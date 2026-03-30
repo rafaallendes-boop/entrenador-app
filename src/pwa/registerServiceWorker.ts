@@ -1,0 +1,11 @@
+export function registerServiceWorker(): void {
+  if (!('serviceWorker' in navigator) || !window.isSecureContext) return
+
+  window.addEventListener('load', () => {
+    navigator.serviceWorker
+      .register('/sw.js')
+      .catch((error) => {
+        console.error('Service worker registration failed', error)
+      })
+  })
+}

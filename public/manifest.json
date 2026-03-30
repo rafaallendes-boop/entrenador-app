@@ -1,0 +1,27 @@
+{
+  "name": "Entrenador",
+  "short_name": "Entrenador",
+  "id": "/",
+  "description": "Tu coach de entrenamiento personal",
+  "theme_color": "#0f0f13",
+  "background_color": "#0f0f13",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui", "browser"],
+  "orientation": "portrait",
+  "start_url": "/",
+  "scope": "/",
+  "icons": [
+    {
+      "src": "/icons/app-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/app-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

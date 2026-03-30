@@ -1,0 +1,66 @@
+import type { SessionType, SessionTypeConfig } from '../types'
+
+export const SESSION_TYPE_CONFIG: Record<SessionType, SessionTypeConfig> = {
+  squash: {
+    type: 'squash',
+    label: 'Squash',
+    bgClass: 'bg-yellow-500/15',
+    textClass: 'text-yellow-400',
+    borderClass: 'border-yellow-500/30',
+    dotClass: 'bg-yellow-400',
+    icon: 'Zap',
+  },
+  running: {
+    type: 'running',
+    label: 'Running',
+    bgClass: 'bg-sky-500/15',
+    textClass: 'text-sky-400',
+    borderClass: 'border-sky-500/30',
+    dotClass: 'bg-sky-400',
+    icon: 'Wind',
+  },
+  strength: {
+    type: 'strength',
+    label: 'Fuerza',
+    bgClass: 'bg-orange-500/15',
+    textClass: 'text-orange-400',
+    borderClass: 'border-orange-500/30',
+    dotClass: 'bg-orange-400',
+    icon: 'Dumbbell',
+  },
+  mobility: {
+    type: 'mobility',
+    label: 'Movilidad',
+    bgClass: 'bg-violet-500/15',
+    textClass: 'text-violet-400',
+    borderClass: 'border-violet-500/30',
+    dotClass: 'bg-violet-400',
+    icon: 'Orbit',
+  },
+  recovery: {
+    type: 'recovery',
+    label: 'Recuperación',
+    bgClass: 'bg-teal-500/15',
+    textClass: 'text-teal-400',
+    borderClass: 'border-teal-500/30',
+    dotClass: 'bg-teal-400',
+    icon: 'Heart',
+  },
+  nutrition: {
+    type: 'nutrition',
+    label: 'Nutrición',
+    bgClass: 'bg-lime-500/15',
+    textClass: 'text-lime-400',
+    borderClass: 'border-lime-500/30',
+    dotClass: 'bg-lime-400',
+    icon: 'Apple',
+  },
+}
+
+export const SQUASH_SUBTYPE_LABELS: Record<string, string> = {
+  control: 'Control',
+  training: 'Entrenamiento',
+  match: 'Partido',
+  competitive: 'Competitivo',
+  light: 'Suave',
+}
