@@ -56,7 +56,7 @@ useChatStore
 3. Configura tu `.env`:
    ```
    VITE_AI_PROVIDER=claude
-   VITE_CLAUDE_API_KEY=sk-ant-api03-...
+   VITE_CLAUDE_API_KEY=YOUR_ANTHROPIC_API_KEY
    ```
 
 4. Reconstruye la app:
@@ -85,7 +85,7 @@ VITE_CLAUDE_MODEL=claude-opus-4-6
 2. Configura tu `.env`:
    ```
    VITE_AI_PROVIDER=openai
-   VITE_OPENAI_API_KEY=sk-proj-...
+   VITE_OPENAI_API_KEY=YOUR_OPENAI_API_KEY
    ```
 
 3. Reconstruye y sube a Netlify

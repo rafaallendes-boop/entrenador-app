@@ -64,10 +64,10 @@ ChatBubble muestra respuesta + badge "Gemini Flash"
 | Variable | Valor | Dónde se usa |
 |----------|-------|--------------|
 | `AI_PROVIDER` | `gemini` | Function: selecciona el proveedor |
-| `GEMINI_API_KEY` | `AIzaSy...` (tu key real) | Function: autenticación con Gemini |
+| `GEMINI_API_KEY` | `YOUR_GEMINI_API_KEY` | Function: autenticación con Gemini |
 
-Para migrar a OpenAI: cambia `AI_PROVIDER=openai` y añade `OPENAI_API_KEY=sk-proj-...`
-Para migrar a Claude: cambia `AI_PROVIDER=claude` y añade `CLAUDE_API_KEY=sk-ant-...`
+Para migrar a OpenAI: cambia `AI_PROVIDER=openai` y añade `OPENAI_API_KEY=YOUR_OPENAI_API_KEY`
+Para migrar a Claude: cambia `AI_PROVIDER=claude` y añade `CLAUDE_API_KEY=YOUR_ANTHROPIC_API_KEY`
 
 ### En `.env` local (gitignored, solo para desarrollo)
 
@@ -77,7 +77,7 @@ VITE_AI_PROVIDER=mock
 
 # Para dev con IA real (requiere netlify dev):
 # VITE_AI_PROVIDER=proxy
-# GEMINI_API_KEY=AIzaSy...    ← sin prefijo VITE_, solo para netlify dev
+# GEMINI_API_KEY=YOUR_GEMINI_API_KEY    ← sin prefijo VITE_, solo para netlify dev
 ```
 
 ### Variables que NO deben existir en producción
@@ -133,27 +133,25 @@ npm run build
 
 Verificar que el build es seguro:
 ```bash
-grep -c "AIza" dist/assets/*.js   # debe ser 0
+grep -c "YOUR_GEMINI_API_KEY" dist/assets/*.js   # debe ser 0
 ```
 
 ---
 
 ## 6. Cómo redeployar en Netlify
 
-**Opción A — Manual (drag & drop)**
-1. `npm run build`
-2. Sube la carpeta `dist/` en Netlify → tu sitio → Deploys → "drag and drop"
-
-**Opción B — Via CLI**
+**Opción A — Via CLI**
 ```bash
 npm run build
 netlify deploy --prod --dir dist
 ```
 
-**Opción C — CI (push a git)**
+**Opción B — CI (push a git)**
 Si conectas el repo a Netlify, cada push a `main` dispara un build automático.
 Netlify leerá `netlify.toml` y ejecutará `npm run build`.
 Las env vars del dashboard estarán disponibles para la function automáticamente.
+
+No uses drag & drop de `dist/` en este proyecto. Ese flujo no despliega `netlify/functions/coach.ts`.
 
 ---
 
@@ -207,7 +205,7 @@ tsconfig.node.json       ← añadido: include "netlify/functions"
 
 1. En Netlify dashboard, actualiza las variables de entorno:
    - `AI_PROVIDER` → `openai`
-   - Añade `OPENAI_API_KEY` → `sk-proj-...`
+   - Añade `OPENAI_API_KEY` → `YOUR_OPENAI_API_KEY`
 2. Redeploy (o trigger manual en Netlify)
 3. La function `coach.ts` ya tiene `callOpenAI()` implementado — no hay cambios de código.
 
@@ -215,7 +213,7 @@ tsconfig.node.json       ← añadido: include "netlify/functions"
 
 1. En Netlify dashboard:
    - `AI_PROVIDER` → `claude`
-   - Añade `CLAUDE_API_KEY` → `sk-ant-api03-...`
+   - Añade `CLAUDE_API_KEY` → `YOUR_ANTHROPIC_API_KEY`
 2. Redeploy
 3. La function `coach.ts` ya tiene `callClaude()` implementado.
 
