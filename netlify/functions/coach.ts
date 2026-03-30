@@ -41,7 +41,7 @@ interface CoachRequest {
 // ─── Provider implementations ─────────────────────────────────────────────────
 
 const DEFAULT_MODELS: Record<string, string> = {
-  gemini: 'gemini-2.0-flash-001',
+  gemini: 'gemini-2.5-flash',
   openai: 'gpt-4o-mini',
   claude: 'claude-sonnet-4-6',
 }
