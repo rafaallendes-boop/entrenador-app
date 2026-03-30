@@ -1,7 +1,7 @@
 # Entrenador App — Project Review & Roadmap
 
 Generado: 2026-03-30
-Última revisión: 2026-03-30 (sesión 3)
+Última revisión: 2026-03-30 (sesión 4)
 Revisado por: Claude Sonnet 4.6
 
 ---
@@ -40,10 +40,32 @@ El estado general es: **MVP funcional con capa AI real disponible vía proxy/Net
 | B5 | `History.tsx` — "Ver semana" ahora hace `setCurrentWeekStart` + `setSelectedDate` antes de navegar | Media | ✅ Probablemente resuelto — verificar en dispositivo |
 | B6 | `ChatCoach.tsx` — el campo `error` de `useChatStore` nunca se muestra en la UI | Media | ✅ Corregido (banner rojo bajo input) |
 | B7 | `useChatStore.sendMessage` — `recentMessages = messages.slice(-3)` duplica el mensaje actual | Baja | ✅ Corregido (`slice(-4, -1)`) |
+| B8 | `Dashboard.tsx:19` — `useUIStore()` sin destructurar: subscripción muerta que re-renderizaba Dashboard ante cualquier cambio en UIStore | Baja | ✅ Corregido (eliminado import y llamada) |
+| B9 | `AddSessionModal.tsx:101` — `typeLabels` useMemo duplicaba exactamente `TYPE_LABELS` con mismos valores, forzando dep extra en useEffect (`[type, typeLabels]`) | Baja | ✅ Corregido (eliminado useMemo, useEffect usa `TYPE_LABELS` directo) |
+| B10 | `AddSessionModal.tsx:489,498,569` — Typo "Anadir" (falta ñ) en tres botones de UI | Baja | ✅ Corregido → "Añadir" |
+| B11 | `QuickActionChips.tsx` — Los chips no incluían "Crear semana" tras implementar el modo planner; chips de "priorizar" enviaban prompt de ajuste en vez de creación | Baja | ✅ Corregido (agregado chip "Crear semana", prompts de "priorizar" actualizados a `create_week`) |
 
 ---
 
-## 3. Qué se implementó (sesión 2)
+## 3. Qué se implementó
+
+### 3.0 Sesión 4 — Coach Planner Mode (2026-03-30)
+
+**Coach como planner real** — El coach respondía solo con texto cuando se pedía crear sesiones. Causa raíz: `create_week` y `add_session` no existían como `CoachActionType`. Cambios:
+- `types/index.ts`: +3 action types (`add_session`, `create_week`, `delete_session`), nueva interface `CoachSessionProposal`, nuevos campos en `CoachAction`
+- `responseNormalizer.ts`: validación para los 3 nuevos tipos
+- `promptBuilder.ts`: reescritura completa — persona planner-first, 7 fechas absolutas de la semana actual, reglas críticas ("si pide crear semana → DEBES usar create_week"), ejemplos concretos con fechas reales
+- `useCoachActionsStore.ts`: ejecutores para `add_session` (1 sesión), `create_week` (N sesiones en bucle), `delete_session`
+- `useTrainingStore.ts`: `deleteSession()` nuevo método
+- `ChatCoach.tsx`: `ProposalDrawer` muestra lista de sesiones para `create_week`; `AcceptedBanner` con resumen "Semana creada con 6 sesiones: 2 squash, 2 running..."
+
+**Bugs normalizados (sesión 4)**:
+- B8 `Dashboard.tsx`: `useUIStore()` muerta eliminada
+- B9 `AddSessionModal.tsx`: `typeLabels` useMemo duplicado eliminado
+- B10 `AddSessionModal.tsx`: typos "Anadir" → "Añadir" (×3)
+- B11 `QuickActionChips.tsx`: chip "Crear semana" agregado, prompts de "priorizar" actualizados
+
+---
 
 ### 3.1 Capa AI multi-proveedor
 
@@ -125,7 +147,20 @@ Las mejoras están ordenadas para ir de a poco: baja fricción, alto impacto pri
 | B6 — error no visible en ChatCoach | Banner rojo bajo el input leyendo `useChatStore.error` |
 | B7 — chat history duplicado | `messages.slice(-4, -1)` en `sendMessage` |
 
-### Ola 2 — Calidad de vida y datos ricos (esfuerzo bajo-medio, impacto alto)
+### Ola 2 — Coach Planner real ✅ COMPLETADA (2026-03-30)
+
+| Feature | Fix aplicado |
+|---------|-------------|
+| Coach crea semana completa | `create_week` action + ejecutor + prompt reescrito con fechas absolutas |
+| Coach agrega sesión individual | `add_session` action + ejecutor |
+| Coach elimina sesiones | `delete_session` action + `deleteSession()` en training store |
+| Prompt con rol de planner | Reescritura: planner-first, reglas críticas, ejemplos reales con fechas de la semana |
+| Fechas de la semana en contexto | `buildWeekDatesList()` agrega los 7 YYYY-MM-DD al prompt siempre |
+| ProposalDrawer para create_week | Lista de sesiones + header con conteo |
+| AcceptedBanner | Confirmación "Semana creada con N sesiones: X squash, Y running..." |
+| QuickActionChips actualizado | Chip "Crear semana" agregado; prompts de "priorizar" ahora activan create_week |
+
+### Ola 2.1 — Calidad de vida y datos ricos (esfuerzo bajo-medio, impacto alto)
 
 Orden sugerido de implementación:
 
@@ -168,6 +203,38 @@ Orden sugerido de implementación:
 - Requiere AI real (se puede codear ahora, testear en prod)
 - Esfuerzo: 2–3h
 
+### Ola 2.2 — Mejoras directas al Coach Planner (esfuerzo bajo, impacto alto)
+
+Estas mejoras extienden lo implementado en la Ola 2 con poco esfuerzo incremental:
+
+**D1 — Detección de colisiones en create_week**
+- Antes de crear sesiones, verificar si ya existen sesiones en esa fecha+timeBlock
+- Si hay colisión: notificar al usuario en el AcceptedBanner ("Nota: el lunes ya tenía una sesión")
+- Esfuerzo: 1h
+
+**D2 — Propuesta de semana en WeeklyView**
+- Botón "Pedir semana al coach" en WeeklyView cuando la semana está vacía
+- Navega al Coach con el prompt preescrito "Créame una semana de entrenamiento"
+- Evita que el usuario tenga que saber que puede pedírselo
+- Esfuerzo: 30min
+
+**D3 — Persistencia de CoachProposals en Dexie**
+- Agregar tabla `coachProposals` en db.ts (versión 4 de migración)
+- Las propuestas pending sobreviven recargas de la app
+- Esfuerzo: 1-2h
+
+**D4 — Confirmación de create_week navega a WeeklyView**
+- Después de aceptar una propuesta de tipo `create_week`, navegar automáticamente a `/week`
+- El usuario ve su semana creada de inmediato sin tener que navegar manualmente
+- Esfuerzo: 30min
+
+**D5 — Historial de chat multi-turno real**
+- Hoy: últimos 4 mensajes como texto plano en el system prompt
+- Cambiar a `contents[]` con roles `user`/`model` en la API de Gemini/Claude/OpenAI
+- Mejor continuidad del coach, menos tokens en formateo manual
+- Requiere cambiar `AIRequest` y adaptar todos los providers
+- Esfuerzo: 2-3h
+
 ### Ola 3 — Mejoras técnicas y features nuevos (esfuerzo medio)
 
 **C1 — Chat multi-turno real**
@@ -191,6 +258,24 @@ Orden sugerido de implementación:
 **Pantalla Settings mínima**
 - Export JSON, Clear all data (con confirmación), info de versión
 - Esfuerzo: 1–2h
+
+**C3 — Resumen semanal generado por el coach** ⏳ (movido desde Ola 2)
+- Botón en WeeklyView que le pide al coach un resumen de la semana
+- Coach genera párrafo con contexto completo (adherencia, RPE real, partidos, lesiones)
+- Se guarda en `WeekSummary.coachNote` y aparece en Dashboard y History
+- Esfuerzo: 2h (base ya disponible)
+
+**C4 — Coach memoria de contexto**
+- Store persistente con contexto de Rafael que el coach incluye siempre
+- Ej: "prefiere entrenar fuerza los martes", "molestia rodilla derecha desde feb", "próximo torneo: mayo"
+- Se guarda en Dexie, editable en Settings
+- Esfuerzo: 3-4h
+
+**C5 — Streaming de respuesta del coach**
+- Mostrar la respuesta del coach letra a letra mientras llega (como ChatGPT)
+- Requiere streaming support en CoachEngine y providers
+- Reduce la percepción de latencia significativamente
+- Esfuerzo: 3-4h
 
 ### Ola 4 — Largo plazo (alto esfuerzo, transformacional)
 
@@ -227,14 +312,21 @@ Orden sugerido de implementación:
 | Peso corporal en check-in | Medio | Bajo | 2 | ✅ Hecho |
 | RPE por sesión | Medio | Bajo | 2 | ✅ Hecho |
 | Estadísticas de partido squash | Alto | Medio | 2 | ✅ Hecho |
-| Vista historial partidos | Medio | Bajo | 2 | ⏳ |
-| Resumen semanal del coach | Alto | Medio | 2 | ⏳ |
-| Chat multi-turno real (Gemini) | Alto | Medio | 3 | ⏳ |
+| Coach crea/agrega sesiones reales | Alto | Alto | 2 | ✅ Hecho |
+| B8-B11 — Bugs normalización | Bajo | Mínimo | 4 | ✅ Hecho |
+| D1 — Detección colisiones create_week | Medio | Mínimo | 2.2 | ⏳ |
+| D2 — Botón "Pedir semana" en WeeklyView | Alto | Mínimo | 2.2 | ⏳ |
+| D3 — Persistir proposals en Dexie | Medio | Bajo | 2.2 | ⏳ |
+| D4 — Navegar a WeeklyView tras create_week | Alto | Mínimo | 2.2 | ⏳ |
+| D5 — Chat multi-turno real | Alto | Medio | 2.2 | ⏳ |
+| Vista historial partidos | Medio | Bajo | 2.1 | ⏳ |
+| C3 — Resumen semanal del coach | Alto | Medio | 3 | ⏳ |
+| C4 — Memoria del coach | Alto | Medio | 3 | ⏳ |
+| C5 — Streaming de respuesta | Alto | Medio | 3 | ⏳ |
 | PDF import v1.1 (pdfjs-dist) | Alto | Medio | 3 | ⏳ |
 | Notificaciones de sesión | Alto | Medio | 3 | ⏳ |
 | Pantalla Settings | Bajo | Bajo | 3 | ⏳ |
 | PDF import v2 (Gemini API) | Alto | Medio-alto | 4 | ⏳ |
-| Memoria del coach | Alto | Alto | 4 | ⏳ |
 | Sync backend multi-dispositivo | Alto | Muy alto | 4 | ⏳ |
 | Modo torneo | Alto | Muy alto | 4 | ⏳ |
 

@@ -1,12 +1,13 @@
 import type { QuickAction } from '../../types'
 
 const QUICK_ACTIONS: QuickAction[] = [
-  { id: 'adjust',      label: 'Ajustar semana',       prompt: 'Necesito ajustar mi semana de entrenamiento' },
-  { id: 'reduce',      label: 'Bajar carga',           prompt: 'Quiero bajar la carga esta semana, me siento cansado' },
-  { id: 'squash',      label: 'Priorizar squash',      prompt: 'Quiero priorizar squash esta semana' },
-  { id: 'running',     label: 'Priorizar running',     prompt: 'Quiero priorizar running esta semana' },
-  { id: 'reorder',     label: 'Reordenar sesiones',    prompt: 'Ayúdame a reordenar las sesiones de esta semana' },
-  { id: 'nutrition',   label: 'Foco nutricional',      prompt: 'Dame un foco nutricional para esta semana según mi entrenamiento' },
+  { id: 'create_week', label: 'Crear semana',          prompt: 'Créame una semana de entrenamiento' },
+  { id: 'adjust',      label: 'Ajustar semana',        prompt: 'Necesito ajustar mi semana de entrenamiento' },
+  { id: 'reduce',      label: 'Bajar carga',            prompt: 'Quiero bajar la carga esta semana, me siento cansado' },
+  { id: 'squash',      label: 'Priorizar squash',       prompt: 'Créame una semana priorizando squash' },
+  { id: 'running',     label: 'Priorizar running',      prompt: 'Créame una semana priorizando running' },
+  { id: 'reorder',     label: 'Reordenar sesiones',     prompt: 'Ayúdame a reordenar las sesiones de esta semana' },
+  { id: 'nutrition',   label: 'Foco nutricional',       prompt: 'Dame un foco nutricional para esta semana según mi entrenamiento' },
 ]
 
 interface QuickActionChipsProps {

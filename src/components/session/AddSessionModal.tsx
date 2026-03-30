@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from 'react'
+﻿import { useEffect, useState } from 'react'
 import { X, Plus, Trash2 } from 'lucide-react'
 import type {
   Exercise,
@@ -98,17 +98,8 @@ export default function AddSessionModal({ defaultDate, onClose }: Props) {
   const isSquashMatch = type === 'squash' && (squashSubtype === 'match' || squashSubtype === 'competitive')
   const showLocation = type === 'squash' || type === 'running'
 
-  const typeLabels = useMemo<Record<SessionType, string>>(() => ({
-    squash: 'Sesion de squash',
-    running: 'Salida de running',
-    strength: 'Sesion de fuerza',
-    mobility: 'Movilidad',
-    recovery: 'Recuperacion activa',
-    nutrition: 'Nutricion',
-  }), [])
-
   useEffect(() => {
-    setTitle(typeLabels[type])
+    setTitle(TYPE_LABELS[type])
     if (type !== 'strength' && type !== 'mobility') {
       setExercises([])
     }
@@ -129,7 +120,7 @@ export default function AddSessionModal({ defaultDate, onClose }: Props) {
     if (type !== 'squash' && type !== 'running') {
       setLocation('')
     }
-  }, [type, typeLabels])
+  }, [type])
 
   useEffect(() => {
     if (!isSquashMatch) {
@@ -486,7 +477,7 @@ export default function AddSessionModal({ defaultDate, onClose }: Props) {
                   <span className="ml-1 normal-case text-ink-faint">(opcional)</span>
                 </label>
                 <button onClick={addExercise} className="flex items-center gap-1 text-xs font-medium text-brand-light">
-                  <Plus size={12} /> Anadir
+                  <Plus size={12} /> Añadir
                 </button>
               </div>
 
@@ -495,7 +486,7 @@ export default function AddSessionModal({ defaultDate, onClose }: Props) {
                   onClick={addExercise}
                   className="w-full rounded-xl border border-dashed border-surface-border py-3 text-xs text-ink-faint transition-colors hover:border-brand/40 hover:text-ink-muted"
                 >
-                  + Anadir ejercicio
+                  + Añadir ejercicio
                 </button>
               ) : (
                 <div className="space-y-3">
@@ -566,7 +557,7 @@ export default function AddSessionModal({ defaultDate, onClose }: Props) {
                     onClick={addExercise}
                     className="flex w-full items-center justify-center gap-1 rounded-xl border border-dashed border-surface-border py-2 text-xs text-ink-faint transition-colors hover:border-brand/40 hover:text-ink-muted"
                   >
-                    <Plus size={12} /> Anadir ejercicio
+                    <Plus size={12} /> Añadir ejercicio
                   </button>
                 </div>
               )}

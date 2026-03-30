@@ -1,7 +1,6 @@
 import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTrainingStore } from '../store/useTrainingStore'
-import { useUIStore } from '../store/useUIStore'
 import { todayISO, formatFullDate, currentWeekStartISO } from '../utils/date'
 import { ROUTES } from '../constants/routes'
 import WeekStrip from '../components/week/WeekStrip'
@@ -16,7 +15,6 @@ import { getDayNutrition } from '../services/nutritionEngine'
 
 export default function Dashboard() {
   const { sessions, currentWeekSummary, loadWeek } = useTrainingStore()
-  useUIStore()
   const navigate = useNavigate()
   const today = todayISO()
 
