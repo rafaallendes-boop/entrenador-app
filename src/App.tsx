@@ -8,11 +8,11 @@ import ChatCoach from './pages/ChatCoach'
 import History from './pages/History'
 import ImportPDF from './pages/ImportPDF'
 import { ROUTES } from './constants/routes'
-import { seedDatabase } from './db/seed'
+import { db } from './db/db'
 
 export default function App() {
   useEffect(() => {
-    seedDatabase().catch(console.error)
+    db.open().catch(console.error)
   }, [])
 
   return (

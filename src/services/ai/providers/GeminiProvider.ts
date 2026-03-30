@@ -1,7 +1,7 @@
 import type { AIProvider, AIRequest, AIRawResponse } from '../types'
 import { createProviderError } from '../types'
 
-const DEFAULT_MODEL = 'gemini-1.5-flash'
+const DEFAULT_MODEL = 'gemini-2.0-flash-001'
 const BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/models/'
 
 export class GeminiProvider implements AIProvider {

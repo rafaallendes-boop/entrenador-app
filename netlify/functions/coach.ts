@@ -41,7 +41,7 @@ interface CoachRequest {
 // ─── Provider implementations ─────────────────────────────────────────────────
 
 const DEFAULT_MODELS: Record<string, string> = {
-  gemini: 'gemini-1.5-flash',
+  gemini: 'gemini-2.0-flash-001',
   openai: 'gpt-4o-mini',
   claude: 'claude-sonnet-4-6',
 }
@@ -158,7 +158,12 @@ export const handler = async (event: LambdaEvent): Promise<LambdaResponse> => {
   }
 
   const provider = (process.env['AI_PROVIDER'] ?? 'gemini').toLowerCase()
-  const model = DEFAULT_MODELS[provider] ?? DEFAULT_MODELS['gemini']!
+  const model =
+    (provider === 'gemini' ? process.env['GEMINI_MODEL'] : undefined) ??
+    (provider === 'openai' ? process.env['OPENAI_MODEL'] : undefined) ??
+    (provider === 'claude' ? process.env['CLAUDE_MODEL'] : undefined) ??
+    DEFAULT_MODELS[provider] ??
+    DEFAULT_MODELS['gemini']!
 
   try {
     let text: string
