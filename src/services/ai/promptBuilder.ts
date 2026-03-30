@@ -1,33 +1,34 @@
-﻿/**
+/**
  * Builds rich, context-aware system prompts for the AI coach.
  *
  * Design goals:
- * - Include enough context that the model can give specific, non-generic advice
- * - Keep the prompt efficient (avoid sending unnecessary tokens)
- * - Always include session IDs so the model can reference them in action proposals
- * - Instruct the model on the <actions> response format
+ * - Coach is primarily a PLANNER, secondarily a conversational advisor
+ * - Include enough context (week dates, sessions, profile) for concrete actions
+ * - Teach the model ALL available action types including create_week and add_session
+ * - When the user asks for an action, the model MUST respond with structured actions
  */
 
 import type { ChatContext, Session } from '../../types'
-import { todayISO } from '../../utils/date'
+import { todayISO, currentWeekStartISO } from '../../utils/date'
 
 const SQUASH_SUBTYPE_ES: Record<string, string> = {
   training: 'entrenamiento', match: 'partido', competitive: 'competitivo',
   control: 'control', light: 'suave',
 }
 const RUNNING_TYPE_ES: Record<string, string> = {
-  z2: 'Z2 aerÃ³bico', tempo: 'tempo', intervals: 'intervalos', long: 'long run',
+  z2: 'Z2 aeróbico', tempo: 'tempo', intervals: 'intervalos', long: 'long run',
 }
 const SESSION_TYPE_ES: Record<string, string> = {
   squash: 'squash', running: 'running', strength: 'fuerza',
-  mobility: 'movilidad', recovery: 'recuperaciÃ³n', nutrition: 'nutriciÃ³n',
+  mobility: 'movilidad', recovery: 'recuperación', nutrition: 'nutrición',
 }
 const STATUS_ES: Record<string, string> = {
   planned: 'planificado', completed: 'completado', adjusted: 'ajustado', skipped: 'saltado',
 }
-const DAY_ES = ['Dom', 'Lun', 'Mar', 'MiÃ©', 'Jue', 'Vie', 'SÃ¡b']
+const DAY_ES = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb']
+const DAY_FULL_ES = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado']
 
-// â”€â”€â”€ Entry point â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Entry point ──────────────────────────────────────────────────────────────
 
 export function buildCoachSystemPrompt(context: ChatContext): string {
   const sections: string[] = [
@@ -36,42 +37,42 @@ export function buildCoachSystemPrompt(context: ChatContext): string {
     buildSessionsSection(context.recentSessions),
     buildTodaySection(context),
     buildRecentChatHistory(context.recentMessages),
-    buildResponseInstructions(context.recentSessions),
+    buildResponseInstructions(context.recentSessions, context),
   ]
   return sections.filter(Boolean).join('\n\n')
 }
 
-// â”€â”€â”€ Sections â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Sections ─────────────────────────────────────────────────────────────────
 
 function buildPersonaSection(): string {
-  return `Eres el coach personal de alto rendimiento de Rafael Allendes. Rafael es jugador de squash avanzado (ex-selecciÃ³n nacional) que tambiÃ©n entrena running, fuerza y movilidad de forma estructurada.
+  return `Eres el coach-planner personal de alto rendimiento de Rafael Allendes.
+Rafael es jugador de squash avanzado (ex-selección nacional), entrena también running, fuerza y movilidad de forma estructurada.
 
-Tu estilo de comunicaciÃ³n:
-- Directo y concreto. Sin generalidades de fitness.
-- Hablas como alguien que lleva meses siguiendo su historial.
-- Si propones algo, das el "por quÃ©" en una frase.
-- Si no tienes suficiente contexto, preguntas algo especÃ­fico.
-- Responde siempre en espaÃ±ol.`
+ROLES EN ORDEN DE PRIORIDAD:
+1. PLANNER: Tu trabajo principal es crear y modificar la semana de entrenamiento con acciones ejecutables.
+2. ADVISOR: Analizas el progreso y das recomendaciones concretas cuando te preguntan.
+
+Estilo de comunicación:
+- Directo y conciso. Máximo 3 líneas de mensaje conversacional.
+- Cuando el usuario pide una acción → la ejecutas inmediatamente con el bloque <actions>.
+- Si falta contexto → asumes algo razonable basado en el perfil de Rafael y lo indicas.
+- NUNCA respondas solo con texto cuando el usuario pide crear sesiones o modificar el plan.
+- Responde siempre en español.`
 }
 
 function buildWeekSection(context: ChatContext): string {
   const { currentWeekSummary: s } = context
   if (!s) return ''
 
-  const lines: string[] = ['â”â”â” SEMANA EN CURSO â”â”â”']
+  const lines: string[] = ['═══ SEMANA EN CURSO ═══']
 
-  // Dates
   const weekStart = formatDateShort(s.weekStartDate)
-  lines.push(`Semana: ${weekStart} (7 dÃ­as)`)
+  lines.push(`Semana: ${weekStart} (7 días)`)
 
-  // Global adherence
   const adh = s.adherencePct != null ? ` (${s.adherencePct}%)` : ''
   lines.push(`Adherencia global: ${s.completedSessions}/${s.plannedSessions} sesiones${adh}`)
-
-  // Volume
   lines.push(`Volumen completado: ${formatMin(s.completedMinutes)} de ${formatMin(s.plannedMinutes)} planificados`)
 
-  // Per-discipline adherence (only if we have planned data)
   const disciplines: string[] = []
   if (s.plannedSquashSessions) {
     disciplines.push(`Squash ${s.squashSessions}/${s.plannedSquashSessions}`)
@@ -88,13 +89,11 @@ function buildWeekSection(context: ChatContext): string {
   } else if (s.strengthSessions) {
     disciplines.push(`Fuerza ${s.strengthSessions} completadas`)
   }
-  if (disciplines.length > 0) lines.push(disciplines.join('  Â·  '))
+  if (disciplines.length > 0) lines.push(disciplines.join('  ·  '))
 
-  // RPE
   if (s.avgActualRpe != null) lines.push(`RPE real promedio: ${s.avgActualRpe.toFixed(1)}/10`)
   else if (s.avgRpe != null) lines.push(`RPE planificado promedio: ${s.avgRpe.toFixed(1)}/10`)
 
-  // Coach objectives
   if (s.objectives && s.objectives.length > 0) {
     lines.push(`Objetivos semana: ${s.objectives.join(' / ')}`)
   }
@@ -103,16 +102,20 @@ function buildWeekSection(context: ChatContext): string {
 }
 
 function buildSessionsSection(sessions: Session[]): string {
-  // Filtro "Lazy Context": omitimos las sesiones de dÃ­as anteriores para ahorrar tokens.
   const today = todayISO()
   const futureSessions = sessions.filter(s => s.date >= today)
 
-  if (futureSessions.length === 0) return ''
+  const lines: string[] = ['═══ SESIONES DISPONIBLES (HOY Y FUTURO) ═══']
 
-  const lines: string[] = ['â”â”â” SESIONES DISPONIBLES (HOY Y FUTURO) â”â”â”']
-  lines.push('(IDs incluidos â€” Ãºsalos en las acciones si propones cambios)')
+  if (futureSessions.length === 0) {
+    lines.push('⚠ No hay sesiones planificadas para esta semana.')
+    lines.push('→ Si el usuario pide crear una semana, usa la acción create_week con sesiones concretas.')
+    lines.push('→ Usa los días de la semana actual indicados en las instrucciones.')
+    return lines.join('\n')
+  }
 
-  // Sort by date then timeBlock
+  lines.push('(IDs incluidos — úsalos en las acciones si propones cambios)')
+
   const sorted = [...futureSessions].sort(
     (a, b) => a.date.localeCompare(b.date) || a.timeBlock.localeCompare(b.timeBlock)
   )
@@ -124,38 +127,35 @@ function buildSessionsSection(sessions: Session[]): string {
     const status = STATUS_ES[s.status] ?? s.status
     const rpe = s.rpe != null ? ` RPE${s.actualRpe ?? s.rpe}${s.actualRpe != null ? ' real' : ''}` : ''
     const duration = `${s.actualDurationMin ?? s.durationMin}min`
-    const flag = s.status === 'completed' ? 'âœ“' : s.status === 'skipped' ? 'âœ—' : s.status === 'adjusted' ? '~' : 'â—‹'
+    const flag = s.status === 'completed' ? '✓' : s.status === 'skipped' ? '✗' : s.status === 'adjusted' ? '~' : '○'
     const matchMeta = formatMatchMeta(s)
 
     lines.push(`${flag} [${s.id.slice(0, 8)}] ${dayName} ${s.timeBlock} · ${type}${subtype} "${s.title}" · ${duration}${rpe} · ${status}${matchMeta}`)
 
-    // Running details
     if (s.runningDetails) {
       const rd = s.runningDetails
       const runType = RUNNING_TYPE_ES[rd.runningType] ?? rd.runningType
       const pace = rd.targetPaceMin
-        ? `${rd.targetPaceMin}${rd.targetPaceMax ? `â€“${rd.targetPaceMax}` : ''} /km`
+        ? `${rd.targetPaceMin}${rd.targetPaceMax ? `–${rd.targetPaceMax}` : ''} /km`
         : null
-      const hr = rd.targetHrMin ? `FC ${rd.targetHrMin}â€“${rd.targetHrMax ?? '?'} bpm` : null
-      const details = [runType, pace, hr].filter(Boolean).join(' Â· ')
-      if (details) lines.push(`   â†³ ${details}`)
+      const hr = rd.targetHrMin ? `FC ${rd.targetHrMin}–${rd.targetHrMax ?? '?'} bpm` : null
+      const details = [runType, pace, hr].filter(Boolean).join(' · ')
+      if (details) lines.push(`   ↳ ${details}`)
     }
 
-    // Exercises (strength/mobility)
     if (s.exercises && s.exercises.length > 0) {
       const exStr = s.exercises
-        .slice(0, 6) // cap at 6 to avoid token bloat
+        .slice(0, 6)
         .map(ex => {
           const w = ex.weight ? ` ${ex.weight}kg` : ''
-          return `${ex.name} ${ex.sets}Ã—${ex.reps}${w}`
+          return `${ex.name} ${ex.sets}×${ex.reps}${w}`
         })
         .join(', ')
-      lines.push(`   â†³ ${exStr}${s.exercises.length > 6 ? ` +${s.exercises.length - 6} mÃ¡s` : ''}`)
+      lines.push(`   ↳ ${exStr}${s.exercises.length > 6 ? ` +${s.exercises.length - 6} más` : ''}`)
     }
 
-    // Completion notes
     if (s.completionNotes) {
-      lines.push(`   â†³ Nota post: "${s.completionNotes.slice(0, 80)}"`)
+      lines.push(`   ↳ Nota post: "${s.completionNotes.slice(0, 80)}"`)
     }
   }
 
@@ -166,21 +166,21 @@ function buildTodaySection(context: ChatContext): string {
   const { dayLog } = context
   const today = todayISO()
 
-  const lines: string[] = [`â”â”â” HOY (${formatDateShort(today)}) â”â”â”`]
+  const lines: string[] = [`═══ HOY (${formatDateShort(today)}) ═══`]
 
   if (!dayLog) {
-    lines.push('Sin registro diario todavÃ­a.')
+    lines.push('Sin registro diario todavía.')
     return lines.join('\n')
   }
 
   if (dayLog.sleepHours != null) {
-    const qual = dayLog.sleepQuality != null ? ` Â· Calidad ${dayLog.sleepQuality}/5` : ''
-    lines.push(`SueÃ±o: ${dayLog.sleepHours}h${qual}`)
+    const qual = dayLog.sleepQuality != null ? ` · Calidad ${dayLog.sleepQuality}/5` : ''
+    lines.push(`Sueño: ${dayLog.sleepHours}h${qual}`)
   }
-  if (dayLog.energyLevel != null) lines.push(`EnergÃ­a: ${dayLog.energyLevel}/10`)
+  if (dayLog.energyLevel != null) lines.push(`Energía: ${dayLog.energyLevel}/10`)
   if (dayLog.painLevel != null) {
     const pain = dayLog.painLevel === 0 ? 'Sin dolor' : `${dayLog.painLevel}/10`
-    const notes = dayLog.painNotes ? ` â€” ${dayLog.painNotes}` : ''
+    const notes = dayLog.painNotes ? ` – ${dayLog.painNotes}` : ''
     lines.push(`Dolor: ${pain}${notes}`)
   }
   if (dayLog.rpeActual != null) lines.push(`RPE real hoy: ${dayLog.rpeActual}/10`)
@@ -188,7 +188,7 @@ function buildTodaySection(context: ChatContext): string {
     lines.push(`Comentario: "${dayLog.postSessionComment.slice(0, 120)}"`)
   }
   if (dayLog.generalNotes) {
-    lines.push(`Notas dÃ­a: "${dayLog.generalNotes.slice(0, 120)}"`)
+    lines.push(`Notas día: "${dayLog.generalNotes.slice(0, 120)}"`)
   }
 
   return lines.join('\n')
@@ -196,7 +196,7 @@ function buildTodaySection(context: ChatContext): string {
 
 function buildRecentChatHistory(messages?: {role: string, content: string}[]): string {
   if (!messages || messages.length === 0) return ''
-  const lines = ['â”â”â” HISTORIAL RECIENTE â”â”â”']
+  const lines = ['═══ HISTORIAL RECIENTE ═══']
   for (const m of messages) {
     const isCoach = m.role === 'coach'
     lines.push(`${isCoach ? 'Coach' : 'Atleta'}: "${m.content.slice(0, 150)}${m.content.length > 150 ? '...' : ''}"`)
@@ -204,43 +204,125 @@ function buildRecentChatHistory(messages?: {role: string, content: string}[]): s
   return lines.join('\n')
 }
 
-function buildResponseInstructions(sessions: Session[]): string {
-  const plannedIds = sessions
-    .filter(s => s.status === 'planned')
-    .map(s => s.id.slice(0, 8))
-    .slice(0, 8)
-    .join(', ')
+function buildResponseInstructions(sessions: Session[], context: ChatContext): string {
+  const today = todayISO()
 
-  const actionDocs = `Tipos de acciÃ³n disponibles:
-- skip_session: {sessionId, reason}
-- change_rpe: {sessionId, newRpe, reason}
-- shorten_session: {sessionId, newDurationMin, reason}
-- lengthen_session: {sessionId, newDurationMin, reason}
-- move_session: {sessionId, targetDate (YYYY-MM-DD), reason}
-- replace_session_type: {sessionId, newType (squash|running|strength|mobility|recovery), reason}
-- insert_recovery: {targetDate (YYYY-MM-DD), reason}`
+  // Week dates — use summary weekStartDate or compute from today
+  const weekStart = context.currentWeekSummary?.weekStartDate ?? currentWeekStartISO()
+  const weekDates = buildWeekDatesList(weekStart)
 
-  const idHint = plannedIds
-    ? `IDs de sesiones planificadas (para acciones): ${plannedIds}`
-    : ''
+  // Planned session IDs for modification actions
+  const plannedSessionLines = sessions
+    .filter(s => s.status === 'planned' && s.date >= today)
+    .slice(0, 10)
+    .map(s => `  [${s.id.slice(0, 8)}] ${getDayName(s.date)} ${s.timeBlock} · ${SESSION_TYPE_ES[s.type] ?? s.type} "${s.title}"`)
+    .join('\n')
 
-  return `â”â”â” INSTRUCCIONES DE RESPUESTA â”â”â”
-Responde en espaÃ±ol. MÃ¡ximo 3â€“4 pÃ¡rrafos cortos o una lista con bullets concretos.
-No uses frases genÃ©ricas. Habla como alguien que conoce el historial de Rafael.
+  return `═══ INSTRUCCIONES DEL COACH-PLANNER ═══
 
-${idHint ? idHint + '\n\n' : ''}Si propones cambios concretos al plan, aÃ±ade AL FINAL de tu respuesta (y solo al final) un bloque de acciones con este formato EXACTO:
+REGLAS CRÍTICAS:
+1. Si el usuario pide "crear semana", "armar semana", "planificar semana" → DEBES responder con create_week. No solo texto.
+2. Si el usuario pide "agregar sesión", "pon un X el día Y" → DEBES responder con add_session. No solo texto.
+3. Si falta contexto → asume valores razonables para Rafael y explícalo en 1 frase.
+4. Si no hay sesiones en la semana → crea una semana base sin pedir confirmación.
+
+PERFIL DE RAFAEL (defaults para propuestas):
+- Prioridad: squash (2-3 sesiones/semana) > running (2) > fuerza (1-2) > movilidad (1)
+- Semana base típica:
+    Lun PM: squash entrenamiento 75min RPE7
+    Mar AM: running Z2 50min RPE6
+    Mié PM: fuerza upper 60min RPE7
+    Jue PM: squash control 60min RPE6
+    Vie PM: running tempo 45min RPE7
+    Sáb AM: movilidad 30min RPE4
+    Dom: descanso
+
+FECHA HOY: ${today}
+${weekDates}
+
+SESIONES PLANIFICADAS (IDs para acciones de modificación):
+${plannedSessionLines || '  (ninguna — la semana está vacía)'}
+
+═══ ACCIONES DISPONIBLES ═══
+
+Para CREAR una semana completa (usar cuando el usuario pide crear/armar/planificar la semana):
+  create_week — campo: sessions (array), reason
+
+Para AGREGAR una sesión individual:
+  add_session — campos: targetDate, timeBlock, sessionType, title, durationMin, rpe?, objective?, subtype?, runningType?, reason
+
+Para MODIFICAR sesiones existentes (requieren sessionId del listado):
+  skip_session        — campos: sessionId, reason
+  change_rpe          — campos: sessionId, newRpe (1-10), reason
+  shorten_session     — campos: sessionId, newDurationMin, reason
+  lengthen_session    — campos: sessionId, newDurationMin, reason
+  move_session        — campos: sessionId, targetDate (YYYY-MM-DD), reason
+  replace_session_type— campos: sessionId, newType (squash|running|strength|mobility|recovery), reason
+  insert_recovery     — campos: targetDate (YYYY-MM-DD), reason
+  delete_session      — campos: sessionId, reason
+
+ESQUEMA DE SESIÓN (para create_week y add_session):
+  date: "YYYY-MM-DD"         ← siempre fecha absoluta
+  timeBlock: "AM" | "PM"
+  sessionType: "squash" | "running" | "strength" | "mobility" | "recovery"
+  title: "nombre en español" ← ej: "Squash entrenamiento", "Running Z2", "Fuerza upper"
+  durationMin: número        ← ej: 60
+  rpe: número 1-10           ← opcional
+  objective: "objetivo"      ← opcional
+  subtype: para squash → "training" | "match" | "competitive" | "control" | "light"
+  runningType: para running → "z2" | "tempo" | "intervals" | "long"
+
+═══ FORMATO DE RESPUESTA ═══
+
+Mensaje conversacional: máximo 3 líneas, directo y concreto.
+Luego, si hay acciones, el bloque <actions> AL FINAL:
 
 <actions>
-[{"type":"TIPO","sessionId":"ID_CORTO","reason":"motivo conciso"}]
+[{"type":"TIPO",...,"reason":"motivo conciso"}]
 </actions>
 
-Solo incluye <actions> si tienes propuestas reales y concretas que mejorarÃ­an el plan.
-Si no, no incluyas el bloque â€” responde solo con texto.
+EJEMPLO — crear semana:
+<actions>
+[{"type":"create_week","sessions":[
+  {"date":"${addDaysToISO(weekStart, 0)}","timeBlock":"PM","sessionType":"squash","title":"Squash entrenamiento","durationMin":75,"rpe":7,"subtype":"training"},
+  {"date":"${addDaysToISO(weekStart, 1)}","timeBlock":"AM","sessionType":"running","title":"Running Z2","durationMin":50,"rpe":6,"runningType":"z2"},
+  {"date":"${addDaysToISO(weekStart, 2)}","timeBlock":"PM","sessionType":"strength","title":"Fuerza upper","durationMin":60,"rpe":7},
+  {"date":"${addDaysToISO(weekStart, 3)}","timeBlock":"PM","sessionType":"squash","title":"Squash control","durationMin":60,"rpe":6,"subtype":"control"},
+  {"date":"${addDaysToISO(weekStart, 4)}","timeBlock":"PM","sessionType":"running","title":"Running tempo","durationMin":45,"rpe":7,"runningType":"tempo"},
+  {"date":"${addDaysToISO(weekStart, 5)}","timeBlock":"AM","sessionType":"mobility","title":"Movilidad","durationMin":30,"rpe":4}
+],"reason":"semana base de entrenamiento para Rafael"}]
+</actions>
 
-${actionDocs}`
+EJEMPLO — agregar sesión:
+<actions>
+[{"type":"add_session","targetDate":"${addDaysToISO(weekStart, 3)}","timeBlock":"AM","sessionType":"running","title":"Running Z2","durationMin":50,"rpe":6,"runningType":"z2","reason":"request del atleta"}]
+</actions>`
 }
 
-// â”€â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function buildWeekDatesList(weekStart: string): string {
+  const lines = ['DÍAS DE LA SEMANA ACTUAL:']
+  for (let i = 0; i < 7; i++) {
+    const date = addDaysToISO(weekStart, i)
+    const dayName = getDayFullName(date)
+    lines.push(`  ${date} (${dayName})`)
+  }
+  return lines.join('\n')
+}
+
+function addDaysToISO(isoDate: string, days: number): string {
+  try {
+    const [y, mo, d] = isoDate.split('-').map(Number)
+    const date = new Date(y, mo - 1, d + days)
+    const yy = date.getFullYear()
+    const mm = String(date.getMonth() + 1).padStart(2, '0')
+    const dd = String(date.getDate()).padStart(2, '0')
+    return `${yy}-${mm}-${dd}`
+  } catch {
+    return isoDate
+  }
+}
 
 function formatMin(min: number): string {
   if (min < 60) return `${min}min`
@@ -270,6 +352,16 @@ function getDayName(iso: string): string {
   }
 }
 
+function getDayFullName(iso: string): string {
+  try {
+    const [y, mo, d] = iso.split('-').map(Number)
+    const day = new Date(y, mo - 1, d).getDay()
+    return DAY_FULL_ES[day]
+  } catch {
+    return iso
+  }
+}
+
 function formatMatchMeta(session: Session): string {
   if (session.type !== 'squash' || (session.subtype !== 'match' && session.subtype !== 'competitive')) {
     return ''
@@ -277,7 +369,7 @@ function formatMatchMeta(session: Session): string {
 
   const parts: string[] = []
   if (session.opponent) parts.push(`vs ${session.opponent}`)
-  if (session.matchResult) parts.push(session.matchResult === 'win' ? 'gano' : 'perdio')
+  if (session.matchResult) parts.push(session.matchResult === 'win' ? 'ganó' : 'perdió')
   if (session.gamesWon != null || session.gamesLost != null) {
     parts.push(`games ${session.gamesWon ?? '?'}-${session.gamesLost ?? '?'}`)
   }
@@ -285,5 +377,3 @@ function formatMatchMeta(session: Session): string {
 
   return parts.length > 0 ? ` · ${parts.join(' · ')}` : ''
 }
-
-

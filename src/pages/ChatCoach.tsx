@@ -21,6 +21,14 @@ const ACTION_LABEL: Record<string, string> = {
   move_session: 'Mover sesión',
   replace_session_type: 'Cambiar tipo',
   insert_recovery: 'Insertar recuperación',
+  add_session: 'Agregar sesión',
+  create_week: 'Crear semana',
+  delete_session: 'Eliminar sesión',
+}
+
+const SESSION_TYPE_LABEL: Record<string, string> = {
+  squash: 'squash', running: 'running', strength: 'fuerza',
+  mobility: 'movilidad', recovery: 'recuperación',
 }
 
 // ─── Proposal drawer ───────────────────────────────────────────────────────────
@@ -36,17 +44,25 @@ function ProposalDrawer({
   onReject: () => void
   onClose: () => void
 }) {
+  // Count total sessions for create_week proposals
+  const createWeekAction = proposal.actions.find(a => a.type === 'create_week')
+  const totalSessions = createWeekAction?.sessions?.length ?? 0
+
   return (
     <div className="fixed inset-0 z-50 flex flex-col justify-end">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-surface-card rounded-t-2xl border-t border-surface-border max-h-[70vh] overflow-y-auto">
+      <div className="relative bg-surface-card rounded-t-2xl border-t border-surface-border max-h-[80vh] overflow-y-auto">
         <div className="flex justify-center pt-3 pb-1">
           <div className="w-10 h-1 rounded-full bg-surface-border" />
         </div>
         <div className="px-4 py-3 border-b border-surface-border flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Zap size={14} className="text-amber-400" />
-            <h2 className="text-sm font-semibold text-ink">Propuesta del coach</h2>
+            <h2 className="text-sm font-semibold text-ink">
+              {createWeekAction
+                ? `Semana propuesta · ${totalSessions} sesiones`
+                : 'Propuesta del coach'}
+            </h2>
           </div>
           <button onClick={onClose} className="text-ink-faint hover:text-ink p-1">
             <X size={16} />
@@ -58,21 +74,59 @@ function ProposalDrawer({
 
           <div className="space-y-2">
             {proposal.actions.map((action, i) => (
-              <div key={i} className="flex items-start gap-3 bg-surface-raised rounded-xl p-3">
-                <span className="text-[10px] font-semibold text-amber-400 uppercase tracking-wider mt-0.5 w-24 flex-shrink-0">
-                  {ACTION_LABEL[action.type] ?? action.type}
-                </span>
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs text-ink-muted">{action.reason}</p>
-                  {'newRpe' in action && action.newRpe != null && (
-                    <p className="text-[11px] text-ink-faint mt-0.5">RPE → {action.newRpe}</p>
-                  )}
-                  {'newDurationMin' in action && action.newDurationMin != null && (
-                    <p className="text-[11px] text-ink-faint mt-0.5">Duración → {action.newDurationMin} min</p>
-                  )}
-                  {'targetDate' in action && action.targetDate && (
-                    <p className="text-[11px] text-ink-faint mt-0.5">Fecha → {action.targetDate}</p>
-                  )}
+              <div key={i} className="bg-surface-raised rounded-xl p-3">
+                <div className="flex items-start gap-3">
+                  <span className="text-[10px] font-semibold text-amber-400 uppercase tracking-wider mt-0.5 w-24 flex-shrink-0">
+                    {ACTION_LABEL[action.type] ?? action.type}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs text-ink-muted">{action.reason}</p>
+
+                    {action.newRpe != null && (
+                      <p className="text-[11px] text-ink-faint mt-0.5">RPE → {action.newRpe}</p>
+                    )}
+                    {action.newDurationMin != null && (
+                      <p className="text-[11px] text-ink-faint mt-0.5">Duración → {action.newDurationMin} min</p>
+                    )}
+                    {action.targetDate != null && action.type === 'move_session' && (
+                      <p className="text-[11px] text-ink-faint mt-0.5">Mover a → {action.targetDate}</p>
+                    )}
+
+                    {/* add_session details */}
+                    {action.type === 'add_session' && (
+                      <div className="mt-1.5 space-y-0.5">
+                        {action.targetDate && (
+                          <p className="text-[11px] text-ink-faint">
+                            {action.targetDate} {action.timeBlock}
+                          </p>
+                        )}
+                        {action.title && (
+                          <p className="text-[11px] text-ink-faint">
+                            {action.title}
+                            {action.durationMin ? ` · ${action.durationMin}min` : ''}
+                            {action.newRpe ? ` · RPE${action.newRpe}` : ''}
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    {/* create_week session list */}
+                    {action.type === 'create_week' && action.sessions && (
+                      <div className="mt-2 space-y-1 border-t border-surface-border pt-2">
+                        {action.sessions.map((s, si) => (
+                          <div key={si} className="flex items-center gap-2">
+                            <span className="text-[10px] text-ink-faint/60 w-20 flex-shrink-0">
+                              {s.date} {s.timeBlock}
+                            </span>
+                            <span className="text-[11px] text-ink-faint">
+                              {SESSION_TYPE_LABEL[s.sessionType] ?? s.sessionType} · {s.title} · {s.durationMin}min
+                              {s.rpe ? ` RPE${s.rpe}` : ''}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             ))}
@@ -95,6 +149,20 @@ function ProposalDrawer({
           </div>
         </div>
       </div>
+    </div>
+  )
+}
+
+// ─── Accepted feedback banner ─────────────────────────────────────────────────
+
+function AcceptedBanner({ message, onDismiss }: { message: string; onDismiss: () => void }) {
+  return (
+    <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
+      <CheckCircle2 size={13} className="text-emerald-400 flex-shrink-0" />
+      <span className="text-emerald-300 text-xs leading-relaxed flex-1">{message}</span>
+      <button onClick={onDismiss} className="text-emerald-400/60 hover:text-emerald-400">
+        <X size={12} />
+      </button>
     </div>
   )
 }
@@ -134,6 +202,8 @@ export default function ChatCoach() {
   const bottomRef = useRef<HTMLDivElement>(null)
 
   const [activeProposal, setActiveProposal] = useState<CoachProposal | null>(null)
+  const [acceptedFeedback, setAcceptedFeedback] = useState<string | null>(null)
+
   const latestCoachProvider =
     [...messages].reverse().find(message => message.role === 'coach')?.provider
   const badgeProviderName = latestCoachProvider ?? CoachEngine.getProviderName()
@@ -150,7 +220,7 @@ export default function ChatCoach() {
   const buildContext = (): ChatContext => {
     const recentSessions = [...sessions]
       .sort((a, b) => a.date.localeCompare(b.date) || a.timeBlock.localeCompare(b.timeBlock))
-      .slice(-14) // send up to 2 weeks for better context
+      .slice(-14)
 
     return {
       recentSessions,
@@ -168,8 +238,32 @@ export default function ChatCoach() {
 
   const handleAccept = async () => {
     if (!activeProposal) return
-    await acceptProposal(activeProposal.id)
+    const proposal = activeProposal
+    await acceptProposal(proposal.id)
     setActiveProposal(null)
+
+    // Generate confirmation summary
+    const createWeekAction = proposal.actions.find(a => a.type === 'create_week')
+    if (createWeekAction?.sessions) {
+      const count = createWeekAction.sessions.length
+      const typeCounts = createWeekAction.sessions.reduce<Record<string, number>>((acc, s) => {
+        acc[s.sessionType] = (acc[s.sessionType] ?? 0) + 1
+        return acc
+      }, {})
+      const typeStr = Object.entries(typeCounts)
+        .map(([t, n]) => `${n} ${SESSION_TYPE_LABEL[t] ?? t}`)
+        .join(', ')
+      setAcceptedFeedback(`Listo. Semana creada con ${count} sesiones: ${typeStr}.`)
+    } else {
+      const addAction = proposal.actions.find(a => a.type === 'add_session')
+      if (addAction?.title) {
+        setAcceptedFeedback(`Sesión "${addAction.title}" agregada${addAction.targetDate ? ` al ${addAction.targetDate}` : ''}.`)
+      } else {
+        setAcceptedFeedback(`${proposal.actions.length} cambio${proposal.actions.length > 1 ? 's' : ''} aplicado${proposal.actions.length > 1 ? 's' : ''} correctamente.`)
+      }
+    }
+
+    setTimeout(() => setAcceptedFeedback(null), 6000)
   }
 
   const handleReject = () => {
@@ -186,7 +280,7 @@ export default function ChatCoach() {
           <div className="flex items-center gap-2">
             <div>
               <h1 className="text-xl font-bold text-ink">Coach</h1>
-              <p className="text-xs text-ink-muted mt-0.5">Tu asistente de entrenamiento</p>
+              <p className="text-xs text-ink-muted mt-0.5">Planner · Advisor</p>
             </div>
             <ProviderBadge providerName={badgeProviderName} />
           </div>
@@ -208,10 +302,10 @@ export default function ChatCoach() {
             <div className="w-14 h-14 rounded-full bg-brand/15 flex items-center justify-center">
               <span className="text-2xl">🏋️</span>
             </div>
-            <p className="text-ink font-medium">Tu coach digital</p>
+            <p className="text-ink font-medium">Tu coach-planner</p>
             <p className="text-sm text-ink-muted leading-relaxed">
-              Hazme cualquier pregunta sobre tu entrenamiento, pídeme que ajuste tu semana
-              o cuéntame cómo te sientes.
+              Pídeme que cree tu semana, agregue sesiones o ajuste tu plan.
+              También puedo analizar tu progreso y darte recomendaciones.
             </p>
           </div>
         )}
@@ -250,6 +344,12 @@ export default function ChatCoach() {
 
       {/* Quick actions + input */}
       <div className="flex-shrink-0 px-4 pb-28 pt-2 border-t border-surface-border space-y-2 bg-surface">
+        {acceptedFeedback && (
+          <AcceptedBanner
+            message={acceptedFeedback}
+            onDismiss={() => setAcceptedFeedback(null)}
+          />
+        )}
         {error && (
           <div className="flex items-start gap-2 px-3 py-2 rounded-xl bg-red-500/10 border border-red-500/20">
             <span className="text-red-400 text-xs leading-relaxed">{error}</span>

@@ -26,6 +26,7 @@ interface TrainingState {
   loadAllSummaries: () => Promise<void>
   addSession: (session: Omit<Session, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>
   updateSession: (id: string, patch: Partial<Session>) => Promise<void>
+  deleteSession: (id: string) => Promise<void>
   cycleSessionStatus: (id: string) => Promise<void>
   toggleExercise: (sessionId: string, exerciseId: string) => Promise<void>
   saveDayLog: (date: string, patch: Partial<Omit<DayLog, 'id' | 'date' | 'updatedAt'>>) => Promise<void>
@@ -117,6 +118,19 @@ export const useTrainingStore = create<TrainingState>((set, get) => ({
         const summary = await getWeekSummary(activeWeekStart)
         set({ currentWeekSummary: summary ?? null })
       }
+    }
+  },
+
+  deleteSession: async (id) => {
+    const session = get().sessions.find(s => s.id === id)
+    if (!session) return
+    await db.sessions.delete(id)
+    await recalculateWeekSummary(session.date)
+    set(state => ({ sessions: state.sessions.filter(s => s.id !== id) }))
+    const activeWeekStart = get().currentWeekSummary?.weekStartDate
+    if (activeWeekStart) {
+      const summary = await getWeekSummary(activeWeekStart)
+      set({ currentWeekSummary: summary ?? null })
     }
   },
 

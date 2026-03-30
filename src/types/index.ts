@@ -186,15 +186,41 @@ export type CoachActionType =
   | 'insert_recovery'
   | 'skip_session'
   | 'replace_session_type'
+  | 'add_session'
+  | 'create_week'
+  | 'delete_session'
+
+/** Session proposal used inside create_week and add_session actions */
+export interface CoachSessionProposal {
+  date: string             // YYYY-MM-DD
+  timeBlock: TimeBlock
+  sessionType: SessionType
+  title: string
+  durationMin: number
+  rpe?: number
+  objective?: string
+  subtype?: SquashSubtype
+  runningType?: RunningType
+}
 
 export interface CoachAction {
   type: CoachActionType
   sessionId?: string
-  targetDate?: string      // for move_session
+  targetDate?: string      // for move_session, add_session
   newRpe?: number          // for change_rpe
   newDurationMin?: number  // for shorten_session / lengthen_session
   newType?: SessionType    // for replace_session_type
   reason: string           // always required — explains why
+  // Fields for add_session
+  sessionType?: SessionType
+  title?: string
+  durationMin?: number
+  timeBlock?: TimeBlock
+  objective?: string
+  subtype?: SquashSubtype
+  runningType?: RunningType
+  // Field for create_week
+  sessions?: CoachSessionProposal[]
 }
 
 export interface CoachProposal {

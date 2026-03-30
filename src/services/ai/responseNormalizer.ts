@@ -31,6 +31,9 @@ const VALID_ACTION_TYPES = new Set<CoachActionType>([
   'move_session',
   'replace_session_type',
   'insert_recovery',
+  'add_session',
+  'create_week',
+  'delete_session',
 ])
 
 export function normalizeResponse(raw: AIRawResponse): CoachNormalizedResponse {
@@ -118,6 +121,19 @@ function validateAction(obj: unknown): CoachAction | null {
       break
     case 'insert_recovery':
       if (typeof a.targetDate !== 'string' || !isValidDate(a.targetDate)) return null
+      break
+    case 'add_session':
+      if (typeof a.targetDate !== 'string' || !isValidDate(a.targetDate)) return null
+      if (typeof a.sessionType !== 'string') return null
+      if (typeof a.title !== 'string' || !a.title.trim()) return null
+      if (typeof a.durationMin !== 'number' || a.durationMin < 5) return null
+      if (typeof a.timeBlock !== 'string') return null
+      break
+    case 'create_week':
+      if (!Array.isArray(a.sessions) || a.sessions.length === 0) return null
+      break
+    case 'delete_session':
+      if (typeof a.sessionId !== 'string') return null
       break
   }
 

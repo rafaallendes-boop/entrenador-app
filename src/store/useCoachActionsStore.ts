@@ -131,6 +131,56 @@ async function applyCoachAction(
       break
     }
 
+    case 'add_session': {
+      if (!action.targetDate || !action.sessionType || !action.title || !action.durationMin || !action.timeBlock) {
+        throw new Error('add_session requires targetDate, sessionType, title, durationMin, timeBlock')
+      }
+      await store.addSession({
+        date: action.targetDate,
+        timeBlock: action.timeBlock,
+        type: action.sessionType,
+        subtype: action.subtype,
+        title: action.title,
+        durationMin: action.durationMin,
+        rpe: action.newRpe,
+        objective: action.objective,
+        status: 'planned',
+        runningDetails: action.runningType
+          ? { runningType: action.runningType }
+          : undefined,
+      })
+      break
+    }
+
+    case 'create_week': {
+      if (!action.sessions || action.sessions.length === 0) {
+        throw new Error('create_week requires sessions array')
+      }
+      for (const s of action.sessions) {
+        await store.addSession({
+          date: s.date,
+          timeBlock: s.timeBlock,
+          type: s.sessionType,
+          subtype: s.subtype,
+          title: s.title,
+          durationMin: s.durationMin,
+          rpe: s.rpe,
+          objective: s.objective,
+          status: 'planned',
+          runningDetails: s.runningType
+            ? { runningType: s.runningType }
+            : undefined,
+        })
+      }
+      break
+    }
+
+    case 'delete_session': {
+      if (!action.sessionId) throw new Error('sessionId required')
+      await store.deleteSession(resolveSessionId(action.sessionId, store))
+      break
+    }
+
     default:
       throw new Error(`Unknown action type: ${(action as CoachAction).type}`)
   }
