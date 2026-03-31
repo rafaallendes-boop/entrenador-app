@@ -225,6 +225,7 @@ export interface CoachAction {
   type: CoachActionType
   sessionId?: string
   targetDate?: string      // for move_session, add_session
+  rpe?: number             // for add_session
   newRpe?: number          // for change_rpe, update_session
   newDurationMin?: number  // for shorten_session / lengthen_session / update_session
   newType?: SessionType    // for replace_session_type
@@ -237,6 +238,10 @@ export interface CoachAction {
   objective?: string
   subtype?: SquashSubtype
   runningType?: RunningType
+  targetPaceMin?: string
+  targetPaceMax?: string
+  targetHrMin?: number
+  targetHrMax?: number
   // Fields for create_week
   sessions?: CoachSessionProposal[]
   weekObjectives?: string[]

@@ -144,12 +144,18 @@ async function applyCoachAction(
         subtype: action.subtype,
         title: action.title,
         durationMin: action.durationMin,
-        rpe: action.newRpe,
+        rpe: action.rpe ?? action.newRpe,
         objective: action.objective,
         status: 'planned',
         exercises: action.exercises?.map(ex => ({ ...ex, id: uuid(), completed: false })),
         runningDetails: action.runningType
-          ? { runningType: action.runningType }
+          ? {
+              runningType: action.runningType,
+              targetPaceMin: action.targetPaceMin,
+              targetPaceMax: action.targetPaceMax,
+              targetHrMin: action.targetHrMin,
+              targetHrMax: action.targetHrMax,
+            }
           : undefined,
       })
       break

@@ -1,5 +1,6 @@
 import Dexie, { type Table } from 'dexie'
 import type { Session, DayLog, WeekSummary, ChatMessage } from '../types'
+import { getOrCreateChatSessionId } from '../utils/chatSession'
 
 export class EntrenadorDB extends Dexie {
   sessions!: Table<Session>
@@ -66,6 +67,13 @@ export class EntrenadorDB extends Dexie {
       dayLogs:       'id, &date',
       weekSummaries: 'id, &weekStartDate',
       chatMessages:  'id, timestamp, chatSessionId',
+    }).upgrade(async tx => {
+      const currentSessionId = getOrCreateChatSessionId()
+      await tx.table('chatMessages').toCollection().modify((message: Record<string, unknown>) => {
+        if (typeof message.chatSessionId !== 'string' || !message.chatSessionId) {
+          message.chatSessionId = currentSessionId
+        }
+      })
     })
   }
 }

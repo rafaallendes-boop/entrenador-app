@@ -107,7 +107,7 @@ function ProposalDrawer({
                           <p className="text-[11px] text-ink-faint">
                             {action.title}
                             {action.durationMin ? ` · ${action.durationMin}min` : ''}
-                            {action.newRpe ? ` · RPE${action.newRpe}` : ''}
+                            {action.rpe != null ? ` · RPE${action.rpe}` : action.newRpe != null ? ` · RPE${action.newRpe}` : ''}
                           </p>
                         )}
                       </div>

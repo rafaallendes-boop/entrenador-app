@@ -5,19 +5,7 @@ import { CoachEngine } from '../services/ai/CoachEngine'
 import { useCoachActionsStore } from './useCoachActionsStore'
 import { v4 as uuid } from '../utils/uuid'
 import { AIProviderError } from '../services/ai/types'
-
-// ─── Session ID persistence ──────────────────────────────────────────────────────
-
-const CHAT_SESSION_KEY = 'coach_chat_session_id'
-
-function getOrCreateSessionId(): string {
-  let id = localStorage.getItem(CHAT_SESSION_KEY)
-  if (!id) {
-    id = uuid()
-    localStorage.setItem(CHAT_SESSION_KEY, id)
-  }
-  return id
-}
+import { getOrCreateChatSessionId, setStoredChatSessionId } from '../utils/chatSession'
 
 interface ChatState {
   messages: ChatMessage[]
@@ -33,7 +21,7 @@ interface ChatState {
 
 export const useChatStore = create<ChatState>((set, get) => ({
   messages: [],
-  currentSessionId: getOrCreateSessionId(),
+  currentSessionId: getOrCreateChatSessionId(),
   isLoading: false,
   error: null,
 
@@ -98,7 +86,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   newSession: async () => {
     const newId = uuid()
-    localStorage.setItem(CHAT_SESSION_KEY, newId)
+    setStoredChatSessionId(newId)
     set({ currentSessionId: newId, messages: [], error: null })
   },
 

@@ -139,6 +139,11 @@ function validateAction(obj: unknown): CoachAction | null {
       if (typeof a.title !== 'string' || !a.title.trim()) return null
       if (typeof a.durationMin !== 'number' || a.durationMin < 5) return null
       if (typeof a.timeBlock !== 'string') return null
+      if (a.rpe != null && (typeof a.rpe !== 'number' || a.rpe < 1 || a.rpe > 10)) return null
+      if (a.targetPaceMin != null && typeof a.targetPaceMin !== 'string') return null
+      if (a.targetPaceMax != null && typeof a.targetPaceMax !== 'string') return null
+      if (a.targetHrMin != null && typeof a.targetHrMin !== 'number') return null
+      if (a.targetHrMax != null && typeof a.targetHrMax !== 'number') return null
       break
     case 'create_week':
       if (!Array.isArray(a.sessions) || a.sessions.length === 0) return null
