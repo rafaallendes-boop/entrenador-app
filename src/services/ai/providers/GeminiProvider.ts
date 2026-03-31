@@ -19,67 +19,101 @@ export class GeminiProvider implements AIProvider {
     }
 
     const model = import.meta.env.VITE_GEMINI_MODEL ?? DEFAULT_MODEL
-    const url = `${BASE_URL}${model}:generateContent?key=${apiKey}`
     const t0 = Date.now()
+
+    const body = JSON.stringify({
+      systemInstruction: { parts: [{ text: request.systemPrompt }] },
+      contents: [
+        ...(request.conversation ?? []).map(message => ({
+          role: message.role === 'assistant' ? 'model' : 'user',
+          parts: [{ text: message.content }],
+        })),
+        { role: 'user', parts: [{ text: request.userMessage }] },
+      ],
+      generationConfig: {
+        maxOutputTokens: request.maxTokens ?? 1024,
+        temperature: request.temperature ?? 0.7,
+      },
+    })
+
+    if (request.onChunk) {
+      return this.callStream(request.onChunk, body, apiKey, model, t0)
+    }
+
+    const url = `${BASE_URL}${model}:generateContent?key=${apiKey}`
 
     let res: Response
     try {
-      res = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          systemInstruction: {
-            parts: [{ text: request.systemPrompt }],
-          },
-          contents: [
-            ...(request.conversation ?? []).map(message => ({
-              role: message.role === 'assistant' ? 'model' : 'user',
-              parts: [{ text: message.content }],
-            })),
-            { role: 'user', parts: [{ text: request.userMessage }] },
-          ],
-          generationConfig: {
-            maxOutputTokens: request.maxTokens ?? 1024,
-            temperature: request.temperature ?? 0.7,
-          },
-        }),
-      })
+      res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body })
     } catch {
       throw createProviderError('gemini', 'timeout', 'No se pudo conectar con la API de Gemini. Verifica tu conexión.', true)
     }
 
     if (!res.ok) {
-      const body = await res.json().catch(() => ({}))
-      const detail = (body as { error?: { message?: string } }).error?.message ?? `HTTP ${res.status}`
-
-      if (res.status === 400 && detail.includes('API key')) {
-        throw createProviderError('gemini', 'unauthorized', `API key inválida. ${detail}`)
-      }
-      if (res.status === 429) {
-        throw createProviderError('gemini', 'rate_limit', `Rate limit alcanzado. ${detail}`, true)
-      }
+      const errBody = await res.json().catch(() => ({}))
+      const detail = (errBody as { error?: { message?: string } }).error?.message ?? `HTTP ${res.status}`
+      if (res.status === 400 && detail.includes('API key')) throw createProviderError('gemini', 'unauthorized', `API key inválida. ${detail}`)
+      if (res.status === 429) throw createProviderError('gemini', 'rate_limit', `Rate limit alcanzado. ${detail}`, true)
       throw createProviderError('gemini', 'unknown', detail)
     }
 
-    const data = await res.json() as {
-      candidates?: Array<{
-        content?: { parts?: Array<{ text?: string }> }
-      }>
-    }
-
+    const data = await res.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> }
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? ''
-    if (!text) {
-      throw createProviderError('gemini', 'parse_error', 'La API de Gemini devolvió una respuesta vacía o inesperada.')
+    if (!text) throw createProviderError('gemini', 'parse_error', 'La API de Gemini devolvió una respuesta vacía o inesperada.')
+
+    return { text, provider: 'gemini', model, raw: data, durationMs: Date.now() - t0 }
+  }
+
+  private async callStream(
+    onChunk: (chunk: string) => void,
+    body: string,
+    apiKey: string,
+    model: string,
+    t0: number,
+  ): Promise<AIRawResponse> {
+    const url = `${BASE_URL}${model}:streamGenerateContent?alt=sse&key=${apiKey}`
+
+    let res: Response
+    try {
+      res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body })
+    } catch {
+      throw createProviderError('gemini', 'timeout', 'No se pudo conectar con la API de Gemini. Verifica tu conexión.', true)
     }
 
-    return {
-      text,
-      provider: 'gemini',
-      model,
-      raw: data,
-      durationMs: Date.now() - t0,
+    if (!res.ok || !res.body) {
+      const errBody = await res.json().catch(() => ({}))
+      const detail = (errBody as { error?: { message?: string } }).error?.message ?? `HTTP ${res.status}`
+      if (res.status === 429) throw createProviderError('gemini', 'rate_limit', `Rate limit alcanzado. ${detail}`, true)
+      throw createProviderError('gemini', 'unknown', detail)
     }
+
+    const reader = res.body.getReader()
+    const decoder = new TextDecoder()
+    let fullText = ''
+    let buffer = ''
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop() ?? ''
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue
+        const jsonStr = line.slice(6).trim()
+        if (!jsonStr || jsonStr === '[DONE]') continue
+        try {
+          const data = JSON.parse(jsonStr) as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> }
+          const chunk = data.candidates?.[0]?.content?.parts?.[0]?.text ?? ''
+          if (chunk) { fullText += chunk; onChunk(chunk) }
+        } catch { /* skip malformed SSE line */ }
+      }
+    }
+
+    if (!fullText) throw createProviderError('gemini', 'parse_error', 'La API de Gemini devolvió una respuesta vacía.')
+
+    return { text: fullText, provider: 'gemini', model, durationMs: Date.now() - t0 }
   }
 }

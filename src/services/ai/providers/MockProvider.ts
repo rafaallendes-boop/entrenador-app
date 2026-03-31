@@ -10,8 +10,6 @@ export class MockProvider implements AIProvider {
   readonly name = 'mock' as const
 
   async call(request: AIRequest): Promise<AIRawResponse> {
-    // Simulate network latency
-    await new Promise(r => setTimeout(r, 500 + Math.random() * 400))
     const conversationHint = (request.conversation ?? [])
       .slice(-4)
       .map(message => `${message.role}: ${message.content}`)
@@ -20,6 +18,27 @@ export class MockProvider implements AIProvider {
       ? `${request.systemPrompt}\n\nHISTORIAL:\n${conversationHint}`
       : request.systemPrompt
     const text = mockReply(request.userMessage, contextHint)
+
+    if (request.onChunk) {
+      return this.callStream(request.onChunk, text)
+    }
+
+    // Non-streaming: simulate network latency
+    await new Promise(r => setTimeout(r, 500 + Math.random() * 400))
+    return { text, provider: 'mock', model: 'mock-v1' }
+  }
+
+  private async callStream(onChunk: (chunk: string) => void, text: string): Promise<AIRawResponse> {
+    // Initial "thinking" pause
+    await new Promise(r => setTimeout(r, 250))
+
+    // Emit word by word with realistic typing speed
+    const words = text.split(' ')
+    for (const word of words) {
+      await new Promise(r => setTimeout(r, 25 + Math.random() * 35))
+      onChunk(word + ' ')
+    }
+
     return { text, provider: 'mock', model: 'mock-v1' }
   }
 }

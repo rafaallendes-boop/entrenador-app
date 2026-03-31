@@ -12,6 +12,8 @@ interface ChatState {
   messages: ChatMessage[]
   currentSessionId: string
   isLoading: boolean
+  /** Accumulated text from the current streaming response. Empty when not streaming. */
+  streamingText: string
   error: string | null
 
   loadHistory: () => Promise<void>
@@ -24,6 +26,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   messages: [],
   currentSessionId: getOrCreateChatSessionId(),
   isLoading: false,
+  streamingText: '',
   error: null,
 
   loadHistory: async () => {
@@ -46,7 +49,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       context,
     }
     await db.chatMessages.add(userMsg)
-    set(state => ({ messages: [...state.messages, userMsg], isLoading: true, error: null }))
+    set(state => ({ messages: [...state.messages, userMsg], isLoading: true, streamingText: '', error: null }))
 
     // Pasamos historial multi-turno real al provider (excluye el mensaje recién añadido)
     const recentMessages = get().messages.slice(0, -1).map(m => ({ role: m.role, content: m.content }))
@@ -56,7 +59,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
     })
 
     try {
-      const response = await CoachEngine.send(content, enrichedContext)
+      const response = await CoachEngine.send(content, enrichedContext, {
+        onChunk: (chunk) => set(state => ({ streamingText: state.streamingText + chunk })),
+      })
 
       // If the model returned structured actions, create a proposal automatically
       let proposalId: string | undefined
@@ -78,10 +83,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
         proposalId,
       }
       await db.chatMessages.add(coachMsg)
-      set(state => ({ messages: [...state.messages, coachMsg], isLoading: false }))
+      set(state => ({ messages: [...state.messages, coachMsg], isLoading: false, streamingText: '' }))
     } catch (e) {
       const errorMsg = formatError(e)
-      set({ isLoading: false, error: errorMsg })
+      set({ isLoading: false, streamingText: '', error: errorMsg })
     }
   },
 

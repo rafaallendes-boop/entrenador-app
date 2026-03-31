@@ -31,6 +31,10 @@ export interface AIRequest {
   conversation?: AIConversationMessage[]
   maxTokens?: number
   temperature?: number
+  /** Called with each text chunk as it arrives. When provided, providers that
+   *  support SSE streaming will emit chunks in real time. Providers that don't
+   *  support streaming (e.g. ProxyProvider) ignore this field. */
+  onChunk?: (chunk: string) => void
 }
 
 export interface AIConversationMessage {

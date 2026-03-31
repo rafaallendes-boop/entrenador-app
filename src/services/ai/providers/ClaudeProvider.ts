@@ -41,30 +41,29 @@ export class ClaudeProvider implements AIProvider {
     const model = import.meta.env.VITE_CLAUDE_MODEL ?? DEFAULT_MODEL
     const t0 = Date.now()
 
+    const HEADERS = {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': ANTHROPIC_VERSION,
+      // Required for direct browser calls — without this Anthropic rejects CORS requests
+      'anthropic-dangerous-direct-browser-access': 'true',
+    }
+
+    const messages = [
+      ...(request.conversation ?? []).map(message => ({ role: message.role, content: message.content })),
+      { role: 'user', content: request.userMessage },
+    ]
+
+    if (request.onChunk) {
+      return this.callStream(request.onChunk, apiKey, model, HEADERS, messages, request, t0)
+    }
+
     let res: Response
     try {
       res = await fetch(API_URL, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': apiKey,
-          'anthropic-version': ANTHROPIC_VERSION,
-          // Required for direct browser calls — without this Anthropic rejects CORS requests
-          'anthropic-dangerous-direct-browser-access': 'true',
-        },
-        body: JSON.stringify({
-          model,
-          max_tokens: request.maxTokens ?? 1024,
-          temperature: request.temperature ?? 0.7,
-          system: request.systemPrompt,
-          messages: [
-            ...(request.conversation ?? []).map(message => ({
-              role: message.role,
-              content: message.content,
-            })),
-            { role: 'user', content: request.userMessage },
-          ],
-        }),
+        headers: HEADERS,
+        body: JSON.stringify({ model, max_tokens: request.maxTokens ?? 1024, temperature: request.temperature ?? 0.7, system: request.systemPrompt, messages }),
       })
     } catch {
       throw createProviderError('claude', 'timeout', 'No se pudo conectar con la API de Claude. Verifica tu conexión.', true)
@@ -73,32 +72,82 @@ export class ClaudeProvider implements AIProvider {
     if (!res.ok) {
       const body = await res.json().catch(() => ({}))
       const detail = (body as { error?: { message?: string } }).error?.message ?? `HTTP ${res.status}`
-
-      if (res.status === 401) {
-        throw createProviderError('claude', 'unauthorized', `API key inválida o sin permisos. ${detail}`)
-      }
-      if (res.status === 429) {
-        throw createProviderError('claude', 'rate_limit', `Rate limit alcanzado. ${detail}`, true)
-      }
+      if (res.status === 401) throw createProviderError('claude', 'unauthorized', `API key inválida o sin permisos. ${detail}`)
+      if (res.status === 429) throw createProviderError('claude', 'rate_limit', `Rate limit alcanzado. ${detail}`, true)
       throw createProviderError('claude', 'unknown', detail)
     }
 
-    const data = await res.json() as {
-      content: Array<{ type: string; text: string }>
-      model: string
-    }
-
+    const data = await res.json() as { content: Array<{ type: string; text: string }>; model: string }
     const text = data.content.find(c => c.type === 'text')?.text ?? ''
-    if (!text) {
-      throw createProviderError('claude', 'parse_error', 'La API de Claude devolvió una respuesta vacía.')
+    if (!text) throw createProviderError('claude', 'parse_error', 'La API de Claude devolvió una respuesta vacía.')
+
+    return { text, provider: 'claude', model: data.model ?? model, raw: data, durationMs: Date.now() - t0 }
+  }
+
+  private async callStream(
+    onChunk: (chunk: string) => void,
+    _apiKey: string,
+    model: string,
+    headers: Record<string, string>,
+    messages: Array<{ role: string; content: string }>,
+    request: AIRequest,
+    t0: number,
+  ): Promise<AIRawResponse> {
+    let res: Response
+    try {
+      res = await fetch(API_URL, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          model,
+          max_tokens: request.maxTokens ?? 1024,
+          temperature: request.temperature ?? 0.7,
+          system: request.systemPrompt,
+          stream: true,
+          messages,
+        }),
+      })
+    } catch {
+      throw createProviderError('claude', 'timeout', 'No se pudo conectar con la API de Claude. Verifica tu conexión.', true)
     }
 
-    return {
-      text,
-      provider: 'claude',
-      model: data.model ?? model,
-      raw: data,
-      durationMs: Date.now() - t0,
+    if (!res.ok || !res.body) {
+      const errBody = await res.json().catch(() => ({}))
+      const detail = (errBody as { error?: { message?: string } }).error?.message ?? `HTTP ${res.status}`
+      if (res.status === 401) throw createProviderError('claude', 'unauthorized', `API key inválida. ${detail}`)
+      if (res.status === 429) throw createProviderError('claude', 'rate_limit', `Rate limit alcanzado. ${detail}`, true)
+      throw createProviderError('claude', 'unknown', detail)
     }
+
+    const reader = res.body.getReader()
+    const decoder = new TextDecoder()
+    let fullText = ''
+    let buffer = ''
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop() ?? ''
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue
+        const jsonStr = line.slice(6).trim()
+        if (!jsonStr) continue
+        try {
+          const event = JSON.parse(jsonStr) as { type?: string; delta?: { type?: string; text?: string } }
+          if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta') {
+            const chunk = event.delta.text ?? ''
+            if (chunk) { fullText += chunk; onChunk(chunk) }
+          }
+        } catch { /* skip malformed SSE line */ }
+      }
+    }
+
+    if (!fullText) throw createProviderError('claude', 'parse_error', 'La API de Claude devolvió una respuesta vacía.')
+
+    return { text: fullText, provider: 'claude', model, durationMs: Date.now() - t0 }
   }
 }

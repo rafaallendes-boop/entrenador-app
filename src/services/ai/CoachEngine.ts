@@ -56,7 +56,7 @@ export const CoachEngine = {
   async send(
     userMessage: string,
     context: ChatContext,
-    options?: { maxTokens?: number; temperature?: number },
+    options?: { maxTokens?: number; temperature?: number; onChunk?: (chunk: string) => void },
   ): Promise<CoachNormalizedResponse> {
     const provider = getActiveProvider()
     const systemPrompt = buildCoachSystemPrompt(context)
@@ -70,6 +70,7 @@ export const CoachEngine = {
       })),
       maxTokens: options?.maxTokens ?? 3000,
       temperature: options?.temperature ?? 0.7,
+      onChunk: options?.onChunk,
     }
 
     return sendWithRecovery(provider, request)
@@ -120,6 +121,7 @@ async function sendWithRecovery(
     ...request,
     systemPrompt: `${request.systemPrompt}\n\nIMPORTANTE DE FORMATO:\n- Si usas <actions>, cierra siempre con </actions>.\n- El contenido dentro de <actions> debe ser JSON valido.\n- Si no puedes devolver JSON valido, responde solo con texto limpio y sin <actions>.`,
     temperature: Math.min(request.temperature ?? 0.7, 0.3),
+    onChunk: undefined, // retry is silent — no streaming
   })
   const retryNormalized = normalizeResponse(retryRaw)
 

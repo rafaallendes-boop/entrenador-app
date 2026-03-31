@@ -70,7 +70,7 @@ function ProviderBadge({ providerName }: { providerName: string }) {
 
 export default function ChatCoach() {
   const navigate = useNavigate()
-  const { messages, isLoading, error, loadHistory, sendMessage, newSession, deleteCurrentSession } = useChatStore()
+  const { messages, isLoading, streamingText, error, loadHistory, sendMessage, newSession, deleteCurrentSession } = useChatStore()
   const { proposals, loadProposals, acceptProposal, rejectProposal } = useCoachActionsStore()
   const { coachMemory, loadMemory } = useCoachMemoryStore()
   const { sessions, currentWeekSummary, dayLogs, loadWeek } = useTrainingStore()
@@ -96,6 +96,10 @@ export default function ChatCoach() {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages.length, isLoading])
+
+  useEffect(() => {
+    if (streamingText) bottomRef.current?.scrollIntoView({ behavior: 'instant' as ScrollBehavior })
+  }, [streamingText])
 
   const buildContext = (message: string): ChatContext => {
     const recentSessions = [...sessions]
@@ -249,14 +253,26 @@ export default function ChatCoach() {
         })}
 
         {isLoading && (
-          <div className="flex gap-2 items-center">
-            <div className="w-7 h-7 rounded-full bg-brand/20 flex items-center justify-center">
-              <span className="text-sm">🏋️</span>
+          streamingText ? (
+            <div className="flex gap-2 items-start">
+              <div className="w-7 h-7 rounded-full bg-brand/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                <span className="text-sm">🏋️</span>
+              </div>
+              <div className="bg-surface-card border border-surface-border rounded-2xl rounded-tl-sm px-4 py-3 max-w-[85%]">
+                <p className="text-sm text-ink whitespace-pre-wrap leading-relaxed">{streamingText}</p>
+                <span className="inline-block w-0.5 h-3.5 bg-brand/70 animate-pulse ml-0.5 align-middle" />
+              </div>
             </div>
-            <div className="bg-surface-card border border-surface-border rounded-2xl rounded-tl-sm px-4 py-3">
-              <Spinner />
+          ) : (
+            <div className="flex gap-2 items-center">
+              <div className="w-7 h-7 rounded-full bg-brand/20 flex items-center justify-center">
+                <span className="text-sm">🏋️</span>
+              </div>
+              <div className="bg-surface-card border border-surface-border rounded-2xl rounded-tl-sm px-4 py-3">
+                <Spinner />
+              </div>
             </div>
-          </div>
+          )
         )}
 
         <div ref={bottomRef} />
