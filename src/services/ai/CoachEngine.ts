@@ -13,10 +13,11 @@
  *   VITE_AI_PROVIDER=openai → OpenAIProvider directo (requiere VITE_OPENAI_API_KEY)
  */
 
-import type { AIProvider, CoachNormalizedResponse } from './types'
+import type { AIProvider, AIRequest, CoachNormalizedResponse } from './types'
 import type { ChatContext } from '../../types'
 import { buildCoachSystemPrompt } from './promptBuilder'
 import { normalizeResponse } from './responseNormalizer'
+import { createProviderError } from './types'
 import { ClaudeProvider } from './providers/ClaudeProvider'
 import { OpenAIProvider } from './providers/OpenAIProvider'
 import { MockProvider } from './providers/MockProvider'
@@ -60,7 +61,7 @@ export const CoachEngine = {
     const provider = getActiveProvider()
     const systemPrompt = buildCoachSystemPrompt(context)
 
-    const raw = await provider.call({
+    const request: AIRequest = {
       systemPrompt,
       userMessage,
       conversation: (context.recentMessages ?? []).map(message => ({
@@ -69,9 +70,9 @@ export const CoachEngine = {
       })),
       maxTokens: options?.maxTokens ?? 3000,
       temperature: options?.temperature ?? 0.7,
-    })
+    }
 
-    return normalizeResponse(raw)
+    return sendWithRecovery(provider, request)
   },
 
   /**
@@ -102,4 +103,50 @@ export const CoachEngine = {
     }
     return false
   },
+}
+
+async function sendWithRecovery(
+  provider: AIProvider,
+  request: AIRequest,
+): Promise<CoachNormalizedResponse> {
+  const firstRaw = await provider.call(request)
+  const firstNormalized = normalizeResponse(firstRaw)
+
+  if (!shouldRetry(firstNormalized)) {
+    return firstNormalized
+  }
+
+  const retryRaw = await provider.call({
+    ...request,
+    systemPrompt: `${request.systemPrompt}\n\nIMPORTANTE DE FORMATO:\n- Si usas <actions>, cierra siempre con </actions>.\n- El contenido dentro de <actions> debe ser JSON valido.\n- Si no puedes devolver JSON valido, responde solo con texto limpio y sin <actions>.`,
+    temperature: Math.min(request.temperature ?? 0.7, 0.3),
+  })
+  const retryNormalized = normalizeResponse(retryRaw)
+
+  if (shouldRejectAfterRetry(retryNormalized)) {
+    throw createProviderError(
+      provider.name,
+      'parse_error',
+      'El coach devolvio una respuesta invalida en el bloque de acciones.',
+      true,
+    )
+  }
+
+  return {
+    ...retryNormalized,
+    meta: {
+      hadActionsMarkup: retryNormalized.meta?.hadActionsMarkup ?? false,
+      actionParseFailed: retryNormalized.meta?.actionParseFailed ?? false,
+      likelyTruncated: retryNormalized.meta?.likelyTruncated ?? false,
+      retryUsed: true,
+    },
+  }
+}
+
+function shouldRetry(response: CoachNormalizedResponse): boolean {
+  return !!(response.meta?.actionParseFailed || response.meta?.likelyTruncated)
+}
+
+function shouldRejectAfterRetry(response: CoachNormalizedResponse): boolean {
+  return !!response.meta?.actionParseFailed && !response.message.trim()
 }

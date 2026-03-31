@@ -147,6 +147,7 @@ export interface ChatContext {
   weekDayLogs?: DayLog[]
   athleteMemory?: string
   recentMessages?: { role: MessageRole; content: string }[]
+  intent?: 'general_chat' | 'plan_week' | 'adjust_session' | 'weekly_summary'
 }
 
 // ─── Nutrition ────────────────────────────────────────────────────────────────

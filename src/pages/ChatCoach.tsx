@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { CheckCircle2, X, Zap, MoreHorizontal } from 'lucide-react'
 import { useChatStore } from '../store/useChatStore'
@@ -6,13 +6,15 @@ import { useCoachActionsStore } from '../store/useCoachActionsStore'
 import { useCoachMemoryStore } from '../store/useCoachMemoryStore'
 import { useTrainingStore } from '../store/useTrainingStore'
 import { CoachEngine } from '../services/ai/CoachEngine'
+import { detectChatIntent } from '../services/ai/contextOptimizer'
 import { currentWeekStartISO, todayISO } from '../utils/date'
 import ChatBubble from '../components/chat/ChatBubble'
 import ChatInput from '../components/chat/ChatInput'
-import QuickActionChips from '../components/chat/QuickActionChips'
 import Spinner from '../components/ui/Spinner'
 import type { ChatContext, CoachProposal } from '../types'
 import { ROUTES } from '../constants/routes'
+
+const QuickActionChips = lazy(() => import('../components/chat/QuickActionChips'))
 
 // ─── Coach action types (display labels) ──────────────────────────────────────
 
@@ -300,7 +302,7 @@ export default function ChatCoach() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages.length, isLoading])
 
-  const buildContext = (): ChatContext => {
+  const buildContext = (message: string): ChatContext => {
     const recentSessions = [...sessions]
       .sort((a, b) => a.date.localeCompare(b.date) || a.timeBlock.localeCompare(b.timeBlock))
       .slice(-14)
@@ -309,11 +311,13 @@ export default function ChatCoach() {
       recentSessions,
       currentWeekSummary: currentWeekSummary ?? undefined,
       dayLog: dayLogs[todayISO()],
+      weekDayLogs: Object.values(dayLogs),
       athleteMemory: coachMemory || undefined,
+      intent: detectChatIntent(message),
     }
   }
 
-  const handleSend = (msg: string) => sendMessage(msg, buildContext())
+  const handleSend = (msg: string) => sendMessage(msg, buildContext(msg))
 
   const handleViewProposal = (proposalId: string) => {
     const p = proposals.find(p => p.id === proposalId)
@@ -476,7 +480,9 @@ export default function ChatCoach() {
             <span className="text-red-400 text-xs leading-relaxed">{error}</span>
           </div>
         )}
-        <QuickActionChips onSelect={handleSend} disabled={isLoading} />
+        <Suspense fallback={<div className="h-8" />}>
+          <QuickActionChips onSelect={handleSend} disabled={isLoading} />
+        </Suspense>
         <ChatInput onSend={handleSend} disabled={isLoading} />
       </div>
 

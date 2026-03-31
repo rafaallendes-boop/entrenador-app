@@ -12,8 +12,8 @@
  *   [{"type":"skip_session","sessionId":"abc12345","reason":"fatiga acumulada"}]
  *   </actions>
  *
- * If parsing fails, actions are silently dropped (message is still shown).
- * This ensures UI never breaks due to malformed model output.
+ * If parsing fails, malformed actions are dropped and the caller decides
+ * whether to retry or reject the response.
  */
 
 import type { AIRawResponse, CoachNormalizedResponse } from './types'
@@ -22,6 +22,7 @@ import type { CoachAction, CoachActionType } from '../../types'
 // ─── Actions block extractor ───────────────────────────────────────────────────
 
 const ACTIONS_BLOCK_RE = /<actions>([\s\S]*?)<\/actions>/i
+const ACTIONS_START_RE = /<actions>/i
 
 const VALID_ACTION_TYPES = new Set<CoachActionType>([
   'skip_session',
@@ -50,17 +51,22 @@ export function normalizeResponse(raw: AIRawResponse): CoachNormalizedResponse {
   message = message.replace(/```[a-z]*\n?\s*\n?```/g, '')
 
   let actions: CoachAction[] | undefined
-
-  // Try to find and extract the actions block
-  const match = message.match(ACTIONS_BLOCK_RE)
-  if (match) {
-    actions = parseActionsBlock(match[1])
-    // Remove ALL actions blocks (global replace) from display text
-    message = message.replace(/<actions>[\s\S]*?<\/actions>/gi, '').trim()
+  let actionParseFailed = false
+  let hadActionsMarkup = false
+  let likelyTruncated = false
+  const extraction = extractActionsText(message)
+  if (extraction) {
+    hadActionsMarkup = true
+    const parseResult = parseActionsBlock(extraction.actionsText)
+    actions = parseResult.actions
+    actionParseFailed = parseResult.parseFailed
+    likelyTruncated = extraction.openOnly || parseResult.likelyTruncated
+    message = extraction.messageWithoutActions
   }
 
   // Clean up any trailing whitespace or extra newlines left after stripping
   message = message.replace(/\n{3,}/g, '\n\n').trim()
+
 
   return {
     message,
@@ -70,33 +76,64 @@ export function normalizeResponse(raw: AIRawResponse): CoachNormalizedResponse {
     raw: raw.raw,
     timestamp: Date.now(),
     durationMs: raw.durationMs,
+    meta: {
+      hadActionsMarkup,
+      actionParseFailed,
+      likelyTruncated,
+    },
   }
 }
 
 // ─── Action parsing + validation ──────────────────────────────────────────────
 
-function parseActionsBlock(jsonText: string): CoachAction[] {
+function parseActionsBlock(jsonText: string): {
+  actions: CoachAction[]
+  parseFailed: boolean
+  likelyTruncated: boolean
+} {
   let parsed: unknown
   try {
     parsed = JSON.parse(jsonText.trim())
   } catch {
     // Model may have added trailing text or bad JSON — attempt lenient recovery
     const fixedJson = extractJsonArray(jsonText)
-    if (!fixedJson) return []
+    if (!fixedJson) {
+      return {
+        actions: [],
+        parseFailed: true,
+        likelyTruncated: isLikelyTruncatedJson(jsonText),
+      }
+    }
     try {
       parsed = JSON.parse(fixedJson)
     } catch {
-      return []
+      return {
+        actions: [],
+        parseFailed: true,
+        likelyTruncated: isLikelyTruncatedJson(jsonText),
+      }
     }
   }
 
-  if (!Array.isArray(parsed)) return []
+  if (!Array.isArray(parsed)) {
+    return {
+      actions: [],
+      parseFailed: true,
+      likelyTruncated: isLikelyTruncatedJson(jsonText),
+    }
+  }
 
-  return parsed.reduce<CoachAction[]>((acc, item) => {
+  const actions = parsed.reduce<CoachAction[]>((acc, item) => {
     const action = validateAction(item)
     if (action) acc.push(action)
     return acc
   }, [])
+
+  return {
+    actions,
+    parseFailed: actions.length === 0 && parsed.length > 0,
+    likelyTruncated: false,
+  }
 }
 
 function validateAction(obj: unknown): CoachAction | null {
@@ -172,6 +209,44 @@ function isValidDate(s: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(s) && !isNaN(Date.parse(s))
 }
 
+function extractActionsText(message: string): { actionsText: string; messageWithoutActions: string; openOnly: boolean } | null {
+  const fullMatch = message.match(ACTIONS_BLOCK_RE)
+  if (fullMatch) {
+    return {
+      actionsText: fullMatch[1],
+      messageWithoutActions: message.replace(/<actions>[\s\S]*?<\/actions>/gi, '').trim(),
+      openOnly: false,
+    }
+  }
+
+  const startMatch = ACTIONS_START_RE.exec(message)
+  if (!startMatch) return null
+
+  const actionsText = message.slice(startMatch.index + startMatch[0].length).trim()
+  const messageWithoutActions = message.slice(0, startMatch.index).trim()
+  return {
+    actionsText,
+    messageWithoutActions,
+    openOnly: true,
+  }
+}
+
+function isLikelyTruncatedJson(text: string): boolean {
+  const trimmed = text.trim()
+  if (!trimmed) return false
+
+  const openBrackets = (trimmed.match(/\[/g) ?? []).length
+  const closeBrackets = (trimmed.match(/\]/g) ?? []).length
+  const openBraces = (trimmed.match(/\{/g) ?? []).length
+  const closeBraces = (trimmed.match(/\}/g) ?? []).length
+
+  return (
+    openBrackets !== closeBrackets ||
+    openBraces !== closeBraces ||
+    /[:,{[]\s*$/.test(trimmed)
+  )
+}
+
 // Attempt to recover a JSON array from partially malformed text
 function extractJsonArray(text: string): string | null {
   const start = text.indexOf('[')
@@ -179,3 +254,4 @@ function extractJsonArray(text: string): string | null {
   if (start === -1 || end === -1 || end < start) return null
   return text.slice(start, end + 1)
 }
+

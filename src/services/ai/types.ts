@@ -65,6 +65,12 @@ export interface CoachNormalizedResponse {
   durationMs?: number
   /** ID of the CoachProposal created from actions, if any */
   proposalId?: string
+  meta?: {
+    hadActionsMarkup: boolean
+    actionParseFailed: boolean
+    likelyTruncated: boolean
+    retryUsed?: boolean
+  }
 }
 
 // ─── Provider errors ───────────────────────────────────────────────────────────

@@ -1,7 +1,7 @@
 # Entrenador App — Project Review & Roadmap
 
 Generado: 2026-03-30
-Última revisión: 2026-03-31 (sesión 5)
+Última revisión: 2026-03-31 (sesión 6)
 Revisado por: Claude Sonnet 4.6
 
 ---
@@ -53,6 +53,7 @@ El estado general es: **MVP funcional con coach planner ya operativo, multi-sesi
 | B16 | Objetivos semanales no se persistían desde `create_week` | Media | ✅ Corregido |
 | B17 | Migración a chat multi-sesión dejaba el historial previo inaccesible | Alta | ✅ Corregido |
 | B18 | `add_session` tenía contrato inconsistente (`rpe` vs `newRpe`, running details incompletos) | Media | ✅ Corregido |
+| B19 | Respuestas truncadas o `<actions>` malformado dejaban JSON técnico visible en el chat | Alta | ✅ Corregido |
 
 ---
 
@@ -116,6 +117,32 @@ El estado general es: **MVP funcional con coach planner ya operativo, multi-sesi
 
 ---
 
+### 3.0.2 Sesión 6 — Robustez del coach y performance (2026-03-31)
+
+**Respuestas del coach más robustas**
+- `responseNormalizer.ts`: ahora detecta `<actions>` abiertos, JSON truncado y bloques técnicos malformados sin exponerlos en la UI
+- `CoachEngine.ts`: reintento automático único cuando falla el parseo del bloque estructurado; si el retry sigue inválido, se devuelve `parse_error` en vez de guardar basura
+- `types.ts`: metadatos de normalización (`hadActionsMarkup`, `actionParseFailed`, `likelyTruncated`, `retryUsed`)
+
+**Contexto más inteligente**
+- `contextOptimizer.ts` nuevo: recorte por presupuesto de caracteres para mensajes, sesiones, week logs y memoria del atleta
+- `ChatContext.intent`: permite priorizar distinto si el usuario quiere crear semana, ajustar sesión, conversar o generar resumen semanal
+- `useChatStore.ts`, `ChatCoach.tsx` y `useTrainingStore.ts` ahora usan contexto optimizado
+
+**Performance / code splitting**
+- `App.tsx`: rutas con `lazy()` + `Suspense`
+- `vite.config.ts`: `manualChunks` para `react`, `router`, `dexie` e `icons`
+- `App.tsx`: apertura de Dexie diferida vía `import('./db/db')`
+- `BottomNav.tsx`: SVG inline en vez de `lucide-react` para no cargar iconos desde el shell permanente
+- `Dashboard.tsx`: cards secundarios diferidos con `lazy()`
+- `ChatCoach.tsx`: `QuickActionChips` diferido
+
+**Resultado del build**
+- desapareció el warning anterior de chunk > `500 kB`
+- el bundle principal quedó repartido en chunks más pequeños y el primer paint ya no arrastra todas las pantallas
+
+---
+
 ### 3.1 Capa AI multi-proveedor
 
 **Arquitectura** (`src/services/ai/`)
@@ -174,10 +201,10 @@ El estado general es: **MVP funcional con coach planner ya operativo, multi-sesi
 
 ### Deuda técnica menor
 
-1. **Propuestas sin persistencia**: `useCoachActionsStore` es in-memory. Si se recarga la app, las propuestas pendientes desaparecen.
-2. **Chat multi-turno sigue siendo aproximado**: se mandan últimos mensajes serializados dentro del prompt, no como conversación nativa del proveedor.
-3. **Código legacy AI**: `src/services/aiCoach.ts` sigue presente como compat layer y agrega ruido al mantenimiento.
-4. **UX menor en WeeklyView**: el CTA de semana vacía todavía puede hacer flicker mientras `loadWeek()` resuelve.
+1. **Código legacy AI**: `src/services/aiCoach.ts` sigue presente como compat layer y agrega ruido al mantenimiento.
+2. **Streaming aún inexistente**: el coach responde completo al final; la percepción de latencia sigue siendo mejorable.
+3. **PDF import v1 sigue limitado**: no usa `pdfjs-dist`; funciona solo con PDFs simples de texto.
+4. **Queda optimización adicional posible**: `date-fns` y algunos bloques del chat todavía podrían separarse más si buscas latencia inicial aún menor.
 
 ---
 
@@ -261,6 +288,8 @@ Estas mejoras extienden lo implementado en la Ola 2 con poco esfuerzo incrementa
 - Si hay colisión: notificar al usuario en el AcceptedBanner ("Nota: el lunes ya tenía una sesión")
 - Esfuerzo: 1h
 
+Estado: ✅ COMPLETADO
+
 **D2 — Propuesta de semana en WeeklyView** ✅ COMPLETADO
 - Botón "Crear semana" en WeeklyView cuando la semana está vacía
 - Navega al Coach para iniciar el flujo con el planner
@@ -270,6 +299,8 @@ Estas mejoras extienden lo implementado en la Ola 2 con poco esfuerzo incrementa
 - Agregar tabla `coachProposals` en db.ts (versión 4 de migración)
 - Las propuestas pending sobreviven recargas de la app
 - Esfuerzo: 1-2h
+
+Estado: ✅ COMPLETADO
 
 **D4 — Confirmación de create_week navega a WeeklyView** ✅ COMPLETADO
 - Después de aceptar una propuesta de tipo `create_week`, navega automáticamente a `/week`
@@ -369,12 +400,13 @@ Estado: ✅ COMPLETADO
 | B12-B16 — Estabilidad planner | Alto | Bajo-medio | 2.2 | ✅ Hecho |
 | B17 — Migración chat multi-sesión | Alto | Bajo | 2.2 | ✅ Hecho |
 | B18 — Contrato `add_session` alineado | Medio | Bajo | 2.2 | ✅ Hecho |
-| D1 — Detección colisiones create_week | Medio | Mínimo | 2.2 | ⏳ |
+| B19 — Hardening de respuestas inválidas del coach | Alto | Bajo | 2.2 | ✅ Hecho |
+| D1 — Detección colisiones create_week | Medio | Mínimo | 2.2 | ✅ Hecho |
 | D2 — Botón "Pedir semana" en WeeklyView | Alto | Mínimo | 2.2 | ✅ Hecho |
-| D3 — Persistir proposals en Dexie | Medio | Bajo | 2.2 | ⏳ |
+| D3 — Persistir proposals en Dexie | Medio | Bajo | 2.2 | ✅ Hecho |
 | D4 — Navegar a WeeklyView tras create_week | Alto | Mínimo | 2.2 | ✅ Hecho |
 | D5 — Chat multi-turno real | Alto | Medio | 2.2 | ✅ Hecho |
-| UX — Evitar flicker semana vacía en WeeklyView | Medio | Mínimo | 2.2 | ⏳ |
+| UX — Evitar flicker semana vacía en WeeklyView | Medio | Mínimo | 2.2 | ✅ Hecho |
 | Vista historial partidos | Medio | Bajo | 2.1 | ⏳ |
 | C3 — Resumen semanal del coach | Alto | Medio | 3 | ✅ Hecho |
 | C4 — Memoria del coach | Alto | Medio | 3 | ✅ Hecho |
@@ -382,6 +414,8 @@ Estado: ✅ COMPLETADO
 | PDF import v1.1 (pdfjs-dist) | Alto | Medio | 3 | ⏳ |
 | Notificaciones de sesión | Alto | Medio | 3 | ⏳ |
 | Pantalla Settings | Bajo | Bajo | 3 | ✅ Hecho |
+| Truncado inteligente del contexto | Alto | Bajo | 3 | ✅ Hecho |
+| Code splitting inicial | Alto | Bajo-medio | 3 | ✅ Hecho |
 | PDF import v2 (Gemini API) | Alto | Medio-alto | 4 | ⏳ |
 | Sync backend multi-dispositivo | Alto | Muy alto | 4 | ⏳ |
 | Modo torneo | Alto | Muy alto | 4 | ⏳ |

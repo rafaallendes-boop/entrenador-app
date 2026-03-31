@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { db } from '../db/db'
 import type { ChatMessage, ChatContext } from '../types'
 import { CoachEngine } from '../services/ai/CoachEngine'
+import { optimizeChatContext } from '../services/ai/contextOptimizer'
 import { useCoachActionsStore } from './useCoachActionsStore'
 import { v4 as uuid } from '../utils/uuid'
 import { AIProviderError } from '../services/ai/types'
@@ -48,11 +49,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set(state => ({ messages: [...state.messages, userMsg], isLoading: true, error: null }))
 
     // Pasamos historial multi-turno real al provider (excluye el mensaje recién añadido)
-    const recentMessages = get().messages.slice(-7, -1).map(m => ({ role: m.role, content: m.content }))
-    const enrichedContext: ChatContext = {
+    const recentMessages = get().messages.slice(0, -1).map(m => ({ role: m.role, content: m.content }))
+    const enrichedContext = optimizeChatContext({
       ...(context ?? { recentSessions: [] }),
       recentMessages,
-    }
+    })
 
     try {
       const response = await CoachEngine.send(content, enrichedContext)

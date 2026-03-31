@@ -1,17 +1,18 @@
-import { useEffect } from 'react'
+import { lazy, Suspense, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTrainingStore } from '../store/useTrainingStore'
 import { todayISO, formatFullDate, currentWeekStartISO } from '../utils/date'
 import { ROUTES } from '../constants/routes'
 import WeekStrip from '../components/week/WeekStrip'
-import CoachMessageCard from '../components/dashboard/CoachMessageCard'
-import NextSessionCard from '../components/dashboard/NextSessionCard'
 import LoadIndicator from '../components/dashboard/LoadIndicator'
-import NutritionFocusCard from '../components/dashboard/NutritionFocusCard'
-import DailyCheckInCard from '../components/dashboard/DailyCheckInCard'
-import InstallAppCard from '../components/pwa/InstallAppCard'
 import Card from '../components/ui/Card'
 import { getDayNutrition } from '../services/nutritionEngine'
+
+const CoachMessageCard = lazy(() => import('../components/dashboard/CoachMessageCard'))
+const NextSessionCard = lazy(() => import('../components/dashboard/NextSessionCard'))
+const NutritionFocusCard = lazy(() => import('../components/dashboard/NutritionFocusCard'))
+const DailyCheckInCard = lazy(() => import('../components/dashboard/DailyCheckInCard'))
+const InstallAppCard = lazy(() => import('../components/pwa/InstallAppCard'))
 
 export default function Dashboard() {
   const { sessions, currentWeekSummary, loadWeek } = useTrainingStore()
@@ -37,7 +38,6 @@ export default function Dashboard() {
 
   return (
     <div className="px-4 pt-12 pb-4 space-y-5">
-      {/* Header */}
       <div>
         <p className="text-xs text-ink-muted font-medium uppercase tracking-wider">
           {formatFullDate(new Date())}
@@ -51,23 +51,26 @@ export default function Dashboard() {
         )}
       </div>
 
-      {/* Coach message */}
-      <CoachMessageCard message={coachNote} />
+      <Suspense fallback={<CardSkeleton className="h-28" />}>
+        <CoachMessageCard message={coachNote} />
+      </Suspense>
 
-      {/* Daily check-in — only show if there are sessions today or it's today */}
-      <DailyCheckInCard todaySessions={todaySessions} />
+      <Suspense fallback={<CardSkeleton className="h-32" />}>
+        <DailyCheckInCard todaySessions={todaySessions} />
+      </Suspense>
 
-      <InstallAppCard />
+      <Suspense fallback={null}>
+        <InstallAppCard />
+      </Suspense>
 
-      {/* Week strip */}
       <div className="bg-surface-card rounded-card border border-surface-border">
         <WeekStrip showNav={false} onDayPress={(iso) => navigate(ROUTES.DAY(iso))} />
       </div>
 
-      {/* Nutrition focus for today */}
-      <NutritionFocusCard rec={todayNutrition} />
+      <Suspense fallback={<CardSkeleton className="h-32" />}>
+        <NutritionFocusCard rec={todayNutrition} />
+      </Suspense>
 
-      {/* Weekly load + objectives */}
       {currentWeekSummary && (
         <Card className="p-4">
           <h2 className="text-xs font-semibold text-ink-muted uppercase tracking-wider mb-3">
@@ -104,19 +107,24 @@ export default function Dashboard() {
         </Card>
       )}
 
-      {/* Upcoming sessions */}
       {upcomingSessions.length > 0 && (
         <div>
           <h2 className="text-xs font-semibold text-ink-muted uppercase tracking-wider mb-3">
-            Próximas sesiones
+            Proximas sesiones
           </h2>
           <div className="space-y-2">
-            {upcomingSessions.map(session => (
-              <NextSessionCard key={session.id} session={session} />
-            ))}
+            <Suspense fallback={<CardSkeleton className="h-24" />}>
+              {upcomingSessions.map(session => (
+                <NextSessionCard key={session.id} session={session} />
+              ))}
+            </Suspense>
           </div>
         </div>
       )}
     </div>
   )
+}
+
+function CardSkeleton({ className }: { className: string }) {
+  return <div className={`rounded-card border border-surface-border bg-surface-card animate-pulse ${className}`} />
 }
