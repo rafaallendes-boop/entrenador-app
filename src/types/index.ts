@@ -126,6 +126,7 @@ export interface ChatMessage {
   role: MessageRole
   content: string
   timestamp: number
+  chatSessionId?: string
   context?: ChatContext
   /** Which AI provider generated this message (undefined for user messages) */
   provider?: AIProviderName

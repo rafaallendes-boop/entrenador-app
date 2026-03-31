@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { CheckCircle2, X, Zap } from 'lucide-react'
+import { CheckCircle2, X, Zap, MoreHorizontal } from 'lucide-react'
 import { useChatStore } from '../store/useChatStore'
 import { useCoachActionsStore } from '../store/useCoachActionsStore'
 import { useTrainingStore } from '../store/useTrainingStore'
@@ -250,13 +250,15 @@ function ProviderBadge({ providerName }: { providerName: string }) {
 // ─── Main page ─────────────────────────────────────────────────────────────────
 
 export default function ChatCoach() {
-  const { messages, isLoading, error, loadHistory, sendMessage, clearChat } = useChatStore()
+  const { messages, isLoading, error, loadHistory, sendMessage, newSession, deleteCurrentSession } = useChatStore()
   const { proposals, acceptProposal, rejectProposal } = useCoachActionsStore()
   const { sessions, currentWeekSummary, dayLogs, loadWeek } = useTrainingStore()
   const bottomRef = useRef<HTMLDivElement>(null)
 
   const [activeProposal, setActiveProposal] = useState<CoachProposal | null>(null)
   const [acceptedFeedback, setAcceptedFeedback] = useState<string | null>(null)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [deleteConfirm, setDeleteConfirm] = useState(false)
 
   const latestCoachProvider =
     [...messages].reverse().find(message => message.role === 'coach')?.provider
@@ -347,12 +349,37 @@ export default function ChatCoach() {
             <ProviderBadge providerName={badgeProviderName} />
           </div>
           {messages.length > 0 && (
-            <button
-              onClick={clearChat}
-              className="text-xs text-ink-faint hover:text-ink-muted transition-colors"
-            >
-              Limpiar
-            </button>
+            <div className="relative">
+              <button
+                onClick={() => setMenuOpen(!menuOpen)}
+                className="text-ink-faint hover:text-ink-muted transition-colors p-1"
+                title="Opciones de chat"
+              >
+                <MoreHorizontal size={18} />
+              </button>
+              {menuOpen && (
+                <div className="absolute right-0 mt-1 w-40 bg-surface-card border border-surface-border rounded-lg shadow-lg z-10">
+                  <button
+                    onClick={() => {
+                      setMenuOpen(false)
+                      newSession()
+                    }}
+                    className="w-full text-left px-3 py-2 text-xs text-ink hover:bg-surface-raised transition-colors border-b border-surface-border"
+                  >
+                    Nuevo chat
+                  </button>
+                  <button
+                    onClick={() => {
+                      setMenuOpen(false)
+                      setDeleteConfirm(true)
+                    }}
+                    className="w-full text-left px-3 py-2 text-xs text-ink hover:bg-surface-raised transition-colors"
+                  >
+                    Borrar conversación
+                  </button>
+                </div>
+              )}
+            </div>
           )}
         </div>
       </div>
@@ -420,6 +447,35 @@ export default function ChatCoach() {
         <QuickActionChips onSelect={handleSend} disabled={isLoading} />
         <ChatInput onSend={handleSend} disabled={isLoading} />
       </div>
+
+      {/* Delete confirmation modal */}
+      {deleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-surface-card border border-surface-border rounded-2xl p-5 max-w-sm mx-4">
+            <h3 className="text-sm font-semibold text-ink mb-2">Borrar conversación</h3>
+            <p className="text-xs text-ink-muted mb-4 leading-relaxed">
+              ¿Seguro que quieres borrar esta conversación? No se puede deshacer, pero el historial anterior se mantiene.
+            </p>
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => setDeleteConfirm(false)}
+                className="text-xs px-3 py-2 rounded-lg text-ink-muted hover:bg-surface-raised transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={async () => {
+                  setDeleteConfirm(false)
+                  await deleteCurrentSession()
+                }}
+                className="text-xs px-3 py-2 rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors font-medium"
+              >
+                Borrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Proposal drawer */}
       {activeProposal && (

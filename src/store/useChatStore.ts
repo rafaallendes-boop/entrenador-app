@@ -6,32 +6,54 @@ import { useCoachActionsStore } from './useCoachActionsStore'
 import { v4 as uuid } from '../utils/uuid'
 import { AIProviderError } from '../services/ai/types'
 
+// ─── Session ID persistence ──────────────────────────────────────────────────────
+
+const CHAT_SESSION_KEY = 'coach_chat_session_id'
+
+function getOrCreateSessionId(): string {
+  let id = localStorage.getItem(CHAT_SESSION_KEY)
+  if (!id) {
+    id = uuid()
+    localStorage.setItem(CHAT_SESSION_KEY, id)
+  }
+  return id
+}
+
 interface ChatState {
   messages: ChatMessage[]
+  currentSessionId: string
   isLoading: boolean
   error: string | null
 
   loadHistory: () => Promise<void>
   sendMessage: (content: string, context?: ChatContext) => Promise<void>
-  clearChat: () => Promise<void>
+  newSession: () => Promise<void>
+  deleteCurrentSession: () => Promise<void>
 }
 
 export const useChatStore = create<ChatState>((set, get) => ({
   messages: [],
+  currentSessionId: getOrCreateSessionId(),
   isLoading: false,
   error: null,
 
   loadHistory: async () => {
-    const msgs = await db.chatMessages.orderBy('timestamp').toArray()
+    const sessionId = get().currentSessionId
+    const msgs = await db.chatMessages
+      .where('chatSessionId')
+      .equals(sessionId)
+      .sortBy('timestamp')
     set({ messages: msgs })
   },
 
   sendMessage: async (content, context) => {
+    const sessionId = get().currentSessionId
     const userMsg: ChatMessage = {
       id: uuid(),
       role: 'user',
       content,
       timestamp: Date.now(),
+      chatSessionId: sessionId,
       context,
     }
     await db.chatMessages.add(userMsg)
@@ -62,6 +84,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         role: 'coach',
         content: response.message,
         timestamp: Date.now(),
+        chatSessionId: sessionId,
         provider: response.provider,
         proposalId,
       }
@@ -73,9 +96,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
   },
 
-  clearChat: async () => {
-    await db.chatMessages.clear()
-    set({ messages: [], error: null })
+  newSession: async () => {
+    const newId = uuid()
+    localStorage.setItem(CHAT_SESSION_KEY, newId)
+    set({ currentSessionId: newId, messages: [], error: null })
+  },
+
+  deleteCurrentSession: async () => {
+    const sessionId = get().currentSessionId
+    await db.chatMessages.where('chatSessionId').equals(sessionId).delete()
+    // After deleting current session, start a new one
+    await get().newSession()
   },
 }))
 

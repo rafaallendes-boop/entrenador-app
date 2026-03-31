@@ -59,6 +59,14 @@ export class EntrenadorDB extends Dexie {
       await tx.table('weekSummaries').clear()
       await tx.table('chatMessages').clear()
     })
+
+    // v5 — add chatSessionId index for multi-session chat support
+    this.version(5).stores({
+      sessions:      'id, date, type, status, completedAt',
+      dayLogs:       'id, &date',
+      weekSummaries: 'id, &weekStartDate',
+      chatMessages:  'id, timestamp, chatSessionId',
+    })
   }
 }
 
