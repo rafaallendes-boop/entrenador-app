@@ -34,6 +34,10 @@ interface LambdaResponse {
 interface CoachRequest {
   systemPrompt: string
   userMessage: string
+  conversation?: Array<{
+    role: 'user' | 'assistant'
+    content: string
+  }>
   maxTokens?: number
   temperature?: number
 }
@@ -53,7 +57,13 @@ async function callGemini(req: CoachRequest, apiKey: string, model: string): Pro
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: req.systemPrompt }] },
-      contents: [{ role: 'user', parts: [{ text: req.userMessage }] }],
+      contents: [
+        ...(req.conversation ?? []).map(message => ({
+          role: message.role === 'assistant' ? 'model' : 'user',
+          parts: [{ text: message.content }],
+        })),
+        { role: 'user', parts: [{ text: req.userMessage }] },
+      ],
       generationConfig: {
         maxOutputTokens: req.maxTokens ?? 1024,
         temperature: req.temperature ?? 0.7,
@@ -87,6 +97,10 @@ async function callOpenAI(req: CoachRequest, apiKey: string, model: string): Pro
       temperature: req.temperature ?? 0.7,
       messages: [
         { role: 'system', content: req.systemPrompt },
+        ...(req.conversation ?? []).map(message => ({
+          role: message.role,
+          content: message.content,
+        })),
         { role: 'user', content: req.userMessage },
       ],
     }),
@@ -116,7 +130,13 @@ async function callClaude(req: CoachRequest, apiKey: string, model: string): Pro
       max_tokens: req.maxTokens ?? 1024,
       temperature: req.temperature ?? 0.7,
       system: req.systemPrompt,
-      messages: [{ role: 'user', content: req.userMessage }],
+      messages: [
+        ...(req.conversation ?? []).map(message => ({
+          role: message.role,
+          content: message.content,
+        })),
+        { role: 'user', content: req.userMessage },
+      ],
     }),
   })
   if (!res.ok) {

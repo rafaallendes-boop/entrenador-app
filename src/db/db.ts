@@ -1,5 +1,5 @@
 import Dexie, { type Table } from 'dexie'
-import type { Session, DayLog, WeekSummary, ChatMessage, CoachProposal } from '../types'
+import type { Session, DayLog, WeekSummary, ChatMessage, CoachProposal, AthleteProfile } from '../types'
 import { getOrCreateChatSessionId } from '../utils/chatSession'
 
 export class EntrenadorDB extends Dexie {
@@ -8,6 +8,7 @@ export class EntrenadorDB extends Dexie {
   weekSummaries!: Table<WeekSummary>
   chatMessages!: Table<ChatMessage>
   coachProposals!: Table<CoachProposal>
+  athleteProfiles!: Table<AthleteProfile>
 
   constructor() {
     super('EntrenadorDB')
@@ -83,6 +84,15 @@ export class EntrenadorDB extends Dexie {
       weekSummaries:  'id, &weekStartDate',
       chatMessages:   'id, timestamp, chatSessionId',
       coachProposals: 'id, status, createdAt, resolvedAt, chatMessageId',
+    })
+
+    this.version(7).stores({
+      sessions:        'id, date, type, status, completedAt',
+      dayLogs:         'id, &date',
+      weekSummaries:   'id, &weekStartDate',
+      chatMessages:    'id, timestamp, chatSessionId',
+      coachProposals:  'id, status, createdAt, resolvedAt, chatMessageId',
+      athleteProfiles: 'id, updatedAt',
     })
   }
 }

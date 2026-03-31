@@ -33,10 +33,11 @@ const DAY_FULL_ES = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'vier
 export function buildCoachSystemPrompt(context: ChatContext): string {
   const sections: string[] = [
     buildPersonaSection(),
+    buildCoachMemorySection(context),
     buildWeekSection(context),
     buildSessionsSection(context.recentSessions),
+    buildWeekDayLogsSection(context),
     buildTodaySection(context),
-    buildRecentChatHistory(context.recentMessages),
     buildResponseInstructions(context.recentSessions, context),
   ]
   return sections.filter(Boolean).join('\n\n')
@@ -112,6 +113,13 @@ function buildWeekSection(context: ChatContext): string {
   }
 
   return lines.join('\n')
+}
+
+function buildCoachMemorySection(context: ChatContext): string {
+  if (!context.athleteMemory?.trim()) return ''
+
+  return `═══ MEMORIA DEL ATLETA ═══
+${context.athleteMemory.trim()}`
 }
 
 function buildSessionsSection(sessions: Session[]): string {
@@ -207,13 +215,33 @@ function buildTodaySection(context: ChatContext): string {
   return lines.join('\n')
 }
 
-function buildRecentChatHistory(messages?: {role: string, content: string}[]): string {
-  if (!messages || messages.length === 0) return ''
-  const lines = ['═══ HISTORIAL RECIENTE ═══']
-  for (const m of messages) {
-    const isCoach = m.role === 'coach'
-    lines.push(`${isCoach ? 'Coach' : 'Atleta'}: "${m.content.slice(0, 150)}${m.content.length > 150 ? '...' : ''}"`)
+function buildWeekDayLogsSection(context: ChatContext): string {
+  const logs = context.weekDayLogs
+    ?.filter(log =>
+      log.sleepHours != null ||
+      log.energyLevel != null ||
+      log.painLevel != null ||
+      log.rpeActual != null ||
+      log.postSessionComment ||
+      log.generalNotes ||
+      log.bodyWeight != null
+    )
+
+  if (!logs || logs.length === 0) return ''
+
+  const lines: string[] = ['═══ REGISTROS DE LA SEMANA ═══']
+  for (const log of logs) {
+    const parts: string[] = []
+    if (log.sleepHours != null) parts.push(`sueño ${log.sleepHours}h`)
+    if (log.energyLevel != null) parts.push(`energía ${log.energyLevel}/10`)
+    if (log.painLevel != null) parts.push(`dolor ${log.painLevel}/10`)
+    if (log.rpeActual != null) parts.push(`RPE real ${log.rpeActual}/10`)
+    if (log.bodyWeight != null) parts.push(`peso ${log.bodyWeight}kg`)
+    if (log.postSessionComment) parts.push(`post: "${log.postSessionComment.slice(0, 80)}"`)
+    if (log.generalNotes) parts.push(`nota: "${log.generalNotes.slice(0, 80)}"`)
+    lines.push(`${log.date} · ${parts.join(' · ')}`)
   }
+
   return lines.join('\n')
 }
 

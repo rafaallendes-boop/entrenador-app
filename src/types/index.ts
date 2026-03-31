@@ -121,6 +121,12 @@ export interface WeekSummary {
   coachNote?: string
 }
 
+export interface AthleteProfile {
+  id: string
+  coachMemory?: string
+  updatedAt: number
+}
+
 export interface ChatMessage {
   id: string
   role: MessageRole
@@ -138,6 +144,8 @@ export interface ChatContext {
   recentSessions: Session[]
   currentWeekSummary?: WeekSummary
   dayLog?: DayLog
+  weekDayLogs?: DayLog[]
+  athleteMemory?: string
   recentMessages?: { role: MessageRole; content: string }[]
 }
 

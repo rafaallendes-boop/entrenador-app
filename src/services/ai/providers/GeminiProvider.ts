@@ -34,6 +34,10 @@ export class GeminiProvider implements AIProvider {
             parts: [{ text: request.systemPrompt }],
           },
           contents: [
+            ...(request.conversation ?? []).map(message => ({
+              role: message.role === 'assistant' ? 'model' : 'user',
+              parts: [{ text: message.content }],
+            })),
             { role: 'user', parts: [{ text: request.userMessage }] },
           ],
           generationConfig: {

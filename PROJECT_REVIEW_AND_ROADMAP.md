@@ -88,6 +88,7 @@ El estado general es: **MVP funcional con coach planner ya operativo, multi-sesi
 **Chat multi-sesión usable**
 - `useChatStore.ts`: `currentSessionId` persistido, `newSession()` y `deleteCurrentSession()`
 - `db.ts`: migración v5 con backfill de `chatSessionId` para no perder visibilidad del historial anterior
+- `ChatCoach.tsx`: menú de chat siempre visible; permite iniciar sesión nueva y borrar la conversación actual
 - `WeeklyView.tsx`: CTA "Crear semana" cuando la semana está vacía
 - `ChatCoach.tsx`: auto-navegación a `/week` tras aceptar `create_week`
 
@@ -95,6 +96,18 @@ El estado general es: **MVP funcional con coach planner ya operativo, multi-sesi
 - `promptBuilder.ts`: reglas más fuertes de decisión de carga, fatiga, lesión y sesión clave
 - Se eliminó la restricción artificial de máximo 3 líneas conversacionales
 - Se mantuvo obligación de usar `<actions>` cuando el usuario pide cambios reales
+
+**Continuidad y contexto del coach**
+- `CoachEngine` y los providers ahora envían historial reciente como conversación nativa del proveedor
+- `netlify/functions/coach.ts` quedó alineada con el mismo contrato para producción vía proxy
+- El historial ya no se duplica dentro del system prompt
+
+**Resumen semanal + memoria persistente**
+- `WeeklyView.tsx`: botón manual para generar/regenerar `coachNote` semanal
+- `useTrainingStore.ts`: generación de resumen semanal vía `CoachEngine` + persistencia en `WeekSummary.coachNote`
+- `athleteProfiles` en Dexie: memoria persistente del atleta para el coach
+- `Dashboard.tsx`: UI para editar la memoria persistente del coach
+- `promptBuilder.ts`: nuevas secciones opcionales para memoria del atleta y registros de la semana
 
 ---
 
@@ -264,6 +277,8 @@ Estas mejoras extienden lo implementado en la Ola 2 con poco esfuerzo incrementa
 - Requiere cambiar `AIRequest` y adaptar todos los providers
 - Esfuerzo: 2-3h
 
+Estado: ✅ COMPLETADO
+
 ### Ola 3 — Mejoras técnicas y features nuevos (esfuerzo medio)
 
 **C1 — Chat multi-turno real**
@@ -288,16 +303,16 @@ Estas mejoras extienden lo implementado en la Ola 2 con poco esfuerzo incrementa
 - Export JSON, Clear all data (con confirmación), info de versión
 - Esfuerzo: 1–2h
 
-**C3 — Resumen semanal generado por el coach** ⏳ (movido desde Ola 2)
+**C3 — Resumen semanal generado por el coach** ✅ COMPLETADO
 - Botón en WeeklyView que le pide al coach un resumen de la semana
 - Coach genera párrafo con contexto completo (adherencia, RPE real, partidos, lesiones)
 - Se guarda en `WeekSummary.coachNote` y aparece en Dashboard y History
 - Esfuerzo: 2h (base ya disponible)
 
-**C4 — Coach memoria de contexto**
+**C4 — Coach memoria de contexto** ✅ COMPLETADO
 - Store persistente con contexto de Rafael que el coach incluye siempre
 - Ej: "prefiere entrenar fuerza los martes", "molestia rodilla derecha desde feb", "próximo torneo: mayo"
-- Se guarda en Dexie, editable en Settings
+- Se guarda en Dexie y hoy es editable desde Dashboard
 - Esfuerzo: 3-4h
 
 **C5 — Streaming de respuesta del coach**
@@ -350,11 +365,11 @@ Estas mejoras extienden lo implementado en la Ola 2 con poco esfuerzo incrementa
 | D2 — Botón "Pedir semana" en WeeklyView | Alto | Mínimo | 2.2 | ✅ Hecho |
 | D3 — Persistir proposals en Dexie | Medio | Bajo | 2.2 | ⏳ |
 | D4 — Navegar a WeeklyView tras create_week | Alto | Mínimo | 2.2 | ✅ Hecho |
-| D5 — Chat multi-turno real | Alto | Medio | 2.2 | ⏳ |
+| D5 — Chat multi-turno real | Alto | Medio | 2.2 | ✅ Hecho |
 | UX — Evitar flicker semana vacía en WeeklyView | Medio | Mínimo | 2.2 | ⏳ |
 | Vista historial partidos | Medio | Bajo | 2.1 | ⏳ |
-| C3 — Resumen semanal del coach | Alto | Medio | 3 | ⏳ |
-| C4 — Memoria del coach | Alto | Medio | 3 | ⏳ |
+| C3 — Resumen semanal del coach | Alto | Medio | 3 | ✅ Hecho |
+| C4 — Memoria del coach | Alto | Medio | 3 | ✅ Hecho |
 | C5 — Streaming de respuesta | Alto | Medio | 3 | ⏳ |
 | PDF import v1.1 (pdfjs-dist) | Alto | Medio | 3 | ⏳ |
 | Notificaciones de sesión | Alto | Medio | 3 | ⏳ |
@@ -388,9 +403,8 @@ Estas mejoras extienden lo implementado en la Ola 2 con poco esfuerzo incrementa
 
 ### Chat history multi-turn (limitación actual)
 
-- El prompt incluye los últimos 3 mensajes como texto plano en el system prompt, no como `contents[]` multi-turn.
-- Gemini soporta multi-turn nativamente. Usar la API correctamente daría mejor continuidad.
-- **Decisión actual**: simple y funcional. Ola 3 lo mejora con `contents[]` real.
+- Ya se envía historial reciente como conversación nativa del provider (`messages[]` / `contents[]`).
+- **Limitación remanente**: sigue siendo historial reciente, no memoria de largo plazo ni truncado dinámico por presupuesto de tokens.
 
 ### CTA de semana vacía aún depende de carga asíncrona
 

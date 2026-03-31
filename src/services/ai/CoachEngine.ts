@@ -63,6 +63,10 @@ export const CoachEngine = {
     const raw = await provider.call({
       systemPrompt,
       userMessage,
+      conversation: (context.recentMessages ?? []).map(message => ({
+        role: message.role === 'coach' ? 'assistant' : 'user',
+        content: message.content,
+      })),
       maxTokens: options?.maxTokens ?? 3000,
       temperature: options?.temperature ?? 0.7,
     })

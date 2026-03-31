@@ -28,8 +28,14 @@ export interface AIProvider {
 export interface AIRequest {
   systemPrompt: string
   userMessage: string
+  conversation?: AIConversationMessage[]
   maxTokens?: number
   temperature?: number
+}
+
+export interface AIConversationMessage {
+  role: 'user' | 'assistant'
+  content: string
 }
 
 // ─── Raw response (before normalization) ──────────────────────────────────────

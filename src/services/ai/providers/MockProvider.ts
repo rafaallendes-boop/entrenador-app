@@ -12,7 +12,14 @@ export class MockProvider implements AIProvider {
   async call(request: AIRequest): Promise<AIRawResponse> {
     // Simulate network latency
     await new Promise(r => setTimeout(r, 500 + Math.random() * 400))
-    const text = mockReply(request.userMessage, request.systemPrompt)
+    const conversationHint = (request.conversation ?? [])
+      .slice(-4)
+      .map(message => `${message.role}: ${message.content}`)
+      .join('\n')
+    const contextHint = conversationHint
+      ? `${request.systemPrompt}\n\nHISTORIAL:\n${conversationHint}`
+      : request.systemPrompt
+    const text = mockReply(request.userMessage, contextHint)
     return { text, provider: 'mock', model: 'mock-v1' }
   }
 }

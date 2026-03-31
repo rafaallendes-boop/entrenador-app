@@ -34,6 +34,7 @@ export class ProxyProvider implements AIProvider {
         body: JSON.stringify({
           systemPrompt: request.systemPrompt,
           userMessage: request.userMessage,
+          conversation: request.conversation,
           maxTokens: request.maxTokens,
           temperature: request.temperature,
         }),

@@ -60,6 +60,10 @@ export class OpenAIProvider implements AIProvider {
           temperature: request.temperature ?? 0.7,
           messages: [
             { role: 'system', content: request.systemPrompt },
+            ...(request.conversation ?? []).map(message => ({
+              role: message.role,
+              content: message.content,
+            })),
             { role: 'user', content: request.userMessage },
           ],
         }),

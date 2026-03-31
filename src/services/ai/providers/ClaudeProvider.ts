@@ -57,7 +57,13 @@ export class ClaudeProvider implements AIProvider {
           max_tokens: request.maxTokens ?? 1024,
           temperature: request.temperature ?? 0.7,
           system: request.systemPrompt,
-          messages: [{ role: 'user', content: request.userMessage }],
+          messages: [
+            ...(request.conversation ?? []).map(message => ({
+              role: message.role,
+              content: message.content,
+            })),
+            { role: 'user', content: request.userMessage },
+          ],
         }),
       })
     } catch {

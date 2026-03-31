@@ -3,15 +3,19 @@ import { db } from '../db/db'
 import {
   getSessionsForWeek,
   getDayLog,
+  getDayLogsForWeek,
   upsertDayLog,
   getWeekSummary,
   recalculateWeekSummary,
   getAllWeekSummaries,
+  getAthleteProfile,
+  upsertWeekSummary,
 } from '../db/queries'
 import type { Session, DayLog, WeekSummary, SessionStatus } from '../types'
 import { v4 as uuid } from '../utils/uuid'
 import { toISO, fromISO, getWeekStart } from '../utils/date'
 import { addDays } from 'date-fns'
+import { CoachEngine } from '../services/ai/CoachEngine'
 
 const STATUS_CYCLE: SessionStatus[] = ['planned', 'completed', 'adjusted', 'skipped']
 
@@ -31,6 +35,7 @@ interface TrainingState {
   cycleSessionStatus: (id: string) => Promise<void>
   toggleExercise: (sessionId: string, exerciseId: string) => Promise<void>
   saveDayLog: (date: string, patch: Partial<Omit<DayLog, 'id' | 'date' | 'updatedAt'>>) => Promise<void>
+  generateCoachNote: (weekStart: string) => Promise<string>
 }
 
 export const useTrainingStore = create<TrainingState>((set, get) => ({
@@ -170,5 +175,34 @@ export const useTrainingStore = create<TrainingState>((set, get) => ({
     set(state => ({
       dayLogs: { ...state.dayLogs, [date]: log },
     }))
+  },
+
+  generateCoachNote: async (weekStart) => {
+    const [sessions, weekDayLogs, currentWeekSummary, athleteProfile] = await Promise.all([
+      getSessionsForWeek(weekStart),
+      getDayLogsForWeek(weekStart),
+      getWeekSummary(weekStart),
+      getAthleteProfile(),
+    ])
+
+    const response = await CoachEngine.send(
+      'Genera un resumen semanal corto y concreto. Evalúa adherencia, carga, sensaciones, riesgos y foco para la siguiente semana. No propongas acciones ni uses <actions>.',
+      {
+        recentSessions: sessions
+          .sort((a, b) => a.date.localeCompare(b.date) || a.timeBlock.localeCompare(b.timeBlock)),
+        currentWeekSummary: currentWeekSummary ?? undefined,
+        weekDayLogs,
+        athleteMemory: athleteProfile?.coachMemory,
+      },
+      { maxTokens: 700, temperature: 0.4 },
+    )
+
+    const summary = await upsertWeekSummary(weekStart, { coachNote: response.message })
+    const activeWeekStart = get().currentWeekSummary?.weekStartDate
+    if (activeWeekStart === weekStart) {
+      set({ currentWeekSummary: summary })
+    }
+    await get().loadAllSummaries()
+    return response.message
   },
 }))

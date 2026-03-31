@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { CheckCircle2, X, Zap, MoreHorizontal } from 'lucide-react'
 import { useChatStore } from '../store/useChatStore'
 import { useCoachActionsStore } from '../store/useCoachActionsStore'
+import { useCoachMemoryStore } from '../store/useCoachMemoryStore'
 import { useTrainingStore } from '../store/useTrainingStore'
 import { CoachEngine } from '../services/ai/CoachEngine'
 import { currentWeekStartISO, todayISO } from '../utils/date'
@@ -255,6 +256,7 @@ export default function ChatCoach() {
   const navigate = useNavigate()
   const { messages, isLoading, error, loadHistory, sendMessage, newSession, deleteCurrentSession } = useChatStore()
   const { proposals, loadProposals, acceptProposal, rejectProposal } = useCoachActionsStore()
+  const { coachMemory, loadMemory } = useCoachMemoryStore()
   const { sessions, currentWeekSummary, dayLogs, loadWeek } = useTrainingStore()
   const bottomRef = useRef<HTMLDivElement>(null)
 
@@ -262,6 +264,7 @@ export default function ChatCoach() {
   const [acceptedFeedback, setAcceptedFeedback] = useState<string | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState(false)
+  const hasMessages = messages.length > 0
 
   const latestCoachProvider =
     [...messages].reverse().find(message => message.role === 'coach')?.provider
@@ -270,8 +273,9 @@ export default function ChatCoach() {
   useEffect(() => {
     loadHistory()
     loadProposals()
+    loadMemory()
     loadWeek(currentWeekStartISO())
-  }, [loadHistory, loadProposals, loadWeek])
+  }, [loadHistory, loadProposals, loadMemory, loadWeek])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -286,6 +290,7 @@ export default function ChatCoach() {
       recentSessions,
       currentWeekSummary: currentWeekSummary ?? undefined,
       dayLog: dayLogs[todayISO()],
+      athleteMemory: coachMemory || undefined,
     }
   }
 
@@ -355,39 +360,40 @@ export default function ChatCoach() {
             </div>
             <ProviderBadge providerName={badgeProviderName} />
           </div>
-          {messages.length > 0 && (
-            <div className="relative">
-              <button
-                onClick={() => setMenuOpen(!menuOpen)}
-                className="text-ink-faint hover:text-ink-muted transition-colors p-1"
-                title="Opciones de chat"
-              >
-                <MoreHorizontal size={18} />
-              </button>
-              {menuOpen && (
-                <div className="absolute right-0 mt-1 w-40 bg-surface-card border border-surface-border rounded-lg shadow-lg z-10">
-                  <button
-                    onClick={() => {
-                      setMenuOpen(false)
-                      newSession()
-                    }}
-                    className="w-full text-left px-3 py-2 text-xs text-ink hover:bg-surface-raised transition-colors border-b border-surface-border"
-                  >
-                    Nuevo chat
-                  </button>
-                  <button
-                    onClick={() => {
-                      setMenuOpen(false)
-                      setDeleteConfirm(true)
-                    }}
-                    className="w-full text-left px-3 py-2 text-xs text-ink hover:bg-surface-raised transition-colors"
-                  >
-                    Borrar conversación
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
+          <div className="relative">
+            <button
+              onClick={() => setMenuOpen(!menuOpen)}
+              className="text-ink-faint hover:text-ink-muted transition-colors p-1"
+              title="Opciones de chat"
+            >
+              <MoreHorizontal size={18} />
+            </button>
+            {menuOpen && (
+              <div className="absolute right-0 mt-1 w-44 bg-surface-card border border-surface-border rounded-lg shadow-lg z-10">
+                <button
+                  onClick={() => {
+                    setMenuOpen(false)
+                    void newSession()
+                  }}
+                  className="w-full text-left px-3 py-2 text-xs text-ink hover:bg-surface-raised transition-colors border-b border-surface-border"
+                >
+                  Nuevo chat
+                </button>
+                <button
+                  onClick={() => {
+                    if (!hasMessages) return
+                    setMenuOpen(false)
+                    setDeleteConfirm(true)
+                  }}
+                  disabled={!hasMessages}
+                  className="w-full text-left px-3 py-2 text-xs transition-colors disabled:text-ink-faint/40 disabled:cursor-not-allowed text-ink hover:bg-surface-raised"
+                  title={hasMessages ? 'Borrar conversación actual' : 'No hay mensajes en esta conversación'}
+                >
+                  Borrar conversación
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 

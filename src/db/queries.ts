@@ -1,5 +1,5 @@
 import { db } from './db'
-import type { Session, DayLog, WeekSummary } from '../types'
+import type { Session, DayLog, WeekSummary, AthleteProfile } from '../types'
 import { toISO, getWeekStart, fromISO } from '../utils/date'
 import { addDays } from 'date-fns'
 import { v4 as uuid } from '../utils/uuid'
@@ -163,3 +163,33 @@ export const recalculateWeekSummary = async (dateISO: string): Promise<void> => 
 
 export const getAllWeekSummaries = async (): Promise<WeekSummary[]> =>
   db.weekSummaries.orderBy('weekStartDate').reverse().toArray()
+
+const ATHLETE_PROFILE_ID = 'default'
+
+export const getAthleteProfile = async (): Promise<AthleteProfile | undefined> =>
+  db.athleteProfiles.get(ATHLETE_PROFILE_ID)
+
+export const upsertAthleteProfile = async (
+  patch: Partial<Omit<AthleteProfile, 'id' | 'updatedAt'>>
+): Promise<AthleteProfile> => {
+  const existing = await getAthleteProfile()
+  const updatedAt = Date.now()
+
+  if (existing) {
+    const updated: AthleteProfile = {
+      ...existing,
+      ...patch,
+      updatedAt,
+    }
+    await db.athleteProfiles.put(updated)
+    return updated
+  }
+
+  const created: AthleteProfile = {
+    id: ATHLETE_PROFILE_ID,
+    updatedAt,
+    ...patch,
+  }
+  await db.athleteProfiles.put(created)
+  return created
+}

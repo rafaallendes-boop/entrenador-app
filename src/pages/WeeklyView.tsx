@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Download, Plus, FileUp, Sparkles } from 'lucide-react'
+import { Download, Plus, FileUp, Sparkles, MessageSquareText } from 'lucide-react'
 import { useTrainingStore } from '../store/useTrainingStore'
 import { useUIStore } from '../store/useUIStore'
 import { formatFullDate, fromISO, getWeekDays, toISO, isDateToday } from '../utils/date'
@@ -13,9 +13,10 @@ import type { TimeBlock } from '../types'
 import { downloadICS } from '../utils/ics'
 
 export default function WeeklyView() {
-  const { sessions, currentWeekSummary, isLoading, loadedWeekStart, loadWeek } = useTrainingStore()
+  const { sessions, currentWeekSummary, isLoading, loadedWeekStart, loadWeek, generateCoachNote } = useTrainingStore()
   const { currentWeekStart, selectedDate } = useUIStore()
   const [showAddModal, setShowAddModal] = useState(false)
+  const [isGeneratingNote, setIsGeneratingNote] = useState(false)
 
   useEffect(() => {
     loadWeek(currentWeekStart)
@@ -40,6 +41,15 @@ export default function WeeklyView() {
 
   const handleExport = () => {
     downloadICS(sessions, `entrenador-${currentWeekStart}.ics`)
+  }
+
+  const handleGenerateCoachNote = async () => {
+    setIsGeneratingNote(true)
+    try {
+      await generateCoachNote(currentWeekStart)
+    } finally {
+      setIsGeneratingNote(false)
+    }
   }
 
   return (
@@ -141,7 +151,17 @@ export default function WeeklyView() {
       {/* Week summary */}
       {currentWeekSummary && (
         <div className="px-4 mt-6">
-          <p className="text-xs font-semibold text-ink-muted uppercase tracking-wider mb-3">Resumen semanal</p>
+          <div className="flex items-center justify-between mb-3 gap-3">
+            <p className="text-xs font-semibold text-ink-muted uppercase tracking-wider">Resumen semanal</p>
+            <button
+              onClick={handleGenerateCoachNote}
+              disabled={isGeneratingNote}
+              className="inline-flex items-center gap-1.5 text-[11px] text-brand-light font-medium px-3 py-1.5 rounded-lg bg-brand/10 hover:bg-brand/20 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+            >
+              <MessageSquareText size={13} />
+              {isGeneratingNote ? 'Generando...' : currentWeekSummary.coachNote ? 'Regenerar coach note' : 'Generar coach note'}
+            </button>
+          </div>
           <WeekSummaryCard summary={currentWeekSummary} />
         </div>
       )}

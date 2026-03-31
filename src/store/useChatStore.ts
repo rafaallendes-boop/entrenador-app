@@ -47,8 +47,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
     await db.chatMessages.add(userMsg)
     set(state => ({ messages: [...state.messages, userMsg], isLoading: true, error: null }))
 
-    // Pasamos el historial reciente al context (excluye el mensaje recién añadido)
-    const recentMessages = get().messages.slice(-4, -1).map(m => ({ role: m.role, content: m.content }))
+    // Pasamos historial multi-turno real al provider (excluye el mensaje recién añadido)
+    const recentMessages = get().messages.slice(-7, -1).map(m => ({ role: m.role, content: m.content }))
     const enrichedContext: ChatContext = {
       ...(context ?? { recentSessions: [] }),
       recentMessages,
