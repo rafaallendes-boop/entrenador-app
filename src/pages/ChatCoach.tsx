@@ -24,6 +24,7 @@ const ACTION_LABEL: Record<string, string> = {
   add_session: 'Agregar sesión',
   create_week: 'Crear semana',
   delete_session: 'Eliminar sesión',
+  update_session: 'Actualizar sesión',
 }
 
 const SESSION_TYPE_LABEL: Record<string, string> = {
@@ -112,18 +113,71 @@ function ProposalDrawer({
 
                     {/* create_week session list */}
                     {action.type === 'create_week' && action.sessions && (
-                      <div className="mt-2 space-y-1 border-t border-surface-border pt-2">
+                      <div className="mt-2 space-y-2 border-t border-surface-border pt-2">
+                        {action.weekObjectives && action.weekObjectives.length > 0 && (
+                          <div className="mb-1">
+                            <p className="text-[10px] text-ink-faint/60 uppercase tracking-wide mb-0.5">Objetivos</p>
+                            {action.weekObjectives.map((obj, oi) => (
+                              <p key={oi} className="text-[11px] text-ink-faint">· {obj}</p>
+                            ))}
+                          </div>
+                        )}
                         {action.sessions.map((s, si) => (
-                          <div key={si} className="flex items-center gap-2">
-                            <span className="text-[10px] text-ink-faint/60 w-20 flex-shrink-0">
-                              {s.date} {s.timeBlock}
-                            </span>
-                            <span className="text-[11px] text-ink-faint">
-                              {SESSION_TYPE_LABEL[s.sessionType] ?? s.sessionType} · {s.title} · {s.durationMin}min
-                              {s.rpe ? ` RPE${s.rpe}` : ''}
-                            </span>
+                          <div key={si}>
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] text-ink-faint/60 w-20 flex-shrink-0">
+                                {s.date} {s.timeBlock}
+                              </span>
+                              <span className="text-[11px] text-ink-faint">
+                                {SESSION_TYPE_LABEL[s.sessionType] ?? s.sessionType} · {s.title} · {s.durationMin}min
+                                {s.rpe ? ` RPE${s.rpe}` : ''}
+                              </span>
+                            </div>
+                            {s.exercises && s.exercises.length > 0 && (
+                              <div className="ml-20 mt-0.5">
+                                {s.exercises.slice(0, 4).map((ex, ei) => (
+                                  <span key={ei} className="text-[10px] text-ink-faint/70 mr-2">
+                                    {ex.name} {ex.sets}×{ex.reps}{ex.weight ? ` ${ex.weight}kg` : ''}
+                                  </span>
+                                ))}
+                                {s.exercises.length > 4 && (
+                                  <span className="text-[10px] text-ink-faint/50">+{s.exercises.length - 4} más</span>
+                                )}
+                              </div>
+                            )}
                           </div>
                         ))}
+                      </div>
+                    )}
+
+                    {/* update_session details */}
+                    {action.type === 'update_session' && (
+                      <div className="mt-1.5 space-y-0.5">
+                        {action.newTitle && (
+                          <p className="text-[11px] text-ink-faint">Título → {action.newTitle}</p>
+                        )}
+                        {action.newObjective && (
+                          <p className="text-[11px] text-ink-faint">Objetivo → {action.newObjective}</p>
+                        )}
+                        {action.newRpe != null && (
+                          <p className="text-[11px] text-ink-faint">RPE → {action.newRpe}</p>
+                        )}
+                        {action.newDurationMin != null && (
+                          <p className="text-[11px] text-ink-faint">Duración → {action.newDurationMin} min</p>
+                        )}
+                        {action.exercises && action.exercises.length > 0 && (
+                          <div className="mt-1">
+                            <p className="text-[10px] text-ink-faint/60 uppercase tracking-wide">Ejercicios ({action.exercises.length})</p>
+                            {action.exercises.slice(0, 5).map((ex, ei) => (
+                              <p key={ei} className="text-[10px] text-ink-faint">
+                                {ex.name} {ex.sets}×{ex.reps}{ex.weight ? ` ${ex.weight}kg` : ''}
+                              </p>
+                            ))}
+                            {action.exercises.length > 5 && (
+                              <p className="text-[10px] text-ink-faint/50">+{action.exercises.length - 5} más</p>
+                            )}
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -256,8 +310,16 @@ export default function ChatCoach() {
       setAcceptedFeedback(`Listo. Semana creada con ${count} sesiones: ${typeStr}.`)
     } else {
       const addAction = proposal.actions.find(a => a.type === 'add_session')
+      const updateAction = proposal.actions.find(a => a.type === 'update_session')
       if (addAction?.title) {
         setAcceptedFeedback(`Sesión "${addAction.title}" agregada${addAction.targetDate ? ` al ${addAction.targetDate}` : ''}.`)
+      } else if (updateAction) {
+        const parts: string[] = []
+        if (updateAction.exercises?.length) parts.push(`${updateAction.exercises.length} ejercicios actualizados`)
+        if (updateAction.newObjective) parts.push('objetivo actualizado')
+        if (updateAction.newRpe != null) parts.push(`RPE → ${updateAction.newRpe}`)
+        if (updateAction.newDurationMin != null) parts.push(`duración → ${updateAction.newDurationMin}min`)
+        setAcceptedFeedback(`Sesión actualizada${parts.length ? ': ' + parts.join(', ') : ''}.`)
       } else {
         setAcceptedFeedback(`${proposal.actions.length} cambio${proposal.actions.length > 1 ? 's' : ''} aplicado${proposal.actions.length > 1 ? 's' : ''} correctamente.`)
       }

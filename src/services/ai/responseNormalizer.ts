@@ -34,18 +34,29 @@ const VALID_ACTION_TYPES = new Set<CoachActionType>([
   'add_session',
   'create_week',
   'delete_session',
+  'update_session',
 ])
 
 export function normalizeResponse(raw: AIRawResponse): CoachNormalizedResponse {
-  let message = raw.text
+  // Pre-process: unwrap <actions> blocks from markdown code fences.
+  // Gemini sometimes outputs: ```xml\n<actions>...</actions>\n```
+  // The regex strips the fence markers so the main extractor can catch the block.
+  let message = raw.text.replace(
+    /```[a-z]*\n?(<actions>[\s\S]*?<\/actions>)\n?```/gi,
+    '$1'
+  )
+
+  // Also remove orphan code fence markers left after stripping (e.g. "```\n```")
+  message = message.replace(/```[a-z]*\n?\s*\n?```/g, '')
+
   let actions: CoachAction[] | undefined
 
   // Try to find and extract the actions block
   const match = message.match(ACTIONS_BLOCK_RE)
   if (match) {
     actions = parseActionsBlock(match[1])
-    // Remove the actions block (and any surrounding whitespace) from display text
-    message = message.replace(ACTIONS_BLOCK_RE, '').trim()
+    // Remove ALL actions blocks (global replace) from display text
+    message = message.replace(/<actions>[\s\S]*?<\/actions>/gi, '').trim()
   }
 
   // Clean up any trailing whitespace or extra newlines left after stripping
@@ -135,6 +146,16 @@ function validateAction(obj: unknown): CoachAction | null {
     case 'delete_session':
       if (typeof a.sessionId !== 'string') return null
       break
+    case 'update_session': {
+      if (typeof a.sessionId !== 'string') return null
+      // Must have at least one update field
+      const hasUpdate =
+        a.newTitle != null || a.newObjective != null ||
+        a.newRpe != null || a.newDurationMin != null ||
+        Array.isArray(a.exercises)
+      if (!hasUpdate) return null
+      break
+    }
   }
 
   // For sessionId fields, expand short IDs back (the model uses 8-char prefix from prompt)

@@ -223,18 +223,19 @@ function buildResponseInstructions(sessions: Session[], context: ChatContext): s
 REGLAS CRÍTICAS:
 1. Si el usuario pide "crear semana", "armar semana", "planificar semana" → DEBES responder con create_week. No solo texto.
 2. Si el usuario pide "agregar sesión", "pon un X el día Y" → DEBES responder con add_session. No solo texto.
-3. Si falta contexto → asume valores razonables para Rafael y explícalo en 1 frase.
-4. Si no hay sesiones en la semana → crea una semana base sin pedir confirmación.
+3. Si el usuario pide "cambia los ejercicios", "agrégale X", "reemplaza" → DEBES responder con update_session con exercises. No solo texto.
+4. Si falta contexto → asume valores razonables para Rafael y explícalo en 1 frase.
+5. Si no hay sesiones en la semana → crea una semana base COMPLETA sin pedir confirmación.
 
 PERFIL DE RAFAEL (defaults para propuestas):
 - Prioridad: squash (2-3 sesiones/semana) > running (2) > fuerza (1-2) > movilidad (1)
 - Semana base típica:
     Lun PM: squash entrenamiento 75min RPE7
-    Mar AM: running Z2 50min RPE6
-    Mié PM: fuerza upper 60min RPE7
+    Mar AM: running Z2 50min RPE6 (ritmo 5:30-6:00/km)
+    Mié PM: fuerza upper 60min RPE7 (press banca, remo, dominadas, hombro, core)
     Jue PM: squash control 60min RPE6
-    Vie PM: running tempo 45min RPE7
-    Sáb AM: movilidad 30min RPE4
+    Vie PM: running tempo 45min RPE7 (ritmo 4:40-5:00/km)
+    Sáb AM: movilidad 30min RPE4 (cadera, tobillo, hombro)
     Dom: descanso
 
 FECHA HOY: ${today}
@@ -245,57 +246,93 @@ ${plannedSessionLines || '  (ninguna — la semana está vacía)'}
 
 ═══ ACCIONES DISPONIBLES ═══
 
-Para CREAR una semana completa (usar cuando el usuario pide crear/armar/planificar la semana):
-  create_week — campo: sessions (array), reason
+Para CREAR una semana completa:
+  create_week — campos: sessions (array con TODOS los detalles), weekObjectives (array de strings), reason
 
 Para AGREGAR una sesión individual:
   add_session — campos: targetDate, timeBlock, sessionType, title, durationMin, rpe?, objective?, subtype?, runningType?, reason
 
-Para MODIFICAR sesiones existentes (requieren sessionId del listado):
-  skip_session        — campos: sessionId, reason
-  change_rpe          — campos: sessionId, newRpe (1-10), reason
-  shorten_session     — campos: sessionId, newDurationMin, reason
-  lengthen_session    — campos: sessionId, newDurationMin, reason
-  move_session        — campos: sessionId, targetDate (YYYY-MM-DD), reason
-  replace_session_type— campos: sessionId, newType (squash|running|strength|mobility|recovery), reason
-  insert_recovery     — campos: targetDate (YYYY-MM-DD), reason
-  delete_session      — campos: sessionId, reason
+Para ACTUALIZAR sesión existente (ejercicios, título, objetivo, RPE, duración):
+  update_session — campos: sessionId, reason + uno o más de: newTitle, newObjective, newRpe, newDurationMin, exercises (array completo — reemplaza todo)
 
-ESQUEMA DE SESIÓN (para create_week y add_session):
-  date: "YYYY-MM-DD"         ← siempre fecha absoluta
+Para otras modificaciones (requieren sessionId):
+  skip_session        — sessionId, reason
+  change_rpe          — sessionId, newRpe (1-10), reason
+  shorten_session     — sessionId, newDurationMin, reason
+  lengthen_session    — sessionId, newDurationMin, reason
+  move_session        — sessionId, targetDate (YYYY-MM-DD), reason
+  replace_session_type— sessionId, newType (squash|running|strength|mobility|recovery), reason
+  insert_recovery     — targetDate (YYYY-MM-DD), reason
+  delete_session      — sessionId, reason
+
+═══ ESQUEMA COMPLETO DE SESIÓN (para create_week y add_session) ═══
+
+Campos base:
+  date: "YYYY-MM-DD"         ← fecha absoluta obligatoria
   timeBlock: "AM" | "PM"
   sessionType: "squash" | "running" | "strength" | "mobility" | "recovery"
-  title: "nombre en español" ← ej: "Squash entrenamiento", "Running Z2", "Fuerza upper"
-  durationMin: número        ← ej: 60
-  rpe: número 1-10           ← opcional
-  objective: "objetivo"      ← opcional
-  subtype: para squash → "training" | "match" | "competitive" | "control" | "light"
-  runningType: para running → "z2" | "tempo" | "intervals" | "long"
+  title: "nombre"            ← ej: "Squash entrenamiento", "Running Z2", "Fuerza upper"
+  durationMin: número
+  rpe: número 1-10
+  objective: "objetivo de sesión"
+  subtype: squash → "training"|"match"|"competitive"|"control"|"light"
+
+Para running (agrega en la sesión):
+  runningType: "z2"|"tempo"|"intervals"|"long"
+  targetPaceMin: "5:30"      ← ritmo mínimo /km
+  targetPaceMax: "6:00"      ← ritmo máximo /km
+  targetHrMin: 140           ← FC objetivo (opcional)
+  targetHrMax: 155
+
+Para fuerza y movilidad (agrega array exercises en la sesión):
+  exercises: [
+    {"name":"Nombre","sets":4,"reps":8,"weight":80,"group":"push|pull|legs|core|olympic|mobility|other"},
+    {"name":"Nombre","sets":3,"reps":"30s","mobilityFocus":"hip|ankle|shoulder|spine|knee|full_body"}
+  ]
 
 ═══ FORMATO DE RESPUESTA ═══
 
-Mensaje conversacional: máximo 3 líneas, directo y concreto.
-Luego, si hay acciones, el bloque <actions> AL FINAL:
+Mensaje conversacional: máximo 3 líneas, directo y concreto. SIN JSON, SIN tags.
+Luego el bloque <actions> AL FINAL (sin code fences, sin backticks):
 
 <actions>
-[{"type":"TIPO",...,"reason":"motivo conciso"}]
+[{"type":"TIPO",...,"reason":"motivo"}]
 </actions>
 
-EJEMPLO — crear semana:
+EJEMPLO — crear semana completa con detalle:
 <actions>
-[{"type":"create_week","sessions":[
-  {"date":"${addDaysToISO(weekStart, 0)}","timeBlock":"PM","sessionType":"squash","title":"Squash entrenamiento","durationMin":75,"rpe":7,"subtype":"training"},
-  {"date":"${addDaysToISO(weekStart, 1)}","timeBlock":"AM","sessionType":"running","title":"Running Z2","durationMin":50,"rpe":6,"runningType":"z2"},
-  {"date":"${addDaysToISO(weekStart, 2)}","timeBlock":"PM","sessionType":"strength","title":"Fuerza upper","durationMin":60,"rpe":7},
-  {"date":"${addDaysToISO(weekStart, 3)}","timeBlock":"PM","sessionType":"squash","title":"Squash control","durationMin":60,"rpe":6,"subtype":"control"},
-  {"date":"${addDaysToISO(weekStart, 4)}","timeBlock":"PM","sessionType":"running","title":"Running tempo","durationMin":45,"rpe":7,"runningType":"tempo"},
-  {"date":"${addDaysToISO(weekStart, 5)}","timeBlock":"AM","sessionType":"mobility","title":"Movilidad","durationMin":30,"rpe":4}
-],"reason":"semana base de entrenamiento para Rafael"}]
+[{"type":"create_week",
+  "weekObjectives":["mantener base squash","sostener aeróbico running","llegar fresco al fin de semana"],
+  "sessions":[
+    {"date":"${addDaysToISO(weekStart, 0)}","timeBlock":"PM","sessionType":"squash","title":"Squash entrenamiento","durationMin":75,"rpe":7,"objective":"técnica y físico general","subtype":"training"},
+    {"date":"${addDaysToISO(weekStart, 1)}","timeBlock":"AM","sessionType":"running","title":"Running Z2","durationMin":50,"rpe":6,"objective":"base aeróbica","runningType":"z2","targetPaceMin":"5:30","targetPaceMax":"6:00"},
+    {"date":"${addDaysToISO(weekStart, 2)}","timeBlock":"PM","sessionType":"strength","title":"Fuerza upper","durationMin":60,"rpe":7,"objective":"fuerza tren superior","exercises":[
+      {"name":"Press banca","sets":4,"reps":8,"weight":80,"group":"push"},
+      {"name":"Remo con barra","sets":4,"reps":8,"weight":60,"group":"pull"},
+      {"name":"Dominadas","sets":3,"reps":"max","group":"pull"},
+      {"name":"Press hombro","sets":3,"reps":10,"weight":25,"group":"push"},
+      {"name":"Core rotacional","sets":3,"reps":15,"group":"core"}
+    ]},
+    {"date":"${addDaysToISO(weekStart, 3)}","timeBlock":"PM","sessionType":"squash","title":"Squash control","durationMin":60,"rpe":6,"objective":"técnica controlada","subtype":"control"},
+    {"date":"${addDaysToISO(weekStart, 4)}","timeBlock":"PM","sessionType":"running","title":"Running tempo","durationMin":45,"rpe":7,"objective":"umbral aeróbico","runningType":"tempo","targetPaceMin":"4:40","targetPaceMax":"5:00"},
+    {"date":"${addDaysToISO(weekStart, 5)}","timeBlock":"AM","sessionType":"mobility","title":"Movilidad integral","durationMin":30,"rpe":4,"objective":"prevención y recuperación","exercises":[
+      {"name":"Hip flexor stretch","sets":2,"reps":"60s","mobilityFocus":"hip"},
+      {"name":"Ankle circles","sets":2,"reps":"30s","mobilityFocus":"ankle"},
+      {"name":"Shoulder CARs","sets":2,"reps":"30s","mobilityFocus":"shoulder"}
+    ]}
+  ],
+  "reason":"semana base equilibrada para Rafael"}]
 </actions>
 
-EJEMPLO — agregar sesión:
+EJEMPLO — update_session con ejercicios:
 <actions>
-[{"type":"add_session","targetDate":"${addDaysToISO(weekStart, 3)}","timeBlock":"AM","sessionType":"running","title":"Running Z2","durationMin":50,"rpe":6,"runningType":"z2","reason":"request del atleta"}]
+[{"type":"update_session","sessionId":"ID_DE_8_CHARS","newObjective":"fuerza tren superior con énfasis en empuje","exercises":[
+  {"name":"Press banca","sets":5,"reps":5,"weight":85,"group":"push"},
+  {"name":"Press inclinado","sets":3,"reps":8,"weight":70,"group":"push"},
+  {"name":"Dominadas con lastre","sets":4,"reps":6,"weight":10,"group":"pull"},
+  {"name":"Remo Pendlay","sets":3,"reps":8,"weight":65,"group":"pull"},
+  {"name":"Planchas","sets":3,"reps":"45s","group":"core"}
+],"reason":"ejercicios más intensos según solicitud"}]
 </actions>`
 }
 

@@ -189,8 +189,20 @@ export type CoachActionType =
   | 'add_session'
   | 'create_week'
   | 'delete_session'
+  | 'update_session'
 
-/** Session proposal used inside create_week and add_session actions */
+/** Simplified exercise for AI proposals (executor adds id + completed) */
+export interface CoachExerciseProposal {
+  name: string
+  sets: number
+  reps: number | string    // e.g. 12 or "30s"
+  weight?: number          // kg
+  notes?: string
+  group?: ExerciseGroup
+  mobilityFocus?: MobilityFocus
+}
+
+/** Session proposal used inside create_week actions */
 export interface CoachSessionProposal {
   date: string             // YYYY-MM-DD
   timeBlock: TimeBlock
@@ -201,14 +213,19 @@ export interface CoachSessionProposal {
   objective?: string
   subtype?: SquashSubtype
   runningType?: RunningType
+  targetPaceMin?: string   // e.g. "5:00" — for running
+  targetPaceMax?: string   // e.g. "5:30" — for running
+  targetHrMin?: number
+  targetHrMax?: number
+  exercises?: CoachExerciseProposal[]  // for strength/mobility
 }
 
 export interface CoachAction {
   type: CoachActionType
   sessionId?: string
   targetDate?: string      // for move_session, add_session
-  newRpe?: number          // for change_rpe
-  newDurationMin?: number  // for shorten_session / lengthen_session
+  newRpe?: number          // for change_rpe, update_session
+  newDurationMin?: number  // for shorten_session / lengthen_session / update_session
   newType?: SessionType    // for replace_session_type
   reason: string           // always required — explains why
   // Fields for add_session
@@ -219,8 +236,13 @@ export interface CoachAction {
   objective?: string
   subtype?: SquashSubtype
   runningType?: RunningType
-  // Field for create_week
+  // Fields for create_week
   sessions?: CoachSessionProposal[]
+  weekObjectives?: string[]
+  // Fields for update_session
+  newTitle?: string
+  newObjective?: string
+  exercises?: CoachExerciseProposal[]  // replace full exercise list
 }
 
 export interface CoachProposal {

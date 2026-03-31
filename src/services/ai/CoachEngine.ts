@@ -63,7 +63,7 @@ export const CoachEngine = {
     const raw = await provider.call({
       systemPrompt,
       userMessage,
-      maxTokens: options?.maxTokens ?? 1024,
+      maxTokens: options?.maxTokens ?? 3000,
       temperature: options?.temperature ?? 0.7,
     })
 

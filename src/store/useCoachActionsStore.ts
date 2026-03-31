@@ -2,6 +2,8 @@ import { create } from 'zustand'
 import type { CoachProposal, CoachAction } from '../types'
 import { v4 as uuid } from '../utils/uuid'
 import { useTrainingStore } from './useTrainingStore'
+import { upsertWeekSummary } from '../db/queries'
+import { toISO, fromISO, getWeekStart } from '../utils/date'
 
 // ─── DB extension needed in future migration — for now proposals are in-memory
 // In a future db.ts v4 migration, add: coachProposals: 'id, status, createdAt'
@@ -145,6 +147,7 @@ async function applyCoachAction(
         rpe: action.newRpe,
         objective: action.objective,
         status: 'planned',
+        exercises: action.exercises?.map(ex => ({ ...ex, id: uuid(), completed: false })),
         runningDetails: action.runningType
           ? { runningType: action.runningType }
           : undefined,
@@ -167,10 +170,22 @@ async function applyCoachAction(
           rpe: s.rpe,
           objective: s.objective,
           status: 'planned',
-          runningDetails: s.runningType
-            ? { runningType: s.runningType }
-            : undefined,
+          exercises: s.exercises?.map(ex => ({ ...ex, id: uuid(), completed: false })),
+          runningDetails: s.runningType ? {
+            runningType: s.runningType,
+            targetPaceMin: s.targetPaceMin,
+            targetPaceMax: s.targetPaceMax,
+            targetHrMin: s.targetHrMin,
+            targetHrMax: s.targetHrMax,
+          } : undefined,
         })
+      }
+      // Set week objectives if provided
+      if (action.weekObjectives && action.weekObjectives.length > 0) {
+        const weekStart = toISO(getWeekStart(fromISO(action.sessions[0].date)))
+        await upsertWeekSummary(weekStart, { objectives: action.weekObjectives })
+        // Reload week to pick up objectives in store
+        await store.loadWeek(weekStart)
       }
       break
     }
@@ -178,6 +193,21 @@ async function applyCoachAction(
     case 'delete_session': {
       if (!action.sessionId) throw new Error('sessionId required')
       await store.deleteSession(resolveSessionId(action.sessionId, store))
+      break
+    }
+
+    case 'update_session': {
+      if (!action.sessionId) throw new Error('sessionId required')
+      const id = resolveSessionId(action.sessionId, store)
+      const patch: Record<string, unknown> = {}
+      if (action.newTitle != null) patch.title = action.newTitle
+      if (action.newObjective != null) patch.objective = action.newObjective
+      if (action.newRpe != null) patch.rpe = action.newRpe
+      if (action.newDurationMin != null) patch.durationMin = action.newDurationMin
+      if (Array.isArray(action.exercises)) {
+        patch.exercises = action.exercises.map(ex => ({ ...ex, id: uuid(), completed: false }))
+      }
+      await store.updateSession(id, patch)
       break
     }
 
