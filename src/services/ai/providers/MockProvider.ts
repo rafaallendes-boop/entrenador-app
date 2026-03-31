@@ -4,7 +4,6 @@
  */
 
 import type { AIProvider, AIRequest, AIRawResponse } from '../types'
-import type { ChatContext } from '../../../types'
 
 export class MockProvider implements AIProvider {
   readonly name = 'mock' as const
@@ -43,7 +42,7 @@ export class MockProvider implements AIProvider {
   }
 }
 
-// ─── Keyword-based reply logic (ported from aiCoach.ts) ───────────────────────
+// ─── Keyword-based reply logic ────────────────────────────────────────────────
 
 function mockReply(userMessage: string, _systemPrompt: string): string {
   const lower = userMessage.toLowerCase()
@@ -94,17 +93,3 @@ function extractContextSummary(systemPrompt: string): string {
   return ''
 }
 
-// ─── Legacy adapter — keeps aiCoach.ts working unchanged ──────────────────────
-
-export function mockCoachResponseLegacy(
-  userMessage: string,
-  context: ChatContext,
-): { message: string } {
-  const recentCompleted = context.recentSessions.filter(s => s.status === 'completed')
-  const lastType = recentCompleted[recentCompleted.length - 1]?.type
-  const contextHint = lastType
-    ? `SEMANA ACTUAL. Última sesión completada: ${lastType}.`
-    : ''
-  const reply = mockReply(userMessage, contextHint)
-  return { message: reply }
-}

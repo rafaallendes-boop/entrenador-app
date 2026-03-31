@@ -209,16 +209,6 @@ export default function ImportPDF() {
       <PageHeader title="Importar PDF" backTo={ROUTES.WEEK} />
 
       <div className="px-4 pb-8 space-y-4">
-        {/* Version notice */}
-        <div className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/25 rounded-xl p-3">
-          <AlertTriangle size={14} className="text-amber-400 flex-shrink-0 mt-0.5" />
-          <p className="text-xs text-amber-200/80 leading-relaxed">
-            <span className="font-semibold">Versión 1 — experimental.</span> La lectura automática funciona solo con PDFs de texto
-            (no escaneados). Revisa y edita cada sesión detectada antes de importar.
-            Si la detección es incorrecta, puedes añadir sesiones manualmente.
-          </p>
-        </div>
-
         {/* Upload area */}
         {(status === 'idle' || status === 'loading') && (
           <div

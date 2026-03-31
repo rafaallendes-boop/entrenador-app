@@ -198,10 +198,6 @@ export async function importFromPDF(
     throw new Error('El PDF es demasiado grande (máx 10 MB)')
   }
 
-  warnings.push(
-    'Versión 1: la lectura automática de PDF es experimental. Revisa todos los campos antes de importar.'
-  )
-
   let rawText = ''
   try {
     rawText = await extractTextFromPDF(file)
