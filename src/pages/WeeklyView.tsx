@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Download, Plus, FileUp } from 'lucide-react'
+import { Download, Plus, FileUp, Sparkles } from 'lucide-react'
 import { useTrainingStore } from '../store/useTrainingStore'
 import { useUIStore } from '../store/useUIStore'
 import { formatFullDate, fromISO, getWeekDays, toISO, isDateToday } from '../utils/date'
@@ -35,6 +35,7 @@ export default function WeeklyView() {
   })
 
   const selectedDayData = dayData.find(d => d.iso === selectedDate) ?? dayData[0]
+  const isWeekEmpty = sessions.length === 0
 
   const handleExport = () => {
     downloadICS(sessions, `entrenador-${currentWeekStart}.ics`)
@@ -46,30 +47,43 @@ export default function WeeklyView() {
       <div className="pt-12 px-4 pb-2 flex items-center justify-between">
         <h1 className="text-xl font-bold text-ink">Semana</h1>
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => navigate(ROUTES.IMPORT)}
-            title="Importar planificación desde PDF"
-            className="flex items-center gap-1.5 text-xs text-ink-muted hover:text-ink px-3 py-1.5 rounded-lg bg-surface-raised border border-surface-border hover:border-brand/40 transition-colors"
-          >
-            <FileUp size={13} />
-            <span>PDF</span>
-          </button>
-          <button
-            onClick={handleExport}
-            title="Exportar semana a calendario"
-            className="flex items-center gap-1.5 text-xs text-ink-muted hover:text-ink px-3 py-1.5 rounded-lg bg-surface-raised border border-surface-border hover:border-brand/40 transition-colors"
-          >
-            <Download size={13} />
-            <span>Exportar</span>
-          </button>
-          <button
-            onClick={() => setShowAddModal(true)}
-            title="Agregar sesión"
-            className="flex items-center gap-1.5 text-xs text-white px-3 py-1.5 rounded-lg bg-brand hover:bg-brand-light transition-colors active:scale-95"
-          >
-            <Plus size={13} />
-            <span>Agregar</span>
-          </button>
+          {isWeekEmpty ? (
+            <button
+              onClick={() => navigate(ROUTES.CHAT)}
+              title="Pedir al coach que cree tu semana"
+              className="flex items-center gap-1.5 text-xs text-white px-4 py-2 rounded-lg bg-brand hover:bg-brand-light transition-colors active:scale-95 font-medium"
+            >
+              <Sparkles size={14} />
+              <span>Crear semana</span>
+            </button>
+          ) : (
+            <>
+              <button
+                onClick={() => navigate(ROUTES.IMPORT)}
+                title="Importar planificación desde PDF"
+                className="flex items-center gap-1.5 text-xs text-ink-muted hover:text-ink px-3 py-1.5 rounded-lg bg-surface-raised border border-surface-border hover:border-brand/40 transition-colors"
+              >
+                <FileUp size={13} />
+                <span>PDF</span>
+              </button>
+              <button
+                onClick={handleExport}
+                title="Exportar semana a calendario"
+                className="flex items-center gap-1.5 text-xs text-ink-muted hover:text-ink px-3 py-1.5 rounded-lg bg-surface-raised border border-surface-border hover:border-brand/40 transition-colors"
+              >
+                <Download size={13} />
+                <span>Exportar</span>
+              </button>
+              <button
+                onClick={() => setShowAddModal(true)}
+                title="Agregar sesión"
+                className="flex items-center gap-1.5 text-xs text-white px-3 py-1.5 rounded-lg bg-brand hover:bg-brand-light transition-colors active:scale-95"
+              >
+                <Plus size={13} />
+                <span>Agregar</span>
+              </button>
+            </>
+          )}
         </div>
       </div>
 

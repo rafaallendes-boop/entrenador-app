@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { CheckCircle2, X, Zap, MoreHorizontal } from 'lucide-react'
 import { useChatStore } from '../store/useChatStore'
 import { useCoachActionsStore } from '../store/useCoachActionsStore'
@@ -10,6 +11,7 @@ import ChatInput from '../components/chat/ChatInput'
 import QuickActionChips from '../components/chat/QuickActionChips'
 import Spinner from '../components/ui/Spinner'
 import type { ChatContext, CoachProposal } from '../types'
+import { ROUTES } from '../constants/routes'
 
 // ─── Coach action types (display labels) ──────────────────────────────────────
 
@@ -250,6 +252,7 @@ function ProviderBadge({ providerName }: { providerName: string }) {
 // ─── Main page ─────────────────────────────────────────────────────────────────
 
 export default function ChatCoach() {
+  const navigate = useNavigate()
   const { messages, isLoading, error, loadHistory, sendMessage, newSession, deleteCurrentSession } = useChatStore()
   const { proposals, acceptProposal, rejectProposal } = useCoachActionsStore()
   const { sessions, currentWeekSummary, dayLogs, loadWeek } = useTrainingStore()
@@ -310,6 +313,8 @@ export default function ChatCoach() {
         .map(([t, n]) => `${n} ${SESSION_TYPE_LABEL[t] ?? t}`)
         .join(', ')
       setAcceptedFeedback(`Listo. Semana creada con ${count} sesiones: ${typeStr}.`)
+      // Navigate to week view after create_week
+      setTimeout(() => navigate(ROUTES.WEEK), 500)
     } else {
       const addAction = proposal.actions.find(a => a.type === 'add_session')
       const updateAction = proposal.actions.find(a => a.type === 'update_session')
