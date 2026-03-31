@@ -39,11 +39,13 @@ const SESSION_TYPE_LABEL: Record<string, string> = {
 
 function ProposalDrawer({
   proposal,
+  existingSessions,
   onAccept,
   onReject,
   onClose,
 }: {
   proposal: CoachProposal
+  existingSessions: ChatContext['recentSessions']
   onAccept: () => void
   onReject: () => void
   onClose: () => void
@@ -51,6 +53,14 @@ function ProposalDrawer({
   // Count total sessions for create_week proposals
   const createWeekAction = proposal.actions.find(a => a.type === 'create_week')
   const totalSessions = createWeekAction?.sessions?.length ?? 0
+  const collisions = createWeekAction?.sessions
+    ?.filter(session =>
+      existingSessions.some(existing =>
+        existing.date === session.date && existing.timeBlock === session.timeBlock
+      )
+    )
+    .map(session => `${session.date} ${session.timeBlock}`)
+    .filter((value, index, array) => array.indexOf(value) === index) ?? []
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col justify-end">
@@ -75,6 +85,15 @@ function ProposalDrawer({
 
         <div className="px-4 py-4 space-y-4">
           <p className="text-xs text-ink-muted leading-relaxed">{proposal.message}</p>
+
+          {collisions.length > 0 && (
+            <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-2">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-300">Colisiones detectadas</p>
+              <p className="mt-1 text-xs text-amber-100/80 leading-relaxed">
+                Ya existen sesiones en: {collisions.join(', ')}. Si aceptas, la semana se creará igual y podrías terminar con duplicados.
+              </p>
+            </div>
+          )}
 
           <div className="space-y-2">
             {proposal.actions.map((action, i) => (
@@ -494,6 +513,7 @@ export default function ChatCoach() {
       {activeProposal && (
         <ProposalDrawer
           proposal={activeProposal}
+          existingSessions={sessions}
           onAccept={handleAccept}
           onReject={handleReject}
           onClose={() => setActiveProposal(null)}

@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom'
-import { Home, CalendarDays, MessageCircle, Clock } from 'lucide-react'
+import { Home, CalendarDays, MessageCircle, Clock, Settings } from 'lucide-react'
 import { ROUTES } from '../../constants/routes'
 
 const tabs = [
@@ -7,6 +7,7 @@ const tabs = [
   { to: ROUTES.WEEK,    label: 'Semana',   Icon: CalendarDays },
   { to: ROUTES.CHAT,    label: 'Coach',    Icon: MessageCircle },
   { to: ROUTES.HISTORY, label: 'Historial', Icon: Clock },
+  { to: ROUTES.SETTINGS, label: 'Ajustes', Icon: Settings },
 ]
 
 export default function BottomNav() {

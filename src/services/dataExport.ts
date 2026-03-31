@@ -9,6 +9,8 @@ export interface AppDataExport {
     dayLogs: unknown[]
     weekSummaries: unknown[]
     chatMessages: unknown[]
+    coachProposals: unknown[]
+    athleteProfiles: unknown[]
   }
 }
 
@@ -19,11 +21,13 @@ function buildFilename(exportedAt: Date): string {
 
 export async function exportAppData(): Promise<{ filename: string; json: string }> {
   const exportedAt = new Date()
-  const [sessions, dayLogs, weekSummaries, chatMessages] = await Promise.all([
+  const [sessions, dayLogs, weekSummaries, chatMessages, coachProposals, athleteProfiles] = await Promise.all([
     db.sessions.toArray(),
     db.dayLogs.toArray(),
     db.weekSummaries.toArray(),
     db.chatMessages.toArray(),
+    db.coachProposals.toArray(),
+    db.athleteProfiles.toArray(),
   ])
 
   const payload: AppDataExport = {
@@ -35,6 +39,8 @@ export async function exportAppData(): Promise<{ filename: string; json: string 
       dayLogs,
       weekSummaries,
       chatMessages,
+      coachProposals,
+      athleteProfiles,
     },
   }
 

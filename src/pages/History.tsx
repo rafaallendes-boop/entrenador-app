@@ -1,67 +1,25 @@
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Download, TrendingDown, TrendingUp, Weight, Zap, Wind, Dumbbell } from 'lucide-react'
+import { TrendingDown, TrendingUp, Weight, Zap, Wind, Dumbbell } from 'lucide-react'
 import { useTrainingStore } from '../store/useTrainingStore'
 import { useUIStore } from '../store/useUIStore'
 import { formatWeekRange, fromISO } from '../utils/date'
 import WeekSummaryCard from '../components/week/WeekSummaryCard'
 import { ROUTES } from '../constants/routes'
-import Card from '../components/ui/Card'
-import { downloadAppDataExport } from '../services/dataExport'
 
 export default function History() {
   const { allWeekSummaries, loadAllSummaries } = useTrainingStore()
   const { setCurrentWeekStart, setSelectedDate } = useUIStore()
   const navigate = useNavigate()
-  const [isExporting, setIsExporting] = useState(false)
-  const [exportStatus, setExportStatus] = useState<string | null>(null)
 
   useEffect(() => {
     loadAllSummaries()
   }, [loadAllSummaries])
 
-  const handleExport = async () => {
-    setIsExporting(true)
-    setExportStatus(null)
-    try {
-      const filename = await downloadAppDataExport()
-      setExportStatus(`Backup exportado: ${filename}`)
-    } catch (error) {
-      const message = error instanceof Error
-        ? error.message
-        : 'No se pudo exportar el backup.'
-      setExportStatus(message)
-    } finally {
-      setIsExporting(false)
-    }
-  }
-
   return (
     <div className="px-4 pt-12 pb-8">
       <h1 className="text-xl font-bold text-ink mb-1">Historial</h1>
       <p className="text-sm text-ink-muted mb-5">Tus semanas de entrenamiento</p>
-
-      <Card className="p-4 mb-5">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h2 className="text-sm font-semibold text-ink">Backup JSON</h2>
-            <p className="text-xs text-ink-muted mt-1 leading-relaxed">
-              Exporta sesiones, check-ins, resúmenes semanales y chat a un JSON descargable.
-            </p>
-          </div>
-          <button
-            onClick={handleExport}
-            disabled={isExporting}
-            className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-brand text-white text-sm font-semibold hover:bg-brand-light disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
-          >
-            <Download size={14} />
-            {isExporting ? 'Exportando...' : 'Exportar'}
-          </button>
-        </div>
-        {exportStatus && (
-          <p className="text-xs text-ink-muted mt-3">{exportStatus}</p>
-        )}
-      </Card>
 
       {allWeekSummaries.length === 0 ? (
         <div className="text-center py-12">

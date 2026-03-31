@@ -1,7 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTrainingStore } from '../store/useTrainingStore'
-import { useCoachMemoryStore } from '../store/useCoachMemoryStore'
 import { todayISO, formatFullDate, currentWeekStartISO } from '../utils/date'
 import { ROUTES } from '../constants/routes'
 import WeekStrip from '../components/week/WeekStrip'
@@ -16,19 +15,12 @@ import { getDayNutrition } from '../services/nutritionEngine'
 
 export default function Dashboard() {
   const { sessions, currentWeekSummary, loadWeek } = useTrainingStore()
-  const { coachMemory, isSaving, loadMemory, saveMemory } = useCoachMemoryStore()
   const navigate = useNavigate()
   const today = todayISO()
-  const [memoryDraft, setMemoryDraft] = useState('')
 
   useEffect(() => {
     loadWeek(currentWeekStartISO())
-    loadMemory()
-  }, [loadWeek, loadMemory])
-
-  useEffect(() => {
-    setMemoryDraft(coachMemory)
-  }, [coachMemory])
+  }, [loadWeek])
 
   const todaySessions = sessions.filter(s => s.date === today)
   const completedToday = todaySessions.filter(s => s.status === 'completed').length
@@ -61,33 +53,6 @@ export default function Dashboard() {
 
       {/* Coach message */}
       <CoachMessageCard message={coachNote} />
-
-      <Card className="p-4">
-        <div className="flex items-start justify-between gap-4 mb-3">
-          <div>
-            <h2 className="text-sm font-semibold text-ink">Memoria del coach</h2>
-            <p className="text-xs text-ink-muted mt-1 leading-relaxed">
-              Datos persistentes que el coach debe considerar siempre: lesiones, preferencias, torneos o restricciones.
-            </p>
-          </div>
-        </div>
-        <textarea
-          value={memoryDraft}
-          onChange={(e) => setMemoryDraft(e.target.value)}
-          rows={4}
-          placeholder="Ej: molestia rodilla derecha desde febrero, priorizar squash, evitar fuerza pesada el día antes de partido..."
-          className="w-full rounded-xl bg-surface-raised border border-surface-border px-3 py-2.5 text-sm text-ink placeholder:text-ink-faint resize-none focus:outline-none focus:ring-2 focus:ring-brand/40"
-        />
-        <div className="mt-3 flex justify-end">
-          <button
-            onClick={() => void saveMemory(memoryDraft)}
-            disabled={isSaving}
-            className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-brand text-white text-sm font-semibold hover:bg-brand-light disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
-          >
-            {isSaving ? 'Guardando...' : 'Guardar memoria'}
-          </button>
-        </div>
-      </Card>
 
       {/* Daily check-in — only show if there are sessions today or it's today */}
       <DailyCheckInCard todaySessions={todaySessions} />

@@ -10,6 +10,10 @@ export function setStoredChatSessionId(id: string): void {
   localStorage.setItem(CHAT_SESSION_KEY, id)
 }
 
+export function clearStoredChatSessionId(): void {
+  localStorage.removeItem(CHAT_SESSION_KEY)
+}
+
 export function getOrCreateChatSessionId(): string {
   const existing = getStoredChatSessionId()
   if (existing) return existing

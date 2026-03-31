@@ -109,6 +109,11 @@ El estado general es: **MVP funcional con coach planner ya operativo, multi-sesi
 - `Dashboard.tsx`: UI para editar la memoria persistente del coach
 - `promptBuilder.ts`: nuevas secciones opcionales para memoria del atleta y registros de la semana
 
+**Settings mínima**
+- Nueva pantalla `SettingsPage.tsx`
+- Agrupa backup JSON, memoria del coach, limpieza de datos locales e info de app/provider
+- `History` queda enfocado en historial semanal y `Dashboard` vuelve a centrarse en operación diaria
+
 ---
 
 ### 3.1 Capa AI multi-proveedor
@@ -301,7 +306,10 @@ Estado: ✅ COMPLETADO
 
 **Pantalla Settings mínima**
 - Export JSON, Clear all data (con confirmación), info de versión
+- Memoria del coach también centralizada en la misma vista
 - Esfuerzo: 1–2h
+
+Estado: ✅ COMPLETADO
 
 **C3 — Resumen semanal generado por el coach** ✅ COMPLETADO
 - Botón en WeeklyView que le pide al coach un resumen de la semana
@@ -373,7 +381,7 @@ Estado: ✅ COMPLETADO
 | C5 — Streaming de respuesta | Alto | Medio | 3 | ⏳ |
 | PDF import v1.1 (pdfjs-dist) | Alto | Medio | 3 | ⏳ |
 | Notificaciones de sesión | Alto | Medio | 3 | ⏳ |
-| Pantalla Settings | Bajo | Bajo | 3 | ⏳ |
+| Pantalla Settings | Bajo | Bajo | 3 | ✅ Hecho |
 | PDF import v2 (Gemini API) | Alto | Medio-alto | 4 | ⏳ |
 | Sync backend multi-dispositivo | Alto | Muy alto | 4 | ⏳ |
 | Modo torneo | Alto | Muy alto | 4 | ⏳ |
