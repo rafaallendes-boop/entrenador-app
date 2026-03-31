@@ -1,7 +1,7 @@
 # Entrenador App — Project Review & Roadmap
 
 Generado: 2026-03-30
-Última revisión: 2026-03-30 (sesión 4)
+Última revisión: 2026-03-31 (sesión 5)
 Revisado por: Claude Sonnet 4.6
 
 ---
@@ -12,7 +12,7 @@ Revisado por: Claude Sonnet 4.6
 
 Entrenador es una PWA React personal bien estructurada y en activo desarrollo. En esta segunda revisión el salto más grande fue la capa AI: pasó de un stub con mock responses a una abstracción multi-proveedor funcional con proxy server-side, Gemini, Claude y OpenAI listos para usar. El flujo completo coach → propuesta → ejecución ya opera end-to-end.
 
-El estado general es: **MVP funcional con capa AI real disponible vía proxy/Netlify, deuda técnica baja, base técnica sólida para seguir creciendo.**
+El estado general es: **MVP funcional con coach planner ya operativo, multi-sesión de chat, capa AI real vía proxy/Netlify y una base técnica sólida para seguir creciendo.**
 
 ### Fortalezas consolidadas
 
@@ -23,6 +23,8 @@ El estado general es: **MVP funcional con capa AI real disponible vía proxy/Net
 - **Capa AI multi-proveedor**: Proxy, Gemini, Claude, OpenAI — switch por env var en local, sin cambiar código
 - **Sistema de propuestas del coach**: acción estructurada → ProposalDrawer → ejecución real en el store
 - **Prompt rico y contextual**: incluye semana actual, sesiones con IDs, day log, historial de chat
+- **Coach planner más robusto**: `create_week`, `add_session`, `update_session`, ejercicios, running details y objetivos semanales ya soportados
+- **Chat multi-sesión**: nuevo chat, borrar conversación y persistencia por `chatSessionId`
 - **Build seguro para Netlify**: producción usa `ProxyProvider`; la API key vive solo en la función server-side
 - **ICS export funcional**: integración con calendarios externos
 - **DailyCheckInCard**: captura energía, sueño, dolor y RPE desde el Dashboard
@@ -44,6 +46,13 @@ El estado general es: **MVP funcional con capa AI real disponible vía proxy/Net
 | B9 | `AddSessionModal.tsx:101` — `typeLabels` useMemo duplicaba exactamente `TYPE_LABELS` con mismos valores, forzando dep extra en useEffect (`[type, typeLabels]`) | Baja | ✅ Corregido (eliminado useMemo, useEffect usa `TYPE_LABELS` directo) |
 | B10 | `AddSessionModal.tsx:489,498,569` — Typo "Anadir" (falta ñ) en tres botones de UI | Baja | ✅ Corregido → "Añadir" |
 | B11 | `QuickActionChips.tsx` — Los chips no incluían "Crear semana" tras implementar el modo planner; chips de "priorizar" enviaban prompt de ajuste en vez de creación | Baja | ✅ Corregido (agregado chip "Crear semana", prompts de "priorizar" actualizados a `create_week`) |
+| B12 | `<actions>` aparecía visible en el chat por code fences alrededor del bloque técnico | Media | ✅ Corregido |
+| B13 | `create_week` se truncaba: semana incompleta, sin ejercicios ni objetivos | Alta | ✅ Corregido |
+| B14 | No existía `update_session`; imposible modificar ejercicios desde el coach | Alta | ✅ Corregido |
+| B15 | Running perdía ritmo/FC al crear o agregar sesiones | Media | ✅ Corregido |
+| B16 | Objetivos semanales no se persistían desde `create_week` | Media | ✅ Corregido |
+| B17 | Migración a chat multi-sesión dejaba el historial previo inaccesible | Alta | ✅ Corregido |
+| B18 | `add_session` tenía contrato inconsistente (`rpe` vs `newRpe`, running details incompletos) | Media | ✅ Corregido |
 
 ---
 
@@ -64,6 +73,28 @@ El estado general es: **MVP funcional con capa AI real disponible vía proxy/Net
 - B9 `AddSessionModal.tsx`: `typeLabels` useMemo duplicado eliminado
 - B10 `AddSessionModal.tsx`: typos "Anadir" → "Añadir" (×3)
 - B11 `QuickActionChips.tsx`: chip "Crear semana" agregado, prompts de "priorizar" actualizados
+
+---
+
+### 3.0.1 Sesión 5 — Estabilidad, multi-sesión y contrato del coach (2026-03-31)
+
+**Planner más estable y con datos más ricos**
+- `responseNormalizer.ts`: strip robusto de code fences y limpieza global de `<actions>`
+- `CoachEngine.ts`: `maxTokens` subido a `3000` para evitar truncado en `create_week`
+- `types/index.ts`: `update_session`, `CoachExerciseProposal`, `weekObjectives`, running details completos, `rpe` explícito para `add_session`
+- `useCoachActionsStore.ts`: executor para `update_session`; `create_week` y `add_session` ahora persisten ejercicios, pace/HR y objetivos semanales
+- `ChatCoach.tsx`: drawer enriquecido para `create_week` y `update_session`, feedback más claro al aceptar propuestas
+
+**Chat multi-sesión usable**
+- `useChatStore.ts`: `currentSessionId` persistido, `newSession()` y `deleteCurrentSession()`
+- `db.ts`: migración v5 con backfill de `chatSessionId` para no perder visibilidad del historial anterior
+- `WeeklyView.tsx`: CTA "Crear semana" cuando la semana está vacía
+- `ChatCoach.tsx`: auto-navegación a `/week` tras aceptar `create_week`
+
+**Prompt mejorado**
+- `promptBuilder.ts`: reglas más fuertes de decisión de carga, fatiga, lesión y sesión clave
+- Se eliminó la restricción artificial de máximo 3 líneas conversacionales
+- Se mantuvo obligación de usar `<actions>` cuando el usuario pide cambios reales
 
 ---
 
@@ -117,7 +148,7 @@ El estado general es: **MVP funcional con capa AI real disponible vía proxy/Net
 
 **Arquitectura AI**: El diseño de `CoachEngine` + providers es limpio. Cambiar de proveedor es un cambio de env var, no de código. El contrato `AIProvider.call()` es minimalista y correcto.
 
-**Prompt builder**: Rico sin ser verboso. Los IDs cortos de 8 chars son una buena decisión de tokens. El historial de chat en contexto (3 mensajes) da continuidad sin inflar el prompt.
+**Prompt builder**: Rico sin ser verboso. Los IDs cortos de 8 chars son una buena decisión de tokens. El historial de chat en contexto da continuidad sin inflar el prompt y ahora el coach tiene mejores reglas para decidir carga.
 
 **ProposalDrawer**: Bien integrado. El flujo completo (mensaje del coach → propuesta → drawer → ejecución) funciona end-to-end y es la funcionalidad más valiosa de la app.
 
@@ -125,10 +156,10 @@ El estado general es: **MVP funcional con capa AI real disponible vía proxy/Net
 
 ### Deuda técnica menor
 
-1. **Documentación desalineada**: el roadmap todavía menciona `mock`/Gemini directo en producción, pero el código actual usa `proxy`.
-2. **Propuestas sin persistencia**: `useCoachActionsStore` es in-memory. Si se recarga la app, las propuestas pendientes desaparecen. Aceptable por ahora.
+1. **Propuestas sin persistencia**: `useCoachActionsStore` es in-memory. Si se recarga la app, las propuestas pendientes desaparecen.
+2. **Chat multi-turno sigue siendo aproximado**: se mandan últimos mensajes serializados dentro del prompt, no como conversación nativa del proveedor.
 3. **Código legacy AI**: `src/services/aiCoach.ts` sigue presente como compat layer y agrega ruido al mantenimiento.
-4. **Sin validación automática en este entorno**: no fue posible correr `build`/`lint` aquí porque `node`/`npm` no están disponibles en PATH.
+4. **UX menor en WeeklyView**: el CTA de semana vacía todavía puede hacer flicker mientras `loadWeek()` resuelve.
 
 ---
 
@@ -136,7 +167,7 @@ El estado general es: **MVP funcional con capa AI real disponible vía proxy/Net
 
 Las mejoras están ordenadas para ir de a poco: baja fricción, alto impacto primero.
 
-> **Estado al 2026-03-30:** Ola 1 completada. Netlify sin créditos hasta 2026-04-13 — trabajo en local hasta entonces.
+> **Estado al 2026-03-31:** Ola 1, Ola 2 y parte de Ola 2.2 ya completadas. El foco ahora debería estar en consolidar persistencia/UX del coach antes de abrir frentes grandes.
 
 ### Ola 1 — Bugs y pulido ✅ COMPLETADA (2026-03-30)
 
@@ -212,21 +243,19 @@ Estas mejoras extienden lo implementado en la Ola 2 con poco esfuerzo incrementa
 - Si hay colisión: notificar al usuario en el AcceptedBanner ("Nota: el lunes ya tenía una sesión")
 - Esfuerzo: 1h
 
-**D2 — Propuesta de semana en WeeklyView**
-- Botón "Pedir semana al coach" en WeeklyView cuando la semana está vacía
-- Navega al Coach con el prompt preescrito "Créame una semana de entrenamiento"
-- Evita que el usuario tenga que saber que puede pedírselo
-- Esfuerzo: 30min
+**D2 — Propuesta de semana en WeeklyView** ✅ COMPLETADO
+- Botón "Crear semana" en WeeklyView cuando la semana está vacía
+- Navega al Coach para iniciar el flujo con el planner
+- Reduce fricción de descubrimiento del feature
 
 **D3 — Persistencia de CoachProposals en Dexie**
 - Agregar tabla `coachProposals` en db.ts (versión 4 de migración)
 - Las propuestas pending sobreviven recargas de la app
 - Esfuerzo: 1-2h
 
-**D4 — Confirmación de create_week navega a WeeklyView**
-- Después de aceptar una propuesta de tipo `create_week`, navegar automáticamente a `/week`
-- El usuario ve su semana creada de inmediato sin tener que navegar manualmente
-- Esfuerzo: 30min
+**D4 — Confirmación de create_week navega a WeeklyView** ✅ COMPLETADO
+- Después de aceptar una propuesta de tipo `create_week`, navega automáticamente a `/week`
+- El usuario ve la semana creada de inmediato
 
 **D5 — Historial de chat multi-turno real**
 - Hoy: últimos 4 mensajes como texto plano en el system prompt
@@ -314,11 +343,15 @@ Estas mejoras extienden lo implementado en la Ola 2 con poco esfuerzo incrementa
 | Estadísticas de partido squash | Alto | Medio | 2 | ✅ Hecho |
 | Coach crea/agrega sesiones reales | Alto | Alto | 2 | ✅ Hecho |
 | B8-B11 — Bugs normalización | Bajo | Mínimo | 4 | ✅ Hecho |
+| B12-B16 — Estabilidad planner | Alto | Bajo-medio | 2.2 | ✅ Hecho |
+| B17 — Migración chat multi-sesión | Alto | Bajo | 2.2 | ✅ Hecho |
+| B18 — Contrato `add_session` alineado | Medio | Bajo | 2.2 | ✅ Hecho |
 | D1 — Detección colisiones create_week | Medio | Mínimo | 2.2 | ⏳ |
-| D2 — Botón "Pedir semana" en WeeklyView | Alto | Mínimo | 2.2 | ⏳ |
+| D2 — Botón "Pedir semana" en WeeklyView | Alto | Mínimo | 2.2 | ✅ Hecho |
 | D3 — Persistir proposals en Dexie | Medio | Bajo | 2.2 | ⏳ |
-| D4 — Navegar a WeeklyView tras create_week | Alto | Mínimo | 2.2 | ⏳ |
+| D4 — Navegar a WeeklyView tras create_week | Alto | Mínimo | 2.2 | ✅ Hecho |
 | D5 — Chat multi-turno real | Alto | Medio | 2.2 | ⏳ |
+| UX — Evitar flicker semana vacía en WeeklyView | Medio | Mínimo | 2.2 | ⏳ |
 | Vista historial partidos | Medio | Bajo | 2.1 | ⏳ |
 | C3 — Resumen semanal del coach | Alto | Medio | 3 | ⏳ |
 | C4 — Memoria del coach | Alto | Medio | 3 | ⏳ |
@@ -358,6 +391,12 @@ Estas mejoras extienden lo implementado en la Ola 2 con poco esfuerzo incrementa
 - El prompt incluye los últimos 3 mensajes como texto plano en el system prompt, no como `contents[]` multi-turn.
 - Gemini soporta multi-turn nativamente. Usar la API correctamente daría mejor continuidad.
 - **Decisión actual**: simple y funcional. Ola 3 lo mejora con `contents[]` real.
+
+### CTA de semana vacía aún depende de carga asíncrona
+
+- `WeeklyView` usa `sessions.length === 0` para mostrar "Crear semana".
+- Durante el primer render puede verse el CTA antes de que `loadWeek()` complete.
+- **Decisión actual**: aceptable para cerrar el feature; conviene corregirlo con un flag `weekLoaded` o con `isLoading`.
 
 ### PDF import v1 muy limitado
 

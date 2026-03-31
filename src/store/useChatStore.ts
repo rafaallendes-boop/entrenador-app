@@ -60,7 +60,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       // If the model returned structured actions, create a proposal automatically
       let proposalId: string | undefined
       if (response.actions && response.actions.length > 0) {
-        const proposal = useCoachActionsStore.getState().addProposal(
+        const proposal = await useCoachActionsStore.getState().addProposal(
           response.message.slice(0, 120) + (response.message.length > 120 ? '…' : ''),
           response.actions,
         )

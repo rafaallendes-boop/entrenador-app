@@ -13,7 +13,7 @@ import type { TimeBlock } from '../types'
 import { downloadICS } from '../utils/ics'
 
 export default function WeeklyView() {
-  const { sessions, currentWeekSummary, isLoading, loadWeek } = useTrainingStore()
+  const { sessions, currentWeekSummary, isLoading, loadedWeekStart, loadWeek } = useTrainingStore()
   const { currentWeekStart, selectedDate } = useUIStore()
   const [showAddModal, setShowAddModal] = useState(false)
 
@@ -35,7 +35,8 @@ export default function WeeklyView() {
   })
 
   const selectedDayData = dayData.find(d => d.iso === selectedDate) ?? dayData[0]
-  const isWeekEmpty = sessions.length === 0
+  const weekLoaded = loadedWeekStart === currentWeekStart && !isLoading
+  const isWeekEmpty = weekLoaded && sessions.length === 0
 
   const handleExport = () => {
     downloadICS(sessions, `entrenador-${currentWeekStart}.ics`)

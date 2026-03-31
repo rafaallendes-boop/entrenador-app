@@ -1,26 +1,39 @@
 import { create } from 'zustand'
 import type { CoachProposal, CoachAction } from '../types'
+import { db } from '../db/db'
 import { v4 as uuid } from '../utils/uuid'
 import { useTrainingStore } from './useTrainingStore'
 import { upsertWeekSummary } from '../db/queries'
 import { toISO, fromISO, getWeekStart } from '../utils/date'
 
-// ─── DB extension needed in future migration — for now proposals are in-memory
-// In a future db.ts v4 migration, add: coachProposals: 'id, status, createdAt'
+interface ApplyCoachActionResult {
+  warnings: string[]
+}
+
+interface AcceptProposalResult {
+  errors: string[]
+  warnings: string[]
+}
 
 interface CoachActionsState {
   proposals: CoachProposal[]
 
-  addProposal: (message: string, actions: CoachAction[], chatMessageId?: string) => CoachProposal
-  acceptProposal: (id: string) => Promise<void>
-  rejectProposal: (id: string) => void
+  loadProposals: () => Promise<void>
+  addProposal: (message: string, actions: CoachAction[], chatMessageId?: string) => Promise<CoachProposal>
+  acceptProposal: (id: string) => Promise<AcceptProposalResult>
+  rejectProposal: (id: string) => Promise<void>
   getPendingProposals: () => CoachProposal[]
 }
 
 export const useCoachActionsStore = create<CoachActionsState>((set, get) => ({
   proposals: [],
 
-  addProposal: (message, actions, chatMessageId) => {
+  loadProposals: async () => {
+    const proposals = await db.coachProposals.orderBy('createdAt').toArray()
+    set({ proposals })
+  },
+
+  addProposal: async (message, actions, chatMessageId) => {
     const proposal: CoachProposal = {
       id: uuid(),
       chatMessageId,
@@ -29,48 +42,59 @@ export const useCoachActionsStore = create<CoachActionsState>((set, get) => ({
       status: 'pending',
       createdAt: Date.now(),
     }
+    await db.coachProposals.put(proposal)
     set(state => ({ proposals: [...state.proposals, proposal] }))
     return proposal
   },
 
-  rejectProposal: (id) => {
+  rejectProposal: async (id) => {
+    const proposal = get().proposals.find(p => p.id === id)
+    if (!proposal) return
+
+    const nextProposal = { ...proposal, status: 'rejected' as const, resolvedAt: Date.now() }
+    await db.coachProposals.put(nextProposal)
     set(state => ({
-      proposals: state.proposals.map(p =>
-        p.id === id ? { ...p, status: 'rejected', resolvedAt: Date.now() } : p
-      ),
+      proposals: state.proposals.map(p => (p.id === id ? nextProposal : p)),
     }))
   },
 
   acceptProposal: async (id) => {
     const proposal = get().proposals.find(p => p.id === id)
-    if (!proposal || proposal.status !== 'pending') return
+    if (!proposal || proposal.status !== 'pending') {
+      return { errors: [], warnings: [] }
+    }
 
     const trainingStore = useTrainingStore.getState()
     const errors: string[] = []
+    const warnings: string[] = []
 
     for (const action of proposal.actions) {
       try {
-        await applyCoachAction(action, trainingStore)
+        const result = await applyCoachAction(action, trainingStore)
+        warnings.push(...result.warnings)
       } catch (e) {
         errors.push(`${action.type}: ${e}`)
       }
     }
 
+    const nextProposal: CoachProposal = {
+      ...proposal,
+      status: errors.length === 0 ? 'accepted' : 'partial',
+      resolvedAt: Date.now(),
+    }
+
+    await db.coachProposals.put(nextProposal)
     set(state => ({
       proposals: state.proposals.map(p =>
-        p.id === id
-          ? {
-              ...p,
-              status: errors.length === 0 ? 'accepted' : 'partial',
-              resolvedAt: Date.now(),
-            }
-          : p
+        p.id === id ? nextProposal : p
       ),
     }))
 
     if (errors.length > 0) {
       console.warn('Some coach actions failed:', errors)
     }
+
+    return { errors, warnings }
   },
 
   getPendingProposals: () => get().proposals.filter(p => p.status === 'pending'),
@@ -81,7 +105,9 @@ export const useCoachActionsStore = create<CoachActionsState>((set, get) => ({
 async function applyCoachAction(
   action: CoachAction,
   store: ReturnType<typeof useTrainingStore.getState>
-): Promise<void> {
+): Promise<ApplyCoachActionResult> {
+  const warnings: string[] = []
+
   switch (action.type) {
     case 'skip_session': {
       if (!action.sessionId) throw new Error('sessionId required')
@@ -165,6 +191,12 @@ async function applyCoachAction(
       if (!action.sessions || action.sessions.length === 0) {
         throw new Error('create_week requires sessions array')
       }
+      const collisions = await findCreateWeekCollisions(action.sessions)
+      if (collisions.length > 0) {
+        warnings.push(
+          `Colisiones detectadas: ${collisions.map(c => `${c.date} ${c.timeBlock}`).join(', ')}`
+        )
+      }
       for (const s of action.sessions) {
         await store.addSession({
           date: s.date,
@@ -220,6 +252,8 @@ async function applyCoachAction(
     default:
       throw new Error(`Unknown action type: ${(action as CoachAction).type}`)
   }
+
+  return { warnings }
 }
 
 function resolveSessionId(
@@ -246,4 +280,19 @@ export function parseProposalFromText(text: string): CoachAction[] {
   // For now returns empty — actions will be manually constructed in Phase 2
   void text
   return []
+}
+
+async function findCreateWeekCollisions(
+  sessions: NonNullable<CoachAction['sessions']>
+): Promise<Array<{ date: string; timeBlock: string }>> {
+  const targetDates = [...new Set(sessions.map(session => session.date))]
+  const existingSessions = await db.sessions.where('date').anyOf(targetDates).toArray()
+
+  return sessions
+    .filter(session =>
+      existingSessions.some(existing =>
+        existing.date === session.date && existing.timeBlock === session.timeBlock
+      )
+    )
+    .map(session => ({ date: session.date, timeBlock: session.timeBlock }))
 }

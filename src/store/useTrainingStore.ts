@@ -21,6 +21,7 @@ interface TrainingState {
   currentWeekSummary: WeekSummary | null
   allWeekSummaries: WeekSummary[]
   isLoading: boolean
+  loadedWeekStart: string | null
 
   loadWeek: (weekStart: string) => Promise<void>
   loadAllSummaries: () => Promise<void>
@@ -38,6 +39,7 @@ export const useTrainingStore = create<TrainingState>((set, get) => ({
   currentWeekSummary: null,
   allWeekSummaries: [],
   isLoading: false,
+  loadedWeekStart: null,
 
   loadWeek: async (weekStart) => {
     set({ isLoading: true })
@@ -55,10 +57,16 @@ export const useTrainingStore = create<TrainingState>((set, get) => ({
       })
 
       const summary = await getWeekSummary(weekStart)
-      set({ sessions, dayLogs, currentWeekSummary: summary ?? null, isLoading: false })
+      set({
+        sessions,
+        dayLogs,
+        currentWeekSummary: summary ?? null,
+        isLoading: false,
+        loadedWeekStart: weekStart,
+      })
     } catch (e) {
       console.error(e)
-      set({ isLoading: false })
+      set({ isLoading: false, loadedWeekStart: weekStart })
     }
   },
 

@@ -254,7 +254,7 @@ function ProviderBadge({ providerName }: { providerName: string }) {
 export default function ChatCoach() {
   const navigate = useNavigate()
   const { messages, isLoading, error, loadHistory, sendMessage, newSession, deleteCurrentSession } = useChatStore()
-  const { proposals, acceptProposal, rejectProposal } = useCoachActionsStore()
+  const { proposals, loadProposals, acceptProposal, rejectProposal } = useCoachActionsStore()
   const { sessions, currentWeekSummary, dayLogs, loadWeek } = useTrainingStore()
   const bottomRef = useRef<HTMLDivElement>(null)
 
@@ -269,8 +269,9 @@ export default function ChatCoach() {
 
   useEffect(() => {
     loadHistory()
+    loadProposals()
     loadWeek(currentWeekStartISO())
-  }, [loadHistory, loadWeek])
+  }, [loadHistory, loadProposals, loadWeek])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -298,11 +299,12 @@ export default function ChatCoach() {
   const handleAccept = async () => {
     if (!activeProposal) return
     const proposal = activeProposal
-    await acceptProposal(proposal.id)
+    const result = await acceptProposal(proposal.id)
     setActiveProposal(null)
 
     // Generate confirmation summary
     const createWeekAction = proposal.actions.find(a => a.type === 'create_week')
+    const warningSuffix = result.warnings.length > 0 ? ` Nota: ${result.warnings.join(' ')}` : ''
     if (createWeekAction?.sessions) {
       const count = createWeekAction.sessions.length
       const typeCounts = createWeekAction.sessions.reduce<Record<string, number>>((acc, s) => {
@@ -312,23 +314,23 @@ export default function ChatCoach() {
       const typeStr = Object.entries(typeCounts)
         .map(([t, n]) => `${n} ${SESSION_TYPE_LABEL[t] ?? t}`)
         .join(', ')
-      setAcceptedFeedback(`Listo. Semana creada con ${count} sesiones: ${typeStr}.`)
+      setAcceptedFeedback(`Listo. Semana creada con ${count} sesiones: ${typeStr}.${warningSuffix}`)
       // Navigate to week view after create_week
       setTimeout(() => navigate(ROUTES.WEEK), 500)
     } else {
       const addAction = proposal.actions.find(a => a.type === 'add_session')
       const updateAction = proposal.actions.find(a => a.type === 'update_session')
       if (addAction?.title) {
-        setAcceptedFeedback(`Sesión "${addAction.title}" agregada${addAction.targetDate ? ` al ${addAction.targetDate}` : ''}.`)
+        setAcceptedFeedback(`Sesión "${addAction.title}" agregada${addAction.targetDate ? ` al ${addAction.targetDate}` : ''}.${warningSuffix}`)
       } else if (updateAction) {
         const parts: string[] = []
         if (updateAction.exercises?.length) parts.push(`${updateAction.exercises.length} ejercicios actualizados`)
         if (updateAction.newObjective) parts.push('objetivo actualizado')
         if (updateAction.newRpe != null) parts.push(`RPE → ${updateAction.newRpe}`)
         if (updateAction.newDurationMin != null) parts.push(`duración → ${updateAction.newDurationMin}min`)
-        setAcceptedFeedback(`Sesión actualizada${parts.length ? ': ' + parts.join(', ') : ''}.`)
+        setAcceptedFeedback(`Sesión actualizada${parts.length ? ': ' + parts.join(', ') : ''}.${warningSuffix}`)
       } else {
-        setAcceptedFeedback(`${proposal.actions.length} cambio${proposal.actions.length > 1 ? 's' : ''} aplicado${proposal.actions.length > 1 ? 's' : ''} correctamente.`)
+        setAcceptedFeedback(`${proposal.actions.length} cambio${proposal.actions.length > 1 ? 's' : ''} aplicado${proposal.actions.length > 1 ? 's' : ''} correctamente.${warningSuffix}`)
       }
     }
 
@@ -337,7 +339,7 @@ export default function ChatCoach() {
 
   const handleReject = () => {
     if (!activeProposal) return
-    rejectProposal(activeProposal.id)
+    void rejectProposal(activeProposal.id)
     setActiveProposal(null)
   }
 
