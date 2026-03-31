@@ -167,7 +167,7 @@ El estado general es: **MVP funcional con coach planner ya operativo, multi-sesi
 - `acceptProposal(id)`: ejecuta cada `CoachAction` contra `useTrainingStore`
 - 7 tipos de acción: `skip_session`, `change_rpe`, `shorten_session`, `lengthen_session`, `move_session`, `replace_session_type`, `insert_recovery`
 
-**ProposalDrawer** (`src/pages/ChatCoach.tsx`)
+**ProposalDrawer** (`src/components/chat/ProposalDrawer.tsx`)
 - Sheet bottom que aparece al tocar "Ver propuesta" en un ChatBubble
 - Muestra cada acción con su tipo, razón y parámetros
 - Botones "Rechazar" / "Aplicar cambios" con feedback visual
@@ -203,7 +203,7 @@ El estado general es: **MVP funcional con coach planner ya operativo, multi-sesi
 
 1. **Código legacy AI**: `src/services/aiCoach.ts` sigue presente como compat layer y agrega ruido al mantenimiento.
 2. **Streaming aún inexistente**: el coach responde completo al final; la percepción de latencia sigue siendo mejorable.
-3. **PDF import v1 sigue limitado**: no usa `pdfjs-dist`; funciona solo con PDFs simples de texto.
+3. **Queda optimizaci?n adicional posible**: todav?a se puede seguir afinando el reparto de chunks en bloques internos del chat y de m?tricas.
 4. **Queda optimización adicional posible**: `date-fns` y algunos bloques del chat todavía podrían separarse más si buscas latencia inicial aún menor.
 
 ---

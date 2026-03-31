@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { CheckCircle2, X, Zap, MoreHorizontal } from 'lucide-react'
+import { CheckCircle2, X, MoreHorizontal } from 'lucide-react'
 import { useChatStore } from '../store/useChatStore'
 import { useCoachActionsStore } from '../store/useCoachActionsStore'
 import { useCoachMemoryStore } from '../store/useCoachMemoryStore'
@@ -15,221 +15,16 @@ import type { ChatContext, CoachProposal } from '../types'
 import { ROUTES } from '../constants/routes'
 
 const QuickActionChips = lazy(() => import('../components/chat/QuickActionChips'))
-
-// ─── Coach action types (display labels) ──────────────────────────────────────
-
-const ACTION_LABEL: Record<string, string> = {
-  skip_session: 'Saltar sesión',
-  change_rpe: 'Cambiar RPE',
-  shorten_session: 'Acortar sesión',
-  lengthen_session: 'Alargar sesión',
-  move_session: 'Mover sesión',
-  replace_session_type: 'Cambiar tipo',
-  insert_recovery: 'Insertar recuperación',
-  add_session: 'Agregar sesión',
-  create_week: 'Crear semana',
-  delete_session: 'Eliminar sesión',
-  update_session: 'Actualizar sesión',
-}
+const ProposalDrawer = lazy(() => import('../components/chat/ProposalDrawer'))
 
 const SESSION_TYPE_LABEL: Record<string, string> = {
-  squash: 'squash', running: 'running', strength: 'fuerza',
-  mobility: 'movilidad', recovery: 'recuperación',
+  squash: 'squash',
+  running: 'running',
+  strength: 'fuerza',
+  mobility: 'movilidad',
+  recovery: 'recuperacion',
 }
 
-// ─── Proposal drawer ───────────────────────────────────────────────────────────
-
-function ProposalDrawer({
-  proposal,
-  existingSessions,
-  onAccept,
-  onReject,
-  onClose,
-}: {
-  proposal: CoachProposal
-  existingSessions: ChatContext['recentSessions']
-  onAccept: () => void
-  onReject: () => void
-  onClose: () => void
-}) {
-  // Count total sessions for create_week proposals
-  const createWeekAction = proposal.actions.find(a => a.type === 'create_week')
-  const totalSessions = createWeekAction?.sessions?.length ?? 0
-  const collisions = createWeekAction?.sessions
-    ?.filter(session =>
-      existingSessions.some(existing =>
-        existing.date === session.date && existing.timeBlock === session.timeBlock
-      )
-    )
-    .map(session => `${session.date} ${session.timeBlock}`)
-    .filter((value, index, array) => array.indexOf(value) === index) ?? []
-
-  return (
-    <div className="fixed inset-0 z-50 flex flex-col justify-end">
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-surface-card rounded-t-2xl border-t border-surface-border max-h-[80vh] overflow-y-auto">
-        <div className="flex justify-center pt-3 pb-1">
-          <div className="w-10 h-1 rounded-full bg-surface-border" />
-        </div>
-        <div className="px-4 py-3 border-b border-surface-border flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Zap size={14} className="text-amber-400" />
-            <h2 className="text-sm font-semibold text-ink">
-              {createWeekAction
-                ? `Semana propuesta · ${totalSessions} sesiones`
-                : 'Propuesta del coach'}
-            </h2>
-          </div>
-          <button onClick={onClose} className="text-ink-faint hover:text-ink p-1">
-            <X size={16} />
-          </button>
-        </div>
-
-        <div className="px-4 py-4 space-y-4">
-          <p className="text-xs text-ink-muted leading-relaxed">{proposal.message}</p>
-
-          {collisions.length > 0 && (
-            <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-2">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-300">Colisiones detectadas</p>
-              <p className="mt-1 text-xs text-amber-100/80 leading-relaxed">
-                Ya existen sesiones en: {collisions.join(', ')}. Si aceptas, la semana se creará igual y podrías terminar con duplicados.
-              </p>
-            </div>
-          )}
-
-          <div className="space-y-2">
-            {proposal.actions.map((action, i) => (
-              <div key={i} className="bg-surface-raised rounded-xl p-3">
-                <div className="flex items-start gap-3">
-                  <span className="text-[10px] font-semibold text-amber-400 uppercase tracking-wider mt-0.5 w-24 flex-shrink-0">
-                    {ACTION_LABEL[action.type] ?? action.type}
-                  </span>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs text-ink-muted">{action.reason}</p>
-
-                    {action.newRpe != null && (
-                      <p className="text-[11px] text-ink-faint mt-0.5">RPE → {action.newRpe}</p>
-                    )}
-                    {action.newDurationMin != null && (
-                      <p className="text-[11px] text-ink-faint mt-0.5">Duración → {action.newDurationMin} min</p>
-                    )}
-                    {action.targetDate != null && action.type === 'move_session' && (
-                      <p className="text-[11px] text-ink-faint mt-0.5">Mover a → {action.targetDate}</p>
-                    )}
-
-                    {/* add_session details */}
-                    {action.type === 'add_session' && (
-                      <div className="mt-1.5 space-y-0.5">
-                        {action.targetDate && (
-                          <p className="text-[11px] text-ink-faint">
-                            {action.targetDate} {action.timeBlock}
-                          </p>
-                        )}
-                        {action.title && (
-                          <p className="text-[11px] text-ink-faint">
-                            {action.title}
-                            {action.durationMin ? ` · ${action.durationMin}min` : ''}
-                            {action.rpe != null ? ` · RPE${action.rpe}` : action.newRpe != null ? ` · RPE${action.newRpe}` : ''}
-                          </p>
-                        )}
-                      </div>
-                    )}
-
-                    {/* create_week session list */}
-                    {action.type === 'create_week' && action.sessions && (
-                      <div className="mt-2 space-y-2 border-t border-surface-border pt-2">
-                        {action.weekObjectives && action.weekObjectives.length > 0 && (
-                          <div className="mb-1">
-                            <p className="text-[10px] text-ink-faint/60 uppercase tracking-wide mb-0.5">Objetivos</p>
-                            {action.weekObjectives.map((obj, oi) => (
-                              <p key={oi} className="text-[11px] text-ink-faint">· {obj}</p>
-                            ))}
-                          </div>
-                        )}
-                        {action.sessions.map((s, si) => (
-                          <div key={si}>
-                            <div className="flex items-center gap-2">
-                              <span className="text-[10px] text-ink-faint/60 w-20 flex-shrink-0">
-                                {s.date} {s.timeBlock}
-                              </span>
-                              <span className="text-[11px] text-ink-faint">
-                                {SESSION_TYPE_LABEL[s.sessionType] ?? s.sessionType} · {s.title} · {s.durationMin}min
-                                {s.rpe ? ` RPE${s.rpe}` : ''}
-                              </span>
-                            </div>
-                            {s.exercises && s.exercises.length > 0 && (
-                              <div className="ml-20 mt-0.5">
-                                {s.exercises.slice(0, 4).map((ex, ei) => (
-                                  <span key={ei} className="text-[10px] text-ink-faint/70 mr-2">
-                                    {ex.name} {ex.sets}×{ex.reps}{ex.weight ? ` ${ex.weight}kg` : ''}
-                                  </span>
-                                ))}
-                                {s.exercises.length > 4 && (
-                                  <span className="text-[10px] text-ink-faint/50">+{s.exercises.length - 4} más</span>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* update_session details */}
-                    {action.type === 'update_session' && (
-                      <div className="mt-1.5 space-y-0.5">
-                        {action.newTitle && (
-                          <p className="text-[11px] text-ink-faint">Título → {action.newTitle}</p>
-                        )}
-                        {action.newObjective && (
-                          <p className="text-[11px] text-ink-faint">Objetivo → {action.newObjective}</p>
-                        )}
-                        {action.newRpe != null && (
-                          <p className="text-[11px] text-ink-faint">RPE → {action.newRpe}</p>
-                        )}
-                        {action.newDurationMin != null && (
-                          <p className="text-[11px] text-ink-faint">Duración → {action.newDurationMin} min</p>
-                        )}
-                        {action.exercises && action.exercises.length > 0 && (
-                          <div className="mt-1">
-                            <p className="text-[10px] text-ink-faint/60 uppercase tracking-wide">Ejercicios ({action.exercises.length})</p>
-                            {action.exercises.slice(0, 5).map((ex, ei) => (
-                              <p key={ei} className="text-[10px] text-ink-faint">
-                                {ex.name} {ex.sets}×{ex.reps}{ex.weight ? ` ${ex.weight}kg` : ''}
-                              </p>
-                            ))}
-                            {action.exercises.length > 5 && (
-                              <p className="text-[10px] text-ink-faint/50">+{action.exercises.length - 5} más</p>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <div className="flex gap-3 pt-1">
-            <button
-              onClick={onReject}
-              className="flex-1 py-2.5 rounded-xl text-sm font-medium text-ink-muted bg-surface-raised border border-surface-border hover:border-red-500/30 hover:text-red-400 transition-colors"
-            >
-              Rechazar
-            </button>
-            <button
-              onClick={onAccept}
-              className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white bg-brand hover:bg-brand-light active:scale-[0.98] transition-all flex items-center justify-center gap-2"
-            >
-              <CheckCircle2 size={14} />
-              Aplicar cambios
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
 
 // ─── Accepted feedback banner ─────────────────────────────────────────────────
 
@@ -517,13 +312,15 @@ export default function ChatCoach() {
 
       {/* Proposal drawer */}
       {activeProposal && (
-        <ProposalDrawer
-          proposal={activeProposal}
-          existingSessions={sessions}
-          onAccept={handleAccept}
-          onReject={handleReject}
-          onClose={() => setActiveProposal(null)}
-        />
+        <Suspense fallback={null}>
+          <ProposalDrawer
+            proposal={activeProposal}
+            existingSessions={sessions}
+            onAccept={handleAccept}
+            onReject={handleReject}
+            onClose={() => setActiveProposal(null)}
+          />
+        </Suspense>
       )}
     </div>
   )
