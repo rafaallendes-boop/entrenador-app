@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { Upload, AlertTriangle, CheckCircle2, Trash2, Plus } from 'lucide-react'
+import { Upload, AlertTriangle, CheckCircle2, Trash2, Plus, Sparkles, ScanText } from 'lucide-react'
 import { useTrainingStore } from '../store/useTrainingStore'
 import { useUIStore } from '../store/useUIStore'
 import { currentWeekStartISO } from '../utils/date'
@@ -261,9 +261,26 @@ export default function ImportPDF() {
         {status === 'preview' && (
           <>
             <div className="flex items-center justify-between">
-              <p className="text-sm font-semibold text-ink">
-                {drafts.length > 0 ? `${drafts.length} sesiones detectadas` : 'Ninguna detectada'}
-              </p>
+              <div>
+                <p className="text-sm font-semibold text-ink">
+                  {drafts.length > 0 ? `${drafts.length} sesiones detectadas` : 'Ninguna detectada'}
+                </p>
+                {result && (
+                  <div className="flex items-center gap-1 mt-0.5">
+                    {result.usedAI ? (
+                      <>
+                        <Sparkles size={11} className="text-brand-light" />
+                        <span className="text-[10px] text-brand-light font-medium">Analizado con IA</span>
+                      </>
+                    ) : (
+                      <>
+                        <ScanText size={11} className="text-ink-faint" />
+                        <span className="text-[10px] text-ink-faint">Detección automática</span>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
               <button
                 onClick={addBlankDraft}
                 className="flex items-center gap-1 text-xs text-brand-light font-medium"

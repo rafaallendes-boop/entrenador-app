@@ -1,5 +1,10 @@
 import { useEffect, useState } from 'react'
-import { Download, Brain, Trash2, Cpu, ShieldAlert } from 'lucide-react'
+import { Download, Brain, Trash2, Cpu, ShieldAlert, Bell } from 'lucide-react'
+import {
+  notificationsSupported,
+  getNotificationPermission,
+  requestNotificationPermission,
+} from '../services/notifications'
 import Card from '../components/ui/Card'
 import { downloadAppDataExport } from '../services/dataExport'
 import { clearAllLocalAppData } from '../services/appMaintenance'
@@ -10,6 +15,7 @@ import { APP_INFO } from '../constants/appInfo'
 export default function SettingsPage() {
   const { coachMemory, isSaving, loadMemory, saveMemory } = useCoachMemoryStore()
   const [memoryDraft, setMemoryDraft] = useState('')
+  const [notifPermission, setNotifPermission] = useState<NotificationPermission | null>(null)
   const [isExporting, setIsExporting] = useState(false)
   const [isClearing, setIsClearing] = useState(false)
   const [exportStatus, setExportStatus] = useState<string | null>(null)
@@ -17,6 +23,7 @@ export default function SettingsPage() {
 
   useEffect(() => {
     void loadMemory()
+    setNotifPermission(getNotificationPermission())
   }, [loadMemory])
 
   useEffect(() => {
@@ -44,6 +51,11 @@ export default function SettingsPage() {
     } finally {
       setIsClearing(false)
     }
+  }
+
+  const handleRequestNotifications = async () => {
+    const result = await requestNotificationPermission()
+    setNotifPermission(result)
   }
 
   const providerName = CoachEngine.getProviderName()
@@ -136,6 +148,38 @@ export default function SettingsPage() {
             </span>
           </div>
         </div>
+      </Card>
+
+      <Card className="p-4">
+        <div className="flex items-start gap-3 mb-3">
+          <div className="w-8 h-8 rounded-full bg-brand/15 flex items-center justify-center flex-shrink-0">
+            <Bell size={16} className="text-brand-light" />
+          </div>
+          <div>
+            <h2 className="text-sm font-semibold text-ink">Notificaciones de sesión</h2>
+            <p className="text-xs text-ink-muted mt-1 leading-relaxed">
+              Recibe una notificación 30 minutos antes de cada sesión del día.
+              Sesiones AM a las 7:30 h · sesiones PM a las 17:30 h.
+            </p>
+          </div>
+        </div>
+        {!notificationsSupported() ? (
+          <p className="text-xs text-ink-muted">Notificaciones no disponibles en este navegador.</p>
+        ) : notifPermission === 'granted' ? (
+          <p className="text-xs text-emerald-400 font-medium">Notificaciones activadas</p>
+        ) : notifPermission === 'denied' ? (
+          <p className="text-xs text-amber-400 leading-relaxed">
+            Permiso bloqueado. Actívalas desde los ajustes del navegador para este sitio.
+          </p>
+        ) : (
+          <button
+            onClick={() => void handleRequestNotifications()}
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-brand text-white text-sm font-semibold hover:bg-brand-light transition-colors"
+          >
+            <Bell size={14} />
+            Activar notificaciones
+          </button>
+        )}
       </Card>
 
       <Card className="p-4 border-red-500/20">

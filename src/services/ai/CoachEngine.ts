@@ -77,6 +77,26 @@ export const CoachEngine = {
   },
 
   /**
+   * Llama al proveedor directamente con un system prompt y mensaje propios,
+   * sin pasar por el normalizer de coach ni el prompt builder.
+   * Útil para tareas de extracción estructurada (PDF import, etc.).
+   */
+  async extractRaw(
+    systemPrompt: string,
+    userMessage: string,
+    options?: { maxTokens?: number; temperature?: number },
+  ): Promise<string> {
+    const provider = getActiveProvider()
+    const raw = await provider.call({
+      systemPrompt,
+      userMessage,
+      maxTokens: options?.maxTokens ?? 2000,
+      temperature: options?.temperature ?? 0.1,
+    })
+    return raw.text
+  },
+
+  /**
    * Retorna el nombre del proveedor activo.
    * Usado para el badge en la UI del chat.
    */

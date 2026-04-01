@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { X, Plus, Trash2 } from 'lucide-react'
 import type {
   Exercise,
@@ -98,38 +98,45 @@ export default function AddSessionModal({ defaultDate, onClose }: Props) {
   const isSquashMatch = type === 'squash' && (squashSubtype === 'match' || squashSubtype === 'competitive')
   const showLocation = type === 'squash' || type === 'running'
 
-  useEffect(() => {
-    setTitle(TYPE_LABELS[type])
-    if (type !== 'strength' && type !== 'mobility') {
+  const handleTypeChange = (nextType: SessionType) => {
+    setType(nextType)
+    setTitle(TYPE_LABELS[nextType])
+
+    if (nextType !== 'strength' && nextType !== 'mobility') {
       setExercises([])
     }
-    if (type !== 'running') {
+
+    if (nextType !== 'running') {
       setPaceMin('')
       setPaceMax('')
       setHrMin('')
       setHrMax('')
       setRunningType('z2')
     }
-    if (type !== 'squash') {
+
+    if (nextType !== 'squash') {
       setSquashSubtype('training')
       setOpponent('')
       setMatchResult('')
       setGamesWon('')
       setGamesLost('')
     }
-    if (type !== 'squash' && type !== 'running') {
+
+    if (nextType !== 'squash' && nextType !== 'running') {
       setLocation('')
     }
-  }, [type])
+  }
 
-  useEffect(() => {
-    if (!isSquashMatch) {
+  const handleSquashSubtypeChange = (nextSubtype: SquashSubtype) => {
+    setSquashSubtype(nextSubtype)
+
+    if (nextSubtype !== 'match' && nextSubtype !== 'competitive') {
       setOpponent('')
       setMatchResult('')
       setGamesWon('')
       setGamesLost('')
     }
-  }, [isSquashMatch])
+  }
 
   const addExercise = () => setExercises(prev => [...prev, emptyExercise()])
 
@@ -222,7 +229,7 @@ export default function AddSessionModal({ defaultDate, onClose }: Props) {
                 return (
                   <button
                     key={sessionType}
-                    onClick={() => setType(sessionType)}
+                    onClick={() => handleTypeChange(sessionType)}
                     className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-all ${
                       active
                         ? `${currentTypeConfig.bgClass} ${currentTypeConfig.textClass} ${currentTypeConfig.borderClass}`
@@ -243,7 +250,7 @@ export default function AddSessionModal({ defaultDate, onClose }: Props) {
                 {SQUASH_SUBTYPES.map(subtype => (
                   <button
                     key={subtype.value}
-                    onClick={() => setSquashSubtype(subtype.value)}
+                    onClick={() => handleSquashSubtypeChange(subtype.value)}
                     className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-all ${
                       squashSubtype === subtype.value
                         ? `${cfg.bgClass} ${cfg.textClass} ${cfg.borderClass}`
@@ -598,4 +605,3 @@ export default function AddSessionModal({ defaultDate, onClose }: Props) {
     </div>
   )
 }
-

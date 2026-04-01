@@ -422,11 +422,11 @@ Estado: ✅ COMPLETADO
 | C4 — Memoria del coach | Alto | Medio | 3 | ✅ Hecho |
 | C5 — Streaming de respuesta | Alto | Medio | 3 | ✅ Hecho |
 | PDF import v1.1 (pdfjs-dist) | Alto | Medio | 3 | ✅ Hecho |
-| Notificaciones de sesión | Alto | Medio | 3 | ⏳ |
+| Notificaciones de sesión | Alto | Medio | 3 | ✅ Hecho |
 | Pantalla Settings | Bajo | Bajo | 3 | ✅ Hecho |
 | Truncado inteligente del contexto | Alto | Bajo | 3 | ✅ Hecho |
 | Code splitting inicial | Alto | Bajo-medio | 3 | ✅ Hecho |
-| PDF import v2 (Gemini API) | Alto | Medio-alto | 4 | ⏳ |
+| PDF import v2 (Gemini API) | Alto | Medio-alto | 4 | ✅ Hecho |
 | Sync backend multi-dispositivo | Alto | Muy alto | 4 | ⏳ |
 | Modo torneo | Alto | Muy alto | 4 | ⏳ |
 
