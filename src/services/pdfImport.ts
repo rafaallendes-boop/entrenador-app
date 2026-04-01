@@ -297,12 +297,9 @@ export async function importFromPDF(
   }
 
   // Try AI extraction first; fall back to pattern matching
-  let drafts = await extractSessionsWithAI(rawText, referenceWeekStart)
-  const usedAI = drafts !== null
-
-  if (!usedAI) {
-    drafts = parseSessionsFromText(rawText, referenceWeekStart)
-  }
+  const aiResult = await extractSessionsWithAI(rawText, referenceWeekStart)
+  const usedAI = aiResult !== null
+  const drafts: ParsedSessionDraft[] = aiResult ?? parseSessionsFromText(rawText, referenceWeekStart)
 
   if (drafts.length === 0) {
     warnings.push(
