@@ -1,34 +1,84 @@
-import { useEffect, useState } from 'react'
-import { Download, Brain, Trash2, Cpu, ShieldAlert, Bell } from 'lucide-react'
+import { type ChangeEvent, useEffect, useMemo, useRef, useState } from 'react'
+import { Bell, Brain, Cpu, Download, ShieldAlert, Trash2, Upload } from 'lucide-react'
+import Card from '../components/ui/Card'
+import { APP_INFO } from '../constants/appInfo'
+import { CoachEngine } from '../services/ai/CoachEngine'
+import { downloadAppDataExport, importAppDataFromFile } from '../services/dataExport'
 import {
-  notificationsSupported,
+  clearSelectedLocalAppData,
+  getLocalDataCounts,
+  type LocalDataCounts,
+  type LocalDataGroup,
+  type LocalDataSelection,
+} from '../services/appMaintenance'
+import {
   getNotificationPermission,
+  notificationsSupported,
   requestNotificationPermission,
 } from '../services/notifications'
-import Card from '../components/ui/Card'
-import { downloadAppDataExport } from '../services/dataExport'
-import { clearAllLocalAppData } from '../services/appMaintenance'
 import { useCoachMemoryStore } from '../store/useCoachMemoryStore'
-import { CoachEngine } from '../services/ai/CoachEngine'
-import { APP_INFO } from '../constants/appInfo'
+
+const CLEARABLE_GROUPS: Array<{
+  key: LocalDataGroup
+  title: string
+  description: string
+}> = [
+  {
+    key: 'trainingData',
+    title: 'Entrenamiento',
+    description: 'Sesiones, check-ins y resumenes semanales.',
+  },
+  {
+    key: 'chatHistory',
+    title: 'Chat del coach',
+    description: 'Conversaciones guardadas del coach actual y anteriores.',
+  },
+  {
+    key: 'coachProposals',
+    title: 'Proposals del coach',
+    description: 'Propuestas pendientes, aceptadas o rechazadas.',
+  },
+  {
+    key: 'coachMemory',
+    title: 'Memoria del coach',
+    description: 'Contexto persistente del atleta, lesiones y preferencias.',
+  },
+]
+
+const EMPTY_CLEAR_SELECTION: LocalDataSelection = {
+  trainingData: false,
+  chatHistory: false,
+  coachProposals: false,
+  coachMemory: false,
+}
 
 export default function SettingsPage() {
   const { coachMemory, isSaving, loadMemory, saveMemory } = useCoachMemoryStore()
   const [memoryDraft, setMemoryDraft] = useState('')
   const [notifPermission, setNotifPermission] = useState<NotificationPermission | null>(null)
+  const [dataCounts, setDataCounts] = useState<LocalDataCounts | null>(null)
+  const [clearSelection, setClearSelection] = useState<LocalDataSelection>(EMPTY_CLEAR_SELECTION)
   const [isExporting, setIsExporting] = useState(false)
+  const [isImporting, setIsImporting] = useState(false)
   const [isClearing, setIsClearing] = useState(false)
   const [exportStatus, setExportStatus] = useState<string | null>(null)
+  const [importStatus, setImportStatus] = useState<string | null>(null)
+  const [clearStatus, setClearStatus] = useState<string | null>(null)
   const [clearConfirm, setClearConfirm] = useState(false)
+  const importInputRef = useRef<HTMLInputElement | null>(null)
 
   useEffect(() => {
     void loadMemory()
     setNotifPermission(getNotificationPermission())
+    void refreshCounts(setDataCounts)
   }, [loadMemory])
 
   useEffect(() => {
     setMemoryDraft(coachMemory)
   }, [coachMemory])
+
+  const selectedGroups = useMemo(() => getSelectedGroups(clearSelection), [clearSelection])
+  const hasSelection = selectedGroups.length > 0
 
   const handleExport = async () => {
     setIsExporting(true)
@@ -43,11 +93,49 @@ export default function SettingsPage() {
     }
   }
 
-  const handleClearData = async () => {
-    setIsClearing(true)
+  const handleImportFile = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+
+    const confirmed = window.confirm(
+      'Importar un backup reemplazara todos los datos locales actuales. Esta accion no se puede deshacer. ¿Quieres continuar?'
+    )
+    if (!confirmed) return
+
+    setIsImporting(true)
+    setImportStatus(null)
     try {
-      await clearAllLocalAppData()
-      window.location.reload()
+      const result = await importAppDataFromFile(file)
+      await refreshCounts(setDataCounts)
+      await loadMemory()
+      setClearSelection({ ...EMPTY_CLEAR_SELECTION })
+      setClearConfirm(false)
+      setClearStatus(null)
+      setImportStatus(
+        `Backup importado (${result.importedAt}): ${result.counts.sessions} sesiones, ${result.counts.dayLogs} check-ins, ${result.counts.weekSummaries} resumenes y ${result.counts.chatMessages} mensajes.`
+      )
+    } catch (error) {
+      setImportStatus(error instanceof Error ? error.message : 'No se pudo importar el backup.')
+    } finally {
+      setIsImporting(false)
+    }
+  }
+
+  const handleClearData = async () => {
+    if (!hasSelection) return
+
+    setIsClearing(true)
+    setClearStatus(null)
+    try {
+      const clearedGroups = await clearSelectedLocalAppData(clearSelection)
+      await refreshCounts(setDataCounts)
+      setClearSelection({ ...EMPTY_CLEAR_SELECTION })
+      setClearConfirm(false)
+      if (clearSelection.coachMemory) {
+        await loadMemory()
+      }
+      setClearStatus(`Se elimino: ${formatGroupList(clearedGroups)}.`)
     } finally {
       setIsClearing(false)
     }
@@ -58,6 +146,15 @@ export default function SettingsPage() {
     setNotifPermission(result)
   }
 
+  const applyClearPreset = (selection: LocalDataSelection) => {
+    setClearSelection({
+      ...EMPTY_CLEAR_SELECTION,
+      ...selection,
+    })
+    setClearConfirm(false)
+    setClearStatus(null)
+  }
+
   const providerName = CoachEngine.getProviderName()
   const providerConfigured = CoachEngine.isRealProviderConfigured()
 
@@ -65,7 +162,7 @@ export default function SettingsPage() {
     <div className="px-4 pt-12 pb-8 space-y-5">
       <div>
         <h1 className="text-xl font-bold text-ink mb-1">Ajustes</h1>
-        <p className="text-sm text-ink-muted">Configuración local, contexto del coach y mantenimiento</p>
+        <p className="text-sm text-ink-muted">Configuracion local, contexto del coach y mantenimiento.</p>
       </div>
 
       <Card className="p-4">
@@ -84,7 +181,7 @@ export default function SettingsPage() {
           value={memoryDraft}
           onChange={(e) => setMemoryDraft(e.target.value)}
           rows={5}
-          placeholder="Ej: molestia rodilla derecha desde febrero, evitar fuerza pesada el día antes de partido, próximo torneo en mayo..."
+          placeholder="Ej: molestia rodilla derecha desde febrero, evitar fuerza pesada el dia antes de partido, proximo torneo en mayo..."
           className="w-full rounded-xl bg-surface-raised border border-surface-border px-3 py-2.5 text-sm text-ink placeholder:text-ink-faint resize-none focus:outline-none focus:ring-2 focus:ring-brand/40"
         />
         <div className="mt-3 flex justify-end">
@@ -103,20 +200,42 @@ export default function SettingsPage() {
           <div>
             <h2 className="text-sm font-semibold text-ink">Backup JSON</h2>
             <p className="text-xs text-ink-muted mt-1 leading-relaxed">
-              Exporta sesiones, check-ins, resúmenes semanales, chat, proposals y memoria del coach a un JSON descargable.
+              Exporta o restaura sesiones, check-ins, resumenes semanales, chat, proposals y memoria del coach.
             </p>
           </div>
-          <button
-            onClick={() => void handleExport()}
-            disabled={isExporting}
-            className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-brand text-white text-sm font-semibold hover:bg-brand-light disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
-          >
-            <Download size={14} />
-            {isExporting ? 'Exportando...' : 'Exportar'}
-          </button>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <input
+              ref={importInputRef}
+              type="file"
+              accept=".json,application/json"
+              onChange={(event) => void handleImportFile(event)}
+              className="hidden"
+            />
+            <button
+              onClick={() => importInputRef.current?.click()}
+              disabled={isImporting}
+              className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-surface-raised text-ink text-sm font-semibold hover:bg-surface transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              <Upload size={14} />
+              {isImporting ? 'Importando...' : 'Importar'}
+            </button>
+            <button
+              onClick={() => void handleExport()}
+              disabled={isExporting}
+              className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-brand text-white text-sm font-semibold hover:bg-brand-light disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+            >
+              <Download size={14} />
+              {isExporting ? 'Exportando...' : 'Exportar'}
+            </button>
+          </div>
         </div>
         {exportStatus && (
           <p className="text-xs text-ink-muted mt-3">{exportStatus}</p>
+        )}
+        {importStatus && (
+          <p className={`text-xs mt-2 ${importStatus.startsWith('Backup importado') ? 'text-emerald-400' : 'text-amber-400'}`}>
+            {importStatus}
+          </p>
         )}
       </Card>
 
@@ -126,7 +245,7 @@ export default function SettingsPage() {
             <Cpu size={16} className="text-emerald-400" />
           </div>
           <div>
-            <h2 className="text-sm font-semibold text-ink">Información de la app</h2>
+            <h2 className="text-sm font-semibold text-ink">Informacion de la app</h2>
             <p className="text-xs text-ink-muted mt-1 leading-relaxed">
               Estado actual del runtime local.
             </p>
@@ -134,7 +253,7 @@ export default function SettingsPage() {
         </div>
         <div className="space-y-2 text-sm">
           <div className="flex items-center justify-between gap-3">
-            <span className="text-ink-muted">Versión</span>
+            <span className="text-ink-muted">Version</span>
             <span className="text-ink font-medium">{APP_INFO.version}</span>
           </div>
           <div className="flex items-center justify-between gap-3">
@@ -156,10 +275,10 @@ export default function SettingsPage() {
             <Bell size={16} className="text-brand-light" />
           </div>
           <div>
-            <h2 className="text-sm font-semibold text-ink">Notificaciones de sesión</h2>
+            <h2 className="text-sm font-semibold text-ink">Notificaciones de sesion</h2>
             <p className="text-xs text-ink-muted mt-1 leading-relaxed">
-              Recibe una notificación 30 minutos antes de cada sesión del día.
-              Sesiones AM a las 7:30 h · sesiones PM a las 17:30 h.
+              Recibe una notificacion 30 minutos antes de cada sesion del dia.
+              Sesiones AM a las 7:30 h y sesiones PM a las 17:30 h.
             </p>
           </div>
         </div>
@@ -169,7 +288,7 @@ export default function SettingsPage() {
           <p className="text-xs text-emerald-400 font-medium">Notificaciones activadas</p>
         ) : notifPermission === 'denied' ? (
           <p className="text-xs text-amber-400 leading-relaxed">
-            Permiso bloqueado. Actívalas desde los ajustes del navegador para este sitio.
+            Permiso bloqueado. Activalas desde los ajustes del navegador para este sitio.
           </p>
         ) : (
           <button
@@ -190,23 +309,105 @@ export default function SettingsPage() {
           <div>
             <h2 className="text-sm font-semibold text-ink">Limpiar datos locales</h2>
             <p className="text-xs text-ink-muted mt-1 leading-relaxed">
-              Borra sesiones, chat, resúmenes, proposals y memoria guardada en este navegador.
+              Elige exactamente que quieres borrar. Los bloques estan agrupados para evitar datos huerfanos.
             </p>
           </div>
         </div>
 
+        <div className="flex flex-wrap gap-2 mb-4">
+          <button
+            onClick={() => applyClearPreset({
+              trainingData: true,
+              chatHistory: true,
+              coachProposals: true,
+              coachMemory: true,
+            })}
+            className="px-3 py-2 rounded-xl text-xs font-semibold text-ink hover:bg-surface-raised transition-colors"
+          >
+            Seleccionar todo
+          </button>
+          <button
+            onClick={() => applyClearPreset({ trainingData: true })}
+            className="px-3 py-2 rounded-xl text-xs font-semibold text-ink hover:bg-surface-raised transition-colors"
+          >
+            Solo entrenamiento
+          </button>
+          <button
+            onClick={() => applyClearPreset({ chatHistory: true, coachProposals: true })}
+            className="px-3 py-2 rounded-xl text-xs font-semibold text-ink hover:bg-surface-raised transition-colors"
+          >
+            Solo coach
+          </button>
+          <button
+            onClick={() => applyClearPreset({})}
+            className="px-3 py-2 rounded-xl text-xs font-semibold text-ink-muted hover:bg-surface-raised transition-colors"
+          >
+            Limpiar seleccion
+          </button>
+        </div>
+
+        <div className="space-y-2">
+          {CLEARABLE_GROUPS.map((group) => {
+            const selected = Boolean(clearSelection[group.key])
+
+            return (
+              <label
+                key={group.key}
+                className={`block w-full cursor-pointer rounded-2xl border px-3 py-3 transition-colors ${
+                  selected
+                    ? 'border-red-500/40 bg-red-500/10'
+                    : 'border-surface-border bg-surface-raised hover:border-red-500/20'
+                }`}
+              >
+                <div className="flex items-start gap-3">
+                  <input
+                    type="checkbox"
+                    checked={selected}
+                    onChange={() => {
+                      setClearSelection((current) => ({
+                        ...current,
+                        [group.key]: !current[group.key],
+                      }))
+                      setClearConfirm(false)
+                      setClearStatus(null)
+                    }}
+                    className="mt-1 h-4 w-4 rounded border-surface-border bg-surface"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-ink">{group.title}</p>
+                        <p className="text-xs text-ink-muted mt-1">{group.description}</p>
+                      </div>
+                      <span className="text-[11px] font-medium text-ink-muted whitespace-nowrap">
+                        {formatCountLabel(group.key, dataCounts)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </label>
+            )
+          })}
+        </div>
+
+        {clearStatus && (
+          <p className="text-xs text-emerald-400 mt-3">{clearStatus}</p>
+        )}
+
         {!clearConfirm ? (
           <button
             onClick={() => setClearConfirm(true)}
-            className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-red-500/10 text-red-400 text-sm font-semibold hover:bg-red-500/20 transition-colors"
+            disabled={!hasSelection}
+            className="mt-4 inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-red-500/10 text-red-400 text-sm font-semibold hover:bg-red-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             <Trash2 size={14} />
-            Limpiar datos
+            {hasSelection ? 'Continuar con borrado' : 'Selecciona algo para borrar'}
           </button>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-3 mt-4">
             <p className="text-xs text-ink-muted leading-relaxed">
-              Esta acción no se puede deshacer. Si quieres conservar algo, exporta un backup antes.
+              Esta accion no se puede deshacer. Se borrara: <span className="text-ink">{formatGroupList(selectedGroups)}</span>.
+              Si quieres conservar algo, exporta un backup antes.
             </p>
             <div className="flex gap-2 justify-end">
               <button
@@ -217,11 +418,11 @@ export default function SettingsPage() {
               </button>
               <button
                 onClick={() => void handleClearData()}
-                disabled={isClearing}
+                disabled={isClearing || !hasSelection}
                 className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-red-500/20 text-red-400 text-sm font-semibold hover:bg-red-500/30 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
               >
                 <Trash2 size={14} />
-                {isClearing ? 'Limpiando...' : 'Confirmar borrado'}
+                {isClearing ? 'Borrando...' : 'Confirmar borrado'}
               </button>
             </div>
           </div>
@@ -229,4 +430,53 @@ export default function SettingsPage() {
       </Card>
     </div>
   )
+}
+
+async function refreshCounts(setDataCounts: (counts: LocalDataCounts) => void): Promise<void> {
+  const counts = await getLocalDataCounts()
+  setDataCounts(counts)
+}
+
+function getSelectedGroups(selection: LocalDataSelection): LocalDataGroup[] {
+  return CLEARABLE_GROUPS
+    .map((group) => group.key)
+    .filter((key) => Boolean(selection[key]))
+}
+
+function formatCountLabel(group: LocalDataGroup, counts: LocalDataCounts | null): string {
+  if (!counts) return 'Cargando...'
+
+  switch (group) {
+    case 'trainingData': {
+      const { sessions, dayLogs, weekSummaries } = counts.trainingData
+      return `${sessions} sesiones - ${dayLogs} check-ins - ${weekSummaries} resumenes`
+    }
+    case 'chatHistory':
+      return `${counts.chatHistory} mensajes`
+    case 'coachProposals':
+      return `${counts.coachProposals} proposals`
+    case 'coachMemory':
+      return counts.coachMemory > 0 ? 'Guardada' : 'Vacia'
+  }
+}
+
+function formatGroupList(groups: LocalDataGroup[]): string {
+  if (groups.length === 0) return 'nada'
+
+  const labels = groups.map((group) => {
+    switch (group) {
+      case 'trainingData':
+        return 'entrenamiento'
+      case 'chatHistory':
+        return 'chat'
+      case 'coachProposals':
+        return 'proposals'
+      case 'coachMemory':
+        return 'memoria del coach'
+    }
+  })
+
+  if (labels.length === 1) return labels[0]
+  if (labels.length === 2) return `${labels[0]} y ${labels[1]}`
+  return `${labels.slice(0, -1).join(', ')} y ${labels[labels.length - 1]}`
 }
