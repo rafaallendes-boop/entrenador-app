@@ -23,12 +23,12 @@ function DayFeedbackFields({
   return (
     <>
       <div className="flex flex-col gap-1.5">
-        <label className="text-xs text-ink-muted">Comentario post-sesiÃ³n</label>
+        <label className="text-xs text-ink-muted">Comentario post-sesión</label>
         <textarea
           value={postComment}
           onChange={e => setPostComment(e.target.value)}
           onBlur={() => onSave({ postSessionComment: postComment || undefined })}
-          placeholder="CÃ³mo fue, sensaciones, quÃ© mejorar..."
+          placeholder="Cómo fue, sensaciones, qué mejorar..."
           rows={2}
           className="bg-surface-raised border border-surface-border rounded-xl px-3 py-2 text-sm text-ink placeholder-ink-faint resize-none focus:outline-none focus:border-brand/50"
         />
@@ -36,12 +36,12 @@ function DayFeedbackFields({
 
       {dayLog?.painLevel != null && dayLog.painLevel > 0 && (
         <div className="flex flex-col gap-1.5">
-          <label className="text-xs text-ink-muted">DescripciÃ³n del dolor</label>
+          <label className="text-xs text-ink-muted">Descripción del dolor</label>
           <textarea
             value={painNotes}
             onChange={e => setPainNotes(e.target.value)}
             onBlur={() => onSave({ painNotes: painNotes || undefined })}
-            placeholder="LocalizaciÃ³n, tipo, intensidad..."
+            placeholder="Localización, tipo, intensidad..."
             rows={2}
             className="bg-surface-raised border border-surface-border rounded-xl px-3 py-2 text-sm text-ink placeholder-ink-faint resize-none focus:outline-none focus:border-brand/50"
           />
@@ -62,12 +62,12 @@ function DayRecoveryNotes({
 
   return (
     <div className="flex flex-col gap-1.5">
-      <label className="text-xs text-ink-muted">Notas generales del dÃ­a</label>
+      <label className="text-xs text-ink-muted">Notas generales del día</label>
       <textarea
         value={notes}
         onChange={e => setNotes(e.target.value)}
         onBlur={() => onSave({ generalNotes: notes || undefined })}
-        placeholder="CÃ³mo fue el dÃ­a en general..."
+        placeholder="Cómo fue el día en general..."
         rows={2}
         className="bg-surface-raised border border-surface-border rounded-xl px-3 py-2 text-sm text-ink placeholder-ink-faint resize-none focus:outline-none focus:border-brand/50"
       />
@@ -116,7 +116,7 @@ export default function DayDetail() {
   return (
     <div>
       <PageHeader
-        title={dateISO ? formatFullDate(fromISO(dateISO)) : 'DÃ­a'}
+        title={dateISO ? formatFullDate(fromISO(dateISO)) : 'Día'}
         subtitle={isToday ? 'Hoy' : undefined}
         backTo={ROUTES.WEEK}
       />
@@ -131,14 +131,14 @@ export default function DayDetail() {
 
         {daySessions.length === 0 ? (
           <Card className="p-6 text-center">
-            <p className="text-ink-muted text-sm">Sin sesiones este dÃ­a</p>
-            <p className="text-ink-faint text-xs mt-1">DÃ­a libre o de descanso</p>
+            <p className="text-ink-muted text-sm">Sin sesiones este día</p>
+            <p className="text-ink-faint text-xs mt-1">Día libre o de descanso</p>
           </Card>
         ) : (
           <div className="space-y-4">
             {amSessions.length > 0 && (
               <div>
-                <p className="text-[11px] text-ink-faint font-semibold uppercase tracking-wider mb-2">MaÃ±ana</p>
+                <p className="text-[11px] text-ink-faint font-semibold uppercase tracking-wider mb-2">Mañana</p>
                 <div className="space-y-2">
                   {amSessions.map(s => <SessionCard key={s.id} session={s} />)}
                 </div>
@@ -157,14 +157,14 @@ export default function DayDetail() {
 
         <Card className="p-4 space-y-4">
           <div>
-            <h2 className="text-sm font-semibold text-ink">RPE por sesiÃ³n</h2>
+            <h2 className="text-sm font-semibold text-ink">RPE por sesión</h2>
             <p className="text-xs text-ink-muted mt-1">
-              Registra el esfuerzo real de cada sesiÃ³n completada. Esto alimenta las mÃ©tricas semanales.
+              Registra el esfuerzo real de cada sesión completada. Esto alimenta las métricas semanales.
             </p>
           </div>
 
           {completedSessions.length === 0 ? (
-            <p className="text-sm text-ink-faint">AÃºn no hay sesiones completadas este dÃ­a.</p>
+            <p className="text-sm text-ink-faint">Aún no hay sesiones completadas este día.</p>
           ) : (
             <div className="space-y-4">
               {completedSessions.map(session => {
@@ -178,7 +178,7 @@ export default function DayDetail() {
                       <div>
                         <p className="text-sm font-medium text-ink">{session.title}</p>
                         <p className="text-xs text-ink-muted mt-0.5">
-                          {session.timeBlock} Â· {session.type}
+                          {session.timeBlock} · {session.type}
                         </p>
                       </div>
                       {session.rpe != null && (
@@ -187,7 +187,7 @@ export default function DayDetail() {
                     </div>
 
                     <Slider
-                      label="RPE real de la sesiÃ³n"
+                      label="RPE real de la sesión"
                       value={value}
                       min={1}
                       max={10}
@@ -202,10 +202,10 @@ export default function DayDetail() {
         </Card>
 
         <Card className="p-4 space-y-5">
-          <h2 className="text-sm font-semibold text-ink">Feedback del dÃ­a</h2>
+          <h2 className="text-sm font-semibold text-ink">Feedback del día</h2>
 
           <Slider
-            label="EnergÃ­a general"
+            label="Energía general"
             value={dayLog?.energyLevel}
             min={1}
             max={10}
@@ -225,7 +225,7 @@ export default function DayDetail() {
 
           {completedSessions.length === 1 && dayLog?.rpeActual != null && (
             <p className="text-xs text-ink-faint">
-              El RPE diario previo se usa como valor inicial de la sesiÃ³n si solo hubo una sesiÃ³n completada.
+              El RPE diario previo se usa como valor inicial de la sesión si solo hubo una sesión completada.
             </p>
           )}
 
@@ -237,10 +237,10 @@ export default function DayDetail() {
         </Card>
 
         <Card className="p-4 space-y-5">
-          <h2 className="text-sm font-semibold text-ink">SueÃ±o y recuperaciÃ³n</h2>
+          <h2 className="text-sm font-semibold text-ink">Sueño y recuperación</h2>
 
           <Slider
-            label="Calidad de sueÃ±o"
+            label="Calidad de sueño"
             value={dayLog?.sleepQuality}
             min={1}
             max={5}
@@ -251,9 +251,9 @@ export default function DayDetail() {
 
           <div className="flex flex-col gap-1.5">
             <div className="flex justify-between items-center">
-              <label className="text-sm text-ink-muted">Horas de sueÃ±o</label>
+              <label className="text-sm text-ink-muted">Horas de sueño</label>
               <span className="text-sm font-semibold text-ink">
-                {dayLog?.sleepHours != null ? `${dayLog.sleepHours}h` : 'â€”'}
+                {dayLog?.sleepHours != null ? `${dayLog.sleepHours}h` : '—'}
               </span>
             </div>
             <input
@@ -262,7 +262,7 @@ export default function DayDetail() {
               max={12}
               step={0.5}
               value={dayLog?.sleepHours ?? ''}
-              onChange={e => save({ sleepHours: e.target.value === '' ? undefined : Number(e.target.value) })}
+              onBlur={e => save({ sleepHours: e.target.value === '' ? undefined : Number(e.target.value) })}
               placeholder="ej: 7.5"
               className="bg-surface-raised border border-surface-border rounded-xl px-3 py-2 text-sm text-ink placeholder-ink-faint w-full focus:outline-none focus:border-brand/50"
             />

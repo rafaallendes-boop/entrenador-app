@@ -45,7 +45,7 @@ self.addEventListener('message', (event) => {
     if (delay <= 0) continue
 
     const id = setTimeout(() => {
-      self.registration.showNotification('Sesion en 30 min', {
+      self.registration.showNotification('Sesión en 30 min', {
         body: session.title,
         icon: '/icons/app-icon.svg',
         badge: '/icons/app-icon.svg',
