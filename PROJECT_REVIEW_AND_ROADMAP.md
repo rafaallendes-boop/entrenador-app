@@ -1,7 +1,7 @@
 # Entrenador App — Project Review & Roadmap
 
 Generado: 2026-03-30
-Última revisión: 2026-03-31 (sesión 6)
+Última revisión: 2026-03-31 (sesión 7)
 Revisado por: Claude Sonnet 4.6
 
 ---
@@ -266,11 +266,11 @@ Orden sugerido de implementación:
 - `SessionCard` muestra badge de resultado, rival, games y lugar
 - El prompt del coach ya recibe esta metadata en el contexto
 
-**B2 — Vista historial de partidos en History**
-- Filtro en History que muestre solo `match/competitive`
-- Winrate acumulado, rivales frecuentes
-- Se construye sobre B1
-- Esfuerzo: 1–2h (depende de B1)
+**B2 — Vista historial de partidos en History** ✅ COMPLETADO
+- Tab "Partidos" en History: lista de partidos match/competitive ordenada por fecha
+- Stats: total partidos, victorias, derrotas, winrate %
+- Rivales frecuentes con conteo de partidos y victorias
+- Cada card muestra fecha, rival, score (games), resultado (Victoria/Derrota), lugar
 
 **Resumen semanal generado por el coach**
 - Botón manual en WeeklyView (no automático)
@@ -315,6 +315,17 @@ Estado: ✅ COMPLETADO
 
 Estado: ✅ COMPLETADO
 
+### 3.0.3 Sesión 7 — B2 historial de partidos y streaming (2026-03-31)
+
+**Historial de partidos (B2)**
+- `queries.ts`: nueva query `getMatchSessions()` — filtra sesiones squash con subtype `match`/`competitive`, ordenadas por fecha desc
+- `History.tsx`: tab switcher "Semanas" / "Partidos"; view `PartidosView` con stats (total, victorias, derrotas, winrate) y sección de rivales frecuentes; `MatchCard` por partido con fecha, rival, score, resultado y lugar
+
+**Streaming del coach (C5) — completado en sesión 6**
+- Marcado como completado en roadmap; ya implementado y committeado en `74cf86f`
+
+---
+
 ### Ola 3 — Mejoras técnicas y features nuevos (esfuerzo medio)
 
 **C1 — Chat multi-turno real**
@@ -354,11 +365,10 @@ Estado: ✅ COMPLETADO
 - Se guarda en Dexie y hoy es editable desde Dashboard
 - Esfuerzo: 3-4h
 
-**C5 — Streaming de respuesta del coach**
-- Mostrar la respuesta del coach letra a letra mientras llega (como ChatGPT)
-- Requiere streaming support en CoachEngine y providers
-- Reduce la percepción de latencia significativamente
-- Esfuerzo: 3-4h
+**C5 — Streaming de respuesta del coach** ✅ COMPLETADO
+- Todos los providers (Gemini, Claude, OpenAI, Mock) emiten chunks via `onChunk`
+- `useChatStore` acumula `streamingText`; `ChatCoach` muestra burbuja en vivo con cursor pulsante
+- Retry automático desactiva streaming (`onChunk: undefined`) para evitar texto parcial visible
 
 ### Ola 4 — Largo plazo (alto esfuerzo, transformacional)
 
@@ -407,10 +417,10 @@ Estado: ✅ COMPLETADO
 | D4 — Navegar a WeeklyView tras create_week | Alto | Mínimo | 2.2 | ✅ Hecho |
 | D5 — Chat multi-turno real | Alto | Medio | 2.2 | ✅ Hecho |
 | UX — Evitar flicker semana vacía en WeeklyView | Medio | Mínimo | 2.2 | ✅ Hecho |
-| Vista historial partidos | Medio | Bajo | 2.1 | ⏳ |
+| Vista historial partidos | Medio | Bajo | 2.1 | ✅ Hecho |
 | C3 — Resumen semanal del coach | Alto | Medio | 3 | ✅ Hecho |
 | C4 — Memoria del coach | Alto | Medio | 3 | ✅ Hecho |
-| C5 — Streaming de respuesta | Alto | Medio | 3 | ⏳ |
+| C5 — Streaming de respuesta | Alto | Medio | 3 | ✅ Hecho |
 | PDF import v1.1 (pdfjs-dist) | Alto | Medio | 3 | ⏳ |
 | Notificaciones de sesión | Alto | Medio | 3 | ⏳ |
 | Pantalla Settings | Bajo | Bajo | 3 | ✅ Hecho |

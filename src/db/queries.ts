@@ -164,6 +164,13 @@ export const recalculateWeekSummary = async (dateISO: string): Promise<void> => 
 export const getAllWeekSummaries = async (): Promise<WeekSummary[]> =>
   db.weekSummaries.orderBy('weekStartDate').reverse().toArray()
 
+export const getMatchSessions = async (): Promise<Session[]> => {
+  const sessions = await db.sessions
+    .filter(s => s.type === 'squash' && (s.subtype === 'match' || s.subtype === 'competitive'))
+    .toArray()
+  return sessions.sort((a, b) => b.date.localeCompare(a.date))
+}
+
 const ATHLETE_PROFILE_ID = 'default'
 
 export const getAthleteProfile = async (): Promise<AthleteProfile | undefined> =>
