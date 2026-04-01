@@ -1,22 +1,16 @@
 /**
- * PDF Import Service — v1 stub
+ * PDF Import Service — v1.1
  *
  * CURRENT CAPABILITY:
- *   - Reads raw text from a PDF file using the browser's built-in FileReader
+ *   - Extracts text from PDF using pdf.js (pdfjs-dist) — real text layer extraction
  *   - Attempts basic pattern matching to detect sessions from text
  *   - All parsed sessions are marked with confidence 'low' or 'medium'
  *   - User must review and confirm before importing
  *
- * LIMITATIONS (v1):
- *   - No actual PDF parsing library (PDF.js is NOT bundled yet)
- *   - Text extraction is only reliable for text-layer PDFs (not scanned images)
+ * LIMITATIONS (v1.1):
+ *   - Scanned / image-only PDFs have no text layer — extraction returns empty
  *   - Pattern matching is heuristic — structured planning PDFs work best
- *   - Exercise blocks inside sessions are NOT parsed in v1
- *
- * TO UPGRADE TO v1.1:
- *   - npm install pdfjs-dist
- *   - Replace extractTextFromPDF with pdf.js implementation
- *   - Add smarter NLP or regex for session blocks
+ *   - Exercise blocks inside sessions are NOT parsed
  *
  * TO UPGRADE TO v2 (AI-powered):
  *   - Send extracted text to Claude API with a structured extraction prompt
@@ -24,42 +18,37 @@
  *   - Higher confidence, supports unstructured formats
  */
 
+import * as pdfjsLib from 'pdfjs-dist'
 import type { ParsedSessionDraft, SessionType, TimeBlock } from '../types'
 
-// ─── Text extraction stub ─────────────────────────────────────────────────────
+// Point pdf.js at its bundled worker (Vite resolves this at build time)
+pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+  'pdfjs-dist/build/pdf.worker.min.mjs',
+  import.meta.url
+).href
+
+// ─── Text extraction ─────────────────────────────────────────────────────────
 
 /**
- * Attempts to extract text content from a PDF File object.
- * v1: Reads as ArrayBuffer and decodes visible ASCII strings.
- * This works for simple text-layer PDFs but is NOT reliable.
- * For proper parsing, integrate pdf.js.
+ * Extracts text content from a PDF File using pdf.js.
+ * Works with text-layer PDFs. Scanned/image PDFs will return empty or sparse text.
  */
 export async function extractTextFromPDF(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = (e) => {
-      const buffer = e.target?.result as ArrayBuffer
-      if (!buffer) { reject(new Error('No se pudo leer el archivo')); return }
+  const arrayBuffer = await file.arrayBuffer()
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
 
-      // Naive: decode as latin-1 and extract printable strings
-      const bytes = new Uint8Array(buffer)
-      const chunks: string[] = []
-      let current = ''
-      for (let i = 0; i < bytes.length; i++) {
-        const b = bytes[i]
-        if (b >= 32 && b < 127) {
-          current += String.fromCharCode(b)
-        } else {
-          if (current.length > 4) chunks.push(current)
-          current = ''
-        }
-      }
-      if (current.length > 4) chunks.push(current)
-      resolve(chunks.join('\n'))
-    }
-    reader.onerror = () => reject(new Error('Error al leer el archivo'))
-    reader.readAsArrayBuffer(file)
-  })
+  const pages: string[] = []
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i)
+    const content = await page.getTextContent()
+    // Each item is a TextItem or TextMarkedContent; only TextItem has .str
+    const pageText = content.items
+      .map((item) => ('str' in item ? item.str : ''))
+      .join(' ')
+    pages.push(pageText)
+  }
+
+  return pages.join('\n')
 }
 
 // ─── Pattern matching ─────────────────────────────────────────────────────────

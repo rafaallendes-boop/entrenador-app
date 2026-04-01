@@ -335,7 +335,7 @@ Estado: ✅ COMPLETADO
 - Requiere cambiar `AIRequest` y adaptar todos los providers
 - Esfuerzo: 2–3h — codeable/testeable local con mock
 
-**C2 — PDF import v1.1 — extracción real**
+**C2 — PDF import v1.1 — extracción real** ✅ COMPLETADO
 - Reemplazar el parser naive por `pdfjs-dist` (extracción real de texto, no bytes ASCII)
 - El `ParsedSessionDraft` ya existe, solo cambia el extractor
 - Esfuerzo: 2–3h
@@ -421,7 +421,7 @@ Estado: ✅ COMPLETADO
 | C3 — Resumen semanal del coach | Alto | Medio | 3 | ✅ Hecho |
 | C4 — Memoria del coach | Alto | Medio | 3 | ✅ Hecho |
 | C5 — Streaming de respuesta | Alto | Medio | 3 | ✅ Hecho |
-| PDF import v1.1 (pdfjs-dist) | Alto | Medio | 3 | ⏳ |
+| PDF import v1.1 (pdfjs-dist) | Alto | Medio | 3 | ✅ Hecho |
 | Notificaciones de sesión | Alto | Medio | 3 | ⏳ |
 | Pantalla Settings | Bajo | Bajo | 3 | ✅ Hecho |
 | Truncado inteligente del contexto | Alto | Bajo | 3 | ✅ Hecho |
