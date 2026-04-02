@@ -22,6 +22,9 @@ export default defineConfig({
           if (id.includes('node_modules/date-fns/')) {
             return 'date'
           }
+          if (id.includes('node_modules/pdfjs-dist/')) {
+            return 'pdf'
+          }
           if (id.includes('node_modules/lucide-react/')) {
             return 'icons'
           }

@@ -16,9 +16,9 @@ export default function ChatInput({ onSend, disabled }: ChatInputProps) {
     setValue('')
   }
 
-  const handleKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
+  const handleKey = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault()
       handleSend()
     }
   }
@@ -27,12 +27,12 @@ export default function ChatInput({ onSend, disabled }: ChatInputProps) {
     <div className="flex gap-2 items-end bg-surface-raised rounded-2xl border border-surface-border p-2">
       <textarea
         value={value}
-        onChange={e => setValue(e.target.value)}
+        onChange={(event) => setValue(event.target.value)}
         onKeyDown={handleKey}
         placeholder="Escríbele al coach..."
         rows={1}
         disabled={disabled}
-        className="flex-1 bg-transparent text-sm text-ink placeholder-ink-faint resize-none focus:outline-none py-1.5 px-2 max-h-32"
+        className="flex-1 bg-transparent text-sm text-ink placeholder-ink-faint resize-none focus:outline-none py-1.5 px-2 max-h-32 min-h-[42px]"
         style={{ fieldSizing: 'content' } as React.CSSProperties}
       />
       <button

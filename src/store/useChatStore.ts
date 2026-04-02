@@ -101,7 +101,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   deleteCurrentSession: async () => {
     const sessionId = get().currentSessionId
+    const messageIds = await db.chatMessages
+      .where('chatSessionId')
+      .equals(sessionId)
+      .primaryKeys() as string[]
+
     await db.chatMessages.where('chatSessionId').equals(sessionId).delete()
+    await syncService.deleteChatMessages(messageIds)
     // After deleting current session, start a new one
     await get().newSession()
   },

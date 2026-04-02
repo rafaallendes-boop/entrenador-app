@@ -27,15 +27,20 @@ export default function WeeklyView() {
 
   const getSessionsForDay = (dateISO: string, block?: TimeBlock) =>
     sessions
-      .filter(s => s.date === dateISO && (!block || s.timeBlock === block))
+      .filter((session) => session.date === dateISO && (!block || session.timeBlock === block))
       .sort((a, b) => a.timeBlock.localeCompare(b.timeBlock))
 
-  const dayData = weekDays.map(day => {
+  const dayData = weekDays.map((day) => {
     const iso = toISO(day)
-    return { iso, day, amSessions: getSessionsForDay(iso, 'AM'), pmSessions: getSessionsForDay(iso, 'PM') }
+    return {
+      iso,
+      day,
+      amSessions: getSessionsForDay(iso, 'AM'),
+      pmSessions: getSessionsForDay(iso, 'PM'),
+    }
   })
 
-  const selectedDayData = dayData.find(d => d.iso === selectedDate) ?? dayData[0]
+  const selectedDayData = dayData.find((day) => day.iso === selectedDate) ?? dayData[0]
   const weekLoaded = loadedWeekStart === currentWeekStart && !isLoading
   const isWeekEmpty = weekLoaded && sessions.length === 0
 
@@ -53,11 +58,10 @@ export default function WeeklyView() {
   }
 
   return (
-    <div className="pb-6">
-      {/* Header */}
-      <div className="pt-12 px-4 pb-2 flex items-center justify-between">
-        <h1 className="text-xl font-bold text-ink">Semana</h1>
-        <div className="flex items-center gap-2">
+    <div className="pb-6 md:pb-8">
+      <div className="pt-12 px-4 pb-2 flex flex-col gap-3 md:px-6 md:flex-row md:items-center md:justify-between">
+        <h1 className="text-xl font-bold text-ink md:text-2xl">Semana</h1>
+        <div className="flex items-center gap-2 flex-wrap">
           {isWeekEmpty ? (
             <button
               onClick={() => navigate(ROUTES.CHAT)}
@@ -100,74 +104,78 @@ export default function WeeklyView() {
 
       <WeekStrip showNav={true} />
 
-      {/* Selected day detail */}
-      {selectedDayData && (
-        <div className="px-4 mt-2">
-          <div className="flex items-center justify-between mb-3">
-            <div>
-              <h2 className="text-base font-semibold text-ink capitalize">
-                {formatFullDate(selectedDayData.day)}
-              </h2>
-              {isDateToday(selectedDayData.iso) && (
-                <span className="text-xs text-brand-light font-medium">Hoy</span>
-              )}
+      <div className="px-4 mt-2 grid gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(300px,0.85fr)] lg:items-start md:px-6">
+        {selectedDayData && (
+          <div className="min-w-0">
+            <div className="flex items-start justify-between gap-3 mb-3 flex-wrap">
+              <div>
+                <h2 className="text-base font-semibold text-ink capitalize md:text-lg">
+                  {formatFullDate(selectedDayData.day)}
+                </h2>
+                {isDateToday(selectedDayData.iso) && (
+                  <span className="text-xs text-brand-light font-medium">Hoy</span>
+                )}
+              </div>
+              <button
+                onClick={() => navigate(ROUTES.DAY(selectedDayData.iso))}
+                className="text-xs text-brand-light font-medium px-3 py-1.5 rounded-lg bg-brand/10 hover:bg-brand/20 transition-colors whitespace-nowrap"
+              >
+                Ver día completo
+              </button>
             </div>
-            <button
-              onClick={() => navigate(ROUTES.DAY(selectedDayData.iso))}
-              className="text-xs text-brand-light font-medium px-3 py-1.5 rounded-lg bg-brand/10 hover:bg-brand/20 transition-colors"
-            >
-              Ver día completo
-            </button>
-          </div>
 
-          {selectedDayData.amSessions.length === 0 && selectedDayData.pmSessions.length === 0 ? (
-            <div className="py-8 text-center">
-              <p className="text-ink-faint text-sm">Sin sesiones planificadas</p>
-              <p className="text-ink-faint text-xs mt-1">Día libre o de descanso</p>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {selectedDayData.amSessions.length > 0 && (
-                <div>
-                  <p className="text-[11px] text-ink-faint font-semibold uppercase tracking-wider mb-2">Mañana</p>
-                  <div className="space-y-2">
-                    {selectedDayData.amSessions.map(s => <SessionCard key={s.id} session={s} />)}
+            {selectedDayData.amSessions.length === 0 && selectedDayData.pmSessions.length === 0 ? (
+              <div className="py-8 text-center rounded-2xl bg-surface-card border border-surface-border">
+                <p className="text-ink-faint text-sm">Sin sesiones planificadas</p>
+                <p className="text-ink-faint text-xs mt-1">Día libre o de descanso</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {selectedDayData.amSessions.length > 0 && (
+                  <div>
+                    <p className="text-[11px] text-ink-faint font-semibold uppercase tracking-wider mb-2">Mañana</p>
+                    <div className="space-y-2">
+                      {selectedDayData.amSessions.map((session) => (
+                        <SessionCard key={session.id} session={session} />
+                      ))}
+                    </div>
                   </div>
-                </div>
-              )}
-              {selectedDayData.pmSessions.length > 0 && (
-                <div>
-                  <p className="text-[11px] text-ink-faint font-semibold uppercase tracking-wider mb-2">Tarde</p>
-                  <div className="space-y-2">
-                    {selectedDayData.pmSessions.map(s => <SessionCard key={s.id} session={s} />)}
+                )}
+                {selectedDayData.pmSessions.length > 0 && (
+                  <div>
+                    <p className="text-[11px] text-ink-faint font-semibold uppercase tracking-wider mb-2">Tarde</p>
+                    <div className="space-y-2">
+                      {selectedDayData.pmSessions.map((session) => (
+                        <SessionCard key={session.id} session={session} />
+                      ))}
+                    </div>
                   </div>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Week summary */}
-      {currentWeekSummary && (
-        <div className="px-4 mt-6">
-          <div className="flex items-center justify-between mb-3 gap-3">
-            <p className="text-xs font-semibold text-ink-muted uppercase tracking-wider">Resumen semanal</p>
-            <button
-              onClick={handleGenerateCoachNote}
-              disabled={isGeneratingNote}
-              className="inline-flex items-center gap-1.5 text-[11px] text-brand-light font-medium px-3 py-1.5 rounded-lg bg-brand/10 hover:bg-brand/20 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
-            >
-              <MessageSquareText size={13} />
-              {isGeneratingNote ? 'Generando...' : currentWeekSummary.coachNote ? 'Regenerar coach note' : 'Generar coach note'}
-            </button>
+                )}
+              </div>
+            )}
           </div>
-          <WeekSummaryCard summary={currentWeekSummary} />
-        </div>
-      )}
+        )}
+
+        {currentWeekSummary && (
+          <div className="min-w-0">
+            <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
+              <p className="text-xs font-semibold text-ink-muted uppercase tracking-wider">Resumen semanal</p>
+              <button
+                onClick={handleGenerateCoachNote}
+                disabled={isGeneratingNote}
+                className="inline-flex items-center gap-1.5 text-[11px] text-brand-light font-medium px-3 py-1.5 rounded-lg bg-brand/10 hover:bg-brand/20 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+              >
+                <MessageSquareText size={13} />
+                {isGeneratingNote ? 'Generando...' : currentWeekSummary.coachNote ? 'Regenerar coach note' : 'Generar coach note'}
+              </button>
+            </div>
+            <WeekSummaryCard summary={currentWeekSummary} />
+          </div>
+        )}
+      </div>
 
       {isLoading && (
-        <div className="px-4 py-4 text-center text-sm text-ink-muted">Cargando...</div>
+        <div className="px-4 py-4 text-center text-sm text-ink-muted md:px-6">Cargando...</div>
       )}
 
       {showAddModal && (

@@ -138,27 +138,27 @@ export default function AddSessionModal({ defaultDate, onClose }: Props) {
     }
   }
 
-  const addExercise = () => setExercises(prev => [...prev, emptyExercise()])
+  const addExercise = () => setExercises((current) => [...current, emptyExercise()])
 
   const updateExercise = (id: string, field: keyof ExerciseDraft, value: string) => {
-    setExercises(prev => prev.map(ex => (ex.id === id ? { ...ex, [field]: value } : ex)))
+    setExercises((current) => current.map((exercise) => (exercise.id === id ? { ...exercise, [field]: value } : exercise)))
   }
 
   const removeExercise = (id: string) => {
-    setExercises(prev => prev.filter(ex => ex.id !== id))
+    setExercises((current) => current.filter((exercise) => exercise.id !== id))
   }
 
   const buildExercises = (): Exercise[] =>
     exercises
-      .filter(ex => ex.name.trim())
-      .map(ex => ({
-        id: ex.id,
-        name: ex.name.trim(),
-        sets: Number(ex.sets) || 3,
-        reps: ex.reps.trim() || '10',
-        weight: ex.weight ? Number(ex.weight) : undefined,
+      .filter((exercise) => exercise.name.trim())
+      .map((exercise) => ({
+        id: exercise.id,
+        name: exercise.name.trim(),
+        sets: Number(exercise.sets) || 3,
+        reps: exercise.reps.trim() || '10',
+        weight: exercise.weight ? Number(exercise.weight) : undefined,
         completed: false,
-        notes: ex.notes.trim() || undefined,
+        notes: exercise.notes.trim() || undefined,
       }))
 
   const parseOptionalNumber = (value: string): number | undefined => {
@@ -201,29 +201,29 @@ export default function AddSessionModal({ defaultDate, onClose }: Props) {
     onClose()
   }
 
-  const cfg = SESSION_TYPE_CONFIG[type]
+  const config = SESSION_TYPE_CONFIG[type]
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col justify-end">
+    <div className="fixed inset-0 z-50 flex flex-col justify-end md:items-center md:justify-center md:p-6">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
 
-      <div className="relative max-h-[92vh] overflow-y-auto rounded-t-2xl border-t border-surface-border bg-surface-card">
-        <div className="flex justify-center pb-1 pt-3">
+      <div className="relative w-full max-h-[92vh] overflow-y-auto rounded-t-2xl border-t border-surface-border bg-surface-card md:max-w-3xl md:rounded-2xl md:border md:max-h-[88vh]">
+        <div className="flex justify-center pb-1 pt-3 md:hidden">
           <div className="h-1 w-10 rounded-full bg-surface-border" />
         </div>
 
-        <div className="flex items-center justify-between border-b border-surface-border px-4 py-3">
+        <div className="flex items-center justify-between border-b border-surface-border px-4 py-3 md:px-6">
           <h2 className="text-base font-semibold text-ink">Nueva sesion</h2>
           <button onClick={onClose} className="rounded-lg p-1 text-ink-muted hover:text-ink">
             <X size={18} />
           </button>
         </div>
 
-        <div className="space-y-5 px-4 py-4 pb-8">
+        <div className="space-y-5 px-4 py-4 pb-8 md:px-6">
           <div>
             <label className="mb-2 block text-xs font-medium uppercase tracking-wider text-ink-muted">Tipo</label>
             <div className="flex flex-wrap gap-2">
-              {SESSION_TYPES.map(sessionType => {
+              {SESSION_TYPES.map((sessionType) => {
                 const currentTypeConfig = SESSION_TYPE_CONFIG[sessionType]
                 const active = type === sessionType
                 return (
@@ -247,13 +247,13 @@ export default function AddSessionModal({ defaultDate, onClose }: Props) {
             <div>
               <label className="mb-2 block text-xs font-medium uppercase tracking-wider text-ink-muted">Subtipo</label>
               <div className="flex flex-wrap gap-2">
-                {SQUASH_SUBTYPES.map(subtype => (
+                {SQUASH_SUBTYPES.map((subtype) => (
                   <button
                     key={subtype.value}
                     onClick={() => handleSquashSubtypeChange(subtype.value)}
                     className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-all ${
                       squashSubtype === subtype.value
-                        ? `${cfg.bgClass} ${cfg.textClass} ${cfg.borderClass}`
+                        ? `${config.bgClass} ${config.textClass} ${config.borderClass}`
                         : 'border-surface-border bg-surface-raised text-ink-muted'
                     }`}
                   >
@@ -268,7 +268,7 @@ export default function AddSessionModal({ defaultDate, onClose }: Props) {
             <div>
               <label className="mb-2 block text-xs font-medium uppercase tracking-wider text-ink-muted">Tipo de carrera</label>
               <div className="flex flex-wrap gap-2">
-                {RUNNING_TYPES.map(run => (
+                {RUNNING_TYPES.map((run) => (
                   <button
                     key={run.value}
                     onClick={() => setRunningType(run.value)}
@@ -290,26 +290,26 @@ export default function AddSessionModal({ defaultDate, onClose }: Props) {
             <input
               type="text"
               value={title}
-              onChange={event => setTitle(event.target.value)}
+              onChange={(event) => setTitle(event.target.value)}
               placeholder="Nombre de la sesion"
               className="w-full rounded-xl border border-surface-border bg-surface-raised px-3 py-2.5 text-sm text-ink placeholder-ink-faint focus:border-brand/50 focus:outline-none"
             />
           </div>
 
-          <div className="flex gap-3">
-            <div className="flex-1">
+          <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
+            <div>
               <label className="mb-2 block text-xs font-medium uppercase tracking-wider text-ink-muted">Fecha</label>
               <input
                 type="date"
                 value={date}
-                onChange={event => setDate(event.target.value)}
+                onChange={(event) => setDate(event.target.value)}
                 className="w-full rounded-xl border border-surface-border bg-surface-raised px-3 py-2.5 text-sm text-ink focus:border-brand/50 focus:outline-none"
               />
             </div>
             <div>
               <label className="mb-2 block text-xs font-medium uppercase tracking-wider text-ink-muted">Bloque</label>
               <div className="flex overflow-hidden rounded-xl border border-surface-border">
-                {(['AM', 'PM'] as TimeBlock[]).map(block => (
+                {(['AM', 'PM'] as TimeBlock[]).map((block) => (
                   <button
                     key={block}
                     onClick={() => setTimeBlock(block)}
@@ -324,8 +324,8 @@ export default function AddSessionModal({ defaultDate, onClose }: Props) {
             </div>
           </div>
 
-          <div className="flex gap-3">
-            <div className="flex-1">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
               <label className="mb-2 block text-xs font-medium uppercase tracking-wider text-ink-muted">Duracion (min)</label>
               <input
                 type="number"
@@ -333,18 +333,18 @@ export default function AddSessionModal({ defaultDate, onClose }: Props) {
                 max={300}
                 step={5}
                 value={duration}
-                onChange={event => setDuration(Number(event.target.value))}
+                onChange={(event) => setDuration(Number(event.target.value))}
                 className="w-full rounded-xl border border-surface-border bg-surface-raised px-3 py-2.5 text-sm text-ink focus:border-brand/50 focus:outline-none"
               />
             </div>
-            <div className="flex-1">
+            <div>
               <label className="mb-2 block text-xs font-medium uppercase tracking-wider text-ink-muted">RPE planificado</label>
               <input
                 type="number"
                 min={1}
                 max={10}
                 value={rpe}
-                onChange={event => setRpe(event.target.value === '' ? '' : Number(event.target.value))}
+                onChange={(event) => setRpe(event.target.value === '' ? '' : Number(event.target.value))}
                 placeholder="1-10"
                 className="w-full rounded-xl border border-surface-border bg-surface-raised px-3 py-2.5 text-sm text-ink placeholder-ink-faint focus:border-brand/50 focus:outline-none"
               />
@@ -357,7 +357,7 @@ export default function AddSessionModal({ defaultDate, onClose }: Props) {
               <input
                 type="text"
                 value={location}
-                onChange={event => setLocation(event.target.value)}
+                onChange={(event) => setLocation(event.target.value)}
                 placeholder={type === 'running' ? 'Ej: Parque Bicentenario' : 'Ej: Club Manquehue'}
                 className="w-full rounded-xl border border-surface-border bg-surface-raised px-3 py-2.5 text-sm text-ink placeholder-ink-faint focus:border-brand/50 focus:outline-none"
               />
@@ -371,7 +371,7 @@ export default function AddSessionModal({ defaultDate, onClose }: Props) {
                 <input
                   type="text"
                   value={opponent}
-                  onChange={event => setOpponent(event.target.value)}
+                  onChange={(event) => setOpponent(event.target.value)}
                   placeholder="Nombre del rival"
                   className="w-full rounded-xl border border-surface-border bg-surface px-3 py-2.5 text-sm text-ink placeholder-ink-faint focus:border-brand/50 focus:outline-none"
                 />
@@ -380,10 +380,10 @@ export default function AddSessionModal({ defaultDate, onClose }: Props) {
               <div>
                 <label className="mb-2 block text-xs font-medium uppercase tracking-wider text-ink-muted">Resultado <span className="normal-case text-ink-faint">(opcional)</span></label>
                 <div className="flex flex-wrap gap-2">
-                  {MATCH_RESULTS.map(result => (
+                  {MATCH_RESULTS.map((result) => (
                     <button
                       key={result.value}
-                      onClick={() => setMatchResult(current => (current === result.value ? '' : result.value))}
+                      onClick={() => setMatchResult((current) => (current === result.value ? '' : result.value))}
                       className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-all ${
                         matchResult === result.value
                           ? result.value === 'win'
@@ -398,27 +398,27 @@ export default function AddSessionModal({ defaultDate, onClose }: Props) {
                 </div>
               </div>
 
-              <div className="flex gap-3">
-                <div className="flex-1">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
                   <label className="mb-2 block text-xs font-medium uppercase tracking-wider text-ink-muted">Games ganados</label>
                   <input
                     type="number"
                     min={0}
                     max={5}
                     value={gamesWon}
-                    onChange={event => setGamesWon(event.target.value)}
+                    onChange={(event) => setGamesWon(event.target.value)}
                     placeholder="3"
                     className="w-full rounded-xl border border-surface-border bg-surface px-3 py-2.5 text-sm text-ink placeholder-ink-faint focus:border-brand/50 focus:outline-none"
                   />
                 </div>
-                <div className="flex-1">
+                <div>
                   <label className="mb-2 block text-xs font-medium uppercase tracking-wider text-ink-muted">Games perdidos</label>
                   <input
                     type="number"
                     min={0}
                     max={5}
                     value={gamesLost}
-                    onChange={event => setGamesLost(event.target.value)}
+                    onChange={(event) => setGamesLost(event.target.value)}
                     placeholder="1"
                     className="w-full rounded-xl border border-surface-border bg-surface px-3 py-2.5 text-sm text-ink placeholder-ink-faint focus:border-brand/50 focus:outline-none"
                   />
@@ -429,45 +429,45 @@ export default function AddSessionModal({ defaultDate, onClose }: Props) {
 
           {type === 'running' && (
             <div className="space-y-3">
-              <div className="flex gap-3">
-                <div className="flex-1">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
                   <label className="mb-2 block text-xs font-medium uppercase tracking-wider text-ink-muted">Ritmo min (min/km)</label>
                   <input
                     type="text"
                     value={paceMin}
-                    onChange={event => setPaceMin(event.target.value)}
+                    onChange={(event) => setPaceMin(event.target.value)}
                     placeholder="Ej: 5:00"
                     className="w-full rounded-xl border border-surface-border bg-surface-raised px-3 py-2.5 text-sm text-ink placeholder-ink-faint focus:border-brand/50 focus:outline-none"
                   />
                 </div>
-                <div className="flex-1">
+                <div>
                   <label className="mb-2 block text-xs font-medium uppercase tracking-wider text-ink-muted">Ritmo max (min/km)</label>
                   <input
                     type="text"
                     value={paceMax}
-                    onChange={event => setPaceMax(event.target.value)}
+                    onChange={(event) => setPaceMax(event.target.value)}
                     placeholder="Ej: 5:30"
                     className="w-full rounded-xl border border-surface-border bg-surface-raised px-3 py-2.5 text-sm text-ink placeholder-ink-faint focus:border-brand/50 focus:outline-none"
                   />
                 </div>
               </div>
-              <div className="flex gap-3">
-                <div className="flex-1">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
                   <label className="mb-2 block text-xs font-medium uppercase tracking-wider text-ink-muted">FC min (bpm)</label>
                   <input
                     type="number"
                     value={hrMin}
-                    onChange={event => setHrMin(event.target.value)}
+                    onChange={(event) => setHrMin(event.target.value)}
                     placeholder="140"
                     className="w-full rounded-xl border border-surface-border bg-surface-raised px-3 py-2.5 text-sm text-ink placeholder-ink-faint focus:border-brand/50 focus:outline-none"
                   />
                 </div>
-                <div className="flex-1">
+                <div>
                   <label className="mb-2 block text-xs font-medium uppercase tracking-wider text-ink-muted">FC max (bpm)</label>
                   <input
                     type="number"
                     value={hrMax}
-                    onChange={event => setHrMax(event.target.value)}
+                    onChange={(event) => setHrMax(event.target.value)}
                     placeholder="155"
                     className="w-full rounded-xl border border-surface-border bg-surface-raised px-3 py-2.5 text-sm text-ink placeholder-ink-faint focus:border-brand/50 focus:outline-none"
                   />
@@ -478,12 +478,12 @@ export default function AddSessionModal({ defaultDate, onClose }: Props) {
 
           {showExercises && (
             <div>
-              <div className="mb-2 flex items-center justify-between">
+              <div className="mb-2 flex items-center justify-between gap-3 flex-wrap">
                 <label className="text-xs font-medium uppercase tracking-wider text-ink-muted">
                   {type === 'mobility' ? 'Ejercicios de movilidad' : 'Ejercicios'}
                   <span className="ml-1 normal-case text-ink-faint">(opcional)</span>
                 </label>
-                <button onClick={addExercise} className="flex items-center gap-1 text-xs font-medium text-brand-light">
+                <button onClick={addExercise} className="flex items-center gap-1 text-xs font-medium text-brand-light whitespace-nowrap">
                   <Plus size={12} /> Añadir
                 </button>
               </div>
@@ -504,7 +504,7 @@ export default function AddSessionModal({ defaultDate, onClose }: Props) {
                         <input
                           type="text"
                           value={exercise.name}
-                          onChange={event => updateExercise(exercise.id, 'name', event.target.value)}
+                          onChange={(event) => updateExercise(exercise.id, 'name', event.target.value)}
                           placeholder={type === 'mobility' ? 'Ej: Hip flexor stretch' : 'Ej: Press banca'}
                           className="flex-1 rounded-lg border border-surface-border bg-surface px-2.5 py-1.5 text-sm text-ink placeholder-ink-faint focus:border-brand/50 focus:outline-none"
                         />
@@ -512,37 +512,37 @@ export default function AddSessionModal({ defaultDate, onClose }: Props) {
                           <Trash2 size={14} />
                         </button>
                       </div>
-                      <div className="flex gap-2 pl-6">
-                        <div className="flex-1">
+                      <div className={`grid gap-2 pl-6 ${type === 'strength' ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`}>
+                        <div>
                           <label className="mb-1 block text-[10px] uppercase tracking-wider text-ink-faint">Series</label>
                           <input
                             type="number"
                             min={1}
                             max={20}
                             value={exercise.sets}
-                            onChange={event => updateExercise(exercise.id, 'sets', event.target.value)}
+                            onChange={(event) => updateExercise(exercise.id, 'sets', event.target.value)}
                             className="w-full rounded-lg border border-surface-border bg-surface px-2 py-1.5 text-sm text-ink focus:border-brand/50 focus:outline-none"
                           />
                         </div>
-                        <div className="flex-1">
+                        <div>
                           <label className="mb-1 block text-[10px] uppercase tracking-wider text-ink-faint">{type === 'mobility' ? 'Reps / seg' : 'Reps'}</label>
                           <input
                             type="text"
                             value={exercise.reps}
-                            onChange={event => updateExercise(exercise.id, 'reps', event.target.value)}
+                            onChange={(event) => updateExercise(exercise.id, 'reps', event.target.value)}
                             placeholder={type === 'mobility' ? '30s' : '8'}
                             className="w-full rounded-lg border border-surface-border bg-surface px-2 py-1.5 text-sm text-ink placeholder-ink-faint focus:border-brand/50 focus:outline-none"
                           />
                         </div>
                         {type === 'strength' && (
-                          <div className="flex-1">
+                          <div>
                             <label className="mb-1 block text-[10px] uppercase tracking-wider text-ink-faint">Carga (kg)</label>
                             <input
                               type="number"
                               min={0}
                               step={0.5}
                               value={exercise.weight}
-                              onChange={event => updateExercise(exercise.id, 'weight', event.target.value)}
+                              onChange={(event) => updateExercise(exercise.id, 'weight', event.target.value)}
                               placeholder="-"
                               className="w-full rounded-lg border border-surface-border bg-surface px-2 py-1.5 text-sm text-ink placeholder-ink-faint focus:border-brand/50 focus:outline-none"
                             />
@@ -553,7 +553,7 @@ export default function AddSessionModal({ defaultDate, onClose }: Props) {
                         <input
                           type="text"
                           value={exercise.notes}
-                          onChange={event => updateExercise(exercise.id, 'notes', event.target.value)}
+                          onChange={(event) => updateExercise(exercise.id, 'notes', event.target.value)}
                           placeholder={type === 'mobility' ? 'Foco: cadera, tobillo...' : 'Notas opcionales'}
                           className="w-full rounded-lg border border-surface-border bg-surface px-2.5 py-1.5 text-xs text-ink placeholder-ink-faint focus:border-brand/50 focus:outline-none"
                         />
@@ -576,7 +576,7 @@ export default function AddSessionModal({ defaultDate, onClose }: Props) {
             <input
               type="text"
               value={objective}
-              onChange={event => setObjective(event.target.value)}
+              onChange={(event) => setObjective(event.target.value)}
               placeholder="Que quieres conseguir?"
               className="w-full rounded-xl border border-surface-border bg-surface-raised px-3 py-2.5 text-sm text-ink placeholder-ink-faint focus:border-brand/50 focus:outline-none"
             />
@@ -586,7 +586,7 @@ export default function AddSessionModal({ defaultDate, onClose }: Props) {
             <label className="mb-2 block text-xs font-medium uppercase tracking-wider text-ink-muted">Notas <span className="normal-case text-ink-faint">(opcional)</span></label>
             <textarea
               value={notes}
-              onChange={event => setNotes(event.target.value)}
+              onChange={(event) => setNotes(event.target.value)}
               placeholder="Instrucciones, recordatorios..."
               rows={2}
               className="w-full resize-none rounded-xl border border-surface-border bg-surface-raised px-3 py-2 text-sm text-ink placeholder-ink-faint focus:border-brand/50 focus:outline-none"

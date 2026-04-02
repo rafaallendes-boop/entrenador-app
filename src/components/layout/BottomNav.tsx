@@ -1,5 +1,7 @@
 import { NavLink } from 'react-router-dom'
 import { ROUTES } from '../../constants/routes'
+import SyncStatusBadge from '../sync/SyncStatusBadge'
+import { useAuthStore } from '../../store/useAuthStore'
 
 const tabs = [
   { to: ROUTES.HOME, label: 'Home', icon: 'home' },
@@ -10,26 +12,33 @@ const tabs = [
 ]
 
 export default function BottomNav() {
+  const { syncStatus, syncError } = useAuthStore()
+
   return (
-    <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-lg bg-surface-card border-t border-surface-border safe-bottom">
-      <div className="flex">
-        {tabs.map(({ to, label, icon }) => (
-          <NavLink
-            key={to}
-            to={to}
-            end={to === ROUTES.HOME}
-            className={({ isActive }) =>
-              `flex-1 flex flex-col items-center gap-1 py-3 text-xs font-medium transition-colors ${
-                isActive
-                  ? 'text-brand'
-                  : 'text-ink-faint hover:text-ink-muted'
-              }`
-            }
-          >
-            <NavIcon name={icon} />
-            <span>{label}</span>
-          </NavLink>
-        ))}
+    <nav className="fixed bottom-0 left-0 right-0 z-40 px-2 pb-2 md:px-4">
+      <div className="mx-auto w-full max-w-5xl rounded-t-2xl border border-surface-border bg-surface-card shadow-lg shadow-black/10 safe-bottom">
+        <div className="px-3 pt-2 flex justify-end">
+          <SyncStatusBadge status={syncStatus} error={syncError} compact />
+        </div>
+        <div className="flex">
+          {tabs.map(({ to, label, icon }) => (
+            <NavLink
+              key={to}
+              to={to}
+              end={to === ROUTES.HOME}
+              className={({ isActive }) =>
+                `flex-1 flex flex-col items-center gap-1 py-3 text-xs font-medium transition-colors ${
+                  isActive
+                    ? 'text-brand'
+                    : 'text-ink-faint hover:text-ink-muted'
+                }`
+              }
+            >
+              <NavIcon name={icon} />
+              <span>{label}</span>
+            </NavLink>
+          ))}
+        </div>
       </div>
     </nav>
   )

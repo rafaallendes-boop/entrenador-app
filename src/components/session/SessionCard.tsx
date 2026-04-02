@@ -44,7 +44,7 @@ export default function SessionCard({ session, compact = false }: SessionCardPro
 
   return (
     <div className={`rounded-xl border ${config.borderClass} ${config.bgClass} overflow-hidden transition-opacity ${isSkipped ? 'opacity-50' : ''}`}>
-      <div className={`flex items-center gap-3 p-3 ${isExpandable ? 'cursor-pointer' : ''}`} onClick={() => isExpandable && setExpanded(e => !e)}>
+      <div className={`flex items-start gap-3 p-3 md:p-4 ${isExpandable ? 'cursor-pointer' : ''}`} onClick={() => isExpandable && setExpanded(e => !e)}>
         <SessionTypeIcon type={session.type} />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
@@ -53,33 +53,33 @@ export default function SessionCard({ session, compact = false }: SessionCardPro
             {showMatchBadge && <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium flex-shrink-0 ${matchBadgeClass}`}>{MATCH_RESULT_LABELS[session.matchResult!]}</span>}
             {hasRunningDetails && session.runningDetails && <span className="text-xs px-1.5 py-0.5 rounded-full bg-sky-500/10 text-sky-400 border border-sky-500/20 font-medium flex-shrink-0">{RUNNING_TYPE_LABELS[session.runningDetails.runningType] ?? session.runningDetails.runningType}</span>}
           </div>
-          <div className="flex items-center gap-3 mt-1 flex-wrap">
+          <div className="flex items-center gap-x-3 gap-y-1.5 mt-1 flex-wrap">
             <span className="flex items-center gap-1 text-xs text-ink-muted"><Clock size={11} />{formatDuration(session.durationMin)}</span>
             {session.rpe != null && <span className="flex items-center gap-1 text-xs text-ink-muted"><Flame size={11} />{session.actualRpe != null && session.status === 'completed' ? `RPE real ${session.actualRpe}` : `RPE ${session.rpe}`}</span>}
             {hasRunningDetails && session.runningDetails?.targetPaceMin && <span className="flex items-center gap-1 text-xs text-sky-400"><Wind size={11} />{session.runningDetails.targetPaceMin}{session.runningDetails.targetPaceMax ? `–${session.runningDetails.targetPaceMax}` : ''} /km</span>}
             {session.opponent && <span className="text-xs text-ink-faint">vs {session.opponent}</span>}
           </div>
         </div>
-        <div className="flex items-center gap-2 flex-shrink-0">
-          {!compact && <button onClick={e => { e.stopPropagation(); cycleStatus(session.id) }} title="Cambiar estado" className={`text-xs px-2 py-1 rounded-lg font-medium flex items-center gap-1 transition-all active:scale-95 ${statusCfg.badge}`}><span className="text-[11px] leading-none">{statusCfg.icon}</span><span className="hidden xs:inline">{statusCfg.label}</span></button>}
+        <div className="flex items-center gap-2 flex-shrink-0 self-start md:self-center">
+          {!compact && <button onClick={e => { e.stopPropagation(); cycleStatus(session.id) }} title="Cambiar estado" className={`text-xs px-2 py-1 rounded-lg font-medium flex items-center gap-1 transition-all active:scale-95 whitespace-nowrap ${statusCfg.badge}`}><span className="text-[11px] leading-none">{statusCfg.icon}</span><span className="hidden sm:inline">{statusCfg.label}</span></button>}
           {compact && <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${statusCfg.badge}`}>{statusCfg.icon}</span>}
           {isExpandable && <span className="text-ink-faint">{expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}</span>}
         </div>
       </div>
       {expanded && (
-        <div className="px-3 pb-3 border-t border-white/5 space-y-2">
+        <div className="px-3 pb-3 border-t border-white/5 space-y-2 md:px-4 md:pb-4">
           {session.objective && <p className="text-xs text-ink-muted mt-2"><span className="text-ink-faint uppercase tracking-wider text-[10px] font-medium mr-1">Objetivo</span>{session.objective}</p>}
           {hasRunningDetails && session.runningDetails && (
-            <div className="mt-2 grid grid-cols-2 gap-2">
+            <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
               <div className="bg-sky-500/10 rounded-lg p-2"><p className="text-[10px] text-sky-400/70 uppercase tracking-wider font-medium mb-0.5">Ritmo objetivo</p><p className="text-sm font-semibold text-sky-400">{session.runningDetails.targetPaceMin}{session.runningDetails.targetPaceMax ? `–${session.runningDetails.targetPaceMax}` : ''}<span className="text-xs font-normal text-sky-400/70 ml-1">/km</span></p></div>
               {session.runningDetails.targetHrMin && <div className="bg-rose-500/10 rounded-lg p-2"><p className="text-[10px] text-rose-400/70 uppercase tracking-wider font-medium mb-0.5">FC objetivo</p><p className="text-sm font-semibold text-rose-400">{session.runningDetails.targetHrMin}–{session.runningDetails.targetHrMax}<span className="text-xs font-normal text-rose-400/70 ml-1">bpm</span></p></div>}
             </div>
           )}
           {hasMatchMeta && (
-            <div className="mt-2 grid grid-cols-2 gap-2">
+            <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
               {(session.matchResult || session.gamesWon != null || session.gamesLost != null) && <div className="bg-surface-raised rounded-lg p-2"><p className="text-[10px] text-ink-faint uppercase tracking-wider font-medium mb-0.5">Resultado</p><p className={`text-sm font-semibold ${session.matchResult === 'win' ? 'text-emerald-400' : session.matchResult === 'loss' ? 'text-rose-400' : 'text-ink'}`}>{session.matchResult ? MATCH_RESULT_LABELS[session.matchResult] : 'Pendiente'}{(session.gamesWon != null || session.gamesLost != null) && <span className="text-ink-muted font-normal ml-1">{session.gamesWon ?? '?'}-{session.gamesLost ?? '?'}</span>}</p></div>}
               {session.opponent && <div className="bg-surface-raised rounded-lg p-2"><p className="text-[10px] text-ink-faint uppercase tracking-wider font-medium mb-0.5">Rival</p><p className="text-sm font-semibold text-ink">{session.opponent}</p></div>}
-              {session.location && <div className="bg-surface-raised rounded-lg p-2 col-span-2"><p className="text-[10px] text-ink-faint uppercase tracking-wider font-medium mb-0.5">Lugar</p><p className="text-sm text-ink">{session.location}</p></div>}
+              {session.location && <div className="bg-surface-raised rounded-lg p-2 sm:col-span-2"><p className="text-[10px] text-ink-faint uppercase tracking-wider font-medium mb-0.5">Lugar</p><p className="text-sm text-ink">{session.location}</p></div>}
             </div>
           )}
           {hasExercises && <ExerciseChecklist sessionId={session.id} exercises={session.exercises!} />}

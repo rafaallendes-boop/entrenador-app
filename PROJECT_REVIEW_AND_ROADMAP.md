@@ -1,275 +1,149 @@
-# Entrenador App - Review y Roadmap
+# Entrenador App - Review and Roadmap
 
-Generado: 2026-04-01
-Actualizado: 2026-04-02 (sync multi-dispositivo en produccion — COMPLETO)
-Base de revision: codigo del repo + `npm run lint` + `npm run build`
+Generado: 2026-04-01  
+Actualizado: 2026-04-02
 
----
+Base de revision:
 
-## 1. Resumen ejecutivo
+- codigo del repo
+- `npm run lint`
+- `npm run build`
 
-Entrenador ya no esta en fase de idea ni de prototipo basico. Hoy es una PWA funcional para planificacion y seguimiento deportivo con:
+## Resumen ejecutivo
+
+Entrenador ya esta en una etapa de producto usable, no de prototipo base.
+
+Hoy ya existen:
 
 - plan semanal y vista diaria
 - coach AI con propuestas ejecutables
 - chat multi-sesion con streaming
-- persistencia local en Dexie
-- backup JSON
-- importacion de PDFs
-- resumenes semanales y memoria persistente del coach
-- notificaciones basicas de sesiones
+- Dexie local-first
+- backup JSON con import/export
+- importacion PDF
+- notificaciones basicas
+- sync multi-dispositivo con Supabase + Google OAuth
 
-El estado real al 2026-04-02 es:
+El trabajo prioritario ya no es agregar features basicas. El foco real es:
 
-**MVP avanzado y utilizable**, con la mayor parte del roadmap historico ya implementado. El cuello de botella ya no es "crear features basicas", sino cerrar huecos de producto y operacion:
+- bajar peso del flujo PDF
+- seguir endureciendo sync y mantenimiento
+- mejorar notificaciones
+- pulir UX de producto ya existente
 
-- ~~sincronizacion entre dispositivos~~ → **COMPLETO Y EN PRODUCCION** (Supabase + Google OAuth)
-- versionado y opciones avanzadas del restore
-- robustez real de notificaciones
-- control del peso del bundle de importacion PDF
-- ~~reload de stores post-sync~~ → resuelto
+## Estado verificado
 
----
-
-## 2. Estado verificado hoy
-
-### Salud tecnica
+Salud tecnica:
 
 - `npm run lint`: OK
 - `npm run build`: OK
-- Build de produccion generado correctamente con Vite 8
 
-### Estado del producto
+Observaciones de build:
 
-Implementado y visible en codigo:
+- `pdf.worker.min` sigue siendo el asset mas pesado
+- `ImportPDF` sigue siendo el chunk mas caro de la app
+- el resto del core esta razonablemente contenido
 
-- coach planner con `create_week`, `add_session`, `update_session`, `delete_session`
-- proposals persistidas en Dexie
-- chat multi-sesion
-- streaming de respuesta del coach
-- memoria persistente del atleta/coach
-- resumen semanal generado por AI
-- historial de partidos de squash
-- `actualRpe` por sesion
-- `bodyWeight` en check-in diario y metricas semanales
-- Settings con export, memoria, permisos de notificaciones y limpieza local
-- importacion PDF con `pdfjs-dist` y extraccion asistida por AI
-- provider proxy para produccion via Netlify
-- lazy loading y code splitting inicial
+## Lo que ya esta cerrado
 
-### Nuevos archivos (2026-04-02, sync multi-dispositivo)
+Estos temas ya no deberian seguir listados como roadmap principal:
 
-- `src/services/auth.ts` — cliente Supabase singleton (lee env vars `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`)
-- `src/services/syncService.ts` — capa completa de sync: push/pull/offline queue para 6 tablas
-- `src/store/useAuthStore.ts` — estado de auth (user, syncStatus, signInWithGoogle, signOut)
-- `src/components/auth/AuthGate.tsx` + `LoginScreen.tsx` — Google OAuth flow
-- `MULTI_DEVICE_SYNC_FOR_NETLIFY_APP.md` — documento de arquitectura completo con SQL
-
-### Observaciones relevantes del build
-
-- `npm run build`: OK (0 errores TypeScript)
-- Asset mas pesado: `pdf.worker.min` (~1.24 MB). Sin cambios.
-- `ImportPDF` sigue siendo la pantalla mas cara (~418 kB gzip 125 kB).
-- El core de la app se mantiene contenido; la deuda de bundle esta concentrada en PDF.
-- Warning de dynamic import de `db.ts`: preexistente, no introducido por sync.
-
----
-
-## 3. Lo que ya no deberia seguir en "roadmap"
-
-Estos frentes ya deben considerarse cerrados salvo bugs puntuales:
-
-- coach planner base
+- planner base del coach
 - proposals persistidas
-- chat multi-turno reciente
+- chat multi-sesion
 - streaming
-- historial de partidos
-- resumen semanal AI
 - memoria del coach
-- Settings minima
-- export JSON
-- notificaciones basicas
-- PDF import v1.1 y v2 asistido por AI
-- `weekLoaded` para evitar el flicker obvio de semana vacia
-- **sync multi-dispositivo** — codigo completo (Supabase + Google OAuth + push/pull/offline queue)
+- export/import JSON
+- sync multi-dispositivo base
+- reload de stores post-sync
+- limpieza principal de docs base
 
-El roadmap anterior mezclaba varios de estos items como si siguieran pendientes. Eso lo hacia menos confiable.
+## Prioridades reales
 
----
+### P1. Reducir peso del modulo PDF
 
-## 4. Prioridades reales desde hoy
+Es el frente con mejor retorno tecnico inmediato.
 
-### ~~Ola 1 - Cerrar huecos del sync implementado~~ → COMPLETADO (2026-04-02)
+Objetivo minimo:
 
-#### ~~P1. Setup infraestructura Supabase~~ → HECHO
+- separar `pdfjs-dist` del chunk principal de `ImportPDF`
+- cargar worker y libreria solo bajo demanda
+- revisar si el parsing puede seguir partiendose en chunks dedicados
 
-- Proyecto Supabase creado
-- Google OAuth habilitado y vinculado a Google Cloud Console
-- 6 tablas + 24 politicas RLS ejecutadas en Supabase SQL Editor
-- `VITE_SUPABASE_URL` y `VITE_SUPABASE_ANON_KEY` agregadas en Netlify Dashboard
-- Deploy produccion exitoso y verificado
+### P2. Notificaciones mas confiables
 
-#### ~~P2. Reload de stores tras pullAll~~ → HECHO
+La base existe, pero no equivale todavia a scheduling verdaderamente persistente del sistema.
 
-`pullAll()` en `App.tsx` llama `loadWeek()` y `loadAllSummaries()` al completar.
+Objetivo minimo:
 
-#### P3. Notificaciones mas confiables
+- mejor reprogramacion al volver a foco
+- documentar limites reales por navegador
+- seguir reduciendo duplicados o misses
 
-La implementacion actual agenda `setTimeout` dentro del service worker usando horarios fijos por `AM` y `PM`.
+### P3. Sync UX y reglas de dominio
 
-Riesgos actuales:
-- si el worker se reinicia, los timers no sobreviven
-- no hay hora real por sesion, solo bloque AM/PM
-- no hay reprogramacion al reabrir al dia siguiente salvo paso por Dashboard
+La base de sync ya esta mejor cerrada, pero quedan decisiones de producto:
 
-Entrega minima:
-- reprogramacion robusta al abrir la app
-- timestamps por sesion cuando existan
-- fallback claro cuando solo haya `timeBlock`
-- documentar limitaciones por navegador/PWA
+- indicador visible de sync fuera de Settings
+- decidir que pasa con `coachProposals` cuando se borra una conversacion
+- evaluar realtime solo si aparece uso simultaneo real
 
-#### P4. Reducir peso del flujo PDF
+### P4. Backup mas avanzado
 
-La funcion existe y sirve, pero sigue siendo la zona mas pesada del bundle.
+La importacion actual ya es util y endurecida, pero aun puede crecer:
 
-Entrega minima:
-- aislar mejor `pdfjs-dist`
-- cargar worker y pantalla PDF solo bajo demanda
-- revisar si hay assets importados de mas
+- preview antes de restaurar
+- opcion `merge` vs `replace`
+- versionado y migraciones futuras de backup
 
-### Ola 2 - Consolidacion de producto
-
-#### ~~P5. Sync multi-dispositivo~~ → COMPLETO Y EN PRODUCCION (2026-04-02)
-
-Implementado con Supabase. Infraestructura activa. Verificado en produccion.
-
-#### P5. Indicador de sync en navegacion principal
-
-Hoy el sync status (`idle | syncing | error | offline`) solo se muestra en la pagina de Settings.
-
-Mejora util: un pequeno icono de nube en el `AppShell`/`BottomNav` para que el usuario vea el estado sin ir a Settings.
-
-Impacto: bajo-medio
-Esfuerzo: bajo (el `SyncStatusBadge` ya existe, solo moverlo)
-
-#### P6. Restauracion de backups versionada
-
-Si se hace restore desde un backup JSON antiguo, hoy no hay migracion ni merge — se reemplaza todo.
-
-Mejora minima:
-- mostrar preview de conteos antes de importar
-- considerar opcion `merge` vs `replace`
-- versionado del schema del backup para futuras migraciones
-
-#### P7. Mejoras de coaching con impacto real
-
-No hace falta abrir mas features "vistosas". Conviene ir a mejoras que aumenten confianza y utilidad:
-
-- mejores mensajes de colision/duplicado al crear semana
-- explicaciones mas claras en propuestas complejas
-- mas contexto deportivo en el prompt de resumen semanal
-- editar objetivos semanales desde UI (hoy solo los genera el coach)
-
-### Ola 3 - Expansiones mayores
-
-#### P8. Real-time sync entre dispositivos
-
-El sync actual es pull-on-load. Si dos dispositivos estan abiertos simultaneamente, los cambios de uno no aparecen en el otro hasta recargar.
-
-Mejora: `supabase.channel().on('postgres_changes', ...)` para listeners en tiempo real.
-
-Cuando aplica: solo si hay uso simultaneo activo en multiples dispositivos.
-
-#### P9. Modo torneo
-
-Sigue siendo una buena expansion, pero no debe competir con las prioridades operativas.
-
-Recomendacion: mantenerlo en backlog largo.
-
-#### P10. Analitica deportiva mas rica
-
-Posibles extensiones:
-- tendencia de carga semana a semana
-- comparacion plan vs real por disciplina
-- vista de rivales y resultados por periodo
-- correlacion simple entre sueno, peso, dolor y rendimiento
-
----
-
-## 5. Backlog priorizado
+## Backlog priorizado
 
 | Item | Impacto | Esfuerzo | Estado |
 |------|---------|----------|--------|
-| Importar backup JSON | Alto | Medio | Hecho |
-| Sync multi-dispositivo completo | Muy alto | Alto | **Hecho (prod)** |
-| Indicador sync en nav principal | Bajo | Bajo | Pendiente |
+| Reducir peso de PDF import | Alto | Medio | En curso |
 | Robustecer notificaciones | Alto | Medio | Parcial |
-| Reducir peso de PDF import | Alto | Medio | Pendiente |
-| Backup versionado + restore seguro | Alto | Medio | Parcial |
-| Mejoras UX del coach planner | Medio | Bajo | Pendiente |
-| Real-time sync entre dispositivos | Medio | Medio | Backlog |
-| Modo torneo | Alto | Alto | Backlog |
-| Analitica deportiva avanzada | Medio | Medio | Backlog |
+| Indicador sync en nav principal | Medio | Bajo | Pendiente |
+| Politica de proposals al borrar chat | Medio | Bajo | Pendiente |
+| Backup versionado + preview | Alto | Medio | Parcial |
+| Realtime sync opcional | Medio | Medio | Backlog |
+| Modo torneo | Medio | Alto | Backlog |
+| Analitica deportiva mas rica | Medio | Medio | Backlog |
 
----
+## Riesgos actuales
 
-## 6. Riesgos actuales
+### Peso del flujo PDF
 
-### ~~Sync sin stores recargados~~ → RESUELTO (2026-04-02)
+Sigue siendo la parte mas cara del bundle y del tiempo de carga asociado a esa pantalla.
 
-`pullAll()` ahora llama `loadWeek()` y `loadAllSummaries()` al completar, desde `App.tsx`.
+### Notificaciones web
 
-### ~~Sync activo solo con infraestructura configurada~~ → RESUELTO (2026-04-02)
+La plataforma web sigue imponiendo limites de persistencia y scheduling segun navegador.
 
-Infraestructura Supabase activa en produccion. Sync verificado.
+### Reglas de borrado de chat/proposals
 
-### Notificaciones no realmente persistentes
+La semantica de dominio todavia puede generar dudas si se quiere que el borrado de una conversacion arrastre propuestas asociadas.
 
-La app ya muestra el feature, pero la estrategia actual depende de timers en memoria del service worker.
+## Recomendacion de ejecucion
 
-Esto es util como base, no como implementacion final totalmente fiable.
+Orden recomendado:
 
-### Peso del modulo PDF
+1. optimizacion del flujo PDF
+2. robustez adicional de notificaciones
+3. indicador de sync en navegacion
+4. definicion de reglas de proposals y mantenimiento
 
-La importacion PDF aporta valor, pero hoy es la parte mas costosa del build.
+## Referencias revisadas
 
-### Dependencia del provider AI real para ciertas funciones
-
-Funciones como extraccion AI de PDF o resumenes semanales dependen de provider real correctamente configurado.
-
-Mitigacion actual:
-- fallback parcial en PDF
-- modo demo/mock para no romper la UX base
-
----
-
-## 7. Recomendacion de ejecucion
-
-Sync completo y en produccion. Proximas iteraciones:
-
-1. **Robustez de notificaciones** (P3) — mejora de fiabilidad para uso diario
-2. **Optimizacion del flujo PDF** (P4) — reduce el costo del bundle
-3. **Indicador sync en nav** (P5) — UX feedback del estado de sync
-4. **Mejoras de coaching** (P7) — calidad del producto existente
-
----
-
-## 8. Referencias de codigo revisadas
-
-- `src/store/useCoachActionsStore.ts`
+- `src/services/syncService.ts`
+- `src/services/auth.ts`
+- `src/store/useAuthStore.ts`
 - `src/store/useChatStore.ts`
+- `src/store/useCoachActionsStore.ts`
 - `src/store/useTrainingStore.ts`
-- `src/pages/WeeklyView.tsx`
-- `src/pages/History.tsx`
-- `src/pages/SettingsPage.tsx`
-- `src/services/pdfImport.ts`
-- `src/services/notifications.ts`
-- `public/sw.js`
-- `src/db/db.ts`
-- `src/db/queries.ts`
 - `src/services/dataExport.ts`
-- `src/services/auth.ts` (nuevo)
-- `src/services/syncService.ts` (nuevo)
-- `src/store/useAuthStore.ts` (nuevo)
-- `src/components/auth/AuthGate.tsx` (nuevo)
+- `src/services/notifications.ts`
+- `src/services/pdfImport.ts`
+- `src/pages/ImportPDF.tsx`
+- `src/pages/SettingsPage.tsx`
 - `src/App.tsx`
+- `public/sw.js`

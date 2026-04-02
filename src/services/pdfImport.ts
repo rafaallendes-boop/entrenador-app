@@ -1,53 +1,70 @@
 /**
- * PDF Import Service — v2
+ * PDF Import Service
  *
- * CAPABILITY:
- *   - Extracts text from PDF using pdf.js (pdfjs-dist) — real text layer extraction
- *   - Sends text to the active AI provider for structured session extraction
- *   - AI returns ParsedSessionDraft[] as JSON with confidence 'high'
- *   - Falls back to pattern matching (v1.1) when AI is unavailable or fails
- *   - User always reviews and confirms before importing
+ * Capabilities:
+ * - Extracts text from PDF using pdf.js
+ * - Sends extracted text to the active AI provider for structured session extraction
+ * - Falls back to pattern matching when AI is unavailable or fails
+ * - Keeps review and confirmation in the UI before importing
  *
- * LIMITATIONS:
- *   - Scanned / image-only PDFs have no text layer — extraction returns empty
- *   - AI extraction requires a real provider (not mock) — in demo mode uses fallback
+ * Notes:
+ * - Scanned or image-only PDFs may not contain a readable text layer
+ * - pdf.js is loaded on demand to keep the initial PDF screen lighter
  */
 
-import * as pdfjsLib from 'pdfjs-dist'
 import type { ParsedSessionDraft, SessionType, TimeBlock } from '../types'
 import { CoachEngine } from './ai/CoachEngine'
 
-// Point pdf.js at its bundled worker (Vite resolves this at build time)
-pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-  'pdfjs-dist/build/pdf.worker.min.mjs',
-  import.meta.url
-).href
+interface PdfJsModule {
+  GlobalWorkerOptions: {
+    workerSrc: string
+  }
+  getDocument: (src: { data: ArrayBuffer }) => {
+    promise: Promise<{
+      numPages: number
+      getPage: (pageNumber: number) => Promise<{
+        getTextContent: () => Promise<{
+          items: Array<{ str?: string }>
+        }>
+      }>
+    }>
+  }
+}
 
-// ─── Text extraction ─────────────────────────────────────────────────────────
+let pdfJsLoader: Promise<PdfJsModule> | null = null
 
-/**
- * Extracts text content from a PDF File using pdf.js.
- * Works with text-layer PDFs. Scanned/image PDFs will return empty or sparse text.
- */
+async function loadPdfJs(): Promise<PdfJsModule> {
+  if (!pdfJsLoader) {
+    pdfJsLoader = Promise.all([
+      import('pdfjs-dist/build/pdf.min.mjs'),
+      import('pdfjs-dist/build/pdf.worker.min.mjs?url'),
+    ]).then(([pdfjsLib, workerUrl]) => {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl.default
+      return pdfjsLib as PdfJsModule
+    })
+  }
+
+  return pdfJsLoader
+}
+
 export async function extractTextFromPDF(file: File): Promise<string> {
+  const pdfjsLib = await loadPdfJs()
   const arrayBuffer = await file.arrayBuffer()
   const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
 
   const pages: string[] = []
+
   for (let i = 1; i <= pdf.numPages; i++) {
     const page = await pdf.getPage(i)
     const content = await page.getTextContent()
-    // Each item is a TextItem or TextMarkedContent; only TextItem has .str
     const pageText = content.items
-      .map((item) => ('str' in item ? item.str : ''))
+      .map((item) => ('str' in item ? item.str ?? '' : ''))
       .join(' ')
     pages.push(pageText)
   }
 
   return pages.join('\n')
 }
-
-// ─── Pattern matching ─────────────────────────────────────────────────────────
 
 const TYPE_PATTERNS: Array<{ pattern: RegExp; type: SessionType }> = [
   { pattern: /squash|pista|cancha/i, type: 'squash' },
@@ -62,14 +79,13 @@ const TIME_BLOCK_PATTERN: Record<TimeBlock, RegExp> = {
   PM: /tarde|PM|evening|noche/i,
 }
 
-// Simple day detection: "Lunes", "Martes", etc. → number 0–6
 const DAY_NAMES: Record<string, number> = {
   lunes: 0, monday: 0,
   martes: 1, tuesday: 1,
-  miércoles: 2, miercoles: 2, wednesday: 2,
+  miercoles: 2, miércoles: 2, wednesday: 2,
   jueves: 3, thursday: 3,
   viernes: 4, friday: 4,
-  sábado: 5, sabado: 5, saturday: 5,
+  sabado: 5, sábado: 5, saturday: 5,
   domingo: 6, sunday: 6,
 }
 
@@ -86,28 +102,26 @@ function detectTimeBlock(text: string): TimeBlock {
 }
 
 function detectDuration(text: string): number | undefined {
-  const m = text.match(/(\d+)\s*min/i)
-  if (m) return Number(m[1])
-  const h = text.match(/(\d+(?:[.,]\d+)?)\s*h(?:ora)?s?\b/i)
-  if (h) return Math.round(Number(h[1].replace(',', '.')) * 60)
+  const minutes = text.match(/(\d+)\s*min/i)
+  if (minutes) return Number(minutes[1])
+
+  const hours = text.match(/(\d+(?:[.,]\d+)?)\s*h(?:ora)?s?\b/i)
+  if (hours) return Math.round(Number(hours[1].replace(',', '.')) * 60)
+
   return undefined
 }
 
 function detectRpe(text: string): number | undefined {
-  const m = text.match(/rpe\s*:?\s*(\d+)/i) ?? text.match(/intensidad\s*:?\s*(\d+)/i)
-  if (m) return Math.min(10, Number(m[1]))
+  const match = text.match(/rpe\s*:?\s*(\d+)/i) ?? text.match(/intensidad\s*:?\s*(\d+)/i)
+  if (match) return Math.min(10, Number(match[1]))
   return undefined
 }
 
-/**
- * Given raw extracted text, attempt to find week sessions.
- * Splits by day-name lines and extracts one draft per detected block.
- */
 export function parseSessionsFromText(
   text: string,
-  referenceWeekStart: string
+  referenceWeekStart: string,
 ): ParsedSessionDraft[] {
-  const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
+  const lines = text.split('\n').map((line) => line.trim()).filter(Boolean)
   const drafts: ParsedSessionDraft[] = []
 
   let currentDayOffset: number | null = null
@@ -115,28 +129,30 @@ export function parseSessionsFromText(
 
   const flushBlock = () => {
     if (currentBlock.length === 0 || currentDayOffset === null) return
+
     const blockText = currentBlock.join(' ')
     const type = detectType(blockText)
-    if (!type) { currentBlock = []; return }
+    if (!type) {
+      currentBlock = []
+      return
+    }
 
-    // Calculate date from week start + offset
-    const [y, mo, d] = referenceWeekStart.split('-').map(Number)
-    const base = new Date(y, mo - 1, d)
+    const [year, month, day] = referenceWeekStart.split('-').map(Number)
+    const base = new Date(year, month - 1, day)
     base.setDate(base.getDate() + currentDayOffset)
-    const date = base.toISOString().split('T')[0]
 
+    const date = base.toISOString().split('T')[0]
     const draft: ParsedSessionDraft = {
       date,
       type,
       timeBlock: detectTimeBlock(blockText),
-      title: currentBlock[0]?.slice(0, 60) || `Sesión ${type}`,
+      title: currentBlock[0]?.slice(0, 60) || `Sesion ${type}`,
       durationMin: detectDuration(blockText),
       rpe: detectRpe(blockText),
       rawText: blockText.slice(0, 300),
       confidence: 'low',
     }
 
-    // Upgrade confidence if multiple signals detected
     const signals = [type, draft.durationMin, draft.rpe, draft.date].filter(Boolean).length
     draft.confidence = signals >= 3 ? 'medium' : 'low'
 
@@ -152,27 +168,30 @@ export function parseSessionsFromText(
       flushBlock()
       currentDayOffset = dayIndex
       currentBlock = [line]
-    } else if (currentDayOffset !== null) {
+      continue
+    }
+
+    if (currentDayOffset !== null) {
       currentBlock.push(line)
     }
   }
-  flushBlock()
 
+  flushBlock()
   return drafts
 }
 
-// ─── AI extraction ────────────────────────────────────────────────────────────
-
 function buildWeekDateMap(weekStart: string): Record<string, string> {
-  const [y, mo, d] = weekStart.split('-').map(Number)
-  const base = new Date(y, mo - 1, d)
-  const days = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
+  const [year, month, day] = weekStart.split('-').map(Number)
+  const base = new Date(year, month - 1, day)
+  const days = ['Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes', 'Sabado', 'Domingo']
   const map: Record<string, string> = {}
-  days.forEach((name, i) => {
+
+  days.forEach((name, index) => {
     const date = new Date(base)
-    date.setDate(base.getDate() + i)
+    date.setDate(base.getDate() + index)
     map[name] = date.toISOString().split('T')[0]
   })
+
   return map
 }
 
@@ -183,20 +202,20 @@ function buildExtractionPrompt(weekStart: string): string {
     .join('\n')
 
   return `Eres un extractor de datos de entrenamiento deportivo.
-Tu única tarea es analizar el texto de una planificación y devolver las sesiones en JSON puro.
+Tu unica tarea es analizar el texto de una planificacion y devolver las sesiones en JSON puro.
 
 Semana de referencia:
 ${dateTable}
 
-Devuelve ÚNICAMENTE un array JSON válido. Sin texto antes ni después, sin bloques de código markdown.
-Cada elemento debe seguir exactamente esta estructura (usa null para campos desconocidos):
+Devuelve UNICAMENTE un array JSON valido. Sin texto antes ni despues, sin bloques markdown.
+Cada elemento debe seguir exactamente esta estructura y usar null para campos desconocidos:
 {
   "date": "YYYY-MM-DD",
   "type": "squash" | "running" | "strength" | "mobility" | "recovery" | "nutrition",
   "timeBlock": "AM" | "PM",
-  "title": string (máx 60 chars),
+  "title": string,
   "durationMin": number | null,
-  "rpe": number(1-10) | null,
+  "rpe": number | null,
   "objective": string | null,
   "notes": string | null,
   "subtype": "control" | "training" | "match" | "competitive" | "light" | null,
@@ -204,21 +223,17 @@ Cada elemento debe seguir exactamente esta estructura (usa null para campos desc
 }
 
 Reglas:
-- date: usa las fechas absolutas de la tabla de arriba según el día de la semana
-- subtype: solo para type "squash"
-- runningDetails: solo para type "running"
-- Si no hay sesiones detectables, devuelve []
-- NUNCA devuelvas texto fuera del array JSON`
+- date: usa las fechas absolutas de la tabla segun el dia detectado
+- subtype: solo para "squash"
+- runningDetails: solo para "running"
+- si no hay sesiones detectables, devuelve []
+- nunca devuelvas texto fuera del array JSON`
 }
 
 function stripCodeFences(text: string): string {
   return text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim()
 }
 
-/**
- * Attempts AI-powered extraction. Returns null if AI is unavailable or fails,
- * so the caller can fall back to pattern matching.
- */
 async function extractSessionsWithAI(
   rawText: string,
   referenceWeekStart: string,
@@ -234,7 +249,6 @@ async function extractSessionsWithAI(
 
     const cleaned = stripCodeFences(responseText)
     const parsed: unknown = JSON.parse(cleaned)
-
     if (!Array.isArray(parsed)) return null
 
     return parsed
@@ -254,13 +268,11 @@ async function extractSessionsWithAI(
           : undefined,
         confidence: 'high' as const,
       }))
-      .filter((d) => d.date && d.type && d.title)
+      .filter((draft) => draft.date && draft.type && draft.title)
   } catch {
     return null
   }
 }
-
-// ─── Main entry ───────────────────────────────────────────────────────────────
 
 export interface PDFImportResult {
   rawText: string
@@ -271,7 +283,7 @@ export interface PDFImportResult {
 
 export async function importFromPDF(
   file: File,
-  referenceWeekStart: string
+  referenceWeekStart: string,
 ): Promise<PDFImportResult> {
   const warnings: string[] = []
 
@@ -280,30 +292,30 @@ export async function importFromPDF(
   }
 
   if (file.size > 10 * 1024 * 1024) {
-    throw new Error('El PDF es demasiado grande (máx 10 MB)')
+    throw new Error('El PDF es demasiado grande (max 10 MB)')
   }
 
   let rawText = ''
+
   try {
     rawText = await extractTextFromPDF(file)
   } catch {
-    throw new Error('No se pudo leer el PDF. Prueba con un PDF de texto (no escaneado).')
+    throw new Error('No se pudo leer el PDF. Prueba con un PDF de texto, no escaneado.')
   }
 
   if (rawText.trim().length < 50) {
     warnings.push(
-      'Se extrajo muy poco texto del PDF. Puede ser un PDF escaneado o de imagen. La detección automática puede fallar.'
+      'Se extrajo muy poco texto del PDF. Puede ser un PDF escaneado o de imagen. La deteccion automatica puede fallar.',
     )
   }
 
-  // Try AI extraction first; fall back to pattern matching
   const aiResult = await extractSessionsWithAI(rawText, referenceWeekStart)
   const usedAI = aiResult !== null
-  const drafts: ParsedSessionDraft[] = aiResult ?? parseSessionsFromText(rawText, referenceWeekStart)
+  const drafts = aiResult ?? parseSessionsFromText(rawText, referenceWeekStart)
 
   if (drafts.length === 0) {
     warnings.push(
-      'No se detectaron sesiones en el PDF. Puedes añadir sesiones manualmente con el botón "Añadir".'
+      'No se detectaron sesiones en el PDF. Puedes anadir sesiones manualmente con el boton correspondiente.',
     )
   }
 

@@ -16,7 +16,7 @@ const DailyCheckInCard = lazy(() => import('../components/dashboard/DailyCheckIn
 const InstallAppCard = lazy(() => import('../components/pwa/InstallAppCard'))
 
 export default function Dashboard() {
-  const { sessions, currentWeekSummary, loadWeek } = useTrainingStore()
+  const { sessions, currentWeekSummary, isLoading, loadWeek } = useTrainingStore()
   const navigate = useNavigate()
   const today = todayISO()
 
@@ -42,7 +42,7 @@ export default function Dashboard() {
     'Bienvenido. Carga tu primera semana de entrenamiento y empieza a registrar tu progreso.'
 
   return (
-    <div className="px-4 pt-12 pb-4 space-y-5">
+    <div className="px-4 pt-12 pb-6 space-y-5 md:px-6 md:space-y-6">
       <div>
         <p className="text-xs text-ink-muted font-medium uppercase tracking-wider">
           {formatFullDate(new Date())}
@@ -60,71 +60,81 @@ export default function Dashboard() {
         <CoachMessageCard message={coachNote} />
       </Suspense>
 
-      <Suspense fallback={<CardSkeleton className="h-32" />}>
-        <DailyCheckInCard todaySessions={todaySessions} />
-      </Suspense>
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)] xl:items-start">
+        <div className="space-y-5 md:space-y-6">
+          <Suspense fallback={<CardSkeleton className="h-32" />}>
+            <DailyCheckInCard todaySessions={todaySessions} />
+          </Suspense>
 
-      <Suspense fallback={null}>
-        <InstallAppCard />
-      </Suspense>
-
-      <div className="bg-surface-card rounded-card border border-surface-border">
-        <WeekStrip showNav={false} onDayPress={(iso) => navigate(ROUTES.DAY(iso))} />
-      </div>
-
-      <Suspense fallback={<CardSkeleton className="h-32" />}>
-        <NutritionFocusCard rec={todayNutrition} />
-      </Suspense>
-
-      {currentWeekSummary && (
-        <Card className="p-4">
-          <h2 className="text-xs font-semibold text-ink-muted uppercase tracking-wider mb-3">
-            Semana actual
-          </h2>
-          <LoadIndicator summary={currentWeekSummary} />
-
-          <div className="mt-3 flex items-center justify-between text-xs text-ink-muted">
-            <span>
-              {currentWeekSummary.completedSessions}/{currentWeekSummary.plannedSessions} sesiones realizadas
-            </span>
-            {currentWeekSummary.adherencePct != null && (
-              <span className="text-brand-light font-semibold">
-                {currentWeekSummary.adherencePct}% adherencia
-              </span>
-            )}
+          <div className="bg-surface-card rounded-card border border-surface-border">
+            <WeekStrip showNav={false} onDayPress={(iso) => navigate(ROUTES.DAY(iso))} />
           </div>
 
-          {currentWeekSummary.objectives && currentWeekSummary.objectives.length > 0 && (
-            <div className="mt-4 pt-3 border-t border-surface-border">
-              <p className="text-xs font-semibold text-ink-muted uppercase tracking-wider mb-2">
-                Objetivos
-              </p>
-              <ul className="space-y-1.5">
-                {currentWeekSummary.objectives.map((obj, i) => (
-                  <li key={i} className="flex items-start gap-2 text-sm text-ink">
-                    <span className="w-1.5 h-1.5 rounded-full bg-brand mt-2 flex-shrink-0" />
-                    {obj}
-                  </li>
-                ))}
-              </ul>
+          {upcomingSessions.length > 0 && (
+            <div>
+              <h2 className="text-xs font-semibold text-ink-muted uppercase tracking-wider mb-3">
+                Proximas sesiones
+              </h2>
+              <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-1">
+                <Suspense fallback={<CardSkeleton className="h-24" />}>
+                  {upcomingSessions.map(session => (
+                    <NextSessionCard key={session.id} session={session} />
+                  ))}
+                </Suspense>
+              </div>
             </div>
           )}
-        </Card>
-      )}
-
-      {upcomingSessions.length > 0 && (
-        <div>
-          <h2 className="text-xs font-semibold text-ink-muted uppercase tracking-wider mb-3">
-            Proximas sesiones
-          </h2>
-          <div className="space-y-2">
-            <Suspense fallback={<CardSkeleton className="h-24" />}>
-              {upcomingSessions.map(session => (
-                <NextSessionCard key={session.id} session={session} />
-              ))}
-            </Suspense>
-          </div>
         </div>
+
+        <div className="space-y-5 md:space-y-6">
+          <Suspense fallback={null}>
+            <InstallAppCard />
+          </Suspense>
+
+          <Suspense fallback={<CardSkeleton className="h-32" />}>
+            <NutritionFocusCard rec={todayNutrition} />
+          </Suspense>
+
+          {currentWeekSummary && (
+            <Card className="p-4">
+              <h2 className="text-xs font-semibold text-ink-muted uppercase tracking-wider mb-3">
+                Semana actual
+              </h2>
+              <LoadIndicator summary={currentWeekSummary} />
+
+              <div className="mt-3 flex items-center justify-between gap-3 text-xs text-ink-muted flex-wrap">
+                <span>
+                  {currentWeekSummary.completedSessions}/{currentWeekSummary.plannedSessions} sesiones realizadas
+                </span>
+                {currentWeekSummary.adherencePct != null && (
+                  <span className="text-brand-light font-semibold">
+                    {currentWeekSummary.adherencePct}% adherencia
+                  </span>
+                )}
+              </div>
+
+              {currentWeekSummary.objectives && currentWeekSummary.objectives.length > 0 && (
+                <div className="mt-4 pt-3 border-t border-surface-border">
+                  <p className="text-xs font-semibold text-ink-muted uppercase tracking-wider mb-2">
+                    Objetivos
+                  </p>
+                  <ul className="space-y-1.5">
+                    {currentWeekSummary.objectives.map((obj, i) => (
+                      <li key={i} className="flex items-start gap-2 text-sm text-ink">
+                        <span className="w-1.5 h-1.5 rounded-full bg-brand mt-2 flex-shrink-0" />
+                        {obj}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </Card>
+          )}
+        </div>
+      </div>
+
+      {isLoading && (
+        <div className="px-1 py-2 text-center text-sm text-ink-muted">Cargando...</div>
       )}
     </div>
   )

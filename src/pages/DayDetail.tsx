@@ -59,19 +59,53 @@ function DayRecoveryNotes({
   onSave: (patch: Partial<DayLog>) => void
 }) {
   const [notes, setNotes] = useState(dayLog?.generalNotes ?? '')
+  const [sleepHours, setSleepHours] = useState(dayLog?.sleepHours?.toString() ?? '')
+
+  const saveSleepHours = () => {
+    const normalized = sleepHours.trim().replace(',', '.')
+    const parsed = normalized === '' ? undefined : Number(normalized)
+
+    onSave({
+      sleepHours: parsed != null && Number.isFinite(parsed) ? parsed : undefined,
+    })
+
+    if (parsed != null && Number.isFinite(parsed)) {
+      setSleepHours(String(parsed))
+    }
+  }
 
   return (
-    <div className="flex flex-col gap-1.5">
-      <label className="text-xs text-ink-muted">Notas generales del día</label>
-      <textarea
-        value={notes}
-        onChange={e => setNotes(e.target.value)}
-        onBlur={() => onSave({ generalNotes: notes || undefined })}
-        placeholder="Cómo fue el día en general..."
-        rows={2}
-        className="bg-surface-raised border border-surface-border rounded-xl px-3 py-2 text-sm text-ink placeholder-ink-faint resize-none focus:outline-none focus:border-brand/50"
-      />
-    </div>
+    <>
+      <div className="flex flex-col gap-1.5">
+        <div className="flex justify-between items-center">
+          <label className="text-sm text-ink-muted">Horas de sueño</label>
+          <span className="text-sm font-semibold text-ink">
+            {dayLog?.sleepHours != null ? `${dayLog.sleepHours}h` : '—'}
+          </span>
+        </div>
+        <input
+          type="text"
+          inputMode="decimal"
+          value={sleepHours}
+          onChange={e => setSleepHours(e.target.value)}
+          onBlur={saveSleepHours}
+          placeholder="ej: 7,5"
+          className="bg-surface-raised border border-surface-border rounded-xl px-3 py-2 text-sm text-ink placeholder-ink-faint w-full focus:outline-none focus:border-brand/50"
+        />
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <label className="text-xs text-ink-muted">Notas generales del día</label>
+        <textarea
+          value={notes}
+          onChange={e => setNotes(e.target.value)}
+          onBlur={() => onSave({ generalNotes: notes || undefined })}
+          placeholder="Cómo fue el día en general..."
+          rows={2}
+          className="bg-surface-raised border border-surface-border rounded-xl px-3 py-2 text-sm text-ink placeholder-ink-faint resize-none focus:outline-none focus:border-brand/50"
+        />
+      </div>
+    </>
   )
 }
 
@@ -249,27 +283,8 @@ export default function DayDetail() {
             formatValue={v => ['', 'Muy mal', 'Mal', 'Regular', 'Bien', 'Excelente'][v] ?? String(v)}
           />
 
-          <div className="flex flex-col gap-1.5">
-            <div className="flex justify-between items-center">
-              <label className="text-sm text-ink-muted">Horas de sueño</label>
-              <span className="text-sm font-semibold text-ink">
-                {dayLog?.sleepHours != null ? `${dayLog.sleepHours}h` : '—'}
-              </span>
-            </div>
-            <input
-              type="number"
-              min={0}
-              max={12}
-              step={0.5}
-              value={dayLog?.sleepHours ?? ''}
-              onBlur={e => save({ sleepHours: e.target.value === '' ? undefined : Number(e.target.value) })}
-              placeholder="ej: 7.5"
-              className="bg-surface-raised border border-surface-border rounded-xl px-3 py-2 text-sm text-ink placeholder-ink-faint w-full focus:outline-none focus:border-brand/50"
-            />
-          </div>
-
           <DayRecoveryNotes
-            key={`${dateISO}-${dayLog?.updatedAt ?? 'empty'}-${dayLog?.generalNotes ?? ''}`}
+            key={`${dateISO}-${dayLog?.updatedAt ?? 'empty'}-${dayLog?.generalNotes ?? ''}-${dayLog?.sleepHours ?? 'none'}`}
             dayLog={dayLog}
             onSave={patch => void save(patch)}
           />

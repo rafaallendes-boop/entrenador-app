@@ -29,11 +29,10 @@ export default function History() {
   }, [tab])
 
   return (
-    <div className="px-4 pt-12 pb-8">
-      <h1 className="text-xl font-bold text-ink mb-4">Historial</h1>
+    <div className="px-4 pt-12 pb-8 md:px-6">
+      <h1 className="text-xl font-bold text-ink mb-4 md:text-2xl">Historial</h1>
 
-      {/* Tab switcher */}
-      <div className="flex gap-2 mb-5">
+      <div className="flex gap-2 mb-5 flex-wrap">
         <button
           onClick={() => setTab('semanas')}
           className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
@@ -72,8 +71,6 @@ export default function History() {
   )
 }
 
-// ─── Semanas view ─────────────────────────────────────────────────────────────
-
 interface SemanasViewProps {
   allWeekSummaries: ReturnType<typeof useTrainingStore.getState>['allWeekSummaries']
   onNavigate: (weekStart: string) => void
@@ -83,21 +80,21 @@ function SemanasView({ allWeekSummaries, onNavigate }: SemanasViewProps) {
   if (allWeekSummaries.length === 0) {
     return (
       <div className="text-center py-12">
-        <p className="text-ink-faint text-sm">Sin historial aún</p>
+        <p className="text-ink-faint text-sm">Sin historial aun</p>
       </div>
     )
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5 md:space-y-6">
       {allWeekSummaries.map((summary, index) => (
         <div key={summary.id}>
-          <div className="flex items-center justify-between mb-2">
-            <div>
+          <div className="flex items-start justify-between gap-3 mb-2 flex-wrap">
+            <div className="min-w-0">
               <p className="text-sm font-semibold text-ink capitalize">
                 {formatWeekRange(fromISO(summary.weekStartDate))}
               </p>
-              <div className="flex gap-3 mt-1">
+              <div className="flex gap-3 mt-1 flex-wrap">
                 <span className="flex items-center gap-1 text-xs text-yellow-400">
                   <Zap size={11} /> {summary.squashSessions}
                 </span>
@@ -111,7 +108,7 @@ function SemanasView({ allWeekSummaries, onNavigate }: SemanasViewProps) {
             </div>
             <button
               onClick={() => onNavigate(summary.weekStartDate)}
-              className="text-xs text-brand-light font-medium px-3 py-1.5 rounded-lg bg-brand/10 hover:bg-brand/20 transition-colors"
+              className="text-xs text-brand-light font-medium px-3 py-1.5 rounded-lg bg-brand/10 hover:bg-brand/20 transition-colors whitespace-nowrap"
             >
               Ver semana
             </button>
@@ -146,10 +143,10 @@ function SemanasView({ allWeekSummaries, onNavigate }: SemanasViewProps) {
                 Objetivos
               </p>
               <ul className="space-y-0.5">
-                {summary.objectives.map((obj, i) => (
-                  <li key={i} className="flex items-start gap-2 text-xs text-ink-muted">
+                {summary.objectives.map((objective, objectiveIndex) => (
+                  <li key={objectiveIndex} className="flex items-start gap-2 text-xs text-ink-muted">
                     <span className="w-1 h-1 rounded-full bg-ink-faint mt-1.5 flex-shrink-0" />
-                    {obj}
+                    {objective}
                   </li>
                 ))}
               </ul>
@@ -163,8 +160,8 @@ function SemanasView({ allWeekSummaries, onNavigate }: SemanasViewProps) {
 
 function renderWeightDelta(current?: number, previous?: number) {
   if (current == null || previous == null) return null
-  const delta = current - previous
 
+  const delta = current - previous
   if (Math.abs(delta) < 0.05) {
     return <span className="text-ink-faint">sin cambio relevante</span>
   }
@@ -181,49 +178,47 @@ function renderWeightDelta(current?: number, previous?: number) {
   )
 }
 
-// ─── Partidos view ────────────────────────────────────────────────────────────
-
 function PartidosView({ sessions }: { sessions: Session[] }) {
   if (sessions.length === 0) {
     return (
       <div className="text-center py-12">
         <Swords size={28} className="text-ink-faint mx-auto mb-3" />
-        <p className="text-ink-faint text-sm">Sin partidos registrados aún</p>
+        <p className="text-ink-faint text-sm">Sin partidos registrados aun</p>
         <p className="text-ink-faint/60 text-xs mt-1">
-          Registra sesiones de squash con tipo "Partido"
+          Registra sesiones de squash con subtipo partido o competitivo
         </p>
       </div>
     )
   }
 
-  const withResult = sessions.filter(s => s.matchResult != null)
-  const wins = withResult.filter(s => s.matchResult === 'win').length
-  const losses = withResult.filter(s => s.matchResult === 'loss').length
+  const withResult = sessions.filter((session) => session.matchResult != null)
+  const wins = withResult.filter((session) => session.matchResult === 'win').length
+  const losses = withResult.filter((session) => session.matchResult === 'loss').length
   const winratePct = withResult.length > 0 ? Math.round((wins / withResult.length) * 100) : null
 
-  // Top rivals by frequency
   const rivalMap: Record<string, { total: number; wins: number }> = {}
-  for (const s of sessions) {
-    if (!s.opponent) continue
-    if (!rivalMap[s.opponent]) rivalMap[s.opponent] = { total: 0, wins: 0 }
-    rivalMap[s.opponent].total++
-    if (s.matchResult === 'win') rivalMap[s.opponent].wins++
+  for (const session of sessions) {
+    if (!session.opponent) continue
+    if (!rivalMap[session.opponent]) rivalMap[session.opponent] = { total: 0, wins: 0 }
+    rivalMap[session.opponent].total++
+    if (session.matchResult === 'win') rivalMap[session.opponent].wins++
   }
+
   const topRivals = Object.entries(rivalMap)
     .sort((a, b) => b[1].total - a[1].total)
     .slice(0, 3)
 
   return (
     <div className="space-y-4">
-      {/* Stats summary */}
-      <div className="bg-surface-card border border-surface-border rounded-xl p-4">
+      <div className="bg-surface-card border border-surface-border rounded-xl p-4 md:p-5">
         <div className="flex items-center gap-2 mb-3">
           <Trophy size={14} className="text-yellow-400" />
           <span className="text-xs font-semibold text-ink-muted uppercase tracking-wider">
             Resumen
           </span>
         </div>
-        <div className="flex gap-4 flex-wrap">
+
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
           <div>
             <p className="text-2xl font-bold text-ink">{sessions.length}</p>
             <p className="text-xs text-ink-muted">partidos</p>
@@ -270,40 +265,39 @@ function PartidosView({ sessions }: { sessions: Session[] }) {
         )}
       </div>
 
-      {/* Match list */}
       <div className="space-y-2">
-        {sessions.map(s => (
-          <MatchCard key={s.id} session={s} />
+        {sessions.map((session) => (
+          <MatchCard key={session.id} session={session} />
         ))}
       </div>
     </div>
   )
 }
 
-function MatchCard({ session: s }: { session: Session }) {
-  const hasResult = s.matchResult != null
-  const hasScore = s.gamesWon != null && s.gamesLost != null
-  const isWin = s.matchResult === 'win'
+function MatchCard({ session }: { session: Session }) {
+  const hasResult = session.matchResult != null
+  const hasScore = session.gamesWon != null && session.gamesLost != null
+  const isWin = session.matchResult === 'win'
 
   return (
-    <div className="bg-surface-card border border-surface-border rounded-xl px-4 py-3 flex items-start justify-between gap-3">
+    <div className="bg-surface-card border border-surface-border rounded-xl px-4 py-3 flex items-start justify-between gap-3 flex-wrap">
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-2 flex-wrap">
           <span className="text-xs text-ink-muted tabular-nums">
-            {formatShortDate(fromISO(s.date))}
+            {formatShortDate(fromISO(session.date))}
           </span>
-          <span className="text-sm font-medium text-ink truncate">
-            {s.opponent ? `vs. ${s.opponent}` : s.title}
+          <span className="text-sm font-medium text-ink break-words">
+            {session.opponent ? `vs. ${session.opponent}` : session.title}
           </span>
         </div>
         <div className="flex items-center gap-2 mt-1 flex-wrap">
           {hasScore && (
             <span className="text-xs font-semibold text-ink-muted tabular-nums">
-              {s.gamesWon}–{s.gamesLost}
+              {session.gamesWon}-{session.gamesLost}
             </span>
           )}
-          {s.location && (
-            <span className="text-xs text-ink-faint truncate">{s.location}</span>
+          {session.location && (
+            <span className="text-xs text-ink-faint break-words">{session.location}</span>
           )}
           {!hasResult && (
             <span className="text-xs text-ink-faint italic">sin resultado</span>

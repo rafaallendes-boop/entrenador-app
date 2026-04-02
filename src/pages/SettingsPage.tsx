@@ -1,6 +1,7 @@
 import { type ChangeEvent, useEffect, useMemo, useRef, useState } from 'react'
-import { Bell, Brain, Cloud, CloudOff, Cpu, Download, LogOut, ShieldAlert, Trash2, Upload, User } from 'lucide-react'
+import { Bell, Brain, Cpu, Download, LogOut, ShieldAlert, Trash2, Upload, User } from 'lucide-react'
 import Card from '../components/ui/Card'
+import SyncStatusBadge from '../components/sync/SyncStatusBadge'
 import { APP_INFO } from '../constants/appInfo'
 import { CoachEngine } from '../services/ai/CoachEngine'
 import { downloadAppDataExport, importAppDataFromFile } from '../services/dataExport'
@@ -161,296 +162,302 @@ export default function SettingsPage() {
   const providerConfigured = CoachEngine.isRealProviderConfigured()
 
   return (
-    <div className="px-4 pt-12 pb-8 space-y-5">
+    <div className="px-4 pt-12 pb-8 space-y-5 md:px-6 md:space-y-6">
       <div>
         <h1 className="text-xl font-bold text-ink mb-1">Ajustes</h1>
         <p className="text-sm text-ink-muted">Configuracion local, contexto del coach y mantenimiento.</p>
       </div>
 
-      {/* Account & Sync card */}
-      <Card className="p-4">
-        <div className="flex items-start gap-3 mb-3">
-          <div className="w-8 h-8 rounded-full bg-brand/15 flex items-center justify-center flex-shrink-0">
-            <User size={16} className="text-brand-light" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <h2 className="text-sm font-semibold text-ink">Cuenta y sincronizacion</h2>
-            <p className="text-xs text-ink-muted mt-1 truncate">{user?.email ?? 'Sesion activa'}</p>
-          </div>
-          <SyncStatusBadge status={syncStatus} error={syncError} />
-        </div>
-        <button
-          onClick={() => void signOut()}
-          className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-surface-raised text-ink-muted text-sm font-semibold hover:bg-surface hover:text-ink transition-colors"
-        >
-          <LogOut size={14} />
-          Cerrar sesion
-        </button>
-      </Card>
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+        <div className="space-y-5 md:space-y-6">
+          {/* Account & Sync card */}
+          <Card className="p-4">
+            <div className="flex items-start gap-3 mb-3">
+              <div className="w-8 h-8 rounded-full bg-brand/15 flex items-center justify-center flex-shrink-0">
+                <User size={16} className="text-brand-light" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h2 className="text-sm font-semibold text-ink">Cuenta y sincronizacion</h2>
+                <p className="text-xs text-ink-muted mt-1 truncate">{user?.email ?? 'Sesion activa'}</p>
+              </div>
+              <SyncStatusBadge status={syncStatus} error={syncError} />
+            </div>
+            <button
+              onClick={() => void signOut()}
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-surface-raised text-ink-muted text-sm font-semibold hover:bg-surface hover:text-ink transition-colors"
+            >
+              <LogOut size={14} />
+              Cerrar sesion
+            </button>
+          </Card>
 
-      <Card className="p-4">
-        <div className="flex items-start gap-3 mb-3">
-          <div className="w-8 h-8 rounded-full bg-brand/15 flex items-center justify-center flex-shrink-0">
-            <Brain size={16} className="text-brand-light" />
-          </div>
-          <div>
-            <h2 className="text-sm font-semibold text-ink">Memoria del coach</h2>
-            <p className="text-xs text-ink-muted mt-1 leading-relaxed">
-              Datos persistentes que el coach debe considerar siempre: lesiones, preferencias, torneos o restricciones.
-            </p>
-          </div>
-        </div>
-        <textarea
-          value={memoryDraft}
-          onChange={(e) => setMemoryDraft(e.target.value)}
-          rows={5}
-          placeholder="Ej: molestia rodilla derecha desde febrero, evitar fuerza pesada el dia antes de partido, proximo torneo en mayo..."
-          className="w-full rounded-xl bg-surface-raised border border-surface-border px-3 py-2.5 text-sm text-ink placeholder:text-ink-faint resize-none focus:outline-none focus:ring-2 focus:ring-brand/40"
-        />
-        <div className="mt-3 flex justify-end">
-          <button
-            onClick={() => void saveMemory(memoryDraft)}
-            disabled={isSaving}
-            className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-brand text-white text-sm font-semibold hover:bg-brand-light disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
-          >
-            {isSaving ? 'Guardando...' : 'Guardar memoria'}
-          </button>
-        </div>
-      </Card>
-
-      <Card className="p-4">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h2 className="text-sm font-semibold text-ink">Backup JSON</h2>
-            <p className="text-xs text-ink-muted mt-1 leading-relaxed">
-              Exporta o restaura sesiones, check-ins, resumenes semanales, chat, proposals y memoria del coach.
-            </p>
-          </div>
-          <div className="flex flex-col sm:flex-row gap-2">
-            <input
-              ref={importInputRef}
-              type="file"
-              accept=".json,application/json"
-              onChange={(event) => void handleImportFile(event)}
-              className="hidden"
+          <Card className="p-4">
+            <div className="flex items-start gap-3 mb-3">
+              <div className="w-8 h-8 rounded-full bg-brand/15 flex items-center justify-center flex-shrink-0">
+                <Brain size={16} className="text-brand-light" />
+              </div>
+              <div>
+                <h2 className="text-sm font-semibold text-ink">Memoria del coach</h2>
+                <p className="text-xs text-ink-muted mt-1 leading-relaxed">
+                  Datos persistentes que el coach debe considerar siempre: lesiones, preferencias, torneos o restricciones.
+                </p>
+              </div>
+            </div>
+            <textarea
+              value={memoryDraft}
+              onChange={(e) => setMemoryDraft(e.target.value)}
+              rows={5}
+              placeholder="Ej: molestia rodilla derecha desde febrero, evitar fuerza pesada el dia antes de partido, proximo torneo en mayo..."
+              className="w-full rounded-xl bg-surface-raised border border-surface-border px-3 py-2.5 text-sm text-ink placeholder:text-ink-faint resize-none focus:outline-none focus:ring-2 focus:ring-brand/40"
             />
-            <button
-              onClick={() => importInputRef.current?.click()}
-              disabled={isImporting}
-              className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-surface-raised text-ink text-sm font-semibold hover:bg-surface transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
-            >
-              <Upload size={14} />
-              {isImporting ? 'Importando...' : 'Importar'}
-            </button>
-            <button
-              onClick={() => void handleExport()}
-              disabled={isExporting}
-              className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-brand text-white text-sm font-semibold hover:bg-brand-light disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
-            >
-              <Download size={14} />
-              {isExporting ? 'Exportando...' : 'Exportar'}
-            </button>
-          </div>
-        </div>
-        {exportStatus && (
-          <p className="text-xs text-ink-muted mt-3">{exportStatus}</p>
-        )}
-        {importStatus && (
-          <p className={`text-xs mt-2 ${importStatus.startsWith('Backup importado') ? 'text-emerald-400' : 'text-amber-400'}`}>
-            {importStatus}
-          </p>
-        )}
-      </Card>
-
-      <Card className="p-4">
-        <div className="flex items-start gap-3 mb-3">
-          <div className="w-8 h-8 rounded-full bg-emerald-500/10 flex items-center justify-center flex-shrink-0">
-            <Cpu size={16} className="text-emerald-400" />
-          </div>
-          <div>
-            <h2 className="text-sm font-semibold text-ink">Informacion de la app</h2>
-            <p className="text-xs text-ink-muted mt-1 leading-relaxed">
-              Estado actual del runtime local.
-            </p>
-          </div>
-        </div>
-        <div className="space-y-2 text-sm">
-          <div className="flex items-center justify-between gap-3">
-            <span className="text-ink-muted">Version</span>
-            <span className="text-ink font-medium">{APP_INFO.version}</span>
-          </div>
-          <div className="flex items-center justify-between gap-3">
-            <span className="text-ink-muted">Provider AI</span>
-            <span className="text-ink font-medium">{providerName}</span>
-          </div>
-          <div className="flex items-center justify-between gap-3">
-            <span className="text-ink-muted">Modo AI</span>
-            <span className={`font-medium ${providerConfigured ? 'text-emerald-400' : 'text-amber-400'}`}>
-              {providerConfigured ? 'Real' : 'Demo'}
-            </span>
-          </div>
-        </div>
-      </Card>
-
-      <Card className="p-4">
-        <div className="flex items-start gap-3 mb-3">
-          <div className="w-8 h-8 rounded-full bg-brand/15 flex items-center justify-center flex-shrink-0">
-            <Bell size={16} className="text-brand-light" />
-          </div>
-          <div>
-            <h2 className="text-sm font-semibold text-ink">Notificaciones de sesion</h2>
-            <p className="text-xs text-ink-muted mt-1 leading-relaxed">
-              Recibe una notificacion 30 minutos antes de cada sesion del dia.
-              Sesiones AM a las 7:30 h y sesiones PM a las 17:30 h.
-            </p>
-          </div>
-        </div>
-        {!notificationsSupported() ? (
-          <p className="text-xs text-ink-muted">Notificaciones no disponibles en este navegador.</p>
-        ) : notifPermission === 'granted' ? (
-          <p className="text-xs text-emerald-400 font-medium">Notificaciones activadas</p>
-        ) : notifPermission === 'denied' ? (
-          <p className="text-xs text-amber-400 leading-relaxed">
-            Permiso bloqueado. Activalas desde los ajustes del navegador para este sitio.
-          </p>
-        ) : (
-          <button
-            onClick={() => void handleRequestNotifications()}
-            className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-brand text-white text-sm font-semibold hover:bg-brand-light transition-colors"
-          >
-            <Bell size={14} />
-            Activar notificaciones
-          </button>
-        )}
-      </Card>
-
-      <Card className="p-4 border-red-500/20">
-        <div className="flex items-start gap-3 mb-3">
-          <div className="w-8 h-8 rounded-full bg-red-500/10 flex items-center justify-center flex-shrink-0">
-            <ShieldAlert size={16} className="text-red-400" />
-          </div>
-          <div>
-            <h2 className="text-sm font-semibold text-ink">Limpiar datos locales</h2>
-            <p className="text-xs text-ink-muted mt-1 leading-relaxed">
-              Elige exactamente que quieres borrar. Los bloques estan agrupados para evitar datos huerfanos.
-            </p>
-          </div>
-        </div>
-
-        <div className="flex flex-wrap gap-2 mb-4">
-          <button
-            onClick={() => applyClearPreset({
-              trainingData: true,
-              chatHistory: true,
-              coachProposals: true,
-              coachMemory: true,
-            })}
-            className="px-3 py-2 rounded-xl text-xs font-semibold text-ink hover:bg-surface-raised transition-colors"
-          >
-            Seleccionar todo
-          </button>
-          <button
-            onClick={() => applyClearPreset({ trainingData: true })}
-            className="px-3 py-2 rounded-xl text-xs font-semibold text-ink hover:bg-surface-raised transition-colors"
-          >
-            Solo entrenamiento
-          </button>
-          <button
-            onClick={() => applyClearPreset({ chatHistory: true, coachProposals: true })}
-            className="px-3 py-2 rounded-xl text-xs font-semibold text-ink hover:bg-surface-raised transition-colors"
-          >
-            Solo coach
-          </button>
-          <button
-            onClick={() => applyClearPreset({})}
-            className="px-3 py-2 rounded-xl text-xs font-semibold text-ink-muted hover:bg-surface-raised transition-colors"
-          >
-            Limpiar seleccion
-          </button>
-        </div>
-
-        <div className="space-y-2">
-          {CLEARABLE_GROUPS.map((group) => {
-            const selected = Boolean(clearSelection[group.key])
-
-            return (
-              <label
-                key={group.key}
-                className={`block w-full cursor-pointer rounded-2xl border px-3 py-3 transition-colors ${
-                  selected
-                    ? 'border-red-500/40 bg-red-500/10'
-                    : 'border-surface-border bg-surface-raised hover:border-red-500/20'
-                }`}
-              >
-                <div className="flex items-start gap-3">
-                  <input
-                    type="checkbox"
-                    checked={selected}
-                    onChange={() => {
-                      setClearSelection((current) => ({
-                        ...current,
-                        [group.key]: !current[group.key],
-                      }))
-                      setClearConfirm(false)
-                      setClearStatus(null)
-                    }}
-                    className="mt-1 h-4 w-4 rounded border-surface-border bg-surface"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-semibold text-ink">{group.title}</p>
-                        <p className="text-xs text-ink-muted mt-1">{group.description}</p>
-                      </div>
-                      <span className="text-[11px] font-medium text-ink-muted whitespace-nowrap">
-                        {formatCountLabel(group.key, dataCounts)}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </label>
-            )
-          })}
-        </div>
-
-        {clearStatus && (
-          <p className="text-xs text-emerald-400 mt-3">{clearStatus}</p>
-        )}
-
-        {!clearConfirm ? (
-          <button
-            onClick={() => setClearConfirm(true)}
-            disabled={!hasSelection}
-            className="mt-4 inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-red-500/10 text-red-400 text-sm font-semibold hover:bg-red-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            <Trash2 size={14} />
-            {hasSelection ? 'Continuar con borrado' : 'Selecciona algo para borrar'}
-          </button>
-        ) : (
-          <div className="space-y-3 mt-4">
-            <p className="text-xs text-ink-muted leading-relaxed">
-              Esta accion no se puede deshacer. Se borrara: <span className="text-ink">{formatGroupList(selectedGroups)}</span>.
-              Si quieres conservar algo, exporta un backup antes.
-            </p>
-            <div className="flex gap-2 justify-end">
+            <div className="mt-3 flex justify-end">
               <button
-                onClick={() => setClearConfirm(false)}
-                className="px-3 py-2 rounded-xl text-sm text-ink-muted hover:bg-surface-raised transition-colors"
+                onClick={() => void saveMemory(memoryDraft)}
+                disabled={isSaving}
+                className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-brand text-white text-sm font-semibold hover:bg-brand-light disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
               >
-                Cancelar
-              </button>
-              <button
-                onClick={() => void handleClearData()}
-                disabled={isClearing || !hasSelection}
-                className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-red-500/20 text-red-400 text-sm font-semibold hover:bg-red-500/30 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
-              >
-                <Trash2 size={14} />
-                {isClearing ? 'Borrando...' : 'Confirmar borrado'}
+                {isSaving ? 'Guardando...' : 'Guardar memoria'}
               </button>
             </div>
-          </div>
-        )}
-      </Card>
+          </Card>
+
+          <Card className="p-4">
+            <div className="flex items-start justify-between gap-4 flex-wrap">
+              <div className="min-w-0 flex-1">
+                <h2 className="text-sm font-semibold text-ink">Backup JSON</h2>
+                <p className="text-xs text-ink-muted mt-1 leading-relaxed">
+                  Exporta o restaura sesiones, check-ins, resumenes semanales, chat, proposals y memoria del coach.
+                </p>
+              </div>
+              <div className="flex w-full flex-col sm:w-auto sm:flex-row gap-2">
+                <input
+                  ref={importInputRef}
+                  type="file"
+                  accept=".json,application/json"
+                  onChange={(event) => void handleImportFile(event)}
+                  className="hidden"
+                />
+                <button
+                  onClick={() => importInputRef.current?.click()}
+                  disabled={isImporting}
+                  className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-surface-raised text-ink text-sm font-semibold hover:bg-surface transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  <Upload size={14} />
+                  {isImporting ? 'Importando...' : 'Importar'}
+                </button>
+                <button
+                  onClick={() => void handleExport()}
+                  disabled={isExporting}
+                  className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-brand text-white text-sm font-semibold hover:bg-brand-light disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+                >
+                  <Download size={14} />
+                  {isExporting ? 'Exportando...' : 'Exportar'}
+                </button>
+              </div>
+            </div>
+            {exportStatus && (
+              <p className="text-xs text-ink-muted mt-3">{exportStatus}</p>
+            )}
+            {importStatus && (
+              <p className={`text-xs mt-2 ${importStatus.startsWith('Backup importado') ? 'text-emerald-400' : 'text-amber-400'}`}>
+                {importStatus}
+              </p>
+            )}
+          </Card>
+        </div>
+
+        <div className="space-y-5 md:space-y-6">
+          <Card className="p-4">
+            <div className="flex items-start gap-3 mb-3">
+              <div className="w-8 h-8 rounded-full bg-emerald-500/10 flex items-center justify-center flex-shrink-0">
+                <Cpu size={16} className="text-emerald-400" />
+              </div>
+              <div>
+                <h2 className="text-sm font-semibold text-ink">Informacion de la app</h2>
+                <p className="text-xs text-ink-muted mt-1 leading-relaxed">
+                  Estado actual del runtime local.
+                </p>
+              </div>
+            </div>
+            <div className="space-y-2 text-sm">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-ink-muted">Version</span>
+                <span className="text-ink font-medium">{APP_INFO.version}</span>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-ink-muted">Provider AI</span>
+                <span className="text-ink font-medium">{providerName}</span>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-ink-muted">Modo AI</span>
+                <span className={`font-medium ${providerConfigured ? 'text-emerald-400' : 'text-amber-400'}`}>
+                  {providerConfigured ? 'Real' : 'Demo'}
+                </span>
+              </div>
+            </div>
+          </Card>
+
+          <Card className="p-4">
+            <div className="flex items-start gap-3 mb-3">
+              <div className="w-8 h-8 rounded-full bg-brand/15 flex items-center justify-center flex-shrink-0">
+                <Bell size={16} className="text-brand-light" />
+              </div>
+              <div>
+                <h2 className="text-sm font-semibold text-ink">Notificaciones de sesion</h2>
+                <p className="text-xs text-ink-muted mt-1 leading-relaxed">
+                  Recibe una notificacion 30 minutos antes de cada sesion del dia.
+                  Sesiones AM a las 7:30 h y sesiones PM a las 17:30 h.
+                </p>
+              </div>
+            </div>
+            {!notificationsSupported() ? (
+              <p className="text-xs text-ink-muted">Notificaciones no disponibles en este navegador.</p>
+            ) : notifPermission === 'granted' ? (
+              <p className="text-xs text-emerald-400 font-medium">Notificaciones activadas</p>
+            ) : notifPermission === 'denied' ? (
+              <p className="text-xs text-amber-400 leading-relaxed">
+                Permiso bloqueado. Activalas desde los ajustes del navegador para este sitio.
+              </p>
+            ) : (
+              <button
+                onClick={() => void handleRequestNotifications()}
+                className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-brand text-white text-sm font-semibold hover:bg-brand-light transition-colors"
+              >
+                <Bell size={14} />
+                Activar notificaciones
+              </button>
+            )}
+          </Card>
+
+          <Card className="p-4 border-red-500/20">
+            <div className="flex items-start gap-3 mb-3">
+              <div className="w-8 h-8 rounded-full bg-red-500/10 flex items-center justify-center flex-shrink-0">
+                <ShieldAlert size={16} className="text-red-400" />
+              </div>
+              <div>
+                <h2 className="text-sm font-semibold text-ink">Limpiar datos locales</h2>
+                <p className="text-xs text-ink-muted mt-1 leading-relaxed">
+                  Elige exactamente que quieres borrar. Los bloques estan agrupados para evitar datos huerfanos.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-2 mb-4">
+              <button
+                onClick={() => applyClearPreset({
+                  trainingData: true,
+                  chatHistory: true,
+                  coachProposals: true,
+                  coachMemory: true,
+                })}
+                className="px-3 py-2 rounded-xl text-xs font-semibold text-ink hover:bg-surface-raised transition-colors"
+              >
+                Seleccionar todo
+              </button>
+              <button
+                onClick={() => applyClearPreset({ trainingData: true })}
+                className="px-3 py-2 rounded-xl text-xs font-semibold text-ink hover:bg-surface-raised transition-colors"
+              >
+                Solo entrenamiento
+              </button>
+              <button
+                onClick={() => applyClearPreset({ chatHistory: true, coachProposals: true })}
+                className="px-3 py-2 rounded-xl text-xs font-semibold text-ink hover:bg-surface-raised transition-colors"
+              >
+                Solo coach
+              </button>
+              <button
+                onClick={() => applyClearPreset({})}
+                className="px-3 py-2 rounded-xl text-xs font-semibold text-ink-muted hover:bg-surface-raised transition-colors"
+              >
+                Limpiar seleccion
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              {CLEARABLE_GROUPS.map((group) => {
+                const selected = Boolean(clearSelection[group.key])
+
+                return (
+                  <label
+                    key={group.key}
+                    className={`block w-full cursor-pointer rounded-2xl border px-3 py-3 transition-colors ${
+                      selected
+                        ? 'border-red-500/40 bg-red-500/10'
+                        : 'border-surface-border bg-surface-raised hover:border-red-500/20'
+                    }`}
+                  >
+                    <div className="flex items-start gap-3">
+                      <input
+                        type="checkbox"
+                        checked={selected}
+                        onChange={() => {
+                          setClearSelection((current) => ({
+                            ...current,
+                            [group.key]: !current[group.key],
+                          }))
+                          setClearConfirm(false)
+                          setClearStatus(null)
+                        }}
+                        className="mt-1 h-4 w-4 rounded border-surface-border bg-surface"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-start justify-between gap-3 flex-wrap">
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold text-ink">{group.title}</p>
+                            <p className="text-xs text-ink-muted mt-1">{group.description}</p>
+                          </div>
+                          <span className="text-[11px] font-medium text-ink-muted whitespace-nowrap">
+                            {formatCountLabel(group.key, dataCounts)}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </label>
+                )
+              })}
+            </div>
+
+            {clearStatus && (
+              <p className="text-xs text-emerald-400 mt-3">{clearStatus}</p>
+            )}
+
+            {!clearConfirm ? (
+              <button
+                onClick={() => setClearConfirm(true)}
+                disabled={!hasSelection}
+                className="mt-4 inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-red-500/10 text-red-400 text-sm font-semibold hover:bg-red-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                <Trash2 size={14} />
+                {hasSelection ? 'Continuar con borrado' : 'Selecciona algo para borrar'}
+              </button>
+            ) : (
+              <div className="space-y-3 mt-4">
+                <p className="text-xs text-ink-muted leading-relaxed">
+                  Esta accion no se puede deshacer. Se borrara: <span className="text-ink">{formatGroupList(selectedGroups)}</span>.
+                  Si quieres conservar algo, exporta un backup antes.
+                </p>
+                <div className="flex gap-2 justify-end flex-wrap">
+                  <button
+                    onClick={() => setClearConfirm(false)}
+                    className="px-3 py-2 rounded-xl text-sm text-ink-muted hover:bg-surface-raised transition-colors"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={() => void handleClearData()}
+                    disabled={isClearing || !hasSelection}
+                    className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-red-500/20 text-red-400 text-sm font-semibold hover:bg-red-500/30 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+                  >
+                    <Trash2 size={14} />
+                    {isClearing ? 'Borrando...' : 'Confirmar borrado'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </Card>
+        </div>
+      </div>
     </div>
   )
 }
@@ -481,39 +488,6 @@ function formatCountLabel(group: LocalDataGroup, counts: LocalDataCounts | null)
     case 'coachMemory':
       return counts.coachMemory > 0 ? 'Guardada' : 'Vacia'
   }
-}
-
-function SyncStatusBadge({ status, error }: { status: string; error: string | null }) {
-  if (status === 'syncing') {
-    return (
-      <span className="inline-flex items-center gap-1 text-xs text-brand-light">
-        <Cloud size={12} className="animate-pulse" />
-        Sincronizando
-      </span>
-    )
-  }
-  if (status === 'error') {
-    return (
-      <span className="inline-flex items-center gap-1 text-xs text-amber-400" title={error ?? undefined}>
-        <CloudOff size={12} />
-        Error sync
-      </span>
-    )
-  }
-  if (status === 'offline') {
-    return (
-      <span className="inline-flex items-center gap-1 text-xs text-ink-muted">
-        <CloudOff size={12} />
-        Sin conexion
-      </span>
-    )
-  }
-  return (
-    <span className="inline-flex items-center gap-1 text-xs text-emerald-400">
-      <Cloud size={12} />
-      Sincronizado
-    </span>
-  )
 }
 
 function formatGroupList(groups: LocalDataGroup[]): string {

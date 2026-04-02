@@ -58,8 +58,8 @@ export default function WeekSummaryCard({
   }>
 
   return (
-    <Card className="p-4">
-      <div className="grid grid-cols-3 gap-3">
+    <Card className="p-4 md:p-5">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         <Stat
           Icon={Clock}
           value={formatDuration(summary.completedMinutes)}
@@ -82,8 +82,8 @@ export default function WeekSummaryCard({
 
       {!compact && (
         <>
-          <div className="grid grid-cols-3 gap-3 mt-3">
-            {secondaryStats.map(stat => (
+          <div className="grid grid-cols-1 gap-3 mt-3 sm:grid-cols-3">
+            {secondaryStats.map((stat) => (
               <Stat
                 key={stat.key}
                 Icon={stat.Icon}
@@ -94,7 +94,7 @@ export default function WeekSummaryCard({
             ))}
           </div>
 
-          <div className="mt-3 flex items-center justify-between text-xs text-ink-muted">
+          <div className="mt-3 flex items-center justify-between gap-3 text-xs text-ink-muted flex-wrap">
             <span>{summary.completedSessions}/{summary.plannedSessions} sesiones</span>
             {summary.adherencePct != null && (
               <span className="font-semibold text-brand-light">{summary.adherencePct}% adherencia</span>
@@ -137,16 +137,21 @@ export default function WeekSummaryCard({
   )
 }
 
-function Stat({ Icon, value, label, colorClass }: {
+function Stat({
+  Icon,
+  value,
+  label,
+  colorClass,
+}: {
   Icon: React.ComponentType<{ size?: number; className?: string }>
   value: string
   label: string
   colorClass: string
 }) {
   return (
-    <div className="flex flex-col gap-1">
+    <div className="flex flex-col gap-1 rounded-xl bg-surface-raised/60 p-3">
       <Icon size={14} className={colorClass} />
-      <span className="text-lg font-semibold text-ink">{value}</span>
+      <span className="text-lg font-semibold text-ink break-words">{value}</span>
       <span className="text-[11px] text-ink-muted">{label}</span>
     </div>
   )
@@ -164,7 +169,9 @@ function DisciplineBar({
   colorClass: string
 }) {
   if (planned == null || planned === 0) return null
+
   const pct = Math.min(100, Math.round((completed / planned) * 100))
+
   return (
     <div className="flex items-center gap-2">
       <span className="text-[11px] text-ink-faint w-12 flex-shrink-0">{label}</span>
@@ -174,7 +181,7 @@ function DisciplineBar({
           style={{ width: `${pct}%` }}
         />
       </div>
-      <span className="text-[11px] text-ink-muted w-14 text-right flex-shrink-0">
+      <span className="text-[11px] text-ink-muted w-16 text-right flex-shrink-0">
         {completed}/{planned} · {pct}%
       </span>
     </div>

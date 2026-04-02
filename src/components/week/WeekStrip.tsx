@@ -20,7 +20,7 @@ export default function WeekStrip({ showNav = true, onDayPress }: WeekStripProps
     sessions.filter(s => s.date === dateISO)
 
   return (
-    <div className="px-4 py-3">
+    <div className="px-4 py-3 md:px-0">
       {showNav && (
         <div className="flex items-center justify-between mb-3">
           <button
@@ -41,7 +41,7 @@ export default function WeekStrip({ showNav = true, onDayPress }: WeekStripProps
         </div>
       )}
 
-      <div className="grid grid-cols-7 gap-1">
+      <div className="grid grid-cols-7 gap-1 md:gap-2">
         {weekDays.map(day => {
           const iso = toISO(day)
           const isSelected = iso === selectedDate
@@ -62,10 +62,10 @@ export default function WeekStrip({ showNav = true, onDayPress }: WeekStripProps
                   : 'text-ink-muted hover:bg-surface-raised'
               }`}
             >
-              <span className="text-[10px] uppercase font-medium">
+              <span className="text-[10px] uppercase font-medium md:text-[11px]">
                 {formatDay(day)}
               </span>
-              <span className={`text-base font-semibold ${isSelected ? 'text-white' : ''}`}>
+              <span className={`text-base font-semibold md:text-lg ${isSelected ? 'text-white' : ''}`}>
                 {formatDayNum(day)}
               </span>
               {/* Type dots */}

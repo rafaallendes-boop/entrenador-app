@@ -4,7 +4,7 @@ import AppShell from './components/layout/AppShell'
 import AuthGate from './components/auth/AuthGate'
 import { ROUTES } from './constants/routes'
 import { useAuthStore } from './store/useAuthStore'
-import { pullAll, migrateLocalDataToCloud } from './services/syncService'
+import { pullAll, migrateLocalDataToCloud, prepareLocalDataForUser } from './services/syncService'
 import { useTrainingStore } from './store/useTrainingStore'
 import { currentWeekStartISO } from './utils/date'
 
@@ -26,6 +26,7 @@ function RouteFallback() {
 
 export default function App() {
   const user = useAuthStore(s => s.user)
+  const userId = user?.id ?? null
 
   useEffect(() => {
     void import('./db/db')
@@ -34,14 +35,35 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    if (!user) return
-    void migrateLocalDataToCloud(user.id)
-    pullAll(user.id).then(() => {
+    if (!userId) return
+
+    let cancelled = false
+
+    const syncSignedInUser = async () => {
+      const { shouldMigrate } = await prepareLocalDataForUser(userId)
+      if (cancelled) return
+
+      if (shouldMigrate) {
+        await migrateLocalDataToCloud(userId)
+        if (cancelled) return
+      }
+
+      await pullAll(userId)
+      if (cancelled) return
+
       const { loadWeek, loadAllSummaries } = useTrainingStore.getState()
-      void loadWeek(currentWeekStartISO())
-      void loadAllSummaries()
-    })
-  }, [user?.id])
+      await Promise.all([
+        loadWeek(currentWeekStartISO()),
+        loadAllSummaries(),
+      ])
+    }
+
+    void syncSignedInUser()
+
+    return () => {
+      cancelled = true
+    }
+  }, [userId])
 
   return (
     <BrowserRouter>

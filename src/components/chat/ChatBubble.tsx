@@ -29,16 +29,16 @@ export default function ChatBubble({ message, hasProposal, onViewProposal }: Cha
         </div>
       )}
 
-      <div className={`max-w-[80%] ${isCoach ? '' : 'items-end flex flex-col'}`}>
+      <div className={`max-w-[88%] md:max-w-[80%] ${isCoach ? '' : 'items-end flex flex-col'}`}>
         <div className={`rounded-2xl px-4 py-3 text-sm leading-relaxed ${
           isCoach
             ? 'bg-surface-card border border-surface-border text-ink rounded-tl-sm'
             : 'bg-brand text-white rounded-tr-sm'
         }`}>
-          {message.content}
+          <p className="whitespace-pre-wrap break-words">{message.content}</p>
         </div>
 
-        <div className="flex items-center gap-2 mt-1 px-1">
+        <div className="flex items-center gap-x-2 gap-y-1 mt-1 px-1 flex-wrap">
           <span className="text-[11px] text-ink-faint">{time}</span>
           {providerLabel && (
             <span className="text-[10px] text-ink-faint/60 font-medium">{providerLabel}</span>
