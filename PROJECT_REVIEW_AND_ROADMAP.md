@@ -1,7 +1,7 @@
 # Entrenador App - Review y Roadmap
 
 Generado: 2026-04-01
-Actualizado: 2026-04-02 (sync multi-dispositivo implementado)
+Actualizado: 2026-04-02 (sync multi-dispositivo en produccion — COMPLETO)
 Base de revision: codigo del repo + `npm run lint` + `npm run build`
 
 ---
@@ -23,11 +23,11 @@ El estado real al 2026-04-02 es:
 
 **MVP avanzado y utilizable**, con la mayor parte del roadmap historico ya implementado. El cuello de botella ya no es "crear features basicas", sino cerrar huecos de producto y operacion:
 
-- ~~sincronizacion entre dispositivos~~ → implementado (Supabase, pendiente setup infraestructura)
+- ~~sincronizacion entre dispositivos~~ → **COMPLETO Y EN PRODUCCION** (Supabase + Google OAuth)
 - versionado y opciones avanzadas del restore
 - robustez real de notificaciones
 - control del peso del bundle de importacion PDF
-- reload de stores post-sync (gap conocido del sync actual)
+- ~~reload de stores post-sync~~ → resuelto
 
 ---
 
@@ -99,41 +99,19 @@ El roadmap anterior mezclaba varios de estos items como si siguieran pendientes.
 
 ## 4. Prioridades reales desde hoy
 
-### Ola 1 - Cerrar huecos del sync implementado
+### ~~Ola 1 - Cerrar huecos del sync implementado~~ → COMPLETADO (2026-04-02)
 
-#### P1. Setup infraestructura Supabase (prerequisito del sync)
+#### ~~P1. Setup infraestructura Supabase~~ → HECHO
 
-El codigo esta completo pero el sync no funciona hasta que se complete el setup externo.
+- Proyecto Supabase creado
+- Google OAuth habilitado y vinculado a Google Cloud Console
+- 6 tablas + 24 politicas RLS ejecutadas en Supabase SQL Editor
+- `VITE_SUPABASE_URL` y `VITE_SUPABASE_ANON_KEY` agregadas en Netlify Dashboard
+- Deploy produccion exitoso y verificado
 
-Pasos pendientes (manuales, no en codigo):
-1. Crear proyecto en supabase.com (free tier)
-2. Habilitar Google OAuth en Auth → Providers → Google
-3. Crear credenciales OAuth en Google Cloud Console (whitelist dominio Netlify + localhost:8888)
-4. Ejecutar el SQL del `MULTI_DEVICE_SYNC_FOR_NETLIFY_APP.md` (seccion 5) — 6 tablas + 24 politicas RLS
-5. Agregar `VITE_SUPABASE_URL` y `VITE_SUPABASE_ANON_KEY` en Netlify Dashboard + `.env.local`
+#### ~~P2. Reload de stores tras pullAll~~ → HECHO
 
-Sin esto el sync esta silenciosamente desactivado (la app funciona normal, sin sync).
-
-#### P2. Reload de stores tras pullAll (gap conocido del sync)
-
-Estado actual: `pullAll()` escribe datos remotos en Dexie, pero los stores de Zustand no se enteran. El usuario ve datos actualizados solo al navegar o recargar la app.
-
-Impacto:
-- medio (visible en el primer login desde un dispositivo nuevo)
-
-Causa:
-- `syncService.ts` no puede importar los stores directamente (dependencia circular con las tiendas que importan syncService)
-- la solucion limpia es llamar `loadWeek()` y `loadAllSummaries()` desde `App.tsx` despues de que `pullAll()` resuelva
-
-Entrega minima:
-```tsx
-// En App.tsx, tras el pullAll:
-await pullAll(user.id)
-void useTrainingStore.getState().loadWeek(currentWeekStartISO())
-void useTrainingStore.getState().loadAllSummaries()
-```
-
-Prioridad: alta (deberia hacerse junto con el setup de Supabase)
+`pullAll()` en `App.tsx` llama `loadWeek()` y `loadAllSummaries()` al completar.
 
 #### P3. Notificaciones mas confiables
 
@@ -161,11 +139,9 @@ Entrega minima:
 
 ### Ola 2 - Consolidacion de producto
 
-#### ~~P5. Sync multi-dispositivo~~ → COMPLETADO (2026-04-02)
+#### ~~P5. Sync multi-dispositivo~~ → COMPLETO Y EN PRODUCCION (2026-04-02)
 
-Implementado con Supabase. Ver `MULTI_DEVICE_SYNC_FOR_NETLIFY_APP.md` para arquitectura completa.
-
-Pendiente: solo el setup de infraestructura (P1 arriba).
+Implementado con Supabase. Infraestructura activa. Verificado en produccion.
 
 #### P5. Indicador de sync en navegacion principal
 
@@ -225,9 +201,7 @@ Posibles extensiones:
 | Item | Impacto | Esfuerzo | Estado |
 |------|---------|----------|--------|
 | Importar backup JSON | Alto | Medio | Hecho |
-| Sync multi-dispositivo (codigo) | Muy alto | Alto | **Hecho** |
-| Setup Supabase infraestructura | Muy alto | Bajo | **Pendiente (manual)** |
-| Reload stores tras pullAll | Alto | Bajo | **Hecho** |
+| Sync multi-dispositivo completo | Muy alto | Alto | **Hecho (prod)** |
 | Indicador sync en nav principal | Bajo | Bajo | Pendiente |
 | Robustecer notificaciones | Alto | Medio | Parcial |
 | Reducir peso de PDF import | Alto | Medio | Pendiente |
@@ -245,12 +219,9 @@ Posibles extensiones:
 
 `pullAll()` ahora llama `loadWeek()` y `loadAllSummaries()` al completar, desde `App.tsx`.
 
-### Sync activo solo con infraestructura configurada
+### ~~Sync activo solo con infraestructura configurada~~ → RESUELTO (2026-04-02)
 
-El codigo de sync esta completo, pero sin las variables `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` el sync permanece silenciosamente desactivado. La app funciona normal pero sin nube.
-
-Mitigacion:
-- hacer el setup de Supabase (P1)
+Infraestructura Supabase activa en produccion. Sync verificado.
 
 ### Notificaciones no realmente persistentes
 
@@ -274,16 +245,12 @@ Mitigacion actual:
 
 ## 7. Recomendacion de ejecucion
 
-Orden sugerido para las proximas iteraciones:
+Sync completo y en produccion. Proximas iteraciones:
 
-1. **Setup Supabase** (P1) — sin esto el sync no funciona en produccion; esfuerzo bajo, impacto muy alto
-2. **Reload de stores tras pullAll** (P2) — fix de ~5 lineas en App.tsx; deberia ir junto con P1
-3. **Robustez de notificaciones** (P3) — mejora de fiabilidad para uso diario
-4. **Optimizacion del flujo PDF** (P4) — reduce el costo del bundle
-5. **Indicador sync en nav** (P5) — UX feedback del estado de sync
-6. **Mejoras de coaching** (P7) — calidad del producto existente
-
-Ese orden cierra la brecha critica del sync primero, luego se enfoca en fiabilidad operativa y calidad de producto.
+1. **Robustez de notificaciones** (P3) — mejora de fiabilidad para uso diario
+2. **Optimizacion del flujo PDF** (P4) — reduce el costo del bundle
+3. **Indicador sync en nav** (P5) — UX feedback del estado de sync
+4. **Mejoras de coaching** (P7) — calidad del producto existente
 
 ---
 

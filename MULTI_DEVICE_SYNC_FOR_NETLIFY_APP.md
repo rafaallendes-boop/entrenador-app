@@ -1,6 +1,9 @@
 # Multi-Device Sync — Entrenador App
 
-> Documento de arquitectura, decisión técnica y plan de implementación para sincronización multi-dispositivo.
+> **Estado: COMPLETO Y EN PRODUCCIÓN (2026-04-02)**
+> Supabase + Google OAuth activos. Verificado en producción Netlify.
+
+> Documento de arquitectura, decisión técnica e implementación de sincronización multi-dispositivo.
 
 ---
 
