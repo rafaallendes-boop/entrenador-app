@@ -1,7 +1,7 @@
 # Entrenador App - Review y Roadmap
 
 Generado: 2026-04-01
-Actualizado: 2026-04-01 (backup import hardening)
+Actualizado: 2026-04-02 (sync multi-dispositivo implementado)
 Base de revision: codigo del repo + `npm run lint` + `npm run build`
 
 ---
@@ -19,15 +19,15 @@ Entrenador ya no esta en fase de idea ni de prototipo basico. Hoy es una PWA fun
 - resumenes semanales y memoria persistente del coach
 - notificaciones basicas de sesiones
 
-El estado real al 2026-04-01 es:
+El estado real al 2026-04-02 es:
 
 **MVP avanzado y utilizable**, con la mayor parte del roadmap historico ya implementado. El cuello de botella ya no es "crear features basicas", sino cerrar huecos de producto y operacion:
 
-- sincronizacion entre dispositivos
+- ~~sincronizacion entre dispositivos~~ → implementado (Supabase, pendiente setup infraestructura)
 - versionado y opciones avanzadas del restore
 - robustez real de notificaciones
-- pulido de docs y encoding
 - control del peso del bundle de importacion PDF
+- reload de stores post-sync (gap conocido del sync actual)
 
 ---
 
@@ -57,11 +57,21 @@ Implementado y visible en codigo:
 - provider proxy para produccion via Netlify
 - lazy loading y code splitting inicial
 
+### Nuevos archivos (2026-04-02, sync multi-dispositivo)
+
+- `src/services/auth.ts` — cliente Supabase singleton (lee env vars `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`)
+- `src/services/syncService.ts` — capa completa de sync: push/pull/offline queue para 6 tablas
+- `src/store/useAuthStore.ts` — estado de auth (user, syncStatus, signInWithGoogle, signOut)
+- `src/components/auth/AuthGate.tsx` + `LoginScreen.tsx` — Google OAuth flow
+- `MULTI_DEVICE_SYNC_FOR_NETLIFY_APP.md` — documento de arquitectura completo con SQL
+
 ### Observaciones relevantes del build
 
-- El build pasa, pero el asset mas pesado sigue siendo `pdf.worker.min` (~1.24 MB).
-- `ImportPDF` sigue siendo una pantalla cara (~418 kB gzip 125 kB).
-- El core de la app esta bastante mas contenido que antes; el costo grande hoy esta concentrado en PDF.
+- `npm run build`: OK (0 errores TypeScript)
+- Asset mas pesado: `pdf.worker.min` (~1.24 MB). Sin cambios.
+- `ImportPDF` sigue siendo la pantalla mas cara (~418 kB gzip 125 kB).
+- El core de la app se mantiene contenido; la deuda de bundle esta concentrada en PDF.
+- Warning de dynamic import de `db.ts`: preexistente, no introducido por sync.
 
 ---
 
@@ -81,6 +91,7 @@ Estos frentes ya deben considerarse cerrados salvo bugs puntuales:
 - notificaciones basicas
 - PDF import v1.1 y v2 asistido por AI
 - `weekLoaded` para evitar el flicker obvio de semana vacia
+- **sync multi-dispositivo** — codigo completo (Supabase + Google OAuth + push/pull/offline queue)
 
 El roadmap anterior mezclaba varios de estos items como si siguieran pendientes. Eso lo hacia menos confiable.
 
@@ -88,25 +99,43 @@ El roadmap anterior mezclaba varios de estos items como si siguieran pendientes.
 
 ## 4. Prioridades reales desde hoy
 
-### Ola 1 - Cerrar huecos operativos
+### Ola 1 - Cerrar huecos del sync implementado
 
-#### P1. Restauracion de backups
+#### P1. Setup infraestructura Supabase (prerequisito del sync)
 
-La base ya existe y ya tiene validacion estructural fuerte por tabla, enums, fechas e IDs duplicados.
+El codigo esta completo pero el sync no funciona hasta que se complete el setup externo.
+
+Pasos pendientes (manuales, no en codigo):
+1. Crear proyecto en supabase.com (free tier)
+2. Habilitar Google OAuth en Auth → Providers → Google
+3. Crear credenciales OAuth en Google Cloud Console (whitelist dominio Netlify + localhost:8888)
+4. Ejecutar el SQL del `MULTI_DEVICE_SYNC_FOR_NETLIFY_APP.md` (seccion 5) — 6 tablas + 24 politicas RLS
+5. Agregar `VITE_SUPABASE_URL` y `VITE_SUPABASE_ANON_KEY` en Netlify Dashboard + `.env.local`
+
+Sin esto el sync esta silenciosamente desactivado (la app funciona normal, sin sync).
+
+#### P2. Reload de stores tras pullAll (gap conocido del sync)
+
+Estado actual: `pullAll()` escribe datos remotos en Dexie, pero los stores de Zustand no se enteran. El usuario ve datos actualizados solo al navegar o recargar la app.
 
 Impacto:
-- alto
+- medio (visible en el primer login desde un dispositivo nuevo)
 
-Motivo:
-- la app sigue siendo local-first
-- ahora ya hay recuperacion local confiable, pero todavia falta estrategia de versionado/migracion y opciones de importacion
+Causa:
+- `syncService.ts` no puede importar los stores directamente (dependencia circular con las tiendas que importan syncService)
+- la solucion limpia es llamar `loadWeek()` y `loadAllSummaries()` desde `App.tsx` despues de que `pullAll()` resuelva
 
 Entrega minima:
-- soportar versionado/migraciones de importacion
-- considerar `replace` vs `merge` en futuras versiones
-- opcionalmente mostrar preview antes de importar
+```tsx
+// En App.tsx, tras el pullAll:
+await pullAll(user.id)
+void useTrainingStore.getState().loadWeek(currentWeekStartISO())
+void useTrainingStore.getState().loadAllSummaries()
+```
 
-#### P2. Notificaciones mas confiables
+Prioridad: alta (deberia hacerse junto con el setup de Supabase)
+
+#### P3. Notificaciones mas confiables
 
 La implementacion actual agenda `setTimeout` dentro del service worker usando horarios fijos por `AM` y `PM`.
 
@@ -121,17 +150,6 @@ Entrega minima:
 - fallback claro cuando solo haya `timeBlock`
 - documentar limitaciones por navegador/PWA
 
-#### P3. Arreglar encoding y documentos base
-
-Los docs base ya quedaron limpios, pero todavia conviene revisar archivos historicos secundarios.
-
-Impacto:
-- medio
-
-Entrega minima:
-- mantener README, roadmap y Settings sin mojibake
-- revisar documentos historicos secundarios cuando toque limpiarlos
-
 #### P4. Reducir peso del flujo PDF
 
 La funcion existe y sirve, pero sigue siendo la zona mas pesada del bundle.
@@ -143,51 +161,59 @@ Entrega minima:
 
 ### Ola 2 - Consolidacion de producto
 
-#### P5. Sync multi-dispositivo
+#### ~~P5. Sync multi-dispositivo~~ → COMPLETADO (2026-04-02)
 
-Sigue siendo el mayor salto pendiente de producto.
+Implementado con Supabase. Ver `MULTI_DEVICE_SYNC_FOR_NETLIFY_APP.md` para arquitectura completa.
 
-Alcance minimo razonable:
-- auth simple de un usuario
-- sync de sesiones, day logs, summaries, chat y memoria
-- estrategia de merge simple y explicita
+Pendiente: solo el setup de infraestructura (P1 arriba).
 
-Opciones candidatas:
-- Supabase
-- PocketBase
+#### P5. Indicador de sync en navegacion principal
 
-#### P6. Restore + export versionado
+Hoy el sync status (`idle | syncing | error | offline`) solo se muestra en la pagina de Settings.
 
-Si se hace restore, conviene cerrar el circuito completo:
+Mejora util: un pequeno icono de nube en el `AppShell`/`BottomNav` para que el usuario vea el estado sin ir a Settings.
 
-- versionado del backup
-- validacion estructural
-- migraciones de importacion
-- opcion merge o replace
+Impacto: bajo-medio
+Esfuerzo: bajo (el `SyncStatusBadge` ya existe, solo moverlo)
+
+#### P6. Restauracion de backups versionada
+
+Si se hace restore desde un backup JSON antiguo, hoy no hay migracion ni merge — se reemplaza todo.
+
+Mejora minima:
+- mostrar preview de conteos antes de importar
+- considerar opcion `merge` vs `replace`
+- versionado del schema del backup para futuras migraciones
 
 #### P7. Mejoras de coaching con impacto real
 
-No hace falta abrir mas features "vistosas" todavia. Conviene ir a mejoras que aumenten confianza y utilidad:
+No hace falta abrir mas features "vistosas". Conviene ir a mejoras que aumenten confianza y utilidad:
 
 - mejores mensajes de colision/duplicado al crear semana
 - explicaciones mas claras en propuestas complejas
 - mas contexto deportivo en el prompt de resumen semanal
-- herramientas para editar objetivos semanales desde UI
+- editar objetivos semanales desde UI (hoy solo los genera el coach)
 
 ### Ola 3 - Expansiones mayores
 
-#### P8. Modo torneo
+#### P8. Real-time sync entre dispositivos
 
-Sigue siendo una buena expansion, pero todavia no debe competir con sync y restore.
+El sync actual es pull-on-load. Si dos dispositivos estan abiertos simultaneamente, los cambios de uno no aparecen en el otro hasta recargar.
 
-Recomendacion:
-- mantenerlo en backlog largo
+Mejora: `supabase.channel().on('postgres_changes', ...)` para listeners en tiempo real.
 
-#### P9. Analitica deportiva mas rica
+Cuando aplica: solo si hay uso simultaneo activo en multiples dispositivos.
+
+#### P9. Modo torneo
+
+Sigue siendo una buena expansion, pero no debe competir con las prioridades operativas.
+
+Recomendacion: mantenerlo en backlog largo.
+
+#### P10. Analitica deportiva mas rica
 
 Posibles extensiones:
-
-- tendencia de carga
+- tendencia de carga semana a semana
 - comparacion plan vs real por disciplina
 - vista de rivales y resultados por periodo
 - correlacion simple entre sueno, peso, dolor y rendimiento
@@ -199,12 +225,15 @@ Posibles extensiones:
 | Item | Impacto | Esfuerzo | Estado |
 |------|---------|----------|--------|
 | Importar backup JSON | Alto | Medio | Hecho |
+| Sync multi-dispositivo (codigo) | Muy alto | Alto | **Hecho** |
+| Setup Supabase infraestructura | Muy alto | Bajo | **Pendiente (manual)** |
+| Reload stores tras pullAll | Alto | Bajo | **Hecho** |
+| Indicador sync en nav principal | Bajo | Bajo | Pendiente |
 | Robustecer notificaciones | Alto | Medio | Parcial |
-| Corregir encoding/docs base | Medio | Bajo | Parcial |
 | Reducir peso de PDF import | Alto | Medio | Pendiente |
-| Sync multi-dispositivo | Muy alto | Alto | Pendiente |
 | Backup versionado + restore seguro | Alto | Medio | Parcial |
 | Mejoras UX del coach planner | Medio | Bajo | Pendiente |
+| Real-time sync entre dispositivos | Medio | Medio | Backlog |
 | Modo torneo | Alto | Alto | Backlog |
 | Analitica deportiva avanzada | Medio | Medio | Backlog |
 
@@ -212,16 +241,16 @@ Posibles extensiones:
 
 ## 6. Riesgos actuales
 
-### Persistencia solo local
+### ~~Sync sin stores recargados~~ → RESUELTO (2026-04-02)
 
-Sin backend, los datos siguen atados al navegador/dispositivo actual.
+`pullAll()` ahora llama `loadWeek()` y `loadAllSummaries()` al completar, desde `App.tsx`.
 
-Mitigacion actual:
-- export JSON manual
+### Sync activo solo con infraestructura configurada
 
-Mitigacion faltante:
-- sync
-- versionado/migraciones de backup
+El codigo de sync esta completo, pero sin las variables `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` el sync permanece silenciosamente desactivado. La app funciona normal pero sin nube.
+
+Mitigacion:
+- hacer el setup de Supabase (P1)
 
 ### Notificaciones no realmente persistentes
 
@@ -241,23 +270,20 @@ Mitigacion actual:
 - fallback parcial en PDF
 - modo demo/mock para no romper la UX base
 
-### Documentacion desactualizada
-
-README y documentos historicos todavia describen estados anteriores del producto.
-
 ---
 
 ## 7. Recomendacion de ejecucion
 
 Orden sugerido para las proximas iteraciones:
 
-1. versionado/migraciones de backup
-2. robustez de notificaciones
-3. limpieza de encoding secundaria
-4. optimizacion del flujo PDF
-5. diseno de sync multi-dispositivo
+1. **Setup Supabase** (P1) — sin esto el sync no funciona en produccion; esfuerzo bajo, impacto muy alto
+2. **Reload de stores tras pullAll** (P2) — fix de ~5 lineas en App.tsx; deberia ir junto con P1
+3. **Robustez de notificaciones** (P3) — mejora de fiabilidad para uso diario
+4. **Optimizacion del flujo PDF** (P4) — reduce el costo del bundle
+5. **Indicador sync en nav** (P5) — UX feedback del estado de sync
+6. **Mejoras de coaching** (P7) — calidad del producto existente
 
-Ese orden mantiene foco en resiliencia y uso real antes de abrir una capa nueva de complejidad.
+Ese orden cierra la brecha critica del sync primero, luego se enfoca en fiabilidad operativa y calidad de producto.
 
 ---
 
@@ -273,4 +299,10 @@ Ese orden mantiene foco en resiliencia y uso real antes de abrir una capa nueva 
 - `src/services/notifications.ts`
 - `public/sw.js`
 - `src/db/db.ts`
+- `src/db/queries.ts`
 - `src/services/dataExport.ts`
+- `src/services/auth.ts` (nuevo)
+- `src/services/syncService.ts` (nuevo)
+- `src/store/useAuthStore.ts` (nuevo)
+- `src/components/auth/AuthGate.tsx` (nuevo)
+- `src/App.tsx`

@@ -1,7 +1,12 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { lazy, Suspense, useEffect } from 'react'
 import AppShell from './components/layout/AppShell'
+import AuthGate from './components/auth/AuthGate'
 import { ROUTES } from './constants/routes'
+import { useAuthStore } from './store/useAuthStore'
+import { pullAll, migrateLocalDataToCloud } from './services/syncService'
+import { useTrainingStore } from './store/useTrainingStore'
+import { currentWeekStartISO } from './utils/date'
 
 const Dashboard = lazy(() => import('./pages/Dashboard'))
 const WeeklyView = lazy(() => import('./pages/WeeklyView'))
@@ -20,15 +25,28 @@ function RouteFallback() {
 }
 
 export default function App() {
+  const user = useAuthStore(s => s.user)
+
   useEffect(() => {
     void import('./db/db')
       .then(({ db }) => db.open())
       .catch(console.error)
   }, [])
 
+  useEffect(() => {
+    if (!user) return
+    void migrateLocalDataToCloud(user.id)
+    pullAll(user.id).then(() => {
+      const { loadWeek, loadAllSummaries } = useTrainingStore.getState()
+      void loadWeek(currentWeekStartISO())
+      void loadAllSummaries()
+    })
+  }, [user?.id])
+
   return (
     <BrowserRouter>
       <Suspense fallback={<RouteFallback />}>
+        <AuthGate>
         <Routes>
           <Route element={<AppShell />}>
             <Route path={ROUTES.HOME} element={<Dashboard />} />
@@ -40,6 +58,7 @@ export default function App() {
             <Route path={ROUTES.IMPORT} element={<ImportPDF />} />
           </Route>
         </Routes>
+        </AuthGate>
       </Suspense>
     </BrowserRouter>
   )

@@ -7,6 +7,7 @@ import { useCoachActionsStore } from './useCoachActionsStore'
 import { v4 as uuid } from '../utils/uuid'
 import { AIProviderError } from '../services/ai/types'
 import { getOrCreateChatSessionId, setStoredChatSessionId } from '../utils/chatSession'
+import * as syncService from '../services/syncService'
 
 interface ChatState {
   messages: ChatMessage[]
@@ -49,6 +50,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       context,
     }
     await db.chatMessages.add(userMsg)
+    void syncService.pushChatMessage(userMsg)
     set(state => ({ messages: [...state.messages, userMsg], isLoading: true, streamingText: '', error: null }))
 
     // Pasamos historial multi-turno real al provider (excluye el mensaje recién añadido)
@@ -83,6 +85,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         proposalId,
       }
       await db.chatMessages.add(coachMsg)
+      void syncService.pushChatMessage(coachMsg)
       set(state => ({ messages: [...state.messages, coachMsg], isLoading: false, streamingText: '' }))
     } catch (e) {
       const errorMsg = formatError(e)

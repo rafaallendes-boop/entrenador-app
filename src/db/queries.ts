@@ -1,5 +1,6 @@
 import { db } from './db'
 import type { Session, DayLog, WeekSummary, AthleteProfile } from '../types'
+import * as syncService from '../services/syncService'
 import { toISO, getWeekStart, fromISO } from '../utils/date'
 import { addDays } from 'date-fns'
 import { v4 as uuid } from '../utils/uuid'
@@ -49,6 +50,7 @@ export const upsertWeekSummary = async (
   if (existing) {
     const updated = { ...existing, ...patch }
     await db.weekSummaries.put(updated)
+    void syncService.pushWeekSummary(updated)
     return updated
   }
   const created: WeekSummary = {
@@ -66,6 +68,7 @@ export const upsertWeekSummary = async (
     ...patch,
   }
   await db.weekSummaries.put(created)
+  void syncService.pushWeekSummary(created)
   return created
 }
 

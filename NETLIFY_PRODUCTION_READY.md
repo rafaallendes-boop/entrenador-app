@@ -1,242 +1,122 @@
-# Entrenador App — Producción en Netlify
+# Entrenador App - Produccion en Netlify
 
-Actualizado: 2026-03-30
+Actualizado: 2026-04-02
 
----
+## 1. Objetivo
 
-## 1. Qué se corrigió
+Desplegar la app en Netlify sin exponer API keys en el frontend.
 
-### Problema original
-La API key de Gemini vivía en `VITE_GEMINI_API_KEY` → Vite la incrustaba literalmente en el JS del bundle. Cualquiera que inspeccionara el bundle podía extraer la key.
+La arquitectura correcta en produccion es:
 
-### Solución implementada
-- **Nueva Netlify Function** `netlify/functions/coach.ts`: proxy backend seguro que llama a Gemini/OpenAI/Claude usando `process.env.GEMINI_API_KEY`. La key nunca sale del servidor.
-- **Nuevo `ProxyProvider.ts`**: el frontend llama a `/.netlify/functions/coach` (HTTP POST), sin conocer la key.
-- **`CoachEngine.ts` actualizado**: en producción (`import.meta.env.PROD=true`) siempre usa `ProxyProvider`, sin importar la variable `VITE_AI_PROVIDER`.
-- **`.env` limpio**: removida `VITE_GEMINI_API_KEY`. La key del servidor usa `GEMINI_API_KEY` (sin prefijo `VITE_`, invisible al bundle).
-- **Verificado**: el bundle de producción `dist/assets/index-DHDHV6NM.js` no contiene ninguna API key real.
+- frontend Vite servido por Netlify
+- llamadas AI desde el cliente hacia `/.netlify/functions/coach`
+- keys reales solo en variables de entorno del servidor
 
----
+## 2. Flujo de produccion
 
-## 2. Flujo completo de IA (producción)
-
-```
-Usuario escribe mensaje
-        │
-useChatStore.sendMessage()
-        │
-CoachEngine.send()
-  ├── buildCoachSystemPrompt(context)   ← construido en el frontend
-  └── ProxyProvider.call()
-        │
-        ▼
-POST /.netlify/functions/coach
-  { systemPrompt, userMessage, maxTokens, temperature }
-        │
-        ▼
-netlify/functions/coach.ts  (servidor Node.js 18+)
-  ├── lee process.env.AI_PROVIDER  → "gemini"
-  ├── lee process.env.GEMINI_API_KEY  → key real
-  └── POST https://generativelanguage.googleapis.com/...
-        │
-        ▼
-Gemini 1.5 Flash responde
-        │
-        ▼
-Function retorna { text, provider: "gemini", model: "gemini-1.5-flash" }
-        │
-        ▼
-ProxyProvider retorna AIRawResponse
-        │
-responseNormalizer → extrae <actions>, limpia mensaje
-        │
-useChatStore → guarda en Dexie, actualiza UI
-        │
-ChatBubble muestra respuesta + badge "Gemini Flash"
+```text
+Usuario
+  -> ChatCoach / CoachEngine
+  -> ProxyProvider
+  -> /.netlify/functions/coach
+  -> proveedor real (Gemini / OpenAI / Claude)
+  -> respuesta normalizada al frontend
 ```
 
----
+Punto importante:
 
-## 3. Variables de entorno
+- el bundle cliente no debe contener `GEMINI_API_KEY`, `OPENAI_API_KEY` ni `CLAUDE_API_KEY`
 
-### En Netlify (dashboard → Site settings → Environment variables)
+## 3. Variables de entorno en Netlify
 
-| Variable | Valor | Dónde se usa |
-|----------|-------|--------------|
-| `AI_PROVIDER` | `gemini` | Function: selecciona el proveedor |
-| `GEMINI_API_KEY` | `YOUR_GEMINI_API_KEY` | Function: autenticación con Gemini |
+Configurar en `Site settings -> Environment variables`:
 
-Para migrar a OpenAI: cambia `AI_PROVIDER=openai` y añade `OPENAI_API_KEY=YOUR_OPENAI_API_KEY`
-Para migrar a Claude: cambia `AI_PROVIDER=claude` y añade `CLAUDE_API_KEY=YOUR_ANTHROPIC_API_KEY`
+- `AI_PROVIDER=gemini`
+- `GEMINI_API_KEY=...`
 
-### En `.env` local (gitignored, solo para desarrollo)
+Alternativas:
 
-```bash
-# Para dev offline (no necesita key):
-VITE_AI_PROVIDER=mock
+- `AI_PROVIDER=openai` y `OPENAI_API_KEY=...`
+- `AI_PROVIDER=claude` y `CLAUDE_API_KEY=...`
 
-# Para dev con IA real (requiere netlify dev):
-# VITE_AI_PROVIDER=proxy
-# GEMINI_API_KEY=YOUR_GEMINI_API_KEY    ← sin prefijo VITE_, solo para netlify dev
-```
+No usar en produccion:
 
-### Variables que NO deben existir en producción
+- `VITE_GEMINI_API_KEY`
+- `VITE_OPENAI_API_KEY`
+- `VITE_CLAUDE_API_KEY`
 
-| Variable | Por qué |
-|----------|---------|
-| `VITE_GEMINI_API_KEY` | Quedaría embebida en el bundle JS del cliente |
-| `VITE_CLAUDE_API_KEY` | Ídem |
-| `VITE_OPENAI_API_KEY` | Ídem |
+Todo lo que empiece con `VITE_` puede terminar embebido en el bundle del cliente.
 
-Estas variables tienen prefijo `VITE_` → Vite las incrusta en el bundle. **Nunca configurarlas en Netlify.** Solo existen en `.env` local para dev sin proxy.
+## 4. Desarrollo local
 
----
-
-## 4. Cómo correr localmente
-
-### Opción A — Offline (mock, sin API key, default)
+Modo mock:
 
 ```bash
 npm run dev
-# App en localhost:5173
-# Coach usa MockProvider con respuestas keyword-based
 ```
 
-### Opción B — Con IA real (requiere netlify-cli)
+Modo proxy con Netlify:
 
 ```bash
-# 1. Instalar netlify CLI (una sola vez)
-npm install -g netlify-cli
-
-# 2. En .env, cambiar:
-#   VITE_AI_PROVIDER=proxy
-#   GEMINI_API_KEY=tu_clave_aqui   (sin prefijo VITE_)
-
-# 3. Arrancar
 netlify dev
-# App en localhost:8888
-# Function en localhost:8888/.netlify/functions/coach
-# Coach usa Gemini via la function local
 ```
 
----
+Variables locales de ejemplo:
 
-## 5. Cómo hacer build
+```bash
+VITE_AI_PROVIDER=proxy
+GEMINI_API_KEY=tu_clave_local
+```
+
+## 5. Build
 
 ```bash
 npm run build
-# Genera dist/ con:
-#   - VITE_AI_PROVIDER ignorada (CoachEngine fuerza 'proxy' en PROD)
-#   - Sin ninguna API key en el bundle
-#   - El proveedor real se resuelve en la function y vuelve en la respuesta
 ```
 
-Verificar que el build es seguro:
-```bash
-grep -c "YOUR_GEMINI_API_KEY" dist/assets/*.js   # debe ser 0
-```
+Resultado esperado:
 
----
+- se genera `dist/`
+- el frontend queda apuntando a `ProxyProvider` en produccion
+- las keys reales no viajan al cliente
 
-## 6. Cómo redeployar en Netlify
+## 6. Deploy
 
-**Opción A — Via CLI**
+Opciones:
+
+### A. Repo conectado a Netlify
+
+Cada push a `main` dispara build y deploy automatico.
+
+### B. Deploy manual por CLI
+
 ```bash
 npm run build
 netlify deploy --prod --dir dist
 ```
 
-**Opción B — CI (push a git)**
-Si conectas el repo a Netlify, cada push a `main` dispara un build automático.
-Netlify leerá `netlify.toml` y ejecutará `npm run build`.
-Las env vars del dashboard estarán disponibles para la function automáticamente.
+No conviene usar drag and drop de `dist/` si dependes de `netlify/functions/coach`.
 
-No uses drag & drop de `dist/` en este proyecto. Ese flujo no despliega `netlify/functions/coach.ts`.
+## 7. Archivos relevantes
 
----
+- `netlify/functions/coach.ts`
+- `src/services/ai/CoachEngine.ts`
+- `src/services/ai/providers/ProxyProvider.ts`
+- `netlify.toml`
+- `.env.production`
 
-## 7. Arquitectura de archivos nueva
+## 8. Checklist
 
-```
-netlify/
-  functions/
-    coach.ts          ← función backend segura (nueva)
+- [x] API key fuera del bundle del cliente
+- [x] `ProxyProvider` activo en produccion
+- [x] function `coach.ts` desplegable en Netlify
+- [x] build de produccion pasando
+- [x] variables reales configuradas en Netlify
+- [x] prueba real del coach en entorno desplegado
 
-src/
-  services/
-    ai/
-      CoachEngine.ts          ← usa ProxyProvider en PROD (actualizado)
-      providers/
-        ProxyProvider.ts      ← llama a /.netlify/functions/coach (nuevo)
-        GeminiProvider.ts     ← solo para dev local directo (no en PROD)
-        ClaudeProvider.ts     ← solo para dev local directo
-        OpenAIProvider.ts     ← solo para dev local directo
-        MockProvider.ts       ← para offline y tests
+## 9. Notas
 
-netlify.toml             ← añadido: functions="netlify/functions", esbuild
-tsconfig.node.json       ← añadido: include "netlify/functions"
-.env                     ← limpiado: sin VITE_GEMINI_API_KEY
-.env.production          ← VITE_AI_PROVIDER=proxy (documentación)
-```
+- Si cambias de proveedor, el cambio principal es de variables de entorno.
+- Si quieres cambiar modelos por proveedor, conviene centralizarlo en la function.
+- Si el deploy falla, revisar primero variables de entorno, `netlify.toml` y logs de la function.
 
----
-
-## 8. Checklist final de producción
-
-- [x] API key **no está** en el bundle JS del cliente
-- [x] `GEMINI_API_KEY` solo accesible via `process.env` en la function
-- [x] Build pasa `tsc -b` sin errores
-- [x] `dist/` generado correctamente (nuevo hash: `index-DHDHV6NM.js`)
-- [x] `netlify.toml` configura functions directory y esbuild bundler
-- [x] `CoachEngine` usa `ProxyProvider` en cualquier build de producción
-- [x] `.env` no tiene `VITE_GEMINI_API_KEY`
-- [x] `.gitignore` protege `.env` (tiene claves locales)
-- [x] `.env.production` no tiene claves reales
-- [x] Function soporta los 3 proveedores: Gemini, OpenAI, Claude
-- [x] Errores de la function propagados correctamente al frontend (`AIProviderError`)
-- [ ] Verificar en Netlify que `AI_PROVIDER` y `GEMINI_API_KEY` están configuradas ← **ya lo hiciste (screenshot)**
-- [ ] Primer deploy exitoso y test real de mensaje al coach
-
----
-
-## 9. Migrar a OpenAI o Claude (cuando quieras)
-
-### Cambiar a OpenAI
-
-1. En Netlify dashboard, actualiza las variables de entorno:
-   - `AI_PROVIDER` → `openai`
-   - Añade `OPENAI_API_KEY` → `YOUR_OPENAI_API_KEY`
-2. Redeploy (o trigger manual en Netlify)
-3. La function `coach.ts` ya tiene `callOpenAI()` implementado — no hay cambios de código.
-
-### Cambiar a Claude
-
-1. En Netlify dashboard:
-   - `AI_PROVIDER` → `claude`
-   - Añade `CLAUDE_API_KEY` → `YOUR_ANTHROPIC_API_KEY`
-2. Redeploy
-3. La function `coach.ts` ya tiene `callClaude()` implementado.
-
-### Cambiar el modelo
-
-Para usar un modelo diferente del default, la function usa estos defaults:
-```
-gemini → gemini-1.5-flash
-openai → gpt-4o-mini
-claude → claude-sonnet-4-6
-```
-
-Para cambiar: añade una variable `GEMINI_MODEL`, `OPENAI_MODEL` o `CLAUDE_MODEL` en Netlify, y lee `process.env['GEMINI_MODEL']` en `coach.ts`. (Hoy está hardcodeado en `DEFAULT_MODELS`.)
-
----
-
-## 10. Decisiones de diseño
-
-**¿Por qué el prompt se construye en el frontend y no en la function?**
-El frontend tiene acceso directo a los datos del usuario (Dexie/Zustand). Pasar el contexto completo al servidor requeriría serializar sesiones, day logs, etc. Es más simple construir el prompt completo en el cliente y enviar solo `{ systemPrompt, userMessage }` al servidor. La function es un proxy thin, no un backend de negocio.
-
-**¿Por qué el badge puede cambiar después de la primera respuesta?**
-Antes de recibir una respuesta, la UI solo sabe que está usando `proxy` o un proveedor local. Después de la llamada, el servidor retorna `provider: "gemini" | "openai" | "claude"` y ese valor pasa a ser la fuente de verdad para el historial y el badge del chat.
-
-**¿Por qué no `@netlify/functions` package?**
-Evita una dependencia externa. Los tipos inline son suficientes. El esbuild bundler de Netlify compila TypeScript nativo sin necesidad del paquete.

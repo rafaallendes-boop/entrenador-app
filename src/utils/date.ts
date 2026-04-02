@@ -1,14 +1,14 @@
 import {
-  format,
-  startOfWeek,
-  endOfWeek,
+  addDays,
   addWeeks,
-  subWeeks,
   eachDayOfInterval,
+  endOfWeek,
+  format,
+  isSameDay,
   isToday,
   parseISO,
-  isSameDay,
-  addDays,
+  startOfWeek,
+  subWeeks,
 } from 'date-fns'
 import { es } from 'date-fns/locale'
 
@@ -17,7 +17,7 @@ export const toISO = (date: Date): string => format(date, 'yyyy-MM-dd')
 export const fromISO = (iso: string): Date => parseISO(iso)
 
 export const getWeekStart = (date: Date): Date =>
-  startOfWeek(date, { weekStartsOn: 1 }) // Monday
+  startOfWeek(date, { weekStartsOn: 1 })
 
 export const getWeekEnd = (date: Date): Date =>
   endOfWeek(date, { weekStartsOn: 1 })
@@ -37,11 +37,11 @@ export const formatFullDate = (date: Date): string =>
   format(date, "EEEE d 'de' MMMM", { locale: es })
 
 export const formatShortDate = (date: Date): string =>
-  format(date, "d MMM", { locale: es })
+  format(date, 'd MMM', { locale: es })
 
 export const formatWeekRange = (weekStart: Date): string => {
   const end = addDays(weekStart, 6)
-  return `${format(weekStart, 'd MMM', { locale: es })} – ${format(end, 'd MMM yyyy', { locale: es })}`
+  return `${format(weekStart, 'd MMM', { locale: es })} - ${format(end, 'd MMM yyyy', { locale: es })}`
 }
 
 export const isDateToday = (iso: string): boolean =>

@@ -17,6 +17,7 @@ import { toISO, fromISO, getWeekStart } from '../utils/date'
 import { addDays } from 'date-fns'
 import { CoachEngine } from '../services/ai/CoachEngine'
 import { optimizeChatContext } from '../services/ai/contextOptimizer'
+import * as syncService from '../services/syncService'
 
 const STATUS_CYCLE: SessionStatus[] = ['planned', 'completed', 'adjusted', 'skipped']
 
@@ -85,6 +86,7 @@ export const useTrainingStore = create<TrainingState>((set, get) => ({
     const now = Date.now()
     const session: Session = { ...partial, id: uuid(), createdAt: now, updatedAt: now }
     await db.sessions.add(session)
+    void syncService.pushSession(session)
     await recalculateWeekSummary(session.date)
     const activeWeekStart = get().currentWeekSummary?.weekStartDate
     const sessionWeekStart = toISO(getWeekStart(fromISO(session.date)))
@@ -111,6 +113,8 @@ export const useTrainingStore = create<TrainingState>((set, get) => ({
         : previous.completedAt
 
     await db.sessions.update(id, { ...patch, completedAt, updatedAt: now })
+    const updatedSession = { ...previous, ...patch, completedAt, updatedAt: now }
+    void syncService.pushSession(updatedSession)
     set(state => ({
       sessions: state.sessions.map(s =>
         s.id === id ? { ...s, ...patch, completedAt, updatedAt: now } : s
@@ -139,6 +143,7 @@ export const useTrainingStore = create<TrainingState>((set, get) => ({
     const session = get().sessions.find(s => s.id === id)
     if (!session) return
     await db.sessions.delete(id)
+    void syncService.deleteSession(id)
     await recalculateWeekSummary(session.date)
     set(state => ({ sessions: state.sessions.filter(s => s.id !== id) }))
     const activeWeekStart = get().currentWeekSummary?.weekStartDate
@@ -167,6 +172,7 @@ export const useTrainingStore = create<TrainingState>((set, get) => ({
 
   saveDayLog: async (date, patch) => {
     const log = await upsertDayLog(date, patch)
+    void syncService.pushDayLog(log)
     await recalculateWeekSummary(date)
     const activeWeekStart = get().currentWeekSummary?.weekStartDate
     if (activeWeekStart === toISO(getWeekStart(fromISO(date)))) {

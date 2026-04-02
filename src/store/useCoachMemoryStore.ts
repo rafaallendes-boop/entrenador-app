@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { getAthleteProfile, upsertAthleteProfile } from '../db/queries'
+import * as syncService from '../services/syncService'
 
 interface CoachMemoryState {
   coachMemory: string
@@ -21,6 +22,7 @@ export const useCoachMemoryStore = create<CoachMemoryState>((set) => ({
     set({ isSaving: true })
     try {
       const profile = await upsertAthleteProfile({ coachMemory: coachMemory.trim() || undefined })
+      void syncService.pushAthleteProfile(profile)
       set({ coachMemory: profile.coachMemory ?? '', isSaving: false })
     } catch (error) {
       set({ isSaving: false })

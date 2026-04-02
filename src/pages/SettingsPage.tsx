@@ -1,5 +1,5 @@
 import { type ChangeEvent, useEffect, useMemo, useRef, useState } from 'react'
-import { Bell, Brain, Cpu, Download, ShieldAlert, Trash2, Upload } from 'lucide-react'
+import { Bell, Brain, Cloud, CloudOff, Cpu, Download, LogOut, ShieldAlert, Trash2, Upload, User } from 'lucide-react'
 import Card from '../components/ui/Card'
 import { APP_INFO } from '../constants/appInfo'
 import { CoachEngine } from '../services/ai/CoachEngine'
@@ -17,6 +17,7 @@ import {
   requestNotificationPermission,
 } from '../services/notifications'
 import { useCoachMemoryStore } from '../store/useCoachMemoryStore'
+import { useAuthStore } from '../store/useAuthStore'
 
 const CLEARABLE_GROUPS: Array<{
   key: LocalDataGroup
@@ -54,6 +55,7 @@ const EMPTY_CLEAR_SELECTION: LocalDataSelection = {
 
 export default function SettingsPage() {
   const { coachMemory, isSaving, loadMemory, saveMemory } = useCoachMemoryStore()
+  const { user, signOut, syncStatus, syncError } = useAuthStore()
   const [memoryDraft, setMemoryDraft] = useState('')
   const [notifPermission, setNotifPermission] = useState<NotificationPermission | null>(null)
   const [dataCounts, setDataCounts] = useState<LocalDataCounts | null>(null)
@@ -164,6 +166,27 @@ export default function SettingsPage() {
         <h1 className="text-xl font-bold text-ink mb-1">Ajustes</h1>
         <p className="text-sm text-ink-muted">Configuracion local, contexto del coach y mantenimiento.</p>
       </div>
+
+      {/* Account & Sync card */}
+      <Card className="p-4">
+        <div className="flex items-start gap-3 mb-3">
+          <div className="w-8 h-8 rounded-full bg-brand/15 flex items-center justify-center flex-shrink-0">
+            <User size={16} className="text-brand-light" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h2 className="text-sm font-semibold text-ink">Cuenta y sincronizacion</h2>
+            <p className="text-xs text-ink-muted mt-1 truncate">{user?.email ?? 'Sesion activa'}</p>
+          </div>
+          <SyncStatusBadge status={syncStatus} error={syncError} />
+        </div>
+        <button
+          onClick={() => void signOut()}
+          className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-surface-raised text-ink-muted text-sm font-semibold hover:bg-surface hover:text-ink transition-colors"
+        >
+          <LogOut size={14} />
+          Cerrar sesion
+        </button>
+      </Card>
 
       <Card className="p-4">
         <div className="flex items-start gap-3 mb-3">
@@ -458,6 +481,39 @@ function formatCountLabel(group: LocalDataGroup, counts: LocalDataCounts | null)
     case 'coachMemory':
       return counts.coachMemory > 0 ? 'Guardada' : 'Vacia'
   }
+}
+
+function SyncStatusBadge({ status, error }: { status: string; error: string | null }) {
+  if (status === 'syncing') {
+    return (
+      <span className="inline-flex items-center gap-1 text-xs text-brand-light">
+        <Cloud size={12} className="animate-pulse" />
+        Sincronizando
+      </span>
+    )
+  }
+  if (status === 'error') {
+    return (
+      <span className="inline-flex items-center gap-1 text-xs text-amber-400" title={error ?? undefined}>
+        <CloudOff size={12} />
+        Error sync
+      </span>
+    )
+  }
+  if (status === 'offline') {
+    return (
+      <span className="inline-flex items-center gap-1 text-xs text-ink-muted">
+        <CloudOff size={12} />
+        Sin conexion
+      </span>
+    )
+  }
+  return (
+    <span className="inline-flex items-center gap-1 text-xs text-emerald-400">
+      <Cloud size={12} />
+      Sincronizado
+    </span>
+  )
 }
 
 function formatGroupList(groups: LocalDataGroup[]): string {

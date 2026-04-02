@@ -4,6 +4,7 @@ import { db } from '../db/db'
 import { v4 as uuid } from '../utils/uuid'
 import { useTrainingStore } from './useTrainingStore'
 import { upsertWeekSummary } from '../db/queries'
+import * as syncService from '../services/syncService'
 import { toISO, fromISO, getWeekStart } from '../utils/date'
 
 interface ApplyCoachActionResult {
@@ -43,6 +44,7 @@ export const useCoachActionsStore = create<CoachActionsState>((set, get) => ({
       createdAt: Date.now(),
     }
     await db.coachProposals.put(proposal)
+    void syncService.pushCoachProposal(proposal)
     set(state => ({ proposals: [...state.proposals, proposal] }))
     return proposal
   },
@@ -53,6 +55,7 @@ export const useCoachActionsStore = create<CoachActionsState>((set, get) => ({
 
     const nextProposal = { ...proposal, status: 'rejected' as const, resolvedAt: Date.now() }
     await db.coachProposals.put(nextProposal)
+    void syncService.pushCoachProposal(nextProposal)
     set(state => ({
       proposals: state.proposals.map(p => (p.id === id ? nextProposal : p)),
     }))
@@ -84,6 +87,7 @@ export const useCoachActionsStore = create<CoachActionsState>((set, get) => ({
     }
 
     await db.coachProposals.put(nextProposal)
+    void syncService.pushCoachProposal(nextProposal)
     set(state => ({
       proposals: state.proposals.map(p =>
         p.id === id ? nextProposal : p

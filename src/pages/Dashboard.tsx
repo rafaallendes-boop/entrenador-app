@@ -7,7 +7,7 @@ import WeekStrip from '../components/week/WeekStrip'
 import LoadIndicator from '../components/dashboard/LoadIndicator'
 import Card from '../components/ui/Card'
 import { getDayNutrition } from '../services/nutritionEngine'
-import { scheduleTodayNotifications } from '../services/notifications'
+import { startNotificationSync } from '../services/notifications'
 
 const CoachMessageCard = lazy(() => import('../components/dashboard/CoachMessageCard'))
 const NextSessionCard = lazy(() => import('../components/dashboard/NextSessionCard'))
@@ -25,7 +25,7 @@ export default function Dashboard() {
   }, [loadWeek])
 
   useEffect(() => {
-    void scheduleTodayNotifications(sessions)
+    return startNotificationSync(() => sessions)
   }, [sessions])
 
   const todaySessions = sessions.filter(s => s.date === today)
