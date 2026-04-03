@@ -106,6 +106,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
       .equals(sessionId)
       .primaryKeys() as string[]
 
+    // Delete proposals linked to any message in this session
+    const linkedProposals = await db.coachProposals
+      .where('chatMessageId')
+      .anyOf(messageIds)
+      .toArray()
+    const proposalIds = linkedProposals.map(p => p.id)
+    if (proposalIds.length > 0) {
+      await db.coachProposals.where('chatMessageId').anyOf(messageIds).delete()
+      await syncService.deleteCoachProposals(proposalIds)
+      await useCoachActionsStore.getState().loadProposals()
+    }
+
     await db.chatMessages.where('chatSessionId').equals(sessionId).delete()
     await syncService.deleteChatMessages(messageIds)
     // After deleting current session, start a new one

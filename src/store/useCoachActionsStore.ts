@@ -187,6 +187,7 @@ async function applyCoachAction(
               targetHrMax: action.targetHrMax,
             }
           : undefined,
+        squashDetails: action.squashDetails,
       })
       break
     }
@@ -220,6 +221,7 @@ async function applyCoachAction(
             targetHrMin: s.targetHrMin,
             targetHrMax: s.targetHrMax,
           } : undefined,
+          squashDetails: s.squashDetails,
         })
       }
       // Set week objectives if provided

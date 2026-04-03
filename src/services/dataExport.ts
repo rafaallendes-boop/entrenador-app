@@ -1,4 +1,5 @@
 import { db } from '../db/db'
+import { APP_INFO } from '../constants/appInfo'
 import type {
   AthleteProfile,
   ChatMessage,
@@ -15,7 +16,8 @@ import { useTrainingStore } from '../store/useTrainingStore'
 import { clearStoredChatSessionId, getOrCreateChatSessionId, setStoredChatSessionId } from '../utils/chatSession'
 
 const BACKUP_APP_NAME = 'Entrenador' as const
-const CURRENT_BACKUP_VERSION = 1 as const
+const CURRENT_BACKUP_VERSION = 2 as const
+const MIN_SUPPORTED_BACKUP_VERSION = 1 as const
 
 const TIME_BLOCKS = new Set(['AM', 'PM'])
 const SESSION_TYPES = new Set(['squash', 'running', 'strength', 'mobility', 'recovery', 'nutrition'])
@@ -25,6 +27,7 @@ const MATCH_RESULTS = new Set(['win', 'loss'])
 const MESSAGE_ROLES = new Set(['user', 'coach'])
 const AI_PROVIDERS = new Set(['claude', 'openai', 'mock', 'gemini'])
 const RUNNING_TYPES = new Set(['z2', 'tempo', 'intervals', 'long'])
+const SQUASH_TRAINING_FOCUSES = new Set(['technical', 'tactical', 'physical', 'conditioned_games'])
 const PROPOSAL_STATUSES = new Set(['pending', 'accepted', 'rejected', 'partial'])
 const COACH_ACTION_TYPES = new Set([
   'move_session',
@@ -44,6 +47,7 @@ export interface AppDataExport {
   app: typeof BACKUP_APP_NAME
   version: typeof CURRENT_BACKUP_VERSION
   exportedAt: string
+  exportedFromAppVersion: string
   tables: {
     sessions: Session[]
     dayLogs: DayLog[]
@@ -55,7 +59,9 @@ export interface AppDataExport {
 }
 
 export interface AppDataImportResult {
+  mode: 'replace' | 'merge'
   importedAt: string
+  importedFromAppVersion: string
   counts: {
     sessions: number
     dayLogs: number
@@ -64,6 +70,13 @@ export interface AppDataImportResult {
     coachProposals: number
     athleteProfiles: number
   }
+}
+
+export interface AppDataImportPreview {
+  importedAt: string
+  importedFromAppVersion: string
+  version: number
+  counts: AppDataImportResult['counts']
 }
 
 function buildFilename(exportedAt: Date): string {
@@ -86,6 +99,7 @@ export async function exportAppData(): Promise<{ filename: string; json: string 
     app: BACKUP_APP_NAME,
     version: CURRENT_BACKUP_VERSION,
     exportedAt: exportedAt.toISOString(),
+    exportedFromAppVersion: APP_INFO.version,
     tables: {
       sessions,
       dayLogs,
@@ -119,7 +133,83 @@ export async function downloadAppDataExport(): Promise<string> {
   return filename
 }
 
-export async function importAppDataFromFile(file: File): Promise<AppDataImportResult> {
+export async function previewAppDataImportFile(file: File): Promise<AppDataImportPreview> {
+  const backup = await readBackupFromFile(file)
+  return {
+    importedAt: backup.exportedAt,
+    importedFromAppVersion: backup.exportedFromAppVersion,
+    version: backup.version,
+    counts: {
+      sessions: backup.tables.sessions.length,
+      dayLogs: backup.tables.dayLogs.length,
+      weekSummaries: backup.tables.weekSummaries.length,
+      chatMessages: backup.tables.chatMessages.length,
+      coachProposals: backup.tables.coachProposals.length,
+      athleteProfiles: backup.tables.athleteProfiles.length,
+    },
+  }
+}
+
+export async function importAppDataFromFile(
+  file: File,
+  mode: 'replace' | 'merge' = 'replace',
+): Promise<AppDataImportResult> {
+  const backup = await readBackupFromFile(file)
+  const preferredChatSessionId = pickPreferredChatSessionId(backup.tables.chatMessages)
+
+  if (mode === 'replace') {
+    await db.transaction(
+      'rw',
+      [db.sessions, db.dayLogs, db.weekSummaries, db.chatMessages, db.coachProposals, db.athleteProfiles],
+      async () => {
+        await db.sessions.clear()
+        await db.dayLogs.clear()
+        await db.weekSummaries.clear()
+        await db.chatMessages.clear()
+        await db.coachProposals.clear()
+        await db.athleteProfiles.clear()
+
+        if (backup.tables.sessions.length > 0) await db.sessions.bulkPut(backup.tables.sessions)
+        if (backup.tables.dayLogs.length > 0) await db.dayLogs.bulkPut(backup.tables.dayLogs)
+        if (backup.tables.weekSummaries.length > 0) await db.weekSummaries.bulkPut(backup.tables.weekSummaries)
+        if (backup.tables.chatMessages.length > 0) await db.chatMessages.bulkPut(backup.tables.chatMessages)
+        if (backup.tables.coachProposals.length > 0) await db.coachProposals.bulkPut(backup.tables.coachProposals)
+        if (backup.tables.athleteProfiles.length > 0) await db.athleteProfiles.bulkPut(backup.tables.athleteProfiles)
+      },
+    )
+  } else {
+    await db.transaction(
+      'rw',
+      [db.sessions, db.dayLogs, db.weekSummaries, db.chatMessages, db.coachProposals, db.athleteProfiles],
+      async () => {
+        if (backup.tables.sessions.length > 0) await db.sessions.bulkPut(backup.tables.sessions)
+        if (backup.tables.dayLogs.length > 0) await db.dayLogs.bulkPut(backup.tables.dayLogs)
+        if (backup.tables.weekSummaries.length > 0) await db.weekSummaries.bulkPut(backup.tables.weekSummaries)
+        if (backup.tables.chatMessages.length > 0) await db.chatMessages.bulkPut(backup.tables.chatMessages)
+        if (backup.tables.coachProposals.length > 0) await db.coachProposals.bulkPut(backup.tables.coachProposals)
+        if (backup.tables.athleteProfiles.length > 0) await db.athleteProfiles.bulkPut(backup.tables.athleteProfiles)
+      },
+    )
+  }
+
+  syncStoresAfterImport(preferredChatSessionId)
+
+  return {
+    mode,
+    importedAt: backup.exportedAt,
+    importedFromAppVersion: backup.exportedFromAppVersion,
+    counts: {
+      sessions: backup.tables.sessions.length,
+      dayLogs: backup.tables.dayLogs.length,
+      weekSummaries: backup.tables.weekSummaries.length,
+      chatMessages: backup.tables.chatMessages.length,
+      coachProposals: backup.tables.coachProposals.length,
+      athleteProfiles: backup.tables.athleteProfiles.length,
+    },
+  }
+}
+
+async function readBackupFromFile(file: File): Promise<AppDataExport> {
   if (!file.name.toLowerCase().endsWith('.json')) {
     throw new Error('El archivo debe ser un JSON exportado por Entrenador.')
   }
@@ -133,80 +223,26 @@ export async function importAppDataFromFile(file: File): Promise<AppDataImportRe
     throw new Error('El archivo no contiene un JSON valido.')
   }
 
-  const backup = parseAppDataExport(parsed)
-  const preferredChatSessionId = pickPreferredChatSessionId(backup.tables.chatMessages)
-
-  await db.transaction(
-    'rw',
-    [db.sessions, db.dayLogs, db.weekSummaries, db.chatMessages, db.coachProposals, db.athleteProfiles],
-    async () => {
-      await db.sessions.clear()
-      await db.dayLogs.clear()
-      await db.weekSummaries.clear()
-      await db.chatMessages.clear()
-      await db.coachProposals.clear()
-      await db.athleteProfiles.clear()
-
-      if (backup.tables.sessions.length > 0) await db.sessions.bulkPut(backup.tables.sessions)
-      if (backup.tables.dayLogs.length > 0) await db.dayLogs.bulkPut(backup.tables.dayLogs)
-      if (backup.tables.weekSummaries.length > 0) await db.weekSummaries.bulkPut(backup.tables.weekSummaries)
-      if (backup.tables.chatMessages.length > 0) await db.chatMessages.bulkPut(backup.tables.chatMessages)
-      if (backup.tables.coachProposals.length > 0) await db.coachProposals.bulkPut(backup.tables.coachProposals)
-      if (backup.tables.athleteProfiles.length > 0) await db.athleteProfiles.bulkPut(backup.tables.athleteProfiles)
-    },
-  )
-
-  syncStoresAfterImport(preferredChatSessionId)
-
-  return {
-    importedAt: backup.exportedAt,
-    counts: {
-      sessions: backup.tables.sessions.length,
-      dayLogs: backup.tables.dayLogs.length,
-      weekSummaries: backup.tables.weekSummaries.length,
-      chatMessages: backup.tables.chatMessages.length,
-      coachProposals: backup.tables.coachProposals.length,
-      athleteProfiles: backup.tables.athleteProfiles.length,
-    },
-  }
+  return parseAppDataExport(parsed)
 }
 
 function parseAppDataExport(value: unknown): AppDataExport {
-  if (!isRecord(value)) {
-    throw new Error('Formato de backup invalido.')
-  }
+  const normalized = normalizeBackupEnvelope(value)
 
-  if (value.app !== BACKUP_APP_NAME) {
-    throw new Error('El archivo no corresponde a un backup de Entrenador.')
-  }
+  const sessions = parseSessionsTable(normalized.tables.sessions)
+  const dayLogs = parseDayLogsTable(normalized.tables.dayLogs)
+  const weekSummaries = parseWeekSummariesTable(normalized.tables.weekSummaries)
+  const chatMessages = parseChatMessagesTable(normalized.tables.chatMessages)
+  const coachProposals = parseCoachProposalsTable(normalized.tables.coachProposals)
+  const athleteProfiles = parseAthleteProfilesTable(normalized.tables.athleteProfiles)
 
-  if (typeof value.version !== 'number' || !Number.isInteger(value.version)) {
-    throw new Error('El backup no incluye una version valida.')
-  }
-
-  if (value.version !== CURRENT_BACKUP_VERSION) {
-    throw new Error(`Version de backup no soportada: ${String(value.version)}.`)
-  }
-
-  if (!isIsoTimestamp(value.exportedAt)) {
-    throw new Error('El backup no incluye fecha de exportacion valida.')
-  }
-
-  if (!isRecord(value.tables)) {
-    throw new Error('El backup no incluye tablas validas.')
-  }
-
-  const sessions = parseSessionsTable(value.tables.sessions)
-  const dayLogs = parseDayLogsTable(value.tables.dayLogs)
-  const weekSummaries = parseWeekSummariesTable(value.tables.weekSummaries)
-  const chatMessages = parseChatMessagesTable(value.tables.chatMessages)
-  const coachProposals = parseCoachProposalsTable(value.tables.coachProposals)
-  const athleteProfiles = parseAthleteProfilesTable(value.tables.athleteProfiles)
+  ensureChatProposalLinks(chatMessages, coachProposals)
 
   return {
     app: BACKUP_APP_NAME,
     version: CURRENT_BACKUP_VERSION,
-    exportedAt: value.exportedAt,
+    exportedAt: normalized.exportedAt,
+    exportedFromAppVersion: normalized.exportedFromAppVersion,
     tables: {
       sessions,
       dayLogs,
@@ -287,6 +323,7 @@ function parseSession(value: unknown, index: number): Session {
     completionNotes: optionalString(row.completionNotes, `sessions[${index}].completionNotes`),
     exercises: optionalExercises(row.exercises, `sessions[${index}].exercises`),
     runningDetails: optionalRunningDetails(row.runningDetails, `sessions[${index}].runningDetails`),
+    squashDetails: optionalSquashDetails(row.squashDetails, `sessions[${index}].squashDetails`),
     completedAt: optionalFiniteNumber(row.completedAt, `sessions[${index}].completedAt`),
   }
 }
@@ -414,6 +451,7 @@ function parseCoachAction(value: unknown, path: string): CoachAction {
     newTitle: optionalString(row.newTitle, `${path}.newTitle`),
     newObjective: optionalString(row.newObjective, `${path}.newObjective`),
     exercises: optionalCoachExercises(row.exercises, `${path}.exercises`) as CoachAction['exercises'],
+    squashDetails: optionalSquashDetails(row.squashDetails, `${path}.squashDetails`) as CoachAction['squashDetails'],
   }
 }
 
@@ -477,6 +515,7 @@ function optionalCoachSessions(value: unknown, path: string): CoachAction['sessi
       targetHrMin: optionalFiniteNumber(row.targetHrMin, `${path}[${index}].targetHrMin`),
       targetHrMax: optionalFiniteNumber(row.targetHrMax, `${path}[${index}].targetHrMax`),
       exercises: optionalCoachExercises(row.exercises, `${path}[${index}].exercises`),
+      squashDetails: optionalSquashDetails(row.squashDetails, `${path}[${index}].squashDetails`),
     }
   })
 }
@@ -491,6 +530,28 @@ function optionalRunningDetails(value: unknown, path: string): Session['runningD
     targetPaceMax: optionalString(row.targetPaceMax, `${path}.targetPaceMax`),
     targetHrMin: optionalFiniteNumber(row.targetHrMin, `${path}.targetHrMin`),
     targetHrMax: optionalFiniteNumber(row.targetHrMax, `${path}.targetHrMax`),
+  }
+}
+
+function optionalSquashDetails(value: unknown, path: string): Session['squashDetails'] {
+  if (value == null) return undefined
+  const row = ensureRecord(value, path)
+  const drills = ensureArray(row.drills, `${path}.drills`).map((drill, index) => {
+    const drillRow = ensureRecord(drill, `${path}.drills[${index}]`)
+    return {
+      name: requireString(drillRow.name, `${path}.drills[${index}].name`),
+      durationMin: optionalFiniteNumber(drillRow.durationMin, `${path}.drills[${index}].durationMin`),
+      notes: optionalString(drillRow.notes, `${path}.drills[${index}].notes`),
+    }
+  })
+
+  if (drills.length === 0) {
+    throw new Error(`${path}.drills debe incluir al menos un drill.`)
+  }
+
+  return {
+    trainingFocus: requireEnum(row.trainingFocus, SQUASH_TRAINING_FOCUSES, `${path}.trainingFocus`) as NonNullable<Session['squashDetails']>['trainingFocus'],
+    drills,
   }
 }
 
@@ -636,6 +697,77 @@ function isIsoTimestamp(value: unknown): value is string {
   if (typeof value !== 'string') return false
   const time = Date.parse(value)
   return !Number.isNaN(time)
+}
+
+function normalizeBackupEnvelope(value: unknown): {
+  exportedAt: string
+  exportedFromAppVersion: string
+  tables: Record<string, unknown>
+} {
+  if (!isRecord(value)) {
+    throw new Error('Formato de backup invalido.')
+  }
+
+  if (value.app !== BACKUP_APP_NAME) {
+    throw new Error('El archivo no corresponde a un backup de Entrenador.')
+  }
+
+  if (typeof value.version !== 'number' || !Number.isInteger(value.version)) {
+    throw new Error('El backup no incluye una version valida.')
+  }
+
+  if (value.version < MIN_SUPPORTED_BACKUP_VERSION || value.version > CURRENT_BACKUP_VERSION) {
+    throw new Error(`Version de backup no soportada: ${String(value.version)}.`)
+  }
+
+  if (!isIsoTimestamp(value.exportedAt)) {
+    throw new Error('El backup no incluye fecha de exportacion valida.')
+  }
+
+  if (!isRecord(value.tables)) {
+    throw new Error('El backup no incluye tablas validas.')
+  }
+
+  if (value.version === 1) {
+    return migrateBackupV1(value)
+  }
+
+  return {
+    exportedAt: value.exportedAt,
+    exportedFromAppVersion: typeof value.exportedFromAppVersion === 'string' && value.exportedFromAppVersion.trim() !== ''
+      ? value.exportedFromAppVersion
+      : 'unknown',
+    tables: value.tables,
+  }
+}
+
+function migrateBackupV1(value: Record<string, unknown>): {
+  exportedAt: string
+  exportedFromAppVersion: string
+  tables: Record<string, unknown>
+} {
+  return {
+    exportedAt: value.exportedAt as string,
+    exportedFromAppVersion: 'legacy-v1',
+    tables: value.tables as Record<string, unknown>,
+  }
+}
+
+function ensureChatProposalLinks(messages: ChatMessage[], proposals: CoachProposal[]): void {
+  const messageIds = new Set(messages.map((message) => message.id))
+  const proposalIds = new Set(proposals.map((proposal) => proposal.id))
+
+  for (const message of messages) {
+    if (message.proposalId && !proposalIds.has(message.proposalId)) {
+      throw new Error(`chatMessages contiene proposalId inexistente: ${message.proposalId}.`)
+    }
+  }
+
+  for (const proposal of proposals) {
+    if (proposal.chatMessageId && !messageIds.has(proposal.chatMessageId)) {
+      throw new Error(`coachProposals contiene chatMessageId inexistente: ${proposal.chatMessageId}.`)
+    }
+  }
 }
 
 function pickPreferredChatSessionId(messages: ChatMessage[]): string | null {

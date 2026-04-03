@@ -51,6 +51,19 @@ export interface RunningDetails {
   targetHrMax?: number
 }
 
+export type SquashTrainingFocus = 'technical' | 'tactical' | 'physical' | 'conditioned_games'
+
+export interface SquashDrill {
+  name: string
+  durationMin?: number
+  notes?: string
+}
+
+export interface SquashDetails {
+  trainingFocus: SquashTrainingFocus
+  drills: SquashDrill[]
+}
+
 export interface Session {
   id: string
   date: string             // ISO "YYYY-MM-DD"
@@ -73,6 +86,7 @@ export interface Session {
   completionNotes?: string
   exercises?: Exercise[]   // strength + mobility
   runningDetails?: RunningDetails
+  squashDetails?: SquashDetails
   completedAt?: number
   createdAt: number
   updatedAt: number
@@ -228,6 +242,7 @@ export interface CoachSessionProposal {
   targetHrMin?: number
   targetHrMax?: number
   exercises?: CoachExerciseProposal[]  // for strength/mobility
+  squashDetails?: SquashDetails        // for squash training/control sessions
 }
 
 export interface CoachAction {
@@ -258,6 +273,7 @@ export interface CoachAction {
   newTitle?: string
   newObjective?: string
   exercises?: CoachExerciseProposal[]  // replace full exercise list
+  squashDetails?: SquashDetails        // for squash sessions in add_session
 }
 
 export interface CoachProposal {

@@ -360,6 +360,13 @@ export async function deleteChatMessages(ids: string[]): Promise<void> {
   }
 }
 
+export async function deleteCoachProposals(ids: string[]): Promise<void> {
+  if (ids.length === 0) return
+  for (const id of ids) {
+    void deleteRow('coach_proposals', id)
+  }
+}
+
 export async function pushCoachProposal(proposal: CoachProposal): Promise<void> {
   const userId = getUserId()
   if (!userId) return

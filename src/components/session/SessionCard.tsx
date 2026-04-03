@@ -33,8 +33,9 @@ export default function SessionCard({ session, compact = false }: SessionCardPro
 
   const hasExercises = (session.type === 'strength' || session.type === 'mobility') && session.exercises && session.exercises.length > 0
   const hasRunningDetails = session.type === 'running' && session.runningDetails
+  const hasSquashDetails = session.type === 'squash' && session.squashDetails && session.squashDetails.drills.length > 0
   const hasMatchMeta = session.type === 'squash' && (session.subtype === 'match' || session.subtype === 'competitive') && (session.matchResult || session.opponent || session.gamesWon != null || session.gamesLost != null || session.location)
-  const isExpandable = hasExercises || session.objective || session.notes || hasRunningDetails || hasMatchMeta
+  const isExpandable = hasExercises || session.objective || session.notes || hasRunningDetails || hasMatchMeta || hasSquashDetails
   const subtypeLabel = session.subtype ? SQUASH_SUBTYPE_LABELS[session.subtype] : null
   const isSkipped = session.status === 'skipped'
   const showMatchBadge = hasMatchMeta && session.matchResult
@@ -80,6 +81,27 @@ export default function SessionCard({ session, compact = false }: SessionCardPro
               {(session.matchResult || session.gamesWon != null || session.gamesLost != null) && <div className="bg-surface-raised rounded-lg p-2"><p className="text-[10px] text-ink-faint uppercase tracking-wider font-medium mb-0.5">Resultado</p><p className={`text-sm font-semibold ${session.matchResult === 'win' ? 'text-emerald-400' : session.matchResult === 'loss' ? 'text-rose-400' : 'text-ink'}`}>{session.matchResult ? MATCH_RESULT_LABELS[session.matchResult] : 'Pendiente'}{(session.gamesWon != null || session.gamesLost != null) && <span className="text-ink-muted font-normal ml-1">{session.gamesWon ?? '?'}-{session.gamesLost ?? '?'}</span>}</p></div>}
               {session.opponent && <div className="bg-surface-raised rounded-lg p-2"><p className="text-[10px] text-ink-faint uppercase tracking-wider font-medium mb-0.5">Rival</p><p className="text-sm font-semibold text-ink">{session.opponent}</p></div>}
               {session.location && <div className="bg-surface-raised rounded-lg p-2 sm:col-span-2"><p className="text-[10px] text-ink-faint uppercase tracking-wider font-medium mb-0.5">Lugar</p><p className="text-sm text-ink">{session.location}</p></div>}
+            </div>
+          )}
+          {hasSquashDetails && session.squashDetails && (
+            <div className="mt-2 space-y-1.5">
+              <p className="text-[10px] text-ink-faint uppercase tracking-wider font-medium">Drills</p>
+              {session.squashDetails.drills.map((drill, i) => (
+                <div key={i} className="flex items-start gap-2 bg-surface-raised rounded-lg px-2.5 py-1.5">
+                  <span className="text-xs font-medium text-ink leading-snug flex-1">{drill.name}</span>
+                  {drill.durationMin && <span className="text-[11px] text-ink-faint flex-shrink-0">{drill.durationMin}min</span>}
+                  {drill.notes && <span className="sr-only">{drill.notes}</span>}
+                </div>
+              ))}
+              {session.squashDetails.drills.some(d => d.notes) && (
+                <div className="space-y-0.5 mt-1">
+                  {session.squashDetails.drills.filter(d => d.notes).map((drill, i) => (
+                    <p key={i} className="text-[11px] text-ink-faint leading-snug">
+                      <span className="font-medium text-ink-muted">{drill.name}:</span> {drill.notes}
+                    </p>
+                  ))}
+                </div>
+              )}
             </div>
           )}
           {hasExercises && <ExerciseChecklist sessionId={session.id} exercises={session.exercises!} />}

@@ -23,6 +23,13 @@ const SESSION_TYPE_LABEL: Record<string, string> = {
   recovery: 'recuperacion',
 }
 
+const SQUASH_FOCUS_LABEL: Record<string, string> = {
+  technical: 'Tecnico',
+  tactical: 'Tactico',
+  physical: 'Fisico-especifico',
+  conditioned_games: 'Juegos condicionados',
+}
+
 interface ProposalDrawerProps {
   proposal: CoachProposal
   existingSessions: ChatContext['recentSessions']
@@ -116,6 +123,7 @@ export default function ProposalDrawer({
                             {action.rpe != null ? ` · RPE${action.rpe}` : action.newRpe != null ? ` · RPE${action.newRpe}` : ''}
                           </p>
                         )}
+                        {renderProposalDetails(action, 'ml-0')}
                       </div>
                     )}
 
@@ -140,18 +148,7 @@ export default function ProposalDrawer({
                                 {session.rpe ? ` RPE${session.rpe}` : ''}
                               </span>
                             </div>
-                            {session.exercises && session.exercises.length > 0 && (
-                              <div className="ml-20 mt-0.5">
-                                {session.exercises.slice(0, 4).map((exercise, exerciseIndex) => (
-                                  <span key={exerciseIndex} className="text-[10px] text-ink-faint/70 mr-2">
-                                    {exercise.name} {exercise.sets}x{exercise.reps}{exercise.weight ? ` ${exercise.weight}kg` : ''}
-                                  </span>
-                                ))}
-                                {session.exercises.length > 4 && (
-                                  <span className="text-[10px] text-ink-faint/50">+{session.exercises.length - 4} mas</span>
-                                )}
-                              </div>
-                            )}
+                            {renderProposalDetails(session)}
                           </div>
                         ))}
                       </div>
@@ -171,19 +168,7 @@ export default function ProposalDrawer({
                         {action.newDurationMin != null && (
                           <p className="text-[11px] text-ink-faint">Duracion → {action.newDurationMin} min</p>
                         )}
-                        {action.exercises && action.exercises.length > 0 && (
-                          <div className="mt-1">
-                            <p className="text-[10px] text-ink-faint/60 uppercase tracking-wide">Ejercicios ({action.exercises.length})</p>
-                            {action.exercises.slice(0, 5).map((exercise, exerciseIndex) => (
-                              <p key={exerciseIndex} className="text-[10px] text-ink-faint">
-                                {exercise.name} {exercise.sets}x{exercise.reps}{exercise.weight ? ` ${exercise.weight}kg` : ''}
-                              </p>
-                            ))}
-                            {action.exercises.length > 5 && (
-                              <p className="text-[10px] text-ink-faint/50">+{action.exercises.length - 5} mas</p>
-                            )}
-                          </div>
-                        )}
+                        {renderProposalDetails(action, 'ml-0')}
                       </div>
                     )}
                   </div>
@@ -210,6 +195,75 @@ export default function ProposalDrawer({
         </div>
       </div>
     </div>
+  )
+}
+
+function renderProposalDetails(
+  item: {
+    runningType?: string
+    targetPaceMin?: string
+    targetPaceMax?: string
+    targetHrMin?: number
+    targetHrMax?: number
+    exercises?: Array<{ name: string; sets: number; reps: number | string; weight?: number }>
+    squashDetails?: { trainingFocus: string; drills: Array<{ name: string; durationMin?: number; notes?: string }> }
+  },
+  indentClassName = 'ml-20',
+) {
+  const hasRunningMeta =
+    item.runningType ||
+    item.targetPaceMin ||
+    item.targetPaceMax ||
+    item.targetHrMin != null ||
+    item.targetHrMax != null
+
+  return (
+    <>
+      {item.squashDetails && item.squashDetails.drills.length > 0 && (
+        <div className={`${indentClassName} mt-1 rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-2.5 py-2`}>
+          <p className="text-[10px] text-emerald-300/80 uppercase tracking-wide">
+            Squash {SQUASH_FOCUS_LABEL[item.squashDetails.trainingFocus] ?? item.squashDetails.trainingFocus}
+          </p>
+          <div className="mt-1 space-y-1">
+            {item.squashDetails.drills.slice(0, 4).map((drill, drillIndex) => (
+              <p key={drillIndex} className="text-[10px] text-ink-faint">
+                {drill.name}
+                {drill.durationMin ? ` · ${drill.durationMin}min` : ''}
+                {drill.notes ? ` · ${drill.notes}` : ''}
+              </p>
+            ))}
+            {item.squashDetails.drills.length > 4 && (
+              <p className="text-[10px] text-ink-faint/50">+{item.squashDetails.drills.length - 4} drills mas</p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {hasRunningMeta && (
+        <div className={`${indentClassName} mt-1`}>
+          <p className="text-[10px] text-sky-300/70 uppercase tracking-wide">Running</p>
+          <p className="text-[10px] text-ink-faint">
+            {item.runningType ?? 'running'}
+            {item.targetPaceMin ? ` · ${item.targetPaceMin}${item.targetPaceMax ? `-${item.targetPaceMax}` : ''} /km` : ''}
+            {item.targetHrMin != null ? ` · FC ${item.targetHrMin}-${item.targetHrMax ?? '?'}` : ''}
+          </p>
+        </div>
+      )}
+
+      {item.exercises && item.exercises.length > 0 && (
+        <div className={`${indentClassName} mt-1`}>
+          <p className="text-[10px] text-ink-faint/60 uppercase tracking-wide">Ejercicios ({item.exercises.length})</p>
+          {item.exercises.slice(0, 5).map((exercise, exerciseIndex) => (
+            <p key={exerciseIndex} className="text-[10px] text-ink-faint">
+              {exercise.name} {exercise.sets}x{exercise.reps}{exercise.weight ? ` ${exercise.weight}kg` : ''}
+            </p>
+          ))}
+          {item.exercises.length > 5 && (
+            <p className="text-[10px] text-ink-faint/50">+{item.exercises.length - 5} mas</p>
+          )}
+        </div>
+      )}
+    </>
   )
 }
 

@@ -71,7 +71,27 @@ ESTILO:
 - Si falta contexto, asume algo razonable y dilo brevemente.
 - Si el usuario pide crear o modificar el plan, usa <actions>.
 - Nunca respondas solo con texto cuando se pidió una acción.
-- Responde siempre en español.`
+- Responde siempre en español.
+
+SQUASH — CONOCIMIENTO TÉCNICO (usa esto para dar respuestas expertas, no genéricas):
+
+Tipos de sesión y contenido esperado en el campo objective:
+· training técnico: bloques de drives (paralelo y cruzado, profundidad y longitud), voleas de presión desde media pista, salidas de pared (boast a zona corta, nick de esquina), dejadas y drops. 2-3 focos de 15-20min con intención clara.
+· training táctico: patrones de juego (largo-corto, presión de fondo, ataque desde T), juegos condicionados (solo paralelo, solo largo, dos botes prohibidos, inicio en boasted ball, zona prohibida). Especificar condición y objetivo del patrón.
+· training físico-específico: ghosting (4 esquinas o 6 puntos, con o sin raqueta), RSA repetidos cortos 10-15s con recuperación incompleta, multiball alta intensidad, desplazamientos específicos (lunge, split step, recuperación al T). Especificar series y ratio trabajo/descanso.
+· control: peloteo de calidad técnica a intensidad baja-media, foco en ejecución limpia sin presión de resultado. Ideal día previo a partido o en semanas de carga alta.
+· match/competitive: partido real de competición. Anotar rival si se conoce.
+
+Secuenciación squash:
+· No dos sesiones de intensidad alta seguidas.
+· Día previo a partido → control o descanso activo, nunca intenso.
+· Post-partido exigente → 24-48h de recuperación antes de volver a intensidad.
+· Semana con torneo: reducir volumen total, mantener 1-2 activaciones cortas pre-evento.
+
+Preparación física para squash:
+· Fuerza: tren inferior (sentadilla, hip thrust, lunge con carga) + core rotacional + upper body (remo, press, dominadas). Priorizar potencia y estabilidad sobre hipertrofia pura.
+· Running: Z2 sostenido mejora directamente la recuperación en pista. Intervalos cortos (RSA-like) complementan el ghosting.
+· Movilidad crítica: cadera (flexores, rotadores), tobillo (dorsiflexión) y hombro (CARs, apertura). Son los tres más limitantes en squash.`
 }
 
 function buildWeekSection(context: ChatContext): string {
@@ -119,7 +139,13 @@ function buildCoachMemorySection(context: ChatContext): string {
   if (!context.athleteMemory?.trim()) return ''
 
   return `═══ MEMORIA DEL ATLETA ═══
-${context.athleteMemory.trim()}`
+${context.athleteMemory.trim()}
+
+Extrae y aplica activamente cualquiera de estos elementos si aparecen:
+- LESIÓN o molestia → modifica o elimina cargas que la afecten, prioriza recuperación o trabajo alternativo
+- TORNEO PRÓXIMO → periodiza hacia ese evento: descarga la semana previa, no añadas carga nueva en los últimos 2-3 días
+- BLOQUE ACTUAL → respeta el foco declarado (técnico, físico, competitivo) al proponer sesiones
+- RESTRICCIÓN → horario, equipamiento, limitación física o de disponibilidad de pista`
 }
 
 function buildSessionsSection(sessions: Session[]): string {
@@ -152,6 +178,13 @@ function buildSessionsSection(sessions: Session[]): string {
     const matchMeta = formatMatchMeta(s)
 
     lines.push(`${flag} [${s.id.slice(0, 8)}] ${dayName} ${s.timeBlock} · ${type}${subtype} "${s.title}" · ${duration}${rpe} · ${status}${matchMeta}`)
+
+    if (s.squashDetails) {
+      const focus = s.squashDetails.trainingFocus
+      const focusLabel: Record<string, string> = { technical: 'técnico', tactical: 'táctico', physical: 'físico', conditioned_games: 'juegos condicionados' }
+      const drillStr = s.squashDetails.drills.map(d => d.durationMin ? `${d.name} ${d.durationMin}min` : d.name).join(', ')
+      lines.push(`   ↳ ${focusLabel[focus] ?? focus}: ${drillStr}`)
+    }
 
     if (s.runningDetails) {
       const rd = s.runningDetails
@@ -271,10 +304,10 @@ REGLAS CRÍTICAS:
 PERFIL DE RAFAEL (defaults para propuestas):
 - Prioridad: squash (2-3 sesiones/semana) > running (2) > fuerza (1-2) > movilidad (1)
 - Semana base típica:
-    Lun PM: squash entrenamiento 75min RPE7
+    Lun PM: squash entrenamiento técnico 75min RPE7 — drives paralelo/cruzado, voleas de presión, juego condicionado solo largo
     Mar AM: running Z2 50min RPE6 (ritmo 5:30-6:00/km)
-    Mié PM: fuerza upper 60min RPE7 (press banca, remo, dominadas, hombro, core)
-    Jue PM: squash control 60min RPE6
+    Mié PM: fuerza upper 60min RPE7 (press banca, remo con barra, dominadas, press hombro, core rotacional)
+    Jue PM: squash control 60min RPE6 — peloteo de calidad, drives y dejadas, técnica limpia sin presión
     Vie PM: running tempo 45min RPE7 (ritmo 4:40-5:00/km)
     Sáb AM: movilidad 30min RPE4 (cadera, tobillo, hombro)
     Dom: descanso
@@ -318,6 +351,16 @@ Campos base:
   objective: "objetivo de sesión"
   subtype: squash → "training"|"match"|"competitive"|"control"|"light"
 
+Para squash training o control (agrega en la sesión cuando hay drills concretos):
+  squashDetails: {
+    trainingFocus: "technical"|"tactical"|"physical"|"conditioned_games",
+    drills: [
+      {"name":"Drives paralelo y cruzado","durationMin":20,"notes":"a zonas, profundidad y longitud"},
+      {"name":"Voleas de presión","durationMin":15,"notes":"desde media pista, ataque al frente"},
+      {"name":"Juego condicionado solo largo","durationMin":20}
+    ]
+  }
+
 Para running (agrega en la sesión):
   runningType: "z2"|"tempo"|"intervals"|"long"
   targetPaceMin: "5:30"      ← ritmo mínimo /km
@@ -345,7 +388,7 @@ EJEMPLO — crear semana completa con detalle:
 [{"type":"create_week",
   "weekObjectives":["mantener base squash","sostener aeróbico running","llegar fresco al fin de semana"],
   "sessions":[
-    {"date":"${addDaysToISO(weekStart, 0)}","timeBlock":"PM","sessionType":"squash","title":"Squash entrenamiento","durationMin":75,"rpe":7,"objective":"técnica y físico general","subtype":"training"},
+    {"date":"${addDaysToISO(weekStart, 0)}","timeBlock":"PM","sessionType":"squash","title":"Squash técnico — drives y juego condicionado","durationMin":75,"rpe":7,"objective":"Técnico con cierre táctico. Intensidad progresiva.","subtype":"training","squashDetails":{"trainingFocus":"technical","drills":[{"name":"Drives paralelo y cruzado","durationMin":20,"notes":"a zonas, profundidad y longitud"},{"name":"Voleas de presión","durationMin":20,"notes":"desde media pista, ataque y defensa"},{"name":"Juego condicionado solo largo","durationMin":20,"notes":"presión de fondo, control del T"}]}},
     {"date":"${addDaysToISO(weekStart, 1)}","timeBlock":"AM","sessionType":"running","title":"Running Z2","durationMin":50,"rpe":6,"objective":"base aeróbica","runningType":"z2","targetPaceMin":"5:30","targetPaceMax":"6:00"},
     {"date":"${addDaysToISO(weekStart, 2)}","timeBlock":"PM","sessionType":"strength","title":"Fuerza upper","durationMin":60,"rpe":7,"objective":"fuerza tren superior","exercises":[
       {"name":"Press banca","sets":4,"reps":8,"weight":80,"group":"push"},
@@ -354,7 +397,7 @@ EJEMPLO — crear semana completa con detalle:
       {"name":"Press hombro","sets":3,"reps":10,"weight":25,"group":"push"},
       {"name":"Core rotacional","sets":3,"reps":15,"group":"core"}
     ]},
-    {"date":"${addDaysToISO(weekStart, 3)}","timeBlock":"PM","sessionType":"squash","title":"Squash control","durationMin":60,"rpe":6,"objective":"técnica controlada","subtype":"control"},
+    {"date":"${addDaysToISO(weekStart, 3)}","timeBlock":"PM","sessionType":"squash","title":"Squash control — peloteo y dejadas","durationMin":60,"rpe":6,"objective":"Técnica limpia sin presión de resultado. Mitad de semana.","subtype":"control","squashDetails":{"trainingFocus":"technical","drills":[{"name":"Drives profundos","durationMin":20,"notes":"foco en longitud y consistencia"},{"name":"Dejadas y drops","durationMin":20,"notes":"de ambos lados, toque suave"},{"name":"Peloteo libre","durationMin":15,"notes":"ejecución limpia, sin presión"}]}},
     {"date":"${addDaysToISO(weekStart, 4)}","timeBlock":"PM","sessionType":"running","title":"Running tempo","durationMin":45,"rpe":7,"objective":"umbral aeróbico","runningType":"tempo","targetPaceMin":"4:40","targetPaceMax":"5:00"},
     {"date":"${addDaysToISO(weekStart, 5)}","timeBlock":"AM","sessionType":"mobility","title":"Movilidad integral","durationMin":30,"rpe":4,"objective":"prevención y recuperación","exercises":[
       {"name":"Hip flexor stretch","sets":2,"reps":"60s","mobilityFocus":"hip"},

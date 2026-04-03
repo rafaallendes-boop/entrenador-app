@@ -3,7 +3,7 @@ import { Upload, AlertTriangle, CheckCircle2, Trash2, Plus, Sparkles, ScanText }
 import { useTrainingStore } from '../store/useTrainingStore'
 import { useUIStore } from '../store/useUIStore'
 import { currentWeekStartISO } from '../utils/date'
-import { importFromPDF, type PDFImportResult } from '../services/pdfImport'
+import type { PDFImportResult } from '../services/pdfImport'
 import { SESSION_TYPE_CONFIG } from '../constants/sessionTypes'
 import PageHeader from '../components/layout/PageHeader'
 import { ROUTES } from '../constants/routes'
@@ -123,6 +123,7 @@ export default function ImportPDF() {
     setError(null)
     try {
       const weekStart = currentWeekStart || currentWeekStartISO()
+      const { importFromPDF } = await import('../services/pdfImport')
       const nextResult = await importFromPDF(file, weekStart)
       setResult(nextResult)
       setDrafts(nextResult.drafts)

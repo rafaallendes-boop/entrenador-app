@@ -8,6 +8,7 @@ const APP_SHELL = [
 
 const NOTIFICATION_STATE_CACHE = 'entrenador-notifications-v1'
 const NOTIFICATION_STATE_URL = '/__notification_state__'
+const DEFAULT_NOTIFICATION_GRACE_MS = 90 * 60 * 1000
 const notifTimers = new Map()
 
 self.addEventListener('install', (event) => {
@@ -27,7 +28,7 @@ self.addEventListener('activate', (event) => {
     )
     await self.clients.claim()
     const state = await readNotificationState()
-    scheduleNotificationTimers(state)
+    await scheduleNotificationTimers(state)
   })())
 })
 
@@ -95,25 +96,30 @@ async function handleScheduleNotifications(payload) {
     date: typeof payload?.date === 'string' ? payload.date : state.date,
     sessions: Array.isArray(payload?.sessions) ? payload.sessions : [],
     sentTags: state.date === payload?.date ? state.sentTags : [],
+    recoveredTags: state.date === payload?.date ? state.recoveredTags : [],
+    graceMs: typeof payload?.graceMs === 'number' && Number.isFinite(payload.graceMs)
+      ? payload.graceMs
+      : state.graceMs,
   }
 
   await writeNotificationState(nextState)
-  scheduleNotificationTimers(nextState)
+  await scheduleNotificationTimers(nextState)
 }
 
-function scheduleNotificationTimers(state) {
+async function scheduleNotificationTimers(state) {
   clearNotificationTimers()
 
+  const normalizedState = await flushOverdueNotifications(state)
   const now = Date.now()
-  for (const session of state.sessions) {
+  for (const session of normalizedState.sessions) {
     if (!session || typeof session.tag !== 'string') continue
-    if (state.sentTags.includes(session.tag)) continue
+    if (normalizedState.sentTags.includes(session.tag)) continue
 
     const delay = session.notifyAt - now
     if (delay <= 0) continue
 
     const timeoutId = setTimeout(() => {
-      void fireScheduledNotification(session, state.date)
+      void fireScheduledNotification(session, normalizedState.date)
     }, delay)
 
     notifTimers.set(session.tag, timeoutId)
@@ -173,7 +179,7 @@ async function readNotificationState() {
   const cache = await caches.open(NOTIFICATION_STATE_CACHE)
   const response = await cache.match(NOTIFICATION_STATE_URL)
   if (!response) {
-    return { date: '', sessions: [], sentTags: [] }
+    return { date: '', sessions: [], sentTags: [], recoveredTags: [], graceMs: DEFAULT_NOTIFICATION_GRACE_MS }
   }
 
   try {
@@ -182,9 +188,13 @@ async function readNotificationState() {
       date: typeof parsed?.date === 'string' ? parsed.date : '',
       sessions: Array.isArray(parsed?.sessions) ? parsed.sessions : [],
       sentTags: Array.isArray(parsed?.sentTags) ? parsed.sentTags.filter((tag) => typeof tag === 'string') : [],
+      recoveredTags: Array.isArray(parsed?.recoveredTags) ? parsed.recoveredTags.filter((tag) => typeof tag === 'string') : [],
+      graceMs: typeof parsed?.graceMs === 'number' && Number.isFinite(parsed.graceMs)
+        ? parsed.graceMs
+        : DEFAULT_NOTIFICATION_GRACE_MS,
     }
   } catch {
-    return { date: '', sessions: [], sentTags: [] }
+    return { date: '', sessions: [], sentTags: [], recoveredTags: [], graceMs: DEFAULT_NOTIFICATION_GRACE_MS }
   }
 }
 
@@ -196,4 +206,43 @@ async function writeNotificationState(state) {
       headers: { 'content-type': 'application/json' },
     }),
   )
+}
+
+async function flushOverdueNotifications(state) {
+  const graceMs = typeof state.graceMs === 'number' && Number.isFinite(state.graceMs)
+    ? state.graceMs
+    : DEFAULT_NOTIFICATION_GRACE_MS
+  const now = Date.now()
+  const nextState = {
+    ...state,
+    sessions: [],
+    sentTags: Array.isArray(state.sentTags) ? [...state.sentTags] : [],
+    recoveredTags: Array.isArray(state.recoveredTags) ? [...state.recoveredTags] : [],
+    graceMs,
+  }
+
+  for (const session of Array.isArray(state.sessions) ? state.sessions : []) {
+    if (!session || typeof session.tag !== 'string' || typeof session.notifyAt !== 'number') continue
+    if (nextState.sentTags.includes(session.tag)) {
+      nextState.sessions.push(session)
+      continue
+    }
+
+    if (session.notifyAt > now) {
+      nextState.sessions.push(session)
+      continue
+    }
+
+    if (now - session.notifyAt <= graceMs) {
+      await fireScheduledNotification(session, state.date)
+      nextState.sentTags.push(session.tag)
+      if (!nextState.recoveredTags.includes(session.tag)) {
+        nextState.recoveredTags.push(session.tag)
+      }
+      nextState.sessions.push(session)
+    }
+  }
+
+  await writeNotificationState(nextState)
+  return nextState
 }

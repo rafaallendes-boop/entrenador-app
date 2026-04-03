@@ -4,7 +4,12 @@ import Card from '../components/ui/Card'
 import SyncStatusBadge from '../components/sync/SyncStatusBadge'
 import { APP_INFO } from '../constants/appInfo'
 import { CoachEngine } from '../services/ai/CoachEngine'
-import { downloadAppDataExport, importAppDataFromFile } from '../services/dataExport'
+import {
+  downloadAppDataExport,
+  importAppDataFromFile,
+  previewAppDataImportFile,
+  type AppDataImportPreview,
+} from '../services/dataExport'
 import {
   clearSelectedLocalAppData,
   getLocalDataCounts,
@@ -13,9 +18,11 @@ import {
   type LocalDataSelection,
 } from '../services/appMaintenance'
 import {
+  getNotificationDebugState,
   getNotificationPermission,
   notificationsSupported,
   requestNotificationPermission,
+  type NotificationDebugState,
 } from '../services/notifications'
 import { useCoachMemoryStore } from '../store/useCoachMemoryStore'
 import { useAuthStore } from '../store/useAuthStore'
@@ -59,6 +66,7 @@ export default function SettingsPage() {
   const { user, signOut, syncStatus, syncError } = useAuthStore()
   const [memoryDraft, setMemoryDraft] = useState('')
   const [notifPermission, setNotifPermission] = useState<NotificationPermission | null>(null)
+  const [notificationDebugState, setNotificationDebugState] = useState<NotificationDebugState | null>(null)
   const [dataCounts, setDataCounts] = useState<LocalDataCounts | null>(null)
   const [clearSelection, setClearSelection] = useState<LocalDataSelection>(EMPTY_CLEAR_SELECTION)
   const [isExporting, setIsExporting] = useState(false)
@@ -68,12 +76,16 @@ export default function SettingsPage() {
   const [importStatus, setImportStatus] = useState<string | null>(null)
   const [clearStatus, setClearStatus] = useState<string | null>(null)
   const [clearConfirm, setClearConfirm] = useState(false)
+  const [importPreview, setImportPreview] = useState<AppDataImportPreview | null>(null)
+  const [pendingImportFile, setPendingImportFile] = useState<File | null>(null)
+  const [importMode, setImportMode] = useState<'replace' | 'merge'>('replace')
   const importInputRef = useRef<HTMLInputElement | null>(null)
 
   useEffect(() => {
     void loadMemory()
     setNotifPermission(getNotificationPermission())
     void refreshCounts(setDataCounts)
+    void refreshNotificationDebugState(setNotificationDebugState)
   }, [loadMemory])
 
   useEffect(() => {
@@ -101,22 +113,35 @@ export default function SettingsPage() {
     event.target.value = ''
     if (!file) return
 
-    const confirmed = window.confirm(
-      'Importar un backup reemplazara todos los datos locales actuales. Esta accion no se puede deshacer. ¿Quieres continuar?'
-    )
-    if (!confirmed) return
+    setImportStatus(null)
+    try {
+      const preview = await previewAppDataImportFile(file)
+      setPendingImportFile(file)
+      setImportPreview(preview)
+    } catch (error) {
+      setPendingImportFile(null)
+      setImportPreview(null)
+      setImportStatus(error instanceof Error ? error.message : 'No se pudo leer el backup.')
+    }
+  }
+
+  const handleConfirmImport = async () => {
+    if (!pendingImportFile) return
 
     setIsImporting(true)
     setImportStatus(null)
     try {
-      const result = await importAppDataFromFile(file)
+      const result = await importAppDataFromFile(pendingImportFile, importMode)
       await refreshCounts(setDataCounts)
       await loadMemory()
+      await refreshNotificationDebugState(setNotificationDebugState)
       setClearSelection({ ...EMPTY_CLEAR_SELECTION })
       setClearConfirm(false)
       setClearStatus(null)
+      setPendingImportFile(null)
+      setImportPreview(null)
       setImportStatus(
-        `Backup importado (${result.importedAt}): ${result.counts.sessions} sesiones, ${result.counts.dayLogs} check-ins, ${result.counts.weekSummaries} resumenes y ${result.counts.chatMessages} mensajes.`
+        `Backup importado en modo ${result.mode === 'merge' ? 'merge' : 'replace'} (${result.importedAt}): ${result.counts.sessions} sesiones, ${result.counts.dayLogs} check-ins, ${result.counts.weekSummaries} resumenes y ${result.counts.chatMessages} mensajes.`
       )
     } catch (error) {
       setImportStatus(error instanceof Error ? error.message : 'No se pudo importar el backup.')
@@ -147,6 +172,7 @@ export default function SettingsPage() {
   const handleRequestNotifications = async () => {
     const result = await requestNotificationPermission()
     setNotifPermission(result)
+    await refreshNotificationDebugState(setNotificationDebugState)
   }
 
   const applyClearPreset = (selection: LocalDataSelection) => {
@@ -170,7 +196,6 @@ export default function SettingsPage() {
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <div className="space-y-5 md:space-y-6">
-          {/* Account & Sync card */}
           <Card className="p-4">
             <div className="flex items-start gap-3 mb-3">
               <div className="w-8 h-8 rounded-full bg-brand/15 flex items-center justify-center flex-shrink-0">
@@ -243,7 +268,7 @@ export default function SettingsPage() {
                   className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-surface-raised text-ink text-sm font-semibold hover:bg-surface transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   <Upload size={14} />
-                  {isImporting ? 'Importando...' : 'Importar'}
+                  {isImporting ? 'Importando...' : 'Seleccionar backup'}
                 </button>
                 <button
                   onClick={() => void handleExport()}
@@ -262,6 +287,75 @@ export default function SettingsPage() {
               <p className={`text-xs mt-2 ${importStatus.startsWith('Backup importado') ? 'text-emerald-400' : 'text-amber-400'}`}>
                 {importStatus}
               </p>
+            )}
+            {importPreview && (
+              <div className="mt-4 rounded-2xl border border-surface-border bg-surface-raised px-4 py-3 space-y-3">
+                <div className="flex items-start justify-between gap-3 flex-wrap">
+                  <div>
+                    <p className="text-sm font-semibold text-ink">Preview del backup</p>
+                    <p className="text-xs text-ink-muted mt-1">
+                      Exportado el {importPreview.importedAt} · app {importPreview.importedFromAppVersion} · formato v{importPreview.version}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setImportPreview(null)
+                      setPendingImportFile(null)
+                    }}
+                    className="px-3 py-2 rounded-xl text-xs font-semibold text-ink-muted hover:bg-surface transition-colors"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+
+                <div className="grid gap-2 sm:grid-cols-2 text-xs text-ink-muted">
+                  <p>{importPreview.counts.sessions} sesiones</p>
+                  <p>{importPreview.counts.dayLogs} check-ins</p>
+                  <p>{importPreview.counts.weekSummaries} resumenes</p>
+                  <p>{importPreview.counts.chatMessages} mensajes</p>
+                  <p>{importPreview.counts.coachProposals} proposals</p>
+                  <p>{importPreview.counts.athleteProfiles} perfiles</p>
+                </div>
+
+                <div className="space-y-2">
+                  <p className="text-xs font-medium text-ink">Modo de restauracion</p>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <button
+                      onClick={() => setImportMode('replace')}
+                      className={`rounded-xl border px-3 py-2 text-left transition-colors ${
+                        importMode === 'replace'
+                          ? 'border-amber-500/40 bg-amber-500/10'
+                          : 'border-surface-border bg-surface'
+                      }`}
+                    >
+                      <p className="text-sm font-semibold text-ink">Replace</p>
+                      <p className="text-xs text-ink-muted mt-1">Borra lo local actual y deja exactamente el contenido del backup.</p>
+                    </button>
+                    <button
+                      onClick={() => setImportMode('merge')}
+                      className={`rounded-xl border px-3 py-2 text-left transition-colors ${
+                        importMode === 'merge'
+                          ? 'border-emerald-500/40 bg-emerald-500/10'
+                          : 'border-surface-border bg-surface'
+                      }`}
+                    >
+                      <p className="text-sm font-semibold text-ink">Merge</p>
+                      <p className="text-xs text-ink-muted mt-1">Inserta o actualiza por ID sin vaciar primero la base local.</p>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex justify-end">
+                  <button
+                    onClick={() => void handleConfirmImport()}
+                    disabled={isImporting}
+                    className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-brand text-white text-sm font-semibold hover:bg-brand-light disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+                  >
+                    <Upload size={14} />
+                    {isImporting ? 'Importando...' : `Importar en modo ${importMode}`}
+                  </button>
+                </div>
+              </div>
             )}
           </Card>
         </div>
@@ -313,7 +407,23 @@ export default function SettingsPage() {
             {!notificationsSupported() ? (
               <p className="text-xs text-ink-muted">Notificaciones no disponibles en este navegador.</p>
             ) : notifPermission === 'granted' ? (
-              <p className="text-xs text-emerald-400 font-medium">Notificaciones activadas</p>
+              <div className="space-y-2">
+                <p className="text-xs text-emerald-400 font-medium">Notificaciones activadas</p>
+                {notificationDebugState && (
+                  <div className="rounded-xl border border-surface-border bg-surface-raised px-3 py-3 space-y-2">
+                    <p className="text-[11px] uppercase tracking-wide text-ink-faint">Estado de hoy ({notificationDebugState.date})</p>
+                    <div className="grid gap-2 sm:grid-cols-2 text-xs text-ink-muted">
+                      <p>Programadas: <span className="text-ink">{notificationDebugState.scheduledCount}</span></p>
+                      <p>Pendientes: <span className="text-ink">{notificationDebugState.pendingCount}</span></p>
+                      <p>Enviadas: <span className="text-ink">{notificationDebugState.sentCount}</span></p>
+                      <p>Recuperadas: <span className="text-ink">{notificationDebugState.recoveredCount}</span></p>
+                    </div>
+                    <p className="text-[11px] text-ink-faint">
+                      Si la app o el worker vuelven tarde, intenta recuperar avisos dentro de una ventana de {notificationDebugState.graceMinutes} min.
+                    </p>
+                  </div>
+                )}
+              </div>
             ) : notifPermission === 'denied' ? (
               <p className="text-xs text-amber-400 leading-relaxed">
                 Permiso bloqueado. Activalas desde los ajustes del navegador para este sitio.
@@ -465,6 +575,13 @@ export default function SettingsPage() {
 async function refreshCounts(setDataCounts: (counts: LocalDataCounts) => void): Promise<void> {
   const counts = await getLocalDataCounts()
   setDataCounts(counts)
+}
+
+async function refreshNotificationDebugState(
+  setNotificationDebug: (state: NotificationDebugState | null) => void,
+): Promise<void> {
+  const state = await getNotificationDebugState()
+  setNotificationDebug(state)
 }
 
 function getSelectedGroups(selection: LocalDataSelection): LocalDataGroup[] {

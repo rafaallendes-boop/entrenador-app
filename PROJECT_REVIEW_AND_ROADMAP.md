@@ -1,7 +1,7 @@
 # Entrenador App - Review and Roadmap
 
-Generado: 2026-04-01  
-Actualizado: 2026-04-02
+Generado: 2026-04-01
+Actualizado: 2026-04-03
 
 Base de revision:
 
@@ -11,25 +11,31 @@ Base de revision:
 
 ## Resumen ejecutivo
 
-Entrenador ya esta en una etapa de producto usable, no de prototipo base.
+Entrenador ya esta en etapa de producto usable, no de prototipo base.
 
 Hoy ya existen:
 
 - plan semanal y vista diaria
 - coach AI con propuestas ejecutables
+- especializacion base del coach en squash, running y preparacion fisica aplicada
+- propuestas de squash estructuradas con `squashDetails`
+- UI de proposals con drills, focos de squash y mejor detalle visible
 - chat multi-sesion con streaming
 - Dexie local-first
-- backup JSON con import/export
-- importacion PDF
-- notificaciones basicas
+- backup JSON con import/export, preview y modos `replace` / `merge`
+- importacion PDF con carga diferida
+- notificaciones reforzadas con recuperacion dentro de ventana de gracia y estado visible
 - sync multi-dispositivo con Supabase + Google OAuth
+- indicador visible de sync en navegacion
 
-El trabajo prioritario ya no es agregar features basicas. El foco real es:
+El foco real ya no es agregar features basicas. Las prioridades abiertas son:
 
-- bajar peso del flujo PDF
+- mejorar confiabilidad y UX de notificaciones
 - seguir endureciendo sync y mantenimiento
-- mejorar notificaciones
-- pulir UX de producto ya existente
+- hacer mas usable el backup/restore
+- pulir la experiencia visible del coach y sus propuestas
+- preparar integraciones externas viables a futuro
+- refinar reglas competitivas y analitica contextual
 
 ## Estado verificado
 
@@ -41,7 +47,7 @@ Salud tecnica:
 Observaciones de build:
 
 - `pdf.worker.min` sigue siendo el asset mas pesado
-- `ImportPDF` sigue siendo el chunk mas caro de la app
+- el flujo PDF ya esta mejor aislado, pero sigue siendo la parte mas cara cuando esa pantalla se usa
 - el resto del core esta razonablemente contenido
 
 ## Lo que ya esta cerrado
@@ -53,84 +59,110 @@ Estos temas ya no deberian seguir listados como roadmap principal:
 - chat multi-sesion
 - streaming
 - memoria del coach
-- export/import JSON
+- export/import JSON base
 - sync multi-dispositivo base
 - reload de stores post-sync
+- indicador de sync en navegacion
+- especializacion base del coach
+- propuestas de squash estructuradas
+- UX visible de proposals del coach
+- backup versionado base
+- preview de importacion y modos `replace` / `merge`
+- optimizacion principal del chunk de PDF
 - limpieza principal de docs base
 
 ## Prioridades reales
 
-### P1. Reducir peso del modulo PDF
+### P1. Notificaciones mas confiables
 
-Es el frente con mejor retorno tecnico inmediato.
-
-Objetivo minimo:
-
-- separar `pdfjs-dist` del chunk principal de `ImportPDF`
-- cargar worker y libreria solo bajo demanda
-- revisar si el parsing puede seguir partiendose en chunks dedicados
-
-### P2. Notificaciones mas confiables
-
-La base existe, pero no equivale todavia a scheduling verdaderamente persistente del sistema.
+La base ya esta bastante mejor, pero no equivale todavia a scheduling verdaderamente persistente del sistema.
 
 Objetivo minimo:
 
-- mejor reprogramacion al volver a foco
 - documentar limites reales por navegador
-- seguir reduciendo duplicados o misses
+- seguir reduciendo misses en escenarios limite
+- exponer mejor errores y reintentos, no solo estado programado
 
-### P3. Sync UX y reglas de dominio
+### P2. Sync UX y reglas de dominio
 
-La base de sync ya esta mejor cerrada, pero quedan decisiones de producto:
+La base de sync ya esta mejor cerrada, pero aun puede crecer:
 
-- indicador visible de sync fuera de Settings
-- decidir que pasa con `coachProposals` cuando se borra una conversacion
 - evaluar realtime solo si aparece uso simultaneo real
+- revisar visualmente estados de error, cola pendiente y recovery offline
+- seguir endureciendo operaciones destructivas y reconciliacion
+
+### P3. UX del coach y proposals
+
+La calidad base del coach ya subio y la UI de proposals ya muestra mejor el detalle. Lo que queda es refinar decisiones mas avanzadas:
+
+- mejorar reglas para semanas competitivas, descarga pre-torneo y bloques hibridos squash + running
+- seguir reduciendo respuestas demasiado generales
 
 ### P4. Backup mas avanzado
 
-La importacion actual ya es util y endurecida, pero aun puede crecer:
+La importacion actual ya tiene preview, `merge` / `replace` y versionado base. Lo que queda es crecer desde ahi:
 
-- preview antes de restaurar
-- opcion `merge` vs `replace`
-- versionado y migraciones futuras de backup
+- conflictos visibles en `merge` cuando lo local es mas nuevo
+- migraciones futuras de backup mas alla de v1 -> v2
+- mejor resumen post-restore
+
+### P5. Integraciones externas de rendimiento y recuperacion
+
+Es una linea de producto de largo plazo, no una prioridad inmediata del core.
+
+Lectura actual:
+
+- WHOOP si es una integracion realista para esta app
+- Garmin existe, pero su acceso oficial esta mucho mas orientado a partners/business developers
+- para un roadmap costo 0, WHOOP es claramente mejor candidato que Garmin
+
+Objetivo minimo:
+
+- definir modelo `external_metrics` separado del dato manual
+- preparar OAuth backend con Supabase
+- mapear `sleep`, `recovery`, `workout` y `body_measurement`
+- usarlo primero como autocompletado o sugerencia, no como reemplazo del flujo manual
 
 ## Backlog priorizado
 
 | Item | Impacto | Esfuerzo | Estado |
 |------|---------|----------|--------|
-| Reducir peso de PDF import | Alto | Medio | En curso |
 | Robustecer notificaciones | Alto | Medio | Parcial |
-| Indicador sync en nav principal | Medio | Bajo | Pendiente |
-| Politica de proposals al borrar chat | Medio | Bajo | Pendiente |
-| Backup versionado + preview | Alto | Medio | Parcial |
+| Reglas competitivas del coach | Alto | Medio | Backlog |
+| Backup conflict-aware merge | Alto | Medio | Backlog |
 | Realtime sync opcional | Medio | Medio | Backlog |
+| Integracion WHOOP futura | Medio | Medio | Backlog |
+| Integracion Garmin futura | Bajo | Alto | Exploracion |
 | Modo torneo | Medio | Alto | Backlog |
 | Analitica deportiva mas rica | Medio | Medio | Backlog |
 
 ## Riesgos actuales
 
-### Peso del flujo PDF
-
-Sigue siendo la parte mas cara del bundle y del tiempo de carga asociado a esa pantalla.
-
 ### Notificaciones web
 
 La plataforma web sigue imponiendo limites de persistencia y scheduling segun navegador.
 
-### Reglas de borrado de chat/proposals
+### Experiencia visible del coach
 
-La semantica de dominio todavia puede generar dudas si se quiere que el borrado de una conversacion arrastre propuestas asociadas.
+El coach ya propone y muestra mejor el detalle, pero todavia faltan reglas mas finas para semanas competitivas y descarga.
+
+### Backup futuro
+
+El restore actual es seguro para el schema vigente y ya tiene preview y modos de importacion, pero aun faltan conflictos visibles en merge y migraciones futuras mas completas.
+
+### Integraciones externas
+
+WHOOP parece viable para una futura integracion low-cost. Garmin puede terminar bloqueado por acceso o aprobacion comercial antes que por complejidad tecnica.
 
 ## Recomendacion de ejecucion
 
 Orden recomendado:
 
-1. optimizacion del flujo PDF
+1. UX visible de proposals del coach
 2. robustez adicional de notificaciones
-3. indicador de sync en navegacion
-4. definicion de reglas de proposals y mantenimiento
+3. refinamiento del coach para semanas competitivas
+4. merge conflict-aware en backup
+5. diseno tecnico de integracion WHOOP
 
 ## Referencias revisadas
 
@@ -143,6 +175,8 @@ Orden recomendado:
 - `src/services/dataExport.ts`
 - `src/services/notifications.ts`
 - `src/services/pdfImport.ts`
+- `src/services/ai/promptBuilder.ts`
+- `src/components/chat/ProposalDrawer.tsx`
 - `src/pages/ImportPDF.tsx`
 - `src/pages/SettingsPage.tsx`
 - `src/App.tsx`

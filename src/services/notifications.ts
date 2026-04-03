@@ -22,6 +22,23 @@ interface SentNotificationsState {
   tags: string[]
 }
 
+interface NotificationWorkerState {
+  date: string
+  sessions: Array<{ tag: string; notifyAt: number }>
+  sentTags: string[]
+  recoveredTags: string[]
+  graceMs: number
+}
+
+export interface NotificationDebugState {
+  date: string
+  scheduledCount: number
+  pendingCount: number
+  sentCount: number
+  recoveredCount: number
+  graceMinutes: number
+}
+
 export function notificationsSupported(): boolean {
   return 'Notification' in window && 'serviceWorker' in navigator
 }
@@ -55,6 +72,7 @@ export async function scheduleTodayNotifications(sessions: Session[]): Promise<v
     type: 'SCHEDULE_NOTIFICATIONS',
     date: today,
     sessions: upcoming,
+    graceMs: LATE_DELIVERY_GRACE_MS,
   })
 }
 
@@ -79,6 +97,33 @@ export function startNotificationSync(getSessions: () => Session[]): () => void 
     window.removeEventListener('focus', onFocus)
     document.removeEventListener('visibilitychange', onVisibilityChange)
     window.clearInterval(intervalId)
+  }
+}
+
+export async function getNotificationDebugState(): Promise<NotificationDebugState | null> {
+  if (!notificationsSupported()) return null
+
+  try {
+    const cache = await caches.open('entrenador-notifications-v1')
+    const response = await cache.match('/__notification_state__')
+    if (!response) return null
+
+    const parsed = await response.json() as Partial<NotificationWorkerState>
+    const sessions = Array.isArray(parsed.sessions) ? parsed.sessions : []
+    const sentTags = Array.isArray(parsed.sentTags) ? parsed.sentTags.filter((tag): tag is string => typeof tag === 'string') : []
+    const recoveredTags = Array.isArray(parsed.recoveredTags) ? parsed.recoveredTags.filter((tag): tag is string => typeof tag === 'string') : []
+    const pendingCount = sessions.filter((session) => typeof session?.tag === 'string' && !sentTags.includes(session.tag)).length
+
+    return {
+      date: typeof parsed.date === 'string' ? parsed.date : todayISODate(),
+      scheduledCount: sessions.length,
+      pendingCount,
+      sentCount: sentTags.length,
+      recoveredCount: recoveredTags.length,
+      graceMinutes: Math.round(((typeof parsed.graceMs === 'number' ? parsed.graceMs : LATE_DELIVERY_GRACE_MS) / 1000) / 60),
+    }
+  } catch {
+    return null
   }
 }
 
