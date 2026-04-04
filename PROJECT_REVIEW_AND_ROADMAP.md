@@ -18,6 +18,9 @@ Hoy ya existen:
 - plan semanal y vista diaria
 - coach AI con propuestas ejecutables
 - especializacion base del coach en squash, running y preparacion fisica aplicada
+- coach con lectura mejorada de fatiga acumulada y taper competitivo
+- coach con mejor jerarquia competitiva y reglas para bloques hibridos squash + running
+- coach con inferencia implicita de prioridad competitiva desde memoria, mensajes y calendario
 - propuestas de squash estructuradas con `squashDetails`
 - UI de proposals con drills, focos de squash y mejor detalle visible
 - chat multi-sesion con streaming
@@ -33,9 +36,9 @@ El foco real ya no es agregar features basicas. Las prioridades abiertas son:
 - mejorar confiabilidad y UX de notificaciones
 - seguir endureciendo sync y mantenimiento
 - hacer mas usable el backup/restore
-- pulir la experiencia visible del coach y sus propuestas
+- pulir detalles puntuales de UX del coach y bajar respuestas genericas residuales
 - preparar integraciones externas viables a futuro
-- refinar reglas competitivas y analitica contextual
+- refinar analitica contextual y prioridad competitiva implicita del coach
 
 ## Estado verificado
 
@@ -68,6 +71,9 @@ Estos temas ya no deberian seguir listados como roadmap principal:
 - UX visible de proposals del coach
 - backup versionado base
 - preview de importacion y modos `replace` / `merge`
+- lectura base de fatiga acumulada para taper
+- jerarquia competitiva explicita y bloques hibridos base
+- inferencia implicita de prioridad competitiva
 - optimizacion principal del chunk de PDF
 - limpieza principal de docs base
 
@@ -93,10 +99,11 @@ La base de sync ya esta mejor cerrada, pero aun puede crecer:
 
 ### P3. UX del coach y proposals
 
-La calidad base del coach ya subio y la UI de proposals ya muestra mejor el detalle. Lo que queda es refinar decisiones mas avanzadas:
+La parte importante del refinamiento del coach ya quedo cerrada. La UI de proposals muestra mejor el detalle, el taper considera senales base de fatiga y el prompt ya protege mejor la competencia objetivo inmediata incluso cuando el usuario no la explicita.
 
-- mejorar reglas para semanas competitivas, descarga pre-torneo y bloques hibridos squash + running
-- seguir reduciendo respuestas demasiado generales
+- queda solo como mejora incremental seguir reduciendo respuestas demasiado generales
+- revisar visualmente ejemplos reales de semanas mixtas para detectar casos borde
+- si se quiere un salto extra, el siguiente nivel ya no es prompt sino analitica mas estructurada
 
 ### P4. Backup mas avanzado
 
@@ -128,7 +135,7 @@ Objetivo minimo:
 | Item | Impacto | Esfuerzo | Estado |
 |------|---------|----------|--------|
 | Robustecer notificaciones | Alto | Medio | Parcial |
-| Reglas competitivas del coach | Alto | Medio | Backlog |
+| Reglas competitivas del coach | Alto | Medio | Cerrado base |
 | Backup conflict-aware merge | Alto | Medio | Backlog |
 | Realtime sync opcional | Medio | Medio | Backlog |
 | Integracion WHOOP futura | Medio | Medio | Backlog |
@@ -144,7 +151,7 @@ La plataforma web sigue imponiendo limites de persistencia y scheduling segun na
 
 ### Experiencia visible del coach
 
-El coach ya propone y muestra mejor el detalle, pero todavia faltan reglas mas finas para semanas competitivas y descarga.
+El coach ya propone y muestra mejor el detalle, interpreta mejor fatiga acumulada, protege mejor la competencia objetivo inmediata y ya usa memoria y calendario para inferir prioridad competitiva. El riesgo restante es mas de calidad fina de respuestas que de vacio funcional.
 
 ### Backup futuro
 
@@ -158,10 +165,10 @@ WHOOP parece viable para una futura integracion low-cost. Garmin puede terminar 
 
 Orden recomendado:
 
-1. UX visible de proposals del coach
-2. robustez adicional de notificaciones
-3. refinamiento del coach para semanas competitivas
-4. merge conflict-aware en backup
+1. robustez adicional de notificaciones
+2. merge conflict-aware en backup
+3. analitica deportiva mas rica
+4. robustez adicional del sync segun uso real
 5. diseno tecnico de integracion WHOOP
 
 ## Referencias revisadas

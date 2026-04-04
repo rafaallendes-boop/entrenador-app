@@ -34,6 +34,11 @@ export function buildCoachSystemPrompt(context: ChatContext): string {
   const sections: string[] = [
     buildPersonaSection(),
     buildCoachMemorySection(context),
+    buildFatigueSection(context),
+    buildHybridSection(context),
+    buildCompetitionSection(context),
+    buildCompetitionLoadSection(context),
+    buildImplicitPrioritySection(context),
     buildWeekSection(context),
     buildSessionsSection(context.recentSessions),
     buildWeekDayLogsSection(context),
@@ -88,9 +93,18 @@ Secuenciación squash:
 · Post-partido exigente → 24-48h de recuperación antes de volver a intensidad.
 · Semana con torneo: reducir volumen total, mantener 1-2 activaciones cortas pre-evento.
 
+REGLAS DE SEMANA COMPETITIVA Y PRE-TORNEO:
+· Si hay partido importante o torneo en 2-3 dias, prioriza frescura sobre volumen.
+· Ultimas 48h pre-partido: nada de fuerza pesada, nada de RSA duro, nada de running tempo largo.
+· Ultimas 24h pre-partido: control tecnico, movilidad, activacion corta o descanso activo.
+· En semana con torneo, reduce 30-50% del volumen accesorio y conserva solo 1-2 estimulos de calidad.
+· Si hay varios partidos en la misma semana, el running pasa a rol de recuperacion, no de desarrollo.
+· Despues de un partido duro: primero recuperacion, luego tecnica/control, y recien despues intensidad.
+· Si el usuario pide llegar fresco, competir bien o descargar, debes planificar taper real, no solo bajar un poco el RPE.
+
 Preparación física para squash:
 · Fuerza: tren inferior (sentadilla, hip thrust, lunge con carga) + core rotacional + upper body (remo, press, dominadas). Priorizar potencia y estabilidad sobre hipertrofia pura.
-· Running: Z2 sostenido mejora directamente la recuperación en pista. Intervalos cortos (RSA-like) complementan el ghosting.
+· Running: Z2 sostenido mejora directamente la recuperación para rendir en cancha. Intervalos cortos (RSA-like) complementan el ghosting.
 · Movilidad crítica: cadera (flexores, rotadores), tobillo (dorsiflexión) y hombro (CARs, apertura). Son los tres más limitantes en squash.`
 }
 
@@ -145,7 +159,190 @@ Extrae y aplica activamente cualquiera de estos elementos si aparecen:
 - LESIÓN o molestia → modifica o elimina cargas que la afecten, prioriza recuperación o trabajo alternativo
 - TORNEO PRÓXIMO → periodiza hacia ese evento: descarga la semana previa, no añadas carga nueva en los últimos 2-3 días
 - BLOQUE ACTUAL → respeta el foco declarado (técnico, físico, competitivo) al proponer sesiones
-- RESTRICCIÓN → horario, equipamiento, limitación física o de disponibilidad de pista`
+- RESTRICCIÓN → horario, equipamiento, limitación física o disponibilidad de cancha`
+}
+
+function buildFatigueSection(context: ChatContext): string {
+  const lines: string[] = ['â•â•â• FATIGA Y RECUPERACION â•â•â•']
+  const indicators: string[] = []
+
+  const summary = context.currentWeekSummary
+  if (summary?.avgActualRpe != null) indicators.push(`RPE real semanal ${summary.avgActualRpe.toFixed(1)}/10`)
+  if (summary?.avgSleep != null) indicators.push(`sueÃ±o promedio ${summary.avgSleep.toFixed(1)}h`)
+  if (summary?.avgEnergy != null) indicators.push(`energÃ­a promedio ${summary.avgEnergy.toFixed(1)}/10`)
+
+  const logs = (context.weekDayLogs ?? []).filter(log =>
+    log.sleepHours != null ||
+    log.energyLevel != null ||
+    log.painLevel != null ||
+    log.rpeActual != null,
+  )
+
+  const lowSleepDays = logs.filter(log => (log.sleepHours ?? 99) < 6.5).length
+  const lowEnergyDays = logs.filter(log => (log.energyLevel ?? 99) <= 5).length
+  const highPainDays = logs.filter(log => (log.painLevel ?? -1) >= 4).length
+  const highRpeDays = logs.filter(log => (log.rpeActual ?? -1) >= 8).length
+
+  if (lowSleepDays > 0) indicators.push(`${lowSleepDays} dia(s) con sueÃ±o < 6.5h`)
+  if (lowEnergyDays > 0) indicators.push(`${lowEnergyDays} dia(s) con energÃ­a <= 5/10`)
+  if (highPainDays > 0) indicators.push(`${highPainDays} dia(s) con dolor >= 4/10`)
+  if (highRpeDays > 0) indicators.push(`${highRpeDays} dia(s) con RPE real >= 8/10`)
+
+  if (indicators.length > 0) lines.push(`SeÃ±ales observadas: ${indicators.join(' Â· ')}`)
+  else lines.push('Sin seÃ±ales semanales suficientes. Si falta data, usa un taper conservador cuando haya competencia cercana.')
+
+  lines.push('InterpretaciÃ³n obligatoria:')
+  lines.push('- Fatiga alta si coinciden 2 o mÃ¡s seÃ±ales: sueÃ±o bajo, energÃ­a baja, dolor elevado, RPE real alto.')
+  lines.push('- Si la fatiga es alta y hay competencia cercana, baja volumen antes que solo bajar RPE.')
+  lines.push('- Si la fatiga es moderada, conserva solo 1 estÃ­mulo de calidad y limpia lo accesorio.')
+  lines.push('- Si la recuperaciÃ³n es buena, puedes mantener calidad, pero sin romper las reglas de taper.')
+
+  return lines.join('\n')
+}
+
+function buildHybridSection(context: ChatContext): string {
+  const today = todayISO()
+  const futureSessions = context.recentSessions.filter(session => session.date >= today)
+  const squashSessions = futureSessions.filter(session => session.type === 'squash')
+  const runningSessions = futureSessions.filter(session => session.type === 'running')
+
+  if (squashSessions.length === 0 || runningSessions.length === 0) return ''
+
+  const competitiveSessions = squashSessions.filter(
+    session => session.subtype === 'match' || session.subtype === 'competitive',
+  )
+
+  const lines: string[] = ['HYBRID SQUASH + RUNNING']
+  lines.push(`Squash futuro: ${squashSessions.length} sesion(es)`)
+  lines.push(`Running futuro: ${runningSessions.length} sesion(es)`)
+
+  if (competitiveSessions.length > 0) {
+    lines.push(`Contexto: ${competitiveSessions.length} sesion(es) competitiva(s) proximas.`)
+    lines.push('Reglas obligatorias del bloque hibrido:')
+    lines.push('- La competencia mas cercana es la sesion objetivo inmediata; las demas son secundarias.')
+    lines.push('- El running apoya recuperacion, base aerobica o activacion; no debe competir con el squash objetivo.')
+    lines.push('- No pongas running tempo, intervalos o long run dentro de las 48h previas a la competencia objetivo.')
+    lines.push('- Si hay squash intenso, el running cercano debe ser Z2 corto o recovery, no otro estimulo duro.')
+    lines.push('- Si la fatiga acumulada es mala, recorta running antes que tocar la sesion objetivo de squash.')
+  } else {
+    lines.push('Reglas obligatorias del bloque hibrido:')
+    lines.push('- Si la semana es mixta pero no competitiva, usa running para construir base o tolerancia, sin romper la calidad del squash.')
+    lines.push('- Evita apilar squash intenso y running intenso en dias consecutivos si no hay buena recuperacion.')
+    lines.push('- Si haces un estimulo de running de calidad, el squash siguiente debe ser tecnico/control o estar suficientemente separado.')
+  }
+
+  return lines.join('\n')
+}
+
+function buildCompetitionSection(context: ChatContext): string {
+  const today = todayISO()
+  const upcomingCompetitive = [...context.recentSessions]
+    .filter(session =>
+      session.date >= today &&
+      session.type === 'squash' &&
+      (session.subtype === 'match' || session.subtype === 'competitive'),
+    )
+    .sort((a, b) => a.date.localeCompare(b.date) || a.timeBlock.localeCompare(b.timeBlock))
+
+  if (upcomingCompetitive.length === 0) return ''
+
+  const nextCompetitive = upcomingCompetitive[0]
+  const nextGapDays = diffDays(today, nextCompetitive.date)
+  const lines: string[] = ['═══ CONTEXTO COMPETITIVO ═══']
+
+  lines.push(`Próxima sesión competitiva: ${nextCompetitive.date} ${nextCompetitive.timeBlock} · ${nextCompetitive.title}`)
+  if (typeof nextGapDays === 'number') {
+    if (nextGapDays === 0) lines.push('Ventana competitiva: hoy es día de competencia.')
+    else if (nextGapDays === 1) lines.push('Ventana competitiva: falta 1 día.')
+    else lines.push(`Ventana competitiva: faltan ${nextGapDays} días.`)
+  }
+
+  if (upcomingCompetitive.length > 1) {
+    lines.push(`Sesiones competitivas próximas: ${upcomingCompetitive.length}. Maneja la carga como microciclo competitivo.`)
+  }
+
+  lines.push('Interpretación obligatoria:')
+  lines.push('- Si faltan 0-2 días, prioriza activación, control y frescura.')
+  lines.push('- Si faltan 3-5 días, permite 1 estímulo de calidad y luego baja carga.')
+  lines.push('- Si hay múltiples partidos, evita meter fatiga secundaria innecesaria.')
+
+  return lines.join('\n')
+}
+
+function buildCompetitionLoadSection(context: ChatContext): string {
+  const today = todayISO()
+  const competitiveSessions = context.recentSessions.filter(session =>
+    session.type === 'squash' &&
+    (session.subtype === 'match' || session.subtype === 'competitive'),
+  )
+
+  if (competitiveSessions.length === 0) return ''
+
+  const recentCompetitive = competitiveSessions.filter(session => {
+    const gap = diffDays(session.date, today)
+    return gap != null && gap >= 0 && gap <= 10
+  })
+  const nextCompetitive = competitiveSessions
+    .filter(session => session.date >= today)
+    .sort((a, b) => a.date.localeCompare(b.date) || a.timeBlock.localeCompare(b.timeBlock))[0]
+
+  if (recentCompetitive.length === 0 && !nextCompetitive) return ''
+
+  const lines: string[] = ['CARGA COMPETITIVA']
+
+  if (recentCompetitive.length > 0) {
+    lines.push(`En los ultimos 10 dias hubo ${recentCompetitive.length} sesion(es) competitiva(s).`)
+  }
+  if (nextCompetitive) {
+    lines.push(`La proxima competencia objetivo inmediata es ${nextCompetitive.date} ${nextCompetitive.timeBlock}.`)
+  }
+
+  lines.push('Reglas obligatorias:')
+  lines.push('- Si vienes de varios partidos recientes, trata la semana como acumulacion competitiva y no como semana normal de desarrollo.')
+  lines.push('- Los controles y competencias secundarias no justifican fatiga extra antes de la competencia objetivo inmediata.')
+  lines.push('- Si ya hubo carga competitiva alta y aparecen senales de fatiga, descarga antes y conserva solo lo que mejora sensaciones en cancha.')
+
+  return lines.join('\n')
+}
+
+function buildImplicitPrioritySection(context: ChatContext): string {
+  const today = todayISO()
+  const upcomingCompetitive = context.recentSessions
+    .filter(session =>
+      session.date >= today &&
+      session.type === 'squash' &&
+      (session.subtype === 'match' || session.subtype === 'competitive'),
+    )
+    .sort((a, b) => a.date.localeCompare(b.date) || a.timeBlock.localeCompare(b.timeBlock))
+
+  if (upcomingCompetitive.length === 0) return ''
+
+  const memory = `${context.athleteMemory ?? ''} ${context.recentMessages?.map(message => message.content).join(' ') ?? ''}`.toLowerCase()
+  const ranked = upcomingCompetitive
+    .map(session => ({ session, score: scoreCompetitivePriority(session, memory, today) }))
+    .sort((a, b) =>
+      b.score - a.score ||
+      a.session.date.localeCompare(b.session.date) ||
+      a.session.timeBlock.localeCompare(b.session.timeBlock),
+    )
+
+  const top = ranked[0]
+  if (!top || top.score <= 0) return ''
+
+  const reasons = explainPrioritySignals(top.session, memory, today)
+  const lines: string[] = ['PRIORIDAD COMPETITIVA IMPLICITA']
+
+  lines.push(`Si el usuario no declara el evento principal, asume como prioridad actual: ${top.session.date} ${top.session.timeBlock} · ${top.session.title}.`)
+  if (reasons.length > 0) {
+    lines.push(`Senales detectadas: ${reasons.join(' · ')}`)
+  }
+
+  lines.push('Reglas obligatorias:')
+  lines.push('- Usa esta competencia como referencia principal para taper, running accesorio y limpieza de fatiga.')
+  lines.push('- Si otra competencia aparece despues, tratala como secundaria salvo que memoria o mensajes indiquen explicitamente que es el objetivo mayor.')
+  lines.push('- Si la memoria menciona torneo objetivo, rival clave, liga o evento importante, eso pesa mas que una simple cercania de fecha.')
+
+  return lines.join('\n')
 }
 
 function buildSessionsSection(sessions: Session[]): string {
@@ -312,6 +509,19 @@ PERFIL DE RAFAEL (defaults para propuestas):
     Sáb AM: movilidad 30min RPE4 (cadera, tobillo, hombro)
     Dom: descanso
 
+SEMANA COMPETITIVA Y PRE-TORNEO:
+- Si aparece un partido o torneo, el objetivo principal pasa a ser rendir fresco en cancha.
+- Si faltan 2 dias o menos para competir, evita agregar sesiones que dejen DOMS o fatiga metabolica alta.
+- Fuerza en semana competitiva: volumen bajo, foco neural/estabilidad, nunca pesada pegada al partido.
+- Running en semana competitiva: Z2 corto o activacion; evita tempo o intervalos largos salvo que esten lejos del partido.
+- Squash pre-partido: control tecnico, precision, sensaciones, T, largo-corto, activacion de pies; no sesiones largas de desgaste.
+- Si el usuario menciona torneo, liga, rival, cuadro o fin de semana competitivo, debes responder como coach en taper, no como semana base normal.
+- En semanas hibridas squash + running, el running no debe quitar frescura a la sesion objetivo de squash.
+- Si hay competencia objetivo, prioriza running recovery o Z2 corto; deja tempo, intervals o long run fuera de la ventana sensible.
+- Si hay varias competencias, distingue entre sesion objetivo inmediata y carga secundaria; protege primero la inmediata.
+- Un control no compite por prioridad con un match o competitive; usalo como ajuste tecnico o activacion.
+- Un match o competitive mas cercano manda sobre cualquier desarrollo de running de esa misma ventana.
+
 FECHA HOY: ${today}
 ${weekDates}
 
@@ -417,6 +627,25 @@ EJEMPLO — update_session con ejercicios:
   {"name":"Remo Pendlay","sets":3,"reps":8,"weight":65,"group":"pull"},
   {"name":"Planchas","sets":3,"reps":"45s","group":"core"}
 ],"reason":"ejercicios más intensos según solicitud"}]
+</actions>
+
+EJEMPLO — microciclo competitivo con partido el sábado:
+<actions>
+[{"type":"create_week",
+  "weekObjectives":["llegar fresco al partido","mantener timing de squash","evitar fatiga secundaria"],
+  "sessions":[
+    {"date":"${addDaysToISO(weekStart, 0)}","timeBlock":"PM","sessionType":"squash","title":"Squash táctico controlado","durationMin":65,"rpe":6,"objective":"Patrones largo-corto y control del T, sin fatiga alta.","subtype":"training","squashDetails":{"trainingFocus":"tactical","drills":[{"name":"Patrones largo-corto","durationMin":20,"notes":"salida desde T, recuperar posicion"},{"name":"Juego condicionado solo paralelo","durationMin":20,"notes":"orden y profundidad"},{"name":"Cierre con precision a objetivos","durationMin":15,"notes":"ritmo controlado"}]}},
+    {"date":"${addDaysToISO(weekStart, 1)}","timeBlock":"AM","sessionType":"running","title":"Running Z2 corto","durationMin":30,"rpe":4,"objective":"Recuperacion aerobica sin fatigar","runningType":"z2","targetPaceMin":"5:40","targetPaceMax":"6:10"},
+    {"date":"${addDaysToISO(weekStart, 2)}","timeBlock":"PM","sessionType":"strength","title":"Fuerza neural liviana","durationMin":40,"rpe":5,"objective":"Activacion y estabilidad sin DOMS","exercises":[
+      {"name":"Trap bar deadlift","sets":3,"reps":3,"group":"legs"},
+      {"name":"Split squat","sets":2,"reps":5,"group":"legs"},
+      {"name":"Remo con mancuerna","sets":3,"reps":6,"group":"pull"},
+      {"name":"Core rotacional","sets":2,"reps":10,"group":"core"}
+    ]},
+    {"date":"${addDaysToISO(weekStart, 3)}","timeBlock":"PM","sessionType":"squash","title":"Squash control pre-partido","durationMin":50,"rpe":5,"objective":"Timing, precision, pies y sensaciones. Nada de desgaste.","subtype":"control","squashDetails":{"trainingFocus":"technical","drills":[{"name":"Drives a zonas","durationMin":15,"notes":"limpio y suelto"},{"name":"Voleas de control","durationMin":15,"notes":"timing y mano"},{"name":"Activacion de pies al T","durationMin":10,"notes":"corto, rapido, fresco"}]}},
+    {"date":"${addDaysToISO(weekStart, 5)}","timeBlock":"PM","sessionType":"squash","title":"Partido objetivo","durationMin":60,"rpe":8,"objective":"Competir fresco y con buena toma de T","subtype":"match"}
+  ],
+  "reason":"semana competitiva con taper para llegar fresco al partido objetivo"}]
 </actions>`
 }
 
@@ -497,4 +726,69 @@ function formatMatchMeta(session: Session): string {
   if (session.location) parts.push(`en ${session.location}`)
 
   return parts.length > 0 ? ` · ${parts.join(' · ')}` : ''
+}
+
+function scoreCompetitivePriority(session: Session, memory: string, today: string): number {
+  let score = 0
+  const daysAway = diffDays(today, session.date)
+  const haystack = `${session.title} ${session.objective ?? ''} ${session.opponent ?? ''} ${session.notes ?? ''}`.toLowerCase()
+
+  if (daysAway != null) {
+    if (daysAway <= 1) score += 5
+    else if (daysAway <= 3) score += 4
+    else if (daysAway <= 5) score += 3
+    else score += 1
+  }
+
+  if (session.subtype === 'competitive') score += 2
+  if (session.opponent) score += 1
+
+  const strongKeywords = ['torneo', 'liga', 'cuadro', 'final', 'semifinal', 'ranking', 'objetivo', 'importante']
+  const mediumKeywords = ['match', 'partido', 'competencia', 'rival']
+
+  if (strongKeywords.some(keyword => haystack.includes(keyword))) score += 3
+  else if (mediumKeywords.some(keyword => haystack.includes(keyword))) score += 1
+
+  if (memory) {
+    if (session.opponent && memory.includes(session.opponent.toLowerCase())) score += 2
+    if (strongKeywords.some(keyword => memory.includes(keyword) && haystack.includes(keyword))) score += 3
+    if (memory.includes(session.date)) score += 2
+  }
+
+  return score
+}
+
+function explainPrioritySignals(session: Session, memory: string, today: string): string[] {
+  const reasons: string[] = []
+  const daysAway = diffDays(today, session.date)
+  const haystack = `${session.title} ${session.objective ?? ''} ${session.opponent ?? ''} ${session.notes ?? ''}`.toLowerCase()
+
+  if (daysAway != null) {
+    if (daysAway <= 1) reasons.push('muy cercana en el calendario')
+    else if (daysAway <= 3) reasons.push('cercana en el calendario')
+  }
+  if (session.subtype === 'competitive') reasons.push('marcada como competitive')
+  if (session.opponent) reasons.push(`rival definido: ${session.opponent}`)
+  if (['torneo', 'liga', 'final', 'ranking', 'objetivo'].some(keyword => haystack.includes(keyword))) {
+    reasons.push('titulo u objetivo con senal competitiva fuerte')
+  }
+  if (memory && session.opponent && memory.includes(session.opponent.toLowerCase())) {
+    reasons.push('memoria reciente menciona el rival')
+  }
+  if (memory && memory.includes(session.date)) {
+    reasons.push('memoria reciente menciona la fecha')
+  }
+
+  return reasons
+}
+
+function diffDays(fromISODate: string, toISODate: string): number | null {
+  try {
+    const from = new Date(`${fromISODate}T00:00:00`)
+    const to = new Date(`${toISODate}T00:00:00`)
+    const ms = to.getTime() - from.getTime()
+    return Math.round(ms / (24 * 60 * 60 * 1000))
+  } catch {
+    return null
+  }
 }
