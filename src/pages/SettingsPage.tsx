@@ -65,6 +65,7 @@ export default function SettingsPage() {
   const { coachMemory, isSaving, loadMemory, saveMemory } = useCoachMemoryStore()
   const { user, signOut, syncStatus, syncError } = useAuthStore()
   const [memoryDraft, setMemoryDraft] = useState('')
+  const [memorySaved, setMemorySaved] = useState(false)
   const [notifPermission, setNotifPermission] = useState<NotificationPermission | null>(null)
   const [notificationDebugState, setNotificationDebugState] = useState<NotificationDebugState | null>(null)
   const [dataCounts, setDataCounts] = useState<LocalDataCounts | null>(null)
@@ -235,9 +236,17 @@ export default function SettingsPage() {
               placeholder="Ej: molestia rodilla derecha desde febrero, evitar fuerza pesada el dia antes de partido, proximo torneo en mayo..."
               className="w-full rounded-xl bg-surface-raised border border-surface-border px-3 py-2.5 text-sm text-ink placeholder:text-ink-faint resize-none focus:outline-none focus:ring-2 focus:ring-brand/40"
             />
-            <div className="mt-3 flex justify-end">
+            <div className="mt-3 flex items-center justify-end gap-3">
+              {memorySaved && (
+                <span className="text-xs text-emerald-400 font-medium">Memoria guardada</span>
+              )}
               <button
-                onClick={() => void saveMemory(memoryDraft)}
+                onClick={() => {
+                  void saveMemory(memoryDraft).then(() => {
+                    setMemorySaved(true)
+                    setTimeout(() => setMemorySaved(false), 3000)
+                  })
+                }}
                 disabled={isSaving}
                 className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-brand text-white text-sm font-semibold hover:bg-brand-light disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
               >
@@ -294,8 +303,13 @@ export default function SettingsPage() {
                   <div>
                     <p className="text-sm font-semibold text-ink">Preview del backup</p>
                     <p className="text-xs text-ink-muted mt-1">
-                      Exportado el {importPreview.importedAt} · app {importPreview.importedFromAppVersion} · formato v{importPreview.version}
+                      Exportado el {formatBackupDate(importPreview.importedAt)} · app {importPreview.importedFromAppVersion} · formato v{importPreview.version}
                     </p>
+                    {importPreview.sessionDateRange && (
+                      <p className="text-xs text-ink-faint mt-0.5">
+                        Sesiones: {importPreview.sessionDateRange.first} → {importPreview.sessionDateRange.last}
+                      </p>
+                    )}
                   </div>
                   <button
                     onClick={() => {
@@ -308,13 +322,25 @@ export default function SettingsPage() {
                   </button>
                 </div>
 
-                <div className="grid gap-2 sm:grid-cols-2 text-xs text-ink-muted">
-                  <p>{importPreview.counts.sessions} sesiones</p>
-                  <p>{importPreview.counts.dayLogs} check-ins</p>
-                  <p>{importPreview.counts.weekSummaries} resumenes</p>
-                  <p>{importPreview.counts.chatMessages} mensajes</p>
-                  <p>{importPreview.counts.coachProposals} proposals</p>
-                  <p>{importPreview.counts.athleteProfiles} perfiles</p>
+                <div className="rounded-xl border border-surface-border overflow-hidden">
+                  <div className="grid grid-cols-3 text-[10px] font-medium text-ink-faint uppercase tracking-wider px-3 py-1.5 bg-surface border-b border-surface-border">
+                    <span>Dato</span>
+                    <span className="text-center">Backup</span>
+                    <span className="text-center">Local</span>
+                  </div>
+                  {[
+                    { label: 'Sesiones', backup: importPreview.counts.sessions, local: dataCounts?.trainingData.sessions },
+                    { label: 'Check-ins', backup: importPreview.counts.dayLogs, local: dataCounts?.trainingData.dayLogs },
+                    { label: 'Resúmenes', backup: importPreview.counts.weekSummaries, local: dataCounts?.trainingData.weekSummaries },
+                    { label: 'Mensajes', backup: importPreview.counts.chatMessages, local: dataCounts?.chatHistory },
+                    { label: 'Proposals', backup: importPreview.counts.coachProposals, local: null },
+                  ].map(row => (
+                    <div key={row.label} className="grid grid-cols-3 text-xs px-3 py-1.5 border-b border-surface-border/50 last:border-0">
+                      <span className="text-ink-muted">{row.label}</span>
+                      <span className="text-center font-medium text-ink">{row.backup}</span>
+                      <span className="text-center text-ink-faint">{row.local ?? '—'}</span>
+                    </div>
+                  ))}
                 </div>
 
                 <div className="space-y-2">
@@ -604,6 +630,17 @@ function formatCountLabel(group: LocalDataGroup, counts: LocalDataCounts | null)
       return `${counts.coachProposals} proposals`
     case 'coachMemory':
       return counts.coachMemory > 0 ? 'Guardada' : 'Vacia'
+  }
+}
+
+function formatBackupDate(isoString: string): string {
+  try {
+    return new Intl.DateTimeFormat('es-CL', {
+      day: 'numeric', month: 'long', year: 'numeric',
+      hour: '2-digit', minute: '2-digit',
+    }).format(new Date(isoString))
+  } catch {
+    return isoString
   }
 }
 

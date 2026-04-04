@@ -76,27 +76,27 @@ export const recalculateWeekSummary = async (dateISO: string): Promise<void> => 
   const weekStart = toISO(getWeekStart(fromISO(dateISO)))
   const sessions = await getSessionsForWeek(weekStart)
   const dayLogs = await getDayLogsForWeek(weekStart)
-  const completed = sessions.filter(s => s.status === 'completed')
+  const realized = sessions.filter(s => s.status === 'completed' || s.status === 'adjusted')
   const plannedMinutes = sessions
     .filter(s => s.status !== 'skipped')
     .reduce((a, s) => a + s.durationMin, 0)
-  const completedMinutes = completed.reduce((a, s) => a + (s.actualDurationMin ?? s.durationMin), 0)
+  const completedMinutes = realized.reduce((a, s) => a + (s.actualDurationMin ?? s.durationMin), 0)
   const plannedSessions = sessions.filter(s => s.status !== 'skipped').length
-  const completedSessions = completed.length
+  const completedSessions = realized.length
 
-  const plannedRpeValues = completed.filter(s => s.rpe != null).map(s => s.rpe!)
+  const plannedRpeValues = realized.filter(s => s.rpe != null).map(s => s.rpe!)
   const avgRpe = plannedRpeValues.length
     ? plannedRpeValues.reduce((a, b) => a + b, 0) / plannedRpeValues.length
     : undefined
 
-  const sessionActualRpeValues = completed
+  const sessionActualRpeValues = realized
     .map(s => s.actualRpe)
     .filter((value): value is number => value != null)
 
   const fallbackDayActualRpeValues = dayLogs
     .filter(log => log.rpeActual != null)
     .filter(log => {
-      const completedSessionsForDay = completed.filter(session => session.date === log.date)
+      const completedSessionsForDay = realized.filter(session => session.date === log.date)
       if (completedSessionsForDay.length !== 1) return false
       return completedSessionsForDay[0].actualRpe == null
     })
@@ -146,13 +146,13 @@ export const recalculateWeekSummary = async (dateISO: string): Promise<void> => 
     plannedMinutes,
     completedMinutes,
     adherencePct,
-    squashSessions: completed.filter(s => s.type === 'squash').length,
-    runningSessions: completed.filter(s => s.type === 'running').length,
-    strengthSessions: completed.filter(s => s.type === 'strength').length,
+    squashSessions: realized.filter(s => s.type === 'squash').length,
+    runningSessions: realized.filter(s => s.type === 'running').length,
+    strengthSessions: realized.filter(s => s.type === 'strength').length,
     plannedSquashSessions: active.filter(s => s.type === 'squash').length,
     plannedRunningSessions: active.filter(s => s.type === 'running').length,
     plannedStrengthSessions: active.filter(s => s.type === 'strength').length,
-    mobilityMinutes: completed
+    mobilityMinutes: realized
       .filter(s => s.type === 'mobility')
       .reduce((a, s) => a + (s.actualDurationMin ?? s.durationMin), 0),
     avgRpe,

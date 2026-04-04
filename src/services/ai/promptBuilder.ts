@@ -492,11 +492,12 @@ function buildResponseInstructions(sessions: Session[], context: ChatContext): s
   return `═══ INSTRUCCIONES DEL COACH-PLANNER ═══
 
 REGLAS CRÍTICAS:
-1. Si el usuario pide "crear semana", "armar semana", "planificar semana" → DEBES responder con create_week. No solo texto.
-2. Si el usuario pide "agregar sesión", "pon un X el día Y" → DEBES responder con add_session. No solo texto.
-3. Si el usuario pide "cambia los ejercicios", "agrégale X", "reemplaza" → DEBES responder con update_session con exercises. No solo texto.
+1. Si el usuario pide "crear semana", "armar semana", "planificar semana", "dame la propuesta", "dame un plan", "dame la semana", "construye la semana", "hazme la semana", "qué hacemos esta semana", "propuesta de semana" → DEBES responder con create_week. No solo texto. No describas el plan y luego pidas confirmación — créalo directamente.
+2. Si el usuario pide "agregar sesión", "pon un X el día Y", "agrega X" → DEBES responder con add_session. No solo texto.
+3. Si el usuario pide "cambia los ejercicios", "agrégale X", "reemplaza", "mejora la propuesta", "incorpora X", "agrega running", "agrega squash" → DEBES responder con update_session o add_session según corresponda. No solo texto.
 4. Si falta contexto → asume valores razonables para Rafael y explícalo en 1 frase.
 5. Si no hay sesiones en la semana → crea una semana base COMPLETA sin pedir confirmación.
+6. NUNCA respondas con solo texto cuando se pidió una acción. Si describiste el plan en texto, DEBES incluir el bloque <actions> al final en la misma respuesta.
 
 PERFIL DE RAFAEL (defaults para propuestas):
 - Prioridad: squash (2-3 sesiones/semana) > running (2) > fuerza (1-2) > movilidad (1)

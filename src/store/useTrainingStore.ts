@@ -63,6 +63,7 @@ export const useTrainingStore = create<TrainingState>((set, get) => ({
         if (log) dayLogs[dates[i]] = log
       })
 
+      await recalculateWeekSummary(weekStart)
       const summary = await getWeekSummary(weekStart)
       set({
         sessions,

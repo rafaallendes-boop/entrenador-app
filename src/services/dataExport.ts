@@ -77,6 +77,7 @@ export interface AppDataImportPreview {
   importedFromAppVersion: string
   version: number
   counts: AppDataImportResult['counts']
+  sessionDateRange: { first: string; last: string } | null
 }
 
 function buildFilename(exportedAt: Date): string {
@@ -135,6 +136,12 @@ export async function downloadAppDataExport(): Promise<string> {
 
 export async function previewAppDataImportFile(file: File): Promise<AppDataImportPreview> {
   const backup = await readBackupFromFile(file)
+
+  const sessionDates = backup.tables.sessions.map(s => s.date).filter(Boolean).sort()
+  const sessionDateRange = sessionDates.length > 0
+    ? { first: sessionDates[0], last: sessionDates[sessionDates.length - 1] }
+    : null
+
   return {
     importedAt: backup.exportedAt,
     importedFromAppVersion: backup.exportedFromAppVersion,
@@ -147,6 +154,7 @@ export async function previewAppDataImportFile(file: File): Promise<AppDataImpor
       coachProposals: backup.tables.coachProposals.length,
       athleteProfiles: backup.tables.athleteProfiles.length,
     },
+    sessionDateRange,
   }
 }
 

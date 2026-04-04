@@ -1,3 +1,4 @@
+import type React from 'react'
 import type { ChatMessage } from '../../types'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
@@ -14,6 +15,63 @@ interface ChatBubbleProps {
   message: ChatMessage
   hasProposal?: boolean
   onViewProposal?: () => void
+}
+
+/** Minimal markdown renderer: bold, italic, bullet lists, numbered lists, paragraphs. */
+function MarkdownContent({ text }: { text: string }) {
+  const blocks = text.split(/\n\n+/)
+
+  return (
+    <div className="space-y-2">
+      {blocks.map((block, bi) => {
+        const lines = block.split('\n')
+        const isBulletList = lines.every(l => /^[*-]\s/.test(l.trim()) || l.trim() === '')
+        const isNumList = lines.every(l => /^\d+\.\s/.test(l.trim()) || l.trim() === '')
+
+        if (isBulletList && lines.some(l => /^[*-]\s/.test(l.trim()))) {
+          return (
+            <ul key={bi} className="list-disc list-inside space-y-0.5">
+              {lines.filter(l => /^[*-]\s/.test(l.trim())).map((l, li) => (
+                <li key={li}>{renderInline(l.replace(/^[*-]\s/, ''))}</li>
+              ))}
+            </ul>
+          )
+        }
+
+        if (isNumList && lines.some(l => /^\d+\.\s/.test(l.trim()))) {
+          return (
+            <ol key={bi} className="list-decimal list-inside space-y-0.5">
+              {lines.filter(l => /^\d+\.\s/.test(l.trim())).map((l, li) => (
+                <li key={li}>{renderInline(l.replace(/^\d+\.\s/, ''))}</li>
+              ))}
+            </ol>
+          )
+        }
+
+        return (
+          <p key={bi} className="whitespace-pre-wrap break-words">
+            {lines.map((line, li) => (
+              <span key={li}>{renderInline(line)}{li < lines.length - 1 ? '\n' : ''}</span>
+            ))}
+          </p>
+        )
+      })}
+    </div>
+  )
+}
+
+function renderInline(text: string): React.ReactNode {
+  // Split on **bold** and *italic* patterns
+  const parts = text.split(/(\*\*[^*]+\*\*|\*[^*]+\*)/g)
+  return parts.map((part, i) => {
+    if (part.startsWith('**') && part.endsWith('**')) {
+      return <strong key={i}>{part.slice(2, -2)}</strong>
+    }
+    if (part.startsWith('*') && part.endsWith('*') && part.length > 2) {
+      return <em key={i}>{part.slice(1, -1)}</em>
+    }
+    return part
+  })
 }
 
 export default function ChatBubble({ message, hasProposal, onViewProposal }: ChatBubbleProps) {
@@ -35,7 +93,10 @@ export default function ChatBubble({ message, hasProposal, onViewProposal }: Cha
             ? 'bg-surface-card border border-surface-border text-ink rounded-tl-sm'
             : 'bg-brand text-white rounded-tr-sm'
         }`}>
-          <p className="whitespace-pre-wrap break-words">{message.content}</p>
+          {isCoach
+            ? <MarkdownContent text={message.content} />
+            : <p className="whitespace-pre-wrap break-words">{message.content}</p>
+          }
         </div>
 
         <div className="flex items-center gap-x-2 gap-y-1 mt-1 px-1 flex-wrap">

@@ -104,7 +104,7 @@ export default function Dashboard() {
 
               <div className="mt-3 flex items-center justify-between gap-3 text-xs text-ink-muted flex-wrap">
                 <span>
-                  {currentWeekSummary.completedSessions}/{currentWeekSummary.plannedSessions} sesiones realizadas
+                  {currentWeekSummary.completedSessions}/{currentWeekSummary.plannedSessions} planificadas realizadas
                 </span>
                 {currentWeekSummary.adherencePct != null && (
                   <span className="text-brand-light font-semibold">

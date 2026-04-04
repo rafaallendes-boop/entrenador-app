@@ -1,7 +1,7 @@
 # Entrenador App - Review and Roadmap
 
 Generado: 2026-04-01
-Actualizado: 2026-04-03
+Actualizado: 2026-04-04
 
 Base de revision:
 
@@ -105,13 +105,17 @@ La parte importante del refinamiento del coach ya quedo cerrada. La UI de propos
 - revisar visualmente ejemplos reales de semanas mixtas para detectar casos borde
 - si se quiere un salto extra, el siguiente nivel ya no es prompt sino analitica mas estructurada
 
-### P4. Backup mas avanzado
+### P4. Backup mas avanzado — COMPLETADO (base)
 
-La importacion actual ya tiene preview, `merge` / `replace` y versionado base. Lo que queda es crecer desde ahi:
+Implementado 2026-04-04.
 
+- se agrego comparacion tabla backup vs local en el preview (sesiones, check-ins, resumenes, mensajes, proposals)
+- fecha del backup ahora formateada en espanol legible (antes era ISO crudo)
+- se agrego rango de fechas de sesiones del backup en el preview
+
+Pendiente a futuro:
 - conflictos visibles en `merge` cuando lo local es mas nuevo
 - migraciones futuras de backup mas alla de v1 -> v2
-- mejor resumen post-restore
 
 ### P5. Integraciones externas de rendimiento y recuperacion
 

@@ -169,8 +169,8 @@ export default function ChatCoach() {
   }
 
   return (
-    <div className="flex flex-col h-[100dvh]">
-      <div className="pt-12 px-4 pb-3 border-b border-surface-border flex-shrink-0 md:px-6">
+    <div className="flex h-[100dvh] min-h-0 flex-col">
+      <div className="sticky top-0 z-30 flex-shrink-0 border-b border-surface-border bg-surface/95 px-4 pb-3 pt-12 backdrop-blur md:px-6">
         <div className="mx-auto w-full max-w-3xl flex items-center justify-between gap-3">
           <div className="flex items-center gap-2 min-w-0">
             <div className="min-w-0">
@@ -218,7 +218,7 @@ export default function ChatCoach() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 py-4 md:px-6">
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 md:px-6">
         <div className="mx-auto w-full max-w-3xl space-y-4">
           {messages.length === 0 && !isLoading && (
             <div className="flex flex-col items-center justify-center min-h-[45vh] gap-3 text-center px-4 md:px-6">
@@ -278,7 +278,7 @@ export default function ChatCoach() {
         </div>
       </div>
 
-      <div className="flex-shrink-0 px-4 pb-28 pt-2 border-t border-surface-border bg-surface md:px-6">
+      <div className="sticky bottom-0 z-30 flex-shrink-0 border-t border-surface-border bg-surface/95 px-4 pb-28 pt-2 backdrop-blur md:px-6">
         <div className="mx-auto w-full max-w-3xl space-y-2">
           {acceptedFeedback && (
             <AcceptedBanner

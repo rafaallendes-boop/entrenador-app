@@ -95,7 +95,7 @@ export default function WeekSummaryCard({
           </div>
 
           <div className="mt-3 flex items-center justify-between gap-3 text-xs text-ink-muted flex-wrap">
-            <span>{summary.completedSessions}/{summary.plannedSessions} sesiones</span>
+            <span>{summary.completedSessions}/{summary.plannedSessions} planificadas realizadas</span>
             {summary.adherencePct != null && (
               <span className="font-semibold text-brand-light">{summary.adherencePct}% adherencia</span>
             )}
