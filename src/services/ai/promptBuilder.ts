@@ -33,6 +33,7 @@ const DAY_FULL_ES = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'vier
 export function buildCoachSystemPrompt(context: ChatContext): string {
   const sections: string[] = [
     buildPersonaSection(),
+    buildAthleteProfileSection(context),
     buildCoachMemorySection(context),
     buildFatigueSection(context),
     buildHybridSection(context),
@@ -146,6 +147,93 @@ function buildWeekSection(context: ChatContext): string {
     lines.push(`Objetivos semana: ${s.objectives.join(' / ')}`)
   }
 
+  return lines.join('\n')
+}
+
+function buildAthleteProfileSection(context: ChatContext): string {
+  const p = context.athleteProfile
+  if (!p) return ''
+
+  const lines: string[] = ['═══ PERFIL DEL ATLETA ═══']
+
+  // Basic
+  const basicParts: string[] = []
+  if (p.age) basicParts.push(`${p.age} años`)
+  if (p.weightKg) basicParts.push(`${p.weightKg} kg`)
+  if (basicParts.length > 0) lines.push(`Atleta: ${basicParts.join(' · ')}`)
+
+  // Sport & goals
+  if (p.primarySport) lines.push(`Deporte principal: ${p.primarySport}`)
+  if (p.secondarySports?.length) lines.push(`Deportes secundarios: ${p.secondarySports.join(', ')}`)
+  if (p.mainGoal) lines.push(`Objetivo principal: ${p.mainGoal}`)
+  if (p.secondaryGoal) lines.push(`Objetivo secundario: ${p.secondaryGoal}`)
+
+  // Running profile
+  const r = p.runningProfile
+  if (r) {
+    const runLines: string[] = []
+    if (r.fiveKTime) runLines.push(`5K: ${r.fiveKTime}`)
+    if (r.tenKTime) runLines.push(`10K: ${r.tenKTime}`)
+    if (r.halfMarathonTime) runLines.push(`Media maratón: ${r.halfMarathonTime}`)
+    if (r.z2PaceMin || r.z2PaceMax) {
+      const z2 = [r.z2PaceMin, r.z2PaceMax].filter(Boolean).join('–')
+      runLines.push(`Ritmo Z2: ${z2} /km`)
+    }
+    if (r.easyPaceMin || r.easyPaceMax) {
+      const easy = [r.easyPaceMin, r.easyPaceMax].filter(Boolean).join('–')
+      runLines.push(`Ritmo easy: ${easy} /km`)
+    }
+    if (r.thresholdPace) runLines.push(`Umbral: ${r.thresholdPace} /km`)
+    if (r.longRunPace) runLines.push(`Long run: ${r.longRunPace} /km`)
+    if (r.notes) runLines.push(`Nota running: ${r.notes}`)
+    if (runLines.length > 0) lines.push(`Running — ${runLines.join(' · ')}`)
+  }
+
+  // Strength profile
+  const s = p.strengthProfile
+  if (s) {
+    const strLines: string[] = []
+    if (s.benchPress1RM) strLines.push(`press banca ${s.benchPress1RM}kg`)
+    if (s.squat1RM) strLines.push(`sentadilla ${s.squat1RM}kg`)
+    if (s.deadlift1RM) strLines.push(`peso muerto ${s.deadlift1RM}kg`)
+    if (s.overheadPress1RM) strLines.push(`press hombro ${s.overheadPress1RM}kg`)
+    if (s.pullUpMaxReps) strLines.push(`dominadas ${s.pullUpMaxReps} reps`)
+    if (s.notes) strLines.push(`nota: ${s.notes}`)
+    if (strLines.length > 0) lines.push(`Fuerza (1RM ref) — ${strLines.join(' · ')}`)
+  }
+
+  // Recovery & restrictions
+  const rec = p.recoveryProfile
+  if (rec) {
+    if (rec.currentInjuries?.trim()) lines.push(`Lesión/molestia actual: ${rec.currentInjuries.trim()}`)
+    if (rec.restrictions?.trim()) lines.push(`Restricciones: ${rec.restrictions.trim()}`)
+    if (rec.previousInjuries?.trim()) lines.push(`Lesiones previas: ${rec.previousInjuries.trim()}`)
+  }
+
+  // Schedule
+  const sch = p.scheduleProfile
+  if (sch) {
+    if (sch.availableDays?.length) lines.push(`Disponibilidad: ${sch.availableDays.join(', ')}`)
+    if (sch.doubleSessionDays?.length) lines.push(`Doble sesión posible: ${sch.doubleSessionDays.join(', ')}`)
+    if (sch.constraints?.trim()) lines.push(`Restricción horaria: ${sch.constraints.trim()}`)
+  }
+
+  // Strength % guidelines — only if 1RM data exists
+  if (s) {
+    const pctLines: string[] = []
+    if (s.benchPress1RM) pctLines.push(`press banca: ~${Math.round(s.benchPress1RM * 0.75)}kg al 75%, ~${Math.round(s.benchPress1RM * 0.85)}kg al 85%`)
+    if (s.squat1RM) pctLines.push(`sentadilla: ~${Math.round(s.squat1RM * 0.75)}kg al 75%, ~${Math.round(s.squat1RM * 0.85)}kg al 85%`)
+    if (s.deadlift1RM) pctLines.push(`peso muerto: ~${Math.round(s.deadlift1RM * 0.75)}kg al 75%, ~${Math.round(s.deadlift1RM * 0.85)}kg al 85%`)
+    if (s.overheadPress1RM) pctLines.push(`press hombro: ~${Math.round(s.overheadPress1RM * 0.75)}kg al 75%, ~${Math.round(s.overheadPress1RM * 0.85)}kg al 85%`)
+    if (pctLines.length > 0) {
+      lines.push(`Cargas de referencia (usa estos valores en exercises.weight, ajusta según objetivo del día):`)
+      pctLines.forEach(l => lines.push(`  · ${l}`))
+    }
+  }
+
+  if (lines.length === 1) return '' // only header, no data
+  lines.push('')
+  lines.push('Usa este perfil para proponer ritmos realistas, cargas de fuerza por % del 1RM y priorizar el deporte principal al armar la semana.')
   return lines.join('\n')
 }
 
@@ -482,6 +570,25 @@ function buildResponseInstructions(sessions: Session[], context: ChatContext): s
   const weekStart = context.currentWeekSummary?.weekStartDate ?? currentWeekStartISO()
   const weekDates = buildWeekDatesList(weekStart)
 
+  // Dynamic strength weights from profile (75% for hypertrophy/volume, 85% for strength)
+  const sp = context.athleteProfile?.strengthProfile
+  const w = {
+    bench75: sp?.benchPress1RM ? Math.round(sp.benchPress1RM * 0.75) : 80,
+    bench85: sp?.benchPress1RM ? Math.round(sp.benchPress1RM * 0.85) : 90,
+    row75: sp?.deadlift1RM ? Math.round(sp.deadlift1RM * 0.55) : 60,  // barbell row ~55% of deadlift
+    ohp75: sp?.overheadPress1RM ? Math.round(sp.overheadPress1RM * 0.75) : 50,
+    squat75: sp?.squat1RM ? Math.round(sp.squat1RM * 0.75) : 90,
+    squat85: sp?.squat1RM ? Math.round(sp.squat1RM * 0.85) : 102,
+    deadlift75: sp?.deadlift1RM ? Math.round(sp.deadlift1RM * 0.75) : 110,
+  }
+
+  // Dynamic running paces from profile
+  const rp = context.athleteProfile?.runningProfile
+  const z2min = rp?.z2PaceMin ?? '5:30'
+  const z2max = rp?.z2PaceMax ?? '6:00'
+  const tempoMin = rp?.thresholdPace ? addSecsToPace(rp.thresholdPace, -10) : '4:40'
+  const tempoMax = rp?.thresholdPace ?? '5:00'
+
   // Planned session IDs for modification actions
   const plannedSessionLines = sessions
     .filter(s => s.status === 'planned' && s.date >= today)
@@ -600,16 +707,16 @@ EJEMPLO — crear semana completa con detalle:
   "weekObjectives":["mantener base squash","sostener aeróbico running","llegar fresco al fin de semana"],
   "sessions":[
     {"date":"${addDaysToISO(weekStart, 0)}","timeBlock":"PM","sessionType":"squash","title":"Squash técnico — drives y juego condicionado","durationMin":75,"rpe":7,"objective":"Técnico con cierre táctico. Intensidad progresiva.","subtype":"training","squashDetails":{"trainingFocus":"technical","drills":[{"name":"Drives paralelo y cruzado","durationMin":20,"notes":"a zonas, profundidad y longitud"},{"name":"Voleas de presión","durationMin":20,"notes":"desde media pista, ataque y defensa"},{"name":"Juego condicionado solo largo","durationMin":20,"notes":"presión de fondo, control del T"}]}},
-    {"date":"${addDaysToISO(weekStart, 1)}","timeBlock":"AM","sessionType":"running","title":"Running Z2","durationMin":50,"rpe":6,"objective":"base aeróbica","runningType":"z2","targetPaceMin":"5:30","targetPaceMax":"6:00"},
-    {"date":"${addDaysToISO(weekStart, 2)}","timeBlock":"PM","sessionType":"strength","title":"Fuerza upper","durationMin":60,"rpe":7,"objective":"fuerza tren superior","exercises":[
-      {"name":"Press banca","sets":4,"reps":8,"weight":80,"group":"push"},
-      {"name":"Remo con barra","sets":4,"reps":8,"weight":60,"group":"pull"},
+    {"date":"${addDaysToISO(weekStart, 1)}","timeBlock":"AM","sessionType":"running","title":"Running Z2","durationMin":50,"rpe":6,"objective":"base aeróbica — ritmo cómodo, respiración nasal","runningType":"z2","targetPaceMin":"${z2min}","targetPaceMax":"${z2max}"},
+    {"date":"${addDaysToISO(weekStart, 2)}","timeBlock":"PM","sessionType":"strength","title":"Fuerza upper","durationMin":60,"rpe":7,"objective":"fuerza tren superior — volumen al 75% 1RM","exercises":[
+      {"name":"Press banca","sets":4,"reps":8,"weight":${w.bench75},"group":"push"},
+      {"name":"Remo con barra","sets":4,"reps":8,"weight":${w.row75},"group":"pull"},
       {"name":"Dominadas","sets":3,"reps":"max","group":"pull"},
-      {"name":"Press hombro","sets":3,"reps":10,"weight":25,"group":"push"},
+      {"name":"Press hombro","sets":3,"reps":10,"weight":${w.ohp75},"group":"push"},
       {"name":"Core rotacional","sets":3,"reps":15,"group":"core"}
     ]},
     {"date":"${addDaysToISO(weekStart, 3)}","timeBlock":"PM","sessionType":"squash","title":"Squash control — peloteo y dejadas","durationMin":60,"rpe":6,"objective":"Técnica limpia sin presión de resultado. Mitad de semana.","subtype":"control","squashDetails":{"trainingFocus":"technical","drills":[{"name":"Drives profundos","durationMin":20,"notes":"foco en longitud y consistencia"},{"name":"Dejadas y drops","durationMin":20,"notes":"de ambos lados, toque suave"},{"name":"Peloteo libre","durationMin":15,"notes":"ejecución limpia, sin presión"}]}},
-    {"date":"${addDaysToISO(weekStart, 4)}","timeBlock":"PM","sessionType":"running","title":"Running tempo","durationMin":45,"rpe":7,"objective":"umbral aeróbico","runningType":"tempo","targetPaceMin":"4:40","targetPaceMax":"5:00"},
+    {"date":"${addDaysToISO(weekStart, 4)}","timeBlock":"PM","sessionType":"running","title":"Running tempo","durationMin":45,"rpe":7,"objective":"umbral aeróbico — mantener ritmo sostenido","runningType":"tempo","targetPaceMin":"${tempoMin}","targetPaceMax":"${tempoMax}"},
     {"date":"${addDaysToISO(weekStart, 5)}","timeBlock":"AM","sessionType":"mobility","title":"Movilidad integral","durationMin":30,"rpe":4,"objective":"prevención y recuperación","exercises":[
       {"name":"Hip flexor stretch","sets":2,"reps":"60s","mobilityFocus":"hip"},
       {"name":"Ankle circles","sets":2,"reps":"30s","mobilityFocus":"ankle"},
@@ -621,11 +728,11 @@ EJEMPLO — crear semana completa con detalle:
 
 EJEMPLO — update_session con ejercicios:
 <actions>
-[{"type":"update_session","sessionId":"ID_DE_8_CHARS","newObjective":"fuerza tren superior con énfasis en empuje","exercises":[
-  {"name":"Press banca","sets":5,"reps":5,"weight":85,"group":"push"},
-  {"name":"Press inclinado","sets":3,"reps":8,"weight":70,"group":"push"},
+[{"type":"update_session","sessionId":"ID_DE_8_CHARS","newObjective":"fuerza tren superior con énfasis en fuerza — 85% 1RM","exercises":[
+  {"name":"Press banca","sets":5,"reps":5,"weight":${w.bench85},"group":"push"},
+  {"name":"Press inclinado","sets":3,"reps":8,"weight":${w.bench75},"group":"push"},
   {"name":"Dominadas con lastre","sets":4,"reps":6,"weight":10,"group":"pull"},
-  {"name":"Remo Pendlay","sets":3,"reps":8,"weight":65,"group":"pull"},
+  {"name":"Remo con barra","sets":3,"reps":8,"weight":${w.row75},"group":"pull"},
   {"name":"Planchas","sets":3,"reps":"45s","group":"core"}
 ],"reason":"ejercicios más intensos según solicitud"}]
 </actions>
@@ -651,6 +758,19 @@ EJEMPLO — microciclo competitivo con partido el sábado:
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/** Adds `secs` seconds to a "M:SS" pace string. Returns adjusted pace. */
+function addSecsToPace(pace: string, secs: number): string {
+  try {
+    const [m, s] = pace.split(':').map(Number)
+    const total = m * 60 + s + secs
+    const mm = Math.floor(total / 60)
+    const ss = total % 60
+    return `${mm}:${ss.toString().padStart(2, '0')}`
+  } catch {
+    return pace
+  }
+}
 
 function buildWeekDatesList(weekStart: string): string {
   const lines = ['DÍAS DE LA SEMANA ACTUAL:']

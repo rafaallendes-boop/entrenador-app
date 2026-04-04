@@ -308,20 +308,24 @@ function rowToCoachProposal(row: Record<string, unknown>): CoachProposal {
 }
 
 function athleteProfileToRow(profile: AthleteProfile, userId: string): Record<string, unknown> {
+  const { id, coachMemory, updatedAt, ...rest } = profile
   return {
-    id: profile.id,
+    id,
     user_id: userId,
-    coach_memory: profile.coachMemory ?? null,
-    updated_at: profile.updatedAt,
+    coach_memory: coachMemory ?? null,
+    updated_at: updatedAt,
+    data: Object.keys(rest).length > 0 ? rest : null,
   }
 }
 
 function rowToAthleteProfile(row: Record<string, unknown>): AthleteProfile {
+  const data = (row.data as Record<string, unknown> | null) ?? {}
   return {
     id: (row.id as string) ?? 'default',
     coachMemory: (row.coach_memory as string | null) ?? undefined,
     updatedAt: row.updated_at as number,
-  }
+    ...data,
+  } as AthleteProfile
 }
 
 export async function pushSession(session: Session): Promise<void> {

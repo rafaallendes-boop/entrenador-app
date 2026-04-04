@@ -135,10 +135,56 @@ export interface WeekSummary {
   coachNote?: string
 }
 
+export interface RunningProfile {
+  fiveKTime?: string          // "23:30"
+  tenKTime?: string           // "49:00"
+  halfMarathonTime?: string   // "1:48:00"
+  easyPaceMin?: string        // "5:45" /km
+  easyPaceMax?: string        // "6:15" /km
+  z2PaceMin?: string          // "5:30" /km
+  z2PaceMax?: string          // "6:00" /km
+  thresholdPace?: string      // "4:45" /km
+  longRunPace?: string        // "5:50" /km
+  notes?: string
+}
+
+export interface StrengthProfile {
+  benchPress1RM?: number      // kg
+  squat1RM?: number           // kg
+  deadlift1RM?: number        // kg
+  overheadPress1RM?: number   // kg
+  pullUpMaxReps?: number      // reps
+  notes?: string
+}
+
+export interface RecoveryProfile {
+  currentInjuries?: string    // free text
+  previousInjuries?: string   // free text
+  restrictions?: string       // free text
+}
+
+export interface ScheduleProfile {
+  availableDays?: string[]      // ['lun','mar','mié','jue','vie','sáb','dom']
+  doubleSessionDays?: string[]
+  constraints?: string          // free text
+}
+
 export interface AthleteProfile {
   id: string
   coachMemory?: string
   updatedAt: number
+  // Structured profile
+  name?: string
+  age?: number
+  weightKg?: number
+  primarySport?: string
+  secondarySports?: string[]
+  mainGoal?: string
+  secondaryGoal?: string
+  runningProfile?: RunningProfile
+  strengthProfile?: StrengthProfile
+  recoveryProfile?: RecoveryProfile
+  scheduleProfile?: ScheduleProfile
 }
 
 export interface ChatMessage {
@@ -160,6 +206,7 @@ export interface ChatContext {
   dayLog?: DayLog
   weekDayLogs?: DayLog[]
   athleteMemory?: string
+  athleteProfile?: AthleteProfile
   recentMessages?: { role: MessageRole; content: string }[]
   intent?: 'general_chat' | 'plan_week' | 'adjust_session' | 'weekly_summary'
 }

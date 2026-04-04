@@ -201,6 +201,7 @@ export const useTrainingStore = create<TrainingState>((set, get) => ({
         currentWeekSummary: currentWeekSummary ?? undefined,
         weekDayLogs,
         athleteMemory: athleteProfile?.coachMemory,
+        athleteProfile: athleteProfile ?? undefined,
         intent: 'weekly_summary',
       }),
       { maxTokens: 700, temperature: 0.4 },

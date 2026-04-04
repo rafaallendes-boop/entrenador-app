@@ -66,7 +66,7 @@ export default function ChatCoach() {
   const navigate = useNavigate()
   const { messages, isLoading, streamingText, error, loadHistory, sendMessage, newSession, deleteCurrentSession } = useChatStore()
   const { proposals, loadProposals, acceptProposal, rejectProposal } = useCoachActionsStore()
-  const { coachMemory, loadMemory } = useCoachMemoryStore()
+  const { coachMemory, athleteProfile, loadMemory } = useCoachMemoryStore()
   const { sessions, currentWeekSummary, dayLogs, loadWeek } = useTrainingStore()
   const bottomRef = useRef<HTMLDivElement>(null)
 
@@ -108,6 +108,7 @@ export default function ChatCoach() {
       dayLog: dayLogs[todayISO()],
       weekDayLogs: Object.values(dayLogs),
       athleteMemory: coachMemory || undefined,
+      athleteProfile: athleteProfile ?? undefined,
       intent: detectChatIntent(message),
     }
   }

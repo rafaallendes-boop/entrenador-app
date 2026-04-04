@@ -1,6 +1,7 @@
 import { type ChangeEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { Bell, Brain, Cpu, Download, LogOut, ShieldAlert, Trash2, Upload, User } from 'lucide-react'
 import Card from '../components/ui/Card'
+import AthleteProfileEditor from '../components/settings/AthleteProfileEditor'
 import SyncStatusBadge from '../components/sync/SyncStatusBadge'
 import { APP_INFO } from '../constants/appInfo'
 import { CoachEngine } from '../services/ai/CoachEngine'
@@ -62,7 +63,7 @@ const EMPTY_CLEAR_SELECTION: LocalDataSelection = {
 }
 
 export default function SettingsPage() {
-  const { coachMemory, isSaving, loadMemory, saveMemory } = useCoachMemoryStore()
+  const { coachMemory, athleteProfile, isSaving, loadMemory, saveMemory, saveAthleteProfile } = useCoachMemoryStore()
   const { user, signOut, syncStatus, syncError } = useAuthStore()
   const [memoryDraft, setMemoryDraft] = useState('')
   const [memorySaved, setMemorySaved] = useState(false)
@@ -253,6 +254,25 @@ export default function SettingsPage() {
                 {isSaving ? 'Guardando...' : 'Guardar memoria'}
               </button>
             </div>
+          </Card>
+
+          <Card className="p-4">
+            <div className="flex items-start gap-3 mb-4">
+              <div className="w-8 h-8 rounded-full bg-violet-500/10 flex items-center justify-center flex-shrink-0">
+                <User size={16} className="text-violet-400" />
+              </div>
+              <div>
+                <h2 className="text-sm font-semibold text-ink">Perfil del atleta</h2>
+                <p className="text-xs text-ink-muted mt-1 leading-relaxed">
+                  Datos estructurados para que el coach proponga ritmos, cargas y semanas más precisos.
+                </p>
+              </div>
+            </div>
+            <AthleteProfileEditor
+              profile={athleteProfile}
+              isSaving={isSaving}
+              onSave={saveAthleteProfile}
+            />
           </Card>
 
           <Card className="p-4">
