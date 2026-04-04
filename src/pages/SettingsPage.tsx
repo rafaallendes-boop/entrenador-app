@@ -269,6 +269,7 @@ export default function SettingsPage() {
               </div>
             </div>
             <AthleteProfileEditor
+              key={athleteProfile?.updatedAt ?? 'athlete-profile-empty'}
               profile={athleteProfile}
               isSaving={isSaving}
               onSave={saveAthleteProfile}

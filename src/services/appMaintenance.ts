@@ -112,6 +112,6 @@ function syncStoresAfterClear(selection: LocalDataSelection): void {
   }
 
   if (selection.coachMemory) {
-    useCoachMemoryStore.setState({ coachMemory: '', isSaving: false })
+    useCoachMemoryStore.setState({ coachMemory: '', athleteProfile: null, isSaving: false })
   }
 }

@@ -21,6 +21,7 @@ Hoy ya existen:
 - coach con lectura mejorada de fatiga acumulada y taper competitivo
 - coach con mejor jerarquia competitiva y reglas para bloques hibridos squash + running
 - coach con inferencia implicita de prioridad competitiva desde memoria, mensajes y calendario
+- athlete profile estructurado para running, fuerza, recuperacion y disponibilidad
 - propuestas de squash estructuradas con `squashDetails`
 - UI de proposals con drills, focos de squash y mejor detalle visible
 - chat multi-sesion con streaming
@@ -37,6 +38,7 @@ El foco real ya no es agregar features basicas. Las prioridades abiertas son:
 - seguir endureciendo sync y mantenimiento
 - hacer mas usable el backup/restore
 - pulir detalles puntuales de UX del coach y bajar respuestas genericas residuales
+- explotar mejor el athlete profile en recomendaciones y propuestas
 - preparar integraciones externas viables a futuro
 - refinar analitica contextual y prioridad competitiva implicita del coach
 
@@ -74,6 +76,7 @@ Estos temas ya no deberian seguir listados como roadmap principal:
 - lectura base de fatiga acumulada para taper
 - jerarquia competitiva explicita y bloques hibridos base
 - inferencia implicita de prioridad competitiva
+- athlete profile estructurado persistido en ajustes
 - optimizacion principal del chunk de PDF
 - limpieza principal de docs base
 
@@ -99,10 +102,11 @@ La base de sync ya esta mejor cerrada, pero aun puede crecer:
 
 ### P3. UX del coach y proposals
 
-La parte importante del refinamiento del coach ya quedo cerrada. La UI de proposals muestra mejor el detalle, el taper considera senales base de fatiga y el prompt ya protege mejor la competencia objetivo inmediata incluso cuando el usuario no la explicita.
+La parte importante del refinamiento del coach ya quedo cerrada. La UI de proposals muestra mejor el detalle, el taper considera senales base de fatiga, el prompt ya protege mejor la competencia objetivo inmediata incluso cuando el usuario no la explicita y ahora existe athlete profile estructurado para personalizar mejor el contexto.
 
 - queda solo como mejora incremental seguir reduciendo respuestas demasiado generales
 - revisar visualmente ejemplos reales de semanas mixtas para detectar casos borde
+- usar mejor el athlete profile para convertir PRs, ritmos y restricciones en propuestas mas finas
 - si se quiere un salto extra, el siguiente nivel ya no es prompt sino analitica mas estructurada
 
 ### P4. Backup mas avanzado — COMPLETADO (base)
@@ -140,6 +144,7 @@ Objetivo minimo:
 |------|---------|----------|--------|
 | Robustecer notificaciones | Alto | Medio | Parcial |
 | Reglas competitivas del coach | Alto | Medio | Cerrado base |
+| Explotar athlete profile en el coach | Alto | Medio | En curso |
 | Backup conflict-aware merge | Alto | Medio | Backlog |
 | Realtime sync opcional | Medio | Medio | Backlog |
 | Integracion WHOOP futura | Medio | Medio | Backlog |
@@ -155,7 +160,7 @@ La plataforma web sigue imponiendo limites de persistencia y scheduling segun na
 
 ### Experiencia visible del coach
 
-El coach ya propone y muestra mejor el detalle, interpreta mejor fatiga acumulada, protege mejor la competencia objetivo inmediata y ya usa memoria y calendario para inferir prioridad competitiva. El riesgo restante es mas de calidad fina de respuestas que de vacio funcional.
+El coach ya propone y muestra mejor el detalle, interpreta mejor fatiga acumulada, protege mejor la competencia objetivo inmediata, usa memoria y calendario para inferir prioridad competitiva y ya recibe athlete profile estructurado. El riesgo restante es mas de explotacion desigual de ese perfil que de vacio funcional.
 
 ### Backup futuro
 
@@ -170,10 +175,10 @@ WHOOP parece viable para una futura integracion low-cost. Garmin puede terminar 
 Orden recomendado:
 
 1. robustez adicional de notificaciones
-2. merge conflict-aware en backup
-3. analitica deportiva mas rica
-4. robustez adicional del sync segun uso real
-5. diseno tecnico de integracion WHOOP
+2. explotar athlete profile en propuestas de fuerza y running
+3. merge conflict-aware en backup
+4. analitica deportiva mas rica
+5. robustez adicional del sync segun uso real
 
 ## Referencias revisadas
 

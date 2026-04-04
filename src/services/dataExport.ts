@@ -423,6 +423,17 @@ function parseAthleteProfile(value: unknown, index: number): AthleteProfile {
     id: requireString(row.id, `athleteProfiles[${index}].id`),
     coachMemory: optionalString(row.coachMemory, `athleteProfiles[${index}].coachMemory`),
     updatedAt: requireFiniteNumber(row.updatedAt, `athleteProfiles[${index}].updatedAt`),
+    name: optionalString(row.name, `athleteProfiles[${index}].name`),
+    age: optionalFiniteNumber(row.age, `athleteProfiles[${index}].age`),
+    weightKg: optionalFiniteNumber(row.weightKg, `athleteProfiles[${index}].weightKg`),
+    primarySport: optionalString(row.primarySport, `athleteProfiles[${index}].primarySport`),
+    secondarySports: optionalStringArray(row.secondarySports, `athleteProfiles[${index}].secondarySports`),
+    mainGoal: optionalString(row.mainGoal, `athleteProfiles[${index}].mainGoal`),
+    secondaryGoal: optionalString(row.secondaryGoal, `athleteProfiles[${index}].secondaryGoal`),
+    runningProfile: optionalRunningProfile(row.runningProfile, `athleteProfiles[${index}].runningProfile`),
+    strengthProfile: optionalStrengthProfile(row.strengthProfile, `athleteProfiles[${index}].strengthProfile`),
+    recoveryProfile: optionalRecoveryProfile(row.recoveryProfile, `athleteProfiles[${index}].recoveryProfile`),
+    scheduleProfile: optionalScheduleProfile(row.scheduleProfile, `athleteProfiles[${index}].scheduleProfile`),
   }
 }
 
@@ -579,6 +590,7 @@ function optionalChatContext(value: unknown, path: string): ChatMessage['context
       ? undefined
       : ensureArray(row.weekDayLogs, `${path}.weekDayLogs`).map((log, index) => parseDayLog(log, index)),
     athleteMemory: optionalString(row.athleteMemory, `${path}.athleteMemory`),
+    athleteProfile: row.athleteProfile == null ? undefined : parseAthleteProfile(row.athleteProfile, 0),
     recentMessages: row.recentMessages == null
       ? undefined
       : ensureArray(row.recentMessages, `${path}.recentMessages`).map((message, index) => {
@@ -693,6 +705,56 @@ function optionalStringArray(value: unknown, path: string): string[] | undefined
   if (value == null) return undefined
   const items = ensureArray(value, path)
   return items.map((item, index) => requireString(item, `${path}[${index}]`))
+}
+
+function optionalRunningProfile(value: unknown, path: string): AthleteProfile['runningProfile'] {
+  if (value == null) return undefined
+  const row = ensureRecord(value, path)
+  return {
+    fiveKTime: optionalString(row.fiveKTime, `${path}.fiveKTime`),
+    tenKTime: optionalString(row.tenKTime, `${path}.tenKTime`),
+    halfMarathonTime: optionalString(row.halfMarathonTime, `${path}.halfMarathonTime`),
+    easyPaceMin: optionalString(row.easyPaceMin, `${path}.easyPaceMin`),
+    easyPaceMax: optionalString(row.easyPaceMax, `${path}.easyPaceMax`),
+    z2PaceMin: optionalString(row.z2PaceMin, `${path}.z2PaceMin`),
+    z2PaceMax: optionalString(row.z2PaceMax, `${path}.z2PaceMax`),
+    thresholdPace: optionalString(row.thresholdPace, `${path}.thresholdPace`),
+    longRunPace: optionalString(row.longRunPace, `${path}.longRunPace`),
+    notes: optionalString(row.notes, `${path}.notes`),
+  }
+}
+
+function optionalStrengthProfile(value: unknown, path: string): AthleteProfile['strengthProfile'] {
+  if (value == null) return undefined
+  const row = ensureRecord(value, path)
+  return {
+    benchPress1RM: optionalFiniteNumber(row.benchPress1RM, `${path}.benchPress1RM`),
+    squat1RM: optionalFiniteNumber(row.squat1RM, `${path}.squat1RM`),
+    deadlift1RM: optionalFiniteNumber(row.deadlift1RM, `${path}.deadlift1RM`),
+    overheadPress1RM: optionalFiniteNumber(row.overheadPress1RM, `${path}.overheadPress1RM`),
+    pullUpMaxReps: optionalFiniteNumber(row.pullUpMaxReps, `${path}.pullUpMaxReps`),
+    notes: optionalString(row.notes, `${path}.notes`),
+  }
+}
+
+function optionalRecoveryProfile(value: unknown, path: string): AthleteProfile['recoveryProfile'] {
+  if (value == null) return undefined
+  const row = ensureRecord(value, path)
+  return {
+    currentInjuries: optionalString(row.currentInjuries, `${path}.currentInjuries`),
+    previousInjuries: optionalString(row.previousInjuries, `${path}.previousInjuries`),
+    restrictions: optionalString(row.restrictions, `${path}.restrictions`),
+  }
+}
+
+function optionalScheduleProfile(value: unknown, path: string): AthleteProfile['scheduleProfile'] {
+  if (value == null) return undefined
+  const row = ensureRecord(value, path)
+  return {
+    availableDays: optionalStringArray(row.availableDays, `${path}.availableDays`),
+    doubleSessionDays: optionalStringArray(row.doubleSessionDays, `${path}.doubleSessionDays`),
+    constraints: optionalString(row.constraints, `${path}.constraints`),
+  }
 }
 
 function isISODate(value: string): boolean {
@@ -813,5 +875,5 @@ function syncStoresAfterImport(preferredChatSessionId: string | null): void {
   })
 
   useCoachActionsStore.setState({ proposals: [] })
-  useCoachMemoryStore.setState({ coachMemory: '', isSaving: false })
+  useCoachMemoryStore.setState({ coachMemory: '', athleteProfile: null, isSaving: false })
 }

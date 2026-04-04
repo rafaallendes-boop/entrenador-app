@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { ChevronDown, ChevronUp } from 'lucide-react'
 import type {
   AthleteProfile,
@@ -23,36 +23,19 @@ export default function AthleteProfileEditor({ profile, isSaving, onSave }: Prop
   const [saved, setSaved] = useState(false)
 
   // Local draft state per section
-  const [age, setAge] = useState('')
-  const [weightKg, setWeightKg] = useState('')
-  const [primarySport, setPrimarySport] = useState('')
-  const [secondarySports, setSecondarySports] = useState('')
-  const [mainGoal, setMainGoal] = useState('')
-  const [secondaryGoal, setSecondaryGoal] = useState('')
+  const [age, setAge] = useState(profile?.age != null ? String(profile.age) : '')
+  const [weightKg, setWeightKg] = useState(profile?.weightKg != null ? String(profile.weightKg) : '')
+  const [primarySport, setPrimarySport] = useState(profile?.primarySport ?? '')
+  const [secondarySports, setSecondarySports] = useState(profile?.secondarySports?.join(', ') ?? '')
+  const [mainGoal, setMainGoal] = useState(profile?.mainGoal ?? '')
+  const [secondaryGoal, setSecondaryGoal] = useState(profile?.secondaryGoal ?? '')
 
-  const [running, setRunning] = useState<RunningProfile>({})
-  const [strength, setStrength] = useState<StrengthProfile>({})
-  const [recovery, setRecovery] = useState<RecoveryProfile>({})
-  const [availableDays, setAvailableDays] = useState<string[]>([])
-  const [doubleSessionDays, setDoubleSessionDays] = useState<string[]>([])
-  const [scheduleConstraints, setScheduleConstraints] = useState('')
-
-  // Load from profile
-  useEffect(() => {
-    if (!profile) return
-    setAge(profile.age != null ? String(profile.age) : '')
-    setWeightKg(profile.weightKg != null ? String(profile.weightKg) : '')
-    setPrimarySport(profile.primarySport ?? '')
-    setSecondarySports(profile.secondarySports?.join(', ') ?? '')
-    setMainGoal(profile.mainGoal ?? '')
-    setSecondaryGoal(profile.secondaryGoal ?? '')
-    setRunning(profile.runningProfile ?? {})
-    setStrength(profile.strengthProfile ?? {})
-    setRecovery(profile.recoveryProfile ?? {})
-    setAvailableDays(profile.scheduleProfile?.availableDays ?? [])
-    setDoubleSessionDays(profile.scheduleProfile?.doubleSessionDays ?? [])
-    setScheduleConstraints(profile.scheduleProfile?.constraints ?? '')
-  }, [profile])
+  const [running, setRunning] = useState<RunningProfile>(profile?.runningProfile ?? {})
+  const [strength, setStrength] = useState<StrengthProfile>(profile?.strengthProfile ?? {})
+  const [recovery, setRecovery] = useState<RecoveryProfile>(profile?.recoveryProfile ?? {})
+  const [availableDays, setAvailableDays] = useState<string[]>(profile?.scheduleProfile?.availableDays ?? [])
+  const [doubleSessionDays, setDoubleSessionDays] = useState<string[]>(profile?.scheduleProfile?.doubleSessionDays ?? [])
+  const [scheduleConstraints, setScheduleConstraints] = useState(profile?.scheduleProfile?.constraints ?? '')
 
   const handleSave = async () => {
     const scheduleProfile: ScheduleProfile = {
