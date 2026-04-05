@@ -1,7 +1,7 @@
 # Entrenador App - Review and Roadmap
 
 Generado: 2026-04-01
-Actualizado: 2026-04-05
+Actualizado: 2026-04-05 (x4)
 
 Base de revision:
 
@@ -20,14 +20,15 @@ Hoy ya existen:
 - especializacion base del coach en squash, running y preparacion fisica aplicada
 - coach con lectura mejorada de fatiga acumulada, taper competitivo y bloques hibridos squash + running
 - coach con inferencia implicita de prioridad competitiva desde memoria, mensajes y calendario
-- athlete profile estructurado para running, fuerza, recuperacion, nutricion y disponibilidad
-- athlete profile explotado en el coach con ritmos y cargas de fuerza concretas desde el perfil
-- personalizacion real por usuario en nombre visible, deporte principal y onboarding contextual
+- athlete profile estructurado para running, fuerza, recuperacion, disponibilidad y nutricion
+- athlete profile explotado en el coach: paces de running, cargas de fuerza y contexto nutricional desde el perfil
+- nutricion integrada al coach: seccion de prompt con carga del dia, timing, protocolo competitivo y composicion corporal — basada en `nutritionEngine` existente sin duplicar logica
+- personalizacion real por usuario: coach adaptado al deporte principal, seed anonimizado, nudge onboarding, banner de perfil incompleto
 - propuestas de squash estructuradas con `squashDetails`
 - UI de proposals con drills, focos de squash y mejor detalle visible
 - chat multi-sesion con streaming
 - Dexie local-first
-- backup JSON con import/export, preview, versionado base y modos `replace` / `merge`
+- backup JSON con import/export, preview, versionado base y modos `replace` / `merge` conflict-aware
 - importacion PDF con carga diferida
 - notificaciones reforzadas con recuperacion dentro de ventana de gracia, estado visible y controles manuales
 - sync multi-dispositivo con Supabase + Google OAuth
@@ -37,7 +38,6 @@ El foco real ya no es agregar features basicas. Las prioridades abiertas son:
 
 - mejorar confiabilidad y UX de notificaciones en escenarios reales de navegador
 - seguir endureciendo sync y mantenimiento
-- robustecer el modelo de nutricion e integrarlo mejor al coach
 - preparar personalizacion real por usuario para uso compartido/comercial
 - pulir detalles puntuales de UX del coach y bajar respuestas genericas residuales
 - preparar integraciones externas viables a futuro
@@ -82,6 +82,9 @@ Estos temas ya no deberian seguir listados como roadmap principal:
 - explotacion del athlete profile en propuestas: paces y cargas reales inyectados en el prompt
 - fuerza lower en semana base del coach
 - personalizacion real por usuario: coach adaptado al deporte principal, seed anonimizado, login neutral y nudge de onboarding
+- banner de perfil incompleto en ChatCoach
+- nutricion integrada al coach: contexto dinamico por carga del dia, protocolo competitivo, composicion corporal desde perfil
+- NutritionProfile en AthleteProfile con seccion en el editor de ajustes
 - optimizacion principal del chunk de PDF
 - limpieza principal de docs base
 - limpieza del bloque duplicado de semana base en el prompt del coach
@@ -117,16 +120,24 @@ La base de sync ya esta mejor cerrada, pero aun puede crecer:
 - seguir endureciendo operaciones destructivas y reconciliacion
 - mejorar mensajes visibles cuando hubo recovery offline o sync atrasado
 
-### P3. Nutricion mas robusta e integrada al coach
+### P3. Nutricion integrada al coach — COMPLETADO (base)
 
-La capa actual de nutricion cumple como MVP, pero todavia esta menos madura que el resto del sistema.
+Implementado 2026-04-05.
 
-Objetivo minimo:
+- `NutritionProfile` agregado a `AthleteProfile`: objetivos de composicion corporal, proteina diaria, agua base, notas/intolerancias
+- Seccion "Nutricion y composicion corporal" en `AthleteProfileEditor` — grid con todos los campos del perfil
+- `buildNutritionContextSection` en `promptBuilder.ts`: carga del dia clasificada via `classifyDayLoad()` del `nutritionEngine` existente — sin duplicar logica
+- Timing concreto por tipo de sesion (squash, running, fuerza, doble, long_run, partido)
+- Protocolo dia de competencia y vispera de partido incluidos en el prompt
+- Hidratacion dinamica: base del perfil + extra por sesion
+- Proteina derivada del perfil o estimada desde peso (2g/kg)
+- El coach solo usa este contexto cuando el usuario pregunta — no lo inyecta en toda respuesta
 
-- enriquecer el modelo de nutricion segun perfil, carga del dia y objetivo principal
-- integrar mejor nutricion con el coach para sugerencias mas contextuales
-- ajustar mejor comidas segun squash, running, fuerza, recuperacion y composicion corporal
-- preparar recomendaciones mas personalizadas sin perder simplicidad de uso
+Pendiente a futuro:
+
+- validar con uso real que las sugerencias de timing y carga sean coherentes con sesiones reales
+- enriquecer las recomendaciones del `nutritionEngine` para squash especificamente (pre-cancha, entre partidos)
+- considerar mostrar sugerencia de nutricion en vista diaria segun la sesion del dia
 
 ### P4. Personalizacion real por usuario
 
@@ -135,7 +146,7 @@ La base ya esta, pero falta endurecerla pensando en terceros:
 - separar configuracion de cuenta vs perfil deportivo si la app se ofrece a terceros
 - mejorar onboarding para deportes que no sean squash ni running
 - personalizar mejor saludo inicial y estados vacios segun objetivo principal del atleta
-- revisar textos todavia demasiado ligados a tu caso de uso original
+- revisar textos todavia demasiado ligados al caso de uso original
 
 ### P5. Integraciones externas de rendimiento y recuperacion
 
@@ -171,7 +182,7 @@ Objetivo minimo:
 | Item | Impacto | Esfuerzo | Estado |
 |------|---------|----------|--------|
 | Robustecer notificaciones | Alto | Medio | Parcial |
-| Nutricion mas robusta e integrada al coach | Alto | Medio | Backlog |
+| Nutricion integrada al coach | Alto | Medio | Cerrado base |
 | Sync UX y recovery offline | Alto | Medio | Backlog |
 | Personalizacion real por usuario | Alto | Medio | Parcial |
 | Realtime sync opcional | Medio | Medio | Backlog |
@@ -188,11 +199,11 @@ La plataforma web sigue imponiendo limites de persistencia y scheduling segun na
 
 ### Experiencia visible del coach
 
-El coach ya propone y muestra mejor el detalle, usa memoria, calendario, contexto competitivo y athlete profile estructurado. El riesgo restante es principalmente calidad variable cuando el perfil esta incompleto o cuando el contexto nutricional todavia no se integra de forma fuerte.
+El coach ya propone y muestra mejor el detalle, usa memoria, calendario, contexto competitivo, athlete profile estructurado y ahora contexto nutricional dinamico. El riesgo restante es principalmente calidad variable cuando el perfil esta incompleto — si el usuario no cargo datos de composicion corporal, el coach cae a estimaciones genericas.
 
 ### Backup futuro
 
-El restore actual es seguro para el schema vigente y ya tiene preview, merge y conflictos base, pero aun faltan conflictos visibles a nivel de campo y migraciones futuras mas completas.
+El restore actual es seguro para el schema vigente y ya tiene preview, merge conflict-aware y panel de conflictos estimados, pero aun faltan conflictos visibles a nivel de campo y migraciones futuras mas completas.
 
 ### Integraciones externas
 
@@ -202,7 +213,7 @@ WHOOP parece viable para una futura integracion low-cost. Apple Health pasa a se
 
 Orden recomendado:
 
-1. nutricion mas robusta e integrada al coach
+1. ~~nutricion integrada al coach~~ — COMPLETADO 2026-04-05
 2. robustez adicional de notificaciones en movil real
 3. sync UX y recovery offline
 4. personalizacion real por usuario para uso compartido
@@ -219,9 +230,11 @@ Orden recomendado:
 - `src/services/dataExport.ts`
 - `src/services/notifications.ts`
 - `src/services/pdfImport.ts`
-- `src/services/ai/promptBuilder.ts`
 - `src/services/nutritionEngine.ts`
+- `src/services/ai/promptBuilder.ts`
+- `src/utils/athlete.ts`
 - `src/components/chat/ProposalDrawer.tsx`
+- `src/components/settings/AthleteProfileEditor.tsx`
 - `src/pages/ImportPDF.tsx`
 - `src/pages/SettingsPage.tsx`
 - `src/pages/ChatCoach.tsx`

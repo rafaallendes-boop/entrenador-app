@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTrainingStore } from '../store/useTrainingStore'
+import { useCoachMemoryStore } from '../store/useCoachMemoryStore'
 import { todayISO, formatFullDate, currentWeekStartISO } from '../utils/date'
 import { ROUTES } from '../constants/routes'
 import WeekStrip from '../components/week/WeekStrip'
@@ -8,6 +9,7 @@ import LoadIndicator from '../components/dashboard/LoadIndicator'
 import Card from '../components/ui/Card'
 import { getDayNutrition } from '../services/nutritionEngine'
 import { startNotificationSync } from '../services/notifications'
+import { getAthleteFirstName } from '../utils/athlete'
 
 const CoachMessageCard = lazy(() => import('../components/dashboard/CoachMessageCard'))
 const NextSessionCard = lazy(() => import('../components/dashboard/NextSessionCard'))
@@ -17,12 +19,15 @@ const InstallAppCard = lazy(() => import('../components/pwa/InstallAppCard'))
 
 export default function Dashboard() {
   const { sessions, currentWeekSummary, isLoading, loadWeek } = useTrainingStore()
+  const { athleteProfile, loadMemory } = useCoachMemoryStore()
   const navigate = useNavigate()
   const today = todayISO()
+  const athleteFirstName = getAthleteFirstName(athleteProfile, 'atleta')
 
   useEffect(() => {
     loadWeek(currentWeekStartISO())
-  }, [loadWeek])
+    void loadMemory()
+  }, [loadWeek, loadMemory])
 
   useEffect(() => {
     return startNotificationSync(() => sessions)
@@ -39,7 +44,7 @@ export default function Dashboard() {
   const todayNutrition = getDayNutrition(todaySessions)
 
   const coachNote = currentWeekSummary?.coachNote ??
-    'Bienvenido. Carga tu primera semana de entrenamiento y empieza a registrar tu progreso.'
+    `Bienvenido${athleteProfile?.name ? `, ${athleteFirstName}` : ''}. Carga tu primera semana de entrenamiento y empieza a registrar tu progreso.`
 
   return (
     <div className="px-4 pt-12 pb-6 space-y-5 md:px-6 md:space-y-6">
@@ -47,7 +52,7 @@ export default function Dashboard() {
         <p className="text-xs text-ink-muted font-medium uppercase tracking-wider">
           {formatFullDate(new Date())}
         </p>
-        <h1 className="text-2xl font-bold text-ink mt-1">Hola, Rafael</h1>
+        <h1 className="text-2xl font-bold text-ink mt-1">Hola, {athleteFirstName}</h1>
         {todaySessions.length > 0 && (
           <p className="text-sm text-ink-muted mt-1">
             <span className="text-emerald-400 font-semibold">{completedToday}</span>

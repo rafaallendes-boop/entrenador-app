@@ -28,6 +28,8 @@ interface NotificationWorkerState {
   sentTags: string[]
   recoveredTags: string[]
   graceMs: number
+  lastSyncedAt?: number
+  lastClearReason?: string | null
 }
 
 export interface NotificationDebugState {
@@ -37,6 +39,9 @@ export interface NotificationDebugState {
   sentCount: number
   recoveredCount: number
   graceMinutes: number
+  permission: NotificationPermission | 'unsupported'
+  lastSyncedAt: number | null
+  lastClearReason: string | null
 }
 
 export function notificationsSupported(): boolean {
@@ -55,11 +60,20 @@ export async function requestNotificationPermission(): Promise<NotificationPermi
 
 export async function scheduleTodayNotifications(sessions: Session[]): Promise<void> {
   if (!notificationsSupported()) return
-  if (Notification.permission !== 'granted') return
+
+  const today = todayISODate()
+  if (Notification.permission !== 'granted') {
+    await clearTodayNotifications(today, 'permission-not-granted')
+    return
+  }
 
   const registration = await navigator.serviceWorker.ready
-  const today = todayISODate()
   const scheduled = buildScheduledNotifications(sessions, today)
+  if (scheduled.length === 0) {
+    await clearTodayNotifications(today, 'no-sessions')
+    return
+  }
+
   const dueNow = scheduled.filter((item) => isDueWithinGraceWindow(item.notifyAt) && !hasNotificationBeenSent(item.tag, today))
   const upcoming = scheduled.filter((item) => item.notifyAt > Date.now() && !hasNotificationBeenSent(item.tag, today))
 
@@ -68,11 +82,12 @@ export async function scheduleTodayNotifications(sessions: Session[]): Promise<v
     markNotificationSent(item.tag, today)
   }
 
-  registration.active?.postMessage({
+  await postMessageToNotificationWorker(registration, {
     type: 'SCHEDULE_NOTIFICATIONS',
     date: today,
     sessions: upcoming,
     graceMs: LATE_DELIVERY_GRACE_MS,
+    lastSyncedAt: Date.now(),
   })
 }
 
@@ -121,9 +136,34 @@ export async function getNotificationDebugState(): Promise<NotificationDebugStat
       sentCount: sentTags.length,
       recoveredCount: recoveredTags.length,
       graceMinutes: Math.round(((typeof parsed.graceMs === 'number' ? parsed.graceMs : LATE_DELIVERY_GRACE_MS) / 1000) / 60),
+      permission: Notification.permission,
+      lastSyncedAt: typeof parsed.lastSyncedAt === 'number' ? parsed.lastSyncedAt : null,
+      lastClearReason: typeof parsed.lastClearReason === 'string' ? parsed.lastClearReason : null,
     }
   } catch {
     return null
+  }
+}
+
+export async function refreshTodayNotifications(sessions: Session[]): Promise<void> {
+  await scheduleTodayNotifications(sessions)
+}
+
+export async function clearTodayNotifications(date = todayISODate(), reason = 'manual-clear'): Promise<void> {
+  if (!notificationsSupported()) return
+
+  clearSentNotificationsState(date)
+
+  try {
+    const registration = await navigator.serviceWorker.ready
+    await postMessageToNotificationWorker(registration, {
+      type: 'CLEAR_NOTIFICATIONS',
+      date,
+      reason,
+      lastSyncedAt: Date.now(),
+    })
+  } catch {
+    return
   }
 }
 
@@ -196,6 +236,12 @@ function markNotificationSent(tag: string, date: string): void {
   localStorage.setItem(SENT_NOTIFICATIONS_KEY, JSON.stringify(nextState))
 }
 
+function clearSentNotificationsState(date: string): void {
+  const state = readSentNotificationsState(date)
+  if (state.tags.length === 0) return
+  localStorage.setItem(SENT_NOTIFICATIONS_KEY, JSON.stringify({ date, tags: [] }))
+}
+
 function readSentNotificationsState(date: string): SentNotificationsState {
   const raw = localStorage.getItem(SENT_NOTIFICATIONS_KEY)
   if (!raw) return { date, tags: [] }
@@ -231,4 +277,24 @@ function isDueWithinGraceWindow(notifyAt: number): boolean {
 function todayISODate(): string {
   const now = new Date()
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+}
+
+async function postMessageToNotificationWorker(
+  registration: ServiceWorkerRegistration,
+  message: Record<string, unknown>,
+): Promise<void> {
+  const worker = registration.active ?? registration.waiting ?? registration.installing
+  if (!worker) return
+
+  await new Promise<void>((resolve) => {
+    const channel = new MessageChannel()
+    const timeoutId = window.setTimeout(() => resolve(), 1500)
+
+    channel.port1.onmessage = () => {
+      window.clearTimeout(timeoutId)
+      resolve()
+    }
+
+    worker.postMessage(message, [channel.port2])
+  })
 }

@@ -35,11 +35,21 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('message', (event) => {
   const type = event.data?.type
   if (type === 'SCHEDULE_NOTIFICATIONS') {
-    event.waitUntil(handleScheduleNotifications(event.data))
+    event.waitUntil(handleScheduleNotifications(event.data).then(() => {
+      event.ports[0]?.postMessage({ ok: true })
+    }))
+    return
+  }
+  if (type === 'CLEAR_NOTIFICATIONS') {
+    event.waitUntil(handleClearNotifications(event.data).then(() => {
+      event.ports[0]?.postMessage({ ok: true })
+    }))
     return
   }
   if (type === 'MARK_NOTIFICATION_SENT') {
-    event.waitUntil(markNotificationSent(event.data?.date, event.data?.tag))
+    event.waitUntil(markNotificationSent(event.data?.date, event.data?.tag).then(() => {
+      event.ports[0]?.postMessage({ ok: true })
+    }))
   }
 })
 
@@ -100,10 +110,32 @@ async function handleScheduleNotifications(payload) {
     graceMs: typeof payload?.graceMs === 'number' && Number.isFinite(payload.graceMs)
       ? payload.graceMs
       : state.graceMs,
+    lastSyncedAt: typeof payload?.lastSyncedAt === 'number' && Number.isFinite(payload.lastSyncedAt)
+      ? payload.lastSyncedAt
+      : Date.now(),
+    lastClearReason: null,
   }
 
   await writeNotificationState(nextState)
   await scheduleNotificationTimers(nextState)
+}
+
+async function handleClearNotifications(payload) {
+  clearNotificationTimers()
+  const state = await readNotificationState()
+  const nextState = {
+    date: typeof payload?.date === 'string' ? payload.date : state.date,
+    sessions: [],
+    sentTags: [],
+    recoveredTags: [],
+    graceMs: state.graceMs,
+    lastSyncedAt: typeof payload?.lastSyncedAt === 'number' && Number.isFinite(payload.lastSyncedAt)
+      ? payload.lastSyncedAt
+      : Date.now(),
+    lastClearReason: typeof payload?.reason === 'string' ? payload.reason : 'manual-clear',
+  }
+
+  await writeNotificationState(nextState)
 }
 
 async function scheduleNotificationTimers(state) {
@@ -179,7 +211,15 @@ async function readNotificationState() {
   const cache = await caches.open(NOTIFICATION_STATE_CACHE)
   const response = await cache.match(NOTIFICATION_STATE_URL)
   if (!response) {
-    return { date: '', sessions: [], sentTags: [], recoveredTags: [], graceMs: DEFAULT_NOTIFICATION_GRACE_MS }
+    return {
+      date: '',
+      sessions: [],
+      sentTags: [],
+      recoveredTags: [],
+      graceMs: DEFAULT_NOTIFICATION_GRACE_MS,
+      lastSyncedAt: null,
+      lastClearReason: null,
+    }
   }
 
   try {
@@ -192,9 +232,21 @@ async function readNotificationState() {
       graceMs: typeof parsed?.graceMs === 'number' && Number.isFinite(parsed.graceMs)
         ? parsed.graceMs
         : DEFAULT_NOTIFICATION_GRACE_MS,
+      lastSyncedAt: typeof parsed?.lastSyncedAt === 'number' && Number.isFinite(parsed.lastSyncedAt)
+        ? parsed.lastSyncedAt
+        : null,
+      lastClearReason: typeof parsed?.lastClearReason === 'string' ? parsed.lastClearReason : null,
     }
   } catch {
-    return { date: '', sessions: [], sentTags: [], recoveredTags: [], graceMs: DEFAULT_NOTIFICATION_GRACE_MS }
+    return {
+      date: '',
+      sessions: [],
+      sentTags: [],
+      recoveredTags: [],
+      graceMs: DEFAULT_NOTIFICATION_GRACE_MS,
+      lastSyncedAt: null,
+      lastClearReason: null,
+    }
   }
 }
 
