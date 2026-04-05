@@ -147,10 +147,10 @@ export const recalculateWeekSummary = async (dateISO: string): Promise<void> => 
     completedMinutes,
     adherencePct,
     squashSessions: realized.filter(s => s.type === 'squash').length,
-    runningSessions: realized.filter(s => s.type === 'running').length,
+    runningSessions: realized.filter(s => s.type === 'running' || s.type === 'cycling').length,
     strengthSessions: realized.filter(s => s.type === 'strength').length,
     plannedSquashSessions: active.filter(s => s.type === 'squash').length,
-    plannedRunningSessions: active.filter(s => s.type === 'running').length,
+    plannedRunningSessions: active.filter(s => s.type === 'running' || s.type === 'cycling').length,
     plannedStrengthSessions: active.filter(s => s.type === 'strength').length,
     mobilityMinutes: realized
       .filter(s => s.type === 'mobility')

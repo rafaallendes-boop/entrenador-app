@@ -8,6 +8,7 @@ export type AIProviderName = 'claude' | 'openai' | 'mock' | 'gemini'
 export type SessionType =
   | 'squash'
   | 'running'
+  | 'cycling'
   | 'strength'
   | 'mobility'
   | 'recovery'
@@ -180,6 +181,9 @@ export interface NutritionProfile {
   notes?: string                // intolerances, preferences, free text
 }
 
+export type SupportedSport = 'squash' | 'running' | 'strength' | 'mobility' | 'cycling'
+export type TrainingPriority = 'performance' | 'fitness' | 'body_composition' | 'return_to_play'
+
 export interface AthleteProfile {
   id: string
   coachMemory?: string
@@ -190,6 +194,12 @@ export interface AthleteProfile {
   weightKg?: number
   primarySport?: string
   secondarySports?: string[]
+  sportContext?: {
+    enabledSports?: SupportedSport[]
+    primarySport?: SupportedSport
+    secondarySports?: SupportedSport[]
+    trainingPriority?: TrainingPriority
+  }
   mainGoal?: string
   secondaryGoal?: string
   runningProfile?: RunningProfile
@@ -311,7 +321,7 @@ export interface CoachAction {
   rpe?: number             // for add_session
   newRpe?: number          // for change_rpe, update_session
   newDurationMin?: number  // for shorten_session / lengthen_session / update_session
-  newType?: SessionType    // for replace_session_type
+  newType?: SessionType    // for replace_session_type / update_session
   reason: string           // always required — explains why
   // Fields for add_session
   sessionType?: SessionType
@@ -332,7 +342,7 @@ export interface CoachAction {
   newTitle?: string
   newObjective?: string
   exercises?: CoachExerciseProposal[]  // replace full exercise list
-  squashDetails?: SquashDetails        // for squash sessions in add_session
+  squashDetails?: SquashDetails        // for squash sessions in add_session / update_session
 }
 
 export interface CoachProposal {

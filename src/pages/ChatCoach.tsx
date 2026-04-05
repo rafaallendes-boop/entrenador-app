@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { CheckCircle2, X, MoreHorizontal } from 'lucide-react'
+import { CheckCircle2, MoreHorizontal, Plus, Trash2, X } from 'lucide-react'
 import { useChatStore } from '../store/useChatStore'
 import { useCoachActionsStore } from '../store/useCoachActionsStore'
 import { useCoachMemoryStore } from '../store/useCoachMemoryStore'
@@ -26,29 +26,11 @@ const SESSION_TYPE_LABEL: Record<string, string> = {
   recovery: 'recuperacion',
 }
 
-function _IncompleteProfileBanner({ gaps, onDismiss, onGoToSettings }: {
-  gaps: string[]
-  onDismiss: () => void
-  onGoToSettings: () => void
-}) {
-  const gapText = gaps.join(' y ')
-  return (
-    <div className="flex items-start gap-2 px-3 py-2 rounded-xl bg-amber-500/10 border border-amber-500/20">
-      <span className="text-amber-400 flex-shrink-0 mt-0.5 text-xs">⚠</span>
-      <span className="text-amber-300 text-xs leading-relaxed flex-1">
-        Sin {gapText} en tu perfil — el coach usará valores genéricos.{' '}
-        <button onClick={onGoToSettings} className="underline underline-offset-2 hover:text-amber-200 transition-colors">
-          Completar perfil
-        </button>
-      </span>
-      <button onClick={onDismiss} className="text-amber-400/60 hover:text-amber-400 flex-shrink-0">
-        <X size={12} />
-      </button>
-    </div>
-  )
-}
-
-function ContextualProfileBanner({ completeness, onDismiss, onGoToSettings }: {
+function ContextualProfileBanner({
+  completeness,
+  onDismiss,
+  onGoToSettings,
+}: {
   completeness: ReturnType<typeof getProfileCompleteness>
   onDismiss: () => void
   onGoToSettings: () => void
@@ -60,35 +42,37 @@ function ContextualProfileBanner({ completeness, onDismiss, onGoToSettings }: {
   if (completeness.state === 'missing_profile') {
     message = 'Completa tu perfil para personalizar nombre, deportes, ritmos, cargas y restricciones.'
   } else if (completeness.state === 'missing_sports') {
-    message = 'Indica tu deporte principal y, si aplica, tus deportes secundarios para que el coach sepa que datos pedirte.'
+    message =
+      'Indica tu deporte principal y, si aplica, tus deportes secundarios para que el coach sepa que datos pedirte.'
   } else {
     message = `Faltan ${missingText} en tu perfil. El coach seguira usando valores genericos para esa parte.`
     if (recommendedText) message += ` Tambien puedes agregar ${recommendedText}.`
   }
 
   return (
-    <div className="flex items-start gap-2 px-3 py-2 rounded-xl bg-amber-500/10 border border-amber-500/20">
-      <span className="text-amber-400 flex-shrink-0 mt-0.5 text-xs">!</span>
-      <span className="text-amber-300 text-xs leading-relaxed flex-1">
+    <div className="flex items-start gap-2 rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-2">
+      <span className="mt-0.5 flex-shrink-0 text-xs text-amber-400">!</span>
+      <span className="flex-1 text-xs leading-relaxed text-amber-300">
         {message}{' '}
-        <button onClick={onGoToSettings} className="underline underline-offset-2 hover:text-amber-200 transition-colors">
+        <button
+          onClick={onGoToSettings}
+          className="underline underline-offset-2 transition-colors hover:text-amber-200"
+        >
           Completar perfil
         </button>
       </span>
-      <button onClick={onDismiss} className="text-amber-400/60 hover:text-amber-400 flex-shrink-0">
+      <button onClick={onDismiss} className="flex-shrink-0 text-amber-400/60 hover:text-amber-400">
         <X size={12} />
       </button>
     </div>
   )
 }
 
-void _IncompleteProfileBanner
-
 function AcceptedBanner({ message, onDismiss }: { message: string; onDismiss: () => void }) {
   return (
-    <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
-      <CheckCircle2 size={13} className="text-emerald-400 flex-shrink-0" />
-      <span className="text-emerald-300 text-xs leading-relaxed flex-1">{message}</span>
+    <div className="flex items-center gap-2 rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-2">
+      <CheckCircle2 size={13} className="flex-shrink-0 text-emerald-400" />
+      <span className="flex-1 text-xs leading-relaxed text-emerald-300">{message}</span>
       <button onClick={onDismiss} className="text-emerald-400/60 hover:text-emerald-400">
         <X size={12} />
       </button>
@@ -101,7 +85,7 @@ function ProviderBadge({ providerName }: { providerName: string }) {
 
   if (providerName === 'mock' || !isReal) {
     return (
-      <span className="text-[10px] text-ink-faint/50 font-medium px-2 py-0.5 rounded-full bg-surface-raised border border-surface-border">
+      <span className="rounded-full border border-surface-border bg-surface-raised px-2 py-0.5 text-[10px] font-medium text-ink-faint/50">
         Demo
       </span>
     )
@@ -115,7 +99,7 @@ function ProviderBadge({ providerName }: { providerName: string }) {
   }
 
   return (
-    <span className="text-[10px] text-emerald-400 font-medium px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20">
+    <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-400">
       {labels[providerName] ?? providerName}
     </span>
   )
@@ -123,7 +107,8 @@ function ProviderBadge({ providerName }: { providerName: string }) {
 
 export default function ChatCoach() {
   const navigate = useNavigate()
-  const { messages, isLoading, streamingText, error, loadHistory, sendMessage, newSession, deleteCurrentSession } = useChatStore()
+  const { messages, isLoading, streamingText, error, loadHistory, sendMessage, newSession, deleteCurrentSession } =
+    useChatStore()
   const { proposals, loadProposals, acceptProposal, rejectProposal } = useCoachActionsStore()
   const { coachMemory, athleteProfile, loadMemory } = useCoachMemoryStore()
   const { sessions, currentWeekSummary, dayLogs, loadWeek } = useTrainingStore()
@@ -139,8 +124,7 @@ export default function ChatCoach() {
   const profileCompleteness = getProfileCompleteness(athleteProfile)
   const showProfileBanner = !profileBannerDismissed && profileCompleteness.state !== 'complete'
 
-  const latestCoachProvider =
-    [...messages].reverse().find((message) => message.role === 'coach')?.provider
+  const latestCoachProvider = [...messages].reverse().find((message) => message.role === 'coach')?.provider
   const badgeProviderName = latestCoachProvider ?? CoachEngine.getProviderName()
 
   useEffect(() => {
@@ -210,16 +194,22 @@ export default function ChatCoach() {
       const updateAction = proposal.actions.find((action) => action.type === 'update_session')
 
       if (addAction?.title) {
-        setAcceptedFeedback(`Sesión "${addAction.title}" agregada${addAction.targetDate ? ` al ${addAction.targetDate}` : ''}.${warningSuffix}`)
+        setAcceptedFeedback(
+          `Sesion "${addAction.title}" agregada${addAction.targetDate ? ` al ${addAction.targetDate}` : ''}.${warningSuffix}`,
+        )
       } else if (updateAction) {
         const parts: string[] = []
         if (updateAction.exercises?.length) parts.push(`${updateAction.exercises.length} ejercicios actualizados`)
         if (updateAction.newObjective) parts.push('objetivo actualizado')
         if (updateAction.newRpe != null) parts.push(`RPE -> ${updateAction.newRpe}`)
-        if (updateAction.newDurationMin != null) parts.push(`duración -> ${updateAction.newDurationMin} min`)
-        setAcceptedFeedback(`Sesión actualizada${parts.length ? `: ${parts.join(', ')}` : ''}.${warningSuffix}`)
+        if (updateAction.newDurationMin != null) parts.push(`duracion -> ${updateAction.newDurationMin} min`)
+        setAcceptedFeedback(`Sesion actualizada${parts.length ? `: ${parts.join(', ')}` : ''}.${warningSuffix}`)
       } else {
-        setAcceptedFeedback(`${proposal.actions.length} cambio${proposal.actions.length > 1 ? 's' : ''} aplicado${proposal.actions.length > 1 ? 's' : ''} correctamente.${warningSuffix}`)
+        setAcceptedFeedback(
+          `${proposal.actions.length} cambio${proposal.actions.length > 1 ? 's' : ''} aplicado${
+            proposal.actions.length > 1 ? 's' : ''
+          } correctamente.${warningSuffix}`,
+        )
       }
     }
 
@@ -233,35 +223,59 @@ export default function ChatCoach() {
   }
 
   return (
-    <div className="flex h-[100dvh] min-h-0 flex-col">
-      <div className="sticky top-0 z-30 flex-shrink-0 border-b border-surface-border bg-surface/95 px-4 pb-3 pt-12 backdrop-blur md:px-6">
-        <div className="mx-auto w-full max-w-3xl flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2 min-w-0">
+    <div className="h-[100dvh] bg-surface">
+      <div className="fixed inset-x-0 top-0 z-40 border-b border-surface-border bg-surface/95 px-4 pb-3 pt-12 backdrop-blur md:px-6">
+        <div className="mx-auto flex w-full max-w-3xl items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-2">
             <div className="min-w-0">
               <h1 className="text-xl font-bold text-ink">Coach</h1>
-              <p className="text-[11px] text-ink-faint mt-0.5">Perfil activo: {athleteFirstName}</p>
-              <p className="text-xs text-ink-muted mt-0.5">Planner · Advisor</p>
+              <p className="mt-0.5 text-[11px] text-ink-faint">Perfil activo: {athleteFirstName}</p>
+              <p className="mt-0.5 text-xs text-ink-muted">Planner · Advisor</p>
             </div>
             <ProviderBadge providerName={badgeProviderName} />
           </div>
 
-          <div className="relative flex-shrink-0">
+          <div className="relative flex flex-shrink-0 items-center gap-1.5">
+            <button
+              onClick={() => {
+                setMenuOpen(false)
+                void newSession()
+              }}
+              className="inline-flex items-center gap-1.5 rounded-full border border-surface-border bg-surface-card px-2.5 py-1.5 text-[11px] font-medium text-ink transition-colors hover:bg-surface-raised"
+              title="Empezar un nuevo chat"
+            >
+              <Plus size={14} />
+              <span className="hidden sm:inline">Nuevo</span>
+            </button>
+            <button
+              onClick={() => {
+                if (!hasMessages) return
+                setMenuOpen(false)
+                setDeleteConfirm(true)
+              }}
+              disabled={!hasMessages}
+              className="inline-flex items-center gap-1.5 rounded-full border border-surface-border bg-surface-card px-2.5 py-1.5 text-[11px] font-medium text-ink transition-colors hover:bg-surface-raised disabled:cursor-not-allowed disabled:text-ink-faint/40"
+              title={hasMessages ? 'Borrar conversacion actual' : 'No hay mensajes en esta conversacion'}
+            >
+              <Trash2 size={14} />
+              <span className="hidden sm:inline">Borrar</span>
+            </button>
             <button
               onClick={() => setMenuOpen((open) => !open)}
-              className="text-ink-faint hover:text-ink-muted transition-colors p-1"
-              title="Opciones de chat"
+              className="p-1 text-ink-faint transition-colors hover:text-ink-muted"
+              title="Mas opciones del chat"
             >
               <MoreHorizontal size={18} />
             </button>
 
             {menuOpen && (
-              <div className="absolute right-0 mt-1 w-44 bg-surface-card border border-surface-border rounded-lg shadow-lg z-10">
+              <div className="absolute right-0 top-full z-10 mt-2 w-44 rounded-lg border border-surface-border bg-surface-card shadow-lg">
                 <button
                   onClick={() => {
                     setMenuOpen(false)
                     void newSession()
                   }}
-                  className="w-full text-left px-3 py-2 text-xs text-ink hover:bg-surface-raised transition-colors border-b border-surface-border"
+                  className="w-full border-b border-surface-border px-3 py-2 text-left text-xs text-ink transition-colors hover:bg-surface-raised"
                 >
                   Nuevo chat
                 </button>
@@ -272,10 +286,10 @@ export default function ChatCoach() {
                     setDeleteConfirm(true)
                   }}
                   disabled={!hasMessages}
-                  className="w-full text-left px-3 py-2 text-xs transition-colors disabled:text-ink-faint/40 disabled:cursor-not-allowed text-ink hover:bg-surface-raised"
-                  title={hasMessages ? 'Borrar conversación actual' : 'No hay mensajes en esta conversación'}
+                  className="w-full px-3 py-2 text-left text-xs text-ink transition-colors hover:bg-surface-raised disabled:cursor-not-allowed disabled:text-ink-faint/40"
+                  title={hasMessages ? 'Borrar conversacion actual' : 'No hay mensajes en esta conversacion'}
                 >
-                  Borrar conversación
+                  Borrar conversacion
                 </button>
               </div>
             )}
@@ -283,8 +297,8 @@ export default function ChatCoach() {
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 md:px-6">
-        <div className="mx-auto w-full max-w-3xl space-y-4">
+      <div className="h-full overflow-y-auto px-4 pb-[228px] pt-[108px] md:px-6 md:pb-[208px]">
+        <div className="mx-auto w-full max-w-3xl space-y-4 py-4">
           {showProfileBanner && (
             <ContextualProfileBanner
               completeness={profileCompleteness}
@@ -294,21 +308,21 @@ export default function ChatCoach() {
           )}
 
           {messages.length === 0 && !isLoading && (
-            <div className="flex flex-col items-center justify-center min-h-[45vh] gap-3 text-center px-4 md:px-6">
-              <div className="w-14 h-14 rounded-full bg-brand/15 flex items-center justify-center">
+            <div className="flex min-h-[45vh] flex-col items-center justify-center gap-3 px-4 text-center md:px-6">
+              <div className="flex h-14 w-14 items-center justify-center rounded-full bg-brand/15">
                 <span className="text-2xl">🏋️</span>
               </div>
-              <p className="text-ink font-medium">Tu coach-planner</p>
-              <p className="text-sm text-ink-muted leading-relaxed">
-                Pídeme que cree tu semana, agregue sesiones o ajuste tu plan.
-                También puedo analizar tu progreso y darte recomendaciones.
+              <p className="font-medium text-ink">Tu coach-planner</p>
+              <p className="text-sm leading-relaxed text-ink-muted">
+                Pideme que cree tu semana, agregue sesiones o ajuste tu plan. Tambien puedo analizar tu progreso y
+                darte recomendaciones.
               </p>
               {profileCompleteness.state !== 'complete' && (
-                <p className="text-xs text-ink-faint mt-1">
-                  Para propuestas más precisas,{' '}
+                <p className="mt-1 text-xs text-ink-faint">
+                  Para propuestas mas precisas,{' '}
                   <button
                     onClick={() => navigate(ROUTES.SETTINGS)}
-                    className="underline underline-offset-2 hover:text-ink-muted transition-colors"
+                    className="underline underline-offset-2 transition-colors hover:text-ink-muted"
                   >
                     completa tu perfil
                   </button>
@@ -319,9 +333,7 @@ export default function ChatCoach() {
           )}
 
           {messages.map((message) => {
-            const proposal = message.proposalId
-              ? proposals.find((item) => item.id === message.proposalId)
-              : undefined
+            const proposal = message.proposalId ? proposals.find((item) => item.id === message.proposalId) : undefined
             const isPending = proposal?.status === 'pending'
 
             return (
@@ -329,52 +341,46 @@ export default function ChatCoach() {
                 key={message.id}
                 message={message}
                 hasProposal={isPending}
-                onViewProposal={isPending && message.proposalId
-                  ? () => handleViewProposal(message.proposalId!)
-                  : undefined}
+                onViewProposal={
+                  isPending && message.proposalId ? () => handleViewProposal(message.proposalId as string) : undefined
+                }
               />
             )
           })}
 
-          {isLoading && (
-            streamingText ? (
-              <div className="flex gap-2 items-start">
-                <div className="w-7 h-7 rounded-full bg-brand/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+          {isLoading &&
+            (streamingText ? (
+              <div className="flex items-start gap-2">
+                <div className="mt-0.5 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-brand/20">
                   <span className="text-sm">🏋️</span>
                 </div>
-                <div className="bg-surface-card border border-surface-border rounded-2xl rounded-tl-sm px-4 py-3 max-w-[90%] md:max-w-[85%]">
-                  <p className="text-sm text-ink whitespace-pre-wrap leading-relaxed">{streamingText}</p>
-                  <span className="inline-block w-0.5 h-3.5 bg-brand/70 animate-pulse ml-0.5 align-middle" />
+                <div className="max-w-[90%] rounded-2xl rounded-tl-sm border border-surface-border bg-surface-card px-4 py-3 md:max-w-[85%]">
+                  <p className="whitespace-pre-wrap text-sm leading-relaxed text-ink">{streamingText}</p>
+                  <span className="ml-0.5 inline-block h-3.5 w-0.5 animate-pulse bg-brand/70 align-middle" />
                 </div>
               </div>
             ) : (
-              <div className="flex gap-2 items-center">
-                <div className="w-7 h-7 rounded-full bg-brand/20 flex items-center justify-center">
+              <div className="flex items-center gap-2">
+                <div className="flex h-7 w-7 items-center justify-center rounded-full bg-brand/20">
                   <span className="text-sm">🏋️</span>
                 </div>
-                <div className="bg-surface-card border border-surface-border rounded-2xl rounded-tl-sm px-4 py-3">
+                <div className="rounded-2xl rounded-tl-sm border border-surface-border bg-surface-card px-4 py-3">
                   <Spinner />
                 </div>
               </div>
-            )
-          )}
+            ))}
 
           <div ref={bottomRef} />
         </div>
       </div>
 
-      <div className="sticky bottom-0 z-30 flex-shrink-0 border-t border-surface-border bg-surface/95 px-4 pb-28 pt-2 backdrop-blur md:px-6">
+      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-surface-border bg-surface/95 px-4 pb-28 pt-2 backdrop-blur md:px-6">
         <div className="mx-auto w-full max-w-3xl space-y-2">
-          {acceptedFeedback && (
-            <AcceptedBanner
-              message={acceptedFeedback}
-              onDismiss={() => setAcceptedFeedback(null)}
-            />
-          )}
+          {acceptedFeedback && <AcceptedBanner message={acceptedFeedback} onDismiss={() => setAcceptedFeedback(null)} />}
 
           {error && (
-            <div className="flex items-start gap-2 px-3 py-2 rounded-xl bg-red-500/10 border border-red-500/20">
-              <span className="text-red-400 text-xs leading-relaxed">{error}</span>
+            <div className="flex items-start gap-2 rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2">
+              <span className="text-xs leading-relaxed text-red-400">{error}</span>
             </div>
           )}
 
@@ -388,15 +394,16 @@ export default function ChatCoach() {
 
       {deleteConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div className="bg-surface-card border border-surface-border rounded-2xl p-5 max-w-sm mx-4">
-            <h3 className="text-sm font-semibold text-ink mb-2">Borrar conversación</h3>
-            <p className="text-xs text-ink-muted mb-4 leading-relaxed">
-              ¿Seguro que quieres borrar esta conversación? No se puede deshacer, pero el historial anterior se mantiene.
+          <div className="mx-4 max-w-sm rounded-2xl border border-surface-border bg-surface-card p-5">
+            <h3 className="mb-2 text-sm font-semibold text-ink">Borrar conversacion</h3>
+            <p className="mb-4 text-xs leading-relaxed text-ink-muted">
+              ¿Seguro que quieres borrar esta conversacion? No se puede deshacer, pero el historial anterior se
+              mantiene.
             </p>
-            <div className="flex gap-2 justify-end">
+            <div className="flex justify-end gap-2">
               <button
                 onClick={() => setDeleteConfirm(false)}
-                className="text-xs px-3 py-2 rounded-lg text-ink-muted hover:bg-surface-raised transition-colors"
+                className="rounded-lg px-3 py-2 text-xs text-ink-muted transition-colors hover:bg-surface-raised"
               >
                 Cancelar
               </button>
@@ -405,7 +412,7 @@ export default function ChatCoach() {
                   setDeleteConfirm(false)
                   await deleteCurrentSession()
                 }}
-                className="text-xs px-3 py-2 rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors font-medium"
+                className="rounded-lg bg-red-500/20 px-3 py-2 text-xs font-medium text-red-400 transition-colors hover:bg-red-500/30"
               >
                 Borrar
               </button>

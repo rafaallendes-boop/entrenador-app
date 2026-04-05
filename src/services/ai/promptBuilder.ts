@@ -8,9 +8,15 @@
  * - When the user asks for an action, the model MUST respond with structured actions
  */
 
-import type { ChatContext, Session } from '../../types'
+import type { ChatContext, Session, SupportedSport } from '../../types'
 import { todayISO, currentWeekStartISO } from '../../utils/date'
-import { getAthleteDisplayName, getAthleteSportsSummary, includesSport } from '../../utils/athlete'
+import {
+  getAthleteDisplayName,
+  getAthleteSportsSummary,
+  getEnabledSports,
+  getPrimarySportNormalized,
+  includesSport,
+} from '../../utils/athlete'
 import { classifyDayLoad, getDayNutrition, getLoadTypeLabel } from '../nutritionEngine'
 
 const SQUASH_SUBTYPE_ES: Record<string, string> = {
@@ -52,15 +58,10 @@ export function buildCoachSystemPrompt(context: ChatContext): string {
   return sections.filter(Boolean).join('\n\n')
 }
 
-// ─── Sections ─────────────────────────────────────────────────────────────────
+// ─── Sport-specific rule sections ─────────────────────────────────────────────
 
-function buildPersonaSection(context: ChatContext): string {
-  const athleteName = getAthleteDisplayName(context.athleteProfile, 'este atleta')
-  const sportsSummary = getAthleteSportsSummary(context.athleteProfile)
-  const primarySport = context.athleteProfile?.primarySport?.trim() || 'squash'
-  const playsSquash = includesSport(context.athleteProfile, 'squash')
-
-  const squashSection = playsSquash ? `
+function buildSquashRulesSection(): string {
+  return `
 SQUASH — CONOCIMIENTO TÉCNICO (usa esto para dar respuestas expertas, no genéricas):
 
 Tipos de sesión y contenido esperado en el campo objective:
@@ -88,10 +89,119 @@ REGLAS DE SEMANA COMPETITIVA Y PRE-TORNEO:
 Preparación física para squash:
 · Fuerza: tren inferior (sentadilla, hip thrust, lunge con carga) + core rotacional + upper body (remo, press, dominadas). Priorizar potencia y estabilidad sobre hipertrofia pura.
 · Running: Z2 sostenido mejora directamente la recuperación para rendir en cancha. Intervalos cortos (RSA-like) complementan el ghosting.
-· Movilidad crítica: cadera (flexores, rotadores), tobillo (dorsiflexión) y hombro (CARs, apertura). Son los tres más limitantes en squash.` : ''
+· Movilidad crítica: cadera (flexores, rotadores), tobillo (dorsiflexión) y hombro (CARs, apertura). Son los tres más limitantes en squash.`
+}
+
+function buildRunningRulesSection(): string {
+  return `
+RUNNING — CONOCIMIENTO TÉCNICO:
+Tipos de sesión:
+· Z2 aeróbico: ritmo conversacional, FC baja, totalmente sostenible. Base aeróbica y recuperación activa.
+· Tempo/umbral: ritmo sostenido al 85-90% de esfuerzo. No más de 40-50 min continuos sin recuperación.
+· Intervalos VO2max: series cortas de alta intensidad (4-8min), con recuperación activa entre series.
+· Long run: 60-120min al ritmo easy/Z2. Clave para base aeróbica y tolerancia.
+
+Secuenciación running:
+· No apilar dos sesiones de alta intensidad (tempo o intervalos) en días consecutivos.
+· Long run requiere 48h de recuperación antes de sesión exigente de otro deporte.
+· Si hay competencia clave (cualquier deporte), corta el tempo y los intervalos 5+ días antes.
+· Z2 puede ir cualquier día como herramienta de recuperación activa sin comprometer otros deportes.`
+}
+
+function buildStrengthRulesSection(): string {
+  return `
+FUERZA — CONOCIMIENTO TÉCNICO:
+Estructura habitual:
+· Upper: press banca/inclinado, remo, dominadas, press hombro, core. 4-5 ejercicios, 3-5 series.
+· Lower: sentadilla, peso muerto o variante, hip thrust, lunge, core. 4-5 ejercicios, 3-5 series.
+· Full body: combinación de variantes de press, jalón/remo y tren inferior.
+
+Secuenciación fuerza:
+· No hacer sesión de piernas pesada dentro de las 24h previas a una competencia o sesión técnica clave.
+· DOMS de piernas + competencia = error de planificación — evitarlo siempre.
+· En semana competitiva: sesión neural liviana (pocos sets, alta intensidad, sin volumen de DOMS).
+· Movilidad post-fuerza mejora recuperación y flexibilidad funcional.`
+}
+
+function buildMobilityRulesSection(): string {
+  return `
+MOVILIDAD — CONOCIMIENTO TÉCNICO:
+
+Focos articulares por zona y deporte:
+· Cadera — flexores (psoas, iliacus): crítico en running, ciclismo y squash (posición de ataque). Trabajar con couch stretch, hip flexor activo y estocadas lentas.
+· Cadera — rotadores externos (piriforme, obturadores): limitante principal en sentadilla profunda y lunge con carga. CARs de cadera, figuras 4, rotación activa tumbado.
+· Tobillo — dorsiflexión: crítico para lunge en squash, recepción en running y sentadilla. Movilización de tobillo en pared, dorsiflexión con banda, excéntrico de gemelo.
+· Hombro — CARs (Controlled Articular Rotations): rango activo controlado en toda la circunferencia glenohumeral. Imprescindible en squash (impacto repetido con raqueta) y natación.
+· Hombro — apertura torácica: remo en el suelo, apertura con foam roller, rotaciones torácicas en cuadrupedia.
+· Columna torácica — rotación y extensión: limitante en todos los deportes de rotación (squash, golf, natación). Rotaciones en cuadrupedia, foam roller extensión torácica.
+
+Cuándo programar movilidad:
+· Post-fuerza: ideal, el músculo cálido retiene más rango.
+· Pre-competencia: movilidad activa (dinámica, no estática pasiva sostenida). 10-15min máximo.
+· Como sesión de recuperación activa: 30-45min de trabajo articular + movilidad pasiva. RPE 3-4, nunca agotador.
+· Como bloque corto al final de otra sesión: 10-20min sobre las articulaciones más trabajadas del día.
+
+Secuenciación y reglas:
+· Sesión de movilidad pura puede ir cualquier día — no genera fatiga recuperable.
+· Movilidad estática pasiva sostenida (>30s) NO antes de sesiones de fuerza o potencia — reduce pico de fuerza transitoriamente.
+· Si el atleta tiene restricciones de tobillo o cadera: priorizar esas zonas antes de fuerza de piernas o sesiones técnicas que las requieran.
+· Una semana de carga alta sin movilidad resulta en pérdida progresiva de rango — especialmente en flexores de cadera y torácica.`
+}
+
+function buildCyclingRulesSection(): string {
+  return `
+CICLISMO — CONOCIMIENTO TÉCNICO:
+
+Tipos de sesión y contenido esperado:
+· Z2 bici aeróbico: ritmo aeróbico cómodo, FC baja, cadencia 80-90rpm. Base aeróbica con bajo impacto articular. Sostenible indefinidamente, útil como recuperación activa entre sesiones de otro deporte.
+· Tempo/sweetspot: intensidad sostenida al 88-94% de FTP o RPE 6-7. Mejora umbral sin el daño muscular del running. Series de 15-30min con recuperación activa.
+· Intervalos VO2max: series de 3-8min a alta intensidad (>100% FTP o RPE 8-9), recuperación activa entre series. No más de 3 bloques en sesión.
+· Long ride: 60-180min al ritmo aeróbico sostenido. Fondo, tolerancia metabólica y resistencia mental. Exige nutrición en ruta si supera 90min.
+
+Cadencia y técnica:
+· Cadencia baja (<70rpm): más demanda muscular, más fuerza, útil en subidas cortas o fuerza específica.
+· Cadencia alta (>95rpm): más demanda cardiorrespiratoria, menos fatiga muscular. Entrenamiento de pedaling suave.
+· Cadencia objetivo habitual: 80-95rpm. Mantenerla en Z2 reduce riesgo de DOMS en piernas.
+
+Indoor vs outdoor:
+· Indoor (rodillo/trainer): más control de potencia e intensidad, menor tiempo efectivo. Sin coste de paradas. Ideal para intervalos controlados.
+· Outdoor (ruta/gravel): más variabilidad, mayor demanda técnica, nutrición/hidratación más compleja. Esfuerzo real mayor que el percibido en rodillo.
+
+Secuenciación ciclismo:
+· Menor impacto articular que running — útil como complemento o recuperación activa entre días duros.
+· Si combina con fuerza de piernas el mismo día: bici primero (o separar por >6h).
+· No apilar long ride (>90min) con fuerza de piernas en el mismo día ni en días consecutivos sin recuperación.
+· Long ride requiere 24-36h de recuperación antes de sesión exigente de otro deporte (running tempo, squash intenso).
+· Si hay competencia o evento clave: Z2 bici corto (30-45min) puede ser activación previa ideal sin generar fatiga.
+· Intervalos VO2max en bici tienen un "costo de piernas" real — planificar como si fuera sesión de fuerza respecto al día siguiente.
+
+Cruce de fatiga con running:
+· Bici y running comparten adaptación aeróbica central (corazón, pulmones) — pueden apilarse sin conflicto en Z2.
+· A alta intensidad, comparten fatiga de cuádriceps y glúteos — no apilar intervalos bici + tempo running en días seguidos.
+· Z2 bici es el cross-training aeróbico ideal cuando hay molestias de running que contraindican correr.`
+}
+
+// ─── Sections ─────────────────────────────────────────────────────────────────
+
+function buildPersonaSection(context: ChatContext): string {
+  const athleteName = getAthleteDisplayName(context.athleteProfile, 'este atleta')
+  const sportsSummary = getAthleteSportsSummary(context.athleteProfile)
+  const enabledSports = getEnabledSports(context.athleteProfile)
+  const primarySport = getPrimarySportNormalized(context.athleteProfile)
+
+  const sportDisplay = sportsSummary || 'disciplinas no configuradas'
+  const primaryDisplay = primarySport ?? context.athleteProfile?.primarySport?.trim() ?? 'deporte principal'
+
+  const sportSections = [
+    enabledSports.includes('squash')   ? buildSquashRulesSection()   : '',
+    enabledSports.includes('running')  ? buildRunningRulesSection()  : '',
+    enabledSports.includes('strength') ? buildStrengthRulesSection() : '',
+    enabledSports.includes('mobility') ? buildMobilityRulesSection() : '',
+    enabledSports.includes('cycling')  ? buildCyclingRulesSection()  : '',
+  ].filter(Boolean).join('\n')
 
   return `Eres el coach-planner personal de alto rendimiento de ${athleteName}.
-${athleteName} es un atleta híbrido orientado a ${sportsSummary}.
+${athleteName} es un atleta híbrido orientado a ${sportDisplay}.
 
 ROLES EN ORDEN DE PRIORIDAD:
 1. PLANNER: Diseñas y ajustas la semana con acciones ejecutables.
@@ -101,7 +211,7 @@ ROLES EN ORDEN DE PRIORIDAD:
 PRIORIDADES DE DECISIÓN:
 1. Salud y prevención de lesión
 2. Calidad del entrenamiento
-3. Rendimiento específico en ${primarySport}
+3. Rendimiento específico en ${primaryDisplay}
 4. Volumen total
 
 REGLAS:
@@ -116,7 +226,7 @@ ESTILO:
 - Si el usuario pide crear o modificar el plan, usa <actions>.
 - Nunca respondas solo con texto cuando se pidió una acción.
 - Responde siempre en español.
-${squashSection}`
+${sportSections}`
 }
 
 function buildNutritionContextSection(context: ChatContext): string {
@@ -131,11 +241,10 @@ function buildNutritionContextSection(context: ChatContext): string {
   const loadType = classifyDayLoad(todaySessions)
   const rec = getDayNutrition(todaySessions)
 
-  // Check for upcoming match in next 2 days (for víspera protocol)
+  // Check for upcoming competitive session in next 2 days (for víspera protocol — any sport)
   const upcomingMatch = context.recentSessions.find(s =>
     s.date > today &&
     s.date <= addDaysToISO(today, 2) &&
-    s.type === 'squash' &&
     (s.subtype === 'match' || s.subtype === 'competitive'),
   )
 
@@ -385,36 +494,73 @@ function buildFatigueSection(context: ChatContext): string {
 
 function buildHybridSection(context: ChatContext): string {
   const today = todayISO()
+  const enabledSports = getEnabledSports(context.athleteProfile)
+  if (enabledSports.length < 2) return ''
+
   const futureSessions = context.recentSessions.filter(session => session.date >= today)
-  const squashSessions = futureSessions.filter(session => session.type === 'squash')
-  const runningSessions = futureSessions.filter(session => session.type === 'running')
 
-  if (squashSessions.length === 0 || runningSessions.length === 0) return ''
+  const SPORT_ES: Record<SupportedSport, string> = {
+    squash: 'Squash', running: 'Running', strength: 'Fuerza',
+    mobility: 'Movilidad', cycling: 'Ciclismo',
+  }
 
-  const competitiveSessions = squashSessions.filter(
-    session => session.subtype === 'match' || session.subtype === 'competitive',
+  const TYPE_MAP: Record<SupportedSport, string[]> = {
+    squash: ['squash'], running: ['running'], strength: ['strength'],
+    mobility: ['mobility'], cycling: ['cycling'],
+  }
+
+  const activeSports = enabledSports.filter(sport =>
+    futureSessions.some(s => TYPE_MAP[sport].includes(s.type)),
   )
 
-  const lines: string[] = ['HYBRID SQUASH + RUNNING']
-  lines.push(`Squash futuro: ${squashSessions.length} sesion(es)`)
-  lines.push(`Running futuro: ${runningSessions.length} sesion(es)`)
+  if (activeSports.length < 2) return ''
+
+  const primarySport = getPrimarySportNormalized(context.athleteProfile)
+  const competitiveSessions = futureSessions.filter(
+    s => s.subtype === 'match' || s.subtype === 'competitive',
+  )
+
+  const lines: string[] = [`HYBRID ${activeSports.map(s => SPORT_ES[s]).join(' + ')}`]
+
+  for (const sport of activeSports) {
+    const count = futureSessions.filter(s => TYPE_MAP[sport].includes(s.type)).length
+    lines.push(`${SPORT_ES[sport]} futuro: ${count} sesion(es)`)
+  }
 
   if (competitiveSessions.length > 0) {
     lines.push(`Contexto: ${competitiveSessions.length} sesion(es) competitiva(s) proximas.`)
     lines.push('Reglas obligatorias del bloque hibrido:')
     lines.push('- La competencia mas cercana es la sesion objetivo inmediata; las demas son secundarias.')
-    lines.push('- El running apoya recuperacion, base aerobica o activacion; no debe competir con el squash objetivo.')
-    lines.push('- No pongas running tempo, intervalos o long run dentro de las 48h previas a la competencia objetivo.')
-    lines.push('- Si hay squash intenso, el running cercano debe ser Z2 corto o recovery, no otro estimulo duro.')
-    lines.push('- Si la fatiga acumulada es mala, recorta running antes que tocar la sesion objetivo de squash.')
+    if (primarySport) {
+      lines.push(`- Las sesiones de ${SPORT_ES[primarySport]} en semana competitiva mandan sobre el volumen accesorio.`)
+    }
+    lines.push('- No pongas sesiones de alta intensidad dentro de las 48h previas a la competencia objetivo.')
+    lines.push('- Si hay sesion intensa en un deporte, la sesion cercana del otro debe ser Z2 corto, control o recovery.')
+    lines.push('- Si la fatiga acumulada es alta, recorta los deportes accesorios antes que tocar la sesion objetivo.')
   } else {
     lines.push('Reglas obligatorias del bloque hibrido:')
-    lines.push('- Si la semana es mixta pero no competitiva, usa running para construir base o tolerancia, sin romper la calidad del squash.')
-    lines.push('- Evita apilar squash intenso y running intenso en dias consecutivos si no hay buena recuperacion.')
-    lines.push('- Si haces un estimulo de running de calidad, el squash siguiente debe ser tecnico/control o estar suficientemente separado.')
+    lines.push('- Semana mixta sin competencia: usa los deportes secundarios para construir base sin romper la calidad del principal.')
+    lines.push('- Evita apilar sesiones de alta intensidad de distintos deportes en dias consecutivos si no hay buena recuperacion.')
+    lines.push('- Si haces un estimulo de calidad en un deporte, el siguiente dia en el otro debe ser tecnico/control o estar suficientemente separado.')
   }
 
   return lines.join('\n')
+}
+
+// Returns sport-specific vocabulary for competition context (match, venue, performance label)
+function getCompetitionSportTerms(sessionType: string): { event: string; venue: string; readiness: string } {
+  switch (sessionType) {
+    case 'squash':
+      return { event: 'partido', venue: 'cancha', readiness: 'sensaciones en cancha' }
+    case 'running':
+      return { event: 'carrera', venue: 'largada', readiness: 'sensaciones de carrera' }
+    case 'cycling':
+      return { event: 'evento de ciclismo', venue: 'salida', readiness: 'sensaciones en bici' }
+    case 'strength':
+      return { event: 'competencia de fuerza', venue: 'plataforma', readiness: 'rendimiento en plataforma' }
+    default:
+      return { event: 'competencia', venue: 'competencia', readiness: 'rendimiento en la competencia' }
+  }
 }
 
 function buildCompetitionSection(context: ChatContext): string {
@@ -422,7 +568,6 @@ function buildCompetitionSection(context: ChatContext): string {
   const upcomingCompetitive = [...context.recentSessions]
     .filter(session =>
       session.date >= today &&
-      session.type === 'squash' &&
       (session.subtype === 'match' || session.subtype === 'competitive'),
     )
     .sort((a, b) => a.date.localeCompare(b.date) || a.timeBlock.localeCompare(b.timeBlock))
@@ -431,11 +576,12 @@ function buildCompetitionSection(context: ChatContext): string {
 
   const nextCompetitive = upcomingCompetitive[0]
   const nextGapDays = diffDays(today, nextCompetitive.date)
+  const terms = getCompetitionSportTerms(nextCompetitive.type)
   const lines: string[] = ['═══ CONTEXTO COMPETITIVO ═══']
 
-  lines.push(`Próxima sesión competitiva: ${nextCompetitive.date} ${nextCompetitive.timeBlock} · ${nextCompetitive.title}`)
+  lines.push(`Próximo ${terms.event}: ${nextCompetitive.date} ${nextCompetitive.timeBlock} · ${nextCompetitive.title}`)
   if (typeof nextGapDays === 'number') {
-    if (nextGapDays === 0) lines.push('Ventana competitiva: hoy es día de competencia.')
+    if (nextGapDays === 0) lines.push(`Ventana competitiva: hoy es día de ${terms.event}.`)
     else if (nextGapDays === 1) lines.push('Ventana competitiva: falta 1 día.')
     else lines.push(`Ventana competitiva: faltan ${nextGapDays} días.`)
   }
@@ -445,9 +591,9 @@ function buildCompetitionSection(context: ChatContext): string {
   }
 
   lines.push('Interpretación obligatoria:')
-  lines.push('- Si faltan 0-2 días, prioriza activación, control y frescura.')
+  lines.push(`- Si faltan 0-2 días, prioriza activación, control y frescura para el ${terms.event}.`)
   lines.push('- Si faltan 3-5 días, permite 1 estímulo de calidad y luego baja carga.')
-  lines.push('- Si hay múltiples partidos, evita meter fatiga secundaria innecesaria.')
+  lines.push(`- Si hay múltiples ${terms.event}s, evita meter fatiga secundaria innecesaria.`)
 
   return lines.join('\n')
 }
@@ -455,8 +601,7 @@ function buildCompetitionSection(context: ChatContext): string {
 function buildCompetitionLoadSection(context: ChatContext): string {
   const today = todayISO()
   const competitiveSessions = context.recentSessions.filter(session =>
-    session.type === 'squash' &&
-    (session.subtype === 'match' || session.subtype === 'competitive'),
+    session.subtype === 'match' || session.subtype === 'competitive',
   )
 
   if (competitiveSessions.length === 0) return ''
@@ -471,19 +616,20 @@ function buildCompetitionLoadSection(context: ChatContext): string {
 
   if (recentCompetitive.length === 0 && !nextCompetitive) return ''
 
+  const terms = getCompetitionSportTerms(nextCompetitive?.type ?? recentCompetitive[0]?.type ?? '')
   const lines: string[] = ['CARGA COMPETITIVA']
 
   if (recentCompetitive.length > 0) {
-    lines.push(`En los ultimos 10 dias hubo ${recentCompetitive.length} sesion(es) competitiva(s).`)
+    lines.push(`En los ultimos 10 dias hubo ${recentCompetitive.length} sesion(es) competitiva(s) de ${terms.event}.`)
   }
   if (nextCompetitive) {
-    lines.push(`La proxima competencia objetivo inmediata es ${nextCompetitive.date} ${nextCompetitive.timeBlock}.`)
+    lines.push(`El proximo ${terms.event} objetivo inmediato es ${nextCompetitive.date} ${nextCompetitive.timeBlock}.`)
   }
 
   lines.push('Reglas obligatorias:')
-  lines.push('- Si vienes de varios partidos recientes, trata la semana como acumulacion competitiva y no como semana normal de desarrollo.')
-  lines.push('- Los controles y competencias secundarias no justifican fatiga extra antes de la competencia objetivo inmediata.')
-  lines.push('- Si ya hubo carga competitiva alta y aparecen senales de fatiga, descarga antes y conserva solo lo que mejora sensaciones en cancha.')
+  lines.push(`- Si vienes de varias ${terms.event}s recientes, trata la semana como acumulacion competitiva y no como semana normal de desarrollo.`)
+  lines.push(`- Los controles y competencias secundarias no justifican fatiga extra antes del ${terms.event} objetivo inmediato.`)
+  lines.push(`- Si ya hubo carga competitiva alta y aparecen senales de fatiga, descarga antes y conserva solo lo que mejora ${terms.readiness}.`)
 
   return lines.join('\n')
 }
@@ -493,7 +639,6 @@ function buildImplicitPrioritySection(context: ChatContext): string {
   const upcomingCompetitive = context.recentSessions
     .filter(session =>
       session.date >= today &&
-      session.type === 'squash' &&
       (session.subtype === 'match' || session.subtype === 'competitive'),
     )
     .sort((a, b) => a.date.localeCompare(b.date) || a.timeBlock.localeCompare(b.timeBlock))
@@ -665,23 +810,41 @@ function buildResponseInstructions(sessions: Session[], context: ChatContext): s
   const weekStart = context.currentWeekSummary?.weekStartDate ?? currentWeekStartISO()
   const weekDates = buildWeekDatesList(weekStart)
 
-  // Sport context
-  const playsSquash = includesSport(context.athleteProfile, 'squash')
-  const primarySport = context.athleteProfile?.primarySport?.trim() || 'squash'
-  const secondarySports = context.athleteProfile?.secondarySports ?? []
-  const allSports = [primarySport, ...secondarySports].map(s => s.toLowerCase())
-  const hasRunning = allSports.some(s => s.includes('running') || s.includes('correr'))
-  const hasStrength = allSports.some(
-    s => s.includes('fuerza') || s.includes('strength') || s.includes('pesas') || s.includes('gym'),
-  )
+  // Sport context — use normalized helpers with legacy fallback
+  const enabledSports = getEnabledSports(context.athleteProfile)
+  const primarySportNorm = getPrimarySportNormalized(context.athleteProfile)
+  // Fallback for legacy free-text when sportContext not yet configured
+  const primarySportLabel = primarySportNorm
+    ?? context.athleteProfile?.primarySport?.trim()
+    ?? 'deporte principal'
+  const playsSquash = enabledSports.includes('squash') || includesSport(context.athleteProfile, 'squash')
+  const hasRunning = enabledSports.includes('running') || includesSport(context.athleteProfile, 'running')
+  const hasStrength = enabledSports.includes('strength') || includesSport(context.athleteProfile, 'strength') || includesSport(context.athleteProfile, 'fuerza') || includesSport(context.athleteProfile, 'pesas')
+  const hasCycling = enabledSports.includes('cycling') || includesSport(context.athleteProfile, 'cycling') || includesSport(context.athleteProfile, 'bicicleta')
+  const hasMobility = enabledSports.includes('mobility') || includesSport(context.athleteProfile, 'mobility') || includesSport(context.athleteProfile, 'movilidad')
 
-  // Sport priority line for defaults
-  const sportPriority = [
-    `${primarySport} (2-3 sesiones/semana)`,
-    hasRunning ? 'running (2)' : null,
-    hasStrength || playsSquash || hasRunning ? 'fuerza (1-2)' : null,
-    'movilidad (1)',
-  ].filter(Boolean).join(' > ')
+  const SPORT_SESSION_COUNTS: Partial<Record<string, string>> = {
+    squash: '2-3 sesiones/semana',
+    running: '2-3 sesiones/semana',
+    strength: '1-2 sesiones/semana',
+    mobility: '1 sesión/semana',
+    cycling: '1-2 sesiones/semana',
+  }
+
+  // Sport priority line — built from actual enabled sports
+  const activeSportList = enabledSports.length > 0
+    ? enabledSports
+    : [
+        playsSquash ? 'squash' : null,
+        hasRunning ? 'running' : null,
+        hasStrength ? 'strength' : null,
+        hasMobility ? 'mobility' : null,
+        hasCycling ? 'cycling' : null,
+      ].filter(Boolean) as string[]
+
+  const sportPriority = activeSportList.length > 0
+    ? activeSportList.map(s => `${s} (${SPORT_SESSION_COUNTS[s] ?? '1-2 sesiones/semana'})`).join(' > ')
+    : `${primarySportLabel} (2-3 sesiones/semana)`
 
   // Dynamic strength weights from profile (75% for hypertrophy/volume, 85% for strength)
   const sp = context.athleteProfile?.strengthProfile
@@ -723,19 +886,35 @@ function buildResponseInstructions(sessions: Session[], context: ChatContext): s
     Vie PM: running tempo 45min RPE7 (ritmo ${tempoMin}-${tempoMax}/km)
     Sab AM: fuerza lower 50min RPE7 (sentadilla ${w.squat75}kg, hip thrust ${hipThrust85}kg, lunge ${lunge45}kg, core) - semana base; movilidad 30min si semana competitiva
     Dom: descanso`
-    : hasRunning
-      ? `    Lun AM: running Z2 50min RPE6 (ritmo ${z2min}-${z2max}/km)
+    : hasCycling
+      ? `    Lun PM: ciclismo Z2 70min RPE6 (base aerobica, cadencia 80-90rpm)
+    Mar PM: fuerza upper 55min RPE7 (press banca ${w.bench75}kg, remo ${w.row75}kg, dominadas, press hombro ${w.ohp75}kg, core)
+    Mie: movilidad 30min RPE4 (cadera, tobillo, columna)
+    Jue AM: ciclismo intervalos 45min RPE7-8 (series 4-6min a alta intensidad con recuperacion activa)
+    Vie PM: fuerza lower 50min RPE7 (sentadilla ${w.squat75}kg, hip thrust ${hipThrust85}kg, lunge ${lunge45}kg, core)
+    Sab AM: ciclismo long ride 90min RPE6 (fondo aerobico sostenido)
+    Dom: descanso`
+      : hasRunning
+        ? `    Lun AM: running Z2 50min RPE6 (ritmo ${z2min}-${z2max}/km)
     Mar PM: fuerza upper 60min RPE7 (press banca ${w.bench75}kg, remo ${w.row75}kg, dominadas, press hombro ${w.ohp75}kg, core rotacional)
     Mie: movilidad 30min RPE4 (cadera, tobillo, hombro)
     Jue AM: running tempo 45min RPE7 (ritmo ${tempoMin}-${tempoMax}/km)
     Vie PM: fuerza lower 50min RPE7 (sentadilla ${w.squat75}kg, hip thrust ${hipThrust85}kg, lunge ${lunge45}kg, core)
     Sab AM: running long 60-75min RPE6 (ritmo ${longRunPaceStr}/km)
     Dom: descanso`
-      : `    Lun PM: sesion principal de ${primarySport} 60-75min RPE6-7
+        : hasStrength
+          ? `    Lun PM: fuerza upper 60min RPE7 (press banca ${w.bench75}kg, remo ${w.row75}kg, dominadas, press hombro ${w.ohp75}kg, core rotacional)
+    Mar: movilidad 30min RPE4
+    Mie PM: fuerza lower 60min RPE7 (sentadilla ${w.squat75}kg, hip thrust ${hipThrust85}kg, lunge ${lunge45}kg, RDL, core)
+    Jue: recuperacion activa 25min RPE3
+    Vie PM: fuerza full body 50min RPE7 (circuito press, remo, sentadilla frontal, core rotacional)
+    Sab: movilidad 30min RPE4
+    Dom: descanso`
+          : `    Lun PM: sesion principal de ${primarySportLabel} 60-75min RPE6-7
     Mar: movilidad 30min RPE4
     Mie PM: fuerza general 45-60min RPE6-7 (segun restricciones y equipamiento)
     Jue: recuperacion activa 25-35min RPE3-4
-    Vie PM: sesion especifica de ${primarySport} 50-70min RPE6
+    Vie PM: sesion especifica de ${primarySportLabel} 50-70min RPE6
     Sab: movilidad o activacion tecnica 20-30min RPE3-4
     Dom: descanso`
 
@@ -744,7 +923,7 @@ function buildResponseInstructions(sessions: Session[], context: ChatContext): s
 REGLAS CRÍTICAS:
 1. Si el usuario pide "crear semana", "armar semana", "planificar semana", "dame la propuesta", "dame un plan", "dame la semana", "construye la semana", "hazme la semana", "qué hacemos esta semana", "propuesta de semana" → DEBES responder con create_week. No solo texto. No describas el plan y luego pidas confirmación — créalo directamente.
 2. Si el usuario pide "agregar sesión", "pon un X el día Y", "agrega X" → DEBES responder con add_session. No solo texto.
-3. Si el usuario pide "cambia los ejercicios", "agrégale X", "reemplaza", "mejora la propuesta", "incorpora X", "agrega running", "agrega squash" → DEBES responder con update_session o add_session según corresponda. No solo texto.
+3. Si el usuario pide "cambia los ejercicios", "agrégale X", "reemplaza", "mejora la propuesta", "incorpora X", "agrega running", "agrega squash", "baja squash", "sube running" o redistribuir la semana → DEBES priorizar update_session, move_session, replace_session_type o delete_session sobre add_session cuando la intención sea reemplazar o ajustar lo ya existente. No acumules sesiones o ejercicios viejos si la idea es sustituirlos.
 4. Si falta contexto → asume valores razonables para el atleta y explícalo en 1 frase.
 5. Si no hay sesiones en la semana → crea una semana base COMPLETA sin pedir confirmación.
 6. NUNCA respondas con solo texto cuando se pidió una acción. Si describiste el plan en texto, DEBES incluir el bloque <actions> al final en la misma respuesta.
@@ -759,10 +938,10 @@ SEMANA COMPETITIVA Y PRE-TORNEO:
 - Si faltan 2 dias o menos para competir, evita agregar sesiones que dejen DOMS o fatiga metabolica alta.
 - Fuerza en semana competitiva: volumen bajo, foco neural/estabilidad, nunca pesada pegada al partido.
 - Running en semana competitiva: Z2 corto o activacion; evita tempo o intervalos largos salvo que esten lejos del partido.
-- Squash pre-partido: control tecnico, precision, sensaciones, T, largo-corto, activacion de pies; no sesiones largas de desgaste.
+- Pre-competencia (deporte principal): sesion tecnica corta o activacion especifica; no sesiones largas de desgaste.${playsSquash ? '\n- Squash pre-partido: control tecnico, precision, sensaciones, T, largo-corto, activacion de pies; no sesiones de RSA ni carga fisica alta.' : ''}
 - Si el usuario menciona torneo, liga, rival, cuadro o fin de semana competitivo, debes responder como coach en taper, no como semana base normal.
-- En semanas hibridas squash + running, el running no debe quitar frescura a la sesion objetivo de squash.
-- Si hay competencia objetivo, prioriza running recovery o Z2 corto; deja tempo, intervals o long run fuera de la ventana sensible.
+- El deporte accesorio en semana competitiva no debe quitar frescura a la sesion objetivo del deporte principal.
+- Si hay competencia objetivo, prioriza cardio recovery o Z2 corto; deja intensidad alta fuera de la ventana sensible.
 - Si hay varias competencias, distingue entre sesion objetivo inmediata y carga secundaria; protege primero la inmediata.
 - Un control no compite por prioridad con un match o competitive; usalo como ajuste tecnico o activacion.
 - Un match o competitive mas cercano manda sobre cualquier desarrollo de running de esa misma ventana.
@@ -789,8 +968,8 @@ Para CREAR una semana completa:
 Para AGREGAR una sesión individual:
   add_session — campos: targetDate, timeBlock, sessionType, title, durationMin, rpe?, objective?, subtype?, runningType?, targetPaceMin?, targetPaceMax?, targetHrMin?, targetHrMax?, exercises?, reason
 
-Para ACTUALIZAR sesión existente (ejercicios, título, objetivo, RPE, duración):
-  update_session — campos: sessionId, reason + uno o más de: newTitle, newObjective, newRpe, newDurationMin, exercises (array completo — reemplaza todo)
+Para ACTUALIZAR sesión existente (tipo, detalles, ejercicios, título, objetivo, RPE, duración):
+  update_session — campos: sessionId, reason + uno o más de: newType, subtype, newTitle, newObjective, newRpe, newDurationMin, runningType, targetPaceMin, targetPaceMax, targetHrMin, targetHrMax, squashDetails, exercises (array completo — reemplaza todo)
 
 Para otras modificaciones (requieren sessionId):
   skip_session        — sessionId, reason
@@ -798,16 +977,20 @@ Para otras modificaciones (requieren sessionId):
   shorten_session     — sessionId, newDurationMin, reason
   lengthen_session    — sessionId, newDurationMin, reason
   move_session        — sessionId, targetDate (YYYY-MM-DD), reason
-  replace_session_type— sessionId, newType (squash|running|strength|mobility|recovery), reason
+  replace_session_type— sessionId, newType (squash|running|cycling|strength|mobility|recovery), reason
   insert_recovery     — targetDate (YYYY-MM-DD), reason
   delete_session      — sessionId, reason
+
+REGLA DE ORO PARA AJUSTAR UNA SEMANA YA EXISTENTE:
+- Si el usuario pide subir una disciplina y bajar otra, primero modifica, mueve o elimina sesiones existentes; solo usa add_session cuando de verdad quieres aumentar el total semanal.
+- Si cambias una sesión de squash a running, o de running a fuerza, debes reemplazar el contenido incompatible anterior; no dejes ejercicios o detalles viejos mezclados.
 
 ═══ ESQUEMA COMPLETO DE SESIÓN (para create_week y add_session) ═══
 
 Campos base:
   date: "YYYY-MM-DD"         ← fecha absoluta obligatoria
   timeBlock: "AM" | "PM"
-  sessionType: "squash" | "running" | "strength" | "mobility" | "recovery"
+  sessionType: "squash" | "running" | "cycling" | "strength" | "mobility" | "recovery"
   title: "nombre"            ← ej: "Squash entrenamiento", "Running Z2", "Fuerza upper"
   durationMin: número
   rpe: número 1-10
@@ -824,9 +1007,9 @@ Para squash training o control (agrega en la sesión cuando hay drills concretos
     ]
   }
 
-Para running (agrega en la sesión):
+Para running y cycling (agrega en la sesión):
   runningType: "z2"|"tempo"|"intervals"|"long"
-  targetPaceMin: "5:30"      ← ritmo mínimo /km
+  targetPaceMin: "5:30"      ← ritmo mínimo /km (running) o min/km referencia (cycling)
   targetPaceMax: "6:00"      ← ritmo máximo /km
   targetHrMin: 140           ← FC objetivo (opcional)
   targetHrMax: 155

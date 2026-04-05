@@ -18,7 +18,7 @@ interface Props {
   onClose: () => void
 }
 
-const SESSION_TYPES: SessionType[] = ['squash', 'running', 'strength', 'mobility', 'recovery']
+const SESSION_TYPES: SessionType[] = ['squash', 'running', 'cycling', 'strength', 'mobility', 'recovery']
 
 const RUNNING_TYPES: { value: RunningType; label: string }[] = [
   { value: 'z2', label: 'Z2 Aerobico' },
@@ -61,6 +61,7 @@ const emptyExercise = (): ExerciseDraft => ({
 const TYPE_LABELS: Record<SessionType, string> = {
   squash: 'Sesion de squash',
   running: 'Salida de running',
+  cycling: 'Sesion de ciclismo',
   strength: 'Sesion de fuerza',
   mobility: 'Movilidad',
   recovery: 'Recuperacion activa',
@@ -95,8 +96,9 @@ export default function AddSessionModal({ defaultDate, onClose }: Props) {
   const [exercises, setExercises] = useState<ExerciseDraft[]>([])
 
   const showExercises = type === 'strength' || type === 'mobility'
+  const showRunningFields = type === 'running' || type === 'cycling'
   const isSquashMatch = type === 'squash' && (squashSubtype === 'match' || squashSubtype === 'competitive')
-  const showLocation = type === 'squash' || type === 'running'
+  const showLocation = type === 'squash' || type === 'running' || type === 'cycling'
 
   const handleTypeChange = (nextType: SessionType) => {
     setType(nextType)
@@ -106,7 +108,7 @@ export default function AddSessionModal({ defaultDate, onClose }: Props) {
       setExercises([])
     }
 
-    if (nextType !== 'running') {
+    if (nextType !== 'running' && nextType !== 'cycling') {
       setPaceMin('')
       setPaceMax('')
       setHrMin('')
@@ -122,7 +124,7 @@ export default function AddSessionModal({ defaultDate, onClose }: Props) {
       setGamesLost('')
     }
 
-    if (nextType !== 'squash' && nextType !== 'running') {
+    if (nextType !== 'squash' && nextType !== 'running' && nextType !== 'cycling') {
       setLocation('')
     }
   }
@@ -186,7 +188,7 @@ export default function AddSessionModal({ defaultDate, onClose }: Props) {
       matchResult: isSquashMatch && matchResult ? matchResult : undefined,
       gamesWon: isSquashMatch ? parseOptionalNumber(gamesWon) : undefined,
       gamesLost: isSquashMatch ? parseOptionalNumber(gamesLost) : undefined,
-      runningDetails: type === 'running'
+      runningDetails: (type === 'running' || type === 'cycling')
         ? {
             runningType,
             targetPaceMin: paceMin || undefined,
@@ -264,9 +266,9 @@ export default function AddSessionModal({ defaultDate, onClose }: Props) {
             </div>
           )}
 
-          {type === 'running' && (
+          {showRunningFields && (
             <div>
-              <label className="mb-2 block text-xs font-medium uppercase tracking-wider text-ink-muted">Tipo de carrera</label>
+              <label className="mb-2 block text-xs font-medium uppercase tracking-wider text-ink-muted">{type === 'cycling' ? 'Tipo de sesión' : 'Tipo de carrera'}</label>
               <div className="flex flex-wrap gap-2">
                 {RUNNING_TYPES.map((run) => (
                   <button
@@ -427,7 +429,7 @@ export default function AddSessionModal({ defaultDate, onClose }: Props) {
             </div>
           )}
 
-          {type === 'running' && (
+          {showRunningFields && (
             <div className="space-y-3">
               <div className="grid gap-3 sm:grid-cols-2">
                 <div>

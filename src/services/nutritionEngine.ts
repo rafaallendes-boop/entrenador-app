@@ -6,11 +6,11 @@ export function classifyDayLoad(sessions: Session[]): DayLoadType {
   const active = sessions.filter(s => s.status !== 'skipped')
   if (active.length === 0) return 'rest'
 
-  const hasMatch = active.some(s => s.type === 'squash' && s.subtype === 'match')
+  const hasMatch = active.some(s => s.subtype === 'match' || s.subtype === 'competitive')
   if (hasMatch) return 'match'
 
   const hasLongRun = active.some(
-    s => s.type === 'running' && s.runningDetails?.runningType === 'long'
+    s => (s.type === 'running' || s.type === 'cycling') && s.runningDetails?.runningType === 'long'
   )
   if (hasLongRun) return 'long_run'
 

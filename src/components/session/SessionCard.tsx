@@ -32,7 +32,7 @@ export default function SessionCard({ session, compact = false }: SessionCardPro
   const statusCfg = STATUS_CONFIG[session.status]
 
   const hasExercises = (session.type === 'strength' || session.type === 'mobility') && session.exercises && session.exercises.length > 0
-  const hasRunningDetails = session.type === 'running' && session.runningDetails
+  const hasRunningDetails = (session.type === 'running' || session.type === 'cycling') && session.runningDetails
   const hasSquashDetails = session.type === 'squash' && session.squashDetails && session.squashDetails.drills.length > 0
   const hasMatchMeta = session.type === 'squash' && (session.subtype === 'match' || session.subtype === 'competitive') && (session.matchResult || session.opponent || session.gamesWon != null || session.gamesLost != null || session.location)
   const isExpandable = hasExercises || session.objective || session.notes || hasRunningDetails || hasMatchMeta || hasSquashDetails
@@ -112,4 +112,3 @@ export default function SessionCard({ session, compact = false }: SessionCardPro
     </div>
   )
 }
-

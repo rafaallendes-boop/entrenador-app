@@ -7,6 +7,8 @@ import type {
   CoachProposal,
   DayLog,
   Session,
+  SupportedSport,
+  TrainingPriority,
   WeekSummary,
 } from '../types'
 import { useChatStore } from '../store/useChatStore'
@@ -20,7 +22,7 @@ const CURRENT_BACKUP_VERSION = 2 as const
 const MIN_SUPPORTED_BACKUP_VERSION = 1 as const
 
 const TIME_BLOCKS = new Set(['AM', 'PM'])
-const SESSION_TYPES = new Set(['squash', 'running', 'strength', 'mobility', 'recovery', 'nutrition'])
+const SESSION_TYPES = new Set(['squash', 'running', 'cycling', 'strength', 'mobility', 'recovery', 'nutrition'])
 const SESSION_STATUSES = new Set(['planned', 'completed', 'adjusted', 'skipped'])
 const SQUASH_SUBTYPES = new Set(['control', 'training', 'match', 'competitive', 'light'])
 const MATCH_RESULTS = new Set(['win', 'loss'])
@@ -29,6 +31,8 @@ const AI_PROVIDERS = new Set(['claude', 'openai', 'mock', 'gemini'])
 const RUNNING_TYPES = new Set(['z2', 'tempo', 'intervals', 'long'])
 const SQUASH_TRAINING_FOCUSES = new Set(['technical', 'tactical', 'physical', 'conditioned_games'])
 const PROPOSAL_STATUSES = new Set(['pending', 'accepted', 'rejected', 'partial'])
+const SUPPORTED_SPORTS = new Set(['squash', 'running', 'strength', 'mobility', 'cycling'])
+const TRAINING_PRIORITIES = new Set(['performance', 'fitness', 'body_composition', 'return_to_play'])
 const COACH_ACTION_TYPES = new Set([
   'move_session',
   'change_rpe',
@@ -546,12 +550,14 @@ function parseAthleteProfile(value: unknown, index: number): AthleteProfile {
     weightKg: optionalFiniteNumber(row.weightKg, `athleteProfiles[${index}].weightKg`),
     primarySport: optionalString(row.primarySport, `athleteProfiles[${index}].primarySport`),
     secondarySports: optionalStringArray(row.secondarySports, `athleteProfiles[${index}].secondarySports`),
+    sportContext: optionalSportContext(row.sportContext, `athleteProfiles[${index}].sportContext`),
     mainGoal: optionalString(row.mainGoal, `athleteProfiles[${index}].mainGoal`),
     secondaryGoal: optionalString(row.secondaryGoal, `athleteProfiles[${index}].secondaryGoal`),
     runningProfile: optionalRunningProfile(row.runningProfile, `athleteProfiles[${index}].runningProfile`),
     strengthProfile: optionalStrengthProfile(row.strengthProfile, `athleteProfiles[${index}].strengthProfile`),
     recoveryProfile: optionalRecoveryProfile(row.recoveryProfile, `athleteProfiles[${index}].recoveryProfile`),
     scheduleProfile: optionalScheduleProfile(row.scheduleProfile, `athleteProfiles[${index}].scheduleProfile`),
+    nutritionProfile: optionalNutritionProfile(row.nutritionProfile, `athleteProfiles[${index}].nutritionProfile`),
   }
 }
 
@@ -825,6 +831,12 @@ function optionalStringArray(value: unknown, path: string): string[] | undefined
   return items.map((item, index) => requireString(item, `${path}[${index}]`))
 }
 
+function optionalEnumArray<T extends string>(value: unknown, allowed: Set<T>, path: string): T[] | undefined {
+  if (value == null) return undefined
+  const items = ensureArray(value, path)
+  return items.map((item, index) => requireEnum(item, allowed, `${path}[${index}]`))
+}
+
 function optionalRunningProfile(value: unknown, path: string): AthleteProfile['runningProfile'] {
   if (value == null) return undefined
   const row = ensureRecord(value, path)
@@ -872,6 +884,32 @@ function optionalScheduleProfile(value: unknown, path: string): AthleteProfile['
     availableDays: optionalStringArray(row.availableDays, `${path}.availableDays`),
     doubleSessionDays: optionalStringArray(row.doubleSessionDays, `${path}.doubleSessionDays`),
     constraints: optionalString(row.constraints, `${path}.constraints`),
+  }
+}
+
+function optionalSportContext(value: unknown, path: string): AthleteProfile['sportContext'] {
+  if (value == null) return undefined
+  const row = ensureRecord(value, path)
+  return {
+    enabledSports: optionalEnumArray(row.enabledSports, SUPPORTED_SPORTS, `${path}.enabledSports`) as SupportedSport[] | undefined,
+    primarySport: optionalEnum(row.primarySport, SUPPORTED_SPORTS, `${path}.primarySport`) as SupportedSport | undefined,
+    secondarySports: optionalEnumArray(row.secondarySports, SUPPORTED_SPORTS, `${path}.secondarySports`) as SupportedSport[] | undefined,
+    trainingPriority: optionalEnum(row.trainingPriority, TRAINING_PRIORITIES, `${path}.trainingPriority`) as TrainingPriority | undefined,
+  }
+}
+
+function optionalNutritionProfile(value: unknown, path: string): AthleteProfile['nutritionProfile'] {
+  if (value == null) return undefined
+  const row = ensureRecord(value, path)
+  return {
+    goalBodyWeightKg: optionalFiniteNumber(row.goalBodyWeightKg, `${path}.goalBodyWeightKg`),
+    fatMassPct: optionalFiniteNumber(row.fatMassPct, `${path}.fatMassPct`),
+    fatMassGoalPct: optionalFiniteNumber(row.fatMassGoalPct, `${path}.fatMassGoalPct`),
+    muscleMassKg: optionalFiniteNumber(row.muscleMassKg, `${path}.muscleMassKg`),
+    muscleMassGoalKg: optionalFiniteNumber(row.muscleMassGoalKg, `${path}.muscleMassGoalKg`),
+    proteinTargetG: optionalFiniteNumber(row.proteinTargetG, `${path}.proteinTargetG`),
+    dailyWaterLiters: optionalFiniteNumber(row.dailyWaterLiters, `${path}.dailyWaterLiters`),
+    notes: optionalString(row.notes, `${path}.notes`),
   }
 }
 

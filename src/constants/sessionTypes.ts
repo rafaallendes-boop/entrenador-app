@@ -19,6 +19,15 @@ export const SESSION_TYPE_CONFIG: Record<SessionType, SessionTypeConfig> = {
     dotClass: 'bg-sky-400',
     icon: 'Wind',
   },
+  cycling: {
+    type: 'cycling',
+    label: 'Ciclismo',
+    bgClass: 'bg-cyan-500/15',
+    textClass: 'text-cyan-400',
+    borderClass: 'border-cyan-500/30',
+    dotClass: 'bg-cyan-400',
+    icon: 'Bike',
+  },
   strength: {
     type: 'strength',
     label: 'Fuerza',

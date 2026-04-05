@@ -8,7 +8,8 @@ import SessionCard from '../components/session/SessionCard'
 import Slider from '../components/ui/Slider'
 import Card from '../components/ui/Card'
 import { ROUTES } from '../constants/routes'
-import type { DayLog } from '../types'
+import { getDayNutrition, getLoadTypeLabel, getLoadTypeColor } from '../services/nutritionEngine'
+import type { DayLog, Session } from '../types'
 
 function DayFeedbackFields({
   dayLog,
@@ -109,6 +110,41 @@ function DayRecoveryNotes({
   )
 }
 
+function DayNutritionCard({ sessions }: { sessions: Session[] }) {
+  const rec = getDayNutrition(sessions)
+  const colorClass = getLoadTypeColor(rec.loadType)
+  const label = getLoadTypeLabel(rec.loadType)
+
+  const rows: { label: string; value: string }[] = []
+  if (rec.preWorkout) rows.push({ label: 'Pre-entreno', value: rec.preWorkout })
+  else if (rec.preTraining) rows.push({ label: 'Pre-entreno', value: rec.preTraining })
+  if (rec.hydration) rows.push({ label: 'Hidratación', value: rec.hydration })
+  if (rec.postWorkout) rows.push({ label: 'Post-entreno', value: rec.postWorkout })
+  else if (rec.postTraining) rows.push({ label: 'Post-entreno', value: rec.postTraining })
+
+  return (
+    <Card className="p-4 space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <h2 className="text-sm font-semibold text-ink">Nutrición del día</h2>
+        <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${colorClass}`}>
+          {label}
+        </span>
+      </div>
+      <p className="text-xs text-ink-muted">{rec.dailyFocus}</p>
+      {rows.length > 0 && (
+        <div className="space-y-2 pt-1">
+          {rows.map(row => (
+            <div key={row.label}>
+              <p className="text-[11px] font-semibold text-ink-faint uppercase tracking-wider">{row.label}</p>
+              <p className="text-xs text-ink-muted mt-0.5">{row.value}</p>
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
+  )
+}
+
 export default function DayDetail() {
   const { date } = useParams<{ date: string }>()
   const { sessions, dayLogs, loadWeek, saveDayLog, updateSession } = useTrainingStore()
@@ -188,6 +224,8 @@ export default function DayDetail() {
             )}
           </div>
         )}
+
+        <DayNutritionCard sessions={daySessions} />
 
         <Card className="p-4 space-y-4">
           <div>

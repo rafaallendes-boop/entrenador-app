@@ -7,9 +7,27 @@ import type {
   RecoveryProfile,
   ScheduleProfile,
   NutritionProfile,
+  SupportedSport,
+  TrainingPriority,
 } from '../../types'
+import { getEnabledSports, getPrimarySportNormalized } from '../../utils/athlete'
 
 const DAYS = ['lun', 'mar', 'mié', 'jue', 'vie', 'sáb', 'dom']
+
+const SPORT_OPTIONS: { value: SupportedSport; label: string; emoji: string }[] = [
+  { value: 'squash',   label: 'Squash',          emoji: '🎾' },
+  { value: 'running',  label: 'Running',          emoji: '🏃' },
+  { value: 'cycling',  label: 'Bicicleta',        emoji: '🚴' },
+  { value: 'strength', label: 'Pesas / Fuerza',   emoji: '🏋️' },
+  { value: 'mobility', label: 'Movilidad',        emoji: '🧘' },
+]
+
+const PRIORITY_OPTIONS: { value: TrainingPriority; label: string }[] = [
+  { value: 'performance',      label: 'Competir mejor' },
+  { value: 'fitness',          label: 'Condición física' },
+  { value: 'body_composition', label: 'Composición corporal' },
+  { value: 'return_to_play',   label: 'Volver de lesión' },
+]
 
 interface Props {
   profile: AthleteProfile | null
@@ -27,8 +45,14 @@ export default function AthleteProfileEditor({ profile, isSaving, onSave }: Prop
   const [name, setName] = useState(profile?.name ?? '')
   const [age, setAge] = useState(profile?.age != null ? String(profile.age) : '')
   const [weightKg, setWeightKg] = useState(profile?.weightKg != null ? String(profile.weightKg) : '')
-  const [primarySport, setPrimarySport] = useState(profile?.primarySport ?? '')
-  const [secondarySports, setSecondarySports] = useState(profile?.secondarySports?.join(', ') ?? '')
+
+  // Structured sport context — initialize from sportContext first, fall back to normalizing legacy strings
+  const [enabledSports, setEnabledSports] = useState<SupportedSport[]>(() => getEnabledSports(profile))
+  const [primarySportCtx, setPrimarySportCtx] = useState<SupportedSport | null>(() => getPrimarySportNormalized(profile) ?? null)
+  const [trainingPriority, setTrainingPriority] = useState<TrainingPriority | null>(
+    profile?.sportContext?.trainingPriority ?? null,
+  )
+
   const [mainGoal, setMainGoal] = useState(profile?.mainGoal ?? '')
   const [secondaryGoal, setSecondaryGoal] = useState(profile?.secondaryGoal ?? '')
 
@@ -51,9 +75,13 @@ export default function AthleteProfileEditor({ profile, isSaving, onSave }: Prop
       name: name.trim() || undefined,
       age: numOrUndef(age),
       weightKg: numOrUndef(weightKg),
-      primarySport: primarySport.trim() || undefined,
-      secondarySports: secondarySports.trim()
-        ? secondarySports.split(',').map(s => s.trim()).filter(Boolean)
+      sportContext: enabledSports.length > 0 && primarySportCtx
+        ? {
+            enabledSports,
+            primarySport: primarySportCtx,
+            secondarySports: enabledSports.filter(s => s !== primarySportCtx),
+            trainingPriority: trainingPriority ?? undefined,
+          }
         : undefined,
       mainGoal: mainGoal.trim() || undefined,
       secondaryGoal: secondaryGoal.trim() || undefined,
@@ -77,7 +105,7 @@ export default function AthleteProfileEditor({ profile, isSaving, onSave }: Prop
         title="Deporte y objetivos"
         open={open === 'sport'}
         onToggle={() => toggle('sport')}
-        filled={!!(primarySport || mainGoal)}
+        filled={enabledSports.length > 0 || !!mainGoal}
       >
         <Field label="Nombre visible">
           <input
@@ -95,35 +123,93 @@ export default function AthleteProfileEditor({ profile, isSaving, onSave }: Prop
             <input type="number" value={weightKg} onChange={e => setWeightKg(e.target.value)} placeholder="78" className={inputCls} min={30} max={200} step={0.5} />
           </Field>
         </div>
-        <Field label="Deporte principal">
-          <input
-            value={primarySport}
-            onChange={e => setPrimarySport(e.target.value)}
-            placeholder="squash"
-            className={inputCls}
-          />
+
+        <Field label="Disciplinas que practicas">
+          <div className="flex flex-wrap gap-2 mt-1">
+            {SPORT_OPTIONS.map(opt => {
+              const active = enabledSports.includes(opt.value)
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => {
+                    setEnabledSports(prev => {
+                      const next = prev.includes(opt.value)
+                        ? prev.filter(s => s !== opt.value)
+                        : [...prev, opt.value]
+                      if (!next.includes(primarySportCtx!)) setPrimarySportCtx(null)
+                      return next
+                    })
+                  }}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors
+                    ${active
+                      ? 'bg-brand/15 text-brand-light border-brand/30'
+                      : 'bg-surface-raised text-ink-muted border-surface-border hover:border-brand/30'
+                    }`}
+                >
+                  <span>{opt.emoji}</span>
+                  <span>{opt.label}</span>
+                </button>
+              )
+            })}
+          </div>
         </Field>
-        <Field label="Deportes secundarios" hint="separados por coma">
-          <input
-            value={secondarySports}
-            onChange={e => setSecondarySports(e.target.value)}
-            placeholder="running, fuerza"
-            className={inputCls}
-          />
+
+        {enabledSports.length > 1 && (
+          <Field label="Disciplina principal">
+            <div className="flex flex-wrap gap-2 mt-1">
+              {SPORT_OPTIONS.filter(opt => enabledSports.includes(opt.value)).map(opt => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setPrimarySportCtx(opt.value)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors
+                    ${primarySportCtx === opt.value
+                      ? 'bg-brand/20 text-brand-light border-brand/40'
+                      : 'bg-surface-raised text-ink-muted border-surface-border hover:border-brand/30'
+                    }`}
+                >
+                  <span>{opt.emoji}</span>
+                  <span>{opt.label}</span>
+                  {primarySportCtx === opt.value && <span className="text-brand-light">✓</span>}
+                </button>
+              ))}
+            </div>
+          </Field>
+        )}
+
+        <Field label="Objetivo de entrenamiento">
+          <div className="flex flex-wrap gap-2 mt-1">
+            {PRIORITY_OPTIONS.map(opt => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => setTrainingPriority(prev => prev === opt.value ? null : opt.value)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors
+                  ${trainingPriority === opt.value
+                    ? 'bg-brand/15 text-brand-light border-brand/30'
+                    : 'bg-surface-raised text-ink-muted border-surface-border hover:border-brand/30'
+                  }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
         </Field>
-        <Field label="Objetivo principal">
+
+        <Field label="Objetivo libre" hint="opcional">
           <input
             value={mainGoal}
             onChange={e => setMainGoal(e.target.value)}
-            placeholder="rendir mejor en squash"
+            placeholder="ej: llegar al top 10 regional"
             className={inputCls}
           />
         </Field>
-        <Field label="Objetivo secundario">
+        <Field label="Objetivo secundario" hint="opcional">
           <input
             value={secondaryGoal}
             onChange={e => setSecondaryGoal(e.target.value)}
-            placeholder="preparar media maratón"
+            placeholder="ej: preparar media maratón"
             className={inputCls}
           />
         </Field>

@@ -194,6 +194,14 @@ function validateAction(obj: unknown): CoachAction | null {
       const hasUpdate =
         a.newTitle != null || a.newObjective != null ||
         a.newRpe != null || a.newDurationMin != null ||
+        a.newType != null ||
+        a.subtype != null ||
+        a.runningType != null ||
+        a.targetPaceMin != null ||
+        a.targetPaceMax != null ||
+        a.targetHrMin != null ||
+        a.targetHrMax != null ||
+        a.squashDetails != null ||
         Array.isArray(a.exercises)
       if (!hasUpdate) return null
       break

@@ -145,7 +145,8 @@ async function applyCoachAction(
 
     case 'replace_session_type': {
       if (!action.sessionId || !action.newType) throw new Error('sessionId + newType required')
-      await store.updateSession(resolveSessionId(action.sessionId, store), { type: action.newType })
+      const id = resolveSessionId(action.sessionId, store)
+      await store.updateSession(id, buildSessionTypePatch(action.newType))
       break
     }
 
@@ -243,13 +244,35 @@ async function applyCoachAction(
     case 'update_session': {
       if (!action.sessionId) throw new Error('sessionId required')
       const id = resolveSessionId(action.sessionId, store)
-      const patch: Record<string, unknown> = {}
+      const current = store.sessions.find((session) => session.id === id)
+      if (!current) throw new Error(`sessionId no encontrado: ${action.sessionId}`)
+
+      const nextType = action.newType ?? current.type
+      const patch: Record<string, unknown> = buildSessionTypePatch(nextType)
       if (action.newTitle != null) patch.title = action.newTitle
       if (action.newObjective != null) patch.objective = action.newObjective
       if (action.newRpe != null) patch.rpe = action.newRpe
       if (action.newDurationMin != null) patch.durationMin = action.newDurationMin
+      if (action.newType != null) patch.type = action.newType
+      if (nextType === 'squash') {
+        patch.subtype = action.subtype ?? current.subtype
+        patch.squashDetails = action.squashDetails ?? current.squashDetails
+      }
+      if (nextType === 'running' || nextType === 'cycling') {
+        patch.runningDetails = action.runningType || action.targetPaceMin || action.targetPaceMax || action.targetHrMin != null || action.targetHrMax != null
+          ? {
+              runningType: action.runningType ?? current.runningDetails?.runningType ?? 'z2',
+              targetPaceMin: action.targetPaceMin ?? current.runningDetails?.targetPaceMin,
+              targetPaceMax: action.targetPaceMax ?? current.runningDetails?.targetPaceMax,
+              targetHrMin: action.targetHrMin ?? current.runningDetails?.targetHrMin,
+              targetHrMax: action.targetHrMax ?? current.runningDetails?.targetHrMax,
+            }
+          : current.runningDetails
+      }
       if (Array.isArray(action.exercises)) {
         patch.exercises = action.exercises.map(ex => ({ ...ex, id: uuid(), completed: false }))
+      } else if (nextType === 'strength' || nextType === 'mobility') {
+        patch.exercises = current.exercises
       }
       await store.updateSession(id, patch)
       break
@@ -260,6 +283,39 @@ async function applyCoachAction(
   }
 
   return { warnings }
+}
+
+function buildSessionTypePatch(type: CoachAction['newType']): Record<string, unknown> {
+  const patch: Record<string, unknown> = {}
+  if (type) patch.type = type
+
+  switch (type) {
+    case 'squash':
+      patch.exercises = undefined
+      patch.runningDetails = undefined
+      break
+    case 'running':
+    case 'cycling':
+      patch.exercises = undefined
+      patch.squashDetails = undefined
+      patch.subtype = undefined
+      break
+    case 'strength':
+    case 'mobility':
+      patch.runningDetails = undefined
+      patch.squashDetails = undefined
+      patch.subtype = undefined
+      break
+    case 'recovery':
+    case 'nutrition':
+      patch.exercises = undefined
+      patch.runningDetails = undefined
+      patch.squashDetails = undefined
+      patch.subtype = undefined
+      break
+  }
+
+  return patch
 }
 
 function resolveSessionId(

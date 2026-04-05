@@ -1,11 +1,11 @@
 import {
-  Zap, Wind, Dumbbell, Orbit, Heart, Apple, type LucideProps
+  Zap, Wind, Dumbbell, Orbit, Heart, Apple, Bike, type LucideProps
 } from 'lucide-react'
 import { SESSION_TYPE_CONFIG } from '../../constants/sessionTypes'
 import type { SessionType } from '../../types'
 
 const iconMap: Record<string, React.ComponentType<LucideProps>> = {
-  Zap, Wind, Dumbbell, Orbit, Heart, Apple,
+  Zap, Wind, Dumbbell, Orbit, Heart, Apple, Bike,
 }
 
 interface SessionTypeIconProps {
