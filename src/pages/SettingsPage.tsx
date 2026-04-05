@@ -19,14 +19,18 @@ import {
   type LocalDataSelection,
 } from '../services/appMaintenance'
 import {
+  clearTodayNotifications,
   getNotificationDebugState,
   getNotificationPermission,
   notificationsSupported,
+  refreshTodayNotifications,
   requestNotificationPermission,
   type NotificationDebugState,
 } from '../services/notifications'
 import { useCoachMemoryStore } from '../store/useCoachMemoryStore'
 import { useAuthStore } from '../store/useAuthStore'
+import { useTrainingStore } from '../store/useTrainingStore'
+import { currentWeekStartISO } from '../utils/date'
 
 const CLEARABLE_GROUPS: Array<{
   key: LocalDataGroup
@@ -65,6 +69,7 @@ const EMPTY_CLEAR_SELECTION: LocalDataSelection = {
 export default function SettingsPage() {
   const { coachMemory, athleteProfile, isSaving, loadMemory, saveMemory, saveAthleteProfile } = useCoachMemoryStore()
   const { user, signOut, syncStatus, syncError } = useAuthStore()
+  const { sessions, loadWeek } = useTrainingStore()
   const [memoryDraft, setMemoryDraft] = useState('')
   const [memorySaved, setMemorySaved] = useState(false)
   const [notifPermission, setNotifPermission] = useState<NotificationPermission | null>(null)
@@ -83,12 +88,51 @@ export default function SettingsPage() {
   const [importMode, setImportMode] = useState<'replace' | 'merge'>('replace')
   const importInputRef = useRef<HTMLInputElement | null>(null)
 
+  const refreshNotificationStatus = async () => {
+    setNotifPermission(getNotificationPermission())
+    await refreshNotificationDebugState(setNotificationDebugState)
+  }
+
   useEffect(() => {
     void loadMemory()
-    setNotifPermission(getNotificationPermission())
+    void loadWeek(currentWeekStartISO())
     void refreshCounts(setDataCounts)
-    void refreshNotificationDebugState(setNotificationDebugState)
-  }, [loadMemory])
+    void refreshNotificationStatus()
+  }, [loadMemory, loadWeek])
+
+  useEffect(() => {
+    if (!notificationsSupported()) return () => undefined
+
+    const syncPermission = () => {
+      void refreshNotificationStatus()
+    }
+
+    const onFocus = () => syncPermission()
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') syncPermission()
+    }
+
+    window.addEventListener('focus', onFocus)
+    document.addEventListener('visibilitychange', onVisibilityChange)
+
+    let permissionStatus: PermissionStatus | null = null
+
+    if ('permissions' in navigator && typeof navigator.permissions.query === 'function') {
+      void navigator.permissions
+        .query({ name: 'notifications' as PermissionName })
+        .then((status) => {
+          permissionStatus = status
+          status.addEventListener('change', syncPermission)
+        })
+        .catch(() => undefined)
+    }
+
+    return () => {
+      window.removeEventListener('focus', onFocus)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+      permissionStatus?.removeEventListener('change', syncPermission)
+    }
+  }, [])
 
   useEffect(() => {
     setMemoryDraft(coachMemory)
@@ -174,7 +218,17 @@ export default function SettingsPage() {
   const handleRequestNotifications = async () => {
     const result = await requestNotificationPermission()
     setNotifPermission(result)
-    await refreshNotificationDebugState(setNotificationDebugState)
+    await refreshNotificationStatus()
+  }
+
+  const handleResyncNotifications = async () => {
+    await refreshTodayNotifications(sessions)
+    await refreshNotificationStatus()
+  }
+
+  const handleClearNotifications = async () => {
+    await clearTodayNotifications()
+    await refreshNotificationStatus()
   }
 
   const applyClearPreset = (selection: LocalDataSelection) => {
@@ -364,6 +418,31 @@ export default function SettingsPage() {
                   ))}
                 </div>
 
+                {importMode === 'merge' && (() => {
+                  const c = importPreview.mergeConflicts
+                  const hasConflicts = c.localNewerCount > 0 || c.backupNewerCount > 0 || c.newInBackupCount > 0
+                  return (
+                    <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-3 py-2.5 space-y-1">
+                      <p className="text-[10px] font-semibold text-emerald-400 uppercase tracking-wider">Resultado estimado del merge</p>
+                      {!hasConflicts ? (
+                        <p className="text-xs text-ink-muted">Sin diferencias — backup y datos locales son idénticos.</p>
+                      ) : (
+                        <ul className="space-y-0.5 text-xs text-ink-muted">
+                          {c.newInBackupCount > 0 && (
+                            <li><span className="text-emerald-400 font-medium">{c.newInBackupCount}</span> registros nuevos se añadirán</li>
+                          )}
+                          {c.backupNewerCount > 0 && (
+                            <li><span className="text-amber-400 font-medium">{c.backupNewerCount}</span> registros más nuevos en backup sobreescribirán los locales</li>
+                          )}
+                          {c.localNewerCount > 0 && (
+                            <li><span className="text-ink font-medium">{c.localNewerCount}</span> registros locales más nuevos se conservarán</li>
+                          )}
+                        </ul>
+                      )}
+                    </div>
+                  )
+                })()}
+
                 <div className="space-y-2">
                   <p className="text-xs font-medium text-ink">Modo de restauracion</p>
                   <div className="grid gap-2 sm:grid-cols-2">
@@ -465,16 +544,56 @@ export default function SettingsPage() {
                       <p>Enviadas: <span className="text-ink">{notificationDebugState.sentCount}</span></p>
                       <p>Recuperadas: <span className="text-ink">{notificationDebugState.recoveredCount}</span></p>
                     </div>
+                    <div className="grid gap-2 text-xs text-ink-muted">
+                      <p>Permiso: <span className="text-ink">{notificationDebugState.permission}</span></p>
+                      <p>
+                        Ultima reprogramacion:{' '}
+                        <span className="text-ink">
+                          {notificationDebugState.lastSyncedAt ? formatRuntimeTimestamp(notificationDebugState.lastSyncedAt) : 'sin registro'}
+                        </span>
+                      </p>
+                      {notificationDebugState.lastClearReason && (
+                        <p>
+                          Ultima limpieza:{' '}
+                          <span className="text-ink">{formatNotificationClearReason(notificationDebugState.lastClearReason)}</span>
+                        </p>
+                      )}
+                    </div>
                     <p className="text-[11px] text-ink-faint">
                       Si la app o el worker vuelven tarde, intenta recuperar avisos dentro de una ventana de {notificationDebugState.graceMinutes} min.
                     </p>
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      <button
+                        onClick={() => void handleResyncNotifications()}
+                        className="px-3 py-2 rounded-xl text-xs font-semibold text-ink hover:bg-surface transition-colors"
+                      >
+                        Reprogramar hoy
+                      </button>
+                      <button
+                        onClick={() => void handleClearNotifications()}
+                        className="px-3 py-2 rounded-xl text-xs font-semibold text-ink-muted hover:bg-surface transition-colors"
+                      >
+                        Limpiar estado
+                      </button>
+                    </div>
                   </div>
                 )}
+                <p className="text-[11px] text-ink-faint leading-relaxed">
+                  En web, los avisos dependen del navegador y del service worker. Si cambias permisos, no tienes sesiones hoy o el navegador suspende procesos, usa "Reprogramar hoy" para forzar el estado actual.
+                </p>
               </div>
             ) : notifPermission === 'denied' ? (
-              <p className="text-xs text-amber-400 leading-relaxed">
-                Permiso bloqueado. Activalas desde los ajustes del navegador para este sitio.
-              </p>
+              <div className="space-y-2">
+                <p className="text-xs text-amber-400 leading-relaxed">
+                  Permiso bloqueado. Activalas desde los ajustes del navegador para este sitio.
+                </p>
+                <button
+                  onClick={() => void refreshNotificationStatus()}
+                  className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-surface-raised text-ink text-sm font-semibold hover:bg-surface transition-colors"
+                >
+                  Revisar permiso
+                </button>
+              </div>
             ) : (
               <button
                 onClick={() => void handleRequestNotifications()}
@@ -662,6 +781,32 @@ function formatBackupDate(isoString: string): string {
     }).format(new Date(isoString))
   } catch {
     return isoString
+  }
+}
+
+function formatRuntimeTimestamp(timestamp: number): string {
+  try {
+    return new Intl.DateTimeFormat('es-CL', {
+      day: 'numeric',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(new Date(timestamp))
+  } catch {
+    return String(timestamp)
+  }
+}
+
+function formatNotificationClearReason(reason: string): string {
+  switch (reason) {
+    case 'permission-not-granted':
+      return 'permiso no concedido'
+    case 'no-sessions':
+      return 'sin sesiones planificadas hoy'
+    case 'manual-clear':
+      return 'limpieza manual'
+    default:
+      return reason
   }
 }
 

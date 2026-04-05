@@ -72,12 +72,23 @@ export interface AppDataImportResult {
   }
 }
 
+export interface MergeConflictSummary {
+  /** Local records newer than backup — backup version will be skipped */
+  localNewerCount: number
+  /** Backup records newer than local — will overwrite local */
+  backupNewerCount: number
+  /** Records in backup that don't exist locally — will be added */
+  newInBackupCount: number
+}
+
 export interface AppDataImportPreview {
   importedAt: string
   importedFromAppVersion: string
   version: number
   counts: AppDataImportResult['counts']
   sessionDateRange: { first: string; last: string } | null
+  /** Populated at preview time — shows what merge would do vs. local data */
+  mergeConflicts: MergeConflictSummary
 }
 
 function buildFilename(exportedAt: Date): string {
@@ -142,6 +153,8 @@ export async function previewAppDataImportFile(file: File): Promise<AppDataImpor
     ? { first: sessionDates[0], last: sessionDates[sessionDates.length - 1] }
     : null
 
+  const mergeConflicts = await computeMergeConflicts(backup)
+
   return {
     importedAt: backup.exportedAt,
     importedFromAppVersion: backup.exportedFromAppVersion,
@@ -155,7 +168,71 @@ export async function previewAppDataImportFile(file: File): Promise<AppDataImpor
       athleteProfiles: backup.tables.athleteProfiles.length,
     },
     sessionDateRange,
+    mergeConflicts,
   }
+}
+
+async function computeMergeConflicts(backup: AppDataExport): Promise<MergeConflictSummary> {
+  const [localSessions, localDayLogs, localWeekSummaries, localChatMessages, localProposals, localProfiles] =
+    await Promise.all([
+      db.sessions.toArray(),
+      db.dayLogs.toArray(),
+      db.weekSummaries.toArray(),
+      db.chatMessages.toArray(),
+      db.coachProposals.toArray(),
+      db.athleteProfiles.toArray(),
+    ])
+
+  let localNewerCount = 0
+  let backupNewerCount = 0
+  let newInBackupCount = 0
+
+  // Sessions — have updatedAt
+  const localSessionsById = new Map(localSessions.map(s => [s.id, s]))
+  for (const bs of backup.tables.sessions) {
+    const local = localSessionsById.get(bs.id)
+    if (!local) newInBackupCount++
+    else if (local.updatedAt > bs.updatedAt) localNewerCount++
+    else if (bs.updatedAt > local.updatedAt) backupNewerCount++
+  }
+
+  // DayLogs — have updatedAt
+  const localDayLogsById = new Map(localDayLogs.map(d => [d.id, d]))
+  for (const bd of backup.tables.dayLogs) {
+    const local = localDayLogsById.get(bd.id)
+    if (!local) newInBackupCount++
+    else if (local.updatedAt > bd.updatedAt) localNewerCount++
+    else if (bd.updatedAt > local.updatedAt) backupNewerCount++
+  }
+
+  // WeekSummaries — no updatedAt, only track new
+  const localSummariesById = new Set(localWeekSummaries.map(s => s.id))
+  for (const bs of backup.tables.weekSummaries) {
+    if (!localSummariesById.has(bs.id)) newInBackupCount++
+  }
+
+  // ChatMessages — immutable, only track new
+  const localMessagesById = new Set(localChatMessages.map(m => m.id))
+  for (const bm of backup.tables.chatMessages) {
+    if (!localMessagesById.has(bm.id)) newInBackupCount++
+  }
+
+  // CoachProposals — immutable, only track new
+  const localProposalsById = new Set(localProposals.map(p => p.id))
+  for (const bp of backup.tables.coachProposals) {
+    if (!localProposalsById.has(bp.id)) newInBackupCount++
+  }
+
+  // AthleteProfiles — have updatedAt
+  const localProfilesById = new Map(localProfiles.map(p => [p.id, p]))
+  for (const bp of backup.tables.athleteProfiles) {
+    const local = localProfilesById.get(bp.id)
+    if (!local) newInBackupCount++
+    else if (local.updatedAt > bp.updatedAt) localNewerCount++
+    else if (bp.updatedAt > local.updatedAt) backupNewerCount++
+  }
+
+  return { localNewerCount, backupNewerCount, newInBackupCount }
 }
 
 export async function importAppDataFromFile(
@@ -186,16 +263,57 @@ export async function importAppDataFromFile(
       },
     )
   } else {
+    // Timestamp-aware merge: only overwrite local records if backup version is newer or doesn't exist locally.
+    // ChatMessages and CoachProposals are immutable — only add records missing locally.
+    // WeekSummaries have no updatedAt — only add records missing locally.
     await db.transaction(
       'rw',
       [db.sessions, db.dayLogs, db.weekSummaries, db.chatMessages, db.coachProposals, db.athleteProfiles],
       async () => {
-        if (backup.tables.sessions.length > 0) await db.sessions.bulkPut(backup.tables.sessions)
-        if (backup.tables.dayLogs.length > 0) await db.dayLogs.bulkPut(backup.tables.dayLogs)
-        if (backup.tables.weekSummaries.length > 0) await db.weekSummaries.bulkPut(backup.tables.weekSummaries)
-        if (backup.tables.chatMessages.length > 0) await db.chatMessages.bulkPut(backup.tables.chatMessages)
-        if (backup.tables.coachProposals.length > 0) await db.coachProposals.bulkPut(backup.tables.coachProposals)
-        if (backup.tables.athleteProfiles.length > 0) await db.athleteProfiles.bulkPut(backup.tables.athleteProfiles)
+        // Sessions
+        const localSessions = await db.sessions.toArray()
+        const localSessionsById = new Map(localSessions.map(s => [s.id, s]))
+        const sessionsToWrite = backup.tables.sessions.filter(bs => {
+          const local = localSessionsById.get(bs.id)
+          return !local || bs.updatedAt >= local.updatedAt
+        })
+        if (sessionsToWrite.length > 0) await db.sessions.bulkPut(sessionsToWrite)
+
+        // DayLogs
+        const localDayLogs = await db.dayLogs.toArray()
+        const localDayLogsById = new Map(localDayLogs.map(d => [d.id, d]))
+        const dayLogsToWrite = backup.tables.dayLogs.filter(bd => {
+          const local = localDayLogsById.get(bd.id)
+          return !local || bd.updatedAt >= local.updatedAt
+        })
+        if (dayLogsToWrite.length > 0) await db.dayLogs.bulkPut(dayLogsToWrite)
+
+        // WeekSummaries — no updatedAt, only add new
+        const localSummaries = await db.weekSummaries.toArray()
+        const localSummariesById = new Set(localSummaries.map(s => s.id))
+        const summariesToWrite = backup.tables.weekSummaries.filter(bs => !localSummariesById.has(bs.id))
+        if (summariesToWrite.length > 0) await db.weekSummaries.bulkPut(summariesToWrite)
+
+        // ChatMessages — immutable, only add new
+        const localMessages = await db.chatMessages.toArray()
+        const localMessagesById = new Set(localMessages.map(m => m.id))
+        const messagesToWrite = backup.tables.chatMessages.filter(bm => !localMessagesById.has(bm.id))
+        if (messagesToWrite.length > 0) await db.chatMessages.bulkPut(messagesToWrite)
+
+        // CoachProposals — immutable, only add new
+        const localProposals = await db.coachProposals.toArray()
+        const localProposalsById = new Set(localProposals.map(p => p.id))
+        const proposalsToWrite = backup.tables.coachProposals.filter(bp => !localProposalsById.has(bp.id))
+        if (proposalsToWrite.length > 0) await db.coachProposals.bulkPut(proposalsToWrite)
+
+        // AthleteProfiles
+        const localProfilesArr = await db.athleteProfiles.toArray()
+        const localProfilesById = new Map(localProfilesArr.map(p => [p.id, p]))
+        const profilesToWrite = backup.tables.athleteProfiles.filter(bp => {
+          const local = localProfilesById.get(bp.id)
+          return !local || bp.updatedAt >= local.updatedAt
+        })
+        if (profilesToWrite.length > 0) await db.athleteProfiles.bulkPut(profilesToWrite)
       },
     )
   }

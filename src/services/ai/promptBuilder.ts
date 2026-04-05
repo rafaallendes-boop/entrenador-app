@@ -10,6 +10,8 @@
 
 import type { ChatContext, Session } from '../../types'
 import { todayISO, currentWeekStartISO } from '../../utils/date'
+import { getAthleteDisplayName, getAthleteSportsSummary, includesSport } from '../../utils/athlete'
+import { classifyDayLoad, getDayNutrition, getLoadTypeLabel } from '../nutritionEngine'
 
 const SQUASH_SUBTYPE_ES: Record<string, string> = {
   training: 'entrenamiento', match: 'partido', competitive: 'competitivo',
@@ -32,7 +34,7 @@ const DAY_FULL_ES = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'vier
 
 export function buildCoachSystemPrompt(context: ChatContext): string {
   const sections: string[] = [
-    buildPersonaSection(),
+    buildPersonaSection(context),
     buildAthleteProfileSection(context),
     buildCoachMemorySection(context),
     buildFatigueSection(context),
@@ -40,6 +42,7 @@ export function buildCoachSystemPrompt(context: ChatContext): string {
     buildCompetitionSection(context),
     buildCompetitionLoadSection(context),
     buildImplicitPrioritySection(context),
+    buildNutritionContextSection(context),
     buildWeekSection(context),
     buildSessionsSection(context.recentSessions),
     buildWeekDayLogsSection(context),
@@ -51,34 +54,13 @@ export function buildCoachSystemPrompt(context: ChatContext): string {
 
 // ─── Sections ─────────────────────────────────────────────────────────────────
 
-function buildPersonaSection(): string {
-  return `Eres el coach-planner personal de alto rendimiento de Rafael Allendes.
-Rafael es jugador de squash avanzado (ex-selección nacional) y atleta híbrido: squash, running, fuerza y movilidad.
+function buildPersonaSection(context: ChatContext): string {
+  const athleteName = getAthleteDisplayName(context.athleteProfile, 'este atleta')
+  const sportsSummary = getAthleteSportsSummary(context.athleteProfile)
+  const primarySport = context.athleteProfile?.primarySport?.trim() || 'squash'
+  const playsSquash = includesSport(context.athleteProfile, 'squash')
 
-ROLES EN ORDEN DE PRIORIDAD:
-1. PLANNER: Diseñas y ajustas la semana con acciones ejecutables.
-2. PERFORMANCE COACH: Tomas decisiones de carga según fatiga, recuperación y contexto.
-3. ADVISOR: Das recomendaciones concretas solo si agregan valor real.
-
-PRIORIDADES DE DECISIÓN:
-1. Salud y prevención de lesión
-2. Calidad del entrenamiento
-3. Rendimiento específico en squash
-4. Volumen total
-
-REGLAS:
-- Si hay fatiga alta, baja volumen o intensidad.
-- Si hay dolor o lesión, prioriza recuperación activa, movilidad, activación, trabajo técnico, upper body y cardio suave si aplica.
-- Si hay sesión clave al día siguiente, el día previo debe ser liviano.
-- No acumules fatiga inútil.
-
-ESTILO:
-- Directo y conciso.
-- Si falta contexto, asume algo razonable y dilo brevemente.
-- Si el usuario pide crear o modificar el plan, usa <actions>.
-- Nunca respondas solo con texto cuando se pidió una acción.
-- Responde siempre en español.
-
+  const squashSection = playsSquash ? `
 SQUASH — CONOCIMIENTO TÉCNICO (usa esto para dar respuestas expertas, no genéricas):
 
 Tipos de sesión y contenido esperado en el campo objective:
@@ -106,7 +88,120 @@ REGLAS DE SEMANA COMPETITIVA Y PRE-TORNEO:
 Preparación física para squash:
 · Fuerza: tren inferior (sentadilla, hip thrust, lunge con carga) + core rotacional + upper body (remo, press, dominadas). Priorizar potencia y estabilidad sobre hipertrofia pura.
 · Running: Z2 sostenido mejora directamente la recuperación para rendir en cancha. Intervalos cortos (RSA-like) complementan el ghosting.
-· Movilidad crítica: cadera (flexores, rotadores), tobillo (dorsiflexión) y hombro (CARs, apertura). Son los tres más limitantes en squash.`
+· Movilidad crítica: cadera (flexores, rotadores), tobillo (dorsiflexión) y hombro (CARs, apertura). Son los tres más limitantes en squash.` : ''
+
+  return `Eres el coach-planner personal de alto rendimiento de ${athleteName}.
+${athleteName} es un atleta híbrido orientado a ${sportsSummary}.
+
+ROLES EN ORDEN DE PRIORIDAD:
+1. PLANNER: Diseñas y ajustas la semana con acciones ejecutables.
+2. PERFORMANCE COACH: Tomas decisiones de carga según fatiga, recuperación y contexto.
+3. ADVISOR: Das recomendaciones concretas solo si agregan valor real.
+
+PRIORIDADES DE DECISIÓN:
+1. Salud y prevención de lesión
+2. Calidad del entrenamiento
+3. Rendimiento específico en ${primarySport}
+4. Volumen total
+
+REGLAS:
+- Si hay fatiga alta, baja volumen o intensidad.
+- Si hay dolor o lesión, prioriza recuperación activa, movilidad, activación, trabajo técnico, upper body y cardio suave si aplica.
+- Si hay sesión clave al día siguiente, el día previo debe ser liviano.
+- No acumules fatiga inútil.
+
+ESTILO:
+- Directo y conciso.
+- Si falta contexto, asume algo razonable y dilo brevemente.
+- Si el usuario pide crear o modificar el plan, usa <actions>.
+- Nunca respondas solo con texto cuando se pidió una acción.
+- Responde siempre en español.
+${squashSection}`
+}
+
+function buildNutritionContextSection(context: ChatContext): string {
+  const np = context.athleteProfile?.nutritionProfile
+  const weightKg = context.athleteProfile?.weightKg
+  const today = todayISO()
+
+  const todaySessions = context.recentSessions.filter(s => s.date === today && s.status !== 'skipped')
+  const sessionCount = todaySessions.length
+
+  // Use the canonical classifier from nutritionEngine
+  const loadType = classifyDayLoad(todaySessions)
+  const rec = getDayNutrition(todaySessions)
+
+  // Check for upcoming match in next 2 days (for víspera protocol)
+  const upcomingMatch = context.recentSessions.find(s =>
+    s.date > today &&
+    s.date <= addDaysToISO(today, 2) &&
+    s.type === 'squash' &&
+    (s.subtype === 'match' || s.subtype === 'competitive'),
+  )
+
+  const lines: string[] = ['═══ NUTRICIÓN Y HIDRATACIÓN ═══']
+
+  // Body composition context from profile
+  if (np || weightKg) {
+    const bodyLines: string[] = []
+    if (weightKg) bodyLines.push(`peso actual ${weightKg}kg`)
+    if (np?.goalBodyWeightKg) bodyLines.push(`objetivo ${np.goalBodyWeightKg}kg`)
+    if (np?.fatMassPct != null) bodyLines.push(`grasa ${np.fatMassPct}%`)
+    if (np?.fatMassGoalPct != null) bodyLines.push(`objetivo grasa ${np.fatMassGoalPct}%`)
+    if (np?.muscleMassKg != null) bodyLines.push(`muscular ${np.muscleMassKg}kg`)
+    if (np?.muscleMassGoalKg != null) bodyLines.push(`objetivo muscular ${np.muscleMassGoalKg}kg`)
+    if (bodyLines.length > 0) lines.push(`Composición corporal: ${bodyLines.join(' · ')}`)
+  }
+
+  // Protein target from profile or derived from weight
+  const proteinTarget = np?.proteinTargetG ?? (weightKg ? Math.round(weightKg * 2.0) : null)
+  if (proteinTarget) lines.push(`Proteína diaria objetivo: ~${proteinTarget}g`)
+
+  // Hydration: base from profile + dynamic by sessions
+  const waterBase = np?.dailyWaterLiters ?? 2.5
+  const waterTotal = waterBase + sessionCount * 0.8
+  lines.push(
+    sessionCount > 0
+      ? `Hidratación: ${waterBase}L base + ~${(sessionCount * 0.8).toFixed(1)}L por entrenamiento = ~${waterTotal.toFixed(1)}L total hoy`
+      : `Hidratación: ${waterBase}L (día sin entrenamiento)`,
+  )
+
+  // Load type + engine recommendations
+  lines.push('')
+  lines.push(`Carga de hoy: ${getLoadTypeLabel(loadType)}`)
+  lines.push(`Foco: ${rec.dailyFocus}`)
+  lines.push(`Hidratación recomendada: ${rec.hydration}`)
+
+  if (rec.preWorkout) lines.push(`Pre-entreno: ${rec.preWorkout}`)
+  if (rec.postWorkout) lines.push(`Post-entreno: ${rec.postWorkout}`)
+
+  lines.push('Estructura del día:')
+  lines.push(`  · Desayuno: ${rec.breakfast}`)
+  lines.push(`  · Almuerzo: ${rec.lunch}`)
+  lines.push(`  · Merienda: ${rec.snack}`)
+  lines.push(`  · Cena: ${rec.dinner}`)
+  if (rec.preTraining) lines.push(`  · Colación pre-entreno: ${rec.preTraining}`)
+  if (rec.postTraining) lines.push(`  · Colación post-entreno: ${rec.postTraining}`)
+
+  // Víspera de competencia
+  if (loadType !== 'match' && upcomingMatch) {
+    lines.push('')
+    lines.push(`VÍSPERA DE COMPETENCIA (partido el ${upcomingMatch.date}):`)
+    lines.push('· Cena: carga de carbohidratos — proteína blanca + 3 porciones de cereal (papa/arroz/pasta) + ensalada.')
+    lines.push('· Solo carnes blancas desde 2 días antes. Sin alcohol en la semana previa.')
+    lines.push('· Sin alimentos meteorizantes (legumbres, brócoli, coliflor, choclo, condimentos fuertes).')
+  }
+
+  // Intolerances / free text notes
+  if (np?.notes?.trim()) {
+    lines.push('')
+    lines.push(`Preferencias / restricciones: ${np.notes.trim()}`)
+  }
+
+  lines.push('')
+  lines.push('Usa este contexto nutricional cuando el usuario pregunte sobre comidas, recuperación, energía o composición corporal. Si el usuario no pregunta de nutrición, no lo menciones salvo que sea directamente relevante a la sesión del día.')
+
+  return lines.join('\n')
 }
 
 function buildWeekSection(context: ChatContext): string {
@@ -570,6 +665,24 @@ function buildResponseInstructions(sessions: Session[], context: ChatContext): s
   const weekStart = context.currentWeekSummary?.weekStartDate ?? currentWeekStartISO()
   const weekDates = buildWeekDatesList(weekStart)
 
+  // Sport context
+  const playsSquash = includesSport(context.athleteProfile, 'squash')
+  const primarySport = context.athleteProfile?.primarySport?.trim() || 'squash'
+  const secondarySports = context.athleteProfile?.secondarySports ?? []
+  const allSports = [primarySport, ...secondarySports].map(s => s.toLowerCase())
+  const hasRunning = allSports.some(s => s.includes('running') || s.includes('correr'))
+  const hasStrength = allSports.some(
+    s => s.includes('fuerza') || s.includes('strength') || s.includes('pesas') || s.includes('gym'),
+  )
+
+  // Sport priority line for defaults
+  const sportPriority = [
+    `${primarySport} (2-3 sesiones/semana)`,
+    hasRunning ? 'running (2)' : null,
+    hasStrength || playsSquash || hasRunning ? 'fuerza (1-2)' : null,
+    'movilidad (1)',
+  ].filter(Boolean).join(' > ')
+
   // Dynamic strength weights from profile (75% for hypertrophy/volume, 85% for strength)
   const sp = context.athleteProfile?.strengthProfile
   const w = {
@@ -588,6 +701,12 @@ function buildResponseInstructions(sessions: Session[], context: ChatContext): s
   const z2max = rp?.z2PaceMax ?? '6:00'
   const tempoMin = rp?.thresholdPace ? addSecsToPace(rp.thresholdPace, -10) : '4:40'
   const tempoMax = rp?.thresholdPace ?? '5:00'
+  const longRunPaceStr = rp?.longRunPace ?? rp?.easyPaceMax ?? '6:00'
+  const intervalPaceStr = rp?.fiveKTime ? deriveIntervalPace(rp.fiveKTime) : '4:15'
+
+  // Lower body strength loads
+  const hipThrust85 = sp?.squat1RM ? Math.round(sp.squat1RM * 0.85) : 100
+  const lunge45 = sp?.squat1RM ? Math.round(sp.squat1RM * 0.45) : 55
 
   // Planned session IDs for modification actions
   const plannedSessionLines = sessions
@@ -596,26 +715,44 @@ function buildResponseInstructions(sessions: Session[], context: ChatContext): s
     .map(s => `  [${s.id.slice(0, 8)}] ${getDayName(s.date)} ${s.timeBlock} · ${SESSION_TYPE_ES[s.type] ?? s.type} "${s.title}"`)
     .join('\n')
 
+  const baseWeekTemplate = playsSquash
+    ? `    Lun PM: squash entrenamiento tecnico 75min RPE7 - drives paralelo/cruzado, voleas de presion, juego condicionado solo largo
+    Mar AM: running Z2 50min RPE6 (ritmo ${z2min}-${z2max}/km)
+    Mie PM: fuerza upper 60min RPE7 (press banca ${w.bench75}kg, remo ${w.row75}kg, dominadas, press hombro ${w.ohp75}kg, core rotacional)
+    Jue PM: squash control 60min RPE6 - peloteo de calidad, drives y dejadas, tecnica limpia sin presion
+    Vie PM: running tempo 45min RPE7 (ritmo ${tempoMin}-${tempoMax}/km)
+    Sab AM: fuerza lower 50min RPE7 (sentadilla ${w.squat75}kg, hip thrust ${hipThrust85}kg, lunge ${lunge45}kg, core) - semana base; movilidad 30min si semana competitiva
+    Dom: descanso`
+    : hasRunning
+      ? `    Lun AM: running Z2 50min RPE6 (ritmo ${z2min}-${z2max}/km)
+    Mar PM: fuerza upper 60min RPE7 (press banca ${w.bench75}kg, remo ${w.row75}kg, dominadas, press hombro ${w.ohp75}kg, core rotacional)
+    Mie: movilidad 30min RPE4 (cadera, tobillo, hombro)
+    Jue AM: running tempo 45min RPE7 (ritmo ${tempoMin}-${tempoMax}/km)
+    Vie PM: fuerza lower 50min RPE7 (sentadilla ${w.squat75}kg, hip thrust ${hipThrust85}kg, lunge ${lunge45}kg, core)
+    Sab AM: running long 60-75min RPE6 (ritmo ${longRunPaceStr}/km)
+    Dom: descanso`
+      : `    Lun PM: sesion principal de ${primarySport} 60-75min RPE6-7
+    Mar: movilidad 30min RPE4
+    Mie PM: fuerza general 45-60min RPE6-7 (segun restricciones y equipamiento)
+    Jue: recuperacion activa 25-35min RPE3-4
+    Vie PM: sesion especifica de ${primarySport} 50-70min RPE6
+    Sab: movilidad o activacion tecnica 20-30min RPE3-4
+    Dom: descanso`
+
   return `═══ INSTRUCCIONES DEL COACH-PLANNER ═══
 
 REGLAS CRÍTICAS:
 1. Si el usuario pide "crear semana", "armar semana", "planificar semana", "dame la propuesta", "dame un plan", "dame la semana", "construye la semana", "hazme la semana", "qué hacemos esta semana", "propuesta de semana" → DEBES responder con create_week. No solo texto. No describas el plan y luego pidas confirmación — créalo directamente.
 2. Si el usuario pide "agregar sesión", "pon un X el día Y", "agrega X" → DEBES responder con add_session. No solo texto.
 3. Si el usuario pide "cambia los ejercicios", "agrégale X", "reemplaza", "mejora la propuesta", "incorpora X", "agrega running", "agrega squash" → DEBES responder con update_session o add_session según corresponda. No solo texto.
-4. Si falta contexto → asume valores razonables para Rafael y explícalo en 1 frase.
+4. Si falta contexto → asume valores razonables para el atleta y explícalo en 1 frase.
 5. Si no hay sesiones en la semana → crea una semana base COMPLETA sin pedir confirmación.
 6. NUNCA respondas con solo texto cuando se pidió una acción. Si describiste el plan en texto, DEBES incluir el bloque <actions> al final en la misma respuesta.
 
-PERFIL DE RAFAEL (defaults para propuestas):
-- Prioridad: squash (2-3 sesiones/semana) > running (2) > fuerza (1-2) > movilidad (1)
+PERFIL BASE DEL ATLETA (defaults para propuestas):
+- Prioridad: ${sportPriority}
 - Semana base típica:
-    Lun PM: squash entrenamiento técnico 75min RPE7 — drives paralelo/cruzado, voleas de presión, juego condicionado solo largo
-    Mar AM: running Z2 50min RPE6 (ritmo 5:30-6:00/km)
-    Mié PM: fuerza upper 60min RPE7 (press banca, remo con barra, dominadas, press hombro, core rotacional)
-    Jue PM: squash control 60min RPE6 — peloteo de calidad, drives y dejadas, técnica limpia sin presión
-    Vie PM: running tempo 45min RPE7 (ritmo 4:40-5:00/km)
-    Sáb AM: movilidad 30min RPE4 (cadera, tobillo, hombro)
-    Dom: descanso
+${baseWeekTemplate}
 
 SEMANA COMPETITIVA Y PRE-TORNEO:
 - Si aparece un partido o torneo, el objetivo principal pasa a ser rendir fresco en cancha.
@@ -632,6 +769,14 @@ SEMANA COMPETITIVA Y PRE-TORNEO:
 
 FECHA HOY: ${today}
 ${weekDates}
+
+CARGAS Y RITMOS DE REFERENCIA (aplica estos valores en todas las propuestas de running y fuerza):
+Running:
+  · Z2: ${z2min}–${z2max} /km  · Tempo/umbral: ${tempoMin}–${tempoMax} /km  · Intervalos VO2max: ${intervalPaceStr} /km  · Long run: ${longRunPaceStr} /km
+Fuerza upper:
+  · Press banca ${w.bench75}kg (75%) / ${w.bench85}kg (85%)  · Remo con barra ${w.row75}kg  · Press hombro ${w.ohp75}kg (75%)
+Fuerza lower:
+  · Sentadilla ${w.squat75}kg (75%) / ${w.squat85}kg (85%)  · Peso muerto ${w.deadlift75}kg (75%)  · Hip thrust ${hipThrust85}kg  · Lunge ${lunge45}kg
 
 SESIONES PLANIFICADAS (IDs para acciones de modificación):
 ${plannedSessionLines || '  (ninguna — la semana está vacía)'}
@@ -717,13 +862,15 @@ EJEMPLO — crear semana completa con detalle:
     ]},
     {"date":"${addDaysToISO(weekStart, 3)}","timeBlock":"PM","sessionType":"squash","title":"Squash control — peloteo y dejadas","durationMin":60,"rpe":6,"objective":"Técnica limpia sin presión de resultado. Mitad de semana.","subtype":"control","squashDetails":{"trainingFocus":"technical","drills":[{"name":"Drives profundos","durationMin":20,"notes":"foco en longitud y consistencia"},{"name":"Dejadas y drops","durationMin":20,"notes":"de ambos lados, toque suave"},{"name":"Peloteo libre","durationMin":15,"notes":"ejecución limpia, sin presión"}]}},
     {"date":"${addDaysToISO(weekStart, 4)}","timeBlock":"PM","sessionType":"running","title":"Running tempo","durationMin":45,"rpe":7,"objective":"umbral aeróbico — mantener ritmo sostenido","runningType":"tempo","targetPaceMin":"${tempoMin}","targetPaceMax":"${tempoMax}"},
-    {"date":"${addDaysToISO(weekStart, 5)}","timeBlock":"AM","sessionType":"mobility","title":"Movilidad integral","durationMin":30,"rpe":4,"objective":"prevención y recuperación","exercises":[
-      {"name":"Hip flexor stretch","sets":2,"reps":"60s","mobilityFocus":"hip"},
-      {"name":"Ankle circles","sets":2,"reps":"30s","mobilityFocus":"ankle"},
-      {"name":"Shoulder CARs","sets":2,"reps":"30s","mobilityFocus":"shoulder"}
+    {"date":"${addDaysToISO(weekStart, 5)}","timeBlock":"AM","sessionType":"strength","title":"Fuerza lower — base squash","durationMin":55,"rpe":7,"objective":"tren inferior para potencia y estabilidad en cancha — sentadilla, hip thrust, lunge y core","exercises":[
+      {"name":"Sentadilla","sets":4,"reps":6,"weight":${w.squat75},"group":"legs"},
+      {"name":"Hip thrust","sets":3,"reps":10,"weight":${hipThrust85},"group":"legs"},
+      {"name":"Lunge con mancuernas","sets":3,"reps":8,"weight":${lunge45},"group":"legs"},
+      {"name":"RDL unilateral","sets":2,"reps":8,"group":"legs"},
+      {"name":"Core rotacional","sets":3,"reps":12,"group":"core"}
     ]}
   ],
-  "reason":"semana base equilibrada para Rafael"}]
+  "reason":"semana base equilibrada — upper martes, lower sábado, con cargas reales del perfil"}]
 </actions>
 
 EJEMPLO — update_session con ejercicios:
@@ -743,11 +890,11 @@ EJEMPLO — microciclo competitivo con partido el sábado:
   "weekObjectives":["llegar fresco al partido","mantener timing de squash","evitar fatiga secundaria"],
   "sessions":[
     {"date":"${addDaysToISO(weekStart, 0)}","timeBlock":"PM","sessionType":"squash","title":"Squash táctico controlado","durationMin":65,"rpe":6,"objective":"Patrones largo-corto y control del T, sin fatiga alta.","subtype":"training","squashDetails":{"trainingFocus":"tactical","drills":[{"name":"Patrones largo-corto","durationMin":20,"notes":"salida desde T, recuperar posicion"},{"name":"Juego condicionado solo paralelo","durationMin":20,"notes":"orden y profundidad"},{"name":"Cierre con precision a objetivos","durationMin":15,"notes":"ritmo controlado"}]}},
-    {"date":"${addDaysToISO(weekStart, 1)}","timeBlock":"AM","sessionType":"running","title":"Running Z2 corto","durationMin":30,"rpe":4,"objective":"Recuperacion aerobica sin fatigar","runningType":"z2","targetPaceMin":"5:40","targetPaceMax":"6:10"},
-    {"date":"${addDaysToISO(weekStart, 2)}","timeBlock":"PM","sessionType":"strength","title":"Fuerza neural liviana","durationMin":40,"rpe":5,"objective":"Activacion y estabilidad sin DOMS","exercises":[
-      {"name":"Trap bar deadlift","sets":3,"reps":3,"group":"legs"},
-      {"name":"Split squat","sets":2,"reps":5,"group":"legs"},
-      {"name":"Remo con mancuerna","sets":3,"reps":6,"group":"pull"},
+    {"date":"${addDaysToISO(weekStart, 1)}","timeBlock":"AM","sessionType":"running","title":"Running Z2 corto","durationMin":30,"rpe":4,"objective":"Recuperacion aerobica sin fatigar","runningType":"z2","targetPaceMin":"${z2min}","targetPaceMax":"${z2max}"},
+    {"date":"${addDaysToISO(weekStart, 2)}","timeBlock":"PM","sessionType":"strength","title":"Fuerza neural liviana","durationMin":40,"rpe":5,"objective":"Activacion y estabilidad sin DOMS — foco neural, sin DOMS, pocas series","exercises":[
+      {"name":"Sentadilla","sets":3,"reps":3,"weight":${w.squat85},"group":"legs"},
+      {"name":"Lunge con mancuernas","sets":2,"reps":5,"weight":${lunge45},"group":"legs"},
+      {"name":"Remo con barra","sets":3,"reps":6,"weight":${w.row75},"group":"pull"},
       {"name":"Core rotacional","sets":2,"reps":10,"group":"core"}
     ]},
     {"date":"${addDaysToISO(weekStart, 3)}","timeBlock":"PM","sessionType":"squash","title":"Squash control pre-partido","durationMin":50,"rpe":5,"objective":"Timing, precision, pies y sensaciones. Nada de desgaste.","subtype":"control","squashDetails":{"trainingFocus":"technical","drills":[{"name":"Drives a zonas","durationMin":15,"notes":"limpio y suelto"},{"name":"Voleas de control","durationMin":15,"notes":"timing y mano"},{"name":"Activacion de pies al T","durationMin":10,"notes":"corto, rapido, fresco"}]}},
@@ -758,6 +905,25 @@ EJEMPLO — microciclo competitivo con partido el sábado:
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/**
+ * Derives interval/VO2max pace from 5K time.
+ * 5K time "MM:SS" → pace per km = total_seconds / 5, formatted as "M:SS".
+ */
+function deriveIntervalPace(fiveKTime: string): string {
+  try {
+    const parts = fiveKTime.split(':').map(Number)
+    const totalSecs = parts.length === 3
+      ? parts[0] * 3600 + parts[1] * 60 + parts[2]
+      : parts[0] * 60 + parts[1]
+    const paceSecs = Math.round(totalSecs / 5)
+    const m = Math.floor(paceSecs / 60)
+    const s = paceSecs % 60
+    return `${m}:${s.toString().padStart(2, '0')}`
+  } catch {
+    return '4:15'
+  }
+}
 
 /** Adds `secs` seconds to a "M:SS" pace string. Returns adjusted pace. */
 function addSecsToPace(pace: string, secs: number): string {
@@ -913,3 +1079,4 @@ function diffDays(fromISODate: string, toISODate: string): number | null {
     return null
   }
 }
+

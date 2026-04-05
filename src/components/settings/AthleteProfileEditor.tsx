@@ -6,6 +6,7 @@ import type {
   StrengthProfile,
   RecoveryProfile,
   ScheduleProfile,
+  NutritionProfile,
 } from '../../types'
 
 const DAYS = ['lun', 'mar', 'mié', 'jue', 'vie', 'sáb', 'dom']
@@ -16,13 +17,14 @@ interface Props {
   onSave: (patch: Partial<Omit<AthleteProfile, 'id' | 'updatedAt'>>) => Promise<void>
 }
 
-type Section = 'sport' | 'running' | 'strength' | 'recovery' | 'schedule'
+type Section = 'sport' | 'running' | 'strength' | 'recovery' | 'schedule' | 'nutrition'
 
 export default function AthleteProfileEditor({ profile, isSaving, onSave }: Props) {
   const [open, setOpen] = useState<Section | null>(null)
   const [saved, setSaved] = useState(false)
 
   // Local draft state per section
+  const [name, setName] = useState(profile?.name ?? '')
   const [age, setAge] = useState(profile?.age != null ? String(profile.age) : '')
   const [weightKg, setWeightKg] = useState(profile?.weightKg != null ? String(profile.weightKg) : '')
   const [primarySport, setPrimarySport] = useState(profile?.primarySport ?? '')
@@ -36,6 +38,7 @@ export default function AthleteProfileEditor({ profile, isSaving, onSave }: Prop
   const [availableDays, setAvailableDays] = useState<string[]>(profile?.scheduleProfile?.availableDays ?? [])
   const [doubleSessionDays, setDoubleSessionDays] = useState<string[]>(profile?.scheduleProfile?.doubleSessionDays ?? [])
   const [scheduleConstraints, setScheduleConstraints] = useState(profile?.scheduleProfile?.constraints ?? '')
+  const [nutrition, setNutrition] = useState<NutritionProfile>(profile?.nutritionProfile ?? {})
 
   const handleSave = async () => {
     const scheduleProfile: ScheduleProfile = {
@@ -45,6 +48,7 @@ export default function AthleteProfileEditor({ profile, isSaving, onSave }: Prop
     }
 
     await onSave({
+      name: name.trim() || undefined,
       age: numOrUndef(age),
       weightKg: numOrUndef(weightKg),
       primarySport: primarySport.trim() || undefined,
@@ -57,6 +61,7 @@ export default function AthleteProfileEditor({ profile, isSaving, onSave }: Prop
       strengthProfile: hasData(strength) ? strength : undefined,
       recoveryProfile: hasData(recovery) ? recovery : undefined,
       scheduleProfile: hasData(scheduleProfile) ? scheduleProfile : undefined,
+      nutritionProfile: hasData(nutrition) ? nutrition : undefined,
     })
     setSaved(true)
     setTimeout(() => setSaved(false), 3000)
@@ -74,6 +79,14 @@ export default function AthleteProfileEditor({ profile, isSaving, onSave }: Prop
         onToggle={() => toggle('sport')}
         filled={!!(primarySport || mainGoal)}
       >
+        <Field label="Nombre visible">
+          <input
+            value={name}
+            onChange={e => setName(e.target.value)}
+            placeholder="Nombre del atleta"
+            className={inputCls}
+          />
+        </Field>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Edad">
             <input type="number" value={age} onChange={e => setAge(e.target.value)} placeholder="32" className={inputCls} min={10} max={99} />
@@ -230,6 +243,45 @@ export default function AthleteProfileEditor({ profile, isSaving, onSave }: Prop
             <input value={scheduleConstraints} onChange={e => setScheduleConstraints(e.target.value)} placeholder="solo AM los martes, no disponible sábados" className={inputCls} />
           </Field>
         </div>
+      </SectionPanel>
+
+      {/* Nutrition */}
+      <SectionPanel
+        title="Nutrición y composición corporal"
+        open={open === 'nutrition'}
+        onToggle={() => toggle('nutrition')}
+        filled={hasData(nutrition)}
+      >
+        <p className="text-[10px] text-ink-faint uppercase tracking-wider font-medium mb-1">Composición corporal</p>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Peso objetivo (kg)">
+            <input type="number" value={nutrition.goalBodyWeightKg ?? ''} onChange={e => setNutrition(n => ({ ...n, goalBodyWeightKg: numOrUndef(e.target.value) }))} placeholder="75" className={inputCls} step={0.5} />
+          </Field>
+          <Field label="% Masa grasa actual">
+            <input type="number" value={nutrition.fatMassPct ?? ''} onChange={e => setNutrition(n => ({ ...n, fatMassPct: numOrUndef(e.target.value) }))} placeholder="20" className={inputCls} step={0.1} />
+          </Field>
+          <Field label="% Masa grasa objetivo">
+            <input type="number" value={nutrition.fatMassGoalPct ?? ''} onChange={e => setNutrition(n => ({ ...n, fatMassGoalPct: numOrUndef(e.target.value) }))} placeholder="16" className={inputCls} step={0.1} />
+          </Field>
+          <Field label="Masa muscular (kg)">
+            <input type="number" value={nutrition.muscleMassKg ?? ''} onChange={e => setNutrition(n => ({ ...n, muscleMassKg: numOrUndef(e.target.value) }))} placeholder="38.7" className={inputCls} step={0.1} />
+          </Field>
+          <Field label="Masa muscular objetivo (kg)">
+            <input type="number" value={nutrition.muscleMassGoalKg ?? ''} onChange={e => setNutrition(n => ({ ...n, muscleMassGoalKg: numOrUndef(e.target.value) }))} placeholder="40" className={inputCls} step={0.1} />
+          </Field>
+        </div>
+        <p className="text-[10px] text-ink-faint uppercase tracking-wider font-medium mt-4 mb-1">Objetivos diarios</p>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Proteína diaria (g)" hint="~2g/kg como referencia">
+            <input type="number" value={nutrition.proteinTargetG ?? ''} onChange={e => setNutrition(n => ({ ...n, proteinTargetG: numOrUndef(e.target.value) }))} placeholder="156" className={inputCls} />
+          </Field>
+          <Field label="Agua base (L/día)" hint="sin entrenar">
+            <input type="number" value={nutrition.dailyWaterLiters ?? ''} onChange={e => setNutrition(n => ({ ...n, dailyWaterLiters: numOrUndef(e.target.value) }))} placeholder="2.5" className={inputCls} step={0.1} />
+          </Field>
+        </div>
+        <Field label="Intolerancias / preferencias" className="mt-3">
+          <input value={nutrition.notes ?? ''} onChange={e => setNutrition(n => ({ ...n, notes: e.target.value || undefined }))} placeholder="sin lactosa, prefiere pollo y pescado..." className={inputCls} />
+        </Field>
       </SectionPanel>
 
       <div className="flex items-center justify-end gap-3 pt-1">

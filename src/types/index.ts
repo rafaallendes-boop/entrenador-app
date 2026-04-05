@@ -169,6 +169,17 @@ export interface ScheduleProfile {
   constraints?: string          // free text
 }
 
+export interface NutritionProfile {
+  goalBodyWeightKg?: number     // target weight kg
+  fatMassPct?: number           // measured % fat mass
+  fatMassGoalPct?: number       // target % fat mass
+  muscleMassKg?: number         // measured muscle mass kg
+  muscleMassGoalKg?: number     // target muscle mass kg
+  proteinTargetG?: number       // daily protein target in grams
+  dailyWaterLiters?: number     // baseline water target L/day (excl. training)
+  notes?: string                // intolerances, preferences, free text
+}
+
 export interface AthleteProfile {
   id: string
   coachMemory?: string
@@ -185,6 +196,7 @@ export interface AthleteProfile {
   strengthProfile?: StrengthProfile
   recoveryProfile?: RecoveryProfile
   scheduleProfile?: ScheduleProfile
+  nutritionProfile?: NutritionProfile
 }
 
 export interface ChatMessage {

@@ -8,6 +8,7 @@ import { useTrainingStore } from '../store/useTrainingStore'
 import { CoachEngine } from '../services/ai/CoachEngine'
 import { detectChatIntent } from '../services/ai/contextOptimizer'
 import { currentWeekStartISO, todayISO } from '../utils/date'
+import { getAthleteFirstName, getProfileCompleteness } from '../utils/athlete'
 import ChatBubble from '../components/chat/ChatBubble'
 import ChatInput from '../components/chat/ChatInput'
 import Spinner from '../components/ui/Spinner'
@@ -24,6 +25,64 @@ const SESSION_TYPE_LABEL: Record<string, string> = {
   mobility: 'movilidad',
   recovery: 'recuperacion',
 }
+
+function _IncompleteProfileBanner({ gaps, onDismiss, onGoToSettings }: {
+  gaps: string[]
+  onDismiss: () => void
+  onGoToSettings: () => void
+}) {
+  const gapText = gaps.join(' y ')
+  return (
+    <div className="flex items-start gap-2 px-3 py-2 rounded-xl bg-amber-500/10 border border-amber-500/20">
+      <span className="text-amber-400 flex-shrink-0 mt-0.5 text-xs">⚠</span>
+      <span className="text-amber-300 text-xs leading-relaxed flex-1">
+        Sin {gapText} en tu perfil — el coach usará valores genéricos.{' '}
+        <button onClick={onGoToSettings} className="underline underline-offset-2 hover:text-amber-200 transition-colors">
+          Completar perfil
+        </button>
+      </span>
+      <button onClick={onDismiss} className="text-amber-400/60 hover:text-amber-400 flex-shrink-0">
+        <X size={12} />
+      </button>
+    </div>
+  )
+}
+
+function ContextualProfileBanner({ completeness, onDismiss, onGoToSettings }: {
+  completeness: ReturnType<typeof getProfileCompleteness>
+  onDismiss: () => void
+  onGoToSettings: () => void
+}) {
+  const missingText = completeness.missing.join(' y ')
+  const recommendedText = completeness.recommended.join(' y ')
+
+  let message = ''
+  if (completeness.state === 'missing_profile') {
+    message = 'Completa tu perfil para personalizar nombre, deportes, ritmos, cargas y restricciones.'
+  } else if (completeness.state === 'missing_sports') {
+    message = 'Indica tu deporte principal y, si aplica, tus deportes secundarios para que el coach sepa que datos pedirte.'
+  } else {
+    message = `Faltan ${missingText} en tu perfil. El coach seguira usando valores genericos para esa parte.`
+    if (recommendedText) message += ` Tambien puedes agregar ${recommendedText}.`
+  }
+
+  return (
+    <div className="flex items-start gap-2 px-3 py-2 rounded-xl bg-amber-500/10 border border-amber-500/20">
+      <span className="text-amber-400 flex-shrink-0 mt-0.5 text-xs">!</span>
+      <span className="text-amber-300 text-xs leading-relaxed flex-1">
+        {message}{' '}
+        <button onClick={onGoToSettings} className="underline underline-offset-2 hover:text-amber-200 transition-colors">
+          Completar perfil
+        </button>
+      </span>
+      <button onClick={onDismiss} className="text-amber-400/60 hover:text-amber-400 flex-shrink-0">
+        <X size={12} />
+      </button>
+    </div>
+  )
+}
+
+void _IncompleteProfileBanner
 
 function AcceptedBanner({ message, onDismiss }: { message: string; onDismiss: () => void }) {
   return (
@@ -74,7 +133,11 @@ export default function ChatCoach() {
   const [acceptedFeedback, setAcceptedFeedback] = useState<string | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState(false)
+  const [profileBannerDismissed, setProfileBannerDismissed] = useState(false)
   const hasMessages = messages.length > 0
+  const athleteFirstName = getAthleteFirstName(athleteProfile, 'atleta')
+  const profileCompleteness = getProfileCompleteness(athleteProfile)
+  const showProfileBanner = !profileBannerDismissed && profileCompleteness.state !== 'complete'
 
   const latestCoachProvider =
     [...messages].reverse().find((message) => message.role === 'coach')?.provider
@@ -176,6 +239,7 @@ export default function ChatCoach() {
           <div className="flex items-center gap-2 min-w-0">
             <div className="min-w-0">
               <h1 className="text-xl font-bold text-ink">Coach</h1>
+              <p className="text-[11px] text-ink-faint mt-0.5">Perfil activo: {athleteFirstName}</p>
               <p className="text-xs text-ink-muted mt-0.5">Planner · Advisor</p>
             </div>
             <ProviderBadge providerName={badgeProviderName} />
@@ -221,6 +285,14 @@ export default function ChatCoach() {
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 md:px-6">
         <div className="mx-auto w-full max-w-3xl space-y-4">
+          {showProfileBanner && (
+            <ContextualProfileBanner
+              completeness={profileCompleteness}
+              onDismiss={() => setProfileBannerDismissed(true)}
+              onGoToSettings={() => navigate(ROUTES.SETTINGS)}
+            />
+          )}
+
           {messages.length === 0 && !isLoading && (
             <div className="flex flex-col items-center justify-center min-h-[45vh] gap-3 text-center px-4 md:px-6">
               <div className="w-14 h-14 rounded-full bg-brand/15 flex items-center justify-center">
@@ -231,6 +303,18 @@ export default function ChatCoach() {
                 Pídeme que cree tu semana, agregue sesiones o ajuste tu plan.
                 También puedo analizar tu progreso y darte recomendaciones.
               </p>
+              {profileCompleteness.state !== 'complete' && (
+                <p className="text-xs text-ink-faint mt-1">
+                  Para propuestas más precisas,{' '}
+                  <button
+                    onClick={() => navigate(ROUTES.SETTINGS)}
+                    className="underline underline-offset-2 hover:text-ink-muted transition-colors"
+                  >
+                    completa tu perfil
+                  </button>
+                  .
+                </p>
+              )}
             </div>
           )}
 
