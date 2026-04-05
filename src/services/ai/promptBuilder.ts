@@ -15,7 +15,8 @@ import {
   getAthleteSportsSummary,
   getEnabledSports,
   getPrimarySportNormalized,
-  includesSport,
+  getSecondarySportsNormalized,
+  getSportPrioritySummary,
 } from '../../utils/athlete'
 import { classifyDayLoad, getDayNutrition, getLoadTypeLabel } from '../nutritionEngine'
 
@@ -357,6 +358,9 @@ function buildWeekSection(context: ChatContext): string {
 function buildAthleteProfileSection(context: ChatContext): string {
   const p = context.athleteProfile
   if (!p) return ''
+  const primarySport = getPrimarySportNormalized(p)
+  const secondarySports = getSecondarySportsNormalized(p)
+  const sportPrioritySummary = getSportPrioritySummary(p)
 
   const lines: string[] = ['═══ PERFIL DEL ATLETA ═══']
 
@@ -367,8 +371,9 @@ function buildAthleteProfileSection(context: ChatContext): string {
   if (basicParts.length > 0) lines.push(`Atleta: ${basicParts.join(' · ')}`)
 
   // Sport & goals
-  if (p.primarySport) lines.push(`Deporte principal: ${p.primarySport}`)
-  if (p.secondarySports?.length) lines.push(`Deportes secundarios: ${p.secondarySports.join(', ')}`)
+  if (primarySport) lines.push(`Deporte principal: ${primarySport}`)
+  if (secondarySports.length) lines.push(`Deportes secundarios: ${secondarySports.join(', ')}`)
+  if (sportPrioritySummary) lines.push(`Prioridad deportiva: ${sportPrioritySummary}`)
   if (p.mainGoal) lines.push(`Objetivo principal: ${p.mainGoal}`)
   if (p.secondaryGoal) lines.push(`Objetivo secundario: ${p.secondaryGoal}`)
 
@@ -817,11 +822,11 @@ function buildResponseInstructions(sessions: Session[], context: ChatContext): s
   const primarySportLabel = primarySportNorm
     ?? context.athleteProfile?.primarySport?.trim()
     ?? 'deporte principal'
-  const playsSquash = enabledSports.includes('squash') || includesSport(context.athleteProfile, 'squash')
-  const hasRunning = enabledSports.includes('running') || includesSport(context.athleteProfile, 'running')
-  const hasStrength = enabledSports.includes('strength') || includesSport(context.athleteProfile, 'strength') || includesSport(context.athleteProfile, 'fuerza') || includesSport(context.athleteProfile, 'pesas')
-  const hasCycling = enabledSports.includes('cycling') || includesSport(context.athleteProfile, 'cycling') || includesSport(context.athleteProfile, 'bicicleta')
-  const hasMobility = enabledSports.includes('mobility') || includesSport(context.athleteProfile, 'mobility') || includesSport(context.athleteProfile, 'movilidad')
+  const playsSquash = enabledSports.includes('squash')
+  const hasRunning = enabledSports.includes('running')
+  const hasStrength = enabledSports.includes('strength')
+  const hasCycling = enabledSports.includes('cycling')
+  const hasMobility = enabledSports.includes('mobility')
 
   const SPORT_SESSION_COUNTS: Partial<Record<string, string>> = {
     squash: '2-3 sesiones/semana',
@@ -1262,4 +1267,3 @@ function diffDays(fromISODate: string, toISODate: string): number | null {
     return null
   }
 }
-

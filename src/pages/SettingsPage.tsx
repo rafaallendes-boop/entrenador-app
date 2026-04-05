@@ -1,4 +1,4 @@
-import { type ChangeEvent, useEffect, useMemo, useRef, useState } from 'react'
+import { type ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Bell, Brain, Cpu, Download, LogOut, ShieldAlert, Trash2, Upload, User } from 'lucide-react'
 import Card from '../components/ui/Card'
 import AthleteProfileEditor from '../components/settings/AthleteProfileEditor'
@@ -13,7 +13,9 @@ import {
 } from '../services/dataExport'
 import {
   clearSelectedLocalAppData,
+  deleteCoachSessionsByIds,
   getLocalDataCounts,
+  getRecentCoachSessions,
   type LocalDataCounts,
   type LocalDataGroup,
   type LocalDataSelection,
@@ -31,6 +33,8 @@ import { useCoachMemoryStore } from '../store/useCoachMemoryStore'
 import { useAuthStore } from '../store/useAuthStore'
 import { useTrainingStore } from '../store/useTrainingStore'
 import { currentWeekStartISO } from '../utils/date'
+import { getEnabledSports, getSportPrioritySummary } from '../utils/athlete'
+import type { Session } from '../types'
 
 const CLEARABLE_GROUPS: Array<{
   key: LocalDataGroup
@@ -79,13 +83,18 @@ export default function SettingsPage() {
   const [isExporting, setIsExporting] = useState(false)
   const [isImporting, setIsImporting] = useState(false)
   const [isClearing, setIsClearing] = useState(false)
+  const [isDeletingCoachSessions, setIsDeletingCoachSessions] = useState(false)
   const [exportStatus, setExportStatus] = useState<string | null>(null)
   const [importStatus, setImportStatus] = useState<string | null>(null)
   const [clearStatus, setClearStatus] = useState<string | null>(null)
+  const [coachSessionStatus, setCoachSessionStatus] = useState<string | null>(null)
   const [clearConfirm, setClearConfirm] = useState(false)
   const [importPreview, setImportPreview] = useState<AppDataImportPreview | null>(null)
   const [pendingImportFile, setPendingImportFile] = useState<File | null>(null)
   const [importMode, setImportMode] = useState<'replace' | 'merge'>('replace')
+  const [coachSessionRange, setCoachSessionRange] = useState<1 | 2 | 3 | 4>(4)
+  const [coachSessions, setCoachSessions] = useState<Session[]>([])
+  const [selectedCoachSessionIds, setSelectedCoachSessionIds] = useState<string[]>([])
   const importInputRef = useRef<HTMLInputElement | null>(null)
 
   const refreshNotificationStatus = async () => {
@@ -99,6 +108,18 @@ export default function SettingsPage() {
     void refreshCounts(setDataCounts)
     void refreshNotificationStatus()
   }, [loadMemory, loadWeek])
+
+  const refreshCoachSessions = useCallback(async () => {
+    const nextSessions = await getRecentCoachSessions(coachSessionRange)
+    setCoachSessions(nextSessions)
+    setSelectedCoachSessionIds((current) =>
+      current.filter((id) => nextSessions.some((session) => session.id === id)),
+    )
+  }, [coachSessionRange])
+
+  useEffect(() => {
+    void refreshCoachSessions()
+  }, [refreshCoachSessions])
 
   useEffect(() => {
     if (!notificationsSupported()) return () => undefined
@@ -242,6 +263,40 @@ export default function SettingsPage() {
 
   const providerName = CoachEngine.getProviderName()
   const providerConfigured = CoachEngine.isRealProviderConfigured()
+  const sportSummary = getSportPrioritySummary(athleteProfile)
+  const enabledSports = getEnabledSports(athleteProfile)
+
+  const toggleCoachSessionSelection = (sessionId: string) => {
+    setSelectedCoachSessionIds((current) =>
+      current.includes(sessionId) ? current.filter((id) => id !== sessionId) : [...current, sessionId],
+    )
+    setCoachSessionStatus(null)
+  }
+
+  const handleDeleteSelectedCoachSessions = async () => {
+    if (selectedCoachSessionIds.length === 0) return
+    const confirmed = window.confirm(
+      `Se eliminaran ${selectedCoachSessionIds.length} entrenamientos creados por el coach. Esta accion no se puede deshacer.`,
+    )
+    if (!confirmed) return
+
+    setIsDeletingCoachSessions(true)
+    setCoachSessionStatus(null)
+    try {
+      const deleted = await deleteCoachSessionsByIds(selectedCoachSessionIds)
+      await refreshCoachSessions()
+      await refreshCounts(setDataCounts)
+      await loadWeek(currentWeekStartISO())
+      setSelectedCoachSessionIds([])
+      setCoachSessionStatus(
+        deleted > 0
+          ? `Se eliminaron ${deleted} entrenamientos del coach.`
+          : 'No se encontraron entrenamientos del coach para eliminar.',
+      )
+    } finally {
+      setIsDeletingCoachSessions(false)
+    }
+  }
 
   return (
     <div className="px-4 pt-12 pb-8 space-y-5 md:px-6 md:space-y-6">
@@ -270,6 +325,108 @@ export default function SettingsPage() {
               <LogOut size={14} />
               Cerrar sesion
             </button>
+          </Card>
+
+          <Card className="p-4 border-amber-500/20">
+            <div className="flex items-start gap-3 mb-3">
+              <div className="w-8 h-8 rounded-full bg-amber-500/10 flex items-center justify-center flex-shrink-0">
+                <Trash2 size={16} className="text-amber-400" />
+              </div>
+              <div>
+                <h2 className="text-sm font-semibold text-ink">Entrenamientos del coach</h2>
+                <p className="text-xs text-ink-muted mt-1 leading-relaxed">
+                  Elimina sesiones creadas por el coach sin borrar todo el bloque de entrenamiento.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
+              <label className="text-xs text-ink-muted">
+                Rango reciente
+                <select
+                  value={coachSessionRange}
+                  onChange={(e) => setCoachSessionRange(Number(e.target.value) as 1 | 2 | 3 | 4)}
+                  className="ml-2 rounded-lg border border-surface-border bg-surface-raised px-2 py-1 text-xs text-ink"
+                >
+                  <option value={1}>Ultima semana</option>
+                  <option value={2}>Ultimas 2 semanas</option>
+                  <option value={3}>Ultimas 3 semanas</option>
+                  <option value={4}>Ultimas 4 semanas</option>
+                </select>
+              </label>
+
+              <div className="flex gap-2 flex-wrap">
+                <button
+                  onClick={() => setSelectedCoachSessionIds(coachSessions.map((session) => session.id))}
+                  className="px-3 py-2 rounded-xl text-xs font-semibold text-ink hover:bg-surface transition-colors"
+                >
+                  Seleccionar visibles
+                </button>
+                <button
+                  onClick={() => setSelectedCoachSessionIds([])}
+                  className="px-3 py-2 rounded-xl text-xs font-semibold text-ink-muted hover:bg-surface transition-colors"
+                >
+                  Limpiar
+                </button>
+              </div>
+            </div>
+
+            {coachSessions.length === 0 ? (
+              <p className="text-xs text-ink-muted">No hay entrenamientos del coach en este rango.</p>
+            ) : (
+              <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                {coachSessions.map((session) => {
+                  const selected = selectedCoachSessionIds.includes(session.id)
+                  return (
+                    <label
+                      key={session.id}
+                      className={`flex items-start gap-3 rounded-xl border px-3 py-2 transition-colors ${
+                        selected
+                          ? 'border-amber-500/40 bg-amber-500/10'
+                          : 'border-surface-border bg-surface-raised'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selected}
+                        onChange={() => toggleCoachSessionSelection(session.id)}
+                        className="mt-1 h-4 w-4 rounded border-surface-border bg-surface"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-start justify-between gap-3 flex-wrap">
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-ink">{session.title}</p>
+                            <p className="text-xs text-ink-muted mt-1">
+                              {session.date} · {session.timeBlock} · {session.type}
+                            </p>
+                          </div>
+                          <span className="text-[11px] font-medium text-amber-400">Coach</span>
+                        </div>
+                      </div>
+                    </label>
+                  )
+                })}
+              </div>
+            )}
+
+            {coachSessionStatus && (
+              <p className="mt-3 text-xs text-emerald-400">{coachSessionStatus}</p>
+            )}
+
+            <div className="mt-4 flex justify-end">
+              <button
+                onClick={() => void handleDeleteSelectedCoachSessions()}
+                disabled={isDeletingCoachSessions || selectedCoachSessionIds.length === 0}
+                className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-amber-500/10 text-amber-400 text-sm font-semibold hover:bg-amber-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                <Trash2 size={14} />
+                {isDeletingCoachSessions
+                  ? 'Eliminando...'
+                  : selectedCoachSessionIds.length > 0
+                    ? `Eliminar ${selectedCoachSessionIds.length}`
+                    : 'Selecciona sesiones'}
+              </button>
+            </div>
           </Card>
 
           <Card className="p-4">
@@ -322,6 +479,12 @@ export default function SettingsPage() {
                 </p>
               </div>
             </div>
+            {enabledSports.length > 0 && (
+              <div className="mb-4 rounded-xl border border-surface-border bg-surface-raised px-3 py-2">
+                <p className="text-[10px] font-medium uppercase tracking-wider text-ink-faint">Resumen deportivo</p>
+                <p className="mt-1 text-sm text-ink">{sportSummary || `${enabledSports.length} deportes configurados`}</p>
+              </div>
+            )}
             <AthleteProfileEditor
               key={athleteProfile?.updatedAt ?? 'athlete-profile-empty'}
               profile={athleteProfile}

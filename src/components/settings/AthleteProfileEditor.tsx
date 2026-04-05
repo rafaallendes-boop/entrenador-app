@@ -2,31 +2,35 @@ import { useState } from 'react'
 import { ChevronDown, ChevronUp } from 'lucide-react'
 import type {
   AthleteProfile,
-  RunningProfile,
-  StrengthProfile,
-  RecoveryProfile,
-  ScheduleProfile,
   NutritionProfile,
+  RecoveryProfile,
+  RunningProfile,
+  ScheduleProfile,
+  StrengthProfile,
   SupportedSport,
   TrainingPriority,
 } from '../../types'
-import { getEnabledSports, getPrimarySportNormalized } from '../../utils/athlete'
+import {
+  getEnabledSports,
+  getPrimarySportNormalized,
+  getSportPrioritySummary,
+} from '../../utils/athlete'
 
-const DAYS = ['lun', 'mar', 'mié', 'jue', 'vie', 'sáb', 'dom']
+const DAYS = ['lun', 'mar', 'mie', 'jue', 'vie', 'sab', 'dom']
 
-const SPORT_OPTIONS: { value: SupportedSport; label: string; emoji: string }[] = [
-  { value: 'squash',   label: 'Squash',          emoji: '🎾' },
-  { value: 'running',  label: 'Running',          emoji: '🏃' },
-  { value: 'cycling',  label: 'Bicicleta',        emoji: '🚴' },
-  { value: 'strength', label: 'Pesas / Fuerza',   emoji: '🏋️' },
-  { value: 'mobility', label: 'Movilidad',        emoji: '🧘' },
+const SPORT_OPTIONS: { value: SupportedSport; label: string }[] = [
+  { value: 'squash', label: 'Squash' },
+  { value: 'running', label: 'Running' },
+  { value: 'cycling', label: 'Bicicleta' },
+  { value: 'strength', label: 'Pesas / Fuerza' },
+  { value: 'mobility', label: 'Movilidad' },
 ]
 
 const PRIORITY_OPTIONS: { value: TrainingPriority; label: string }[] = [
-  { value: 'performance',      label: 'Competir mejor' },
-  { value: 'fitness',          label: 'Condición física' },
-  { value: 'body_composition', label: 'Composición corporal' },
-  { value: 'return_to_play',   label: 'Volver de lesión' },
+  { value: 'performance', label: 'Competir mejor' },
+  { value: 'fitness', label: 'Condicion fisica' },
+  { value: 'body_composition', label: 'Composicion corporal' },
+  { value: 'return_to_play', label: 'Volver de lesion' },
 ]
 
 interface Props {
@@ -41,30 +45,64 @@ export default function AthleteProfileEditor({ profile, isSaving, onSave }: Prop
   const [open, setOpen] = useState<Section | null>(null)
   const [saved, setSaved] = useState(false)
 
-  // Local draft state per section
   const [name, setName] = useState(profile?.name ?? '')
   const [age, setAge] = useState(profile?.age != null ? String(profile.age) : '')
   const [weightKg, setWeightKg] = useState(profile?.weightKg != null ? String(profile.weightKg) : '')
-
-  // Structured sport context — initialize from sportContext first, fall back to normalizing legacy strings
   const [enabledSports, setEnabledSports] = useState<SupportedSport[]>(() => getEnabledSports(profile))
-  const [primarySportCtx, setPrimarySportCtx] = useState<SupportedSport | null>(() => getPrimarySportNormalized(profile) ?? null)
+  const [primarySportCtx, setPrimarySportCtx] = useState<SupportedSport | null>(
+    () => getPrimarySportNormalized(profile) ?? null,
+  )
   const [trainingPriority, setTrainingPriority] = useState<TrainingPriority | null>(
     profile?.sportContext?.trainingPriority ?? null,
   )
-
   const [mainGoal, setMainGoal] = useState(profile?.mainGoal ?? '')
   const [secondaryGoal, setSecondaryGoal] = useState(profile?.secondaryGoal ?? '')
-
   const [running, setRunning] = useState<RunningProfile>(profile?.runningProfile ?? {})
   const [strength, setStrength] = useState<StrengthProfile>(profile?.strengthProfile ?? {})
   const [recovery, setRecovery] = useState<RecoveryProfile>(profile?.recoveryProfile ?? {})
   const [availableDays, setAvailableDays] = useState<string[]>(profile?.scheduleProfile?.availableDays ?? [])
-  const [doubleSessionDays, setDoubleSessionDays] = useState<string[]>(profile?.scheduleProfile?.doubleSessionDays ?? [])
+  const [doubleSessionDays, setDoubleSessionDays] = useState<string[]>(
+    profile?.scheduleProfile?.doubleSessionDays ?? [],
+  )
   const [scheduleConstraints, setScheduleConstraints] = useState(profile?.scheduleProfile?.constraints ?? '')
   const [nutrition, setNutrition] = useState<NutritionProfile>(profile?.nutritionProfile ?? {})
 
-  const handleSave = async () => {
+  const resolvedPrimarySport = primarySportCtx ?? (enabledSports.length === 1 ? enabledSports[0] : null)
+  const secondarySportsCtx = resolvedPrimarySport
+    ? enabledSports.filter((sport) => sport !== resolvedPrimarySport)
+    : enabledSports
+  const sportSummaryProfile: AthleteProfile = {
+    id: profile?.id ?? 'draft',
+    updatedAt: profile?.updatedAt ?? 0,
+    ...(profile ?? {}),
+    primarySport: resolvedPrimarySport ?? undefined,
+    secondarySports: secondarySportsCtx.length > 0 ? secondarySportsCtx : undefined,
+    sportContext: resolvedPrimarySport
+      ? {
+          enabledSports,
+          primarySport: resolvedPrimarySport,
+          secondarySports: secondarySportsCtx,
+          trainingPriority: trainingPriority ?? undefined,
+        }
+      : undefined,
+  }
+  const sportSummary = getSportPrioritySummary(sportSummaryProfile)
+
+  const toggle = (section: Section) => setOpen((prev) => (prev === section ? null : section))
+
+  function toggleSport(sport: SupportedSport) {
+    setEnabledSports((prev) => {
+      const next = prev.includes(sport) ? prev.filter((item) => item !== sport) : [...prev, sport]
+      if (next.length === 0) {
+        setPrimarySportCtx(null)
+      } else if (!resolvedPrimarySport || !next.includes(resolvedPrimarySport)) {
+        setPrimarySportCtx(next[0] ?? null)
+      }
+      return next
+    })
+  }
+
+  async function handleSave() {
     const scheduleProfile: ScheduleProfile = {
       availableDays: availableDays.length > 0 ? availableDays : undefined,
       doubleSessionDays: doubleSessionDays.length > 0 ? doubleSessionDays : undefined,
@@ -75,14 +113,17 @@ export default function AthleteProfileEditor({ profile, isSaving, onSave }: Prop
       name: name.trim() || undefined,
       age: numOrUndef(age),
       weightKg: numOrUndef(weightKg),
-      sportContext: enabledSports.length > 0 && primarySportCtx
-        ? {
-            enabledSports,
-            primarySport: primarySportCtx,
-            secondarySports: enabledSports.filter(s => s !== primarySportCtx),
-            trainingPriority: trainingPriority ?? undefined,
-          }
-        : undefined,
+      primarySport: resolvedPrimarySport ?? undefined,
+      secondarySports: secondarySportsCtx.length > 0 ? secondarySportsCtx : undefined,
+      sportContext:
+        enabledSports.length > 0 && resolvedPrimarySport
+          ? {
+              enabledSports,
+              primarySport: resolvedPrimarySport,
+              secondarySports: secondarySportsCtx,
+              trainingPriority: trainingPriority ?? undefined,
+            }
+          : undefined,
       mainGoal: mainGoal.trim() || undefined,
       secondaryGoal: secondaryGoal.trim() || undefined,
       runningProfile: hasData(running) ? running : undefined,
@@ -91,16 +132,13 @@ export default function AthleteProfileEditor({ profile, isSaving, onSave }: Prop
       scheduleProfile: hasData(scheduleProfile) ? scheduleProfile : undefined,
       nutritionProfile: hasData(nutrition) ? nutrition : undefined,
     })
+
     setSaved(true)
     setTimeout(() => setSaved(false), 3000)
   }
 
-  const toggle = (s: Section) => setOpen(prev => prev === s ? null : s)
-
   return (
     <div className="space-y-2">
-
-      {/* Sport & Goals */}
       <SectionPanel
         title="Deporte y objetivos"
         open={open === 'sport'}
@@ -110,112 +148,133 @@ export default function AthleteProfileEditor({ profile, isSaving, onSave }: Prop
         <Field label="Nombre visible">
           <input
             value={name}
-            onChange={e => setName(e.target.value)}
+            onChange={(e) => setName(e.target.value)}
             placeholder="Nombre del atleta"
             className={inputCls}
           />
         </Field>
+
         <div className="grid grid-cols-2 gap-3">
           <Field label="Edad">
-            <input type="number" value={age} onChange={e => setAge(e.target.value)} placeholder="32" className={inputCls} min={10} max={99} />
+            <input
+              type="number"
+              value={age}
+              onChange={(e) => setAge(e.target.value)}
+              placeholder="32"
+              className={inputCls}
+              min={10}
+              max={99}
+            />
           </Field>
           <Field label="Peso (kg)">
-            <input type="number" value={weightKg} onChange={e => setWeightKg(e.target.value)} placeholder="78" className={inputCls} min={30} max={200} step={0.5} />
+            <input
+              type="number"
+              value={weightKg}
+              onChange={(e) => setWeightKg(e.target.value)}
+              placeholder="78"
+              className={inputCls}
+              min={30}
+              max={200}
+              step={0.5}
+            />
           </Field>
         </div>
 
         <Field label="Disciplinas que practicas">
-          <div className="flex flex-wrap gap-2 mt-1">
-            {SPORT_OPTIONS.map(opt => {
-              const active = enabledSports.includes(opt.value)
+          <div className="mt-1 flex flex-wrap gap-2">
+            {SPORT_OPTIONS.map((option) => {
+              const active = enabledSports.includes(option.value)
               return (
                 <button
-                  key={opt.value}
+                  key={option.value}
                   type="button"
-                  onClick={() => {
-                    setEnabledSports(prev => {
-                      const next = prev.includes(opt.value)
-                        ? prev.filter(s => s !== opt.value)
-                        : [...prev, opt.value]
-                      if (!next.includes(primarySportCtx!)) setPrimarySportCtx(null)
-                      return next
-                    })
-                  }}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors
-                    ${active
-                      ? 'bg-brand/15 text-brand-light border-brand/30'
-                      : 'bg-surface-raised text-ink-muted border-surface-border hover:border-brand/30'
-                    }`}
+                  onClick={() => toggleSport(option.value)}
+                  className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
+                    active
+                      ? 'border-brand/30 bg-brand/15 text-brand-light'
+                      : 'border-surface-border bg-surface-raised text-ink-muted hover:border-brand/30'
+                  }`}
                 >
-                  <span>{opt.emoji}</span>
-                  <span>{opt.label}</span>
+                  {option.label}
                 </button>
               )
             })}
           </div>
         </Field>
 
-        {enabledSports.length > 1 && (
+        {enabledSports.length > 0 && (
           <Field label="Disciplina principal">
-            <div className="flex flex-wrap gap-2 mt-1">
-              {SPORT_OPTIONS.filter(opt => enabledSports.includes(opt.value)).map(opt => (
-                <button
-                  key={opt.value}
-                  type="button"
-                  onClick={() => setPrimarySportCtx(opt.value)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors
-                    ${primarySportCtx === opt.value
-                      ? 'bg-brand/20 text-brand-light border-brand/40'
-                      : 'bg-surface-raised text-ink-muted border-surface-border hover:border-brand/30'
+            {enabledSports.length === 1 ? (
+              <div className="mt-1 inline-flex items-center rounded-lg border border-brand/30 bg-brand/15 px-3 py-1.5 text-xs font-medium text-brand-light">
+                {SPORT_OPTIONS.find((option) => option.value === enabledSports[0])?.label}
+              </div>
+            ) : (
+              <div className="mt-1 flex flex-wrap gap-2">
+                {SPORT_OPTIONS.filter((option) => enabledSports.includes(option.value)).map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => setPrimarySportCtx(option.value)}
+                    className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
+                      resolvedPrimarySport === option.value
+                        ? 'border-brand/40 bg-brand/20 text-brand-light'
+                        : 'border-surface-border bg-surface-raised text-ink-muted hover:border-brand/30'
                     }`}
-                >
-                  <span>{opt.emoji}</span>
-                  <span>{opt.label}</span>
-                  {primarySportCtx === opt.value && <span className="text-brand-light">✓</span>}
-                </button>
-              ))}
-            </div>
+                  >
+                    {option.label}
+                    {resolvedPrimarySport === option.value && <span className="ml-1 text-brand-light">OK</span>}
+                  </button>
+                ))}
+              </div>
+            )}
           </Field>
         )}
 
         <Field label="Objetivo de entrenamiento">
-          <div className="flex flex-wrap gap-2 mt-1">
-            {PRIORITY_OPTIONS.map(opt => (
+          <div className="mt-1 flex flex-wrap gap-2">
+            {PRIORITY_OPTIONS.map((option) => (
               <button
-                key={opt.value}
+                key={option.value}
                 type="button"
-                onClick={() => setTrainingPriority(prev => prev === opt.value ? null : opt.value)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors
-                  ${trainingPriority === opt.value
-                    ? 'bg-brand/15 text-brand-light border-brand/30'
-                    : 'bg-surface-raised text-ink-muted border-surface-border hover:border-brand/30'
-                  }`}
+                onClick={() => setTrainingPriority((prev) => (prev === option.value ? null : option.value))}
+                className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
+                  trainingPriority === option.value
+                    ? 'border-brand/30 bg-brand/15 text-brand-light'
+                    : 'border-surface-border bg-surface-raised text-ink-muted hover:border-brand/30'
+                }`}
               >
-                {opt.label}
+                {option.label}
               </button>
             ))}
           </div>
         </Field>
 
+        {sportSummary && (
+          <div className="rounded-xl border border-surface-border bg-surface-raised px-3 py-2">
+            <p className="text-[10px] font-medium uppercase tracking-wider text-ink-faint">Resumen deportivo</p>
+            <p className="mt-1 text-sm text-ink">{sportSummary}</p>
+          </div>
+        )}
+
         <Field label="Objetivo libre" hint="opcional">
           <input
             value={mainGoal}
-            onChange={e => setMainGoal(e.target.value)}
+            onChange={(e) => setMainGoal(e.target.value)}
             placeholder="ej: llegar al top 10 regional"
             className={inputCls}
           />
         </Field>
+
         <Field label="Objetivo secundario" hint="opcional">
           <input
             value={secondaryGoal}
-            onChange={e => setSecondaryGoal(e.target.value)}
-            placeholder="ej: preparar media maratón"
+            onChange={(e) => setSecondaryGoal(e.target.value)}
+            placeholder="ej: preparar media maraton"
             className={inputCls}
           />
         </Field>
       </SectionPanel>
 
-      {/* Running */}
       <SectionPanel
         title="Perfil de running"
         open={open === 'running'}
@@ -224,96 +283,168 @@ export default function AthleteProfileEditor({ profile, isSaving, onSave }: Prop
       >
         <div className="grid grid-cols-2 gap-3">
           <Field label="5K actual">
-            <input value={running.fiveKTime ?? ''} onChange={e => setRunning(r => ({ ...r, fiveKTime: e.target.value || undefined }))} placeholder="23:30" className={inputCls} />
+            <input
+              value={running.fiveKTime ?? ''}
+              onChange={(e) => setRunning((r) => ({ ...r, fiveKTime: e.target.value || undefined }))}
+              placeholder="23:30"
+              className={inputCls}
+            />
           </Field>
           <Field label="10K actual">
-            <input value={running.tenKTime ?? ''} onChange={e => setRunning(r => ({ ...r, tenKTime: e.target.value || undefined }))} placeholder="49:00" className={inputCls} />
+            <input
+              value={running.tenKTime ?? ''}
+              onChange={(e) => setRunning((r) => ({ ...r, tenKTime: e.target.value || undefined }))}
+              placeholder="49:00"
+              className={inputCls}
+            />
           </Field>
-          <Field label="Media maratón">
-            <input value={running.halfMarathonTime ?? ''} onChange={e => setRunning(r => ({ ...r, halfMarathonTime: e.target.value || undefined }))} placeholder="1:48:00" className={inputCls} />
+          <Field label="Media maraton">
+            <input
+              value={running.halfMarathonTime ?? ''}
+              onChange={(e) => setRunning((r) => ({ ...r, halfMarathonTime: e.target.value || undefined }))}
+              placeholder="1:48:00"
+              className={inputCls}
+            />
           </Field>
         </div>
-        <p className="text-[10px] text-ink-faint uppercase tracking-wider font-medium mt-3 mb-1">Ritmos /km <span className="normal-case font-normal">(formato M:SS, ej: 5:30)</span></p>
+
+        <p className="mb-1 mt-3 text-[10px] font-medium uppercase tracking-wider text-ink-faint">
+          Ritmos /km <span className="normal-case font-normal">(formato M:SS, ej: 5:30)</span>
+        </p>
+
         <div className="grid grid-cols-2 gap-3">
           {([
-            ['Z2 mín', 'z2PaceMin', '5:30'],
-            ['Z2 máx', 'z2PaceMax', '6:00'],
-            ['Easy mín', 'easyPaceMin', '5:45'],
-            ['Easy máx', 'easyPaceMax', '6:15'],
+            ['Z2 min', 'z2PaceMin', '5:30'],
+            ['Z2 max', 'z2PaceMax', '6:00'],
+            ['Easy min', 'easyPaceMin', '5:45'],
+            ['Easy max', 'easyPaceMax', '6:15'],
             ['Umbral', 'thresholdPace', '4:45'],
             ['Long run', 'longRunPace', '5:50'],
-          ] as const).map(([label, key, ph]) => {
-            const val = running[key] ?? ''
-            const err = !isValidPace(val)
+          ] as const).map(([label, key, placeholder]) => {
+            const value = running[key] ?? ''
+            const invalid = !isValidPace(value)
             return (
               <Field key={key} label={label}>
                 <input
-                  value={val}
-                  onChange={e => {
-                    const v = e.target.value
-                    setRunning(r => ({ ...r, [key]: v || undefined }))
-                  }}
-                  placeholder={ph}
-                  className={err && val ? inputErrCls : inputCls}
+                  value={value}
+                  onChange={(e) => setRunning((r) => ({ ...r, [key]: e.target.value || undefined }))}
+                  placeholder={placeholder}
+                  className={invalid && value ? inputErrCls : inputCls}
                 />
-                {err && val && <p className="text-[10px] text-rose-400 mt-0.5">Formato: M:SS (ej: {ph})</p>}
+                {invalid && value && (
+                  <p className="mt-0.5 text-[10px] text-rose-400">Formato: M:SS (ej: {placeholder})</p>
+                )}
               </Field>
             )
           })}
         </div>
+
         <Field label="Notas running" className="mt-3">
-          <input value={running.notes ?? ''} onChange={e => setRunning(r => ({ ...r, notes: e.target.value || undefined }))} placeholder="molestia gemelo izquierdo, foco en Z2 este bloque..." className={inputCls} />
+          <input
+            value={running.notes ?? ''}
+            onChange={(e) => setRunning((r) => ({ ...r, notes: e.target.value || undefined }))}
+            placeholder="molestia gemelo izquierdo, foco en Z2 este bloque..."
+            className={inputCls}
+          />
         </Field>
       </SectionPanel>
 
-      {/* Strength */}
       <SectionPanel
-        title="Fuerza — 1RM de referencia"
+        title="Fuerza - 1RM de referencia"
         open={open === 'strength'}
         onToggle={() => toggle('strength')}
         filled={!!(strength.benchPress1RM || strength.squat1RM)}
       >
         <div className="grid grid-cols-2 gap-3">
           <Field label="Press banca (kg)">
-            <input type="number" value={strength.benchPress1RM ?? ''} onChange={e => setStrength(s => ({ ...s, benchPress1RM: numOrUndef(e.target.value) }))} placeholder="90" className={inputCls} />
+            <input
+              type="number"
+              value={strength.benchPress1RM ?? ''}
+              onChange={(e) => setStrength((s) => ({ ...s, benchPress1RM: numOrUndef(e.target.value) }))}
+              placeholder="90"
+              className={inputCls}
+            />
           </Field>
           <Field label="Sentadilla (kg)">
-            <input type="number" value={strength.squat1RM ?? ''} onChange={e => setStrength(s => ({ ...s, squat1RM: numOrUndef(e.target.value) }))} placeholder="120" className={inputCls} />
+            <input
+              type="number"
+              value={strength.squat1RM ?? ''}
+              onChange={(e) => setStrength((s) => ({ ...s, squat1RM: numOrUndef(e.target.value) }))}
+              placeholder="120"
+              className={inputCls}
+            />
           </Field>
           <Field label="Peso muerto (kg)">
-            <input type="number" value={strength.deadlift1RM ?? ''} onChange={e => setStrength(s => ({ ...s, deadlift1RM: numOrUndef(e.target.value) }))} placeholder="140" className={inputCls} />
+            <input
+              type="number"
+              value={strength.deadlift1RM ?? ''}
+              onChange={(e) => setStrength((s) => ({ ...s, deadlift1RM: numOrUndef(e.target.value) }))}
+              placeholder="140"
+              className={inputCls}
+            />
           </Field>
           <Field label="Press hombro (kg)">
-            <input type="number" value={strength.overheadPress1RM ?? ''} onChange={e => setStrength(s => ({ ...s, overheadPress1RM: numOrUndef(e.target.value) }))} placeholder="65" className={inputCls} />
+            <input
+              type="number"
+              value={strength.overheadPress1RM ?? ''}
+              onChange={(e) => setStrength((s) => ({ ...s, overheadPress1RM: numOrUndef(e.target.value) }))}
+              placeholder="65"
+              className={inputCls}
+            />
           </Field>
           <Field label="Dominadas (reps)">
-            <input type="number" value={strength.pullUpMaxReps ?? ''} onChange={e => setStrength(s => ({ ...s, pullUpMaxReps: numOrUndef(e.target.value) }))} placeholder="12" className={inputCls} />
+            <input
+              type="number"
+              value={strength.pullUpMaxReps ?? ''}
+              onChange={(e) => setStrength((s) => ({ ...s, pullUpMaxReps: numOrUndef(e.target.value) }))}
+              placeholder="12"
+              className={inputCls}
+            />
           </Field>
         </div>
+
         <Field label="Notas fuerza" className="mt-3">
-          <input value={strength.notes ?? ''} onChange={e => setStrength(s => ({ ...s, notes: e.target.value || undefined }))} placeholder="foco en press este bloque, pierna limitada por isquio..." className={inputCls} />
+          <input
+            value={strength.notes ?? ''}
+            onChange={(e) => setStrength((s) => ({ ...s, notes: e.target.value || undefined }))}
+            placeholder="foco en press este bloque, pierna limitada por isquio..."
+            className={inputCls}
+          />
         </Field>
       </SectionPanel>
 
-      {/* Recovery */}
       <SectionPanel
         title="Lesiones y restricciones"
         open={open === 'recovery'}
         onToggle={() => toggle('recovery')}
         filled={!!(recovery.currentInjuries || recovery.restrictions)}
       >
-        <Field label="Lesión o molestia actual">
-          <input value={recovery.currentInjuries ?? ''} onChange={e => setRecovery(r => ({ ...r, currentInjuries: e.target.value || undefined }))} placeholder="dolor isquiotibial derecho, evitar sentadilla pesada" className={inputCls} />
+        <Field label="Lesion o molestia actual">
+          <input
+            value={recovery.currentInjuries ?? ''}
+            onChange={(e) => setRecovery((r) => ({ ...r, currentInjuries: e.target.value || undefined }))}
+            placeholder="dolor isquiotibial derecho, evitar sentadilla pesada"
+            className={inputCls}
+          />
         </Field>
         <Field label="Restricciones activas">
-          <input value={recovery.restrictions ?? ''} onChange={e => setRecovery(r => ({ ...r, restrictions: e.target.value || undefined }))} placeholder="no fuerza pesada día previo a partido" className={inputCls} />
+          <input
+            value={recovery.restrictions ?? ''}
+            onChange={(e) => setRecovery((r) => ({ ...r, restrictions: e.target.value || undefined }))}
+            placeholder="no fuerza pesada el dia previo a partido"
+            className={inputCls}
+          />
         </Field>
         <Field label="Lesiones previas relevantes">
-          <input value={recovery.previousInjuries ?? ''} onChange={e => setRecovery(r => ({ ...r, previousInjuries: e.target.value || undefined }))} placeholder="rotura de fibras gemelo 2024" className={inputCls} />
+          <input
+            value={recovery.previousInjuries ?? ''}
+            onChange={(e) => setRecovery((r) => ({ ...r, previousInjuries: e.target.value || undefined }))}
+            placeholder="rotura de fibras gemelo 2024"
+            className={inputCls}
+          />
         </Field>
       </SectionPanel>
 
-      {/* Schedule */}
       <SectionPanel
         title="Disponibilidad semanal"
         open={open === 'schedule'}
@@ -321,61 +452,120 @@ export default function AthleteProfileEditor({ profile, isSaving, onSave }: Prop
         filled={availableDays.length > 0}
       >
         <div className="space-y-2">
-          <p className="text-xs text-ink-muted">Días disponibles</p>
+          <p className="text-xs text-ink-muted">Dias disponibles</p>
           <DayPicker selected={availableDays} onChange={setAvailableDays} />
-          <p className="text-xs text-ink-muted mt-2">Días con doble sesión posible</p>
+          <p className="mt-2 text-xs text-ink-muted">Dias con doble sesion posible</p>
           <DayPicker selected={doubleSessionDays} onChange={setDoubleSessionDays} />
           <Field label="Restricciones horarias" className="mt-3">
-            <input value={scheduleConstraints} onChange={e => setScheduleConstraints(e.target.value)} placeholder="solo AM los martes, no disponible sábados" className={inputCls} />
+            <input
+              value={scheduleConstraints}
+              onChange={(e) => setScheduleConstraints(e.target.value)}
+              placeholder="solo AM los martes, no disponible sabados"
+              className={inputCls}
+            />
           </Field>
         </div>
       </SectionPanel>
 
-      {/* Nutrition */}
       <SectionPanel
-        title="Nutrición y composición corporal"
+        title="Nutricion y composicion corporal"
         open={open === 'nutrition'}
         onToggle={() => toggle('nutrition')}
         filled={hasData(nutrition)}
       >
-        <p className="text-[10px] text-ink-faint uppercase tracking-wider font-medium mb-1">Composición corporal</p>
+        <p className="mb-1 text-[10px] font-medium uppercase tracking-wider text-ink-faint">Composicion corporal</p>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Peso objetivo (kg)">
-            <input type="number" value={nutrition.goalBodyWeightKg ?? ''} onChange={e => setNutrition(n => ({ ...n, goalBodyWeightKg: numOrUndef(e.target.value) }))} placeholder="75" className={inputCls} step={0.5} />
+            <input
+              type="number"
+              value={nutrition.goalBodyWeightKg ?? ''}
+              onChange={(e) => setNutrition((n) => ({ ...n, goalBodyWeightKg: numOrUndef(e.target.value) }))}
+              placeholder="75"
+              className={inputCls}
+              step={0.5}
+            />
           </Field>
-          <Field label="% Masa grasa actual">
-            <input type="number" value={nutrition.fatMassPct ?? ''} onChange={e => setNutrition(n => ({ ...n, fatMassPct: numOrUndef(e.target.value) }))} placeholder="20" className={inputCls} step={0.1} />
+          <Field label="% masa grasa actual">
+            <input
+              type="number"
+              value={nutrition.fatMassPct ?? ''}
+              onChange={(e) => setNutrition((n) => ({ ...n, fatMassPct: numOrUndef(e.target.value) }))}
+              placeholder="20"
+              className={inputCls}
+              step={0.1}
+            />
           </Field>
-          <Field label="% Masa grasa objetivo">
-            <input type="number" value={nutrition.fatMassGoalPct ?? ''} onChange={e => setNutrition(n => ({ ...n, fatMassGoalPct: numOrUndef(e.target.value) }))} placeholder="16" className={inputCls} step={0.1} />
+          <Field label="% masa grasa objetivo">
+            <input
+              type="number"
+              value={nutrition.fatMassGoalPct ?? ''}
+              onChange={(e) => setNutrition((n) => ({ ...n, fatMassGoalPct: numOrUndef(e.target.value) }))}
+              placeholder="16"
+              className={inputCls}
+              step={0.1}
+            />
           </Field>
           <Field label="Masa muscular (kg)">
-            <input type="number" value={nutrition.muscleMassKg ?? ''} onChange={e => setNutrition(n => ({ ...n, muscleMassKg: numOrUndef(e.target.value) }))} placeholder="38.7" className={inputCls} step={0.1} />
+            <input
+              type="number"
+              value={nutrition.muscleMassKg ?? ''}
+              onChange={(e) => setNutrition((n) => ({ ...n, muscleMassKg: numOrUndef(e.target.value) }))}
+              placeholder="38.7"
+              className={inputCls}
+              step={0.1}
+            />
           </Field>
           <Field label="Masa muscular objetivo (kg)">
-            <input type="number" value={nutrition.muscleMassGoalKg ?? ''} onChange={e => setNutrition(n => ({ ...n, muscleMassGoalKg: numOrUndef(e.target.value) }))} placeholder="40" className={inputCls} step={0.1} />
+            <input
+              type="number"
+              value={nutrition.muscleMassGoalKg ?? ''}
+              onChange={(e) => setNutrition((n) => ({ ...n, muscleMassGoalKg: numOrUndef(e.target.value) }))}
+              placeholder="40"
+              className={inputCls}
+              step={0.1}
+            />
           </Field>
         </div>
-        <p className="text-[10px] text-ink-faint uppercase tracking-wider font-medium mt-4 mb-1">Objetivos diarios</p>
+
+        <p className="mb-1 mt-4 text-[10px] font-medium uppercase tracking-wider text-ink-faint">Objetivos diarios</p>
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Proteína diaria (g)" hint="~2g/kg como referencia">
-            <input type="number" value={nutrition.proteinTargetG ?? ''} onChange={e => setNutrition(n => ({ ...n, proteinTargetG: numOrUndef(e.target.value) }))} placeholder="156" className={inputCls} />
+          <Field label="Proteina diaria (g)" hint="~2g/kg como referencia">
+            <input
+              type="number"
+              value={nutrition.proteinTargetG ?? ''}
+              onChange={(e) => setNutrition((n) => ({ ...n, proteinTargetG: numOrUndef(e.target.value) }))}
+              placeholder="156"
+              className={inputCls}
+            />
           </Field>
-          <Field label="Agua base (L/día)" hint="sin entrenar">
-            <input type="number" value={nutrition.dailyWaterLiters ?? ''} onChange={e => setNutrition(n => ({ ...n, dailyWaterLiters: numOrUndef(e.target.value) }))} placeholder="2.5" className={inputCls} step={0.1} />
+          <Field label="Agua base (L/dia)" hint="sin entrenar">
+            <input
+              type="number"
+              value={nutrition.dailyWaterLiters ?? ''}
+              onChange={(e) => setNutrition((n) => ({ ...n, dailyWaterLiters: numOrUndef(e.target.value) }))}
+              placeholder="2.5"
+              className={inputCls}
+              step={0.1}
+            />
           </Field>
         </div>
+
         <Field label="Intolerancias / preferencias" className="mt-3">
-          <input value={nutrition.notes ?? ''} onChange={e => setNutrition(n => ({ ...n, notes: e.target.value || undefined }))} placeholder="sin lactosa, prefiere pollo y pescado..." className={inputCls} />
+          <input
+            value={nutrition.notes ?? ''}
+            onChange={(e) => setNutrition((n) => ({ ...n, notes: e.target.value || undefined }))}
+            placeholder="sin lactosa, prefiere pollo y pescado..."
+            className={inputCls}
+          />
         </Field>
       </SectionPanel>
 
       <div className="flex items-center justify-end gap-3 pt-1">
-        {saved && <span className="text-xs text-emerald-400 font-medium">Perfil guardado</span>}
+        {saved && <span className="text-xs font-medium text-emerald-400">Perfil guardado</span>}
         <button
           onClick={() => void handleSave()}
           disabled={isSaving}
-          className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-brand text-white text-sm font-semibold hover:bg-brand-light disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+          className="inline-flex items-center gap-2 rounded-xl bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-light disabled:cursor-not-allowed disabled:opacity-60"
         >
           {isSaving ? 'Guardando...' : 'Guardar perfil'}
         </button>
@@ -384,9 +574,13 @@ export default function AthleteProfileEditor({ profile, isSaving, onSave }: Prop
   )
 }
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
-
-function SectionPanel({ title, open, onToggle, filled, children }: {
+function SectionPanel({
+  title,
+  open,
+  onToggle,
+  filled,
+  children,
+}: {
   title: string
   open: boolean
   onToggle: () => void
@@ -394,27 +588,28 @@ function SectionPanel({ title, open, onToggle, filled, children }: {
   children: React.ReactNode
 }) {
   return (
-    <div className="rounded-xl border border-surface-border overflow-hidden">
+    <div className="overflow-hidden rounded-xl border border-surface-border">
       <button
         onClick={onToggle}
-        className="w-full flex items-center justify-between px-3 py-2.5 bg-surface-raised hover:bg-surface transition-colors"
+        className="flex w-full items-center justify-between bg-surface-raised px-3 py-2.5 transition-colors hover:bg-surface"
       >
         <span className="flex items-center gap-2 text-sm font-medium text-ink">
-          {filled && <span className="w-1.5 h-1.5 rounded-full bg-brand-light flex-shrink-0" />}
+          {filled && <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-brand-light" />}
           {title}
         </span>
         {open ? <ChevronUp size={15} className="text-ink-faint" /> : <ChevronDown size={15} className="text-ink-faint" />}
       </button>
-      {open && (
-        <div className="px-3 py-3 space-y-3 border-t border-surface-border bg-surface">
-          {children}
-        </div>
-      )}
+      {open && <div className="space-y-3 border-t border-surface-border bg-surface px-3 py-3">{children}</div>}
     </div>
   )
 }
 
-function Field({ label, hint, children, className }: {
+function Field({
+  label,
+  hint,
+  children,
+  className,
+}: {
   label: string
   hint?: string
   children: React.ReactNode
@@ -422,8 +617,9 @@ function Field({ label, hint, children, className }: {
 }) {
   return (
     <div className={className}>
-      <label className="block text-xs text-ink-muted mb-1">
-        {label}{hint && <span className="text-ink-faint ml-1">({hint})</span>}
+      <label className="mb-1 block text-xs text-ink-muted">
+        {label}
+        {hint && <span className="ml-1 text-ink-faint">({hint})</span>}
       </label>
       {children}
     </div>
@@ -432,18 +628,18 @@ function Field({ label, hint, children, className }: {
 
 function DayPicker({ selected, onChange }: { selected: string[]; onChange: (days: string[]) => void }) {
   const toggle = (day: string) =>
-    onChange(selected.includes(day) ? selected.filter(d => d !== day) : [...selected, day])
+    onChange(selected.includes(day) ? selected.filter((item) => item !== day) : [...selected, day])
 
   return (
-    <div className="flex gap-1.5 flex-wrap">
-      {DAYS.map(day => (
+    <div className="flex flex-wrap gap-1.5">
+      {DAYS.map((day) => (
         <button
           key={day}
           onClick={() => toggle(day)}
-          className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${
+          className={`rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors ${
             selected.includes(day)
-              ? 'bg-brand/20 text-brand-light border border-brand/30'
-              : 'bg-surface-raised text-ink-muted border border-surface-border'
+              ? 'border-brand/30 bg-brand/20 text-brand-light'
+              : 'border-surface-border bg-surface-raised text-ink-muted'
           }`}
         >
           {day}
@@ -453,21 +649,22 @@ function DayPicker({ selected, onChange }: { selected: string[]; onChange: (days
   )
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+const inputCls =
+  'w-full rounded-xl border border-surface-border bg-surface-raised px-3 py-2 text-sm text-ink placeholder:text-ink-faint focus:outline-none focus:ring-2 focus:ring-brand/40'
+const inputErrCls =
+  'w-full rounded-xl border border-rose-500/50 bg-surface-raised px-3 py-2 text-sm text-ink placeholder:text-ink-faint focus:outline-none focus:ring-2 focus:ring-rose-500/40'
 
-const inputCls = 'w-full rounded-xl bg-surface-raised border border-surface-border px-3 py-2 text-sm text-ink placeholder:text-ink-faint focus:outline-none focus:ring-2 focus:ring-brand/40'
-const inputErrCls = 'w-full rounded-xl bg-surface-raised border border-rose-500/50 px-3 py-2 text-sm text-ink placeholder:text-ink-faint focus:outline-none focus:ring-2 focus:ring-rose-500/40'
-
-/** Returns true if value matches M:SS or MM:SS format (e.g. "5:30", "12:00") */
-function isValidPace(val: string): boolean {
-  return val === '' || /^\d{1,2}:\d{2}$/.test(val)
+function isValidPace(value: string): boolean {
+  return value === '' || /^\d{1,2}:\d{2}$/.test(value)
 }
 
-function numOrUndef(val: string): number | undefined {
-  const n = parseFloat(val)
-  return isNaN(n) ? undefined : n
+function numOrUndef(value: string): number | undefined {
+  const parsed = parseFloat(value)
+  return Number.isNaN(parsed) ? undefined : parsed
 }
 
 function hasData(obj: object): boolean {
-  return Object.values(obj).some(v => v !== undefined && v !== null && v !== '' && !(Array.isArray(v) && v.length === 0))
+  return Object.values(obj).some(
+    (value) => value !== undefined && value !== null && value !== '' && !(Array.isArray(value) && value.length === 0),
+  )
 }

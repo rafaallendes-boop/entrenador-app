@@ -19,6 +19,7 @@ export type MatchResult = 'win' | 'loss'
 export type RunningType = 'z2' | 'tempo' | 'intervals' | 'long'
 export type TimeBlock = 'AM' | 'PM'
 export type MessageRole = 'user' | 'coach'
+export type SessionSource = 'manual' | 'coach'
 
 /** Lifecycle state of a session */
 export type SessionStatus = 'planned' | 'completed' | 'adjusted' | 'skipped'
@@ -65,10 +66,17 @@ export interface SquashDetails {
   drills: SquashDrill[]
 }
 
+export interface WorkoutProtocolBlock {
+  title: string
+  durationMin?: number
+  steps: string[]
+}
+
 export interface Session {
   id: string
   date: string             // ISO "YYYY-MM-DD"
   timeBlock: TimeBlock
+  source?: SessionSource
   type: SessionType
   subtype?: SquashSubtype  // squash only
   opponent?: string
@@ -88,6 +96,8 @@ export interface Session {
   exercises?: Exercise[]   // strength + mobility
   runningDetails?: RunningDetails
   squashDetails?: SquashDetails
+  warmup?: WorkoutProtocolBlock[]
+  cooldown?: WorkoutProtocolBlock[]
   completedAt?: number
   createdAt: number
   updatedAt: number
@@ -312,6 +322,8 @@ export interface CoachSessionProposal {
   targetHrMax?: number
   exercises?: CoachExerciseProposal[]  // for strength/mobility
   squashDetails?: SquashDetails        // for squash training/control sessions
+  warmup?: WorkoutProtocolBlock[]
+  cooldown?: WorkoutProtocolBlock[]
 }
 
 export interface CoachAction {
@@ -343,6 +355,8 @@ export interface CoachAction {
   newObjective?: string
   exercises?: CoachExerciseProposal[]  // replace full exercise list
   squashDetails?: SquashDetails        // for squash sessions in add_session / update_session
+  warmup?: WorkoutProtocolBlock[]
+  cooldown?: WorkoutProtocolBlock[]
 }
 
 export interface CoachProposal {
@@ -368,6 +382,8 @@ export interface ParsedSessionDraft {
   notes?: string
   subtype?: SquashSubtype
   runningDetails?: RunningDetails
+  warmup?: WorkoutProtocolBlock[]
+  cooldown?: WorkoutProtocolBlock[]
   exercises?: Omit<Exercise, 'id' | 'completed'>[]
   confidence: 'high' | 'medium' | 'low'  // parsing confidence
   rawText?: string                         // original source text for review

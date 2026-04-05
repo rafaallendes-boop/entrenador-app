@@ -181,6 +181,8 @@ function validateAction(obj: unknown): CoachAction | null {
       if (a.targetPaceMax != null && typeof a.targetPaceMax !== 'string') return null
       if (a.targetHrMin != null && typeof a.targetHrMin !== 'number') return null
       if (a.targetHrMax != null && typeof a.targetHrMax !== 'number') return null
+      if (a.warmup != null && !Array.isArray(a.warmup)) return null
+      if (a.cooldown != null && !Array.isArray(a.cooldown)) return null
       break
     case 'create_week':
       if (!Array.isArray(a.sessions) || a.sessions.length === 0) return null
@@ -202,6 +204,8 @@ function validateAction(obj: unknown): CoachAction | null {
         a.targetHrMin != null ||
         a.targetHrMax != null ||
         a.squashDetails != null ||
+        a.warmup != null ||
+        a.cooldown != null ||
         Array.isArray(a.exercises)
       if (!hasUpdate) return null
       break

@@ -207,6 +207,8 @@ function renderProposalDetails(
     targetHrMax?: number
     exercises?: Array<{ name: string; sets: number; reps: number | string; weight?: number }>
     squashDetails?: { trainingFocus: string; drills: Array<{ name: string; durationMin?: number; notes?: string }> }
+    warmup?: Array<{ title: string; durationMin?: number; steps: string[] }>
+    cooldown?: Array<{ title: string; durationMin?: number; steps: string[] }>
   },
   indentClassName = 'ml-20',
 ) {
@@ -261,6 +263,38 @@ function renderProposalDetails(
           {item.exercises.length > 5 && (
             <p className="text-[10px] text-ink-faint/50">+{item.exercises.length - 5} mas</p>
           )}
+        </div>
+      )}
+
+      {item.warmup && item.warmup.length > 0 && (
+        <div className={`${indentClassName} mt-1 rounded-lg border border-brand/20 bg-brand/5 px-2.5 py-2`}>
+          <p className="text-[10px] text-brand-light/80 uppercase tracking-wide">Warm-up</p>
+          {item.warmup.slice(0, 2).map((block, blockIndex) => (
+            <div key={blockIndex} className="mt-1">
+              <p className="text-[10px] text-ink-faint">
+                {block.title}{block.durationMin ? ` · ${block.durationMin}min` : ''}
+              </p>
+              {block.steps.slice(0, 2).map((step, stepIndex) => (
+                <p key={stepIndex} className="text-[10px] text-ink-faint/80">· {step}</p>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {item.cooldown && item.cooldown.length > 0 && (
+        <div className={`${indentClassName} mt-1 rounded-lg border border-violet-500/20 bg-violet-500/5 px-2.5 py-2`}>
+          <p className="text-[10px] text-violet-300/80 uppercase tracking-wide">Post / cool-down</p>
+          {item.cooldown.slice(0, 2).map((block, blockIndex) => (
+            <div key={blockIndex} className="mt-1">
+              <p className="text-[10px] text-ink-faint">
+                {block.title}{block.durationMin ? ` · ${block.durationMin}min` : ''}
+              </p>
+              {block.steps.slice(0, 2).map((step, stepIndex) => (
+                <p key={stepIndex} className="text-[10px] text-ink-faint/80">· {step}</p>
+              ))}
+            </div>
+          ))}
         </div>
       )}
     </>

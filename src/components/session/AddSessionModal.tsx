@@ -12,6 +12,7 @@ import { SESSION_TYPE_CONFIG } from '../../constants/sessionTypes'
 import { useTrainingStore } from '../../store/useTrainingStore'
 import { todayISO } from '../../utils/date'
 import { v4 as uuid } from '../../utils/uuid'
+import { generateDefaultProtocols } from '../../services/trainingProtocols'
 
 interface Props {
   defaultDate?: string
@@ -171,10 +172,16 @@ export default function AddSessionModal({ defaultDate, onClose }: Props) {
 
   const handleSubmit = async () => {
     if (!title.trim()) return
+    const protocols = generateDefaultProtocols({
+      type,
+      subtype: type === 'squash' ? squashSubtype : undefined,
+      runningType: type === 'running' || type === 'cycling' ? runningType : undefined,
+    })
 
     await addSession({
       date,
       timeBlock,
+      source: 'manual',
       type,
       status: 'planned',
       title: title.trim(),
@@ -197,6 +204,8 @@ export default function AddSessionModal({ defaultDate, onClose }: Props) {
             targetHrMax: hrMax ? Number(hrMax) : undefined,
           }
         : undefined,
+      warmup: protocols.warmup,
+      cooldown: protocols.cooldown,
       exercises: showExercises && exercises.length > 0 ? buildExercises() : undefined,
     })
 

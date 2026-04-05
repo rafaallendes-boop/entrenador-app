@@ -6,6 +6,7 @@ import { useTrainingStore } from './useTrainingStore'
 import { upsertWeekSummary } from '../db/queries'
 import * as syncService from '../services/syncService'
 import { toISO, fromISO, getWeekStart } from '../utils/date'
+import { ensureSessionProtocols, generateDefaultProtocols } from '../services/trainingProtocols'
 
 interface ApplyCoachActionResult {
   warnings: string[]
@@ -152,15 +153,16 @@ async function applyCoachAction(
 
     case 'insert_recovery': {
       if (!action.targetDate) throw new Error('targetDate required')
-      await store.addSession({
+      await store.addSession(ensureSessionProtocols({
         date: action.targetDate,
         timeBlock: 'PM',
+        source: 'coach',
         type: 'recovery',
         status: 'planned',
         title: 'Recuperación activa (coach)',
         durationMin: 30,
         objective: action.reason,
-      })
+      }))
       break
     }
 
@@ -168,9 +170,10 @@ async function applyCoachAction(
       if (!action.targetDate || !action.sessionType || !action.title || !action.durationMin || !action.timeBlock) {
         throw new Error('add_session requires targetDate, sessionType, title, durationMin, timeBlock')
       }
-      await store.addSession({
+      await store.addSession(ensureSessionProtocols({
         date: action.targetDate,
         timeBlock: action.timeBlock,
+        source: 'coach',
         type: action.sessionType,
         subtype: action.subtype,
         title: action.title,
@@ -189,7 +192,9 @@ async function applyCoachAction(
             }
           : undefined,
         squashDetails: action.squashDetails,
-      })
+        warmup: action.warmup,
+        cooldown: action.cooldown,
+      }))
       break
     }
 
@@ -204,9 +209,10 @@ async function applyCoachAction(
         )
       }
       for (const s of action.sessions) {
-        await store.addSession({
+        await store.addSession(ensureSessionProtocols({
           date: s.date,
           timeBlock: s.timeBlock,
+          source: 'coach',
           type: s.sessionType,
           subtype: s.subtype,
           title: s.title,
@@ -223,7 +229,9 @@ async function applyCoachAction(
             targetHrMax: s.targetHrMax,
           } : undefined,
           squashDetails: s.squashDetails,
-        })
+          warmup: s.warmup,
+          cooldown: s.cooldown,
+        }))
       }
       // Set week objectives if provided
       if (action.weekObjectives && action.weekObjectives.length > 0) {
@@ -274,6 +282,17 @@ async function applyCoachAction(
       } else if (nextType === 'strength' || nextType === 'mobility') {
         patch.exercises = current.exercises
       }
+      const resolvedRunningType =
+        nextType === 'running' || nextType === 'cycling'
+          ? action.runningType ?? current.runningDetails?.runningType
+          : undefined
+      const defaults = generateDefaultProtocols({
+        type: nextType,
+        subtype: nextType === 'squash' ? ((patch.subtype as typeof current.subtype) ?? current.subtype) : undefined,
+        runningType: resolvedRunningType,
+      })
+      patch.warmup = action.warmup ?? current.warmup ?? defaults.warmup
+      patch.cooldown = action.cooldown ?? current.cooldown ?? defaults.cooldown
       await store.updateSession(id, patch)
       break
     }

@@ -54,7 +54,7 @@ Observaciones de build:
 
 - `pdf.worker.min` sigue siendo el asset mas pesado
 - el flujo PDF ya esta mejor aislado, pero sigue siendo la parte mas cara cuando esa pantalla se usa
-- persiste la advertencia conocida de `INEFFECTIVE_DYNAMIC_IMPORT` en `src/db/db.ts`
+- la advertencia vieja de `INEFFECTIVE_DYNAMIC_IMPORT` ya fue corregida
 
 ## Lo que ya esta cerrado
 
@@ -154,7 +154,35 @@ La base ya esta, pero si la app se abre a terceros:
 - textos del coach que todavia asumen squash como deporte implicito
 - evaluar si el onboarding debe ser obligatorio o skipable con perfil minimal
 
-### P5. Integraciones externas de rendimiento y recuperacion
+### P5. Protocolos previos y posteriores por disciplina
+
+Agregar protocolos visibles y reutilizables de:
+
+- movilidad dinamica pre-entreno para squash y running
+- estiramientos y vuelta a la calma post-entreno
+- calentamiento base para fuerza: 10 min de bici/trote/eliptica + movilidad + activacion
+
+Impacto esperado:
+
+- alto para UX diaria y adherencia
+- alto para seguridad y sensacion de "coach completo"
+- bajo-medio en esfuerzo si se implementa primero como bloques sugeridos reutilizables
+
+### P6. Borrado selectivo de entrenamientos creados por el coach
+
+Hoy el borrado masivo de entrenamientos del coach es demasiado agresivo. Hace falta bajar granularidad:
+
+- eliminar 1 a 1 desde la pantalla de semana
+- desde Ajustes, selector para borrar todos o solo un rango reciente
+- rango sugerido: ultima semana hasta 4 semanas atras
+
+Impacto esperado:
+
+- muy alto para control del usuario
+- evita miedo a probar al coach si luego limpiar implica borrar demasiado
+- esfuerzo medio por UI, reglas de seleccion y confirmaciones
+
+### P7. Integraciones externas de rendimiento y recuperacion
 
 Linea de producto de largo plazo:
 
@@ -172,6 +200,8 @@ Linea de producto de largo plazo:
 | Nutricion en vista diaria | Medio | Bajo | Cerrado |
 | Robustecer notificaciones | Alto | Medio | Parcial |
 | Analytics carga por disciplina | Alto | Medio | Backlog |
+| Protocolos de movilidad y calentamiento por disciplina | Alto | Bajo-Medio | Backlog |
+| Borrado selectivo de entrenamientos del coach | Muy alto | Medio | Backlog |
 | Sync UX y recovery offline | Alto | Medio | Backlog |
 | Personalizacion profunda para terceros | Alto | Medio | Parcial |
 | Realtime sync opcional | Medio | Medio | Backlog |

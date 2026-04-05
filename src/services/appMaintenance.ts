@@ -4,6 +4,9 @@ import { useCoachActionsStore } from '../store/useCoachActionsStore'
 import { useCoachMemoryStore } from '../store/useCoachMemoryStore'
 import { useTrainingStore } from '../store/useTrainingStore'
 import { clearStoredChatSessionId, getOrCreateChatSessionId } from '../utils/chatSession'
+import { currentWeekStartISO, fromISO, toISO } from '../utils/date'
+import { addDays } from 'date-fns'
+import type { Session } from '../types'
 
 export type LocalDataGroup =
   | 'trainingData'
@@ -22,6 +25,34 @@ export interface LocalDataCounts {
   chatHistory: number
   coachProposals: number
   coachMemory: number
+}
+
+export async function getRecentCoachSessions(weeks: 1 | 2 | 3 | 4 = 4): Promise<Session[]> {
+  const currentWeekStart = currentWeekStartISO()
+  const start = toISO(addDays(fromISO(currentWeekStart), -(weeks - 1) * 7))
+  const end = toISO(addDays(fromISO(currentWeekStart), 6))
+
+  const sessions = await db.sessions.where('date').between(start, end, true, true).toArray()
+  return sessions
+    .filter((session) => session.source === 'coach')
+    .sort((a, b) => b.date.localeCompare(a.date) || a.timeBlock.localeCompare(b.timeBlock))
+}
+
+export async function deleteCoachSessionsByIds(ids: string[]): Promise<number> {
+  const uniqueIds = [...new Set(ids)].filter(Boolean)
+  if (uniqueIds.length === 0) return 0
+
+  const trainingStore = useTrainingStore.getState()
+  let deleted = 0
+
+  for (const id of uniqueIds) {
+    const session = await db.sessions.get(id)
+    if (!session || session.source !== 'coach') continue
+    await trainingStore.deleteSession(id)
+    deleted += 1
+  }
+
+  return deleted
 }
 
 export async function getLocalDataCounts(): Promise<LocalDataCounts> {

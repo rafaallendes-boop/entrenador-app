@@ -13,7 +13,7 @@ import type { TimeBlock } from '../types'
 import { downloadICS } from '../utils/ics'
 
 export default function WeeklyView() {
-  const { sessions, currentWeekSummary, isLoading, loadedWeekStart, loadWeek, generateCoachNote } = useTrainingStore()
+  const { sessions, currentWeekSummary, isLoading, loadedWeekStart, loadWeek, generateCoachNote, deleteSession } = useTrainingStore()
   const { currentWeekStart, selectedDate } = useUIStore()
   const [showAddModal, setShowAddModal] = useState(false)
   const [isGeneratingNote, setIsGeneratingNote] = useState(false)
@@ -55,6 +55,12 @@ export default function WeeklyView() {
     } finally {
       setIsGeneratingNote(false)
     }
+  }
+
+  const handleDeleteCoachSession = async (sessionId: string) => {
+    const confirmed = window.confirm('Esta sesion del coach se eliminara solo para esta semana. Esta accion no se puede deshacer.')
+    if (!confirmed) return
+    await deleteSession(sessionId)
   }
 
   return (
@@ -136,7 +142,11 @@ export default function WeeklyView() {
                     <p className="text-[11px] text-ink-faint font-semibold uppercase tracking-wider mb-2">Mañana</p>
                     <div className="space-y-2">
                       {selectedDayData.amSessions.map((session) => (
-                        <SessionCard key={session.id} session={session} />
+                        <SessionCard
+                          key={session.id}
+                          session={session}
+                          onDelete={session.source === 'coach' ? (current) => void handleDeleteCoachSession(current.id) : undefined}
+                        />
                       ))}
                     </div>
                   </div>
@@ -146,7 +156,11 @@ export default function WeeklyView() {
                     <p className="text-[11px] text-ink-faint font-semibold uppercase tracking-wider mb-2">Tarde</p>
                     <div className="space-y-2">
                       {selectedDayData.pmSessions.map((session) => (
-                        <SessionCard key={session.id} session={session} />
+                        <SessionCard
+                          key={session.id}
+                          session={session}
+                          onDelete={session.source === 'coach' ? (current) => void handleDeleteCoachSession(current.id) : undefined}
+                        />
                       ))}
                     </div>
                   </div>

@@ -10,6 +10,7 @@ import { useCoachMemoryStore } from './store/useCoachMemoryStore'
 import { currentWeekStartISO } from './utils/date'
 import { getEnabledSports } from './utils/athlete'
 import { db } from './db/db'
+import { hasSkippedOnboarding } from './utils/onboarding'
 
 const Dashboard = lazy(() => import('./pages/Dashboard'))
 const WeeklyView = lazy(() => import('./pages/WeeklyView'))
@@ -35,6 +36,7 @@ function RouteFallback() {
 function OnboardingGuard({ children }: { children: ReactNode }) {
   const navigate = useNavigate()
   const location = useLocation()
+  const user = useAuthStore(s => s.user)
   const athleteProfile = useCoachMemoryStore(s => s.athleteProfile)
 
   useEffect(() => {
@@ -43,11 +45,12 @@ function OnboardingGuard({ children }: { children: ReactNode }) {
 
     const hasLegacySport = !!athleteProfile.primarySport?.trim()
     const hasEnabledSports = getEnabledSports(athleteProfile).length > 0
+    const skippedOnboarding = hasSkippedOnboarding(user?.id)
 
-    if (!hasEnabledSports && !hasLegacySport) {
+    if (!hasEnabledSports && !hasLegacySport && !skippedOnboarding) {
       navigate(ROUTES.ONBOARDING, { replace: true })
     }
-  }, [athleteProfile, location.pathname, navigate])
+  }, [athleteProfile, location.pathname, navigate, user?.id])
 
   return <>{children}</>
 }

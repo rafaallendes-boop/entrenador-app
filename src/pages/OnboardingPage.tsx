@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom'
 import type { SupportedSport, TrainingPriority } from '../types'
 import { ROUTES } from '../constants/routes'
 import { useCoachMemoryStore } from '../store/useCoachMemoryStore'
+import { useAuthStore } from '../store/useAuthStore'
+import { clearOnboardingSkipped, markOnboardingSkipped } from '../utils/onboarding'
 
 const SPORT_OPTIONS: { value: SupportedSport; label: string; emoji: string }[] = [
   { value: 'squash', label: 'Squash', emoji: '🎾' },
@@ -64,6 +66,7 @@ const TOTAL_STEPS = 4
 
 export default function OnboardingPage() {
   const navigate = useNavigate()
+  const user = useAuthStore((s) => s.user)
   const { saveAthleteProfile, isSaving, loadMemory } = useCoachMemoryStore()
 
   const [step, setStep] = useState(1)
@@ -112,7 +115,13 @@ export default function OnboardingPage() {
       },
     })
 
+    clearOnboardingSkipped(user?.id)
     navigate(ROUTES.CHAT)
+  }
+
+  function handleSkip() {
+    markOnboardingSkipped(user?.id)
+    navigate(ROUTES.HOME)
   }
 
   const canNext1 = selectedSports.length > 0
@@ -123,6 +132,16 @@ export default function OnboardingPage() {
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-surface px-4 py-12">
       <div className="w-full max-w-md">
+        <div className="mb-4 flex justify-end">
+          <button
+            type="button"
+            onClick={handleSkip}
+            className="text-sm font-medium text-ink-faint transition-colors hover:text-ink-muted"
+          >
+            Omitir por ahora
+          </button>
+        </div>
+
         <div className="mb-8">
           <div className="mb-2 flex justify-between">
             <span className="text-xs text-ink-muted">Paso {step} de {TOTAL_STEPS}</span>

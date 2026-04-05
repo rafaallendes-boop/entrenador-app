@@ -136,11 +136,10 @@ export function getAthleteFirstName(profile?: AthleteProfile | null, fallback = 
 
 export function includesSport(profile: AthleteProfile | null | undefined, sport: string): boolean {
   if (!profile) return false
-  // Check normalized enabled sports first
   const enabled = getEnabledSports(profile)
   const normalized = normalizeSport(sport)
   if (normalized && enabled.includes(normalized)) return true
-  // Fallback: substring match on legacy free-text fields
+
   const needle = sport.toLowerCase()
   if (profile.primarySport?.toLowerCase().includes(needle)) return true
   return profile.secondarySports?.some((item) => item.toLowerCase().includes(needle)) ?? false
@@ -155,7 +154,6 @@ export function getAthleteSportsSummary(profile?: AthleteProfile | null): string
     cycling: 'ciclismo',
   }
 
-  // Prefer normalized enabled sports
   const enabled = getEnabledSports(profile)
   if (enabled.length > 0) {
     return enabled.map(s => SPORT_ES[s]).join(', ')
@@ -184,7 +182,6 @@ export function getProfileCompleteness(profile: AthleteProfile | null): ProfileC
 
   const configuredSports = getEnabledSports(profile)
 
-  // Also check legacy free-text fields for backward compat
   const hasLegacySports = !!(
     profile.primarySport?.trim() ||
     (profile.secondarySports ?? []).some(s => s.trim())
@@ -200,9 +197,9 @@ export function getProfileCompleteness(profile: AthleteProfile | null): ProfileC
 
   const missing: string[] = []
   const recommended: string[] = []
-
-  const hasSport = (aliases: string[]) =>
-    aliases.some((a) => includesSport(profile, a))
+  const enabled = new Set(configuredSports)
+  const hasRunning = enabled.has('running')
+  const hasStrength = enabled.has('strength')
 
   const runningProfile = profile.runningProfile
   const hasRunningData =
@@ -210,7 +207,7 @@ export function getProfileCompleteness(profile: AthleteProfile | null): ProfileC
     runningProfile?.z2PaceMax ||
     runningProfile?.thresholdPace ||
     runningProfile?.fiveKTime
-  if (hasSport(['running', 'correr', 'run']) && !hasRunningData) missing.push('ritmos de running')
+  if (hasRunning && !hasRunningData) missing.push('ritmos de running')
 
   const strengthProfile = profile.strengthProfile
   const hasStrengthData =
@@ -218,7 +215,7 @@ export function getProfileCompleteness(profile: AthleteProfile | null): ProfileC
     strengthProfile?.squat1RM ||
     strengthProfile?.deadlift1RM ||
     strengthProfile?.overheadPress1RM
-  if (hasSport(['strength', 'fuerza', 'pesas', 'gym']) && !hasStrengthData) missing.push('1RMs de fuerza')
+  if (hasStrength && !hasStrengthData) missing.push('1RMs de fuerza')
 
   if (!profile.name?.trim()) recommended.push('nombre visible')
 

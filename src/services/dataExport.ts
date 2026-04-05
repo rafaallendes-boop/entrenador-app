@@ -23,6 +23,7 @@ const MIN_SUPPORTED_BACKUP_VERSION = 1 as const
 
 const TIME_BLOCKS = new Set(['AM', 'PM'])
 const SESSION_TYPES = new Set(['squash', 'running', 'cycling', 'strength', 'mobility', 'recovery', 'nutrition'])
+const SESSION_SOURCES = new Set(['manual', 'coach'])
 const SESSION_STATUSES = new Set(['planned', 'completed', 'adjusted', 'skipped'])
 const SQUASH_SUBTYPES = new Set(['control', 'training', 'match', 'competitive', 'light'])
 const MATCH_RESULTS = new Set(['win', 'loss'])
@@ -433,6 +434,7 @@ function parseSession(value: unknown, index: number): Session {
     id: requireString(row.id, `sessions[${index}].id`),
     date: requireISODate(row.date, `sessions[${index}].date`),
     timeBlock: requireEnum(row.timeBlock, TIME_BLOCKS, `sessions[${index}].timeBlock`) as Session['timeBlock'],
+    source: optionalEnum(row.source, SESSION_SOURCES, `sessions[${index}].source`) as Session['source'],
     type: requireEnum(row.type, SESSION_TYPES, `sessions[${index}].type`) as Session['type'],
     status: requireEnum(row.status, SESSION_STATUSES, `sessions[${index}].status`) as Session['status'],
     title: requireString(row.title, `sessions[${index}].title`),
@@ -454,6 +456,8 @@ function parseSession(value: unknown, index: number): Session {
     exercises: optionalExercises(row.exercises, `sessions[${index}].exercises`),
     runningDetails: optionalRunningDetails(row.runningDetails, `sessions[${index}].runningDetails`),
     squashDetails: optionalSquashDetails(row.squashDetails, `sessions[${index}].squashDetails`),
+    warmup: optionalWorkoutProtocolBlocks(row.warmup, `sessions[${index}].warmup`),
+    cooldown: optionalWorkoutProtocolBlocks(row.cooldown, `sessions[${index}].cooldown`),
     completedAt: optionalFiniteNumber(row.completedAt, `sessions[${index}].completedAt`),
   }
 }
@@ -595,6 +599,8 @@ function parseCoachAction(value: unknown, path: string): CoachAction {
     newObjective: optionalString(row.newObjective, `${path}.newObjective`),
     exercises: optionalCoachExercises(row.exercises, `${path}.exercises`) as CoachAction['exercises'],
     squashDetails: optionalSquashDetails(row.squashDetails, `${path}.squashDetails`) as CoachAction['squashDetails'],
+    warmup: optionalWorkoutProtocolBlocks(row.warmup, `${path}.warmup`) as CoachAction['warmup'],
+    cooldown: optionalWorkoutProtocolBlocks(row.cooldown, `${path}.cooldown`) as CoachAction['cooldown'],
   }
 }
 
@@ -659,6 +665,25 @@ function optionalCoachSessions(value: unknown, path: string): CoachAction['sessi
       targetHrMax: optionalFiniteNumber(row.targetHrMax, `${path}[${index}].targetHrMax`),
       exercises: optionalCoachExercises(row.exercises, `${path}[${index}].exercises`),
       squashDetails: optionalSquashDetails(row.squashDetails, `${path}[${index}].squashDetails`),
+      warmup: optionalWorkoutProtocolBlocks(row.warmup, `${path}[${index}].warmup`),
+      cooldown: optionalWorkoutProtocolBlocks(row.cooldown, `${path}[${index}].cooldown`),
+    }
+  })
+}
+
+function optionalWorkoutProtocolBlocks(value: unknown, path: string): Session['warmup'] {
+  if (value == null) return undefined
+  const rows = ensureArray(value, path)
+
+  return rows.map((item, index) => {
+    const row = ensureRecord(item, `${path}[${index}]`)
+    const steps = ensureArray(row.steps, `${path}[${index}].steps`).map((step, stepIndex) =>
+      requireString(step, `${path}[${index}].steps[${stepIndex}]`),
+    )
+    return {
+      title: requireString(row.title, `${path}[${index}].title`),
+      durationMin: optionalFiniteNumber(row.durationMin, `${path}[${index}].durationMin`),
+      steps,
     }
   })
 }
