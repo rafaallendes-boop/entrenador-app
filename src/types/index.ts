@@ -224,6 +224,10 @@ export type TrainingPriority = 'performance' | 'fitness' | 'body_composition' | 
 
 // ─── Macro planning (MVP) ─────────────────────────────────────────────────────
 
+export type GoalEventType = 'tournament' | 'race' | 'cycling_event' | 'other'
+export type GoalEventObjective = 'win' | 'perform' | 'finish' | 'personal_best'
+export type GoalEventLevel = 'recreational' | 'competitive' | 'masters' | 'elite'
+
 export interface GoalEvent {
   id: string
   title: string
@@ -231,6 +235,29 @@ export interface GoalEvent {
   sport: string           // free text aligned to SupportedSport when possible
   priority: 'primary'     // MVP: only primary events
   notes?: string
+  // Wizard-enriched fields
+  eventType?: GoalEventType
+  objective?: GoalEventObjective
+  competitiveLevel?: GoalEventLevel
+}
+
+export type DayOfWeek = 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | 'saturday' | 'sunday'
+export type WizardFitnessLevel = 'fit' | 'normal' | 'returning' | 'low'
+export type WizardFatigueLevel = 'fresh' | 'normal' | 'loaded' | 'overloaded'
+
+/** Configuration captured by the competition plan wizard */
+export interface PlanWizardConfig {
+  goalEventId: string
+  trainingDays: DayOfWeek[]
+  sessionsPerWeek: number
+  sessionDurationMins: number       // 30 | 45 | 60 | 90 | 120
+  allowDoubleSession: boolean
+  complementarySports: SupportedSport[]
+  currentFitnessLevel: WizardFitnessLevel
+  currentFatigue: WizardFatigueLevel
+  injuryNotes?: string
+  createdAt: string
+  updatedAt: string
 }
 
 /**
@@ -281,6 +308,8 @@ export interface AthleteProfile {
   // Macro planning (MVP — single primary event)
   goalEvents?: GoalEvent[]
   macroPlan?: MacroPlan
+  // Competition plan wizard config
+  planWizardConfig?: PlanWizardConfig
 }
 
 export interface ChatMessage {
@@ -297,7 +326,12 @@ export interface ChatMessage {
 }
 
 export interface ChatContext {
+  /** Legacy combined session list kept for backwards compatibility and exports */
   recentSessions: Session[]
+  /** Sessions from today onward that the coach may modify via actions */
+  plannedSessions?: Session[]
+  /** Completed / adjusted / skipped history used for reasoning and progression */
+  historicalSessions?: Session[]
   currentWeekSummary?: WeekSummary
   dayLog?: DayLog
   weekDayLogs?: DayLog[]
@@ -325,6 +359,10 @@ export interface NutritionRec {
   dinner: string
   preTraining?: string
   postTraining?: string
+  /** Computed protein target, e.g. "~152g" — present when athlete weight is known */
+  proteinTarget?: string
+  /** Free-text dietary notes/restrictions from athlete profile */
+  dietaryNotes?: string
 }
 
 // ─── Config types ─────────────────────────────────────────────────────────────

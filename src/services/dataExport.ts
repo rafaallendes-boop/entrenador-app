@@ -774,9 +774,17 @@ function optionalChatContext(value: unknown, path: string): ChatMessage['context
   recentSessions.forEach((session, index) => {
     parseSession(session, index)
   })
+  const plannedSessions = row.plannedSessions == null
+    ? undefined
+    : ensureArray(row.plannedSessions, `${path}.plannedSessions`).map((session, index) => parseSession(session, index))
+  const historicalSessions = row.historicalSessions == null
+    ? undefined
+    : ensureArray(row.historicalSessions, `${path}.historicalSessions`).map((session, index) => parseSession(session, index))
 
   const context = {
     recentSessions: recentSessions as Session[],
+    plannedSessions: plannedSessions as Session[] | undefined,
+    historicalSessions: historicalSessions as Session[] | undefined,
     currentWeekSummary: row.currentWeekSummary == null ? undefined : parseWeekSummary(row.currentWeekSummary, 0),
     dayLog: row.dayLog == null ? undefined : parseDayLog(row.dayLog, 0),
     weekDayLogs: row.weekDayLogs == null

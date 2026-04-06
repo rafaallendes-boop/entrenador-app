@@ -1,5 +1,5 @@
 ﻿import { CheckCircle2, X, Zap } from 'lucide-react'
-import type { ChatContext, CoachProposal, GeneratedProtocol } from '../../types'
+import type { CoachProposal, GeneratedProtocol, Session } from '../../types'
 
 const ACTION_LABEL: Record<string, string> = {
   skip_session: 'Saltar sesion',
@@ -32,7 +32,7 @@ const SQUASH_FOCUS_LABEL: Record<string, string> = {
 
 interface ProposalDrawerProps {
   proposal: CoachProposal
-  existingSessions: ChatContext['recentSessions']
+  existingSessions: Session[]
   onAccept: () => void
   onReject: () => void
   onClose: () => void

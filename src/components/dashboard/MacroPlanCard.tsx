@@ -1,6 +1,8 @@
-import { Target, Calendar, TrendingUp } from 'lucide-react'
+import { Target, Calendar, TrendingUp, Pencil } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import type { MacroPlan } from '../../types'
 import { getPhaseLabel, formatWeeksRemaining } from '../../services/macroPlan'
+import { ROUTES } from '../../constants/routes'
 import Card from '../ui/Card'
 
 const PHASE_COLOR: Record<MacroPlan['currentPhase'], string> = {
@@ -27,6 +29,7 @@ interface MacroPlanCardProps {
 }
 
 export default function MacroPlanCard({ macroPlan, eventTitle }: MacroPlanCardProps) {
+  const navigate = useNavigate()
   const phaseLabel = getPhaseLabel(macroPlan.currentPhase)
   const weeksLabel = formatWeeksRemaining(macroPlan.weeksRemaining)
   const phaseColor = PHASE_COLOR[macroPlan.currentPhase]
@@ -46,6 +49,14 @@ export default function MacroPlanCard({ macroPlan, eventTitle }: MacroPlanCardPr
             <p className="text-sm font-medium text-ink mt-0.5 truncate">{eventTitle}</p>
           )}
         </div>
+        <button
+          type="button"
+          onClick={() => navigate(ROUTES.COMPETITION_PLAN)}
+          className="flex-shrink-0 flex items-center gap-1 text-xs text-ink-faint hover:text-ink-muted transition-colors px-2 py-1 rounded-lg hover:bg-surface-raised"
+        >
+          <Pencil size={11} />
+          Editar
+        </button>
       </div>
 
       <div className="grid grid-cols-2 gap-3">

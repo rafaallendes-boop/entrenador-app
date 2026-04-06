@@ -198,6 +198,8 @@ export const useTrainingStore = create<TrainingState>((set, get) => ({
       optimizeChatContext({
         recentSessions: sessions
           .sort((a, b) => a.date.localeCompare(b.date) || a.timeBlock.localeCompare(b.timeBlock)),
+        plannedSessions: sessions.filter(session => session.status === 'planned'),
+        historicalSessions: sessions.filter(session => session.status !== 'planned'),
         currentWeekSummary: currentWeekSummary ?? undefined,
         weekDayLogs,
         athleteMemory: athleteProfile?.coachMemory,

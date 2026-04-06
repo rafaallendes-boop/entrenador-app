@@ -16,6 +16,7 @@ const WeeklyView = lazy(() => import('./pages/WeeklyView'))
 const DayDetail = lazy(() => import('./pages/DayDetail'))
 const ChatCoach = lazy(() => import('./pages/ChatCoach'))
 const PlanBuilderPage = lazy(() => import('./pages/PlanBuilderPage'))
+const CompetitionPlanPage = lazy(() => import('./pages/CompetitionPlanPage'))
 const History = lazy(() => import('./pages/History'))
 const ImportPDF = lazy(() => import('./pages/ImportPDF'))
 const SettingsPage = lazy(() => import('./pages/SettingsPage'))
@@ -137,6 +138,7 @@ export default function App() {
                 <Route path="/day/:date" element={<DayDetail />} />
                 <Route path={ROUTES.CHAT} element={<ChatCoach />} />
                 <Route path={ROUTES.PLAN_BUILDER} element={<PlanBuilderPage />} />
+                <Route path={ROUTES.COMPETITION_PLAN} element={<CompetitionPlanPage />} />
                 <Route path={ROUTES.HISTORY} element={<History />} />
                 <Route path={ROUTES.SETTINGS} element={<SettingsPage />} />
                 <Route path={ROUTES.IMPORT} element={<ImportPDF />} />

@@ -1,4 +1,4 @@
-import type { Session, DayLoadType, NutritionRec } from '../types'
+import type { Session, DayLoadType, NutritionRec, AthleteProfile } from '../types'
 
 // ─── Load classifier ──────────────────────────────────────────────────────────
 
@@ -115,11 +115,84 @@ const RECS: Record<DayLoadType, NutritionRec> = {
   },
 }
 
+// ─── Personalization helpers ──────────────────────────────────────────────────
+
+/**
+ * Protein factor (g/kg of bodyweight) per load type.
+ * Higher load → more protein for repair and adaptation.
+ */
+const PROTEIN_FACTOR: Record<DayLoadType, number> = {
+  rest:     1.6,
+  light:    1.7,
+  medium:   1.8,
+  high:     2.0,
+  double:   2.0,
+  match:    1.9,
+  long_run: 1.8,
+}
+
+/**
+ * Additional water (liters) to add on top of the base daily intake,
+ * depending on training load.
+ */
+const TRAINING_WATER_ADD: Record<DayLoadType, number> = {
+  rest:     0,
+  light:    0.5,
+  medium:   0.75,
+  high:     1.0,
+  double:   1.5,
+  match:    1.5,
+  long_run: 1.5,
+}
+
+function round05(n: number): number {
+  return Math.round(n * 2) / 2
+}
+
+function personalizeRec(base: NutritionRec, profile: AthleteProfile | null | undefined): NutritionRec {
+  if (!profile) return base
+
+  const weightKg = profile.weightKg
+  const np = profile.nutritionProfile
+  const rec: NutritionRec = { ...base }
+
+  // ── Protein target ────────────────────────────────────────────────────────
+  if (np?.proteinTargetG) {
+    rec.proteinTarget = `~${np.proteinTargetG}g proteína`
+  } else if (weightKg) {
+    const factor = PROTEIN_FACTOR[base.loadType]
+    const grams = Math.round(weightKg * factor)
+    rec.proteinTarget = `~${grams}g proteína`
+  }
+
+  // ── Hydration ─────────────────────────────────────────────────────────────
+  // Base: user-defined daily water target or weight-derived (33 ml/kg)
+  const waterBase = np?.dailyWaterLiters ?? (weightKg ? round05(weightKg * 0.033) : null)
+  const waterAdd = TRAINING_WATER_ADD[base.loadType]
+
+  if (waterBase !== null) {
+    const total = round05(waterBase + waterAdd)
+    if (waterAdd > 0) {
+      rec.hydration = `${waterBase.toFixed(1)}L base + ${waterAdd.toFixed(1)}L entrenamiento = ~${total.toFixed(1)}L hoy. ${base.loadType === 'match' || base.loadType === 'double' ? 'Agrega electrolitos.' : base.loadType === 'high' || base.loadType === 'long_run' ? 'Electrolitos si sudas mucho.' : ''}`
+    } else {
+      rec.hydration = `~${total.toFixed(1)}L hoy (día sin entrenamiento).`
+    }
+    rec.hydration = rec.hydration.trim()
+  }
+
+  // ── Dietary notes ─────────────────────────────────────────────────────────
+  if (np?.notes?.trim()) {
+    rec.dietaryNotes = np.notes.trim()
+  }
+
+  return rec
+}
+
 // ─── Public API ───────────────────────────────────────────────────────────────
 
-export function getDayNutrition(sessions: Session[]): NutritionRec {
+export function getDayNutrition(sessions: Session[], profile?: AthleteProfile | null): NutritionRec {
   const loadType = classifyDayLoad(sessions)
-  return RECS[loadType]
+  return personalizeRec(RECS[loadType], profile)
 }
 
 export function getLoadTypeLabel(loadType: DayLoadType): string {

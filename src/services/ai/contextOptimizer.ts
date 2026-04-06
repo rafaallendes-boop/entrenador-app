@@ -1,4 +1,5 @@
 import type { ChatContext, DayLog, Session } from '../../types'
+import { todayISO } from '../../utils/date'
 
 const DEFAULT_MAX_RECENT_MESSAGES = 8
 const DEFAULT_MAX_RECENT_MESSAGE_CHARS = 1400
@@ -10,18 +11,26 @@ const MAX_ATHLETE_MEMORY_CHARS = 500
 
 export function optimizeChatContext(context: ChatContext): ChatContext {
   const budget = getBudget(context.intent)
+  const plannedSessions = trimPlannedSessions(
+    context.plannedSessions ?? inferPlannedSessions(context.recentSessions),
+    budget.maxPlannedSessionLines,
+    budget.maxPlannedSessionChars,
+  )
+  const historicalSessions = trimHistoricalSessions(
+    context.historicalSessions ?? inferHistoricalSessions(context.recentSessions),
+    budget.maxHistoricalSessionLines,
+    budget.maxHistoricalSessionChars,
+  )
 
   return {
     ...context,
+    recentSessions: mergeUniqueSessions(plannedSessions, historicalSessions),
+    plannedSessions,
+    historicalSessions,
     recentMessages: trimRecentMessages(
       context.recentMessages,
       budget.maxRecentMessages,
       budget.maxRecentMessageChars,
-    ),
-    recentSessions: trimRecentSessions(
-      context.recentSessions,
-      budget.maxSessionLines,
-      budget.maxSessionChars,
     ),
     weekDayLogs: trimWeekDayLogs(
       context.weekDayLogs,
@@ -87,16 +96,36 @@ function trimRecentMessages(
   return selected.reverse()
 }
 
-function trimRecentSessions(
+function trimPlannedSessions(
   sessions: Session[],
   maxSessionLines: number,
   maxSessionChars: number,
 ): Session[] {
-  if (sessions.length <= maxSessionLines) return sessions
+  const prioritized = [...sessions].sort((a, b) => a.date.localeCompare(b.date) || a.timeBlock.localeCompare(b.timeBlock))
 
-  const futureSessions = sessions.filter(s => s.status === 'planned')
-  const completedSessions = sessions.filter(s => s.status !== 'planned')
-  const prioritized = [...futureSessions, ...completedSessions.reverse()]
+  const selected: Session[] = []
+  let usedChars = 0
+  const seen = new Set<string>()
+
+  for (const session of prioritized) {
+    if (selected.length >= maxSessionLines) break
+    if (seen.has(session.id)) continue
+    const cost = estimateSessionCost(session)
+    if (selected.length > 0 && usedChars + cost > maxSessionChars) break
+      selected.push(session)
+      seen.add(session.id)
+      usedChars += cost
+  }
+
+  return selected
+}
+
+function trimHistoricalSessions(
+  sessions: Session[],
+  maxSessionLines: number,
+  maxSessionChars: number,
+): Session[] {
+  const prioritized = [...sessions].sort((a, b) => b.date.localeCompare(a.date) || b.timeBlock.localeCompare(a.timeBlock))
 
   const selected: Session[] = []
   let usedChars = 0
@@ -147,8 +176,10 @@ function getBudget(intent: ChatContext['intent']) {
       return {
         maxRecentMessages: 4,
         maxRecentMessageChars: 700,
-        maxSessionLines: 14,
-        maxSessionChars: 3600,
+        maxPlannedSessionLines: 10,
+        maxPlannedSessionChars: 2200,
+        maxHistoricalSessionLines: 10,
+        maxHistoricalSessionChars: 2600,
         maxWeekLogs: 4,
         maxWeekLogChars: 700,
       }
@@ -156,8 +187,10 @@ function getBudget(intent: ChatContext['intent']) {
       return {
         maxRecentMessages: 6,
         maxRecentMessageChars: 1000,
-        maxSessionLines: 10,
-        maxSessionChars: 2600,
+        maxPlannedSessionLines: 8,
+        maxPlannedSessionChars: 1800,
+        maxHistoricalSessionLines: 8,
+        maxHistoricalSessionChars: 1800,
         maxWeekLogs: 3,
         maxWeekLogChars: 520,
       }
@@ -165,8 +198,10 @@ function getBudget(intent: ChatContext['intent']) {
       return {
         maxRecentMessages: 2,
         maxRecentMessageChars: 300,
-        maxSessionLines: 16,
-        maxSessionChars: 3800,
+        maxPlannedSessionLines: 10,
+        maxPlannedSessionChars: 2200,
+        maxHistoricalSessionLines: 12,
+        maxHistoricalSessionChars: 2600,
         maxWeekLogs: 7,
         maxWeekLogChars: 1300,
       }
@@ -174,8 +209,10 @@ function getBudget(intent: ChatContext['intent']) {
       return {
         maxRecentMessages: DEFAULT_MAX_RECENT_MESSAGES,
         maxRecentMessageChars: DEFAULT_MAX_RECENT_MESSAGE_CHARS,
-        maxSessionLines: DEFAULT_MAX_SESSION_LINES,
-        maxSessionChars: DEFAULT_MAX_SESSION_CHARS,
+        maxPlannedSessionLines: DEFAULT_MAX_SESSION_LINES,
+        maxPlannedSessionChars: DEFAULT_MAX_SESSION_CHARS,
+        maxHistoricalSessionLines: DEFAULT_MAX_SESSION_LINES,
+        maxHistoricalSessionChars: DEFAULT_MAX_SESSION_CHARS,
         maxWeekLogs: DEFAULT_MAX_WEEK_LOGS,
         maxWeekLogChars: DEFAULT_MAX_WEEK_LOG_CHARS,
       }
@@ -185,6 +222,24 @@ function getBudget(intent: ChatContext['intent']) {
 function clipText(text: string, limit: number): string {
   if (text.length <= limit) return text
   return `${text.slice(0, Math.max(0, limit - 1)).trimEnd()}…`
+}
+
+function inferPlannedSessions(sessions: Session[]): Session[] {
+  return sessions.filter(session => session.status === 'planned' || session.date >= todayISO())
+}
+
+function inferHistoricalSessions(sessions: Session[]): Session[] {
+  return sessions.filter(session => session.status !== 'planned' || session.date < todayISO())
+}
+
+function mergeUniqueSessions(...groups: Session[][]): Session[] {
+  const merged = new Map<string, Session>()
+
+  for (const session of groups.flat()) {
+    merged.set(session.id, session)
+  }
+
+  return [...merged.values()].sort((a, b) => a.date.localeCompare(b.date) || a.timeBlock.localeCompare(b.timeBlock))
 }
 
 function estimateSessionCost(session: Session): number {

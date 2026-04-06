@@ -140,8 +140,19 @@ export default function ChatCoach() {
     loadProposals()
     loadMemory()
     loadWeek(currentWeekStartISO())
-    void computeLoadAnalytics(4).then(setLoadAnalytics)
   }, [loadHistory, loadProposals, loadMemory, loadWeek])
+
+  useEffect(() => {
+    let cancelled = false
+
+    void computeLoadAnalytics(4).then((analytics) => {
+      if (!cancelled) setLoadAnalytics(analytics)
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [sessions, dayLogs, currentWeekSummary])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -154,12 +165,17 @@ export default function ChatCoach() {
   }, [streamingText])
 
   const buildContext = (message: string): ChatContext => {
-    const recentSessions = [...sessions]
+    const sortedSessions = [...sessions]
       .sort((a, b) => a.date.localeCompare(b.date) || a.timeBlock.localeCompare(b.timeBlock))
-      .slice(-14)
+    const plannedSessions = sortedSessions.filter(session => session.date >= todayISO())
+    const historicalSessions = sortedSessions.filter(
+      session => session.status !== 'planned' || session.date < todayISO(),
+    )
 
     return {
-      recentSessions,
+      recentSessions: sortedSessions,
+      plannedSessions,
+      historicalSessions,
       currentWeekSummary: currentWeekSummary ?? undefined,
       dayLog: dayLogs[todayISO()],
       weekDayLogs: Object.values(dayLogs),

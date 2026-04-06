@@ -1,9 +1,8 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Cloud, CloudOff } from 'lucide-react'
+import { Target } from 'lucide-react'
 import { useTrainingStore } from '../store/useTrainingStore'
 import { useCoachMemoryStore } from '../store/useCoachMemoryStore'
-import { useAuthStore } from '../store/useAuthStore'
 import { useUIStore } from '../store/useUIStore'
 import { todayISO, formatFullDate } from '../utils/date'
 import { ROUTES } from '../constants/routes'
@@ -14,7 +13,7 @@ import Card from '../components/ui/Card'
 import { getDayNutrition } from '../services/nutritionEngine'
 import { computeLoadAnalytics, type LoadAnalytics } from '../services/loadAnalytics'
 import { startNotificationSync } from '../services/notifications'
-import { getAthleteFirstName } from '../utils/athlete'
+import { getAthleteFirstName, getProfileCompleteness } from '../utils/athlete'
 import { computeMacroPlan, getPrimaryGoalEvent } from '../services/macroPlan'
 
 const CoachMessageCard = lazy(() => import('../components/dashboard/CoachMessageCard'))
@@ -27,7 +26,6 @@ const MacroPlanCard = lazy(() => import('../components/dashboard/MacroPlanCard')
 export default function Dashboard() {
   const { sessions, currentWeekSummary, isLoading, loadWeek } = useTrainingStore()
   const { athleteProfile, loadMemory } = useCoachMemoryStore()
-  const { syncStatus, syncError, syncDetails } = useAuthStore()
   const { currentWeekStart } = useUIStore()
   const navigate = useNavigate()
   const today = todayISO()
@@ -64,12 +62,13 @@ export default function Dashboard() {
     .sort((a, b) => a.date.localeCompare(b.date) || a.timeBlock.localeCompare(b.timeBlock))
     .slice(0, 4)
 
-  const todayNutrition = getDayNutrition(todaySessions)
+  const todayNutrition = getDayNutrition(todaySessions, athleteProfile)
 
   const coachNote = currentWeekSummary?.coachNote ??
     `Bienvenido${athleteProfile?.name ? `, ${athleteFirstName}` : ''}. Carga tu primera semana de entrenamiento y empieza a registrar tu progreso.`
 
-  const showSyncAlert = syncStatus === 'offline' || syncStatus === 'error' || syncDetails.pendingOps > 0
+  const profileCompleteness = getProfileCompleteness(athleteProfile ?? null)
+  const showProfileNudge = profileCompleteness.state === 'partial' || profileCompleteness.state === 'missing_sports'
 
   return (
     <div className="px-4 pt-12 pb-6 space-y-5 md:px-6 md:space-y-6">
@@ -86,53 +85,60 @@ export default function Dashboard() {
         )}
       </div>
 
-      {showSyncAlert && (
-        <Card className="p-4 border-amber-500/20 bg-amber-500/5">
-          <div className="flex items-start gap-3">
-            <div className="mt-0.5 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-amber-500/10">
-              {syncStatus === 'offline' || syncStatus === 'error' ? (
-                <CloudOff size={16} className="text-amber-400" />
-              ) : (
-                <Cloud size={16} className="text-amber-400" />
-              )}
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold text-ink">Sincronizacion pendiente</p>
-              <p className="mt-1 text-xs leading-relaxed text-ink-muted">
-                {syncStatus === 'offline'
-                  ? 'Estás sin conexión. Tus cambios siguen guardados aquí y la app reintentará sincronizar sola al volver la red o al recuperar foco.'
-                  : syncStatus === 'error'
-                    ? syncError ?? 'Hubo un problema al sincronizar con el servidor. Tus cambios locales siguen guardados y puedes reintentar desde Ajustes.'
-                    : `Hay ${syncDetails.pendingOps} cambio(s) local(es) pendientes por subir. Si la cola no baja, revisa Ajustes > Cuenta y sincronización.`}
-              </p>
-              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-ink-faint">
-                <span>Pendientes: {syncDetails.pendingOps}</span>
-                {(syncDetails.pendingUpserts > 0 || syncDetails.pendingDeletes > 0) && (
-                  <span>Upserts/deletes: {syncDetails.pendingUpserts}/{syncDetails.pendingDeletes}</span>
-                )}
-                {syncDetails.lastSuccessfulSyncAt && (
-                  <span>Ultimo sync OK: {formatSyncTimestamp(syncDetails.lastSuccessfulSyncAt)}</span>
-                )}
-                {syncDetails.lastRecoveredSyncAt && (
-                  <span>Recovery offline: {formatSyncTimestamp(syncDetails.lastRecoveredSyncAt)}</span>
-                )}
-                {syncDetails.oldestPendingOpAt && (
-                  <span>Cola mas antigua: {formatSyncTimestamp(syncDetails.oldestPendingOpAt)}</span>
-                )}
+      {showProfileNudge && (
+        <button
+          type="button"
+          onClick={() => navigate(ROUTES.SETTINGS)}
+          className="w-full text-left"
+        >
+          <Card className="p-4 border-brand/20 bg-brand/5 hover:bg-brand/10 transition-colors">
+            <div className="flex items-start gap-3">
+              <span className="mt-0.5 text-base leading-none">💡</span>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-ink">
+                  Completa tu perfil para mejorar el coach
+                </p>
+                <p className="mt-1 text-xs text-ink-muted leading-relaxed">
+                  {profileCompleteness.state === 'missing_sports'
+                    ? 'Configura tu deporte principal para que el coach pueda personalizar tus entrenamientos.'
+                    : `Falta: ${profileCompleteness.missing.join(', ')}. Con esos datos el coach propone cargas reales.`}
+                </p>
+                <p className="mt-2 text-xs font-medium text-brand-light">Ir a Ajustes →</p>
               </div>
             </div>
-          </div>
-        </Card>
+          </Card>
+        </button>
       )}
 
       <Suspense fallback={<CardSkeleton className="h-28" />}>
         <CoachMessageCard message={coachNote} />
       </Suspense>
 
-      {macroPlan && (
+      {macroPlan ? (
         <Suspense fallback={<CardSkeleton className="h-32" />}>
           <MacroPlanCard macroPlan={macroPlan} eventTitle={primaryGoalEvent?.title} />
         </Suspense>
+      ) : (
+        <button
+          type="button"
+          onClick={() => navigate(ROUTES.COMPETITION_PLAN)}
+          className="w-full text-left"
+        >
+          <Card className="p-4 border-surface-border hover:border-brand/30 hover:bg-brand/5 transition-colors">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-full bg-surface-raised flex items-center justify-center flex-shrink-0">
+                <Target size={16} className="text-ink-faint" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-ink">Crea tu plan de competencia</p>
+                <p className="text-xs text-ink-muted mt-0.5">
+                  Define tu evento y genera un plan por fases hasta el día de la carrera o el torneo.
+                </p>
+              </div>
+              <span className="text-xs font-medium text-brand-light flex-shrink-0">Empezar →</span>
+            </div>
+          </Card>
+        </button>
       )}
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)] xl:items-start">
@@ -229,15 +235,3 @@ function CardSkeleton({ className }: { className: string }) {
   return <div className={`rounded-card border border-surface-border bg-surface-card animate-pulse ${className}`} />
 }
 
-function formatSyncTimestamp(timestamp: number): string {
-  try {
-    return new Intl.DateTimeFormat('es-CL', {
-      day: 'numeric',
-      month: 'short',
-      hour: '2-digit',
-      minute: '2-digit',
-    }).format(new Date(timestamp))
-  } catch {
-    return String(timestamp)
-  }
-}

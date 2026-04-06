@@ -41,6 +41,23 @@ export interface WeekLoadSummary {
   cyclingMinutes: number
 }
 
+export type ACWRZone = 'undertrained' | 'optimal' | 'risk' | 'limited'
+
+export interface ACWR {
+  /** Acute load: current week weighted load */
+  acute: number
+  /** Chronic load: average of previous loaded weeks, excluding current week */
+  chronic: number
+  /** Ratio: acute / chronic */
+  ratio: number
+  /** Traffic-light zone based on standard sport science thresholds */
+  zone: ACWRZone
+  /** Number of previous weeks used to build the chronic baseline */
+  baselineWeeks: number
+  /** When true, the ratio is informative but not strong enough for a hard warning */
+  baselineLimited: boolean
+}
+
 export interface LoadAnalytics {
   /** Ordered newest-first: [0] = current week, [1] = last week … */
   weeks: WeekLoadSummary[]
@@ -50,6 +67,13 @@ export interface LoadAnalytics {
   runningTrend: LoadTrend
   /** Adherence trend: is the athlete completing more or fewer sessions? */
   adherenceTrend: LoadTrend
+  /**
+   * Acute:Chronic Workload Ratio.
+   * Null when there is no previous training load to use as chronic baseline.
+   * Thresholds: <0.8 undertrained, 0.8–1.3 optimal, >1.3 risk.
+   * When baselineLimited is true, show it as directional guidance only.
+   */
+  acwr: ACWR | null
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -79,6 +103,46 @@ function trend(current: number, previous: number): LoadTrend {
   if (ratio > 1.12) return 'increasing'
   if (ratio < 0.88) return 'decreasing'
   return 'stable'
+}
+
+function computeAcwr(weeks: WeekLoadSummary[]): ACWR | null {
+  const current = weeks[0]
+  if (!current || current.totalWeightedLoad <= 0) {
+    return null
+  }
+
+  const baselineWeeks = weeks
+    .slice(1)
+    .filter((week) => week.totalWeightedLoad > 0)
+
+  if (baselineWeeks.length === 0) {
+    return null
+  }
+
+  const acute = current.totalWeightedLoad
+  const chronic = baselineWeeks.reduce((sum, week) => sum + week.totalWeightedLoad, 0) / baselineWeeks.length
+  const ratio = acute / chronic
+  const baselineLimited = baselineWeeks.length < 3
+
+  let zone: ACWRZone
+  if (baselineLimited) {
+    zone = 'limited'
+  } else if (ratio < 0.8) {
+    zone = 'undertrained'
+  } else if (ratio > 1.3) {
+    zone = 'risk'
+  } else {
+    zone = 'optimal'
+  }
+
+  return {
+    acute,
+    chronic,
+    ratio,
+    zone,
+    baselineWeeks: baselineWeeks.length,
+    baselineLimited,
+  }
 }
 
 function computeWeekSummary(weekStart: string, sessions: Session[]): WeekLoadSummary {
@@ -192,6 +256,8 @@ export async function computeLoadAnalytics(weeksBack = 4): Promise<LoadAnalytics
   const current = weeks[0]
   const previous = weeks[1]
 
+  const acwr = computeAcwr(weeks)
+
   return {
     weeks,
     overallTrend: previous
@@ -203,5 +269,6 @@ export async function computeLoadAnalytics(weeksBack = 4): Promise<LoadAnalytics
     adherenceTrend: previous
       ? trend(current.adherencePct, previous.adherencePct)
       : 'stable',
+    acwr,
   }
 }

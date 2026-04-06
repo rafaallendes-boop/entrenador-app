@@ -1,8 +1,8 @@
 import { useState } from 'react'
-import { ChevronDown, ChevronUp } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { ChevronDown, ChevronUp, ExternalLink } from 'lucide-react'
 import type {
   AthleteProfile,
-  GoalEvent,
   NutritionProfile,
   RecoveryProfile,
   RunningProfile,
@@ -17,7 +17,7 @@ import {
   getSportPrioritySummary,
 } from '../../utils/athlete'
 import { computeMacroPlan } from '../../services/macroPlan'
-import { v4 as uuid } from '../../utils/uuid'
+
 
 const DAYS = ['lun', 'mar', 'mie', 'jue', 'vie', 'sab', 'dom']
 
@@ -45,6 +45,7 @@ interface Props {
 type Section = 'sport' | 'running' | 'strength' | 'recovery' | 'schedule' | 'nutrition' | 'goalEvent'
 
 export default function AthleteProfileEditor({ profile, isSaving, onSave }: Props) {
+  const navigate = useNavigate()
   const [open, setOpen] = useState<Section | null>(null)
   const [saved, setSaved] = useState(false)
 
@@ -70,13 +71,8 @@ export default function AthleteProfileEditor({ profile, isSaving, onSave }: Prop
   const [scheduleConstraints, setScheduleConstraints] = useState(profile?.scheduleProfile?.constraints ?? '')
   const [nutrition, setNutrition] = useState<NutritionProfile>(profile?.nutritionProfile ?? {})
 
-  // Goal event state (MVP: single primary event)
+  // Goal event is now managed by the Competition Plan wizard
   const existingEvent = profile?.goalEvents?.[0]
-  const [goalEventTitle, setGoalEventTitle] = useState(existingEvent?.title ?? '')
-  const [goalEventDate, setGoalEventDate] = useState(existingEvent?.date ?? '')
-  const [goalEventSport, setGoalEventSport] = useState(existingEvent?.sport ?? '')
-  const [goalEventNotes, setGoalEventNotes] = useState(existingEvent?.notes ?? '')
-  const [goalEventId] = useState(existingEvent?.id ?? uuid())
 
   const resolvedPrimarySport = primarySportCtx ?? (enabledSports.length === 1 ? enabledSports[0] : null)
   const secondarySportsCtx = resolvedPrimarySport
@@ -120,20 +116,8 @@ export default function AthleteProfileEditor({ profile, isSaving, onSave }: Prop
       constraints: scheduleConstraints.trim() || undefined,
     }
 
-    // Build goal events (MVP: single primary event)
-    const hasGoalEvent = goalEventTitle.trim() && goalEventDate.trim()
-    const goalEvents: GoalEvent[] | undefined = hasGoalEvent
-      ? [{
-          id: goalEventId,
-          title: goalEventTitle.trim(),
-          date: goalEventDate.trim(),
-          sport: goalEventSport.trim() || resolvedPrimarySport || 'general',
-          priority: 'primary' as const,
-          notes: goalEventNotes.trim() || undefined,
-        }]
-      : undefined
-
-    // Build a draft profile to compute macroPlan
+    // Goal events are managed by the Competition Plan wizard — preserve as-is
+    const goalEvents = profile?.goalEvents
     const draftProfile: AthleteProfile = {
       id: profile?.id ?? 'draft',
       updatedAt: Date.now(),
@@ -505,56 +489,30 @@ export default function AthleteProfileEditor({ profile, isSaving, onSave }: Prop
         title="Objetivo principal"
         open={open === 'goalEvent'}
         onToggle={() => toggle('goalEvent')}
-        filled={!!goalEventTitle.trim() && !!goalEventDate.trim()}
+        filled={!!existingEvent}
       >
         <p className="text-xs text-ink-muted mb-3 leading-relaxed">
-          Define tu evento o competencia principal. El sistema calculará automáticamente la fase de entrenamiento y el foco del bloque.
+          Tu evento principal se configura con el wizard "Plan de competencia", que también crea el plan de entrenamiento por fases.
         </p>
 
-        <Field label="Nombre del evento">
-          <input
-            value={goalEventTitle}
-            onChange={(e) => setGoalEventTitle(e.target.value)}
-            placeholder="ej: Torneo Regional, Media Maratón Santiago"
-            className={inputCls}
-          />
-        </Field>
-
-        <Field label="Fecha del evento">
-          <input
-            type="date"
-            value={goalEventDate}
-            onChange={(e) => setGoalEventDate(e.target.value)}
-            className={inputCls}
-          />
-        </Field>
-
-        <Field label="Deporte" hint="opcional, usa el principal si está vacío">
-          <input
-            value={goalEventSport}
-            onChange={(e) => setGoalEventSport(e.target.value)}
-            placeholder={resolvedPrimarySport ?? 'ej: squash, running, ciclismo'}
-            className={inputCls}
-          />
-        </Field>
-
-        <Field label="Notas" hint="opcional">
-          <input
-            value={goalEventNotes}
-            onChange={(e) => setGoalEventNotes(e.target.value)}
-            placeholder="ej: objetivo top 8, estrategia defensiva..."
-            className={inputCls}
-          />
-        </Field>
-
-        {goalEventTitle.trim() && goalEventDate.trim() && (
-          <div className="rounded-xl border border-surface-border bg-surface-raised px-3 py-2">
-            <p className="text-[10px] font-medium uppercase tracking-wider text-ink-faint">Preview</p>
-            <p className="mt-1 text-sm text-ink">
-              {goalEventTitle.trim()} · {goalEventDate} · {goalEventSport.trim() || resolvedPrimarySport || 'general'}
-            </p>
+        {existingEvent ? (
+          <div className="rounded-xl border border-surface-border bg-surface-raised px-3 py-3 mb-3">
+            <p className="text-[10px] font-medium uppercase tracking-wider text-ink-faint mb-1">Evento activo</p>
+            <p className="text-sm font-medium text-ink">{existingEvent.title}</p>
+            <p className="text-xs text-ink-muted mt-0.5">{existingEvent.date} · {existingEvent.sport}</p>
           </div>
+        ) : (
+          <p className="text-xs text-ink-faint mb-3">No hay evento configurado.</p>
         )}
+
+        <a
+          href="/competition-plan"
+          onClick={(e) => { e.preventDefault(); navigate('/competition-plan') }}
+          className="inline-flex items-center gap-1.5 rounded-xl border border-brand/30 bg-brand/10 px-3 py-2 text-sm font-medium text-brand-light hover:bg-brand/20 transition-colors"
+        >
+          <ExternalLink size={14} />
+          {existingEvent ? 'Editar en Plan de competencia' : 'Crear Plan de competencia'}
+        </a>
       </SectionPanel>
 
       <SectionPanel

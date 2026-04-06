@@ -38,10 +38,18 @@ export default function NutritionFocusCard({ rec }: NutritionFocusCardProps) {
         </div>
       </button>
 
-      {/* Hydration always visible */}
-      <div className="flex items-center gap-2 px-4 pb-3 -mt-1">
-        <Droplets size={13} className="text-sky-400 flex-shrink-0" />
-        <span className="text-xs text-ink-muted">{rec.hydration}</span>
+      {/* Protein target + hydration always visible */}
+      <div className="px-4 pb-3 -mt-1 space-y-1.5">
+        {rec.proteinTarget && (
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold text-violet-400">{rec.proteinTarget}</span>
+            <span className="text-[10px] text-ink-faint">objetivo del día</span>
+          </div>
+        )}
+        <div className="flex items-center gap-2">
+          <Droplets size={13} className="text-sky-400 flex-shrink-0" />
+          <span className="text-xs text-ink-muted">{rec.hydration}</span>
+        </div>
       </div>
 
       {/* Pre/post workout quick view */}
@@ -98,6 +106,16 @@ export default function NutritionFocusCard({ rec }: NutritionFocusCardProps) {
               </div>
             ))}
           </div>
+
+          {/* Dietary notes from profile */}
+          {rec.dietaryNotes && (
+            <div className="px-4 pb-4 pt-1 border-t border-surface-border">
+              <p className="text-[11px] text-ink-faint font-semibold uppercase tracking-wider mb-1">
+                Tus preferencias
+              </p>
+              <p className="text-xs text-ink-muted leading-relaxed">{rec.dietaryNotes}</p>
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -1,0 +1,302 @@
+import type { SquashDrill, SquashTrainingFocus } from '../../types'
+
+export type DrillCategory = 'technical' | 'tactical' | 'physical' | 'match'
+export type DrillIntensity = 'low' | 'moderate' | 'high'
+export type DrillProgressionLevel = 1 | 2 | 3
+
+export interface SquashDrillDefinition {
+  id: string
+  name: string
+  category: DrillCategory
+  focus: string[]
+  intensity: DrillIntensity
+  tags: string[]
+  description: string
+  constraints?: string[]
+  progressionLevel?: DrillProgressionLevel
+}
+
+export const SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
+  {
+    id: 'drive_parallel_depth',
+    name: 'Drives paralelos a profundidad',
+    category: 'technical',
+    focus: ['drive', 'length', 'control'],
+    intensity: 'moderate',
+    tags: ['parallel', 'drive', 'base', 'build', 'length_control'],
+    description: 'Peloteo de drives paralelos buscando profundidad constante a la pared del fondo.',
+    progressionLevel: 1,
+  },
+  {
+    id: 'drive_crosscourt_length',
+    name: 'Drives cruzados con longitud',
+    category: 'technical',
+    focus: ['drive', 'crosscourt', 'length'],
+    intensity: 'moderate',
+    tags: ['crosscourt', 'drive', 'base', 'build', 'length_control'],
+    description: 'Secuencias de drives cruzados manteniendo altura y largo para desplazar al rival.',
+    progressionLevel: 1,
+  },
+  {
+    id: 'drive_switch_parallel_cross',
+    name: 'Cambio de drive paralelo a cruzado',
+    category: 'technical',
+    focus: ['drive', 'transition', 'precision'],
+    intensity: 'moderate',
+    tags: ['parallel', 'crosscourt', 'drive', 'build', 'variation'],
+    description: 'Alternar paralelo y cruzado sin perder longitud ni control del centro.',
+    progressionLevel: 2,
+  },
+  {
+    id: 'boast_to_straight_drive',
+    name: 'Boast a drive de salida',
+    category: 'technical',
+    focus: ['boast', 'drive', 'recovery'],
+    intensity: 'moderate',
+    tags: ['boast', 'drive', 'build', 'recovery_technical'],
+    description: 'Trabajar salida desde boast corto hacia drive limpio con recuperación al T.',
+    progressionLevel: 2,
+  },
+  {
+    id: 'drop_and_counter_drop',
+    name: 'Drop y contra-drop por ambos lados',
+    category: 'technical',
+    focus: ['drop', 'touch', 'front_court'],
+    intensity: 'low',
+    tags: ['drop', 'front_court', 'taper', 'recovery_technical'],
+    description: 'Series de drop y respuesta corta con foco en toque, altura y segunda acción.',
+    progressionLevel: 1,
+  },
+  {
+    id: 'volley_control_midcourt',
+    name: 'Volea de control desde media cancha',
+    category: 'technical',
+    focus: ['volley', 'control', 'midcourt'],
+    intensity: 'moderate',
+    tags: ['volley', 'control', 'midcourt', 'base', 'build'],
+    description: 'Voleas sostenidas desde media cancha buscando estabilidad y preparación temprana.',
+    progressionLevel: 1,
+  },
+  {
+    id: 'volley_pressure_front_wall',
+    name: 'Volea de presión a pared frontal',
+    category: 'technical',
+    focus: ['volley', 'pressure', 'attack'],
+    intensity: 'moderate',
+    tags: ['volley', 'pressure', 'attack', 'build', 'peak'],
+    description: 'Secuencias de volea ofensiva apretando tiempo y posición rival.',
+    progressionLevel: 2,
+  },
+  {
+    id: 'volley_t_recover',
+    name: 'Volea con recuperación al T',
+    category: 'tactical',
+    focus: ['volley', 't_control', 'recovery'],
+    intensity: 'moderate',
+    tags: ['volley', 't_control', 'build', 'peak'],
+    description: 'Volear y recuperar inmediatamente al T para sostener dominio del punto.',
+    progressionLevel: 2,
+  },
+  {
+    id: 't_control_long_short',
+    name: 'Control del T con patrón largo-corto',
+    category: 'tactical',
+    focus: ['t_control', 'long_short', 'pressure'],
+    intensity: 'moderate',
+    tags: ['t_control', 'long_short', 'conditioned_game', 'build', 'peak'],
+    description: 'Secuencias desde el T alternando profundidad y bola corta para abrir espacio.',
+    progressionLevel: 2,
+  },
+  {
+    id: 'attack_from_t_first_ball',
+    name: 'Ataque desde T a primera bola',
+    category: 'tactical',
+    focus: ['t_control', 'attack', 'initiative'],
+    intensity: 'high',
+    tags: ['t_control', 'attack', 'peak', 'initiative'],
+    description: 'Ejercicio de lectura y toma del T para atacar la primera pelota útil.',
+    progressionLevel: 3,
+  },
+  {
+    id: 'pressure_back_corners',
+    name: 'Presión a esquinas de fondo',
+    category: 'tactical',
+    focus: ['pressure', 'back_court', 'length'],
+    intensity: 'moderate',
+    tags: ['pressure', 'back_court', 'build', 'peak'],
+    description: 'Patrón de presión continua sobre esquinas del fondo para encerrar al rival.',
+    progressionLevel: 2,
+  },
+  {
+    id: 'conditioned_parallel_only',
+    name: 'Juego condicionado solo paralelo',
+    category: 'tactical',
+    focus: ['conditioned_game', 'parallel', 'order'],
+    intensity: 'moderate',
+    tags: ['conditioned_game', 'parallel', 'build', 'peak'],
+    description: 'Punto condicionado donde solo se permite jugar paralelo para ordenar trayectorias.',
+    progressionLevel: 1,
+  },
+  {
+    id: 'conditioned_long_only',
+    name: 'Juego condicionado solo fondo',
+    category: 'tactical',
+    focus: ['conditioned_game', 'length', 'pressure'],
+    intensity: 'moderate',
+    tags: ['conditioned_game', 'length_control', 'pressure', 'base', 'build'],
+    description: 'Punto condicionado sin juego corto, priorizando profundidad y paciencia táctica.',
+    progressionLevel: 1,
+  },
+  {
+    id: 'conditioned_no_two_bounces',
+    name: 'Juego condicionado sin segundos botes',
+    category: 'tactical',
+    focus: ['conditioned_game', 'intensity', 'speed'],
+    intensity: 'high',
+    tags: ['conditioned_game', 'speed', 'peak', 'pressure'],
+    description: 'Juego condicionado con obligación de llegar temprano, subiendo el ritmo del intercambio. Por ejemplo, la pelota no puede pasar atras del cuadrado de saque',
+    progressionLevel: 3,
+  },
+  {
+    id: 'conditioned_forbidden_zone',
+    name: 'Juego condicionado con zona prohibida',
+    category: 'tactical',
+    focus: ['conditioned_game', 'targets', 'decision_making'],
+    intensity: 'moderate',
+    tags: ['conditioned_game', 'targets', 'build', 'peak'],
+    description: 'Se restringe una zona de cancha para forzar nuevas decisiones tácticas y ángulos.',
+    progressionLevel: 2,
+  },
+  {
+    id: 'conditioned_boast_start',
+    name: 'Juego condicionado iniciando en boast',
+    category: 'tactical',
+    focus: ['conditioned_game', 'boast', 'transition'],
+    intensity: 'moderate',
+    tags: ['conditioned_game', 'boast', 'transition', 'build'],
+    description: 'Cada punto inicia con boast para trabajar salidas, lectura y reorganización del T.',
+    progressionLevel: 2,
+  },
+  {
+    id: 'front_back_transition',
+    name: 'Transición frente-fondo con recuperación',
+    category: 'tactical',
+    focus: ['transition', 'recovery', 'court_coverage'],
+    intensity: 'moderate',
+    tags: ['transition', 'court_coverage', 'build', 'peak'],
+    description: 'Alternancia de bola corta y larga con recuperación disciplinada al centro.',
+    progressionLevel: 2,
+  },
+  {
+    id: 'ghosting_4_corners',
+    name: 'Ghosting 4 esquinas',
+    category: 'physical',
+    focus: ['ghosting', 'movement', 'conditioning'],
+    intensity: 'moderate',
+    tags: ['ghosting', 'movement', 'base', 'build'],
+    description: 'Ghosting clásico a cuatro esquinas con foco en patrón técnico y control corporal.',
+    progressionLevel: 1,
+  },
+  {
+    id: 'ghosting_6_points',
+    name: 'Ghosting 6 puntos',
+    category: 'physical',
+    focus: ['ghosting', 'movement', 'speed'],
+    intensity: 'high',
+    tags: ['ghosting', 'movement', 'speed', 'build', 'peak'],
+    description: 'Ghosting a seis puntos con mayor frecuencia de apoyos y demanda cardiovascular.',
+    progressionLevel: 2,
+  },
+  {
+    id: 'split_step_t_recovery',
+    name: 'Split step y recuperación al T',
+    category: 'physical',
+    focus: ['footwork', 't_control', 'reaction'],
+    intensity: 'moderate',
+    tags: ['footwork', 't_control', 'build', 'taper'],
+    description: 'Bloques cortos de split step, salida y recuperación rápida al T.',
+    progressionLevel: 1,
+  },
+  {
+    id: 'rsa_short_bursts',
+    name: 'RSA corto 10-15s',
+    category: 'physical',
+    focus: ['rsa', 'conditioning', 'repeat_sprint'],
+    intensity: 'high',
+    tags: ['rsa', 'conditioning', 'peak', 'speed'],
+    description: 'Repeticiones cortas de alta intensidad con recuperación incompleta para tolerancia al esfuerzo.',
+    progressionLevel: 3,
+  },
+  {
+    id: 'multiball_pressure_finishes',
+    name: 'Multiball de presión y cierre',
+    category: 'physical',
+    focus: ['multiball', 'pressure', 'finish'],
+    intensity: 'high',
+    tags: ['multiball', 'pressure', 'peak', 'attack'],
+    description: 'Multiball intenso para presión continua y definición de la jugada.',
+    progressionLevel: 3,
+  },
+  {
+    id: 'technical_recovery_length',
+    name: 'Recuperación técnica con largo controlado',
+    category: 'technical',
+    focus: ['recovery_technical', 'length', 'rhythm'],
+    intensity: 'low',
+    tags: ['recovery_technical', 'length_control', 'taper', 'base'],
+    description: 'Peloteo largo de baja fatiga para recuperar sensaciones y timing.',
+    progressionLevel: 1,
+  },
+  {
+    id: 'pre_match_activation_timing',
+    name: 'Activación pre-partido de timing',
+    category: 'match',
+    focus: ['activation', 'timing', 'confidence'],
+    intensity: 'low',
+    tags: ['pre_match', 'taper', 'timing', 'activation'],
+    description: 'Secuencia breve de activación de manos, pies y percepción antes de competir.',
+    progressionLevel: 1,
+  },
+  {
+    id: 'match_sim_points_short_sets',
+    name: 'Puntos de partido en sets cortos',
+    category: 'match',
+    focus: ['match_play', 'decision_making', 'pressure'],
+    intensity: 'high',
+    tags: ['match_play', 'peak', 'pressure', 'competitive'],
+    description: 'Jugar puntos o sets cortos con scoring reducido para simular estrés competitivo.',
+    progressionLevel: 3,
+  },
+]
+
+export function toSquashDrill(definition: SquashDrillDefinition, durationMin?: number, notes?: string): SquashDrill {
+  return {
+    name: definition.name,
+    durationMin,
+    notes: notes ?? definition.description,
+  }
+}
+
+export function normalizeSquashDrillKey(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+}
+
+export function findSquashDrillByName(name: string): SquashDrillDefinition | undefined {
+  const normalizedName = normalizeSquashDrillKey(name)
+  return SQUASH_DRILL_LIBRARY.find(
+    drill => drill.id === normalizedName || normalizeSquashDrillKey(drill.name) === normalizedName,
+  )
+}
+
+export function getSuggestedTrainingFocus(category: DrillCategory, tags: string[]): SquashTrainingFocus {
+  if (tags.includes('conditioned_game')) return 'conditioned_games'
+  if (category === 'tactical') return 'tactical'
+  if (category === 'physical') return 'physical'
+  return 'technical'
+}

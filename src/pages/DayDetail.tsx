@@ -10,7 +10,8 @@ import Card from '../components/ui/Card'
 import { ROUTES } from '../constants/routes'
 import { getDayNutrition, getLoadTypeLabel, getLoadTypeColor } from '../services/nutritionEngine'
 import { resolveSessionProtocols } from '../services/trainingProtocols'
-import type { DayLog, GeneratedProtocol, Session } from '../types'
+import { useCoachMemoryStore } from '../store/useCoachMemoryStore'
+import type { AthleteProfile, DayLog, GeneratedProtocol, Session } from '../types'
 
 function DayFeedbackFields({
   dayLog,
@@ -111,8 +112,8 @@ function DayRecoveryNotes({
   )
 }
 
-function DayNutritionCard({ sessions }: { sessions: Session[] }) {
-  const rec = getDayNutrition(sessions)
+function DayNutritionCard({ sessions, profile }: { sessions: Session[]; profile?: AthleteProfile | null }) {
+  const rec = getDayNutrition(sessions, profile)
   const colorClass = getLoadTypeColor(rec.loadType)
   const label = getLoadTypeLabel(rec.loadType)
 
@@ -132,6 +133,12 @@ function DayNutritionCard({ sessions }: { sessions: Session[] }) {
         </span>
       </div>
       <p className="text-xs text-ink-muted">{rec.dailyFocus}</p>
+      {rec.proteinTarget && (
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-semibold text-violet-400">{rec.proteinTarget}</span>
+          <span className="text-[10px] text-ink-faint">objetivo del día</span>
+        </div>
+      )}
       {rows.length > 0 && (
         <div className="space-y-2 pt-1">
           {rows.map(row => (
@@ -140,6 +147,12 @@ function DayNutritionCard({ sessions }: { sessions: Session[] }) {
               <p className="text-xs text-ink-muted mt-0.5">{row.value}</p>
             </div>
           ))}
+        </div>
+      )}
+      {rec.dietaryNotes && (
+        <div className="pt-2 border-t border-surface-border">
+          <p className="text-[11px] font-semibold text-ink-faint uppercase tracking-wider mb-1">Tus preferencias</p>
+          <p className="text-xs text-ink-muted leading-relaxed">{rec.dietaryNotes}</p>
         </div>
       )}
     </Card>
@@ -178,6 +191,7 @@ function ProtocolGuideCard({ label, protocol }: { label: string; protocol?: Gene
 export default function DayDetail() {
   const { date } = useParams<{ date: string }>()
   const { sessions, dayLogs, loadWeek, saveDayLog, updateSession } = useTrainingStore()
+  const { athleteProfile } = useCoachMemoryStore()
   const { setCurrentWeekStart, setSelectedDate } = useUIStore()
 
   useEffect(() => {
@@ -277,7 +291,7 @@ export default function DayDetail() {
           </div>
         )}
 
-        <DayNutritionCard sessions={daySessions} />
+        <DayNutritionCard sessions={daySessions} profile={athleteProfile} />
 
         <Card className="p-4 space-y-4">
           <div>
