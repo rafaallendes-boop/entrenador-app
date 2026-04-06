@@ -35,6 +35,7 @@ import { useAuthStore } from '../store/useAuthStore'
 import { useTrainingStore } from '../store/useTrainingStore'
 import { currentWeekStartISO } from '../utils/date'
 import { getEnabledSports, getSportPrioritySummary } from '../utils/athlete'
+import { clearOnboardingSkipped } from '../utils/onboarding'
 import type { Session } from '../types'
 
 const CLEARABLE_GROUPS: Array<{
@@ -276,6 +277,7 @@ export default function SettingsPage() {
     setImportStatus(null)
     try {
       await wipeRemoteAndLocalAppData(currentUser.id)
+      clearOnboardingSkipped(currentUser.id)
       await refreshCounts(setDataCounts)
       await refreshNotificationDebugState(setNotificationDebugState)
       await loadMemory()

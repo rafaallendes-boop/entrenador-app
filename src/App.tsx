@@ -69,9 +69,15 @@ export default function App() {
 
     let cancelled = false
     let syncInFlight = false
+    let lastAutoRetryAt = 0
 
-    const syncSignedInUser = async () => {
+    const syncSignedInUser = async (reason: 'initial' | 'online' | 'visible' = 'initial') => {
       if (syncInFlight) return
+      if (reason !== 'initial') {
+        const now = Date.now()
+        if (now - lastAutoRetryAt < 15000) return
+        lastAutoRetryAt = now
+      }
       syncInFlight = true
 
       try {
@@ -99,30 +105,24 @@ export default function App() {
     void syncSignedInUser()
 
     const handleOnline = () => {
-      void syncSignedInUser()
-    }
-
-    const handleFocus = () => {
-      const { syncStatus, syncDetails } = useAuthStore.getState()
-      if (syncStatus === 'offline' || syncStatus === 'error' || syncDetails.pendingOps > 0) {
-        void syncSignedInUser()
-      }
+      void syncSignedInUser('online')
     }
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
-        handleFocus()
+        const { syncStatus, syncDetails } = useAuthStore.getState()
+        if (syncStatus === 'offline' || syncStatus === 'error' || syncDetails.pendingOps > 0) {
+          void syncSignedInUser('visible')
+        }
       }
     }
 
     window.addEventListener('online', handleOnline)
-    window.addEventListener('focus', handleFocus)
     document.addEventListener('visibilitychange', handleVisibilityChange)
 
     return () => {
       cancelled = true
       window.removeEventListener('online', handleOnline)
-      window.removeEventListener('focus', handleFocus)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
   }, [userId])
