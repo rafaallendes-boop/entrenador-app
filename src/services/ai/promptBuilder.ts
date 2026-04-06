@@ -19,6 +19,7 @@ import {
   getSportPrioritySummary,
 } from '../../utils/athlete'
 import { classifyDayLoad, getDayNutrition, getLoadTypeLabel } from '../nutritionEngine'
+import { computeMacroPlan, getPrimaryGoalEvent, getPhaseLabel, formatWeeksRemaining } from '../macroPlan'
 
 const SQUASH_SUBTYPE_ES: Record<string, string> = {
   training: 'entrenamiento', match: 'partido', competitive: 'competitivo',
@@ -43,6 +44,7 @@ export function buildCoachSystemPrompt(context: ChatContext): string {
   const sections: string[] = [
     buildPersonaSection(context),
     buildAthleteProfileSection(context),
+    buildMacroPlanSection(context),
     buildCoachMemorySection(context),
     buildFatigueSection(context),
     buildHybridSection(context),
@@ -444,6 +446,30 @@ function buildAthleteProfileSection(context: ChatContext): string {
   if (lines.length === 1) return '' // only header, no data
   lines.push('')
   lines.push('Usa este perfil para proponer ritmos realistas, cargas de fuerza por % del 1RM y priorizar el deporte principal al armar la semana.')
+  return lines.join('\n')
+}
+
+function buildMacroPlanSection(context: ChatContext): string {
+  const profile = context.athleteProfile
+  const macroPlan = computeMacroPlan(profile)
+  if (!macroPlan) return ''
+
+  const event = getPrimaryGoalEvent(profile)
+  const eventTitle = event?.title ?? 'evento principal'
+
+  const lines: string[] = ['═══ MACRO PLAN ═══']
+  lines.push(`Evento principal: ${eventTitle} (${macroPlan.goalEventDate})`)
+  lines.push(`Fase actual: ${getPhaseLabel(macroPlan.currentPhase)}`)
+  lines.push(`Semanas restantes: ${formatWeeksRemaining(macroPlan.weeksRemaining)}`)
+  lines.push(`Foco del bloque: ${macroPlan.blockFocus}`)
+  lines.push('')
+  lines.push('REGLAS MACRO PLAN:')
+  lines.push('- Usa esta información para ajustar recomendaciones de carga, volumen e intensidad.')
+  lines.push('- NO redefinas fases ni crees bloques arbitrarios. Las fases son input del sistema.')
+  lines.push('- Si estás en taper o race, prioriza frescura sobre desarrollo.')
+  lines.push('- Si estás en base o build, puedes progresar volumen e intensidad normalmente.')
+  lines.push('- Si estás en transición (post-evento), prioriza recuperación activa y reset.')
+
   return lines.join('\n')
 }
 

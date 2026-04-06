@@ -6,6 +6,9 @@ import type {
   CoachAction,
   CoachProposal,
   DayLog,
+  GoalEvent,
+  MacroPlan,
+  MacroPlanPhase,
   Session,
   SupportedSport,
   TrainingPriority,
@@ -34,6 +37,7 @@ const SQUASH_TRAINING_FOCUSES = new Set(['technical', 'tactical', 'physical', 'c
 const PROPOSAL_STATUSES = new Set(['pending', 'accepted', 'rejected', 'partial'])
 const SUPPORTED_SPORTS = new Set(['squash', 'running', 'strength', 'mobility', 'cycling'])
 const TRAINING_PRIORITIES = new Set(['performance', 'fitness', 'body_composition', 'return_to_play'])
+const MACRO_PLAN_PHASES = new Set(['base', 'build', 'peak', 'taper', 'race', 'transition'])
 const COACH_ACTION_TYPES = new Set([
   'move_session',
   'change_rpe',
@@ -562,6 +566,8 @@ function parseAthleteProfile(value: unknown, index: number): AthleteProfile {
     recoveryProfile: optionalRecoveryProfile(row.recoveryProfile, `athleteProfiles[${index}].recoveryProfile`),
     scheduleProfile: optionalScheduleProfile(row.scheduleProfile, `athleteProfiles[${index}].scheduleProfile`),
     nutritionProfile: optionalNutritionProfile(row.nutritionProfile, `athleteProfiles[${index}].nutritionProfile`),
+    goalEvents: optionalGoalEvents(row.goalEvents, `athleteProfiles[${index}].goalEvents`),
+    macroPlan: optionalMacroPlan(row.macroPlan, `athleteProfiles[${index}].macroPlan`),
   }
 }
 
@@ -973,6 +979,35 @@ function optionalNutritionProfile(value: unknown, path: string): AthleteProfile[
     proteinTargetG: optionalFiniteNumber(row.proteinTargetG, `${path}.proteinTargetG`),
     dailyWaterLiters: optionalFiniteNumber(row.dailyWaterLiters, `${path}.dailyWaterLiters`),
     notes: optionalString(row.notes, `${path}.notes`),
+  }
+}
+
+function optionalGoalEvents(value: unknown, path: string): GoalEvent[] | undefined {
+  if (value == null) return undefined
+  const items = ensureArray(value, path)
+  return items.map((item, index) => {
+    const row = ensureRecord(item, `${path}[${index}]`)
+    return {
+      id: requireString(row.id, `${path}[${index}].id`),
+      title: requireString(row.title, `${path}[${index}].title`),
+      date: requireISODate(row.date, `${path}[${index}].date`),
+      sport: requireString(row.sport, `${path}[${index}].sport`),
+      priority: 'primary' as const,
+      notes: optionalString(row.notes, `${path}[${index}].notes`),
+    }
+  })
+}
+
+function optionalMacroPlan(value: unknown, path: string): MacroPlan | undefined {
+  if (value == null) return undefined
+  const row = ensureRecord(value, path)
+  return {
+    goalEventId: requireString(row.goalEventId, `${path}.goalEventId`),
+    goalEventDate: requireISODate(row.goalEventDate, `${path}.goalEventDate`),
+    currentPhase: requireEnum(row.currentPhase, MACRO_PLAN_PHASES, `${path}.currentPhase`) as MacroPlanPhase,
+    weeksRemaining: requireFiniteNumber(row.weeksRemaining, `${path}.weeksRemaining`),
+    blockFocus: requireString(row.blockFocus, `${path}.blockFocus`),
+    computedAt: requireFiniteNumber(row.computedAt, `${path}.computedAt`),
   }
 }
 

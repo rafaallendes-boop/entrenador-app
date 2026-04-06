@@ -222,6 +222,39 @@ export interface NutritionProfile {
 export type SupportedSport = 'squash' | 'running' | 'strength' | 'mobility' | 'cycling'
 export type TrainingPriority = 'performance' | 'fitness' | 'body_composition' | 'return_to_play'
 
+// ─── Macro planning (MVP) ─────────────────────────────────────────────────────
+
+export interface GoalEvent {
+  id: string
+  title: string
+  date: string            // ISO "YYYY-MM-DD"
+  sport: string           // free text aligned to SupportedSport when possible
+  priority: 'primary'     // MVP: only primary events
+  notes?: string
+}
+
+/**
+ * Deterministic macro phases resolved locally from distance to goal event.
+ * Thresholds (in weeks to event):
+ *   >12 → base, 8-12 → build, 4-8 → peak, 1-4 → taper, 0 → race, <0 → transition
+ */
+export type MacroPlanPhase =
+  | 'base'
+  | 'build'
+  | 'peak'
+  | 'taper'
+  | 'race'
+  | 'transition'
+
+export interface MacroPlan {
+  goalEventId: string
+  goalEventDate: string   // ISO "YYYY-MM-DD" — denormalized for quick display
+  currentPhase: MacroPlanPhase
+  weeksRemaining: number
+  blockFocus: string      // human-readable focus for the current phase
+  computedAt: number      // Date.now() timestamp of last computation
+}
+
 export interface AthleteProfile {
   id: string
   coachMemory?: string
@@ -245,6 +278,9 @@ export interface AthleteProfile {
   recoveryProfile?: RecoveryProfile
   scheduleProfile?: ScheduleProfile
   nutritionProfile?: NutritionProfile
+  // Macro planning (MVP — single primary event)
+  goalEvents?: GoalEvent[]
+  macroPlan?: MacroPlan
 }
 
 export interface ChatMessage {

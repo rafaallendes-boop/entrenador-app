@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Cloud, CloudOff } from 'lucide-react'
 import { useTrainingStore } from '../store/useTrainingStore'
@@ -15,12 +15,14 @@ import { getDayNutrition } from '../services/nutritionEngine'
 import { computeLoadAnalytics, type LoadAnalytics } from '../services/loadAnalytics'
 import { startNotificationSync } from '../services/notifications'
 import { getAthleteFirstName } from '../utils/athlete'
+import { computeMacroPlan, getPrimaryGoalEvent } from '../services/macroPlan'
 
 const CoachMessageCard = lazy(() => import('../components/dashboard/CoachMessageCard'))
 const NextSessionCard = lazy(() => import('../components/dashboard/NextSessionCard'))
 const NutritionFocusCard = lazy(() => import('../components/dashboard/NutritionFocusCard'))
 const DailyCheckInCard = lazy(() => import('../components/dashboard/DailyCheckInCard'))
 const InstallAppCard = lazy(() => import('../components/pwa/InstallAppCard'))
+const MacroPlanCard = lazy(() => import('../components/dashboard/MacroPlanCard'))
 
 export default function Dashboard() {
   const { sessions, currentWeekSummary, isLoading, loadWeek } = useTrainingStore()
@@ -32,6 +34,10 @@ export default function Dashboard() {
   const athleteFirstName = getAthleteFirstName(athleteProfile, 'atleta')
 
   const [loadAnalytics, setLoadAnalytics] = useState<LoadAnalytics | null>(null)
+
+  // Macro plan — computed on-the-fly from profile, not persisted as source of truth
+  const macroPlan = useMemo(() => computeMacroPlan(athleteProfile), [athleteProfile])
+  const primaryGoalEvent = useMemo(() => getPrimaryGoalEvent(athleteProfile), [athleteProfile])
 
   useEffect(() => {
     void loadMemory()
@@ -116,6 +122,12 @@ export default function Dashboard() {
       <Suspense fallback={<CardSkeleton className="h-28" />}>
         <CoachMessageCard message={coachNote} />
       </Suspense>
+
+      {macroPlan && (
+        <Suspense fallback={<CardSkeleton className="h-32" />}>
+          <MacroPlanCard macroPlan={macroPlan} eventTitle={primaryGoalEvent?.title} />
+        </Suspense>
+      )}
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)] xl:items-start">
         <div className="space-y-5 md:space-y-6">

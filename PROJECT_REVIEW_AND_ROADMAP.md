@@ -45,6 +45,10 @@ Hoy ya existen:
 - sync UX mejorado: cola pendiente, ultimo sync OK, recovery offline y forzar sync visible en Ajustes
 - personalizacion profunda: AddSessionModal, QuickActionChips y promptBuilder adaptados al deporte principal del atleta, eliminando defaults de squash
 - ejemplos del coach por deporte: propuestas de create_week inyectan ejemplos de running, ciclismo o fuerza segun el perfil real
+- MVP Macro Eventos: 1 evento principal, calculo local determinista de fases y awareness del coach via prompt (base, build, peak, taper, race, transition)
+- UI Macro Eventos: MacroPlanCard en Dashboard con fase, semanas restantes y foco del bloque color-coded por fase
+- integracion backup Macro: goalEvents y macroPlan incluidos en export/import con validacion robusta y backward compatibility
+- Phase Awareness en el Coach: reglas explicitas en el prompt para no redefinir fases y ajustar carga segun el bloque actual (ej: ahorro en taper)
 
 ## Estado verificado
 
@@ -106,7 +110,10 @@ Estos temas ya no deberian seguir listados como roadmap principal:
 - card de nutricion en vista diaria (DayDetail): carga del dia, foco nutricional, pre/post-entreno e hidratacion — sin abrir el chat
 - analytics de carga por disciplina: carga semanal/mensual por tipo de sesion (min × RPE), tendencia general + running, adherencia 4 semanas, inyectado en el prompt del coach y visible en Dashboard como card "Carga por disciplina"
 - sync UX base: estado offline real, cola pendiente visible, ultimo sync exitoso, recovery offline registrado y accion manual de `Forzar sync`
-- personalizacion profunda para terceros (P4): modal de sesion, chips de accion y prompt del coach adaptados 100% al deporte principal
+- MVP Macro Eventos: 1 evento principal, calculo local determinista de fases y awareness del coach via prompt (base, build, peak, taper, race, transition)
+- UI Macro Eventos: MacroPlanCard en Dashboard con fase, semanas restantes y foco del bloque color-coded por fase
+- integracion backup Macro: goalEvents y macroPlan incluidos en export/import con validacion robusta y backward compatibility
+- Phase Awareness en el Coach: reglas explicitas en el prompt para no redefinir fases y ajustar carga segun el bloque actual (ej: ahorro en taper)
 
 ## Prioridades reales
 
@@ -188,22 +195,7 @@ Impacto esperado:
 - evita miedo a probar al coach si luego limpiar implica borrar demasiado
 - esfuerzo medio por UI, reglas de seleccion y confirmaciones
 
-### P7. Plan macro de entrenamiento para un evento
-
-Crear un plan de entrenamiento de largo plazo (4-16 semanas) orientado a un evento o torneo especifico.
-
-Objetivo:
-
-- el atleta define el evento (fecha, tipo, nivel objetivo)
-- el coach genera un plan por bloques (base, build, peak, taper) adaptado al deporte principal
-- el plan se convierte en sesiones planificadas semana a semana, con cargas progresivas
-- el atleta puede ver el plan macro en la vista de semana con un indicador de bloque actual
-
-Impacto esperado:
-
-- muy alto para atletas competitivos (squash, running)
-- da estructura y contexto longitudinal al coach actual que solo planifica semana a semana
-- esfuerzo alto: requiere modelo de bloques, generacion multi-semana y UI de plan macro
+### P7. Plan macro de entrenamiento para un evento (MVP) — COMPLETADO 2026-04-06
 
 ### P8. Integraciones externas de rendimiento y recuperacion
 
@@ -231,7 +223,8 @@ Linea de producto de largo plazo:
 | Integracion WHOOP futura | Medio | Medio | Backlog |
 | Integracion Apple Health futura | Medio | Alto | Backlog |
 | Integracion Garmin futura | Bajo | Alto | Exploracion |
-| Plan macro por evento (4-16 semanas) | Muy alto | Alto | Backlog |
+| Plan macro por evento (MVP) | Muy alto | Alto | Cerrado |
+| Plan macro Fase 2 (Timeline + Plantillas) | Alto | Medio | Backlog |
 
 ## Riesgos actuales
 
@@ -266,7 +259,8 @@ Orden recomendado para proximas iteraciones:
 5. Notificaciones en movil real (requiere validacion manual en dispositivo fisico)
 6. ~~Sync UX y recovery offline~~ — CERRADO BASE 2026-04-06
 7. ~~Personalizacion profunda para terceros~~ — COMPLETADO 2026-04-06
-8. Protocolos previos y posteriores interactivos (Warmup/Cooldown)
+8. Plan Macro Fase 2: Visualizacion de timeline y plantillas multi-semana por fase
+9. Protocolos previos y posteriores interactivos (Warmup/Cooldown)
 
 ## Referencias revisadas
 
@@ -292,3 +286,17 @@ Orden recomendado para proximas iteraciones:
 - `src/constants/sessionTypes.ts`
 - `src/constants/routes.ts`
 - `public/sw.js`
+- `src/services/macroPlan.ts`
+- `src/components/dashboard/MacroPlanCard.tsx`
+
+## Propuesta: Plan Macro Fase 2 y "Coach Proactivo"
+
+Basado en la implementación actual, la siguiente evolución lógica para escalar el valor del Macro Plan es:
+
+1.  **Timeline Visual**: Expandir la `MacroPlanCard` o crear una vista dedicada que muestre una barra de progreso horizontal con todas las fases (Base -> Build -> Peak -> Taper -> Race). Esto da una perspectiva visual de cuánto falta y en qué parte del ciclo estamos.
+2.  **Plantillas por Fase (Coach)**: Actualmente el coach sabe en qué fase está, pero la acción `create_week` usa plantillas genéricas. La propuesta es crear variantes de plantillas para cada fase:
+    *   **Base**: Más volumen de Z2 y fuerza general.
+    *   **Peak**: Más sesiones de alta intensidad y drills de match-play.
+    *   **Taper**: Reducción drástica de volumen (40-60%) pero manteniendo la intensidad.
+3.  **Eventos Secundarios (B/C)**: Permitir agregar eventos menores que no resetean el macro ciclo pero que el coach debe considerar para bajar carga el día previo y el día de.
+4.  **Notificación de Cambio de Fase**: Un aviso proactivo el lunes de la semana que cambia una fase (ej: "Has entrado en fase de Construcción, prepárate para subir la intensidad").
