@@ -1,9 +1,11 @@
 import { type ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Bell, Brain, Cpu, Download, LogOut, ShieldAlert, Trash2, Upload, User } from 'lucide-react'
 import Card from '../components/ui/Card'
 import AthleteProfileEditor from '../components/settings/AthleteProfileEditor'
 import SyncStatusBadge from '../components/sync/SyncStatusBadge'
 import { APP_INFO } from '../constants/appInfo'
+import { ROUTES } from '../constants/routes'
 import { CoachEngine } from '../services/ai/CoachEngine'
 import {
   downloadAppDataExport,
@@ -73,6 +75,7 @@ const EMPTY_CLEAR_SELECTION: LocalDataSelection = {
 }
 
 export default function SettingsPage() {
+  const navigate = useNavigate()
   const { coachMemory, athleteProfile, isSaving, loadMemory, saveMemory, saveAthleteProfile } = useCoachMemoryStore()
   const { user, signOut, syncStatus, syncError, syncDetails } = useAuthStore()
   const { sessions, loadWeek } = useTrainingStore()
@@ -286,11 +289,18 @@ export default function SettingsPage() {
       setSelectedCoachSessionIds([])
       setCoachSessionStatus(null)
       setClearStatus('Se eliminaron todos los datos locales y remotos. La app quedó reiniciada para este usuario.')
+      navigate(ROUTES.ONBOARDING, { replace: true })
     } catch (error) {
       setClearStatus(error instanceof Error ? error.message : 'No se pudo borrar todo el entorno del usuario.')
     } finally {
       setIsWipingAllData(false)
     }
+  }
+
+  const handleRestartOnboarding = () => {
+    const { user: currentUser } = useAuthStore.getState()
+    clearOnboardingSkipped(currentUser?.id)
+    navigate(ROUTES.ONBOARDING, { replace: true })
   }
 
   const applyClearPreset = (selection: LocalDataSelection) => {
@@ -504,6 +514,17 @@ export default function SettingsPage() {
               isSaving={isSaving}
               onSave={saveAthleteProfile}
             />
+            <div className="mt-4 rounded-xl border border-surface-border bg-surface-raised px-3 py-3">
+              <p className="text-xs text-ink-muted leading-relaxed">
+                Si quieres volver a la configuración guiada sin borrar toda la cuenta, puedes relanzar el onboarding.
+              </p>
+              <button
+                onClick={handleRestartOnboarding}
+                className="mt-3 inline-flex items-center gap-2 rounded-xl bg-surface px-3 py-2 text-sm font-semibold text-brand-light transition-colors hover:bg-surface-border"
+              >
+                Reiniciar onboarding
+              </button>
+            </div>
           </Card>
 
           <Card className="p-4">

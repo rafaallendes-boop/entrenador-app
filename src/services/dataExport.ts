@@ -1129,5 +1129,5 @@ function syncStoresAfterImport(preferredChatSessionId: string | null): void {
   })
 
   useCoachActionsStore.setState({ proposals: [] })
-  useCoachMemoryStore.setState({ coachMemory: '', athleteProfile: null, isSaving: false })
+  useCoachMemoryStore.setState({ coachMemory: '', athleteProfile: null, isSaving: false, hasLoaded: true })
 }

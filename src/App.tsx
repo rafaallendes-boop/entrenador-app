@@ -8,9 +8,8 @@ import { pullAll, migrateLocalDataToCloud, prepareLocalDataForUser } from './ser
 import { useTrainingStore } from './store/useTrainingStore'
 import { useCoachMemoryStore } from './store/useCoachMemoryStore'
 import { currentWeekStartISO } from './utils/date'
-import { getEnabledSports } from './utils/athlete'
 import { db } from './db/db'
-import { hasSkippedOnboarding } from './utils/onboarding'
+import { hasSkippedOnboarding, needsOnboarding } from './utils/onboarding'
 
 const Dashboard = lazy(() => import('./pages/Dashboard'))
 const WeeklyView = lazy(() => import('./pages/WeeklyView'))
@@ -39,19 +38,17 @@ function OnboardingGuard({ children }: { children: ReactNode }) {
   const location = useLocation()
   const user = useAuthStore(s => s.user)
   const athleteProfile = useCoachMemoryStore(s => s.athleteProfile)
+  const hasLoadedMemory = useCoachMemoryStore(s => s.hasLoaded)
 
   useEffect(() => {
     if (location.pathname === ROUTES.ONBOARDING) return
-    if (athleteProfile === null) return // still loading — don't redirect yet
-
-    const hasLegacySport = !!athleteProfile.primarySport?.trim()
-    const hasEnabledSports = getEnabledSports(athleteProfile).length > 0
+    if (!hasLoadedMemory) return
     const skippedOnboarding = hasSkippedOnboarding(user?.id)
 
-    if (!hasEnabledSports && !hasLegacySport && !skippedOnboarding) {
+    if (needsOnboarding(athleteProfile) && !skippedOnboarding) {
       navigate(ROUTES.ONBOARDING, { replace: true })
     }
-  }, [athleteProfile, location.pathname, navigate, user?.id])
+  }, [athleteProfile, hasLoadedMemory, location.pathname, navigate, user?.id])
 
   return <>{children}</>
 }
