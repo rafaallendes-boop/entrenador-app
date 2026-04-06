@@ -43,6 +43,8 @@ Hoy ya existen:
 - sync multi-dispositivo con Supabase + Google OAuth
 - indicador visible de sync en navegacion
 - sync UX mejorado: cola pendiente, ultimo sync OK, recovery offline y forzar sync visible en Ajustes
+- personalizacion profunda: AddSessionModal, QuickActionChips y promptBuilder adaptados al deporte principal del atleta, eliminando defaults de squash
+- ejemplos del coach por deporte: propuestas de create_week inyectan ejemplos de running, ciclismo o fuerza segun el perfil real
 
 ## Estado verificado
 
@@ -104,6 +106,7 @@ Estos temas ya no deberian seguir listados como roadmap principal:
 - card de nutricion en vista diaria (DayDetail): carga del dia, foco nutricional, pre/post-entreno e hidratacion — sin abrir el chat
 - analytics de carga por disciplina: carga semanal/mensual por tipo de sesion (min × RPE), tendencia general + running, adherencia 4 semanas, inyectado en el prompt del coach y visible en Dashboard como card "Carga por disciplina"
 - sync UX base: estado offline real, cola pendiente visible, ultimo sync exitoso, recovery offline registrado y accion manual de `Forzar sync`
+- personalizacion profunda para terceros (P4): modal de sesion, chips de accion y prompt del coach adaptados 100% al deporte principal
 
 ## Prioridades reales
 
@@ -155,14 +158,7 @@ Objetivo minimo viable:
 
 Esto puede vivir como una funcion de `promptBuilder.ts` que lee el historico de sesiones, sin necesidad de una pagina de analytics nueva.
 
-### P4. Personalizacion profunda por usuario (para terceros)
-
-La base ya esta, pero si la app se abre a terceros:
-
-- separar configuracion de cuenta (email, login) vs perfil deportivo
-- saludo inicial y estados vacios personalizados por deporte principal (no solo "hola, veo que entrenas squash...")
-- textos del coach que todavia asumen squash como deporte implicito
-- evaluar si el onboarding debe ser obligatorio o skipable con perfil minimal
+### P4. Personalización profunda por usuario (para terceros) — COMPLETADO 2026-04-06
 
 ### P5. Protocolos previos y posteriores por disciplina
 
@@ -230,7 +226,7 @@ Linea de producto de largo plazo:
 | Protocolos de movilidad y calentamiento por disciplina | Alto | Bajo-Medio | Parcial |
 | Borrado selectivo de entrenamientos del coach | Muy alto | Medio | Cerrado |
 | Sync UX y recovery offline | Alto | Medio | Cerrado base |
-| Personalizacion profunda para terceros | Alto | Medio | Parcial |
+| Personalizacion profunda para terceros | Alto | Medio | Cerrado |
 | Realtime sync opcional | Medio | Medio | Backlog |
 | Integracion WHOOP futura | Medio | Medio | Backlog |
 | Integracion Apple Health futura | Medio | Alto | Backlog |
@@ -268,8 +264,9 @@ Orden recomendado para proximas iteraciones:
 3. ~~Nutricion en vista diaria~~ — COMPLETADO 2026-04-05
 4. ~~Analytics carga por disciplina~~ — COMPLETADO 2026-04-06
 5. Notificaciones en movil real (requiere validacion manual en dispositivo fisico)
-6. ~~Sync UX y recovery offline~~ â€” CERRADO BASE 2026-04-06
-7. Personalizacion profunda para terceros
+6. ~~Sync UX y recovery offline~~ — CERRADO BASE 2026-04-06
+7. ~~Personalizacion profunda para terceros~~ — COMPLETADO 2026-04-06
+8. Protocolos previos y posteriores interactivos (Warmup/Cooldown)
 
 ## Referencias revisadas
 

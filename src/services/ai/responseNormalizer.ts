@@ -181,8 +181,8 @@ function validateAction(obj: unknown): CoachAction | null {
       if (a.targetPaceMax != null && typeof a.targetPaceMax !== 'string') return null
       if (a.targetHrMin != null && typeof a.targetHrMin !== 'number') return null
       if (a.targetHrMax != null && typeof a.targetHrMax !== 'number') return null
-      if (a.warmup != null && !Array.isArray(a.warmup)) return null
-      if (a.cooldown != null && !Array.isArray(a.cooldown)) return null
+      if (!isValidProtocolPayload(a.warmup)) return null
+      if (!isValidProtocolPayload(a.cooldown)) return null
       break
     case 'create_week':
       if (!Array.isArray(a.sessions) || a.sessions.length === 0) return null
@@ -215,6 +215,21 @@ function validateAction(obj: unknown): CoachAction | null {
   // For sessionId fields, expand short IDs back (the model uses 8-char prefix from prompt)
   // The executor handles lookup by prefix — pass as-is
   return a as unknown as CoachAction
+}
+
+function isValidProtocolPayload(value: unknown): boolean {
+  if (value == null) return true
+  if (Array.isArray(value)) return true
+  if (typeof value !== 'object') return false
+
+  const row = value as Record<string, unknown>
+  return (
+    typeof row.title === 'string' &&
+    typeof row.durationMin === 'number' &&
+    typeof row.note === 'string' &&
+    typeof row.tone === 'string' &&
+    Array.isArray(row.steps)
+  )
 }
 
 function isValidDate(s: string): boolean {

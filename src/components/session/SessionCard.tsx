@@ -6,6 +6,7 @@ import { formatDuration } from '../../utils/format'
 import SessionTypeIcon from './SessionTypeIcon'
 import ExerciseChecklist from './ExerciseChecklist'
 import { useTrainingStore } from '../../store/useTrainingStore'
+import { getProtocolSummary, normalizeGeneratedProtocol } from '../../services/trainingProtocols'
 
 const STATUS_CONFIG: Record<SessionStatus, { label: string; badge: string; icon: string }> = {
   planned: { label: 'Planificado', badge: 'bg-surface-raised text-ink-faint border border-surface-border', icon: '?' },
@@ -39,7 +40,9 @@ export default function SessionCard({ session, compact = false, onDelete }: Sess
   const hasRunningDetails = (session.type === 'running' || session.type === 'cycling') && session.runningDetails
   const hasSquashDetails =
     session.type === 'squash' && session.squashDetails && session.squashDetails.drills.length > 0
-  const hasProtocols = Boolean(session.warmup?.length || session.cooldown?.length)
+  const warmup = normalizeGeneratedProtocol(session.warmup, 'warmup')
+  const cooldown = normalizeGeneratedProtocol(session.cooldown, 'cooldown')
+  const hasProtocols = Boolean(warmup || cooldown)
   const hasMatchMeta =
     session.type === 'squash' &&
     (session.subtype === 'match' || session.subtype === 'competitive') &&
@@ -239,40 +242,18 @@ export default function SessionCard({ session, compact = false, onDelete }: Sess
           {hasExercises && <ExerciseChecklist sessionId={session.id} exercises={session.exercises!} />}
           {hasProtocols && (
             <div className="space-y-2">
-              {session.warmup && session.warmup.length > 0 && (
+              {warmup && (
                 <div className="rounded-lg border border-brand/20 bg-brand/5 p-2">
                   <p className="text-[10px] font-medium uppercase tracking-wider text-brand-light/80">Warm-up</p>
-                  <div className="mt-1 space-y-1">
-                    {session.warmup.map((block, index) => (
-                      <div key={index}>
-                        <p className="text-xs text-ink">
-                          {block.title}
-                          {block.durationMin ? ` · ${block.durationMin}min` : ''}
-                        </p>
-                        {block.steps.map((step, stepIndex) => (
-                          <p key={stepIndex} className="text-[11px] text-ink-faint">· {step}</p>
-                        ))}
-                      </div>
-                    ))}
-                  </div>
+                  <p className="mt-1 text-xs text-ink">{warmup.title}</p>
+                  <p className="text-[11px] text-ink-faint">{getProtocolSummary(warmup)}</p>
                 </div>
               )}
-              {session.cooldown && session.cooldown.length > 0 && (
+              {cooldown && (
                 <div className="rounded-lg border border-violet-500/20 bg-violet-500/5 p-2">
                   <p className="text-[10px] font-medium uppercase tracking-wider text-violet-300/80">Post / cool-down</p>
-                  <div className="mt-1 space-y-1">
-                    {session.cooldown.map((block, index) => (
-                      <div key={index}>
-                        <p className="text-xs text-ink">
-                          {block.title}
-                          {block.durationMin ? ` · ${block.durationMin}min` : ''}
-                        </p>
-                        {block.steps.map((step, stepIndex) => (
-                          <p key={stepIndex} className="text-[11px] text-ink-faint">· {step}</p>
-                        ))}
-                      </div>
-                    ))}
-                  </div>
+                  <p className="mt-1 text-xs text-ink">{cooldown.title}</p>
+                  <p className="text-[11px] text-ink-faint">{getProtocolSummary(cooldown)}</p>
                 </div>
               )}
             </div>

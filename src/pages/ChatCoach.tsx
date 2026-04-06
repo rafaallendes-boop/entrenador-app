@@ -9,7 +9,7 @@ import { useTrainingStore } from '../store/useTrainingStore'
 import { CoachEngine } from '../services/ai/CoachEngine'
 import { detectChatIntent } from '../services/ai/contextOptimizer'
 import { currentWeekStartISO, todayISO } from '../utils/date'
-import { getAthleteFirstName, getProfileCompleteness } from '../utils/athlete'
+import { getAthleteFirstName, getEnabledSports, getProfileCompleteness } from '../utils/athlete'
 import ChatBubble from '../components/chat/ChatBubble'
 import ChatInput from '../components/chat/ChatInput'
 import Spinner from '../components/ui/Spinner'
@@ -411,7 +411,7 @@ export default function ChatCoach() {
           )}
 
           <Suspense fallback={<div className="h-8" />}>
-            <QuickActionChips onSelect={handleSend} disabled={isLoading} />
+            <QuickActionChips onSelect={handleSend} disabled={isLoading} enabledSports={getEnabledSports(athleteProfile)} />
           </Suspense>
 
           <ChatInput onSend={handleSend} disabled={isLoading} />

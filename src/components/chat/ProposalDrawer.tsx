@@ -1,5 +1,5 @@
 ﻿import { CheckCircle2, X, Zap } from 'lucide-react'
-import type { ChatContext, CoachProposal } from '../../types'
+import type { ChatContext, CoachProposal, GeneratedProtocol } from '../../types'
 
 const ACTION_LABEL: Record<string, string> = {
   skip_session: 'Saltar sesion',
@@ -207,8 +207,8 @@ function renderProposalDetails(
     targetHrMax?: number
     exercises?: Array<{ name: string; sets: number; reps: number | string; weight?: number }>
     squashDetails?: { trainingFocus: string; drills: Array<{ name: string; durationMin?: number; notes?: string }> }
-    warmup?: Array<{ title: string; durationMin?: number; steps: string[] }>
-    cooldown?: Array<{ title: string; durationMin?: number; steps: string[] }>
+    warmup?: GeneratedProtocol
+    cooldown?: GeneratedProtocol
   },
   indentClassName = 'ml-20',
 ) {
@@ -266,34 +266,28 @@ function renderProposalDetails(
         </div>
       )}
 
-      {item.warmup && item.warmup.length > 0 && (
+      {item.warmup && (
         <div className={`${indentClassName} mt-1 rounded-lg border border-brand/20 bg-brand/5 px-2.5 py-2`}>
           <p className="text-[10px] text-brand-light/80 uppercase tracking-wide">Warm-up</p>
-          {item.warmup.slice(0, 2).map((block, blockIndex) => (
-            <div key={blockIndex} className="mt-1">
-              <p className="text-[10px] text-ink-faint">
-                {block.title}{block.durationMin ? ` · ${block.durationMin}min` : ''}
-              </p>
-              {block.steps.slice(0, 2).map((step, stepIndex) => (
-                <p key={stepIndex} className="text-[10px] text-ink-faint/80">· {step}</p>
-              ))}
-            </div>
+          <p className="mt-1 text-[10px] text-ink-faint">
+            {item.warmup.title} · {item.warmup.durationMin}min
+          </p>
+          <p className="text-[10px] text-ink-faint/80">{item.warmup.note}</p>
+          {item.warmup.steps.slice(0, 3).map((step, stepIndex) => (
+            <p key={stepIndex} className="text-[10px] text-ink-faint/80">· {step.label}</p>
           ))}
         </div>
       )}
 
-      {item.cooldown && item.cooldown.length > 0 && (
+      {item.cooldown && (
         <div className={`${indentClassName} mt-1 rounded-lg border border-violet-500/20 bg-violet-500/5 px-2.5 py-2`}>
           <p className="text-[10px] text-violet-300/80 uppercase tracking-wide">Post / cool-down</p>
-          {item.cooldown.slice(0, 2).map((block, blockIndex) => (
-            <div key={blockIndex} className="mt-1">
-              <p className="text-[10px] text-ink-faint">
-                {block.title}{block.durationMin ? ` · ${block.durationMin}min` : ''}
-              </p>
-              {block.steps.slice(0, 2).map((step, stepIndex) => (
-                <p key={stepIndex} className="text-[10px] text-ink-faint/80">· {step}</p>
-              ))}
-            </div>
+          <p className="mt-1 text-[10px] text-ink-faint">
+            {item.cooldown.title} · {item.cooldown.durationMin}min
+          </p>
+          <p className="text-[10px] text-ink-faint/80">{item.cooldown.note}</p>
+          {item.cooldown.steps.slice(0, 3).map((step, stepIndex) => (
+            <p key={stepIndex} className="text-[10px] text-ink-faint/80">· {step.label}</p>
           ))}
         </div>
       )}

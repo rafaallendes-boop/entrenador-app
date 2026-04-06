@@ -925,37 +925,39 @@ function buildResponseInstructions(sessions: Session[], context: ChatContext): s
     .map(s => `  [${s.id.slice(0, 8)}] ${getDayName(s.date)} ${s.timeBlock} · ${SESSION_TYPE_ES[s.type] ?? s.type} "${s.title}"`)
     .join('\n')
 
-  const baseWeekTemplate = playsSquash
-    ? `    Lun PM: squash entrenamiento tecnico 75min RPE7 - drives paralelo/cruzado, voleas de presion, juego condicionado solo largo
-    Mar AM: running Z2 50min RPE6 (ritmo ${z2min}-${z2max}/km)
-    Mie PM: fuerza upper 60min RPE7 (press banca ${w.bench75}kg, remo ${w.row75}kg, dominadas, press hombro ${w.ohp75}kg, core rotacional)
-    Jue PM: squash control 60min RPE6 - peloteo de calidad, drives y dejadas, tecnica limpia sin presion
-    Vie PM: running tempo 45min RPE7 (ritmo ${tempoMin}-${tempoMax}/km)
-    Sab AM: fuerza lower 50min RPE7 (sentadilla ${w.squat75}kg, hip thrust ${hipThrust85}kg, lunge ${lunge45}kg, core) - semana base; movilidad 30min si semana competitiva
-    Dom: descanso`
-    : hasCycling
-      ? `    Lun PM: ciclismo Z2 70min RPE6 (base aerobica, cadencia 80-90rpm)
+  const primary = context.athleteProfile?.sportContext?.primarySport
+
+  const baseWeekTemplate = (primary === 'cycling' || (!primary && hasCycling && !playsSquash && !hasRunning))
+    ? `    Lun PM: ciclismo Z2 70min RPE6 (base aerobica, cadencia 80-90rpm)
     Mar PM: fuerza upper 55min RPE7 (press banca ${w.bench75}kg, remo ${w.row75}kg, dominadas, press hombro ${w.ohp75}kg, core)
     Mie: movilidad 30min RPE4 (cadera, tobillo, columna)
     Jue AM: ciclismo intervalos 45min RPE7-8 (series 4-6min a alta intensidad con recuperacion activa)
     Vie PM: fuerza lower 50min RPE7 (sentadilla ${w.squat75}kg, hip thrust ${hipThrust85}kg, lunge ${lunge45}kg, core)
     Sab AM: ciclismo long ride 90min RPE6 (fondo aerobico sostenido)
     Dom: descanso`
-      : hasRunning
-        ? `    Lun AM: running Z2 50min RPE6 (ritmo ${z2min}-${z2max}/km)
+    : (primary === 'running' || (!primary && hasRunning && !playsSquash))
+      ? `    Lun AM: running Z2 50min RPE6 (ritmo ${z2min}-${z2max}/km)
     Mar PM: fuerza upper 60min RPE7 (press banca ${w.bench75}kg, remo ${w.row75}kg, dominadas, press hombro ${w.ohp75}kg, core rotacional)
     Mie: movilidad 30min RPE4 (cadera, tobillo, hombro)
     Jue AM: running tempo 45min RPE7 (ritmo ${tempoMin}-${tempoMax}/km)
     Vie PM: fuerza lower 50min RPE7 (sentadilla ${w.squat75}kg, hip thrust ${hipThrust85}kg, lunge ${lunge45}kg, core)
     Sab AM: running long 60-75min RPE6 (ritmo ${longRunPaceStr}/km)
     Dom: descanso`
-        : hasStrength
-          ? `    Lun PM: fuerza upper 60min RPE7 (press banca ${w.bench75}kg, remo ${w.row75}kg, dominadas, press hombro ${w.ohp75}kg, core rotacional)
+      : (primary === 'strength' || (!primary && hasStrength && !playsSquash && !hasRunning && !hasCycling))
+        ? `    Lun PM: fuerza upper 60min RPE7 (press banca ${w.bench75}kg, remo ${w.row75}kg, dominadas, press hombro ${w.ohp75}kg, core rotacional)
     Mar: movilidad 30min RPE4
     Mie PM: fuerza lower 60min RPE7 (sentadilla ${w.squat75}kg, hip thrust ${hipThrust85}kg, lunge ${lunge45}kg, RDL, core)
     Jue: recuperacion activa 25min RPE3
     Vie PM: fuerza full body 50min RPE7 (circuito press, remo, sentadilla frontal, core rotacional)
     Sab: movilidad 30min RPE4
+    Dom: descanso`
+        : playsSquash
+          ? `    Lun PM: squash entrenamiento tecnico 75min RPE7 - drives paralelo/cruzado, voleas de presion, juego condicionado solo largo
+    Mar AM: running Z2 50min RPE6 (ritmo ${z2min}-${z2max}/km)
+    Mie PM: fuerza upper 60min RPE7 (press banca ${w.bench75}kg, remo ${w.row75}kg, dominadas, press hombro ${w.ohp75}kg, core rotacional)
+    Jue PM: squash control 60min RPE6 - peloteo de calidad, drives y dejadas, tecnica limpia sin presion
+    Vie PM: running tempo 45min RPE7 (ritmo ${tempoMin}-${tempoMax}/km)
+    Sab AM: fuerza lower 50min RPE7 (sentadilla ${w.squat75}kg, hip thrust ${hipThrust85}kg, lunge ${lunge45}kg, core) - semana base; movilidad 30min si semana competitiva
     Dom: descanso`
           : `    Lun PM: sesion principal de ${primarySportLabel} 60-75min RPE6-7
     Mar: movilidad 30min RPE4
@@ -1077,7 +1079,91 @@ Luego el bloque <actions> AL FINAL (sin code fences, sin backticks):
 </actions>
 
 EJEMPLO — crear semana completa con detalle:
-<actions>
+${(() => {
+  const exampleSport = context.athleteProfile?.sportContext?.primarySport ?? 'squash'
+  if (exampleSport === 'running') {
+    return `<actions>
+[{"type":"create_week",
+  "weekObjectives":["construir base aeróbica running","mantener fuerza complementaria","recuperación activa"],
+  "sessions":[
+    {"date":"${addDaysToISO(weekStart, 0)}","timeBlock":"AM","sessionType":"running","title":"Running Z2","durationMin":50,"rpe":6,"objective":"base aeróbica — ritmo cómodo, respiración nasal","runningType":"z2","targetPaceMin":"${z2min}","targetPaceMax":"${z2max}"},
+    {"date":"${addDaysToISO(weekStart, 1)}","timeBlock":"PM","sessionType":"strength","title":"Fuerza upper","durationMin":60,"rpe":7,"objective":"fuerza tren superior — volumen al 75% 1RM","exercises":[
+      {"name":"Press banca","sets":4,"reps":8,"weight":${w.bench75},"group":"push"},
+      {"name":"Remo con barra","sets":4,"reps":8,"weight":${w.row75},"group":"pull"},
+      {"name":"Dominadas","sets":3,"reps":"max","group":"pull"},
+      {"name":"Press hombro","sets":3,"reps":10,"weight":${w.ohp75},"group":"push"},
+      {"name":"Core rotacional","sets":3,"reps":15,"group":"core"}
+    ]},
+    {"date":"${addDaysToISO(weekStart, 2)}","timeBlock":"AM","sessionType":"mobility","title":"Movilidad","durationMin":30,"rpe":4,"objective":"cadera, tobillo y hombro"},
+    {"date":"${addDaysToISO(weekStart, 3)}","timeBlock":"AM","sessionType":"running","title":"Running tempo","durationMin":45,"rpe":7,"objective":"umbral aeróbico — mantener ritmo sostenido","runningType":"tempo","targetPaceMin":"${tempoMin}","targetPaceMax":"${tempoMax}"},
+    {"date":"${addDaysToISO(weekStart, 4)}","timeBlock":"PM","sessionType":"strength","title":"Fuerza lower","durationMin":50,"rpe":7,"objective":"tren inferior — sentadilla, hip thrust, lunge y core","exercises":[
+      {"name":"Sentadilla","sets":4,"reps":6,"weight":${w.squat75},"group":"legs"},
+      {"name":"Hip thrust","sets":3,"reps":10,"weight":${hipThrust85},"group":"legs"},
+      {"name":"Lunge con mancuernas","sets":3,"reps":8,"weight":${lunge45},"group":"legs"},
+      {"name":"Core rotacional","sets":3,"reps":12,"group":"core"}
+    ]},
+    {"date":"${addDaysToISO(weekStart, 5)}","timeBlock":"AM","sessionType":"running","title":"Running long","durationMin":70,"rpe":6,"objective":"fondo largo — ritmo aeróbico sostenido","runningType":"long","targetPaceMin":"${longRunPaceStr}","targetPaceMax":"${longRunPaceStr}"}
+  ],
+  "reason":"semana base running — Z2 lunes, tempo jueves, long sábado, con fuerza complementaria"}]
+</actions>`
+  } else if (exampleSport === 'cycling') {
+    return `<actions>
+[{"type":"create_week",
+  "weekObjectives":["construir base aeróbica ciclismo","mantener fuerza complementaria","fondo largo fin de semana"],
+  "sessions":[
+    {"date":"${addDaysToISO(weekStart, 0)}","timeBlock":"PM","sessionType":"cycling","title":"Ciclismo Z2","durationMin":70,"rpe":6,"objective":"base aeróbica, cadencia 80-90rpm"},
+    {"date":"${addDaysToISO(weekStart, 1)}","timeBlock":"PM","sessionType":"strength","title":"Fuerza upper","durationMin":55,"rpe":7,"objective":"fuerza tren superior — volumen al 75% 1RM","exercises":[
+      {"name":"Press banca","sets":4,"reps":8,"weight":${w.bench75},"group":"push"},
+      {"name":"Remo con barra","sets":4,"reps":8,"weight":${w.row75},"group":"pull"},
+      {"name":"Dominadas","sets":3,"reps":"max","group":"pull"},
+      {"name":"Press hombro","sets":3,"reps":10,"weight":${w.ohp75},"group":"push"},
+      {"name":"Core rotacional","sets":3,"reps":15,"group":"core"}
+    ]},
+    {"date":"${addDaysToISO(weekStart, 2)}","timeBlock":"AM","sessionType":"mobility","title":"Movilidad","durationMin":30,"rpe":4,"objective":"cadera, tobillo y columna"},
+    {"date":"${addDaysToISO(weekStart, 3)}","timeBlock":"AM","sessionType":"cycling","title":"Ciclismo intervalos","durationMin":45,"rpe":8,"objective":"series 4-6min a alta intensidad con recuperación activa"},
+    {"date":"${addDaysToISO(weekStart, 4)}","timeBlock":"PM","sessionType":"strength","title":"Fuerza lower","durationMin":50,"rpe":7,"objective":"tren inferior — sentadilla, hip thrust, lunge y core","exercises":[
+      {"name":"Sentadilla","sets":4,"reps":6,"weight":${w.squat75},"group":"legs"},
+      {"name":"Hip thrust","sets":3,"reps":10,"weight":${hipThrust85},"group":"legs"},
+      {"name":"Lunge con mancuernas","sets":3,"reps":8,"weight":${lunge45},"group":"legs"},
+      {"name":"Core rotacional","sets":3,"reps":12,"group":"core"}
+    ]},
+    {"date":"${addDaysToISO(weekStart, 5)}","timeBlock":"AM","sessionType":"cycling","title":"Ciclismo long ride","durationMin":90,"rpe":6,"objective":"fondo aeróbico sostenido"}
+  ],
+  "reason":"semana base ciclismo — Z2 lunes, intervalos jueves, long ride sábado, con fuerza complementaria"}]
+</actions>`
+  } else if (exampleSport === 'strength') {
+    return `<actions>
+[{"type":"create_week",
+  "weekObjectives":["desarrollar fuerza upper + lower","movilidad complementaria","recuperación activa"],
+  "sessions":[
+    {"date":"${addDaysToISO(weekStart, 0)}","timeBlock":"PM","sessionType":"strength","title":"Fuerza upper","durationMin":60,"rpe":7,"objective":"fuerza tren superior — volumen al 75% 1RM","exercises":[
+      {"name":"Press banca","sets":4,"reps":8,"weight":${w.bench75},"group":"push"},
+      {"name":"Remo con barra","sets":4,"reps":8,"weight":${w.row75},"group":"pull"},
+      {"name":"Dominadas","sets":3,"reps":"max","group":"pull"},
+      {"name":"Press hombro","sets":3,"reps":10,"weight":${w.ohp75},"group":"push"},
+      {"name":"Core rotacional","sets":3,"reps":15,"group":"core"}
+    ]},
+    {"date":"${addDaysToISO(weekStart, 1)}","timeBlock":"AM","sessionType":"mobility","title":"Movilidad","durationMin":30,"rpe":4,"objective":"cadera, tobillo y columna"},
+    {"date":"${addDaysToISO(weekStart, 2)}","timeBlock":"PM","sessionType":"strength","title":"Fuerza lower","durationMin":60,"rpe":7,"objective":"tren inferior — sentadilla, hip thrust, RDL y core","exercises":[
+      {"name":"Sentadilla","sets":4,"reps":6,"weight":${w.squat75},"group":"legs"},
+      {"name":"Hip thrust","sets":3,"reps":10,"weight":${hipThrust85},"group":"legs"},
+      {"name":"RDL","sets":3,"reps":8,"weight":${w.deadlift75},"group":"legs"},
+      {"name":"Lunge con mancuernas","sets":3,"reps":8,"weight":${lunge45},"group":"legs"},
+      {"name":"Core rotacional","sets":3,"reps":12,"group":"core"}
+    ]},
+    {"date":"${addDaysToISO(weekStart, 3)}","timeBlock":"AM","sessionType":"recovery","title":"Recuperación activa","durationMin":25,"rpe":3,"objective":"recuperación y circulación"},
+    {"date":"${addDaysToISO(weekStart, 4)}","timeBlock":"PM","sessionType":"strength","title":"Fuerza full body","durationMin":50,"rpe":7,"objective":"circuito cuerpo completo","exercises":[
+      {"name":"Press banca","sets":3,"reps":8,"weight":${w.bench75},"group":"push"},
+      {"name":"Sentadilla frontal","sets":3,"reps":8,"weight":${w.squat75},"group":"legs"},
+      {"name":"Remo con barra","sets":3,"reps":8,"weight":${w.row75},"group":"pull"},
+      {"name":"Core rotacional","sets":3,"reps":15,"group":"core"}
+    ]},
+    {"date":"${addDaysToISO(weekStart, 5)}","timeBlock":"AM","sessionType":"mobility","title":"Movilidad","durationMin":30,"rpe":4,"objective":"movilidad general — cadera, hombro y columna"}
+  ],
+  "reason":"semana base fuerza — upper lunes, lower miércoles, full body viernes, con movilidad complementaria"}]
+</actions>`
+  } else {
+    return `<actions>
 [{"type":"create_week",
   "weekObjectives":["mantener base squash","sostener aeróbico running","llegar fresco al fin de semana"],
   "sessions":[
@@ -1101,7 +1187,9 @@ EJEMPLO — crear semana completa con detalle:
     ]}
   ],
   "reason":"semana base equilibrada — upper martes, lower sábado, con cargas reales del perfil"}]
-</actions>
+</actions>`
+  }
+})()}
 
 EJEMPLO — update_session con ejercicios:
 <actions>

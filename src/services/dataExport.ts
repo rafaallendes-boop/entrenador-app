@@ -456,8 +456,8 @@ function parseSession(value: unknown, index: number): Session {
     exercises: optionalExercises(row.exercises, `sessions[${index}].exercises`),
     runningDetails: optionalRunningDetails(row.runningDetails, `sessions[${index}].runningDetails`),
     squashDetails: optionalSquashDetails(row.squashDetails, `sessions[${index}].squashDetails`),
-    warmup: optionalWorkoutProtocolBlocks(row.warmup, `sessions[${index}].warmup`),
-    cooldown: optionalWorkoutProtocolBlocks(row.cooldown, `sessions[${index}].cooldown`),
+    warmup: optionalGeneratedProtocol(row.warmup, `sessions[${index}].warmup`, 'warmup'),
+    cooldown: optionalGeneratedProtocol(row.cooldown, `sessions[${index}].cooldown`, 'cooldown'),
     completedAt: optionalFiniteNumber(row.completedAt, `sessions[${index}].completedAt`),
   }
 }
@@ -599,8 +599,8 @@ function parseCoachAction(value: unknown, path: string): CoachAction {
     newObjective: optionalString(row.newObjective, `${path}.newObjective`),
     exercises: optionalCoachExercises(row.exercises, `${path}.exercises`) as CoachAction['exercises'],
     squashDetails: optionalSquashDetails(row.squashDetails, `${path}.squashDetails`) as CoachAction['squashDetails'],
-    warmup: optionalWorkoutProtocolBlocks(row.warmup, `${path}.warmup`) as CoachAction['warmup'],
-    cooldown: optionalWorkoutProtocolBlocks(row.cooldown, `${path}.cooldown`) as CoachAction['cooldown'],
+    warmup: optionalGeneratedProtocol(row.warmup, `${path}.warmup`, 'warmup') as CoachAction['warmup'],
+    cooldown: optionalGeneratedProtocol(row.cooldown, `${path}.cooldown`, 'cooldown') as CoachAction['cooldown'],
   }
 }
 
@@ -665,27 +665,65 @@ function optionalCoachSessions(value: unknown, path: string): CoachAction['sessi
       targetHrMax: optionalFiniteNumber(row.targetHrMax, `${path}[${index}].targetHrMax`),
       exercises: optionalCoachExercises(row.exercises, `${path}[${index}].exercises`),
       squashDetails: optionalSquashDetails(row.squashDetails, `${path}[${index}].squashDetails`),
-      warmup: optionalWorkoutProtocolBlocks(row.warmup, `${path}[${index}].warmup`),
-      cooldown: optionalWorkoutProtocolBlocks(row.cooldown, `${path}[${index}].cooldown`),
+      warmup: optionalGeneratedProtocol(row.warmup, `${path}[${index}].warmup`, 'warmup'),
+      cooldown: optionalGeneratedProtocol(row.cooldown, `${path}[${index}].cooldown`, 'cooldown'),
     }
   })
 }
 
-function optionalWorkoutProtocolBlocks(value: unknown, path: string): Session['warmup'] {
+function optionalGeneratedProtocol(
+  value: unknown,
+  path: string,
+  kind: 'warmup' | 'cooldown',
+): Session['warmup'] {
   if (value == null) return undefined
-  const rows = ensureArray(value, path)
 
-  return rows.map((item, index) => {
-    const row = ensureRecord(item, `${path}[${index}]`)
-    const steps = ensureArray(row.steps, `${path}[${index}].steps`).map((step, stepIndex) =>
-      requireString(step, `${path}[${index}].steps[${stepIndex}]`),
-    )
+  if (Array.isArray(value)) {
+    const rows = ensureArray(value, path)
+    const steps = rows.flatMap((item, index) => {
+      const row = ensureRecord(item, `${path}[${index}]`)
+      const title = optionalString(row.title, `${path}[${index}].title`)
+      return ensureArray(row.steps, `${path}[${index}].steps`).map((step, stepIndex) => ({
+        label: title ? `${title}: ${requireString(step, `${path}[${index}].steps[${stepIndex}]`)}` : requireString(step, `${path}[${index}].steps[${stepIndex}]`),
+      }))
+    })
+
+    const durationMin = rows.reduce<number>((total, item, index) => {
+      const row = ensureRecord(item, `${path}[${index}]`)
+      return total + (optionalFiniteNumber(row.durationMin, `${path}[${index}].durationMin`) ?? 0)
+    }, 0)
+
     return {
-      title: requireString(row.title, `${path}[${index}].title`),
-      durationMin: optionalFiniteNumber(row.durationMin, `${path}[${index}].durationMin`),
+      title: kind === 'warmup' ? 'Warm-up recomendado' : 'Cooldown recomendado',
+      durationMin: durationMin > 0 ? durationMin : kind === 'warmup' ? 8 : 6,
+      note: 'Protocolo migrado desde una versión anterior del backup.',
+      tone: kind === 'warmup' ? 'general' : 'recovery',
       steps,
+      source: 'base',
+    }
+  }
+
+  const row = ensureRecord(value, path)
+  const rawSteps = ensureArray(row.steps, `${path}.steps`).map((step, index) => {
+    const stepPath = `${path}.steps[${index}]`
+    if (typeof step === 'string') {
+      return { label: requireString(step, stepPath) }
+    }
+    const stepRow = ensureRecord(step, stepPath)
+    return {
+      label: requireString(stepRow.label, `${stepPath}.label`),
+      detail: optionalString(stepRow.detail, `${stepPath}.detail`),
     }
   })
+
+  return {
+    title: requireString(row.title, `${path}.title`),
+    durationMin: requireFiniteNumber(row.durationMin, `${path}.durationMin`),
+    note: requireString(row.note, `${path}.note`),
+    tone: requireEnum(row.tone, new Set(['general', 'protective', 'competitive', 'recovery']), `${path}.tone`) as NonNullable<Session['warmup']>['tone'],
+    steps: rawSteps,
+    source: requireEnum(row.source, new Set(['base', 'adapted']), `${path}.source`) as NonNullable<Session['warmup']>['source'],
+  }
 }
 
 function optionalRunningDetails(value: unknown, path: string): Session['runningDetails'] {

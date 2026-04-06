@@ -66,10 +66,38 @@ export interface SquashDetails {
   drills: SquashDrill[]
 }
 
-export interface WorkoutProtocolBlock {
+export type ProtocolKind = 'warmup' | 'cooldown'
+export type ProtocolTone = 'general' | 'protective' | 'competitive' | 'recovery'
+
+export interface ProtocolStep {
+  label: string
+  detail?: string
+}
+
+export interface GeneratedProtocol {
   title: string
-  durationMin?: number
-  steps: string[]
+  durationMin: number
+  note: string
+  tone: ProtocolTone
+  steps: ProtocolStep[]
+  source: 'base' | 'adapted'
+}
+
+export interface ProtocolContext {
+  kind: ProtocolKind
+  sport?: SupportedSport
+  sessionType?: SessionType
+  sessionSubtype?: SquashSubtype
+  runningType?: RunningType
+  plannedRpe?: number
+  energyLevel?: number
+  painLevel?: number
+  painNotes?: string
+  sleepHours?: number
+  sleepQuality?: number
+  consecutiveTrainingDays: number
+  hasCompetitionSoon: boolean
+  daysToCompetition?: number
 }
 
 export interface Session {
@@ -96,8 +124,8 @@ export interface Session {
   exercises?: Exercise[]   // strength + mobility
   runningDetails?: RunningDetails
   squashDetails?: SquashDetails
-  warmup?: WorkoutProtocolBlock[]
-  cooldown?: WorkoutProtocolBlock[]
+  warmup?: GeneratedProtocol
+  cooldown?: GeneratedProtocol
   completedAt?: number
   createdAt: number
   updatedAt: number
@@ -324,8 +352,8 @@ export interface CoachSessionProposal {
   targetHrMax?: number
   exercises?: CoachExerciseProposal[]  // for strength/mobility
   squashDetails?: SquashDetails        // for squash training/control sessions
-  warmup?: WorkoutProtocolBlock[]
-  cooldown?: WorkoutProtocolBlock[]
+  warmup?: GeneratedProtocol
+  cooldown?: GeneratedProtocol
 }
 
 export interface CoachAction {
@@ -357,8 +385,8 @@ export interface CoachAction {
   newObjective?: string
   exercises?: CoachExerciseProposal[]  // replace full exercise list
   squashDetails?: SquashDetails        // for squash sessions in add_session / update_session
-  warmup?: WorkoutProtocolBlock[]
-  cooldown?: WorkoutProtocolBlock[]
+  warmup?: GeneratedProtocol
+  cooldown?: GeneratedProtocol
 }
 
 export interface CoachProposal {
@@ -384,8 +412,8 @@ export interface ParsedSessionDraft {
   notes?: string
   subtype?: SquashSubtype
   runningDetails?: RunningDetails
-  warmup?: WorkoutProtocolBlock[]
-  cooldown?: WorkoutProtocolBlock[]
+  warmup?: GeneratedProtocol
+  cooldown?: GeneratedProtocol
   exercises?: Omit<Exercise, 'id' | 'completed'>[]
   confidence: 'high' | 'medium' | 'low'  // parsing confidence
   rawText?: string                         // original source text for review

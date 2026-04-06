@@ -10,6 +10,7 @@ import type {
 } from '../../types'
 import { SESSION_TYPE_CONFIG } from '../../constants/sessionTypes'
 import { useTrainingStore } from '../../store/useTrainingStore'
+import { useCoachMemoryStore } from '../../store/useCoachMemoryStore'
 import { todayISO } from '../../utils/date'
 import { v4 as uuid } from '../../utils/uuid'
 import { generateDefaultProtocols } from '../../services/trainingProtocols'
@@ -71,9 +72,11 @@ const TYPE_LABELS: Record<SessionType, string> = {
 
 export default function AddSessionModal({ defaultDate, onClose }: Props) {
   const { addSession } = useTrainingStore()
+  const { athleteProfile } = useCoachMemoryStore()
+  const defaultType = (athleteProfile?.sportContext?.primarySport as SessionType | undefined) ?? 'squash'
 
-  const [type, setType] = useState<SessionType>('squash')
-  const [title, setTitle] = useState(TYPE_LABELS.squash)
+  const [type, setType] = useState<SessionType>(defaultType)
+  const [title, setTitle] = useState(TYPE_LABELS[defaultType])
   const [date, setDate] = useState(defaultDate ?? todayISO())
   const [timeBlock, setTimeBlock] = useState<TimeBlock>('AM')
   const [duration, setDuration] = useState(60)
@@ -175,6 +178,7 @@ export default function AddSessionModal({ defaultDate, onClose }: Props) {
     const protocols = generateDefaultProtocols({
       type,
       subtype: type === 'squash' ? squashSubtype : undefined,
+      rpe: rpe !== '' ? rpe : undefined,
       runningType: type === 'running' || type === 'cycling' ? runningType : undefined,
     })
 

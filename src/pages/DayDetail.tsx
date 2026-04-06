@@ -9,7 +9,8 @@ import Slider from '../components/ui/Slider'
 import Card from '../components/ui/Card'
 import { ROUTES } from '../constants/routes'
 import { getDayNutrition, getLoadTypeLabel, getLoadTypeColor } from '../services/nutritionEngine'
-import type { DayLog, Session } from '../types'
+import { resolveSessionProtocols } from '../services/trainingProtocols'
+import type { DayLog, GeneratedProtocol, Session } from '../types'
 
 function DayFeedbackFields({
   dayLog,
@@ -145,6 +146,35 @@ function DayNutritionCard({ sessions }: { sessions: Session[] }) {
   )
 }
 
+function ProtocolGuideCard({ label, protocol }: { label: string; protocol?: GeneratedProtocol }) {
+  if (!protocol) return null
+
+  const isWarmup = label.includes('Warm-up')
+  const containerClass = isWarmup
+    ? 'border-brand/20 bg-brand/5'
+    : 'border-violet-500/20 bg-violet-500/5'
+  const titleClass = isWarmup ? 'text-brand-light/80' : 'text-violet-300/80'
+
+  return (
+    <div className={`rounded-xl border p-3 ${containerClass}`}>
+      <div className="flex items-center justify-between gap-3">
+        <p className={`text-[10px] font-medium uppercase tracking-wider ${titleClass}`}>{label}</p>
+        <span className="text-[11px] text-ink-faint">{protocol.durationMin} min</span>
+      </div>
+      <p className="mt-1 text-sm font-medium text-ink">{protocol.title}</p>
+      <p className="mt-1 text-xs leading-relaxed text-ink-muted">{protocol.note}</p>
+      <div className="mt-2 space-y-1">
+        {protocol.steps.slice(0, 4).map((step, index) => (
+          <p key={index} className="text-[11px] leading-relaxed text-ink-faint">
+            · {step.label}
+            {step.detail ? ` — ${step.detail}` : ''}
+          </p>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export default function DayDetail() {
   const { date } = useParams<{ date: string }>()
   const { sessions, dayLogs, loadWeek, saveDayLog, updateSession } = useTrainingStore()
@@ -210,7 +240,18 @@ export default function DayDetail() {
               <div>
                 <p className="text-[11px] text-ink-faint font-semibold uppercase tracking-wider mb-2">Mañana</p>
                 <div className="space-y-2">
-                  {amSessions.map(s => <SessionCard key={s.id} session={s} />)}
+                  {amSessions.map((s) => {
+                    const protocols = resolveSessionProtocols(s, { dayLog, recentSessions: sessions })
+                    return (
+                      <div key={s.id} className="space-y-2">
+                        <SessionCard session={s} />
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          <ProtocolGuideCard label="Warm-up recomendado" protocol={protocols.warmup} />
+                          <ProtocolGuideCard label="Cooldown recomendado" protocol={protocols.cooldown} />
+                        </div>
+                      </div>
+                    )
+                  })}
                 </div>
               </div>
             )}
@@ -218,7 +259,18 @@ export default function DayDetail() {
               <div>
                 <p className="text-[11px] text-ink-faint font-semibold uppercase tracking-wider mb-2">Tarde</p>
                 <div className="space-y-2">
-                  {pmSessions.map(s => <SessionCard key={s.id} session={s} />)}
+                  {pmSessions.map((s) => {
+                    const protocols = resolveSessionProtocols(s, { dayLog, recentSessions: sessions })
+                    return (
+                      <div key={s.id} className="space-y-2">
+                        <SessionCard session={s} />
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          <ProtocolGuideCard label="Warm-up recomendado" protocol={protocols.warmup} />
+                          <ProtocolGuideCard label="Cooldown recomendado" protocol={protocols.cooldown} />
+                        </div>
+                      </div>
+                    )
+                  })}
                 </div>
               </div>
             )}

@@ -289,6 +289,7 @@ async function applyCoachAction(
       const defaults = generateDefaultProtocols({
         type: nextType,
         subtype: nextType === 'squash' ? ((patch.subtype as typeof current.subtype) ?? current.subtype) : undefined,
+        rpe: (patch.rpe as number | undefined) ?? current.rpe,
         runningType: resolvedRunningType,
       })
       patch.warmup = action.warmup ?? current.warmup ?? defaults.warmup

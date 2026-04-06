@@ -1,12 +1,21 @@
 import { useState } from 'react'
-import type { QuickAction } from '../../types'
+import type { QuickAction, SupportedSport } from '../../types'
 
-const QUICK_ACTIONS: QuickAction[] = [
+const SPORT_LABELS: Record<SupportedSport, string> = {
+  squash: 'squash',
+  running: 'running',
+  cycling: 'ciclismo',
+  strength: 'fuerza',
+  mobility: 'movilidad',
+}
+
+const BASE_QUICK_ACTIONS: QuickAction[] = [
   { id: 'create_week', label: 'Crear semana',          prompt: '' },
   { id: 'adjust',      label: 'Ajustar semana',        prompt: 'Necesito ajustar mi semana de entrenamiento' },
   { id: 'reduce',      label: 'Bajar carga',            prompt: 'Quiero bajar la carga esta semana, me siento cansado' },
-  { id: 'squash',      label: 'Priorizar squash',       prompt: 'Créame una semana priorizando squash' },
-  { id: 'running',     label: 'Priorizar running',      prompt: 'Créame una semana priorizando running' },
+]
+
+const TAIL_QUICK_ACTIONS: QuickAction[] = [
   { id: 'reorder',     label: 'Reordenar sesiones',     prompt: 'Ayúdame a reordenar las sesiones de esta semana' },
   { id: 'nutrition',   label: 'Foco nutricional',       prompt: 'Dame un foco nutricional para esta semana según mi entrenamiento' },
 ]
@@ -14,10 +23,23 @@ const QUICK_ACTIONS: QuickAction[] = [
 interface QuickActionChipsProps {
   onSelect: (prompt: string) => void
   disabled?: boolean
+  enabledSports?: SupportedSport[]
 }
 
-export default function QuickActionChips({ onSelect, disabled }: QuickActionChipsProps) {
+export default function QuickActionChips({ onSelect, disabled, enabledSports = [] }: QuickActionChipsProps) {
   const [weekPicker, setWeekPicker] = useState(false)
+
+  // Build dynamic sport chips (exclude mobility, max 2)
+  const sportChips: QuickAction[] = enabledSports
+    .filter(s => s !== 'mobility')
+    .slice(0, 2)
+    .map(s => ({
+      id: `prioritize_${s}`,
+      label: `Priorizar ${SPORT_LABELS[s]}`,
+      prompt: `Créame una semana priorizando ${SPORT_LABELS[s]}`,
+    }))
+
+  const allActions = [...BASE_QUICK_ACTIONS, ...sportChips, ...TAIL_QUICK_ACTIONS]
 
   const handleAction = (action: QuickAction) => {
     if (action.id === 'create_week') {
@@ -57,7 +79,7 @@ export default function QuickActionChips({ onSelect, disabled }: QuickActionChip
 
   return (
     <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
-      {QUICK_ACTIONS.map(action => (
+      {allActions.map(action => (
         <button
           key={action.id}
           onClick={() => handleAction(action)}
