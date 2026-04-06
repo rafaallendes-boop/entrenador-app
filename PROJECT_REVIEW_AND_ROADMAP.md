@@ -31,6 +31,7 @@ No debería volver a aparecer como backlog principal:
 - endurecimiento reciente de sync: dedupe por clave natural en `dayLogs`/`weekSummaries`, tombstones de delete para `sessions`, compactación de cola, reintento automático al volver online/foco y mejor clasificación de errores (`offline` vs `error`)
 - backup JSON con preview, merge/replace y validación
 - borrado selectivo de entrenamientos creados por el coach
+- reset total local + nube para reiniciar el usuario desde cero cuando el sync quedó contaminado o se quiere limpiar todo el entorno
 - macroplan MVP por evento principal con awareness del coach vía prompt
 - primera versión de `Plan Builder` separada del chat: ruta propia, inputs guiados base y handoff al coach con prompt estructurado
 
@@ -148,7 +149,7 @@ Items de mayor prioridad para las próximas iteraciones:
    - seguir endureciendo cola offline, recovery y diagnósticos
    - mejorar copy cuando la cola queda retenida mucho tiempo
    - **nuevo:** detectar y avisar cuando hay ediciones concurrentes en lugar de sobrescribir silenciosamente
-   - **ya implementado en código:** dedupe natural key, tombstones de delete, compactación de cola y reintento automático al volver online/foco
+   - **ya implementado en código:** dedupe natural key, tombstones de delete, compactación de cola, reintento automático al volver online/foco y reset total local+nube
 
 2. **Notificaciones móviles reales**
    - validar suspensión real en iPhone/Android/PWA

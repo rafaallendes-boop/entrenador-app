@@ -11,7 +11,7 @@ import {
   previewAppDataImportFile,
   type AppDataImportPreview,
 } from '../services/dataExport'
-import { pullAll } from '../services/syncService'
+import { pullAll, wipeRemoteAndLocalAppData } from '../services/syncService'
 import {
   clearSelectedLocalAppData,
   deleteCoachSessionsByIds,
@@ -85,6 +85,7 @@ export default function SettingsPage() {
   const [isImporting, setIsImporting] = useState(false)
   const [isClearing, setIsClearing] = useState(false)
   const [isDeletingCoachSessions, setIsDeletingCoachSessions] = useState(false)
+  const [isWipingAllData, setIsWipingAllData] = useState(false)
   const [exportStatus, setExportStatus] = useState<string | null>(null)
   const [importStatus, setImportStatus] = useState<string | null>(null)
   const [clearStatus, setClearStatus] = useState<string | null>(null)
@@ -256,6 +257,38 @@ export default function SettingsPage() {
   const handleClearNotifications = async () => {
     await clearTodayNotifications()
     await refreshNotificationStatus()
+  }
+
+  const handleWipeAllData = async () => {
+    const { user: currentUser } = useAuthStore.getState()
+    if (!currentUser) return
+
+    const firstConfirm = window.confirm(
+      'Esto eliminará TODOS tus datos locales y remotos de Entrenador. Se perderán sesiones, check-ins, chat, proposals y perfil. ¿Quieres continuar?',
+    )
+    if (!firstConfirm) return
+
+    const typed = window.prompt('Escribe RESET para confirmar el borrado total de la cuenta en este entorno.')
+    if (typed !== 'RESET') return
+
+    setIsWipingAllData(true)
+    setClearStatus(null)
+    setImportStatus(null)
+    try {
+      await wipeRemoteAndLocalAppData(currentUser.id)
+      await refreshCounts(setDataCounts)
+      await refreshNotificationDebugState(setNotificationDebugState)
+      await loadMemory()
+      await loadWeek(currentWeekStartISO())
+      setClearSelection({ ...EMPTY_CLEAR_SELECTION })
+      setSelectedCoachSessionIds([])
+      setCoachSessionStatus(null)
+      setClearStatus('Se eliminaron todos los datos locales y remotos. La app quedó reiniciada para este usuario.')
+    } catch (error) {
+      setClearStatus(error instanceof Error ? error.message : 'No se pudo borrar todo el entorno del usuario.')
+    } finally {
+      setIsWipingAllData(false)
+    }
   }
 
   const applyClearPreset = (selection: LocalDataSelection) => {
@@ -974,6 +1007,28 @@ export default function SettingsPage() {
                 </div>
               </div>
             )}
+
+            <div className="mt-6 rounded-2xl border border-red-500/20 bg-red-500/5 px-4 py-4">
+              <div className="flex items-start gap-3">
+                <div className="w-8 h-8 rounded-full bg-red-500/10 flex items-center justify-center flex-shrink-0">
+                  <ShieldAlert size={16} className="text-red-400" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold text-ink">Reset total del usuario</p>
+                  <p className="mt-1 text-xs leading-relaxed text-ink-muted">
+                    Usa esto solo si quieres dejar la app desde cero. Borra datos locales y también los datos remotos para que no vuelvan a aparecer al sincronizar en PC o celular.
+                  </p>
+                  <button
+                    onClick={() => void handleWipeAllData()}
+                    disabled={isWipingAllData}
+                    className="mt-3 inline-flex items-center gap-2 rounded-xl bg-red-500/15 px-3 py-2 text-sm font-semibold text-red-300 transition-colors hover:bg-red-500/25 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <Trash2 size={14} />
+                    {isWipingAllData ? 'Borrando todo...' : 'Borrar local + nube'}
+                  </button>
+                </div>
+              </div>
+            </div>
           </Card>
         </div>
       </div>

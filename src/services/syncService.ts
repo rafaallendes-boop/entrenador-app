@@ -982,6 +982,41 @@ function saveSessionDeleteTombstones(userId: string, tombstones: Record<string, 
   }
 }
 
+function clearSyncArtifactsForUser(userId: string): void {
+  try {
+    const queue = loadQueue().filter((op) => op.userId !== userId)
+    saveQueue(queue)
+  } catch {
+    // Ignore storage failures.
+  }
+
+  clearSessionDeleteTombstoneGroup(userId)
+  localStorage.removeItem(getMigrationKey(userId))
+
+  syncStoreState().setSyncStatus('idle')
+  syncStoreState().setSyncDetails({
+    pendingOps: 0,
+    pendingUpserts: 0,
+    pendingDeletes: 0,
+    oldestPendingOpAt: null,
+    pendingTables: [],
+    lastErrorAt: null,
+    lastErrorMessage: null,
+  })
+}
+
+function clearSessionDeleteTombstoneGroup(userId: string): void {
+  try {
+    const raw = localStorage.getItem(SESSION_DELETE_TOMBSTONES_KEY)
+    const parsed = raw ? JSON.parse(raw) as Record<string, Record<string, number>> : {}
+    if (!(userId in parsed)) return
+    delete parsed[userId]
+    localStorage.setItem(SESSION_DELETE_TOMBSTONES_KEY, JSON.stringify(parsed))
+  } catch {
+    // Ignore storage failures.
+  }
+}
+
 function rememberSessionDeleteTombstone(userId: string, sessionId: string): void {
   const tombstones = getSessionDeleteTombstones(userId)
   tombstones[sessionId] = Date.now()
@@ -1089,4 +1124,29 @@ export async function migrateLocalDataToCloud(userId: string): Promise<void> {
   } catch (error) {
     console.error('[sync] Migration failed:', error)
   }
+}
+
+export async function wipeRemoteAndLocalAppData(userId: string): Promise<void> {
+  if (!isEnabled()) {
+    await clearAllLocalAppData()
+    clearSyncArtifactsForUser(userId)
+    return
+  }
+
+  const tables: SupabaseTable[] = [
+    'coach_proposals',
+    'chat_messages',
+    'week_summaries',
+    'day_logs',
+    'sessions',
+    'athlete_profiles',
+  ]
+
+  for (const table of tables) {
+    const { error } = await supabase.from(table).delete().eq('user_id', userId)
+    if (error) throw error
+  }
+
+  await clearAllLocalAppData()
+  clearSyncArtifactsForUser(userId)
 }
