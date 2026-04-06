@@ -6,6 +6,10 @@ export type SyncStatus = 'idle' | 'syncing' | 'error' | 'offline'
 
 export interface SyncDetails {
   pendingOps: number
+  pendingUpserts: number
+  pendingDeletes: number
+  oldestPendingOpAt: number | null
+  pendingTables: string[]
   lastSyncAt: number | null
   lastSuccessfulSyncAt: number | null
   lastRecoveredSyncAt: number | null
@@ -43,6 +47,10 @@ export const useAuthStore = create<AuthState>((set) => {
     syncError: null,
     syncDetails: {
       pendingOps: 0,
+      pendingUpserts: 0,
+      pendingDeletes: 0,
+      oldestPendingOpAt: null,
+      pendingTables: [],
       lastSyncAt: null,
       lastSuccessfulSyncAt: null,
       lastRecoveredSyncAt: null,
@@ -65,6 +73,10 @@ export const useAuthStore = create<AuthState>((set) => {
         syncError: null,
         syncDetails: {
           pendingOps: 0,
+          pendingUpserts: 0,
+          pendingDeletes: 0,
+          oldestPendingOpAt: null,
+          pendingTables: [],
           lastSyncAt: null,
           lastSuccessfulSyncAt: null,
           lastRecoveredSyncAt: null,

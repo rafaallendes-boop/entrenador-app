@@ -70,12 +70,12 @@ export default function WeeklyView() {
         <div className="flex items-center gap-2 flex-wrap">
           {isWeekEmpty ? (
             <button
-              onClick={() => navigate(ROUTES.CHAT)}
-              title="Pedir al coach que cree tu semana"
+              onClick={() => navigate(ROUTES.PLAN_BUILDER)}
+              title="Abrir creador de plan"
               className="flex items-center gap-1.5 text-xs text-white px-4 py-2 rounded-lg bg-brand hover:bg-brand-light transition-colors active:scale-95 font-medium"
             >
               <Sparkles size={14} />
-              <span>Crear semana</span>
+              <span>Plan Builder</span>
             </button>
           ) : (
             <>

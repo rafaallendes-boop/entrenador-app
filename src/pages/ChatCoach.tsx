@@ -123,7 +123,10 @@ export default function ChatCoach() {
   const [profileBannerDismissed, setProfileBannerDismissed] = useState(false)
   const [profileNudgeDismissed, setProfileNudgeDismissed] = useState(false)
   const [loadAnalytics, setLoadAnalytics] = useState<LoadAnalytics | null>(null)
-  const showProfileNudge = !profileNudgeDismissed && (location.state as { showProfileNudge?: boolean } | null)?.showProfileNudge === true
+  const locationState = (location.state as { showProfileNudge?: boolean; composerDraft?: string; fromPlanBuilder?: boolean } | null)
+  const showProfileNudge = !profileNudgeDismissed && locationState?.showProfileNudge === true
+  const composerDraft = locationState?.composerDraft ?? ''
+  const showPlanBuilderBanner = locationState?.fromPlanBuilder === true && composerDraft.trim().length > 0
   const hasMessages = messages.length > 0
   const athleteFirstName = getAthleteFirstName(athleteProfile, 'atleta')
   const profileCompleteness = getProfileCompleteness(athleteProfile)
@@ -325,6 +328,15 @@ export default function ChatCoach() {
             </div>
           )}
 
+          {showPlanBuilderBanner && (
+            <div className="flex items-start gap-2 rounded-xl border border-sky-500/20 bg-sky-500/10 px-3 py-2">
+              <span className="mt-0.5 flex-shrink-0 text-xs text-sky-300">i</span>
+              <span className="flex-1 text-xs leading-relaxed text-sky-200">
+                Llegaste desde el <span className="font-semibold">Plan Builder</span>. Revisa el prompt estructurado abajo, ajusta si hace falta y envíalo al coach para generar tu semana.
+              </span>
+            </div>
+          )}
+
           {showProfileBanner && (
             <ContextualProfileBanner
               completeness={profileCompleteness}
@@ -411,10 +423,15 @@ export default function ChatCoach() {
           )}
 
           <Suspense fallback={<div className="h-8" />}>
-            <QuickActionChips onSelect={handleSend} disabled={isLoading} enabledSports={getEnabledSports(athleteProfile)} />
+            <QuickActionChips
+              onSelect={handleSend}
+              onOpenPlanBuilder={() => navigate(ROUTES.PLAN_BUILDER)}
+              disabled={isLoading}
+              enabledSports={getEnabledSports(athleteProfile)}
+            />
           </Suspense>
 
-          <ChatInput onSend={handleSend} disabled={isLoading} />
+          <ChatInput onSend={handleSend} disabled={isLoading} initialValue={composerDraft} />
         </div>
       </div>
 

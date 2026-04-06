@@ -1,13 +1,18 @@
-import { useState, type KeyboardEvent } from 'react'
+import { useEffect, useState, type KeyboardEvent } from 'react'
 import { Send } from 'lucide-react'
 
 interface ChatInputProps {
   onSend: (message: string) => void
   disabled?: boolean
+  initialValue?: string
 }
 
-export default function ChatInput({ onSend, disabled }: ChatInputProps) {
+export default function ChatInput({ onSend, disabled, initialValue = '' }: ChatInputProps) {
   const [value, setValue] = useState('')
+
+  useEffect(() => {
+    setValue(initialValue)
+  }, [initialValue])
 
   const handleSend = () => {
     const trimmed = value.trim()

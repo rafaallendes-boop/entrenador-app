@@ -100,18 +100,24 @@ export default function Dashboard() {
               <p className="text-sm font-semibold text-ink">Sincronizacion pendiente</p>
               <p className="mt-1 text-xs leading-relaxed text-ink-muted">
                 {syncStatus === 'offline'
-                  ? 'Estas sin conexion. Tus cambios siguen guardados en este dispositivo y se enviaran cuando vuelva la red.'
+                  ? 'Estás sin conexión. Tus cambios siguen guardados aquí y la app reintentará sincronizar sola al volver la red o al recuperar foco.'
                   : syncStatus === 'error'
-                    ? syncError ?? 'Hubo un problema al sincronizar. Tus cambios locales siguen guardados.'
-                    : `Hay ${syncDetails.pendingOps} cambio(s) local(es) pendientes por subir.`}
+                    ? syncError ?? 'Hubo un problema al sincronizar con el servidor. Tus cambios locales siguen guardados y puedes reintentar desde Ajustes.'
+                    : `Hay ${syncDetails.pendingOps} cambio(s) local(es) pendientes por subir. Si la cola no baja, revisa Ajustes > Cuenta y sincronización.`}
               </p>
               <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-ink-faint">
                 <span>Pendientes: {syncDetails.pendingOps}</span>
+                {(syncDetails.pendingUpserts > 0 || syncDetails.pendingDeletes > 0) && (
+                  <span>Upserts/deletes: {syncDetails.pendingUpserts}/{syncDetails.pendingDeletes}</span>
+                )}
                 {syncDetails.lastSuccessfulSyncAt && (
                   <span>Ultimo sync OK: {formatSyncTimestamp(syncDetails.lastSuccessfulSyncAt)}</span>
                 )}
                 {syncDetails.lastRecoveredSyncAt && (
                   <span>Recovery offline: {formatSyncTimestamp(syncDetails.lastRecoveredSyncAt)}</span>
+                )}
+                {syncDetails.oldestPendingOpAt && (
+                  <span>Cola mas antigua: {formatSyncTimestamp(syncDetails.oldestPendingOpAt)}</span>
                 )}
               </div>
             </div>

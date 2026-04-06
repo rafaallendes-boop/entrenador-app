@@ -327,12 +327,18 @@ export default function SettingsPage() {
             {syncStatus === 'error' && syncError && (
               <p className="mb-3 rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
                 {syncError}
+                <span className="block mt-1 text-amber-200/80">
+                  Si sigues con conexión, este error probablemente no es de red. Reintenta sync y revisa si la cola baja.
+                </span>
               </p>
             )}
             <div className="mb-3 rounded-xl border border-surface-border bg-surface-raised px-3 py-3">
               <div className="grid gap-2 text-xs text-ink-muted sm:grid-cols-2">
                 <p>
                   Cola pendiente: <span className="text-ink">{syncDetails.pendingOps}</span>
+                </p>
+                <p>
+                  Upserts / deletes: <span className="text-ink">{syncDetails.pendingUpserts}/{syncDetails.pendingDeletes}</span>
                 </p>
                 <p>
                   Ultimo intento:{' '}
@@ -353,6 +359,16 @@ export default function SettingsPage() {
                   </span>
                 </p>
               </div>
+              {syncDetails.oldestPendingOpAt && (
+                <p className="mt-2 text-xs text-ink-muted">
+                  Cola mas antigua: <span className="text-ink">{formatRuntimeTimestamp(syncDetails.oldestPendingOpAt)}</span>
+                </p>
+              )}
+              {syncDetails.pendingTables.length > 0 && (
+                <p className="mt-1 text-xs text-ink-muted">
+                  Tablas afectadas: <span className="text-ink">{syncDetails.pendingTables.join(', ')}</span>
+                </p>
+              )}
               {syncDetails.lastErrorMessage && syncStatus !== 'error' && (
                 <p className="mt-2 text-xs text-amber-300">
                   Ultimo incidente: {syncDetails.lastErrorMessage}
@@ -360,7 +376,7 @@ export default function SettingsPage() {
               )}
               {syncDetails.pendingOps > 0 && (
                 <p className="mt-2 text-xs text-ink-faint">
-                  Hay cambios locales pendientes por subir. Cuando vuelva la conexion o pulses reintentar, se intentaran sincronizar.
+                  Hay cambios locales pendientes por subir. La cola se compacta por registro para evitar duplicados, los deletes de sesiones se retienen hasta confirmar convergencia remota y la app reintenta automáticamente al volver online o recuperar foco.
                 </p>
               )}
             </div>

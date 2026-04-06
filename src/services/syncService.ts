@@ -41,11 +41,19 @@ interface OfflineOp {
 const QUEUE_KEY = 'entrenador_sync_queue_v1'
 const LAST_SYNC_USER_KEY = 'entrenador_sync_user_v1'
 const MIGRATION_KEY_PREFIX = 'entrenador_migrated_v1'
+const SESSION_DELETE_TOMBSTONES_KEY = 'entrenador_sync_session_tombstones_v1'
 const MAX_QUEUE_SIZE = 500
+let activeDrainQueuePromise: Promise<boolean> | null = null
+let activePullAllPromise: Promise<void> | null = null
 
 interface MergeContext {
   allowDeletes: boolean
   deleteBeforeTs: number | null
+}
+
+interface MergeResolution<T extends { id: string }> {
+  winner: T
+  loserId?: string
 }
 
 function syncStoreState() {
@@ -53,7 +61,22 @@ function syncStoreState() {
 }
 
 function updatePendingOps(count: number): void {
-  syncStoreState().setSyncDetails({ pendingOps: count })
+  const queue = loadQueue()
+  const pendingUpserts = queue.filter((op) => op.action === 'upsert').length
+  const pendingDeletes = queue.filter((op) => op.action === 'delete').length
+  const oldestPendingOpAt = queue.reduce<number | null>((oldest, op) => {
+    if (oldest == null) return op.enqueuedAt
+    return Math.min(oldest, op.enqueuedAt)
+  }, null)
+  const pendingTables = [...new Set(queue.map((op) => op.table))]
+
+  syncStoreState().setSyncDetails({
+    pendingOps: count,
+    pendingUpserts,
+    pendingDeletes,
+    oldestPendingOpAt,
+    pendingTables,
+  })
 }
 
 function loadQueue(): OfflineOp[] {
@@ -91,11 +114,10 @@ function saveQueue(queue: OfflineOp[]): void {
 }
 
 function enqueue(op: OfflineOp): void {
-  const queue = loadQueue()
+  const queue = compactQueue(loadQueue(), op)
   if (queue.length >= MAX_QUEUE_SIZE) {
     queue.shift()
   }
-  queue.push(op)
   saveQueue(queue)
 }
 
@@ -112,7 +134,44 @@ function isEnabled(): boolean {
   return Boolean(url)
 }
 
+function isLikelyOfflineError(error: unknown): boolean {
+  if (!navigator.onLine) return true
+
+  const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase()
+  return (
+    message.includes('failed to fetch') ||
+    message.includes('networkerror') ||
+    message.includes('network request failed') ||
+    message.includes('load failed') ||
+    message.includes('offline') ||
+    message.includes('timed out') ||
+    message.includes('timeout')
+  )
+}
+
+function getSyncErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message.trim()) return error.message
+  return fallback
+}
+
+function applySyncFailure(error: unknown, fallbackMessage: string): void {
+  const message = getSyncErrorMessage(error, fallbackMessage)
+  const status = isLikelyOfflineError(error) ? 'offline' : 'error'
+
+  syncStoreState().setSyncStatus(status, message)
+  syncStoreState().setSyncDetails({
+    pendingOps: loadQueue().length,
+    lastErrorAt: Date.now(),
+    lastErrorMessage: message,
+  })
+}
+
 async function drainQueue(): Promise<boolean> {
+  if (activeDrainQueuePromise) {
+    return activeDrainQueuePromise
+  }
+
+  activeDrainQueuePromise = (async () => {
   const queue = loadQueue()
   const userId = getUserId()
 
@@ -145,8 +204,12 @@ async function drainQueue(): Promise<boolean> {
           .eq('id', payload.id)
           .eq('user_id', targetUserId)
         if (error) throw error
+        if (op.table === 'sessions') {
+          clearSessionDeleteTombstone(op.userId, payload.id)
+        }
       }
-    } catch {
+    } catch (error) {
+      applySyncFailure(error, 'No se pudo subir la cola pendiente.')
       remaining.push(op)
       break
     }
@@ -161,6 +224,13 @@ async function drainQueue(): Promise<boolean> {
     })
   }
   return remaining.length === 0
+  })()
+
+  try {
+    return await activeDrainQueuePromise
+  } finally {
+    activeDrainQueuePromise = null
+  }
 }
 
 if (typeof window !== 'undefined') {
@@ -192,8 +262,8 @@ async function upsertRow(table: SupabaseTable, row: Record<string, unknown>): Pr
     const { error } = await supabase.from(table).upsert(row as never)
     if (error) throw error
     void drainQueue()
-  } catch {
-    syncStoreState().setSyncStatus('offline')
+  } catch (error) {
+    applySyncFailure(error, `No se pudo sincronizar ${table}.`)
     enqueue({ userId, table, action: 'upsert', payload: row, enqueuedAt: Date.now() })
   }
 }
@@ -206,6 +276,7 @@ async function deleteRow(table: SupabaseTable, id: string): Promise<void> {
 
   if (!navigator.onLine) {
     syncStoreState().setSyncStatus('offline')
+    if (table === 'sessions') rememberSessionDeleteTombstone(userId, id)
     enqueue({ userId, table, action: 'delete', payload: { id, userId }, enqueuedAt: Date.now() })
     return
   }
@@ -213,8 +284,10 @@ async function deleteRow(table: SupabaseTable, id: string): Promise<void> {
   try {
     const { error } = await supabase.from(table).delete().eq('id', id).eq('user_id', userId)
     if (error) throw error
-  } catch {
-    syncStoreState().setSyncStatus('offline')
+    if (table === 'sessions') rememberSessionDeleteTombstone(userId, id)
+  } catch (error) {
+    applySyncFailure(error, `No se pudo eliminar en sync ${table}.`)
+    if (table === 'sessions') rememberSessionDeleteTombstone(userId, id)
     enqueue({ userId, table, action: 'delete', payload: { id, userId }, enqueuedAt: Date.now() })
   }
 }
@@ -429,6 +502,11 @@ async function fetchAll<T>(table: SupabaseTable, userId: string): Promise<T[]> {
 }
 
 export async function pullAll(userId: string): Promise<void> {
+  if (activePullAllPromise) {
+    return activePullAllPromise
+  }
+
+  activePullAllPromise = (async () => {
   if (!isEnabled()) return
 
   const { setSyncStatus, setSyncDetails, syncDetails } = useAuthStore.getState()
@@ -437,6 +515,8 @@ export async function pullAll(userId: string): Promise<void> {
   setSyncDetails({ lastSyncAt: startedAt })
 
   try {
+    await repairLocalNaturalKeyConflicts()
+
     const queueDrained = await drainQueue()
     const mergeContext: MergeContext = {
       allowDeletes: queueDrained,
@@ -462,23 +542,34 @@ export async function pullAll(userId: string): Promise<void> {
     })
   } catch (error) {
     console.error('[sync] pullAll error:', error)
-    const message = error instanceof Error ? error.message : 'Error de sincronizacion'
-    setSyncStatus(navigator.onLine ? 'error' : 'offline', message)
-    setSyncDetails({
-      pendingOps: loadQueue().length,
-      lastErrorAt: Date.now(),
-      lastErrorMessage: message,
-    })
+    applySyncFailure(error, 'Error de sincronizacion')
+  }
+  })()
+
+  try {
+    await activePullAllPromise
+  } finally {
+    activePullAllPromise = null
   }
 }
 
 async function mergeSessions(userId: string, context: MergeContext): Promise<void> {
   const remoteRows = await fetchAll<Record<string, unknown>>('sessions', userId)
   const remoteIds = new Set<string>()
+  const tombstones = getSessionDeleteTombstones(userId)
 
   for (const row of remoteRows) {
     const remote = rowToSession(row)
     remoteIds.add(remote.id)
+
+    const deletedAt = tombstones[remote.id]
+    if (typeof deletedAt === 'number') {
+      if (deletedAt >= remote.updatedAt) {
+        void deleteRow('sessions', remote.id)
+        continue
+      }
+      clearSessionDeleteTombstone(userId, remote.id)
+    }
 
     const local = await db.sessions.get(remote.id)
     if (!local || remote.updatedAt > local.updatedAt) {
@@ -496,6 +587,8 @@ async function mergeSessions(userId: string, context: MergeContext): Promise<voi
       context.deleteBeforeTs,
     )
   }
+
+  pruneSessionDeleteTombstones(userId, remoteIds)
 }
 
 async function mergeDayLogs(userId: string, context: MergeContext): Promise<void> {
@@ -504,13 +597,32 @@ async function mergeDayLogs(userId: string, context: MergeContext): Promise<void
 
   for (const row of remoteRows) {
     const remote = rowToDayLog(row)
-    remoteIds.add(remote.id)
+    const localById = await db.dayLogs.get(remote.id)
+    const localByDate = localById ?? await findDayLogConflictByDate(remote.date)
+    const resolution = resolveDayLogConflict(localByDate, remote)
 
-    const local = await db.dayLogs.get(remote.id)
-    if (!local || remote.updatedAt > local.updatedAt) {
+    remoteIds.add(remote.id)
+    remoteIds.add(resolution.winner.id)
+
+    if (!localByDate) {
+      await db.dayLogs.put(resolution.winner)
+      continue
+    }
+
+    if (resolution.winner.id !== localByDate.id) {
+      await db.dayLogs.delete(localByDate.id)
+      await db.dayLogs.put(resolution.winner)
+      if (resolution.winner.id !== remote.id) {
+        void deleteRow('day_logs', remote.id)
+        void pushDayLog(resolution.winner)
+      }
+      continue
+    }
+
+    if (resolution.winner === remote) {
       await db.dayLogs.put(remote)
-    } else if (local.updatedAt > remote.updatedAt) {
-      void pushDayLog(local)
+    } else if (resolution.winner.updatedAt > remote.updatedAt) {
+      void pushDayLog(resolution.winner)
     }
   }
 
@@ -530,16 +642,35 @@ async function mergeWeekSummaries(userId: string, context: MergeContext): Promis
 
   for (const row of remoteRows) {
     const remote = rowToWeekSummary(row)
-    remoteIds.add(remote.id)
-
     const remoteUpdatedAt = (row.updated_at as number) ?? 0
-    const local = await db.weekSummaries.get(remote.id)
-    const localUpdatedAt = ((local as Record<string, unknown> | undefined)?.updatedAt as number) ?? 0
+    const localById = await db.weekSummaries.get(remote.id)
+    const localByWeek = localById ?? await findWeekSummaryConflictByWeekStart(remote.weekStartDate)
+    const resolution = resolveWeekSummaryConflict(localByWeek, remote, remoteUpdatedAt)
 
-    if (!local || remoteUpdatedAt > localUpdatedAt) {
+    remoteIds.add(remote.id)
+    remoteIds.add(resolution.winner.id)
+
+    if (!localByWeek) {
+      await db.weekSummaries.put(resolution.winner)
+      continue
+    }
+
+    if (resolution.winner.id !== localByWeek.id) {
+      await db.weekSummaries.delete(localByWeek.id)
+      await db.weekSummaries.put(resolution.winner)
+      if (resolution.winner.id !== remote.id) {
+        void deleteRow('week_summaries', remote.id)
+        void pushWeekSummary(resolution.winner)
+      }
+      continue
+    }
+
+    const winnerUpdatedAt = getWeekSummaryUpdatedAt(resolution.winner)
+
+    if (resolution.winner === remote) {
       await db.weekSummaries.put(remote)
-    } else if (localUpdatedAt > remoteUpdatedAt) {
-      void pushWeekSummary(local)
+    } else if (winnerUpdatedAt > remoteUpdatedAt) {
+      void pushWeekSummary(resolution.winner)
     }
   }
 
@@ -656,6 +787,227 @@ async function deleteMissingLocalRows<T extends { id: string }>(
 
   if (idsToDelete.length > 0) {
     await table.bulkDelete(idsToDelete)
+  }
+}
+
+async function findDayLogConflictByDate(date: string): Promise<DayLog | undefined> {
+  return db.dayLogs.where('date').equals(date).first()
+}
+
+async function findWeekSummaryConflictByWeekStart(weekStartDate: string): Promise<WeekSummary | undefined> {
+  return db.weekSummaries.where('weekStartDate').equals(weekStartDate).first()
+}
+
+function resolveDayLogConflict(local: DayLog | undefined, remote: DayLog): MergeResolution<DayLog> {
+  if (!local) {
+    return { winner: remote }
+  }
+
+  if (remote.updatedAt > local.updatedAt) {
+    return { winner: remote, loserId: local.id !== remote.id ? local.id : undefined }
+  }
+
+  if (local.updatedAt > remote.updatedAt) {
+    return { winner: local, loserId: local.id !== remote.id ? remote.id : undefined }
+  }
+
+  if (scoreEntityData(remote) > scoreEntityData(local)) {
+    return { winner: remote, loserId: local.id !== remote.id ? local.id : undefined }
+  }
+
+  return { winner: local, loserId: local.id !== remote.id ? remote.id : undefined }
+}
+
+function resolveWeekSummaryConflict(
+  local: WeekSummary | undefined,
+  remote: WeekSummary,
+  remoteUpdatedAt: number,
+): MergeResolution<WeekSummary> {
+  if (!local) {
+    return { winner: remote }
+  }
+
+  const localUpdatedAt = getWeekSummaryUpdatedAt(local)
+  if (remoteUpdatedAt > localUpdatedAt) {
+    return { winner: remote, loserId: local.id !== remote.id ? local.id : undefined }
+  }
+
+  if (localUpdatedAt > remoteUpdatedAt) {
+    return { winner: local, loserId: local.id !== remote.id ? remote.id : undefined }
+  }
+
+  if (scoreEntityData(remote) > scoreEntityData(local)) {
+    return { winner: remote, loserId: local.id !== remote.id ? local.id : undefined }
+  }
+
+  return { winner: local, loserId: local.id !== remote.id ? remote.id : undefined }
+}
+
+async function repairLocalNaturalKeyConflicts(): Promise<void> {
+  await Promise.all([
+    repairLocalDayLogConflicts(),
+    repairLocalWeekSummaryConflicts(),
+  ])
+}
+
+async function repairLocalDayLogConflicts(): Promise<void> {
+  const rows = await db.dayLogs.toArray()
+  const groups = groupRowsBy(rows, (row) => row.date)
+
+  for (const duplicates of groups.values()) {
+    if (duplicates.length <= 1) continue
+    const sorted = [...duplicates].sort(compareDayLogsForRepair)
+    const winner = sorted[0]
+    const loserIds = sorted.slice(1).map((row) => row.id)
+    if (loserIds.length > 0) {
+      await db.dayLogs.bulkDelete(loserIds)
+      void pushDayLog(winner)
+    }
+  }
+}
+
+async function repairLocalWeekSummaryConflicts(): Promise<void> {
+  const rows = await db.weekSummaries.toArray()
+  const groups = groupRowsBy(rows, (row) => row.weekStartDate)
+
+  for (const duplicates of groups.values()) {
+    if (duplicates.length <= 1) continue
+    const sorted = [...duplicates].sort(compareWeekSummariesForRepair)
+    const winner = sorted[0]
+    const loserIds = sorted.slice(1).map((row) => row.id)
+    if (loserIds.length > 0) {
+      await db.weekSummaries.bulkDelete(loserIds)
+      void pushWeekSummary(winner)
+    }
+  }
+}
+
+function compareDayLogsForRepair(a: DayLog, b: DayLog): number {
+  if (b.updatedAt !== a.updatedAt) return b.updatedAt - a.updatedAt
+  return scoreEntityData(b) - scoreEntityData(a)
+}
+
+function compareWeekSummariesForRepair(a: WeekSummary, b: WeekSummary): number {
+  const aUpdatedAt = getWeekSummaryUpdatedAt(a)
+  const bUpdatedAt = getWeekSummaryUpdatedAt(b)
+  if (bUpdatedAt !== aUpdatedAt) return bUpdatedAt - aUpdatedAt
+  return scoreEntityData(b) - scoreEntityData(a)
+}
+
+function getWeekSummaryUpdatedAt(summary: WeekSummary): number {
+  return ((summary as unknown as { updatedAt?: number }).updatedAt) ?? 0
+}
+
+function groupRowsBy<T>(rows: T[], getKey: (row: T) => string): Map<string, T[]> {
+  const groups = new Map<string, T[]>()
+
+  for (const row of rows) {
+    const key = getKey(row)
+    const existing = groups.get(key)
+    if (existing) existing.push(row)
+    else groups.set(key, [row])
+  }
+
+  return groups
+}
+
+function scoreEntityData(value: unknown): number {
+  if (value == null) return 0
+  if (Array.isArray(value)) {
+    return value.reduce((total, item) => total + scoreEntityData(item), value.length > 0 ? 1 : 0)
+  }
+  if (typeof value === 'object') {
+    return Object.entries(value as Record<string, unknown>).reduce((total, [key, item]) => {
+      if (key === 'id' || key === 'updatedAt') return total
+      return total + scoreEntityData(item)
+    }, 0)
+  }
+  if (typeof value === 'string') return value.trim().length > 0 ? 1 : 0
+  if (typeof value === 'number') return Number.isFinite(value) ? 1 : 0
+  if (typeof value === 'boolean') return value ? 1 : 0
+  return 0
+}
+
+function compactQueue(queue: OfflineOp[], incoming: OfflineOp): OfflineOp[] {
+  const next = queue.filter((queued) => !shouldReplaceQueuedOp(queued, incoming))
+  next.push(incoming)
+  return next
+}
+
+function shouldReplaceQueuedOp(existing: OfflineOp, incoming: OfflineOp): boolean {
+  if (existing.userId !== incoming.userId || existing.table !== incoming.table) return false
+
+  const existingId = getOfflineOpEntityId(existing)
+  const incomingId = getOfflineOpEntityId(incoming)
+  if (!existingId || !incomingId || existingId !== incomingId) return false
+
+  if (incoming.action === 'delete') {
+    return true
+  }
+
+  return existing.action === 'upsert'
+}
+
+function getOfflineOpEntityId(op: OfflineOp): string | null {
+  const id = op.payload.id
+  return typeof id === 'string' && id.length > 0 ? id : null
+}
+
+function getSessionDeleteTombstones(userId: string): Record<string, number> {
+  try {
+    const raw = localStorage.getItem(SESSION_DELETE_TOMBSTONES_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw) as Record<string, Record<string, number>>
+    const value = parsed?.[userId]
+    if (!value || typeof value !== 'object') return {}
+    return Object.fromEntries(
+      Object.entries(value).filter(([, deletedAt]) => typeof deletedAt === 'number' && Number.isFinite(deletedAt)),
+    )
+  } catch {
+    return {}
+  }
+}
+
+function saveSessionDeleteTombstones(userId: string, tombstones: Record<string, number>): void {
+  try {
+    const raw = localStorage.getItem(SESSION_DELETE_TOMBSTONES_KEY)
+    const parsed = raw ? JSON.parse(raw) as Record<string, Record<string, number>> : {}
+    const next = { ...parsed, [userId]: tombstones }
+    if (Object.keys(tombstones).length === 0) {
+      delete next[userId]
+    }
+    localStorage.setItem(SESSION_DELETE_TOMBSTONES_KEY, JSON.stringify(next))
+  } catch {
+    // Ignore storage failures.
+  }
+}
+
+function rememberSessionDeleteTombstone(userId: string, sessionId: string): void {
+  const tombstones = getSessionDeleteTombstones(userId)
+  tombstones[sessionId] = Date.now()
+  saveSessionDeleteTombstones(userId, tombstones)
+}
+
+function clearSessionDeleteTombstone(userId: string, sessionId: string): void {
+  const tombstones = getSessionDeleteTombstones(userId)
+  if (!(sessionId in tombstones)) return
+  delete tombstones[sessionId]
+  saveSessionDeleteTombstones(userId, tombstones)
+}
+
+function pruneSessionDeleteTombstones(userId: string, remoteIds: Set<string>): void {
+  const tombstones = getSessionDeleteTombstones(userId)
+  let changed = false
+
+  for (const sessionId of Object.keys(tombstones)) {
+    if (!remoteIds.has(sessionId)) {
+      delete tombstones[sessionId]
+      changed = true
+    }
+  }
+
+  if (changed) {
+    saveSessionDeleteTombstones(userId, tombstones)
   }
 }
 

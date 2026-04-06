@@ -22,11 +22,17 @@ const TAIL_QUICK_ACTIONS: QuickAction[] = [
 
 interface QuickActionChipsProps {
   onSelect: (prompt: string) => void
+  onOpenPlanBuilder?: () => void
   disabled?: boolean
   enabledSports?: SupportedSport[]
 }
 
-export default function QuickActionChips({ onSelect, disabled, enabledSports = [] }: QuickActionChipsProps) {
+export default function QuickActionChips({
+  onSelect,
+  onOpenPlanBuilder,
+  disabled,
+  enabledSports = [],
+}: QuickActionChipsProps) {
   const [weekPicker, setWeekPicker] = useState(false)
 
   // Build dynamic sport chips (exclude mobility, max 2)
@@ -43,6 +49,10 @@ export default function QuickActionChips({ onSelect, disabled, enabledSports = [
 
   const handleAction = (action: QuickAction) => {
     if (action.id === 'create_week') {
+      if (onOpenPlanBuilder) {
+        onOpenPlanBuilder()
+        return
+      }
       setWeekPicker(true)
       return
     }

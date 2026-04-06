@@ -3,6 +3,7 @@ export const ROUTES = {
   WEEK:       '/week',
   DAY:        (date: string) => `/day/${date}`,
   CHAT:       '/chat',
+  PLAN_BUILDER: '/plan-builder',
   HISTORY:    '/history',
   SETTINGS:   '/settings',
   IMPORT:     '/import',

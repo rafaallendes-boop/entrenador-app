@@ -1,302 +1,367 @@
 # Entrenador App - Review and Roadmap
 
-Generado: 2026-04-01
-Actualizado: 2026-04-06 (x7)
+Actualizado: 2026-04-06 (revisión técnica del código)
 
-Base de revision:
+## Estado actual del producto
 
-- codigo del repo
-- `npm run lint`
-- `npm run build`
+Entrenador ya es un producto early-stage usable, no solo un prototipo. Hoy la app ya entrega valor real para atletas híbridos y tiene una base suficientemente sólida para iterar hacia algo vendible.
 
-## Resumen ejecutivo
+Estado resumido:
 
-Entrenador ya esta en etapa de producto usable para atletas hibriditos con 5 deportes. La app paso de estar diseñada exclusivamente para Rafael a ser personalizable para cualquier atleta que combine squash, running, fuerza, movilidad y/o ciclismo.
+- planificación semanal, vista diaria, historial y ajustes ya operativos
+- coach AI con propuestas ejecutables y mejor contexto deportivo
+- perfil estructurado del atleta con multi-deporte, prioridades, running, fuerza, recuperación, disponibilidad y nutrición
+- onboarding de 4 pasos para configurar deporte principal, objetivo y disponibilidad
+- dashboard con contexto útil: próximas sesiones, carga por disciplina, nutrición, sync y macroplan
+- sync multi-dispositivo, backup/import-export y recuperación offline ya implementados
+- MVP de macroplan por evento principal ya activo: fase, semanas restantes y foco del bloque
 
-Hoy ya existen:
+## Lo que ya está implementado
 
-- plan semanal y vista diaria
-- coach AI con propuestas ejecutables
-- especializacion modular del coach por deporte: squash (profundo), running, fuerza, movilidad, ciclismo
-- reglas del coach solo se activan para deportes habilitados en el perfil del atleta
-- coach con lectura mejorada de fatiga acumulada, taper competitivo y bloques hibridos multi-deporte
-- coach con inferencia implicita de prioridad competitiva desde memoria, mensajes y calendario
-- deteccion competitiva generalizada a cualquier sesion con subtype `match` o `competitive`
-- athlete profile estructurado: running, fuerza, recuperacion, disponibilidad, nutricion, sportContext
-- sportContext tipado: enabledSports, primarySport, secondarySports, trainingPriority
-- helpers `getEnabledSports`, `getPrimarySportNormalized`, `getSportPrioritySummary` como fuente de verdad
-- athlete profile explotado en el coach: paces de running, cargas de fuerza y contexto nutricional desde el perfil
-- nutricion integrada al coach: seccion de prompt con carga del dia, timing, protocolo competitivo y composicion corporal
-- onboarding wizard de 4 pasos (disciplinas → deporte principal → objetivo → disponibilidad)
-- OnboardingGuard con escape hatch para usuarios legacy
-- AthleteProfileEditor con UI estructurada de sportContext (chips de deporte + prioridad)
-- 5 tipos de sesion: squash, running, cycling, strength, mobility (+ recovery, nutrition)
-- cycling como SessionType real con campos de pace/HR compartidos con running
-- templates de semana base para cycling-first y strength-first en el coach
-- propuestas de squash estructuradas con `squashDetails`
-- UI de proposals con drills, focos de squash y mejor detalle visible
-- chat multi-sesion con streaming
-- Dexie local-first
-- backup JSON con import/export, preview, versionado base y modos `replace` / `merge` conflict-aware
-- importacion PDF con carga diferida
-- notificaciones reforzadas con recuperacion dentro de ventana de gracia, estado visible y controles manuales
-- sync multi-dispositivo con Supabase + Google OAuth
-- indicador visible de sync en navegacion
-- sync UX mejorado: cola pendiente, ultimo sync OK, recovery offline y forzar sync visible en Ajustes
-- personalizacion profunda: AddSessionModal, QuickActionChips y promptBuilder adaptados al deporte principal del atleta, eliminando defaults de squash
-- ejemplos del coach por deporte: propuestas de create_week inyectan ejemplos de running, ciclismo o fuerza segun el perfil real
-- MVP Macro Eventos: 1 evento principal, calculo local determinista de fases y awareness del coach via prompt (base, build, peak, taper, race, transition)
-- UI Macro Eventos: MacroPlanCard en Dashboard con fase, semanas restantes y foco del bloque color-coded por fase
-- integracion backup Macro: goalEvents y macroPlan incluidos en export/import con validacion robusta y backward compatibility
-- Phase Awareness en el Coach: reglas explicitas en el prompt para no redefinir fases y ajustar carga segun el bloque actual (ej: ahorro en taper)
+No debería volver a aparecer como backlog principal:
 
-## Estado verificado
-
-Salud tecnica:
-
-- `npm run lint`: OK
-- `npm run build`: OK
-
-Observaciones de build:
-
-- `pdf.worker.min` sigue siendo el asset mas pesado
-- el flujo PDF ya esta mejor aislado, pero sigue siendo la parte mas cara cuando esa pantalla se usa
-- la advertencia vieja de `INEFFECTIVE_DYNAMIC_IMPORT` ya fue corregida
-
-## Lo que ya esta cerrado
-
-Estos temas ya no deberian seguir listados como roadmap principal:
-
-- planner base del coach
-- proposals persistidas
-- chat multi-sesion
-- streaming
-- memoria del coach
-- export/import JSON base
-- sync multi-dispositivo base
-- reload de stores post-sync
-- indicador de sync en navegacion
-- especializacion base del coach
-- propuestas de squash estructuradas
-- UX visible de proposals del coach
-- backup versionado base
-- preview de importacion y modos `replace` / `merge`
-- merge conflict-aware base
-- lectura base de fatiga acumulada para taper
-- jerarquia competitiva explicita y bloques hibridos base
-- inferencia implicita de prioridad competitiva
+- coach con chat multi-sesión, streaming y proposals persistidas
+- especialización modular por deporte habilitado
+- lectura de fatiga, taper competitivo y contexto híbrido multi-deporte
 - athlete profile estructurado persistido en ajustes
-- explotacion del athlete profile en propuestas: paces y cargas reales inyectados en el prompt
-- fuerza lower en semana base del coach
-- personalizacion real por usuario: coach adaptado al deporte principal, seed anonimizado, login neutral y nudge de onboarding
-- banner de perfil incompleto en ChatCoach
-- nutricion integrada al coach: contexto dinamico por carga del dia, protocolo competitivo, composicion corporal desde perfil
-- NutritionProfile en AthleteProfile con seccion en el editor de ajustes
-- optimizacion principal del chunk de PDF
-- limpieza principal de docs base
-- limpieza del bloque duplicado de semana base en el prompt del coach
-- apertura multi-deporte: SupportedSport, TrainingPriority, sportContext tipado en AthleteProfile
-- helpers de deporte: normalizeSport, getEnabledSports, getSportPrioritySummary
-- onboarding wizard de 4 pasos con OnboardingGuard y escape hatch legacy
-- promptBuilder modular: 5 secciones por deporte, solo activas si el deporte esta habilitado, defaults squash eliminados
-- deteccion competitiva generalizada (subtype match/competitive, no solo type squash)
-- cycling como SessionType con campos pace/HR en modal y store
-- templates de semana base cycling-first y strength-first en el coach
-- AthleteProfileEditor con sportContext UI (chips de deporte + prioridad, reemplaza free-text legacy)
-- profundidad tactica cycling: Z2/tempo-sweetspot/intervalos/long ride, cadencia, indoor vs outdoor, cruce de fatiga con running
-- profundidad tactica mobility: focos articulares por zona (cadera/tobillo/hombro/toracica), cuando programar, regla movilidad estatica vs fuerza
-- buildCompetitionSection y buildCompetitionLoadSection generalizados por deporte: "partido" / "carrera" / "evento de ciclismo" segun sesion real
-- nutritionEngine: deteccion de match generalizada a cualquier subtype match/competitive (no solo squash)
-- card de nutricion en vista diaria (DayDetail): carga del dia, foco nutricional, pre/post-entreno e hidratacion — sin abrir el chat
-- analytics de carga por disciplina: carga semanal/mensual por tipo de sesion (min × RPE), tendencia general + running, adherencia 4 semanas, inyectado en el prompt del coach y visible en Dashboard como card "Carga por disciplina"
-- sync UX base: estado offline real, cola pendiente visible, ultimo sync exitoso, recovery offline registrado y accion manual de `Forzar sync`
-- MVP Macro Eventos: 1 evento principal, calculo local determinista de fases y awareness del coach via prompt (base, build, peak, taper, race, transition)
-- UI Macro Eventos: MacroPlanCard en Dashboard con fase, semanas restantes y foco del bloque color-coded por fase
-- integracion backup Macro: goalEvents y macroPlan incluidos en export/import con validacion robusta y backward compatibility
-- Phase Awareness en el Coach: reglas explicitas en el prompt para no redefinir fases y ajustar carga segun el bloque actual (ej: ahorro en taper)
+- onboarding wizard + guard para usuarios nuevos
+- nutrición integrada al coach y visible en UI
+- analytics de carga por disciplina en dashboard + prompt
+- sync base con Supabase, Google OAuth, cola pendiente y recovery offline visible
+- endurecimiento reciente de sync: dedupe por clave natural en `dayLogs`/`weekSummaries`, tombstones de delete para `sessions`, compactación de cola, reintento automático al volver online/foco y mejor clasificación de errores (`offline` vs `error`)
+- backup JSON con preview, merge/replace y validación
+- borrado selectivo de entrenamientos creados por el coach
+- macroplan MVP por evento principal con awareness del coach vía prompt
+- primera versión de `Plan Builder` separada del chat: ruta propia, inputs guiados base y handoff al coach con prompt estructurado
 
-## Prioridades reales
+## Posicionamiento actual
 
-### P1. Notificaciones mas confiables
+Hoy el producto ya se siente como:
 
-La base ya esta claramente mejor, pero no equivale todavia a scheduling verdaderamente persistente del sistema.
+- planner de entrenamiento personal
+- coach AI que adapta recomendaciones al perfil del atleta
+- tracker ligero para carga, recuperación y adherencia
 
-Implementado:
+Todavía no se siente completamente “premium” por tres razones:
 
-- limpieza del estado del worker cuando no hay permiso o no hay sesiones para hoy
-- debug visible con permiso, ultima reprogramacion y ultima limpieza
-- botones manuales `Reprogramar hoy` y `Limpiar estado`
-- handshake con `MessageChannel` para esperar confirmacion real del service worker
-- limpieza de `localStorage` para no dejar tags enviados bloqueando nuevas notificaciones del mismo dia
-- refresco automatico del permiso al volver a foco/visibilidad via `navigator.permissions`
+- sync y reconciliación siguen siendo la zona más sensible
+- notificaciones móviles/PWA no están validadas del todo en uso real
+- el valor diferencial del macroplan y los protocolos aún está en MVP
 
-Pendiente:
+## Roadmap por fases
 
-- validar comportamiento en suspension real de movil/PWA
-- aviso visible en Dashboard cuando el permiso esta bloqueado
-- exponer errores de scheduling de forma mas clara para el usuario
+### Fase 1 — MVP vendible
 
-### P2. Sync UX y reglas de dominio
+**Objetivo**
 
-La UX base de sync ya quedo cerrada:
+Cerrar confiabilidad y UX base para que el producto se pueda mostrar, usar y cobrar sin miedo.
 
-- estado offline real
-- cola pendiente visible
-- ultimo sync exitoso y recovery offline visibles
-- accion manual de `Forzar sync`
-- aviso visible en Dashboard cuando hay cambios pendientes o estado offline
+**Features principales**
 
-Pendiente en esta linea:
+1. Endurecer sync y reconciliación entre dispositivos
+2. Validar notificaciones reales en móvil/PWA
+3. Mejorar UX del coach y feedback de acciones
+4. Cerrar gaps de perfil incompleto con nudges claros
+5. Limpiar messaging de producto y flujo de valor principal
 
-- endurecimiento de operaciones destructivas y reconciliacion
-- mejor copy/explicacion cuando hubo recovery offline o cola retenida mucho tiempo
-- evaluar realtime solo si aparece uso simultaneo real
+**Impacto en usuario**
 
-### P3. Analytics: carga acumulada por disciplina
+- más confianza en que sus datos no se rompen
+- mejor experiencia diaria con el coach
+- percepción de producto serio, no experimental
 
-No como una pantalla de graficos separada, sino como contexto cuantitativo directo para el coach y para el usuario.
+### Fase 2 — Crecimiento
 
-Objetivo minimo viable:
+**Objetivo**
 
-- carga semanal y mensual por tipo de sesion (squash, running, cycling, strength)
-- tendencia de adherencia (sesiones planificadas vs completadas)
-- consistencia de running por semana (km/tiempo acumulado)
-- contexto inyectable en el prompt del coach cuando lo necesite
+Aumentar retención y valor percibido sin sobrearquitectura.
 
-Esto puede vivir como una funcion de `promptBuilder.ts` que lee el historico de sesiones, sin necesidad de una pagina de analytics nueva.
+**Features principales**
 
-### P4. Personalización profunda por usuario (para terceros) — COMPLETADO 2026-04-06
+1. Macroplan Fase 2: timeline visual + templates por fase
+2. Protocolos reutilizables e interactivos de warmup/cooldown
+3. Mejorar profundidad de cycling y mobility
+4. Dashboard más accionable con alertas y recomendaciones cortas
+5. Mejorar importación inicial y recuperación de datos
 
-### P5. Protocolos previos y posteriores por disciplina
+**Impacto en usuario**
 
-Agregar protocolos visibles y reutilizables de:
+- más claridad sobre qué entrenar y por qué
+- sensación de coach más completo
+- más adherencia y retorno a la app
 
-- movilidad dinamica pre-entreno para squash y running
-- estiramientos y vuelta a la calma post-entreno
-- calentamiento base para fuerza: 10 min de bici/trote/eliptica + movilidad + activacion
+### Fase 3 — Monetización
 
-Impacto esperado:
+**Objetivo**
 
-- alto para UX diaria y adherencia
-- alto para seguridad y sensacion de "coach completo"
-- bajo-medio en esfuerzo si se implementa primero como bloques sugeridos reutilizables
+Empaquetar el producto para convertirlo en algo claramente vendible.
 
-### P6. Borrado selectivo de entrenamientos creados por el coach
+**Features principales**
 
-Hoy el borrado masivo de entrenamientos del coach es demasiado agresivo. Hace falta bajar granularidad:
+1. Planes y límites claros
+2. Historial y analytics premium
+3. Coach más profundo en plan pago
+4. Export/share de planes o resúmenes
+5. Integraciones premium solo si ayudan a cerrar ventas
 
-- eliminar 1 a 1 desde la pantalla de semana
-- desde Ajustes, selector para borrar todos o solo un rango reciente
-- rango sugerido: ultima semana hasta 4 semanas atras
+**Impacto en usuario**
 
-Impacto esperado:
+- diferencia clara entre gratis y pago
+- mayor percepción de valor por personalización y seguimiento
+- modelo fácil de entender y comprar
 
-- muy alto para control del usuario
-- evita miedo a probar al coach si luego limpiar implica borrar demasiado
-- esfuerzo medio por UI, reglas de seleccion y confirmaciones
+## Observaciones técnicas del código (2026-04-06)
 
-### P7. Plan macro de entrenamiento para un evento (MVP) — COMPLETADO 2026-04-06
+Hallazgos concretos de revisión del código que no estaban explícitos en el backlog anterior:
 
-### P8. Integraciones externas de rendimiento y recuperacion
+### Nutrición sin personalización real
+`nutritionEngine.ts` usa una tabla lookup 100% estática por tipo de carga. No lee el perfil del atleta en absoluto: ni peso, ni restricciones alimentarias, ni objetivos de macros, ni timing de entrenamientos. El gap entre “tenemos perfil del atleta” y “lo usamos para nutrición” es completo.
 
-Linea de producto de largo plazo:
+### LoadAnalytics sin ACWR
+`loadAnalytics.ts` calcula carga ponderada (min × RPE) y tendencias por disciplina — buena base. Pero no calcula el **Acute:Chronic Workload Ratio** (carga semana actual / promedio 4 semanas), que es el indicador estándar de ciencias del deporte para riesgo de lesión. El dato está ahí para calcularlo.
 
-- WHOOP: via OAuth backend + Supabase, mapear sleep/recovery/strain
-- Apple Health: integracion deseable para datos de salud e iPhone/Apple Watch
-- Garmin: bloqueado probablemente por acceso comercial
-- Modelo `external_metrics` separado del dato manual para no mezclar fuentes
+### Fuerza sin progresión acumulada
+El tipo `Exercise` ya guarda `weight`, `sets`, `reps`. La data existe para trazar progresión de carga en fuerza (ej. evolución de peso en sentadilla), pero no hay ningún surface de esto en analytics ni en el prompt del coach.
 
-## Backlog priorizado
+### ProtocolEngine implementado, sin suficiente UX
+`protocolEngine.ts` tiene lógica rica: calcula días consecutivos de entrenamiento, proximidad a competencia, señales del `DayLog` (energía, dolor). El motor existe pero no está suficientemente expuesto en la UI post-sesión ni en vista diaria.
 
-| Item | Impacto | Esfuerzo | Estado |
-|------|---------|----------|--------|
-| Profundidad tactica cycling + mobility | Alto | Bajo | Cerrado |
-| buildCompetitionSection por deporte | Alto | Bajo | Cerrado |
-| Nutricion en vista diaria | Medio | Bajo | Cerrado |
-| Robustecer notificaciones | Alto | Medio | Parcial |
-| Analytics carga por disciplina | Alto | Medio | Cerrado |
-| Protocolos de movilidad y calentamiento por disciplina | Alto | Bajo-Medio | Parcial |
-| Borrado selectivo de entrenamientos del coach | Muy alto | Medio | Cerrado |
-| Sync UX y recovery offline | Alto | Medio | Cerrado base |
-| Personalizacion profunda para terceros | Alto | Medio | Cerrado |
-| Realtime sync opcional | Medio | Medio | Backlog |
-| Integracion WHOOP futura | Medio | Medio | Backlog |
-| Integracion Apple Health futura | Medio | Alto | Backlog |
-| Integracion Garmin futura | Bajo | Alto | Exploracion |
-| Plan macro por evento (MVP) | Muy alto | Alto | Cerrado |
-| Plan macro Fase 2 (Timeline + Plantillas) | Alto | Medio | Backlog |
+### Sync: merge last-write-wins es frágil
+La estrategia de sync ya mejoró bastante: se corrigieron conflictos por clave natural (`date`, `weekStartDate`), deletes de `sessions` con tombstones, compactación de cola y recovery automático. El gap que sigue abierto es el merge de **ediciones concurrentes del mismo registro**: si dos dispositivos editan el mismo objeto offline, todavía gana el último timestamp silenciosamente.
 
-## Riesgos actuales
+### MacroPlan sin diferenciación por deporte
+Las fases (base/build/peak/taper) son genéricas. En un atleta multi-deporte como squash + running, “peak de squash” y “peak de running” implican énfasis distintos (skills técnicos vs volumen aeróbico). El macroplan no hace esa distinción.
 
-### Coach con perfil incompleto
+### ICS export parcialmente implementado
+`utils/ics.ts` existe en el proyecto — sugiere que la exportación a calendario fue planeada o está parcialmente lista. No se ve activamente expuesta en la UI.
 
-El coach es mucho mas util con sportContext completo. Si el usuario completo onboarding solo con deporte principal pero sin datos de running (paces) o fuerza (cargas), las propuestas caen a estimaciones genericas. El aviso en ChatCoach ayuda, pero no fuerza el llenado.
+---
 
-### Cycling y mobility como ciudadanos de segunda
+## Backlog unificado
 
-Las secciones de reglas de cycling y mobility son MVP. Si un usuario de cycling como deporte principal usa intensamente el coach, va a notar que el conocimiento es mas superficial que el de squash o running.
+### Ahora
 
-### Notificaciones web
+Items de mayor prioridad para las próximas iteraciones:
 
-La plataforma web sigue imponiendo limites de persistencia segun navegador. La app ya reacciona mejor, pero en suspension real de movil/PWA el comportamiento no esta validado.
+1. **Sync y reconciliación**
+   - validar en dispositivos reales la convergencia completa de sesiones borradas
+   - seguir endureciendo cola offline, recovery y diagnósticos
+   - mejorar copy cuando la cola queda retenida mucho tiempo
+   - **nuevo:** detectar y avisar cuando hay ediciones concurrentes en lugar de sobrescribir silenciosamente
+   - **ya implementado en código:** dedupe natural key, tombstones de delete, compactación de cola y reintento automático al volver online/foco
 
-### Backup futuro
+2. **Notificaciones móviles reales**
+   - validar suspensión real en iPhone/Android/PWA
+   - aviso visible cuando permiso está bloqueado
+   - errores de scheduling más claros para el usuario
 
-El restore tiene preview, merge conflict-aware y panel de conflictos estimados, pero aun faltan conflictos visibles a nivel de campo y migraciones futuras mas completas.
+3. **Coach UX**
+   - respuestas más consistentes y menos ambiguas
+   - mejor feedback después de aceptar propuestas
+   - reducir fricción entre “chat útil” y “acción ejecutable”
+   - **nuevo:** resumen de contexto enviado al coach (“el coach sabe esto de ti”) para generar confianza
+   - **avance reciente:** mejor copy de sync/error y entrada guiada hacia planificación semanal
 
-### Integraciones externas
+4. **Perfil incompleto**
+   - nudges específicos por deporte
+   - pedir ritmos de running, 1RM de fuerza y disponibilidad cuando falten
+   - usar eso para mejorar la calidad del coach más rápido
 
-WHOOP parece viable low-cost. Apple Health candidato fuerte para iPhone/Watch. Garmin puede quedar bloqueado por aprobacion comercial.
+5. **Creador de plan como feature separada**
+   - separar el flujo de `create_week` del chat general
+   - convertirlo en una experiencia dedicada y más enriquecida
+   - permitir inputs más claros: objetivo de semana, fase, disponibilidad, competencia cercana, foco principal
+   - mantener el chat como coach conversacional y el creador como herramienta estructurada
 
-## Recomendacion de ejecucion
+### Siguiente
 
-Orden recomendado para proximas iteraciones:
+Items de alto valor después de cerrar confiabilidad:
 
-1. ~~Profundidad tactica cycling + mobility~~ — COMPLETADO 2026-04-05
-2. ~~buildCompetitionSection generalizado por deporte~~ — COMPLETADO 2026-04-05
-3. ~~Nutricion en vista diaria~~ — COMPLETADO 2026-04-05
-4. ~~Analytics carga por disciplina~~ — COMPLETADO 2026-04-06
-5. Notificaciones en movil real (requiere validacion manual en dispositivo fisico)
-6. ~~Sync UX y recovery offline~~ — CERRADO BASE 2026-04-06
-7. ~~Personalizacion profunda para terceros~~ — COMPLETADO 2026-04-06
-8. Plan Macro Fase 2: Visualizacion de timeline y plantillas multi-semana por fase
-9. Protocolos previos y posteriores interactivos (Warmup/Cooldown)
+1. **Macroplan Fase 2**
+   - timeline visual
+   - plantillas `create_week` por fase
+   - reglas de taper/peak más visibles
+   - **nuevo:** diferenciación de énfasis por deporte dentro de cada fase (squash vs running peak no son iguales)
+   - **nuevo:** eventos secundarios (ej. torneos de preparación) visibles en el timeline
 
-## Referencias revisadas
+2. **Nutrición personalizada — gap técnico crítico**
+   - conectar `nutritionEngine` al perfil del atleta: usar peso, preferencias y timing de entrenamiento
+   - reemplazar lookup estático por lógica que adapte macros al volumen real semanal
+   - no requiere LLM — es lógica determinista que ya puede mejorar mucho con el perfil que tenemos
+   - mostrar diferencia entre días de doble sesión en diferentes deportes (squash-fuerza vs squash-running)
 
-- `src/services/syncService.ts`
-- `src/services/auth.ts`
-- `src/store/useAuthStore.ts`
-- `src/store/useChatStore.ts`
-- `src/store/useCoachActionsStore.ts`
-- `src/store/useTrainingStore.ts`
-- `src/services/dataExport.ts`
-- `src/services/notifications.ts`
-- `src/services/pdfImport.ts`
-- `src/services/nutritionEngine.ts`
-- `src/services/ai/promptBuilder.ts`
-- `src/utils/athlete.ts`
-- `src/components/chat/ProposalDrawer.tsx`
-- `src/components/settings/AthleteProfileEditor.tsx`
-- `src/pages/OnboardingPage.tsx`
-- `src/pages/ImportPDF.tsx`
-- `src/pages/SettingsPage.tsx`
-- `src/pages/ChatCoach.tsx`
-- `src/App.tsx`
-- `src/constants/sessionTypes.ts`
-- `src/constants/routes.ts`
-- `public/sw.js`
-- `src/services/macroPlan.ts`
-- `src/components/dashboard/MacroPlanCard.tsx`
+3. **ACWR y alertas de carga — dato ya disponible**
+   - `loadAnalytics.ts` ya tiene todo lo necesario para calcular Acute:Chronic Workload Ratio
+   - añadir ACWR al dashboard como indicador de riesgo de lesión (semáforo: verde/amarillo/rojo)
+   - enviar ACWR al prompt del coach para que informe sus propuestas
+   - umbral de alerta: ACWR > 1.5 = riesgo alto, < 0.8 = desentrenamiento
 
-## Propuesta: Plan Macro Fase 2 y "Coach Proactivo"
+4. **Progresión de fuerza**
+   - los datos de peso/series/reps ya se guardan en `Exercise`
+   - mostrar evolución de carga por ejercicio (ej. “tu sentadilla subió 12% en 4 semanas”)
+   - enviar tendencia de fuerza al prompt del coach para propuestas de progresión
+   - calcular 1RM estimado automáticamente desde el historial
 
-Basado en la implementación actual, la siguiente evolución lógica para escalar el valor del Macro Plan es:
+5. **Protocolos previos y posteriores — UX pendiente**
+   - `protocolEngine.ts` ya está implementado con contexto rico
+   - surfacear el protocol recomendado en la vista de sesión del día antes de empezar
+   - mostrar cooldown recomendado en la pantalla de completar sesión
+   - reutilización: guardar protocolo como favorito por disciplina
 
-1.  **Timeline Visual**: Expandir la `MacroPlanCard` o crear una vista dedicada que muestre una barra de progreso horizontal con todas las fases (Base -> Build -> Peak -> Taper -> Race). Esto da una perspectiva visual de cuánto falta y en qué parte del ciclo estamos.
-2.  **Plantillas por Fase (Coach)**: Actualmente el coach sabe en qué fase está, pero la acción `create_week` usa plantillas genéricas. La propuesta es crear variantes de plantillas para cada fase:
-    *   **Base**: Más volumen de Z2 y fuerza general.
-    *   **Peak**: Más sesiones de alta intensidad y drills de match-play.
-    *   **Taper**: Reducción drástica de volumen (40-60%) pero manteniendo la intensidad.
-3.  **Eventos Secundarios (B/C)**: Permitir agregar eventos menores que no resetean el macro ciclo pero que el coach debe considerar para bajar carga el día previo y el día de.
-4.  **Notificación de Cambio de Fase**: Un aviso proactivo el lunes de la semana que cambia una fase (ej: "Has entrado en fase de Construcción, prepárate para subir la intensidad").
+6. **Dashboard accionable**
+   - mejores alertas
+   - recomendaciones cortas de coach
+   - señales claras cuando hay riesgo de fatiga, taper o huecos de planificación
+   - **nuevo:** integrar ACWR como señal de alerta visual
+
+7. **Depth improvements**
+   - cycling más profundo para usuarios cycling-first
+   - mobility más útil como disciplina real, no solo complemento
+
+8. **Plan Builder enriquecido**
+   - base ya implementada con ruta propia y draft estructurado al coach
+   - permitir revisar borrador antes de aplicar
+   - explicar por qué se generó cada sesión
+   - servir como base para una futura feature premium
+
+### Después
+
+Items valiosos, pero no críticos para esta etapa:
+
+1. **Realtime sync opcional**
+   - solo si aparece uso simultáneo real y recurrente
+
+2. **Exportación a calendario (ICS)**
+   - `utils/ics.ts` ya existe — evaluar qué tan completo está y si vale la pena exponer en UI
+   - útil para usuarios que quieren ver sus sesiones en Google Calendar / Apple Calendar
+
+3. **Integraciones externas**
+   - WHOOP
+   - Apple Health
+   - Garmin solo exploratorio
+
+4. **Eventos secundarios**
+   - útiles para macroplan fase 2 y timeline visual
+
+## Priorización simple
+
+Si hubiera que resumir todo en orden real:
+
+1. confiabilidad de sync (incluyendo merge de ediciones concurrentes)
+2. notificaciones móviles reales
+3. UX del coach y perfil incompleto
+4. nutrición personalizada al perfil del atleta (alto impacto, implementación simple)
+5. ACWR como indicador de carga en dashboard (alto impacto, dato ya disponible)
+6. macroplan fase 2 con diferenciación por deporte
+7. progresión de fuerza visible
+8. protocolos interactivos en flujo de sesión
+9. monetización
+
+## Monetización viable
+
+### 1. Suscripción simple
+
+Gratis para planificación base. Pago mensual para:
+
+- coach AI completo
+- sync sólido multi-dispositivo
+- macroplan avanzado
+- analytics e historial premium
+
+### 2. Freemium por límites
+
+Gratis con:
+
+- 1 deporte principal
+- funciones base
+- 1 evento principal
+
+Pago para:
+
+- multi-deporte completo
+- más contexto del coach
+- más historial
+- más personalización
+
+### 3. Coaching premium
+
+Plan superior con:
+
+- análisis más profundo
+- resúmenes semanales premium
+- recomendaciones más completas
+- eventualmente capa humana liviana
+
+## Features clave para habilitar monetización
+
+Antes de cobrar, estas piezas tienen que sentirse fuertes:
+
+- sync confiable
+- notificaciones móviles confiables
+- coach AI consistente y útil
+- macroplan visible y entendible
+- perfil del atleta bien aprovechado
+- diferencia clara entre valor gratis y valor pago
+
+## Checklist beta privada
+
+| Área | Estado | Nota |
+|------|--------|------|
+| Planificación semanal, vista diaria, historial y ajustes | OK | Base de producto ya usable |
+| Coach AI con proposals ejecutables | OK | Ya entrega valor real |
+| Perfil estructurado + onboarding | OK | Bueno para arranque, pero aún mejorable |
+| Dashboard con carga, nutrición y macroplan | OK | Ya muestra valor visible |
+| Backup/import-export base | OK | Funcional para recovery |
+| Sync multi-dispositivo | En progreso | Dedupe, cola compactada y recovery automático ya implementados; falta validación fuerte en móvil/PC real |
+| Deletes y reconciliación completa | En progreso | Tombstones y convergencia base implementados; falta blindar ediciones concurrentes |
+| Notificaciones móviles/PWA reales | En progreso | Falta validación en uso real |
+| Manejo de errores visible y claro | En progreso | Mejoró el copy de sync; falta extenderlo a más flujos |
+| Perfil incompleto con nudges específicos | En progreso | Mejora calidad del coach |
+| Flujo principal del coach pulido | En progreso | Ya existe handoff desde Plan Builder; falta enriquecerlo |
+| Offline básico confiable | En progreso | Recovery automático y mejor clasificación de errores ya implementados; falta validación en uso real |
+| Nutrición personalizada al perfil | Pendiente | Motor estático — no usa datos del perfil del atleta |
+| Analytics de progresión de fuerza | Pendiente | Data disponible en Dexie, sin surface en UI |
+| ACWR / indicador de riesgo de carga | Pendiente | Base de datos lista para calcularlo, no implementado aún |
+| Protocolos warmup/cooldown en UX | En progreso | Motor implementado, falta integración en flujo de sesión |
+| Plan Builder separado del chat | En progreso | Primera versión lista; falta enriquecer inputs, preview y explicación del plan |
+
+## Próximas 3 tareas de implementación
+
+1. **Validar y blindar sync entre móvil y escritorio**
+   - probar deletes, edits y recovery offline en dos dispositivos reales
+   - revisar si todavía reaparece alguna `session`
+   - cerrar cualquier caso restante de convergencia incompleta
+
+2. **Mejorar UX de errores y estado de sync**
+   - copy más claro en Dashboard y Ajustes
+   - diferenciar mejor “sin conexión”, “error de servidor” y “cola retenida”
+   - dejar acciones sugeridas visibles para el usuario
+
+3. **Separar el creador de plan del chat**
+   - base ya creada con `Plan Builder`
+   - enriquecer inputs estructurados en vez de depender solo del mensaje libre
+   - mantener el chat para conversación y ajustes, y el plan builder para planificación guiada
+
+**Criterio para beta privada**
+
+La beta privada está lista cuando:
+
+- `sync` crea, edita y borra sin reaparecer datos
+- móvil y escritorio convergen con la misma cuenta
+- errores de sync, import y coach son entendibles
+- onboarding lleva al usuario al primer valor sin ayuda manual
+- offline básico se siente controlado y no roto
+
+## Criterio de producto
+
+La regla para próximas iteraciones debería ser simple:
+
+- primero construir algo confiable
+- luego construir algo que el usuario quiera abrir seguido
+- recién después empaquetar y cobrar
+
+Evitar por ahora:
+
+- features complejas que no mejoran retención
+- integraciones externas tempranas
+- overengineering de arquitectura sin impacto comercial directo

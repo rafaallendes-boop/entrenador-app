@@ -16,6 +16,7 @@ const Dashboard = lazy(() => import('./pages/Dashboard'))
 const WeeklyView = lazy(() => import('./pages/WeeklyView'))
 const DayDetail = lazy(() => import('./pages/DayDetail'))
 const ChatCoach = lazy(() => import('./pages/ChatCoach'))
+const PlanBuilderPage = lazy(() => import('./pages/PlanBuilderPage'))
 const History = lazy(() => import('./pages/History'))
 const ImportPDF = lazy(() => import('./pages/ImportPDF'))
 const SettingsPage = lazy(() => import('./pages/SettingsPage'))
@@ -67,8 +68,13 @@ export default function App() {
     if (!userId) return
 
     let cancelled = false
+    let syncInFlight = false
 
     const syncSignedInUser = async () => {
+      if (syncInFlight) return
+      syncInFlight = true
+
+      try {
       const { shouldMigrate } = await prepareLocalDataForUser(userId)
       if (cancelled) return
 
@@ -85,12 +91,39 @@ export default function App() {
         loadWeek(currentWeekStartISO()),
         loadAllSummaries(),
       ])
+      } finally {
+        syncInFlight = false
+      }
     }
 
     void syncSignedInUser()
 
+    const handleOnline = () => {
+      void syncSignedInUser()
+    }
+
+    const handleFocus = () => {
+      const { syncStatus, syncDetails } = useAuthStore.getState()
+      if (syncStatus === 'offline' || syncStatus === 'error' || syncDetails.pendingOps > 0) {
+        void syncSignedInUser()
+      }
+    }
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        handleFocus()
+      }
+    }
+
+    window.addEventListener('online', handleOnline)
+    window.addEventListener('focus', handleFocus)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
     return () => {
       cancelled = true
+      window.removeEventListener('online', handleOnline)
+      window.removeEventListener('focus', handleFocus)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
   }, [userId])
 
@@ -106,6 +139,7 @@ export default function App() {
                 <Route path={ROUTES.WEEK} element={<WeeklyView />} />
                 <Route path="/day/:date" element={<DayDetail />} />
                 <Route path={ROUTES.CHAT} element={<ChatCoach />} />
+                <Route path={ROUTES.PLAN_BUILDER} element={<PlanBuilderPage />} />
                 <Route path={ROUTES.HISTORY} element={<History />} />
                 <Route path={ROUTES.SETTINGS} element={<SettingsPage />} />
                 <Route path={ROUTES.IMPORT} element={<ImportPDF />} />
