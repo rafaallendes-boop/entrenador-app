@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
+import { computeLoadAnalytics, type LoadAnalytics } from '../services/loadAnalytics'
 import { CheckCircle2, MoreHorizontal, Plus, Trash2, X } from 'lucide-react'
 import { useChatStore } from '../store/useChatStore'
 import { useCoachActionsStore } from '../store/useCoachActionsStore'
@@ -107,6 +108,7 @@ function ProviderBadge({ providerName }: { providerName: string }) {
 
 export default function ChatCoach() {
   const navigate = useNavigate()
+  const location = useLocation()
   const { messages, isLoading, streamingText, error, loadHistory, sendMessage, newSession, deleteCurrentSession } =
     useChatStore()
   const { proposals, loadProposals, acceptProposal, rejectProposal } = useCoachActionsStore()
@@ -119,6 +121,9 @@ export default function ChatCoach() {
   const [menuOpen, setMenuOpen] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState(false)
   const [profileBannerDismissed, setProfileBannerDismissed] = useState(false)
+  const [profileNudgeDismissed, setProfileNudgeDismissed] = useState(false)
+  const [loadAnalytics, setLoadAnalytics] = useState<LoadAnalytics | null>(null)
+  const showProfileNudge = !profileNudgeDismissed && (location.state as { showProfileNudge?: boolean } | null)?.showProfileNudge === true
   const hasMessages = messages.length > 0
   const athleteFirstName = getAthleteFirstName(athleteProfile, 'atleta')
   const profileCompleteness = getProfileCompleteness(athleteProfile)
@@ -132,6 +137,7 @@ export default function ChatCoach() {
     loadProposals()
     loadMemory()
     loadWeek(currentWeekStartISO())
+    void computeLoadAnalytics(4).then(setLoadAnalytics)
   }, [loadHistory, loadProposals, loadMemory, loadWeek])
 
   useEffect(() => {
@@ -157,6 +163,7 @@ export default function ChatCoach() {
       athleteMemory: coachMemory || undefined,
       athleteProfile: athleteProfile ?? undefined,
       intent: detectChatIntent(message),
+      loadAnalytics: loadAnalytics ?? undefined,
     }
   }
 
@@ -299,6 +306,25 @@ export default function ChatCoach() {
 
       <div className="h-full overflow-y-auto px-4 pb-[228px] pt-[108px] md:px-6 md:pb-[208px]">
         <div className="mx-auto w-full max-w-3xl space-y-4 py-4">
+          {showProfileNudge && (
+            <div className="flex items-start gap-2 rounded-xl border border-brand/20 bg-brand/10 px-3 py-2">
+              <span className="mt-0.5 flex-shrink-0 text-xs text-brand-light">💡</span>
+              <span className="flex-1 text-xs leading-relaxed text-brand-light">
+                Perfil básico guardado. Para propuestas más precisas, agrega tus{' '}
+                <button
+                  onClick={() => navigate(ROUTES.SETTINGS)}
+                  className="font-semibold underline underline-offset-2 hover:text-white"
+                >
+                  ritmos de running y RMs de pesas
+                </button>{' '}
+                en Ajustes → Perfil del atleta.
+              </span>
+              <button onClick={() => setProfileNudgeDismissed(true)} className="flex-shrink-0 text-brand-light/60 hover:text-brand-light">
+                <X size={12} />
+              </button>
+            </div>
+          )}
+
           {showProfileBanner && (
             <ContextualProfileBanner
               completeness={profileCompleteness}

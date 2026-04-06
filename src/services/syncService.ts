@@ -43,6 +43,19 @@ const LAST_SYNC_USER_KEY = 'entrenador_sync_user_v1'
 const MIGRATION_KEY_PREFIX = 'entrenador_migrated_v1'
 const MAX_QUEUE_SIZE = 500
 
+interface MergeContext {
+  allowDeletes: boolean
+  deleteBeforeTs: number | null
+}
+
+function syncStoreState() {
+  return useAuthStore.getState()
+}
+
+function updatePendingOps(count: number): void {
+  syncStoreState().setSyncDetails({ pendingOps: count })
+}
+
 function loadQueue(): OfflineOp[] {
   try {
     const raw = localStorage.getItem(QUEUE_KEY)
@@ -74,6 +87,7 @@ function saveQueue(queue: OfflineOp[]): void {
   } catch {
     // Ignore storage quota failures.
   }
+  updatePendingOps(queue.length)
 }
 
 function enqueue(op: OfflineOp): void {
@@ -115,6 +129,7 @@ async function drainQueue(): Promise<boolean> {
   }
 
   const remaining: OfflineOp[] = []
+  const initialCount = currentUserQueue.length
 
   for (const op of currentUserQueue) {
     try {
@@ -138,12 +153,24 @@ async function drainQueue(): Promise<boolean> {
   }
 
   saveQueue([...otherUsersQueue, ...remaining])
+  if (remaining.length === 0 && initialCount > 0) {
+    syncStoreState().setSyncDetails({
+      lastRecoveredSyncAt: Date.now(),
+      lastSuccessfulSyncAt: Date.now(),
+      lastErrorMessage: null,
+    })
+  }
   return remaining.length === 0
 }
 
 if (typeof window !== 'undefined') {
+  updatePendingOps(loadQueue().length)
   window.addEventListener('online', () => {
+    syncStoreState().setSyncStatus('syncing')
     void drainQueue()
+  })
+  window.addEventListener('offline', () => {
+    syncStoreState().setSyncStatus('offline')
   })
 }
 
@@ -156,6 +183,7 @@ async function upsertRow(table: SupabaseTable, row: Record<string, unknown>): Pr
   if (!userId) return
 
   if (!navigator.onLine) {
+    syncStoreState().setSyncStatus('offline')
     enqueue({ userId, table, action: 'upsert', payload: row, enqueuedAt: Date.now() })
     return
   }
@@ -165,6 +193,7 @@ async function upsertRow(table: SupabaseTable, row: Record<string, unknown>): Pr
     if (error) throw error
     void drainQueue()
   } catch {
+    syncStoreState().setSyncStatus('offline')
     enqueue({ userId, table, action: 'upsert', payload: row, enqueuedAt: Date.now() })
   }
 }
@@ -176,6 +205,7 @@ async function deleteRow(table: SupabaseTable, id: string): Promise<void> {
   if (!userId) return
 
   if (!navigator.onLine) {
+    syncStoreState().setSyncStatus('offline')
     enqueue({ userId, table, action: 'delete', payload: { id, userId }, enqueuedAt: Date.now() })
     return
   }
@@ -184,6 +214,7 @@ async function deleteRow(table: SupabaseTable, id: string): Promise<void> {
     const { error } = await supabase.from(table).delete().eq('id', id).eq('user_id', userId)
     if (error) throw error
   } catch {
+    syncStoreState().setSyncStatus('offline')
     enqueue({ userId, table, action: 'delete', payload: { id, userId }, enqueuedAt: Date.now() })
   }
 }
@@ -400,29 +431,48 @@ async function fetchAll<T>(table: SupabaseTable, userId: string): Promise<T[]> {
 export async function pullAll(userId: string): Promise<void> {
   if (!isEnabled()) return
 
-  const { setSyncStatus } = useAuthStore.getState()
+  const { setSyncStatus, setSyncDetails, syncDetails } = useAuthStore.getState()
+  const startedAt = Date.now()
   setSyncStatus('syncing')
+  setSyncDetails({ lastSyncAt: startedAt })
 
   try {
     const queueDrained = await drainQueue()
+    const mergeContext: MergeContext = {
+      allowDeletes: queueDrained,
+      deleteBeforeTs: queueDrained ? (syncDetails.lastSuccessfulSyncAt ?? null) : null,
+    }
 
     await Promise.all([
-      mergeSessions(userId, queueDrained),
-      mergeDayLogs(userId, queueDrained),
-      mergeWeekSummaries(userId, queueDrained),
-      mergeChatMessages(userId, queueDrained),
-      mergeCoachProposals(userId, queueDrained),
-      mergeAthleteProfile(userId, queueDrained),
+      mergeSessions(userId, mergeContext),
+      mergeDayLogs(userId, mergeContext),
+      mergeWeekSummaries(userId, mergeContext),
+      mergeChatMessages(userId, mergeContext),
+      mergeCoachProposals(userId, mergeContext),
+      mergeAthleteProfile(userId, mergeContext),
     ])
 
     setSyncStatus('idle')
+    setSyncDetails({
+      pendingOps: loadQueue().length,
+      lastSuccessfulSyncAt: Date.now(),
+      lastErrorAt: null,
+      lastErrorMessage: null,
+      ...(queueDrained ? {} : { lastErrorMessage: 'Quedaron operaciones pendientes en cola.' }),
+    })
   } catch (error) {
     console.error('[sync] pullAll error:', error)
-    setSyncStatus('error', error instanceof Error ? error.message : 'Error de sincronizacion')
+    const message = error instanceof Error ? error.message : 'Error de sincronizacion'
+    setSyncStatus(navigator.onLine ? 'error' : 'offline', message)
+    setSyncDetails({
+      pendingOps: loadQueue().length,
+      lastErrorAt: Date.now(),
+      lastErrorMessage: message,
+    })
   }
 }
 
-async function mergeSessions(userId: string, allowDeletes: boolean): Promise<void> {
+async function mergeSessions(userId: string, context: MergeContext): Promise<void> {
   const remoteRows = await fetchAll<Record<string, unknown>>('sessions', userId)
   const remoteIds = new Set<string>()
 
@@ -438,12 +488,17 @@ async function mergeSessions(userId: string, allowDeletes: boolean): Promise<voi
     }
   }
 
-  if (allowDeletes) {
-    await deleteMissingLocalRows(db.sessions, remoteIds)
+  if (context.allowDeletes) {
+    await deleteMissingLocalRows(
+      db.sessions,
+      remoteIds,
+      (session: Session) => session.updatedAt,
+      context.deleteBeforeTs,
+    )
   }
 }
 
-async function mergeDayLogs(userId: string, allowDeletes: boolean): Promise<void> {
+async function mergeDayLogs(userId: string, context: MergeContext): Promise<void> {
   const remoteRows = await fetchAll<Record<string, unknown>>('day_logs', userId)
   const remoteIds = new Set<string>()
 
@@ -459,12 +514,17 @@ async function mergeDayLogs(userId: string, allowDeletes: boolean): Promise<void
     }
   }
 
-  if (allowDeletes) {
-    await deleteMissingLocalRows(db.dayLogs, remoteIds)
+  if (context.allowDeletes) {
+    await deleteMissingLocalRows(
+      db.dayLogs,
+      remoteIds,
+      (dayLog: DayLog) => dayLog.updatedAt,
+      context.deleteBeforeTs,
+    )
   }
 }
 
-async function mergeWeekSummaries(userId: string, allowDeletes: boolean): Promise<void> {
+async function mergeWeekSummaries(userId: string, context: MergeContext): Promise<void> {
   const remoteRows = await fetchAll<Record<string, unknown>>('week_summaries', userId)
   const remoteIds = new Set<string>()
 
@@ -483,12 +543,17 @@ async function mergeWeekSummaries(userId: string, allowDeletes: boolean): Promis
     }
   }
 
-  if (allowDeletes) {
-    await deleteMissingLocalRows(db.weekSummaries, remoteIds)
+  if (context.allowDeletes) {
+    await deleteMissingLocalRows(
+      db.weekSummaries,
+      remoteIds,
+      (summary: WeekSummary) => ((summary as unknown as { updatedAt?: number }).updatedAt) ?? null,
+      context.deleteBeforeTs,
+    )
   }
 }
 
-async function mergeChatMessages(userId: string, allowDeletes: boolean): Promise<void> {
+async function mergeChatMessages(userId: string, context: MergeContext): Promise<void> {
   const remoteRows = await fetchAll<Record<string, unknown>>('chat_messages', userId)
   const remoteIds = new Set<string>()
 
@@ -502,12 +567,17 @@ async function mergeChatMessages(userId: string, allowDeletes: boolean): Promise
     }
   }
 
-  if (allowDeletes) {
-    await deleteMissingLocalRows(db.chatMessages, remoteIds)
+  if (context.allowDeletes) {
+    await deleteMissingLocalRows(
+      db.chatMessages,
+      remoteIds,
+      (message: ChatMessage) => message.timestamp,
+      context.deleteBeforeTs,
+    )
   }
 }
 
-async function mergeCoachProposals(userId: string, allowDeletes: boolean): Promise<void> {
+async function mergeCoachProposals(userId: string, context: MergeContext): Promise<void> {
   const remoteRows = await fetchAll<Record<string, unknown>>('coach_proposals', userId)
   const remoteIds = new Set<string>()
 
@@ -526,17 +596,25 @@ async function mergeCoachProposals(userId: string, allowDeletes: boolean): Promi
     }
   }
 
-  if (allowDeletes) {
-    await deleteMissingLocalRows(db.coachProposals, remoteIds)
+  if (context.allowDeletes) {
+    await deleteMissingLocalRows(
+      db.coachProposals,
+      remoteIds,
+      (proposal: CoachProposal) => proposal.resolvedAt ?? proposal.createdAt,
+      context.deleteBeforeTs,
+    )
   }
 }
 
-async function mergeAthleteProfile(userId: string, allowDeletes: boolean): Promise<void> {
+async function mergeAthleteProfile(userId: string, context: MergeContext): Promise<void> {
   const remoteRows = await fetchAll<Record<string, unknown>>('athlete_profiles', userId)
 
   if (remoteRows.length === 0) {
-    if (allowDeletes) {
-      await db.athleteProfiles.clear()
+    if (context.allowDeletes && context.deleteBeforeTs != null) {
+      const local = await db.athleteProfiles.get('default')
+      if (local && local.updatedAt <= context.deleteBeforeTs) {
+        await db.athleteProfiles.clear()
+      }
     }
     return
   }
@@ -555,11 +633,26 @@ async function mergeAthleteProfile(userId: string, allowDeletes: boolean): Promi
 async function deleteMissingLocalRows<T extends { id: string }>(
   table: { toArray: () => Promise<T[]>; bulkDelete: (keys: string[]) => Promise<void> },
   remoteIds: Set<string>,
+  getLocalUpdatedAt: (row: T) => number | null | undefined,
+  deleteBeforeTs: number | null,
 ): Promise<void> {
+  if (deleteBeforeTs == null) {
+    return
+  }
+
   const localRows = await table.toArray()
   const idsToDelete = localRows
+    .filter((row) => {
+      if (remoteIds.has(row.id)) return false
+
+      const localUpdatedAt = getLocalUpdatedAt(row)
+      if (typeof localUpdatedAt !== 'number' || Number.isNaN(localUpdatedAt)) {
+        return false
+      }
+
+      return localUpdatedAt <= deleteBeforeTs
+    })
     .map((row) => row.id)
-    .filter((id) => !remoteIds.has(id))
 
   if (idsToDelete.length > 0) {
     await table.bulkDelete(idsToDelete)

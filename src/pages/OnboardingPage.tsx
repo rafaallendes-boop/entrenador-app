@@ -55,7 +55,7 @@ const SPORT_ES: Record<SupportedSport, string> = {
 const DAYS = [
   { key: 'lun', label: 'L' },
   { key: 'mar', label: 'M' },
-  { key: 'mié', label: 'X' },
+  { key: 'mié', label: 'Mi' },
   { key: 'jue', label: 'J' },
   { key: 'vie', label: 'V' },
   { key: 'sáb', label: 'S' },
@@ -70,6 +70,7 @@ export default function OnboardingPage() {
   const { saveAthleteProfile, isSaving, loadMemory } = useCoachMemoryStore()
 
   const [step, setStep] = useState(1)
+  const [name, setName] = useState('')
   const [selectedSports, setSelectedSports] = useState<SupportedSport[]>([])
   const [primarySport, setPrimarySport] = useState<SupportedSport | null>(null)
   const [priority, setPriority] = useState<TrainingPriority | null>(null)
@@ -102,6 +103,7 @@ export default function OnboardingPage() {
     if (!primarySport || !priority) return
 
     await saveAthleteProfile({
+      name: name.trim() || undefined,
       sportContext: {
         enabledSports: selectedSports,
         primarySport,
@@ -116,7 +118,7 @@ export default function OnboardingPage() {
     })
 
     clearOnboardingSkipped(user?.id)
-    navigate(ROUTES.CHAT)
+    navigate(ROUTES.CHAT, { state: { showProfileNudge: true } })
   }
 
   function handleSkip() {
@@ -157,8 +159,17 @@ export default function OnboardingPage() {
 
         {step === 1 && (
           <div>
-            <h1 className="mb-1 text-2xl font-bold text-ink">¿Qué disciplinas practicas?</h1>
-            <p className="mb-6 text-sm text-ink-muted">Selecciona todas las que entrenas regularmente.</p>
+            <h1 className="mb-1 text-2xl font-bold text-ink">¡Hola! ¿Cómo te llamas?</h1>
+            <p className="mb-4 text-sm text-ink-muted">El coach usará este nombre para dirigirse a ti.</p>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Tu nombre o apodo"
+              className="mb-6 w-full rounded-xl border-2 border-surface-border bg-surface-card px-4 py-3 text-sm text-ink placeholder:text-ink-faint focus:border-brand focus:outline-none"
+            />
+            <p className="mb-3 text-sm font-medium text-ink-muted">¿Qué disciplinas practicas?</p>
+            <p className="mb-4 text-xs text-ink-faint">Selecciona todas las que entrenas regularmente.</p>
             <div className="space-y-3">
               {SPORT_OPTIONS.map((option) => (
                 <button

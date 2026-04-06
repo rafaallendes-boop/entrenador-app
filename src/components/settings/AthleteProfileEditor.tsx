@@ -561,7 +561,11 @@ export default function AthleteProfileEditor({ profile, isSaving, onSave }: Prop
       </SectionPanel>
 
       <div className="flex items-center justify-end gap-3 pt-1">
-        {saved && <span className="text-xs font-medium text-emerald-400">Perfil guardado</span>}
+        {saved && (
+          <span className="inline-flex items-center gap-1 rounded-lg bg-emerald-500/10 px-2 py-1 text-xs font-semibold text-emerald-400">
+            ✓ Perfil guardado
+          </span>
+        )}
         <button
           onClick={() => void handleSave()}
           disabled={isSaving}

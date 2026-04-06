@@ -1,7 +1,7 @@
 # Entrenador App - Review and Roadmap
 
 Generado: 2026-04-01
-Actualizado: 2026-04-05 (x6)
+Actualizado: 2026-04-06 (x7)
 
 Base de revision:
 
@@ -42,6 +42,7 @@ Hoy ya existen:
 - notificaciones reforzadas con recuperacion dentro de ventana de gracia, estado visible y controles manuales
 - sync multi-dispositivo con Supabase + Google OAuth
 - indicador visible de sync en navegacion
+- sync UX mejorado: cola pendiente, ultimo sync OK, recovery offline y forzar sync visible en Ajustes
 
 ## Estado verificado
 
@@ -101,6 +102,8 @@ Estos temas ya no deberian seguir listados como roadmap principal:
 - buildCompetitionSection y buildCompetitionLoadSection generalizados por deporte: "partido" / "carrera" / "evento de ciclismo" segun sesion real
 - nutritionEngine: deteccion de match generalizada a cualquier subtype match/competitive (no solo squash)
 - card de nutricion en vista diaria (DayDetail): carga del dia, foco nutricional, pre/post-entreno e hidratacion — sin abrir el chat
+- analytics de carga por disciplina: carga semanal/mensual por tipo de sesion (min × RPE), tendencia general + running, adherencia 4 semanas, inyectado en el prompt del coach y visible en Dashboard como card "Carga por disciplina"
+- sync UX base: estado offline real, cola pendiente visible, ultimo sync exitoso, recovery offline registrado y accion manual de `Forzar sync`
 
 ## Prioridades reales
 
@@ -125,11 +128,18 @@ Pendiente:
 
 ### P2. Sync UX y reglas de dominio
 
-La base de sync ya esta cerrada, pero aun puede crecer:
+La UX base de sync ya quedo cerrada:
 
-- estados de error y cola pendiente visibles en la UI
-- mensajes cuando hubo recovery offline o sync atrasado
+- estado offline real
+- cola pendiente visible
+- ultimo sync exitoso y recovery offline visibles
+- accion manual de `Forzar sync`
+- aviso visible en Dashboard cuando hay cambios pendientes o estado offline
+
+Pendiente en esta linea:
+
 - endurecimiento de operaciones destructivas y reconciliacion
+- mejor copy/explicacion cuando hubo recovery offline o cola retenida mucho tiempo
 - evaluar realtime solo si aparece uso simultaneo real
 
 ### P3. Analytics: carga acumulada por disciplina
@@ -182,7 +192,24 @@ Impacto esperado:
 - evita miedo a probar al coach si luego limpiar implica borrar demasiado
 - esfuerzo medio por UI, reglas de seleccion y confirmaciones
 
-### P7. Integraciones externas de rendimiento y recuperacion
+### P7. Plan macro de entrenamiento para un evento
+
+Crear un plan de entrenamiento de largo plazo (4-16 semanas) orientado a un evento o torneo especifico.
+
+Objetivo:
+
+- el atleta define el evento (fecha, tipo, nivel objetivo)
+- el coach genera un plan por bloques (base, build, peak, taper) adaptado al deporte principal
+- el plan se convierte en sesiones planificadas semana a semana, con cargas progresivas
+- el atleta puede ver el plan macro en la vista de semana con un indicador de bloque actual
+
+Impacto esperado:
+
+- muy alto para atletas competitivos (squash, running)
+- da estructura y contexto longitudinal al coach actual que solo planifica semana a semana
+- esfuerzo alto: requiere modelo de bloques, generacion multi-semana y UI de plan macro
+
+### P8. Integraciones externas de rendimiento y recuperacion
 
 Linea de producto de largo plazo:
 
@@ -199,15 +226,16 @@ Linea de producto de largo plazo:
 | buildCompetitionSection por deporte | Alto | Bajo | Cerrado |
 | Nutricion en vista diaria | Medio | Bajo | Cerrado |
 | Robustecer notificaciones | Alto | Medio | Parcial |
-| Analytics carga por disciplina | Alto | Medio | Backlog |
-| Protocolos de movilidad y calentamiento por disciplina | Alto | Bajo-Medio | Backlog |
-| Borrado selectivo de entrenamientos del coach | Muy alto | Medio | Backlog |
-| Sync UX y recovery offline | Alto | Medio | Backlog |
+| Analytics carga por disciplina | Alto | Medio | Cerrado |
+| Protocolos de movilidad y calentamiento por disciplina | Alto | Bajo-Medio | Parcial |
+| Borrado selectivo de entrenamientos del coach | Muy alto | Medio | Cerrado |
+| Sync UX y recovery offline | Alto | Medio | Cerrado base |
 | Personalizacion profunda para terceros | Alto | Medio | Parcial |
 | Realtime sync opcional | Medio | Medio | Backlog |
 | Integracion WHOOP futura | Medio | Medio | Backlog |
 | Integracion Apple Health futura | Medio | Alto | Backlog |
 | Integracion Garmin futura | Bajo | Alto | Exploracion |
+| Plan macro por evento (4-16 semanas) | Muy alto | Alto | Backlog |
 
 ## Riesgos actuales
 
@@ -238,9 +266,9 @@ Orden recomendado para proximas iteraciones:
 1. ~~Profundidad tactica cycling + mobility~~ — COMPLETADO 2026-04-05
 2. ~~buildCompetitionSection generalizado por deporte~~ — COMPLETADO 2026-04-05
 3. ~~Nutricion en vista diaria~~ — COMPLETADO 2026-04-05
-4. Analytics carga por disciplina (esfuerzo medio, alta utilidad para el coach y el usuario)
+4. ~~Analytics carga por disciplina~~ — COMPLETADO 2026-04-06
 5. Notificaciones en movil real (requiere validacion manual en dispositivo fisico)
-6. Sync UX y recovery offline
+6. ~~Sync UX y recovery offline~~ â€” CERRADO BASE 2026-04-06
 7. Personalizacion profunda para terceros
 
 ## Referencias revisadas

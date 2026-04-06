@@ -11,6 +11,7 @@ import {
   previewAppDataImportFile,
   type AppDataImportPreview,
 } from '../services/dataExport'
+import { pullAll } from '../services/syncService'
 import {
   clearSelectedLocalAppData,
   deleteCoachSessionsByIds,
@@ -72,7 +73,7 @@ const EMPTY_CLEAR_SELECTION: LocalDataSelection = {
 
 export default function SettingsPage() {
   const { coachMemory, athleteProfile, isSaving, loadMemory, saveMemory, saveAthleteProfile } = useCoachMemoryStore()
-  const { user, signOut, syncStatus, syncError } = useAuthStore()
+  const { user, signOut, syncStatus, syncError, syncDetails } = useAuthStore()
   const { sessions, loadWeek } = useTrainingStore()
   const [memoryDraft, setMemoryDraft] = useState('')
   const [memorySaved, setMemorySaved] = useState(false)
@@ -247,6 +248,11 @@ export default function SettingsPage() {
     await refreshNotificationStatus()
   }
 
+  const handleRetrySync = async () => {
+    const { user: currentUser } = useAuthStore.getState()
+    if (currentUser) await pullAll(currentUser.id)
+  }
+
   const handleClearNotifications = async () => {
     await clearTodayNotifications()
     await refreshNotificationStatus()
@@ -316,116 +322,72 @@ export default function SettingsPage() {
                 <h2 className="text-sm font-semibold text-ink">Cuenta y sincronizacion</h2>
                 <p className="text-xs text-ink-muted mt-1 truncate">{user?.email ?? 'Sesion activa'}</p>
               </div>
-              <SyncStatusBadge status={syncStatus} error={syncError} />
+              <SyncStatusBadge status={syncStatus} error={syncError} pendingOps={syncDetails.pendingOps} />
             </div>
-            <button
-              onClick={() => void signOut()}
-              className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-surface-raised text-ink-muted text-sm font-semibold hover:bg-surface hover:text-ink transition-colors"
-            >
-              <LogOut size={14} />
-              Cerrar sesion
-            </button>
-          </Card>
-
-          <Card className="p-4 border-amber-500/20">
-            <div className="flex items-start gap-3 mb-3">
-              <div className="w-8 h-8 rounded-full bg-amber-500/10 flex items-center justify-center flex-shrink-0">
-                <Trash2 size={16} className="text-amber-400" />
-              </div>
-              <div>
-                <h2 className="text-sm font-semibold text-ink">Entrenamientos del coach</h2>
-                <p className="text-xs text-ink-muted mt-1 leading-relaxed">
-                  Elimina sesiones creadas por el coach sin borrar todo el bloque de entrenamiento.
+            {syncStatus === 'error' && syncError && (
+              <p className="mb-3 rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
+                {syncError}
+              </p>
+            )}
+            <div className="mb-3 rounded-xl border border-surface-border bg-surface-raised px-3 py-3">
+              <div className="grid gap-2 text-xs text-ink-muted sm:grid-cols-2">
+                <p>
+                  Cola pendiente: <span className="text-ink">{syncDetails.pendingOps}</span>
+                </p>
+                <p>
+                  Ultimo intento:{' '}
+                  <span className="text-ink">
+                    {syncDetails.lastSyncAt ? formatRuntimeTimestamp(syncDetails.lastSyncAt) : 'sin registro'}
+                  </span>
+                </p>
+                <p>
+                  Ultimo sync OK:{' '}
+                  <span className="text-ink">
+                    {syncDetails.lastSuccessfulSyncAt ? formatRuntimeTimestamp(syncDetails.lastSuccessfulSyncAt) : 'sin registro'}
+                  </span>
+                </p>
+                <p>
+                  Recovery offline:{' '}
+                  <span className="text-ink">
+                    {syncDetails.lastRecoveredSyncAt ? formatRuntimeTimestamp(syncDetails.lastRecoveredSyncAt) : 'sin registro'}
+                  </span>
                 </p>
               </div>
+              {syncDetails.lastErrorMessage && syncStatus !== 'error' && (
+                <p className="mt-2 text-xs text-amber-300">
+                  Ultimo incidente: {syncDetails.lastErrorMessage}
+                </p>
+              )}
+              {syncDetails.pendingOps > 0 && (
+                <p className="mt-2 text-xs text-ink-faint">
+                  Hay cambios locales pendientes por subir. Cuando vuelva la conexion o pulses reintentar, se intentaran sincronizar.
+                </p>
+              )}
             </div>
-
-            <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
-              <label className="text-xs text-ink-muted">
-                Rango reciente
-                <select
-                  value={coachSessionRange}
-                  onChange={(e) => setCoachSessionRange(Number(e.target.value) as 1 | 2 | 3 | 4)}
-                  className="ml-2 rounded-lg border border-surface-border bg-surface-raised px-2 py-1 text-xs text-ink"
-                >
-                  <option value={1}>Ultima semana</option>
-                  <option value={2}>Ultimas 2 semanas</option>
-                  <option value={3}>Ultimas 3 semanas</option>
-                  <option value={4}>Ultimas 4 semanas</option>
-                </select>
-              </label>
-
-              <div className="flex gap-2 flex-wrap">
-                <button
-                  onClick={() => setSelectedCoachSessionIds(coachSessions.map((session) => session.id))}
-                  className="px-3 py-2 rounded-xl text-xs font-semibold text-ink hover:bg-surface transition-colors"
-                >
-                  Seleccionar visibles
-                </button>
-                <button
-                  onClick={() => setSelectedCoachSessionIds([])}
-                  className="px-3 py-2 rounded-xl text-xs font-semibold text-ink-muted hover:bg-surface transition-colors"
-                >
-                  Limpiar
-                </button>
-              </div>
-            </div>
-
-            {coachSessions.length === 0 ? (
-              <p className="text-xs text-ink-muted">No hay entrenamientos del coach en este rango.</p>
-            ) : (
-              <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
-                {coachSessions.map((session) => {
-                  const selected = selectedCoachSessionIds.includes(session.id)
-                  return (
-                    <label
-                      key={session.id}
-                      className={`flex items-start gap-3 rounded-xl border px-3 py-2 transition-colors ${
-                        selected
-                          ? 'border-amber-500/40 bg-amber-500/10'
-                          : 'border-surface-border bg-surface-raised'
-                      }`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={selected}
-                        onChange={() => toggleCoachSessionSelection(session.id)}
-                        className="mt-1 h-4 w-4 rounded border-surface-border bg-surface"
-                      />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-start justify-between gap-3 flex-wrap">
-                          <div className="min-w-0">
-                            <p className="text-sm font-medium text-ink">{session.title}</p>
-                            <p className="text-xs text-ink-muted mt-1">
-                              {session.date} · {session.timeBlock} · {session.type}
-                            </p>
-                          </div>
-                          <span className="text-[11px] font-medium text-amber-400">Coach</span>
-                        </div>
-                      </div>
-                    </label>
-                  )
-                })}
-              </div>
-            )}
-
-            {coachSessionStatus && (
-              <p className="mt-3 text-xs text-emerald-400">{coachSessionStatus}</p>
-            )}
-
-            <div className="mt-4 flex justify-end">
+            <div className="flex flex-wrap gap-2">
               <button
-                onClick={() => void handleDeleteSelectedCoachSessions()}
-                disabled={isDeletingCoachSessions || selectedCoachSessionIds.length === 0}
-                className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-amber-500/10 text-amber-400 text-sm font-semibold hover:bg-amber-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                onClick={() => void signOut()}
+                className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-surface-raised text-ink-muted text-sm font-semibold hover:bg-surface hover:text-ink transition-colors"
               >
-                <Trash2 size={14} />
-                {isDeletingCoachSessions
-                  ? 'Eliminando...'
-                  : selectedCoachSessionIds.length > 0
-                    ? `Eliminar ${selectedCoachSessionIds.length}`
-                    : 'Selecciona sesiones'}
+                <LogOut size={14} />
+                Cerrar sesion
               </button>
+              {syncStatus === 'error' && (
+                <button
+                  onClick={() => void handleRetrySync()}
+                  className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-surface-raised text-amber-400 text-sm font-semibold hover:bg-surface transition-colors"
+                >
+                  Reintentar sync
+                </button>
+              )}
+              {(syncDetails.pendingOps > 0 || syncStatus === 'offline') && syncStatus !== 'error' && (
+                <button
+                  onClick={() => void handleRetrySync()}
+                  className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-surface-raised text-brand-light text-sm font-semibold hover:bg-surface transition-colors"
+                >
+                  Forzar sync
+                </button>
+              )}
             </div>
           </Card>
 
@@ -766,6 +728,108 @@ export default function SettingsPage() {
                 Activar notificaciones
               </button>
             )}
+          </Card>
+
+          <Card className="p-4 border-amber-500/20">
+            <div className="flex items-start gap-3 mb-3">
+              <div className="w-8 h-8 rounded-full bg-amber-500/10 flex items-center justify-center flex-shrink-0">
+                <Trash2 size={16} className="text-amber-400" />
+              </div>
+              <div>
+                <h2 className="text-sm font-semibold text-ink">Entrenamientos del coach</h2>
+                <p className="text-xs text-ink-muted mt-1 leading-relaxed">
+                  Elimina sesiones creadas por el coach sin borrar todo el bloque de entrenamiento.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
+              <label className="text-xs text-ink-muted">
+                Rango reciente
+                <select
+                  value={coachSessionRange}
+                  onChange={(e) => setCoachSessionRange(Number(e.target.value) as 1 | 2 | 3 | 4)}
+                  className="ml-2 rounded-lg border border-surface-border bg-surface-raised px-2 py-1 text-xs text-ink"
+                >
+                  <option value={1}>Ultima semana</option>
+                  <option value={2}>Ultimas 2 semanas</option>
+                  <option value={3}>Ultimas 3 semanas</option>
+                  <option value={4}>Ultimas 4 semanas</option>
+                </select>
+              </label>
+
+              <div className="flex gap-2 flex-wrap">
+                <button
+                  onClick={() => setSelectedCoachSessionIds(coachSessions.map((session) => session.id))}
+                  className="px-3 py-2 rounded-xl text-xs font-semibold text-ink hover:bg-surface transition-colors"
+                >
+                  Seleccionar visibles
+                </button>
+                <button
+                  onClick={() => setSelectedCoachSessionIds([])}
+                  className="px-3 py-2 rounded-xl text-xs font-semibold text-ink-muted hover:bg-surface transition-colors"
+                >
+                  Limpiar
+                </button>
+              </div>
+            </div>
+
+            {coachSessions.length === 0 ? (
+              <p className="text-xs text-ink-muted">No hay entrenamientos del coach en este rango.</p>
+            ) : (
+              <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                {coachSessions.map((session) => {
+                  const selected = selectedCoachSessionIds.includes(session.id)
+                  return (
+                    <label
+                      key={session.id}
+                      className={`flex items-start gap-3 rounded-xl border px-3 py-2 transition-colors ${
+                        selected
+                          ? 'border-amber-500/40 bg-amber-500/10'
+                          : 'border-surface-border bg-surface-raised'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selected}
+                        onChange={() => toggleCoachSessionSelection(session.id)}
+                        className="mt-1 h-4 w-4 rounded border-surface-border bg-surface"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-start justify-between gap-3 flex-wrap">
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-ink">{session.title}</p>
+                            <p className="text-xs text-ink-muted mt-1">
+                              {session.date} · {session.timeBlock} · {session.type}
+                            </p>
+                          </div>
+                          <span className="text-[11px] font-medium text-amber-400">Coach</span>
+                        </div>
+                      </div>
+                    </label>
+                  )
+                })}
+              </div>
+            )}
+
+            {coachSessionStatus && (
+              <p className="mt-3 text-xs text-emerald-400">{coachSessionStatus}</p>
+            )}
+
+            <div className="mt-4 flex justify-end">
+              <button
+                onClick={() => void handleDeleteSelectedCoachSessions()}
+                disabled={isDeletingCoachSessions || selectedCoachSessionIds.length === 0}
+                className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-amber-500/10 text-amber-400 text-sm font-semibold hover:bg-amber-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                <Trash2 size={14} />
+                {isDeletingCoachSessions
+                  ? 'Eliminando...'
+                  : selectedCoachSessionIds.length > 0
+                    ? `Eliminar ${selectedCoachSessionIds.length}`
+                    : 'Selecciona sesiones'}
+              </button>
+            </div>
           </Card>
 
           <Card className="p-4 border-red-500/20">

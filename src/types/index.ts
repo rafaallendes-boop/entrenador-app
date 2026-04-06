@@ -241,6 +241,8 @@ export interface ChatContext {
   athleteProfile?: AthleteProfile
   recentMessages?: { role: MessageRole; content: string }[]
   intent?: 'general_chat' | 'plan_week' | 'adjust_session' | 'weekly_summary'
+  /** Multi-week load analytics — optional, computed async before sending */
+  loadAnalytics?: import('../services/loadAnalytics').LoadAnalytics
 }
 
 // ─── Nutrition ────────────────────────────────────────────────────────────────

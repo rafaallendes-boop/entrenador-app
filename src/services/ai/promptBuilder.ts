@@ -48,6 +48,7 @@ export function buildCoachSystemPrompt(context: ChatContext): string {
     buildHybridSection(context),
     buildCompetitionSection(context),
     buildCompetitionLoadSection(context),
+    buildLoadAnalyticsSection(context),
     buildImplicitPrioritySection(context),
     buildNutritionContextSection(context),
     buildWeekSection(context),
@@ -635,6 +636,47 @@ function buildCompetitionLoadSection(context: ChatContext): string {
   lines.push(`- Si vienes de varias ${terms.event}s recientes, trata la semana como acumulacion competitiva y no como semana normal de desarrollo.`)
   lines.push(`- Los controles y competencias secundarias no justifican fatiga extra antes del ${terms.event} objetivo inmediato.`)
   lines.push(`- Si ya hubo carga competitiva alta y aparecen senales de fatiga, descarga antes y conserva solo lo que mejora ${terms.readiness}.`)
+
+  return lines.join('\n')
+}
+
+function buildLoadAnalyticsSection(context: ChatContext): string {
+  const analytics = context.loadAnalytics
+  if (!analytics || analytics.weeks.length === 0) return ''
+
+  const SPORT_ES: Record<string, string> = {
+    squash: 'Squash', running: 'Running', cycling: 'Ciclismo',
+    strength: 'Fuerza', mobility: 'Movilidad',
+  }
+  const TREND_ES: Record<string, string> = {
+    increasing: 'subiendo', stable: 'estable', decreasing: 'bajando',
+  }
+
+  const lines: string[] = ['══ CARGA HISTÓRICA POR DISCIPLINA (últimas semanas) ══']
+
+  for (const week of analytics.weeks) {
+    const isCurrentWeek = week === analytics.weeks[0]
+    const label = isCurrentWeek ? 'Sem actual' : `Sem -${analytics.weeks.indexOf(week)}`
+    const disciplineParts = week.disciplines
+      .filter(d => d.plannedSessions > 0 || d.completedSessions > 0)
+      .map(d => {
+        const name = SPORT_ES[d.type] ?? d.type
+        return `${name} ${d.completedSessions}/${d.plannedSessions} (${d.completedMinutes}min)`
+      })
+    const rpeStr = week.avgActualRpe != null ? ` · RPE ${week.avgActualRpe}` : ''
+    const loadStr = week.totalWeightedLoad > 0 ? ` · Carga ${Math.round(week.totalWeightedLoad)}` : ''
+    lines.push(
+      `${label} [${week.weekStart}]: ${disciplineParts.join(' · ')} | Adherencia ${week.adherencePct}%${rpeStr}${loadStr}`,
+    )
+  }
+
+  lines.push('')
+  lines.push(`Tendencia general: ${TREND_ES[analytics.overallTrend]}`)
+  if (analytics.weeks[0].runningMinutes > 0 || analytics.weeks[1]?.runningMinutes > 0) {
+    lines.push(`Tendencia running: ${TREND_ES[analytics.runningTrend]}`)
+  }
+  lines.push(`Tendencia adherencia: ${TREND_ES[analytics.adherenceTrend]}`)
+  lines.push('Usa esta información para ajustar la carga propuesta: si la carga viene alta, no sumes más volumen; si viene baja y el atleta está recuperado, puedes progresar.')
 
   return lines.join('\n')
 }
