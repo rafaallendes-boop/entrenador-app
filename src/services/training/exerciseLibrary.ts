@@ -20,6 +20,8 @@ export interface ExerciseDefinition {
   sportsTransfer?: string[]
 }
 
+export type StrengthExerciseRole = 'main_lift' | 'accessory' | 'trunk' | 'power'
+
 export const STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   {
     id: 'back_squat',
@@ -470,6 +472,12 @@ export const STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
     sportsTransfer: ['strength', 'general_fitness'],
   },
 ]
+
+export function getStrengthExerciseRole(definition: ExerciseDefinition, index = 0): StrengthExerciseRole {
+  if (definition.category === 'core') return 'trunk'
+  if (definition.intensityType === 'power') return 'power'
+  return index === 0 ? 'main_lift' : 'accessory'
+}
 
 export function normalizeStrengthExerciseKey(value: string): string {
   return value

@@ -300,3 +300,25 @@ export function getSuggestedTrainingFocus(category: DrillCategory, tags: string[
   if (category === 'physical') return 'physical'
   return 'technical'
 }
+
+export function getSquashDrillFamily(drill: SquashDrillDefinition): string {
+  if (drill.tags.includes('pre_match')) return 'pre_match_activation'
+  if (drill.tags.includes('ghosting')) return 'ghosting'
+  if (drill.tags.includes('rsa')) return 'rsa'
+  if (drill.tags.includes('multiball')) return 'multiball_pressure'
+  if (drill.tags.includes('conditioned_game')) {
+    if (drill.tags.includes('parallel')) return 'conditioned_parallel'
+    if (drill.tags.includes('length_control')) return 'conditioned_length'
+    if (drill.tags.includes('boast')) return 'conditioned_boast'
+    if (drill.tags.includes('targets')) return 'conditioned_targets'
+    return 'conditioned_general'
+  }
+  if (drill.focus.includes('drive')) return 'drive_patterns'
+  if (drill.focus.includes('volley')) return 'volley_patterns'
+  if (drill.tags.includes('t_control')) return 't_control_patterns'
+  if (drill.focus.includes('drop')) return 'front_court_touch'
+  if (drill.tags.includes('recovery_technical')) return 'recovery_length'
+  if (drill.tags.includes('transition')) return 'transition_patterns'
+  if (drill.tags.includes('pressure')) return 'pressure_back_court'
+  return `${drill.category}_general`
+}

@@ -1,6 +1,7 @@
 import type { Session, SquashDrill, SquashTrainingFocus } from '../../types'
 import {
   findSquashDrillByName,
+  getSquashDrillFamily,
   getSuggestedTrainingFocus,
   normalizeSquashDrillKey,
   SQUASH_DRILL_LIBRARY,
@@ -16,6 +17,28 @@ export interface SquashSelectionContext {
   recentDrills: string[]
   goal: string
   competitionSoon: boolean
+  historicalSessions?: Session[]
+}
+
+// Fase 2: 4-state model. 'progress' = continuar familia con más exigencia,
+// 'hold' = mantener sin agregar estímulo nuevo, 'rotate' = cambiar familia,
+// 'deload' = bajar carga/volumen (fatiga, taper, competencia).
+export type SquashProgressionRecommendation = 'progress' | 'hold' | 'rotate' | 'deload'
+
+interface SquashFamilyProgressionEntry {
+  family: string
+  lastDrillId: string
+  lastLevel: number
+  frequency: number
+  lastDate: string
+  recentFocuses: string[]
+}
+
+export interface SquashProgressionState {
+  recommendation: SquashProgressionRecommendation
+  targetFamily?: string
+  targetFocus?: string
+  families: Record<string, SquashFamilyProgressionEntry>
 }
 
 interface DrillScore {
@@ -27,15 +50,16 @@ export function selectSquashDrills(
   context: SquashSelectionContext,
 ): { trainingFocus: SquashTrainingFocus; drills: SquashDrill[] } {
   const recentSet = new Set(context.recentDrills.map(normalizeSquashDrillKey))
+  const progressionState = deriveSquashProgressionState(context)
   const byFatigue = filterByFatigue(SQUASH_DRILL_LIBRARY, context)
   const byPhase = filterByPhase(byFatigue, context)
   const withoutRecent = avoidRecentDrills(byPhase, recentSet)
   const pool = withoutRecent.length >= 3 ? withoutRecent : byPhase
-  const selected = pickDiverseDrills(pool, context, recentSet)
+  const selected = pickDiverseDrills(pool, context, recentSet, progressionState)
 
   const fallbackSelected = selected.length >= 3
     ? selected
-    : pickDiverseDrills(byFatigue, context, recentSet)
+    : pickDiverseDrills(byFatigue, context, recentSet, progressionState)
 
   const finalSelection = fallbackSelected.slice(0, 5)
   const trainingFocus = deriveTrainingFocus(finalSelection, context)
@@ -45,7 +69,7 @@ export function selectSquashDrills(
     drills: finalSelection.map((definition, index) => ({
       name: definition.name,
       durationMin: getDrillDuration(definition, index, context),
-      notes: buildDrillNotes(definition, context),
+      notes: buildProgressedDrillNotes(definition, context, progressionState),
     })),
   }
 }
@@ -132,8 +156,9 @@ export function pickDiverseDrills(
   drills: SquashDrillDefinition[],
   context: SquashSelectionContext,
   recentDrills: Set<string>,
+  progressionState?: SquashProgressionState,
 ): SquashDrillDefinition[] {
-  const scored = scoreDrills(drills, context, recentDrills)
+  const scored = scoreDrillsWithProgression(drills, context, recentDrills, progressionState)
   const selected: SquashDrillDefinition[] = []
   const categories = new Set<DrillCategory>()
   const goal = context.goal.toLowerCase()
@@ -229,6 +254,145 @@ function scoreDrills(
     .sort((a, b) => b.score - a.score || a.drill.name.localeCompare(b.drill.name))
 }
 
+export function deriveSquashProgressionState(context: SquashSelectionContext): SquashProgressionState {
+  const squashSessions = [...(context.historicalSessions ?? [])]
+    .filter(session =>
+      session.type === 'squash' &&
+      session.squashDetails?.drills &&
+      session.squashDetails.drills.length > 0,
+    )
+    .sort((a, b) => b.date.localeCompare(a.date) || b.timeBlock.localeCompare(a.timeBlock))
+    .slice(0, 6)
+
+  const families: Record<string, SquashFamilyProgressionEntry> = {}
+
+  for (const session of squashSessions) {
+    for (const drill of session.squashDetails?.drills ?? []) {
+      const definition = findSquashDrillByName(drill.name)
+      if (!definition) continue
+      const family = getSquashDrillFamily(definition)
+      const existing = families[family]
+      const lastLevel = definition.progressionLevel ?? 1
+
+      if (!existing) {
+        families[family] = {
+          family,
+          lastDrillId: definition.id,
+          lastLevel,
+          frequency: 1,
+          lastDate: session.date,
+          recentFocuses: [...definition.focus],
+        }
+        continue
+      }
+
+      existing.frequency += 1
+      existing.lastLevel = Math.max(existing.lastLevel, lastLevel)
+      existing.recentFocuses = [...new Set([...existing.recentFocuses, ...definition.focus])].slice(0, 4)
+    }
+  }
+
+  const mostRecentDefinition = squashSessions[0]?.squashDetails?.drills?.[0]
+    ? findSquashDrillByName(squashSessions[0].squashDetails!.drills[0].name)
+    : undefined
+  const targetFamily = mostRecentDefinition ? getSquashDrillFamily(mostRecentDefinition) : undefined
+  const targetFocus = mostRecentDefinition?.focus[0]
+
+  // Deload: competition imminent, taper phase, or high fatigue
+  if (context.competitionSoon || context.phase === 'taper' || context.fatigueLevel >= 7) {
+    return { recommendation: 'deload', targetFamily, targetFocus, families }
+  }
+
+  if (!targetFamily) {
+    return { recommendation: 'progress', targetFamily, targetFocus, families }
+  }
+
+  // Detect consecutive repetition: same family in the 2 most recent sessions
+  const prevSessionDefinition = squashSessions[1]?.squashDetails?.drills?.[0]
+    ? findSquashDrillByName(squashSessions[1].squashDetails!.drills[0].name)
+    : undefined
+  const prevFamily = prevSessionDefinition ? getSquashDrillFamily(prevSessionDefinition) : undefined
+  const appearedConsecutive = prevFamily === targetFamily
+
+  const recentFamily = families[targetFamily]
+
+  // Rotate: same family used in consecutive sessions or overused (3+ times in last 6)
+  if (appearedConsecutive || (recentFamily && recentFamily.frequency >= 3)) {
+    return { recommendation: 'rotate', targetFamily, targetFocus, families }
+  }
+
+  // Progress: family used once recently — add more exigence
+  if (recentFamily && recentFamily.frequency === 1) {
+    return { recommendation: 'progress', targetFamily, targetFocus, families }
+  }
+
+  // Hold: seen but not consecutive, maintain stimulus without escalating
+  return { recommendation: 'hold', targetFamily, targetFocus, families }
+}
+
+export function shouldProgressSquashFamily(
+  drill: SquashDrillDefinition,
+  progressionState: SquashProgressionState,
+): boolean {
+  const family = getSquashDrillFamily(drill)
+  const targetFamily = progressionState.targetFamily
+  if (!targetFamily || progressionState.recommendation !== 'progress') return false
+  if (family !== targetFamily) return false
+
+  const familyEntry = progressionState.families[family]
+  if (!familyEntry) return true
+  return (drill.progressionLevel ?? 1) >= familyEntry.lastLevel
+}
+
+export function scoreDrillsWithProgression(
+  drills: SquashDrillDefinition[],
+  context: SquashSelectionContext,
+  recentDrills: Set<string>,
+  progressionState = deriveSquashProgressionState(context),
+): DrillScore[] {
+  const baseScores = scoreDrills(drills, context, recentDrills)
+
+  return baseScores
+    .map(({ drill, score }) => {
+      const family = getSquashDrillFamily(drill)
+      const familyEntry = progressionState.families[family]
+
+      if (progressionState.recommendation === 'progress' && shouldProgressSquashFamily(drill, progressionState)) {
+        score += 7
+      }
+
+      if (progressionState.recommendation === 'hold' && family === progressionState.targetFamily) {
+        // hold: keep same family but don't prioritize harder variants
+        score += 2
+      }
+
+      if (
+        progressionState.recommendation === 'rotate' &&
+        familyEntry &&
+        family === progressionState.targetFamily
+      ) {
+        score -= 6
+      }
+
+      if (
+        progressionState.recommendation === 'rotate' &&
+        progressionState.targetFocus &&
+        drill.focus.includes(progressionState.targetFocus) &&
+        family !== progressionState.targetFamily
+      ) {
+        score += 4
+      }
+
+      if (progressionState.recommendation === 'deload') {
+        if (drill.tags.includes('recovery_technical') || drill.tags.includes('pre_match') || drill.intensity === 'low') score += 6
+        if (family === progressionState.targetFamily && drill.intensity === 'low') score += 2
+      }
+
+      return { drill, score }
+    })
+    .sort((a, b) => b.score - a.score || a.drill.name.localeCompare(b.drill.name))
+}
+
 function deriveTrainingFocus(
   drills: SquashDrillDefinition[],
   context: SquashSelectionContext,
@@ -272,6 +436,60 @@ function buildDrillNotes(drill: SquashDrillDefinition, context: SquashSelectionC
   return drill.description
 }
 
+export function buildProgressedDrillNotes(
+  drill: SquashDrillDefinition,
+  context: SquashSelectionContext,
+  progressionState = deriveSquashProgressionState(context),
+): string {
+  const baseNote = buildDrillNotes(drill, context)
+  const family = getSquashDrillFamily(drill)
+
+  if (progressionState.recommendation === 'deload') {
+    return `${baseNote} Variante de control para mantener timing sin fatiga extra.`
+  }
+
+  if (progressionState.recommendation === 'progress' && shouldProgressSquashFamily(drill, progressionState)) {
+    const nextConstraint = drill.constraints?.[0]
+    const progressionCue = nextConstraint
+      ? `Progresar familia ${family} agregando constraint: ${nextConstraint}.`
+      : `Progresar familia ${family} con mayor exigencia de precision, decision o ritmo.`
+    return `${baseNote} ${progressionCue}`
+  }
+
+  if (progressionState.recommendation === 'hold' && family === progressionState.targetFamily) {
+    return `${baseNote} Mantener nivel de exigencia, sin escalar — consolidar lo entrenado.`
+  }
+
+  if (
+    progressionState.recommendation === 'rotate' &&
+    progressionState.targetFocus &&
+    drill.focus.includes(progressionState.targetFocus) &&
+    family !== progressionState.targetFamily
+  ) {
+    return `${baseNote} Rotacion del mismo foco para evitar repetir el drill exacto demasiado cerca.`
+  }
+
+  return baseNote
+}
+
+export function summarizeSquashProgression(context: SquashSelectionContext): string {
+  const state = deriveSquashProgressionState(context)
+  if (!state.targetFamily) {
+    return 'Sin historia suficiente: usar variacion contextual limpia.'
+  }
+
+  switch (state.recommendation) {
+    case 'deload':
+      return `Descargar familia ${state.targetFamily} — variante controlada sin escalar carga.`
+    case 'progress':
+      return `Continuar familia ${state.targetFamily} con progresion (mas exigencia, constraint o ritmo).`
+    case 'hold':
+      return `Mantener familia ${state.targetFamily} — consolidar sin agregar estimulo nuevo.`
+    case 'rotate':
+      return `Rotar desde familia ${state.targetFamily} — cambiar foco para evitar sobreestimulo.`
+  }
+}
+
 export function runSquashDrillSelectorSmokeChecks(): string[] {
   const outputs: string[] = []
 
@@ -308,8 +526,17 @@ export function runSquashDrillSelectorSmokeChecks(): string[] {
     recentDrills: [],
   })
   outputs.push(`taper_competition=${taper.drills.map((d) => d.name).join(' | ')}`)
+  outputs.push(`progression_signal=${summarizeSquashProgression({
+    phase: 'build',
+    fatigueLevel: 4,
+    competitionSoon: false,
+    goal: 'mejorar tactica y control del T',
+    recentDrills: buildA.drills.map((drill) => normalizeSquashDrillKey(drill.name)),
+    historicalSessions: [],
+  })}`)
 
   return outputs
 }
 
-// TODO: agregar progresion multi-semana real por microciclo y soporte reutilizable para otros deportes.
+// Fase 2 implementada: progresion 4-state (progress/hold/rotate/deload) con deteccion de familias consecutivas.
+// Pendiente Fase 3: rotacion semanal explicita por microciclo, progresion cuantitativa de nivel, metadata visible en UI.

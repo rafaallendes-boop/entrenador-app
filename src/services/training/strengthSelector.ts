@@ -2,12 +2,14 @@ import type { ExerciseGroup, Session } from '../../types'
 import {
   findStrengthExerciseByName,
   getExerciseGroupForDefinition,
+  getStrengthExerciseRole,
   normalizeStrengthExerciseKey,
   STRENGTH_EXERCISE_LIBRARY,
   type EquipmentType,
   type ExerciseDefinition,
   type ExperienceLevel,
   type MovementPattern,
+  type StrengthExerciseRole,
 } from './exerciseLibrary'
 
 export type StrengthPhase = 'base' | 'build' | 'peak' | 'taper' | 'transition'
@@ -25,6 +27,7 @@ export interface StrengthContext {
   sessionDurationMin?: number
   competitionSoon?: boolean
   daysToCompetition?: number
+  historicalSessions?: Session[]
 }
 
 export interface StrengthSelectionExercise {
@@ -41,28 +44,46 @@ interface ScoredExercise {
   score: number
 }
 
+// Fase 2: 4-state model. 'rotate' = cambiar patron principal para evitar sobreestimulo.
+export type StrengthProgressionIntent = 'progress' | 'hold' | 'deload' | 'rotate'
+
+interface PatternProgressionEntry {
+  pattern: MovementPattern
+  frequency: number
+  lastExerciseId: string
+  lastRole: StrengthExerciseRole
+  lastDate: string
+}
+
+export interface StrengthProgressionState {
+  intent: StrengthProgressionIntent
+  mainPattern?: MovementPattern
+  patterns: Partial<Record<MovementPattern, PatternProgressionEntry>>
+}
+
 export function selectStrengthSession(
   context: StrengthContext,
 ): { focus: string; exercises: StrengthSelectionExercise[] } {
   const normalizedEquipment = normalizeEquipment(context.availableEquipment)
   const recentSet = new Set(context.recentExercises.map(normalizeStrengthExerciseKey))
+  const progressionState = deriveStrengthProgressionState(context)
   const equipmentPool = filterByEquipment(STRENGTH_EXERCISE_LIBRARY, normalizedEquipment)
   const fatiguePool = filterByFatigue(equipmentPool, context)
   const phasePool = filterByPhase(fatiguePool, context)
   const experiencePool = filterByExperience(phasePool, context)
   const withoutRecent = avoidRecentExercises(experiencePool, recentSet)
   const pool = withoutRecent.length >= 6 ? withoutRecent : experiencePool
-  const selected = pickStrengthStructure(pool, context, recentSet)
+  const selected = pickStrengthStructure(pool, context, recentSet, progressionState)
 
   const fallback = selected.length >= 3
     ? selected
-    : pickStrengthStructure(filterByFatigue(equipmentPool, { ...context, fatigueLevel: Math.min(context.fatigueLevel, 6) }), context, recentSet)
+    : pickStrengthStructure(filterByFatigue(equipmentPool, { ...context, fatigueLevel: Math.min(context.fatigueLevel, 6) }), context, recentSet, progressionState)
 
   const finalSelection = fallback.slice(0, 6)
 
   return {
     focus: deriveStrengthFocus(finalSelection, context),
-    exercises: finalSelection.map((exercise, index) => buildSelectionExercise(exercise, context, index)),
+    exercises: finalSelection.map((exercise, index) => buildSelectionExercise(exercise, context, index, progressionState)),
   }
 }
 
@@ -154,18 +175,15 @@ export function pickStrengthStructure(
   exercises: ExerciseDefinition[],
   context: StrengthContext,
   recentExercises: Set<string>,
+  progressionState?: StrengthProgressionState,
 ): ExerciseDefinition[] {
-  const scored = scoreExercises(exercises, context, recentExercises)
+  const scored = scoreExercises(exercises, context, recentExercises, progressionState)
   const selected: ExerciseDefinition[] = []
   const selectedMovements = new Set<MovementPattern>()
   const selectedIds = new Set<string>()
   const targetCount = getTargetExerciseCount(context)
 
-  const mainLift = pickFirst(scored, context, (exercise) =>
-    exercise.intensityType === 'strength' &&
-    exercise.category !== 'core' &&
-    !recentExercises.has(normalizeStrengthExerciseKey(exercise.id)),
-  )
+  const mainLift = selectMainLiftWithProgression(scored, context, recentExercises, progressionState)
   if (mainLift) {
     selected.push(mainLift)
     selectedMovements.add(mainLift.movement)
@@ -241,6 +259,7 @@ function scoreExercises(
   exercises: ExerciseDefinition[],
   context: StrengthContext,
   recentExercises: Set<string>,
+  progressionState = deriveStrengthProgressionState(context),
 ): ScoredExercise[] {
   const goal = context.goal.toLowerCase()
 
@@ -327,9 +346,145 @@ function scoreExercises(
 
       if (recentExercises.has(normalizeStrengthExerciseKey(exercise.id))) score -= 10
 
+      if (progressionState.mainPattern && exercise.movement === progressionState.mainPattern) {
+        if (progressionState.intent === 'progress' && exercise.intensityType === 'strength') score += 5
+        if (progressionState.intent === 'hold' && exercise.intensityType !== 'recovery') score += 2
+        if (progressionState.intent === 'deload' && (exercise.intensityType === 'stability' || exercise.intensityType === 'recovery')) score += 4
+        if (progressionState.intent === 'rotate') score -= 6 // discourage overused pattern
+      }
+
+      if (progressionState.intent === 'rotate' && progressionState.mainPattern && exercise.movement !== progressionState.mainPattern) {
+        if (exercise.intensityType === 'strength' || exercise.intensityType === 'hypertrophy') score += 3
+      }
+
+      if (
+        progressionState.intent === 'progress' &&
+        progressionState.mainPattern &&
+        exercise.movement === progressionState.mainPattern &&
+        progressionState.patterns[exercise.movement]?.lastExerciseId === exercise.id
+      ) {
+        score -= context.sportProfile === 'strength_primary' ? 1 : 4
+      }
+
       return { exercise, score }
     })
     .sort((a, b) => b.score - a.score || a.exercise.name.localeCompare(b.exercise.name))
+}
+
+export function deriveStrengthProgressionState(context: StrengthContext): StrengthProgressionState {
+  const strengthSessions = [...(context.historicalSessions ?? [])]
+    .filter((session) =>
+      session.type === 'strength' &&
+      (session.status === 'completed' || session.status === 'adjusted') &&
+      session.exercises &&
+      session.exercises.length > 0,
+    )
+    .sort((a, b) => b.date.localeCompare(a.date) || b.timeBlock.localeCompare(a.timeBlock))
+    .slice(0, 5)
+
+  const patterns: Partial<Record<MovementPattern, PatternProgressionEntry>> = {}
+  let mainPattern: MovementPattern | undefined
+
+  strengthSessions.forEach((session, sessionIndex) => {
+    session.exercises?.forEach((exercise, index) => {
+      const definition = findStrengthExerciseByName(exercise.name)
+      if (!definition) return
+
+      const role = getStrengthExerciseRole(definition, index)
+      const entry = patterns[definition.movement]
+      if (!entry) {
+        patterns[definition.movement] = {
+          pattern: definition.movement,
+          frequency: 1,
+          lastExerciseId: definition.id,
+          lastRole: role,
+          lastDate: session.date,
+        }
+      } else {
+        entry.frequency += 1
+      }
+
+      if (sessionIndex === 0 && role === 'main_lift' && !mainPattern) {
+        mainPattern = definition.movement
+      }
+    })
+  })
+
+  const mainPatternFrequency = mainPattern ? (patterns[mainPattern]?.frequency ?? 0) : 0
+
+  return {
+    intent: deriveProgressionIntent(context, mainPattern, mainPatternFrequency),
+    mainPattern,
+    patterns,
+  }
+}
+
+export function deriveProgressionIntent(
+  context: StrengthContext,
+  mainPattern?: MovementPattern,
+  mainPatternFrequency?: number,
+): StrengthProgressionIntent {
+  if (context.competitionSoon || context.phase === 'taper' || context.fatigueLevel >= 7) return 'deload'
+
+  const freq = mainPatternFrequency ?? 0
+
+  if (context.sportProfile === 'strength_primary') {
+    // strength_primary: progress aggressively, rotate only when clearly overloaded
+    if (mainPattern && freq >= 4) return 'rotate'
+    if (mainPattern) return 'progress'
+    if (context.phase === 'build' && context.fatigueLevel <= 5) return 'progress'
+    return 'hold'
+  }
+
+  if (context.sportProfile === 'hybrid') {
+    // hybrid: softer progression rhythm, rotate after 3 sessions with same pattern
+    if (mainPattern && freq >= 3) return 'rotate'
+    if (mainPattern && freq >= 1 && context.phase === 'build' && context.fatigueLevel <= 5) return 'progress'
+    return 'hold'
+  }
+
+  // sport_support: conservative — hold unless very fresh, rotate quickly to avoid overloading sport legs
+  if (mainPattern && freq >= 2) return 'rotate'
+  if (context.phase === 'base' && context.fatigueLevel <= 4) return 'progress'
+  return 'hold'
+}
+
+export function selectMainLiftWithProgression(
+  scored: ScoredExercise[],
+  context: StrengthContext,
+  recentExercises: Set<string>,
+  progressionState = deriveStrengthProgressionState(context),
+): ExerciseDefinition | undefined {
+  // rotate: pick a main lift from a DIFFERENT pattern to break overload cycle
+  if (progressionState.intent === 'rotate' && progressionState.mainPattern) {
+    const alternative = scored.find(({ exercise }) =>
+      exercise.movement !== progressionState.mainPattern &&
+      exercise.intensityType === 'strength' &&
+      exercise.category !== 'core' &&
+      !recentExercises.has(normalizeStrengthExerciseKey(exercise.id)),
+    )
+    if (alternative) return alternative.exercise
+  }
+
+  if (progressionState.mainPattern) {
+    const preferred = scored.find(({ exercise }) =>
+      exercise.movement === progressionState.mainPattern &&
+      exercise.intensityType === 'strength' &&
+      exercise.category !== 'core' &&
+      (
+        progressionState.intent !== 'progress' ||
+        !recentExercises.has(normalizeStrengthExerciseKey(exercise.id)) ||
+        context.sportProfile === 'strength_primary'
+      ),
+    )
+    if (preferred) return preferred.exercise
+  }
+
+  return pickFirst(scored, context, (exercise) =>
+    exercise.intensityType === 'strength' &&
+    exercise.category !== 'core' &&
+    !recentExercises.has(normalizeStrengthExerciseKey(exercise.id)),
+  )
 }
 
 function deriveStrengthFocus(
@@ -370,8 +525,9 @@ function buildSelectionExercise(
   exercise: ExerciseDefinition,
   context: StrengthContext,
   index: number,
+  progressionState = deriveStrengthProgressionState(context),
 ): StrengthSelectionExercise {
-  const prescription = getPrescription(exercise, context, index)
+  const prescription = getProgressedPrescription(exercise, context, index, progressionState)
 
   return {
     name: exercise.name,
@@ -423,6 +579,48 @@ function getPrescription(
   }
 }
 
+export function getProgressedPrescription(
+  exercise: ExerciseDefinition,
+  context: StrengthContext,
+  index: number,
+  progressionState = deriveStrengthProgressionState(context),
+): {
+  sets: number
+  reps: number | string
+  intensity: StrengthSelectionExercise['intensity']
+} {
+  const base = getPrescription(exercise, context, index)
+  const isMainPattern = progressionState.mainPattern != null && exercise.movement === progressionState.mainPattern
+
+  if (progressionState.intent === 'deload') {
+    if (typeof base.reps === 'number') {
+      return {
+        sets: Math.max(2, base.sets - 1),
+        reps: base.reps,
+        intensity: base.intensity === 'heavy' || base.intensity === 'moderate-heavy' ? 'moderate' : 'light',
+      }
+    }
+    return { ...base, sets: Math.max(2, base.sets - 1), intensity: 'controlled' }
+  }
+
+  if (progressionState.intent === 'progress' && isMainPattern && exercise.intensityType === 'strength') {
+    if (context.phase === 'build') return { sets: 5, reps: 3, intensity: 'moderate-heavy' }
+    if (context.phase === 'peak') return { sets: 5, reps: 3, intensity: 'heavy' }
+    return { sets: Math.max(base.sets, 4), reps: typeof base.reps === 'number' ? Math.max(5, base.reps) : base.reps, intensity: 'moderate-heavy' }
+  }
+
+  if (progressionState.intent === 'hold' && isMainPattern && exercise.intensityType === 'strength') {
+    return { ...base, intensity: base.intensity === 'heavy' ? 'moderate-heavy' : base.intensity }
+  }
+
+  // rotate: this exercise is a different pattern from the overused one — treat like a fresh hold
+  if (progressionState.intent === 'rotate' && !isMainPattern && exercise.intensityType === 'strength') {
+    return { ...base, intensity: 'moderate' }
+  }
+
+  return base
+}
+
 function buildExerciseNotes(
   exercise: ExerciseDefinition,
   context: StrengthContext,
@@ -448,6 +646,24 @@ function buildExerciseNotes(
     return 'Use controlled tempo and match both sides.'
   }
   return undefined
+}
+
+export function summarizeStrengthProgression(context: StrengthContext): string {
+  const state = deriveStrengthProgressionState(context)
+  if (!state.mainPattern) {
+    return 'Sin historia suficiente: usar variacion estructurada segun contexto.'
+  }
+
+  switch (state.intent) {
+    case 'progress':
+      return `Patron principal ${state.mainPattern} en modo progress — escalar carga o densidad.`
+    case 'hold':
+      return `Patron principal ${state.mainPattern} en modo hold — mantener estimulo sin escalar.`
+    case 'deload':
+      return `Patron principal ${state.mainPattern} en modo deload — reducir volumen e intensidad.`
+    case 'rotate':
+      return `Patron ${state.mainPattern} sobreentrenado — rotar a patron distinto esta sesion.`
+  }
 }
 
 function shouldIncludePower(context: StrengthContext): boolean {
@@ -594,8 +810,21 @@ export function runStrengthSelectorSmokeChecks(): string[] {
     competitionSoon: false,
   })
   outputs.push(`variation=${buildA.exercises.map((exercise) => exercise.name).join(' / ')} <> ${buildB.exercises.map((exercise) => exercise.name).join(' / ')}`)
+  outputs.push(`progression_signal=${summarizeStrengthProgression({
+    phase: 'build',
+    fatigueLevel: 4,
+    recentExercises: buildA.exercises.map((exercise) => normalizeStrengthExerciseKey(exercise.name)),
+    goal: 'fuerza lower y estabilidad',
+    sportProfile: 'strength_primary',
+    experienceLevel: 'intermediate',
+    availableEquipment: ['barbell', 'dumbbell', 'bodyweight', 'cable'],
+    sessionDurationMin: 65,
+    competitionSoon: false,
+    historicalSessions: [],
+  })}`)
 
   return outputs
 }
 
-// TODO: agregar progresion multi-semana por familia y scoring mas fino por nivel del atleta.
+// Fase 2 implementada: intent 4-state (progress/hold/deload/rotate) con deteccion de frecuencia por patron y perfil deportivo.
+// Pendiente Fase 3: progresion cuantitativa por kg, periodizacion completa, equipamiento persistido en perfil, metadata visible en UI.
