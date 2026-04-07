@@ -1,6 +1,6 @@
 # Entrenador App - Review and Roadmap
 
-Actualizado: 2026-04-06 (revisión técnica del código + wizard Plan de competencia)
+Actualizado: 2026-04-07 (progresión multi-semana Fase 2 de squash y fuerza — implementada)
 
 ## Estado actual del producto
 
@@ -39,6 +39,8 @@ No debería volver a aparecer como backlog principal:
 - sync eliminado del dashboard — visible solo en Ajustes donde tiene acciones disponibles
 - nudge de perfil incompleto en dashboard: detecta qué faltan (ritmos, 1RMs) y navega a Ajustes
 - **wizard "Plan de competencia"** (`/competition-plan`): 7 pasos guiados para definir evento, objetivo, nivel, disponibilidad semanal, deportes complementarios y estado físico actual; genera `PlanWizardConfig` persistido en perfil y prompt rico al coach; accesible desde dashboard (card de bienvenida si no hay evento, botón "Editar" en MacroPlanCard) y desde Ajustes; reemplaza la configuración de GoalEvent que vivía en el formulario de perfil
+- **arquitectura estructurada de running — Fase 1**: nuevo catálogo `runningSessionLibrary.ts` con ~27 sesiones clasificadas en 8 familias (easy_aerobic, long_run, tempo_threshold, intervals_vo2, speed_economy, hill, race_specific, recovery); nuevo selector `runningSelector.ts` con reglas por fase, fatiga, perfil deportivo (running_primary / hybrid / sport_support), competencia cercana, evitación de repetición y progresión multi-semana (progress / hold / deload / rotate); integrado en `promptBuilder.ts` con sección dinámica análoga a squash y fuerza; compatible con `RunningDetails` y `runningType` actuales sin cambios de tipos
+- **progresión multi-semana Fase 2 — squash y fuerza**: `deriveSquashProgressionState` implementa 4-state model (progress/hold/rotate/deload) con detección de familias consecutivas en últimas 2 sesiones; `deriveProgressionIntent` en fuerza ahora es profile-aware (strength_primary/hybrid/sport_support) con detección de sobreentreno por patrón; `selectMainLiftWithProgression` rota a patrón diferente en modo rotate; señales ricas en prompt ("patrón squat sobreentrenado — rotar") que ayudan al coach a mantener coherencia; compatible completamente con `session.exercises` y `squashDetails.drills`
 
 ## Posicionamiento actual
 
@@ -51,8 +53,8 @@ Hoy el producto ya se siente como:
 Todavía no se siente completamente “premium” por tres razones:
 
 - sync y reconciliación siguen siendo la zona más sensible
-- notificaciones móviles/PWA no están validadas del todo en uso real
 - el valor diferencial del macroplan y los protocolos aún está en MVP
+- la progresión multi-semana todavía debe sentirse más continua y menos aislada
 
 ## Roadmap por fases
 
@@ -65,7 +67,7 @@ Cerrar confiabilidad y UX base para que el producto se pueda mostrar, usar y cob
 **Features principales**
 
 1. Endurecer sync y reconciliación entre dispositivos
-2. Validar notificaciones reales en móvil/PWA
+2. Consolidar progresión multi-semana real en squash y fuerza
 3. Mejorar UX del coach y feedback de acciones
 4. Cerrar gaps de perfil incompleto con nudges claros
 5. Limpiar messaging de producto y flujo de valor principal
@@ -124,7 +126,7 @@ Hallazgos concretos de revisión del código que no estaban explícitos en el ba
 `getDayNutrition(sessions, profile?)` ya lee `weightKg`, `proteinTargetG` y `nutritionProfile.notes`. Hidratación calculada por peso, proteína estimada por carga del día, notas dietéticas visibles en UI. Pendiente: ajustar menú de comidas según restricciones del perfil.
 
 ### ✓ ACWR calculado y conectado al coach
-`loadAnalytics.ts` calcula ratio agudo/crónico con zona `undertrained / optimal / risk / limited`. Visible en dashboard con semáforo y métricas. `promptBuilder.ts` ya incluye el ACWR con reglas accionables de progresión/descarga. Pendiente: validación de umbrales en uso real; evaluar ACWR por disciplina en el futuro.
+`loadAnalytics.ts` calcula ratio agudo/crónico con zona `undertrained / optimal / risk / limited`. Visible en dashboard con semáforo y métricas. `promptBuilder.ts` ya incluye el ACWR con reglas accionables de progresión/descarga. Ahora también existe capa explícita de running con `getRunningWeeklyLoads()` y `calculateRunningAcwr()`, integrada en dashboard, prompt y selector sin romper el ACWR global. Pendiente: validación de umbrales en uso real; extender el mismo patrón cuantitativo a squash y fuerza.
 
 ### ✓ Progresión de fuerza en el prompt del coach
 `buildStrengthProgressionSection` en `promptBuilder.ts` agrupa ejercicios completados por nombre y muestra la progresión de carga de las últimas 4 ocurrencias. El coach ahora ve `Sentadilla: 4×6@80kg → 4×6@82.5kg → 4×5@85kg` y puede proponer la siguiente carga concreta. Los 1RM del perfil ya estaban y se acompañan de porcentajes de referencia (75%, 85%). Pendiente: surface de progresión en UI de analytics.
@@ -144,6 +146,9 @@ Las fases (base/build/peak/taper) son genéricas. En un atleta multi-deporte, �
 ### ICS export parcialmente implementado
 `utils/ics.ts` existe en el proyecto — sugiere que la exportación a calendario fue planeada o está parcialmente lista. No se ve activamente expuesta en la UI.
 
+### ✓ Arquitectura estructurada de running — Fase 2 cuantitativa inicial
+`runningSessionLibrary.ts` mantiene ~27 sesiones en 8 familias (easy_aerobic, long_run, tempo_threshold, intervals_vo2, speed_economy, hill, race_specific, recovery) con campo `runningType` compatible con `RunningDetails` existente. Sobre esa base, `loadAnalytics.ts` ahora expone `getRunningWeeklyLoads()` y `calculateRunningAcwr()` para tracking semanal de running solo con sesiones de running, usando carga ponderada por minutos/RPE y distancia estimada cuando existe señal suficiente (km en notas/título/objetivo o pace objetivo). `runningSelector.ts` consume `runningAcwr` como señal objetiva simple: `risk -> deload`, `undertrained -> puede progresar`, `limited -> cae a lógica contextual`. `promptBuilder.ts` y dashboard ya muestran la señal cuantitativa corta. Pendiente: cálculo fino de ritmos por historial real, extensión completa a squash/fuerza, tests unitarios y UI histórica más rica.
+
 ---
 
 ## Backlog unificado
@@ -159,10 +164,12 @@ Items de mayor prioridad para las próximas iteraciones:
    - **nuevo:** detectar y avisar cuando hay ediciones concurrentes en lugar de sobrescribir silenciosamente
    - **ya implementado en código:** dedupe natural key, tombstones de delete, compactación de cola, reintento automático al volver online/foco y reset total local+nube
 
-2. **Notificaciones móviles reales**
-   - validar suspensión real en iPhone/Android/PWA
-   - aviso visible cuando permiso está bloqueado
-   - errores de scheduling más claros para el usuario
+2. **Progresión multi-semana de squash y fuerza** ✓ Fase 2 implementada
+   - ✓ 4-state model para squash (progress/hold/rotate/deload) con detección de familias consecutivas
+   - ✓ 4-state intent para fuerza (progress/hold/deload/rotate) con reglas por perfil deportivo (strength_primary/hybrid/sport_support)
+   - ✓ selectMainLiftWithProgression rota a patrón diferente en modo rotate
+   - ✓ señales claras al coach en prompt ("familia drive_control entrenada suficiente — rotar")
+   - pendiente Fase 3: progresión cuantitativa por kg, periodización completa (microciclos de 4 semanas), rotación semanal explícita
 
 3. **Coach UX**
    - respuestas más consistentes y menos ambiguas
@@ -185,14 +192,20 @@ Items de mayor prioridad para las próximas iteraciones:
    - nuevo catálogo `drillLibrary.ts` con drills reutilizables y clasificables
    - nuevo selector `drillSelector.ts` con reglas por fase, fatiga, competencia cercana y repetición reciente
    - `promptBuilder.ts` ya consume selección dinámica como base de sesiones squash y reemplaza los ejemplos estáticos principales por bloques guiados desde el selector
-   - pendiente: progresión multi-semana real, metadata visible en UI y extensión a otros deportes
-   - Crear librerías para otros deportes; fuerza ya iniciada y running queda en backlog
+   - pendiente: progresión multi-semana real, metadata visible en UI
 
 7. **Arquitectura estructurada de sesiones de fuerza** ✓ Fase 1 implementada
    - nuevo catálogo `exerciseLibrary.ts` con ejercicios clasificados por patrón, intensidad y equipamiento
    - nuevo selector `strengthSelector.ts` con reglas por fase, fatiga, perfil (`strength_primary`, `hybrid`, `sport_support`) y recencia
    - `promptBuilder.ts` ya consume selección dinámica de fuerza manteniendo `session.exercises` como formato canónico
    - pendiente: progresión multi-semana por familia, equipamiento persistido en perfil, scoring más fino por nivel y metadata visible en UI
+
+8. **Arquitectura estructurada de sesiones de running** ✓ Fase 1 implementada
+   - nuevo catálogo `runningSessionLibrary.ts` con ~27 sesiones en 8 familias y compatibilidad con `RunningType` existente
+   - nuevo selector `runningSelector.ts` con reglas por fase, fatiga, perfil deportivo (`running_primary`, `hybrid`, `sport_support`), competencia cercana, evitación de repetición y progresión multi-semana (progress / hold / deload / rotate)
+   - `promptBuilder.ts` integra selección dinámica de running análoga a squash y fuerza, con reglas claras de perfil deportivo en el prompt
+   - avance reciente: tracking cuantitativo semanal de running + `runningAcwr` explícito integrados en analytics, dashboard, prompt y selector
+   - pendiente: cálculo fino de ritmos por historial real, extensión completa a squash/fuerza, tests unitarios y UI de historial de sesiones de running
 
 ### Siguiente
 
@@ -216,7 +229,7 @@ Items de alto valor después de cerrar confiabilidad:
    - baseline corta visible cuando aún no hay suficiente historia para una alerta fuerte
    - semáforo visible en dashboard con carga aguda, crónica y semanas usadas
    - ACWR enviado al prompt del coach con reglas accionables de progresión / descarga
-   - pendiente: tests unitarios de cálculo y evaluación futura de ACWR por disciplina
+   - pendiente: tests unitarios de cálculo y extensión futura del patrón cuantitativo a squash y fuerza
 
 4. **Squash y fuerza personalizados al historial** ✓ implementado en prompt
    - `buildSquashMatchHistorySection`: últimos 6 partidos (resultado, oponente, score, RPE) → el coach adapta foco técnico según racha
@@ -295,13 +308,15 @@ Si hubiera que resumir todo en orden real:
 5. ~~ACWR en dashboard~~ ✓ implementado y conectado al coach
 6. ~~squash personalizado: contexto de partidos, taper y foco técnico en el prompt~~ ✓ implementado
 7. ~~arquitectura estructurada de fuerza~~ ✓ implementado en Fase 1
-8. **progresión multi-semana y rotación explícita de drills squash** ← siguiente
-9. **progresión multi-semana y periodización real de fuerza** ← siguiente
-10. **extender arquitectura estructurada a running**
-11. tests de ACWR + validación de umbrales en uso real
-12. macroplan fase 2 con diferenciación por deporte
+8. ~~extender arquitectura estructurada a running~~ ✓ implementado en Fase 1
+9. **progresión multi-semana y rotación explícita de drills squash** ← foco siguiente
+10. **progresión multi-semana y periodización base de fuerza** ← mismo frente
+11. ~~progresión cuantitativa por volumen semanal + ACWR por disciplina para running~~ ✓ fase inicial implementada
+12. tests de ACWR + validación de umbrales en uso real
+13. macroplan fase 2 con diferenciación por deporte
 13. protocolos interactivos en flujo de sesión
-14. monetización
+14. notificaciones móviles reales
+15. monetización
 
 ## Monetización viable
 
@@ -365,10 +380,12 @@ Antes de cobrar, estas piezas tienen que sentirse fuertes:
 | Perfil incompleto con nudges específicos | En progreso | Mejora calidad del coach |
 | Flujo principal del coach pulido | En progreso | Ya existe handoff desde Plan Builder; falta enriquecerlo |
 | Offline básico confiable | En progreso | Recovery automático y mejor clasificación de errores ya implementados; falta validación en uso real |
-| Nutrición personalizada al perfil | Pendiente | Motor estático — no usa datos del perfil del atleta |
-| Analytics de progresión de fuerza | Pendiente | Data disponible en Dexie, sin surface en UI |
-| ACWR / indicador de riesgo de carga | Pendiente | Base de datos lista para calcularlo, no implementado aún |
-| Protocolos warmup/cooldown en UX | En progreso | Motor implementado, falta integración en flujo de sesión |
+| Nutrición personalizada al perfil | OK | Hidratación por peso, proteína por carga del día, notas dietéticas del perfil visibles en UI |
+| ACWR / indicador de riesgo de carga | OK | Calculado en loadAnalytics.ts, visible en dashboard con semáforo (verde/amarillo/rojo), enviado al prompt del coach |
+| Progresión multi-semana Fase 2 (squash/fuerza) | OK | 4-state model en squash y fuerza, detección de sobreentreno, señales ricas al coach |
+| Analytics de progresión de fuerza | En progreso | Data disponible en Dexie, señales de progresión en prompt; falta UI de historial/gráfico |
+| Progresión de running cuantitativa por volumen | OK | Tracking semanal de running, `runningAcwr` explícito, integración en selector, prompt y dashboard; falta refinamiento fino de ritmos/tests/UI histórica |
+| Protocolos warmup/cooldown en UX | En progreso | Motor implementado, UX en DayDetail; falta guardar favoritos por disciplina |
 | Plan de competencia (wizard) | OK | Wizard 7 pasos implementado; GoalEvent movido de Ajustes al wizard; PlanWizardConfig persistido; prompt rico al coach |
 
 ## Próximas 3 tareas de implementación
@@ -377,16 +394,19 @@ Antes de cobrar, estas piezas tienen que sentirse fuertes:
    - probar deletes, edits y recovery offline en dos dispositivos reales
    - revisar si todavía reaparece alguna `session`
    - cerrar cualquier caso restante de convergencia incompleta
+   - **contexto:** sync es todavía la zona más sensible del producto; validación en dispositivo real es crítica antes de beta
 
-2. **Mejorar UX de errores y estado de sync**
-   - copy más claro en Dashboard y Ajustes
-   - diferenciar mejor “sin conexión”, “error de servidor” y “cola retenida”
-   - dejar acciones sugeridas visibles para el usuario
+2. **Progresión cuantitativa de running + ACWR por disciplina**
+   - ✓ running Fase 2 inicial implementada: tracking semanal solo de running, `runningAcwr` explícito y consumo en selector/prompt/dashboard
+   - ✓ permite deload de running independiente de squash o fuerza sin tocar el ACWR global existente
+   - backlog: extender el mismo patrón cuantitativo a squash/fuerza, validar umbrales en uso real, tests unitarios y UI histórica más rica
+   - **impacto:** atleta hybrid (squash + running) ya puede ver señal separada cuando solo running está sobrecargado
 
-3. **Separar el creador de plan del chat**
-   - base ya creada con `Plan Builder`
-   - enriquecer inputs estructurados en vez de depender solo del mensaje libre
-   - mantener el chat para conversación y ajustes, y el plan builder para planificación guiada
+3. **UI de progresión multi-semana visible para el atleta**
+   - historial de partidos de squash en tab de analytics (últimos 10 con resultado, RPE, oponente)
+   - gráfico de progresión de carga por ejercicio (últimas 4 sesiones: ejercicio, series, reps, carga)
+   - recomendación clara: "familia drive_control en progresion" vs "patrón squat necesita rotación"
+   - **impacto:** atleta entiende la continuidad del entrenamiento, genera confianza en el coach
 
 **Criterio para beta privada**
 

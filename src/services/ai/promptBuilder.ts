@@ -24,6 +24,7 @@ import {
   extractRecentSquashDrills,
   runSquashDrillSelectorSmokeChecks,
   selectSquashDrills,
+  summarizeSquashProgression,
   type SquashSelectionContext,
   type SquashSelectionPhase,
 } from '../training/drillSelector'
@@ -31,11 +32,22 @@ import {
   extractRecentStrengthExercises,
   runStrengthSelectorSmokeChecks,
   selectStrengthSession,
+  summarizeStrengthProgression,
   type StrengthContext,
   type StrengthPhase,
   type StrengthSelectionExercise,
   type StrengthSportProfile,
 } from '../training/strengthSelector'
+import {
+  extractRecentRunningSessions,
+  runRunningSelectorSmokeChecks,
+  selectRunningSession,
+  summarizeRunningProgression,
+  type RunningContext,
+  type RunningPhase,
+  type RunningSelectionResult,
+  type RunningSportProfile,
+} from '../training/runningSelector'
 
 const SQUASH_SUBTYPE_ES: Record<string, string> = {
   training: 'entrenamiento', match: 'partido', competitive: 'competitivo',
@@ -179,6 +191,83 @@ function deriveStrengthExperienceLevel(context: ChatContext): 'beginner' | 'inte
   return 'beginner'
 }
 
+function mapMacroPhaseToRunningPhase(phase: MacroPlanPhase | undefined): RunningPhase {
+  switch (phase) {
+    case 'build':
+      return 'build'
+    case 'peak':
+      return 'peak'
+    case 'taper':
+    case 'race':
+      return 'taper'
+    case 'transition':
+      return 'transition'
+    case 'base':
+    default:
+      return 'base'
+  }
+}
+
+function deriveRunningSportProfile(context: ChatContext): RunningSportProfile {
+  const primarySport = getPrimarySportNormalized(context.athleteProfile)
+  const enabledSports = getEnabledSports(context.athleteProfile)
+
+  if (primarySport === 'running') return 'running_primary'
+  if (enabledSports.includes('running') && enabledSports.length > 1) return 'hybrid'
+  return 'sport_support'
+}
+
+function getRunningSelectionContext(context: ChatContext): RunningContext {
+  const today = todayISO()
+  const plannedSessions = getPlannedSessions(context)
+  const historicalSessions = getHistoricalSessions(context)
+  const macroPlan = computeMacroPlan(context.athleteProfile)
+  const nextCompetitive = plannedSessions
+    .filter(
+      session =>
+        session.date >= today &&
+        (session.subtype === 'match' || session.subtype === 'competitive'),
+    )
+    .sort((a, b) => a.date.localeCompare(b.date) || a.timeBlock.localeCompare(b.timeBlock))[0]
+
+  const competitionGap = nextCompetitive ? diffDays(today, nextCompetitive.date) : undefined
+  const daysToCompetition = typeof competitionGap === 'number' ? competitionGap : undefined
+  const competitionSoon = typeof daysToCompetition === 'number' && daysToCompetition <= 7
+  const primarySport = getPrimarySportNormalized(context.athleteProfile)
+  const goal =
+    context.athleteProfile?.mainGoal ??
+    context.currentWeekSummary?.objectives?.[0] ??
+    'desarrollar sesiones de running variadas y bien estructuradas'
+
+  return {
+    fatigueLevel: deriveSquashFatigueLevel(context),
+    phase: mapMacroPhaseToRunningPhase(macroPlan?.currentPhase),
+    recentSessions: extractRecentRunningSessions(historicalSessions),
+    goal,
+    sportProfile: deriveRunningSportProfile(context),
+    primarySport: primarySport ?? undefined,
+    competitionSoon,
+    daysToCompetition,
+    historicalSessions,
+    runningAcwr: context.loadAnalytics?.runningAcwr,
+    runningWeeklyLoad: context.loadAnalytics?.runningWeeklyLoads?.[0],
+  }
+}
+
+function buildRunningSelectionSummary(context: ChatContext): {
+  selection: RunningSelectionResult
+  selectionContext: RunningContext
+} | null {
+  const enabledSports = getEnabledSports(context.athleteProfile)
+  if (!enabledSports.includes('running')) return null
+
+  const selectionContext = getRunningSelectionContext(context)
+  return {
+    selectionContext,
+    selection: selectRunningSession(selectionContext),
+  }
+}
+
 function getSquashSelectionContext(context: ChatContext): SquashSelectionContext {
   const today = todayISO()
   const plannedSessions = getPlannedSessions(context)
@@ -204,6 +293,7 @@ function getSquashSelectionContext(context: ChatContext): SquashSelectionContext
     recentDrills: extractRecentSquashDrills(historicalSessions),
     goal,
     competitionSoon,
+    historicalSessions,
   }
 }
 
@@ -253,6 +343,7 @@ function getStrengthSelectionContext(context: ChatContext): StrengthContext {
     sessionDurationMin: primarySport === 'strength' ? 65 : 50,
     competitionSoon,
     daysToCompetition,
+    historicalSessions,
   }
 }
 
@@ -324,6 +415,7 @@ export function buildCoachSystemPrompt(context: ChatContext): string {
   const plannedSessions = getPlannedSessions(context)
   const squashSummary = buildSquashSelectionSummary(context)
   const strengthSummary = buildStrengthSelectionSummary(context)
+  const runningSummary = buildRunningSelectionSummary(context)
 
   const sections: string[] = [
     buildPersonaSection(context),
@@ -340,6 +432,7 @@ export function buildCoachSystemPrompt(context: ChatContext): string {
     buildSquashMatchHistorySection(context),
     buildDynamicSquashSelectionSection(context, squashSummary),
     buildDynamicStrengthSelectionSection(context, strengthSummary),
+    buildDynamicRunningSelectionSection(context, runningSummary),
     buildStrengthProgressionSection(context),
     buildNutritionContextSection(context),
     buildWeekSection(context),
@@ -398,7 +491,12 @@ Secuenciación running:
 · No apilar dos sesiones de alta intensidad (tempo o intervalos) en días consecutivos.
 · Long run requiere 48h de recuperación antes de sesión exigente de otro deporte.
 · Si hay competencia clave (cualquier deporte), corta el tempo y los intervalos 5+ días antes.
-· Z2 puede ir cualquier día como herramienta de recuperación activa sin comprometer otros deportes.`
+· Z2 puede ir cualquier día como herramienta de recuperación activa sin comprometer otros deportes.
+
+PERFIL DEPORTIVO EN RUNNING:
+· running_primary: running es el deporte central del atleta. Tratar con continuidad y especificidad real de entrenamiento competitivo. No usar como cardio complementario. Priorizar progresión, variación de estímulos y coherencia entre sesiones.
+· hybrid: running convive con otras disciplinas (squash, fuerza, ciclismo). Priorizar eficiencia por sesión. Controlar fatiga cruzada. Preferir calidad sobre volumen cuando hay carga de otro deporte.
+· sport_support: running como herramienta aeróbica o complemento del deporte principal. Sesiones cortas, baja interferencia. Z2, strides y recovery preferidos. Evitar interferir con la frescura del deporte principal.`
 }
 
 function buildStrengthRulesSection(): string {
@@ -1003,6 +1101,8 @@ function buildCompetitionLoadSection(context: ChatContext): string {
 function buildLoadAnalyticsSection(context: ChatContext): string {
   const analytics = context.loadAnalytics
   if (!analytics || analytics.weeks.length === 0) return ''
+  const runningLoad = analytics.runningWeeklyLoads?.[0]
+  const runningAcwr = analytics.runningAcwr
 
   const SPORT_ES: Record<string, string> = {
     squash: 'Squash', running: 'Running', cycling: 'Ciclismo',
@@ -1059,6 +1159,42 @@ function buildLoadAnalyticsSection(context: ChatContext): string {
   }
 
   lines.push('Usa esta informacion para ajustar la carga propuesta: si la carga viene alta, no sumes mas volumen; si viene baja y el atleta esta recuperado, puedes progresar.')
+
+  if (runningLoad && runningLoad.sessionsCount > 0) {
+    const distanceStr = runningLoad.totalDistanceKm != null
+      ? `${runningLoad.totalDistanceKm} km`
+      : `${runningLoad.totalDurationMin ?? 0} min`
+    const ratioStr = runningAcwr.ratio != null ? runningAcwr.ratio.toFixed(2) : 'sin ratio'
+    lines.push(`Running cuantitativo: ${distanceStr} en ${runningLoad.sessionsCount} sesion(es) - carga ${Math.round(runningLoad.totalLoad)} - ACWR running ${ratioStr} (${runningAcwr.status})`)
+    if (runningAcwr.status === 'risk') {
+      lines.push('Senal running: descarga running primero y no castigues squash o fuerza si esos deportes siguen estables.')
+    } else if (runningAcwr.status === 'undertrained') {
+      lines.push('Senal running: puedes progresar running si la fase y la fatiga lo permiten.')
+    } else if (runningAcwr.status === 'limited') {
+      lines.push('Senal running: historial insuficiente; usa esta capa solo como apoyo y manten la logica contextual actual.')
+    }
+  }
+
+  // ACWR por disciplina — permite decisiones independientes por deporte
+  const byDisc = analytics.acwrByDiscipline
+  if (byDisc) {
+    const ZONE_ES: Record<string, string> = {
+      undertrained: 'baja', optimal: 'optima', risk: 'riesgo', limited: 'insuf',
+    }
+    const disciplineLines: string[] = []
+    for (const sport of ['squash', 'running', 'strength'] as const) {
+      const d = byDisc[sport]
+      if (d.acuteLoad > 0) {
+        const ratioStr = d.ratio != null ? d.ratio.toFixed(2) : 'sin ratio'
+        disciplineLines.push(`${sport === 'strength' ? 'Fuerza' : sport.charAt(0).toUpperCase() + sport.slice(1)}: ${ratioStr} (${ZONE_ES[d.status]})`)
+      }
+    }
+    if (disciplineLines.length > 0) {
+      lines.push('')
+      lines.push(`ACWR por deporte: ${disciplineLines.join(' · ')}`)
+      lines.push('Usa estos ratios para decidir por deporte de forma independiente: puedes bajar running sin tocar squash, mantener fuerza aunque squash este alto, etc.')
+    }
+  }
 
   return lines.join('\n')
 }
@@ -1162,6 +1298,7 @@ function buildDynamicSquashSelectionSection(
       selectionContext.competitionSoon ? 'si' : 'no'
     } · objetivo "${selectionContext.goal}"`,
   )
+  lines.push(`Continuidad: ${summarizeSquashProgression(selectionContext)}`)
   lines.push(`Drills sugeridos ahora: ${formatSelectedSquashDrills(selection.drills)}`)
   lines.push(`Formato compatible actual: ${stringifySquashDrills(selection.drills)}`)
   lines.push('Usa esta seleccion como base prioritaria para las sesiones squash nuevas o actualizadas.')
@@ -1190,6 +1327,7 @@ function buildDynamicStrengthSelectionSection(
       selectionContext.competitionSoon ? 'si' : 'no'
     }${selectionContext.primarySport ? ` · deporte principal ${selectionContext.primarySport}` : ''}`,
   )
+  lines.push(`Continuidad: ${summarizeStrengthProgression(selectionContext)}`)
   lines.push(`Ejercicios sugeridos ahora: ${formatSelectedStrengthExercises(selection.exercises)}`)
   lines.push(`Formato compatible actual: ${stringifyStrengthExercises(selection.exercises)}`)
   lines.push('Si fuerza es principal, esta seleccion manda como sesion real de pesas y no como complemento generico.')
@@ -1197,6 +1335,50 @@ function buildDynamicStrengthSelectionSection(
 
   if (!import.meta.env.PROD) {
     const smoke = runStrengthSelectorSmokeChecks().slice(0, 3).join(' || ')
+    lines.push(`Debug selector (dev): ${smoke}`)
+  }
+
+  return lines.join('\n')
+}
+
+function buildDynamicRunningSelectionSection(
+  context: ChatContext,
+  summary = buildRunningSelectionSummary(context),
+): string {
+  if (!summary) return ''
+
+  const { selection, selectionContext } = summary
+  const lines: string[] = ['SELECCION DINAMICA DE RUNNING']
+
+  lines.push(`Perfil: ${selectionContext.sportProfile}`)
+  lines.push(`Foco sugerido: ${selection.focus}`)
+  lines.push(
+    `Contexto selector: fase ${selectionContext.phase} · fatiga ${selectionContext.fatigueLevel}/10 · perfil ${selectionContext.sportProfile} · competencia cercana ${
+      selectionContext.competitionSoon ? 'si' : 'no'
+    }${selectionContext.primarySport ? ` · deporte principal ${selectionContext.primarySport}` : ''}`,
+  )
+  if (selectionContext.runningWeeklyLoad?.sessionsCount) {
+    const weeklyVolume = selectionContext.runningWeeklyLoad.totalDistanceKm != null
+      ? `${selectionContext.runningWeeklyLoad.totalDistanceKm} km`
+      : `${selectionContext.runningWeeklyLoad.totalDurationMin ?? 0} min`
+    const acwrRatio = selectionContext.runningAcwr?.ratio != null
+      ? selectionContext.runningAcwr.ratio.toFixed(2)
+      : 'sin ratio'
+    lines.push(`Running ACWR: ${acwrRatio} (${selectionContext.runningAcwr?.status ?? 'limited'})`)
+    lines.push(`Weekly running load: ${weeklyVolume} / ${selectionContext.runningWeeklyLoad.sessionsCount} sesiones`)
+  }
+  lines.push(`Continuidad: ${summarizeRunningProgression(selectionContext)}`)
+  lines.push(`Sesion sugerida: ${selection.session.name} — ${selection.session.structure} — intensidad ${selection.session.intensity}`)
+  lines.push(`runningType compatible: ${selection.session.runningType}`)
+  if (selection.session.notes) lines.push(`Nota: ${selection.session.notes}`)
+  if (selectionContext.runningAcwr?.status === 'risk') {
+    lines.push('Running progression intent adjusted to deload por carga especifica de running.')
+  }
+  lines.push('Si running es deporte principal, esta seleccion manda como sesion de entrenamiento real con continuidad y no como cardio generico.')
+  lines.push('Si running es complemento, controla la carga para no interferir con el deporte principal.')
+
+  if (!import.meta.env.PROD) {
+    const smoke = runRunningSelectorSmokeChecks().slice(0, 2).join(' || ')
     lines.push(`Debug selector (dev): ${smoke}`)
   }
 
@@ -1974,14 +2156,16 @@ function buildDynamicPromptSelectionSections(promptContext: ResponsePromptContex
     sections.push(`SQUASH DINAMICO (usa esto como base de contenido, no inventes siempre los mismos drills):
 - Foco sugerido actual: ${squashSelection.trainingFocus}
 - Drills base seleccionados: ${formatSelectedSquashDrills(squashSelection.drills)}
-- Justificacion: fase ${squashSelectorContext.phase}, fatiga ${squashSelectorContext.fatigueLevel}/10, competencia cercana ${squashSelectorContext.competitionSoon ? 'si' : 'no'}`)
+- Justificacion: fase ${squashSelectorContext.phase}, fatiga ${squashSelectorContext.fatigueLevel}/10, competencia cercana ${squashSelectorContext.competitionSoon ? 'si' : 'no'}
+- Continuidad: ${summarizeSquashProgression(squashSelectorContext)}`)
   }
 
   if (strengthSelection && strengthSelectorContext) {
     sections.push(`FUERZA DINAMICA (usa esto como base de contenido, no caigas en rutinas genericas):
 - Foco sugerido actual: ${strengthSelection.focus}
 - Ejercicios base seleccionados: ${formatSelectedStrengthExercises(strengthSelection.exercises)}
-- Justificacion: fase ${strengthSelectorContext.phase}, fatiga ${strengthSelectorContext.fatigueLevel}/10, perfil ${strengthSelectorContext.sportProfile}, competencia cercana ${strengthSelectorContext.competitionSoon ? 'si' : 'no'}`)
+- Justificacion: fase ${strengthSelectorContext.phase}, fatiga ${strengthSelectorContext.fatigueLevel}/10, perfil ${strengthSelectorContext.sportProfile}, competencia cercana ${strengthSelectorContext.competitionSoon ? 'si' : 'no'}
+- Continuidad: ${summarizeStrengthProgression(strengthSelectorContext)}`)
   }
 
   return sections.length > 0 ? `\n${sections.join('\n\n')}` : ''

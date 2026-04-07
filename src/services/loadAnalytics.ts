@@ -58,6 +58,35 @@ export interface ACWR {
   baselineLimited: boolean
 }
 
+/** Disciplines tracked for per-sport ACWR */
+export type SportKey = 'squash' | 'running' | 'strength'
+
+export interface DisciplineAcwr {
+  sport: SportKey
+  acuteLoad: number
+  chronicLoad: number
+  /** Null when there is no baseline or the sport had no load this week */
+  ratio: number | null
+  status: ACWRZone
+  baselineWeeks: number
+}
+
+export interface RunningWeeklyLoad {
+  weekStart: string
+  totalLoad: number
+  totalDurationMin?: number
+  totalDistanceKm?: number
+  sessionsCount: number
+}
+
+export interface RunningAcwr {
+  acuteLoad: number
+  chronicLoad: number
+  ratio: number | null
+  status: ACWRZone
+  baselineWeeks: number
+}
+
 export interface LoadAnalytics {
   /** Ordered newest-first: [0] = current week, [1] = last week … */
   weeks: WeekLoadSummary[]
@@ -68,12 +97,18 @@ export interface LoadAnalytics {
   /** Adherence trend: is the athlete completing more or fewer sessions? */
   adherenceTrend: LoadTrend
   /**
-   * Acute:Chronic Workload Ratio.
+   * Acute:Chronic Workload Ratio (global, all disciplines combined).
    * Null when there is no previous training load to use as chronic baseline.
    * Thresholds: <0.8 undertrained, 0.8–1.3 optimal, >1.3 risk.
    * When baselineLimited is true, show it as directional guidance only.
    */
   acwr: ACWR | null
+  /** Per-discipline ACWR for squash, running and strength */
+  acwrByDiscipline: Record<SportKey, DisciplineAcwr>
+  /** Running-only weekly load history, newest-first */
+  runningWeeklyLoads: RunningWeeklyLoad[]
+  /** Explicit running ACWR wrapper for selector/prompt consumers */
+  runningAcwr: RunningAcwr
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -95,6 +130,166 @@ function sessionWeightedLoad(session: Session): number {
   const minutes = session.actualDurationMin ?? session.durationMin
   const rpe = session.actualRpe ?? session.rpe ?? DEFAULT_RPE
   return minutes * rpe
+}
+
+function isCompletedSession(session: Session): boolean {
+  return session.status === 'completed' || session.status === 'adjusted'
+}
+
+function parsePaceToMinutes(pace?: string): number | null {
+  if (!pace) return null
+  const parts = pace.trim().split(':').map(Number)
+  if (parts.length !== 2 || parts.some((value) => Number.isNaN(value))) return null
+  return parts[0] + (parts[1] / 60)
+}
+
+function round1(value: number): number {
+  return Math.round(value * 10) / 10
+}
+
+function estimateRunningDistanceKm(session: Session): number | undefined {
+  if (session.type !== 'running') return undefined
+
+  const text = [
+    session.notes,
+    session.completionNotes,
+    session.objective,
+    session.title,
+  ]
+    .filter(Boolean)
+    .join(' ')
+
+  const distanceMatch = text.match(/(\d+(?:[.,]\d+)?)\s*(km|kms|kilometros?|kilómetros?|\bk\b)/i)
+  if (distanceMatch) {
+    const distance = Number(distanceMatch[1].replace(',', '.'))
+    if (Number.isFinite(distance) && distance > 0) return round1(distance)
+  }
+
+  const paceMin = parsePaceToMinutes(session.runningDetails?.targetPaceMin)
+  const paceMax = parsePaceToMinutes(session.runningDetails?.targetPaceMax)
+  const resolvedPace =
+    paceMin != null && paceMax != null
+      ? (paceMin + paceMax) / 2
+      : paceMin ?? paceMax
+
+  if (resolvedPace != null && resolvedPace > 0) {
+    const duration = session.actualDurationMin ?? session.durationMin
+    if (duration > 0) return round1(duration / resolvedPace)
+  }
+
+  return undefined
+}
+
+function resolveWeekStarts(sessions: Session[], minWeeks = 4): string[] {
+  const currentWeekStart = toISO(getWeekStart(new Date()))
+  const runningSessions = sessions
+    .filter((session) => session.type === 'running' && isCompletedSession(session))
+    .sort((a, b) => a.date.localeCompare(b.date))
+
+  const oldestDate = runningSessions[0]?.date
+  const oldestWeekStart = oldestDate ? toISO(getWeekStart(fromISO(oldestDate))) : currentWeekStart
+
+  const weeks: string[] = []
+  let cursor = fromISO(currentWeekStart)
+
+  while (weeks.length < minWeeks || toISO(cursor) >= oldestWeekStart) {
+    weeks.push(toISO(cursor))
+    cursor = subWeeks(cursor, 1)
+  }
+
+  return weeks
+}
+
+function calculateDisciplineAcwrFromLoads(
+  sport: SportKey,
+  loads: Array<{ totalLoad: number }>,
+): DisciplineAcwr {
+  const acuteLoad = loads[0]?.totalLoad ?? 0
+  const baselineLoads = loads.slice(1).filter((load) => load.totalLoad > 0)
+
+  if (acuteLoad <= 0) {
+    return { sport, acuteLoad: 0, chronicLoad: 0, ratio: null, status: 'limited', baselineWeeks: 0 }
+  }
+
+  if (baselineLoads.length === 0) {
+    return { sport, acuteLoad, chronicLoad: 0, ratio: null, status: 'limited', baselineWeeks: 0 }
+  }
+
+  const chronicLoad = baselineLoads.reduce((sum, load) => sum + load.totalLoad, 0) / baselineLoads.length
+  const ratio = acuteLoad / chronicLoad
+  const baselineLimited = baselineLoads.length < 3
+
+  let status: ACWRZone
+  if (baselineLimited) {
+    status = 'limited'
+  } else if (ratio < 0.8) {
+    status = 'undertrained'
+  } else if (ratio > 1.3) {
+    status = 'risk'
+  } else {
+    status = 'optimal'
+  }
+
+  return { sport, acuteLoad, chronicLoad, ratio, status, baselineWeeks: baselineLoads.length }
+}
+
+export function getRunningWeeklyLoads(
+  sessions: Session[],
+  _dayLogs?: unknown,
+): RunningWeeklyLoad[] {
+  const weekStarts = resolveWeekStarts(sessions)
+  const byWeek = new Map<string, RunningWeeklyLoad>()
+
+  for (const weekStart of weekStarts) {
+    byWeek.set(weekStart, {
+      weekStart,
+      totalLoad: 0,
+      totalDurationMin: 0,
+      sessionsCount: 0,
+    })
+  }
+
+  for (const session of sessions) {
+    if (session.type !== 'running' || !isCompletedSession(session)) continue
+
+    const weekStart = toISO(getWeekStart(fromISO(session.date)))
+    const existing = byWeek.get(weekStart)
+    if (!existing) continue
+
+    existing.totalLoad += sessionWeightedLoad(session)
+    existing.totalDurationMin = (existing.totalDurationMin ?? 0) + (session.actualDurationMin ?? session.durationMin)
+    existing.sessionsCount += 1
+
+    const distanceKm = estimateRunningDistanceKm(session)
+    if (distanceKm != null) {
+      existing.totalDistanceKm = round1((existing.totalDistanceKm ?? 0) + distanceKm)
+    }
+  }
+
+  return weekStarts.map((weekStart) => {
+    const load = byWeek.get(weekStart)!
+    return {
+      weekStart,
+      totalLoad: Math.round(load.totalLoad),
+      totalDurationMin: load.totalDurationMin ?? 0,
+      totalDistanceKm: load.totalDistanceKm,
+      sessionsCount: load.sessionsCount,
+    }
+  })
+}
+
+export function calculateRunningAcwr(
+  sessions: Session[],
+  dayLogs?: unknown,
+): RunningAcwr {
+  const running = calculateDisciplineAcwrFromLoads('running', getRunningWeeklyLoads(sessions, dayLogs))
+  return {
+    acuteLoad: running.acuteLoad,
+    chronicLoad: running.chronicLoad,
+    ratio: running.ratio,
+    status: running.status,
+    baselineWeeks: running.baselineWeeks,
+  }
 }
 
 function trend(current: number, previous: number): LoadTrend {
@@ -168,7 +363,7 @@ function computeWeekSummary(weekStart: string, sessions: Session[]): WeekLoadSum
 
     const entry = byType.get(type)!
 
-    if (session.status === 'completed' || session.status === 'adjusted') {
+    if (isCompletedSession(session)) {
       entry.completedSessions += 1
       const mins = session.actualDurationMin ?? session.durationMin
       entry.completedMinutes += mins
@@ -203,6 +398,24 @@ function computeWeekSummary(weekStart: string, sessions: Session[]): WeekLoadSum
     runningMinutes: byType.get('running')?.completedMinutes ?? 0,
     cyclingMinutes: byType.get('cycling')?.completedMinutes ?? 0,
   }
+}
+
+function getDisciplineLoad(week: WeekLoadSummary, sport: SportKey): number {
+  return week.disciplines.find(d => d.type === sport)?.weightedLoad ?? 0
+}
+
+export function computeAcwrByDiscipline(weeks: WeekLoadSummary[]): Record<SportKey, DisciplineAcwr> {
+  const sports: SportKey[] = ['squash', 'running', 'strength']
+  const result = {} as Record<SportKey, DisciplineAcwr>
+
+  for (const sport of sports) {
+    result[sport] = calculateDisciplineAcwrFromLoads(
+      sport,
+      weeks.map((week) => ({ totalLoad: getDisciplineLoad(week, sport) })),
+    )
+  }
+
+  return result
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────
@@ -257,6 +470,9 @@ export async function computeLoadAnalytics(weeksBack = 4): Promise<LoadAnalytics
   const previous = weeks[1]
 
   const acwr = computeAcwr(weeks)
+  const acwrByDiscipline = computeAcwrByDiscipline(weeks)
+  const runningWeeklyLoads = getRunningWeeklyLoads(allSessions)
+  const runningAcwr = calculateRunningAcwr(allSessions)
 
   return {
     weeks,
@@ -270,5 +486,8 @@ export async function computeLoadAnalytics(weeksBack = 4): Promise<LoadAnalytics
       ? trend(current.adherencePct, previous.adherencePct)
       : 'stable',
     acwr,
+    acwrByDiscipline,
+    runningWeeklyLoads,
+    runningAcwr,
   }
 }

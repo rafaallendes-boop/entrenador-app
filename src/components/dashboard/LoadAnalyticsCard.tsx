@@ -1,4 +1,4 @@
-import type { LoadAnalytics, LoadTrend, DisciplineWeekLoad, ACWRZone } from '../../services/loadAnalytics'
+import type { LoadAnalytics, LoadTrend, DisciplineWeekLoad, ACWRZone, SportKey } from '../../services/loadAnalytics'
 
 interface Props {
   analytics: LoadAnalytics
@@ -12,11 +12,16 @@ const SPORT_CONFIG: Record<string, { label: string; color: string }> = {
   mobility: { label: 'Mov.',     color: 'bg-pink-500' },
 }
 
-const ACWR_CONFIG: Record<ACWRZone, { dot: string; label: string; detail: string }> = {
-  undertrained: { dot: 'bg-sky-400',     label: 'Carga baja',      detail: 'Ratio <0.8 — margen para progresar si la recuperacion acompana' },
-  optimal:      { dot: 'bg-emerald-400', label: 'Carga optima',    detail: 'Ratio 0.8-1.3 — zona razonable de progresion' },
-  risk:         { dot: 'bg-red-400',     label: 'Carga elevada',   detail: 'Ratio >1.3 — evita sumar volumen y prioriza descarga' },
-  limited:      { dot: 'bg-amber-400',   label: 'Baseline corta',  detail: 'Pocas semanas con carga — usar como referencia suave' },
+const ACWR_CONFIG: Record<ACWRZone, { dot: string; text: string; label: string; detail: string }> = {
+  undertrained: { dot: 'bg-sky-400',     text: 'text-sky-400',     label: 'Baja',     detail: 'Ratio <0.8 — margen para progresar si la recuperacion acompana' },
+  optimal:      { dot: 'bg-emerald-400', text: 'text-emerald-400', label: 'Optima',   detail: 'Ratio 0.8-1.3 — zona razonable de progresion' },
+  risk:         { dot: 'bg-red-400',     text: 'text-red-400',     label: 'Elevada',  detail: 'Ratio >1.3 — evita sumar volumen y prioriza descarga' },
+  limited:      { dot: 'bg-amber-400',   text: 'text-amber-400',   label: 'Insuf.',   detail: 'Pocas semanas con carga — usar como referencia suave' },
+}
+
+const DISCIPLINE_ACWR_SPORTS: SportKey[] = ['squash', 'running', 'strength']
+const DISCIPLINE_LABEL: Record<SportKey, string> = {
+  squash: 'Squash', running: 'Running', strength: 'Fuerza',
 }
 
 const TREND_CONFIG: Record<LoadTrend, { icon: string; color: string; label: string }> = {
@@ -90,6 +95,7 @@ export default function LoadAnalyticsCard({ analytics }: Props) {
 
   const allDisciplines = current.disciplines.filter(d => d.plannedSessions > 0)
   const maxMinutes = Math.max(...allDisciplines.map(d => Math.max(d.completedMinutes, d.plannedMinutes)), 1)
+  const runningCurrentWeek = analytics.runningWeeklyLoads[0]
 
   const trendCfg = TREND_CONFIG[analytics.overallTrend]
 
@@ -97,27 +103,43 @@ export default function LoadAnalyticsCard({ analytics }: Props) {
   const runningWeeks = analytics.weeks.map(w => w.runningMinutes)
   const hasRunning = runningWeeks.some(m => m > 0)
 
-  const acwrCfg = analytics.acwr ? ACWR_CONFIG[analytics.acwr.zone] : null
-
   return (
     <div className="space-y-4">
-      {/* ACWR semaphore */}
-      {analytics.acwr && acwrCfg && (
-        <div className="rounded-xl border border-surface-border bg-surface-raised/40 px-3 py-2">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${acwrCfg.dot}`} />
-            <span className="text-xs font-semibold text-ink">{acwrCfg.label}</span>
-            <span className="text-xs text-ink-faint">
-              ACWR {analytics.acwr.ratio.toFixed(2)}
-            </span>
-          </div>
-          <p className="mt-1 text-[11px] text-ink-muted">
-            Aguda {Math.round(analytics.acwr.acute)} / cronica {Math.round(analytics.acwr.chronic)}
-            {' · '}
-            baseline {analytics.acwr.baselineWeeks} semana{analytics.acwr.baselineWeeks === 1 ? '' : 's'}
-          </p>
-          <p className="mt-1 text-[11px] text-ink-faint">{acwrCfg.detail}</p>
+      {/* ACWR por disciplina — 3 semáforos */}
+      <div className="rounded-xl border border-surface-border bg-surface-raised/40 px-3 py-2.5 space-y-2">
+        <p className="text-[10px] font-medium uppercase tracking-wider text-ink-faint">
+          ACWR por disciplina
+        </p>
+        <div className="grid grid-cols-3 gap-2">
+          {DISCIPLINE_ACWR_SPORTS.map(sport => {
+            const disc = analytics.acwrByDiscipline[sport]
+            const cfg = ACWR_CONFIG[disc.status]
+            return (
+              <div
+                key={sport}
+                className="flex flex-col items-center gap-1 py-2 px-1.5 rounded-lg bg-surface-raised"
+              >
+                <span className={`w-2 h-2 rounded-full ${cfg.dot}`} />
+                <span className="text-[10px] font-semibold text-ink">{DISCIPLINE_LABEL[sport]}</span>
+                <span className="text-[11px] font-mono text-ink-muted">
+                  {disc.ratio != null ? disc.ratio.toFixed(2) : '—'}
+                </span>
+                <span className={`text-[9px] font-medium ${cfg.text}`}>{cfg.label}</span>
+              </div>
+            )
+          })}
         </div>
+        {analytics.acwr && (
+          <p className="text-[10px] text-ink-faint pt-1 border-t border-surface-border">
+            Global ACWR {analytics.acwr.ratio.toFixed(2)} · aguda {Math.round(analytics.acwr.acute)} / crónica {Math.round(analytics.acwr.chronic)} · baseline {analytics.acwr.baselineWeeks}s
+          </p>
+        )}
+      </div>
+
+      {runningCurrentWeek && runningCurrentWeek.sessionsCount > 0 && (
+        <p className="text-[10px] text-ink-faint -mt-2">
+          Running actual {runningCurrentWeek.totalDistanceKm != null ? `${runningCurrentWeek.totalDistanceKm}km` : `${runningCurrentWeek.totalDurationMin ?? 0}min`} · {runningCurrentWeek.sessionsCount} sesiones · carga {Math.round(runningCurrentWeek.totalLoad)}
+        </p>
       )}
 
       {/* Header row: trend + adherence mini-history */}
