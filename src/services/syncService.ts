@@ -56,6 +56,14 @@ interface MergeResolution<T extends { id: string }> {
   loserId?: string
 }
 
+interface AthleteProfileSyncRow extends Record<string, unknown> {
+  id: string
+  user_id: string
+  coach_memory: string | null
+  updated_at: number
+  data: Record<string, unknown> | null
+}
+
 function syncStoreState() {
   return useAuthStore.getState()
 }
@@ -154,6 +162,39 @@ function getSyncErrorMessage(error: unknown, fallback: string): string {
   return fallback
 }
 
+function classifyAthleteProfileSyncError(error: unknown): string {
+  const message = getSyncErrorMessage(error, 'Error desconocido de athlete_profiles.')
+  const normalized = message.toLowerCase()
+
+  if (
+    normalized.includes("could not find the 'data' column") ||
+    normalized.includes('column athlete_profiles.data does not exist') ||
+    normalized.includes('no unique or exclusion constraint matching the on conflict') ||
+    normalized.includes('on conflict')
+  ) {
+    return 'Schema remoto de athlete_profiles incompatible. Falta columna data y/o unique(user_id). Aplica la migration de sync del perfil.'
+  }
+
+  if (
+    normalized.includes('row-level security') ||
+    normalized.includes('permission denied') ||
+    normalized.includes('new row violates row-level security')
+  ) {
+    return 'athlete_profiles bloqueado por RLS/permisos. Revisa policies de user_id para select/insert/update/delete.'
+  }
+
+  if (
+    normalized.includes('duplicate key') ||
+    normalized.includes('multiple') ||
+    normalized.includes('more than one row') ||
+    normalized.includes('json object requested')
+  ) {
+    return 'Perfil remoto inconsistente o duplicado. Se detecto un conflicto en athlete_profiles y requiere reparacion.'
+  }
+
+  return `No se pudo sincronizar athlete_profiles. ${message}`
+}
+
 function applySyncFailure(error: unknown, fallbackMessage: string): void {
   const message = getSyncErrorMessage(error, fallbackMessage)
   const status = isLikelyOfflineError(error) ? 'offline' : 'error'
@@ -164,6 +205,10 @@ function applySyncFailure(error: unknown, fallbackMessage: string): void {
     lastErrorAt: Date.now(),
     lastErrorMessage: message,
   })
+}
+
+function logAthleteProfileSync(event: string, details: Record<string, unknown>): void {
+  console.info('[sync][athlete_profiles]', event, details)
 }
 
 async function drainQueue(): Promise<boolean> {
@@ -193,8 +238,12 @@ async function drainQueue(): Promise<boolean> {
   for (const op of currentUserQueue) {
     try {
       if (op.action === 'upsert') {
-        const { error } = await supabase.from(op.table).upsert(op.payload as never)
-        if (error) throw error
+        if (op.table === 'athlete_profiles') {
+          await upsertAthleteProfileRow(op.payload, op.userId)
+        } else {
+          const { error } = await supabase.from(op.table).upsert(op.payload as never)
+          if (error) throw error
+        }
       } else {
         const payload = op.payload as { id: string; userId?: string }
         const targetUserId = payload.userId ?? op.userId
@@ -209,7 +258,11 @@ async function drainQueue(): Promise<boolean> {
         }
       }
     } catch (error) {
-      applySyncFailure(error, 'No se pudo subir la cola pendiente.')
+      const fallback =
+        op.table === 'athlete_profiles'
+          ? classifyAthleteProfileSyncError(error)
+          : 'No se pudo subir la cola pendiente.'
+      applySyncFailure(error, fallback)
       remaining.push(op)
       break
     }
@@ -259,11 +312,19 @@ async function upsertRow(table: SupabaseTable, row: Record<string, unknown>): Pr
   }
 
   try {
-    const { error } = await supabase.from(table).upsert(row as never)
-    if (error) throw error
+    if (table === 'athlete_profiles') {
+      await upsertAthleteProfileRow(row, userId)
+    } else {
+      const { error } = await supabase.from(table).upsert(row as never)
+      if (error) throw error
+    }
     void drainQueue()
   } catch (error) {
-    applySyncFailure(error, `No se pudo sincronizar ${table}.`)
+    const fallback =
+      table === 'athlete_profiles'
+        ? classifyAthleteProfileSyncError(error)
+        : `No se pudo sincronizar ${table}.`
+    applySyncFailure(error, fallback)
     enqueue({ userId, table, action: 'upsert', payload: row, enqueuedAt: Date.now() })
   }
 }
@@ -411,6 +472,8 @@ function rowToCoachProposal(row: Record<string, unknown>): CoachProposal {
   } as CoachProposal
 }
 
+// athlete_profiles is treated as a singleton per user locally (id = "default").
+// Remotely, the canonical identity is the user_id; id should converge to "default".
 function athleteProfileToRow(profile: AthleteProfile, userId: string): Record<string, unknown> {
   const { id, coachMemory, updatedAt, ...rest } = profile
   return {
@@ -425,11 +488,139 @@ function athleteProfileToRow(profile: AthleteProfile, userId: string): Record<st
 function rowToAthleteProfile(row: Record<string, unknown>): AthleteProfile {
   const data = (row.data as Record<string, unknown> | null) ?? {}
   return {
-    id: (row.id as string) ?? 'default',
+    id: 'default',
     coachMemory: (row.coach_memory as string | null) ?? undefined,
     updatedAt: row.updated_at as number,
     ...data,
   } as AthleteProfile
+}
+
+function toAthleteProfileSyncRow(row: Record<string, unknown>): AthleteProfileSyncRow {
+  return {
+    id: String(row.id ?? 'default'),
+    user_id: String(row.user_id ?? ''),
+    coach_memory: (row.coach_memory as string | null) ?? null,
+    updated_at: Number(row.updated_at ?? 0),
+    data: ((row.data as Record<string, unknown> | null) ?? null),
+  }
+}
+
+function scoreAthleteProfileRow(row: AthleteProfileSyncRow): number {
+  return scoreEntityData({
+    coachMemory: row.coach_memory,
+    updatedAt: row.updated_at,
+    ...((row.data as Record<string, unknown> | null) ?? {}),
+  })
+}
+
+function pickCanonicalAthleteProfileRow(rows: AthleteProfileSyncRow[]): AthleteProfileSyncRow {
+  const sorted = [...rows].sort((a, b) => {
+    if (b.updated_at !== a.updated_at) return b.updated_at - a.updated_at
+    const scoreDiff = scoreAthleteProfileRow(b) - scoreAthleteProfileRow(a)
+    if (scoreDiff !== 0) return scoreDiff
+    if (a.id === 'default') return -1
+    if (b.id === 'default') return 1
+    return a.id.localeCompare(b.id)
+  })
+  return sorted[0]
+}
+
+async function fetchAthleteProfileRows(userId: string): Promise<AthleteProfileSyncRow[]> {
+  const { data, error } = await supabase
+    .from('athlete_profiles')
+    .select('id, user_id, coach_memory, updated_at, data')
+    .eq('user_id', userId)
+
+  if (error) throw error
+  return ((data ?? []) as Record<string, unknown>[]).map(toAthleteProfileSyncRow)
+}
+
+async function deleteAthleteProfileRowsById(userId: string, ids: string[]): Promise<void> {
+  for (const id of [...new Set(ids)].filter(Boolean)) {
+    const { error } = await supabase
+      .from('athlete_profiles')
+      .delete()
+      .eq('id', id)
+      .eq('user_id', userId)
+
+    if (error) throw error
+  }
+}
+
+async function repairRemoteAthleteProfileRows(
+  userId: string,
+  rows: AthleteProfileSyncRow[],
+  preferredRow?: AthleteProfileSyncRow,
+): Promise<AthleteProfileSyncRow> {
+  const candidates = preferredRow ? [...rows, preferredRow] : [...rows]
+  const winner = pickCanonicalAthleteProfileRow(candidates)
+  const canonical: AthleteProfileSyncRow = {
+    ...winner,
+    id: 'default',
+    user_id: userId,
+  }
+
+  logAthleteProfileSync('repair:start', {
+    remoteRows: rows.length,
+    remoteIds: rows.map((row) => row.id),
+    preferredUpdatedAt: preferredRow?.updated_at ?? null,
+    winnerId: winner.id,
+    canonicalUpdatedAt: canonical.updated_at,
+  })
+
+  const { error: upsertError } = await supabase
+    .from('athlete_profiles')
+    .upsert(canonical as never, { onConflict: 'user_id' })
+
+  if (upsertError) {
+    throw new Error(classifyAthleteProfileSyncError(upsertError))
+  }
+
+  const repairedRows = await fetchAthleteProfileRows(userId)
+  const loserIds = repairedRows
+    .filter((row) => row.id !== 'default')
+    .map((row) => row.id)
+
+  if (loserIds.length > 0) {
+    await deleteAthleteProfileRowsById(userId, loserIds)
+  }
+
+  logAthleteProfileSync('repair:done', {
+    remoteRowsAfterUpsert: repairedRows.length,
+    deletedIds: loserIds,
+  })
+
+  return canonical
+}
+
+async function upsertAthleteProfileRow(row: Record<string, unknown>, userId: string): Promise<void> {
+  try {
+    const profileRow = toAthleteProfileSyncRow(row)
+    const remoteRows = await fetchAthleteProfileRows(userId)
+
+    logAthleteProfileSync('push:attempt', {
+      payloadId: profileRow.id,
+      payloadUpdatedAt: profileRow.updated_at,
+      remoteRows: remoteRows.length,
+      remoteIds: remoteRows.map((item) => item.id),
+      payloadKeys: Object.keys((profileRow.data as Record<string, unknown> | null) ?? {}),
+    })
+
+    if (remoteRows.length > 1 || remoteRows.some((item) => item.id !== 'default')) {
+      await repairRemoteAthleteProfileRows(userId, remoteRows, profileRow)
+      return
+    }
+
+    const { error } = await supabase
+      .from('athlete_profiles')
+      .upsert(profileRow as never, { onConflict: 'user_id' })
+
+    if (error) {
+      throw error
+    }
+  } catch (error) {
+    throw new Error(classifyAthleteProfileSyncError(error))
+  }
 }
 
 export async function pushSession(session: Session): Promise<void> {
@@ -738,7 +929,22 @@ async function mergeCoachProposals(userId: string, context: MergeContext): Promi
 }
 
 async function mergeAthleteProfile(userId: string, context: MergeContext): Promise<void> {
-  const remoteRows = await fetchAll<Record<string, unknown>>('athlete_profiles', userId)
+  let remoteRows: AthleteProfileSyncRow[]
+  try {
+    remoteRows = await fetchAthleteProfileRows(userId)
+  } catch (error) {
+    throw new Error(classifyAthleteProfileSyncError(error))
+  }
+
+  if (remoteRows.length > 1 || remoteRows.some((row) => row.id !== 'default')) {
+    const localPreferred = await db.athleteProfiles.get('default')
+    const preferredRow = localPreferred
+      ? toAthleteProfileSyncRow(athleteProfileToRow(localPreferred, userId))
+      : undefined
+
+    await repairRemoteAthleteProfileRows(userId, remoteRows, preferredRow)
+    remoteRows = await fetchAthleteProfileRows(userId)
+  }
 
   if (remoteRows.length === 0) {
     if (context.allowDeletes && context.deleteBeforeTs != null) {
@@ -750,8 +956,9 @@ async function mergeAthleteProfile(userId: string, context: MergeContext): Promi
     return
   }
 
-  const remote = rowToAthleteProfile(remoteRows[0])
-  const remoteUpdatedAt = (remoteRows[0].updated_at as number) ?? 0
+  const canonicalRow = pickCanonicalAthleteProfileRow(remoteRows)
+  const remote = rowToAthleteProfile(canonicalRow)
+  const remoteUpdatedAt = canonicalRow.updated_at ?? 0
   const local = await db.athleteProfiles.get('default')
 
   if (!local || remoteUpdatedAt > local.updatedAt) {
@@ -1115,7 +1322,7 @@ export async function migrateLocalDataToCloud(userId: string): Promise<void> {
       weekRows.length > 0 && supabase.from('week_summaries').upsert(weekRows as never),
       chatRows.length > 0 && supabase.from('chat_messages').upsert(chatRows as never),
       proposalRows.length > 0 && supabase.from('coach_proposals').upsert(proposalRows as never),
-      profileRows.length > 0 && supabase.from('athlete_profiles').upsert(profileRows as never),
+      profileRows.length > 0 && supabase.from('athlete_profiles').upsert(profileRows as never, { onConflict: 'user_id' }),
     ])
 
     localStorage.setItem(getMigrationKey(userId), '1')

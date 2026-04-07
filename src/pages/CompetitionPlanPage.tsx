@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ChevronLeft, ChevronRight, Target, Sparkles, SkipForward } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Target, Sparkles, SkipForward, Trash2 } from 'lucide-react'
 import { ROUTES } from '../constants/routes'
 import { useCoachMemoryStore } from '../store/useCoachMemoryStore'
 import { computeMacroPlan, getPrimaryGoalEvent, getPhaseLabel } from '../services/macroPlan'
@@ -111,14 +111,16 @@ interface WizardState {
   injuryNotes: string
 }
 
+function getSportForEventType(eventType: GoalEventType | undefined): SupportedSport | null {
+  return EVENT_TYPE_OPTIONS.find((option) => option.value === eventType)?.sport ?? null
+}
+
 function initWizardState(
   existingEvent: ReturnType<typeof getPrimaryGoalEvent>,
   existingConfig: import('../types').PlanWizardConfig | undefined,
   enabledSports: SupportedSport[],
 ): WizardState {
-  const primarySportForEvent = existingEvent
-    ? (EVENT_TYPE_OPTIONS.find(o => o.sport && enabledSports.includes(o.sport))?.sport ?? null)
-    : null
+  const primarySportForEvent = getSportForEventType(existingEvent?.eventType)
 
   const defaultComplementary = existingConfig?.complementarySports ??
     enabledSports.filter(s => s !== primarySportForEvent)
@@ -276,10 +278,11 @@ export default function CompetitionPlanPage() {
   // Compute macro plan context for the summary step
   const macroPlan = useMemo(() => computeMacroPlan(athleteProfile), [athleteProfile])
   const macroPlanPhaseLabel = macroPlan ? getPhaseLabel(macroPlan.currentPhase) : undefined
+  const hasSavedPlan = Boolean(existingEvent || existingConfig)
 
   // Derive primary sport from event type
   const primarySportForEvent = useMemo<SupportedSport | null>(() => {
-    return EVENT_TYPE_OPTIONS.find(o => o.value === state.eventType)?.sport ?? null
+    return getSportForEventType(state.eventType)
   }, [state.eventType])
 
   // Sports available for complementary (excluding the event's primary sport)
@@ -310,7 +313,30 @@ export default function CompetitionPlanPage() {
 
   function goBack() {
     if (step > 1) setStep(s => s - 1)
-    else navigate(-1)
+    else if (window.history.length > 1) navigate(-1)
+    else navigate(ROUTES.SETTINGS)
+  }
+
+  async function handleDeletePlan() {
+    if (isSaving || !hasSavedPlan) return
+
+    const confirmed = window.confirm(
+      'Esto eliminara el evento principal y la configuracion del plan de competencia. Puedes volver a crearlo despues.',
+    )
+    if (!confirmed) return
+
+    setIsSaving(true)
+    try {
+      await saveAthleteProfile({
+        goalEvents: [],
+        planWizardConfig: undefined,
+        macroPlan: undefined,
+      })
+      setState(initWizardState(undefined, undefined, enabledSports))
+      setStep(1)
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   async function handleGenerate() {
@@ -407,6 +433,17 @@ export default function CompetitionPlanPage() {
 
       {/* Footer CTA */}
       <div className="mt-6 space-y-2">
+        {hasSavedPlan && step === 1 && (
+          <button
+            type="button"
+            onClick={() => { void handleDeletePlan() }}
+            disabled={isSaving}
+            className="w-full flex items-center justify-center gap-2 rounded-2xl border border-rose-500/25 bg-rose-500/5 px-4 py-3 text-sm font-medium text-rose-300 transition-colors hover:bg-rose-500/10 disabled:opacity-50"
+          >
+            <Trash2 size={15} />
+            {isSaving ? 'Eliminando...' : 'Eliminar plan generado'}
+          </button>
+        )}
         {step < TOTAL_STEPS ? (
           <>
             <button
@@ -460,16 +497,24 @@ function Step1EventType({
       <Question>¿Qué tipo de evento estás preparando?</Question>
       <Hint>El tipo de evento define cómo distribuimos las cargas y el taper.</Hint>
 
-      <div className="space-y-2 mb-5">
+      <div className="grid grid-cols-2 gap-3 mb-5">
         {EVENT_TYPE_OPTIONS.map(opt => (
           <button
             key={opt.value}
             type="button"
-            onClick={() => update({ eventType: opt.value })}
-            className={chipCls(state.eventType === opt.value)}
+            onClick={() => {
+              const selectedPrimarySport = getSportForEventType(opt.value)
+              update({
+                eventType: opt.value,
+                complementarySports: selectedPrimarySport
+                  ? state.complementarySports.filter((sport) => sport !== selectedPrimarySport)
+                  : state.complementarySports,
+              })
+            }}
+            className={`${chipCls(state.eventType === opt.value)} min-h-[88px] flex flex-col justify-center`}
           >
-            <span className="mr-2">{opt.emoji}</span>
-            {opt.label}
+            <span className="text-xl leading-none mb-2">{opt.emoji}</span>
+            <span className="leading-snug">{opt.label}</span>
           </button>
         ))}
       </div>

@@ -151,8 +151,12 @@ create table athlete_profiles (
   id text primary key,
   user_id uuid not null references auth.users(id) on delete cascade,
   coach_memory text,
-  updated_at bigint not null
+  updated_at bigint not null,
+  data jsonb null
 );
+
+create unique index athlete_profiles_user_id_unique
+on athlete_profiles (user_id);
 ```
 
 ## RLS

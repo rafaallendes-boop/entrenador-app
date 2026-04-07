@@ -316,6 +316,7 @@ export default function SettingsPage() {
   const providerConfigured = CoachEngine.isRealProviderConfigured()
   const sportSummary = getSportPrioritySummary(athleteProfile)
   const enabledSports = getEnabledSports(athleteProfile)
+  const profileSyncAffected = syncDetails.pendingTables.includes('athlete_profiles')
 
   const toggleCoachSessionSelection = (sessionId: string) => {
     setSelectedCoachSessionIds((current) =>
@@ -371,9 +372,11 @@ export default function SettingsPage() {
             </div>
             {syncStatus === 'error' && syncError && (
               <p className="mb-3 rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
-                {syncError}
+                {profileSyncAffected ? 'El perfil del atleta no esta pudiendo sincronizar.' : syncError}
                 <span className="block mt-1 text-amber-200/80">
-                  Si sigues con conexión, este error probablemente no es de red. Reintenta sync y revisa si la cola baja.
+                  {profileSyncAffected
+                    ? 'Puede deberse a un perfil remoto duplicado o a un desajuste de schema en athlete_profiles. Reintenta sync y revisa si la cola baja.'
+                    : 'Si sigues con conexión, este error probablemente no es de red. Reintenta sync y revisa si la cola baja.'}
                 </span>
               </p>
             )}
@@ -417,6 +420,11 @@ export default function SettingsPage() {
               {syncDetails.lastErrorMessage && syncStatus !== 'error' && (
                 <p className="mt-2 text-xs text-amber-300">
                   Ultimo incidente: {syncDetails.lastErrorMessage}
+                </p>
+              )}
+              {profileSyncAffected && syncDetails.pendingOps > 0 && (
+                <p className="mt-2 text-xs text-amber-200/90">
+                  El pending actual afecta athlete_profiles. Si la cola no baja, el problema probablemente es del perfil remoto y no de conectividad general.
                 </p>
               )}
               {syncDetails.pendingOps > 0 && (

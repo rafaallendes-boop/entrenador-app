@@ -1,4 +1,4 @@
-import { Target, Calendar, TrendingUp, Pencil } from 'lucide-react'
+import { Target, Calendar, TrendingUp, Pencil, Trash2 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import type { MacroPlan } from '../../types'
 import { getPhaseLabel, formatWeeksRemaining } from '../../services/macroPlan'
@@ -26,9 +26,16 @@ const PHASE_BG: Record<MacroPlan['currentPhase'], string> = {
 interface MacroPlanCardProps {
   macroPlan: MacroPlan
   eventTitle?: string
+  isDeleting?: boolean
+  onDelete?: () => void
 }
 
-export default function MacroPlanCard({ macroPlan, eventTitle }: MacroPlanCardProps) {
+export default function MacroPlanCard({
+  macroPlan,
+  eventTitle,
+  isDeleting = false,
+  onDelete,
+}: MacroPlanCardProps) {
   const navigate = useNavigate()
   const phaseLabel = getPhaseLabel(macroPlan.currentPhase)
   const weeksLabel = formatWeeksRemaining(macroPlan.weeksRemaining)
@@ -49,14 +56,27 @@ export default function MacroPlanCard({ macroPlan, eventTitle }: MacroPlanCardPr
             <p className="text-sm font-medium text-ink mt-0.5 truncate">{eventTitle}</p>
           )}
         </div>
-        <button
-          type="button"
-          onClick={() => navigate(ROUTES.COMPETITION_PLAN)}
-          className="flex-shrink-0 flex items-center gap-1 text-xs text-ink-faint hover:text-ink-muted transition-colors px-2 py-1 rounded-lg hover:bg-surface-raised"
-        >
-          <Pencil size={11} />
-          Editar
-        </button>
+        <div className="flex items-center gap-1">
+          {onDelete && (
+            <button
+              type="button"
+              onClick={onDelete}
+              disabled={isDeleting}
+              className="flex-shrink-0 flex items-center gap-1 text-xs text-rose-300 hover:text-rose-200 transition-colors px-2 py-1 rounded-lg hover:bg-rose-500/10 disabled:opacity-50"
+            >
+              <Trash2 size={11} />
+              {isDeleting ? 'Eliminando' : 'Eliminar'}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => navigate(ROUTES.COMPETITION_PLAN)}
+            className="flex-shrink-0 flex items-center gap-1 text-xs text-ink-faint hover:text-ink-muted transition-colors px-2 py-1 rounded-lg hover:bg-surface-raised"
+          >
+            <Pencil size={11} />
+            Editar
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-3">

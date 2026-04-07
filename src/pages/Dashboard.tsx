@@ -25,13 +25,14 @@ const MacroPlanCard = lazy(() => import('../components/dashboard/MacroPlanCard')
 
 export default function Dashboard() {
   const { sessions, currentWeekSummary, isLoading, loadWeek } = useTrainingStore()
-  const { athleteProfile, loadMemory } = useCoachMemoryStore()
+  const { athleteProfile, loadMemory, saveAthleteProfile } = useCoachMemoryStore()
   const { currentWeekStart } = useUIStore()
   const navigate = useNavigate()
   const today = todayISO()
   const athleteFirstName = getAthleteFirstName(athleteProfile, 'atleta')
 
   const [loadAnalytics, setLoadAnalytics] = useState<LoadAnalytics | null>(null)
+  const [isDeletingMacroPlan, setIsDeletingMacroPlan] = useState(false)
 
   // Macro plan — computed on-the-fly from profile, not persisted as source of truth
   const macroPlan = useMemo(() => computeMacroPlan(athleteProfile), [athleteProfile])
@@ -69,6 +70,26 @@ export default function Dashboard() {
 
   const profileCompleteness = getProfileCompleteness(athleteProfile ?? null)
   const showProfileNudge = profileCompleteness.state === 'partial' || profileCompleteness.state === 'missing_sports'
+
+  async function handleDeleteMacroPlan() {
+    if (isDeletingMacroPlan || !macroPlan) return
+
+    const confirmed = window.confirm(
+      'Esto eliminara el plan de competencia guardado y su evento principal. Puedes volver a crearlo despues.',
+    )
+    if (!confirmed) return
+
+    setIsDeletingMacroPlan(true)
+    try {
+      await saveAthleteProfile({
+        goalEvents: [],
+        planWizardConfig: undefined,
+        macroPlan: undefined,
+      })
+    } finally {
+      setIsDeletingMacroPlan(false)
+    }
+  }
 
   return (
     <div className="px-4 pt-12 pb-6 space-y-5 md:px-6 md:space-y-6">
@@ -116,7 +137,12 @@ export default function Dashboard() {
 
       {macroPlan ? (
         <Suspense fallback={<CardSkeleton className="h-32" />}>
-          <MacroPlanCard macroPlan={macroPlan} eventTitle={primaryGoalEvent?.title} />
+          <MacroPlanCard
+            macroPlan={macroPlan}
+            eventTitle={primaryGoalEvent?.title}
+            isDeleting={isDeletingMacroPlan}
+            onDelete={() => { void handleDeleteMacroPlan() }}
+          />
         </Suspense>
       ) : (
         <button
@@ -234,4 +260,3 @@ export default function Dashboard() {
 function CardSkeleton({ className }: { className: string }) {
   return <div className={`rounded-card border border-surface-border bg-surface-card animate-pulse ${className}`} />
 }
-
