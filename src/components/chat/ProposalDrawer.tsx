@@ -1,5 +1,6 @@
 ﻿import { CheckCircle2, X, Zap } from 'lucide-react'
 import type { CoachProposal, GeneratedProtocol, Session, SupportedSport, WeeklyPlanIntent } from '../../types'
+import { getPhaseLabel } from '../../services/macroPlan'
 
 const ACTION_LABEL: Record<string, string> = {
   skip_session: 'Saltar sesion',
@@ -37,6 +38,19 @@ const SQUASH_FOCUS_LABEL: Record<string, string> = {
   tactical: 'Tactico',
   physical: 'Fisico-especifico',
   conditioned_games: 'Juegos condicionados',
+}
+
+function formatTargetRole(role: 'primary' | 'support' | 'excluded' | undefined) {
+  switch (role) {
+    case 'primary':
+      return 'Rol: principal'
+    case 'support':
+      return 'Rol: soporte'
+    case 'excluded':
+      return 'Rol: excluido'
+    default:
+      return 'Rol: sin definir'
+  }
 }
 
 interface ProposalDrawerProps {
@@ -136,6 +150,40 @@ export default function ProposalDrawer({
                     </p>
                   </div>
                 ))}
+              </div>
+
+              <div className="mt-3 rounded-lg border border-surface-border/70 bg-surface-raised/40 px-3 py-2.5">
+                <p className="text-[10px] uppercase tracking-wide text-ink-faint">Macroplan y semana</p>
+                <div className="mt-1.5 space-y-1 text-[11px] text-ink-faint">
+                  <p>Fase actual: <span className="text-ink">{getPhaseLabel(planSummary.macroWeekCoherence.currentPhase)}</span></p>
+                  <p>Objetivo del bloque: <span className="text-ink">{planSummary.macroWeekCoherence.blockGoal}</span></p>
+                  <p>Regla de la semana: <span className="text-ink">{planSummary.macroWeekCoherence.weeklyRule}</span></p>
+                </div>
+                <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                  {planSummary.allowedSports.map((sport) => (
+                    <div key={`phase-${sport}`} className="rounded-lg bg-surface-raised/60 px-2.5 py-2">
+                      <p className="text-[10px] uppercase tracking-wide text-ink-faint">
+                        {SESSION_TYPE_LABEL[sport] ?? sport}
+                      </p>
+                      <p className="mt-0.5 text-[11px] text-ink-faint">
+                        {formatTargetRole(planSummary.macroWeekCoherence.targetDistributionBySport[sport])}
+                      </p>
+                      <p className="text-[11px] text-ink-faint">
+                        Esperado: {planSummary.macroWeekCoherence.expectedSessionsBySport[sport] ?? 'sin referencia'}
+                      </p>
+                      <p className="text-[11px] text-brand-light">
+                        Propuesto: {planSummary.macroWeekCoherence.actualDistributionBySport[sport] ?? 0} sesión(es)
+                      </p>
+                    </div>
+                  ))}
+                </div>
+                {planSummary.macroWeekCoherence.coherenceIssues.length > 0 && (
+                  <div className="mt-2 space-y-1">
+                    {planSummary.macroWeekCoherence.coherenceIssues.map((issue, issueIndex) => (
+                      <p key={issueIndex} className="text-[11px] text-amber-100/90">{issue}</p>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {planSummary.validationIssues.length > 0 && (

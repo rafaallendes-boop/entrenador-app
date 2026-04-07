@@ -12,6 +12,7 @@ import type {
 } from '../types'
 import { calculateRunningAcwr, calculateSquashAcwr, calculateStrengthAcwr } from './loadAnalytics'
 import { computeMacroPlan, getPrimaryGoalEvent } from './macroPlan'
+import { buildMacroWeekCoherenceSummary } from './macroWeekCoherence'
 import { getAllowedPlanningSports, getPlanningPrimarySport, RESTRICTED_PLANNING_SPORTS } from './planningConstraints'
 import {
   deriveSquashProgressionState,
@@ -322,6 +323,11 @@ export function buildPlanGenerationSummary(args: {
     sessions: proposedSessions,
     intentsBySport,
   })
+  const macroWeekCoherence = buildMacroWeekCoherenceSummary({
+    athleteProfile,
+    sessions: proposedSessions,
+    historicalSessions,
+  })
 
   return {
     allowedSports,
@@ -333,5 +339,6 @@ export function buildPlanGenerationSummary(args: {
     weeklyGoalSummary,
     validationStatus: validation.validationStatus,
     validationIssues: validation.validationIssues,
+    macroWeekCoherence,
   }
 }

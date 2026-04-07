@@ -9,6 +9,8 @@ import type {
   GoalEvent,
   MacroPlan,
   MacroPlanPhase,
+  MacroWeekCoherenceSummary,
+  PhaseSportTargetRole,
   Session,
   SupportedSport,
   TrainingPriority,
@@ -38,6 +40,7 @@ const PROPOSAL_STATUSES = new Set(['pending', 'accepted', 'rejected', 'partial']
 const SUPPORTED_SPORTS = new Set(['squash', 'running', 'strength', 'mobility', 'cycling'])
 const TRAINING_PRIORITIES = new Set(['performance', 'fitness', 'body_composition', 'return_to_play'])
 const MACRO_PLAN_PHASES = new Set(['base', 'build', 'peak', 'taper', 'race', 'transition'])
+const PHASE_SPORT_TARGET_ROLES = new Set(['primary', 'support', 'excluded'])
 const COACH_ACTION_TYPES = new Set([
   'move_session',
   'change_rpe',
@@ -665,6 +668,52 @@ function optionalPlanGenerationSummary(value: unknown, path: string): CoachPropo
     weeklyGoalSummary: requireString(row.weeklyGoalSummary, `${path}.weeklyGoalSummary`),
     validationStatus: requireEnum(row.validationStatus, new Set(['ok', 'warning']), `${path}.validationStatus`) as NonNullable<CoachProposal['planSummary']>['validationStatus'],
     validationIssues: optionalStringArray(row.validationIssues, `${path}.validationIssues`) ?? [],
+    macroWeekCoherence: optionalMacroWeekCoherenceSummary(row.macroWeekCoherence, `${path}.macroWeekCoherence`),
+  }
+}
+
+function optionalMacroWeekCoherenceSummary(value: unknown, path: string): MacroWeekCoherenceSummary {
+  if (value == null) {
+    return {
+      currentPhase: 'base',
+      blockGoal: 'Construir base general.',
+      weeklyRule: 'Construir base general sin sobrecargar accesorios.',
+      targetDistributionBySport: {},
+      actualDistributionBySport: {},
+      expectedSessionsBySport: {},
+      coherenceStatus: 'ok',
+      coherenceIssues: [],
+    }
+  }
+  const row = ensureRecord(value, path)
+  const targetDistribution = ensureRecord(row.targetDistributionBySport ?? {}, `${path}.targetDistributionBySport`)
+  const actualDistribution = ensureRecord(row.actualDistributionBySport ?? {}, `${path}.actualDistributionBySport`)
+  const expectedSessions = ensureRecord(row.expectedSessionsBySport ?? {}, `${path}.expectedSessionsBySport`)
+
+  return {
+    currentPhase: requireEnum(row.currentPhase, MACRO_PLAN_PHASES, `${path}.currentPhase`) as MacroWeekCoherenceSummary['currentPhase'],
+    blockGoal: requireString(row.blockGoal, `${path}.blockGoal`),
+    weeklyRule: requireString(row.weeklyRule, `${path}.weeklyRule`),
+    targetDistributionBySport: Object.fromEntries(
+      Object.entries(targetDistribution).map(([key, item]) => [
+        key,
+        requireEnum(item, PHASE_SPORT_TARGET_ROLES, `${path}.targetDistributionBySport.${key}`),
+      ]),
+    ) as Partial<Record<SupportedSport, PhaseSportTargetRole>>,
+    actualDistributionBySport: Object.fromEntries(
+      Object.entries(actualDistribution).map(([key, item]) => [
+        key,
+        requireFiniteNumber(item, `${path}.actualDistributionBySport.${key}`),
+      ]),
+    ) as Partial<Record<SupportedSport, number>>,
+    expectedSessionsBySport: Object.fromEntries(
+      Object.entries(expectedSessions).map(([key, item]) => [
+        key,
+        requireString(item, `${path}.expectedSessionsBySport.${key}`),
+      ]),
+    ) as Partial<Record<SupportedSport, string>>,
+    coherenceStatus: requireEnum(row.coherenceStatus, new Set(['ok', 'warning']), `${path}.coherenceStatus`) as MacroWeekCoherenceSummary['coherenceStatus'],
+    coherenceIssues: optionalStringArray(row.coherenceIssues, `${path}.coherenceIssues`) ?? [],
   }
 }
 

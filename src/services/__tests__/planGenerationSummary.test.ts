@@ -101,6 +101,9 @@ describe('planGenerationSummary', () => {
     expect(summary?.sessionsBySport.strength).toBe(1)
     expect(summary?.sessionsBySport.running).toBe(0)
     expect(summary?.weeklyGoalSummary).toContain('Build squash volume while maintaining strength')
+    expect(summary?.macroWeekCoherence.currentPhase).toBeDefined()
+    expect(summary?.macroWeekCoherence.targetDistributionBySport.squash).toBe('primary')
+    expect(summary?.macroWeekCoherence.actualDistributionBySport.running).toBe(0)
   })
 
   it('does not include strength or running for a squash-only plan', () => {
@@ -208,5 +211,6 @@ describe('planGenerationSummary', () => {
 
     expect(summary?.weeklyIntent).toBeDefined()
     expect(summary?.weeklyGoalSummary).toBe('Build squash volume while maintaining strength')
+    expect(summary?.macroWeekCoherence.weeklyRule.length).toBeGreaterThan(0)
   })
 })

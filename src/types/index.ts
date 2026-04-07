@@ -465,6 +465,19 @@ export interface CoachAction {
 
 export type PlanValidationStatus = 'ok' | 'warning'
 export type WeeklyPlanIntent = 'progress' | 'hold' | 'rotate' | 'deload' | 'unknown'
+export type PhaseSportTargetRole = 'primary' | 'support' | 'excluded'
+export type PhaseCoherenceStatus = 'ok' | 'warning'
+
+export interface MacroWeekCoherenceSummary {
+  currentPhase: MacroPlanPhase
+  blockGoal: string
+  weeklyRule: string
+  targetDistributionBySport: Partial<Record<SupportedSport, PhaseSportTargetRole>>
+  actualDistributionBySport: Partial<Record<SupportedSport, number>>
+  expectedSessionsBySport: Partial<Record<SupportedSport, string>>
+  coherenceStatus: PhaseCoherenceStatus
+  coherenceIssues: string[]
+}
 
 export interface PlanGenerationSummary {
   allowedSports: SupportedSport[]
@@ -476,6 +489,7 @@ export interface PlanGenerationSummary {
   weeklyGoalSummary: string
   validationStatus: PlanValidationStatus
   validationIssues: string[]
+  macroWeekCoherence: MacroWeekCoherenceSummary
 }
 
 export interface CoachProposal {

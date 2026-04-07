@@ -1,20 +1,24 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Download, Plus, FileUp, Sparkles, MessageSquareText } from 'lucide-react'
 import { useTrainingStore } from '../store/useTrainingStore'
 import { useUIStore } from '../store/useUIStore'
+import { useCoachMemoryStore } from '../store/useCoachMemoryStore'
 import { formatFullDate, fromISO, getWeekDays, toISO, isDateToday } from '../utils/date'
 import WeekStrip from '../components/week/WeekStrip'
 import WeekSummaryCard from '../components/week/WeekSummaryCard'
+import MacroPhaseSummaryCard from '../components/week/MacroPhaseSummaryCard'
 import SessionCard from '../components/session/SessionCard'
 import AddSessionModal from '../components/session/AddSessionModal'
 import { ROUTES } from '../constants/routes'
 import type { TimeBlock } from '../types'
 import { downloadICS } from '../utils/ics'
+import { buildMacroWeekCoherenceSummary } from '../services/macroWeekCoherence'
 
 export default function WeeklyView() {
   const { sessions, currentWeekSummary, isLoading, loadedWeekStart, loadWeek, generateCoachNote, deleteSession } = useTrainingStore()
   const { currentWeekStart, selectedDate } = useUIStore()
+  const athleteProfile = useCoachMemoryStore((state) => state.athleteProfile)
   const [showAddModal, setShowAddModal] = useState(false)
   const [isGeneratingNote, setIsGeneratingNote] = useState(false)
 
@@ -43,6 +47,11 @@ export default function WeeklyView() {
   const selectedDayData = dayData.find((day) => day.iso === selectedDate) ?? dayData[0]
   const weekLoaded = loadedWeekStart === currentWeekStart && !isLoading
   const isWeekEmpty = weekLoaded && sessions.length === 0
+  const macroWeekCoherence = useMemo(() => buildMacroWeekCoherenceSummary({
+    athleteProfile,
+    sessions,
+    historicalSessions: sessions.filter((session) => session.status === 'completed' || session.status === 'adjusted'),
+  }), [athleteProfile, sessions])
 
   const handleExport = () => {
     downloadICS(sessions, `entrenador-${currentWeekStart}.ics`)
@@ -183,7 +192,10 @@ export default function WeeklyView() {
                 {isGeneratingNote ? 'Generando...' : currentWeekSummary.coachNote ? 'Regenerar coach note' : 'Generar coach note'}
               </button>
             </div>
-            <WeekSummaryCard summary={currentWeekSummary} />
+            <div className="space-y-3">
+              <MacroPhaseSummaryCard summary={macroWeekCoherence} />
+              <WeekSummaryCard summary={currentWeekSummary} />
+            </div>
           </div>
         )}
       </div>
