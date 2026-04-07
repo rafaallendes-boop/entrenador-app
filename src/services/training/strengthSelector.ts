@@ -11,6 +11,7 @@ import {
   type MovementPattern,
   type StrengthExerciseRole,
 } from './exerciseLibrary'
+import type { DisciplineAcwr } from '../loadAnalytics'
 
 export type StrengthPhase = 'base' | 'build' | 'peak' | 'taper' | 'transition'
 export type StrengthSportProfile = 'strength_primary' | 'hybrid' | 'sport_support'
@@ -28,6 +29,8 @@ export interface StrengthContext {
   competitionSoon?: boolean
   daysToCompetition?: number
   historicalSessions?: Session[]
+  /** Quantitative ACWR signal for strength-specific load */
+  strengthAcwr?: DisciplineAcwr
 }
 
 export interface StrengthSelectionExercise {
@@ -426,7 +429,19 @@ export function deriveProgressionIntent(
 ): StrengthProgressionIntent {
   if (context.competitionSoon || context.phase === 'taper' || context.fatigueLevel >= 7) return 'deload'
 
+  // ACWR risk override: objective load signal takes priority
+  if (context.strengthAcwr?.status === 'risk') return 'deload'
+
   const freq = mainPatternFrequency ?? 0
+
+  // ACWR undertrained: nudge to progress unless rotation thresholds would fire
+  if (context.strengthAcwr?.status === 'undertrained' && context.fatigueLevel <= 5 && !context.competitionSoon) {
+    const wouldRotate =
+      (context.sportProfile === 'strength_primary' && mainPattern != null && freq >= 4) ||
+      (context.sportProfile === 'hybrid' && mainPattern != null && freq >= 3) ||
+      (context.sportProfile === 'sport_support' && mainPattern != null && freq >= 2)
+    if (!wouldRotate) return 'progress'
+  }
 
   if (context.sportProfile === 'strength_primary') {
     // strength_primary: progress aggressively, rotate only when clearly overloaded
@@ -650,19 +665,25 @@ function buildExerciseNotes(
 
 export function summarizeStrengthProgression(context: StrengthContext): string {
   const state = deriveStrengthProgressionState(context)
+  const acwrLabel = context.strengthAcwr?.ratio != null
+    ? ` ACWR fuerza: ${context.strengthAcwr.ratio.toFixed(2)} (${context.strengthAcwr.status}).`
+    : context.strengthAcwr?.status
+      ? ` ACWR fuerza: ${context.strengthAcwr.status}.`
+      : ''
+
   if (!state.mainPattern) {
-    return 'Sin historia suficiente: usar variacion estructurada segun contexto.'
+    return `Sin historia suficiente: usar variacion estructurada segun contexto.${acwrLabel}`
   }
 
   switch (state.intent) {
     case 'progress':
-      return `Patron principal ${state.mainPattern} en modo progress — escalar carga o densidad.`
+      return `Patron principal ${state.mainPattern} en modo progress — escalar carga o densidad.${acwrLabel}`
     case 'hold':
-      return `Patron principal ${state.mainPattern} en modo hold — mantener estimulo sin escalar.`
+      return `Patron principal ${state.mainPattern} en modo hold — mantener estimulo sin escalar.${acwrLabel}`
     case 'deload':
-      return `Patron principal ${state.mainPattern} en modo deload — reducir volumen e intensidad.`
+      return `Patron principal ${state.mainPattern} en modo deload — reducir volumen e intensidad.${acwrLabel}`
     case 'rotate':
-      return `Patron ${state.mainPattern} sobreentrenado — rotar a patron distinto esta sesion.`
+      return `Patron ${state.mainPattern} sobreentrenado — rotar a patron distinto esta sesion.${acwrLabel}`
   }
 }
 

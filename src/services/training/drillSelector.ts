@@ -8,6 +8,7 @@ import {
   type DrillCategory,
   type SquashDrillDefinition,
 } from './drillLibrary'
+import type { DisciplineAcwr } from '../loadAnalytics'
 
 export type SquashSelectionPhase = 'base' | 'build' | 'peak' | 'taper'
 
@@ -18,6 +19,8 @@ export interface SquashSelectionContext {
   goal: string
   competitionSoon: boolean
   historicalSessions?: Session[]
+  /** Quantitative ACWR signal for squash-specific load */
+  squashAcwr?: DisciplineAcwr
 }
 
 // Fase 2: 4-state model. 'progress' = continuar familia con más exigencia,
@@ -303,6 +306,11 @@ export function deriveSquashProgressionState(context: SquashSelectionContext): S
     return { recommendation: 'deload', targetFamily, targetFocus, families }
   }
 
+  // ACWR override: objective load signal overrides heuristic (risk wins)
+  if (context.squashAcwr?.status === 'risk') {
+    return { recommendation: 'deload', targetFamily, targetFocus, families }
+  }
+
   if (!targetFamily) {
     return { recommendation: 'progress', targetFamily, targetFocus, families }
   }
@@ -319,6 +327,11 @@ export function deriveSquashProgressionState(context: SquashSelectionContext): S
   // Rotate: same family used in consecutive sessions or overused (3+ times in last 6)
   if (appearedConsecutive || (recentFamily && recentFamily.frequency >= 3)) {
     return { recommendation: 'rotate', targetFamily, targetFocus, families }
+  }
+
+  // ACWR undertrained: nudge to progress when load is low and no rotation signal
+  if (context.squashAcwr?.status === 'undertrained' && context.fatigueLevel <= 5) {
+    return { recommendation: 'progress', targetFamily, targetFocus, families }
   }
 
   // Progress: family used once recently — add more exigence
@@ -474,19 +487,25 @@ export function buildProgressedDrillNotes(
 
 export function summarizeSquashProgression(context: SquashSelectionContext): string {
   const state = deriveSquashProgressionState(context)
+  const acwrLabel = context.squashAcwr?.ratio != null
+    ? ` ACWR squash: ${context.squashAcwr.ratio.toFixed(2)} (${context.squashAcwr.status}).`
+    : context.squashAcwr?.status
+      ? ` ACWR squash: ${context.squashAcwr.status}.`
+      : ''
+
   if (!state.targetFamily) {
-    return 'Sin historia suficiente: usar variacion contextual limpia.'
+    return `Sin historia suficiente: usar variacion contextual limpia.${acwrLabel}`
   }
 
   switch (state.recommendation) {
     case 'deload':
-      return `Descargar familia ${state.targetFamily} — variante controlada sin escalar carga.`
+      return `Descargar familia ${state.targetFamily} — variante controlada sin escalar carga.${acwrLabel}`
     case 'progress':
-      return `Continuar familia ${state.targetFamily} con progresion (mas exigencia, constraint o ritmo).`
+      return `Continuar familia ${state.targetFamily} con progresion (mas exigencia, constraint o ritmo).${acwrLabel}`
     case 'hold':
-      return `Mantener familia ${state.targetFamily} — consolidar sin agregar estimulo nuevo.`
+      return `Mantener familia ${state.targetFamily} — consolidar sin agregar estimulo nuevo.${acwrLabel}`
     case 'rotate':
-      return `Rotar desde familia ${state.targetFamily} — cambiar foco para evitar sobreestimulo.`
+      return `Rotar desde familia ${state.targetFamily} — cambiar foco para evitar sobreestimulo.${acwrLabel}`
   }
 }
 

@@ -9,6 +9,7 @@ import { ROUTES } from '../constants/routes'
 import { getMatchSessions } from '../db/queries'
 import type { Session } from '../types'
 import { getAthleteProgressionInsights, type AthleteProgressionInsights } from '../services/progressionInsights'
+import type { DisciplineAcwr } from '../services/loadAnalytics'
 
 type Tab = 'semanas' | 'partidos' | 'progresion'
 
@@ -364,7 +365,10 @@ function ProgresionView() {
     return <div className="text-center py-12"><p className="text-sm text-ink-muted">Cargando progresión...</p></div>
   }
 
-  if (insights.matches.length === 0 && insights.strength.length === 0) {
+  const hasSquashLoad = insights.squashWeeklyLoads.some((w) => w.totalLoad > 0)
+  const hasStrengthLoad = insights.strengthWeeklyLoads.some((w) => w.totalLoad > 0)
+
+  if (insights.matches.length === 0 && insights.strength.length === 0 && !hasSquashLoad && !hasStrengthLoad) {
     return (
       <div className="text-center py-12">
         <Activity size={28} className="text-ink-faint mx-auto mb-3" />
@@ -387,6 +391,30 @@ function ProgresionView() {
              {insights.strengthRecommendation && (
                 <RecommendationCard title="Fuerza" rec={insights.strengthRecommendation} icon={<Dumbbell size={16}/>} />
              )}
+          </div>
+        </div>
+      )}
+
+      {(hasSquashLoad || hasStrengthLoad) && (
+        <div className="space-y-3">
+          <h3 className="text-xs font-semibold text-ink-muted uppercase tracking-wider">Carga Semanal</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {hasSquashLoad && (
+              <LoadTrendCard
+                title="Squash"
+                icon={<Trophy size={16} />}
+                loads={insights.squashWeeklyLoads}
+                acwr={insights.squashAcwr}
+              />
+            )}
+            {hasStrengthLoad && (
+              <LoadTrendCard
+                title="Fuerza"
+                icon={<Dumbbell size={16} />}
+                loads={insights.strengthWeeklyLoads}
+                acwr={insights.strengthAcwr}
+              />
+            )}
           </div>
         </div>
       )}
@@ -438,6 +466,90 @@ function ProgresionView() {
           />
         )}
       </div>
+    </div>
+  )
+}
+
+function getAcwrStatusColor(status: DisciplineAcwr['status']): string {
+  if (status === 'optimal') return 'text-emerald-400 bg-emerald-400/10'
+  if (status === 'risk') return 'text-rose-400 bg-rose-400/10'
+  if (status === 'undertrained') return 'text-amber-400 bg-amber-400/10'
+  return 'text-ink-muted bg-surface-hover'
+}
+
+function getAcwrStatusLabel(status: DisciplineAcwr['status']): string {
+  if (status === 'optimal') return 'Óptima'
+  if (status === 'risk') return 'Elevada'
+  if (status === 'undertrained') return 'Baja'
+  return 'Insuf.'
+}
+
+function LoadTrendCard({
+  title,
+  icon,
+  loads,
+  acwr,
+}: {
+  title: string
+  icon: React.ReactNode
+  loads: Array<{ weekStart: string; totalLoad: number; sessionsCount: number }>
+  acwr: DisciplineAcwr
+}) {
+  const displayLoads = [...loads].reverse().slice(-4)
+  const maxLoad = Math.max(...displayLoads.map((w) => w.totalLoad), 1)
+  const currentWeek = loads[0]
+
+  return (
+    <div className="bg-surface-card border border-surface-border rounded-xl p-4 flex flex-col gap-3">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <span className="text-brand-light">{icon}</span>
+          <span className="text-sm font-semibold text-ink uppercase tracking-wider">{title}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          {acwr.ratio != null && (
+            <span className="text-xs text-ink-muted tabular-nums">{acwr.ratio.toFixed(2)}</span>
+          )}
+          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider ${getAcwrStatusColor(acwr.status)}`}>
+            {getAcwrStatusLabel(acwr.status)}
+          </span>
+        </div>
+      </div>
+
+      {displayLoads.length > 0 && (
+        <div className="flex items-end gap-1.5 h-14">
+          {displayLoads.map((week, index) => {
+            const pct = (week.totalLoad / maxLoad) * 100
+            const isCurrentWeek = index === displayLoads.length - 1
+            return (
+              <div key={week.weekStart} className="flex-1 flex flex-col items-center gap-1">
+                <div className="w-full flex items-end" style={{ height: '40px' }}>
+                  <div
+                    className={`w-full rounded-sm transition-all ${isCurrentWeek ? 'bg-brand/70' : 'bg-brand/30'}`}
+                    style={{ height: `${Math.max(pct, week.totalLoad > 0 ? 12 : 4)}%` }}
+                  />
+                </div>
+                <span className="text-[9px] text-ink-faint tabular-nums">
+                  {index === displayLoads.length - 1 ? 'Actual' : `S${index - displayLoads.length + 1}`}
+                </span>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {currentWeek && currentWeek.sessionsCount > 0 && (
+        <p className="text-xs text-ink-faint">
+          {currentWeek.sessionsCount} {currentWeek.sessionsCount === 1 ? 'sesión' : 'sesiones'} esta semana
+        </p>
+      )}
+
+      {acwr.status === 'risk' && (
+        <p className="text-xs text-rose-400">Carga elevada — considera reducir volumen esta semana.</p>
+      )}
+      {acwr.status === 'undertrained' && (
+        <p className="text-xs text-amber-400">Carga baja — hay margen para progresar.</p>
+      )}
     </div>
   )
 }

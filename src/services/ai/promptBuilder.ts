@@ -276,6 +276,7 @@ function getSquashSelectionContext(context: ChatContext): SquashSelectionContext
     goal,
     competitionSoon,
     historicalSessions,
+    squashAcwr: context.loadAnalytics?.squashAcwr,
   }
 }
 
@@ -326,6 +327,7 @@ function getStrengthSelectionContext(context: ChatContext): StrengthContext {
     competitionSoon,
     daysToCompetition,
     historicalSessions,
+    strengthAcwr: context.loadAnalytics?.strengthAcwr,
   }
 }
 
@@ -1273,6 +1275,12 @@ function buildDynamicSquashSelectionSection(
     } · objetivo "${selectionContext.goal}"`,
   )
   lines.push(`Continuidad: ${summarizeSquashProgression(selectionContext)}`)
+  if (selectionContext.squashAcwr?.ratio != null) {
+    lines.push(`Squash ACWR: ${selectionContext.squashAcwr.ratio.toFixed(2)} (${selectionContext.squashAcwr.status})`)
+  }
+  if (selectionContext.squashAcwr?.status === 'risk') {
+    lines.push('Squash: carga elevada — progression intent ajustado a deload.')
+  }
   lines.push(`Drills sugeridos ahora: ${formatSelectedSquashDrills(selection.drills)}`)
   lines.push(`Formato compatible actual: ${stringifySquashDrills(selection.drills)}`)
   lines.push('Usa esta seleccion como base prioritaria para las sesiones squash nuevas o actualizadas.')
@@ -1302,6 +1310,12 @@ function buildDynamicStrengthSelectionSection(
     }${selectionContext.primarySport ? ` · deporte principal ${selectionContext.primarySport}` : ''}`,
   )
   lines.push(`Continuidad: ${summarizeStrengthProgression(selectionContext)}`)
+  if (selectionContext.strengthAcwr?.ratio != null) {
+    lines.push(`Fuerza ACWR: ${selectionContext.strengthAcwr.ratio.toFixed(2)} (${selectionContext.strengthAcwr.status})`)
+  }
+  if (selectionContext.strengthAcwr?.status === 'risk') {
+    lines.push('Fuerza: carga elevada — progression intent ajustado a deload.')
+  }
   lines.push(`Ejercicios sugeridos ahora: ${formatSelectedStrengthExercises(selection.exercises)}`)
   lines.push(`Formato compatible actual: ${stringifyStrengthExercises(selection.exercises)}`)
   lines.push('Si fuerza es principal, esta seleccion manda como sesion real de pesas y no como complemento generico.')

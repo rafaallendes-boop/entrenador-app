@@ -16,6 +16,15 @@ import {
   type StrengthProgressionIntent,
   type StrengthSportProfile,
 } from './training/strengthSelector'
+import {
+  calculateSquashAcwr,
+  calculateStrengthAcwr,
+  getSquashWeeklyLoads,
+  getStrengthWeeklyLoads,
+  type DisciplineAcwr,
+  type SquashWeeklyLoad,
+  type StrengthWeeklyLoad,
+} from './loadAnalytics'
 
 const STRENGTH_PRIORITY_ORDER = [
   'sentadilla',
@@ -83,6 +92,10 @@ export interface AthleteProgressionInsights {
   }
   matches: SquashMatchHistoryItem[]
   strength: StrengthExerciseProgression[]
+  squashAcwr: DisciplineAcwr
+  strengthAcwr: DisciplineAcwr
+  squashWeeklyLoads: SquashWeeklyLoad[]
+  strengthWeeklyLoads: StrengthWeeklyLoad[]
 }
 
 function getSquashRecommendationMessage(
@@ -346,6 +359,7 @@ function getNextCompetitionSessions(
 function buildSquashContext(
   profile: AthleteProfile | undefined,
   completedSessions: Session[],
+  squashAcwr: DisciplineAcwr,
   upcomingCompetition?: Session,
   fatigueLevel = 4,
 ): SquashSelectionContext {
@@ -356,12 +370,14 @@ function buildSquashContext(
     goal: upcomingCompetition?.title ?? profile?.mainGoal ?? 'mejorar squash con continuidad',
     competitionSoon: Boolean(upcomingCompetition && diffDays(todayISO(), upcomingCompetition.date) <= 4),
     historicalSessions: completedSessions,
+    squashAcwr,
   }
 }
 
 function buildStrengthContext(
   profile: AthleteProfile | undefined,
   completedSessions: Session[],
+  strengthAcwr: DisciplineAcwr,
   upcomingCompetition: Session | undefined,
   fatigueLevel: number,
 ): StrengthContext {
@@ -377,6 +393,7 @@ function buildStrengthContext(
     competitionSoon: Boolean(upcomingCompetition && diffDays(todayISO(), upcomingCompetition.date) <= 4),
     daysToCompetition: upcomingCompetition ? diffDays(todayISO(), upcomingCompetition.date) : undefined,
     historicalSessions: completedSessions,
+    strengthAcwr,
   }
 }
 
@@ -402,8 +419,13 @@ export async function getAthleteProgressionInsights(): Promise<AthleteProgressio
   const matchHistory = getSquashMatchHistory(completedSessions, 10)
   const strengthProgression = getStrengthProgression(completedSessions, 4, 4)
 
+  const squashAcwr = calculateSquashAcwr(completedSessions)
+  const strengthAcwr = calculateStrengthAcwr(completedSessions)
+  const squashWeeklyLoads = getSquashWeeklyLoads(completedSessions)
+  const strengthWeeklyLoads = getStrengthWeeklyLoads(completedSessions)
+
   const enabledSports = getEnabledSports(profile)
-  const squashContext = buildSquashContext(profile, completedSessions, nextSquashCompetition, fatigueLevel)
+  const squashContext = buildSquashContext(profile, completedSessions, squashAcwr, nextSquashCompetition, fatigueLevel)
   const squashProgressionState = deriveSquashProgressionState(squashContext)
   const squashRecommendation = enabledSports.includes('squash') && squashProgressionState.targetFamily
     ? {
@@ -415,7 +437,7 @@ export async function getAthleteProgressionInsights(): Promise<AthleteProgressio
       }
     : undefined
 
-  const strengthContext = buildStrengthContext(profile, completedSessions, nextCompetition, fatigueLevel)
+  const strengthContext = buildStrengthContext(profile, completedSessions, strengthAcwr, nextCompetition, fatigueLevel)
   const strengthProgressionState = deriveStrengthProgressionState(strengthContext)
   const strengthRecommendation = enabledSports.includes('strength') && strengthProgressionState.mainPattern
     ? {
@@ -432,5 +454,9 @@ export async function getAthleteProgressionInsights(): Promise<AthleteProgressio
     strengthRecommendation,
     matches: matchHistory,
     strength: strengthProgression,
+    squashAcwr,
+    strengthAcwr,
+    squashWeeklyLoads,
+    strengthWeeklyLoads,
   }
 }
