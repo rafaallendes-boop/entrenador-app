@@ -540,6 +540,7 @@ function parseCoachProposal(value: unknown, index: number): CoachProposal {
     chatMessageId: optionalString(row.chatMessageId, `coachProposals[${index}].chatMessageId`),
     message: requireString(row.message, `coachProposals[${index}].message`),
     actions: parseCoachActions(row.actions, `coachProposals[${index}].actions`),
+    planSummary: optionalPlanGenerationSummary(row.planSummary, `coachProposals[${index}].planSummary`),
     status: requireEnum(row.status, PROPOSAL_STATUSES, `coachProposals[${index}].status`) as CoachProposal['status'],
     createdAt: requireFiniteNumber(row.createdAt, `coachProposals[${index}].createdAt`),
     resolvedAt: optionalFiniteNumber(row.resolvedAt, `coachProposals[${index}].resolvedAt`),
@@ -629,6 +630,42 @@ function optionalExercises(value: unknown, path: string): Session['exercises'] {
       durationSec: optionalFiniteNumber(row.durationSec, `${path}[${index}].durationSec`),
     }
   })
+}
+
+function optionalPlanGenerationSummary(value: unknown, path: string): CoachProposal['planSummary'] {
+  if (value == null) return undefined
+  const row = ensureRecord(value, path)
+
+  const sessionsBySport = ensureRecord(row.sessionsBySport ?? {}, `${path}.sessionsBySport`)
+  const estimatedLoadBySport = ensureRecord(row.estimatedLoadBySport ?? {}, `${path}.estimatedLoadBySport`)
+  const intentsBySport = ensureRecord(row.intentsBySport ?? {}, `${path}.intentsBySport`)
+
+  return {
+    allowedSports: optionalEnumArray(row.allowedSports, SUPPORTED_SPORTS, `${path}.allowedSports`) as SupportedSport[] ?? [],
+    excludedSports: optionalEnumArray(row.excludedSports, SUPPORTED_SPORTS, `${path}.excludedSports`) as SupportedSport[] ?? [],
+    sessionsBySport: Object.fromEntries(
+      Object.entries(sessionsBySport).map(([key, item]) => [
+        key,
+        requireFiniteNumber(item, `${path}.sessionsBySport.${key}`),
+      ]),
+    ) as NonNullable<CoachProposal['planSummary']>['sessionsBySport'],
+    estimatedLoadBySport: Object.fromEntries(
+      Object.entries(estimatedLoadBySport).map(([key, item]) => [
+        key,
+        requireFiniteNumber(item, `${path}.estimatedLoadBySport.${key}`),
+      ]),
+    ) as NonNullable<CoachProposal['planSummary']>['estimatedLoadBySport'],
+    intentsBySport: Object.fromEntries(
+      Object.entries(intentsBySport).map(([key, item]) => [
+        key,
+        requireEnum(item, new Set(['progress', 'hold', 'rotate', 'deload', 'unknown']), `${path}.intentsBySport.${key}`),
+      ]),
+    ) as NonNullable<CoachProposal['planSummary']>['intentsBySport'],
+    weeklyIntent: requireEnum(row.weeklyIntent, new Set(['progress', 'hold', 'rotate', 'deload', 'unknown']), `${path}.weeklyIntent`) as NonNullable<CoachProposal['planSummary']>['weeklyIntent'],
+    weeklyGoalSummary: requireString(row.weeklyGoalSummary, `${path}.weeklyGoalSummary`),
+    validationStatus: requireEnum(row.validationStatus, new Set(['ok', 'warning']), `${path}.validationStatus`) as NonNullable<CoachProposal['planSummary']>['validationStatus'],
+    validationIssues: optionalStringArray(row.validationIssues, `${path}.validationIssues`) ?? [],
+  }
 }
 
 function optionalCoachExercises(value: unknown, path: string): CoachAction['exercises'] {

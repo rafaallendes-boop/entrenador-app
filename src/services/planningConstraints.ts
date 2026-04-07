@@ -1,7 +1,7 @@
 import type { AthleteProfile, CoachAction, CoachSessionProposal, PlanWizardConfig, SessionType, SupportedSport } from '../types'
 import { getEnabledSports, getPrimarySportNormalized, normalizeSport } from '../utils/athlete'
 
-const RESTRICTED_PLANNING_SPORTS: SupportedSport[] = ['squash', 'running', 'strength', 'cycling']
+export const RESTRICTED_PLANNING_SPORTS: SupportedSport[] = ['squash', 'running', 'strength', 'cycling']
 
 function getPlanGoalEventSport(profile: AthleteProfile | null | undefined): SupportedSport | undefined {
   if (!profile?.goalEvents || profile.goalEvents.length === 0) return undefined

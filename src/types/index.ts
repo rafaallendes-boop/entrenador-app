@@ -463,11 +463,27 @@ export interface CoachAction {
   cooldown?: GeneratedProtocol
 }
 
+export type PlanValidationStatus = 'ok' | 'warning'
+export type WeeklyPlanIntent = 'progress' | 'hold' | 'rotate' | 'deload' | 'unknown'
+
+export interface PlanGenerationSummary {
+  allowedSports: SupportedSport[]
+  excludedSports: SupportedSport[]
+  sessionsBySport: Partial<Record<SupportedSport, number>>
+  estimatedLoadBySport: Partial<Record<SupportedSport, number>>
+  intentsBySport: Partial<Record<SupportedSport, WeeklyPlanIntent>>
+  weeklyIntent: WeeklyPlanIntent
+  weeklyGoalSummary: string
+  validationStatus: PlanValidationStatus
+  validationIssues: string[]
+}
+
 export interface CoachProposal {
   id: string
   chatMessageId?: string   // link to the chat message that generated this
   message: string          // human-readable summary of the proposal
   actions: CoachAction[]
+  planSummary?: PlanGenerationSummary
   status: 'pending' | 'accepted' | 'rejected' | 'partial'
   createdAt: number
   resolvedAt?: number

@@ -8,6 +8,7 @@ import * as syncService from '../services/syncService'
 import { toISO, fromISO, getWeekStart } from '../utils/date'
 import { ensureSessionProtocols, generateDefaultProtocols } from '../services/trainingProtocols'
 import { useCoachMemoryStore } from './useCoachMemoryStore'
+import { buildPlanGenerationSummary } from '../services/planGenerationSummary'
 import { filterCoachSessionsToAllowedSports, isSessionTypeAllowedForPlan, sanitizeCoachActionsForPlan } from '../services/planningConstraints'
 
 interface ApplyCoachActionResult {
@@ -40,11 +41,18 @@ export const useCoachActionsStore = create<CoachActionsState>((set, get) => ({
   addProposal: async (message, actions, chatMessageId) => {
     const athleteProfile = useCoachMemoryStore.getState().athleteProfile
     const sanitized = sanitizeCoachActionsForPlan(actions, athleteProfile)
+    const historicalSessions = await db.sessions.toArray()
+    const planSummary = buildPlanGenerationSummary({
+      athleteProfile,
+      actions: sanitized.actions,
+      historicalSessions,
+    })
     const proposal: CoachProposal = {
       id: uuid(),
       chatMessageId,
       message,
       actions: sanitized.actions,
+      planSummary,
       status: 'pending',
       createdAt: Date.now(),
     }
