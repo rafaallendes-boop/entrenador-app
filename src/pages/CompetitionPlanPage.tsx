@@ -4,6 +4,7 @@ import { ChevronLeft, ChevronRight, Target, Sparkles, SkipForward, Trash2 } from
 import { ROUTES } from '../constants/routes'
 import { useCoachMemoryStore } from '../store/useCoachMemoryStore'
 import { computeMacroPlan, getPrimaryGoalEvent, getPhaseLabel } from '../services/macroPlan'
+import { getPlanWizardDefaultComplementarySports } from '../services/planningConstraints'
 import { getEnabledSports } from '../utils/athlete'
 import { v4 as uuid } from '../utils/uuid'
 import type {
@@ -118,12 +119,9 @@ function getSportForEventType(eventType: GoalEventType | undefined): SupportedSp
 function initWizardState(
   existingEvent: ReturnType<typeof getPrimaryGoalEvent>,
   existingConfig: import('../types').PlanWizardConfig | undefined,
-  enabledSports: SupportedSport[],
 ): WizardState {
   const primarySportForEvent = getSportForEventType(existingEvent?.eventType)
-
-  const defaultComplementary = existingConfig?.complementarySports ??
-    enabledSports.filter(s => s !== primarySportForEvent)
+  const defaultComplementary = getPlanWizardDefaultComplementarySports(existingConfig, primarySportForEvent)
 
   return {
     eventType: existingEvent?.eventType,
@@ -269,7 +267,7 @@ export default function CompetitionPlanPage() {
   const [step, setStep] = useState(1)
   const [isSaving, setIsSaving] = useState(false)
   const [state, setState] = useState<WizardState>(() =>
-    initWizardState(existingEvent, existingConfig, enabledSports)
+    initWizardState(existingEvent, existingConfig)
   )
 
   const update = (patch: Partial<WizardState>) =>
@@ -332,7 +330,7 @@ export default function CompetitionPlanPage() {
         planWizardConfig: undefined,
         macroPlan: undefined,
       })
-      setState(initWizardState(undefined, undefined, enabledSports))
+      setState(initWizardState(undefined, undefined))
       setStep(1)
     } finally {
       setIsSaving(false)

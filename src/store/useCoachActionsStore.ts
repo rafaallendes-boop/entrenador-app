@@ -7,6 +7,8 @@ import { upsertWeekSummary } from '../db/queries'
 import * as syncService from '../services/syncService'
 import { toISO, fromISO, getWeekStart } from '../utils/date'
 import { ensureSessionProtocols, generateDefaultProtocols } from '../services/trainingProtocols'
+import { useCoachMemoryStore } from './useCoachMemoryStore'
+import { filterCoachSessionsToAllowedSports, isSessionTypeAllowedForPlan, sanitizeCoachActionsForPlan } from '../services/planningConstraints'
 
 interface ApplyCoachActionResult {
   warnings: string[]
@@ -36,11 +38,13 @@ export const useCoachActionsStore = create<CoachActionsState>((set, get) => ({
   },
 
   addProposal: async (message, actions, chatMessageId) => {
+    const athleteProfile = useCoachMemoryStore.getState().athleteProfile
+    const sanitized = sanitizeCoachActionsForPlan(actions, athleteProfile)
     const proposal: CoachProposal = {
       id: uuid(),
       chatMessageId,
       message,
-      actions,
+      actions: sanitized.actions,
       status: 'pending',
       createdAt: Date.now(),
     }
@@ -112,6 +116,7 @@ async function applyCoachAction(
   store: ReturnType<typeof useTrainingStore.getState>
 ): Promise<ApplyCoachActionResult> {
   const warnings: string[] = []
+  const athleteProfile = useCoachMemoryStore.getState().athleteProfile
 
   switch (action.type) {
     case 'skip_session': {
@@ -146,6 +151,10 @@ async function applyCoachAction(
 
     case 'replace_session_type': {
       if (!action.sessionId || !action.newType) throw new Error('sessionId + newType required')
+      if (!isSessionTypeAllowedForPlan(action.newType, athleteProfile)) {
+        warnings.push(`Se filtró replace_session_type a ${action.newType} por no estar permitido en la planificación actual.`)
+        break
+      }
       const id = resolveSessionId(action.sessionId, store)
       await store.updateSession(id, buildSessionTypePatch(action.newType))
       break
@@ -169,6 +178,10 @@ async function applyCoachAction(
     case 'add_session': {
       if (!action.targetDate || !action.sessionType || !action.title || !action.durationMin || !action.timeBlock) {
         throw new Error('add_session requires targetDate, sessionType, title, durationMin, timeBlock')
+      }
+      if (!isSessionTypeAllowedForPlan(action.sessionType, athleteProfile)) {
+        warnings.push(`Se filtró add_session de ${action.sessionType} por no estar permitido en la planificación actual.`)
+        break
       }
       await store.addSession(ensureSessionProtocols({
         date: action.targetDate,
@@ -202,13 +215,21 @@ async function applyCoachAction(
       if (!action.sessions || action.sessions.length === 0) {
         throw new Error('create_week requires sessions array')
       }
-      const collisions = await findCreateWeekCollisions(action.sessions)
+      const allowedSessions = filterCoachSessionsToAllowedSports(action.sessions, athleteProfile)
+      if (allowedSessions.length !== action.sessions.length) {
+        warnings.push('Se filtraron sesiones de deportes no permitidos antes de guardar la semana.')
+      }
+      if (allowedSessions.length === 0) {
+        warnings.push('No se guardó ninguna sesión porque todas pertenecían a deportes no permitidos para esta planificación.')
+        break
+      }
+      const collisions = await findCreateWeekCollisions(allowedSessions)
       if (collisions.length > 0) {
         warnings.push(
           `Colisiones detectadas: ${collisions.map(c => `${c.date} ${c.timeBlock}`).join(', ')}`
         )
       }
-      for (const s of action.sessions) {
+      for (const s of allowedSessions) {
         await store.addSession(ensureSessionProtocols({
           date: s.date,
           timeBlock: s.timeBlock,
@@ -235,7 +256,7 @@ async function applyCoachAction(
       }
       // Set week objectives if provided
       if (action.weekObjectives && action.weekObjectives.length > 0) {
-        const weekStart = toISO(getWeekStart(fromISO(action.sessions[0].date)))
+        const weekStart = toISO(getWeekStart(fromISO(allowedSessions[0].date)))
         await upsertWeekSummary(weekStart, { objectives: action.weekObjectives })
         // Reload week to pick up objectives in store
         await store.loadWeek(weekStart)
@@ -256,6 +277,10 @@ async function applyCoachAction(
       if (!current) throw new Error(`sessionId no encontrado: ${action.sessionId}`)
 
       const nextType = action.newType ?? current.type
+      if (!isSessionTypeAllowedForPlan(nextType, athleteProfile)) {
+        warnings.push(`Se filtró update_session a ${nextType} por no estar permitido en la planificación actual.`)
+        break
+      }
       const patch: Record<string, unknown> = buildSessionTypePatch(nextType)
       if (action.newTitle != null) patch.title = action.newTitle
       if (action.newObjective != null) patch.objective = action.newObjective

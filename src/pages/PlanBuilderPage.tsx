@@ -2,9 +2,10 @@ import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Card from '../components/ui/Card'
 import { ROUTES } from '../constants/routes'
+import { getAllowedPlanningSports } from '../services/planningConstraints'
 import { useCoachMemoryStore } from '../store/useCoachMemoryStore'
 import { getPrimaryGoalEvent } from '../services/macroPlan'
-import { getAthleteFirstName, getEnabledSports } from '../utils/athlete'
+import { getAthleteFirstName } from '../utils/athlete'
 
 const WEEK_OPTIONS = [
   { value: 'esta', label: 'Esta semana' },
@@ -22,7 +23,7 @@ export default function PlanBuilderPage() {
   const navigate = useNavigate()
   const athleteProfile = useCoachMemoryStore((state) => state.athleteProfile)
   const athleteFirstName = getAthleteFirstName(athleteProfile, 'atleta')
-  const enabledSports = getEnabledSports(athleteProfile)
+  const enabledSports = getAllowedPlanningSports(athleteProfile)
   const goalEvent = getPrimaryGoalEvent(athleteProfile)
 
   const [weekTarget, setWeekTarget] = useState<(typeof WEEK_OPTIONS)[number]['value']>('esta')
