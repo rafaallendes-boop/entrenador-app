@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { TrendingDown, TrendingUp, Weight, Zap, Wind, Dumbbell, Trophy, Swords } from 'lucide-react'
+import { TrendingDown, TrendingUp, Weight, Zap, Wind, Dumbbell, Trophy, Swords, Activity } from 'lucide-react'
 import { useTrainingStore } from '../store/useTrainingStore'
 import { useUIStore } from '../store/useUIStore'
 import { formatWeekRange, formatShortDate, fromISO } from '../utils/date'
@@ -8,8 +8,9 @@ import WeekSummaryCard from '../components/week/WeekSummaryCard'
 import { ROUTES } from '../constants/routes'
 import { getMatchSessions } from '../db/queries'
 import type { Session } from '../types'
+import { getAthleteProgressionInsights, type AthleteProgressionInsights } from '../services/progressionInsights'
 
-type Tab = 'semanas' | 'partidos'
+type Tab = 'semanas' | 'partidos' | 'progresion'
 
 export default function History() {
   const { allWeekSummaries, loadAllSummaries } = useTrainingStore()
@@ -53,6 +54,16 @@ export default function History() {
         >
           Partidos
         </button>
+        <button
+          onClick={() => setTab('progresion')}
+          className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+            tab === 'progresion'
+              ? 'bg-brand text-white'
+              : 'bg-surface-card text-ink-muted hover:text-ink'
+          }`}
+        >
+          Progresión
+        </button>
       </div>
 
       {tab === 'semanas' ? (
@@ -64,8 +75,10 @@ export default function History() {
             navigate(ROUTES.WEEK)
           }}
         />
-      ) : (
+      ) : tab === 'partidos' ? (
         <PartidosView sessions={matchSessions} />
+      ) : (
+        <ProgresionView />
       )}
     </div>
   )
@@ -274,7 +287,15 @@ function PartidosView({ sessions }: { sessions: Session[] }) {
   )
 }
 
-function MatchCard({ session }: { session: Session }) {
+function MatchCard({
+  session,
+  showRpe = false,
+  subtitle,
+}: {
+  session: Pick<Session, 'date' | 'title' | 'opponent' | 'gamesWon' | 'gamesLost' | 'matchResult' | 'location' | 'actualRpe'>
+  showRpe?: boolean
+  subtitle?: React.ReactNode
+}) {
   const hasResult = session.matchResult != null
   const hasScore = session.gamesWon != null && session.gamesLost != null
   const isWin = session.matchResult === 'win'
@@ -296,9 +317,15 @@ function MatchCard({ session }: { session: Session }) {
               {session.gamesWon}-{session.gamesLost}
             </span>
           )}
+          {showRpe && session.actualRpe != null && (
+            <span className="text-xs text-ink-faint font-medium">
+              RPE {session.actualRpe}
+            </span>
+          )}
           {session.location && (
             <span className="text-xs text-ink-faint break-words">{session.location}</span>
           )}
+          {subtitle}
           {!hasResult && (
             <span className="text-xs text-ink-faint italic">sin resultado</span>
           )}
@@ -316,6 +343,259 @@ function MatchCard({ session }: { session: Session }) {
           {isWin ? 'Victoria' : 'Derrota'}
         </span>
       )}
+    </div>
+  )
+}
+
+function ProgresionView() {
+  const [insights, setInsights] = useState<AthleteProgressionInsights | null>(null)
+  
+  useEffect(() => {
+    let cancelled = false
+    void getAthleteProgressionInsights().then((value) => {
+      if (!cancelled) setInsights(value)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+  
+  if (!insights) {
+    return <div className="text-center py-12"><p className="text-sm text-ink-muted">Cargando progresión...</p></div>
+  }
+
+  if (insights.matches.length === 0 && insights.strength.length === 0) {
+    return (
+      <div className="text-center py-12">
+        <Activity size={28} className="text-ink-faint mx-auto mb-3" />
+        <p className="text-ink-faint text-sm">Aún no hay datos suficientes de partidos o sesiones de fuerza.</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-6">
+      <ProgressionOverview insights={insights} />
+
+      {(insights.squashRecommendation || insights.strengthRecommendation) && (
+        <div className="space-y-3">
+          <h3 className="text-xs font-semibold text-ink-muted uppercase tracking-wider mb-2">Recomendaciones Actuales</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+             {insights.squashRecommendation && (
+                <RecommendationCard title="Squash" rec={insights.squashRecommendation} icon={<Trophy size={16}/>} />
+             )}
+             {insights.strengthRecommendation && (
+                <RecommendationCard title="Fuerza" rec={insights.strengthRecommendation} icon={<Dumbbell size={16}/>} />
+             )}
+          </div>
+        </div>
+      )}
+
+      <div className="space-y-3">
+        <div className="flex items-end justify-between gap-3 flex-wrap">
+          <div>
+            <h3 className="text-xs font-semibold text-ink-muted uppercase tracking-wider">Historial Squash</h3>
+            <p className="text-xs text-ink-faint mt-1">Últimos 10 partidos con resultado, score y RPE.</p>
+          </div>
+        </div>
+        {insights.matches.length > 0 ? (
+          insights.matches.map((match) => (
+            <MatchCard
+              key={match.id}
+              session={{
+                date: match.date,
+                title: match.title,
+                opponent: match.opponent,
+                gamesWon: match.gamesWon,
+                gamesLost: match.gamesLost,
+                matchResult: match.result,
+                actualRpe: match.actualRpe,
+              }}
+              showRpe
+            />
+          ))
+        ) : (
+          <EmptyInsightCard
+            title="Sin partidos recientes"
+            detail="Registra partidos o sesiones competitivas de squash para ver continuidad y confianza competitiva."
+          />
+        )}
+      </div>
+
+      <div className="space-y-3">
+        <div>
+          <h3 className="text-xs font-semibold text-ink-muted uppercase tracking-wider">Progresión de Fuerza</h3>
+          <p className="text-xs text-ink-faint mt-1">Últimas 4 exposiciones por familia, con tendencia.</p>
+        </div>
+        {insights.strength.length > 0 ? (
+          insights.strength.map((family) => (
+            <StrengthProgressCard key={family.exerciseKey} family={family} />
+          ))
+        ) : (
+          <EmptyInsightCard
+            title="Sin sesiones de fuerza suficientes"
+            detail="Completa sesiones con ejercicios y carga para ver progresión por patrón principal."
+          />
+        )}
+      </div>
+    </div>
+  )
+}
+
+type Recommendation = NonNullable<AthleteProgressionInsights['squashRecommendation']> | NonNullable<AthleteProgressionInsights['strengthRecommendation']>
+
+function RecommendationCard({ title, rec, icon }: { title: string, rec: Recommendation, icon: React.ReactNode }) {
+  const getStatusColor = (status: string) => {
+    if (status === 'progress') return 'text-emerald-400 bg-emerald-400/10'
+    if (status === 'rotate') return 'text-amber-400 bg-amber-400/10'
+    if (status === 'deload') return 'text-rose-400 bg-rose-400/10'
+    return 'text-ink-muted bg-surface-hover' // hold
+  }
+  const getStatusLabel = (status: string) => {
+    if (status === 'progress') return 'En progresión'
+    if (status === 'rotate') return 'Rotar estímulo'
+    if (status === 'deload') return 'Descarga'
+    return 'Mantener' 
+  }
+  return (
+    <div className="bg-surface-card border border-surface-border rounded-xl p-4 flex flex-col gap-2">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+           <span className="text-brand-light">{icon}</span>
+           <span className="text-sm font-semibold text-ink uppercase tracking-wider">{title}</span>
+        </div>
+        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider ${getStatusColor(rec.status)}`}>
+           {getStatusLabel(rec.status)}
+        </span>
+      </div>
+      <p className="text-sm text-ink-muted mt-1">{rec.message}</p>
+    </div>
+  )
+}
+
+function StrengthProgressCard({
+  family,
+}: {
+  family: AthleteProgressionInsights['strength'][number]
+}) {
+  const maxWeight = Math.max(...family.entries.map((entry) => entry.weight ?? 0), 1)
+
+  return (
+    <div className="bg-surface-card border border-surface-border rounded-xl p-4">
+      <div className="flex items-start justify-between gap-3 mb-3 flex-wrap">
+        <p className="text-sm font-semibold text-ink capitalize flex items-center gap-2">
+          <Activity size={14} className="text-ink-muted" />
+          {family.exerciseLabel}
+        </p>
+        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider ${
+          family.trend === 'up'
+            ? 'text-emerald-400 bg-emerald-400/10'
+            : family.trend === 'flat'
+              ? 'text-ink-muted bg-surface-hover'
+              : family.trend === 'mixed'
+                ? 'text-amber-400 bg-amber-400/10'
+                : 'text-sky-400 bg-sky-400/10'
+        }`}>
+          {family.trendLabel}
+        </span>
+      </div>
+      <div className="flex gap-2 overflow-x-auto pb-2 -mb-2 hide-scrollbar">
+        {family.entries.map((entry, index) => (
+          <div key={index} className="flex-shrink-0 bg-surface-hover rounded-lg px-3 py-2 flex flex-col min-w-[96px]">
+            <span className="text-[10px] text-ink-muted mb-1">{formatShortDate(fromISO(entry.date))}</span>
+            <div className="h-1.5 rounded-full bg-surface-border overflow-hidden mb-2">
+              <div
+                className={`h-full rounded-full ${
+                  family.trend === 'up'
+                    ? 'bg-emerald-400'
+                    : family.trend === 'mixed'
+                      ? 'bg-amber-400'
+                      : family.trend === 'flat'
+                        ? 'bg-ink-faint'
+                        : 'bg-sky-400'
+                }`}
+                style={{ width: `${Math.max(((entry.weight ?? 0) / maxWeight) * 100, entry.weight != null ? 18 : 8)}%` }}
+              />
+            </div>
+            <span className="text-sm font-medium text-ink">{entry.sets}×{entry.reps}</span>
+            {entry.weight != null ? (
+              <span className="text-xs text-brand-light mt-0.5">@ {entry.weight}kg</span>
+            ) : (
+              <span className="text-xs text-ink-faint mt-0.5">sin kg</span>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function EmptyInsightCard({ title, detail }: { title: string; detail: string }) {
+  return (
+    <div className="bg-surface-card border border-surface-border rounded-xl px-4 py-4">
+      <p className="text-sm font-medium text-ink">{title}</p>
+      <p className="text-xs text-ink-faint mt-1 leading-relaxed">{detail}</p>
+    </div>
+  )
+}
+
+function ProgressionOverview({ insights }: { insights: AthleteProgressionInsights }) {
+  const recommendationStatuses = [
+    insights.squashRecommendation?.status,
+    insights.strengthRecommendation?.status,
+  ].filter((status): status is NonNullable<Recommendation['status']> => Boolean(status))
+
+  const progressingCount = recommendationStatuses.filter((status) => status === 'progress').length
+  const rotatingCount = recommendationStatuses.filter((status) => status === 'rotate').length
+  const deloadCount = recommendationStatuses.filter((status) => status === 'deload').length
+
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <OverviewStat
+        label="Progresando"
+        value={progressingCount}
+        detail="disciplinas listas para progresar"
+        tone="emerald"
+      />
+      <OverviewStat
+        label="Rotación"
+        value={rotatingCount}
+        detail="disciplinas que piden variar"
+        tone="amber"
+      />
+      <OverviewStat
+        label="Descarga"
+        value={deloadCount}
+        detail="disciplinas que conviene proteger"
+        tone="rose"
+      />
+    </div>
+  )
+}
+
+function OverviewStat({
+  label,
+  value,
+  detail,
+  tone,
+}: {
+  label: string
+  value: number
+  detail: string
+  tone: 'emerald' | 'amber' | 'rose'
+}) {
+  const toneClass =
+    tone === 'emerald'
+      ? 'text-emerald-400 bg-emerald-400/10 border-emerald-400/20'
+      : tone === 'amber'
+        ? 'text-amber-400 bg-amber-400/10 border-amber-400/20'
+        : 'text-rose-400 bg-rose-400/10 border-rose-400/20'
+
+  return (
+    <div className={`rounded-xl border px-4 py-3 ${toneClass}`}>
+      <p className="text-[10px] font-semibold uppercase tracking-wider">{label}</p>
+      <p className="text-2xl font-bold mt-1">{value}</p>
+      <p className="text-[11px] mt-1 opacity-80">{detail}</p>
     </div>
   )
 }

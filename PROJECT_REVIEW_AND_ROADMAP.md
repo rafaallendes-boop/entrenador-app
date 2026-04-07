@@ -382,8 +382,8 @@ Antes de cobrar, estas piezas tienen que sentirse fuertes:
 | Offline básico confiable | En progreso | Recovery automático y mejor clasificación de errores ya implementados; falta validación en uso real |
 | Nutrición personalizada al perfil | OK | Hidratación por peso, proteína por carga del día, notas dietéticas del perfil visibles en UI |
 | ACWR / indicador de riesgo de carga | OK | Calculado en loadAnalytics.ts, visible en dashboard con semáforo (verde/amarillo/rojo), enviado al prompt del coach |
-| Progresión multi-semana Fase 2 (squash/fuerza) | OK | 4-state model en squash y fuerza, detección de sobreentreno, señales ricas al coach |
-| Analytics de progresión de fuerza | En progreso | Data disponible en Dexie, señales de progresión en prompt; falta UI de historial/gráfico |
+| Progresión multi-semana Fase 2 (squash/fuerza) | OK | 4-state model en squash y fuerza, UI de insights e historial, detección de sobreentreno, señales al coach y mensajes visibles para el atleta |
+| Analytics de progresión de fuerza | OK | UI añadida en History, con familias principales, últimas 4 exposiciones y tendencia simple visible |
 | Progresión de running cuantitativa por volumen | OK | Tracking semanal de running, `runningAcwr` explícito, integración en selector, prompt y dashboard; falta refinamiento fino de ritmos/tests/UI histórica |
 | Protocolos warmup/cooldown en UX | En progreso | Motor implementado, UX en DayDetail; falta guardar favoritos por disciplina |
 | Plan de competencia (wizard) | OK | Wizard 7 pasos implementado; GoalEvent movido de Ajustes al wizard; PlanWizardConfig persistido; prompt rico al coach |
@@ -402,10 +402,11 @@ Antes de cobrar, estas piezas tienen que sentirse fuertes:
    - backlog: extender el mismo patrón cuantitativo a squash/fuerza, validar umbrales en uso real, tests unitarios y UI histórica más rica
    - **impacto:** atleta hybrid (squash + running) ya puede ver señal separada cuando solo running está sobrecargado
 
-3. **UI de progresión multi-semana visible para el atleta**
-   - historial de partidos de squash en tab de analytics (últimos 10 con resultado, RPE, oponente)
-   - gráfico de progresión de carga por ejercicio (últimas 4 sesiones: ejercicio, series, reps, carga)
-   - recomendación clara: "familia drive_control en progresion" vs "patrón squat necesita rotación"
+3. **UI de progresión multi-semana visible para el atleta** ✓ implementado
+   - ✓ historial de partidos de squash en tab de analytics, con resultado, score y RPE si existe
+   - ✓ progresión de fuerza en UI simplificada, curada a familias principales
+   - ✓ recomendaciones claras basadas en estado (progress/hold/rotate/deload) y expresadas en lenguaje visible para el atleta
+   - ✓ UI y prompt comparten la misma capa base de insights para reducir divergencia
    - **impacto:** atleta entiende la continuidad del entrenamiento, genera confianza en el coach
 
 **Criterio para beta privada**

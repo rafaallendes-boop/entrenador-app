@@ -96,25 +96,7 @@ function getHistoricalSessions(context: ChatContext): Session[] {
   )
 }
 
-function normalizeExerciseFamily(name: string): { key: string; label: string } {
-  const normalized = name.trim().toLowerCase()
-
-  if (normalized.includes('sentadilla frontal')) return { key: 'sentadilla', label: 'Sentadilla' }
-  if (normalized.includes('sentadilla')) return { key: 'sentadilla', label: 'Sentadilla' }
-  if (normalized.includes('back squat')) return { key: 'sentadilla', label: 'Sentadilla' }
-  if (normalized.includes('press banca') || normalized.includes('bench')) return { key: 'press banca', label: 'Press banca' }
-  if (normalized.includes('peso muerto') || normalized.includes('deadlift') || normalized === 'rdl') return { key: 'peso muerto', label: 'Peso muerto' }
-  if (normalized.includes('press hombro') || normalized.includes('overhead press')) return { key: 'press hombro', label: 'Press hombro' }
-  if (normalized.includes('remo')) return { key: 'remo', label: 'Remo' }
-  if (normalized.includes('hip thrust')) return { key: 'hip thrust', label: 'Hip thrust' }
-  if (normalized.includes('lunge') || normalized.includes('zancada')) return { key: 'lunge', label: 'Lunge' }
-
-  const compact = normalized.replace(/\s+/g, ' ')
-  return {
-    key: compact,
-    label: compact.charAt(0).toUpperCase() + compact.slice(1),
-  }
-}
+import { getSquashMatchHistory, getStrengthProgression } from '../progressionInsights'
 
 function mapMacroPhaseToSquashPhase(phase: MacroPlanPhase | undefined): SquashSelectionPhase {
   switch (phase) {
@@ -1247,33 +1229,25 @@ function buildSquashMatchHistorySection(context: ChatContext): string {
   const enabledSports = getEnabledSports(context.athleteProfile)
   if (!enabledSports.includes('squash')) return ''
 
-  const completedMatches = getHistoricalSessions(context)
-    .filter(s =>
-      s.type === 'squash' &&
-      (s.subtype === 'match' || s.subtype === 'competitive') &&
-      (s.status === 'completed' || s.status === 'adjusted'),
-    )
-    .sort((a, b) => b.date.localeCompare(a.date))
-    .slice(0, 6)
+  const completedMatches = getSquashMatchHistory(getHistoricalSessions(context), 6)
 
   if (completedMatches.length === 0) return ''
 
   const lines: string[] = ['HISTORIAL DE PARTIDOS RECIENTES (squash)']
 
-  for (const s of completedMatches) {
-    const parts: string[] = [s.date]
-    if (s.opponent) parts.push(`vs ${s.opponent}`)
-    if (s.matchResult) parts.push(s.matchResult === 'win' ? '✓ ganó' : '✗ perdió')
-    if (s.gamesWon != null || s.gamesLost != null) {
-      parts.push(`${s.gamesWon ?? '?'}-${s.gamesLost ?? '?'} games`)
+  for (const match of completedMatches) {
+    const parts: string[] = [match.date]
+    if (match.opponent) parts.push(`vs ${match.opponent}`)
+    if (match.result) parts.push(match.result === 'win' ? '✓ ganó' : '✗ perdió')
+    if (match.gamesWon != null || match.gamesLost != null) {
+      parts.push(`${match.gamesWon ?? '?'}-${match.gamesLost ?? '?'} games`)
     }
-    const rpe = s.actualRpe != null ? ` · RPE real ${s.actualRpe}` : ''
-    const notes = s.completionNotes ? ` · "${s.completionNotes.slice(0, 60)}"` : ''
-    lines.push(`· ${parts.join(' · ')}${rpe}${notes}`)
+    const rpe = match.actualRpe != null ? ` · RPE real ${match.actualRpe}` : ''
+    lines.push(`· ${parts.join(' · ')}${rpe}`)
   }
 
-  const wins = completedMatches.filter(s => s.matchResult === 'win').length
-  const losses = completedMatches.filter(s => s.matchResult === 'loss').length
+  const wins = completedMatches.filter((match) => match.result === 'win').length
+  const losses = completedMatches.filter((match) => match.result === 'loss').length
   if (wins + losses > 0) {
     lines.push(`Balance reciente: ${wins}V ${losses}D en ${wins + losses} partidos registrados.`)
   }
@@ -1394,58 +1368,19 @@ function buildStrengthProgressionSection(context: ChatContext): string {
   const enabledSports = getEnabledSports(context.athleteProfile)
   if (!enabledSports.includes('strength')) return ''
 
-  const strengthSessions = getHistoricalSessions(context)
-    .filter(s =>
-      s.type === 'strength' &&
-      (s.status === 'completed' || s.status === 'adjusted') &&
-      s.exercises && s.exercises.length > 0,
-    )
-    .sort((a, b) => a.date.localeCompare(b.date))
-
-  if (strengthSessions.length === 0) return ''
-
-  // Group variants under the same family so the coach sees real progression instead of fragmented names.
-  const byExercise = new Map<string, {
-    label: string
-    entries: Array<{ date: string; weight?: number; sets: number; reps: number | string }>
-  }>()
-
-  for (const session of strengthSessions) {
-    for (const ex of session.exercises ?? []) {
-      if (!ex.weight && !ex.sets) continue
-      const family = normalizeExerciseFamily(ex.name)
-      const existing = byExercise.get(family.key) ?? { label: family.label, entries: [] }
-      existing.entries.push({ date: session.date, weight: ex.weight, sets: ex.sets, reps: ex.reps })
-      byExercise.set(family.key, existing)
-    }
-  }
-
-  if (byExercise.size === 0) return ''
+  const progressions = getStrengthProgression(getHistoricalSessions(context), 4, 4)
+  if (progressions.length === 0) return ''
 
   const lines: string[] = ['PROGRESIÓN DE FUERZA (sesiones completadas recientes)']
 
-  const priorityOrder = ['sentadilla', 'peso muerto', 'press banca', 'press hombro', 'remo', 'hip thrust', 'lunge']
-
-  const sorted = [...byExercise.entries()]
-    .filter(([, data]) => data.entries.some(entry => entry.weight != null))
-    .sort((a, b) => {
-      const aIdx = priorityOrder.indexOf(a[0])
-      const bIdx = priorityOrder.indexOf(b[0])
-      const aRank = aIdx === -1 ? Number.MAX_SAFE_INTEGER : aIdx
-      const bRank = bIdx === -1 ? Number.MAX_SAFE_INTEGER : bIdx
-      return aRank - bRank || a[1].label.localeCompare(b[1].label)
-    })
-    .slice(0, 8) // cap to avoid bloating the prompt
-
-  for (const [, data] of sorted) {
-    const recentEntries = data.entries.slice(-4)
-    const trend = recentEntries
-      .map(e => {
-        const load = e.weight != null ? `${e.weight}kg` : ''
-        return `${e.sets}×${e.reps}${load ? `@${load}` : ''}`
+  for (const progression of progressions) {
+    const trend = progression.entries
+      .map((entry) => {
+        const load = entry.weight != null ? `${entry.weight}kg` : ''
+        return `${entry.sets}×${entry.reps}${load ? `@${load}` : ''}`
       })
       .join(' → ')
-    lines.push(`· ${data.label}: ${trend}`)
+    lines.push(`· ${progression.exerciseLabel}: ${trend}`)
   }
 
   lines.push('')
