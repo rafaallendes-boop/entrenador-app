@@ -15,6 +15,7 @@ import { computeLoadAnalytics, type LoadAnalytics } from '../services/loadAnalyt
 import { startNotificationSync } from '../services/notifications'
 import { getAthleteFirstName, getProfileCompleteness } from '../utils/athlete'
 import { computeMacroPlan, getPrimaryGoalEvent } from '../services/macroPlan'
+import { buildMacroWeekCoherenceSummary } from '../services/macroWeekCoherence'
 
 const CoachMessageCard = lazy(() => import('../components/dashboard/CoachMessageCard'))
 const NextSessionCard = lazy(() => import('../components/dashboard/NextSessionCard'))
@@ -24,7 +25,7 @@ const InstallAppCard = lazy(() => import('../components/pwa/InstallAppCard'))
 const MacroPlanCard = lazy(() => import('../components/dashboard/MacroPlanCard'))
 
 export default function Dashboard() {
-  const { sessions, currentWeekSummary, isLoading, loadWeek } = useTrainingStore()
+  const { sessions, dayLogs, currentWeekSummary, isLoading, loadWeek } = useTrainingStore()
   const { athleteProfile, loadMemory, saveAthleteProfile } = useCoachMemoryStore()
   const { currentWeekStart } = useUIStore()
   const navigate = useNavigate()
@@ -37,6 +38,11 @@ export default function Dashboard() {
   // Macro plan — computed on-the-fly from profile, not persisted as source of truth
   const macroPlan = useMemo(() => computeMacroPlan(athleteProfile), [athleteProfile])
   const primaryGoalEvent = useMemo(() => getPrimaryGoalEvent(athleteProfile), [athleteProfile])
+  const macroWeekCoherence = useMemo(() => buildMacroWeekCoherenceSummary({
+    athleteProfile,
+    sessions,
+    historicalSessions: sessions.filter((session) => session.status === 'completed' || session.status === 'adjusted'),
+  }), [athleteProfile, sessions])
 
   useEffect(() => {
     void loadMemory()
@@ -47,8 +53,14 @@ export default function Dashboard() {
   }, [loadWeek, currentWeekStart])
 
   useEffect(() => {
-    return startNotificationSync(() => sessions)
-  }, [sessions])
+    return startNotificationSync(() => ({
+      sessions,
+      currentWeekSummary,
+      macroWeekCoherence,
+      todayDayLog: dayLogs[today],
+      athleteProfile,
+    }))
+  }, [sessions, currentWeekSummary, macroWeekCoherence, dayLogs, today, athleteProfile])
 
   // Reload analytics whenever the viewed week changes (covers new completions too)
   useEffect(() => {

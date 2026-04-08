@@ -104,7 +104,7 @@ async function handleScheduleNotifications(payload) {
   const state = await readNotificationState()
   const nextState = {
     date: typeof payload?.date === 'string' ? payload.date : state.date,
-    sessions: Array.isArray(payload?.sessions) ? payload.sessions : [],
+    notifications: Array.isArray(payload?.notifications) ? payload.notifications : [],
     sentTags: state.date === payload?.date ? state.sentTags : [],
     recoveredTags: state.date === payload?.date ? state.recoveredTags : [],
     graceMs: typeof payload?.graceMs === 'number' && Number.isFinite(payload.graceMs)
@@ -125,7 +125,7 @@ async function handleClearNotifications(payload) {
   const state = await readNotificationState()
   const nextState = {
     date: typeof payload?.date === 'string' ? payload.date : state.date,
-    sessions: [],
+    notifications: [],
     sentTags: [],
     recoveredTags: [],
     graceMs: state.graceMs,
@@ -143,41 +143,41 @@ async function scheduleNotificationTimers(state) {
 
   const normalizedState = await flushOverdueNotifications(state)
   const now = Date.now()
-  for (const session of normalizedState.sessions) {
-    if (!session || typeof session.tag !== 'string') continue
-    if (normalizedState.sentTags.includes(session.tag)) continue
+  for (const item of normalizedState.notifications) {
+    if (!item || typeof item.tag !== 'string') continue
+    if (normalizedState.sentTags.includes(item.tag)) continue
 
-    const delay = session.notifyAt - now
+    const delay = item.notifyAt - now
     if (delay <= 0) continue
 
     const timeoutId = setTimeout(() => {
-      void fireScheduledNotification(session, normalizedState.date)
+      void fireScheduledNotification(item, normalizedState.date)
     }, delay)
 
-    notifTimers.set(session.tag, timeoutId)
+    notifTimers.set(item.tag, timeoutId)
   }
 }
 
-async function fireScheduledNotification(session, date) {
+async function fireScheduledNotification(item, date) {
   const state = await readNotificationState()
   if (state.date !== date) return
-  if (state.sentTags.includes(session.tag)) return
+  if (state.sentTags.includes(item.tag)) return
 
-  await self.registration.showNotification('Sesion en 30 min', {
-    body: session.title,
+  await self.registration.showNotification(item.title, {
+    body: item.body,
     icon: '/icons/app-icon.svg',
     badge: '/icons/app-icon.svg',
-    tag: session.tag,
+    tag: item.tag,
     renotify: false,
     data: {
-      sessionId: session.id,
-      type: session.type,
-      notifyAt: session.notifyAt,
+      notifyAt: item.notifyAt,
+      category: item.category,
       source: 'service-worker',
+      ...(item.data ?? {}),
     },
   })
 
-  await markNotificationSent(date, session.tag)
+  await markNotificationSent(date, item.tag)
 }
 
 function clearNotificationTimers() {
@@ -193,7 +193,15 @@ async function markNotificationSent(date, tag) {
   const state = await readNotificationState()
   const nextState = state.date === date
     ? state
-    : { date, sessions: state.sessions, sentTags: [] }
+    : {
+        date,
+        notifications: state.notifications,
+        sentTags: [],
+        recoveredTags: state.recoveredTags,
+        graceMs: state.graceMs,
+        lastSyncedAt: state.lastSyncedAt,
+        lastClearReason: state.lastClearReason,
+      }
 
   if (!nextState.sentTags.includes(tag)) {
     nextState.sentTags = [...nextState.sentTags, tag]
@@ -213,7 +221,7 @@ async function readNotificationState() {
   if (!response) {
     return {
       date: '',
-      sessions: [],
+      notifications: [],
       sentTags: [],
       recoveredTags: [],
       graceMs: DEFAULT_NOTIFICATION_GRACE_MS,
@@ -226,7 +234,11 @@ async function readNotificationState() {
     const parsed = await response.json()
     return {
       date: typeof parsed?.date === 'string' ? parsed.date : '',
-      sessions: Array.isArray(parsed?.sessions) ? parsed.sessions : [],
+      notifications: Array.isArray(parsed?.notifications)
+        ? parsed.notifications
+        : Array.isArray(parsed?.sessions)
+        ? parsed.sessions
+        : [],
       sentTags: Array.isArray(parsed?.sentTags) ? parsed.sentTags.filter((tag) => typeof tag === 'string') : [],
       recoveredTags: Array.isArray(parsed?.recoveredTags) ? parsed.recoveredTags.filter((tag) => typeof tag === 'string') : [],
       graceMs: typeof parsed?.graceMs === 'number' && Number.isFinite(parsed.graceMs)
@@ -240,7 +252,7 @@ async function readNotificationState() {
   } catch {
     return {
       date: '',
-      sessions: [],
+      notifications: [],
       sentTags: [],
       recoveredTags: [],
       graceMs: DEFAULT_NOTIFICATION_GRACE_MS,
@@ -267,31 +279,31 @@ async function flushOverdueNotifications(state) {
   const now = Date.now()
   const nextState = {
     ...state,
-    sessions: [],
+    notifications: [],
     sentTags: Array.isArray(state.sentTags) ? [...state.sentTags] : [],
     recoveredTags: Array.isArray(state.recoveredTags) ? [...state.recoveredTags] : [],
     graceMs,
   }
 
-  for (const session of Array.isArray(state.sessions) ? state.sessions : []) {
-    if (!session || typeof session.tag !== 'string' || typeof session.notifyAt !== 'number') continue
-    if (nextState.sentTags.includes(session.tag)) {
-      nextState.sessions.push(session)
+  for (const item of Array.isArray(state.notifications) ? state.notifications : []) {
+    if (!item || typeof item.tag !== 'string' || typeof item.notifyAt !== 'number') continue
+    if (nextState.sentTags.includes(item.tag)) {
+      nextState.notifications.push(item)
       continue
     }
 
-    if (session.notifyAt > now) {
-      nextState.sessions.push(session)
+    if (item.notifyAt > now) {
+      nextState.notifications.push(item)
       continue
     }
 
-    if (now - session.notifyAt <= graceMs) {
-      await fireScheduledNotification(session, state.date)
-      nextState.sentTags.push(session.tag)
-      if (!nextState.recoveredTags.includes(session.tag)) {
-        nextState.recoveredTags.push(session.tag)
+    if (now - item.notifyAt <= graceMs) {
+      await fireScheduledNotification(item, state.date)
+      nextState.sentTags.push(item.tag)
+      if (!nextState.recoveredTags.includes(item.tag)) {
+        nextState.recoveredTags.push(item.tag)
       }
-      nextState.sessions.push(session)
+      nextState.notifications.push(item)
     }
   }
 

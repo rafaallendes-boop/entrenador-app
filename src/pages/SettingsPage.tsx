@@ -26,11 +26,14 @@ import {
 import {
   clearTodayNotifications,
   getNotificationDebugState,
+  getNotificationPreferences,
   getNotificationPermission,
   notificationsSupported,
   refreshTodayNotifications,
   requestNotificationPermission,
+  saveNotificationPreferences,
   type NotificationDebugState,
+  type NotificationPreferences,
 } from '../services/notifications'
 import { useCoachMemoryStore } from '../store/useCoachMemoryStore'
 import { useAuthStore } from '../store/useAuthStore'
@@ -38,7 +41,8 @@ import { useTrainingStore } from '../store/useTrainingStore'
 import { currentWeekStartISO } from '../utils/date'
 import { getEnabledSports, getSportPrioritySummary } from '../utils/athlete'
 import { clearOnboardingSkipped } from '../utils/onboarding'
-import type { Session } from '../types'
+import type { AthleteProfile, Session } from '../types'
+import { buildMacroWeekCoherenceSummary } from '../services/macroWeekCoherence'
 
 const CLEARABLE_GROUPS: Array<{
   key: LocalDataGroup
@@ -78,11 +82,12 @@ export default function SettingsPage() {
   const navigate = useNavigate()
   const { coachMemory, athleteProfile, isSaving, loadMemory, saveMemory, saveAthleteProfile } = useCoachMemoryStore()
   const { user, signOut, syncStatus, syncError, syncDetails } = useAuthStore()
-  const { sessions, loadWeek } = useTrainingStore()
+  const { sessions, dayLogs, currentWeekSummary, loadWeek } = useTrainingStore()
   const [memoryDraft, setMemoryDraft] = useState('')
   const [memorySaved, setMemorySaved] = useState(false)
   const [notifPermission, setNotifPermission] = useState<NotificationPermission | null>(null)
   const [notificationDebugState, setNotificationDebugState] = useState<NotificationDebugState | null>(null)
+  const [notificationPreferences, setNotificationPreferences] = useState<NotificationPreferences>(getNotificationPreferences())
   const [dataCounts, setDataCounts] = useState<LocalDataCounts | null>(null)
   const [clearSelection, setClearSelection] = useState<LocalDataSelection>(EMPTY_CLEAR_SELECTION)
   const [isExporting, setIsExporting] = useState(false)
@@ -105,6 +110,7 @@ export default function SettingsPage() {
 
   const refreshNotificationStatus = async () => {
     setNotifPermission(getNotificationPermission())
+    setNotificationPreferences(getNotificationPreferences())
     await refreshNotificationDebugState(setNotificationDebugState)
   }
 
@@ -249,8 +255,24 @@ export default function SettingsPage() {
   }
 
   const handleResyncNotifications = async () => {
-    await refreshTodayNotifications(sessions)
+    const macroWeekCoherence = buildSettingsMacroWeekCoherence(athleteProfile, sessions)
+    await refreshTodayNotifications({
+      sessions,
+      currentWeekSummary,
+      macroWeekCoherence,
+      todayDayLog: dayLogs[todayIsoKey()],
+      athleteProfile,
+    })
     await refreshNotificationStatus()
+  }
+
+  const handleToggleNotificationPreference = async (
+    key: keyof NotificationPreferences,
+    value: boolean,
+  ) => {
+    const next = saveNotificationPreferences({ [key]: value })
+    setNotificationPreferences(next)
+    await handleResyncNotifications()
   }
 
   const handleRetrySync = async () => {
@@ -798,10 +820,9 @@ export default function SettingsPage() {
                 <Bell size={16} className="text-brand-light" />
               </div>
               <div>
-                <h2 className="text-sm font-semibold text-ink">Notificaciones de sesion</h2>
+                <h2 className="text-sm font-semibold text-ink">Notificaciones y activacion</h2>
                 <p className="text-xs text-ink-muted mt-1 leading-relaxed">
-                  Recibe una notificacion 30 minutos antes de cada sesion del dia.
-                  Sesiones AM a las 7:30 h y sesiones PM a las 17:30 h.
+                  Recordatorios de sesion, cierre del dia y nudges semanales para no perder continuidad.
                 </p>
               </div>
             </div>
@@ -810,6 +831,41 @@ export default function SettingsPage() {
             ) : notifPermission === 'granted' ? (
               <div className="space-y-2">
                 <p className="text-xs text-emerald-400 font-medium">Notificaciones activadas</p>
+                <div className="rounded-xl border border-surface-border bg-surface-raised px-3 py-3 space-y-3">
+                  <p className="text-[11px] uppercase tracking-wide text-ink-faint">Categorias activas</p>
+                  <div className="space-y-2">
+                    <NotificationPreferenceRow
+                      label="Sesiones del dia"
+                      description="Aviso 30 min antes de cada sesion planificada."
+                      checked={notificationPreferences.sessionReminders}
+                      onChange={(checked) => void handleToggleNotificationPreference('sessionReminders', checked)}
+                    />
+                    <NotificationPreferenceRow
+                      label="Check-in y feedback"
+                      description="Nudge para cerrar el dia o completar feedback de sesion."
+                      checked={notificationPreferences.dailyCheckIn}
+                      onChange={(checked) => void handleToggleNotificationPreference('dailyCheckIn', checked)}
+                    />
+                    <NotificationPreferenceRow
+                      label="Semana vacia"
+                      description="Aviso cuando aun no hay plan para la semana."
+                      checked={notificationPreferences.weeklyPlanning}
+                      onChange={(checked) => void handleToggleNotificationPreference('weeklyPlanning', checked)}
+                    />
+                    <NotificationPreferenceRow
+                      label="Follow-up del coach"
+                      description="Recuerda generar o revisar la nota semanal."
+                      checked={notificationPreferences.coachFollowUp}
+                      onChange={(checked) => void handleToggleNotificationPreference('coachFollowUp', checked)}
+                    />
+                    <NotificationPreferenceRow
+                      label="Alertas de carga"
+                      description="Avisos cuando la semana queda incoherente con el bloque."
+                      checked={notificationPreferences.loadAlerts}
+                      onChange={(checked) => void handleToggleNotificationPreference('loadAlerts', checked)}
+                    />
+                  </div>
+                </div>
                 {notificationDebugState && (
                   <div className="rounded-xl border border-surface-border bg-surface-raised px-3 py-3 space-y-2">
                     <p className="text-[11px] uppercase tracking-wide text-ink-faint">Estado de hoy ({notificationDebugState.date})</p>
@@ -827,6 +883,12 @@ export default function SettingsPage() {
                           {notificationDebugState.lastSyncedAt ? formatRuntimeTimestamp(notificationDebugState.lastSyncedAt) : 'sin registro'}
                         </span>
                       </p>
+                      <p>
+                        Categorias activas:{' '}
+                        <span className="text-ink">
+                          {formatEnabledNotificationCategories(notificationDebugState.enabledCategories)}
+                        </span>
+                      </p>
                       {notificationDebugState.lastClearReason && (
                         <p>
                           Ultima limpieza:{' '}
@@ -834,6 +896,15 @@ export default function SettingsPage() {
                         </p>
                       )}
                     </div>
+                    {Object.keys(notificationDebugState.categories).length > 0 && (
+                      <div className="grid gap-2 sm:grid-cols-2 text-xs text-ink-muted">
+                        {Object.entries(notificationDebugState.categories).map(([category, count]) => (
+                          <p key={category}>
+                            {formatNotificationCategory(category)}: <span className="text-ink">{count}</span>
+                          </p>
+                        ))}
+                      </div>
+                    )}
                     <p className="text-[11px] text-ink-faint">
                       Si la app o el worker vuelven tarde, intenta recuperar avisos dentro de una ventana de {notificationDebugState.graceMinutes} min.
                     </p>
@@ -1137,6 +1208,33 @@ export default function SettingsPage() {
   )
 }
 
+function NotificationPreferenceRow({
+  label,
+  description,
+  checked,
+  onChange,
+}: {
+  label: string
+  description: string
+  checked: boolean
+  onChange: (checked: boolean) => void
+}) {
+  return (
+    <label className="flex items-start justify-between gap-3 rounded-xl border border-white/5 bg-surface px-3 py-2.5">
+      <div className="min-w-0">
+        <p className="text-sm font-medium text-ink">{label}</p>
+        <p className="mt-1 text-xs leading-relaxed text-ink-muted">{description}</p>
+      </div>
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(event) => onChange(event.target.checked)}
+        className="mt-1 h-4 w-4 rounded border-surface-border bg-surface"
+      />
+    </label>
+  )
+}
+
 async function refreshCounts(setDataCounts: (counts: LocalDataCounts) => void): Promise<void> {
   const counts = await getLocalDataCounts()
   setDataCounts(counts)
@@ -1170,6 +1268,48 @@ function formatCountLabel(group: LocalDataGroup, counts: LocalDataCounts | null)
     case 'coachMemory':
       return counts.coachMemory > 0 ? 'Guardada' : 'Vacia'
   }
+}
+
+function buildSettingsMacroWeekCoherence(athleteProfile: AthleteProfile | null | undefined, sessions: Session[]) {
+  return buildMacroWeekCoherenceSummary({
+    athleteProfile,
+    sessions,
+    historicalSessions: sessions.filter((session) => session.status === 'completed' || session.status === 'adjusted'),
+  })
+}
+
+function todayIsoKey(): string {
+  const now = new Date()
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+}
+
+function formatNotificationCategory(category: string): string {
+  switch (category) {
+    case 'session_reminders':
+      return 'Sesiones'
+    case 'daily_checkin':
+      return 'Check-in'
+    case 'weekly_planning':
+      return 'Semana vacia'
+    case 'coach_followup':
+      return 'Coach'
+    case 'load_alerts':
+      return 'Carga'
+    default:
+      return category
+  }
+}
+
+function formatEnabledNotificationCategories(preferences: NotificationPreferences): string {
+  const labels = [
+    preferences.sessionReminders ? 'sesiones' : null,
+    preferences.dailyCheckIn ? 'check-in' : null,
+    preferences.weeklyPlanning ? 'semana' : null,
+    preferences.coachFollowUp ? 'coach' : null,
+    preferences.loadAlerts ? 'carga' : null,
+  ].filter(Boolean)
+
+  return labels.length > 0 ? labels.join(', ') : 'ninguna'
 }
 
 function getSyncSummary(status: string, pendingOps: number): { label: string; toneClass: string } {
@@ -1268,6 +1408,8 @@ function formatNotificationClearReason(reason: string): string {
       return 'permiso no concedido'
     case 'no-sessions':
       return 'sin sesiones planificadas hoy'
+    case 'no-matching-rules':
+      return 'sin reglas activas para hoy'
     case 'manual-clear':
       return 'limpieza manual'
     default:
