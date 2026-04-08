@@ -36,10 +36,10 @@ export function classifyAthleteProfileSyncError(error: unknown): string {
   if (
     normalized.includes("could not find the 'data' column") ||
     normalized.includes('column athlete_profiles.data does not exist') ||
-    normalized.includes('no unique or exclusion constraint matching the on conflict') ||
-    normalized.includes('on conflict')
+    normalized.includes('invalid input syntax for type json') ||
+    normalized.includes('json')
   ) {
-    return 'Schema remoto de athlete_profiles incompatible. Falta columna data y/o unique(user_id). Aplica la migration de sync del perfil.'
+    return 'Schema remoto de athlete_profiles incompatible. Falta la estructura esperada del perfil en Supabase.'
   }
 
   if (

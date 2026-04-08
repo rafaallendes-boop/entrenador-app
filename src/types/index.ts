@@ -51,6 +51,21 @@ export interface RunningDetails {
   targetPaceMax?: string   // e.g. "5:30"
   targetHrMin?: number
   targetHrMax?: number
+  intervalStructure?: RunningIntervalStructure
+}
+
+export interface RunningIntervalBlock {
+  label: string
+  repetitions?: number
+  durationMin?: number
+  distanceKm?: number
+  targetPace?: string
+  targetHrMax?: number
+  notes?: string
+}
+
+export interface RunningIntervalStructure {
+  blocks: RunningIntervalBlock[]
 }
 
 export type SquashTrainingFocus = 'technical' | 'tactical' | 'physical' | 'conditioned_games'
@@ -72,6 +87,7 @@ export type ProtocolTone = 'general' | 'protective' | 'competitive' | 'recovery'
 export interface ProtocolStep {
   label: string
   detail?: string
+  completed?: boolean
 }
 
 export interface GeneratedProtocol {
@@ -126,9 +142,17 @@ export interface Session {
   squashDetails?: SquashDetails
   warmup?: GeneratedProtocol
   cooldown?: GeneratedProtocol
+  sessionFeedback?: SessionFeedback
   completedAt?: number
   createdAt: number
   updatedAt: number
+}
+
+export interface SessionFeedback {
+  rating: 1 | 2 | 3 | 4 | 5
+  energyDuringSession: 1 | 2 | 3 | 4 | 5
+  mainChallenge?: string
+  capturedAt: number
 }
 
 export interface DayLog {
@@ -233,7 +257,7 @@ export interface GoalEvent {
   title: string
   date: string            // ISO "YYYY-MM-DD"
   sport: string           // free text aligned to SupportedSport when possible
-  priority: 'primary'     // MVP: only primary events
+  priority: 'primary' | 'secondary'
   notes?: string
   // Wizard-enriched fields
   eventType?: GoalEventType
@@ -273,12 +297,50 @@ export type MacroPlanPhase =
   | 'race'
   | 'transition'
 
+export type MacroPlanSportRole = 'primary' | 'support'
+export type MacroPlanLoadBias = 'build' | 'hold' | 'reduce' | 'minimal'
+export type MacroPlanEventTiming = 'upcoming' | 'active' | 'past'
+
+export interface MacroPlanSportDetail {
+  sport: SupportedSport
+  role: MacroPlanSportRole
+  phaseFocus: string
+  weeklyIntent: string
+  volumeBias: MacroPlanLoadBias
+  intensityBias: MacroPlanLoadBias
+  notes: string
+}
+
+export interface MacroPlanEventMarker {
+  id: string
+  title: string
+  date: string
+  sport?: SupportedSport
+  priority: GoalEvent['priority']
+  timing: MacroPlanEventTiming
+  weeksFromReference: number
+}
+
+export interface MacroPlanTimelineEntry {
+  phase: MacroPlanPhase
+  startWeek: number
+  endWeek: number
+  label: string
+  focus: string
+  isCurrent: boolean
+  eventMarkers: MacroPlanEventMarker[]
+}
+
 export interface MacroPlan {
   goalEventId: string
   goalEventDate: string   // ISO "YYYY-MM-DD" — denormalized for quick display
   currentPhase: MacroPlanPhase
   weeksRemaining: number
   blockFocus: string      // human-readable focus for the current phase
+  headline: string
+  timeline: MacroPlanTimelineEntry[]
+  sportDetails: MacroPlanSportDetail[]
+  secondaryEvents: MacroPlanEventMarker[]
   computedAt: number      // Date.now() timestamp of last computation
 }
 
@@ -424,6 +486,7 @@ export interface CoachSessionProposal {
   targetPaceMax?: string   // e.g. "5:30" — for running
   targetHrMin?: number
   targetHrMax?: number
+  intervalStructure?: RunningIntervalStructure
   exercises?: CoachExerciseProposal[]  // for strength/mobility
   squashDetails?: SquashDetails        // for squash training/control sessions
   warmup?: GeneratedProtocol
@@ -451,6 +514,7 @@ export interface CoachAction {
   targetPaceMax?: string
   targetHrMin?: number
   targetHrMax?: number
+  intervalStructure?: RunningIntervalStructure
   // Fields for create_week
   sessions?: CoachSessionProposal[]
   weekObjectives?: string[]

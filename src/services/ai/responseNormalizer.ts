@@ -178,6 +178,10 @@ function validateAction(obj: unknown): CoachAction | null {
       if (typeof a.timeBlock !== 'string') return null
       if (a.rpe != null && (typeof a.rpe !== 'number' || a.rpe < 1 || a.rpe > 10)) return null
       if (a.targetPaceMin != null && typeof a.targetPaceMin !== 'string') return null
+      if (a.intervalStructure != null) {
+        const intervalStructure = a.intervalStructure as Record<string, unknown>
+        if (!Array.isArray(intervalStructure.blocks)) return null
+      }
       if (a.targetPaceMax != null && typeof a.targetPaceMax !== 'string') return null
       if (a.targetHrMin != null && typeof a.targetHrMin !== 'number') return null
       if (a.targetHrMax != null && typeof a.targetHrMax !== 'number') return null

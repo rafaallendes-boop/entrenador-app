@@ -1,7 +1,7 @@
 # Entrenador App - Review and Roadmap
 
-Actualizado: 2026-04-07
-Ultimo hito relevante: coherencia macroplan <-> semana, validacion visible del plan y resumen persistido del plan generdo
+Actualizado: 2026-04-08
+Ultimo hito relevante: Macroplan V2 por deporte y protocolos/flows de sesion mas profundos integrados en motor, prompt y UI
 
 ## Estado actual del producto
 
@@ -11,9 +11,10 @@ Entrenador ya no esta en modo prototipo. Hoy existe una base usable y relativame
 - coach AI con propuestas ejecutables y persistidas
 - perfil estructurado del atleta con multi-deporte, recovery, schedule y nutricion
 - onboarding y wizard de plan de competencia funcionando
-- macroplan MVP por evento principal ya visible
+- macroplan V2 por deporte ya visible
 - sync multi-dispositivo, backup/import-export y recovery offline implementados
 - analytics de carga, ACWR y progresion ya visibles
+- protocolos de sesion mas ejecutables: intervalos running, warmup/cooldown checkables y feedback por sesion
 
 ## Lo ya implementado
 
@@ -31,6 +32,8 @@ Esto ya no deberia volver al backlog principal salvo refinamientos:
 - resumen estructurado del plan generado (`planSummary`)
 - validacion visible del plan generado
 - coherencia macroplan <-> semana visible en ProposalDrawer y WeeklyView
+- macroplan V2 con timeline, sportDetails y eventos secundarios visibles
+- protocolos de sesion mas profundos en SessionCard y prompt del coach
 - tests unitarios ampliados para logica critica
 
 ## Lo que ya entrega valor real
@@ -46,8 +49,8 @@ Hoy el producto ya logra tres cosas importantes:
 Las brechas mas importantes siguen siendo estas:
 
 1. Sync en uso real sigue siendo la zona mas sensible.
-2. Macroplan todavia es generico por fase; falta profundidad por deporte.
-3. Falta retencion real: notificaciones, reactivacion y loops semanales.
+2. Falta retencion real: notificaciones, reactivacion y loops semanales.
+3. Analytics y alertas todavia no cierran bien el loop de accion.
 4. La propuesta comercial aun no esta empaquetada para vender.
 
 ## Roadmap vigente
@@ -71,10 +74,10 @@ hacer que el producto se sienta claramente mejor que una planificacion semanal a
 
 Bloques:
 
-1. Macroplan V2 por deporte
-2. Protocolos y flows de sesion mas profundos
-3. Analytics y alertas mas accionables
-4. Mejoras en cycling y mobility
+1. Analytics y alertas mas accionables
+2. Mejoras en cycling y mobility
+3. Explicabilidad y continuidad del coach sobre historial real
+4. Refinamientos de templates por disciplina
 
 ### Fase 3 - Monetizacion
 
@@ -101,23 +104,24 @@ Estado: fuerte
 
 Pendiente:
 
-- templates por fase mas ricos
-- diferencias por deporte dentro de cada fase
+- explicar mejor el "por que" de la propuesta usando historial y feedback real
+- pulir templates por disciplina en casos edge
 - mejor explicacion del "por que" en cada semana
 
 ### Macroplan
 
-Estado: MVP bueno
+Estado: fuerte
 
 - fase actual, semanas restantes y block focus ya existen
+- timeline visible del bloque
+- diferencias por deporte dentro de cada fase
+- eventos secundarios visibles como moduladores
 - ahora la semana refleja la fase y genera warnings de incoherencia
 
 Pendiente:
 
-- timeline visual
-- reglas por deporte dentro de base/build/peak/taper
-- eventos secundarios
 - comparacion entre semana esperada y semana propuesta en mas detalle
+- mas profundidad en cycling y mobility
 
 ### Progression y carga
 
@@ -150,6 +154,21 @@ Pendiente:
 - validacion fuerte movil + escritorio real
 - conflictos concurrentes mejor resueltos o al menos mejor explicados
 - mensajes mas accionables cuando la cola queda retenida
+
+### Protocolos y ejecucion de sesion
+
+Estado: fuerte
+
+- running con intervalStructure para sesiones mas ejecutables
+- warmup y cooldown checkables desde SessionCard
+- feedback por sesion persistido y visible para el coach
+- prompt reforzado para exigir warmup/cooldown y drills con timing
+
+Pendiente:
+
+- tests UI puntuales de SessionCard expandido
+- usar sessionFeedback para recomendaciones y ajustes mas explicitos
+- mejorar templates de intervalos para cycling
 
 ### Tests y deuda tecnica
 
@@ -204,6 +223,21 @@ Pendiente:
 - coherenceStatus e issues
 - bloque visible en WeeklyView
 
+### 6. Macroplan V2 por deporte
+
+- headline, timeline y sportDetails en macroplan
+- fase global gobernada por evento principal
+- squash, running y strength con foco distinto por fase
+- eventos secundarios visibles sin romper la prioridad principal
+- integracion en dashboard, coherencia semanal y prompt del coach
+
+### 7. Protocolos y flows de sesion mas profundos
+
+- running con bloques explicitos para intervalos/tempo
+- warmup y cooldown checkables paso a paso
+- feedback a nivel sesion persistido
+- prompt y normalizacion alineados con el nuevo contrato
+
 ## Siguientes pasos recomendados
 
 ### Prioridad 1
@@ -224,22 +258,6 @@ Por que:
 
 ### Prioridad 2
 
-**Macroplan V2 por deporte**
-
-Alcance:
-
-- squash peak != running peak != cycling peak
-- reglas por disciplina dentro de cada fase
-- timeline simple del bloque
-- week templates por fase
-
-Por que:
-
-- el macroplan ya es visible; ahora toca hacerlo realmente diferencial
-- aumenta mucho la sensacion de coach premium
-
-### Prioridad 3
-
 **Notificaciones y activacion semanal**
 
 Alcance:
@@ -254,15 +272,30 @@ Por que:
 - sin esto la app puede ser buena pero abrirse poco
 - es clave para retencion real
 
+### Prioridad 3
+
+**Analytics y alertas mas accionables**
+
+Alcance:
+
+- usar ACWR, coherencia y feedback de sesion para detectar riesgo o necesidad de ajuste
+- mensajes mas claros de por que una semana esta bien o mal calibrada
+- alertas concretas por disciplina, no solo globales
+
+Por que:
+
+- cierra el loop entre datos, decision y accion
+- hace que el coach se sienta menos descriptivo y mas util
+
 ## Priorizacion simple
 
 Si hubiera que resumir el orden real de trabajo desde hoy:
 
 1. validar sync en dispositivos reales
-2. macroplan V2 por deporte
-3. notificaciones y activacion semanal
+2. notificaciones y activacion semanal
+3. analytics y alertas mas accionables
 4. extensiones cuantitativas de carga a squash y fuerza
-5. protocolos y flows de sesion mas profundos
+5. mejoras en cycling y mobility
 6. monetizacion y packaging comercial
 
 ## Que falta para hacer la app vendible
@@ -286,6 +319,8 @@ La app ya tiene base para ser vendible, pero todavia faltan estas piezas para qu
 - timeline
 - diferenciacion por deporte
 - sensacion de continuidad de verdad
+
+Esta capa ya dio un salto importante. Lo pendiente aqui no es "hacer macroplan V2", sino seguir refinando disciplinas secundarias y explicabilidad.
 
 ### 4. Packaging comercial
 

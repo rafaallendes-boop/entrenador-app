@@ -317,6 +317,14 @@ export default function SettingsPage() {
   const sportSummary = getSportPrioritySummary(athleteProfile)
   const enabledSports = getEnabledSports(athleteProfile)
   const profileSyncAffected = syncDetails.pendingTables.includes('athlete_profiles')
+  const syncSummary = getSyncSummary(syncStatus, syncDetails.pendingOps)
+  const syncHeadline = getSyncHeadline(syncStatus, syncDetails.pendingOps, profileSyncAffected)
+  const syncSupportText = getSyncSupportText(syncStatus, syncDetails.pendingOps, profileSyncAffected)
+  const syncDiagnosticsAvailable =
+    syncDetails.pendingOps > 0 ||
+    syncDetails.pendingTables.length > 0 ||
+    syncDetails.lastErrorMessage != null ||
+    syncDetails.oldestPendingOpAt != null
 
   const toggleCoachSessionSelection = (sessionId: string) => {
     setSelectedCoachSessionIds((current) =>
@@ -370,7 +378,7 @@ export default function SettingsPage() {
               </div>
               <SyncStatusBadge status={syncStatus} error={syncError} pendingOps={syncDetails.pendingOps} />
             </div>
-            {syncStatus === 'error' && syncError && (
+            {false && syncStatus === 'error' && syncError && (
               <p className="mb-3 rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
                 {profileSyncAffected ? 'El perfil del atleta no esta pudiendo sincronizar.' : syncError}
                 <span className="block mt-1 text-amber-200/80">
@@ -381,6 +389,66 @@ export default function SettingsPage() {
               </p>
             )}
             <div className="mb-3 rounded-xl border border-surface-border bg-surface-raised px-3 py-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-ink">{syncHeadline}</p>
+                  <p className="mt-1 text-xs text-ink-muted leading-relaxed">{syncSupportText}</p>
+                </div>
+                <span className={`rounded-full px-2 py-1 text-[11px] font-semibold ${syncSummary.toneClass}`}>
+                  {syncSummary.label}
+                </span>
+              </div>
+              <div className="mt-3 grid gap-2 text-xs text-ink-muted sm:grid-cols-2">
+                <p>
+                  Cola pendiente: <span className="text-ink">{syncDetails.pendingOps}</span>
+                </p>
+                <p>
+                  Ultimo sync OK:{' '}
+                  <span className="text-ink">
+                    {syncDetails.lastSuccessfulSyncAt ? formatRuntimeTimestamp(syncDetails.lastSuccessfulSyncAt) : 'sin registro'}
+                  </span>
+                </p>
+                {(syncStatus === 'error' || syncStatus === 'offline') && syncDetails.lastSyncAt && (
+                  <p>
+                    Ultimo intento: <span className="text-ink">{formatRuntimeTimestamp(syncDetails.lastSyncAt)}</span>
+                  </p>
+                )}
+              </div>
+              {syncDiagnosticsAvailable && (
+                <details className="mt-3 group">
+                  <summary className="cursor-pointer list-none text-xs font-medium text-ink-muted transition-colors group-open:text-ink">
+                    Ver detalle tecnico
+                  </summary>
+                  <div className="mt-2 space-y-2 rounded-xl border border-surface-border/80 bg-surface px-3 py-3 text-xs text-ink-muted">
+                    <p>
+                      Upserts / deletes: <span className="text-ink">{syncDetails.pendingUpserts}/{syncDetails.pendingDeletes}</span>
+                    </p>
+                    <p>
+                      Recovery offline:{' '}
+                      <span className="text-ink">
+                        {syncDetails.lastRecoveredSyncAt ? formatRuntimeTimestamp(syncDetails.lastRecoveredSyncAt) : 'sin registro'}
+                      </span>
+                    </p>
+                    {syncDetails.oldestPendingOpAt && (
+                      <p>
+                        Cola mas antigua: <span className="text-ink">{formatRuntimeTimestamp(syncDetails.oldestPendingOpAt)}</span>
+                      </p>
+                    )}
+                    {syncDetails.pendingTables.length > 0 && (
+                      <p>
+                        Tablas afectadas: <span className="text-ink">{syncDetails.pendingTables.join(', ')}</span>
+                      </p>
+                    )}
+                    {syncDetails.lastErrorMessage && (
+                      <p className="text-amber-300">
+                        Ultimo incidente: {syncDetails.lastErrorMessage}
+                      </p>
+                    )}
+                  </div>
+                </details>
+              )}
+              {false && (
+                <>
               <div className="grid gap-2 text-xs text-ink-muted sm:grid-cols-2">
                 <p>
                   Cola pendiente: <span className="text-ink">{syncDetails.pendingOps}</span>
@@ -391,25 +459,25 @@ export default function SettingsPage() {
                 <p>
                   Ultimo intento:{' '}
                   <span className="text-ink">
-                    {syncDetails.lastSyncAt ? formatRuntimeTimestamp(syncDetails.lastSyncAt) : 'sin registro'}
+                    {syncDetails.lastSyncAt ? formatRuntimeTimestamp(syncDetails.lastSyncAt!) : 'sin registro'}
                   </span>
                 </p>
                 <p>
                   Ultimo sync OK:{' '}
                   <span className="text-ink">
-                    {syncDetails.lastSuccessfulSyncAt ? formatRuntimeTimestamp(syncDetails.lastSuccessfulSyncAt) : 'sin registro'}
+                    {syncDetails.lastSuccessfulSyncAt ? formatRuntimeTimestamp(syncDetails.lastSuccessfulSyncAt!) : 'sin registro'}
                   </span>
                 </p>
                 <p>
                   Recovery offline:{' '}
                   <span className="text-ink">
-                    {syncDetails.lastRecoveredSyncAt ? formatRuntimeTimestamp(syncDetails.lastRecoveredSyncAt) : 'sin registro'}
+                    {syncDetails.lastRecoveredSyncAt ? formatRuntimeTimestamp(syncDetails.lastRecoveredSyncAt!) : 'sin registro'}
                   </span>
                 </p>
               </div>
               {syncDetails.oldestPendingOpAt && (
                 <p className="mt-2 text-xs text-ink-muted">
-                  Cola mas antigua: <span className="text-ink">{formatRuntimeTimestamp(syncDetails.oldestPendingOpAt)}</span>
+                  Cola mas antigua: <span className="text-ink">{formatRuntimeTimestamp(syncDetails.oldestPendingOpAt!)}</span>
                 </p>
               )}
               {syncDetails.pendingTables.length > 0 && (
@@ -431,6 +499,8 @@ export default function SettingsPage() {
                 <p className="mt-2 text-xs text-ink-faint">
                   Hay cambios locales pendientes por subir. La cola se compacta por registro para evitar duplicados, los deletes de sesiones se retienen hasta confirmar convergencia remota y la app reintenta automáticamente al volver online o recuperar foco.
                 </p>
+              )}
+                </>
               )}
             </div>
             <div className="flex flex-wrap gap-2">
@@ -1100,6 +1170,72 @@ function formatCountLabel(group: LocalDataGroup, counts: LocalDataCounts | null)
     case 'coachMemory':
       return counts.coachMemory > 0 ? 'Guardada' : 'Vacia'
   }
+}
+
+function getSyncSummary(status: string, pendingOps: number): { label: string; toneClass: string } {
+  if (status === 'error') {
+    return {
+      label: pendingOps > 0 ? `${pendingOps} pendiente${pendingOps === 1 ? '' : 's'}` : 'Revisar',
+      toneClass: 'bg-amber-500/10 text-amber-300',
+    }
+  }
+
+  if (status === 'offline') {
+    return {
+      label: pendingOps > 0 ? `Offline ${pendingOps}` : 'Offline',
+      toneClass: 'bg-surface text-ink-muted',
+    }
+  }
+
+  if (status === 'syncing') {
+    return {
+      label: 'Sync',
+      toneClass: 'bg-brand/10 text-brand-light',
+    }
+  }
+
+  return {
+    label: 'OK',
+    toneClass: 'bg-emerald-500/10 text-emerald-300',
+  }
+}
+
+function getSyncHeadline(status: string, pendingOps: number, profileSyncAffected: boolean): string {
+  if (status === 'error') {
+    return profileSyncAffected
+      ? 'Tu perfil no se pudo actualizar en la nube'
+      : 'Hay cambios que no se pudieron sincronizar'
+  }
+
+  if (status === 'offline') {
+    return pendingOps > 0 ? 'Hay cambios guardados esperando conexion' : 'La app esta offline'
+  }
+
+  if (status === 'syncing') {
+    return 'Sincronizando cambios'
+  }
+
+  return 'Cuenta conectada y al dia'
+}
+
+function getSyncSupportText(status: string, pendingOps: number, profileSyncAffected: boolean): string {
+  if (status === 'error') {
+    return profileSyncAffected
+      ? 'Tus cambios siguen guardados en este dispositivo. Vamos a reintentar sin mostrarte detalle tecnico por defecto.'
+      : 'Tus cambios locales siguen guardados. Puedes reintentar la sincronizacion cuando quieras.'
+  }
+
+  if (status === 'offline') {
+    return pendingOps > 0
+      ? 'La app subira estos cambios automaticamente cuando vuelva la conexion.'
+      : 'Puedes seguir usando la app; sincronizara cuando recuperes conexion.'
+  }
+
+  if (status === 'syncing') {
+    return 'Estamos enviando cambios pendientes y revisando consistencia con la nube.'
+  }
+
+  return 'Tu cuenta, perfil y planificacion estan sincronizados.'
 }
 
 function formatBackupDate(isoString: string): string {

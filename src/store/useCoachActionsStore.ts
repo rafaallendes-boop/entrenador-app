@@ -210,6 +210,7 @@ async function applyCoachAction(
               targetPaceMax: action.targetPaceMax,
               targetHrMin: action.targetHrMin,
               targetHrMax: action.targetHrMax,
+              intervalStructure: action.intervalStructure,
             }
           : undefined,
         squashDetails: action.squashDetails,
@@ -256,6 +257,7 @@ async function applyCoachAction(
             targetPaceMax: s.targetPaceMax,
             targetHrMin: s.targetHrMin,
             targetHrMax: s.targetHrMax,
+            intervalStructure: s.intervalStructure,
           } : undefined,
           squashDetails: s.squashDetails,
           warmup: s.warmup,
@@ -301,12 +303,14 @@ async function applyCoachAction(
       }
       if (nextType === 'running' || nextType === 'cycling') {
         patch.runningDetails = action.runningType || action.targetPaceMin || action.targetPaceMax || action.targetHrMin != null || action.targetHrMax != null
+          || action.intervalStructure != null
           ? {
               runningType: action.runningType ?? current.runningDetails?.runningType ?? 'z2',
               targetPaceMin: action.targetPaceMin ?? current.runningDetails?.targetPaceMin,
               targetPaceMax: action.targetPaceMax ?? current.runningDetails?.targetPaceMax,
               targetHrMin: action.targetHrMin ?? current.runningDetails?.targetHrMin,
               targetHrMax: action.targetHrMax ?? current.runningDetails?.targetHrMax,
+              intervalStructure: action.intervalStructure ?? current.runningDetails?.intervalStructure,
             }
           : current.runningDetails
       }

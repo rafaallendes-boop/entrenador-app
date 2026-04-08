@@ -24,7 +24,11 @@ export default function SyncStatusBadge({ status, error, compact = false, pendin
     return (
       <span className={`inline-flex items-center gap-1 text-amber-400 ${labelClass}`} title={error ?? undefined}>
         <CloudOff size={iconSize} />
-        {compact ? (pendingOps > 0 ? `Error ${pendingOps}` : 'Error') : pendingOps > 0 ? `Error sync · ${pendingOps} pendientes` : 'Error sync'}
+        {compact
+          ? (pendingOps > 0 ? `Atencion ${pendingOps}` : 'Atencion')
+          : pendingOps > 0
+            ? `${pendingOps} pendiente${pendingOps === 1 ? '' : 's'}`
+            : 'Revisar sync'}
       </span>
     )
   }
@@ -33,7 +37,11 @@ export default function SyncStatusBadge({ status, error, compact = false, pendin
     return (
       <span className={`inline-flex items-center gap-1 text-ink-muted ${labelClass}`}>
         <CloudOff size={iconSize} />
-        {compact ? (pendingOps > 0 ? `Off ${pendingOps}` : 'Offline') : pendingOps > 0 ? `Sin conexion · ${pendingOps} pendientes` : 'Sin conexion'}
+        {compact
+          ? (pendingOps > 0 ? `Off ${pendingOps}` : 'Offline')
+          : pendingOps > 0
+            ? `${pendingOps} pendiente${pendingOps === 1 ? '' : 's'} offline`
+            : 'Sin conexion'}
       </span>
     )
   }

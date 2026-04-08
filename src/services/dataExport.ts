@@ -8,7 +8,10 @@ import type {
   DayLog,
   GoalEvent,
   MacroPlan,
+  MacroPlanEventMarker,
   MacroPlanPhase,
+  MacroPlanSportDetail,
+  MacroPlanTimelineEntry,
   MacroWeekCoherenceSummary,
   PhaseSportTargetRole,
   Session,
@@ -39,6 +42,10 @@ const SQUASH_TRAINING_FOCUSES = new Set(['technical', 'tactical', 'physical', 'c
 const PROPOSAL_STATUSES = new Set(['pending', 'accepted', 'rejected', 'partial'])
 const SUPPORTED_SPORTS = new Set(['squash', 'running', 'strength', 'mobility', 'cycling'])
 const TRAINING_PRIORITIES = new Set(['performance', 'fitness', 'body_composition', 'return_to_play'])
+const GOAL_EVENT_PRIORITIES = new Set(['primary', 'secondary'])
+const MACRO_PLAN_LOAD_BIASES = new Set(['build', 'hold', 'reduce', 'minimal'])
+const MACRO_PLAN_EVENT_TIMINGS = new Set(['upcoming', 'active', 'past'])
+const MACRO_PLAN_SPORT_ROLES = new Set(['primary', 'support'])
 const MACRO_PLAN_PHASES = new Set(['base', 'build', 'peak', 'taper', 'race', 'transition'])
 const PHASE_SPORT_TARGET_ROLES = new Set(['primary', 'support', 'excluded'])
 const COACH_ACTION_TYPES = new Set([
@@ -1086,8 +1093,58 @@ function optionalGoalEvents(value: unknown, path: string): GoalEvent[] | undefin
       title: requireString(row.title, `${path}[${index}].title`),
       date: requireISODate(row.date, `${path}[${index}].date`),
       sport: requireString(row.sport, `${path}[${index}].sport`),
-      priority: 'primary' as const,
+      priority: (row.priority == null
+        ? 'primary'
+        : requireEnum(row.priority, GOAL_EVENT_PRIORITIES, `${path}[${index}].priority`)) as GoalEvent['priority'],
       notes: optionalString(row.notes, `${path}[${index}].notes`),
+    }
+  })
+}
+
+function optionalMacroPlanEventMarkers(value: unknown, path: string): MacroPlanEventMarker[] {
+  if (value == null) return []
+  return ensureArray(value, path).map((item, index) => {
+    const row = ensureRecord(item, `${path}[${index}]`)
+    return {
+      id: requireString(row.id, `${path}[${index}].id`),
+      title: requireString(row.title, `${path}[${index}].title`),
+      date: requireISODate(row.date, `${path}[${index}].date`),
+      sport: optionalEnum(row.sport, SUPPORTED_SPORTS, `${path}[${index}].sport`) as SupportedSport | undefined,
+      priority: requireEnum(row.priority, GOAL_EVENT_PRIORITIES, `${path}[${index}].priority`) as GoalEvent['priority'],
+      timing: requireEnum(row.timing, MACRO_PLAN_EVENT_TIMINGS, `${path}[${index}].timing`) as MacroPlanEventMarker['timing'],
+      weeksFromReference: requireFiniteNumber(row.weeksFromReference, `${path}[${index}].weeksFromReference`),
+    }
+  })
+}
+
+function optionalMacroPlanSportDetails(value: unknown, path: string): MacroPlanSportDetail[] {
+  if (value == null) return []
+  return ensureArray(value, path).map((item, index) => {
+    const row = ensureRecord(item, `${path}[${index}]`)
+    return {
+      sport: requireEnum(row.sport, SUPPORTED_SPORTS, `${path}[${index}].sport`) as SupportedSport,
+      role: requireEnum(row.role, MACRO_PLAN_SPORT_ROLES, `${path}[${index}].role`) as MacroPlanSportDetail['role'],
+      phaseFocus: requireString(row.phaseFocus, `${path}[${index}].phaseFocus`),
+      weeklyIntent: requireString(row.weeklyIntent, `${path}[${index}].weeklyIntent`),
+      volumeBias: requireEnum(row.volumeBias, MACRO_PLAN_LOAD_BIASES, `${path}[${index}].volumeBias`) as MacroPlanSportDetail['volumeBias'],
+      intensityBias: requireEnum(row.intensityBias, MACRO_PLAN_LOAD_BIASES, `${path}[${index}].intensityBias`) as MacroPlanSportDetail['intensityBias'],
+      notes: requireString(row.notes, `${path}[${index}].notes`),
+    }
+  })
+}
+
+function optionalMacroPlanTimeline(value: unknown, path: string): MacroPlanTimelineEntry[] {
+  if (value == null) return []
+  return ensureArray(value, path).map((item, index) => {
+    const row = ensureRecord(item, `${path}[${index}]`)
+    return {
+      phase: requireEnum(row.phase, MACRO_PLAN_PHASES, `${path}[${index}].phase`) as MacroPlanPhase,
+      startWeek: requireFiniteNumber(row.startWeek, `${path}[${index}].startWeek`),
+      endWeek: requireFiniteNumber(row.endWeek, `${path}[${index}].endWeek`),
+      label: requireString(row.label, `${path}[${index}].label`),
+      focus: requireString(row.focus, `${path}[${index}].focus`),
+      isCurrent: requireBoolean(row.isCurrent, `${path}[${index}].isCurrent`),
+      eventMarkers: optionalMacroPlanEventMarkers(row.eventMarkers, `${path}[${index}].eventMarkers`),
     }
   })
 }
@@ -1101,6 +1158,10 @@ function optionalMacroPlan(value: unknown, path: string): MacroPlan | undefined 
     currentPhase: requireEnum(row.currentPhase, MACRO_PLAN_PHASES, `${path}.currentPhase`) as MacroPlanPhase,
     weeksRemaining: requireFiniteNumber(row.weeksRemaining, `${path}.weeksRemaining`),
     blockFocus: requireString(row.blockFocus, `${path}.blockFocus`),
+    headline: optionalString(row.headline, `${path}.headline`) ?? requireString(row.blockFocus, `${path}.blockFocus`),
+    timeline: optionalMacroPlanTimeline(row.timeline, `${path}.timeline`),
+    sportDetails: optionalMacroPlanSportDetails(row.sportDetails, `${path}.sportDetails`),
+    secondaryEvents: optionalMacroPlanEventMarkers(row.secondaryEvents, `${path}.secondaryEvents`),
     computedAt: requireFiniteNumber(row.computedAt, `${path}.computedAt`),
   }
 }

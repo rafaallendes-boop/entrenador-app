@@ -73,6 +73,52 @@ describe('macroPlan', () => {
       weeksRemaining: 4,
       currentPhase: 'taper',
     })
+    expect(plan?.headline.length).toBeGreaterThan(0)
+    expect(plan?.timeline.length).toBeGreaterThan(0)
+    expect(plan?.sportDetails[0]).toMatchObject({
+      sport: 'squash',
+      role: 'primary',
+    })
+  })
+
+  it('adds sport detail and visible secondary events without changing the primary phase', () => {
+    const profile: AthleteProfile = {
+      ...makeProfile('2026-06-15'),
+      sportContext: {
+        enabledSports: ['squash', 'running', 'strength'],
+        primarySport: 'squash',
+        secondarySports: ['running', 'strength'],
+        trainingPriority: 'performance',
+      },
+      planWizardConfig: {
+        goalEventId: 'goal-1',
+        trainingDays: ['monday', 'wednesday', 'friday'],
+        sessionsPerWeek: 4,
+        sessionDurationMins: 60,
+        allowDoubleSession: false,
+        complementarySports: ['running', 'strength'],
+        currentFitnessLevel: 'normal',
+        currentFatigue: 'normal',
+        createdAt: '2026-04-01',
+        updatedAt: '2026-04-01',
+      },
+      goalEvents: [
+        ...makeProfile('2026-06-15').goalEvents!,
+        {
+          id: 'secondary-1',
+          title: '10K tune-up',
+          date: '2026-05-30',
+          sport: 'running',
+          priority: 'secondary',
+        },
+      ],
+    }
+
+    const plan = computeMacroPlan(profile, new Date('2026-04-07T09:00:00'))
+    expect(plan?.currentPhase).toBe('build')
+    expect(plan?.sportDetails.map((detail) => detail.sport)).toEqual(['squash', 'running', 'strength'])
+    expect(plan?.secondaryEvents).toHaveLength(1)
+    expect(plan?.timeline.some((entry) => entry.eventMarkers.some((marker) => marker.id === 'secondary-1'))).toBe(true)
   })
 
   it('formats display helpers correctly', () => {

@@ -107,7 +107,7 @@ describe('macroWeekCoherence', () => {
 
     expect(summary.currentPhase).toBe('build')
     expect(summary.coherenceStatus).toBe('ok')
-    expect(summary.weeklyRule.toLowerCase()).toContain('subir volumen específico')
+    expect(summary.weeklyRule.toLowerCase()).toContain('squash')
     expect(summary.actualDistributionBySport.squash).toBe(3)
   })
 
@@ -125,7 +125,7 @@ describe('macroWeekCoherence', () => {
 
     expect(summary.currentPhase).toBe('peak')
     expect(summary.coherenceStatus).toBe('warning')
-    expect(summary.coherenceIssues.join(' ')).toContain('peak')
+    expect(summary.coherenceIssues.join(' ')).toContain('accesorio')
   })
 
   it('taper warns when running or accessory load stays too high', () => {
@@ -147,5 +147,48 @@ describe('macroWeekCoherence', () => {
     expect(summary.currentPhase).toBe('taper')
     expect(summary.coherenceStatus).toBe('warning')
     expect(summary.coherenceIssues.join(' ')).toContain('running')
+  })
+
+  it('produces different coherence guidance for build squash and peak running', () => {
+    const squashProfile = makeProfile({
+      goalEvents: [{ ...makeProfile().goalEvents![0], date: '2026-06-20' }],
+    })
+    const runningProfile = makeProfile({
+      primarySport: 'running',
+      sportContext: {
+        enabledSports: ['running', 'strength'],
+        primarySport: 'running',
+        secondarySports: ['strength'],
+        trainingPriority: 'performance',
+      },
+      goalEvents: [
+        {
+          ...makeProfile().goalEvents![0],
+          sport: 'running',
+          title: '10K principal',
+          date: '2026-05-20',
+        },
+      ],
+      planWizardConfig: {
+        ...makeProfile().planWizardConfig!,
+        complementarySports: ['strength'],
+      },
+    })
+
+    const buildSummary = buildMacroWeekCoherenceSummary({
+      athleteProfile: squashProfile,
+      sessions: [makeSession('squash'), makeSession('squash'), makeSession('strength', 50, 5)],
+      historicalSessions,
+      referenceDate,
+    })
+    const peakSummary = buildMacroWeekCoherenceSummary({
+      athleteProfile: runningProfile,
+      sessions: [makeSession('running'), makeSession('running'), makeSession('strength', 45, 5)],
+      historicalSessions,
+      referenceDate,
+    })
+
+    expect(buildSummary.weeklyRule).not.toBe(peakSummary.weeklyRule)
+    expect(buildSummary.blockGoal).not.toBe(peakSummary.blockGoal)
   })
 })

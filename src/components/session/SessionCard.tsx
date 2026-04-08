@@ -1,12 +1,12 @@
-import { Clock, Flame, ChevronDown, ChevronUp, Trash2, Wind } from 'lucide-react'
-import { useState } from 'react'
+import { Check, Clock, Flame, ChevronDown, ChevronUp, Trash2, Wind } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import type { Session, SessionStatus } from '../../types'
 import { SESSION_TYPE_CONFIG, SQUASH_SUBTYPE_LABELS } from '../../constants/sessionTypes'
 import { formatDuration } from '../../utils/format'
 import SessionTypeIcon from './SessionTypeIcon'
 import ExerciseChecklist from './ExerciseChecklist'
 import { useTrainingStore } from '../../store/useTrainingStore'
-import { getProtocolSummary, normalizeGeneratedProtocol } from '../../services/trainingProtocols'
+import { normalizeGeneratedProtocol } from '../../services/trainingProtocols'
 
 const STATUS_CONFIG: Record<SessionStatus, { label: string; badge: string; icon: string }> = {
   planned: { label: 'Planificado', badge: 'bg-surface-raised text-ink-faint border border-surface-border', icon: '?' },
@@ -30,6 +30,8 @@ interface SessionCardProps {
 export default function SessionCard({ session, compact = false, onDelete }: SessionCardProps) {
   const [expanded, setExpanded] = useState(false)
   const cycleStatus = useTrainingStore((s) => s.cycleSessionStatus)
+  const toggleProtocolStep = useTrainingStore((s) => s.toggleProtocolStep)
+  const updateSession = useTrainingStore((s) => s.updateSession)
   const config = SESSION_TYPE_CONFIG[session.type]
   const statusCfg = STATUS_CONFIG[session.status]
 
@@ -51,7 +53,17 @@ export default function SessionCard({ session, compact = false, onDelete }: Sess
       session.gamesWon != null ||
       session.gamesLost != null ||
       session.location)
-  const isExpandable = hasExercises || session.objective || session.notes || hasRunningDetails || hasMatchMeta || hasSquashDetails || hasProtocols
+  const hasCompletedFeedback = session.status === 'completed' || Boolean(session.sessionFeedback)
+  const isExpandable =
+    hasExercises ||
+    session.objective ||
+    session.notes ||
+    session.completionNotes ||
+    hasRunningDetails ||
+    hasMatchMeta ||
+    hasSquashDetails ||
+    hasProtocols ||
+    hasCompletedFeedback
   const subtypeLabel = session.subtype ? SQUASH_SUBTYPE_LABELS[session.subtype] : null
   const isSkipped = session.status === 'skipped'
   const showMatchBadge = hasMatchMeta && session.matchResult
@@ -159,22 +171,45 @@ export default function SessionCard({ session, compact = false, onDelete }: Sess
             </p>
           )}
           {hasRunningDetails && session.runningDetails && (
-            <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
-              <div className="rounded-lg bg-sky-500/10 p-2">
-                <p className="mb-0.5 text-[10px] font-medium uppercase tracking-wider text-sky-400/70">Ritmo objetivo</p>
-                <p className="text-sm font-semibold text-sky-400">
-                  {session.runningDetails.targetPaceMin}
-                  {session.runningDetails.targetPaceMax ? `-${session.runningDetails.targetPaceMax}` : ''}
-                  <span className="ml-1 text-xs font-normal text-sky-400/70">/km</span>
-                </p>
+            <div className="mt-2 space-y-2">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {session.runningDetails.targetPaceMin && (
+                  <div className="rounded-lg bg-sky-500/10 p-2">
+                    <p className="mb-0.5 text-[10px] font-medium uppercase tracking-wider text-sky-400/70">Ritmo objetivo</p>
+                    <p className="text-sm font-semibold text-sky-400">
+                      {session.runningDetails.targetPaceMin}
+                      {session.runningDetails.targetPaceMax ? `-${session.runningDetails.targetPaceMax}` : ''}
+                      <span className="ml-1 text-xs font-normal text-sky-400/70">/km</span>
+                    </p>
+                  </div>
+                )}
+                {session.runningDetails.targetHrMin && (
+                  <div className="rounded-lg bg-rose-500/10 p-2">
+                    <p className="mb-0.5 text-[10px] font-medium uppercase tracking-wider text-rose-400/70">FC objetivo</p>
+                    <p className="text-sm font-semibold text-rose-400">
+                      {session.runningDetails.targetHrMin}-{session.runningDetails.targetHrMax}
+                      <span className="ml-1 text-xs font-normal text-rose-400/70">bpm</span>
+                    </p>
+                  </div>
+                )}
               </div>
-              {session.runningDetails.targetHrMin && (
-                <div className="rounded-lg bg-rose-500/10 p-2">
-                  <p className="mb-0.5 text-[10px] font-medium uppercase tracking-wider text-rose-400/70">FC objetivo</p>
-                  <p className="text-sm font-semibold text-rose-400">
-                    {session.runningDetails.targetHrMin}-{session.runningDetails.targetHrMax}
-                    <span className="ml-1 text-xs font-normal text-rose-400/70">bpm</span>
-                  </p>
+              {session.runningDetails.intervalStructure && (
+                <div className="space-y-1">
+                  <p className="text-[10px] font-medium uppercase tracking-wider text-ink-faint">Estructura</p>
+                  {session.runningDetails.intervalStructure.blocks.map((block, i) => (
+                    <div key={`${block.label}-${i}`} className="flex items-start gap-2 rounded-lg bg-sky-500/8 px-2.5 py-1.5">
+                      <span className="w-5 flex-shrink-0 text-right text-[11px] font-semibold text-sky-400">{i + 1}.</span>
+                      <div className="min-w-0 flex-1">
+                        <span className="text-xs font-medium text-ink">{block.label}</span>
+                        {block.notes && <span className="ml-1 text-[11px] text-ink-faint">({block.notes})</span>}
+                      </div>
+                      <span className="flex-shrink-0 text-right text-[11px] text-sky-400/80">
+                        {block.repetitions != null && block.distanceKm != null && `${block.repetitions}x${block.distanceKm}km`}
+                        {block.durationMin != null && ` ${block.durationMin}min`}
+                        {block.targetPace && ` · ${block.targetPace}/km`}
+                      </span>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
@@ -243,25 +278,200 @@ export default function SessionCard({ session, compact = false, onDelete }: Sess
           {hasProtocols && (
             <div className="space-y-2">
               {warmup && (
-                <div className="rounded-lg border border-brand/20 bg-brand/5 p-2">
-                  <p className="text-[10px] font-medium uppercase tracking-wider text-brand-light/80">Warm-up</p>
-                  <p className="mt-1 text-xs text-ink">{warmup.title}</p>
-                  <p className="text-[11px] text-ink-faint">{getProtocolSummary(warmup)}</p>
-                </div>
+                <ProtocolChecklistCard
+                  title="Warm-up"
+                  accentClass="border-brand/20 bg-brand/5"
+                  headingClass="text-brand-light/80"
+                  checkboxClass="border-brand/30 group-hover:border-brand/60 data-[completed=true]:border-brand data-[completed=true]:bg-brand"
+                  sessionId={session.id}
+                  type="warmup"
+                  protocol={warmup}
+                  onToggle={toggleProtocolStep}
+                />
               )}
               {cooldown && (
-                <div className="rounded-lg border border-violet-500/20 bg-violet-500/5 p-2">
-                  <p className="text-[10px] font-medium uppercase tracking-wider text-violet-300/80">Post / cool-down</p>
-                  <p className="mt-1 text-xs text-ink">{cooldown.title}</p>
-                  <p className="text-[11px] text-ink-faint">{getProtocolSummary(cooldown)}</p>
-                </div>
+                <ProtocolChecklistCard
+                  title="Post / cool-down"
+                  accentClass="border-violet-500/20 bg-violet-500/5"
+                  headingClass="text-violet-300/80"
+                  checkboxClass="border-violet-500/30 group-hover:border-violet-400/60 data-[completed=true]:border-violet-500 data-[completed=true]:bg-violet-500"
+                  sessionId={session.id}
+                  type="cooldown"
+                  protocol={cooldown}
+                  onToggle={toggleProtocolStep}
+                />
               )}
             </div>
           )}
           {session.notes && <p className="text-xs italic text-ink-muted">"{session.notes}"</p>}
           {session.completionNotes && <p className="text-xs italic text-ink-muted">Post: "{session.completionNotes}"</p>}
+          {session.status === 'completed' && (
+            <SessionFeedbackForm session={session} onUpdate={updateSession} />
+          )}
         </div>
       )}
+    </div>
+  )
+}
+
+interface ProtocolChecklistCardProps {
+  title: string
+  accentClass: string
+  headingClass: string
+  checkboxClass: string
+  sessionId: string
+  type: 'warmup' | 'cooldown'
+  protocol: NonNullable<Session['warmup']>
+  onToggle: (sessionId: string, type: 'warmup' | 'cooldown', stepIndex: number) => Promise<void>
+}
+
+function ProtocolChecklistCard({
+  title,
+  accentClass,
+  headingClass,
+  checkboxClass,
+  sessionId,
+  type,
+  protocol,
+  onToggle,
+}: ProtocolChecklistCardProps) {
+  return (
+    <div className={`rounded-lg border p-2 ${accentClass}`}>
+      <div className="flex items-center justify-between">
+        <p className={`text-[10px] font-medium uppercase tracking-wider ${headingClass}`}>{title}</p>
+        <span className="text-[11px] text-ink-faint">{protocol.durationMin} min</span>
+      </div>
+      <p className="mt-1 text-xs text-ink">{protocol.title}</p>
+      {protocol.note && <p className="mt-1 text-[11px] text-ink-faint">{protocol.note}</p>}
+      <div className="mt-1.5 space-y-1">
+        {protocol.steps.map((step, i) => (
+          <button
+            key={`${type}-${i}`}
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              void onToggle(sessionId, type, i)
+            }}
+            className="group flex w-full items-start gap-2 text-left"
+          >
+            <div
+              data-completed={step.completed ? 'true' : 'false'}
+              className={`mt-0.5 flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center rounded border transition-colors ${checkboxClass}`}
+            >
+              {step.completed && <Check size={9} className="text-white" />}
+            </div>
+            <span className={`text-[11px] leading-snug ${step.completed ? 'text-ink-faint line-through' : 'text-ink-faint'}`}>
+              {step.label}
+              {step.detail ? ` — ${step.detail}` : ''}
+            </span>
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+interface SessionFeedbackFormProps {
+  session: Session
+  onUpdate: (id: string, patch: Partial<Session>) => Promise<void>
+}
+
+function SessionFeedbackForm({ session, onUpdate }: SessionFeedbackFormProps) {
+  const [rating, setRating] = useState<number>(session.sessionFeedback?.rating ?? 0)
+  const [energy, setEnergy] = useState<number>(session.sessionFeedback?.energyDuringSession ?? 0)
+  const [challenge, setChallenge] = useState(session.sessionFeedback?.mainChallenge ?? '')
+
+  useEffect(() => {
+    setRating(session.sessionFeedback?.rating ?? 0)
+    setEnergy(session.sessionFeedback?.energyDuringSession ?? 0)
+    setChallenge(session.sessionFeedback?.mainChallenge ?? '')
+  }, [session.sessionFeedback])
+
+  const persistFeedback = async (next: { rating?: number; energy?: number; challenge?: string }) => {
+    const nextRating = next.rating ?? rating
+    const nextEnergy = next.energy ?? energy
+    const nextChallenge = next.challenge ?? challenge
+
+    if (!nextRating || !nextEnergy) return
+
+    await onUpdate(session.id, {
+      sessionFeedback: {
+        rating: nextRating as 1 | 2 | 3 | 4 | 5,
+        energyDuringSession: nextEnergy as 1 | 2 | 3 | 4 | 5,
+        mainChallenge: nextChallenge.trim() || undefined,
+        capturedAt: Date.now(),
+      },
+    })
+  }
+
+  return (
+    <div
+      className="rounded-lg border border-white/8 bg-surface-raised/70 p-3"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <p className="text-sm font-medium text-ink">¿Cómo fue?</p>
+      <p className="mt-1 text-[11px] text-ink-faint">Guarda una señal corta para que el coach lea sensaciones reales de esta sesión.</p>
+
+      <div className="mt-3">
+        <p className="text-[10px] font-medium uppercase tracking-wider text-ink-faint">Rating</p>
+        <div className="mt-1 flex gap-1.5">
+          {[1, 2, 3, 4, 5].map((value) => (
+            <button
+              key={`rating-${value}`}
+              type="button"
+              onClick={() => {
+                setRating(value)
+                void persistFeedback({ rating: value })
+              }}
+              className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+                rating === value
+                  ? 'bg-brand text-white'
+                  : 'border border-white/10 bg-white/5 text-ink-faint hover:border-brand/40 hover:text-ink'
+              }`}
+            >
+              {value}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="mt-3">
+        <p className="text-[10px] font-medium uppercase tracking-wider text-ink-faint">Energía durante la sesión</p>
+        <div className="mt-1 flex gap-1.5">
+          {[1, 2, 3, 4, 5].map((value) => (
+            <button
+              key={`energy-${value}`}
+              type="button"
+              onClick={() => {
+                setEnergy(value)
+                void persistFeedback({ energy: value })
+              }}
+              className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+                energy === value
+                  ? 'bg-emerald-500 text-white'
+                  : 'border border-white/10 bg-white/5 text-ink-faint hover:border-emerald-400/40 hover:text-ink'
+              }`}
+            >
+              {value}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="mt-3">
+        <label className="text-[10px] font-medium uppercase tracking-wider text-ink-faint" htmlFor={`challenge-${session.id}`}>
+          Desafío principal
+        </label>
+        <textarea
+          id={`challenge-${session.id}`}
+          value={challenge}
+          onChange={(e) => setChallenge(e.target.value)}
+          onBlur={() => void persistFeedback({ challenge })}
+          rows={3}
+          placeholder="Qué costó más, qué se sintió raro o dónde faltó energía."
+          className="mt-1 w-full rounded-lg border border-white/10 bg-white/5 px-2.5 py-2 text-xs text-ink outline-none transition-colors placeholder:text-ink-faint focus:border-brand/40"
+        />
+      </div>
     </div>
   )
 }

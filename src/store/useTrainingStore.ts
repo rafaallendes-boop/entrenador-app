@@ -36,6 +36,7 @@ interface TrainingState {
   deleteSession: (id: string) => Promise<void>
   cycleSessionStatus: (id: string) => Promise<void>
   toggleExercise: (sessionId: string, exerciseId: string) => Promise<void>
+  toggleProtocolStep: (sessionId: string, type: 'warmup' | 'cooldown', stepIndex: number) => Promise<void>
   saveDayLog: (date: string, patch: Partial<Omit<DayLog, 'id' | 'date' | 'updatedAt'>>) => Promise<void>
   generateCoachNote: (weekStart: string) => Promise<string>
 }
@@ -169,6 +170,17 @@ export const useTrainingStore = create<TrainingState>((set, get) => ({
       ex.id === exerciseId ? { ...ex, completed: !ex.completed } : ex
     )
     await get().updateSession(sessionId, { exercises })
+  },
+
+  toggleProtocolStep: async (sessionId, type, stepIndex) => {
+    const session = get().sessions.find(s => s.id === sessionId)
+    if (!session) return
+    const protocol = session[type]
+    if (!protocol) return
+    const steps = protocol.steps.map((step, i) =>
+      i === stepIndex ? { ...step, completed: !step.completed } : step
+    )
+    await get().updateSession(sessionId, { [type]: { ...protocol, steps } })
   },
 
   saveDayLog: async (date, patch) => {

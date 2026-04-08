@@ -840,6 +840,21 @@ function buildMacroPlanSection(context: ChatContext): string {
   lines.push(`Fase actual: ${getPhaseLabel(macroPlan.currentPhase)}`)
   lines.push(`Semanas restantes: ${formatWeeksRemaining(macroPlan.weeksRemaining)}`)
   lines.push(`Foco del bloque: ${macroPlan.blockFocus}`)
+  lines.push(`Headline del bloque: ${macroPlan.headline}`)
+  if (macroPlan.sportDetails.length > 0) {
+    lines.push('')
+    lines.push('INTENCION POR DEPORTE:')
+    for (const detail of macroPlan.sportDetails) {
+      lines.push(`- ${detail.sport} (${detail.role}): foco ${detail.phaseFocus}; semana ${detail.weeklyIntent}; volumen ${detail.volumeBias}; intensidad ${detail.intensityBias}.`)
+    }
+  }
+  if (macroPlan.secondaryEvents.length > 0) {
+    lines.push('')
+    lines.push('EVENTOS SECUNDARIOS RELEVANTES:')
+    for (const eventMarker of macroPlan.secondaryEvents.slice(0, 3)) {
+      lines.push(`- ${eventMarker.title} (${eventMarker.date}) · ${eventMarker.timing}`)
+    }
+  }
   lines.push('')
   lines.push('REGLAS MACRO PLAN:')
   lines.push('- Usa esta información para ajustar recomendaciones de carga, volumen e intensidad.')
@@ -1470,6 +1485,12 @@ function buildSessionsSection(sessions: Session[]): string {
     if (s.completionNotes) {
       lines.push(`   ↳ Nota post: "${s.completionNotes.slice(0, 80)}"`)
     }
+
+    if (s.sessionFeedback) {
+      const sf = s.sessionFeedback
+      const challengeStr = sf.mainChallenge ? ` · desafío: "${sf.mainChallenge.slice(0, 60)}"` : ''
+      lines.push(`   ↳ Feedback sesión: ${sf.rating}/5 · energía ${sf.energyDuringSession}/5${challengeStr}`)
+    }
   }
 
   return lines.join('\n')
@@ -1890,10 +1911,10 @@ Para CREAR una semana completa:
   create_week — campos: sessions (array con TODOS los detalles), weekObjectives (array de strings), reason
 
 Para AGREGAR una sesión individual:
-  add_session — campos: targetDate, timeBlock, sessionType, title, durationMin, rpe?, objective?, subtype?${hasRunning || hasCycling ? ', runningType?, targetPaceMin?, targetPaceMax?, targetHrMin?, targetHrMax?' : ''}${hasStrength ? ', exercises?' : ', exercises?'} , reason
+  add_session — campos: targetDate, timeBlock, sessionType, title, durationMin, rpe?, objective?, subtype?${hasRunning || hasCycling ? ', runningType?, targetPaceMin?, targetPaceMax?, targetHrMin?, targetHrMax?, intervalStructure?' : ''}${hasStrength ? ', exercises?' : ', exercises?'} , warmup, cooldown, reason
 
 Para ACTUALIZAR sesión existente (tipo, detalles, ejercicios, título, objetivo, RPE, duración):
-  update_session — campos: sessionId, reason + uno o más de: newType, subtype, newTitle, newObjective, newRpe, newDurationMin${hasRunning || hasCycling ? ', runningType, targetPaceMin, targetPaceMax, targetHrMin, targetHrMax' : ''}, squashDetails, exercises (array completo — reemplaza todo)
+  update_session — campos: sessionId, reason + uno o más de: newType, subtype, newTitle, newObjective, newRpe, newDurationMin${hasRunning || hasCycling ? ', runningType, targetPaceMin, targetPaceMax, targetHrMin, targetHrMax, intervalStructure' : ''}, squashDetails, exercises (array completo — reemplaza todo)
 
 Para otras modificaciones (requieren sessionId):
   skip_session        — sessionId, reason
@@ -1928,13 +1949,22 @@ Para squash training o control (agrega en la sesión cuando hay drills concretos
       ${squashBaseDrillsJson}
     ]
   }
+  IMPORTANTE: para sesiones de subtype "training" o "control", drills[] es obligatorio. Incluye siempre durationMin por drill.
 
 ${hasRunning || hasCycling ? `Para ${runningOrCyclingLabel} (agrega en la sesión):
   runningType: "z2"|"tempo"|"intervals"|"long"
   targetPaceMin: "5:30"      ← ritmo mínimo /km (running) o min/km referencia (cycling)
   targetPaceMax: "6:00"      ← ritmo máximo /km
   targetHrMin: 140           ← FC objetivo (opcional)
-  targetHrMax: 155` : ''}
+  targetHrMax: 155
+  Para intervalos o tempo, añade también intervalStructure con bloques explícitos:
+    intervalStructure: {
+      blocks: [
+        {"label":"Calentamiento progresivo","durationMin":15,"targetPace":"6:00"},
+        {"label":"Series 5x1km","repetitions":5,"distanceKm":1,"targetPace":"4:20","notes":"recuperación 90s trote"},
+        {"label":"Vuelta a la calma","durationMin":10,"targetPace":"6:30"}
+      ]
+    }` : ''}
 
 Para fuerza y movilidad (agrega array exercises en la sesión):
   exercises: [
@@ -1942,6 +1972,10 @@ Para fuerza y movilidad (agrega array exercises en la sesión):
     {"name":"Nombre","sets":3,"reps":"30s","mobilityFocus":"hip|ankle|shoulder|spine|knee|full_body"}
   ]
   Para fuerza: usa la selección dinámica como base; si quieres explicitar intensidad, hazlo dentro de notes sin crear un campo nuevo.
+
+Warmup y cooldown (obligatorios en todas las sesiones de add_session y create_week):
+  warmup: {"title":"...","durationMin":10,"note":"...","tone":"general","steps":[{"label":"..."},...],"source":"base"}
+  cooldown: {"title":"...","durationMin":7,"note":"...","tone":"recovery","steps":[{"label":"..."},...],"source":"base"}
 
 ═══ FORMATO DE RESPUESTA ═══
 

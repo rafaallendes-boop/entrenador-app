@@ -1,7 +1,7 @@
-import { Target, Calendar, TrendingUp, Pencil, Trash2 } from 'lucide-react'
+import { Calendar, Pencil, Target, Trash2, TrendingUp } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
-import type { MacroPlan } from '../../types'
-import { getPhaseLabel, formatWeeksRemaining } from '../../services/macroPlan'
+import type { MacroPlan, MacroPlanSportDetail, SupportedSport } from '../../types'
+import { formatWeeksRemaining, getPhaseLabel } from '../../services/macroPlan'
 import { ROUTES } from '../../constants/routes'
 import Card from '../ui/Card'
 
@@ -23,6 +23,14 @@ const PHASE_BG: Record<MacroPlan['currentPhase'], string> = {
   transition: 'bg-violet-500/10 border-violet-500/20',
 }
 
+const SPORT_LABELS: Record<SupportedSport, string> = {
+  squash: 'Squash',
+  running: 'Running',
+  strength: 'Fuerza',
+  mobility: 'Movilidad',
+  cycling: 'Ciclismo',
+}
+
 interface MacroPlanCardProps {
   macroPlan: MacroPlan
   eventTitle?: string
@@ -41,6 +49,8 @@ export default function MacroPlanCard({
   const weeksLabel = formatWeeksRemaining(macroPlan.weeksRemaining)
   const phaseColor = PHASE_COLOR[macroPlan.currentPhase]
   const phaseBg = PHASE_BG[macroPlan.currentPhase]
+  const visibleSportDetails = macroPlan.sportDetails.slice(0, 3)
+  const visibleTimeline = macroPlan.timeline.slice(0, 5)
 
   return (
     <Card className={`p-4 border ${phaseBg}`}>
@@ -55,6 +65,7 @@ export default function MacroPlanCard({
           {eventTitle && (
             <p className="text-sm font-medium text-ink mt-0.5 truncate">{eventTitle}</p>
           )}
+          <p className="mt-1 text-xs text-ink-muted leading-relaxed">{macroPlan.headline}</p>
         </div>
         <div className="flex items-center gap-1">
           {onDelete && (
@@ -102,9 +113,83 @@ export default function MacroPlanCard({
         <p className="text-xs text-ink-muted leading-relaxed">{macroPlan.blockFocus}</p>
       </div>
 
+      {visibleSportDetails.length > 0 && (
+        <div className="mt-3 rounded-xl border border-surface-border bg-surface-raised px-3 py-3">
+          <p className="text-[10px] font-medium uppercase tracking-wider text-ink-faint mb-2">Por deporte</p>
+          <div className="space-y-2">
+            {visibleSportDetails.map((detail) => (
+              <SportDetailRow key={`${detail.sport}-${detail.role}`} detail={detail} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {visibleTimeline.length > 0 && (
+        <div className="mt-3 rounded-xl border border-surface-border bg-surface-raised px-3 py-3">
+          <p className="text-[10px] font-medium uppercase tracking-wider text-ink-faint mb-2">Timeline</p>
+          <div className="space-y-2">
+            {visibleTimeline.map((entry) => (
+              <div
+                key={`${entry.phase}-${entry.startWeek}-${entry.endWeek}`}
+                className={`rounded-lg border px-2.5 py-2 ${
+                  entry.isCurrent ? 'border-brand/30 bg-brand/5' : 'border-surface-border bg-surface'
+                }`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs font-semibold text-ink">{entry.label}</p>
+                  <span className="text-[10px] text-ink-faint">
+                    {formatTimelineRange(entry.startWeek, entry.endWeek)}
+                  </span>
+                </div>
+                <p className="mt-1 text-[11px] text-ink-muted leading-relaxed">{entry.focus}</p>
+                {entry.eventMarkers.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {entry.eventMarkers.map((eventMarker) => (
+                      <span
+                        key={eventMarker.id}
+                        className={`rounded-full px-2 py-0.5 text-[10px] ${
+                          eventMarker.priority === 'secondary'
+                            ? 'bg-surface-border/60 text-ink-muted'
+                            : 'bg-brand/10 text-brand-light'
+                        }`}
+                      >
+                        {eventMarker.title}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <p className="mt-2 text-[10px] text-ink-faint">
         {macroPlan.goalEventDate} · Actualizado al guardar perfil
       </p>
     </Card>
   )
+}
+
+function SportDetailRow({ detail }: { detail: MacroPlanSportDetail }) {
+  return (
+    <div className="rounded-lg border border-surface-border bg-surface px-2.5 py-2">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-xs font-semibold text-ink">{SPORT_LABELS[detail.sport] ?? detail.sport}</p>
+        <span className={`text-[10px] uppercase tracking-wide ${
+          detail.role === 'primary' ? 'text-brand-light' : 'text-amber-300'
+        }`}>
+          {detail.role === 'primary' ? 'principal' : 'soporte'}
+        </span>
+      </div>
+      <p className="mt-1 text-[11px] text-ink-muted leading-relaxed">{detail.weeklyIntent}</p>
+    </div>
+  )
+}
+
+function formatTimelineRange(startWeek: number, endWeek: number): string {
+  if (startWeek < 0 && endWeek < 0) return 'post-evento'
+  if (startWeek === 0 && endWeek === 0) return 'esta semana'
+  if (startWeek === endWeek) return `sem ${startWeek}`
+  return `sem ${startWeek}-${endWeek}`
 }

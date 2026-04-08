@@ -458,8 +458,12 @@ async function repairRemoteAthleteProfileRows(
   const winner = pickCanonicalAthleteProfileRow(candidates)
   const canonical: AthleteProfileSyncRow = {
     ...winner,
-    id: 'default',
     user_id: userId,
+  }
+  const keeper = rows.find((row) => row.id === winner.id) ?? rows[0]
+  const nextRow: AthleteProfileSyncRow = {
+    ...canonical,
+    id: keeper?.id ?? 'default',
   }
 
   logAthleteProfileSync('repair:start', {
@@ -467,32 +471,90 @@ async function repairRemoteAthleteProfileRows(
     remoteIds: rows.map((row) => row.id),
     preferredUpdatedAt: preferredRow?.updated_at ?? null,
     winnerId: winner.id,
-    canonicalUpdatedAt: canonical.updated_at,
+    canonicalUpdatedAt: nextRow.updated_at,
+    keeperId: nextRow.id,
   })
 
-  const { error: upsertError } = await supabase
-    .from('athlete_profiles')
-    .upsert(canonical as never, { onConflict: 'user_id' })
+  if (keeper) {
+    const { error: updateError } = await supabase
+      .from('athlete_profiles')
+      .update({
+        coach_memory: nextRow.coach_memory,
+        updated_at: nextRow.updated_at,
+        data: nextRow.data,
+      } as never)
+      .eq('id', keeper.id)
+      .eq('user_id', userId)
 
-  if (upsertError) {
-    throw new Error(classifyAthleteProfileSyncError(upsertError))
+    if (updateError) {
+      throw new Error(classifyAthleteProfileSyncError(updateError))
+    }
+  } else {
+    const { error: insertError } = await supabase
+      .from('athlete_profiles')
+      .insert({
+        id: nextRow.id,
+        user_id: userId,
+        coach_memory: nextRow.coach_memory,
+        updated_at: nextRow.updated_at,
+        data: nextRow.data,
+      } as never)
+
+    if (insertError) {
+      throw new Error(classifyAthleteProfileSyncError(insertError))
+    }
   }
 
-  const repairedRows = await fetchAthleteProfileRows(userId)
-  const loserIds = repairedRows
-    .filter((row) => row.id !== 'default')
+  const loserIds = rows
+    .filter((row) => row.id !== nextRow.id)
     .map((row) => row.id)
 
   if (loserIds.length > 0) {
     await deleteAthleteProfileRowsById(userId, loserIds)
   }
 
+  const repairedRows = await fetchAthleteProfileRows(userId)
+
   logAthleteProfileSync('repair:done', {
     remoteRowsAfterUpsert: repairedRows.length,
     deletedIds: loserIds,
   })
 
-  return canonical
+  return nextRow
+}
+
+async function persistAthleteProfileRow(
+  row: Record<string, unknown>,
+  userId: string,
+  remoteRows?: AthleteProfileSyncRow[],
+): Promise<void> {
+  const profileRow = toAthleteProfileSyncRow(row)
+  const existingRows = remoteRows ?? await fetchAthleteProfileRows(userId)
+
+  if (existingRows.length > 1) {
+    await repairRemoteAthleteProfileRows(userId, existingRows, profileRow)
+    return
+  }
+
+  const existingRow = existingRows[0]
+
+  if (!existingRow) {
+    const { error } = await supabase.from('athlete_profiles').insert(profileRow as never)
+    if (error) throw error
+    return
+  }
+
+  const { error } = await supabase
+    .from('athlete_profiles')
+    .update({
+      coach_memory: profileRow.coach_memory,
+      updated_at: profileRow.updated_at,
+      data: profileRow.data,
+    } as never)
+    .eq('id', existingRow.id)
+    .eq('user_id', userId)
+
+  if (error) throw error
 }
 
 async function upsertAthleteProfileRow(row: Record<string, unknown>, userId: string): Promise<void> {
@@ -508,18 +570,12 @@ async function upsertAthleteProfileRow(row: Record<string, unknown>, userId: str
       payloadKeys: Object.keys((profileRow.data as Record<string, unknown> | null) ?? {}),
     })
 
-    if (remoteRows.length > 1 || remoteRows.some((item) => item.id !== 'default')) {
+    if (remoteRows.length > 1) {
       await repairRemoteAthleteProfileRows(userId, remoteRows, profileRow)
       return
     }
 
-    const { error } = await supabase
-      .from('athlete_profiles')
-      .upsert(profileRow as never, { onConflict: 'user_id' })
-
-    if (error) {
-      throw error
-    }
+    await persistAthleteProfileRow(profileRow, userId, remoteRows)
   } catch (error) {
     throw new Error(classifyAthleteProfileSyncError(error))
   }
@@ -838,7 +894,7 @@ async function mergeAthleteProfile(userId: string, context: MergeContext): Promi
     throw new Error(classifyAthleteProfileSyncError(error))
   }
 
-  if (remoteRows.length > 1 || remoteRows.some((row) => row.id !== 'default')) {
+  if (remoteRows.length > 1) {
     const localPreferred = await db.athleteProfiles.get('default')
     const preferredRow = localPreferred
       ? toAthleteProfileSyncRow(athleteProfileToRow(localPreferred, userId))
@@ -1182,7 +1238,7 @@ export async function migrateLocalDataToCloud(userId: string): Promise<void> {
       weekRows.length > 0 && supabase.from('week_summaries').upsert(weekRows as never),
       chatRows.length > 0 && supabase.from('chat_messages').upsert(chatRows as never),
       proposalRows.length > 0 && supabase.from('coach_proposals').upsert(proposalRows as never),
-      profileRows.length > 0 && supabase.from('athlete_profiles').upsert(profileRows as never, { onConflict: 'user_id' }),
+      profileRows.length > 0 && persistAthleteProfileRow(profileRows[profileRows.length - 1], userId),
     ])
 
     localStorage.setItem(getMigrationKey(userId), '1')
