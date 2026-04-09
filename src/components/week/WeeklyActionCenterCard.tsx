@@ -5,6 +5,7 @@ import type { WeeklyActionItem, WeeklyActionSummary } from '../../types'
 interface WeeklyActionCenterCardProps {
   summary: WeeklyActionSummary
   onSelectAction: (action: WeeklyActionItem) => void
+  onOpenAutoAdjustment?: () => void
 }
 
 const STATUS_LABELS = {
@@ -32,7 +33,7 @@ const STATUS_LABELS = {
   },
 } as const
 
-export default function WeeklyActionCenterCard({ summary, onSelectAction }: WeeklyActionCenterCardProps) {
+export default function WeeklyActionCenterCard({ summary, onSelectAction, onOpenAutoAdjustment }: WeeklyActionCenterCardProps) {
   const primaryAction = summary.primaryAction
 
   return (
@@ -79,6 +80,16 @@ export default function WeeklyActionCenterCard({ summary, onSelectAction }: Week
                 {primaryAction.ctaLabel}
                 <ArrowRight size={13} />
               </button>
+              {onOpenAutoAdjustment && (
+                <button
+                  type="button"
+                  onClick={onOpenAutoAdjustment}
+                  className="mt-2 inline-flex items-center gap-1.5 rounded-xl border border-brand/25 bg-brand/10 px-3 py-2 text-xs font-semibold text-brand-light transition-colors hover:bg-brand/20"
+                >
+                  Ver ajuste rapido
+                  <ArrowRight size={13} />
+                </button>
+              )}
             </div>
           </div>
         </div>

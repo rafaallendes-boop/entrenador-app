@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Download, Plus, FileUp, Sparkles, MessageSquareText } from 'lucide-react'
 import { useTrainingStore } from '../store/useTrainingStore'
+import { useCoachActionsStore } from '../store/useCoachActionsStore'
 import { useUIStore } from '../store/useUIStore'
 
 import { computeLoadAnalytics, type LoadAnalytics } from '../services/loadAnalytics'
@@ -13,17 +14,20 @@ import SessionCard from '../components/session/SessionCard'
 import AddSessionModal from '../components/session/AddSessionModal'
 import ConfirmDialog from '../components/ui/ConfirmDialog'
 import { ROUTES } from '../constants/routes'
-import type { TimeBlock } from '../types'
+import type { CoachProposal, TimeBlock } from '../types'
 import { downloadICS } from '../utils/ics'
 import { useMacroWeekCoherence } from '../hooks/useMacroWeekCoherence'
 import { useWeeklyActionNavigator } from '../hooks/useWeeklyActionNavigator'
 import { buildWeeklyActionSummary } from '../services/weeklyActionLoop'
+import { buildAutoAdjustmentDraft } from '../services/alertAdjustmentEngine'
 
 const DailyCheckInCard = lazy(() => import('../components/dashboard/DailyCheckInCard'))
 const WeeklyActionCenterCard = lazy(() => import('../components/week/WeeklyActionCenterCard'))
+const ProposalDrawer = lazy(() => import('../components/chat/ProposalDrawer'))
 
 export default function WeeklyView() {
   const { sessions, currentWeekSummary, dayLogs, isLoading, loadedWeekStart, loadWeek, generateCoachNote, deleteSession } = useTrainingStore()
+  const { addProposal, acceptProposal, rejectProposal } = useCoachActionsStore()
   const { currentWeekStart, selectedDate, setSelectedDate, setCurrentWeekStart } = useUIStore()
 
   const [showAddModal, setShowAddModal] = useState(false)
@@ -31,6 +35,7 @@ export default function WeeklyView() {
   const [checkInExpandToken, setCheckInExpandToken] = useState(0)
   const [loadAnalytics, setLoadAnalytics] = useState<LoadAnalytics | null>(null)
   const [pendingCoachDeleteId, setPendingCoachDeleteId] = useState<string | null>(null)
+  const [activeProposal, setActiveProposal] = useState<CoachProposal | null>(null)
 
   useEffect(() => {
     loadWeek(currentWeekStart)
@@ -81,6 +86,14 @@ export default function WeeklyView() {
     loadAnalytics,
     today,
   }), [sessions, currentWeekSummary, dayLogs, today, macroWeekCoherence, loadAnalytics])
+  const autoAdjustmentDraft = useMemo(() => buildAutoAdjustmentDraft({
+    sessions,
+    currentWeekSummary,
+    todayDayLog: dayLogs[today],
+    macroWeekCoherence,
+    loadAnalytics,
+    today,
+  }), [sessions, currentWeekSummary, dayLogs, today, macroWeekCoherence, loadAnalytics])
   const todaySessions = sessions.filter((session) => session.date === today)
 
   const handleExport = () => {
@@ -100,6 +113,25 @@ export default function WeeklyView() {
     if (!pendingCoachDeleteId) return
     await deleteSession(pendingCoachDeleteId)
     setPendingCoachDeleteId(null)
+  }
+
+  const handleOpenAutoAdjustment = async () => {
+    if (!autoAdjustmentDraft) return
+    const proposal = await addProposal(autoAdjustmentDraft.message, autoAdjustmentDraft.actions)
+    setActiveProposal(proposal)
+  }
+
+  const handleAcceptAutoAdjustment = async () => {
+    if (!activeProposal) return
+    await acceptProposal(activeProposal.id)
+    setActiveProposal(null)
+  }
+
+  const handleCloseAutoAdjustment = () => {
+    if (activeProposal && activeProposal.status === 'pending') {
+      void rejectProposal(activeProposal.id)
+    }
+    setActiveProposal(null)
   }
 
   return (
@@ -225,7 +257,11 @@ export default function WeeklyView() {
           </div>
           <div className="space-y-3">
             <Suspense fallback={<div className="h-48 rounded-card border border-surface-border bg-surface-card animate-pulse" />}>
-              <WeeklyActionCenterCard summary={weeklyActionSummary} onSelectAction={handleSelectWeeklyAction} />
+              <WeeklyActionCenterCard
+                summary={weeklyActionSummary}
+                onSelectAction={handleSelectWeeklyAction}
+                onOpenAutoAdjustment={autoAdjustmentDraft ? () => { void handleOpenAutoAdjustment() } : undefined}
+              />
             </Suspense>
             <Suspense fallback={<div className="h-28 rounded-card border border-surface-border bg-surface-card animate-pulse" />}>
               <DailyCheckInCard todaySessions={todaySessions} autoExpandToken={checkInExpandToken} />
@@ -256,6 +292,18 @@ export default function WeeklyView() {
         onCancel={() => setPendingCoachDeleteId(null)}
         onConfirm={() => { void handleConfirmDeleteCoachSession() }}
       />
+
+      {activeProposal && (
+        <Suspense fallback={null}>
+          <ProposalDrawer
+            proposal={activeProposal}
+            existingSessions={sessions}
+            onAccept={() => { void handleAcceptAutoAdjustment() }}
+            onReject={handleCloseAutoAdjustment}
+            onClose={handleCloseAutoAdjustment}
+          />
+        </Suspense>
+      )}
     </div>
   )
 }

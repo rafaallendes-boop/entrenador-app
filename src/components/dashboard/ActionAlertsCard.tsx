@@ -5,6 +5,7 @@ import type { WeeklyActionItem, WeeklyActionSummary } from '../../types'
 interface ActionAlertsCardProps {
   summary: WeeklyActionSummary
   onSelectAction: (action: WeeklyActionItem) => void
+  onOpenAutoAdjustment?: () => void
 }
 
 const TONE_STYLES = {
@@ -28,7 +29,7 @@ const TONE_STYLES = {
   },
 } as const
 
-export default function ActionAlertsCard({ summary, onSelectAction }: ActionAlertsCardProps) {
+export default function ActionAlertsCard({ summary, onSelectAction, onOpenAutoAdjustment }: ActionAlertsCardProps) {
   const primaryAction = summary.primaryAction
 
   if (!primaryAction) {
@@ -81,6 +82,17 @@ export default function ActionAlertsCard({ summary, onSelectAction }: ActionAler
           <p className="mt-3 text-xs text-ink">
             <span className="font-semibold text-ink">Recomendación:</span> {primaryAction.reason}
           </p>
+
+          {onOpenAutoAdjustment && (
+            <button
+              type="button"
+              onClick={onOpenAutoAdjustment}
+              className="mt-3 inline-flex items-center gap-1 rounded-lg bg-brand/15 px-3 py-1.5 text-[11px] font-semibold text-brand-light transition-colors hover:bg-brand/25"
+            >
+              Ver ajuste rapido
+              <ArrowRight size={12} />
+            </button>
+          )}
 
           {summary.secondaryActions.length > 0 && (
             <div className="mt-4 pt-3 border-t border-surface-border/70 space-y-2">

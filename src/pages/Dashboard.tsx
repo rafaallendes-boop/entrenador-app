@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Target } from 'lucide-react'
 import { useTrainingStore } from '../store/useTrainingStore'
+import { useCoachActionsStore } from '../store/useCoachActionsStore'
 import { useCoachMemoryStore } from '../store/useCoachMemoryStore'
 import { useUIStore } from '../store/useUIStore'
 import { todayISO, formatFullDate } from '../utils/date'
@@ -19,6 +20,8 @@ import { computeMacroPlan, getPrimaryGoalEvent } from '../services/macroPlan'
 import { useMacroWeekCoherence } from '../hooks/useMacroWeekCoherence'
 import { buildWeeklyActionSummary } from '../services/weeklyActionLoop'
 import { useWeeklyActionNavigator } from '../hooks/useWeeklyActionNavigator'
+import { buildAutoAdjustmentDraft } from '../services/alertAdjustmentEngine'
+import type { CoachProposal } from '../types'
 
 const CoachMessageCard = lazy(() => import('../components/dashboard/CoachMessageCard'))
 const NextSessionCard = lazy(() => import('../components/dashboard/NextSessionCard'))
@@ -27,9 +30,11 @@ const DailyCheckInCard = lazy(() => import('../components/dashboard/DailyCheckIn
 const InstallAppCard = lazy(() => import('../components/pwa/InstallAppCard'))
 const MacroPlanCard = lazy(() => import('../components/dashboard/MacroPlanCard'))
 const ActionAlertsCard = lazy(() => import('../components/dashboard/ActionAlertsCard'))
+const ProposalDrawer = lazy(() => import('../components/chat/ProposalDrawer'))
 
 export default function Dashboard() {
   const { sessions, dayLogs, currentWeekSummary, isLoading, loadWeek } = useTrainingStore()
+  const { addProposal, acceptProposal, rejectProposal } = useCoachActionsStore()
   const { athleteProfile, loadMemory, saveAthleteProfile } = useCoachMemoryStore()
   const { currentWeekStart } = useUIStore()
   const navigate = useNavigate()
@@ -40,6 +45,7 @@ export default function Dashboard() {
   const [isDeletingMacroPlan, setIsDeletingMacroPlan] = useState(false)
   const [checkInExpandToken, setCheckInExpandToken] = useState(0)
   const [showDeleteMacroPlanConfirm, setShowDeleteMacroPlanConfirm] = useState(false)
+  const [activeProposal, setActiveProposal] = useState<CoachProposal | null>(null)
 
   // Macro plan — computed on-the-fly from profile, not persisted as source of truth
   const macroPlan = useMemo(() => computeMacroPlan(athleteProfile), [athleteProfile])
@@ -100,6 +106,33 @@ export default function Dashboard() {
     loadAnalytics,
     today,
   }), [sessions, currentWeekSummary, dayLogs, today, macroWeekCoherence, loadAnalytics])
+  const autoAdjustmentDraft = useMemo(() => buildAutoAdjustmentDraft({
+    sessions,
+    currentWeekSummary,
+    todayDayLog: dayLogs[today],
+    macroWeekCoherence,
+    loadAnalytics,
+    today,
+  }), [sessions, currentWeekSummary, dayLogs, today, macroWeekCoherence, loadAnalytics])
+
+  async function handleOpenAutoAdjustment() {
+    if (!autoAdjustmentDraft) return
+    const proposal = await addProposal(autoAdjustmentDraft.message, autoAdjustmentDraft.actions)
+    setActiveProposal(proposal)
+  }
+
+  async function handleAcceptAutoAdjustment() {
+    if (!activeProposal) return
+    await acceptProposal(activeProposal.id)
+    setActiveProposal(null)
+  }
+
+  function handleCloseAutoAdjustment() {
+    if (activeProposal && activeProposal.status === 'pending') {
+      void rejectProposal(activeProposal.id)
+    }
+    setActiveProposal(null)
+  }
 
   async function handleDeleteMacroPlan() {
     if (isDeletingMacroPlan || !macroPlan) return
@@ -162,7 +195,11 @@ export default function Dashboard() {
       </Suspense>
 
       <Suspense fallback={<CardSkeleton className="h-36" />}>
-        <ActionAlertsCard summary={weeklyActionSummary} onSelectAction={handleSelectAction} />
+        <ActionAlertsCard
+          summary={weeklyActionSummary}
+          onSelectAction={handleSelectAction}
+          onOpenAutoAdjustment={autoAdjustmentDraft ? () => { void handleOpenAutoAdjustment() } : undefined}
+        />
       </Suspense>
 
       {macroPlan ? (
@@ -294,6 +331,18 @@ export default function Dashboard() {
         onCancel={() => setShowDeleteMacroPlanConfirm(false)}
         onConfirm={() => { void handleDeleteMacroPlan() }}
       />
+
+      {activeProposal && (
+        <Suspense fallback={null}>
+          <ProposalDrawer
+            proposal={activeProposal}
+            existingSessions={sessions}
+            onAccept={() => { void handleAcceptAutoAdjustment() }}
+            onReject={handleCloseAutoAdjustment}
+            onClose={handleCloseAutoAdjustment}
+          />
+        </Suspense>
+      )}
     </div>
   )
 }

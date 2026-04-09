@@ -1,7 +1,7 @@
 # Entrenador App - Review and Roadmap
 
 Actualizado: 2026-04-09
-Ultimo hito relevante: endurecimiento tecnico del weekly loop y propuestas del coach, con rollback mas seguro y confirm dialogs compartidos en flujos criticos
+Ultimo hito relevante: ajustes automaticos del coach desde alertas, con propuestas concretas listas para aceptar desde WeeklyView y Dashboard
 
 ## Estado actual del producto
 
@@ -22,6 +22,7 @@ Entrenador ya no esta en fase de prototipo. Hoy existe una base seria para atlet
 - squash ya distingue mejor partido de entrenamiento vs partido competitivo real
 - rollback de propuestas del coach mas robusto para altas, updates y deletes
 - confirm dialogs compartidos en los flujos criticos mas visibles
+- alertas fuertes ahora pueden convertirse en propuestas concretas del coach sin pasar primero por chat libre
 
 ## Lo ya implementado
 
@@ -96,6 +97,7 @@ Pendiente:
 - usar alertas y feedback para disparar ajustes mas directos del coach
 - explicar mejor el "por que" de la propuesta usando historial y feedback real
 - pulir templates por disciplina en casos edge
+- medir uso y aceptacion real de ajustes automaticos vs CTA a chat
 
 ### Macroplan
 
@@ -331,6 +333,14 @@ Pendiente:
 - `chatSession` usa acceso a storage mas defensivo
 - confirmaciones criticas pasan a un modal compartido en vez de `window.confirm`
 
+### 14. Ajustes automaticos del coach desde alertas
+
+- motor puro para transformar alertas fuertes en propuestas concretas y reversibles
+- heuristicas iniciales para coherencia semanal, riesgo ACWR y baja adherencia
+- propuestas revisables desde `Dashboard` y `WeeklyView` usando `ProposalDrawer`
+- acciones reales generadas: recortar sesion, bajar RPE, mover sesion e insertar recovery cuando corresponde
+- el coach ya puede actuar desde la alerta sin depender solo de `chat_adjust_week`
+
 ## Que hay hoy
 
 Resumen simple del producto actual:
@@ -352,6 +362,7 @@ Las brechas mas importantes no son tantas, pero si son profundas:
 5. Convertir mejoras recientes de disciplinas secundarias en comportamiento estable del coach.
 6. Consolidar mejor la semantica de squash competitivo entre planner, historial y analytics finos.
 7. Completar rollback verdaderamente transaccional para propuestas complejas multi-accion con objetivos y week summaries.
+8. Afinar la calidad y precision de los ajustes automaticos con contexto mas rico por dia, deporte y fatiga.
 
 ## Roadmap vigente
 
@@ -420,11 +431,17 @@ Alcance:
 - usar alertas, adherencia y feedback para sugerir acciones concretas
 - convertir ciertos warnings en propuestas del coach
 - priorizar deload, reordenamiento o recorte de soporte cuando haga sentido
+- medir que tipo de ajuste automatico se acepta y cual se descarta
 
 Por que:
 
 - esta es la diferencia entre un coach "inteligente" y un dashboard con texto
 - aumenta mucho el valor percibido
+
+Estado:
+
+- base ya implementada
+- siguiente paso: volverla mas precisa, mas medible y mas personalizada por contexto
 
 ### Prioridad 3
 
