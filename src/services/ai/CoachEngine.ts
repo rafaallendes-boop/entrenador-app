@@ -1,16 +1,5 @@
 /**
- * CoachEngine — orchestrador central para todas las interacciones con el coach AI.
- *
- * Flujo en PRODUCCIÓN (Netlify deploy):
- *   Usuario → CoachEngine → ProxyProvider → /.netlify/functions/coach → Gemini/OpenAI/Claude
- *   La API key vive solo en el servidor. El frontend no la ve nunca.
- *
- * Flujo en DESARROLLO LOCAL:
- *   VITE_AI_PROVIDER=mock   → MockProvider (offline, sin API key)
- *   VITE_AI_PROVIDER=proxy  → ProxyProvider → requiere `netlify dev` corriendo
- *   VITE_AI_PROVIDER=gemini → GeminiProvider directo (requiere VITE_GEMINI_API_KEY en .env)
- *   VITE_AI_PROVIDER=claude → ClaudeProvider directo (requiere VITE_CLAUDE_API_KEY)
- *   VITE_AI_PROVIDER=openai → OpenAIProvider directo (requiere VITE_OPENAI_API_KEY)
+ * CoachEngine - orchestrates all AI coach interactions.
  */
 
 import type { AIProvider, AIRequest, CoachNormalizedResponse } from './types'
@@ -24,8 +13,9 @@ import { MockProvider } from './providers/MockProvider'
 import { GeminiProvider } from './providers/GeminiProvider'
 import { ProxyProvider } from './providers/ProxyProvider'
 
+export type CoachActionIntent = 'create_week' | 'modify_plan' | 'none'
+
 function getConfiguredProviderName(): string {
-  // En producción siempre usa el proxy seguro (la key está en el servidor)
   if (import.meta.env.PROD) {
     return 'proxy'
   }
@@ -42,17 +32,13 @@ function getActiveProvider(): AIProvider {
     case 'openai':
       return new OpenAIProvider()
     case 'gemini':
-      return new GeminiProvider()  // solo para dev local con VITE_GEMINI_API_KEY
+      return new GeminiProvider()
     default:
       return new MockProvider()
   }
 }
 
 export const CoachEngine = {
-  /**
-   * Envía un mensaje al proveedor AI activo y retorna una respuesta normalizada.
-   * El system prompt se construye automáticamente desde el contexto.
-   */
   async send(
     userMessage: string,
     context: ChatContext,
@@ -60,6 +46,7 @@ export const CoachEngine = {
   ): Promise<CoachNormalizedResponse> {
     const provider = getActiveProvider()
     const systemPrompt = buildCoachSystemPrompt(context)
+    const actionIntent = inferCoachActionIntent(userMessage)
 
     const request: AIRequest = {
       systemPrompt,
@@ -68,19 +55,14 @@ export const CoachEngine = {
         role: message.role === 'coach' ? 'assistant' : 'user',
         content: message.content,
       })),
-      maxTokens: options?.maxTokens ?? 3000,
+      maxTokens: options?.maxTokens ?? (actionIntent === 'create_week' ? 5000 : actionIntent === 'modify_plan' ? 3600 : 3000),
       temperature: options?.temperature ?? 0.7,
       onChunk: options?.onChunk,
     }
 
-    return sendWithRecovery(provider, request)
+    return sendWithRecovery(provider, request, actionIntent)
   },
 
-  /**
-   * Llama al proveedor directamente con un system prompt y mensaje propios,
-   * sin pasar por el normalizer de coach ni el prompt builder.
-   * Útil para tareas de extracción estructurada (PDF import, etc.).
-   */
   async extractRaw(
     systemPrompt: string,
     userMessage: string,
@@ -96,23 +78,13 @@ export const CoachEngine = {
     return raw.text
   },
 
-  /**
-   * Retorna el nombre del proveedor activo.
-   * Usado para el badge en la UI del chat.
-   */
   getProviderName(): string {
     return getActiveProvider().name
   },
 
-  /**
-   * Retorna true si hay un proveedor real (no mock) configurado.
-   * Usado para mostrar el badge "Demo" vs "Gemini Flash" etc.
-   */
   isRealProviderConfigured(): boolean {
     const name = getConfiguredProviderName()
-    // Proxy siempre es real (conecta al servidor con la key)
     if (name === 'proxy') return true
-    // Providers directos (solo dev local)
     if (name === 'claude') {
       return !!(import.meta.env.VITE_CLAUDE_API_KEY ?? import.meta.env.VITE_AI_API_KEY)
     }
@@ -129,27 +101,38 @@ export const CoachEngine = {
 async function sendWithRecovery(
   provider: AIProvider,
   request: AIRequest,
+  actionIntent: CoachActionIntent,
 ): Promise<CoachNormalizedResponse> {
   const firstRaw = await provider.call(request)
   const firstNormalized = normalizeResponse(firstRaw)
 
-  if (!shouldRetry(firstNormalized)) {
+  if (!shouldRetry(firstNormalized, actionIntent)) {
     return firstNormalized
   }
 
   const retryRaw = await provider.call({
     ...request,
-    systemPrompt: `${request.systemPrompt}\n\nIMPORTANTE DE FORMATO:\n- Si usas <actions>, cierra siempre con </actions>.\n- El contenido dentro de <actions> debe ser JSON valido.\n- Si no puedes devolver JSON valido, responde solo con texto limpio y sin <actions>.`,
+    systemPrompt: `${request.systemPrompt}
+
+IMPORTANTE DE FORMATO:
+- Si el usuario pidio crear o modificar un plan, DEBES incluir un bloque <actions> valido.
+- Si usas <actions>, cierra siempre con </actions>.
+- El contenido dentro de <actions> debe ser JSON valido.
+- Para create_week, prioriza una semana compacta y ejecutable.
+- No incluyas warmup/cooldown salvo que aporte valor claro: el sistema completa protocolos base automaticamente si faltan.
+- Si tu respuesta anterior fue solo texto, ahora corrige eso y devuelve acciones reales.`,
     temperature: Math.min(request.temperature ?? 0.7, 0.3),
-    onChunk: undefined, // retry is silent — no streaming
+    onChunk: undefined,
   })
   const retryNormalized = normalizeResponse(retryRaw)
 
-  if (shouldRejectAfterRetry(retryNormalized)) {
+  if (shouldRejectAfterRetry(retryNormalized, actionIntent)) {
     throw createProviderError(
       provider.name,
       'parse_error',
-      'El coach devolvio una respuesta invalida en el bloque de acciones.',
+      actionIntent === 'none'
+        ? 'El coach devolvio una respuesta invalida en el bloque de acciones.'
+        : 'El coach no devolvio acciones aplicables para la solicitud del usuario.',
       true,
     )
   }
@@ -165,10 +148,35 @@ async function sendWithRecovery(
   }
 }
 
-function shouldRetry(response: CoachNormalizedResponse): boolean {
-  return !!(response.meta?.actionParseFailed || response.meta?.likelyTruncated)
+export function inferCoachActionIntent(userMessage: string): CoachActionIntent {
+  const normalized = userMessage.trim().toLowerCase()
+  if (!normalized) return 'none'
+
+  if (
+    /\b(crea(?:r|me)?|haz(?:me)?|arma(?:me)?|genera(?:r)?|planifica(?:r)?|propuesta)\b/.test(normalized) &&
+    /\b(semana|plan|microciclo)\b/.test(normalized)
+  ) {
+    return 'create_week'
+  }
+
+  if (
+    /\b(ajusta(?:r)?|reordena(?:r)?|mueve|cambia|agrega|quita|sube|baja|reduce|simplifica|reemplaza|incorpora)\b/.test(normalized) &&
+    /\b(semana|sesion|sesión|plan|carga|running|squash|fuerza|cycling|ciclismo|movilidad)\b/.test(normalized)
+  ) {
+    return 'modify_plan'
+  }
+
+  return 'none'
 }
 
-function shouldRejectAfterRetry(response: CoachNormalizedResponse): boolean {
-  return !!response.meta?.actionParseFailed && !response.message.trim()
+export function shouldRetry(response: CoachNormalizedResponse, actionIntent: CoachActionIntent): boolean {
+  if (response.meta?.actionParseFailed || response.meta?.likelyTruncated) return true
+  if (actionIntent !== 'none' && (!response.actions || response.actions.length === 0)) return true
+  return false
+}
+
+function shouldRejectAfterRetry(response: CoachNormalizedResponse, actionIntent: CoachActionIntent): boolean {
+  if (response.meta?.actionParseFailed) return true
+  if (actionIntent !== 'none' && (!response.actions || response.actions.length === 0)) return true
+  return false
 }

@@ -45,6 +45,17 @@ export function normalizeResponse(raw: AIRawResponse): CoachNormalizedResponse {
     actionParseFailed = parseResult.parseFailed
     likelyTruncated = extraction.openOnly || parseResult.likelyTruncated
     message = extraction.messageWithoutActions
+  } else {
+    const inlineJson = extractInlineActionsJson(message)
+    if (inlineJson) {
+      const parseResult = parseActionsBlock(inlineJson.actionsText)
+      actions = parseResult.actions
+      actionParseFailed = parseResult.parseFailed
+      likelyTruncated = parseResult.likelyTruncated
+      if (parseResult.actions.length > 0) {
+        message = inlineJson.messageWithoutActions
+      }
+    }
   }
 
   message = message.replace(/\n{3,}/g, '\n\n').trim()
@@ -454,4 +465,15 @@ function extractJsonArray(text: string): string | null {
   const end = text.lastIndexOf(']')
   if (start === -1 || end === -1 || end < start) return null
   return text.slice(start, end + 1)
+}
+
+function extractInlineActionsJson(message: string): { actionsText: string; messageWithoutActions: string } | null {
+  const jsonArray = extractJsonArray(message)
+  if (!jsonArray) return null
+  if (!/"type"\s*:/.test(jsonArray)) return null
+
+  return {
+    actionsText: jsonArray,
+    messageWithoutActions: message.replace(jsonArray, '').trim(),
+  }
 }

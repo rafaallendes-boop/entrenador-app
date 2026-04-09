@@ -100,4 +100,32 @@ describe('responseNormalizer', () => {
     expect(response.actions?.[0].sessions).toHaveLength(1)
     expect(response.actions?.[0].sessions?.[0].title).toBe('Tempo')
   })
+
+  it('parses inline JSON actions even when the model omits the actions tag', () => {
+    const response = normalizeResponse({
+      text: [
+        'Aqui va la propuesta compacta.',
+        JSON.stringify([
+          {
+            type: 'create_week',
+            reason: 'Semana base compacta',
+            sessions: [
+              {
+                date: '2026-04-08',
+                timeBlock: 'PM',
+                sessionType: 'squash',
+                title: 'Squash tecnico',
+                durationMin: 60,
+              },
+            ],
+          },
+        ]),
+      ].join('\n'),
+      provider: 'mock',
+    })
+
+    expect(response.actions).toHaveLength(1)
+    expect(response.actions?.[0].type).toBe('create_week')
+    expect(response.message).toContain('Aqui va la propuesta compacta.')
+  })
 })

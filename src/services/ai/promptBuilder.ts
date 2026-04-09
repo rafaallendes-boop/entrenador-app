@@ -1325,10 +1325,10 @@ ${plannedSessionLines || '  (ninguna — la semana está vacía)'}
 ═══ ACCIONES DISPONIBLES ═══
 
 Para CREAR una semana completa:
-  create_week — campos: sessions (array con TODOS los detalles), weekObjectives (array de strings), reason
+  create_week — campos: sessions (array con detalles útiles y válidos), weekObjectives (array de strings), reason
 
 Para AGREGAR una sesión individual:
-  add_session — campos: targetDate, timeBlock, sessionType, title, durationMin, rpe?, objective?, subtype?${hasRunning || hasCycling ? ', runningType?, targetPaceMin?, targetPaceMax?, targetHrMin?, targetHrMax?, intervalStructure?' : ''}${hasStrength ? ', exercises?' : ', exercises?'} , warmup, cooldown, reason
+  add_session — campos: targetDate, timeBlock, sessionType, title, durationMin, rpe?, objective?, subtype?${hasRunning || hasCycling ? ', runningType?, targetPaceMin?, targetPaceMax?, targetHrMin?, targetHrMax?, intervalStructure?' : ''}${hasStrength ? ', exercises?' : ', exercises?'} , warmup?, cooldown?, reason
 
 Para ACTUALIZAR sesión existente (tipo, detalles, ejercicios, título, objetivo, RPE, duración):
   update_session — campos: sessionId, reason + uno o más de: newType, subtype, newTitle, newObjective, newRpe, newDurationMin${hasRunning || hasCycling ? ', runningType, targetPaceMin, targetPaceMax, targetHrMin, targetHrMax, intervalStructure' : ''}, squashDetails, exercises (array completo — reemplaza todo)
@@ -1394,9 +1394,11 @@ Para fuerza y movilidad (agrega array exercises en la sesión):
   ]
   Para fuerza: usa la selección dinámica como base; si quieres explicitar intensidad, hazlo dentro de notes sin crear un campo nuevo.
 
-Warmup y cooldown (obligatorios en todas las sesiones de add_session y create_week):
+Warmup y cooldown (opcionales):
   warmup: {"title":"...","durationMin":10,"note":"...","tone":"general","steps":[{"label":"..."},...],"source":"base"}
   cooldown: {"title":"...","durationMin":7,"note":"...","tone":"recovery","steps":[{"label":"..."},...],"source":"base"}
+Si los omites, el sistema genera protocolos base automáticamente.
+Para create_week, prioriza primero sesiones válidas y compactas; no gastes tokens en warmup/cooldown si no son necesarios.
 
 ═══ FORMATO DE RESPUESTA ═══
 

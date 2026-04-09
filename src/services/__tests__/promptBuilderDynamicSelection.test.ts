@@ -190,4 +190,11 @@ describe('promptBuilder dynamic cycling and mobility sections', () => {
     expect(prompt).toContain('competition_match')
     expect(prompt).toContain('Partido de entrenamiento con foco tactico')
   })
+
+  it('marks warmup and cooldown as optional for compact create_week responses', () => {
+    const prompt = buildCoachSystemPrompt(makeContext(makeProfile()))
+
+    expect(prompt).toContain('Warmup y cooldown (opcionales)')
+    expect(prompt).toContain('el sistema genera protocolos base automáticamente')
+  })
 })
