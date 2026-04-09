@@ -37,12 +37,12 @@ export function selectMobilitySession(context: MobilityContext): MobilitySelecti
     }
   }
 
-  const sportSpecific = MOBILITY_SESSION_LIBRARY
-    .filter(session =>
+  const sportSpecific = MOBILITY_SESSION_LIBRARY.filter(
+    (session) =>
       session.suitableSportContext.includes(context.primarySport) &&
       !recentIds.has(session.id) &&
       matchesPhase(session, context.phase),
-    )
+  )
 
   const scored = scoreForContext(sportSpecific, context)
   if (scored.length > 0) {
@@ -54,7 +54,7 @@ export function selectMobilitySession(context: MobilityContext): MobilitySelecti
     }
   }
 
-  const fallback = MOBILITY_SESSION_LIBRARY.find(session => session.id === 'full_body_flow')
+  const fallback = MOBILITY_SESSION_LIBRARY.find((session) => session.id === 'full_body_flow')
     ?? MOBILITY_SESSION_LIBRARY[0]
 
   return {
@@ -72,15 +72,14 @@ function findPostTrainingSession(
     running: 'post_run_mobility',
     squash: 'post_squash_mobility',
     cycling: 'post_cycling_mobility',
+    strength: 'post_strength_reset',
   }
 
   const targetId = postMap[sport]
   if (!targetId) return undefined
 
-  const session = MOBILITY_SESSION_LIBRARY.find(entry => entry.id === targetId)
-  if (!session) return undefined
-  if (recentIds.has(session.id)) return undefined
-
+  const session = MOBILITY_SESSION_LIBRARY.find((entry) => entry.id === targetId)
+  if (!session || recentIds.has(session.id)) return undefined
   return session
 }
 
@@ -97,12 +96,12 @@ function scoreForContext(
   const recentIds = new Set(context.recentSessionIds)
 
   return sessions
-    .map(session => ({
+    .map((session) => ({
       session,
       score: computeMobilityScore(session, context, phasePreferredFocus, recentIds),
     }))
     .sort((a, b) => b.score - a.score || a.session.name.localeCompare(b.session.name))
-    .map(entry => entry.session)
+    .map((entry) => entry.session)
 }
 
 function computeMobilityScore(
@@ -113,21 +112,23 @@ function computeMobilityScore(
 ): number {
   let score = 0
 
-  if (session.focus.some(focus => phasePreferredFocus.includes(focus))) score += 5
+  if (session.focus.some((focus) => phasePreferredFocus.includes(focus))) score += 5
   if (session.focus.includes('sport_specific')) score += 3
+  if (context.primarySport !== 'general' && session.suitableSportContext.includes(context.primarySport)) score += 2
 
   if ((context.fatigueLevel ?? 5) >= 7 && session.category === 'passive') score += 4
   if ((context.fatigueLevel ?? 5) >= 7 && session.category === 'activation') score -= 3
 
+  if ((context.phase === 'transition' || context.phase === 'taper') && session.focus.includes('full_body')) score += 3
+  if ((context.phase === 'peak' || context.phase === 'race') && session.focus.includes('activation')) score += 4
+  if ((context.phase === 'build' || context.phase === 'base') && session.id === 'range_maintenance_reset') score += 2
+
+  if (context.primarySport === 'cycling' && session.id === 'hip_flexor_release') score += 3
+  if (context.primarySport === 'strength' && session.id === 'post_strength_reset') score += 3
+  if (context.primarySport === 'running' && session.id === 'ankle_dorsiflexion') score += 3
+  if (context.primarySport === 'squash' && session.id === 'shoulder_cars') score += 3
+
   if (recentIds.has(session.id)) score -= 8
-
-  if ((context.phase === 'transition' || context.phase === 'taper') && session.focus.includes('full_body')) {
-    score += 3
-  }
-
-  if ((context.phase === 'peak' || context.phase === 'race') && session.focus.includes('activation')) {
-    score += 4
-  }
 
   return score
 }
@@ -151,10 +152,13 @@ function getPhasePreferredFocus(phase: MobilityPhase): MobilityFocus[] {
 
 function buildMobilityRationale(session: MobilitySessionDefinition, context: MobilityContext): string {
   if (context.phase === 'taper' || context.phase === 'race') {
-    return `Movilidad suave pre-evento - ${session.description} Sin fatiga residual.`
+    return `Movilidad suave pre-evento. ${session.description} Sin fatiga residual.`
   }
   if (context.phase === 'transition') {
-    return `Movilidad de recuperacion - ${session.description}`
+    return `Movilidad de recuperacion. ${session.description}`
+  }
+  if (session.focus.includes('sport_specific')) {
+    return `${session.description} Elegida para dar soporte especifico a ${context.primarySport}.`
   }
   return `${session.description} Adaptada al contexto de ${context.primarySport} en fase ${context.phase}.`
 }
@@ -162,7 +166,7 @@ function buildMobilityRationale(session: MobilitySessionDefinition, context: Mob
 export function extractRecentMobilitySessions(historicalSessions: Session[]): string[] {
   return [...historicalSessions]
     .filter(
-      session =>
+      (session) =>
         session.type === 'mobility' &&
         (session.status === 'completed' || session.status === 'adjusted'),
     )
@@ -179,33 +183,27 @@ export function summarizeMobilitySelection(result: MobilitySelectionResult): str
 export function deriveMobilityLibraryIdFromSession(session: Session): string | undefined {
   if (session.type !== 'mobility') return undefined
 
+  const detailHints = `${session.mobilityDetails?.context ?? ''} ${session.mobilityDetails?.focusAreas?.join(' ') ?? ''}`
   const normalized = normalizeMobilityText([
     session.title,
     session.objective,
     session.notes,
     session.completionNotes,
+    detailHints,
   ].filter(Boolean).join(' '))
 
   if (!normalized) return undefined
 
   if (normalized.includes('post squash')) return 'post_squash_mobility'
   if (normalized.includes('post running') || normalized.includes('post run')) return 'post_run_mobility'
-  if (
-    normalized.includes('post ciclismo') ||
-    normalized.includes('post cycling') ||
-    normalized.includes('post bici')
-  ) return 'post_cycling_mobility'
-  if (normalized.includes('activacion pre entrenamiento') || normalized.includes('pre training activation')) {
-    return 'pre_training_activation'
-  }
+  if (normalized.includes('post ciclismo') || normalized.includes('post cycling') || normalized.includes('post bici')) return 'post_cycling_mobility'
+  if (normalized.includes('post fuerza') || normalized.includes('post strength') || normalized.includes('strength reset')) return 'post_strength_reset'
+  if (normalized.includes('activacion pre entrenamiento') || normalized.includes('pre training activation')) return 'pre_training_activation'
   if (normalized.includes('flujo de movilidad global') || normalized.includes('full body flow')) return 'full_body_flow'
-  if (normalized.includes('movilidad de recuperacion activa') || normalized.includes('recovery mobility')) {
-    return 'recovery_mobility'
-  }
+  if (normalized.includes('mantenimiento de rango') || normalized.includes('range maintenance')) return 'range_maintenance_reset'
+  if (normalized.includes('movilidad de recuperacion activa') || normalized.includes('recovery mobility')) return 'recovery_mobility'
   if (normalized.includes('cadera completa') || normalized.includes('hip full range')) return 'hip_full_range'
-  if (normalized.includes('flexores de cadera') || normalized.includes('hip flexor') || normalized.includes('psoas')) {
-    return 'hip_flexor_release'
-  }
+  if (normalized.includes('flexores de cadera') || normalized.includes('hip flexor') || normalized.includes('psoas')) return 'hip_flexor_release'
   if (normalized.includes('tobillo') || normalized.includes('dorsiflexion')) return 'ankle_dorsiflexion'
   if (normalized.includes('cars de hombro') || normalized.includes('apertura toracica')) return 'shoulder_cars'
   if (normalized.includes('movilidad toracica') || normalized.includes('rotacion toracica')) return 'thoracic_mobility'

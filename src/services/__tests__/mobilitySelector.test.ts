@@ -57,4 +57,20 @@ describe('mobilitySelector', () => {
 
     expect(result.session.id).not.toBe('post_run_mobility')
   })
+
+  it('prioritizes activation in race context', () => {
+    const result = selectMobilitySession({
+      primarySport: 'squash',
+      phase: 'race',
+      recentSessionIds: [],
+      fatigueLevel: 4,
+    })
+
+    expect(result.session.id).toBe('pre_training_activation')
+  })
+
+  it('recognizes post-strength routines from recent mobility history', () => {
+    const session = makeMobilitySession('2026-04-08', 'Reset post-fuerza', 'movilidad post strength')
+    expect(deriveMobilityLibraryIdFromSession(session)).toBe('post_strength_reset')
+  })
 })

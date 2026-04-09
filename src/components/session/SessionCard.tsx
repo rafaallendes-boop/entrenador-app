@@ -19,6 +19,17 @@ const RUNNING_TYPE_LABELS: Record<string, string> = {
   z2: 'Z2 Aerobico', tempo: 'Tempo', intervals: 'Intervalos', long: 'Long Run',
 }
 
+const MOBILITY_CONTEXT_LABELS: Record<string, string> = {
+  post_run: 'Post-running',
+  post_cycling: 'Post-cycling',
+  post_squash: 'Post-squash',
+  post_strength: 'Post-fuerza',
+  pre_training_activation: 'Activacion',
+  recovery: 'Recovery',
+  full_body: 'Full body',
+  sport_specific: 'Especifica',
+}
+
 const MATCH_RESULT_LABELS = { win: 'Gano', loss: 'Perdio' } as const
 
 interface SessionCardProps {
@@ -39,6 +50,8 @@ export default function SessionCard({ session, compact = false, onDelete }: Sess
     session.exercises &&
     session.exercises.length > 0
   const hasRunningDetails = (session.type === 'running' || session.type === 'cycling') && session.runningDetails
+  const hasCyclingDetails = session.type === 'cycling' && session.cyclingDetails
+  const hasMobilityDetails = session.type === 'mobility' && session.mobilityDetails
   const hasSquashDetails =
     session.type === 'squash' && session.squashDetails && session.squashDetails.drills.length > 0
   const warmup = normalizeGeneratedProtocol(session.warmup, 'warmup')
@@ -59,8 +72,10 @@ export default function SessionCard({ session, compact = false, onDelete }: Sess
     session.notes ||
     session.completionNotes ||
     hasRunningDetails ||
+    hasCyclingDetails ||
     hasMatchMeta ||
     hasSquashDetails ||
+    hasMobilityDetails ||
     hasProtocols ||
     hasCompletedFeedback
   const subtypeLabel = session.subtype ? SQUASH_SUBTYPE_LABELS[session.subtype] : null
@@ -104,7 +119,17 @@ export default function SessionCard({ session, compact = false, onDelete }: Sess
                 {MATCH_RESULT_LABELS[session.matchResult!]}
               </span>
             )}
-            {hasRunningDetails && session.runningDetails && (
+            {session.type === 'cycling' && session.cyclingDetails && (
+              <span className="rounded-full border border-sky-500/20 bg-sky-500/10 px-1.5 py-0.5 text-xs font-medium text-sky-400 flex-shrink-0">
+                {session.cyclingDetails.sessionCategory}
+              </span>
+            )}
+            {session.type === 'mobility' && session.mobilityDetails && (
+              <span className="rounded-full border border-pink-500/20 bg-pink-500/10 px-1.5 py-0.5 text-xs font-medium text-pink-300 flex-shrink-0">
+                {MOBILITY_CONTEXT_LABELS[session.mobilityDetails.context] ?? session.mobilityDetails.context}
+              </span>
+            )}
+            {hasRunningDetails && session.runningDetails && session.type !== 'cycling' && (
               <span className="rounded-full border border-sky-500/20 bg-sky-500/10 px-1.5 py-0.5 text-xs font-medium text-sky-400 flex-shrink-0">
                 {RUNNING_TYPE_LABELS[session.runningDetails.runningType] ?? session.runningDetails.runningType}
               </span>
@@ -127,6 +152,12 @@ export default function SessionCard({ session, compact = false, onDelete }: Sess
                 {session.runningDetails.targetPaceMin}
                 {session.runningDetails.targetPaceMax ? `-${session.runningDetails.targetPaceMax}` : ''} /km
               </span>
+            )}
+            {session.type === 'cycling' && session.cyclingDetails?.intensityReference && (
+              <span className="text-xs text-sky-300">{session.cyclingDetails.intensityReference}</span>
+            )}
+            {session.type === 'mobility' && (session.mobilityDetails?.focusAreas?.length ?? 0) > 0 && (
+              <span className="text-xs text-pink-300">{session.mobilityDetails?.focusAreas?.join(', ')}</span>
             )}
             {session.opponent && <span className="text-xs text-ink-faint">vs {session.opponent}</span>}
           </div>
@@ -210,6 +241,52 @@ export default function SessionCard({ session, compact = false, onDelete }: Sess
                     </div>
                   ))}
                 </div>
+              )}
+            </div>
+          )}
+          {session.type === 'cycling' && session.cyclingDetails && (
+            <div className="mt-2 space-y-2">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <div className="rounded-lg bg-sky-500/10 p-2">
+                  <p className="mb-0.5 text-[10px] font-medium uppercase tracking-wider text-sky-400/70">Tipo</p>
+                  <p className="text-sm font-semibold text-sky-400">{session.cyclingDetails.sessionCategory}</p>
+                </div>
+                {session.cyclingDetails.intensityReference && (
+                  <div className="rounded-lg bg-sky-500/10 p-2">
+                    <p className="mb-0.5 text-[10px] font-medium uppercase tracking-wider text-sky-400/70">Intensidad</p>
+                    <p className="text-sm font-semibold text-sky-400">{session.cyclingDetails.intensityReference}</p>
+                  </div>
+                )}
+              </div>
+              <div className="rounded-lg bg-surface-raised p-2">
+                <p className="mb-0.5 text-[10px] font-medium uppercase tracking-wider text-ink-faint">Estructura</p>
+                <p className="text-sm text-ink">{session.cyclingDetails.targetStructure}</p>
+              </div>
+              {session.cyclingDetails.executionNotes && (
+                <p className="text-[11px] leading-snug text-ink-faint">{session.cyclingDetails.executionNotes}</p>
+              )}
+            </div>
+          )}
+          {session.type === 'mobility' && session.mobilityDetails && (
+            <div className="mt-2 space-y-2">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <div className="rounded-lg bg-pink-500/10 p-2">
+                  <p className="mb-0.5 text-[10px] font-medium uppercase tracking-wider text-pink-300/70">Contexto</p>
+                  <p className="text-sm font-semibold text-pink-300">
+                    {MOBILITY_CONTEXT_LABELS[session.mobilityDetails.context] ?? session.mobilityDetails.context}
+                  </p>
+                </div>
+                <div className="rounded-lg bg-pink-500/10 p-2">
+                  <p className="mb-0.5 text-[10px] font-medium uppercase tracking-wider text-pink-300/70">Foco</p>
+                  <p className="text-sm font-semibold text-pink-300">{session.mobilityDetails.focusAreas.join(', ')}</p>
+                </div>
+              </div>
+              <div className="rounded-lg bg-surface-raised p-2">
+                <p className="mb-0.5 text-[10px] font-medium uppercase tracking-wider text-ink-faint">Estructura</p>
+                <p className="text-sm text-ink">{session.mobilityDetails.targetStructure}</p>
+              </div>
+              {session.mobilityDetails.executionNotes && (
+                <p className="text-[11px] leading-snug text-ink-faint">{session.mobilityDetails.executionNotes}</p>
               )}
             </div>
           )}

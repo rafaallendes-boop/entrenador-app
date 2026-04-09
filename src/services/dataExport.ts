@@ -38,6 +38,16 @@ const MATCH_RESULTS = new Set(['win', 'loss'])
 const MESSAGE_ROLES = new Set(['user', 'coach'])
 const AI_PROVIDERS = new Set(['claude', 'openai', 'mock', 'gemini'])
 const RUNNING_TYPES = new Set(['z2', 'tempo', 'intervals', 'long'])
+const MOBILITY_SESSION_CONTEXTS = new Set([
+  'post_run',
+  'post_cycling',
+  'post_squash',
+  'post_strength',
+  'pre_training_activation',
+  'recovery',
+  'full_body',
+  'sport_specific',
+])
 const SQUASH_TRAINING_FOCUSES = new Set(['technical', 'tactical', 'physical', 'conditioned_games'])
 const PROPOSAL_STATUSES = new Set(['pending', 'accepted', 'rejected', 'partial'])
 const SUPPORTED_SPORTS = new Set(['squash', 'running', 'strength', 'mobility', 'cycling'])
@@ -469,6 +479,8 @@ function parseSession(value: unknown, index: number): Session {
     completionNotes: optionalString(row.completionNotes, `sessions[${index}].completionNotes`),
     exercises: optionalExercises(row.exercises, `sessions[${index}].exercises`),
     runningDetails: optionalRunningDetails(row.runningDetails, `sessions[${index}].runningDetails`),
+    cyclingDetails: optionalCyclingDetails(row.cyclingDetails, `sessions[${index}].cyclingDetails`),
+    mobilityDetails: optionalMobilityDetails(row.mobilityDetails, `sessions[${index}].mobilityDetails`),
     squashDetails: optionalSquashDetails(row.squashDetails, `sessions[${index}].squashDetails`),
     warmup: optionalGeneratedProtocol(row.warmup, `sessions[${index}].warmup`, 'warmup'),
     cooldown: optionalGeneratedProtocol(row.cooldown, `sessions[${index}].cooldown`, 'cooldown'),
@@ -835,6 +847,37 @@ function optionalRunningDetails(value: unknown, path: string): Session['runningD
     targetPaceMax: optionalString(row.targetPaceMax, `${path}.targetPaceMax`),
     targetHrMin: optionalFiniteNumber(row.targetHrMin, `${path}.targetHrMin`),
     targetHrMax: optionalFiniteNumber(row.targetHrMax, `${path}.targetHrMax`),
+  }
+}
+
+function optionalCyclingDetails(value: unknown, path: string): Session['cyclingDetails'] {
+  if (value == null) return undefined
+  const row = ensureRecord(value, path)
+
+  return {
+    sessionCategory: requireString(row.sessionCategory, `${path}.sessionCategory`),
+    sessionFamily: optionalString(row.sessionFamily, `${path}.sessionFamily`),
+    targetStructure: requireString(row.targetStructure, `${path}.targetStructure`),
+    intensityReference: optionalString(row.intensityReference, `${path}.intensityReference`),
+    executionNotes: optionalString(row.executionNotes, `${path}.executionNotes`),
+  }
+}
+
+function optionalMobilityDetails(value: unknown, path: string): Session['mobilityDetails'] {
+  if (value == null) return undefined
+  const row = ensureRecord(value, path)
+  const focusAreas = ensureArray(row.focusAreas, `${path}.focusAreas`)
+    .map((item, index) => requireString(item, `${path}.focusAreas[${index}]`))
+
+  return {
+    focusAreas,
+    context: requireEnum(
+      row.context,
+      MOBILITY_SESSION_CONTEXTS,
+      `${path}.context`,
+    ) as NonNullable<Session['mobilityDetails']>['context'],
+    targetStructure: requireString(row.targetStructure, `${path}.targetStructure`),
+    executionNotes: optionalString(row.executionNotes, `${path}.executionNotes`),
   }
 }
 

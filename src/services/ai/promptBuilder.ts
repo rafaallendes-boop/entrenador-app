@@ -587,8 +587,8 @@ export function buildCoachSystemPrompt(context: ChatContext): string {
     buildDynamicSquashSelectionSection(context, squashSummary),
     buildDynamicStrengthSelectionSection(context, strengthSummary),
     buildDynamicRunningSelectionSection(context, runningSummary),
-    buildDynamicCyclingSelectionSection(context, cyclingSummary),
-    buildDynamicMobilitySelectionSection(context, mobilitySummary),
+    buildDynamicCyclingSelectionSectionV2(context, cyclingSummary),
+    buildDynamicMobilitySelectionSectionV2(context, mobilitySummary),
     buildStrengthProgressionSection(context),
     buildSessionFeedbackSection(context.historicalSessions),
     buildNutritionContextSection(context),
@@ -596,7 +596,7 @@ export function buildCoachSystemPrompt(context: ChatContext): string {
     buildSessionsSection(plannedSessions),
     buildWeekDayLogsSection(context),
     buildTodaySection(context),
-    buildResponseInstructionsSection(plannedSessions, context, squashSummary, strengthSummary),
+    buildResponseInstructionsSection(plannedSessions, context, squashSummary, strengthSummary, cyclingSummary, mobilitySummary),
   ]
   return sections.filter(Boolean).join('\n\n')
 }
@@ -1659,6 +1659,56 @@ function buildDynamicMobilitySelectionSection(
   return lines.join('\n')
 }
 
+function buildDynamicCyclingSelectionSectionV2(
+  context: ChatContext,
+  summary = buildCyclingSelectionSummary(context),
+): string {
+  const base = buildDynamicCyclingSelectionSection(context, summary)
+  if (!summary) return base
+
+  const { selection } = summary
+  const addendum = [
+    'DETALLE EXPLICITO PARA CYCLING:',
+    `- Usa cyclingDetails.sessionCategory = "${selection.session.category}"`,
+    `- Usa cyclingDetails.sessionFamily = "${selection.session.family}"`,
+    `- Usa cyclingDetails.targetStructure con la estructura sugerida y no inventes una generica`,
+    `- Usa cyclingDetails.executionNotes para explicar dosificacion o rol dentro de la semana`,
+  ].join('\n')
+
+  return `${base}\n${addendum}`
+}
+
+function inferMobilityPromptContext(summary: MobilitySelectionResult): string {
+  const sessionId = summary.session.id
+  if (sessionId === 'post_run_mobility') return 'post_run'
+  if (sessionId === 'post_cycling_mobility') return 'post_cycling'
+  if (sessionId === 'post_squash_mobility') return 'post_squash'
+  if (sessionId === 'post_strength_reset') return 'post_strength'
+  if (sessionId === 'pre_training_activation') return 'pre_training_activation'
+  if (sessionId === 'recovery_mobility') return 'recovery'
+  if (sessionId === 'full_body_flow' || sessionId === 'range_maintenance_reset') return 'full_body'
+  return 'sport_specific'
+}
+
+function buildDynamicMobilitySelectionSectionV2(
+  context: ChatContext,
+  summary = buildMobilitySelectionSummary(context),
+): string {
+  const base = buildDynamicMobilitySelectionSection(context, summary)
+  if (!summary) return base
+
+  const { selection } = summary
+  const addendum = [
+    'DETALLE EXPLICITO PARA MOBILITY:',
+    `- Usa mobilityDetails.context = "${inferMobilityPromptContext(selection)}"`,
+    `- Usa mobilityDetails.focusAreas con focos derivados de la seleccion actual`,
+    `- Usa mobilityDetails.targetStructure con una estructura breve y accionable`,
+    '- Evita sesiones llamadas solo "Movilidad" sin contexto ni foco anatomico',
+  ].join('\n')
+
+  return `${base}\n${addendum}`
+}
+
 /**
  * Aggregates exercise weight progression from recent completed strength sessions.
  * Groups by exercise name and shows the last values chronologically so the coach
@@ -1858,6 +1908,8 @@ interface ResponsePromptContext {
   lunge45: number
   squashSummary: SquashSelectionSummary
   strengthSummary: StrengthSelectionSummary
+  cyclingSummary: ReturnType<typeof buildCyclingSelectionSummary>
+  mobilitySummary: ReturnType<typeof buildMobilitySelectionSummary>
   squashBaseSelection: ReturnType<typeof selectSquashDrills>
   squashCompetitiveSelection: ReturnType<typeof selectSquashDrills>
   squashControlSelection: ReturnType<typeof selectSquashDrills>
@@ -1883,6 +1935,8 @@ function buildResponsePromptContext(
   context: ChatContext,
   squashSummary: SquashSelectionSummary,
   strengthSummary: StrengthSelectionSummary,
+  cyclingSummary: ReturnType<typeof buildCyclingSelectionSummary>,
+  mobilitySummary: ReturnType<typeof buildMobilitySelectionSummary>,
 ): ResponsePromptContext {
   const today = todayISO()
   const weekStart = context.currentWeekSummary?.weekStartDate ?? currentWeekStartISO()
@@ -2058,6 +2112,8 @@ function buildResponsePromptContext(
     lunge45,
     squashSummary,
     strengthSummary,
+    cyclingSummary,
+    mobilitySummary,
     squashBaseSelection,
     squashCompetitiveSelection,
     squashControlSelection,
@@ -2087,6 +2143,8 @@ function buildResponseInstructions(
     context,
     buildSquashSelectionSummary(context),
     buildStrengthSelectionSummary(context),
+    buildCyclingSelectionSummary(context),
+    buildMobilitySelectionSummary(context),
   ),
 ): string {
   const {
@@ -2590,9 +2648,43 @@ function buildResponseInstructionsSection(
   context: ChatContext,
   squashSummary: SquashSelectionSummary = buildSquashSelectionSummary(context),
   strengthSummary: StrengthSelectionSummary = buildStrengthSelectionSummary(context),
+  cyclingSummary = buildCyclingSelectionSummary(context),
+  mobilitySummary = buildMobilitySelectionSummary(context),
 ): string {
-  const promptContext = buildResponsePromptContext(sessions, context, squashSummary, strengthSummary)
-  return buildResponseInstructions(sessions, context, promptContext)
+  const promptContext = buildResponsePromptContext(sessions, context, squashSummary, strengthSummary, cyclingSummary, mobilitySummary)
+  return `${buildResponseInstructions(sessions, context, promptContext)}\n\n${buildCyclingMobilityActionSchemaAddendum(promptContext)}`
+}
+
+function buildCyclingMobilityActionSchemaAddendum(promptContext: ResponsePromptContext): string {
+  const sections: string[] = ['ADDENDUM - CAMPOS EXPLICITOS PARA CYCLING Y MOBILITY']
+
+  if (promptContext.hasCycling) {
+    sections.push(
+      'Cuando sessionType = "cycling", incluye cyclingDetails siempre que la sesion sea creada o actualizada por el coach.',
+      'cyclingDetails: {',
+      '  sessionCategory: "support aerobic" | "primary build" | "fatigue-managed threshold" | "activation" | "recovery",',
+      '  sessionFamily: "z2_aerobic" | "long_ride" | "sweetspot_tempo" | "intervals_vo2" | "activation" | "recovery",',
+      '  targetStructure: "estructura breve y accionable",',
+      '  intensityReference: "low|moderate|moderate-high|high o referencia equivalente",',
+      '  executionNotes: "nota corta de ejecucion"',
+      '}',
+    )
+  }
+
+  if (promptContext.hasMobility) {
+    sections.push(
+      'Cuando sessionType = "mobility", incluye mobilityDetails siempre que la sesion sea creada o actualizada por el coach.',
+      'mobilityDetails: {',
+      '  focusAreas: ["hip"|"ankle_foot"|"shoulder_thoracic"|"full_body"|"sport_specific"|"activation", ...],',
+      '  context: "post_run" | "post_cycling" | "post_squash" | "post_strength" | "pre_training_activation" | "recovery" | "full_body" | "sport_specific",',
+      '  targetStructure: "bloques concretos o flujo resumido",',
+      '  executionNotes: "nota corta de uso o dosificacion"',
+      '}',
+      'Si propones movilidad, el titulo y el objetivo deben reflejar foco anatomico o contexto real; no uses solo "Movilidad".',
+    )
+  }
+
+  return sections.join('\n')
 }
 
 /**

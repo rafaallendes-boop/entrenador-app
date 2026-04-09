@@ -166,4 +166,20 @@ describe('promptBuilder dynamic cycling and mobility sections', () => {
     expect(prompt).toContain('MOVILIDAD')
     expect(prompt).toContain('Movilidad post-running')
   })
+
+  it('includes explicit cyclingDetails guidance when cycling is enabled', () => {
+    const prompt = buildCoachSystemPrompt(makeContext(makeProfile()))
+
+    expect(prompt).toContain('cyclingDetails')
+    expect(prompt).toContain('sessionCategory')
+    expect(prompt).toContain('sessionFamily')
+  })
+
+  it('includes explicit mobilityDetails guidance when mobility is enabled', () => {
+    const prompt = buildCoachSystemPrompt(makeContext(makeProfile()))
+
+    expect(prompt).toContain('mobilityDetails')
+    expect(prompt).toContain('focusAreas')
+    expect(prompt).toContain('pre_training_activation')
+  })
 })

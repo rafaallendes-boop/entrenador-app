@@ -54,6 +54,31 @@ export interface RunningDetails {
   intervalStructure?: RunningIntervalStructure
 }
 
+export interface CyclingDetails {
+  sessionCategory: string
+  sessionFamily?: string
+  targetStructure: string
+  intensityReference?: string
+  executionNotes?: string
+}
+
+export type MobilitySessionContext =
+  | 'post_run'
+  | 'post_cycling'
+  | 'post_squash'
+  | 'post_strength'
+  | 'pre_training_activation'
+  | 'recovery'
+  | 'full_body'
+  | 'sport_specific'
+
+export interface MobilityDetails {
+  focusAreas: string[]
+  context: MobilitySessionContext
+  targetStructure: string
+  executionNotes?: string
+}
+
 export interface RunningIntervalBlock {
   label: string
   repetitions?: number
@@ -138,6 +163,8 @@ export interface Session {
   completionNotes?: string
   exercises?: Exercise[]   // strength + mobility
   runningDetails?: RunningDetails
+  cyclingDetails?: CyclingDetails
+  mobilityDetails?: MobilityDetails
   squashDetails?: SquashDetails
   warmup?: GeneratedProtocol
   cooldown?: GeneratedProtocol
@@ -486,7 +513,9 @@ export interface CoachSessionProposal {
   targetHrMin?: number
   targetHrMax?: number
   intervalStructure?: RunningIntervalStructure
+  cyclingDetails?: CyclingDetails
   exercises?: CoachExerciseProposal[]  // for strength/mobility
+  mobilityDetails?: MobilityDetails
   squashDetails?: SquashDetails        // for squash training/control sessions
   warmup?: GeneratedProtocol
   cooldown?: GeneratedProtocol
@@ -514,6 +543,7 @@ export interface CoachAction {
   targetHrMin?: number
   targetHrMax?: number
   intervalStructure?: RunningIntervalStructure
+  cyclingDetails?: CyclingDetails
   // Fields for create_week
   sessions?: CoachSessionProposal[]
   weekObjectives?: string[]
@@ -521,6 +551,7 @@ export interface CoachAction {
   newTitle?: string
   newObjective?: string
   exercises?: CoachExerciseProposal[]  // replace full exercise list
+  mobilityDetails?: MobilityDetails
   squashDetails?: SquashDetails        // for squash sessions in add_session / update_session
   warmup?: GeneratedProtocol
   cooldown?: GeneratedProtocol

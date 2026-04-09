@@ -1,8 +1,10 @@
 import { useState } from 'react'
 import { X, Plus, Trash2 } from 'lucide-react'
 import type {
+  CyclingDetails,
   Exercise,
   MatchResult,
+  MobilityDetails,
   RunningType,
   SessionType,
   SquashSubtype,
@@ -68,6 +70,58 @@ const TYPE_LABELS: Record<SessionType, string> = {
   mobility: 'Movilidad',
   recovery: 'Recuperacion activa',
   nutrition: 'Nutricion',
+}
+
+function buildCyclingDetailsDraft(runningType: RunningType, objective: string): CyclingDetails {
+  const byType: Record<RunningType, Pick<CyclingDetails, 'sessionCategory' | 'targetStructure' | 'intensityReference' | 'executionNotes'>> = {
+    z2: {
+      sessionCategory: 'support aerobic',
+      targetStructure: 'Rodaje continuo en Z1-Z2 con cadencia estable.',
+      intensityReference: 'Conversacional, respiracion controlada, sin cierres agresivos.',
+      executionNotes: 'Mantener piernas sueltas y sumar base sin convertirlo en dia duro.',
+    },
+    tempo: {
+      sessionCategory: 'fatigue-managed threshold',
+      targetStructure: 'Bloque principal sostenido en tempo o sweetspot bajo con recuperaciones suaves.',
+      intensityReference: 'RPE 6-7 sostenido, sin entrar en VO2.',
+      executionNotes: 'Buscar control y estabilidad de potencia, no vaciarse.',
+    },
+    intervals: {
+      sessionCategory: 'primary build',
+      targetStructure: 'Series estructuradas con recuperacion activa y vuelta a la calma completa.',
+      intensityReference: 'RPE 8 en los bloques duros, con recuperacion real entre repeticiones.',
+      executionNotes: 'Calidad alta, tecnica estable y sin perder cadencia.',
+    },
+    long: {
+      sessionCategory: 'support aerobic',
+      targetStructure: 'Fondo aerobico sostenido con nutricion y ritmo parejo.',
+      intensityReference: 'Z2 sostenido, sin picos innecesarios.',
+      executionNotes: 'Usar como construccion de resistencia, no como carrera encubierta.',
+    },
+  }
+
+  const base = byType[runningType]
+  return {
+    ...base,
+    executionNotes: objective.trim() ? `${base.executionNotes} Foco extra: ${objective.trim()}.` : base.executionNotes,
+  }
+}
+
+function buildMobilityDetailsDraft(objective: string): MobilityDetails {
+  const normalized = objective.toLowerCase()
+  const focusAreas = [
+    normalized.includes('hombro') ? 'hombro' : null,
+    normalized.includes('torac') || normalized.includes('columna') ? 'toracica/columna' : null,
+    normalized.includes('tobillo') ? 'tobillo' : null,
+    normalized.includes('cadera') ? 'cadera' : null,
+  ].filter((item): item is string => Boolean(item))
+
+  return {
+    context: 'full_body',
+    focusAreas: focusAreas.length > 0 ? focusAreas : ['cadera', 'toracica/columna'],
+    targetStructure: 'Flujo breve con movilidad articular, respiracion y estiramientos activos bien dosificados.',
+    executionNotes: 'Buscar rango util y sensacion de soltura, no fatiga.',
+  }
 }
 
 export default function AddSessionModal({ defaultDate, onClose }: Props) {
@@ -208,6 +262,8 @@ export default function AddSessionModal({ defaultDate, onClose }: Props) {
             targetHrMax: hrMax ? Number(hrMax) : undefined,
           }
         : undefined,
+      cyclingDetails: type === 'cycling' ? buildCyclingDetailsDraft(runningType, objective) : undefined,
+      mobilityDetails: type === 'mobility' ? buildMobilityDetailsDraft(objective) : undefined,
       warmup: protocols.warmup,
       cooldown: protocols.cooldown,
       exercises: showExercises && exercises.length > 0 ? buildExercises() : undefined,

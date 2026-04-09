@@ -1,7 +1,7 @@
 # Entrenador App - Review and Roadmap
 
 Actualizado: 2026-04-09
-Ultimo hito relevante: alertas accionables en dashboard conectadas a coherencia macroplan-semana, ACWR, adherencia y cierre de check-in
+Ultimo hito relevante: profundizacion de cycling y mobility con contrato explicito de sesion, selector mas maduro, mejor prompt del coach y mejor visibilidad en SessionCard
 
 ## Estado actual del producto
 
@@ -17,6 +17,7 @@ Entrenador ya no esta en fase de prototipo. Hoy existe una base bastante seria p
 - protocolos de sesion mas ejecutables con warmup/cooldown y feedback por sesion
 - notificaciones operativas con reglas por contexto
 - alertas accionables en dashboard con CTA reales a semana, chat o check-in
+- cycling y mobility ahora con mejor criterio de coaching, continuidad y estructura visible
 
 ## Lo ya implementado
 
@@ -28,7 +29,7 @@ Esto ya no deberia volver al backlog principal salvo refinamientos:
 - wizard de plan de competencia
 - plan builder separado del chat
 - ACWR global y ACWR especifico por running, squash y fuerza
-- selectors estructurados para squash, strength, running, mobility y base de cycling
+- selectors estructurados para squash, strength, running, cycling y mobility
 - progresion multi-semana visible para el atleta en History
 - validacion de deportes permitidos en planning flow, prompt y persistencia
 - resumen estructurado del plan generado (`planSummary`)
@@ -38,6 +39,8 @@ Esto ya no deberia volver al backlog principal salvo refinamientos:
 - protocolos de sesion mas profundos en SessionCard y prompt del coach
 - notificaciones locales con preferencias, scheduling y debug
 - alertas accionables en dashboard priorizadas por severidad
+- contrato explicito para sesiones de cycling y mobility
+- prompt del coach reforzado para emitir `cyclingDetails` y `mobilityDetails`
 - tests unitarios ampliados para logica critica
 
 ## Lo que ya entrega valor real
@@ -97,8 +100,8 @@ Estado: fuerte
 Pendiente:
 
 - comparacion mas detallada entre semana esperada y semana propuesta
-- mas profundidad real en cycling y mobility
 - cerrar mejor la traduccion de macroplan a sugerencias concretas de ajuste
+- afinar como macroplan modula especificamente cycling de soporte y mobility de descarga
 
 ### Progression y carga
 
@@ -115,6 +118,24 @@ Pendiente:
 - convertir mas analytics en decisiones ejecutables, no solo visualizacion
 - refinar thresholds con uso real
 - mejorar lectura historica para que explique tendencia, no solo la muestre
+- sumar capa cuantitativa mejor para cycling y decidir si mobility queda solo como soporte cualitativo
+
+### Cycling y mobility
+
+Estado: mucho mejor, ya no basico
+
+- biblioteca de sesiones mas profunda para cycling
+- movilidad ya no actua solo como relleno generico
+- selectores mas sensibles a fase, fatiga, continuidad y rol dentro del atleta hibrido
+- contrato de sesion explicito con `cyclingDetails` y `mobilityDetails`
+- SessionCard muestra mejor contexto, estructura e intencion
+- el prompt del coach ya empuja al modelo a emitir esos campos explicitamente
+
+Pendiente:
+
+- refinar ejemplos de `create_week` para que usen todavia mas el detalle dinamico real
+- medir si el coach efectivamente usa estos campos de forma consistente en produccion
+- integrar mejor cycling y mobility con alertas y ajustes automaticos del coach
 
 ### Alertas y activacion
 
@@ -164,7 +185,7 @@ Pendiente:
 
 - usar sessionFeedback para recomendaciones y ajustes mas explicitos
 - tests UI puntuales de SessionCard expandido
-- mejorar templates de intervalos para cycling
+- seguir refinando templates de intervalos para cycling en casos edge
 
 ### Tests y deuda tecnica
 
@@ -173,6 +194,7 @@ Estado: mucho mejor que antes
 - suite de tests ampliada
 - coverage operativa
 - selectors, ACWR, macroplan, protocol engine, notificaciones y alertas ya cubiertos en logica critica
+- selectors de cycling y mobility y contrato dinamico de prompt ya cubiertos en tests focalizados
 
 Pendiente:
 
@@ -247,6 +269,14 @@ Pendiente:
 - lectura unificada de coherencia, ACWR, adherencia y cierre de check-in
 - CTA reales hacia accion concreta
 
+### 10. Profundizacion de cycling y mobility
+
+- `cyclingDetails` y `mobilityDetails` agregados como contrato explicito y compatible
+- selector de cycling mas rico para soporte, build, taper/race y recovery
+- selector de mobility mas util para reset post-deporte, activacion y mantenimiento de rango
+- SessionCard ahora muestra mejor estructura, contexto e intensidad para estas disciplinas
+- prompt del coach reforzado para emitir estos detalles en acciones
+
 ## Que hay hoy
 
 Resumen simple del producto actual:
@@ -265,7 +295,7 @@ Las brechas mas importantes no son tantas, pero si son profundas:
 2. Convertir alertas y notificaciones en un loop semanal consistente.
 3. Hacer que el coach ajuste mejor la semana usando historial y feedback.
 4. Completar packaging de monetizacion y posicionamiento comercial.
-5. Profundizar disciplinas secundarias donde aun se nota menor calidad.
+5. Convertir mejoras recientes de disciplinas secundarias en comportamiento estable del coach.
 
 ## Roadmap vigente
 
@@ -289,7 +319,7 @@ hacer que el producto se sienta claramente mejor que una planificacion semanal c
 Bloques:
 
 1. Analytics mas prescriptivos por disciplina
-2. Mejoras fuertes en cycling y mobility
+2. Consolidacion y refinamiento de cycling y mobility
 3. Continuidad del coach sobre historial real
 4. Templates y recomendaciones mas finas por contexto
 
@@ -359,18 +389,18 @@ Por que:
 
 ### Prioridad 4
 
-**Refinar cycling y mobility**
+**Consolidar cycling y mobility**
 
 Alcance:
 
-- mejores templates
-- mejores reglas de carga y soporte
-- mejor integracion con macroplan y alertas
+- refinar ejemplos del coach para que usen siempre el detalle nuevo
+- integrar mejor estas disciplinas con macroplan, alertas y ajustes automaticos
+- revisar uso real para detectar salidas todavia genericas
 
 Por que:
 
-- hoy se nota que squash/running/fuerza estan mas maduros
-- cerrar esto mejora la sensacion de producto redondo
+- el salto base ya esta dado
+- ahora conviene consolidar comportamiento y no solo sumar mas biblioteca
 
 ## Priorizacion simple
 

@@ -213,6 +213,8 @@ async function applyCoachAction(
               intervalStructure: action.intervalStructure,
             }
           : undefined,
+        cyclingDetails: action.sessionType === 'cycling' ? action.cyclingDetails : undefined,
+        mobilityDetails: action.sessionType === 'mobility' ? action.mobilityDetails : undefined,
         squashDetails: action.squashDetails,
         warmup: action.warmup,
         cooldown: action.cooldown,
@@ -259,6 +261,8 @@ async function applyCoachAction(
             targetHrMax: s.targetHrMax,
             intervalStructure: s.intervalStructure,
           } : undefined,
+          cyclingDetails: s.sessionType === 'cycling' ? s.cyclingDetails : undefined,
+          mobilityDetails: s.sessionType === 'mobility' ? s.mobilityDetails : undefined,
           squashDetails: s.squashDetails,
           warmup: s.warmup,
           cooldown: s.cooldown,
@@ -313,11 +317,17 @@ async function applyCoachAction(
               intervalStructure: action.intervalStructure ?? current.runningDetails?.intervalStructure,
             }
           : current.runningDetails
+        patch.cyclingDetails = nextType === 'cycling'
+          ? action.cyclingDetails ?? current.cyclingDetails
+          : undefined
       }
       if (Array.isArray(action.exercises)) {
         patch.exercises = action.exercises.map(ex => ({ ...ex, id: uuid(), completed: false }))
       } else if (nextType === 'strength' || nextType === 'mobility') {
         patch.exercises = current.exercises
+      }
+      if (nextType === 'mobility') {
+        patch.mobilityDetails = action.mobilityDetails ?? current.mobilityDetails
       }
       const resolvedRunningType =
         nextType === 'running' || nextType === 'cycling'
@@ -354,19 +364,25 @@ function buildSessionTypePatch(type: CoachAction['newType']): Record<string, unk
     case 'running':
     case 'cycling':
       patch.exercises = undefined
+      patch.mobilityDetails = undefined
       patch.squashDetails = undefined
       patch.subtype = undefined
+      if (type !== 'cycling') patch.cyclingDetails = undefined
       break
     case 'strength':
     case 'mobility':
       patch.runningDetails = undefined
+      patch.cyclingDetails = undefined
       patch.squashDetails = undefined
       patch.subtype = undefined
+      if (type !== 'mobility') patch.mobilityDetails = undefined
       break
     case 'recovery':
     case 'nutrition':
       patch.exercises = undefined
       patch.runningDetails = undefined
+      patch.cyclingDetails = undefined
+      patch.mobilityDetails = undefined
       patch.squashDetails = undefined
       patch.subtype = undefined
       break
