@@ -224,6 +224,47 @@ export interface WeekSummary {
   coachNote?: string
 }
 
+export type WeeklyActionKind =
+  | 'plan_week'
+  | 'fix_coherence'
+  | 'close_checkin'
+  | 'review_coach_note'
+  | 'recover_adherence'
+  | 'review_load_risk'
+
+export type WeeklyActionTarget =
+  | 'plan_builder'
+  | 'chat_adjust_week'
+  | 'today_checkin'
+  | 'today_detail'
+  | 'generate_coach_note'
+
+export type WeeklyActionStatus = 'pending' | 'recommended' | 'done' | 'blocked'
+export type WeeklyActionAdherenceStatus = 'unknown' | 'on_track' | 'low' | 'at_risk' | 'no_plan'
+export type WeeklyActionCheckInStatus = 'complete' | 'pending' | 'not_needed'
+export type WeeklyActionWeekState = 'empty' | 'planned' | 'needs_attention' | 'on_track'
+
+export interface WeeklyActionItem {
+  id: string
+  kind: WeeklyActionKind
+  priority: number
+  title: string
+  body: string
+  reason: string
+  ctaLabel: string
+  ctaTarget: WeeklyActionTarget
+  status: WeeklyActionStatus
+}
+
+export interface WeeklyActionSummary {
+  primaryAction: WeeklyActionItem | null
+  secondaryActions: WeeklyActionItem[]
+  adherenceStatus: WeeklyActionAdherenceStatus
+  checkInStatus: WeeklyActionCheckInStatus
+  coherenceStatus: PhaseCoherenceStatus
+  weekState: WeeklyActionWeekState
+}
+
 export interface RunningProfile {
   fiveKTime?: string          // "23:30"
   tenKTime?: string           // "49:00"

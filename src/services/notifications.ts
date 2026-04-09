@@ -1,4 +1,6 @@
 import type { AthleteProfile, DayLog, MacroWeekCoherenceSummary, Session, WeekSummary } from '../types'
+import type { LoadAnalytics } from './loadAnalytics'
+import { buildWeeklyActionSummary } from './weeklyActionLoop'
 
 const NOTIFY_TIME: Record<string, { h: number; m: number }> = {
   AM: { h: 7, m: 30 },
@@ -77,6 +79,7 @@ export interface NotificationSyncContext {
   macroWeekCoherence?: MacroWeekCoherenceSummary | null
   todayDayLog?: DayLog
   athleteProfile?: AthleteProfile | null
+  loadAnalytics?: LoadAnalytics | null
 }
 
 const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences = {
@@ -312,25 +315,23 @@ function buildDailyCheckInNotification(
   today: string,
   now: Date,
 ): ScheduledAppNotification | null {
-  const todaySessions = context.sessions.filter((session) => session.date === today && session.status !== 'skipped')
-  if (todaySessions.length === 0) return null
-
-  const completedSessions = todaySessions.filter((session) => session.status === 'completed')
-  const hasPendingFeedback = completedSessions.some((session) => !session.sessionFeedback)
-  const missingCheckIn =
-    context.todayDayLog == null ||
-    context.todayDayLog.energyLevel == null ||
-    context.todayDayLog.sleepQuality == null ||
-    context.todayDayLog.rpeActual == null
-
-  if (!hasPendingFeedback && !missingCheckIn) return null
+  const summary = buildWeeklyActionSummary({
+    sessions: context.sessions,
+    currentWeekSummary: context.currentWeekSummary,
+    todayDayLog: context.todayDayLog,
+    macroWeekCoherence: context.macroWeekCoherence,
+    loadAnalytics: context.loadAnalytics,
+    today,
+  })
+  const action = summary.primaryAction?.kind === 'close_checkin'
+    ? summary.primaryAction
+    : summary.secondaryActions.find((item) => item.kind === 'close_checkin')
+  if (!action) return null
 
   return {
     id: `checkin-${today}`,
-    title: hasPendingFeedback ? 'Cierra tu sesion de hoy' : 'Haz tu check-in de hoy',
-    body: hasPendingFeedback
-      ? 'Completa feedback y sensaciones para que el coach lea como fue la sesion.'
-      : 'Registra energia, dolor y sensaciones para cerrar el dia.',
+    title: action.title,
+    body: action.body,
     notifyAt: atTime(now, ACTIVATION_NOTIFY_TIME.checkIn.h, ACTIVATION_NOTIFY_TIME.checkIn.m),
     tag: buildNotificationTag('daily_checkin', 'today', today),
     category: 'daily_checkin',
@@ -346,15 +347,23 @@ function buildWeekPlanningNotification(
   today: string,
   now: Date,
 ): ScheduledAppNotification | null {
-  if (getWeekday(now) > 3) return null
-
-  const weekSessions = context.currentWeekSummary?.totalSessions ?? context.sessions.length
-  if (weekSessions > 0) return null
+  const summary = buildWeeklyActionSummary({
+    sessions: context.sessions,
+    currentWeekSummary: context.currentWeekSummary,
+    todayDayLog: context.todayDayLog,
+    macroWeekCoherence: context.macroWeekCoherence,
+    loadAnalytics: context.loadAnalytics,
+    today,
+  })
+  const action = summary.primaryAction?.kind === 'plan_week'
+    ? summary.primaryAction
+    : summary.secondaryActions.find((item) => item.kind === 'plan_week')
+  if (!action) return null
 
   return {
     id: `week-empty-${today}`,
-    title: 'Tu semana sigue vacia',
-    body: 'Crea tu semana o pide una propuesta al coach para no perder continuidad.',
+    title: action.title,
+    body: action.body,
     notifyAt: atTime(now, ACTIVATION_NOTIFY_TIME.weekPlanning.h, ACTIVATION_NOTIFY_TIME.weekPlanning.m),
     tag: buildNotificationTag('weekly_planning', 'week-empty', today),
     category: 'weekly_planning',
@@ -370,15 +379,23 @@ function buildCoachFollowUpNotification(
   today: string,
   now: Date,
 ): ScheduledAppNotification | null {
-  if (getWeekday(now) > 4) return null
-  if (!context.currentWeekSummary) return null
-  if (context.currentWeekSummary.totalSessions === 0) return null
-  if (context.currentWeekSummary.coachNote) return null
+  const summary = buildWeeklyActionSummary({
+    sessions: context.sessions,
+    currentWeekSummary: context.currentWeekSummary,
+    todayDayLog: context.todayDayLog,
+    macroWeekCoherence: context.macroWeekCoherence,
+    loadAnalytics: context.loadAnalytics,
+    today,
+  })
+  const action = summary.primaryAction?.kind === 'review_coach_note'
+    ? summary.primaryAction
+    : summary.secondaryActions.find((item) => item.kind === 'review_coach_note')
+  if (!action) return null
 
   return {
     id: `coach-note-${today}`,
-    title: 'Te falta una lectura del coach',
-    body: 'Genera o revisa la nota semanal para entender foco, riesgo y prioridad de esta semana.',
+    title: action.title,
+    body: action.body,
     notifyAt: atTime(now, ACTIVATION_NOTIFY_TIME.coachNote.h, ACTIVATION_NOTIFY_TIME.coachNote.m),
     tag: buildNotificationTag('coach_followup', 'coach-note', today),
     category: 'coach_followup',
@@ -394,13 +411,23 @@ function buildCoherenceAlertNotification(
   today: string,
   now: Date,
 ): ScheduledAppNotification | null {
-  const summary = context.macroWeekCoherence
-  if (!summary || summary.coherenceStatus !== 'warning' || summary.coherenceIssues.length === 0) return null
+  const summary = buildWeeklyActionSummary({
+    sessions: context.sessions,
+    currentWeekSummary: context.currentWeekSummary,
+    todayDayLog: context.todayDayLog,
+    macroWeekCoherence: context.macroWeekCoherence,
+    loadAnalytics: context.loadAnalytics,
+    today,
+  })
+  const action = summary.primaryAction?.kind === 'fix_coherence'
+    ? summary.primaryAction
+    : summary.secondaryActions.find((item) => item.kind === 'fix_coherence')
+  if (!action) return null
 
   return {
     id: `coherence-${today}`,
-    title: 'Tu semana necesita ajuste',
-    body: summary.coherenceIssues[0],
+    title: action.title,
+    body: action.body,
     notifyAt: atTime(now, ACTIVATION_NOTIFY_TIME.coherence.h, ACTIVATION_NOTIFY_TIME.coherence.m),
     tag: buildNotificationTag('load_alerts', 'coherence-warning', today),
     category: 'load_alerts',
@@ -501,11 +528,6 @@ function isDueWithinGraceWindow(notifyAt: number): boolean {
 
 function atTime(now: Date, h: number, m: number): number {
   return new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m, 0).getTime()
-}
-
-function getWeekday(date: Date): number {
-  const day = date.getDay()
-  return day === 0 ? 7 : day
 }
 
 function todayISODate(): string {

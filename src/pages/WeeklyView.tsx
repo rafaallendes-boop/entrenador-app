@@ -1,33 +1,45 @@
-import { useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Download, Plus, FileUp, Sparkles, MessageSquareText } from 'lucide-react'
 import { useTrainingStore } from '../store/useTrainingStore'
 import { useUIStore } from '../store/useUIStore'
 import { useCoachMemoryStore } from '../store/useCoachMemoryStore'
-import { formatFullDate, fromISO, getWeekDays, toISO, isDateToday } from '../utils/date'
+import { computeLoadAnalytics, type LoadAnalytics } from '../services/loadAnalytics'
+import { formatFullDate, fromISO, getWeekDays, toISO, isDateToday, todayISO } from '../utils/date'
 import WeekStrip from '../components/week/WeekStrip'
 import WeekSummaryCard from '../components/week/WeekSummaryCard'
 import MacroPhaseSummaryCard from '../components/week/MacroPhaseSummaryCard'
 import SessionCard from '../components/session/SessionCard'
 import AddSessionModal from '../components/session/AddSessionModal'
 import { ROUTES } from '../constants/routes'
-import type { TimeBlock } from '../types'
+import type { TimeBlock, WeeklyActionItem } from '../types'
 import { downloadICS } from '../utils/ics'
 import { buildMacroWeekCoherenceSummary } from '../services/macroWeekCoherence'
+import { buildWeeklyActionSummary } from '../services/weeklyActionLoop'
+
+const DailyCheckInCard = lazy(() => import('../components/dashboard/DailyCheckInCard'))
+const WeeklyActionCenterCard = lazy(() => import('../components/week/WeeklyActionCenterCard'))
 
 export default function WeeklyView() {
-  const { sessions, currentWeekSummary, isLoading, loadedWeekStart, loadWeek, generateCoachNote, deleteSession } = useTrainingStore()
-  const { currentWeekStart, selectedDate } = useUIStore()
+  const { sessions, currentWeekSummary, dayLogs, isLoading, loadedWeekStart, loadWeek, generateCoachNote, deleteSession } = useTrainingStore()
+  const { currentWeekStart, selectedDate, setSelectedDate, setCurrentWeekStart } = useUIStore()
   const athleteProfile = useCoachMemoryStore((state) => state.athleteProfile)
   const [showAddModal, setShowAddModal] = useState(false)
   const [isGeneratingNote, setIsGeneratingNote] = useState(false)
+  const [checkInExpandToken, setCheckInExpandToken] = useState(0)
+  const [loadAnalytics, setLoadAnalytics] = useState<LoadAnalytics | null>(null)
 
   useEffect(() => {
     loadWeek(currentWeekStart)
   }, [currentWeekStart, loadWeek])
 
+  useEffect(() => {
+    void computeLoadAnalytics(4).then(setLoadAnalytics)
+  }, [currentWeekStart, sessions])
+
   const navigate = useNavigate()
   const weekDays = getWeekDays(fromISO(currentWeekStart))
+  const today = todayISO()
 
   const getSessionsForDay = (dateISO: string, block?: TimeBlock) =>
     sessions
@@ -52,6 +64,15 @@ export default function WeeklyView() {
     sessions,
     historicalSessions: sessions.filter((session) => session.status === 'completed' || session.status === 'adjusted'),
   }), [athleteProfile, sessions])
+  const weeklyActionSummary = useMemo(() => buildWeeklyActionSummary({
+    sessions,
+    currentWeekSummary,
+    todayDayLog: dayLogs[today],
+    macroWeekCoherence,
+    loadAnalytics,
+    today,
+  }), [sessions, currentWeekSummary, dayLogs, today, macroWeekCoherence, loadAnalytics])
+  const todaySessions = sessions.filter((session) => session.date === today)
 
   const handleExport = () => {
     downloadICS(sessions, `entrenador-${currentWeekStart}.ics`)
@@ -72,12 +93,45 @@ export default function WeeklyView() {
     await deleteSession(sessionId)
   }
 
+  const handleSelectWeeklyAction = (action: WeeklyActionItem) => {
+    if (action.ctaTarget === 'plan_builder') {
+      navigate(ROUTES.PLAN_BUILDER)
+      return
+    }
+
+    if (action.ctaTarget === 'chat_adjust_week') {
+      const composerDraft =
+        action.kind === 'fix_coherence'
+          ? `Ajusta mi semana para respetar esta regla del bloque: ${macroWeekCoherence.weeklyRule}`
+          : action.kind === 'recover_adherence'
+            ? 'Revisa mi adherencia semanal y propon un ajuste concreto para que la semana sea mas realista.'
+            : 'Simplifica o ajusta mi semana segun la carga y la fatiga de estos dias.'
+      navigate(ROUTES.CHAT, { state: { composerDraft } })
+      return
+    }
+
+    if (action.ctaTarget === 'generate_coach_note') {
+      void handleGenerateCoachNote()
+      return
+    }
+
+    if (action.ctaTarget === 'today_detail') {
+      navigate(ROUTES.DAY(today))
+      return
+    }
+
+    setCurrentWeekStart(today)
+    setSelectedDate(today)
+    setCheckInExpandToken((value) => value + 1)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
   return (
     <div className="pb-6 md:pb-8">
       <div className="pt-12 px-4 pb-2 flex flex-col gap-3 md:px-6 md:flex-row md:items-center md:justify-between">
         <h1 className="text-xl font-bold text-ink md:text-2xl">Semana</h1>
         <div className="flex items-center gap-2 flex-wrap">
-          {isWeekEmpty ? (
+          {isWeekEmpty && weeklyActionSummary.primaryAction?.kind === 'plan_week' ? (
             <button
               onClick={() => navigate(ROUTES.PLAN_BUILDER)}
               title="Abrir creador de plan"
@@ -179,10 +233,10 @@ export default function WeeklyView() {
           </div>
         )}
 
-        {currentWeekSummary && (
-          <div className="min-w-0">
-            <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
-              <p className="text-xs font-semibold text-ink-muted uppercase tracking-wider">Resumen semanal</p>
+        <div className="min-w-0">
+          <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
+            <p className="text-xs font-semibold text-ink-muted uppercase tracking-wider">Resumen semanal</p>
+            {currentWeekSummary && (
               <button
                 onClick={handleGenerateCoachNote}
                 disabled={isGeneratingNote}
@@ -191,13 +245,19 @@ export default function WeeklyView() {
                 <MessageSquareText size={13} />
                 {isGeneratingNote ? 'Generando...' : currentWeekSummary.coachNote ? 'Regenerar coach note' : 'Generar coach note'}
               </button>
-            </div>
-            <div className="space-y-3">
-              <MacroPhaseSummaryCard summary={macroWeekCoherence} />
-              <WeekSummaryCard summary={currentWeekSummary} />
-            </div>
+            )}
           </div>
-        )}
+          <div className="space-y-3">
+            <Suspense fallback={<div className="h-48 rounded-card border border-surface-border bg-surface-card animate-pulse" />}>
+              <WeeklyActionCenterCard summary={weeklyActionSummary} onSelectAction={handleSelectWeeklyAction} />
+            </Suspense>
+            <Suspense fallback={<div className="h-28 rounded-card border border-surface-border bg-surface-card animate-pulse" />}>
+              <DailyCheckInCard todaySessions={todaySessions} autoExpandToken={checkInExpandToken} />
+            </Suspense>
+            <MacroPhaseSummaryCard summary={macroWeekCoherence} />
+            {currentWeekSummary && <WeekSummaryCard summary={currentWeekSummary} />}
+          </div>
+        </div>
       </div>
 
       {isLoading && (

@@ -1,11 +1,11 @@
 # Entrenador App - Review and Roadmap
 
 Actualizado: 2026-04-09
-Ultimo hito relevante: profundizacion de cycling y mobility con contrato explicito de sesion, selector mas maduro, mejor prompt del coach y mejor visibilidad en SessionCard
+Ultimo hito relevante: weekly action loop unificado con WeeklyView como action center, CTA semanticos y notificaciones alineadas al mismo motor
 
 ## Estado actual del producto
 
-Entrenador ya no esta en fase de prototipo. Hoy existe una base bastante seria para atletas hibridos, especialmente en squash + running + fuerza:
+Entrenador ya no esta en fase de prototipo. Hoy existe una base seria para atletas hibridos, especialmente en squash + running + fuerza:
 
 - planificacion semanal, vista diaria, historial y ajustes operativos
 - coach AI con propuestas ejecutables y persistidas
@@ -16,8 +16,9 @@ Entrenador ya no esta en fase de prototipo. Hoy existe una base bastante seria p
 - analytics de carga, ACWR y progresion visibles
 - protocolos de sesion mas ejecutables con warmup/cooldown y feedback por sesion
 - notificaciones operativas con reglas por contexto
-- alertas accionables en dashboard con CTA reales a semana, chat o check-in
+- alertas accionables en dashboard con CTA reales
 - cycling y mobility ahora con mejor criterio de coaching, continuidad y estructura visible
+- weekly action loop unificado visible en WeeklyView y reutilizado en dashboard y notificaciones
 
 ## Lo ya implementado
 
@@ -41,17 +42,20 @@ Esto ya no deberia volver al backlog principal salvo refinamientos:
 - alertas accionables en dashboard priorizadas por severidad
 - contrato explicito para sesiones de cycling y mobility
 - prompt del coach reforzado para emitir `cyclingDetails` y `mobilityDetails`
+- weekly action engine compartido entre WeeklyView, dashboard y notificaciones
+- WeeklyView elevado a superficie principal para actuar sobre la semana
 - tests unitarios ampliados para logica critica
 
 ## Lo que ya entrega valor real
 
-Hoy el producto ya logra cinco cosas importantes:
+Hoy el producto ya logra seis cosas importantes:
 
 1. El atleta entiende que entrenar y por que.
 2. El coach AI tiene mas contexto y menos margen para contradicciones obvias.
 3. La planificacion multi-deporte es bastante mas segura que antes.
-4. El usuario ya recibe señales concretas cuando una semana se desordena.
-5. Existe una base razonable para retencion semanal, no solo para generacion de planes.
+4. El usuario ya recibe senales concretas cuando una semana se desordena.
+5. La semana ya tiene un centro de accion claro, no solo visualizacion.
+6. Existe una base razonable para retencion semanal, no solo para generacion de planes.
 
 ## Lectura honesta del producto
 
@@ -61,11 +65,12 @@ Hoy el producto ya logra cinco cosas importantes:
 - coach AI cada vez mas util para ejecutar, no solo explicar
 - analytics suficientemente buenos para empezar a guiar decisiones
 - capa offline/sync ya mucho mas madura que la mayoria de apps tempranas
+- loop semanal visible y accionable con una superficie principal clara
 
 ### Lo debil hoy
 
 - sync sigue siendo el mayor riesgo comercial porque falta validacion en uso real duro
-- notificaciones y alertas existen, pero todavia no estan unificadas en un solo loop de activacion
+- el loop semanal ya existe, pero todavia falta volverlo mas automatico, medible y coherente con el coach
 - el coach todavia explica mejor de lo que reajusta automaticamente
 - el packaging comercial sigue incompleto
 
@@ -80,6 +85,7 @@ Estado: fuerte
 - resumen del plan generado ya visible
 - coherencia macroplan <-> semana ya visible y validable
 - alertas accionables ya ayudan a decidir cuando revisar semana o pedir ajuste
+- CTA de ajuste semanal ya conectados con WeeklyView, chat y check-in
 
 Pendiente:
 
@@ -139,18 +145,19 @@ Pendiente:
 
 ### Alertas y activacion
 
-Estado: intermedio-fuerte
+Estado: fuerte
 
 - notificaciones locales operativas
 - preferencias por categoria
 - resync/debug de notificaciones
 - alertas accionables ya visibles en dashboard
-- CTA reales a chat, semana y check-in
+- loop semanal unificado con action center visible en WeeklyView
+- dashboard y notificaciones ya reutilizan el mismo motor de decision
 
 Pendiente:
 
-- reutilizar el mismo motor de alertas en WeeklyView y notificaciones
 - cerrar el loop semanal completo con mas reactivacion automatica
+- hacer que el coach proponga ajustes mas precisos desde cada CTA del loop
 - medir que alertas realmente hacen volver al usuario
 
 ### Sync
@@ -195,6 +202,7 @@ Estado: mucho mejor que antes
 - coverage operativa
 - selectors, ACWR, macroplan, protocol engine, notificaciones y alertas ya cubiertos en logica critica
 - selectors de cycling y mobility y contrato dinamico de prompt ya cubiertos en tests focalizados
+- weekly action loop ya cubierto con tests de prioridad y estados base
 
 Pendiente:
 
@@ -277,6 +285,14 @@ Pendiente:
 - SessionCard ahora muestra mejor estructura, contexto e intensidad para estas disciplinas
 - prompt del coach reforzado para emitir estos detalles en acciones
 
+### 11. Weekly action loop unificado
+
+- `weeklyActionLoop` como motor puro compartido
+- WeeklyView convertido en action center de la semana
+- dashboard reducido a resumen del mismo estado semanal
+- notificaciones conectadas a la misma fuente de decision para semana vacia, coherencia, check-in y coach note
+- CTA semanticos a `plan_builder`, `chat_adjust_week`, `today_checkin`, `today_detail` y `generate_coach_note`
+
 ## Que hay hoy
 
 Resumen simple del producto actual:
@@ -292,8 +308,8 @@ Resumen simple del producto actual:
 Las brechas mas importantes no son tantas, pero si son profundas:
 
 1. Validar sync en uso real entre dispositivos.
-2. Convertir alertas y notificaciones en un loop semanal consistente.
-3. Hacer que el coach ajuste mejor la semana usando historial y feedback.
+2. Hacer que el coach ajuste mejor la semana usando historial, feedback y el loop semanal ya unificado.
+3. Convertir el loop semanal en reactivacion mas automatica y medible.
 4. Completar packaging de monetizacion y posicionamiento comercial.
 5. Convertir mejoras recientes de disciplinas secundarias en comportamiento estable del coach.
 
@@ -307,8 +323,8 @@ dejar la app lista para una beta privada fuerte, con menos riesgo operativo y un
 Bloques:
 
 1. Validacion real de sync y reconciliacion
-2. Unificacion de alertas y notificaciones
-3. Ajustes del coach guiados por alertas y feedback
+2. Ajustes del coach guiados por alertas y feedback
+3. Reactivacion semanal mas automatica y medible
 4. Pulido de UX entre semana, chat y check-in
 
 ### Fase 2 - Coaching mas premium
@@ -357,23 +373,6 @@ Por que:
 
 ### Prioridad 2
 
-**Unificar alertas accionables y notificaciones**
-
-Alcance:
-
-- reutilizar el motor de alertas en WeeklyView
-- conectar notificaciones a la misma fuente de decision
-- reducir duplicacion de reglas entre dashboard y notifications
-- definir top alert semanal y top alert diaria
-
-Por que:
-
-- ya existe la infraestructura
-- ahora el mayor retorno esta en cerrar el loop, no en crear otra capa nueva
-- esto mejora retencion y coherencia del producto al mismo tiempo
-
-### Prioridad 3
-
 **Hacer que el coach ajuste, no solo explique**
 
 Alcance:
@@ -384,8 +383,23 @@ Alcance:
 
 Por que:
 
-- esta es la diferencia entre un coach “inteligente” y un dashboard con texto
+- esta es la diferencia entre un coach "inteligente" y un dashboard con texto
 - aumenta mucho el valor percibido
+
+### Prioridad 3
+
+**Medir y endurecer el weekly action loop**
+
+Alcance:
+
+- cerrar reactivacion automatica de lunes, mitad de semana y fin de dia
+- medir que CTA se usan y cuales no
+- reducir mas la duplicacion entre superficies y builders de notificaciones
+
+Por que:
+
+- el loop ya existe y ahora hay que volverlo confiable y medible
+- esto define si la retencion semanal es real o solo potencial
 
 ### Prioridad 4
 
@@ -407,30 +421,15 @@ Por que:
 Si hubiera que resumir el orden real desde hoy:
 
 1. validar sync en dispositivos reales
-2. unificar alertas + notificaciones + weekly loop
-3. hacer que el coach proponga ajustes guiados por alertas
+2. hacer que el coach proponga ajustes guiados por alertas
+3. endurecer y medir el weekly loop
 4. profundizar cycling y mobility
 5. instrumentar activacion, retencion y monetizacion
 6. abrir beta privada pagada
 
 ## Mejoras concretas posibles desde aqui
 
-### Mejora 1 - Action center semanal
-
-Una vista simple en dashboard o weekly view con:
-
-- alerta principal de la semana
-- 2 acciones recomendadas
-- estado de adherencia
-- estado de check-in pendiente
-
-Impacto:
-
-- alto
-- bajo riesgo
-- reutiliza mucho de lo ya construido
-
-### Mejora 2 - Coach adjustment proposals
+### Mejora 1 - Coach adjustment proposals
 
 Cuando una alerta sea fuerte:
 
@@ -443,7 +442,7 @@ Impacto:
 - muy alto
 - sube mucho el valor percibido
 
-### Mejora 3 - Sync test matrix visible
+### Mejora 2 - Sync test matrix visible
 
 Documento o panel interno con:
 
@@ -456,17 +455,63 @@ Impacto:
 - alto para producto y confianza
 - poco glamoroso pero necesario
 
-### Mejora 4 - Weekly reactivation loop
+### Mejora 3 - Weekly loop instrumentation
 
-- lunes: semana vacia
-- mitad de semana: adherencia baja
-- fin de dia: check-in pendiente
-- warning fuerte: ajuste sugerido
+- monday empty-week trigger
+- mid-week adherence trigger
+- end-of-day check-in trigger
+- uso de CTA por superficie
 
 Impacto:
 
 - alto en retencion
-- ya hay muchas piezas construidas
+- convierte intuicion de producto en una senal medible
+
+### Mejora 4 - Refactor UX-critical
+
+Refactors de codigo con impacto directo en usabilidad:
+
+- navegacion semantica de CTA semanales
+- hooks compartidos para carga de semana y analytics
+- contrato mas robusto para lanzar intents al chat
+
+Impacto:
+
+- medio-alto
+- reduce friccion y deuda al mismo tiempo
+
+## Revision tecnica de usabilidad
+
+### Hallazgos prioritarios
+
+1. Duplicacion de navegacion por CTA semanal.
+2. Carga repetida de semana y analytics en varias pantallas.
+3. Acoplamiento fragil con `location.state.composerDraft`.
+4. Builders de notificaciones que recalculan el mismo resumen varias veces.
+5. `DailyCheckInCard` mezcla panel, estado y edicion en un solo componente.
+6. Uso disperso de `window.confirm`.
+7. `promptBuilder.ts` sigue siendo un hotspot de complejidad estructural.
+
+### Refactors recomendados
+
+**Corto plazo**
+
+- extraer un `weeklyActionNavigator` o hook equivalente para resolver CTA semanales desde una sola capa
+- crear hooks compartidos para `loadWeek` y snapshots de analytics
+- calcular `weeklyActionSummary` una sola vez dentro de notifications
+- separar el panel reusable de check-in del contenedor especifico de "hoy"
+
+**Medio plazo**
+
+- reemplazar `composerDraft` libre por un contrato explicito de `chatLaunchIntent`
+- reemplazar `window.confirm` por un modal compartido testeable
+- extraer bloques puros de `promptBuilder` por disciplina y por accion
+
+### Lectura final de la revision
+
+- no hace falta una reescritura grande de stores
+- si hace falta reducir acoplamientos de navegacion, carga y lanzamiento de intents
+- el refactor con mejor retorno inmediato es centralizar la navegacion del weekly loop
 
 ## Roadmap de monetizacion
 
@@ -518,85 +563,6 @@ Hipotesis simple:
 Antes de monetizar de verdad faltan estas piezas:
 
 1. sync validado en movil y escritorio reales
-2. metricas basicas de activacion y retencion
-3. gating de features premium
-4. estado de suscripcion o flag de acceso
-5. paywall simple y claro
-6. flujo minimo de alta / upgrade / restore
-
-### Dependencias de producto minimas para cobrar
-
-1. value proposition visible en onboarding
-2. explicacion clara de por que pagar
-3. una razon semanal fuerte para volver
-4. feedback de beta privada con usuarios reales
-5. definicion de para quien SI es y para quien NO es el producto
-
-## Que falta para hacer la app vendible
-
-La app ya tiene base para ser vendible, pero todavia faltan estas piezas para que se sienta lista comercialmente:
-
-### 1. Confiabilidad operativa
-
-- sync validado en uso real
-- recovery claro cuando algo falla
-- menos miedo a perder o duplicar datos
-
-### 2. Retencion real
-
-- loop semanal unificado
-- notificaciones consistentes con alertas
-- razones claras para volver a abrir la app
-
-### 3. Coaching mas ejecutivo
-
-- menos descripcion pasiva
-- mas acciones y reajustes utiles
-- mejor uso del feedback real
-
-### 4. Packaging comercial
-
-- pricing claro
-- plan gratis vs pago
-- value prop muy facil de entender
-- onboarding orientado a conversion
-
-### 5. Pulido final de UX
-
-- menos friccion entre wizard, coach y aceptacion del plan
-- mejor copy
-- estados vacios y warnings mas consistentes
-
-## Criterio para beta privada fuerte
-
-La beta privada esta realmente lista cuando:
-
-- sync converge bien en movil y escritorio
-- el usuario entiende su semana y su fase sin ayuda manual
-- el coach no propone deportes o cargas incoherentes con facilidad
-- los errores importantes son explicables
-- existe al menos una razon fuerte para volver cada semana
-
-## Criterio para empezar a monetizar
-
-Se puede empezar a monetizar cuando se cumplan estas condiciones minimas:
-
-1. sync validado en uso real con baja tasa de incidentes
-2. loop semanal de uso ya visible en datos
-3. paywall y acceso premium implementados
-4. modelo gratis vs pago ya decidido y entendible
-5. al menos 5-10 usuarios de beta privada usando el producto sin romperlo
-
-Recomendacion:
-
-- primero beta privada pagada
-- despues recien apertura mas amplia
-
-## Criterio de producto
-
-Regla para las siguientes iteraciones:
-
-1. primero, confiabilidad
-2. despues, loop semanal y continuidad visible
-3. despues, coaching mas ejecutivo
-4. recien ahi, monetizacion fuerte
+2. reactivacion semanal estable y medible
+3. coach con capacidad real de reajuste, no solo de explicacion
+4. experiencia suficientemente consistente entre dashboard, semana y chat

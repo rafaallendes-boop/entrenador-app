@@ -1,10 +1,10 @@
 import { AlertTriangle, ArrowRight, CheckCircle2 } from 'lucide-react'
 import Card from '../ui/Card'
-import type { ActionableAlert } from '../../services/actionAlerts'
+import type { WeeklyActionItem, WeeklyActionSummary } from '../../types'
 
 interface ActionAlertsCardProps {
-  alerts: ActionableAlert[]
-  onSelectAlert: (alert: ActionableAlert) => void
+  summary: WeeklyActionSummary
+  onSelectAction: (action: WeeklyActionItem) => void
 }
 
 const TONE_STYLES = {
@@ -28,8 +28,10 @@ const TONE_STYLES = {
   },
 } as const
 
-export default function ActionAlertsCard({ alerts, onSelectAlert }: ActionAlertsCardProps) {
-  if (alerts.length === 0) {
+export default function ActionAlertsCard({ summary, onSelectAction }: ActionAlertsCardProps) {
+  const primaryAction = summary.primaryAction
+
+  if (!primaryAction) {
     return (
       <Card className="p-4 border-emerald-500/20 bg-emerald-500/10">
         <div className="flex items-start gap-3">
@@ -39,7 +41,7 @@ export default function ActionAlertsCard({ alerts, onSelectAlert }: ActionAlerts
           <div className="min-w-0">
             <p className="text-sm font-semibold text-ink">Sin alertas urgentes</p>
             <p className="mt-1 text-xs text-ink-muted leading-relaxed">
-              La semana no muestra desajustes obvios. Mantén el check-in al día para seguir afinando el coaching.
+              La semana viene alineada. Mantén el check-in al día para seguir afinando el coaching.
             </p>
           </div>
         </div>
@@ -47,8 +49,11 @@ export default function ActionAlertsCard({ alerts, onSelectAlert }: ActionAlerts
     )
   }
 
-  const [primaryAlert, ...secondaryAlerts] = alerts
-  const tone = TONE_STYLES[primaryAlert.severity]
+  const tone = primaryAction.kind === 'plan_week' || primaryAction.kind === 'fix_coherence'
+    ? TONE_STYLES.high
+    : primaryAction.kind === 'review_coach_note'
+      ? TONE_STYLES.low
+      : TONE_STYLES.medium
 
   return (
     <Card className={`p-4 ${tone.shell}`}>
@@ -63,33 +68,33 @@ export default function ActionAlertsCard({ alerts, onSelectAlert }: ActionAlerts
             </span>
             <button
               type="button"
-              onClick={() => onSelectAlert(primaryAlert)}
+              onClick={() => onSelectAction(primaryAction)}
               className="inline-flex items-center gap-1 text-xs font-semibold text-ink hover:text-brand-light transition-colors"
             >
-              {primaryAlert.ctaLabel}
+              {primaryAction.ctaLabel}
               <ArrowRight size={13} />
             </button>
           </div>
 
-          <p className="text-sm font-semibold text-ink">{primaryAlert.title}</p>
-          <p className="mt-1 text-sm text-ink-muted leading-relaxed">{primaryAlert.body}</p>
+          <p className="text-sm font-semibold text-ink">{primaryAction.title}</p>
+          <p className="mt-1 text-sm text-ink-muted leading-relaxed">{primaryAction.body}</p>
           <p className="mt-3 text-xs text-ink">
-            <span className="font-semibold text-ink">Recomendacion:</span> {primaryAlert.recommendation}
+            <span className="font-semibold text-ink">Recomendación:</span> {primaryAction.reason}
           </p>
 
-          {secondaryAlerts.length > 0 && (
+          {summary.secondaryActions.length > 0 && (
             <div className="mt-4 pt-3 border-t border-surface-border/70 space-y-2">
-              {secondaryAlerts.slice(0, 2).map((alert) => (
+              {summary.secondaryActions.slice(0, 2).map((action) => (
                 <button
-                  key={alert.id}
+                  key={action.id}
                   type="button"
-                  onClick={() => onSelectAlert(alert)}
+                  onClick={() => onSelectAction(action)}
                   className="w-full text-left rounded-xl border border-surface-border bg-surface-card/70 px-3 py-2 hover:border-brand/25 hover:bg-brand/5 transition-colors"
                 >
                   <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="text-xs font-semibold text-ink truncate">{alert.title}</p>
-                      <p className="mt-0.5 text-xs text-ink-muted truncate">{alert.ctaLabel}</p>
+                      <p className="text-xs font-semibold text-ink truncate">{action.title}</p>
+                      <p className="mt-0.5 text-xs text-ink-muted truncate">{action.ctaLabel}</p>
                     </div>
                     <ArrowRight size={13} className="text-ink-faint flex-shrink-0" />
                   </div>

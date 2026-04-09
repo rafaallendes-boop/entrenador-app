@@ -16,7 +16,8 @@ import { startNotificationSync } from '../services/notifications'
 import { getAthleteFirstName, getProfileCompleteness } from '../utils/athlete'
 import { computeMacroPlan, getPrimaryGoalEvent } from '../services/macroPlan'
 import { buildMacroWeekCoherenceSummary } from '../services/macroWeekCoherence'
-import { buildActionAlerts, type ActionableAlert } from '../services/actionAlerts'
+import { buildWeeklyActionSummary } from '../services/weeklyActionLoop'
+import type { WeeklyActionItem } from '../types'
 
 const CoachMessageCard = lazy(() => import('../components/dashboard/CoachMessageCard'))
 const NextSessionCard = lazy(() => import('../components/dashboard/NextSessionCard'))
@@ -62,8 +63,9 @@ export default function Dashboard() {
       macroWeekCoherence,
       todayDayLog: dayLogs[today],
       athleteProfile,
+      loadAnalytics,
     }))
-  }, [sessions, currentWeekSummary, macroWeekCoherence, dayLogs, today, athleteProfile])
+  }, [sessions, currentWeekSummary, macroWeekCoherence, dayLogs, today, athleteProfile, loadAnalytics])
 
   // Reload analytics whenever the viewed week changes (covers new completions too)
   useEffect(() => {
@@ -85,7 +87,7 @@ export default function Dashboard() {
 
   const profileCompleteness = getProfileCompleteness(athleteProfile ?? null)
   const showProfileNudge = profileCompleteness.state === 'partial' || profileCompleteness.state === 'missing_sports'
-  const actionAlerts = useMemo(() => buildActionAlerts({
+  const weeklyActionSummary = useMemo(() => buildWeeklyActionSummary({
     sessions,
     currentWeekSummary,
     todayDayLog: dayLogs[today],
@@ -114,14 +116,30 @@ export default function Dashboard() {
     }
   }
 
-  function handleSelectAlert(alert: ActionableAlert) {
-    if (alert.target === 'chat') {
-      navigate(ROUTES.CHAT)
+  function handleSelectAction(action: WeeklyActionItem) {
+    if (action.ctaTarget === 'plan_builder') {
+      navigate(ROUTES.PLAN_BUILDER)
       return
     }
 
-    if (alert.target === 'week') {
+    if (action.ctaTarget === 'chat_adjust_week') {
+      const composerDraft =
+        action.kind === 'fix_coherence'
+          ? `Ajusta mi semana para respetar esta regla del bloque: ${macroWeekCoherence.weeklyRule}`
+          : action.kind === 'recover_adherence'
+            ? 'Revisa mi adherencia semanal y propon un ajuste concreto para que la semana sea mas realista.'
+            : 'Simplifica o ajusta mi semana segun la carga y la fatiga de estos dias.'
+      navigate(ROUTES.CHAT, { state: { composerDraft } })
+      return
+    }
+
+    if (action.ctaTarget === 'generate_coach_note') {
       navigate(ROUTES.WEEK)
+      return
+    }
+
+    if (action.ctaTarget === 'today_detail') {
+      navigate(ROUTES.DAY(today))
       return
     }
 
@@ -174,7 +192,7 @@ export default function Dashboard() {
       </Suspense>
 
       <Suspense fallback={<CardSkeleton className="h-36" />}>
-        <ActionAlertsCard alerts={actionAlerts} onSelectAlert={handleSelectAlert} />
+        <ActionAlertsCard summary={weeklyActionSummary} onSelectAction={handleSelectAction} />
       </Suspense>
 
       {macroPlan ? (

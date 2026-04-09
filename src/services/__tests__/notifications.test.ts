@@ -64,7 +64,7 @@ describe('notifications', () => {
     )
 
     const checkIn = items.find((item) => item.category === 'daily_checkin')
-    expect(checkIn?.title).toBe('Cierra tu sesion de hoy')
+    expect(checkIn?.title).toBe('Te falta cerrar el dia')
   })
 
   it('adds weekly planning and coach follow-up nudges when the week has no plan or note', () => {
@@ -92,6 +92,7 @@ describe('notifications', () => {
 
     expect(items.some((item) => item.category === 'weekly_planning')).toBe(true)
     expect(items.some((item) => item.category === 'coach_followup')).toBe(false)
+    expect(items.find((item) => item.category === 'weekly_planning')?.title).toBe('Tu semana sigue sin estructura')
   })
 
   it('adds a load alert when macro week coherence has warnings', () => {
@@ -107,6 +108,7 @@ describe('notifications', () => {
 
     const loadAlert = items.find((item) => item.category === 'load_alerts')
     expect(loadAlert?.body).toContain('fase build')
+    expect(loadAlert?.title).toBe('Tu semana no calza con el bloque actual')
   })
 
   it('respects disabled categories', () => {
