@@ -97,4 +97,52 @@ describe('drillSelector progression', () => {
     expect(selection.drills.length).toBeGreaterThanOrEqual(3)
     expect(selection.drills.some((drill) => drill.notes?.includes('Mantener timing'))).toBe(true)
   })
+
+  it('prioritizes practice match drills in build/peak when the goal is competitive and there is no immediate competition', () => {
+    const selection = selectSquashDrills({
+      phase: 'peak',
+      fatigueLevel: 4,
+      competitionSoon: false,
+      goal: 'mejorar rendimiento en partido y manejo de presion',
+      recentDrills: [],
+      historicalSessions: [makeSquashSession('2026-04-08', 'Drives paralelos a profundidad')],
+    })
+
+    expect(
+      selection.drills.some((drill) =>
+        [
+          'Partido de entrenamiento libre a 5 games',
+          'Sets cortos de presion al mejor de 3 games',
+          'Partido con foco de ataque en puntos cortos',
+        ].includes(drill.name),
+      ),
+    ).toBe(true)
+  })
+
+  it('does not prioritize practice match drills in taper or high fatigue', () => {
+    const taperSelection = selectSquashDrills({
+      phase: 'taper',
+      fatigueLevel: 5,
+      competitionSoon: false,
+      goal: 'mejorar rendimiento en partido',
+      recentDrills: [],
+    })
+
+    const fatigueSelection = selectSquashDrills({
+      phase: 'build',
+      fatigueLevel: 8,
+      competitionSoon: false,
+      goal: 'mejorar rendimiento en partido',
+      recentDrills: [],
+    })
+
+    const practiceMatchNames = new Set([
+      'Partido de entrenamiento libre a 5 games',
+      'Sets cortos de presion al mejor de 3 games',
+      'Partido con foco de ataque en puntos cortos',
+    ])
+
+    expect(taperSelection.drills.some((drill) => practiceMatchNames.has(drill.name))).toBe(false)
+    expect(fatigueSelection.drills.some((drill) => practiceMatchNames.has(drill.name))).toBe(false)
+  })
 })

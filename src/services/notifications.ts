@@ -136,24 +136,35 @@ export function buildScheduledNotifications(
 ): ScheduledAppNotification[] {
   const context = Array.isArray(input) ? { sessions: input } : input
   const items: ScheduledAppNotification[] = []
+  const weeklyActionSummary =
+    preferences.dailyCheckIn || preferences.weeklyPlanning || preferences.coachFollowUp || preferences.loadAlerts
+      ? buildWeeklyActionSummary({
+          sessions: context.sessions,
+          currentWeekSummary: context.currentWeekSummary,
+          todayDayLog: context.todayDayLog,
+          macroWeekCoherence: context.macroWeekCoherence,
+          loadAnalytics: context.loadAnalytics,
+          today,
+        })
+      : null
 
   if (preferences.sessionReminders) {
     items.push(...buildSessionReminderNotifications(context.sessions, today, now))
   }
   if (preferences.dailyCheckIn) {
-    const checkInNotification = buildDailyCheckInNotification(context, today, now)
+    const checkInNotification = buildDailyCheckInNotification(weeklyActionSummary, today, now)
     if (checkInNotification) items.push(checkInNotification)
   }
   if (preferences.weeklyPlanning) {
-    const weekPlanningNotification = buildWeekPlanningNotification(context, today, now)
+    const weekPlanningNotification = buildWeekPlanningNotification(weeklyActionSummary, today, now)
     if (weekPlanningNotification) items.push(weekPlanningNotification)
   }
   if (preferences.coachFollowUp) {
-    const coachNotification = buildCoachFollowUpNotification(context, today, now)
+    const coachNotification = buildCoachFollowUpNotification(weeklyActionSummary, today, now)
     if (coachNotification) items.push(coachNotification)
   }
   if (preferences.loadAlerts) {
-    const coherenceNotification = buildCoherenceAlertNotification(context, today, now)
+    const coherenceNotification = buildCoherenceAlertNotification(weeklyActionSummary, today, now)
     if (coherenceNotification) items.push(coherenceNotification)
   }
 
@@ -311,18 +322,11 @@ function buildSessionReminderNotifications(sessions: Session[], today: string, n
 }
 
 function buildDailyCheckInNotification(
-  context: NotificationSyncContext,
+  summary: ReturnType<typeof buildWeeklyActionSummary> | null,
   today: string,
   now: Date,
 ): ScheduledAppNotification | null {
-  const summary = buildWeeklyActionSummary({
-    sessions: context.sessions,
-    currentWeekSummary: context.currentWeekSummary,
-    todayDayLog: context.todayDayLog,
-    macroWeekCoherence: context.macroWeekCoherence,
-    loadAnalytics: context.loadAnalytics,
-    today,
-  })
+  if (!summary) return null
   const action = summary.primaryAction?.kind === 'close_checkin'
     ? summary.primaryAction
     : summary.secondaryActions.find((item) => item.kind === 'close_checkin')
@@ -343,18 +347,11 @@ function buildDailyCheckInNotification(
 }
 
 function buildWeekPlanningNotification(
-  context: NotificationSyncContext,
+  summary: ReturnType<typeof buildWeeklyActionSummary> | null,
   today: string,
   now: Date,
 ): ScheduledAppNotification | null {
-  const summary = buildWeeklyActionSummary({
-    sessions: context.sessions,
-    currentWeekSummary: context.currentWeekSummary,
-    todayDayLog: context.todayDayLog,
-    macroWeekCoherence: context.macroWeekCoherence,
-    loadAnalytics: context.loadAnalytics,
-    today,
-  })
+  if (!summary) return null
   const action = summary.primaryAction?.kind === 'plan_week'
     ? summary.primaryAction
     : summary.secondaryActions.find((item) => item.kind === 'plan_week')
@@ -375,18 +372,11 @@ function buildWeekPlanningNotification(
 }
 
 function buildCoachFollowUpNotification(
-  context: NotificationSyncContext,
+  summary: ReturnType<typeof buildWeeklyActionSummary> | null,
   today: string,
   now: Date,
 ): ScheduledAppNotification | null {
-  const summary = buildWeeklyActionSummary({
-    sessions: context.sessions,
-    currentWeekSummary: context.currentWeekSummary,
-    todayDayLog: context.todayDayLog,
-    macroWeekCoherence: context.macroWeekCoherence,
-    loadAnalytics: context.loadAnalytics,
-    today,
-  })
+  if (!summary) return null
   const action = summary.primaryAction?.kind === 'review_coach_note'
     ? summary.primaryAction
     : summary.secondaryActions.find((item) => item.kind === 'review_coach_note')
@@ -407,18 +397,11 @@ function buildCoachFollowUpNotification(
 }
 
 function buildCoherenceAlertNotification(
-  context: NotificationSyncContext,
+  summary: ReturnType<typeof buildWeeklyActionSummary> | null,
   today: string,
   now: Date,
 ): ScheduledAppNotification | null {
-  const summary = buildWeeklyActionSummary({
-    sessions: context.sessions,
-    currentWeekSummary: context.currentWeekSummary,
-    todayDayLog: context.todayDayLog,
-    macroWeekCoherence: context.macroWeekCoherence,
-    loadAnalytics: context.loadAnalytics,
-    today,
-  })
+  if (!summary) return null
   const action = summary.primaryAction?.kind === 'fix_coherence'
     ? summary.primaryAction
     : summary.secondaryActions.find((item) => item.kind === 'fix_coherence')

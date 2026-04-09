@@ -1,25 +1,5 @@
-/**
- * Normalizes raw AI provider responses into the CoachNormalizedResponse shape.
- *
- * Responsibilities:
- * 1. Extract <actions>...</actions> block if present
- * 2. Validate each action object (type, required fields)
- * 3. Strip the actions block from the display message
- * 4. Return a clean CoachNormalizedResponse
- *
- * The <actions> format expected from the model:
- *   <actions>
- *   [{"type":"skip_session","sessionId":"abc12345","reason":"fatiga acumulada"}]
- *   </actions>
- *
- * If parsing fails, malformed actions are dropped and the caller decides
- * whether to retry or reject the response.
- */
-
+import type { CoachAction, CoachActionType, CoachExerciseProposal, CoachSessionProposal, CyclingDetails, GeneratedProtocol, MobilityDetails, RunningIntervalStructure, RunningType, SquashDetails, SquashSessionMode, SquashSubtype, TimeBlock } from '../../types'
 import type { AIRawResponse, CoachNormalizedResponse } from './types'
-import type { CoachAction, CoachActionType } from '../../types'
-
-// ─── Actions block extractor ───────────────────────────────────────────────────
 
 const ACTIONS_BLOCK_RE = /<actions>([\s\S]*?)<\/actions>/i
 const ACTIONS_START_RE = /<actions>/i
@@ -38,16 +18,19 @@ const VALID_ACTION_TYPES = new Set<CoachActionType>([
   'update_session',
 ])
 
+const VALID_SESSION_TYPES = new Set(['squash', 'running', 'cycling', 'strength', 'mobility', 'recovery', 'nutrition'])
+const VALID_TIME_BLOCKS = new Set<TimeBlock>(['AM', 'PM'])
+const VALID_SQUASH_SUBTYPES = new Set<SquashSubtype>(['control', 'training', 'match', 'competitive', 'light'])
+const VALID_RUNNING_TYPES = new Set<RunningType>(['z2', 'tempo', 'intervals', 'long'])
+const VALID_SQUASH_SESSION_MODES = new Set<SquashSessionMode>(['drill_session', 'practice_match', 'competition_match'])
+const VALID_SQUASH_TRAINING_FOCUS = new Set(['technical', 'tactical', 'physical', 'conditioned_games'])
+const VALID_MOBILITY_CONTEXTS = new Set(['post_run', 'post_cycling', 'post_squash', 'post_strength', 'pre_training_activation', 'recovery', 'full_body', 'sport_specific'])
+
 export function normalizeResponse(raw: AIRawResponse): CoachNormalizedResponse {
-  // Pre-process: unwrap <actions> blocks from markdown code fences.
-  // Gemini sometimes outputs: ```xml\n<actions>...</actions>\n```
-  // The regex strips the fence markers so the main extractor can catch the block.
   let message = raw.text.replace(
     /```[a-z]*\n?(<actions>[\s\S]*?<\/actions>)\n?```/gi,
-    '$1'
+    '$1',
   )
-
-  // Also remove orphan code fence markers left after stripping (e.g. "```\n```")
   message = message.replace(/```[a-z]*\n?\s*\n?```/g, '')
 
   let actions: CoachAction[] | undefined
@@ -64,9 +47,7 @@ export function normalizeResponse(raw: AIRawResponse): CoachNormalizedResponse {
     message = extraction.messageWithoutActions
   }
 
-  // Clean up any trailing whitespace or extra newlines left after stripping
   message = message.replace(/\n{3,}/g, '\n\n').trim()
-
 
   return {
     message,
@@ -84,8 +65,6 @@ export function normalizeResponse(raw: AIRawResponse): CoachNormalizedResponse {
   }
 }
 
-// ─── Action parsing + validation ──────────────────────────────────────────────
-
 function parseActionsBlock(jsonText: string): {
   actions: CoachAction[]
   parseFailed: boolean
@@ -95,7 +74,6 @@ function parseActionsBlock(jsonText: string): {
   try {
     parsed = JSON.parse(jsonText.trim())
   } catch {
-    // Model may have added trailing text or bad JSON — attempt lenient recovery
     const fixedJson = extractJsonArray(jsonText)
     if (!fixedJson) {
       return {
@@ -138,106 +116,299 @@ function parseActionsBlock(jsonText: string): {
 
 function validateAction(obj: unknown): CoachAction | null {
   if (!obj || typeof obj !== 'object') return null
-  const a = obj as Record<string, unknown>
+  const record = obj as Record<string, unknown>
 
-  // type is always required
-  if (typeof a.type !== 'string' || !VALID_ACTION_TYPES.has(a.type as CoachActionType)) return null
+  if (typeof record.type !== 'string' || !VALID_ACTION_TYPES.has(record.type as CoachActionType)) return null
+  if (typeof record.reason !== 'string' || !record.reason.trim()) return null
 
-  // reason is always required
-  if (typeof a.reason !== 'string' || !a.reason.trim()) return null
+  const type = record.type as CoachActionType
+  const base = {
+    type,
+    reason: record.reason.trim(),
+  } satisfies Pick<CoachAction, 'type' | 'reason'>
 
-  const type = a.type as CoachActionType
-
-  // Validate required fields per action type
   switch (type) {
     case 'skip_session':
+    case 'delete_session':
+      return typeof record.sessionId === 'string' ? { ...base, sessionId: record.sessionId } : null
+
     case 'replace_session_type':
-      if (typeof a.sessionId !== 'string') return null
-      break
+      return typeof record.sessionId === 'string' && isSessionType(record.newType)
+        ? { ...base, sessionId: record.sessionId, newType: record.newType }
+        : null
+
     case 'change_rpe':
-      if (typeof a.sessionId !== 'string') return null
-      if (typeof a.newRpe !== 'number' || a.newRpe < 1 || a.newRpe > 10) return null
-      break
+      return typeof record.sessionId === 'string' && isRpe(record.newRpe)
+        ? { ...base, sessionId: record.sessionId, newRpe: record.newRpe }
+        : null
+
     case 'shorten_session':
     case 'lengthen_session':
-      if (typeof a.sessionId !== 'string') return null
-      if (typeof a.newDurationMin !== 'number' || a.newDurationMin < 5) return null
-      break
+      return typeof record.sessionId === 'string' && typeof record.newDurationMin === 'number' && record.newDurationMin >= 5
+        ? { ...base, sessionId: record.sessionId, newDurationMin: record.newDurationMin }
+        : null
+
     case 'move_session':
-      if (typeof a.sessionId !== 'string') return null
-      if (typeof a.targetDate !== 'string' || !isValidDate(a.targetDate)) return null
-      break
+      return typeof record.sessionId === 'string' && isValidDate(record.targetDate)
+        ? { ...base, sessionId: record.sessionId, targetDate: record.targetDate }
+        : null
+
     case 'insert_recovery':
-      if (typeof a.targetDate !== 'string' || !isValidDate(a.targetDate)) return null
-      break
-    case 'add_session':
-      if (typeof a.targetDate !== 'string' || !isValidDate(a.targetDate)) return null
-      if (typeof a.sessionType !== 'string') return null
-      if (typeof a.title !== 'string' || !a.title.trim()) return null
-      if (typeof a.durationMin !== 'number' || a.durationMin < 5) return null
-      if (typeof a.timeBlock !== 'string') return null
-      if (a.rpe != null && (typeof a.rpe !== 'number' || a.rpe < 1 || a.rpe > 10)) return null
-      if (a.targetPaceMin != null && typeof a.targetPaceMin !== 'string') return null
-      if (a.intervalStructure != null) {
-        const intervalStructure = a.intervalStructure as Record<string, unknown>
-        if (!Array.isArray(intervalStructure.blocks)) return null
+      return isValidDate(record.targetDate)
+        ? { ...base, targetDate: record.targetDate }
+        : null
+
+    case 'add_session': {
+      if (!isValidDate(record.targetDate) || !isSessionType(record.sessionType) || typeof record.title !== 'string' || !record.title.trim()) {
+        return null
       }
-      if (a.targetPaceMax != null && typeof a.targetPaceMax !== 'string') return null
-      if (a.targetHrMin != null && typeof a.targetHrMin !== 'number') return null
-      if (a.targetHrMax != null && typeof a.targetHrMax !== 'number') return null
-      if (!isValidProtocolPayload(a.warmup)) return null
-      if (!isValidProtocolPayload(a.cooldown)) return null
-      break
-    case 'create_week':
-      if (!Array.isArray(a.sessions) || a.sessions.length === 0) return null
-      break
-    case 'delete_session':
-      if (typeof a.sessionId !== 'string') return null
-      break
+      if (typeof record.durationMin !== 'number' || record.durationMin < 5 || !isTimeBlock(record.timeBlock)) {
+        return null
+      }
+
+      const action: CoachAction = {
+        ...base,
+        targetDate: record.targetDate,
+        sessionType: record.sessionType,
+        title: record.title.trim(),
+        durationMin: record.durationMin,
+        timeBlock: record.timeBlock,
+      }
+      return assignOptionalSessionFields(action, record)
+    }
+
+    case 'create_week': {
+      if (!Array.isArray(record.sessions) || record.sessions.length === 0) return null
+      const sessions = record.sessions
+        .map(validateSessionProposal)
+        .filter((item): item is CoachSessionProposal => item != null)
+      if (sessions.length === 0) return null
+
+      const action: CoachAction = {
+        ...base,
+        sessions,
+      }
+      if (Array.isArray(record.weekObjectives)) {
+        action.weekObjectives = record.weekObjectives.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+      }
+      return action
+    }
+
     case 'update_session': {
-      if (typeof a.sessionId !== 'string') return null
-      // Must have at least one update field
-      const hasUpdate =
-        a.newTitle != null || a.newObjective != null ||
-        a.newRpe != null || a.newDurationMin != null ||
-        a.newType != null ||
-        a.subtype != null ||
-        a.runningType != null ||
-        a.targetPaceMin != null ||
-        a.targetPaceMax != null ||
-        a.targetHrMin != null ||
-        a.targetHrMax != null ||
-        a.squashDetails != null ||
-        a.warmup != null ||
-        a.cooldown != null ||
-        Array.isArray(a.exercises)
-      if (!hasUpdate) return null
-      break
+      if (typeof record.sessionId !== 'string') return null
+      const action: CoachAction = {
+        ...base,
+        sessionId: record.sessionId,
+      }
+      if (typeof record.newTitle === 'string' && record.newTitle.trim()) action.newTitle = record.newTitle.trim()
+      if (typeof record.newObjective === 'string' && record.newObjective.trim()) action.newObjective = record.newObjective.trim()
+      if (isRpe(record.newRpe)) action.newRpe = record.newRpe
+      if (typeof record.newDurationMin === 'number' && record.newDurationMin >= 5) action.newDurationMin = record.newDurationMin
+      if (isSessionType(record.newType)) action.newType = record.newType
+      if (isSquashSubtype(record.subtype)) action.subtype = record.subtype
+      if (isRunningType(record.runningType)) action.runningType = record.runningType
+      if (typeof record.targetPaceMin === 'string') action.targetPaceMin = record.targetPaceMin
+      if (typeof record.targetPaceMax === 'string') action.targetPaceMax = record.targetPaceMax
+      if (typeof record.targetHrMin === 'number') action.targetHrMin = record.targetHrMin
+      if (typeof record.targetHrMax === 'number') action.targetHrMax = record.targetHrMax
+      if (isRunningIntervalStructure(record.intervalStructure)) action.intervalStructure = record.intervalStructure
+      if (Array.isArray(record.exercises)) {
+        action.exercises = record.exercises
+          .map(validateExerciseProposal)
+          .filter((item): item is CoachExerciseProposal => item != null)
+      }
+      if (isGeneratedProtocol(record.warmup)) action.warmup = record.warmup
+      if (isGeneratedProtocol(record.cooldown)) action.cooldown = record.cooldown
+      if (isCyclingDetails(record.cyclingDetails)) action.cyclingDetails = record.cyclingDetails
+      if (isMobilityDetails(record.mobilityDetails)) action.mobilityDetails = record.mobilityDetails
+      if (isSquashDetails(record.squashDetails)) action.squashDetails = record.squashDetails
+
+      return hasAnyUpdateField(action) ? action : null
     }
   }
-
-  // For sessionId fields, expand short IDs back (the model uses 8-char prefix from prompt)
-  // The executor handles lookup by prefix — pass as-is
-  return a as unknown as CoachAction
 }
 
-function isValidProtocolPayload(value: unknown): boolean {
-  if (value == null) return true
-  if (Array.isArray(value)) return true
-  if (typeof value !== 'object') return false
+function assignOptionalSessionFields(action: CoachAction, record: Record<string, unknown>): CoachAction | null {
+  if (isRpe(record.rpe)) action.rpe = record.rpe
+  if (typeof record.objective === 'string' && record.objective.trim()) action.objective = record.objective.trim()
+  if (isSquashSubtype(record.subtype)) action.subtype = record.subtype
+  if (isRunningType(record.runningType)) action.runningType = record.runningType
+  if (typeof record.targetPaceMin === 'string') action.targetPaceMin = record.targetPaceMin
+  if (typeof record.targetPaceMax === 'string') action.targetPaceMax = record.targetPaceMax
+  if (typeof record.targetHrMin === 'number') action.targetHrMin = record.targetHrMin
+  if (typeof record.targetHrMax === 'number') action.targetHrMax = record.targetHrMax
+  if (isRunningIntervalStructure(record.intervalStructure)) action.intervalStructure = record.intervalStructure
+  if (isGeneratedProtocol(record.warmup)) action.warmup = record.warmup
+  if (isGeneratedProtocol(record.cooldown)) action.cooldown = record.cooldown
+  if (Array.isArray(record.exercises)) {
+    action.exercises = record.exercises
+      .map(validateExerciseProposal)
+      .filter((item): item is CoachExerciseProposal => item != null)
+  }
+  if (isCyclingDetails(record.cyclingDetails)) action.cyclingDetails = record.cyclingDetails
+  if (isMobilityDetails(record.mobilityDetails)) action.mobilityDetails = record.mobilityDetails
+  if (isSquashDetails(record.squashDetails)) action.squashDetails = record.squashDetails
+  return action
+}
 
-  const row = value as Record<string, unknown>
+function validateSessionProposal(value: unknown): CoachSessionProposal | null {
+  if (!value || typeof value !== 'object') return null
+  const record = value as Record<string, unknown>
+  if (!isValidDate(record.date) || !isTimeBlock(record.timeBlock) || !isSessionType(record.sessionType) || typeof record.title !== 'string' || !record.title.trim()) {
+    return null
+  }
+  if (typeof record.durationMin !== 'number' || record.durationMin < 5) return null
+
+  const proposal: CoachSessionProposal = {
+    date: record.date,
+    timeBlock: record.timeBlock,
+    sessionType: record.sessionType,
+    title: record.title.trim(),
+    durationMin: record.durationMin,
+  }
+
+  if (isRpe(record.rpe)) proposal.rpe = record.rpe
+  if (typeof record.objective === 'string' && record.objective.trim()) proposal.objective = record.objective.trim()
+  if (isSquashSubtype(record.subtype)) proposal.subtype = record.subtype
+  if (isRunningType(record.runningType)) proposal.runningType = record.runningType
+  if (typeof record.targetPaceMin === 'string') proposal.targetPaceMin = record.targetPaceMin
+  if (typeof record.targetPaceMax === 'string') proposal.targetPaceMax = record.targetPaceMax
+  if (typeof record.targetHrMin === 'number') proposal.targetHrMin = record.targetHrMin
+  if (typeof record.targetHrMax === 'number') proposal.targetHrMax = record.targetHrMax
+  if (isRunningIntervalStructure(record.intervalStructure)) proposal.intervalStructure = record.intervalStructure
+  if (Array.isArray(record.exercises)) {
+    proposal.exercises = record.exercises
+      .map(validateExerciseProposal)
+      .filter((item): item is CoachExerciseProposal => item != null)
+  }
+  if (isGeneratedProtocol(record.warmup)) proposal.warmup = record.warmup
+  if (isGeneratedProtocol(record.cooldown)) proposal.cooldown = record.cooldown
+  if (isCyclingDetails(record.cyclingDetails)) proposal.cyclingDetails = record.cyclingDetails
+  if (isMobilityDetails(record.mobilityDetails)) proposal.mobilityDetails = record.mobilityDetails
+  if (isSquashDetails(record.squashDetails)) proposal.squashDetails = record.squashDetails
+
+  return proposal
+}
+
+function validateExerciseProposal(value: unknown): CoachExerciseProposal | null {
+  if (!value || typeof value !== 'object') return null
+  const record = value as Record<string, unknown>
+  if (typeof record.name !== 'string' || !record.name.trim()) return null
+  if (typeof record.sets !== 'number' || record.sets < 1) return null
+  if (typeof record.reps !== 'number' && typeof record.reps !== 'string') return null
+
+  const exercise: CoachExerciseProposal = {
+    name: record.name.trim(),
+    sets: record.sets,
+    reps: record.reps,
+  }
+  if (typeof record.weight === 'number') exercise.weight = record.weight
+  if (typeof record.notes === 'string') exercise.notes = record.notes
+  if (typeof record.group === 'string') exercise.group = record.group as CoachExerciseProposal['group']
+  if (typeof record.mobilityFocus === 'string') exercise.mobilityFocus = record.mobilityFocus as CoachExerciseProposal['mobilityFocus']
+  return exercise
+}
+
+function hasAnyUpdateField(action: CoachAction): boolean {
   return (
-    typeof row.title === 'string' &&
-    typeof row.durationMin === 'number' &&
-    typeof row.note === 'string' &&
-    typeof row.tone === 'string' &&
-    Array.isArray(row.steps)
+    action.newTitle != null ||
+    action.newObjective != null ||
+    action.newRpe != null ||
+    action.newDurationMin != null ||
+    action.newType != null ||
+    action.subtype != null ||
+    action.runningType != null ||
+    action.targetPaceMin != null ||
+    action.targetPaceMax != null ||
+    action.targetHrMin != null ||
+    action.targetHrMax != null ||
+    action.intervalStructure != null ||
+    action.exercises != null ||
+    action.warmup != null ||
+    action.cooldown != null ||
+    action.cyclingDetails != null ||
+    action.mobilityDetails != null ||
+    action.squashDetails != null
   )
 }
 
-function isValidDate(s: string): boolean {
-  return /^\d{4}-\d{2}-\d{2}$/.test(s) && !isNaN(Date.parse(s))
+function isGeneratedProtocol(value: unknown): value is GeneratedProtocol {
+  if (value == null) return false
+  if (typeof value !== 'object') return false
+  const record = value as Record<string, unknown>
+  return (
+    typeof record.title === 'string' &&
+    typeof record.durationMin === 'number' &&
+    typeof record.note === 'string' &&
+    typeof record.tone === 'string' &&
+    Array.isArray(record.steps) &&
+    (record.source === 'base' || record.source === 'adapted')
+  )
+}
+
+function isRunningIntervalStructure(value: unknown): value is RunningIntervalStructure {
+  if (value == null) return false
+  if (typeof value !== 'object') return false
+  const record = value as Record<string, unknown>
+  return Array.isArray(record.blocks)
+}
+
+function isCyclingDetails(value: unknown): value is CyclingDetails {
+  if (value == null) return false
+  if (typeof value !== 'object') return false
+  const record = value as Record<string, unknown>
+  return typeof record.sessionCategory === 'string' && typeof record.targetStructure === 'string'
+}
+
+function isMobilityDetails(value: unknown): value is MobilityDetails {
+  if (value == null) return false
+  if (typeof value !== 'object') return false
+  const record = value as Record<string, unknown>
+  return (
+    Array.isArray(record.focusAreas) &&
+    typeof record.targetStructure === 'string' &&
+    typeof record.context === 'string' &&
+    VALID_MOBILITY_CONTEXTS.has(record.context)
+  )
+}
+
+function isSquashDetails(value: unknown): value is SquashDetails {
+  if (value == null) return false
+  if (typeof value !== 'object') return false
+  const record = value as Record<string, unknown>
+  const validMode =
+    record.sessionMode == null ||
+    (typeof record.sessionMode === 'string' && VALID_SQUASH_SESSION_MODES.has(record.sessionMode as SquashSessionMode))
+  return (
+    typeof record.trainingFocus === 'string' &&
+    VALID_SQUASH_TRAINING_FOCUS.has(record.trainingFocus) &&
+    Array.isArray(record.drills) &&
+    validMode
+  )
+}
+
+function isSessionType(value: unknown): value is CoachSessionProposal['sessionType'] {
+  return typeof value === 'string' && VALID_SESSION_TYPES.has(value)
+}
+
+function isTimeBlock(value: unknown): value is TimeBlock {
+  return typeof value === 'string' && VALID_TIME_BLOCKS.has(value as TimeBlock)
+}
+
+function isSquashSubtype(value: unknown): value is SquashSubtype {
+  return typeof value === 'string' && VALID_SQUASH_SUBTYPES.has(value as SquashSubtype)
+}
+
+function isRunningType(value: unknown): value is RunningType {
+  return typeof value === 'string' && VALID_RUNNING_TYPES.has(value as RunningType)
+}
+
+function isRpe(value: unknown): value is number {
+  return typeof value === 'number' && value >= 1 && value <= 10
+}
+
+function isValidDate(value: unknown): value is string {
+  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value))
 }
 
 function extractActionsText(message: string): { actionsText: string; messageWithoutActions: string; openOnly: boolean } | null {
@@ -278,11 +449,9 @@ function isLikelyTruncatedJson(text: string): boolean {
   )
 }
 
-// Attempt to recover a JSON array from partially malformed text
 function extractJsonArray(text: string): string | null {
   const start = text.indexOf('[')
   const end = text.lastIndexOf(']')
   if (start === -1 || end === -1 || end < start) return null
   return text.slice(start, end + 1)
 }
-

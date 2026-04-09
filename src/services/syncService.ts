@@ -38,6 +38,7 @@ const QUEUE_KEY = 'entrenador_sync_queue_v1'
 const LAST_SYNC_USER_KEY = 'entrenador_sync_user_v1'
 const MIGRATION_KEY_PREFIX = 'entrenador_migrated_v1'
 const SESSION_DELETE_TOMBSTONES_KEY = 'entrenador_sync_session_tombstones_v1'
+const TOMBSTONE_TTL_MS = 90 * 24 * 60 * 60 * 1000 // 90 days
 const MAX_QUEUE_SIZE = 500
 let activeDrainQueuePromise: Promise<boolean> | null = null
 let activePullAllPromise: Promise<void> | null = null
@@ -705,6 +706,7 @@ export async function pullAll(userId: string): Promise<void> {
 
   try {
     await repairLocalNaturalKeyConflicts()
+    pruneExpiredTombstones(userId)
 
     const queueDrained = await drainQueue()
     const mergeContext: MergeContext = {
@@ -1124,11 +1126,44 @@ function getSessionDeleteTombstones(userId: string): Record<string, number> {
     const parsed = JSON.parse(raw) as Record<string, Record<string, number>>
     const value = parsed?.[userId]
     if (!value || typeof value !== 'object') return {}
+    const now = Date.now()
+    // Filter out malformed entries and TTL-expired tombstones (older than 90 days)
     return Object.fromEntries(
-      Object.entries(value).filter(([, deletedAt]) => typeof deletedAt === 'number' && Number.isFinite(deletedAt)),
+      Object.entries(value).filter(
+        ([, deletedAt]) =>
+          typeof deletedAt === 'number' &&
+          Number.isFinite(deletedAt) &&
+          now - deletedAt < TOMBSTONE_TTL_MS,
+      ),
     )
   } catch {
     return {}
+  }
+}
+
+/** Remove tombstones older than TOMBSTONE_TTL_MS from localStorage for a user. */
+function pruneExpiredTombstones(userId: string): void {
+  try {
+    const raw = localStorage.getItem(SESSION_DELETE_TOMBSTONES_KEY)
+    if (!raw) return
+    const parsed = JSON.parse(raw) as Record<string, Record<string, number>>
+    const userTombstones = parsed[userId]
+    if (!userTombstones) return
+
+    const now = Date.now()
+    const pruned = Object.fromEntries(
+      Object.entries(userTombstones).filter(
+        ([, deletedAt]) => now - deletedAt < TOMBSTONE_TTL_MS,
+      ),
+    )
+
+    if (Object.keys(pruned).length !== Object.keys(userTombstones).length) {
+      parsed[userId] = pruned
+      if (Object.keys(pruned).length === 0) delete parsed[userId]
+      localStorage.setItem(SESSION_DELETE_TOMBSTONES_KEY, JSON.stringify(parsed))
+    }
+  } catch {
+    // Ignore storage failures
   }
 }
 

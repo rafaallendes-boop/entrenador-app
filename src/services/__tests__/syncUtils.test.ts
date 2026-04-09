@@ -100,4 +100,125 @@ describe('syncUtils', () => {
     expect(shouldReplaceQueuedOp(existing, deleteOp)).toBe(true)
     expect(compactQueue([existing, newerUpsert], deleteOp)).toEqual([deleteOp])
   })
+
+  it('delete → upsert → delete sequence: second delete supersedes the upsert', () => {
+    const base: OfflineOp = {
+      userId: 'user-1',
+      table: 'sessions',
+      action: 'upsert',
+      payload: { id: 'session-1' },
+      enqueuedAt: 1,
+    }
+    const upsert: OfflineOp = { ...base, action: 'upsert', enqueuedAt: 2 }
+    const firstDelete: OfflineOp = { ...base, action: 'delete', enqueuedAt: 3 }
+    const secondUpsert: OfflineOp = { ...base, action: 'upsert', enqueuedAt: 4 }
+    const secondDelete: OfflineOp = { ...base, action: 'delete', enqueuedAt: 5 }
+
+    // After delete → upsert, queue has the re-created upsert
+    const afterReCreate = compactQueue(compactQueue([upsert, firstDelete], secondUpsert), secondDelete)
+    // Final state must be a single delete, not a ghost upsert
+    expect(afterReCreate).toHaveLength(1)
+    expect(afterReCreate[0].action).toBe('delete')
+  })
+
+  it('does not compact ops for different users', () => {
+    const user1Op: OfflineOp = {
+      userId: 'user-1',
+      table: 'sessions',
+      action: 'upsert',
+      payload: { id: 'session-1' },
+      enqueuedAt: 1,
+    }
+    const user2Delete: OfflineOp = {
+      ...user1Op,
+      userId: 'user-2',
+      action: 'delete',
+      enqueuedAt: 2,
+    }
+    // user-2 delete should NOT remove user-1 upsert
+    const result = compactQueue([user1Op], user2Delete)
+    expect(result).toHaveLength(2)
+    expect(result.some(op => op.userId === 'user-1' && op.action === 'upsert')).toBe(true)
+  })
+
+  it('does not compact ops for different tables', () => {
+    const sessionsOp: OfflineOp = {
+      userId: 'user-1',
+      table: 'sessions',
+      action: 'upsert',
+      payload: { id: 'item-1' },
+      enqueuedAt: 1,
+    }
+    const profileDelete: OfflineOp = {
+      ...sessionsOp,
+      table: 'athlete_profiles',
+      action: 'delete',
+      enqueuedAt: 2,
+    }
+    const result = compactQueue([sessionsOp], profileDelete)
+    expect(result).toHaveLength(2)
+  })
+
+  it('does not compact ops for different entity ids', () => {
+    const opA: OfflineOp = {
+      userId: 'user-1',
+      table: 'sessions',
+      action: 'upsert',
+      payload: { id: 'session-A' },
+      enqueuedAt: 1,
+    }
+    const deleteB: OfflineOp = {
+      userId: 'user-1',
+      table: 'sessions',
+      action: 'delete',
+      payload: { id: 'session-B' },
+      enqueuedAt: 2,
+    }
+    const result = compactQueue([opA], deleteB)
+    expect(result).toHaveLength(2)
+  })
+
+  it('picks the profile row with the highest score when repairing duplicates (same updated_at)', () => {
+    // When updated_at is equal, data richness + id=default are the tiebreakers
+    const sparseRow = toAthleteProfileSyncRow({
+      id: 'legacy-1',
+      user_id: 'user-1',
+      updated_at: 100,
+      data: { name: 'Rafa' },
+    })
+    const richRow = toAthleteProfileSyncRow({
+      id: 'default',
+      user_id: 'user-1',
+      updated_at: 100,
+      data: { name: 'Rafa', primarySport: 'squash', secondarySports: ['running', 'strength'], mainGoal: 'Masters' },
+    })
+    expect(pickCanonicalAthleteProfileRow([sparseRow, richRow]).id).toBe('default')
+  })
+
+  it('picks the most recently updated row when updated_at differs', () => {
+    const olderRow = toAthleteProfileSyncRow({
+      id: 'legacy-1',
+      user_id: 'user-1',
+      updated_at: 100,
+      data: { name: 'Rafa', primarySport: 'squash', mainGoal: 'Masters' },
+    })
+    const newerRow = toAthleteProfileSyncRow({
+      id: 'legacy-2',
+      user_id: 'user-1',
+      updated_at: 200,
+      data: { name: 'Rafa' }, // sparser but newer
+    })
+    expect(pickCanonicalAthleteProfileRow([olderRow, newerRow]).id).toBe('legacy-2')
+  })
+
+  it('getOfflineOpEntityId returns null for ops without an id', () => {
+    const op: OfflineOp = {
+      userId: 'user-1',
+      table: 'sessions',
+      action: 'upsert',
+      payload: {},
+      enqueuedAt: 1,
+    }
+    expect(getOfflineOpEntityId(op)).toBeNull()
+  })
 })

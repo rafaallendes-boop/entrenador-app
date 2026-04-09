@@ -10,14 +10,15 @@ import WeekStrip from '../components/week/WeekStrip'
 import LoadIndicator from '../components/dashboard/LoadIndicator'
 import LoadAnalyticsCard from '../components/dashboard/LoadAnalyticsCard'
 import Card from '../components/ui/Card'
+import ConfirmDialog from '../components/ui/ConfirmDialog'
 import { getDayNutrition } from '../services/nutritionEngine'
 import { computeLoadAnalytics, type LoadAnalytics } from '../services/loadAnalytics'
 import { startNotificationSync } from '../services/notifications'
 import { getAthleteFirstName, getProfileCompleteness } from '../utils/athlete'
 import { computeMacroPlan, getPrimaryGoalEvent } from '../services/macroPlan'
-import { buildMacroWeekCoherenceSummary } from '../services/macroWeekCoherence'
+import { useMacroWeekCoherence } from '../hooks/useMacroWeekCoherence'
 import { buildWeeklyActionSummary } from '../services/weeklyActionLoop'
-import type { WeeklyActionItem } from '../types'
+import { useWeeklyActionNavigator } from '../hooks/useWeeklyActionNavigator'
 
 const CoachMessageCard = lazy(() => import('../components/dashboard/CoachMessageCard'))
 const NextSessionCard = lazy(() => import('../components/dashboard/NextSessionCard'))
@@ -38,15 +39,19 @@ export default function Dashboard() {
   const [loadAnalytics, setLoadAnalytics] = useState<LoadAnalytics | null>(null)
   const [isDeletingMacroPlan, setIsDeletingMacroPlan] = useState(false)
   const [checkInExpandToken, setCheckInExpandToken] = useState(0)
+  const [showDeleteMacroPlanConfirm, setShowDeleteMacroPlanConfirm] = useState(false)
 
   // Macro plan — computed on-the-fly from profile, not persisted as source of truth
   const macroPlan = useMemo(() => computeMacroPlan(athleteProfile), [athleteProfile])
   const primaryGoalEvent = useMemo(() => getPrimaryGoalEvent(athleteProfile), [athleteProfile])
-  const macroWeekCoherence = useMemo(() => buildMacroWeekCoherenceSummary({
-    athleteProfile,
-    sessions,
-    historicalSessions: sessions.filter((session) => session.status === 'completed' || session.status === 'adjusted'),
-  }), [athleteProfile, sessions])
+  const macroWeekCoherence = useMacroWeekCoherence()
+  const handleSelectAction = useWeeklyActionNavigator({
+    weeklyRule: macroWeekCoherence.weeklyRule,
+    onCheckIn: () => {
+      setCheckInExpandToken((value) => value + 1)
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+    },
+  })
 
   useEffect(() => {
     void loadMemory()
@@ -99,11 +104,6 @@ export default function Dashboard() {
   async function handleDeleteMacroPlan() {
     if (isDeletingMacroPlan || !macroPlan) return
 
-    const confirmed = window.confirm(
-      'Esto eliminara el plan de competencia guardado y su evento principal. Puedes volver a crearlo despues.',
-    )
-    if (!confirmed) return
-
     setIsDeletingMacroPlan(true)
     try {
       await saveAthleteProfile({
@@ -113,38 +113,8 @@ export default function Dashboard() {
       })
     } finally {
       setIsDeletingMacroPlan(false)
+      setShowDeleteMacroPlanConfirm(false)
     }
-  }
-
-  function handleSelectAction(action: WeeklyActionItem) {
-    if (action.ctaTarget === 'plan_builder') {
-      navigate(ROUTES.PLAN_BUILDER)
-      return
-    }
-
-    if (action.ctaTarget === 'chat_adjust_week') {
-      const composerDraft =
-        action.kind === 'fix_coherence'
-          ? `Ajusta mi semana para respetar esta regla del bloque: ${macroWeekCoherence.weeklyRule}`
-          : action.kind === 'recover_adherence'
-            ? 'Revisa mi adherencia semanal y propon un ajuste concreto para que la semana sea mas realista.'
-            : 'Simplifica o ajusta mi semana segun la carga y la fatiga de estos dias.'
-      navigate(ROUTES.CHAT, { state: { composerDraft } })
-      return
-    }
-
-    if (action.ctaTarget === 'generate_coach_note') {
-      navigate(ROUTES.WEEK)
-      return
-    }
-
-    if (action.ctaTarget === 'today_detail') {
-      navigate(ROUTES.DAY(today))
-      return
-    }
-
-    setCheckInExpandToken((value) => value + 1)
-    window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   return (
@@ -197,13 +167,13 @@ export default function Dashboard() {
 
       {macroPlan ? (
         <Suspense fallback={<CardSkeleton className="h-32" />}>
-          <MacroPlanCard
-            macroPlan={macroPlan}
-            eventTitle={primaryGoalEvent?.title}
-            isDeleting={isDeletingMacroPlan}
-            onDelete={() => { void handleDeleteMacroPlan() }}
-          />
-        </Suspense>
+            <MacroPlanCard
+              macroPlan={macroPlan}
+              eventTitle={primaryGoalEvent?.title}
+              isDeleting={isDeletingMacroPlan}
+              onDelete={() => setShowDeleteMacroPlanConfirm(true)}
+            />
+          </Suspense>
       ) : (
         <button
           type="button"
@@ -313,6 +283,17 @@ export default function Dashboard() {
       {isLoading && (
         <div className="px-1 py-2 text-center text-sm text-ink-muted">Cargando...</div>
       )}
+
+      <ConfirmDialog
+        open={showDeleteMacroPlanConfirm}
+        title="Eliminar plan de competencia"
+        message="Esto eliminara el plan de competencia guardado y su evento principal. Puedes volver a crearlo despues."
+        confirmLabel="Eliminar plan"
+        destructive
+        isLoading={isDeletingMacroPlan}
+        onCancel={() => setShowDeleteMacroPlanConfirm(false)}
+        onConfirm={() => { void handleDeleteMacroPlan() }}
+      />
     </div>
   )
 }

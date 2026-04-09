@@ -182,4 +182,12 @@ describe('promptBuilder dynamic cycling and mobility sections', () => {
     expect(prompt).toContain('focusAreas')
     expect(prompt).toContain('pre_training_activation')
   })
+
+  it('includes explicit practice_match guidance for squash planning', () => {
+    const prompt = buildCoachSystemPrompt(makeContext(makeProfile()))
+
+    expect(prompt).toContain('practice_match')
+    expect(prompt).toContain('competition_match')
+    expect(prompt).toContain('Partido de entrenamiento con foco tactico')
+  })
 })

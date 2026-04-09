@@ -1,6 +1,7 @@
 import Dexie, { type Table } from 'dexie'
 import type { Session, DayLog, WeekSummary, ChatMessage, CoachProposal, AthleteProfile } from '../types'
 import { getOrCreateChatSessionId } from '../utils/chatSession'
+import { toISO, getWeekStart, fromISO } from '../utils/date'
 
 export class EntrenadorDB extends Dexie {
   sessions!: Table<Session>
@@ -93,6 +94,26 @@ export class EntrenadorDB extends Dexie {
       chatMessages:    'id, timestamp, chatSessionId',
       coachProposals:  'id, status, createdAt, resolvedAt, chatMessageId',
       athleteProfiles: 'id, updatedAt',
+    })
+
+    // v8 — add weekStartDate index on sessions for efficient week-based queries
+    this.version(8).stores({
+      sessions:        'id, date, weekStartDate, type, status, completedAt',
+      dayLogs:         'id, &date',
+      weekSummaries:   'id, &weekStartDate',
+      chatMessages:    'id, timestamp, chatSessionId',
+      coachProposals:  'id, status, createdAt, resolvedAt, chatMessageId',
+      athleteProfiles: 'id, updatedAt',
+    }).upgrade(tx => {
+      return tx.table('sessions').toCollection().modify((session: Record<string, unknown>) => {
+        if (!session.weekStartDate && typeof session.date === 'string') {
+          try {
+            session.weekStartDate = toISO(getWeekStart(fromISO(session.date as string)))
+          } catch {
+            // Leave undefined if date is malformed
+          }
+        }
+      })
     })
   }
 }

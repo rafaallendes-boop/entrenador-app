@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { computeLoadAnalytics, type LoadAnalytics } from '../services/loadAnalytics'
-import { CheckCircle2, MoreHorizontal, Plus, Trash2, X } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, MoreHorizontal, Plus, Trash2, X } from 'lucide-react'
 import { useChatStore } from '../store/useChatStore'
 import { useCoachActionsStore } from '../store/useCoachActionsStore'
 import { useCoachMemoryStore } from '../store/useCoachMemoryStore'
@@ -118,6 +118,7 @@ export default function ChatCoach() {
 
   const [activeProposal, setActiveProposal] = useState<CoachProposal | null>(null)
   const [acceptedFeedback, setAcceptedFeedback] = useState<string | null>(null)
+  const [proposalError, setProposalError] = useState<string | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState(false)
   const [profileBannerDismissed, setProfileBannerDismissed] = useState(false)
@@ -199,6 +200,13 @@ export default function ChatCoach() {
     const proposal = activeProposal
     const result = await acceptProposal(proposal.id)
     setActiveProposal(null)
+    setProposalError(null)
+
+    if (result.errors.length > 0) {
+      setProposalError(result.errors.join(' '))
+      setTimeout(() => setProposalError(null), 8000)
+      return
+    }
 
     const createWeekAction = proposal.actions.find((action) => action.type === 'create_week')
     const warningSuffix = result.warnings.length > 0 ? ` Nota: ${result.warnings.join(' ')}` : ''
@@ -431,6 +439,16 @@ export default function ChatCoach() {
       <div className="fixed inset-x-0 bottom-0 z-40 border-t border-surface-border bg-surface/95 px-4 pb-28 pt-2 backdrop-blur md:px-6">
         <div className="mx-auto w-full max-w-3xl space-y-2">
           {acceptedFeedback && <AcceptedBanner message={acceptedFeedback} onDismiss={() => setAcceptedFeedback(null)} />}
+
+          {proposalError && (
+            <div className="flex items-start gap-2 rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2">
+              <AlertTriangle size={13} className="mt-0.5 flex-shrink-0 text-red-400" />
+              <span className="flex-1 text-xs leading-relaxed text-red-400">{proposalError}</span>
+              <button onClick={() => setProposalError(null)} className="text-red-400/60 hover:text-red-400">
+                <X size={12} />
+              </button>
+            </div>
+          )}
 
           {error && (
             <div className="flex items-start gap-2 rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2">

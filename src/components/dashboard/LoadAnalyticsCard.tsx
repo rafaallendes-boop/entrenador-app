@@ -19,9 +19,9 @@ const ACWR_CONFIG: Record<ACWRZone, { dot: string; text: string; label: string; 
   limited:      { dot: 'bg-amber-400',   text: 'text-amber-400',   label: 'Insuf.',   detail: 'Pocas semanas con carga — usar como referencia suave' },
 }
 
-const DISCIPLINE_ACWR_SPORTS: SportKey[] = ['squash', 'running', 'strength']
+const DISCIPLINE_ACWR_SPORTS: SportKey[] = ['squash', 'running', 'strength', 'cycling']
 const DISCIPLINE_LABEL: Record<SportKey, string> = {
-  squash: 'Squash', running: 'Running', strength: 'Fuerza',
+  squash: 'Squash', running: 'Running', strength: 'Fuerza', cycling: 'Ciclismo',
 }
 
 const TREND_CONFIG: Record<LoadTrend, { icon: string; color: string; label: string }> = {

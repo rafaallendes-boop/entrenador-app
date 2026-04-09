@@ -11,6 +11,7 @@
 
 import { db } from '../db/db'
 import { toISO, fromISO, getWeekStart } from '../utils/date'
+import { isCompetitionSquashMatch } from '../utils/squash'
 import { addDays, subWeeks } from 'date-fns'
 import type { Session, SessionType } from '../types'
 
@@ -59,7 +60,7 @@ export interface ACWR {
 }
 
 /** Disciplines tracked for per-sport ACWR */
-export type SportKey = 'squash' | 'running' | 'strength'
+export type SportKey = 'squash' | 'running' | 'strength' | 'cycling'
 
 export interface DisciplineAcwr {
   sport: SportKey
@@ -105,6 +106,14 @@ export interface StrengthWeeklyLoad {
   totalDurationMin: number
 }
 
+export interface CyclingWeeklyLoad {
+  weekStart: string
+  /** sum of (actualDurationMin × actualRpe) for completed cycling sessions */
+  totalLoad: number
+  sessionsCount: number
+  totalDurationMin: number
+}
+
 export interface LoadAnalytics {
   /** Ordered newest-first: [0] = current week, [1] = last week … */
   weeks: WeekLoadSummary[]
@@ -135,6 +144,10 @@ export interface LoadAnalytics {
   strengthWeeklyLoads: StrengthWeeklyLoad[]
   /** Explicit strength ACWR for selector/prompt consumers */
   strengthAcwr: DisciplineAcwr
+  /** Cycling-only weekly load history, newest-first */
+  cyclingWeeklyLoads: CyclingWeeklyLoad[]
+  /** Explicit cycling ACWR for selector/prompt consumers */
+  cyclingAcwr: DisciplineAcwr
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -338,7 +351,7 @@ export function getSquashWeeklyLoads(sessions: Session[]): SquashWeeklyLoad[] {
     existing.totalLoad += sessionWeightedLoad(session)
     existing.totalDurationMin += session.actualDurationMin ?? session.durationMin
     existing.sessionsCount += 1
-    if (session.subtype === 'match' || session.subtype === 'competitive') {
+    if (isCompetitionSquashMatch(session)) {
       existing.matchCount += 1
     }
   }
@@ -392,6 +405,41 @@ export function getStrengthWeeklyLoads(sessions: Session[]): StrengthWeeklyLoad[
 
 export function calculateStrengthAcwr(sessions: Session[]): DisciplineAcwr {
   return calculateDisciplineAcwrFromLoads('strength', getStrengthWeeklyLoads(sessions))
+}
+
+export function getCyclingWeeklyLoads(sessions: Session[]): CyclingWeeklyLoad[] {
+  const weekStarts = resolveWeekStartsForSport(sessions, 'cycling')
+  const byWeek = new Map<string, CyclingWeeklyLoad>()
+
+  for (const weekStart of weekStarts) {
+    byWeek.set(weekStart, { weekStart, totalLoad: 0, sessionsCount: 0, totalDurationMin: 0 })
+  }
+
+  for (const session of sessions) {
+    if (session.type !== 'cycling' || !isCompletedSession(session)) continue
+
+    const weekStart = toISO(getWeekStart(fromISO(session.date)))
+    const existing = byWeek.get(weekStart)
+    if (!existing) continue
+
+    existing.totalLoad += sessionWeightedLoad(session)
+    existing.totalDurationMin += session.actualDurationMin ?? session.durationMin
+    existing.sessionsCount += 1
+  }
+
+  return weekStarts.map((weekStart) => {
+    const load = byWeek.get(weekStart)!
+    return {
+      weekStart,
+      totalLoad: Math.round(load.totalLoad),
+      sessionsCount: load.sessionsCount,
+      totalDurationMin: load.totalDurationMin,
+    }
+  })
+}
+
+export function calculateCyclingAcwr(sessions: Session[]): DisciplineAcwr {
+  return calculateDisciplineAcwrFromLoads('cycling', getCyclingWeeklyLoads(sessions))
 }
 
 function trend(current: number, previous: number): LoadTrend {
@@ -507,7 +555,7 @@ function getDisciplineLoad(week: WeekLoadSummary, sport: SportKey): number {
 }
 
 export function computeAcwrByDiscipline(weeks: WeekLoadSummary[]): Record<SportKey, DisciplineAcwr> {
-  const sports: SportKey[] = ['squash', 'running', 'strength']
+  const sports: SportKey[] = ['squash', 'running', 'strength', 'cycling']
   const result = {} as Record<SportKey, DisciplineAcwr>
 
   for (const sport of sports) {
@@ -579,6 +627,8 @@ export async function computeLoadAnalytics(weeksBack = 4): Promise<LoadAnalytics
   const squashAcwr = calculateSquashAcwr(allSessions)
   const strengthWeeklyLoads = getStrengthWeeklyLoads(allSessions)
   const strengthAcwr = calculateStrengthAcwr(allSessions)
+  const cyclingWeeklyLoads = getCyclingWeeklyLoads(allSessions)
+  const cyclingAcwr = calculateCyclingAcwr(allSessions)
 
   return {
     weeks,
@@ -599,5 +649,7 @@ export async function computeLoadAnalytics(weeksBack = 4): Promise<LoadAnalytics
     squashAcwr,
     strengthWeeklyLoads,
     strengthAcwr,
+    cyclingWeeklyLoads,
+    cyclingAcwr,
   }
 }

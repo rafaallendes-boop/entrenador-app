@@ -3,6 +3,7 @@ import { getAthleteProfile } from '../db/queries'
 import { computeMacroPlan } from './macroPlan'
 import type { AthleteProfile, DayLog, MatchResult, Session } from '../types'
 import { getEnabledSports, getPrimarySportNormalized } from '../utils/athlete'
+import { isCompetitionSquashMatch } from '../utils/squash'
 import {
   deriveSquashProgressionState,
   extractRecentSquashDrills,
@@ -154,8 +155,7 @@ export function getSquashMatchHistory(
 ): SquashMatchHistoryItem[] {
   return sessions
     .filter((session) =>
-      session.type === 'squash' &&
-      (session.subtype === 'match' || session.subtype === 'competitive'),
+      isCompetitionSquashMatch(session),
     )
     .sort((a, b) => b.date.localeCompare(a.date) || b.timeBlock.localeCompare(a.timeBlock))
     .slice(0, limit)
@@ -350,7 +350,7 @@ function getNextCompetitionSessions(
   return allSessions
     .filter((session) =>
       session.date >= today &&
-      (session.subtype === 'match' || session.subtype === 'competitive') &&
+      isCompetitionSquashMatch(session) &&
       (!predicate || predicate(session)),
     )
     .sort((a, b) => a.date.localeCompare(b.date) || a.timeBlock.localeCompare(b.timeBlock))

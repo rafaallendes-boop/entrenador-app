@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ChevronLeft, ChevronRight, Target, Sparkles, SkipForward, Trash2 } from 'lucide-react'
 import { ROUTES } from '../constants/routes'
+import ConfirmDialog from '../components/ui/ConfirmDialog'
 import { useCoachMemoryStore } from '../store/useCoachMemoryStore'
 import { computeMacroPlan, getPrimaryGoalEvent, getPhaseLabel } from '../services/macroPlan'
 import { getPlanWizardDefaultComplementarySports } from '../services/planningConstraints'
@@ -266,6 +267,7 @@ export default function CompetitionPlanPage() {
 
   const [step, setStep] = useState(1)
   const [isSaving, setIsSaving] = useState(false)
+  const [showDeletePlanConfirm, setShowDeletePlanConfirm] = useState(false)
   const [state, setState] = useState<WizardState>(() =>
     initWizardState(existingEvent, existingConfig)
   )
@@ -318,11 +320,6 @@ export default function CompetitionPlanPage() {
   async function handleDeletePlan() {
     if (isSaving || !hasSavedPlan) return
 
-    const confirmed = window.confirm(
-      'Esto eliminara el evento principal y la configuracion del plan de competencia. Puedes volver a crearlo despues.',
-    )
-    if (!confirmed) return
-
     setIsSaving(true)
     try {
       await saveAthleteProfile({
@@ -334,6 +331,7 @@ export default function CompetitionPlanPage() {
       setStep(1)
     } finally {
       setIsSaving(false)
+      setShowDeletePlanConfirm(false)
     }
   }
 
@@ -434,7 +432,7 @@ export default function CompetitionPlanPage() {
         {hasSavedPlan && step === 1 && (
           <button
             type="button"
-            onClick={() => { void handleDeletePlan() }}
+            onClick={() => setShowDeletePlanConfirm(true)}
             disabled={isSaving}
             className="w-full flex items-center justify-center gap-2 rounded-2xl border border-rose-500/25 bg-rose-500/5 px-4 py-3 text-sm font-medium text-rose-300 transition-colors hover:bg-rose-500/10 disabled:opacity-50"
           >
@@ -476,6 +474,17 @@ export default function CompetitionPlanPage() {
           </button>
         )}
       </div>
+
+      <ConfirmDialog
+        open={showDeletePlanConfirm}
+        title="Eliminar plan de competencia"
+        message="Esto eliminara el evento principal y la configuracion del plan de competencia. Puedes volver a crearlo despues."
+        confirmLabel="Eliminar plan"
+        destructive
+        isLoading={isSaving}
+        onCancel={() => setShowDeletePlanConfirm(false)}
+        onConfirm={() => { void handleDeletePlan() }}
+      />
     </div>
   )
 }

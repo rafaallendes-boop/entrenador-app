@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import type { Session, SessionStatus } from '../../types'
 import { SESSION_TYPE_CONFIG, SQUASH_SUBTYPE_LABELS } from '../../constants/sessionTypes'
 import { formatDuration } from '../../utils/format'
+import { isCompetitionSquashMatch, isPracticeSquashMatch } from '../../utils/squash'
 import SessionTypeIcon from './SessionTypeIcon'
 import ExerciseChecklist from './ExerciseChecklist'
 import { useTrainingStore } from '../../store/useTrainingStore'
@@ -58,8 +59,7 @@ export default function SessionCard({ session, compact = false, onDelete }: Sess
   const cooldown = normalizeGeneratedProtocol(session.cooldown, 'cooldown')
   const hasProtocols = Boolean(warmup || cooldown)
   const hasMatchMeta =
-    session.type === 'squash' &&
-    (session.subtype === 'match' || session.subtype === 'competitive') &&
+    isCompetitionSquashMatch(session) &&
     (session.matchResult ||
       session.opponent ||
       session.gamesWon != null ||
@@ -79,6 +79,7 @@ export default function SessionCard({ session, compact = false, onDelete }: Sess
     hasProtocols ||
     hasCompletedFeedback
   const subtypeLabel = session.subtype ? SQUASH_SUBTYPE_LABELS[session.subtype] : null
+  const isPracticeMatch = isPracticeSquashMatch(session)
   const isSkipped = session.status === 'skipped'
   const showMatchBadge = hasMatchMeta && session.matchResult
   const matchBadgeClass =
@@ -112,6 +113,11 @@ export default function SessionCard({ session, compact = false, onDelete }: Sess
                 className={`text-xs px-1.5 py-0.5 rounded-full border ${config.borderClass} ${config.textClass} font-medium flex-shrink-0`}
               >
                 {subtypeLabel}
+              </span>
+            )}
+            {isPracticeMatch && (
+              <span className="rounded-full border border-brand/25 bg-brand/10 px-1.5 py-0.5 text-xs font-medium text-brand-light flex-shrink-0">
+                Partido entrenamiento
               </span>
             )}
             {showMatchBadge && (

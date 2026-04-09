@@ -27,6 +27,7 @@ const SPORT_LABELS: Record<SportKey, string> = {
   squash: 'squash',
   running: 'running',
   strength: 'fuerza',
+  cycling: 'ciclismo',
 }
 
 const SEVERITY_WEIGHT: Record<ActionAlertSeverity, number> = {

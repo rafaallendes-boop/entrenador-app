@@ -39,6 +39,7 @@ function makeLoadAnalytics(): LoadAnalytics {
       squash: { sport: 'squash', acuteLoad: 0, chronicLoad: 0, ratio: null, status: 'limited', baselineWeeks: 0 },
       running: { sport: 'running', acuteLoad: 960, chronicLoad: 600, ratio: 1.6, status: 'risk', baselineWeeks: 3 },
       strength: { sport: 'strength', acuteLoad: 0, chronicLoad: 0, ratio: null, status: 'limited', baselineWeeks: 0 },
+      cycling: { sport: 'cycling', acuteLoad: 0, chronicLoad: 0, ratio: null, status: 'limited', baselineWeeks: 0 },
     },
     runningWeeklyLoads: [],
     runningAcwr: { acuteLoad: 960, chronicLoad: 600, ratio: 1.6, status: 'risk', baselineWeeks: 3 },
@@ -46,6 +47,8 @@ function makeLoadAnalytics(): LoadAnalytics {
     squashAcwr: { sport: 'squash', acuteLoad: 0, chronicLoad: 0, ratio: null, status: 'limited', baselineWeeks: 0 },
     strengthWeeklyLoads: [],
     strengthAcwr: { sport: 'strength', acuteLoad: 0, chronicLoad: 0, ratio: null, status: 'limited', baselineWeeks: 0 },
+    cyclingWeeklyLoads: [],
+    cyclingAcwr: { sport: 'cycling', acuteLoad: 0, chronicLoad: 0, ratio: null, status: 'limited', baselineWeeks: 0 },
   }
 }
 

@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Download, Plus, FileUp, Sparkles, MessageSquareText } from 'lucide-react'
 import { useTrainingStore } from '../store/useTrainingStore'
 import { useUIStore } from '../store/useUIStore'
-import { useCoachMemoryStore } from '../store/useCoachMemoryStore'
+
 import { computeLoadAnalytics, type LoadAnalytics } from '../services/loadAnalytics'
 import { formatFullDate, fromISO, getWeekDays, toISO, isDateToday, todayISO } from '../utils/date'
 import WeekStrip from '../components/week/WeekStrip'
@@ -11,10 +11,12 @@ import WeekSummaryCard from '../components/week/WeekSummaryCard'
 import MacroPhaseSummaryCard from '../components/week/MacroPhaseSummaryCard'
 import SessionCard from '../components/session/SessionCard'
 import AddSessionModal from '../components/session/AddSessionModal'
+import ConfirmDialog from '../components/ui/ConfirmDialog'
 import { ROUTES } from '../constants/routes'
-import type { TimeBlock, WeeklyActionItem } from '../types'
+import type { TimeBlock } from '../types'
 import { downloadICS } from '../utils/ics'
-import { buildMacroWeekCoherenceSummary } from '../services/macroWeekCoherence'
+import { useMacroWeekCoherence } from '../hooks/useMacroWeekCoherence'
+import { useWeeklyActionNavigator } from '../hooks/useWeeklyActionNavigator'
 import { buildWeeklyActionSummary } from '../services/weeklyActionLoop'
 
 const DailyCheckInCard = lazy(() => import('../components/dashboard/DailyCheckInCard'))
@@ -23,11 +25,12 @@ const WeeklyActionCenterCard = lazy(() => import('../components/week/WeeklyActio
 export default function WeeklyView() {
   const { sessions, currentWeekSummary, dayLogs, isLoading, loadedWeekStart, loadWeek, generateCoachNote, deleteSession } = useTrainingStore()
   const { currentWeekStart, selectedDate, setSelectedDate, setCurrentWeekStart } = useUIStore()
-  const athleteProfile = useCoachMemoryStore((state) => state.athleteProfile)
+
   const [showAddModal, setShowAddModal] = useState(false)
   const [isGeneratingNote, setIsGeneratingNote] = useState(false)
   const [checkInExpandToken, setCheckInExpandToken] = useState(0)
   const [loadAnalytics, setLoadAnalytics] = useState<LoadAnalytics | null>(null)
+  const [pendingCoachDeleteId, setPendingCoachDeleteId] = useState<string | null>(null)
 
   useEffect(() => {
     loadWeek(currentWeekStart)
@@ -59,11 +62,17 @@ export default function WeeklyView() {
   const selectedDayData = dayData.find((day) => day.iso === selectedDate) ?? dayData[0]
   const weekLoaded = loadedWeekStart === currentWeekStart && !isLoading
   const isWeekEmpty = weekLoaded && sessions.length === 0
-  const macroWeekCoherence = useMemo(() => buildMacroWeekCoherenceSummary({
-    athleteProfile,
-    sessions,
-    historicalSessions: sessions.filter((session) => session.status === 'completed' || session.status === 'adjusted'),
-  }), [athleteProfile, sessions])
+  const macroWeekCoherence = useMacroWeekCoherence()
+  const handleSelectWeeklyAction = useWeeklyActionNavigator({
+    weeklyRule: macroWeekCoherence.weeklyRule,
+    onGenerateCoachNote: () => { void handleGenerateCoachNote() },
+    onCheckIn: () => {
+      setCurrentWeekStart(today)
+      setSelectedDate(today)
+      setCheckInExpandToken((value) => value + 1)
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+    },
+  })
   const weeklyActionSummary = useMemo(() => buildWeeklyActionSummary({
     sessions,
     currentWeekSummary,
@@ -87,43 +96,10 @@ export default function WeeklyView() {
     }
   }
 
-  const handleDeleteCoachSession = async (sessionId: string) => {
-    const confirmed = window.confirm('Esta sesion del coach se eliminara solo para esta semana. Esta accion no se puede deshacer.')
-    if (!confirmed) return
-    await deleteSession(sessionId)
-  }
-
-  const handleSelectWeeklyAction = (action: WeeklyActionItem) => {
-    if (action.ctaTarget === 'plan_builder') {
-      navigate(ROUTES.PLAN_BUILDER)
-      return
-    }
-
-    if (action.ctaTarget === 'chat_adjust_week') {
-      const composerDraft =
-        action.kind === 'fix_coherence'
-          ? `Ajusta mi semana para respetar esta regla del bloque: ${macroWeekCoherence.weeklyRule}`
-          : action.kind === 'recover_adherence'
-            ? 'Revisa mi adherencia semanal y propon un ajuste concreto para que la semana sea mas realista.'
-            : 'Simplifica o ajusta mi semana segun la carga y la fatiga de estos dias.'
-      navigate(ROUTES.CHAT, { state: { composerDraft } })
-      return
-    }
-
-    if (action.ctaTarget === 'generate_coach_note') {
-      void handleGenerateCoachNote()
-      return
-    }
-
-    if (action.ctaTarget === 'today_detail') {
-      navigate(ROUTES.DAY(today))
-      return
-    }
-
-    setCurrentWeekStart(today)
-    setSelectedDate(today)
-    setCheckInExpandToken((value) => value + 1)
-    window.scrollTo({ top: 0, behavior: 'smooth' })
+  const handleConfirmDeleteCoachSession = async () => {
+    if (!pendingCoachDeleteId) return
+    await deleteSession(pendingCoachDeleteId)
+    setPendingCoachDeleteId(null)
   }
 
   return (
@@ -208,7 +184,7 @@ export default function WeeklyView() {
                         <SessionCard
                           key={session.id}
                           session={session}
-                          onDelete={session.source === 'coach' ? (current) => void handleDeleteCoachSession(current.id) : undefined}
+                          onDelete={session.source === 'coach' ? (current) => setPendingCoachDeleteId(current.id) : undefined}
                         />
                       ))}
                     </div>
@@ -222,7 +198,7 @@ export default function WeeklyView() {
                         <SessionCard
                           key={session.id}
                           session={session}
-                          onDelete={session.source === 'coach' ? (current) => void handleDeleteCoachSession(current.id) : undefined}
+                          onDelete={session.source === 'coach' ? (current) => setPendingCoachDeleteId(current.id) : undefined}
                         />
                       ))}
                     </div>
@@ -270,6 +246,16 @@ export default function WeeklyView() {
           onClose={() => setShowAddModal(false)}
         />
       )}
+
+      <ConfirmDialog
+        open={pendingCoachDeleteId != null}
+        title="Eliminar sesion del coach"
+        message="Esta sesion del coach se eliminara solo para esta semana. Esta accion no se puede deshacer."
+        confirmLabel="Eliminar"
+        destructive
+        onCancel={() => setPendingCoachDeleteId(null)}
+        onConfirm={() => { void handleConfirmDeleteCoachSession() }}
+      />
     </div>
   )
 }

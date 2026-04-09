@@ -1,0 +1,67 @@
+import { describe, expect, it, vi } from 'vitest'
+import { renderToStaticMarkup } from 'react-dom/server'
+import type { Session } from '../../types'
+import SessionCard from './SessionCard'
+
+vi.mock('../../store/useTrainingStore', () => ({
+  useTrainingStore: (selector: (state: { cycleSessionStatus: () => void; updateSession: () => Promise<void> }) => unknown) =>
+    selector({
+      cycleSessionStatus: () => undefined,
+      updateSession: async () => undefined,
+    }),
+}))
+
+vi.mock('../../services/trainingProtocols', () => ({
+  normalizeGeneratedProtocol: () => undefined,
+}))
+
+function makeSession(overrides: Partial<Session> = {}): Session {
+  return {
+    id: overrides.id ?? 'session-1',
+    date: overrides.date ?? '2026-04-09',
+    timeBlock: overrides.timeBlock ?? 'AM',
+    type: overrides.type ?? 'squash',
+    status: overrides.status ?? 'planned',
+    title: overrides.title ?? 'Sesion squash',
+    durationMin: overrides.durationMin ?? 60,
+    createdAt: overrides.createdAt ?? 1,
+    updatedAt: overrides.updatedAt ?? 1,
+    ...overrides,
+  } as Session
+}
+
+describe('SessionCard squash match badges', () => {
+  it('renders a dedicated practice-match badge', () => {
+    const html = renderToStaticMarkup(
+      <SessionCard
+        session={makeSession({
+          subtype: 'match',
+          squashDetails: {
+            trainingFocus: 'tactical',
+            sessionMode: 'practice_match',
+            drills: [{ name: 'Partido de entrenamiento libre a 5 games' }],
+          },
+        })}
+      />,
+    )
+
+    expect(html).toContain('Partido entrenamiento')
+  })
+
+  it('does not render the practice badge for legacy or competition matches', () => {
+    const html = renderToStaticMarkup(
+      <SessionCard
+        session={makeSession({
+          subtype: 'match',
+          squashDetails: {
+            trainingFocus: 'tactical',
+            sessionMode: 'competition_match',
+            drills: [{ name: 'Partido objetivo' }],
+          },
+        })}
+      />,
+    )
+
+    expect(html).not.toContain('Partido entrenamiento')
+  })
+})

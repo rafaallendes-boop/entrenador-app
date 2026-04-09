@@ -267,6 +267,36 @@ export const SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
     description: 'Jugar puntos o sets cortos con scoring reducido para simular estrés competitivo.',
     progressionLevel: 3,
   },
+  {
+    id: 'practice_match_five_games',
+    name: 'Partido de entrenamiento libre a 5 games',
+    category: 'match',
+    focus: ['match_play', 'decision_making', 'tactical_application'],
+    intensity: 'high',
+    tags: ['match_play', 'practice', 'build', 'peak'],
+    description: 'Partido de entrenamiento completo a cinco games para aplicar táctica, ritmo y toma de decisiones con rival real.',
+    progressionLevel: 2,
+  },
+  {
+    id: 'practice_match_best_of_3',
+    name: 'Sets cortos de presion al mejor de 3 games',
+    category: 'match',
+    focus: ['match_play', 'pressure', 'competitive_rhythm'],
+    intensity: 'moderate',
+    tags: ['match_play', 'practice', 'build', 'peak', 'pressure'],
+    description: 'Cierre de entrenamiento con match-play corto al mejor de tres games para trabajar presión sin carga completa de partido largo.',
+    progressionLevel: 2,
+  },
+  {
+    id: 'practice_match_short_points_attack',
+    name: 'Partido con foco de ataque en puntos cortos',
+    category: 'match',
+    focus: ['match_play', 'attack', 'first_ball'],
+    intensity: 'high',
+    tags: ['match_play', 'practice', 'peak', 'attack', 'pressure'],
+    description: 'Partido de entrenamiento orientado a imponer ataque temprano, primera pelota util y definición de puntos cortos.',
+    progressionLevel: 3,
+  },
 ]
 
 export function toSquashDrill(definition: SquashDrillDefinition, durationMin?: number, notes?: string): SquashDrill {
@@ -295,6 +325,7 @@ export function findSquashDrillByName(name: string): SquashDrillDefinition | und
 }
 
 export function getSuggestedTrainingFocus(category: DrillCategory, tags: string[]): SquashTrainingFocus {
+  if (tags.includes('match_play')) return 'conditioned_games'
   if (tags.includes('conditioned_game')) return 'conditioned_games'
   if (category === 'tactical') return 'tactical'
   if (category === 'physical') return 'physical'
@@ -303,6 +334,7 @@ export function getSuggestedTrainingFocus(category: DrillCategory, tags: string[
 
 export function getSquashDrillFamily(drill: SquashDrillDefinition): string {
   if (drill.tags.includes('pre_match')) return 'pre_match_activation'
+  if (drill.tags.includes('match_play')) return 'match_play_practice'
   if (drill.tags.includes('ghosting')) return 'ghosting'
   if (drill.tags.includes('rsa')) return 'rsa'
   if (drill.tags.includes('multiball')) return 'multiball_pressure'

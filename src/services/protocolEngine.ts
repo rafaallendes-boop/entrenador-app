@@ -1,5 +1,6 @@
 import { subDays } from 'date-fns'
 import { fromISO, toISO } from '../utils/date'
+import { isCompetitionSquashMatch } from '../utils/squash'
 import type {
   DayLog,
   GeneratedProtocol,
@@ -50,7 +51,8 @@ export function resolveProtocolContext(
   const competitionCandidates = recentActiveSessions.filter((item) => {
     if (item.date < sessionDate) return false
     if (item.type !== sport) return false
-    return item.subtype === 'match' || item.subtype === 'competitive'
+    if (item.type === 'squash') return isCompetitionSquashMatch(item)
+    return item.subtype === 'competitive'
   })
 
   const nextCompetition = competitionCandidates[0]

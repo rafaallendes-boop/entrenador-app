@@ -49,6 +49,7 @@ const MOBILITY_SESSION_CONTEXTS = new Set([
   'sport_specific',
 ])
 const SQUASH_TRAINING_FOCUSES = new Set(['technical', 'tactical', 'physical', 'conditioned_games'])
+const SQUASH_SESSION_MODES = new Set(['drill_session', 'practice_match', 'competition_match'])
 const PROPOSAL_STATUSES = new Set(['pending', 'accepted', 'rejected', 'partial'])
 const SUPPORTED_SPORTS = new Set(['squash', 'running', 'strength', 'mobility', 'cycling'])
 const TRAINING_PRIORITIES = new Set(['performance', 'fitness', 'body_composition', 'return_to_play'])
@@ -900,6 +901,7 @@ function optionalSquashDetails(value: unknown, path: string): Session['squashDet
   return {
     trainingFocus: requireEnum(row.trainingFocus, SQUASH_TRAINING_FOCUSES, `${path}.trainingFocus`) as NonNullable<Session['squashDetails']>['trainingFocus'],
     drills,
+    sessionMode: optionalEnum(row.sessionMode, SQUASH_SESSION_MODES, `${path}.sessionMode`) as NonNullable<Session['squashDetails']>['sessionMode'],
   }
 }
 

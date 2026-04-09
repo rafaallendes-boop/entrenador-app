@@ -1,4 +1,5 @@
 import type { Session, DayLoadType, NutritionRec, AthleteProfile } from '../types'
+import { isCompetitionSquashMatch } from '../utils/squash'
 
 // ─── Load classifier ──────────────────────────────────────────────────────────
 
@@ -6,7 +7,7 @@ export function classifyDayLoad(sessions: Session[]): DayLoadType {
   const active = sessions.filter(s => s.status !== 'skipped')
   if (active.length === 0) return 'rest'
 
-  const hasMatch = active.some(s => s.subtype === 'match' || s.subtype === 'competitive')
+  const hasMatch = active.some((s) => (s.type === 'squash' ? isCompetitionSquashMatch(s) : s.subtype === 'competitive'))
   if (hasMatch) return 'match'
 
   const hasLongRun = active.some(

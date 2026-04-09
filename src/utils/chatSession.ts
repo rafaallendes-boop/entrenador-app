@@ -2,16 +2,24 @@ import { v4 as uuid } from './uuid'
 
 export const CHAT_SESSION_KEY = 'coach_chat_session_id'
 
+function getStorage(): Storage | null {
+  try {
+    return typeof window !== 'undefined' ? window.localStorage : null
+  } catch {
+    return null
+  }
+}
+
 export function getStoredChatSessionId(): string | null {
-  return localStorage.getItem(CHAT_SESSION_KEY)
+  return getStorage()?.getItem(CHAT_SESSION_KEY) ?? null
 }
 
 export function setStoredChatSessionId(id: string): void {
-  localStorage.setItem(CHAT_SESSION_KEY, id)
+  getStorage()?.setItem(CHAT_SESSION_KEY, id)
 }
 
 export function clearStoredChatSessionId(): void {
-  localStorage.removeItem(CHAT_SESSION_KEY)
+  getStorage()?.removeItem(CHAT_SESSION_KEY)
 }
 
 export function getOrCreateChatSessionId(): string {

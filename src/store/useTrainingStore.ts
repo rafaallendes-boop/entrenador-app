@@ -31,13 +31,41 @@ interface TrainingState {
 
   loadWeek: (weekStart: string) => Promise<void>
   loadAllSummaries: () => Promise<void>
-  addSession: (session: Omit<Session, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>
+  addSession: (session: Omit<Session, 'id' | 'createdAt' | 'updatedAt'>) => Promise<Session>
   updateSession: (id: string, patch: Partial<Session>) => Promise<void>
   deleteSession: (id: string) => Promise<void>
   cycleSessionStatus: (id: string) => Promise<void>
   toggleExercise: (sessionId: string, exerciseId: string) => Promise<void>
   saveDayLog: (date: string, patch: Partial<Omit<DayLog, 'id' | 'date' | 'updatedAt'>>) => Promise<void>
   generateCoachNote: (weekStart: string) => Promise<string>
+}
+
+let latestWeekLoadRequestId = 0
+
+function getWeekStartDate(dateISO: string): string {
+  return toISO(getWeekStart(fromISO(dateISO)))
+}
+
+function getActiveWeekStart(state: Pick<TrainingState, 'loadedWeekStart' | 'currentWeekSummary'>): string | null {
+  return state.loadedWeekStart ?? state.currentWeekSummary?.weekStartDate ?? null
+}
+
+export function resolveVisibleSessionsAfterUpdate(
+  visibleSessions: Session[],
+  updatedSession: Session,
+  loadedWeekStart: string | null,
+): Session[] {
+  const nextVisible = visibleSessions.filter((session) => session.id !== updatedSession.id)
+  if (!loadedWeekStart || updatedSession.weekStartDate !== loadedWeekStart) {
+    return nextVisible
+  }
+
+  return [...nextVisible, updatedSession]
+}
+
+export function shouldKeepDayLogInVisibleWeek(dateISO: string, loadedWeekStart: string | null): boolean {
+  if (!loadedWeekStart) return false
+  return getWeekStartDate(dateISO) === loadedWeekStart
 }
 
 export const useTrainingStore = create<TrainingState>((set, get) => ({
@@ -49,6 +77,7 @@ export const useTrainingStore = create<TrainingState>((set, get) => ({
   loadedWeekStart: null,
 
   loadWeek: async (weekStart) => {
+    const requestId = ++latestWeekLoadRequestId
     set({ isLoading: true })
     try {
       const sessions = await getSessionsForWeek(weekStart)
@@ -65,6 +94,7 @@ export const useTrainingStore = create<TrainingState>((set, get) => ({
 
       await recalculateWeekSummary(weekStart)
       const summary = await getWeekSummary(weekStart)
+      if (requestId !== latestWeekLoadRequestId) return
       set({
         sessions,
         dayLogs,
@@ -74,7 +104,14 @@ export const useTrainingStore = create<TrainingState>((set, get) => ({
       })
     } catch (e) {
       console.error(e)
-      set({ isLoading: false, loadedWeekStart: weekStart })
+      if (requestId !== latestWeekLoadRequestId) return
+      set({
+        sessions: [],
+        dayLogs: {},
+        currentWeekSummary: null,
+        isLoading: false,
+        loadedWeekStart: null,
+      })
     }
   },
 
@@ -85,20 +122,24 @@ export const useTrainingStore = create<TrainingState>((set, get) => ({
 
   addSession: async (partial) => {
     const now = Date.now()
-    const session: Session = { ...partial, id: uuid(), createdAt: now, updatedAt: now }
+    const weekStartDate = getWeekStartDate(partial.date)
+    const session: Session = { ...partial, weekStartDate, id: uuid(), createdAt: now, updatedAt: now }
     await db.sessions.add(session)
     void syncService.pushSession(session)
     await recalculateWeekSummary(session.date)
-    const activeWeekStart = get().currentWeekSummary?.weekStartDate
-    const sessionWeekStart = toISO(getWeekStart(fromISO(session.date)))
+    const activeWeekStart = getActiveWeekStart(get())
+    const sessionWeekStart = getWeekStartDate(session.date)
     const nextSummary = activeWeekStart === sessionWeekStart
       ? await getWeekSummary(activeWeekStart)
       : get().currentWeekSummary
 
     set(state => ({
-      sessions: [...state.sessions, session],
+      sessions: state.loadedWeekStart === sessionWeekStart
+        ? [...state.sessions, session]
+        : state.sessions,
       currentWeekSummary: nextSummary ?? state.currentWeekSummary,
     }))
+    return session
   },
 
   updateSession: async (id, patch) => {
@@ -113,24 +154,25 @@ export const useTrainingStore = create<TrainingState>((set, get) => ({
         ? undefined
         : previous.completedAt
 
-    await db.sessions.update(id, { ...patch, completedAt, updatedAt: now })
-    const updatedSession = { ...previous, ...patch, completedAt, updatedAt: now }
+    const weekStartDate = patch.date && patch.date !== previous.date
+      ? getWeekStartDate(patch.date)
+      : previous.weekStartDate
+    await db.sessions.update(id, { ...patch, weekStartDate, completedAt, updatedAt: now })
+    const updatedSession = { ...previous, ...patch, weekStartDate, completedAt, updatedAt: now }
     void syncService.pushSession(updatedSession)
     set(state => ({
-      sessions: state.sessions.map(s =>
-        s.id === id ? { ...s, ...patch, completedAt, updatedAt: now } : s
-      ),
+      sessions: resolveVisibleSessionsAfterUpdate(state.sessions, updatedSession, state.loadedWeekStart),
     }))
     await recalculateWeekSummary(previous.date)
     if (patch.date && patch.date !== previous.date) {
       await recalculateWeekSummary(patch.date)
     }
 
-    const activeWeekStart = get().currentWeekSummary?.weekStartDate
+    const activeWeekStart = getActiveWeekStart(get())
     if (activeWeekStart) {
       const affectedWeeks = new Set([
-        toISO(getWeekStart(fromISO(previous.date))),
-        patch.date ? toISO(getWeekStart(fromISO(patch.date))) : null,
+        getWeekStartDate(previous.date),
+        patch.date ? getWeekStartDate(patch.date) : null,
       ].filter((value): value is string => Boolean(value)))
 
       if ([...affectedWeeks].includes(activeWeekStart)) {
@@ -147,8 +189,8 @@ export const useTrainingStore = create<TrainingState>((set, get) => ({
     void syncService.deleteSession(id)
     await recalculateWeekSummary(session.date)
     set(state => ({ sessions: state.sessions.filter(s => s.id !== id) }))
-    const activeWeekStart = get().currentWeekSummary?.weekStartDate
-    if (activeWeekStart) {
+    const activeWeekStart = getActiveWeekStart(get())
+    if (activeWeekStart === getWeekStartDate(session.date)) {
       const summary = await getWeekSummary(activeWeekStart)
       set({ currentWeekSummary: summary ?? null })
     }
@@ -175,13 +217,15 @@ export const useTrainingStore = create<TrainingState>((set, get) => ({
     const log = await upsertDayLog(date, patch)
     void syncService.pushDayLog(log)
     await recalculateWeekSummary(date)
-    const activeWeekStart = get().currentWeekSummary?.weekStartDate
-    if (activeWeekStart === toISO(getWeekStart(fromISO(date)))) {
+    const activeWeekStart = getActiveWeekStart(get())
+    if (activeWeekStart === getWeekStartDate(date)) {
       const summary = await getWeekSummary(activeWeekStart)
       set({ currentWeekSummary: summary ?? null })
     }
     set(state => ({
-      dayLogs: { ...state.dayLogs, [date]: log },
+      dayLogs: shouldKeepDayLogInVisibleWeek(date, state.loadedWeekStart)
+        ? { ...state.dayLogs, [date]: log }
+        : state.dayLogs,
     }))
   },
 
@@ -210,7 +254,7 @@ export const useTrainingStore = create<TrainingState>((set, get) => ({
     )
 
     const summary = await upsertWeekSummary(weekStart, { coachNote: response.message })
-    const activeWeekStart = get().currentWeekSummary?.weekStartDate
+    const activeWeekStart = getActiveWeekStart(get())
     if (activeWeekStart === weekStart) {
       set({ currentWeekSummary: summary })
     }

@@ -114,8 +114,8 @@ export function filterByFatigue(
 ): ExerciseDefinition[] {
   if (context.competitionSoon || context.fatigueLevel >= 8) {
     return exercises.filter((exercise) =>
-      exercise.intensityType !== 'power' &&
-      exercise.intensityType !== 'strength' ||
+      (exercise.intensityType !== 'power' &&
+      exercise.intensityType !== 'strength') ||
       exercise.tags.includes('beginner_friendly') ||
       exercise.tags.includes('recovery'),
     )

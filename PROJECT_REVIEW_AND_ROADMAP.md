@@ -1,7 +1,7 @@
 # Entrenador App - Review and Roadmap
 
 Actualizado: 2026-04-09
-Ultimo hito relevante: weekly action loop unificado con WeeklyView como action center, CTA semanticos y notificaciones alineadas al mismo motor
+Ultimo hito relevante: endurecimiento tecnico del weekly loop y propuestas del coach, con rollback mas seguro y confirm dialogs compartidos en flujos criticos
 
 ## Estado actual del producto
 
@@ -19,6 +19,9 @@ Entrenador ya no esta en fase de prototipo. Hoy existe una base seria para atlet
 - alertas accionables en dashboard con CTA reales
 - cycling y mobility ahora con mejor criterio de coaching, continuidad y estructura visible
 - weekly action loop unificado visible en WeeklyView y reutilizado en dashboard y notificaciones
+- squash ya distingue mejor partido de entrenamiento vs partido competitivo real
+- rollback de propuestas del coach mas robusto para altas, updates y deletes
+- confirm dialogs compartidos en los flujos criticos mas visibles
 
 ## Lo ya implementado
 
@@ -44,6 +47,7 @@ Esto ya no deberia volver al backlog principal salvo refinamientos:
 - prompt del coach reforzado para emitir `cyclingDetails` y `mobilityDetails`
 - weekly action engine compartido entre WeeklyView, dashboard y notificaciones
 - WeeklyView elevado a superficie principal para actuar sobre la semana
+- squashDetails ahora soporta `sessionMode` para distinguir drill, practice match y competition match
 - tests unitarios ampliados para logica critica
 
 ## Lo que ya entrega valor real
@@ -125,6 +129,22 @@ Pendiente:
 - refinar thresholds con uso real
 - mejorar lectura historica para que explique tendencia, no solo la muestre
 - sumar capa cuantitativa mejor para cycling y decidir si mobility queda solo como soporte cualitativo
+- afinar analytics de squash para distinguir mejor match-play de entrenamiento vs partido real sin romper historico
+
+### Squash competitivo
+
+Estado: mas fuerte y mas realista
+
+- libreria squash ya soporta match-play de entrenamiento
+- el planner puede proponer `subtype: match` con `sessionMode: practice_match`
+- SessionCard distingue partido de entrenamiento vs partido real
+- varias capas criticas ya no tratan automaticamente todo `match` como competencia real
+
+Pendiente:
+
+- enriquecer formatos de match-play con mas contexto y familias
+- decidir si en el futuro conviene `sessionFamily` o subtype mas rico
+- consolidar semantica competitiva en analytics e historial fino sin tocar demasiado el modelo
 
 ### Cycling y mobility
 
@@ -203,6 +223,8 @@ Estado: mucho mejor que antes
 - selectors, ACWR, macroplan, protocol engine, notificaciones y alertas ya cubiertos en logica critica
 - selectors de cycling y mobility y contrato dinamico de prompt ya cubiertos en tests focalizados
 - weekly action loop ya cubierto con tests de prioridad y estados base
+- estado semanal blindado mejor frente a carreras de carga y errores silenciosos
+- normalizacion AI mas estricta para evitar acciones malformadas
 
 Pendiente:
 
@@ -293,6 +315,22 @@ Pendiente:
 - notificaciones conectadas a la misma fuente de decision para semana vacia, coherencia, check-in y coach note
 - CTA semanticos a `plan_builder`, `chat_adjust_week`, `today_checkin`, `today_detail` y `generate_coach_note`
 
+### 12. Match-play de entrenamiento en squash
+
+- `SquashDetails.sessionMode` agregado como semantica minima compatible
+- `practice_match` habilitado como modalidad de entrenamiento en planner y prompt
+- libreria squash ampliada con formatos base de partido de entrenamiento
+- guards minimos para no tratar `practice_match` como competencia real en capas criticas
+- badge especifico en SessionCard para distinguir partido de entrenamiento
+
+### 13. Hardening tecnico del loop semanal
+
+- `useTrainingStore` ya no mezcla semanas visibles ni deja datos viejos cuando falla `loadWeek`
+- proposals del coach ahora guardan snapshots suficientes para rollback mas seguro de create, update y delete
+- notifications ya reutiliza un solo `weeklyActionSummary` por sync
+- `chatSession` usa acceso a storage mas defensivo
+- confirmaciones criticas pasan a un modal compartido en vez de `window.confirm`
+
 ## Que hay hoy
 
 Resumen simple del producto actual:
@@ -312,6 +350,8 @@ Las brechas mas importantes no son tantas, pero si son profundas:
 3. Convertir el loop semanal en reactivacion mas automatica y medible.
 4. Completar packaging de monetizacion y posicionamiento comercial.
 5. Convertir mejoras recientes de disciplinas secundarias en comportamiento estable del coach.
+6. Consolidar mejor la semantica de squash competitivo entre planner, historial y analytics finos.
+7. Completar rollback verdaderamente transaccional para propuestas complejas multi-accion con objetivos y week summaries.
 
 ## Roadmap vigente
 
@@ -424,8 +464,9 @@ Si hubiera que resumir el orden real desde hoy:
 2. hacer que el coach proponga ajustes guiados por alertas
 3. endurecer y medir el weekly loop
 4. profundizar cycling y mobility
-5. instrumentar activacion, retencion y monetizacion
-6. abrir beta privada pagada
+5. consolidar squash competitivo y match-play
+6. instrumentar activacion, retencion y monetizacion
+7. abrir beta privada pagada
 
 ## Mejoras concretas posibles desde aqui
 
@@ -506,6 +547,7 @@ Impacto:
 - reemplazar `composerDraft` libre por un contrato explicito de `chatLaunchIntent`
 - reemplazar `window.confirm` por un modal compartido testeable
 - extraer bloques puros de `promptBuilder` por disciplina y por accion
+- seguir aislando rollback de proposals en una capa transaccional reusable
 
 ### Lectura final de la revision
 

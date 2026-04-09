@@ -94,6 +94,7 @@ export interface RunningIntervalStructure {
 }
 
 export type SquashTrainingFocus = 'technical' | 'tactical' | 'physical' | 'conditioned_games'
+export type SquashSessionMode = 'drill_session' | 'practice_match' | 'competition_match'
 
 export interface SquashDrill {
   name: string
@@ -104,6 +105,7 @@ export interface SquashDrill {
 export interface SquashDetails {
   trainingFocus: SquashTrainingFocus
   drills: SquashDrill[]
+  sessionMode?: SquashSessionMode
 }
 
 export type ProtocolKind = 'warmup' | 'cooldown'
@@ -140,18 +142,14 @@ export interface ProtocolContext {
   daysToCompetition?: number
 }
 
-export interface Session {
+/** Common fields shared by all session types. */
+export interface SessionBase {
   id: string
   date: string             // ISO "YYYY-MM-DD"
+  weekStartDate?: string   // ISO "YYYY-MM-DD", Monday — indexed in Dexie for efficient week queries
   timeBlock: TimeBlock
   source?: SessionSource
-  type: SessionType
-  subtype?: SquashSubtype  // squash only
-  opponent?: string
-  matchResult?: MatchResult
-  gamesWon?: number
-  gamesLost?: number
-  status: SessionStatus    // replaces completed: boolean
+  status: SessionStatus
   title: string
   objective?: string
   durationMin: number
@@ -161,11 +159,6 @@ export interface Session {
   actualRpe?: number       // 1-10 RPE real
   notes?: string
   completionNotes?: string
-  exercises?: Exercise[]   // strength + mobility
-  runningDetails?: RunningDetails
-  cyclingDetails?: CyclingDetails
-  mobilityDetails?: MobilityDetails
-  squashDetails?: SquashDetails
   warmup?: GeneratedProtocol
   cooldown?: GeneratedProtocol
   sessionFeedback?: SessionFeedback
@@ -173,6 +166,72 @@ export interface Session {
   createdAt: number
   updatedAt: number
 }
+
+/** Sport-specific optional fields — present on all sessions for backwards compat. */
+export interface SessionSportFields {
+  subtype?: SquashSubtype
+  opponent?: string
+  matchResult?: MatchResult
+  gamesWon?: number
+  gamesLost?: number
+  exercises?: Exercise[]
+  runningDetails?: RunningDetails
+  cyclingDetails?: CyclingDetails
+  mobilityDetails?: MobilityDetails
+  squashDetails?: SquashDetails
+}
+
+/**
+ * Discriminated session types — narrow via session.type.
+ * Sport-specific fields are optional on each variant for backwards compatibility
+ * with existing data and code, but type guards let new code narrow safely.
+ */
+export interface SquashSession extends SessionBase, SessionSportFields {
+  type: 'squash'
+}
+
+export interface RunningSession extends SessionBase, SessionSportFields {
+  type: 'running'
+}
+
+export interface CyclingSession extends SessionBase, SessionSportFields {
+  type: 'cycling'
+}
+
+export interface StrengthSession extends SessionBase, SessionSportFields {
+  type: 'strength'
+}
+
+export interface MobilitySession extends SessionBase, SessionSportFields {
+  type: 'mobility'
+}
+
+export interface RecoverySession extends SessionBase, SessionSportFields {
+  type: 'recovery'
+}
+
+export interface NutritionSession extends SessionBase, SessionSportFields {
+  type: 'nutrition'
+}
+
+/** Discriminated union: use session.type to narrow to a specific sport type. */
+export type Session =
+  | SquashSession
+  | RunningSession
+  | CyclingSession
+  | StrengthSession
+  | MobilitySession
+  | RecoverySession
+  | NutritionSession
+
+// ─── Type guards ─────────────────────────────────────────────────────────────
+
+export function isSquashSession(s: Session): s is SquashSession { return s.type === 'squash' }
+export function isRunningSession(s: Session): s is RunningSession { return s.type === 'running' }
+export function isCyclingSession(s: Session): s is CyclingSession { return s.type === 'cycling' }
+export function isStrengthSession(s: Session): s is StrengthSession { return s.type === 'strength' }
+export function isMobilitySession(s: Session): s is MobilitySession { return s.type === 'mobility' }
+export function isRecoverySession(s: Session): s is RecoverySession { return s.type === 'recovery' }
 
 export interface SessionFeedback {
   rating: 1 | 2 | 3 | 4 | 5
