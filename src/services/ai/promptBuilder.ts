@@ -48,6 +48,24 @@ import {
   type RunningSelectionResult,
   type RunningSportProfile,
 } from '../training/runningSelector'
+import {
+  extractRecentCyclingSessions,
+  runCyclingSelectorSmokeChecks,
+  selectCyclingSession,
+  summarizeCyclingProgression,
+  type CyclingContext,
+  type CyclingPhase,
+  type CyclingSelectionResult,
+  type CyclingSportProfile,
+} from '../training/cyclingSelector'
+import {
+  extractRecentMobilitySessions,
+  selectMobilitySession,
+  summarizeMobilitySelection,
+  type MobilityContext,
+  type MobilityPhase,
+  type MobilitySelectionResult,
+} from '../training/mobilitySelector'
 
 const SQUASH_SUBTYPE_ES: Record<string, string> = {
   training: 'entrenamiento', match: 'partido', competitive: 'competitivo',
@@ -250,6 +268,156 @@ function buildRunningSelectionSummary(context: ChatContext): {
   }
 }
 
+// ─── Cycling selection ────────────────────────────────────────────────────────
+
+function mapMacroPhaseToRunningPhaseForCycling(phase: MacroPlanPhase | undefined): CyclingPhase {
+  switch (phase) {
+    case 'build': return 'build'
+    case 'peak': return 'peak'
+    case 'taper': return 'taper'
+    case 'race': return 'race'
+    case 'transition': return 'transition'
+    case 'base':
+    default: return 'base'
+  }
+}
+
+function deriveCyclingSportProfile(context: ChatContext): CyclingSportProfile {
+  const primarySport = getPlanningPrimarySport(context.athleteProfile)
+  const enabledSports = getAllowedPlanningSports(context.athleteProfile)
+  if (primarySport === 'cycling') return 'cycling_primary'
+  if (enabledSports.includes('cycling') && enabledSports.length > 1) return 'hybrid'
+  return 'sport_support'
+}
+
+function getNextGoalEventForSport(
+  context: ChatContext,
+  sport: SupportedSport,
+): { date: string } | undefined {
+  const today = todayISO()
+  return [...(context.athleteProfile?.goalEvents ?? [])]
+    .filter(event => event.date >= today && event.sport === sport)
+    .sort((a, b) => a.date.localeCompare(b.date))[0]
+}
+
+function getCyclingSelectionContext(context: ChatContext): CyclingContext {
+  const today = todayISO()
+  const historicalSessions = getHistoricalSessions(context)
+  const macroPlan = computeMacroPlan(context.athleteProfile)
+  const sportProfile = deriveCyclingSportProfile(context)
+  const role = sportProfile === 'cycling_primary' ? 'primary' : 'support'
+
+  const nextCyclingEvent = getNextGoalEventForSport(context, 'cycling')
+  const competitionGap = nextCyclingEvent ? diffDays(today, nextCyclingEvent.date) : undefined
+  const daysToCompetition = typeof competitionGap === 'number' ? competitionGap : undefined
+  const competitionSoon = typeof daysToCompetition === 'number' && daysToCompetition <= 7
+
+  return {
+    phase: mapMacroPhaseToRunningPhaseForCycling(macroPlan?.currentPhase),
+    role,
+    fatigueLevel: deriveSquashFatigueLevel(context),
+    sportProfile,
+    recentSessionIds: extractRecentCyclingSessions(historicalSessions),
+    goal: context.athleteProfile?.mainGoal
+      ?? context.currentWeekSummary?.objectives?.[0]
+      ?? 'entrenamiento ciclista variado y bien estructurado',
+    competitionSoon,
+    daysToCompetition,
+    historicalSessions,
+  }
+}
+
+function buildCyclingSelectionSummary(context: ChatContext): {
+  selection: CyclingSelectionResult
+  selectionContext: CyclingContext
+} | null {
+  const enabledSports = getAllowedPlanningSports(context.athleteProfile)
+  if (!enabledSports.includes('cycling')) return null
+
+  const selectionContext = getCyclingSelectionContext(context)
+  return {
+    selectionContext,
+    selection: selectCyclingSession(selectionContext),
+  }
+}
+
+// ─── Mobility selection ───────────────────────────────────────────────────────
+
+function mapMacroPhaseToMobilityPhase(phase: MacroPlanPhase | undefined): MobilityPhase {
+  switch (phase) {
+    case 'build': return 'build'
+    case 'peak': return 'peak'
+    case 'taper': return 'taper'
+    case 'race': return 'race'
+    case 'transition': return 'transition'
+    case 'base':
+    default: return 'base'
+  }
+}
+
+function getMobilitySportContext(context: ChatContext): 'squash' | 'running' | 'cycling' | 'strength' | 'general' {
+  const primary = getPlanningPrimarySport(context.athleteProfile)
+  if (primary === 'squash') return 'squash'
+  if (primary === 'running') return 'running'
+  if (primary === 'cycling') return 'cycling'
+  if (primary === 'strength') return 'strength'
+  return 'general'
+}
+
+function getRecentCompletedSportContext(
+  historicalSessions: Session[],
+): 'squash' | 'running' | 'cycling' | 'strength' | undefined {
+  const latestCompletedSession = [...historicalSessions]
+    .filter(session =>
+      (session.status === 'completed' || session.status === 'adjusted') &&
+      ['squash', 'running', 'cycling', 'strength'].includes(session.type),
+    )
+    .sort((a, b) => {
+      const dateSort = b.date.localeCompare(a.date)
+      if (dateSort !== 0) return dateSort
+      return b.updatedAt - a.updatedAt
+    })[0]
+
+  if (
+    latestCompletedSession?.type === 'squash' ||
+    latestCompletedSession?.type === 'running' ||
+    latestCompletedSession?.type === 'cycling' ||
+    latestCompletedSession?.type === 'strength'
+  ) {
+    return latestCompletedSession.type
+  }
+
+  return undefined
+}
+
+function getMobilitySelectionContext(context: ChatContext): MobilityContext {
+  const historicalSessions = getHistoricalSessions(context)
+  const macroPlan = computeMacroPlan(context.athleteProfile)
+
+  return {
+    primarySport: getMobilitySportContext(context),
+    phase: mapMacroPhaseToMobilityPhase(macroPlan?.currentPhase),
+    recentSessionIds: extractRecentMobilitySessions(historicalSessions),
+    postTrainingType: getRecentCompletedSportContext(historicalSessions),
+    fatigueLevel: deriveSquashFatigueLevel(context),
+    historicalSessions,
+  }
+}
+
+function buildMobilitySelectionSummary(context: ChatContext): {
+  selection: MobilitySelectionResult
+  selectionContext: MobilityContext
+} | null {
+  const enabledSports = getAllowedPlanningSports(context.athleteProfile)
+  if (!enabledSports.includes('mobility')) return null
+
+  const selectionContext = getMobilitySelectionContext(context)
+  return {
+    selectionContext,
+    selection: selectMobilitySession(selectionContext),
+  }
+}
+
 function getSquashSelectionContext(context: ChatContext): SquashSelectionContext {
   const today = todayISO()
   const plannedSessions = getPlannedSessions(context)
@@ -400,6 +568,8 @@ export function buildCoachSystemPrompt(context: ChatContext): string {
   const squashSummary = buildSquashSelectionSummary(context)
   const strengthSummary = buildStrengthSelectionSummary(context)
   const runningSummary = buildRunningSelectionSummary(context)
+  const cyclingSummary = buildCyclingSelectionSummary(context)
+  const mobilitySummary = buildMobilitySelectionSummary(context)
 
   const sections: string[] = [
     buildPersonaSection(context),
@@ -417,7 +587,10 @@ export function buildCoachSystemPrompt(context: ChatContext): string {
     buildDynamicSquashSelectionSection(context, squashSummary),
     buildDynamicStrengthSelectionSection(context, strengthSummary),
     buildDynamicRunningSelectionSection(context, runningSummary),
+    buildDynamicCyclingSelectionSection(context, cyclingSummary),
+    buildDynamicMobilitySelectionSection(context, mobilitySummary),
     buildStrengthProgressionSection(context),
+    buildSessionFeedbackSection(context.historicalSessions),
     buildNutritionContextSection(context),
     buildWeekSection(context),
     buildSessionsSection(plannedSessions),
@@ -608,6 +781,51 @@ ESTILO:
 - Nunca respondas solo con texto cuando se pidió una acción.
 - Responde siempre en español.
 ${sportSections}`
+}
+
+function buildSessionFeedbackSection(historicalSessions: Session[] | undefined): string {
+  if (!historicalSessions?.length) return ''
+
+  const cutoffDate = new Date()
+  cutoffDate.setDate(cutoffDate.getDate() - 28)
+  const cutoff = cutoffDate.toISOString().slice(0, 10)
+
+  const sessionsWithFeedback = historicalSessions.filter(
+    (s) => s.sessionFeedback != null && s.date >= cutoff,
+  )
+  if (sessionsWithFeedback.length === 0) return ''
+
+  const bySport = new Map<string, { ratings: number[]; energies: number[]; challenges: string[] }>()
+  for (const session of sessionsWithFeedback) {
+    const sport = session.type
+    if (!bySport.has(sport)) bySport.set(sport, { ratings: [], energies: [], challenges: [] })
+    const group = bySport.get(sport)!
+    const fb = session.sessionFeedback!
+    group.ratings.push(fb.rating)
+    group.energies.push(fb.energyDuringSession)
+    if (fb.mainChallenge?.trim()) group.challenges.push(fb.mainChallenge.trim())
+  }
+
+  const lines: string[] = ['═══ SEÑALES RECIENTES DE FEEDBACK DEL ATLETA ═══']
+  lines.push('Basado en las últimas 4 semanas de sesiones con feedback registrado:')
+  lines.push('')
+
+  for (const [sport, group] of bySport) {
+    const count = group.ratings.length
+    const avg = (arr: number[]) => (arr.reduce((a, b) => a + b, 0) / arr.length).toFixed(1)
+    const sportLabel = SESSION_TYPE_ES[sport] ?? sport
+    const challengeText = group.challenges.length > 0
+      ? ` Desafíos recientes: "${group.challenges.slice(-2).join('", "')}."`
+      : ''
+    lines.push(`- ${sportLabel} (${count} ses.): calidad ${avg(group.ratings)}/5, energía ${avg(group.energies)}/5.${challengeText}`)
+  }
+
+  lines.push('')
+  lines.push('CÓMO USAR ESTE FEEDBACK:')
+  lines.push('- Energía promedio baja (<3) en un deporte → sugiere reducir carga o priorizar recuperación esa semana.')
+  lines.push('- Calidad baja repetida → considera cambiar el tipo de sesión o añadir recuperación entre bloques.')
+  lines.push('- Desafíos mencionados frecuentemente → úsalos para personalizar el foco de la próxima sesión.')
+  return lines.join('\n')
 }
 
 function buildNutritionContextSection(context: ChatContext): string {
@@ -1391,6 +1609,56 @@ function buildDynamicRunningSelectionSection(
   return lines.join('\n')
 }
 
+function buildDynamicCyclingSelectionSection(
+  context: ChatContext,
+  summary = buildCyclingSelectionSummary(context),
+): string {
+  if (!summary) return ''
+
+  const { selection, selectionContext } = summary
+  const lines: string[] = ['SESIÓN SUGERIDA – CICLISMO']
+
+  lines.push(`Perfil: ${selectionContext.sportProfile} · rol ${selectionContext.role}`)
+  lines.push(`Foco: ${selection.focus}`)
+  lines.push(
+    `Contexto selector: fase ${selectionContext.phase} · fatiga ${selectionContext.fatigueLevel}/10 · competencia cercana ${
+      selectionContext.competitionSoon ? 'si' : 'no'
+    }`,
+  )
+  lines.push(`Continuidad: ${summarizeCyclingProgression(selectionContext)}`)
+  lines.push(`Sesión sugerida: ${selection.session.name} — ${selection.session.structure} — intensidad ${selection.session.intensity}`)
+  if (selection.session.notes) lines.push(`Nota: ${selection.session.notes}`)
+  lines.push('Si ciclismo es deporte principal, esta selección manda como sesión real con continuidad y progresión.')
+  lines.push('Si ciclismo es soporte, controla la carga para no interferir con el deporte principal.')
+
+  if (!import.meta.env.PROD) {
+    const smoke = runCyclingSelectorSmokeChecks().slice(0, 2).join(' || ')
+    lines.push(`Debug selector (dev): ${smoke}`)
+  }
+
+  return lines.join('\n')
+}
+
+function buildDynamicMobilitySelectionSection(
+  context: ChatContext,
+  summary = buildMobilitySelectionSummary(context),
+): string {
+  if (!summary) return ''
+
+  const { selection, selectionContext } = summary
+  const lines: string[] = ['SESIÓN SUGERIDA – MOVILIDAD']
+
+  lines.push(`Deporte principal: ${selectionContext.primarySport} · fase ${selectionContext.phase}`)
+  lines.push(`Sesión sugerida: ${selection.session.name} (${selection.session.typicalDuration})`)
+  lines.push(`Foco: ${selection.session.focus.join(', ')}`)
+  lines.push(`Estructura: ${selection.session.typicalStructure}`)
+  lines.push(`Justificación: ${selection.rationale}`)
+  lines.push(`Resumen: ${summarizeMobilitySelection(selection)}`)
+  lines.push('La movilidad no genera fatiga recuperable — puede ir cualquier día. Prioriza las articulaciones más trabajadas del bloque actual.')
+
+  return lines.join('\n')
+}
+
 /**
  * Aggregates exercise weight progression from recent completed strength sessions.
  * Groups by exercise name and shows the last values chronologically so the coach
@@ -1831,19 +2099,12 @@ function buildResponseInstructions(
     hasStrength,
     hasCycling,
     plannedSessionLines,
-    z2min,
-    z2max,
-    tempoMin,
-    tempoMax,
-    longRunPaceStr,
     w,
     squashBaseDrillsJson,
     strengthBaseSelection,
-    strengthSupportSelection,
     strengthPrimarySelection,
     strengthPrimaryFollowUpSelection,
     strengthBaseExercisesJson,
-    strengthSupportExercisesJson,
     strengthPrimaryExercisesJson,
     strengthPrimaryFollowUpExercisesJson,
   } = promptContext
@@ -1991,35 +2252,7 @@ ${(() => {
   const exampleSport: string = getPlanningPrimarySport(context.athleteProfile) ?? context.athleteProfile?.sportContext?.primarySport ?? 'squash'
   if (exampleSport === 'running') return buildRunningCreateWeekExample(promptContext)
   if (exampleSport === 'cycling') return buildCyclingCreateWeekExample(promptContext)
-  if (exampleSport === 'running') {
-    return `<actions>
-[{"type":"create_week",
-  "weekObjectives":["construir base aeróbica running","mantener fuerza complementaria","recuperación activa"],
-  "sessions":[
-    {"date":"${addDaysToISO(weekStart, 0)}","timeBlock":"AM","sessionType":"running","title":"Running Z2","durationMin":50,"rpe":6,"objective":"base aeróbica — ritmo cómodo, respiración nasal","runningType":"z2","targetPaceMin":"${z2min}","targetPaceMax":"${z2max}"},
-    {"date":"${addDaysToISO(weekStart, 1)}","timeBlock":"PM","sessionType":"strength","title":"Fuerza estructurada","durationMin":60,"rpe":7,"objective":"${strengthBaseSelection.focus}","exercises":[${strengthSupportExercisesJson}]},
-    {"date":"${addDaysToISO(weekStart, 2)}","timeBlock":"AM","sessionType":"mobility","title":"Movilidad","durationMin":30,"rpe":4,"objective":"cadera, tobillo y hombro"},
-    {"date":"${addDaysToISO(weekStart, 3)}","timeBlock":"AM","sessionType":"running","title":"Running tempo","durationMin":45,"rpe":7,"objective":"umbral aeróbico — mantener ritmo sostenido","runningType":"tempo","targetPaceMin":"${tempoMin}","targetPaceMax":"${tempoMax}"},
-    {"date":"${addDaysToISO(weekStart, 4)}","timeBlock":"PM","sessionType":"strength","title":"Fuerza de apoyo","durationMin":50,"rpe":6,"objective":"${strengthSupportSelection.focus}","exercises":[${strengthSupportExercisesJson}]},
-    {"date":"${addDaysToISO(weekStart, 5)}","timeBlock":"AM","sessionType":"running","title":"Running long","durationMin":70,"rpe":6,"objective":"fondo largo — ritmo aeróbico sostenido","runningType":"long","targetPaceMin":"${longRunPaceStr}","targetPaceMax":"${longRunPaceStr}"}
-  ],
-  "reason":"semana base running — Z2 lunes, tempo jueves, long sábado, con fuerza complementaria"}]
-</actions>`
-  } else if (exampleSport === 'cycling') {
-    return `<actions>
-[{"type":"create_week",
-  "weekObjectives":["construir base aeróbica ciclismo","mantener fuerza complementaria","fondo largo fin de semana"],
-  "sessions":[
-    {"date":"${addDaysToISO(weekStart, 0)}","timeBlock":"PM","sessionType":"cycling","title":"Ciclismo Z2","durationMin":70,"rpe":6,"objective":"base aeróbica, cadencia 80-90rpm"},
-    {"date":"${addDaysToISO(weekStart, 1)}","timeBlock":"PM","sessionType":"strength","title":"Fuerza estructurada","durationMin":55,"rpe":7,"objective":"${strengthBaseSelection.focus}","exercises":[${strengthSupportExercisesJson}]},
-    {"date":"${addDaysToISO(weekStart, 2)}","timeBlock":"AM","sessionType":"mobility","title":"Movilidad","durationMin":30,"rpe":4,"objective":"cadera, tobillo y columna"},
-    {"date":"${addDaysToISO(weekStart, 3)}","timeBlock":"AM","sessionType":"cycling","title":"Ciclismo intervalos","durationMin":45,"rpe":8,"objective":"series 4-6min a alta intensidad con recuperación activa"},
-    {"date":"${addDaysToISO(weekStart, 4)}","timeBlock":"PM","sessionType":"strength","title":"Fuerza de apoyo","durationMin":50,"rpe":6,"objective":"${strengthSupportSelection.focus}","exercises":[${strengthSupportExercisesJson}]},
-    {"date":"${addDaysToISO(weekStart, 5)}","timeBlock":"AM","sessionType":"cycling","title":"Ciclismo long ride","durationMin":90,"rpe":6,"objective":"fondo aeróbico sostenido"}
-  ],
-  "reason":"semana base ciclismo — Z2 lunes, intervalos jueves, long ride sábado, con fuerza complementaria"}]
-</actions>`
-  } else if (exampleSport === 'strength') {
+  if (exampleSport === 'strength') {
     return `<actions>
 [{"type":"create_week",
   "weekObjectives":["desarrollar fuerza upper + lower","movilidad complementaria","recuperación activa"],

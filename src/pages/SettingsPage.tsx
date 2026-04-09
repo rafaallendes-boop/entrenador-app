@@ -339,9 +339,9 @@ export default function SettingsPage() {
   const sportSummary = getSportPrioritySummary(athleteProfile)
   const enabledSports = getEnabledSports(athleteProfile)
   const profileSyncAffected = syncDetails.pendingTables.includes('athlete_profiles')
-  const syncSummary = getSyncSummary(syncStatus, syncDetails.pendingOps)
-  const syncHeadline = getSyncHeadline(syncStatus, syncDetails.pendingOps, profileSyncAffected)
-  const syncSupportText = getSyncSupportText(syncStatus, syncDetails.pendingOps, profileSyncAffected)
+  const syncSummary = getSyncSummary(syncStatus, syncDetails.pendingOps, syncDetails.syncAttemptInFlight)
+  const syncHeadline = getSyncHeadline(syncStatus, syncDetails.pendingOps, syncDetails.syncAttemptInFlight, profileSyncAffected)
+  const syncSupportText = getSyncSupportText(syncStatus, syncDetails.pendingOps, syncDetails.syncAttemptInFlight, profileSyncAffected)
   const syncDiagnosticsAvailable =
     syncDetails.pendingOps > 0 ||
     syncDetails.pendingTables.length > 0 ||
@@ -398,7 +398,12 @@ export default function SettingsPage() {
                 <h2 className="text-sm font-semibold text-ink">Cuenta y sincronizacion</h2>
                 <p className="text-xs text-ink-muted mt-1 truncate">{user?.email ?? 'Sesion activa'}</p>
               </div>
-              <SyncStatusBadge status={syncStatus} error={syncError} pendingOps={syncDetails.pendingOps} />
+              <SyncStatusBadge
+                status={syncStatus}
+                error={syncError}
+                pendingOps={syncDetails.pendingOps}
+                syncAttemptInFlight={syncDetails.syncAttemptInFlight}
+              />
             </div>
             {false && syncStatus === 'error' && syncError && (
               <p className="mb-3 rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
@@ -1312,7 +1317,7 @@ function formatEnabledNotificationCategories(preferences: NotificationPreference
   return labels.length > 0 ? labels.join(', ') : 'ninguna'
 }
 
-function getSyncSummary(status: string, pendingOps: number): { label: string; toneClass: string } {
+function getSyncSummary(status: string, pendingOps: number, syncAttemptInFlight: boolean): { label: string; toneClass: string } {
   if (status === 'error') {
     return {
       label: pendingOps > 0 ? `${pendingOps} pendiente${pendingOps === 1 ? '' : 's'}` : 'Revisar',
@@ -1327,10 +1332,17 @@ function getSyncSummary(status: string, pendingOps: number): { label: string; to
     }
   }
 
-  if (status === 'syncing') {
+  if (status === 'syncing' || syncAttemptInFlight) {
     return {
-      label: 'Sync',
+      label: 'Enviando',
       toneClass: 'bg-brand/10 text-brand-light',
+    }
+  }
+
+  if (pendingOps > 0) {
+    return {
+      label: `${pendingOps} pendiente${pendingOps === 1 ? '' : 's'}`,
+      toneClass: 'bg-amber-500/10 text-amber-200',
     }
   }
 
@@ -1340,7 +1352,7 @@ function getSyncSummary(status: string, pendingOps: number): { label: string; to
   }
 }
 
-function getSyncHeadline(status: string, pendingOps: number, profileSyncAffected: boolean): string {
+function getSyncHeadline(status: string, pendingOps: number, syncAttemptInFlight: boolean, profileSyncAffected: boolean): string {
   if (status === 'error') {
     return profileSyncAffected
       ? 'Tu perfil no se pudo actualizar en la nube'
@@ -1351,14 +1363,18 @@ function getSyncHeadline(status: string, pendingOps: number, profileSyncAffected
     return pendingOps > 0 ? 'Hay cambios guardados esperando conexion' : 'La app esta offline'
   }
 
-  if (status === 'syncing') {
-    return 'Sincronizando cambios'
+  if (status === 'syncing' || syncAttemptInFlight) {
+    return 'Estamos enviando tus cambios'
+  }
+
+  if (pendingOps > 0) {
+    return 'Quedaron cambios pendientes por subir'
   }
 
   return 'Cuenta conectada y al dia'
 }
 
-function getSyncSupportText(status: string, pendingOps: number, profileSyncAffected: boolean): string {
+function getSyncSupportText(status: string, pendingOps: number, syncAttemptInFlight: boolean, profileSyncAffected: boolean): string {
   if (status === 'error') {
     return profileSyncAffected
       ? 'Tus cambios siguen guardados en este dispositivo. Vamos a reintentar sin mostrarte detalle tecnico por defecto.'
@@ -1371,8 +1387,12 @@ function getSyncSupportText(status: string, pendingOps: number, profileSyncAffec
       : 'Puedes seguir usando la app; sincronizara cuando recuperes conexion.'
   }
 
-  if (status === 'syncing') {
-    return 'Estamos enviando cambios pendientes y revisando consistencia con la nube.'
+  if (status === 'syncing' || syncAttemptInFlight) {
+    return 'Tus cambios ya quedaron guardados aqui y se estan enviando a la nube.'
+  }
+
+  if (pendingOps > 0) {
+    return 'Tus cambios siguen guardados localmente. Solo mostraremos este estado si la cola no logro vaciarse.'
   }
 
   return 'Tu cuenta, perfil y planificacion estan sincronizados.'

@@ -29,7 +29,7 @@ type SportPhaseRule = {
 
 type SportRuleSet = Record<MacroPlanPhase, { primary: SportPhaseRule; support: SportPhaseRule }>
 
-const SPORT_DETAIL_ORDER: SupportedSport[] = ['squash', 'running', 'strength']
+const SPORT_DETAIL_ORDER: SupportedSport[] = ['squash', 'running', 'strength', 'cycling', 'mobility']
 
 const GENERIC_PRIMARY_RULES: Record<MacroPlanPhase, SportPhaseRule> = {
   base: {
@@ -121,7 +121,7 @@ const GENERIC_SUPPORT_RULES: Record<MacroPlanPhase, SportPhaseRule> = {
   },
 }
 
-const SPORT_RULES: Record<'squash' | 'running' | 'strength', SportRuleSet> = {
+const SPORT_RULES: Record<'squash' | 'running' | 'strength' | 'cycling' | 'mobility', SportRuleSet> = {
   squash: {
     base: {
       primary: {
@@ -380,6 +380,154 @@ const SPORT_RULES: Record<'squash' | 'running' | 'strength', SportRuleSet> = {
       support: GENERIC_SUPPORT_RULES.transition,
     },
   },
+  cycling: {
+    base: {
+      primary: {
+        phaseFocus: 'Acumular base aeróbica ciclista con volumen Z2 y trabajo de cadencia y economía.',
+        weeklyIntent: 'Construir motor aeróbico con rodajes largo Z2 y técnica de pedaleo consistente.',
+        volumeBias: 'build',
+        intensityBias: 'hold',
+        notes: 'Foco en repeticiones aeróbicas de calidad, no en intensidad todavía.',
+      },
+      support: {
+        phaseFocus: 'Ciclismo como soporte aeróbico liviano del bloque principal.',
+        weeklyIntent: 'Usar rodajes Z2 cortos para sumar capacidad aeróbica sin fatiga cruzada.',
+        volumeBias: 'hold',
+        intensityBias: 'hold',
+        notes: 'El ciclismo complementa sin competir con el deporte central.',
+      },
+    },
+    build: {
+      primary: {
+        phaseFocus: 'Subir especificidad ciclista con bloques de sweetspot, tempo y trabajo de potencia.',
+        weeklyIntent: 'Alternar Z2 largo con sesiones de sweetspot o intervalos para consolidar rendimiento.',
+        volumeBias: 'build',
+        intensityBias: 'build',
+        notes: 'Progresión hacia ritmos específicos con buena base aeróbica.',
+      },
+      support: {
+        phaseFocus: 'Ciclismo Z2 controlado como soporte aeróbico durante build del deporte principal.',
+        weeklyIntent: 'Mantener motor aeróbico con dosis baja-media sin interferir con la disciplina central.',
+        volumeBias: 'hold',
+        intensityBias: 'hold',
+        notes: 'El ciclismo acompaña la carga, no la eleva.',
+      },
+    },
+    peak: {
+      primary: {
+        phaseFocus: 'Reducir volumen y mantener calidad. Activaciones específicas de alta calidad.',
+        weeklyIntent: 'Sesiones cortas de calidad: una de intensidad clave y rodajes de mantenimiento.',
+        volumeBias: 'reduce',
+        intensityBias: 'build',
+        notes: 'Calidad sobre cantidad. Proteger frescura sin perder sensaciones.',
+      },
+      support: {
+        phaseFocus: 'Ciclismo mínimo de soporte durante peak del deporte principal.',
+        weeklyIntent: 'Un rodaje suave Z2 solo si no genera fatiga adicional.',
+        volumeBias: 'reduce',
+        intensityBias: 'minimal',
+        notes: 'Si el ciclismo resta frescura al deporte principal, se suprime.',
+      },
+    },
+    taper: {
+      primary: {
+        phaseFocus: 'Activación corta y de calidad, sin carga acumulada ni fatiga residual.',
+        weeklyIntent: 'Mantener sensaciones con rodajes cortos y frescos. Nada de largo ni de sweetspot pesado.',
+        volumeBias: 'minimal',
+        intensityBias: 'hold',
+        notes: 'Llegar fresco y con piernas disponibles es la prioridad.',
+      },
+      support: {
+        phaseFocus: 'Ciclismo opcional y muy suave durante taper del deporte principal.',
+        weeklyIntent: 'Solo si es claramente recuperativo y no genera cansancio extra.',
+        volumeBias: 'minimal',
+        intensityBias: 'minimal',
+        notes: 'Si no suma frescura, se elimina.',
+      },
+    },
+    race: {
+      primary: {
+        phaseFocus: 'Semana de evento ciclista. Nada de carga, solo activación si el formato lo permite.',
+        weeklyIntent: 'Reservar energía para competir. Rodaje de activación muy corto o descanso.',
+        volumeBias: 'minimal',
+        intensityBias: 'hold',
+        notes: 'El rendimiento del evento define toda la semana.',
+      },
+      support: GENERIC_SUPPORT_RULES.race,
+    },
+    transition: {
+      primary: {
+        phaseFocus: 'Pedaleo suave Z2 para recuperar y disfrutar. Sin presión de rendimiento.',
+        weeklyIntent: 'Rodajes ligeros y libres para salir de la fatiga acumulada del bloque.',
+        volumeBias: 'minimal',
+        intensityBias: 'minimal',
+        notes: 'Reset aeróbico y articular. Prioridad al placer sobre el rendimiento.',
+      },
+      support: GENERIC_SUPPORT_RULES.transition,
+    },
+  },
+  mobility: {
+    base: {
+      primary: GENERIC_PRIMARY_RULES.base,
+      support: {
+        phaseFocus: 'Activar rangos completos de movimiento con foco en cadera, tobillo y hombro.',
+        weeklyIntent: 'Dos sesiones de movilidad funcional para construir disponibilidad articular desde la base.',
+        volumeBias: 'hold',
+        intensityBias: 'hold',
+        notes: 'La movilidad en base construye la capacidad de carga segura para todo el bloque.',
+      },
+    },
+    build: {
+      primary: GENERIC_PRIMARY_RULES.build,
+      support: {
+        phaseFocus: 'Mantener movilidad funcional y prevenir restricciones por carga acumulada.',
+        weeklyIntent: 'Una a dos sesiones específicas por semana para sostener rangos bajo carga creciente.',
+        volumeBias: 'hold',
+        intensityBias: 'hold',
+        notes: 'Anticipa restricciones antes de que aparezcan como dolor o compensación.',
+      },
+    },
+    peak: {
+      primary: GENERIC_PRIMARY_RULES.peak,
+      support: {
+        phaseFocus: 'Movilidad de activación específica, corta y orientada al deporte principal.',
+        weeklyIntent: 'Sesión corta pre-entrenamiento: cadera, tobillo y hombro en menos de 20 min.',
+        volumeBias: 'reduce',
+        intensityBias: 'hold',
+        notes: 'Calidad y especificidad. Sin fatiga articular extra.',
+      },
+    },
+    taper: {
+      primary: GENERIC_PRIMARY_RULES.taper,
+      support: {
+        phaseFocus: 'Movilidad suave y preventiva para llegar disponible al evento.',
+        weeklyIntent: 'Una sesión liviana de rangos y articulaciones clave. Sin profundidad extrema.',
+        volumeBias: 'minimal',
+        intensityBias: 'minimal',
+        notes: 'El objetivo es disponibilidad, no ganancia de rango.',
+      },
+    },
+    race: {
+      primary: GENERIC_PRIMARY_RULES.race,
+      support: {
+        phaseFocus: 'Activación articular mínima el día previo o día del evento.',
+        weeklyIntent: 'Cinco a diez minutos de movilidad específica de activación. Nada más.',
+        volumeBias: 'minimal',
+        intensityBias: 'minimal',
+        notes: 'Solo lo necesario para llegar suelto y disponible.',
+      },
+    },
+    transition: {
+      primary: GENERIC_PRIMARY_RULES.transition,
+      support: {
+        phaseFocus: 'Recuperación articular activa y reset de rangos post-bloque.',
+        weeklyIntent: 'Una o dos sesiones de movilidad restaurativa para salir de la fatiga articular acumulada.',
+        volumeBias: 'minimal',
+        intensityBias: 'minimal',
+        notes: 'Foco en recuperar disponibilidad antes de volver a cargar.',
+      },
+    },
+  },
 }
 
 const PHASE_LABELS: Record<MacroPlanPhase, string> = {
@@ -503,8 +651,10 @@ function resolveDetailSports(
   primarySport: SupportedSport | undefined,
   allowedSports: SupportedSport[],
 ): SupportedSport[] {
+  // mobility is never a primary sport in macroplan details
+  const effectivePrimary = primarySport === 'mobility' ? undefined : primarySport
   const ordered = [...new Set([
-    primarySport,
+    effectivePrimary,
     ...allowedSports,
   ])]
     .filter((sport): sport is SupportedSport => sport != null)
@@ -534,7 +684,7 @@ function buildSportDetail(args: {
 }
 
 function getSportRuleSet(sport: SupportedSport): SportRuleSet | undefined {
-  if (sport === 'squash' || sport === 'running' || sport === 'strength') {
+  if (sport === 'squash' || sport === 'running' || sport === 'strength' || sport === 'cycling' || sport === 'mobility') {
     return SPORT_RULES[sport]
   }
   return undefined

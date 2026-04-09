@@ -6,6 +6,7 @@ export type SyncStatus = 'idle' | 'syncing' | 'error' | 'offline'
 
 export interface SyncDetails {
   pendingOps: number
+  syncAttemptInFlight: boolean
   pendingUpserts: number
   pendingDeletes: number
   oldestPendingOpAt: number | null
@@ -47,6 +48,7 @@ export const useAuthStore = create<AuthState>((set) => {
     syncError: null,
     syncDetails: {
       pendingOps: 0,
+      syncAttemptInFlight: false,
       pendingUpserts: 0,
       pendingDeletes: 0,
       oldestPendingOpAt: null,
@@ -73,6 +75,7 @@ export const useAuthStore = create<AuthState>((set) => {
         syncError: null,
         syncDetails: {
           pendingOps: 0,
+          syncAttemptInFlight: false,
           pendingUpserts: 0,
           pendingDeletes: 0,
           oldestPendingOpAt: null,

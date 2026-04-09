@@ -75,6 +75,18 @@ function updatePendingOps(count: number): void {
   })
 }
 
+function startSyncAttempt(): void {
+  syncStoreState().setSyncDetails({ syncAttemptInFlight: true })
+  if (navigator.onLine) {
+    syncStoreState().setSyncStatus('syncing')
+  }
+}
+
+function finishSyncAttempt(status: 'idle' | 'offline' | 'error' = 'idle'): void {
+  syncStoreState().setSyncDetails({ syncAttemptInFlight: false })
+  syncStoreState().setSyncStatus(status)
+}
+
 function loadQueue(): OfflineOp[] {
   try {
     const raw = localStorage.getItem(QUEUE_KEY)
@@ -156,6 +168,7 @@ function applySyncFailure(error: unknown, fallbackMessage: string): void {
 
   syncStoreState().setSyncStatus(status, message)
   syncStoreState().setSyncDetails({
+    syncAttemptInFlight: false,
     pendingOps: loadQueue().length,
     lastErrorAt: Date.now(),
     lastErrorMessage: message,
@@ -172,10 +185,12 @@ async function drainQueue(): Promise<boolean> {
   }
 
   activeDrainQueuePromise = (async () => {
+  startSyncAttempt()
   const queue = loadQueue()
   const userId = getUserId()
 
   if (!userId) {
+    finishSyncAttempt('idle')
     return queue.length === 0
   }
 
@@ -184,6 +199,7 @@ async function drainQueue(): Promise<boolean> {
 
   if (currentUserQueue.length === 0) {
     saveQueue(otherUsersQueue)
+    finishSyncAttempt('idle')
     return true
   }
 
@@ -225,11 +241,14 @@ async function drainQueue(): Promise<boolean> {
 
   saveQueue([...otherUsersQueue, ...remaining])
   if (remaining.length === 0 && initialCount > 0) {
+    finishSyncAttempt('idle')
     syncStoreState().setSyncDetails({
       lastRecoveredSyncAt: Date.now(),
       lastSuccessfulSyncAt: Date.now(),
       lastErrorMessage: null,
     })
+  } else if (remaining.length === 0) {
+    finishSyncAttempt('idle')
   }
   return remaining.length === 0
   })()
@@ -261,11 +280,13 @@ async function upsertRow(table: SupabaseTable, row: Record<string, unknown>): Pr
   if (!userId) return
 
   if (!navigator.onLine) {
+    finishSyncAttempt('offline')
     syncStoreState().setSyncStatus('offline')
     enqueue({ userId, table, action: 'upsert', payload: row, enqueuedAt: Date.now() })
     return
   }
 
+  startSyncAttempt()
   try {
     if (table === 'athlete_profiles') {
       await upsertAthleteProfileRow(row, userId)
@@ -273,14 +294,22 @@ async function upsertRow(table: SupabaseTable, row: Record<string, unknown>): Pr
       const { error } = await supabase.from(table).upsert(row as never)
       if (error) throw error
     }
-    void drainQueue()
+    const queueDrained = await drainQueue()
+    if (queueDrained) {
+      syncStoreState().setSyncDetails({
+        lastSuccessfulSyncAt: Date.now(),
+        lastErrorAt: null,
+        lastErrorMessage: null,
+      })
+      finishSyncAttempt('idle')
+    }
   } catch (error) {
     const fallback =
       table === 'athlete_profiles'
         ? classifyAthleteProfileSyncError(error)
         : `No se pudo sincronizar ${table}.`
-    applySyncFailure(error, fallback)
     enqueue({ userId, table, action: 'upsert', payload: row, enqueuedAt: Date.now() })
+    applySyncFailure(error, fallback)
   }
 }
 
@@ -291,20 +320,31 @@ async function deleteRow(table: SupabaseTable, id: string): Promise<void> {
   if (!userId) return
 
   if (!navigator.onLine) {
+    finishSyncAttempt('offline')
     syncStoreState().setSyncStatus('offline')
     if (table === 'sessions') rememberSessionDeleteTombstone(userId, id)
     enqueue({ userId, table, action: 'delete', payload: { id, userId }, enqueuedAt: Date.now() })
     return
   }
 
+  startSyncAttempt()
   try {
     const { error } = await supabase.from(table).delete().eq('id', id).eq('user_id', userId)
     if (error) throw error
     if (table === 'sessions') rememberSessionDeleteTombstone(userId, id)
+    const queueDrained = await drainQueue()
+    if (queueDrained) {
+      syncStoreState().setSyncDetails({
+        lastSuccessfulSyncAt: Date.now(),
+        lastErrorAt: null,
+        lastErrorMessage: null,
+      })
+      finishSyncAttempt('idle')
+    }
   } catch (error) {
-    applySyncFailure(error, `No se pudo eliminar en sync ${table}.`)
     if (table === 'sessions') rememberSessionDeleteTombstone(userId, id)
     enqueue({ userId, table, action: 'delete', payload: { id, userId }, enqueuedAt: Date.now() })
+    applySyncFailure(error, `No se pudo eliminar en sync ${table}.`)
   }
 }
 
@@ -661,7 +701,7 @@ export async function pullAll(userId: string): Promise<void> {
   const { setSyncStatus, setSyncDetails, syncDetails } = useAuthStore.getState()
   const startedAt = Date.now()
   setSyncStatus('syncing')
-  setSyncDetails({ lastSyncAt: startedAt })
+  setSyncDetails({ lastSyncAt: startedAt, syncAttemptInFlight: true })
 
   try {
     await repairLocalNaturalKeyConflicts()
@@ -683,6 +723,7 @@ export async function pullAll(userId: string): Promise<void> {
 
     setSyncStatus('idle')
     setSyncDetails({
+      syncAttemptInFlight: false,
       pendingOps: loadQueue().length,
       lastSuccessfulSyncAt: Date.now(),
       lastErrorAt: null,
@@ -1119,6 +1160,7 @@ function clearSyncArtifactsForUser(userId: string): void {
   syncStoreState().setSyncStatus('idle')
   syncStoreState().setSyncDetails({
     pendingOps: 0,
+    syncAttemptInFlight: false,
     pendingUpserts: 0,
     pendingDeletes: 0,
     oldestPendingOpAt: null,

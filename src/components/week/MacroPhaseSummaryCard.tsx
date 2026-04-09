@@ -42,9 +42,15 @@ export default function MacroPhaseSummaryCard({ summary }: MacroPhaseSummaryCard
         </div>
       </div>
 
-      <div className="mt-3 space-y-2 text-xs text-ink-muted leading-relaxed">
-        <p><span className="text-ink">Objetivo del bloque:</span> {summary.blockGoal}</p>
-        <p><span className="text-ink">Regla de la semana:</span> {summary.weeklyRule}</p>
+      <div className="mt-3 rounded-xl border border-surface-border bg-surface-raised px-3 py-2.5 space-y-2">
+        <div>
+          <p className="text-[10px] uppercase tracking-wider text-ink-faint font-semibold mb-0.5">Objetivo del bloque</p>
+          <p className="text-xs text-ink leading-relaxed">{summary.blockGoal}</p>
+        </div>
+        <div>
+          <p className="text-[10px] uppercase tracking-wider text-ink-faint font-semibold mb-0.5">Esta semana</p>
+          <p className="text-xs text-ink-muted leading-relaxed">{summary.weeklyRule}</p>
+        </div>
       </div>
 
       {sports.length > 0 && (

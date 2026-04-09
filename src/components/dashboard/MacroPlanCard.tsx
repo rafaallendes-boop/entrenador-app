@@ -49,7 +49,7 @@ export default function MacroPlanCard({
   const weeksLabel = formatWeeksRemaining(macroPlan.weeksRemaining)
   const phaseColor = PHASE_COLOR[macroPlan.currentPhase]
   const phaseBg = PHASE_BG[macroPlan.currentPhase]
-  const visibleSportDetails = macroPlan.sportDetails.slice(0, 3)
+  const visibleSportDetails = macroPlan.sportDetails
   const visibleTimeline = macroPlan.timeline.slice(0, 5)
 
   return (
@@ -182,7 +182,8 @@ function SportDetailRow({ detail }: { detail: MacroPlanSportDetail }) {
           {detail.role === 'primary' ? 'principal' : 'soporte'}
         </span>
       </div>
-      <p className="mt-1 text-[11px] text-ink-muted leading-relaxed">{detail.weeklyIntent}</p>
+      <p className="mt-1 text-[11px] text-ink leading-relaxed">{detail.phaseFocus}</p>
+      <p className="mt-0.5 text-[10px] text-ink-muted leading-relaxed">{detail.weeklyIntent}</p>
     </div>
   )
 }

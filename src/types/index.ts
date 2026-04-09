@@ -87,7 +87,6 @@ export type ProtocolTone = 'general' | 'protective' | 'competitive' | 'recovery'
 export interface ProtocolStep {
   label: string
   detail?: string
-  completed?: boolean
 }
 
 export interface GeneratedProtocol {

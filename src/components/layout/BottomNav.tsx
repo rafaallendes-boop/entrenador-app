@@ -18,7 +18,13 @@ export default function BottomNav() {
     <nav className="fixed bottom-0 left-0 right-0 z-40 px-2 pb-2 md:px-4">
       <div className="mx-auto w-full max-w-5xl rounded-t-2xl border border-surface-border bg-surface-card shadow-lg shadow-black/10 safe-bottom">
         <div className="px-3 pt-2 flex justify-end">
-          <SyncStatusBadge status={syncStatus} error={syncError} pendingOps={syncDetails.pendingOps} compact />
+          <SyncStatusBadge
+            status={syncStatus}
+            error={syncError}
+            pendingOps={syncDetails.pendingOps}
+            syncAttemptInFlight={syncDetails.syncAttemptInFlight}
+            compact
+          />
         </div>
         <div className="flex">
           {tabs.map(({ to, label, icon }) => (

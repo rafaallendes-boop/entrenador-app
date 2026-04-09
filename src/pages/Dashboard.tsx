@@ -16,6 +16,7 @@ import { startNotificationSync } from '../services/notifications'
 import { getAthleteFirstName, getProfileCompleteness } from '../utils/athlete'
 import { computeMacroPlan, getPrimaryGoalEvent } from '../services/macroPlan'
 import { buildMacroWeekCoherenceSummary } from '../services/macroWeekCoherence'
+import { buildActionAlerts, type ActionableAlert } from '../services/actionAlerts'
 
 const CoachMessageCard = lazy(() => import('../components/dashboard/CoachMessageCard'))
 const NextSessionCard = lazy(() => import('../components/dashboard/NextSessionCard'))
@@ -23,6 +24,7 @@ const NutritionFocusCard = lazy(() => import('../components/dashboard/NutritionF
 const DailyCheckInCard = lazy(() => import('../components/dashboard/DailyCheckInCard'))
 const InstallAppCard = lazy(() => import('../components/pwa/InstallAppCard'))
 const MacroPlanCard = lazy(() => import('../components/dashboard/MacroPlanCard'))
+const ActionAlertsCard = lazy(() => import('../components/dashboard/ActionAlertsCard'))
 
 export default function Dashboard() {
   const { sessions, dayLogs, currentWeekSummary, isLoading, loadWeek } = useTrainingStore()
@@ -34,6 +36,7 @@ export default function Dashboard() {
 
   const [loadAnalytics, setLoadAnalytics] = useState<LoadAnalytics | null>(null)
   const [isDeletingMacroPlan, setIsDeletingMacroPlan] = useState(false)
+  const [checkInExpandToken, setCheckInExpandToken] = useState(0)
 
   // Macro plan — computed on-the-fly from profile, not persisted as source of truth
   const macroPlan = useMemo(() => computeMacroPlan(athleteProfile), [athleteProfile])
@@ -82,6 +85,14 @@ export default function Dashboard() {
 
   const profileCompleteness = getProfileCompleteness(athleteProfile ?? null)
   const showProfileNudge = profileCompleteness.state === 'partial' || profileCompleteness.state === 'missing_sports'
+  const actionAlerts = useMemo(() => buildActionAlerts({
+    sessions,
+    currentWeekSummary,
+    todayDayLog: dayLogs[today],
+    macroWeekCoherence,
+    loadAnalytics,
+    today,
+  }), [sessions, currentWeekSummary, dayLogs, today, macroWeekCoherence, loadAnalytics])
 
   async function handleDeleteMacroPlan() {
     if (isDeletingMacroPlan || !macroPlan) return
@@ -101,6 +112,21 @@ export default function Dashboard() {
     } finally {
       setIsDeletingMacroPlan(false)
     }
+  }
+
+  function handleSelectAlert(alert: ActionableAlert) {
+    if (alert.target === 'chat') {
+      navigate(ROUTES.CHAT)
+      return
+    }
+
+    if (alert.target === 'week') {
+      navigate(ROUTES.WEEK)
+      return
+    }
+
+    setCheckInExpandToken((value) => value + 1)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   return (
@@ -147,6 +173,10 @@ export default function Dashboard() {
         <CoachMessageCard message={coachNote} />
       </Suspense>
 
+      <Suspense fallback={<CardSkeleton className="h-36" />}>
+        <ActionAlertsCard alerts={actionAlerts} onSelectAlert={handleSelectAlert} />
+      </Suspense>
+
       {macroPlan ? (
         <Suspense fallback={<CardSkeleton className="h-32" />}>
           <MacroPlanCard
@@ -182,7 +212,7 @@ export default function Dashboard() {
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)] xl:items-start">
         <div className="space-y-5 md:space-y-6">
           <Suspense fallback={<CardSkeleton className="h-32" />}>
-            <DailyCheckInCard todaySessions={todaySessions} />
+            <DailyCheckInCard todaySessions={todaySessions} autoExpandToken={checkInExpandToken} />
           </Suspense>
 
           <div className="bg-surface-card rounded-card border border-surface-border">

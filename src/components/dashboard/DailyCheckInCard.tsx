@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { CheckCircle2, ChevronDown, ChevronUp, Minus, X } from 'lucide-react'
 import { useTrainingStore } from '../../store/useTrainingStore'
 import type { DayLog, Session } from '../../types'
@@ -105,14 +105,21 @@ function DailyCheckInNotes({
 
 interface Props {
   todaySessions: Session[]
+  autoExpandToken?: number
 }
 
-export default function DailyCheckInCard({ todaySessions }: Props) {
+export default function DailyCheckInCard({ todaySessions, autoExpandToken = 0 }: Props) {
   const { dayLogs, saveDayLog, updateSession } = useTrainingStore()
   const today = todayISO()
   const dayLog = dayLogs[today]
 
   const [expanded, setExpanded] = useState(false)
+
+  useEffect(() => {
+    if (autoExpandToken > 0) {
+      setExpanded(true)
+    }
+  }, [autoExpandToken])
 
   const save = (patch: Parameters<typeof saveDayLog>[1]) => saveDayLog(today, patch)
 

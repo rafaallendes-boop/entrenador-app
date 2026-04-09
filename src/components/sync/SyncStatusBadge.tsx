@@ -5,13 +5,20 @@ interface SyncStatusBadgeProps {
   error: string | null
   compact?: boolean
   pendingOps?: number
+  syncAttemptInFlight?: boolean
 }
 
-export default function SyncStatusBadge({ status, error, compact = false, pendingOps = 0 }: SyncStatusBadgeProps) {
+export default function SyncStatusBadge({
+  status,
+  error,
+  compact = false,
+  pendingOps = 0,
+  syncAttemptInFlight = false,
+}: SyncStatusBadgeProps) {
   const iconSize = compact ? 11 : 12
   const labelClass = compact ? 'text-[10px]' : 'text-xs'
 
-  if (status === 'syncing') {
+  if (status === 'syncing' || syncAttemptInFlight) {
     return (
       <span className={`inline-flex items-center gap-1 text-brand-light ${labelClass}`}>
         <Cloud size={iconSize} className="animate-pulse" />
@@ -42,6 +49,15 @@ export default function SyncStatusBadge({ status, error, compact = false, pendin
           : pendingOps > 0
             ? `${pendingOps} pendiente${pendingOps === 1 ? '' : 's'} offline`
             : 'Sin conexion'}
+      </span>
+    )
+  }
+
+  if (pendingOps > 0) {
+    return (
+      <span className={`inline-flex items-center gap-1 text-amber-300 ${labelClass}`}>
+        <CloudOff size={iconSize} />
+        {compact ? `Pend ${pendingOps}` : `${pendingOps} pendiente${pendingOps === 1 ? '' : 's'}`}
       </span>
     )
   }

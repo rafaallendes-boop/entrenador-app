@@ -1,4 +1,4 @@
-import { Check, Clock, Flame, ChevronDown, ChevronUp, Trash2, Wind } from 'lucide-react'
+import { Clock, Flame, ChevronDown, ChevronUp, Trash2, Wind } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import type { Session, SessionStatus } from '../../types'
 import { SESSION_TYPE_CONFIG, SQUASH_SUBTYPE_LABELS } from '../../constants/sessionTypes'
@@ -30,7 +30,6 @@ interface SessionCardProps {
 export default function SessionCard({ session, compact = false, onDelete }: SessionCardProps) {
   const [expanded, setExpanded] = useState(false)
   const cycleStatus = useTrainingStore((s) => s.cycleSessionStatus)
-  const toggleProtocolStep = useTrainingStore((s) => s.toggleProtocolStep)
   const updateSession = useTrainingStore((s) => s.updateSession)
   const config = SESSION_TYPE_CONFIG[session.type]
   const statusCfg = STATUS_CONFIG[session.status]
@@ -278,27 +277,19 @@ export default function SessionCard({ session, compact = false, onDelete }: Sess
           {hasProtocols && (
             <div className="space-y-2">
               {warmup && (
-                <ProtocolChecklistCard
+                <ProtocolStaticCard
                   title="Warm-up"
                   accentClass="border-brand/20 bg-brand/5"
                   headingClass="text-brand-light/80"
-                  checkboxClass="border-brand/30 group-hover:border-brand/60 data-[completed=true]:border-brand data-[completed=true]:bg-brand"
-                  sessionId={session.id}
-                  type="warmup"
                   protocol={warmup}
-                  onToggle={toggleProtocolStep}
                 />
               )}
               {cooldown && (
-                <ProtocolChecklistCard
+                <ProtocolStaticCard
                   title="Post / cool-down"
                   accentClass="border-violet-500/20 bg-violet-500/5"
                   headingClass="text-violet-300/80"
-                  checkboxClass="border-violet-500/30 group-hover:border-violet-400/60 data-[completed=true]:border-violet-500 data-[completed=true]:bg-violet-500"
-                  sessionId={session.id}
-                  type="cooldown"
                   protocol={cooldown}
-                  onToggle={toggleProtocolStep}
                 />
               )}
             </div>
@@ -314,27 +305,19 @@ export default function SessionCard({ session, compact = false, onDelete }: Sess
   )
 }
 
-interface ProtocolChecklistCardProps {
+interface ProtocolStaticCardProps {
   title: string
   accentClass: string
   headingClass: string
-  checkboxClass: string
-  sessionId: string
-  type: 'warmup' | 'cooldown'
   protocol: NonNullable<Session['warmup']>
-  onToggle: (sessionId: string, type: 'warmup' | 'cooldown', stepIndex: number) => Promise<void>
 }
 
-function ProtocolChecklistCard({
+function ProtocolStaticCard({
   title,
   accentClass,
   headingClass,
-  checkboxClass,
-  sessionId,
-  type,
   protocol,
-  onToggle,
-}: ProtocolChecklistCardProps) {
+}: ProtocolStaticCardProps) {
   return (
     <div className={`rounded-lg border p-2 ${accentClass}`}>
       <div className="flex items-center justify-between">
@@ -345,26 +328,15 @@ function ProtocolChecklistCard({
       {protocol.note && <p className="mt-1 text-[11px] text-ink-faint">{protocol.note}</p>}
       <div className="mt-1.5 space-y-1">
         {protocol.steps.map((step, i) => (
-          <button
-            key={`${type}-${i}`}
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation()
-              void onToggle(sessionId, type, i)
-            }}
-            className="group flex w-full items-start gap-2 text-left"
-          >
-            <div
-              data-completed={step.completed ? 'true' : 'false'}
-              className={`mt-0.5 flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center rounded border transition-colors ${checkboxClass}`}
-            >
-              {step.completed && <Check size={9} className="text-white" />}
-            </div>
-            <span className={`text-[11px] leading-snug ${step.completed ? 'text-ink-faint line-through' : 'text-ink-faint'}`}>
+          <div key={`${title}-${i}`} className="flex items-start gap-2 text-left">
+            <span className="mt-0.5 w-4 flex-shrink-0 text-[11px] font-semibold text-ink-faint">
+              {i + 1}.
+            </span>
+            <span className="text-[11px] leading-snug text-ink-faint">
               {step.label}
               {step.detail ? ` — ${step.detail}` : ''}
             </span>
-          </button>
+          </div>
         ))}
       </div>
     </div>
