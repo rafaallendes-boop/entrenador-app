@@ -13,7 +13,7 @@ import { MockProvider } from './providers/MockProvider'
 import { GeminiProvider } from './providers/GeminiProvider'
 import { ProxyProvider } from './providers/ProxyProvider'
 
-export type CoachActionIntent = 'create_week' | 'modify_plan' | 'none'
+export type CoachActionIntent = 'create_week' | 'create_full_plan' | 'modify_plan' | 'none'
 
 function getConfiguredProviderName(): string {
   if (import.meta.env.PROD) {
@@ -55,8 +55,12 @@ export const CoachEngine = {
         role: message.role === 'coach' ? 'assistant' : 'user',
         content: message.content,
       })),
-      maxTokens: options?.maxTokens ?? (actionIntent === 'create_week' ? 8000 : actionIntent === 'modify_plan' ? 5000 : 4000),
-      temperature: options?.temperature ?? 0.7,
+      maxTokens: options?.maxTokens ?? (
+        actionIntent === 'create_full_plan' ? 14000 :
+        actionIntent === 'create_week' ? 8000 :
+        actionIntent === 'modify_plan' ? 5000 : 4000
+      ),
+      temperature: options?.temperature ?? (actionIntent === 'create_full_plan' ? 0.4 : 0.7),
       onChunk: options?.onChunk,
     }
 
@@ -151,6 +155,13 @@ export function inferCoachActionIntent(userMessage: string): CoachActionIntent {
   if (!normalized) return 'none'
 
   if (
+    /\b(plan\s+completo|todas\s+las\s+semanas|plan\s+hasta|semanas\s+hasta|completo\s+hasta|completo\s+para\s+\d+\s+semanas)\b/.test(normalized) ||
+    (/\b(plan|crea(?:r|me)?)\b/.test(normalized) && /\buna\s+acción\s+create_week\s+por\s+semana\b/.test(normalized))
+  ) {
+    return 'create_full_plan'
+  }
+
+  if (
     /\b(crea(?:r|me)?|haz(?:me)?|arma(?:me)?|genera(?:r)?|planifica(?:r)?|propuesta)\b/.test(normalized) &&
     /\b(semana|plan|microciclo)\b/.test(normalized)
   ) {
@@ -170,6 +181,8 @@ export function inferCoachActionIntent(userMessage: string): CoachActionIntent {
 export function shouldRetry(response: CoachNormalizedResponse, actionIntent: CoachActionIntent): boolean {
   if (response.meta?.actionParseFailed || response.meta?.likelyTruncated) return true
   if (actionIntent !== 'none' && (!response.actions || response.actions.length === 0)) return true
+  // For full plan, also retry if fewer create_week actions than expected (at least 2)
+  if (actionIntent === 'create_full_plan' && response.actions && response.actions.filter((a) => a.type === 'create_week').length < 2) return true
   return false
 }
 

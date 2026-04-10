@@ -158,6 +158,45 @@ function isLikelyOfflineError(error: unknown): boolean {
   )
 }
 
+/**
+ * Detecta errores NON-RETRIABLE: tablas inexistentes, schema incorrecto,
+ * errores de auth/RLS o configuración de Supabase.
+ * En estos casos no tiene sentido encolar ni reintentar — se descartan silenciosamente.
+ */
+function isInfrastructureError(error: unknown): boolean {
+  const obj = error as Record<string, unknown> | null
+  if (!obj) return false
+
+  // PostgreSQL error code 42P01 = undefined_table
+  if (typeof obj.code === 'string' && obj.code === '42P01') return true
+
+  // Supabase PostgREST errors (PGRST*) — incluye tabla no encontrada, schema inválido, etc.
+  if (typeof obj.code === 'string' && obj.code.startsWith('PGRST')) return true
+
+  // HTTP 4xx de Supabase que no son recuperables
+  const statusCode = typeof obj.status === 'number' ? obj.status : null
+  if (statusCode === 401 || statusCode === 403 || statusCode === 404) return true
+
+  const message = (
+    (error instanceof Error ? error.message : '') +
+    (typeof obj.message === 'string' ? obj.message : '') +
+    (typeof obj.details === 'string' ? obj.details : '') +
+    (typeof obj.hint === 'string' ? obj.hint : '')
+  ).toLowerCase()
+
+  return (
+    (message.includes('relation') && message.includes('does not exist')) ||
+    message.includes('undefined_table') ||
+    (message.includes('schema') && message.includes('not found')) ||
+    message.includes('invalid api key') ||
+    message.includes('jwt') ||
+    message.includes('anon key') ||
+    message.includes('not authorized') ||
+    (message.includes('permission') && message.includes('denied')) ||
+    message.includes('does not have permission')
+  )
+}
+
 function getSyncErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof Error && error.message.trim()) return error.message
   return fallback
@@ -165,14 +204,21 @@ function getSyncErrorMessage(error: unknown, fallback: string): string {
 
 function applySyncFailure(error: unknown, fallbackMessage: string): void {
   const message = getSyncErrorMessage(error, fallbackMessage)
-  const status = isLikelyOfflineError(error) ? 'offline' : 'error'
+  // Errores de infraestructura (tabla inexistente, schema incorrecto) no indican
+  // un problema de red: mostrar 'idle' silencioso en vez de 'error' para no spamear
+  // el UI con una nube roja que el usuario no puede resolver.
+  const status = isInfrastructureError(error)
+    ? 'idle'
+    : isLikelyOfflineError(error)
+      ? 'offline'
+      : 'error'
 
-  syncStoreState().setSyncStatus(status, message)
+  syncStoreState().setSyncStatus(status, status === 'idle' ? undefined : message)
   syncStoreState().setSyncDetails({
     syncAttemptInFlight: false,
     pendingOps: loadQueue().length,
-    lastErrorAt: Date.now(),
-    lastErrorMessage: message,
+    lastErrorAt: status !== 'idle' ? Date.now() : null,
+    lastErrorMessage: status !== 'idle' ? message : null,
   })
 }
 
@@ -230,6 +276,12 @@ async function drainQueue(): Promise<boolean> {
         }
       }
     } catch (error) {
+      if (isInfrastructureError(error)) {
+        // Tabla inexistente u otro error de schema: descartar la op silenciosamente.
+        // No tiene sentido re-encolar — seguirá fallando hasta que la infra esté lista.
+        console.warn('[sync] discarding op due to infrastructure error:', op.table, error)
+        continue
+      }
       const fallback =
         op.table === 'athlete_profiles'
           ? classifyAthleteProfileSyncError(error)
@@ -272,6 +324,20 @@ if (typeof window !== 'undefined') {
   })
 }
 
+/**
+ * Elimina de la cola local todas las ops que llevan más de `maxAgeMs` sin poderse enviar.
+ * Evita que errores de infraestructura acumulen una cola que nunca se vacía.
+ */
+export function pruneStaleQueue(userId: string, maxAgeMs = 7 * 24 * 60 * 60 * 1000): void {
+  const now = Date.now()
+  const queue = loadQueue()
+  const pruned = queue.filter((op) => op.userId !== userId || now - op.enqueuedAt < maxAgeMs)
+  if (pruned.length !== queue.length) {
+    console.info(`[sync] pruned ${queue.length - pruned.length} stale ops from queue`)
+    saveQueue(pruned)
+  }
+}
+
 export { drainQueue }
 
 async function upsertRow(table: SupabaseTable, row: Record<string, unknown>): Promise<void> {
@@ -305,6 +371,11 @@ async function upsertRow(table: SupabaseTable, row: Record<string, unknown>): Pr
       finishSyncAttempt('idle')
     }
   } catch (error) {
+    if (isInfrastructureError(error)) {
+      console.warn('[sync] upsertRow infrastructure error, skipping queue:', table, error)
+      finishSyncAttempt('idle')
+      return
+    }
     const fallback =
       table === 'athlete_profiles'
         ? classifyAthleteProfileSyncError(error)
@@ -343,6 +414,11 @@ async function deleteRow(table: SupabaseTable, id: string): Promise<void> {
       finishSyncAttempt('idle')
     }
   } catch (error) {
+    if (isInfrastructureError(error)) {
+      console.warn('[sync] deleteRow infrastructure error, skipping queue:', table, error)
+      finishSyncAttempt('idle')
+      return
+    }
     if (table === 'sessions') rememberSessionDeleteTombstone(userId, id)
     enqueue({ userId, table, action: 'delete', payload: { id, userId }, enqueuedAt: Date.now() })
     applySyncFailure(error, `No se pudo eliminar en sync ${table}.`)
@@ -707,6 +783,7 @@ export async function pullAll(userId: string): Promise<void> {
   try {
     await repairLocalNaturalKeyConflicts()
     pruneExpiredTombstones(userId)
+    pruneStaleQueue(userId)
 
     const queueDrained = await drainQueue()
     const mergeContext: MergeContext = {
@@ -733,6 +810,12 @@ export async function pullAll(userId: string): Promise<void> {
       ...(queueDrained ? {} : { lastErrorMessage: 'Quedaron operaciones pendientes en cola.' }),
     })
   } catch (error) {
+    if (isInfrastructureError(error)) {
+      console.warn('[sync] pullAll infrastructure error (tables not ready), skipping:', error)
+      setSyncStatus('idle')
+      setSyncDetails({ syncAttemptInFlight: false, pendingOps: 0 })
+      return
+    }
     console.error('[sync] pullAll error:', error)
     applySyncFailure(error, 'Error de sincronizacion')
   }

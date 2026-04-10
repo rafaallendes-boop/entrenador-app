@@ -10,7 +10,10 @@ import { getAthleteFirstName } from '../utils/athlete'
 const WEEK_OPTIONS = [
   { value: 'esta', label: 'Esta semana' },
   { value: 'proxima', label: 'Próxima semana' },
+  { value: 'completo', label: 'Plan completo' },
 ] as const
+
+const MAX_PLAN_WEEKS = 12
 
 const FOCUS_OPTIONS = [
   { value: 'balance', label: 'Balance general' },
@@ -30,15 +33,38 @@ export default function PlanBuilderPage() {
   const [focus, setFocus] = useState<(typeof FOCUS_OPTIONS)[number]['value']>('balance')
   const [notes, setNotes] = useState('')
 
+  const weeksToEvent = useMemo(() => {
+    if (!goalEvent) return null
+    const today = new Date()
+    const eventDate = new Date(goalEvent.date)
+    const msPerWeek = 7 * 24 * 60 * 60 * 1000
+    return Math.max(1, Math.ceil((eventDate.getTime() - today.getTime()) / msPerWeek))
+  }, [goalEvent])
+
+  const planWeeksCount = useMemo(() => {
+    if (weekTarget !== 'completo') return null
+    return Math.min(weeksToEvent ?? 8, MAX_PLAN_WEEKS)
+  }, [weekTarget, weeksToEvent])
+
+  const cappedAt12 = weeksToEvent != null && weeksToEvent > MAX_PLAN_WEEKS
+
   const prompt = useMemo(() => {
-    const weekText = weekTarget === 'esta' ? 'esta semana' : 'la próxima semana'
     const focusText = FOCUS_OPTIONS.find((item) => item.value === focus)?.label.toLowerCase() ?? 'balance general'
     const sportsText = enabledSports.length > 0 ? enabledSports.join(', ') : 'mi perfil actual'
-    const eventText = goalEvent ? ` Considera como evento principal ${goalEvent.title} el ${goalEvent.date}.` : ''
-    const notesText = notes.trim() ? ` Notas extra: ${notes.trim()}.` : ''
+    const notesText = notes.trim() ? ` Notas: ${notes.trim()}.` : ''
 
+    if (weekTarget === 'completo') {
+      const count = planWeeksCount ?? 8
+      const weekStarts = buildWeekStartDates(count)
+      const weekSchedule = weekStarts.map((date, i) => `Semana ${i + 1}: lunes ${date}`).join(' | ')
+      const eventText = goalEvent ? ` preparando para ${goalEvent.title} el ${goalEvent.date}` : ''
+      return `Créame un plan de entrenamiento completo para ${count} semanas${eventText}. Genera UNA acción create_week por semana (${count} acciones en total). Semanas: ${weekSchedule}. Foco general: ${focusText}. Deportes: ${sportsText}. Sesiones compactas — omite warmup/cooldown, el sistema los genera. 4-6 sesiones por semana.${notesText}`
+    }
+
+    const weekText = weekTarget === 'esta' ? 'esta semana' : 'la próxima semana'
+    const eventText = goalEvent ? ` Considera como evento principal ${goalEvent.title} el ${goalEvent.date}.` : ''
     return `Créame un plan de entrenamiento para ${weekText}. Prioriza ${focusText}. Usa mis deportes activos (${sportsText}) y mi perfil del atleta.${eventText}${notesText}`
-  }, [enabledSports, focus, goalEvent, notes, weekTarget])
+  }, [enabledSports, focus, goalEvent, notes, planWeeksCount, weekTarget])
 
   return (
     <div className="px-4 pt-12 pb-8 space-y-5 md:px-6 md:space-y-6">
@@ -73,6 +99,19 @@ export default function PlanBuilderPage() {
               </button>
             ))}
           </div>
+          {weekTarget === 'completo' && (
+            <div className="mt-2 rounded-lg border border-surface-border bg-surface-raised px-3 py-2 text-xs text-ink-muted">
+              {planWeeksCount != null && (
+                <span>Se generarán <strong className="text-ink">{planWeeksCount} semanas</strong> de sesiones.</span>
+              )}
+              {!goalEvent && (
+                <span> Sin evento configurado: se usarán 8 semanas por defecto.</span>
+              )}
+              {cappedAt12 && (
+                <span> Tu evento está a {weeksToEvent} semanas — se limita a {MAX_PLAN_WEEKS} para optimizar la respuesta del coach. Podés extender más adelante.</span>
+              )}
+            </div>
+          )}
         </Field>
 
         <Field label="Foco principal">
@@ -142,4 +181,18 @@ function choiceCls(active: boolean): string {
       ? 'border-brand/40 bg-brand/15 text-brand-light'
       : 'border-surface-border bg-surface-raised text-ink-muted hover:border-brand/30 hover:text-ink'
   }`
+}
+
+function buildWeekStartDates(count: number): string[] {
+  const today = new Date()
+  const dayOfWeek = today.getDay()
+  const daysToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek
+  const monday = new Date(today)
+  monday.setDate(today.getDate() + daysToMonday)
+  monday.setHours(0, 0, 0, 0)
+  return Array.from({ length: count }, (_, i) => {
+    const ws = new Date(monday)
+    ws.setDate(monday.getDate() + i * 7)
+    return ws.toISOString().split('T')[0]
+  })
 }

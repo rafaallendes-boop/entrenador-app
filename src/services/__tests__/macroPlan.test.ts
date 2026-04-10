@@ -124,7 +124,7 @@ describe('macroPlan', () => {
   it('formats display helpers correctly', () => {
     expect(getPhaseLabel('build')).toBe('Construcción')
     expect(formatWeeksRemaining(-1)).toBe('Evento pasado')
-    expect(formatWeeksRemaining(0)).toBe('Esta semana')
+    expect(formatWeeksRemaining(0)).toBe('Semana Competencia')
     expect(formatWeeksRemaining(1)).toBe('1 semana')
     expect(formatWeeksRemaining(3)).toBe('3 semanas')
   })
