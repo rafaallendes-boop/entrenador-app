@@ -110,7 +110,7 @@ function buildAcwrAlerts(loadAnalytics: LoadAnalytics | null | undefined): Actio
       severity: 'low',
       title: `${SPORT_LABELS[leadDetrain.sport]} quedo corto esta semana`,
       body: describeAcwrUndertrained(leadDetrain),
-      recommendation: 'Si el bloque pide progresion, agrega una sesion util o recupera una calidad perdida.',
+      recommendation: 'Si el bloque pide progresión, agrega una sesión útil o recupera una calidad perdida.',
       ctaLabel: 'Ver semana',
       target: 'week',
     })
@@ -145,7 +145,7 @@ function buildRecoveryAlert(
     return {
       id: 'recovery-checkin-strain',
       severity: 'medium',
-      title: 'Hoy hubo una sesion pesada',
+      title: 'Hoy hubo una sesión pesada',
       body: 'Marcaste sensaciones bajas dentro de la sesion y conviene cerrar el contexto del dia.',
       recommendation: 'Completa el check-in y deja una nota corta para que el coach ajuste mejor la siguiente carga.',
       ctaLabel: 'Completar check-in',
@@ -157,11 +157,11 @@ function buildRecoveryAlert(
     return {
       id: 'recovery-checkin-missing',
       severity: 'medium',
-      title: 'Te falta cerrar el dia',
+      title: 'Te falta cerrar el día',
       body: pendingFeedbackCount > 0
         ? `Hay ${pendingFeedbackCount} sesion${pendingFeedbackCount === 1 ? '' : 'es'} completada${pendingFeedbackCount === 1 ? '' : 's'} sin feedback.`
         : 'Aun faltan tus sensaciones del dia para calibrar la semana.',
-      recommendation: 'Registra energia, sueno y feedback de sesion para que el coach no trabaje a ciegas.',
+      recommendation: 'Registra energia, sueño y feedback de sesión para que el coach no trabaje a ciegas.',
       ctaLabel: 'Abrir check-in',
       target: 'checkin',
     }

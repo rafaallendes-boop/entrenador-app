@@ -279,7 +279,7 @@ export const SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
   },
   {
     id: 'practice_match_best_of_3',
-    name: 'Sets cortos de presion al mejor de 3 games',
+    name: 'Partido de entrenamiento al mejor de 3 games',
     category: 'match',
     focus: ['match_play', 'pressure', 'competitive_rhythm'],
     intensity: 'moderate',
