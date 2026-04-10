@@ -117,7 +117,12 @@ export default function Dashboard() {
 
   async function handleOpenAutoAdjustment() {
     if (!autoAdjustmentDraft) return
-    const proposal = await addProposal(autoAdjustmentDraft.message, autoAdjustmentDraft.actions)
+    const proposal = await addProposal(
+      autoAdjustmentDraft.message,
+      autoAdjustmentDraft.actions,
+      undefined,
+      { source: 'dashboard_auto_adjustment', relatedAlertId: autoAdjustmentDraft.alertId },
+    )
     setActiveProposal(proposal)
   }
 

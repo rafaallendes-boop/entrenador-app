@@ -2,7 +2,7 @@
  * Shared helpers used across per-sport prompt modules.
  */
 
-import type { ChatContext, Session } from '../../../types'
+import type { ChatContext, Session, SupportedSport } from '../../../types'
 import { isCompetitionSquashMatch } from '../../../utils/squash'
 import { todayISO } from '../../../utils/date'
 import { computeMacroPlan } from '../../macroPlan'
@@ -95,6 +95,10 @@ export function findNextCompetitiveSession(
 
 export function getMacroPlan(context: ChatContext) {
   return computeMacroPlan(context.athleteProfile)
+}
+
+export function getMacroPlanSportDetail(context: ChatContext, sport: SupportedSport) {
+  return getMacroPlan(context)?.sportDetails.find((detail) => detail.sport === sport)
 }
 
 // ─── Date / formatting helpers ──────────────────────────────────────────────

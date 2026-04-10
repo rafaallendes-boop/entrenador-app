@@ -112,7 +112,7 @@ describe('drillSelector progression', () => {
       selection.drills.some((drill) =>
         [
           'Partido de entrenamiento libre a 5 games',
-          'Sets cortos de presion al mejor de 3 games',
+          'Partido de entrenamiento al mejor de 3 games',
           'Partido con foco de ataque en puntos cortos',
         ].includes(drill.name),
       ),

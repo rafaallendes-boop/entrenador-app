@@ -16,6 +16,7 @@ import {
   deriveFatigueLevel,
   getHistoricalSessions,
   getMacroPlan,
+  getMacroPlanSportDetail,
 } from './shared'
 
 // ─── Phase mapping ──────────────────────────────────────────────────────────
@@ -133,12 +134,16 @@ export function buildDynamicMobilitySelectionSection(
   if (!summary) return ''
 
   const { selection, selectionContext } = summary
+  const sportDetail = getMacroPlanSportDetail(context, 'mobility')
   const lines: string[] = ['SESIÓN SUGERIDA – MOVILIDAD']
 
   lines.push(`Deporte principal: ${selectionContext.primarySport} · fase ${selectionContext.phase}`)
   lines.push(`Sesión sugerida: ${selection.session.name} (${selection.session.typicalDuration})`)
   lines.push(`Foco: ${selection.session.focus.join(', ')}`)
   lines.push(`Estructura: ${selection.session.typicalStructure}`)
+  if (sportDetail) {
+    lines.push(`Macroplan mobility: ${sportDetail.weeklyIntent} · volumen ${sportDetail.volumeBias} · intensidad ${sportDetail.intensityBias}`)
+  }
   lines.push(`Justificación: ${selection.rationale}`)
   lines.push(`Resumen: ${summarizeMobilitySelection(selection)}`)
   lines.push('La movilidad no genera fatiga recuperable — puede ir cualquier día. Prioriza las articulaciones más trabajadas del bloque actual.')

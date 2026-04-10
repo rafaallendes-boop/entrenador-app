@@ -1328,10 +1328,10 @@ Para CREAR una semana completa:
   create_week — campos: sessions (array con detalles útiles y válidos), weekObjectives (array de strings), reason
 
 Para AGREGAR una sesión individual:
-  add_session — campos: targetDate, timeBlock, sessionType, title, durationMin, rpe?, objective?, subtype?${hasRunning || hasCycling ? ', runningType?, targetPaceMin?, targetPaceMax?, targetHrMin?, targetHrMax?, intervalStructure?' : ''}${hasStrength ? ', exercises?' : ', exercises?'} , warmup?, cooldown?, reason
+  add_session — campos: targetDate, timeBlock, sessionType, title, durationMin, rpe?, objective?, subtype?${hasRunning || hasCycling ? ', runningType?, targetPaceMin?, targetPaceMax?, targetHrMin?, targetHrMax?, intervalStructure?' : ''}${hasStrength ? ', exercises?' : ', exercises?'} , cyclingDetails?, mobilityDetails?, warmup?, cooldown?, reason
 
 Para ACTUALIZAR sesión existente (tipo, detalles, ejercicios, título, objetivo, RPE, duración):
-  update_session — campos: sessionId, reason + uno o más de: newType, subtype, newTitle, newObjective, newRpe, newDurationMin${hasRunning || hasCycling ? ', runningType, targetPaceMin, targetPaceMax, targetHrMin, targetHrMax, intervalStructure' : ''}, squashDetails, exercises (array completo — reemplaza todo)
+  update_session — campos: sessionId, reason + uno o más de: newType, subtype, newTitle, newObjective, newRpe, newDurationMin${hasRunning || hasCycling ? ', runningType, targetPaceMin, targetPaceMax, targetHrMin, targetHrMax, intervalStructure' : ''}, cyclingDetails, mobilityDetails, squashDetails, exercises (array completo — reemplaza todo)
 
 Para otras modificaciones (requieren sessionId):
   skip_session        — sessionId, reason
@@ -1399,6 +1399,7 @@ Warmup y cooldown (opcionales):
   cooldown: {"title":"...","durationMin":7,"note":"...","tone":"recovery","steps":[{"label":"..."},...],"source":"base"}
 Si los omites, el sistema genera protocolos base automáticamente.
 Para create_week, prioriza primero sesiones válidas y compactas; no gastes tokens en warmup/cooldown si no son necesarios.
+Cuando la sesión sea cycling o mobility, NO omitas cyclingDetails o mobilityDetails aunque la propuesta sea compacta.
 
 ═══ FORMATO DE RESPUESTA ═══
 
@@ -1420,11 +1421,11 @@ ${(() => {
   "weekObjectives":["desarrollar fuerza upper + lower","movilidad complementaria","recuperación activa"],
   "sessions":[
     {"date":"${addDaysToISO(weekStart, 0)}","timeBlock":"PM","sessionType":"strength","title":"Fuerza principal A","durationMin":60,"rpe":7,"objective":"${strengthPrimarySelection.focus}","exercises":[${strengthPrimaryExercisesJson}]},
-    {"date":"${addDaysToISO(weekStart, 1)}","timeBlock":"AM","sessionType":"mobility","title":"Movilidad","durationMin":30,"rpe":4,"objective":"cadera, tobillo y columna"},
+    {"date":"${addDaysToISO(weekStart, 1)}","timeBlock":"AM","sessionType":"mobility","title":"Movilidad post-fuerza","durationMin":30,"rpe":4,"objective":"cadera, tobillo y columna","mobilityDetails":{"context":"post_strength","focusAreas":["hip","ankle_foot","full_body"],"targetStructure":"10-15min de reset post-fuerza + bloques suaves de rango.","executionNotes":"Usar como descarga complementaria del bloque de fuerza."}},
     {"date":"${addDaysToISO(weekStart, 2)}","timeBlock":"PM","sessionType":"strength","title":"Fuerza principal B","durationMin":60,"rpe":7,"objective":"${strengthPrimaryFollowUpSelection.focus}","exercises":[${strengthPrimaryFollowUpExercisesJson}]},
     {"date":"${addDaysToISO(weekStart, 3)}","timeBlock":"AM","sessionType":"recovery","title":"Recuperación activa","durationMin":25,"rpe":3,"objective":"recuperación y circulación"},
     {"date":"${addDaysToISO(weekStart, 4)}","timeBlock":"PM","sessionType":"strength","title":"Fuerza full body estructurada","durationMin":50,"rpe":6,"objective":"${strengthBaseSelection.focus}","exercises":[${strengthBaseExercisesJson}]},
-    {"date":"${addDaysToISO(weekStart, 5)}","timeBlock":"AM","sessionType":"mobility","title":"Movilidad","durationMin":30,"rpe":4,"objective":"movilidad general — cadera, hombro y columna"}
+    {"date":"${addDaysToISO(weekStart, 5)}","timeBlock":"AM","sessionType":"mobility","title":"Movilidad full body","durationMin":30,"rpe":4,"objective":"movilidad general — cadera, hombro y columna","mobilityDetails":{"context":"full_body","focusAreas":["hip","shoulder_thoracic","full_body"],"targetStructure":"15-20min de flujo full body con foco en cadera, hombro y columna.","executionNotes":"Mantener disponibilidad articular sin fatiga extra."}}
   ],
   "reason":"semana base fuerza — upper lunes, lower miércoles, full body viernes, con movilidad complementaria"}]
 </actions>`
@@ -1604,6 +1605,14 @@ function buildCyclingMobilityActionSchemaAddendum(promptContext: ResponsePromptC
       '  executionNotes: "nota corta de uso o dosificacion"',
       '}',
       'Si propones movilidad, el titulo y el objetivo deben reflejar foco anatomico o contexto real; no uses solo "Movilidad".',
+    )
+  }
+
+  if (promptContext.hasCycling || promptContext.hasMobility) {
+    sections.push(
+      'Ejemplos compactos válidos:',
+      '  cycling -> {"sessionType":"cycling","title":"Ciclismo Z2","runningType":"z2","cyclingDetails":{"sessionCategory":"support aerobic","sessionFamily":"z2_aerobic","targetStructure":"Rodaje Z2 continuo con cadencia estable.","intensityReference":"moderate","executionNotes":"Soporte aerobico sin interferir con el deporte principal."}}',
+      '  mobility -> {"sessionType":"mobility","title":"Movilidad post-cycling","mobilityDetails":{"context":"post_cycling","focusAreas":["hip","ankle_foot"],"targetStructure":"10-15min post sesion con movilidad activa y reset articular.","executionNotes":"Usar como descarga corta y especifica."}}',
     )
   }
 

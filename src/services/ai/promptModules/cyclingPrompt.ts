@@ -20,6 +20,7 @@ import {
   diffDays,
   getHistoricalSessions,
   getMacroPlan,
+  getMacroPlanSportDetail,
   getNextGoalEventForSport,
   addDaysToISO,
 } from './shared'
@@ -133,6 +134,7 @@ export function buildDynamicCyclingSelectionSection(
   if (!summary) return ''
 
   const { selection, selectionContext } = summary
+  const sportDetail = getMacroPlanSportDetail(context, 'cycling')
   const lines: string[] = ['SESIÓN SUGERIDA – CICLISMO']
 
   lines.push(`Perfil: ${selectionContext.sportProfile} · rol ${selectionContext.role}`)
@@ -143,6 +145,9 @@ export function buildDynamicCyclingSelectionSection(
     }`,
   )
   lines.push(`Continuidad: ${summarizeCyclingProgression(selectionContext)}`)
+  if (sportDetail) {
+    lines.push(`Macroplan cycling: ${sportDetail.weeklyIntent} · volumen ${sportDetail.volumeBias} · intensidad ${sportDetail.intensityBias}`)
+  }
   lines.push(`Sesión sugerida: ${selection.session.name} — ${selection.session.structure} — intensidad ${selection.session.intensity}`)
   if (selection.session.notes) lines.push(`Nota: ${selection.session.notes}`)
   lines.push('Si ciclismo es deporte principal, esta selección manda como sesión real con continuidad y progresión.')

@@ -1,5 +1,5 @@
 ﻿import { CheckCircle2, X, Zap } from 'lucide-react'
-import type { CoachProposal, GeneratedProtocol, Session } from '../../types'
+import type { CoachProposal, CyclingDetails, GeneratedProtocol, MobilityDetails, Session } from '../../types'
 
 const ACTION_LABEL: Record<string, string> = {
   skip_session: 'Saltar sesion',
@@ -82,6 +82,22 @@ export default function ProposalDrawer({
         <div className="px-4 py-4 space-y-4">
           {compactMessage && (
             <p className="text-xs text-ink-muted leading-relaxed">{compactMessage}</p>
+          )}
+
+          {proposal.metadata && (
+            <div className="flex flex-wrap gap-2">
+              <span className="rounded-full border border-surface-border bg-surface-raised px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-ink-faint">
+                {formatProposalSource(proposal.metadata.source)}
+              </span>
+              <span className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide ${getQualityBadgeClass(proposal.metadata.quality)}`}>
+                {formatProposalQuality(proposal.metadata.quality)}
+              </span>
+              {proposal.metadata.relatedAlertId && (
+                <span className="rounded-full border border-amber-500/20 bg-amber-500/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-amber-300">
+                  {proposal.metadata.relatedAlertId}
+                </span>
+              )}
+            </div>
           )}
 
           {collisions.length > 0 && (
@@ -220,6 +236,8 @@ function renderProposalDetails(
     targetHrMin?: number
     targetHrMax?: number
     exercises?: Array<{ name: string; sets: number; reps: number | string; weight?: number }>
+    cyclingDetails?: CyclingDetails
+    mobilityDetails?: MobilityDetails
     squashDetails?: { trainingFocus: string; drills: Array<{ name: string; durationMin?: number; notes?: string }> }
     warmup?: GeneratedProtocol
     cooldown?: GeneratedProtocol
@@ -266,6 +284,35 @@ function renderProposalDetails(
         </div>
       )}
 
+      {item.cyclingDetails && (
+        <div className={`${indentClassName} mt-1 rounded-lg border border-sky-500/20 bg-sky-500/5 px-2.5 py-2`}>
+          <p className="text-[10px] text-sky-300/80 uppercase tracking-wide">Cycling</p>
+          <p className="mt-1 text-[10px] text-ink-faint">
+            {item.cyclingDetails.sessionCategory}
+            {item.cyclingDetails.sessionFamily ? ` · ${item.cyclingDetails.sessionFamily}` : ''}
+            {item.cyclingDetails.intensityReference ? ` · ${item.cyclingDetails.intensityReference}` : ''}
+          </p>
+          <p className="text-[10px] text-ink-faint/85">{item.cyclingDetails.targetStructure}</p>
+          {item.cyclingDetails.executionNotes && (
+            <p className="text-[10px] text-ink-faint/70">{item.cyclingDetails.executionNotes}</p>
+          )}
+        </div>
+      )}
+
+      {item.mobilityDetails && (
+        <div className={`${indentClassName} mt-1 rounded-lg border border-pink-500/20 bg-pink-500/5 px-2.5 py-2`}>
+          <p className="text-[10px] text-pink-300/80 uppercase tracking-wide">Mobility</p>
+          <p className="mt-1 text-[10px] text-ink-faint">
+            {formatMobilityContext(item.mobilityDetails.context)}
+            {item.mobilityDetails.focusAreas.length > 0 ? ` · ${item.mobilityDetails.focusAreas.join(', ')}` : ''}
+          </p>
+          <p className="text-[10px] text-ink-faint/85">{item.mobilityDetails.targetStructure}</p>
+          {item.mobilityDetails.executionNotes && (
+            <p className="text-[10px] text-ink-faint/70">{item.mobilityDetails.executionNotes}</p>
+          )}
+        </div>
+      )}
+
       {item.exercises && item.exercises.length > 0 && (
         <div className={`${indentClassName} mt-1`}>
           <p className="text-[10px] text-ink-faint/60 uppercase tracking-wide">Ejercicios ({item.exercises.length})</p>
@@ -307,5 +354,63 @@ function renderProposalDetails(
       )}
     </>
   )
+}
+
+function formatProposalSource(source: NonNullable<CoachProposal['metadata']>['source']): string {
+  switch (source) {
+    case 'dashboard_auto_adjustment':
+      return 'auto ajuste dashboard'
+    case 'weekly_action':
+      return 'weekly action'
+    default:
+      return 'chat'
+  }
+}
+
+function formatProposalQuality(quality: NonNullable<CoachProposal['metadata']>['quality']): string {
+  switch (quality) {
+    case 'detailed':
+      return 'detalle explicito'
+    case 'generic_fallback':
+      return 'fallback generico'
+    case 'mixed':
+      return 'detalle mixto'
+    default:
+      return 'sin tracking'
+  }
+}
+
+function getQualityBadgeClass(quality: NonNullable<CoachProposal['metadata']>['quality']): string {
+  switch (quality) {
+    case 'detailed':
+      return 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300'
+    case 'generic_fallback':
+      return 'border-amber-500/20 bg-amber-500/10 text-amber-300'
+    case 'mixed':
+      return 'border-sky-500/20 bg-sky-500/10 text-sky-300'
+    default:
+      return 'border-surface-border bg-surface-raised text-ink-faint'
+  }
+}
+
+function formatMobilityContext(context: MobilityDetails['context']): string {
+  switch (context) {
+    case 'post_cycling':
+      return 'post-cycling'
+    case 'post_run':
+      return 'post-running'
+    case 'post_squash':
+      return 'post-squash'
+    case 'post_strength':
+      return 'post-fuerza'
+    case 'pre_training_activation':
+      return 'activacion'
+    case 'recovery':
+      return 'recuperacion'
+    case 'full_body':
+      return 'full body'
+    default:
+      return 'sport specific'
+  }
 }
 

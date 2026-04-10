@@ -657,6 +657,27 @@ export interface CoachAction {
   cooldown?: GeneratedProtocol
 }
 
+export type CoachProposalSource = 'chat' | 'dashboard_auto_adjustment' | 'weekly_action'
+export type CoachProposalSpecificity = 'detailed' | 'generic_fallback'
+export type CoachProposalQuality = 'none' | 'detailed' | 'mixed' | 'generic_fallback'
+
+export interface CoachProposalSportInsight {
+  sport: 'cycling' | 'mobility'
+  actionCount: number
+  hasExplicitDetails: boolean
+  specificity: CoachProposalSpecificity
+}
+
+export interface CoachProposalMetadata {
+  source: CoachProposalSource
+  sports: SupportedSport[]
+  sportInsights: CoachProposalSportInsight[]
+  genericFallbackSports: Array<'cycling' | 'mobility'>
+  quality: CoachProposalQuality
+  resolutionOutcome: 'pending' | 'accepted' | 'rejected' | 'partial'
+  relatedAlertId?: string
+}
+
 export type PlanValidationStatus = 'ok' | 'warning'
 export type WeeklyPlanIntent = 'progress' | 'hold' | 'rotate' | 'deload' | 'unknown'
 export type PhaseSportTargetRole = 'primary' | 'support' | 'excluded'
@@ -692,6 +713,7 @@ export interface CoachProposal {
   message: string          // human-readable summary of the proposal
   actions: CoachAction[]
   planSummary?: PlanGenerationSummary
+  metadata?: CoachProposalMetadata
   status: 'pending' | 'accepted' | 'rejected' | 'partial'
   createdAt: number
   resolvedAt?: number

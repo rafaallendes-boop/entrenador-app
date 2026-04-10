@@ -1,9 +1,10 @@
 import { create } from 'zustand'
-import type { AthleteProfile, CoachAction, CoachProposal, Session } from '../types'
+import type { AthleteProfile, CoachAction, CoachProposal, CoachProposalSource, Session } from '../types'
 import { db } from '../db/db'
 import { recalculateWeekSummary, upsertWeekSummary } from '../db/queries'
 import { buildPlanGenerationSummary } from '../services/planGenerationSummary'
 import { filterCoachSessionsToAllowedSports, isSessionTypeAllowedForPlan, sanitizeCoachActionsForPlan } from '../services/planningConstraints'
+import { normalizeCoachProposal } from '../services/coachProposalMetadata'
 import * as syncService from '../services/syncService'
 import { ensureSessionProtocols, generateDefaultProtocols } from '../services/trainingProtocols'
 import { toISO, fromISO, getWeekStart } from '../utils/date'
@@ -25,7 +26,12 @@ interface AcceptProposalResult {
 interface CoachActionsState {
   proposals: CoachProposal[]
   loadProposals: () => Promise<void>
-  addProposal: (message: string, actions: CoachAction[], chatMessageId?: string) => Promise<CoachProposal>
+  addProposal: (
+    message: string,
+    actions: CoachAction[],
+    chatMessageId?: string,
+    options?: { source?: CoachProposalSource; relatedAlertId?: string },
+  ) => Promise<CoachProposal>
   acceptProposal: (id: string) => Promise<AcceptProposalResult>
   rejectProposal: (id: string) => Promise<void>
   getPendingProposals: () => CoachProposal[]
@@ -39,21 +45,27 @@ export const useCoachActionsStore = create<CoachActionsState>((set, get) => ({
     set({ proposals })
   },
 
-  addProposal: async (message, actions, chatMessageId) => {
+  addProposal: async (message, actions, chatMessageId, options) => {
     const athleteProfile = useCoachMemoryStore.getState().athleteProfile
     const sanitized = sanitizeCoachActionsForPlan(actions, athleteProfile)
+    const normalized = normalizeCoachProposal(sanitized.actions, {
+      source: options?.source ?? 'chat',
+      relatedAlertId: options?.relatedAlertId,
+      existingSessions: useTrainingStore.getState().sessions,
+    })
     const historicalSessions = await db.sessions.toArray()
     const planSummary = buildPlanGenerationSummary({
       athleteProfile,
-      actions: sanitized.actions,
+      actions: normalized.actions,
       historicalSessions,
     })
     const proposal: CoachProposal = {
       id: uuid(),
       chatMessageId,
       message,
-      actions: sanitized.actions,
+      actions: normalized.actions,
       planSummary,
+      metadata: normalized.metadata,
       status: 'pending',
       createdAt: Date.now(),
     }
@@ -67,7 +79,14 @@ export const useCoachActionsStore = create<CoachActionsState>((set, get) => ({
     const proposal = get().proposals.find((item) => item.id === id)
     if (!proposal) return
 
-    const nextProposal = { ...proposal, status: 'rejected' as const, resolvedAt: Date.now() }
+    const nextProposal = {
+      ...proposal,
+      status: 'rejected' as const,
+      resolvedAt: Date.now(),
+      metadata: proposal.metadata
+        ? { ...proposal.metadata, resolutionOutcome: 'rejected' as const }
+        : proposal.metadata,
+    }
     await db.coachProposals.put(nextProposal)
     void syncService.pushCoachProposal(nextProposal)
     set((state) => ({
@@ -85,13 +104,29 @@ export const useCoachActionsStore = create<CoachActionsState>((set, get) => ({
     const athleteProfile = useCoachMemoryStore.getState().athleteProfile
     const errors: string[] = []
     const warnings: string[] = []
+    const normalized = normalizeCoachProposal(proposal.actions, {
+      source: proposal.metadata?.source ?? 'chat',
+      relatedAlertId: proposal.metadata?.relatedAlertId,
+      existingSessions: trainingStore.sessions,
+    })
+    const workingProposal: CoachProposal = {
+      ...proposal,
+      actions: normalized.actions,
+      metadata: {
+        ...normalized.metadata,
+        resolutionOutcome: proposal.metadata?.resolutionOutcome ?? 'pending',
+      },
+    }
 
-    const validationErrors = preValidateActions(proposal.actions, trainingStore, athleteProfile)
+    const validationErrors = preValidateActions(workingProposal.actions, trainingStore, athleteProfile)
     if (validationErrors.length > 0) {
       const nextProposal: CoachProposal = {
-        ...proposal,
+        ...workingProposal,
         status: 'rejected',
         resolvedAt: Date.now(),
+        metadata: workingProposal.metadata
+          ? { ...workingProposal.metadata, resolutionOutcome: 'rejected' }
+          : workingProposal.metadata,
       }
       await db.coachProposals.put(nextProposal)
       void syncService.pushCoachProposal(nextProposal)
@@ -102,9 +137,9 @@ export const useCoachActionsStore = create<CoachActionsState>((set, get) => ({
     }
 
     const appliedResults: Array<{ index: number; createdSessionIds: string[]; restoredSessions: Session[] }> = []
-    for (let i = 0; i < proposal.actions.length; i++) {
+    for (let i = 0; i < workingProposal.actions.length; i++) {
       try {
-        const result = await applyCoachAction(proposal.actions[i], trainingStore)
+        const result = await applyCoachAction(workingProposal.actions[i], trainingStore)
         warnings.push(...result.warnings)
         appliedResults.push({
           index: i,
@@ -112,19 +147,25 @@ export const useCoachActionsStore = create<CoachActionsState>((set, get) => ({
           restoredSessions: result.restoredSessions,
         })
       } catch (error) {
-        errors.push(`Accion ${i + 1} (${proposal.actions[i].type}): ${error}`)
+        errors.push(`Accion ${i + 1} (${workingProposal.actions[i].type}): ${error}`)
       }
     }
 
     if (errors.length > 0 && appliedResults.length > 0) {
-      await rollbackAppliedActions(proposal.actions, appliedResults, trainingStore)
+      await rollbackAppliedActions(workingProposal.actions, appliedResults, trainingStore)
       warnings.push(`Se revirtieron ${appliedResults.length} acciones aplicadas antes del fallo.`)
     }
 
     const nextProposal: CoachProposal = {
-      ...proposal,
+      ...workingProposal,
       status: errors.length === 0 ? 'accepted' : 'rejected',
       resolvedAt: Date.now(),
+      metadata: workingProposal.metadata
+        ? {
+            ...workingProposal.metadata,
+            resolutionOutcome: errors.length === 0 ? 'accepted' : 'rejected',
+          }
+        : workingProposal.metadata,
     }
 
     await db.coachProposals.put(nextProposal)
@@ -201,12 +242,25 @@ function preValidateActions(
           errors.push(`${label}: campos requeridos faltantes (targetDate, sessionType, title, durationMin, timeBlock)`)
         } else if (!isSessionTypeAllowedForPlan(action.sessionType, athleteProfile)) {
           errors.push(`${label}: tipo ${action.sessionType} no permitido en planificacion actual`)
+        } else if (action.sessionType === 'cycling' && !action.cyclingDetails) {
+          errors.push(`${label}: cyclingDetails requerido para sesiones de ciclismo`)
+        } else if (action.sessionType === 'mobility' && !action.mobilityDetails) {
+          errors.push(`${label}: mobilityDetails requerido para sesiones de movilidad`)
         }
         break
 
       case 'create_week':
         if (!action.sessions || action.sessions.length === 0) {
           errors.push(`${label}: sessions array requerido`)
+        } else {
+          action.sessions.forEach((session, sessionIndex) => {
+            if (session.sessionType === 'cycling' && !session.cyclingDetails) {
+              errors.push(`${label}: sesion ${sessionIndex + 1} requiere cyclingDetails`)
+            }
+            if (session.sessionType === 'mobility' && !session.mobilityDetails) {
+              errors.push(`${label}: sesion ${sessionIndex + 1} requiere mobilityDetails`)
+            }
+          })
         }
         break
 
@@ -222,6 +276,12 @@ function preValidateActions(
           const nextType = action.newType ?? store.sessions.find((session) => session.id === action.sessionId)?.type
           if (nextType && !isSessionTypeAllowedForPlan(nextType, athleteProfile)) {
             errors.push(`${label}: tipo ${nextType} no permitido en planificacion actual`)
+          }
+          if (nextType === 'cycling' && !action.cyclingDetails) {
+            errors.push(`${label}: cyclingDetails requerido para update_session de ciclismo`)
+          }
+          if (nextType === 'mobility' && !action.mobilityDetails) {
+            errors.push(`${label}: mobilityDetails requerido para update_session de movilidad`)
           }
         }
         break

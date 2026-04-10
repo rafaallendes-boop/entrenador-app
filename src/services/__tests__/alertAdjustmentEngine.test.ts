@@ -109,6 +109,33 @@ describe('alertAdjustmentEngine', () => {
     })
   })
 
+  it('uses mobility support instead of generic recovery for cycling load risk', () => {
+    const draft = buildAutoAdjustmentDraft({
+      sessions: [
+        makeSession({ id: 'cycle-1', type: 'cycling', title: 'Ciclismo intervalos', durationMin: 70, rpe: 8 }),
+      ],
+      loadAnalytics: {
+        ...makeLoadAnalytics(),
+        acwrByDiscipline: {
+          squash: { sport: 'squash', acuteLoad: 0, chronicLoad: 0, ratio: null, status: 'limited', baselineWeeks: 0 },
+          running: { sport: 'running', acuteLoad: 0, chronicLoad: 0, ratio: null, status: 'limited', baselineWeeks: 0 },
+          strength: { sport: 'strength', acuteLoad: 0, chronicLoad: 0, ratio: null, status: 'limited', baselineWeeks: 0 },
+          cycling: { sport: 'cycling', acuteLoad: 600, chronicLoad: 300, ratio: 2, status: 'risk', baselineWeeks: 3 },
+        },
+        runningAcwr: { acuteLoad: 0, chronicLoad: 0, ratio: null, status: 'limited', baselineWeeks: 0 },
+        cyclingAcwr: { sport: 'cycling', acuteLoad: 600, chronicLoad: 300, ratio: 2, status: 'risk', baselineWeeks: 3 },
+      },
+      today: '2026-04-08',
+    })
+
+    expect(draft?.alertId).toBe('acwr-risk-cycling')
+    expect(draft?.actions[0]).toMatchObject({
+      type: 'update_session',
+      sessionId: 'cycle-1',
+    })
+    expect(draft?.actions.some((action) => action.type === 'add_session' && action.sessionType === 'mobility')).toBe(true)
+  })
+
   it('falls back to adherence adjustment when there is no higher-severity draft', () => {
     const draft = buildAutoAdjustmentDraft({
       sessions: [

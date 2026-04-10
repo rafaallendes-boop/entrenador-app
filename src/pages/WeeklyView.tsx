@@ -117,7 +117,12 @@ export default function WeeklyView() {
 
   const handleOpenAutoAdjustment = async () => {
     if (!autoAdjustmentDraft) return
-    const proposal = await addProposal(autoAdjustmentDraft.message, autoAdjustmentDraft.actions)
+    const proposal = await addProposal(
+      autoAdjustmentDraft.message,
+      autoAdjustmentDraft.actions,
+      undefined,
+      { source: 'weekly_action', relatedAlertId: autoAdjustmentDraft.alertId },
+    )
     setActiveProposal(proposal)
   }
 

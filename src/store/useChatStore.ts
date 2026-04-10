@@ -71,6 +71,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
         const proposal = await useCoachActionsStore.getState().addProposal(
           response.message.slice(0, 120) + (response.message.length > 120 ? '…' : ''),
           response.actions,
+          undefined,
+          { source: 'chat' },
         )
         proposalId = proposal.id
       }

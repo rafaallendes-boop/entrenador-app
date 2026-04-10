@@ -8,6 +8,7 @@ import type {
 } from '../types'
 import { toISO, fromISO, getWeekStart } from '../utils/date'
 import { buildActionAlerts, type ActionAlertsInput, type ActionableAlert } from './actionAlerts'
+import { buildFallbackCyclingDetails, buildFallbackMobilityDetails } from './coachProposalMetadata'
 
 export interface AutoAdjustmentDraft {
   alertId: string
@@ -68,8 +69,22 @@ function buildCoherenceDraft(
     sessionId: supportCandidate.id,
     newDurationMin: reduceDuration(supportCandidate.durationMin, 0.75),
     newRpe: reduceRpe(supportCandidate.rpe),
+    cyclingDetails: supportCandidate.type === 'cycling' ? buildFallbackCyclingDetails(supportCandidate, supportCandidate) : undefined,
+    mobilityDetails: supportCandidate.type === 'mobility' ? buildFallbackMobilityDetails(supportCandidate, supportCandidate) : undefined,
     reason: `Recortar ${supportCandidate.title} porque hoy el bloque pide menos carga accesoria y mas protagonismo del deporte principal.`,
   })
+
+  const mobilityTargetDate = shouldAddMobilitySupport(context.currentPhase)
+    ? findRecoveryInsertDate(supportCandidate, input.sessions)
+    : null
+  if (mobilityTargetDate) {
+    actions.push(buildMobilitySupportAction({
+      targetDate: mobilityTargetDate,
+      reason: `Agregar movilidad contextual para sostener frescura y coherencia con la fase ${context.currentPhase}.`,
+      sourceSession: supportCandidate,
+      intentLabel: 'movilidad de soporte del bloque',
+    }))
+  }
 
   return {
     alertId: alert.id,
@@ -95,17 +110,27 @@ function buildLoadRiskDraft(
       sessionId: candidate.id,
       newDurationMin: reduceDuration(candidate.durationMin, 0.7),
       newRpe: reduceRpe(candidate.rpe, 2),
+      cyclingDetails: sport === 'cycling' ? buildFallbackCyclingDetails(candidate, candidate) : undefined,
       reason: `Reducir la proxima carga de ${sportLabel(sport)} para bajar riesgo ACWR y evitar seguir subiendo demasiado rapido.`,
     },
   ]
 
   const recoveryTargetDate = findRecoveryInsertDate(candidate, input.sessions)
   if (recoveryTargetDate) {
-    actions.push({
-      type: 'insert_recovery',
-      targetDate: recoveryTargetDate,
-      reason: `Insertar recuperacion activa para amortiguar la fatiga despues del ajuste de carga en ${sportLabel(sport)}.`,
-    })
+    actions.push(
+      sport === 'cycling'
+        ? buildMobilitySupportAction({
+            targetDate: recoveryTargetDate,
+            reason: `Insertar movilidad post-cycling para amortiguar la fatiga despues del ajuste de carga.`,
+            sourceSession: candidate,
+            intentLabel: 'movilidad post-cycling',
+          })
+        : {
+            type: 'insert_recovery',
+            targetDate: recoveryTargetDate,
+            reason: `Insertar recuperacion activa para amortiguar la fatiga despues del ajuste de carga en ${sportLabel(sport)}.`,
+          },
+    )
   }
 
   return {
@@ -138,6 +163,8 @@ function buildAdherenceDraft(
     sessionId: candidate.id,
     newDurationMin: reduceDuration(candidate.durationMin, 0.7),
     newRpe: reduceRpe(candidate.rpe),
+    cyclingDetails: candidate.type === 'cycling' ? buildFallbackCyclingDetails(candidate, candidate) : undefined,
+    mobilityDetails: candidate.type === 'mobility' ? buildFallbackMobilityDetails(candidate, candidate) : undefined,
     reason: `Recortar ${candidate.title} para recuperar adherencia y evitar que la semana siga acumulando sesiones poco realistas.`,
   })
 
@@ -261,6 +288,10 @@ function reduceRpe(rpe?: number, delta = 1): number {
   return Math.max(3, (rpe ?? 6) - delta)
 }
 
+function shouldAddMobilitySupport(phase: MacroWeekCoherenceSummary['currentPhase']): boolean {
+  return ['peak', 'taper', 'race', 'transition'].includes(phase)
+}
+
 function extractSportFromAlertId(alertId: string): 'running' | 'squash' | 'strength' | 'cycling' | null {
   if (alertId.endsWith('running')) return 'running'
   if (alertId.endsWith('squash')) return 'squash'
@@ -279,5 +310,52 @@ function sportLabel(sport: 'running' | 'squash' | 'strength' | 'cycling'): strin
       return 'fuerza'
     case 'cycling':
       return 'ciclismo'
+  }
+}
+
+function buildMobilitySupportAction(input: {
+  targetDate: string
+  reason: string
+  sourceSession?: Session
+  intentLabel: string
+}): CoachAction {
+  const mobilityDetails = buildFallbackMobilityDetails({
+    title: input.intentLabel,
+    objective: input.reason,
+    exercises: input.sourceSession?.exercises,
+  }, input.sourceSession)
+
+  return {
+    type: 'add_session',
+    targetDate: input.targetDate,
+    timeBlock: 'PM',
+    sessionType: 'mobility',
+    title: resolveMobilityTitle(mobilityDetails.context),
+    durationMin: mobilityDetails.context === 'pre_training_activation' ? 15 : 25,
+    rpe: mobilityDetails.context === 'pre_training_activation' ? 3 : 4,
+    objective: input.intentLabel,
+    mobilityDetails,
+    reason: input.reason,
+  }
+}
+
+function resolveMobilityTitle(context: NonNullable<CoachAction['mobilityDetails']>['context']): string {
+  switch (context) {
+    case 'post_cycling':
+      return 'Movilidad post-cycling'
+    case 'post_run':
+      return 'Movilidad post-running'
+    case 'post_squash':
+      return 'Movilidad post-squash'
+    case 'post_strength':
+      return 'Reset post-fuerza'
+    case 'pre_training_activation':
+      return 'Activacion articular'
+    case 'recovery':
+      return 'Movilidad de recuperacion'
+    case 'full_body':
+      return 'Movilidad full body'
+    default:
+      return 'Movilidad especifica'
   }
 }

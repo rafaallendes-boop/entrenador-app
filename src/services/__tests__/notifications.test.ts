@@ -64,7 +64,7 @@ describe('notifications', () => {
     )
 
     const checkIn = items.find((item) => item.category === 'daily_checkin')
-    expect(checkIn?.title).toBe('Te falta cerrar el dia')
+    expect(checkIn?.title).toBe('Te falta cerrar el día')
   })
 
   it('adds weekly planning and coach follow-up nudges when the week has no plan or note', () => {
