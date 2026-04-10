@@ -118,7 +118,7 @@ export default function OnboardingPage() {
     })
 
     clearOnboardingSkipped(user?.id)
-    navigate(ROUTES.CHAT, { state: { showProfileNudge: true } })
+    navigate(ROUTES.HOME, { state: { showProfileNudge: true } })
   }
 
   function handleSkip() {

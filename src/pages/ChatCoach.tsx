@@ -115,6 +115,7 @@ export default function ChatCoach() {
   const { coachMemory, athleteProfile, loadMemory } = useCoachMemoryStore()
   const { sessions, currentWeekSummary, dayLogs, loadWeek } = useTrainingStore()
   const bottomRef = useRef<HTMLDivElement>(null)
+  const autoSentRef = useRef(false)
 
   const [activeProposal, setActiveProposal] = useState<CoachProposal | null>(null)
   const [acceptedFeedback, setAcceptedFeedback] = useState<string | null>(null)
@@ -164,6 +165,22 @@ export default function ChatCoach() {
       bottomRef.current?.scrollIntoView({ behavior: 'instant' as ScrollBehavior })
     }
   }, [streamingText])
+
+  // Auto-submit prompt cuando se llega desde PlanBuilder
+  useEffect(() => {
+    if (autoSentRef.current) return
+    if (!locationState?.fromPlanBuilder) return
+    const draft = composerDraft.trim()
+    if (!draft) return
+
+    autoSentRef.current = true
+    navigate(location.pathname, { replace: true, state: null })
+    const t = setTimeout(() => {
+      handleSend(draft)
+    }, 250)
+    return () => clearTimeout(t)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const buildContext = (message: string): ChatContext => {
     const sortedSessions = [...sessions]
@@ -356,7 +373,7 @@ export default function ChatCoach() {
             <div className="flex items-start gap-2 rounded-xl border border-sky-500/20 bg-sky-500/10 px-3 py-2">
               <span className="mt-0.5 flex-shrink-0 text-xs text-sky-300">i</span>
               <span className="flex-1 text-xs leading-relaxed text-sky-200">
-                Llegaste desde el <span className="font-semibold">Plan Builder</span>. Revisa el prompt estructurado abajo, ajusta si hace falta y envíalo al coach para generar tu semana.
+                Plan Builder: el prompt fue enviado automáticamente al coach para generar tu semana.
               </span>
             </div>
           )}

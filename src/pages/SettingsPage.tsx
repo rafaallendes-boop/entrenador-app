@@ -275,6 +275,18 @@ export default function SettingsPage() {
     await handleResyncNotifications()
   }
 
+  const handleDisableAllNotifications = async () => {
+    const next = saveNotificationPreferences({
+      sessionReminders: false,
+      dailyCheckIn: false,
+      weeklyPlanning: false,
+      coachFollowUp: false,
+      loadAlerts: false,
+    })
+    setNotificationPreferences(next)
+    await handleResyncNotifications()
+  }
+
   const handleRetrySync = async () => {
     const { user: currentUser } = useAuthStore.getState()
     if (currentUser) await pullAll(currentUser.id)
@@ -870,6 +882,14 @@ export default function SettingsPage() {
                       onChange={(checked) => void handleToggleNotificationPreference('loadAlerts', checked)}
                     />
                   </div>
+                  <div className="pt-1">
+                    <button
+                      onClick={() => void handleDisableAllNotifications()}
+                      className="text-xs text-ink-faint underline underline-offset-2 hover:text-ink-muted transition-colors"
+                    >
+                      Desactivar todas las notificaciones
+                    </button>
+                  </div>
                 </div>
                 {notificationDebugState && (
                   <div className="rounded-xl border border-surface-border bg-surface-raised px-3 py-3 space-y-2">
@@ -877,7 +897,6 @@ export default function SettingsPage() {
                     <div className="grid gap-2 sm:grid-cols-2 text-xs text-ink-muted">
                       <p>Programadas: <span className="text-ink">{notificationDebugState.scheduledCount}</span></p>
                       <p>Pendientes: <span className="text-ink">{notificationDebugState.pendingCount}</span></p>
-                      <p>Enviadas: <span className="text-ink">{notificationDebugState.sentCount}</span></p>
                       <p>Recuperadas: <span className="text-ink">{notificationDebugState.recoveredCount}</span></p>
                     </div>
                     <div className="grid gap-2 text-xs text-ink-muted">

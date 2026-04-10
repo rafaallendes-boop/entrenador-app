@@ -55,7 +55,7 @@ export const CoachEngine = {
         role: message.role === 'coach' ? 'assistant' : 'user',
         content: message.content,
       })),
-      maxTokens: options?.maxTokens ?? (actionIntent === 'create_week' ? 5000 : actionIntent === 'modify_plan' ? 3600 : 3000),
+      maxTokens: options?.maxTokens ?? (actionIntent === 'create_week' ? 8000 : actionIntent === 'modify_plan' ? 5000 : 4000),
       temperature: options?.temperature ?? 0.7,
       onChunk: options?.onChunk,
     }
@@ -126,13 +126,11 @@ IMPORTANTE DE FORMATO:
   })
   const retryNormalized = normalizeResponse(retryRaw)
 
-  if (shouldRejectAfterRetry(retryNormalized, actionIntent)) {
+  if (shouldRejectAfterRetry(retryNormalized)) {
     throw createProviderError(
       provider.name,
       'parse_error',
-      actionIntent === 'none'
-        ? 'El coach devolvio una respuesta invalida en el bloque de acciones.'
-        : 'El coach no devolvio acciones aplicables para la solicitud del usuario.',
+      'El coach devolvio una respuesta con formato invalido en el bloque de acciones. Intenta de nuevo.',
       true,
     )
   }
@@ -175,8 +173,8 @@ export function shouldRetry(response: CoachNormalizedResponse, actionIntent: Coa
   return false
 }
 
-function shouldRejectAfterRetry(response: CoachNormalizedResponse, actionIntent: CoachActionIntent): boolean {
-  if (response.meta?.actionParseFailed) return true
-  if (actionIntent !== 'none' && (!response.actions || response.actions.length === 0)) return true
-  return false
+function shouldRejectAfterRetry(response: CoachNormalizedResponse): boolean {
+  // Solo rechazar cuando el JSON está genuinamente malformado.
+  // Si el modelo simplemente no incluyó acciones, devolvemos el texto para que el usuario pueda continuar.
+  return response.meta?.actionParseFailed === true
 }
