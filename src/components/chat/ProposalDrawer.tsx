@@ -1,4 +1,4 @@
-﻿import { CheckCircle2, X, Zap } from 'lucide-react'
+import { CheckCircle2, X, Zap } from 'lucide-react'
 import type { CoachProposal, CyclingDetails, GeneratedProtocol, MobilityDetails, Session, SquashSessionMode } from '../../types'
 
 const ACTION_LABEL: Record<string, string> = {
