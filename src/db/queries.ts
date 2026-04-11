@@ -45,11 +45,12 @@ export const getWeekSummary = async (weekStartISO: string): Promise<WeekSummary 
 
 export const upsertWeekSummary = async (
   weekStartISO: string,
-  patch: Partial<Omit<WeekSummary, 'id' | 'weekStartDate'>>
+  patch: Partial<Omit<WeekSummary, 'id' | 'weekStartDate' | 'updatedAt'>>
 ): Promise<WeekSummary> => {
   const existing = await getWeekSummary(weekStartISO)
+  const updatedAt = Date.now()
   if (existing) {
-    const updated = { ...existing, ...patch }
+    const updated = { ...existing, ...patch, updatedAt }
     await db.weekSummaries.put(updated)
     void syncService.pushWeekSummary(updated)
     return updated
@@ -57,6 +58,7 @@ export const upsertWeekSummary = async (
   const created: WeekSummary = {
     id: uuid(),
     weekStartDate: weekStartISO,
+    updatedAt,
     totalSessions: 0,
     totalMinutes: 0,
     plannedSessions: 0,
@@ -85,9 +87,9 @@ export const recalculateWeekSummary = async (dateISO: string): Promise<void> => 
   const plannedSessions = sessions.filter(s => s.status !== 'skipped').length
   const completedSessions = realized.length
 
-  const plannedRpeValues = realized.filter(s => s.rpe != null).map(s => s.rpe!)
-  const avgRpe = plannedRpeValues.length
-    ? plannedRpeValues.reduce((a, b) => a + b, 0) / plannedRpeValues.length
+  const completedRpeValues = realized.filter(s => s.rpe != null).map(s => s.rpe!)
+  const avgRpe = completedRpeValues.length
+    ? completedRpeValues.reduce((a, b) => a + b, 0) / completedRpeValues.length
     : undefined
 
   const sessionActualRpeValues = realized
@@ -148,10 +150,10 @@ export const recalculateWeekSummary = async (dateISO: string): Promise<void> => 
     completedMinutes,
     adherencePct,
     squashSessions: realized.filter(s => s.type === 'squash').length,
-    runningSessions: realized.filter(s => s.type === 'running' || s.type === 'cycling').length,
+    runningSessions: realized.filter(s => s.type === 'running').length,
     strengthSessions: realized.filter(s => s.type === 'strength').length,
     plannedSquashSessions: active.filter(s => s.type === 'squash').length,
-    plannedRunningSessions: active.filter(s => s.type === 'running' || s.type === 'cycling').length,
+    plannedRunningSessions: active.filter(s => s.type === 'running').length,
     plannedStrengthSessions: active.filter(s => s.type === 'strength').length,
     mobilityMinutes: realized
       .filter(s => s.type === 'mobility')

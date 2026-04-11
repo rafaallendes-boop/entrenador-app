@@ -7,6 +7,7 @@ import type {
   WeekSummary,
 } from '../types'
 import { toISO, fromISO, getWeekStart } from '../utils/date'
+import { getSportLabel } from '../utils/sport'
 import { buildActionAlerts, type ActionAlertsInput, type ActionableAlert } from './actionAlerts'
 import { buildFallbackCyclingDetails, buildFallbackMobilityDetails } from './coachProposalMetadata'
 
@@ -89,7 +90,7 @@ function buildCoherenceDraft(
   return {
     alertId: alert.id,
     title: 'Ajuste automatico por incoherencia semanal',
-    message: `Detecte una incoherencia con el bloque actual. Prepare un ajuste rapido para bajar la carga accesoria${moveTargetDate ? ' y moverla a un momento menos conflictivo' : ''}. Revísalo y aplícalo si te calza.`,
+    message: `Detecte una incoherencia con el bloque actual. Prepare un ajuste rapido para bajar la carga accesoria${moveTargetDate ? ' y mover la misma sesion a un momento menos conflictivo' : ''}. Revisalo y aplicalo si te calza.`,
     actions,
   }
 }
@@ -111,7 +112,7 @@ function buildLoadRiskDraft(
       newDurationMin: reduceDuration(candidate.durationMin, 0.7),
       newRpe: reduceRpe(candidate.rpe, 2),
       cyclingDetails: sport === 'cycling' ? buildFallbackCyclingDetails(candidate, candidate) : undefined,
-      reason: `Reducir la proxima carga de ${sportLabel(sport)} para bajar riesgo ACWR y evitar seguir subiendo demasiado rapido.`,
+      reason: `Reducir la proxima carga de ${getSportLabel(sport)} para bajar riesgo ACWR y evitar seguir subiendo demasiado rapido.`,
     },
   ]
 
@@ -121,22 +122,22 @@ function buildLoadRiskDraft(
       sport === 'cycling'
         ? buildMobilitySupportAction({
             targetDate: recoveryTargetDate,
-            reason: `Insertar movilidad post-cycling para amortiguar la fatiga despues del ajuste de carga.`,
+            reason: 'Insertar movilidad post-cycling para amortiguar la fatiga despues del ajuste de carga.',
             sourceSession: candidate,
             intentLabel: 'movilidad post-cycling',
           })
         : {
             type: 'insert_recovery',
             targetDate: recoveryTargetDate,
-            reason: `Insertar recuperacion activa para amortiguar la fatiga despues del ajuste de carga en ${sportLabel(sport)}.`,
+            reason: `Insertar recuperacion activa para amortiguar la fatiga despues del ajuste de carga en ${getSportLabel(sport)}.`,
           },
     )
   }
 
   return {
     alertId: alert.id,
-    title: `Ajuste automatico por riesgo de carga en ${sportLabel(sport)}`,
-    message: `Detecte riesgo de carga en ${sportLabel(sport)}. Prepare una version mas conservadora de la siguiente sesion${recoveryTargetDate ? ' y agregue una recuperacion de soporte' : ''} para bajar el riesgo sin romper la semana.`,
+    title: `Ajuste automatico por riesgo de carga en ${getSportLabel(sport)}`,
+    message: `Detecte riesgo de carga en ${getSportLabel(sport)}. Prepare una version mas conservadora de la siguiente sesion${recoveryTargetDate ? ' y agregue una recuperacion de soporte' : ''} para bajar el riesgo sin romper la semana.`,
     actions,
   }
 }
@@ -171,7 +172,7 @@ function buildAdherenceDraft(
   return {
     alertId: alert.id,
     title: 'Ajuste automatico por baja adherencia',
-    message: `La adherencia semanal viene baja. Prepare un ajuste mas realista sobre ${candidate.title}${moveTargetDate ? ' y lo corrí a un slot menos cargado' : ''} para aumentar la probabilidad de completar la semana.`,
+    message: `La adherencia semanal viene baja. Prepare un ajuste mas realista sobre ${candidate.title}${moveTargetDate ? ' y movi la misma sesion a un slot menos cargado' : ''} para aumentar la probabilidad de completar la semana.`,
     actions,
   }
 }
@@ -298,19 +299,6 @@ function extractSportFromAlertId(alertId: string): 'running' | 'squash' | 'stren
   if (alertId.endsWith('strength')) return 'strength'
   if (alertId.endsWith('cycling')) return 'cycling'
   return null
-}
-
-function sportLabel(sport: 'running' | 'squash' | 'strength' | 'cycling'): string {
-  switch (sport) {
-    case 'running':
-      return 'running'
-    case 'squash':
-      return 'squash'
-    case 'strength':
-      return 'fuerza'
-    case 'cycling':
-      return 'ciclismo'
-  }
 }
 
 function buildMobilitySupportAction(input: {

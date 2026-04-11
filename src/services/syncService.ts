@@ -25,6 +25,7 @@ import {
   athleteProfileToRow,
   classifyAthleteProfileSyncError,
   compactQueue,
+  getSyncErrorMessage,
   pickCanonicalAthleteProfileRow,
   rowToAthleteProfile,
   scoreEntityData,
@@ -124,7 +125,14 @@ function saveQueue(queue: OfflineOp[]): void {
 function enqueue(op: OfflineOp): void {
   const queue = compactQueue(loadQueue(), op)
   if (queue.length >= MAX_QUEUE_SIZE) {
-    queue.shift()
+    const dropped = queue.shift()
+    console.warn('[sync] queue limit reached, dropping oldest op', {
+      maxQueueSize: MAX_QUEUE_SIZE,
+      droppedTable: dropped?.table,
+      droppedAction: dropped?.action,
+      droppedId: typeof dropped?.payload?.id === 'string' ? dropped.payload.id : null,
+      droppedEnqueuedAt: dropped?.enqueuedAt ?? null,
+    })
   }
   saveQueue(queue)
 }
@@ -157,6 +165,33 @@ function isLikelyOfflineError(error: unknown): boolean {
   )
 }
 
+function isRetryableAuthError(error: unknown): boolean {
+  const obj = error as Record<string, unknown> | null
+  if (!obj) return false
+
+  const statusCode = typeof obj.status === 'number' ? obj.status : null
+  if (statusCode !== 401) return false
+
+  const message = (
+    (error instanceof Error ? error.message : '') +
+    (typeof obj.message === 'string' ? obj.message : '') +
+    (typeof obj.details === 'string' ? obj.details : '') +
+    (typeof obj.hint === 'string' ? obj.hint : '')
+  ).toLowerCase()
+
+  if (message.includes('invalid api key') || message.includes('anon key')) {
+    return false
+  }
+
+  return (
+    message.includes('jwt') ||
+    message.includes('token') ||
+    message.includes('session') ||
+    message.includes('expired') ||
+    message.includes('auth')
+  )
+}
+
 /**
  * Detecta errores NON-RETRIABLE: tablas inexistentes, schema incorrecto,
  * errores de auth/RLS o configuración de Supabase.
@@ -174,7 +209,8 @@ function isInfrastructureError(error: unknown): boolean {
 
   // HTTP 4xx de Supabase que no son recuperables
   const statusCode = typeof obj.status === 'number' ? obj.status : null
-  if (statusCode === 401 || statusCode === 403 || statusCode === 404) return true
+  if (statusCode === 401) return !isRetryableAuthError(error)
+  if (statusCode === 403 || statusCode === 404) return true
 
   const message = (
     (error instanceof Error ? error.message : '') +
@@ -188,17 +224,11 @@ function isInfrastructureError(error: unknown): boolean {
     message.includes('undefined_table') ||
     (message.includes('schema') && message.includes('not found')) ||
     message.includes('invalid api key') ||
-    message.includes('jwt') ||
     message.includes('anon key') ||
     message.includes('not authorized') ||
     (message.includes('permission') && message.includes('denied')) ||
     message.includes('does not have permission')
   )
-}
-
-function getSyncErrorMessage(error: unknown, fallback: string): string {
-  if (error instanceof Error && error.message.trim()) return error.message
-  return fallback
 }
 
 function applySyncFailure(error: unknown, fallbackMessage: string): void {
@@ -475,13 +505,12 @@ function rowToDayLog(row: Record<string, unknown>): DayLog {
 }
 
 function weekSummaryToRow(summary: WeekSummary, userId: string): Record<string, unknown> {
-  const { id, weekStartDate, ...rest } = summary
-  const updatedAt = (rest as Record<string, unknown>).updatedAt ?? Date.now()
+  const { id, weekStartDate, updatedAt, ...rest } = summary
   return {
     id,
     user_id: userId,
     week_start_date: weekStartDate,
-    updated_at: updatedAt,
+    updated_at: updatedAt ?? 0,
     data: rest,
   }
 }
@@ -491,6 +520,7 @@ function rowToWeekSummary(row: Record<string, unknown>): WeekSummary {
   return {
     id: row.id as string,
     weekStartDate: (row.week_start_date ?? data.weekStartDate) as string,
+    updatedAt: (row.updated_at as number | undefined) ?? undefined,
     ...data,
   } as WeekSummary
 }
@@ -554,15 +584,16 @@ async function fetchAthleteProfileRows(userId: string): Promise<AthleteProfileSy
 }
 
 async function deleteAthleteProfileRowsById(userId: string, ids: string[]): Promise<void> {
-  for (const id of [...new Set(ids)].filter(Boolean)) {
-    const { error } = await supabase
-      .from('athlete_profiles')
-      .delete()
-      .eq('id', id)
-      .eq('user_id', userId)
+  const normalizedIds = [...new Set(ids)].filter(Boolean)
+  if (normalizedIds.length === 0) return
 
-    if (error) throw error
-  }
+  const { error } = await supabase
+    .from('athlete_profiles')
+    .delete()
+    .in('id', normalizedIds)
+    .eq('user_id', userId)
+
+  if (error) throw error
 }
 
 async function repairRemoteAthleteProfileRows(
@@ -727,17 +758,12 @@ export async function pushChatMessage(msg: ChatMessage): Promise<void> {
 
 export async function deleteChatMessages(ids: string[]): Promise<void> {
   if (ids.length === 0) return
-
-  for (const id of ids) {
-    void deleteRow('chat_messages', id)
-  }
+  await Promise.all(ids.map((id) => deleteRow('chat_messages', id)))
 }
 
 export async function deleteCoachProposals(ids: string[]): Promise<void> {
   if (ids.length === 0) return
-  for (const id of ids) {
-    void deleteRow('coach_proposals', id)
-  }
+  await Promise.all(ids.map((id) => deleteRow('coach_proposals', id)))
 }
 
 export async function pushCoachProposal(proposal: CoachProposal): Promise<void> {
@@ -1185,7 +1211,7 @@ function compareWeekSummariesForRepair(a: WeekSummary, b: WeekSummary): number {
 }
 
 function getWeekSummaryUpdatedAt(summary: WeekSummary): number {
-  return ((summary as unknown as { updatedAt?: number }).updatedAt) ?? 0
+  return summary.updatedAt ?? 0
 }
 
 function groupRowsBy<T>(rows: T[], getKey: (row: T) => string): Map<string, T[]> {
@@ -1391,20 +1417,39 @@ export async function migrateLocalDataToCloud(userId: string): Promise<void> {
     const proposalRows = tables.coachProposals.map((proposal) => coachProposalToRow(proposal, userId))
     const profileRows = tables.athleteProfiles.map((profile) => athleteProfileToRow(profile, userId))
 
-    await Promise.all([
-      sessionRows.length > 0 && supabase.from('sessions').upsert(sessionRows as never),
-      dayLogRows.length > 0 && supabase.from('day_logs').upsert(dayLogRows as never),
-      weekRows.length > 0 && supabase.from('week_summaries').upsert(weekRows as never),
-      chatRows.length > 0 && supabase.from('chat_messages').upsert(chatRows as never),
-      proposalRows.length > 0 && supabase.from('coach_proposals').upsert(proposalRows as never),
-      profileRows.length > 0 && persistAthleteProfileRow(profileRows[profileRows.length - 1], userId),
+    const migrationResults = await Promise.all([
+      sessionRows.length > 0
+        ? supabase.from('sessions').upsert(sessionRows as never).then((result) => ({ table: 'sessions', error: result.error }))
+        : Promise.resolve({ table: 'sessions', error: null }),
+      dayLogRows.length > 0
+        ? supabase.from('day_logs').upsert(dayLogRows as never).then((result) => ({ table: 'day_logs', error: result.error }))
+        : Promise.resolve({ table: 'day_logs', error: null }),
+      weekRows.length > 0
+        ? supabase.from('week_summaries').upsert(weekRows as never).then((result) => ({ table: 'week_summaries', error: result.error }))
+        : Promise.resolve({ table: 'week_summaries', error: null }),
+      chatRows.length > 0
+        ? supabase.from('chat_messages').upsert(chatRows as never).then((result) => ({ table: 'chat_messages', error: result.error }))
+        : Promise.resolve({ table: 'chat_messages', error: null }),
+      proposalRows.length > 0
+        ? supabase.from('coach_proposals').upsert(proposalRows as never).then((result) => ({ table: 'coach_proposals', error: result.error }))
+        : Promise.resolve({ table: 'coach_proposals', error: null }),
+      profileRows.length > 0
+        ? persistAthleteProfileRow(profileRows[profileRows.length - 1], userId).then(() => ({ table: 'athlete_profiles', error: null }))
+        : Promise.resolve({ table: 'athlete_profiles', error: null }),
     ])
+
+    const failedTables = migrationResults.filter((result) => result.error != null)
+    if (failedTables.length > 0) {
+      throw new Error(`Migration partial failure: ${failedTables.map((result) => result.table).join(', ')}`)
+    }
 
     localStorage.setItem(getMigrationKey(userId), '1')
     localStorage.setItem(LAST_SYNC_USER_KEY, userId)
     console.log('[sync] Initial migration complete')
   } catch (error) {
+    applySyncFailure(error, 'No se pudo migrar los datos locales a la nube.')
     console.error('[sync] Migration failed:', error)
+    throw error
   }
 }
 

@@ -236,9 +236,12 @@ async function computeMergeConflicts(backup: AppDataExport): Promise<MergeConfli
   }
 
   // WeekSummaries — no updatedAt, only track new
-  const localSummariesById = new Set(localWeekSummaries.map(s => s.id))
+  const localSummariesById = new Map(localWeekSummaries.map(s => [s.id, s]))
   for (const bs of backup.tables.weekSummaries) {
-    if (!localSummariesById.has(bs.id)) newInBackupCount++
+    const local = localSummariesById.get(bs.id)
+    if (!local) newInBackupCount++
+    else if ((local.updatedAt ?? 0) > (bs.updatedAt ?? 0)) localNewerCount++
+    else if ((bs.updatedAt ?? 0) > (local.updatedAt ?? 0)) backupNewerCount++
   }
 
   // ChatMessages — immutable, only track new
@@ -320,8 +323,11 @@ export async function importAppDataFromFile(
 
         // WeekSummaries — no updatedAt, only add new
         const localSummaries = await db.weekSummaries.toArray()
-        const localSummariesById = new Set(localSummaries.map(s => s.id))
-        const summariesToWrite = backup.tables.weekSummaries.filter(bs => !localSummariesById.has(bs.id))
+        const localSummariesById = new Map(localSummaries.map(s => [s.id, s]))
+        const summariesToWrite = backup.tables.weekSummaries.filter(bs => {
+          const local = localSummariesById.get(bs.id)
+          return !local || (bs.updatedAt ?? 0) >= (local.updatedAt ?? 0)
+        })
         if (summariesToWrite.length > 0) await db.weekSummaries.bulkPut(summariesToWrite)
 
         // ChatMessages — immutable, only add new
@@ -514,6 +520,7 @@ function parseWeekSummary(value: unknown, index: number): WeekSummary {
   return {
     id: requireString(row.id, `weekSummaries[${index}].id`),
     weekStartDate: requireISODate(row.weekStartDate, `weekSummaries[${index}].weekStartDate`),
+    updatedAt: optionalFiniteNumber(row.updatedAt, `weekSummaries[${index}].updatedAt`),
     totalSessions: requireFiniteNumber(row.totalSessions, `weekSummaries[${index}].totalSessions`),
     totalMinutes: requireFiniteNumber(row.totalMinutes, `weekSummaries[${index}].totalMinutes`),
     plannedSessions: requireFiniteNumber(row.plannedSessions, `weekSummaries[${index}].plannedSessions`),

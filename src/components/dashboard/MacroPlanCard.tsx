@@ -1,8 +1,9 @@
 import { Calendar, Pencil, Target, Trash2, TrendingUp } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
-import type { MacroPlan, MacroPlanSportDetail, SupportedSport } from '../../types'
+import type { MacroPlan, MacroPlanSportDetail } from '../../types'
 import { formatWeeksRemaining, getPhaseLabel } from '../../services/macroPlan'
 import { ROUTES } from '../../constants/routes'
+import { SPORT_LABELS } from '../../utils/sport'
 import Card from '../ui/Card'
 
 const PHASE_COLOR: Record<MacroPlan['currentPhase'], string> = {
@@ -23,14 +24,6 @@ const PHASE_BG: Record<MacroPlan['currentPhase'], string> = {
   transition: 'bg-violet-500/10 border-violet-500/20',
 }
 
-const SPORT_LABELS: Record<SupportedSport, string> = {
-  squash: 'Squash',
-  running: 'Running',
-  strength: 'Fuerza',
-  mobility: 'Movilidad',
-  cycling: 'Ciclismo',
-}
-
 interface MacroPlanCardProps {
   macroPlan: MacroPlan
   eventTitle?: string
@@ -47,8 +40,8 @@ export default function MacroPlanCard({
   const navigate = useNavigate()
   const phaseLabel = getPhaseLabel(macroPlan.currentPhase)
   const weeksLabel = formatWeeksRemaining(macroPlan.weeksRemaining)
-  const phaseColor = PHASE_COLOR[macroPlan.currentPhase]
-  const phaseBg = PHASE_BG[macroPlan.currentPhase]
+  const phaseColor = PHASE_COLOR[macroPlan.currentPhase] ?? 'text-ink-muted'
+  const phaseBg = PHASE_BG[macroPlan.currentPhase] ?? 'bg-surface-raised border-surface-border'
   const visibleSportDetails = macroPlan.sportDetails
   const visibleTimeline = macroPlan.timeline.slice(0, 5)
 

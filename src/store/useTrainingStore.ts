@@ -1,3 +1,4 @@
+import { addDays } from 'date-fns'
 import { create } from 'zustand'
 import { db } from '../db/db'
 import {
@@ -12,12 +13,11 @@ import {
   upsertWeekSummary,
 } from '../db/queries'
 import type { Session, DayLog, WeekSummary, SessionStatus } from '../types'
-import { v4 as uuid } from '../utils/uuid'
-import { toISO, fromISO, getWeekStart } from '../utils/date'
-import { addDays } from 'date-fns'
 import { CoachEngine } from '../services/ai/CoachEngine'
 import { optimizeChatContext } from '../services/ai/contextOptimizer'
 import * as syncService from '../services/syncService'
+import { toISO, fromISO, getWeekStart } from '../utils/date'
+import { v4 as uuid } from '../utils/uuid'
 
 const STATUS_CYCLE: SessionStatus[] = ['planned', 'completed', 'adjusted', 'skipped']
 
@@ -151,8 +151,8 @@ export const useTrainingStore = create<TrainingState>((set, get) => ({
       nextStatus === 'completed'
         ? previous.completedAt ?? now
         : patch.status != null && patch.status !== 'completed'
-        ? undefined
-        : previous.completedAt
+          ? undefined
+          : previous.completedAt
 
     const weekStartDate = patch.date && patch.date !== previous.date
       ? getWeekStartDate(patch.date)
@@ -208,7 +208,7 @@ export const useTrainingStore = create<TrainingState>((set, get) => ({
     const session = get().sessions.find(s => s.id === sessionId)
     if (!session?.exercises) return
     const exercises = session.exercises.map(ex =>
-      ex.id === exerciseId ? { ...ex, completed: !ex.completed } : ex
+      ex.id === exerciseId ? { ...ex, completed: !ex.completed } : ex,
     )
     await get().updateSession(sessionId, { exercises })
   },
@@ -230,35 +230,40 @@ export const useTrainingStore = create<TrainingState>((set, get) => ({
   },
 
   generateCoachNote: async (weekStart) => {
-    const [sessions, weekDayLogs, currentWeekSummary, athleteProfile] = await Promise.all([
-      getSessionsForWeek(weekStart),
-      getDayLogsForWeek(weekStart),
-      getWeekSummary(weekStart),
-      getAthleteProfile(),
-    ])
+    set({ isLoading: true })
+    try {
+      const [sessions, weekDayLogs, currentWeekSummary, athleteProfile] = await Promise.all([
+        getSessionsForWeek(weekStart),
+        getDayLogsForWeek(weekStart),
+        getWeekSummary(weekStart),
+        getAthleteProfile(),
+      ])
 
-    const response = await CoachEngine.send(
-      'Genera un resumen semanal corto y concreto. Evalúa adherencia, carga, sensaciones, riesgos y foco para la siguiente semana. No propongas acciones ni uses <actions>.',
-      optimizeChatContext({
-        recentSessions: sessions
-          .sort((a, b) => a.date.localeCompare(b.date) || a.timeBlock.localeCompare(b.timeBlock)),
-        plannedSessions: sessions.filter(session => session.status === 'planned'),
-        historicalSessions: sessions.filter(session => session.status !== 'planned'),
-        currentWeekSummary: currentWeekSummary ?? undefined,
-        weekDayLogs,
-        athleteMemory: athleteProfile?.coachMemory,
-        athleteProfile: athleteProfile ?? undefined,
-        intent: 'weekly_summary',
-      }),
-      { maxTokens: 700, temperature: 0.4 },
-    )
+      const response = await CoachEngine.send(
+        'Genera un resumen semanal corto y concreto. Evalua adherencia, carga, sensaciones, riesgos y foco para la siguiente semana. No propongas acciones ni uses <actions>.',
+        optimizeChatContext({
+          recentSessions: sessions
+            .sort((a, b) => a.date.localeCompare(b.date) || a.timeBlock.localeCompare(b.timeBlock)),
+          plannedSessions: sessions.filter(session => session.status === 'planned'),
+          historicalSessions: sessions.filter(session => session.status !== 'planned'),
+          currentWeekSummary: currentWeekSummary ?? undefined,
+          weekDayLogs,
+          athleteMemory: athleteProfile?.coachMemory,
+          athleteProfile: athleteProfile ?? undefined,
+          intent: 'weekly_summary',
+        }),
+        { maxTokens: 700, temperature: 0.4 },
+      )
 
-    const summary = await upsertWeekSummary(weekStart, { coachNote: response.message })
-    const activeWeekStart = getActiveWeekStart(get())
-    if (activeWeekStart === weekStart) {
-      set({ currentWeekSummary: summary })
+      const summary = await upsertWeekSummary(weekStart, { coachNote: response.message })
+      const activeWeekStart = getActiveWeekStart(get())
+      if (activeWeekStart === weekStart) {
+        set({ currentWeekSummary: summary })
+      }
+      await get().loadAllSummaries()
+      return response.message
+    } finally {
+      set({ isLoading: false })
     }
-    await get().loadAllSummaries()
-    return response.message
   },
 }))

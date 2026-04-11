@@ -47,6 +47,7 @@ export default function ProposalDrawer({
   onClose,
 }: ProposalDrawerProps) {
   const createWeekAction = proposal.actions.find(action => action.type === 'create_week')
+  const chainedAdjustmentSessionIds = getChainedAdjustmentSessionIds(proposal.actions)
   const totalSessions = createWeekAction?.sessions?.length ?? 0
   const compactMessage = compactProposalMessage(proposal.message)
   const collisions = createWeekAction?.sessions
@@ -118,6 +119,11 @@ export default function ProposalDrawer({
                   </span>
                   <div className="flex-1 min-w-0">
                     <p className="text-xs text-ink-muted">{action.reason}</p>
+                    {action.sessionId && chainedAdjustmentSessionIds.has(action.sessionId) && (
+                      <p className="mt-1 text-[11px] text-amber-300">
+                        Parte de un ajuste encadenado sobre la misma sesion.
+                      </p>
+                    )}
 
                     {action.newRpe != null && (
                       <p className="text-[11px] text-ink-faint mt-0.5">RPE → {action.newRpe}</p>
@@ -226,6 +232,25 @@ function compactProposalMessage(message: string): string {
     return slice.slice(0, lastPeriod + 1)
   }
   return `${slice}...`
+}
+
+function getChainedAdjustmentSessionIds(actions: CoachProposal['actions']): Set<string> {
+  const grouped = new Map<string, Set<string>>()
+
+  for (const action of actions) {
+    if (!action.sessionId) continue
+    if (action.type !== 'move_session' && action.type !== 'update_session') continue
+
+    const types = grouped.get(action.sessionId) ?? new Set<string>()
+    types.add(action.type)
+    grouped.set(action.sessionId, types)
+  }
+
+  return new Set(
+    [...grouped.entries()]
+      .filter(([, types]) => types.has('move_session') && types.has('update_session'))
+      .map(([sessionId]) => sessionId),
+  )
 }
 
 function renderProposalDetails(
@@ -429,4 +454,3 @@ function formatSquashSessionMode(sessionMode: SquashSessionMode): string {
       return 'Sesion de drills'
   }
 }
-

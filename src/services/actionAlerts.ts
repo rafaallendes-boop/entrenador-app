@@ -1,5 +1,7 @@
 import type { DayLog, MacroWeekCoherenceSummary, Session, WeekSummary } from '../types'
-import type { DisciplineAcwr, LoadAnalytics, SportKey } from './loadAnalytics'
+import type { DisciplineAcwr, LoadAnalytics } from './loadAnalytics'
+import { todayISO } from '../utils/date'
+import { getSportLabel } from '../utils/sport'
 
 export type ActionAlertSeverity = 'high' | 'medium' | 'low'
 export type ActionAlertTarget = 'chat' | 'week' | 'checkin'
@@ -23,13 +25,6 @@ export interface ActionAlertsInput {
   today?: string
 }
 
-const SPORT_LABELS: Record<SportKey, string> = {
-  squash: 'squash',
-  running: 'running',
-  strength: 'fuerza',
-  cycling: 'ciclismo',
-}
-
 const SEVERITY_WEIGHT: Record<ActionAlertSeverity, number> = {
   high: 3,
   medium: 2,
@@ -48,7 +43,7 @@ const ALERT_PRIORITY: Record<string, number> = {
 
 export function buildActionAlerts(input: ActionAlertsInput): ActionableAlert[] {
   const alerts: ActionableAlert[] = []
-  const today = input.today ?? todayISODate()
+  const today = input.today ?? todayISO()
 
   const coherenceAlert = buildCoherenceAlert(input.macroWeekCoherence)
   if (coherenceAlert) alerts.push(coherenceAlert)
@@ -95,7 +90,7 @@ function buildAcwrAlerts(loadAnalytics: LoadAnalytics | null | undefined): Actio
     alerts.push({
       id: `acwr-risk-${leadRisk.sport}`,
       severity: 'high',
-      title: `Carga en riesgo en ${SPORT_LABELS[leadRisk.sport]}`,
+      title: `Carga en riesgo en ${getSportLabel(leadRisk.sport)}`,
       body: describeAcwrRisk(leadRisk),
       recommendation: 'Pide al coach un ajuste de carga o baja una sesion accesoria antes de acumular fatiga innecesaria.',
       ctaLabel: 'Pedir ajuste',
@@ -108,7 +103,7 @@ function buildAcwrAlerts(loadAnalytics: LoadAnalytics | null | undefined): Actio
     alerts.push({
       id: `acwr-undertrained-${leadDetrain.sport}`,
       severity: 'low',
-      title: `${SPORT_LABELS[leadDetrain.sport]} quedo corto esta semana`,
+      title: `${getSportLabel(leadDetrain.sport)} quedo corto esta semana`,
       body: describeAcwrUndertrained(leadDetrain),
       recommendation: 'Si el bloque pide progresión, agrega una sesión útil o recupera una calidad perdida.',
       ctaLabel: 'Ver semana',
@@ -191,12 +186,12 @@ function buildAdherenceAlert(summary: WeekSummary | null | undefined): Actionabl
 
 function describeAcwrRisk(acwr: DisciplineAcwr): string {
   const ratio = acwr.ratio != null ? `ACWR ${acwr.ratio.toFixed(2)}` : 'Carga aguda muy por encima de la base'
-  return `${ratio}. La carga reciente de ${SPORT_LABELS[acwr.sport]} esta subiendo demasiado rapido.`
+  return `${ratio}. La carga reciente de ${getSportLabel(acwr.sport)} esta subiendo demasiado rapido.`
 }
 
 function describeAcwrUndertrained(acwr: DisciplineAcwr): string {
   const ratio = acwr.ratio != null ? `ACWR ${acwr.ratio.toFixed(2)}` : 'La carga reciente quedo baja'
-  return `${ratio}. La semana actual esta por debajo de lo que venias sosteniendo en ${SPORT_LABELS[acwr.sport]}.`
+  return `${ratio}. La semana actual esta por debajo de lo que venias sosteniendo en ${getSportLabel(acwr.sport)}.`
 }
 
 function dedupeAlerts(alerts: ActionableAlert[]): ActionableAlert[] {
@@ -219,9 +214,4 @@ function compareAlerts(a: ActionableAlert, b: ActionableAlert): number {
   }
 
   return a.title.localeCompare(b.title)
-}
-
-function todayISODate(): string {
-  const now = new Date()
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
 }

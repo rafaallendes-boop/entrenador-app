@@ -93,6 +93,26 @@ describe('buildActionAlerts', () => {
     expect(alerts[0]?.title).toContain('running')
   })
 
+  it('renders a valid label when mobility appears in ACWR by discipline', () => {
+    const alerts = buildActionAlerts({
+      sessions: [],
+      loadAnalytics: {
+        ...makeLoadAnalytics(),
+        acwrByDiscipline: {
+          squash: { sport: 'squash', acuteLoad: 0, chronicLoad: 0, ratio: null, status: 'limited', baselineWeeks: 0 },
+          running: { sport: 'running', acuteLoad: 0, chronicLoad: 0, ratio: null, status: 'limited', baselineWeeks: 0 },
+          strength: { sport: 'strength', acuteLoad: 0, chronicLoad: 0, ratio: null, status: 'limited', baselineWeeks: 0 },
+          cycling: { sport: 'cycling', acuteLoad: 0, chronicLoad: 0, ratio: null, status: 'limited', baselineWeeks: 0 },
+          mobility: { sport: 'mobility', acuteLoad: 180, chronicLoad: 90, ratio: 2, status: 'risk', baselineWeeks: 3 },
+        },
+      } as LoadAnalytics,
+      today: dateInWeek(0),
+    })
+
+    expect(alerts[0]?.id).toBe('acwr-risk-mobility')
+    expect(alerts[0]?.title).toContain('movilidad')
+  })
+
   it('creates a check-in alert when completed sessions still lack feedback or daily context', () => {
     const alerts = buildActionAlerts({
       sessions: [

@@ -258,6 +258,7 @@ export interface DayLog {
 export interface WeekSummary {
   id: string
   weekStartDate: string    // ISO "YYYY-MM-DD", always Monday
+  updatedAt?: number
   totalSessions: number
   totalMinutes: number
   plannedSessions: number

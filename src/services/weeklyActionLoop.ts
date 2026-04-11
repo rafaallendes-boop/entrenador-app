@@ -11,6 +11,7 @@ import type {
 } from '../types'
 import type { LoadAnalytics } from './loadAnalytics'
 import { buildActionAlerts } from './actionAlerts'
+import { todayISO } from '../utils/date'
 
 export interface WeeklyActionLoopInput {
   sessions: Session[]
@@ -31,7 +32,7 @@ const PRIORITY = {
 } as const
 
 export function buildWeeklyActionSummary(input: WeeklyActionLoopInput): WeeklyActionSummary {
-  const today = input.today ?? todayISODate()
+  const today = input.today ?? todayISO()
   const weekSessions = input.currentWeekSummary?.totalSessions ?? input.sessions.length
   const actions: WeeklyActionItem[] = []
 
@@ -223,9 +224,4 @@ function buildWeekState({
   if (!primaryAction) return 'on_track'
   if (primaryAction.kind === 'review_coach_note' && secondaryActions.length === 0) return 'planned'
   return 'needs_attention'
-}
-
-function todayISODate(): string {
-  const now = new Date()
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
 }
