@@ -64,6 +64,18 @@ export default function Dashboard() {
     loadWeek(currentWeekStart)
   }, [loadWeek, currentWeekStart])
 
+  const {
+    loadAnalytics,
+    weeklyActionSummary,
+    autoAdjustmentDraft,
+  } = useWeeklySnapshot(currentWeekStart, {
+    sessions,
+    currentWeekSummary,
+    todayDayLog: dayLogs[today],
+    macroWeekCoherence,
+    today,
+  })
+
   useEffect(() => {
     return startNotificationSync(() => ({
       sessions,
@@ -90,17 +102,6 @@ export default function Dashboard() {
 
   const profileCompleteness = getProfileCompleteness(athleteProfile ?? null)
   const showProfileNudge = profileCompleteness.state === 'partial' || profileCompleteness.state === 'missing_sports'
-  const {
-    loadAnalytics,
-    weeklyActionSummary,
-    autoAdjustmentDraft,
-  } = useWeeklySnapshot(currentWeekStart, {
-    sessions,
-    currentWeekSummary,
-    todayDayLog: dayLogs[today],
-    macroWeekCoherence,
-    today,
-  })
 
   async function handleOpenAutoAdjustment() {
     if (!autoAdjustmentDraft) return

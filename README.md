@@ -286,6 +286,16 @@ Dependiendo de tu configuracion, puedes necesitar variables tipo:
 - `VITE_AI_PROVIDER`
 - `VITE_SUPABASE_URL`
 - `VITE_SUPABASE_ANON_KEY`
+- `VITE_AUTH_REDIRECT_URL`
+
+Para auth con Google en dev, `VITE_AUTH_REDIRECT_URL` puede apuntar a tu host local, por ejemplo:
+
+- `VITE_AUTH_REDIRECT_URL=http://localhost:5173`
+
+Importante:
+
+- esa URL tambien debe estar autorizada en Supabase Auth
+- si Supabase/Google solo tienen autorizada la URL de produccion, el login puede terminar devolviendote a prod aunque hayas iniciado desde dev
 
 ### Produccion segura con Netlify
 

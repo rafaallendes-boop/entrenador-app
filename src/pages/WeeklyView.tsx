@@ -72,7 +72,6 @@ export default function WeeklyView() {
     },
   })
   const {
-    loadAnalytics,
     weeklyActionSummary,
     autoAdjustmentDraft,
   } = useWeeklySnapshot(currentWeekStart, {

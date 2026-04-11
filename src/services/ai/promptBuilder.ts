@@ -81,13 +81,6 @@ import {
   buildMobilityRulesSection,
   buildDynamicMobilitySelectionSectionV2,
 } from './promptModules'
-import {
-  buildLoadAnalyticsSection as buildLoadAnalyticsSectionHelper,
-  buildReferenceLoadSection as buildReferenceLoadSectionHelper,
-  buildCyclingMobilityActionSchemaAddendum as buildCyclingMobilityActionSchemaAddendumHelper,
-} from './promptBuilder.helpers'
-
-
 // ─── Entry point ──────────────────────────────────────────────────────────
 
 export function buildCoachSystemPrompt(context: ChatContext): string {
@@ -108,7 +101,7 @@ export function buildCoachSystemPrompt(context: ChatContext): string {
     buildHybridSection(context),
     buildCompetitionSection(context),
     buildCompetitionLoadSection(context),
-    buildLoadAnalyticsSectionHelper(context),
+    buildLoadAnalyticsSection(context),
     buildImplicitPrioritySection(context),
     buildSquashMatchHistorySection(context),
     buildDynamicSquashSelectionSection(context, squashSummary),
@@ -1242,7 +1235,7 @@ function buildResponseInstructionsSection(
   mobilitySummary = buildMobilitySelectionSummary(context),
 ): string {
   const promptContext = buildResponsePromptContext(sessions, context, squashSummary, strengthSummary, cyclingSummary, mobilitySummary)
-  return `${buildResponseInstructions(sessions, context, promptContext)}\n\n${buildCyclingMobilityActionSchemaAddendumHelper(promptContext)}`
+  return `${buildResponseInstructions(sessions, context, promptContext)}\n\n${buildCyclingMobilityActionSchemaAddendum(promptContext)}`
 }
 
 function buildResponseInstructions(
@@ -1323,7 +1316,7 @@ FECHA HOY: ${today}
 ${weekDates}
 ${buildDynamicPromptSelectionSections(promptContext)}
 
-${buildReferenceLoadSectionHelper(promptContext)}
+${buildReferenceLoadSection(promptContext)}
 
 SESIONES PLANIFICADAS (IDs para acciones de modificación):
 ${plannedSessionLines || '  (ninguna — la semana está vacía)'}

@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import type { User } from '@supabase/supabase-js'
-import { supabase } from '../services/auth'
+import { getAuthRedirectUrl, supabase } from '../services/auth'
 
 export type SyncStatus = 'idle' | 'syncing' | 'error' | 'offline'
 
@@ -63,7 +63,7 @@ export const useAuthStore = create<AuthState>((set) => {
     signInWithGoogle: async () => {
       await supabase.auth.signInWithOAuth({
         provider: 'google',
-        options: { redirectTo: window.location.origin },
+        options: { redirectTo: getAuthRedirectUrl() },
       })
     },
 
