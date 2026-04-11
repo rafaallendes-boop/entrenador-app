@@ -1,9 +1,13 @@
 import { db } from '../db/db'
 import { getAthleteProfile } from '../db/queries'
 import { computeMacroPlan } from './macroPlan'
-import type { AthleteProfile, DayLog, MatchResult, Session } from '../types'
+import type { AthleteProfile, DayLog, MatchResult, Session, SquashSessionMode } from '../types'
 import { getEnabledSports, getPrimarySportNormalized } from '../utils/athlete'
-import { isCompetitionSquashMatch } from '../utils/squash'
+import {
+  getRecentSquashCompetitiveExposure,
+  isCompetitionSquashMatch,
+  isPracticeSquashMatch,
+} from '../utils/squash'
 import {
   deriveSquashProgressionState,
   extractRecentSquashDrills,
@@ -65,6 +69,15 @@ export interface SquashMatchHistoryItem {
   gamesLost?: number
   actualRpe?: number
   title: string
+  sessionMode: SquashSessionMode
+  competitiveRole: 'practice_match' | 'competition_match'
+}
+
+export interface SquashCompetitiveExposureInsights {
+  practiceMatchCount: number
+  competitionMatchCount: number
+  totalMatchCount: number
+  exposureScore: number
 }
 
 export interface StrengthProgressionEntry {
@@ -92,6 +105,7 @@ export interface AthleteProgressionInsights {
     message: string
   }
   matches: SquashMatchHistoryItem[]
+  squashCompetitiveExposure: SquashCompetitiveExposureInsights
   strength: StrengthExerciseProgression[]
   squashAcwr: DisciplineAcwr
   strengthAcwr: DisciplineAcwr
@@ -155,7 +169,7 @@ export function getSquashMatchHistory(
 ): SquashMatchHistoryItem[] {
   return sessions
     .filter((session) =>
-      isCompetitionSquashMatch(session),
+      isPracticeSquashMatch(session) || isCompetitionSquashMatch(session),
     )
     .sort((a, b) => b.date.localeCompare(a.date) || b.timeBlock.localeCompare(a.timeBlock))
     .slice(0, limit)
@@ -168,6 +182,8 @@ export function getSquashMatchHistory(
       gamesLost: session.gamesLost,
       actualRpe: session.actualRpe,
       title: session.title,
+      sessionMode: isPracticeSquashMatch(session) ? 'practice_match' : 'competition_match',
+      competitiveRole: isPracticeSquashMatch(session) ? 'practice_match' : 'competition_match',
     }))
 }
 
@@ -417,6 +433,12 @@ export async function getAthleteProgressionInsights(): Promise<AthleteProgressio
   const fatigueLevel = deriveFatigueLevel(dayLogs, completedSessions)
 
   const matchHistory = getSquashMatchHistory(completedSessions, 10)
+  const squashCompetitiveExposure = getRecentSquashCompetitiveExposure(
+    [...completedSessions]
+      .filter((session) => session.type === 'squash')
+      .sort((a, b) => b.date.localeCompare(a.date) || b.timeBlock.localeCompare(a.timeBlock)),
+    6,
+  )
   const strengthProgression = getStrengthProgression(completedSessions, 4, 4)
 
   const squashAcwr = calculateSquashAcwr(completedSessions)
@@ -453,6 +475,7 @@ export async function getAthleteProgressionInsights(): Promise<AthleteProgressio
     squashRecommendation,
     strengthRecommendation,
     matches: matchHistory,
+    squashCompetitiveExposure,
     strength: strengthProgression,
     squashAcwr,
     strengthAcwr,

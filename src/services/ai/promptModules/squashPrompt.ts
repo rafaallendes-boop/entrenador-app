@@ -3,7 +3,7 @@
  */
 
 import type { ChatContext, MacroPlanPhase, SquashDrill } from '../../../types'
-import { isCompetitionSquashMatch } from '../../../utils/squash'
+import { getRecentSquashCompetitiveExposure, isCompetitionSquashMatch } from '../../../utils/squash'
 import { todayISO } from '../../../utils/date'
 import { getAllowedPlanningSports } from '../../planningConstraints'
 import {
@@ -178,6 +178,7 @@ export function buildDynamicSquashSelectionSection(
   lines.push('Usa esta seleccion como base prioritaria para las sesiones squash nuevas o actualizadas.')
   lines.push('Si ajustas una sesion squash, intenta mantener este foco y variar solo por restricciones del dia, equipamiento o feedback reciente.')
   lines.push('Si el contexto es build/peak competitivo sin competencia inmediata, puedes convertir la sesion squash principal en subtype "match" con squashDetails.sessionMode "practice_match".')
+  lines.push('Si la exposicion reciente a match-play ya es alta, rota hacia control tecnico, tactica o activacion en vez de repetir otro practice_match.')
 
   if (!import.meta.env.PROD) {
     const smoke = runSquashDrillSelectorSmokeChecks().slice(0, 2).join(' || ')
@@ -193,14 +194,18 @@ export function buildSquashMatchHistorySection(context: ChatContext): string {
   const enabledSports = getAllowedPlanningSports(context.athleteProfile)
   if (!enabledSports.includes('squash')) return ''
 
-  const completedMatches = getSquashMatchHistory(getHistoricalSessions(context), 6)
+  const historicalSessions = getHistoricalSessions(context)
+  const completedMatches = getSquashMatchHistory(historicalSessions, 6)
+  const recentExposure = getRecentSquashCompetitiveExposure(historicalSessions, 6)
 
   if (completedMatches.length === 0) return ''
 
   const lines: string[] = ['HISTORIAL DE PARTIDOS RECIENTES (squash)']
+  lines.push(`Exposicion reciente: ${recentExposure.practiceMatchCount} practice match / ${recentExposure.competitionMatchCount} competencia real.`)
 
   for (const match of completedMatches) {
     const parts: string[] = [match.date]
+    parts.push(match.competitiveRole === 'practice_match' ? 'practice match' : 'competencia')
     if (match.opponent) parts.push(`vs ${match.opponent}`)
     if (match.result) parts.push(match.result === 'win' ? '✓ ganó' : '✗ perdió')
     if (match.gamesWon != null || match.gamesLost != null) {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { Session } from '../../types'
-import { isCompetitionSquashMatch, isPracticeSquashMatch } from '../squash'
+import { getRecentSquashCompetitiveExposure, isCompetitionSquashMatch, isPracticeSquashMatch } from '../squash'
 
 function makeSquashSession(overrides: Partial<Session> = {}): Session {
   return {
@@ -38,5 +38,28 @@ describe('squash session mode compatibility', () => {
 
     expect(isCompetitionSquashMatch(session)).toBe(false)
     expect(isPracticeSquashMatch(session)).toBe(true)
+  })
+
+  it('summarizes recent competitive exposure separating practice and competition', () => {
+    const exposure = getRecentSquashCompetitiveExposure([
+      makeSquashSession({
+        squashDetails: {
+          trainingFocus: 'tactical',
+          sessionMode: 'practice_match',
+          drills: [{ name: 'Partido de entrenamiento libre a 5 games' }],
+        },
+      }),
+      makeSquashSession({
+        id: 'session-2',
+        subtype: 'competitive',
+      }),
+      makeSquashSession({
+        id: 'session-3',
+      }),
+    ])
+
+    expect(exposure.practiceMatchCount).toBe(1)
+    expect(exposure.competitionMatchCount).toBe(2)
+    expect(exposure.totalMatchCount).toBe(3)
   })
 })

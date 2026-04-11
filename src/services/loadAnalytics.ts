@@ -11,7 +11,7 @@
 
 import { db } from '../db/db'
 import { toISO, fromISO, getWeekStart } from '../utils/date'
-import { isCompetitionSquashMatch } from '../utils/squash'
+import { isCompetitionSquashMatch, isPracticeSquashMatch } from '../utils/squash'
 import { addDays, subWeeks } from 'date-fns'
 import type { Session, SessionType } from '../types'
 
@@ -95,6 +95,9 @@ export interface SquashWeeklyLoad {
   sessionsCount: number
   /** sessions with subtype 'match' or 'competitive' */
   matchCount: number
+  practiceMatchCount: number
+  competitionMatchCount: number
+  competitiveExposureScore: number
   totalDurationMin: number
 }
 
@@ -338,7 +341,16 @@ export function getSquashWeeklyLoads(sessions: Session[]): SquashWeeklyLoad[] {
   const byWeek = new Map<string, SquashWeeklyLoad>()
 
   for (const weekStart of weekStarts) {
-    byWeek.set(weekStart, { weekStart, totalLoad: 0, sessionsCount: 0, matchCount: 0, totalDurationMin: 0 })
+    byWeek.set(weekStart, {
+      weekStart,
+      totalLoad: 0,
+      sessionsCount: 0,
+      matchCount: 0,
+      practiceMatchCount: 0,
+      competitionMatchCount: 0,
+      competitiveExposureScore: 0,
+      totalDurationMin: 0,
+    })
   }
 
   for (const session of sessions) {
@@ -351,8 +363,14 @@ export function getSquashWeeklyLoads(sessions: Session[]): SquashWeeklyLoad[] {
     existing.totalLoad += sessionWeightedLoad(session)
     existing.totalDurationMin += session.actualDurationMin ?? session.durationMin
     existing.sessionsCount += 1
-    if (isCompetitionSquashMatch(session)) {
+    if (isPracticeSquashMatch(session)) {
       existing.matchCount += 1
+      existing.practiceMatchCount += 1
+      existing.competitiveExposureScore += 1
+    } else if (isCompetitionSquashMatch(session)) {
+      existing.matchCount += 1
+      existing.competitionMatchCount += 1
+      existing.competitiveExposureScore += 1
     }
   }
 
@@ -363,6 +381,9 @@ export function getSquashWeeklyLoads(sessions: Session[]): SquashWeeklyLoad[] {
       totalLoad: Math.round(load.totalLoad),
       sessionsCount: load.sessionsCount,
       matchCount: load.matchCount,
+      practiceMatchCount: load.practiceMatchCount,
+      competitionMatchCount: load.competitionMatchCount,
+      competitiveExposureScore: load.competitiveExposureScore,
       totalDurationMin: load.totalDurationMin,
     }
   })

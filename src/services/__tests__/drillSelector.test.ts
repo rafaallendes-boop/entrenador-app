@@ -25,6 +25,26 @@ function makeSquashSession(date: string, drillName: string): Session {
   } as Session
 }
 
+function makePracticeMatchSession(date: string): Session {
+  return {
+    id: `${date}-practice-match`,
+    date,
+    timeBlock: 'PM',
+    type: 'squash',
+    status: 'completed',
+    subtype: 'match',
+    title: 'Practice match',
+    durationMin: 60,
+    createdAt: 1,
+    updatedAt: 1,
+    squashDetails: {
+      trainingFocus: 'tactical',
+      sessionMode: 'practice_match',
+      drills: [{ name: 'Partido de entrenamiento libre a 5 games', durationMin: 20 }],
+    },
+  } as Session
+}
+
 describe('drillSelector progression', () => {
   it('forces deload when squash ACWR is in risk', () => {
     const state = deriveSquashProgressionState({
@@ -144,5 +164,30 @@ describe('drillSelector progression', () => {
 
     expect(taperSelection.drills.some((drill) => practiceMatchNames.has(drill.name))).toBe(false)
     expect(fatigueSelection.drills.some((drill) => practiceMatchNames.has(drill.name))).toBe(false)
+  })
+
+  it('rotates away from practice match when recent match-play exposure is already high', () => {
+    const selection = selectSquashDrills({
+      phase: 'peak',
+      fatigueLevel: 4,
+      competitionSoon: false,
+      goal: 'mejorar rendimiento en partido y manejo de presion',
+      recentDrills: [],
+      historicalSessions: [
+        makePracticeMatchSession('2026-04-09'),
+        makePracticeMatchSession('2026-04-07'),
+        makeSquashSession('2026-04-05', 'Drives paralelos a profundidad'),
+      ],
+    })
+
+    expect(
+      selection.drills.some((drill) =>
+        [
+          'Partido de entrenamiento libre a 5 games',
+          'Partido de entrenamiento al mejor de 3 games',
+          'Partido con foco de ataque en puntos cortos',
+        ].includes(drill.name),
+      ),
+    ).toBe(false)
   })
 })

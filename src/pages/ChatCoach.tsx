@@ -1,6 +1,5 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { computeLoadAnalytics, type LoadAnalytics } from '../services/loadAnalytics'
 import { AlertTriangle, CheckCircle2, MoreHorizontal, Plus, Trash2, X } from 'lucide-react'
 import { useChatStore } from '../store/useChatStore'
 import { useCoachActionsStore } from '../store/useCoachActionsStore'
@@ -15,6 +14,7 @@ import ChatInput from '../components/chat/ChatInput'
 import Spinner from '../components/ui/Spinner'
 import type { ChatContext, CoachProposal } from '../types'
 import { ROUTES } from '../constants/routes'
+import { useLoadAnalytics } from '../hooks/useWeeklySnapshot'
 
 const QuickActionChips = lazy(() => import('../components/chat/QuickActionChips'))
 const ProposalDrawer = lazy(() => import('../components/chat/ProposalDrawer'))
@@ -124,8 +124,9 @@ export default function ChatCoach() {
   const [deleteConfirm, setDeleteConfirm] = useState(false)
   const [profileBannerDismissed, setProfileBannerDismissed] = useState(false)
   const [profileNudgeDismissed, setProfileNudgeDismissed] = useState(false)
-  const [loadAnalytics, setLoadAnalytics] = useState<LoadAnalytics | null>(null)
   const locationState = (location.state as { showProfileNudge?: boolean; composerDraft?: string; fromPlanBuilder?: boolean } | null)
+  const loadAnalytics = useLoadAnalytics(currentWeekStartISO(), sessions)
+
   const showProfileNudge = !profileNudgeDismissed && locationState?.showProfileNudge === true
   const composerDraft = locationState?.composerDraft ?? ''
   const showPlanBuilderBanner = locationState?.fromPlanBuilder === true && composerDraft.trim().length > 0
@@ -143,18 +144,6 @@ export default function ChatCoach() {
     loadMemory()
     loadWeek(currentWeekStartISO())
   }, [loadHistory, loadProposals, loadMemory, loadWeek])
-
-  useEffect(() => {
-    let cancelled = false
-
-    void computeLoadAnalytics(4).then((analytics) => {
-      if (!cancelled) setLoadAnalytics(analytics)
-    })
-
-    return () => {
-      cancelled = true
-    }
-  }, [sessions, dayLogs, currentWeekSummary])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })

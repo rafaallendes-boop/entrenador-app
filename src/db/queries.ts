@@ -2,7 +2,7 @@ import { db } from './db'
 import type { Session, DayLog, WeekSummary, AthleteProfile } from '../types'
 import * as syncService from '../services/syncService'
 import { toISO, getWeekStart, fromISO } from '../utils/date'
-import { isCompetitionSquashMatch } from '../utils/squash'
+import { isCompetitionSquashMatch, isPracticeSquashMatch } from '../utils/squash'
 import { addDays } from 'date-fns'
 import { v4 as uuid } from '../utils/uuid'
 
@@ -170,7 +170,7 @@ export const getAllWeekSummaries = async (): Promise<WeekSummary[]> =>
 
 export const getMatchSessions = async (): Promise<Session[]> => {
   const sessions = await db.sessions
-    .filter((s) => isCompetitionSquashMatch(s))
+    .filter((s) => isPracticeSquashMatch(s) || isCompetitionSquashMatch(s))
     .toArray()
   return sessions.sort((a, b) => b.date.localeCompare(a.date))
 }

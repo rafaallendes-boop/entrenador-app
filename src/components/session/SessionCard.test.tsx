@@ -64,4 +64,21 @@ describe('SessionCard squash match badges', () => {
 
     expect(html).not.toContain('Partido entrenamiento')
   })
+
+  it('renders a dedicated competition badge for real squash matches', () => {
+    const html = renderToStaticMarkup(
+      <SessionCard
+        session={makeSession({
+          subtype: 'match',
+          squashDetails: {
+            trainingFocus: 'tactical',
+            sessionMode: 'competition_match',
+            drills: [{ name: 'Partido objetivo' }],
+          },
+        })}
+      />,
+    )
+
+    expect(html).toContain('Partido competitivo')
+  })
 })

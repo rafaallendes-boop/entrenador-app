@@ -71,7 +71,19 @@ describe('progressionInsights', () => {
 
   it('returns the last squash matches in reverse chronological order', () => {
     const matches = getSquashMatchHistory([
-      makeSession({ type: 'squash', date: '2026-04-01', subtype: 'match', title: 'Match A', opponent: 'Ana', actualRpe: 8 }),
+      makeSession({
+        type: 'squash',
+        date: '2026-04-01',
+        subtype: 'match',
+        title: 'Match A',
+        opponent: 'Ana',
+        actualRpe: 8,
+        squashDetails: {
+          trainingFocus: 'tactical',
+          sessionMode: 'practice_match',
+          drills: [{ name: 'Partido de entrenamiento libre a 5 games' }],
+        },
+      }),
       makeSession({ type: 'squash', date: '2026-04-03', subtype: 'competitive', title: 'Match B', opponent: 'Bea', actualRpe: 7 }),
       makeSession({ type: 'squash', date: '2026-04-02', subtype: 'training', title: 'Training' }),
     ])
@@ -79,6 +91,8 @@ describe('progressionInsights', () => {
     expect(matches).toHaveLength(2)
     expect(matches[0].title).toBe('Match B')
     expect(matches[1].title).toBe('Match A')
+    expect(matches[0].competitiveRole).toBe('competition_match')
+    expect(matches[1].competitiveRole).toBe('practice_match')
   })
 
   it('groups strength progressions by family, prioritizes main lifts and computes trend', () => {
@@ -124,6 +138,18 @@ describe('progressionInsights', () => {
         matchResult: 'win',
         gamesWon: 3,
         gamesLost: 1,
+      }),
+      makeSession({
+        type: 'squash',
+        date: '2026-04-07',
+        subtype: 'match',
+        title: 'Match-play tactico',
+        actualRpe: 7,
+        squashDetails: {
+          trainingFocus: 'tactical',
+          sessionMode: 'practice_match',
+          drills: [{ name: 'Partido de entrenamiento libre a 5 games', durationMin: 20 }],
+        },
       }),
       makeSession({
         type: 'squash',
@@ -226,8 +252,10 @@ describe('progressionInsights', () => {
 
     const insights = await getAthleteProgressionInsights()
 
-    expect(insights.matches).toHaveLength(1)
+    expect(insights.matches).toHaveLength(2)
     expect(insights.matches[0].opponent).toBe('Rival A')
+    expect(insights.squashCompetitiveExposure.practiceMatchCount).toBe(1)
+    expect(insights.squashCompetitiveExposure.competitionMatchCount).toBe(1)
     expect(insights.squashRecommendation?.message).toContain('Familia')
     expect(insights.strengthRecommendation?.message).toContain('Patrón')
     expect(insights.strength[0].exerciseKey).toBe('sentadilla')

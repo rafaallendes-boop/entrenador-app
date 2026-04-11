@@ -33,6 +33,17 @@ import {
   type OfflineOp,
   type SupabaseTable,
 } from './syncUtils'
+import {
+  compareDayLogsForRepair as compareDayLogsForRepairHelper,
+  compareWeekSummariesForRepair as compareWeekSummariesForRepairHelper,
+  getSyncErrorMessage as getSyncErrorMessageHelper,
+  getWeekSummaryUpdatedAt as getWeekSummaryUpdatedAtHelper,
+  groupRowsBy as groupRowsByHelper,
+  isInfrastructureError as isInfrastructureErrorHelper,
+  resolveDayLogConflict as resolveDayLogConflictHelper,
+  resolveSyncFailureStatus,
+  resolveWeekSummaryConflict as resolveWeekSummaryConflictHelper,
+} from './syncService.helpers'
 
 const QUEUE_KEY = 'entrenador_sync_queue_v1'
 const LAST_SYNC_USER_KEY = 'entrenador_sync_user_v1'
@@ -203,15 +214,11 @@ function getSyncErrorMessage(error: unknown, fallback: string): string {
 }
 
 function applySyncFailure(error: unknown, fallbackMessage: string): void {
-  const message = getSyncErrorMessage(error, fallbackMessage)
+  const message = getSyncErrorMessageHelper(error, fallbackMessage)
   // Errores de infraestructura (tabla inexistente, schema incorrecto) no indican
   // un problema de red: mostrar 'idle' silencioso en vez de 'error' para no spamear
   // el UI con una nube roja que el usuario no puede resolver.
-  const status = isInfrastructureError(error)
-    ? 'idle'
-    : isLikelyOfflineError(error)
-      ? 'offline'
-      : 'error'
+  const status = resolveSyncFailureStatus(error, navigator.onLine)
 
   syncStoreState().setSyncStatus(status, status === 'idle' ? undefined : message)
   syncStoreState().setSyncDetails({
@@ -276,7 +283,7 @@ async function drainQueue(): Promise<boolean> {
         }
       }
     } catch (error) {
-      if (isInfrastructureError(error)) {
+      if (isInfrastructureErrorHelper(error)) {
         // Tabla inexistente u otro error de schema: descartar la op silenciosamente.
         // No tiene sentido re-encolar — seguirá fallando hasta que la infra esté lista.
         console.warn('[sync] discarding op due to infrastructure error:', op.table, error)
@@ -371,7 +378,7 @@ async function upsertRow(table: SupabaseTable, row: Record<string, unknown>): Pr
       finishSyncAttempt('idle')
     }
   } catch (error) {
-    if (isInfrastructureError(error)) {
+    if (isInfrastructureErrorHelper(error)) {
       console.warn('[sync] upsertRow infrastructure error, skipping queue:', table, error)
       finishSyncAttempt('idle')
       return
@@ -414,7 +421,7 @@ async function deleteRow(table: SupabaseTable, id: string): Promise<void> {
       finishSyncAttempt('idle')
     }
   } catch (error) {
-    if (isInfrastructureError(error)) {
+    if (isInfrastructureErrorHelper(error)) {
       console.warn('[sync] deleteRow infrastructure error, skipping queue:', table, error)
       finishSyncAttempt('idle')
       return
@@ -810,7 +817,7 @@ export async function pullAll(userId: string): Promise<void> {
       ...(queueDrained ? {} : { lastErrorMessage: 'Quedaron operaciones pendientes en cola.' }),
     })
   } catch (error) {
-    if (isInfrastructureError(error)) {
+    if (isInfrastructureErrorHelper(error)) {
       console.warn('[sync] pullAll infrastructure error (tables not ready), skipping:', error)
       setSyncStatus('idle')
       setSyncDetails({ syncAttemptInFlight: false, pendingOps: 0 })
@@ -874,7 +881,7 @@ async function mergeDayLogs(userId: string, context: MergeContext): Promise<void
     const remote = rowToDayLog(row)
     const localById = await db.dayLogs.get(remote.id)
     const localByDate = localById ?? await findDayLogConflictByDate(remote.date)
-    const resolution = resolveDayLogConflict(localByDate, remote)
+    const resolution = resolveDayLogConflictHelper(localByDate, remote)
 
     remoteIds.add(remote.id)
     remoteIds.add(resolution.winner.id)
@@ -920,7 +927,7 @@ async function mergeWeekSummaries(userId: string, context: MergeContext): Promis
     const remoteUpdatedAt = (row.updated_at as number) ?? 0
     const localById = await db.weekSummaries.get(remote.id)
     const localByWeek = localById ?? await findWeekSummaryConflictByWeekStart(remote.weekStartDate)
-    const resolution = resolveWeekSummaryConflict(localByWeek, remote, remoteUpdatedAt)
+    const resolution = resolveWeekSummaryConflictHelper(localByWeek, remote, remoteUpdatedAt)
 
     remoteIds.add(remote.id)
     remoteIds.add(resolution.winner.id)
@@ -940,7 +947,7 @@ async function mergeWeekSummaries(userId: string, context: MergeContext): Promis
       continue
     }
 
-    const winnerUpdatedAt = getWeekSummaryUpdatedAt(resolution.winner)
+    const winnerUpdatedAt = getWeekSummaryUpdatedAtHelper(resolution.winner)
 
     if (resolution.winner === remote) {
       await db.weekSummaries.put(remote)
@@ -1143,11 +1150,11 @@ async function repairLocalNaturalKeyConflicts(): Promise<void> {
 
 async function repairLocalDayLogConflicts(): Promise<void> {
   const rows = await db.dayLogs.toArray()
-  const groups = groupRowsBy(rows, (row) => row.date)
+  const groups = groupRowsByHelper(rows, (row) => row.date)
 
   for (const duplicates of groups.values()) {
     if (duplicates.length <= 1) continue
-    const sorted = [...duplicates].sort(compareDayLogsForRepair)
+    const sorted = [...duplicates].sort(compareDayLogsForRepairHelper)
     const winner = sorted[0]
     const loserIds = sorted.slice(1).map((row) => row.id)
     if (loserIds.length > 0) {
@@ -1159,11 +1166,11 @@ async function repairLocalDayLogConflicts(): Promise<void> {
 
 async function repairLocalWeekSummaryConflicts(): Promise<void> {
   const rows = await db.weekSummaries.toArray()
-  const groups = groupRowsBy(rows, (row) => row.weekStartDate)
+  const groups = groupRowsByHelper(rows, (row) => row.weekStartDate)
 
   for (const duplicates of groups.values()) {
     if (duplicates.length <= 1) continue
-    const sorted = [...duplicates].sort(compareWeekSummariesForRepair)
+    const sorted = [...duplicates].sort(compareWeekSummariesForRepairHelper)
     const winner = sorted[0]
     const loserIds = sorted.slice(1).map((row) => row.id)
     if (loserIds.length > 0) {

@@ -1,5 +1,5 @@
 ﻿import { CheckCircle2, X, Zap } from 'lucide-react'
-import type { CoachProposal, CyclingDetails, GeneratedProtocol, MobilityDetails, Session } from '../../types'
+import type { CoachProposal, CyclingDetails, GeneratedProtocol, MobilityDetails, Session, SquashSessionMode } from '../../types'
 
 const ACTION_LABEL: Record<string, string> = {
   skip_session: 'Saltar sesion',
@@ -238,7 +238,7 @@ function renderProposalDetails(
     exercises?: Array<{ name: string; sets: number; reps: number | string; weight?: number }>
     cyclingDetails?: CyclingDetails
     mobilityDetails?: MobilityDetails
-    squashDetails?: { trainingFocus: string; drills: Array<{ name: string; durationMin?: number; notes?: string }> }
+    squashDetails?: { trainingFocus: string; sessionMode?: SquashSessionMode; drills: Array<{ name: string; durationMin?: number; notes?: string }> }
     warmup?: GeneratedProtocol
     cooldown?: GeneratedProtocol
   },
@@ -253,11 +253,16 @@ function renderProposalDetails(
 
   return (
     <>
-      {item.squashDetails && item.squashDetails.drills.length > 0 && (
+      {item.squashDetails && (
         <div className={`${indentClassName} mt-1 rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-2.5 py-2`}>
           <p className="text-[10px] text-emerald-300/80 uppercase tracking-wide">
             Squash {SQUASH_FOCUS_LABEL[item.squashDetails.trainingFocus] ?? item.squashDetails.trainingFocus}
           </p>
+          {item.squashDetails.sessionMode && (
+            <p className="mt-1 text-[10px] text-emerald-200/80">
+              {formatSquashSessionMode(item.squashDetails.sessionMode)}
+            </p>
+          )}
           <div className="mt-1 space-y-1">
             {item.squashDetails.drills.slice(0, 4).map((drill, drillIndex) => (
               <p key={drillIndex} className="text-[10px] text-ink-faint">
@@ -411,6 +416,17 @@ function formatMobilityContext(context: MobilityDetails['context']): string {
       return 'full body'
     default:
       return 'sport specific'
+  }
+}
+
+function formatSquashSessionMode(sessionMode: SquashSessionMode): string {
+  switch (sessionMode) {
+    case 'practice_match':
+      return 'Match-play de entrenamiento'
+    case 'competition_match':
+      return 'Partido competitivo real'
+    default:
+      return 'Sesion de drills'
   }
 }
 

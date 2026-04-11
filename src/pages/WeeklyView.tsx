@@ -1,11 +1,10 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Download, Plus, FileUp, Sparkles, MessageSquareText } from 'lucide-react'
 import { useTrainingStore } from '../store/useTrainingStore'
 import { useCoachActionsStore } from '../store/useCoachActionsStore'
 import { useUIStore } from '../store/useUIStore'
 
-import { computeLoadAnalytics, type LoadAnalytics } from '../services/loadAnalytics'
 import { formatFullDate, fromISO, getWeekDays, toISO, isDateToday, todayISO } from '../utils/date'
 import WeekStrip from '../components/week/WeekStrip'
 import WeekSummaryCard from '../components/week/WeekSummaryCard'
@@ -18,8 +17,7 @@ import type { CoachProposal, TimeBlock } from '../types'
 import { downloadICS } from '../utils/ics'
 import { useMacroWeekCoherence } from '../hooks/useMacroWeekCoherence'
 import { useWeeklyActionNavigator } from '../hooks/useWeeklyActionNavigator'
-import { buildWeeklyActionSummary } from '../services/weeklyActionLoop'
-import { buildAutoAdjustmentDraft } from '../services/alertAdjustmentEngine'
+import { useWeeklySnapshot } from '../hooks/useWeeklySnapshot'
 
 const DailyCheckInCard = lazy(() => import('../components/dashboard/DailyCheckInCard'))
 const WeeklyActionCenterCard = lazy(() => import('../components/week/WeeklyActionCenterCard'))
@@ -33,17 +31,12 @@ export default function WeeklyView() {
   const [showAddModal, setShowAddModal] = useState(false)
   const [isGeneratingNote, setIsGeneratingNote] = useState(false)
   const [checkInExpandToken, setCheckInExpandToken] = useState(0)
-  const [loadAnalytics, setLoadAnalytics] = useState<LoadAnalytics | null>(null)
   const [pendingCoachDeleteId, setPendingCoachDeleteId] = useState<string | null>(null)
   const [activeProposal, setActiveProposal] = useState<CoachProposal | null>(null)
 
   useEffect(() => {
     loadWeek(currentWeekStart)
   }, [currentWeekStart, loadWeek])
-
-  useEffect(() => {
-    void computeLoadAnalytics(4).then(setLoadAnalytics)
-  }, [currentWeekStart, sessions])
 
   const navigate = useNavigate()
   const weekDays = getWeekDays(fromISO(currentWeekStart))
@@ -78,22 +71,17 @@ export default function WeeklyView() {
       window.scrollTo({ top: 0, behavior: 'smooth' })
     },
   })
-  const weeklyActionSummary = useMemo(() => buildWeeklyActionSummary({
+  const {
+    loadAnalytics,
+    weeklyActionSummary,
+    autoAdjustmentDraft,
+  } = useWeeklySnapshot(currentWeekStart, {
     sessions,
     currentWeekSummary,
     todayDayLog: dayLogs[today],
     macroWeekCoherence,
-    loadAnalytics,
     today,
-  }), [sessions, currentWeekSummary, dayLogs, today, macroWeekCoherence, loadAnalytics])
-  const autoAdjustmentDraft = useMemo(() => buildAutoAdjustmentDraft({
-    sessions,
-    currentWeekSummary,
-    todayDayLog: dayLogs[today],
-    macroWeekCoherence,
-    loadAnalytics,
-    today,
-  }), [sessions, currentWeekSummary, dayLogs, today, macroWeekCoherence, loadAnalytics])
+  })
   const todaySessions = sessions.filter((session) => session.date === today)
 
   const handleExport = () => {

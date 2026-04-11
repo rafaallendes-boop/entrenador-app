@@ -197,4 +197,10 @@ describe('promptBuilder dynamic cycling and mobility sections', () => {
     expect(prompt).toContain('Warmup y cooldown (opcionales)')
     expect(prompt).toContain('el sistema genera protocolos base automáticamente')
   })
+  it('keeps extracted reference and schema sections in the final prompt', () => {
+    const prompt = buildCoachSystemPrompt(makeContext(makeProfile()))
+
+    expect(prompt).toContain('ADDENDUM - CAMPOS EXPLICITOS PARA CYCLING Y MOBILITY')
+    expect(prompt).toContain('CARGAS Y RITMOS DE REFERENCIA')
+  })
 })

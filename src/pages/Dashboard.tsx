@@ -13,14 +13,12 @@ import LoadAnalyticsCard from '../components/dashboard/LoadAnalyticsCard'
 import Card from '../components/ui/Card'
 import ConfirmDialog from '../components/ui/ConfirmDialog'
 import { getDayNutrition } from '../services/nutritionEngine'
-import { computeLoadAnalytics, type LoadAnalytics } from '../services/loadAnalytics'
 import { startNotificationSync } from '../services/notifications'
 import { getAthleteFirstName, getProfileCompleteness } from '../utils/athlete'
 import { computeMacroPlan, getPrimaryGoalEvent } from '../services/macroPlan'
 import { useMacroWeekCoherence } from '../hooks/useMacroWeekCoherence'
-import { buildWeeklyActionSummary } from '../services/weeklyActionLoop'
 import { useWeeklyActionNavigator } from '../hooks/useWeeklyActionNavigator'
-import { buildAutoAdjustmentDraft } from '../services/alertAdjustmentEngine'
+import { useWeeklySnapshot } from '../hooks/useWeeklySnapshot'
 import type { CoachProposal } from '../types'
 
 const CoachMessageCard = lazy(() => import('../components/dashboard/CoachMessageCard'))
@@ -41,7 +39,6 @@ export default function Dashboard() {
   const today = todayISO()
   const athleteFirstName = getAthleteFirstName(athleteProfile, 'atleta')
 
-  const [loadAnalytics, setLoadAnalytics] = useState<LoadAnalytics | null>(null)
   const [isDeletingMacroPlan, setIsDeletingMacroPlan] = useState(false)
   const [checkInExpandToken, setCheckInExpandToken] = useState(0)
   const [showDeleteMacroPlanConfirm, setShowDeleteMacroPlanConfirm] = useState(false)
@@ -78,11 +75,6 @@ export default function Dashboard() {
     }))
   }, [sessions, currentWeekSummary, macroWeekCoherence, dayLogs, today, athleteProfile, loadAnalytics])
 
-  // Reload analytics whenever the viewed week changes (covers new completions too)
-  useEffect(() => {
-    void computeLoadAnalytics(4).then(setLoadAnalytics)
-  }, [currentWeekStart, sessions])
-
   const todaySessions = sessions.filter(s => s.date === today)
   const completedToday = todaySessions.filter(s => s.status === 'completed').length
 
@@ -98,22 +90,17 @@ export default function Dashboard() {
 
   const profileCompleteness = getProfileCompleteness(athleteProfile ?? null)
   const showProfileNudge = profileCompleteness.state === 'partial' || profileCompleteness.state === 'missing_sports'
-  const weeklyActionSummary = useMemo(() => buildWeeklyActionSummary({
+  const {
+    loadAnalytics,
+    weeklyActionSummary,
+    autoAdjustmentDraft,
+  } = useWeeklySnapshot(currentWeekStart, {
     sessions,
     currentWeekSummary,
     todayDayLog: dayLogs[today],
     macroWeekCoherence,
-    loadAnalytics,
     today,
-  }), [sessions, currentWeekSummary, dayLogs, today, macroWeekCoherence, loadAnalytics])
-  const autoAdjustmentDraft = useMemo(() => buildAutoAdjustmentDraft({
-    sessions,
-    currentWeekSummary,
-    todayDayLog: dayLogs[today],
-    macroWeekCoherence,
-    loadAnalytics,
-    today,
-  }), [sessions, currentWeekSummary, dayLogs, today, macroWeekCoherence, loadAnalytics])
+  })
 
   async function handleOpenAutoAdjustment() {
     if (!autoAdjustmentDraft) return

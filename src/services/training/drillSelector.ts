@@ -1,4 +1,5 @@
 import type { Session, SquashDrill, SquashTrainingFocus } from '../../types'
+import { getRecentSquashCompetitiveExposure } from '../../utils/squash'
 import {
   findSquashDrillByName,
   getSquashDrillFamily,
@@ -247,7 +248,7 @@ function scoreDrills(
   recentDrills: Set<string>,
 ): DrillScore[] {
   const goal = context.goal.toLowerCase()
-  const recentMatchExposure = getRecentMatchExposure(context.historicalSessions)
+  const recentMatchExposure = getRecentSquashCompetitiveExposure(context.historicalSessions ?? [])
   const wantsCompetitiveExposure =
     goal.includes('partido') ||
     goal.includes('presion') ||
@@ -284,7 +285,9 @@ function scoreDrills(
 
       if (!context.competitionSoon && context.fatigueLevel <= 6 && (context.phase === 'build' || context.phase === 'peak')) {
         if (drill.tags.includes('match_play') && drill.tags.includes('practice') && wantsCompetitiveExposure) score += 8
-        if (drill.tags.includes('match_play') && drill.tags.includes('practice') && recentMatchExposure === 0) score += 4
+        if (drill.tags.includes('match_play') && drill.tags.includes('practice') && recentMatchExposure.totalMatchCount === 0) score += 4
+        if (drill.tags.includes('match_play') && drill.tags.includes('practice') && recentMatchExposure.practiceMatchCount >= 2) score -= 6
+        if (drill.tags.includes('match_play') && drill.tags.includes('practice') && recentMatchExposure.exposureScore >= 3) score -= 4
       }
       if (context.phase === 'taper' && drill.tags.includes('match_play') && drill.tags.includes('practice')) score -= 9
 
@@ -525,13 +528,13 @@ export function buildProgressedDrillNotes(
 
 export function summarizeSquashProgression(context: SquashSelectionContext): string {
   const state = deriveSquashProgressionState(context)
-  const recentMatchExposure = getRecentMatchExposure(context.historicalSessions)
+  const recentMatchExposure = getRecentSquashCompetitiveExposure(context.historicalSessions ?? [])
   const acwrLabel = context.squashAcwr?.ratio != null
     ? ` ACWR squash: ${context.squashAcwr.ratio.toFixed(2)} (${context.squashAcwr.status}).`
     : context.squashAcwr?.status
       ? ` ACWR squash: ${context.squashAcwr.status}.`
       : ''
-  const matchPlayLabel = ` Exposicion reciente a match-play: ${recentMatchExposure}.`
+  const matchPlayLabel = ` Exposicion reciente a match-play: ${recentMatchExposure.practiceMatchCount} practice / ${recentMatchExposure.competitionMatchCount} competencia.`
 
   if (!state.targetFamily) {
     return `Sin historia suficiente: usar variacion contextual limpia.${matchPlayLabel}${acwrLabel}`
@@ -549,15 +552,9 @@ export function summarizeSquashProgression(context: SquashSelectionContext): str
   }
 }
 
-function getRecentMatchExposure(historicalSessions: Session[] | undefined): number {
-  return (historicalSessions ?? [])
-    .filter((session) => session.type === 'squash' && session.subtype === 'match')
-    .slice(0, 4)
-    .length
-}
-
 function shouldPrioritizePracticeMatch(context: SquashSelectionContext): boolean {
   const goal = context.goal.toLowerCase()
+  const recentExposure = getRecentSquashCompetitiveExposure(context.historicalSessions ?? [])
   const wantsCompetitiveExposure =
     goal.includes('partido') ||
     goal.includes('presion') ||
@@ -570,7 +567,9 @@ function shouldPrioritizePracticeMatch(context: SquashSelectionContext): boolean
     wantsCompetitiveExposure &&
     !context.competitionSoon &&
     context.fatigueLevel <= 6 &&
-    (context.phase === 'build' || context.phase === 'peak')
+    (context.phase === 'build' || context.phase === 'peak') &&
+    recentExposure.practiceMatchCount < 2 &&
+    recentExposure.exposureScore < 3
   )
 }
 

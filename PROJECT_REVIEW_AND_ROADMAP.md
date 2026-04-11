@@ -1,7 +1,7 @@
 # Entrenador App - Review and Roadmap
 
-Actualizado: 2026-04-09
-Ultimo hito relevante: ajustes automaticos del coach desde alertas, con propuestas concretas listas para aceptar desde WeeklyView y Dashboard
+Actualizado: 2026-04-10
+Ultimo hito relevante: consolidacion de squash competitivo y match-play entre selector, historial, analytics y surfaces visibles
 
 ## Estado actual del producto
 
@@ -124,6 +124,7 @@ Estado: fuerte
 - squash y fuerza ya tienen ACWR propio
 - insights visibles para el atleta
 - selectors y reglas con buena base de tests
+- squash ahora separa mejor practice match vs competencia real en historial y carga
 
 Pendiente:
 
@@ -131,7 +132,7 @@ Pendiente:
 - refinar thresholds con uso real
 - mejorar lectura historica para que explique tendencia, no solo la muestre
 - sumar capa cuantitativa mejor para cycling y decidir si mobility queda solo como soporte cualitativo
-- afinar analytics de squash para distinguir mejor match-play de entrenamiento vs partido real sin romper historico
+- seguir usando este split de squash para recomendaciones mas prescriptivas y ajustes automaticos
 
 ### Squash competitivo
 
@@ -141,12 +142,14 @@ Estado: mas fuerte y mas realista
 - el planner puede proponer `subtype: match` con `sessionMode: practice_match`
 - SessionCard distingue partido de entrenamiento vs partido real
 - varias capas criticas ya no tratan automaticamente todo `match` como competencia real
+- historial y analytics ya separan mejor practice match vs competencia real
+- History y ProposalDrawer muestran mejor el rol competitivo de cada sesion
 
 Pendiente:
 
 - enriquecer formatos de match-play con mas contexto y familias
-- decidir si en el futuro conviene `sessionFamily` o subtype mas rico
-- consolidar semantica competitiva en analytics e historial fino sin tocar demasiado el modelo
+- usar esta semantica para recomendaciones y ajustes automaticos todavia mas precisos
+- decidir si en el futuro conviene `sessionFamily` o subtype mas rico, solo si aparece un limite real del modelo actual
 
 ### Cycling y mobility
 
@@ -325,6 +328,14 @@ Pendiente:
 - guards minimos para no tratar `practice_match` como competencia real en capas criticas
 - badge especifico en SessionCard para distinguir partido de entrenamiento
 
+### 12b. Consolidacion de squash competitivo y match-play
+
+- selector squash ahora rota mejor segun exposicion competitiva reciente
+- historial y progresion ya muestran practice match y competencia real por separado
+- analytics de squash separan `practiceMatchCount` y `competitionMatchCount`
+- surfaces visibles distinguen mejor el modo competitivo en History, SessionCard y ProposalDrawer
+- roadmap ya no necesita tratar esta mejora como bloque grande aislado, sino como refinamiento futuro sobre una base consolidada
+
 ### 13. Hardening tecnico del loop semanal
 
 - `useTrainingStore` ya no mezcla semanas visibles ni deja datos viejos cuando falla `loadWeek`
@@ -360,7 +371,7 @@ Las brechas mas importantes no son tantas, pero si son profundas:
 3. Convertir el loop semanal en reactivacion mas automatica y medible.
 4. Completar packaging de monetizacion y posicionamiento comercial.
 5. Convertir mejoras recientes de disciplinas secundarias en comportamiento estable del coach.
-6. Consolidar mejor la semantica de squash competitivo entre planner, historial y analytics finos.
+6. Seguir refinando squash competitivo sobre la base ya consolidada, no reabrir el problema desde cero.
 7. Completar rollback verdaderamente transaccional para propuestas complejas multi-accion con objetivos y week summaries.
 8. Afinar la calidad y precision de los ajustes automaticos con contexto mas rico por dia, deporte y fatiga.
 
@@ -473,6 +484,21 @@ Por que:
 - el salto base ya esta dado
 - ahora conviene consolidar comportamiento y no solo sumar mas biblioteca
 
+### Prioridad 5
+
+**Refinar squash competitivo sobre la base ya consolidada**
+
+Alcance:
+
+- enriquecer formatos de match-play y familias cuando aparezcan gaps reales de uso
+- usar el split practice match / competencia real para recomendaciones y auto-ajustes mas finos
+- medir si la nueva semantica mejora decisiones del coach y lectura del historial
+
+Por que:
+
+- la consolidacion base ya esta implementada
+- el siguiente salto no es de modelo, sino de precision y uso real
+
 ## Priorizacion simple
 
 Si hubiera que resumir el orden real desde hoy:
@@ -481,7 +507,7 @@ Si hubiera que resumir el orden real desde hoy:
 2. hacer que el coach proponga ajustes guiados por alertas
 3. endurecer y medir el weekly loop
 4. profundizar cycling y mobility
-5. consolidar squash competitivo y match-play
+5. refinar squash competitivo ya consolidado
 6. instrumentar activacion, retencion y monetizacion
 7. abrir beta privada pagada
 
@@ -537,6 +563,26 @@ Impacto:
 
 - medio-alto
 - reduce friccion y deuda al mismo tiempo
+
+## Recomendacion final
+
+La recomendacion hoy no es abrir una refactorizacion amplia.
+
+El mejor orden sigue siendo:
+
+1. validar sync en uso real movil + escritorio
+2. volver mas preciso y medible el coach que ajusta la semana
+3. endurecer el weekly loop como sistema de reactivacion
+
+Deuda tecnica si, pero quirurgica:
+
+- seguir desacoplando `syncService`
+- extraer mas bloques puros de `promptBuilder`
+- reducir duplicacion de carga semanal y analytics
+
+Refactor grande o proyecto de seguridad dedicado:
+
+- no todavia, salvo que aparezca un riesgo real en sync, persistencia o manejo de credenciales
 
 ## Revision tecnica de usabilidad
 

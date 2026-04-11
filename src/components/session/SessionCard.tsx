@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import type { Session, SessionStatus } from '../../types'
 import { SESSION_TYPE_CONFIG, SQUASH_SUBTYPE_LABELS } from '../../constants/sessionTypes'
 import { formatDuration } from '../../utils/format'
-import { isCompetitionSquashMatch, isPracticeSquashMatch } from '../../utils/squash'
+import { isCompetitionSquashMatch, isPracticeSquashMatch, resolveSquashSessionMode } from '../../utils/squash'
 import SessionTypeIcon from './SessionTypeIcon'
 import ExerciseChecklist from './ExerciseChecklist'
 import { useTrainingStore } from '../../store/useTrainingStore'
@@ -80,6 +80,10 @@ export default function SessionCard({ session, compact = false, onDelete }: Sess
     hasCompletedFeedback
   const subtypeLabel = session.subtype ? SQUASH_SUBTYPE_LABELS[session.subtype] : null
   const isPracticeMatch = isPracticeSquashMatch(session)
+  const isCompetitionMatch = isCompetitionSquashMatch(session)
+  const squashSessionMode = session.type === 'squash' && session.squashDetails
+    ? resolveSquashSessionMode(session.squashDetails)
+    : undefined
   const isSkipped = session.status === 'skipped'
   const showMatchBadge = hasMatchMeta && session.matchResult
   const matchBadgeClass =
@@ -118,6 +122,11 @@ export default function SessionCard({ session, compact = false, onDelete }: Sess
             {isPracticeMatch && (
               <span className="rounded-full border border-brand/25 bg-brand/10 px-1.5 py-0.5 text-xs font-medium text-brand-light flex-shrink-0">
                 Partido entrenamiento
+              </span>
+            )}
+            {isCompetitionMatch && session.subtype === 'match' && (
+              <span className="rounded-full border border-amber-500/25 bg-amber-500/10 px-1.5 py-0.5 text-xs font-medium text-amber-300 flex-shrink-0">
+                Partido competitivo
               </span>
             )}
             {showMatchBadge && (
@@ -331,6 +340,18 @@ export default function SessionCard({ session, compact = false, onDelete }: Sess
                   <p className="text-sm text-ink">{session.location}</p>
                 </div>
               )}
+            </div>
+          )}
+          {session.type === 'squash' && squashSessionMode && (
+            <div className="rounded-lg bg-surface-raised p-2">
+              <p className="mb-0.5 text-[10px] font-medium uppercase tracking-wider text-ink-faint">Modo squash</p>
+              <p className="text-sm text-ink">
+                {squashSessionMode === 'practice_match'
+                  ? 'Match-play de entrenamiento'
+                  : squashSessionMode === 'competition_match'
+                    ? 'Partido competitivo real'
+                    : 'Sesion de drills'}
+              </p>
             </div>
           )}
           {hasSquashDetails && session.squashDetails && (

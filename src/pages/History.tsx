@@ -4,6 +4,7 @@ import { TrendingDown, TrendingUp, Weight, Zap, Wind, Dumbbell, Trophy, Swords, 
 import { useTrainingStore } from '../store/useTrainingStore'
 import { useUIStore } from '../store/useUIStore'
 import { formatWeekRange, formatShortDate, fromISO } from '../utils/date'
+import { getRecentSquashCompetitiveExposure, isPracticeSquashMatch } from '../utils/squash'
 import WeekSummaryCard from '../components/week/WeekSummaryCard'
 import { ROUTES } from '../constants/routes'
 import { getMatchSessions } from '../db/queries'
@@ -206,8 +207,8 @@ function PartidosView({ sessions }: { sessions: Session[] }) {
   }
 
   const withResult = sessions.filter((session) => session.matchResult != null)
+  const exposure = getRecentSquashCompetitiveExposure(sessions, sessions.length)
   const wins = withResult.filter((session) => session.matchResult === 'win').length
-  const losses = withResult.filter((session) => session.matchResult === 'loss').length
   const winratePct = withResult.length > 0 ? Math.round((wins / withResult.length) * 100) : null
 
   const rivalMap: Record<string, { total: number; wins: number }> = {}
@@ -235,18 +236,18 @@ function PartidosView({ sessions }: { sessions: Session[] }) {
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
           <div>
             <p className="text-2xl font-bold text-ink">{sessions.length}</p>
-            <p className="text-xs text-ink-muted">partidos</p>
+            <p className="text-xs text-ink-muted">exposiciones</p>
+          </div>
+          <div>
+            <p className="text-2xl font-bold text-brand-light">{exposure.practiceMatchCount}</p>
+            <p className="text-xs text-ink-muted">practice match</p>
+          </div>
+          <div>
+            <p className="text-2xl font-bold text-amber-300">{exposure.competitionMatchCount}</p>
+            <p className="text-xs text-ink-muted">competencias</p>
           </div>
           {withResult.length > 0 && (
             <>
-              <div>
-                <p className="text-2xl font-bold text-emerald-400">{wins}</p>
-                <p className="text-xs text-ink-muted">victorias</p>
-              </div>
-              <div>
-                <p className="text-2xl font-bold text-red-400">{losses}</p>
-                <p className="text-xs text-ink-muted">derrotas</p>
-              </div>
               {winratePct != null && (
                 <div>
                   <p className="text-2xl font-bold text-brand-light">{winratePct}%</p>
@@ -281,7 +282,19 @@ function PartidosView({ sessions }: { sessions: Session[] }) {
 
       <div className="space-y-2">
         {sessions.map((session) => (
-          <MatchCard key={session.id} session={session} />
+          <MatchCard
+            key={session.id}
+            session={session}
+            subtitle={
+              <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                isPracticeSquashMatch(session)
+                  ? 'bg-brand/10 text-brand-light'
+                  : 'bg-amber-500/10 text-amber-300'
+              }`}>
+                {isPracticeSquashMatch(session) ? 'Practice match' : 'Competencia'}
+              </span>
+            }
+          />
         ))}
       </div>
     </div>
@@ -423,8 +436,13 @@ function ProgresionView() {
         <div className="flex items-end justify-between gap-3 flex-wrap">
           <div>
             <h3 className="text-xs font-semibold text-ink-muted uppercase tracking-wider">Historial Squash</h3>
-            <p className="text-xs text-ink-faint mt-1">Últimos 10 partidos con resultado, score y RPE.</p>
+            <p className="text-xs text-ink-faint mt-1">Últimas 10 exposiciones competitivas, separando practice match y competencia real.</p>
           </div>
+        </div>
+        <div className="rounded-xl border border-surface-border bg-surface-card px-4 py-3">
+          <p className="text-xs text-ink-muted">
+            Exposicion reciente: {insights.squashCompetitiveExposure.practiceMatchCount} practice match / {insights.squashCompetitiveExposure.competitionMatchCount} competencia real.
+          </p>
         </div>
         {insights.matches.length > 0 ? (
           insights.matches.map((match) => (
@@ -440,12 +458,21 @@ function ProgresionView() {
                 actualRpe: match.actualRpe,
               }}
               showRpe
+              subtitle={
+                <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                  match.competitiveRole === 'practice_match'
+                    ? 'bg-brand/10 text-brand-light'
+                    : 'bg-amber-500/10 text-amber-300'
+                }`}>
+                  {match.competitiveRole === 'practice_match' ? 'Practice match' : 'Competencia'}
+                </span>
+              }
             />
           ))
         ) : (
           <EmptyInsightCard
             title="Sin partidos recientes"
-            detail="Registra partidos o sesiones competitivas de squash para ver continuidad y confianza competitiva."
+            detail="Registra practice matches o competencias de squash para ver continuidad y confianza competitiva."
           />
         )}
       </div>
@@ -492,7 +519,7 @@ function LoadTrendCard({
 }: {
   title: string
   icon: React.ReactNode
-  loads: Array<{ weekStart: string; totalLoad: number; sessionsCount: number }>
+  loads: Array<{ weekStart: string; totalLoad: number; sessionsCount: number; practiceMatchCount?: number; competitionMatchCount?: number }>
   acwr: DisciplineAcwr
 }) {
   const displayLoads = [...loads].reverse().slice(-4)

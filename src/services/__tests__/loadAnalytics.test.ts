@@ -125,13 +125,24 @@ describe('getSquashWeeklyLoads', () => {
     expect(loads[0].sessionsCount).toBe(1)
   })
 
-  it('counts match sessions separately in matchCount', () => {
+  it('separates practice matches from competition matches in squash load history', () => {
     const training = makeSession({ type: 'squash', date: dateInWeek(0) })
-    const match1 = makeSession({ type: 'squash', date: dateInWeek(0), subtype: 'match' })
+    const match1 = makeSession({
+      type: 'squash',
+      date: dateInWeek(0),
+      subtype: 'match',
+      squashDetails: {
+        trainingFocus: 'tactical',
+        sessionMode: 'practice_match',
+        drills: [{ name: 'Partido de entrenamiento libre a 5 games' }],
+      },
+    })
     const match2 = makeSession({ type: 'squash', date: dateInWeek(0), subtype: 'competitive' })
     const loads = getSquashWeeklyLoads([training, match1, match2])
     expect(loads[0].sessionsCount).toBe(3)
     expect(loads[0].matchCount).toBe(2)
+    expect(loads[0].practiceMatchCount).toBe(1)
+    expect(loads[0].competitionMatchCount).toBe(1)
   })
 
   it('skips non-completed sessions', () => {
