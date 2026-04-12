@@ -104,7 +104,8 @@ function parseActionsBlock(jsonText: string): {
     }
   }
 
-  if (!Array.isArray(parsed)) {
+  const actionCandidates = unwrapActionCandidates(parsed)
+  if (!actionCandidates) {
     return {
       actions: [],
       parseFailed: true,
@@ -112,18 +113,33 @@ function parseActionsBlock(jsonText: string): {
     }
   }
 
-  const actions = parsed.reduce<CoachAction[]>((acc, item) => {
+  const actions = actionCandidates.reduce<CoachAction[]>((acc, item) => {
     const action = validateAction(item)
     if (action) acc.push(action)
     return acc
   }, [])
-  const invalidActionCount = parsed.length - actions.length
+  const invalidActionCount = actionCandidates.length - actions.length
 
   return {
     actions,
-    parseFailed: actions.length === 0 && parsed.length > 0,
+    parseFailed: actions.length === 0 && actionCandidates.length > 0,
     likelyTruncated: invalidActionCount > 0 || isLikelyTruncatedJson(jsonText),
   }
+}
+
+function unwrapActionCandidates(parsed: unknown): unknown[] | null {
+  if (Array.isArray(parsed)) return parsed
+
+  if (parsed && typeof parsed === 'object') {
+    const record = parsed as Record<string, unknown>
+    if (Array.isArray(record.actions)) return record.actions
+
+    if (typeof record.type === 'string') {
+      return [record]
+    }
+  }
+
+  return null
 }
 
 function validateAction(obj: unknown): CoachAction | null {

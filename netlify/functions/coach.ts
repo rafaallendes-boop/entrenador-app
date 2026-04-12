@@ -211,9 +211,15 @@ export const handler = async (event: LambdaEvent): Promise<LambdaResponse> => {
 
   } catch (e) {
     const err = e as Error & { statusCode?: number }
+    const normalizedMessage = (err.message ?? '').toLowerCase()
     const status = err.statusCode === 429 ? 429
       : err.statusCode === 401 ? 401
-      : 500
+      : err.statusCode === 502 ? 502
+      : err.statusCode === 503 ? 503
+      : err.statusCode === 504 ? 504
+      : normalizedMessage.includes('deadline') || normalizedMessage.includes('timed out') || normalizedMessage.includes('timeout')
+        ? 504
+        : 500
     return json(status, { error: err.message ?? 'Error interno del servidor.' })
   }
 }

@@ -213,4 +213,32 @@ describe('responseNormalizer', () => {
     expect(response.actions?.[0].type).toBe('create_week')
     expect(response.message).toContain('Aqui va la propuesta compacta.')
   })
+
+  it('accepts actions wrapped in an object payload', () => {
+    const response = normalizeResponse({
+      text: [
+        'Ajuste completo.',
+        '<actions>',
+        JSON.stringify({
+          actions: [
+            {
+              type: 'update_session',
+              reason: 'Bajar carga por adherencia',
+              sessionId: 'abc123',
+              newDurationMin: 40,
+            },
+          ],
+        }),
+        '</actions>',
+      ].join('\n'),
+      provider: 'mock',
+    })
+
+    expect(response.actions).toHaveLength(1)
+    expect(response.actions?.[0]).toMatchObject({
+      type: 'update_session',
+      sessionId: 'abc123',
+      newDurationMin: 40,
+    })
+  })
 })

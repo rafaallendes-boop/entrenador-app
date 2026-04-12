@@ -53,7 +53,7 @@ export default function ProposalDrawer({
   const collisions = createWeekAction?.sessions
     ?.filter(session =>
       existingSessions.some(existing =>
-        existing.date === session.date && existing.timeBlock === session.timeBlock,
+        existing.date === session.date && existing.timeBlock === session.timeBlock && existing.status !== 'planned',
       ),
     )
     .map(session => `${session.date} ${session.timeBlock}`)
@@ -105,7 +105,7 @@ export default function ProposalDrawer({
             <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-2">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-300">Colisiones detectadas</p>
               <p className="mt-1 text-xs text-amber-100/80 leading-relaxed">
-                Ya existen sesiones en: {collisions.join(', ')}. Si aceptas, la semana se creara igual y podrias terminar con duplicados.
+                Ya existen sesiones con historial en: {collisions.join(', ')}. Las sesiones planificadas se reemplazaran, pero estas se mantendran para no perder adherencia registrada.
               </p>
             </div>
           )}

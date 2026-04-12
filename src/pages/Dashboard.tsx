@@ -104,7 +104,7 @@ export default function Dashboard() {
 
   const hasTrainingHistory = allWeekSummaries.length > 0
   const defaultCoachNote = hasTrainingHistory
-    ? `Hola ${athleteFirstName}, ¿cómo viene la semana? Revisá tu semana en curso o pedile al coach que actualice tu plan.`
+    ? `Hola ${athleteFirstName}, ¿cómo viene la semana? Revisa tu semana en curso o solicita al coach que actualice tu plan.`
     : `Bienvenido${athleteProfile?.name ? `, ${athleteFirstName}` : ''}. Carga tu primera semana de entrenamiento y empieza a registrar tu progreso.`
   const coachNote = currentWeekSummary?.coachNote ?? defaultCoachNote
 

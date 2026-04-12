@@ -33,6 +33,7 @@ function DotScale({
         {Array.from({ length: max }, (_, i) => i + 1).map(n => (
           <button
             key={n}
+            type="button"
             onClick={() => onChange(n)}
             className={`flex-1 h-5 rounded-sm transition-all ${
               value != null && n <= value
@@ -135,6 +136,7 @@ export default function DailyCheckInCard({ todaySessions, autoExpandToken = 0 }:
   return (
     <div className="bg-surface-card rounded-card border border-surface-border overflow-hidden">
       <button
+        type="button"
         onClick={() => setExpanded(e => !e)}
         className="w-full flex items-center justify-between px-4 py-3"
       >
@@ -176,9 +178,10 @@ export default function DailyCheckInCard({ todaySessions, autoExpandToken = 0 }:
                         return (
                           <button
                             key={opt.value}
+                            type="button"
                             onClick={() => void updateSession(session.id, { status: opt.value })}
                             title={opt.label}
-                            className={`w-7 h-7 rounded-lg border flex items-center justify-center transition-all ${
+                            className={`w-7 h-7 rounded-lg border flex items-center justify-center transition-all touch-manipulation ${
                               active
                                 ? opt.activeClass
                                 : 'bg-surface-raised border-surface-border text-ink-faint'

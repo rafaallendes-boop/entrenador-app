@@ -1,4 +1,5 @@
-import { Calendar, Pencil, Target, Trash2, TrendingUp } from 'lucide-react'
+import { Calendar, ChevronDown, Pencil, Target, Trash2, TrendingUp } from 'lucide-react'
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { MacroPlan, MacroPlanSportDetail } from '../../types'
 import { formatWeeksRemaining, getPhaseLabel } from '../../services/macroPlan'
@@ -38,12 +39,14 @@ export default function MacroPlanCard({
   onDelete,
 }: MacroPlanCardProps) {
   const navigate = useNavigate()
+  const [sportDetailsExpanded, setSportDetailsExpanded] = useState(true)
+  const [timelineExpanded, setTimelineExpanded] = useState(false)
   const phaseLabel = getPhaseLabel(macroPlan.currentPhase)
   const weeksLabel = formatWeeksRemaining(macroPlan.weeksRemaining)
   const phaseColor = PHASE_COLOR[macroPlan.currentPhase] ?? 'text-ink-muted'
   const phaseBg = PHASE_BG[macroPlan.currentPhase] ?? 'bg-surface-raised border-surface-border'
   const visibleSportDetails = macroPlan.sportDetails
-  const visibleTimeline = macroPlan.timeline.slice(0, 5)
+  const visibleTimeline = timelineExpanded ? macroPlan.timeline : macroPlan.timeline.slice(0, 5)
 
   return (
     <Card className={`p-4 border ${phaseBg}`}>
@@ -108,52 +111,82 @@ export default function MacroPlanCard({
 
       {visibleSportDetails.length > 0 && (
         <div className="mt-3 rounded-xl border border-surface-border bg-surface-raised px-3 py-3">
-          <p className="text-[10px] font-medium uppercase tracking-wider text-ink-faint mb-2">Por deporte</p>
-          <div className="space-y-2">
-            {visibleSportDetails.map((detail) => (
-              <SportDetailRow key={`${detail.sport}-${detail.role}`} detail={detail} />
-            ))}
-          </div>
+          <button
+            type="button"
+            onClick={() => setSportDetailsExpanded((value) => !value)}
+            className="flex w-full items-center justify-between gap-3 text-left"
+          >
+            <p className="text-[10px] font-medium uppercase tracking-wider text-ink-faint">
+              Por deporte
+              <span className="ml-1.5 normal-case tracking-normal text-ink-muted">({visibleSportDetails.length})</span>
+            </p>
+            <ChevronDown
+              size={14}
+              className={`text-ink-faint transition-transform ${sportDetailsExpanded ? 'rotate-180' : ''}`}
+            />
+          </button>
+          {sportDetailsExpanded && (
+            <div className="mt-2 space-y-2">
+              {visibleSportDetails.map((detail) => (
+                <SportDetailRow key={`${detail.sport}-${detail.role}`} detail={detail} />
+              ))}
+            </div>
+          )}
         </div>
       )}
 
       {visibleTimeline.length > 0 && (
         <div className="mt-3 rounded-xl border border-surface-border bg-surface-raised px-3 py-3">
-          <p className="text-[10px] font-medium uppercase tracking-wider text-ink-faint mb-2">Timeline</p>
-          <div className="space-y-2">
-            {visibleTimeline.map((entry) => (
-              <div
-                key={`${entry.phase}-${entry.startWeek}-${entry.endWeek}`}
-                className={`rounded-lg border px-2.5 py-2 ${
-                  entry.isCurrent ? 'border-brand/30 bg-brand/5' : 'border-surface-border bg-surface'
-                }`}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-xs font-semibold text-ink">{entry.label}</p>
-                  <span className="text-[10px] text-ink-faint">
-                    {formatTimelineRange(entry.startWeek, entry.endWeek)}
-                  </span>
-                </div>
-                <p className="mt-1 text-[11px] text-ink-muted leading-relaxed">{entry.focus}</p>
-                {entry.eventMarkers.length > 0 && (
-                  <div className="mt-2 flex flex-wrap gap-1.5">
-                    {entry.eventMarkers.map((eventMarker) => (
-                      <span
-                        key={eventMarker.id}
-                        className={`rounded-full px-2 py-0.5 text-[10px] ${
-                          eventMarker.priority === 'secondary'
-                            ? 'bg-surface-border/60 text-ink-muted'
-                            : 'bg-brand/10 text-brand-light'
-                        }`}
-                      >
-                        {eventMarker.title}
-                      </span>
-                    ))}
+          <button
+            type="button"
+            onClick={() => setTimelineExpanded((value) => !value)}
+            className="flex w-full items-center justify-between gap-3 text-left"
+          >
+            <p className="text-[10px] font-medium uppercase tracking-wider text-ink-faint">
+              Timeline
+              <span className="ml-1.5 normal-case tracking-normal text-ink-muted">({macroPlan.timeline.length})</span>
+            </p>
+            <ChevronDown
+              size={14}
+              className={`text-ink-faint transition-transform ${timelineExpanded ? 'rotate-180' : ''}`}
+            />
+          </button>
+          {timelineExpanded && (
+            <div className="mt-2 space-y-2">
+              {visibleTimeline.map((entry) => (
+                <div
+                  key={`${entry.phase}-${entry.startWeek}-${entry.endWeek}`}
+                  className={`rounded-lg border px-2.5 py-2 ${
+                    entry.isCurrent ? 'border-brand/30 bg-brand/5' : 'border-surface-border bg-surface'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs font-semibold text-ink">{entry.label}</p>
+                    <span className="text-[10px] text-ink-faint">
+                      {formatTimelineRange(entry.startWeek, entry.endWeek)}
+                    </span>
                   </div>
-                )}
-              </div>
-            ))}
-          </div>
+                  <p className="mt-1 text-[11px] text-ink-muted leading-relaxed">{entry.focus}</p>
+                  {entry.eventMarkers.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {entry.eventMarkers.map((eventMarker) => (
+                        <span
+                          key={eventMarker.id}
+                          className={`rounded-full px-2 py-0.5 text-[10px] ${
+                            eventMarker.priority === 'secondary'
+                              ? 'bg-surface-border/60 text-ink-muted'
+                              : 'bg-brand/10 text-brand-light'
+                          }`}
+                        >
+                          {eventMarker.title}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

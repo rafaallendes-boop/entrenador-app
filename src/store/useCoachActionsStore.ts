@@ -7,6 +7,7 @@ import { filterCoachSessionsToAllowedSports, isSessionTypeAllowedForPlan, saniti
 import { normalizeCoachProposal } from '../services/coachProposalMetadata'
 import * as syncService from '../services/syncService'
 import { ensureSessionProtocols, generateDefaultProtocols } from '../services/trainingProtocols'
+import { addDays } from 'date-fns'
 import { toISO, fromISO, getWeekStart } from '../utils/date'
 import { v4 as uuid } from '../utils/uuid'
 import { useCoachMemoryStore } from './useCoachMemoryStore'
@@ -480,9 +481,13 @@ async function applyCoachAction(
         break
       }
 
+      const replacement = await replacePlannedSessionsForCreateWeek(allowedSessions)
+      restoredSessions.push(...replacement.replacedSessions)
+      warnings.push(...replacement.warnings)
+
       const collisions = await findCreateWeekCollisions(allowedSessions)
       if (collisions.length > 0) {
-        warnings.push(`Colisiones detectadas: ${collisions.map((item) => `${item.date} ${item.timeBlock}`).join(', ')}`)
+        warnings.push(`Se mantuvieron sesiones ya realizadas o ajustadas en: ${collisions.map((item) => `${item.date} ${item.timeBlock}`).join(', ')}`)
       }
 
       for (const session of allowedSessions) {
@@ -693,7 +698,45 @@ async function findCreateWeekCollisions(
 
   return sessions
     .filter((session) =>
-      existingSessions.some((existing) => existing.date === session.date && existing.timeBlock === session.timeBlock),
+      existingSessions.some((existing) => (
+        existing.date === session.date
+        && existing.timeBlock === session.timeBlock
+        && existing.status !== 'planned'
+      )),
     )
     .map((session) => ({ date: session.date, timeBlock: session.timeBlock }))
+}
+
+async function replacePlannedSessionsForCreateWeek(
+  sessions: NonNullable<CoachAction['sessions']>,
+): Promise<{ replacedSessions: Session[]; warnings: string[] }> {
+  const warnings: string[] = []
+  const weekStarts = [...new Set(sessions.map((session) => toISO(getWeekStart(fromISO(session.date)))))]
+  const replacementDates = new Set(sessions.map((session) => session.date))
+  const replacedSessions: Session[] = []
+
+  for (const weekStart of weekStarts) {
+    const weekEnd = toISO(addDays(fromISO(weekStart), 6))
+    const existingWeekSessions = await db.sessions.where('date').between(weekStart, weekEnd, true, true).toArray()
+    const plannedSessions = existingWeekSessions.filter((session) => session.status === 'planned')
+    const preservedSessions = existingWeekSessions.filter((session) => session.status !== 'planned')
+
+    if (plannedSessions.length > 0) {
+      replacedSessions.push(...plannedSessions.map((session) => ({ ...session })))
+      await db.sessions.bulkDelete(plannedSessions.map((session) => session.id))
+      plannedSessions.forEach((session) => {
+        void syncService.deleteSession(session.id)
+      })
+      warnings.push(`Se reemplazo la planificacion previa de ${weekStart} (${plannedSessions.length} sesiones planificadas).`)
+    }
+
+    const preservedOnReplacementDates = preservedSessions.filter((session) => replacementDates.has(session.date))
+    if (preservedOnReplacementDates.length > 0) {
+      warnings.push(`Se conservaron ${preservedOnReplacementDates.length} sesiones con historial en la misma semana para no borrar adherencia ya registrada.`)
+    }
+
+    await recalculateWeekSummary(weekStart)
+  }
+
+  return { replacedSessions, warnings }
 }
