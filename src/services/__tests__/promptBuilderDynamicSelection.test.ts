@@ -203,4 +203,29 @@ describe('promptBuilder dynamic cycling and mobility sections', () => {
     expect(prompt).toContain('ADDENDUM - CAMPOS EXPLICITOS PARA CYCLING Y MOBILITY')
     expect(prompt).toContain('CARGAS Y RITMOS DE REFERENCIA')
   })
+
+  it('uses personalized nutrition targets from getDayNutrition in the prompt context', () => {
+    const profile = makeProfile({
+      weightKg: 80,
+      nutritionProfile: {
+        dailyWaterLiters: 2.5,
+      },
+    })
+    const prompt = buildCoachSystemPrompt(makeContext(profile, {
+      plannedSessions: [
+        makeSession({
+          id: 'tempo-1',
+          date: '2026-04-11',
+          type: 'running',
+          runningDetails: { runningType: 'tempo' },
+          status: 'planned',
+          durationMin: 45,
+          rpe: 6,
+        }),
+      ],
+    }))
+
+    expect(prompt).toContain('Proteína diaria objetivo: ~144g proteína')
+    expect(prompt).toContain('Hidratación recomendada:')
+  })
 })

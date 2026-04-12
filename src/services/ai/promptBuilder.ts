@@ -223,10 +223,9 @@ function buildNutritionContextSection(context: ChatContext): string {
   const allSessions = getAllContextSessions(context)
 
   const todaySessions = allSessions.filter(s => s.date === today && s.status !== 'skipped')
-  const sessionCount = todaySessions.length
 
   const loadType = classifyDayLoad(todaySessions)
-  const rec = getDayNutrition(todaySessions)
+  const rec = getDayNutrition(todaySessions, context.athleteProfile)
 
   const upcomingMatch = getPlannedSessions(context).find(s =>
     s.date > today &&
@@ -247,16 +246,7 @@ function buildNutritionContextSection(context: ChatContext): string {
     if (bodyLines.length > 0) lines.push(`Composición corporal: ${bodyLines.join(' · ')}`)
   }
 
-  const proteinTarget = np?.proteinTargetG ?? (weightKg ? Math.round(weightKg * 2.0) : null)
-  if (proteinTarget) lines.push(`Proteína diaria objetivo: ~${proteinTarget}g`)
-
-  const waterBase = np?.dailyWaterLiters ?? 2.5
-  const waterTotal = waterBase + sessionCount * 0.8
-  lines.push(
-    sessionCount > 0
-      ? `Hidratación: ${waterBase}L base + ~${(sessionCount * 0.8).toFixed(1)}L por entrenamiento = ~${waterTotal.toFixed(1)}L total hoy`
-      : `Hidratación: ${waterBase}L (día sin entrenamiento)`,
-  )
+  if (rec.proteinTarget) lines.push(`Proteína diaria objetivo: ${rec.proteinTarget}`)
 
   lines.push('')
   lines.push(`Carga de hoy: ${getLoadTypeLabel(loadType)}`)
@@ -863,7 +853,7 @@ function buildSessionsSection(sessions: Session[]): string {
     if (s.squashDetails) {
       const focus = s.squashDetails.trainingFocus
       const focusLabel: Record<string, string> = { technical: 'técnico', tactical: 'táctico', physical: 'físico', conditioned_games: 'juegos condicionados' }
-      const drillStr = s.squashDetails.drills.map(d => d.durationMin ? `${d.name} ${d.durationMin}min` : d.name).join(', ')
+      const drillStr = (s.squashDetails.drills ?? []).map(d => d.durationMin ? `${d.name} ${d.durationMin}min` : d.name).join(', ')
       lines.push(`   ↳ ${focusLabel[focus] ?? focus}: ${drillStr}`)
     }
 
@@ -1113,10 +1103,12 @@ function buildResponsePromptContext(
   })
   const squashControlSelection = selectSquashDrills({
     fatigueLevel: Math.max(squashSelectorContext?.fatigueLevel ?? 4, 5),
-    phase: squashSelectorContext?.competitionSoon ? 'taper' : 'base',
-    recentDrills: squashBaseSelection.drills.map(drill => drill.name),
+    phase: squashSelectorContext?.phase ?? 'build',
+    recentDrills: squashSelectorContext?.recentDrills ?? [],
     goal: 'limpiar tecnica, timing y control sin cargar de mas',
     competitionSoon: squashSelectorContext?.competitionSoon ?? false,
+    historicalSessions: squashSelectorContext?.historicalSessions,
+    squashAcwr: squashSelectorContext?.squashAcwr,
   })
   const squashTemplateSummary = formatSelectedSquashDrills(squashBaseSelection.drills, 3)
   const squashBaseDrillsJson = stringifySquashDrills(squashBaseSelection.drills.slice(0, 3))

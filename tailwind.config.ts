@@ -7,6 +7,7 @@ const config: Config = {
       colors: {
         surface: {
           DEFAULT: '#0f0f13',
+          deep:    '#08080b',
           card:    '#17171e',
           raised:  '#1e1e28',
           border:  '#2a2a38',
@@ -23,15 +24,20 @@ const config: Config = {
         },
       },
       fontFamily: {
-        sans: ['Inter', 'system-ui', 'sans-serif'],
+        sans:    ['"DM Sans"', 'system-ui', 'sans-serif'],
+        display: ['"Barlow Condensed"', 'system-ui', 'sans-serif'],
+        mono:    ['"JetBrains Mono"', 'ui-monospace', 'monospace'],
       },
       borderRadius: {
-        card: '1rem',
-        pill: '9999px',
+        card:    '1rem',
+        'card-sm': '0.75rem',
+        pill:    '9999px',
       },
       boxShadow: {
-        card:     '0 2px 16px 0 rgba(0,0,0,0.4)',
-        glow:     '0 0 20px 2px rgba(124,92,252,0.25)',
+        card:       '0 2px 16px 0 rgba(0,0,0,0.4)',
+        'card-hover': '0 4px 28px 0 rgba(0,0,0,0.55)',
+        glow:       '0 0 20px 2px rgba(124,92,252,0.25)',
+        'glow-sm':  '0 0 10px 1px rgba(124,92,252,0.18)',
         'inner-sm': 'inset 0 1px 3px rgba(0,0,0,0.3)',
       },
       screens: {

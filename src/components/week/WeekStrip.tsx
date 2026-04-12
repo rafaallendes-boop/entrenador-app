@@ -29,7 +29,7 @@ export default function WeekStrip({ showNav = true, onDayPress }: WeekStripProps
           >
             <ChevronLeft size={16} />
           </button>
-          <span className="text-xs text-ink-muted font-medium uppercase tracking-wider">
+          <span className="font-display text-sm font-semibold uppercase tracking-wider text-ink-muted">
             {fromISO(currentWeekStart).toLocaleString('es', { month: 'long', year: 'numeric' })}
           </span>
           <button
@@ -54,7 +54,7 @@ export default function WeekStrip({ showNav = true, onDayPress }: WeekStripProps
             <button
               key={iso}
               onClick={() => { setSelectedDate(iso); onDayPress?.(iso) }}
-              className={`flex flex-col items-center gap-1 py-2 rounded-xl transition-all ${
+              className={`flex flex-col items-center gap-1 py-2.5 rounded-xl transition-all ${
                 isSelected
                   ? 'bg-brand text-white shadow-glow'
                   : isToday
@@ -62,10 +62,10 @@ export default function WeekStrip({ showNav = true, onDayPress }: WeekStripProps
                   : 'text-ink-muted hover:bg-surface-raised'
               }`}
             >
-              <span className="text-[10px] uppercase font-medium md:text-[11px]">
+              <span className="font-display text-[10px] font-semibold uppercase tracking-wider md:text-[11px]">
                 {formatDay(day)}
               </span>
-              <span className={`text-base font-semibold md:text-lg ${isSelected ? 'text-white' : ''}`}>
+              <span className={`font-display text-lg font-bold md:text-xl ${isSelected ? 'text-white' : ''}`}>
                 {formatDayNum(day)}
               </span>
               {/* Type dots */}

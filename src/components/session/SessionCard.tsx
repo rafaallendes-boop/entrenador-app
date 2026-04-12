@@ -10,10 +10,10 @@ import { useTrainingStore } from '../../store/useTrainingStore'
 import { normalizeGeneratedProtocol } from '../../services/trainingProtocols'
 
 const STATUS_CONFIG: Record<SessionStatus, { label: string; badge: string; icon: string }> = {
-  planned: { label: 'Planificado', badge: 'bg-surface-raised text-ink-faint border border-surface-border', icon: '?' },
-  completed: { label: 'Realizado', badge: 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/25', icon: '?' },
-  adjusted: { label: 'Ajustado', badge: 'bg-amber-500/15 text-amber-400 border border-amber-500/25', icon: '~' },
-  skipped: { label: 'Saltado', badge: 'bg-red-500/15 text-red-400 border border-red-500/25', icon: '?' },
+  planned:   { label: 'Planificado', badge: 'bg-surface-raised text-ink-faint border border-surface-border',       icon: '○' },
+  completed: { label: 'Realizado',   badge: 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/25',    icon: '✓' },
+  adjusted:  { label: 'Ajustado',    badge: 'bg-amber-500/15 text-amber-400 border border-amber-500/25',          icon: '↺' },
+  skipped:   { label: 'Saltado',     badge: 'bg-red-500/15 text-red-400 border border-red-500/25',                icon: '×' },
 }
 
 const RUNNING_TYPE_LABELS: Record<string, string> = {
@@ -54,7 +54,7 @@ export default function SessionCard({ session, compact = false, onDelete }: Sess
   const hasCyclingDetails = session.type === 'cycling' && session.cyclingDetails
   const hasMobilityDetails = session.type === 'mobility' && session.mobilityDetails
   const hasSquashDetails =
-    session.type === 'squash' && session.squashDetails && session.squashDetails.drills.length > 0
+    session.type === 'squash' && session.squashDetails && (session.squashDetails.drills?.length ?? 0) > 0
   const warmup = normalizeGeneratedProtocol(session.warmup, 'warmup')
   const cooldown = normalizeGeneratedProtocol(session.cooldown, 'cooldown')
   const hasProtocols = Boolean(warmup || cooldown)
@@ -93,14 +93,19 @@ export default function SessionCard({ session, compact = false, onDelete }: Sess
 
   return (
     <div
-      className={`rounded-xl border ${config.borderClass} ${config.bgClass} overflow-hidden transition-opacity ${
-        isSkipped ? 'opacity-50' : ''
+      className={`rounded-xl border ${config.borderClass} bg-surface-card overflow-hidden transition-opacity ${
+        isSkipped ? 'opacity-40' : ''
       }`}
     >
-      <div
-        className={`flex items-start gap-3 p-3 md:p-4 ${isExpandable ? 'cursor-pointer' : ''}`}
-        onClick={() => isExpandable && setExpanded((e) => !e)}
-      >
+      <div className="flex">
+        {/* Sport accent strip */}
+        <div className={`w-[3px] flex-shrink-0 ${config.dotClass}`} />
+        {/* Main content */}
+        <div className="flex-1 min-w-0">
+          <div
+            className={`flex items-start gap-3 p-3 md:p-4 ${isExpandable ? 'cursor-pointer' : ''}`}
+            onClick={() => isExpandable && setExpanded((e) => !e)}
+          >
         <SessionTypeIcon type={session.type} />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
@@ -150,26 +155,26 @@ export default function SessionCard({ session, compact = false, onDelete }: Sess
               </span>
             )}
           </div>
-          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1.5">
-            <span className="flex items-center gap-1 text-xs text-ink-muted">
+          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span className="flex items-center gap-1 font-mono text-xs tabular-nums text-ink-muted">
               <Clock size={11} />
               {formatDuration(session.durationMin)}
             </span>
             {session.rpe != null && (
-              <span className="flex items-center gap-1 text-xs text-ink-muted">
+              <span className="flex items-center gap-1 font-mono text-xs tabular-nums text-ink-muted">
                 <Flame size={11} />
-                {session.actualRpe != null && session.status === 'completed' ? `RPE real ${session.actualRpe}` : `RPE ${session.rpe}`}
+                {session.actualRpe != null && session.status === 'completed' ? `RPE ${session.actualRpe}` : `RPE ${session.rpe}`}
               </span>
             )}
             {hasRunningDetails && session.runningDetails?.targetPaceMin && (
-              <span className="flex items-center gap-1 text-xs text-sky-400">
+              <span className="flex items-center gap-1 font-mono text-xs tabular-nums text-sky-400">
                 <Wind size={11} />
                 {session.runningDetails.targetPaceMin}
-                {session.runningDetails.targetPaceMax ? `-${session.runningDetails.targetPaceMax}` : ''} /km
+                {session.runningDetails.targetPaceMax ? `–${session.runningDetails.targetPaceMax}` : ''}<span className="text-sky-400/60">/km</span>
               </span>
             )}
             {session.type === 'cycling' && session.cyclingDetails?.intensityReference && (
-              <span className="text-xs text-sky-300">{session.cyclingDetails.intensityReference}</span>
+              <span className="font-mono text-xs tabular-nums text-sky-300">{session.cyclingDetails.intensityReference}</span>
             )}
             {session.type === 'mobility' && (session.mobilityDetails?.focusAreas?.length ?? 0) > 0 && (
               <span className="text-xs text-pink-300">{session.mobilityDetails?.focusAreas?.join(', ')}</span>
@@ -211,7 +216,7 @@ export default function SessionCard({ session, compact = false, onDelete }: Sess
         <div className="space-y-2 border-t border-white/5 px-3 pb-3 md:px-4 md:pb-4">
           {session.objective && (
             <p className="mt-2 text-xs text-ink-muted">
-              <span className="mr-1 text-[10px] font-medium uppercase tracking-wider text-ink-faint">Objetivo</span>
+              <span className="mr-1 font-display text-[10px] font-semibold uppercase tracking-wider text-ink-faint">Objetivo</span>
               {session.objective}
             </p>
           )}
@@ -220,36 +225,36 @@ export default function SessionCard({ session, compact = false, onDelete }: Sess
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 {session.runningDetails.targetPaceMin && (
                   <div className="rounded-lg bg-sky-500/10 p-2">
-                    <p className="mb-0.5 text-[10px] font-medium uppercase tracking-wider text-sky-400/70">Ritmo objetivo</p>
-                    <p className="text-sm font-semibold text-sky-400">
+                    <p className="mb-0.5 font-display text-[10px] font-semibold uppercase tracking-wider text-sky-400/70">Ritmo objetivo</p>
+                    <p className="font-mono text-sm font-semibold tabular-nums text-sky-400">
                       {session.runningDetails.targetPaceMin}
-                      {session.runningDetails.targetPaceMax ? `-${session.runningDetails.targetPaceMax}` : ''}
-                      <span className="ml-1 text-xs font-normal text-sky-400/70">/km</span>
+                      {session.runningDetails.targetPaceMax ? `–${session.runningDetails.targetPaceMax}` : ''}
+                      <span className="ml-1 text-xs font-normal text-sky-400/60">/km</span>
                     </p>
                   </div>
                 )}
                 {session.runningDetails.targetHrMin && (
                   <div className="rounded-lg bg-rose-500/10 p-2">
-                    <p className="mb-0.5 text-[10px] font-medium uppercase tracking-wider text-rose-400/70">FC objetivo</p>
-                    <p className="text-sm font-semibold text-rose-400">
-                      {session.runningDetails.targetHrMin}-{session.runningDetails.targetHrMax}
-                      <span className="ml-1 text-xs font-normal text-rose-400/70">bpm</span>
+                    <p className="mb-0.5 font-display text-[10px] font-semibold uppercase tracking-wider text-rose-400/70">FC objetivo</p>
+                    <p className="font-mono text-sm font-semibold tabular-nums text-rose-400">
+                      {session.runningDetails.targetHrMin}–{session.runningDetails.targetHrMax}
+                      <span className="ml-1 text-xs font-normal text-rose-400/60">bpm</span>
                     </p>
                   </div>
                 )}
               </div>
               {session.runningDetails.intervalStructure && (
                 <div className="space-y-1">
-                  <p className="text-[10px] font-medium uppercase tracking-wider text-ink-faint">Estructura</p>
+                  <p className="font-display text-[10px] font-semibold uppercase tracking-wider text-ink-faint">Estructura</p>
                   {session.runningDetails.intervalStructure.blocks.map((block, i) => (
                     <div key={`${block.label}-${i}`} className="flex items-start gap-2 rounded-lg bg-sky-500/8 px-2.5 py-1.5">
-                      <span className="w-5 flex-shrink-0 text-right text-[11px] font-semibold text-sky-400">{i + 1}.</span>
+                      <span className="font-mono w-5 flex-shrink-0 text-right text-[11px] font-semibold tabular-nums text-sky-400">{i + 1}.</span>
                       <div className="min-w-0 flex-1">
                         <span className="text-xs font-medium text-ink">{block.label}</span>
                         {block.notes && <span className="ml-1 text-[11px] text-ink-faint">({block.notes})</span>}
                       </div>
-                      <span className="flex-shrink-0 text-right text-[11px] text-sky-400/80">
-                        {block.repetitions != null && block.distanceKm != null && `${block.repetitions}x${block.distanceKm}km`}
+                      <span className="font-mono flex-shrink-0 text-right text-[11px] tabular-nums text-sky-400/80">
+                        {block.repetitions != null && block.distanceKm != null && `${block.repetitions}×${block.distanceKm}km`}
                         {block.durationMin != null && ` ${block.durationMin}min`}
                         {block.targetPace && ` · ${block.targetPace}/km`}
                       </span>
@@ -357,24 +362,17 @@ export default function SessionCard({ session, compact = false, onDelete }: Sess
           {hasSquashDetails && session.squashDetails && (
             <div className="mt-2 space-y-1.5">
               <p className="text-[10px] font-medium uppercase tracking-wider text-ink-faint">Drills</p>
-              {session.squashDetails.drills.map((drill, i) => (
+              {(session.squashDetails.drills ?? []).map((drill, i) => (
                 <div key={i} className="flex items-start gap-2 rounded-lg bg-surface-raised px-2.5 py-1.5">
                   <span className="flex-1 text-xs font-medium leading-snug text-ink">{drill.name}</span>
                   {drill.durationMin && <span className="flex-shrink-0 text-[11px] text-ink-faint">{drill.durationMin}min</span>}
-                  {drill.notes && <span className="sr-only">{drill.notes}</span>}
+                  {drill.notes && (
+                    <span className="block max-w-full text-[11px] leading-snug text-ink-faint">
+                      {drill.notes}
+                    </span>
+                  )}
                 </div>
               ))}
-              {session.squashDetails.drills.some((d) => d.notes) && (
-                <div className="mt-1 space-y-0.5">
-                  {session.squashDetails.drills
-                    .filter((d) => d.notes)
-                    .map((drill, i) => (
-                      <p key={i} className="text-[11px] leading-snug text-ink-faint">
-                        <span className="font-medium text-ink-muted">{drill.name}:</span> {drill.notes}
-                      </p>
-                    ))}
-                </div>
-              )}
             </div>
           )}
           {hasExercises && <ExerciseChecklist sessionId={session.id} exercises={session.exercises!} />}
@@ -405,6 +403,8 @@ export default function SessionCard({ session, compact = false, onDelete }: Sess
           )}
         </div>
       )}
+        </div>
+      </div>
     </div>
   )
 }

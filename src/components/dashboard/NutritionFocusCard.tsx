@@ -11,6 +11,8 @@ interface NutritionFocusCardProps {
 export default function NutritionFocusCard({ rec }: NutritionFocusCardProps) {
   const [expanded, setExpanded] = useState(false)
   const colorClasses = getLoadTypeColor(rec.loadType)
+  const preFuel = rec.preTraining ?? rec.preWorkout
+  const postFuel = rec.postTraining ?? rec.postWorkout
 
   return (
     <div className={`rounded-card border ${colorClasses.split(' ').find(c => c.startsWith('border')) ?? 'border-surface-border'} bg-surface-card overflow-hidden`}>
@@ -53,18 +55,18 @@ export default function NutritionFocusCard({ rec }: NutritionFocusCardProps) {
       </div>
 
       {/* Pre/post workout quick view */}
-      {(rec.preWorkout || rec.postWorkout) && !expanded && (
+      {(preFuel || postFuel) && !expanded && (
         <div className="px-4 pb-3 grid grid-cols-2 gap-2">
-          {rec.preWorkout && (
+          {preFuel && (
             <div className="bg-surface-raised rounded-lg p-2">
               <p className="text-[10px] text-ink-faint font-semibold uppercase tracking-wider mb-1">Pre</p>
-              <p className="text-xs text-ink-muted leading-snug line-clamp-2">{rec.preWorkout}</p>
+              <p className="text-xs text-ink-muted leading-snug line-clamp-2">{preFuel}</p>
             </div>
           )}
-          {rec.postWorkout && (
+          {postFuel && (
             <div className="bg-surface-raised rounded-lg p-2">
               <p className="text-[10px] text-ink-faint font-semibold uppercase tracking-wider mb-1">Post</p>
-              <p className="text-xs text-ink-muted leading-snug line-clamp-2">{rec.postWorkout}</p>
+              <p className="text-xs text-ink-muted leading-snug line-clamp-2">{postFuel}</p>
             </div>
           )}
         </div>
@@ -74,18 +76,18 @@ export default function NutritionFocusCard({ rec }: NutritionFocusCardProps) {
       {expanded && (
         <div className="border-t border-surface-border">
           {/* Pre/post workout */}
-          {(rec.preWorkout || rec.postWorkout) && (
+          {(preFuel || postFuel) && (
             <div className="px-4 py-3 grid grid-cols-2 gap-2">
-              {rec.preWorkout && (
+              {preFuel && (
                 <div className="bg-amber-500/8 border border-amber-500/15 rounded-lg p-2.5">
                   <p className="text-[10px] text-amber-400 font-semibold uppercase tracking-wider mb-1">Pre entreno</p>
-                  <p className="text-xs text-ink-muted leading-snug">{rec.preWorkout}</p>
+                  <p className="text-xs text-ink-muted leading-snug">{preFuel}</p>
                 </div>
               )}
-              {rec.postWorkout && (
+              {postFuel && (
                 <div className="bg-emerald-500/8 border border-emerald-500/15 rounded-lg p-2.5">
                   <p className="text-[10px] text-emerald-400 font-semibold uppercase tracking-wider mb-1">Post entreno</p>
-                  <p className="text-xs text-ink-muted leading-snug">{rec.postWorkout}</p>
+                  <p className="text-xs text-ink-muted leading-snug">{postFuel}</p>
                 </div>
               )}
             </div>

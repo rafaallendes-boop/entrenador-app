@@ -390,10 +390,22 @@ function isSquashDetails(value: unknown): value is SquashDetails {
   const validMode =
     record.sessionMode == null ||
     (typeof record.sessionMode === 'string' && VALID_SQUASH_SESSION_MODES.has(record.sessionMode as SquashSessionMode))
+  const validDrills =
+    Array.isArray(record.drills) &&
+    record.drills.every((drill) => {
+      if (!drill || typeof drill !== 'object') return false
+      const drillRecord = drill as Record<string, unknown>
+      return (
+        typeof drillRecord.name === 'string' &&
+        drillRecord.name.trim().length > 0 &&
+        (drillRecord.durationMin == null || typeof drillRecord.durationMin === 'number') &&
+        (drillRecord.notes == null || typeof drillRecord.notes === 'string')
+      )
+    })
   return (
     typeof record.trainingFocus === 'string' &&
     VALID_SQUASH_TRAINING_FOCUS.has(record.trainingFocus) &&
-    Array.isArray(record.drills) &&
+    validDrills &&
     validMode
   )
 }

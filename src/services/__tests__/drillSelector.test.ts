@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 
 import type { Session } from '../../types'
+import { findSquashDrillByName, getSquashDrillFamily, SQUASH_DRILL_LIBRARY } from '../training/drillLibrary'
 import {
+  buildProgressedDrillNotes,
   deriveSquashProgressionState,
   selectSquashDrills,
   summarizeSquashProgression,
@@ -46,6 +48,27 @@ function makePracticeMatchSession(date: string): Session {
 }
 
 describe('drillSelector progression', () => {
+  it('keeps library ids unique and metadata fields coherent', () => {
+    const validIntents = new Set(['consistency', 'pressure', 'finishing', 'recovery', 'control'])
+    const validPhaseTags = new Set(['base', 'build', 'peak', 'taper'])
+    const ids = new Set<string>()
+
+    for (const drill of SQUASH_DRILL_LIBRARY) {
+      expect(ids.has(drill.id)).toBe(false)
+      ids.add(drill.id)
+      expect(drill.tags.some((tag) => validPhaseTags.has(tag))).toBe(true)
+
+      if (drill.constraints) {
+        expect(drill.constraints.length).toBeGreaterThan(0)
+        expect(drill.constraints.every((constraint) => constraint.trim().length > 0)).toBe(true)
+      }
+
+      if (drill.intent) {
+        expect(validIntents.has(drill.intent)).toBe(true)
+      }
+    }
+  })
+
   it('forces deload when squash ACWR is in risk', () => {
     const state = deriveSquashProgressionState({
       phase: 'build',
@@ -189,5 +212,130 @@ describe('drillSelector progression', () => {
         ].includes(drill.name),
       ),
     ).toBe(false)
+  })
+
+  it('matches drill names fuzzily for AI-generated variations', () => {
+    expect(findSquashDrillByName('Parallel drives')?.id).toBe('drive_parallel_depth')
+    expect(findSquashDrillByName('Drives paralelos')?.id).toBe('drive_parallel_depth')
+    expect(findSquashDrillByName('Defensive lob recovery')?.id).toBe('defensive_high_lob_recovery')
+  })
+
+  it('keeps peak selection focused on high-value peak drills instead of recovery fillers', () => {
+    const selection = selectSquashDrills({
+      phase: 'peak',
+      fatigueLevel: 4,
+      competitionSoon: false,
+      goal: 'presion y partido',
+      recentDrills: [],
+    })
+
+    expect(selection.drills.some((drill) => drill.name === 'RecuperaciÃ³n tÃ©cnica con largo controlado')).toBe(false)
+    expect(selection.drills.some((drill) => drill.name.includes('Partido') || drill.name.includes('presi'))).toBe(true)
+  })
+
+  it('derives progression focus from the whole recent session instead of only the first drill', () => {
+    const state = deriveSquashProgressionState({
+      phase: 'build',
+      fatigueLevel: 4,
+      competitionSoon: false,
+      goal: 'presion',
+      recentDrills: [],
+      historicalSessions: [{
+        ...makeSquashSession('2026-04-10', 'Drives paralelos a profundidad'),
+        squashDetails: {
+          trainingFocus: 'technical',
+          drills: [
+            { name: 'Drives paralelos a profundidad', durationMin: 10 },
+            { name: 'PresiÃ³n a esquinas de fondo', durationMin: 10 },
+            { name: 'Juego condicionado sin segundos botes', durationMin: 10 },
+          ],
+        },
+      }],
+    })
+
+    expect(state.targetFocus).toBeDefined()
+  })
+
+  it('classifies split step recovery as footwork family', () => {
+    const drill = findSquashDrillByName('Split step y recuperaciÃ³n al T')
+    expect(drill).toBeTruthy()
+    expect(getSquashDrillFamily(drill!)).toBe('footwork')
+  })
+
+  it('maps finishing drills into a dedicated family', () => {
+    const nickDrill = findSquashDrillByName('Nick Pressure Closure')
+    const angleDrill = findSquashDrillByName('Front Court Angle Finish')
+
+    expect(nickDrill?.intent).toBe('finishing')
+    expect(angleDrill?.intent).toBe('finishing')
+    expect(getSquashDrillFamily(nickDrill!)).toBe('finishing')
+    expect(getSquashDrillFamily(angleDrill!)).toBe('finishing')
+  })
+
+  it('can include aerobic base movement drills in base selection when the context favors low-risk work', () => {
+    const selection = selectSquashDrills({
+      phase: 'base',
+      fatigueLevel: 7,
+      competitionSoon: false,
+      goal: 'base aerobica y movimiento especifico',
+      recentDrills: [],
+    })
+
+    expect(
+      selection.drills.some((drill) =>
+        ['Continuous Squash Movement Base', 'Extensive Aerobic Movement Intervals'].includes(drill.name),
+      ),
+    ).toBe(true)
+  })
+
+  it('keeps aerobic base drills out of peak and taper selections', () => {
+    const peakSelection = selectSquashDrills({
+      phase: 'peak',
+      fatigueLevel: 4,
+      competitionSoon: false,
+      goal: 'presion y partido',
+      recentDrills: [],
+    })
+    const taperSelection = selectSquashDrills({
+      phase: 'taper',
+      fatigueLevel: 5,
+      competitionSoon: false,
+      goal: 'timing y frescura',
+      recentDrills: [],
+    })
+    const aerobicBaseNames = new Set([
+      'Continuous Squash Movement Base',
+      'Extensive Aerobic Movement Intervals',
+    ])
+
+    expect(peakSelection.drills.some((drill) => aerobicBaseNames.has(drill.name))).toBe(false)
+    expect(taperSelection.drills.some((drill) => aerobicBaseNames.has(drill.name))).toBe(false)
+  })
+
+  it('includes the first constraint in progression notes when a drill provides one', () => {
+    const drill = findSquashDrillByName('Continuous Squash Movement Base')
+    const notes = buildProgressedDrillNotes(drill!, {
+      phase: 'build',
+      fatigueLevel: 4,
+      competitionSoon: false,
+      goal: 'mejorar base fisica',
+      recentDrills: [],
+      historicalSessions: [makeSquashSession('2026-04-08', 'Continuous Squash Movement Base')],
+    })
+
+    expect(notes).toContain('Sustain even tempo across the full interval')
+  })
+
+  it('still returns a valid note for drills without constraints', () => {
+    const drill = findSquashDrillByName('Drives cruzados con longitud')
+    const notes = buildProgressedDrillNotes(drill!, {
+      phase: 'build',
+      fatigueLevel: 4,
+      competitionSoon: false,
+      goal: 'mejorar drive',
+      recentDrills: [],
+    })
+
+    expect(notes.length).toBeGreaterThan(0)
   })
 })

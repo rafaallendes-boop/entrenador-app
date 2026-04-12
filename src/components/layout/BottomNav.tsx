@@ -20,15 +20,22 @@ export default function BottomNav() {
               to={to}
               end={to === ROUTES.HOME}
               className={({ isActive }) =>
-                `flex-1 flex flex-col items-center gap-1 py-3 text-xs font-medium transition-colors ${
+                `relative flex-1 flex flex-col items-center gap-1 py-3 text-xs font-medium transition-colors ${
                   isActive
                     ? 'text-brand'
                     : 'text-ink-faint hover:text-ink-muted'
                 }`
               }
             >
-              <NavIcon name={icon} />
-              <span>{label}</span>
+              {({ isActive }) => (
+                <>
+                  {isActive && (
+                    <span className="absolute top-0 left-1/2 h-0.5 w-8 -translate-x-1/2 rounded-full bg-brand" />
+                  )}
+                  <NavIcon name={icon} />
+                  <span className="font-display text-[10px] font-semibold uppercase tracking-wider">{label}</span>
+                </>
+              )}
             </NavLink>
           ))}
         </div>

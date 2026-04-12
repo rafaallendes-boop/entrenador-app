@@ -3,6 +3,7 @@ import type { SquashDrill, SquashTrainingFocus } from '../../types'
 export type DrillCategory = 'technical' | 'tactical' | 'physical' | 'match'
 export type DrillIntensity = 'low' | 'moderate' | 'high'
 export type DrillProgressionLevel = 1 | 2 | 3
+export type DrillIntent = 'consistency' | 'pressure' | 'finishing' | 'recovery' | 'control'
 
 export interface SquashDrillDefinition {
   id: string
@@ -12,6 +13,7 @@ export interface SquashDrillDefinition {
   intensity: DrillIntensity
   tags: string[]
   description: string
+  intent?: DrillIntent
   constraints?: string[]
   progressionLevel?: DrillProgressionLevel
 }
@@ -23,8 +25,10 @@ export const SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
     category: 'technical',
     focus: ['drive', 'length', 'control'],
     intensity: 'moderate',
-    tags: ['parallel', 'drive', 'base', 'build', 'length_control'],
+    tags: ['parallel', 'drive', 'base', 'build', 'length', 'length_control'],
     description: 'Peloteo de drives paralelos buscando profundidad constante a la pared del fondo.',
+    intent: 'consistency',
+    constraints: ['Keep height above the service line'],
     progressionLevel: 1,
   },
   {
@@ -33,8 +37,9 @@ export const SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
     category: 'technical',
     focus: ['drive', 'crosscourt', 'length'],
     intensity: 'moderate',
-    tags: ['crosscourt', 'drive', 'base', 'build', 'length_control'],
+    tags: ['crosscourt', 'drive', 'base', 'build', 'length', 'length_control'],
     description: 'Secuencias de drives cruzados manteniendo altura y largo para desplazar al rival.',
+    intent: 'control',
     progressionLevel: 1,
   },
   {
@@ -95,6 +100,8 @@ export const SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
     intensity: 'moderate',
     tags: ['volley', 't_control', 'build', 'peak'],
     description: 'Volear y recuperar inmediatamente al T para sostener dominio del punto.',
+    intent: 'recovery',
+    constraints: ['Recover to the T before the next shot'],
     progressionLevel: 2,
   },
   {
@@ -143,8 +150,10 @@ export const SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
     category: 'tactical',
     focus: ['conditioned_game', 'length', 'pressure'],
     intensity: 'moderate',
-    tags: ['conditioned_game', 'length_control', 'pressure', 'base', 'build'],
+    tags: ['conditioned_game', 'length', 'length_control', 'pressure', 'base', 'build'],
     description: 'Punto condicionado sin juego corto, priorizando profundidad y paciencia táctica.',
+    intent: 'control',
+    constraints: ['Sustain depth for 6 consecutive shots before changing pace'],
     progressionLevel: 1,
   },
   {
@@ -195,6 +204,8 @@ export const SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
     intensity: 'moderate',
     tags: ['ghosting', 'movement', 'base', 'build'],
     description: 'Ghosting clásico a cuatro esquinas con foco en patrón técnico y control corporal.',
+    intent: 'consistency',
+    constraints: ['Land balanced and recover with the same rhythm each rep'],
     progressionLevel: 1,
   },
   {
@@ -215,6 +226,7 @@ export const SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
     intensity: 'moderate',
     tags: ['footwork', 't_control', 'build', 'taper'],
     description: 'Bloques cortos de split step, salida y recuperación rápida al T.',
+    intent: 'recovery',
     progressionLevel: 1,
   },
   {
@@ -235,7 +247,104 @@ export const SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
     intensity: 'high',
     tags: ['multiball', 'pressure', 'peak', 'attack'],
     description: 'Multiball intenso para presión continua y definición de la jugada.',
+    intent: 'pressure',
     progressionLevel: 3,
+  },
+  {
+    id: 'defensive_high_lob_recovery',
+    name: 'Defensive High Lob Recovery',
+    category: 'technical',
+    focus: ['lob', 'recovery', 'back_court'],
+    intensity: 'low',
+    tags: ['lob', 'recovery_technical', 'base', 'build', 'taper', 'back_court'],
+    description: 'Defensive high lob from pressure situations, rebuilding time and shape before re-entering the rally.',
+    intent: 'recovery',
+    constraints: ['Keep height above the service line', 'Recover to the T before the next shot'],
+    progressionLevel: 1,
+  },
+  {
+    id: 'attacking_lob_change_of_pace',
+    name: 'Attacking Lob Change of Pace',
+    category: 'technical',
+    focus: ['lob', 'attack', 'variation'],
+    intensity: 'moderate',
+    tags: ['lob', 'attack', 'build', 'peak', 'variation'],
+    description: 'Use the attacking lob as a change of pace to move the opponent deep and reopen the front court.',
+    intent: 'control',
+    constraints: ['Disguise the preparation before the lift', 'Send the second shot back to open court'],
+    progressionLevel: 2,
+  },
+  {
+    id: 'attacking_boast_from_mid_court',
+    name: 'Attacking Boast from Mid Court',
+    category: 'technical',
+    focus: ['boast', 'attack', 'mid_court'],
+    intensity: 'moderate',
+    tags: ['boast', 'attack', 'mid_court', 'build', 'peak', 'pressure'],
+    description: 'Attack from mid court with an early boast to break rhythm and move forward into the next ball.',
+    intent: 'pressure',
+    constraints: ['Recover forward after the boast instead of drifting back', 'Finish within 3 shots'],
+    progressionLevel: 2,
+  },
+  {
+    id: 'attacking_boast_from_back_court',
+    name: 'Attacking Boast from Back Court',
+    category: 'technical',
+    focus: ['boast', 'attack', 'back_court'],
+    intensity: 'high',
+    tags: ['boast', 'attack', 'back_court', 'build', 'peak', 'pressure'],
+    description: 'Create attack from deep court with a purposeful boast that forces a weak front-court reply.',
+    intent: 'pressure',
+    constraints: ['Keep the boast tight to the side wall', 'Recover to cut off the next ball early'],
+    progressionLevel: 3,
+  },
+  {
+    id: 'front_court_angle_finish',
+    name: 'Front Court Angle Finish',
+    category: 'technical',
+    focus: ['angle', 'front_court', 'finish'],
+    intensity: 'moderate',
+    tags: ['angle', 'front_court', 'finish', 'build', 'peak'],
+    description: 'Front-court attacking pattern focused on creating angle and finishing the rally before the opponent resets.',
+    intent: 'finishing',
+    constraints: ['Hold the racket preparation until the last moment', 'Finish within 3 shots'],
+    progressionLevel: 2,
+  },
+  {
+    id: 'nick_pressure_closure',
+    name: 'Nick Pressure Closure',
+    category: 'technical',
+    focus: ['nick', 'finish', 'precision'],
+    intensity: 'moderate',
+    tags: ['nick', 'angle', 'finish', 'build', 'peak', 'pressure'],
+    description: 'Precision finishing drill aimed at finding the nick under pressure after building the rally.',
+    intent: 'finishing',
+    constraints: ['Only attack the nick off a balanced setup ball', 'Use one clear visual target per side'],
+    progressionLevel: 3,
+  },
+  {
+    id: 'continuous_squash_movement_base',
+    name: 'Continuous Squash Movement Base',
+    category: 'physical',
+    focus: ['movement', 'aerobic_base', 'conditioning'],
+    intensity: 'low',
+    tags: ['movement', 'conditioning', 'aerobic_base', 'base', 'build'],
+    description: 'Continuous on-court movement with technical rhythm, built to develop squash-specific aerobic efficiency without sprint demand.',
+    intent: 'consistency',
+    constraints: ['Sustain even tempo across the full interval', 'Keep shoulders relaxed between corners'],
+    progressionLevel: 1,
+  },
+  {
+    id: 'extensive_aerobic_movement_intervals',
+    name: 'Extensive Aerobic Movement Intervals',
+    category: 'physical',
+    focus: ['movement', 'aerobic_base', 'tempo'],
+    intensity: 'moderate',
+    tags: ['movement', 'conditioning', 'aerobic_base', 'base', 'build'],
+    description: 'Extensive aerobic intervals with controlled court movement, emphasizing repeatable base work rather than explosive ghosting.',
+    intent: 'control',
+    constraints: ['Keep identical pacing from first interval to last', 'Finish each block with clean posture at the T'],
+    progressionLevel: 2,
   },
   {
     id: 'technical_recovery_length',
@@ -243,7 +352,7 @@ export const SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
     category: 'technical',
     focus: ['recovery_technical', 'length', 'rhythm'],
     intensity: 'low',
-    tags: ['recovery_technical', 'length_control', 'taper', 'base'],
+    tags: ['recovery_technical', 'length', 'length_control', 'taper', 'base'],
     description: 'Peloteo largo de baja fatiga para recuperar sensaciones y timing.',
     progressionLevel: 1,
   },
@@ -317,11 +426,55 @@ export function normalizeSquashDrillKey(value: string): string {
     .replace(/^_+|_+$/g, '')
 }
 
+const DRILL_TOKEN_ALIASES: Record<string, string> = {
+  drives: 'drive',
+  paralelo: 'parallel',
+  paralelos: 'parallel',
+  cruzado: 'crosscourt',
+  cruzados: 'crosscourt',
+  longitud: 'length',
+  largo: 'length',
+  largos: 'length',
+  lobs: 'lob',
+  angulo: 'angle',
+  angulos: 'angle',
+  nicks: 'nick',
+}
+
+function normalizeDrillTokens(value: string): string[] {
+  return normalizeSquashDrillKey(value)
+    .split('_')
+    .filter(Boolean)
+    .map((token) => DRILL_TOKEN_ALIASES[token] ?? token)
+}
+
 export function findSquashDrillByName(name: string): SquashDrillDefinition | undefined {
   const normalizedName = normalizeSquashDrillKey(name)
-  return SQUASH_DRILL_LIBRARY.find(
+  const exactMatch = SQUASH_DRILL_LIBRARY.find(
     drill => drill.id === normalizedName || normalizeSquashDrillKey(drill.name) === normalizedName,
   )
+  if (exactMatch) return exactMatch
+
+  const tokens = new Set(normalizeDrillTokens(name))
+  let bestMatch: { drill: SquashDrillDefinition; score: number } | null = null
+
+  for (const drill of SQUASH_DRILL_LIBRARY) {
+    const drillKey = normalizeSquashDrillKey(drill.name)
+    if (drillKey.includes(normalizedName) || normalizedName.includes(drillKey)) {
+      return drill
+    }
+
+    const drillTokens = normalizeDrillTokens(drill.name)
+    const overlap = drillTokens.filter((token) => tokens.has(token)).length
+    if (overlap === 0) continue
+
+    const score = overlap / Math.max(drillTokens.length, tokens.size || 1)
+    if (score >= 0.5 && (!bestMatch || score > bestMatch.score)) {
+      bestMatch = { drill, score }
+    }
+  }
+
+  return bestMatch?.drill
 }
 
 export function getSuggestedTrainingFocus(category: DrillCategory, tags: string[]): SquashTrainingFocus {
@@ -336,8 +489,17 @@ export function getSquashDrillFamily(drill: SquashDrillDefinition): string {
   if (drill.tags.includes('pre_match')) return 'pre_match_activation'
   if (drill.tags.includes('match_play')) return 'match_play_practice'
   if (drill.tags.includes('ghosting')) return 'ghosting'
+  if (drill.tags.includes('footwork') || drill.focus.includes('footwork')) return 'footwork'
   if (drill.tags.includes('rsa')) return 'rsa'
   if (drill.tags.includes('multiball')) return 'multiball_pressure'
+  if (
+    drill.intent === 'finishing' ||
+    drill.tags.includes('finish') ||
+    drill.tags.includes('nick') ||
+    drill.tags.includes('angle')
+  ) {
+    return 'finishing'
+  }
   if (drill.tags.includes('conditioned_game')) {
     if (drill.tags.includes('parallel')) return 'conditioned_parallel'
     if (drill.tags.includes('length_control')) return 'conditioned_length'

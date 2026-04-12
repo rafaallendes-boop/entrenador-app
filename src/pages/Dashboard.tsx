@@ -146,14 +146,19 @@ export default function Dashboard() {
   return (
     <div className="px-4 pt-12 pb-6 space-y-5 md:px-6 md:space-y-6">
       <div>
-        <p className="text-xs text-ink-muted font-medium uppercase tracking-wider">
+        <p className="font-display text-[11px] font-semibold uppercase tracking-widest text-ink-faint">
           {formatFullDate(new Date())}
         </p>
-        <h1 className="text-2xl font-bold text-ink mt-1">Hola, {athleteFirstName}</h1>
+        <h1 className="font-display mt-0.5 text-3xl font-bold tracking-tight text-ink md:text-4xl">
+          Hola, {athleteFirstName}
+        </h1>
         {todaySessions.length > 0 && (
-          <p className="text-sm text-ink-muted mt-1">
-            <span className="text-emerald-400 font-semibold">{completedToday}</span>
-            /{todaySessions.filter(s => s.status !== 'skipped').length} sesiones completadas hoy
+          <p className="mt-1.5 flex items-center gap-2 text-sm text-ink-muted">
+            <span className="font-mono tabular-nums">
+              <span className="font-semibold text-emerald-400">{completedToday}</span>
+              <span className="text-ink-faint">/{todaySessions.filter(s => s.status !== 'skipped').length}</span>
+            </span>
+            <span>sesiones hoy</span>
           </p>
         )}
       </div>
@@ -239,8 +244,8 @@ export default function Dashboard() {
 
           {upcomingSessions.length > 0 && (
             <div>
-              <h2 className="text-xs font-semibold text-ink-muted uppercase tracking-wider mb-3">
-                Proximas sesiones
+              <h2 className="font-display mb-3 text-sm font-semibold uppercase tracking-wider text-ink-muted">
+                Próximas sesiones
               </h2>
               <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-1">
                 <Suspense fallback={<CardSkeleton className="h-24" />}>
@@ -265,7 +270,7 @@ export default function Dashboard() {
           {/* Load analytics card — multi-week carga por disciplina */}
           {loadAnalytics && loadAnalytics.weeks.some(w => w.disciplines.length > 0) && (
             <Card className="p-4">
-              <h2 className="text-xs font-semibold text-ink-muted uppercase tracking-wider mb-3">
+              <h2 className="font-display mb-3 text-sm font-semibold uppercase tracking-wider text-ink-muted">
                 Carga por disciplina
               </h2>
               <LoadAnalyticsCard analytics={loadAnalytics} />
@@ -274,18 +279,20 @@ export default function Dashboard() {
 
           {currentWeekSummary && (
             <Card className="p-4">
-              <h2 className="text-xs font-semibold text-ink-muted uppercase tracking-wider mb-3">
+              <h2 className="font-display mb-3 text-sm font-semibold uppercase tracking-wider text-ink-muted">
                 Semana actual
               </h2>
               <LoadIndicator summary={currentWeekSummary} />
 
               <div className="mt-3 flex items-center justify-between gap-3 text-xs text-ink-muted flex-wrap">
-                <span>
-                  {currentWeekSummary.completedSessions}/{currentWeekSummary.plannedSessions} planificadas realizadas
+                <span className="font-mono tabular-nums">
+                  <span className="font-semibold text-ink">{currentWeekSummary.completedSessions}</span>
+                  <span className="text-ink-faint">/{currentWeekSummary.plannedSessions}</span>
+                  <span className="ml-1.5">planificadas</span>
                 </span>
                 {currentWeekSummary.adherencePct != null && (
-                  <span className="text-brand-light font-semibold">
-                    {currentWeekSummary.adherencePct}% adherencia
+                  <span className="font-mono tabular-nums font-semibold text-brand-light">
+                    {currentWeekSummary.adherencePct}%
                   </span>
                 )}
               </div>

@@ -129,7 +129,7 @@ export default function WeeklyView() {
   return (
     <div className="pb-6 md:pb-8">
       <div className="pt-12 px-4 pb-2 flex flex-col gap-3 md:px-6 md:flex-row md:items-center md:justify-between">
-        <h1 className="text-xl font-bold text-ink md:text-2xl">Semana</h1>
+        <h1 className="font-display text-2xl font-bold tracking-tight text-ink md:text-3xl">Semana</h1>
         <div className="flex items-center gap-2 flex-wrap">
           {isWeekEmpty && weeklyActionSummary.primaryAction?.kind === 'plan_week' ? (
             <button
@@ -178,11 +178,11 @@ export default function WeeklyView() {
           <div className="min-w-0">
             <div className="flex items-start justify-between gap-3 mb-3 flex-wrap">
               <div>
-                <h2 className="text-base font-semibold text-ink capitalize md:text-lg">
+                <h2 className="font-display text-lg font-bold capitalize tracking-tight text-ink md:text-xl">
                   {formatFullDate(selectedDayData.day)}
                 </h2>
                 {isDateToday(selectedDayData.iso) && (
-                  <span className="text-xs text-brand-light font-medium">Hoy</span>
+                  <span className="font-display text-xs font-semibold uppercase tracking-wider text-brand-light">Hoy</span>
                 )}
               </div>
               <button
@@ -194,15 +194,16 @@ export default function WeeklyView() {
             </div>
 
             {selectedDayData.amSessions.length === 0 && selectedDayData.pmSessions.length === 0 ? (
-              <div className="py-8 text-center rounded-2xl bg-surface-card border border-surface-border">
-                <p className="text-ink-faint text-sm">Sin sesiones planificadas</p>
-                <p className="text-ink-faint text-xs mt-1">Día libre o de descanso</p>
+              <div className="rounded-2xl border border-dashed border-surface-border bg-surface-card py-10 text-center">
+                <p className="font-mono text-2xl text-ink-faint/30">○</p>
+                <p className="mt-2 text-sm font-medium text-ink-muted">Día libre</p>
+                <p className="mt-0.5 text-xs text-ink-faint">Sin sesiones planificadas</p>
               </div>
             ) : (
               <div className="space-y-4">
                 {selectedDayData.amSessions.length > 0 && (
                   <div>
-                    <p className="text-[11px] text-ink-faint font-semibold uppercase tracking-wider mb-2">Mañana</p>
+                    <p className="font-display mb-2 text-[11px] font-semibold uppercase tracking-widest text-ink-faint">Mañana</p>
                     <div className="space-y-2">
                       {selectedDayData.amSessions.map((session) => (
                         <SessionCard
@@ -216,7 +217,7 @@ export default function WeeklyView() {
                 )}
                 {selectedDayData.pmSessions.length > 0 && (
                   <div>
-                    <p className="text-[11px] text-ink-faint font-semibold uppercase tracking-wider mb-2">Tarde</p>
+                    <p className="font-display mb-2 text-[11px] font-semibold uppercase tracking-widest text-ink-faint">Tarde</p>
                     <div className="space-y-2">
                       {selectedDayData.pmSessions.map((session) => (
                         <SessionCard
@@ -235,7 +236,7 @@ export default function WeeklyView() {
 
         <div className="min-w-0">
           <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
-            <p className="text-xs font-semibold text-ink-muted uppercase tracking-wider">Resumen semanal</p>
+            <p className="font-display text-sm font-semibold uppercase tracking-wider text-ink-muted">Resumen semanal</p>
             {currentWeekSummary && (
               <button
                 onClick={handleGenerateCoachNote}

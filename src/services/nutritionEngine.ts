@@ -10,16 +10,22 @@ export function classifyDayLoad(sessions: Session[]): DayLoadType {
   const hasMatch = active.some((s) => (s.type === 'squash' ? isCompetitionSquashMatch(s) : s.subtype === 'competitive'))
   if (hasMatch) return 'match'
 
-  const hasLongRun = active.some(
-    s => (s.type === 'running' || s.type === 'cycling') && s.runningDetails?.runningType === 'long'
-  )
+  const hasLongRun = active.some((s) => (
+    (s.type === 'running' && s.runningDetails?.runningType === 'long') ||
+    (s.type === 'cycling' && s.cyclingDetails?.sessionFamily === 'long_ride')
+  ))
   if (hasLongRun) return 'long_run'
 
   const isDouble = active.length >= 2
   if (isDouble) return 'double'
 
   const totalMin = active.reduce((a, s) => a + s.durationMin, 0)
-  const avgRpe = active.filter(s => s.rpe).reduce((a, s) => a + (s.rpe ?? 5), 0) / active.filter(s => s.rpe).length || 5
+  const rpeValues = active
+    .map((session) => session.rpe)
+    .filter((value): value is number => value != null)
+  const avgRpe = rpeValues.length
+    ? rpeValues.reduce((a, b) => a + b, 0) / rpeValues.length
+    : 5
 
   if (totalMin >= 75 || avgRpe >= 7.5) return 'high'
   if (totalMin >= 35 || avgRpe >= 5) return 'medium'

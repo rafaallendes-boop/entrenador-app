@@ -263,7 +263,7 @@ function renderProposalDetails(
     exercises?: Array<{ name: string; sets: number; reps: number | string; weight?: number }>
     cyclingDetails?: CyclingDetails
     mobilityDetails?: MobilityDetails
-    squashDetails?: { trainingFocus: string; sessionMode?: SquashSessionMode; drills: Array<{ name: string; durationMin?: number; notes?: string }> }
+    squashDetails?: { trainingFocus: string; sessionMode?: SquashSessionMode; drills?: Array<{ name: string; durationMin?: number; notes?: string }> }
     warmup?: GeneratedProtocol
     cooldown?: GeneratedProtocol
   },
@@ -289,15 +289,15 @@ function renderProposalDetails(
             </p>
           )}
           <div className="mt-1 space-y-1">
-            {item.squashDetails.drills.slice(0, 4).map((drill, drillIndex) => (
-              <p key={drillIndex} className="text-[10px] text-ink-faint">
+            {(item.squashDetails.drills ?? []).slice(0, 4).map((drill, drillIndex) => (
+              <p key={drillIndex} className="truncate text-[10px] text-ink-faint">
                 {drill.name}
                 {drill.durationMin ? ` · ${drill.durationMin}min` : ''}
                 {drill.notes ? ` · ${drill.notes}` : ''}
               </p>
             ))}
-            {item.squashDetails.drills.length > 4 && (
-              <p className="text-[10px] text-ink-faint/50">+{item.squashDetails.drills.length - 4} drills mas</p>
+            {(item.squashDetails.drills?.length ?? 0) > 4 && (
+              <p className="text-[10px] text-ink-faint/50">+{(item.squashDetails.drills?.length ?? 0) - 4} drills mas</p>
             )}
           </div>
         </div>

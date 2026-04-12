@@ -242,6 +242,8 @@ function preValidateActions(
           errors.push(`${label}: campos requeridos faltantes (targetDate, sessionType, title, durationMin, timeBlock)`)
         } else if (!isSessionTypeAllowedForPlan(action.sessionType, athleteProfile)) {
           errors.push(`${label}: tipo ${action.sessionType} no permitido en planificacion actual`)
+        } else if (action.sessionType === 'squash' && !action.squashDetails) {
+          errors.push(`${label}: squashDetails requerido para sesiones de squash`)
         } else if (action.sessionType === 'cycling' && !action.cyclingDetails) {
           errors.push(`${label}: cyclingDetails requerido para sesiones de ciclismo`)
         } else if (action.sessionType === 'mobility' && !action.mobilityDetails) {
@@ -254,6 +256,9 @@ function preValidateActions(
           errors.push(`${label}: sessions array requerido`)
         } else {
           action.sessions.forEach((session, sessionIndex) => {
+            if (session.sessionType === 'squash' && !session.squashDetails) {
+              errors.push(`${label}: sesion ${sessionIndex + 1} requiere squashDetails`)
+            }
             if (session.sessionType === 'cycling' && !session.cyclingDetails) {
               errors.push(`${label}: sesion ${sessionIndex + 1} requiere cyclingDetails`)
             }
@@ -282,6 +287,9 @@ function preValidateActions(
           }
           if (nextType === 'mobility' && !action.mobilityDetails) {
             errors.push(`${label}: mobilityDetails requerido para update_session de movilidad`)
+          }
+          if (nextType === 'squash' && !action.squashDetails && !store.sessions.find((session) => session.id === action.sessionId)?.squashDetails) {
+            errors.push(`${label}: squashDetails requerido para update_session de squash`)
           }
         }
         break
@@ -603,6 +611,14 @@ function buildSessionTypePatch(type: CoachAction['newType']): Record<string, unk
     case 'squash':
       patch.exercises = undefined
       patch.runningDetails = undefined
+      patch.cyclingDetails = undefined
+      patch.mobilityDetails = undefined
+      patch.subtype = 'training'
+      patch.squashDetails = {
+        trainingFocus: 'technical',
+        sessionMode: 'drill_session',
+        drills: [],
+      }
       break
     case 'running':
     case 'cycling':

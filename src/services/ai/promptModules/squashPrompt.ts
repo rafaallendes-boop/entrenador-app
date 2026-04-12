@@ -32,8 +32,9 @@ export function mapMacroPhaseToSquashPhase(phase: MacroPlanPhase | undefined): S
       return 'build'
     case 'peak':
       return 'peak'
-    case 'taper':
     case 'race':
+      return 'peak'
+    case 'taper':
       return 'taper'
     case 'transition':
       return 'base'

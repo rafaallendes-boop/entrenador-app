@@ -101,6 +101,34 @@ describe('responseNormalizer', () => {
     expect(response.actions?.[0].sessions?.[0].title).toBe('Tempo')
   })
 
+  it('rejects squashDetails when drills items do not have a valid shape', () => {
+    const response = normalizeResponse({
+      text: [
+        'Semana propuesta.',
+        '<actions>',
+        JSON.stringify([
+          {
+            type: 'add_session',
+            reason: 'payload invalido squash',
+            targetDate: '2026-04-09',
+            sessionType: 'squash',
+            title: 'Squash tecnico',
+            durationMin: 45,
+            timeBlock: 'PM',
+            squashDetails: {
+              trainingFocus: 'technical',
+              drills: [null, {}, { durationMin: 5 }],
+            },
+          },
+        ]),
+        '</actions>',
+      ].join('\n'),
+      provider: 'mock',
+    })
+
+    expect(response.actions?.[0].squashDetails).toBeUndefined()
+  })
+
   it('parses inline JSON actions even when the model omits the actions tag', () => {
     const response = normalizeResponse({
       text: [

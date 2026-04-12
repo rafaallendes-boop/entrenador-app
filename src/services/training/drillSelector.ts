@@ -50,6 +50,21 @@ interface DrillScore {
   score: number
 }
 
+function isPhaseAllowed(drill: SquashDrillDefinition, phase: SquashSelectionPhase): boolean {
+  switch (phase) {
+    case 'base':
+      return drill.tags.includes('base') || drill.tags.includes('recovery_technical')
+    case 'build':
+      return drill.tags.includes('build')
+    case 'peak':
+      return drill.tags.includes('peak') || drill.tags.includes('pre_match') || drill.tags.includes('match_play')
+    case 'taper':
+      return drill.tags.includes('taper') || drill.tags.includes('pre_match') || drill.tags.includes('recovery_technical')
+    default:
+      return true
+  }
+}
+
 export function selectSquashDrills(
   context: SquashSelectionContext,
 ): { trainingFocus: SquashTrainingFocus; drills: SquashDrill[] } {
@@ -117,13 +132,16 @@ export function filterByFatigue(
     return drills
   }
 
-  const highLimit = 2
-  let highCount = 0
-  return drills.filter((drill) => {
-    if (drill.intensity !== 'high') return true
-    highCount += 1
-    return highCount <= highLimit
-  })
+  const nonHigh = drills.filter((drill) => drill.intensity !== 'high')
+  const high = drills
+    .filter((drill) => drill.intensity === 'high')
+    .sort((a, b) => {
+      const aScore = Number(a.tags.includes('pressure')) + Number(a.tags.includes('match_play')) + Number(a.tags.includes('peak'))
+      const bScore = Number(b.tags.includes('pressure')) + Number(b.tags.includes('match_play')) + Number(b.tags.includes('peak'))
+      return bScore - aScore || a.name.localeCompare(b.name)
+    })
+
+  return [...nonHigh, ...high.slice(0, 2)]
 }
 
 export function filterByPhase(
@@ -133,6 +151,7 @@ export function filterByPhase(
   switch (context.phase) {
     case 'taper':
       return drills.filter((drill) =>
+        isPhaseAllowed(drill, 'taper') &&
         !drill.tags.includes('rsa') &&
         !drill.tags.includes('multiball') &&
         !drill.tags.includes('match_play') &&
@@ -140,7 +159,8 @@ export function filterByPhase(
       )
     case 'peak':
       return drills.filter((drill) =>
-        !drill.tags.includes('recovery_technical') || drill.tags.includes('pre_match'),
+        isPhaseAllowed(drill, 'peak') &&
+        !drill.tags.includes('recovery_technical'),
       )
     case 'build':
       return drills.filter((drill) =>
@@ -336,11 +356,11 @@ export function deriveSquashProgressionState(context: SquashSelectionContext): S
     }
   }
 
-  const mostRecentDefinition = squashSessions[0]?.squashDetails?.drills?.[0]
-    ? findSquashDrillByName(squashSessions[0].squashDetails!.drills[0].name)
-    : undefined
-  const targetFamily = mostRecentDefinition ? getSquashDrillFamily(mostRecentDefinition) : undefined
-  const targetFocus = mostRecentDefinition?.focus[0]
+  const recentDefinitions = (squashSessions[0]?.squashDetails?.drills ?? [])
+    .map((drill) => findSquashDrillByName(drill.name))
+    .filter((drill): drill is SquashDrillDefinition => Boolean(drill))
+  const targetFamily = recentDefinitions[0] ? getSquashDrillFamily(recentDefinitions[0]) : undefined
+  const targetFocus = resolvePrimaryFocus(recentDefinitions)
 
   // Deload: competition imminent, taper phase, or high fatigue
   if (context.competitionSoon || context.phase === 'taper' || context.fatigueLevel >= 7) {
@@ -357,10 +377,10 @@ export function deriveSquashProgressionState(context: SquashSelectionContext): S
   }
 
   // Detect consecutive repetition: same family in the 2 most recent sessions
-  const prevSessionDefinition = squashSessions[1]?.squashDetails?.drills?.[0]
-    ? findSquashDrillByName(squashSessions[1].squashDetails!.drills[0].name)
-    : undefined
-  const prevFamily = prevSessionDefinition ? getSquashDrillFamily(prevSessionDefinition) : undefined
+  const prevSessionDefinitions = (squashSessions[1]?.squashDetails?.drills ?? [])
+    .map((drill) => findSquashDrillByName(drill.name))
+    .filter((drill): drill is SquashDrillDefinition => Boolean(drill))
+  const prevFamily = prevSessionDefinitions[0] ? getSquashDrillFamily(prevSessionDefinitions[0]) : undefined
   const appearedConsecutive = prevFamily === targetFamily
 
   const recentFamily = families[targetFamily]
@@ -382,6 +402,18 @@ export function deriveSquashProgressionState(context: SquashSelectionContext): S
 
   // Hold: seen but not consecutive, maintain stimulus without escalating
   return { recommendation: 'hold', targetFamily, targetFocus, families }
+}
+
+function resolvePrimaryFocus(definitions: SquashDrillDefinition[]): string | undefined {
+  const counts = new Map<string, number>()
+
+  for (const definition of definitions) {
+    for (const focus of definition.focus) {
+      counts.set(focus, (counts.get(focus) ?? 0) + 1)
+    }
+  }
+
+  return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0]?.[0]
 }
 
 export function shouldProgressSquashFamily(
