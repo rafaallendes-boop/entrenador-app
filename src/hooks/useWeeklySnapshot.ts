@@ -82,7 +82,7 @@ export function useLoadAnalytics(currentWeekStart: string, sessions: WeeklySnaps
   return loadAnalytics
 }
 
-export function useHistoricalSessions(referenceDate: string, sessions: WeeklySnapshotInput['sessions']) {
+export function useHistoricalSessions(referenceDate: string) {
   const [historicalSessions, setHistoricalSessions] = useState<Session[]>([])
 
   useEffect(() => {
@@ -95,7 +95,7 @@ export function useHistoricalSessions(referenceDate: string, sessions: WeeklySna
     return () => {
       cancelled = true
     }
-  }, [referenceDate, sessions])
+  }, [referenceDate])
 
   return historicalSessions
 }
@@ -106,7 +106,7 @@ export function useWeeklySnapshot(
 ): WeeklySnapshot {
   const loadAnalytics = useLoadAnalytics(currentWeekStart, input.sessions)
   const referenceDate = input.currentWeekSummary?.weekStartDate ?? currentWeekStart
-  const historicalSessions = useHistoricalSessions(referenceDate, input.sessions)
+  const historicalSessions = useHistoricalSessions(referenceDate)
   const today = input.today ?? todayISO()
   const slotAdherenceProfile = useMemo(
     () => buildSlotAdherenceProfile(historicalSessions, today),

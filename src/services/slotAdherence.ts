@@ -26,7 +26,6 @@ export function buildSlotAdherenceProfile(
 
   for (const session of historicalSessions) {
     if (session.date < cutoff || session.date >= referenceDateISO) continue
-    if (session.status === 'skipped') continue
 
     const key = getSlotKey(session.date, session.timeBlock)
     const current = counts.get(key) ?? { plannedCount: 0, completedCount: 0 }

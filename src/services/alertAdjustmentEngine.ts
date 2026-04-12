@@ -450,7 +450,6 @@ function recoveryPenalty(session: Session, athleteProfile?: AthleteProfile | nul
   let penalty = candidateLoadScore(session)
   if (session.type === 'strength' || session.type === 'cycling') penalty += 18
   if (session.type === 'mobility' || session.type === 'recovery') penalty -= 30
-  if (session.date === toISO(addDays(fromISO(session.date), 0))) penalty += 0
   penalty -= keySessionProtection(session, athleteProfile)
   return penalty
 }
