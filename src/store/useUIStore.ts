@@ -31,7 +31,8 @@ export const useUIStore = create<UIState>((set, get) => ({
   navigateWeek: (direction) => {
     const current = fromISO(get().currentWeekStart)
     const next = direction === 'next' ? addWeeks(current, 1) : subWeeks(current, 1)
-    set({ currentWeekStart: toISO(getWeekStart(next)) })
+    const nextWeekStart = toISO(getWeekStart(next))
+    set({ currentWeekStart: nextWeekStart, selectedDate: nextWeekStart })
   },
 
   openDrawer: (content, sessionId) =>

@@ -43,6 +43,19 @@ export const upsertDayLog = async (
 export const getWeekSummary = async (weekStartISO: string): Promise<WeekSummary | undefined> =>
   db.weekSummaries.where('weekStartDate').equals(weekStartISO).first()
 
+export function hasWeekSummaryMeaningfulChanges(
+  existing: WeekSummary,
+  patch: Partial<Omit<WeekSummary, 'id' | 'weekStartDate' | 'updatedAt'>>,
+): boolean {
+  return Object.entries(patch).some(([key, nextValue]) => {
+    const currentValue = existing[key as keyof WeekSummary]
+    if (Array.isArray(currentValue) || Array.isArray(nextValue)) {
+      return JSON.stringify(currentValue ?? null) !== JSON.stringify(nextValue ?? null)
+    }
+    return currentValue !== nextValue
+  })
+}
+
 export const upsertWeekSummary = async (
   weekStartISO: string,
   patch: Partial<Omit<WeekSummary, 'id' | 'weekStartDate' | 'updatedAt'>>
@@ -50,6 +63,10 @@ export const upsertWeekSummary = async (
   const existing = await getWeekSummary(weekStartISO)
   const updatedAt = Date.now()
   if (existing) {
+    if (!hasWeekSummaryMeaningfulChanges(existing, patch)) {
+      return existing
+    }
+
     const updated = { ...existing, ...patch, updatedAt }
     await db.weekSummaries.put(updated)
     void syncService.pushWeekSummary(updated)

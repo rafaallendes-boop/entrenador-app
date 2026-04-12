@@ -1,7 +1,10 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npm run:*)"
+      "Bash(npm run:*)",
+      "Bash(node -e ':*)",
+      "Bash(cat)",
+      "Bash(node /tmp/test_mutations.js)"
     ]
   }
 }

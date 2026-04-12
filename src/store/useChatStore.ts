@@ -36,6 +36,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       .where('chatSessionId')
       .equals(sessionId)
       .sortBy('timestamp')
+    if (sessionId !== get().currentSessionId) return
     set({ messages: msgs })
   },
 
@@ -65,9 +66,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
         onChunk: (chunk) => set(state => ({ streamingText: state.streamingText + chunk })),
       })
 
-      // If the model returned structured actions, create a proposal automatically
+      // If the model returned structured actions, create a proposal automatically.
+      // Skip if the response is likely truncated to avoid partial plans being created.
       let proposalId: string | undefined
-      if (response.actions && response.actions.length > 0) {
+      if (response.actions && response.actions.length > 0 && !response.meta?.likelyTruncated) {
         const proposal = await useCoachActionsStore.getState().addProposal(
           response.message.slice(0, 120) + (response.message.length > 120 ? '…' : ''),
           response.actions,
@@ -137,7 +139,9 @@ function formatError(e: unknown): string {
       case 'rate_limit':
         return `Límite de uso alcanzado en ${e.provider}. Espera unos minutos e intenta de nuevo.`
       case 'timeout':
-        return 'Sin conexión con el coach. Verifica tu internet e intenta de nuevo.'
+        return e.message.includes('tardó') || e.message.includes('504') || e.message.includes('502') || e.message.includes('503')
+          ? e.message
+          : 'Sin conexión con el coach. Verifica tu internet e intenta de nuevo.'
       case 'parse_error':
         return 'El coach devolvió una respuesta inesperada. Intenta de nuevo.'
       default:

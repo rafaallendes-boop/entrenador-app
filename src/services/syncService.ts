@@ -1313,6 +1313,40 @@ function clearSyncArtifactsForUser(userId: string): void {
   })
 }
 
+export function clearSelectedSyncArtifactsForUser(
+  userId: string,
+  selection: { trainingData?: boolean; chatHistory?: boolean; coachProposals?: boolean; coachMemory?: boolean },
+): void {
+  const selectedTables = new Set<SupabaseTable>()
+  if (selection.trainingData) {
+    selectedTables.add('sessions')
+    selectedTables.add('day_logs')
+    selectedTables.add('week_summaries')
+  }
+  if (selection.chatHistory) {
+    selectedTables.add('chat_messages')
+  }
+  if (selection.coachProposals) {
+    selectedTables.add('coach_proposals')
+  }
+  if (selection.coachMemory) {
+    selectedTables.add('athlete_profiles')
+  }
+
+  if (selectedTables.size === 0) return
+
+  try {
+    const queue = loadQueue().filter((op) => op.userId !== userId || !selectedTables.has(op.table))
+    saveQueue(queue)
+  } catch {
+    // Ignore storage failures.
+  }
+
+  if (selection.trainingData) {
+    clearSessionDeleteTombstoneGroup(userId)
+  }
+}
+
 function clearSessionDeleteTombstoneGroup(userId: string): void {
   try {
     const raw = localStorage.getItem(SESSION_DELETE_TOMBSTONES_KEY)
@@ -1450,6 +1484,37 @@ export async function migrateLocalDataToCloud(userId: string): Promise<void> {
     applySyncFailure(error, 'No se pudo migrar los datos locales a la nube.')
     console.error('[sync] Migration failed:', error)
     throw error
+  }
+}
+
+export async function clearSelectedRemoteAppData(
+  userId: string,
+  selection: { trainingData?: boolean; chatHistory?: boolean; coachProposals?: boolean; coachMemory?: boolean },
+): Promise<void> {
+  if (!isEnabled()) return
+
+  const tableMap: Array<{ key: keyof typeof selection; table: SupabaseTable }> = [
+    { key: 'trainingData', table: 'sessions' },
+    { key: 'trainingData', table: 'day_logs' },
+    { key: 'trainingData', table: 'week_summaries' },
+    { key: 'chatHistory', table: 'chat_messages' },
+    { key: 'coachProposals', table: 'coach_proposals' },
+    { key: 'coachMemory', table: 'athlete_profiles' },
+  ]
+
+  const failures: string[] = []
+
+  for (const { key, table } of tableMap) {
+    if (selection[key]) {
+      const { error } = await supabase.from(table).delete().eq('user_id', userId)
+      if (error) {
+        failures.push(table)
+      }
+    }
+  }
+
+  if (failures.length > 0) {
+    throw new Error(`No se pudo borrar en la nube: ${failures.join(', ')}`)
   }
 }
 

@@ -184,6 +184,13 @@ function choiceCls(active: boolean): string {
 }
 
 function buildWeekStartDates(count: number): string[] {
+  const formatLocalISODate = (date: Date): string => {
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  }
+
   const today = new Date()
   const dayOfWeek = today.getDay()
   const daysToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek
@@ -193,6 +200,6 @@ function buildWeekStartDates(count: number): string[] {
   return Array.from({ length: count }, (_, i) => {
     const ws = new Date(monday)
     ws.setDate(monday.getDate() + i * 7)
-    return ws.toISOString().split('T')[0]
+    return formatLocalISODate(ws)
   })
 }

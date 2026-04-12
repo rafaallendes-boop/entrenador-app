@@ -124,7 +124,7 @@ export default function DailyCheckInCard({ todaySessions, autoExpandToken = 0 }:
   const save = (patch: Parameters<typeof saveDayLog>[1]) => saveDayLog(today, patch)
 
   const activeSessions = todaySessions.filter(s => s.status !== 'skipped')
-  const completedCount = todaySessions.filter(s => s.status === 'completed').length
+  const completedCount = todaySessions.filter(s => s.status === 'completed' || s.status === 'adjusted').length
 
   const energyColor = (v: number) =>
     v >= 8 ? 'bg-emerald-500' : v >= 5 ? 'bg-brand' : 'bg-amber-500'

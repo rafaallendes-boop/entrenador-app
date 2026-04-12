@@ -1,3 +1,4 @@
+import { ChevronDown } from 'lucide-react'
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Target } from 'lucide-react'
@@ -40,6 +41,7 @@ export default function Dashboard() {
   const athleteFirstName = getAthleteFirstName(athleteProfile, 'atleta')
 
   const [isDeletingMacroPlan, setIsDeletingMacroPlan] = useState(false)
+  const [objectivesExpanded, setObjectivesExpanded] = useState(false)
   const [checkInExpandToken, setCheckInExpandToken] = useState(0)
   const [showDeleteMacroPlanConfirm, setShowDeleteMacroPlanConfirm] = useState(false)
   const [activeProposal, setActiveProposal] = useState<CoachProposal | null>(null)
@@ -97,8 +99,11 @@ export default function Dashboard() {
 
   const todayNutrition = getDayNutrition(todaySessions, athleteProfile)
 
-  const coachNote = currentWeekSummary?.coachNote ??
-    `Bienvenido${athleteProfile?.name ? `, ${athleteFirstName}` : ''}. Carga tu primera semana de entrenamiento y empieza a registrar tu progreso.`
+  const hasTrainingHistory = sessions.length > 0
+  const defaultCoachNote = hasTrainingHistory
+    ? `Hola ${athleteFirstName}, ¿cómo viene la semana? Revisá tu semana en curso o pedile al coach que actualice tu plan.`
+    : `Bienvenido${athleteProfile?.name ? `, ${athleteFirstName}` : ''}. Carga tu primera semana de entrenamiento y empieza a registrar tu progreso.`
+  const coachNote = currentWeekSummary?.coachNote ?? defaultCoachNote
 
   const profileCompleteness = getProfileCompleteness(athleteProfile ?? null)
   const showProfileNudge = profileCompleteness.state === 'partial' || profileCompleteness.state === 'missing_sports'
@@ -299,17 +304,32 @@ export default function Dashboard() {
 
               {currentWeekSummary.objectives && currentWeekSummary.objectives.length > 0 && (
                 <div className="mt-4 pt-3 border-t border-surface-border">
-                  <p className="text-xs font-semibold text-ink-muted uppercase tracking-wider mb-2">
-                    Objetivos
-                  </p>
-                  <ul className="space-y-1.5">
-                    {currentWeekSummary.objectives.map((obj, i) => (
-                      <li key={i} className="flex items-start gap-2 text-sm text-ink">
-                        <span className="w-1.5 h-1.5 rounded-full bg-brand mt-2 flex-shrink-0" />
-                        {obj}
-                      </li>
-                    ))}
-                  </ul>
+                  <button
+                    type="button"
+                    onClick={() => setObjectivesExpanded(v => !v)}
+                    className="flex items-center justify-between w-full text-left gap-2"
+                  >
+                    <p className="text-xs font-semibold text-ink-muted uppercase tracking-wider">
+                      Objetivos por deporte
+                      <span className="ml-1.5 font-normal normal-case tracking-normal text-ink-faint">
+                        ({currentWeekSummary.objectives.length})
+                      </span>
+                    </p>
+                    <ChevronDown
+                      size={14}
+                      className={`text-ink-faint transition-transform flex-shrink-0 ${objectivesExpanded ? 'rotate-180' : ''}`}
+                    />
+                  </button>
+                  {objectivesExpanded && (
+                    <ul className="mt-2 space-y-1.5">
+                      {currentWeekSummary.objectives.map((obj, i) => (
+                        <li key={i} className="flex items-start gap-2 text-sm text-ink">
+                          <span className="w-1.5 h-1.5 rounded-full bg-brand mt-2 flex-shrink-0" />
+                          {obj}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
               )}
             </Card>

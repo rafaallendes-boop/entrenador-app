@@ -41,6 +41,7 @@ interface TrainingState {
 }
 
 let latestWeekLoadRequestId = 0
+let latestAllSummariesLoadRequestId = 0
 
 function getWeekStartDate(dateISO: string): string {
   return toISO(getWeekStart(fromISO(dateISO)))
@@ -92,6 +93,7 @@ export const useTrainingStore = create<TrainingState>((set, get) => ({
         if (log) dayLogs[dates[i]] = log
       })
 
+      if (requestId !== latestWeekLoadRequestId) return
       await recalculateWeekSummary(weekStart)
       const summary = await getWeekSummary(weekStart)
       if (requestId !== latestWeekLoadRequestId) return
@@ -116,7 +118,9 @@ export const useTrainingStore = create<TrainingState>((set, get) => ({
   },
 
   loadAllSummaries: async () => {
+    const requestId = ++latestAllSummariesLoadRequestId
     const all = await getAllWeekSummaries()
+    if (requestId !== latestAllSummariesLoadRequestId) return
     set({ allWeekSummaries: all })
   },
 

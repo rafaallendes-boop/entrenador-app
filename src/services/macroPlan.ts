@@ -533,7 +533,7 @@ const SPORT_RULES: Record<'squash' | 'running' | 'strength' | 'cycling' | 'mobil
 const PHASE_LABELS: Record<MacroPlanPhase, string> = {
   base: 'Base',
   build: 'Construcción',
-  peak: 'Pico',
+  peak: 'Peak',
   taper: 'Taper',
   race: 'Evento',
   transition: 'Transición',
@@ -620,7 +620,7 @@ export function computeWeeksRemaining(eventDateISO: string, refDate: Date): numb
   const diffMs = eventDate.getTime() - refNormalized.getTime()
   const diffDays = diffMs / (24 * 60 * 60 * 1000)
 
-  return Math.ceil(diffDays / 7)
+  return diffDays >= 0 ? Math.ceil(diffDays / 7) : Math.floor(diffDays / 7)
 }
 
 export function resolvePhase(weeksRemaining: number): MacroPlanPhase {

@@ -57,6 +57,7 @@ import {
   buildCompetitiveSquashWeekExample,
   formatSelectedSquashDrills,
   stringifySquashDrills,
+  mapMacroPhaseToSquashPhase,
   type SquashSelectionSummary,
   // Strength
   buildStrengthSelectionSummary,
@@ -65,6 +66,7 @@ import {
   buildStrengthProgressionSection,
   formatSelectedStrengthExercises,
   stringifyStrengthExercises,
+  mapMacroPhaseToStrengthPhase,
   type StrengthSelectionSummary,
   // Running
   buildRunningSelectionSummary,
@@ -1024,6 +1026,9 @@ function buildResponsePromptContext(
   const weekDates = buildWeekDatesList(weekStart)
   const enabledSports = getAllowedPlanningSports(context.athleteProfile)
   const primarySportNorm = getPlanningPrimarySport(context.athleteProfile) ?? getPrimarySportNormalized(context.athleteProfile)
+  const macroPlan = computeMacroPlan(context.athleteProfile)
+  const squashBasePhase = mapMacroPhaseToSquashPhase(macroPlan?.currentPhase)
+  const strengthBasePhase = mapMacroPhaseToStrengthPhase(macroPlan?.currentPhase)
   const primarySportLabel = primarySportNorm
     ?? context.athleteProfile?.primarySport?.trim()
     ?? 'deporte principal'
@@ -1089,7 +1094,7 @@ function buildResponsePromptContext(
 
   const squashBaseSelection = squashSelection ?? selectSquashDrills({
     fatigueLevel: 4,
-    phase: 'build',
+    phase: squashBasePhase,
     recentDrills: [],
     goal: 'desarrollar control, precision y presion en squash',
     competitionSoon: false,
@@ -1122,7 +1127,7 @@ function buildResponsePromptContext(
   const squashCompetitiveObjective = `Sesion ${squashCompetitiveSelection.trainingFocus} de ajuste, precision y timing sin fatiga alta.`
   const strengthBaseSelection = strengthSelection ?? selectStrengthSession({
     fatigueLevel: 4,
-    phase: 'build',
+    phase: strengthBasePhase,
     recentExercises: [],
     goal: 'desarrollar una sesion de fuerza completa y util',
     sportProfile: primary === 'strength' ? 'strength_primary' : 'hybrid',

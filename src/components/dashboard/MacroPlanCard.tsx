@@ -183,7 +183,7 @@ function SportDetailRow({ detail }: { detail: MacroPlanSportDetail }) {
 
 function formatTimelineRange(startWeek: number, endWeek: number): string {
   if (startWeek < 0 && endWeek < 0) return 'post-evento'
-  if (startWeek === 0 && endWeek === 0) return 'esta semana'
+  if (startWeek === 0 && endWeek === 0) return 'Semana Competencia'
   if (startWeek === endWeek) return `sem ${startWeek}`
   return `sem ${startWeek}-${endWeek}`
 }

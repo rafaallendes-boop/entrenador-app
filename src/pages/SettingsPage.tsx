@@ -7,14 +7,13 @@ import SyncStatusBadge from '../components/sync/SyncStatusBadge'
 import { APP_INFO } from '../constants/appInfo'
 import { ROUTES } from '../constants/routes'
 import { CoachEngine } from '../services/ai/CoachEngine'
-import { db } from '../db/db'
 import {
   downloadAppDataExport,
   importAppDataFromFile,
   previewAppDataImportFile,
   type AppDataImportPreview,
 } from '../services/dataExport'
-import { pullAll, wipeRemoteAndLocalAppData } from '../services/syncService'
+import { clearSelectedRemoteAppData, clearSelectedSyncArtifactsForUser, pullAll, wipeRemoteAndLocalAppData } from '../services/syncService'
 import {
   clearSelectedLocalAppData,
   deleteCoachSessionsByIds,
@@ -42,9 +41,8 @@ import { useTrainingStore } from '../store/useTrainingStore'
 import { currentWeekStartISO } from '../utils/date'
 import { getEnabledSports, getSportPrioritySummary } from '../utils/athlete'
 import { clearOnboardingSkipped } from '../utils/onboarding'
-import type { AthleteProfile, CoachProposal, Session } from '../types'
+import type { AthleteProfile, Session } from '../types'
 import { buildMacroWeekCoherenceSummary } from '../services/macroWeekCoherence'
-import { summarizeCoachProposalUsage, type CoachProposalUsageSummary } from '../services/coachProposalMetadata'
 
 const CLEARABLE_GROUPS: Array<{
   key: LocalDataGroup
@@ -108,7 +106,6 @@ export default function SettingsPage() {
   const [coachSessionRange, setCoachSessionRange] = useState<1 | 2 | 3 | 4>(4)
   const [coachSessions, setCoachSessions] = useState<Session[]>([])
   const [selectedCoachSessionIds, setSelectedCoachSessionIds] = useState<string[]>([])
-  const [proposalUsageSummary, setProposalUsageSummary] = useState<CoachProposalUsageSummary | null>(null)
   const importInputRef = useRef<HTMLInputElement | null>(null)
 
   const refreshNotificationStatus = async () => {
@@ -132,18 +129,9 @@ export default function SettingsPage() {
     )
   }, [coachSessionRange])
 
-  const refreshProposalUsage = useCallback(async () => {
-    const proposals = await db.coachProposals.orderBy('createdAt').reverse().toArray() as CoachProposal[]
-    setProposalUsageSummary(summarizeCoachProposalUsage(proposals))
-  }, [])
-
   useEffect(() => {
     void refreshCoachSessions()
   }, [refreshCoachSessions])
-
-  useEffect(() => {
-    void refreshProposalUsage()
-  }, [refreshProposalUsage, dataCounts])
 
   useEffect(() => {
     if (!notificationsSupported()) return () => undefined
@@ -246,15 +234,32 @@ export default function SettingsPage() {
 
     setIsClearing(true)
     setClearStatus(null)
+    let remoteError: string | null = null
     try {
+      const currentUser = user
+      if (currentUser) {
+        try {
+          await clearSelectedRemoteAppData(currentUser.id, clearSelection)
+        } catch (error) {
+          remoteError = error instanceof Error ? error.message : 'No se pudo borrar todo en la nube.'
+          console.error('[settings] selective remote wipe failed', error)
+        }
+      }
       const clearedGroups = await clearSelectedLocalAppData(clearSelection)
+      if (currentUser) {
+        clearSelectedSyncArtifactsForUser(currentUser.id, clearSelection)
+      }
       await refreshCounts(setDataCounts)
       setClearSelection({ ...EMPTY_CLEAR_SELECTION })
       setClearConfirm(false)
       if (clearSelection.coachMemory) {
         await loadMemory()
       }
-      setClearStatus(`Se elimino: ${formatGroupList(clearedGroups)}.`)
+      setClearStatus(
+        remoteError
+          ? `Se elimino localmente: ${formatGroupList(clearedGroups)}. La nube quedo con pendientes: ${remoteError}`
+          : `Se elimino: ${formatGroupList(clearedGroups)}.`,
+      )
     } finally {
       setIsClearing(false)
     }
@@ -845,75 +850,6 @@ export default function SettingsPage() {
 
           <Card className="p-4">
             <div className="flex items-start gap-3 mb-3">
-              <div className="w-8 h-8 rounded-full bg-sky-500/10 flex items-center justify-center flex-shrink-0">
-                <Brain size={16} className="text-sky-300" />
-              </div>
-              <div>
-                <h2 className="text-sm font-semibold text-ink">Detalle cycling y mobility</h2>
-                <p className="text-xs text-ink-muted mt-1 leading-relaxed">
-                  Revisión local de proposals instrumentadas para detectar dónde el coach todavía cae en fallback genérico.
-                </p>
-              </div>
-            </div>
-            {proposalUsageSummary == null ? (
-              <p className="text-xs text-ink-muted">Cargando métricas de proposals...</p>
-            ) : proposalUsageSummary.totalTrackedProposals === 0 ? (
-              <p className="text-xs text-ink-muted">Aún no hay proposals de cycling o mobility registradas en este dispositivo.</p>
-            ) : (
-              <div className="space-y-3">
-                <div className="grid gap-2 sm:grid-cols-2">
-                  <ProposalInsightStat
-                    label="Proposals tracking"
-                    value={String(proposalUsageSummary.totalTrackedProposals)}
-                    tone="default"
-                  />
-                  <ProposalInsightStat
-                    label="Aceptadas"
-                    value={`${proposalUsageSummary.acceptedTrackedProposals}`}
-                    tone="good"
-                  />
-                </div>
-                <div className="grid gap-2 sm:grid-cols-2">
-                  <ProposalSportCard
-                    sport="Cycling"
-                    total={proposalUsageSummary.bySport.cycling.total}
-                    explicit={proposalUsageSummary.bySport.cycling.explicitDetail}
-                    fallback={proposalUsageSummary.bySport.cycling.genericFallback}
-                    accepted={proposalUsageSummary.bySport.cycling.accepted}
-                  />
-                  <ProposalSportCard
-                    sport="Mobility"
-                    total={proposalUsageSummary.bySport.mobility.total}
-                    explicit={proposalUsageSummary.bySport.mobility.explicitDetail}
-                    fallback={proposalUsageSummary.bySport.mobility.genericFallback}
-                    accepted={proposalUsageSummary.bySport.mobility.accepted}
-                  />
-                </div>
-                <div className="rounded-xl border border-surface-border bg-surface-raised px-3 py-3">
-                  <p className="text-[11px] uppercase tracking-wide text-ink-faint">Últimos casos con fallback genérico</p>
-                  {proposalUsageSummary.recentGenericProposals.length === 0 ? (
-                    <p className="mt-2 text-xs text-emerald-400">No hay fallbacks genéricos recientes.</p>
-                  ) : (
-                    <div className="mt-2 space-y-2">
-                      {proposalUsageSummary.recentGenericProposals.map((proposal) => (
-                        <div key={proposal.id} className="rounded-lg border border-white/5 bg-surface px-2.5 py-2">
-                          <p className="text-xs text-ink">
-                            {proposal.message}
-                          </p>
-                          <p className="mt-1 text-[11px] text-ink-faint">
-                            {proposal.metadata?.source ?? 'chat'} · {proposal.metadata?.genericFallbackSports.join(', ') || 'sin detalle'} · {proposal.status}
-                          </p>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-          </Card>
-
-          <Card className="p-4">
-            <div className="flex items-start gap-3 mb-3">
               <div className="w-8 h-8 rounded-full bg-brand/15 flex items-center justify-center flex-shrink-0">
                 <Bell size={16} className="text-brand-light" />
               </div>
@@ -1340,51 +1276,6 @@ function NotificationPreferenceRow({
   )
 }
 
-function ProposalInsightStat({
-  label,
-  value,
-  tone,
-}: {
-  label: string
-  value: string
-  tone: 'default' | 'good'
-}) {
-  return (
-    <div className="rounded-xl border border-surface-border bg-surface-raised px-3 py-2.5">
-      <p className="text-[10px] uppercase tracking-wide text-ink-faint">{label}</p>
-      <p className={`mt-1 text-sm font-semibold ${tone === 'good' ? 'text-emerald-400' : 'text-ink'}`}>{value}</p>
-    </div>
-  )
-}
-
-function ProposalSportCard({
-  sport,
-  total,
-  explicit,
-  fallback,
-  accepted,
-}: {
-  sport: string
-  total: number
-  explicit: number
-  fallback: number
-  accepted: number
-}) {
-  const explicitPct = total > 0 ? Math.round((explicit / total) * 100) : 0
-  const acceptedPct = total > 0 ? Math.round((accepted / total) * 100) : 0
-
-  return (
-    <div className="rounded-xl border border-surface-border bg-surface-raised px-3 py-3">
-      <p className="text-[11px] uppercase tracking-wide text-ink-faint">{sport}</p>
-      <div className="mt-2 grid gap-1 text-xs text-ink-muted">
-        <p>Total: <span className="text-ink">{total}</span></p>
-        <p>Detalle explícito: <span className="text-emerald-400">{explicitPct}%</span></p>
-        <p>Fallback genérico: <span className="text-amber-300">{fallback}</span></p>
-        <p>Aceptadas: <span className="text-ink">{acceptedPct}%</span></p>
-      </div>
-    </div>
-  )
-}
 
 async function refreshCounts(setDataCounts: (counts: LocalDataCounts) => void): Promise<void> {
   const counts = await getLocalDataCounts()

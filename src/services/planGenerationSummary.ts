@@ -158,9 +158,10 @@ function buildSessionsBySport(sessions: CoachSessionProposal[]): Partial<Record<
 function buildEstimatedLoadBySport(sessions: CoachSessionProposal[]): Partial<Record<SupportedSport, number>> {
   const loads: Partial<Record<SupportedSport, number>> = {}
   for (const sport of RESTRICTED_PLANNING_SPORTS) loads[sport] = 0
+  loads.mobility = 0
   for (const session of sessions) {
     const sport = session.sessionType as SupportedSport
-    if (!RESTRICTED_PLANNING_SPORTS.includes(sport)) continue
+    if (!RESTRICTED_PLANNING_SPORTS.includes(sport) && sport !== 'mobility') continue
     const rpe = session.rpe ?? (sport === 'mobility' ? 4 : 6)
     loads[sport] = (loads[sport] ?? 0) + (session.durationMin * rpe)
   }

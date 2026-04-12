@@ -53,8 +53,8 @@ export default function SessionCard({ session, compact = false, onDelete }: Sess
   const hasRunningDetails = (session.type === 'running' || session.type === 'cycling') && session.runningDetails
   const hasCyclingDetails = session.type === 'cycling' && session.cyclingDetails
   const hasMobilityDetails = session.type === 'mobility' && session.mobilityDetails
-  const hasSquashDetails =
-    session.type === 'squash' && session.squashDetails && (session.squashDetails.drills?.length ?? 0) > 0
+  const squashDrills = session.squashDetails?.drills ?? []
+  const hasSquashDetails = session.type === 'squash' && Boolean(session.squashDetails)
   const warmup = normalizeGeneratedProtocol(session.warmup, 'warmup')
   const cooldown = normalizeGeneratedProtocol(session.cooldown, 'cooldown')
   const hasProtocols = Boolean(warmup || cooldown)
@@ -359,10 +359,10 @@ export default function SessionCard({ session, compact = false, onDelete }: Sess
               </p>
             </div>
           )}
-          {hasSquashDetails && session.squashDetails && (
+          {hasSquashDetails && session.squashDetails && squashDrills.length > 0 && (
             <div className="mt-2 space-y-1.5">
               <p className="text-[10px] font-medium uppercase tracking-wider text-ink-faint">Drills</p>
-              {(session.squashDetails.drills ?? []).map((drill, i) => (
+              {squashDrills.map((drill, i) => (
                 <div key={i} className="flex items-start gap-2 rounded-lg bg-surface-raised px-2.5 py-1.5">
                   <span className="flex-1 text-xs font-medium leading-snug text-ink">{drill.name}</span>
                   {drill.durationMin && <span className="flex-shrink-0 text-[11px] text-ink-faint">{drill.durationMin}min</span>}

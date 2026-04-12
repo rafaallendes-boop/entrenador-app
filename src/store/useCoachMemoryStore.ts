@@ -13,6 +13,8 @@ interface CoachMemoryState {
   saveAthleteProfile: (patch: Partial<Omit<AthleteProfile, 'id' | 'updatedAt'>>) => Promise<void>
 }
 
+let latestMemoryLoadRequestId = 0
+
 export const useCoachMemoryStore = create<CoachMemoryState>((set) => ({
   coachMemory: '',
   athleteProfile: null,
@@ -20,11 +22,14 @@ export const useCoachMemoryStore = create<CoachMemoryState>((set) => ({
   hasLoaded: false,
 
   loadMemory: async () => {
+    const requestId = ++latestMemoryLoadRequestId
     const profile = await getAthleteProfile()
+    if (requestId !== latestMemoryLoadRequestId) return
     set({ coachMemory: profile?.coachMemory ?? '', athleteProfile: profile ?? null, hasLoaded: true })
   },
 
   saveMemory: async (coachMemory) => {
+    latestMemoryLoadRequestId += 1
     set({ isSaving: true })
     try {
       const profile = await upsertAthleteProfile({ coachMemory: coachMemory.trim() || undefined })
@@ -37,6 +42,7 @@ export const useCoachMemoryStore = create<CoachMemoryState>((set) => ({
   },
 
   saveAthleteProfile: async (patch) => {
+    latestMemoryLoadRequestId += 1
     set({ isSaving: true })
     try {
       const profile = await upsertAthleteProfile(patch)

@@ -62,6 +62,9 @@ export class ProxyProvider implements AIProvider {
       if (res.status === 429) {
         throw createProviderError('gemini', 'rate_limit', data.error ?? 'Demasiadas solicitudes. Intenta en unos minutos.', true)
       }
+      if (res.status === 502 || res.status === 503 || res.status === 504) {
+        throw createProviderError('gemini', 'timeout', data.error ?? `El servidor tardó demasiado (${res.status}). Para planes largos, intenta por semanas individuales.`, true)
+      }
       throw createProviderError('gemini', 'unknown', data.error ?? `Error del servidor (${res.status})`)
     }
 
