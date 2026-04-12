@@ -187,6 +187,17 @@ export const recalculateWeekSummary = async (dateISO: string): Promise<void> => 
 export const getAllWeekSummaries = async (): Promise<WeekSummary[]> =>
   db.weekSummaries.orderBy('weekStartDate').reverse().toArray()
 
+export const getHistoricalSessionsWindow = async (
+  referenceDateISO: string,
+  weeks = 8,
+): Promise<Session[]> => {
+  const start = toISO(addDays(fromISO(referenceDateISO), -(weeks * 7)))
+  return db.sessions
+    .where('date')
+    .between(start, referenceDateISO, true, false)
+    .toArray()
+}
+
 export const getMatchSessions = async (): Promise<Session[]> => {
   const sessions = await db.sessions
     .filter((s) => isPracticeSquashMatch(s) || isCompetitionSquashMatch(s))

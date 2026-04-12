@@ -6,6 +6,7 @@ import { getAllowedPlanningSports } from '../services/planningConstraints'
 import { useCoachMemoryStore } from '../store/useCoachMemoryStore'
 import { getPrimaryGoalEvent } from '../services/macroPlan'
 import { getAthleteFirstName } from '../utils/athlete'
+import { useWeeklyLaunchIntent } from '../hooks/useWeeklyLaunchIntent'
 
 const WEEK_OPTIONS = [
   { value: 'esta', label: 'Esta semana' },
@@ -28,6 +29,7 @@ export default function PlanBuilderPage() {
   const athleteFirstName = getAthleteFirstName(athleteProfile, 'atleta')
   const enabledSports = getAllowedPlanningSports(athleteProfile)
   const goalEvent = getPrimaryGoalEvent(athleteProfile)
+  useWeeklyLaunchIntent()
 
   const [weekTarget, setWeekTarget] = useState<(typeof WEEK_OPTIONS)[number]['value']>('esta')
   const [focus, setFocus] = useState<(typeof FOCUS_OPTIONS)[number]['value']>('balance')

@@ -176,9 +176,16 @@ ${sportSections}`
 function buildSessionFeedbackSection(historicalSessions: Session[] | undefined): string {
   if (!historicalSessions?.length) return ''
 
+  const formatLocalISODate = (date: Date): string => {
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  }
+
   const cutoffDate = new Date()
   cutoffDate.setDate(cutoffDate.getDate() - 28)
-  const cutoff = cutoffDate.toISOString().slice(0, 10)
+  const cutoff = formatLocalISODate(cutoffDate)
 
   const sessionsWithFeedback = historicalSessions.filter(
     (s) => s.sessionFeedback != null && s.date >= cutoff,
@@ -1324,7 +1331,7 @@ Para CREAR una semana completa:
   create_week — campos: sessions (array con detalles útiles y válidos), weekObjectives (array de strings), reason
 
 Para AGREGAR una sesión individual:
-  add_session — campos: targetDate, timeBlock, sessionType, title, durationMin, rpe?, objective?, subtype?${hasRunning || hasCycling ? ', runningType?, targetPaceMin?, targetPaceMax?, targetHrMin?, targetHrMax?, intervalStructure?' : ''}${hasStrength ? ', exercises?' : ', exercises?'} , cyclingDetails?, mobilityDetails?, warmup?, cooldown?, reason
+  add_session — campos: targetDate, timeBlock, sessionType, title, durationMin, rpe?, objective?, subtype?${hasRunning || hasCycling ? ', runningType?, targetPaceMin?, targetPaceMax?, targetHrMin?, targetHrMax?, intervalStructure?' : ''}${hasStrength ? ', exercises?' : ''}, cyclingDetails?, mobilityDetails?, warmup?, cooldown?, reason
 
 Para ACTUALIZAR sesión existente (tipo, detalles, ejercicios, título, objetivo, RPE, duración):
   update_session — campos: sessionId, reason + uno o más de: newType, subtype, newTitle, newObjective, newRpe, newDurationMin${hasRunning || hasCycling ? ', runningType, targetPaceMin, targetPaceMax, targetHrMin, targetHrMax, intervalStructure' : ''}, cyclingDetails, mobilityDetails, squashDetails, exercises (array completo — reemplaza todo)

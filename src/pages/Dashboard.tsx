@@ -32,7 +32,7 @@ const ActionAlertsCard = lazy(() => import('../components/dashboard/ActionAlerts
 const ProposalDrawer = lazy(() => import('../components/chat/ProposalDrawer'))
 
 export default function Dashboard() {
-  const { sessions, dayLogs, currentWeekSummary, isLoading, loadWeek } = useTrainingStore()
+  const { sessions, dayLogs, currentWeekSummary, isLoading, loadWeek, allWeekSummaries } = useTrainingStore()
   const { addProposal, acceptProposal, rejectProposal } = useCoachActionsStore()
   const { athleteProfile, loadMemory, saveAthleteProfile } = useCoachMemoryStore()
   const { currentWeekStart } = useUIStore()
@@ -75,6 +75,7 @@ export default function Dashboard() {
     currentWeekSummary,
     todayDayLog: dayLogs[today],
     macroWeekCoherence,
+    athleteProfile,
     today,
   })
 
@@ -86,8 +87,10 @@ export default function Dashboard() {
       todayDayLog: dayLogs[today],
       athleteProfile,
       loadAnalytics,
+      weeklyActionSummary,
+      autoAdjustmentDraft,
     }))
-  }, [sessions, currentWeekSummary, macroWeekCoherence, dayLogs, today, athleteProfile, loadAnalytics])
+  }, [sessions, currentWeekSummary, macroWeekCoherence, dayLogs, today, athleteProfile, loadAnalytics, weeklyActionSummary, autoAdjustmentDraft])
 
   const todaySessions = sessions.filter(s => s.date === today)
   const completedToday = todaySessions.filter(s => s.status === 'completed').length
@@ -99,7 +102,7 @@ export default function Dashboard() {
 
   const todayNutrition = getDayNutrition(todaySessions, athleteProfile)
 
-  const hasTrainingHistory = sessions.length > 0
+  const hasTrainingHistory = allWeekSummaries.length > 0
   const defaultCoachNote = hasTrainingHistory
     ? `Hola ${athleteFirstName}, ¿cómo viene la semana? Revisá tu semana en curso o pedile al coach que actualice tu plan.`
     : `Bienvenido${athleteProfile?.name ? `, ${athleteFirstName}` : ''}. Carga tu primera semana de entrenamiento y empieza a registrar tu progreso.`

@@ -1,6 +1,16 @@
-import type { AthleteProfile, DayLog, MacroWeekCoherenceSummary, Session, WeekSummary } from '../types'
+import type {
+  AthleteProfile,
+  DayLog,
+  MacroWeekCoherenceSummary,
+  Session,
+  WeekSummary,
+  WeeklyActionSummary,
+} from '../types'
+import { ROUTES } from '../constants/routes'
 import type { LoadAnalytics } from './loadAnalytics'
 import { buildWeeklyActionSummary } from './weeklyActionLoop'
+import { buildAutoAdjustmentDraft, type AutoAdjustmentDraft } from './alertAdjustmentEngine'
+import { buildWeeklyActionLaunchUrl, type WeeklyActionLaunchIntent } from './weeklyLaunchIntent'
 
 const NOTIFY_TIME: Record<string, { h: number; m: number }> = {
   AM: { h: 7, m: 30 },
@@ -41,7 +51,17 @@ interface ScheduledAppNotification {
   notifyAt: number
   tag: string
   category: NotificationCategory
-  data?: Record<string, unknown>
+  data?: ScheduledNotificationData
+}
+
+interface ScheduledNotificationData {
+  source: string
+  url?: string
+  launchIntent?: WeeklyActionLaunchIntent
+  notifyAt?: number
+  category?: NotificationCategory
+  sessionId?: string
+  date?: string
 }
 
 interface SentNotificationsState {
@@ -80,6 +100,8 @@ export interface NotificationSyncContext {
   todayDayLog?: DayLog
   athleteProfile?: AthleteProfile | null
   loadAnalytics?: LoadAnalytics | null
+  weeklyActionSummary?: WeeklyActionSummary
+  autoAdjustmentDraft?: AutoAdjustmentDraft | null
 }
 
 const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences = {
@@ -136,7 +158,7 @@ export function buildScheduledNotifications(
 ): ScheduledAppNotification[] {
   const context = Array.isArray(input) ? { sessions: input } : input
   const items: ScheduledAppNotification[] = []
-  const weeklyActionSummary =
+  const weeklyActionSummary = context.weeklyActionSummary ?? (
     preferences.dailyCheckIn || preferences.weeklyPlanning || preferences.coachFollowUp || preferences.loadAlerts
       ? buildWeeklyActionSummary({
           sessions: context.sessions,
@@ -147,6 +169,20 @@ export function buildScheduledNotifications(
           today,
         })
       : null
+  )
+  const autoAdjustmentDraft = context.autoAdjustmentDraft ?? (
+    preferences.loadAlerts
+      ? buildAutoAdjustmentDraft({
+        sessions: context.sessions,
+        currentWeekSummary: context.currentWeekSummary,
+        todayDayLog: context.todayDayLog,
+        macroWeekCoherence: context.macroWeekCoherence,
+        athleteProfile: context.athleteProfile,
+        loadAnalytics: context.loadAnalytics,
+        today,
+      })
+      : null
+  )
 
   if (preferences.sessionReminders) {
     items.push(...buildSessionReminderNotifications(context.sessions, today, now))
@@ -164,7 +200,13 @@ export function buildScheduledNotifications(
     if (coachNotification) items.push(coachNotification)
   }
   if (preferences.loadAlerts) {
-    const coherenceNotification = buildCoherenceAlertNotification(weeklyActionSummary, today, now)
+    const coherenceNotification = buildCoherenceAlertNotification(
+      weeklyActionSummary,
+      autoAdjustmentDraft,
+      context.macroWeekCoherence?.weeklyRule,
+      today,
+      now,
+    )
     if (coherenceNotification) items.push(coherenceNotification)
   }
 
@@ -313,9 +355,9 @@ function buildSessionReminderNotifications(sessions: Session[], today: string, n
         category: 'session_reminders',
         data: {
           sessionId: session.id,
-          type: session.type,
           notifyAt,
           source: 'page-sync',
+          url: ROUTES.DAY(session.date),
         },
       }
     })
@@ -342,6 +384,16 @@ function buildDailyCheckInNotification(
     data: {
       source: 'activation-checkin',
       date: today,
+      url: buildWeeklyActionLaunchUrl({
+        intent: 'today_checkin',
+        date: today,
+        source: 'activation-checkin',
+      }),
+      launchIntent: {
+        intent: 'today_checkin',
+        date: today,
+        source: 'activation-checkin',
+      },
     },
   }
 }
@@ -367,6 +419,16 @@ function buildWeekPlanningNotification(
     data: {
       source: 'activation-week-empty',
       date: today,
+      url: buildWeeklyActionLaunchUrl({
+        intent: 'plan_builder',
+        date: today,
+        source: 'activation-week-empty',
+      }),
+      launchIntent: {
+        intent: 'plan_builder',
+        date: today,
+        source: 'activation-week-empty',
+      },
     },
   }
 }
@@ -392,12 +454,24 @@ function buildCoachFollowUpNotification(
     data: {
       source: 'activation-coach-note',
       date: today,
+      url: buildWeeklyActionLaunchUrl({
+        intent: 'generate_coach_note',
+        date: today,
+        source: 'activation-coach-note',
+      }),
+      launchIntent: {
+        intent: 'generate_coach_note',
+        date: today,
+        source: 'activation-coach-note',
+      },
     },
   }
 }
 
 function buildCoherenceAlertNotification(
   summary: ReturnType<typeof buildWeeklyActionSummary> | null,
+  autoAdjustmentDraft: ReturnType<typeof buildAutoAdjustmentDraft>,
+  weeklyRule: string | undefined,
   today: string,
   now: Date,
 ): ScheduledAppNotification | null {
@@ -414,10 +488,22 @@ function buildCoherenceAlertNotification(
     notifyAt: atTime(now, ACTIVATION_NOTIFY_TIME.coherence.h, ACTIVATION_NOTIFY_TIME.coherence.m),
     tag: buildNotificationTag('load_alerts', 'coherence-warning', today),
     category: 'load_alerts',
-    data: {
-      source: 'activation-coherence',
-      date: today,
-    },
+    data: buildLaunchNotificationData(
+      autoAdjustmentDraft
+        ? {
+            intent: 'open_auto_adjustment',
+            date: today,
+            alertId: autoAdjustmentDraft.alertId,
+            source: 'activation-auto-adjustment',
+            weeklyRule,
+          }
+        : {
+            intent: 'chat_adjust_week',
+            date: today,
+            source: 'activation-coherence',
+            weeklyRule,
+          },
+    ),
   }
 }
 
@@ -454,6 +540,15 @@ async function showScheduledNotification(
 
 function buildNotificationTag(category: NotificationCategory, id: string, date: string): string {
   return `${category}-${date}-${id}`
+}
+
+function buildLaunchNotificationData(intent: WeeklyActionLaunchIntent): ScheduledNotificationData {
+  return {
+    source: intent.source ?? 'weekly-loop',
+    date: intent.date,
+    url: buildWeeklyActionLaunchUrl(intent),
+    launchIntent: intent,
+  }
 }
 
 function hasNotificationBeenSent(tag: string, date: string): boolean {

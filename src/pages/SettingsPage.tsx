@@ -238,6 +238,7 @@ export default function SettingsPage() {
     try {
       const currentUser = user
       if (currentUser) {
+        clearSelectedSyncArtifactsForUser(currentUser.id, clearSelection)
         try {
           await clearSelectedRemoteAppData(currentUser.id, clearSelection)
         } catch (error) {
@@ -246,9 +247,6 @@ export default function SettingsPage() {
         }
       }
       const clearedGroups = await clearSelectedLocalAppData(clearSelection)
-      if (currentUser) {
-        clearSelectedSyncArtifactsForUser(currentUser.id, clearSelection)
-      }
       await refreshCounts(setDataCounts)
       setClearSelection({ ...EMPTY_CLEAR_SELECTION })
       setClearConfirm(false)

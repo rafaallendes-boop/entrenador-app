@@ -204,16 +204,16 @@ export function buildCyclingCreateWeekExample(opts: {
   ].filter(Boolean).join(',')
 
   const sessions = [
-    `{"date":"${addDaysToISO(weekStart, 0)}","timeBlock":"PM","sessionType":"cycling","title":"Ciclismo Z2","durationMin":70,"rpe":6,"objective":"base aeróbica, cadencia 80-90rpm"}`,
+    `{"date":"${addDaysToISO(weekStart, 0)}","timeBlock":"PM","sessionType":"cycling","title":"Ciclismo Z2","durationMin":70,"rpe":6,"objective":"base aeróbica, cadencia 80-90rpm","cyclingDetails":{"sessionCategory":"support aerobic","sessionFamily":"z2_aerobic","targetStructure":"Rodaje Z2 continuo con cadencia 80-90rpm y respiración controlada.","intensityReference":"moderate","executionNotes":"Soporte aeróbico sin interferir con el resto de la semana."}}`,
     hasStrength
       ? `{"date":"${addDaysToISO(weekStart, 1)}","timeBlock":"PM","sessionType":"strength","title":"Fuerza estructurada","durationMin":55,"rpe":7,"objective":"${strengthBaseSelection.focus}","exercises":[${strengthSupportExercisesJson}]}`
-      : `{"date":"${addDaysToISO(weekStart, 1)}","timeBlock":"PM","sessionType":"mobility","title":"Movilidad","durationMin":30,"rpe":4,"objective":"cadera, tobillo y columna"}`,
-    `{"date":"${addDaysToISO(weekStart, 2)}","timeBlock":"AM","sessionType":"mobility","title":"Movilidad","durationMin":30,"rpe":4,"objective":"cadera, tobillo y columna"}`,
-    `{"date":"${addDaysToISO(weekStart, 3)}","timeBlock":"AM","sessionType":"cycling","title":"Ciclismo intervalos","durationMin":45,"rpe":8,"objective":"series 4-6min a alta intensidad con recuperación activa"}`,
+      : `{"date":"${addDaysToISO(weekStart, 1)}","timeBlock":"PM","sessionType":"mobility","title":"Movilidad post-cycling","durationMin":30,"rpe":4,"objective":"cadera, tobillo y columna","mobilityDetails":{"context":"post_cycling","focusAreas":["hip","ankle_foot","full_body"],"targetStructure":"10-15min post sesión con movilidad activa de cadera y tobillo más reset global.","executionNotes":"Usar como descarga corta tras el bloque aeróbico."}}`,
+    `{"date":"${addDaysToISO(weekStart, 2)}","timeBlock":"AM","sessionType":"mobility","title":"Movilidad full body","durationMin":30,"rpe":4,"objective":"cadera, tobillo y columna","mobilityDetails":{"context":"full_body","focusAreas":["hip","ankle_foot","full_body"],"targetStructure":"15-20min de flujo full body con foco en cadera, tobillo y columna.","executionNotes":"Mantener disponibilidad articular sin fatiga extra."}}`,
+    `{"date":"${addDaysToISO(weekStart, 3)}","timeBlock":"AM","sessionType":"cycling","title":"Ciclismo intervalos","durationMin":45,"rpe":8,"objective":"series 4-6min a alta intensidad con recuperación activa","cyclingDetails":{"sessionCategory":"primary build","sessionFamily":"intervals_vo2","targetStructure":"4-6 repeticiones de 4-6min intensas con recuperación activa entre bloques.","intensityReference":"high","executionNotes":"Sesión principal de calidad de la semana en bici."}}`,
     hasStrength
       ? `{"date":"${addDaysToISO(weekStart, 4)}","timeBlock":"PM","sessionType":"strength","title":"Fuerza de apoyo","durationMin":50,"rpe":6,"objective":"${strengthSupportSelection.focus}","exercises":[${strengthSupportExercisesJson}]}`
       : `{"date":"${addDaysToISO(weekStart, 4)}","timeBlock":"PM","sessionType":"recovery","title":"Recuperación activa","durationMin":25,"rpe":3,"objective":"bajar fatiga y sostener disponibilidad"}`,
-    `{"date":"${addDaysToISO(weekStart, 5)}","timeBlock":"AM","sessionType":"cycling","title":"Ciclismo long ride","durationMin":90,"rpe":6,"objective":"fondo aeróbico sostenido"}`,
+    `{"date":"${addDaysToISO(weekStart, 5)}","timeBlock":"AM","sessionType":"cycling","title":"Ciclismo long ride","durationMin":90,"rpe":6,"objective":"fondo aeróbico sostenido","cyclingDetails":{"sessionCategory":"support aerobic","sessionFamily":"long_ride","targetStructure":"Salida larga continua con cadencia estable y control de esfuerzo.","intensityReference":"moderate","executionNotes":"Construir fondo sin convertirla en otra sesión de calidad."}}`,
   ].join(',\n    ')
 
   return `<actions>

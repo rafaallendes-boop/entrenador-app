@@ -2,6 +2,7 @@ import { useNavigate } from 'react-router-dom'
 import { ROUTES } from '../constants/routes'
 import { todayISO } from '../utils/date'
 import type { WeeklyActionItem } from '../types'
+import { buildWeeklyActionComposerDraft } from '../services/weeklyLaunchIntent'
 
 export interface WeeklyActionNavigatorOverrides {
   /** Called when ctaTarget === 'generate_coach_note'. Defaults to navigate(ROUTES.WEEK). */
@@ -27,16 +28,11 @@ export function useWeeklyActionNavigator(overrides: WeeklyActionNavigatorOverrid
         return
 
       case 'chat_adjust_week': {
-        let composerDraft: string
-        if (action.kind === 'fix_coherence') {
-          composerDraft = overrides.weeklyRule
-            ? `Ajusta mi semana para respetar esta regla del bloque: ${overrides.weeklyRule}`
-            : 'Ajusta mi semana para que sea coherente con el bloque actual.'
-        } else if (action.kind === 'recover_adherence') {
-          composerDraft = 'Revisa mi adherencia semanal y propon un ajuste concreto para que la semana sea mas realista.'
-        } else {
-          composerDraft = 'Simplifica o ajusta mi semana segun la carga y la fatiga de estos dias.'
-        }
+        const composerDraft = action.kind === 'fix_coherence'
+          ? buildWeeklyActionComposerDraft({ intent: 'chat_adjust_week', weeklyRule: overrides.weeklyRule })
+          : action.kind === 'recover_adherence'
+            ? 'Revisa mi adherencia semanal y propon un ajuste concreto para que la semana sea mas realista.'
+            : 'Simplifica o ajusta mi semana segun la carga y la fatiga de estos dias.'
         navigate(ROUTES.CHAT, { state: { composerDraft } })
         return
       }

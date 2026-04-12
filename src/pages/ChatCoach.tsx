@@ -15,6 +15,8 @@ import Spinner from '../components/ui/Spinner'
 import type { ChatContext, CoachProposal } from '../types'
 import { ROUTES } from '../constants/routes'
 import { useLoadAnalytics } from '../hooks/useWeeklySnapshot'
+import { useWeeklyLaunchIntent } from '../hooks/useWeeklyLaunchIntent'
+import { buildWeeklyActionComposerDraft } from '../services/weeklyLaunchIntent'
 
 const QuickActionChips = lazy(() => import('../components/chat/QuickActionChips'))
 const ProposalDrawer = lazy(() => import('../components/chat/ProposalDrawer'))
@@ -116,6 +118,7 @@ export default function ChatCoach() {
   const { sessions, currentWeekSummary, dayLogs, loadWeek } = useTrainingStore()
   const bottomRef = useRef<HTMLDivElement>(null)
   const autoSentRef = useRef(false)
+  const { launchIntent, launchId } = useWeeklyLaunchIntent()
 
   const [activeProposal, setActiveProposal] = useState<CoachProposal | null>(null)
   const [acceptedFeedback, setAcceptedFeedback] = useState<string | null>(null)
@@ -125,10 +128,10 @@ export default function ChatCoach() {
   const [profileBannerDismissed, setProfileBannerDismissed] = useState(false)
   const [profileNudgeDismissed, setProfileNudgeDismissed] = useState(false)
   const locationState = (location.state as { showProfileNudge?: boolean; composerDraft?: string; fromPlanBuilder?: boolean } | null)
+  const [composerDraft, setComposerDraft] = useState(() => locationState?.composerDraft ?? '')
   const loadAnalytics = useLoadAnalytics(currentWeekStartISO(), sessions)
 
   const showProfileNudge = !profileNudgeDismissed && locationState?.showProfileNudge === true
-  const composerDraft = locationState?.composerDraft ?? ''
   const showPlanBuilderBanner = locationState?.fromPlanBuilder === true && composerDraft.trim().length > 0
   const hasMessages = messages.length > 0
   const athleteFirstName = getAthleteFirstName(athleteProfile, 'atleta')
@@ -155,21 +158,17 @@ export default function ChatCoach() {
     }
   }, [streamingText])
 
-  // Auto-submit prompt cuando se llega desde PlanBuilder
   useEffect(() => {
-    if (autoSentRef.current) return
-    if (!locationState?.fromPlanBuilder) return
-    const draft = composerDraft.trim()
-    if (!draft) return
+    if (locationState?.composerDraft) {
+      setComposerDraft(locationState.composerDraft)
+      return
+    }
 
-    autoSentRef.current = true
-    navigate(location.pathname, { replace: true, state: null })
-    const t = setTimeout(() => {
-      handleSend(draft)
-    }, 250)
-    return () => clearTimeout(t)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+    const launchDraft = buildWeeklyActionComposerDraft(launchIntent)
+    if (launchDraft) {
+      setComposerDraft(launchDraft)
+    }
+  }, [launchId, launchIntent, locationState?.composerDraft])
 
   const buildContext = (message: string): ChatContext => {
     const sortedSessions = [...sessions]
@@ -194,6 +193,21 @@ export default function ChatCoach() {
   }
 
   const handleSend = (message: string) => sendMessage(message, buildContext(message))
+
+  // Auto-submit prompt cuando se llega desde PlanBuilder
+  useEffect(() => {
+    if (autoSentRef.current) return
+    if (!locationState?.fromPlanBuilder) return
+    const draft = composerDraft.trim()
+    if (!draft) return
+
+    autoSentRef.current = true
+    navigate(location.pathname, { replace: true, state: null })
+    const t = setTimeout(() => {
+      handleSend(draft)
+    }, 250)
+    return () => clearTimeout(t)
+  }, [composerDraft, handleSend, location.pathname, locationState?.fromPlanBuilder, navigate])
 
   const handleViewProposal = (proposalId: string) => {
     const proposal = proposals.find((item) => item.id === proposalId)

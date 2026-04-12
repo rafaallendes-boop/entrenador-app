@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import type { MacroWeekCoherenceSummary, Session, WeekSummary } from '../../types'
+import type { AthleteProfile, MacroWeekCoherenceSummary, Session, WeekSummary } from '../../types'
 import type { LoadAnalytics } from '../../services/loadAnalytics'
 import { buildWeeklySnapshot } from '../useWeeklySnapshot'
 import { buildWeeklyActionSummary } from '../../services/weeklyActionLoop'
@@ -79,6 +79,20 @@ function makeLoadAnalytics(): LoadAnalytics {
   }
 }
 
+function makeProfile(): AthleteProfile {
+  return {
+    id: 'default',
+    updatedAt: 1,
+    primarySport: 'running',
+    sportContext: {
+      enabledSports: ['running', 'strength'],
+      primarySport: 'running',
+      secondarySports: ['strength'],
+      trainingPriority: 'performance',
+    },
+  }
+}
+
 describe('buildWeeklySnapshot', () => {
   it('matches the direct weekly action summary when analytics are missing', () => {
     const input = {
@@ -96,6 +110,12 @@ describe('buildWeeklySnapshot', () => {
   })
 
   it('keeps coherence and auto-adjustment decisions aligned when analytics exist', () => {
+    const historicalSessions = [
+      makeSession({ id: 'hist-1', date: '2026-03-16', timeBlock: 'AM', status: 'completed', type: 'strength', durationMin: 60 }),
+      makeSession({ id: 'hist-2', date: '2026-03-23', timeBlock: 'AM', status: 'planned', type: 'strength', durationMin: 60 }),
+      makeSession({ id: 'hist-3', date: '2026-03-30', timeBlock: 'AM', status: 'planned', type: 'strength', durationMin: 60 }),
+      makeSession({ id: 'hist-4', date: '2026-04-03', timeBlock: 'AM', status: 'completed', type: 'strength', durationMin: 60 }),
+    ]
     const input = {
       sessions: [
         makeSession({ id: 'run-1', type: 'running', title: 'Rodaje soporte', durationMin: 55 }),
@@ -104,6 +124,8 @@ describe('buildWeeklySnapshot', () => {
       currentWeekSummary: makeSummary(),
       macroWeekCoherence: makeCoherence(),
       loadAnalytics: makeLoadAnalytics(),
+      athleteProfile: makeProfile(),
+      historicalSessions,
       today: '2026-04-08',
     }
 

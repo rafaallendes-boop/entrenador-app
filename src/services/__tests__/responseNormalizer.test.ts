@@ -129,6 +129,57 @@ describe('responseNormalizer', () => {
     expect(response.actions?.[0].squashDetails).toBeUndefined()
   })
 
+  it('rejects squashDetails when drills is empty and flags likelyTruncated', () => {
+    const response = normalizeResponse({
+      text: [
+        'Semana propuesta.',
+        '<actions>',
+        JSON.stringify([
+          {
+            type: 'add_session',
+            reason: 'payload invalido squash',
+            targetDate: '2026-04-09',
+            sessionType: 'squash',
+            title: 'Squash tecnico',
+            durationMin: 45,
+            timeBlock: 'PM',
+            squashDetails: {
+              trainingFocus: 'technical',
+              drills: [],
+            },
+          },
+        ]),
+        '</actions>',
+      ].join('\n'),
+      provider: 'mock',
+    })
+
+    expect(response.actions?.[0].squashDetails).toBeUndefined()
+    expect(response.meta?.likelyTruncated).toBe(true)
+  })
+
+  it('marks likelyTruncated when JSON is valid but actions are semantically incomplete', () => {
+    const response = normalizeResponse({
+      text: [
+        'Semana propuesta.',
+        '<actions>',
+        JSON.stringify([
+          {
+            type: 'create_week',
+            reason: 'Semana build',
+            sessions: [],
+          },
+        ]),
+        '</actions>',
+      ].join('\n'),
+      provider: 'mock',
+    })
+
+    expect(response.actions).toBeUndefined()
+    expect(response.meta?.actionParseFailed).toBe(true)
+    expect(response.meta?.likelyTruncated).toBe(true)
+  })
+
   it('parses inline JSON actions even when the model omits the actions tag', () => {
     const response = normalizeResponse({
       text: [
@@ -144,6 +195,12 @@ describe('responseNormalizer', () => {
                 sessionType: 'squash',
                 title: 'Squash tecnico',
                 durationMin: 60,
+                subtype: 'training',
+                squashDetails: {
+                  trainingFocus: 'technical',
+                  drills: [{ name: 'Drives paralelos', durationMin: 20 }],
+                  sessionMode: 'drill_session',
+                },
               },
             ],
           },

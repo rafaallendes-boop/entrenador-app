@@ -299,6 +299,18 @@ export type WeeklyActionTarget =
   | 'today_detail'
   | 'generate_coach_note'
 
+export type WeeklyActionLaunchIntentTarget =
+  | WeeklyActionTarget
+  | 'open_auto_adjustment'
+
+export interface WeeklyActionLaunchIntent {
+  intent: WeeklyActionLaunchIntentTarget
+  date?: string
+  alertId?: string
+  source?: string
+  weeklyRule?: string
+}
+
 export type WeeklyActionStatus = 'pending' | 'recommended' | 'done' | 'blocked'
 export type WeeklyActionAdherenceStatus = 'unknown' | 'on_track' | 'low' | 'at_risk' | 'no_plan'
 export type WeeklyActionCheckInStatus = 'complete' | 'pending' | 'not_needed'

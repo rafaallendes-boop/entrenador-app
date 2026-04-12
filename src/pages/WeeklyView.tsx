@@ -1,11 +1,12 @@
-import { lazy, Suspense, useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Download, Plus, FileUp, Sparkles, MessageSquareText } from 'lucide-react'
 import { useTrainingStore } from '../store/useTrainingStore'
 import { useCoachActionsStore } from '../store/useCoachActionsStore'
+import { useCoachMemoryStore } from '../store/useCoachMemoryStore'
 import { useUIStore } from '../store/useUIStore'
 
-import { formatFullDate, fromISO, getWeekDays, toISO, isDateToday, todayISO } from '../utils/date'
+import { formatFullDate, fromISO, getWeekDays, getWeekStart, toISO, isDateToday, todayISO } from '../utils/date'
 import WeekStrip from '../components/week/WeekStrip'
 import WeekSummaryCard from '../components/week/WeekSummaryCard'
 import MacroPhaseSummaryCard from '../components/week/MacroPhaseSummaryCard'
@@ -18,6 +19,11 @@ import { downloadICS } from '../utils/ics'
 import { useMacroWeekCoherence } from '../hooks/useMacroWeekCoherence'
 import { useWeeklyActionNavigator } from '../hooks/useWeeklyActionNavigator'
 import { useWeeklySnapshot } from '../hooks/useWeeklySnapshot'
+import { useWeeklyLaunchIntent } from '../hooks/useWeeklyLaunchIntent'
+import {
+  buildWeeklyActionComposerDraft,
+  serializeWeeklyActionLaunchIntent,
+} from '../services/weeklyLaunchIntent'
 
 const DailyCheckInCard = lazy(() => import('../components/dashboard/DailyCheckInCard'))
 const WeeklyActionCenterCard = lazy(() => import('../components/week/WeeklyActionCenterCard'))
@@ -26,6 +32,7 @@ const ProposalDrawer = lazy(() => import('../components/chat/ProposalDrawer'))
 export default function WeeklyView() {
   const { sessions, currentWeekSummary, dayLogs, isLoading, loadedWeekStart, loadWeek, generateCoachNote, deleteSession } = useTrainingStore()
   const { addProposal, acceptProposal, rejectProposal } = useCoachActionsStore()
+  const { athleteProfile } = useCoachMemoryStore()
   const { currentWeekStart, selectedDate, setSelectedDate, setCurrentWeekStart } = useUIStore()
 
   const [showAddModal, setShowAddModal] = useState(false)
@@ -33,6 +40,8 @@ export default function WeeklyView() {
   const [checkInExpandToken, setCheckInExpandToken] = useState(0)
   const [pendingCoachDeleteId, setPendingCoachDeleteId] = useState<string | null>(null)
   const [activeProposal, setActiveProposal] = useState<CoachProposal | null>(null)
+  const { launchIntent, launchId } = useWeeklyLaunchIntent()
+  const handledLaunchIntentKeyRef = useRef<string | null>(null)
 
   useEffect(() => {
     loadWeek(currentWeekStart)
@@ -79,6 +88,7 @@ export default function WeeklyView() {
     currentWeekSummary,
     todayDayLog: dayLogs[today],
     macroWeekCoherence,
+    athleteProfile,
     today,
   })
   const todaySessions = sessions.filter((session) => session.date === today)
@@ -125,6 +135,76 @@ export default function WeeklyView() {
     }
     setActiveProposal(null)
   }
+
+  useEffect(() => {
+    if (!launchIntent) return
+
+    const key = serializeWeeklyActionLaunchIntent(launchIntent)
+    if (handledLaunchIntentKeyRef.current === `${launchId}:${key}`) return
+
+    if (launchIntent.intent === 'plan_builder') {
+      handledLaunchIntentKeyRef.current = `${launchId}:${key}`
+      navigate(ROUTES.PLAN_BUILDER, { replace: true })
+      return
+    }
+
+    if (launchIntent.intent === 'chat_adjust_week') {
+      handledLaunchIntentKeyRef.current = `${launchId}:${key}`
+      navigate(ROUTES.CHAT, {
+        replace: true,
+        state: { composerDraft: buildWeeklyActionComposerDraft(launchIntent) },
+      })
+      return
+    }
+
+    if (launchIntent.intent === 'today_checkin') {
+      handledLaunchIntentKeyRef.current = `${launchId}:${key}`
+      const targetDate = launchIntent.date ?? today
+      setCurrentWeekStart(toISO(getWeekStart(fromISO(targetDate))))
+      setSelectedDate(targetDate)
+      setCheckInExpandToken((value) => value + 1)
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+      return
+    }
+
+    if (launchIntent.intent === 'generate_coach_note') {
+      if (!weekLoaded) return
+      handledLaunchIntentKeyRef.current = `${launchId}:${key}`
+      void handleGenerateCoachNote()
+      return
+    }
+
+    if (launchIntent.intent === 'open_auto_adjustment') {
+      if (!weekLoaded) return
+      if (autoAdjustmentDraft) {
+        handledLaunchIntentKeyRef.current = `${launchId}:${key}`
+        void handleOpenAutoAdjustment()
+        return
+      }
+
+      handledLaunchIntentKeyRef.current = `${launchId}:${key}`
+      navigate(ROUTES.CHAT, {
+        replace: true,
+        state: {
+          composerDraft: buildWeeklyActionComposerDraft({
+            intent: 'chat_adjust_week',
+            weeklyRule: launchIntent.weeklyRule,
+          }),
+        },
+      })
+    }
+  }, [
+    autoAdjustmentDraft,
+    handleGenerateCoachNote,
+    handleOpenAutoAdjustment,
+    launchIntent,
+    navigate,
+    setCurrentWeekStart,
+    setSelectedDate,
+    today,
+    launchId,
+    weekLoaded,
+  ])
 
   return (
     <div className="pb-6 md:pb-8">

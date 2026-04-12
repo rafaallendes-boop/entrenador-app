@@ -117,11 +117,12 @@ function parseActionsBlock(jsonText: string): {
     if (action) acc.push(action)
     return acc
   }, [])
+  const invalidActionCount = parsed.length - actions.length
 
   return {
     actions,
     parseFailed: actions.length === 0 && parsed.length > 0,
-    likelyTruncated: false,
+    likelyTruncated: invalidActionCount > 0 || isLikelyTruncatedJson(jsonText),
   }
 }
 
@@ -174,6 +175,9 @@ function validateAction(obj: unknown): CoachAction | null {
         return null
       }
       if (typeof record.durationMin !== 'number' || record.durationMin < 5 || !isTimeBlock(record.timeBlock)) {
+        return null
+      }
+      if (record.sessionType === 'squash' && !isSquashDetails(record.squashDetails)) {
         return null
       }
 
@@ -287,6 +291,7 @@ function validateSessionProposal(value: unknown): CoachSessionProposal | null {
   if (typeof record.targetHrMin === 'number') proposal.targetHrMin = record.targetHrMin
   if (typeof record.targetHrMax === 'number') proposal.targetHrMax = record.targetHrMax
   if (isRunningIntervalStructure(record.intervalStructure)) proposal.intervalStructure = record.intervalStructure
+  if (record.sessionType === 'squash' && !isSquashDetails(record.squashDetails)) return null
   if (Array.isArray(record.exercises)) {
     proposal.exercises = record.exercises
       .map(validateExerciseProposal)
@@ -392,6 +397,7 @@ function isSquashDetails(value: unknown): value is SquashDetails {
     (typeof record.sessionMode === 'string' && VALID_SQUASH_SESSION_MODES.has(record.sessionMode as SquashSessionMode))
   const validDrills =
     Array.isArray(record.drills) &&
+    record.drills.length > 0 &&
     record.drills.every((drill) => {
       if (!drill || typeof drill !== 'object') return false
       const drillRecord = drill as Record<string, unknown>

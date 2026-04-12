@@ -56,11 +56,20 @@ self.addEventListener('message', (event) => {
 self.addEventListener('notificationclick', (event) => {
   event.notification.close()
   event.waitUntil(
-    self.clients.matchAll({ type: 'window' }).then((clients) => {
+    (async () => {
+      const data = event.notification.data || {}
+      const url = typeof data.url === 'string' && data.url.length > 0 ? data.url : '/'
+      const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
       const existing = clients.find((client) => client.url.includes(self.location.origin))
-      if (existing) return existing.focus()
-      return self.clients.openWindow('/')
-    }),
+      if (existing) {
+        await existing.focus()
+        if (typeof existing.navigate === 'function') {
+          await existing.navigate(url)
+          return
+        }
+      }
+      await self.clients.openWindow(url)
+    })(),
   )
 })
 

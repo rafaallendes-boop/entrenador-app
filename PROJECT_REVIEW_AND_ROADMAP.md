@@ -1,7 +1,7 @@
 # Entrenador App - Review and Roadmap
 
-Actualizado: 2026-04-10
-Ultimo hito relevante: consolidacion de squash competitivo y match-play entre selector, historial, analytics y surfaces visibles
+Actualizado: 2026-04-12
+Ultimo hito relevante: hardening de planificacion y cleanup defensivo de dashboard/sync tras fixes de roadmap y code review
 
 ## Estado actual del producto
 
@@ -23,6 +23,11 @@ Entrenador ya no esta en fase de prototipo. Hoy existe una base seria para atlet
 - rollback de propuestas del coach mas robusto para altas, updates y deletes
 - confirm dialogs compartidos en los flujos criticos mas visibles
 - alertas fuertes ahora pueden convertirse en propuestas concretas del coach sin pasar primero por chat libre
+- plan builder ya no deriva semanas con drift por timezone local
+- macroplan ya resuelve mejor eventos recien pasados sin caer falsamente en semana de competencia
+- fallbacks de seleccion para squash y fuerza ya respetan la fase real del macroplan cuando no hay contexto cacheado
+- dashboard ya detecta historial real del atleta aunque la semana visible este vacia
+- wipe selectivo ya limpia artifacts de sync antes del borrado remoto para evitar resubidas accidentales
 
 ## Lo ya implementado
 
@@ -352,6 +357,15 @@ Pendiente:
 - acciones reales generadas: recortar sesion, bajar RPE, mover sesion e insertar recovery cuando corresponde
 - el coach ya puede actuar desde la alerta sin depender solo de `chat_adjust_week`
 
+### 15. Hardening puntual de planificacion, historial y sync
+
+- `PlanBuilderPage` ya genera week starts en fecha local estable y no por `toISOString()`
+- `computeWeeksRemaining` ya no devuelve `race` para eventos que pasaron hace pocos dias
+- `planSummary` ya incluye carga estimada de mobility con su fallback correcto
+- fallbacks de `promptBuilder` para squash y fuerza ya toman la fase real del macroplan
+- `Dashboard` ya usa `allWeekSummaries` para detectar historial real y evitar mensajes falsos de "primera semana"
+- `SettingsPage` ya limpia artifacts de sync antes del wipe remoto selectivo
+
 ## Que hay hoy
 
 Resumen simple del producto actual:
@@ -366,7 +380,7 @@ Resumen simple del producto actual:
 
 Las brechas mas importantes no son tantas, pero si son profundas:
 
-1. Validar sync en uso real entre dispositivos.
+1. Validar sync en uso real entre dispositivos y seguir cerrando carreras alrededor del wipe/selective clear.
 2. Hacer que el coach ajuste mejor la semana usando historial, feedback y el loop semanal ya unificado.
 3. Convertir el loop semanal en reactivacion mas automatica y medible.
 4. Completar packaging de monetizacion y posicionamiento comercial.
@@ -432,6 +446,7 @@ Por que:
 
 - sigue siendo el mayor riesgo de producto
 - es la principal barrera para cobrar con confianza
+- incluso despues de mejoras defensivas recientes, sigue faltando demostrar convergencia real entre cola, wipe selectivo y reconexion
 
 ### Prioridad 2
 
@@ -573,6 +588,24 @@ El mejor orden sigue siendo:
 1. validar sync en uso real movil + escritorio
 2. volver mas preciso y medible el coach que ajusta la semana
 3. endurecer el weekly loop como sistema de reactivacion
+
+Si hubiera que elegir una sola mejora para avanzar ahora:
+
+**armar y ejecutar una matriz de validacion real de sync multi-dispositivo**
+
+Por que esta primero:
+
+- el producto ya tiene suficiente inteligencia y superficie visible para una beta privada seria
+- lo que mas puede romper confianza ahora no es una recomendacion mediocre del coach, sino perder o resucitar datos entre dispositivos
+- los fixes recientes de `SettingsPage` muestran que todavia hay riesgo en orden de operaciones, cola pendiente y wipe selectivo
+- resolver esto deja una base mucho mas segura para despues medir auto-ajustes del coach y weekly loop
+
+Alcance minimo recomendado:
+
+- crear matriz corta de casos criticos: create, edit, delete, wipe selectivo, offline->online y conflicto simple
+- correrla en movil + escritorio con mismo usuario
+- documentar resultado, gaps y repro steps
+- convertir cada gap real en test o guardrail tecnico donde valga la pena
 
 Deuda tecnica si, pero quirurgica:
 

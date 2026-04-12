@@ -65,6 +65,8 @@ describe('notifications', () => {
 
     const checkIn = items.find((item) => item.category === 'daily_checkin')
     expect(checkIn?.title).toBe('Te falta cerrar el día')
+    expect(checkIn?.data?.launchIntent?.intent).toBe('today_checkin')
+    expect(checkIn?.data?.url).toContain('weeklyIntent=today_checkin')
   })
 
   it('adds weekly planning and coach follow-up nudges when the week has no plan or note', () => {
@@ -93,12 +95,16 @@ describe('notifications', () => {
     expect(items.some((item) => item.category === 'weekly_planning')).toBe(true)
     expect(items.some((item) => item.category === 'coach_followup')).toBe(false)
     expect(items.find((item) => item.category === 'weekly_planning')?.title).toBe('Tu semana sigue sin estructura')
+    expect(items.find((item) => item.category === 'weekly_planning')?.data?.launchIntent?.intent).toBe('plan_builder')
   })
 
   it('adds a load alert when macro week coherence has warnings', () => {
     const items = buildScheduledNotifications(
       {
-        sessions: [makeSession()],
+        sessions: [
+          makeSession({ id: 'run-1', type: 'running', title: 'Tempo', durationMin: 60, rpe: 7 }),
+          makeSession({ id: 'strength-1', type: 'strength', title: 'Fuerza', durationMin: 70, rpe: 8 }),
+        ],
         macroWeekCoherence: makeCoherenceSummary(),
       },
       '2026-04-08',
@@ -109,6 +115,8 @@ describe('notifications', () => {
     const loadAlert = items.find((item) => item.category === 'load_alerts')
     expect(loadAlert?.body).toContain('fase build')
     expect(loadAlert?.title).toBe('Tu semana no calza con el bloque actual')
+    expect(loadAlert?.data?.launchIntent?.intent).toBe('open_auto_adjustment')
+    expect(loadAlert?.data?.url).toContain('weeklyIntent=open_auto_adjustment')
   })
 
   it('respects disabled categories', () => {

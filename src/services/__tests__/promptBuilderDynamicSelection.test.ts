@@ -225,7 +225,7 @@ describe('promptBuilder dynamic cycling and mobility sections', () => {
       ],
     }))
 
-    expect(prompt).toContain('Proteína diaria objetivo: ~144g proteína')
+    expect(prompt).toContain('Proteína diaria objetivo: ~128g proteína')
     expect(prompt).toContain('Hidratación recomendada:')
   })
 })

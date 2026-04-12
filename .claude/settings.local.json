@@ -4,7 +4,10 @@
       "Bash(npm run:*)",
       "Bash(node -e ':*)",
       "Bash(cat)",
-      "Bash(node /tmp/test_mutations.js)"
+      "Bash(node /tmp/test_mutations.js)",
+      "Bash(grep -E \"types\\\\.ts$|types/index.ts$\")",
+      "Bash(grep:*)",
+      "Bash(node /tmp/test_drills.js)"
     ]
   }
 }
