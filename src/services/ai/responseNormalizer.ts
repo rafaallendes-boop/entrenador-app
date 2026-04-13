@@ -253,7 +253,7 @@ function validateAction(obj: unknown): CoachAction | null {
       if (isGeneratedProtocol(record.cooldown)) action.cooldown = record.cooldown
       if (isCyclingDetails(record.cyclingDetails)) action.cyclingDetails = record.cyclingDetails
       if (isMobilityDetails(record.mobilityDetails)) action.mobilityDetails = record.mobilityDetails
-      if (isSquashDetails(record.squashDetails)) action.squashDetails = record.squashDetails
+      if (isSquashDetails(record.squashDetails)) action.squashDetails = normalizeSquashDetails(record.squashDetails)
 
       return hasAnyUpdateField(action) ? action : null
     }
@@ -279,7 +279,7 @@ function assignOptionalSessionFields(action: CoachAction, record: Record<string,
   }
   if (isCyclingDetails(record.cyclingDetails)) action.cyclingDetails = record.cyclingDetails
   if (isMobilityDetails(record.mobilityDetails)) action.mobilityDetails = record.mobilityDetails
-  if (isSquashDetails(record.squashDetails)) action.squashDetails = record.squashDetails
+  if (isSquashDetails(record.squashDetails)) action.squashDetails = normalizeSquashDetails(record.squashDetails)
   return action
 }
 
@@ -318,7 +318,7 @@ function validateSessionProposal(value: unknown): CoachSessionProposal | null {
   if (isGeneratedProtocol(record.cooldown)) proposal.cooldown = record.cooldown
   if (isCyclingDetails(record.cyclingDetails)) proposal.cyclingDetails = record.cyclingDetails
   if (isMobilityDetails(record.mobilityDetails)) proposal.mobilityDetails = record.mobilityDetails
-  if (isSquashDetails(record.squashDetails)) proposal.squashDetails = record.squashDetails
+  if (isSquashDetails(record.squashDetails)) proposal.squashDetails = normalizeSquashDetails(record.squashDetails)
 
   return proposal
 }
@@ -430,10 +430,14 @@ function isSquashDetails(value: unknown): value is SquashDetails {
     VALID_SQUASH_TRAINING_FOCUS.has(record.trainingFocus) &&
     validDrills &&
     validMode
-  if (!isValid) return false
+  return isValid
+}
 
-  record.drills = orderSquashDrillsForSession(record.drills as SquashDetails['drills'])
-  return true
+function normalizeSquashDetails(details: SquashDetails): SquashDetails {
+  return {
+    ...details,
+    drills: orderSquashDrillsForSession(details.drills),
+  }
 }
 
 function isSessionType(value: unknown): value is CoachSessionProposal['sessionType'] {

@@ -7,7 +7,9 @@
       "Bash(node /tmp/test_mutations.js)",
       "Bash(grep -E \"types\\\\.ts$|types/index.ts$\")",
       "Bash(grep:*)",
-      "Bash(node /tmp/test_drills.js)"
+      "Bash(node /tmp/test_drills.js)",
+      "Bash(node:*)",
+      "Bash(npm test:*)"
     ]
   }
 }
