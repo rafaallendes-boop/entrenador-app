@@ -489,8 +489,10 @@ async function applyCoachAction(
       if (collisions.length > 0) {
         warnings.push(`Se mantuvieron sesiones ya realizadas o ajustadas en: ${collisions.map((item) => `${item.date} ${item.timeBlock}`).join(', ')}`)
       }
+      const collisionSet = new Set(collisions.map((c) => `${c.date}|${c.timeBlock}`))
 
       for (const session of allowedSessions) {
+        if (collisionSet.has(`${session.date}|${session.timeBlock}`)) continue
         const created = await store.addSession(ensureSessionProtocols({
           date: session.date,
           timeBlock: session.timeBlock,
@@ -520,6 +522,11 @@ async function applyCoachAction(
           cooldown: session.cooldown,
         }))
         createdSessionIds.push(created.id)
+      }
+
+      const affectedWeekStarts = [...new Set(allowedSessions.map((s) => toISO(getWeekStart(fromISO(s.date)))))]
+      for (const weekStart of affectedWeekStarts) {
+        await recalculateWeekSummary(weekStart)
       }
 
       if (action.weekObjectives && action.weekObjectives.length > 0) {
@@ -718,7 +725,9 @@ async function replacePlannedSessionsForCreateWeek(
   for (const weekStart of weekStarts) {
     const weekEnd = toISO(addDays(fromISO(weekStart), 6))
     const existingWeekSessions = await db.sessions.where('date').between(weekStart, weekEnd, true, true).toArray()
-    const plannedSessions = existingWeekSessions.filter((session) => session.status === 'planned')
+    const plannedSessions = existingWeekSessions.filter(
+      (session) => session.status === 'planned' && replacementDates.has(session.date),
+    )
     const preservedSessions = existingWeekSessions.filter((session) => session.status !== 'planned')
 
     if (plannedSessions.length > 0) {
@@ -735,7 +744,6 @@ async function replacePlannedSessionsForCreateWeek(
       warnings.push(`Se conservaron ${preservedOnReplacementDates.length} sesiones con historial en la misma semana para no borrar adherencia ya registrada.`)
     }
 
-    await recalculateWeekSummary(weekStart)
   }
 
   return { replacedSessions, warnings }

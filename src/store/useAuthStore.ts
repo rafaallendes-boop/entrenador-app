@@ -16,6 +16,9 @@ export interface SyncDetails {
   lastRecoveredSyncAt: number | null
   lastErrorAt: number | null
   lastErrorMessage: string | null
+  lastBlockedTable: string | null
+  retryScheduledAt: number | null
+  consecutiveFailures: number
 }
 
 interface AuthState {
@@ -58,6 +61,9 @@ export const useAuthStore = create<AuthState>((set) => {
       lastRecoveredSyncAt: null,
       lastErrorAt: null,
       lastErrorMessage: null,
+      lastBlockedTable: null,
+      retryScheduledAt: null,
+      consecutiveFailures: 0,
     },
 
     signInWithGoogle: async () => {
@@ -85,6 +91,9 @@ export const useAuthStore = create<AuthState>((set) => {
           lastRecoveredSyncAt: null,
           lastErrorAt: null,
           lastErrorMessage: null,
+          lastBlockedTable: null,
+          retryScheduledAt: null,
+          consecutiveFailures: 0,
         },
       })
     },

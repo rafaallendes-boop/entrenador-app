@@ -13,7 +13,7 @@ import {
   previewAppDataImportFile,
   type AppDataImportPreview,
 } from '../services/dataExport'
-import { clearSelectedRemoteAppData, clearSelectedSyncArtifactsForUser, pullAll, wipeRemoteAndLocalAppData } from '../services/syncService'
+import { clearSelectedRemoteAppData, clearSelectedSyncArtifactsForUser, runFullSync, wipeRemoteAndLocalAppData } from '../services/syncService'
 import {
   clearSelectedLocalAppData,
   deleteCoachSessionsByIds,
@@ -304,7 +304,7 @@ export default function SettingsPage() {
 
   const handleRetrySync = async () => {
     const { user: currentUser } = useAuthStore.getState()
-    if (currentUser) await pullAll(currentUser.id)
+    if (currentUser) await runFullSync(currentUser.id)
   }
 
   const handleClearNotifications = async () => {
@@ -432,7 +432,7 @@ export default function SettingsPage() {
                 syncAttemptInFlight={syncDetails.syncAttemptInFlight}
               />
             </div>
-            {false && syncStatus === 'error' && syncError && (
+            {syncStatus === 'error' && syncError && (
               <p className="mb-3 rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
                 {profileSyncAffected ? 'El perfil del atleta no esta pudiendo sincronizar.' : syncError}
                 <span className="block mt-1 text-amber-200/80">
@@ -491,6 +491,21 @@ export default function SettingsPage() {
                     {syncDetails.pendingTables.length > 0 && (
                       <p>
                         Tablas afectadas: <span className="text-ink">{syncDetails.pendingTables.join(', ')}</span>
+                      </p>
+                    )}
+                    {syncDetails.lastBlockedTable && (
+                      <p>
+                        Tabla bloqueada: <span className="text-ink">{syncDetails.lastBlockedTable}</span>
+                      </p>
+                    )}
+                    {syncDetails.retryScheduledAt && (
+                      <p>
+                        Proximo retry auto: <span className="text-ink">{formatRuntimeTimestamp(syncDetails.retryScheduledAt)}</span>
+                      </p>
+                    )}
+                    {syncDetails.consecutiveFailures > 0 && (
+                      <p>
+                        Fallos consecutivos: <span className="text-ink">{syncDetails.consecutiveFailures}</span>
                       </p>
                     )}
                     {syncDetails.lastErrorMessage && (
@@ -568,17 +583,19 @@ export default function SettingsPage() {
               {syncStatus === 'error' && (
                 <button
                   onClick={() => void handleRetrySync()}
+                  disabled={syncDetails.syncAttemptInFlight}
                   className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-surface-raised text-amber-400 text-sm font-semibold hover:bg-surface transition-colors"
                 >
-                  Reintentar sync
+                  {syncDetails.syncAttemptInFlight ? 'Reintentando...' : 'Reintentar ahora'}
                 </button>
               )}
               {(syncDetails.pendingOps > 0 || syncStatus === 'offline') && syncStatus !== 'error' && (
                 <button
                   onClick={() => void handleRetrySync()}
+                  disabled={syncDetails.syncAttemptInFlight}
                   className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-surface-raised text-brand-light text-sm font-semibold hover:bg-surface transition-colors"
                 >
-                  Forzar sync
+                  {syncDetails.syncAttemptInFlight ? 'Sincronizando...' : 'Reintentar ahora'}
                 </button>
               )}
             </div>

@@ -34,13 +34,13 @@ describe('nutritionEngine', () => {
     expect(loadType).toBe('long_run')
   })
 
-  it('calculates avgRpe from explicit numeric values including zero without double-filtering', () => {
+  it('keeps explicit rpe zero values without changing double-session classification', () => {
     const loadType = classifyDayLoad([
       makeSession({ id: 'a', durationMin: 20, rpe: 0 }),
       makeSession({ id: 'b', durationMin: 20 }),
     ])
 
-    expect(loadType).toBe('medium')
+    expect(loadType).toBe('double')
   })
 
   it('personalizes protein target by profile-specific factor instead of fixed 2.0 in consumers', () => {

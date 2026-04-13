@@ -48,6 +48,22 @@ vi.mock('../../store/useAuthStore', () => ({
   useAuthStore: {
     getState: () => ({
       user: { id: 'user-1' },
+      syncDetails: {
+        pendingOps: 0,
+        syncAttemptInFlight: false,
+        pendingUpserts: 0,
+        pendingDeletes: 0,
+        oldestPendingOpAt: null,
+        pendingTables: [],
+        lastSyncAt: null,
+        lastSuccessfulSyncAt: null,
+        lastRecoveredSyncAt: null,
+        lastErrorAt: null,
+        lastErrorMessage: null,
+        lastBlockedTable: null,
+        retryScheduledAt: null,
+        consecutiveFailures: 0,
+      },
       setSyncStatus: syncStatusMock,
       setSyncDetails: syncDetailsMock,
     }),
@@ -59,26 +75,49 @@ vi.mock('../../db/db', () => ({
     sessions: {
       toArray: vi.fn(async () => sessionsRows),
       count: vi.fn(async () => sessionsRows.length),
+      get: vi.fn(async () => undefined),
+      put: vi.fn(async () => {}),
+      delete: vi.fn(async () => {}),
+      bulkDelete: vi.fn(async () => {}),
     },
     dayLogs: {
       toArray: vi.fn(async () => dayLogRows),
       count: vi.fn(async () => dayLogRows.length),
+      get: vi.fn(async () => undefined),
+      put: vi.fn(async () => {}),
+      delete: vi.fn(async () => {}),
+      bulkDelete: vi.fn(async () => {}),
+      where: vi.fn(() => ({ equals: vi.fn(async () => undefined) })),
     },
     weekSummaries: {
       toArray: vi.fn(async () => weekSummaryRows),
       count: vi.fn(async () => weekSummaryRows.length),
+      get: vi.fn(async () => undefined),
+      put: vi.fn(async () => {}),
+      delete: vi.fn(async () => {}),
+      bulkDelete: vi.fn(async () => {}),
+      where: vi.fn(() => ({ equals: vi.fn(async () => undefined) })),
     },
     chatMessages: {
       toArray: vi.fn(async () => chatMessageRows),
       count: vi.fn(async () => chatMessageRows.length),
+      get: vi.fn(async () => undefined),
+      put: vi.fn(async () => {}),
+      bulkDelete: vi.fn(async () => {}),
     },
     coachProposals: {
       toArray: vi.fn(async () => coachProposalRows),
       count: vi.fn(async () => coachProposalRows.length),
+      get: vi.fn(async () => undefined),
+      put: vi.fn(async () => {}),
+      bulkDelete: vi.fn(async () => {}),
     },
     athleteProfiles: {
       toArray: vi.fn(async () => athleteProfileRows),
       count: vi.fn(async () => athleteProfileRows.length),
+      get: vi.fn(async () => undefined),
+      put: vi.fn(async () => {}),
+      clear: vi.fn(async () => {}),
     },
   },
 }))
@@ -204,5 +243,36 @@ describe('syncService', () => {
     const queue = JSON.parse(localStorage.getItem('entrenador_sync_queue_v1') ?? '[]') as Array<{ table: string }>
     expect(queue).toHaveLength(1)
     expect(queue[0]?.table).toBe('sessions')
+  })
+
+  it('runFullSync drains a retryable queued op and clears diagnostics when the backend recovers', async () => {
+    tableResults.set('sessions', { data: null, error: { message: 'JWT expired', status: 401 } })
+    const syncService = await import('../syncService')
+
+    await syncService.pushSession({
+      id: 'session-1',
+      date: '2026-04-11',
+      weekStartDate: '2026-04-06',
+      timeBlock: 'AM',
+      type: 'running',
+      status: 'planned',
+      title: 'Tempo',
+      durationMin: 45,
+      createdAt: 1,
+      updatedAt: 2,
+    })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    tableResults.set('sessions', { data: null, error: null })
+    await syncService.runFullSync('user-1')
+
+    const queue = JSON.parse(localStorage.getItem('entrenador_sync_queue_v1') ?? '[]') as Array<{ table: string }>
+    expect(queue).toHaveLength(0)
+    expect(syncStatusMock).toHaveBeenCalledWith('idle')
+    expect(syncDetailsMock).toHaveBeenCalledWith(expect.objectContaining({
+      lastErrorMessage: null,
+      lastBlockedTable: null,
+      consecutiveFailures: 0,
+    }))
   })
 })

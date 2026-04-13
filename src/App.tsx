@@ -4,7 +4,7 @@ import AppShell from './components/layout/AppShell'
 import AuthGate from './components/auth/AuthGate'
 import { ROUTES } from './constants/routes'
 import { useAuthStore } from './store/useAuthStore'
-import { pullAll, migrateLocalDataToCloud, prepareLocalDataForUser } from './services/syncService'
+import { runFullSync, migrateLocalDataToCloud, prepareLocalDataForUser } from './services/syncService'
 import { useTrainingStore } from './store/useTrainingStore'
 import { useCoachMemoryStore } from './store/useCoachMemoryStore'
 import { currentWeekStartISO } from './utils/date'
@@ -87,7 +87,7 @@ export default function App() {
         if (cancelled) return
       }
 
-      await pullAll(userId)
+      await runFullSync(userId)
       if (cancelled) return
 
       const { loadWeek, loadAllSummaries } = useTrainingStore.getState()
@@ -117,11 +117,20 @@ export default function App() {
 
     window.addEventListener('online', handleOnline)
     document.addEventListener('visibilitychange', handleVisibilityChange)
+    const intervalId = window.setInterval(() => {
+      const { syncStatus, syncDetails } = useAuthStore.getState()
+      if (syncStatus === 'syncing' || syncDetails.syncAttemptInFlight) return
+      if (syncDetails.pendingOps === 0 && syncStatus !== 'error' && syncStatus !== 'offline') return
+      const retryAt = syncDetails.retryScheduledAt
+      if (retryAt != null && retryAt > Date.now()) return
+      void syncSignedInUser('visible')
+    }, 15000)
 
     return () => {
       cancelled = true
       window.removeEventListener('online', handleOnline)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
+      window.clearInterval(intervalId)
     }
   }, [userId])
 

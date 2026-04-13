@@ -42,6 +42,15 @@ const TOMBSTONE_TTL_MS = 90 * 24 * 60 * 60 * 1000 // 90 days
 const MAX_QUEUE_SIZE = 500
 let activeDrainQueuePromise: Promise<boolean> | null = null
 let activePullAllPromise: Promise<void> | null = null
+let activeFullSyncPromise: Promise<void> | null = null
+
+interface QueueSummary {
+  pendingOps: number
+  pendingUpserts: number
+  pendingDeletes: number
+  oldestPendingOpAt: number | null
+  pendingTables: SupabaseTable[]
+}
 
 interface MergeContext {
   allowDeletes: boolean
@@ -57,8 +66,7 @@ function syncStoreState() {
   return useAuthStore.getState()
 }
 
-function updatePendingOps(count: number): void {
-  const queue = loadQueue()
+function getQueueSummary(queue = loadQueue()): QueueSummary {
   const pendingUpserts = queue.filter((op) => op.action === 'upsert').length
   const pendingDeletes = queue.filter((op) => op.action === 'delete').length
   const oldestPendingOpAt = queue.reduce<number | null>((oldest, op) => {
@@ -67,25 +75,72 @@ function updatePendingOps(count: number): void {
   }, null)
   const pendingTables = [...new Set(queue.map((op) => op.table))]
 
-  syncStoreState().setSyncDetails({
-    pendingOps: count,
+  return {
+    pendingOps: queue.length,
     pendingUpserts,
     pendingDeletes,
     oldestPendingOpAt,
     pendingTables,
+  }
+}
+
+function refreshQueueDiagnostics(): void {
+  const queue = loadQueue()
+  const summary = getQueueSummary(queue)
+
+  syncStoreState().setSyncDetails({
+    ...summary,
   })
 }
 
 function startSyncAttempt(): void {
-  syncStoreState().setSyncDetails({ syncAttemptInFlight: true })
+  syncStoreState().setSyncDetails({
+    syncAttemptInFlight: true,
+    lastSyncAt: Date.now(),
+    retryScheduledAt: null,
+  })
   if (navigator.onLine) {
     syncStoreState().setSyncStatus('syncing')
   }
 }
 
 function finishSyncAttempt(status: 'idle' | 'offline' | 'error' = 'idle'): void {
+  refreshQueueDiagnostics()
   syncStoreState().setSyncDetails({ syncAttemptInFlight: false })
   syncStoreState().setSyncStatus(status)
+}
+
+function markSyncRecovered(): void {
+  refreshQueueDiagnostics()
+  syncStoreState().setSyncStatus('idle')
+  syncStoreState().setSyncDetails({
+    syncAttemptInFlight: false,
+    lastSuccessfulSyncAt: Date.now(),
+    lastRecoveredSyncAt: Date.now(),
+    lastErrorAt: null,
+    lastErrorMessage: null,
+    lastBlockedTable: null,
+    retryScheduledAt: null,
+    consecutiveFailures: 0,
+  })
+}
+
+function markSyncHealthy(): void {
+  refreshQueueDiagnostics()
+  syncStoreState().setSyncStatus('idle')
+  syncStoreState().setSyncDetails({
+    syncAttemptInFlight: false,
+    lastSuccessfulSyncAt: Date.now(),
+    lastErrorAt: null,
+    lastErrorMessage: null,
+    lastBlockedTable: null,
+    retryScheduledAt: null,
+    consecutiveFailures: 0,
+  })
+}
+
+function scheduleRetry(ms: number): void {
+  syncStoreState().setSyncDetails({ retryScheduledAt: Date.now() + ms })
 }
 
 function loadQueue(): OfflineOp[] {
@@ -119,7 +174,7 @@ function saveQueue(queue: OfflineOp[]): void {
   } catch {
     // Ignore storage quota failures.
   }
-  updatePendingOps(queue.length)
+  refreshQueueDiagnostics()
 }
 
 function enqueue(op: OfflineOp): void {
@@ -231,23 +286,29 @@ function isInfrastructureError(error: unknown): boolean {
   )
 }
 
-function applySyncFailure(error: unknown, fallbackMessage: string): void {
+function applySyncFailure(error: unknown, fallbackMessage: string, blockedTable?: SupabaseTable | null): void {
   const message = getSyncErrorMessage(error, fallbackMessage)
-  // Errores de infraestructura (tabla inexistente, schema incorrecto) no indican
-  // un problema de red: mostrar 'idle' silencioso en vez de 'error' para no spamear
-  // el UI con una nube roja que el usuario no puede resolver.
   const status = isInfrastructureError(error)
-    ? 'idle'
+    ? 'error'
     : isLikelyOfflineError(error)
       ? 'offline'
       : 'error'
+  const failureCount = (syncStoreState().syncDetails.consecutiveFailures ?? 0) + 1
+  const retryMs = status === 'offline'
+    ? Math.min(60000, failureCount <= 1 ? 15000 : failureCount <= 3 ? 30000 : 60000)
+    : status === 'error' && !isInfrastructureError(error)
+      ? Math.min(60000, failureCount <= 1 ? 15000 : failureCount <= 3 ? 30000 : 60000)
+      : null
 
-  syncStoreState().setSyncStatus(status, status === 'idle' ? undefined : message)
+  refreshQueueDiagnostics()
+  syncStoreState().setSyncStatus(status, message)
   syncStoreState().setSyncDetails({
     syncAttemptInFlight: false,
-    pendingOps: loadQueue().length,
-    lastErrorAt: status !== 'idle' ? Date.now() : null,
-    lastErrorMessage: status !== 'idle' ? message : null,
+    lastErrorAt: Date.now(),
+    lastErrorMessage: message,
+    lastBlockedTable: blockedTable ?? null,
+    retryScheduledAt: retryMs != null ? Date.now() + retryMs : null,
+    consecutiveFailures: failureCount,
   })
 }
 
@@ -315,7 +376,7 @@ async function drainQueue(): Promise<boolean> {
         op.table === 'athlete_profiles'
           ? classifyAthleteProfileSyncError(error)
           : 'No se pudo subir la cola pendiente.'
-      applySyncFailure(error, fallback)
+      applySyncFailure(error, fallback, op.table)
       remaining.push(op)
       break
     }
@@ -323,14 +384,9 @@ async function drainQueue(): Promise<boolean> {
 
   saveQueue([...otherUsersQueue, ...remaining])
   if (remaining.length === 0 && initialCount > 0) {
-    finishSyncAttempt('idle')
-    syncStoreState().setSyncDetails({
-      lastRecoveredSyncAt: Date.now(),
-      lastSuccessfulSyncAt: Date.now(),
-      lastErrorMessage: null,
-    })
+    markSyncRecovered()
   } else if (remaining.length === 0) {
-    finishSyncAttempt('idle')
+    markSyncHealthy()
   }
   return remaining.length === 0
   })()
@@ -343,10 +399,10 @@ async function drainQueue(): Promise<boolean> {
 }
 
 if (typeof window !== 'undefined') {
-  updatePendingOps(loadQueue().length)
+  refreshQueueDiagnostics()
   window.addEventListener('online', () => {
     syncStoreState().setSyncStatus('syncing')
-    void drainQueue()
+    void runFullSync(getUserId() ?? '')
   })
   window.addEventListener('offline', () => {
     syncStoreState().setSyncStatus('offline')
@@ -379,6 +435,7 @@ async function upsertRow(table: SupabaseTable, row: Record<string, unknown>): Pr
     finishSyncAttempt('offline')
     syncStoreState().setSyncStatus('offline')
     enqueue({ userId, table, action: 'upsert', payload: row, enqueuedAt: Date.now() })
+    scheduleRetry(15000)
     return
   }
 
@@ -396,6 +453,9 @@ async function upsertRow(table: SupabaseTable, row: Record<string, unknown>): Pr
         lastSuccessfulSyncAt: Date.now(),
         lastErrorAt: null,
         lastErrorMessage: null,
+        lastBlockedTable: null,
+        retryScheduledAt: null,
+        consecutiveFailures: 0,
       })
       finishSyncAttempt('idle')
     }
@@ -410,7 +470,7 @@ async function upsertRow(table: SupabaseTable, row: Record<string, unknown>): Pr
         ? classifyAthleteProfileSyncError(error)
         : `No se pudo sincronizar ${table}.`
     enqueue({ userId, table, action: 'upsert', payload: row, enqueuedAt: Date.now() })
-    applySyncFailure(error, fallback)
+    applySyncFailure(error, fallback, table)
   }
 }
 
@@ -425,6 +485,7 @@ async function deleteRow(table: SupabaseTable, id: string): Promise<void> {
     syncStoreState().setSyncStatus('offline')
     if (table === 'sessions') rememberSessionDeleteTombstone(userId, id)
     enqueue({ userId, table, action: 'delete', payload: { id, userId }, enqueuedAt: Date.now() })
+    scheduleRetry(15000)
     return
   }
 
@@ -439,6 +500,9 @@ async function deleteRow(table: SupabaseTable, id: string): Promise<void> {
         lastSuccessfulSyncAt: Date.now(),
         lastErrorAt: null,
         lastErrorMessage: null,
+        lastBlockedTable: null,
+        retryScheduledAt: null,
+        consecutiveFailures: 0,
       })
       finishSyncAttempt('idle')
     }
@@ -450,7 +514,7 @@ async function deleteRow(table: SupabaseTable, id: string): Promise<void> {
     }
     if (table === 'sessions') rememberSessionDeleteTombstone(userId, id)
     enqueue({ userId, table, action: 'delete', payload: { id, userId }, enqueuedAt: Date.now() })
-    applySyncFailure(error, `No se pudo eliminar en sync ${table}.`)
+    applySyncFailure(error, `No se pudo eliminar en sync ${table}.`, table)
   }
 }
 
@@ -792,24 +856,15 @@ async function fetchAll<T>(table: SupabaseTable, userId: string): Promise<T[]> {
   return (data ?? []) as T[]
 }
 
-export async function pullAll(userId: string): Promise<void> {
+async function pullRemoteAndMerge(userId: string): Promise<void> {
   if (activePullAllPromise) {
     return activePullAllPromise
   }
 
   activePullAllPromise = (async () => {
-  if (!isEnabled()) return
+    if (!isEnabled()) return
 
-  const { setSyncStatus, setSyncDetails, syncDetails } = useAuthStore.getState()
-  const startedAt = Date.now()
-  setSyncStatus('syncing')
-  setSyncDetails({ lastSyncAt: startedAt, syncAttemptInFlight: true })
-
-  try {
-    await repairLocalNaturalKeyConflicts()
-    pruneExpiredTombstones(userId)
-    pruneStaleQueue(userId)
-
+    const { syncDetails } = useAuthStore.getState()
     const queueDrained = await drainQueue()
     const mergeContext: MergeContext = {
       allowDeletes: queueDrained,
@@ -824,26 +879,6 @@ export async function pullAll(userId: string): Promise<void> {
       mergeCoachProposals(userId, mergeContext),
       mergeAthleteProfile(userId, mergeContext),
     ])
-
-    setSyncStatus('idle')
-    setSyncDetails({
-      syncAttemptInFlight: false,
-      pendingOps: loadQueue().length,
-      lastSuccessfulSyncAt: Date.now(),
-      lastErrorAt: null,
-      lastErrorMessage: null,
-      ...(queueDrained ? {} : { lastErrorMessage: 'Quedaron operaciones pendientes en cola.' }),
-    })
-  } catch (error) {
-    if (isInfrastructureError(error)) {
-      console.warn('[sync] pullAll infrastructure error (tables not ready), skipping:', error)
-      setSyncStatus('idle')
-      setSyncDetails({ syncAttemptInFlight: false, pendingOps: 0 })
-      return
-    }
-    console.error('[sync] pullAll error:', error)
-    applySyncFailure(error, 'Error de sincronizacion')
-  }
   })()
 
   try {
@@ -851,6 +886,58 @@ export async function pullAll(userId: string): Promise<void> {
   } finally {
     activePullAllPromise = null
   }
+}
+
+export async function runFullSync(userId: string): Promise<void> {
+  if (!userId || !isEnabled()) return
+  if (activeFullSyncPromise) {
+    return activeFullSyncPromise
+  }
+
+  activeFullSyncPromise = (async () => {
+    startSyncAttempt()
+
+    try {
+      await repairLocalNaturalKeyConflicts()
+      pruneExpiredTombstones(userId)
+      pruneStaleQueue(userId)
+      await drainQueue()
+      await pullRemoteAndMerge(userId)
+      const queueDrainedAfterMerge = await drainQueue()
+
+      if (queueDrainedAfterMerge) {
+        markSyncHealthy()
+      } else {
+        refreshQueueDiagnostics()
+        syncStoreState().setSyncStatus('error', 'Quedaron operaciones pendientes en cola.')
+        syncStoreState().setSyncDetails({
+          syncAttemptInFlight: false,
+          lastErrorAt: Date.now(),
+          lastErrorMessage: 'Quedaron operaciones pendientes en cola.',
+          lastBlockedTable: syncStoreState().syncDetails.pendingTables[0] ?? null,
+          retryScheduledAt: Date.now() + 15000,
+          consecutiveFailures: (syncStoreState().syncDetails.consecutiveFailures ?? 0) + 1,
+        })
+      }
+    } catch (error) {
+      console.error('[sync] runFullSync error:', error)
+      applySyncFailure(
+        error,
+        'Error de sincronizacion',
+        (syncStoreState().syncDetails.pendingTables[0] as SupabaseTable | undefined) ?? null,
+      )
+    }
+  })()
+
+  try {
+    await activeFullSyncPromise
+  } finally {
+    activeFullSyncPromise = null
+  }
+}
+
+export async function pullAll(userId: string): Promise<void> {
+  await runFullSync(userId)
 }
 
 async function mergeSessions(userId: string, context: MergeContext): Promise<void> {
@@ -1310,6 +1397,9 @@ function clearSyncArtifactsForUser(userId: string): void {
     pendingTables: [],
     lastErrorAt: null,
     lastErrorMessage: null,
+    lastBlockedTable: null,
+    retryScheduledAt: null,
+    consecutiveFailures: 0,
   })
 }
 
