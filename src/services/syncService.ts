@@ -896,6 +896,7 @@ export async function runFullSync(userId: string): Promise<void> {
 
   activeFullSyncPromise = (async () => {
     startSyncAttempt()
+    const failureCountAtStart = syncStoreState().syncDetails.consecutiveFailures ?? 0
 
     try {
       await repairLocalNaturalKeyConflicts()
@@ -920,6 +921,16 @@ export async function runFullSync(userId: string): Promise<void> {
         })
       }
     } catch (error) {
+      if (isInfrastructureError(error)) {
+        console.warn('[sync] runFullSync infrastructure error (tables not ready), skipping:', error)
+        finishSyncAttempt('idle')
+        return
+      }
+      const failureCountNow = syncStoreState().syncDetails.consecutiveFailures ?? 0
+      if (failureCountNow > failureCountAtStart) {
+        // A lower layer (drainQueue) already recorded this failure — avoid double-counting.
+        return
+      }
       console.error('[sync] runFullSync error:', error)
       applySyncFailure(
         error,

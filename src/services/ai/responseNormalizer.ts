@@ -1,5 +1,6 @@
 import type { CoachAction, CoachActionType, CoachExerciseProposal, CoachSessionProposal, CyclingDetails, GeneratedProtocol, MobilityDetails, RunningIntervalStructure, RunningType, SquashDetails, SquashSessionMode, SquashSubtype, TimeBlock } from '../../types'
 import type { AIRawResponse, CoachNormalizedResponse } from './types'
+import { orderSquashDrillsForSession } from '../training/drillLibrary'
 
 const ACTIONS_BLOCK_RE = /<actions>([\s\S]*?)<\/actions>/i
 const ACTIONS_START_RE = /<actions>/i
@@ -424,12 +425,15 @@ function isSquashDetails(value: unknown): value is SquashDetails {
         (drillRecord.notes == null || typeof drillRecord.notes === 'string')
       )
     })
-  return (
+  const isValid =
     typeof record.trainingFocus === 'string' &&
     VALID_SQUASH_TRAINING_FOCUS.has(record.trainingFocus) &&
     validDrills &&
     validMode
-  )
+  if (!isValid) return false
+
+  record.drills = orderSquashDrillsForSession(record.drills as SquashDetails['drills'])
+  return true
 }
 
 function isSessionType(value: unknown): value is CoachSessionProposal['sessionType'] {

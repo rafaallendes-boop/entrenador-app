@@ -18,6 +18,19 @@ export interface SquashDrillDefinition {
   progressionLevel?: DrillProgressionLevel
 }
 
+export function isSquashMatchDrill(value: Pick<SquashDrillDefinition, 'category' | 'tags'>): boolean {
+  return value.category === 'match' || value.tags.includes('match_play')
+}
+
+export function orderSquashDrillsForSession<T extends { name: string }>(
+  drills: T[],
+  resolveDefinition: (drill: T) => SquashDrillDefinition | undefined = (drill) => findSquashDrillByName(drill.name),
+): T[] {
+  const regular = drills.filter((drill) => !isSquashMatchDrill(resolveDefinition(drill) ?? { category: 'technical', tags: [] }))
+  const matches = drills.filter((drill) => isSquashMatchDrill(resolveDefinition(drill) ?? { category: 'technical', tags: [] }))
+  return [...regular, ...matches]
+}
+
 export const SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
   {
     id: 'drive_parallel_depth',
@@ -28,7 +41,7 @@ export const SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
     tags: ['parallel', 'drive', 'base', 'build', 'length', 'length_control'],
     description: 'Peloteo de drives paralelos buscando profundidad constante a la pared del fondo.',
     intent: 'consistency',
-    constraints: ['Keep height above the service line'],
+    constraints: ['Mantener la pelota por encima de la línea de saque'],
     progressionLevel: 1,
   },
   {
@@ -101,7 +114,7 @@ export const SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
     tags: ['volley', 't_control', 'build', 'peak'],
     description: 'Volear y recuperar inmediatamente al T para sostener dominio del punto.',
     intent: 'recovery',
-    constraints: ['Recover to the T before the next shot'],
+    constraints: ['Recuperar al T antes del siguiente golpe'],
     progressionLevel: 2,
   },
   {
@@ -252,98 +265,98 @@ export const SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
   },
   {
     id: 'defensive_high_lob_recovery',
-    name: 'Defensive High Lob Recovery',
+    name: 'Lob defensivo alto con recuperación',
     category: 'technical',
     focus: ['lob', 'recovery', 'back_court'],
     intensity: 'low',
     tags: ['lob', 'recovery_technical', 'base', 'build', 'taper', 'back_court'],
-    description: 'Defensive high lob from pressure situations, rebuilding time and shape before re-entering the rally.',
+    description: 'Lob defensivo alto desde situaciones de presión para recuperar tiempo, orden y volver al rally con control.',
     intent: 'recovery',
-    constraints: ['Keep height above the service line', 'Recover to the T before the next shot'],
+    constraints: ['Mantener la pelota por encima de la línea de saque', 'Recuperar al T antes del siguiente golpe'],
     progressionLevel: 1,
   },
   {
     id: 'attacking_lob_change_of_pace',
-    name: 'Attacking Lob Change of Pace',
+    name: 'Lob ofensivo como cambio de ritmo',
     category: 'technical',
     focus: ['lob', 'attack', 'variation'],
     intensity: 'moderate',
     tags: ['lob', 'attack', 'build', 'peak', 'variation'],
-    description: 'Use the attacking lob as a change of pace to move the opponent deep and reopen the front court.',
+    description: 'Usar el lob ofensivo como cambio de ritmo para llevar al rival al fondo y reabrir el juego en la parte delantera.',
     intent: 'control',
-    constraints: ['Disguise the preparation before the lift', 'Send the second shot back to open court'],
+    constraints: ['Disfrazar la preparación antes del lift', 'Enviar el segundo golpe hacia cancha abierta'],
     progressionLevel: 2,
   },
   {
     id: 'attacking_boast_from_mid_court',
-    name: 'Attacking Boast from Mid Court',
+    name: 'Boast ofensivo desde media cancha',
     category: 'technical',
     focus: ['boast', 'attack', 'mid_court'],
     intensity: 'moderate',
     tags: ['boast', 'attack', 'mid_court', 'build', 'peak', 'pressure'],
-    description: 'Attack from mid court with an early boast to break rhythm and move forward into the next ball.',
+    description: 'Atacar desde media cancha con un boast temprano para romper el ritmo y avanzar sobre la siguiente pelota.',
     intent: 'pressure',
-    constraints: ['Recover forward after the boast instead of drifting back', 'Finish within 3 shots'],
+    constraints: ['Recuperar hacia adelante después del boast en vez de retroceder', 'Cerrar el punto dentro de 3 golpes'],
     progressionLevel: 2,
   },
   {
     id: 'attacking_boast_from_back_court',
-    name: 'Attacking Boast from Back Court',
+    name: 'Boast ofensivo desde el fondo',
     category: 'technical',
     focus: ['boast', 'attack', 'back_court'],
     intensity: 'high',
     tags: ['boast', 'attack', 'back_court', 'build', 'peak', 'pressure'],
-    description: 'Create attack from deep court with a purposeful boast that forces a weak front-court reply.',
+    description: 'Generar ataque desde el fondo con un boast intencional que fuerce una respuesta débil en la zona delantera.',
     intent: 'pressure',
-    constraints: ['Keep the boast tight to the side wall', 'Recover to cut off the next ball early'],
+    constraints: ['Mantener el boast pegado a la pared lateral', 'Recuperar para cortar temprano la siguiente pelota'],
     progressionLevel: 3,
   },
   {
     id: 'front_court_angle_finish',
-    name: 'Front Court Angle Finish',
+    name: 'Definición con ángulo en zona delantera',
     category: 'technical',
     focus: ['angle', 'front_court', 'finish'],
     intensity: 'moderate',
     tags: ['angle', 'front_court', 'finish', 'build', 'peak'],
-    description: 'Front-court attacking pattern focused on creating angle and finishing the rally before the opponent resets.',
+    description: 'Patrón ofensivo en la parte delantera enfocado en crear ángulo y cerrar el rally antes de que el rival se reorganice.',
     intent: 'finishing',
-    constraints: ['Hold the racket preparation until the last moment', 'Finish within 3 shots'],
+    constraints: ['Sostener la preparación de la raqueta hasta el último momento', 'Cerrar el punto dentro de 3 golpes'],
     progressionLevel: 2,
   },
   {
     id: 'nick_pressure_closure',
-    name: 'Nick Pressure Closure',
+    name: 'Cierre al nick bajo presión',
     category: 'technical',
     focus: ['nick', 'finish', 'precision'],
     intensity: 'moderate',
     tags: ['nick', 'angle', 'finish', 'build', 'peak', 'pressure'],
-    description: 'Precision finishing drill aimed at finding the nick under pressure after building the rally.',
+    description: 'Drill de definición precisa orientado a encontrar el nick bajo presión después de construir el rally.',
     intent: 'finishing',
-    constraints: ['Only attack the nick off a balanced setup ball', 'Use one clear visual target per side'],
+    constraints: ['Atacar el nick solo desde una pelota de armado equilibrada', 'Usar un objetivo visual claro por lado'],
     progressionLevel: 3,
   },
   {
     id: 'continuous_squash_movement_base',
-    name: 'Continuous Squash Movement Base',
+    name: 'Base continua de movimiento específico de squash',
     category: 'physical',
     focus: ['movement', 'aerobic_base', 'conditioning'],
     intensity: 'low',
     tags: ['movement', 'conditioning', 'aerobic_base', 'base', 'build'],
-    description: 'Continuous on-court movement with technical rhythm, built to develop squash-specific aerobic efficiency without sprint demand.',
+    description: 'Movimiento continuo en cancha con ritmo técnico, pensado para desarrollar base aeróbica específica sin exigir sprints.',
     intent: 'consistency',
-    constraints: ['Sustain even tempo across the full interval', 'Keep shoulders relaxed between corners'],
+    constraints: ['Sostener un tempo parejo durante todo el intervalo', 'Mantener hombros relajados entre esquinas'],
     progressionLevel: 1,
   },
   {
     id: 'extensive_aerobic_movement_intervals',
-    name: 'Extensive Aerobic Movement Intervals',
+    name: 'Intervalos extensivos de movimiento aeróbico',
     category: 'physical',
     focus: ['movement', 'aerobic_base', 'tempo'],
     intensity: 'moderate',
     tags: ['movement', 'conditioning', 'aerobic_base', 'base', 'build'],
-    description: 'Extensive aerobic intervals with controlled court movement, emphasizing repeatable base work rather than explosive ghosting.',
+    description: 'Intervalos aeróbicos extensivos con movimiento controlado en cancha, priorizando trabajo base repetible sobre ghosting explosivo.',
     intent: 'control',
-    constraints: ['Keep identical pacing from first interval to last', 'Finish each block with clean posture at the T'],
+    constraints: ['Mantener el mismo ritmo del primer al último intervalo', 'Terminar cada bloque con postura limpia en el T'],
     progressionLevel: 2,
   },
   {
@@ -439,6 +452,12 @@ const DRILL_TOKEN_ALIASES: Record<string, string> = {
   angulo: 'angle',
   angulos: 'angle',
   nicks: 'nick',
+  defensive: 'defensivo',
+  recovery: 'recuperacion',
+  attacking: 'ofensivo',
+  finish: 'definicion',
+  front: 'delantera',
+  court: 'cancha',
 }
 
 function normalizeDrillTokens(value: string): string[] {

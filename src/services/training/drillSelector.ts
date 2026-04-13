@@ -5,6 +5,7 @@ import {
   getSquashDrillFamily,
   getSuggestedTrainingFocus,
   normalizeSquashDrillKey,
+  orderSquashDrillsForSession,
   SQUASH_DRILL_LIBRARY,
   type DrillCategory,
   type SquashDrillDefinition,
@@ -85,11 +86,13 @@ export function selectSquashDrills(
 
   return {
     trainingFocus,
-    drills: finalSelection.map((definition, index) => ({
-      name: definition.name,
-      durationMin: getDrillDuration(definition, index, context),
-      notes: buildProgressedDrillNotes(definition, context, progressionState),
-    })),
+    drills: orderSquashDrillsForSession(
+      finalSelection.map((definition, index) => ({
+        name: definition.name,
+        durationMin: getDrillDuration(definition, index, context),
+        notes: buildProgressedDrillNotes(definition, context, progressionState),
+      })),
+    ),
   }
 }
 

@@ -116,6 +116,7 @@ Tipos de sesión y contenido esperado en el campo objective:
 · control: peloteo de calidad técnica a intensidad baja-media, foco en ejecución limpia sin presión de resultado. Ideal día previo a partido o en semanas de carga alta.
 · match con squashDetails.sessionMode="practice_match": partido de entrenamiento o match-play. Usarlo en build/peak para trabajar táctica, presión, toma de decisiones y ritmo real.
 · match con squashDetails.sessionMode="competition_match" o subtype competitive: partido real de competición. Anotar rival si se conoce.
+· Si una sesión squash mezcla drills y partido en squashDetails.drills, el partido debe ir siempre al final del bloque: activación/calor inicial → drills → partido final.
 
 CUANDO USAR PRACTICE_MATCH:
 · build o peak

@@ -160,6 +160,13 @@ describe('drillSelector progression', () => {
         ].includes(drill.name),
       ),
     ).toBe(true)
+    expect(
+      [
+        'Partido de entrenamiento libre a 5 games',
+        'Partido de entrenamiento al mejor de 3 games',
+        'Partido con foco de ataque en puntos cortos',
+      ].includes(selection.drills[selection.drills.length - 1]!.name),
+    ).toBe(true)
   })
 
   it('does not prioritize practice match drills in taper or high fatigue', () => {
@@ -263,8 +270,8 @@ describe('drillSelector progression', () => {
   })
 
   it('maps finishing drills into a dedicated family', () => {
-    const nickDrill = findSquashDrillByName('Nick Pressure Closure')
-    const angleDrill = findSquashDrillByName('Front Court Angle Finish')
+    const nickDrill = findSquashDrillByName('Cierre al nick bajo presión')
+    const angleDrill = findSquashDrillByName('Definición con ángulo en zona delantera')
 
     expect(nickDrill?.intent).toBe('finishing')
     expect(angleDrill?.intent).toBe('finishing')
@@ -283,7 +290,7 @@ describe('drillSelector progression', () => {
 
     expect(
       selection.drills.some((drill) =>
-        ['Continuous Squash Movement Base', 'Extensive Aerobic Movement Intervals'].includes(drill.name),
+        ['Base continua de movimiento específico de squash', 'Intervalos extensivos de movimiento aeróbico'].includes(drill.name),
       ),
     ).toBe(true)
   })
@@ -304,8 +311,8 @@ describe('drillSelector progression', () => {
       recentDrills: [],
     })
     const aerobicBaseNames = new Set([
-      'Continuous Squash Movement Base',
-      'Extensive Aerobic Movement Intervals',
+      'Base continua de movimiento específico de squash',
+      'Intervalos extensivos de movimiento aeróbico',
     ])
 
     expect(peakSelection.drills.some((drill) => aerobicBaseNames.has(drill.name))).toBe(false)
@@ -313,17 +320,17 @@ describe('drillSelector progression', () => {
   })
 
   it('includes the first constraint in progression notes when a drill provides one', () => {
-    const drill = findSquashDrillByName('Continuous Squash Movement Base')
+    const drill = findSquashDrillByName('Base continua de movimiento específico de squash')
     const notes = buildProgressedDrillNotes(drill!, {
       phase: 'build',
       fatigueLevel: 4,
       competitionSoon: false,
       goal: 'mejorar base fisica',
       recentDrills: [],
-      historicalSessions: [makeSquashSession('2026-04-08', 'Continuous Squash Movement Base')],
+      historicalSessions: [makeSquashSession('2026-04-08', 'Base continua de movimiento específico de squash')],
     })
 
-    expect(notes).toContain('Sustain even tempo across the full interval')
+    expect(notes).toContain('Sostener un tempo parejo durante todo el intervalo')
   })
 
   it('still returns a valid note for drills without constraints', () => {

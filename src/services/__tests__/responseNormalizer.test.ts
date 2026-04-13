@@ -241,4 +241,42 @@ describe('responseNormalizer', () => {
       newDurationMin: 40,
     })
   })
+
+  it('moves practice match drills to the end of a squash drill block', () => {
+    const response = normalizeResponse({
+      text: [
+        'Ajuste squash.',
+        '<actions>',
+        JSON.stringify([
+          {
+            type: 'add_session',
+            reason: 'Cerrar con match-play',
+            targetDate: '2026-04-09',
+            sessionType: 'squash',
+            title: 'Squash con partido final',
+            durationMin: 60,
+            timeBlock: 'PM',
+            subtype: 'match',
+            squashDetails: {
+              trainingFocus: 'tactical',
+              sessionMode: 'practice_match',
+              drills: [
+                { name: 'Partido de entrenamiento al mejor de 3 games', durationMin: 18 },
+                { name: 'Drives paralelos a profundidad', durationMin: 15 },
+                { name: 'Juego condicionado solo paralelo', durationMin: 15 },
+              ],
+            },
+          },
+        ]),
+        '</actions>',
+      ].join('\n'),
+      provider: 'mock',
+    })
+
+    expect(response.actions?.[0].squashDetails?.drills.map((drill) => drill.name)).toEqual([
+      'Drives paralelos a profundidad',
+      'Juego condicionado solo paralelo',
+      'Partido de entrenamiento al mejor de 3 games',
+    ])
+  })
 })
