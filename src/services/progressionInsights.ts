@@ -22,6 +22,11 @@ import {
   type StrengthSportProfile,
 } from './training/strengthSelector'
 import {
+  deriveStrengthExperienceLevel,
+  deriveStrengthSportProfile,
+  mapMacroPhaseToStrengthPhase,
+} from './training/strengthContext'
+import {
   calculateSquashAcwr,
   calculateStrengthAcwr,
   getSquashWeeklyLoads,
@@ -275,44 +280,6 @@ function mapMacroPhaseToSquashPhase(profile: AthleteProfile | undefined): Squash
   }
 }
 
-function mapMacroPhaseToStrengthPhase(profile: AthleteProfile | undefined): StrengthContext['phase'] {
-  const phase = computeMacroPlan(profile)?.currentPhase
-  switch (phase) {
-    case 'build':
-      return 'build'
-    case 'peak':
-      return 'peak'
-    case 'taper':
-    case 'race':
-      return 'taper'
-    case 'transition':
-      return 'transition'
-    case 'base':
-    default:
-      return 'base'
-  }
-}
-
-function deriveStrengthSportProfile(profile: AthleteProfile | undefined): StrengthSportProfile {
-  const enabledSports = getEnabledSports(profile)
-  const primarySport = getPrimarySportNormalized(profile)
-
-  if (primarySport === 'strength') return 'strength_primary'
-  if (enabledSports.includes('strength') && enabledSports.length > 1) return 'hybrid'
-  return 'sport_support'
-}
-
-function deriveStrengthExperienceLevel(profile: AthleteProfile | undefined): StrengthContext['experienceLevel'] {
-  const sp = profile?.strengthProfile
-  const filled = [sp?.benchPress1RM, sp?.squat1RM, sp?.deadlift1RM, sp?.overheadPress1RM]
-    .filter((value) => value != null)
-    .length
-
-  if (filled >= 4) return 'advanced'
-  if (filled >= 2) return 'intermediate'
-  return 'beginner'
-}
-
 function deriveFatigueLevel(dayLogs: DayLog[], sessions: Session[]): number {
   let score = 4
   const latestLog = [...dayLogs]
@@ -399,7 +366,7 @@ function buildStrengthContext(
 ): StrengthContext {
   return {
     fatigueLevel,
-    phase: mapMacroPhaseToStrengthPhase(profile),
+    phase: mapMacroPhaseToStrengthPhase(computeMacroPlan(profile)?.currentPhase),
     recentExercises: extractRecentStrengthExercises(completedSessions),
     goal: upcomingCompetition?.title ?? profile?.mainGoal ?? 'desarrollar fuerza util',
     sportProfile: deriveStrengthSportProfile(profile),

@@ -61,6 +61,8 @@ interface ScoredSession {
   score: number
 }
 
+let cachedRunningSelectorSmokeChecks: string[] | null = null
+
 // ─── Main selector ────────────────────────────────────────────────────────────
 
 export function selectRunningSession(context: RunningContext): RunningSelectionResult {
@@ -165,8 +167,10 @@ export function filterByCompetition(
   if (days <= 7) {
     return sessions.filter(
       s =>
-        !['intervals_vo2', 'hill'].includes(s.family) &&
-        !(s.family === 'tempo_threshold' && s.intensity === 'high'),
+        !(s.family === 'intervals_vo2' && s.intensity === 'high') &&
+        s.family !== 'hill' &&
+        !(s.family === 'tempo_threshold' && s.intensity === 'high') &&
+        !(s.family === 'race_specific' && s.intensity === 'high'),
     )
   }
   return sessions
@@ -300,17 +304,7 @@ function scoreSessions(
 // ─── Progression ─────────────────────────────────────────────────────────────
 
 export function extractRecentRunningSessions(historicalSessions: Session[]): string[] {
-  const runningSessions = [...historicalSessions]
-    .filter(
-      s =>
-        s.type === 'running' &&
-        (s.status === 'completed' || s.status === 'adjusted') &&
-        s.runningDetails != null,
-    )
-    .sort((a, b) => b.date.localeCompare(a.date) || b.timeBlock.localeCompare(a.timeBlock))
-    .slice(0, 6)
-
-  return runningSessions.map(s => deriveRunningFamilyFromSession(s))
+  return getRecentCompletedRunningSessions(historicalSessions).map(s => deriveRunningFamilyFromSession(s))
 }
 
 function deriveRunningFamilyFromSession(session: Session): string {
@@ -328,6 +322,7 @@ function deriveRunningFamilyFromSession(session: Session): string {
   }
 
   if (rt === 'tempo') {
+    if (combined.includes('hill') || combined.includes('cuesta') || combined.includes('uphill')) return 'hill'
     if (
       combined.includes('race') ||
       combined.includes('carrera') ||
@@ -341,20 +336,13 @@ function deriveRunningFamilyFromSession(session: Session): string {
 
   // z2 family derivation
   if (combined.includes('recup') || combined.includes('recovery') || combined.includes('trote suave')) return 'recovery'
+  if (combined.includes('race') || (combined.includes('activaci') && combined.includes('carrera'))) return 'race_specific'
   if (combined.includes('stride') || combined.includes('economy') || combined.includes('activaci') || combined.includes('hill')) return 'speed_economy'
   return 'easy_aerobic'
 }
 
 export function deriveRunningProgressionState(context: RunningContext): RunningProgressionState {
-  const runningSessions = [...(context.historicalSessions ?? [])]
-    .filter(
-      s =>
-        s.type === 'running' &&
-        (s.status === 'completed' || s.status === 'adjusted') &&
-        s.runningDetails != null,
-    )
-    .sort((a, b) => b.date.localeCompare(a.date) || b.timeBlock.localeCompare(a.timeBlock))
-    .slice(0, 6)
+  const runningSessions = getRecentCompletedRunningSessions(context.historicalSessions ?? [])
 
   const families: Record<string, RunningFamilyEntry> = {}
 
@@ -378,6 +366,18 @@ export function deriveRunningProgressionState(context: RunningContext): RunningP
     currentFamily,
     families,
   }
+}
+
+function getRecentCompletedRunningSessions(sessions: Session[]): Session[] {
+  return [...sessions]
+    .filter(
+      s =>
+        s.type === 'running' &&
+        (s.status === 'completed' || s.status === 'adjusted') &&
+        s.runningDetails != null,
+    )
+    .sort((a, b) => b.date.localeCompare(a.date) || b.timeBlock.localeCompare(a.timeBlock))
+    .slice(0, 6)
 }
 
 function deriveRunningProgressionIntent(
@@ -507,6 +507,10 @@ function deriveRunningFocus(session: RunningSessionDefinition, context: RunningC
 // ─── Smoke checks ────────────────────────────────────────────────────────────
 
 export function runRunningSelectorSmokeChecks(): string[] {
+  if (cachedRunningSelectorSmokeChecks) {
+    return cachedRunningSelectorSmokeChecks
+  }
+
   const outputs: string[] = []
 
   const primaryBase = selectRunningSession({
@@ -596,6 +600,7 @@ export function runRunningSelectorSmokeChecks(): string[] {
   })
   outputs.push(`acwr_limited=${acwrLimited.session.name} (${acwrLimited.session.runningType})`)
 
+  cachedRunningSelectorSmokeChecks = outputs
   return outputs
 }
 

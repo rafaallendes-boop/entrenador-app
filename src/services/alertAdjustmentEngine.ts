@@ -15,6 +15,7 @@ import { buildActionAlerts, type ActionAlertsInput, type ActionableAlert } from 
 import { buildFallbackCyclingDetails, buildFallbackMobilityDetails } from './coachProposalMetadata'
 import { buildSlotAdherenceProfile, getSlotAdherenceStats, type SlotAdherenceProfile } from './slotAdherence'
 import { getPlanningPrimarySport } from './planningConstraints'
+import { isCompetitionSquashMatch } from '../utils/squash'
 
 export interface AutoAdjustmentDraft {
   alertId: string
@@ -473,7 +474,7 @@ function isLikelyKeySession(session: Session, athleteProfile?: AthleteProfile | 
   const title = session.title.toLowerCase()
 
   if (session.type === 'squash') {
-    if (session.subtype === 'match' || session.squashDetails?.sessionMode === 'competition_match') return true
+    if (isCompetitionSquashMatch(session)) return true
   }
   if (session.type === 'running') {
     if (session.runningDetails?.runningType === 'tempo' || session.runningDetails?.runningType === 'intervals' || session.runningDetails?.runningType === 'long') return true

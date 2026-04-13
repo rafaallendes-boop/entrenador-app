@@ -430,7 +430,7 @@ export function shouldProgressSquashFamily(
 
   const familyEntry = progressionState.families[family]
   if (!familyEntry) return true
-  return (drill.progressionLevel ?? 1) >= familyEntry.lastLevel
+  return (drill.progressionLevel ?? 1) > familyEntry.lastLevel
 }
 
 export function scoreDrillsWithProgression(

@@ -7,6 +7,11 @@ import { isCompetitionSquashMatch } from '../../../utils/squash'
 import { todayISO } from '../../../utils/date'
 import { getAllowedPlanningSports, getPlanningPrimarySport } from '../../planningConstraints'
 import {
+  deriveStrengthExperienceLevel as deriveStrengthExperienceLevelFromProfile,
+  deriveStrengthSportProfile as deriveStrengthSportProfileFromProfile,
+  mapMacroPhaseToStrengthPhase as mapMacroPhaseToStrengthPhaseFromMacro,
+} from '../../training/strengthContext'
+import {
   extractRecentStrengthExercises,
   runStrengthSelectorSmokeChecks,
   selectStrengthSession,
@@ -28,42 +33,17 @@ import {
 // ─── Phase mapping ──────────────────────────────────────────────────────────
 
 export function mapMacroPhaseToStrengthPhase(phase: MacroPlanPhase | undefined): StrengthPhase {
-  switch (phase) {
-    case 'build':
-      return 'build'
-    case 'peak':
-      return 'peak'
-    case 'taper':
-    case 'race':
-      return 'taper'
-    case 'transition':
-      return 'transition'
-    case 'base':
-    default:
-      return 'base'
-  }
+  return mapMacroPhaseToStrengthPhaseFromMacro(phase)
 }
 
 // ─── Context derivation ────────────────────────────────────────────────────
 
 export function deriveStrengthSportProfile(context: ChatContext): StrengthSportProfile {
-  const enabledSports = getAllowedPlanningSports(context.athleteProfile)
-  const primarySport = getPlanningPrimarySport(context.athleteProfile)
-
-  if (primarySport === 'strength') return 'strength_primary'
-  if (enabledSports.includes('strength') && enabledSports.length > 1) return 'hybrid'
-  return 'sport_support'
+  return deriveStrengthSportProfileFromProfile(context.athleteProfile)
 }
 
 export function deriveStrengthExperienceLevel(context: ChatContext): 'beginner' | 'intermediate' | 'advanced' {
-  const sp = context.athleteProfile?.strengthProfile
-  const filled = [sp?.benchPress1RM, sp?.squat1RM, sp?.deadlift1RM, sp?.overheadPress1RM]
-    .filter((value) => value != null)
-    .length
-
-  if (filled >= 4) return 'advanced'
-  if (filled >= 2) return 'intermediate'
-  return 'beginner'
+  return deriveStrengthExperienceLevelFromProfile(context.athleteProfile)
 }
 
 export function getStrengthSelectionContext(context: ChatContext): StrengthContext {
@@ -136,7 +116,7 @@ export function toCoachExerciseProposal(exercise: StrengthSelectionExercise): Co
     group: exercise.group,
     notes: exercise.notes
       ? `${exercise.notes} [${exercise.intensity}]`
-      : exercise.intensity,
+      : (exercise.intensity ? `[${exercise.intensity}]` : undefined),
   }
 }
 

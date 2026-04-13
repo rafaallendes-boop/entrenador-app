@@ -1112,6 +1112,8 @@ function buildResponsePromptContext(
     recentDrills: squashSelectorContext?.recentDrills ?? [],
     goal: 'llegar fresco al partido objetivo y afinar timing en squash',
     competitionSoon: true,
+    historicalSessions: squashSelectorContext?.historicalSessions,
+    squashAcwr: squashSelectorContext?.squashAcwr,
   })
   const squashControlSelection = selectSquashDrills({
     fatigueLevel: Math.max(squashSelectorContext?.fatigueLevel ?? 4, 5),

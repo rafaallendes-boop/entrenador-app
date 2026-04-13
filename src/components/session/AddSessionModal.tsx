@@ -6,6 +6,8 @@ import type {
   MatchResult,
   MobilityDetails,
   RunningType,
+  SquashDetails,
+  SquashTrainingFocus,
   SessionType,
   SquashSubtype,
   TimeBlock,
@@ -121,6 +123,30 @@ function buildMobilityDetailsDraft(objective: string): MobilityDetails {
     focusAreas: focusAreas.length > 0 ? focusAreas : ['cadera', 'toracica/columna'],
     targetStructure: 'Flujo breve con movilidad articular, respiracion y estiramientos activos bien dosificados.',
     executionNotes: 'Buscar rango util y sensacion de soltura, no fatiga.',
+  }
+}
+
+function resolveSquashTrainingFocus(subtype: SquashSubtype, objective: string): SquashTrainingFocus {
+  const normalized = objective.toLowerCase()
+
+  if (subtype === 'match') return 'conditioned_games'
+  if (subtype === 'competitive') return 'tactical'
+  if (/(fisic|acelera|potencia|resisten|carga|intens)/.test(normalized)) return 'physical'
+  if (/(tact|decision|patron|estrateg|ritmo|presion)/.test(normalized)) return 'tactical'
+  if (/(game|set|partido|punto condicionado)/.test(normalized)) return 'conditioned_games'
+  return 'technical'
+}
+
+function buildSquashDetailsDraft(subtype: SquashSubtype, objective: string): SquashDetails {
+  return {
+    trainingFocus: resolveSquashTrainingFocus(subtype, objective),
+    sessionMode:
+      subtype === 'competitive'
+        ? 'competition_match'
+        : subtype === 'match'
+          ? 'practice_match'
+          : 'drill_session',
+    drills: [],
   }
 }
 
@@ -264,6 +290,7 @@ export default function AddSessionModal({ defaultDate, onClose }: Props) {
         : undefined,
       cyclingDetails: type === 'cycling' ? buildCyclingDetailsDraft(runningType, objective) : undefined,
       mobilityDetails: type === 'mobility' ? buildMobilityDetailsDraft(objective) : undefined,
+      squashDetails: type === 'squash' ? buildSquashDetailsDraft(squashSubtype, objective) : undefined,
       warmup: protocols.warmup,
       cooldown: protocols.cooldown,
       exercises: showExercises && exercises.length > 0 ? buildExercises() : undefined,

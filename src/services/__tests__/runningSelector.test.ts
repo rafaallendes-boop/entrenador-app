@@ -37,6 +37,42 @@ describe('runningSelector progression', () => {
     expect(families).toEqual(['tempo_threshold', 'long_run', 'recovery'])
   })
 
+  it('maps uphill tempo sessions to hill in recent history and progression state', () => {
+    const history = [makeRunningSession('2026-04-08', 'tempo', 'Uphill tempo blocks', 'tempo en cuesta')]
+
+    expect(extractRecentRunningSessions(history)).toEqual(['hill'])
+
+    const state = deriveRunningProgressionState({
+      phase: 'build',
+      fatigueLevel: 4,
+      recentSessions: [],
+      goal: '10k',
+      sportProfile: 'running_primary',
+      historicalSessions: history,
+    })
+
+    expect(state.currentFamily).toBe('hill')
+  })
+
+  it('maps race activation sessions to race_specific instead of speed_economy', () => {
+    const history = [makeRunningSession('2026-04-08', 'z2', 'Race day activation', 'activacion de carrera')]
+
+    expect(extractRecentRunningSessions(history)).toEqual(['race_specific'])
+
+    const state = deriveRunningProgressionState({
+      phase: 'taper',
+      fatigueLevel: 3,
+      recentSessions: [],
+      goal: '10k',
+      sportProfile: 'running_primary',
+      competitionSoon: true,
+      daysToCompetition: 2,
+      historicalSessions: history,
+    })
+
+    expect(state.currentFamily).toBe('race_specific')
+  })
+
   it('forces deload when running ACWR is in risk', () => {
     const state = deriveRunningProgressionState({
       phase: 'build',
@@ -82,7 +118,7 @@ describe('runningSelector progression', () => {
     expect(state.intent).toBe('progress')
   })
 
-  it('removes hard sessions close to competition', () => {
+  it('keeps moderate-high fartlek but removes high intervals and hill sessions close to competition', () => {
     const filtered = filterByCompetition(RUNNING_SESSION_LIBRARY, {
       phase: 'peak',
       fatigueLevel: 4,
@@ -94,7 +130,9 @@ describe('runningSelector progression', () => {
     })
 
     expect(filtered.some((session) => session.family === 'hill')).toBe(false)
-    expect(filtered.some((session) => session.id === 'pace_10k_reps')).toBe(true)
+    expect(filtered.some((session) => session.id === 'repeats_400')).toBe(false)
+    expect(filtered.some((session) => session.id === 'pace_10k_reps')).toBe(false)
+    expect(filtered.some((session) => session.id === 'fartlek_controlado')).toBe(true)
   })
 
   it('selects a low intensity session when ACWR risk asks for deload', () => {
@@ -111,6 +149,22 @@ describe('runningSelector progression', () => {
 
     expect(['low', 'moderate']).toContain(result.session.intensity)
     expect(result.session.notes).toContain('ACWR de running alto')
+  })
+
+  it('returns a safe low-intensity recovery option under extreme taper and fatigue constraints', () => {
+    const result = selectRunningSession({
+      phase: 'taper',
+      fatigueLevel: 8,
+      recentSessions: ['easy_aerobic', 'recovery', 'speed_economy'],
+      goal: 'running de apoyo en semana de descarga',
+      sportProfile: 'sport_support',
+      competitionSoon: true,
+      daysToCompetition: 3,
+      historicalSessions: [makeRunningSession('2026-04-08', 'z2', 'Trote suave recovery')],
+    })
+
+    expect(result.session.intensity).toBe('low')
+    expect(['easy_aerobic', 'recovery']).toContain(result.session.family)
   })
 
   it('summarizes the selected family and ACWR status', () => {

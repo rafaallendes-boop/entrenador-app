@@ -20,10 +20,10 @@ function makeSquashSession(overrides: Partial<Session> = {}): Session {
 }
 
 describe('squash session mode compatibility', () => {
-  it('treats legacy subtype match without sessionMode as competition match', () => {
+  it('treats subtype match without sessionMode as non-competitive by default', () => {
     const session = makeSquashSession()
 
-    expect(isCompetitionSquashMatch(session)).toBe(true)
+    expect(isCompetitionSquashMatch(session)).toBe(false)
     expect(isPracticeSquashMatch(session)).toBe(false)
   })
 
@@ -55,6 +55,11 @@ describe('squash session mode compatibility', () => {
       }),
       makeSquashSession({
         id: 'session-3',
+        squashDetails: {
+          trainingFocus: 'tactical',
+          sessionMode: 'competition_match',
+          drills: [{ name: 'Partido objetivo' }],
+        },
       }),
     ])
 

@@ -147,14 +147,16 @@ export function buildDynamicRunningSelectionSection(
       selectionContext.competitionSoon ? 'si' : 'no'
     }${selectionContext.primarySport ? ` · deporte principal ${selectionContext.primarySport}` : ''}`,
   )
-  if (selectionContext.runningWeeklyLoad?.sessionsCount) {
-    const weeklyVolume = selectionContext.runningWeeklyLoad.totalDistanceKm != null
-      ? `${selectionContext.runningWeeklyLoad.totalDistanceKm} km`
-      : `${selectionContext.runningWeeklyLoad.totalDurationMin ?? 0} min`
+  if (selectionContext.runningAcwr) {
     const acwrRatio = selectionContext.runningAcwr?.ratio != null
       ? selectionContext.runningAcwr.ratio.toFixed(2)
       : 'sin ratio'
     lines.push(`Running ACWR: ${acwrRatio} (${selectionContext.runningAcwr?.status ?? 'limited'})`)
+  }
+  if (selectionContext.runningWeeklyLoad?.sessionsCount) {
+    const weeklyVolume = selectionContext.runningWeeklyLoad.totalDistanceKm != null
+      ? `${selectionContext.runningWeeklyLoad.totalDistanceKm} km`
+      : `${selectionContext.runningWeeklyLoad.totalDurationMin ?? 0} min`
     lines.push(`Weekly running load: ${weeklyVolume} / ${selectionContext.runningWeeklyLoad.sessionsCount} sesiones`)
   }
   lines.push(`Continuidad: ${summarizeRunningProgression(selectionContext)}`)

@@ -8,7 +8,7 @@ export interface SquashCompetitiveExposureSummary {
 }
 
 export function resolveSquashSessionMode(squashDetails?: SquashDetails): SquashSessionMode {
-  return squashDetails?.sessionMode ?? 'competition_match'
+  return squashDetails?.sessionMode ?? 'drill_session'
 }
 
 export function isPracticeSquashMatch(session: Pick<Session, 'type' | 'subtype' | 'squashDetails'>): boolean {
@@ -19,7 +19,7 @@ export function isCompetitionSquashMatch(session: Pick<Session, 'type' | 'subtyp
   if (session.type !== 'squash') return false
   if (session.subtype === 'competitive') return true
   if (session.subtype !== 'match') return false
-  return resolveSquashSessionMode(session.squashDetails) !== 'practice_match'
+  return resolveSquashSessionMode(session.squashDetails) === 'competition_match'
 }
 
 export function getRecentSquashCompetitiveExposure(

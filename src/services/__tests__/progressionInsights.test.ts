@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { AthleteProfile, DayLog, Session } from '../../types'
 import {
@@ -58,9 +58,15 @@ function makeExercise(name: string, sets: number, reps: number | string, weight?
 
 describe('progressionInsights', () => {
   beforeEach(() => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-04-08T12:00:00Z'))
     mocks.sessionsStore.toArray.mockReset()
     mocks.dayLogsStore.toArray.mockReset()
     mocks.getAthleteProfileMock.mockReset()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
   })
 
   it('normalizes strength families consistently', () => {

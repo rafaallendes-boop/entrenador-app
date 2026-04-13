@@ -71,16 +71,19 @@ export function selectStrengthSession(
   const recentSet = new Set(context.recentExercises.map(normalizeStrengthExerciseKey))
   const progressionState = deriveStrengthProgressionState(context)
   const equipmentPool = filterByEquipment(STRENGTH_EXERCISE_LIBRARY, normalizedEquipment)
-  const fatiguePool = filterByFatigue(equipmentPool, context)
-  const phasePool = filterByPhase(fatiguePool, context)
-  const experiencePool = filterByExperience(phasePool, context)
+  const experiencePool = buildStrengthCandidatePool(equipmentPool, context)
   const withoutRecent = avoidRecentExercises(experiencePool, recentSet)
   const pool = withoutRecent.length >= 6 ? withoutRecent : experiencePool
   const selected = pickStrengthStructure(pool, context, recentSet, progressionState)
 
   const fallback = selected.length >= 3
     ? selected
-    : pickStrengthStructure(filterByFatigue(equipmentPool, { ...context, fatigueLevel: Math.min(context.fatigueLevel, 6) }), context, recentSet, progressionState)
+    : pickStrengthStructure(
+        buildStrengthCandidatePool(equipmentPool, { ...context, fatigueLevel: Math.min(context.fatigueLevel, 6) }),
+        context,
+        recentSet,
+        progressionState,
+      )
 
   const finalSelection = fallback.slice(0, 6)
 
@@ -174,6 +177,19 @@ export function avoidRecentExercises(
   return exercises.filter((exercise) => !recentExercises.has(normalizeStrengthExerciseKey(exercise.id)))
 }
 
+function buildStrengthCandidatePool(
+  exercises: ExerciseDefinition[],
+  context: StrengthContext,
+): ExerciseDefinition[] {
+  return filterByFatigue(
+    filterByPhase(
+      filterByExperience(exercises, context),
+      context,
+    ),
+    context,
+  )
+}
+
 export function pickStrengthStructure(
   exercises: ExerciseDefinition[],
   context: StrengthContext,
@@ -211,6 +227,10 @@ export function pickStrengthStructure(
     exercise.category !== 'core' &&
     exercise.intensityType !== 'recovery' &&
     (!selectedMovements.has(exercise.movement) || context.sportProfile === 'strength_primary'),
+  (exercise) =>
+    !selectedIds.has(exercise.id) &&
+    exercise.category !== 'core' &&
+    exercise.intensityType !== 'recovery',
   )
   if (accessory) {
     selected.push(accessory)
@@ -222,6 +242,9 @@ export function pickStrengthStructure(
     !selectedIds.has(exercise.id) &&
     (exercise.unilateral || exercise.intensityType === 'stability') &&
     exercise.category !== 'core',
+  (exercise) =>
+    !selectedIds.has(exercise.id) &&
+    exercise.category !== 'core',
   )
   if (unilateralOrStability) {
     selected.push(unilateralOrStability)
@@ -232,7 +255,7 @@ export function pickStrengthStructure(
   const trunk = pickFirst(scored, context, (exercise) =>
     !selectedIds.has(exercise.id) &&
     exercise.category === 'core',
-  )
+  (exercise) => !selectedIds.has(exercise.id))
   if (trunk) {
     selected.push(trunk)
     selectedIds.add(trunk.id)
@@ -242,6 +265,9 @@ export function pickStrengthStructure(
     !selectedIds.has(exercise.id) &&
     exercise.category === 'upper' &&
     (context.sportProfile !== 'sport_support' || context.competitionSoon || context.primarySport === 'running'),
+  (exercise) =>
+    !selectedIds.has(exercise.id) &&
+    exercise.category === 'upper',
   )
   if (upperOptional && selected.length < targetCount) {
     selected.push(upperOptional)
@@ -719,11 +745,12 @@ function pickFirst(
   scored: ScoredExercise[],
   context: StrengthContext,
   predicate: (exercise: ExerciseDefinition) => boolean,
+  fallbackPredicate: (exercise: ExerciseDefinition) => boolean = predicate,
 ): ExerciseDefinition | undefined {
   return scored.find(({ exercise }) => predicate(exercise))?.exercise
     ?? scored.find(({ exercise }) =>
-      predicate(exercise) ||
-      (context.sportProfile === 'strength_primary' && exercise.intensityType === 'strength'),
+      fallbackPredicate(exercise) &&
+      (context.sportProfile === 'strength_primary' ? exercise.intensityType === 'strength' : true),
     )?.exercise
 }
 

@@ -10,6 +10,7 @@ import {
   filterByFatigue,
   filterByPhase,
   getProgressedPrescription,
+  pickStrengthStructure,
   selectStrengthSession,
   selectMainLiftWithProgression,
   summarizeStrengthProgression,
@@ -206,5 +207,45 @@ describe('strengthSelector progression', () => {
     expect(selection.exercises.length).toBeLessThanOrEqual(3)
     expect(selection.focus).toContain('activation')
     expect(selection.exercises.every((exercise) => exercise.intensity !== 'heavy')).toBe(true)
+  })
+
+  it('does not duplicate the main lift when a slot falls back in strength_primary', () => {
+    const smallPool = STRENGTH_EXERCISE_LIBRARY.filter((exercise) =>
+      ['romanian_deadlift', 'hip_thrust', 'plank'].includes(exercise.id),
+    )
+
+    const selection = pickStrengthStructure(
+      smallPool,
+      {
+        phase: 'build',
+        fatigueLevel: 3,
+        recentExercises: [],
+        goal: 'fuerza',
+        sportProfile: 'strength_primary',
+        availableEquipment: ['dumbbell', 'bands'],
+        experienceLevel: 'beginner',
+      },
+      new Set<string>(),
+    )
+
+    const ids = selection.map((exercise) => exercise.id)
+    expect(new Set(ids).size).toBe(ids.length)
+  })
+
+  it('keeps taper and beginner filters in the relaxed fallback path', () => {
+    const selection = selectStrengthSession({
+      phase: 'taper',
+      fatigueLevel: 8,
+      recentExercises: ['plank', 'dead_bug', 'pallof_press'],
+      goal: 'mantener fuerza sin fatigar',
+      sportProfile: 'hybrid',
+      availableEquipment: ['dumbbell', 'bodyweight'],
+      experienceLevel: 'beginner',
+      sessionDurationMin: 45,
+      competitionSoon: false,
+    })
+
+    expect(selection.exercises.length).toBeGreaterThan(0)
+    expect(selection.exercises.every((exercise) => !['Goblet squat', 'Walking lunge', 'Bulgarian split squat'].includes(exercise.name))).toBe(true)
   })
 })
