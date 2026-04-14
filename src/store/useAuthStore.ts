@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import type { User } from '@supabase/supabase-js'
-import { getAuthRedirectUrl, supabase } from '../services/auth'
+import { getAuthRedirectUrl, isSupabaseConfigured, supabase } from '../services/auth'
 
 export type SyncStatus = 'idle' | 'syncing' | 'error' | 'offline'
 
@@ -16,9 +16,12 @@ export interface SyncDetails {
   lastRecoveredSyncAt: number | null
   lastErrorAt: number | null
   lastErrorMessage: string | null
+  lastErrorCategory: string | null
   lastBlockedTable: string | null
   retryScheduledAt: number | null
   consecutiveFailures: number
+  autoRepairInProgress: boolean
+  lastAutoRepairAt: number | null
 }
 
 interface AuthState {
@@ -35,18 +38,20 @@ interface AuthState {
 }
 
 export const useAuthStore = create<AuthState>((set) => {
-  // Subscribe to Supabase auth state changes on store creation
-  supabase.auth.getSession().then(({ data }) => {
-    set({ user: data.session?.user ?? null, isLoading: false })
-  })
+  if (isSupabaseConfigured && supabase) {
+    // Subscribe to Supabase auth state changes on store creation
+    supabase.auth.getSession().then(({ data }) => {
+      set({ user: data.session?.user ?? null, isLoading: false })
+    })
 
-  supabase.auth.onAuthStateChange((_event, session) => {
-    set({ user: session?.user ?? null, isLoading: false })
-  })
+    supabase.auth.onAuthStateChange((_event, session) => {
+      set({ user: session?.user ?? null, isLoading: false })
+    })
+  }
 
   return {
     user: null,
-    isLoading: true,
+    isLoading: isSupabaseConfigured,
     syncStatus: 'idle',
     syncError: null,
     syncDetails: {
@@ -61,12 +66,19 @@ export const useAuthStore = create<AuthState>((set) => {
       lastRecoveredSyncAt: null,
       lastErrorAt: null,
       lastErrorMessage: null,
+      lastErrorCategory: null,
       lastBlockedTable: null,
       retryScheduledAt: null,
       consecutiveFailures: 0,
+      autoRepairInProgress: false,
+      lastAutoRepairAt: null,
     },
 
     signInWithGoogle: async () => {
+      if (!isSupabaseConfigured || !supabase) {
+        throw new Error('Supabase no está configurado. Define VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY.')
+      }
+
       await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: { redirectTo: getAuthRedirectUrl() },
@@ -74,7 +86,10 @@ export const useAuthStore = create<AuthState>((set) => {
     },
 
     signOut: async () => {
-      await supabase.auth.signOut()
+      if (supabase) {
+        await supabase.auth.signOut()
+      }
+
       set({
         user: null,
         syncStatus: 'idle',
@@ -91,9 +106,12 @@ export const useAuthStore = create<AuthState>((set) => {
           lastRecoveredSyncAt: null,
           lastErrorAt: null,
           lastErrorMessage: null,
+          lastErrorCategory: null,
           lastBlockedTable: null,
           retryScheduledAt: null,
           consecutiveFailures: 0,
+          autoRepairInProgress: false,
+          lastAutoRepairAt: null,
         },
       })
     },

@@ -1,7 +1,9 @@
+import { isSupabaseConfigured } from '../../services/auth'
 import { useAuthStore } from '../../store/useAuthStore'
 
 export default function LoginScreen() {
   const signInWithGoogle = useAuthStore((s) => s.signInWithGoogle)
+  const isAuthAvailable = isSupabaseConfigured
 
   return (
     <div className="min-h-screen bg-surface flex flex-col items-center justify-center px-6">
@@ -22,11 +24,17 @@ export default function LoginScreen() {
           </p>
           <button
             onClick={() => void signInWithGoogle()}
-            className="w-full flex items-center justify-center gap-3 px-4 py-3 rounded-xl bg-white text-gray-800 text-sm font-semibold hover:bg-gray-50 transition-colors shadow-sm"
+            disabled={!isAuthAvailable}
+            className="w-full flex items-center justify-center gap-3 px-4 py-3 rounded-xl bg-white text-gray-800 text-sm font-semibold hover:bg-gray-50 transition-colors shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
           >
             <GoogleIcon />
             Continuar con Google
           </button>
+          {!isAuthAvailable ? (
+            <p className="text-xs text-amber-700 text-left leading-relaxed">
+              Falta configurar `VITE_SUPABASE_URL` y `VITE_SUPABASE_ANON_KEY` en tu entorno local.
+            </p>
+          ) : null}
         </div>
 
         <p className="text-xs text-ink-faint">

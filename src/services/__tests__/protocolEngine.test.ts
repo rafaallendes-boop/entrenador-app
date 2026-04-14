@@ -33,7 +33,17 @@ describe('protocolEngine', () => {
     const recentSessions = [
       makeSession({ type: 'squash', date: '2026-04-08', status: 'completed' }),
       makeSession({ type: 'squash', date: '2026-04-09', status: 'completed' }),
-      makeSession({ type: 'squash', date: '2026-04-11', status: 'planned', subtype: 'match' }),
+      makeSession({
+        type: 'squash',
+        date: '2026-04-11',
+        status: 'planned',
+        subtype: 'match',
+        squashDetails: {
+          trainingFocus: 'tactical',
+          sessionMode: 'competition_match',
+          drills: [{ name: 'Partido objetivo' }],
+        },
+      }),
       makeSession({ type: 'running', date: '2026-04-11', status: 'planned', subtype: 'competitive' }),
     ]
     const dayLog: DayLog = {

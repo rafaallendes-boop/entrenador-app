@@ -24,14 +24,19 @@ import { clearAllLocalAppData } from './appMaintenance'
 import {
   athleteProfileToRow,
   classifyAthleteProfileSyncError,
+  classifySyncError,
   compactQueue,
   getSyncErrorMessage,
+  normalizeAthleteProfilePayload,
   pickCanonicalAthleteProfileRow,
   rowToAthleteProfile,
   scoreEntityData,
   toAthleteProfileSyncRow,
+  MAX_RETRIES_PER_OP,
   type AthleteProfileSyncRow,
   type OfflineOp,
+  type SyncErrorCategory,
+  type SyncErrorInfo,
   type SupabaseTable,
 } from './syncUtils'
 const QUEUE_KEY = 'entrenador_sync_queue_v1'
@@ -43,6 +48,41 @@ const MAX_QUEUE_SIZE = 500
 let activeDrainQueuePromise: Promise<boolean> | null = null
 let activePullAllPromise: Promise<void> | null = null
 let activeFullSyncPromise: Promise<void> | null = null
+let syncAttemptCounter = 0
+
+/**
+ * Safe accessor for the Supabase client. Throws a typed SyncError
+ * instead of crashing with a null-reference TypeError.
+ */
+function getSupabase() {
+  if (!supabase) {
+    throw Object.assign(
+      new TypeError('Supabase client is null — VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY missing'),
+      { category: 'supabase_not_configured' as SyncErrorCategory },
+    )
+  }
+  return supabase
+}
+
+/**
+ * Structured sync logger. All sync events go through here for
+ * consistent format and easy debugging.
+ */
+function syncLog(
+  event: string,
+  details: Record<string, unknown>,
+  level: 'info' | 'warn' | 'error' = 'info',
+): void {
+  const entry = {
+    event,
+    timestamp: Date.now(),
+    userId: getUserId(),
+    ...details,
+  }
+  if (level === 'error') console.error('[sync]', event, entry)
+  else if (level === 'warn') console.warn('[sync]', event, entry)
+  else console.info('[sync]', event, entry)
+}
 
 interface QueueSummary {
   pendingOps: number
@@ -119,9 +159,11 @@ function markSyncRecovered(): void {
     lastRecoveredSyncAt: Date.now(),
     lastErrorAt: null,
     lastErrorMessage: null,
+    lastErrorCategory: null,
     lastBlockedTable: null,
     retryScheduledAt: null,
     consecutiveFailures: 0,
+    autoRepairInProgress: false,
   })
 }
 
@@ -133,9 +175,11 @@ function markSyncHealthy(): void {
     lastSuccessfulSyncAt: Date.now(),
     lastErrorAt: null,
     lastErrorMessage: null,
+    lastErrorCategory: null,
     lastBlockedTable: null,
     retryScheduledAt: null,
     consecutiveFailures: 0,
+    autoRepairInProgress: false,
   })
 }
 
@@ -181,13 +225,13 @@ function enqueue(op: OfflineOp): void {
   const queue = compactQueue(loadQueue(), op)
   if (queue.length >= MAX_QUEUE_SIZE) {
     const dropped = queue.shift()
-    console.warn('[sync] queue limit reached, dropping oldest op', {
+    syncLog('queue:overflow', {
       maxQueueSize: MAX_QUEUE_SIZE,
       droppedTable: dropped?.table,
       droppedAction: dropped?.action,
       droppedId: typeof dropped?.payload?.id === 'string' ? dropped.payload.id : null,
       droppedEnqueuedAt: dropped?.enqueuedAt ?? null,
-    })
+    }, 'warn')
   }
   saveQueue(queue)
 }
@@ -205,100 +249,27 @@ function isEnabled(): boolean {
   return Boolean(url)
 }
 
-function isLikelyOfflineError(error: unknown): boolean {
-  if (!navigator.onLine) return true
-
-  const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase()
-  return (
-    message.includes('failed to fetch') ||
-    message.includes('networkerror') ||
-    message.includes('network request failed') ||
-    message.includes('load failed') ||
-    message.includes('offline') ||
-    message.includes('timed out') ||
-    message.includes('timeout')
-  )
-}
-
-function isRetryableAuthError(error: unknown): boolean {
-  const obj = error as Record<string, unknown> | null
-  if (!obj) return false
-
-  const statusCode = typeof obj.status === 'number' ? obj.status : null
-  if (statusCode !== 401) return false
-
-  const message = (
-    (error instanceof Error ? error.message : '') +
-    (typeof obj.message === 'string' ? obj.message : '') +
-    (typeof obj.details === 'string' ? obj.details : '') +
-    (typeof obj.hint === 'string' ? obj.hint : '')
-  ).toLowerCase()
-
-  if (message.includes('invalid api key') || message.includes('anon key')) {
-    return false
-  }
-
-  return (
-    message.includes('jwt') ||
-    message.includes('token') ||
-    message.includes('session') ||
-    message.includes('expired') ||
-    message.includes('auth')
-  )
-}
-
-/**
- * Detecta errores NON-RETRIABLE: tablas inexistentes, schema incorrecto,
- * errores de auth/RLS o configuración de Supabase.
- * En estos casos no tiene sentido encolar ni reintentar — se descartan silenciosamente.
- */
-function isInfrastructureError(error: unknown): boolean {
-  const obj = error as Record<string, unknown> | null
-  if (!obj) return false
-
-  // PostgreSQL error code 42P01 = undefined_table
-  if (typeof obj.code === 'string' && obj.code === '42P01') return true
-
-  // Supabase PostgREST errors (PGRST*) — incluye tabla no encontrada, schema inválido, etc.
-  if (typeof obj.code === 'string' && obj.code.startsWith('PGRST')) return true
-
-  // HTTP 4xx de Supabase que no son recuperables
-  const statusCode = typeof obj.status === 'number' ? obj.status : null
-  if (statusCode === 401) return !isRetryableAuthError(error)
-  if (statusCode === 403 || statusCode === 404) return true
-
-  const message = (
-    (error instanceof Error ? error.message : '') +
-    (typeof obj.message === 'string' ? obj.message : '') +
-    (typeof obj.details === 'string' ? obj.details : '') +
-    (typeof obj.hint === 'string' ? obj.hint : '')
-  ).toLowerCase()
-
-  return (
-    (message.includes('relation') && message.includes('does not exist')) ||
-    message.includes('undefined_table') ||
-    (message.includes('schema') && message.includes('not found')) ||
-    message.includes('invalid api key') ||
-    message.includes('anon key') ||
-    message.includes('not authorized') ||
-    (message.includes('permission') && message.includes('denied')) ||
-    message.includes('does not have permission')
-  )
-}
 
 function applySyncFailure(error: unknown, fallbackMessage: string, blockedTable?: SupabaseTable | null): void {
-  const message = getSyncErrorMessage(error, fallbackMessage)
-  const status = isInfrastructureError(error)
-    ? 'error'
-    : isLikelyOfflineError(error)
-      ? 'offline'
-      : 'error'
+  const errorInfo = classifySyncError(error, (blockedTable ?? undefined) as SupabaseTable | undefined)
+  const message = errorInfo.userMessage || getSyncErrorMessage(error, fallbackMessage)
+  const status = errorInfo.category === 'network_error'
+    ? 'offline' as const
+    : 'error' as const
   const failureCount = (syncStoreState().syncDetails.consecutiveFailures ?? 0) + 1
-  const retryMs = status === 'offline'
+  const retryMs = errorInfo.retriable
     ? Math.min(60000, failureCount <= 1 ? 15000 : failureCount <= 3 ? 30000 : 60000)
-    : status === 'error' && !isInfrastructureError(error)
-      ? Math.min(60000, failureCount <= 1 ? 15000 : failureCount <= 3 ? 30000 : 60000)
-      : null
+    : null
+
+  syncLog('sync:failure', {
+    errorCategory: errorInfo.category,
+    retriable: errorInfo.retriable,
+    autoRepairable: errorInfo.autoRepairable,
+    technicalMessage: errorInfo.technicalMessage,
+    blockedTable,
+    failureCount,
+    retryMs,
+  }, 'error')
 
   refreshQueueDiagnostics()
   syncStoreState().setSyncStatus(status, message)
@@ -306,14 +277,16 @@ function applySyncFailure(error: unknown, fallbackMessage: string, blockedTable?
     syncAttemptInFlight: false,
     lastErrorAt: Date.now(),
     lastErrorMessage: message,
+    lastErrorCategory: errorInfo.category,
     lastBlockedTable: blockedTable ?? null,
     retryScheduledAt: retryMs != null ? Date.now() + retryMs : null,
     consecutiveFailures: failureCount,
+    autoRepairInProgress: errorInfo.autoRepairable,
   })
 }
 
 function logAthleteProfileSync(event: string, details: Record<string, unknown>): void {
-  console.info('[sync][athlete_profiles]', event, details)
+  syncLog(`athlete_profiles:${event}`, details)
 }
 
 async function drainQueue(): Promise<boolean> {
@@ -322,6 +295,7 @@ async function drainQueue(): Promise<boolean> {
   }
 
   activeDrainQueuePromise = (async () => {
+  const attemptId = ++syncAttemptCounter
   startSyncAttempt()
   const queue = loadQueue()
   const userId = getUserId()
@@ -342,20 +316,36 @@ async function drainQueue(): Promise<boolean> {
 
   const remaining: OfflineOp[] = []
   const initialCount = currentUserQueue.length
+  let lastFailureInfo: SyncErrorInfo | null = null
 
   for (const op of currentUserQueue) {
+    const opRetryCount = op.retryCount ?? 0
+
+    // Drop ops that have exceeded max retries
+    if (opRetryCount >= MAX_RETRIES_PER_OP) {
+      syncLog('queue:op_expired', {
+        attemptId,
+        table: op.table,
+        action: op.action,
+        entityId: typeof op.payload.id === 'string' ? op.payload.id : null,
+        retryCount: opRetryCount,
+        lastErrorCategory: op.lastErrorCategory,
+      }, 'warn')
+      continue // drop it
+    }
+
     try {
       if (op.action === 'upsert') {
         if (op.table === 'athlete_profiles') {
           await upsertAthleteProfileRow(op.payload, op.userId)
         } else {
-          const { error } = await supabase.from(op.table).upsert(op.payload as never)
+          const { error } = await getSupabase().from(op.table).upsert(op.payload as never)
           if (error) throw error
         }
       } else {
         const payload = op.payload as { id: string; userId?: string }
         const targetUserId = payload.userId ?? op.userId
-        const { error } = await supabase
+        const { error } = await getSupabase()
           .from(op.table)
           .delete()
           .eq('id', payload.id)
@@ -366,27 +356,85 @@ async function drainQueue(): Promise<boolean> {
         }
       }
     } catch (error) {
-      if (isInfrastructureError(error)) {
-        // Tabla inexistente u otro error de schema: descartar la op silenciosamente.
-        // No tiene sentido re-encolar — seguirá fallando hasta que la infra esté lista.
-        console.warn('[sync] discarding op due to infrastructure error:', op.table, error)
+      const errorInfo = classifySyncError(error, op.table)
+
+      syncLog('queue:op_failed', {
+        attemptId,
+        table: op.table,
+        action: op.action,
+        entityId: typeof op.payload.id === 'string' ? op.payload.id : null,
+        errorCategory: errorInfo.category,
+        retriable: errorInfo.retriable,
+        autoRepairable: errorInfo.autoRepairable,
+        retryCount: opRetryCount,
+        technicalMessage: errorInfo.technicalMessage,
+      }, 'warn')
+
+      // Non-retriable errors: drop the op permanently
+      if (!errorInfo.retriable && !errorInfo.autoRepairable) {
+        syncLog('queue:op_dropped', {
+          attemptId,
+          table: op.table,
+          reason: errorInfo.category,
+          technicalMessage: errorInfo.technicalMessage,
+        }, 'warn')
+        lastFailureInfo = errorInfo
         continue
       }
-      const fallback =
-        op.table === 'athlete_profiles'
-          ? classifyAthleteProfileSyncError(error)
-          : 'No se pudo subir la cola pendiente.'
-      applySyncFailure(error, fallback, op.table)
-      remaining.push(op)
-      break
+
+      // Auto-repairable: attempt repair inline for athlete_profiles duplicates
+      if (errorInfo.autoRepairable && op.table === 'athlete_profiles') {
+        try {
+          syncStoreState().setSyncDetails({ autoRepairInProgress: true })
+          const remoteRows = await fetchAthleteProfileRows(op.userId)
+          if (remoteRows.length > 1) {
+            const profileRow = toAthleteProfileSyncRow(op.payload)
+            await repairRemoteAthleteProfileRows(op.userId, remoteRows, profileRow)
+            syncLog('queue:op_repaired', {
+              attemptId,
+              table: op.table,
+              repairedDuplicates: remoteRows.length,
+            })
+            syncStoreState().setSyncDetails({
+              autoRepairInProgress: false,
+              lastAutoRepairAt: Date.now(),
+            })
+            continue // repaired successfully, op consumed
+          }
+          syncStoreState().setSyncDetails({ autoRepairInProgress: false })
+        } catch (repairError) {
+          syncLog('queue:repair_failed', {
+            attemptId,
+            table: op.table,
+            repairError: repairError instanceof Error ? repairError.message : String(repairError),
+          }, 'error')
+          syncStoreState().setSyncDetails({ autoRepairInProgress: false })
+        }
+      }
+
+      // Retriable: keep in queue with incremented retry count
+      remaining.push({
+        ...op,
+        retryCount: opRetryCount + 1,
+        lastErrorCategory: errorInfo.category,
+      })
+      lastFailureInfo = errorInfo
+      // IMPORTANT: continue processing other ops instead of breaking
     }
   }
 
   saveQueue([...otherUsersQueue, ...remaining])
+
   if (remaining.length === 0 && initialCount > 0) {
     markSyncRecovered()
   } else if (remaining.length === 0) {
     markSyncHealthy()
+  } else if (lastFailureInfo) {
+    applySyncFailure(
+      lastFailureInfo.originalError,
+      lastFailureInfo.userMessage,
+      remaining[0]?.table ?? null,
+    )
   }
   return remaining.length === 0
   })()
@@ -418,7 +466,10 @@ export function pruneStaleQueue(userId: string, maxAgeMs = 7 * 24 * 60 * 60 * 10
   const queue = loadQueue()
   const pruned = queue.filter((op) => op.userId !== userId || now - op.enqueuedAt < maxAgeMs)
   if (pruned.length !== queue.length) {
-    console.info(`[sync] pruned ${queue.length - pruned.length} stale ops from queue`)
+    syncLog('queue:pruned', {
+      prunedCount: queue.length - pruned.length,
+      remainingCount: pruned.length,
+    })
     saveQueue(pruned)
   }
 }
@@ -444,7 +495,7 @@ async function upsertRow(table: SupabaseTable, row: Record<string, unknown>): Pr
     if (table === 'athlete_profiles') {
       await upsertAthleteProfileRow(row, userId)
     } else {
-      const { error } = await supabase.from(table).upsert(row as never)
+      const { error } = await getSupabase().from(table).upsert(row as never)
       if (error) throw error
     }
     const queueDrained = await drainQueue()
@@ -453,6 +504,7 @@ async function upsertRow(table: SupabaseTable, row: Record<string, unknown>): Pr
         lastSuccessfulSyncAt: Date.now(),
         lastErrorAt: null,
         lastErrorMessage: null,
+        lastErrorCategory: null,
         lastBlockedTable: null,
         retryScheduledAt: null,
         consecutiveFailures: 0,
@@ -460,17 +512,14 @@ async function upsertRow(table: SupabaseTable, row: Record<string, unknown>): Pr
       finishSyncAttempt('idle')
     }
   } catch (error) {
-    if (isInfrastructureError(error)) {
-      console.warn('[sync] upsertRow infrastructure error, skipping queue:', table, error)
-      finishSyncAttempt('idle')
+    const errorInfo = classifySyncError(error, table)
+    if (!errorInfo.retriable && !errorInfo.autoRepairable) {
+      syncLog('upsertRow:non_retriable', { table, category: errorInfo.category }, 'warn')
+      applySyncFailure(error, errorInfo.userMessage, table)
       return
     }
-    const fallback =
-      table === 'athlete_profiles'
-        ? classifyAthleteProfileSyncError(error)
-        : `No se pudo sincronizar ${table}.`
     enqueue({ userId, table, action: 'upsert', payload: row, enqueuedAt: Date.now() })
-    applySyncFailure(error, fallback, table)
+    applySyncFailure(error, errorInfo.userMessage, table)
   }
 }
 
@@ -491,7 +540,7 @@ async function deleteRow(table: SupabaseTable, id: string): Promise<void> {
 
   startSyncAttempt()
   try {
-    const { error } = await supabase.from(table).delete().eq('id', id).eq('user_id', userId)
+    const { error } = await getSupabase().from(table).delete().eq('id', id).eq('user_id', userId)
     if (error) throw error
     if (table === 'sessions') rememberSessionDeleteTombstone(userId, id)
     const queueDrained = await drainQueue()
@@ -500,6 +549,7 @@ async function deleteRow(table: SupabaseTable, id: string): Promise<void> {
         lastSuccessfulSyncAt: Date.now(),
         lastErrorAt: null,
         lastErrorMessage: null,
+        lastErrorCategory: null,
         lastBlockedTable: null,
         retryScheduledAt: null,
         consecutiveFailures: 0,
@@ -507,9 +557,10 @@ async function deleteRow(table: SupabaseTable, id: string): Promise<void> {
       finishSyncAttempt('idle')
     }
   } catch (error) {
-    if (isInfrastructureError(error)) {
-      console.warn('[sync] deleteRow infrastructure error, skipping queue:', table, error)
-      finishSyncAttempt('idle')
+    const errorInfo = classifySyncError(error, table)
+    if (!errorInfo.retriable && !errorInfo.autoRepairable) {
+      syncLog('deleteRow:non_retriable', { table, category: errorInfo.category }, 'warn')
+      applySyncFailure(error, errorInfo.userMessage, table)
       return
     }
     if (table === 'sessions') rememberSessionDeleteTombstone(userId, id)
@@ -638,7 +689,7 @@ function rowToCoachProposal(row: Record<string, unknown>): CoachProposal {
 }
 
 async function fetchAthleteProfileRows(userId: string): Promise<AthleteProfileSyncRow[]> {
-  const { data, error } = await supabase
+  const { data, error } = await getSupabase()
     .from('athlete_profiles')
     .select('id, user_id, coach_memory, updated_at, data')
     .eq('user_id', userId)
@@ -651,7 +702,7 @@ async function deleteAthleteProfileRowsById(userId: string, ids: string[]): Prom
   const normalizedIds = [...new Set(ids)].filter(Boolean)
   if (normalizedIds.length === 0) return
 
-  const { error } = await supabase
+  const { error } = await getSupabase()
     .from('athlete_profiles')
     .delete()
     .in('id', normalizedIds)
@@ -687,12 +738,13 @@ async function repairRemoteAthleteProfileRows(
   })
 
   if (keeper) {
-    const { error: updateError } = await supabase
+    const normalized = normalizeAthleteProfilePayload(nextRow)
+    const { error: updateError } = await getSupabase()
       .from('athlete_profiles')
       .update({
-        coach_memory: nextRow.coach_memory,
-        updated_at: nextRow.updated_at,
-        data: nextRow.data,
+        coach_memory: normalized.coach_memory,
+        updated_at: normalized.updated_at,
+        data: normalized.data,
       } as never)
       .eq('id', keeper.id)
       .eq('user_id', userId)
@@ -701,14 +753,15 @@ async function repairRemoteAthleteProfileRows(
       throw new Error(classifyAthleteProfileSyncError(updateError))
     }
   } else {
-    const { error: insertError } = await supabase
+    const normalized = normalizeAthleteProfilePayload(nextRow)
+    const { error: insertError } = await getSupabase()
       .from('athlete_profiles')
       .insert({
-        id: nextRow.id,
+        id: normalized.id,
         user_id: userId,
-        coach_memory: nextRow.coach_memory,
-        updated_at: nextRow.updated_at,
-        data: nextRow.data,
+        coach_memory: normalized.coach_memory,
+        updated_at: normalized.updated_at,
+        data: normalized.data,
       } as never)
 
     if (insertError) {
@@ -734,12 +787,19 @@ async function repairRemoteAthleteProfileRows(
   return nextRow
 }
 
+/**
+ * Idempotent write for athlete_profiles.
+ * Strategy:
+ * 1. If unique constraint on user_id exists → use upsert with onConflict
+ * 2. If duplicates detected → repair first, then write
+ * 3. Fallback to fetch-then-update for compatibility
+ */
 async function persistAthleteProfileRow(
   row: Record<string, unknown>,
   userId: string,
   remoteRows?: AthleteProfileSyncRow[],
 ): Promise<void> {
-  const profileRow = toAthleteProfileSyncRow(row)
+  const profileRow = normalizeAthleteProfilePayload(row)
   const existingRows = remoteRows ?? await fetchAthleteProfileRows(userId)
 
   if (existingRows.length > 1) {
@@ -750,12 +810,21 @@ async function persistAthleteProfileRow(
   const existingRow = existingRows[0]
 
   if (!existingRow) {
-    const { error } = await supabase.from('athlete_profiles').insert(profileRow as never)
+    // Try upsert with onConflict first (requires unique constraint on user_id)
+    const { error } = await getSupabase()
+      .from('athlete_profiles')
+      .upsert({
+        id: profileRow.id,
+        user_id: userId,
+        coach_memory: profileRow.coach_memory,
+        updated_at: profileRow.updated_at,
+        data: profileRow.data,
+      } as never, { onConflict: 'user_id' })
     if (error) throw error
     return
   }
 
-  const { error } = await supabase
+  const { error } = await getSupabase()
     .from('athlete_profiles')
     .update({
       coach_memory: profileRow.coach_memory,
@@ -769,27 +838,31 @@ async function persistAthleteProfileRow(
 }
 
 async function upsertAthleteProfileRow(row: Record<string, unknown>, userId: string): Promise<void> {
-  try {
-    const profileRow = toAthleteProfileSyncRow(row)
-    const remoteRows = await fetchAthleteProfileRows(userId)
+  const profileRow = normalizeAthleteProfilePayload(row)
+  const remoteRows = await fetchAthleteProfileRows(userId)
 
-    logAthleteProfileSync('push:attempt', {
-      payloadId: profileRow.id,
-      payloadUpdatedAt: profileRow.updated_at,
-      remoteRows: remoteRows.length,
-      remoteIds: remoteRows.map((item) => item.id),
-      payloadKeys: Object.keys((profileRow.data as Record<string, unknown> | null) ?? {}),
-    })
+  logAthleteProfileSync('push:attempt', {
+    payloadId: profileRow.id,
+    payloadUpdatedAt: profileRow.updated_at,
+    remoteRows: remoteRows.length,
+    remoteIds: remoteRows.map((item) => item.id),
+    payloadKeys: Object.keys((profileRow.data as Record<string, unknown> | null) ?? {}),
+  })
 
-    if (remoteRows.length > 1) {
+  if (remoteRows.length > 1) {
+    syncStoreState().setSyncDetails({ autoRepairInProgress: true })
+    try {
       await repairRemoteAthleteProfileRows(userId, remoteRows, profileRow)
-      return
+    } finally {
+      syncStoreState().setSyncDetails({
+        autoRepairInProgress: false,
+        lastAutoRepairAt: Date.now(),
+      })
     }
-
-    await persistAthleteProfileRow(profileRow, userId, remoteRows)
-  } catch (error) {
-    throw new Error(classifyAthleteProfileSyncError(error))
+    return
   }
+
+  await persistAthleteProfileRow(profileRow, userId, remoteRows)
 }
 
 export async function pushSession(session: Session): Promise<void> {
@@ -843,7 +916,7 @@ export async function pushAthleteProfile(profile: AthleteProfile): Promise<void>
 }
 
 async function fetchAll<T>(table: SupabaseTable, userId: string): Promise<T[]> {
-  const { data, error } = await supabase
+  const { data, error } = await getSupabase()
     .from(table)
     .select('*')
     .eq('user_id', userId)
@@ -921,9 +994,14 @@ export async function runFullSync(userId: string): Promise<void> {
         })
       }
     } catch (error) {
-      if (isInfrastructureError(error)) {
-        console.warn('[sync] runFullSync infrastructure error (tables not ready), skipping:', error)
-        finishSyncAttempt('idle')
+      const errorInfo = classifySyncError(error)
+      if (!errorInfo.retriable && !errorInfo.autoRepairable) {
+        syncLog('runFullSync:non_retriable', { category: errorInfo.category }, 'warn')
+        applySyncFailure(
+          error,
+          errorInfo.userMessage,
+          (syncStoreState().syncDetails.pendingTables[0] as SupabaseTable | undefined) ?? null,
+        )
         return
       }
       const failureCountNow = syncStoreState().syncDetails.consecutiveFailures ?? 0
@@ -931,7 +1009,7 @@ export async function runFullSync(userId: string): Promise<void> {
         // A lower layer (drainQueue) already recorded this failure — avoid double-counting.
         return
       }
-      console.error('[sync] runFullSync error:', error)
+      syncLog('runFullSync:error', { category: errorInfo.category, technicalMessage: errorInfo.technicalMessage }, 'error')
       applySyncFailure(
         error,
         'Error de sincronizacion',
@@ -1408,9 +1486,12 @@ function clearSyncArtifactsForUser(userId: string): void {
     pendingTables: [],
     lastErrorAt: null,
     lastErrorMessage: null,
+    lastErrorCategory: null,
     lastBlockedTable: null,
     retryScheduledAt: null,
     consecutiveFailures: 0,
+    autoRepairInProgress: false,
+    lastAutoRepairAt: null,
   })
 }
 
@@ -1554,19 +1635,19 @@ export async function migrateLocalDataToCloud(userId: string): Promise<void> {
 
     const migrationResults = await Promise.all([
       sessionRows.length > 0
-        ? supabase.from('sessions').upsert(sessionRows as never).then((result) => ({ table: 'sessions', error: result.error }))
+        ? getSupabase().from('sessions').upsert(sessionRows as never).then((result) => ({ table: 'sessions', error: result.error }))
         : Promise.resolve({ table: 'sessions', error: null }),
       dayLogRows.length > 0
-        ? supabase.from('day_logs').upsert(dayLogRows as never).then((result) => ({ table: 'day_logs', error: result.error }))
+        ? getSupabase().from('day_logs').upsert(dayLogRows as never).then((result) => ({ table: 'day_logs', error: result.error }))
         : Promise.resolve({ table: 'day_logs', error: null }),
       weekRows.length > 0
-        ? supabase.from('week_summaries').upsert(weekRows as never).then((result) => ({ table: 'week_summaries', error: result.error }))
+        ? getSupabase().from('week_summaries').upsert(weekRows as never).then((result) => ({ table: 'week_summaries', error: result.error }))
         : Promise.resolve({ table: 'week_summaries', error: null }),
       chatRows.length > 0
-        ? supabase.from('chat_messages').upsert(chatRows as never).then((result) => ({ table: 'chat_messages', error: result.error }))
+        ? getSupabase().from('chat_messages').upsert(chatRows as never).then((result) => ({ table: 'chat_messages', error: result.error }))
         : Promise.resolve({ table: 'chat_messages', error: null }),
       proposalRows.length > 0
-        ? supabase.from('coach_proposals').upsert(proposalRows as never).then((result) => ({ table: 'coach_proposals', error: result.error }))
+        ? getSupabase().from('coach_proposals').upsert(proposalRows as never).then((result) => ({ table: 'coach_proposals', error: result.error }))
         : Promise.resolve({ table: 'coach_proposals', error: null }),
       profileRows.length > 0
         ? persistAthleteProfileRow(profileRows[profileRows.length - 1], userId).then(() => ({ table: 'athlete_profiles', error: null }))
@@ -1607,7 +1688,7 @@ export async function clearSelectedRemoteAppData(
 
   for (const { key, table } of tableMap) {
     if (selection[key]) {
-      const { error } = await supabase.from(table).delete().eq('user_id', userId)
+      const { error } = await getSupabase().from(table).delete().eq('user_id', userId)
       if (error) {
         failures.push(table)
       }
@@ -1636,7 +1717,7 @@ export async function wipeRemoteAndLocalAppData(userId: string): Promise<void> {
   ]
 
   for (const table of tables) {
-    const { error } = await supabase.from(table).delete().eq('user_id', userId)
+    const { error } = await getSupabase().from(table).delete().eq('user_id', userId)
     if (error) throw error
   }
 

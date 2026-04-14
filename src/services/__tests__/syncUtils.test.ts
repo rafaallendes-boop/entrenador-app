@@ -17,12 +17,13 @@ import {
 describe('syncUtils', () => {
   it('classifies schema mismatch errors with a clear message', () => {
     const error = new Error("Could not find the 'data' column of 'athlete_profiles' in the schema cache")
-    expect(classifyAthleteProfileSyncError(error)).toContain('Schema remoto de athlete_profiles incompatible')
+    const result = classifyAthleteProfileSyncError(error)
+    expect(result).toContain('Schema mismatch')
   })
 
   it('classifies RLS and duplicate profile errors distinctly', () => {
-    expect(classifyAthleteProfileSyncError(new Error('new row violates row-level security policy'))).toContain('RLS/permisos')
-    expect(classifyAthleteProfileSyncError(new Error('duplicate key value violates unique constraint'))).toContain('duplicado')
+    expect(classifyAthleteProfileSyncError(new Error('new row violates row-level security policy'))).toContain('RLS/permission error')
+    expect(classifyAthleteProfileSyncError(new Error('duplicate key value violates unique constraint'))).toContain('Duplicate/conflict')
   })
 
   it('round-trips athlete profile rows while keeping local id canonical', () => {

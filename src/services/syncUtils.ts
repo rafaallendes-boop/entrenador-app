@@ -8,13 +8,292 @@ export type SupabaseTable =
   | 'coach_proposals'
   | 'athlete_profiles'
 
+// ─── Typed error classification ──────────────────────────────────────────────
+
+export type SyncErrorCategory =
+  | 'duplicate_remote_profile'
+  | 'schema_mismatch'
+  | 'network_error'
+  | 'auth_error'
+  | 'validation_error'
+  | 'supabase_not_configured'
+  | 'rls_error'
+  | 'unknown_error'
+
+export interface SyncErrorInfo {
+  category: SyncErrorCategory
+  /** Whether this error should be retried automatically */
+  retriable: boolean
+  /** Whether the system can self-repair without user intervention */
+  autoRepairable: boolean
+  /** User-facing message (non-technical) */
+  userMessage: string
+  /** Technical details for diagnostics */
+  technicalMessage: string
+  /** The original underlying error */
+  originalError: unknown
+}
+
+/**
+ * Classify a sync error into a typed category with actionable metadata.
+ * This enables programmatic decisions about retry, repair, and UI messaging.
+ */
+export function classifySyncError(error: unknown, table?: SupabaseTable): SyncErrorInfo {
+  // Null/undefined supabase client or custom category
+  const isCustomNull = typeof error === 'object' && error !== null && (error as Record<string, unknown>).category === 'supabase_not_configured'
+  const isTypeNull = error instanceof TypeError && /cannot read properties of null/i.test(error.message)
+
+  if (isCustomNull || isTypeNull) {
+    return {
+      category: 'supabase_not_configured',
+      retriable: false,
+      autoRepairable: false,
+      userMessage: 'La conexión a la nube no está configurada.',
+      technicalMessage: 'Supabase client is null — check VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.',
+      originalError: error,
+    }
+  }
+
+  const message = extractErrorMessage(error)
+  const normalized = message.toLowerCase()
+  const statusCode = extractStatusCode(error)
+
+  // Network / offline errors
+  if (isNetworkErrorMessage(normalized)) {
+    return {
+      category: 'network_error',
+      retriable: true,
+      autoRepairable: false,
+      userMessage: 'Sin conexión. Tus cambios se subirán automáticamente cuando vuelvas online.',
+      technicalMessage: `Network error: ${message}`,
+      originalError: error,
+    }
+  }
+
+  // Auth errors
+  if (statusCode === 401 || statusCode === 403) {
+    const isRetryableAuth = isRetryableAuthMessage(normalized)
+    if (statusCode === 401 && isRetryableAuth) {
+      return {
+        category: 'auth_error',
+        retriable: true,
+        autoRepairable: false,
+        userMessage: 'Tu sesión expiró. Reintentando automáticamente.',
+        technicalMessage: `Retryable auth error (${statusCode}): ${message}`,
+        originalError: error,
+      }
+    }
+    if (isRlsErrorMessage(normalized)) {
+      return {
+        category: 'rls_error',
+        retriable: false,
+        autoRepairable: false,
+        userMessage: 'No se pudo acceder a tus datos en la nube. Puede ser un problema de permisos.',
+        technicalMessage: `RLS/permission error on ${table ?? 'unknown'}: ${message}`,
+        originalError: error,
+      }
+    }
+    return {
+      category: 'auth_error',
+      retriable: false,
+      autoRepairable: false,
+      userMessage: 'Problema de autenticación. Intenta cerrar sesión y volver a entrar.',
+      technicalMessage: `Non-retryable auth error (${statusCode}): ${message}`,
+      originalError: error,
+    }
+  }
+
+  // RLS errors without HTTP status code (e.g. thrown directly from PostgREST message)
+  if (isRlsErrorMessage(normalized)) {
+    return {
+      category: 'rls_error',
+      retriable: false,
+      autoRepairable: false,
+      userMessage: 'No se pudo acceder a tus datos en la nube. Puede ser un problema de permisos.',
+      technicalMessage: `RLS/permission error on ${table ?? 'unknown'}: ${message}`,
+      originalError: error,
+    }
+  }
+
+  // Schema mismatch
+  if (isSchemaErrorMessage(normalized)) {
+    return {
+      category: 'schema_mismatch',
+      retriable: false,
+      autoRepairable: false,
+      userMessage: 'Hay un problema de configuración en el servidor. Contacta soporte.',
+      technicalMessage: `Schema mismatch on ${table ?? 'unknown'}: ${message}`,
+      originalError: error,
+    }
+  }
+
+  // Duplicate key / conflict
+  if (isDuplicateErrorMessage(normalized)) {
+    return {
+      category: 'duplicate_remote_profile',
+      retriable: false,
+      autoRepairable: table === 'athlete_profiles',
+      userMessage: table === 'athlete_profiles'
+        ? 'Reparando un perfil duplicado en la nube.'
+        : 'Conflicto de datos duplicados.',
+      technicalMessage: `Duplicate/conflict on ${table ?? 'unknown'}: ${message}`,
+      originalError: error,
+    }
+  }
+
+  // Validation / data errors (4xx that aren't auth)
+  if (statusCode != null && statusCode >= 400 && statusCode < 500) {
+    return {
+      category: 'validation_error',
+      retriable: false,
+      autoRepairable: false,
+      userMessage: 'Los datos enviados no son válidos. Intenta guardar de nuevo.',
+      technicalMessage: `Validation error (${statusCode}) on ${table ?? 'unknown'}: ${message}`,
+      originalError: error,
+    }
+  }
+
+  // PGRST errors (PostgREST — infrastructure)
+  if (isPgrstError(error)) {
+    return {
+      category: 'schema_mismatch',
+      retriable: false,
+      autoRepairable: false,
+      userMessage: 'Hay un problema de configuración en el servidor.',
+      technicalMessage: `PostgREST error on ${table ?? 'unknown'}: ${message}`,
+      originalError: error,
+    }
+  }
+
+  // Fallback
+  return {
+    category: 'unknown_error',
+    retriable: true,
+    autoRepairable: false,
+    userMessage: 'No se pudo sincronizar. Reintentando.',
+    technicalMessage: `Unknown sync error on ${table ?? 'unknown'}: ${message}`,
+    originalError: error,
+  }
+}
+
+// ─── Error message helpers ───────────────────────────────────────────────────
+
+function extractErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message.trim()) return error.message
+  if (typeof error === 'object' && error !== null) {
+    const obj = error as Record<string, unknown>
+    if (typeof obj.message === 'string' && obj.message.trim()) return obj.message
+    if (typeof obj.details === 'string' && obj.details.trim()) return obj.details
+  }
+  return String(error)
+}
+
+function extractStatusCode(error: unknown): number | null {
+  if (typeof error !== 'object' || error === null) return null
+  const obj = error as Record<string, unknown>
+  if (typeof obj.status === 'number') return obj.status
+  if (typeof obj.code === 'number') return obj.code
+  return null
+}
+
+function isNetworkErrorMessage(normalized: string): boolean {
+  return (
+    (typeof navigator !== 'undefined' && navigator.onLine === false) ||
+    normalized.includes('failed to fetch') ||
+    normalized.includes('networkerror') ||
+    normalized.includes('network request failed') ||
+    normalized.includes('load failed') ||
+    normalized.includes('offline') ||
+    normalized.includes('timed out') ||
+    normalized.includes('timeout')
+  )
+}
+
+function isRetryableAuthMessage(normalized: string): boolean {
+  if (normalized.includes('invalid api key') || normalized.includes('anon key')) {
+    return false
+  }
+  return (
+    normalized.includes('jwt') ||
+    normalized.includes('token') ||
+    normalized.includes('session') ||
+    normalized.includes('expired') ||
+    normalized.includes('auth')
+  )
+}
+
+function isSchemaErrorMessage(normalized: string): boolean {
+  return (
+    normalized.includes("could not find the 'data' column") ||
+    normalized.includes('column athlete_profiles.data does not exist') ||
+    normalized.includes('invalid input syntax for type json') ||
+    normalized.includes('undefined_table') ||
+    (normalized.includes('relation') && normalized.includes('does not exist')) ||
+    (normalized.includes('schema') && normalized.includes('not found')) ||
+    (normalized.includes('column') && normalized.includes('does not exist'))
+  )
+}
+
+function isRlsErrorMessage(normalized: string): boolean {
+  return (
+    normalized.includes('row-level security') ||
+    normalized.includes('permission denied') ||
+    normalized.includes('new row violates row-level security') ||
+    normalized.includes('not authorized') ||
+    (normalized.includes('permission') && normalized.includes('denied')) ||
+    normalized.includes('does not have permission')
+  )
+}
+
+function isDuplicateErrorMessage(normalized: string): boolean {
+  return (
+    normalized.includes('duplicate key') ||
+    normalized.includes('unique constraint') ||
+    normalized.includes('more than one row') ||
+    normalized.includes('json object requested') ||
+    normalized.includes('multiple rows returned') ||
+    (normalized.includes('multiple') && normalized.includes('rows'))
+  )
+}
+
+function isPgrstError(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) return false
+  const obj = error as Record<string, unknown>
+  if (typeof obj.code === 'string' && obj.code.startsWith('PGRST')) return true
+  if (typeof obj.code === 'string' && obj.code === '42P01') return true
+  return false
+}
+
+// ─── Legacy error helpers (backwards compatible) ─────────────────────────────
+
+export function getSyncErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message.trim()) return error.message
+  return fallback
+}
+
+export function classifyAthleteProfileSyncError(error: unknown): string {
+  const info = classifySyncError(error, 'athlete_profiles')
+  return info.technicalMessage
+}
+
+// ─── Offline op types ────────────────────────────────────────────────────────
+
 export interface OfflineOp {
   userId: string
   table: SupabaseTable
   action: 'upsert' | 'delete'
   payload: Record<string, unknown>
   enqueuedAt: number
+  /** Number of times this op has been attempted and failed */
+  retryCount?: number
+  /** Error category from last failed attempt */
+  lastErrorCategory?: SyncErrorCategory
 }
+
+/** Maximum retries per queued op before it's considered permanently failed */
+export const MAX_RETRIES_PER_OP = 5
+
+// ─── Athlete profile sync row ────────────────────────────────────────────────
 
 export interface AthleteProfileSyncRow extends Record<string, unknown> {
   id: string
@@ -24,43 +303,14 @@ export interface AthleteProfileSyncRow extends Record<string, unknown> {
   data: Record<string, unknown> | null
 }
 
-export function getSyncErrorMessage(error: unknown, fallback: string): string {
-  if (error instanceof Error && error.message.trim()) return error.message
-  return fallback
-}
-
-export function classifyAthleteProfileSyncError(error: unknown): string {
-  const message = getSyncErrorMessage(error, 'Error desconocido de athlete_profiles.')
-  const normalized = message.toLowerCase()
-
-  if (
-    normalized.includes("could not find the 'data' column") ||
-    normalized.includes('column athlete_profiles.data does not exist') ||
-    normalized.includes('invalid input syntax for type json') ||
-    normalized.includes('json')
-  ) {
-    return 'Schema remoto de athlete_profiles incompatible. Falta la estructura esperada del perfil en Supabase.'
-  }
-
-  if (
-    normalized.includes('row-level security') ||
-    normalized.includes('permission denied') ||
-    normalized.includes('new row violates row-level security')
-  ) {
-    return 'athlete_profiles bloqueado por RLS/permisos. Revisa policies de user_id para select/insert/update/delete.'
-  }
-
-  if (
-    normalized.includes('duplicate key') ||
-    normalized.includes('multiple') ||
-    normalized.includes('more than one row') ||
-    normalized.includes('json object requested')
-  ) {
-    return 'Perfil remoto inconsistente o duplicado. Se detecto un conflicto en athlete_profiles y requiere reparacion.'
-  }
-
-  return `No se pudo sincronizar athlete_profiles. ${message}`
-}
+/** Known columns in the remote athlete_profiles table */
+const ATHLETE_PROFILE_REMOTE_COLUMNS = new Set([
+  'id',
+  'user_id',
+  'coach_memory',
+  'updated_at',
+  'data',
+])
 
 export function athleteProfileToRow(profile: AthleteProfile, userId: string): Record<string, unknown> {
   const { id, coachMemory, updatedAt, ...rest } = profile
@@ -92,6 +342,43 @@ export function toAthleteProfileSyncRow(row: Record<string, unknown>): AthletePr
     data: ((row.data as Record<string, unknown> | null) ?? null),
   }
 }
+
+/**
+ * Normalize and validate an athlete profile payload before sending to Supabase.
+ * - Strips unknown columns that don't exist in the remote schema
+ * - Ensures types are correct (updated_at is number, data is object or null)
+ * - Returns a clean row safe to upsert
+ */
+export function normalizeAthleteProfilePayload(
+  row: Record<string, unknown>,
+): AthleteProfileSyncRow {
+  const normalized = toAthleteProfileSyncRow(row)
+
+  // Strip any keys that aren't in the remote schema
+  const cleaned: Record<string, unknown> = {}
+  for (const key of ATHLETE_PROFILE_REMOTE_COLUMNS) {
+    if (key in normalized) {
+      cleaned[key] = normalized[key]
+    }
+  }
+
+  // Validate updated_at is a finite number
+  const updatedAt = Number(cleaned.updated_at ?? 0)
+  cleaned.updated_at = Number.isFinite(updatedAt) ? updatedAt : Date.now()
+
+  // Ensure data is JSON-serializable (or null)
+  if (cleaned.data != null) {
+    try {
+      JSON.stringify(cleaned.data)
+    } catch {
+      cleaned.data = null
+    }
+  }
+
+  return cleaned as unknown as AthleteProfileSyncRow
+}
+
+// ─── Scoring & canonical selection ───────────────────────────────────────────
 
 export function scoreEntityData(value: unknown): number {
   if (value == null) return 0
@@ -129,6 +416,8 @@ export function pickCanonicalAthleteProfileRow(rows: AthleteProfileSyncRow[]): A
   })
   return sorted[0]
 }
+
+// ─── Queue compaction ────────────────────────────────────────────────────────
 
 export function compactQueue(queue: OfflineOp[], incoming: OfflineOp): OfflineOp[] {
   const next = queue.filter((queued) => !shouldReplaceQueuedOp(queued, incoming))

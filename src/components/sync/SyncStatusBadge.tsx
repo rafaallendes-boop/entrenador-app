@@ -1,4 +1,4 @@
-import { Cloud, CloudOff } from 'lucide-react'
+import { Cloud, CloudOff, Wrench } from 'lucide-react'
 
 interface SyncStatusBadgeProps {
   status: string
@@ -6,6 +6,7 @@ interface SyncStatusBadgeProps {
   compact?: boolean
   pendingOps?: number
   syncAttemptInFlight?: boolean
+  autoRepairInProgress?: boolean
 }
 
 export default function SyncStatusBadge({
@@ -14,9 +15,20 @@ export default function SyncStatusBadge({
   compact = false,
   pendingOps = 0,
   syncAttemptInFlight = false,
+  autoRepairInProgress = false,
 }: SyncStatusBadgeProps) {
   const iconSize = compact ? 11 : 12
   const labelClass = compact ? 'text-[10px]' : 'text-xs'
+
+  // Auto-repair takes visual priority
+  if (autoRepairInProgress) {
+    return (
+      <span className={`inline-flex items-center gap-1 text-brand-light ${labelClass}`}>
+        <Wrench size={iconSize} className="animate-spin" />
+        {compact ? 'Reparando' : 'Reparando perfil'}
+      </span>
+    )
+  }
 
   if (status === 'syncing' || syncAttemptInFlight) {
     return (

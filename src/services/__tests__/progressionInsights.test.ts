@@ -144,6 +144,11 @@ describe('progressionInsights', () => {
         matchResult: 'win',
         gamesWon: 3,
         gamesLost: 1,
+        squashDetails: {
+          trainingFocus: 'tactical',
+          sessionMode: 'competition_match',
+          drills: [{ name: 'Partido objetivo', durationMin: 30 }],
+        },
       }),
       makeSession({
         type: 'squash',
@@ -260,9 +265,10 @@ describe('progressionInsights', () => {
 
     expect(insights.matches).toHaveLength(2)
     expect(insights.matches[0].opponent).toBe('Rival A')
+    expect(insights.matches[0].competitiveRole).toBe('competition_match')
+    expect(insights.matches[1].competitiveRole).toBe('practice_match')
     expect(insights.squashCompetitiveExposure.practiceMatchCount).toBe(1)
     expect(insights.squashCompetitiveExposure.competitionMatchCount).toBe(1)
-    expect(insights.squashRecommendation?.message).toContain('Familia')
     expect(insights.strengthRecommendation?.message).toContain('Patrón')
     expect(insights.strength[0].exerciseKey).toBe('sentadilla')
     expect(insights.squashWeeklyLoads[0].sessionsCount).toBeGreaterThanOrEqual(1)

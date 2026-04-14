@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 
 import type { AthleteProfile, ChatContext, Session } from '../../types'
 
@@ -90,9 +90,15 @@ describe('promptBuilder dynamic cycling and mobility sections', () => {
   let buildCoachSystemPrompt: typeof import('../ai/promptBuilder').buildCoachSystemPrompt
 
   beforeAll(async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-04-10T12:00:00Z'))
     installLocalStorageMock()
     ;({ buildCoachSystemPrompt } = await import('../ai/promptBuilder'))
   }, 120000)
+
+  afterAll(() => {
+    vi.useRealTimers()
+  })
 
   it('does not mark cycling competitionSoon from a squash match alone', () => {
     const profile = makeProfile()

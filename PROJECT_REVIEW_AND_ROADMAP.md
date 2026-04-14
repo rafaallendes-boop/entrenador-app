@@ -1,7 +1,30 @@
 # Entrenador App - Review and Roadmap
 
-Actualizado: 2026-04-12
-Ultimo hito relevante: hardening de planificacion y cleanup defensivo de dashboard/sync tras fixes de roadmap y code review
+Actualizado: 2026-04-14
+Ultimo hito relevante: revision integral del repo y recalibracion del roadmap contra el estado real del codigo
+
+## Revision 2026-04-14 contrastada con codigo
+
+La revision de hoy confirma que el roadmap general sigue bien orientado, pero necesitaba quedar mas pegado a lo que ya existe en el repo y a los riesgos que aun siguen abiertos.
+
+Validado en codigo:
+
+- app React + TypeScript + Vite con rutas reales para dashboard, semana, dia, chat, onboarding, competition plan, import y settings
+- estrategia local-first implementada con Dexie, Zustand y sync a Supabase en `src/services/syncService.ts`
+- auth con Supabase + Google OAuth en `src/services/auth.ts`, `src/store/useAuthStore.ts` y `src/components/auth/AuthGate.tsx`
+- proposals persistidas, aceptables y reversibles desde chat, dashboard y weekly view
+- backup/import/export ya operativo con preview, merge y replace
+- weekly action loop ya unificado y reutilizado en dashboard, weekly view y notificaciones
+- notificaciones, macroplan, analytics de carga y planificacion multideporte ya aterrizados en codigo y no solo en docs
+- suite amplia de tests unitarios en stores, hooks y servicios criticos
+
+Huecos reales detectados en la revision:
+
+- sync ya esta bastante maduro, pero sigue siendo el mayor riesgo por convergencia real entre dispositivos, conflictos simultaneos y cola retenida
+- el coach ya puede actuar, pero todavia falta cerrar mejor el ciclo alerta -> propuesta -> aceptacion -> medicion
+- no hay una capa visible de instrumentacion de uso y aceptacion para weekly loop, proposals o reactivacion
+- la relacion chat/proposal ya esta mejor resuelta, pero aun conviene explicitar mejor la politica de lifecycle y auditoria
+- la beta privada ya es viable tecnicamente, pero todavia falta blindar confianza operativa antes de empujar monetizacion
 
 ## Estado actual del producto
 
@@ -82,6 +105,8 @@ Hoy el producto ya logra seis cosas importantes:
 - sync sigue siendo el mayor riesgo comercial porque falta validacion en uso real duro
 - el loop semanal ya existe, pero todavia falta volverlo mas automatico, medible y coherente con el coach
 - el coach todavia explica mejor de lo que reajusta automaticamente
+- falta observabilidad de producto para saber que CTA, alertas y propuestas realmente mueven comportamiento
+- la capa de conflictos y recovery de sync sigue mas fuerte en logica que en validacion operativa visible
 - el packaging comercial sigue incompleto
 
 ## Estado por area
@@ -208,6 +233,8 @@ Pendiente:
 - conflictos concurrentes mejor resueltos o al menos mejor explicados
 - mensajes todavia mas accionables cuando la cola queda retenida
 - pruebas manuales y semi-automatizadas de convergencia
+- definir si hace falta realtime o si pull oportunista + buen recovery cubre la beta
+- documentar politica de deletes, tombstones y selective wipe como parte del contrato del producto
 
 ### Protocolos y ejecucion de sesion
 
@@ -430,6 +457,23 @@ Bloques:
 
 ## Siguientes pasos recomendados
 
+### Prioridad 0
+
+**Agregar una capa minima de observabilidad operativa**
+
+Alcance:
+
+- matriz visible de validacion de sync
+- registro simple de aceptacion/rechazo de proposals
+- conteo de uso de CTA del weekly loop
+- trazas minimas para saber cuando una cola queda retenida o se recupera
+
+Por que:
+
+- hoy el repo ya tiene mucha logica de producto, pero poca senal sobre que esta funcionando de verdad en uso real
+- esto reduce riesgo antes de abrir mas superficie o sumar complejidad
+- varias decisiones del roadmap ya no deberian tomarse por intuicion sino por uso real
+
 ### Prioridad 1
 
 **Validar y blindar sync entre movil y escritorio**
@@ -441,6 +485,8 @@ Alcance:
 - cola retenida
 - convergencia despues de volver online
 - conflictos de edicion simultanea del mismo objeto
+- wipe selectivo y wipe total con cola pendiente
+- import/export como recovery complementario frente a fallos reales
 
 Por que:
 
@@ -484,7 +530,28 @@ Por que:
 - el loop ya existe y ahora hay que volverlo confiable y medible
 - esto define si la retencion semanal es real o solo potencial
 
+Entrega concreta recomendada:
+
+- guardar origen del CTA y resultado del flujo
+- medir aperturas de dashboard, weekly view y chat con intencion explicita
+- detectar si las alertas fuertes terminan en accion, rechazo o abandono
+
 ### Prioridad 4
+
+**Cerrar mejor el lifecycle de proposals y ajustes automaticos**
+
+Alcance:
+
+- definir reglas claras para proposals huerfanas, proposals ligadas a chats borrados y proposals de alertas automaticas
+- separar mejor propuesta sugerida, propuesta aceptada y propuesta parcialmente aplicada
+- dejar trazabilidad simple del motivo, superficie de origen y resultado
+
+Por que:
+
+- esta capa ya existe y ahora merece contrato de producto, no solo implementacion tecnica
+- ayuda a medir confianza real del usuario en el coach
+
+### Prioridad 5
 
 **Consolidar cycling y mobility**
 
@@ -499,7 +566,7 @@ Por que:
 - el salto base ya esta dado
 - ahora conviene consolidar comportamiento y no solo sumar mas biblioteca
 
-### Prioridad 5
+### Prioridad 6
 
 **Refinar squash competitivo sobre la base ya consolidada**
 
@@ -518,17 +585,30 @@ Por que:
 
 Si hubiera que resumir el orden real desde hoy:
 
+0. agregar observabilidad minima de producto y sync
 1. validar sync en dispositivos reales
 2. hacer que el coach proponga ajustes guiados por alertas
 3. endurecer y medir el weekly loop
-4. profundizar cycling y mobility
-5. refinar squash competitivo ya consolidado
-6. instrumentar activacion, retencion y monetizacion
-7. abrir beta privada pagada
+4. cerrar lifecycle y trazabilidad de proposals
+5. profundizar cycling y mobility
+6. refinar squash competitivo ya consolidado
+7. instrumentar activacion, retencion y monetizacion
+8. abrir beta privada pagada
 
 ## Mejoras concretas posibles desde aqui
 
-### Mejora 1 - Coach adjustment proposals
+### Mejora 1 - Matriz de validacion de sync + tablero de diagnostico
+
+- checklist corta de casos reales por dispositivo
+- ultima corrida, resultado y repro
+- estado visible de cola, ultimo sync sano, ultimo error y tabla bloqueada
+
+Impacto:
+
+- muy alto
+- reduce el mayor riesgo operativo del producto
+
+### Mejora 2 - Coach adjustment proposals
 
 Cuando una alerta sea fuerte:
 
@@ -540,19 +620,6 @@ Impacto:
 
 - muy alto
 - sube mucho el valor percibido
-
-### Mejora 2 - Sync test matrix visible
-
-Documento o panel interno con:
-
-- casos cubiertos
-- casos fallidos
-- ultima fecha de validacion real
-
-Impacto:
-
-- alto para producto y confianza
-- poco glamoroso pero necesario
 
 ### Mejora 3 - Weekly loop instrumentation
 
@@ -566,7 +633,18 @@ Impacto:
 - alto en retencion
 - convierte intuicion de producto en una senal medible
 
-### Mejora 4 - Refactor UX-critical
+### Mejora 4 - Trazabilidad de proposals
+
+- origen de la propuesta: chat, dashboard, weekly loop o alerta automatica
+- resultado: aceptada, rechazada, fallo parcial, rollback
+- razon corta visible para entender por que se sugirio
+
+Impacto:
+
+- alto
+- convierte propuestas en una superficie auditable y medible
+
+### Mejora 5 - Refactor UX-critical
 
 Refactors de codigo con impacto directo en usabilidad:
 
@@ -585,13 +663,14 @@ La recomendacion hoy no es abrir una refactorizacion amplia.
 
 El mejor orden sigue siendo:
 
-1. validar sync en uso real movil + escritorio
-2. volver mas preciso y medible el coach que ajusta la semana
-3. endurecer el weekly loop como sistema de reactivacion
+1. agregar observabilidad minima para no decidir a ciegas
+2. validar sync en uso real movil + escritorio
+3. volver mas preciso y medible el coach que ajusta la semana
+4. endurecer el weekly loop como sistema de reactivacion
 
 Si hubiera que elegir una sola mejora para avanzar ahora:
 
-**armar y ejecutar una matriz de validacion real de sync multi-dispositivo**
+**armar y ejecutar una matriz de validacion real de sync multi-dispositivo con diagnostico visible**
 
 Por que esta primero:
 
@@ -599,6 +678,7 @@ Por que esta primero:
 - lo que mas puede romper confianza ahora no es una recomendacion mediocre del coach, sino perder o resucitar datos entre dispositivos
 - los fixes recientes de `SettingsPage` muestran que todavia hay riesgo en orden de operaciones, cola pendiente y wipe selectivo
 - resolver esto deja una base mucho mas segura para despues medir auto-ajustes del coach y weekly loop
+- si ademas se deja diagnostico visible, cualquier bug real de sync pasa de intuicion a incidente reproducible
 
 Alcance minimo recomendado:
 
@@ -606,6 +686,7 @@ Alcance minimo recomendado:
 - correrla en movil + escritorio con mismo usuario
 - documentar resultado, gaps y repro steps
 - convertir cada gap real en test o guardrail tecnico donde valga la pena
+- exponer en UI o debug panel: ultimo sync exitoso, pendientes, tabla bloqueada y ultimo error util
 
 Deuda tecnica si, pero quirurgica:
 
@@ -621,7 +702,7 @@ Refactor grande o proyecto de seguridad dedicado:
 
 ### Hallazgos prioritarios
 
-1. Duplicacion de navegacion por CTA semanal.
+1. La navegacion del weekly loop ya mejoro, pero todavia hay friccion entre superficies y lanzamiento de intents.
 2. Carga repetida de semana y analytics en varias pantallas.
 3. Acoplamiento fragil con `location.state.composerDraft`.
 4. Builders de notificaciones que recalculan el mismo resumen varias veces.
@@ -649,7 +730,7 @@ Refactor grande o proyecto de seguridad dedicado:
 
 - no hace falta una reescritura grande de stores
 - si hace falta reducir acoplamientos de navegacion, carga y lanzamiento de intents
-- el refactor con mejor retorno inmediato es centralizar la navegacion del weekly loop
+- el refactor con mejor retorno inmediato es cerrar el contrato de intents y terminar de consolidar el weekly loop entre superficies
 
 ## Roadmap de monetizacion
 

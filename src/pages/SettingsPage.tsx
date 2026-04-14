@@ -368,7 +368,7 @@ export default function SettingsPage() {
   const profileSyncAffected = syncDetails.pendingTables.includes('athlete_profiles')
   const syncSummary = getSyncSummary(syncStatus, syncDetails.pendingOps, syncDetails.syncAttemptInFlight)
   const syncHeadline = getSyncHeadline(syncStatus, syncDetails.pendingOps, syncDetails.syncAttemptInFlight, profileSyncAffected)
-  const syncSupportText = getSyncSupportText(syncStatus, syncDetails.pendingOps, syncDetails.syncAttemptInFlight, profileSyncAffected)
+  const syncSupportText = getSyncSupportText(syncStatus, syncDetails.pendingOps, syncDetails.syncAttemptInFlight)
   const syncDiagnosticsAvailable =
     syncDetails.pendingOps > 0 ||
     syncDetails.pendingTables.length > 0 ||
@@ -430,15 +430,29 @@ export default function SettingsPage() {
                 error={syncError}
                 pendingOps={syncDetails.pendingOps}
                 syncAttemptInFlight={syncDetails.syncAttemptInFlight}
+                autoRepairInProgress={syncDetails.autoRepairInProgress}
               />
             </div>
-            {syncStatus === 'error' && syncError && (
+            {syncDetails.autoRepairInProgress && (
+              <p className="mb-3 rounded-xl border border-brand/20 bg-brand/10 px-3 py-2 text-xs text-brand-light animate-pulse">
+                Reparando tu perfil en la nube. Esto solo toma unos segundos.
+              </p>
+            )}
+            {syncStatus === 'error' && syncError && !syncDetails.autoRepairInProgress && (
               <p className="mb-3 rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
-                {profileSyncAffected ? 'El perfil del atleta no esta pudiendo sincronizar.' : syncError}
+                {syncDetails.lastErrorCategory === 'schema_mismatch'
+                  ? 'Hay un problema de configuración en el servidor. Contacta soporte si persiste.'
+                  : syncDetails.lastErrorCategory === 'supabase_not_configured'
+                    ? 'La conexión a la nube no está configurada. Verifica tu cuenta.'
+                    : syncDetails.lastErrorCategory === 'rls_error'
+                      ? 'No se pudo acceder a tus datos en la nube. Intenta cerrar sesión y volver a entrar.'
+                      : profileSyncAffected
+                        ? 'Tu perfil no se pudo actualizar en la nube.'
+                        : syncError}
                 <span className="block mt-1 text-amber-200/80">
-                  {profileSyncAffected
-                    ? 'Puede deberse a un perfil remoto duplicado o a un desajuste de schema en athlete_profiles. Reintenta sync y revisa si la cola baja.'
-                    : 'Si sigues con conexión, este error probablemente no es de red. Reintenta sync y revisa si la cola baja.'}
+                  {syncDetails.lastErrorCategory === 'schema_mismatch' || syncDetails.lastErrorCategory === 'supabase_not_configured'
+                    ? 'Este problema no afecta tus datos locales.'
+                    : 'Tus cambios siguen guardados en este dispositivo. Se reintentará automáticamente.'}
                 </span>
               </p>
             )}
@@ -508,6 +522,16 @@ export default function SettingsPage() {
                         Fallos consecutivos: <span className="text-ink">{syncDetails.consecutiveFailures}</span>
                       </p>
                     )}
+                    {syncDetails.lastErrorCategory && (
+                      <p>
+                        Categoria error: <span className="text-ink">{syncDetails.lastErrorCategory}</span>
+                      </p>
+                    )}
+                    {syncDetails.lastAutoRepairAt && (
+                      <p>
+                        Ultima reparacion auto: <span className="text-ink">{formatRuntimeTimestamp(syncDetails.lastAutoRepairAt)}</span>
+                      </p>
+                    )}
                     {syncDetails.lastErrorMessage && (
                       <p className="text-amber-300">
                         Ultimo incidente: {syncDetails.lastErrorMessage}
@@ -515,61 +539,6 @@ export default function SettingsPage() {
                     )}
                   </div>
                 </details>
-              )}
-              {false && (
-                <>
-              <div className="grid gap-2 text-xs text-ink-muted sm:grid-cols-2">
-                <p>
-                  Cola pendiente: <span className="text-ink">{syncDetails.pendingOps}</span>
-                </p>
-                <p>
-                  Upserts / deletes: <span className="text-ink">{syncDetails.pendingUpserts}/{syncDetails.pendingDeletes}</span>
-                </p>
-                <p>
-                  Ultimo intento:{' '}
-                  <span className="text-ink">
-                    {syncDetails.lastSyncAt ? formatRuntimeTimestamp(syncDetails.lastSyncAt!) : 'sin registro'}
-                  </span>
-                </p>
-                <p>
-                  Ultimo sync OK:{' '}
-                  <span className="text-ink">
-                    {syncDetails.lastSuccessfulSyncAt ? formatRuntimeTimestamp(syncDetails.lastSuccessfulSyncAt!) : 'sin registro'}
-                  </span>
-                </p>
-                <p>
-                  Recovery offline:{' '}
-                  <span className="text-ink">
-                    {syncDetails.lastRecoveredSyncAt ? formatRuntimeTimestamp(syncDetails.lastRecoveredSyncAt!) : 'sin registro'}
-                  </span>
-                </p>
-              </div>
-              {syncDetails.oldestPendingOpAt && (
-                <p className="mt-2 text-xs text-ink-muted">
-                  Cola mas antigua: <span className="text-ink">{formatRuntimeTimestamp(syncDetails.oldestPendingOpAt!)}</span>
-                </p>
-              )}
-              {syncDetails.pendingTables.length > 0 && (
-                <p className="mt-1 text-xs text-ink-muted">
-                  Tablas afectadas: <span className="text-ink">{syncDetails.pendingTables.join(', ')}</span>
-                </p>
-              )}
-              {syncDetails.lastErrorMessage && syncStatus !== 'error' && (
-                <p className="mt-2 text-xs text-amber-300">
-                  Ultimo incidente: {syncDetails.lastErrorMessage}
-                </p>
-              )}
-              {profileSyncAffected && syncDetails.pendingOps > 0 && (
-                <p className="mt-2 text-xs text-amber-200/90">
-                  El pending actual afecta athlete_profiles. Si la cola no baja, el problema probablemente es del perfil remoto y no de conectividad general.
-                </p>
-              )}
-              {syncDetails.pendingOps > 0 && (
-                <p className="mt-2 text-xs text-ink-faint">
-                  Hay cambios locales pendientes por subir. La cola se compacta por registro para evitar duplicados, los deletes de sesiones se retienen hasta confirmar convergencia remota y la app reintenta automáticamente al volver online o recuperar foco.
-                </p>
-              )}
-                </>
               )}
             </div>
             <div className="flex flex-wrap gap-2">
@@ -1426,11 +1395,9 @@ function getSyncHeadline(status: string, pendingOps: number, syncAttemptInFlight
   return 'Cuenta conectada y al dia'
 }
 
-function getSyncSupportText(status: string, pendingOps: number, syncAttemptInFlight: boolean, profileSyncAffected: boolean): string {
+function getSyncSupportText(status: string, pendingOps: number, syncAttemptInFlight: boolean): string {
   if (status === 'error') {
-    return profileSyncAffected
-      ? 'Tus cambios siguen guardados en este dispositivo. Vamos a reintentar sin mostrarte detalle tecnico por defecto.'
-      : 'Tus cambios locales siguen guardados. Puedes reintentar la sincronizacion cuando quieras.'
+    return 'Tus cambios siguen guardados en este dispositivo. Se reintentará automáticamente.'
   }
 
   if (status === 'offline') {
@@ -1444,7 +1411,7 @@ function getSyncSupportText(status: string, pendingOps: number, syncAttemptInFli
   }
 
   if (pendingOps > 0) {
-    return 'Tus cambios siguen guardados localmente. Solo mostraremos este estado si la cola no logro vaciarse.'
+    return 'Tus cambios siguen guardados localmente. Se subirán en el próximo intento.'
   }
 
   return 'Tu cuenta, perfil y planificacion estan sincronizados.'
