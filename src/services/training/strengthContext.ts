@@ -1,6 +1,7 @@
 import type { AthleteProfile, MacroPlanPhase } from '../../types'
 import { getEnabledSports, getPrimarySportNormalized } from '../../utils/athlete'
-import type { StrengthContext, StrengthPhase, StrengthSportProfile } from './strengthSelector'
+import type { ExperienceLevel } from './exerciseLibrary'
+import type { StrengthPhase, StrengthSportProfile } from './strengthSelector'
 
 export function mapMacroPhaseToStrengthPhase(phase: MacroPlanPhase | undefined): StrengthPhase {
   switch (phase) {
@@ -28,7 +29,7 @@ export function deriveStrengthSportProfile(profile: AthleteProfile | undefined):
   return 'sport_support'
 }
 
-export function deriveStrengthExperienceLevel(profile: AthleteProfile | undefined): StrengthContext['experienceLevel'] {
+export function deriveStrengthExperienceLevel(profile: AthleteProfile | undefined): ExperienceLevel {
   const sp = profile?.strengthProfile
   const filled = [sp?.benchPress1RM, sp?.squat1RM, sp?.deadlift1RM, sp?.overheadPress1RM]
     .filter((value) => value != null)
