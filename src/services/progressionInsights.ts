@@ -19,7 +19,6 @@ import {
   extractRecentStrengthExercises,
   type StrengthContext,
   type StrengthProgressionIntent,
-  type StrengthSportProfile,
 } from './training/strengthSelector'
 import {
   deriveStrengthExperienceLevel,
