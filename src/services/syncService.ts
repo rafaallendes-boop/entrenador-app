@@ -281,7 +281,7 @@ function applySyncFailure(error: unknown, fallbackMessage: string, blockedTable?
     lastBlockedTable: blockedTable ?? null,
     retryScheduledAt: retryMs != null ? Date.now() + retryMs : null,
     consecutiveFailures: failureCount,
-    autoRepairInProgress: errorInfo.autoRepairable,
+    autoRepairInProgress: false,
   })
 }
 

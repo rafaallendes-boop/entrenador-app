@@ -8,6 +8,8 @@ const syncDetailsMock = vi.fn()
 
 let athleteProfileRows: AthleteProfileSyncRow[] = []
 const tableResults = new Map<string, { data: unknown; error: unknown }>()
+// Separate map so tests can make upsert fail while select (fetchAthleteProfileRows) succeeds
+const upsertResults = new Map<string, { data: unknown; error: unknown }>()
 const upsertCalls: Array<{ table: string; payload: unknown; options?: unknown }> = []
 const insertCalls: Array<{ table: string; payload: unknown }> = []
 const updateCalls: Array<{ table: string; payload: unknown }> = []
@@ -56,7 +58,7 @@ vi.mock('../auth', () => ({
         ...builder,
         upsert: vi.fn((payload: unknown, options?: unknown) => {
           upsertCalls.push({ table, payload, options })
-          return Promise.resolve(tableResults.get(table) ?? { data: null, error: null })
+          return Promise.resolve(upsertResults.get(table) ?? tableResults.get(table) ?? { data: null, error: null })
         }),
         insert: vi.fn((payload: unknown) => {
           insertCalls.push({ table, payload })
@@ -132,6 +134,7 @@ describe('Athlete Profile Sync - Hardening Fixes', () => {
     
     athleteProfileRows = []
     tableResults.clear()
+    upsertResults.clear()
     upsertCalls.length = 0
     insertCalls.length = 0
     updateCalls.length = 0
@@ -286,8 +289,52 @@ describe('Athlete Profile Sync - Hardening Fixes', () => {
     expect(newQueue[0].retryCount).toBe(1)
   })
 
+  it('7. autoRepairInProgress is false in applySyncFailure when a duplicate-key error is enqueued for later repair', async () => {
+    // No existing remote rows → goes to the upsert path
+    athleteProfileRows = []
+    // The DB upsert throws a duplicate key constraint error (race condition after migration)
+    upsertResults.set('athlete_profiles', {
+      data: null,
+      error: { code: '23505', message: 'duplicate key value violates unique constraint "athlete_profiles_user_id_unique"' },
+    })
+
+    const syncService = await import('../syncService')
+    await syncService.pushAthleteProfile({ id: 'default', name: 'Rafa', updatedAt: 200 })
+    await new Promise(resolve => setTimeout(resolve, 10))
+
+    // The op is enqueued and applySyncFailure is called.
+    // applySyncFailure must NOT set autoRepairInProgress: true just because the error
+    // is autoRepairable — no actual repair is running at this point.
+    const allCalls = syncDetailsMock.mock.calls.map((c: unknown[]) => c[0] as Record<string, unknown>)
+    const callWithAutoRepair = allCalls.find((c) => 'autoRepairInProgress' in c)
+    expect(callWithAutoRepair).toBeDefined()
+    expect(callWithAutoRepair!.autoRepairInProgress).toBe(false)
+    // The error category should be the duplicate, not some network error
+    const callWithCategory = allCalls.find((c) => 'lastErrorCategory' in c)
+    expect(callWithCategory?.lastErrorCategory).toBe('duplicate_remote_profile')
+  })
+
+  it('8. When a queued op is processed with remote duplicates, the op payload data is written to the canonical row', async () => {
+    // Two remote duplicates — the op payload wins (updatedAt 999 > 200 > 100)
+    athleteProfileRows = [
+      toAthleteProfileSyncRow({ id: 'remote-1', user_id: 'user-1', updated_at: 100, data: { name: 'Old A' } }),
+      toAthleteProfileSyncRow({ id: 'remote-2', user_id: 'user-1', updated_at: 200, data: { name: 'Old B' } }),
+    ]
+
+    const syncService = await import('../syncService')
+    // Push directly — upsertAthleteProfileRow detects duplicates, repairs them,
+    // and writes the payload's data to the canonical keeper row
+    await syncService.pushAthleteProfile({ id: 'default', name: 'Rafa Repaired', updatedAt: 999 })
+    await new Promise(resolve => setTimeout(resolve, 10))
+
+    // repairRemoteAthleteProfileRows picks winner by updated_at — payload (999) wins
+    expect(updateCalls.length).toBeGreaterThan(0)
+    const updatePayload = updateCalls[0].payload as { data: Record<string, unknown> }
+    expect(updatePayload.data.name).toBe('Rafa Repaired')
+  })
+
+  // Test 6 MUST remain last: it nulls supabase and would contaminate subsequent tests
   it('6. Does not crash when supabase is null', async () => {
-    // We override supabase to be null
     vi.mocked(await import('../auth')).supabase = null as unknown as ReturnType<typeof import('@supabase/supabase-js').createClient>
 
     const syncService = await import('../syncService')

@@ -10,7 +10,14 @@
       "Bash(node /tmp/test_drills.js)",
       "Bash(node:*)",
       "Bash(npm test:*)",
-      "Bash(ls -la *.test.ts)"
+      "Bash(ls -la *.test.ts)",
+      "Bash(brew list *)",
+      "Read(//usr/local/bin/**)",
+      "Read(//opt/homebrew/bin/**)",
+      "Read(//opt/homebrew/**)",
+      "Bash(ls /opt/homebrew/bin/g*)",
+      "Bash(git -C /Users/rafaallendes/Projects/entrenador-app show bdd6714a8347c42699ecb1512885be178770723e -- src/services/syncService.ts src/services/syncUtils.ts)",
+      "Bash(git -C /Users/rafaallendes/Projects/entrenador-app log --oneline -20)"
     ]
   }
 }
