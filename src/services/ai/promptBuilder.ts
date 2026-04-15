@@ -56,6 +56,7 @@ import {
   buildSquashCreateWeekExample,
   buildCompetitiveSquashWeekExample,
   formatSelectedSquashDrills,
+  stringifySquashBlocks,
   stringifySquashDrills,
   mapMacroPhaseToSquashPhase,
   type SquashSelectionSummary,
@@ -1001,10 +1002,13 @@ interface ResponsePromptContext {
   cyclingSummary: ReturnType<typeof buildCyclingSelectionSummary>
   mobilitySummary: ReturnType<typeof buildMobilitySelectionSummary>
   squashBaseSelection: ReturnType<typeof selectSquashDrills>
+  squashMixedSelection: ReturnType<typeof selectSquashDrills>
   squashCompetitiveSelection: ReturnType<typeof selectSquashDrills>
   squashControlSelection: ReturnType<typeof selectSquashDrills>
   squashTemplateSummary: string
   squashBaseDrillsJson: string
+  squashMixedDrillsJson: string
+  squashMixedBlocksJson: string
   squashControlDrillsJson: string
   squashCompetitiveDrillsJson: string
   squashBaseObjective: string
@@ -1106,6 +1110,16 @@ function buildResponsePromptContext(
     goal: 'desarrollar control, precision y presion en squash',
     competitionSoon: false,
   })
+  const squashMixedSelection = selectSquashDrills({
+    fatigueLevel: Math.max(squashSelectorContext?.fatigueLevel ?? 4, 4),
+    phase: squashSelectorContext?.phase ?? 'base',
+    recentDrills: squashSelectorContext?.recentDrills ?? [],
+    goal: 'sumar sombras y control tecnico sin cargar de mas',
+    competitionSoon: squashSelectorContext?.competitionSoon ?? false,
+    historicalSessions: squashSelectorContext?.historicalSessions,
+    squashAcwr: squashSelectorContext?.squashAcwr,
+    desiredKind: 'mixed-shadows-control',
+  })
   const squashCompetitiveSelection = selectSquashDrills({
     fatigueLevel: Math.max(squashSelectorContext?.fatigueLevel ?? 4, 4),
     phase: 'taper',
@@ -1114,6 +1128,7 @@ function buildResponsePromptContext(
     competitionSoon: true,
     historicalSessions: squashSelectorContext?.historicalSessions,
     squashAcwr: squashSelectorContext?.squashAcwr,
+    desiredKind: 'control',
   })
   const squashControlSelection = selectSquashDrills({
     fatigueLevel: Math.max(squashSelectorContext?.fatigueLevel ?? 4, 5),
@@ -1123,9 +1138,12 @@ function buildResponsePromptContext(
     competitionSoon: squashSelectorContext?.competitionSoon ?? false,
     historicalSessions: squashSelectorContext?.historicalSessions,
     squashAcwr: squashSelectorContext?.squashAcwr,
+    desiredKind: 'control',
   })
   const squashTemplateSummary = formatSelectedSquashDrills(squashBaseSelection.drills, 3)
   const squashBaseDrillsJson = stringifySquashDrills(squashBaseSelection.drills.slice(0, 3))
+  const squashMixedDrillsJson = stringifySquashDrills(squashMixedSelection.drills.slice(0, 4))
+  const squashMixedBlocksJson = stringifySquashBlocks(squashMixedSelection.blocks)
   const squashControlDrillsJson = stringifySquashDrills(squashControlSelection.drills.slice(0, 3))
   const squashCompetitiveDrillsJson = stringifySquashDrills(squashCompetitiveSelection.drills.slice(0, 3))
   const squashBaseObjective = squashBaseSelection.trainingFocus === 'tactical'
@@ -1212,10 +1230,13 @@ function buildResponsePromptContext(
     cyclingSummary,
     mobilitySummary,
     squashBaseSelection,
+    squashMixedSelection,
     squashCompetitiveSelection,
     squashControlSelection,
     squashTemplateSummary,
     squashBaseDrillsJson,
+    squashMixedDrillsJson,
+    squashMixedBlocksJson,
     squashControlDrillsJson,
     squashCompetitiveDrillsJson,
     squashBaseObjective,
@@ -1368,14 +1389,21 @@ Para squash training o control (agrega en la sesión cuando hay drills concretos
   squashDetails: {
     trainingFocus: "technical"|"tactical"|"physical"|"conditioned_games",
     sessionMode: "drill_session",
+    sessionKind: "technical"|"control"|"shadows"|"match"|"mixed",
     drills: [
       ${squashBaseDrillsJson}
     ]
   }
   IMPORTANTE: para sesiones de subtype "training" o "control", drills[] es obligatorio. Incluye siempre durationMin por drill.
+  Si sessionKind="mixed", añade además blocks[] y deja drills[] como vista plana compatible:
+    blocks: [
+      {"kind":"shadows","durationMin":18,"drills":[{"name":"Ghosting 4 esquinas","durationMin":18,"notes":"control de ritmo y recuperación al T"}]},
+      {"kind":"control","durationMin":24,"drills":[{"name":"100 drops solo","durationMin":24,"notes":"100 reps totales, 50 por lado"}]}
+    ]
   Para squash subtype "match":
     - usa squashDetails.sessionMode: "practice_match" si es partido de entrenamiento
     - usa squashDetails.sessionMode: "competition_match" si es partido real
+    - usa sessionKind: "match"
 
 ${hasRunning || hasCycling ? `Para ${runningOrCyclingLabel} (agrega en la sesión):
   runningType: "z2"|"tempo"|"intervals"|"long"

@@ -197,6 +197,14 @@ describe('promptBuilder dynamic cycling and mobility sections', () => {
     expect(prompt).toContain('Partido de entrenamiento con foco tactico')
   })
 
+  it('includes sessionKind, blocks and weekly distribution guidance for squash', () => {
+    const prompt = buildCoachSystemPrompt(makeContext(makeProfile()))
+
+    expect(prompt).toContain('sessionKind')
+    expect(prompt).toContain('blocks')
+    expect(prompt).toContain('Distribucion sugerida de la semana')
+  })
+
   it('marks warmup and cooldown as optional for compact create_week responses', () => {
     const prompt = buildCoachSystemPrompt(makeContext(makeProfile()))
 
