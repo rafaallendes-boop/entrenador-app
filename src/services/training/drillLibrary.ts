@@ -1,4 +1,8 @@
-import type { SquashDrill, SquashTrainingFocus } from '../../types'
+import type {
+  SquashDrill,
+  SquashSessionBlockKind,
+  SquashTrainingFocus,
+} from '../../types'
 
 export type DrillCategory = 'technical' | 'tactical' | 'physical' | 'match'
 export type DrillIntensity = 'low' | 'moderate' | 'high'
@@ -22,12 +26,37 @@ export function isSquashMatchDrill(value: Pick<SquashDrillDefinition, 'category'
   return value.category === 'match' || value.tags.includes('match_play')
 }
 
+export function isControlDrill(value: Pick<SquashDrillDefinition, 'tags'>): boolean {
+  return value.tags.includes('control_session') || value.tags.includes('solo') || value.tags.includes('volume_reps')
+}
+
+export function isShadowsDrill(value: Pick<SquashDrillDefinition, 'category' | 'tags' | 'focus'>): boolean {
+  return value.category === 'physical' && (
+    value.tags.includes('ghosting') ||
+    value.tags.includes('footwork') ||
+    value.focus.includes('ghosting')
+  )
+}
+
+export function resolveSquashDrillKind(definition: SquashDrillDefinition): SquashSessionBlockKind {
+  if (isSquashMatchDrill(definition)) return 'match'
+  if (isShadowsDrill(definition)) return 'shadows'
+  if (isControlDrill(definition)) return 'control'
+  return 'technical'
+}
+
 export function orderSquashDrillsForSession<T extends { name: string }>(
   drills: T[],
   resolveDefinition: (drill: T) => SquashDrillDefinition | undefined = (drill) => findSquashDrillByName(drill.name),
 ): T[] {
   const regular = drills.filter((drill) => !isSquashMatchDrill(resolveDefinition(drill) ?? { category: 'technical', tags: [] }))
   const matches = drills.filter((drill) => isSquashMatchDrill(resolveDefinition(drill) ?? { category: 'technical', tags: [] }))
+  return [...regular, ...matches]
+}
+
+export function orderSquashBlocksForSession<T extends { kind: SquashSessionBlockKind }>(blocks: T[]): T[] {
+  const regular = blocks.filter((block) => block.kind !== 'match')
+  const matches = blocks.filter((block) => block.kind === 'match')
   return [...regular, ...matches]
 }
 
@@ -81,8 +110,80 @@ export const SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
     category: 'technical',
     focus: ['drop', 'touch', 'front_court'],
     intensity: 'low',
-    tags: ['drop', 'front_court', 'taper', 'recovery_technical'],
-    description: 'Series de drop y respuesta corta con foco en toque, altura y segunda acción.',
+    tags: ['drop', 'front_court', 'taper', 'recovery_technical', 'control_session'],
+    description: 'Series controladas de drop y respuesta corta con foco en toque, altura y segunda acción.',
+    progressionLevel: 1,
+  },
+  {
+    id: 'solo_100_drops',
+    name: '100 drops solo',
+    category: 'technical',
+    focus: ['drop', 'touch', 'front_court'],
+    intensity: 'low',
+    tags: ['drop', 'front_court', 'solo', 'volume_reps', 'control_session', 'base', 'build', 'taper', 'recovery_technical'],
+    description: '100 drops solo, 50 por lado, priorizando precisión y altura antes que velocidad.',
+    intent: 'control',
+    constraints: ['50 repeticiones por lado', 'Buscar que la segunda bote quede antes de la línea de saque'],
+    progressionLevel: 1,
+  },
+  {
+    id: 'solo_100_mid_court_shots',
+    name: '100 tiros media cancha',
+    category: 'technical',
+    focus: ['midcourt', 'length', 'precision'],
+    intensity: 'low',
+    tags: ['midcourt', 'length', 'precision', 'solo', 'volume_reps', 'control_session', 'base', 'build', 'taper'],
+    description: '100 tiros desde media cancha alternando paralelo y cruzado con énfasis en limpieza y repetición.',
+    intent: 'control',
+    constraints: ['Alternar paralelo y cruzado cada 10 repeticiones', 'Mantener la preparación estable y contacto temprano'],
+    progressionLevel: 1,
+  },
+  {
+    id: 'solo_100_service_box',
+    name: '100 al box de saque',
+    category: 'technical',
+    focus: ['target', 'length', 'precision'],
+    intensity: 'low',
+    tags: ['target', 'length', 'precision', 'solo', 'volume_reps', 'control_session', 'base', 'build', 'taper'],
+    description: '100 tiros apuntando al box de saque con target visual claro y feedback de precisión.',
+    intent: 'control',
+    constraints: ['Usar un target visual dentro del box', '50 repeticiones por lado'],
+    progressionLevel: 1,
+  },
+  {
+    id: 'solo_100_parallels_back',
+    name: '100 paralelas de fondo',
+    category: 'technical',
+    focus: ['drive', 'parallel', 'length'],
+    intensity: 'moderate',
+    tags: ['drive', 'parallel', 'length', 'solo', 'volume_reps', 'control_session', 'base', 'build', 'taper'],
+    description: '100 drives paralelos de fondo buscando profundidad, pared y repetición estable.',
+    intent: 'control',
+    constraints: ['Mantener la pelota pegada a la pared lateral', '50 repeticiones por lado'],
+    progressionLevel: 1,
+  },
+  {
+    id: 'mid_court_drops',
+    name: 'Drops desde media cancha',
+    category: 'technical',
+    focus: ['drop', 'transition', 'touch'],
+    intensity: 'low',
+    tags: ['drop', 'transition', 'touch', 'control_session', 'base', 'build', 'taper', 'recovery_technical'],
+    description: 'Bloques de drops desde media cancha con foco en transición suave, touch y repetición limpia.',
+    intent: 'control',
+    constraints: ['Construir ritmo antes de buscar bola muy corta', 'No acelerar el swing para compensar fatiga'],
+    progressionLevel: 1,
+  },
+  {
+    id: 'solo_volleys_only',
+    name: 'Voleas solo',
+    category: 'technical',
+    focus: ['volley', 'control', 'timing'],
+    intensity: 'low',
+    tags: ['volley', 'control', 'timing', 'solo', 'control_session', 'base', 'build', 'taper'],
+    description: 'Voleas solo con foco en timing, preparación temprana y control por encima de potencia.',
+    intent: 'control',
+    constraints: ['Mantener codo alto y contacto delante del cuerpo', 'Buscar series de 20 contactos limpios'],
     progressionLevel: 1,
   },
   {
@@ -365,7 +466,7 @@ export const SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
     category: 'technical',
     focus: ['recovery_technical', 'length', 'rhythm'],
     intensity: 'low',
-    tags: ['recovery_technical', 'length', 'length_control', 'taper', 'base'],
+    tags: ['recovery_technical', 'length', 'length_control', 'control_session', 'taper', 'base'],
     description: 'Peloteo largo de baja fatiga para recuperar sensaciones y timing.',
     progressionLevel: 1,
   },
@@ -507,6 +608,7 @@ export function getSuggestedTrainingFocus(category: DrillCategory, tags: string[
 export function getSquashDrillFamily(drill: SquashDrillDefinition): string {
   if (drill.tags.includes('pre_match')) return 'pre_match_activation'
   if (drill.tags.includes('match_play')) return 'match_play_practice'
+  if (drill.tags.includes('solo') || drill.tags.includes('volume_reps')) return 'solo_control_volume'
   if (drill.tags.includes('ghosting')) return 'ghosting'
   if (drill.tags.includes('footwork') || drill.focus.includes('footwork')) return 'footwork'
   if (drill.tags.includes('rsa')) return 'rsa'

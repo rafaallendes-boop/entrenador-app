@@ -1,4 +1,10 @@
-import type { Session, SquashDetails, SquashSessionMode } from '../types'
+import type { Session, SquashDetails, SquashSessionKind, SquashSessionMode } from '../types'
+import {
+  findSquashDrillByName,
+  isControlDrill,
+  isShadowsDrill,
+  isSquashMatchDrill,
+} from '../services/training/drillLibrary'
 
 export interface SquashCompetitiveExposureSummary {
   practiceMatchCount: number
@@ -9,6 +15,52 @@ export interface SquashCompetitiveExposureSummary {
 
 export function resolveSquashSessionMode(squashDetails?: SquashDetails): SquashSessionMode {
   return squashDetails?.sessionMode ?? 'drill_session'
+}
+
+export function resolveSquashSessionKind(
+  session: Pick<Session, 'type' | 'subtype' | 'squashDetails'>,
+): SquashSessionKind | undefined {
+  if (session.type !== 'squash') return undefined
+
+  const details = session.squashDetails
+  if (!details) {
+    if (session.subtype === 'match' || session.subtype === 'competitive') return 'match'
+    return undefined
+  }
+
+  if (details.sessionKind) return details.sessionKind
+
+  const blockKinds = [...new Set((details.blocks ?? []).map((block) => block.kind))]
+  if (blockKinds.length > 1) return 'mixed'
+  if (blockKinds.length === 1) return blockKinds[0]
+
+  if (session.subtype === 'match' || session.subtype === 'competitive') return 'match'
+  if (resolveSquashSessionMode(details) !== 'drill_session') return 'match'
+
+  const counts = new Map<SquashSessionKind, number>()
+  for (const drill of details.drills ?? []) {
+    const definition = findSquashDrillByName(drill.name)
+    const kind = definition
+      ? isSquashMatchDrill(definition)
+        ? 'match'
+        : isShadowsDrill(definition)
+          ? 'shadows'
+          : isControlDrill(definition)
+            ? 'control'
+            : 'technical'
+      : 'technical'
+    counts.set(kind, (counts.get(kind) ?? 0) + 1)
+  }
+
+  if (counts.size === 0) return 'technical'
+
+  const sortedKinds = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+  const [topKind, topCount] = sortedKinds[0]!
+  const tiedTop = sortedKinds.filter(([, count]) => count === topCount)
+
+  if (topKind === 'match' && sortedKinds.length > 1) return 'mixed'
+  if (tiedTop.length > 1) return 'mixed'
+  return topKind
 }
 
 export function isPracticeSquashMatch(session: Pick<Session, 'type' | 'subtype' | 'squashDetails'>): boolean {

@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest'
 
 import type { Session } from '../../types'
-import { getRecentSquashCompetitiveExposure, isCompetitionSquashMatch, isPracticeSquashMatch } from '../squash'
+import {
+  getRecentSquashCompetitiveExposure,
+  isCompetitionSquashMatch,
+  isPracticeSquashMatch,
+  resolveSquashSessionKind,
+} from '../squash'
 
 function makeSquashSession(overrides: Partial<Session> = {}): Session {
   return {
@@ -66,5 +71,41 @@ describe('squash session mode compatibility', () => {
     expect(exposure.practiceMatchCount).toBe(1)
     expect(exposure.competitionMatchCount).toBe(2)
     expect(exposure.totalMatchCount).toBe(3)
+  })
+
+  it('derives control, shadows and mixed kinds from legacy-compatible squash details', () => {
+    const control = makeSquashSession({
+      subtype: 'control',
+      squashDetails: {
+        trainingFocus: 'technical',
+        drills: [{ name: '100 drops solo', durationMin: 18 }],
+      },
+    })
+    const shadows = makeSquashSession({
+      subtype: 'training',
+      squashDetails: {
+        trainingFocus: 'physical',
+        drills: [{ name: 'Ghosting 4 esquinas', durationMin: 16 }],
+      },
+    })
+    const mixed = makeSquashSession({
+      subtype: 'training',
+      squashDetails: {
+        trainingFocus: 'technical',
+        sessionKind: 'mixed',
+        blocks: [
+          { kind: 'shadows', durationMin: 18, drills: [{ name: 'Ghosting 4 esquinas', durationMin: 18 }] },
+          { kind: 'control', durationMin: 24, drills: [{ name: '100 drops solo', durationMin: 24 }] },
+        ],
+        drills: [
+          { name: 'Ghosting 4 esquinas', durationMin: 18 },
+          { name: '100 drops solo', durationMin: 24 },
+        ],
+      },
+    })
+
+    expect(resolveSquashSessionKind(control)).toBe('control')
+    expect(resolveSquashSessionKind(shadows)).toBe('shadows')
+    expect(resolveSquashSessionKind(mixed)).toBe('mixed')
   })
 })

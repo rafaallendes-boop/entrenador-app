@@ -95,6 +95,8 @@ export interface RunningIntervalStructure {
 
 export type SquashTrainingFocus = 'technical' | 'tactical' | 'physical' | 'conditioned_games'
 export type SquashSessionMode = 'drill_session' | 'practice_match' | 'competition_match'
+export type SquashSessionKind = 'technical' | 'control' | 'shadows' | 'match' | 'mixed'
+export type SquashSessionBlockKind = Exclude<SquashSessionKind, 'mixed'>
 
 export interface SquashDrill {
   name: string
@@ -102,10 +104,18 @@ export interface SquashDrill {
   notes?: string
 }
 
+export interface SquashSessionBlock {
+  kind: SquashSessionBlockKind
+  drills: SquashDrill[]
+  durationMin?: number
+}
+
 export interface SquashDetails {
   trainingFocus: SquashTrainingFocus
   drills: SquashDrill[]
   sessionMode?: SquashSessionMode
+  sessionKind?: SquashSessionKind
+  blocks?: SquashSessionBlock[]
 }
 
 export type ProtocolKind = 'warmup' | 'cooldown'

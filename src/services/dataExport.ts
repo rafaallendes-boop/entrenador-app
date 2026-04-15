@@ -50,6 +50,7 @@ const MOBILITY_SESSION_CONTEXTS = new Set([
 ])
 const SQUASH_TRAINING_FOCUSES = new Set(['technical', 'tactical', 'physical', 'conditioned_games'])
 const SQUASH_SESSION_MODES = new Set(['drill_session', 'practice_match', 'competition_match'])
+const SQUASH_SESSION_KINDS = new Set(['technical', 'control', 'shadows', 'match', 'mixed'])
 const PROPOSAL_STATUSES = new Set(['pending', 'accepted', 'rejected', 'partial'])
 const SUPPORTED_SPORTS = new Set(['squash', 'running', 'strength', 'mobility', 'cycling'])
 const TRAINING_PRIORITIES = new Set(['performance', 'fitness', 'body_composition', 'return_to_play'])
@@ -892,23 +893,44 @@ function optionalMobilityDetails(value: unknown, path: string): Session['mobilit
 function optionalSquashDetails(value: unknown, path: string): Session['squashDetails'] {
   if (value == null) return undefined
   const row = ensureRecord(value, path)
-  const drills = ensureArray(row.drills, `${path}.drills`).map((drill, index) => {
-    const drillRow = ensureRecord(drill, `${path}.drills[${index}]`)
+  const parseDrill = (drill: unknown, drillPath: string) => {
+    const drillRow = ensureRecord(drill, drillPath)
     return {
-      name: requireString(drillRow.name, `${path}.drills[${index}].name`),
-      durationMin: optionalFiniteNumber(drillRow.durationMin, `${path}.drills[${index}].durationMin`),
-      notes: optionalString(drillRow.notes, `${path}.drills[${index}].notes`),
+      name: requireString(drillRow.name, `${drillPath}.name`),
+      durationMin: optionalFiniteNumber(drillRow.durationMin, `${drillPath}.durationMin`),
+      notes: optionalString(drillRow.notes, `${drillPath}.notes`),
     }
-  })
+  }
+  const blocks = row.blocks == null
+    ? undefined
+    : ensureArray(row.blocks, `${path}.blocks`).map((block, index) => {
+        const blockRow = ensureRecord(block, `${path}.blocks[${index}]`)
+        const blockDrills = ensureArray(blockRow.drills, `${path}.blocks[${index}].drills`).map((drill, drillIndex) =>
+          parseDrill(drill, `${path}.blocks[${index}].drills[${drillIndex}]`),
+        )
+        if (blockDrills.length === 0) {
+          throw new Error(`${path}.blocks[${index}].drills debe incluir al menos un drill.`)
+        }
+        return {
+          kind: requireEnum(blockRow.kind, SQUASH_SESSION_KINDS, `${path}.blocks[${index}].kind`) as NonNullable<NonNullable<Session['squashDetails']>['blocks']>[number]['kind'],
+          durationMin: optionalFiniteNumber(blockRow.durationMin, `${path}.blocks[${index}].durationMin`),
+          drills: blockDrills,
+        }
+      })
+  const drills = row.drills == null
+    ? (blocks ?? []).flatMap((block) => block.drills)
+    : ensureArray(row.drills, `${path}.drills`).map((drill, index) => parseDrill(drill, `${path}.drills[${index}]`))
 
   if (drills.length === 0) {
-    throw new Error(`${path}.drills debe incluir al menos un drill.`)
+    throw new Error(`${path}.drills debe incluir al menos un drill o derivarse desde blocks.`)
   }
 
   return {
     trainingFocus: requireEnum(row.trainingFocus, SQUASH_TRAINING_FOCUSES, `${path}.trainingFocus`) as NonNullable<Session['squashDetails']>['trainingFocus'],
     drills,
     sessionMode: optionalEnum(row.sessionMode, SQUASH_SESSION_MODES, `${path}.sessionMode`) as NonNullable<Session['squashDetails']>['sessionMode'],
+    sessionKind: optionalEnum(row.sessionKind, SQUASH_SESSION_KINDS, `${path}.sessionKind`) as NonNullable<Session['squashDetails']>['sessionKind'],
+    blocks,
   }
 }
 
