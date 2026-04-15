@@ -69,6 +69,23 @@ describe('drillSelector progression', () => {
     }
   })
 
+  it('adds the explicit solo/control drill library expected by the new taxonomy', () => {
+    const controlNames = [
+      '100 drops solo',
+      '100 tiros media cancha',
+      '100 al box de saque',
+      '100 paralelas de fondo',
+      'Drops desde media cancha',
+      'Voleas solo',
+    ]
+
+    for (const name of controlNames) {
+      const drill = findSquashDrillByName(name)
+      expect(drill).toBeTruthy()
+      expect(drill?.tags).toContain('control_session')
+    }
+  })
+
   it('forces deload when squash ACWR is in risk', () => {
     const state = deriveSquashProgressionState({
       phase: 'build',
@@ -141,6 +158,35 @@ describe('drillSelector progression', () => {
     expect(selection.drills.some((drill) => drill.notes?.includes('Mantener timing'))).toBe(true)
   })
 
+  it('supports desiredKind control with solo-volume drills', () => {
+    const selection = selectSquashDrills({
+      phase: 'taper',
+      fatigueLevel: 5,
+      competitionSoon: false,
+      goal: 'timing y precision',
+      recentDrills: [],
+      desiredKind: 'control',
+    })
+
+    expect(selection.sessionKind).toBe('control')
+    expect(selection.drills.some((drill) => drill.name === '100 drops solo' || drill.name === '100 paralelas de fondo')).toBe(true)
+    expect(selection.drills.some((drill) => drill.notes?.includes('100 reps'))).toBe(true)
+  })
+
+  it('supports desiredKind mixed-shadows-control with grouped blocks', () => {
+    const selection = selectSquashDrills({
+      phase: 'base',
+      fatigueLevel: 4,
+      competitionSoon: false,
+      goal: 'pies y control',
+      recentDrills: [],
+      desiredKind: 'mixed-shadows-control',
+    })
+
+    expect(selection.sessionKind).toBe('mixed')
+    expect(selection.blocks?.map((block) => block.kind)).toEqual(['shadows', 'control'])
+  })
+
   it('prioritizes practice match drills in build/peak when the goal is competitive and there is no immediate competition', () => {
     const selection = selectSquashDrills({
       phase: 'peak',
@@ -167,6 +213,8 @@ describe('drillSelector progression', () => {
         'Partido con foco de ataque en puntos cortos',
       ].includes(selection.drills[selection.drills.length - 1]!.name),
     ).toBe(true)
+    expect(selection.sessionKind).toBe('mixed')
+    expect(selection.blocks?.[selection.blocks.length - 1]?.kind).toBe('match')
   })
 
   it('does not prioritize practice match drills in taper or high fatigue', () => {

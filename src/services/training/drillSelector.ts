@@ -1,11 +1,21 @@
-import type { Session, SquashDrill, SquashTrainingFocus } from '../../types'
+import type {
+  Session,
+  SquashDrill,
+  SquashSessionBlock,
+  SquashSessionBlockKind,
+  SquashSessionKind,
+  SquashTrainingFocus,
+} from '../../types'
 import { getRecentSquashCompetitiveExposure } from '../../utils/squash'
 import {
   findSquashDrillByName,
   getSquashDrillFamily,
   getSuggestedTrainingFocus,
+  isControlDrill,
+  orderSquashBlocksForSession,
   normalizeSquashDrillKey,
   orderSquashDrillsForSession,
+  resolveSquashDrillKind,
   SQUASH_DRILL_LIBRARY,
   type DrillCategory,
   type SquashDrillDefinition,
@@ -23,6 +33,21 @@ export interface SquashSelectionContext {
   historicalSessions?: Session[]
   /** Quantitative ACWR signal for squash-specific load */
   squashAcwr?: DisciplineAcwr
+  desiredKind?: SquashSelectionDesiredKind
+}
+
+export type SquashSelectionDesiredKind =
+  | SquashSessionBlockKind
+  | 'mixed-control-technical'
+  | 'mixed-shadows-control'
+  | 'mixed-shadows-technical'
+
+export interface SquashSelectionResult {
+  trainingFocus: SquashTrainingFocus
+  drills: SquashDrill[]
+  sessionKind: SquashSessionKind
+  blocks?: SquashSessionBlock[]
+  selectionNote?: string
 }
 
 // Fase 2: 4-state model. 'progress' = continuar familia con más exigencia,
@@ -51,6 +76,12 @@ interface DrillScore {
   score: number
 }
 
+const MIXED_KIND_ORDER: Record<Exclude<SquashSelectionDesiredKind, SquashSessionBlockKind>, SquashSessionBlockKind[]> = {
+  'mixed-control-technical': ['technical', 'control'],
+  'mixed-shadows-control': ['shadows', 'control'],
+  'mixed-shadows-technical': ['shadows', 'technical'],
+}
+
 function isPhaseAllowed(drill: SquashDrillDefinition, phase: SquashSelectionPhase): boolean {
   switch (phase) {
     case 'base':
@@ -68,32 +99,224 @@ function isPhaseAllowed(drill: SquashDrillDefinition, phase: SquashSelectionPhas
 
 export function selectSquashDrills(
   context: SquashSelectionContext,
-): { trainingFocus: SquashTrainingFocus; drills: SquashDrill[] } {
+): SquashSelectionResult {
   const recentSet = new Set(context.recentDrills.map(normalizeSquashDrillKey))
   const progressionState = deriveSquashProgressionState(context)
   const byFatigue = filterByFatigue(SQUASH_DRILL_LIBRARY, context)
   const byPhase = filterByPhase(byFatigue, context)
   const withoutRecent = avoidRecentDrills(byPhase, recentSet)
-  const pool = withoutRecent.length >= 3 ? withoutRecent : byPhase
-  const selected = pickDiverseDrills(pool, context, recentSet, progressionState)
+  const basePool = withoutRecent.length >= 3 ? withoutRecent : byPhase
 
+  if (context.desiredKind) {
+    return selectSquashDrillsByDesiredKind(basePool, byFatigue, context, recentSet, progressionState)
+  }
+
+  const selected = pickDiverseDrills(basePool, context, recentSet, progressionState)
   const fallbackSelected = selected.length >= 3
     ? selected
     : pickDiverseDrills(byFatigue, context, recentSet, progressionState)
 
-  const finalSelection = fallbackSelected.slice(0, 5)
-  const trainingFocus = deriveTrainingFocus(finalSelection, context)
+  return buildSelectionResult(fallbackSelected.slice(0, 5), context, progressionState)
+}
+
+function selectSquashDrillsByDesiredKind(
+  basePool: SquashDrillDefinition[],
+  fallbackPool: SquashDrillDefinition[],
+  context: SquashSelectionContext,
+  recentSet: Set<string>,
+  progressionState: SquashProgressionState,
+): SquashSelectionResult {
+  const desiredKind = context.desiredKind!
+
+  if (desiredKind in MIXED_KIND_ORDER) {
+    const selected = buildMixedKindSelection(
+      MIXED_KIND_ORDER[desiredKind as keyof typeof MIXED_KIND_ORDER],
+      basePool,
+      context,
+      recentSet,
+      progressionState,
+    )
+    if (selected.length >= 2) {
+      return buildSelectionResult(selected, context, progressionState)
+    }
+  } else {
+    const selected = buildSingleKindSelection(
+      desiredKind as SquashSessionBlockKind,
+      basePool,
+      context,
+      recentSet,
+      progressionState,
+    )
+    if (selected.length >= 2 || desiredKind === 'match') {
+      return buildSelectionResult(selected, context, progressionState)
+    }
+  }
+
+  const fallback = pickDiverseDrills(fallbackPool, context, recentSet, progressionState)
+  return {
+    ...buildSelectionResult(fallback.slice(0, 5), context, progressionState),
+    selectionNote: `desiredKind=${desiredKind} sin pool suficiente; se relajo al selector contextual actual.`,
+  }
+}
+
+function buildSingleKindSelection(
+  kind: SquashSessionBlockKind,
+  pool: SquashDrillDefinition[],
+  context: SquashSelectionContext,
+  recentSet: Set<string>,
+  progressionState: SquashProgressionState,
+): SquashDrillDefinition[] {
+  const kindPool = filterBySessionKind(pool, kind, context)
+  const preferredCount = kind === 'match' ? 2 : kind === 'shadows' ? 1 : 3
+  const selected = pickKindDrills(kindPool, context, recentSet, progressionState, preferredCount)
+
+  if (selected.length >= Math.min(preferredCount, 2)) return selected
+
+  if (kind === 'control') {
+    return buildMixedKindSelection(['control', 'technical'], pool, context, recentSet, progressionState)
+  }
+  if (kind === 'shadows') {
+    return buildMixedKindSelection(['shadows', 'technical'], pool, context, recentSet, progressionState)
+  }
+  if (kind === 'technical') {
+    return buildMixedKindSelection(['technical', 'control'], pool, context, recentSet, progressionState)
+  }
+
+  return selected
+}
+
+function buildMixedKindSelection(
+  blockKinds: SquashSessionBlockKind[],
+  pool: SquashDrillDefinition[],
+  context: SquashSelectionContext,
+  recentSet: Set<string>,
+  progressionState: SquashProgressionState,
+): SquashDrillDefinition[] {
+  const selected: SquashDrillDefinition[] = []
+
+  for (const kind of blockKinds) {
+    const kindPool = filterBySessionKind(pool, kind, context)
+    const targetCount = kind === 'shadows' ? 1 : kind === 'match' ? 1 : 2
+    const kindSelection = pickKindDrills(kindPool, context, recentSet, progressionState, targetCount)
+    selected.push(...kindSelection)
+  }
+
+  return dedupeDrills(orderSelectionDefinitions(selected)).slice(0, 5)
+}
+
+function filterBySessionKind(
+  drills: SquashDrillDefinition[],
+  kind: SquashSessionBlockKind,
+  context: SquashSelectionContext,
+): SquashDrillDefinition[] {
+  return drills.filter((drill) => {
+    const drillKind = resolveSquashDrillKind(drill)
+    if (kind === 'control' && context.phase === 'taper') {
+      return drillKind === 'control' || drill.tags.includes('recovery_technical')
+    }
+    if (kind === 'match' && context.phase === 'taper') {
+      return drill.tags.includes('pre_match')
+    }
+    return drillKind === kind
+  })
+}
+
+function pickKindDrills(
+  drills: SquashDrillDefinition[],
+  context: SquashSelectionContext,
+  recentDrills: Set<string>,
+  progressionState: SquashProgressionState,
+  targetCount: number,
+): SquashDrillDefinition[] {
+  const scored = scoreDrillsWithProgression(drills, context, recentDrills, progressionState)
+  const selected: SquashDrillDefinition[] = []
+
+  for (const { drill } of scored) {
+    const kind = resolveSquashDrillKind(drill)
+
+    if (kind === 'shadows' && selected.some((item) => resolveSquashDrillKind(item) === 'shadows')) {
+      continue
+    }
+    if (kind === 'control' && selected.some((item) => resolveSquashDrillKind(item) === 'match')) {
+      continue
+    }
+    if (kind === 'match' && selected.some((item) => isControlDrill(item))) {
+      continue
+    }
+
+    selected.push(drill)
+    if (selected.length >= targetCount) break
+  }
+
+  return selected
+}
+
+function buildSelectionResult(
+  definitions: SquashDrillDefinition[],
+  context: SquashSelectionContext,
+  progressionState: SquashProgressionState,
+): SquashSelectionResult {
+  const orderedDefinitions = orderSelectionDefinitions(definitions)
+  const drills = orderSquashDrillsForSession(
+    orderedDefinitions.map((definition, index) => ({
+      name: definition.name,
+      durationMin: getDrillDuration(definition, index, context),
+      notes: buildProgressedDrillNotes(definition, context, progressionState),
+    })),
+  )
+  const blocks = buildSelectionBlocks(orderedDefinitions, drills)
+  const sessionKind = resolveSelectedSessionKind(blocks)
 
   return {
-    trainingFocus,
-    drills: orderSquashDrillsForSession(
-      finalSelection.map((definition, index) => ({
-        name: definition.name,
-        durationMin: getDrillDuration(definition, index, context),
-        notes: buildProgressedDrillNotes(definition, context, progressionState),
-      })),
-    ),
+    trainingFocus: deriveTrainingFocus(orderedDefinitions, context),
+    drills,
+    sessionKind,
+    blocks: sessionKind === 'mixed' ? blocks : undefined,
   }
+}
+
+function buildSelectionBlocks(
+  definitions: SquashDrillDefinition[],
+  drills: SquashDrill[],
+): SquashSessionBlock[] {
+  const blockMap = new Map<SquashSessionBlockKind, SquashDrill[]>()
+
+  for (const definition of definitions) {
+    const kind = resolveSquashDrillKind(definition)
+    const drill = drills.find((item) => item.name === definition.name)
+    if (!drill) continue
+    const existing = blockMap.get(kind) ?? []
+    existing.push(drill)
+    blockMap.set(kind, existing)
+  }
+
+  return orderSquashBlocksForSession(
+    [...blockMap.entries()].map(([kind, blockDrills]) => ({
+      kind,
+      drills: blockDrills,
+      durationMin: blockDrills.reduce((sum, drill) => sum + (drill.durationMin ?? 0), 0) || undefined,
+    })),
+  )
+}
+
+function resolveSelectedSessionKind(blocks: SquashSessionBlock[]): SquashSessionKind {
+  if (blocks.length === 0) return 'technical'
+  if (blocks.length === 1) return blocks[0]!.kind
+  return 'mixed'
+}
+
+function orderSelectionDefinitions(definitions: SquashDrillDefinition[]): SquashDrillDefinition[] {
+  const orderedKinds = orderSquashBlocksForSession(
+    dedupeDrills(definitions).map((definition) => ({
+      kind: resolveSquashDrillKind(definition),
+      definition,
+    })),
+  )
+  return orderedKinds.map((item) => item.definition)
+}
+
+function dedupeDrills(definitions: SquashDrillDefinition[]): SquashDrillDefinition[] {
+  return [...new Map(definitions.map((definition) => [definition.id, definition])).values()]
 }
 
 export function extractRecentSquashDrills(historicalSessions: Session[]): string[] {
@@ -513,16 +736,17 @@ function getDrillDuration(
 }
 
 function buildDrillNotes(drill: SquashDrillDefinition, context: SquashSelectionContext): string {
+  const volumeCue = getVolumePrescription(drill)
   if (context.competitionSoon && drill.tags.includes('pre_match')) {
     return 'Activacion corta y precisa, sin fatiga residual.'
   }
   if (context.phase === 'taper') {
-    return 'Mantener timing y sensaciones, evitando carga alta.'
+    return `Mantener timing y sensaciones, evitando carga alta.${volumeCue ? ` ${volumeCue}` : ''}`
   }
   if (context.fatigueLevel >= 7) {
-    return 'Control tecnico y calidad de movimiento por sobre volumen.'
+    return `Control tecnico y calidad de movimiento por sobre volumen.${volumeCue ? ` ${volumeCue}` : ''}`
   }
-  return drill.description
+  return `${drill.description}${volumeCue ? ` ${volumeCue}` : ''}`
 }
 
 export function buildProgressedDrillNotes(
@@ -608,6 +832,23 @@ function shouldPrioritizePracticeMatch(context: SquashSelectionContext): boolean
   )
 }
 
+function getVolumePrescription(drill: SquashDrillDefinition): string {
+  switch (drill.id) {
+    case 'solo_100_drops':
+      return 'Objetivo: 100 reps totales, 50 por lado.'
+    case 'solo_100_mid_court_shots':
+      return 'Objetivo: 100 reps totales alternando paralelo y cruzado.'
+    case 'solo_100_service_box':
+      return 'Objetivo: 100 reps al target, 50 por lado.'
+    case 'solo_100_parallels_back':
+      return 'Objetivo: 100 paralelas de fondo, 50 por lado.'
+    case 'solo_volleys_only':
+      return 'Objetivo: series limpias de 20 contactos antes de progresar.'
+    default:
+      return drill.tags.includes('volume_reps') ? 'Usa durationMin como aproximación; manda la cuenta objetivo de reps.' : ''
+  }
+}
+
 export function runSquashDrillSelectorSmokeChecks(): string[] {
   const outputs: string[] = []
 
@@ -625,7 +866,7 @@ export function runSquashDrillSelectorSmokeChecks(): string[] {
     goal: 'mejorar tactica y control del T',
     recentDrills: buildA.drills.map((drill) => normalizeSquashDrillKey(drill.name)),
   })
-  outputs.push(`build_variation=${buildA.drills.map((d) => d.name).join(' | ')} <> ${buildB.drills.map((d) => d.name).join(' | ')}`)
+  outputs.push(`build_variation=${buildA.sessionKind}:${buildA.drills.map((d) => d.name).join(' | ')} <> ${buildB.sessionKind}:${buildB.drills.map((d) => d.name).join(' | ')}`)
 
   const fatigueHigh = selectSquashDrills({
     phase: 'build',
@@ -643,7 +884,7 @@ export function runSquashDrillSelectorSmokeChecks(): string[] {
     goal: 'llegar fresco al partido',
     recentDrills: [],
   })
-  outputs.push(`taper_competition=${taper.drills.map((d) => d.name).join(' | ')}`)
+  outputs.push(`taper_competition=${taper.sessionKind}:${taper.drills.map((d) => d.name).join(' | ')}`)
   outputs.push(`progression_signal=${summarizeSquashProgression({
     phase: 'build',
     fatigueLevel: 4,
