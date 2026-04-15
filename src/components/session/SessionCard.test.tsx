@@ -81,4 +81,29 @@ describe('SessionCard squash match badges', () => {
 
     expect(html).toContain('Partido competitivo')
   })
+
+  it('renders the mixed session kind badge when squash blocks are present', () => {
+    const html = renderToStaticMarkup(
+      <SessionCard
+        session={makeSession({
+          subtype: 'control',
+          squashDetails: {
+            trainingFocus: 'technical',
+            sessionKind: 'mixed',
+            sessionMode: 'drill_session',
+            blocks: [
+              { kind: 'shadows', durationMin: 18, drills: [{ name: 'Ghosting 4 esquinas', durationMin: 18 }] },
+              { kind: 'control', durationMin: 24, drills: [{ name: '100 drops solo', durationMin: 24 }] },
+            ],
+            drills: [
+              { name: 'Ghosting 4 esquinas', durationMin: 18 },
+              { name: '100 drops solo', durationMin: 24 },
+            ],
+          },
+        })}
+      />,
+    )
+
+    expect(html).toContain('Sombras + Control')
+  })
 })

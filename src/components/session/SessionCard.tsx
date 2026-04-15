@@ -1,9 +1,9 @@
 import { Clock, Flame, ChevronDown, ChevronUp, Trash2, Wind } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import type { Session, SessionStatus } from '../../types'
 import { SESSION_TYPE_CONFIG, SQUASH_SUBTYPE_LABELS } from '../../constants/sessionTypes'
 import { formatDuration } from '../../utils/format'
-import { isCompetitionSquashMatch, isPracticeSquashMatch, resolveSquashSessionMode } from '../../utils/squash'
+import { isCompetitionSquashMatch, isPracticeSquashMatch, resolveSquashSessionKind, resolveSquashSessionMode } from '../../utils/squash'
 import SessionTypeIcon from './SessionTypeIcon'
 import ExerciseChecklist from './ExerciseChecklist'
 import { useTrainingStore } from '../../store/useTrainingStore'
@@ -32,6 +32,13 @@ const MOBILITY_CONTEXT_LABELS: Record<string, string> = {
 }
 
 const MATCH_RESULT_LABELS = { win: 'Gano', loss: 'Perdio' } as const
+const SQUASH_KIND_LABELS: Record<string, string> = {
+  technical: 'Tecnica',
+  control: 'Control',
+  shadows: 'Sombras',
+  match: 'Partido',
+  mixed: 'Mixto',
+}
 
 interface SessionCardProps {
   session: Session
@@ -54,6 +61,7 @@ export default function SessionCard({ session, compact = false, onDelete }: Sess
   const hasCyclingDetails = session.type === 'cycling' && session.cyclingDetails
   const hasMobilityDetails = session.type === 'mobility' && session.mobilityDetails
   const squashDrills = session.squashDetails?.drills ?? []
+  const squashBlocks = session.squashDetails?.blocks ?? []
   const hasSquashDetails = session.type === 'squash' && Boolean(session.squashDetails)
   const warmup = normalizeGeneratedProtocol(session.warmup, 'warmup')
   const cooldown = normalizeGeneratedProtocol(session.cooldown, 'cooldown')
@@ -81,9 +89,15 @@ export default function SessionCard({ session, compact = false, onDelete }: Sess
   const subtypeLabel = session.subtype ? SQUASH_SUBTYPE_LABELS[session.subtype] : null
   const isPracticeMatch = isPracticeSquashMatch(session)
   const isCompetitionMatch = isCompetitionSquashMatch(session)
+  const squashSessionKind = resolveSquashSessionKind(session)
   const squashSessionMode = session.type === 'squash' && session.squashDetails
     ? resolveSquashSessionMode(session.squashDetails)
     : undefined
+  const squashKindBadgeLabel = squashSessionKind === 'mixed' && squashBlocks.length > 1
+    ? squashBlocks.map((block) => SQUASH_KIND_LABELS[block.kind] ?? block.kind).join(' + ')
+    : squashSessionKind
+      ? (SQUASH_KIND_LABELS[squashSessionKind] ?? squashSessionKind)
+      : null
   const isSkipped = session.status === 'skipped'
   const showMatchBadge = hasMatchMeta && session.matchResult
   const matchBadgeClass =
@@ -122,6 +136,11 @@ export default function SessionCard({ session, compact = false, onDelete }: Sess
                 className={`text-xs px-1.5 py-0.5 rounded-full border ${config.borderClass} ${config.textClass} font-medium flex-shrink-0`}
               >
                 {subtypeLabel}
+              </span>
+            )}
+            {session.type === 'squash' && squashKindBadgeLabel && (
+              <span className="rounded-full border border-brand/20 bg-brand/5 px-1.5 py-0.5 text-xs font-medium text-brand-light flex-shrink-0">
+                {squashKindBadgeLabel}
               </span>
             )}
             {isPracticeMatch && (
@@ -359,18 +378,52 @@ export default function SessionCard({ session, compact = false, onDelete }: Sess
               </p>
             </div>
           )}
-          {hasSquashDetails && session.squashDetails && squashDrills.length > 0 && (
+          {hasSquashDetails && session.squashDetails && squashBlocks.length > 0 && (
+            <div className="mt-2 space-y-2">
+              <p className="text-[10px] font-medium uppercase tracking-wider text-ink-faint">Bloques squash</p>
+              {squashBlocks.map((block, blockIndex) => (
+                <div key={`${block.kind}-${blockIndex}`} className="rounded-lg border border-white/5 bg-surface-raised p-2">
+                  <div className="mb-1 flex items-center justify-between gap-2">
+                    <span className="text-xs font-semibold text-ink">
+                      {SQUASH_KIND_LABELS[block.kind] ?? block.kind}
+                    </span>
+                    {block.durationMin && (
+                      <span className="text-[11px] text-ink-faint">{block.durationMin}min</span>
+                    )}
+                  </div>
+                  <div className="space-y-1.5">
+                    {block.drills.map((drill, drillIndex) => (
+                      <div key={`${block.kind}-${blockIndex}-${drill.name}-${drillIndex}`} className="rounded-lg bg-surface-card px-2.5 py-1.5">
+                        <div className="flex items-start gap-2">
+                          <span className="flex-1 text-xs font-medium leading-snug text-ink">{drill.name}</span>
+                          {drill.durationMin && <span className="flex-shrink-0 text-[11px] text-ink-faint">{drill.durationMin}min</span>}
+                        </div>
+                        {drill.notes && (
+                          <p className="mt-1 text-[11px] leading-snug text-ink-faint">{drill.notes}</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          {hasSquashDetails && session.squashDetails && squashBlocks.length === 0 && squashDrills.length > 0 && (
             <div className="mt-2 space-y-1.5">
               <p className="text-[10px] font-medium uppercase tracking-wider text-ink-faint">Drills</p>
               {squashDrills.map((drill, i) => (
                 <div key={i} className="flex items-start gap-2 rounded-lg bg-surface-raised px-2.5 py-1.5">
-                  <span className="flex-1 text-xs font-medium leading-snug text-ink">{drill.name}</span>
-                  {drill.durationMin && <span className="flex-shrink-0 text-[11px] text-ink-faint">{drill.durationMin}min</span>}
-                  {drill.notes && (
-                    <span className="block max-w-full text-[11px] leading-snug text-ink-faint">
-                      {drill.notes}
-                    </span>
-                  )}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-start gap-2">
+                      <span className="flex-1 text-xs font-medium leading-snug text-ink">{drill.name}</span>
+                      {drill.durationMin && <span className="flex-shrink-0 text-[11px] text-ink-faint">{drill.durationMin}min</span>}
+                    </div>
+                    {drill.notes && (
+                      <p className="mt-1 text-[11px] leading-snug text-ink-faint">
+                        {drill.notes}
+                      </p>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
@@ -399,7 +452,11 @@ export default function SessionCard({ session, compact = false, onDelete }: Sess
           {session.notes && <p className="text-xs italic text-ink-muted">"{session.notes}"</p>}
           {session.completionNotes && <p className="text-xs italic text-ink-muted">Post: "{session.completionNotes}"</p>}
           {session.status === 'completed' && (
-            <SessionFeedbackForm session={session} onUpdate={updateSession} />
+            <SessionFeedbackForm
+              key={`${session.id}-${session.sessionFeedback?.capturedAt ?? 'none'}`}
+              session={session}
+              onUpdate={updateSession}
+            />
           )}
         </div>
       )}
@@ -456,12 +513,6 @@ function SessionFeedbackForm({ session, onUpdate }: SessionFeedbackFormProps) {
   const [rating, setRating] = useState<number>(session.sessionFeedback?.rating ?? 0)
   const [energy, setEnergy] = useState<number>(session.sessionFeedback?.energyDuringSession ?? 0)
   const [challenge, setChallenge] = useState(session.sessionFeedback?.mainChallenge ?? '')
-
-  useEffect(() => {
-    setRating(session.sessionFeedback?.rating ?? 0)
-    setEnergy(session.sessionFeedback?.energyDuringSession ?? 0)
-    setChallenge(session.sessionFeedback?.mainChallenge ?? '')
-  }, [session.sessionFeedback])
 
   const persistFeedback = async (next: { rating?: number; energy?: number; challenge?: string }) => {
     const nextRating = next.rating ?? rating
