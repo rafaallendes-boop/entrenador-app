@@ -46,6 +46,7 @@ describe('SessionCard squash match badges', () => {
     )
 
     expect(html).toContain('Partido entrenamiento')
+    expect(html).not.toContain('>Partido<')
   })
 
   it('does not render the practice badge for legacy or competition matches', () => {
@@ -80,6 +81,7 @@ describe('SessionCard squash match badges', () => {
     )
 
     expect(html).toContain('Partido competitivo')
+    expect(html).not.toContain('>Partido<')
   })
 
   it('renders the mixed session kind badge when squash blocks are present', () => {

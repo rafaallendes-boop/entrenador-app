@@ -328,7 +328,7 @@ export function buildSquashCreateWeekExample(opts: {
   ].filter(Boolean).join(',')
 
   const sessions = [
-    `{"date":"${addDaysToISO(weekStart, 0)}","timeBlock":"PM","sessionType":"squash","title":"Squash mixto sombras + control","durationMin":65,"rpe":6,"objective":"${squashBaseObjective} con cierre de sombras + control para sumar pies y precision sin subir fatiga.","subtype":"control","squashDetails":{"trainingFocus":"${squashMixedSelection.trainingFocus}","sessionMode":"drill_session","sessionKind":"mixed","blocks":[${squashMixedBlocksJson}],"drills":[${squashMixedDrillsJson}]}}`,
+    `{"date":"${addDaysToISO(weekStart, 0)}","timeBlock":"PM","sessionType":"squash","title":"Squash mixto sombras + control","durationMin":65,"rpe":6,"objective":"${squashBaseObjective} con cierre de sombras + control para sumar pies y precision sin subir fatiga.","subtype":"control","squashDetails":{"trainingFocus":"${squashMixedSelection.trainingFocus}","sessionMode":"drill_session","sessionKind":"${squashMixedSelection.sessionKind}"${squashMixedBlocksJson ? `,"blocks":[${squashMixedBlocksJson}]` : ''},"drills":[${squashMixedDrillsJson}]}}`,
     hasRunning
       ? `{"date":"${addDaysToISO(weekStart, 1)}","timeBlock":"AM","sessionType":"running","title":"Running Z2","durationMin":50,"rpe":6,"objective":"base aeróbica — ritmo cómodo, respiración nasal","runningType":"z2","targetPaceMin":"${z2min}","targetPaceMax":"${z2max}"}`
       : null,
@@ -361,6 +361,7 @@ export function buildCompetitiveSquashWeekExample(opts: {
   squashCompetitiveObjective: string
   squashCompetitiveSelection: ReturnType<typeof selectSquashDrills>
   squashCompetitiveDrillsJson: string
+  squashMatchDayDrillsJson: string
   strengthSupportSelection: ReturnType<typeof import('../../training/strengthSelector').selectStrengthSession>
   strengthSupportExercisesJson: string
   z2min: string
@@ -373,6 +374,7 @@ export function buildCompetitiveSquashWeekExample(opts: {
     squashCompetitiveObjective,
     squashCompetitiveSelection,
     squashCompetitiveDrillsJson,
+    squashMatchDayDrillsJson,
     strengthSupportSelection,
     strengthSupportExercisesJson,
     z2min,
@@ -388,7 +390,7 @@ export function buildCompetitiveSquashWeekExample(opts: {
       ? `{"date":"${addDaysToISO(weekStart, 2)}","timeBlock":"PM","sessionType":"strength","title":"Fuerza neural liviana","durationMin":40,"rpe":5,"objective":"${strengthSupportSelection.focus}","exercises":[${strengthSupportExercisesJson}]}`
       : null,
     `{"date":"${addDaysToISO(weekStart, 3)}","timeBlock":"PM","sessionType":"squash","title":"Squash control pre-partido","durationMin":45,"rpe":5,"objective":"Timing, precisión, pies y sensaciones. Nada de desgaste.","subtype":"control","squashDetails":{"trainingFocus":"${squashCompetitiveSelection.trainingFocus}","sessionMode":"drill_session","sessionKind":"control","drills":[${squashCompetitiveDrillsJson}]}}`,
-    `{"date":"${addDaysToISO(weekStart, 5)}","timeBlock":"PM","sessionType":"squash","title":"Partido objetivo","durationMin":60,"rpe":8,"objective":"Competir fresco y con buena toma de T","subtype":"match","squashDetails":{"trainingFocus":"${squashCompetitiveSelection.trainingFocus}","sessionMode":"competition_match","sessionKind":"match","drills":[${squashCompetitiveDrillsJson}]}}`,
+    `{"date":"${addDaysToISO(weekStart, 5)}","timeBlock":"PM","sessionType":"squash","title":"Partido objetivo","durationMin":60,"rpe":8,"objective":"Competir fresco y con buena toma de T","subtype":"match","squashDetails":{"trainingFocus":"${squashCompetitiveSelection.trainingFocus}","sessionMode":"competition_match","sessionKind":"match","drills":[${squashMatchDayDrillsJson}]}}`,
   ].filter(Boolean).join(',\n    ')
 
   return `<actions>

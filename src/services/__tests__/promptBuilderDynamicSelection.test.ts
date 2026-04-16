@@ -197,6 +197,25 @@ describe('promptBuilder dynamic cycling and mobility sections', () => {
     expect(prompt).toContain('Partido de entrenamiento con foco tactico')
   })
 
+  it('does not teach a mixed squash session with empty blocks in the example schema', () => {
+    const profile = makeProfile({
+      goalEvents: [
+        {
+          id: 'goal-squash',
+          title: 'Open de squash',
+          date: '2026-04-11',
+          sport: 'squash',
+          priority: 'primary',
+          eventType: 'tournament',
+        },
+      ],
+    })
+
+    const prompt = buildCoachSystemPrompt(makeContext(profile))
+
+    expect(prompt).not.toContain('"sessionKind":"mixed","blocks":[]')
+  })
+
   it('includes sessionKind, blocks and weekly distribution guidance for squash', () => {
     const prompt = buildCoachSystemPrompt(makeContext(makeProfile()))
 

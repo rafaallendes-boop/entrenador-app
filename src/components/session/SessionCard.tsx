@@ -86,14 +86,18 @@ export default function SessionCard({ session, compact = false, onDelete }: Sess
     hasMobilityDetails ||
     hasProtocols ||
     hasCompletedFeedback
-  const subtypeLabel = session.subtype ? SQUASH_SUBTYPE_LABELS[session.subtype] : null
   const isPracticeMatch = isPracticeSquashMatch(session)
   const isCompetitionMatch = isCompetitionSquashMatch(session)
+  const subtypeLabel = session.subtype && !(isPracticeMatch || isCompetitionMatch)
+    ? SQUASH_SUBTYPE_LABELS[session.subtype]
+    : null
   const squashSessionKind = resolveSquashSessionKind(session)
   const squashSessionMode = session.type === 'squash' && session.squashDetails
     ? resolveSquashSessionMode(session.squashDetails)
     : undefined
-  const squashKindBadgeLabel = squashSessionKind === 'mixed' && squashBlocks.length > 1
+  const squashKindBadgeLabel = (isPracticeMatch || isCompetitionMatch)
+    ? null
+    : squashSessionKind === 'mixed' && squashBlocks.length > 1
     ? squashBlocks.map((block) => SQUASH_KIND_LABELS[block.kind] ?? block.kind).join(' + ')
     : squashSessionKind
       ? (SQUASH_KIND_LABELS[squashSessionKind] ?? squashSessionKind)

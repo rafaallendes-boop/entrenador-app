@@ -1011,6 +1011,7 @@ interface ResponsePromptContext {
   squashMixedBlocksJson: string
   squashControlDrillsJson: string
   squashCompetitiveDrillsJson: string
+  squashMatchDayDrillsJson: string
   squashBaseObjective: string
   squashCompetitiveObjective: string
   strengthBaseSelection: ReturnType<typeof selectStrengthSession>
@@ -1130,6 +1131,16 @@ function buildResponsePromptContext(
     squashAcwr: squashSelectorContext?.squashAcwr,
     desiredKind: 'control',
   })
+  const squashMatchDaySelection = selectSquashDrills({
+    fatigueLevel: Math.max(squashSelectorContext?.fatigueLevel ?? 4, 4),
+    phase: 'taper',
+    recentDrills: squashSelectorContext?.recentDrills ?? [],
+    goal: 'activacion corta de timing y sensaciones para competir fresco en squash',
+    competitionSoon: true,
+    historicalSessions: squashSelectorContext?.historicalSessions,
+    squashAcwr: squashSelectorContext?.squashAcwr,
+    desiredKind: 'match',
+  })
   const squashControlSelection = selectSquashDrills({
     fatigueLevel: Math.max(squashSelectorContext?.fatigueLevel ?? 4, 5),
     phase: squashSelectorContext?.phase ?? 'build',
@@ -1146,6 +1157,7 @@ function buildResponsePromptContext(
   const squashMixedBlocksJson = stringifySquashBlocks(squashMixedSelection.blocks)
   const squashControlDrillsJson = stringifySquashDrills(squashControlSelection.drills.slice(0, 3))
   const squashCompetitiveDrillsJson = stringifySquashDrills(squashCompetitiveSelection.drills.slice(0, 3))
+  const squashMatchDayDrillsJson = stringifySquashDrills(squashMatchDaySelection.drills.slice(0, 3))
   const squashBaseObjective = squashBaseSelection.trainingFocus === 'tactical'
     ? 'Tactico con cierre tecnico. Intensidad progresiva.'
     : squashBaseSelection.trainingFocus === 'physical'
@@ -1239,6 +1251,7 @@ function buildResponsePromptContext(
     squashMixedBlocksJson,
     squashControlDrillsJson,
     squashCompetitiveDrillsJson,
+    squashMatchDayDrillsJson,
     squashBaseObjective,
     squashCompetitiveObjective,
     strengthBaseSelection,

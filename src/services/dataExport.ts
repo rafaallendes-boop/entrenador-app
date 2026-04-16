@@ -51,6 +51,7 @@ const MOBILITY_SESSION_CONTEXTS = new Set([
 const SQUASH_TRAINING_FOCUSES = new Set(['technical', 'tactical', 'physical', 'conditioned_games'])
 const SQUASH_SESSION_MODES = new Set(['drill_session', 'practice_match', 'competition_match'])
 const SQUASH_SESSION_KINDS = new Set(['technical', 'control', 'shadows', 'match', 'mixed'])
+const SQUASH_BLOCK_KINDS = new Set(['technical', 'control', 'shadows', 'match'])
 const PROPOSAL_STATUSES = new Set(['pending', 'accepted', 'rejected', 'partial'])
 const SUPPORTED_SPORTS = new Set(['squash', 'running', 'strength', 'mobility', 'cycling'])
 const TRAINING_PRIORITIES = new Set(['performance', 'fitness', 'body_composition', 'return_to_play'])
@@ -912,7 +913,7 @@ function optionalSquashDetails(value: unknown, path: string): Session['squashDet
           throw new Error(`${path}.blocks[${index}].drills debe incluir al menos un drill.`)
         }
         return {
-          kind: requireEnum(blockRow.kind, SQUASH_SESSION_KINDS, `${path}.blocks[${index}].kind`) as NonNullable<NonNullable<Session['squashDetails']>['blocks']>[number]['kind'],
+          kind: requireEnum(blockRow.kind, SQUASH_BLOCK_KINDS, `${path}.blocks[${index}].kind`) as NonNullable<NonNullable<Session['squashDetails']>['blocks']>[number]['kind'],
           durationMin: optionalFiniteNumber(blockRow.durationMin, `${path}.blocks[${index}].durationMin`),
           drills: blockDrills,
         }
