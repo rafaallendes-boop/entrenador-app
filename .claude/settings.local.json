@@ -17,7 +17,11 @@
       "Read(//opt/homebrew/**)",
       "Bash(ls /opt/homebrew/bin/g*)",
       "Bash(git -C /Users/rafaallendes/Projects/entrenador-app show bdd6714a8347c42699ecb1512885be178770723e -- src/services/syncService.ts src/services/syncUtils.ts)",
-      "Bash(git -C /Users/rafaallendes/Projects/entrenador-app log --oneline -20)"
+      "Bash(git -C /Users/rafaallendes/Projects/entrenador-app log --oneline -20)",
+      "Bash(curl -s \"https://api.github.com/repos/rafaallendes-boop/entrenador-app/pulls?state=open\")",
+      "Bash(python3 -m json.tool)",
+      "WebFetch(domain:api.github.com)",
+      "WebFetch(domain:github.com)"
     ]
   }
 }
