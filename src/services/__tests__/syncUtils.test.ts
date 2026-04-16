@@ -2,10 +2,13 @@ import { describe, expect, it } from 'vitest'
 
 import type { AthleteProfile } from '../../types'
 import {
+  athleteProfileRowsEqual,
   athleteProfileToRow,
   classifyAthleteProfileSyncError,
+  coalesceAthleteProfileRows,
   compactQueue,
   getOfflineOpEntityId,
+  mergeAthleteProfileRows,
   pickCanonicalAthleteProfileRow,
   rowToAthleteProfile,
   scoreEntityData,
@@ -68,6 +71,78 @@ describe('syncUtils', () => {
     ]
 
     expect(pickCanonicalAthleteProfileRow(rows).id).toBe('default')
+  })
+
+  it('coalesces a newer sparse profile with richer existing sport data', () => {
+    const rows = [
+      toAthleteProfileSyncRow({
+        id: 'default',
+        user_id: 'user-1',
+        coach_memory: null,
+        updated_at: 100,
+        data: {
+          name: 'Rafa',
+          primarySport: 'squash',
+          sportContext: {
+            enabledSports: ['squash', 'strength'],
+            primarySport: 'squash',
+            secondarySports: ['strength'],
+          },
+        },
+      }),
+      toAthleteProfileSyncRow({
+        id: 'default',
+        user_id: 'user-1',
+        coach_memory: 'Prefiere cargas progresivas',
+        updated_at: 200,
+        data: {
+          onboardingDeferredAt: 200,
+        },
+      }),
+    ]
+
+    const merged = coalesceAthleteProfileRows(rows)
+    expect(merged.updated_at).toBe(200)
+    expect(merged.coach_memory).toBe('Prefiere cargas progresivas')
+    expect(merged.data?.name).toBe('Rafa')
+    expect((merged.data?.sportContext as { enabledSports?: string[] })?.enabledSports).toEqual(['squash', 'strength'])
+    expect(merged.data?.onboardingDeferredAt).toBe(200)
+  })
+
+  it('preserves explicit updates when merging athlete profile rows', () => {
+    const base = toAthleteProfileSyncRow({
+      id: 'default',
+      user_id: 'user-1',
+      coach_memory: 'Vieja',
+      updated_at: 100,
+      data: {
+        name: 'Rafa',
+        sportContext: {
+          enabledSports: ['squash'],
+          primarySport: 'squash',
+        },
+      },
+    })
+    const incoming = toAthleteProfileSyncRow({
+      id: 'default',
+      user_id: 'user-1',
+      coach_memory: null,
+      updated_at: 200,
+      data: {
+        name: undefined,
+        sportContext: {
+          enabledSports: ['running'],
+          primarySport: 'running',
+        },
+      },
+    })
+
+    const merged = mergeAthleteProfileRows(base, incoming)
+    expect(merged.coach_memory).toBeNull()
+    expect(merged.updated_at).toBe(200)
+    expect(merged.data?.name).toBeUndefined()
+    expect((merged.data?.sportContext as { primarySport?: string })?.primarySport).toBe('running')
+    expect(athleteProfileRowsEqual(merged, incoming)).toBe(true)
   })
 
   it('scores richer entity data higher than sparse data', () => {

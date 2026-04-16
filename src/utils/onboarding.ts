@@ -21,6 +21,7 @@ export function clearOnboardingSkipped(userId?: string | null): void {
 
 export function needsOnboarding(profile: AthleteProfile | null | undefined): boolean {
   if (!profile) return true
+  if (typeof profile.onboardingDeferredAt === 'number') return false
 
   const hasLegacySport = !!profile.primarySport?.trim()
   const hasEnabledSports = getEnabledSports(profile).length > 0

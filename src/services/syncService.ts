@@ -22,13 +22,14 @@ import type {
 import type { AppDataExport } from './dataExport'
 import { clearAllLocalAppData } from './appMaintenance'
 import {
+  athleteProfileRowsEqual,
   athleteProfileToRow,
   classifyAthleteProfileSyncError,
   classifySyncError,
+  coalesceAthleteProfileRows,
   compactQueue,
   getSyncErrorMessage,
   normalizeAthleteProfilePayload,
-  pickCanonicalAthleteProfileRow,
   rowToAthleteProfile,
   scoreEntityData,
   toAthleteProfileSyncRow,
@@ -717,7 +718,7 @@ async function repairRemoteAthleteProfileRows(
   preferredRow?: AthleteProfileSyncRow,
 ): Promise<AthleteProfileSyncRow> {
   const candidates = preferredRow ? [...rows, preferredRow] : [...rows]
-  const winner = pickCanonicalAthleteProfileRow(candidates)
+  const winner = coalesceAthleteProfileRows(candidates)
   const canonical: AthleteProfileSyncRow = {
     ...winner,
     user_id: userId,
@@ -799,7 +800,7 @@ async function persistAthleteProfileRow(
   userId: string,
   remoteRows?: AthleteProfileSyncRow[],
 ): Promise<void> {
-  const profileRow = normalizeAthleteProfilePayload(row)
+  const profileRow = toAthleteProfileSyncRow(row)
   const existingRows = remoteRows ?? await fetchAthleteProfileRows(userId)
 
   if (existingRows.length > 1) {
@@ -808,17 +809,20 @@ async function persistAthleteProfileRow(
   }
 
   const existingRow = existingRows[0]
+  const rowToPersist = existingRow
+    ? coalesceAthleteProfileRows([existingRow, profileRow])
+    : profileRow
 
   if (!existingRow) {
     // Try upsert with onConflict first (requires unique constraint on user_id)
     const { error } = await getSupabase()
       .from('athlete_profiles')
       .upsert({
-        id: profileRow.id,
+        id: rowToPersist.id,
         user_id: userId,
-        coach_memory: profileRow.coach_memory,
-        updated_at: profileRow.updated_at,
-        data: profileRow.data,
+        coach_memory: rowToPersist.coach_memory,
+        updated_at: rowToPersist.updated_at,
+        data: rowToPersist.data,
       } as never, { onConflict: 'user_id' })
     if (error) throw error
     return
@@ -827,9 +831,9 @@ async function persistAthleteProfileRow(
   const { error } = await getSupabase()
     .from('athlete_profiles')
     .update({
-      coach_memory: profileRow.coach_memory,
-      updated_at: profileRow.updated_at,
-      data: profileRow.data,
+      coach_memory: rowToPersist.coach_memory,
+      updated_at: rowToPersist.updated_at,
+      data: rowToPersist.data,
     } as never)
     .eq('id', existingRow.id)
     .eq('user_id', userId)
@@ -838,7 +842,7 @@ async function persistAthleteProfileRow(
 }
 
 async function upsertAthleteProfileRow(row: Record<string, unknown>, userId: string): Promise<void> {
-  const profileRow = normalizeAthleteProfilePayload(row)
+  const profileRow = toAthleteProfileSyncRow(row)
   const remoteRows = await fetchAthleteProfileRows(userId)
 
   logAthleteProfileSync('push:attempt', {
@@ -1241,15 +1245,18 @@ async function mergeAthleteProfile(userId: string, context: MergeContext): Promi
     return
   }
 
-  const canonicalRow = pickCanonicalAthleteProfileRow(remoteRows)
-  const remote = rowToAthleteProfile(canonicalRow)
-  const remoteUpdatedAt = canonicalRow.updated_at ?? 0
+  const canonicalRow = coalesceAthleteProfileRows(remoteRows)
   const local = await db.athleteProfiles.get('default')
+  const localRow = local ? toAthleteProfileSyncRow(athleteProfileToRow(local, userId)) : null
+  const mergedRow = localRow ? coalesceAthleteProfileRows([localRow, canonicalRow]) : canonicalRow
+  const mergedProfile = rowToAthleteProfile(mergedRow)
 
-  if (!local || remoteUpdatedAt > local.updatedAt) {
-    await db.athleteProfiles.put({ ...remote, id: 'default' })
-  } else if (local.updatedAt > remoteUpdatedAt) {
-    void pushAthleteProfile(local)
+  if (!localRow || !athleteProfileRowsEqual(localRow, mergedRow)) {
+    await db.athleteProfiles.put({ ...mergedProfile, id: 'default' })
+  }
+
+  if (!athleteProfileRowsEqual(canonicalRow, mergedRow)) {
+    void pushAthleteProfile(mergedProfile)
   }
 }
 

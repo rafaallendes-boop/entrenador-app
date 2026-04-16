@@ -496,6 +496,7 @@ export interface MacroPlan {
 export interface AthleteProfile {
   id: string
   coachMemory?: string
+  onboardingDeferredAt?: number
   updatedAt: number
   // Structured profile
   name?: string

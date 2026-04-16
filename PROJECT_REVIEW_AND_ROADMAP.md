@@ -1,7 +1,7 @@
 # Entrenador App - Review and Roadmap
 
-Actualizado: 2026-04-14
-Ultimo hito relevante: revision integral del repo y recalibracion del roadmap contra el estado real del codigo
+Actualizado: 2026-04-15
+Ultimo hito relevante: taxonomia nueva de squash, planner semanal deterministico y hardening de prompt/UI ya integrados en codigo
 
 ## Revision 2026-04-14 contrastada con codigo
 
@@ -43,6 +43,7 @@ Entrenador ya no esta en fase de prototipo. Hoy existe una base seria para atlet
 - cycling y mobility ahora con mejor criterio de coaching, continuidad y estructura visible
 - weekly action loop unificado visible en WeeklyView y reutilizado en dashboard y notificaciones
 - squash ya distingue mejor partido de entrenamiento vs partido competitivo real
+- squash ahora tambien distingue mejor tecnica, control, sombras, match y sesiones mixtas visibles
 - rollback de propuestas del coach mas robusto para altas, updates y deletes
 - confirm dialogs compartidos en los flujos criticos mas visibles
 - alertas fuertes ahora pueden convertirse en propuestas concretas del coach sin pasar primero por chat libre
@@ -77,6 +78,7 @@ Esto ya no deberia volver al backlog principal salvo refinamientos:
 - weekly action engine compartido entre WeeklyView, dashboard y notificaciones
 - WeeklyView elevado a superficie principal para actuar sobre la semana
 - squashDetails ahora soporta `sessionMode` para distinguir drill, practice match y competition match
+- `squashDetails` ahora soporta `sessionKind` y `blocks` opcionales sin romper compatibilidad ni schema
 - tests unitarios ampliados para logica critica
 
 ## Lo que ya entrega valor real
@@ -166,7 +168,7 @@ Pendiente:
 
 ### Squash competitivo
 
-Estado: mas fuerte y mas realista
+Estado: consolidado y bastante mas expresivo
 
 - libreria squash ya soporta match-play de entrenamiento
 - el planner puede proponer `subtype: match` con `sessionMode: practice_match`
@@ -174,10 +176,18 @@ Estado: mas fuerte y mas realista
 - varias capas criticas ya no tratan automaticamente todo `match` como competencia real
 - historial y analytics ya separan mejor practice match vs competencia real
 - History y ProposalDrawer muestran mejor el rol competitivo de cada sesion
+- taxonomia visible de `sessionKind`: `technical`, `control`, `shadows`, `match` y `mixed`
+- sesiones mixtas opcionales por `blocks[]` ya compatibles con datos legacy y sin tocar Dexie
+- libreria de control ya incluye drills solo/volume mas reales para squash competitivo
+- selector squash ya soporta `desiredKind`, mixtos validos y mantiene match al final
+- `squashWeekPlanner.ts` ya sugiere distribucion semanal por fase, fatiga, ACWR y proximidad de competencia
+- prompt del coach ya recibe esta taxonomia y una semana sugerida, no solo drills sueltos
+- hardening reciente evita `block.kind` invalido, ejemplos mixtos contradictorios y badges duplicados de match
 
 Pendiente:
 
 - enriquecer formatos de match-play con mas contexto y familias
+- medir si el coach realmente sigue `sessionKind`, `blocks` y `weekPlan` en produccion
 - usar esta semantica para recomendaciones y ajustes automaticos todavia mas precisos
 - decidir si en el futuro conviene `sessionFamily` o subtype mas rico, solo si aparece un limite real del modelo actual
 
@@ -393,6 +403,17 @@ Pendiente:
 - `Dashboard` ya usa `allWeekSummaries` para detectar historial real y evitar mensajes falsos de "primera semana"
 - `SettingsPage` ya limpia artifacts de sync antes del wipe remoto selectivo
 
+### 16. Taxonomia nueva de squash + planner semanal inteligente
+
+- `SquashDetails` ahora soporta `sessionKind` y `blocks` opcionales como capa semantica compatible
+- helper de derivacion legacy para no romper sesiones historicas ni rollback
+- libreria de squash enriquecida con control real tipo `solo` / `volume_reps`
+- selector con `desiredKind`, mixtos validos y regla explicita de match al final
+- `squashWeekPlanner.ts` nuevo como advisor deterministico de distribucion semanal
+- prompt y ejemplos de squash actualizados con `sessionKind`, `blocks` y una sesion mixta real
+- SessionCard ya muestra badge de kind y render agrupado por bloques cuando existen
+- hardening adicional en import/prompt/UI para evitar `block.kind` invalido, ejemplos mixtos vacios y duplicacion de badges de partido
+
 ## Que hay hoy
 
 Resumen simple del producto actual:
@@ -412,7 +433,7 @@ Las brechas mas importantes no son tantas, pero si son profundas:
 3. Convertir el loop semanal en reactivacion mas automatica y medible.
 4. Completar packaging de monetizacion y posicionamiento comercial.
 5. Convertir mejoras recientes de disciplinas secundarias en comportamiento estable del coach.
-6. Seguir refinando squash competitivo sobre la base ya consolidada, no reabrir el problema desde cero.
+6. Medir y consolidar el uso real de la nueva taxonomia de squash antes de reabrir refinamientos mas finos.
 7. Completar rollback verdaderamente transaccional para propuestas complejas multi-accion con objetivos y week summaries.
 8. Afinar la calidad y precision de los ajustes automaticos con contexto mas rico por dia, deporte y fatiga.
 
@@ -573,12 +594,12 @@ Por que:
 Alcance:
 
 - enriquecer formatos de match-play y familias cuando aparezcan gaps reales de uso
-- usar el split practice match / competencia real para recomendaciones y auto-ajustes mas finos
-- medir si la nueva semantica mejora decisiones del coach y lectura del historial
+- usar `sessionKind`, `blocks` y `weekPlan` para recomendaciones y auto-ajustes mas finos
+- medir si la nueva semantica mejora decisiones del coach, lectura del historial y calidad del prompt
 
 Por que:
 
-- la consolidacion base ya esta implementada
+- la consolidacion base ya esta implementada, incluyendo taxonomia y planner semanal
 - el siguiente salto no es de modelo, sino de precision y uso real
 
 ## Priorizacion simple

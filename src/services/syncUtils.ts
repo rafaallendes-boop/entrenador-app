@@ -405,6 +405,150 @@ function scoreAthleteProfileRow(row: AthleteProfileSyncRow): number {
   })
 }
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function hasMeaningfulValue(value: unknown): boolean {
+  if (value == null) return false
+  if (Array.isArray(value)) return value.length > 0
+  if (isPlainObject(value)) return Object.values(value).some((item) => hasMeaningfulValue(item))
+  if (typeof value === 'string') return value.trim().length > 0
+  if (typeof value === 'number') return Number.isFinite(value)
+  if (typeof value === 'boolean') return true
+  return false
+}
+
+function hasConfiguredSports(data: Record<string, unknown> | null): boolean {
+  if (!data) return false
+
+  const sportContext = isPlainObject(data.sportContext) ? data.sportContext : null
+  const enabledSports = Array.isArray(sportContext?.enabledSports) ? sportContext.enabledSports : []
+  const primarySport = typeof data.primarySport === 'string' ? data.primarySport.trim() : ''
+  const secondarySports = Array.isArray(data.secondarySports) ? data.secondarySports : []
+
+  return enabledSports.length > 0 || primarySport.length > 0 || secondarySports.length > 0
+}
+
+function countMissingDurableKeys(
+  baseData: Record<string, unknown> | null,
+  incomingData: Record<string, unknown> | null,
+): number {
+  if (!baseData) return 0
+
+  const durableKeys = [
+    'name',
+    'primarySport',
+    'secondarySports',
+    'sportContext',
+    'mainGoal',
+    'secondaryGoal',
+    'runningProfile',
+    'strengthProfile',
+    'recoveryProfile',
+    'scheduleProfile',
+    'nutritionProfile',
+    'goalEvents',
+    'macroPlan',
+    'planWizardConfig',
+  ] as const
+
+  return durableKeys.reduce((missing, key) => {
+    if (!hasMeaningfulValue(baseData[key])) return missing
+    if (incomingData && key in incomingData) return missing
+    return missing + 1
+  }, 0)
+}
+
+function shouldHydrateFromRicherAthleteProfileRow(
+  richerRow: AthleteProfileSyncRow,
+  candidateRow: AthleteProfileSyncRow,
+): boolean {
+  const richerScore = scoreAthleteProfileRow(richerRow)
+  const candidateScore = scoreAthleteProfileRow(candidateRow)
+  if (richerScore <= candidateScore + 1) return false
+
+  const richerData = richerRow.data
+  const candidateData = candidateRow.data
+
+  if (hasConfiguredSports(richerData) && !hasConfiguredSports(candidateData)) {
+    return true
+  }
+
+  const richerName = typeof richerData?.name === 'string' ? richerData.name.trim() : ''
+  const candidateNamePresent = candidateData != null && 'name' in candidateData
+  if (richerName.length > 0 && !candidateNamePresent) {
+    return true
+  }
+
+  const richerCoachMemory = richerRow.coach_memory?.trim() ?? ''
+  if (richerCoachMemory.length > 0 && candidateRow.coach_memory == null) {
+    return true
+  }
+
+  return countMissingDurableKeys(richerData, candidateData) >= 2
+}
+
+function mergeDefinedObjects(
+  base: Record<string, unknown>,
+  incoming: Record<string, unknown>,
+): Record<string, unknown> {
+  const merged: Record<string, unknown> = { ...base }
+
+  for (const [key, value] of Object.entries(incoming)) {
+    if (value === undefined) {
+      delete merged[key]
+      continue
+    }
+
+    const existing = merged[key]
+    if (isPlainObject(existing) && isPlainObject(value)) {
+      merged[key] = mergeDefinedObjects(existing, value)
+      continue
+    }
+
+    merged[key] = value
+  }
+
+  return merged
+}
+
+export function mergeAthleteProfileRows(
+  baseRow: AthleteProfileSyncRow,
+  incomingRow: AthleteProfileSyncRow,
+): AthleteProfileSyncRow {
+  const baseData = baseRow.data ?? {}
+  const incomingData = incomingRow.data ?? {}
+  const mergedData = mergeDefinedObjects(baseData, incomingData)
+
+  return normalizeAthleteProfilePayload({
+    id: incomingRow.id,
+    user_id: incomingRow.user_id,
+    coach_memory: incomingRow.coach_memory,
+    updated_at: incomingRow.updated_at,
+    data: Object.keys(mergedData).length > 0 ? mergedData : null,
+  })
+}
+
+export function coalesceAthleteProfileRows(rows: AthleteProfileSyncRow[]): AthleteProfileSyncRow {
+  const winner = normalizeAthleteProfilePayload(pickCanonicalAthleteProfileRow(rows))
+  const richerRows = rows
+    .map((row) => normalizeAthleteProfilePayload(row))
+    .filter((row) => !athleteProfileRowsEqual(row, winner))
+    .sort((a, b) => scoreAthleteProfileRow(b) - scoreAthleteProfileRow(a))
+
+  return richerRows.reduce((current, row) => {
+    if (!shouldHydrateFromRicherAthleteProfileRow(row, current)) {
+      return current
+    }
+    return mergeAthleteProfileRows(row, current)
+  }, winner)
+}
+
+export function athleteProfileRowsEqual(a: AthleteProfileSyncRow, b: AthleteProfileSyncRow): boolean {
+  return JSON.stringify(normalizeAthleteProfilePayload(a)) === JSON.stringify(normalizeAthleteProfilePayload(b))
+}
+
 export function pickCanonicalAthleteProfileRow(rows: AthleteProfileSyncRow[]): AthleteProfileSyncRow {
   const sorted = [...rows].sort((a, b) => {
     if (b.updated_at !== a.updated_at) return b.updated_at - a.updated_at

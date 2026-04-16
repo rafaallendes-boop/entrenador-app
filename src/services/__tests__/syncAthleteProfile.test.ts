@@ -333,6 +333,49 @@ describe('Athlete Profile Sync - Hardening Fixes', () => {
     expect(updatePayload.data.name).toBe('Rafa Repaired')
   })
 
+  it('9. Preserves remote sport setup when a newer partial profile only updates coach memory or onboarding defer', async () => {
+    athleteProfileRows = [
+      toAthleteProfileSyncRow({
+        id: 'remote-1',
+        user_id: 'user-1',
+        coach_memory: null,
+        updated_at: 100,
+        data: {
+          name: 'Rafa',
+          primarySport: 'squash',
+          sportContext: {
+            enabledSports: ['squash', 'strength'],
+            primarySport: 'squash',
+            secondarySports: ['strength'],
+          },
+        },
+      }),
+    ]
+
+    const syncService = await import('../syncService')
+    await syncService.pushAthleteProfile({
+      id: 'default',
+      coachMemory: 'Prefiere doble sesion',
+      onboardingDeferredAt: 300,
+      updatedAt: 300,
+    })
+
+    await new Promise(resolve => setTimeout(resolve, 10))
+
+    expect(updateCalls).toHaveLength(1)
+    const payload = updateCalls[0].payload as {
+      coach_memory: string | null
+      updated_at: number
+      data: Record<string, unknown>
+    }
+    expect(payload.coach_memory).toBe('Prefiere doble sesion')
+    expect(payload.updated_at).toBe(300)
+    expect(payload.data.name).toBe('Rafa')
+    expect(payload.data.primarySport).toBe('squash')
+    expect((payload.data.sportContext as { enabledSports?: string[] }).enabledSports).toEqual(['squash', 'strength'])
+    expect(payload.data.onboardingDeferredAt).toBe(300)
+  })
+
   // Test 6 MUST remain last: it nulls supabase and would contaminate subsequent tests
   it('6. Does not crash when supabase is null', async () => {
     vi.mocked(await import('../auth')).supabase = null as unknown as ReturnType<typeof import('@supabase/supabase-js').createClient>

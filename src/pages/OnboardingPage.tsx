@@ -104,6 +104,7 @@ export default function OnboardingPage() {
 
     await saveAthleteProfile({
       name: name.trim() || undefined,
+      onboardingDeferredAt: undefined,
       sportContext: {
         enabledSports: selectedSports,
         primarySport,
@@ -121,7 +122,8 @@ export default function OnboardingPage() {
     navigate(ROUTES.HOME, { state: { showProfileNudge: true } })
   }
 
-  function handleSkip() {
+  async function handleSkip() {
+    await saveAthleteProfile({ onboardingDeferredAt: Date.now() })
     markOnboardingSkipped(user?.id)
     navigate(ROUTES.HOME)
   }
@@ -137,7 +139,7 @@ export default function OnboardingPage() {
         <div className="mb-4 flex justify-end">
           <button
             type="button"
-            onClick={handleSkip}
+            onClick={() => { void handleSkip() }}
             className="text-sm font-medium text-ink-faint transition-colors hover:text-ink-muted"
           >
             Omitir por ahora

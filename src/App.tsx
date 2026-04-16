@@ -10,6 +10,7 @@ import { useCoachMemoryStore } from './store/useCoachMemoryStore'
 import { currentWeekStartISO } from './utils/date'
 import { db } from './db/db'
 import { hasSkippedOnboarding, needsOnboarding } from './utils/onboarding'
+import { isSupabaseConfigured } from './services/auth'
 
 const Dashboard = lazy(() => import('./pages/Dashboard'))
 const WeeklyView = lazy(() => import('./pages/WeeklyView'))
@@ -38,18 +39,22 @@ function OnboardingGuard({ children }: { children: ReactNode }) {
   const navigate = useNavigate()
   const location = useLocation()
   const user = useAuthStore(s => s.user)
+  const syncAttemptInFlight = useAuthStore(s => s.syncDetails.syncAttemptInFlight)
+  const lastSyncAt = useAuthStore(s => s.syncDetails.lastSyncAt)
   const athleteProfile = useCoachMemoryStore(s => s.athleteProfile)
   const hasLoadedMemory = useCoachMemoryStore(s => s.hasLoaded)
 
   useEffect(() => {
     if (location.pathname === ROUTES.ONBOARDING) return
     if (!hasLoadedMemory) return
+    if (syncAttemptInFlight) return
+    if (isSupabaseConfigured && user?.id && lastSyncAt == null) return
     const skippedOnboarding = hasSkippedOnboarding(user?.id)
 
     if (needsOnboarding(athleteProfile) && !skippedOnboarding) {
       navigate(ROUTES.ONBOARDING, { replace: true })
     }
-  }, [athleteProfile, hasLoadedMemory, location.pathname, navigate, user?.id])
+  }, [athleteProfile, hasLoadedMemory, lastSyncAt, location.pathname, navigate, syncAttemptInFlight, user?.id])
 
   return <>{children}</>
 }
@@ -88,6 +93,10 @@ export default function App() {
       }
 
       await runFullSync(userId)
+      if (cancelled) return
+
+      const { loadMemory } = useCoachMemoryStore.getState()
+      await loadMemory()
       if (cancelled) return
 
       const { loadWeek, loadAllSummaries } = useTrainingStore.getState()
