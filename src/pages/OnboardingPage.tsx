@@ -150,7 +150,11 @@ export default function OnboardingPage() {
           type="button"
           disabled={!canGoNext}
           onClick={() => setStep(2)}
-          className="w-full rounded-xl bg-brand py-3 font-semibold text-white transition-opacity disabled:opacity-40"
+          className="w-full rounded-xl py-3.5 font-display text-sm font-bold uppercase tracking-[0.18em] text-white transition-all active:scale-[0.98] disabled:opacity-40"
+          style={{
+            background: 'linear-gradient(135deg, #ff5500, #ff4d00)',
+            boxShadow: canGoNext ? '0 8px 30px -8px rgba(255,77,0,0.55)' : 'none',
+          }}
         >
           Continuar
         </button>
@@ -163,7 +167,8 @@ export default function OnboardingPage() {
           <button
             type="button"
             onClick={() => setStep(3)}
-            className="flex-1 rounded-xl border border-surface-soft/70 py-3 font-semibold text-ink-muted transition-colors hover:bg-surface-raised"
+            className="flex-1 rounded-xl py-3.5 font-display text-sm font-bold uppercase tracking-[0.18em] text-ink-muted transition-all hover:text-ink"
+            style={{ border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.04)' }}
           >
             Atrás
           </button>
@@ -171,7 +176,11 @@ export default function OnboardingPage() {
             type="button"
             disabled={!canFinish}
             onClick={() => void handleFinish()}
-            className="flex flex-1 items-center justify-center rounded-xl bg-brand py-3 font-semibold text-white transition-opacity disabled:opacity-40"
+            className="flex flex-1 items-center justify-center rounded-xl py-3.5 font-display text-sm font-bold uppercase tracking-[0.18em] text-white transition-all active:scale-[0.98] disabled:opacity-40"
+            style={{
+              background: 'linear-gradient(135deg, #ff5500, #ff4d00)',
+              boxShadow: canFinish ? '0 8px 30px -8px rgba(255,77,0,0.55)' : 'none',
+            }}
           >
             {isSaving ? (
               <span className="h-4 w-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
@@ -188,7 +197,8 @@ export default function OnboardingPage() {
         <button
           type="button"
           onClick={() => setStep((step - 1) as 1 | 2 | 3)}
-          className="flex-1 rounded-xl border border-surface-soft/70 py-3 font-semibold text-ink-muted transition-colors hover:bg-surface-raised"
+          className="flex-1 rounded-xl py-3.5 font-display text-sm font-bold uppercase tracking-[0.18em] text-ink-muted transition-all hover:text-ink"
+          style={{ border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.04)' }}
         >
           Atrás
         </button>
@@ -196,7 +206,11 @@ export default function OnboardingPage() {
           type="button"
           disabled={!canGoNext}
           onClick={() => setStep((step + 1) as 2 | 3 | 4)}
-          className="flex-1 rounded-xl bg-brand py-3 font-semibold text-white transition-opacity disabled:opacity-40"
+          className="flex-1 rounded-xl py-3.5 font-display text-sm font-bold uppercase tracking-[0.18em] text-white transition-all active:scale-[0.98] disabled:opacity-40"
+          style={{
+            background: 'linear-gradient(135deg, #ff5500, #ff4d00)',
+            boxShadow: canGoNext ? '0 8px 30px -8px rgba(255,77,0,0.55)' : 'none',
+          }}
         >
           Continuar
         </button>
@@ -240,7 +254,19 @@ export default function OnboardingPage() {
               value={name}
               onChange={(event) => setName(event.target.value)}
               placeholder="Ej. Rafa"
-              className="w-full rounded-xl border border-surface-soft/70 bg-surface-panel px-4 py-3 text-sm text-ink placeholder:text-ink-faint focus:border-brand focus:outline-none"
+              className="w-full rounded-xl px-4 py-3 text-sm text-ink placeholder:text-ink-faint outline-none transition-all"
+              style={{
+                background: 'rgba(255,255,255,0.05)',
+                border: '1px solid rgba(255,255,255,0.1)',
+              }}
+              onFocus={(e) => {
+                e.currentTarget.style.border = '1px solid rgba(255,77,0,0.35)'
+                e.currentTarget.style.boxShadow = '0 3px 14px -3px rgba(255,77,0,0.35)'
+              }}
+              onBlur={(e) => {
+                e.currentTarget.style.border = '1px solid rgba(255,255,255,0.1)'
+                e.currentTarget.style.boxShadow = 'none'
+              }}
             />
           </label>
 
@@ -308,11 +334,13 @@ export default function OnboardingPage() {
                     type="button"
                     aria-pressed={selected}
                     onClick={() => toggleDay(day.key)}
-                    className={`rounded-full border px-3 py-3 text-sm font-semibold transition-colors ${
-                      selected
-                        ? 'border-brand bg-brand text-white'
-                        : 'border-surface-soft/70 bg-surface-panel text-ink-muted hover:border-brand/40'
-                    }`}
+                    className="rounded-full px-3 py-3 text-sm font-bold transition-all active:scale-95"
+                    style={{
+                      border: selected ? '1px solid rgba(255,77,0,0.5)' : '1px solid rgba(255,255,255,0.1)',
+                      background: selected ? 'linear-gradient(135deg, #ff5500, #ff4d00)' : 'rgba(255,255,255,0.04)',
+                      color: selected ? '#fff' : '#6e6e73',
+                      boxShadow: selected ? '0 4px 16px -4px rgba(255,77,0,0.5)' : 'none',
+                    }}
                     title={day.label}
                   >
                     {day.shortLabel}
@@ -338,11 +366,12 @@ export default function OnboardingPage() {
                       type="button"
                       aria-pressed={selected}
                       onClick={() => toggleDoubleDay(day.key)}
-                      className={`rounded-full border px-4 py-2 text-sm font-medium transition-colors ${
-                        selected
-                          ? 'border-forge-ember bg-forge-ember/15 text-forge-ember'
-                          : 'border-surface-soft/70 bg-surface-panel text-ink-muted hover:border-forge-ember/40'
-                      }`}
+                      className="rounded-full px-4 py-2 text-sm font-semibold transition-all"
+                      style={{
+                        border: selected ? '1px solid rgba(255,150,50,0.4)' : '1px solid rgba(255,255,255,0.1)',
+                        background: selected ? 'rgba(255,140,50,0.14)' : 'rgba(255,255,255,0.04)',
+                        color: selected ? '#ffab5e' : '#6e6e73',
+                      }}
                     >
                       {day.label}
                     </button>
@@ -353,8 +382,8 @@ export default function OnboardingPage() {
           )}
 
           {summary.length > 0 && (
-            <div className="rounded-xl border border-surface-soft/70 bg-surface-panel p-4">
-              <p className="text-sm font-medium text-ink">Resumen</p>
+            <div className="rounded-xl p-4" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)' }}>
+              <p className="font-mono text-[10px] font-bold uppercase tracking-[0.28em] text-ink-faint">Resumen</p>
               <div className="mt-2 space-y-1 text-sm text-ink-muted">
                 {summary.map((item) => (
                   <p key={item}>{item}</p>

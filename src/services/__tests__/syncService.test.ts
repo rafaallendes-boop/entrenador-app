@@ -5,6 +5,38 @@ type SupabaseResult = { data: unknown; error: unknown }
 const localStorageState = new Map<string, string>()
 const syncStatusMock = vi.fn()
 const syncDetailsMock = vi.fn()
+function createSyncDetailsState() {
+  return {
+    pendingOps: 0,
+    syncAttemptInFlight: false,
+    pendingUpserts: 0,
+    pendingDeletes: 0,
+    oldestPendingOpAt: null,
+    pendingTables: [],
+    lastSyncAt: null,
+    lastSuccessfulSyncAt: null,
+    lastRecoveredSyncAt: null,
+    lastErrorAt: null,
+    lastErrorMessage: null,
+    lastErrorCategory: null,
+    lastBlockedTable: null,
+    retryScheduledAt: null,
+    consecutiveFailures: 0,
+    autoRepairInProgress: false,
+    lastAutoRepairAt: null,
+    memoryLoadRequiredAfterSyncAt: null,
+    memoryLoadedForSyncAt: null,
+  }
+}
+const storeState = {
+  user: { id: 'user-1' },
+  syncDetails: createSyncDetailsState(),
+  setSyncStatus: (...args: unknown[]) => syncStatusMock(...args),
+  setSyncDetails: (patch: Record<string, unknown>) => {
+    Object.assign(storeState.syncDetails, patch)
+    syncDetailsMock(patch)
+  },
+}
 
 let sessionsRows: unknown[] = []
 let dayLogRows: unknown[] = []
@@ -48,31 +80,7 @@ vi.mock('../appMaintenance', () => ({
 
 vi.mock('../../store/useAuthStore', () => ({
   useAuthStore: {
-    getState: () => ({
-      user: { id: 'user-1' },
-      syncDetails: {
-        pendingOps: 0,
-        syncAttemptInFlight: false,
-        pendingUpserts: 0,
-        pendingDeletes: 0,
-        oldestPendingOpAt: null,
-        pendingTables: [],
-        lastSyncAt: null,
-        lastSuccessfulSyncAt: null,
-        lastRecoveredSyncAt: null,
-        lastErrorAt: null,
-        lastErrorMessage: null,
-        lastBlockedTable: null,
-        retryScheduledAt: null,
-        consecutiveFailures: 0,
-        autoRepairInProgress: false,
-        lastAutoRepairAt: null,
-        memoryLoadRequiredAfterSyncAt: null,
-        memoryLoadedForSyncAt: null,
-      },
-      setSyncStatus: syncStatusMock,
-      setSyncDetails: syncDetailsMock,
-    }),
+    getState: () => storeState,
   },
 }))
 
@@ -160,6 +168,8 @@ describe('syncService', () => {
     localStorageState.clear()
     syncStatusMock.mockReset()
     syncDetailsMock.mockReset()
+    storeState.user = { id: 'user-1' }
+    storeState.syncDetails = createSyncDetailsState()
 
     Object.defineProperty(globalThis, 'localStorage', {
       configurable: true,
@@ -323,6 +333,9 @@ describe('syncService', () => {
     expect(weekUpsert).toBeTruthy()
     expect((weekUpsert?.payload as Array<Record<string, unknown>>)).toHaveLength(1)
     expect((weekUpsert?.payload as Array<Record<string, unknown>>)[0]?.id).toBe('week-active')
+    expect(upsertCalls.findIndex((call) => call.table === 'training_plans')).toBeLessThan(
+      upsertCalls.findIndex((call) => call.table === 'training_plan_weeks'),
+    )
   })
 
   it('re-enqueues writes on retryable 401 auth errors instead of treating them as infrastructure', async () => {
@@ -341,8 +354,6 @@ describe('syncService', () => {
       createdAt: 1,
       updatedAt: 2,
     })
-
-    await new Promise((resolve) => setTimeout(resolve, 0))
 
     const queue = JSON.parse(localStorage.getItem('entrenador_sync_queue_v1') ?? '[]') as Array<{ table: string }>
     expect(queue).toHaveLength(1)
@@ -365,7 +376,6 @@ describe('syncService', () => {
       createdAt: 1,
       updatedAt: 2,
     })
-    await new Promise((resolve) => setTimeout(resolve, 0))
 
     tableResults.set('sessions', { data: null, error: null })
     await syncService.runFullSync('user-1')
@@ -377,6 +387,34 @@ describe('syncService', () => {
       lastErrorMessage: null,
       lastBlockedTable: null,
       consecutiveFailures: 0,
+    }))
+  })
+
+  it('surfaces expired queue ops instead of reporting a healthy recovery', async () => {
+    localStorageState.set('entrenador_sync_queue_v1', JSON.stringify([
+      {
+        userId: 'user-1',
+        table: 'sessions',
+        action: 'upsert',
+        payload: { id: 'session-expired' },
+        enqueuedAt: 1,
+        retryCount: 5,
+        lastErrorCategory: 'network_error',
+      },
+    ]))
+
+    const syncService = await import('../syncService')
+    const drained = await syncService.drainQueue()
+
+    expect(drained).toBe(false)
+    expect(JSON.parse(localStorage.getItem('entrenador_sync_queue_v1') ?? '[]')).toEqual([])
+    expect(syncStatusMock).toHaveBeenCalledWith(
+      'error',
+      expect.stringContaining('Se descart'),
+    )
+    expect(syncDetailsMock).toHaveBeenCalledWith(expect.objectContaining({
+      lastErrorCategory: 'network_error',
+      lastBlockedTable: 'sessions',
     }))
   })
 })

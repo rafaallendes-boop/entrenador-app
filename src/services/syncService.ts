@@ -290,6 +290,38 @@ function applySyncFailure(error: unknown, fallbackMessage: string, blockedTable?
   })
 }
 
+function applyExpiredQueueFailure(expiredOps: OfflineOp[]): void {
+  const firstExpiredOp = expiredOps[0]
+  const message =
+    expiredOps.length === 1
+      ? 'Se descartó 1 cambio tras demasiados reintentos de sincronización.'
+      : `Se descartaron ${expiredOps.length} cambios tras demasiados reintentos de sincronización.`
+
+  syncLog(
+    'queue:ops_expired_summary',
+    {
+      expiredCount: expiredOps.length,
+      tables: [...new Set(expiredOps.map((op) => op.table))],
+      firstExpiredTable: firstExpiredOp?.table ?? null,
+      firstExpiredCategory: firstExpiredOp?.lastErrorCategory ?? 'unknown_error',
+    },
+    'error',
+  )
+
+  refreshQueueDiagnostics()
+  syncStoreState().setSyncStatus('error', message)
+  syncStoreState().setSyncDetails({
+    syncAttemptInFlight: false,
+    lastErrorAt: Date.now(),
+    lastErrorMessage: message,
+    lastErrorCategory: firstExpiredOp?.lastErrorCategory ?? 'unknown_error',
+    lastBlockedTable: firstExpiredOp?.table ?? null,
+    retryScheduledAt: null,
+    consecutiveFailures: (syncStoreState().syncDetails.consecutiveFailures ?? 0) + 1,
+    autoRepairInProgress: false,
+  })
+}
+
 function logAthleteProfileSync(event: string, details: Record<string, unknown>): void {
   syncLog(`athlete_profiles:${event}`, details)
 }
@@ -320,6 +352,7 @@ async function drainQueue(): Promise<boolean> {
   }
 
   const remaining: OfflineOp[] = []
+  const expiredOps: OfflineOp[] = []
   const initialCount = currentUserQueue.length
   let lastFailureInfo: SyncErrorInfo | null = null
 
@@ -336,6 +369,7 @@ async function drainQueue(): Promise<boolean> {
         retryCount: opRetryCount,
         lastErrorCategory: op.lastErrorCategory,
       }, 'warn')
+      expiredOps.push(op)
       continue // drop it
     }
 
@@ -429,6 +463,11 @@ async function drainQueue(): Promise<boolean> {
   }
 
   saveQueue([...otherUsersQueue, ...remaining])
+
+  if (expiredOps.length > 0) {
+    applyExpiredQueueFailure(expiredOps)
+    return false
+  }
 
   if (remaining.length === 0 && initialCount > 0) {
     markSyncRecovered()
@@ -958,29 +997,29 @@ async function upsertAthleteProfileRow(row: Record<string, unknown>, userId: str
 export async function pushSession(session: Session): Promise<void> {
   const userId = getUserId()
   if (!userId) return
-  void upsertRow('sessions', sessionToRow(session, userId))
+  await upsertRow('sessions', sessionToRow(session, userId))
 }
 
 export async function deleteSession(id: string): Promise<void> {
-  void deleteRow('sessions', id)
+  await deleteRow('sessions', id)
 }
 
 export async function pushDayLog(log: DayLog): Promise<void> {
   const userId = getUserId()
   if (!userId) return
-  void upsertRow('day_logs', dayLogToRow(log, userId))
+  await upsertRow('day_logs', dayLogToRow(log, userId))
 }
 
 export async function pushWeekSummary(summary: WeekSummary): Promise<void> {
   const userId = getUserId()
   if (!userId) return
-  void upsertRow('week_summaries', weekSummaryToRow(summary, userId))
+  await upsertRow('week_summaries', weekSummaryToRow(summary, userId))
 }
 
 export async function pushChatMessage(msg: ChatMessage): Promise<void> {
   const userId = getUserId()
   if (!userId) return
-  void upsertRow('chat_messages', chatMessageToRow(msg, userId))
+  await upsertRow('chat_messages', chatMessageToRow(msg, userId))
 }
 
 export async function deleteChatMessages(ids: string[]): Promise<void> {
@@ -996,27 +1035,25 @@ export async function deleteCoachProposals(ids: string[]): Promise<void> {
 export async function pushCoachProposal(proposal: CoachProposal): Promise<void> {
   const userId = getUserId()
   if (!userId) return
-  void upsertRow('coach_proposals', coachProposalToRow(proposal, userId))
+  await upsertRow('coach_proposals', coachProposalToRow(proposal, userId))
 }
 
 export async function pushAthleteProfile(profile: AthleteProfile): Promise<void> {
   const userId = getUserId()
   if (!userId) return
-  void upsertRow('athlete_profiles', athleteProfileToRow(profile, userId))
+  await upsertRow('athlete_profiles', athleteProfileToRow(profile, userId))
 }
 
 export async function pushTrainingPlan(plan: TrainingPlan): Promise<void> {
   const userId = getUserId()
   if (!userId || !isSyncablePlanStatus(plan.status)) return
-  void upsertRow('training_plans', trainingPlanToRow(plan, userId))
+  await upsertRow('training_plans', trainingPlanToRow(plan, userId))
 }
 
 export async function pushTrainingPlanWeeks(plan: TrainingPlan, weeks: TrainingPlanWeek[]): Promise<void> {
   const userId = getUserId()
   if (!userId || !isSyncablePlanStatus(plan.status)) return
-  for (const week of weeks) {
-    void upsertRow('training_plan_weeks', trainingPlanWeekToRow(week, userId))
-  }
+  await Promise.all(weeks.map((week) => upsertRow('training_plan_weeks', trainingPlanWeekToRow(week, userId))))
 }
 
 export async function archiveTrainingPlan(plan: TrainingPlan, weeks: TrainingPlanWeek[]): Promise<void> {
@@ -1033,10 +1070,12 @@ export async function softDeleteTrainingPlan(plan: TrainingPlan, weeks: Training
   const userId = getUserId()
   if (!userId) return
   const deletedAt = Date.now()
-  void upsertRow('training_plans', trainingPlanToRow({ ...plan, updatedAt: deletedAt }, userId, deletedAt))
-  for (const week of weeks) {
-    void upsertRow('training_plan_weeks', trainingPlanWeekToRow({ ...week, updatedAt: deletedAt }, userId, deletedAt))
-  }
+  await Promise.all([
+    upsertRow('training_plans', trainingPlanToRow({ ...plan, updatedAt: deletedAt }, userId, deletedAt)),
+    ...weeks.map((week) =>
+      upsertRow('training_plan_weeks', trainingPlanWeekToRow({ ...week, updatedAt: deletedAt }, userId, deletedAt)),
+    ),
+  ])
 }
 
 async function fetchAll<T>(table: SupabaseTable, userId: string): Promise<T[]> {
@@ -1061,8 +1100,8 @@ async function pullRemoteAndMerge(userId: string): Promise<void> {
   activePullAllPromise = (async () => {
     if (!isEnabled()) return
 
-    const { syncDetails } = useAuthStore.getState()
     const queueDrained = await drainQueue()
+    const { syncDetails } = useAuthStore.getState()
     const mergeContext: MergeContext = {
       allowDeletes: queueDrained,
       deleteBeforeTs: queueDrained ? (syncDetails.lastSuccessfulSyncAt ?? null) : null,
@@ -1103,11 +1142,16 @@ export async function runFullSync(userId: string): Promise<void> {
       pruneStaleQueue(userId)
       await drainQueue()
       await pullRemoteAndMerge(userId)
+      const failureCountBeforeFinalDrain = syncStoreState().syncDetails.consecutiveFailures ?? 0
       const queueDrainedAfterMerge = await drainQueue()
 
       if (queueDrainedAfterMerge) {
         markSyncHealthy()
       } else {
+        const failureCountAfterFinalDrain = syncStoreState().syncDetails.consecutiveFailures ?? 0
+        if (failureCountAfterFinalDrain > failureCountBeforeFinalDrain) {
+          return
+        }
         refreshQueueDiagnostics()
         syncStoreState().setSyncStatus('error', 'Quedaron operaciones pendientes en cola.')
         syncStoreState().setSyncDetails({
@@ -1888,22 +1932,29 @@ export async function migrateLocalDataToCloud(userId: string): Promise<void> {
       weekRows.length > 0
         ? getSupabase().from('week_summaries').upsert(weekRows as never).then((result) => ({ table: 'week_summaries', error: result.error }))
         : Promise.resolve({ table: 'week_summaries', error: null }),
-      trainingPlanRows.length > 0
-        ? getSupabase().from('training_plans').upsert(trainingPlanRows as never).then((result) => ({ table: 'training_plans', error: result.error }))
-        : Promise.resolve({ table: 'training_plans', error: null }),
-      trainingPlanWeekRows.length > 0
-        ? getSupabase().from('training_plan_weeks').upsert(trainingPlanWeekRows as never).then((result) => ({ table: 'training_plan_weeks', error: result.error }))
-        : Promise.resolve({ table: 'training_plan_weeks', error: null }),
       chatRows.length > 0
         ? getSupabase().from('chat_messages').upsert(chatRows as never).then((result) => ({ table: 'chat_messages', error: result.error }))
         : Promise.resolve({ table: 'chat_messages', error: null }),
       proposalRows.length > 0
         ? getSupabase().from('coach_proposals').upsert(proposalRows as never).then((result) => ({ table: 'coach_proposals', error: result.error }))
         : Promise.resolve({ table: 'coach_proposals', error: null }),
-      profileRows.length > 0
-        ? persistAthleteProfileRow(profileRows[profileRows.length - 1], userId).then(() => ({ table: 'athlete_profiles', error: null }))
-        : Promise.resolve({ table: 'athlete_profiles', error: null }),
     ])
+    const trainingPlanResult = trainingPlanRows.length > 0
+      ? await getSupabase()
+        .from('training_plans')
+        .upsert(trainingPlanRows as never)
+        .then((result) => ({ table: 'training_plans', error: result.error }))
+      : { table: 'training_plans', error: null }
+    const trainingPlanWeekResult = trainingPlanWeekRows.length > 0
+      ? await getSupabase()
+        .from('training_plan_weeks')
+        .upsert(trainingPlanWeekRows as never)
+        .then((result) => ({ table: 'training_plan_weeks', error: result.error }))
+      : { table: 'training_plan_weeks', error: null }
+    const profileResult = profileRows.length > 0
+      ? await persistAthleteProfileRow(profileRows[profileRows.length - 1], userId).then(() => ({ table: 'athlete_profiles', error: null }))
+      : { table: 'athlete_profiles', error: null }
+    migrationResults.push(trainingPlanResult, trainingPlanWeekResult, profileResult)
 
     const failedTables = migrationResults.filter((result) => result.error != null)
     if (failedTables.length > 0) {

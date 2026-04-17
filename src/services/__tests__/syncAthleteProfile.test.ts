@@ -31,15 +31,20 @@ function createQueryBuilder(table: string) {
     }),
     then(onFulfilled: (value: { data: unknown; error: unknown }) => unknown) {
       const result = tableResults.get(table) ?? { data: null, error: null }
-      
+
+      if (table === 'athlete_profiles' && inFilters.id && !result.error) {
+        deleteCalls.push({ table, ids: [...inFilters.id] })
+        athleteProfileRows = athleteProfileRows.filter((row) => !inFilters.id.includes(row.id))
+      }
+
       // Simulate select returning the mock rows if no error is mocked
       if (table === 'athlete_profiles' && !result.error && !result.data) {
         let filtered = [...athleteProfileRows]
         if (eqFilters['user_id']) {
-          filtered = filtered.filter(r => r.user_id === eqFilters['user_id'])
+          filtered = filtered.filter((row) => row.user_id === eqFilters['user_id'])
         }
         if (inFilters['id']) {
-          filtered = filtered.filter(r => inFilters['id'].includes(r.id))
+          filtered = filtered.filter((row) => inFilters['id'].includes(row.id))
         }
         return Promise.resolve(onFulfilled({ data: filtered, error: null }))
       }
@@ -68,7 +73,7 @@ vi.mock('../auth', () => ({
           updateCalls.push({ table, payload })
           return builder
         }),
-        delete: vi.fn(() => builder)
+        delete: vi.fn(() => builder),
       }
     }),
   },
@@ -175,9 +180,6 @@ describe('Athlete Profile Sync - Hardening Fixes', () => {
       updatedAt: 100,
     })
 
-    // Upsert needs to wait for queue drain
-    await new Promise(resolve => setTimeout(resolve, 10))
-
     expect(upsertCalls).toHaveLength(1)
     expect(upsertCalls[0].table).toBe('athlete_profiles')
     expect(upsertCalls[0].options).toEqual({ onConflict: 'user_id' })
@@ -203,8 +205,6 @@ describe('Athlete Profile Sync - Hardening Fixes', () => {
       updatedAt: 150,
     })
 
-    await new Promise(resolve => setTimeout(resolve, 10))
-
     // With the new logic, the first branch checks existingRows.length.
     // If it is 1, it updates that single row.
     expect(updateCalls).toHaveLength(1)
@@ -226,8 +226,6 @@ describe('Athlete Profile Sync - Hardening Fixes', () => {
       updatedAt: 300,
     })
 
-    await new Promise(resolve => setTimeout(resolve, 10))
-
     // The repair function should have picked the newer locally provided row (300) to win,
     // updated legacy-1 or legacy-2 to the new data, and deleted the rest.
     // legacy-2 was the previous highest updated_at, but we provided a new row with 300.
@@ -237,10 +235,11 @@ describe('Athlete Profile Sync - Hardening Fixes', () => {
     expect(updateCalls.length).toBeGreaterThan(0)
     const updatePayload = updateCalls[0].payload as { data: Record<string, unknown> }
     expect(updatePayload.data.name).toBe('Rafa New')
-    
+    expect(deleteCalls).toEqual([{ table: 'athlete_profiles', ids: ['legacy-2'] }])
+
     // The repair function sets autoRepairInProgress flag
     expect(syncDetailsMock).toHaveBeenCalledWith(expect.objectContaining({
-      autoRepairInProgress: true
+      autoRepairInProgress: true,
     }))
   })
 
@@ -254,14 +253,12 @@ describe('Athlete Profile Sync - Hardening Fixes', () => {
       updatedAt: 100,
     })
 
-    await new Promise(resolve => setTimeout(resolve, 10))
-
     // The op should have failed permanently
     expect(syncStatusMock).toHaveBeenCalledWith('error', expect.any(String))
-    
+
     expect(syncDetailsMock).toHaveBeenCalledWith(expect.objectContaining({
       lastErrorCategory: 'schema_mismatch',
-      consecutiveFailures: 1
+      consecutiveFailures: 1,
     }))
 
     // Queue should be empty since non-retriable gets permanently dropped
@@ -302,7 +299,6 @@ describe('Athlete Profile Sync - Hardening Fixes', () => {
 
     const syncService = await import('../syncService')
     await syncService.pushAthleteProfile({ id: 'default', name: 'Rafa', updatedAt: 200 })
-    await new Promise(resolve => setTimeout(resolve, 10))
 
     // The op is enqueued and applySyncFailure is called.
     // applySyncFailure must NOT set autoRepairInProgress: true just because the error
@@ -327,12 +323,12 @@ describe('Athlete Profile Sync - Hardening Fixes', () => {
     // Push directly — upsertAthleteProfileRow detects duplicates, repairs them,
     // and writes the payload's data to the canonical keeper row
     await syncService.pushAthleteProfile({ id: 'default', name: 'Rafa Repaired', updatedAt: 999 })
-    await new Promise(resolve => setTimeout(resolve, 10))
 
     // repairRemoteAthleteProfileRows picks winner by updated_at — payload (999) wins
     expect(updateCalls.length).toBeGreaterThan(0)
     const updatePayload = updateCalls[0].payload as { data: Record<string, unknown> }
     expect(updatePayload.data.name).toBe('Rafa Repaired')
+    expect(deleteCalls).toEqual([{ table: 'athlete_profiles', ids: ['remote-2'] }])
   })
 
   it('9. Preserves remote sport setup when a newer partial profile only updates coach memory or onboarding defer', async () => {
@@ -361,8 +357,6 @@ describe('Athlete Profile Sync - Hardening Fixes', () => {
       onboardingDeferredAt: 300,
       updatedAt: 300,
     })
-
-    await new Promise(resolve => setTimeout(resolve, 10))
 
     expect(updateCalls).toHaveLength(1)
     const payload = updateCalls[0].payload as {
@@ -400,8 +394,6 @@ describe('Athlete Profile Sync - Hardening Fixes', () => {
       updatedAt: 300,
     })
 
-    await new Promise(resolve => setTimeout(resolve, 10))
-
     expect(updateCalls).toHaveLength(1)
     const payload = updateCalls[0].payload as {
       coach_memory: string | null
@@ -419,8 +411,6 @@ describe('Athlete Profile Sync - Hardening Fixes', () => {
 
     const syncService = await import('../syncService')
     await syncService.pushAthleteProfile({ id: 'default', updatedAt: 100 })
-
-    await new Promise(resolve => setTimeout(resolve, 10))
 
     expect(syncDetailsMock).toHaveBeenCalledWith(expect.objectContaining({
       lastErrorCategory: 'supabase_not_configured',
