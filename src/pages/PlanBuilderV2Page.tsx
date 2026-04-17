@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Card from '../components/ui/Card'
 import { ROUTES } from '../constants/routes'
+import { db } from '../db/db'
 import { useCoachMemoryStore } from '../store/useCoachMemoryStore'
 import { usePlanBuilderStore } from '../store/usePlanBuilderStore'
 import { getPrimaryGoalEvent } from '../services/macroPlan'
@@ -48,9 +49,37 @@ export default function PlanBuilderV2Page() {
 
   useEffect(() => {
     if (!athleteProfile || !athleteProfile.planWizardConfig || !goalEvent) return
+    const wizardConfig = athleteProfile.planWizardConfig
     if (currentDraftSignature === expectedDraftSignature) return
-    void createDraft({ profile: athleteProfile, wizardConfig: athleteProfile.planWizardConfig })
-  }, [athleteProfile, createDraft, currentDraftSignature, expectedDraftSignature, goalEvent])
+    if (plan) {
+      void createDraft({ profile: athleteProfile, wizardConfig })
+      return
+    }
+
+    let cancelled = false
+    void (async () => {
+      const existingPlans = await db.trainingPlans
+        .where('athleteId')
+        .equals(athleteProfile.id)
+        .toArray()
+      if (cancelled) return
+
+      const matchingPlan = existingPlans
+        .filter((candidate) => buildDraftSignature(candidate.goalEventId, candidate.wizardConfig) === expectedDraftSignature)
+        .sort((a, b) => b.updatedAt - a.updatedAt)[0]
+
+      if (matchingPlan) {
+        await usePlanBuilderStore.getState().loadDraft(matchingPlan.id)
+        return
+      }
+
+      await createDraft({ profile: athleteProfile, wizardConfig })
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [athleteProfile, createDraft, currentDraftSignature, expectedDraftSignature, goalEvent, plan])
 
   useEffect(() => {
     if (plan && weeks.length > 0 && status === 'ready' && weeks.every((w) => w.status === 'pending')) {

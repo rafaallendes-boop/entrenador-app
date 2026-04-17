@@ -1,4 +1,4 @@
-import type { CoachSessionProposal, SupportedSport } from '../../types'
+import type { CoachSessionProposal, DayOfWeek, SupportedSport } from '../../types'
 import type { PlanValidationIssue, TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
 
 export interface ValidatePlanInput {
@@ -82,6 +82,72 @@ function validateWeekSessions(week: TrainingPlanWeek): PlanValidationIssue[] {
       })
     }
   }
+  return issues
+}
+
+function isStrictISODate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
+  const parsed = new Date(`${value}T00:00:00.000Z`)
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().startsWith(value)
+}
+
+function isoDateToDayOfWeek(date: string): DayOfWeek | null {
+  if (!isStrictISODate(date)) return null
+  const weekday = new Date(`${date}T00:00:00.000Z`).getUTCDay()
+  const mapping: DayOfWeek[] = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
+  return mapping[weekday] ?? null
+}
+
+function validateWeekConstraints(plan: TrainingPlan, week: TrainingPlanWeek): PlanValidationIssue[] {
+  const issues: PlanValidationIssue[] = []
+  if (week.status !== 'draft' && week.status !== 'accepted') return issues
+  if (!Array.isArray(week.sessions) || week.sessions.length === 0) return issues
+
+  const expectedDays = new Set(plan.wizardConfig.trainingDays)
+  const weekStart = new Date(`${week.weekStartDate}T00:00:00.000Z`).getTime()
+  const weekEndExclusive = weekStart + 7 * 24 * 60 * 60 * 1000
+
+  if (week.sessions.length !== plan.wizardConfig.sessionsPerWeek) {
+    issues.push({
+      severity: 'warning',
+      code: 'week.sessions.count_mismatch',
+      message: `La semana ${week.weekIndex + 1} tiene ${week.sessions.length} sesiones, pero el wizard esperaba ${plan.wizardConfig.sessionsPerWeek}.`,
+      weekIndex: week.weekIndex,
+    })
+  }
+
+  for (const session of week.sessions) {
+    if (!isStrictISODate(session.date)) {
+      issues.push({
+        severity: 'error',
+        code: 'week.sessions.invalid_date',
+        message: `La sesión ${session.title} tiene una fecha inválida (${session.date}).`,
+        weekIndex: week.weekIndex,
+      })
+      continue
+    }
+
+    const sessionTs = new Date(`${session.date}T00:00:00.000Z`).getTime()
+    if (sessionTs < weekStart || sessionTs >= weekEndExclusive) {
+      issues.push({
+        severity: 'error',
+        code: 'week.sessions.out_of_week',
+        message: `La sesión ${session.title} (${session.date}) cae fuera de la semana ${week.weekIndex + 1}.`,
+        weekIndex: week.weekIndex,
+      })
+    }
+
+    const dayOfWeek = isoDateToDayOfWeek(session.date)
+    if (dayOfWeek && !expectedDays.has(dayOfWeek)) {
+      issues.push({
+        severity: 'warning',
+        code: 'week.sessions.out_of_allowed_day',
+        message: `La sesión ${session.title} (${session.date}) usa un día no permitido por el wizard.`,
+        weekIndex: week.weekIndex,
+      })
+    }
+  }
+
   return issues
 }
 
@@ -199,6 +265,7 @@ export function validatePlan(input: ValidatePlanInput): PlanValidationIssue[] {
   return [
     ...validateStructure(plan, weeks),
     ...weeks.flatMap(validateWeekSessions),
+    ...weeks.flatMap((week) => validateWeekConstraints(plan, week)),
     ...validateLoadProgression(weeks),
     ...validateSportDistribution(plan, weeks),
     ...validatePrimarySportCoherence(plan, weeks),

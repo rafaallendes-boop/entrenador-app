@@ -1214,10 +1214,13 @@ async function mergeDayLogs(userId: string, context: MergeContext): Promise<void
     if (resolution.winner.id !== localByDate.id) {
       await db.dayLogs.delete(localByDate.id)
       await db.dayLogs.put(resolution.winner)
+      if (remote.id !== localByDate.id) {
+        void deleteRow('day_logs', localByDate.id)
+      }
       if (resolution.winner.id !== remote.id) {
         void deleteRow('day_logs', remote.id)
-        void pushDayLog(resolution.winner)
       }
+      void pushDayLog(resolution.winner)
       continue
     }
 
@@ -1260,10 +1263,13 @@ async function mergeWeekSummaries(userId: string, context: MergeContext): Promis
     if (resolution.winner.id !== localByWeek.id) {
       await db.weekSummaries.delete(localByWeek.id)
       await db.weekSummaries.put(resolution.winner)
+      if (remote.id !== localByWeek.id) {
+        void deleteRow('week_summaries', localByWeek.id)
+      }
       if (resolution.winner.id !== remote.id) {
         void deleteRow('week_summaries', remote.id)
-        void pushWeekSummary(resolution.winner)
       }
+      void pushWeekSummary(resolution.winner)
       continue
     }
 
@@ -1401,6 +1407,8 @@ async function mergeTrainingPlans(userId: string, context: MergeContext): Promis
     if (remoteDeletedAt != null) {
       if (localPlan && remoteDeletedAt >= localPlan.updatedAt) {
         await deleteLocalTrainingPlan(localPlan.id)
+      } else if (localPlan && isSyncablePlanStatus(localPlan.status)) {
+        void pushTrainingPlan(localPlan)
       }
       continue
     }
@@ -1451,6 +1459,11 @@ async function mergeTrainingPlanWeeks(userId: string, context: MergeContext): Pr
     if (remoteDeletedAt != null) {
       if (localWeek && remoteDeletedAt >= localWeek.updatedAt) {
         await db.trainingPlanWeeks.delete(localWeek.id)
+      } else if (localWeek) {
+        const localPlan = localPlans.find((plan) => plan.id === localWeek.planId)
+        if (localPlan && isSyncablePlanStatus(localPlan.status)) {
+          void pushTrainingPlanWeeks(localPlan, [localWeek])
+        }
       }
       continue
     }
@@ -1822,6 +1835,7 @@ export async function prepareLocalDataForUser(userId: string): Promise<{ shouldM
 
   const previousUserId = localStorage.getItem(LAST_SYNC_USER_KEY)
   if (previousUserId && previousUserId !== userId) {
+    clearSyncArtifactsForUser(previousUserId)
     await clearAllLocalAppData()
   }
 

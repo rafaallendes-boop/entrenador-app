@@ -33,9 +33,13 @@ export interface GenerateWeekResult {
 
 export function pickCreateWeekAction(actions: CoachAction[] | undefined, weekStartDate: string): CoachAction | undefined {
   if (!actions || actions.length === 0) return undefined
-  const forDate = actions.find((a) => a.type === 'create_week' && a.targetDate === weekStartDate)
-  if (forDate) return forDate
-  return actions.find((a) => a.type === 'create_week')
+  return actions.find((a) => a.type === 'create_week' && a.targetDate === weekStartDate)
+}
+
+function isStrictISODate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
+  const parsed = new Date(`${value}T00:00:00.000Z`)
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().startsWith(value)
 }
 
 export function filterSessionsToWeek(
@@ -46,6 +50,7 @@ export function filterSessionsToWeek(
   const start = new Date(y, m - 1, d).getTime()
   const end = start + 7 * 24 * 60 * 60 * 1000
   return sessions.filter((s) => {
+    if (!isStrictISODate(s.date)) return false
     const [sy, sm, sd] = s.date.split('-').map(Number)
     const ts = new Date(sy, sm - 1, sd).getTime()
     return ts >= start && ts < end
@@ -109,16 +114,29 @@ export async function generateWeek(input: GenerateWeekInput): Promise<GenerateWe
         },
       }
     }
-
-    const sessions = filterSessionsToWeek(action.sessions, week.weekStartDate)
-    if (sessions.length === 0) {
+    if (action.targetDate !== week.weekStartDate) {
       return {
         sessions: [],
         meta: {
           attempts: 1,
           provider: provider.name,
           model: raw.model,
-          lastError: 'Las sesiones devueltas cayeron fuera de la semana objetivo.',
+          lastError: `El modelo devolvió create_week para ${action.targetDate ?? 'sin targetDate'}, no para ${week.weekStartDate}.`,
+          durationMs: raw.durationMs,
+          chunkCount,
+        },
+      }
+    }
+
+    const sessions = filterSessionsToWeek(action.sessions, week.weekStartDate)
+    if (sessions.length !== action.sessions.length) {
+      return {
+        sessions: [],
+        meta: {
+          attempts: 1,
+          provider: provider.name,
+          model: raw.model,
+          lastError: 'Las sesiones devueltas no respetaron exactamente la semana objetivo.',
           durationMs: raw.durationMs,
           chunkCount,
         },

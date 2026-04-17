@@ -53,18 +53,13 @@ export class EntrenadorDB extends Dexie {
       })
     })
 
-    // v4 — reset local seeded/demo data and chat history.
-    // This intentionally starts the app from a clean state on next load.
+    // v4 — historical schema step kept as a no-op to preserve user data
+    // when upgrading from older local databases.
     this.version(4).stores({
       sessions:      'id, date, type, status, completedAt',
       dayLogs:       'id, &date',
       weekSummaries: 'id, &weekStartDate',
       chatMessages:  'id, timestamp',
-    }).upgrade(async tx => {
-      await tx.table('sessions').clear()
-      await tx.table('dayLogs').clear()
-      await tx.table('weekSummaries').clear()
-      await tx.table('chatMessages').clear()
     })
 
     // v5 — add chatSessionId index for multi-session chat support

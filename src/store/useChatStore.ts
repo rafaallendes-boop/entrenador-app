@@ -63,8 +63,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     try {
       const response = await CoachEngine.send(content, enrichedContext, {
-        onChunk: (chunk) => set(state => ({ streamingText: state.streamingText + chunk })),
+        onChunk: (chunk) => {
+          if (get().currentSessionId !== sessionId) return
+          set(state => ({ streamingText: state.streamingText + chunk }))
+        },
       })
+
+      if (get().currentSessionId !== sessionId) {
+        return
+      }
 
       // If the model returned structured actions, create a proposal automatically.
       // Skip if the response is likely truncated to avoid partial plans being created.
@@ -90,9 +97,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
       await db.chatMessages.add(coachMsg)
       void syncService.pushChatMessage(coachMsg)
+      if (get().currentSessionId !== sessionId) return
       set(state => ({ messages: [...state.messages, coachMsg], isLoading: false, streamingText: '' }))
     } catch (e) {
       const errorMsg = formatError(e)
+      if (get().currentSessionId !== sessionId) return
       set({ isLoading: false, streamingText: '', error: errorMsg })
     }
   },
@@ -100,7 +109,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   newSession: async () => {
     const newId = uuid()
     setStoredChatSessionId(newId)
-    set({ currentSessionId: newId, messages: [], error: null })
+    set({ currentSessionId: newId, messages: [], isLoading: false, streamingText: '', error: null })
   },
 
   deleteCurrentSession: async () => {

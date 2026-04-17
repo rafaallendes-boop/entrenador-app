@@ -1,6 +1,6 @@
 import { ChevronDown } from 'lucide-react'
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { Target } from 'lucide-react'
 import { useTrainingStore } from '../store/useTrainingStore'
 import { useCoachActionsStore } from '../store/useCoachActionsStore'
@@ -36,6 +36,7 @@ export default function Dashboard() {
   const { addProposal, acceptProposal, rejectProposal } = useCoachActionsStore()
   const { athleteProfile, loadMemory, saveAthleteProfile } = useCoachMemoryStore()
   const { currentWeekStart } = useUIStore()
+  const location = useLocation()
   const navigate = useNavigate()
   const today = todayISO()
   const athleteFirstName = getAthleteFirstName(athleteProfile, 'atleta')
@@ -45,6 +46,7 @@ export default function Dashboard() {
   const [checkInExpandToken, setCheckInExpandToken] = useState(0)
   const [showDeleteMacroPlanConfirm, setShowDeleteMacroPlanConfirm] = useState(false)
   const [activeProposal, setActiveProposal] = useState<CoachProposal | null>(null)
+  const [proposalError, setProposalError] = useState<string | null>(null)
 
   // Macro plan — computed on-the-fly from profile, not persisted as source of truth
   const macroPlan = useMemo(() => computeMacroPlan(athleteProfile), [athleteProfile])
@@ -109,10 +111,20 @@ export default function Dashboard() {
   const coachNote = currentWeekSummary?.coachNote ?? defaultCoachNote
 
   const profileCompleteness = getProfileCompleteness(athleteProfile ?? null)
-  const showProfileNudge = profileCompleteness.state === 'partial' || profileCompleteness.state === 'missing_sports'
+  const showProfileNudge = (
+    Boolean((location.state as { showProfileNudge?: boolean } | null)?.showProfileNudge)
+    || profileCompleteness.state === 'partial'
+    || profileCompleteness.state === 'missing_sports'
+  )
+
+  useEffect(() => {
+    if (!(location.state && typeof location.state === 'object' && 'showProfileNudge' in location.state)) return
+    navigate(location.pathname, { replace: true, state: null })
+  }, [location.pathname, location.state, navigate])
 
   async function handleOpenAutoAdjustment() {
     if (!autoAdjustmentDraft) return
+    setProposalError(null)
     const proposal = await addProposal(
       autoAdjustmentDraft.message,
       autoAdjustmentDraft.actions,
@@ -124,7 +136,12 @@ export default function Dashboard() {
 
   async function handleAcceptAutoAdjustment() {
     if (!activeProposal) return
-    await acceptProposal(activeProposal.id)
+    const result = await acceptProposal(activeProposal.id)
+    if (result.errors.length > 0) {
+      setProposalError(result.errors.join(' '))
+      return
+    }
+    setProposalError(null)
     setActiveProposal(null)
   }
 
@@ -132,6 +149,7 @@ export default function Dashboard() {
     if (activeProposal && activeProposal.status === 'pending') {
       void rejectProposal(activeProposal.id)
     }
+    setProposalError(null)
     setActiveProposal(null)
   }
 
@@ -199,6 +217,12 @@ export default function Dashboard() {
       <Suspense fallback={<CardSkeleton className="h-28" />}>
         <CoachMessageCard message={coachNote} />
       </Suspense>
+
+      {proposalError && (
+        <Card className="border-red-500/20 bg-red-500/10 p-3 text-xs text-red-300">
+          {proposalError}
+        </Card>
+      )}
 
       <Suspense fallback={<CardSkeleton className="h-36" />}>
         <ActionAlertsCard

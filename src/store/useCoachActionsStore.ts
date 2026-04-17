@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { AthleteProfile, CoachAction, CoachProposal, CoachProposalSource, Session } from '../types'
+import type { AthleteProfile, CoachAction, CoachProposal, CoachProposalSource, Session, WeekSummary } from '../types'
 import { db } from '../db/db'
 import { recalculateWeekSummary, upsertWeekSummary } from '../db/queries'
 import { buildPlanGenerationSummary } from '../services/planGenerationSummary'
@@ -17,6 +17,8 @@ interface ApplyCoachActionResult {
   warnings: string[]
   createdSessionIds: string[]
   restoredSessions: Session[]
+  restoredWeekSummaries: WeekSummary[]
+  deletedWeekSummaryIds: string[]
 }
 
 interface AcceptProposalResult {
@@ -137,7 +139,7 @@ export const useCoachActionsStore = create<CoachActionsState>((set, get) => ({
       return { errors: validationErrors, warnings: [] }
     }
 
-    const appliedResults: Array<{ index: number; createdSessionIds: string[]; restoredSessions: Session[] }> = []
+    const appliedResults: Array<{ index: number; createdSessionIds: string[]; restoredSessions: Session[]; restoredWeekSummaries: WeekSummary[]; deletedWeekSummaryIds: string[] }> = []
     for (let i = 0; i < workingProposal.actions.length; i++) {
       try {
         const result = await applyCoachAction(workingProposal.actions[i], trainingStore)
@@ -146,6 +148,8 @@ export const useCoachActionsStore = create<CoachActionsState>((set, get) => ({
           index: i,
           createdSessionIds: result.createdSessionIds,
           restoredSessions: result.restoredSessions,
+          restoredWeekSummaries: result.restoredWeekSummaries,
+          deletedWeekSummaryIds: result.deletedWeekSummaryIds,
         })
       } catch (error) {
         errors.push(`Accion ${i + 1} (${workingProposal.actions[i].type}): ${error}`)
@@ -302,7 +306,7 @@ function preValidateActions(
 
 async function rollbackAppliedActions(
   actions: CoachAction[],
-  appliedResults: Array<{ index: number; createdSessionIds: string[]; restoredSessions: Session[] }>,
+  appliedResults: Array<{ index: number; createdSessionIds: string[]; restoredSessions: Session[]; restoredWeekSummaries: WeekSummary[]; deletedWeekSummaryIds: string[] }>,
   store: ReturnType<typeof useTrainingStore.getState>,
 ): Promise<void> {
   const affectedDates = new Set<string>()
@@ -330,6 +334,20 @@ async function rollbackAppliedActions(
           await db.sessions.put(snapshot)
           void syncService.pushSession(snapshot)
         }
+      }
+
+      if (result.restoredWeekSummaries.length > 0) {
+        for (const summary of result.restoredWeekSummaries) {
+          await db.weekSummaries.put(summary)
+          void syncService.pushWeekSummary(summary)
+        }
+      }
+
+      if (result.deletedWeekSummaryIds.length > 0) {
+        await db.weekSummaries.bulkDelete(result.deletedWeekSummaryIds)
+      }
+
+      if (result.restoredSessions.length > 0 || result.restoredWeekSummaries.length > 0 || result.deletedWeekSummaryIds.length > 0) {
         continue
       }
 
@@ -357,6 +375,8 @@ async function applyCoachAction(
   const warnings: string[] = []
   const createdSessionIds: string[] = []
   const restoredSessions: Session[] = []
+  const restoredWeekSummaries: WeekSummary[] = []
+  const deletedWeekSummaryIds: string[] = []
   const athleteProfile = useCoachMemoryStore.getState().athleteProfile
 
   switch (action.type) {
@@ -531,6 +551,12 @@ async function applyCoachAction(
 
       if (action.weekObjectives && action.weekObjectives.length > 0) {
         const weekStart = toISO(getWeekStart(fromISO(allowedSessions[0].date)))
+        const previousSummary = await db.weekSummaries.get(weekStart)
+        if (previousSummary) {
+          restoredWeekSummaries.push({ ...previousSummary })
+        } else {
+          deletedWeekSummaryIds.push(weekStart)
+        }
         await upsertWeekSummary(weekStart, { objectives: action.weekObjectives })
         await store.loadWeek(weekStart)
       }
@@ -612,7 +638,7 @@ async function applyCoachAction(
       throw new Error(`Unknown action type: ${(action as CoachAction).type}`)
   }
 
-  return { warnings, createdSessionIds, restoredSessions }
+  return { warnings, createdSessionIds, restoredSessions, restoredWeekSummaries, deletedWeekSummaryIds }
 }
 
 function buildSessionTypePatch(type: CoachAction['newType']): Record<string, unknown> {

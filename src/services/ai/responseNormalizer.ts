@@ -464,7 +464,9 @@ function isRpe(value: unknown): value is number {
 }
 
 function isValidDate(value: unknown): value is string {
-  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value))
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
+  const parsed = new Date(`${value}T00:00:00.000Z`)
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().startsWith(value)
 }
 
 function extractActionsText(message: string): { actionsText: string; messageWithoutActions: string; openOnly: boolean } | null {

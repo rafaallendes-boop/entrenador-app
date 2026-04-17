@@ -6,6 +6,11 @@ import {
   type WeeklyActionLaunchIntent,
 } from '../services/weeklyLaunchIntent'
 
+interface WeeklyLaunchLocationState {
+  weeklyLaunchIntent?: WeeklyActionLaunchIntent
+  weeklyLaunchId?: number
+}
+
 export interface WeeklyLaunchIntentState {
   launchIntent: WeeklyActionLaunchIntent | null
   launchId: number
@@ -14,27 +19,29 @@ export interface WeeklyLaunchIntentState {
 export function useWeeklyLaunchIntent(): WeeklyLaunchIntentState {
   const location = useLocation()
   const navigate = useNavigate()
+  const locationState = (location.state as WeeklyLaunchLocationState | null) ?? null
   const parsedLaunchIntent = useMemo(
     () => parseWeeklyActionLaunchIntent(location.search),
     [location.search],
   )
+  const launchIntent = parsedLaunchIntent ?? locationState?.weeklyLaunchIntent ?? null
+  const launchId = parsedLaunchIntent ? 0 : (locationState?.weeklyLaunchId ?? 0)
 
   useEffect(() => {
     if (!parsedLaunchIntent) return
     const nextSearch = clearWeeklyActionLaunchSearch(location.search)
-    navigate({ pathname: location.pathname, search: nextSearch }, { replace: true })
-  }, [location.pathname, location.search, navigate, parsedLaunchIntent])
+    navigate(
+      { pathname: location.pathname, search: nextSearch },
+      {
+        replace: true,
+        state: {
+          ...(locationState ?? {}),
+          weeklyLaunchIntent: parsedLaunchIntent,
+          weeklyLaunchId: Date.now(),
+        },
+      },
+    )
+  }, [location.pathname, location.search, locationState, navigate, parsedLaunchIntent])
 
-  const launchId = useMemo(() => {
-    if (!parsedLaunchIntent) return 0
-
-    const seed = `${location.key}:${location.pathname}:${location.search}`
-    let hash = 0
-    for (const char of seed) {
-      hash = (hash * 31 + char.charCodeAt(0)) >>> 0
-    }
-    return hash
-  }, [location.key, location.pathname, location.search, parsedLaunchIntent])
-
-  return { launchIntent: parsedLaunchIntent, launchId }
+  return { launchIntent, launchId }
 }

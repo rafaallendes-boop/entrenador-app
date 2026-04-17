@@ -222,8 +222,13 @@ function estimateRunningDistanceKm(session: Session): number | undefined {
   return undefined
 }
 
-function resolveWeekStartsForSport(sessions: Session[], sport: SessionType, minWeeks = 4): string[] {
-  const currentWeekStart = toISO(getWeekStart(new Date()))
+function resolveWeekStartsForSport(
+  sessions: Session[],
+  sport: SessionType,
+  minWeeks = 4,
+  referenceDate: Date = new Date(),
+): string[] {
+  const currentWeekStart = toISO(getWeekStart(referenceDate))
   const sportSessions = sessions
     .filter((session) => session.type === sport && isCompletedSession(session))
     .sort((a, b) => a.date.localeCompare(b.date))
@@ -242,8 +247,8 @@ function resolveWeekStartsForSport(sessions: Session[], sport: SessionType, minW
   return weeks
 }
 
-function resolveWeekStarts(sessions: Session[], minWeeks = 4): string[] {
-  return resolveWeekStartsForSport(sessions, 'running', minWeeks)
+function resolveWeekStarts(sessions: Session[], minWeeks = 4, referenceDate: Date = new Date()): string[] {
+  return resolveWeekStartsForSport(sessions, 'running', minWeeks, referenceDate)
 }
 
 function calculateDisciplineAcwrFromLoads(
@@ -281,8 +286,9 @@ function calculateDisciplineAcwrFromLoads(
 
 export function getRunningWeeklyLoads(
   sessions: Session[],
+  referenceDate: Date = new Date(),
 ): RunningWeeklyLoad[] {
-  const weekStarts = resolveWeekStarts(sessions)
+  const weekStarts = resolveWeekStarts(sessions, 4, referenceDate)
   const byWeek = new Map<string, RunningWeeklyLoad>()
 
   for (const weekStart of weekStarts) {
@@ -325,8 +331,9 @@ export function getRunningWeeklyLoads(
 
 export function calculateRunningAcwr(
   sessions: Session[],
+  referenceDate: Date = new Date(),
 ): RunningAcwr {
-  const running = calculateDisciplineAcwrFromLoads('running', getRunningWeeklyLoads(sessions))
+  const running = calculateDisciplineAcwrFromLoads('running', getRunningWeeklyLoads(sessions, referenceDate))
   return {
     acuteLoad: running.acuteLoad,
     chronicLoad: running.chronicLoad,
@@ -336,8 +343,8 @@ export function calculateRunningAcwr(
   }
 }
 
-export function getSquashWeeklyLoads(sessions: Session[]): SquashWeeklyLoad[] {
-  const weekStarts = resolveWeekStartsForSport(sessions, 'squash')
+export function getSquashWeeklyLoads(sessions: Session[], referenceDate: Date = new Date()): SquashWeeklyLoad[] {
+  const weekStarts = resolveWeekStartsForSport(sessions, 'squash', 4, referenceDate)
   const byWeek = new Map<string, SquashWeeklyLoad>()
 
   for (const weekStart of weekStarts) {
@@ -389,12 +396,12 @@ export function getSquashWeeklyLoads(sessions: Session[]): SquashWeeklyLoad[] {
   })
 }
 
-export function calculateSquashAcwr(sessions: Session[]): DisciplineAcwr {
-  return calculateDisciplineAcwrFromLoads('squash', getSquashWeeklyLoads(sessions))
+export function calculateSquashAcwr(sessions: Session[], referenceDate: Date = new Date()): DisciplineAcwr {
+  return calculateDisciplineAcwrFromLoads('squash', getSquashWeeklyLoads(sessions, referenceDate))
 }
 
-export function getStrengthWeeklyLoads(sessions: Session[]): StrengthWeeklyLoad[] {
-  const weekStarts = resolveWeekStartsForSport(sessions, 'strength')
+export function getStrengthWeeklyLoads(sessions: Session[], referenceDate: Date = new Date()): StrengthWeeklyLoad[] {
+  const weekStarts = resolveWeekStartsForSport(sessions, 'strength', 4, referenceDate)
   const byWeek = new Map<string, StrengthWeeklyLoad>()
 
   for (const weekStart of weekStarts) {
@@ -424,12 +431,12 @@ export function getStrengthWeeklyLoads(sessions: Session[]): StrengthWeeklyLoad[
   })
 }
 
-export function calculateStrengthAcwr(sessions: Session[]): DisciplineAcwr {
-  return calculateDisciplineAcwrFromLoads('strength', getStrengthWeeklyLoads(sessions))
+export function calculateStrengthAcwr(sessions: Session[], referenceDate: Date = new Date()): DisciplineAcwr {
+  return calculateDisciplineAcwrFromLoads('strength', getStrengthWeeklyLoads(sessions, referenceDate))
 }
 
-export function getCyclingWeeklyLoads(sessions: Session[]): CyclingWeeklyLoad[] {
-  const weekStarts = resolveWeekStartsForSport(sessions, 'cycling')
+export function getCyclingWeeklyLoads(sessions: Session[], referenceDate: Date = new Date()): CyclingWeeklyLoad[] {
+  const weekStarts = resolveWeekStartsForSport(sessions, 'cycling', 4, referenceDate)
   const byWeek = new Map<string, CyclingWeeklyLoad>()
 
   for (const weekStart of weekStarts) {
@@ -459,8 +466,8 @@ export function getCyclingWeeklyLoads(sessions: Session[]): CyclingWeeklyLoad[] 
   })
 }
 
-export function calculateCyclingAcwr(sessions: Session[]): DisciplineAcwr {
-  return calculateDisciplineAcwrFromLoads('cycling', getCyclingWeeklyLoads(sessions))
+export function calculateCyclingAcwr(sessions: Session[], referenceDate: Date = new Date()): DisciplineAcwr {
+  return calculateDisciplineAcwrFromLoads('cycling', getCyclingWeeklyLoads(sessions, referenceDate))
 }
 
 function trend(current: number, previous: number): LoadTrend {
@@ -595,14 +602,19 @@ export function computeAcwrByDiscipline(weeks: WeekLoadSummary[]): Record<SportK
  * Computes load analytics for the last N weeks (default 4).
  * Returns weeks ordered newest-first.
  */
-export async function computeLoadAnalytics(weeksBack = 4): Promise<LoadAnalytics> {
-  const today = new Date()
-  const currentWeekStart = toISO(getWeekStart(today))
+export async function computeLoadAnalytics(
+  weeksBack = 4,
+  referenceDate: string | Date = new Date(),
+): Promise<LoadAnalytics> {
+  const resolvedReferenceDate = typeof referenceDate === 'string'
+    ? fromISO(referenceDate)
+    : referenceDate
+  const currentWeekStart = toISO(getWeekStart(resolvedReferenceDate))
 
   // Collect week starts (current + previous N-1)
   const weekStarts: string[] = []
   for (let i = 0; i < weeksBack; i++) {
-    weekStarts.push(toISO(getWeekStart(subWeeks(today, i))))
+    weekStarts.push(toISO(getWeekStart(subWeeks(resolvedReferenceDate, i))))
   }
 
   // Query all sessions in the date range in a single Dexie call
@@ -642,14 +654,14 @@ export async function computeLoadAnalytics(weeksBack = 4): Promise<LoadAnalytics
 
   const acwr = computeAcwr(weeks)
   const acwrByDiscipline = computeAcwrByDiscipline(weeks)
-  const runningWeeklyLoads = getRunningWeeklyLoads(allSessions)
-  const runningAcwr = calculateRunningAcwr(allSessions)
-  const squashWeeklyLoads = getSquashWeeklyLoads(allSessions)
-  const squashAcwr = calculateSquashAcwr(allSessions)
-  const strengthWeeklyLoads = getStrengthWeeklyLoads(allSessions)
-  const strengthAcwr = calculateStrengthAcwr(allSessions)
-  const cyclingWeeklyLoads = getCyclingWeeklyLoads(allSessions)
-  const cyclingAcwr = calculateCyclingAcwr(allSessions)
+  const runningWeeklyLoads = getRunningWeeklyLoads(allSessions, resolvedReferenceDate)
+  const runningAcwr = calculateRunningAcwr(allSessions, resolvedReferenceDate)
+  const squashWeeklyLoads = getSquashWeeklyLoads(allSessions, resolvedReferenceDate)
+  const squashAcwr = calculateSquashAcwr(allSessions, resolvedReferenceDate)
+  const strengthWeeklyLoads = getStrengthWeeklyLoads(allSessions, resolvedReferenceDate)
+  const strengthAcwr = calculateStrengthAcwr(allSessions, resolvedReferenceDate)
+  const cyclingWeeklyLoads = getCyclingWeeklyLoads(allSessions, resolvedReferenceDate)
+  const cyclingAcwr = calculateCyclingAcwr(allSessions, resolvedReferenceDate)
 
   return {
     weeks,

@@ -19,14 +19,16 @@ import type {
   TrainingPriority,
   WeekSummary,
 } from '../types'
+import type { TrainingPlan, TrainingPlanWeek } from '../types/planBuilder'
 import { useChatStore } from '../store/useChatStore'
 import { useCoachActionsStore } from '../store/useCoachActionsStore'
 import { useCoachMemoryStore } from '../store/useCoachMemoryStore'
+import { usePlanBuilderStore } from '../store/usePlanBuilderStore'
 import { useTrainingStore } from '../store/useTrainingStore'
 import { clearStoredChatSessionId, getOrCreateChatSessionId, setStoredChatSessionId } from '../utils/chatSession'
 
 const BACKUP_APP_NAME = 'Entrenador' as const
-const CURRENT_BACKUP_VERSION = 2 as const
+const CURRENT_BACKUP_VERSION = 3 as const
 const MIN_SUPPORTED_BACKUP_VERSION = 1 as const
 
 const TIME_BLOCKS = new Set(['AM', 'PM'])
@@ -61,6 +63,8 @@ const MACRO_PLAN_EVENT_TIMINGS = new Set(['upcoming', 'active', 'past'])
 const MACRO_PLAN_SPORT_ROLES = new Set(['primary', 'support'])
 const MACRO_PLAN_PHASES = new Set(['base', 'build', 'peak', 'taper', 'race', 'transition'])
 const PHASE_SPORT_TARGET_ROLES = new Set(['primary', 'support', 'excluded'])
+const PLAN_STATUSES = new Set(['draft', 'active', 'archived', 'superseded'])
+const PLAN_WEEK_STATUSES = new Set(['pending', 'generating', 'draft', 'accepted', 'error'])
 const COACH_ACTION_TYPES = new Set([
   'move_session',
   'change_rpe',
@@ -84,6 +88,8 @@ export interface AppDataExport {
     sessions: Session[]
     dayLogs: DayLog[]
     weekSummaries: WeekSummary[]
+    trainingPlans: TrainingPlan[]
+    trainingPlanWeeks: TrainingPlanWeek[]
     chatMessages: ChatMessage[]
     coachProposals: CoachProposal[]
     athleteProfiles: AthleteProfile[]
@@ -98,6 +104,8 @@ export interface AppDataImportResult {
     sessions: number
     dayLogs: number
     weekSummaries: number
+    trainingPlans: number
+    trainingPlanWeeks: number
     chatMessages: number
     coachProposals: number
     athleteProfiles: number
@@ -130,10 +138,12 @@ function buildFilename(exportedAt: Date): string {
 
 export async function exportAppData(): Promise<{ filename: string; json: string }> {
   const exportedAt = new Date()
-  const [sessions, dayLogs, weekSummaries, chatMessages, coachProposals, athleteProfiles] = await Promise.all([
+  const [sessions, dayLogs, weekSummaries, trainingPlans, trainingPlanWeeks, chatMessages, coachProposals, athleteProfiles] = await Promise.all([
     db.sessions.toArray(),
     db.dayLogs.toArray(),
     db.weekSummaries.toArray(),
+    db.trainingPlans.toArray(),
+    db.trainingPlanWeeks.toArray(),
     db.chatMessages.toArray(),
     db.coachProposals.toArray(),
     db.athleteProfiles.toArray(),
@@ -148,6 +158,8 @@ export async function exportAppData(): Promise<{ filename: string; json: string 
       sessions,
       dayLogs,
       weekSummaries,
+      trainingPlans,
+      trainingPlanWeeks,
       chatMessages,
       coachProposals,
       athleteProfiles,
@@ -195,6 +207,8 @@ export async function previewAppDataImportFile(file: File): Promise<AppDataImpor
       sessions: backup.tables.sessions.length,
       dayLogs: backup.tables.dayLogs.length,
       weekSummaries: backup.tables.weekSummaries.length,
+      trainingPlans: backup.tables.trainingPlans.length,
+      trainingPlanWeeks: backup.tables.trainingPlanWeeks.length,
       chatMessages: backup.tables.chatMessages.length,
       coachProposals: backup.tables.coachProposals.length,
       athleteProfiles: backup.tables.athleteProfiles.length,
@@ -280,11 +294,13 @@ export async function importAppDataFromFile(
   if (mode === 'replace') {
     await db.transaction(
       'rw',
-      [db.sessions, db.dayLogs, db.weekSummaries, db.chatMessages, db.coachProposals, db.athleteProfiles],
+      [db.sessions, db.dayLogs, db.weekSummaries, db.trainingPlans, db.trainingPlanWeeks, db.chatMessages, db.coachProposals, db.athleteProfiles],
       async () => {
         await db.sessions.clear()
         await db.dayLogs.clear()
         await db.weekSummaries.clear()
+        await db.trainingPlanWeeks.clear()
+        await db.trainingPlans.clear()
         await db.chatMessages.clear()
         await db.coachProposals.clear()
         await db.athleteProfiles.clear()
@@ -292,6 +308,8 @@ export async function importAppDataFromFile(
         if (backup.tables.sessions.length > 0) await db.sessions.bulkPut(backup.tables.sessions)
         if (backup.tables.dayLogs.length > 0) await db.dayLogs.bulkPut(backup.tables.dayLogs)
         if (backup.tables.weekSummaries.length > 0) await db.weekSummaries.bulkPut(backup.tables.weekSummaries)
+        if (backup.tables.trainingPlans.length > 0) await db.trainingPlans.bulkPut(backup.tables.trainingPlans)
+        if (backup.tables.trainingPlanWeeks.length > 0) await db.trainingPlanWeeks.bulkPut(backup.tables.trainingPlanWeeks)
         if (backup.tables.chatMessages.length > 0) await db.chatMessages.bulkPut(backup.tables.chatMessages)
         if (backup.tables.coachProposals.length > 0) await db.coachProposals.bulkPut(backup.tables.coachProposals)
         if (backup.tables.athleteProfiles.length > 0) await db.athleteProfiles.bulkPut(backup.tables.athleteProfiles)
@@ -303,14 +321,14 @@ export async function importAppDataFromFile(
     // WeekSummaries have no updatedAt — only add records missing locally.
     await db.transaction(
       'rw',
-      [db.sessions, db.dayLogs, db.weekSummaries, db.chatMessages, db.coachProposals, db.athleteProfiles],
+      [db.sessions, db.dayLogs, db.weekSummaries, db.trainingPlans, db.trainingPlanWeeks, db.chatMessages, db.coachProposals, db.athleteProfiles],
       async () => {
         // Sessions
         const localSessions = await db.sessions.toArray()
         const localSessionsById = new Map(localSessions.map(s => [s.id, s]))
         const sessionsToWrite = backup.tables.sessions.filter(bs => {
           const local = localSessionsById.get(bs.id)
-          return !local || bs.updatedAt >= local.updatedAt
+          return !local || bs.updatedAt > local.updatedAt
         })
         if (sessionsToWrite.length > 0) await db.sessions.bulkPut(sessionsToWrite)
 
@@ -319,7 +337,7 @@ export async function importAppDataFromFile(
         const localDayLogsById = new Map(localDayLogs.map(d => [d.id, d]))
         const dayLogsToWrite = backup.tables.dayLogs.filter(bd => {
           const local = localDayLogsById.get(bd.id)
-          return !local || bd.updatedAt >= local.updatedAt
+          return !local || bd.updatedAt > local.updatedAt
         })
         if (dayLogsToWrite.length > 0) await db.dayLogs.bulkPut(dayLogsToWrite)
 
@@ -328,9 +346,25 @@ export async function importAppDataFromFile(
         const localSummariesById = new Map(localSummaries.map(s => [s.id, s]))
         const summariesToWrite = backup.tables.weekSummaries.filter(bs => {
           const local = localSummariesById.get(bs.id)
-          return !local || (bs.updatedAt ?? 0) >= (local.updatedAt ?? 0)
+          return !local || (bs.updatedAt ?? 0) > (local.updatedAt ?? 0)
         })
         if (summariesToWrite.length > 0) await db.weekSummaries.bulkPut(summariesToWrite)
+
+        const localPlans = await db.trainingPlans.toArray()
+        const localPlansById = new Map(localPlans.map((plan) => [plan.id, plan]))
+        const plansToWrite = backup.tables.trainingPlans.filter((backupPlan) => {
+          const local = localPlansById.get(backupPlan.id)
+          return !local || backupPlan.updatedAt > local.updatedAt
+        })
+        if (plansToWrite.length > 0) await db.trainingPlans.bulkPut(plansToWrite)
+
+        const localPlanWeeks = await db.trainingPlanWeeks.toArray()
+        const localPlanWeeksById = new Map(localPlanWeeks.map((week) => [week.id, week]))
+        const planWeeksToWrite = backup.tables.trainingPlanWeeks.filter((backupWeek) => {
+          const local = localPlanWeeksById.get(backupWeek.id)
+          return !local || backupWeek.updatedAt > local.updatedAt
+        })
+        if (planWeeksToWrite.length > 0) await db.trainingPlanWeeks.bulkPut(planWeeksToWrite)
 
         // ChatMessages — immutable, only add new
         const localMessages = await db.chatMessages.toArray()
@@ -349,7 +383,7 @@ export async function importAppDataFromFile(
         const localProfilesById = new Map(localProfilesArr.map(p => [p.id, p]))
         const profilesToWrite = backup.tables.athleteProfiles.filter(bp => {
           const local = localProfilesById.get(bp.id)
-          return !local || bp.updatedAt >= local.updatedAt
+          return !local || bp.updatedAt > local.updatedAt
         })
         if (profilesToWrite.length > 0) await db.athleteProfiles.bulkPut(profilesToWrite)
       },
@@ -366,6 +400,8 @@ export async function importAppDataFromFile(
       sessions: backup.tables.sessions.length,
       dayLogs: backup.tables.dayLogs.length,
       weekSummaries: backup.tables.weekSummaries.length,
+      trainingPlans: backup.tables.trainingPlans.length,
+      trainingPlanWeeks: backup.tables.trainingPlanWeeks.length,
       chatMessages: backup.tables.chatMessages.length,
       coachProposals: backup.tables.coachProposals.length,
       athleteProfiles: backup.tables.athleteProfiles.length,
@@ -396,6 +432,8 @@ function parseAppDataExport(value: unknown): AppDataExport {
   const sessions = parseSessionsTable(normalized.tables.sessions)
   const dayLogs = parseDayLogsTable(normalized.tables.dayLogs)
   const weekSummaries = parseWeekSummariesTable(normalized.tables.weekSummaries)
+  const trainingPlans = parseTrainingPlansTable(normalized.tables.trainingPlans ?? [])
+  const trainingPlanWeeks = parseTrainingPlanWeeksTable(normalized.tables.trainingPlanWeeks ?? [])
   const chatMessages = parseChatMessagesTable(normalized.tables.chatMessages)
   const coachProposals = parseCoachProposalsTable(normalized.tables.coachProposals)
   const athleteProfiles = parseAthleteProfilesTable(normalized.tables.athleteProfiles)
@@ -411,6 +449,8 @@ function parseAppDataExport(value: unknown): AppDataExport {
       sessions,
       dayLogs,
       weekSummaries,
+      trainingPlans,
+      trainingPlanWeeks,
       chatMessages,
       coachProposals,
       athleteProfiles,
@@ -444,6 +484,20 @@ function parseChatMessagesTable(value: unknown): ChatMessage[] {
   const messages = rows.map((row, index) => parseChatMessage(row, index))
   ensureUniqueIds(messages, 'chatMessages')
   return messages
+}
+
+function parseTrainingPlansTable(value: unknown): TrainingPlan[] {
+  const rows = ensureArray(value, 'trainingPlans')
+  const plans = rows.map((row, index) => parseTrainingPlan(row, index))
+  ensureUniqueIds(plans, 'trainingPlans')
+  return plans
+}
+
+function parseTrainingPlanWeeksTable(value: unknown): TrainingPlanWeek[] {
+  const rows = ensureArray(value, 'trainingPlanWeeks')
+  const weeks = rows.map((row, index) => parseTrainingPlanWeek(row, index))
+  ensureUniqueIds(weeks, 'trainingPlanWeeks')
+  return weeks
 }
 
 function parseCoachProposalsTable(value: unknown): CoachProposal[] {
@@ -576,6 +630,61 @@ function parseCoachProposal(value: unknown, index: number): CoachProposal {
     status: requireEnum(row.status, PROPOSAL_STATUSES, `coachProposals[${index}].status`) as CoachProposal['status'],
     createdAt: requireFiniteNumber(row.createdAt, `coachProposals[${index}].createdAt`),
     resolvedAt: optionalFiniteNumber(row.resolvedAt, `coachProposals[${index}].resolvedAt`),
+  }
+}
+
+function parseTrainingPlan(value: unknown, index: number): TrainingPlan {
+  const row = ensureRecord(value, `trainingPlans[${index}]`)
+  const phases = ensureArray(row.phases, `trainingPlans[${index}].phases`).map((phase, phaseIndex) => {
+    const phaseRow = ensureRecord(phase, `trainingPlans[${index}].phases[${phaseIndex}]`)
+    return {
+      phase: requireEnum(phaseRow.phase, MACRO_PLAN_PHASES, `trainingPlans[${index}].phases[${phaseIndex}].phase`) as TrainingPlan['phases'][number]['phase'],
+      startWeekIndex: requireFiniteNumber(phaseRow.startWeekIndex, `trainingPlans[${index}].phases[${phaseIndex}].startWeekIndex`),
+      endWeekIndex: requireFiniteNumber(phaseRow.endWeekIndex, `trainingPlans[${index}].phases[${phaseIndex}].endWeekIndex`),
+      blockFocus: requireString(phaseRow.blockFocus, `trainingPlans[${index}].phases[${phaseIndex}].blockFocus`),
+      intentBySport: ensureRecord(phaseRow.intentBySport ?? {}, `trainingPlans[${index}].phases[${phaseIndex}].intentBySport`) as TrainingPlan['phases'][number]['intentBySport'],
+    }
+  })
+
+  return {
+    id: requireString(row.id, `trainingPlans[${index}].id`),
+    athleteId: requireString(row.athleteId, `trainingPlans[${index}].athleteId`),
+    goalEventId: requireString(row.goalEventId, `trainingPlans[${index}].goalEventId`),
+    status: requireEnum(row.status, PLAN_STATUSES, `trainingPlans[${index}].status`) as TrainingPlan['status'],
+    title: requireString(row.title, `trainingPlans[${index}].title`),
+    startDate: requireISODate(row.startDate, `trainingPlans[${index}].startDate`),
+    endDate: requireISODate(row.endDate, `trainingPlans[${index}].endDate`),
+    totalWeeks: requireFiniteNumber(row.totalWeeks, `trainingPlans[${index}].totalWeeks`),
+    phases,
+    wizardConfig: parsePlanWizardConfig(row.wizardConfig, `trainingPlans[${index}].wizardConfig`),
+    macroSnapshot:
+      optionalMacroPlan(row.macroSnapshot, `trainingPlans[${index}].macroSnapshot`)
+      ?? optionalMacroPlan(row.macroPlan, `trainingPlans[${index}].macroPlan`)
+      ?? (() => { throw new Error(`trainingPlans[${index}].macroSnapshot es requerido.`) })(),
+    createdAt: requireFiniteNumber(row.createdAt, `trainingPlans[${index}].createdAt`),
+    updatedAt: requireFiniteNumber(row.updatedAt, `trainingPlans[${index}].updatedAt`),
+    acceptedAt: optionalFiniteNumber(row.acceptedAt, `trainingPlans[${index}].acceptedAt`),
+    notes: optionalString(row.notes, `trainingPlans[${index}].notes`),
+    generationSummary: optionalTrainingPlanGenerationSummary(row.generationSummary, `trainingPlans[${index}].generationSummary`),
+  }
+}
+
+function parseTrainingPlanWeek(value: unknown, index: number): TrainingPlanWeek {
+  const row = ensureRecord(value, `trainingPlanWeeks[${index}]`)
+  return {
+    id: requireString(row.id, `trainingPlanWeeks[${index}].id`),
+    planId: requireString(row.planId, `trainingPlanWeeks[${index}].planId`),
+    weekIndex: requireFiniteNumber(row.weekIndex, `trainingPlanWeeks[${index}].weekIndex`),
+    weekStartDate: requireISODate(row.weekStartDate, `trainingPlanWeeks[${index}].weekStartDate`),
+    phase: requireEnum(row.phase, MACRO_PLAN_PHASES, `trainingPlanWeeks[${index}].phase`) as TrainingPlanWeek['phase'],
+    status: requireEnum(row.status, PLAN_WEEK_STATUSES, `trainingPlanWeeks[${index}].status`) as TrainingPlanWeek['status'],
+    sessions: optionalCoachSessions(row.sessions, `trainingPlanWeeks[${index}].sessions`) ?? [],
+    weekObjectives: optionalPlanWeekObjectives(row.weekObjectives, `trainingPlanWeeks[${index}].weekObjectives`),
+    targetLoadBySport: ensureRecord(row.targetLoadBySport ?? {}, `trainingPlanWeeks[${index}].targetLoadBySport`) as TrainingPlanWeek['targetLoadBySport'],
+    validationIssues: optionalPlanValidationIssues(row.validationIssues, `trainingPlanWeeks[${index}].validationIssues`),
+    generationMeta: optionalWeekGenerationMeta(row.generationMeta, `trainingPlanWeeks[${index}].generationMeta`),
+    createdAt: requireFiniteNumber(row.createdAt, `trainingPlanWeeks[${index}].createdAt`),
+    updatedAt: requireFiniteNumber(row.updatedAt, `trainingPlanWeeks[${index}].updatedAt`),
   }
 }
 
@@ -981,6 +1090,97 @@ function optionalChatContext(value: unknown, path: string): ChatMessage['context
   return context
 }
 
+function parsePlanWizardConfig(value: unknown, path: string): TrainingPlan['wizardConfig'] {
+  const row = ensureRecord(value, path)
+  return {
+    goalEventId: requireString(row.goalEventId, `${path}.goalEventId`),
+    trainingDays: optionalEnumArray(
+      row.trainingDays,
+      new Set(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']),
+      `${path}.trainingDays`,
+    ) as TrainingPlan['wizardConfig']['trainingDays'] ?? [],
+    sessionsPerWeek: requireFiniteNumber(row.sessionsPerWeek, `${path}.sessionsPerWeek`),
+    sessionDurationMins: requireFiniteNumber(row.sessionDurationMins, `${path}.sessionDurationMins`),
+    allowDoubleSession: requireBoolean(row.allowDoubleSession, `${path}.allowDoubleSession`),
+    complementarySports: optionalEnumArray(row.complementarySports, SUPPORTED_SPORTS, `${path}.complementarySports`) as TrainingPlan['wizardConfig']['complementarySports'] ?? [],
+    currentFitnessLevel: requireEnum(
+      row.currentFitnessLevel,
+      new Set(['fit', 'normal', 'returning', 'low']),
+      `${path}.currentFitnessLevel`,
+    ) as TrainingPlan['wizardConfig']['currentFitnessLevel'],
+    currentFatigue: requireEnum(
+      row.currentFatigue,
+      new Set(['fresh', 'normal', 'loaded', 'overloaded']),
+      `${path}.currentFatigue`,
+    ) as TrainingPlan['wizardConfig']['currentFatigue'],
+    injuryNotes: optionalString(row.injuryNotes, `${path}.injuryNotes`),
+    createdAt: requireString(row.createdAt, `${path}.createdAt`),
+    updatedAt: requireString(row.updatedAt, `${path}.updatedAt`),
+  }
+}
+
+function optionalTrainingPlanGenerationSummary(value: unknown, path: string): TrainingPlan['generationSummary'] {
+  if (value == null) return undefined
+  const row = ensureRecord(value, path)
+  return {
+    startedAt: requireFiniteNumber(row.startedAt, `${path}.startedAt`),
+    completedAt: optionalFiniteNumber(row.completedAt, `${path}.completedAt`),
+    totalDurationMs: optionalFiniteNumber(row.totalDurationMs, `${path}.totalDurationMs`),
+    strategy: requireEnum(row.strategy, new Set(['single', 'pairs']), `${path}.strategy`) as NonNullable<TrainingPlan['generationSummary']>['strategy'],
+    completedWeeks: requireFiniteNumber(row.completedWeeks, `${path}.completedWeeks`),
+    failedWeeks: ensureArray(row.failedWeeks ?? [], `${path}.failedWeeks`).map((item, index) => requireFiniteNumber(item, `${path}.failedWeeks[${index}]`)),
+    totalAttempts: requireFiniteNumber(row.totalAttempts, `${path}.totalAttempts`),
+    acceptedAt: optionalFiniteNumber(row.acceptedAt, `${path}.acceptedAt`),
+    discardedAt: optionalFiniteNumber(row.discardedAt, `${path}.discardedAt`),
+  }
+}
+
+function optionalPlanWeekObjectives(value: unknown, path: string): TrainingPlanWeek['weekObjectives'] {
+  if (value == null) return []
+  return ensureArray(value, path).map((item, index) => {
+    const row = ensureRecord(item, `${path}[${index}]`)
+    return {
+      sport: optionalEnum(row.sport, SUPPORTED_SPORTS, `${path}[${index}].sport`) as TrainingPlanWeek['weekObjectives'][number]['sport'],
+      goal: requireString(row.goal, `${path}[${index}].goal`),
+      metric: optionalString(row.metric, `${path}[${index}].metric`),
+    }
+  })
+}
+
+function optionalPlanValidationIssues(value: unknown, path: string): TrainingPlanWeek['validationIssues'] {
+  if (value == null) return []
+  return ensureArray(value, path).map((item, index) => {
+    const row = ensureRecord(item, `${path}[${index}]`)
+    return {
+      severity: requireEnum(row.severity, new Set(['error', 'warning', 'info']), `${path}[${index}].severity`) as TrainingPlanWeek['validationIssues'][number]['severity'],
+      code: requireString(row.code, `${path}[${index}].code`),
+      message: requireString(row.message, `${path}[${index}].message`),
+      weekIndex: optionalFiniteNumber(row.weekIndex, `${path}[${index}].weekIndex`),
+      sessionId: optionalString(row.sessionId, `${path}[${index}].sessionId`),
+    }
+  })
+}
+
+function optionalWeekGenerationMeta(value: unknown, path: string): TrainingPlanWeek['generationMeta'] {
+  if (value == null) {
+    return { attempts: 0 }
+  }
+  const row = ensureRecord(value, path)
+  return {
+    provider: optionalString(row.provider, `${path}.provider`),
+    model: optionalString(row.model, `${path}.model`),
+    promptTokens: optionalFiniteNumber(row.promptTokens, `${path}.promptTokens`),
+    completionTokens: optionalFiniteNumber(row.completionTokens, `${path}.completionTokens`),
+    attempts: requireFiniteNumber(row.attempts, `${path}.attempts`),
+    lastError: optionalString(row.lastError, `${path}.lastError`),
+    lastAttemptAt: optionalFiniteNumber(row.lastAttemptAt, `${path}.lastAttemptAt`),
+    durationMs: optionalFiniteNumber(row.durationMs, `${path}.durationMs`),
+    chunkCount: optionalFiniteNumber(row.chunkCount, `${path}.chunkCount`),
+    strategy: optionalEnum(row.strategy, new Set(['single', 'pairs']), `${path}.strategy`) as TrainingPlanWeek['generationMeta']['strategy'],
+    batchId: optionalString(row.batchId, `${path}.batchId`),
+  }
+}
+
 function ensureUniqueIds<T extends { id: string }>(rows: T[], tableName: string): void {
   const ids = new Set<string>()
   for (const row of rows) {
@@ -1360,4 +1560,15 @@ function syncStoresAfterImport(preferredChatSessionId: string | null): void {
 
   useCoachActionsStore.setState({ proposals: [] })
   useCoachMemoryStore.setState({ coachMemory: '', athleteProfile: null, isSaving: false, hasLoaded: true, lastLoadedAt: Date.now() })
+  usePlanBuilderStore.setState({
+    plan: null,
+    weeks: [],
+    issues: [],
+    status: 'idle',
+    currentWeekIndex: null,
+    completedWeeks: 0,
+    failedWeekIndexes: [],
+    streamingTextByWeekIndex: {},
+    lastError: null,
+  })
 }

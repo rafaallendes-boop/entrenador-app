@@ -107,13 +107,7 @@ export const useTrainingStore = create<TrainingState>((set, get) => ({
     } catch (e) {
       console.error(e)
       if (requestId !== latestWeekLoadRequestId) return
-      set({
-        sessions: [],
-        dayLogs: {},
-        currentWeekSummary: null,
-        isLoading: false,
-        loadedWeekStart: null,
-      })
+      set({ isLoading: false })
     }
   },
 
@@ -143,6 +137,7 @@ export const useTrainingStore = create<TrainingState>((set, get) => ({
         : state.sessions,
       currentWeekSummary: nextSummary ?? state.currentWeekSummary,
     }))
+    await get().loadAllSummaries()
     return session
   },
 
@@ -184,6 +179,7 @@ export const useTrainingStore = create<TrainingState>((set, get) => ({
         set({ currentWeekSummary: summary ?? null })
       }
     }
+    await get().loadAllSummaries()
   },
 
   deleteSession: async (id) => {
@@ -198,6 +194,7 @@ export const useTrainingStore = create<TrainingState>((set, get) => ({
       const summary = await getWeekSummary(activeWeekStart)
       set({ currentWeekSummary: summary ?? null })
     }
+    await get().loadAllSummaries()
   },
 
   cycleSessionStatus: async (id) => {
@@ -231,6 +228,7 @@ export const useTrainingStore = create<TrainingState>((set, get) => ({
         ? { ...state.dayLogs, [date]: log }
         : state.dayLogs,
     }))
+    await get().loadAllSummaries()
   },
 
   generateCoachNote: async (weekStart) => {

@@ -40,6 +40,7 @@ export default function WeeklyView() {
   const [checkInExpandToken, setCheckInExpandToken] = useState(0)
   const [pendingCoachDeleteId, setPendingCoachDeleteId] = useState<string | null>(null)
   const [activeProposal, setActiveProposal] = useState<CoachProposal | null>(null)
+  const [proposalError, setProposalError] = useState<string | null>(null)
   const { launchIntent, launchId } = useWeeklyLaunchIntent()
   const handledLaunchIntentKeyRef = useRef<string | null>(null)
 
@@ -114,6 +115,7 @@ export default function WeeklyView() {
 
   const handleOpenAutoAdjustment = useCallback(async () => {
     if (!autoAdjustmentDraft) return
+    setProposalError(null)
     const proposal = await addProposal(
       autoAdjustmentDraft.message,
       autoAdjustmentDraft.actions,
@@ -125,7 +127,12 @@ export default function WeeklyView() {
 
   const handleAcceptAutoAdjustment = async () => {
     if (!activeProposal) return
-    await acceptProposal(activeProposal.id)
+    const result = await acceptProposal(activeProposal.id)
+    if (result.errors.length > 0) {
+      setProposalError(result.errors.join(' '))
+      return
+    }
+    setProposalError(null)
     setActiveProposal(null)
   }
 
@@ -133,6 +140,7 @@ export default function WeeklyView() {
     if (activeProposal && activeProposal.status === 'pending') {
       void rejectProposal(activeProposal.id)
     }
+    setProposalError(null)
     setActiveProposal(null)
   }
 
@@ -329,6 +337,11 @@ export default function WeeklyView() {
             )}
           </div>
           <div className="space-y-3">
+            {proposalError && (
+              <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+                {proposalError}
+              </div>
+            )}
             <Suspense fallback={<div className="h-48 rounded-card border border-surface-border bg-surface-card animate-pulse" />}>
               <WeeklyActionCenterCard
                 summary={weeklyActionSummary}

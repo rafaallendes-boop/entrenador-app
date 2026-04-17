@@ -70,7 +70,7 @@ export function useLoadAnalytics(currentWeekStart: string, sessions: WeeklySnaps
   useEffect(() => {
     let cancelled = false
 
-    void computeLoadAnalytics(4).then((analytics) => {
+    void computeLoadAnalytics(4, currentWeekStart).then((analytics) => {
       if (!cancelled) setLoadAnalytics(analytics)
     })
 

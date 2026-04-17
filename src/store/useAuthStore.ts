@@ -39,19 +39,9 @@ interface AuthState {
   setSyncDetails: (patch: Partial<SyncDetails>) => void
 }
 
-export const useAuthStore = create<AuthState>((set) => {
-  if (isSupabaseConfigured && supabase) {
-    // Subscribe to Supabase auth state changes on store creation
-    supabase.auth.getSession().then(({ data }) => {
-      set({ user: data.session?.user ?? null, isLoading: false })
-    })
+let authBootstrapVersion = 0
 
-    supabase.auth.onAuthStateChange((_event, session) => {
-      set({ user: session?.user ?? null, isLoading: false })
-    })
-  }
-
-  return {
+export const useAuthStore = create<AuthState>((set) => ({
     user: null,
     isLoading: isSupabaseConfigured,
     syncStatus: 'idle',
@@ -134,5 +124,22 @@ export const useAuthStore = create<AuthState>((set) => {
         },
       }))
     },
-  }
-})
+  }))
+
+if (isSupabaseConfigured && supabase) {
+  const bootstrapVersion = ++authBootstrapVersion
+  void supabase.auth.getSession()
+    .then(({ data }) => {
+      if (bootstrapVersion !== authBootstrapVersion) return
+      useAuthStore.setState({ user: data.session?.user ?? null, isLoading: false })
+    })
+    .catch(() => {
+      if (bootstrapVersion !== authBootstrapVersion) return
+      useAuthStore.setState({ user: null, isLoading: false })
+    })
+
+  supabase.auth.onAuthStateChange((_event, session) => {
+    authBootstrapVersion += 1
+    useAuthStore.setState({ user: session?.user ?? null, isLoading: false })
+  })
+}

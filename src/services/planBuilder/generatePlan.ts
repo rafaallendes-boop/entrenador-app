@@ -352,29 +352,29 @@ export async function generatePlanWeeks(input: GeneratePlanWeeksInput): Promise<
         input.onChunk,
       )
 
-      const fallbackWeeks = batchResult.results.filter((item) => item.sessions.length === 0)
-      const successfulWeeks = batchResult.results.filter((item) => item.sessions.length > 0)
+      for (const batchWeekResult of batchResult.results) {
+        if (batchWeekResult.sessions.length > 0) {
+          const resolved = makeResolvedWeek(batchWeekResult.week, batchWeekResult.sessions, {
+            attempts: 1,
+            provider: batchResult.meta.provider,
+            model: batchResult.meta.model,
+            durationMs: batchResult.meta.durationMs,
+            chunkCount: batchResult.meta.chunkCount,
+            strategy: 'pairs',
+            batchId: batchResult.meta.batchId,
+          })
+          input.onWeekUpdate?.(resolved)
+          results.push(resolved)
+          if (resolved.status === 'draft') {
+            previousWeek = resolved
+          }
+          continue
+        }
 
-      for (const success of successfulWeeks) {
-        const resolved = makeResolvedWeek(success.week, success.sessions, {
-          attempts: 1,
-          provider: batchResult.meta.provider,
-          model: batchResult.meta.model,
-          durationMs: batchResult.meta.durationMs,
-          chunkCount: batchResult.meta.chunkCount,
-          strategy: 'pairs',
-          batchId: batchResult.meta.batchId,
-        })
-        input.onWeekUpdate?.(resolved)
-        results.push(resolved)
-        previousWeek = resolved
-      }
-
-      for (const failure of fallbackWeeks) {
         const fallbackResolved = await generateSingleWeekWithRetry(
           provider,
           input.plan,
-          failure.week,
+          batchWeekResult.week,
           previousWeek,
           input.profile,
           input.wizardConfig,
