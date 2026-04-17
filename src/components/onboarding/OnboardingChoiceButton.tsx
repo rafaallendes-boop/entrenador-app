@@ -24,8 +24,8 @@ export default function OnboardingChoiceButton({
       aria-pressed={selected}
       className={`flex w-full items-start gap-3 rounded-xl border px-4 py-3 text-left transition-colors ${
         selected
-          ? 'border-brand bg-brand/10 text-ink shadow-glow-sm'
-          : 'border-surface-border bg-surface-card text-ink-muted hover:border-brand/40 hover:bg-surface-raised'
+          ? 'border-brand/25 bg-brand/10 text-ink shadow-glow-sm'
+          : 'border-surface-soft/70 bg-surface-panel text-ink-muted hover:border-brand/30 hover:bg-surface-raised'
       }`}
     >
       {leading && <span className="mt-0.5 text-xl leading-none">{leading}</span>}

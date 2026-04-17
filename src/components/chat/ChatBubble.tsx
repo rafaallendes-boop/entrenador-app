@@ -82,16 +82,16 @@ export default function ChatBubble({ message, hasProposal, onViewProposal }: Cha
   return (
     <div className={`flex gap-2 ${isCoach ? 'items-start' : 'items-start flex-row-reverse'}`}>
       {isCoach && (
-        <div className="mt-1 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-brand/20">
-          <MessageCircle size={14} className="text-brand-light" />
+        <div className="mt-1 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full border border-forge-cyan/20 bg-forge-cyan/10 shadow-[0_0_24px_-10px_rgba(0,227,253,0.6)]">
+          <MessageCircle size={14} className="text-forge-cyan" />
         </div>
       )}
 
       <div className={`max-w-[88%] md:max-w-[80%] ${isCoach ? '' : 'items-end flex flex-col'}`}>
         <div className={`rounded-2xl px-4 py-3 text-sm leading-relaxed ${
           isCoach
-            ? 'rounded-tl-sm border border-surface-border bg-surface-card text-ink'
-            : 'rounded-tr-sm bg-brand text-white'
+            ? 'rounded-tl-sm border border-surface-soft/70 bg-[linear-gradient(145deg,rgba(26,26,26,0.96),rgba(14,14,14,0.98))] text-ink shadow-panel'
+            : 'rounded-tr-sm border border-brand/25 bg-[linear-gradient(145deg,rgba(255,77,0,0.22),rgba(40,10,0,0.96))] text-white shadow-[0_20px_50px_-32px_rgba(255,77,0,0.4)]'
         }`}>
           {isCoach
             ? <MarkdownContent text={message.content} />
@@ -107,7 +107,7 @@ export default function ChatBubble({ message, hasProposal, onViewProposal }: Cha
           {hasProposal && onViewProposal && (
             <button
               onClick={onViewProposal}
-              className="flex items-center gap-1 text-[11px] text-amber-400 font-medium hover:text-amber-300 transition-colors"
+              className="flex items-center gap-1 text-[11px] font-medium text-forge-ember transition-colors hover:text-[#fff4c9]"
             >
               <Zap size={10} />
               Ver propuesta

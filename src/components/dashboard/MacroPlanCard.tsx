@@ -17,12 +17,12 @@ const PHASE_COLOR: Record<MacroPlan['currentPhase'], string> = {
 }
 
 const PHASE_BG: Record<MacroPlan['currentPhase'], string> = {
-  base: 'bg-sky-500/10 border-sky-500/20',
-  build: 'bg-amber-500/10 border-amber-500/20',
-  peak: 'bg-orange-500/10 border-orange-500/20',
-  taper: 'bg-emerald-500/10 border-emerald-500/20',
-  race: 'bg-rose-500/10 border-rose-500/20',
-  transition: 'bg-violet-500/10 border-violet-500/20',
+  base: 'bg-[linear-gradient(145deg,rgba(56,189,248,0.14),rgba(14,14,14,0.96))] border-sky-500/20',
+  build: 'bg-[linear-gradient(145deg,rgba(255,235,156,0.14),rgba(14,14,14,0.96))] border-forge-ember/25',
+  peak: 'bg-[linear-gradient(145deg,rgba(251,146,60,0.14),rgba(14,14,14,0.96))] border-orange-500/20',
+  taper: 'bg-[linear-gradient(145deg,rgba(16,185,129,0.14),rgba(14,14,14,0.96))] border-emerald-500/20',
+  race: 'bg-[linear-gradient(145deg,rgba(251,113,133,0.14),rgba(14,14,14,0.96))] border-rose-500/20',
+  transition: 'bg-[linear-gradient(145deg,rgba(167,139,250,0.14),rgba(14,14,14,0.96))] border-violet-500/20',
 }
 
 interface MacroPlanCardProps {
@@ -45,13 +45,17 @@ export default function MacroPlanCard({
   const weeksLabel = formatWeeksRemaining(macroPlan.weeksRemaining)
   const phaseColor = PHASE_COLOR[macroPlan.currentPhase] ?? 'text-ink-muted'
   const phaseBg = PHASE_BG[macroPlan.currentPhase] ?? 'bg-surface-raised border-surface-border'
+  const cardAccent =
+    macroPlan.currentPhase === 'base' || macroPlan.currentPhase === 'transition'
+      ? 'cyan'
+      : 'ember'
   const visibleSportDetails = macroPlan.sportDetails
   const visibleTimeline = timelineExpanded ? macroPlan.timeline : macroPlan.timeline.slice(0, 5)
 
   return (
-    <Card className={`p-4 border ${phaseBg}`}>
+    <Card variant="hud" accent={cardAccent} className={`p-4 border ${phaseBg}`}>
       <div className="flex items-start gap-3 mb-3">
-        <div className="w-8 h-8 rounded-full bg-surface-raised flex items-center justify-center flex-shrink-0">
+        <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full border border-white/5 bg-surface-raised">
           <Target size={16} className={phaseColor} />
         </div>
         <div className="min-w-0 flex-1">
@@ -87,7 +91,7 @@ export default function MacroPlanCard({
       </div>
 
       <div className="grid grid-cols-2 gap-3">
-        <div className="rounded-xl border border-surface-border bg-surface-raised px-3 py-2">
+        <div className="rounded-xl border border-surface-border bg-surface-raised/80 px-3 py-2">
           <div className="flex items-center gap-1.5 mb-1">
             <TrendingUp size={12} className={phaseColor} />
             <p className="text-[10px] font-medium uppercase tracking-wider text-ink-faint">Fase</p>
@@ -95,7 +99,7 @@ export default function MacroPlanCard({
           <p className={`text-sm font-semibold ${phaseColor}`}>{phaseLabel}</p>
         </div>
 
-        <div className="rounded-xl border border-surface-border bg-surface-raised px-3 py-2">
+        <div className="rounded-xl border border-surface-border bg-surface-raised/80 px-3 py-2">
           <div className="flex items-center gap-1.5 mb-1">
             <Calendar size={12} className="text-ink-faint" />
             <p className="text-[10px] font-medium uppercase tracking-wider text-ink-faint">Faltan</p>
@@ -104,13 +108,13 @@ export default function MacroPlanCard({
         </div>
       </div>
 
-      <div className="mt-3 rounded-xl border border-surface-border bg-surface-raised px-3 py-2">
+      <div className="mt-3 rounded-xl border border-surface-border bg-surface-raised/80 px-3 py-2">
         <p className="text-[10px] font-medium uppercase tracking-wider text-ink-faint mb-1">Foco del bloque</p>
         <p className="text-xs text-ink-muted leading-relaxed">{macroPlan.blockFocus}</p>
       </div>
 
       {visibleSportDetails.length > 0 && (
-        <div className="mt-3 rounded-xl border border-surface-border bg-surface-raised px-3 py-3">
+        <div className="mt-3 rounded-xl border border-surface-border bg-surface-raised/80 px-3 py-3">
           <button
             type="button"
             onClick={() => setSportDetailsExpanded((value) => !value)}
@@ -136,7 +140,7 @@ export default function MacroPlanCard({
       )}
 
       {visibleTimeline.length > 0 && (
-        <div className="mt-3 rounded-xl border border-surface-border bg-surface-raised px-3 py-3">
+        <div className="mt-3 rounded-xl border border-surface-border bg-surface-raised/80 px-3 py-3">
           <button
             type="button"
             onClick={() => setTimelineExpanded((value) => !value)}
@@ -157,7 +161,7 @@ export default function MacroPlanCard({
                 <div
                   key={`${entry.phase}-${entry.startWeek}-${entry.endWeek}`}
                   className={`rounded-lg border px-2.5 py-2 ${
-                    entry.isCurrent ? 'border-brand/30 bg-brand/5' : 'border-surface-border bg-surface'
+                    entry.isCurrent ? 'border-brand/25 bg-brand/5' : 'border-surface-border bg-surface'
                   }`}
                 >
                   <div className="flex items-center justify-between gap-2">
@@ -203,7 +207,7 @@ function SportDetailRow({ detail }: { detail: MacroPlanSportDetail }) {
       <div className="flex items-center justify-between gap-2">
         <p className="text-xs font-semibold text-ink">{SPORT_LABELS[detail.sport] ?? detail.sport}</p>
         <span className={`text-[10px] uppercase tracking-wide ${
-          detail.role === 'primary' ? 'text-brand-light' : 'text-amber-300'
+          detail.role === 'primary' ? 'text-brand-light' : 'text-amber-400'
         }`}>
           {detail.role === 'primary' ? 'principal' : 'soporte'}
         </span>

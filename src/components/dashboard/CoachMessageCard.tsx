@@ -2,6 +2,7 @@ import type React from 'react'
 import { MessageCircle, ChevronRight } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { ROUTES } from '../../constants/routes'
+import Card from '../ui/Card'
 
 interface CoachMessageCardProps {
   message: string
@@ -73,22 +74,33 @@ export default function CoachMessageCard({ message }: CoachMessageCardProps) {
   const navigate = useNavigate()
 
   return (
-    <button
-      onClick={() => navigate(ROUTES.CHAT)}
-      className="w-full text-left bg-brand/10 border border-brand/25 rounded-card p-4 flex gap-3 items-start hover:bg-brand/15 transition-colors active:scale-[0.98] md:p-5"
-    >
-      <div className="w-8 h-8 rounded-full bg-brand/20 flex items-center justify-center flex-shrink-0 mt-0.5">
-        <MessageCircle size={16} className="text-brand-light" />
-      </div>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center justify-between gap-3 mb-1">
-          <span className="text-xs font-semibold text-brand-light uppercase tracking-wider">Coach</span>
-          <ChevronRight size={14} className="text-ink-faint flex-shrink-0" />
+    <button onClick={() => navigate(ROUTES.CHAT)} className="w-full text-left active:scale-[0.99]">
+      <Card
+        variant="hud"
+        accent="cyan"
+        className="overflow-hidden bg-[linear-gradient(145deg,rgba(38,38,38,0.92),rgba(14,14,14,0.98))] p-4 transition-transform duration-200 hover:-translate-y-0.5 md:p-5"
+      >
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <span className="inline-flex items-center rounded-full border border-forge-cyan/20 bg-forge-cyan/10 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-forge-cyan">
+            Canal coach
+          </span>
+          <ChevronRight size={14} className="flex-shrink-0 text-ink-faint" />
         </div>
-        <div className="text-sm text-ink leading-relaxed">
-          <MarkdownPreview text={message} />
+
+        <div className="flex gap-3 items-start">
+          <div className="mt-0.5 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full border border-forge-cyan/20 bg-forge-cyan/10 shadow-[0_0_24px_-10px_rgba(0,227,253,0.65)]">
+            <MessageCircle size={17} className="text-forge-cyan" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-ink-faint">
+              Insight del día
+            </p>
+            <div className="text-sm leading-relaxed text-ink">
+              <MarkdownPreview text={message} />
+            </div>
+          </div>
         </div>
-      </div>
+      </Card>
     </button>
   )
 }

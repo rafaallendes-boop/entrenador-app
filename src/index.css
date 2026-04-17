@@ -22,8 +22,11 @@
     min-height: 100svh;
     background-color: #0e0e0e;
     background-image:
-      radial-gradient(circle at top left, rgba(255, 77, 0, 0.08), transparent 32%),
-      radial-gradient(circle at bottom right, rgba(255, 77, 0, 0.05), transparent 28%);
+      radial-gradient(circle at top left, rgba(209, 252, 0, 0.07), transparent 28%),
+      radial-gradient(circle at 85% 15%, rgba(0, 227, 253, 0.08), transparent 24%),
+      radial-gradient(circle at bottom right, rgba(255, 235, 156, 0.05), transparent 24%),
+      linear-gradient(180deg, rgba(19, 19, 19, 0.96) 0%, rgba(8, 8, 8, 1) 100%);
+    background-attachment: fixed;
   }
 
   #root {
@@ -34,6 +37,39 @@
 }
 
 @layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .panel-grid {
+    background-image:
+      linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+    background-size: 22px 22px;
+  }
+
+  .hud-border {
+    position: relative;
+  }
+
+  .hud-border::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1px;
+    background: linear-gradient(
+      135deg,
+      var(--hud-accent-start, rgba(209, 252, 0, 0.34)),
+      rgba(255, 255, 255, 0.08) 28%,
+      var(--hud-accent-end, rgba(0, 227, 253, 0.22)) 100%
+    );
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    pointer-events: none;
+  }
+
   .safe-bottom {
     padding-bottom: max(env(safe-area-inset-bottom, 0px), 8px);
   }

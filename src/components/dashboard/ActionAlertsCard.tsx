@@ -10,22 +10,25 @@ interface ActionAlertsCardProps {
 
 const TONE_STYLES = {
   high: {
-    shell: 'border-amber-500/30 bg-amber-500/10',
-    badge: 'bg-amber-500/20 text-amber-300',
-    icon: 'text-amber-300',
+    shell: 'border-forge-ember/25 bg-[linear-gradient(145deg,rgba(255,235,156,0.14),rgba(14,14,14,0.96))]',
+    badge: 'bg-forge-ember/15 text-forge-ember',
+    icon: 'text-forge-ember',
     label: 'Prioridad alta',
+    accent: 'ember',
   },
   medium: {
-    shell: 'border-brand/25 bg-brand/8',
-    badge: 'bg-brand/15 text-brand-light',
+    shell: 'border-brand/20 bg-[linear-gradient(145deg,rgba(255,77,0,0.10),rgba(14,14,14,0.96))]',
+    badge: 'bg-brand/12 text-brand-light',
     icon: 'text-brand-light',
     label: 'Prioridad media',
+    accent: 'lime',
   },
   low: {
-    shell: 'border-emerald-500/25 bg-emerald-500/10',
-    badge: 'bg-emerald-500/15 text-emerald-300',
-    icon: 'text-emerald-300',
+    shell: 'border-forge-cyan/20 bg-[linear-gradient(145deg,rgba(0,227,253,0.14),rgba(14,14,14,0.96))]',
+    badge: 'bg-forge-cyan/12 text-forge-cyan',
+    icon: 'text-forge-cyan',
     label: 'Seguimiento',
+    accent: 'cyan',
   },
 } as const
 
@@ -34,10 +37,10 @@ export default function ActionAlertsCard({ summary, onSelectAction, onOpenAutoAd
 
   if (!primaryAction) {
     return (
-      <Card className="p-4 border-emerald-500/20 bg-emerald-500/10">
+      <Card variant="hud" accent="cyan" className="p-4 border-forge-cyan/20 bg-[linear-gradient(145deg,rgba(0,227,253,0.12),rgba(14,14,14,0.96))]">
         <div className="flex items-start gap-3">
-          <div className="w-8 h-8 rounded-full bg-emerald-500/15 flex items-center justify-center flex-shrink-0">
-            <CheckCircle2 size={16} className="text-emerald-300" />
+          <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full border border-forge-cyan/20 bg-forge-cyan/10">
+            <CheckCircle2 size={16} className="text-forge-cyan" />
           </div>
           <div className="min-w-0">
             <p className="text-sm font-semibold text-ink">Sin alertas urgentes</p>
@@ -57,9 +60,9 @@ export default function ActionAlertsCard({ summary, onSelectAction, onOpenAutoAd
       : TONE_STYLES.medium
 
   return (
-    <Card className={`p-4 ${tone.shell}`}>
+    <Card variant="hud" accent={tone.accent} className={`p-4 ${tone.shell}`}>
       <div className="flex items-start gap-3">
-        <div className="w-9 h-9 rounded-full bg-surface-card/70 border border-white/5 flex items-center justify-center flex-shrink-0">
+        <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full border border-white/5 bg-surface-card/70">
           <AlertTriangle size={18} className={tone.icon} />
         </div>
         <div className="min-w-0 flex-1">
@@ -87,7 +90,7 @@ export default function ActionAlertsCard({ summary, onSelectAction, onOpenAutoAd
             <button
               type="button"
               onClick={onOpenAutoAdjustment}
-              className="mt-3 inline-flex items-center gap-1 rounded-lg bg-brand/15 px-3 py-1.5 text-[11px] font-semibold text-brand-light transition-colors hover:bg-brand/25"
+              className="mt-3 inline-flex items-center gap-1 rounded-lg border border-brand/20 bg-brand/10 px-3 py-1.5 text-[11px] font-semibold text-brand-light transition-colors hover:bg-brand/15"
             >
               Ver ajuste rapido
               <ArrowRight size={12} />
@@ -101,7 +104,7 @@ export default function ActionAlertsCard({ summary, onSelectAction, onOpenAutoAd
                   key={action.id}
                   type="button"
                   onClick={() => onSelectAction(action)}
-                  className="w-full text-left rounded-xl border border-surface-border bg-surface-card/70 px-3 py-2 hover:border-brand/25 hover:bg-brand/5 transition-colors"
+                  className="w-full rounded-xl border border-surface-border bg-surface-card/70 px-3 py-2 text-left transition-colors hover:border-forge-cyan/20 hover:bg-forge-cyan/5"
                 >
                   <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0">

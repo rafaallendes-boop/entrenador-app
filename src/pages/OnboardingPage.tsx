@@ -163,7 +163,7 @@ export default function OnboardingPage() {
           <button
             type="button"
             onClick={() => setStep(3)}
-            className="flex-1 rounded-xl border border-surface-border py-3 font-semibold text-ink-muted transition-colors hover:bg-surface-raised"
+            className="flex-1 rounded-xl border border-surface-soft/70 py-3 font-semibold text-ink-muted transition-colors hover:bg-surface-raised"
           >
             Atrás
           </button>
@@ -188,7 +188,7 @@ export default function OnboardingPage() {
         <button
           type="button"
           onClick={() => setStep((step - 1) as 1 | 2 | 3)}
-          className="flex-1 rounded-xl border border-surface-border py-3 font-semibold text-ink-muted transition-colors hover:bg-surface-raised"
+          className="flex-1 rounded-xl border border-surface-soft/70 py-3 font-semibold text-ink-muted transition-colors hover:bg-surface-raised"
         >
           Atrás
         </button>
@@ -240,7 +240,7 @@ export default function OnboardingPage() {
               value={name}
               onChange={(event) => setName(event.target.value)}
               placeholder="Ej. Rafa"
-              className="w-full rounded-xl border border-surface-border bg-surface-raised px-4 py-3 text-sm text-ink placeholder:text-ink-faint focus:border-brand focus:outline-none"
+              className="w-full rounded-xl border border-surface-soft/70 bg-surface-panel px-4 py-3 text-sm text-ink placeholder:text-ink-faint focus:border-brand focus:outline-none"
             />
           </label>
 
@@ -311,7 +311,7 @@ export default function OnboardingPage() {
                     className={`rounded-full border px-3 py-3 text-sm font-semibold transition-colors ${
                       selected
                         ? 'border-brand bg-brand text-white'
-                        : 'border-surface-border bg-surface-card text-ink-muted hover:border-brand/40'
+                        : 'border-surface-soft/70 bg-surface-panel text-ink-muted hover:border-brand/40'
                     }`}
                     title={day.label}
                   >
@@ -340,8 +340,8 @@ export default function OnboardingPage() {
                       onClick={() => toggleDoubleDay(day.key)}
                       className={`rounded-full border px-4 py-2 text-sm font-medium transition-colors ${
                         selected
-                          ? 'border-amber-500 bg-amber-500/15 text-amber-300'
-                          : 'border-surface-border bg-surface-card text-ink-muted hover:border-amber-500/40'
+                          ? 'border-forge-ember bg-forge-ember/15 text-forge-ember'
+                          : 'border-surface-soft/70 bg-surface-panel text-ink-muted hover:border-forge-ember/40'
                       }`}
                     >
                       {day.label}
@@ -353,7 +353,7 @@ export default function OnboardingPage() {
           )}
 
           {summary.length > 0 && (
-            <div className="rounded-xl border border-surface-border bg-surface-raised p-4">
+            <div className="rounded-xl border border-surface-soft/70 bg-surface-panel p-4">
               <p className="text-sm font-medium text-ink">Resumen</p>
               <div className="mt-2 space-y-1 text-sm text-ink-muted">
                 {summary.map((item) => (

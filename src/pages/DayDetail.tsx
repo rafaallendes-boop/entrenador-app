@@ -135,7 +135,7 @@ function DayNutritionCard({ sessions, profile }: { sessions: Session[]; profile?
       <p className="text-xs text-ink-muted">{rec.dailyFocus}</p>
       {rec.proteinTarget && (
         <div className="flex items-center gap-2">
-          <span className="text-xs font-semibold text-violet-400">{rec.proteinTarget}</span>
+          <span className="text-xs font-semibold text-amber-400">{rec.proteinTarget}</span>
           <span className="text-[10px] text-ink-faint">objetivo del día</span>
         </div>
       )}
@@ -165,8 +165,8 @@ function ProtocolGuideCard({ label, protocol }: { label: string; protocol?: Gene
   const isWarmup = label.includes('Warm-up')
   const containerClass = isWarmup
     ? 'border-brand/20 bg-brand/5'
-    : 'border-violet-500/20 bg-violet-500/5'
-  const titleClass = isWarmup ? 'text-brand-light/80' : 'text-violet-300/80'
+    : 'border-surface-soft/40 bg-surface-raised/60'
+  const titleClass = isWarmup ? 'text-brand-light/80' : 'text-ink-muted'
 
   return (
     <div className={`rounded-xl border p-3 ${containerClass}`}>
@@ -237,21 +237,34 @@ export default function DayDetail() {
 
       <div className="px-4 space-y-5 pb-8">
         {daySessions.length > 0 && (
-          <div className="flex items-center gap-2 text-xs text-ink-muted">
-            <span className="text-emerald-400 font-semibold">{completedCount}</span>
-            <span>de {daySessions.filter(s => s.status !== 'skipped').length} sesiones completadas</span>
-          </div>
+          <Card variant="hud" accent="cyan" className="p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="font-display text-[10px] font-semibold uppercase tracking-[0.22em] text-ink-faint">
+                  Estado del día
+                </p>
+                <p className="mt-1 text-sm text-ink-muted">Resumen rápido de ejecución y recuperación.</p>
+              </div>
+              <div className="text-right">
+                <p className="font-mono text-2xl font-semibold text-ink">
+                  <span className="text-forge-cyan">{completedCount}</span>
+                  <span className="text-ink-faint">/{daySessions.filter(s => s.status !== 'skipped').length}</span>
+                </p>
+                <p className="text-[11px] uppercase tracking-[0.18em] text-ink-faint">completadas</p>
+              </div>
+            </div>
+          </Card>
         )}
 
         {daySessions.length === 0 ? (
-          <Card className="p-6 text-center">
+          <Card variant="panel" className="p-6 text-center">
             <p className="text-ink-muted text-sm">Sin sesiones este día</p>
             <p className="text-ink-faint text-xs mt-1">Día libre o de descanso</p>
           </Card>
         ) : (
           <div className="space-y-4">
             {amSessions.length > 0 && (
-              <div>
+              <Card variant="panel" className="p-4">
                 <p className="text-[11px] text-ink-faint font-semibold uppercase tracking-wider mb-2">Mañana</p>
                 <div className="space-y-2">
                   {amSessions.map((s) => {
@@ -267,10 +280,10 @@ export default function DayDetail() {
                     )
                   })}
                 </div>
-              </div>
+              </Card>
             )}
             {pmSessions.length > 0 && (
-              <div>
+              <Card variant="panel" className="p-4">
                 <p className="text-[11px] text-ink-faint font-semibold uppercase tracking-wider mb-2">Tarde</p>
                 <div className="space-y-2">
                   {pmSessions.map((s) => {
@@ -286,14 +299,14 @@ export default function DayDetail() {
                     )
                   })}
                 </div>
-              </div>
+              </Card>
             )}
           </div>
         )}
 
         <DayNutritionCard sessions={daySessions} profile={athleteProfile} />
 
-        <Card className="p-4 space-y-4">
+        <Card variant="hud" accent="lime" className="p-4 space-y-4">
           <div>
             <h2 className="text-sm font-semibold text-ink">RPE por sesión</h2>
             <p className="text-xs text-ink-muted mt-1">
@@ -311,7 +324,7 @@ export default function DayDetail() {
                 )
 
                 return (
-                  <div key={session.id} className="rounded-xl bg-surface-raised border border-surface-border p-3">
+                  <div key={session.id} className="rounded-xl border border-surface-border bg-surface-raised/80 p-3">
                     <div className="flex items-center justify-between gap-3 mb-3">
                       <div>
                         <p className="text-sm font-medium text-ink">{session.title}</p>
@@ -339,7 +352,7 @@ export default function DayDetail() {
           )}
         </Card>
 
-        <Card className="p-4 space-y-5">
+        <Card variant="hud" accent="ember" className="p-4 space-y-5">
           <h2 className="text-sm font-semibold text-ink">Feedback del día</h2>
 
           <Slider
@@ -374,7 +387,7 @@ export default function DayDetail() {
           />
         </Card>
 
-        <Card className="p-4 space-y-5">
+        <Card variant="hud" accent="cyan" className="p-4 space-y-5">
           <h2 className="text-sm font-semibold text-ink">Sueño y recuperación</h2>
 
           <Slider

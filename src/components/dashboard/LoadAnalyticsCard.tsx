@@ -5,11 +5,11 @@ interface Props {
 }
 
 const SPORT_CONFIG: Record<string, { label: string; color: string }> = {
-  squash:   { label: 'Squash',   color: 'bg-violet-500' },
+  squash:   { label: 'Squash',   color: 'bg-brand' },
   running:  { label: 'Running',  color: 'bg-emerald-500' },
   cycling:  { label: 'Ciclismo', color: 'bg-sky-500' },
   strength: { label: 'Fuerza',   color: 'bg-amber-500' },
-  mobility: { label: 'Mov.',     color: 'bg-pink-500' },
+  mobility: { label: 'Mov.',     color: 'bg-rose-400' },
 }
 
 const ACWR_CONFIG: Record<ACWRZone, { dot: string; text: string; label: string; detail: string }> = {
@@ -106,7 +106,7 @@ export default function LoadAnalyticsCard({ analytics }: Props) {
   return (
     <div className="space-y-4">
       {/* ACWR por disciplina — 3 semáforos */}
-      <div className="rounded-xl border border-surface-border bg-surface-raised/40 px-3 py-2.5 space-y-2">
+      <div className="rounded-xl border border-surface-border bg-surface-raised/50 px-3 py-2.5 space-y-2">
         <p className="text-[10px] font-medium uppercase tracking-wider text-ink-faint">
           ACWR por disciplina
         </p>
@@ -117,7 +117,7 @@ export default function LoadAnalyticsCard({ analytics }: Props) {
             return (
               <div
                 key={sport}
-                className="flex flex-col items-center gap-1 py-2 px-1.5 rounded-lg bg-surface-raised"
+                className="flex flex-col items-center gap-1 rounded-lg border border-white/5 bg-surface-raised px-1.5 py-2"
               >
                 <span className={`w-2 h-2 rounded-full ${cfg.dot}`} />
                 <span className="text-[10px] font-semibold text-ink">{DISCIPLINE_LABEL[sport]}</span>
@@ -143,7 +143,7 @@ export default function LoadAnalyticsCard({ analytics }: Props) {
       )}
 
       {/* Header row: trend + adherence mini-history */}
-      <div className="flex items-center justify-between gap-3 flex-wrap">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-1.5">
           <span className={`text-sm font-bold ${trendCfg.color}`}>{trendCfg.icon}</span>
           <span className="text-xs text-ink-muted">

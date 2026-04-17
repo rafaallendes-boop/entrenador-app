@@ -25,18 +25,18 @@ export default function WeekStrip({ showNav = true, onDayPress }: WeekStripProps
         <div className="flex items-center justify-between mb-3">
           <button
             onClick={() => navigateWeek('prev')}
-            className="w-8 h-8 flex items-center justify-center rounded-full bg-surface-raised text-ink-muted hover:text-ink"
+            className="w-8 h-8 flex items-center justify-center rounded-full border border-surface-soft/50 bg-surface-raised text-ink-faint transition-colors hover:border-brand/25 hover:text-ink"
           >
-            <ChevronLeft size={16} />
+            <ChevronLeft size={15} />
           </button>
-          <span className="font-display text-sm font-semibold uppercase tracking-wider text-ink-muted">
+          <span className="font-display text-[11px] font-semibold uppercase tracking-[0.24em] text-ink-faint">
             {fromISO(currentWeekStart).toLocaleString('es', { month: 'long', year: 'numeric' })}
           </span>
           <button
             onClick={() => navigateWeek('next')}
-            className="w-8 h-8 flex items-center justify-center rounded-full bg-surface-raised text-ink-muted hover:text-ink"
+            className="w-8 h-8 flex items-center justify-center rounded-full border border-surface-soft/50 bg-surface-raised text-ink-faint transition-colors hover:border-brand/25 hover:text-ink"
           >
-            <ChevronRight size={16} />
+            <ChevronRight size={15} />
           </button>
         </div>
       )}

@@ -17,13 +17,13 @@ export default function PageHeader({ title, subtitle, backTo, action }: PageHead
         {backTo && (
           <button
             onClick={() => navigate(backTo)}
-            className="w-9 h-9 flex items-center justify-center rounded-full bg-surface-raised text-ink-muted hover:text-ink transition-colors"
+            className="flex h-9 w-9 items-center justify-center rounded-full border border-surface-soft/70 bg-surface-panel text-ink-muted transition-colors hover:border-brand/20 hover:text-ink"
           >
             <ChevronLeft size={20} />
           </button>
         )}
         <div className="flex-1 min-w-0">
-          <h1 className="text-xl font-semibold text-ink leading-tight md:text-2xl">{title}</h1>
+          <h1 className="font-display text-xl font-semibold leading-tight text-ink md:text-2xl">{title}</h1>
           {subtitle && <p className="text-sm text-ink-muted mt-0.5">{subtitle}</p>}
         </div>
         {action && <div className="flex-shrink-0">{action}</div>}

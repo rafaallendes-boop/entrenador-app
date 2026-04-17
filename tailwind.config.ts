@@ -10,12 +10,22 @@ const config: Config = {
           deep: '#080808',
           card: '#151515',
           raised: '#1d1d1d',
+          panel: '#181818',
+          glass: '#202020cc',
           border: '#303030',
+          soft: '#484847',
         },
         brand: {
           DEFAULT: '#ff4d00',
           light: '#ff7a33',
           glow: '#ff4d0033',
+        },
+        forge: {
+          lime: '#d1fc00',
+          'lime-soft': '#f4ffc6',
+          cyan: '#00e3fd',
+          ember: '#ffeb9c',
+          outline: '#484847',
         },
         ink: {
           DEFAULT: '#f5f5f7',
@@ -39,6 +49,9 @@ const config: Config = {
         glow: '0 0 24px 2px rgba(255,77,0,0.24)',
         'glow-sm': '0 0 12px 1px rgba(255,77,0,0.16)',
         'inner-sm': 'inset 0 1px 3px rgba(0,0,0,0.3)',
+        panel: '0 20px 60px -30px rgba(0,0,0,0.9)',
+        hud: '0 24px 80px -36px rgba(0,0,0,0.92)',
+        'lime-glow': '0 0 32px -10px rgba(209,252,0,0.35)',
       },
       screens: {
         xs: '375px',

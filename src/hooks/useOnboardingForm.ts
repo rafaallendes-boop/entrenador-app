@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { AthleteProfile, SupportedSport, TrainingPriority } from '../types'
 import { getEnabledSports, getPrimarySportNormalized } from '../utils/athlete'
 
@@ -57,17 +57,15 @@ export function useOnboardingForm(
   isReady: boolean,
   isSaving: boolean,
 ): UseOnboardingFormResult {
-  const [state, setState] = useState<OnboardingFormState>(EMPTY_STATE)
-  const hasHydratedRef = useRef(false)
-
-  useEffect(() => {
-    if (!isReady || hasHydratedRef.current) return
-    hasHydratedRef.current = true
-    setState((current) => ({
-      ...current,
-      ...buildStateFromProfile(profile),
-    }))
-  }, [isReady, profile])
+  const baseState = useMemo<OnboardingFormState>(
+    () => ({
+      ...EMPTY_STATE,
+      ...(isReady ? buildStateFromProfile(profile) : {}),
+    }),
+    [isReady, profile],
+  )
+  const [draftState, setDraftState] = useState<OnboardingFormState | null>(null)
+  const state = draftState ?? baseState
 
   const canGoNext = useMemo(() => {
     switch (state.step) {
@@ -88,41 +86,49 @@ export function useOnboardingForm(
     ...state,
     canGoNext,
     canFinish,
-    setStep: (step) => setState((current) => ({ ...current, step })),
-    setName: (name) => setState((current) => ({ ...current, name })),
-    setPrimarySport: (sport) => setState((current) => ({ ...current, primarySport: sport })),
-    setPriority: (priority) => setState((current) => ({ ...current, priority })),
+    setStep: (step) => setDraftState((current) => ({ ...(current ?? baseState), step })),
+    setName: (name) => setDraftState((current) => ({ ...(current ?? baseState), name })),
+    setPrimarySport: (sport) => setDraftState((current) => ({ ...(current ?? baseState), primarySport: sport })),
+    setPriority: (priority) => setDraftState((current) => ({ ...(current ?? baseState), priority })),
     toggleSport: (sport) =>
-      setState((current) => {
-        const selectedSports = current.selectedSports.includes(sport)
-          ? current.selectedSports.filter((item) => item !== sport)
-          : [...current.selectedSports, sport]
+      setDraftState((current) => {
+        const resolvedState = current ?? baseState
+        const selectedSports = resolvedState.selectedSports.includes(sport)
+          ? resolvedState.selectedSports.filter((item) => item !== sport)
+          : [...resolvedState.selectedSports, sport]
 
         return {
-          ...current,
+          ...resolvedState,
           selectedSports,
           primarySport:
-            current.primarySport && !selectedSports.includes(current.primarySport) ? null : current.primarySport,
+            resolvedState.primarySport && !selectedSports.includes(resolvedState.primarySport)
+              ? null
+              : resolvedState.primarySport,
         }
       }),
     toggleDay: (day) =>
-      setState((current) => {
-        const availableDays = current.availableDays.includes(day)
-          ? current.availableDays.filter((item) => item !== day)
-          : [...current.availableDays, day]
+      setDraftState((current) => {
+        const resolvedState = current ?? baseState
+        const availableDays = resolvedState.availableDays.includes(day)
+          ? resolvedState.availableDays.filter((item) => item !== day)
+          : [...resolvedState.availableDays, day]
 
         return {
-          ...current,
+          ...resolvedState,
           availableDays,
-          doubleSessionDays: current.doubleSessionDays.filter((item) => availableDays.includes(item)),
+          doubleSessionDays: resolvedState.doubleSessionDays.filter((item) => availableDays.includes(item)),
         }
       }),
     toggleDoubleDay: (day) =>
-      setState((current) => ({
-        ...current,
-        doubleSessionDays: current.doubleSessionDays.includes(day)
-          ? current.doubleSessionDays.filter((item) => item !== day)
-          : [...current.doubleSessionDays, day],
-      })),
+      setDraftState((current) => {
+        const resolvedState = current ?? baseState
+
+        return {
+          ...resolvedState,
+          doubleSessionDays: resolvedState.doubleSessionDays.includes(day)
+            ? resolvedState.doubleSessionDays.filter((item) => item !== day)
+            : [...resolvedState.doubleSessionDays, day],
+        }
+      }),
   }
 }

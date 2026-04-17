@@ -170,23 +170,102 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-5 px-4 pb-6 pt-12 md:px-6 md:space-y-6">
-      <div>
-        <p className="font-display text-[11px] font-semibold uppercase tracking-widest text-ink-faint">
-          {formatFullDate(new Date())}
-        </p>
-        <h1 className="font-display mt-0.5 text-3xl font-bold tracking-tight text-ink md:text-4xl">
-          Hola, {athleteFirstName}
-        </h1>
-        {todaySessions.length > 0 && (
-          <p className="mt-1.5 flex items-center gap-2 text-sm text-ink-muted">
-            <span className="font-mono tabular-nums">
-              <span className="font-semibold text-emerald-400">{completedToday}</span>
-              <span className="text-ink-faint">/{todaySessions.filter(s => s.status !== 'skipped').length}</span>
-            </span>
-            <span>sesiones hoy</span>
-          </p>
-        )}
-      </div>
+      <section className="panel-grid relative overflow-hidden rounded-[1.75rem] border border-surface-soft/40 bg-[linear-gradient(150deg,rgba(24,18,14,0.99),rgba(10,8,8,1))] px-5 py-6 shadow-hud">
+        {/* Top orange accent line */}
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-brand/50 to-transparent" />
+
+        {/* Ambient orange glow — left */}
+        <div className="pointer-events-none absolute -left-10 -top-10 h-52 w-52 rounded-full bg-brand/10 blur-[56px]" />
+
+        {/* Ambient ember — bottom right */}
+        <div className="pointer-events-none absolute -bottom-8 right-12 h-36 w-36 rounded-full bg-brand/6 blur-[48px]" />
+
+        {/* Watermark bolt */}
+        <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 select-none opacity-[0.038]">
+          <svg viewBox="0 0 32 32" className="h-44 w-44" fill="#ff4d00" aria-hidden>
+            <path d="M20 3L8 19H16L13 29L25 13H17L20 3Z" />
+          </svg>
+        </div>
+
+        <div className="relative flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
+          {/* Left: greeting */}
+          <div className="min-w-0">
+            <p className="font-mono text-[9px] font-semibold uppercase tracking-[0.42em] text-ink-faint">
+              {formatFullDate(new Date())}
+            </p>
+            <h1 className="mt-2 font-display text-[2.2rem] font-bold leading-none tracking-tight text-ink md:text-5xl">
+              Hola,{' '}
+              <span
+                style={{
+                  background: 'linear-gradient(90deg, #ff4d00 0%, #ff7a33 100%)',
+                  WebkitBackgroundClip: 'text',
+                  WebkitTextFillColor: 'transparent',
+                  backgroundClip: 'text',
+                }}
+              >
+                {athleteFirstName}
+              </span>
+            </h1>
+            <p className="mt-2.5 max-w-xs text-[13px] leading-relaxed text-ink-faint">
+              Tu centro de control · carga, coach y decisiones en tiempo real.
+            </p>
+          </div>
+
+          {/* Right: stat instruments */}
+          <div className="grid grid-cols-2 gap-2.5 sm:min-w-[230px]">
+            {/* Stat: sessions today */}
+            <div
+              className="relative overflow-hidden rounded-2xl px-3.5 py-3"
+              style={{
+                background: 'rgba(255,255,255,0.03)',
+                border: '1px solid rgba(255,255,255,0.06)',
+              }}
+            >
+              {/* Top accent stripe */}
+              <div
+                className="absolute inset-x-0 top-0 h-[2px] rounded-t-2xl"
+                style={{
+                  background: todaySessions.length > 0
+                    ? 'linear-gradient(90deg, #ff4d00, #ff7a33)'
+                    : 'rgba(255,255,255,0.08)',
+                }}
+              />
+              <p className="font-mono text-[9px] font-semibold uppercase tracking-[0.32em] text-ink-faint">Hoy</p>
+              <p className="mt-1.5 font-mono text-3xl font-bold leading-none text-ink">
+                {todaySessions.length}
+              </p>
+              <p className="mt-1 text-[10.5px] text-ink-faint">sesiones</p>
+            </div>
+
+            {/* Stat: completed */}
+            <div
+              className="relative overflow-hidden rounded-2xl px-3.5 py-3"
+              style={{
+                background: 'rgba(255,255,255,0.03)',
+                border: '1px solid rgba(255,255,255,0.06)',
+              }}
+            >
+              {/* Top accent stripe */}
+              <div
+                className="absolute inset-x-0 top-0 h-[2px] rounded-t-2xl"
+                style={{
+                  background: completedToday > 0
+                    ? 'linear-gradient(90deg, #ff4d00, #ff7a33)'
+                    : 'rgba(255,255,255,0.08)',
+                }}
+              />
+              <p className="font-mono text-[9px] font-semibold uppercase tracking-[0.32em] text-ink-faint">Hechas</p>
+              <p className="mt-1.5 font-mono text-3xl font-bold leading-none text-ink">
+                {completedToday}
+                <span className="text-base font-normal text-ink-faint">
+                  /{todaySessions.filter(s => s.status !== 'skipped').length || 0}
+                </span>
+              </p>
+              <p className="mt-1 text-[10.5px] text-ink-faint">completadas</p>
+            </div>
+          </div>
+        </div>
+      </section>
 
       {showProfileNudge && (
         <button
@@ -194,9 +273,9 @@ export default function Dashboard() {
           onClick={() => navigate(ROUTES.SETTINGS)}
           className="w-full text-left"
         >
-          <Card className="border-brand/20 bg-brand/5 p-4 transition-colors hover:bg-brand/10">
+          <Card variant="hud" accent="ember" className="border-forge-ember/20 bg-[linear-gradient(145deg,rgba(255,235,156,0.12),rgba(14,14,14,0.96))] p-4 transition-colors hover:bg-[linear-gradient(145deg,rgba(255,235,156,0.16),rgba(14,14,14,0.98))]">
             <div className="flex items-start gap-3">
-              <span className="mt-0.5 text-base leading-none">💡</span>
+              <span className="mt-0.5 text-base leading-none text-forge-ember">▲</span>
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-semibold text-ink">
                   Completa tu perfil para mejorar el coach
@@ -206,7 +285,7 @@ export default function Dashboard() {
                     ? 'Configura tu deporte principal para que el coach pueda personalizar tus entrenamientos.'
                     : `Falta: ${profileCompleteness.missing.join(', ')}. Con esos datos el coach propone cargas reales.`}
                 </p>
-                <p className="mt-2 text-xs font-medium text-brand-light">Ir a Ajustes →</p>
+                <p className="mt-2 text-xs font-medium text-forge-ember">Ir a Ajustes →</p>
               </div>
             </div>
           </Card>
@@ -246,10 +325,14 @@ export default function Dashboard() {
           onClick={() => navigate(ROUTES.COMPETITION_PLAN)}
           className="w-full text-left"
         >
-          <Card className="border-surface-border p-4 transition-colors hover:border-brand/30 hover:bg-brand/5">
+          <Card
+            variant="hud"
+            accent="ember"
+            className="border-surface-border p-4 transition-colors hover:border-brand/30 hover:bg-brand/5"
+          >
             <div className="flex items-center gap-3">
-              <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-surface-raised">
-                <Target size={16} className="text-ink-faint" />
+              <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full border border-brand/15 bg-brand/10">
+                <Target size={16} className="text-brand-light" />
               </div>
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-semibold text-ink">Crea tu plan de competencia</p>
@@ -269,7 +352,7 @@ export default function Dashboard() {
             <DailyCheckInCard todaySessions={todaySessions} autoExpandToken={checkInExpandToken} />
           </Suspense>
 
-          <div className="bg-surface-card rounded-card border border-surface-border">
+          <div className="rounded-card border border-surface-soft/70 bg-surface-panel shadow-panel">
             <WeekStrip showNav onDayPress={(iso) => navigate(ROUTES.DAY(iso))} />
           </div>
 
@@ -300,8 +383,8 @@ export default function Dashboard() {
 
           {/* Load analytics card — multi-week carga por disciplina */}
           {loadAnalytics && loadAnalytics.weeks.some(w => w.disciplines.length > 0) && (
-            <Card className="p-4">
-              <h2 className="font-display mb-3 text-sm font-semibold uppercase tracking-wider text-ink-muted">
+            <Card variant="hud" accent="cyan" className="p-4">
+              <h2 className="font-display mb-3 text-sm font-semibold uppercase tracking-[0.22em] text-ink-muted">
                 Carga por disciplina
               </h2>
               <LoadAnalyticsCard analytics={loadAnalytics} />
@@ -309,13 +392,13 @@ export default function Dashboard() {
           )}
 
           {currentWeekSummary && (
-            <Card className="p-4">
-              <h2 className="font-display mb-3 text-sm font-semibold uppercase tracking-wider text-ink-muted">
+            <Card variant="hud" accent="ember" className="p-4">
+              <h2 className="font-display mb-3 text-sm font-semibold uppercase tracking-[0.22em] text-ink-muted">
                 Semana actual
               </h2>
               <LoadIndicator summary={currentWeekSummary} />
 
-              <div className="mt-3 flex items-center justify-between gap-3 text-xs text-ink-muted flex-wrap">
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-xs text-ink-muted">
                 <span className="font-mono tabular-nums">
                   <span className="font-semibold text-ink">{currentWeekSummary.completedSessions}</span>
                   <span className="text-ink-faint">/{currentWeekSummary.plannedSessions}</span>
@@ -350,7 +433,7 @@ export default function Dashboard() {
                     <ul className="mt-2 space-y-1.5">
                       {currentWeekSummary.objectives.map((obj, i) => (
                         <li key={i} className="flex items-start gap-2 text-sm text-ink">
-                          <span className="w-1.5 h-1.5 rounded-full bg-brand mt-2 flex-shrink-0" />
+                          <span className="mt-2 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-brand" />
                           {obj}
                         </li>
                       ))}

@@ -25,7 +25,7 @@ export default function ChatInput({ onSend, disabled, initialValue = '' }: ChatI
   }
 
   return (
-    <div className="flex gap-2 items-end bg-surface-raised rounded-2xl border border-surface-border p-2">
+    <div className="hud-border flex items-end gap-2 rounded-2xl border border-white/5 bg-[linear-gradient(145deg,rgba(32,32,32,0.94),rgba(14,14,14,0.98))] p-2 shadow-panel [--hud-accent-start:rgba(0,227,253,0.28)] [--hud-accent-end:rgba(0,115,128,0.18)]">
       <textarea
         value={value}
         onChange={(event) => setValue(event.target.value)}
@@ -39,7 +39,7 @@ export default function ChatInput({ onSend, disabled, initialValue = '' }: ChatI
       <button
         onClick={handleSend}
         disabled={!value.trim() || disabled}
-        className="w-9 h-9 rounded-xl bg-brand flex items-center justify-center text-white disabled:opacity-30 disabled:cursor-not-allowed transition-opacity flex-shrink-0"
+        className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-forge-cyan text-[#003a42] transition-opacity disabled:cursor-not-allowed disabled:opacity-30"
       >
         <Send size={16} />
       </button>

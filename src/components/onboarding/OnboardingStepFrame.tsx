@@ -35,7 +35,7 @@ export default function OnboardingStepFrame({
           </button>
         </div>
 
-        <Card className="p-6 md:p-7">
+        <Card variant="hud" accent="ember" className="panel-grid p-6 md:p-7">
           <div className="mb-6">
             <div className="mb-2 flex items-center justify-between text-xs text-ink-muted">
               <span>Paso {step} de {totalSteps}</span>
@@ -54,7 +54,7 @@ export default function OnboardingStepFrame({
           </div>
 
           <header className="mb-6">
-            <h1 className="text-2xl font-semibold text-ink md:text-3xl">{title}</h1>
+            <h1 className="font-display text-2xl font-semibold text-ink md:text-3xl">{title}</h1>
             <p className="mt-2 text-sm leading-relaxed text-ink-muted">{description}</p>
           </header>
 

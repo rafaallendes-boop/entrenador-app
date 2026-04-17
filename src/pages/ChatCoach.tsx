@@ -270,10 +270,11 @@ export default function ChatCoach() {
 
   return (
     <div className="h-[100dvh] bg-surface">
-      <div className="fixed inset-x-0 top-0 z-40 border-b border-surface-border bg-surface/95 px-4 pb-3 pt-12 backdrop-blur md:px-6">
+      <div className="fixed inset-x-0 top-0 z-40 border-b border-surface-soft/70 bg-[rgba(14,14,14,0.9)] px-4 pb-3 pt-12 backdrop-blur-xl md:px-6">
         <div className="mx-auto flex w-full max-w-3xl items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-2">
             <div className="min-w-0">
+              <p className="font-display text-[10px] font-semibold uppercase tracking-[0.22em] text-ink-faint">AI coach chat</p>
               <h1 className="text-xl font-bold text-ink">Coach</h1>
               <p className="mt-0.5 text-[11px] text-ink-faint">Perfil activo: {athleteFirstName}</p>
               <p className="mt-0.5 text-xs text-ink-muted">Planner · Advisor</p>
@@ -287,7 +288,7 @@ export default function ChatCoach() {
                 setMenuOpen(false)
                 void newSession()
               }}
-              className="inline-flex items-center gap-1.5 rounded-full border border-surface-border bg-surface-card px-2.5 py-1.5 text-[11px] font-medium text-ink transition-colors hover:bg-surface-raised"
+              className="inline-flex items-center gap-1.5 rounded-full border border-brand/15 bg-brand/8 px-2.5 py-1.5 text-[11px] font-medium text-brand-light transition-colors hover:bg-brand/12"
               title="Empezar un nuevo chat"
             >
               <Plus size={14} />
@@ -300,7 +301,7 @@ export default function ChatCoach() {
                 setDeleteConfirm(true)
               }}
               disabled={!hasMessages}
-              className="inline-flex items-center gap-1.5 rounded-full border border-surface-border bg-surface-card px-2.5 py-1.5 text-[11px] font-medium text-ink transition-colors hover:bg-surface-raised disabled:cursor-not-allowed disabled:text-ink-faint/40"
+              className="inline-flex items-center gap-1.5 rounded-full border border-brand/15 bg-brand/8 px-2.5 py-1.5 text-[11px] font-medium text-brand-light transition-colors hover:bg-brand/12 disabled:cursor-not-allowed disabled:text-ink-faint/40"
               title={hasMessages ? 'Borrar conversacion actual' : 'No hay mensajes en esta conversacion'}
             >
               <Trash2 size={14} />
@@ -315,7 +316,7 @@ export default function ChatCoach() {
             </button>
 
             {menuOpen && (
-              <div className="absolute right-0 top-full z-10 mt-2 w-44 rounded-lg border border-surface-border bg-surface-card shadow-lg">
+              <div className="absolute right-0 top-full z-10 mt-2 w-44 rounded-lg border border-surface-soft/70 bg-surface-panel shadow-panel">
                 <button
                   onClick={() => {
                     setMenuOpen(false)
@@ -346,9 +347,9 @@ export default function ChatCoach() {
       <div className="h-full overflow-y-auto px-4 pb-[228px] pt-[108px] md:px-6 md:pb-[208px]">
         <div className="mx-auto w-full max-w-3xl space-y-4 py-4">
           {showProfileNudge && (
-            <div className="flex items-start gap-2 rounded-xl border border-brand/20 bg-brand/10 px-3 py-2">
-              <span className="mt-0.5 flex-shrink-0 text-xs text-brand-light">💡</span>
-              <span className="flex-1 text-xs leading-relaxed text-brand-light">
+            <div className="hud-border flex items-start gap-2 rounded-xl border border-white/5 bg-[linear-gradient(145deg,rgba(255,77,0,0.12),rgba(14,14,14,0.96))] px-3 py-2 [--hud-accent-start:rgba(255,122,51,0.3)] [--hud-accent-end:rgba(255,77,0,0.14)]">
+              <span className="mt-0.5 flex-shrink-0 text-xs text-brand-light">▲</span>
+              <span className="flex-1 text-xs leading-relaxed text-[#ffd2bf]">
                 Perfil básico guardado. Para propuestas más precisas, agrega tus{' '}
                 <button
                   onClick={() => navigate(ROUTES.SETTINGS)}
@@ -365,9 +366,9 @@ export default function ChatCoach() {
           )}
 
           {showPlanBuilderBanner && (
-            <div className="flex items-start gap-2 rounded-xl border border-sky-500/20 bg-sky-500/10 px-3 py-2">
-              <span className="mt-0.5 flex-shrink-0 text-xs text-sky-300">i</span>
-              <span className="flex-1 text-xs leading-relaxed text-sky-200">
+            <div className="hud-border flex items-start gap-2 rounded-xl border border-white/5 bg-[linear-gradient(145deg,rgba(255,77,0,0.14),rgba(14,14,14,0.96))] px-3 py-2 [--hud-accent-start:rgba(255,122,51,0.28)] [--hud-accent-end:rgba(255,77,0,0.12)]">
+              <span className="mt-0.5 flex-shrink-0 text-xs text-brand-light">i</span>
+              <span className="flex-1 text-xs leading-relaxed text-[#ffd2bf]">
                 Plan Builder: el prompt fue enviado automáticamente al coach para generar tu semana.
               </span>
             </div>
@@ -383,10 +384,10 @@ export default function ChatCoach() {
 
           {messages.length === 0 && !isLoading && (
             <div className="flex min-h-[45vh] flex-col items-center justify-center gap-3 px-4 text-center md:px-6">
-              <div className="flex h-14 w-14 items-center justify-center rounded-full bg-brand/15">
+              <div className="flex h-14 w-14 items-center justify-center rounded-full border border-forge-cyan/20 bg-forge-cyan/10 shadow-[0_0_40px_-18px_rgba(0,227,253,0.6)]">
                 <span className="text-2xl">🏋️</span>
               </div>
-              <p className="font-medium text-ink">Tu coach-planner</p>
+              <p className="font-display text-lg font-medium text-ink">Tu coach-planner</p>
               <p className="text-sm leading-relaxed text-ink-muted">
                 Pideme que cree tu semana, agregue sesiones o ajuste tu plan. Tambien puedo analizar tu progreso y
                 darte recomendaciones.
@@ -422,33 +423,32 @@ export default function ChatCoach() {
             )
           })}
 
-          {isLoading &&
-            (streamingText ? (
-              <div className="flex items-start gap-2">
-                <div className="mt-0.5 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-brand/20">
-                  <span className="text-sm">🏋️</span>
-                </div>
-                <div className="max-w-[90%] rounded-2xl rounded-tl-sm border border-surface-border bg-surface-card px-4 py-3 md:max-w-[85%]">
-                  <p className="whitespace-pre-wrap text-sm leading-relaxed text-ink">{streamingText}</p>
-                  <span className="ml-0.5 inline-block h-3.5 w-0.5 animate-pulse bg-brand/70 align-middle" />
-                </div>
+          {isLoading && (
+            <div className="flex items-start gap-2">
+              <div className="mt-0.5 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full border border-forge-cyan/20 bg-forge-cyan/10">
+                <span className="text-sm">🏋️</span>
               </div>
-            ) : (
-              <div className="flex items-center gap-2">
-                <div className="flex h-7 w-7 items-center justify-center rounded-full bg-brand/20">
-                  <span className="text-sm">🏋️</span>
-                </div>
-                <div className="rounded-2xl rounded-tl-sm border border-surface-border bg-surface-card px-4 py-3">
-                  <Spinner />
-                </div>
+              <div className="max-w-[90%] rounded-2xl rounded-tl-sm border border-surface-soft/70 bg-[linear-gradient(145deg,rgba(26,26,26,0.96),rgba(14,14,14,0.98))] px-4 py-3 shadow-panel md:max-w-[85%]">
+                {streamingText ? (
+                  <p className="whitespace-pre-wrap text-sm leading-relaxed text-ink">
+                    {streamingText}
+                    <span className="ml-0.5 inline-block h-3.5 w-0.5 animate-pulse bg-forge-cyan/70 align-middle" />
+                  </p>
+                ) : (
+                  <div className="flex items-center gap-2 text-sm text-ink-muted">
+                    <Spinner />
+                    <span>Pensando respuesta…</span>
+                  </div>
+                )}
               </div>
-            ))}
+            </div>
+          )}
 
           <div ref={bottomRef} />
         </div>
       </div>
 
-      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-surface-border bg-surface/95 px-4 pb-28 pt-2 backdrop-blur md:px-6">
+      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-surface-soft/70 bg-[rgba(14,14,14,0.92)] px-4 pb-28 pt-2 backdrop-blur-xl md:px-6">
         <div className="mx-auto w-full max-w-3xl space-y-2">
           {acceptedFeedback && <AcceptedBanner message={acceptedFeedback} onDismiss={() => setAcceptedFeedback(null)} />}
 
@@ -483,7 +483,7 @@ export default function ChatCoach() {
 
       {deleteConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div className="mx-4 max-w-sm rounded-2xl border border-surface-border bg-surface-card p-5">
+          <div className="mx-4 max-w-sm rounded-2xl border border-surface-soft/70 bg-surface-panel p-5 shadow-panel">
             <h3 className="mb-2 text-sm font-semibold text-ink">Borrar conversacion</h3>
             <p className="mb-4 text-xs leading-relaxed text-ink-muted">
               ¿Seguro que quieres borrar esta conversacion? No se puede deshacer, pero el historial anterior se
