@@ -82,7 +82,7 @@ export default function ChatBubble({ message, hasProposal, onViewProposal }: Cha
   return (
     <div className={`flex gap-2 ${isCoach ? 'items-start' : 'items-start flex-row-reverse'}`}>
       {isCoach && (
-        <div className="w-7 h-7 rounded-full bg-brand/20 flex items-center justify-center flex-shrink-0 mt-1">
+        <div className="mt-1 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-brand/20">
           <MessageCircle size={14} className="text-brand-light" />
         </div>
       )}
@@ -90,12 +90,12 @@ export default function ChatBubble({ message, hasProposal, onViewProposal }: Cha
       <div className={`max-w-[88%] md:max-w-[80%] ${isCoach ? '' : 'items-end flex flex-col'}`}>
         <div className={`rounded-2xl px-4 py-3 text-sm leading-relaxed ${
           isCoach
-            ? 'bg-surface-card border border-surface-border text-ink rounded-tl-sm'
-            : 'bg-brand text-white rounded-tr-sm'
+            ? 'rounded-tl-sm border border-surface-border bg-surface-card text-ink'
+            : 'rounded-tr-sm bg-brand text-white'
         }`}>
           {isCoach
             ? <MarkdownContent text={message.content} />
-            : <p className="whitespace-pre-wrap break-words">{message.content}</p>
+            : <p className="whitespace-pre-wrap break-words font-medium">{message.content}</p>
           }
         </div>
 

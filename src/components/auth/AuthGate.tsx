@@ -12,8 +12,12 @@ export default function AuthGate({ children }: AuthGateProps) {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-surface flex items-center justify-center">
-        <div className="w-8 h-8 rounded-full border-2 border-brand border-t-transparent animate-spin" />
+      <div className="flex min-h-screen items-center justify-center bg-surface px-6">
+        <div className="rounded-card border border-surface-border bg-surface-card px-8 py-10 text-center shadow-card">
+          <div className="mx-auto h-8 w-8 rounded-full border-2 border-brand border-t-transparent animate-spin" />
+          <p className="mt-4 text-sm font-medium text-ink">Preparando tu sesión</p>
+          <p className="mt-1 text-xs text-ink-muted">Estamos restaurando tu acceso y sincronización.</p>
+        </div>
       </div>
     )
   }

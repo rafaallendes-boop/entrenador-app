@@ -14,8 +14,6 @@
     color: #f0f0f5;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    font-feature-settings: 'ss01', 'cv01';
-    text-rendering: optimizeLegibility;
   }
 
   body {
@@ -28,16 +26,15 @@
   #root {
     min-height: 100svh;
     background-color: #0f0f13;
+    overflow-x: hidden;
   }
 }
 
 @layer utilities {
-  /* Safe area for iPhone notch / home indicator */
   .safe-bottom {
     padding-bottom: max(env(safe-area-inset-bottom, 0px), 8px);
   }
 
-  /* Hide scrollbar but keep scrollability */
   .scrollbar-none {
     -ms-overflow-style: none;
     scrollbar-width: none;

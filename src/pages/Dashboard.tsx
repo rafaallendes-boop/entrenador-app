@@ -1,7 +1,6 @@
-import { ChevronDown } from 'lucide-react'
+import { ChevronDown, Target } from 'lucide-react'
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { Target } from 'lucide-react'
 import { useTrainingStore } from '../store/useTrainingStore'
 import { useCoachActionsStore } from '../store/useCoachActionsStore'
 import { useCoachMemoryStore } from '../store/useCoachMemoryStore'
@@ -170,7 +169,7 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="px-4 pt-12 pb-6 space-y-5 md:px-6 md:space-y-6">
+    <div className="space-y-5 px-4 pb-6 pt-12 md:px-6 md:space-y-6">
       <div>
         <p className="font-display text-[11px] font-semibold uppercase tracking-widest text-ink-faint">
           {formatFullDate(new Date())}
@@ -195,14 +194,14 @@ export default function Dashboard() {
           onClick={() => navigate(ROUTES.SETTINGS)}
           className="w-full text-left"
         >
-          <Card className="p-4 border-brand/20 bg-brand/5 hover:bg-brand/10 transition-colors">
+          <Card className="border-brand/20 bg-brand/5 p-4 transition-colors hover:bg-brand/10">
             <div className="flex items-start gap-3">
               <span className="mt-0.5 text-base leading-none">💡</span>
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-semibold text-ink">
                   Completa tu perfil para mejorar el coach
                 </p>
-                <p className="mt-1 text-xs text-ink-muted leading-relaxed">
+                <p className="mt-1 text-xs leading-relaxed text-ink-muted">
                   {profileCompleteness.state === 'missing_sports'
                     ? 'Configura tu deporte principal para que el coach pueda personalizar tus entrenamientos.'
                     : `Falta: ${profileCompleteness.missing.join(', ')}. Con esos datos el coach propone cargas reales.`}
@@ -247,18 +246,18 @@ export default function Dashboard() {
           onClick={() => navigate(ROUTES.COMPETITION_PLAN)}
           className="w-full text-left"
         >
-          <Card className="p-4 border-surface-border hover:border-brand/30 hover:bg-brand/5 transition-colors">
+          <Card className="border-surface-border p-4 transition-colors hover:border-brand/30 hover:bg-brand/5">
             <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-full bg-surface-raised flex items-center justify-center flex-shrink-0">
+              <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-surface-raised">
                 <Target size={16} className="text-ink-faint" />
               </div>
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-semibold text-ink">Crea tu plan de competencia</p>
-                <p className="text-xs text-ink-muted mt-0.5">
+                <p className="mt-0.5 text-xs text-ink-muted">
                   Define tu evento y genera un plan por fases hasta el día de la carrera o el torneo.
                 </p>
               </div>
-              <span className="text-xs font-medium text-brand-light flex-shrink-0">Empezar →</span>
+              <span className="flex-shrink-0 text-xs font-medium text-brand-light">Empezar →</span>
             </div>
           </Card>
         </button>
