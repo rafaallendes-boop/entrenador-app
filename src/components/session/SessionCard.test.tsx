@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import type { Session } from '../../types'
-import SessionCard from './SessionCard'
+import SessionCard, { SQUASH_BLOCKS_DURATION_GUIDANCE } from './SessionCard'
 
 vi.mock('../../store/useTrainingStore', () => ({
   useTrainingStore: (selector: (state: { cycleSessionStatus: () => void; updateSession: () => Promise<void> }) => unknown) =>
@@ -107,5 +107,27 @@ describe('SessionCard squash match badges', () => {
     )
 
     expect(html).toContain('Sombras + Control')
+  })
+
+  it('uses the session total duration as the main time reference for squash details', () => {
+    const html = renderToStaticMarkup(
+      <SessionCard
+        session={makeSession({
+          objective: 'Sesion tecnica de control',
+          squashDetails: {
+            trainingFocus: 'technical',
+            sessionMode: 'drill_session',
+            blocks: [
+              { kind: 'control', durationMin: 14, drills: [{ name: '100 paralelas de fondo', durationMin: 14 }] },
+            ],
+            drills: [{ name: '100 paralelas de fondo', durationMin: 14 }],
+          },
+        })}
+      />,
+    )
+
+    expect(SQUASH_BLOCKS_DURATION_GUIDANCE).toContain('La duracion total de la sesion es la referencia principal')
+    expect(html).toContain('1h')
+    expect(html).not.toContain('14min')
   })
 })

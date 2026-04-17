@@ -86,6 +86,21 @@ describe('drillSelector progression', () => {
     }
   })
 
+  it('includes the new high-intensity squash pressure drills', () => {
+    const backCourtPressure = findSquashDrillByName('Presión de fondo')
+    const threeQuarterPressure = findSquashDrillByName('Presión a 3/4 de cancha')
+
+    expect(backCourtPressure).toBeTruthy()
+    expect(backCourtPressure?.intensity).toBe('high')
+    expect(backCourtPressure?.intent).toBe('pressure')
+    expect(backCourtPressure?.tags).toContain('conditioned_game')
+
+    expect(threeQuarterPressure).toBeTruthy()
+    expect(threeQuarterPressure?.intensity).toBe('high')
+    expect(threeQuarterPressure?.intent).toBe('pressure')
+    expect(threeQuarterPressure?.tags).toContain('transition')
+  })
+
   it('forces deload when squash ACWR is in risk', () => {
     const state = deriveSquashProgressionState({
       phase: 'build',

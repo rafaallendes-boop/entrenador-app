@@ -96,6 +96,8 @@ vi.mock('../../store/useAuthStore', () => ({
         consecutiveFailures: 0,
         autoRepairInProgress: false,
         lastAutoRepairAt: null,
+        memoryLoadRequiredAfterSyncAt: null,
+        memoryLoadedForSyncAt: null,
       },
       setSyncStatus: syncStatusMock,
       setSyncDetails: syncDetailsMock,
@@ -374,6 +376,41 @@ describe('Athlete Profile Sync - Hardening Fixes', () => {
     expect(payload.data.primarySport).toBe('squash')
     expect((payload.data.sportContext as { enabledSports?: string[] }).enabledSports).toEqual(['squash', 'strength'])
     expect(payload.data.onboardingDeferredAt).toBe(300)
+  })
+
+  it('10. Pushes tombstones when clearing durable profile fields so remote stale values cannot revive them', async () => {
+    athleteProfileRows = [
+      toAthleteProfileSyncRow({
+        id: 'remote-1',
+        user_id: 'user-1',
+        coach_memory: 'Vieja memoria',
+        updated_at: 100,
+        data: {
+          name: 'Rafa',
+          mainGoal: 'Competir mejor',
+        },
+      }),
+    ]
+
+    const syncService = await import('../syncService')
+    await syncService.pushAthleteProfile({
+      id: 'default',
+      coachMemory: undefined,
+      name: undefined,
+      updatedAt: 300,
+    })
+
+    await new Promise(resolve => setTimeout(resolve, 10))
+
+    expect(updateCalls).toHaveLength(1)
+    const payload = updateCalls[0].payload as {
+      coach_memory: string | null
+      data: Record<string, unknown>
+    }
+    expect(payload.coach_memory).toBeNull()
+    expect(payload.data.__clearCoachMemory).toBe(true)
+    expect(payload.data.__deletedFields).toEqual(expect.arrayContaining(['name']))
+    expect(payload.data.mainGoal).toBe('Competir mejor')
   })
 
   // Test 6 MUST remain last: it nulls supabase and would contaminate subsequent tests

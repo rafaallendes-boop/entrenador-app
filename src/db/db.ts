@@ -1,5 +1,6 @@
 import Dexie, { type Table } from 'dexie'
 import type { Session, DayLog, WeekSummary, ChatMessage, CoachProposal, AthleteProfile } from '../types'
+import type { TrainingPlan, TrainingPlanWeek } from '../types/planBuilder'
 import { getOrCreateChatSessionId } from '../utils/chatSession'
 import { toISO, getWeekStart, fromISO } from '../utils/date'
 
@@ -10,6 +11,8 @@ export class EntrenadorDB extends Dexie {
   chatMessages!: Table<ChatMessage>
   coachProposals!: Table<CoachProposal>
   athleteProfiles!: Table<AthleteProfile>
+  trainingPlans!: Table<TrainingPlan>
+  trainingPlanWeeks!: Table<TrainingPlanWeek>
 
   constructor() {
     super('EntrenadorDB')
@@ -114,6 +117,18 @@ export class EntrenadorDB extends Dexie {
           }
         }
       })
+    })
+
+    // v9 — add training plan entities owned by Plan Builder module
+    this.version(9).stores({
+      sessions:          'id, date, weekStartDate, type, status, completedAt',
+      dayLogs:           'id, &date',
+      weekSummaries:     'id, &weekStartDate',
+      chatMessages:      'id, timestamp, chatSessionId',
+      coachProposals:    'id, status, createdAt, resolvedAt, chatMessageId',
+      athleteProfiles:   'id, updatedAt',
+      trainingPlans:     'id, athleteId, goalEventId, status, startDate, updatedAt',
+      trainingPlanWeeks: 'id, planId, weekStartDate, status, [planId+weekIndex]',
     })
   }
 }
