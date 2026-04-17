@@ -1,9 +1,8 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import {
   clearWeeklyActionLaunchSearch,
   parseWeeklyActionLaunchIntent,
-  serializeWeeklyActionLaunchIntent,
   type WeeklyActionLaunchIntent,
 } from '../services/weeklyLaunchIntent'
 
@@ -15,26 +14,27 @@ export interface WeeklyLaunchIntentState {
 export function useWeeklyLaunchIntent(): WeeklyLaunchIntentState {
   const location = useLocation()
   const navigate = useNavigate()
-  const [launchIntent, setLaunchIntent] = useState<WeeklyActionLaunchIntent | null>(null)
-  const [launchId, setLaunchId] = useState(0)
-  const lastHandledKey = useRef<string | null>(null)
+  const parsedLaunchIntent = useMemo(
+    () => parseWeeklyActionLaunchIntent(location.search),
+    [location.search],
+  )
 
   useEffect(() => {
-    const parsed = parseWeeklyActionLaunchIntent(location.search)
-    if (!parsed) {
-      lastHandledKey.current = null
-      return
-    }
-
-    const key = serializeWeeklyActionLaunchIntent(parsed)
-    if (lastHandledKey.current === key) return
-
-    lastHandledKey.current = key
-    setLaunchIntent(parsed)
-    setLaunchId((value) => value + 1)
+    if (!parsedLaunchIntent) return
     const nextSearch = clearWeeklyActionLaunchSearch(location.search)
     navigate({ pathname: location.pathname, search: nextSearch }, { replace: true })
-  }, [location.pathname, location.search, navigate])
+  }, [location.pathname, location.search, navigate, parsedLaunchIntent])
 
-  return { launchIntent, launchId }
+  const launchId = useMemo(() => {
+    if (!parsedLaunchIntent) return 0
+
+    const seed = `${location.key}:${location.pathname}:${location.search}`
+    let hash = 0
+    for (const char of seed) {
+      hash = (hash * 31 + char.charCodeAt(0)) >>> 0
+    }
+    return hash
+  }, [location.key, location.pathname, location.search, parsedLaunchIntent])
+
+  return { launchIntent: parsedLaunchIntent, launchId }
 }

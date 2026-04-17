@@ -157,58 +157,6 @@ function phasesFromWeeks(weeks: number): string {
   return 'Semana de competencia'
 }
 
-// Deprecated: prompt builder mantenido temporalmente por si se reactiva el envío al chat.
-// El flujo actual navega al PlanBuilderV2 que genera cada semana con su propio pipeline.
-// @ts-expect-error unused while plan builder v2 maneja la generación
-function buildCompetitionPrompt(state: WizardState, macroPlanPhase?: string): string {
-  const eventType = EVENT_TYPE_OPTIONS.find(o => o.value === state.eventType)?.label ?? 'evento'
-  const objectiveLabel = OBJECTIVE_OPTIONS.find(o => o.value === state.objective)?.label ?? ''
-  const levelLabel = LEVEL_OPTIONS.find(o => o.value === state.competitiveLevel)?.label ?? ''
-  const fitnessLabel = FITNESS_OPTIONS.find(o => o.value === state.fitnessLevel)?.label ?? ''
-  const fatigueLabel = FATIGUE_OPTIONS.find(o => o.value === state.fatigue)?.label ?? ''
-
-  const weeks = weeksUntil(state.eventDate)
-
-  const dayLabels = state.trainingDays
-    .map(d => DAYS_OF_WEEK.find(o => o.value === d)?.label ?? d)
-    .join(', ')
-
-  const compSportsText = state.complementarySports
-    .map(s => SPORT_LABELS[s])
-    .join(', ')
-
-  const lines: string[] = [
-    `Crea mi plan de competencia para "${state.eventTitle}" (${state.eventDate} — ${weeks} semana${weeks !== 1 ? 's' : ''}).`,
-    '',
-    `Tipo de evento: ${eventType}`,
-    objectiveLabel ? `Objetivo: ${objectiveLabel}` : '',
-    levelLabel ? `Nivel: ${levelLabel}` : '',
-    macroPlanPhase ? `Fase actual del macroplan: ${macroPlanPhase}` : '',
-    '',
-    '--- Configuración de entrenamiento ---',
-    dayLabels ? `Días disponibles: ${dayLabels}` : '',
-    state.sessionsPerWeek ? `Sesiones por semana: ${state.sessionsPerWeek}` : '',
-    state.sessionDurationMins ? `Duración por sesión: ${state.sessionDurationMins} min` : '',
-    `Doble sesión: ${state.allowDoubleSession ? 'sí, algunos días' : 'no'}`,
-    compSportsText ? `Deportes complementarios: ${compSportsText}` : '',
-    '',
-    '--- Estado actual ---',
-    fitnessLabel ? `Forma física: ${fitnessLabel}` : '',
-    fatigueLabel ? `Fatiga: ${fatigueLabel}` : '',
-    state.injuryNotes.trim() ? `Molestias o restricciones: ${state.injuryNotes.trim()}` : '',
-  ].filter(line => line !== undefined)
-
-  const prompt = lines.filter(l => l !== '').join('\n').replace(/\n{3,}/g, '\n\n')
-
-  return prompt + '\n\n' +
-    'Genera el plan semana a semana desde hoy hasta el evento, con:\n' +
-    '1. Distribución por fases y semanas en cada fase\n' +
-    '2. Carga semanal por disciplina y sesiones clave de cada fase\n' +
-    '3. Protocolo de taper para las semanas finales\n' +
-    '4. Indicaciones para deportes complementarios según la fase\n' +
-    '5. Reglas de ajuste si sube la fatiga o baja la adherencia'
-}
-
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 function ProgressBar({ step }: { step: number }) {

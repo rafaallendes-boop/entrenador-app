@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Card from '../components/ui/Card'
 import { ROUTES } from '../constants/routes'
@@ -36,17 +36,15 @@ export default function PlanBuilderV2Page() {
     createDraft, runGeneration, regenerateWeek, acceptPlan, discard,
   } = usePlanBuilderStore()
 
-  const [selectedWeekIndex, setSelectedWeekIndex] = useState<number>(0)
+  const [selectedWeekIndex, setSelectedWeekIndex] = useState<number | null>(null)
 
-  const goalEvent = useMemo(() => getPrimaryGoalEvent(athleteProfile), [athleteProfile])
-  const expectedDraftSignature = useMemo(() => {
-    if (!athleteProfile?.planWizardConfig || !goalEvent) return null
-    return buildDraftSignature(goalEvent.id, athleteProfile.planWizardConfig)
-  }, [athleteProfile?.planWizardConfig, goalEvent])
-  const currentDraftSignature = useMemo(() => {
-    if (!plan) return null
-    return buildDraftSignature(plan.goalEventId, plan.wizardConfig)
-  }, [plan])
+  const goalEvent = getPrimaryGoalEvent(athleteProfile)
+  const expectedDraftSignature = athleteProfile?.planWizardConfig && goalEvent
+    ? buildDraftSignature(goalEvent.id, athleteProfile.planWizardConfig)
+    : null
+  const currentDraftSignature = plan
+    ? buildDraftSignature(plan.goalEventId, plan.wizardConfig)
+    : null
 
   useEffect(() => {
     if (!athleteProfile || !athleteProfile.planWizardConfig || !goalEvent) return
@@ -61,16 +59,11 @@ export default function PlanBuilderV2Page() {
     }
   }, [plan, weeks, status, athleteProfile, runGeneration])
 
-  useEffect(() => {
-    if (weeks.length === 0) {
-      setSelectedWeekIndex(0)
-      return
-    }
-    if (weeks.some((w) => w.weekIndex === selectedWeekIndex)) return
-    setSelectedWeekIndex(weeks[0].weekIndex)
-  }, [selectedWeekIndex, weeks])
-
-  const selectedWeek = weeks.find((w) => w.weekIndex === selectedWeekIndex)
+  const effectiveSelectedWeekIndex =
+    selectedWeekIndex != null && weeks.some((week) => week.weekIndex === selectedWeekIndex)
+      ? selectedWeekIndex
+      : weeks[0]?.weekIndex ?? 0
+  const selectedWeek = weeks.find((w) => w.weekIndex === effectiveSelectedWeekIndex)
   const errors = issues.filter((i) => i.severity === 'error')
   const warnings = issues.filter((i) => i.severity === 'warning')
   const hasIncompleteWeeks = weeks.length === 0 || weeks.some((week) => week.status !== 'draft' || week.sessions.length === 0)
@@ -141,7 +134,7 @@ export default function PlanBuilderV2Page() {
               type="button"
               onClick={() => setSelectedWeekIndex(w.weekIndex)}
               className={`w-full flex items-center gap-2 rounded-lg px-2 py-2 text-left text-sm transition-colors ${
-                w.weekIndex === selectedWeekIndex
+                w.weekIndex === effectiveSelectedWeekIndex
                   ? 'bg-brand/15 text-ink'
                   : 'hover:bg-surface-raised text-ink-muted'
               }`}

@@ -276,4 +276,49 @@ describe('planBuilder', () => {
     expect(chunks).toEqual(['uno', 'dos'])
     expect(result[0]?.generationMeta.chunkCount).toBe(2)
   })
+
+  it('routes pair-batch streaming chunks to the matching week index', async () => {
+    const profile = makeProfile(eventNWeeksFromNow(8))
+    const event = profile.goalEvents![0] as GoalEvent
+    const { plan, weeks } = buildPlanShell({
+      athleteId: profile.id,
+      profile,
+      wizardConfig: makeWizardConfig(),
+      goalEvent: event,
+    })
+
+    const streamedByWeekIndex: Record<number, string> = {}
+    const provider = {
+      name: 'mock' as const,
+      call: async (request: { onChunk?: (chunk: string) => void }) => {
+        request.onChunk?.('<actions>[{"type":"create_week","reason":"batch-1",')
+        request.onChunk?.(`"targetDate":"${weeks[0].weekStartDate}","sessions":[{"date":"${weeks[0].weekStartDate}","timeBlock":"AM","sessionType":"running","title":"w1","durationMin":30}]},`)
+        request.onChunk?.('{"type":"create_week","reason":"batch-2",')
+        request.onChunk?.(`"targetDate":"${weeks[1].weekStartDate}","sessions":[{"date":"${weeks[1].weekStartDate}","timeBlock":"AM","sessionType":"strength","title":"w2","durationMin":45}]}]</actions>`)
+        return {
+          provider: 'mock' as const,
+          durationMs: 15,
+          text: `<actions>[{"type":"create_week","reason":"batch-1","targetDate":"${weeks[0].weekStartDate}","sessions":[{"date":"${weeks[0].weekStartDate}","timeBlock":"AM","sessionType":"running","title":"w1","durationMin":30}]},{"type":"create_week","reason":"batch-2","targetDate":"${weeks[1].weekStartDate}","sessions":[{"date":"${weeks[1].weekStartDate}","timeBlock":"AM","sessionType":"strength","title":"w2","durationMin":45}]}]</actions>`,
+        }
+      },
+    }
+
+    const result = await generatePlanWeeks({
+      plan,
+      weeks: weeks.slice(0, 2),
+      profile,
+      wizardConfig: makeWizardConfig(),
+      provider,
+      strategy: 'pairs',
+      onChunk: (weekIndex, chunk) => {
+        streamedByWeekIndex[weekIndex] = (streamedByWeekIndex[weekIndex] ?? '') + chunk
+      },
+    })
+
+    expect(streamedByWeekIndex[weeks[0].weekIndex]).toContain(`"targetDate":"${weeks[0].weekStartDate}"`)
+    expect(streamedByWeekIndex[weeks[0].weekIndex]).not.toContain(`"targetDate":"${weeks[1].weekStartDate}"`)
+    expect(streamedByWeekIndex[weeks[1].weekIndex]).toContain(`"targetDate":"${weeks[1].weekStartDate}"`)
+    expect(result[0]?.status).toBe('draft')
+    expect(result[1]?.status).toBe('draft')
+  })
 })

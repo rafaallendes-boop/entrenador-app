@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Download, Plus, FileUp, Sparkles, MessageSquareText } from 'lucide-react'
 import { useTrainingStore } from '../store/useTrainingStore'
@@ -97,14 +97,14 @@ export default function WeeklyView() {
     downloadICS(sessions, `entrenador-${currentWeekStart}.ics`)
   }
 
-  const handleGenerateCoachNote = async () => {
+  const handleGenerateCoachNote = useCallback(async () => {
     setIsGeneratingNote(true)
     try {
       await generateCoachNote(currentWeekStart)
     } finally {
       setIsGeneratingNote(false)
     }
-  }
+  }, [currentWeekStart, generateCoachNote])
 
   const handleConfirmDeleteCoachSession = async () => {
     if (!pendingCoachDeleteId) return
@@ -112,7 +112,7 @@ export default function WeeklyView() {
     setPendingCoachDeleteId(null)
   }
 
-  const handleOpenAutoAdjustment = async () => {
+  const handleOpenAutoAdjustment = useCallback(async () => {
     if (!autoAdjustmentDraft) return
     const proposal = await addProposal(
       autoAdjustmentDraft.message,
@@ -121,7 +121,7 @@ export default function WeeklyView() {
       { source: 'weekly_action', relatedAlertId: autoAdjustmentDraft.alertId },
     )
     setActiveProposal(proposal)
-  }
+  }, [addProposal, autoAdjustmentDraft])
 
   const handleAcceptAutoAdjustment = async () => {
     if (!activeProposal) return

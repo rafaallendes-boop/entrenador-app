@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { AlertTriangle, CheckCircle2, MoreHorizontal, Plus, Trash2, X } from 'lucide-react'
 import { useChatStore } from '../store/useChatStore'
@@ -128,8 +128,9 @@ export default function ChatCoach() {
   const [profileBannerDismissed, setProfileBannerDismissed] = useState(false)
   const [profileNudgeDismissed, setProfileNudgeDismissed] = useState(false)
   const locationState = (location.state as { showProfileNudge?: boolean; composerDraft?: string; fromPlanBuilder?: boolean } | null)
-  const [composerDraft, setComposerDraft] = useState(() => locationState?.composerDraft ?? '')
   const loadAnalytics = useLoadAnalytics(currentWeekStartISO(), sessions)
+  const composerDraft = locationState?.composerDraft ?? buildWeeklyActionComposerDraft(launchIntent)
+  const composerDraftKey = `${launchId}:${composerDraft}`
 
   const showProfileNudge = !profileNudgeDismissed && locationState?.showProfileNudge === true
   const showPlanBuilderBanner = locationState?.fromPlanBuilder === true && composerDraft.trim().length > 0
@@ -158,19 +159,7 @@ export default function ChatCoach() {
     }
   }, [streamingText])
 
-  useEffect(() => {
-    if (locationState?.composerDraft) {
-      setComposerDraft(locationState.composerDraft)
-      return
-    }
-
-    const launchDraft = buildWeeklyActionComposerDraft(launchIntent)
-    if (launchDraft) {
-      setComposerDraft(launchDraft)
-    }
-  }, [launchId, launchIntent, locationState?.composerDraft])
-
-  const buildContext = (message: string): ChatContext => {
+  const buildContext = useCallback((message: string): ChatContext => {
     const sortedSessions = [...sessions]
       .sort((a, b) => a.date.localeCompare(b.date) || a.timeBlock.localeCompare(b.timeBlock))
     const plannedSessions = sortedSessions.filter(session => session.date >= todayISO())
@@ -190,9 +179,12 @@ export default function ChatCoach() {
       intent: detectChatIntent(message),
       loadAnalytics: loadAnalytics ?? undefined,
     }
-  }
+  }, [sessions, currentWeekSummary, dayLogs, coachMemory, athleteProfile, loadAnalytics])
 
-  const handleSend = (message: string) => sendMessage(message, buildContext(message))
+  const handleSend = useCallback(
+    (message: string) => sendMessage(message, buildContext(message)),
+    [buildContext, sendMessage],
+  )
 
   // Auto-submit prompt cuando se llega desde PlanBuilder
   useEffect(() => {
@@ -485,7 +477,7 @@ export default function ChatCoach() {
             />
           </Suspense>
 
-          <ChatInput onSend={handleSend} disabled={isLoading} initialValue={composerDraft} />
+          <ChatInput key={composerDraftKey} onSend={handleSend} disabled={isLoading} initialValue={composerDraft} />
         </div>
       </div>
 

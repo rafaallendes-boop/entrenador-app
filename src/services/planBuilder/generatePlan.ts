@@ -45,8 +45,41 @@ interface BatchWeekExtraction {
   error?: string
 }
 
+interface WeekBatchChunkRouter {
+  push: (chunk: string) => void
+}
+
 function createBatchId(firstWeekIndex: number): string {
   return `batch-${firstWeekIndex}-${Date.now()}`
+}
+
+function createWeekBatchChunkRouter(
+  weeks: [TrainingPlanWeek, TrainingPlanWeek],
+  onChunk: ((weekIndex: number, chunk: string) => void) | undefined,
+): WeekBatchChunkRouter {
+  let streamedText = ''
+  let deliveredLength = 0
+
+  const targetDatePattern = /"targetDate"\s*:\s*"([^"]+)"/g
+
+  return {
+    push(chunk: string) {
+      streamedText += chunk
+
+      let activeWeekIndex: number | undefined
+      for (const match of streamedText.matchAll(targetDatePattern)) {
+        const matchedWeek = weeks.find((week) => week.weekStartDate === match[1])
+        if (matchedWeek) {
+          activeWeekIndex = matchedWeek.weekIndex
+        }
+      }
+
+      if (activeWeekIndex == null || streamedText.length <= deliveredLength) return
+
+      onChunk?.(activeWeekIndex, streamedText.slice(deliveredLength))
+      deliveredLength = streamedText.length
+    },
+  }
 }
 
 function resolveStrategy(input: GeneratePlanWeeksInput): 'single' | 'pairs' {
@@ -209,6 +242,7 @@ async function generateWeekPair(
 }> {
   const batchId = createBatchId(weeks[0].weekIndex)
   let chunkCount = 0
+  const chunkRouter = createWeekBatchChunkRouter(weeks, onChunk)
 
   try {
     const raw = await provider.call({
@@ -224,7 +258,7 @@ async function generateWeekPair(
       temperature: 0.35,
       onChunk: (chunk) => {
         chunkCount += 1
-        onChunk?.(weeks[0].weekIndex, chunk)
+        chunkRouter.push(chunk)
       },
     })
     const normalized = normalizeResponse(raw)

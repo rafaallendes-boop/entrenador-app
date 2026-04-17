@@ -21,7 +21,9 @@
       "Bash(curl -s \"https://api.github.com/repos/rafaallendes-boop/entrenador-app/pulls?state=open\")",
       "Bash(python3 -m json.tool)",
       "WebFetch(domain:api.github.com)",
-      "WebFetch(domain:github.com)"
+      "WebFetch(domain:github.com)",
+      "Bash(git *)",
+      "Skill(codex:rescue)"
     ]
   }
 }

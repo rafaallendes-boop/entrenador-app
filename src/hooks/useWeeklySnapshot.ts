@@ -112,36 +112,20 @@ export function useWeeklySnapshot(
     () => buildSlotAdherenceProfile(historicalSessions, today),
     [historicalSessions, today],
   )
+  const activeAlerts = buildActionAlerts({
+    sessions: input.sessions,
+    currentWeekSummary: input.currentWeekSummary,
+    todayDayLog: input.todayDayLog,
+    macroWeekCoherence: input.macroWeekCoherence,
+    loadAnalytics,
+    today,
+  })
 
-  return useMemo(
-    () =>
-      buildWeeklySnapshot({
-        ...input,
-        historicalSessions: input.historicalSessions ?? historicalSessions,
-        slotAdherenceProfile: input.slotAdherenceProfile ?? slotAdherenceProfile,
-        activeAlerts: buildActionAlerts({
-          sessions: input.sessions,
-          currentWeekSummary: input.currentWeekSummary,
-          todayDayLog: input.todayDayLog,
-          macroWeekCoherence: input.macroWeekCoherence,
-          loadAnalytics,
-          today,
-        }),
-        loadAnalytics,
-      }),
-    [
-      currentWeekStart,
-      input.athleteProfile,
-      input.historicalSessions,
-      input.slotAdherenceProfile,
-      input.sessions,
-      input.currentWeekSummary,
-      input.todayDayLog,
-      input.macroWeekCoherence,
-      today,
-      historicalSessions,
-      slotAdherenceProfile,
-      loadAnalytics,
-    ],
-  )
+  return buildWeeklySnapshot({
+    ...input,
+    historicalSessions: input.historicalSessions ?? historicalSessions,
+    slotAdherenceProfile: input.slotAdherenceProfile ?? slotAdherenceProfile,
+    activeAlerts,
+    loadAnalytics,
+  })
 }

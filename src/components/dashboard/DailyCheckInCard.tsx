@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { CheckCircle2, ChevronDown, ChevronUp, Minus, X } from 'lucide-react'
 import { useTrainingStore } from '../../store/useTrainingStore'
 import type { DayLog, Session } from '../../types'
@@ -114,13 +114,19 @@ export default function DailyCheckInCard({ todaySessions, autoExpandToken = 0 }:
   const today = todayISO()
   const dayLog = dayLogs[today]
 
-  const [expanded, setExpanded] = useState(false)
+  const [manuallyExpanded, setManuallyExpanded] = useState(false)
+  const [dismissedAutoExpandToken, setDismissedAutoExpandToken] = useState(0)
+  const expanded = manuallyExpanded || autoExpandToken > dismissedAutoExpandToken
 
-  useEffect(() => {
-    if (autoExpandToken > 0) {
-      setExpanded(true)
+  const toggleExpanded = () => {
+    if (expanded) {
+      setManuallyExpanded(false)
+      setDismissedAutoExpandToken(autoExpandToken)
+      return
     }
-  }, [autoExpandToken])
+
+    setManuallyExpanded(true)
+  }
 
   const save = (patch: Parameters<typeof saveDayLog>[1]) => saveDayLog(today, patch)
 
@@ -137,7 +143,7 @@ export default function DailyCheckInCard({ todaySessions, autoExpandToken = 0 }:
     <div className="bg-surface-card rounded-card border border-surface-border overflow-hidden">
       <button
         type="button"
-        onClick={() => setExpanded(e => !e)}
+        onClick={toggleExpanded}
         className="w-full flex items-center justify-between px-4 py-3"
       >
         <div className="flex items-center gap-3">
