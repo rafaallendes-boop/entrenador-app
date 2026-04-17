@@ -18,6 +18,7 @@ const DayDetail = lazy(() => import('./pages/DayDetail'))
 const ChatCoach = lazy(() => import('./pages/ChatCoach'))
 const PlanBuilderPage = lazy(() => import('./pages/PlanBuilderPage'))
 const CompetitionPlanPage = lazy(() => import('./pages/CompetitionPlanPage'))
+const PlanBuilderV2Page = lazy(() => import('./pages/PlanBuilderV2Page'))
 const History = lazy(() => import('./pages/History'))
 const ImportPDF = lazy(() => import('./pages/ImportPDF'))
 const SettingsPage = lazy(() => import('./pages/SettingsPage'))
@@ -40,7 +41,8 @@ function OnboardingGuard({ children }: { children: ReactNode }) {
   const location = useLocation()
   const user = useAuthStore(s => s.user)
   const syncAttemptInFlight = useAuthStore(s => s.syncDetails.syncAttemptInFlight)
-  const lastSyncAt = useAuthStore(s => s.syncDetails.lastSyncAt)
+  const memoryLoadRequiredAfterSyncAt = useAuthStore(s => s.syncDetails.memoryLoadRequiredAfterSyncAt)
+  const memoryLoadedForSyncAt = useAuthStore(s => s.syncDetails.memoryLoadedForSyncAt)
   const athleteProfile = useCoachMemoryStore(s => s.athleteProfile)
   const hasLoadedMemory = useCoachMemoryStore(s => s.hasLoaded)
 
@@ -48,13 +50,19 @@ function OnboardingGuard({ children }: { children: ReactNode }) {
     if (location.pathname === ROUTES.ONBOARDING) return
     if (!hasLoadedMemory) return
     if (syncAttemptInFlight) return
-    if (isSupabaseConfigured && user?.id && lastSyncAt == null) return
+    if (
+      isSupabaseConfigured &&
+      user?.id &&
+      memoryLoadRequiredAfterSyncAt != null &&
+      memoryLoadedForSyncAt !== memoryLoadRequiredAfterSyncAt
+    ) return
+    if (isSupabaseConfigured && user?.id && memoryLoadRequiredAfterSyncAt == null) return
     const skippedOnboarding = hasSkippedOnboarding(user?.id)
 
     if (needsOnboarding(athleteProfile) && !skippedOnboarding) {
       navigate(ROUTES.ONBOARDING, { replace: true })
     }
-  }, [athleteProfile, hasLoadedMemory, lastSyncAt, location.pathname, navigate, syncAttemptInFlight, user?.id])
+  }, [athleteProfile, hasLoadedMemory, location.pathname, memoryLoadRequiredAfterSyncAt, memoryLoadedForSyncAt, navigate, syncAttemptInFlight, user?.id])
 
   return <>{children}</>
 }
@@ -82,28 +90,50 @@ export default function App() {
         lastAutoRetryAt = now
       }
       syncInFlight = true
+      const syncBoundaryAt = Date.now()
+      useAuthStore.getState().setSyncDetails({
+        memoryLoadRequiredAfterSyncAt: syncBoundaryAt,
+        memoryLoadedForSyncAt: null,
+      })
 
       try {
-      const { shouldMigrate } = await prepareLocalDataForUser(userId)
-      if (cancelled) return
-
-      if (shouldMigrate) {
-        await migrateLocalDataToCloud(userId)
+        const { shouldMigrate } = await prepareLocalDataForUser(userId)
         if (cancelled) return
-      }
 
-      await runFullSync(userId)
-      if (cancelled) return
+        if (shouldMigrate) {
+          await migrateLocalDataToCloud(userId)
+          if (cancelled) return
+        }
 
-      const { loadMemory } = useCoachMemoryStore.getState()
-      await loadMemory()
-      if (cancelled) return
+        await runFullSync(userId)
+        if (cancelled) return
 
-      const { loadWeek, loadAllSummaries } = useTrainingStore.getState()
-      await Promise.all([
-        loadWeek(currentWeekStartISO()),
-        loadAllSummaries(),
-      ])
+        const { loadMemory } = useCoachMemoryStore.getState()
+        await loadMemory()
+        if (cancelled) return
+
+        useAuthStore.getState().setSyncDetails({
+          memoryLoadedForSyncAt: syncBoundaryAt,
+        })
+
+        const { loadWeek, loadAllSummaries } = useTrainingStore.getState()
+        await Promise.all([
+          loadWeek(currentWeekStartISO()),
+          loadAllSummaries(),
+        ])
+      } catch (error) {
+        const { loadMemory } = useCoachMemoryStore.getState()
+        try {
+          await loadMemory()
+          if (!cancelled) {
+            useAuthStore.getState().setSyncDetails({
+              memoryLoadedForSyncAt: syncBoundaryAt,
+            })
+          }
+        } catch (memoryError) {
+          console.error('[app] failed to reload athlete profile after sync error', memoryError)
+        }
+        console.error('[app] signed-in sync failed', error)
       } finally {
         syncInFlight = false
       }
@@ -157,6 +187,7 @@ export default function App() {
                 <Route path={ROUTES.CHAT} element={<ChatCoach />} />
                 <Route path={ROUTES.PLAN_BUILDER} element={<PlanBuilderPage />} />
                 <Route path={ROUTES.COMPETITION_PLAN} element={<CompetitionPlanPage />} />
+                <Route path={ROUTES.PLAN_BUILDER_V2} element={<PlanBuilderV2Page />} />
                 <Route path={ROUTES.HISTORY} element={<History />} />
                 <Route path={ROUTES.SETTINGS} element={<SettingsPage />} />
                 <Route path={ROUTES.IMPORT} element={<ImportPDF />} />

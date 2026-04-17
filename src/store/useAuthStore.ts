@@ -22,6 +22,8 @@ export interface SyncDetails {
   consecutiveFailures: number
   autoRepairInProgress: boolean
   lastAutoRepairAt: number | null
+  memoryLoadRequiredAfterSyncAt: number | null
+  memoryLoadedForSyncAt: number | null
 }
 
 interface AuthState {
@@ -72,6 +74,8 @@ export const useAuthStore = create<AuthState>((set) => {
       consecutiveFailures: 0,
       autoRepairInProgress: false,
       lastAutoRepairAt: null,
+      memoryLoadRequiredAfterSyncAt: null,
+      memoryLoadedForSyncAt: null,
     },
 
     signInWithGoogle: async () => {
@@ -112,6 +116,8 @@ export const useAuthStore = create<AuthState>((set) => {
           consecutiveFailures: 0,
           autoRepairInProgress: false,
           lastAutoRepairAt: null,
+          memoryLoadRequiredAfterSyncAt: null,
+          memoryLoadedForSyncAt: null,
         },
       })
     },

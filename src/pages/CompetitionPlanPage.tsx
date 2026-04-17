@@ -157,6 +157,9 @@ function phasesFromWeeks(weeks: number): string {
   return 'Semana de competencia'
 }
 
+// Deprecated: prompt builder mantenido temporalmente por si se reactiva el envío al chat.
+// El flujo actual navega al PlanBuilderV2 que genera cada semana con su propio pipeline.
+// @ts-expect-error unused while plan builder v2 maneja la generación
 function buildCompetitionPrompt(state: WizardState, macroPlanPhase?: string): string {
   const eventType = EVENT_TYPE_OPTIONS.find(o => o.value === state.eventType)?.label ?? 'evento'
   const objectiveLabel = OBJECTIVE_OPTIONS.find(o => o.value === state.objective)?.label ?? ''
@@ -373,8 +376,7 @@ export default function CompetitionPlanPage() {
         planWizardConfig: newConfig,
       })
 
-      const prompt = buildCompetitionPrompt(state, macroPlanPhaseLabel)
-      navigate(ROUTES.CHAT, { state: { composerDraft: prompt, fromPlanBuilder: true } })
+      navigate(ROUTES.PLAN_BUILDER_V2, { state: { fromWizard: true } })
     } catch {
       setIsSaving(false)
     }

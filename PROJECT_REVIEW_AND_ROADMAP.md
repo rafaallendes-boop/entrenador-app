@@ -806,3 +806,63 @@ Antes de monetizar de verdad faltan estas piezas:
 2. reactivacion semanal estable y medible
 3. coach con capacidad real de reajuste, no solo de explicacion
 4. experiencia suficientemente consistente entre dashboard, semana y chat
+
+## Plan Builder V2 — estado de implementacion (MVP Fase A)
+
+### Lo que ya esta en codigo
+
+- Tipos propios de plan en `src/types/planBuilder.ts` (`TrainingPlan`, `TrainingPlanWeek`, `PlanPhaseBlock`, `PlanValidationIssue`, etc.)
+- Schema Dexie v9 con tablas `trainingPlans` y `trainingPlanWeeks` (`src/db/db.ts`)
+- Pipeline separado del chat en `src/services/planBuilder/`:
+  - `buildPlanShell.ts` — shell deterministico apoyado en `computeMacroPlan` y agrupado por fases.
+  - `generateWeek.ts` — un request LLM por semana, reusa `normalizeResponse` y extrae un `create_week` acotado a la fecha objetivo.
+  - `generatePlan.ts` — loop secuencial con `seedPreviousWeek` y streaming via `onWeekUpdate`.
+  - `validator.ts` — estructura, colisiones, deportes permitidos y salto de carga.
+  - `commitPlan.ts` — expande a sesiones reales reusando `useCoachActionsStore.acceptProposal` (protocolos, filtros por deporte permitido, recalculo de week summary).
+- `CoachProposalSource` ahora incluye `plan_builder` para trazabilidad.
+- Store `src/store/usePlanBuilderStore.ts` con `createDraft`, `runGeneration`, `regenerateWeek`, `acceptPlan`, `discard`, `loadDraft`.
+- Pantalla `src/pages/PlanBuilderV2Page.tsx` con timeline + detalle + panel de validacion.
+- Ruta `ROUTES.PLAN_BUILDER_V2 = '/plans/builder'` y router actualizado.
+- Redirecciones: `CompetitionPlanPage.handleGenerate` y `PlanBuilderPage` (weekTarget `completo`) navegan a la pantalla nueva en vez de al chat.
+- Tests iniciales (`src/services/__tests__/planBuilder.test.ts`): shell por 8 y 40 semanas, cap de 20, validator detecta colisiones.
+- `npm run build` limpio; tests pasan (`vitest run planBuilder.test.ts`).
+
+### Lo que queda explicitamente para siguientes iteraciones
+
+**Robustez pipeline (Fase B):**
+- Afinar retry por semana con contexto extendido (hoy reintentos estan dentro de `generateWeek`, no por semana fallida aparte).
+- Streaming real a la UI por chunk (hoy el usuario ve cambios de estado a nivel semana, no streaming de texto).
+- Generacion por pares para reducir total de requests en planes largos.
+- Instrumentacion: medir aceptacion del plan generado, cuantas semanas fallan, tiempo total.
+
+**Sync con Supabase (deliberadamente fuera del MVP):**
+- Push/pull de `trainingPlans` (solo `active`/`archived`) y `trainingPlanWeeks` siguiendo el patron last-write-wins + tombstones.
+- `syncService.ts` todavia no expone helpers para las tablas nuevas. Mientras tanto los planes viven solo local.
+- Cuando se active, respetar la regla: `draft` no sincroniza para reducir cola.
+
+**Validacion y calidad:**
+- Validador de ACWR proyectado y progresion fase-a-fase (hoy cubre estructura, colision y salto de carga simple).
+- Llevar `validateSessionProposal` de `responseNormalizer.ts` a un modulo puro y reusarlo dentro del validator.
+- Tests de integracion end-to-end con `MockProvider` generando planes de 4, 8, 12 semanas sin truncacion.
+
+**Coexistencia con el chat:**
+- `inferCoachActionIntent` sigue reconociendo `create_full_plan` — debe deprecarse en `CoachEngine` una vez validado el flujo nuevo en uso.
+- `promptBuilder.ts` mantiene instrucciones de multi-week que ya no se usan desde el plan builder.
+- Definir politica de trazabilidad entre planes v2 y proposals viejas heredadas.
+
+**UX:**
+- Edicion inline de sesiones antes de aceptar el plan (drag/drop, cambio de RPE o duracion).
+- Regeneracion de fase completa, no solo semana aislada.
+- Confirmacion de descarte con `ConfirmDialog` compartido.
+- Historial de planes (archived / superseded) y comparativa.
+- Aborto real de generacion en curso (hoy `abortSignal` esta tipado pero no usado).
+
+**Migracion y datos viejos:**
+- No hay migracion: los planes previos siguen siendo colecciones implicitas de sesiones. Si se decide backfill, agrupar por `goalEventId + weekStartDate` y crear un `TrainingPlan` retroactivo.
+
+### Riesgos abiertos
+
+- El flujo depende de la calidad del provider por semana. Un `MockProvider` devuelve sesiones genericas: hace falta validacion manual con Claude real antes de abrir a usuarios.
+- `commitPlan` usa el store de proposals como bus transaccional. Si un `acceptProposal` falla a mitad del commit, semanas previas ya quedan persistidas (no hay rollback plan-wide todavia).
+- Plan Builder viejo (`PlanBuilderPage` con `weekTarget=completo`) ahora redirige, pero la UI todavia existe; evaluar si se reemplaza por completo.
+

@@ -148,10 +148,16 @@ export default function PlanBuilderPage() {
 
         <div className="flex flex-wrap gap-2">
           <button
-            onClick={() => navigate(ROUTES.CHAT, { state: { composerDraft: prompt, fromPlanBuilder: true } })}
+            onClick={() => {
+              if (weekTarget === 'completo') {
+                navigate(ROUTES.PLAN_BUILDER_V2, { state: { fromWizard: true } })
+              } else {
+                navigate(ROUTES.CHAT, { state: { composerDraft: prompt, fromPlanBuilder: true } })
+              }
+            }}
             className="inline-flex items-center gap-2 rounded-xl bg-brand px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-light"
           >
-            Abrir en coach
+            {weekTarget === 'completo' ? 'Abrir Plan Builder' : 'Abrir en coach'}
           </button>
           <button
             onClick={() => navigate(ROUTES.WEEK)}

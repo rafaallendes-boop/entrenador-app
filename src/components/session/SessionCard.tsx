@@ -39,6 +39,10 @@ const SQUASH_KIND_LABELS: Record<string, string> = {
   match: 'Partido',
   mixed: 'Mixto',
 }
+export const SQUASH_BLOCKS_DURATION_GUIDANCE =
+  'La duracion total de la sesion es la referencia principal. Los ejercicios dentro de cada bloque son orientativos.'
+export const SQUASH_DRILLS_DURATION_GUIDANCE =
+  'La duracion total de la sesion es la referencia principal. Los drills listados sirven como guia.'
 
 interface SessionCardProps {
   session: Session
@@ -384,23 +388,24 @@ export default function SessionCard({ session, compact = false, onDelete }: Sess
           )}
           {hasSquashDetails && session.squashDetails && squashBlocks.length > 0 && (
             <div className="mt-2 space-y-2">
-              <p className="text-[10px] font-medium uppercase tracking-wider text-ink-faint">Bloques squash</p>
+              <div className="space-y-1">
+                <p className="text-[10px] font-medium uppercase tracking-wider text-ink-faint">Bloques squash</p>
+                <p className="text-[11px] leading-snug text-ink-faint">
+                  {SQUASH_BLOCKS_DURATION_GUIDANCE}
+                </p>
+              </div>
               {squashBlocks.map((block, blockIndex) => (
                 <div key={`${block.kind}-${blockIndex}`} className="rounded-lg border border-white/5 bg-surface-raised p-2">
-                  <div className="mb-1 flex items-center justify-between gap-2">
+                  <div className="mb-1">
                     <span className="text-xs font-semibold text-ink">
                       {SQUASH_KIND_LABELS[block.kind] ?? block.kind}
                     </span>
-                    {block.durationMin && (
-                      <span className="text-[11px] text-ink-faint">{block.durationMin}min</span>
-                    )}
                   </div>
                   <div className="space-y-1.5">
                     {block.drills.map((drill, drillIndex) => (
                       <div key={`${block.kind}-${blockIndex}-${drill.name}-${drillIndex}`} className="rounded-lg bg-surface-card px-2.5 py-1.5">
                         <div className="flex items-start gap-2">
                           <span className="flex-1 text-xs font-medium leading-snug text-ink">{drill.name}</span>
-                          {drill.durationMin && <span className="flex-shrink-0 text-[11px] text-ink-faint">{drill.durationMin}min</span>}
                         </div>
                         {drill.notes && (
                           <p className="mt-1 text-[11px] leading-snug text-ink-faint">{drill.notes}</p>
@@ -414,13 +419,17 @@ export default function SessionCard({ session, compact = false, onDelete }: Sess
           )}
           {hasSquashDetails && session.squashDetails && squashBlocks.length === 0 && squashDrills.length > 0 && (
             <div className="mt-2 space-y-1.5">
-              <p className="text-[10px] font-medium uppercase tracking-wider text-ink-faint">Drills</p>
+              <div className="space-y-1">
+                <p className="text-[10px] font-medium uppercase tracking-wider text-ink-faint">Drills</p>
+                <p className="text-[11px] leading-snug text-ink-faint">
+                  {SQUASH_DRILLS_DURATION_GUIDANCE}
+                </p>
+              </div>
               {squashDrills.map((drill, i) => (
                 <div key={i} className="flex items-start gap-2 rounded-lg bg-surface-raised px-2.5 py-1.5">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-start gap-2">
                       <span className="flex-1 text-xs font-medium leading-snug text-ink">{drill.name}</span>
-                      {drill.durationMin && <span className="flex-shrink-0 text-[11px] text-ink-faint">{drill.durationMin}min</span>}
                     </div>
                     {drill.notes && (
                       <p className="mt-1 text-[11px] leading-snug text-ink-faint">

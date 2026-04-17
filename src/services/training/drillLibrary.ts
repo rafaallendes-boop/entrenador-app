@@ -123,7 +123,7 @@ export const SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
     tags: ['drop', 'front_court', 'solo', 'volume_reps', 'control_session', 'base', 'build', 'taper', 'recovery_technical'],
     description: '100 drops solo, 50 por lado, priorizando precisión y altura antes que velocidad.',
     intent: 'control',
-    constraints: ['50 repeticiones por lado', 'Buscar que la segunda bote quede antes de la línea de saque'],
+    constraints: ['100 repeticiones por lado', 'Buscar que la segunda bote quede antes de la línea de saque'],
     progressionLevel: 1,
   },
   {
@@ -147,7 +147,7 @@ export const SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
     tags: ['target', 'length', 'precision', 'solo', 'volume_reps', 'control_session', 'base', 'build', 'taper'],
     description: '100 tiros apuntando al box de saque con target visual claro y feedback de precisión.',
     intent: 'control',
-    constraints: ['Usar un target visual dentro del box', '50 repeticiones por lado'],
+    constraints: ['Usar un target visual dentro del box', '100 repeticiones por lado'],
     progressionLevel: 1,
   },
   {
@@ -159,7 +159,7 @@ export const SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
     tags: ['drive', 'parallel', 'length', 'solo', 'volume_reps', 'control_session', 'base', 'build', 'taper'],
     description: '100 drives paralelos de fondo buscando profundidad, pared y repetición estable.',
     intent: 'control',
-    constraints: ['Mantener la pelota pegada a la pared lateral', '50 repeticiones por lado'],
+    constraints: ['Mantener la pelota pegada a la pared lateral', '100 repeticiones por lado'],
     progressionLevel: 1,
   },
   {
@@ -247,6 +247,30 @@ export const SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
     tags: ['pressure', 'back_court', 'build', 'peak'],
     description: 'Patrón de presión continua sobre esquinas del fondo para encerrar al rival.',
     progressionLevel: 2,
+  },
+  {
+    id: 'pressure_back_court',
+    name: 'Presión de fondo',
+    category: 'tactical',
+    focus: ['conditioned_game', 'pressure', 'back_court'],
+    intensity: 'high',
+    tags: ['conditioned_game', 'pressure', 'back_court', 'build', 'peak'],
+    description: 'Juego condicionado de alta intensidad para sostener presión desde el fondo y obligar respuestas defensivas.',
+    intent: 'pressure',
+    constraints: ['Sostener profundidad y ritmo alto durante todo el intercambio', 'Buscar dejar al rival detrás de la línea de saque'],
+    progressionLevel: 3,
+  },
+  {
+    id: 'pressure_three_quarters_court',
+    name: 'Presión a 3/4 de cancha',
+    category: 'tactical',
+    focus: ['transition', 'pressure', 'mid_court'],
+    intensity: 'high',
+    tags: ['transition', 'pressure', 'mid_court', 'conditioned_game', 'build', 'peak'],
+    description: 'Patrón condicionado de alta intensidad en tres cuartos de cancha para acelerar transiciones y tomar la siguiente pelota adelante.',
+    intent: 'pressure',
+    constraints: ['Tomar la pelota antes de que baje a la zona del fondo', 'Recuperar al T con intención ofensiva después de cada presión'],
+    progressionLevel: 3,
   },
   {
     id: 'conditioned_parallel_only',
@@ -561,6 +585,11 @@ const DRILL_TOKEN_ALIASES: Record<string, string> = {
   court: 'cancha',
 }
 
+const DRILL_NAME_ALIASES: Record<string, string> = {
+  parallel_drives: 'drive_parallel_depth',
+  defensive_lob_recovery: 'defensive_high_lob_recovery',
+}
+
 function normalizeDrillTokens(value: string): string[] {
   return normalizeSquashDrillKey(value)
     .split('_')
@@ -570,6 +599,13 @@ function normalizeDrillTokens(value: string): string[] {
 
 export function findSquashDrillByName(name: string): SquashDrillDefinition | undefined {
   const normalizedName = normalizeSquashDrillKey(name)
+  if (!normalizedName) return undefined
+
+  const aliasedId = DRILL_NAME_ALIASES[normalizedName]
+  if (aliasedId) {
+    return SQUASH_DRILL_LIBRARY.find((drill) => drill.id === aliasedId)
+  }
+
   const exactMatch = SQUASH_DRILL_LIBRARY.find(
     drill => drill.id === normalizedName || normalizeSquashDrillKey(drill.name) === normalizedName,
   )
@@ -580,7 +616,10 @@ export function findSquashDrillByName(name: string): SquashDrillDefinition | und
 
   for (const drill of SQUASH_DRILL_LIBRARY) {
     const drillKey = normalizeSquashDrillKey(drill.name)
-    if (drillKey.includes(normalizedName) || normalizedName.includes(drillKey)) {
+    if (
+      normalizedName.length >= 4 &&
+      (drillKey.includes(normalizedName) || normalizedName.includes(drillKey))
+    ) {
       return drill
     }
 

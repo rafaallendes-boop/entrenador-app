@@ -303,6 +303,9 @@ export interface AthleteProfileSyncRow extends Record<string, unknown> {
   data: Record<string, unknown> | null
 }
 
+const ATHLETE_PROFILE_DELETED_FIELDS_KEY = '__deletedFields'
+const ATHLETE_PROFILE_CLEAR_COACH_MEMORY_KEY = '__clearCoachMemory'
+
 /** Known columns in the remote athlete_profiles table */
 const ATHLETE_PROFILE_REMOTE_COLUMNS = new Set([
   'id',
@@ -314,17 +317,36 @@ const ATHLETE_PROFILE_REMOTE_COLUMNS = new Set([
 
 export function athleteProfileToRow(profile: AthleteProfile, userId: string): Record<string, unknown> {
   const { id, coachMemory, updatedAt, ...rest } = profile
+  const deletedFields: string[] = []
+  const dataEntries: Record<string, unknown> = {}
+
+  for (const [key, value] of Object.entries(rest)) {
+    if (value === undefined) {
+      deletedFields.push(key)
+      continue
+    }
+    dataEntries[key] = value
+  }
+
+  if (deletedFields.length > 0) {
+    dataEntries[ATHLETE_PROFILE_DELETED_FIELDS_KEY] = deletedFields
+  }
+
+  if (Object.prototype.hasOwnProperty.call(profile, 'coachMemory') && coachMemory === undefined) {
+    dataEntries[ATHLETE_PROFILE_CLEAR_COACH_MEMORY_KEY] = true
+  }
+
   return {
     id,
     user_id: userId,
     coach_memory: coachMemory ?? null,
     updated_at: updatedAt,
-    data: Object.keys(rest).length > 0 ? rest : null,
+    data: Object.keys(dataEntries).length > 0 ? dataEntries : null,
   }
 }
 
 export function rowToAthleteProfile(row: Record<string, unknown>): AthleteProfile {
-  const data = (row.data as Record<string, unknown> | null) ?? {}
+  const { data } = parseAthleteProfileData(row.data as Record<string, unknown> | null)
   return {
     id: 'default',
     coachMemory: (row.coach_memory as string | null) ?? undefined,
@@ -398,10 +420,11 @@ export function scoreEntityData(value: unknown): number {
 }
 
 function scoreAthleteProfileRow(row: AthleteProfileSyncRow): number {
+  const { data } = parseAthleteProfileData(row.data)
   return scoreEntityData({
     coachMemory: row.coach_memory,
     updatedAt: row.updated_at,
-    ...((row.data as Record<string, unknown> | null) ?? {}),
+    ...data,
   })
 }
 
@@ -430,9 +453,54 @@ function hasConfiguredSports(data: Record<string, unknown> | null): boolean {
   return enabledSports.length > 0 || primarySport.length > 0 || secondarySports.length > 0
 }
 
+function parseAthleteProfileData(data: Record<string, unknown> | null): {
+  data: Record<string, unknown>
+  deletedFields: string[]
+  clearCoachMemory: boolean
+} {
+  if (!isPlainObject(data)) {
+    return { data: {}, deletedFields: [], clearCoachMemory: false }
+  }
+
+  const deletedFields = Array.isArray(data[ATHLETE_PROFILE_DELETED_FIELDS_KEY])
+    ? (data[ATHLETE_PROFILE_DELETED_FIELDS_KEY] as unknown[]).filter((item): item is string => typeof item === 'string')
+    : []
+  const clearCoachMemory = data[ATHLETE_PROFILE_CLEAR_COACH_MEMORY_KEY] === true
+  const cleanData = Object.fromEntries(
+    Object.entries(data).filter(([key]) =>
+      key !== ATHLETE_PROFILE_DELETED_FIELDS_KEY && key !== ATHLETE_PROFILE_CLEAR_COACH_MEMORY_KEY,
+    ),
+  )
+
+  return {
+    data: cleanData,
+    deletedFields,
+    clearCoachMemory,
+  }
+}
+
+function serializeAthleteProfileData(
+  data: Record<string, unknown>,
+  deletedFields: string[],
+  clearCoachMemory: boolean,
+): Record<string, unknown> | null {
+  const nextData: Record<string, unknown> = { ...data }
+  const uniqueDeletedFields = [...new Set(deletedFields)].filter(Boolean)
+
+  if (uniqueDeletedFields.length > 0) {
+    nextData[ATHLETE_PROFILE_DELETED_FIELDS_KEY] = uniqueDeletedFields
+  }
+  if (clearCoachMemory) {
+    nextData[ATHLETE_PROFILE_CLEAR_COACH_MEMORY_KEY] = true
+  }
+
+  return Object.keys(nextData).length > 0 ? nextData : null
+}
+
 function countMissingDurableKeys(
   baseData: Record<string, unknown> | null,
   incomingData: Record<string, unknown> | null,
+  incomingDeletedFields: string[] = [],
 ): number {
   if (!baseData) return 0
 
@@ -455,6 +523,7 @@ function countMissingDurableKeys(
 
   return durableKeys.reduce((missing, key) => {
     if (!hasMeaningfulValue(baseData[key])) return missing
+    if (incomingDeletedFields.includes(key)) return missing
     if (incomingData && key in incomingData) return missing
     return missing + 1
   }, 0)
@@ -469,24 +538,31 @@ function shouldHydrateFromRicherAthleteProfileRow(
   if (richerScore <= candidateScore + 1) return false
 
   const richerData = richerRow.data
-  const candidateData = candidateRow.data
+  const {
+    data: normalizedRicherData,
+  } = parseAthleteProfileData(richerData)
+  const {
+    data: normalizedCandidateData,
+    deletedFields: candidateDeletedFields,
+    clearCoachMemory: candidateClearsCoachMemory,
+  } = parseAthleteProfileData(candidateRow.data)
 
-  if (hasConfiguredSports(richerData) && !hasConfiguredSports(candidateData)) {
+  if (hasConfiguredSports(normalizedRicherData) && !hasConfiguredSports(normalizedCandidateData)) {
     return true
   }
 
-  const richerName = typeof richerData?.name === 'string' ? richerData.name.trim() : ''
-  const candidateNamePresent = candidateData != null && 'name' in candidateData
+  const richerName = typeof normalizedRicherData?.name === 'string' ? normalizedRicherData.name.trim() : ''
+  const candidateNamePresent = ('name' in normalizedCandidateData) || candidateDeletedFields.includes('name')
   if (richerName.length > 0 && !candidateNamePresent) {
     return true
   }
 
   const richerCoachMemory = richerRow.coach_memory?.trim() ?? ''
-  if (richerCoachMemory.length > 0 && candidateRow.coach_memory == null) {
+  if (richerCoachMemory.length > 0 && candidateRow.coach_memory == null && !candidateClearsCoachMemory) {
     return true
   }
 
-  return countMissingDurableKeys(richerData, candidateData) >= 2
+  return countMissingDurableKeys(normalizedRicherData, normalizedCandidateData, candidateDeletedFields) >= 1
 }
 
 function mergeDefinedObjects(
@@ -517,16 +593,35 @@ export function mergeAthleteProfileRows(
   baseRow: AthleteProfileSyncRow,
   incomingRow: AthleteProfileSyncRow,
 ): AthleteProfileSyncRow {
-  const baseData = baseRow.data ?? {}
-  const incomingData = incomingRow.data ?? {}
+  const {
+    data: baseData,
+    deletedFields: baseDeletedFields,
+    clearCoachMemory: baseClearsCoachMemory,
+  } = parseAthleteProfileData(baseRow.data)
+  const {
+    data: incomingData,
+    deletedFields: incomingDeletedFields,
+    clearCoachMemory: incomingClearsCoachMemory,
+  } = parseAthleteProfileData(incomingRow.data)
   const mergedData = mergeDefinedObjects(baseData, incomingData)
+  const restoredKeys = Object.keys(incomingData)
+  const mergedDeletedFields = [...new Set([...baseDeletedFields, ...incomingDeletedFields])]
+    .filter((key) => !restoredKeys.includes(key))
+
+  for (const key of incomingDeletedFields) {
+    delete mergedData[key]
+  }
+
+  const mergedCoachMemory = incomingClearsCoachMemory
+    ? null
+    : incomingRow.coach_memory ?? (baseClearsCoachMemory ? null : baseRow.coach_memory)
 
   return normalizeAthleteProfilePayload({
     id: incomingRow.id,
     user_id: incomingRow.user_id,
-    coach_memory: incomingRow.coach_memory,
+    coach_memory: mergedCoachMemory,
     updated_at: incomingRow.updated_at,
-    data: Object.keys(mergedData).length > 0 ? mergedData : null,
+    data: serializeAthleteProfileData(mergedData, mergedDeletedFields, incomingClearsCoachMemory),
   })
 }
 

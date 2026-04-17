@@ -5,6 +5,7 @@ export const ROUTES = {
   CHAT:             '/chat',
   PLAN_BUILDER:     '/plan-builder',
   COMPETITION_PLAN: '/competition-plan',
+  PLAN_BUILDER_V2: '/plans/builder',
   HISTORY:          '/history',
   SETTINGS:         '/settings',
   IMPORT:           '/import',

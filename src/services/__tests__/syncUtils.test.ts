@@ -138,11 +138,57 @@ describe('syncUtils', () => {
     })
 
     const merged = mergeAthleteProfileRows(base, incoming)
-    expect(merged.coach_memory).toBeNull()
+    expect(merged.coach_memory).toBe('Vieja')
     expect(merged.updated_at).toBe(200)
     expect(merged.data?.name).toBeUndefined()
     expect((merged.data?.sportContext as { primarySport?: string })?.primarySport).toBe('running')
-    expect(athleteProfileRowsEqual(merged, incoming)).toBe(true)
+    expect(athleteProfileRowsEqual(merged, incoming)).toBe(false)
+  })
+
+  it('keeps tombstones for explicitly cleared athlete profile fields', () => {
+    const profile: AthleteProfile = {
+      id: 'default',
+      updatedAt: 300,
+      coachMemory: undefined,
+      name: undefined,
+      mainGoal: undefined,
+    }
+
+    const row = athleteProfileToRow(profile, 'user-1')
+    expect(row.coach_memory).toBeNull()
+    expect(row.data).toMatchObject({
+      __clearCoachMemory: true,
+      __deletedFields: expect.arrayContaining(['name', 'mainGoal']),
+    })
+  })
+
+  it('does not resurrect a deleted field from a richer stale row', () => {
+    const rows = [
+      toAthleteProfileSyncRow({
+        id: 'default',
+        user_id: 'user-1',
+        coach_memory: 'Prefiere estructura',
+        updated_at: 100,
+        data: { name: 'Rafa', mainGoal: 'Competir mejor' },
+      }),
+      toAthleteProfileSyncRow({
+        id: 'default',
+        user_id: 'user-1',
+        coach_memory: null,
+        updated_at: 200,
+        data: {
+          __clearCoachMemory: true,
+          __deletedFields: ['name'],
+        },
+      }),
+    ]
+
+    const merged = coalesceAthleteProfileRows(rows)
+    expect(merged.coach_memory).toBeNull()
+    expect(merged.data?.name).toBeUndefined()
+    expect(merged.data?.mainGoal).toBe('Competir mejor')
+    expect(merged.data?.__deletedFields).toEqual(['name'])
+    expect(merged.data?.__clearCoachMemory).toBe(true)
   })
 
   it('scores richer entity data higher than sparse data', () => {

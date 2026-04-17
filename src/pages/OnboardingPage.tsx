@@ -123,7 +123,11 @@ export default function OnboardingPage() {
   }
 
   async function handleSkip() {
-    await saveAthleteProfile({ onboardingDeferredAt: Date.now() })
+    try {
+      await saveAthleteProfile({ onboardingDeferredAt: Date.now() })
+    } catch (error) {
+      console.error('[onboarding] failed to persist skip flag in athlete profile', error)
+    }
     markOnboardingSkipped(user?.id)
     navigate(ROUTES.HOME)
   }

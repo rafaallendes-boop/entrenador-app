@@ -681,7 +681,7 @@ export interface CoachAction {
   cooldown?: GeneratedProtocol
 }
 
-export type CoachProposalSource = 'chat' | 'dashboard_auto_adjustment' | 'weekly_action'
+export type CoachProposalSource = 'chat' | 'dashboard_auto_adjustment' | 'weekly_action' | 'plan_builder'
 export type CoachProposalSpecificity = 'detailed' | 'generic_fallback'
 export type CoachProposalQuality = 'none' | 'detailed' | 'mixed' | 'generic_fallback'
 
