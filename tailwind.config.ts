@@ -6,26 +6,26 @@ const config: Config = {
     extend: {
       colors: {
         surface: {
-          DEFAULT: '#0f0f13',
-          deep: '#08080b',
-          card: '#17171e',
-          raised: '#1e1e28',
-          border: '#2a2a38',
+          DEFAULT: '#0e0e0e',
+          deep: '#080808',
+          card: '#151515',
+          raised: '#1d1d1d',
+          border: '#303030',
         },
         brand: {
-          DEFAULT: '#7c5cfc',
-          light: '#a88bfd',
-          glow: '#7c5cfc33',
+          DEFAULT: '#ff4d00',
+          light: '#ff7a33',
+          glow: '#ff4d0033',
         },
         ink: {
-          DEFAULT: '#f0f0f5',
-          muted: '#8888a0',
-          faint: '#44445a',
+          DEFAULT: '#f5f5f7',
+          muted: '#b0b0b3',
+          faint: '#6e6e73',
         },
       },
       fontFamily: {
-        sans: ['"DM Sans"', 'system-ui', 'sans-serif'],
-        display: ['"Barlow Condensed"', 'system-ui', 'sans-serif'],
+        sans: ['Inter', 'system-ui', 'sans-serif'],
+        display: ['Lexend', 'system-ui', 'sans-serif'],
         mono: ['"JetBrains Mono"', 'ui-monospace', 'monospace'],
       },
       borderRadius: {
@@ -36,8 +36,8 @@ const config: Config = {
       boxShadow: {
         card: '0 2px 16px 0 rgba(0,0,0,0.4)',
         'card-hover': '0 4px 28px 0 rgba(0,0,0,0.55)',
-        glow: '0 0 20px 2px rgba(124,92,252,0.25)',
-        'glow-sm': '0 0 10px 1px rgba(124,92,252,0.18)',
+        glow: '0 0 24px 2px rgba(255,77,0,0.24)',
+        'glow-sm': '0 0 12px 1px rgba(255,77,0,0.16)',
         'inner-sm': 'inset 0 1px 3px rgba(0,0,0,0.3)',
       },
       screens: {
