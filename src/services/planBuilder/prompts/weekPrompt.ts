@@ -7,6 +7,18 @@ export interface WeekPromptInput {
   previousWeek?: TrainingPlanWeek
   profile: AthleteProfile
   wizardConfig: PlanWizardConfig
+  retryInstruction?: string
+  strictFormatting?: boolean
+}
+
+export interface WeekBatchPromptInput {
+  plan: TrainingPlan
+  weeks: [TrainingPlanWeek, TrainingPlanWeek]
+  previousWeek?: TrainingPlanWeek
+  profile: AthleteProfile
+  wizardConfig: PlanWizardConfig
+  retryInstruction?: string
+  strictFormatting?: boolean
 }
 
 const PHASE_LABEL: Record<string, string> = {
@@ -16,6 +28,38 @@ const PHASE_LABEL: Record<string, string> = {
   taper: 'Taper',
   race: 'Race',
   transition: 'Transition',
+}
+
+function getPrimarySport(plan: TrainingPlan): SupportedSport | undefined {
+  return plan.macroSnapshot.sportDetails.find((detail) => detail.role === 'primary')?.sport
+}
+
+function buildPrimarySportRule(plan: TrainingPlan, week: TrainingPlanWeek): string[] {
+  const primarySport = getPrimarySport(plan)
+  if (!primarySport) return []
+
+  const lines = [`- Deporte principal del objetivo: ${primarySport}`]
+
+  if (week.phase === 'transition') {
+    lines.push(`- Mantén ${primarySport} presente solo si aporta recuperación y continuidad suave.`)
+    return lines
+  }
+
+  const minimumByPhase: Record<string, number> = {
+    base: 1,
+    build: primarySport === 'squash' ? 2 : 1,
+    peak: primarySport === 'squash' ? 2 : 1,
+    taper: 1,
+    race: 1,
+  }
+  const minimumSessions = minimumByPhase[week.phase] ?? 1
+  const emphasis =
+    week.phase === 'build' || week.phase === 'peak'
+      ? ` ${primarySport} debe tener más protagonismo que los deportes de apoyo.`
+      : ''
+
+  lines.push(`- Regla crítica: incluye al menos ${minimumSessions} sesión${minimumSessions > 1 ? 'es' : ''} de ${primarySport} dentro de esta semana.${emphasis}`)
+  return lines
 }
 
 function briefPreviousWeek(previous: TrainingPlanWeek | undefined): string {
@@ -53,8 +97,21 @@ export function buildWeekSystemPrompt(): string {
   ].join('\n')
 }
 
+export function buildWeekBatchSystemPrompt(): string {
+  return [
+    'Eres el generador de DOS semanas consecutivas dentro de un plan por evento ya estructurado.',
+    'Respondes EXCLUSIVAMENTE con un bloque <actions> JSON que contenga EXACTAMENTE DOS acciones create_week, una por cada lunes objetivo.',
+    'No explicas nada fuera del bloque <actions>. Nada de texto previo ni posterior.',
+    'Cada create_week debe incluir: type, targetDate (lunes de la semana), reason corto, sessions[] y weekObjectives[].',
+    'Cada sesión incluye: date (YYYY-MM-DD dentro de la semana correcta), timeBlock (AM/PM), sessionType, title, durationMin, objective. Añade subtype/runningType/squashDetails/cyclingDetails/mobilityDetails/exercises/intervalStructure cuando aporten.',
+    'Respeta estrictamente la fase indicada, objetivos de carga y deportes permitidos.',
+    'No inventes sesiones fuera de los días permitidos. No dupliques misma fecha+timeBlock dentro de cada semana.',
+    'Nunca mezcles sesiones de una semana dentro de la otra. targetDate y fechas deben coincidir exactamente con cada semana pedida.',
+  ].join('\n')
+}
+
 export function buildWeekUserPrompt(input: WeekPromptInput): string {
-  const { plan, week, previousWeek, profile, wizardConfig } = input
+  const { plan, week, previousWeek, profile, wizardConfig, retryInstruction, strictFormatting } = input
   const allowed = allowedSportsList(plan, wizardConfig)
   const targetLoads = Object.entries(week.targetLoadBySport)
     .map(([sport, load]) => `${sport}: ${load}`)
@@ -77,10 +134,63 @@ export function buildWeekUserPrompt(input: WeekPromptInput): string {
     `- Nivel actual: ${wizardConfig.currentFitnessLevel} · Fatiga: ${wizardConfig.currentFatigue}`,
     `- Deportes permitidos: ${allowed.join(', ')}`,
     `- Carga objetivo por deporte: ${targetLoads}`,
+    ...buildPrimarySportRule(plan, week),
     wizardConfig.injuryNotes ? `- Lesiones/restricciones: ${wizardConfig.injuryNotes}` : '',
     '',
     briefPreviousWeek(previousWeek),
     '',
+    retryInstruction ? `Corrección del intento anterior:\n${retryInstruction}\n` : '',
+    strictFormatting ? 'Modo estricto: si dudas, prioriza fechas válidas, targetDate correcto y sesiones compactas antes que creatividad.' : '',
+    '',
     'Devuelve sólo el bloque <actions> con una única create_week para esta semana.',
+  ].filter(Boolean).join('\n')
+}
+
+export function buildWeekBatchUserPrompt(input: WeekBatchPromptInput): string {
+  const { plan, weeks, previousWeek, profile, wizardConfig, retryInstruction, strictFormatting } = input
+  const allowed = allowedSportsList(plan, wizardConfig)
+  const days = wizardConfig.trainingDays.join(', ')
+  const primarySport = getPrimarySport(plan)
+  const weeksText = weeks.map((week) => {
+    const targetLoads = Object.entries(week.targetLoadBySport)
+      .map(([sport, load]) => `${sport}: ${load}`)
+      .join(', ')
+    const blockFocus = plan.phases.find((p) => week.weekIndex >= p.startWeekIndex && week.weekIndex <= p.endWeekIndex)?.blockFocus ?? ''
+    const primarySportRule = buildPrimarySportRule(plan, week)
+    return [
+      `Semana ${week.weekIndex + 1}/${plan.totalWeeks}`,
+      `- Lunes objetivo: ${week.weekStartDate}`,
+      `- Fase: ${PHASE_LABEL[week.phase] ?? week.phase}`,
+      `- Foco del bloque: ${blockFocus}`,
+      `- Carga objetivo por deporte: ${targetLoads}`,
+      `- Objetivos: ${week.weekObjectives.map((objective) => objective.goal).join(' | ')}`,
+      ...primarySportRule,
+    ].join('\n')
+  }).join('\n\n')
+
+  return [
+    `Generar dos semanas consecutivas del plan "${plan.title}".`,
+    `Evento principal: ${plan.macroSnapshot.goalEventDate}.`,
+    '',
+    briefAthlete(profile),
+    '',
+    'Configuración del wizard:',
+    `- Días permitidos: ${days}`,
+    `- Sesiones por semana: ${wizardConfig.sessionsPerWeek}`,
+    `- Duración por sesión: ${wizardConfig.sessionDurationMins} min`,
+    `- Doble sesión permitido: ${wizardConfig.allowDoubleSession ? 'sí' : 'no'}`,
+    `- Nivel actual: ${wizardConfig.currentFitnessLevel} · Fatiga: ${wizardConfig.currentFatigue}`,
+    `- Deportes permitidos: ${allowed.join(', ')}`,
+    primarySport ? `- Deporte principal transversal: ${primarySport}` : '',
+    wizardConfig.injuryNotes ? `- Lesiones/restricciones: ${wizardConfig.injuryNotes}` : '',
+    '',
+    briefPreviousWeek(previousWeek),
+    '',
+    weeksText,
+    '',
+    retryInstruction ? `Corrección del intento anterior:\n${retryInstruction}\n` : '',
+    strictFormatting ? 'Modo estricto: devuelve exactamente dos create_week, una por cada targetDate indicado, sin mezclar fechas entre semanas.' : '',
+    '',
+    'Devuelve sólo el bloque <actions> con exactamente dos create_week, una para cada semana pedida.',
   ].filter(Boolean).join('\n')
 }

@@ -19,7 +19,7 @@ import type {
   CoachProposal,
   AthleteProfile,
 } from '../types'
-import type { AppDataExport } from './dataExport'
+import type { TrainingPlan, TrainingPlanWeek } from '../types/planBuilder'
 import { clearAllLocalAppData } from './appMaintenance'
 import {
   athleteProfileRowsEqual,
@@ -101,6 +101,10 @@ interface MergeContext {
 interface MergeResolution<T extends { id: string }> {
   winner: T
   loserId?: string
+}
+
+function isSyncablePlanStatus(status: TrainingPlan['status']): boolean {
+  return status === 'active' || status === 'archived'
 }
 
 function syncStoreState() {
@@ -641,6 +645,88 @@ function rowToWeekSummary(row: Record<string, unknown>): WeekSummary {
   } as WeekSummary
 }
 
+function trainingPlanToRow(plan: TrainingPlan, userId: string, deletedAt?: number | null): Record<string, unknown> {
+  return {
+    id: plan.id,
+    user_id: userId,
+    athlete_id: plan.athleteId,
+    goal_event_id: plan.goalEventId,
+    status: plan.status,
+    title: plan.title,
+    start_date: plan.startDate,
+    end_date: plan.endDate,
+    total_weeks: plan.totalWeeks,
+    phases: plan.phases,
+    wizard_config: plan.wizardConfig,
+    macro_snapshot: plan.macroSnapshot,
+    created_at: plan.createdAt,
+    updated_at: plan.updatedAt,
+    accepted_at: plan.acceptedAt ?? null,
+    notes: plan.notes ?? null,
+    generation_summary: plan.generationSummary ?? null,
+    deleted_at: deletedAt ?? null,
+  }
+}
+
+function rowToTrainingPlan(row: Record<string, unknown>): TrainingPlan {
+  return {
+    id: row.id as string,
+    athleteId: row.athlete_id as string,
+    goalEventId: row.goal_event_id as string,
+    status: row.status as TrainingPlan['status'],
+    title: row.title as string,
+    startDate: row.start_date as string,
+    endDate: row.end_date as string,
+    totalWeeks: row.total_weeks as number,
+    phases: (row.phases as TrainingPlan['phases']) ?? [],
+    wizardConfig: row.wizard_config as TrainingPlan['wizardConfig'],
+    macroSnapshot: row.macro_snapshot as TrainingPlan['macroSnapshot'],
+    createdAt: row.created_at as number,
+    updatedAt: row.updated_at as number,
+    acceptedAt: (row.accepted_at as number | null) ?? undefined,
+    notes: (row.notes as string | null) ?? undefined,
+    generationSummary: (row.generation_summary as TrainingPlan['generationSummary'] | null) ?? undefined,
+  }
+}
+
+function trainingPlanWeekToRow(week: TrainingPlanWeek, userId: string, deletedAt?: number | null): Record<string, unknown> {
+  return {
+    id: week.id,
+    user_id: userId,
+    plan_id: week.planId,
+    week_index: week.weekIndex,
+    week_start_date: week.weekStartDate,
+    phase: week.phase,
+    status: week.status,
+    sessions: week.sessions,
+    week_objectives: week.weekObjectives,
+    target_load_by_sport: week.targetLoadBySport,
+    validation_issues: week.validationIssues,
+    generation_meta: week.generationMeta,
+    created_at: week.createdAt,
+    updated_at: week.updatedAt,
+    deleted_at: deletedAt ?? null,
+  }
+}
+
+function rowToTrainingPlanWeek(row: Record<string, unknown>): TrainingPlanWeek {
+  return {
+    id: row.id as string,
+    planId: row.plan_id as string,
+    weekIndex: row.week_index as number,
+    weekStartDate: row.week_start_date as string,
+    phase: row.phase as TrainingPlanWeek['phase'],
+    status: row.status as TrainingPlanWeek['status'],
+    sessions: (row.sessions as TrainingPlanWeek['sessions']) ?? [],
+    weekObjectives: (row.week_objectives as TrainingPlanWeek['weekObjectives']) ?? [],
+    targetLoadBySport: (row.target_load_by_sport as TrainingPlanWeek['targetLoadBySport']) ?? {},
+    validationIssues: (row.validation_issues as TrainingPlanWeek['validationIssues']) ?? [],
+    generationMeta: (row.generation_meta as TrainingPlanWeek['generationMeta']) ?? { attempts: 0 },
+    createdAt: row.created_at as number,
+    updatedAt: row.updated_at as number,
+  }
+}
+
 function chatMessageToRow(msg: ChatMessage, userId: string): Record<string, unknown> {
   const { id, role, content, timestamp, chatSessionId, ...rest } = msg
   return {
@@ -919,6 +1005,40 @@ export async function pushAthleteProfile(profile: AthleteProfile): Promise<void>
   void upsertRow('athlete_profiles', athleteProfileToRow(profile, userId))
 }
 
+export async function pushTrainingPlan(plan: TrainingPlan): Promise<void> {
+  const userId = getUserId()
+  if (!userId || !isSyncablePlanStatus(plan.status)) return
+  void upsertRow('training_plans', trainingPlanToRow(plan, userId))
+}
+
+export async function pushTrainingPlanWeeks(plan: TrainingPlan, weeks: TrainingPlanWeek[]): Promise<void> {
+  const userId = getUserId()
+  if (!userId || !isSyncablePlanStatus(plan.status)) return
+  for (const week of weeks) {
+    void upsertRow('training_plan_weeks', trainingPlanWeekToRow(week, userId))
+  }
+}
+
+export async function archiveTrainingPlan(plan: TrainingPlan, weeks: TrainingPlanWeek[]): Promise<void> {
+  const archivedPlan: TrainingPlan = {
+    ...plan,
+    status: 'archived',
+    updatedAt: Date.now(),
+  }
+  await pushTrainingPlan(archivedPlan)
+  await pushTrainingPlanWeeks(archivedPlan, weeks)
+}
+
+export async function softDeleteTrainingPlan(plan: TrainingPlan, weeks: TrainingPlanWeek[]): Promise<void> {
+  const userId = getUserId()
+  if (!userId) return
+  const deletedAt = Date.now()
+  void upsertRow('training_plans', trainingPlanToRow({ ...plan, updatedAt: deletedAt }, userId, deletedAt))
+  for (const week of weeks) {
+    void upsertRow('training_plan_weeks', trainingPlanWeekToRow({ ...week, updatedAt: deletedAt }, userId, deletedAt))
+  }
+}
+
 async function fetchAll<T>(table: SupabaseTable, userId: string): Promise<T[]> {
   const { data, error } = await getSupabase()
     .from(table)
@@ -956,6 +1076,8 @@ async function pullRemoteAndMerge(userId: string): Promise<void> {
       mergeCoachProposals(userId, mergeContext),
       mergeAthleteProfile(userId, mergeContext),
     ])
+    await mergeTrainingPlans(userId, mergeContext)
+    await mergeTrainingPlanWeeks(userId, mergeContext)
   })()
 
   try {
@@ -1260,6 +1382,105 @@ async function mergeAthleteProfile(userId: string, context: MergeContext): Promi
   }
 }
 
+async function deleteLocalTrainingPlan(planId: string): Promise<void> {
+  await db.trainingPlanWeeks.where('planId').equals(planId).delete()
+  await db.trainingPlans.delete(planId)
+}
+
+async function mergeTrainingPlans(userId: string, context: MergeContext): Promise<void> {
+  const remoteRows = await fetchAll<Record<string, unknown>>('training_plans', userId)
+  const remoteIds = new Set<string>()
+
+  for (const row of remoteRows) {
+    const remotePlan = rowToTrainingPlan(row)
+    const remoteDeletedAt = typeof row.deleted_at === 'number' ? row.deleted_at : null
+    remoteIds.add(remotePlan.id)
+
+    const localPlan = await db.trainingPlans.get(remotePlan.id)
+
+    if (remoteDeletedAt != null) {
+      if (localPlan && remoteDeletedAt >= localPlan.updatedAt) {
+        await deleteLocalTrainingPlan(localPlan.id)
+      }
+      continue
+    }
+
+    if (!localPlan) {
+      await db.trainingPlans.put(remotePlan)
+      continue
+    }
+
+    if (remotePlan.updatedAt > localPlan.updatedAt) {
+      await db.trainingPlans.put(remotePlan)
+    } else if (localPlan.updatedAt > remotePlan.updatedAt && isSyncablePlanStatus(localPlan.status)) {
+      void pushTrainingPlan(localPlan)
+    }
+  }
+
+  if (!context.allowDeletes || context.deleteBeforeTs == null) return
+
+  const localPlans = await db.trainingPlans.toArray()
+  for (const localPlan of localPlans) {
+    if (!isSyncablePlanStatus(localPlan.status)) continue
+    if (remoteIds.has(localPlan.id)) continue
+    if (localPlan.updatedAt > context.deleteBeforeTs) continue
+    await deleteLocalTrainingPlan(localPlan.id)
+  }
+}
+
+async function mergeTrainingPlanWeeks(userId: string, context: MergeContext): Promise<void> {
+  const remoteRows = await fetchAll<Record<string, unknown>>('training_plan_weeks', userId)
+  const remoteIds = new Set<string>()
+  const localPlans = await db.trainingPlans.toArray()
+  const syncablePlanIds = new Set(localPlans.filter((plan) => isSyncablePlanStatus(plan.status)).map((plan) => plan.id))
+
+  for (const row of remoteRows) {
+    const remoteWeek = rowToTrainingPlanWeek(row)
+    const remoteDeletedAt = typeof row.deleted_at === 'number' ? row.deleted_at : null
+    const localWeek = await db.trainingPlanWeeks.get(remoteWeek.id)
+
+    if (!syncablePlanIds.has(remoteWeek.planId)) {
+      if (localWeek) {
+        await db.trainingPlanWeeks.delete(localWeek.id)
+      }
+      continue
+    }
+
+    remoteIds.add(remoteWeek.id)
+
+    if (remoteDeletedAt != null) {
+      if (localWeek && remoteDeletedAt >= localWeek.updatedAt) {
+        await db.trainingPlanWeeks.delete(localWeek.id)
+      }
+      continue
+    }
+
+    if (!localWeek) {
+      await db.trainingPlanWeeks.put(remoteWeek)
+      continue
+    }
+
+    if (remoteWeek.updatedAt > localWeek.updatedAt) {
+      await db.trainingPlanWeeks.put(remoteWeek)
+    } else if (localWeek.updatedAt > remoteWeek.updatedAt) {
+      const localPlan = localPlans.find((plan) => plan.id === localWeek.planId)
+      if (localPlan && isSyncablePlanStatus(localPlan.status)) {
+        void pushTrainingPlanWeeks(localPlan, [localWeek])
+      }
+    }
+  }
+
+  if (!context.allowDeletes || context.deleteBeforeTs == null) return
+
+  const localWeeks = await db.trainingPlanWeeks.toArray()
+  for (const localWeek of localWeeks) {
+    if (!syncablePlanIds.has(localWeek.planId)) continue
+    if (remoteIds.has(localWeek.id)) continue
+    if (localWeek.updatedAt > context.deleteBeforeTs) continue
+    await db.trainingPlanWeeks.delete(localWeek.id)
+  }
+}
+
 async function deleteMissingLocalRows<T extends { id: string }>(
   table: { toArray: () => Promise<T[]>; bulkDelete: (keys: string[]) => Promise<void> },
   remoteIds: Set<string>,
@@ -1511,6 +1732,8 @@ export function clearSelectedSyncArtifactsForUser(
     selectedTables.add('sessions')
     selectedTables.add('day_logs')
     selectedTables.add('week_summaries')
+    selectedTables.add('training_plans')
+    selectedTables.add('training_plan_weeks')
   }
   if (selection.chatHistory) {
     selectedTables.add('chat_messages')
@@ -1582,6 +1805,8 @@ async function hasLocalAppData(): Promise<boolean> {
     db.sessions.count(),
     db.dayLogs.count(),
     db.weekSummaries.count(),
+    db.trainingPlans.count(),
+    db.trainingPlanWeeks.count(),
     db.chatMessages.count(),
     db.coachProposals.count(),
     db.athleteProfiles.count(),
@@ -1614,31 +1839,30 @@ export async function migrateLocalDataToCloud(userId: string): Promise<void> {
   if (localStorage.getItem(getMigrationKey(userId))) return
 
   try {
-    const [sessions, dayLogs, weekSummaries, chatMessages, coachProposals, athleteProfiles] =
+    const [sessions, dayLogs, weekSummaries, trainingPlans, trainingPlanWeeks, chatMessages, coachProposals, athleteProfiles] =
       await Promise.all([
         db.sessions.toArray(),
         db.dayLogs.toArray(),
         db.weekSummaries.toArray(),
+        db.trainingPlans.toArray(),
+        db.trainingPlanWeeks.toArray(),
         db.chatMessages.toArray(),
         db.coachProposals.toArray(),
         db.athleteProfiles.toArray(),
       ])
 
-    const tables: AppDataExport['tables'] = {
-      sessions,
-      dayLogs,
-      weekSummaries,
-      chatMessages,
-      coachProposals,
-      athleteProfiles,
-    }
+    const syncablePlans = trainingPlans.filter((plan) => isSyncablePlanStatus(plan.status))
+    const syncablePlanIds = new Set(syncablePlans.map((plan) => plan.id))
+    const syncableWeeks = trainingPlanWeeks.filter((week) => syncablePlanIds.has(week.planId))
 
-    const sessionRows = tables.sessions.map((session) => sessionToRow(session, userId))
-    const dayLogRows = tables.dayLogs.map((dayLog) => dayLogToRow(dayLog, userId))
-    const weekRows = tables.weekSummaries.map((summary) => weekSummaryToRow(summary, userId))
-    const chatRows = tables.chatMessages.map((message) => chatMessageToRow(message, userId))
-    const proposalRows = tables.coachProposals.map((proposal) => coachProposalToRow(proposal, userId))
-    const profileRows = tables.athleteProfiles.map((profile) => athleteProfileToRow(profile, userId))
+    const sessionRows = sessions.map((session) => sessionToRow(session, userId))
+    const dayLogRows = dayLogs.map((dayLog) => dayLogToRow(dayLog, userId))
+    const weekRows = weekSummaries.map((summary) => weekSummaryToRow(summary, userId))
+    const trainingPlanRows = syncablePlans.map((plan) => trainingPlanToRow(plan, userId))
+    const trainingPlanWeekRows = syncableWeeks.map((week) => trainingPlanWeekToRow(week, userId))
+    const chatRows = chatMessages.map((message) => chatMessageToRow(message, userId))
+    const proposalRows = coachProposals.map((proposal) => coachProposalToRow(proposal, userId))
+    const profileRows = athleteProfiles.map((profile) => athleteProfileToRow(profile, userId))
 
     const migrationResults = await Promise.all([
       sessionRows.length > 0
@@ -1650,6 +1874,12 @@ export async function migrateLocalDataToCloud(userId: string): Promise<void> {
       weekRows.length > 0
         ? getSupabase().from('week_summaries').upsert(weekRows as never).then((result) => ({ table: 'week_summaries', error: result.error }))
         : Promise.resolve({ table: 'week_summaries', error: null }),
+      trainingPlanRows.length > 0
+        ? getSupabase().from('training_plans').upsert(trainingPlanRows as never).then((result) => ({ table: 'training_plans', error: result.error }))
+        : Promise.resolve({ table: 'training_plans', error: null }),
+      trainingPlanWeekRows.length > 0
+        ? getSupabase().from('training_plan_weeks').upsert(trainingPlanWeekRows as never).then((result) => ({ table: 'training_plan_weeks', error: result.error }))
+        : Promise.resolve({ table: 'training_plan_weeks', error: null }),
       chatRows.length > 0
         ? getSupabase().from('chat_messages').upsert(chatRows as never).then((result) => ({ table: 'chat_messages', error: result.error }))
         : Promise.resolve({ table: 'chat_messages', error: null }),
@@ -1686,6 +1916,8 @@ export async function clearSelectedRemoteAppData(
     { key: 'trainingData', table: 'sessions' },
     { key: 'trainingData', table: 'day_logs' },
     { key: 'trainingData', table: 'week_summaries' },
+    { key: 'trainingData', table: 'training_plan_weeks' },
+    { key: 'trainingData', table: 'training_plans' },
     { key: 'chatHistory', table: 'chat_messages' },
     { key: 'coachProposals', table: 'coach_proposals' },
     { key: 'coachMemory', table: 'athlete_profiles' },
@@ -1715,6 +1947,8 @@ export async function wipeRemoteAndLocalAppData(userId: string): Promise<void> {
   }
 
   const tables: SupabaseTable[] = [
+    'training_plan_weeks',
+    'training_plans',
     'coach_proposals',
     'chat_messages',
     'week_summaries',

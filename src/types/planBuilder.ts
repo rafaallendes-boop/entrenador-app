@@ -34,6 +34,22 @@ export interface PlanGenerationMeta {
   attempts: number
   lastError?: string
   lastAttemptAt?: number
+  durationMs?: number
+  chunkCount?: number
+  strategy?: 'single' | 'pairs'
+  batchId?: string
+}
+
+export interface PlanGenerationSummary {
+  startedAt: number
+  completedAt?: number
+  totalDurationMs?: number
+  strategy: 'single' | 'pairs'
+  completedWeeks: number
+  failedWeeks: number[]
+  totalAttempts: number
+  acceptedAt?: number
+  discardedAt?: number
 }
 
 export interface PlanValidationIssue {
@@ -60,6 +76,7 @@ export interface TrainingPlan {
   updatedAt: number
   acceptedAt?: number
   notes?: string
+  generationSummary?: PlanGenerationSummary
 }
 
 export interface TrainingPlanWeek {

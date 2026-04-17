@@ -7,6 +7,7 @@ import * as syncService from '../syncService'
 import { useCoachActionsStore } from '../../store/useCoachActionsStore'
 import { useTrainingStore } from '../../store/useTrainingStore'
 import { fromISO, toISO } from '../../utils/date'
+import { validatePlan } from './validator'
 
 export interface CommitPlanResult {
   errors: string[]
@@ -137,6 +138,16 @@ export async function commitPlan(
     return { errors: readinessErrors, warnings, acceptedWeeks }
   }
 
+  const validationIssues = validatePlan({ plan, weeks: orderedWeeks })
+  const validationErrors = validationIssues
+    .filter((issue) => issue.severity === 'error')
+    .map((issue) => issue.message)
+  warnings.push(...validationIssues.filter((issue) => issue.severity !== 'error').map((issue) => issue.message))
+
+  if (validationErrors.length > 0) {
+    return { errors: validationErrors, warnings, acceptedWeeks }
+  }
+
   const appliedSnapshots: WeekCommitSnapshot[] = []
 
   for (const week of orderedWeeks) {
@@ -185,17 +196,24 @@ export async function commitPlan(
       status: 'active',
       acceptedAt: nowTs,
       updatedAt: nowTs,
+      generationSummary: plan.generationSummary
+        ? {
+          ...plan.generationSummary,
+          acceptedAt: plan.generationSummary.acceptedAt ?? nowTs,
+        }
+        : undefined,
     }
+    const nextWeeks = orderedWeeks.map((w) => ({
+      ...w,
+      status: acceptedWeeks.includes(w.weekIndex) ? 'accepted' : w.status,
+      updatedAt: nowTs,
+    }))
     await db.trainingPlans.put(nextPlan)
     await Promise.all(
-      orderedWeeks.map((w) =>
-        db.trainingPlanWeeks.put({
-          ...w,
-          status: acceptedWeeks.includes(w.weekIndex) ? 'accepted' : w.status,
-          updatedAt: nowTs,
-        }),
-      ),
+      nextWeeks.map((w) => db.trainingPlanWeeks.put(w)),
     )
+    void syncService.pushTrainingPlan(nextPlan)
+    void syncService.pushTrainingPlanWeeks(nextPlan, nextWeeks.filter((week) => week.status === 'accepted'))
   }
 
   return { errors, warnings, acceptedWeeks }

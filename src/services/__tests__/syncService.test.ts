@@ -9,6 +9,8 @@ const syncDetailsMock = vi.fn()
 let sessionsRows: unknown[] = []
 let dayLogRows: unknown[] = []
 let weekSummaryRows: unknown[] = []
+let trainingPlanRows: unknown[] = []
+let trainingPlanWeekRows: unknown[] = []
 let chatMessageRows: unknown[] = []
 let coachProposalRows: unknown[] = []
 let athleteProfileRows: unknown[] = []
@@ -102,6 +104,23 @@ vi.mock('../../db/db', () => ({
       bulkDelete: vi.fn(async () => {}),
       where: vi.fn(() => ({ equals: vi.fn(async () => undefined) })),
     },
+    trainingPlans: {
+      toArray: vi.fn(async () => trainingPlanRows),
+      count: vi.fn(async () => trainingPlanRows.length),
+      get: vi.fn(async () => undefined),
+      put: vi.fn(async () => {}),
+      delete: vi.fn(async () => {}),
+      bulkDelete: vi.fn(async () => {}),
+    },
+    trainingPlanWeeks: {
+      toArray: vi.fn(async () => trainingPlanWeekRows),
+      count: vi.fn(async () => trainingPlanWeekRows.length),
+      get: vi.fn(async () => undefined),
+      put: vi.fn(async () => {}),
+      delete: vi.fn(async () => {}),
+      bulkDelete: vi.fn(async () => {}),
+      where: vi.fn(() => ({ equals: vi.fn(() => ({ delete: vi.fn(async () => {}), toArray: vi.fn(async () => []) })) })),
+    },
     chatMessages: {
       toArray: vi.fn(async () => chatMessageRows),
       count: vi.fn(async () => chatMessageRows.length),
@@ -131,6 +150,8 @@ describe('syncService', () => {
     sessionsRows = []
     dayLogRows = []
     weekSummaryRows = []
+    trainingPlanRows = []
+    trainingPlanWeekRows = []
     chatMessageRows = []
     coachProposalRows = []
     athleteProfileRows = []
@@ -223,6 +244,85 @@ describe('syncService', () => {
     const weekSummaryUpsert = upsertCalls.find((call) => call.table === 'week_summaries')
     expect(weekSummaryUpsert).toBeTruthy()
     expect((weekSummaryUpsert?.payload as Array<Record<string, unknown>>)[0]?.updated_at).toBe(777)
+  })
+
+  it('migrates only active or archived plans and their weeks', async () => {
+    trainingPlanRows = [
+      {
+        id: 'plan-active',
+        athleteId: 'athlete-1',
+        goalEventId: 'evt-1',
+        status: 'active',
+        title: 'Plan activo',
+        startDate: '2026-04-14',
+        endDate: '2026-04-20',
+        totalWeeks: 1,
+        phases: [],
+        wizardConfig: {},
+        macroSnapshot: {},
+        createdAt: 1,
+        updatedAt: 2,
+      },
+      {
+        id: 'plan-draft',
+        athleteId: 'athlete-1',
+        goalEventId: 'evt-2',
+        status: 'draft',
+        title: 'Plan draft',
+        startDate: '2026-04-21',
+        endDate: '2026-04-27',
+        totalWeeks: 1,
+        phases: [],
+        wizardConfig: {},
+        macroSnapshot: {},
+        createdAt: 1,
+        updatedAt: 2,
+      },
+    ]
+    trainingPlanWeekRows = [
+      {
+        id: 'week-active',
+        planId: 'plan-active',
+        weekIndex: 0,
+        weekStartDate: '2026-04-14',
+        phase: 'build',
+        status: 'accepted',
+        sessions: [],
+        weekObjectives: [],
+        targetLoadBySport: {},
+        validationIssues: [],
+        generationMeta: { attempts: 1 },
+        createdAt: 1,
+        updatedAt: 2,
+      },
+      {
+        id: 'week-draft',
+        planId: 'plan-draft',
+        weekIndex: 0,
+        weekStartDate: '2026-04-21',
+        phase: 'build',
+        status: 'draft',
+        sessions: [],
+        weekObjectives: [],
+        targetLoadBySport: {},
+        validationIssues: [],
+        generationMeta: { attempts: 1 },
+        createdAt: 1,
+        updatedAt: 2,
+      },
+    ]
+
+    const syncService = await import('../syncService')
+    await syncService.migrateLocalDataToCloud('user-1')
+
+    const planUpsert = upsertCalls.find((call) => call.table === 'training_plans')
+    const weekUpsert = upsertCalls.find((call) => call.table === 'training_plan_weeks')
+    expect(planUpsert).toBeTruthy()
+    expect((planUpsert?.payload as Array<Record<string, unknown>>)).toHaveLength(1)
+    expect((planUpsert?.payload as Array<Record<string, unknown>>)[0]?.id).toBe('plan-active')
+    expect(weekUpsert).toBeTruthy()
+    expect((weekUpsert?.payload as Array<Record<string, unknown>>)).toHaveLength(1)
+    expect((weekUpsert?.payload as Array<Record<string, unknown>>)[0]?.id).toBe('week-active')
   })
 
   it('re-enqueues writes on retryable 401 auth errors instead of treating them as infrastructure', async () => {

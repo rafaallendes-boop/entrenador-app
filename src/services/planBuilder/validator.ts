@@ -89,6 +89,14 @@ function computeWeekLoad(sessions: CoachSessionProposal[]): number {
   return sessions.reduce((sum, s) => sum + (s.durationMin * (s.rpe ?? 6)), 0)
 }
 
+function countSessionsBySport(sessions: CoachSessionProposal[]): Partial<Record<SupportedSport, number>> {
+  return sessions.reduce<Partial<Record<SupportedSport, number>>>((counts, session) => {
+    const sport = session.sessionType as SupportedSport
+    counts[sport] = (counts[sport] ?? 0) + 1
+    return counts
+  }, {})
+}
+
 function validateLoadProgression(weeks: TrainingPlanWeek[]): PlanValidationIssue[] {
   const issues: PlanValidationIssue[] = []
   const generated = weeks.filter((w) => w.sessions.length > 0).sort((a, b) => a.weekIndex - b.weekIndex)
@@ -129,6 +137,63 @@ function validateSportDistribution(plan: TrainingPlan, weeks: TrainingPlanWeek[]
   return issues
 }
 
+function minimumPrimarySessions(primarySport: SupportedSport, phase: TrainingPlanWeek['phase']): number {
+  if (phase === 'transition') return 0
+  if (phase === 'build' || phase === 'peak') return primarySport === 'squash' ? 2 : 1
+  if (phase === 'taper' || phase === 'race' || phase === 'base') return 1
+  return 1
+}
+
+function validatePrimarySportCoherence(plan: TrainingPlan, weeks: TrainingPlanWeek[]): PlanValidationIssue[] {
+  const issues: PlanValidationIssue[] = []
+  const primarySport = plan.macroSnapshot.sportDetails.find((detail) => detail.role === 'primary')?.sport
+  if (!primarySport) return issues
+
+  for (const week of weeks) {
+    if (week.status !== 'draft' && week.status !== 'accepted') continue
+    if (!Array.isArray(week.sessions) || week.sessions.length === 0) continue
+
+    const counts = countSessionsBySport(week.sessions)
+    const primaryCount = counts[primarySport] ?? 0
+    const supportCount = Object.entries(counts).reduce((total, [sport, count]) => {
+      if (sport === primarySport) return total
+      return total + (count ?? 0)
+    }, 0)
+    const minimum = minimumPrimarySessions(primarySport, week.phase)
+
+    if (primaryCount === 0 && minimum > 0) {
+      issues.push({
+        severity: 'error',
+        code: 'week.primary_sport.missing',
+        message: `La semana ${week.weekIndex + 1} no incluye sesiones de ${primarySport}, aunque es el deporte principal del objetivo.`,
+        weekIndex: week.weekIndex,
+      })
+      continue
+    }
+
+    if (primaryCount < minimum) {
+      const sessionLabel = minimum > 1 ? 'sesiones' : 'sesión'
+      issues.push({
+        severity: 'error',
+        code: 'week.primary_sport.too_low',
+        message: `La semana ${week.weekIndex + 1} necesita al menos ${minimum} ${sessionLabel} de ${primarySport} para la fase ${week.phase}.`,
+        weekIndex: week.weekIndex,
+      })
+    }
+
+    if ((week.phase === 'build' || week.phase === 'peak') && primaryCount > 0 && primaryCount <= supportCount) {
+      issues.push({
+        severity: 'warning',
+        code: 'week.primary_sport.underweighted',
+        message: `La semana ${week.weekIndex + 1} deja demasiado protagonismo al trabajo accesorio frente a ${primarySport}.`,
+        weekIndex: week.weekIndex,
+      })
+    }
+  }
+
+  return issues
+}
+
 export function validatePlan(input: ValidatePlanInput): PlanValidationIssue[] {
   const { plan, weeks } = input
   return [
@@ -136,5 +201,6 @@ export function validatePlan(input: ValidatePlanInput): PlanValidationIssue[] {
     ...weeks.flatMap(validateWeekSessions),
     ...validateLoadProgression(weeks),
     ...validateSportDistribution(plan, weeks),
+    ...validatePrimarySportCoherence(plan, weeks),
   ]
 }

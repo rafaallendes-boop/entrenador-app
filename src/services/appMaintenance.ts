@@ -2,6 +2,7 @@ import { db } from '../db/db'
 import { useChatStore } from '../store/useChatStore'
 import { useCoachActionsStore } from '../store/useCoachActionsStore'
 import { useCoachMemoryStore } from '../store/useCoachMemoryStore'
+import { usePlanBuilderStore } from '../store/usePlanBuilderStore'
 import { useTrainingStore } from '../store/useTrainingStore'
 import { clearStoredChatSessionId, getOrCreateChatSessionId } from '../utils/chatSession'
 import { currentWeekStartISO, fromISO, toISO } from '../utils/date'
@@ -21,6 +22,8 @@ export interface LocalDataCounts {
     sessions: number
     dayLogs: number
     weekSummaries: number
+    trainingPlans: number
+    trainingPlanWeeks: number
   }
   chatHistory: number
   coachProposals: number
@@ -56,17 +59,25 @@ export async function deleteCoachSessionsByIds(ids: string[]): Promise<number> {
 }
 
 export async function getLocalDataCounts(): Promise<LocalDataCounts> {
-  const [sessions, dayLogs, weekSummaries, chatHistory, coachProposals, coachMemory] = await Promise.all([
+  const [sessions, dayLogs, weekSummaries, trainingPlans, trainingPlanWeeks, chatHistory, coachProposals, coachMemory] = await Promise.all([
     db.sessions.count(),
     db.dayLogs.count(),
     db.weekSummaries.count(),
+    db.trainingPlans.count(),
+    db.trainingPlanWeeks.count(),
     db.chatMessages.count(),
     db.coachProposals.count(),
     db.athleteProfiles.count(),
   ])
 
   return {
-    trainingData: { sessions, dayLogs, weekSummaries },
+    trainingData: {
+      sessions,
+      dayLogs,
+      weekSummaries,
+      trainingPlans,
+      trainingPlanWeeks,
+    },
     chatHistory,
     coachProposals,
     coachMemory,
@@ -82,12 +93,14 @@ export async function clearSelectedLocalAppData(selection: LocalDataSelection): 
 
   await db.transaction(
     'rw',
-    [db.sessions, db.dayLogs, db.weekSummaries, db.chatMessages, db.coachProposals, db.athleteProfiles],
+    [db.sessions, db.dayLogs, db.weekSummaries, db.trainingPlans, db.trainingPlanWeeks, db.chatMessages, db.coachProposals, db.athleteProfiles],
     async () => {
       if (selection.trainingData) {
         await db.sessions.clear()
         await db.dayLogs.clear()
         await db.weekSummaries.clear()
+        await db.trainingPlanWeeks.clear()
+        await db.trainingPlans.clear()
       }
       if (selection.chatHistory) {
         await db.chatMessages.clear()
@@ -123,6 +136,17 @@ function syncStoresAfterClear(selection: LocalDataSelection): void {
       allWeekSummaries: [],
       isLoading: false,
       loadedWeekStart: null,
+    })
+    usePlanBuilderStore.setState({
+      plan: null,
+      weeks: [],
+      issues: [],
+      status: 'idle',
+      currentWeekIndex: null,
+      completedWeeks: 0,
+      failedWeekIndexes: [],
+      streamingTextByWeekIndex: {},
+      lastError: null,
     })
   }
 

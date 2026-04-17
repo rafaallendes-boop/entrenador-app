@@ -220,6 +220,9 @@ function validateAction(obj: unknown): CoachAction | null {
         ...base,
         sessions,
       }
+      if (isValidDate(record.targetDate)) {
+        action.targetDate = record.targetDate
+      }
       if (Array.isArray(record.weekObjectives)) {
         action.weekObjectives = record.weekObjectives.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
       }

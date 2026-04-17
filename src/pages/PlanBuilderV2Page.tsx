@@ -32,7 +32,7 @@ export default function PlanBuilderV2Page() {
   const navigate = useNavigate()
   const athleteProfile = useCoachMemoryStore((s) => s.athleteProfile)
   const {
-    plan, weeks, issues, status, currentWeekIndex, lastError,
+    plan, weeks, issues, status, currentWeekIndex, completedWeeks, failedWeekIndexes, streamingTextByWeekIndex, lastError,
     createDraft, runGeneration, regenerateWeek, acceptPlan, discard,
   } = usePlanBuilderStore()
 
@@ -74,6 +74,10 @@ export default function PlanBuilderV2Page() {
   const errors = issues.filter((i) => i.severity === 'error')
   const warnings = issues.filter((i) => i.severity === 'warning')
   const hasIncompleteWeeks = weeks.length === 0 || weeks.some((week) => week.status !== 'draft' || week.sessions.length === 0)
+  const acceptBlockers = [
+    ...(hasIncompleteWeeks ? ['Completa o regenera todas las semanas antes de aceptar el plan.'] : []),
+    ...errors.map((issue) => issue.message),
+  ]
 
   if (!athleteProfile?.planWizardConfig || !goalEvent) {
     return (
@@ -117,6 +121,11 @@ export default function PlanBuilderV2Page() {
         <p className="text-xs text-ink-muted">
           {plan ? `${plan.totalWeeks} semanas · Inicio ${plan.startDate} · Evento ${plan.macroSnapshot.goalEventDate}` : 'Preparando plan…'}
         </p>
+        {plan?.generationSummary && (
+          <p className="mt-1 text-xs text-ink-faint">
+            Estrategia {plan.generationSummary.strategy} · {completedWeeks}/{weeks.length} semanas listas · {failedWeekIndexes.length} fallidas
+          </p>
+        )}
         {lastError && (
           <p className="mt-2 text-xs text-red-500">{lastError}</p>
         )}
@@ -186,13 +195,20 @@ export default function PlanBuilderV2Page() {
               )}
 
               {selectedWeek.sessions.length === 0 ? (
-                <p className="text-sm text-ink-muted italic">
-                  {selectedWeek.status === 'generating'
-                    ? 'Generando sesiones…'
-                    : selectedWeek.status === 'error'
-                    ? `Falló la generación. ${selectedWeek.generationMeta.lastError ?? ''}`
-                    : 'Sin sesiones todavía.'}
-                </p>
+                <div className="space-y-2">
+                  <p className="text-sm text-ink-muted italic">
+                    {selectedWeek.status === 'generating'
+                      ? 'Generando sesiones…'
+                      : selectedWeek.status === 'error'
+                      ? `Falló la generación. ${selectedWeek.generationMeta.lastError ?? ''}`
+                      : 'Sin sesiones todavía.'}
+                  </p>
+                  {selectedWeek.status === 'generating' && streamingTextByWeekIndex[selectedWeek.weekIndex] && (
+                    <div className="rounded-lg bg-surface-raised px-3 py-2 text-xs text-ink whitespace-pre-wrap">
+                      {streamingTextByWeekIndex[selectedWeek.weekIndex]}
+                    </div>
+                  )}
+                </div>
               ) : (
                 <div className="space-y-2">
                   {selectedWeek.sessions
@@ -243,29 +259,36 @@ export default function PlanBuilderV2Page() {
 
       {/* Actions */}
       {status !== 'done' && (
-        <div className="mt-4 flex flex-wrap gap-2">
-          <button
-            type="button"
-            disabled={status === 'generating' || status === 'committing' || errors.length > 0 || hasIncompleteWeeks}
-            onClick={async () => {
-              const result = await acceptPlan()
-              if (result.errors.length === 0) navigate(ROUTES.WEEK)
-            }}
-            className="rounded-xl bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
-          >
-            {status === 'committing' ? 'Guardando…' : 'Aceptar plan'}
-          </button>
-          <button
-            type="button"
-            disabled={status === 'generating' || status === 'committing'}
-            onClick={async () => {
-              await discard()
-              navigate(-1)
-            }}
-            className="rounded-xl bg-surface-raised px-4 py-2 text-sm font-semibold text-ink-muted hover:text-ink disabled:opacity-50"
-          >
-            Descartar
-          </button>
+        <div className="mt-4 space-y-2">
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              disabled={status === 'generating' || status === 'committing' || errors.length > 0 || hasIncompleteWeeks}
+              onClick={async () => {
+                const result = await acceptPlan()
+                if (result.errors.length === 0) navigate(ROUTES.WEEK)
+              }}
+              className="rounded-xl bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+            >
+              {status === 'committing' ? 'Guardando…' : 'Aceptar plan'}
+            </button>
+            <button
+              type="button"
+              disabled={status === 'generating' || status === 'committing'}
+              onClick={async () => {
+                await discard()
+                navigate(-1)
+              }}
+              className="rounded-xl bg-surface-raised px-4 py-2 text-sm font-semibold text-ink-muted hover:text-ink disabled:opacity-50"
+            >
+              Descartar
+            </button>
+          </div>
+          {acceptBlockers.length > 0 && status !== 'generating' && status !== 'committing' && (
+            <p className="text-xs text-ink-muted">
+              No se puede aceptar todavía: {acceptBlockers[0]}
+            </p>
+          )}
         </div>
       )}
     </div>

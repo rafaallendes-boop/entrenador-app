@@ -126,6 +126,13 @@ export function buildPlanShell(input: BuildPlanShellInput): BuildPlanShellResult
     macroSnapshot,
     createdAt: nowTs,
     updatedAt: nowTs,
+    generationSummary: {
+      startedAt: nowTs,
+      strategy: totalWeeks >= 8 ? 'pairs' : 'single',
+      completedWeeks: 0,
+      failedWeeks: [],
+      totalAttempts: 0,
+    },
   }
 
   const weeks: TrainingPlanWeek[] = weekPhases.map((phase, index) => {

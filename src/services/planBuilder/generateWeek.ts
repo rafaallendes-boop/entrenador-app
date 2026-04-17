@@ -11,30 +11,34 @@ export interface GenerateWeekInput {
   previousWeek?: TrainingPlanWeek
   profile: AthleteProfile
   wizardConfig: PlanWizardConfig
-  maxAttempts?: number
   temperature?: number
+  onChunk?: (chunk: string) => void
+  retryInstruction?: string
+  strictFormatting?: boolean
 }
 
 export interface GenerateWeekResult {
   sessions: CoachSessionProposal[]
   meta: {
     attempts: number
-    provider: string
+    provider: AIProvider['name']
     model?: string
     lastError?: string
     promptTokens?: number
     completionTokens?: number
+    durationMs?: number
+    chunkCount?: number
   }
 }
 
-function pickCreateWeekAction(actions: CoachAction[] | undefined, weekStartDate: string): CoachAction | undefined {
+export function pickCreateWeekAction(actions: CoachAction[] | undefined, weekStartDate: string): CoachAction | undefined {
   if (!actions || actions.length === 0) return undefined
   const forDate = actions.find((a) => a.type === 'create_week' && a.targetDate === weekStartDate)
   if (forDate) return forDate
   return actions.find((a) => a.type === 'create_week')
 }
 
-function filterSessionsToWeek(
+export function filterSessionsToWeek(
   sessions: CoachSessionProposal[],
   weekStartDate: string,
 ): CoachSessionProposal[] {
@@ -48,58 +52,98 @@ function filterSessionsToWeek(
   })
 }
 
+export function summarizeWeekGenerationError(
+  error: string | undefined,
+  week: TrainingPlanWeek,
+): string {
+  if (!error) {
+    return `La semana ${week.weekIndex + 1} debe contener sesiones válidas dentro del rango ${week.weekStartDate} a los 6 días siguientes.`
+  }
+  if (error.includes('fuera de la semana')) {
+    return `Todas las sesiones deben caer dentro de la semana que comienza el ${week.weekStartDate}.`
+  }
+  if (error.includes('no devolvió sesiones válidas')) {
+    return `Devuelve una acción create_week válida con targetDate=${week.weekStartDate} y sesiones no vacías.`
+  }
+  return `Corrige este problema del intento previo: ${error}`
+}
+
 export async function generateWeek(input: GenerateWeekInput): Promise<GenerateWeekResult> {
   const { provider, plan, week, previousWeek, profile, wizardConfig } = input
-  const maxAttempts = Math.max(1, input.maxAttempts ?? 3)
   const systemPrompt = buildWeekSystemPrompt()
-  const userMessage = buildWeekUserPrompt({ plan, week, previousWeek, profile, wizardConfig })
+  const userMessage = buildWeekUserPrompt({
+    plan,
+    week,
+    previousWeek,
+    profile,
+    wizardConfig,
+    retryInstruction: input.retryInstruction,
+    strictFormatting: input.strictFormatting,
+  })
 
-  let lastError: string | undefined
-  let attempts = 0
-  let lastModel: string | undefined
+  let chunkCount = 0
 
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    attempts++
-    const temperature = attempt === 0 ? (input.temperature ?? 0.4) : 0.25
-    try {
-      const raw = await provider.call({
-        systemPrompt,
-        userMessage,
-        maxTokens: 3500,
-        temperature,
-      })
-      lastModel = raw.model
-      const normalized = normalizeResponse(raw)
-      const action = pickCreateWeekAction(normalized.actions, week.weekStartDate)
-      if (!action || !Array.isArray(action.sessions) || action.sessions.length === 0) {
-        lastError = 'El modelo no devolvió sesiones válidas para la semana.'
-        continue
-      }
-      const sessions = filterSessionsToWeek(action.sessions, week.weekStartDate)
-      if (sessions.length === 0) {
-        lastError = 'Las sesiones devueltas cayeron fuera de la semana objetivo.'
-        continue
-      }
+  try {
+    const raw = await provider.call({
+      systemPrompt,
+      userMessage,
+      maxTokens: 3500,
+      temperature: input.temperature ?? 0.4,
+      onChunk: (chunk) => {
+        chunkCount += 1
+        input.onChunk?.(chunk)
+      },
+    })
+    const normalized = normalizeResponse(raw)
+    const action = pickCreateWeekAction(normalized.actions, week.weekStartDate)
+    if (!action || !Array.isArray(action.sessions) || action.sessions.length === 0) {
       return {
-        sessions,
+        sessions: [],
         meta: {
-          attempts,
+          attempts: 1,
           provider: provider.name,
-          model: lastModel,
+          model: raw.model,
+          lastError: 'El modelo no devolvió sesiones válidas para la semana.',
+          durationMs: raw.durationMs,
+          chunkCount,
         },
       }
-    } catch (error) {
-      lastError = error instanceof Error ? error.message : String(error)
     }
-  }
 
-  return {
-    sessions: [],
-    meta: {
-      attempts,
-      provider: provider.name,
-      model: lastModel,
-      lastError,
-    },
+    const sessions = filterSessionsToWeek(action.sessions, week.weekStartDate)
+    if (sessions.length === 0) {
+      return {
+        sessions: [],
+        meta: {
+          attempts: 1,
+          provider: provider.name,
+          model: raw.model,
+          lastError: 'Las sesiones devueltas cayeron fuera de la semana objetivo.',
+          durationMs: raw.durationMs,
+          chunkCount,
+        },
+      }
+    }
+
+    return {
+      sessions,
+      meta: {
+        attempts: 1,
+        provider: provider.name,
+        model: raw.model,
+        durationMs: raw.durationMs,
+        chunkCount,
+      },
+    }
+  } catch (error) {
+    return {
+      sessions: [],
+      meta: {
+        attempts: 1,
+        provider: provider.name,
+        lastError: error instanceof Error ? error.message : String(error),
+        chunkCount,
+      },
+    }
   }
 }

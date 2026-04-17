@@ -7,6 +7,8 @@ export type SupabaseTable =
   | 'chat_messages'
   | 'coach_proposals'
   | 'athlete_profiles'
+  | 'training_plans'
+  | 'training_plan_weeks'
 
 // ─── Typed error classification ──────────────────────────────────────────────
 

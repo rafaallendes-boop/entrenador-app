@@ -73,6 +73,8 @@ vi.mock('../syncService', () => ({
   deleteSession: vi.fn(),
   pushWeekSummary: vi.fn(),
   pushCoachProposal: vi.fn(),
+  pushTrainingPlan: vi.fn(),
+  pushTrainingPlanWeeks: vi.fn(),
 }))
 
 vi.mock('../../store/useCoachActionsStore', () => ({
@@ -166,18 +168,32 @@ function makeWeek(args: {
 }
 
 function makeProposalSession(date: string) {
-  return [{
-    date,
-    timeBlock: 'AM' as const,
-    sessionType: 'squash' as const,
-    title: `Sesion ${date}`,
-    durationMin: 60,
-    squashDetails: {
-      trainingFocus: 'technical' as const,
-      drills: [],
-      sessionMode: 'drill_session' as const,
+  return [
+    {
+      date,
+      timeBlock: 'AM' as const,
+      sessionType: 'squash' as const,
+      title: `Sesion ${date}`,
+      durationMin: 60,
+      squashDetails: {
+        trainingFocus: 'technical' as const,
+        drills: [],
+        sessionMode: 'drill_session' as const,
+      },
     },
-  }]
+    {
+      date,
+      timeBlock: 'PM' as const,
+      sessionType: 'squash' as const,
+      title: `Sesion tarde ${date}`,
+      durationMin: 45,
+      squashDetails: {
+        trainingFocus: 'tactical' as const,
+        drills: [],
+        sessionMode: 'drill_session' as const,
+      },
+    },
+  ]
 }
 
 function makeStoredSession(id: string, date: string, title: string): Session {
@@ -252,6 +268,27 @@ describe('commitPlan', () => {
     expect(coachActionsState.acceptProposal).not.toHaveBeenCalled()
     expect(trainingPlanPuts).toHaveLength(0)
     expect(trainingPlanWeekPuts).toHaveLength(0)
+  })
+
+  it('blocks commit when validation detects a missing primary sport week', async () => {
+    const result = await commitPlan(makePlan(1), [
+      makeWeek({
+        id: 'week-1',
+        weekIndex: 0,
+        weekStartDate: '2026-05-04',
+        sessions: [{
+          date: '2026-05-05',
+          timeBlock: 'AM',
+          sessionType: 'running',
+          title: 'Rodaje',
+          durationMin: 45,
+        }],
+      }),
+    ])
+
+    expect(result.errors.some((error) => error.includes('no incluye sesiones de squash'))).toBe(true)
+    expect(coachActionsState.addProposal).not.toHaveBeenCalled()
+    expect(trainingPlanPuts).toHaveLength(0)
   })
 
   it('rolls back previously accepted weeks when a later week fails', async () => {
