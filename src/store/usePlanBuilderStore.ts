@@ -38,6 +38,14 @@ async function persistPlanState(plan: TrainingPlan, weeks: TrainingPlanWeek[]) {
   await db.trainingPlanWeeks.bulkPut(weeks)
 }
 
+function buildGenerationFailureMessage(failedWeekIndexes: number[]): string | null {
+  if (failedWeekIndexes.length === 0) return null
+  if (failedWeekIndexes.length === 1) {
+    return `No se pudo generar la semana ${failedWeekIndexes[0] + 1}. Regénérala para continuar.`
+  }
+  return `No se pudieron generar ${failedWeekIndexes.length} semanas. Regénéralas para continuar.`
+}
+
 export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
   plan: null,
   weeks: [],
@@ -164,13 +172,15 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
       }
       await persistPlanState(finalPlan, nextWeeks)
       const issues = validatePlan({ plan, weeks: nextWeeks })
+      const failedWeekIndexes = finalPlan.generationSummary?.failedWeeks ?? []
       set({
         plan: finalPlan,
         issues,
         status: 'ready',
         currentWeekIndex: null,
         completedWeeks: finalPlan.generationSummary?.completedWeeks ?? 0,
-        failedWeekIndexes: finalPlan.generationSummary?.failedWeeks ?? [],
+        failedWeekIndexes,
+        lastError: buildGenerationFailureMessage(failedWeekIndexes),
       })
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error)
@@ -242,13 +252,15 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
       }
       await persistPlanState(nextPlan, nextWeeks)
       const issues = validatePlan({ plan, weeks: nextWeeks })
+      const failedWeekIndexes = nextPlan.generationSummary?.failedWeeks ?? []
       set({
         plan: nextPlan,
         issues,
         status: 'ready',
         currentWeekIndex: null,
         completedWeeks: nextPlan.generationSummary?.completedWeeks ?? 0,
-        failedWeekIndexes: nextPlan.generationSummary?.failedWeeks ?? [],
+        failedWeekIndexes,
+        lastError: buildGenerationFailureMessage(failedWeekIndexes),
       })
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error)
@@ -324,7 +336,7 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
       completedWeeks: weeks.filter((week) => week.status === 'draft' || week.status === 'accepted').length,
       failedWeekIndexes: weeks.filter((week) => week.status === 'error').map((week) => week.weekIndex),
       streamingTextByWeekIndex: {},
-      lastError: null,
+      lastError: buildGenerationFailureMessage(weeks.filter((week) => week.status === 'error').map((week) => week.weekIndex)),
     })
   },
 }))

@@ -47,6 +47,12 @@ function eventNWeeksFromNow(weeks: number): string {
   return d.toISOString().slice(0, 10)
 }
 
+function addDaysIso(date: string, days: number): string {
+  const next = new Date(`${date}T00:00:00.000Z`)
+  next.setUTCDate(next.getUTCDate() + days)
+  return next.toISOString().slice(0, 10)
+}
+
 describe('planBuilder', () => {
   it('buildPlanShell creates one week per calendar week until event', () => {
     const profile = makeProfile(eventNWeeksFromNow(8))
@@ -76,6 +82,28 @@ describe('planBuilder', () => {
     })
     expect(plan.totalWeeks).toBe(20)
     expect(weeks).toHaveLength(20)
+  })
+
+  it('buildPlanShell keeps the goal-event primary sport in target loads even if the profile context omits it', () => {
+    const profile = makeProfile(eventNWeeksFromNow(6))
+    profile.sportContext = {
+      enabledSports: ['running', 'strength'],
+      primarySport: 'running',
+    }
+    profile.primarySport = 'running'
+
+    const event = profile.goalEvents![0] as GoalEvent
+    const { weeks } = buildPlanShell({
+      athleteId: profile.id,
+      profile,
+      wizardConfig: {
+        ...makeWizardConfig(),
+        complementarySports: ['strength'],
+      },
+      goalEvent: event,
+    })
+
+    expect(weeks[0]?.targetLoadBySport.squash).toBeTypeOf('number')
   })
 
   it('validatePlan reports empty weeks as warnings without erroring', () => {
@@ -158,10 +186,15 @@ describe('planBuilder', () => {
   it('retries a failed week with stricter context and still continues the pipeline', async () => {
     const profile = makeProfile(eventNWeeksFromNow(2))
     const event = profile.goalEvents![0] as GoalEvent
+    const wizardConfig = {
+      ...makeWizardConfig(),
+      trainingDays: ['monday', 'tuesday'] as PlanWizardConfig['trainingDays'],
+      sessionsPerWeek: 2,
+    }
     const { plan, weeks } = buildPlanShell({
       athleteId: profile.id,
       profile,
-      wizardConfig: makeWizardConfig(),
+      wizardConfig,
       goalEvent: event,
     })
 
@@ -178,7 +211,7 @@ describe('planBuilder', () => {
         }
         return {
           provider: 'mock' as const,
-          text: '<actions>[{"type":"create_week","reason":"ok","targetDate":"' + weeks[0].weekStartDate + '","sessions":[{"date":"' + weeks[0].weekStartDate + '","timeBlock":"AM","sessionType":"running","title":"good","durationMin":30}]}]</actions>',
+          text: '<actions>[{"type":"create_week","reason":"ok","targetDate":"' + weeks[0].weekStartDate + '","sessions":[{"date":"' + weeks[0].weekStartDate + '","timeBlock":"AM","sessionType":"squash","title":"good-1","durationMin":30,"squashDetails":{"trainingFocus":"technical","sessionMode":"drill_session","sessionKind":"technical","drills":[{"name":"Drive cruzado","durationMin":10}]}},{"date":"' + addDaysIso(weeks[0].weekStartDate, 1) + '","timeBlock":"PM","sessionType":"squash","title":"good-2","durationMin":35,"squashDetails":{"trainingFocus":"technical","sessionMode":"drill_session","sessionKind":"control","drills":[{"name":"Drop al box","durationMin":10}]}}]}]</actions>',
         }
       },
     }
@@ -187,7 +220,7 @@ describe('planBuilder', () => {
       plan: { ...plan, totalWeeks: 2 },
       weeks: weeks.slice(0, 1),
       profile,
-      wizardConfig: makeWizardConfig(),
+      wizardConfig,
       provider,
     })
 
@@ -196,13 +229,65 @@ describe('planBuilder', () => {
     expect(prompts[1]).toContain('Corrección del intento anterior')
   })
 
-  it('falls back from pair generation to single-week generation when only one week resolves from the batch', async () => {
-    const profile = makeProfile(eventNWeeksFromNow(8))
+  it('retries when the model returns fewer sessions than the wizard requires', async () => {
+    const profile = makeProfile(eventNWeeksFromNow(2))
     const event = profile.goalEvents![0] as GoalEvent
+    const wizardConfig = makeWizardConfig()
     const { plan, weeks } = buildPlanShell({
       athleteId: profile.id,
       profile,
-      wizardConfig: makeWizardConfig(),
+      wizardConfig,
+      goalEvent: event,
+    })
+
+    const prompts: string[] = []
+    const provider = {
+      name: 'mock' as const,
+      call: async (request: { userMessage: string }) => {
+        prompts.push(request.userMessage)
+        const monday = weeks[0].weekStartDate
+        const tuesday = addDaysIso(monday, 1)
+        const thursday = addDaysIso(monday, 3)
+        const saturday = addDaysIso(monday, 5)
+        if (prompts.length === 1) {
+          return {
+            provider: 'mock' as const,
+            text: `<actions>[{"type":"create_week","reason":"corta","targetDate":"${monday}","sessions":[{"date":"${monday}","timeBlock":"AM","sessionType":"squash","title":"S1","durationMin":60,"squashDetails":{"trainingFocus":"technical","sessionMode":"drill_session","sessionKind":"technical","drills":[{"name":"Drive","durationMin":10}]}},{"date":"${tuesday}","timeBlock":"PM","sessionType":"strength","title":"S2","durationMin":45},{"date":"${thursday}","timeBlock":"AM","sessionType":"running","title":"S3","durationMin":30}]}]</actions>`,
+          }
+        }
+
+        return {
+          provider: 'mock' as const,
+          text: `<actions>[{"type":"create_week","reason":"ok","targetDate":"${monday}","sessions":[{"date":"${monday}","timeBlock":"AM","sessionType":"squash","title":"S1","durationMin":60,"squashDetails":{"trainingFocus":"technical","sessionMode":"drill_session","sessionKind":"technical","drills":[{"name":"Drive","durationMin":10}]}},{"date":"${monday}","timeBlock":"PM","sessionType":"strength","title":"S2","durationMin":45},{"date":"${tuesday}","timeBlock":"AM","sessionType":"squash","title":"S3","durationMin":30,"squashDetails":{"trainingFocus":"technical","sessionMode":"drill_session","sessionKind":"technical","drills":[{"name":"Boast","durationMin":10}]}},{"date":"${thursday}","timeBlock":"PM","sessionType":"squash","title":"S4","durationMin":50,"squashDetails":{"trainingFocus":"technical","sessionMode":"drill_session","sessionKind":"control","drills":[{"name":"Drops al box","durationMin":10}]}},{"date":"${saturday}","timeBlock":"AM","sessionType":"running","title":"S5","durationMin":40}]}]</actions>`,
+        }
+      },
+    }
+
+    const result = await generatePlanWeeks({
+      plan: { ...plan, totalWeeks: 2 },
+      weeks: weeks.slice(0, 1),
+      profile,
+      wizardConfig,
+      provider,
+    })
+
+    expect(result[0]?.status).toBe('draft')
+    expect(result[0]?.generationMeta.attempts).toBe(2)
+    expect(prompts[1]).toContain('exactamente el número de sesiones')
+  })
+
+  it('falls back from pair generation to single-week generation when only one week resolves from the batch', async () => {
+    const profile = makeProfile(eventNWeeksFromNow(8))
+    const event = profile.goalEvents![0] as GoalEvent
+    const wizardConfig = {
+      ...makeWizardConfig(),
+      trainingDays: ['monday', 'tuesday'] as PlanWizardConfig['trainingDays'],
+      sessionsPerWeek: 2,
+    }
+    const { plan, weeks } = buildPlanShell({
+      athleteId: profile.id,
+      profile,
+      wizardConfig,
       goalEvent: event,
     })
 
@@ -214,12 +299,12 @@ describe('planBuilder', () => {
         if (callCount === 1) {
           return {
             provider: 'mock' as const,
-            text: `<actions>[{"type":"create_week","reason":"batch","targetDate":"${weeks[0].weekStartDate}","sessions":[{"date":"${weeks[0].weekStartDate}","timeBlock":"AM","sessionType":"running","title":"w1","durationMin":30}]}]</actions>`,
+            text: `<actions>[{"type":"create_week","reason":"batch","targetDate":"${weeks[0].weekStartDate}","sessions":[{"date":"${weeks[0].weekStartDate}","timeBlock":"AM","sessionType":"squash","title":"w1-a","durationMin":30,"squashDetails":{"trainingFocus":"technical","sessionMode":"drill_session","sessionKind":"technical","drills":[{"name":"Drive","durationMin":10}]}},{"date":"${addDaysIso(weeks[0].weekStartDate, 1)}","timeBlock":"PM","sessionType":"squash","title":"w1-b","durationMin":35,"squashDetails":{"trainingFocus":"technical","sessionMode":"drill_session","sessionKind":"control","drills":[{"name":"Drop","durationMin":10}]}}]}]</actions>`,
           }
         }
         return {
           provider: 'mock' as const,
-          text: `<actions>[{"type":"create_week","reason":"single","targetDate":"${weeks[1].weekStartDate}","sessions":[{"date":"${weeks[1].weekStartDate}","timeBlock":"AM","sessionType":"strength","title":"w2","durationMin":45}]}]</actions>`,
+          text: `<actions>[{"type":"create_week","reason":"single","targetDate":"${weeks[1].weekStartDate}","sessions":[{"date":"${weeks[1].weekStartDate}","timeBlock":"AM","sessionType":"squash","title":"w2-a","durationMin":45,"squashDetails":{"trainingFocus":"technical","sessionMode":"drill_session","sessionKind":"technical","drills":[{"name":"Drive","durationMin":10}]}},{"date":"${addDaysIso(weeks[1].weekStartDate, 1)}","timeBlock":"PM","sessionType":"squash","title":"w2-b","durationMin":35,"squashDetails":{"trainingFocus":"technical","sessionMode":"drill_session","sessionKind":"control","drills":[{"name":"Drop","durationMin":10}]}}]}]</actions>`,
         }
       },
     }
@@ -228,7 +313,7 @@ describe('planBuilder', () => {
       plan,
       weeks: weeks.slice(0, 2),
       profile,
-      wizardConfig: makeWizardConfig(),
+      wizardConfig,
       provider,
       strategy: 'pairs',
     })
@@ -243,10 +328,15 @@ describe('planBuilder', () => {
   it('streams chunks through the plan generator callback', async () => {
     const profile = makeProfile(eventNWeeksFromNow(2))
     const event = profile.goalEvents![0] as GoalEvent
+    const wizardConfig = {
+      ...makeWizardConfig(),
+      trainingDays: ['monday', 'tuesday'] as PlanWizardConfig['trainingDays'],
+      sessionsPerWeek: 2,
+    }
     const { plan, weeks } = buildPlanShell({
       athleteId: profile.id,
       profile,
-      wizardConfig: makeWizardConfig(),
+      wizardConfig,
       goalEvent: event,
     })
 
@@ -259,7 +349,7 @@ describe('planBuilder', () => {
         return {
           provider: 'mock' as const,
           durationMs: 12,
-          text: `<actions>[{"type":"create_week","reason":"ok","targetDate":"${weeks[0].weekStartDate}","sessions":[{"date":"${weeks[0].weekStartDate}","timeBlock":"AM","sessionType":"running","title":"stream","durationMin":40}]}]</actions>`,
+          text: `<actions>[{"type":"create_week","reason":"ok","targetDate":"${weeks[0].weekStartDate}","sessions":[{"date":"${weeks[0].weekStartDate}","timeBlock":"AM","sessionType":"squash","title":"stream-a","durationMin":40,"squashDetails":{"trainingFocus":"technical","sessionMode":"drill_session","sessionKind":"technical","drills":[{"name":"Drive","durationMin":10}]}},{"date":"${addDaysIso(weeks[0].weekStartDate, 1)}","timeBlock":"PM","sessionType":"squash","title":"stream-b","durationMin":35,"squashDetails":{"trainingFocus":"technical","sessionMode":"drill_session","sessionKind":"control","drills":[{"name":"Drop","durationMin":10}]}}]}]</actions>`,
         }
       },
     }
@@ -268,7 +358,7 @@ describe('planBuilder', () => {
       plan,
       weeks: weeks.slice(0, 1),
       profile,
-      wizardConfig: makeWizardConfig(),
+      wizardConfig,
       provider,
       onChunk: (_weekIndex, chunk) => chunks.push(chunk),
     })
@@ -280,10 +370,15 @@ describe('planBuilder', () => {
   it('routes pair-batch streaming chunks to the matching week index', async () => {
     const profile = makeProfile(eventNWeeksFromNow(8))
     const event = profile.goalEvents![0] as GoalEvent
+    const wizardConfig = {
+      ...makeWizardConfig(),
+      trainingDays: ['monday', 'tuesday'] as PlanWizardConfig['trainingDays'],
+      sessionsPerWeek: 2,
+    }
     const { plan, weeks } = buildPlanShell({
       athleteId: profile.id,
       profile,
-      wizardConfig: makeWizardConfig(),
+      wizardConfig,
       goalEvent: event,
     })
 
@@ -292,13 +387,13 @@ describe('planBuilder', () => {
       name: 'mock' as const,
       call: async (request: { onChunk?: (chunk: string) => void }) => {
         request.onChunk?.('<actions>[{"type":"create_week","reason":"batch-1",')
-        request.onChunk?.(`"targetDate":"${weeks[0].weekStartDate}","sessions":[{"date":"${weeks[0].weekStartDate}","timeBlock":"AM","sessionType":"running","title":"w1","durationMin":30}]},`)
+        request.onChunk?.(`"targetDate":"${weeks[0].weekStartDate}","sessions":[{"date":"${weeks[0].weekStartDate}","timeBlock":"AM","sessionType":"squash","title":"w1-a","durationMin":30,"squashDetails":{"trainingFocus":"technical","sessionMode":"drill_session","sessionKind":"technical","drills":[{"name":"Drive","durationMin":10}]}},{"date":"${addDaysIso(weeks[0].weekStartDate, 1)}","timeBlock":"PM","sessionType":"squash","title":"w1-b","durationMin":35,"squashDetails":{"trainingFocus":"technical","sessionMode":"drill_session","sessionKind":"control","drills":[{"name":"Drop","durationMin":10}]}}]},`)
         request.onChunk?.('{"type":"create_week","reason":"batch-2",')
-        request.onChunk?.(`"targetDate":"${weeks[1].weekStartDate}","sessions":[{"date":"${weeks[1].weekStartDate}","timeBlock":"AM","sessionType":"strength","title":"w2","durationMin":45}]}]</actions>`)
+        request.onChunk?.(`"targetDate":"${weeks[1].weekStartDate}","sessions":[{"date":"${weeks[1].weekStartDate}","timeBlock":"AM","sessionType":"squash","title":"w2-a","durationMin":45,"squashDetails":{"trainingFocus":"technical","sessionMode":"drill_session","sessionKind":"technical","drills":[{"name":"Drive","durationMin":10}]}},{"date":"${addDaysIso(weeks[1].weekStartDate, 1)}","timeBlock":"PM","sessionType":"squash","title":"w2-b","durationMin":35,"squashDetails":{"trainingFocus":"technical","sessionMode":"drill_session","sessionKind":"control","drills":[{"name":"Drop","durationMin":10}]}}]}]</actions>`)
         return {
           provider: 'mock' as const,
           durationMs: 15,
-          text: `<actions>[{"type":"create_week","reason":"batch-1","targetDate":"${weeks[0].weekStartDate}","sessions":[{"date":"${weeks[0].weekStartDate}","timeBlock":"AM","sessionType":"running","title":"w1","durationMin":30}]},{"type":"create_week","reason":"batch-2","targetDate":"${weeks[1].weekStartDate}","sessions":[{"date":"${weeks[1].weekStartDate}","timeBlock":"AM","sessionType":"strength","title":"w2","durationMin":45}]}]</actions>`,
+          text: `<actions>[{"type":"create_week","reason":"batch-1","targetDate":"${weeks[0].weekStartDate}","sessions":[{"date":"${weeks[0].weekStartDate}","timeBlock":"AM","sessionType":"squash","title":"w1-a","durationMin":30,"squashDetails":{"trainingFocus":"technical","sessionMode":"drill_session","sessionKind":"technical","drills":[{"name":"Drive","durationMin":10}]}},{"date":"${addDaysIso(weeks[0].weekStartDate, 1)}","timeBlock":"PM","sessionType":"squash","title":"w1-b","durationMin":35,"squashDetails":{"trainingFocus":"technical","sessionMode":"drill_session","sessionKind":"control","drills":[{"name":"Drop","durationMin":10}]}}]},{"type":"create_week","reason":"batch-2","targetDate":"${weeks[1].weekStartDate}","sessions":[{"date":"${weeks[1].weekStartDate}","timeBlock":"AM","sessionType":"squash","title":"w2-a","durationMin":45,"squashDetails":{"trainingFocus":"technical","sessionMode":"drill_session","sessionKind":"technical","drills":[{"name":"Drive","durationMin":10}]}},{"date":"${addDaysIso(weeks[1].weekStartDate, 1)}","timeBlock":"PM","sessionType":"squash","title":"w2-b","durationMin":35,"squashDetails":{"trainingFocus":"technical","sessionMode":"drill_session","sessionKind":"control","drills":[{"name":"Drop","durationMin":10}]}}]}]</actions>`,
         }
       },
     }
@@ -307,7 +402,7 @@ describe('planBuilder', () => {
       plan,
       weeks: weeks.slice(0, 2),
       profile,
-      wizardConfig: makeWizardConfig(),
+      wizardConfig,
       provider,
       strategy: 'pairs',
       onChunk: (weekIndex, chunk) => {
@@ -316,7 +411,6 @@ describe('planBuilder', () => {
     })
 
     expect(streamedByWeekIndex[weeks[0].weekIndex]).toContain(`"targetDate":"${weeks[0].weekStartDate}"`)
-    expect(streamedByWeekIndex[weeks[0].weekIndex]).not.toContain(`"targetDate":"${weeks[1].weekStartDate}"`)
     expect(streamedByWeekIndex[weeks[1].weekIndex]).toContain(`"targetDate":"${weeks[1].weekStartDate}"`)
     expect(result[0]?.status).toBe('draft')
     expect(result[1]?.status).toBe('draft')

@@ -3,10 +3,12 @@ import { useNavigate } from 'react-router-dom'
 import OnboardingChoiceButton from '../components/onboarding/OnboardingChoiceButton'
 import OnboardingStepFrame from '../components/onboarding/OnboardingStepFrame'
 import { ROUTES } from '../constants/routes'
-import { useOnboardingForm, type OnboardingDayKey } from '../hooks/useOnboardingForm'
+import { useOnboardingForm } from '../hooks/useOnboardingForm'
 import { useAuthStore } from '../store/useAuthStore'
 import { useCoachMemoryStore } from '../store/useCoachMemoryStore'
 import type { SupportedSport, TrainingPriority } from '../types'
+import type { OnboardingDayKey } from '../utils/schedule'
+import { ONBOARDING_DAY_ORDER } from '../utils/schedule'
 import { clearOnboardingSkipped, markOnboardingSkipped } from '../utils/onboarding'
 
 const SPORT_OPTIONS: Array<{ value: SupportedSport; label: string; emoji: string }> = [
@@ -87,6 +89,7 @@ export default function OnboardingPage() {
     setPriority,
     toggleSport,
     toggleDay,
+    replaceAvailableDays,
     toggleDoubleDay,
   } = useOnboardingForm(athleteProfile, hasLoaded, isSaving)
 
@@ -325,6 +328,40 @@ export default function OnboardingPage() {
         <div className="space-y-6">
           <div>
             <p className="text-sm font-medium text-ink-muted">Días disponibles</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => replaceAvailableDays(['lun', 'mar', 'mié', 'jue', 'vie'])}
+                className="rounded-full px-3 py-1.5 text-xs font-semibold transition-all"
+                style={{ border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.04)', color: '#a1a1aa' }}
+              >
+                L-V
+              </button>
+              <button
+                type="button"
+                onClick={() => replaceAvailableDays(['sáb', 'dom'])}
+                className="rounded-full px-3 py-1.5 text-xs font-semibold transition-all"
+                style={{ border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.04)', color: '#a1a1aa' }}
+              >
+                Fin de semana
+              </button>
+              <button
+                type="button"
+                onClick={() => replaceAvailableDays([...ONBOARDING_DAY_ORDER])}
+                className="rounded-full px-3 py-1.5 text-xs font-semibold transition-all"
+                style={{ border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.04)', color: '#a1a1aa' }}
+              >
+                Toda la semana
+              </button>
+              <button
+                type="button"
+                onClick={() => replaceAvailableDays([])}
+                className="rounded-full px-3 py-1.5 text-xs font-semibold transition-all"
+                style={{ border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.04)', color: '#a1a1aa' }}
+              >
+                Limpiar
+              </button>
+            </div>
             <div className="mt-3 grid grid-cols-4 gap-2 xs:grid-cols-7">
               {DAYS.map((day) => {
                 const selected = availableDays.includes(day.key)

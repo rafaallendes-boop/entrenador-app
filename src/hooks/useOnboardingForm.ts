@@ -1,9 +1,15 @@
 import { useMemo, useState } from 'react'
 import type { AthleteProfile, SupportedSport, TrainingPriority } from '../types'
 import { getEnabledSports, getPrimarySportNormalized } from '../utils/athlete'
+import {
+  type OnboardingDayKey,
+  ONBOARDING_DAY_ORDER,
+  orderSelectedValues,
+  replaceOrderedValues,
+  toggleOrderedValue,
+} from '../utils/schedule'
 
 export type OnboardingStep = 1 | 2 | 3 | 4
-export type OnboardingDayKey = 'lun' | 'mar' | 'mié' | 'jue' | 'vie' | 'sáb' | 'dom'
 
 interface OnboardingFormState {
   step: OnboardingStep
@@ -24,6 +30,7 @@ interface UseOnboardingFormResult extends OnboardingFormState {
   setPriority: (priority: TrainingPriority) => void
   toggleSport: (sport: SupportedSport) => void
   toggleDay: (day: OnboardingDayKey) => void
+  replaceAvailableDays: (days: OnboardingDayKey[]) => void
   toggleDoubleDay: (day: OnboardingDayKey) => void
 }
 
@@ -47,8 +54,11 @@ function buildStateFromProfile(profile: AthleteProfile | null | undefined): Omit
     selectedSports: enabledSports,
     primarySport: getPrimarySportNormalized(profile) ?? null,
     priority: profile?.sportContext?.trainingPriority ?? null,
-    availableDays,
-    doubleSessionDays: doubleSessionDays.filter((day) => availableDays.includes(day)),
+    availableDays: orderSelectedValues(availableDays, ONBOARDING_DAY_ORDER),
+    doubleSessionDays: orderSelectedValues(
+      doubleSessionDays.filter((day) => availableDays.includes(day)),
+      ONBOARDING_DAY_ORDER,
+    ),
   }
 }
 
@@ -109,9 +119,18 @@ export function useOnboardingForm(
     toggleDay: (day) =>
       setDraftState((current) => {
         const resolvedState = current ?? baseState
-        const availableDays = resolvedState.availableDays.includes(day)
-          ? resolvedState.availableDays.filter((item) => item !== day)
-          : [...resolvedState.availableDays, day]
+        const availableDays = toggleOrderedValue(resolvedState.availableDays, day, ONBOARDING_DAY_ORDER)
+
+        return {
+          ...resolvedState,
+          availableDays,
+          doubleSessionDays: resolvedState.doubleSessionDays.filter((item) => availableDays.includes(item)),
+        }
+      }),
+    replaceAvailableDays: (days) =>
+      setDraftState((current) => {
+        const resolvedState = current ?? baseState
+        const availableDays = replaceOrderedValues(resolvedState.availableDays, days, ONBOARDING_DAY_ORDER)
 
         return {
           ...resolvedState,
@@ -125,9 +144,7 @@ export function useOnboardingForm(
 
         return {
           ...resolvedState,
-          doubleSessionDays: resolvedState.doubleSessionDays.includes(day)
-            ? resolvedState.doubleSessionDays.filter((item) => item !== day)
-            : [...resolvedState.doubleSessionDays, day],
+          doubleSessionDays: toggleOrderedValue(resolvedState.doubleSessionDays, day, ONBOARDING_DAY_ORDER),
         }
       }),
   }

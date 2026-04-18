@@ -59,6 +59,9 @@ function buildPrimarySportRule(plan: TrainingPlan, week: TrainingPlanWeek): stri
       : ''
 
   lines.push(`- Regla crítica: incluye al menos ${minimumSessions} sesión${minimumSessions > 1 ? 'es' : ''} de ${primarySport} dentro de esta semana.${emphasis}`)
+  if (primarySport === 'squash' && plan.wizardConfig.sessionsPerWeek >= 5) {
+    lines.push('- Como el objetivo principal es squash y la semana tiene alto volumen, squash debe ocupar la mayoría de las sesiones.')
+  }
   return lines
 }
 
@@ -93,6 +96,7 @@ export function buildWeekSystemPrompt(): string {
     'La acción create_week debe incluir: type, targetDate (lunes de la semana), reason corto, sessions[] y weekObjectives[].',
     'Cada sesión incluye: date (YYYY-MM-DD dentro de la semana), timeBlock (AM/PM), sessionType, title, durationMin, objective. Añade subtype/runningType/squashDetails/cyclingDetails/mobilityDetails/exercises/intervalStructure cuando aporten.',
     'Respeta strictamente la fase indicada, objetivos de carga y deportes permitidos.',
+    'Debes respetar exactamente el número de sesiones pedido por el wizard y todas deben quedar dentro de los días permitidos.',
     'No inventes sesiones fuera de los días permitidos. No dupliques misma fecha+timeBlock.',
   ].join('\n')
 }
@@ -129,6 +133,7 @@ export function buildWeekUserPrompt(input: WeekPromptInput): string {
     `Configuración del wizard:`,
     `- Días permitidos: ${days}`,
     `- Sesiones por semana: ${wizardConfig.sessionsPerWeek}`,
+    `- Regla crítica de cantidad: devuelve EXACTAMENTE ${wizardConfig.sessionsPerWeek} sesiones para esta semana.`,
     `- Duración por sesión: ${wizardConfig.sessionDurationMins} min`,
     `- Doble sesión permitido: ${wizardConfig.allowDoubleSession ? 'sí' : 'no'}`,
     `- Nivel actual: ${wizardConfig.currentFitnessLevel} · Fatiga: ${wizardConfig.currentFatigue}`,
@@ -177,6 +182,7 @@ export function buildWeekBatchUserPrompt(input: WeekBatchPromptInput): string {
     'Configuración del wizard:',
     `- Días permitidos: ${days}`,
     `- Sesiones por semana: ${wizardConfig.sessionsPerWeek}`,
+    `- Regla crítica de cantidad: cada semana debe tener EXACTAMENTE ${wizardConfig.sessionsPerWeek} sesiones.`,
     `- Duración por sesión: ${wizardConfig.sessionDurationMins} min`,
     `- Doble sesión permitido: ${wizardConfig.allowDoubleSession ? 'sí' : 'no'}`,
     `- Nivel actual: ${wizardConfig.currentFitnessLevel} · Fatiga: ${wizardConfig.currentFatigue}`,

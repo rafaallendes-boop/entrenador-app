@@ -7,6 +7,14 @@ import { useCoachMemoryStore } from '../store/useCoachMemoryStore'
 import { computeMacroPlan, getPrimaryGoalEvent, getPhaseLabel } from '../services/macroPlan'
 import { getPlanWizardDefaultComplementarySports } from '../services/planningConstraints'
 import { getEnabledSports } from '../utils/athlete'
+import {
+  DAY_OF_WEEK_ORDER,
+  clampSessionsPerWeekToAvailability,
+  mapOnboardingDaysToTrainingDays,
+  orderSelectedValues,
+  replaceOrderedValues,
+  toggleOrderedValue,
+} from '../utils/schedule'
 import { v4 as uuid } from '../utils/uuid'
 import type {
   GoalEventType,
@@ -118,11 +126,17 @@ function getSportForEventType(eventType: GoalEventType | undefined): SupportedSp
 }
 
 function initWizardState(
+  athleteProfile: ReturnType<typeof useCoachMemoryStore.getState>['athleteProfile'],
   existingEvent: ReturnType<typeof getPrimaryGoalEvent>,
   existingConfig: import('../types').PlanWizardConfig | undefined,
 ): WizardState {
   const primarySportForEvent = getSportForEventType(existingEvent?.eventType)
   const defaultComplementary = getPlanWizardDefaultComplementarySports(existingConfig, primarySportForEvent)
+  const trainingDays = orderSelectedValues(
+    existingConfig?.trainingDays ?? mapOnboardingDaysToTrainingDays(athleteProfile?.scheduleProfile?.availableDays),
+    DAY_OF_WEEK_ORDER,
+  )
+  const allowDoubleSession = existingConfig?.allowDoubleSession ?? false
 
   return {
     eventType: existingEvent?.eventType,
@@ -130,10 +144,15 @@ function initWizardState(
     eventDate: existingEvent?.date ?? '',
     objective: existingEvent?.objective,
     competitiveLevel: existingEvent?.competitiveLevel,
-    trainingDays: existingConfig?.trainingDays ?? [],
-    sessionsPerWeek: existingConfig?.sessionsPerWeek,
+    trainingDays,
+    sessionsPerWeek: clampSessionsPerWeekToAvailability(
+      existingConfig?.sessionsPerWeek
+        ?? (trainingDays.length >= 2 ? Math.min(trainingDays.length, Math.max(...SESSIONS_PER_WEEK_OPTIONS)) : undefined),
+      trainingDays,
+      allowDoubleSession,
+    ),
     sessionDurationMins: existingConfig?.sessionDurationMins,
-    allowDoubleSession: existingConfig?.allowDoubleSession ?? false,
+    allowDoubleSession,
     complementarySports: defaultComplementary,
     fitnessLevel: existingConfig?.currentFitnessLevel,
     fatigue: existingConfig?.currentFatigue,
@@ -220,11 +239,13 @@ export default function CompetitionPlanPage() {
   const [isSaving, setIsSaving] = useState(false)
   const [showDeletePlanConfirm, setShowDeletePlanConfirm] = useState(false)
   const [state, setState] = useState<WizardState>(() =>
-    initWizardState(existingEvent, existingConfig)
+    initWizardState(athleteProfile, existingEvent, existingConfig)
   )
 
   const update = (patch: Partial<WizardState>) =>
     setState(prev => ({ ...prev, ...patch }))
+  const updateWith = (recipe: (prev: WizardState) => WizardState) =>
+    setState(prev => recipe(prev))
 
   // Compute macro plan context for the summary step
   const macroPlan = useMemo(() => computeMacroPlan(athleteProfile), [athleteProfile])
@@ -278,7 +299,7 @@ export default function CompetitionPlanPage() {
         planWizardConfig: undefined,
         macroPlan: undefined,
       })
-      setState(initWizardState(undefined, undefined))
+      setState(initWizardState(athleteProfile, undefined, undefined))
       setStep(1)
     } finally {
       setIsSaving(false)
@@ -357,7 +378,7 @@ export default function CompetitionPlanPage() {
         {step === 1 && <Step1EventType state={state} update={update} />}
         {step === 2 && <Step2EventDate state={state} update={update} weeks={weeks} />}
         {step === 3 && <Step3Objective state={state} update={update} />}
-        {step === 4 && <Step4Schedule state={state} update={update} />}
+        {step === 4 && <Step4Schedule state={state} update={update} updateWith={updateWith} />}
         {step === 5 && (
           <Step5ComplementarySports
             state={state}
@@ -592,16 +613,35 @@ function Step3Objective({
 function Step4Schedule({
   state,
   update,
+  updateWith,
 }: {
   state: WizardState
   update: (p: Partial<WizardState>) => void
+  updateWith: (recipe: (prev: WizardState) => WizardState) => void
 }) {
   function toggleDay(day: DayOfWeek) {
-    const days = state.trainingDays.includes(day)
-      ? state.trainingDays.filter(d => d !== day)
-      : [...state.trainingDays, day]
-    update({ trainingDays: days })
+    updateWith((current) => {
+      const trainingDays = toggleOrderedValue(current.trainingDays, day, DAY_OF_WEEK_ORDER)
+      return {
+        ...current,
+        trainingDays,
+        sessionsPerWeek: clampSessionsPerWeekToAvailability(current.sessionsPerWeek, trainingDays, current.allowDoubleSession),
+      }
+    })
   }
+
+  function replaceTrainingDays(days: DayOfWeek[]) {
+    updateWith((current) => {
+      const trainingDays = replaceOrderedValues(current.trainingDays, days, DAY_OF_WEEK_ORDER)
+      return {
+        ...current,
+        trainingDays,
+        sessionsPerWeek: clampSessionsPerWeekToAvailability(current.sessionsPerWeek, trainingDays, current.allowDoubleSession),
+      }
+    })
+  }
+
+  const maxSessions = state.trainingDays.length * (state.allowDoubleSession ? 2 : 1)
 
   return (
     <div>
@@ -610,6 +650,20 @@ function Step4Schedule({
       <Hint>Con esto diseño la carga real que puedes sostener, sin comprometerte de más.</Hint>
 
       <label className="text-sm font-medium text-ink block mb-2">Días disponibles</label>
+      <div className="flex flex-wrap gap-2 mb-3">
+        <button type="button" onClick={() => replaceTrainingDays(['monday', 'tuesday', 'wednesday', 'thursday', 'friday'])} className={chipCls(false)}>
+          L-V
+        </button>
+        <button type="button" onClick={() => replaceTrainingDays(['saturday', 'sunday'])} className={chipCls(false)}>
+          Fin de semana
+        </button>
+        <button type="button" onClick={() => replaceTrainingDays([...DAY_OF_WEEK_ORDER])} className={chipCls(false)}>
+          Toda la semana
+        </button>
+        <button type="button" onClick={() => replaceTrainingDays([])} className={chipCls(false)}>
+          Limpiar
+        </button>
+      </div>
       <div className="flex gap-2 mb-5">
         {DAYS_OF_WEEK.map(d => (
           <button
@@ -630,12 +684,18 @@ function Step4Schedule({
             key={n}
             type="button"
             onClick={() => update({ sessionsPerWeek: n })}
-            className={chipCls(state.sessionsPerWeek === n)}
+            disabled={maxSessions > 0 ? n > maxSessions : true}
+            className={`${chipCls(state.sessionsPerWeek === n)} disabled:cursor-not-allowed disabled:opacity-30`}
           >
             {n}
           </button>
         ))}
       </div>
+      {state.trainingDays.length > 0 && (
+        <p className="text-xs text-ink-faint mb-5">
+          Máximo posible con tu selección actual: {maxSessions} sesión(es){state.allowDoubleSession ? ' considerando doble sesión.' : ' sin doble sesión.'}
+        </p>
+      )}
 
       <label className="text-sm font-medium text-ink block mb-2">Duración por sesión</label>
       <div className="flex flex-wrap gap-2 mb-5">
@@ -658,7 +718,14 @@ function Step4Schedule({
         </div>
         <button
           type="button"
-          onClick={() => update({ allowDoubleSession: !state.allowDoubleSession })}
+          onClick={() => updateWith((current) => {
+            const allowDoubleSession = !current.allowDoubleSession
+            return {
+              ...current,
+              allowDoubleSession,
+              sessionsPerWeek: clampSessionsPerWeekToAvailability(current.sessionsPerWeek, current.trainingDays, allowDoubleSession),
+            }
+          })}
           className={`relative w-11 h-6 rounded-full transition-colors ${state.allowDoubleSession ? 'bg-brand' : 'bg-surface-border'}`}
         >
           <span

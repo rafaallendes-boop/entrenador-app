@@ -151,6 +151,29 @@ function validateWeekConstraints(plan: TrainingPlan, week: TrainingPlanWeek): Pl
   return issues
 }
 
+function validateSportDistributionForWeek(plan: TrainingPlan, week: TrainingPlanWeek): PlanValidationIssue[] {
+  const issues: PlanValidationIssue[] = []
+  const allowed = new Set<SupportedSport>(
+    [
+      ...plan.macroSnapshot.sportDetails.map((d) => d.sport),
+      ...(plan.wizardConfig.complementarySports as SupportedSport[]),
+    ],
+  )
+
+  for (const session of week.sessions) {
+    if (!allowed.has(session.sessionType as SupportedSport)) {
+      issues.push({
+        severity: 'error',
+        code: 'session.sport.not_allowed',
+        message: `Sesión con deporte no permitido: ${session.sessionType} (${session.date}).`,
+        weekIndex: week.weekIndex,
+      })
+    }
+  }
+
+  return issues
+}
+
 function computeWeekLoad(sessions: CoachSessionProposal[]): number {
   return sessions.reduce((sum, s) => sum + (s.durationMin * (s.rpe ?? 6)), 0)
 }
@@ -183,25 +206,6 @@ function validateLoadProgression(weeks: TrainingPlanWeek[]): PlanValidationIssue
   return issues
 }
 
-function validateSportDistribution(plan: TrainingPlan, weeks: TrainingPlanWeek[]): PlanValidationIssue[] {
-  const issues: PlanValidationIssue[] = []
-  const allowed = new Set<SupportedSport>(
-    plan.macroSnapshot.sportDetails.map((d) => d.sport),
-  )
-  for (const week of weeks) {
-    for (const session of week.sessions) {
-      if (!allowed.has(session.sessionType as SupportedSport)) {
-        issues.push({
-          severity: 'error',
-          code: 'session.sport.not_allowed',
-          message: `Sesión con deporte no permitido: ${session.sessionType} (${session.date}).`,
-          weekIndex: week.weekIndex,
-        })
-      }
-    }
-  }
-  return issues
-}
 
 function minimumPrimarySessions(primarySport: SupportedSport, phase: TrainingPlanWeek['phase']): number {
   if (phase === 'transition') return 0
@@ -260,14 +264,20 @@ function validatePrimarySportCoherence(plan: TrainingPlan, weeks: TrainingPlanWe
   return issues
 }
 
+export function validatePlanWeek(plan: TrainingPlan, week: TrainingPlanWeek): PlanValidationIssue[] {
+  return [
+    ...validateWeekSessions(week),
+    ...validateWeekConstraints(plan, week),
+    ...validateSportDistributionForWeek(plan, week),
+    ...validatePrimarySportCoherence(plan, [week]),
+  ]
+}
+
 export function validatePlan(input: ValidatePlanInput): PlanValidationIssue[] {
   const { plan, weeks } = input
   return [
     ...validateStructure(plan, weeks),
-    ...weeks.flatMap(validateWeekSessions),
-    ...weeks.flatMap((week) => validateWeekConstraints(plan, week)),
+    ...weeks.flatMap((week) => validatePlanWeek(plan, week)),
     ...validateLoadProgression(weeks),
-    ...validateSportDistribution(plan, weeks),
-    ...validatePrimarySportCoherence(plan, weeks),
   ]
 }

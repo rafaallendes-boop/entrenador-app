@@ -105,6 +105,9 @@ export function buildPlanShell(input: BuildPlanShellInput): BuildPlanShellResult
 
   const allowedSports: SupportedSport[] = Array.from(
     new Set<SupportedSport>([
+      ...(macroSnapshot.sportDetails
+        .filter((detail) => detail.role === 'primary')
+        .map((detail) => detail.sport)),
       ...(profile.sportContext?.enabledSports ?? []),
       ...wizardConfig.complementarySports,
     ]),

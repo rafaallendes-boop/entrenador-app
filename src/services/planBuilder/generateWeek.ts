@@ -3,6 +3,7 @@ import type { TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
 import type { AIProvider } from '../ai/types'
 import { normalizeResponse } from '../ai/responseNormalizer'
 import { buildWeekSystemPrompt, buildWeekUserPrompt } from './prompts/weekPrompt'
+import { validatePlanWeek } from './validator'
 
 export interface GenerateWeekInput {
   provider: AIProvider
@@ -70,7 +71,24 @@ export function summarizeWeekGenerationError(
   if (error.includes('no devolvió sesiones válidas')) {
     return `Devuelve una acción create_week válida con targetDate=${week.weekStartDate} y sesiones no vacías.`
   }
+  if (error.includes('tiene ') && error.includes('sesiones')) {
+    return `Devuelve exactamente el número de sesiones solicitado por el wizard para la semana que empieza el ${week.weekStartDate}.`
+  }
   return `Corrige este problema del intento previo: ${error}`
+}
+
+function getRetryableWeekIssueMessages(plan: TrainingPlan, week: TrainingPlanWeek): string[] {
+  const issues = validatePlanWeek(plan, week)
+
+  return issues
+    .filter((issue) =>
+      issue.severity === 'error'
+      || issue.code === 'week.sessions.count_mismatch'
+      || issue.code === 'week.sessions.out_of_allowed_day'
+      || issue.code === 'week.primary_sport.underweighted'
+      || issue.code.endsWith('missing_details'),
+    )
+    .map((issue) => issue.message)
 }
 
 export async function generateWeek(input: GenerateWeekInput): Promise<GenerateWeekResult> {
@@ -137,6 +155,25 @@ export async function generateWeek(input: GenerateWeekInput): Promise<GenerateWe
           provider: provider.name,
           model: raw.model,
           lastError: 'Las sesiones devueltas no respetaron exactamente la semana objetivo.',
+          durationMs: raw.durationMs,
+          chunkCount,
+        },
+      }
+    }
+
+    const retryableIssues = getRetryableWeekIssueMessages(plan, {
+      ...week,
+      status: 'draft',
+      sessions,
+    })
+    if (retryableIssues.length > 0) {
+      return {
+        sessions: [],
+        meta: {
+          attempts: 1,
+          provider: provider.name,
+          model: raw.model,
+          lastError: retryableIssues.slice(0, 2).join(' '),
           durationMs: raw.durationMs,
           chunkCount,
         },
