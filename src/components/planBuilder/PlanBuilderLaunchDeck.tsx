@@ -654,14 +654,20 @@ function GenericAthleteHero() {
           <stop offset="0%" stopColor="#15100d" />
           <stop offset="100%" stopColor="#050302" />
         </linearGradient>
-        <radialGradient id="gen-ring" cx="50%" cy="50%" r="50%">
-          <stop offset="0%" stopColor="rgba(255,120,50,0)" />
-          <stop offset="65%" stopColor="rgba(255,120,50,0.25)" />
-          <stop offset="100%" stopColor="rgba(255,120,50,0)" />
+        <linearGradient id="gen-bar" x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" stopColor="#5a4030" />
+          <stop offset="50%" stopColor="#3c2a1e" />
+          <stop offset="100%" stopColor="#1c130d" />
+        </linearGradient>
+        <radialGradient id="gen-plate" cx="50%" cy="40%" r="60%">
+          <stop offset="0%" stopColor="#2a1a10" />
+          <stop offset="75%" stopColor="#100a07" />
+          <stop offset="100%" stopColor="#030201" />
         </radialGradient>
-        <radialGradient id="gen-backlight" cx="50%" cy="45%" r="55%">
-          <stop offset="0%" stopColor="rgba(255,100,30,0.28)" />
-          <stop offset="70%" stopColor="rgba(255,100,30,0)" />
+        <radialGradient id="gen-backlight" cx="50%" cy="32%" r="60%">
+          <stop offset="0%" stopColor="rgba(255,100,30,0.36)" />
+          <stop offset="65%" stopColor="rgba(255,100,30,0.06)" />
+          <stop offset="100%" stopColor="rgba(255,100,30,0)" />
         </radialGradient>
         <linearGradient id="gen-floor" x1="0%" y1="0%" x2="0%" y2="100%">
           <stop offset="0%" stopColor="#1a0d08" />
@@ -675,119 +681,152 @@ function GenericAthleteHero() {
         </filter>
       </defs>
 
-      {/* Backdrop — abstract atmosphere (no venue) */}
+      {/* Backdrop — dark gym atmosphere */}
       <rect x="0" y="0" width="420" height="320" fill="#050403" />
-      <rect x="0" y="0" width="420" height="260" fill="url(#gen-backlight)" />
+      <rect x="0" y="0" width="420" height="270" fill="url(#gen-backlight)" />
 
-      {/* Concentric target rings — the abstract "goal" */}
-      <g transform="translate(210,140)">
-        <circle cx="0" cy="0" r="96" stroke="rgba(255,120,50,0.10)" strokeWidth="1" fill="none" />
-        <circle cx="0" cy="0" r="72" stroke="rgba(255,120,50,0.16)" strokeWidth="1" fill="none" strokeDasharray="2,6" />
-        <circle cx="0" cy="0" r="50" stroke="rgba(255,120,50,0.22)" strokeWidth="1.2" fill="none" />
-        <circle cx="0" cy="0" r="50" fill="url(#gen-ring)" />
-        {/* Cardinal ticks */}
-        <line x1="-104" y1="0" x2="-88" y2="0" stroke="rgba(255,120,50,0.45)" strokeWidth="1.2" strokeLinecap="round" />
-        <line x1="88" y1="0" x2="104" y2="0" stroke="rgba(255,120,50,0.45)" strokeWidth="1.2" strokeLinecap="round" />
-        <line x1="0" y1="-104" x2="0" y2="-88" stroke="rgba(255,120,50,0.45)" strokeWidth="1.2" strokeLinecap="round" />
-        <line x1="0" y1="88" x2="0" y2="104" stroke="rgba(255,120,50,0.45)" strokeWidth="1.2" strokeLinecap="round" />
-        {/* Central bullseye */}
-        <circle cx="0" cy="0" r="4" fill="#ff6a1a" filter="url(#gen-glow)" />
-      </g>
+      {/* Back wall vertical rim-light streaks (weight room bars) */}
+      <rect x="28" y="36" width="1" height="220" fill="rgba(255,120,50,0.22)" />
+      <rect x="58" y="60" width="1" height="190" fill="rgba(255,120,50,0.10)" />
+      <rect x="391" y="36" width="1" height="220" fill="rgba(255,120,50,0.22)" />
+      <rect x="360" y="60" width="1" height="190" fill="rgba(255,120,50,0.10)" />
 
-      {/* Constellation of discipline glyphs — subtle, orbiting */}
-      <g opacity="0.55">
-        {/* Dumbbell glyph (top-left) */}
-        <g transform="translate(56,66)">
-          <rect x="-10" y="-3" width="20" height="6" rx="1" fill="rgba(255,120,50,0.35)" />
-          <rect x="-14" y="-6" width="4" height="12" rx="0.8" fill="rgba(255,120,50,0.45)" />
-          <rect x="10" y="-6" width="4" height="12" rx="0.8" fill="rgba(255,120,50,0.45)" />
-        </g>
-        {/* Stopwatch glyph (top-right) */}
-        <g transform="translate(362,62)">
-          <circle cx="0" cy="0" r="10" stroke="rgba(255,120,50,0.45)" strokeWidth="1" fill="none" />
-          <line x1="0" y1="-10" x2="0" y2="-14" stroke="rgba(255,120,50,0.45)" strokeWidth="1" />
-          <line x1="0" y1="0" x2="5" y2="-5" stroke="rgba(255,120,50,0.55)" strokeWidth="1.2" strokeLinecap="round" />
-        </g>
-        {/* Mountain/peak glyph (bottom-left) */}
-        <g transform="translate(40,216)">
-          <path d="M-14,4 L-4,-10 L3,-2 L10,-8 L14,4 Z" stroke="rgba(255,120,50,0.4)" strokeWidth="1" fill="none" strokeLinejoin="round" />
-        </g>
-        {/* Medal glyph (bottom-right) */}
-        <g transform="translate(378,220)">
-          <circle cx="0" cy="2" r="8" stroke="rgba(255,120,50,0.45)" strokeWidth="1" fill="none" />
-          <path d="M-5,-6 L0,-1 L5,-6" stroke="rgba(255,120,50,0.45)" strokeWidth="1" fill="none" />
-        </g>
-      </g>
+      {/* Rafter beams — industrial ceiling hint */}
+      <line x1="0" y1="22" x2="420" y2="22" stroke="rgba(255,120,50,0.18)" strokeWidth="0.8" />
+      <line x1="0" y1="36" x2="420" y2="36" stroke="rgba(255,120,50,0.08)" strokeWidth="0.6" />
 
-      {/* Diagonal light beam */}
-      <path d="M-40,0 L180,0 L100,320 L-120,320 Z" fill="rgba(255,120,50,0.05)" />
+      {/* Halo behind lifter — raised bar apex */}
+      <ellipse cx="210" cy="52" rx="140" ry="30" fill="rgba(255,120,50,0.18)" filter="url(#gen-bigglow)" />
 
       {/* Floor */}
       <rect x="0" y="260" width="420" height="60" fill="url(#gen-floor)" />
       <line x1="0" y1="262" x2="420" y2="262" stroke="rgba(255,120,50,0.30)" strokeWidth="0.8" />
-      {/* Floor spotlight under athlete */}
-      <ellipse cx="210" cy="290" rx="130" ry="16" fill="rgba(255,120,50,0.28)" filter="url(#gen-bigglow)" />
+      <line x1="0" y1="268" x2="420" y2="268" stroke="rgba(255,120,50,0.08)" strokeWidth="0.5" />
+      <ellipse cx="210" cy="290" rx="150" ry="18" fill="rgba(255,120,50,0.28)" filter="url(#gen-bigglow)" />
 
-      {/* ═══ ATHLETE — power-ready stance, front-facing, slight 3/4 ═══ */}
-      <g transform="translate(148,60)">
-        {/* Right leg */}
-        <path d="M30,124 C24,142 20,166 22,196 L44,198 C48,170 52,146 54,124 Z" fill="url(#gen-kit)" />
-        {/* Right foot — planted */}
-        <path d="M16,200 C20,196 46,194 52,198 C56,200 54,210 48,212 L22,214 C14,214 12,204 16,200 Z" fill="#050403" />
-        <path d="M20,198 C30,196 46,196 50,198" stroke="#ff7a33" strokeWidth="0.55" fill="none" opacity="0.3" />
+      {/* Chalk dust particles — drifting */}
+      <circle cx="128" cy="108" r="1.4" fill="#ffb070" opacity="0.55" filter="url(#gen-bigglow)" />
+      <circle cx="298" cy="92" r="1.2" fill="#ff9060" opacity="0.5" filter="url(#gen-bigglow)" />
+      <circle cx="88" cy="158" r="1.1" fill="#ff8040" opacity="0.45" filter="url(#gen-bigglow)" />
+      <circle cx="336" cy="168" r="1.3" fill="#ff8040" opacity="0.4" filter="url(#gen-bigglow)" />
+      <circle cx="248" cy="200" r="0.9" fill="#ffb070" opacity="0.5" filter="url(#gen-bigglow)" />
 
-        {/* Left leg */}
-        <path d="M90,124 C96,142 100,166 98,196 L76,198 C72,170 68,146 66,124 Z" fill="url(#gen-kit)" />
-        <path d="M68,200 C72,196 98,194 104,198 C108,200 106,210 100,212 L74,214 C66,214 64,204 68,200 Z" fill="#050403" />
-        <path d="M72,198 C82,196 98,196 102,198" stroke="#ff7a33" strokeWidth="0.55" fill="none" opacity="0.3" />
+      {/* ═══ BARBELL — overhead press, lifted above head ═══ */}
+      {/* Bar shaft */}
+      <rect x="80" y="44" width="260" height="5" rx="1.2" fill="url(#gen-bar)" />
+      <rect x="80" y="44" width="260" height="1.4" fill="rgba(255,170,90,0.55)" />
+      {/* Knurling hint */}
+      <g opacity="0.45">
+        <line x1="150" y1="45.5" x2="150" y2="48.5" stroke="#1a0f09" strokeWidth="0.5" />
+        <line x1="158" y1="45.5" x2="158" y2="48.5" stroke="#1a0f09" strokeWidth="0.5" />
+        <line x1="166" y1="45.5" x2="166" y2="48.5" stroke="#1a0f09" strokeWidth="0.5" />
+        <line x1="254" y1="45.5" x2="254" y2="48.5" stroke="#1a0f09" strokeWidth="0.5" />
+        <line x1="262" y1="45.5" x2="262" y2="48.5" stroke="#1a0f09" strokeWidth="0.5" />
+        <line x1="270" y1="45.5" x2="270" y2="48.5" stroke="#1a0f09" strokeWidth="0.5" />
+      </g>
+
+      {/* Left plate stack — outer */}
+      <ellipse cx="66" cy="46.5" rx="10" ry="38" fill="url(#gen-plate)" stroke="#2a1a10" strokeWidth="1" />
+      <ellipse cx="66" cy="46.5" rx="10" ry="38" fill="none" stroke="url(#gen-rim)" strokeWidth="1.6" filter="url(#gen-glow)" opacity="0.8" />
+      <ellipse cx="66" cy="46.5" rx="6" ry="24" fill="rgba(255,120,50,0.10)" />
+      {/* Left inner plate */}
+      <ellipse cx="78" cy="46.5" rx="7" ry="30" fill="url(#gen-plate)" stroke="#2a1a10" strokeWidth="0.8" />
+      <ellipse cx="78" cy="46.5" rx="7" ry="30" fill="none" stroke="url(#gen-rim)" strokeWidth="1" opacity="0.6" />
+      {/* Collar clip */}
+      <rect x="86" y="40" width="3" height="13" rx="0.6" fill="#ff7a33" opacity="0.7" />
+
+      {/* Right plate stack — outer */}
+      <ellipse cx="354" cy="46.5" rx="10" ry="38" fill="url(#gen-plate)" stroke="#2a1a10" strokeWidth="1" />
+      <ellipse cx="354" cy="46.5" rx="10" ry="38" fill="none" stroke="url(#gen-rim)" strokeWidth="1.6" filter="url(#gen-glow)" opacity="0.8" />
+      <ellipse cx="354" cy="46.5" rx="6" ry="24" fill="rgba(255,120,50,0.10)" />
+      {/* Right inner plate */}
+      <ellipse cx="342" cy="46.5" rx="7" ry="30" fill="url(#gen-plate)" stroke="#2a1a10" strokeWidth="0.8" />
+      <ellipse cx="342" cy="46.5" rx="7" ry="30" fill="none" stroke="url(#gen-rim)" strokeWidth="1" opacity="0.6" />
+      {/* Collar clip */}
+      <rect x="331" y="40" width="3" height="13" rx="0.6" fill="#ff7a33" opacity="0.7" />
+
+      {/* Bar bend flex hint */}
+      <path d="M80,48.5 Q210,52 340,48.5" stroke="rgba(255,150,80,0.20)" strokeWidth="0.6" fill="none" />
+
+      {/* ═══ LIFTER — overhead press, front-facing ═══ */}
+      <g transform="translate(148,76)">
+        {/* Right leg (screen left) — slightly flexed, planted */}
+        <path d="M20,150 C14,170 10,196 14,220 L38,222 C42,196 46,172 48,150 Z" fill="url(#gen-kit)" />
+        {/* Right foot */}
+        <path d="M8,224 C12,220 40,218 46,222 C50,224 48,234 42,236 L14,238 C6,238 4,228 8,224 Z" fill="#050403" />
+        <path d="M12,222 C22,220 40,220 44,222" stroke="#ff7a33" strokeWidth="0.55" fill="none" opacity="0.3" />
+
+        {/* Left leg (screen right) — planted wide, load-bearing */}
+        <path d="M96,150 C102,170 106,196 102,220 L78,222 C74,196 70,172 68,150 Z" fill="url(#gen-kit)" />
+        <path d="M66,224 C72,220 100,218 106,222 C110,224 108,234 102,236 L74,238 C66,238 62,228 66,224 Z" fill="#050403" />
+        <path d="M70,222 C82,220 100,220 104,222" stroke="#ff7a33" strokeWidth="0.55" fill="none" opacity="0.3" />
 
         {/* Shorts */}
-        <path d="M28,104 C24,118 24,128 30,134 L90,134 C96,128 96,118 92,104 Z" fill="#0a0806" />
-        <line x1="60" y1="106" x2="60" y2="132" stroke="rgba(255,120,50,0.3)" strokeWidth="0.8" />
+        <path d="M20,128 C16,142 16,154 22,160 L96,160 C102,154 102,142 98,128 Z" fill="#0a0806" />
+        <line x1="58" y1="130" x2="58" y2="158" stroke="rgba(255,120,50,0.3)" strokeWidth="0.8" />
+        {/* Belt */}
+        <path d="M18,124 L100,124 L100,130 L18,130 Z" fill="#1a0e08" />
+        <path d="M18,124 L100,124" stroke="url(#gen-rim)" strokeWidth="1" opacity="0.55" />
+        <circle cx="59" cy="127" r="1.6" fill="#ff7a33" opacity="0.9" />
 
-        {/* Torso — strong chest */}
-        <path d="M34,36 C26,60 22,84 30,108 L92,108 C100,84 96,60 88,36 Z" fill="url(#gen-kit)" />
-        {/* Rim-light down both sides for heroic framing */}
-        <path d="M92,40 C100,62 102,86 98,108" stroke="url(#gen-rim)" strokeWidth="3" fill="none" filter="url(#gen-glow)" />
-        <path d="M30,40 C22,62 20,86 24,108" stroke="url(#gen-rim)" strokeWidth="3" fill="none" filter="url(#gen-glow)" opacity="0.85" />
-        {/* Collar */}
-        <path d="M44,36 L61,52 L78,36" stroke="#020101" strokeWidth="2" fill="none" />
-        {/* Chest line hint */}
-        <line x1="61" y1="54" x2="61" y2="98" stroke="rgba(0,0,0,0.6)" strokeWidth="1" />
+        {/* Torso — braced, rib cage visible under tank */}
+        <path d="M22,42 C14,72 12,100 20,128 L98,128 C106,100 104,72 96,42 Z" fill="url(#gen-kit)" />
+        {/* Rim-light down both sides — hero framing */}
+        <path d="M98,46 C106,70 108,98 102,128" stroke="url(#gen-rim)" strokeWidth="3" fill="none" filter="url(#gen-glow)" />
+        <path d="M20,46 C12,70 10,98 16,128" stroke="url(#gen-rim)" strokeWidth="3" fill="none" filter="url(#gen-glow)" opacity="0.85" />
+        {/* Tank top straps */}
+        <path d="M38,42 L44,16" stroke="#020101" strokeWidth="5" strokeLinecap="round" />
+        <path d="M80,42 L74,16" stroke="#020101" strokeWidth="5" strokeLinecap="round" />
+        {/* Chest shadow center */}
+        <line x1="59" y1="48" x2="59" y2="118" stroke="rgba(0,0,0,0.55)" strokeWidth="1" />
+        {/* Upper chest rim-light (light spilling from overhead spot) */}
+        <path d="M26,40 C40,36 78,36 92,40" stroke="url(#gen-rim)" strokeWidth="1.4" fill="none" opacity="0.55" />
 
-        {/* Neck shadow */}
-        <path d="M50,30 L74,30 L72,38 L52,38 Z" fill="#030201" />
+        {/* Traps — lifted under the bar */}
+        <path d="M28,18 C40,8 78,8 90,18 L84,32 C70,28 48,28 34,32 Z" fill="url(#gen-kit)" />
+        <path d="M28,18 C40,8 78,8 90,18" stroke="url(#gen-rim)" strokeWidth="1.6" fill="none" filter="url(#gen-glow)" opacity="0.8" />
 
-        {/* Head */}
-        <ellipse cx="61" cy="16" rx="17" ry="20" fill="url(#gen-skin)" />
+        {/* Head — tilted slightly back under bar */}
+        <ellipse cx="59" cy="-2" rx="16" ry="18" fill="url(#gen-skin)" />
         {/* Hair shadow */}
-        <path d="M46,6 C52,-2 72,-2 78,8 L76,18 C68,10 54,10 46,18 Z" fill="#020101" />
+        <path d="M45,-12 C51,-20 71,-20 76,-10 L74,-2 C66,-8 52,-8 44,0 Z" fill="#020101" />
         {/* Face rim-light on right */}
-        <path d="M74,6 C80,14 82,26 78,34" stroke="url(#gen-rim)" strokeWidth="2" fill="none" filter="url(#gen-glow)" opacity="0.9" />
-        {/* Jaw */}
-        <path d="M50,24 C56,30 68,30 74,24" stroke="#020101" strokeWidth="0.8" fill="none" />
+        <path d="M72,-12 C78,-4 80,8 76,14" stroke="url(#gen-rim)" strokeWidth="2" fill="none" filter="url(#gen-glow)" opacity="0.9" />
+        {/* Jaw line — clenched under load */}
+        <path d="M48,6 C54,12 66,12 72,6" stroke="#020101" strokeWidth="0.8" fill="none" />
+        {/* Neck tension lines */}
+        <path d="M52,12 L50,20" stroke="#020101" strokeWidth="0.6" />
+        <path d="M68,12 L70,20" stroke="#020101" strokeWidth="0.6" />
 
-        {/* Left arm — bent, fist clenched at side (power stance) */}
-        <path d="M90,48 C104,58 114,72 116,88 C118,100 110,106 104,100 C98,94 92,82 90,68" stroke="url(#gen-skin)" strokeWidth="13" strokeLinecap="round" fill="none" />
-        <path d="M100,54 C110,64 116,78 116,88" stroke="url(#gen-rim)" strokeWidth="2.4" strokeLinecap="round" fill="none" filter="url(#gen-glow)" />
-        {/* Fist */}
-        <circle cx="108" cy="102" r="8" fill="url(#gen-skin)" />
+        {/* Left arm (screen right) — locked out overhead, wrist gripping bar */}
+        <path d="M92,26 C106,10 114,-8 116,-32" stroke="url(#gen-skin)" strokeWidth="15" strokeLinecap="round" fill="none" />
+        <path d="M98,20 C110,4 118,-12 120,-30" stroke="url(#gen-rim)" strokeWidth="2.6" strokeLinecap="round" fill="none" filter="url(#gen-glow)" />
+        {/* Shoulder delt bulge */}
+        <circle cx="94" cy="30" r="10" fill="url(#gen-skin)" />
+        <path d="M88,22 C96,20 104,24 104,32" stroke="url(#gen-rim)" strokeWidth="1.4" fill="none" opacity="0.7" />
+        {/* Fist gripping bar */}
+        <circle cx="118" cy="-30" r="8" fill="url(#gen-skin)" />
+        <path d="M114,-36 C120,-38 124,-34 124,-28" stroke="url(#gen-rim)" strokeWidth="1.2" fill="none" opacity="0.65" />
 
-        {/* Right arm — bent, fist clenched at side */}
-        <path d="M32,48 C18,58 8,72 6,88 C4,100 12,106 18,100 C24,94 30,82 32,68" stroke="url(#gen-skin)" strokeWidth="13" strokeLinecap="round" fill="none" />
-        <path d="M22,54 C12,64 6,78 6,88" stroke="url(#gen-rim)" strokeWidth="2.2" strokeLinecap="round" fill="none" filter="url(#gen-glow)" opacity="0.85" />
-        <circle cx="14" cy="102" r="8" fill="url(#gen-skin)" />
+        {/* Right arm (screen left) — locked out overhead */}
+        <path d="M26,26 C12,10 4,-8 2,-32" stroke="url(#gen-skin)" strokeWidth="15" strokeLinecap="round" fill="none" />
+        <path d="M20,20 C8,4 0,-12 -2,-30" stroke="url(#gen-rim)" strokeWidth="2.4" strokeLinecap="round" fill="none" filter="url(#gen-glow)" opacity="0.85" />
+        {/* Shoulder delt bulge */}
+        <circle cx="24" cy="30" r="10" fill="url(#gen-skin)" />
+        <path d="M14,22 C22,20 30,24 30,32" stroke="url(#gen-rim)" strokeWidth="1.2" fill="none" opacity="0.6" />
+        {/* Fist gripping bar */}
+        <circle cx="0" cy="-30" r="8" fill="url(#gen-skin)" />
+        <path d="M-4,-36 C2,-38 6,-34 6,-28" stroke="url(#gen-rim)" strokeWidth="1" fill="none" opacity="0.55" />
 
-        {/* Sweat / atmospheric particles */}
-        <circle cx="76" cy="2" r="1" fill="#ffb070" opacity="0.7" />
-        <circle cx="92" cy="22" r="0.8" fill="#ff8040" opacity="0.55" />
-        <circle cx="38" cy="18" r="0.8" fill="#ff8040" opacity="0.5" />
+        {/* Abdominal shadow hint */}
+        <path d="M40,78 L78,78" stroke="rgba(0,0,0,0.45)" strokeWidth="0.6" />
+        <path d="M40,92 L78,92" stroke="rgba(0,0,0,0.4)" strokeWidth="0.6" />
+        <path d="M40,106 L78,106" stroke="rgba(0,0,0,0.35)" strokeWidth="0.6" />
 
-        {/* Side atmospheric sparks */}
-        <circle cx="-30" cy="60" r="1.2" fill="#ff8040" opacity="0.6" filter="url(#gen-bigglow)" />
-        <circle cx="152" cy="80" r="1.4" fill="#ff8040" opacity="0.6" filter="url(#gen-bigglow)" />
-        <circle cx="-22" cy="130" r="1" fill="#ff6a1a" opacity="0.5" filter="url(#gen-bigglow)" />
-        <circle cx="146" cy="150" r="1" fill="#ff6a1a" opacity="0.5" filter="url(#gen-bigglow)" />
+        {/* Sweat droplets */}
+        <circle cx="54" cy="-14" r="1.1" fill="#ffb070" opacity="0.7" />
+        <circle cx="82" cy="4" r="0.9" fill="#ff8040" opacity="0.55" />
+        <circle cx="36" cy="6" r="0.8" fill="#ff8040" opacity="0.5" />
       </g>
     </svg>
   )

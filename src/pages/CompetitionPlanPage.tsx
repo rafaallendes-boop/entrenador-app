@@ -5,8 +5,10 @@ import { ROUTES } from '../constants/routes'
 import ConfirmDialog from '../components/ui/ConfirmDialog'
 import { useCoachMemoryStore } from '../store/useCoachMemoryStore'
 import { computeMacroPlan, getPrimaryGoalEvent, getPhaseLabel } from '../services/macroPlan'
+import { MAX_COMPETITION_PLAN_WEEKS } from '../services/planBuilder/buildPlanShell'
 import { getPlanWizardDefaultComplementarySports } from '../services/planningConstraints'
 import { getEnabledSports } from '../utils/athlete'
+import { isStrictISODate } from '../utils/date'
 import {
   DAY_OF_WEEK_ORDER,
   clampSessionsPerWeekToAvailability,
@@ -162,18 +164,39 @@ function initWizardState(
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function weeksUntil(dateStr: string): number {
-  if (!dateStr) return 0
-  const diff = new Date(dateStr).getTime() - Date.now()
+function weeksUntil(dateStr: string, now: Date = new Date()): number {
+  if (!isStrictISODate(dateStr)) return 0
+  const diff = new Date(`${dateStr}T00:00:00.000Z`).getTime() - now.getTime()
   return Math.ceil(diff / (1000 * 60 * 60 * 24 * 7))
 }
 
+function addDaysToISO(date: Date, days: number): string {
+  const next = new Date(date)
+  next.setUTCDate(next.getUTCDate() + days)
+  return next.toISOString().slice(0, 10)
+}
+
 function phasesFromWeeks(weeks: number): string {
-  if (weeks > 12) return 'Base → Build → Peak → Taper'
+  if (weeks > 10) return 'Base → Build → Peak → Taper'
   if (weeks > 8)  return 'Build → Peak → Taper'
   if (weeks > 4)  return 'Peak → Taper'
   if (weeks > 1)  return 'Taper directo'
   return 'Semana de competencia'
+}
+
+function getPlanWindow(eventDate: string, now: Date = new Date()) {
+  const totalWeeksUntilEvent = weeksUntil(eventDate, now)
+  const effectivePlanWeeks = Math.min(MAX_COMPETITION_PLAN_WEEKS, Math.max(0, totalWeeksUntilEvent))
+  const maxSelectableDate = addDaysToISO(now, MAX_COMPETITION_PLAN_WEEKS * 7)
+
+  return {
+    totalWeeksUntilEvent,
+    effectivePlanWeeks,
+    exceedsMax: totalWeeksUntilEvent > MAX_COMPETITION_PLAN_WEEKS,
+    isFuture: totalWeeksUntilEvent > 0,
+    isValidDate: isStrictISODate(eventDate),
+    maxSelectableDate,
+  }
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -231,6 +254,7 @@ function dayChipCls(active: boolean) {
 export default function CompetitionPlanPage() {
   const navigate = useNavigate()
   const { athleteProfile, saveAthleteProfile } = useCoachMemoryStore()
+  const now = useMemo(() => new Date(), [])
   const enabledSports = getEnabledSports(athleteProfile)
   const existingEvent = getPrimaryGoalEvent(athleteProfile)
   const existingConfig = athleteProfile?.planWizardConfig
@@ -262,12 +286,13 @@ export default function CompetitionPlanPage() {
     () => enabledSports.filter(s => s !== primarySportForEvent),
     [enabledSports, primarySportForEvent],
   )
+  const planWindow = useMemo(() => getPlanWindow(state.eventDate, now), [now, state.eventDate])
 
   // Step validation
   const canContinue = useMemo(() => {
     switch (step) {
       case 1: return !!state.eventType && state.eventTitle.trim().length > 0
-      case 2: return !!state.eventDate && weeksUntil(state.eventDate) > 0
+      case 2: return planWindow.isValidDate && planWindow.isFuture && !planWindow.exceedsMax
       case 3: return !!state.objective && !!state.competitiveLevel
       case 4: return state.trainingDays.length > 0 && !!state.sessionsPerWeek && !!state.sessionDurationMins
       case 5: return true  // complementary sports optional
@@ -275,9 +300,7 @@ export default function CompetitionPlanPage() {
       case 7: return true
       default: return true
     }
-  }, [step, state])
-
-  const weeks = state.eventDate ? weeksUntil(state.eventDate) : 0
+  }, [planWindow.exceedsMax, planWindow.isFuture, planWindow.isValidDate, state, step])
 
   function goNext() {
     if (step < TOTAL_STEPS) setStep(s => s + 1)
@@ -308,7 +331,7 @@ export default function CompetitionPlanPage() {
   }
 
   async function handleGenerate() {
-    if (isSaving) return
+    if (isSaving || !planWindow.isValidDate || !planWindow.isFuture || planWindow.exceedsMax) return
     setIsSaving(true)
     try {
       const now = new Date().toISOString()
@@ -376,7 +399,7 @@ export default function CompetitionPlanPage() {
       {/* Step content */}
       <div className="flex-1">
         {step === 1 && <Step1EventType state={state} update={update} />}
-        {step === 2 && <Step2EventDate state={state} update={update} weeks={weeks} />}
+        {step === 2 && <Step2EventDate state={state} update={update} planWindow={planWindow} />}
         {step === 3 && <Step3Objective state={state} update={update} />}
         {step === 4 && <Step4Schedule state={state} update={update} updateWith={updateWith} />}
         {step === 5 && (
@@ -391,7 +414,7 @@ export default function CompetitionPlanPage() {
         {step === 7 && (
           <Step7Summary
             state={state}
-            weeks={weeks}
+            planWindow={planWindow}
             macroPlanPhase={macroPlanPhaseLabel}
             primarySport={primarySportForEvent}
           />
@@ -516,44 +539,65 @@ function Step1EventType({
 function Step2EventDate({
   state,
   update,
-  weeks,
+  planWindow,
 }: {
   state: WizardState
   update: (p: Partial<WizardState>) => void
-  weeks: number
+  planWindow: ReturnType<typeof getPlanWindow>
 }) {
   const today = new Date().toISOString().split('T')[0]
+  const { totalWeeksUntilEvent, effectivePlanWeeks, exceedsMax, isFuture, maxSelectableDate } = planWindow
 
   return (
     <div>
       <StepLabel step={2} />
       <Question>¿Cuándo es el evento?</Question>
-      <Hint>La fecha es el ancla de todo el plan. Puedo ajustar si cambia después.</Hint>
+      <Hint>La fecha es el ancla de todo el plan. Puedo ajustar si cambia después, pero el plan de competencia se limita a un máximo de 12 semanas.</Hint>
 
       <input
         type="date"
         value={state.eventDate}
         min={today}
+        max={maxSelectableDate}
         onChange={e => update({ eventDate: e.target.value })}
         className="w-full rounded-xl border border-surface-border bg-surface-raised px-3 py-2.5 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-brand/30 mb-4"
       />
 
-      {state.eventDate && weeks > 0 && (
+      {state.eventDate && isFuture && !exceedsMax && (
         <div className="rounded-xl border border-brand/20 bg-brand/5 px-4 py-3">
           <p className="text-sm font-semibold text-ink">
-            {weeks} semana{weeks !== 1 ? 's' : ''} disponibles
+            {effectivePlanWeeks} semana{effectivePlanWeeks !== 1 ? 's' : ''} a planificar
           </p>
           <p className="text-xs text-ink-muted mt-0.5">
-            Fases estimadas: <span className="text-brand-light">{phasesFromWeeks(weeks)}</span>
+            Fases estimadas: <span className="text-brand-light">{phasesFromWeeks(effectivePlanWeeks)}</span>
           </p>
         </div>
       )}
-      {state.eventDate && weeks <= 0 && (
+      {state.eventDate && exceedsMax && (
+        <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-3 space-y-3">
+          <div>
+            <p className="text-sm font-semibold text-amber-300">
+              Máximo {MAX_COMPETITION_PLAN_WEEKS} semanas
+            </p>
+            <p className="mt-1 text-xs text-amber-200 leading-relaxed">
+              Tu evento está a {totalWeeksUntilEvent} semanas. Para preparar bien una competencia trabajamos con un máximo de {MAX_COMPETITION_PLAN_WEEKS} semanas, y no se puede agregar más desde aquí. Puedes ajustarlo después si lo necesitas.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => update({ eventDate: maxSelectableDate })}
+            className="inline-flex items-center justify-center rounded-xl border border-amber-400/25 bg-amber-400/10 px-3 py-2 text-xs font-semibold text-amber-200 transition-colors hover:bg-amber-400/15"
+          >
+            Usar máximo permitido
+          </button>
+        </div>
+      )}
+      {state.eventDate && !isFuture && (
         <div className="rounded-xl border border-rose-500/20 bg-rose-500/5 px-4 py-3">
           <p className="text-sm text-rose-400">La fecha debe ser en el futuro.</p>
         </div>
       )}
-      {state.eventDate && weeks > 0 && weeks <= 2 && (
+      {state.eventDate && isFuture && effectivePlanWeeks <= 2 && (
         <p className="mt-2 text-xs text-amber-400">
           Con menos de 2 semanas el plan será de peak/taper directo, sin fases de base o build.
         </p>
@@ -858,12 +902,12 @@ function Step6CurrentState({
 
 function Step7Summary({
   state,
-  weeks,
+  planWindow,
   macroPlanPhase,
   primarySport,
 }: {
   state: WizardState
-  weeks: number
+  planWindow: ReturnType<typeof getPlanWindow>
   macroPlanPhase?: string
   primarySport: SupportedSport | null
 }) {
@@ -879,7 +923,7 @@ function Step7Summary({
 
   const durationLabel = SESSION_DURATION_OPTIONS.find(o => o.value === state.sessionDurationMins)?.label ?? '—'
 
-  const phases = phasesFromWeeks(weeks)
+  const phases = phasesFromWeeks(planWindow.effectivePlanWeeks)
 
   return (
     <div>
@@ -895,7 +939,12 @@ function Step7Summary({
         rows={[
           { label: 'Nombre', value: state.eventTitle },
           { label: 'Tipo', value: eventTypeLabel },
-          { label: 'Fecha', value: `${state.eventDate} · ${weeks} semanas` },
+          {
+            label: 'Fecha',
+            value: planWindow.exceedsMax
+              ? `${state.eventDate} · ${planWindow.totalWeeksUntilEvent} semanas al evento (${planWindow.effectivePlanWeeks} planificadas)`
+              : `${state.eventDate} · ${planWindow.effectivePlanWeeks} semanas`,
+          },
           { label: 'Objetivo', value: objectiveLabel },
           { label: 'Nivel', value: levelLabel },
         ]}
@@ -905,6 +954,11 @@ function Step7Summary({
       <div className="rounded-xl border border-surface-border bg-surface-raised px-4 py-3 mb-3">
         <p className="text-[10px] font-semibold uppercase tracking-wider text-ink-faint mb-2">Fases estimadas</p>
         <p className="text-sm font-medium text-brand-light">{phases}</p>
+        {planWindow.exceedsMax && (
+          <p className="text-xs text-brand-light mt-1 leading-relaxed">
+            Se crearán las últimas {MAX_COMPETITION_PLAN_WEEKS} semanas previas al evento. Es el máximo disponible para un plan de competencia.
+          </p>
+        )}
         {macroPlanPhase && (
           <p className="text-xs text-ink-muted mt-1">Fase actual del macroplan: {macroPlanPhase}</p>
         )}

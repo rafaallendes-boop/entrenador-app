@@ -1,10 +1,9 @@
 import { type ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Bell, Brain, Cpu, Download, LogOut, ShieldAlert, Trash2, Upload, User } from 'lucide-react'
+import { Bell, Brain, Download, LogOut, ShieldAlert, Trash2, Upload, User } from 'lucide-react'
 import Card from '../components/ui/Card'
 import AthleteProfileEditor from '../components/settings/AthleteProfileEditor'
 import SyncStatusBadge from '../components/sync/SyncStatusBadge'
-import { APP_INFO } from '../constants/appInfo'
 import { ROUTES } from '../constants/routes'
 import {
   downloadAppDataExport,
@@ -233,19 +232,19 @@ export default function SettingsPage() {
 
     setIsClearing(true)
     setClearStatus(null)
-    let remoteError: string | null = null
     try {
       const currentUser = user
       if (currentUser) {
         clearSelectedSyncArtifactsForUser(currentUser.id, clearSelection)
-        try {
-          await clearSelectedRemoteAppData(currentUser.id, clearSelection)
-        } catch (error) {
-          remoteError = error instanceof Error ? error.message : 'No se pudo borrar todo en la nube.'
-          console.error('[settings] selective remote wipe failed', error)
-        }
+        await clearSelectedRemoteAppData(currentUser.id, clearSelection)
       }
+
       const clearedGroups = await clearSelectedLocalAppData(clearSelection)
+
+      if (currentUser) {
+        await runFullSync(currentUser.id)
+      }
+
       await refreshCounts(setDataCounts)
       setClearSelection({ ...EMPTY_CLEAR_SELECTION })
       setClearConfirm(false)
@@ -253,9 +252,20 @@ export default function SettingsPage() {
         await loadMemory()
       }
       setClearStatus(
-        remoteError
-          ? `Se elimino localmente: ${formatGroupList(clearedGroups)}. La nube quedo con pendientes: ${remoteError}`
-          : `Se elimino: ${formatGroupList(clearedGroups)}.`,
+        currentUser
+          ? `Se eliminaron ${formatGroupList(clearedGroups)} en este dispositivo y en tu cuenta. Tus otros dispositivos se limpiaran al sincronizar.`
+          : `Se eliminaron ${formatGroupList(clearedGroups)} en este dispositivo.`,
+      )
+    } catch (error) {
+      console.error('[settings] selective data wipe failed', error)
+      setClearStatus(
+        user
+          ? error instanceof Error
+            ? `${error.message} No se borraron datos locales para evitar inconsistencias entre dispositivos.`
+            : 'No se pudieron eliminar los datos en todos tus dispositivos. No se borraron datos locales para evitar inconsistencias.'
+          : error instanceof Error
+            ? error.message
+            : 'No se pudieron eliminar los datos seleccionados.',
       )
     } finally {
       setIsClearing(false)
@@ -607,8 +617,8 @@ export default function SettingsPage() {
 
           <Card className="p-4">
             <div className="flex items-start gap-3 mb-4">
-              <div className="w-8 h-8 rounded-full bg-violet-500/10 flex items-center justify-center flex-shrink-0">
-                <User size={16} className="text-violet-400" />
+              <div className="w-8 h-8 rounded-full bg-brand/15 flex items-center justify-center flex-shrink-0">
+                <User size={16} className="text-brand-light" />
               </div>
               <div>
                 <h2 className="text-sm font-semibold text-ink">Perfil del atleta</h2>
@@ -799,26 +809,6 @@ export default function SettingsPage() {
         </div>
 
         <div className="space-y-5 md:space-y-6">
-          <Card className="p-4">
-            <div className="flex items-start gap-3 mb-3">
-              <div className="w-8 h-8 rounded-full bg-emerald-500/10 flex items-center justify-center flex-shrink-0">
-                <Cpu size={16} className="text-emerald-400" />
-              </div>
-              <div>
-                <h2 className="text-sm font-semibold text-ink">Informacion de la app</h2>
-                <p className="text-xs text-ink-muted mt-1 leading-relaxed">
-                  Estado actual del runtime local.
-                </p>
-              </div>
-            </div>
-            <div className="space-y-2 text-sm">
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-ink-muted">Version</span>
-                <span className="text-ink font-medium">{APP_INFO.version}</span>
-              </div>
-            </div>
-          </Card>
-
           <Card className="p-4">
             <div className="flex items-start gap-3 mb-3">
               <div className="w-8 h-8 rounded-full bg-brand/15 flex items-center justify-center flex-shrink-0">
@@ -1071,9 +1061,11 @@ export default function SettingsPage() {
                 <ShieldAlert size={16} className="text-red-400" />
               </div>
               <div>
-                <h2 className="text-sm font-semibold text-ink">Limpiar datos locales</h2>
+                <h2 className="text-sm font-semibold text-ink">Limpiar datos</h2>
                 <p className="text-xs text-ink-muted mt-1 leading-relaxed">
-                  Elige exactamente que quieres borrar. Los bloques estan agrupados para evitar datos huerfanos.
+                  {user
+                    ? 'Elige exactamente que quieres borrar. Si confirmas, se eliminara de este dispositivo y de tu cuenta para que tambien desaparezca del resto de tus dispositivos.'
+                    : 'Elige exactamente que quieres borrar en este dispositivo. Los bloques estan agrupados para evitar datos huerfanos.'}
                 </p>
               </div>
             </div>
@@ -1155,7 +1147,15 @@ export default function SettingsPage() {
             </div>
 
             {clearStatus && (
-              <p className="text-xs text-emerald-400 mt-3">{clearStatus}</p>
+              <p
+                className={`mt-3 text-xs ${
+                  clearStatus.includes('No se pudo') || clearStatus.includes('No se borraron')
+                    ? 'text-red-400'
+                    : 'text-emerald-400'
+                }`}
+              >
+                {clearStatus}
+              </p>
             )}
 
             {!clearConfirm ? (
@@ -1165,13 +1165,16 @@ export default function SettingsPage() {
                 className="mt-4 inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-red-500/10 text-red-400 text-sm font-semibold hover:bg-red-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 <Trash2 size={14} />
-                {hasSelection ? 'Continuar con borrado' : 'Selecciona algo para borrar'}
+                {hasSelection ? 'Continuar con eliminacion' : 'Selecciona algo para borrar'}
               </button>
             ) : (
               <div className="space-y-3 mt-4">
                 <p className="text-xs text-ink-muted leading-relaxed">
                   Esta accion no se puede deshacer. Se borrara: <span className="text-ink">{formatGroupList(selectedGroups)}</span>.
-                  Si quieres conservar algo, exporta un backup antes.
+                  {user
+                    ? ' Tambien se eliminara de tu cuenta para que se limpie en tus otros dispositivos.'
+                    : ''}
+                  {' '}Si quieres conservar algo, exporta un backup antes.
                 </p>
                 <div className="flex gap-2 justify-end flex-wrap">
                   <button
@@ -1186,7 +1189,7 @@ export default function SettingsPage() {
                     className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-red-500/20 text-red-400 text-sm font-semibold hover:bg-red-500/30 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
                   >
                     <Trash2 size={14} />
-                    {isClearing ? 'Borrando...' : 'Confirmar borrado'}
+                    {isClearing ? 'Eliminando datos...' : 'Confirmar eliminacion'}
                   </button>
                 </div>
               </div>

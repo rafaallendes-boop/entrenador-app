@@ -12,7 +12,7 @@ import type {
   TrainingPlan,
   TrainingPlanWeek,
 } from '../../types/planBuilder'
-import { getWeekStart, toISO } from '../../utils/date'
+import { fromISO, getWeekStart, toISO } from '../../utils/date'
 import { v4 as uuid } from '../../utils/uuid'
 import { computeMacroPlan, computeWeeksRemaining, resolvePhase } from '../macroPlan'
 
@@ -29,6 +29,8 @@ export interface BuildPlanShellResult {
   plan: TrainingPlan
   weeks: TrainingPlanWeek[]
 }
+
+export const MAX_COMPETITION_PLAN_WEEKS = 12
 
 const INTENT_BY_PHASE: Record<MacroPlanPhase, string> = {
   base: 'Construir base amplia con continuidad y dosis sostenible.',
@@ -82,15 +84,23 @@ export function buildPlanShell(input: BuildPlanShellInput): BuildPlanShellResult
     throw new Error('No se puede generar el plan sin un MacroPlan base (falta evento principal).')
   }
 
-  const firstWeekStart = getWeekStart(now)
   const weeksUntilEvent = Math.max(0, computeWeeksRemaining(goalEvent.date, now))
-  // Include event week + at least 1 week. Cap at 20 to avoid runaway.
-  const totalWeeks = Math.min(20, Math.max(1, weeksUntilEvent + 1))
+  const uncappedTotalWeeks = Math.max(1, weeksUntilEvent + 1)
+  const totalWeeks = Math.min(MAX_COMPETITION_PLAN_WEEKS, uncappedTotalWeeks)
+  const eventWeekStart = getWeekStart(fromISO(goalEvent.date))
+  const firstWeekStart =
+    uncappedTotalWeeks > MAX_COMPETITION_PLAN_WEEKS
+      ? addWeeks(eventWeekStart, -(MAX_COMPETITION_PLAN_WEEKS - 1))
+      : getWeekStart(now)
 
   const weekPhases: MacroPlanPhase[] = []
   for (let i = 0; i < totalWeeks; i++) {
     const weekStart = addWeeks(firstWeekStart, i)
-    const weekReferenceDate = i === 0 ? now : weekStart
+    const weekReferenceDate = weekStart.getTime() > now.getTime()
+      ? weekStart
+      : i === 0
+        ? now
+        : weekStart
     const remaining = computeWeeksRemaining(goalEvent.date, weekReferenceDate)
     weekPhases.push(resolvePhaseForWeekOffset(remaining))
   }

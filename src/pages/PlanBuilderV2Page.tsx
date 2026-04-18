@@ -337,11 +337,15 @@ function CyclistMark({ className }: { className?: string }) {
 
 function getSportFromGoalEvent(goalEvent: GoalEvent | undefined): 'squash' | 'running' | 'cycling' | 'other' {
   if (!goalEvent) return 'other'
+  const eventType = goalEvent.eventType
+  if (eventType === 'other') return 'other'
+  if (eventType === 'race') return 'running'
+  if (eventType === 'cycling_event') return 'cycling'
+  if (eventType === 'tournament') return 'squash'
   const sport = (goalEvent.sport ?? '').toLowerCase()
-  const eventType = goalEvent.eventType ?? ''
   if (sport.includes('squash')) return 'squash'
-  if (sport.includes('run') || eventType === 'race') return 'running'
-  if (sport.includes('cycl') || sport.includes('bike') || eventType === 'cycling_event') return 'cycling'
+  if (sport.includes('run')) return 'running'
+  if (sport.includes('cycl') || sport.includes('bike')) return 'cycling'
   return 'other'
 }
 

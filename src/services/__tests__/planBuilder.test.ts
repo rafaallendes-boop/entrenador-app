@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest'
+import { addDays } from 'date-fns'
 import type { AthleteProfile, GoalEvent, PlanWizardConfig } from '../../types'
 import { buildPlanShell } from '../planBuilder/buildPlanShell'
 import { generatePlanWeeks } from '../planBuilder/generatePlan'
 import { buildWeekUserPrompt } from '../planBuilder/prompts/weekPrompt'
 import { validatePlan } from '../planBuilder/validator'
+import { fromISO, getWeekStart, toISO } from '../../utils/date'
 
 function makeProfile(eventDate: string): AthleteProfile {
   return {
@@ -71,7 +73,7 @@ describe('planBuilder', () => {
     expect(plan.phases.length).toBeGreaterThan(0)
   })
 
-  it('buildPlanShell caps at 20 weeks for far events', () => {
+  it('buildPlanShell caps at 12 weeks for far events and anchors the plan to the event block', () => {
     const profile = makeProfile(eventNWeeksFromNow(40))
     const event = profile.goalEvents![0] as GoalEvent
     const { plan, weeks } = buildPlanShell({
@@ -80,8 +82,13 @@ describe('planBuilder', () => {
       wizardConfig: makeWizardConfig(),
       goalEvent: event,
     })
-    expect(plan.totalWeeks).toBe(20)
-    expect(weeks).toHaveLength(20)
+    const expectedStartDate = toISO(addDays(getWeekStart(fromISO(event.date)), -(11 * 7)))
+    const expectedEndDate = toISO(addDays(getWeekStart(fromISO(event.date)), 6))
+
+    expect(plan.totalWeeks).toBe(12)
+    expect(weeks).toHaveLength(12)
+    expect(plan.startDate).toBe(expectedStartDate)
+    expect(plan.endDate).toBe(expectedEndDate)
   })
 
   it('buildPlanShell keeps the goal-event primary sport in target loads even if the profile context omits it', () => {
