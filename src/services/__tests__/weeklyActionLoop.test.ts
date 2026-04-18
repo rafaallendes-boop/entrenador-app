@@ -63,6 +63,22 @@ describe('buildWeeklyActionSummary', () => {
     expect(summary.weekState).toBe('empty')
   })
 
+  it('does not mark the week as empty when plannedSessions exist but totalSessions is stale', () => {
+    const summary = buildWeeklyActionSummary({
+      sessions: [makeSession(), makeSession({ id: 'session-2', date: '2026-04-09' })],
+      currentWeekSummary: makeSummary({
+        totalSessions: 0,
+        plannedSessions: 2,
+        completedSessions: 0,
+        coachNote: undefined,
+      }),
+      today: '2026-04-08',
+    })
+
+    expect(summary.primaryAction?.kind).not.toBe('plan_week')
+    expect(summary.weekState).not.toBe('empty')
+  })
+
   it('prioritizes coherence fixes before coach note review', () => {
     const summary = buildWeeklyActionSummary({
       sessions: [makeSession()],

@@ -73,6 +73,43 @@ describe('squash session mode compatibility', () => {
     expect(exposure.totalMatchCount).toBe(3)
   })
 
+  it('uses the most recent matches when applying the exposure limit', () => {
+    const exposure = getRecentSquashCompetitiveExposure([
+      makeSquashSession({
+        id: 'older-practice',
+        date: '2026-04-01',
+        squashDetails: {
+          trainingFocus: 'tactical',
+          sessionMode: 'practice_match',
+          drills: [{ name: 'Partido de entrenamiento libre a 5 games' }],
+        },
+      }),
+      makeSquashSession({
+        id: 'older-competition',
+        date: '2026-04-02',
+        subtype: 'competitive',
+      }),
+      makeSquashSession({
+        id: 'latest-practice',
+        date: '2026-04-10',
+        squashDetails: {
+          trainingFocus: 'tactical',
+          sessionMode: 'practice_match',
+          drills: [{ name: 'Partido de entrenamiento libre a 5 games' }],
+        },
+      }),
+      makeSquashSession({
+        id: 'latest-competition',
+        date: '2026-04-11',
+        subtype: 'competitive',
+      }),
+    ], 2)
+
+    expect(exposure.practiceMatchCount).toBe(1)
+    expect(exposure.competitionMatchCount).toBe(1)
+    expect(exposure.totalMatchCount).toBe(2)
+  })
+
   it('derives control, shadows and mixed kinds from legacy-compatible squash details', () => {
     const control = makeSquashSession({
       subtype: 'control',

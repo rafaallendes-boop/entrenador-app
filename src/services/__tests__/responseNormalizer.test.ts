@@ -99,6 +99,15 @@ describe('responseNormalizer', () => {
     expect(response.actions?.[0].type).toBe('create_week')
     expect(response.actions?.[0].sessions).toHaveLength(1)
     expect(response.actions?.[0].sessions?.[0].title).toBe('Tempo')
+    expect(response.meta?.createWeekDiagnostics).toEqual([
+      {
+        targetDate: undefined,
+        rawSessions: 2,
+        validSessions: 1,
+        droppedSessions: 1,
+      },
+    ])
+    expect(response.meta?.likelyTruncated).toBe(true)
   })
 
   it('rejects squashDetails when drills items do not have a valid shape', () => {

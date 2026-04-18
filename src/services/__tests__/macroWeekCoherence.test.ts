@@ -149,6 +149,33 @@ describe('macroWeekCoherence', () => {
     expect(summary.coherenceIssues.join(' ')).toContain('running')
   })
 
+  it('taper warns explicitly when average load stays too high for freshness', () => {
+    const profile = makeProfile({
+      goalEvents: [{ ...makeProfile().goalEvents![0], date: '2026-04-25' }],
+      sportContext: {
+        enabledSports: ['squash'],
+        primarySport: 'squash',
+        secondarySports: [],
+        trainingPriority: 'performance',
+      },
+      planWizardConfig: {
+        ...makeProfile().planWizardConfig!,
+        complementarySports: [],
+      },
+    })
+
+    const summary = buildMacroWeekCoherenceSummary({
+      athleteProfile: profile,
+      sessions: [makeSession('squash', 90, 9), makeSession('squash', 85, 8)],
+      historicalSessions,
+      referenceDate,
+    })
+
+    expect(summary.currentPhase).toBe('taper')
+    expect(summary.coherenceStatus).toBe('warning')
+    expect(summary.coherenceIssues.join(' ')).toContain('frescura')
+  })
+
   it('produces different coherence guidance for build squash and peak running', () => {
     const squashProfile = makeProfile({
       goalEvents: [{ ...makeProfile().goalEvents![0], date: '2026-06-20' }],

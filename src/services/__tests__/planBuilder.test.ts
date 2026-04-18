@@ -29,7 +29,7 @@ function makeProfile(eventDate: string): AthleteProfile {
 function makeWizardConfig(): PlanWizardConfig {
   return {
     goalEventId: 'evt-1',
-    trainingDays: ['monday', 'tuesday', 'thursday', 'saturday'],
+    trainingDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'saturday'],
     sessionsPerWeek: 5,
     sessionDurationMins: 60,
     allowDoubleSession: false,
@@ -141,6 +141,32 @@ describe('planBuilder', () => {
     expect(issues.some((i) => i.code === 'week.sessions.collision')).toBe(true)
   })
 
+  it('validatePlan rejects double sessions when the wizard disables them', () => {
+    const profile = makeProfile(eventNWeeksFromNow(6))
+    const event = profile.goalEvents![0] as GoalEvent
+    const wizardConfig = {
+      ...makeWizardConfig(),
+      sessionsPerWeek: 2,
+      trainingDays: ['monday', 'tuesday'] as PlanWizardConfig['trainingDays'],
+      allowDoubleSession: false,
+    }
+    const { plan, weeks } = buildPlanShell({
+      athleteId: profile.id,
+      profile,
+      wizardConfig,
+      goalEvent: event,
+    })
+
+    weeks[0].status = 'draft'
+    weeks[0].sessions = [
+      { date: weeks[0].weekStartDate, timeBlock: 'AM', sessionType: 'squash', title: 'AM squash', durationMin: 60, squashDetails: { trainingFocus: 'technical', sessionMode: 'drill_session', drills: [] } },
+      { date: weeks[0].weekStartDate, timeBlock: 'PM', sessionType: 'running', title: 'PM running', durationMin: 45 },
+    ]
+
+    const issues = validatePlan({ plan, weeks })
+    expect(issues.some((i) => i.code === 'week.sessions.double_session_not_allowed' && i.severity === 'error')).toBe(true)
+  })
+
   it('validatePlan rejects squash weeks without any squash sessions', () => {
     const profile = makeProfile(eventNWeeksFromNow(6))
     const event = profile.goalEvents![0] as GoalEvent
@@ -181,6 +207,7 @@ describe('planBuilder', () => {
     expect(prompt).toContain('Deporte principal del objetivo: squash')
     expect(prompt).toContain('incluye al menos')
     expect(prompt).toContain('sesión')
+    expect(prompt).toContain('Como doble sesión NO está permitido')
   })
 
   it('retries a failed week with stricter context and still continues the pipeline', async () => {
@@ -247,6 +274,7 @@ describe('planBuilder', () => {
         prompts.push(request.userMessage)
         const monday = weeks[0].weekStartDate
         const tuesday = addDaysIso(monday, 1)
+        const wednesday = addDaysIso(monday, 2)
         const thursday = addDaysIso(monday, 3)
         const saturday = addDaysIso(monday, 5)
         if (prompts.length === 1) {
@@ -258,7 +286,7 @@ describe('planBuilder', () => {
 
         return {
           provider: 'mock' as const,
-          text: `<actions>[{"type":"create_week","reason":"ok","targetDate":"${monday}","sessions":[{"date":"${monday}","timeBlock":"AM","sessionType":"squash","title":"S1","durationMin":60,"squashDetails":{"trainingFocus":"technical","sessionMode":"drill_session","sessionKind":"technical","drills":[{"name":"Drive","durationMin":10}]}},{"date":"${monday}","timeBlock":"PM","sessionType":"strength","title":"S2","durationMin":45},{"date":"${tuesday}","timeBlock":"AM","sessionType":"squash","title":"S3","durationMin":30,"squashDetails":{"trainingFocus":"technical","sessionMode":"drill_session","sessionKind":"technical","drills":[{"name":"Boast","durationMin":10}]}},{"date":"${thursday}","timeBlock":"PM","sessionType":"squash","title":"S4","durationMin":50,"squashDetails":{"trainingFocus":"technical","sessionMode":"drill_session","sessionKind":"control","drills":[{"name":"Drops al box","durationMin":10}]}},{"date":"${saturday}","timeBlock":"AM","sessionType":"running","title":"S5","durationMin":40}]}]</actions>`,
+          text: `<actions>[{"type":"create_week","reason":"ok","targetDate":"${monday}","sessions":[{"date":"${monday}","timeBlock":"AM","sessionType":"squash","title":"S1","durationMin":60,"squashDetails":{"trainingFocus":"technical","sessionMode":"drill_session","sessionKind":"technical","drills":[{"name":"Drive","durationMin":10}]}},{"date":"${wednesday}","timeBlock":"PM","sessionType":"strength","title":"S2","durationMin":45},{"date":"${tuesday}","timeBlock":"AM","sessionType":"squash","title":"S3","durationMin":30,"squashDetails":{"trainingFocus":"technical","sessionMode":"drill_session","sessionKind":"technical","drills":[{"name":"Boast","durationMin":10}]}},{"date":"${thursday}","timeBlock":"PM","sessionType":"squash","title":"S4","durationMin":50,"squashDetails":{"trainingFocus":"technical","sessionMode":"drill_session","sessionKind":"control","drills":[{"name":"Drops al box","durationMin":10}]}},{"date":"${saturday}","timeBlock":"AM","sessionType":"running","title":"S5","durationMin":40}]}]</actions>`,
         }
       },
     }
@@ -274,6 +302,67 @@ describe('planBuilder', () => {
     expect(result[0]?.status).toBe('draft')
     expect(result[0]?.generationMeta.attempts).toBe(2)
     expect(prompts[1]).toContain('exactamente el número de sesiones')
+  })
+
+  it('surfaces dropped invalid sessions as a stronger retry instruction', async () => {
+    const profile = makeProfile(eventNWeeksFromNow(2))
+    const event = profile.goalEvents![0] as GoalEvent
+    const wizardConfig = makeWizardConfig()
+    const { plan, weeks } = buildPlanShell({
+      athleteId: profile.id,
+      profile,
+      wizardConfig,
+      goalEvent: event,
+    })
+
+    const prompts: string[] = []
+    const monday = weeks[0].weekStartDate
+    const tuesday = addDaysIso(monday, 1)
+    const wednesday = addDaysIso(monday, 2)
+    const thursday = addDaysIso(monday, 3)
+    const saturday = addDaysIso(monday, 5)
+    const provider = {
+      name: 'mock' as const,
+      call: async (request: { userMessage: string }) => {
+        prompts.push(request.userMessage)
+        if (prompts.length === 1) {
+          return {
+            provider: 'mock' as const,
+            text: `<actions>[{"type":"create_week","reason":"parcial","targetDate":"${monday}","sessions":[{"date":"${monday}","timeBlock":"AM","sessionType":"squash","title":"S1","durationMin":60,"squashDetails":{"trainingFocus":"technical","sessionMode":"drill_session","sessionKind":"technical","drills":[{"name":"Drive","durationMin":10}]}},{"date":"${tuesday}","timeBlock":"PM","sessionType":"strength","title":"S2","durationMin":45},{"date":"${wednesday}","timeBlock":"AM","sessionType":"squash","title":"S3","durationMin":30,"squashDetails":{"trainingFocus":"technical","sessionMode":"drill_session","sessionKind":"technical","drills":[{"name":"Boast","durationMin":10}]}},{"date":"invalid-date","timeBlock":"AM","sessionType":"running","title":"rota-1","durationMin":30},{"date":"${thursday}","timeBlock":"AM","sessionType":"squash","title":"rota-2","durationMin":45}]}]</actions>`,
+          }
+        }
+
+        return {
+          provider: 'mock' as const,
+          text: `<actions>[{"type":"create_week","reason":"ok","targetDate":"${monday}","sessions":[{"date":"${monday}","timeBlock":"AM","sessionType":"squash","title":"S1","durationMin":60,"squashDetails":{"trainingFocus":"technical","sessionMode":"drill_session","sessionKind":"technical","drills":[{"name":"Drive","durationMin":10}]}},{"date":"${wednesday}","timeBlock":"PM","sessionType":"strength","title":"S2","durationMin":45},{"date":"${tuesday}","timeBlock":"AM","sessionType":"squash","title":"S3","durationMin":30,"squashDetails":{"trainingFocus":"technical","sessionMode":"drill_session","sessionKind":"technical","drills":[{"name":"Boast","durationMin":10}]}},{"date":"${thursday}","timeBlock":"PM","sessionType":"squash","title":"S4","durationMin":50,"squashDetails":{"trainingFocus":"technical","sessionMode":"drill_session","sessionKind":"control","drills":[{"name":"Drops al box","durationMin":10}]}},{"date":"${saturday}","timeBlock":"AM","sessionType":"running","title":"S5","durationMin":40}]}]</actions>`,
+        }
+      },
+    }
+
+    const result = await generatePlanWeeks({
+      plan: { ...plan, totalWeeks: 2 },
+      weeks: weeks.slice(0, 1),
+      profile,
+      wizardConfig,
+      provider,
+    })
+
+    expect(result[0]?.status).toBe('draft')
+    expect(prompts[1]).toContain('sesiones válidas completas')
+  })
+
+  it('buildPlanShell starts in transition when the goal event already passed earlier this same week', () => {
+    const profile = makeProfile('2026-04-14')
+    const event = profile.goalEvents![0] as GoalEvent
+    const { weeks } = buildPlanShell({
+      athleteId: profile.id,
+      profile,
+      wizardConfig: makeWizardConfig(),
+      goalEvent: event,
+      now: new Date('2026-04-18T10:00:00'),
+    })
+
+    expect(weeks[0]?.phase).toBe('transition')
   })
 
   it('falls back from pair generation to single-week generation when only one week resolves from the batch', async () => {
@@ -323,6 +412,56 @@ describe('planBuilder', () => {
     expect(result[1]?.status).toBe('draft')
     expect(result[0]?.generationMeta.strategy).toBe('pairs')
     expect(result[1]?.generationMeta.strategy).toBe('single')
+  })
+
+  it('degrades the remaining pipeline to single-week generation after a malformed pair batch', async () => {
+    const profile = makeProfile(eventNWeeksFromNow(8))
+    const event = profile.goalEvents![0] as GoalEvent
+    const wizardConfig = makeWizardConfig()
+    const { plan, weeks } = buildPlanShell({
+      athleteId: profile.id,
+      profile,
+      wizardConfig,
+      goalEvent: event,
+    })
+
+    let callCount = 0
+    const provider = {
+      name: 'mock' as const,
+      call: async () => {
+        callCount += 1
+        const week1Monday = weeks[0].weekStartDate
+        const week2Monday = weeks[1].weekStartDate
+        const week3Monday = weeks[2].weekStartDate
+        const week4Monday = weeks[3].weekStartDate
+        if (callCount === 1) {
+          return {
+            provider: 'mock' as const,
+            text: `<actions>[{"type":"create_week","reason":"batch-1","targetDate":"${week1Monday}","sessions":[{"date":"${week1Monday}","timeBlock":"AM","sessionType":"squash","title":"w1-a","durationMin":40,"squashDetails":{"trainingFocus":"technical","sessionMode":"drill_session","sessionKind":"technical","drills":[{"name":"Drive","durationMin":10}]}},{"date":"${addDaysIso(week1Monday, 1)}","timeBlock":"PM","sessionType":"strength","title":"w1-b","durationMin":45},{"date":"${addDaysIso(week1Monday, 2)}","timeBlock":"AM","sessionType":"running","title":"w1-c","durationMin":35}]},{"type":"create_week","reason":"batch-2","targetDate":"${week2Monday}","sessions":[{"date":"${week2Monday}","timeBlock":"AM","sessionType":"squash","title":"w2-a","durationMin":40,"squashDetails":{"trainingFocus":"technical","sessionMode":"drill_session","sessionKind":"technical","drills":[{"name":"Drive","durationMin":10}]}},{"date":"${addDaysIso(week2Monday, 1)}","timeBlock":"PM","sessionType":"strength","title":"w2-b","durationMin":45},{"date":"${addDaysIso(week2Monday, 2)}","timeBlock":"AM","sessionType":"running","title":"w2-c","durationMin":35}]}]</actions>`,
+          }
+        }
+        const monday = callCount === 2 ? week1Monday : callCount === 3 ? week2Monday : callCount === 4 ? week3Monday : week4Monday
+        return {
+          provider: 'mock' as const,
+          text: `<actions>[{"type":"create_week","reason":"single-ok","targetDate":"${monday}","sessions":[{"date":"${monday}","timeBlock":"AM","sessionType":"squash","title":"a","durationMin":60,"squashDetails":{"trainingFocus":"technical","sessionMode":"drill_session","sessionKind":"technical","drills":[{"name":"Drive","durationMin":10}]}},{"date":"${addDaysIso(monday, 1)}","timeBlock":"PM","sessionType":"strength","title":"b","durationMin":45},{"date":"${addDaysIso(monday, 2)}","timeBlock":"AM","sessionType":"squash","title":"c","durationMin":30,"squashDetails":{"trainingFocus":"technical","sessionMode":"drill_session","sessionKind":"technical","drills":[{"name":"Boast","durationMin":10}]}},{"date":"${addDaysIso(monday, 3)}","timeBlock":"PM","sessionType":"squash","title":"d","durationMin":50,"squashDetails":{"trainingFocus":"technical","sessionMode":"drill_session","sessionKind":"control","drills":[{"name":"Drops","durationMin":10}]}},{"date":"${addDaysIso(monday, 5)}","timeBlock":"AM","sessionType":"running","title":"e","durationMin":40}]}]</actions>`,
+        }
+      },
+    }
+
+    const result = await generatePlanWeeks({
+      plan,
+      weeks: weeks.slice(0, 4),
+      profile,
+      wizardConfig,
+      provider,
+      strategy: 'pairs',
+    })
+
+    expect(callCount).toBe(5)
+    expect(result.every((week) => week.status === 'draft')).toBe(true)
+    expect(result[0]?.generationMeta.strategy).toBe('single')
+    expect(result[2]?.generationMeta.strategy).toBe('single')
+    expect(result[0]?.generationMeta.degradedFromPairs).toBe(true)
   })
 
   it('streams chunks through the plan generator callback', async () => {

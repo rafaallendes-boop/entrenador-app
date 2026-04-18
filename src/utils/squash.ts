@@ -75,13 +75,17 @@ export function isCompetitionSquashMatch(session: Pick<Session, 'type' | 'subtyp
 }
 
 export function getRecentSquashCompetitiveExposure(
-  sessions: Array<Pick<Session, 'type' | 'subtype' | 'squashDetails'>>,
+  sessions: Array<Pick<Session, 'date' | 'timeBlock' | 'type' | 'subtype' | 'squashDetails'>>,
   limit = 4,
 ): SquashCompetitiveExposureSummary {
   let practiceMatchCount = 0
   let competitionMatchCount = 0
 
-  for (const session of sessions.slice(0, limit)) {
+  const recentSessions = [...sessions]
+    .sort((a, b) => b.date.localeCompare(a.date) || b.timeBlock.localeCompare(a.timeBlock))
+    .slice(0, limit)
+
+  for (const session of recentSessions) {
     if (isPracticeSquashMatch(session)) {
       practiceMatchCount += 1
       continue

@@ -1,5 +1,5 @@
 import type { CoachAction, CoachActionType, CoachExerciseProposal, CoachSessionProposal, CyclingDetails, GeneratedProtocol, MobilityDetails, RunningIntervalStructure, RunningType, SquashDetails, SquashSessionMode, SquashSubtype, TimeBlock } from '../../types'
-import type { AIRawResponse, CoachNormalizedResponse } from './types'
+import type { AIRawResponse, CoachNormalizedResponse, CreateWeekNormalizationDiagnostic } from './types'
 import { orderSquashDrillsForSession } from '../training/drillLibrary'
 
 const ACTIONS_BLOCK_RE = /<actions>([\s\S]*?)<\/actions>/i
@@ -38,6 +38,8 @@ export function normalizeResponse(raw: AIRawResponse): CoachNormalizedResponse {
   let actionParseFailed = false
   let hadActionsMarkup = false
   let likelyTruncated = false
+  let invalidActionCount = 0
+  let createWeekDiagnostics: CreateWeekNormalizationDiagnostic[] = []
   const extraction = extractActionsText(message)
   if (extraction) {
     hadActionsMarkup = true
@@ -45,6 +47,8 @@ export function normalizeResponse(raw: AIRawResponse): CoachNormalizedResponse {
     actions = parseResult.actions
     actionParseFailed = parseResult.parseFailed
     likelyTruncated = extraction.openOnly || parseResult.likelyTruncated
+    invalidActionCount = parseResult.invalidActionCount
+    createWeekDiagnostics = parseResult.createWeekDiagnostics
     message = extraction.messageWithoutActions
   } else {
     const inlineJson = extractInlineActionsJson(message)
@@ -53,6 +57,8 @@ export function normalizeResponse(raw: AIRawResponse): CoachNormalizedResponse {
       actions = parseResult.actions
       actionParseFailed = parseResult.parseFailed
       likelyTruncated = parseResult.likelyTruncated
+      invalidActionCount = parseResult.invalidActionCount
+      createWeekDiagnostics = parseResult.createWeekDiagnostics
       if (parseResult.actions.length > 0) {
         message = inlineJson.messageWithoutActions
       }
@@ -73,6 +79,8 @@ export function normalizeResponse(raw: AIRawResponse): CoachNormalizedResponse {
       hadActionsMarkup,
       actionParseFailed,
       likelyTruncated,
+      invalidActionCount,
+      createWeekDiagnostics,
     },
   }
 }
@@ -81,6 +89,8 @@ function parseActionsBlock(jsonText: string): {
   actions: CoachAction[]
   parseFailed: boolean
   likelyTruncated: boolean
+  invalidActionCount: number
+  createWeekDiagnostics: CreateWeekNormalizationDiagnostic[]
 } {
   let parsed: unknown
   try {
@@ -92,6 +102,8 @@ function parseActionsBlock(jsonText: string): {
         actions: [],
         parseFailed: true,
         likelyTruncated: isLikelyTruncatedJson(jsonText),
+        invalidActionCount: 0,
+        createWeekDiagnostics: [],
       }
     }
     try {
@@ -101,6 +113,8 @@ function parseActionsBlock(jsonText: string): {
         actions: [],
         parseFailed: true,
         likelyTruncated: isLikelyTruncatedJson(jsonText),
+        invalidActionCount: 0,
+        createWeekDiagnostics: [],
       }
     }
   }
@@ -111,20 +125,27 @@ function parseActionsBlock(jsonText: string): {
       actions: [],
       parseFailed: true,
       likelyTruncated: isLikelyTruncatedJson(jsonText),
+      invalidActionCount: 0,
+      createWeekDiagnostics: [],
     }
   }
 
+  const createWeekDiagnostics: CreateWeekNormalizationDiagnostic[] = []
   const actions = actionCandidates.reduce<CoachAction[]>((acc, item) => {
-    const action = validateAction(item)
-    if (action) acc.push(action)
+    const result = validateAction(item)
+    if (result.action) acc.push(result.action)
+    if (result.createWeekDiagnostic) createWeekDiagnostics.push(result.createWeekDiagnostic)
     return acc
   }, [])
   const invalidActionCount = actionCandidates.length - actions.length
+  const droppedCreateWeekSessions = createWeekDiagnostics.some((diagnostic) => diagnostic.droppedSessions > 0)
 
   return {
     actions,
     parseFailed: actions.length === 0 && actionCandidates.length > 0,
-    likelyTruncated: invalidActionCount > 0 || isLikelyTruncatedJson(jsonText),
+    likelyTruncated: invalidActionCount > 0 || droppedCreateWeekSessions || isLikelyTruncatedJson(jsonText),
+    invalidActionCount,
+    createWeekDiagnostics,
   }
 }
 
@@ -143,12 +164,15 @@ function unwrapActionCandidates(parsed: unknown): unknown[] | null {
   return null
 }
 
-function validateAction(obj: unknown): CoachAction | null {
-  if (!obj || typeof obj !== 'object') return null
+function validateAction(obj: unknown): {
+  action: CoachAction | null
+  createWeekDiagnostic?: CreateWeekNormalizationDiagnostic
+} {
+  if (!obj || typeof obj !== 'object') return { action: null }
   const record = obj as Record<string, unknown>
 
-  if (typeof record.type !== 'string' || !VALID_ACTION_TYPES.has(record.type as CoachActionType)) return null
-  if (typeof record.reason !== 'string' || !record.reason.trim()) return null
+  if (typeof record.type !== 'string' || !VALID_ACTION_TYPES.has(record.type as CoachActionType)) return { action: null }
+  if (typeof record.reason !== 'string' || !record.reason.trim()) return { action: null }
 
   const type = record.type as CoachActionType
   const base = {
@@ -159,43 +183,53 @@ function validateAction(obj: unknown): CoachAction | null {
   switch (type) {
     case 'skip_session':
     case 'delete_session':
-      return typeof record.sessionId === 'string' ? { ...base, sessionId: record.sessionId } : null
+      return { action: typeof record.sessionId === 'string' ? { ...base, sessionId: record.sessionId } : null }
 
     case 'replace_session_type':
-      return typeof record.sessionId === 'string' && isSessionType(record.newType)
-        ? { ...base, sessionId: record.sessionId, newType: record.newType }
-        : null
+      return {
+        action: typeof record.sessionId === 'string' && isSessionType(record.newType)
+          ? { ...base, sessionId: record.sessionId, newType: record.newType }
+          : null,
+      }
 
     case 'change_rpe':
-      return typeof record.sessionId === 'string' && isRpe(record.newRpe)
-        ? { ...base, sessionId: record.sessionId, newRpe: record.newRpe }
-        : null
+      return {
+        action: typeof record.sessionId === 'string' && isRpe(record.newRpe)
+          ? { ...base, sessionId: record.sessionId, newRpe: record.newRpe }
+          : null,
+      }
 
     case 'shorten_session':
     case 'lengthen_session':
-      return typeof record.sessionId === 'string' && typeof record.newDurationMin === 'number' && record.newDurationMin >= 5
-        ? { ...base, sessionId: record.sessionId, newDurationMin: record.newDurationMin }
-        : null
+      return {
+        action: typeof record.sessionId === 'string' && typeof record.newDurationMin === 'number' && record.newDurationMin >= 5
+          ? { ...base, sessionId: record.sessionId, newDurationMin: record.newDurationMin }
+          : null,
+      }
 
     case 'move_session':
-      return typeof record.sessionId === 'string' && isValidDate(record.targetDate)
-        ? { ...base, sessionId: record.sessionId, targetDate: record.targetDate }
-        : null
+      return {
+        action: typeof record.sessionId === 'string' && isValidDate(record.targetDate)
+          ? { ...base, sessionId: record.sessionId, targetDate: record.targetDate }
+          : null,
+      }
 
     case 'insert_recovery':
-      return isValidDate(record.targetDate)
-        ? { ...base, targetDate: record.targetDate }
-        : null
+      return {
+        action: isValidDate(record.targetDate)
+          ? { ...base, targetDate: record.targetDate }
+          : null,
+      }
 
     case 'add_session': {
       if (!isValidDate(record.targetDate) || !isSessionType(record.sessionType) || typeof record.title !== 'string' || !record.title.trim()) {
-        return null
+        return { action: null }
       }
       if (typeof record.durationMin !== 'number' || record.durationMin < 5 || !isTimeBlock(record.timeBlock)) {
-        return null
+        return { action: null }
       }
       if (record.sessionType === 'squash' && !isSquashDetails(record.squashDetails)) {
-        return null
+        return { action: null }
       }
 
       const action: CoachAction = {
@@ -206,15 +240,22 @@ function validateAction(obj: unknown): CoachAction | null {
         durationMin: record.durationMin,
         timeBlock: record.timeBlock,
       }
-      return assignOptionalSessionFields(action, record)
+      return { action: assignOptionalSessionFields(action, record) }
     }
 
     case 'create_week': {
-      if (!Array.isArray(record.sessions) || record.sessions.length === 0) return null
+      if (!Array.isArray(record.sessions) || record.sessions.length === 0) return { action: null }
+      const rawSessions = record.sessions.length
       const sessions = record.sessions
         .map(validateSessionProposal)
         .filter((item): item is CoachSessionProposal => item != null)
-      if (sessions.length === 0) return null
+      const createWeekDiagnostic: CreateWeekNormalizationDiagnostic = {
+        targetDate: isValidDate(record.targetDate) ? record.targetDate : undefined,
+        rawSessions,
+        validSessions: sessions.length,
+        droppedSessions: rawSessions - sessions.length,
+      }
+      if (sessions.length === 0) return { action: null, createWeekDiagnostic }
 
       const action: CoachAction = {
         ...base,
@@ -226,11 +267,11 @@ function validateAction(obj: unknown): CoachAction | null {
       if (Array.isArray(record.weekObjectives)) {
         action.weekObjectives = record.weekObjectives.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
       }
-      return action
+      return { action, createWeekDiagnostic }
     }
 
     case 'update_session': {
-      if (typeof record.sessionId !== 'string') return null
+      if (typeof record.sessionId !== 'string') return { action: null }
       const action: CoachAction = {
         ...base,
         sessionId: record.sessionId,
@@ -258,7 +299,7 @@ function validateAction(obj: unknown): CoachAction | null {
       if (isMobilityDetails(record.mobilityDetails)) action.mobilityDetails = record.mobilityDetails
       if (isSquashDetails(record.squashDetails)) action.squashDetails = normalizeSquashDetails(record.squashDetails)
 
-      return hasAnyUpdateField(action) ? action : null
+      return { action: hasAnyUpdateField(action) ? action : null }
     }
   }
 }

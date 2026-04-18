@@ -9,6 +9,7 @@ import { usePlanBuilderStore } from '../store/usePlanBuilderStore'
 import { getPrimaryGoalEvent } from '../services/macroPlan'
 import { ChevronLeft, RefreshCw, CheckCircle2, AlertTriangle } from 'lucide-react'
 import type { PlanWizardConfig, GoalEvent } from '../types'
+import type { TrainingPlanWeek } from '../types/planBuilder'
 
 const PHASE_LABELS: Record<string, string> = {
   base: 'Base', build: 'Build', peak: 'Peak', taper: 'Taper', race: 'Race', transition: 'Transition',
@@ -21,6 +22,26 @@ const PHASE_DOT: Record<string, string> = {
   taper: 'bg-emerald-400',
   race: 'bg-rose-400',
   transition: 'bg-ink-faint',
+}
+
+function buildGenerationSignals(week: TrainingPlanWeek): string[] {
+  const signals: string[] = []
+  const meta = week.generationMeta
+
+  if (meta.validSessionCount != null && meta.rawSessionCount != null && meta.rawSessionCount > meta.validSessionCount) {
+    signals.push(`Sesiones válidas ${meta.validSessionCount}/${meta.rawSessionCount}`)
+  }
+  if ((meta.droppedSessionCount ?? 0) > 0) {
+    signals.push(`${meta.droppedSessionCount} descartada${meta.droppedSessionCount === 1 ? '' : 's'} por formato`)
+  }
+  if (meta.degradedFromPairs) {
+    signals.push('Batch degradado a generación individual')
+  }
+  if ((meta.attempts ?? 0) > 1) {
+    signals.push(`${meta.attempts} intentos`)
+  }
+
+  return signals
 }
 
 
@@ -314,20 +335,22 @@ function CyclistMark({ className }: { className?: string }) {
   )
 }
 
-function getSportFromGoalEvent(goalEvent: GoalEvent | undefined): 'squash' | 'running' | 'cycling' {
-  if (!goalEvent) return 'squash'
+function getSportFromGoalEvent(goalEvent: GoalEvent | undefined): 'squash' | 'running' | 'cycling' | 'other' {
+  if (!goalEvent) return 'other'
   const sport = (goalEvent.sport ?? '').toLowerCase()
   const eventType = goalEvent.eventType ?? ''
+  if (sport.includes('squash')) return 'squash'
   if (sport.includes('run') || eventType === 'race') return 'running'
   if (sport.includes('cycl') || sport.includes('bike') || eventType === 'cycling_event') return 'cycling'
-  return 'squash'
+  return 'other'
 }
 
 function SportAthleteIllustration({ goalEvent, className }: { goalEvent: GoalEvent | undefined; className?: string }) {
   const sport = getSportFromGoalEvent(goalEvent)
   if (sport === 'running') return <RunnerMark className={className} />
   if (sport === 'cycling') return <CyclistMark className={className} />
-  return <SquashPlayerMark className={className} />
+  if (sport === 'squash') return <SquashPlayerMark className={className} />
+  return null
 }
 
 function buildDraftSignature(goalEventId: string, wizardConfig: PlanWizardConfig): string {
@@ -402,6 +425,7 @@ export default function PlanBuilderV2Page() {
     return weeks[0]?.weekIndex ?? 0
   })()
   const selectedWeek = weeks.find((w) => w.weekIndex === effectiveSelectedWeekIndex)
+  const selectedWeekSignals = selectedWeek ? buildGenerationSignals(selectedWeek) : []
   const errors = issues.filter((i) => i.severity === 'error')
   const warnings = issues.filter((i) => i.severity === 'warning')
   const hasIncompleteWeeks = weeks.length === 0 || weeks.some((week) => week.status !== 'draft' || week.sessions.length === 0)
@@ -543,6 +567,7 @@ export default function PlanBuilderV2Page() {
             weeksLabel={`${plan?.totalWeeks ?? weeks.length} semanas listas para inicializar.`}
             goalLabel={goalEvent ? `Evento objetivo: ${goalEvent.title} · ${goalEvent.date}` : 'Macro-plan listo para generar.'}
             isInitializing={isGenerating}
+            sport={getSportFromGoalEvent(goalEvent)}
             onInitialize={() => { void handleInitializeProtocol() }}
           />
         ) : (
@@ -657,6 +682,20 @@ export default function PlanBuilderV2Page() {
                   </button>
                 </div>
 
+                {selectedWeekSignals.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {selectedWeekSignals.map((signal) => (
+                      <span
+                        key={signal}
+                        className="rounded-full px-2.5 py-1 text-[10px] font-mono uppercase tracking-[0.12em] text-amber-300"
+                        style={{ background: 'rgba(251,191,36,0.10)', border: '1px solid rgba(251,191,36,0.18)' }}
+                      >
+                        {signal}
+                      </span>
+                    ))}
+                  </div>
+                )}
+
                 {selectedWeek.weekObjectives.length > 0 && (
                   <div className="rounded-xl px-3 py-2.5 text-xs"
                     style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}>
@@ -688,40 +727,69 @@ export default function PlanBuilderV2Page() {
                         )}
                       </>
                     ) : selectedWeek.status === 'error' ? (
-                      <p className="text-xs text-red-400">
-                        Error: {selectedWeek.generationMeta.lastError ?? 'Generación fallida'}
-                      </p>
+                      <div className="space-y-2">
+                        <p className="text-xs text-red-400">
+                          Error: {selectedWeek.generationMeta.lastError ?? 'Generación fallida'}
+                        </p>
+                        {(selectedWeek.generationMeta.validSessionCount != null || selectedWeek.generationMeta.degradedFromPairs) && (
+                          <div
+                            className="rounded-xl px-3 py-2.5 text-left text-[11px] text-amber-300"
+                            style={{ background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.16)' }}
+                          >
+                            {selectedWeek.generationMeta.validSessionCount != null && selectedWeek.generationMeta.rawSessionCount != null && (
+                              <p>
+                                El motor rescató {selectedWeek.generationMeta.validSessionCount} de {selectedWeek.generationMeta.rawSessionCount} sesiones propuestas.
+                              </p>
+                            )}
+                            {selectedWeek.generationMeta.degradedFromPairs && (
+                              <p>
+                                Se cambió de generación por pares a generación individual para priorizar estabilidad.
+                              </p>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     ) : (
                       <p className="text-xs text-ink-faint">Sin sesiones todavía.</p>
                     )}
                   </div>
                 ) : (
-                  <div className="space-y-2">
-                    {selectedWeek.sessions
-                      .slice()
-                      .sort((a, b) => (a.date === b.date ? (a.timeBlock > b.timeBlock ? 1 : -1) : a.date.localeCompare(b.date)))
-                      .map((s, i) => (
-                        <div
-                          key={i}
-                          className="relative overflow-hidden rounded-xl px-3.5 py-2.5"
-                          style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}
-                        >
-                          {/* Sport color indicator */}
-                          <div className="absolute left-0 inset-y-0 w-[3px] rounded-l-xl bg-brand opacity-60" />
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-mono text-[10px] text-ink-faint">{s.date}</span>
-                            <span className="font-mono text-[9px] uppercase tracking-wider text-ink-faint">{s.timeBlock}</span>
-                            <span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-bold uppercase tracking-wider text-brand-light"
-                              style={{ background: 'rgba(255,77,0,0.12)' }}>
-                              {s.sessionType}
-                            </span>
-                            <span className="font-mono text-[10px] text-ink-faint">{s.durationMin}min</span>
+                  <>
+                    {selectedWeekSignals.length > 0 && (
+                      <div
+                        className="rounded-xl px-3 py-2 text-[11px] text-amber-300"
+                        style={{ background: 'rgba(251,191,36,0.06)', border: '1px solid rgba(251,191,36,0.12)' }}
+                      >
+                        Generación reforzada: se aplicaron validaciones y reintentos extra para estabilizar esta semana.
+                      </div>
+                    )}
+                    <div className="space-y-2">
+                      {selectedWeek.sessions
+                        .slice()
+                        .sort((a, b) => (a.date === b.date ? (a.timeBlock > b.timeBlock ? 1 : -1) : a.date.localeCompare(b.date)))
+                        .map((s, i) => (
+                          <div
+                            key={i}
+                            className="relative overflow-hidden rounded-xl px-3.5 py-2.5"
+                            style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}
+                          >
+                            {/* Sport color indicator */}
+                            <div className="absolute left-0 inset-y-0 w-[3px] rounded-l-xl bg-brand opacity-60" />
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-mono text-[10px] text-ink-faint">{s.date}</span>
+                              <span className="font-mono text-[9px] uppercase tracking-wider text-ink-faint">{s.timeBlock}</span>
+                              <span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-bold uppercase tracking-wider text-brand-light"
+                                style={{ background: 'rgba(255,77,0,0.12)' }}>
+                                {s.sessionType}
+                              </span>
+                              <span className="font-mono text-[10px] text-ink-faint">{s.durationMin}min</span>
+                            </div>
+                            <p className="mt-1 text-sm font-semibold text-ink">{s.title}</p>
+                            {s.objective && <p className="mt-0.5 text-xs leading-relaxed text-ink-muted">{s.objective}</p>}
                           </div>
-                          <p className="mt-1 text-sm font-semibold text-ink">{s.title}</p>
-                          {s.objective && <p className="mt-0.5 text-xs leading-relaxed text-ink-muted">{s.objective}</p>}
-                        </div>
-                      ))}
-                  </div>
+                        ))}
+                    </div>
+                  </>
                 )}
               </div>
             ) : (

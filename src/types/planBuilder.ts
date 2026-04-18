@@ -38,6 +38,10 @@ export interface PlanGenerationMeta {
   chunkCount?: number
   strategy?: 'single' | 'pairs'
   batchId?: string
+  rawSessionCount?: number
+  validSessionCount?: number
+  droppedSessionCount?: number
+  degradedFromPairs?: boolean
 }
 
 export interface PlanGenerationSummary {

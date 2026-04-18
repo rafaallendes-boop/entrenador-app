@@ -6,7 +6,6 @@ import AthleteProfileEditor from '../components/settings/AthleteProfileEditor'
 import SyncStatusBadge from '../components/sync/SyncStatusBadge'
 import { APP_INFO } from '../constants/appInfo'
 import { ROUTES } from '../constants/routes'
-import { CoachEngine } from '../services/ai/CoachEngine'
 import {
   downloadAppDataExport,
   importAppDataFromFile,
@@ -361,8 +360,6 @@ export default function SettingsPage() {
     setClearStatus(null)
   }
 
-  const providerName = CoachEngine.getProviderName()
-  const providerConfigured = CoachEngine.isRealProviderConfigured()
   const sportSummary = getSportPrioritySummary(athleteProfile)
   const enabledSports = getEnabledSports(athleteProfile)
   const profileSyncAffected = syncDetails.pendingTables.includes('athlete_profiles')
@@ -818,16 +815,6 @@ export default function SettingsPage() {
               <div className="flex items-center justify-between gap-3">
                 <span className="text-ink-muted">Version</span>
                 <span className="text-ink font-medium">{APP_INFO.version}</span>
-              </div>
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-ink-muted">Provider AI</span>
-                <span className="text-ink font-medium">{providerName}</span>
-              </div>
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-ink-muted">Modo AI</span>
-                <span className={`font-medium ${providerConfigured ? 'text-emerald-400' : 'text-amber-400'}`}>
-                  {providerConfigured ? 'Real' : 'Demo'}
-                </span>
               </div>
             </div>
           </Card>

@@ -51,6 +51,19 @@ describe('macroPlan', () => {
     expect(getPrimaryGoalEvent(profile)?.id).toBe('good')
   })
 
+  it('rejects impossible ISO dates for goal events', () => {
+    const profile: AthleteProfile = {
+      id: 'default',
+      updatedAt: Date.now(),
+      goalEvents: [
+        { id: 'bad', title: 'Fecha imposible', date: '2026-02-31', sport: 'squash', priority: 'primary' },
+      ],
+    }
+
+    expect(getPrimaryGoalEvent(profile)).toBeUndefined()
+    expect(computeMacroPlan(profile)).toBeUndefined()
+  })
+
   it('computes weeks remaining by rounding partial weeks up', () => {
     const weeks = computeWeeksRemaining('2026-04-21', new Date('2026-04-08T10:00:00'))
     expect(weeks).toBe(2)

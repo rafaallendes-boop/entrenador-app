@@ -146,6 +146,8 @@ IMPORTANTE DE FORMATO:
       actionParseFailed: retryNormalized.meta?.actionParseFailed ?? false,
       likelyTruncated: retryNormalized.meta?.likelyTruncated ?? false,
       retryUsed: true,
+      invalidActionCount: retryNormalized.meta?.invalidActionCount,
+      createWeekDiagnostics: retryNormalized.meta?.createWeekDiagnostics,
     },
   }
 }

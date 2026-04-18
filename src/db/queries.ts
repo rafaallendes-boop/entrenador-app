@@ -159,8 +159,8 @@ export const recalculateWeekSummary = async (dateISO: string): Promise<void> => 
   const active = sessions.filter(s => s.status !== 'skipped')
 
   await upsertWeekSummary(weekStart, {
-    totalSessions: completedSessions,
-    totalMinutes: completedMinutes,
+    totalSessions: plannedSessions,
+    totalMinutes: plannedMinutes,
     plannedSessions,
     completedSessions,
     plannedMinutes,

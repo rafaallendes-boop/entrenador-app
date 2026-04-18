@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import {
   clearWeeklyActionLaunchSearch,
   parseWeeklyActionLaunchIntent,
+  serializeWeeklyActionLaunchIntent,
   type WeeklyActionLaunchIntent,
 } from '../services/weeklyLaunchIntent'
 
@@ -16,6 +17,14 @@ export interface WeeklyLaunchIntentState {
   launchId: number
 }
 
+function buildStableLaunchId(sourceKey: string): number {
+  let hash = 0
+  for (let i = 0; i < sourceKey.length; i += 1) {
+    hash = (hash * 31 + sourceKey.charCodeAt(i)) >>> 0
+  }
+  return hash
+}
+
 export function useWeeklyLaunchIntent(): WeeklyLaunchIntentState {
   const location = useLocation()
   const navigate = useNavigate()
@@ -24,8 +33,14 @@ export function useWeeklyLaunchIntent(): WeeklyLaunchIntentState {
     () => parseWeeklyActionLaunchIntent(location.search),
     [location.search],
   )
+  const parsedLaunchSourceKey = parsedLaunchIntent
+    ? `${location.key}:${serializeWeeklyActionLaunchIntent(parsedLaunchIntent)}`
+    : null
+  const parsedLaunchId = parsedLaunchSourceKey ? buildStableLaunchId(parsedLaunchSourceKey) : 0
   const launchIntent = parsedLaunchIntent ?? locationState?.weeklyLaunchIntent ?? null
-  const launchId = parsedLaunchIntent ? 0 : (locationState?.weeklyLaunchId ?? 0)
+  const launchId = parsedLaunchIntent
+    ? parsedLaunchId
+    : (locationState?.weeklyLaunchId ?? 0)
 
   useEffect(() => {
     if (!parsedLaunchIntent) return
@@ -37,11 +52,11 @@ export function useWeeklyLaunchIntent(): WeeklyLaunchIntentState {
         state: {
           ...(locationState ?? {}),
           weeklyLaunchIntent: parsedLaunchIntent,
-          weeklyLaunchId: Date.now(),
+          weeklyLaunchId: parsedLaunchId,
         },
       },
     )
-  }, [location.pathname, location.search, locationState, navigate, parsedLaunchIntent])
+  }, [location.pathname, location.search, locationState, navigate, parsedLaunchId, parsedLaunchIntent])
 
   return { launchIntent, launchId }
 }

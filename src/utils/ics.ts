@@ -4,6 +4,10 @@ import { formatDuration } from './format'
 
 const pad = (n: number, len = 2) => String(n).padStart(len, '0')
 
+function toICSUtcTimestamp(date: Date): string {
+  return `${date.getUTCFullYear()}${pad(date.getUTCMonth() + 1)}${pad(date.getUTCDate())}T${pad(date.getUTCHours())}${pad(date.getUTCMinutes())}${pad(date.getUTCSeconds())}Z`
+}
+
 function toICSDate(dateISO: string, timeBlock: 'AM' | 'PM'): string {
   // AM sessions start 07:00, PM sessions start 18:00
   const [year, month, day] = dateISO.split('-').map(Number)
@@ -46,8 +50,7 @@ function sessionToVEVENT(session: Session, uid: string): string {
   if (session.notes) descParts.push(`Notas: ${session.notes}`)
   descParts.push(`Duración: ${formatDuration(session.durationMin)}`)
 
-  const now = new Date()
-  const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}T${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}Z`
+  const stamp = toICSUtcTimestamp(new Date())
 
   return [
     'BEGIN:VEVENT',
@@ -56,7 +59,7 @@ function sessionToVEVENT(session: Session, uid: string): string {
     `DTSTART:${toICSDate(session.date, session.timeBlock)}`,
     `DTEND:${toICSDateEnd(session.date, session.timeBlock, session.durationMin)}`,
     `SUMMARY:${escapeICS(title)}`,
-    descParts.length ? `DESCRIPTION:${escapeICS(descParts.join('\\n'))}` : '',
+    descParts.length ? `DESCRIPTION:${escapeICS(descParts.join('\n'))}` : '',
     'END:VEVENT',
   ].filter(Boolean).join('\r\n')
 }

@@ -52,6 +52,13 @@ export interface AIRawResponse {
   durationMs?: number
 }
 
+export interface CreateWeekNormalizationDiagnostic {
+  targetDate?: string
+  rawSessions: number
+  validSessions: number
+  droppedSessions: number
+}
+
 // ─── Normalized coach response (what the app consumes) ────────────────────────
 
 export interface CoachNormalizedResponse {
@@ -74,6 +81,8 @@ export interface CoachNormalizedResponse {
     actionParseFailed: boolean
     likelyTruncated: boolean
     retryUsed?: boolean
+    invalidActionCount?: number
+    createWeekDiagnostics?: CreateWeekNormalizationDiagnostic[]
   }
 }
 

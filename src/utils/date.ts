@@ -16,6 +16,12 @@ export const toISO = (date: Date): string => format(date, 'yyyy-MM-dd')
 
 export const fromISO = (iso: string): Date => parseISO(iso)
 
+export const isStrictISODate = (value: string): boolean => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
+  const parsed = new Date(`${value}T00:00:00.000Z`)
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().startsWith(value)
+}
+
 export const getWeekStart = (date: Date): Date =>
   startOfWeek(date, { weekStartsOn: 1 })
 

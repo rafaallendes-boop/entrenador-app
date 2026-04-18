@@ -46,9 +46,10 @@ const MIGRATION_KEY_PREFIX = 'entrenador_migrated_v1'
 const SESSION_DELETE_TOMBSTONES_KEY = 'entrenador_sync_session_tombstones_v1'
 const TOMBSTONE_TTL_MS = 90 * 24 * 60 * 60 * 1000 // 90 days
 const MAX_QUEUE_SIZE = 500
-let activeDrainQueuePromise: Promise<boolean> | null = null
-let activePullAllPromise: Promise<void> | null = null
-let activeFullSyncPromise: Promise<void> | null = null
+type ScopedPromise<T> = { userId: string; promise: Promise<T> }
+let activeDrainQueuePromise: ScopedPromise<boolean> | null = null
+let activePullAllPromise: ScopedPromise<void> | null = null
+let activeFullSyncPromise: ScopedPromise<void> | null = null
 let syncAttemptCounter = 0
 
 /**
@@ -96,6 +97,7 @@ interface QueueSummary {
 interface MergeContext {
   allowDeletes: boolean
   deleteBeforeTs: number | null
+  pendingWrites: Promise<unknown>[]
 }
 
 interface MergeResolution<T extends { id: string }> {
@@ -327,20 +329,21 @@ function logAthleteProfileSync(event: string, details: Record<string, unknown>):
 }
 
 async function drainQueue(): Promise<boolean> {
-  if (activeDrainQueuePromise) {
-    return activeDrainQueuePromise
+  const userId = getUserId()
+  if (!userId) {
+    startSyncAttempt()
+    finishSyncAttempt('idle')
+    return loadQueue().length === 0
   }
 
-  activeDrainQueuePromise = (async () => {
+  if (activeDrainQueuePromise && activeDrainQueuePromise.userId === userId) {
+    return activeDrainQueuePromise.promise
+  }
+
+  const promise = (async () => {
   const attemptId = ++syncAttemptCounter
   startSyncAttempt()
   const queue = loadQueue()
-  const userId = getUserId()
-
-  if (!userId) {
-    finishSyncAttempt('idle')
-    return queue.length === 0
-  }
 
   const otherUsersQueue = queue.filter((op) => op.userId !== userId)
   const currentUserQueue = queue.filter((op) => op.userId === userId)
@@ -483,10 +486,14 @@ async function drainQueue(): Promise<boolean> {
   return remaining.length === 0
   })()
 
+  activeDrainQueuePromise = { userId, promise }
+
   try {
-    return await activeDrainQueuePromise
+    return await promise
   } finally {
-    activeDrainQueuePromise = null
+    if (activeDrainQueuePromise?.promise === promise) {
+      activeDrainQueuePromise = null
+    }
   }
 }
 
@@ -1093,11 +1100,11 @@ async function fetchAll<T>(table: SupabaseTable, userId: string): Promise<T[]> {
 }
 
 async function pullRemoteAndMerge(userId: string): Promise<void> {
-  if (activePullAllPromise) {
-    return activePullAllPromise
+  if (activePullAllPromise && activePullAllPromise.userId === userId) {
+    return activePullAllPromise.promise
   }
 
-  activePullAllPromise = (async () => {
+  const promise = (async () => {
     if (!isEnabled()) return
 
     const queueDrained = await drainQueue()
@@ -1105,6 +1112,7 @@ async function pullRemoteAndMerge(userId: string): Promise<void> {
     const mergeContext: MergeContext = {
       allowDeletes: queueDrained,
       deleteBeforeTs: queueDrained ? (syncDetails.lastSuccessfulSyncAt ?? null) : null,
+      pendingWrites: [],
     }
 
     await Promise.all([
@@ -1117,22 +1125,30 @@ async function pullRemoteAndMerge(userId: string): Promise<void> {
     ])
     await mergeTrainingPlans(userId, mergeContext)
     await mergeTrainingPlanWeeks(userId, mergeContext)
+
+    if (mergeContext.pendingWrites.length > 0) {
+      await Promise.allSettled(mergeContext.pendingWrites)
+    }
   })()
 
+  activePullAllPromise = { userId, promise }
+
   try {
-    await activePullAllPromise
+    await promise
   } finally {
-    activePullAllPromise = null
+    if (activePullAllPromise?.promise === promise) {
+      activePullAllPromise = null
+    }
   }
 }
 
 export async function runFullSync(userId: string): Promise<void> {
   if (!userId || !isEnabled()) return
-  if (activeFullSyncPromise) {
-    return activeFullSyncPromise
+  if (activeFullSyncPromise && activeFullSyncPromise.userId === userId) {
+    return activeFullSyncPromise.promise
   }
 
-  activeFullSyncPromise = (async () => {
+  const promise = (async () => {
     startSyncAttempt()
     const failureCountAtStart = syncStoreState().syncDetails.consecutiveFailures ?? 0
 
@@ -1188,10 +1204,14 @@ export async function runFullSync(userId: string): Promise<void> {
     }
   })()
 
+  activeFullSyncPromise = { userId, promise }
+
   try {
-    await activeFullSyncPromise
+    await promise
   } finally {
-    activeFullSyncPromise = null
+    if (activeFullSyncPromise?.promise === promise) {
+      activeFullSyncPromise = null
+    }
   }
 }
 
@@ -1211,7 +1231,7 @@ async function mergeSessions(userId: string, context: MergeContext): Promise<voi
     const deletedAt = tombstones[remote.id]
     if (typeof deletedAt === 'number') {
       if (deletedAt >= remote.updatedAt) {
-        void deleteRow('sessions', remote.id)
+        context.pendingWrites.push(deleteRow('sessions', remote.id))
         continue
       }
       clearSessionDeleteTombstone(userId, remote.id)
@@ -1221,7 +1241,7 @@ async function mergeSessions(userId: string, context: MergeContext): Promise<voi
     if (!local || remote.updatedAt > local.updatedAt) {
       await db.sessions.put(remote)
     } else if (local.updatedAt > remote.updatedAt) {
-      void pushSession(local)
+      context.pendingWrites.push(pushSession(local))
     }
   }
 
@@ -1259,19 +1279,19 @@ async function mergeDayLogs(userId: string, context: MergeContext): Promise<void
       await db.dayLogs.delete(localByDate.id)
       await db.dayLogs.put(resolution.winner)
       if (remote.id !== localByDate.id) {
-        void deleteRow('day_logs', localByDate.id)
+        context.pendingWrites.push(deleteRow('day_logs', localByDate.id))
       }
       if (resolution.winner.id !== remote.id) {
-        void deleteRow('day_logs', remote.id)
+        context.pendingWrites.push(deleteRow('day_logs', remote.id))
       }
-      void pushDayLog(resolution.winner)
+      context.pendingWrites.push(pushDayLog(resolution.winner))
       continue
     }
 
     if (resolution.winner === remote) {
       await db.dayLogs.put(remote)
     } else if (resolution.winner.updatedAt > remote.updatedAt) {
-      void pushDayLog(resolution.winner)
+      context.pendingWrites.push(pushDayLog(resolution.winner))
     }
   }
 
@@ -1308,12 +1328,12 @@ async function mergeWeekSummaries(userId: string, context: MergeContext): Promis
       await db.weekSummaries.delete(localByWeek.id)
       await db.weekSummaries.put(resolution.winner)
       if (remote.id !== localByWeek.id) {
-        void deleteRow('week_summaries', localByWeek.id)
+        context.pendingWrites.push(deleteRow('week_summaries', localByWeek.id))
       }
       if (resolution.winner.id !== remote.id) {
-        void deleteRow('week_summaries', remote.id)
+        context.pendingWrites.push(deleteRow('week_summaries', remote.id))
       }
-      void pushWeekSummary(resolution.winner)
+      context.pendingWrites.push(pushWeekSummary(resolution.winner))
       continue
     }
 
@@ -1322,7 +1342,7 @@ async function mergeWeekSummaries(userId: string, context: MergeContext): Promis
     if (resolution.winner === remote) {
       await db.weekSummaries.put(remote)
     } else if (winnerUpdatedAt > remoteUpdatedAt) {
-      void pushWeekSummary(resolution.winner)
+      context.pendingWrites.push(pushWeekSummary(resolution.winner))
     }
   }
 
@@ -1375,7 +1395,7 @@ async function mergeCoachProposals(userId: string, context: MergeContext): Promi
     if (!local || remoteUpdatedAt > localUpdatedAt) {
       await db.coachProposals.put(remote)
     } else if (localUpdatedAt > remoteUpdatedAt) {
-      void pushCoachProposal(local)
+      context.pendingWrites.push(pushCoachProposal(local))
     }
   }
 
@@ -1428,7 +1448,7 @@ async function mergeAthleteProfile(userId: string, context: MergeContext): Promi
   }
 
   if (!athleteProfileRowsEqual(canonicalRow, mergedRow)) {
-    void pushAthleteProfile(mergedProfile)
+    context.pendingWrites.push(pushAthleteProfile(mergedProfile))
   }
 }
 
@@ -1452,7 +1472,7 @@ async function mergeTrainingPlans(userId: string, context: MergeContext): Promis
       if (localPlan && remoteDeletedAt >= localPlan.updatedAt) {
         await deleteLocalTrainingPlan(localPlan.id)
       } else if (localPlan && isSyncablePlanStatus(localPlan.status)) {
-        void pushTrainingPlan(localPlan)
+        context.pendingWrites.push(pushTrainingPlan(localPlan))
       }
       continue
     }
@@ -1506,7 +1526,7 @@ async function mergeTrainingPlanWeeks(userId: string, context: MergeContext): Pr
       } else if (localWeek) {
         const localPlan = localPlans.find((plan) => plan.id === localWeek.planId)
         if (localPlan && isSyncablePlanStatus(localPlan.status)) {
-          void pushTrainingPlanWeeks(localPlan, [localWeek])
+          context.pendingWrites.push(pushTrainingPlanWeeks(localPlan, [localWeek]))
         }
       }
       continue
@@ -1638,7 +1658,7 @@ async function repairLocalDayLogConflicts(): Promise<void> {
     const loserIds = sorted.slice(1).map((row) => row.id)
     if (loserIds.length > 0) {
       await db.dayLogs.bulkDelete(loserIds)
-      void pushDayLog(winner)
+      await pushDayLog(winner)
     }
   }
 }
@@ -1654,7 +1674,7 @@ async function repairLocalWeekSummaryConflicts(): Promise<void> {
     const loserIds = sorted.slice(1).map((row) => row.id)
     if (loserIds.length > 0) {
       await db.weekSummaries.bulkDelete(loserIds)
-      void pushWeekSummary(winner)
+      await pushWeekSummary(winner)
     }
   }
 }
@@ -1951,9 +1971,12 @@ export async function migrateLocalDataToCloud(userId: string): Promise<void> {
         .upsert(trainingPlanWeekRows as never)
         .then((result) => ({ table: 'training_plan_weeks', error: result.error }))
       : { table: 'training_plan_weeks', error: null }
-    const profileResult = profileRows.length > 0
-      ? await persistAthleteProfileRow(profileRows[profileRows.length - 1], userId).then(() => ({ table: 'athlete_profiles', error: null }))
-      : { table: 'athlete_profiles', error: null }
+    if (profileRows.length > 0) {
+      const syncRows = profileRows.map(toAthleteProfileSyncRow)
+      const coalesced = coalesceAthleteProfileRows(syncRows)
+      await persistAthleteProfileRow(coalesced as unknown as Record<string, unknown>, userId)
+    }
+    const profileResult = { table: 'athlete_profiles', error: null }
     migrationResults.push(trainingPlanResult, trainingPlanWeekResult, profileResult)
 
     const failedTables = migrationResults.filter((result) => result.error != null)

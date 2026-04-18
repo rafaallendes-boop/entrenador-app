@@ -31,9 +31,18 @@ const PRIORITY = {
   reviewCoachNote: 50,
 } as const
 
+function getWeekSessionCount(
+  summary: WeekSummary | null | undefined,
+  sessions: Session[],
+): number {
+  if (summary?.plannedSessions != null) return summary.plannedSessions
+  if (summary?.totalSessions != null) return summary.totalSessions
+  return sessions.filter((session) => session.status !== 'skipped').length
+}
+
 export function buildWeeklyActionSummary(input: WeeklyActionLoopInput): WeeklyActionSummary {
   const today = input.today ?? todayISO()
-  const weekSessions = input.currentWeekSummary?.totalSessions ?? input.sessions.length
+  const weekSessions = getWeekSessionCount(input.currentWeekSummary, input.sessions)
   const actions: WeeklyActionItem[] = []
 
   if (shouldPlanWeek(input.currentWeekSummary, input.sessions, today)) {
@@ -99,7 +108,7 @@ function shouldPlanWeek(
 ): boolean {
   const weekday = new Date(`${today}T12:00:00`).getDay()
   const mondayToWednesday = weekday >= 1 && weekday <= 3
-  const weekSessions = summary?.totalSessions ?? sessions.length
+  const weekSessions = getWeekSessionCount(summary, sessions)
   return mondayToWednesday && weekSessions === 0
 }
 

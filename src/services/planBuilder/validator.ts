@@ -104,6 +104,7 @@ function validateWeekConstraints(plan: TrainingPlan, week: TrainingPlanWeek): Pl
   if (!Array.isArray(week.sessions) || week.sessions.length === 0) return issues
 
   const expectedDays = new Set(plan.wizardConfig.trainingDays)
+  const sessionCountByDate = new Map<string, number>()
   const weekStart = new Date(`${week.weekStartDate}T00:00:00.000Z`).getTime()
   const weekEndExclusive = weekStart + 7 * 24 * 60 * 60 * 1000
 
@@ -143,6 +144,20 @@ function validateWeekConstraints(plan: TrainingPlan, week: TrainingPlanWeek): Pl
         severity: 'warning',
         code: 'week.sessions.out_of_allowed_day',
         message: `La sesión ${session.title} (${session.date}) usa un día no permitido por el wizard.`,
+        weekIndex: week.weekIndex,
+      })
+    }
+
+    sessionCountByDate.set(session.date, (sessionCountByDate.get(session.date) ?? 0) + 1)
+  }
+
+  if (!plan.wizardConfig.allowDoubleSession) {
+    for (const [date, count] of sessionCountByDate.entries()) {
+      if (count <= 1) continue
+      issues.push({
+        severity: 'error',
+        code: 'week.sessions.double_session_not_allowed',
+        message: `La semana ${week.weekIndex + 1} tiene ${count} sesiones el ${date}, pero el wizard no permite doble sesión.`,
         weekIndex: week.weekIndex,
       })
     }

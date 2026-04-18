@@ -97,6 +97,8 @@ export function buildWeekSystemPrompt(): string {
     'Cada sesión incluye: date (YYYY-MM-DD dentro de la semana), timeBlock (AM/PM), sessionType, title, durationMin, objective. Añade subtype/runningType/squashDetails/cyclingDetails/mobilityDetails/exercises/intervalStructure cuando aporten.',
     'Respeta strictamente la fase indicada, objetivos de carga y deportes permitidos.',
     'Debes respetar exactamente el número de sesiones pedido por el wizard y todas deben quedar dentro de los días permitidos.',
+    'Nunca devuelvas menos sesiones que las pedidas. Si una sesión queda incompleta o inválida, corrígela antes de responder; no la omitas.',
+    'Cada sesión debe ser individualmente válida: fecha ISO real, timeBlock AM/PM, title, durationMin >= 5 y detalles obligatorios cuando el deporte los requiera.',
     'No inventes sesiones fuera de los días permitidos. No dupliques misma fecha+timeBlock.',
   ].join('\n')
 }
@@ -109,6 +111,8 @@ export function buildWeekBatchSystemPrompt(): string {
     'Cada create_week debe incluir: type, targetDate (lunes de la semana), reason corto, sessions[] y weekObjectives[].',
     'Cada sesión incluye: date (YYYY-MM-DD dentro de la semana correcta), timeBlock (AM/PM), sessionType, title, durationMin, objective. Añade subtype/runningType/squashDetails/cyclingDetails/mobilityDetails/exercises/intervalStructure cuando aporten.',
     'Respeta estrictamente la fase indicada, objetivos de carga y deportes permitidos.',
+    'Nunca devuelvas menos sesiones que las pedidas para una semana. Si una sesión queda incompleta o inválida, corrígela antes de responder; no la omitas.',
+    'Cada sesión debe ser individualmente válida: fecha ISO real, timeBlock AM/PM, title, durationMin >= 5 y detalles obligatorios cuando el deporte los requiera.',
     'No inventes sesiones fuera de los días permitidos. No dupliques misma fecha+timeBlock dentro de cada semana.',
     'Nunca mezcles sesiones de una semana dentro de la otra. targetDate y fechas deben coincidir exactamente con cada semana pedida.',
   ].join('\n')
@@ -136,6 +140,9 @@ export function buildWeekUserPrompt(input: WeekPromptInput): string {
     `- Regla crítica de cantidad: devuelve EXACTAMENTE ${wizardConfig.sessionsPerWeek} sesiones para esta semana.`,
     `- Duración por sesión: ${wizardConfig.sessionDurationMins} min`,
     `- Doble sesión permitido: ${wizardConfig.allowDoubleSession ? 'sí' : 'no'}`,
+    wizardConfig.allowDoubleSession
+      ? '- Puedes usar AM y PM el mismo día si ayuda a cumplir el volumen, sin duplicar el mismo bloque.'
+      : '- Como doble sesión NO está permitido, reparte las sesiones entre días permitidos sin repetir un mismo día.',
     `- Nivel actual: ${wizardConfig.currentFitnessLevel} · Fatiga: ${wizardConfig.currentFatigue}`,
     `- Deportes permitidos: ${allowed.join(', ')}`,
     `- Carga objetivo por deporte: ${targetLoads}`,
@@ -145,7 +152,7 @@ export function buildWeekUserPrompt(input: WeekPromptInput): string {
     briefPreviousWeek(previousWeek),
     '',
     retryInstruction ? `Corrección del intento anterior:\n${retryInstruction}\n` : '',
-    strictFormatting ? 'Modo estricto: si dudas, prioriza fechas válidas, targetDate correcto y sesiones compactas antes que creatividad.' : '',
+    strictFormatting ? 'Modo estricto: si dudas, prioriza fechas válidas, targetDate correcto, sesiones completas y exactamente la cantidad pedida antes que creatividad.' : '',
     '',
     'Devuelve sólo el bloque <actions> con una única create_week para esta semana.',
   ].filter(Boolean).join('\n')
@@ -185,6 +192,9 @@ export function buildWeekBatchUserPrompt(input: WeekBatchPromptInput): string {
     `- Regla crítica de cantidad: cada semana debe tener EXACTAMENTE ${wizardConfig.sessionsPerWeek} sesiones.`,
     `- Duración por sesión: ${wizardConfig.sessionDurationMins} min`,
     `- Doble sesión permitido: ${wizardConfig.allowDoubleSession ? 'sí' : 'no'}`,
+    wizardConfig.allowDoubleSession
+      ? '- Puedes usar AM y PM el mismo día si ayuda a cumplir el volumen, sin duplicar el mismo bloque dentro de una semana.'
+      : '- Como doble sesión NO está permitido, reparte las sesiones de cada semana entre días permitidos sin repetir un mismo día.',
     `- Nivel actual: ${wizardConfig.currentFitnessLevel} · Fatiga: ${wizardConfig.currentFatigue}`,
     `- Deportes permitidos: ${allowed.join(', ')}`,
     primarySport ? `- Deporte principal transversal: ${primarySport}` : '',
@@ -195,7 +205,7 @@ export function buildWeekBatchUserPrompt(input: WeekBatchPromptInput): string {
     weeksText,
     '',
     retryInstruction ? `Corrección del intento anterior:\n${retryInstruction}\n` : '',
-    strictFormatting ? 'Modo estricto: devuelve exactamente dos create_week, una por cada targetDate indicado, sin mezclar fechas entre semanas.' : '',
+    strictFormatting ? 'Modo estricto: devuelve exactamente dos create_week, una por cada targetDate indicado, sin mezclar fechas entre semanas y con la cantidad exacta de sesiones válidas por semana.' : '',
     '',
     'Devuelve sólo el bloque <actions> con exactamente dos create_week, una para cada semana pedida.',
   ].filter(Boolean).join('\n')

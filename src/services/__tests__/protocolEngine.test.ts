@@ -63,6 +63,24 @@ describe('protocolEngine', () => {
     expect(context.energyLevel).toBe(4)
   })
 
+  it('detects a competition later on the same day as upcoming', () => {
+    const session = makeSession({ type: 'running', date: '2026-04-10', timeBlock: 'AM' })
+    const recentSessions = [
+      makeSession({
+        id: 'race-1',
+        type: 'running',
+        date: '2026-04-10',
+        timeBlock: 'PM',
+        status: 'planned',
+        subtype: 'competitive',
+      }),
+    ]
+
+    const context = resolveProtocolContext(session, 'warmup', { recentSessions })
+    expect(context.hasCompetitionSoon).toBe(true)
+    expect(context.daysToCompetition).toBe(0)
+  })
+
   it('adapts warmup protectively when pain is present', () => {
     const protocol = buildWarmup({
       kind: 'warmup',

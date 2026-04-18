@@ -292,6 +292,15 @@ describe('commitPlan', () => {
   })
 
   it('rolls back previously accepted weeks when a later week fails', async () => {
+    const plan = {
+      ...makePlan(),
+      wizardConfig: {
+        ...makePlan().wizardConfig,
+        allowDoubleSession: true,
+        trainingDays: ['monday'] as TrainingPlan['wizardConfig']['trainingDays'],
+        sessionsPerWeek: 2,
+      },
+    }
     const originalSession = makeStoredSession('old-1', '2026-05-05', 'Sesion previa')
     const originalSummary: WeekSummary = {
       id: 'summary-1',
@@ -333,7 +342,7 @@ describe('commitPlan', () => {
       return { errors: ['colisión de sesiones'], warnings: [] }
     })
 
-    const result = await commitPlan(makePlan(), [
+    const result = await commitPlan(plan, [
       makeWeek({
         id: 'week-1',
         weekIndex: 0,

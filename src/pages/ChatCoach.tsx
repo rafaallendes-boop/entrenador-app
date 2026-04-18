@@ -5,7 +5,6 @@ import { useChatStore } from '../store/useChatStore'
 import { useCoachActionsStore } from '../store/useCoachActionsStore'
 import { useCoachMemoryStore } from '../store/useCoachMemoryStore'
 import { useTrainingStore } from '../store/useTrainingStore'
-import { CoachEngine } from '../services/ai/CoachEngine'
 import { detectChatIntent } from '../services/ai/contextOptimizer'
 import { currentWeekStartISO, todayISO } from '../utils/date'
 import { getAthleteFirstName, getEnabledSports, getProfileCompleteness } from '../utils/athlete'
@@ -20,6 +19,7 @@ import { buildWeeklyActionComposerDraft } from '../services/weeklyLaunchIntent'
 
 const QuickActionChips = lazy(() => import('../components/chat/QuickActionChips'))
 const ProposalDrawer = lazy(() => import('../components/chat/ProposalDrawer'))
+const consumedPlanBuilderAutoSubmitKeys = new Set<string>()
 
 const SESSION_TYPE_LABEL: Record<string, string> = {
   squash: 'squash',
@@ -83,31 +83,6 @@ function AcceptedBanner({ message, onDismiss }: { message: string; onDismiss: ()
   )
 }
 
-function ProviderBadge({ providerName }: { providerName: string }) {
-  const isReal = CoachEngine.isRealProviderConfigured()
-
-  if (providerName === 'mock' || !isReal) {
-    return (
-      <span className="rounded-full border border-surface-border bg-surface-raised px-2 py-0.5 text-[10px] font-medium text-ink-faint/50">
-        Demo
-      </span>
-    )
-  }
-
-  const labels: Record<string, string> = {
-    claude: 'Claude AI',
-    openai: 'GPT-4o mini',
-    gemini: 'Gemini Flash',
-    proxy: 'AI via proxy',
-  }
-
-  return (
-    <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-400">
-      {labels[providerName] ?? providerName}
-    </span>
-  )
-}
-
 export default function ChatCoach() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -130,7 +105,7 @@ export default function ChatCoach() {
   const locationState = (location.state as { showProfileNudge?: boolean; composerDraft?: string; fromPlanBuilder?: boolean } | null)
   const loadAnalytics = useLoadAnalytics(currentWeekStartISO(), sessions)
   const composerDraft = locationState?.composerDraft ?? buildWeeklyActionComposerDraft(launchIntent)
-  const composerDraftKey = `${launchId}:${composerDraft}`
+  const composerDraftKey = `${location.key}:${launchId}:${composerDraft}`
 
   const showProfileNudge = !profileNudgeDismissed && locationState?.showProfileNudge === true
   const showPlanBuilderBanner = locationState?.fromPlanBuilder === true && composerDraft.trim().length > 0
@@ -138,9 +113,6 @@ export default function ChatCoach() {
   const athleteFirstName = getAthleteFirstName(athleteProfile, 'atleta')
   const profileCompleteness = getProfileCompleteness(athleteProfile)
   const showProfileBanner = !profileBannerDismissed && profileCompleteness.state !== 'complete'
-
-  const latestCoachProvider = [...messages].reverse().find((message) => message.role === 'coach')?.provider
-  const badgeProviderName = latestCoachProvider ?? CoachEngine.getProviderName()
 
   useEffect(() => {
     loadHistory()
@@ -192,14 +164,13 @@ export default function ChatCoach() {
     if (!locationState?.fromPlanBuilder) return
     const draft = composerDraft.trim()
     if (!draft) return
+    if (consumedPlanBuilderAutoSubmitKeys.has(composerDraftKey)) return
 
+    consumedPlanBuilderAutoSubmitKeys.add(composerDraftKey)
     autoSentRef.current = true
+    void handleSend(draft)
     navigate(location.pathname, { replace: true, state: null })
-    const t = setTimeout(() => {
-      handleSend(draft)
-    }, 250)
-    return () => clearTimeout(t)
-  }, [composerDraft, handleSend, location.pathname, locationState?.fromPlanBuilder, navigate])
+  }, [composerDraft, composerDraftKey, handleSend, location.pathname, locationState?.fromPlanBuilder, navigate])
 
   const handleViewProposal = (proposalId: string) => {
     const proposal = proposals.find((item) => item.id === proposalId)
@@ -279,7 +250,6 @@ export default function ChatCoach() {
               <p className="mt-0.5 text-[11px] text-ink-faint">Perfil activo: {athleteFirstName}</p>
               <p className="mt-0.5 text-xs text-ink-muted">Planner · Advisor</p>
             </div>
-            <ProviderBadge providerName={badgeProviderName} />
           </div>
 
           <div className="relative flex flex-shrink-0 items-center gap-1.5">

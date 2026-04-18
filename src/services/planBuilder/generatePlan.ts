@@ -10,7 +10,9 @@ import { normalizeResponse } from '../ai/responseNormalizer'
 import {
   filterSessionsToWeek,
   generateWeek,
+  pickCreateWeekDiagnostic,
   summarizeWeekGenerationError,
+  validateGeneratedWeekAction,
 } from './generateWeek'
 import { buildWeekBatchSystemPrompt, buildWeekBatchUserPrompt } from './prompts/weekPrompt'
 
@@ -41,8 +43,11 @@ export interface GeneratePlanWeeksInput {
 
 interface BatchWeekExtraction {
   week: TrainingPlanWeek
-  sessions: ReturnType<typeof filterSessionsToWeek>
+  sessions: TrainingPlanWeek['sessions']
   error?: string
+  rawSessionCount?: number
+  validSessionCount?: number
+  droppedSessionCount?: number
 }
 
 interface WeekBatchChunkRouter {
@@ -117,6 +122,10 @@ function makeResolvedWeek(
     chunkCount?: number
     strategy: 'single' | 'pairs'
     batchId?: string
+    rawSessionCount?: number
+    validSessionCount?: number
+    droppedSessionCount?: number
+    degradedFromPairs?: boolean
   },
 ): TrainingPlanWeek {
   const nowTs = Date.now()
@@ -135,6 +144,10 @@ function makeResolvedWeek(
       chunkCount: input.chunkCount,
       strategy: input.strategy,
       batchId: input.batchId,
+      rawSessionCount: input.rawSessionCount,
+      validSessionCount: input.validSessionCount,
+      droppedSessionCount: input.droppedSessionCount,
+      degradedFromPairs: input.degradedFromPairs,
     },
     updatedAt: nowTs,
   }
@@ -164,6 +177,9 @@ async function generateSingleWeekWithRetry(
   let model: string | undefined
   let durationMs = 0
   let chunkCount = 0
+  let rawSessionCount: number | undefined
+  let validSessionCount: number | undefined
+  let droppedSessionCount: number | undefined
 
   for (let attempt = 1; attempt <= 3; attempt++) {
     const result = await generateWeek({
@@ -184,6 +200,9 @@ async function generateSingleWeekWithRetry(
     model = result.meta.model
     durationMs += result.meta.durationMs ?? 0
     chunkCount += result.meta.chunkCount ?? 0
+    rawSessionCount = result.meta.rawSessionCount
+    validSessionCount = result.meta.validSessionCount
+    droppedSessionCount = result.meta.droppedSessionCount
 
     if (result.sessions.length > 0) {
       return makeResolvedWeek(week, result.sessions, {
@@ -193,6 +212,9 @@ async function generateSingleWeekWithRetry(
         durationMs,
         chunkCount,
         strategy: 'single',
+        rawSessionCount,
+        validSessionCount,
+        droppedSessionCount,
       })
     }
   }
@@ -205,6 +227,9 @@ async function generateSingleWeekWithRetry(
     durationMs,
     chunkCount,
     strategy: 'single',
+    rawSessionCount,
+    validSessionCount,
+    droppedSessionCount,
   })
 }
 
@@ -238,6 +263,7 @@ async function generateWeekPair(
     chunkCount: number
     lastError?: string
     batchId: string
+    degradeToSingle: boolean
   }
 }> {
   const batchId = createBatchId(weeks[0].weekIndex)
@@ -278,13 +304,23 @@ async function generateWeekPair(
       if (!targetWeekStart || !Array.isArray(action.sessions)) continue
       const targetWeek = weeks.find((week) => week.weekStartDate === targetWeekStart)
       if (!targetWeek) continue
-      const sessions = filterSessionsToWeek(action.sessions, targetWeekStart)
+      const diagnostic = pickCreateWeekDiagnostic(normalized, targetWeekStart, action)
+      const evaluation = validateGeneratedWeekAction(plan, targetWeek, action, diagnostic)
       weekResults.set(targetWeekStart, {
         week: targetWeek,
-        sessions,
-        error: sessions.length > 0 ? undefined : 'Las sesiones del batch quedaron fuera de la semana objetivo.',
+        sessions: evaluation.error ? [] : evaluation.sessions,
+        error: evaluation.error,
+        rawSessionCount: evaluation.rawSessionCount,
+        validSessionCount: evaluation.validSessionCount,
+        droppedSessionCount: evaluation.droppedSessionCount,
       })
     }
+
+    const degradeToSingle =
+      normalized.meta?.actionParseFailed === true
+      || normalized.meta?.likelyTruncated === true
+      || weekResults.size !== weeks.length
+      || Array.from(weekResults.values()).some((result) => result.error != null)
 
     return {
       results: weeks.map((week) => weekResults.get(week.weekStartDate) ?? { week, sessions: [], error: 'Semana no encontrada en batch.' }),
@@ -294,6 +330,7 @@ async function generateWeekPair(
         durationMs: raw.durationMs,
         chunkCount,
         batchId,
+        degradeToSingle,
       },
     }
   } catch (error) {
@@ -309,6 +346,7 @@ async function generateWeekPair(
         chunkCount,
         lastError: message,
         batchId,
+        degradeToSingle: true,
       },
     }
   }
@@ -323,6 +361,7 @@ export async function generatePlanWeeks(input: GeneratePlanWeeksInput): Promise<
   const provider = input.provider ?? getActiveProvider()
   const results: TrainingPlanWeek[] = []
   const strategy = resolveStrategy(input)
+  let batchStrategyEnabled = strategy === 'pairs'
   let previousWeek: TrainingPlanWeek | undefined = input.seedPreviousWeek
 
   for (let index = 0; index < input.weeks.length; index++) {
@@ -333,7 +372,7 @@ export async function generatePlanWeeks(input: GeneratePlanWeeksInput): Promise<
     }
 
     const nextWeek = input.weeks[index + 1]
-    const canBatch = strategy === 'pairs' && nextWeek != null
+    const canBatch = batchStrategyEnabled && nextWeek != null
 
     if (canBatch) {
       const batchWeeks: [TrainingPlanWeek, TrainingPlanWeek] = [week, nextWeek]
@@ -351,6 +390,9 @@ export async function generatePlanWeeks(input: GeneratePlanWeeksInput): Promise<
         input.wizardConfig,
         input.onChunk,
       )
+      if (batchResult.meta.degradeToSingle) {
+        batchStrategyEnabled = false
+      }
 
       for (const batchWeekResult of batchResult.results) {
         if (batchWeekResult.sessions.length > 0) {
@@ -362,6 +404,9 @@ export async function generatePlanWeeks(input: GeneratePlanWeeksInput): Promise<
             chunkCount: batchResult.meta.chunkCount,
             strategy: 'pairs',
             batchId: batchResult.meta.batchId,
+            rawSessionCount: batchWeekResult.rawSessionCount,
+            validSessionCount: batchWeekResult.validSessionCount,
+            droppedSessionCount: batchWeekResult.droppedSessionCount,
           })
           input.onWeekUpdate?.(resolved)
           results.push(resolved)
@@ -387,6 +432,7 @@ export async function generatePlanWeeks(input: GeneratePlanWeeksInput): Promise<
             attempts: (fallbackResolved.generationMeta.attempts ?? 0) + 1,
             durationMs: (fallbackResolved.generationMeta.durationMs ?? 0) + (batchResult.meta.durationMs ?? 0),
             chunkCount: (fallbackResolved.generationMeta.chunkCount ?? 0) + batchResult.meta.chunkCount,
+            degradedFromPairs: true,
           },
         }
         input.onWeekUpdate?.(adjustedFallback)

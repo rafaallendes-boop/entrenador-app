@@ -4,13 +4,6 @@ import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { MessageCircle, Zap } from 'lucide-react'
 
-const PROVIDER_LABEL: Record<string, string> = {
-  claude: 'Claude',
-  gemini: 'Gemini',
-  openai: 'GPT',
-  mock: '',
-}
-
 interface ChatBubbleProps {
   message: ChatMessage
   hasProposal?: boolean
@@ -77,7 +70,6 @@ function renderInline(text: string): React.ReactNode {
 export default function ChatBubble({ message, hasProposal, onViewProposal }: ChatBubbleProps) {
   const isCoach = message.role === 'coach'
   const time = format(new Date(message.timestamp), 'HH:mm', { locale: es })
-  const providerLabel = message.provider ? PROVIDER_LABEL[message.provider] : ''
 
   return (
     <div className={`flex gap-2 ${isCoach ? 'items-start' : 'items-start flex-row-reverse'}`}>
@@ -101,9 +93,6 @@ export default function ChatBubble({ message, hasProposal, onViewProposal }: Cha
 
         <div className="flex items-center gap-x-2 gap-y-1 mt-1 px-1 flex-wrap">
           <span className="text-[11px] text-ink-faint">{time}</span>
-          {providerLabel && (
-            <span className="text-[10px] text-ink-faint/60 font-medium">{providerLabel}</span>
-          )}
           {hasProposal && onViewProposal && (
             <button
               onClick={onViewProposal}

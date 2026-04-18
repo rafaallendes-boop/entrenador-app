@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { useTrainingStore } from '../store/useTrainingStore'
 import { useUIStore } from '../store/useUIStore'
-import { formatFullDate, fromISO, isDateToday, toISO, getWeekStart } from '../utils/date'
+import { formatFullDate, fromISO, isDateToday, isStrictISODate, toISO, getWeekStart } from '../utils/date'
 import PageHeader from '../components/layout/PageHeader'
 import SessionCard from '../components/session/SessionCard'
 import Slider from '../components/ui/Slider'
@@ -193,16 +193,17 @@ export default function DayDetail() {
   const { sessions, dayLogs, loadWeek, saveDayLog, updateSession } = useTrainingStore()
   const { athleteProfile } = useCoachMemoryStore()
   const { setCurrentWeekStart, setSelectedDate } = useUIStore()
+  const hasValidDateParam = typeof date === 'string' && isStrictISODate(date)
 
   useEffect(() => {
-    if (!date) return
+    if (!date || !hasValidDateParam) return
     const weekStart = toISO(getWeekStart(fromISO(date)))
     setCurrentWeekStart(weekStart)
     setSelectedDate(date)
     loadWeek(weekStart)
-  }, [date, loadWeek, setCurrentWeekStart, setSelectedDate])
+  }, [date, hasValidDateParam, loadWeek, setCurrentWeekStart, setSelectedDate])
 
-  const dateISO = date ?? ''
+  const dateISO = hasValidDateParam && date ? date : ''
   const daySessions = sessions
     .filter(s => s.date === dateISO)
     .sort((a, b) => a.timeBlock.localeCompare(b.timeBlock))
@@ -226,6 +227,25 @@ export default function DayDetail() {
 
   const isToday = dateISO ? isDateToday(dateISO) : false
   const completedCount = completedSessions.length
+
+  if (!hasValidDateParam) {
+    return (
+      <div>
+        <PageHeader
+          title="Día inválido"
+          subtitle="La fecha de esta ruta no es válida"
+          backTo={ROUTES.WEEK}
+        />
+
+        <div className="px-4 pb-8">
+          <Card variant="panel" className="p-6 text-center">
+            <p className="text-sm text-ink-muted">No pudimos abrir este día.</p>
+            <p className="mt-1 text-xs text-ink-faint">Revisa la URL o vuelve a la vista semanal.</p>
+          </Card>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div>

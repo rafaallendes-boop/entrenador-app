@@ -16,6 +16,7 @@ import type {
   MacroPlanTimelineEntry,
   SupportedSport,
 } from '../types'
+import { isStrictISODate } from '../utils/date'
 import { getAllowedPlanningSports, getPlanningPrimarySport } from './planningConstraints'
 import { normalizeSport } from '../utils/athlete'
 
@@ -827,5 +828,5 @@ function isValidGoalEvent(event: GoalEvent): boolean {
 }
 
 function isValidISODate(value: string): boolean {
-  return /^\d{4}-\d{2}-\d{2}$/.test(value)
+  return isStrictISODate(value)
 }

@@ -264,7 +264,7 @@ function buildCoherenceIssues(args: {
     const plannedSessionsCount = Object.values(actualDistributionBySport).reduce((sum, count) => sum + (count ?? 0), 0)
     const proposedAverageLoad = plannedSessionsCount > 0 ? totalLoad / plannedSessionsCount : 0
 
-    if (historicalAverageLoad > 0 && proposedAverageLoad > historicalAverageLoad * (1 + expectation.taperLoadMultiplier)) {
+    if (historicalAverageLoad > 0 && proposedAverageLoad > historicalAverageLoad * expectation.taperLoadMultiplier) {
       issues.push(`La semana sigue demasiado cargada para una fase ${phase} que deberia priorizar frescura.`)
     }
   }

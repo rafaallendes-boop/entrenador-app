@@ -24,7 +24,7 @@ type LegacyProtocolBlock = {
 }
 
 export function resolveProtocolContext(
-  session: Pick<Session, 'date' | 'type' | 'subtype' | 'rpe' | 'runningDetails'>,
+  session: Pick<Session, 'date' | 'timeBlock' | 'type' | 'subtype' | 'rpe' | 'runningDetails'>,
   kind: ProtocolKind,
   inputs: ProtocolResolutionInputs = {},
 ): ProtocolContext {
@@ -50,6 +50,7 @@ export function resolveProtocolContext(
 
   const competitionCandidates = recentActiveSessions.filter((item) => {
     if (item.date < sessionDate) return false
+    if (item.date === sessionDate && compareTimeBlocks(item.timeBlock, session.timeBlock) < 0) return false
     if (item.type !== sport) return false
     if (item.type === 'squash') return isCompetitionSquashMatch(item)
     return item.subtype === 'competitive'
@@ -76,6 +77,14 @@ export function resolveProtocolContext(
     hasCompetitionSoon: daysToCompetition != null && daysToCompetition <= 2,
     daysToCompetition,
   }
+}
+
+function compareTimeBlocks(a: Session['timeBlock'], b: Session['timeBlock']): number {
+  const order: Record<Session['timeBlock'], number> = {
+    AM: 0,
+    PM: 1,
+  }
+  return order[a] - order[b]
 }
 
 export function getBaseProtocolBySport(

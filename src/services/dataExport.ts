@@ -1178,6 +1178,10 @@ function optionalWeekGenerationMeta(value: unknown, path: string): TrainingPlanW
     chunkCount: optionalFiniteNumber(row.chunkCount, `${path}.chunkCount`),
     strategy: optionalEnum(row.strategy, new Set(['single', 'pairs']), `${path}.strategy`) as TrainingPlanWeek['generationMeta']['strategy'],
     batchId: optionalString(row.batchId, `${path}.batchId`),
+    rawSessionCount: optionalFiniteNumber(row.rawSessionCount, `${path}.rawSessionCount`),
+    validSessionCount: optionalFiniteNumber(row.validSessionCount, `${path}.validSessionCount`),
+    droppedSessionCount: optionalFiniteNumber(row.droppedSessionCount, `${path}.droppedSessionCount`),
+    degradedFromPairs: optionalBoolean(row.degradedFromPairs, `${path}.degradedFromPairs`),
   }
 }
 
