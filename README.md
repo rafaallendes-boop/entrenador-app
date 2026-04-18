@@ -162,16 +162,50 @@ Esto permite que el coach empiece a dar recomendaciones mas personalizadas.
 
 ### 4. Nutricion
 
-Existe una capa MVP de nutricion que entrega recomendaciones segun la carga del dia.
+La capa de nutricion ya funciona como una subcapa contextual del coach, no como texto suelto.
 
-Hoy sirve como base para:
+El motor clasifica el dia en uno de estos tipos:
 
-- foco diario
-- hidratacion
-- sugerencias pre/post entrenamiento
-- estructura general de comidas
+- `rest`
+- `light`
+- `moderate`
+- `high`
+- `double_session`
+- `competition`
+- `recovery`
 
-Sigue siendo una parte menos madura que el coach principal y es una de las prioridades abiertas.
+La clasificacion usa:
+
+- disciplina de la o las sesiones del dia
+- cantidad de sesiones
+- duracion y RPE
+- tipo de running o familia de ciclismo
+- contexto competitivo
+- señales de fatiga del `DayLog` del mismo dia
+- objetivo del atleta y preferencias del perfil nutricional
+
+La salida del motor ya no es solo copy plano. Ahora entrega una recomendacion estructurada con:
+
+- foco principal del dia
+- accion nutricional clave
+- razon corta de por que hoy es distinto
+- guia de hidratacion
+- timing pre/post entrenamiento
+- nota de recuperacion cuando hay fatiga
+
+En UI, esto permite responder mejor:
+
+- que comer hoy
+- que priorizar antes de entrenar
+- que priorizar despues
+- por que la recomendacion cambia segun la carga
+
+En el `AthleteProfile`, nutricion sigue siendo pragmatica. Ademas de composicion corporal, ahora puede guardar:
+
+- `fuelingGoal`
+- `sweatRate`
+
+El coach AI recibe este contexto nutricional estructurado dentro del prompt. Lo usa cuando el usuario pregunta por comidas, hidratacion, energia o recuperacion, y tambien cuando la nutricion es directamente relevante para la sesion o competencia del dia.
 
 ### 5. Backup y restore
 

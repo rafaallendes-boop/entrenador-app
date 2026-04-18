@@ -1351,6 +1351,8 @@ function optionalNutritionProfile(value: unknown, path: string): AthleteProfile[
   if (value == null) return undefined
   const row = ensureRecord(value, path)
   return {
+    fuelingGoal: optionalEnum(row.fuelingGoal, ['performance', 'maintain', 'mild_fat_loss'] as const, `${path}.fuelingGoal`) as AthleteProfile['nutritionProfile']['fuelingGoal'],
+    sweatRate: optionalEnum(row.sweatRate, ['low', 'moderate', 'high'] as const, `${path}.sweatRate`) as AthleteProfile['nutritionProfile']['sweatRate'],
     goalBodyWeightKg: optionalFiniteNumber(row.goalBodyWeightKg, `${path}.goalBodyWeightKg`),
     fatMassPct: optionalFiniteNumber(row.fatMassPct, `${path}.fatMassPct`),
     fatMassGoalPct: optionalFiniteNumber(row.fatMassGoalPct, `${path}.fatMassGoalPct`),

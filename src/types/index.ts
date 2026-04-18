@@ -382,6 +382,8 @@ export interface ScheduleProfile {
 }
 
 export interface NutritionProfile {
+  fuelingGoal?: 'performance' | 'maintain' | 'mild_fat_loss'
+  sweatRate?: 'low' | 'moderate' | 'high'
   goalBodyWeightKg?: number     // target weight kg
   fatMassPct?: number           // measured % fat mass
   fatMassGoalPct?: number       // target % fat mass
@@ -557,18 +559,55 @@ export interface ChatContext {
 
 // ─── Nutrition ────────────────────────────────────────────────────────────────
 
-export type DayLoadType = 'rest' | 'light' | 'medium' | 'high' | 'double' | 'match' | 'long_run'
+export type NutritionFuelingGoal = 'performance' | 'maintain' | 'mild_fat_loss'
+export type HydrationSweatRate = 'low' | 'moderate' | 'high'
+export type NutritionDayType = 'rest' | 'light' | 'moderate' | 'high' | 'double_session' | 'competition' | 'recovery'
+export type DayLoadType = NutritionDayType
+export type NutritionMacroEmphasis = 'protein_forward' | 'balanced' | 'carb_support' | 'carb_priority' | 'recovery_support'
 
-export interface NutritionRec {
-  loadType: DayLoadType
+export interface NutritionHydrationGuidance {
+  totalLiters: number | null
+  baselineLiters: number | null
+  trainingAddLiters: number
+  electrolyteFocus: 'none' | 'optional' | 'recommended'
+  summary: string
+}
+
+export interface NutritionMealTimingGuidance {
+  label: string
+  timing: 'pre' | 'post' | 'during' | 'all_day'
+  window: string
+  summary: string
+}
+
+export interface NutritionReasoning {
+  summary: string
+  factors: string[]
+}
+
+export interface NutritionDailyRecommendation {
+  loadType: NutritionDayType
+  dayType: NutritionDayType
+  sport: SupportedSport | 'mixed' | 'none'
+  sessionCount: number
+  mainFocus: string
+  keyAction: string
+  whyItMatters: string
+  macroEmphasis: NutritionMacroEmphasis
+  hydrationGuidance: NutritionHydrationGuidance
+  mealTiming: NutritionMealTimingGuidance[]
+  preWorkoutGuidance?: NutritionMealTimingGuidance
+  postWorkoutGuidance?: NutritionMealTimingGuidance
+  recoveryNote?: string
+  reasoning: NutritionReasoning
   dailyFocus: string
   hydration: string
   preWorkout?: string
   postWorkout?: string
-  breakfast: string
-  lunch: string
-  snack: string
-  dinner: string
+  breakfast?: string
+  lunch?: string
+  snack?: string
+  dinner?: string
   preTraining?: string
   postTraining?: string
   /** Computed protein target, e.g. "~152g" — present when athlete weight is known */
@@ -576,6 +615,8 @@ export interface NutritionRec {
   /** Free-text dietary notes/restrictions from athlete profile */
   dietaryNotes?: string
 }
+
+export type NutritionRec = NutritionDailyRecommendation
 
 // ─── Config types ─────────────────────────────────────────────────────────────
 
@@ -686,7 +727,7 @@ export type CoachProposalSpecificity = 'detailed' | 'generic_fallback'
 export type CoachProposalQuality = 'none' | 'detailed' | 'mixed' | 'generic_fallback'
 
 export interface CoachProposalSportInsight {
-  sport: 'cycling' | 'mobility'
+  sport: 'cycling' | 'mobility' | 'nutrition'
   actionCount: number
   hasExplicitDetails: boolean
   specificity: CoachProposalSpecificity
@@ -696,10 +737,11 @@ export interface CoachProposalMetadata {
   source: CoachProposalSource
   sports: SupportedSport[]
   sportInsights: CoachProposalSportInsight[]
-  genericFallbackSports: Array<'cycling' | 'mobility'>
+  genericFallbackSports: Array<'cycling' | 'mobility' | 'nutrition'>
   quality: CoachProposalQuality
   resolutionOutcome: 'pending' | 'accepted' | 'rejected' | 'partial'
   relatedAlertId?: string
+  nutritionPrompts?: string[]
 }
 
 export type PlanValidationStatus = 'ok' | 'warning'

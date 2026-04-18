@@ -521,7 +521,64 @@ export default function AthleteProfileEditor({ profile, isSaving, onSave }: Prop
         onToggle={() => toggle('nutrition')}
         filled={hasData(nutrition)}
       >
-        <p className="mb-1 text-[10px] font-medium uppercase tracking-wider text-ink-faint">Composicion corporal</p>
+        <p className="mb-1 text-[10px] font-medium uppercase tracking-wider text-ink-faint">Rendimiento diario</p>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <Field label="Objetivo de fueling">
+            <select
+              value={nutrition.fuelingGoal ?? ''}
+              onChange={(e) => setNutrition((n) => ({
+                ...n,
+                fuelingGoal: (e.target.value || undefined) as NutritionProfile['fuelingGoal'],
+              }))}
+              className={inputCls}
+            >
+              <option value="">Sin definir</option>
+              <option value="performance">Rendimiento</option>
+              <option value="maintain">Mantener</option>
+              <option value="mild_fat_loss">Bajar grasa sin perder rendimiento</option>
+            </select>
+          </Field>
+          <Field label="Nivel de sudoración" hint="para hidratación">
+            <select
+              value={nutrition.sweatRate ?? ''}
+              onChange={(e) => setNutrition((n) => ({
+                ...n,
+                sweatRate: (e.target.value || undefined) as NutritionProfile['sweatRate'],
+              }))}
+              className={inputCls}
+            >
+              <option value="">Normal</option>
+              <option value="low">Baja</option>
+              <option value="moderate">Media</option>
+              <option value="high">Alta</option>
+            </select>
+          </Field>
+        </div>
+
+        <p className="mb-1 mt-4 text-[10px] font-medium uppercase tracking-wider text-ink-faint">Objetivos diarios</p>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Proteina diaria (g)" hint="~2g/kg como referencia">
+            <input
+              type="number"
+              value={nutrition.proteinTargetG ?? ''}
+              onChange={(e) => setNutrition((n) => ({ ...n, proteinTargetG: numOrUndef(e.target.value) }))}
+              placeholder="156"
+              className={inputCls}
+            />
+          </Field>
+          <Field label="Agua base (L/dia)" hint="sin entrenar">
+            <input
+              type="number"
+              value={nutrition.dailyWaterLiters ?? ''}
+              onChange={(e) => setNutrition((n) => ({ ...n, dailyWaterLiters: numOrUndef(e.target.value) }))}
+              placeholder="2.5"
+              className={inputCls}
+              step={0.1}
+            />
+          </Field>
+        </div>
+
+        <p className="mb-1 mt-4 text-[10px] font-medium uppercase tracking-wider text-ink-faint">Composicion corporal</p>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Peso objetivo (kg)">
             <input
@@ -575,30 +632,7 @@ export default function AthleteProfileEditor({ profile, isSaving, onSave }: Prop
           </Field>
         </div>
 
-        <p className="mb-1 mt-4 text-[10px] font-medium uppercase tracking-wider text-ink-faint">Objetivos diarios</p>
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Proteina diaria (g)" hint="~2g/kg como referencia">
-            <input
-              type="number"
-              value={nutrition.proteinTargetG ?? ''}
-              onChange={(e) => setNutrition((n) => ({ ...n, proteinTargetG: numOrUndef(e.target.value) }))}
-              placeholder="156"
-              className={inputCls}
-            />
-          </Field>
-          <Field label="Agua base (L/dia)" hint="sin entrenar">
-            <input
-              type="number"
-              value={nutrition.dailyWaterLiters ?? ''}
-              onChange={(e) => setNutrition((n) => ({ ...n, dailyWaterLiters: numOrUndef(e.target.value) }))}
-              placeholder="2.5"
-              className={inputCls}
-              step={0.1}
-            />
-          </Field>
-        </div>
-
-        <Field label="Intolerancias / preferencias" className="mt-3">
+        <Field label="Intolerancias / preferencias" className="mt-4">
           <input
             value={nutrition.notes ?? ''}
             onChange={(e) => setNutrition((n) => ({ ...n, notes: e.target.value || undefined }))}

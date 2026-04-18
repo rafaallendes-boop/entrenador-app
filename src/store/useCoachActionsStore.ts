@@ -55,6 +55,7 @@ export const useCoachActionsStore = create<CoachActionsState>((set, get) => ({
       source: options?.source ?? 'chat',
       relatedAlertId: options?.relatedAlertId,
       existingSessions: useTrainingStore.getState().sessions,
+      proposalMessage: message,
     })
     const historicalSessions = await db.sessions.toArray()
     const planSummary = buildPlanGenerationSummary({
@@ -111,6 +112,7 @@ export const useCoachActionsStore = create<CoachActionsState>((set, get) => ({
       source: proposal.metadata?.source ?? 'chat',
       relatedAlertId: proposal.metadata?.relatedAlertId,
       existingSessions: trainingStore.sessions,
+      proposalMessage: proposal.message,
     })
     const workingProposal: CoachProposal = {
       ...proposal,

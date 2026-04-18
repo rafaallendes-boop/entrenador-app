@@ -99,14 +99,31 @@ describe('coachProposalMetadata', () => {
           resolutionOutcome: 'rejected',
         },
       },
+      {
+        id: 'p3',
+        message: 'Qué comer hoy',
+        actions: [],
+        status: 'accepted',
+        createdAt: 12,
+        metadata: {
+          source: 'chat',
+          sports: [],
+          sportInsights: [{ sport: 'nutrition', actionCount: 1, hasExplicitDetails: true, specificity: 'detailed' }],
+          genericFallbackSports: [],
+          quality: 'detailed',
+          resolutionOutcome: 'accepted',
+          nutritionPrompts: ['eat_today'],
+        },
+      },
     ]
 
     const summary = summarizeCoachProposalUsage(proposals)
 
-    expect(summary.totalTrackedProposals).toBe(2)
+    expect(summary.totalTrackedProposals).toBe(3)
     expect(summary.bySport.cycling.genericFallback).toBe(1)
     expect(summary.bySport.cycling.accepted).toBe(1)
     expect(summary.bySport.mobility.explicitDetail).toBe(1)
+    expect(summary.bySport.nutrition.accepted).toBe(1)
     expect(summary.recentGenericProposals[0].id).toBe('p1')
   })
 
@@ -125,5 +142,16 @@ describe('coachProposalMetadata', () => {
 
     expect(result.actions[0].cyclingDetails?.sessionFamily).toBe('intervals_vo2')
     expect(result.metadata.sportInsights[0]?.sport).toBe('cycling')
+  })
+
+  it('tags clearly nutrition-oriented proposals in metadata', () => {
+    const result = normalizeCoachProposal([], {
+      source: 'chat',
+      proposalMessage: '¿Qué debería comer hoy y cómo ajustar mi hidratación?',
+    })
+
+    expect(result.metadata.sportInsights.some((insight) => insight.sport === 'nutrition')).toBe(true)
+    expect(result.metadata.nutritionPrompts).toContain('eat_today')
+    expect(result.metadata.nutritionPrompts).toContain('hydration')
   })
 })

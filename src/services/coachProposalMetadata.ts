@@ -14,7 +14,7 @@ import type {
   SupportedSport,
 } from '../types'
 
-type DetailSport = 'cycling' | 'mobility'
+type DetailSport = 'cycling' | 'mobility' | 'nutrition'
 
 interface SportObservation {
   sport: DetailSport
@@ -44,6 +44,7 @@ export function normalizeCoachProposal(
     source?: CoachProposalSource
     relatedAlertId?: string
     existingSessions?: Session[]
+    proposalMessage?: string
   },
 ): NormalizedCoachProposal {
   const existingSessions = options?.existingSessions ?? []
@@ -57,18 +58,26 @@ export function normalizeCoachProposal(
     metadata: buildCoachProposalMetadata(observations, normalizedActions, {
       source: options?.source ?? 'chat',
       relatedAlertId: options?.relatedAlertId,
+      proposalMessage: options?.proposalMessage,
     }),
   }
 }
 
 export function summarizeCoachProposalUsage(proposals: CoachProposal[]): CoachProposalUsageSummary {
   const tracked = proposals.filter((proposal) =>
-    proposal.metadata?.sportInsights.some((insight) => insight.sport === 'cycling' || insight.sport === 'mobility'),
+    proposal.metadata?.sportInsights.some((insight) =>
+      insight.sport === 'cycling' || insight.sport === 'mobility' || insight.sport === 'nutrition'),
   )
 
-  const bySport: CoachProposalUsageSummary['bySport'] = {
+  const bySport: Record<DetailSport, {
+    total: number
+    accepted: number
+    explicitDetail: number
+    genericFallback: number
+  }> = {
     cycling: { total: 0, accepted: 0, explicitDetail: 0, genericFallback: 0 },
     mobility: { total: 0, accepted: 0, explicitDetail: 0, genericFallback: 0 },
+    nutrition: { total: 0, accepted: 0, explicitDetail: 0, genericFallback: 0 },
   }
 
   for (const proposal of tracked) {
@@ -97,6 +106,10 @@ function normalizeAction(
   existingById: Map<string, Session>,
   observations: SportObservation[],
 ): CoachAction {
+  if (isNutritionPromptText(action.reason) || isNutritionPromptText(action.title) || isNutritionPromptText(action.objective)) {
+    observations.push({ sport: 'nutrition', explicit: true })
+  }
+
   if (action.type === 'create_week' && action.sessions) {
     const sessions = action.sessions.map((session) => normalizeSessionProposal(session, observations))
     return { ...action, sessions }
@@ -149,6 +162,10 @@ function normalizeSessionProposal(
   session: CoachSessionProposal,
   observations: SportObservation[],
 ): CoachSessionProposal {
+  if (isNutritionPromptText(session.title) || isNutritionPromptText(session.objective)) {
+    observations.push({ sport: 'nutrition', explicit: true })
+  }
+
   if (session.sessionType === 'cycling') {
     const explicit = hasCompleteCyclingDetails(session.cyclingDetails)
     observations.push({ sport: 'cycling', explicit })
@@ -173,10 +190,15 @@ function normalizeSessionProposal(
 function buildCoachProposalMetadata(
   observations: SportObservation[],
   actions: CoachAction[],
-  opts: { source: CoachProposalSource; relatedAlertId?: string },
+  opts: { source: CoachProposalSource; relatedAlertId?: string; proposalMessage?: string },
 ): CoachProposalMetadata {
   const supportedSports = new Set<SupportedSport>()
   const summaries = new Map<DetailSport, CoachProposalSportInsight>()
+
+  const nutritionPrompts = extractNutritionPrompts(opts.proposalMessage)
+  if (nutritionPrompts.length > 0) {
+    observations.push({ sport: 'nutrition', explicit: true })
+  }
 
   for (const action of actions) {
     collectSportsFromAction(action).forEach((sport) => supportedSports.add(sport))
@@ -208,6 +230,7 @@ function buildCoachProposalMetadata(
     quality: resolveProposalQuality(sportInsights),
     resolutionOutcome: 'pending',
     relatedAlertId: opts.relatedAlertId,
+    nutritionPrompts: nutritionPrompts.length > 0 ? nutritionPrompts : undefined,
   }
 }
 
@@ -256,6 +279,24 @@ function hasCompleteMobilityDetails(details: MobilityDetails | undefined): detai
     Array.isArray(details?.focusAreas) &&
     details.focusAreas.length > 0,
   )
+}
+
+function extractNutritionPrompts(message: string | undefined): string[] {
+  if (!message) return []
+  const normalized = normalizeText(message)
+  const prompts: string[] = []
+  if (/(que comer hoy|que deberia comer hoy|qué comer hoy)/.test(normalized)) prompts.push('eat_today')
+  if (/(pre entreno|preentreno|pre workout)/.test(normalized)) prompts.push('pre_workout')
+  if (/(post entreno|postentreno|post workout)/.test(normalized)) prompts.push('post_workout')
+  if (/hidrat/.test(normalized)) prompts.push('hydration')
+  if (/(fatiga|recuperacion|recuperación)/.test(normalized) && /nutric/.test(normalized)) prompts.push('fatigue_adjustment')
+  return [...new Set(prompts)]
+}
+
+function isNutritionPromptText(value: string | undefined): boolean {
+  if (!value) return false
+  const normalized = normalizeText(value)
+  return /nutric|hidrata|comer|fuel|post entreno|pre entreno|recuperacion/.test(normalized)
 }
 
 export function buildFallbackCyclingDetails(

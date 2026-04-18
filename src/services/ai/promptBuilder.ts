@@ -234,8 +234,8 @@ function buildNutritionContextSection(context: ChatContext): string {
 
   const todaySessions = allSessions.filter(s => s.date === today && s.status !== 'skipped')
 
-  const loadType = classifyDayLoad(todaySessions)
-  const rec = getDayNutrition(todaySessions, context.athleteProfile)
+  const loadType = classifyDayLoad(todaySessions, context.dayLog)
+  const rec = getDayNutrition(todaySessions, context.athleteProfile, context.dayLog)
 
   const upcomingMatch = getPlannedSessions(context).find(s =>
     s.date > today &&
@@ -259,22 +259,24 @@ function buildNutritionContextSection(context: ChatContext): string {
   if (rec.proteinTarget) lines.push(`Proteína diaria objetivo: ${rec.proteinTarget}`)
 
   lines.push('')
-  lines.push(`Carga de hoy: ${getLoadTypeLabel(loadType)}`)
-  lines.push(`Foco: ${rec.dailyFocus}`)
-  lines.push(`Hidratación recomendada: ${rec.hydration}`)
+  lines.push(`Tipo de día nutricional: ${getLoadTypeLabel(loadType)}`)
+  lines.push(`Foco principal: ${rec.mainFocus}`)
+  lines.push(`Acción clave: ${rec.keyAction}`)
+  lines.push(`Por qué hoy importa: ${rec.whyItMatters}`)
+  lines.push(`Hidratación recomendada: ${rec.hydrationGuidance.summary}`)
 
-  if (rec.preWorkout) lines.push(`Pre-entreno: ${rec.preWorkout}`)
-  if (rec.postWorkout) lines.push(`Post-entreno: ${rec.postWorkout}`)
+  if (rec.preWorkoutGuidance) lines.push(`Pre-entreno: ${rec.preWorkoutGuidance.summary}`)
+  if (rec.postWorkoutGuidance) lines.push(`Post-entreno: ${rec.postWorkoutGuidance.summary}`)
+  if (rec.recoveryNote) lines.push(`Nota de recuperación: ${rec.recoveryNote}`)
 
-  lines.push('Estructura del día:')
-  lines.push(`  · Desayuno: ${rec.breakfast}`)
-  lines.push(`  · Almuerzo: ${rec.lunch}`)
-  lines.push(`  · Merienda: ${rec.snack}`)
-  lines.push(`  · Cena: ${rec.dinner}`)
-  if (rec.preTraining) lines.push(`  · Colación pre-entreno: ${rec.preTraining}`)
-  if (rec.postTraining) lines.push(`  · Colación post-entreno: ${rec.postTraining}`)
+  if (rec.mealTiming.length > 0) {
+    lines.push('Timing nutricional del día:')
+    rec.mealTiming.forEach((item) => {
+      lines.push(`  · ${item.label} (${item.window}): ${item.summary}`)
+    })
+  }
 
-  if (loadType !== 'match' && upcomingMatch) {
+  if (loadType !== 'competition' && upcomingMatch) {
     lines.push('')
     lines.push(`VÍSPERA DE COMPETENCIA (partido el ${upcomingMatch.date}):`)
     lines.push('· Cena: carga de carbohidratos — proteína blanca + 3 porciones de cereal (papa/arroz/pasta) + ensalada.')

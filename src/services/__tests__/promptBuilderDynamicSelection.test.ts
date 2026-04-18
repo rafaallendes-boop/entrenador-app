@@ -260,5 +260,33 @@ describe('promptBuilder dynamic cycling and mobility sections', () => {
 
     expect(prompt).toContain('Proteína diaria objetivo: ~128g proteína')
     expect(prompt).toContain('Hidratación recomendada:')
+    expect(prompt).toContain('Tipo de día nutricional:')
+    expect(prompt).toContain('Acción clave:')
+    expect(prompt).toContain('Por qué hoy importa:')
+  })
+
+  it('includes fatigue-adjusted nutrition notes when day log signals poor recovery', () => {
+    const prompt = buildCoachSystemPrompt(makeContext(makeProfile(), {
+      plannedSessions: [
+        makeSession({
+          id: 'easy-run',
+          date: '2026-04-10',
+          type: 'running',
+          runningDetails: { runningType: 'z2' },
+          status: 'planned',
+          durationMin: 35,
+          rpe: 4,
+        }),
+      ],
+      dayLog: {
+        id: 'day-log',
+        date: '2026-04-10',
+        energyLevel: 3,
+        sleepHours: 5.5,
+        updatedAt: 1,
+      },
+    }))
+
+    expect(prompt).toContain('Nota de recuperación:')
   })
 })

@@ -112,17 +112,18 @@ function DayRecoveryNotes({
   )
 }
 
-function DayNutritionCard({ sessions, profile }: { sessions: Session[]; profile?: AthleteProfile | null }) {
-  const rec = getDayNutrition(sessions, profile)
+function DayNutritionCard({
+  sessions,
+  profile,
+  dayLog,
+}: {
+  sessions: Session[]
+  profile?: AthleteProfile | null
+  dayLog?: DayLog
+}) {
+  const rec = getDayNutrition(sessions, profile, dayLog)
   const colorClass = getLoadTypeColor(rec.loadType)
   const label = getLoadTypeLabel(rec.loadType)
-
-  const rows: { label: string; value: string }[] = []
-  if (rec.preWorkout) rows.push({ label: 'Pre-entreno', value: rec.preWorkout })
-  else if (rec.preTraining) rows.push({ label: 'Pre-entreno', value: rec.preTraining })
-  if (rec.hydration) rows.push({ label: 'Hidratación', value: rec.hydration })
-  if (rec.postWorkout) rows.push({ label: 'Post-entreno', value: rec.postWorkout })
-  else if (rec.postTraining) rows.push({ label: 'Post-entreno', value: rec.postTraining })
 
   return (
     <Card className="p-4 space-y-3">
@@ -132,23 +133,41 @@ function DayNutritionCard({ sessions, profile }: { sessions: Session[]; profile?
           {label}
         </span>
       </div>
-      <p className="text-xs text-ink-muted">{rec.dailyFocus}</p>
+      <div className="space-y-2">
+        <p className="text-sm text-ink">{rec.mainFocus}</p>
+        <p className="text-xs text-amber-300">{rec.keyAction}</p>
+        <p className="text-xs text-ink-muted">{rec.whyItMatters}</p>
+      </div>
       {rec.proteinTarget && (
         <div className="flex items-center gap-2">
           <span className="text-xs font-semibold text-amber-400">{rec.proteinTarget}</span>
           <span className="text-[10px] text-ink-faint">objetivo del día</span>
         </div>
       )}
-      {rows.length > 0 && (
-        <div className="space-y-2 pt-1">
-          {rows.map(row => (
-            <div key={row.label}>
-              <p className="text-[11px] font-semibold text-ink-faint uppercase tracking-wider">{row.label}</p>
-              <p className="text-xs text-ink-muted mt-0.5">{row.value}</p>
-            </div>
-          ))}
+      <div className="space-y-2 pt-1">
+        <div>
+          <p className="text-[11px] font-semibold text-ink-faint uppercase tracking-wider">Hidratación</p>
+          <p className="text-xs text-ink-muted mt-0.5">{rec.hydrationGuidance.summary}</p>
         </div>
-      )}
+        {rec.preWorkoutGuidance && (
+          <div>
+            <p className="text-[11px] font-semibold text-ink-faint uppercase tracking-wider">Antes</p>
+            <p className="text-xs text-ink-muted mt-0.5">{rec.preWorkoutGuidance.summary}</p>
+          </div>
+        )}
+        {rec.postWorkoutGuidance && (
+          <div>
+            <p className="text-[11px] font-semibold text-ink-faint uppercase tracking-wider">Después</p>
+            <p className="text-xs text-ink-muted mt-0.5">{rec.postWorkoutGuidance.summary}</p>
+          </div>
+        )}
+        {rec.recoveryNote && (
+          <div>
+            <p className="text-[11px] font-semibold text-ink-faint uppercase tracking-wider">Recuperación</p>
+            <p className="text-xs text-ink-muted mt-0.5">{rec.recoveryNote}</p>
+          </div>
+        )}
+      </div>
       {rec.dietaryNotes && (
         <div className="pt-2 border-t border-surface-border">
           <p className="text-[11px] font-semibold text-ink-faint uppercase tracking-wider mb-1">Tus preferencias</p>
@@ -324,7 +343,7 @@ export default function DayDetail() {
           </div>
         )}
 
-        <DayNutritionCard sessions={daySessions} profile={athleteProfile} />
+        <DayNutritionCard sessions={daySessions} profile={athleteProfile} dayLog={dayLog} />
 
         <Card variant="hud" accent="lime" className="p-4 space-y-4">
           <div>

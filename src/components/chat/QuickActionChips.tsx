@@ -17,7 +17,11 @@ const BASE_QUICK_ACTIONS: QuickAction[] = [
 
 const TAIL_QUICK_ACTIONS: QuickAction[] = [
   { id: 'reorder',     label: 'Reordenar sesiones',     prompt: 'Ayúdame a reordenar las sesiones de esta semana' },
-  { id: 'nutrition',   label: 'Foco nutricional',       prompt: 'Dame un foco nutricional para esta semana según mi entrenamiento' },
+  { id: 'eat_today',   label: 'Qué comer hoy',          prompt: '¿Qué debería comer hoy según mis sesiones y mi contexto actual?' },
+  { id: 'pre_workout', label: 'Pre-entreno',            prompt: 'Dame una recomendación de pre-entreno para hoy según mi sesión principal.' },
+  { id: 'post_workout', label: 'Post-entreno',          prompt: '¿Qué debería priorizar en el post-entreno de hoy?' },
+  { id: 'hydration',   label: 'Hidratación',            prompt: 'Ayúdame con la hidratación de hoy según mi carga y mi sesión.' },
+  { id: 'fatigue_fuel', label: 'Nutrición por fatiga',  prompt: 'Ajusta mi nutrición de hoy porque vengo con fatiga o poca recuperación.' },
 ]
 
 interface QuickActionChipsProps {

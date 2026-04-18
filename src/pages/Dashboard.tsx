@@ -101,7 +101,7 @@ export default function Dashboard() {
     .sort((a, b) => a.date.localeCompare(b.date) || a.timeBlock.localeCompare(b.timeBlock))
     .slice(0, 4)
 
-  const todayNutrition = getDayNutrition(todaySessions, athleteProfile)
+  const todayNutrition = getDayNutrition(todaySessions, athleteProfile, dayLogs[today])
 
   const hasTrainingHistory = allWeekSummaries.length > 0
   const defaultCoachNote = hasTrainingHistory
