@@ -51,8 +51,11 @@ describe('NutritionFocusCard', () => {
     const html = renderToStaticMarkup(<NutritionFocusCard rec={makeRec()} />)
 
     expect(html).toContain('Nutrición hoy')
+    expect(html).toContain('running')
+    expect(html).toContain('1 sesión')
     expect(html).toContain('Carga moderada')
     expect(html).toContain('Prioriza carbohidratos fáciles de digerir')
     expect(html).toContain('objetivo del día')
+    expect(html).toContain('Antes de correr')
   })
 })

@@ -248,7 +248,7 @@ describe('promptBuilder dynamic cycling and mobility sections', () => {
       plannedSessions: [
         makeSession({
           id: 'tempo-1',
-          date: '2026-04-11',
+          date: '2026-04-10',
           type: 'running',
           runningDetails: { runningType: 'tempo' },
           status: 'planned',
@@ -258,11 +258,13 @@ describe('promptBuilder dynamic cycling and mobility sections', () => {
       ],
     }))
 
-    expect(prompt).toContain('Proteína diaria objetivo: ~128g proteína')
+    expect(prompt).toContain('Proteína diaria objetivo: ~152g proteína')
     expect(prompt).toContain('Hidratación recomendada:')
     expect(prompt).toContain('Tipo de día nutricional:')
+    expect(prompt).toContain('Contexto visible: running · 1 sesión')
     expect(prompt).toContain('Acción clave:')
     expect(prompt).toContain('Por qué hoy importa:')
+    expect(prompt).toContain('Antes de correr:')
   })
 
   it('includes fatigue-adjusted nutrition notes when day log signals poor recovery', () => {
@@ -288,5 +290,29 @@ describe('promptBuilder dynamic cycling and mobility sections', () => {
     }))
 
     expect(prompt).toContain('Nota de recuperación:')
+  })
+
+  it('uses squash competition wording in nutrition context', () => {
+    const prompt = buildCoachSystemPrompt(makeContext(makeProfile(), {
+      plannedSessions: [
+        makeSession({
+          id: 'match-day',
+          date: '2026-04-10',
+          type: 'squash',
+          subtype: 'match',
+          status: 'planned',
+          durationMin: 70,
+          rpe: 8,
+          squashDetails: {
+            trainingFocus: 'tactical',
+            sessionMode: 'competition_match',
+            drills: [{ name: 'Partido objetivo' }],
+          },
+        }),
+      ],
+    }))
+
+    expect(prompt).toContain('Contexto visible: squash · 1 sesión')
+    expect(prompt).toContain('Antes del partido:')
   })
 })

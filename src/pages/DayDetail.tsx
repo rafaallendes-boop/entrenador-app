@@ -124,11 +124,20 @@ function DayNutritionCard({
   const rec = getDayNutrition(sessions, profile, dayLog)
   const colorClass = getLoadTypeColor(rec.loadType)
   const label = getLoadTypeLabel(rec.loadType)
+  const sportLabel = getNutritionSportLabel(rec.sport)
+  const sessionLabel = `${rec.sessionCount} sesión${rec.sessionCount === 1 ? '' : 'es'}`
+  const preLabel = getNutritionTimingLabel(rec.sport, rec.loadType, 'pre')
+  const postLabel = getNutritionTimingLabel(rec.sport, rec.loadType, 'post')
 
   return (
     <Card className="p-4 space-y-3">
       <div className="flex items-center justify-between gap-2">
-        <h2 className="text-sm font-semibold text-ink">Nutrición del día</h2>
+        <div>
+          <h2 className="text-sm font-semibold text-ink">Nutrición del día</h2>
+          <p className="mt-1 text-[10px] uppercase tracking-[0.18em] text-ink-faint">
+            {sportLabel} · {sessionLabel}
+          </p>
+        </div>
         <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${colorClass}`}>
           {label}
         </span>
@@ -151,13 +160,13 @@ function DayNutritionCard({
         </div>
         {rec.preWorkoutGuidance && (
           <div>
-            <p className="text-[11px] font-semibold text-ink-faint uppercase tracking-wider">Antes</p>
+            <p className="text-[11px] font-semibold text-ink-faint uppercase tracking-wider">{preLabel}</p>
             <p className="text-xs text-ink-muted mt-0.5">{rec.preWorkoutGuidance.summary}</p>
           </div>
         )}
         {rec.postWorkoutGuidance && (
           <div>
-            <p className="text-[11px] font-semibold text-ink-faint uppercase tracking-wider">Después</p>
+            <p className="text-[11px] font-semibold text-ink-faint uppercase tracking-wider">{postLabel}</p>
             <p className="text-xs text-ink-muted mt-0.5">{rec.postWorkoutGuidance.summary}</p>
           </div>
         )}
@@ -167,6 +176,10 @@ function DayNutritionCard({
             <p className="text-xs text-ink-muted mt-0.5">{rec.recoveryNote}</p>
           </div>
         )}
+        <div>
+          <p className="text-[11px] font-semibold text-ink-faint uppercase tracking-wider">Contexto {sportLabel}</p>
+          <p className="text-xs text-ink-muted mt-0.5">{rec.reasoning.summary}</p>
+        </div>
       </div>
       {rec.dietaryNotes && (
         <div className="pt-2 border-t border-surface-border">
@@ -176,6 +189,50 @@ function DayNutritionCard({
       )}
     </Card>
   )
+}
+
+function getNutritionSportLabel(sport: ReturnType<typeof getDayNutrition>['sport']): string {
+  switch (sport) {
+    case 'running':
+      return 'running'
+    case 'cycling':
+      return 'ciclismo'
+    case 'strength':
+      return 'fuerza'
+    case 'squash':
+      return 'squash'
+    case 'mobility':
+      return 'movilidad'
+    case 'mixed':
+      return 'día mixto'
+    default:
+      return 'sin sesión'
+  }
+}
+
+function getNutritionTimingLabel(
+  sport: ReturnType<typeof getDayNutrition>['sport'],
+  dayType: ReturnType<typeof getDayNutrition>['dayType'],
+  timing: 'pre' | 'post',
+): string {
+  if (dayType === 'competition' && sport === 'squash') {
+    return timing === 'pre' ? 'Antes del partido' : 'Después del partido'
+  }
+
+  switch (sport) {
+    case 'running':
+      return timing === 'pre' ? 'Antes de correr' : 'Después de correr'
+    case 'cycling':
+      return timing === 'pre' ? 'Antes de pedalear' : 'Después de pedalear'
+    case 'strength':
+      return timing === 'pre' ? 'Antes de fuerza' : 'Después de fuerza'
+    case 'squash':
+      return timing === 'pre' ? 'Antes de la sesión' : 'Después de la sesión'
+    case 'mixed':
+      return timing === 'pre' ? 'Antes del bloque' : 'Después del bloque'
+    default:
+      return timing === 'pre' ? 'Antes' : 'Después'
+  }
 }
 
 function ProtocolGuideCard({ label, protocol }: { label: string; protocol?: GeneratedProtocol }) {

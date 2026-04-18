@@ -236,6 +236,8 @@ function buildNutritionContextSection(context: ChatContext): string {
 
   const loadType = classifyDayLoad(todaySessions, context.dayLog)
   const rec = getDayNutrition(todaySessions, context.athleteProfile, context.dayLog)
+  const sportLabel = getPromptNutritionSportLabel(rec.sport)
+  const sessionLabel = `${rec.sessionCount} sesión${rec.sessionCount === 1 ? '' : 'es'}`
 
   const upcomingMatch = getPlannedSessions(context).find(s =>
     s.date > today &&
@@ -259,20 +261,21 @@ function buildNutritionContextSection(context: ChatContext): string {
   if (rec.proteinTarget) lines.push(`Proteína diaria objetivo: ${rec.proteinTarget}`)
 
   lines.push('')
+  lines.push(`Contexto visible: ${sportLabel} · ${sessionLabel}`)
   lines.push(`Tipo de día nutricional: ${getLoadTypeLabel(loadType)}`)
   lines.push(`Foco principal: ${rec.mainFocus}`)
   lines.push(`Acción clave: ${rec.keyAction}`)
   lines.push(`Por qué hoy importa: ${rec.whyItMatters}`)
   lines.push(`Hidratación recomendada: ${rec.hydrationGuidance.summary}`)
 
-  if (rec.preWorkoutGuidance) lines.push(`Pre-entreno: ${rec.preWorkoutGuidance.summary}`)
-  if (rec.postWorkoutGuidance) lines.push(`Post-entreno: ${rec.postWorkoutGuidance.summary}`)
+  if (rec.preWorkoutGuidance) lines.push(`${getPromptNutritionTimingLabel(rec.sport, rec.dayType, 'pre')}: ${rec.preWorkoutGuidance.summary}`)
+  if (rec.postWorkoutGuidance) lines.push(`${getPromptNutritionTimingLabel(rec.sport, rec.dayType, 'post')}: ${rec.postWorkoutGuidance.summary}`)
   if (rec.recoveryNote) lines.push(`Nota de recuperación: ${rec.recoveryNote}`)
 
   if (rec.mealTiming.length > 0) {
     lines.push('Timing nutricional del día:')
     rec.mealTiming.forEach((item) => {
-      lines.push(`  · ${item.label} (${item.window}): ${item.summary}`)
+      lines.push(`  · ${translatePromptNutritionTimingLabel(item.label, rec.sport, rec.dayType)} (${item.window}): ${item.summary}`)
     })
   }
 
@@ -293,6 +296,60 @@ function buildNutritionContextSection(context: ChatContext): string {
   lines.push('Usa este contexto nutricional cuando el usuario pregunte sobre comidas, recuperación, energía o composición corporal. Si el usuario no pregunta de nutrición, no lo menciones salvo que sea directamente relevante a la sesión del día.')
 
   return lines.join('\n')
+}
+
+function getPromptNutritionSportLabel(sport: ReturnType<typeof getDayNutrition>['sport']): string {
+  switch (sport) {
+    case 'running':
+      return 'running'
+    case 'cycling':
+      return 'ciclismo'
+    case 'strength':
+      return 'fuerza'
+    case 'squash':
+      return 'squash'
+    case 'mobility':
+      return 'movilidad'
+    case 'mixed':
+      return 'día mixto'
+    default:
+      return 'sin sesión'
+  }
+}
+
+function getPromptNutritionTimingLabel(
+  sport: ReturnType<typeof getDayNutrition>['sport'],
+  dayType: ReturnType<typeof getDayNutrition>['dayType'],
+  timing: 'pre' | 'post',
+): string {
+  if (dayType === 'competition' && sport === 'squash') {
+    return timing === 'pre' ? 'Antes del partido' : 'Después del partido'
+  }
+
+  switch (sport) {
+    case 'running':
+      return timing === 'pre' ? 'Antes de correr' : 'Después de correr'
+    case 'cycling':
+      return timing === 'pre' ? 'Antes de pedalear' : 'Después de pedalear'
+    case 'strength':
+      return timing === 'pre' ? 'Antes de fuerza' : 'Después de fuerza'
+    case 'squash':
+      return timing === 'pre' ? 'Antes de la sesión' : 'Después de la sesión'
+    case 'mixed':
+      return timing === 'pre' ? 'Antes del bloque' : 'Después del bloque'
+    default:
+      return timing === 'pre' ? 'Antes' : 'Después'
+  }
+}
+
+function translatePromptNutritionTimingLabel(
+  label: string,
+  sport: ReturnType<typeof getDayNutrition>['sport'],
+  dayType: ReturnType<typeof getDayNutrition>['dayType'],
+): string {
+  if (label === 'Pre-entreno') return getPromptNutritionTimingLabel(sport, dayType, 'pre')
+  if (label === 'Post-entreno') return getPromptNutritionTimingLabel(sport, dayType, 'post')
+  return label
 }
 
 function buildWeekSection(context: ChatContext): string {
