@@ -8,7 +8,7 @@ import { useCoachMemoryStore } from '../store/useCoachMemoryStore'
 import { usePlanBuilderStore } from '../store/usePlanBuilderStore'
 import { getPrimaryGoalEvent } from '../services/macroPlan'
 import { ChevronLeft, RefreshCw, CheckCircle2, AlertTriangle } from 'lucide-react'
-import type { PlanWizardConfig } from '../types'
+import type { PlanWizardConfig, GoalEvent } from '../types'
 
 const PHASE_LABELS: Record<string, string> = {
   base: 'Base', build: 'Build', peak: 'Peak', taper: 'Taper', race: 'Race', transition: 'Transition',
@@ -26,105 +26,308 @@ const PHASE_DOT: Record<string, string> = {
 
 function SquashPlayerMark({ className }: { className?: string }) {
   return (
-    <svg
-      viewBox="0 0 200 230"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      className={className}
-      aria-hidden
-    >
+    <svg viewBox="0 0 200 230" fill="none" xmlns="http://www.w3.org/2000/svg" className={className} aria-hidden>
       <defs>
         <linearGradient id="sqPG" x1="0%" y1="0%" x2="100%" y2="100%">
           <stop offset="0%" stopColor="#ff8040" />
           <stop offset="100%" stopColor="#cc3200" />
         </linearGradient>
-        <radialGradient id="sqHalo" cx="48%" cy="52%" r="50%">
-          <stop offset="0%" stopColor="#ff4d00" stopOpacity="0.32" />
-          <stop offset="70%" stopColor="#ff4d00" stopOpacity="0.08" />
+        <radialGradient id="sqHalo" cx="44%" cy="50%" r="52%">
+          <stop offset="0%" stopColor="#ff4d00" stopOpacity="0.38" />
+          <stop offset="60%" stopColor="#ff4d00" stopOpacity="0.10" />
           <stop offset="100%" stopColor="#ff4d00" stopOpacity="0" />
         </radialGradient>
         <filter id="sqGlow" x="-50%" y="-50%" width="200%" height="200%">
           <feGaussianBlur in="SourceGraphic" stdDeviation="2.8" result="blur" />
-          <feMerge>
-            <feMergeNode in="blur" />
-            <feMergeNode in="SourceGraphic" />
-          </feMerge>
+          <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
         </filter>
         <filter id="sqSoftGlow" x="-60%" y="-60%" width="220%" height="220%">
-          <feGaussianBlur in="SourceGraphic" stdDeviation="4" result="blur" />
-          <feMerge>
-            <feMergeNode in="blur" />
-            <feMergeNode in="SourceGraphic" />
-          </feMerge>
+          <feGaussianBlur in="SourceGraphic" stdDeviation="4.5" result="blur" />
+          <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
         </filter>
       </defs>
 
       {/* Atmospheric halo */}
-      <ellipse cx="96" cy="125" rx="90" ry="82" fill="url(#sqHalo)" />
+      <ellipse cx="90" cy="118" rx="94" ry="86" fill="url(#sqHalo)" />
 
-      {/* Court floor — perspective trapezoid */}
-      <line x1="8" y1="218" x2="192" y2="218" stroke="rgba(255,77,0,0.18)" strokeWidth="1" />
-      <path d="M8,218 L96,148 L192,218" stroke="rgba(255,77,0,0.10)" strokeWidth="0.8" fill="none" />
-      <path d="M36,218 L96,164 L160,218" stroke="rgba(255,77,0,0.06)" strokeWidth="0.6" fill="none" />
-      <line x1="70" y1="148" x2="122" y2="148" stroke="rgba(255,77,0,0.12)" strokeWidth="0.8" />
+      {/* Court floor — service box perspective */}
+      <line x1="6" y1="220" x2="194" y2="220" stroke="rgba(255,77,0,0.20)" strokeWidth="1" />
+      <path d="M6,220 L95,150 L194,220" stroke="rgba(255,77,0,0.11)" strokeWidth="0.9" fill="none" />
+      <path d="M32,220 L95,166 L162,220" stroke="rgba(255,77,0,0.07)" strokeWidth="0.7" fill="none" />
+      <line x1="66" y1="150" x2="124" y2="150" stroke="rgba(255,77,0,0.13)" strokeWidth="0.9" />
+      <line x1="55" y1="163" x2="138" y2="163" stroke="rgba(255,77,0,0.08)" strokeWidth="0.6" />
 
       {/* Head */}
-      <circle cx="82" cy="44" r="14" fill="url(#sqPG)" filter="url(#sqGlow)" />
+      <circle cx="76" cy="42" r="13" fill="url(#sqPG)" filter="url(#sqGlow)" />
 
-      {/* Torso */}
-      <path d="M70,57 C67,69 65,82 67,97 L88,97 C90,82 93,69 95,57 Z" fill="url(#sqPG)" />
+      {/* Neck */}
+      <rect x="72" y="54" width="8" height="7" rx="3" fill="url(#sqPG)" />
 
-      {/* Left arm — raised for balance */}
-      <path d="M72,65 C63,56 54,47 44,39" stroke="url(#sqPG)" strokeWidth="11" strokeLinecap="round" fill="none" filter="url(#sqGlow)" />
+      {/* Torso — rotated slightly for forehand swing */}
+      <path d="M66,61 C62,74 60,88 62,104 L85,101 C87,86 90,72 92,60 Z" fill="url(#sqPG)" />
 
-      {/* Right arm — racket swing */}
-      <path d="M91,61 C103,73 116,88 125,104" stroke="url(#sqPG)" strokeWidth="11" strokeLinecap="round" fill="none" filter="url(#sqGlow)" />
-      <path d="M125,104 C131,116 137,127 141,137" stroke="url(#sqPG)" strokeWidth="8" strokeLinecap="round" fill="none" />
+      {/* Left arm — high balance reach */}
+      <path d="M68,68 C58,57 47,46 35,37" stroke="url(#sqPG)" strokeWidth="12" strokeLinecap="round" fill="none" filter="url(#sqGlow)" />
+      {/* Left hand open */}
+      <circle cx="33" cy="35" r="5" fill="url(#sqPG)" />
 
-      {/* Left leg — front lunge */}
-      <path d="M70,97 C66,111 59,127 52,146 L63,149 C69,130 75,114 80,99 Z" fill="url(#sqPG)" />
-      <path d="M52,146 C49,158 46,170 44,183 L55,185 C57,172 60,160 63,149 Z" fill="url(#sqPG)" />
-      <path d="M40,187 L57,185 L55,193 L36,195 Z" fill="url(#sqPG)" />
+      {/* Right arm — aggressive forehand swing, arm fully extended */}
+      <path d="M88,64 C100,78 114,94 126,112" stroke="url(#sqPG)" strokeWidth="12" strokeLinecap="round" fill="none" filter="url(#sqGlow)" />
+      <path d="M126,112 C132,124 138,136 144,148" stroke="url(#sqPG)" strokeWidth="9" strokeLinecap="round" fill="none" />
 
-      {/* Right leg — back extended */}
-      <path d="M84,97 C89,112 97,127 105,142 L113,138 C105,123 97,108 92,97 Z" fill="url(#sqPG)" />
-      <path d="M105,142 C111,155 117,166 121,179 L129,176 C125,163 119,152 113,138 Z" fill="url(#sqPG)" />
-      <path d="M119,181 L131,176 L135,184 L121,189 Z" fill="url(#sqPG)" />
+      {/* Left leg — deep forward lunge, knee fully bent */}
+      <path d="M64,101 C58,116 50,133 40,152 L53,156 C61,137 68,120 75,103 Z" fill="url(#sqPG)" />
+      <path d="M40,152 C36,165 32,179 30,192 L43,195 C46,182 50,168 53,156 Z" fill="url(#sqPG)" />
+      {/* Left foot flat on court */}
+      <path d="M26,195 L44,193 L43,202 L22,204 Z" fill="url(#sqPG)" />
+
+      {/* Right leg — power base, extended back */}
+      <path d="M80,101 C87,116 97,132 107,148 L117,143 C107,127 97,111 89,97 Z" fill="url(#sqPG)" />
+      <path d="M107,148 C114,162 120,174 124,187 L134,183 C130,170 124,157 117,143 Z" fill="url(#sqPG)" />
+      {/* Right foot — tiptoe on back leg */}
+      <path d="M123,190 L135,183 L139,191 L126,198 Z" fill="url(#sqPG)" />
 
       {/* Racket grip */}
-      <line x1="141" y1="137" x2="155" y2="157" stroke="#ff8a50" strokeWidth="6" strokeLinecap="round" />
+      <line x1="144" y1="148" x2="158" y2="168" stroke="#ff8a50" strokeWidth="7" strokeLinecap="round" />
 
-      {/* Racket head */}
-      <ellipse cx="165" cy="172" rx="25" ry="19" stroke="#ff7a33" strokeWidth="2.8" fill="rgba(255,77,0,0.07)" transform="rotate(-28 165 172)" filter="url(#sqGlow)" />
+      {/* Racket head — larger, rotated, full forehand contact position */}
+      <ellipse cx="172" cy="183" rx="27" ry="21" stroke="#ff7a33" strokeWidth="3.0" fill="rgba(255,77,0,0.09)" transform="rotate(-32 172 183)" filter="url(#sqGlow)" />
 
-      {/* String mesh */}
-      <line x1="150" y1="162" x2="175" y2="182" stroke="rgba(255,130,60,0.28)" strokeWidth="0.8" />
-      <line x1="155" y1="157" x2="178" y2="175" stroke="rgba(255,130,60,0.20)" strokeWidth="0.7" />
-      <line x1="146" y1="168" x2="171" y2="186" stroke="rgba(255,130,60,0.20)" strokeWidth="0.7" />
-      <line x1="148" y1="177" x2="180" y2="166" stroke="rgba(255,130,60,0.22)" strokeWidth="0.7" />
-      <line x1="149" y1="171" x2="181" y2="160" stroke="rgba(255,130,60,0.18)" strokeWidth="0.7" />
-      <line x1="150" y1="165" x2="178" y2="155" stroke="rgba(255,130,60,0.14)" strokeWidth="0.6" />
+      {/* String mesh — denser */}
+      <line x1="155" y1="171" x2="182" y2="195" stroke="rgba(255,130,60,0.30)" strokeWidth="0.9" />
+      <line x1="160" y1="166" x2="184" y2="188" stroke="rgba(255,130,60,0.22)" strokeWidth="0.8" />
+      <line x1="151" y1="177" x2="177" y2="200" stroke="rgba(255,130,60,0.22)" strokeWidth="0.8" />
+      <line x1="148" y1="183" x2="180" y2="170" stroke="rgba(255,130,60,0.24)" strokeWidth="0.8" />
+      <line x1="150" y1="176" x2="183" y2="163" stroke="rgba(255,130,60,0.19)" strokeWidth="0.7" />
+      <line x1="152" y1="169" x2="180" y2="158" stroke="rgba(255,130,60,0.15)" strokeWidth="0.6" />
+      <line x1="147" y1="190" x2="178" y2="177" stroke="rgba(255,130,60,0.16)" strokeWidth="0.6" />
 
-      {/* Ball */}
-      <circle cx="48" cy="176" r="5.5" fill="#ff8040" filter="url(#sqSoftGlow)" />
-      <circle cx="48" cy="176" r="10" fill="none" stroke="#ff6020" strokeWidth="0.8" opacity="0.35" />
-      <line x1="42" y1="176" x2="24" y2="176" stroke="rgba(255,110,40,0.45)" strokeWidth="1.8" strokeLinecap="round" strokeDasharray="2,3" />
-      <line x1="41" y1="173" x2="27" y2="171" stroke="rgba(255,110,40,0.22)" strokeWidth="1.1" strokeLinecap="round" strokeDasharray="2,4" />
-      <line x1="41" y1="179" x2="29" y2="181" stroke="rgba(255,110,40,0.15)" strokeWidth="0.9" strokeLinecap="round" strokeDasharray="2,5" />
+      {/* Ball — mid-air, about to be struck */}
+      <circle cx="46" cy="168" r="6" fill="#ff8040" filter="url(#sqSoftGlow)" />
+      <circle cx="46" cy="168" r="11" fill="none" stroke="#ff6020" strokeWidth="0.9" opacity="0.40" />
+      {/* Ball trail */}
+      <line x1="39" y1="168" x2="18" y2="165" stroke="rgba(255,110,40,0.50)" strokeWidth="2.0" strokeLinecap="round" strokeDasharray="2,3" />
+      <line x1="38" y1="164" x2="22" y2="160" stroke="rgba(255,110,40,0.25)" strokeWidth="1.2" strokeLinecap="round" strokeDasharray="2,4" />
+      <line x1="38" y1="172" x2="24" y2="175" stroke="rgba(255,110,40,0.18)" strokeWidth="1.0" strokeLinecap="round" strokeDasharray="2,5" />
 
-      {/* Speed lines near swing */}
-      <line x1="129" y1="106" x2="109" y2="105" stroke="rgba(255,77,0,0.28)" strokeWidth="1.4" strokeLinecap="round" />
-      <line x1="131" y1="113" x2="113" y2="115" stroke="rgba(255,77,0,0.20)" strokeWidth="1.0" strokeLinecap="round" />
-      <line x1="127" y1="99" x2="110" y2="97" stroke="rgba(255,77,0,0.14)" strokeWidth="0.8" strokeLinecap="round" />
+      {/* Racket swing arc */}
+      <path d="M108,96 C116,100 124,108 130,118" stroke="rgba(255,77,0,0.22)" strokeWidth="1.2" strokeLinecap="round" strokeDasharray="3,4" fill="none" />
 
-      {/* Impact spark */}
-      <circle cx="141" cy="141" r="3" fill="#ffaa66" opacity="0.65" filter="url(#sqGlow)" />
-      <line x1="136" y1="136" x2="130" y2="130" stroke="#ff8040" strokeWidth="1.6" strokeLinecap="round" opacity="0.55" />
-      <line x1="141" y1="134" x2="141" y2="127" stroke="#ff8040" strokeWidth="1.6" strokeLinecap="round" opacity="0.45" />
-      <line x1="146" y1="136" x2="152" y2="130" stroke="#ff8040" strokeWidth="1.6" strokeLinecap="round" opacity="0.45" />
-      <line x1="148" y1="142" x2="155" y2="144" stroke="#ff8040" strokeWidth="1.2" strokeLinecap="round" opacity="0.35" />
+      {/* Speed lines near racket */}
+      <line x1="132" y1="115" x2="112" y2="114" stroke="rgba(255,77,0,0.32)" strokeWidth="1.5" strokeLinecap="round" />
+      <line x1="134" y1="123" x2="116" y2="125" stroke="rgba(255,77,0,0.22)" strokeWidth="1.1" strokeLinecap="round" />
+      <line x1="130" y1="107" x2="113" y2="104" stroke="rgba(255,77,0,0.16)" strokeWidth="0.9" strokeLinecap="round" />
+
+      {/* Impact burst at ball contact point */}
+      <circle cx="144" cy="152" r="4" fill="#ffaa66" opacity="0.70" filter="url(#sqGlow)" />
+      <line x1="138" y1="146" x2="131" y2="140" stroke="#ff8040" strokeWidth="1.8" strokeLinecap="round" opacity="0.60" />
+      <line x1="144" y1="145" x2="144" y2="137" stroke="#ff8040" strokeWidth="1.8" strokeLinecap="round" opacity="0.50" />
+      <line x1="150" y1="146" x2="157" y2="140" stroke="#ff8040" strokeWidth="1.8" strokeLinecap="round" opacity="0.50" />
+      <line x1="152" y1="153" x2="160" y2="156" stroke="#ff8040" strokeWidth="1.4" strokeLinecap="round" opacity="0.38" />
+      <line x1="137" y1="153" x2="129" y2="157" stroke="#ff8040" strokeWidth="1.4" strokeLinecap="round" opacity="0.35" />
     </svg>
   )
+}
+
+function RunnerMark({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 200 230" fill="none" xmlns="http://www.w3.org/2000/svg" className={className} aria-hidden>
+      <defs>
+        <linearGradient id="runPG" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#ff8040" />
+          <stop offset="100%" stopColor="#cc3200" />
+        </linearGradient>
+        <radialGradient id="runHalo" cx="50%" cy="52%" r="50%">
+          <stop offset="0%" stopColor="#ff4d00" stopOpacity="0.34" />
+          <stop offset="65%" stopColor="#ff4d00" stopOpacity="0.08" />
+          <stop offset="100%" stopColor="#ff4d00" stopOpacity="0" />
+        </radialGradient>
+        <filter id="runGlow" x="-50%" y="-50%" width="200%" height="200%">
+          <feGaussianBlur in="SourceGraphic" stdDeviation="2.6" result="blur" />
+          <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+        </filter>
+        <filter id="runSoftGlow" x="-60%" y="-60%" width="220%" height="220%">
+          <feGaussianBlur in="SourceGraphic" stdDeviation="5" result="blur" />
+          <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+        </filter>
+      </defs>
+
+      {/* Atmospheric halo */}
+      <ellipse cx="100" cy="115" rx="90" ry="80" fill="url(#runHalo)" />
+
+      {/* Track — perspective lane lines */}
+      <line x1="6" y1="220" x2="194" y2="220" stroke="rgba(255,77,0,0.20)" strokeWidth="1" />
+      <path d="M6,220 L100,158 L194,220" stroke="rgba(255,77,0,0.10)" strokeWidth="0.8" fill="none" />
+      <path d="M35,220 L100,173 L165,220" stroke="rgba(255,77,0,0.06)" strokeWidth="0.7" fill="none" />
+      {/* Lane tick marks */}
+      <line x1="52" y1="217" x2="52" y2="222" stroke="rgba(255,77,0,0.24)" strokeWidth="1" />
+      <line x1="100" y1="214" x2="100" y2="222" stroke="rgba(255,77,0,0.24)" strokeWidth="1" />
+      <line x1="148" y1="217" x2="148" y2="222" stroke="rgba(255,77,0,0.24)" strokeWidth="1" />
+
+      {/* Head — forward lean */}
+      <circle cx="108" cy="36" r="13" fill="url(#runPG)" filter="url(#runGlow)" />
+
+      {/* Torso — forward lean ~12 degrees */}
+      <path d="M100,49 C98,61 97,74 95,90 L113,92 C113,76 114,63 118,51 Z" fill="url(#runPG)" />
+
+      {/* Left arm — forward pump, elbow bent */}
+      <path d="M102,63 C110,55 120,49 130,44" stroke="url(#runPG)" strokeWidth="11" strokeLinecap="round" fill="none" filter="url(#runGlow)" />
+      <path d="M130,44 C135,40 138,37 136,32" stroke="url(#runPG)" strokeWidth="8" strokeLinecap="round" fill="none" />
+
+      {/* Right arm — back drive, elbow bent */}
+      <path d="M110,63 C100,74 88,84 78,92" stroke="url(#runPG)" strokeWidth="11" strokeLinecap="round" fill="none" filter="url(#runGlow)" />
+      <path d="M78,92 C73,97 70,102 72,108" stroke="url(#runPG)" strokeWidth="8" strokeLinecap="round" fill="none" />
+
+      {/* Right leg — stride forward, knee drive up */}
+      {/* Thigh forward */}
+      <path d="M98,90 C104,104 112,116 120,128 L129,122 C121,110 113,97 106,85 Z" fill="url(#runPG)" />
+      {/* Lower leg down, foot contact */}
+      <path d="M120,128 C124,140 128,152 130,164 L139,160 C137,148 133,136 129,122 Z" fill="url(#runPG)" />
+      {/* Foot strike */}
+      <path d="M128,166 L141,159 L145,167 L130,174 Z" fill="url(#runPG)" />
+      {/* Foot strike glow */}
+      <ellipse cx="136" cy="172" rx="13" ry="5" fill="rgba(255,77,0,0.22)" filter="url(#runSoftGlow)" />
+
+      {/* Left leg — pushoff behind, leg bent back */}
+      {/* Thigh back */}
+      <path d="M108,90 C101,104 91,116 80,127 L71,120 C81,109 90,97 98,85 Z" fill="url(#runPG)" />
+      {/* Lower leg curled up behind */}
+      <path d="M71,120 C65,108 63,96 67,85 L76,88 C73,98 74,109 80,121 Z" fill="url(#runPG)" />
+      {/* Foot behind — toe up */}
+      <path d="M65,84 L76,86 L77,95 L64,94 Z" fill="url(#runPG)" />
+
+      {/* Speed lines — motion blur to the left */}
+      <line x1="56" y1="116" x2="34" y2="116" stroke="rgba(255,77,0,0.35)" strokeWidth="2.0" strokeLinecap="round" />
+      <line x1="53" y1="125" x2="33" y2="126" stroke="rgba(255,77,0,0.25)" strokeWidth="1.4" strokeLinecap="round" />
+      <line x1="59" y1="107" x2="41" y2="106" stroke="rgba(255,77,0,0.20)" strokeWidth="1.1" strokeLinecap="round" />
+      <line x1="60" y1="134" x2="44" y2="135" stroke="rgba(255,77,0,0.16)" strokeWidth="0.9" strokeLinecap="round" />
+
+      {/* Sweat droplet */}
+      <path d="M116,30 C116,27 119,24 119,28 C119,30.5 117.5,32 116,30 Z" fill="#ffaa66" opacity="0.55" />
+
+      {/* Bib number hint */}
+      <rect x="98" y="66" width="15" height="12" rx="1.5" fill="rgba(255,255,255,0.10)" stroke="rgba(255,130,60,0.22)" strokeWidth="0.7" />
+    </svg>
+  )
+}
+
+function CyclistMark({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 200 230" fill="none" xmlns="http://www.w3.org/2000/svg" className={className} aria-hidden>
+      <defs>
+        <linearGradient id="cycPG" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#ff8040" />
+          <stop offset="100%" stopColor="#cc3200" />
+        </linearGradient>
+        <radialGradient id="cycHalo" cx="50%" cy="54%" r="50%">
+          <stop offset="0%" stopColor="#ff4d00" stopOpacity="0.30" />
+          <stop offset="65%" stopColor="#ff4d00" stopOpacity="0.07" />
+          <stop offset="100%" stopColor="#ff4d00" stopOpacity="0" />
+        </radialGradient>
+        <filter id="cycGlow" x="-50%" y="-50%" width="200%" height="200%">
+          <feGaussianBlur in="SourceGraphic" stdDeviation="2.5" result="blur" />
+          <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+        </filter>
+      </defs>
+
+      {/* Atmospheric halo */}
+      <ellipse cx="102" cy="128" rx="88" ry="78" fill="url(#cycHalo)" />
+
+      {/* Road — perspective */}
+      <line x1="6" y1="220" x2="194" y2="220" stroke="rgba(255,77,0,0.20)" strokeWidth="1" />
+      <path d="M6,220 L102,168 L194,220" stroke="rgba(255,77,0,0.09)" strokeWidth="0.8" fill="none" />
+      {/* Road center dashes */}
+      <line x1="90" y1="214" x2="100" y2="207" stroke="rgba(255,77,0,0.22)" strokeWidth="1.2" strokeDasharray="4,6" />
+      <line x1="100" y1="207" x2="110" y2="200" stroke="rgba(255,77,0,0.14)" strokeWidth="1.0" strokeDasharray="3,6" />
+
+      {/* Rear wheel */}
+      <circle cx="56" cy="168" r="42" stroke="#ff7a33" strokeWidth="2.8" fill="rgba(255,77,0,0.05)" filter="url(#cycGlow)" />
+      <circle cx="56" cy="168" r="7" fill="url(#cycPG)" />
+      {/* Rear spokes */}
+      <line x1="56" y1="126" x2="56" y2="210" stroke="rgba(255,100,40,0.28)" strokeWidth="1" />
+      <line x1="14" y1="155" x2="98" y2="181" stroke="rgba(255,100,40,0.22)" strokeWidth="1" />
+      <line x1="14" y1="181" x2="98" y2="155" stroke="rgba(255,100,40,0.22)" strokeWidth="1" />
+      <line x1="28" y1="136" x2="84" y2="200" stroke="rgba(255,100,40,0.16)" strokeWidth="0.8" />
+      <line x1="28" y1="200" x2="84" y2="136" stroke="rgba(255,100,40,0.16)" strokeWidth="0.8" />
+
+      {/* Front wheel */}
+      <circle cx="150" cy="168" r="42" stroke="#ff7a33" strokeWidth="2.8" fill="rgba(255,77,0,0.05)" filter="url(#cycGlow)" />
+      <circle cx="150" cy="168" r="7" fill="url(#cycPG)" />
+      {/* Front spokes */}
+      <line x1="150" y1="126" x2="150" y2="210" stroke="rgba(255,100,40,0.28)" strokeWidth="1" />
+      <line x1="108" y1="155" x2="192" y2="181" stroke="rgba(255,100,40,0.22)" strokeWidth="1" />
+      <line x1="108" y1="181" x2="192" y2="155" stroke="rgba(255,100,40,0.22)" strokeWidth="1" />
+      <line x1="122" y1="136" x2="178" y2="200" stroke="rgba(255,100,40,0.16)" strokeWidth="0.8" />
+      <line x1="122" y1="200" x2="178" y2="136" stroke="rgba(255,100,40,0.16)" strokeWidth="0.8" />
+
+      {/* Bike frame */}
+      {/* Seat tube */}
+      <line x1="102" y1="168" x2="84" y2="118" stroke="url(#cycPG)" strokeWidth="5.5" strokeLinecap="round" />
+      {/* Top tube */}
+      <line x1="86" y1="114" x2="138" y2="106" stroke="url(#cycPG)" strokeWidth="4.5" strokeLinecap="round" />
+      {/* Down tube */}
+      <line x1="140" y1="108" x2="102" y2="168" stroke="url(#cycPG)" strokeWidth="5.5" strokeLinecap="round" />
+      {/* Chain stays */}
+      <line x1="102" y1="168" x2="56" y2="168" stroke="url(#cycPG)" strokeWidth="4" strokeLinecap="round" />
+      {/* Seat stays */}
+      <line x1="84" y1="118" x2="56" y2="168" stroke="url(#cycPG)" strokeWidth="3" strokeLinecap="round" />
+      {/* Fork */}
+      <line x1="140" y1="108" x2="150" y2="168" stroke="url(#cycPG)" strokeWidth="4.5" strokeLinecap="round" />
+
+      {/* Saddle */}
+      <rect x="74" y="107" width="28" height="6" rx="3" fill="url(#cycPG)" />
+
+      {/* Drops handlebars */}
+      <path d="M138,106 L146,96 C148,92 152,92 154,96 L157,106" stroke="url(#cycPG)" strokeWidth="4.5" strokeLinecap="round" fill="none" />
+
+      {/* Rider — aggressive aero tuck */}
+      {/* Back / torso — near horizontal */}
+      <path d="M84,112 C92,102 110,94 132,88 C137,86 141,88 142,93 C143,98 140,102 135,104 C114,110 100,118 92,128 C88,132 82,130 80,123 Z" fill="url(#cycPG)" />
+
+      {/* Head — low aero helmet, chin forward */}
+      <ellipse cx="146" cy="80" rx="14" ry="11" fill="url(#cycPG)" filter="url(#cycGlow)" />
+      {/* Aero helmet tail */}
+      <path d="M133,74 C128,76 126,80 130,83 C134,86 140,84 146,80" fill="url(#cycPG)" opacity="0.75" />
+
+      {/* Arm on drops */}
+      <path d="M134,103 C137,108 139,113 138,118 C137,122 134,123 131,120 C127,116 124,110 124,103" stroke="url(#cycPG)" strokeWidth="10" strokeLinecap="round" fill="none" />
+
+      {/* Left leg — down, power stroke */}
+      <path d="M88,125 C82,139 74,154 68,168 L79,172 C85,158 93,143 100,128 Z" fill="url(#cycPG)" />
+      {/* Left foot / shoe on pedal */}
+      <path d="M63,170 L80,168 L81,176 L62,178 Z" fill="url(#cycPG)" />
+
+      {/* Right leg — up, recovery stroke */}
+      <path d="M98,126 C107,116 116,112 122,118 L113,128 C109,121 105,124 99,132 Z" fill="url(#cycPG)" />
+      {/* Right foot on top pedal */}
+      <path d="M103,168 L122,165 L124,172 L104,175 Z" fill="url(#cycPG)" />
+
+      {/* Speed lines */}
+      <line x1="16" y1="142" x2="2" y2="142" stroke="rgba(255,77,0,0.34)" strokeWidth="2.0" strokeLinecap="round" />
+      <line x1="18" y1="153" x2="5" y2="154" stroke="rgba(255,77,0,0.24)" strokeWidth="1.4" strokeLinecap="round" />
+      <line x1="20" y1="163" x2="9" y2="165" stroke="rgba(255,77,0,0.18)" strokeWidth="1.1" strokeLinecap="round" />
+      <line x1="15" y1="132" x2="4" y2="130" stroke="rgba(255,77,0,0.15)" strokeWidth="0.9" strokeLinecap="round" />
+
+      {/* Chain */}
+      <ellipse cx="102" cy="168" rx="12" ry="8" stroke="rgba(255,100,40,0.30)" strokeWidth="1" fill="none" strokeDasharray="3,2" />
+    </svg>
+  )
+}
+
+function getSportFromGoalEvent(goalEvent: GoalEvent | undefined): 'squash' | 'running' | 'cycling' {
+  if (!goalEvent) return 'squash'
+  const sport = (goalEvent.sport ?? '').toLowerCase()
+  const eventType = goalEvent.eventType ?? ''
+  if (sport.includes('run') || eventType === 'race') return 'running'
+  if (sport.includes('cycl') || sport.includes('bike') || eventType === 'cycling_event') return 'cycling'
+  return 'squash'
+}
+
+function SportAthleteIllustration({ goalEvent, className }: { goalEvent: GoalEvent | undefined; className?: string }) {
+  const sport = getSportFromGoalEvent(goalEvent)
+  if (sport === 'running') return <RunnerMark className={className} />
+  if (sport === 'cycling') return <CyclistMark className={className} />
+  return <SquashPlayerMark className={className} />
 }
 
 function buildDraftSignature(goalEventId: string, wizardConfig: PlanWizardConfig): string {
@@ -263,9 +466,12 @@ export default function PlanBuilderV2Page() {
         <div className="pointer-events-none absolute left-0 top-0 h-40 w-64 rounded-full bg-brand/8 blur-3xl" />
         {/* Top accent line */}
         <div className="pointer-events-none absolute inset-x-0 top-0 h-px" style={{ background: 'linear-gradient(90deg, transparent, rgba(255,77,0,0.4), transparent)' }} />
-        {/* Squash player hero mark */}
+        {/* Sport athlete hero mark — dynamic by goal event sport */}
         <div className="pointer-events-none absolute right-0 top-0 bottom-0 flex items-center">
-          <SquashPlayerMark className="h-36 w-auto translate-x-8 opacity-[0.25] sm:h-48 sm:translate-x-6 sm:opacity-[0.35] md:h-64 md:opacity-[0.48]" />
+          <SportAthleteIllustration
+            goalEvent={goalEvent}
+            className="h-36 w-auto translate-x-8 opacity-[0.25] sm:h-48 sm:translate-x-6 sm:opacity-[0.35] md:h-64 md:opacity-[0.48]"
+          />
         </div>
 
         <div className="relative max-w-5xl mx-auto">
