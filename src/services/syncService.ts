@@ -43,9 +43,178 @@ import {
 const QUEUE_KEY = 'entrenador_sync_queue_v1'
 const LAST_SYNC_USER_KEY = 'entrenador_sync_user_v1'
 const MIGRATION_KEY_PREFIX = 'entrenador_migrated_v1'
+const INITIAL_PULL_KEY_PREFIX = 'entrenador_initial_pull_v1'
+const REMOTE_WIPE_KEY = 'entrenador_remote_wipe_v1'
 const SESSION_DELETE_TOMBSTONES_KEY = 'entrenador_sync_session_tombstones_v1'
 const TOMBSTONE_TTL_MS = 90 * 24 * 60 * 60 * 1000 // 90 days
 const MAX_QUEUE_SIZE = 500
+
+interface PendingRemoteWipeEntry {
+  tables: SupabaseTable[]
+  requestedAt: number
+  fullReset?: boolean
+}
+
+type PendingRemoteWipeStore = Record<string, PendingRemoteWipeEntry>
+
+const REMOTE_WIPE_ORDER: SupabaseTable[] = [
+  'training_plan_weeks',
+  'training_plans',
+  'coach_proposals',
+  'chat_messages',
+  'week_summaries',
+  'day_logs',
+  'sessions',
+  'athlete_profiles',
+]
+
+function getInitialPullKey(userId: string): string {
+  return `${INITIAL_PULL_KEY_PREFIX}:${userId}`
+}
+
+export function hasInitialRemotePullCompleted(userId: string | null | undefined): boolean {
+  if (!userId) return false
+  try {
+    return localStorage.getItem(getInitialPullKey(userId)) === '1'
+  } catch {
+    return false
+  }
+}
+
+function markInitialRemotePullComplete(userId: string): void {
+  try {
+    localStorage.setItem(getInitialPullKey(userId), '1')
+  } catch {
+    // Ignore storage failures — a subsequent successful pull will retry.
+  }
+}
+
+function clearInitialRemotePull(userId: string): void {
+  try {
+    localStorage.removeItem(getInitialPullKey(userId))
+  } catch {
+    // Ignore storage failures.
+  }
+}
+
+function loadPendingRemoteWipeStore(): PendingRemoteWipeStore {
+  try {
+    const raw = localStorage.getItem(REMOTE_WIPE_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw) as unknown
+    if (!parsed || typeof parsed !== 'object') return {}
+
+    const entries = Object.entries(parsed as Record<string, unknown>)
+      .filter(([, value]) => {
+        if (!value || typeof value !== 'object') return false
+        const entry = value as PendingRemoteWipeEntry
+        return Array.isArray(entry.tables) && typeof entry.requestedAt === 'number'
+      })
+      .map(([userId, value]) => {
+        const entry = value as PendingRemoteWipeEntry
+        const validTables = entry.tables.filter((table): table is SupabaseTable => REMOTE_WIPE_ORDER.includes(table as SupabaseTable))
+        return [userId, { tables: validTables, requestedAt: entry.requestedAt, fullReset: entry.fullReset === true }] as const
+      })
+
+    return Object.fromEntries(entries)
+  } catch {
+    return {}
+  }
+}
+
+function savePendingRemoteWipeStore(store: PendingRemoteWipeStore): void {
+  try {
+    localStorage.setItem(REMOTE_WIPE_KEY, JSON.stringify(store))
+  } catch {
+    // Ignore storage failures.
+  }
+}
+
+function getPendingRemoteWipeEntry(userId: string): PendingRemoteWipeEntry | null {
+  const store = loadPendingRemoteWipeStore()
+  return store[userId] ?? null
+}
+
+function getPendingRemoteWipeTables(userId: string): Set<SupabaseTable> {
+  const entry = getPendingRemoteWipeEntry(userId)
+  return new Set(entry?.tables ?? [])
+}
+
+function hasPendingRemoteWipeForTable(userId: string, table: SupabaseTable): boolean {
+  return getPendingRemoteWipeTables(userId).has(table)
+}
+
+function registerPendingRemoteWipe(
+  userId: string,
+  tables: Iterable<SupabaseTable>,
+  options?: { fullReset?: boolean },
+): void {
+  const requestedTables = [...new Set(tables)]
+  if (requestedTables.length === 0) return
+
+  const store = loadPendingRemoteWipeStore()
+  const existing = store[userId]
+  const mergedTables = [...new Set([...(existing?.tables ?? []), ...requestedTables])]
+    .sort((a, b) => REMOTE_WIPE_ORDER.indexOf(a) - REMOTE_WIPE_ORDER.indexOf(b))
+
+  store[userId] = {
+    tables: mergedTables,
+    requestedAt: existing?.requestedAt ?? Date.now(),
+    fullReset: options?.fullReset === true || existing?.fullReset === true,
+  }
+  savePendingRemoteWipeStore(store)
+}
+
+function clearPendingRemoteWipeTables(userId: string, tables: Iterable<SupabaseTable>): void {
+  const tableSet = new Set(tables)
+  if (tableSet.size === 0) return
+
+  const store = loadPendingRemoteWipeStore()
+  const existing = store[userId]
+  if (!existing) return
+
+  const remainingTables = existing.tables.filter((table) => !tableSet.has(table))
+  if (remainingTables.length === 0) {
+    delete store[userId]
+  } else {
+    store[userId] = {
+      ...existing,
+      tables: remainingTables,
+    }
+  }
+  savePendingRemoteWipeStore(store)
+}
+
+function clearPendingRemoteWipeState(userId: string): void {
+  const store = loadPendingRemoteWipeStore()
+  if (!(userId in store)) return
+  delete store[userId]
+  savePendingRemoteWipeStore(store)
+}
+
+function sortRemoteWipeTables(tables: Iterable<SupabaseTable>): SupabaseTable[] {
+  const unique = [...new Set(tables)]
+  return unique.sort((a, b) => REMOTE_WIPE_ORDER.indexOf(a) - REMOTE_WIPE_ORDER.indexOf(b))
+}
+
+function mapSelectionToRemoteTables(
+  selection: { trainingData?: boolean; chatHistory?: boolean; coachProposals?: boolean; coachMemory?: boolean },
+): SupabaseTable[] {
+  const tables: SupabaseTable[] = []
+  if (selection.trainingData) {
+    tables.push('training_plan_weeks', 'training_plans', 'sessions', 'day_logs', 'week_summaries')
+  }
+  if (selection.coachProposals) {
+    tables.push('coach_proposals')
+  }
+  if (selection.chatHistory) {
+    tables.push('chat_messages')
+  }
+  if (selection.coachMemory) {
+    tables.push('athlete_profiles')
+  }
+  return sortRemoteWipeTables(tables)
+}
 type ScopedPromise<T> = { userId: string; promise: Promise<T> }
 let activeDrainQueuePromise: ScopedPromise<boolean> | null = null
 let activePullAllPromise: ScopedPromise<void> | null = null
@@ -98,6 +267,7 @@ interface MergeContext {
   allowDeletes: boolean
   deleteBeforeTs: number | null
   pendingWrites: Promise<unknown>[]
+  pendingRemoteWipeTables: Set<SupabaseTable>
 }
 
 interface MergeResolution<T extends { id: string }> {
@@ -243,6 +413,18 @@ function enqueue(op: OfflineOp): void {
   saveQueue(queue)
 }
 
+function clearQueuedOpsForTables(userId: string, tables: Iterable<SupabaseTable>): void {
+  const selectedTables = new Set(tables)
+  if (selectedTables.size === 0) return
+
+  try {
+    const queue = loadQueue().filter((op) => op.userId !== userId || !selectedTables.has(op.table))
+    saveQueue(queue)
+  } catch {
+    // Ignore storage failures.
+  }
+}
+
 function getMigrationKey(userId: string): string {
   return `${MIGRATION_KEY_PREFIX}:${userId}`
 }
@@ -347,6 +529,7 @@ async function drainQueue(): Promise<boolean> {
 
   const otherUsersQueue = queue.filter((op) => op.userId !== userId)
   const currentUserQueue = queue.filter((op) => op.userId === userId)
+  const pendingRemoteWipeTables = getPendingRemoteWipeTables(userId)
 
   if (currentUserQueue.length === 0) {
     saveQueue(otherUsersQueue)
@@ -361,6 +544,11 @@ async function drainQueue(): Promise<boolean> {
 
   for (const op of currentUserQueue) {
     const opRetryCount = op.retryCount ?? 0
+
+    if (pendingRemoteWipeTables.has(op.table)) {
+      remaining.push(op)
+      continue
+    }
 
     // Drop ops that have exceeded max retries
     if (opRetryCount >= MAX_RETRIES_PER_OP) {
@@ -533,6 +721,12 @@ async function upsertRow(table: SupabaseTable, row: Record<string, unknown>): Pr
   const userId = getUserId()
   if (!userId) return
 
+  if (hasPendingRemoteWipeForTable(userId, table)) {
+    enqueue({ userId, table, action: 'upsert', payload: row, enqueuedAt: Date.now() })
+    scheduleRetry(15000)
+    return
+  }
+
   if (!navigator.onLine) {
     finishSyncAttempt('offline')
     syncStoreState().setSyncStatus('offline')
@@ -579,6 +773,13 @@ async function deleteRow(table: SupabaseTable, id: string): Promise<void> {
 
   const userId = getUserId()
   if (!userId) return
+
+  if (hasPendingRemoteWipeForTable(userId, table)) {
+    if (table === 'sessions') rememberSessionDeleteTombstone(userId, id)
+    enqueue({ userId, table, action: 'delete', payload: { id, userId }, enqueuedAt: Date.now() })
+    scheduleRetry(15000)
+    return
+  }
 
   if (!navigator.onLine) {
     finishSyncAttempt('offline')
@@ -1099,6 +1300,50 @@ async function fetchAll<T>(table: SupabaseTable, userId: string): Promise<T[]> {
   return (data ?? []) as T[]
 }
 
+async function wipeRemoteTableByUser(userId: string, table: SupabaseTable): Promise<void> {
+  if (table === 'athlete_profiles') {
+    await clearRemoteAthleteProfileData(userId)
+    return
+  }
+
+  const { error } = await getSupabase().from(table).delete().eq('user_id', userId)
+  if (error) throw error
+}
+
+async function processPendingRemoteWipes(userId: string): Promise<RemoteWipeOutcome> {
+  const pendingTables = sortRemoteWipeTables(getPendingRemoteWipeTables(userId))
+  const outcome: RemoteWipeOutcome = {
+    succeeded: [],
+    tolerated: [],
+    failed: [],
+    pending: pendingTables,
+    completed: pendingTables.length === 0,
+  }
+
+  if (!isEnabled() || pendingTables.length === 0) {
+    return outcome
+  }
+
+  for (const table of pendingTables) {
+    try {
+      await wipeRemoteTableByUser(userId, table)
+      outcome.succeeded.push(table)
+    } catch (error) {
+      const info = classifySyncError(error, table)
+      if (isToleratedRemoteWipeCategory(info.category)) {
+        outcome.tolerated.push(table)
+      } else {
+        outcome.failed.push({ table, message: info.technicalMessage, category: info.category })
+      }
+    }
+  }
+
+  clearPendingRemoteWipeTables(userId, [...outcome.succeeded, ...outcome.tolerated] as SupabaseTable[])
+  outcome.pending = sortRemoteWipeTables(getPendingRemoteWipeTables(userId))
+  outcome.completed = outcome.pending.length === 0
+  return outcome
+}
+
 async function pullRemoteAndMerge(userId: string): Promise<void> {
   if (activePullAllPromise && activePullAllPromise.userId === userId) {
     return activePullAllPromise.promise
@@ -1109,10 +1354,12 @@ async function pullRemoteAndMerge(userId: string): Promise<void> {
 
     const queueDrained = await drainQueue()
     const { syncDetails } = useAuthStore.getState()
+    const pendingRemoteWipeTables = getPendingRemoteWipeTables(userId)
     const mergeContext: MergeContext = {
       allowDeletes: queueDrained,
       deleteBeforeTs: queueDrained ? (syncDetails.lastSuccessfulSyncAt ?? null) : null,
       pendingWrites: [],
+      pendingRemoteWipeTables,
     }
 
     await Promise.all([
@@ -1128,6 +1375,10 @@ async function pullRemoteAndMerge(userId: string): Promise<void> {
 
     if (mergeContext.pendingWrites.length > 0) {
       await Promise.allSettled(mergeContext.pendingWrites)
+    }
+
+    if (!pendingRemoteWipeTables.has('athlete_profiles')) {
+      markInitialRemotePullComplete(userId)
     }
   })()
 
@@ -1156,14 +1407,25 @@ export async function runFullSync(userId: string): Promise<void> {
       await repairLocalNaturalKeyConflicts()
       pruneExpiredTombstones(userId)
       pruneStaleQueue(userId)
+      await processPendingRemoteWipes(userId)
       await drainQueue()
       await pullRemoteAndMerge(userId)
       const failureCountBeforeFinalDrain = syncStoreState().syncDetails.consecutiveFailures ?? 0
       const queueDrainedAfterMerge = await drainQueue()
+      const hasPendingRemoteWipe = getPendingRemoteWipeTables(userId).size > 0
 
-      if (queueDrainedAfterMerge) {
+      if (queueDrainedAfterMerge && !hasPendingRemoteWipe) {
         markSyncHealthy()
       } else {
+        if (hasPendingRemoteWipe) {
+          refreshQueueDiagnostics()
+          syncStoreState().setSyncDetails({
+            syncAttemptInFlight: false,
+            retryScheduledAt: Date.now() + 15000,
+          })
+          syncStoreState().setSyncStatus('syncing', 'Limpiando datos remotos pendientes.')
+          return
+        }
         const failureCountAfterFinalDrain = syncStoreState().syncDetails.consecutiveFailures ?? 0
         if (failureCountAfterFinalDrain > failureCountBeforeFinalDrain) {
           return
@@ -1220,6 +1482,7 @@ export async function pullAll(userId: string): Promise<void> {
 }
 
 async function mergeSessions(userId: string, context: MergeContext): Promise<void> {
+  if (context.pendingRemoteWipeTables.has('sessions')) return
   const remoteRows = await fetchAll<Record<string, unknown>>('sessions', userId)
   const remoteIds = new Set<string>()
   const tombstones = getSessionDeleteTombstones(userId)
@@ -1258,6 +1521,7 @@ async function mergeSessions(userId: string, context: MergeContext): Promise<voi
 }
 
 async function mergeDayLogs(userId: string, context: MergeContext): Promise<void> {
+  if (context.pendingRemoteWipeTables.has('day_logs')) return
   const remoteRows = await fetchAll<Record<string, unknown>>('day_logs', userId)
   const remoteIds = new Set<string>()
 
@@ -1306,6 +1570,7 @@ async function mergeDayLogs(userId: string, context: MergeContext): Promise<void
 }
 
 async function mergeWeekSummaries(userId: string, context: MergeContext): Promise<void> {
+  if (context.pendingRemoteWipeTables.has('week_summaries')) return
   const remoteRows = await fetchAll<Record<string, unknown>>('week_summaries', userId)
   const remoteIds = new Set<string>()
 
@@ -1357,6 +1622,7 @@ async function mergeWeekSummaries(userId: string, context: MergeContext): Promis
 }
 
 async function mergeChatMessages(userId: string, context: MergeContext): Promise<void> {
+  if (context.pendingRemoteWipeTables.has('chat_messages')) return
   const remoteRows = await fetchAll<Record<string, unknown>>('chat_messages', userId)
   const remoteIds = new Set<string>()
 
@@ -1381,6 +1647,7 @@ async function mergeChatMessages(userId: string, context: MergeContext): Promise
 }
 
 async function mergeCoachProposals(userId: string, context: MergeContext): Promise<void> {
+  if (context.pendingRemoteWipeTables.has('coach_proposals')) return
   const remoteRows = await fetchAll<Record<string, unknown>>('coach_proposals', userId)
   const remoteIds = new Set<string>()
 
@@ -1410,6 +1677,7 @@ async function mergeCoachProposals(userId: string, context: MergeContext): Promi
 }
 
 async function mergeAthleteProfile(userId: string, context: MergeContext): Promise<void> {
+  if (context.pendingRemoteWipeTables.has('athlete_profiles')) return
   let remoteRows: AthleteProfileSyncRow[]
   try {
     remoteRows = await fetchAthleteProfileRows(userId)
@@ -1458,6 +1726,7 @@ async function deleteLocalTrainingPlan(planId: string): Promise<void> {
 }
 
 async function mergeTrainingPlans(userId: string, context: MergeContext): Promise<void> {
+  if (context.pendingRemoteWipeTables.has('training_plans')) return
   const remoteRows = await fetchAll<Record<string, unknown>>('training_plans', userId)
   const remoteIds = new Set<string>()
 
@@ -1501,6 +1770,7 @@ async function mergeTrainingPlans(userId: string, context: MergeContext): Promis
 }
 
 async function mergeTrainingPlanWeeks(userId: string, context: MergeContext): Promise<void> {
+  if (context.pendingRemoteWipeTables.has('training_plan_weeks')) return
   const remoteRows = await fetchAll<Record<string, unknown>>('training_plan_weeks', userId)
   const remoteIds = new Set<string>()
   const localPlans = await db.trainingPlans.toArray()
@@ -1771,15 +2041,11 @@ function saveSessionDeleteTombstones(userId: string, tombstones: Record<string, 
 }
 
 function clearSyncArtifactsForUser(userId: string): void {
-  try {
-    const queue = loadQueue().filter((op) => op.userId !== userId)
-    saveQueue(queue)
-  } catch {
-    // Ignore storage failures.
-  }
-
+  clearQueuedOpsForTables(userId, REMOTE_WIPE_ORDER)
   clearSessionDeleteTombstoneGroup(userId)
   localStorage.removeItem(getMigrationKey(userId))
+  clearInitialRemotePull(userId)
+  clearPendingRemoteWipeState(userId)
 
   syncStoreState().setSyncStatus('idle')
   syncStoreState().setSyncDetails({
@@ -1804,32 +2070,9 @@ export function clearSelectedSyncArtifactsForUser(
   userId: string,
   selection: { trainingData?: boolean; chatHistory?: boolean; coachProposals?: boolean; coachMemory?: boolean },
 ): void {
-  const selectedTables = new Set<SupabaseTable>()
-  if (selection.trainingData) {
-    selectedTables.add('sessions')
-    selectedTables.add('day_logs')
-    selectedTables.add('week_summaries')
-    selectedTables.add('training_plans')
-    selectedTables.add('training_plan_weeks')
-  }
-  if (selection.chatHistory) {
-    selectedTables.add('chat_messages')
-  }
-  if (selection.coachProposals) {
-    selectedTables.add('coach_proposals')
-  }
-  if (selection.coachMemory) {
-    selectedTables.add('athlete_profiles')
-  }
-
-  if (selectedTables.size === 0) return
-
-  try {
-    const queue = loadQueue().filter((op) => op.userId !== userId || !selectedTables.has(op.table))
-    saveQueue(queue)
-  } catch {
-    // Ignore storage failures.
-  }
+  const selectedTables = mapSelectionToRemoteTables(selection)
+  if (selectedTables.length === 0) return
+  clearQueuedOpsForTables(userId, selectedTables)
 
   if (selection.trainingData) {
     clearSessionDeleteTombstoneGroup(userId)
@@ -1994,72 +2237,56 @@ export async function migrateLocalDataToCloud(userId: string): Promise<void> {
   }
 }
 
+export interface RemoteWipeOutcome {
+  /** Tables where the remote delete succeeded. */
+  succeeded: string[]
+  /** Tables skipped because the schema is missing remotely — safe to ignore. */
+  tolerated: string[]
+  /** Tables that failed with a real error (RLS, network, unknown). */
+  failed: Array<{ table: string; message: string; category: SyncErrorCategory }>
+  /** Tables still pending remote cleanup after this attempt. */
+  pending: string[]
+  /** Whether the requested wipe has fully completed. */
+  completed: boolean
+}
+
+function isToleratedRemoteWipeCategory(category: SyncErrorCategory): boolean {
+  return category === 'schema_mismatch' || category === 'supabase_not_configured'
+}
+
 export async function clearSelectedRemoteAppData(
   userId: string,
   selection: { trainingData?: boolean; chatHistory?: boolean; coachProposals?: boolean; coachMemory?: boolean },
-): Promise<void> {
-  if (!isEnabled()) return
+): Promise<RemoteWipeOutcome> {
+  const selectedTables = mapSelectionToRemoteTables(selection)
+  const outcome: RemoteWipeOutcome = { succeeded: [], tolerated: [], failed: [], pending: selectedTables, completed: selectedTables.length === 0 }
+  if (!isEnabled()) return { ...outcome, pending: [], completed: true }
 
-  const tableMap: Array<{ key: keyof typeof selection; table: SupabaseTable }> = [
-    { key: 'trainingData', table: 'training_plan_weeks' },
-    { key: 'trainingData', table: 'training_plans' },
-    { key: 'trainingData', table: 'sessions' },
-    { key: 'trainingData', table: 'day_logs' },
-    { key: 'trainingData', table: 'week_summaries' },
-    { key: 'coachProposals', table: 'coach_proposals' },
-    { key: 'chatHistory', table: 'chat_messages' },
-  ]
-
-  const failures: string[] = []
-
-  for (const { key, table } of tableMap) {
-    if (selection[key]) {
-      const { error } = await getSupabase().from(table).delete().eq('user_id', userId)
-      if (error) {
-        failures.push(table)
-      }
-    }
-  }
-
-  if (selection.coachMemory) {
-    try {
-      await clearRemoteAthleteProfileData(userId)
-    } catch {
-      failures.push('athlete_profiles')
-    }
-  }
-
-  if (failures.length > 0) {
-    throw new Error(`No se pudo borrar en la nube: ${failures.join(', ')}`)
-  }
+  registerPendingRemoteWipe(userId, selectedTables)
+  return processPendingRemoteWipes(userId)
 }
 
-export async function wipeRemoteAndLocalAppData(userId: string): Promise<void> {
+export async function wipeRemoteAndLocalAppData(userId: string): Promise<RemoteWipeOutcome> {
+  const allTables = [...REMOTE_WIPE_ORDER]
+  const outcome: RemoteWipeOutcome = { succeeded: [], tolerated: [], failed: [], pending: allTables, completed: false }
+
   if (!isEnabled()) {
     await clearAllLocalAppData()
     clearSyncArtifactsForUser(userId)
-    return
+    return { ...outcome, pending: [], completed: true }
   }
 
-  const tables: SupabaseTable[] = [
-    'training_plan_weeks',
-    'training_plans',
-    'coach_proposals',
-    'chat_messages',
-    'week_summaries',
-    'day_logs',
-    'sessions',
-  ]
+  clearQueuedOpsForTables(userId, allTables)
+  clearSessionDeleteTombstoneGroup(userId)
+  registerPendingRemoteWipe(userId, allTables, { fullReset: true })
 
-  for (const table of tables) {
-    const { error } = await getSupabase().from(table).delete().eq('user_id', userId)
-    if (error) throw error
-  }
-
-  await clearRemoteAthleteProfileData(userId)
+  const processed = await processPendingRemoteWipes(userId)
+  if (!processed.completed) return processed
 
   await clearAllLocalAppData()
   clearSyncArtifactsForUser(userId)
+
+  return { ...processed, pending: [], completed: true }
 }
 
 async function clearRemoteAthleteProfileData(userId: string): Promise<void> {

@@ -4,7 +4,7 @@ import AppShell from './components/layout/AppShell'
 import AuthGate from './components/auth/AuthGate'
 import { ROUTES } from './constants/routes'
 import { useAuthStore } from './store/useAuthStore'
-import { runFullSync, migrateLocalDataToCloud, prepareLocalDataForUser } from './services/syncService'
+import { runFullSync, migrateLocalDataToCloud, prepareLocalDataForUser, hasInitialRemotePullCompleted } from './services/syncService'
 import { useTrainingStore } from './store/useTrainingStore'
 import { useCoachMemoryStore } from './store/useCoachMemoryStore'
 import { currentWeekStartISO } from './utils/date'
@@ -58,6 +58,17 @@ function OnboardingGuard({ children }: { children: ReactNode }) {
     ) return
     if (isSupabaseConfigured && user?.id && memoryLoadRequiredAfterSyncAt == null) return
     const skippedOnboarding = hasSkippedOnboarding(user?.id)
+
+    // Multi-device safety: if we have a signed-in user but have never completed a remote pull
+    // (e.g. sync failed before the profile was fetched), do NOT redirect to onboarding — a
+    // profile may already exist in the cloud on another device. Wait for a successful sync.
+    if (
+      isSupabaseConfigured &&
+      user?.id &&
+      needsOnboarding(athleteProfile) &&
+      !skippedOnboarding &&
+      !hasInitialRemotePullCompleted(user.id)
+    ) return
 
     if (needsOnboarding(athleteProfile) && !skippedOnboarding) {
       navigate(ROUTES.ONBOARDING, { replace: true })

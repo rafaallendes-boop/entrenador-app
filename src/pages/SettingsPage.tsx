@@ -236,9 +236,10 @@ export default function SettingsPage() {
     setClearStatus(null)
     try {
       const currentUser = user
+      let remoteOutcome: Awaited<ReturnType<typeof clearSelectedRemoteAppData>> | null = null
       if (currentUser) {
         clearSelectedSyncArtifactsForUser(currentUser.id, clearSelection)
-        await clearSelectedRemoteAppData(currentUser.id, clearSelection)
+        remoteOutcome = await clearSelectedRemoteAppData(currentUser.id, clearSelection)
       }
 
       const clearedGroups = await clearSelectedLocalAppData(clearSelection)
@@ -253,21 +254,32 @@ export default function SettingsPage() {
       if (clearSelection.coachMemory) {
         await loadMemory()
       }
-      setClearStatus(
-        currentUser
+
+      const remoteFailed = remoteOutcome?.failed ?? []
+      const remoteTolerated = remoteOutcome?.tolerated ?? []
+      const remotePending = remoteOutcome?.pending ?? []
+      const baseMessage = currentUser
+        ? remotePending.length === 0
           ? `Se eliminaron ${formatGroupList(clearedGroups)} en este dispositivo y en tu cuenta. Tus otros dispositivos se limpiaran al sincronizar.`
-          : `Se eliminaron ${formatGroupList(clearedGroups)} en este dispositivo.`,
-      )
+          : `Se eliminaron ${formatGroupList(clearedGroups)} en este dispositivo. La limpieza remota seguirá pendiente hasta el próximo sync.`
+        : `Se eliminaron ${formatGroupList(clearedGroups)} en este dispositivo.`
+      const warnings: string[] = []
+      if (remoteFailed.length > 0) {
+        warnings.push(`Sigue pendiente en la nube: ${remoteFailed.map((entry) => entry.table).join(', ')}.`)
+      }
+      if (remoteTolerated.length > 0) {
+        warnings.push(`Tablas sin configurar en la nube se ignoraron: ${remoteTolerated.join(', ')}.`)
+      }
+      if (remotePending.length > 0 && remoteFailed.length === 0) {
+        warnings.push(`Pendiente remoto: ${remotePending.join(', ')}.`)
+      }
+      setClearStatus([baseMessage, ...warnings].join(' '))
     } catch (error) {
       console.error('[settings] selective data wipe failed', error)
       setClearStatus(
-        user
-          ? error instanceof Error
-            ? `${error.message} No se borraron datos locales para evitar inconsistencias entre dispositivos.`
-            : 'No se pudieron eliminar los datos en todos tus dispositivos. No se borraron datos locales para evitar inconsistencias.'
-          : error instanceof Error
-            ? error.message
-            : 'No se pudieron eliminar los datos seleccionados.',
+        error instanceof Error
+          ? `${error.message} Revisa tu conexión y reintenta.`
+          : 'No se pudieron eliminar los datos seleccionados.',
       )
     } finally {
       setIsClearing(false)
@@ -339,7 +351,17 @@ export default function SettingsPage() {
     setClearStatus(null)
     setImportStatus(null)
     try {
-      await wipeRemoteAndLocalAppData(currentUser.id)
+      const outcome = await wipeRemoteAndLocalAppData(currentUser.id)
+      if (!outcome.completed) {
+        const pendingTables = outcome.pending.join(', ')
+        setClearStatus(
+          pendingTables
+            ? `No se pudo completar el reinicio total de la cuenta. Sigue pendiente borrar en la nube: ${pendingTables}. Tus datos locales no se reiniciaron para evitar inconsistencias.`
+            : 'No se pudo completar el reinicio total de la cuenta.',
+        )
+        return
+      }
+
       clearOnboardingSkipped(currentUser.id)
       await refreshCounts(setDataCounts)
       await refreshNotificationDebugState(setNotificationDebugState)
@@ -348,9 +370,16 @@ export default function SettingsPage() {
       setClearSelection({ ...EMPTY_CLEAR_SELECTION })
       setSelectedCoachSessionIds([])
       setCoachSessionStatus(null)
-      setClearStatus('Se eliminaron todos los datos locales y remotos. La app quedó reiniciada para este usuario.')
+
+      const baseMessage = 'Se eliminaron los datos locales y se intentó limpiar la nube. La app quedó reiniciada para este usuario.'
+      const warnings: string[] = []
+      if (outcome.tolerated.length > 0) {
+        warnings.push(`Tablas sin configurar en la nube se ignoraron: ${outcome.tolerated.join(', ')}.`)
+      }
+      setClearStatus([baseMessage, ...warnings].join(' '))
       navigate(ROUTES.ONBOARDING, { replace: true })
     } catch (error) {
+      console.error('[settings] full reset failed', error)
       setClearStatus(error instanceof Error ? error.message : 'No se pudo borrar todo el entorno del usuario.')
     } finally {
       setIsWipingAllData(false)

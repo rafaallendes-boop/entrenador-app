@@ -3,7 +3,11 @@ import { addDays } from 'date-fns'
 import type { AthleteProfile, GoalEvent, PlanWizardConfig } from '../../types'
 import { buildPlanShell } from '../planBuilder/buildPlanShell'
 import { generatePlanWeeks } from '../planBuilder/generatePlan'
-import { buildWeekUserPrompt } from '../planBuilder/prompts/weekPrompt'
+import {
+  buildWeekBatchSystemPrompt,
+  buildWeekSystemPrompt,
+  buildWeekUserPrompt,
+} from '../planBuilder/prompts/weekPrompt'
 import { validatePlan } from '../planBuilder/validator'
 import { fromISO, getWeekStart, toISO } from '../../utils/date'
 
@@ -215,6 +219,42 @@ describe('planBuilder', () => {
     expect(prompt).toContain('incluye al menos')
     expect(prompt).toContain('sesión')
     expect(prompt).toContain('Como doble sesión NO está permitido')
+  })
+
+  it('buildWeekSystemPrompt preserves the literal session schema block', () => {
+    const prompt = buildWeekSystemPrompt()
+
+    expect(prompt).toContain('═══ ESQUEMA DE SESIÓN (OBLIGATORIO SEGUIR LITERAL) ═══')
+    expect(prompt).toContain('sessionType: "squash" | "running" | "cycling" | "strength" | "mobility" | "recovery" | "nutrition"')
+    expect(prompt).toContain('drills[] debe tener al menos un elemento')
+    expect(prompt).toContain('cyclingDetails es OBLIGATORIO')
+    expect(prompt).toContain('mobilityDetails es OBLIGATORIO')
+    expect(prompt).toContain('exercises es OBLIGATORIO')
+    expect(prompt).toContain('warmup y cooldown son opcionales')
+  })
+
+  it('buildWeekSystemPrompt keeps squash and running guardrails from the schema block', () => {
+    const prompt = buildWeekSystemPrompt()
+
+    expect(prompt).toContain('sessionMode="practice_match"')
+    expect(prompt).toContain('"competition_match"')
+    expect(prompt).toContain('sessionKind="match"')
+    expect(prompt).toContain('Si sessionKind="mixed", añade blocks[]')
+    expect(prompt).toContain('trainingFocus NO acepta "control" ni "shadows"')
+    expect(prompt).toContain('Si runningType="intervals" o "tempo", añade intervalStructure')
+    expect(prompt).toContain('Si una sesión no cumple, corrígela — no la descartes.')
+  })
+
+  it('buildWeekBatchSystemPrompt reuses the schema block and keeps batch-specific constraints', () => {
+    const prompt = buildWeekBatchSystemPrompt()
+
+    expect(prompt).toContain('EXACTAMENTE DOS acciones create_week')
+    expect(prompt).toContain('Nunca mezcles sesiones de una semana dentro de la otra.')
+    expect(prompt).toContain('═══ ESQUEMA DE SESIÓN (OBLIGATORIO SEGUIR LITERAL) ═══')
+    expect(prompt).toContain('cyclingDetails es OBLIGATORIO')
+    expect(prompt).toContain('mobilityDetails es OBLIGATORIO')
+    expect(prompt).toContain('warmup y cooldown son opcionales')
+    expect(prompt.match(/ESQUEMA DE SESIÓN \(OBLIGATORIO SEGUIR LITERAL\)/g)).toHaveLength(1)
   })
 
   it('retries a failed week with stricter context and still continues the pipeline', async () => {

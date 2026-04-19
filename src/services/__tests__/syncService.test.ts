@@ -425,7 +425,7 @@ describe('syncService', () => {
     tableResults.set('athlete_profiles', { data: athleteProfileRows, error: null })
 
     const syncService = await import('../syncService')
-    await syncService.clearSelectedRemoteAppData('user-1', {
+    const outcome = await syncService.clearSelectedRemoteAppData('user-1', {
       trainingData: true,
       chatHistory: true,
       coachProposals: true,
@@ -435,11 +435,11 @@ describe('syncService', () => {
     expect(deleteCalls.map((call) => call.table)).toEqual([
       'training_plan_weeks',
       'training_plans',
-      'sessions',
-      'day_logs',
-      'week_summaries',
       'coach_proposals',
       'chat_messages',
+      'week_summaries',
+      'day_logs',
+      'sessions',
     ])
 
     const athleteProfileUpdate = updateCalls.find((call) => call.table === 'athlete_profiles')
@@ -448,6 +448,8 @@ describe('syncService', () => {
       { op: 'eq', column: 'id', value: 'profile-1' },
       { op: 'eq', column: 'user_id', value: 'user-1' },
     ])
+    expect(outcome.completed).toBe(true)
+    expect(outcome.pending).toEqual([])
   })
 
   it('wipes all remote tables and clears athlete profile via update instead of delete', async () => {
@@ -461,7 +463,7 @@ describe('syncService', () => {
     tableResults.set('athlete_profiles', { data: athleteProfileRows, error: null })
 
     const syncService = await import('../syncService')
-    await syncService.wipeRemoteAndLocalAppData('user-1')
+    const outcome = await syncService.wipeRemoteAndLocalAppData('user-1')
 
     expect(deleteCalls.map((call) => call.table)).toEqual([
       'training_plan_weeks',
@@ -474,6 +476,72 @@ describe('syncService', () => {
     ])
     expect(deleteCalls.some((call) => call.table === 'athlete_profiles')).toBe(false)
     expect(updateCalls.some((call) => call.table === 'athlete_profiles')).toBe(true)
+    expect(outcome.completed).toBe(true)
+    expect(outcome.pending).toEqual([])
+  })
+
+  it('keeps failed selective remote wipes pending for the next sync instead of dropping them', async () => {
+    tableResults.set('sessions', { data: null, error: { message: 'Failed to fetch' } })
+
+    const syncService = await import('../syncService')
+    const outcome = await syncService.clearSelectedRemoteAppData('user-1', {
+      trainingData: true,
+    })
+
+    expect(outcome.completed).toBe(false)
+    expect(outcome.failed.map((entry) => entry.table)).toContain('sessions')
+    expect(outcome.pending).toContain('sessions')
+    expect(outcome.succeeded).toEqual(expect.arrayContaining([
+      'training_plan_weeks',
+      'training_plans',
+      'day_logs',
+      'week_summaries',
+    ]))
+    expect(localStorage.getItem('entrenador_remote_wipe_v1')).toContain('sessions')
+  })
+
+  it('does not clear local data on full reset until every remote table has been wiped', async () => {
+    tableResults.set('day_logs', { data: null, error: { message: 'Failed to fetch' } })
+
+    const syncService = await import('../syncService')
+    const appMaintenance = await import('../appMaintenance')
+    appMaintenance.clearAllLocalAppData.mockClear()
+    const outcome = await syncService.wipeRemoteAndLocalAppData('user-1')
+
+    expect(outcome.completed).toBe(false)
+    expect(outcome.pending).toContain('day_logs')
+    expect(appMaintenance.clearAllLocalAppData).not.toHaveBeenCalled()
+    expect(localStorage.getItem('entrenador_remote_wipe_v1')).toContain('day_logs')
+  })
+
+  it('skips pulling tables whose remote wipe is still pending so data cannot resurrect locally', async () => {
+    localStorageState.set('entrenador_remote_wipe_v1', JSON.stringify({
+      'user-1': {
+        tables: ['sessions'],
+        requestedAt: Date.now(),
+      },
+    }))
+    tableResults.set('sessions', { data: null, error: { message: 'Failed to fetch' } })
+
+    const syncService = await import('../syncService')
+    await syncService.runFullSync('user-1')
+
+    expect(selectCalls.some((call) => call.table === 'sessions')).toBe(false)
+  })
+
+  it('does not mark the initial remote pull complete while athlete_profiles cleanup is still pending', async () => {
+    localStorageState.set('entrenador_remote_wipe_v1', JSON.stringify({
+      'user-1': {
+        tables: ['athlete_profiles'],
+        requestedAt: Date.now(),
+      },
+    }))
+    tableResults.set('athlete_profiles', { data: null, error: { message: 'Failed to fetch' } })
+
+    const syncService = await import('../syncService')
+    await syncService.runFullSync('user-1')
+
+    expect(localStorage.getItem('entrenador_initial_pull_v1:user-1')).toBeNull()
   })
 
   it('surfaces expired queue ops instead of reporting a healthy recovery', async () => {
