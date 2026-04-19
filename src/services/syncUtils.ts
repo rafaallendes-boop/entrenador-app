@@ -307,6 +307,26 @@ export interface AthleteProfileSyncRow extends Record<string, unknown> {
 
 const ATHLETE_PROFILE_DELETED_FIELDS_KEY = '__deletedFields'
 const ATHLETE_PROFILE_CLEAR_COACH_MEMORY_KEY = '__clearCoachMemory'
+const ATHLETE_PROFILE_FULL_RESET_AT_KEY = '__fullResetAt'
+const ATHLETE_PROFILE_RESETTABLE_FIELDS = [
+  'onboardingDeferredAt',
+  'name',
+  'age',
+  'weightKg',
+  'primarySport',
+  'secondarySports',
+  'sportContext',
+  'mainGoal',
+  'secondaryGoal',
+  'runningProfile',
+  'strengthProfile',
+  'recoveryProfile',
+  'scheduleProfile',
+  'nutritionProfile',
+  'goalEvents',
+  'macroPlan',
+  'planWizardConfig',
+] as const
 
 /** Known columns in the remote athlete_profiles table */
 const ATHLETE_PROFILE_REMOTE_COLUMNS = new Set([
@@ -355,6 +375,34 @@ export function rowToAthleteProfile(row: Record<string, unknown>): AthleteProfil
     updatedAt: row.updated_at as number,
     ...data,
   } as AthleteProfile
+}
+
+export function createAthleteProfileFullResetRow(userId: string, resetAt: number): AthleteProfileSyncRow {
+  return normalizeAthleteProfilePayload({
+    id: 'default',
+    user_id: userId,
+    coach_memory: null,
+    updated_at: resetAt,
+    data: {
+      [ATHLETE_PROFILE_FULL_RESET_AT_KEY]: resetAt,
+      [ATHLETE_PROFILE_DELETED_FIELDS_KEY]: [...ATHLETE_PROFILE_RESETTABLE_FIELDS],
+      [ATHLETE_PROFILE_CLEAR_COACH_MEMORY_KEY]: true,
+    },
+  })
+}
+
+export function getAthleteProfileFullResetAt(data: Record<string, unknown> | null | undefined): number | null {
+  if (!isPlainObject(data)) return null
+  const value = data[ATHLETE_PROFILE_FULL_RESET_AT_KEY]
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
+export function isAthleteProfileFullResetRow(row: AthleteProfileSyncRow): boolean {
+  const fullResetAt = getAthleteProfileFullResetAt(row.data)
+  if (fullResetAt == null) return false
+
+  const { data, clearCoachMemory } = parseAthleteProfileData(row.data)
+  return Object.keys(data).length === 0 && clearCoachMemory && row.coach_memory == null
 }
 
 export function toAthleteProfileSyncRow(row: Record<string, unknown>): AthleteProfileSyncRow {
@@ -459,18 +507,22 @@ function parseAthleteProfileData(data: Record<string, unknown> | null): {
   data: Record<string, unknown>
   deletedFields: string[]
   clearCoachMemory: boolean
+  fullResetAt: number | null
 } {
   if (!isPlainObject(data)) {
-    return { data: {}, deletedFields: [], clearCoachMemory: false }
+    return { data: {}, deletedFields: [], clearCoachMemory: false, fullResetAt: null }
   }
 
   const deletedFields = Array.isArray(data[ATHLETE_PROFILE_DELETED_FIELDS_KEY])
     ? (data[ATHLETE_PROFILE_DELETED_FIELDS_KEY] as unknown[]).filter((item): item is string => typeof item === 'string')
     : []
   const clearCoachMemory = data[ATHLETE_PROFILE_CLEAR_COACH_MEMORY_KEY] === true
+  const fullResetAt = getAthleteProfileFullResetAt(data)
   const cleanData = Object.fromEntries(
     Object.entries(data).filter(([key]) =>
-      key !== ATHLETE_PROFILE_DELETED_FIELDS_KEY && key !== ATHLETE_PROFILE_CLEAR_COACH_MEMORY_KEY,
+      key !== ATHLETE_PROFILE_DELETED_FIELDS_KEY
+      && key !== ATHLETE_PROFILE_CLEAR_COACH_MEMORY_KEY
+      && key !== ATHLETE_PROFILE_FULL_RESET_AT_KEY,
     ),
   )
 
@@ -478,6 +530,7 @@ function parseAthleteProfileData(data: Record<string, unknown> | null): {
     data: cleanData,
     deletedFields,
     clearCoachMemory,
+    fullResetAt,
   }
 }
 

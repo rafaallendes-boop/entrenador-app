@@ -23,7 +23,15 @@
       "WebFetch(domain:api.github.com)",
       "WebFetch(domain:github.com)",
       "Bash(git *)",
-      "Skill(codex:rescue)"
+      "Skill(codex:rescue)",
+      "Read(//private/tmp/design_extract/**)",
+      "Bash(tar xf *)",
+      "WebFetch(domain:api.anthropic.com)",
+      "Read(//private/tmp/**)",
+      "Bash(mkdir -p design1 design2)",
+      "Bash(cp \"/Users/rafaallendes/.claude/projects/-Users-rafaallendes-Projects-entrenador-app/baac0c53-138a-4ad6-9d30-a6023dc4501d/tool-results/webfetch-1776634520310-qzrcbb.bin\" d1.gz)",
+      "Bash(cp \"/Users/rafaallendes/.claude/projects/-Users-rafaallendes-Projects-entrenador-app/baac0c53-138a-4ad6-9d30-a6023dc4501d/tool-results/webfetch-1776634520546-0kwag2.bin\" d2.gz)",
+      "Bash(gunzip -f d1.gz)"
     ]
   }
 }

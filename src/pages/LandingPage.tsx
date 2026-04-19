@@ -1,26 +1,21 @@
 import { useEffect, useState } from 'react'
-import {
-  ArrowRight,
-  BarChart3,
-  Brain,
-  CheckCircle2,
-  Headphones,
-  MoreVertical,
-  RefreshCw,
-  Send,
-  Sparkles,
-  UserPlus,
-  Zap,
-} from 'lucide-react'
+import { ArrowRight } from 'lucide-react'
 import { isSupabaseConfigured } from '../services/auth'
 import { useAuthStore } from '../store/useAuthStore'
 
 const BRAND = '#ff4d00'
 const BRAND_LIGHT = '#ff7a33'
-const COOL_BLUE = '#adc7ff'
-const INK_FAINT = '#8B949E'
+const FORGE_LIME = '#d1fc00'
+const FORGE_CYAN = '#00e3fd'
+const INK = '#f5f5f7'
+const INK_MUTED = '#a0a0a5'
+const INK_FAINT = '#6e6e73'
+const SURFACE_BORDER = 'rgba(255,255,255,0.07)'
 
-const FONT_STACK_DISPLAY = "'Lexend', 'Inter', system-ui, sans-serif"
+const FONT_DISPLAY = "'Lexend', 'Inter', system-ui, sans-serif"
+const FONT_MONO = "'JetBrains Mono', 'Fira Mono', monospace"
+
+const SPORTS = ['Squash', 'Running', 'Fuerza', 'Movilidad', 'Ciclismo']
 
 export default function LandingPage() {
   const signInWithGoogle = useAuthStore((s) => s.signInWithGoogle)
@@ -43,117 +38,98 @@ export default function LandingPage() {
 
   return (
     <div
-      className="relative min-h-screen w-full overflow-x-hidden text-ink antialiased"
+      className="relative min-h-screen w-full overflow-x-hidden antialiased"
       style={{
         background: '#0a0a0a',
+        color: INK,
         fontFamily: "'Inter', system-ui, sans-serif",
       }}
     >
-      <AmbientBackdrop />
       <TopNav onLogin={handleSignIn} onSignup={handleSignIn} />
 
-      <main className="relative">
+      <main>
         <Hero onPrimary={handleSignIn} />
-        <SocialProof />
-        <BentoBenefits onTalkToRally={handleSignIn} />
+        <SportsStrip />
         <HowItWorks />
         <DisciplinesGrid />
-        <AICoachMockup />
-        <AccessCard onSignup={handleSignIn} onGoogle={handleSignIn} authError={authError} authAvailable={authAvailable} />
+        <FeatureTeaser />
+        <QuoteBlock />
+        <AccessCard
+          onSignup={handleSignIn}
+          onGoogle={handleSignIn}
+          authError={authError}
+          authAvailable={authAvailable}
+        />
         <Footer />
       </main>
 
-      <style>{globalLandingCSS}</style>
+      <style>{css}</style>
     </div>
   )
 }
 
-/* ---------- Ambient backdrop ---------- */
-
-function AmbientBackdrop() {
-  return (
-    <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden">
-      {/* Deep vignette */}
-      <div
-        className="absolute inset-0"
-        style={{
-          background:
-            'radial-gradient(1200px 600px at 20% -10%, rgba(255,77,0,0.18) 0%, transparent 55%), radial-gradient(900px 500px at 100% 30%, rgba(173,199,255,0.06) 0%, transparent 60%), radial-gradient(800px 600px at 60% 110%, rgba(255,77,0,0.08) 0%, transparent 60%)',
-        }}
-      />
-      {/* Grain overlay */}
-      <div
-        className="absolute inset-0 opacity-[0.035]"
-        style={{
-          backgroundImage:
-            "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>\")",
-          mixBlendMode: 'overlay',
-        }}
-      />
-    </div>
-  )
-}
-
-/* ---------- Top nav ---------- */
+/* ───────────────────────────────────────────────────────── NAV */
 
 function TopNav({ onLogin, onSignup }: { onLogin: () => void; onSignup: () => void }) {
   const [scrolled, setScrolled] = useState(false)
   useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 10)
-    onScroll()
-    window.addEventListener('scroll', onScroll, { passive: true })
-    return () => window.removeEventListener('scroll', onScroll)
+    const fn = () => setScrolled(window.scrollY > 10)
+    fn()
+    window.addEventListener('scroll', fn, { passive: true })
+    return () => window.removeEventListener('scroll', fn)
   }, [])
 
   return (
     <nav
       className="fixed inset-x-0 top-0 z-50 transition-all duration-300"
       style={{
-        backgroundColor: scrolled ? 'rgba(10,10,10,0.85)' : 'rgba(10,10,10,0.4)',
+        backgroundColor: scrolled ? 'rgba(10,10,10,0.92)' : 'rgba(10,10,10,0.5)',
         backdropFilter: 'blur(18px) saturate(140%)',
         WebkitBackdropFilter: 'blur(18px) saturate(140%)',
-        borderBottom: scrolled ? '1px solid rgba(255,255,255,0.05)' : '1px solid transparent',
+        borderBottom: scrolled ? `1px solid ${SURFACE_BORDER}` : '1px solid transparent',
       }}
     >
-      <div className="mx-auto flex w-full max-w-7xl items-center justify-between px-6 py-4 md:px-8 md:py-5">
-        <a href="#top" className="group flex items-center gap-2">
-          <Bolt />
+      <div className="mx-auto flex w-full max-w-7xl items-center justify-between px-6 py-4 md:px-10 md:py-5">
+        {/* Logo */}
+        <a href="#top" className="flex items-center gap-2.5">
+          <BoltIcon />
           <span
-            className="text-xl font-black tracking-tighter text-white md:text-[1.4rem]"
-            style={{ fontFamily: FONT_STACK_DISPLAY, letterSpacing: '-0.03em' }}
+            className="text-[1.35rem] font-black tracking-[-0.03em] text-white"
+            style={{ fontFamily: FONT_DISPLAY }}
           >
             RallyIQ
           </span>
         </a>
 
+        {/* Nav links */}
         <div className="hidden items-center gap-7 md:flex">
-          <NavLink href="#coach" active>Coach</NavLink>
-          <NavLink href="#disciplines">Disciplines</NavLink>
-          <NavLink href="#features">Features</NavLink>
-          <NavLink href="#access">Pricing</NavLink>
+          {(['Producto', 'Funcionalidades', 'Precios', 'Atletas'] as const).map((label) => (
+            <a
+              key={label}
+              href="#"
+              className="nav-link text-[13px] font-semibold tracking-tight transition-colors"
+              style={{ color: INK_FAINT, fontFamily: FONT_DISPLAY }}
+            >
+              {label}
+            </a>
+          ))}
         </div>
 
+        {/* Actions */}
         <div className="flex items-center gap-2 md:gap-3">
           <button
             onClick={onLogin}
-            className="hidden rounded-xl px-4 py-2 text-sm font-medium text-ink-muted transition-colors hover:text-white md:inline-flex"
+            className="hidden rounded-xl px-4 py-2 text-sm font-medium transition-colors hover:text-white md:inline-flex"
+            style={{ color: INK_MUTED }}
           >
-            Login
+            Iniciar sesión
           </button>
           <button
             onClick={onSignup}
-            className="group relative inline-flex items-center gap-1.5 overflow-hidden rounded-xl px-5 py-2.5 text-[13px] font-bold text-white transition-transform active:scale-[0.97]"
-            style={{
-              background: `linear-gradient(135deg, ${BRAND} 0%, ${BRAND_LIGHT} 100%)`,
-              boxShadow: '0 0 0 1px rgba(255,255,255,0.06) inset, 0 10px 30px -12px rgba(255,77,0,0.5)',
-            }}
+            className="btn-primary-pill group relative inline-flex items-center gap-1.5 overflow-hidden rounded-xl px-5 py-2.5 text-[13px] font-bold text-white"
           >
-            <span className="relative z-10">Sign Up</span>
-            <Zap className="relative z-10 h-3.5 w-3.5 opacity-90" strokeWidth={2.5} />
-            <span
-              className="absolute inset-0 opacity-0 transition-opacity duration-300 group-hover:opacity-100"
-              style={{ background: 'linear-gradient(135deg, rgba(255,255,255,0.14), transparent)' }}
-            />
+            <span className="relative z-10">Empezar</span>
+            <ArrowRight className="relative z-10 h-3.5 w-3.5 opacity-90" strokeWidth={2.5} />
           </button>
         </div>
       </div>
@@ -161,34 +137,1150 @@ function TopNav({ onLogin, onSignup }: { onLogin: () => void; onSignup: () => vo
   )
 }
 
-function NavLink({
-  href,
-  children,
-  active,
-}: {
-  href: string
-  children: React.ReactNode
-  active?: boolean
-}) {
+/* ───────────────────────────────────────────────────────── HERO */
+
+function Hero({ onPrimary }: { onPrimary: () => void }) {
   return (
-    <a
-      href={href}
-      className="group relative text-[13px] font-semibold tracking-tight transition-colors"
-      style={{ color: active ? BRAND : INK_FAINT, fontFamily: FONT_STACK_DISPLAY }}
+    <section
+      id="top"
+      className="relative overflow-hidden"
+      style={{ padding: '72px 0 88px' }}
     >
-      <span className="transition-colors group-hover:text-white">{children}</span>
-      <span
-        className="absolute -bottom-1 left-0 h-[2px] w-full origin-left transition-transform duration-300"
+      {/* Background glows */}
+      <div
+        className="hero-bg-glow pointer-events-none absolute"
         style={{
-          background: BRAND,
-          transform: active ? 'scaleX(1)' : 'scaleX(0)',
+          top: -120, left: -80, width: 520, height: 520,
+          background: 'radial-gradient(circle, rgba(255,77,0,0.28), transparent 60%)',
         }}
       />
-    </a>
+      <div
+        className="hero-bg-glow pointer-events-none absolute"
+        style={{
+          top: -40, right: -120, width: 480, height: 480,
+          background: 'radial-gradient(circle, rgba(0,227,253,0.22), transparent 60%)',
+        }}
+      />
+
+      <div className="relative z-10 mx-auto grid w-full max-w-7xl grid-cols-1 items-center gap-16 px-6 md:px-10 lg:grid-cols-[1.15fr_1fr]">
+        {/* Copy */}
+        <div>
+          <div
+            className="mb-7 inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-[10.5px] font-bold uppercase tracking-[0.22em]"
+            style={{
+              color: BRAND,
+              background: 'rgba(255,77,0,0.08)',
+              border: `1px solid rgba(255,77,0,0.18)`,
+              fontFamily: FONT_MONO,
+            }}
+          >
+            v2.4 · release en abril
+          </div>
+
+          <h1
+            className="text-[2.75rem] font-extrabold leading-[1.04] tracking-[-0.035em] text-white md:text-[4.25rem]"
+            style={{ fontFamily: FONT_DISPLAY, marginBottom: 20 }}
+          >
+            Un coach de élite,<br />
+            en tu{' '}
+            <span style={{ color: BRAND }}>bolsillo.</span>
+          </h1>
+
+          <p
+            className="max-w-xl text-[17px] font-medium leading-relaxed"
+            style={{ color: INK_MUTED, marginBottom: 36 }}
+          >
+            Planea tu semana, registra cada sesión y recibe propuestas reales de IA — no solo
+            chat. RallyIQ lee tu carga, tu sueño y tus dolores, y ajusta el plan con un tap.
+          </p>
+
+          <div className="flex flex-wrap items-center gap-3" style={{ marginBottom: 40 }}>
+            <button
+              onClick={onPrimary}
+              className="btn-primary-pill group inline-flex items-center gap-2 rounded-xl px-7 py-4 text-[15px] font-bold text-white"
+            >
+              Empezar gratis <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" strokeWidth={2.5} />
+            </button>
+            <a
+              href="#how"
+              className="inline-flex items-center gap-2 rounded-xl px-7 py-4 text-[15px] font-bold transition-all"
+              style={{
+                color: INK,
+                background: 'rgba(255,255,255,0.03)',
+                border: '1px solid rgba(255,255,255,0.08)',
+              }}
+            >
+              Ver cómo funciona
+            </a>
+          </div>
+
+          {/* Proof row */}
+          <div
+            className="flex flex-wrap items-center gap-7 pt-7"
+            style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}
+          >
+            <ProofStat value="5" unit=" deportes" label="Cobertura" />
+            <ProofStat value="< 90" unit=" s" label="Log por sesión" />
+            <ProofStat value="100" unit="%" label="Local-first PWA" />
+            <ProofStat value="24/7" label="Coach disponible" />
+          </div>
+        </div>
+
+        {/* Phone mockup */}
+        <div className="flex justify-center">
+          <PhoneMockup />
+        </div>
+      </div>
+    </section>
   )
 }
 
-function Bolt() {
+function ProofStat({ value, unit, label }: { value: string; unit?: string; label: string }) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div
+        className="text-[22px] font-bold leading-none tabular-nums"
+        style={{ fontFamily: FONT_MONO, color: INK }}
+      >
+        {value}
+        {unit && <span style={{ color: INK_FAINT, fontWeight: 500 }}>{unit}</span>}
+      </div>
+      <div
+        className="text-[10px] uppercase tracking-[0.22em] font-semibold"
+        style={{ fontFamily: FONT_MONO, color: INK_FAINT }}
+      >
+        {label}
+      </div>
+    </div>
+  )
+}
+
+function PhoneMockup() {
+  return (
+    <div
+      style={{
+        width: 340, height: 700,
+        borderRadius: 44,
+        background: '#0a0a0a',
+        border: '1.5px solid rgba(255,255,255,0.12)',
+        boxShadow:
+          '0 0 0 6px rgba(255,255,255,0.03), 0 60px 140px -30px rgba(0,0,0,0.95), 0 0 120px -20px rgba(255,77,0,0.25), inset 0 0 0 1px rgba(255,255,255,0.05)',
+        position: 'relative',
+        overflow: 'hidden',
+        flexShrink: 0,
+      }}
+    >
+      {/* Notch */}
+      <div
+        style={{
+          position: 'absolute', top: 0, left: '50%', transform: 'translateX(-50%)',
+          width: 110, height: 30, background: '#0a0a0a',
+          borderRadius: '0 0 16px 16px', zIndex: 20,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+        }}
+      >
+        <div style={{ width: 36, height: 3, borderRadius: 9999, background: '#181818' }} />
+        <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#181818' }} />
+      </div>
+
+      {/* Screen */}
+      <div
+        style={{
+          width: '100%', height: '100%',
+          padding: '44px 18px 0',
+          backgroundImage:
+            'radial-gradient(circle at top left, rgba(209,252,0,0.07), transparent 28%), radial-gradient(circle at 85% 15%, rgba(0,227,253,0.08), transparent 24%), linear-gradient(180deg, rgba(19,19,19,0.96) 0%, rgba(8,8,8,1) 100%)',
+        }}
+      >
+        {/* Status bar */}
+        <div
+          className="flex justify-between pb-4"
+          style={{ fontFamily: FONT_MONO, fontSize: 11, fontWeight: 600, color: INK }}
+        >
+          <span>9:42</span>
+          <span>●●●●● LTE</span>
+        </div>
+
+        {/* Greeting */}
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 22, fontWeight: 700, color: INK }}>
+            Hola, <span style={{ color: BRAND }}>Rafa</span>
+          </div>
+          <div
+            style={{
+              fontFamily: FONT_MONO, fontSize: 10, color: INK_FAINT,
+              letterSpacing: '0.22em', textTransform: 'uppercase', marginTop: 4,
+            }}
+          >
+            Martes · semana 16 · bloque B
+          </div>
+        </div>
+
+        {/* HUD card */}
+        <div
+          style={{
+            background: 'rgba(24,24,24,0.6)',
+            border: `1px solid ${SURFACE_BORDER}`,
+            borderRadius: 14, padding: '12px 14px', marginBottom: 12,
+          }}
+        >
+          <div
+            className="flex justify-between"
+            style={{ fontFamily: FONT_MONO, fontSize: 9, letterSpacing: '0.24em', textTransform: 'uppercase', marginBottom: 10 }}
+          >
+            <span style={{ color: INK_FAINT, fontWeight: 600 }}>Tu semana</span>
+            <span style={{ color: FORGE_LIME }}>78% adherencia</span>
+          </div>
+          <div className="grid grid-cols-3 gap-1.5">
+            <PhoneStat label="Sesiones" value="3/5" />
+            <PhoneStat label="RPE avg" value="7.2" color={FORGE_LIME} />
+            <PhoneStat label="Sueño" value="7h" color={FORGE_CYAN} />
+          </div>
+        </div>
+
+        {/* Today card */}
+        <PhoneCard
+          tag="HOY · 18:30"
+          time="60 min"
+          title="Squash — Intervalos 4×4"
+          body="Bloque B · trabajo aeróbico · objetivo RPE 8"
+          meta={[['Vol', '24′'], ['Int', 'Alta'], ['Zona', '4']]}
+        />
+
+        {/* Coach proposal */}
+        <div
+          style={{
+            background: 'rgba(24,24,24,0.6)',
+            border: `1px solid ${SURFACE_BORDER}`,
+            borderRadius: 14, padding: 14, marginBottom: 10,
+          }}
+        >
+          <div className="flex justify-between" style={{ marginBottom: 10 }}>
+            <span style={{ fontFamily: FONT_MONO, fontSize: 9, letterSpacing: '0.24em', textTransform: 'uppercase', color: FORGE_LIME, fontWeight: 700 }}>
+              PROPUESTA · COACH
+            </span>
+            <span style={{ fontFamily: FONT_MONO, fontSize: 9, letterSpacing: '0.18em', textTransform: 'uppercase', color: INK_FAINT }}>
+              hace 3 min
+            </span>
+          </div>
+          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 15, fontWeight: 600, color: INK, marginBottom: 4 }}>
+            Reduce volumen el jueves
+          </div>
+          <p style={{ fontSize: 11, color: INK_MUTED, lineHeight: 1.45 }}>
+            Sueño bajo 3 noches seguidas. Baja fuerza −15%.
+          </p>
+          <div className="flex gap-1.5" style={{ marginTop: 12 }}>
+            <button
+              style={{
+                flex: 1, fontSize: 11, padding: '8px', borderRadius: 8,
+                background: 'rgba(209,252,0,0.12)', border: '1px solid rgba(209,252,0,0.3)',
+                color: FORGE_LIME, fontWeight: 600, cursor: 'pointer',
+              }}
+            >
+              Aplicar
+            </button>
+            <button
+              style={{
+                fontSize: 11, padding: '8px 14px', borderRadius: 8,
+                background: 'rgba(255,255,255,0.04)', border: `1px solid ${SURFACE_BORDER}`,
+                color: INK_MUTED, cursor: 'pointer',
+              }}
+            >
+              Más tarde
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function PhoneStat({ label, value, color }: { label: string; value: string; color?: string }) {
+  return (
+    <div
+      style={{
+        background: 'rgba(255,255,255,0.02)',
+        border: '1px solid rgba(255,255,255,0.05)',
+        borderRadius: 8, padding: 8,
+      }}
+    >
+      <div style={{ fontFamily: FONT_MONO, fontSize: 8, letterSpacing: '0.22em', textTransform: 'uppercase', color: INK_FAINT, marginBottom: 4 }}>
+        {label}
+      </div>
+      <div style={{ fontFamily: FONT_MONO, fontSize: 16, fontWeight: 700, color: color || INK }}>
+        {value}
+      </div>
+    </div>
+  )
+}
+
+function PhoneCard({
+  tag, time, title, body, meta,
+}: {
+  tag: string; time: string; title: string; body: string;
+  meta: [string, string][];
+}) {
+  return (
+    <div
+      style={{
+        background: 'rgba(24,24,24,0.6)',
+        border: `1px solid ${SURFACE_BORDER}`,
+        borderRadius: 14, padding: 14, marginBottom: 10,
+      }}
+    >
+      <div className="flex justify-between" style={{ marginBottom: 10 }}>
+        <span style={{ fontFamily: FONT_MONO, fontSize: 9, letterSpacing: '0.24em', textTransform: 'uppercase', color: BRAND_LIGHT, fontWeight: 700 }}>
+          {tag}
+        </span>
+        <span style={{ fontFamily: FONT_MONO, fontSize: 9, letterSpacing: '0.18em', textTransform: 'uppercase', color: INK_FAINT }}>
+          {time}
+        </span>
+      </div>
+      <div style={{ fontFamily: FONT_DISPLAY, fontSize: 15, fontWeight: 600, color: INK, marginBottom: 4 }}>
+        {title}
+      </div>
+      <p style={{ fontSize: 11, color: INK_MUTED, lineHeight: 1.45 }}>{body}</p>
+      <div className="flex flex-wrap gap-2.5" style={{ marginTop: 12, fontFamily: FONT_MONO, fontSize: 10, color: INK_MUTED }}>
+        {meta.map(([k, v]) => (
+          <span key={k}>{k} <b style={{ color: INK, fontWeight: 600 }}>→ {v}</b></span>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/* ───────────────────────────────────────────────────────── SPORTS STRIP */
+
+function SportsStrip() {
+  return (
+    <div
+      style={{
+        padding: '28px 0',
+        borderTop: '1px solid rgba(255,255,255,0.05)',
+        borderBottom: '1px solid rgba(255,255,255,0.05)',
+      }}
+    >
+      <div className="mx-auto flex w-full max-w-7xl flex-wrap items-center justify-between gap-8 px-6 md:px-10">
+        <span
+          style={{
+            fontFamily: FONT_MONO, fontSize: 10, letterSpacing: '0.32em',
+            textTransform: 'uppercase', color: INK_FAINT, fontWeight: 600,
+          }}
+        >
+          Construido para
+        </span>
+        <div className="flex flex-wrap items-center gap-4">
+          {SPORTS.map((s, i) => (
+            <span key={s} className="flex items-center gap-4">
+              {i > 0 && <span style={{ color: 'rgba(255,255,255,0.18)' }}>·</span>}
+              <span
+                style={{
+                  fontFamily: FONT_DISPLAY, fontWeight: 600,
+                  fontSize: 18, color: INK,
+                }}
+              >
+                {s}
+              </span>
+            </span>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* ───────────────────────────────────────────────────────── HOW IT WORKS */
+
+function HowItWorks() {
+  return (
+    <section id="how" className="section-padding">
+      <div className="mx-auto w-full max-w-7xl px-6 md:px-10">
+        {/* Header */}
+        <div className="mb-12 flex flex-col items-start justify-between gap-6 md:flex-row md:items-baseline">
+          <div className="max-w-[620px]">
+            <div className="label-mono mb-3.5">Cómo funciona</div>
+            <h2
+              className="text-[2rem] font-bold leading-[1.08] tracking-[-0.025em] text-white md:text-[2.75rem]"
+              style={{ fontFamily: FONT_DISPLAY }}
+            >
+              Tres pasos. Sin planillas,<br /> sin fricción, sin Excel.
+            </h2>
+          </div>
+          <p
+            className="max-w-[320px] text-[14px] leading-[1.55]"
+            style={{ color: INK_MUTED }}
+          >
+            El flujo completo de un atleta serio, destilado en una app que usas en menos de dos minutos por día.
+          </p>
+        </div>
+
+        {/* Steps */}
+        <div className="grid grid-cols-1 gap-3.5 md:grid-cols-3">
+          <Step
+            num="01"
+            phase="Planificar"
+            title="Crea tu semana"
+            body="Define sesiones por día, deporte y objetivo. Arrastra, duplica, ajusta. La semana vive en una grilla que entiendes en 5 segundos."
+            accent={BRAND}
+            icon={
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+              </svg>
+            }
+          />
+          <Step
+            num="02"
+            phase="Registrar"
+            title="Entrena y checkea"
+            body="Registra cada sesión en &lt; 90 s. Check-in diario de sueño, RPE y dolor. Todo tabular, todo monospace, todo al grano."
+            accent={FORGE_LIME}
+            icon={
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+              </svg>
+            }
+          />
+          <Step
+            num="03"
+            phase="Ajustar"
+            title="El coach propone"
+            body="La IA lee tu carga, tu fatiga y tu historial. Propone cambios concretos — no consejos vagos. Aplicas con un tap."
+            accent={FORGE_CYAN}
+            icon={
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z"/>
+              </svg>
+            }
+          />
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function Step({
+  num, phase, title, body, accent, icon,
+}: {
+  num: string; phase: string; title: string; body: string;
+  accent: string; icon: React.ReactNode;
+}) {
+  const bg = `${accent}1a`
+  const border = `${accent}38`
+  return (
+    <div
+      className="relative overflow-hidden rounded-2xl"
+      style={{
+        padding: 32,
+        background: 'rgba(24,24,24,0.5)',
+        border: `1px solid ${SURFACE_BORDER}`,
+      }}
+    >
+      {/* Ghost number */}
+      <div
+        className="pointer-events-none absolute select-none"
+        style={{
+          top: -40, right: -20,
+          fontFamily: FONT_DISPLAY, fontSize: 200, fontWeight: 900,
+          color: 'rgba(255,255,255,0.025)', lineHeight: 1,
+        }}
+      >
+        {num}
+      </div>
+
+      <div
+        className="flex items-center justify-center"
+        style={{
+          width: 44, height: 44, borderRadius: 12,
+          background: bg, border: `1px solid ${border}`,
+          color: accent, marginBottom: 24,
+        }}
+      >
+        {icon}
+      </div>
+
+      <div
+        className="mb-3.5 text-[10px] uppercase tracking-[0.26em] font-semibold"
+        style={{ fontFamily: FONT_MONO, color: INK_FAINT }}
+      >
+        <b style={{ color: INK, fontWeight: 600 }}>Paso {num}</b> · {phase}
+      </div>
+
+      <h3
+        className="mb-3 text-[22px] font-semibold leading-tight tracking-[-0.01em] text-white"
+        style={{ fontFamily: FONT_DISPLAY }}
+      >
+        {title}
+      </h3>
+      <p
+        className="text-[14px] leading-[1.6]"
+        style={{ color: INK_MUTED }}
+        dangerouslySetInnerHTML={{ __html: body }}
+      />
+    </div>
+  )
+}
+
+/* ───────────────────────────────────────────────────────── DISCIPLINES */
+
+const DISCIPLINE_CARDS: Array<{
+  title: string; tag: string; blurb: string;
+  accent: string; image: string; alt: string;
+  fallback: string;
+}> = [
+  {
+    title: 'Squash', tag: 'Herencia técnica',
+    blurb: 'Drills técnicos, match-play y lectura de partido real.',
+    accent: BRAND,
+    image: 'https://lh3.googleusercontent.com/aida-public/AB6AXuAehGJU9K_OKOG721C0R2W6efCxo9k4vnJS2siZJ6r47KylE_SqGjYl6wqVNmsNsHo695j0fDYZJszFHImcukQyfIt11IMQaarNd2Ju_JO4KbOGfpIv95U-mHQ7RlMX1n-Eo_TwC9xhni6GC9zE1OyJ1Q60J7BIwSTL9sqafKMUXQ4IRrNq3lXtdN-soKtqNdFpyjgcCdBGGr9Crwr85fMjflG6zgbUXMt5Dpq7zA3kDIPttPBwznZ647jYa8oaUalfRtkZpWZmlM5M',
+    alt: 'Cancha de squash con iluminación dramática',
+    fallback: 'linear-gradient(150deg, rgba(255,77,0,0.25), rgba(20,10,5,1) 70%)',
+  },
+  {
+    title: 'Running', tag: 'Resistencia pura',
+    blurb: 'Series, tempo y progresión aeróbica con ACWR vigilado.',
+    accent: FORGE_CYAN,
+    image: 'https://lh3.googleusercontent.com/aida-public/AB6AXuB1XpnMPHAGOKmb10vEIGlEkjFFsQpBcabcXJScQFNeZQEaPTXvSuh9IdSQZxskEl5o9rXxP2EIo0-kx_XkUMUALbhNZtSKijwsqsC4GUFHE2NkF1mWHUNPRyLH4Oc6D-PhFmIn-g_h00TNJoXN78Xe4b2rTOPkppYShfhNKvujUcBTueSN24mCYAIkJlmBTi59ChH9qZwaWStenfQFC-uBew5HGgNbstLO-uO-8T_Be8lib8OQXL1IUJG-sBQl6kc7AjHzGxqGalLb',
+    alt: 'Atleta en bloque de salida sobre pista nocturna',
+    fallback: 'linear-gradient(150deg, rgba(0,227,253,0.18), rgba(5,10,20,1) 70%)',
+  },
+  {
+    title: 'Fuerza', tag: 'Potencia explosiva',
+    blurb: 'Fuerza máxima, potencia y transferencia a la cancha.',
+    accent: BRAND,
+    image: 'https://lh3.googleusercontent.com/aida-public/AB6AXuDO55mUlnqFLj10LgEBdpx3rgQvK75EbYiMu-nWB81BdO2-HKxQ78wYltIQDKebUvvJ17Y5lNRVckdRnkQqZui46jajP9gaNofgQiaCnbgmHDUU4VCLg2MwRdF6nsc1ygZEVrU3BTLrh1E75USOen2NITEXCyuMGadHRmrKJ-eP-WzJd7j5OY7-DGkL31wtXzB9heXSOFD_THWJt_MYI6-HSNkIlDhaCrPerQ3qfoqLxzCbk6huvshWtbdvdGwYL1c8vslvjVV5fc2t',
+    alt: 'Barra olímpica en gimnasio oscuro',
+    fallback: 'linear-gradient(150deg, rgba(255,77,0,0.2), rgba(15,10,5,1) 70%)',
+  },
+  {
+    title: 'Ciclismo', tag: 'Soporte aeróbico',
+    blurb: 'Volumen de bajo impacto y build de base para días largos.',
+    accent: FORGE_CYAN,
+    image: '/landing/cycling.jpg',
+    alt: 'Ciclista de élite en posición aerodinámica',
+    fallback: 'linear-gradient(150deg, rgba(0,227,253,0.15), rgba(10,8,6,1) 70%)',
+  },
+  {
+    title: 'Movilidad', tag: 'Recuperación activa',
+    blurb: 'Reset post-sesión, rango articular y desbloqueo de cadenas.',
+    accent: FORGE_LIME,
+    image: 'https://lh3.googleusercontent.com/aida-public/AB6AXuCIbwLT9cKRxWbV62Fnkn8ICVaOu9FuYhPEB4Ufh6Rtihsw-Ko7v8cU1e1kTVp5YmkF6P_hWgoHUWzclzFcapaSyTTedIlC_xqSq8nSVuQF26xJey1npfXaEcg0o8LCfdWXmLqtn9Evz1qW105Y8ehoLRN-HeXhi1wXdcSMbnvTh80OoQclnJ0SYa2av5NMuza9DfKSJ4SyIfsyy6vA0gief7BNPzyQSfDnFwYr4Xtdh-FNdqWSxkd3lwPsTyn4tzSm3czhlnp4kOhk',
+    alt: 'Silueta realizando flow de movilidad al amanecer',
+    fallback: 'linear-gradient(150deg, rgba(209,252,0,0.14), rgba(8,10,15,1) 70%)',
+  },
+]
+
+function DisciplinesGrid() {
+  return (
+    <section id="disciplines" className="section-padding" style={{ paddingTop: 24 }}>
+      <div className="mx-auto w-full max-w-7xl px-6 md:px-10">
+        {/* Header */}
+        <div
+          className="mb-10 flex flex-col items-start justify-between gap-8 md:flex-row md:items-end"
+        >
+          <div>
+            <div className="label-mono mb-4">Multidisciplina</div>
+            <h2
+              className="text-[2rem] font-bold leading-[1.05] tracking-[-0.025em] text-white md:text-[3rem]"
+              style={{ fontFamily: FONT_DISPLAY }}
+            >
+              Multidisciplina<br />
+              <span style={{ color: BRAND }}>Avanzada.</span>
+            </h2>
+            <p
+              className="mt-2 max-w-[380px] text-[15px] leading-[1.55]"
+              style={{ color: INK_MUTED }}
+            >
+              Originado en la intensidad del squash, evolucionado para dominar cualquier campo. Una sola carga unificada, cinco lenguajes distintos.
+            </p>
+          </div>
+          <a
+            href="#"
+            className="disc-link inline-flex items-center gap-2.5 pb-1.5 font-bold uppercase tracking-[0.26em] transition-colors"
+            style={{
+              fontFamily: FONT_MONO, fontSize: 11, color: BRAND_LIGHT,
+              borderBottom: '1px solid rgba(255,77,0,0.3)',
+            }}
+          >
+            Ver todas <ArrowRight className="h-3.5 w-3.5" strokeWidth={2.5} />
+          </a>
+        </div>
+
+        {/* Grid */}
+        <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-5">
+          {DISCIPLINE_CARDS.map((c) => (
+            <article
+              key={c.title}
+              className="disc-card group relative overflow-hidden rounded-2xl"
+              style={{
+                aspectRatio: '3/4',
+                background: c.fallback,
+                border: '1px solid rgba(255,255,255,0.06)',
+                cursor: 'pointer',
+              }}
+            >
+              <img
+                src={c.image}
+                alt={c.alt}
+                loading="lazy"
+                decoding="async"
+                draggable={false}
+                className="disc-art absolute inset-0 h-full w-full object-cover"
+                onError={(e) => { e.currentTarget.style.display = 'none' }}
+              />
+              {/* Gradient overlay */}
+              <div
+                className="absolute inset-0 pointer-events-none"
+                style={{
+                  background: 'linear-gradient(180deg, transparent 40%, rgba(8,8,8,0.65) 75%, rgba(8,8,8,0.95) 100%)',
+                }}
+              />
+              {/* Accent hover overlay */}
+              <div
+                className="disc-hover-glow absolute inset-0 pointer-events-none opacity-0 transition-opacity duration-500"
+                style={{ background: `radial-gradient(circle at 75% 15%, ${c.accent}22, transparent 65%)` }}
+              />
+
+              {/* Caption */}
+              <div className="absolute inset-x-0 bottom-0 z-10 p-5 md:p-6">
+                <div
+                  className="disc-line mb-3 h-px transition-all duration-500"
+                  style={{ width: 32, background: c.accent }}
+                />
+                <h5
+                  className="text-[1.35rem] font-black leading-tight tracking-tight text-white md:text-[1.5rem]"
+                  style={{ fontFamily: FONT_DISPLAY, marginBottom: 4 }}
+                >
+                  {c.title}
+                </h5>
+                <span
+                  className="text-[10px] font-bold uppercase tracking-[0.22em]"
+                  style={{ color: c.accent }}
+                >
+                  {c.tag}
+                </span>
+                <p
+                  className="disc-blurb mt-2 text-[12px] leading-relaxed text-white/80"
+                  style={{ maxHeight: 0, overflow: 'hidden', opacity: 0, transition: 'max-height .5s, opacity .5s' }}
+                >
+                  {c.blurb}
+                </p>
+              </div>
+
+              {/* Hover body (desktop overlay) */}
+              <div
+                className="disc-hover-body absolute inset-0 z-20 flex items-end p-6 opacity-0 transition-opacity duration-300"
+                style={{
+                  background: 'rgba(8,8,8,0.72)',
+                  backdropFilter: 'blur(4px)',
+                }}
+              >
+                <p style={{ fontSize: 13, color: INK, lineHeight: 1.55, maxWidth: '28ch' }}>
+                  <b
+                    style={{
+                      color: c.accent, display: 'block',
+                      fontFamily: FONT_MONO, fontSize: 9,
+                      letterSpacing: '0.28em', textTransform: 'uppercase',
+                      marginBottom: 10, fontWeight: 700,
+                    }}
+                  >
+                    {c.tag}
+                  </b>
+                  {c.blurb}
+                </p>
+              </div>
+            </article>
+          ))}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+/* ───────────────────────────────────────────────────────── FEATURES TEASER */
+
+function FeatureTeaser() {
+  return (
+    <section className="section-padding" style={{ paddingTop: 48 }}>
+      <div className="mx-auto w-full max-w-7xl px-6 md:px-10">
+        {/* Header */}
+        <div className="mb-12 flex flex-col items-start justify-between gap-6 md:flex-row md:items-baseline">
+          <div className="max-w-[620px]">
+            <div className="label-mono lime mb-3.5">Lo que incluye</div>
+            <h2
+              className="text-[2rem] font-bold leading-[1.08] tracking-[-0.025em] text-white md:text-[2.75rem]"
+              style={{ fontFamily: FONT_DISPLAY }}
+            >
+              Un sistema completo,<br />
+              no un{' '}
+              <span style={{ color: FORGE_LIME }}>chatbot más.</span>
+            </h2>
+          </div>
+          <p
+            className="max-w-[320px] text-[14px] leading-[1.55]"
+            style={{ color: INK_MUTED }}
+          >
+            RallyIQ combina planificación, registro, coach IA y analytics en un solo flujo diseñado para el atleta que ya sabe lo que hace.
+          </p>
+        </div>
+
+        {/* 2-card grid */}
+        <div className="grid grid-cols-1 gap-3.5 md:grid-cols-2">
+          {/* Coach AI */}
+          <div
+            className="relative overflow-hidden rounded-2xl p-8"
+            style={{
+              background: 'rgba(24,24,24,0.5)',
+              border: `1px solid ${SURFACE_BORDER}`,
+            }}
+          >
+            <div
+              className="mb-5 inline-block text-[9px] font-bold uppercase tracking-[0.3em]"
+              style={{ fontFamily: FONT_MONO, color: BRAND_LIGHT }}
+            >
+              Coach AI
+            </div>
+            {/* Mini chat */}
+            <div
+              className="mb-4 rounded-xl p-4"
+              style={{ background: 'rgba(8,8,8,0.6)', border: '1px solid rgba(255,255,255,0.04)' }}
+            >
+              <div className="flex flex-col gap-1.5">
+                <MiniChatBubble type="a">Baja volumen jueves −15%. ¿Aplico?</MiniChatBubble>
+                <MiniChatBubble type="u">Sí, aplica.</MiniChatBubble>
+                <MiniChatBubble type="a">Hecho. Semana ajustada.</MiniChatBubble>
+              </div>
+            </div>
+            <h3
+              className="mb-2.5 text-[22px] font-semibold tracking-[-0.01em] text-white"
+              style={{ fontFamily: FONT_DISPLAY }}
+            >
+              Propuestas reales, no consejos vagos
+            </h3>
+            <p className="text-[13px] leading-[1.55]" style={{ color: INK_MUTED }}>
+              El coach IA genera cambios concretos a tu plan — volumen, intensidad, descansos. Aplicas con un tap o descartas.
+            </p>
+          </div>
+
+          {/* Semana */}
+          <div
+            className="relative overflow-hidden rounded-2xl p-8"
+            style={{
+              background: 'rgba(24,24,24,0.5)',
+              border: `1px solid rgba(209,252,0,0.14)`,
+            }}
+          >
+            <div
+              className="mb-5 inline-block text-[9px] font-bold uppercase tracking-[0.3em]"
+              style={{ fontFamily: FONT_MONO, color: FORGE_LIME }}
+            >
+              Semana
+            </div>
+            {/* Mini week grid */}
+            <div
+              className="mb-4 rounded-xl p-4"
+              style={{ background: 'rgba(8,8,8,0.6)', border: '1px solid rgba(255,255,255,0.04)' }}
+            >
+              <div className="grid grid-cols-7 gap-1">
+                {[
+                  { d: 'L', t: 'f' }, { d: 'M', t: 'f' }, { d: 'X', t: 'p' },
+                  { d: 'J', t: 'f' }, { d: 'V', t: '' }, { d: 'S', t: 'p' }, { d: 'D', t: '' },
+                ].map(({ d, t }) => (
+                  <div
+                    key={d}
+                    className="flex items-start justify-center pt-1.5"
+                    style={{
+                      aspectRatio: '1/1.4', borderRadius: 6,
+                      background: t === 'f' ? 'rgba(255,77,0,0.18)' : t === 'p' ? 'rgba(209,252,0,0.14)' : 'rgba(255,255,255,0.04)',
+                      border: t === 'f' ? '1px solid rgba(255,77,0,0.3)' : t === 'p' ? '1px solid rgba(209,252,0,0.3)' : 'none',
+                      fontFamily: FONT_MONO, fontSize: 10, fontWeight: 600,
+                      color: t === 'f' ? BRAND_LIGHT : t === 'p' ? FORGE_LIME : INK_FAINT,
+                    }}
+                  >
+                    {d}
+                  </div>
+                ))}
+              </div>
+            </div>
+            <h3
+              className="mb-2.5 text-[22px] font-semibold tracking-[-0.01em] text-white"
+              style={{ fontFamily: FONT_DISPLAY }}
+            >
+              Planificación semanal visual
+            </h3>
+            <p className="text-[13px] leading-[1.55]" style={{ color: INK_MUTED }}>
+              Grilla de 7 días, deportes por color, adherencia en tiempo real. Duplica semanas, copia plantillas, arrastra sesiones.
+            </p>
+          </div>
+        </div>
+
+        {/* CTA */}
+        <div className="mt-10 flex justify-center">
+          <a
+            href="#"
+            className="inline-flex items-center gap-2 rounded-xl px-7 py-3.5 text-[14px] font-bold transition-all"
+            style={{
+              color: INK,
+              background: 'rgba(255,255,255,0.03)',
+              border: '1px solid rgba(255,255,255,0.08)',
+            }}
+          >
+            Ver todas las funcionalidades <ArrowRight className="h-4 w-4" strokeWidth={2.25} />
+          </a>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function MiniChatBubble({ type, children }: { type: 'a' | 'u'; children: React.ReactNode }) {
+  return (
+    <div
+      className="max-w-[85%] rounded-[10px] px-3 py-2 text-[12px]"
+      style={{
+        alignSelf: type === 'a' ? 'flex-start' : 'flex-end',
+        background: type === 'a' ? 'rgba(255,77,0,0.08)' : 'rgba(255,255,255,0.04)',
+        border: type === 'a' ? '1px solid rgba(255,77,0,0.22)' : `1px solid ${SURFACE_BORDER}`,
+        color: type === 'a' ? INK : INK_MUTED,
+      }}
+    >
+      {children}
+    </div>
+  )
+}
+
+/* ───────────────────────────────────────────────────────── QUOTE BLOCK */
+
+function QuoteBlock() {
+  return (
+    <section className="section-padding">
+      <div className="mx-auto w-full max-w-7xl px-6 md:px-10">
+        <div
+          className="grid grid-cols-1 items-center gap-14 rounded-[20px] p-8 md:grid-cols-[1.3fr_1fr] md:p-16"
+          style={{
+            background: 'rgba(24,24,24,0.5)',
+            border: `1px solid ${SURFACE_BORDER}`,
+          }}
+        >
+          {/* Quote */}
+          <div>
+            <div className="label-mono mb-7">Atletas que la usan</div>
+            <blockquote
+              className="mb-7 text-[1.5rem] font-medium leading-[1.25] tracking-[-0.015em] text-white md:text-[2rem]"
+              style={{ fontFamily: FONT_DISPLAY }}
+            >
+              "Dejé Excel, Notas y tres apps. Lo único que necesito para{' '}
+              <span style={{ color: BRAND }}>entrenar con cabeza</span> está acá adentro."
+            </blockquote>
+            <div className="flex items-center gap-3.5">
+              <div
+                className="flex h-11 w-11 items-center justify-center rounded-full text-sm font-bold"
+                style={{
+                  background: `linear-gradient(135deg, ${BRAND}, #d63200)`,
+                  fontFamily: FONT_MONO, color: '#000',
+                }}
+              >
+                MC
+              </div>
+              <div>
+                <div
+                  className="text-[14px] font-semibold text-white"
+                  style={{ fontFamily: FONT_DISPLAY }}
+                >
+                  Martín Cáceres
+                </div>
+                <div
+                  className="mt-0.5 text-[10px] uppercase tracking-[0.22em]"
+                  style={{ fontFamily: FONT_MONO, color: INK_FAINT }}
+                >
+                  Squash · #8 ranking nacional
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Metrics */}
+          <div className="grid grid-cols-2 gap-4">
+            <MetricCard value="+18" unit="%" label="Adherencia" color={FORGE_LIME} note="Atletas con coach IA completan más del plan que con planillas." />
+            <MetricCard value="90" unit="s" label="Log promedio" color={BRAND_LIGHT} note="Registrar una sesión completa — sin teclado, mínima fricción." />
+            <div
+              className="col-span-2 rounded-xl p-4 md:p-5"
+              style={{ background: 'rgba(8,8,8,0.5)', border: '1px solid rgba(255,255,255,0.06)' }}
+            >
+              <div
+                className="mb-2.5 text-[26px] font-bold leading-none tabular-nums text-white"
+                style={{ fontFamily: FONT_MONO }}
+              >
+                {SPORTS.length}
+                <span style={{ color: INK_FAINT, fontSize: 14, fontWeight: 500 }}> deportes ·</span>{' '}
+                24<span style={{ color: INK_FAINT, fontSize: 14, fontWeight: 500 }}>/7 coach ·</span>{' '}
+                0<span style={{ color: INK_FAINT, fontSize: 14, fontWeight: 500 }}> permanencia</span>
+              </div>
+              <div
+                className="text-[9px] uppercase tracking-[0.3em] font-semibold"
+                style={{ fontFamily: FONT_MONO, color: INK_FAINT }}
+              >
+                Cobertura total
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function MetricCard({
+  value, unit, label, color, note,
+}: {
+  value: string; unit: string; label: string; color: string; note: string;
+}) {
+  return (
+    <div
+      className="rounded-xl p-4 md:p-5"
+      style={{ background: 'rgba(8,8,8,0.5)', border: '1px solid rgba(255,255,255,0.06)' }}
+    >
+      <div
+        className="mb-2.5 text-[28px] font-bold leading-none tabular-nums"
+        style={{ fontFamily: FONT_MONO, color }}
+      >
+        {value}
+        <span style={{ color: INK_FAINT, fontSize: 14, fontWeight: 500 }}>{unit}</span>
+      </div>
+      <div
+        className="mb-2 text-[9px] uppercase tracking-[0.3em] font-semibold"
+        style={{ fontFamily: FONT_MONO, color: INK_FAINT }}
+      >
+        {label}
+      </div>
+      <p className="text-[12px] leading-[1.5]" style={{ color: INK_MUTED }}>{note}</p>
+    </div>
+  )
+}
+
+/* ───────────────────────────────────────────────────────── ACCESS CARD */
+
+function AccessCard({
+  onSignup, onGoogle, authError, authAvailable,
+}: {
+  onSignup: () => void; onGoogle: () => void;
+  authError: string | null; authAvailable: boolean;
+}) {
+  return (
+    <section id="access" className="section-padding">
+      <div className="mx-auto w-full max-w-7xl px-6 md:px-10">
+        <div
+          className="access-card relative overflow-hidden rounded-[28px] p-12 text-center md:p-20"
+          style={{
+            background: 'linear-gradient(180deg, rgba(24,24,26,0.7), rgba(10,10,12,0.8))',
+            backdropFilter: 'blur(24px)',
+            border: '1px solid rgba(255,255,255,0.07)',
+            boxShadow: '0 40px 120px -40px rgba(0,0,0,0.9), inset 0 1px 0 rgba(255,255,255,0.04)',
+          }}
+        >
+          {/* Glows */}
+          <div
+            className="pointer-events-none absolute rounded-full"
+            style={{
+              top: -120, left: -80, width: 380, height: 380,
+              background: 'radial-gradient(circle, rgba(255,77,0,0.22), transparent 65%)',
+              filter: 'blur(80px)',
+            }}
+          />
+          <div
+            className="pointer-events-none absolute rounded-full"
+            style={{
+              bottom: -120, right: -80, width: 380, height: 380,
+              background: 'radial-gradient(circle, rgba(0,227,253,0.16), transparent 65%)',
+              filter: 'blur(80px)',
+            }}
+          />
+          <div
+            className="pointer-events-none absolute rounded-full"
+            style={{
+              top: '20%', right: '30%', width: 260, height: 260,
+              background: 'radial-gradient(circle, rgba(209,252,0,0.08), transparent 65%)',
+              filter: 'blur(80px)',
+            }}
+          />
+          {/* Grid overlay */}
+          <div
+            className="pointer-events-none absolute inset-0"
+            style={{
+              backgroundImage:
+                'linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px)',
+              backgroundSize: '28px 28px',
+              WebkitMaskImage: 'radial-gradient(ellipse 70% 70% at 50% 50%, #000, transparent 85%)',
+              maskImage: 'radial-gradient(ellipse 70% 70% at 50% 50%, #000, transparent 85%)',
+            }}
+          />
+
+          {/* Content */}
+          <div className="relative z-10">
+            <div className="label-mono brand mb-6 flex justify-center">
+              Empieza tu evolución
+            </div>
+            <h2
+              className="mx-auto mb-5 max-w-[680px] text-[2.25rem] font-bold leading-[1.05] tracking-[-0.03em] text-white md:text-[3.5rem]"
+              style={{ fontFamily: FONT_DISPLAY }}
+            >
+              Entrena con{' '}
+              <span style={{ color: BRAND }}>cabeza.</span>
+              <br />
+              Compite con{' '}
+              <span style={{ color: BRAND }}>datos.</span>
+            </h2>
+            <p
+              className="mx-auto mb-9 max-w-[520px] text-[16px] leading-[1.55]"
+              style={{ color: INK_MUTED }}
+            >
+              Únete a la élite y transforma tus hábitos en rendimiento puro. Sin tarjeta, sin permanencia. Tu primera semana de Pro es cortesía de la casa.
+            </p>
+
+            <div className="flex flex-wrap items-center justify-center gap-3">
+              <button
+                onClick={onSignup}
+                disabled={!authAvailable}
+                className="btn-primary-pill inline-flex items-center gap-2 rounded-xl px-7 py-4 text-[15px] font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Crear cuenta gratis <ArrowRight className="h-4 w-4" strokeWidth={2.5} />
+              </button>
+              <button
+                onClick={onGoogle}
+                disabled={!authAvailable}
+                className="inline-flex items-center justify-center gap-3 rounded-xl bg-white px-7 py-4 text-[15px] font-bold text-black transition-transform hover:bg-white/95 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <GoogleIcon />
+                Continuar con Google
+              </button>
+              <span
+                className="inline-flex items-center gap-2 text-[11px] uppercase tracking-[0.26em]"
+                style={{ fontFamily: FONT_MONO, color: INK_FAINT }}
+              >
+                <span
+                  className="h-1.5 w-1.5 rounded-full"
+                  style={{ background: FORGE_LIME, boxShadow: `0 0 8px ${FORGE_LIME}` }}
+                />
+                5 días de Pro incluidos
+              </span>
+            </div>
+
+            {authError && (
+              <p className="mt-4 text-xs font-medium text-red-300">{authError}</p>
+            )}
+            {!authAvailable && (
+              <div
+                className="mx-auto mt-5 max-w-md rounded-xl px-4 py-3"
+                style={{
+                  background: 'rgba(251,191,36,0.05)',
+                  border: '1px solid rgba(251,191,36,0.15)',
+                }}
+              >
+                <p className="text-[12px] font-semibold text-amber-300">Auth no disponible en este entorno</p>
+                <p className="mt-0.5 text-[11px] leading-relaxed text-amber-200/70">
+                  Configura <code className="font-mono">VITE_SUPABASE_URL</code> y{' '}
+                  <code className="font-mono">VITE_SUPABASE_ANON_KEY</code>.
+                </p>
+              </div>
+            )}
+
+            <p className="mt-8 text-[12px]" style={{ color: INK_FAINT }}>
+              ¿Ya eres parte de RallyIQ?{' '}
+              <button
+                onClick={onSignup}
+                className="font-bold text-white underline-offset-2 transition-colors hover:underline"
+              >
+                Iniciar sesión
+              </button>
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+/* ───────────────────────────────────────────────────────── FOOTER */
+
+function Footer() {
+  return (
+    <footer
+      className="relative px-6 py-14 md:px-10"
+      style={{ borderTop: '1px solid rgba(255,255,255,0.05)', background: '#050505' }}
+    >
+      <div className="mx-auto flex w-full max-w-7xl flex-col items-start justify-between gap-8 md:flex-row">
+        <div className="max-w-[260px]">
+          <div className="flex items-center gap-2.5">
+            <BoltIcon />
+            <span
+              className="text-[15px] font-black tracking-tight text-white"
+              style={{ fontFamily: FONT_DISPLAY }}
+            >
+              RallyIQ
+            </span>
+          </div>
+          <p
+            className="mt-3 text-[13px] leading-relaxed"
+            style={{ color: INK_MUTED }}
+          >
+            Entrenador AI para atletas de raqueta y endurance. Hecho por atletas, para atletas.
+          </p>
+        </div>
+
+        <div className="flex flex-wrap gap-12">
+          <FooterCol title="Producto" links={['Funcionalidades', 'Precios', 'Changelog', 'Roadmap']} />
+          <FooterCol title="Comunidad" links={['Atletas', 'Blog', 'Discord', 'Newsletter']} />
+          <FooterCol title="Empresa" links={['Nosotros', 'Contacto', 'Privacidad', 'Términos']} />
+        </div>
+      </div>
+
+      <div
+        className="mx-auto mt-12 flex w-full max-w-7xl items-center justify-between"
+        style={{ borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: 20 }}
+      >
+        <span
+          className="text-[11px] font-semibold"
+          style={{ fontFamily: FONT_MONO, color: INK_FAINT }}
+        >
+          © 2026 · RALLYIQ LABS
+        </span>
+        <div className="flex items-center gap-4">
+          <span className="text-[11px]" style={{ fontFamily: FONT_MONO, color: INK_FAINT }}>v2.4.0</span>
+          <span className="text-[11px]" style={{ fontFamily: FONT_MONO, color: INK_FAINT }}>BUILT IN BUENOS AIRES</span>
+        </div>
+      </div>
+    </footer>
+  )
+}
+
+function FooterCol({ title, links }: { title: string; links: string[] }) {
+  return (
+    <div>
+      <h4
+        className="mb-4 text-[13px] font-bold text-white"
+        style={{ fontFamily: FONT_DISPLAY }}
+      >
+        {title}
+      </h4>
+      <ul className="space-y-2.5">
+        {links.map((l) => (
+          <li key={l}>
+            <a
+              href="#"
+              className="text-[13px] transition-colors hover:text-white"
+              style={{ color: INK_MUTED }}
+            >
+              {l}
+            </a>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+/* ───────────────────────────────────────────────────────── SHARED ICONS */
+
+function BoltIcon() {
   return (
     <span
       className="relative flex h-8 w-8 items-center justify-center"
@@ -199,1116 +1291,81 @@ function Bolt() {
       }}
     >
       <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none">
-        <path
-          d="M14 2L5 14h5l-2 8 9-12h-5l2-8z"
-          fill={BRAND}
-          style={{ filter: `drop-shadow(0 0 3px ${BRAND}aa)` }}
-        />
-        <path d="M14 2L10 12h5l-1-10z" fill={BRAND_LIGHT} opacity={0.7} />
+        <path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z" fill={BRAND} />
       </svg>
     </span>
-  )
-}
-
-/* ---------- Hero ---------- */
-
-function Hero({ onPrimary }: { onPrimary: () => void }) {
-  return (
-    <section id="top" className="relative z-10 px-6 pt-32 pb-20 md:px-8 md:pt-40 md:pb-28">
-      <div className="mx-auto grid w-full max-w-7xl grid-cols-1 items-center gap-16 lg:grid-cols-[1.05fr_1fr]">
-        {/* Copy */}
-        <div className="relative">
-          <span
-            className="mb-6 inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-[10.5px] font-bold uppercase tracking-[0.22em]"
-            style={{
-              color: BRAND,
-              background: 'rgba(255,77,0,0.08)',
-              border: '1px solid rgba(255,77,0,0.18)',
-              letterSpacing: '0.22em',
-            }}
-          >
-            <Sparkles className="h-3 w-3" strokeWidth={2.5} /> Nueva generación de coaching
-          </span>
-
-          <h1
-            className="text-[2.75rem] font-extrabold leading-[1.04] tracking-[-0.035em] text-white md:text-[4.25rem]"
-            style={{ fontFamily: FONT_STACK_DISPLAY }}
-          >
-            Rendimiento Inteligente.
-            <br />
-            <span
-              style={{
-                background: `linear-gradient(100deg, ${BRAND} 0%, ${BRAND_LIGHT} 60%, #ffb380 100%)`,
-                WebkitBackgroundClip: 'text',
-                WebkitTextFillColor: 'transparent',
-                backgroundClip: 'text',
-              }}
-            >
-              Resultados de Élite.
-            </span>
-          </h1>
-
-          <p className="mt-7 max-w-xl text-[17px] font-medium leading-relaxed text-ink-muted md:text-[19px]">
-            Tu coach de IA integral que evoluciona contigo. Planificación técnica avanzada para atletas
-            que no se conforman con lo ordinario.
-          </p>
-
-          <div className="mt-9 flex flex-wrap items-center gap-3">
-            <button
-              onClick={onPrimary}
-              className="group inline-flex items-center gap-2 rounded-xl px-7 py-4 text-[15px] font-bold text-white transition-transform active:scale-[0.97]"
-              style={{
-                background: `linear-gradient(135deg, ${BRAND} 0%, ${BRAND_LIGHT} 100%)`,
-                boxShadow:
-                  '0 0 0 1px rgba(255,255,255,0.08) inset, 0 18px 45px -18px rgba(255,77,0,0.6), 0 0 0 6px rgba(255,77,0,0.05)',
-              }}
-            >
-              Probar coach
-              <Zap className="h-4 w-4 transition-transform group-hover:translate-x-0.5" strokeWidth={2.5} />
-            </button>
-            <a
-              href="#how"
-              className="inline-flex items-center gap-2 rounded-xl px-7 py-4 text-[15px] font-bold text-ink transition-all"
-              style={{
-                background: 'rgba(255,255,255,0.03)',
-                border: '1px solid rgba(255,255,255,0.08)',
-                backdropFilter: 'blur(6px)',
-              }}
-            >
-              Ver cómo funciona
-              <ArrowRight className="h-4 w-4" strokeWidth={2.25} />
-            </a>
-          </div>
-
-          {/* Stats band */}
-          <div className="mt-14 flex items-center gap-8">
-            <StatPip value="4.9/5" label="Calificación Élite" />
-            <div className="h-10 w-px" style={{ background: 'rgba(255,255,255,0.08)' }} />
-            <StatPip value="12k+" label="Atletas Activos" />
-            <div className="h-10 w-px" style={{ background: 'rgba(255,255,255,0.08)' }} />
-            <StatPip value="24/7" label="Coach IA" accent />
-          </div>
-        </div>
-
-        {/* Dashboard mock */}
-        <div className="relative">
-          <div
-            className="absolute -inset-8 -z-10 rounded-full blur-3xl"
-            style={{ background: 'radial-gradient(circle, rgba(255,77,0,0.25), transparent 60%)' }}
-          />
-          <DashboardMock />
-        </div>
-      </div>
-    </section>
-  )
-}
-
-function StatPip({ value, label, accent }: { value: string; label: string; accent?: boolean }) {
-  return (
-    <div className="flex flex-col">
-      <span
-        className="text-2xl font-black tracking-tight text-white md:text-[1.7rem]"
-        style={{ fontFamily: FONT_STACK_DISPLAY, color: accent ? BRAND : '#fff' }}
-      >
-        {value}
-      </span>
-      <span className="mt-0.5 text-[10px] font-bold uppercase tracking-[0.18em] text-ink-faint">
-        {label}
-      </span>
-    </div>
-  )
-}
-
-function DashboardMock() {
-  return (
-    <div
-      className="relative overflow-hidden rounded-2xl"
-      style={{
-        background: 'linear-gradient(160deg, #151515 0%, #0c0c0c 100%)',
-        border: '1px solid rgba(255,255,255,0.06)',
-        boxShadow: '0 40px 80px -30px rgba(0,0,0,0.9), 0 0 0 1px rgba(255,77,0,0.08)',
-      }}
-    >
-      {/* Window chrome */}
-      <div
-        className="flex items-center gap-2 px-4 py-3"
-        style={{
-          background: 'rgba(0,0,0,0.35)',
-          borderBottom: '1px solid rgba(255,255,255,0.04)',
-        }}
-      >
-        <span className="h-2.5 w-2.5 rounded-full" style={{ background: '#ff5f57' }} />
-        <span className="h-2.5 w-2.5 rounded-full" style={{ background: '#febc2e' }} />
-        <span className="h-2.5 w-2.5 rounded-full" style={{ background: BRAND }} />
-        <span
-          className="ml-4 font-mono text-[10px] uppercase tracking-[0.22em]"
-          style={{ color: 'rgba(255,255,255,0.35)' }}
-        >
-          rallyiq · dashboard v2.0
-        </span>
-      </div>
-
-      {/* Dashboard body */}
-      <div className="relative p-5" style={{ background: '#0a0a0a' }}>
-        {/* Top row: big number */}
-        <div
-          className="rounded-xl p-5"
-          style={{
-            background: 'linear-gradient(135deg, rgba(255,77,0,0.08), rgba(255,77,0,0.02))',
-            border: '1px solid rgba(255,77,0,0.14)',
-          }}
-        >
-          <div className="flex items-start justify-between">
-            <div>
-              <div
-                className="text-[10px] font-bold uppercase tracking-[0.24em]"
-                style={{ color: BRAND }}
-              >
-                Load Score · Semana 12
-              </div>
-              <div
-                className="mt-2 text-6xl font-black tracking-tight text-white"
-                style={{ fontFamily: FONT_STACK_DISPLAY }}
-              >
-                87<span className="text-2xl text-ink-muted">/100</span>
-              </div>
-              <div className="mt-1 text-xs font-medium text-ink-muted">
-                ACWR 1.14 · óptimo
-              </div>
-            </div>
-            <div className="flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-bold" style={{ color: BRAND, background: 'rgba(255,77,0,0.1)', border: '1px solid rgba(255,77,0,0.2)' }}>
-              <span className="h-1.5 w-1.5 animate-pulse rounded-full" style={{ background: BRAND }} />
-              LIVE
-            </div>
-          </div>
-
-          {/* Fake sparkline */}
-          <Sparkline />
-        </div>
-
-        {/* Two cards */}
-        <div className="mt-3 grid grid-cols-2 gap-3">
-          <MiniCard label="SESIONES" value="5" sub="de 7 planeadas" progress={5 / 7} />
-          <MiniCard label="RITMO CARDÍACO" value="164" sub="BPM · Zona 4" progress={0.75} accent />
-        </div>
-
-        {/* Bottom row */}
-        <div
-          className="mt-3 flex items-center justify-between rounded-xl p-3.5"
-          style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.04)' }}
-        >
-          <div className="flex items-center gap-3">
-            <span
-              className="flex h-8 w-8 items-center justify-center rounded-lg"
-              style={{ background: 'rgba(255,77,0,0.12)', color: BRAND }}
-            >
-              <Brain className="h-4 w-4" strokeWidth={2.25} />
-            </span>
-            <div>
-              <div className="text-[11px] font-bold text-white">Coach insight · hace 2m</div>
-              <div className="text-[11px] text-ink-muted">Fuerza óptima para tempo mañana.</div>
-            </div>
-          </div>
-          <ArrowRight className="h-4 w-4 text-ink-muted" strokeWidth={2.25} />
-        </div>
-      </div>
-
-      {/* Floating HUD */}
-      <div
-        className="absolute bottom-6 right-6 hidden rounded-xl p-3.5 md:block"
-        style={{
-          background: 'rgba(15,15,15,0.75)',
-          backdropFilter: 'blur(14px)',
-          border: '1px solid rgba(255,255,255,0.08)',
-          boxShadow: '0 20px 60px -20px rgba(0,0,0,0.8)',
-        }}
-      >
-        <div className="text-[9px] font-bold uppercase tracking-[0.22em]" style={{ color: BRAND }}>
-          HRV
-        </div>
-        <div className="mt-1 flex items-baseline gap-1">
-          <span className="text-2xl font-black text-white" style={{ fontFamily: FONT_STACK_DISPLAY }}>
-            68
-          </span>
-          <span className="text-[10px] font-bold text-ink-faint">ms</span>
-        </div>
-        <div className="mt-2 h-[3px] w-28 overflow-hidden rounded-full" style={{ background: 'rgba(255,255,255,0.1)' }}>
-          <div
-            className="h-full"
-            style={{ width: '72%', background: `linear-gradient(90deg, ${BRAND}, ${BRAND_LIGHT})` }}
-          />
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function MiniCard({
-  label,
-  value,
-  sub,
-  progress,
-  accent,
-}: {
-  label: string
-  value: string
-  sub: string
-  progress: number
-  accent?: boolean
-}) {
-  return (
-    <div
-      className="rounded-xl p-4"
-      style={{
-        background: 'rgba(255,255,255,0.02)',
-        border: '1px solid rgba(255,255,255,0.04)',
-      }}
-    >
-      <div className="text-[9.5px] font-bold uppercase tracking-[0.22em] text-ink-faint">{label}</div>
-      <div
-        className="mt-1.5 text-3xl font-black tracking-tight text-white"
-        style={{ fontFamily: FONT_STACK_DISPLAY }}
-      >
-        {value}
-      </div>
-      <div className="text-[10.5px] font-medium text-ink-muted">{sub}</div>
-      <div className="mt-2 h-1 overflow-hidden rounded-full" style={{ background: 'rgba(255,255,255,0.06)' }}>
-        <div
-          className="h-full"
-          style={{
-            width: `${Math.min(100, Math.max(0, progress * 100))}%`,
-            background: accent ? BRAND : COOL_BLUE,
-          }}
-        />
-      </div>
-    </div>
-  )
-}
-
-function Sparkline() {
-  const pts = [28, 34, 30, 42, 36, 48, 44, 58, 52, 64, 60, 72, 68, 78, 82]
-  const max = Math.max(...pts)
-  const w = 260
-  const h = 48
-  const step = w / (pts.length - 1)
-  const path = pts
-    .map((p, i) => {
-      const x = i * step
-      const y = h - (p / max) * h
-      return `${i === 0 ? 'M' : 'L'}${x.toFixed(1)} ${y.toFixed(1)}`
-    })
-    .join(' ')
-  const area = `${path} L${w} ${h} L0 ${h} Z`
-  return (
-    <svg viewBox={`0 0 ${w} ${h}`} className="mt-4 w-full" preserveAspectRatio="none" aria-hidden>
-      <defs>
-        <linearGradient id="spark" x1="0" x2="0" y1="0" y2="1">
-          <stop offset="0%" stopColor={BRAND} stopOpacity="0.45" />
-          <stop offset="100%" stopColor={BRAND} stopOpacity="0" />
-        </linearGradient>
-      </defs>
-      <path d={area} fill="url(#spark)" />
-      <path d={path} fill="none" stroke={BRAND} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  )
-}
-
-/* ---------- Social proof ---------- */
-
-function SocialProof() {
-  const brands = ['NIKE+', 'RED BULL', 'STRAVA', 'IRONMAN', 'POLAR']
-  return (
-    <section
-      className="relative z-10 overflow-hidden py-10"
-      style={{ borderTop: '1px solid rgba(255,255,255,0.04)', borderBottom: '1px solid rgba(255,255,255,0.04)' }}
-    >
-      <div className="mx-auto flex w-full max-w-7xl flex-col items-center justify-between gap-6 px-6 md:flex-row md:px-8">
-        <span
-          className="text-[10.5px] font-bold uppercase tracking-[0.28em] text-ink-faint"
-          style={{ fontFamily: FONT_STACK_DISPLAY }}
-        >
-          Usado por atletas de élite
-        </span>
-        <div className="flex flex-wrap items-center justify-center gap-x-10 gap-y-4 opacity-45">
-          {brands.map((b) => (
-            <span
-              key={b}
-              className="text-sm font-black uppercase tracking-[0.22em] text-white/85"
-              style={{ fontFamily: FONT_STACK_DISPLAY }}
-            >
-              {b}
-            </span>
-          ))}
-        </div>
-      </div>
-    </section>
-  )
-}
-
-/* ---------- Bento benefits ---------- */
-
-function BentoBenefits({ onTalkToRally }: { onTalkToRally: () => void }) {
-  return (
-    <section id="features" className="relative z-10 mx-auto w-full max-w-7xl px-6 py-24 md:px-8">
-      <div className="mb-10 flex flex-col items-start gap-2 md:mb-14">
-        <span
-          className="inline-flex items-center gap-2 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.26em]"
-          style={{
-            color: BRAND,
-            background: 'rgba(255,77,0,0.08)',
-            border: '1px solid rgba(255,77,0,0.18)',
-          }}
-        >
-          <span className="h-1 w-1 rounded-full" style={{ background: BRAND }} />
-          Capacidades
-        </span>
-        <h2
-          className="max-w-3xl text-[2rem] font-black leading-[1.05] tracking-[-0.025em] text-white md:text-[2.75rem]"
-          style={{ fontFamily: FONT_STACK_DISPLAY }}
-        >
-          Diseñado como una{' '}
-          <span style={{ color: BRAND }}>sala de ingeniería</span>, no como una app genérica.
-        </h2>
-      </div>
-
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-3 md:grid-rows-[auto_auto_auto] md:gap-4">
-        {/* Large main */}
-        <BentoCard className="md:col-span-2 md:row-span-2">
-          <div className="pointer-events-none absolute -right-12 -top-12 opacity-[0.07]">
-            <Brain className="h-64 w-64" strokeWidth={0.75} />
-          </div>
-          <div className="relative">
-            <Pill>Siguiente Nivel</Pill>
-            <h3
-              className="mt-5 text-4xl font-black tracking-[-0.02em] text-white md:text-[2.5rem]"
-              style={{ fontFamily: FONT_STACK_DISPLAY }}
-            >
-              Planificación Dinámica
-            </h3>
-            <p className="mt-4 max-w-md text-[15.5px] leading-relaxed text-ink-muted md:text-base">
-              Los algoritmos no siguen un calendario. Analizan tu sueño, estrés y carga previa para dictar tu próxima sesión con precisión quirúrgica.
-            </p>
-          </div>
-          <div className="relative mt-10 flex flex-wrap gap-3">
-            <MetricChip value="98%" label="Precisión predictiva" />
-            <MetricChip value="−24%" label="Riesgo de lesión" cool />
-            <MetricChip value="1.14" label="ACWR óptimo" subtle />
-          </div>
-        </BentoCard>
-
-        <BentoCard>
-          <RefreshCw className="h-9 w-9" style={{ color: BRAND }} strokeWidth={2} />
-          <h4
-            className="mt-5 text-xl font-bold tracking-tight text-white"
-            style={{ fontFamily: FONT_STACK_DISPLAY }}
-          >
-            Adaptación en tiempo real
-          </h4>
-          <p className="mt-2 text-[13.5px] leading-relaxed text-ink-muted">
-            ¿Saltaste una serie? Rally recalcula el resto de tu semana en milisegundos.
-          </p>
-        </BentoCard>
-
-        <BentoCard>
-          <BarChart3 className="h-9 w-9" style={{ color: COOL_BLUE }} strokeWidth={2} />
-          <h4
-            className="mt-5 text-xl font-bold tracking-tight text-white"
-            style={{ fontFamily: FONT_STACK_DISPLAY }}
-          >
-            Alto rendimiento
-          </h4>
-          <p className="mt-2 text-[13.5px] leading-relaxed text-ink-muted">
-            Métricas de nivel olímpico, simplificadas para el atleta ambicioso.
-          </p>
-        </BentoCard>
-
-        {/* Long bottom CTA */}
-        <div
-          id="coach"
-          className="rounded-2xl p-[1.5px] md:col-span-3"
-          style={{
-            background: `linear-gradient(90deg, ${BRAND} 0%, ${BRAND_LIGHT} 50%, rgba(255,77,0,0.2) 100%)`,
-          }}
-        >
-          <div
-            className="flex flex-col items-center justify-between gap-5 rounded-[14px] p-6 md:flex-row md:p-8"
-            style={{ background: '#0a0a0a' }}
-          >
-            <div className="flex items-center gap-5">
-              <div
-                className="flex h-14 w-14 items-center justify-center rounded-xl"
-                style={{
-                  background: `linear-gradient(135deg, ${BRAND}, ${BRAND_LIGHT})`,
-                  boxShadow: '0 10px 30px -10px rgba(255,77,0,0.55)',
-                }}
-              >
-                <Headphones className="h-6 w-6 text-white" strokeWidth={2.25} />
-              </div>
-              <div>
-                <h4
-                  className="text-xl font-bold text-white md:text-2xl"
-                  style={{ fontFamily: FONT_STACK_DISPLAY }}
-                >
-                  Coach IA 24/7
-                </h4>
-                <p className="text-[13.5px] text-ink-muted md:text-sm">
-                  Acceso ilimitado a tu mentor deportivo digital en cualquier momento.
-                </p>
-              </div>
-            </div>
-            <button
-              onClick={onTalkToRally}
-              className="inline-flex items-center gap-2 rounded-xl bg-white px-6 py-3 text-[13px] font-bold text-black transition-transform hover:scale-[1.03] active:scale-[0.97]"
-            >
-              Hablar con Rally <ArrowRight className="h-4 w-4" strokeWidth={2.5} />
-            </button>
-          </div>
-        </div>
-      </div>
-    </section>
-  )
-}
-
-function BentoCard({
-  children,
-  className = '',
-}: {
-  children: React.ReactNode
-  className?: string
-}) {
-  return (
-    <div
-      className={`group relative flex flex-col justify-between overflow-hidden rounded-2xl p-7 transition-all md:p-8 ${className}`}
-      style={{
-        background: 'linear-gradient(160deg, #131313 0%, #0b0b0b 100%)',
-        border: '1px solid rgba(255,255,255,0.05)',
-      }}
-    >
-      <div
-        className="pointer-events-none absolute inset-0 opacity-0 transition-opacity group-hover:opacity-100"
-        style={{
-          background: 'radial-gradient(400px 200px at 30% 0%, rgba(255,77,0,0.08), transparent 60%)',
-        }}
-      />
-      <div className="relative flex h-full flex-col justify-between">{children}</div>
-    </div>
-  )
-}
-
-function Pill({ children }: { children: React.ReactNode }) {
-  return (
-    <span
-      className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.22em]"
-      style={{
-        color: BRAND,
-        background: 'rgba(255,77,0,0.1)',
-        border: '1px solid rgba(255,77,0,0.2)',
-      }}
-    >
-      <span className="h-1 w-1 rounded-full" style={{ background: BRAND }} />
-      {children}
-    </span>
-  )
-}
-
-function MetricChip({
-  value,
-  label,
-  cool,
-  subtle,
-}: {
-  value: string
-  label: string
-  cool?: boolean
-  subtle?: boolean
-}) {
-  return (
-    <div
-      className="flex min-w-[140px] flex-1 flex-col rounded-xl p-4"
-      style={{
-        background: subtle ? 'rgba(255,255,255,0.025)' : 'rgba(255,255,255,0.04)',
-        border: '1px solid rgba(255,255,255,0.05)',
-      }}
-    >
-      <span
-        className="text-2xl font-black tracking-tight md:text-[1.7rem]"
-        style={{
-          fontFamily: FONT_STACK_DISPLAY,
-          color: subtle ? '#fff' : cool ? COOL_BLUE : BRAND,
-        }}
-      >
-        {value}
-      </span>
-      <span className="mt-1 text-[10px] font-bold uppercase tracking-[0.2em] text-ink-faint">
-        {label}
-      </span>
-    </div>
-  )
-}
-
-/* ---------- How it works ---------- */
-
-function HowItWorks() {
-  const steps = [
-    {
-      n: '01',
-      title: 'Sincronización total',
-      body: 'Conecta tus wearables. Rally absorbe datos de sueño, HRV y actividad histórica para entender tu punto de partida biológico.',
-    },
-    {
-      n: '02',
-      title: 'Análisis neuronal',
-      body: 'La IA procesa miles de variables para diseñar bloques de entrenamiento que optimizan la adaptación fisiológica sin quemarte.',
-    },
-    {
-      n: '03',
-      title: 'Evolución cinética',
-      body: 'A medida que mejoras, Rally se vuelve más exigente. El sistema aprende de tu fatiga para empujar tus límites con seguridad.',
-    },
-  ]
-  return (
-    <section
-      id="how"
-      className="relative z-10 px-6 py-24 md:px-8"
-      style={{ background: '#050505', borderTop: '1px solid rgba(255,255,255,0.04)' }}
-    >
-      <div className="mx-auto w-full max-w-7xl">
-        <div className="mx-auto mb-16 max-w-2xl text-center">
-          <h2
-            className="text-[2rem] font-black tracking-[-0.025em] text-white md:text-[2.75rem]"
-            style={{ fontFamily: FONT_STACK_DISPLAY }}
-          >
-            Ingeniería del éxito
-          </h2>
-          <div className="mx-auto mt-4 h-[3px] w-16 rounded-full" style={{ background: BRAND }} />
-        </div>
-
-        <div className="grid grid-cols-1 gap-10 md:grid-cols-3 md:gap-16">
-          {steps.map((s) => (
-            <div key={s.n} className="relative">
-              <div
-                className="pointer-events-none absolute -top-10 -left-3 select-none text-[128px] font-black leading-none"
-                style={{
-                  fontFamily: FONT_STACK_DISPLAY,
-                  color: 'rgba(255,255,255,0.04)',
-                  letterSpacing: '-0.04em',
-                }}
-              >
-                {s.n}
-              </div>
-              <div className="relative z-10 pt-10">
-                <h4
-                  className="text-[15px] font-extrabold uppercase tracking-[0.14em]"
-                  style={{ fontFamily: FONT_STACK_DISPLAY, color: BRAND }}
-                >
-                  {s.title}
-                </h4>
-                <p className="mt-4 text-[15px] leading-relaxed text-ink-muted">{s.body}</p>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </section>
-  )
-}
-
-/* ---------- Disciplines ---------- */
-
-const DISCIPLINE_CARDS: Array<{
-  title: string
-  tag: string
-  blurb: string
-  accent: string
-  image: string
-  alt: string
-  fallback: string
-}> = [
-  {
-    title: 'Squash',
-    tag: 'Herencia técnica',
-    blurb: 'Drills técnicos, match-play y lectura de partido real.',
-    accent: BRAND,
-    image:
-      'https://lh3.googleusercontent.com/aida-public/AB6AXuAehGJU9K_OKOG721C0R2W6efCxo9k4vnJS2siZJ6r47KylE_SqGjYl6wqVNmsNsHo695j0fDYZJszFHImcukQyfIt11IMQaarNd2Ju_JO4KbOGfpIv95U-mHQ7RlMX1n-Eo_TwC9xhni6GC9zE1OyJ1Q60J7BIwSTL9sqafKMUXQ4IRrNq3lXtdN-soKtqNdFpyjgcCdBGGr9Crwr85fMjflG6zgbUXMt5Dpq7zA3kDIPttPBwznZ647jYa8oaUalfRtkZpWZmlM5M',
-    alt: 'Cancha de squash con iluminación dramática y pelota en movimiento',
-    fallback: 'linear-gradient(150deg, rgba(255,77,0,0.25), rgba(20,10,5,1) 70%)',
-  },
-  {
-    title: 'Running',
-    tag: 'Resistencia pura',
-    blurb: 'Series, tempo y progresión aeróbica con ACWR vigilado.',
-    accent: COOL_BLUE,
-    image:
-      'https://lh3.googleusercontent.com/aida-public/AB6AXuB1XpnMPHAGOKmb10vEIGlEkjFFsQpBcabcXJScQFNeZQEaPTXvSuh9IdSQZxskEl5o9rXxP2EIo0-kx_XkUMUALbhNZtSKijwsqsC4GUFHE2NkF1mWHUNPRyLH4Oc6D-PhFmIn-g_h00TNJoXN78Xe4b2rTOPkppYShfhNKvujUcBTueSN24mCYAIkJlmBTi59ChH9qZwaWStenfQFC-uBew5HGgNbstLO-uO-8T_Be8lib8OQXL1IUJG-sBQl6kc7AjHzGxqGalLb',
-    alt: 'Atleta en bloque de salida sobre pista nocturna',
-    fallback: 'linear-gradient(150deg, rgba(173,199,255,0.18), rgba(5,10,20,1) 70%)',
-  },
-  {
-    title: 'Strength',
-    tag: 'Potencia explosiva',
-    blurb: 'Fuerza máxima, potencia y transferencia a la cancha.',
-    accent: BRAND,
-    image:
-      'https://lh3.googleusercontent.com/aida-public/AB6AXuDO55mUlnqFLj10LgEBdpx3rgQvK75EbYiMu-nWB81BdO2-HKxQ78wYltIQDKebUvvJ17Y5lNRVckdRnkQqZui46jajP9gaNofgQiaCnbgmHDUU4VCLg2MwRdF6nsc1ygZEVrU3BTLrh1E75USOen2NITEXCyuMGadHRmrKJ-eP-WzJd7j5OY7-DGkL31wtXzB9heXSOFD_THWJt_MYI6-HSNkIlDhaCrPerQ3qfoqLxzCbk6huvshWtbdvdGwYL1c8vslvjVV5fc2t',
-    alt: 'Barra olímpica con platos en gimnasio oscuro y polvo de magnesio',
-    fallback: 'linear-gradient(150deg, rgba(255,77,0,0.2), rgba(15,10,5,1) 70%)',
-  },
-  {
-    title: 'Cycling',
-    tag: 'Soporte aeróbico',
-    blurb: 'Volumen de bajo impacto y build de base para días largos.',
-    accent: BRAND,
-    image: '/landing/cycling.jpg',
-    alt: 'Ciclista de élite en posición aerodinámica sobre velódromo oscuro',
-    fallback: 'linear-gradient(150deg, rgba(255,77,0,0.18), rgba(10,8,6,1) 70%)',
-  },
-  {
-    title: 'Mobility',
-    tag: 'Recuperación activa',
-    blurb: 'Reset post-sesión, rango articular y desbloqueo de cadenas.',
-    accent: COOL_BLUE,
-    image:
-      'https://lh3.googleusercontent.com/aida-public/AB6AXuCIbwLT9cKRxWbV62Fnkn8ICVaOu9FuYhPEB4Ufh6Rtihsw-Ko7v8cU1e1kTVp5YmkF6P_hWgoHUWzclzFcapaSyTTedIlC_xqSq8nSVuQF26xJey1npfXaEcg0o8LCfdWXmLqtn9Evz1qW105Y8ehoLRN-HeXhi1wXdcSMbnvTh80OoQclnJ0SYa2av5NMuza9DfKSJ4SyIfsyy6vA0gief7BNPzyQSfDnFwYr4Xtdh-FNdqWSxkd3lwPsTyn4tzSm3czhlnp4kOhk',
-    alt: 'Silueta en estudio minimalista realizando flow de movilidad al amanecer',
-    fallback: 'linear-gradient(150deg, rgba(173,199,255,0.14), rgba(8,10,15,1) 70%)',
-  },
-]
-
-function DisciplinesGrid() {
-  return (
-    <section id="disciplines" className="relative z-10 mx-auto w-full max-w-7xl px-6 py-24 md:px-8">
-      <div className="mb-12 flex flex-col items-start justify-between gap-4 md:flex-row md:items-end">
-        <div>
-          <h2
-            className="text-[2rem] font-black tracking-[-0.025em] text-white md:text-[2.5rem]"
-            style={{ fontFamily: FONT_STACK_DISPLAY }}
-          >
-            Multidisciplina avanzada
-          </h2>
-          <p className="mt-2 max-w-md text-[15px] text-ink-muted">
-            Originado en la intensidad del squash, evolucionado para dominar cualquier campo.
-          </p>
-        </div>
-        <a
-          href="#access"
-          className="inline-flex items-center gap-2 text-sm font-bold transition-colors hover:underline"
-          style={{ color: BRAND }}
-        >
-          Ver todas <ArrowRight className="h-4 w-4" strokeWidth={2.5} />
-        </a>
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
-        {DISCIPLINE_CARDS.map((c) => (
-          <article
-            key={c.title}
-            className="group relative aspect-[3/4] overflow-hidden rounded-2xl"
-            style={{
-              background: c.fallback,
-              border: '1px solid rgba(255,255,255,0.06)',
-            }}
-          >
-            <img
-              src={c.image}
-              alt={c.alt}
-              loading="lazy"
-              decoding="async"
-              draggable={false}
-              className="absolute inset-0 h-full w-full object-cover transition-transform duration-[1200ms] ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:scale-[1.08]"
-              style={{ filter: 'grayscale(1) contrast(1.08) brightness(0.92)' }}
-              onError={(e) => {
-                const el = e.currentTarget
-                el.style.display = 'none'
-              }}
-            />
-            <div
-              className="absolute inset-0"
-              style={{
-                background:
-                  'linear-gradient(180deg, rgba(7,7,7,0.15) 0%, rgba(7,7,7,0.55) 55%, rgba(7,7,7,0.92) 100%)',
-              }}
-            />
-            <div
-              className="absolute inset-0 opacity-0 transition-opacity duration-500 group-hover:opacity-100"
-              style={{
-                background: `radial-gradient(circle at 75% 15%, ${c.accent}22, transparent 65%)`,
-              }}
-            />
-
-            <div className="absolute inset-x-0 bottom-0 p-5 md:p-6">
-              <div
-                className="h-[1px] w-8 transition-all duration-500 group-hover:w-16"
-                style={{ background: c.accent }}
-              />
-              <h5
-                className="mt-3 text-[1.6rem] font-black tracking-tight text-white md:text-[1.75rem]"
-                style={{ fontFamily: FONT_STACK_DISPLAY }}
-              >
-                {c.title}
-              </h5>
-              <span
-                className="text-[10px] font-bold uppercase tracking-[0.22em]"
-                style={{ color: c.accent }}
-              >
-                {c.tag}
-              </span>
-              <p
-                className="mt-2 max-h-0 overflow-hidden text-[12px] leading-relaxed text-white/80 opacity-0 transition-all duration-500 group-hover:max-h-24 group-hover:opacity-100"
-              >
-                {c.blurb}
-              </p>
-            </div>
-          </article>
-        ))}
-      </div>
-    </section>
-  )
-}
-
-/* ---------- AI Coach mockup ---------- */
-
-function AICoachMockup() {
-  return (
-    <section
-      className="relative z-10 py-24"
-      style={{ background: '#070707', borderTop: '1px solid rgba(255,255,255,0.04)' }}
-    >
-      <div className="mx-auto grid w-full max-w-7xl grid-cols-1 items-center gap-14 px-6 md:px-8 lg:grid-cols-2 lg:gap-16">
-        <ChatMockup />
-        <div>
-          <span
-            className="text-[11px] font-black uppercase tracking-[0.3em]"
-            style={{ color: BRAND, fontFamily: FONT_STACK_DISPLAY }}
-          >
-            Feedback inteligente
-          </span>
-          <h2
-            className="mt-4 text-[2.25rem] font-black leading-[1.05] tracking-[-0.025em] text-white md:text-[3rem]"
-            style={{ fontFamily: FONT_STACK_DISPLAY }}
-          >
-            Tu coach te conoce mejor que tú mismo.
-          </h2>
-          <p className="mt-5 max-w-xl text-[15.5px] leading-relaxed text-ink-muted md:text-base">
-            Rally no es un chatbot genérico. Es una red neuronal entrenada en fisiología del deporte que analiza tus biometrías en tiempo real para darte el consejo exacto en el momento preciso.
-          </p>
-          <ul className="mt-8 space-y-3.5">
-            {[
-              'Ajuste de carga diario según estrés y sueño',
-              'Análisis técnico con video y cadencia',
-              'Nutrición peri-entrenamiento personalizada',
-            ].map((item) => (
-              <li key={item} className="flex items-center gap-3 text-[14.5px] font-semibold text-white">
-                <span
-                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full"
-                  style={{ background: 'rgba(255,77,0,0.12)', color: BRAND }}
-                >
-                  <CheckCircle2 className="h-3.5 w-3.5" strokeWidth={2.5} />
-                </span>
-                {item}
-              </li>
-            ))}
-          </ul>
-        </div>
-      </div>
-    </section>
-  )
-}
-
-function ChatMockup() {
-  return (
-    <div className="order-2 lg:order-1">
-      <div
-        className="overflow-hidden rounded-2xl"
-        style={{
-          background: 'linear-gradient(160deg, rgba(20,20,20,0.9), rgba(8,8,8,0.9))',
-          backdropFilter: 'blur(18px)',
-          border: '1px solid rgba(255,255,255,0.06)',
-          boxShadow: '0 30px 80px -30px rgba(0,0,0,0.9)',
-        }}
-      >
-        {/* Header */}
-        <div
-          className="flex items-center justify-between px-5 py-4"
-          style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}
-        >
-          <div className="flex items-center gap-3">
-            <div
-              className="flex h-10 w-10 items-center justify-center rounded-full text-white"
-              style={{
-                background: `linear-gradient(135deg, ${BRAND}, ${BRAND_LIGHT})`,
-                fontFamily: FONT_STACK_DISPLAY,
-                fontWeight: 900,
-                boxShadow: '0 10px 24px -10px rgba(255,77,0,0.55)',
-              }}
-            >
-              R
-            </div>
-            <div>
-              <div className="text-[13.5px] font-bold text-white">Rally · Coach IA</div>
-              <div
-                className="mt-0.5 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.22em]"
-                style={{ color: BRAND }}
-              >
-                <span className="h-1.5 w-1.5 animate-pulse rounded-full" style={{ background: BRAND }} />
-                Online · Analizando
-              </div>
-            </div>
-          </div>
-          <MoreVertical className="h-4 w-4 text-ink-muted" />
-        </div>
-
-        {/* Messages */}
-        <div className="space-y-4 p-5">
-          <Bubble direction="in">
-            Buen entrenamiento hoy. Tu potencia explosiva en el tercer set de sprints fue un <b>12% superior</b> a tu promedio. ¿Cómo te sientes mecánicamente?
-          </Bubble>
-          <Bubble direction="out">Un poco de tensión en el sóleo derecho, pero nada grave.</Bubble>
-          <Bubble direction="in">
-            Entendido. Mañana priorizo cadena posterior en la movilidad y reduzco 15% el volumen de impacto. Revisa el nuevo plan ✓
-          </Bubble>
-        </div>
-
-        {/* Input */}
-        <div
-          className="flex items-center gap-2 p-4"
-          style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}
-        >
-          <div
-            className="flex-1 rounded-lg px-4 py-2.5 text-[13px]"
-            style={{
-              background: 'rgba(255,255,255,0.03)',
-              border: '1px solid rgba(255,255,255,0.05)',
-              color: 'rgba(255,255,255,0.4)',
-            }}
-          >
-            Escribe un mensaje…
-          </div>
-          <button
-            className="flex h-10 w-10 items-center justify-center rounded-lg text-white transition-transform active:scale-90"
-            style={{
-              background: `linear-gradient(135deg, ${BRAND}, ${BRAND_LIGHT})`,
-              boxShadow: '0 10px 24px -10px rgba(255,77,0,0.55)',
-            }}
-            aria-label="Enviar"
-          >
-            <Send className="h-4 w-4" strokeWidth={2.25} />
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function Bubble({
-  direction,
-  children,
-}: {
-  direction: 'in' | 'out'
-  children: React.ReactNode
-}) {
-  if (direction === 'in') {
-    return (
-      <div className="flex justify-start">
-        <div
-          className="max-w-[80%] rounded-2xl rounded-tl-sm px-4 py-3 text-[13.5px] text-white/90"
-          style={{
-            background: 'rgba(255,255,255,0.04)',
-            border: '1px solid rgba(255,255,255,0.06)',
-          }}
-        >
-          {children}
-        </div>
-      </div>
-    )
-  }
-  return (
-    <div className="flex justify-end">
-      <div
-        className="max-w-[80%] rounded-2xl rounded-tr-sm px-4 py-3 text-[13.5px] font-medium"
-        style={{
-          color: '#ffe3cf',
-          background: 'rgba(255,77,0,0.12)',
-          border: '1px solid rgba(255,77,0,0.25)',
-        }}
-      >
-        {children}
-      </div>
-    </div>
-  )
-}
-
-/* ---------- Access card ---------- */
-
-function AccessCard({
-  onSignup,
-  onGoogle,
-  authError,
-  authAvailable,
-}: {
-  onSignup: () => void
-  onGoogle: () => void
-  authError: string | null
-  authAvailable: boolean
-}) {
-  return (
-    <section id="access" className="relative z-10 px-6 py-24 md:px-8">
-      <div
-        className="relative mx-auto w-full max-w-4xl overflow-hidden rounded-3xl p-10 md:p-14"
-        style={{
-          background: 'linear-gradient(160deg, #121212 0%, #0a0a0a 100%)',
-          border: '1px solid rgba(255,255,255,0.06)',
-        }}
-      >
-        {/* Glow blobs */}
-        <div
-          className="pointer-events-none absolute -top-32 -left-32 h-80 w-80 rounded-full blur-3xl"
-          style={{ background: 'rgba(255,77,0,0.18)' }}
-        />
-        <div
-          className="pointer-events-none absolute -bottom-32 -right-32 h-80 w-80 rounded-full blur-3xl"
-          style={{ background: 'rgba(173,199,255,0.08)' }}
-        />
-
-        <div className="relative text-center">
-          <h2
-            className="text-[2.25rem] font-black tracking-[-0.025em] text-white md:text-[2.75rem]"
-            style={{ fontFamily: FONT_STACK_DISPLAY }}
-          >
-            Empieza tu evolución
-          </h2>
-          <p className="mx-auto mt-4 max-w-lg text-[15px] leading-relaxed text-ink-muted">
-            Únete a la élite y transforma tus datos en rendimiento puro. Tu primera semana de coach premium es cortesía de la casa.
-          </p>
-
-          <div className="mx-auto mt-9 flex max-w-lg flex-col justify-center gap-3 sm:flex-row">
-            <button
-              onClick={onSignup}
-              disabled={!authAvailable}
-              className="inline-flex items-center justify-center gap-2 rounded-xl px-7 py-4 text-[14.5px] font-bold text-white transition-transform active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50"
-              style={{
-                background: `linear-gradient(135deg, ${BRAND}, ${BRAND_LIGHT})`,
-                boxShadow: '0 18px 45px -18px rgba(255,77,0,0.55)',
-              }}
-            >
-              Crear cuenta <UserPlus className="h-4 w-4" strokeWidth={2.25} />
-            </button>
-            <button
-              onClick={onGoogle}
-              disabled={!authAvailable}
-              className="inline-flex items-center justify-center gap-3 rounded-xl bg-white px-7 py-4 text-[14.5px] font-bold text-black transition-transform hover:bg-white/95 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <GoogleIcon />
-              Continuar con Google
-            </button>
-          </div>
-
-          {authError && (
-            <p className="mt-4 text-xs font-medium text-red-300">{authError}</p>
-          )}
-          {!authAvailable && (
-            <div
-              className="mx-auto mt-5 max-w-md rounded-xl px-4 py-3"
-              style={{
-                background: 'rgba(251,191,36,0.05)',
-                border: '1px solid rgba(251,191,36,0.15)',
-              }}
-            >
-              <p className="text-[12px] font-semibold text-amber-300">Auth no disponible en este entorno</p>
-              <p className="mt-0.5 text-[11px] leading-relaxed text-amber-200/70">
-                Configura <code className="font-mono">VITE_SUPABASE_URL</code> y{' '}
-                <code className="font-mono">VITE_SUPABASE_ANON_KEY</code>.
-              </p>
-            </div>
-          )}
-
-          <p className="mt-8 text-[12px] text-ink-faint">
-            ¿Ya eres parte de RallyIQ?{' '}
-            <button
-              onClick={onSignup}
-              className="font-bold text-white underline-offset-2 transition-colors hover:underline"
-              style={{ color: '#fff' }}
-            >
-              Iniciar sesión
-            </button>
-          </p>
-        </div>
-      </div>
-    </section>
   )
 }
 
 function GoogleIcon() {
   return (
     <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0" aria-hidden>
-      <path
-        d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-        fill="#4285F4"
-      />
-      <path
-        d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-        fill="#34A853"
-      />
-      <path
-        d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
-        fill="#FBBC05"
-      />
-      <path
-        d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-        fill="#EA4335"
-      />
+      <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
+      <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
+      <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05" />
+      <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
     </svg>
   )
 }
 
-/* ---------- Footer ---------- */
+/* ───────────────────────────────────────────────────────── GLOBAL CSS */
 
-function Footer() {
-  return (
-    <footer
-      className="relative z-10 px-6 py-14 md:px-8"
-      style={{ borderTop: '1px solid rgba(255,255,255,0.05)', background: '#050505' }}
-    >
-      <div className="mx-auto flex w-full max-w-7xl flex-col items-center justify-between gap-6 md:flex-row">
-        <div className="flex items-center gap-3">
-          <Bolt />
-          <div>
-            <div
-              className="text-[15px] font-black tracking-tight text-white"
-              style={{ fontFamily: FONT_STACK_DISPLAY }}
-            >
-              RallyIQ
-            </div>
-            <p className="mt-0.5 text-[10px] font-medium uppercase tracking-[0.2em] text-ink-faint">
-              © 2026 · Engineered for kinetic performance
-            </p>
-          </div>
-        </div>
+const css = `
+  @import url('https://fonts.googleapis.com/css2?family=Lexend:wght@600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
 
-        <div className="flex flex-wrap items-center justify-center gap-x-8 gap-y-2">
-          {['Product', 'Coach', 'Contact', 'Privacy', 'Terms'].map((label) => (
-            <a
-              key={label}
-              href="#"
-              className="text-[11px] font-bold uppercase tracking-[0.22em] text-ink-faint transition-colors hover:text-white"
-              style={{ fontFamily: FONT_STACK_DISPLAY }}
-            >
-              {label}
-            </a>
-          ))}
-        </div>
-      </div>
-    </footer>
-  )
-}
+  html { scroll-behavior: smooth; }
 
-/* ---------- Global helpers ---------- */
+  .section-padding { padding: 80px 0; }
 
-const globalLandingCSS = `
+  .label-mono {
+    display: inline-flex; align-items: center;
+    font-family: ${FONT_MONO};
+    font-size: 10px; font-weight: 600;
+    letter-spacing: 0.3em; text-transform: uppercase;
+    color: ${BRAND}; margin-bottom: 14px;
+  }
+  .label-mono.lime { color: ${FORGE_LIME}; }
+  .label-mono.brand { color: ${BRAND_LIGHT}; }
+
+  .btn-primary-pill {
+    background: linear-gradient(135deg, ${BRAND} 0%, ${BRAND_LIGHT} 100%);
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.06) inset, 0 10px 30px -12px rgba(255,77,0,0.5);
+    transition: transform .15s, box-shadow .15s;
+  }
+  .btn-primary-pill:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.08) inset, 0 16px 36px -12px rgba(255,77,0,0.6);
+  }
+  .btn-primary-pill:active { transform: scale(0.97); }
+
+  .nav-link:hover { color: #fff !important; }
+
+  .disc-link:hover { color: ${BRAND} !important; border-color: ${BRAND} !important; }
+
+  /* Discipline cards */
+  .disc-card .disc-art {
+    filter: grayscale(1) contrast(1.05) brightness(0.75);
+    transition: filter .6s ease, transform .6s ease;
+  }
+  .disc-card:hover .disc-art {
+    filter: grayscale(0) contrast(1) brightness(0.95);
+    transform: scale(1.05);
+  }
+  .disc-card:hover .disc-hover-glow { opacity: 1 !important; }
+  .disc-card:hover .disc-hover-body { opacity: 1 !important; }
+  .disc-card:hover .disc-line { width: 64px !important; }
+  .disc-card { transition: border-color .3s; }
+  .disc-card:hover { border-color: rgba(255,77,0,0.35) !important; }
+
+  .hero-bg-glow {
+    filter: blur(90px);
+    opacity: 0.5;
+    z-index: 0;
+  }
+
   @keyframes pulse-dot {
     0%, 100% { opacity: 1; transform: scale(1); }
     50% { opacity: 0.55; transform: scale(1.15); }
   }
   .animate-pulse { animation: pulse-dot 1.8s ease-in-out infinite; }
-  html { scroll-behavior: smooth; }
 `

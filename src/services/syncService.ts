@@ -28,7 +28,10 @@ import {
   classifySyncError,
   coalesceAthleteProfileRows,
   compactQueue,
+  createAthleteProfileFullResetRow,
+  getAthleteProfileFullResetAt,
   getSyncErrorMessage,
+  isAthleteProfileFullResetRow,
   normalizeAthleteProfilePayload,
   rowToAthleteProfile,
   scoreEntityData,
@@ -45,6 +48,7 @@ const LAST_SYNC_USER_KEY = 'entrenador_sync_user_v1'
 const MIGRATION_KEY_PREFIX = 'entrenador_migrated_v1'
 const INITIAL_PULL_KEY_PREFIX = 'entrenador_initial_pull_v1'
 const REMOTE_WIPE_KEY = 'entrenador_remote_wipe_v1'
+const REMOTE_FULL_RESET_ACK_KEY_PREFIX = 'entrenador_remote_reset_ack_v1'
 const SESSION_DELETE_TOMBSTONES_KEY = 'entrenador_sync_session_tombstones_v1'
 const TOMBSTONE_TTL_MS = 90 * 24 * 60 * 60 * 1000 // 90 days
 const MAX_QUEUE_SIZE = 500
@@ -72,6 +76,10 @@ function getInitialPullKey(userId: string): string {
   return `${INITIAL_PULL_KEY_PREFIX}:${userId}`
 }
 
+function getRemoteFullResetAckKey(userId: string): string {
+  return `${REMOTE_FULL_RESET_ACK_KEY_PREFIX}:${userId}`
+}
+
 export function hasInitialRemotePullCompleted(userId: string | null | undefined): boolean {
   if (!userId) return false
   try {
@@ -92,6 +100,27 @@ function markInitialRemotePullComplete(userId: string): void {
 function clearInitialRemotePull(userId: string): void {
   try {
     localStorage.removeItem(getInitialPullKey(userId))
+  } catch {
+    // Ignore storage failures.
+  }
+}
+
+function getAcknowledgedRemoteFullResetAt(userId: string): number | null {
+  try {
+    const raw = localStorage.getItem(getRemoteFullResetAckKey(userId))
+    if (!raw) return null
+    const parsed = Number(raw)
+    return Number.isFinite(parsed) ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+function acknowledgeRemoteFullReset(userId: string, resetAt: number): void {
+  try {
+    localStorage.setItem(getRemoteFullResetAckKey(userId), String(resetAt))
+    localStorage.setItem(getMigrationKey(userId), '1')
+    localStorage.setItem(LAST_SYNC_USER_KEY, userId)
   } catch {
     // Ignore storage failures.
   }
@@ -133,6 +162,10 @@ function savePendingRemoteWipeStore(store: PendingRemoteWipeStore): void {
 function getPendingRemoteWipeEntry(userId: string): PendingRemoteWipeEntry | null {
   const store = loadPendingRemoteWipeStore()
   return store[userId] ?? null
+}
+
+function isPendingRemoteWipeFullReset(userId: string): boolean {
+  return getPendingRemoteWipeEntry(userId)?.fullReset === true
 }
 
 function getPendingRemoteWipeTables(userId: string): Set<SupabaseTable> {
@@ -1032,6 +1065,38 @@ async function fetchAthleteProfileRows(userId: string): Promise<AthleteProfileSy
   return ((data ?? []) as Record<string, unknown>[]).map(toAthleteProfileSyncRow)
 }
 
+async function fetchRemoteFullResetAt(userId: string): Promise<number | null> {
+  const rows = await fetchAthleteProfileRows(userId)
+  let latest: number | null = null
+
+  for (const row of rows) {
+    const resetAt = getAthleteProfileFullResetAt(row.data)
+    if (resetAt == null) continue
+    latest = latest == null ? resetAt : Math.max(latest, resetAt)
+  }
+
+  return latest
+}
+
+async function applyRemoteFullResetIfNeeded(userId: string): Promise<number | null> {
+  if (hasPendingRemoteWipeForTable(userId, 'athlete_profiles')) {
+    return null
+  }
+
+  const remoteResetAt = await fetchRemoteFullResetAt(userId)
+  if (remoteResetAt == null) return null
+
+  const acknowledgedAt = getAcknowledgedRemoteFullResetAt(userId)
+  if (acknowledgedAt != null && acknowledgedAt >= remoteResetAt) {
+    return remoteResetAt
+  }
+
+  clearSyncArtifactsForUser(userId)
+  await clearAllLocalAppData()
+  acknowledgeRemoteFullReset(userId, remoteResetAt)
+  return remoteResetAt
+}
+
 async function deleteAthleteProfileRowsById(userId: string, ids: string[]): Promise<void> {
   const normalizedIds = [...new Set(ids)].filter(Boolean)
   if (normalizedIds.length === 0) return
@@ -1300,9 +1365,17 @@ async function fetchAll<T>(table: SupabaseTable, userId: string): Promise<T[]> {
   return (data ?? []) as T[]
 }
 
-async function wipeRemoteTableByUser(userId: string, table: SupabaseTable): Promise<void> {
+async function wipeRemoteTableByUser(
+  userId: string,
+  table: SupabaseTable,
+  options?: { fullReset?: boolean },
+): Promise<void> {
   if (table === 'athlete_profiles') {
-    await clearRemoteAthleteProfileData(userId)
+    if (options?.fullReset) {
+      await deleteRemoteAthleteProfileData(userId)
+    } else {
+      await clearRemoteAthleteProfileData(userId)
+    }
     return
   }
 
@@ -1312,6 +1385,7 @@ async function wipeRemoteTableByUser(userId: string, table: SupabaseTable): Prom
 
 async function processPendingRemoteWipes(userId: string): Promise<RemoteWipeOutcome> {
   const pendingTables = sortRemoteWipeTables(getPendingRemoteWipeTables(userId))
+  const fullReset = isPendingRemoteWipeFullReset(userId)
   const outcome: RemoteWipeOutcome = {
     succeeded: [],
     tolerated: [],
@@ -1326,7 +1400,7 @@ async function processPendingRemoteWipes(userId: string): Promise<RemoteWipeOutc
 
   for (const table of pendingTables) {
     try {
-      await wipeRemoteTableByUser(userId, table)
+      await wipeRemoteTableByUser(userId, table, { fullReset })
       outcome.succeeded.push(table)
     } catch (error) {
       const info = classifySyncError(error, table)
@@ -1400,6 +1474,7 @@ export async function runFullSync(userId: string): Promise<void> {
   }
 
   const promise = (async () => {
+    await applyRemoteFullResetIfNeeded(userId)
     startSyncAttempt()
     const failureCountAtStart = syncStoreState().syncDetails.consecutiveFailures ?? 0
 
@@ -1706,6 +1781,10 @@ async function mergeAthleteProfile(userId: string, context: MergeContext): Promi
   }
 
   const canonicalRow = coalesceAthleteProfileRows(remoteRows)
+  if (isAthleteProfileFullResetRow(canonicalRow)) {
+    await db.athleteProfiles.clear()
+    return
+  }
   const local = await db.athleteProfiles.get('default')
   const localRow = local ? toAthleteProfileSyncRow(athleteProfileToRow(local, userId)) : null
   const mergedRow = localRow ? coalesceAthleteProfileRows([localRow, canonicalRow]) : canonicalRow
@@ -2146,6 +2225,8 @@ export async function prepareLocalDataForUser(userId: string): Promise<{ shouldM
     await clearAllLocalAppData()
   }
 
+  await applyRemoteFullResetIfNeeded(userId)
+
   localStorage.setItem(LAST_SYNC_USER_KEY, userId)
 
   const shouldMigrate =
@@ -2273,6 +2354,7 @@ export async function wipeRemoteAndLocalAppData(userId: string): Promise<RemoteW
   if (!isEnabled()) {
     await clearAllLocalAppData()
     clearSyncArtifactsForUser(userId)
+    acknowledgeRemoteFullReset(userId, Date.now())
     return { ...outcome, pending: [], completed: true }
   }
 
@@ -2285,6 +2367,8 @@ export async function wipeRemoteAndLocalAppData(userId: string): Promise<RemoteW
 
   await clearAllLocalAppData()
   clearSyncArtifactsForUser(userId)
+  const remoteResetAt = await fetchRemoteFullResetAt(userId)
+  acknowledgeRemoteFullReset(userId, remoteResetAt ?? Date.now())
 
   return { ...processed, pending: [], completed: true }
 }
@@ -2314,4 +2398,21 @@ async function clearRemoteAthleteProfileData(userId: string): Promise<void> {
   }
 
   await persistAthleteProfileRow(athleteProfileToRow(clearedProfile, userId), userId)
+}
+
+async function deleteRemoteAthleteProfileData(userId: string): Promise<void> {
+  const resetAt = Date.now()
+  const { error } = await getSupabase()
+    .from('athlete_profiles')
+    .delete()
+    .eq('user_id', userId)
+
+  if (error) throw error
+
+  const marker = createAthleteProfileFullResetRow(userId, resetAt)
+  const { error: markerError } = await getSupabase()
+    .from('athlete_profiles')
+    .insert(marker as never)
+
+  if (markerError) throw markerError
 }

@@ -1,5 +1,7 @@
 export const ROUTES = {
   HOME:             '/',
+  FEATURES:         '/features',
+  PRICING:          '/pricing',
   WEEK:             '/week',
   DAY:              (date: string) => `/day/${date}`,
   CHAT:             '/chat',

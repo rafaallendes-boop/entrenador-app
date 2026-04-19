@@ -158,6 +158,10 @@ function computeAttemptTimeoutMs(deadline: number, attemptsRemaining: number): n
   )
 }
 
+function shouldUseTechnicalRetry(requestClass: RequestClass): boolean {
+  return requestClass === 'chat_general' || requestClass === 'weekly_summary' || requestClass === 'import_extract'
+}
+
 async function fetchJsonOrThrow(res: Response): Promise<unknown> {
   const body = await res.json().catch(() => ({}))
   if (res.ok) return body
@@ -490,7 +494,10 @@ async function executeWithPolicy(
   const timeoutMs = REQUEST_TIMEOUTS[requestClass]
   const totalBudgetMs = Math.min(timeoutMs, MAX_FUNCTION_WALLCLOCK_MS)
   const deadline = startedAt + totalBudgetMs
-  const maxAttempts = req.allowFallback && fallback && fallback !== primary ? 3 : 2
+  const allowTechnicalRetry = shouldUseTechnicalRetry(requestClass)
+  const maxAttempts = allowTechnicalRetry
+    ? (req.allowFallback && fallback && fallback !== primary ? 3 : 2)
+    : 1
   let retryUsed = false
   let fallbackUsed = false
   let partialChunks = false
@@ -531,7 +538,7 @@ async function executeWithPolicy(
     }
   } catch (firstError) {
     const normalizedFirstError = normalizeError(firstError)
-    if (!normalizedFirstError.retryable || partialChunks) throw normalizedFirstError
+    if (!normalizedFirstError.retryable || partialChunks || maxAttempts <= 1) throw normalizedFirstError
     retryUsed = true
   }
 
@@ -547,7 +554,14 @@ async function executeWithPolicy(
     }
   } catch (retryError) {
     const normalizedRetryError = normalizeError(retryError)
-    if (!req.allowFallback || !fallback || fallback === primary || !normalizedRetryError.retryable || partialChunks) {
+    if (
+      maxAttempts <= 2
+      || !req.allowFallback
+      || !fallback
+      || fallback === primary
+      || !normalizedRetryError.retryable
+      || partialChunks
+    ) {
       throw normalizedRetryError
     }
     fallbackUsed = true

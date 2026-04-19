@@ -5,7 +5,16 @@ type SupabaseResult = { data: unknown; error: unknown }
 const localStorageState = new Map<string, string>()
 const syncStatusMock = vi.fn()
 const syncDetailsMock = vi.fn()
-const clearAllLocalAppDataMock = vi.fn(async () => {})
+const clearAllLocalAppDataMock = vi.fn(async () => {
+  sessionsRows = []
+  dayLogRows = []
+  weekSummaryRows = []
+  trainingPlanRows = []
+  trainingPlanWeekRows = []
+  chatMessageRows = []
+  coachProposalRows = []
+  athleteProfileRows = []
+})
 function createSyncDetailsState() {
   return {
     pendingOps: 0,
@@ -49,6 +58,7 @@ let coachProposalRows: unknown[] = []
 let athleteProfileRows: unknown[] = []
 let tableResults = new Map<string, SupabaseResult>()
 const upsertCalls: Array<{ table: string; payload: unknown }> = []
+const insertCalls: Array<{ table: string; payload: unknown }> = []
 const deleteCalls: Array<{ table: string; filters: Array<{ op: 'eq' | 'in'; column: string; value: unknown }> }> = []
 const updateCalls: Array<{ table: string; payload: unknown; filters: Array<{ op: 'eq' | 'in'; column: string; value: unknown }> }> = []
 const selectCalls: Array<{ table: string; filters: Array<{ op: 'eq' | 'in'; column: string; value: unknown }> }> = []
@@ -88,7 +98,10 @@ vi.mock('../auth', () => ({
         upsertCalls.push({ table, payload })
         return Promise.resolve(tableResults.get(table) ?? { data: null, error: null })
       }),
-      insert: vi.fn(() => Promise.resolve(tableResults.get(table) ?? { data: null, error: null })),
+      insert: vi.fn((payload: unknown) => {
+        insertCalls.push({ table, payload })
+        return Promise.resolve(tableResults.get(table) ?? { data: null, error: null })
+      }),
       update: vi.fn((payload: unknown) => createQueryBuilder(table, 'update', payload)),
       select: vi.fn(() => createQueryBuilder(table, 'select')),
       delete: vi.fn(() => createQueryBuilder(table, 'delete')),
@@ -187,6 +200,7 @@ describe('syncService', () => {
     athleteProfileRows = []
     tableResults = new Map()
     upsertCalls.length = 0
+    insertCalls.length = 0
     deleteCalls.length = 0
     updateCalls.length = 0
     selectCalls.length = 0
@@ -454,7 +468,7 @@ describe('syncService', () => {
     expect(outcome.pending).toEqual([])
   })
 
-  it('wipes all remote tables and clears athlete profile via update instead of delete', async () => {
+  it('wipes all remote tables and hard deletes athlete profile rows during a full reset', async () => {
     athleteProfileRows = [{
       id: 'profile-1',
       user_id: 'user-1',
@@ -475,11 +489,48 @@ describe('syncService', () => {
       'week_summaries',
       'day_logs',
       'sessions',
+      'athlete_profiles',
     ])
-    expect(deleteCalls.some((call) => call.table === 'athlete_profiles')).toBe(false)
-    expect(updateCalls.some((call) => call.table === 'athlete_profiles')).toBe(true)
+    expect(updateCalls.some((call) => call.table === 'athlete_profiles')).toBe(false)
+    expect(insertCalls.some((call) => call.table === 'athlete_profiles')).toBe(true)
     expect(outcome.completed).toBe(true)
     expect(outcome.pending).toEqual([])
+  })
+
+  it('clears stale local data before migration when a newer remote full reset marker exists', async () => {
+    sessionsRows = [{
+      id: 'session-1',
+      user_id: 'user-1',
+      updated_at: 100,
+      date: '2026-04-13',
+      week_start_date: '2026-04-13',
+      time_block: 'AM',
+      type: 'squash',
+      source: 'manual',
+      status: 'planned',
+      title: 'Old local session',
+      duration_min: 60,
+      data: {},
+    }]
+    athleteProfileRows = [{
+      id: 'default',
+      user_id: 'user-1',
+      coach_memory: null,
+      updated_at: 500,
+      data: {
+        __fullResetAt: 500,
+        __deletedFields: ['name', 'primarySport', 'planWizardConfig'],
+        __clearCoachMemory: true,
+      },
+    }]
+    tableResults.set('athlete_profiles', { data: athleteProfileRows, error: null })
+
+    const syncService = await import('../syncService')
+    const prepared = await syncService.prepareLocalDataForUser('user-1')
+
+    expect(clearAllLocalAppDataMock).toHaveBeenCalled()
+    expect(prepared.shouldMigrate).toBe(false)
+    expect(localStorage.getItem('entrenador_remote_reset_ack_v1:user-1')).toBe('500')
   })
 
   it('keeps failed selective remote wipes pending for the next sync instead of dropping them', async () => {
