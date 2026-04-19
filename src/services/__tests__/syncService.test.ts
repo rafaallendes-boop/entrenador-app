@@ -5,6 +5,7 @@ type SupabaseResult = { data: unknown; error: unknown }
 const localStorageState = new Map<string, string>()
 const syncStatusMock = vi.fn()
 const syncDetailsMock = vi.fn()
+const clearAllLocalAppDataMock = vi.fn(async () => {})
 function createSyncDetailsState() {
   return {
     pendingOps: 0,
@@ -96,7 +97,7 @@ vi.mock('../auth', () => ({
 }))
 
 vi.mock('../appMaintenance', () => ({
-  clearAllLocalAppData: vi.fn(async () => {}),
+  clearAllLocalAppData: clearAllLocalAppDataMock,
 }))
 
 vi.mock('../../store/useAuthStore', () => ({
@@ -192,6 +193,7 @@ describe('syncService', () => {
     localStorageState.clear()
     syncStatusMock.mockReset()
     syncDetailsMock.mockReset()
+    clearAllLocalAppDataMock.mockReset()
     storeState.user = { id: 'user-1' }
     storeState.syncDetails = createSyncDetailsState()
 
@@ -504,13 +506,11 @@ describe('syncService', () => {
     tableResults.set('day_logs', { data: null, error: { message: 'Failed to fetch' } })
 
     const syncService = await import('../syncService')
-    const appMaintenance = await import('../appMaintenance')
-    appMaintenance.clearAllLocalAppData.mockClear()
     const outcome = await syncService.wipeRemoteAndLocalAppData('user-1')
 
     expect(outcome.completed).toBe(false)
     expect(outcome.pending).toContain('day_logs')
-    expect(appMaintenance.clearAllLocalAppData).not.toHaveBeenCalled()
+    expect(clearAllLocalAppDataMock).not.toHaveBeenCalled()
     expect(localStorage.getItem('entrenador_remote_wipe_v1')).toContain('day_logs')
   })
 
