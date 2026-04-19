@@ -2001,14 +2001,13 @@ export async function clearSelectedRemoteAppData(
   if (!isEnabled()) return
 
   const tableMap: Array<{ key: keyof typeof selection; table: SupabaseTable }> = [
+    { key: 'trainingData', table: 'training_plan_weeks' },
+    { key: 'trainingData', table: 'training_plans' },
     { key: 'trainingData', table: 'sessions' },
     { key: 'trainingData', table: 'day_logs' },
     { key: 'trainingData', table: 'week_summaries' },
-    { key: 'trainingData', table: 'training_plan_weeks' },
-    { key: 'trainingData', table: 'training_plans' },
-    { key: 'chatHistory', table: 'chat_messages' },
     { key: 'coachProposals', table: 'coach_proposals' },
-    { key: 'coachMemory', table: 'athlete_profiles' },
+    { key: 'chatHistory', table: 'chat_messages' },
   ]
 
   const failures: string[] = []
@@ -2019,6 +2018,14 @@ export async function clearSelectedRemoteAppData(
       if (error) {
         failures.push(table)
       }
+    }
+  }
+
+  if (selection.coachMemory) {
+    try {
+      await clearRemoteAthleteProfileData(userId)
+    } catch {
+      failures.push('athlete_profiles')
     }
   }
 
@@ -2042,7 +2049,6 @@ export async function wipeRemoteAndLocalAppData(userId: string): Promise<void> {
     'week_summaries',
     'day_logs',
     'sessions',
-    'athlete_profiles',
   ]
 
   for (const table of tables) {
@@ -2050,6 +2056,35 @@ export async function wipeRemoteAndLocalAppData(userId: string): Promise<void> {
     if (error) throw error
   }
 
+  await clearRemoteAthleteProfileData(userId)
+
   await clearAllLocalAppData()
   clearSyncArtifactsForUser(userId)
+}
+
+async function clearRemoteAthleteProfileData(userId: string): Promise<void> {
+  const clearedProfile: AthleteProfile = {
+    id: 'default',
+    updatedAt: Date.now(),
+    coachMemory: undefined,
+    onboardingDeferredAt: undefined,
+    name: undefined,
+    age: undefined,
+    weightKg: undefined,
+    primarySport: undefined,
+    secondarySports: undefined,
+    sportContext: undefined,
+    mainGoal: undefined,
+    secondaryGoal: undefined,
+    runningProfile: undefined,
+    strengthProfile: undefined,
+    recoveryProfile: undefined,
+    scheduleProfile: undefined,
+    nutritionProfile: undefined,
+    goalEvents: undefined,
+    macroPlan: undefined,
+    planWizardConfig: undefined,
+  }
+
+  await persistAthleteProfileRow(athleteProfileToRow(clearedProfile, userId), userId)
 }

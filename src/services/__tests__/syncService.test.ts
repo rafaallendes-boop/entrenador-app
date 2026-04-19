@@ -48,12 +48,33 @@ let coachProposalRows: unknown[] = []
 let athleteProfileRows: unknown[] = []
 let tableResults = new Map<string, SupabaseResult>()
 const upsertCalls: Array<{ table: string; payload: unknown }> = []
+const deleteCalls: Array<{ table: string; filters: Array<{ op: 'eq' | 'in'; column: string; value: unknown }> }> = []
+const updateCalls: Array<{ table: string; payload: unknown; filters: Array<{ op: 'eq' | 'in'; column: string; value: unknown }> }> = []
+const selectCalls: Array<{ table: string; filters: Array<{ op: 'eq' | 'in'; column: string; value: unknown }> }> = []
 
-function createDeleteBuilder(table: string) {
+function createQueryBuilder(
+  table: string,
+  action: 'delete' | 'update' | 'select',
+  payload?: unknown,
+) {
+  const filters: Array<{ op: 'eq' | 'in'; column: string; value: unknown }> = []
   return {
-    eq: vi.fn().mockReturnThis(),
-    in: vi.fn().mockReturnThis(),
+    eq(column: string, value: unknown) {
+      filters.push({ op: 'eq', column, value })
+      return this
+    },
+    in(column: string, value: unknown) {
+      filters.push({ op: 'in', column, value })
+      return this
+    },
     then(onFulfilled: (value: SupabaseResult) => unknown) {
+      if (action === 'delete') {
+        deleteCalls.push({ table, filters: [...filters] })
+      } else if (action === 'update') {
+        updateCalls.push({ table, payload, filters: [...filters] })
+      } else if (action === 'select') {
+        selectCalls.push({ table, filters: [...filters] })
+      }
       return Promise.resolve(onFulfilled(tableResults.get(table) ?? { data: null, error: null }))
     },
   }
@@ -67,9 +88,9 @@ vi.mock('../auth', () => ({
         return Promise.resolve(tableResults.get(table) ?? { data: null, error: null })
       }),
       insert: vi.fn(() => Promise.resolve(tableResults.get(table) ?? { data: null, error: null })),
-      update: vi.fn(() => createDeleteBuilder(table)),
-      select: vi.fn(() => createDeleteBuilder(table)),
-      delete: vi.fn(() => createDeleteBuilder(table)),
+      update: vi.fn((payload: unknown) => createQueryBuilder(table, 'update', payload)),
+      select: vi.fn(() => createQueryBuilder(table, 'select')),
+      delete: vi.fn(() => createQueryBuilder(table, 'delete')),
     }),
   },
 }))
@@ -165,6 +186,9 @@ describe('syncService', () => {
     athleteProfileRows = []
     tableResults = new Map()
     upsertCalls.length = 0
+    deleteCalls.length = 0
+    updateCalls.length = 0
+    selectCalls.length = 0
     localStorageState.clear()
     syncStatusMock.mockReset()
     syncDetailsMock.mockReset()
@@ -388,6 +412,68 @@ describe('syncService', () => {
       lastBlockedTable: null,
       consecutiveFailures: 0,
     }))
+  })
+
+  it('clears remote data in dependency-safe order and wipes athlete profile by blanking it', async () => {
+    athleteProfileRows = [{
+      id: 'profile-1',
+      user_id: 'user-1',
+      coach_memory: 'memo',
+      updated_at: 10,
+      data: { name: 'Rafa', primarySport: 'squash' },
+    }]
+    tableResults.set('athlete_profiles', { data: athleteProfileRows, error: null })
+
+    const syncService = await import('../syncService')
+    await syncService.clearSelectedRemoteAppData('user-1', {
+      trainingData: true,
+      chatHistory: true,
+      coachProposals: true,
+      coachMemory: true,
+    })
+
+    expect(deleteCalls.map((call) => call.table)).toEqual([
+      'training_plan_weeks',
+      'training_plans',
+      'sessions',
+      'day_logs',
+      'week_summaries',
+      'coach_proposals',
+      'chat_messages',
+    ])
+
+    const athleteProfileUpdate = updateCalls.find((call) => call.table === 'athlete_profiles')
+    expect(athleteProfileUpdate).toBeTruthy()
+    expect(athleteProfileUpdate?.filters).toEqual([
+      { op: 'eq', column: 'id', value: 'profile-1' },
+      { op: 'eq', column: 'user_id', value: 'user-1' },
+    ])
+  })
+
+  it('wipes all remote tables and clears athlete profile via update instead of delete', async () => {
+    athleteProfileRows = [{
+      id: 'profile-1',
+      user_id: 'user-1',
+      coach_memory: 'memo',
+      updated_at: 10,
+      data: { name: 'Rafa' },
+    }]
+    tableResults.set('athlete_profiles', { data: athleteProfileRows, error: null })
+
+    const syncService = await import('../syncService')
+    await syncService.wipeRemoteAndLocalAppData('user-1')
+
+    expect(deleteCalls.map((call) => call.table)).toEqual([
+      'training_plan_weeks',
+      'training_plans',
+      'coach_proposals',
+      'chat_messages',
+      'week_summaries',
+      'day_logs',
+      'sessions',
+    ])
+    expect(deleteCalls.some((call) => call.table === 'athlete_profiles')).toBe(false)
+    expect(updateCalls.some((call) => call.table === 'athlete_profiles')).toBe(true)
   })
 
   it('surfaces expired queue ops instead of reporting a healthy recovery', async () => {
