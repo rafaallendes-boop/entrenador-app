@@ -1,0 +1,59 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+import type { AIRequest } from '../ai/types'
+import { ProxyProvider } from '../ai/providers/ProxyProvider'
+
+function makeRequest(overrides: Partial<AIRequest> = {}): AIRequest {
+  return {
+    systemPrompt: 'Sistema',
+    userMessage: 'Hola',
+    requestClass: 'chat_general',
+    traceId: 'trace-1',
+    onChunk: vi.fn(),
+    ...overrides,
+  }
+}
+
+describe('ProxyProvider streaming fallback', () => {
+  beforeEach(() => {
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      value: globalThis,
+    })
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('retries chat requests without streaming when the streaming transport fails with gateway timeout', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(
+        JSON.stringify({ error: 'Gateway timeout', errorCode: 'timeout' }),
+        {
+          status: 502,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      ))
+      .mockResolvedValueOnce(new Response(
+        JSON.stringify({ text: 'Hola de vuelta', provider: 'gemini', traceId: 'trace-1' }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      ))
+
+    vi.stubGlobal('fetch', fetchMock)
+
+    const provider = new ProxyProvider()
+    const response = await provider.call(makeRequest())
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
+      method: 'POST',
+    })
+    expect(fetchMock.mock.calls[0]?.[1]?.body).toContain('"stream":true')
+    expect(fetchMock.mock.calls[1]?.[1]?.body).toContain('"stream":false')
+    expect(response.text).toBe('Hola de vuelta')
+  })
+})

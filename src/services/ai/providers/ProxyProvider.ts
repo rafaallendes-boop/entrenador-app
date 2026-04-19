@@ -29,10 +29,45 @@ export class ProxyProvider implements AIProvider {
   readonly name = 'gemini' as const
 
   async call(request: AIRequest): Promise<AIRawResponse> {
+    const allowStreaming = Boolean(request.onChunk)
+    let streamedAnyChunk = false
+
     const t0 = Date.now()
+    try {
+      return await this.executeRequest(
+        {
+          ...request,
+          onChunk: request.onChunk ? (chunk) => {
+            streamedAnyChunk = true
+            request.onChunk?.(chunk)
+          } : undefined,
+        },
+        { stream: allowStreaming, startedAt: t0 },
+      )
+    } catch (error) {
+      if (allowStreaming && !streamedAnyChunk && this.shouldRetryWithoutStreaming(error)) {
+        return this.executeRequest(
+          {
+            ...request,
+            onChunk: undefined,
+          },
+          { stream: false, startedAt: t0 },
+        )
+      }
+
+      if (error instanceof AIProviderError) throw error
+      throw this.normalizeUnexpectedError(error)
+    }
+  }
+
+  private async executeRequest(
+    request: AIRequest,
+    options: { stream: boolean; startedAt: number },
+  ): Promise<AIRawResponse> {
     const policy = getAIRequestPolicy(request.requestClass)
     const controller = new AbortController()
     const timeoutId = window.setTimeout(() => controller.abort(), policy.timeoutMs + 2000)
+
     try {
       const res = await fetch(FUNCTION_URL, {
         method: 'POST',
@@ -47,13 +82,13 @@ export class ProxyProvider implements AIProvider {
           maxTokens: request.maxTokens,
           temperature: request.temperature,
           allowFallback: request.allowFallback,
-          stream: Boolean(request.onChunk),
+          stream: options.stream,
         }),
       })
 
       const contentType = res.headers.get('content-type') ?? ''
-      if (request.onChunk && (contentType.includes('text/event-stream') || contentType.includes('application/x-ndjson'))) {
-        return await this.readStreamingResponse(res, request, t0)
+      if (options.stream && request.onChunk && (contentType.includes('text/event-stream') || contentType.includes('application/x-ndjson'))) {
+        return await this.readStreamingResponse(res, request, options.startedAt)
       }
 
       const data = await res.json().catch(() => ({})) as {
@@ -77,7 +112,6 @@ export class ProxyProvider implements AIProvider {
         throw createProviderError('gemini', 'parse_error', 'El servidor devolvió una respuesta vacía.')
       }
 
-      // Usar el proveedor que retorna el servidor (puede ser gemini/openai/claude según AI_PROVIDER)
       const provider = (data.provider ?? 'gemini') as AIProviderName
 
       return {
@@ -85,7 +119,7 @@ export class ProxyProvider implements AIProvider {
         provider,
         model: data.model,
         raw: data,
-        durationMs: data.durationMs ?? Date.now() - t0,
+        durationMs: data.durationMs ?? Date.now() - options.startedAt,
         traceId: data.traceId ?? request.traceId,
         requestClass: request.requestClass,
         retryUsed: data.retryUsed,
@@ -93,20 +127,7 @@ export class ProxyProvider implements AIProvider {
       }
     } catch (error) {
       if (error instanceof AIProviderError) throw error
-      if (error instanceof Error && error.name === 'AbortError') {
-        throw createProviderError(
-          'gemini',
-          'timeout',
-          'El servidor del coach tardó demasiado en responder. Intenta de nuevo.',
-          true,
-        )
-      }
-      throw createProviderError(
-        'gemini',
-        'timeout',
-        'No se pudo conectar con el servidor del coach. Verifica tu conexión.',
-        true,
-      )
+      throw this.normalizeUnexpectedError(error)
     } finally {
       window.clearTimeout(timeoutId)
     }
@@ -227,5 +248,34 @@ export class ProxyProvider implements AIProvider {
     }
 
     throw createProviderError('gemini', data.errorCode ?? 'unknown', message)
+  }
+
+  private shouldRetryWithoutStreaming(error: unknown): boolean {
+    return error instanceof AIProviderError
+      && error.retryable
+      && (
+        error.code === 'timeout'
+        || error.code === 'server_error'
+        || error.code === 'unknown'
+      )
+  }
+
+  private normalizeUnexpectedError(error: unknown): AIProviderError {
+    if (error instanceof AIProviderError) return error
+    if (error instanceof Error && error.name === 'AbortError') {
+      return createProviderError(
+        'gemini',
+        'timeout',
+        'El servidor del coach tardó demasiado en responder. Intenta de nuevo.',
+        true,
+      )
+    }
+
+    return createProviderError(
+      'gemini',
+      'timeout',
+      'No se pudo conectar con el servidor del coach. Verifica tu conexión.',
+      true,
+    )
   }
 }

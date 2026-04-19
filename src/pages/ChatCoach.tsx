@@ -447,7 +447,6 @@ export default function ChatCoach() {
           <Suspense fallback={<div className="h-8" />}>
             <QuickActionChips
               onSelect={handleSend}
-              onOpenPlanBuilder={() => navigate(ROUTES.PLAN_BUILDER)}
               disabled={isLoading}
               enabledSports={getEnabledSports(athleteProfile)}
             />
