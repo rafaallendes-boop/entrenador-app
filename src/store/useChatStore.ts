@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import { db } from '../db/db'
 import type { ChatMessage, ChatContext } from '../types'
 import { CoachEngine } from '../services/ai/CoachEngine'
-import { optimizeChatContext } from '../services/ai/contextOptimizer'
+import { inferRequestClassFromIntent, optimizeChatContext } from '../services/ai/contextOptimizer'
 import { useCoachActionsStore } from './useCoachActionsStore'
 import { v4 as uuid } from '../utils/uuid'
 import { AIProviderError } from '../services/ai/types'
@@ -55,9 +55,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
     await db.chatMessages.add(userMsg)
     void syncService.pushChatMessage(userMsg)
-    const requestClass = context?.intent === 'plan_week' || context?.intent === 'adjust_session'
-      ? 'chat_action'
-      : 'chat_general'
+    const requestClass = inferRequestClassFromIntent(context?.intent)
     set(state => ({ messages: [...state.messages, userMsg], isLoading: true, streamingText: '', responsePhase: 'connecting', error: null }))
 
     // Pasamos historial multi-turno real al provider (excluye el mensaje recién añadido)
@@ -89,10 +87,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
 
       // If the model returned structured actions, create a proposal automatically.
-      // Skip if the response is likely truncated to avoid partial plans being created.
+      // Skip weekly summaries and likely truncated responses to avoid partial or unwanted proposals.
       let proposalId: string | undefined
       if (
-        requestClass === 'chat_action'
+        requestClass !== 'weekly_summary'
         && response.actions
         && response.actions.length > 0
         && !response.meta?.likelyTruncated

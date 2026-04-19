@@ -91,6 +91,7 @@ export function buildCoachSystemPrompt(
   options?: { requestClass?: AIRequestClass },
 ): string {
   const requestClass = options?.requestClass ?? 'chat_action'
+  const baseSectionsAllowActions = requestClass === 'chat_action' || requestClass === 'chat_general'
   const plannedSessions = getPlannedSessions(context)
   const squashSummary = buildSquashSelectionSummary(context)
   const strengthSummary = buildStrengthSelectionSummary(context)
@@ -99,7 +100,7 @@ export function buildCoachSystemPrompt(
   const mobilitySummary = buildMobilitySelectionSummary(context)
 
   const commonSections: string[] = [
-    buildPersonaSection(context),
+    buildPersonaSection(context, { allowActions: baseSectionsAllowActions }),
     buildAthleteProfileSection(context),
     buildMacroPlanSection(context),
     buildPlanWizardSection(context),
@@ -107,7 +108,7 @@ export function buildCoachSystemPrompt(
     buildFatigueSection(context),
     buildNutritionContextSection(context),
     buildWeekSection(context),
-    buildSessionsSection(plannedSessions),
+    buildSessionsSection(plannedSessions, { allowActions: baseSectionsAllowActions }),
     buildWeekDayLogsSection(context),
     buildTodaySection(context),
   ]
@@ -129,14 +130,24 @@ export function buildCoachSystemPrompt(
     buildResponseInstructionsSection(plannedSessions, context, squashSummary, strengthSummary, cyclingSummary, mobilitySummary),
   ]
 
-  const sections: string[] = requestClass === 'chat_general'
+  const sections: string[] = requestClass === 'chat_action'
     ? [
         ...commonSections,
-        buildGeneralChatResponseInstructionsSection(context),
-      ]
-    : [
-        ...commonSections,
         ...actionSections,
+      ]
+    : requestClass === 'weekly_summary'
+      ? [
+          ...commonSections,
+          buildWeeklySummaryResponseInstructionsSection(),
+        ]
+      : requestClass === 'chat_general'
+        ? [
+            ...commonSections,
+            buildGeneralChatResponseInstructionsSection(context),
+          ]
+        : [
+        ...commonSections,
+        buildMinimalTextResponseInstructionsSection(),
       ]
 
   return sections.filter(Boolean).join('\n\n')
@@ -153,9 +164,32 @@ function buildGeneralChatResponseInstructionsSection(context: ChatContext): stri
 - Deportes permitidos por la planificación actual: ${getAllowedPlanningSports(context.athleteProfile).join(', ') || 'sin restricción explícita'}.`
 }
 
+function buildWeeklySummaryResponseInstructionsSection(): string {
+  return `═══ INSTRUCCIONES DE RESUMEN SEMANAL ═══
+
+- Entrega un resumen semanal corto, concreto y accionable solo en texto.
+- Evalúa adherencia, carga, sensaciones, riesgos y foco para la siguiente semana.
+- No propongas acciones estructuradas y no uses <actions>.
+- Si falta contexto, dilo brevemente en una frase y sigue con el mejor juicio posible.
+- Responde siempre en español.`
+}
+
+function buildMinimalTextResponseInstructionsSection(): string {
+  return `═══ INSTRUCCIONES DE RESPUESTA EN TEXTO ═══
+
+- Responde solo en texto.
+- No uses <actions>.
+- Prioriza claridad, brevedad y utilidad práctica.
+- Responde siempre en español.`
+}
+
 // ─── Persona & rules section ────────────────────────────────────────────────
 
-function buildPersonaSection(context: ChatContext): string {
+function buildPersonaSection(
+  context: ChatContext,
+  options?: { allowActions?: boolean },
+): string {
+  const allowActions = options?.allowActions ?? true
   const athleteName = getAthleteDisplayName(context.athleteProfile, 'este atleta')
   const sportsSummary = getAthleteSportsSummary(context.athleteProfile)
   const enabledSports = getAllowedPlanningSports(context.athleteProfile)
@@ -195,8 +229,12 @@ REGLAS:
 ESTILO:
 - Directo y conciso.
 - Si falta contexto, asume algo razonable y dilo brevemente.
-- Si el usuario pide crear o modificar el plan, usa <actions>.
-- Nunca respondas solo con texto cuando se pidió una acción.
+- ${allowActions
+    ? 'Si el usuario pide crear o modificar el plan, usa <actions>.'
+    : 'Para este tipo de solicitud, responde solo en texto y no uses <actions>.'}
+- ${allowActions
+    ? 'Nunca respondas solo con texto cuando se pidió una acción.'
+    : 'No inventes propuestas estructuradas si el usuario pidió análisis, reflexión o resumen.'}
 - Responde siempre en español.
 ${sportSections}`
 }
@@ -917,7 +955,11 @@ function buildImplicitPrioritySection(context: ChatContext): string {
   return lines.join('\n')
 }
 
-function buildSessionsSection(sessions: Session[]): string {
+function buildSessionsSection(
+  sessions: Session[],
+  options?: { allowActions?: boolean },
+): string {
+  const allowActions = options?.allowActions ?? true
   const today = todayISO()
   const futureSessions = sessions.filter(s => s.date >= today)
 
@@ -925,8 +967,12 @@ function buildSessionsSection(sessions: Session[]): string {
 
   if (futureSessions.length === 0) {
     lines.push('⚠ No hay sesiones planificadas para esta semana.')
-    lines.push('→ Si el usuario pide crear una semana, usa la acción create_week con sesiones concretas.')
-    lines.push('→ Usa los días de la semana actual indicados en las instrucciones.')
+    if (allowActions) {
+      lines.push('→ Si el usuario pide crear una semana, usa la acción create_week con sesiones concretas.')
+      lines.push('→ Usa los días de la semana actual indicados en las instrucciones.')
+    } else {
+      lines.push('→ Si no hay planificación cargada, reconócelo con claridad y resume el contexto disponible sin inventar acciones.')
+    }
     return lines.join('\n')
   }
 

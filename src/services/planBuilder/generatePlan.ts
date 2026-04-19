@@ -346,7 +346,7 @@ async function generateWeekPair(
       meta: {
         provider: provider.name,
         model: raw.model,
-        traceId: raw.traceId,
+        traceId: raw.traceId ?? traceId,
         durationMs: raw.durationMs,
         chunkCount,
         retryUsed: raw.retryUsed,

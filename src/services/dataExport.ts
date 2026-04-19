@@ -131,6 +131,9 @@ export interface AppDataImportPreview {
   mergeConflicts: MergeConflictSummary
 }
 
+type EnumCollection<T extends string> = ReadonlySet<T> | readonly T[]
+type AthleteNutritionProfile = NonNullable<AthleteProfile['nutritionProfile']>
+
 function buildFilename(exportedAt: Date): string {
   const iso = exportedAt.toISOString().replace(/[:.]/g, '-')
   return `entrenador-backup-${iso}.json`
@@ -1248,20 +1251,32 @@ function requireBoolean(value: unknown, path: string): boolean {
   return value
 }
 
+function optionalBoolean(value: unknown, path: string): boolean | undefined {
+  if (value == null) return undefined
+  return requireBoolean(value, path)
+}
+
 function requireNumberOrString(value: unknown, path: string): number | string {
   if (typeof value === 'number' && Number.isFinite(value)) return value
   if (typeof value === 'string' && value.trim() !== '') return value
   throw new Error(`${path} debe ser numero o string.`)
 }
 
-function requireEnum<T extends string>(value: unknown, allowed: Set<T>, path: string): T {
-  if (typeof value !== 'string' || !allowed.has(value as T)) {
+function enumCollectionHas<T extends string>(allowed: EnumCollection<T>, value: T): boolean {
+  if (allowed instanceof Set) {
+    return allowed.has(value)
+  }
+  return (allowed as readonly T[]).includes(value)
+}
+
+function requireEnum<T extends string>(value: unknown, allowed: EnumCollection<T>, path: string): T {
+  if (typeof value !== 'string' || !enumCollectionHas(allowed, value as T)) {
     throw new Error(`${path} tiene un valor no soportado.`)
   }
   return value as T
 }
 
-function optionalEnum<T extends string>(value: unknown, allowed: Set<T>, path: string): T | undefined {
+function optionalEnum<T extends string>(value: unknown, allowed: EnumCollection<T>, path: string): T | undefined {
   if (value == null) return undefined
   return requireEnum(value, allowed, path)
 }
@@ -1284,7 +1299,7 @@ function optionalStringArray(value: unknown, path: string): string[] | undefined
   return items.map((item, index) => requireString(item, `${path}[${index}]`))
 }
 
-function optionalEnumArray<T extends string>(value: unknown, allowed: Set<T>, path: string): T[] | undefined {
+function optionalEnumArray<T extends string>(value: unknown, allowed: EnumCollection<T>, path: string): T[] | undefined {
   if (value == null) return undefined
   const items = ensureArray(value, path)
   return items.map((item, index) => requireEnum(item, allowed, `${path}[${index}]`))
@@ -1355,8 +1370,8 @@ function optionalNutritionProfile(value: unknown, path: string): AthleteProfile[
   if (value == null) return undefined
   const row = ensureRecord(value, path)
   return {
-    fuelingGoal: optionalEnum(row.fuelingGoal, ['performance', 'maintain', 'mild_fat_loss'] as const, `${path}.fuelingGoal`) as AthleteProfile['nutritionProfile']['fuelingGoal'],
-    sweatRate: optionalEnum(row.sweatRate, ['low', 'moderate', 'high'] as const, `${path}.sweatRate`) as AthleteProfile['nutritionProfile']['sweatRate'],
+    fuelingGoal: optionalEnum(row.fuelingGoal, ['performance', 'maintain', 'mild_fat_loss'] as const, `${path}.fuelingGoal`) as AthleteNutritionProfile['fuelingGoal'],
+    sweatRate: optionalEnum(row.sweatRate, ['low', 'moderate', 'high'] as const, `${path}.sweatRate`) as AthleteNutritionProfile['sweatRate'],
     goalBodyWeightKg: optionalFiniteNumber(row.goalBodyWeightKg, `${path}.goalBodyWeightKg`),
     fatMassPct: optionalFiniteNumber(row.fatMassPct, `${path}.fatMassPct`),
     fatMassGoalPct: optionalFiniteNumber(row.fatMassGoalPct, `${path}.fatMassGoalPct`),

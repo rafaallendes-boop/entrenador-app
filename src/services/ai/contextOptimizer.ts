@@ -43,32 +43,39 @@ export function optimizeChatContext(context: ChatContext, requestClass?: AIReque
 
 export function detectChatIntent(message: string): ChatContext['intent'] {
   const normalized = message.toLowerCase()
+  const weekDayPattern = /\b(lunes|martes|miercoles|miércoles|jueves|viernes|sabado|sábado|domingo)\b/
+  const planningVerbPattern = /\b(crea(?:r|me)?|haz(?:me)?|arma(?:me)?|genera(?:r|me)?|planifica(?:r)?|organiza(?:r)?|programa(?:r)?)\b/
+  const planningTargetPattern = /\b(semana|microciclo|plan(?:\s+de\s+entrenamiento)?|rutina)\b/
+  const adjustmentVerbPattern = /\b(ajusta(?:r)?|cambia(?:r)?|modifica(?:r)?|mueve|reordena(?:r)?|actualiza(?:r)?|quita(?:r)?|agrega(?:r)?|reemplaza(?:r)?|reduce|baja|sube)\b/
+  const adjustmentTargetPattern = /\b(semana|sesion|sesión|plan|carga|running|squash|fuerza|cycling|ciclismo|movilidad)\b/
 
   if (
-    normalized.includes('resumen semanal') ||
-    normalized.includes('coach note') ||
-    normalized.includes('resume mi semana')
+    /\b(resumen\s+semanal|coach\s+note|resume\s+mi\s+semana|resumeme\s+la\s+semana|cierre\s+de\s+semana|balance\s+semanal)\b/.test(normalized)
   ) {
     return 'weekly_summary'
   }
 
   if (
-    normalized.includes('crea la semana') ||
-    normalized.includes('crear semana') ||
-    normalized.includes('plan semanal') ||
-    normalized.includes('planifica la semana')
+    adjustmentVerbPattern.test(normalized)
+    && (
+      adjustmentTargetPattern.test(normalized)
+      || weekDayPattern.test(normalized)
+    )
   ) {
-    return 'plan_week'
+    return 'adjust_session'
   }
 
   if (
-    normalized.includes('ajusta') ||
-    normalized.includes('cambia') ||
-    normalized.includes('modifica') ||
-    normalized.includes('mueve') ||
-    normalized.includes('actualiza')
+    (
+      planningVerbPattern.test(normalized)
+      && (
+        planningTargetPattern.test(normalized)
+        || weekDayPattern.test(normalized)
+      )
+    )
+    || /\b(plan\s+semanal|plan\s+para\s+esta\s+semana)\b/.test(normalized)
   ) {
-    return 'adjust_session'
+    return 'plan_week'
   }
 
   return 'general_chat'
@@ -170,7 +177,7 @@ function trimAthleteMemory(memory?: string): string | undefined {
   return clipText(memory.trim(), MAX_ATHLETE_MEMORY_CHARS)
 }
 
-function inferRequestClassFromIntent(intent: ChatContext['intent'] | undefined): AIRequestClass {
+export function inferRequestClassFromIntent(intent: ChatContext['intent'] | undefined): AIRequestClass {
   switch (intent) {
     case 'plan_week':
     case 'adjust_session':

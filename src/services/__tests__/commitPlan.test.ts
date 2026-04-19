@@ -27,10 +27,12 @@ const trainingStoreState = {
 const athleteProfileState = {
   athleteProfile: {
     id: 'athlete-1',
-    firstName: 'Rafa',
+    updatedAt: 1,
+    name: 'Rafa',
     primarySport: 'squash',
-    plan: {
-      allowedSports: ['squash', 'running', 'strength'],
+    sportContext: {
+      enabledSports: ['squash', 'running', 'strength'],
+      primarySport: 'squash',
     },
   } as AthleteProfile,
 }
@@ -371,7 +373,7 @@ describe('commitPlan', () => {
     ])
 
     expect(result.errors).toEqual(['Semana 2: fallo al guardar semana'])
-    expect(result.warnings).toContain('Se revirtieron 1 semanas aceptadas antes del fallo.')
+    expect(result.warnings).toContain('Se revirtieron 2 semanas afectadas antes o durante el fallo.')
     expect(result.acceptedWeeks).toEqual([])
     expect(sessionsById.has(originalSession.id)).toBe(true)
     expect(sessionsById.has('new-1')).toBe(false)

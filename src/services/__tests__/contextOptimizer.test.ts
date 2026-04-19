@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ChatContext, Session } from '../../types'
-import { optimizeChatContext } from '../ai/contextOptimizer'
+import { detectChatIntent, inferRequestClassFromIntent, optimizeChatContext } from '../ai/contextOptimizer'
 
 function makeSession(id: string, date: string, title: string): Session {
   return {
@@ -53,5 +53,17 @@ describe('contextOptimizer budgets by request class', () => {
 
     expect((summary.historicalSessions ?? []).length).toBeGreaterThanOrEqual((general.historicalSessions ?? []).length)
     expect((summary.weekDayLogs ?? []).length).toBeGreaterThanOrEqual((general.weekDayLogs ?? []).length)
+  })
+
+  it('detects broader plan and summary intents from chat phrasing', () => {
+    expect(detectChatIntent('Hazme un plan para esta semana')).toBe('plan_week')
+    expect(detectChatIntent('Armame el lunes con algo liviano')).toBe('plan_week')
+    expect(detectChatIntent('Resumeme la semana y dejame un balance corto')).toBe('weekly_summary')
+  })
+
+  it('maps weekly summary intent to the matching request class', () => {
+    expect(inferRequestClassFromIntent('weekly_summary')).toBe('weekly_summary')
+    expect(inferRequestClassFromIntent('plan_week')).toBe('chat_action')
+    expect(inferRequestClassFromIntent('general_chat')).toBe('chat_general')
   })
 })

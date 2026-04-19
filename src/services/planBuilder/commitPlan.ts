@@ -128,6 +128,7 @@ export async function commitPlan(
   for (const week of orderedWeeks) {
     const snapshot = await captureWeekCommitSnapshot(week)
     try {
+      appliedSnapshots.push(snapshot)
       const result = await applyCreateWeek({
         sessions: week.sessions,
         weekObjectives: week.weekObjectives.map((objective) => objective.goal),
@@ -136,7 +137,6 @@ export async function commitPlan(
       })
       warnings.push(...result.warnings)
       acceptedWeeks.push(week.weekIndex)
-      appliedSnapshots.push(snapshot)
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error)
       errors.push(`Semana ${week.weekIndex + 1}: ${msg}`)
@@ -148,7 +148,7 @@ export async function commitPlan(
   if (errors.length > 0) {
     if (appliedSnapshots.length > 0) {
       await restoreWeekCommitSnapshots(appliedSnapshots)
-      warnings.push(`Se revirtieron ${appliedSnapshots.length} semanas aceptadas antes del fallo.`)
+      warnings.push(`Se revirtieron ${appliedSnapshots.length} semanas afectadas antes o durante el fallo.`)
       acceptedWeeks.length = 0
     }
   }

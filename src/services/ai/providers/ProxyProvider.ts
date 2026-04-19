@@ -11,12 +11,16 @@
  *      → levanta Vite + Functions en localhost:8888
  */
 
-import type { AIProvider, AIRequest, AIRawResponse } from '../types'
-import { createProviderError } from '../types'
+import type { AIProvider, AIRequest, AIRawResponse, AIErrorCode } from '../types'
+import { AIProviderError, createProviderError } from '../types'
 import type { AIProviderName, AIRequestClass } from '../../../types'
 import { getAIRequestPolicy } from '../requestPolicy'
 
 const FUNCTION_URL = '/.netlify/functions/coach'
+type ProxyErrorPayload = {
+  error?: string
+  errorCode?: AIErrorCode
+}
 
 export class ProxyProvider implements AIProvider {
   // El servidor retorna el proveedor real en la respuesta (ej: 'gemini').
@@ -29,10 +33,8 @@ export class ProxyProvider implements AIProvider {
     const policy = getAIRequestPolicy(request.requestClass)
     const controller = new AbortController()
     const timeoutId = window.setTimeout(() => controller.abort(), policy.timeoutMs + 2000)
-
-    let res: Response
     try {
-      res = await fetch(FUNCTION_URL, {
+      const res = await fetch(FUNCTION_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         signal: controller.signal,
@@ -48,7 +50,57 @@ export class ProxyProvider implements AIProvider {
           stream: Boolean(request.onChunk),
         }),
       })
-    } catch {
+
+      const contentType = res.headers.get('content-type') ?? ''
+      if (request.onChunk && (contentType.includes('text/event-stream') || contentType.includes('application/x-ndjson'))) {
+        return await this.readStreamingResponse(res, request, t0)
+      }
+
+      const data = await res.json().catch(() => ({})) as {
+        text?: string
+        provider?: string
+        model?: string
+        error?: string
+        errorCode?: AIErrorCode
+        traceId?: string
+        retryUsed?: boolean
+        fallbackUsed?: boolean
+        requestClass?: AIRequestClass
+        durationMs?: number
+      }
+
+      if (!res.ok) {
+        this.throwHttpError(res, data)
+      }
+
+      if (!data.text) {
+        throw createProviderError('gemini', 'parse_error', 'El servidor devolvió una respuesta vacía.')
+      }
+
+      // Usar el proveedor que retorna el servidor (puede ser gemini/openai/claude según AI_PROVIDER)
+      const provider = (data.provider ?? 'gemini') as AIProviderName
+
+      return {
+        text: data.text,
+        provider,
+        model: data.model,
+        raw: data,
+        durationMs: data.durationMs ?? Date.now() - t0,
+        traceId: data.traceId ?? request.traceId,
+        requestClass: request.requestClass,
+        retryUsed: data.retryUsed,
+        fallbackUsed: data.fallbackUsed,
+      }
+    } catch (error) {
+      if (error instanceof AIProviderError) throw error
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw createProviderError(
+          'gemini',
+          'timeout',
+          'El servidor del coach tardó demasiado en responder. Intenta de nuevo.',
+          true,
+        )
+      }
       throw createProviderError(
         'gemini',
         'timeout',
@@ -58,56 +110,6 @@ export class ProxyProvider implements AIProvider {
     } finally {
       window.clearTimeout(timeoutId)
     }
-
-    const contentType = res.headers.get('content-type') ?? ''
-    if (request.onChunk && (contentType.includes('text/event-stream') || contentType.includes('application/x-ndjson'))) {
-      return this.readStreamingResponse(res, request, t0)
-    }
-
-    const data = await res.json().catch(() => ({})) as {
-      text?: string
-      provider?: string
-      model?: string
-      error?: string
-      errorCode?: string
-      traceId?: string
-      retryUsed?: boolean
-      fallbackUsed?: boolean
-      requestClass?: AIRequestClass
-      durationMs?: number
-    }
-
-    if (!res.ok) {
-      if (res.status === 401 || res.status === 403) {
-        throw createProviderError('gemini', data.errorCode === 'misconfigured' ? 'misconfigured' : 'unauthorized', data.error ?? 'No autorizado por el servidor.')
-      }
-      if (res.status === 429) {
-        throw createProviderError('gemini', 'rate_limit', data.error ?? 'Demasiadas solicitudes. Intenta en unos minutos.', true)
-      }
-      if (res.status === 502 || res.status === 503 || res.status === 504) {
-        throw createProviderError('gemini', 'timeout', data.error ?? `El servidor tardó demasiado (${res.status}). Para planes largos, intenta por semanas individuales.`, true)
-      }
-      throw createProviderError('gemini', data.errorCode === 'server_error' ? 'server_error' : 'unknown', data.error ?? `Error del servidor (${res.status})`)
-    }
-
-    if (!data.text) {
-      throw createProviderError('gemini', 'parse_error', 'El servidor devolvió una respuesta vacía.')
-    }
-
-    // Usar el proveedor que retorna el servidor (puede ser gemini/openai/claude según AI_PROVIDER)
-    const provider = (data.provider ?? 'gemini') as AIProviderName
-
-    return {
-      text: data.text,
-      provider,
-      model: data.model,
-      raw: data,
-      durationMs: data.durationMs ?? Date.now() - t0,
-      traceId: data.traceId ?? request.traceId,
-      requestClass: request.requestClass,
-      retryUsed: data.retryUsed,
-      fallbackUsed: data.fallbackUsed,
-    }
   }
 
   private async readStreamingResponse(
@@ -115,9 +117,13 @@ export class ProxyProvider implements AIProvider {
     request: AIRequest,
     t0: number,
   ): Promise<AIRawResponse> {
-    if (!res.ok || !res.body) {
-      const data = await res.json().catch(() => ({})) as { error?: string }
-      throw createProviderError('gemini', 'timeout', data.error ?? `El servidor tardó demasiado (${res.status}).`, true)
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({})) as ProxyErrorPayload
+      this.throwHttpError(res, data)
+    }
+
+    if (!res.body) {
+      throw createProviderError('gemini', 'parse_error', 'El servidor devolvió un stream vacío.')
     }
 
     const reader = res.body.getReader()
@@ -149,7 +155,7 @@ export class ProxyProvider implements AIProvider {
             retryUsed?: boolean
             fallbackUsed?: boolean
             error?: string
-            errorCode?: string
+            errorCode?: AIErrorCode
             traceId?: string
           }
 
@@ -169,7 +175,7 @@ export class ProxyProvider implements AIProvider {
           }
 
           if (event.type === 'error') {
-            throw createProviderError('gemini', (event.errorCode as 'timeout' | 'server_error' | 'unknown' | undefined) ?? 'unknown', event.error ?? 'Streaming falló.')
+            throw createProviderError('gemini', event.errorCode ?? 'unknown', event.error ?? 'Streaming falló.')
           }
         } catch (error) {
           if (error instanceof Error && error.name === 'AIProviderError') throw error
@@ -191,5 +197,35 @@ export class ProxyProvider implements AIProvider {
       retryUsed,
       fallbackUsed,
     }
+  }
+
+  private throwHttpError(res: Response, data: ProxyErrorPayload): never {
+    const message = data.error ?? `Error del servidor (${res.status}).`
+
+    if (res.status === 401 || res.status === 403) {
+      throw createProviderError('gemini', data.errorCode === 'misconfigured' ? 'misconfigured' : 'unauthorized', message)
+    }
+
+    if (res.status === 429 || data.errorCode === 'rate_limit') {
+      throw createProviderError('gemini', 'rate_limit', message, true)
+    }
+
+    if (res.status === 502 || res.status === 503 || res.status === 504 || data.errorCode === 'timeout') {
+      throw createProviderError('gemini', 'timeout', message, true)
+    }
+
+    if (data.errorCode === 'misconfigured') {
+      throw createProviderError('gemini', 'misconfigured', message)
+    }
+
+    if (data.errorCode === 'unauthorized') {
+      throw createProviderError('gemini', 'unauthorized', message)
+    }
+
+    if (res.status >= 500 || data.errorCode === 'server_error') {
+      throw createProviderError('gemini', 'server_error', message)
+    }
+
+    throw createProviderError('gemini', data.errorCode ?? 'unknown', message)
   }
 }

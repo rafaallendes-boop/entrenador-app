@@ -18,6 +18,7 @@ describe('CoachEngine recovery heuristics', () => {
   it('detects create_week intent from common plan-generation prompts', () => {
     expect(inferCoachActionIntent('Creame una semana para la proxima semana')).toBe('create_week')
     expect(inferCoachActionIntent('Hazme el plan de entrenamiento')).toBe('create_week')
+    expect(inferCoachActionIntent('Armame el lunes con running suave')).toBe('create_week')
   })
 
   it('detects modify intent from week-adjustment prompts', () => {

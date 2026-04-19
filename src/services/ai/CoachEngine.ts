@@ -186,10 +186,6 @@ async function sendWithRecovery(
   const firstRaw = await provider.call(request)
   const firstNormalized = normalizeResponse(firstRaw)
 
-  if (firstNormalized.retryUsed || firstNormalized.fallbackUsed) {
-    return firstNormalized
-  }
-
   if (!shouldRetry(firstNormalized, actionIntent)) {
     return firstNormalized
   }
@@ -222,6 +218,7 @@ IMPORTANTE DE FORMATO:
   return {
     ...retryNormalized,
     retryUsed: true,
+    fallbackUsed: retryNormalized.fallbackUsed || firstNormalized.fallbackUsed,
     meta: {
       hadActionsMarkup: retryNormalized.meta?.hadActionsMarkup ?? false,
       actionParseFailed: retryNormalized.meta?.actionParseFailed ?? false,
@@ -234,6 +231,9 @@ IMPORTANTE DE FORMATO:
 
 export function inferCoachActionIntent(userMessage: string): CoachActionIntent {
   const normalized = userMessage.trim().toLowerCase()
+  const weekDayPattern = /\b(lunes|martes|miercoles|miércoles|jueves|viernes|sabado|sábado|domingo|hoy|mañana|manana)\b/
+  const creationVerbPattern = /\b(crea(?:r|me)?|haz(?:me)?|arma(?:me)?|genera(?:r)?|planifica(?:r)?|propuesta)\b/
+  const modificationVerbPattern = /\b(ajusta(?:r)?|reordena(?:r)?|mueve|cambia|agrega|quita|sube|baja|reduce|simplifica|reemplaza|incorpora)\b/
   if (!normalized) return 'none'
 
   if (
@@ -244,15 +244,21 @@ export function inferCoachActionIntent(userMessage: string): CoachActionIntent {
   }
 
   if (
-    /\b(crea(?:r|me)?|haz(?:me)?|arma(?:me)?|genera(?:r)?|planifica(?:r)?|propuesta)\b/.test(normalized) &&
-    /\b(semana|plan|microciclo)\b/.test(normalized)
+    creationVerbPattern.test(normalized) &&
+    (
+      /\b(semana|plan|microciclo)\b/.test(normalized)
+      || weekDayPattern.test(normalized)
+    )
   ) {
     return 'create_week'
   }
 
   if (
-    /\b(ajusta(?:r)?|reordena(?:r)?|mueve|cambia|agrega|quita|sube|baja|reduce|simplifica|reemplaza|incorpora)\b/.test(normalized) &&
-    /\b(semana|sesion|sesión|plan|carga|running|squash|fuerza|cycling|ciclismo|movilidad)\b/.test(normalized)
+    modificationVerbPattern.test(normalized) &&
+    (
+      /\b(semana|sesion|sesión|plan|carga|running|squash|fuerza|cycling|ciclismo|movilidad)\b/.test(normalized)
+      || weekDayPattern.test(normalized)
+    )
   ) {
     return 'modify_plan'
   }

@@ -24,6 +24,7 @@ export function generateDefaultProtocols(
 ): Pick<Session, 'warmup' | 'cooldown'> {
   const sessionLike = {
     date: inputs.dayLog?.date ?? new Date().toISOString().slice(0, 10),
+    timeBlock: 'AM' as const,
     type: context.type,
     subtype: context.subtype,
     rpe: context.rpe,

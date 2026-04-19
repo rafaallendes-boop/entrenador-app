@@ -73,6 +73,8 @@ const REQUEST_TIMEOUTS: Record<RequestClass, number> = {
   plan_builder_pair: 45000,
   import_extract: 20000,
 }
+const MAX_FUNCTION_WALLCLOCK_MS = 24000
+const MIN_PROVIDER_ATTEMPT_MS = 4000
 
 const JSON_HEADERS = { 'Content-Type': 'application/json' }
 const STREAM_HEADERS = {
@@ -128,6 +130,32 @@ function normalizeError(error: unknown): NormalizedServerError {
     return makeError(message, 504, 'timeout', true)
   }
   return makeError(message, 500, err.errorCode ?? 'server_error')
+}
+
+function parseProviderName(value: string | undefined, envName: string): ProviderName | undefined {
+  const normalized = value?.trim().toLowerCase()
+  if (!normalized) return undefined
+  if (normalized === 'gemini' || normalized === 'openai' || normalized === 'claude') {
+    return normalized
+  }
+  throw makeError(
+    `Configuracion invalida: ${envName}=${value}. Usa gemini, openai o claude.`,
+    500,
+    'misconfigured',
+  )
+}
+
+function computeAttemptTimeoutMs(deadline: number, attemptsRemaining: number): number {
+  const remainingBudget = deadline - Date.now()
+  if (remainingBudget <= 0) {
+    throw makeError('Se agotó el presupuesto total de tiempo del request.', 504, 'timeout', true)
+  }
+
+  const fairShare = Math.floor(remainingBudget / attemptsRemaining)
+  return Math.max(
+    1000,
+    Math.min(remainingBudget, Math.max(MIN_PROVIDER_ATTEMPT_MS, fairShare)),
+  )
 }
 
 async function fetchJsonOrThrow(res: Response): Promise<unknown> {
@@ -397,12 +425,14 @@ async function readSseStream(
 }
 
 function resolveModel(provider: ProviderName): string {
-  return (
-    (provider === 'gemini' ? process.env['GEMINI_MODEL'] : undefined) ??
-    (provider === 'openai' ? process.env['OPENAI_MODEL'] : undefined) ??
-    (provider === 'claude' ? process.env['CLAUDE_MODEL'] : undefined) ??
-    DEFAULT_MODELS[provider]
-  )
+  switch (provider) {
+    case 'gemini':
+      return process.env['GEMINI_MODEL'] ?? DEFAULT_MODELS.gemini
+    case 'openai':
+      return process.env['OPENAI_MODEL'] ?? DEFAULT_MODELS.openai
+    case 'claude':
+      return process.env['CLAUDE_MODEL'] ?? DEFAULT_MODELS.claude
+  }
 }
 
 function resolveApiKey(provider: ProviderName): string {
@@ -426,22 +456,26 @@ async function invokeProvider(
   const model = resolveModel(provider)
   const key = resolveApiKey(provider)
 
-  if (provider === 'gemini') {
-    const result = onChunk
-      ? await streamGemini(req, key, model, signal, onChunk)
-      : await callGemini(req, key, model, signal)
-    return { ...result, provider }
+  switch (provider) {
+    case 'gemini': {
+      const result = onChunk
+        ? await streamGemini(req, key, model, signal, onChunk)
+        : await callGemini(req, key, model, signal)
+      return { ...result, provider }
+    }
+    case 'openai': {
+      const result = onChunk
+        ? await streamOpenAI(req, key, model, signal, onChunk)
+        : await callOpenAI(req, key, model, signal)
+      return { ...result, provider }
+    }
+    case 'claude': {
+      const result = onChunk
+        ? await streamClaude(req, key, model, signal, onChunk)
+        : await callClaude(req, key, model, signal)
+      return { ...result, provider }
+    }
   }
-  if (provider === 'openai') {
-    const result = onChunk
-      ? await streamOpenAI(req, key, model, signal, onChunk)
-      : await callOpenAI(req, key, model, signal)
-    return { ...result, provider }
-  }
-  const result = onChunk
-    ? await streamClaude(req, key, model, signal, onChunk)
-    : await callClaude(req, key, model, signal)
-  return { ...result, provider }
 }
 
 async function executeWithPolicy(
@@ -451,16 +485,20 @@ async function executeWithPolicy(
   const requestClass = normalizeRequestClass(req.requestClass)
   const traceId = req.traceId ?? `srv-${Date.now()}`
   const startedAt = Date.now()
-  const primary = ((process.env['AI_PROVIDER'] ?? 'gemini').toLowerCase()) as ProviderName
-  const fallback = ((process.env['AI_FALLBACK_PROVIDER'] ?? '').toLowerCase() || undefined) as ProviderName | undefined
+  const primary = parseProviderName(process.env['AI_PROVIDER'] ?? 'gemini', 'AI_PROVIDER') ?? 'gemini'
+  const fallback = parseProviderName(process.env['AI_FALLBACK_PROVIDER'], 'AI_FALLBACK_PROVIDER')
   const timeoutMs = REQUEST_TIMEOUTS[requestClass]
+  const totalBudgetMs = Math.min(timeoutMs, MAX_FUNCTION_WALLCLOCK_MS)
+  const deadline = startedAt + totalBudgetMs
+  const maxAttempts = req.allowFallback && fallback && fallback !== primary ? 3 : 2
   let retryUsed = false
   let fallbackUsed = false
   let partialChunks = false
 
-  const runAttempt = async (provider: ProviderName) => {
+  const runAttempt = async (provider: ProviderName, attemptsRemaining: number) => {
+    const attemptTimeoutMs = computeAttemptTimeoutMs(deadline, attemptsRemaining)
     const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
+    const timeoutId = setTimeout(() => controller.abort(), attemptTimeoutMs)
     try {
       return await invokeProvider(
         provider,
@@ -473,7 +511,7 @@ async function executeWithPolicy(
       )
     } catch (error) {
       if ((error as Error).name === 'AbortError') {
-        throw makeError(`Timeout del proveedor ${provider}.`, 504, 'timeout', true)
+        throw makeError(`Timeout del proveedor ${provider} (${attemptTimeoutMs}ms).`, 504, 'timeout', true)
       }
       throw normalizeError(error)
     } finally {
@@ -482,7 +520,7 @@ async function executeWithPolicy(
   }
 
   try {
-    const first = await runAttempt(primary)
+    const first = await runAttempt(primary, maxAttempts)
     return {
       ...first,
       traceId,
@@ -498,7 +536,7 @@ async function executeWithPolicy(
   }
 
   try {
-    const second = await runAttempt(primary)
+    const second = await runAttempt(primary, maxAttempts - 1)
     return {
       ...second,
       traceId,
@@ -515,7 +553,7 @@ async function executeWithPolicy(
     fallbackUsed = true
   }
 
-  const fallbackResult = await runAttempt(fallback!)
+  const fallbackResult = await runAttempt(fallback!, 1)
   return {
     ...fallbackResult,
     traceId,
