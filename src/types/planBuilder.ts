@@ -1,3 +1,4 @@
+import type { AIRequestClass } from './index'
 import type {
   CoachSessionProposal,
   MacroPlan,
@@ -29,6 +30,8 @@ export interface PlanWeekObjective {
 export interface PlanGenerationMeta {
   provider?: string
   model?: string
+  requestClass?: AIRequestClass
+  traceId?: string
   promptTokens?: number
   completionTokens?: number
   attempts: number
@@ -36,6 +39,8 @@ export interface PlanGenerationMeta {
   lastAttemptAt?: number
   durationMs?: number
   chunkCount?: number
+  retryUsed?: boolean
+  fallbackUsed?: boolean
   strategy?: 'single' | 'pairs'
   batchId?: string
   rawSessionCount?: number

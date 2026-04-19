@@ -2,6 +2,36 @@
 
 /** Which AI provider generated a coach response. */
 export type AIProviderName = 'claude' | 'openai' | 'mock' | 'gemini'
+export type AIRequestClass =
+  | 'chat_general'
+  | 'chat_action'
+  | 'weekly_summary'
+  | 'plan_builder_week'
+  | 'plan_builder_pair'
+  | 'import_extract'
+
+export type AITechnicalSurface =
+  | 'chat'
+  | 'weekly_summary'
+  | 'plan_builder'
+  | 'import'
+
+export interface AITechnicalResult {
+  traceId: string
+  surface: AITechnicalSurface
+  requestClass: AIRequestClass
+  provider?: AIProviderName
+  model?: string
+  durationMs?: number
+  status: 'started' | 'streaming' | 'completed' | 'failed'
+  errorCode?: string
+  retryUsed?: boolean
+  fallbackUsed?: boolean
+  proposalCreated?: boolean
+  firstChunkAt?: number
+  startedAt: number
+  completedAt?: number
+}
 
 // ─── Session types ────────────────────────────────────────────────────────────
 

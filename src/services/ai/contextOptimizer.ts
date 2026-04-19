@@ -1,4 +1,4 @@
-import type { ChatContext, DayLog, Session } from '../../types'
+import type { AIRequestClass, ChatContext, DayLog, Session } from '../../types'
 import { todayISO } from '../../utils/date'
 
 const DEFAULT_MAX_RECENT_MESSAGES = 8
@@ -9,8 +9,8 @@ const DEFAULT_MAX_WEEK_LOGS = 5
 const DEFAULT_MAX_WEEK_LOG_CHARS = 900
 const MAX_ATHLETE_MEMORY_CHARS = 500
 
-export function optimizeChatContext(context: ChatContext): ChatContext {
-  const budget = getBudget(context.intent)
+export function optimizeChatContext(context: ChatContext, requestClass?: AIRequestClass): ChatContext {
+  const budget = getBudget(requestClass ?? inferRequestClassFromIntent(context.intent))
   const plannedSessions = trimPlannedSessions(
     context.plannedSessions ?? inferPlannedSessions(context.recentSessions),
     budget.maxPlannedSessionLines,
@@ -112,9 +112,9 @@ function trimPlannedSessions(
     if (seen.has(session.id)) continue
     const cost = estimateSessionCost(session)
     if (selected.length > 0 && usedChars + cost > maxSessionChars) break
-      selected.push(session)
-      seen.add(session.id)
-      usedChars += cost
+    selected.push(session)
+    seen.add(session.id)
+    usedChars += cost
   }
 
   return selected
@@ -170,29 +170,41 @@ function trimAthleteMemory(memory?: string): string | undefined {
   return clipText(memory.trim(), MAX_ATHLETE_MEMORY_CHARS)
 }
 
-function getBudget(intent: ChatContext['intent']) {
+function inferRequestClassFromIntent(intent: ChatContext['intent'] | undefined): AIRequestClass {
   switch (intent) {
     case 'plan_week':
+    case 'adjust_session':
+      return 'chat_action'
+    case 'weekly_summary':
+      return 'weekly_summary'
+    default:
+      return 'chat_general'
+  }
+}
+
+function getBudget(requestClass: AIRequestClass) {
+  switch (requestClass) {
+    case 'chat_action':
       return {
         maxRecentMessages: 4,
         maxRecentMessageChars: 700,
-        maxPlannedSessionLines: 10,
-        maxPlannedSessionChars: 2200,
-        maxHistoricalSessionLines: 10,
-        maxHistoricalSessionChars: 2600,
-        maxWeekLogs: 4,
-        maxWeekLogChars: 700,
+        maxPlannedSessionLines: 6,
+        maxPlannedSessionChars: 1600,
+        maxHistoricalSessionLines: 6,
+        maxHistoricalSessionChars: 1600,
+        maxWeekLogs: 2,
+        maxWeekLogChars: 420,
       }
-    case 'adjust_session':
+    case 'chat_general':
       return {
-        maxRecentMessages: 6,
-        maxRecentMessageChars: 1000,
-        maxPlannedSessionLines: 8,
-        maxPlannedSessionChars: 1800,
-        maxHistoricalSessionLines: 8,
-        maxHistoricalSessionChars: 1800,
-        maxWeekLogs: 3,
-        maxWeekLogChars: 520,
+        maxRecentMessages: 4,
+        maxRecentMessageChars: 680,
+        maxPlannedSessionLines: 4,
+        maxPlannedSessionChars: 1000,
+        maxHistoricalSessionLines: 4,
+        maxHistoricalSessionChars: 1000,
+        maxWeekLogs: 1,
+        maxWeekLogChars: 260,
       }
     case 'weekly_summary':
       return {
@@ -202,17 +214,50 @@ function getBudget(intent: ChatContext['intent']) {
         maxPlannedSessionChars: 2200,
         maxHistoricalSessionLines: 12,
         maxHistoricalSessionChars: 2600,
-        maxWeekLogs: 7,
-        maxWeekLogChars: 1300,
+        maxWeekLogs: 4,
+        maxWeekLogChars: 1200,
+      }
+    case 'plan_builder_week':
+      return {
+        maxRecentMessages: 0,
+        maxRecentMessageChars: 0,
+        maxPlannedSessionLines: DEFAULT_MAX_SESSION_LINES - 4,
+        maxPlannedSessionChars: 1800,
+        maxHistoricalSessionLines: DEFAULT_MAX_SESSION_LINES - 4,
+        maxHistoricalSessionChars: 1800,
+        maxWeekLogs: 2,
+        maxWeekLogChars: 420,
+      }
+    case 'plan_builder_pair':
+      return {
+        maxRecentMessages: 0,
+        maxRecentMessageChars: 0,
+        maxPlannedSessionLines: DEFAULT_MAX_SESSION_LINES,
+        maxPlannedSessionChars: 2600,
+        maxHistoricalSessionLines: DEFAULT_MAX_SESSION_LINES - 2,
+        maxHistoricalSessionChars: 2200,
+        maxWeekLogs: 2,
+        maxWeekLogChars: 420,
+      }
+    case 'import_extract':
+      return {
+        maxRecentMessages: 0,
+        maxRecentMessageChars: 0,
+        maxPlannedSessionLines: 0,
+        maxPlannedSessionChars: 0,
+        maxHistoricalSessionLines: 0,
+        maxHistoricalSessionChars: 0,
+        maxWeekLogs: 0,
+        maxWeekLogChars: 0,
       }
     default:
       return {
         maxRecentMessages: DEFAULT_MAX_RECENT_MESSAGES,
         maxRecentMessageChars: DEFAULT_MAX_RECENT_MESSAGE_CHARS,
-        maxPlannedSessionLines: DEFAULT_MAX_SESSION_LINES,
-        maxPlannedSessionChars: DEFAULT_MAX_SESSION_CHARS,
-        maxHistoricalSessionLines: DEFAULT_MAX_SESSION_LINES,
-        maxHistoricalSessionChars: DEFAULT_MAX_SESSION_CHARS,
+        maxPlannedSessionLines: DEFAULT_MAX_SESSION_LINES - 4,
+        maxPlannedSessionChars: DEFAULT_MAX_SESSION_CHARS - 1400,
+        maxHistoricalSessionLines: DEFAULT_MAX_SESSION_LINES - 4,
+        maxHistoricalSessionChars: DEFAULT_MAX_SESSION_CHARS - 1400,
         maxWeekLogs: DEFAULT_MAX_WEEK_LOGS,
         maxWeekLogChars: DEFAULT_MAX_WEEK_LOG_CHARS,
       }

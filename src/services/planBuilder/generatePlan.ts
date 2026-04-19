@@ -6,6 +6,7 @@ import { MockProvider } from '../ai/providers/MockProvider'
 import { ProxyProvider } from '../ai/providers/ProxyProvider'
 import type { AthleteProfile, CoachAction, PlanWizardConfig } from '../../types'
 import type { TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
+import { buildAITraceId, getAIRequestPolicy } from '../ai/requestPolicy'
 import { normalizeResponse } from '../ai/responseNormalizer'
 import {
   filterSessionsToWeek,
@@ -89,6 +90,7 @@ function createWeekBatchChunkRouter(
 
 function resolveStrategy(input: GeneratePlanWeeksInput): 'single' | 'pairs' {
   if (input.strategy) return input.strategy
+  if (import.meta.env.PROD) return 'single'
   if (input.weeks.length >= 8 || input.plan.totalWeeks >= 8) return 'pairs'
   return 'single'
 }
@@ -117,9 +119,13 @@ function makeResolvedWeek(
     attempts: number
     provider: string
     model?: string
+    requestClass?: 'plan_builder_week' | 'plan_builder_pair'
+    traceId?: string
     lastError?: string
     durationMs?: number
     chunkCount?: number
+    retryUsed?: boolean
+    fallbackUsed?: boolean
     strategy: 'single' | 'pairs'
     batchId?: string
     rawSessionCount?: number
@@ -138,10 +144,14 @@ function makeResolvedWeek(
       attempts: (week.generationMeta.attempts ?? 0) + input.attempts,
       provider: input.provider,
       model: input.model,
+      requestClass: input.requestClass,
+      traceId: input.traceId,
       lastError: input.lastError,
       lastAttemptAt: nowTs,
       durationMs: input.durationMs,
       chunkCount: input.chunkCount,
+      retryUsed: input.retryUsed,
+      fallbackUsed: input.fallbackUsed,
       strategy: input.strategy,
       batchId: input.batchId,
       rawSessionCount: input.rawSessionCount,
@@ -259,19 +269,27 @@ async function generateWeekPair(
   meta: {
     provider: string
     model?: string
+    traceId: string
     durationMs?: number
     chunkCount: number
+    retryUsed?: boolean
+    fallbackUsed?: boolean
     lastError?: string
     batchId: string
     degradeToSingle: boolean
   }
 }> {
   const batchId = createBatchId(weeks[0].weekIndex)
+  const requestClass = 'plan_builder_pair' as const
+  const traceId = buildAITraceId(requestClass)
+  const policy = getAIRequestPolicy(requestClass)
   let chunkCount = 0
   const chunkRouter = createWeekBatchChunkRouter(weeks, onChunk)
 
   try {
     const raw = await provider.call({
+      requestClass,
+      traceId,
       systemPrompt: buildWeekBatchSystemPrompt(),
       userMessage: buildWeekBatchUserPrompt({
         plan,
@@ -280,8 +298,9 @@ async function generateWeekPair(
         profile,
         wizardConfig,
       }),
-      maxTokens: 5500,
-      temperature: 0.35,
+      maxTokens: policy.maxTokens,
+      temperature: policy.temperature,
+      allowFallback: policy.allowFallback,
       onChunk: (chunk) => {
         chunkCount += 1
         chunkRouter.push(chunk)
@@ -327,8 +346,11 @@ async function generateWeekPair(
       meta: {
         provider: provider.name,
         model: raw.model,
+        traceId: raw.traceId,
         durationMs: raw.durationMs,
         chunkCount,
+        retryUsed: raw.retryUsed,
+        fallbackUsed: raw.fallbackUsed,
         batchId,
         degradeToSingle,
       },
@@ -343,6 +365,7 @@ async function generateWeekPair(
       })),
       meta: {
         provider: provider.name,
+        traceId,
         chunkCount,
         lastError: message,
         batchId,
@@ -400,8 +423,12 @@ export async function generatePlanWeeks(input: GeneratePlanWeeksInput): Promise<
             attempts: 1,
             provider: batchResult.meta.provider,
             model: batchResult.meta.model,
+            requestClass: 'plan_builder_pair',
+            traceId: batchResult.meta.traceId,
             durationMs: batchResult.meta.durationMs,
             chunkCount: batchResult.meta.chunkCount,
+            retryUsed: batchResult.meta.retryUsed,
+            fallbackUsed: batchResult.meta.fallbackUsed,
             strategy: 'pairs',
             batchId: batchResult.meta.batchId,
             rawSessionCount: batchWeekResult.rawSessionCount,

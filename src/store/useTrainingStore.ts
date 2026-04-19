@@ -253,8 +253,8 @@ export const useTrainingStore = create<TrainingState>((set, get) => ({
           athleteMemory: athleteProfile?.coachMemory,
           athleteProfile: athleteProfile ?? undefined,
           intent: 'weekly_summary',
-        }),
-        { maxTokens: 700, temperature: 0.4 },
+        }, 'weekly_summary'),
+        { maxTokens: 700, temperature: 0.4, requestClass: 'weekly_summary', surface: 'weekly_summary' },
       )
 
       const summary = await upsertWeekSummary(weekStart, { coachNote: response.message })

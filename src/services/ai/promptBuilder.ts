@@ -11,7 +11,7 @@
  * This file orchestrates sections and builds the final system prompt.
  */
 
-import type { ChatContext, Session, SupportedSport } from '../../types'
+import type { AIRequestClass, ChatContext, Session, SupportedSport } from '../../types'
 import { isCompetitionSquashMatch } from '../../utils/squash'
 import { todayISO, currentWeekStartISO } from '../../utils/date'
 import {
@@ -86,7 +86,11 @@ import {
 } from './promptModules'
 // ─── Entry point ──────────────────────────────────────────────────────────
 
-export function buildCoachSystemPrompt(context: ChatContext): string {
+export function buildCoachSystemPrompt(
+  context: ChatContext,
+  options?: { requestClass?: AIRequestClass },
+): string {
+  const requestClass = options?.requestClass ?? 'chat_action'
   const plannedSessions = getPlannedSessions(context)
   const squashSummary = buildSquashSelectionSummary(context)
   const strengthSummary = buildStrengthSelectionSummary(context)
@@ -94,13 +98,21 @@ export function buildCoachSystemPrompt(context: ChatContext): string {
   const cyclingSummary = buildCyclingSelectionSummary(context)
   const mobilitySummary = buildMobilitySelectionSummary(context)
 
-  const sections: string[] = [
+  const commonSections: string[] = [
     buildPersonaSection(context),
     buildAthleteProfileSection(context),
     buildMacroPlanSection(context),
     buildPlanWizardSection(context),
     buildCoachMemorySection(context),
     buildFatigueSection(context),
+    buildNutritionContextSection(context),
+    buildWeekSection(context),
+    buildSessionsSection(plannedSessions),
+    buildWeekDayLogsSection(context),
+    buildTodaySection(context),
+  ]
+
+  const actionSections: string[] = [
     buildHybridSection(context),
     buildCompetitionSection(context),
     buildCompetitionLoadSection(context),
@@ -114,14 +126,31 @@ export function buildCoachSystemPrompt(context: ChatContext): string {
     buildDynamicMobilitySelectionSectionV2(context, mobilitySummary),
     buildStrengthProgressionSection(context),
     buildSessionFeedbackSection(context.historicalSessions),
-    buildNutritionContextSection(context),
-    buildWeekSection(context),
-    buildSessionsSection(plannedSessions),
-    buildWeekDayLogsSection(context),
-    buildTodaySection(context),
     buildResponseInstructionsSection(plannedSessions, context, squashSummary, strengthSummary, cyclingSummary, mobilitySummary),
   ]
+
+  const sections: string[] = requestClass === 'chat_general'
+    ? [
+        ...commonSections,
+        buildGeneralChatResponseInstructionsSection(context),
+      ]
+    : [
+        ...commonSections,
+        ...actionSections,
+      ]
+
   return sections.filter(Boolean).join('\n\n')
+}
+
+function buildGeneralChatResponseInstructionsSection(context: ChatContext): string {
+  return `═══ INSTRUCCIONES DE CHAT GENERAL ═══
+
+- Responde como coach práctico y directo.
+- Prioriza claridad por sobre exhaustividad.
+- No inventes acciones si el usuario solo está preguntando o reflexionando.
+- Si el usuario pide explícitamente crear o ajustar el plan, entonces responde con acciones estructuradas.
+- Si falta contexto, asume algo razonable y dilo en una frase.
+- Deportes permitidos por la planificación actual: ${getAllowedPlanningSports(context.athleteProfile).join(', ') || 'sin restricción explícita'}.`
 }
 
 // ─── Persona & rules section ────────────────────────────────────────────────

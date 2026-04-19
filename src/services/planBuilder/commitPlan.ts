@@ -1,12 +1,13 @@
 import { addDays } from 'date-fns'
-import type { CoachAction, CoachProposal, Session, WeekSummary } from '../../types'
+import type { Session, WeekSummary } from '../../types'
 import type { TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
 import { db } from '../../db/db'
 import { getWeekSummary } from '../../db/queries'
+import { useCoachMemoryStore } from '../../store/useCoachMemoryStore'
 import * as syncService from '../syncService'
-import { useCoachActionsStore } from '../../store/useCoachActionsStore'
 import { useTrainingStore } from '../../store/useTrainingStore'
 import { fromISO, toISO } from '../../utils/date'
+import { applyCreateWeek } from '../planning/applyCreateWeek'
 import { validatePlan } from './validator'
 
 export interface CommitPlanResult {
@@ -20,7 +21,6 @@ interface WeekCommitSnapshot {
   weekStartDate: string
   sessions: Session[]
   summary: WeekSummary | null
-  proposalId: string | null
 }
 
 function getWeekEndDate(weekStartDate: string): string {
@@ -39,28 +39,7 @@ async function captureWeekCommitSnapshot(week: TrainingPlanWeek): Promise<WeekCo
     weekStartDate: week.weekStartDate,
     sessions: sessions.map((session) => ({ ...session })),
     summary: summary ? { ...summary } : null,
-    proposalId: null,
   }
-}
-
-async function markProposalRolledBack(proposalId: string): Promise<void> {
-  const proposal = await db.coachProposals.get(proposalId)
-  if (!proposal) return
-
-  const rolledBackProposal: CoachProposal = {
-    ...proposal,
-    status: 'rejected',
-    resolvedAt: Date.now(),
-    metadata: proposal.metadata
-      ? { ...proposal.metadata, resolutionOutcome: 'rejected' }
-      : proposal.metadata,
-  }
-
-  await db.coachProposals.put(rolledBackProposal)
-  void syncService.pushCoachProposal(rolledBackProposal)
-  useCoachActionsStore.setState((state) => ({
-    proposals: state.proposals.map((item) => item.id === proposalId ? rolledBackProposal : item),
-  }))
 }
 
 async function restoreWeekCommitSnapshots(snapshots: WeekCommitSnapshot[]): Promise<void> {
@@ -93,10 +72,6 @@ async function restoreWeekCommitSnapshots(snapshots: WeekCommitSnapshot[]): Prom
       await db.weekSummaries.delete(currentSummary.id)
     }
 
-    if (snapshot.proposalId) {
-      await markProposalRolledBack(snapshot.proposalId)
-    }
-
     affectedWeekStarts.add(snapshot.weekStartDate)
   }
 
@@ -118,8 +93,7 @@ function describeWeekReadiness(week: TrainingPlanWeek): string | null {
 
 /**
  * Commits a draft TrainingPlan by expanding each generated week into real sessions.
- * Reuses the coach actions store to benefit from validation, protocol injection,
- * collision detection, and week summary recomputation.
+ * This path is plan-builder specific and no longer depends on the coach proposal lifecycle.
  */
 export async function commitPlan(
   plan: TrainingPlan,
@@ -128,7 +102,8 @@ export async function commitPlan(
   const errors: string[] = []
   const warnings: string[] = []
   const acceptedWeeks: number[] = []
-  const store = useCoachActionsStore.getState()
+  const trainingStore = useTrainingStore.getState()
+  const athleteProfile = useCoachMemoryStore.getState().athleteProfile
   const orderedWeeks = [...weeks].sort((a, b) => a.weekIndex - b.weekIndex)
   const readinessErrors = orderedWeeks
     .map(describeWeekReadiness)
@@ -152,29 +127,16 @@ export async function commitPlan(
 
   for (const week of orderedWeeks) {
     const snapshot = await captureWeekCommitSnapshot(week)
-    const action: CoachAction = {
-      type: 'create_week',
-      targetDate: week.weekStartDate,
-      sessions: week.sessions,
-      weekObjectives: week.weekObjectives.map((o) => o.goal),
-      reason: `Plan "${plan.title}" semana ${week.weekIndex + 1}/${plan.totalWeeks} (${week.phase})`,
-    }
     try {
-      const proposal = await store.addProposal(
-        `Plan Builder: semana ${week.weekIndex + 1} de ${plan.totalWeeks}`,
-        [action],
-        undefined,
-        { source: 'plan_builder' },
-      )
-      snapshot.proposalId = proposal.id
-      const result = await store.acceptProposal(proposal.id)
-      if (result.errors.length > 0) {
-        errors.push(...result.errors.map((err) => `Semana ${week.weekIndex + 1}: ${err}`))
-      } else {
-        acceptedWeeks.push(week.weekIndex)
-        appliedSnapshots.push(snapshot)
-      }
+      const result = await applyCreateWeek({
+        sessions: week.sessions,
+        weekObjectives: week.weekObjectives.map((objective) => objective.goal),
+        athleteProfile,
+        store: trainingStore,
+      })
       warnings.push(...result.warnings)
+      acceptedWeeks.push(week.weekIndex)
+      appliedSnapshots.push(snapshot)
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error)
       errors.push(`Semana ${week.weekIndex + 1}: ${msg}`)
@@ -183,10 +145,12 @@ export async function commitPlan(
     if (errors.length > 0) break
   }
 
-  if (errors.length > 0 && appliedSnapshots.length > 0) {
-    await restoreWeekCommitSnapshots(appliedSnapshots)
-    warnings.push(`Se revirtieron ${appliedSnapshots.length} semanas aceptadas antes del fallo.`)
-    acceptedWeeks.length = 0
+  if (errors.length > 0) {
+    if (appliedSnapshots.length > 0) {
+      await restoreWeekCommitSnapshots(appliedSnapshots)
+      warnings.push(`Se revirtieron ${appliedSnapshots.length} semanas aceptadas antes del fallo.`)
+      acceptedWeeks.length = 0
+    }
   }
 
   if (errors.length === 0) {

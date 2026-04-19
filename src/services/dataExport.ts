@@ -1169,6 +1169,8 @@ function optionalWeekGenerationMeta(value: unknown, path: string): TrainingPlanW
   return {
     provider: optionalString(row.provider, `${path}.provider`),
     model: optionalString(row.model, `${path}.model`),
+    requestClass: optionalString(row.requestClass, `${path}.requestClass`) as TrainingPlanWeek['generationMeta']['requestClass'],
+    traceId: optionalString(row.traceId, `${path}.traceId`),
     promptTokens: optionalFiniteNumber(row.promptTokens, `${path}.promptTokens`),
     completionTokens: optionalFiniteNumber(row.completionTokens, `${path}.completionTokens`),
     attempts: requireFiniteNumber(row.attempts, `${path}.attempts`),
@@ -1176,6 +1178,8 @@ function optionalWeekGenerationMeta(value: unknown, path: string): TrainingPlanW
     lastAttemptAt: optionalFiniteNumber(row.lastAttemptAt, `${path}.lastAttemptAt`),
     durationMs: optionalFiniteNumber(row.durationMs, `${path}.durationMs`),
     chunkCount: optionalFiniteNumber(row.chunkCount, `${path}.chunkCount`),
+    retryUsed: optionalBoolean(row.retryUsed, `${path}.retryUsed`),
+    fallbackUsed: optionalBoolean(row.fallbackUsed, `${path}.fallbackUsed`),
     strategy: optionalEnum(row.strategy, new Set(['single', 'pairs']), `${path}.strategy`) as TrainingPlanWeek['generationMeta']['strategy'],
     batchId: optionalString(row.batchId, `${path}.batchId`),
     rawSessionCount: optionalFiniteNumber(row.rawSessionCount, `${path}.rawSessionCount`),

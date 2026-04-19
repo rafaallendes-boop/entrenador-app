@@ -37,7 +37,7 @@ export class GeminiProvider implements AIProvider {
     })
 
     if (request.onChunk) {
-      return this.callStream(request.onChunk, body, apiKey, model, t0)
+      return this.callStream(request, body, apiKey, model, t0)
     }
 
     const url = `${BASE_URL}${model}:generateContent?key=${apiKey}`
@@ -61,11 +61,19 @@ export class GeminiProvider implements AIProvider {
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? ''
     if (!text) throw createProviderError('gemini', 'parse_error', 'La API de Gemini devolvió una respuesta vacía o inesperada.')
 
-    return { text, provider: 'gemini', model, raw: data, durationMs: Date.now() - t0 }
+    return {
+      text,
+      provider: 'gemini',
+      model,
+      raw: data,
+      durationMs: Date.now() - t0,
+      traceId: request.traceId,
+      requestClass: request.requestClass,
+    }
   }
 
   private async callStream(
-    onChunk: (chunk: string) => void,
+    request: AIRequest,
     body: string,
     apiKey: string,
     model: string,
@@ -107,13 +115,20 @@ export class GeminiProvider implements AIProvider {
         try {
           const data = JSON.parse(jsonStr) as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> }
           const chunk = data.candidates?.[0]?.content?.parts?.[0]?.text ?? ''
-          if (chunk) { fullText += chunk; onChunk(chunk) }
+          if (chunk) { fullText += chunk; request.onChunk?.(chunk) }
         } catch { /* skip malformed SSE line */ }
       }
     }
 
     if (!fullText) throw createProviderError('gemini', 'parse_error', 'La API de Gemini devolvió una respuesta vacía.')
 
-    return { text: fullText, provider: 'gemini', model, durationMs: Date.now() - t0 }
+    return {
+      text: fullText,
+      provider: 'gemini',
+      model,
+      durationMs: Date.now() - t0,
+      traceId: request.traceId,
+      requestClass: request.requestClass,
+    }
   }
 }

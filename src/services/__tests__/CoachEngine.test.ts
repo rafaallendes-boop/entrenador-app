@@ -7,6 +7,8 @@ function makeResponse(overrides: Partial<CoachNormalizedResponse> = {}): CoachNo
   return {
     message: overrides.message ?? 'Respuesta del coach',
     provider: overrides.provider ?? 'mock',
+    traceId: overrides.traceId ?? 'test-trace',
+    requestClass: overrides.requestClass ?? 'chat_general',
     timestamp: overrides.timestamp ?? Date.now(),
     ...overrides,
   }
@@ -49,5 +51,19 @@ describe('CoachEngine recovery heuristics', () => {
     })
 
     expect(shouldRetry(response, 'none')).toBe(false)
+  })
+
+  it('retries when a plan response looks truncated even if actions markup is present', () => {
+    const response = makeResponse({
+      message: 'Semana propuesta.',
+      actions: undefined,
+      meta: {
+        hadActionsMarkup: true,
+        actionParseFailed: true,
+        likelyTruncated: true,
+      },
+    })
+
+    expect(shouldRetry(response, 'create_week')).toBe(true)
   })
 })

@@ -19,15 +19,21 @@ export class MockProvider implements AIProvider {
     const text = mockReply(request.userMessage, contextHint)
 
     if (request.onChunk) {
-      return this.callStream(request.onChunk, text)
+      return this.callStream(request, text)
     }
 
     // Non-streaming: simulate network latency
     await new Promise(r => setTimeout(r, 500 + Math.random() * 400))
-    return { text, provider: 'mock', model: 'mock-v1' }
+    return {
+      text,
+      provider: 'mock',
+      model: 'mock-v1',
+      traceId: request.traceId,
+      requestClass: request.requestClass,
+    }
   }
 
-  private async callStream(onChunk: (chunk: string) => void, text: string): Promise<AIRawResponse> {
+  private async callStream(request: AIRequest, text: string): Promise<AIRawResponse> {
     // Initial "thinking" pause
     await new Promise(r => setTimeout(r, 250))
 
@@ -35,10 +41,16 @@ export class MockProvider implements AIProvider {
     const words = text.split(' ')
     for (const word of words) {
       await new Promise(r => setTimeout(r, 25 + Math.random() * 35))
-      onChunk(word + ' ')
+      request.onChunk?.(word + ' ')
     }
 
-    return { text, provider: 'mock', model: 'mock-v1' }
+    return {
+      text,
+      provider: 'mock',
+      model: 'mock-v1',
+      traceId: request.traceId,
+      requestClass: request.requestClass,
+    }
   }
 }
 
@@ -92,4 +104,3 @@ function extractContextSummary(systemPrompt: string): string {
   }
   return ''
 }
-

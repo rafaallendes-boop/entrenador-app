@@ -28,6 +28,9 @@ function buildGenerationSignals(week: TrainingPlanWeek): string[] {
   const signals: string[] = []
   const meta = week.generationMeta
 
+  if (meta.requestClass) {
+    signals.push(meta.requestClass === 'plan_builder_pair' ? 'Batch par' : 'Semana individual')
+  }
   if (meta.validSessionCount != null && meta.rawSessionCount != null && meta.rawSessionCount > meta.validSessionCount) {
     signals.push(`Sesiones válidas ${meta.validSessionCount}/${meta.rawSessionCount}`)
   }
@@ -40,8 +43,27 @@ function buildGenerationSignals(week: TrainingPlanWeek): string[] {
   if ((meta.attempts ?? 0) > 1) {
     signals.push(`${meta.attempts} intentos`)
   }
+  if (meta.retryUsed) {
+    signals.push('Retry técnico aplicado')
+  }
+  if (meta.fallbackUsed) {
+    signals.push('Fallback de provider')
+  }
 
   return signals
+}
+
+function getWeekGenerationStatus(week: TrainingPlanWeek): string {
+  if (week.status === 'error') return 'error final'
+  if (week.status === 'generating' && (week.generationMeta.attempts ?? 0) >= 2) {
+    const lastError = week.generationMeta.lastError?.toLowerCase() ?? ''
+    if (lastError.includes('formato') || lastError.includes('targetdate') || lastError.includes('válidas')) {
+      return 'corrigiendo formato'
+    }
+    return 'reintentando por validación'
+  }
+  if (week.status === 'generating') return 'generando'
+  return 'lista'
 }
 
 
@@ -722,7 +744,7 @@ export default function PlanBuilderV2Page() {
                         <div className="mb-3 flex justify-center">
                           <RefreshCw size={20} className="animate-spin text-brand" />
                         </div>
-                        <p className="text-xs text-ink-muted">Generando sesiones…</p>
+                        <p className="text-xs text-ink-muted">{getWeekGenerationStatus(selectedWeek)}…</p>
                         {streamingTextByWeekIndex[selectedWeek.weekIndex] && (
                           <div className="mt-3 rounded-xl px-3 py-2.5 text-left text-xs text-ink-muted whitespace-pre-wrap"
                             style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}>

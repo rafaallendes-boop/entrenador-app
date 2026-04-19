@@ -1,21 +1,38 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { CoachProposal, Session, WeekSummary } from '../../types'
+import type { AthleteProfile, Session, WeekSummary } from '../../types'
 import type { TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
 
 const sessionsById = new Map<string, Session>()
 const weekSummariesByStart = new Map<string, WeekSummary>()
-const proposalsById = new Map<string, CoachProposal>()
 const trainingPlanPuts: TrainingPlan[] = []
 const trainingPlanWeekPuts: TrainingPlanWeek[] = []
-const coachActionsState = {
-  proposals: [] as CoachProposal[],
-  addProposal: vi.fn(),
-  acceptProposal: vi.fn(),
-}
+
 const trainingStoreState = {
   loadedWeekStart: null as string | null,
   loadWeek: vi.fn(async () => {}),
   loadAllSummaries: vi.fn(async () => {}),
+  addSession: vi.fn(async (session: Omit<Session, 'id' | 'createdAt' | 'updatedAt'>) => {
+    const created: Session = {
+      ...session,
+      id: `session-${sessionsById.size + 1}`,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      weekStartDate: session.weekStartDate ?? '2026-05-04',
+    }
+    sessionsById.set(created.id, created)
+    return created
+  }),
+}
+
+const athleteProfileState = {
+  athleteProfile: {
+    id: 'athlete-1',
+    firstName: 'Rafa',
+    primarySport: 'squash',
+    plan: {
+      allowedSports: ['squash', 'running', 'strength'],
+    },
+  } as AthleteProfile,
 }
 
 vi.mock('../../db/db', () => ({
@@ -27,6 +44,11 @@ vi.mock('../../db/db', () => ({
             Array.from(sessionsById.values()).filter((session) => session.date >= start && session.date <= end),
           ),
         })),
+        anyOf: vi.fn((dates: string[]) => ({
+          toArray: vi.fn(async () =>
+            Array.from(sessionsById.values()).filter((session) => dates.includes(session.date)),
+          ),
+        })),
       })),
       put: vi.fn(async (session: Session) => {
         sessionsById.set(session.id, session)
@@ -34,8 +56,12 @@ vi.mock('../../db/db', () => ({
       delete: vi.fn(async (id: string) => {
         sessionsById.delete(id)
       }),
+      bulkDelete: vi.fn(async (ids: string[]) => {
+        ids.forEach((id) => sessionsById.delete(id))
+      }),
     },
     weekSummaries: {
+      get: vi.fn(async (weekStartDate: string) => weekSummariesByStart.get(weekStartDate)),
       put: vi.fn(async (summary: WeekSummary) => {
         weekSummariesByStart.set(summary.weekStartDate, summary)
       }),
@@ -43,12 +69,6 @@ vi.mock('../../db/db', () => ({
         for (const [weekStart, summary] of weekSummariesByStart.entries()) {
           if (summary.id === id) weekSummariesByStart.delete(weekStart)
         }
-      }),
-    },
-    coachProposals: {
-      get: vi.fn(async (id: string) => proposalsById.get(id)),
-      put: vi.fn(async (proposal: CoachProposal) => {
-        proposalsById.set(proposal.id, proposal)
       }),
     },
     trainingPlans: {
@@ -66,30 +86,48 @@ vi.mock('../../db/db', () => ({
 
 vi.mock('../../db/queries', () => ({
   getWeekSummary: vi.fn(async (weekStartDate: string) => weekSummariesByStart.get(weekStartDate)),
+  recalculateWeekSummary: vi.fn(async () => {}),
+  upsertWeekSummary: vi.fn(async (weekStartDate: string, patch: { objectives?: string[] }) => {
+    const summary: WeekSummary = weekSummariesByStart.get(weekStartDate) ?? {
+      id: `summary-${weekStartDate}`,
+      weekStartDate,
+      totalSessions: 0,
+      totalMinutes: 0,
+      plannedSessions: 0,
+      completedSessions: 0,
+      plannedMinutes: 0,
+      completedMinutes: 0,
+      squashSessions: 0,
+      runningSessions: 0,
+      strengthSessions: 0,
+      objectives: [],
+    }
+    const nextSummary = {
+      ...summary,
+      objectives: patch.objectives ?? summary.objectives,
+    }
+    weekSummariesByStart.set(weekStartDate, nextSummary)
+    return nextSummary
+  }),
 }))
 
 vi.mock('../syncService', () => ({
   pushSession: vi.fn(),
   deleteSession: vi.fn(),
   pushWeekSummary: vi.fn(),
-  pushCoachProposal: vi.fn(),
   pushTrainingPlan: vi.fn(),
   pushTrainingPlanWeeks: vi.fn(),
-}))
-
-vi.mock('../../store/useCoachActionsStore', () => ({
-  useCoachActionsStore: {
-    getState: () => coachActionsState,
-    setState: (update: ((state: typeof coachActionsState) => Partial<typeof coachActionsState>) | Partial<typeof coachActionsState>) => {
-      const next = typeof update === 'function' ? update(coachActionsState) : update
-      Object.assign(coachActionsState, next)
-    },
-  },
 }))
 
 vi.mock('../../store/useTrainingStore', () => ({
   useTrainingStore: {
     getState: () => trainingStoreState,
+  },
+}))
+
+vi.mock('../../store/useCoachMemoryStore', () => ({
+  useCoachMemoryStore: {
+    getState: () => athleteProfileState,
   },
 }))
 
@@ -220,30 +258,12 @@ function makeStoredSession(id: string, date: string, title: string): Session {
 beforeEach(() => {
   sessionsById.clear()
   weekSummariesByStart.clear()
-  proposalsById.clear()
   trainingPlanPuts.length = 0
   trainingPlanWeekPuts.length = 0
-  coachActionsState.proposals = []
-  coachActionsState.addProposal.mockReset()
-  coachActionsState.acceptProposal.mockReset()
   trainingStoreState.loadedWeekStart = null
   trainingStoreState.loadWeek.mockClear()
   trainingStoreState.loadAllSummaries.mockClear()
-
-  let proposalCounter = 0
-  coachActionsState.addProposal.mockImplementation(async (message: string, actions: CoachProposal['actions']) => {
-    proposalCounter += 1
-    const proposal: CoachProposal = {
-      id: `proposal-${proposalCounter}`,
-      message,
-      actions,
-      status: 'pending',
-      createdAt: proposalCounter,
-    }
-    proposalsById.set(proposal.id, proposal)
-    coachActionsState.proposals = [...coachActionsState.proposals, proposal]
-    return proposal
-  })
+  trainingStoreState.addSession.mockClear()
 })
 
 describe('commitPlan', () => {
@@ -265,7 +285,7 @@ describe('commitPlan', () => {
     ])
 
     expect(result.errors).toEqual(['Semana 2 no está lista para aceptar (estado error).'])
-    expect(coachActionsState.acceptProposal).not.toHaveBeenCalled()
+    expect(trainingStoreState.addSession).not.toHaveBeenCalled()
     expect(trainingPlanPuts).toHaveLength(0)
     expect(trainingPlanWeekPuts).toHaveLength(0)
   })
@@ -287,7 +307,7 @@ describe('commitPlan', () => {
     ])
 
     expect(result.errors.some((error) => error.includes('no incluye sesiones de squash'))).toBe(true)
-    expect(coachActionsState.addProposal).not.toHaveBeenCalled()
+    expect(trainingStoreState.addSession).not.toHaveBeenCalled()
     expect(trainingPlanPuts).toHaveLength(0)
   })
 
@@ -319,27 +339,20 @@ describe('commitPlan', () => {
     sessionsById.set(originalSession.id, originalSession)
     weekSummariesByStart.set(originalSummary.weekStartDate, originalSummary)
 
-    coachActionsState.acceptProposal.mockImplementation(async (proposalId: string) => {
-      if (proposalId === 'proposal-1') {
-        sessionsById.delete(originalSession.id)
-        sessionsById.set('new-1', makeStoredSession('new-1', '2026-05-05', 'Sesion generada'))
-        weekSummariesByStart.set('2026-05-04', {
-          ...originalSummary,
-          totalSessions: 2,
-          totalMinutes: 120,
-          objectives: ['Semana generada'],
-        })
-        const acceptedProposal = proposalsById.get(proposalId)
-        if (acceptedProposal) {
-          proposalsById.set(proposalId, { ...acceptedProposal, status: 'accepted', resolvedAt: 10 })
-          coachActionsState.proposals = coachActionsState.proposals.map((proposal) =>
-            proposal.id === proposalId ? { ...proposal, status: 'accepted', resolvedAt: 10 } : proposal,
-          )
-        }
-        return { errors: [], warnings: [] }
+    trainingStoreState.addSession.mockImplementation(async (session: Omit<Session, 'id' | 'createdAt' | 'updatedAt'>) => {
+      if (session.date === '2026-05-12') {
+        throw new Error('fallo al guardar semana')
       }
-
-      return { errors: ['colisión de sesiones'], warnings: [] }
+      const created: Session = {
+        ...session,
+        id: 'new-1',
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        weekStartDate: session.weekStartDate ?? '2026-05-04',
+      }
+      sessionsById.delete(originalSession.id)
+      sessionsById.set(created.id, created)
+      return created
     })
 
     const result = await commitPlan(plan, [
@@ -357,15 +370,41 @@ describe('commitPlan', () => {
       }),
     ])
 
-    expect(result.errors).toEqual(['Semana 2: colisión de sesiones'])
+    expect(result.errors).toEqual(['Semana 2: fallo al guardar semana'])
     expect(result.warnings).toContain('Se revirtieron 1 semanas aceptadas antes del fallo.')
     expect(result.acceptedWeeks).toEqual([])
     expect(sessionsById.has(originalSession.id)).toBe(true)
     expect(sessionsById.has('new-1')).toBe(false)
     expect(weekSummariesByStart.get('2026-05-04')).toEqual(originalSummary)
-    expect(proposalsById.get('proposal-1')?.status).toBe('rejected')
     expect(trainingPlanPuts).toHaveLength(0)
     expect(trainingPlanWeekPuts).toHaveLength(0)
     expect(trainingStoreState.loadAllSummaries).toHaveBeenCalledTimes(1)
+  })
+
+  it('commits accepted weeks without going through coach proposals', async () => {
+    const plan = {
+      ...makePlan(1),
+      wizardConfig: {
+        ...makePlan().wizardConfig,
+        allowDoubleSession: true,
+        trainingDays: ['monday'] as TrainingPlan['wizardConfig']['trainingDays'],
+        sessionsPerWeek: 2,
+      },
+    }
+
+    const result = await commitPlan(plan, [
+      makeWeek({
+        id: 'week-1',
+        weekIndex: 0,
+        weekStartDate: '2026-05-04',
+        sessions: makeProposalSession('2026-05-05'),
+      }),
+    ])
+
+    expect(result.errors).toEqual([])
+    expect(result.acceptedWeeks).toEqual([0])
+    expect(trainingStoreState.addSession).toHaveBeenCalledTimes(2)
+    expect(trainingPlanPuts).toHaveLength(1)
+    expect(trainingPlanWeekPuts).toHaveLength(1)
   })
 })

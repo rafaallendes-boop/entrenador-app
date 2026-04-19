@@ -3,15 +3,17 @@
  */
 
 import type { AIProvider, AIRequest, CoachNormalizedResponse } from './types'
-import type { ChatContext } from '../../types'
+import type { AIRequestClass, AITechnicalSurface, ChatContext } from '../../types'
 import { buildCoachSystemPrompt } from './promptBuilder'
 import { normalizeResponse } from './responseNormalizer'
-import { createProviderError } from './types'
+import { AIProviderError, createProviderError } from './types'
 import { ClaudeProvider } from './providers/ClaudeProvider'
 import { OpenAIProvider } from './providers/OpenAIProvider'
 import { MockProvider } from './providers/MockProvider'
 import { GeminiProvider } from './providers/GeminiProvider'
 import { ProxyProvider } from './providers/ProxyProvider'
+import { buildAITraceId, getAIRequestPolicy } from './requestPolicy'
+import { useAIDebugStore } from '../../store/useAIDebugStore'
 
 export type CoachActionIntent = 'create_week' | 'create_full_plan' | 'modify_plan' | 'none'
 
@@ -42,44 +44,118 @@ export const CoachEngine = {
   async send(
     userMessage: string,
     context: ChatContext,
-    options?: { maxTokens?: number; temperature?: number; onChunk?: (chunk: string) => void },
+    options?: {
+      maxTokens?: number
+      temperature?: number
+      onChunk?: (chunk: string) => void
+      requestClass?: AIRequestClass
+      surface?: AITechnicalSurface
+    },
   ): Promise<CoachNormalizedResponse> {
     const provider = getActiveProvider()
-    const systemPrompt = buildCoachSystemPrompt(context)
     const actionIntent = inferCoachActionIntent(userMessage)
+    const requestClass = options?.requestClass ?? (actionIntent === 'none' ? 'chat_general' : 'chat_action')
+    const policy = getAIRequestPolicy(requestClass)
+    const traceId = buildAITraceId(requestClass)
+    const startedAt = Date.now()
+    const surface = options?.surface ?? 'chat'
+    const systemPrompt = buildCoachSystemPrompt(context, { requestClass })
+    useAIDebugStore.getState().startRequest({
+      traceId,
+      requestClass,
+      surface,
+      startedAt,
+    })
+
+    let firstChunkSeen = false
 
     const request: AIRequest = {
       systemPrompt,
       userMessage,
+      requestClass,
+      traceId,
       conversation: (context.recentMessages ?? []).map(message => ({
         role: message.role === 'coach' ? 'assistant' : 'user',
         content: message.content,
       })),
-      maxTokens: options?.maxTokens ?? (
-        actionIntent === 'create_full_plan' ? 14000 :
-        actionIntent === 'create_week' ? 8000 :
-        actionIntent === 'modify_plan' ? 5000 : 4000
-      ),
-      temperature: options?.temperature ?? (actionIntent === 'create_full_plan' ? 0.4 : 0.7),
-      onChunk: options?.onChunk,
+      maxTokens: options?.maxTokens ?? policy.maxTokens,
+      temperature: options?.temperature ?? policy.temperature,
+      allowFallback: policy.allowFallback,
+      onChunk: (chunk) => {
+        if (!firstChunkSeen) {
+          firstChunkSeen = true
+          useAIDebugStore.getState().markFirstChunk(traceId)
+        }
+        options?.onChunk?.(chunk)
+      },
     }
 
-    return sendWithRecovery(provider, request, actionIntent)
+    try {
+      const response = await sendWithRecovery(provider, request, actionIntent)
+      useAIDebugStore.getState().completeRequest(traceId, {
+        provider: response.provider,
+        model: response.model,
+        durationMs: response.durationMs,
+        retryUsed: response.retryUsed,
+        fallbackUsed: response.fallbackUsed,
+      })
+      return response
+    } catch (error) {
+      useAIDebugStore.getState().failRequest(traceId, {
+        errorCode: error instanceof AIProviderError ? error.code : 'unknown',
+      })
+      throw error
+    }
   },
 
   async extractRaw(
     systemPrompt: string,
     userMessage: string,
-    options?: { maxTokens?: number; temperature?: number },
+    options?: {
+      maxTokens?: number
+      temperature?: number
+      requestClass?: AIRequestClass
+      surface?: AITechnicalSurface
+      conversation?: AIRequest['conversation']
+    },
   ): Promise<string> {
     const provider = getActiveProvider()
-    const raw = await provider.call({
-      systemPrompt,
-      userMessage,
-      maxTokens: options?.maxTokens ?? 2000,
-      temperature: options?.temperature ?? 0.1,
+    const requestClass = options?.requestClass ?? 'import_extract'
+    const policy = getAIRequestPolicy(requestClass)
+    const traceId = buildAITraceId(requestClass)
+    const surface = options?.surface ?? 'import'
+    useAIDebugStore.getState().startRequest({
+      traceId,
+      requestClass,
+      surface,
+      startedAt: Date.now(),
     })
-    return raw.text
+
+    try {
+      const raw = await provider.call({
+        requestClass,
+        traceId,
+        allowFallback: policy.allowFallback,
+        conversation: options?.conversation,
+        systemPrompt,
+        userMessage,
+        maxTokens: options?.maxTokens ?? policy.maxTokens,
+        temperature: options?.temperature ?? policy.temperature,
+      })
+      useAIDebugStore.getState().completeRequest(traceId, {
+        provider: raw.provider,
+        model: raw.model,
+        durationMs: raw.durationMs,
+        retryUsed: raw.retryUsed,
+        fallbackUsed: raw.fallbackUsed,
+      })
+      return raw.text
+    } catch (error) {
+      useAIDebugStore.getState().failRequest(traceId, {
+        errorCode: error instanceof AIProviderError ? error.code : 'unknown',
+      })
+      throw error
+    }
   },
 
   getProviderName(): string {
@@ -109,6 +185,10 @@ async function sendWithRecovery(
 ): Promise<CoachNormalizedResponse> {
   const firstRaw = await provider.call(request)
   const firstNormalized = normalizeResponse(firstRaw)
+
+  if (firstNormalized.retryUsed || firstNormalized.fallbackUsed) {
+    return firstNormalized
+  }
 
   if (!shouldRetry(firstNormalized, actionIntent)) {
     return firstNormalized
@@ -141,11 +221,11 @@ IMPORTANTE DE FORMATO:
 
   return {
     ...retryNormalized,
+    retryUsed: true,
     meta: {
       hadActionsMarkup: retryNormalized.meta?.hadActionsMarkup ?? false,
       actionParseFailed: retryNormalized.meta?.actionParseFailed ?? false,
       likelyTruncated: retryNormalized.meta?.likelyTruncated ?? false,
-      retryUsed: true,
       invalidActionCount: retryNormalized.meta?.invalidActionCount,
       createWeekDiagnostics: retryNormalized.meta?.createWeekDiagnostics,
     },

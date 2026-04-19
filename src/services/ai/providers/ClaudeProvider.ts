@@ -81,7 +81,15 @@ export class ClaudeProvider implements AIProvider {
     const text = data.content.find(c => c.type === 'text')?.text ?? ''
     if (!text) throw createProviderError('claude', 'parse_error', 'La API de Claude devolvió una respuesta vacía.')
 
-    return { text, provider: 'claude', model: data.model ?? model, raw: data, durationMs: Date.now() - t0 }
+    return {
+      text,
+      provider: 'claude',
+      model: data.model ?? model,
+      raw: data,
+      durationMs: Date.now() - t0,
+      traceId: request.traceId,
+      requestClass: request.requestClass,
+    }
   }
 
   private async callStream(
@@ -148,6 +156,13 @@ export class ClaudeProvider implements AIProvider {
 
     if (!fullText) throw createProviderError('claude', 'parse_error', 'La API de Claude devolvió una respuesta vacía.')
 
-    return { text: fullText, provider: 'claude', model, durationMs: Date.now() - t0 }
+    return {
+      text: fullText,
+      provider: 'claude',
+      model,
+      durationMs: Date.now() - t0,
+      traceId: request.traceId,
+      requestClass: request.requestClass,
+    }
   }
 }

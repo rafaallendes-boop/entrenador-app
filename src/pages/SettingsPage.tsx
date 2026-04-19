@@ -35,6 +35,7 @@ import {
 } from '../services/notifications'
 import { useCoachMemoryStore } from '../store/useCoachMemoryStore'
 import { useAuthStore } from '../store/useAuthStore'
+import { useAIDebugStore } from '../store/useAIDebugStore'
 import { useTrainingStore } from '../store/useTrainingStore'
 import { currentWeekStartISO } from '../utils/date'
 import { getEnabledSports, getSportPrioritySummary } from '../utils/athlete'
@@ -80,6 +81,7 @@ export default function SettingsPage() {
   const navigate = useNavigate()
   const { coachMemory, athleteProfile, isSaving, loadMemory, saveMemory, saveAthleteProfile } = useCoachMemoryStore()
   const { user, signOut, syncStatus, syncError, syncDetails } = useAuthStore()
+  const aiDebugRequests = useAIDebugStore((state) => state.requests)
   const { sessions, dayLogs, currentWeekSummary, loadWeek } = useTrainingStore()
   const [memoryDraft, setMemoryDraft] = useState('')
   const [memorySaved, setMemorySaved] = useState(false)
@@ -575,6 +577,59 @@ export default function SettingsPage() {
                 </button>
               )}
             </div>
+          </Card>
+
+          <Card className="p-4">
+            <div className="flex items-start gap-3 mb-3">
+              <div className="w-8 h-8 rounded-full bg-brand/15 flex items-center justify-center flex-shrink-0">
+                <Brain size={16} className="text-brand-light" />
+              </div>
+              <div className="min-w-0">
+                <h2 className="text-sm font-semibold text-ink">Debug IA</h2>
+                <p className="text-xs text-ink-muted mt-1 leading-relaxed">
+                  Ultimas solicitudes del coach con trace, proveedor, duracion y resultado tecnico.
+                </p>
+              </div>
+            </div>
+            {aiDebugRequests.length === 0 ? (
+              <p className="text-xs text-ink-faint">Aun no hay trazas IA en esta sesion.</p>
+            ) : (
+              <div className="space-y-2">
+                {aiDebugRequests.slice(0, 8).map((request) => (
+                  <div
+                    key={request.traceId}
+                    className="rounded-xl border border-surface-border bg-surface-raised px-3 py-2.5 text-xs text-ink-muted"
+                  >
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-mono text-[10px] text-brand-light">{request.requestClass}</span>
+                      <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold text-ink"
+                        style={{ background: 'rgba(255,255,255,0.06)' }}>
+                        {request.status}
+                      </span>
+                      {request.provider && (
+                        <span className="text-ink-faint">{request.provider}{request.model ? ` · ${request.model}` : ''}</span>
+                      )}
+                    </div>
+                    <p className="mt-1 font-mono text-[10px] text-ink-faint break-all">{request.traceId}</p>
+                    <div className="mt-1 grid gap-1 sm:grid-cols-2">
+                      <p>Superficie: <span className="text-ink">{request.surface}</span></p>
+                      <p>Duracion: <span className="text-ink">{request.durationMs != null ? `${request.durationMs}ms` : 'pendiente'}</span></p>
+                      <p>Retry backend/logico: <span className="text-ink">{request.retryUsed ? 'si' : 'no'}</span></p>
+                      <p>Fallback: <span className="text-ink">{request.fallbackUsed ? 'si' : 'no'}</span></p>
+                      {request.firstChunkAt && (
+                        <p>Primer chunk: <span className="text-ink">{formatRuntimeTimestamp(request.firstChunkAt)}</span></p>
+                      )}
+                      {request.errorCode && (
+                        <p className="text-amber-300">Error: {request.errorCode}</p>
+                      )}
+                      {request.proposalCreated != null && (
+                        <p>Proposal: <span className="text-ink">{request.proposalCreated ? 'creada' : 'no creada'}</span></p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </Card>
 
           <Card className="p-4">

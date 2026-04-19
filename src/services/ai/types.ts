@@ -5,7 +5,7 @@
  * The app only depends on these types — never on provider-specific shapes.
  */
 
-import type { CoachAction, ChatContext, AIProviderName } from '../../types'
+import type { CoachAction, ChatContext, AIProviderName, AIRequestClass } from '../../types'
 
 // ─── Provider identity re-export ───────────────────────────────────────────────
 // Defined in src/types/index.ts — re-exported here for convenience.
@@ -29,8 +29,11 @@ export interface AIRequest {
   systemPrompt: string
   userMessage: string
   conversation?: AIConversationMessage[]
+  requestClass: AIRequestClass
+  traceId: string
   maxTokens?: number
   temperature?: number
+  allowFallback?: boolean
   /** Called with each text chunk as it arrives. When provided, providers that
    *  support SSE streaming will emit chunks in real time. Providers that don't
    *  support streaming (e.g. ProxyProvider) ignore this field. */
@@ -50,6 +53,10 @@ export interface AIRawResponse {
   model?: string
   raw?: unknown        // full API response, available for debugging
   durationMs?: number
+  traceId?: string
+  requestClass?: AIRequestClass
+  retryUsed?: boolean
+  fallbackUsed?: boolean
 }
 
 export interface CreateWeekNormalizationDiagnostic {
@@ -74,13 +81,16 @@ export interface CoachNormalizedResponse {
   raw?: unknown
   timestamp: number
   durationMs?: number
+  traceId: string
+  requestClass: AIRequestClass
+  retryUsed?: boolean
+  fallbackUsed?: boolean
   /** ID of the CoachProposal created from actions, if any */
   proposalId?: string
   meta?: {
     hadActionsMarkup: boolean
     actionParseFailed: boolean
     likelyTruncated: boolean
-    retryUsed?: boolean
     invalidActionCount?: number
     createWeekDiagnostics?: CreateWeekNormalizationDiagnostic[]
   }
@@ -93,6 +103,8 @@ export type AIErrorCode =
   | 'rate_limit'     // 429 from provider
   | 'timeout'        // fetch timeout
   | 'parse_error'    // response could not be parsed
+  | 'misconfigured'  // server or provider config missing
+  | 'server_error'   // internal proxy/backend error
   | 'unknown'        // catch-all
 
 export class AIProviderError extends Error {

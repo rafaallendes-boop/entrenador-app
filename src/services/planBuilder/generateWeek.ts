@@ -1,9 +1,11 @@
 import type { CoachAction, CoachSessionProposal, AthleteProfile, PlanWizardConfig } from '../../types'
 import type { TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
 import type { AIProvider, CoachNormalizedResponse, CreateWeekNormalizationDiagnostic } from '../ai/types'
+import { buildAITraceId, getAIRequestPolicy } from '../ai/requestPolicy'
 import { normalizeResponse } from '../ai/responseNormalizer'
 import { buildWeekSystemPrompt, buildWeekUserPrompt } from './prompts/weekPrompt'
 import { validatePlanWeek } from './validator'
+import { useAIDebugStore } from '../../store/useAIDebugStore'
 
 export interface GenerateWeekInput {
   provider: AIProvider
@@ -24,11 +26,15 @@ export interface GenerateWeekResult {
     attempts: number
     provider: AIProvider['name']
     model?: string
+    requestClass: 'plan_builder_week'
+    traceId: string
     lastError?: string
     promptTokens?: number
     completionTokens?: number
     durationMs?: number
     chunkCount?: number
+    retryUsed?: boolean
+    fallbackUsed?: boolean
     rawSessionCount?: number
     validSessionCount?: number
     droppedSessionCount?: number
@@ -214,15 +220,30 @@ export async function generateWeek(input: GenerateWeekInput): Promise<GenerateWe
   })
 
   let chunkCount = 0
+  const requestClass = 'plan_builder_week' as const
+  const traceId = buildAITraceId(requestClass)
+  const policy = getAIRequestPolicy(requestClass)
+  useAIDebugStore.getState().startRequest({
+    traceId,
+    requestClass,
+    surface: 'plan_builder',
+    startedAt: Date.now(),
+  })
 
   try {
     const raw = await provider.call({
+      requestClass,
+      traceId,
       systemPrompt,
       userMessage,
-      maxTokens: 3500,
-      temperature: input.temperature ?? 0.4,
+      maxTokens: policy.maxTokens,
+      temperature: input.temperature ?? policy.temperature,
+      allowFallback: policy.allowFallback,
       onChunk: (chunk) => {
         chunkCount += 1
+        if (chunkCount === 1) {
+          useAIDebugStore.getState().markFirstChunk(traceId)
+        }
         input.onChunk?.(chunk)
       },
     })
@@ -231,15 +252,27 @@ export async function generateWeek(input: GenerateWeekInput): Promise<GenerateWe
     const diagnostic = pickCreateWeekDiagnostic(normalized, week.weekStartDate, action)
     const evaluation = validateGeneratedWeekAction(plan, week, action, diagnostic)
     if (evaluation.error) {
+      useAIDebugStore.getState().failRequest(traceId, {
+        provider: raw.provider,
+        model: raw.model,
+        durationMs: raw.durationMs,
+        errorCode: 'validation_error',
+        retryUsed: raw.retryUsed,
+        fallbackUsed: raw.fallbackUsed,
+      })
       return {
         sessions: [],
         meta: {
           attempts: 1,
           provider: provider.name,
           model: raw.model,
+          requestClass,
+          traceId: raw.traceId,
           lastError: evaluation.error,
           durationMs: raw.durationMs,
           chunkCount,
+          retryUsed: raw.retryUsed,
+          fallbackUsed: raw.fallbackUsed,
           rawSessionCount: evaluation.rawSessionCount,
           validSessionCount: evaluation.validSessionCount,
           droppedSessionCount: evaluation.droppedSessionCount,
@@ -247,25 +280,41 @@ export async function generateWeek(input: GenerateWeekInput): Promise<GenerateWe
       }
     }
 
+    useAIDebugStore.getState().completeRequest(traceId, {
+      provider: raw.provider,
+      model: raw.model,
+      durationMs: raw.durationMs,
+      retryUsed: raw.retryUsed,
+      fallbackUsed: raw.fallbackUsed,
+    })
     return {
       sessions: evaluation.sessions,
       meta: {
         attempts: 1,
         provider: provider.name,
         model: raw.model,
+        requestClass,
+        traceId: raw.traceId,
         durationMs: raw.durationMs,
         chunkCount,
+        retryUsed: raw.retryUsed,
+        fallbackUsed: raw.fallbackUsed,
         rawSessionCount: evaluation.rawSessionCount,
         validSessionCount: evaluation.validSessionCount,
         droppedSessionCount: evaluation.droppedSessionCount,
       },
     }
   } catch (error) {
+    useAIDebugStore.getState().failRequest(traceId, {
+      errorCode: error instanceof Error ? error.message : 'unknown',
+    })
     return {
       sessions: [],
       meta: {
         attempts: 1,
         provider: provider.name,
+        requestClass,
+        traceId,
         lastError: error instanceof Error ? error.message : String(error),
         chunkCount,
       },

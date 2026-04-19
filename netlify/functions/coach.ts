@@ -2,34 +2,30 @@
  * Netlify Function: coach
  *
  * Secure proxy between the PWA frontend and the AI provider (Gemini / OpenAI / Claude).
- * The API key NEVER reaches the browser — it lives only in Netlify's env vars.
- *
- * Environment variables (set in Netlify dashboard or local .env for netlify dev):
- *   AI_PROVIDER   — 'gemini' | 'openai' | 'claude'  (default: 'gemini')
- *   GEMINI_API_KEY  — required when AI_PROVIDER=gemini
- *   OPENAI_API_KEY  — required when AI_PROVIDER=openai
- *   CLAUDE_API_KEY  — required when AI_PROVIDER=claude
- *
- * Request body (JSON):
- *   { systemPrompt: string, userMessage: string, maxTokens?: number, temperature?: number }
- *
- * Response body (JSON):
- *   { text: string, provider: string, model: string }
- *   or on error: { error: string }
+ * Adds request-class policies, technical retry/fallback, trace propagation and
+ * streaming NDJSON when the client requests chunks.
  */
-
-// ─── Inline types (no external deps needed) ───────────────────────────────────
 
 interface LambdaEvent {
   httpMethod: string
   body: string | null
 }
 
-interface LambdaResponse {
+type LambdaResponse = Response | {
   statusCode: number
   headers: Record<string, string>
   body: string
 }
+
+type ProviderName = 'gemini' | 'openai' | 'claude'
+type RequestClass =
+  | 'chat_general'
+  | 'chat_action'
+  | 'weekly_summary'
+  | 'plan_builder_week'
+  | 'plan_builder_pair'
+  | 'import_extract'
+type TechnicalErrorCode = 'timeout' | 'rate_limit' | 'parse_error' | 'server_error' | 'misconfigured' | 'unknown' | 'unauthorized'
 
 interface CoachRequest {
   systemPrompt: string
@@ -38,86 +34,191 @@ interface CoachRequest {
     role: 'user' | 'assistant'
     content: string
   }>
+  requestClass?: RequestClass
+  traceId?: string
   maxTokens?: number
   temperature?: number
+  allowFallback?: boolean
+  stream?: boolean
 }
 
-// ─── Provider implementations ─────────────────────────────────────────────────
+interface NormalizedServerError extends Error {
+  statusCode?: number
+  errorCode?: TechnicalErrorCode
+  retryable?: boolean
+}
 
-const DEFAULT_MODELS: Record<string, string> = {
+interface ProviderExecutionResult {
+  text: string
+  provider: ProviderName
+  model: string
+  traceId: string
+  requestClass: RequestClass
+  retryUsed: boolean
+  fallbackUsed: boolean
+  durationMs: number
+}
+
+const DEFAULT_MODELS: Record<ProviderName, string> = {
   gemini: 'gemini-2.5-flash',
   openai: 'gpt-4o-mini',
   claude: 'claude-sonnet-4-6',
 }
 
-async function callGemini(req: CoachRequest, apiKey: string, model: string): Promise<string> {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      systemInstruction: { parts: [{ text: req.systemPrompt }] },
-      contents: [
-        ...(req.conversation ?? []).map(message => ({
-          role: message.role === 'assistant' ? 'model' : 'user',
-          parts: [{ text: message.content }],
-        })),
-        { role: 'user', parts: [{ text: req.userMessage }] },
-      ],
-      generationConfig: {
-        maxOutputTokens: req.maxTokens ?? 1024,
-        temperature: req.temperature ?? 0.7,
-      },
-    }),
-  })
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({})) as { error?: { message?: string } }
-    const err = new Error(body.error?.message ?? `Gemini HTTP ${res.status}`) as Error & { statusCode: number }
-    err.statusCode = res.status
-    throw err
+const REQUEST_TIMEOUTS: Record<RequestClass, number> = {
+  chat_general: 15000,
+  chat_action: 25000,
+  weekly_summary: 20000,
+  plan_builder_week: 30000,
+  plan_builder_pair: 45000,
+  import_extract: 20000,
+}
+
+const JSON_HEADERS = { 'Content-Type': 'application/json' }
+const STREAM_HEADERS = {
+  'Content-Type': 'application/x-ndjson; charset=utf-8',
+  'Cache-Control': 'no-cache, no-transform',
+  'Connection': 'keep-alive',
+}
+
+function json(statusCode: number, body: object): LambdaResponse {
+  return { statusCode, headers: JSON_HEADERS, body: JSON.stringify(body) }
+}
+
+function normalizeRequestClass(value: unknown): RequestClass {
+  switch (value) {
+    case 'chat_action':
+    case 'weekly_summary':
+    case 'plan_builder_week':
+    case 'plan_builder_pair':
+    case 'import_extract':
+      return value
+    default:
+      return 'chat_general'
   }
-  const data = await res.json() as {
+}
+
+function makeError(
+  message: string,
+  statusCode: number,
+  errorCode: TechnicalErrorCode,
+  retryable = false,
+): NormalizedServerError {
+  const error = new Error(message) as NormalizedServerError
+  error.statusCode = statusCode
+  error.errorCode = errorCode
+  error.retryable = retryable
+  return error
+}
+
+function normalizeError(error: unknown): NormalizedServerError {
+  const err = error as NormalizedServerError
+  const message = err.message ?? 'Error interno del servidor.'
+  const statusCode = err.statusCode
+  if (statusCode === 401 || statusCode === 403) {
+    return makeError(message, statusCode, 'unauthorized')
+  }
+  if (statusCode === 429) {
+    return makeError(message, 429, 'rate_limit', true)
+  }
+  if (statusCode === 502 || statusCode === 503 || statusCode === 504) {
+    return makeError(message, statusCode, 'timeout', true)
+  }
+  if (message.toLowerCase().includes('timeout') || message.toLowerCase().includes('timed out')) {
+    return makeError(message, 504, 'timeout', true)
+  }
+  return makeError(message, 500, err.errorCode ?? 'server_error')
+}
+
+async function fetchJsonOrThrow(res: Response): Promise<unknown> {
+  const body = await res.json().catch(() => ({}))
+  if (res.ok) return body
+  const errorField = (body as { error?: unknown }).error
+  const detail = typeof errorField === 'object' && errorField != null
+    ? ((errorField as { message?: string }).message ?? `HTTP ${res.status}`)
+    : ((body as { message?: string }).message ?? (typeof errorField === 'string' ? errorField : `HTTP ${res.status}`))
+  if (res.status === 401 || res.status === 403) throw makeError(detail, res.status, 'unauthorized')
+  if (res.status === 429) throw makeError(detail, 429, 'rate_limit', true)
+  if (res.status === 400 && detail.toLowerCase().includes('api key')) throw makeError(detail, 401, 'unauthorized')
+  if (res.status === 502 || res.status === 503 || res.status === 504) throw makeError(detail, res.status, 'timeout', true)
+  throw makeError(detail, res.status, 'server_error')
+}
+
+async function callGemini(
+  req: CoachRequest,
+  apiKey: string,
+  model: string,
+  signal: AbortSignal,
+): Promise<{ text: string; model: string }> {
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal,
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: req.systemPrompt }] },
+        contents: [
+          ...(req.conversation ?? []).map((message) => ({
+            role: message.role === 'assistant' ? 'model' : 'user',
+            parts: [{ text: message.content }],
+          })),
+          { role: 'user', parts: [{ text: req.userMessage }] },
+        ],
+        generationConfig: {
+          maxOutputTokens: req.maxTokens ?? 1024,
+          temperature: req.temperature ?? 0.7,
+        },
+      }),
+    },
+  )
+  const data = await fetchJsonOrThrow(res) as {
     candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>
   }
   const text = data.candidates?.[0]?.content?.parts?.[0]?.text
-  if (!text) throw new Error('Gemini devolvió una respuesta vacía.')
-  return text
+  if (!text) throw makeError('Gemini devolvió una respuesta vacía.', 500, 'parse_error')
+  return { text, model }
 }
 
-async function callOpenAI(req: CoachRequest, apiKey: string, model: string): Promise<string> {
+async function callOpenAI(
+  req: CoachRequest,
+  apiKey: string,
+  model: string,
+  signal: AbortSignal,
+): Promise<{ text: string; model: string }> {
   const res = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${apiKey}`,
     },
+    signal,
     body: JSON.stringify({
       model,
       max_tokens: req.maxTokens ?? 1024,
       temperature: req.temperature ?? 0.7,
       messages: [
         { role: 'system', content: req.systemPrompt },
-        ...(req.conversation ?? []).map(message => ({
-          role: message.role,
-          content: message.content,
-        })),
+        ...(req.conversation ?? []).map((message) => ({ role: message.role, content: message.content })),
         { role: 'user', content: req.userMessage },
       ],
     }),
   })
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({})) as { error?: { message?: string } }
-    const err = new Error(body.error?.message ?? `OpenAI HTTP ${res.status}`) as Error & { statusCode: number }
-    err.statusCode = res.status
-    throw err
+  const data = await fetchJsonOrThrow(res) as {
+    choices?: Array<{ message?: { content?: string } }>
+    model?: string
   }
-  const data = await res.json() as { choices: Array<{ message: { content: string } }> }
-  const text = data.choices[0]?.message?.content
-  if (!text) throw new Error('OpenAI devolvió una respuesta vacía.')
-  return text
+  const text = data.choices?.[0]?.message?.content
+  if (!text) throw makeError('OpenAI devolvió una respuesta vacía.', 500, 'parse_error')
+  return { text, model: data.model ?? model }
 }
 
-async function callClaude(req: CoachRequest, apiKey: string, model: string): Promise<string> {
+async function callClaude(
+  req: CoachRequest,
+  apiKey: string,
+  model: string,
+  signal: AbortSignal,
+): Promise<{ text: string; model: string }> {
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -125,101 +226,368 @@ async function callClaude(req: CoachRequest, apiKey: string, model: string): Pro
       'x-api-key': apiKey,
       'anthropic-version': '2023-06-01',
     },
+    signal,
     body: JSON.stringify({
       model,
       max_tokens: req.maxTokens ?? 1024,
       temperature: req.temperature ?? 0.7,
       system: req.systemPrompt,
       messages: [
-        ...(req.conversation ?? []).map(message => ({
-          role: message.role,
-          content: message.content,
-        })),
+        ...(req.conversation ?? []).map((message) => ({ role: message.role, content: message.content })),
         { role: 'user', content: req.userMessage },
       ],
     }),
   })
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({})) as { error?: { message?: string } }
-    const err = new Error(body.error?.message ?? `Claude HTTP ${res.status}`) as Error & { statusCode: number }
-    err.statusCode = res.status
-    throw err
+  const data = await fetchJsonOrThrow(res) as {
+    content?: Array<{ type?: string; text?: string }>
+    model?: string
   }
-  const data = await res.json() as { content: Array<{ type: string; text: string }>; model: string }
-  const text = data.content.find(c => c.type === 'text')?.text
-  if (!text) throw new Error('Claude devolvió una respuesta vacía.')
-  return text
+  const text = data.content?.find((item) => item.type === 'text')?.text
+  if (!text) throw makeError('Claude devolvió una respuesta vacía.', 500, 'parse_error')
+  return { text, model: data.model ?? model }
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-const HEADERS = { 'Content-Type': 'application/json' }
-
-function json(statusCode: number, body: object): LambdaResponse {
-  return { statusCode, headers: HEADERS, body: JSON.stringify(body) }
+async function streamGemini(
+  req: CoachRequest,
+  apiKey: string,
+  model: string,
+  signal: AbortSignal,
+  onChunk: (chunk: string) => void,
+): Promise<{ text: string; model: string }> {
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${apiKey}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal,
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: req.systemPrompt }] },
+        contents: [
+          ...(req.conversation ?? []).map((message) => ({
+            role: message.role === 'assistant' ? 'model' : 'user',
+            parts: [{ text: message.content }],
+          })),
+          { role: 'user', parts: [{ text: req.userMessage }] },
+        ],
+        generationConfig: {
+          maxOutputTokens: req.maxTokens ?? 1024,
+          temperature: req.temperature ?? 0.7,
+        },
+      }),
+    },
+  )
+  if (!res.ok || !res.body) {
+    await fetchJsonOrThrow(res)
+    throw makeError('Gemini streaming falló.', 500, 'server_error')
+  }
+  return readSseStream(res.body, model, (json) => {
+    const data = JSON.parse(json) as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> }
+    return data.candidates?.[0]?.content?.parts?.[0]?.text ?? ''
+  }, onChunk)
 }
 
-// ─── Handler ──────────────────────────────────────────────────────────────────
+async function streamOpenAI(
+  req: CoachRequest,
+  apiKey: string,
+  model: string,
+  signal: AbortSignal,
+  onChunk: (chunk: string) => void,
+): Promise<{ text: string; model: string }> {
+  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    signal,
+    body: JSON.stringify({
+      model,
+      max_tokens: req.maxTokens ?? 1024,
+      temperature: req.temperature ?? 0.7,
+      stream: true,
+      messages: [
+        { role: 'system', content: req.systemPrompt },
+        ...(req.conversation ?? []).map((message) => ({ role: message.role, content: message.content })),
+        { role: 'user', content: req.userMessage },
+      ],
+    }),
+  })
+  if (!res.ok || !res.body) {
+    await fetchJsonOrThrow(res)
+    throw makeError('OpenAI streaming falló.', 500, 'server_error')
+  }
+  return readSseStream(res.body, model, (json) => {
+    const data = JSON.parse(json) as { choices?: Array<{ delta?: { content?: string } }> }
+    return data.choices?.[0]?.delta?.content ?? ''
+  }, onChunk)
+}
+
+async function streamClaude(
+  req: CoachRequest,
+  apiKey: string,
+  model: string,
+  signal: AbortSignal,
+  onChunk: (chunk: string) => void,
+): Promise<{ text: string; model: string }> {
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+    },
+    signal,
+    body: JSON.stringify({
+      model,
+      max_tokens: req.maxTokens ?? 1024,
+      temperature: req.temperature ?? 0.7,
+      system: req.systemPrompt,
+      stream: true,
+      messages: [
+        ...(req.conversation ?? []).map((message) => ({ role: message.role, content: message.content })),
+        { role: 'user', content: req.userMessage },
+      ],
+    }),
+  })
+  if (!res.ok || !res.body) {
+    await fetchJsonOrThrow(res)
+    throw makeError('Claude streaming falló.', 500, 'server_error')
+  }
+  return readSseStream(res.body, model, (json) => {
+    const data = JSON.parse(json) as { type?: string; delta?: { type?: string; text?: string } }
+    if (data.type === 'content_block_delta' && data.delta?.type === 'text_delta') {
+      return data.delta.text ?? ''
+    }
+    return ''
+  }, onChunk)
+}
+
+async function readSseStream(
+  body: ReadableStream<Uint8Array>,
+  model: string,
+  pickChunk: (json: string) => string,
+  onChunk: (chunk: string) => void,
+): Promise<{ text: string; model: string }> {
+  const reader = body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let fullText = ''
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    const lines = buffer.split('\n')
+    buffer = lines.pop() ?? ''
+
+    for (const line of lines) {
+      if (!line.startsWith('data: ')) continue
+      const json = line.slice(6).trim()
+      if (!json || json === '[DONE]') continue
+      const chunk = pickChunk(json)
+      if (chunk) {
+        fullText += chunk
+        onChunk(chunk)
+      }
+    }
+  }
+
+  if (!fullText) throw makeError('El provider devolvió una respuesta vacía.', 500, 'parse_error')
+  return { text: fullText, model }
+}
+
+function resolveModel(provider: ProviderName): string {
+  return (
+    (provider === 'gemini' ? process.env['GEMINI_MODEL'] : undefined) ??
+    (provider === 'openai' ? process.env['OPENAI_MODEL'] : undefined) ??
+    (provider === 'claude' ? process.env['CLAUDE_MODEL'] : undefined) ??
+    DEFAULT_MODELS[provider]
+  )
+}
+
+function resolveApiKey(provider: ProviderName): string {
+  const key = provider === 'gemini'
+    ? process.env['GEMINI_API_KEY']
+    : provider === 'openai'
+      ? process.env['OPENAI_API_KEY']
+      : process.env['CLAUDE_API_KEY']
+  if (!key) {
+    throw makeError(`${provider.toUpperCase()} API key no configurada en el servidor.`, 500, 'misconfigured')
+  }
+  return key
+}
+
+async function invokeProvider(
+  provider: ProviderName,
+  req: CoachRequest,
+  signal: AbortSignal,
+  onChunk?: (chunk: string) => void,
+): Promise<{ text: string; provider: ProviderName; model: string }> {
+  const model = resolveModel(provider)
+  const key = resolveApiKey(provider)
+
+  if (provider === 'gemini') {
+    const result = onChunk
+      ? await streamGemini(req, key, model, signal, onChunk)
+      : await callGemini(req, key, model, signal)
+    return { ...result, provider }
+  }
+  if (provider === 'openai') {
+    const result = onChunk
+      ? await streamOpenAI(req, key, model, signal, onChunk)
+      : await callOpenAI(req, key, model, signal)
+    return { ...result, provider }
+  }
+  const result = onChunk
+    ? await streamClaude(req, key, model, signal, onChunk)
+    : await callClaude(req, key, model, signal)
+  return { ...result, provider }
+}
+
+async function executeWithPolicy(
+  req: CoachRequest,
+  onChunk?: (chunk: string) => void,
+): Promise<ProviderExecutionResult> {
+  const requestClass = normalizeRequestClass(req.requestClass)
+  const traceId = req.traceId ?? `srv-${Date.now()}`
+  const startedAt = Date.now()
+  const primary = ((process.env['AI_PROVIDER'] ?? 'gemini').toLowerCase()) as ProviderName
+  const fallback = ((process.env['AI_FALLBACK_PROVIDER'] ?? '').toLowerCase() || undefined) as ProviderName | undefined
+  const timeoutMs = REQUEST_TIMEOUTS[requestClass]
+  let retryUsed = false
+  let fallbackUsed = false
+  let partialChunks = false
+
+  const runAttempt = async (provider: ProviderName) => {
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
+    try {
+      return await invokeProvider(
+        provider,
+        req,
+        controller.signal,
+        onChunk ? (chunk) => {
+          partialChunks = true
+          onChunk(chunk)
+        } : undefined,
+      )
+    } catch (error) {
+      if ((error as Error).name === 'AbortError') {
+        throw makeError(`Timeout del proveedor ${provider}.`, 504, 'timeout', true)
+      }
+      throw normalizeError(error)
+    } finally {
+      clearTimeout(timeoutId)
+    }
+  }
+
+  try {
+    const first = await runAttempt(primary)
+    return {
+      ...first,
+      traceId,
+      requestClass,
+      retryUsed,
+      fallbackUsed,
+      durationMs: Date.now() - startedAt,
+    }
+  } catch (firstError) {
+    const normalizedFirstError = normalizeError(firstError)
+    if (!normalizedFirstError.retryable || partialChunks) throw normalizedFirstError
+    retryUsed = true
+  }
+
+  try {
+    const second = await runAttempt(primary)
+    return {
+      ...second,
+      traceId,
+      requestClass,
+      retryUsed,
+      fallbackUsed,
+      durationMs: Date.now() - startedAt,
+    }
+  } catch (retryError) {
+    const normalizedRetryError = normalizeError(retryError)
+    if (!req.allowFallback || !fallback || fallback === primary || !normalizedRetryError.retryable || partialChunks) {
+      throw normalizedRetryError
+    }
+    fallbackUsed = true
+  }
+
+  const fallbackResult = await runAttempt(fallback!)
+  return {
+    ...fallbackResult,
+    traceId,
+    requestClass,
+    retryUsed,
+    fallbackUsed,
+    durationMs: Date.now() - startedAt,
+  }
+}
+
+function streamResponse(req: CoachRequest): Response {
+  const traceId = req.traceId ?? `srv-${Date.now()}`
+  const requestClass = normalizeRequestClass(req.requestClass)
+  const encoder = new TextEncoder()
+
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      void (async () => {
+        try {
+          const result = await executeWithPolicy(req, (chunk) => {
+            controller.enqueue(encoder.encode(`${JSON.stringify({ type: 'chunk', chunk, traceId })}\n`))
+          })
+          controller.enqueue(encoder.encode(`${JSON.stringify({ type: 'done', ...result })}\n`))
+        } catch (error) {
+          const normalized = normalizeError(error)
+          controller.enqueue(encoder.encode(`${JSON.stringify({
+            type: 'error',
+            traceId,
+            requestClass,
+            error: normalized.message,
+            errorCode: normalized.errorCode ?? 'unknown',
+          })}\n`))
+        } finally {
+          controller.close()
+        }
+      })()
+    },
+  })
+
+  return new Response(stream, { status: 200, headers: STREAM_HEADERS })
+}
 
 export const handler = async (event: LambdaEvent): Promise<LambdaResponse> => {
   if (event.httpMethod !== 'POST') {
-    return json(405, { error: 'Method not allowed' })
+    return json(405, { error: 'Method not allowed', errorCode: 'unknown' })
   }
 
   let req: CoachRequest
   try {
     req = JSON.parse(event.body ?? '{}') as CoachRequest
   } catch {
-    return json(400, { error: 'Invalid JSON body' })
+    return json(400, { error: 'Invalid JSON body', errorCode: 'unknown' })
   }
 
   if (!req.systemPrompt || !req.userMessage) {
-    return json(400, { error: 'Missing required fields: systemPrompt, userMessage' })
+    return json(400, { error: 'Missing required fields: systemPrompt, userMessage', errorCode: 'unknown' })
   }
 
-  const provider = (process.env['AI_PROVIDER'] ?? 'gemini').toLowerCase()
-  const model =
-    (provider === 'gemini' ? process.env['GEMINI_MODEL'] : undefined) ??
-    (provider === 'openai' ? process.env['OPENAI_MODEL'] : undefined) ??
-    (provider === 'claude' ? process.env['CLAUDE_MODEL'] : undefined) ??
-    DEFAULT_MODELS[provider] ??
-    DEFAULT_MODELS['gemini']!
+  if (req.stream) {
+    return streamResponse(req)
+  }
 
   try {
-    let text: string
-
-    if (provider === 'gemini') {
-      const key = process.env['GEMINI_API_KEY']
-      if (!key) return json(500, { error: 'GEMINI_API_KEY no configurada en el servidor.' })
-      text = await callGemini(req, key, model)
-
-    } else if (provider === 'openai') {
-      const key = process.env['OPENAI_API_KEY']
-      if (!key) return json(500, { error: 'OPENAI_API_KEY no configurada en el servidor.' })
-      text = await callOpenAI(req, key, model)
-
-    } else if (provider === 'claude') {
-      const key = process.env['CLAUDE_API_KEY']
-      if (!key) return json(500, { error: 'CLAUDE_API_KEY no configurada en el servidor.' })
-      text = await callClaude(req, key, model)
-
-    } else {
-      return json(500, { error: `Proveedor desconocido: ${provider}` })
-    }
-
-    return json(200, { text, provider, model })
-
-  } catch (e) {
-    const err = e as Error & { statusCode?: number }
-    const normalizedMessage = (err.message ?? '').toLowerCase()
-    const status = err.statusCode === 429 ? 429
-      : err.statusCode === 401 ? 401
-      : err.statusCode === 502 ? 502
-      : err.statusCode === 503 ? 503
-      : err.statusCode === 504 ? 504
-      : normalizedMessage.includes('deadline') || normalizedMessage.includes('timed out') || normalizedMessage.includes('timeout')
-        ? 504
-        : 500
-    return json(status, { error: err.message ?? 'Error interno del servidor.' })
+    const result = await executeWithPolicy(req)
+    return json(200, result)
+  } catch (error) {
+    const normalized = normalizeError(error)
+    return json(normalized.statusCode ?? 500, {
+      error: normalized.message,
+      errorCode: normalized.errorCode ?? 'unknown',
+      traceId: req.traceId,
+      requestClass: normalizeRequestClass(req.requestClass),
+    })
   }
 }

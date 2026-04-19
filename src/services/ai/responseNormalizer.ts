@@ -75,6 +75,10 @@ export function normalizeResponse(raw: AIRawResponse): CoachNormalizedResponse {
     raw: raw.raw,
     timestamp: Date.now(),
     durationMs: raw.durationMs,
+    traceId: raw.traceId ?? 'legacy-trace',
+    requestClass: raw.requestClass ?? 'chat_general',
+    retryUsed: raw.retryUsed,
+    fallbackUsed: raw.fallbackUsed,
     meta: {
       hadActionsMarkup,
       actionParseFailed,

@@ -245,6 +245,8 @@ async function extractSessionsWithAI(
     const responseText = await CoachEngine.extractRaw(systemPrompt, rawText, {
       maxTokens: 2000,
       temperature: 0.1,
+      requestClass: 'import_extract',
+      surface: 'import',
     })
 
     const cleaned = stripCodeFences(responseText)

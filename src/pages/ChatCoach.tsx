@@ -86,7 +86,7 @@ function AcceptedBanner({ message, onDismiss }: { message: string; onDismiss: ()
 export default function ChatCoach() {
   const navigate = useNavigate()
   const location = useLocation()
-  const { messages, isLoading, streamingText, error, loadHistory, sendMessage, newSession, deleteCurrentSession } =
+  const { messages, isLoading, streamingText, responsePhase, error, loadHistory, sendMessage, newSession, deleteCurrentSession } =
     useChatStore()
   const { proposals, loadProposals, acceptProposal, rejectProposal } = useCoachActionsStore()
   const { coachMemory, athleteProfile, loadMemory } = useCoachMemoryStore()
@@ -407,7 +407,13 @@ export default function ChatCoach() {
                 ) : (
                   <div className="flex items-center gap-2 text-sm text-ink-muted">
                     <Spinner />
-                    <span>Pensando respuesta…</span>
+                    <span>
+                      {responsePhase === 'connecting'
+                        ? 'Conectando con el coach…'
+                        : responsePhase === 'processing'
+                          ? 'Coach procesando contexto…'
+                          : 'Pensando respuesta…'}
+                    </span>
                   </div>
                 )}
               </div>

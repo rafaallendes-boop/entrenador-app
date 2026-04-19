@@ -80,7 +80,15 @@ export class OpenAIProvider implements AIProvider {
     const text = data.choices[0]?.message?.content ?? ''
     if (!text) throw createProviderError('openai', 'parse_error', 'La API de OpenAI devolvio una respuesta vacia.')
 
-    return { text, provider: 'openai', model: data.model ?? model, raw: data, durationMs: Date.now() - t0 }
+    return {
+      text,
+      provider: 'openai',
+      model: data.model ?? model,
+      raw: data,
+      durationMs: Date.now() - t0,
+      traceId: request.traceId,
+      requestClass: request.requestClass,
+    }
   }
 
   private async callStream(
@@ -137,6 +145,13 @@ export class OpenAIProvider implements AIProvider {
 
     if (!fullText) throw createProviderError('openai', 'parse_error', 'La API de OpenAI devolvio una respuesta vacia.')
 
-    return { text: fullText, provider: 'openai', model, durationMs: Date.now() - t0 }
+    return {
+      text: fullText,
+      provider: 'openai',
+      model,
+      durationMs: Date.now() - t0,
+      traceId: request.traceId,
+      requestClass: request.requestClass,
+    }
   }
 }
