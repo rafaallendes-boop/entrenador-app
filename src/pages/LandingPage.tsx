@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { ArrowRight } from 'lucide-react'
 import { isSupabaseConfigured } from '../services/auth'
 import { useAuthStore } from '../store/useAuthStore'
+import SharedPublicNav from '../components/SharedPublicNav'
 
 const BRAND = '#ff4d00'
 const BRAND_LIGHT = '#ff7a33'
@@ -45,7 +46,7 @@ export default function LandingPage() {
         fontFamily: "'Inter', system-ui, sans-serif",
       }}
     >
-      <TopNav onLogin={handleSignIn} onSignup={handleSignIn} />
+      <SharedPublicNav onLogin={handleSignIn} onSignup={handleSignIn} scrollAware />
 
       <main>
         <Hero onPrimary={handleSignIn} />
@@ -65,75 +66,6 @@ export default function LandingPage() {
 
       <style>{css}</style>
     </div>
-  )
-}
-
-/* ───────────────────────────────────────────────────────── NAV */
-
-function TopNav({ onLogin, onSignup }: { onLogin: () => void; onSignup: () => void }) {
-  const [scrolled, setScrolled] = useState(false)
-  useEffect(() => {
-    const fn = () => setScrolled(window.scrollY > 10)
-    fn()
-    window.addEventListener('scroll', fn, { passive: true })
-    return () => window.removeEventListener('scroll', fn)
-  }, [])
-
-  return (
-    <nav
-      className="fixed inset-x-0 top-0 z-50 transition-all duration-300"
-      style={{
-        backgroundColor: scrolled ? 'rgba(10,10,10,0.92)' : 'rgba(10,10,10,0.5)',
-        backdropFilter: 'blur(18px) saturate(140%)',
-        WebkitBackdropFilter: 'blur(18px) saturate(140%)',
-        borderBottom: scrolled ? `1px solid ${SURFACE_BORDER}` : '1px solid transparent',
-      }}
-    >
-      <div className="mx-auto flex w-full max-w-7xl items-center justify-between px-6 py-4 md:px-10 md:py-5">
-        {/* Logo */}
-        <a href="#top" className="flex items-center gap-2.5">
-          <BoltIcon />
-          <span
-            className="text-[1.35rem] font-black tracking-[-0.03em] text-white"
-            style={{ fontFamily: FONT_DISPLAY }}
-          >
-            RallyIQ
-          </span>
-        </a>
-
-        {/* Nav links */}
-        <div className="hidden items-center gap-7 md:flex">
-          {(['Producto', 'Funcionalidades', 'Precios', 'Atletas'] as const).map((label) => (
-            <a
-              key={label}
-              href="#"
-              className="nav-link text-[13px] font-semibold tracking-tight transition-colors"
-              style={{ color: INK_FAINT, fontFamily: FONT_DISPLAY }}
-            >
-              {label}
-            </a>
-          ))}
-        </div>
-
-        {/* Actions */}
-        <div className="flex items-center gap-2 md:gap-3">
-          <button
-            onClick={onLogin}
-            className="hidden rounded-xl px-4 py-2 text-sm font-medium transition-colors hover:text-white md:inline-flex"
-            style={{ color: INK_MUTED }}
-          >
-            Iniciar sesión
-          </button>
-          <button
-            onClick={onSignup}
-            className="btn-primary-pill group relative inline-flex items-center gap-1.5 overflow-hidden rounded-xl px-5 py-2.5 text-[13px] font-bold text-white"
-          >
-            <span className="relative z-10">Empezar</span>
-            <ArrowRight className="relative z-10 h-3.5 w-3.5 opacity-90" strokeWidth={2.5} />
-          </button>
-        </div>
-      </div>
-    </nav>
   )
 }
 

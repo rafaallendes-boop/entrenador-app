@@ -1,6 +1,7 @@
 import { ArrowRight } from 'lucide-react'
 import { useAuthStore } from '../store/useAuthStore'
 import { isSupabaseConfigured } from '../services/auth'
+import SharedPublicNav from '../components/SharedPublicNav'
 
 const BRAND = '#ff4d00'
 const BRAND_LIGHT = '#ff7a33'
@@ -27,7 +28,7 @@ export default function FeaturesPage() {
     <div
       style={{ background: '#0a0a0a', color: INK, fontFamily: "'Inter', system-ui, sans-serif", minHeight: '100vh' }}
     >
-      <FeaturesNav onSignup={handleSignIn} onLogin={handleSignIn} />
+      <SharedPublicNav onSignup={handleSignIn} onLogin={handleSignIn} />
 
       <main>
         <FeaturesHero />
@@ -42,59 +43,6 @@ export default function FeaturesPage() {
 
       <style>{css}</style>
     </div>
-  )
-}
-
-/* ─── NAV ─────────────────────────────────────────────── */
-
-function FeaturesNav({ onSignup, onLogin }: { onSignup: () => void; onLogin: () => void }) {
-  return (
-    <nav
-      className="fixed inset-x-0 top-0 z-50"
-      style={{
-        backgroundColor: 'rgba(10,10,10,0.92)',
-        backdropFilter: 'blur(18px)',
-        WebkitBackdropFilter: 'blur(18px)',
-        borderBottom: `1px solid ${SURFACE_BORDER}`,
-      }}
-    >
-      <div className="mx-auto flex w-full max-w-7xl items-center justify-between px-6 py-4 md:px-10 md:py-5">
-        <a href="/" className="flex items-center gap-2.5">
-          <BoltIcon />
-          <span style={{ fontFamily: FONT_DISPLAY, fontWeight: 900, fontSize: '1.35rem', letterSpacing: '-0.03em', color: '#fff' }}>
-            RallyIQ
-          </span>
-        </a>
-        <div className="hidden items-center gap-7 md:flex">
-          {[['Producto', '/'], ['Funcionalidades', '/features'], ['Precios', '/pricing'], ['Atletas', '#']].map(([label, href]) => (
-            <a
-              key={label}
-              href={href}
-              style={{
-                color: href === '/features' ? BRAND : INK_FAINT,
-                fontFamily: FONT_DISPLAY, fontSize: 13, fontWeight: 600,
-                textDecoration: 'none', transition: 'color .15s',
-              }}
-              onMouseEnter={e => (e.currentTarget.style.color = '#fff')}
-              onMouseLeave={e => (e.currentTarget.style.color = href === '/features' ? BRAND : INK_FAINT)}
-            >
-              {label}
-            </a>
-          ))}
-        </div>
-        <div className="flex items-center gap-3">
-          <button onClick={onLogin} style={{ color: INK_MUTED, fontSize: 14, fontWeight: 500, background: 'none', border: 'none', cursor: 'pointer', display: 'none' }} className="md:inline-flex">
-            Iniciar sesión
-          </button>
-          <button
-            onClick={onSignup}
-            className="btn-primary-pill inline-flex items-center gap-1.5 rounded-xl px-5 py-2.5 text-[13px] font-bold text-white"
-          >
-            Empezar <ArrowRight className="h-3.5 w-3.5" strokeWidth={2.5} />
-          </button>
-        </div>
-      </div>
-    </nav>
   )
 }
 

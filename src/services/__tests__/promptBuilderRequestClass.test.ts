@@ -61,4 +61,16 @@ describe('promptBuilder request class branching', () => {
     expect(prompt).toContain('no uses <actions>')
     expect(prompt).not.toContain('DEBES responder con create_week')
   })
+
+  it('uses the compact planning branch for chat plan requests', () => {
+    const prompt = buildCoachSystemPrompt({
+      ...makeContext(),
+      intent: 'plan_week',
+    }, { requestClass: 'chat_action' })
+
+    expect(prompt).toContain('INSTRUCCIONES COMPACTAS DE PLANIFICACIÓN')
+    expect(prompt).toContain('responde con una acción create_week')
+    expect(prompt).not.toContain('EJEMPLO — microciclo competitivo con partido el sábado')
+    expect(prompt).not.toContain('NUTRICIÓN Y HIDRATACIÓN')
+  })
 })

@@ -1,5 +1,8 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
+import { useAuthStore } from '../store/useAuthStore'
+import { isSupabaseConfigured } from '../services/auth'
+import SharedPublicNav from '../components/SharedPublicNav'
 
 // ── Design tokens ────────────────────────────────────────────────────────────
 const BRAND = '#ff4d00'
@@ -360,27 +363,6 @@ function BoltIcon() {
   )
 }
 
-function PricingNav() {
-  return (
-    <nav className="pricing-nav">
-      <div className="pricing-nav-inner">
-        <Link to="/" className="pricing-nav-logo">
-          <span className="bolt"><BoltIcon /></span>
-          RallyIQ
-        </Link>
-        <div className="pricing-nav-links">
-          <Link to="/">Producto</Link>
-          <Link to="/features">Funcionalidades</Link>
-          <Link to="/pricing" className="active">Precios</Link>
-        </div>
-        <div className="pricing-nav-actions">
-          <Link to="/" className="p-btn p-btn-ghost-muted">Iniciar sesión</Link>
-          <Link to="/pricing" className="p-btn p-btn-primary">Empezar <span>→</span></Link>
-        </div>
-      </div>
-    </nav>
-  )
-}
 
 interface TierFeature { text: string; note?: string; dim?: boolean }
 
@@ -454,6 +436,12 @@ function FaqItem({ question, answer, defaultOpen }: FaqItemProps) {
 // ── Main page ────────────────────────────────────────────────────────────────
 export default function PricingPage() {
   const [isAnnual, setIsAnnual] = useState(false)
+  const signInWithGoogle = useAuthStore(s => s.signInWithGoogle)
+  const authAvailable = isSupabaseConfigured
+  const handleSignIn = async () => {
+    if (!authAvailable) return
+    try { await signInWithGoogle() } catch (e) { console.error(e) }
+  }
 
   const starterFeatures: TierFeature[] = [
     { text: 'Planificación semanal manual' },
@@ -488,7 +476,7 @@ export default function PricingPage() {
   return (
     <div style={{ background: SURFACE_DEEP, minHeight: '100vh', color: INK, fontFamily: FONT_DISPLAY }}>
       <style>{css}</style>
-      <PricingNav />
+      <SharedPublicNav onSignup={handleSignIn} onLogin={handleSignIn} />
 
       {/* Hero */}
       <section className="p-hero">

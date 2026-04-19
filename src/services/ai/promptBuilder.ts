@@ -92,6 +92,7 @@ export function buildCoachSystemPrompt(
 ): string {
   const requestClass = options?.requestClass ?? 'chat_action'
   const baseSectionsAllowActions = requestClass === 'chat_action' || requestClass === 'chat_general'
+  const useCompactActionPrompt = requestClass === 'chat_action' && context.intent === 'plan_week'
   const plannedSessions = getPlannedSessions(context)
   const squashSummary = buildSquashSelectionSummary(context)
   const strengthSummary = buildStrengthSelectionSummary(context)
@@ -106,7 +107,7 @@ export function buildCoachSystemPrompt(
     buildPlanWizardSection(context),
     buildCoachMemorySection(context),
     buildFatigueSection(context),
-    buildNutritionContextSection(context),
+    useCompactActionPrompt ? '' : buildNutritionContextSection(context),
     buildWeekSection(context),
     buildSessionsSection(plannedSessions, { allowActions: baseSectionsAllowActions }),
     buildWeekDayLogsSection(context),
@@ -133,7 +134,9 @@ export function buildCoachSystemPrompt(
   const sections: string[] = requestClass === 'chat_action'
     ? [
         ...commonSections,
-        ...actionSections,
+        ...(useCompactActionPrompt
+          ? [buildCompactActionResponseInstructionsSection(context)]
+          : actionSections),
       ]
     : requestClass === 'weekly_summary'
       ? [
@@ -151,6 +154,58 @@ export function buildCoachSystemPrompt(
       ]
 
   return sections.filter(Boolean).join('\n\n')
+}
+
+function buildCompactActionResponseInstructionsSection(context: ChatContext): string {
+  const allowedSports = getAllowedPlanningSports(context.athleteProfile)
+  const allowedSessionTypes = [
+    ...allowedSports,
+    'mobility',
+    'recovery',
+  ]
+  const sessionTypeOptions = [...new Set(allowedSessionTypes)].map((type) => `"${type}"`).join(' | ')
+
+  return `═══ INSTRUCCIONES COMPACTAS DE PLANIFICACIÓN ═══
+
+Objetivo de este request:
+- El usuario está pidiendo planificación concreta desde el chat.
+- Prioriza velocidad, claridad y acciones válidas.
+- No escribas una explicación larga antes de resolver.
+
+Reglas obligatorias:
+- Si el usuario pide una semana o microciclo, responde con una acción create_week.
+- Si pide una sola sesión o entrenamiento puntual, responde con add_session.
+- Si ya existe una semana cargada y la intención es ajustar, prioriza update_session, move_session, replace_session_type o delete_session.
+- Usa solo deportes permitidos: ${allowedSports.join(', ') || 'sin restricción explícita'}.
+- Mantén las sesiones compactas: título corto, objetivo concreto, detalles solo cuando aporten valor real.
+- No inventes warmup ni cooldown salvo que sean realmente importantes.
+- Responde siempre en español.
+
+Formato de salida:
+- Puedes escribir 1-3 frases breves de contexto.
+- Luego SIEMPRE cierra con un bloque <actions> válido.
+- No uses code fences.
+
+Esquema mínimo:
+- create_week: type, targetDate, reason, weekObjectives[], sessions[]
+- add_session: type, targetDate, timeBlock, sessionType, title, durationMin, objective, reason
+- update_session: type, sessionId, reason, y solo los campos a cambiar
+
+Campos de sesión:
+- date: "YYYY-MM-DD"
+- timeBlock: "AM" | "PM"
+- sessionType: ${sessionTypeOptions}
+- title: string corto
+- durationMin: número
+- rpe: 1-10 opcional
+- objective: string corto
+- subtype solo si realmente aplica
+- runningDetails, cyclingDetails, mobilityDetails, squashDetails o exercises solo cuando el tipo lo requiera
+
+Respuesta esperada:
+<actions>
+[{"type":"create_week","targetDate":"YYYY-MM-DD","reason":"motivo corto","weekObjectives":["objetivo"],"sessions":[{"date":"YYYY-MM-DD","timeBlock":"AM","sessionType":"${allowedSports[0] ?? 'recovery'}","title":"Sesión","durationMin":45,"objective":"objetivo"}]}]
+</actions>`
 }
 
 function buildGeneralChatResponseInstructionsSection(context: ChatContext): string {

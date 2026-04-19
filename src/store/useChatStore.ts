@@ -56,6 +56,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     await db.chatMessages.add(userMsg)
     void syncService.pushChatMessage(userMsg)
     const requestClass = inferRequestClassFromIntent(context?.intent)
+    const shouldStreamResponse = !(requestClass === 'chat_action' && context?.intent === 'plan_week')
     set(state => ({ messages: [...state.messages, userMsg], isLoading: true, streamingText: '', responsePhase: 'connecting', error: null }))
 
     // Pasamos historial multi-turno real al provider (excluye el mensaje recién añadido)
@@ -76,11 +77,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const response = await CoachEngine.send(content, enrichedContext, {
         requestClass,
         surface: 'chat',
-        onChunk: (chunk) => {
-          if (get().currentSessionId !== sessionId) return
-          receivedFirstChunk = true
-          set(state => ({ streamingText: state.streamingText + chunk, responsePhase: 'responding' }))
-        },
+        onChunk: shouldStreamResponse
+          ? (chunk) => {
+              if (get().currentSessionId !== sessionId) return
+              receivedFirstChunk = true
+              set(state => ({ streamingText: state.streamingText + chunk, responsePhase: 'responding' }))
+            }
+          : undefined,
       })
       if (get().currentSessionId !== sessionId) {
         return
