@@ -100,7 +100,23 @@ export function buildMobilitySelectionSummary(context: ChatContext): {
 
 // ─── Rules section ──────────────────────────────────────────────────────────
 
-export function buildMobilityRulesSection(): string {
+export function buildMobilityRulesSection(options?: { compact?: boolean }): string {
+  if (options?.compact) {
+    return `
+MOVILIDAD — CONOCIMIENTO TÉCNICO:
+
+Focos más útiles:
+· Cadera y tobillo para squash, running y ciclismo.
+· Hombro y torácica cuando hay raqueta, fuerza o mucha rigidez postural.
+· Full body o recovery cuando la meta es descargar sin sumar fatiga.
+
+Reglas prácticas:
+· Post-sesión: 10-20min sobre las articulaciones más cargadas del día.
+· Recuperación activa: 30-45min, RPE 3-4, nunca agotador.
+· Pre-competencia o pre-entreno: movilidad activa y breve; evita estática pasiva larga.
+· Una sesión pura de movilidad puede ir cualquier día y debe nombrar foco anatómico o contexto real.`
+  }
+
   return `
 MOVILIDAD — CONOCIMIENTO TÉCNICO:
 
@@ -166,8 +182,11 @@ export function inferMobilityPromptContext(summary: MobilitySelectionResult): st
 export function buildDynamicMobilitySelectionSectionV2(
   context: ChatContext,
   summary = buildMobilitySelectionSummary(context),
+  options?: { compact?: boolean },
 ): string {
-  const base = buildDynamicMobilitySelectionSection(context, summary)
+  const base = options?.compact
+    ? buildCompactMobilitySelectionSection(context, summary)
+    : buildDynamicMobilitySelectionSection(context, summary)
   if (!summary) return base
 
   const { selection } = summary
@@ -180,4 +199,25 @@ export function buildDynamicMobilitySelectionSectionV2(
   ].join('\n')
 
   return `${base}\n${addendum}`
+}
+
+function buildCompactMobilitySelectionSection(
+  context: ChatContext,
+  summary = buildMobilitySelectionSummary(context),
+): string {
+  if (!summary) return ''
+
+  const { selection, selectionContext } = summary
+  const sportDetail = getMacroPlanSportDetail(context, 'mobility')
+  const lines: string[] = ['SESIÓN SUGERIDA – MOVILIDAD']
+
+  lines.push(`Deporte principal: ${selectionContext.primarySport} · fase ${selectionContext.phase}`)
+  lines.push(`Sesión sugerida: ${selection.session.name} (${selection.session.typicalDuration})`)
+  lines.push(`Foco: ${selection.session.focus.join(', ')}`)
+  lines.push(`Estructura: ${selection.session.typicalStructure}`)
+  if (sportDetail) {
+    lines.push(`Macroplan mobility: ${sportDetail.weeklyIntent}`)
+  }
+
+  return lines.join('\n')
 }

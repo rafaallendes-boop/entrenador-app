@@ -92,7 +92,24 @@ export function buildCyclingSelectionSummary(context: ChatContext): {
 
 // ─── Rules section ──────────────────────────────────────────────────────────
 
-export function buildCyclingRulesSection(): string {
+export function buildCyclingRulesSection(options?: { compact?: boolean }): string {
+  if (options?.compact) {
+    return `
+CICLISMO — CONOCIMIENTO TÉCNICO:
+
+Tipos útiles:
+· Z2: base aeróbica y recuperación activa. Cadencia 80-95rpm, bajo costo articular.
+· Tempo/sweetspot: 15-30min sostenidos a RPE 6-7. Útil para construir umbral sin tanto impacto.
+· VO2/intervalos: bloques de 3-8min a RPE 8-9 con recuperación activa. Trátalos como sesión exigente de piernas.
+· Long ride: 60-180min continuos. Solo cuando la semana soporta nutrición y recuperación extra.
+
+Reglas de secuenciación:
+· Si ciclismo es soporte, prioriza Z2, activación o recuperación antes que otra sesión de calidad.
+· No apiles long ride o VO2 con fuerza pesada de piernas ni cerca de running tempo/squash intenso.
+· Si hay evento cercano, usa bici corta como activación y evita cargar piernas sin necesidad.
+· Indoor = control y precisión; outdoor = más variabilidad y costo real de fatiga.`
+  }
+
   return `
 CICLISMO — CONOCIMIENTO TÉCNICO:
 
@@ -164,8 +181,11 @@ export function buildDynamicCyclingSelectionSection(
 export function buildDynamicCyclingSelectionSectionV2(
   context: ChatContext,
   summary = buildCyclingSelectionSummary(context),
+  options?: { compact?: boolean },
 ): string {
-  const base = buildDynamicCyclingSelectionSection(context, summary)
+  const base = options?.compact
+    ? buildCompactCyclingSelectionSection(context, summary)
+    : buildDynamicCyclingSelectionSection(context, summary)
   if (!summary) return base
 
   const { selection } = summary
@@ -178,6 +198,29 @@ export function buildDynamicCyclingSelectionSectionV2(
   ].join('\n')
 
   return `${base}\n${addendum}`
+}
+
+function buildCompactCyclingSelectionSection(
+  context: ChatContext,
+  summary = buildCyclingSelectionSummary(context),
+): string {
+  if (!summary) return ''
+
+  const { selection, selectionContext } = summary
+  const sportDetail = getMacroPlanSportDetail(context, 'cycling')
+  const lines: string[] = ['SESIÓN SUGERIDA – CICLISMO']
+
+  lines.push(`Perfil: ${selectionContext.sportProfile} · rol ${selectionContext.role}`)
+  lines.push(`Contexto selector: fase ${selectionContext.phase} · fatiga ${selectionContext.fatigueLevel}/10 · competencia cercana ${selectionContext.competitionSoon ? 'si' : 'no'}`)
+  lines.push(`Sesión sugerida: ${selection.session.name} — ${selection.session.structure}`)
+  if (sportDetail) {
+    lines.push(`Macroplan cycling: ${sportDetail.weeklyIntent}`)
+  }
+  if (selection.session.notes) {
+    lines.push(`Nota: ${selection.session.notes}`)
+  }
+
+  return lines.join('\n')
 }
 
 // ─── Week example ───────────────────────────────────────────────────────────

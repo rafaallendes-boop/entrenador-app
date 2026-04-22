@@ -4,6 +4,7 @@ import { Bell, Brain, Download, LogOut, ShieldAlert, Trash2, Upload, User } from
 import Card from '../components/ui/Card'
 import AthleteProfileEditor from '../components/settings/AthleteProfileEditor'
 import SyncStatusBadge from '../components/sync/SyncStatusBadge'
+import SyncDiagnosticsPanel from '../components/sync/SyncDiagnosticsPanel'
 import { ROUTES } from '../constants/routes'
 import {
   downloadAppDataExport,
@@ -578,6 +579,11 @@ export default function SettingsPage() {
                   </div>
                 </details>
               )}
+              <SyncDiagnosticsPanel
+                tierHealthMap={syncDetails.tierHealthMap}
+                refreshToken={syncDetails.lastErrorAt ?? 0}
+                userId={user?.id ?? null}
+              />
             </div>
             <div className="flex flex-wrap gap-2">
               <button

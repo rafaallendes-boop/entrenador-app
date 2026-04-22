@@ -65,15 +65,18 @@ const DEFAULT_MODELS: Record<ProviderName, string> = {
   claude: 'claude-sonnet-4-6',
 }
 
+// Timeouts aligned with client-side requestPolicy.ts
 const REQUEST_TIMEOUTS: Record<RequestClass, number> = {
-  chat_general: 15000,
-  chat_action: 25000,
+  chat_general: 15000,  // Nivel 1: fast, no retry
+  chat_action: 25000,   // Nivel 2: action with recovery
   weekly_summary: 20000,
   plan_builder_week: 30000,
   plan_builder_pair: 45000,
   import_extract: 20000,
 }
-const MAX_FUNCTION_WALLCLOCK_MS = 24000
+// Netlify free tier allows up to 26s. Set at the limit to avoid truncating
+// chat_action requests which may need the full 25s + recovery overhead.
+const MAX_FUNCTION_WALLCLOCK_MS = 26000
 const MIN_PROVIDER_ATTEMPT_MS = 4000
 
 const JSON_HEADERS = { 'Content-Type': 'application/json' }

@@ -88,28 +88,77 @@ import {
 
 export function buildCoachSystemPrompt(
   context: ChatContext,
-  options?: { requestClass?: AIRequestClass },
+  options?: { requestClass?: AIRequestClass; userMessage?: string },
 ): string {
   const requestClass = options?.requestClass ?? 'chat_action'
-  const baseSectionsAllowActions = requestClass === 'chat_action' || requestClass === 'chat_general'
-  const useCompactActionPrompt = requestClass === 'chat_action' && context.intent === 'plan_week'
+
+  switch (requestClass) {
+    case 'chat_general':
+      return buildLiteSystemPrompt(context)
+    case 'chat_action':
+      return buildActionSystemPrompt(context, options?.userMessage)
+    case 'weekly_summary':
+      return buildWeeklySummarySystemPrompt(context)
+    default:
+      return buildActionSystemPrompt(context, options?.userMessage)
+  }
+}
+
+// ─── Nivel 1: Chat Simple (chat_general) ──────────────────────────────────────
+// Lightweight prompt — no sport selections, no action schemas, no retry logic.
+// Target: ~8K-12K tokens.
+
+function buildLiteSystemPrompt(context: ChatContext): string {
   const plannedSessions = getPlannedSessions(context)
-  const squashSummary = buildSquashSelectionSummary(context)
-  const strengthSummary = buildStrengthSelectionSummary(context)
-  const runningSummary = buildRunningSelectionSummary(context)
-  const cyclingSummary = buildCyclingSelectionSummary(context)
-  const mobilitySummary = buildMobilitySelectionSummary(context)
+
+  const sections: string[] = [
+    buildLitePersonaSection(context),
+    buildAthleteProfileSection(context),
+    buildMacroPlanSection(context),
+    buildCoachMemorySection(context),
+    buildFatigueSection(context),
+    buildWeekSection(context),
+    buildSessionsSection(plannedSessions, { allowActions: false }),
+    buildTodaySection(context),
+    buildNutritionContextSection(context),
+    buildGeneralChatResponseInstructionsSection(context),
+  ]
+
+  return sections.filter(Boolean).join('\n\n')
+}
+
+// ─── Nivel 2: Chat con Acción Puntual (chat_action) ─────────────────────────
+// Includes sport sections filtered by user message + primary sport.
+// Target: ~20K-30K tokens.
+
+function buildActionSystemPrompt(context: ChatContext, userMessage?: string): string {
+  if (context.intent === 'plan_week') {
+    return buildPlanWeekSystemPrompt(context, userMessage)
+  }
+
+  return buildAdjustActionSystemPrompt(context, userMessage)
+}
+
+function buildPlanWeekSystemPrompt(context: ChatContext, userMessage?: string): string {
+  const plannedSessions = getPlannedSessions(context)
+  const relevantSports = detectRelevantSports(context, userMessage)
+  const compactRuleSports = new Set<SupportedSport>(['cycling', 'mobility'])
+  const squashSummary = relevantSports.has('squash') ? buildSquashSelectionSummary(context) : undefined
+  const strengthSummary = relevantSports.has('strength') ? buildStrengthSelectionSummary(context) : undefined
+  const runningSummary = relevantSports.has('running') ? buildRunningSelectionSummary(context) : undefined
+  const cyclingSummary = relevantSports.has('cycling') ? buildCyclingSelectionSummary(context) : undefined
+  const mobilitySummary = relevantSports.has('mobility') ? buildMobilitySelectionSummary(context) : undefined
 
   const commonSections: string[] = [
-    buildPersonaSection(context, { allowActions: baseSectionsAllowActions }),
+    buildPersonaSection(context, { allowActions: true, relevantSports, compactRuleSports }),
     buildAthleteProfileSection(context),
     buildMacroPlanSection(context),
     buildPlanWizardSection(context),
     buildCoachMemorySection(context),
     buildFatigueSection(context),
-    useCompactActionPrompt ? '' : buildNutritionContextSection(context),
+    buildNutritionContextSection(context),
     buildWeekSection(context),
-    buildSessionsSection(plannedSessions, { allowActions: baseSectionsAllowActions }),
+    buildSessionsSection(plannedSessions, { allowActions: true }),
     buildWeekDayLogsSection(context),
     buildTodaySection(context),
   ]
@@ -120,43 +169,193 @@ export function buildCoachSystemPrompt(
     buildCompetitionLoadSection(context),
     buildLoadAnalyticsSection(context),
     buildImplicitPrioritySection(context),
-    buildSquashMatchHistorySection(context),
-    buildDynamicSquashSelectionSection(context, squashSummary),
-    buildDynamicStrengthSelectionSection(context, strengthSummary),
-    buildDynamicRunningSelectionSection(context, runningSummary),
-    buildDynamicCyclingSelectionSectionV2(context, cyclingSummary),
-    buildDynamicMobilitySelectionSectionV2(context, mobilitySummary),
-    buildStrengthProgressionSection(context),
+    // Sport-specific sections — only for relevant sports
+    relevantSports.has('squash') ? buildSquashMatchHistorySection(context) : '',
+    squashSummary ? buildDynamicSquashSelectionSection(context, squashSummary) : '',
+    strengthSummary ? buildDynamicStrengthSelectionSection(context, strengthSummary) : '',
+    runningSummary ? buildDynamicRunningSelectionSection(context, runningSummary) : '',
+    cyclingSummary ? buildDynamicCyclingSelectionSectionV2(context, cyclingSummary, { compact: true }) : '',
+    mobilitySummary ? buildDynamicMobilitySelectionSectionV2(context, mobilitySummary, { compact: true }) : '',
+    relevantSports.has('strength') ? buildStrengthProgressionSection(context) : '',
     buildSessionFeedbackSection(context.historicalSessions),
-    buildResponseInstructionsSection(plannedSessions, context, squashSummary, strengthSummary, cyclingSummary, mobilitySummary),
+    buildResponseInstructionsSection(
+      plannedSessions, context,
+      squashSummary ?? buildSquashSelectionSummary(context),
+      strengthSummary ?? buildStrengthSelectionSummary(context),
+      cyclingSummary ?? buildCyclingSelectionSummary(context),
+      mobilitySummary ?? buildMobilitySelectionSummary(context),
+      { compactAddendum: true, compactExamples: true },
+    ),
   ]
 
-  const sections: string[] = requestClass === 'chat_action'
-    ? [
-        ...commonSections,
-        ...(useCompactActionPrompt
-          ? [buildCompactActionResponseInstructionsSection(context)]
-          : actionSections),
-      ]
-    : requestClass === 'weekly_summary'
-      ? [
-          ...commonSections,
-          buildWeeklySummaryResponseInstructionsSection(),
-        ]
-      : requestClass === 'chat_general'
-        ? [
-            ...commonSections,
-            buildGeneralChatResponseInstructionsSection(context),
-          ]
-        : [
-        ...commonSections,
-        buildMinimalTextResponseInstructionsSection(),
-      ]
+  return [...commonSections, ...actionSections].filter(Boolean).join('\n\n')
+}
+
+function buildAdjustActionSystemPrompt(context: ChatContext, userMessage?: string): string {
+  const plannedSessions = getPlannedSessions(context)
+  const relevantSports = detectRelevantSports(context, userMessage)
+  const squashSummary = relevantSports.has('squash') ? buildSquashSelectionSummary(context) : undefined
+  const strengthSummary = relevantSports.has('strength') ? buildStrengthSelectionSummary(context) : undefined
+  const runningSummary = relevantSports.has('running') ? buildRunningSelectionSummary(context) : undefined
+  const cyclingSummary = relevantSports.has('cycling') ? buildCyclingSelectionSummary(context) : undefined
+  const mobilitySummary = relevantSports.has('mobility') ? buildMobilitySelectionSummary(context) : undefined
+
+  const promptContext = buildResponsePromptContext(
+    plannedSessions,
+    context,
+    squashSummary ?? buildSquashSelectionSummary(context),
+    strengthSummary ?? buildStrengthSelectionSummary(context),
+    cyclingSummary ?? buildCyclingSelectionSummary(context),
+    mobilitySummary ?? buildMobilitySelectionSummary(context),
+  )
+
+  const hasCompetitionSoon = [
+    squashSummary?.selectionContext,
+    strengthSummary?.selectionContext,
+    runningSummary?.selectionContext,
+    cyclingSummary?.selectionContext,
+  ].some(selectionContext => selectionContext?.competitionSoon)
+
+  const commonSections: string[] = [
+    buildPersonaSection(context, { allowActions: true, relevantSports }),
+    buildAthleteProfileSection(context),
+    buildMacroPlanSection(context),
+    buildPlanWizardSection(context),
+    buildCoachMemorySection(context),
+    buildFatigueSection(context),
+    buildWeekSection(context),
+    buildSessionsSection(plannedSessions, { allowActions: true }),
+    buildWeekDayLogsSection(context),
+    buildTodaySection(context),
+  ]
+
+  const actionSections: string[] = [
+    hasCompetitionSoon ? buildHybridSection(context) : '',
+    hasCompetitionSoon ? buildCompetitionSection(context) : '',
+    hasCompetitionSoon ? buildCompetitionLoadSection(context) : '',
+    hasCompetitionSoon ? buildImplicitPrioritySection(context) : '',
+    relevantSports.has('squash') ? buildSquashMatchHistorySection(context) : '',
+    squashSummary ? buildDynamicSquashSelectionSection(context, squashSummary) : '',
+    strengthSummary ? buildDynamicStrengthSelectionSection(context, strengthSummary) : '',
+    runningSummary ? buildDynamicRunningSelectionSection(context, runningSummary) : '',
+    cyclingSummary ? buildDynamicCyclingSelectionSectionV2(context, cyclingSummary) : '',
+    mobilitySummary ? buildDynamicMobilitySelectionSectionV2(context, mobilitySummary) : '',
+    relevantSports.has('strength') ? buildStrengthProgressionSection(context) : '',
+    buildAdjustResponseInstructionsSection(context, promptContext),
+  ]
+
+  return [...commonSections, ...actionSections].filter(Boolean).join('\n\n')
+}
+
+// ─── Weekly Summary System Prompt ───────────────────────────────────────────
+
+function buildWeeklySummarySystemPrompt(context: ChatContext): string {
+  const plannedSessions = getPlannedSessions(context)
+
+  const sections: string[] = [
+    buildPersonaSection(context, { allowActions: false }),
+    buildAthleteProfileSection(context),
+    buildMacroPlanSection(context),
+    buildCoachMemorySection(context),
+    buildFatigueSection(context),
+    buildWeekSection(context),
+    buildSessionsSection(plannedSessions, { allowActions: false }),
+    buildWeekDayLogsSection(context),
+    buildTodaySection(context),
+    buildLoadAnalyticsSection(context),
+    buildSessionFeedbackSection(context.historicalSessions),
+    buildWeeklySummaryResponseInstructionsSection(),
+  ]
 
   return sections.filter(Boolean).join('\n\n')
 }
 
-function buildCompactActionResponseInstructionsSection(context: ChatContext): string {
+// ─── Sport Detection for Nivel 2 ────────────────────────────────────────────
+// Detects which sports are relevant based on user message content and profile.
+
+function detectRelevantSports(context: ChatContext, userMessage?: string): Set<SupportedSport> {
+  const enabledSports = getAllowedPlanningSports(context.athleteProfile)
+  const primarySport = getPlanningPrimarySport(context.athleteProfile) ?? getPrimarySportNormalized(context.athleteProfile)
+
+  if (!userMessage) {
+    return new Set(enabledSports.length > 0 ? enabledSports : ['squash', 'running', 'strength', 'mobility', 'cycling'] as SupportedSport[])
+  }
+
+  const normalized = userMessage.toLowerCase()
+  const mentioned = new Set<SupportedSport>()
+
+  // Always include primary sport
+  if (primarySport) mentioned.add(primarySport as SupportedSport)
+
+  // Check for sport mentions in the message
+  const sportKeywords: Record<SupportedSport, string[]> = {
+    squash: ['squash', 'partido', 'match', 'cancha', 'drills', 'raqueta', 'torneo'],
+    running: ['running', 'correr', 'carrera', 'ritmo', 'tempo', 'intervalos', 'z2', 'long run', 'km'],
+    strength: ['fuerza', 'pesas', 'sentadilla', 'press', 'deadlift', 'peso muerto', 'ejercicio', 'gym'],
+    cycling: ['ciclismo', 'cycling', 'bici', 'bicicleta', 'pedalear', 'rodillo'],
+    mobility: ['movilidad', 'mobility', 'estiramiento', 'flexibilidad', 'yoga'],
+  }
+
+  for (const [sport, keywords] of Object.entries(sportKeywords) as [SupportedSport, string[]][]) {
+    if (enabledSports.includes(sport) && keywords.some(kw => normalized.includes(kw))) {
+      mentioned.add(sport)
+    }
+  }
+
+  // Generic planning verbs → include all enabled sports
+  if (
+    mentioned.size === 0 &&
+    /\b(semana|sesion|sesión|plan|crea|arma|genera|ajusta|modifica|redistribuye)\b/.test(normalized)
+  ) {
+    return new Set(enabledSports.length > 0 ? enabledSports : ['squash', 'running', 'strength', 'mobility', 'cycling'] as SupportedSport[])
+  }
+
+  // If nothing specific was mentioned, at least include primary + any enabled sport
+  if (mentioned.size === 0) {
+    return new Set(enabledSports.length > 0 ? enabledSports : ['squash', 'running', 'strength', 'mobility', 'cycling'] as SupportedSport[])
+  }
+
+  // Always include mobility if any sport is included (low cost, always useful)
+  if (enabledSports.includes('mobility')) {
+    mentioned.add('mobility')
+  }
+
+  return mentioned
+}
+
+// ─── Lite Persona (Nivel 1 — no action rules) ──────────────────────────────
+
+function buildLitePersonaSection(context: ChatContext): string {
+  const athleteName = getAthleteDisplayName(context.athleteProfile, 'este atleta')
+  const sportsSummary = getAthleteSportsSummary(context.athleteProfile)
+  const primarySport = getPlanningPrimarySport(context.athleteProfile) ?? getPrimarySportNormalized(context.athleteProfile)
+  const sportDisplay = sportsSummary || 'disciplinas no configuradas'
+  const primaryDisplay = primarySport ?? context.athleteProfile?.primarySport?.trim() ?? 'deporte principal'
+
+  return `Eres el coach personal de alto rendimiento de ${athleteName}.
+${athleteName} es un atleta orientado a ${sportDisplay}.
+
+ROLES:
+1. PERFORMANCE COACH: Das consejos de carga, fatiga, recuperación y periodización.
+2. ADVISOR: Respondes preguntas sobre entrenamiento, nutrición y rendimiento.
+
+PRIORIDADES:
+1. Salud y prevención de lesión
+2. Calidad del entrenamiento
+3. Rendimiento específico en ${primaryDisplay}
+
+ESTILO:
+- Directo, conciso, práctico.
+- No inventes acciones estructuradas ni bloques <actions>.
+- Si el usuario pide crear o modificar sesiones o semanas, responde en texto y sugiere que lo pida explícitamente como acción.
+- Si falta contexto, asume algo razonable y dilo brevemente.
+- Responde siempre en español.`
+}
+
+function buildAdjustResponseInstructionsSection(
+  context: ChatContext,
+  promptContext: ResponsePromptContext,
+): string {
   const allowedSports = getAllowedPlanningSports(context.athleteProfile)
   const allowedSessionTypes = [
     ...allowedSports,
@@ -164,48 +363,77 @@ function buildCompactActionResponseInstructionsSection(context: ChatContext): st
     'recovery',
   ]
   const sessionTypeOptions = [...new Set(allowedSessionTypes)].map((type) => `"${type}"`).join(' | ')
+  const defaultSessionType = allowedSports[0] ?? 'recovery'
+  const addendum = buildCyclingMobilityActionSchemaAddendum(promptContext, { compact: true })
+  const referenceLoads = buildReferenceLoadSection(promptContext)
 
-  return `═══ INSTRUCCIONES COMPACTAS DE PLANIFICACIÓN ═══
+  const sections: string[] = [
+    '═══ INSTRUCCIONES DE AJUSTE ═══',
+    '',
+    'Objetivo de este request:',
+    '- El usuario está pidiendo un ajuste puntual, no una planificación semanal completa.',
+    '- Prioriza cambios concretos, válidos y fáciles de ejecutar.',
+    '- Usa las sesiones existentes e IDs visibles como fuente principal para modificar la semana.',
+    '',
+    'Reglas obligatorias:',
+    '- Si el usuario pide agregar una sesión nueva, usa add_session.',
+    '- Si pide cambiar una sesión existente, usa update_session con sessionId.',
+    '- Si pide moverla, usa move_session.',
+    '- Si pide eliminarla, usa delete_session.',
+    '- Si pide saltarla, usa skip_session.',
+    '- No uses create_week para ajustes puntuales.',
+    `- Usa solo deportes permitidos: ${allowedSports.join(', ') || 'sin restricción explícita'}.`,
+    '- No arrastres detalles viejos incompatibles cuando reemplaces tipo, ejercicios o foco de una sesión.',
+    '- Mantén las sesiones compactas: título corto, objetivo claro y detalles solo cuando aporten valor real.',
+    '- Warmup y cooldown son opcionales; si los omites, el sistema genera protocolos base automáticamente.',
+    '- Responde siempre en español.',
+  ]
 
-Objetivo de este request:
-- El usuario está pidiendo planificación concreta desde el chat.
-- Prioriza velocidad, claridad y acciones válidas.
-- No escribas una explicación larga antes de resolver.
+  sections.push(
+    '',
+    referenceLoads,
+    '',
+    'Acciones disponibles para ajuste:',
+    '- add_session — targetDate, timeBlock, sessionType, title, durationMin, rpe?, objective?, subtype?, reason',
+    '- update_session — sessionId, reason, y solo los campos que cambian: newType, subtype, newTitle, newObjective, newRpe, newDurationMin, runningType, targetPaceMin, targetPaceMax, targetHrMin, targetHrMax, intervalStructure, cyclingDetails, mobilityDetails, squashDetails, exercises',
+    '- move_session — sessionId, targetDate, reason',
+    '- skip_session — sessionId, reason',
+    '- delete_session — sessionId, reason',
+    '- replace_session_type — sessionId, newType, reason',
+    '- change_rpe / shorten_session / lengthen_session cuando el ajuste es solo carga o duración',
+    '',
+    'Campos mínimos de sesión para add_session:',
+    '- targetDate: "YYYY-MM-DD"',
+    '- timeBlock: "AM" | "PM"',
+    `- sessionType: ${sessionTypeOptions}`,
+    '- title: string corto',
+    '- durationMin: número',
+    '- objective: string corto',
+    '- rpe: 1-10 opcional',
+    '- subtype solo si realmente aplica',
+    '- runningType, cyclingDetails, mobilityDetails, squashDetails o exercises solo cuando el tipo lo requiera',
+    '',
+    'Formato de salida:',
+    '- Puedes escribir 1-3 frases breves de contexto.',
+    '- Luego SIEMPRE cierra con un bloque <actions> válido.',
+    '- No uses code fences.',
+    '',
+    'Ejemplo — add_session:',
+    '<actions>',
+    `[{"type":"add_session","targetDate":"YYYY-MM-DD","timeBlock":"AM","sessionType":"${defaultSessionType}","title":"Sesión","durationMin":45,"objective":"objetivo puntual","reason":"agregar una sesión específica"}]`,
+    '</actions>',
+    '',
+    'Ejemplo — update_session:',
+    '<actions>',
+    '[{"type":"update_session","sessionId":"ID_DE_8_CHARS","newTitle":"Sesión ajustada","newObjective":"ajuste concreto según lo pedido","newDurationMin":40,"reason":"modificar la sesión existente"}]',
+    '</actions>',
+  )
 
-Reglas obligatorias:
-- Si el usuario pide una semana o microciclo, responde con una acción create_week.
-- Si pide una sola sesión o entrenamiento puntual, responde con add_session.
-- Si ya existe una semana cargada y la intención es ajustar, prioriza update_session, move_session, replace_session_type o delete_session.
-- Usa solo deportes permitidos: ${allowedSports.join(', ') || 'sin restricción explícita'}.
-- Mantén las sesiones compactas: título corto, objetivo concreto, detalles solo cuando aporten valor real.
-- No inventes warmup ni cooldown salvo que sean realmente importantes.
-- Responde siempre en español.
+  if (addendum) {
+    sections.push('', addendum)
+  }
 
-Formato de salida:
-- Puedes escribir 1-3 frases breves de contexto.
-- Luego SIEMPRE cierra con un bloque <actions> válido.
-- No uses code fences.
-
-Esquema mínimo:
-- create_week: type, targetDate, reason, weekObjectives[], sessions[]
-- add_session: type, targetDate, timeBlock, sessionType, title, durationMin, objective, reason
-- update_session: type, sessionId, reason, y solo los campos a cambiar
-
-Campos de sesión:
-- date: "YYYY-MM-DD"
-- timeBlock: "AM" | "PM"
-- sessionType: ${sessionTypeOptions}
-- title: string corto
-- durationMin: número
-- rpe: 1-10 opcional
-- objective: string corto
-- subtype solo si realmente aplica
-- runningDetails, cyclingDetails, mobilityDetails, squashDetails o exercises solo cuando el tipo lo requiera
-
-Respuesta esperada:
-<actions>
-[{"type":"create_week","targetDate":"YYYY-MM-DD","reason":"motivo corto","weekObjectives":["objetivo"],"sessions":[{"date":"YYYY-MM-DD","timeBlock":"AM","sessionType":"${allowedSports[0] ?? 'recovery'}","title":"Sesión","durationMin":45,"objective":"objetivo"}]}]
-</actions>`
+  return sections.join('\n')
 }
 
 function buildGeneralChatResponseInstructionsSection(context: ChatContext): string {
@@ -229,36 +457,33 @@ function buildWeeklySummaryResponseInstructionsSection(): string {
 - Responde siempre en español.`
 }
 
-function buildMinimalTextResponseInstructionsSection(): string {
-  return `═══ INSTRUCCIONES DE RESPUESTA EN TEXTO ═══
-
-- Responde solo en texto.
-- No uses <actions>.
-- Prioriza claridad, brevedad y utilidad práctica.
-- Responde siempre en español.`
-}
-
 // ─── Persona & rules section ────────────────────────────────────────────────
 
 function buildPersonaSection(
   context: ChatContext,
-  options?: { allowActions?: boolean },
+  options?: { allowActions?: boolean; relevantSports?: Set<SupportedSport>; compactRuleSports?: Set<SupportedSport> },
 ): string {
   const allowActions = options?.allowActions ?? true
   const athleteName = getAthleteDisplayName(context.athleteProfile, 'este atleta')
   const sportsSummary = getAthleteSportsSummary(context.athleteProfile)
   const enabledSports = getAllowedPlanningSports(context.athleteProfile)
   const primarySport = getPlanningPrimarySport(context.athleteProfile) ?? getPrimarySportNormalized(context.athleteProfile)
+  const relevantSports = options?.relevantSports
+  const compactRuleSports = options?.compactRuleSports
 
   const sportDisplay = sportsSummary || 'disciplinas no configuradas'
   const primaryDisplay = primarySport ?? context.athleteProfile?.primarySport?.trim() ?? 'deporte principal'
 
   const sportSections = [
-    enabledSports.includes('squash')   ? buildSquashRulesSection()   : '',
-    enabledSports.includes('running')  ? buildRunningRulesSection()  : '',
-    enabledSports.includes('strength') ? buildStrengthRulesSection() : '',
-    enabledSports.includes('mobility') ? buildMobilityRulesSection() : '',
-    enabledSports.includes('cycling')  ? buildCyclingRulesSection()  : '',
+    enabledSports.includes('squash') && (!relevantSports || relevantSports.has('squash')) ? buildSquashRulesSection() : '',
+    enabledSports.includes('running') && (!relevantSports || relevantSports.has('running')) ? buildRunningRulesSection() : '',
+    enabledSports.includes('strength') && (!relevantSports || relevantSports.has('strength')) ? buildStrengthRulesSection() : '',
+    enabledSports.includes('mobility') && (!relevantSports || relevantSports.has('mobility'))
+      ? buildMobilityRulesSection({ compact: compactRuleSports?.has('mobility') })
+      : '',
+    enabledSports.includes('cycling') && (!relevantSports || relevantSports.has('cycling'))
+      ? buildCyclingRulesSection({ compact: compactRuleSports?.has('cycling') })
+      : '',
   ].filter(Boolean).join('\n')
 
   return `Eres el coach-planner personal de alto rendimiento de ${athleteName}.
@@ -1462,19 +1687,20 @@ function buildResponseInstructionsSection(
   strengthSummary: StrengthSelectionSummary = buildStrengthSelectionSummary(context),
   cyclingSummary = buildCyclingSelectionSummary(context),
   mobilitySummary = buildMobilitySelectionSummary(context),
+  options?: { compactAddendum?: boolean; compactExamples?: boolean },
 ): string {
   const promptContext = buildResponsePromptContext(sessions, context, squashSummary, strengthSummary, cyclingSummary, mobilitySummary)
-  return `${buildResponseInstructions(sessions, context, promptContext)}\n\n${buildCyclingMobilityActionSchemaAddendum(promptContext)}`
+  return `${buildResponseInstructions(sessions, context, promptContext, { compactExamples: options?.compactExamples })}\n\n${buildCyclingMobilityActionSchemaAddendum(promptContext, { compact: options?.compactAddendum })}`
 }
 
 function buildResponseInstructions(
   _sessions: Session[],
   context: ChatContext,
   promptContext: ResponsePromptContext,
+  options?: { compactExamples?: boolean },
 ): string {
   const {
     today,
-    weekStart,
     weekDates,
     sportPriority,
     playsSquash,
@@ -1482,15 +1708,9 @@ function buildResponseInstructions(
     hasStrength,
     hasCycling,
     plannedSessionLines,
-    w,
     squashBaseDrillsJson,
-    strengthPrimarySelection,
-    strengthPrimaryFollowUpSelection,
-    strengthBaseSelection,
-    strengthBaseExercisesJson,
-    strengthPrimaryExercisesJson,
-    strengthPrimaryFollowUpExercisesJson,
   } = promptContext
+  const useCompactExamples = options?.compactExamples ?? false
   const baseWeekTemplate = buildBaseWeekTemplate(promptContext)
   const allowedSessionTypes = [
     playsSquash ? 'squash' : null,
@@ -1508,38 +1728,67 @@ function buildResponseInstructions(
   ].filter(Boolean).join(', ')
   const runningOrCyclingLabel = hasRunning && hasCycling ? 'running y cycling' : hasRunning ? 'running' : 'cycling'
 
+  const intervalStructureSection = hasRunning || hasCycling
+    ? useCompactExamples
+      ? `Para ${runningOrCyclingLabel} (agrega en la sesión):
+  runningType: "z2"|"tempo"|"intervals"|"long"
+  targetPaceMin / targetPaceMax / targetHrMin / targetHrMax cuando apliquen
+  Si runningType="intervals" o "tempo", añade intervalStructure con bloques explícitos y cortos.`
+      : `Para ${runningOrCyclingLabel} (agrega en la sesión):
+  runningType: "z2"|"tempo"|"intervals"|"long"
+  targetPaceMin: "5:30"      ← ritmo mínimo /km (running) o min/km referencia (cycling)
+  targetPaceMax: "6:00"      ← ritmo máximo /km
+  targetHrMin: 140           ← FC objetivo (opcional)
+  targetHrMax: 155
+  Para intervalos o tempo, añade también intervalStructure con bloques explícitos:
+    intervalStructure: {
+      blocks: [
+        {"label":"Calentamiento progresivo","durationMin":15,"targetPace":"6:00"},
+        {"label":"Series 5x1km","repetitions":5,"distanceKm":1,"targetPace":"4:20","notes":"recuperación 90s trote"},
+        {"label":"Vuelta a la calma","durationMin":10,"targetPace":"6:30"}
+      ]
+    }`
+    : ''
+  const exerciseSchemaSection = useCompactExamples
+    ? `Para fuerza y movilidad:
+  exercises: [{"name":"Nombre","sets":4,"reps":8,"weight":80,"group":"push|pull|legs|core|olympic|mobility|other"}]
+  También acepta {"name":"...","sets":3,"reps":"30s","mobilityFocus":"hip|ankle|shoulder|spine|knee|full_body"}`
+    : `Para fuerza y movilidad (agrega array exercises en la sesión):
+  exercises: [
+    {"name":"Nombre","sets":4,"reps":8,"weight":80,"group":"push|pull|legs|core|olympic|mobility|other"},
+    {"name":"Nombre","sets":3,"reps":"30s","mobilityFocus":"hip|ankle|shoulder|spine|knee|full_body"}
+  ]
+  Para fuerza: usa la selección dinámica como base; si quieres explicitar intensidad, hazlo dentro de notes sin crear un campo nuevo.`
+  const warmupCooldownSection = useCompactExamples
+    ? `Warmup y cooldown (opcionales):
+  warmup/cooldown pueden omitirse; el sistema genera protocolos base automáticamente.
+  Si los incluyes, usa objetos breves con title, durationMin, note, tone, steps[], source.`
+    : `Warmup y cooldown (opcionales):
+  warmup: {"title":"...","durationMin":10,"note":"...","tone":"general","steps":[{"label":"..."},...],"source":"base"}
+  cooldown: {"title":"...","durationMin":7,"note":"...","tone":"recovery","steps":[{"label":"..."},...],"source":"base"}
+Si los omites, el sistema genera protocolos base automáticamente.
+Para create_week, prioriza primero sesiones válidas y compactas; no gastes tokens en warmup/cooldown si no son necesarios.
+Cuando la sesión sea cycling o mobility, NO omitas cyclingDetails o mobilityDetails aunque la propuesta sea compacta.`
+  const examplesSection = useCompactExamples
+    ? buildCompactPlannerExamples(context, promptContext)
+    : buildFullPlannerExamples(context, promptContext)
+  const criticalRulesSection = useCompactExamples
+    ? buildCompactCriticalRulesSection(context)
+    : buildFullCriticalRulesSection(context)
+  const competitionRulesSection = useCompactExamples
+    ? buildCompactCompetitionRulesSection(playsSquash, hasRunning)
+    : buildFullCompetitionRulesSection(playsSquash, hasRunning)
+
   return `═══ INSTRUCCIONES DEL COACH-PLANNER ═══
 
-REGLAS CRÍTICAS:
-1. Si el usuario pide "crear semana", "armar semana", "planificar semana", "dame la propuesta", "dame un plan", "dame la semana", "construye la semana", "hazme la semana", "qué hacemos esta semana", "propuesta de semana" → DEBES responder con create_week. No solo texto. No describas el plan y luego pidas confirmación — créalo directamente.
-2. Si el usuario pide "agregar sesión", "pon un X el día Y", "agrega X" → DEBES responder con add_session. No solo texto.
-3. Si el usuario pide "cambia los ejercicios", "agrégale X", "reemplaza", "mejora la propuesta", "incorpora X", "agrega running", "agrega squash", "baja squash", "sube running" o redistribuir la semana → DEBES priorizar update_session, move_session, replace_session_type o delete_session sobre add_session cuando la intención sea reemplazar o ajustar lo ya existente. No acumules sesiones o ejercicios viejos si la idea es sustituirlos.
-4. Si falta contexto → asume valores razonables para el atleta y explícalo en 1 frase.
-5. Si no hay sesiones en la semana → crea una semana base COMPLETA sin pedir confirmación.
-6. NUNCA respondas con solo texto cuando se pidió una acción. Si describiste el plan en texto, DEBES incluir el bloque <actions> al final en la misma respuesta.
-7. SOLO puedes usar deportes permitidos por la planificación actual: ${getAllowedPlanningSports(context.athleteProfile).join(', ') || 'sin restricción explícita'}. Si running no está en esa lista, NO lo agregues.
-8. Si el usuario pide "plan completo", "todas las semanas", "plan hasta el evento" o especifica semanas exactas con fechas de lunes → genera MÚLTIPLES acciones create_week EN EL MISMO bloque <actions>, UNA POR SEMANA. El array de acciones contendrá [create_week_s1, create_week_s2, ...create_week_sN]. Cada create_week tiene sus propias sessions[] con fechas absolutas dentro de esa semana, y sus weekObjectives. Mantén sesiones COMPACTAS: omite warmup/cooldown (el sistema los genera automáticamente), limita exercises a 4-5 por sesión, objectives en 1 frase. NO describas las semanas en texto y luego pongas solo 1-2 create_week — genera TODAS las semanas solicitadas como acciones.
+${criticalRulesSection}
 
 PERFIL BASE DEL ATLETA (defaults para propuestas):
 - Prioridad: ${sportPriority}
 - Semana base típica:
 ${baseWeekTemplate}
 
-SEMANA COMPETITIVA Y PRE-TORNEO:
-- Si aparece un partido o torneo, el objetivo principal pasa a ser rendir fresco en cancha.
-- Si faltan 2 dias o menos para competir, evita agregar sesiones que dejen DOMS o fatiga metabolica alta.
-- Fuerza en semana competitiva: volumen bajo, foco neural/estabilidad, nunca pesada pegada al partido.
-${hasRunning ? '- Running en semana competitiva: Z2 corto o activacion; evita tempo o intervalos largos salvo que esten lejos del partido.' : ''}
-- Pre-competencia (deporte principal): sesion tecnica corta o activacion especifica; no sesiones largas de desgaste.${playsSquash ? '\n- Squash pre-partido: control tecnico, precision, sensaciones, T, largo-corto, activacion de pies; no sesiones de RSA ni carga fisica alta.' : ''}
-- Si el usuario menciona torneo, liga, rival, cuadro o fin de semana competitivo, debes responder como coach en taper, no como semana base normal.
-- El deporte accesorio en semana competitiva no debe quitar frescura a la sesion objetivo del deporte principal.
-- Si hay competencia objetivo, prioriza cardio recovery o Z2 corto; deja intensidad alta fuera de la ventana sensible.
-- Si hay varias competencias, distingue entre sesion objetivo inmediata y carga secundaria; protege primero la inmediata.
-- Un control no compite por prioridad con un match o competitive; usalo como ajuste tecnico o activacion.
-${hasRunning ? '- Un match o competitive mas cercano manda sobre cualquier desarrollo de running de esa misma ventana.' : ''}
-- Si el deporte principal es fuerza, trata la fuerza como disciplina principal: lift central, accesorios coherentes, trunk y progresion real.
-- Si la fuerza no es principal, ajusta el volumen para que complemente al deporte objetivo y no robe frescura.
-- No uses la misma receta de pesas para todos: decide entre fuerza, hipertrofia, potencia, estabilidad o recovery segun fase, fatiga, historial y rol de la fuerza.
+${competitionRulesSection}
 
 FECHA HOY: ${today}
 ${weekDates}
@@ -1607,34 +1856,12 @@ Para squash training o control (agrega en la sesión cuando hay drills concretos
     - usa squashDetails.sessionMode: "competition_match" si es partido real
     - usa sessionKind: "match"
 
-${hasRunning || hasCycling ? `Para ${runningOrCyclingLabel} (agrega en la sesión):
-  runningType: "z2"|"tempo"|"intervals"|"long"
-  targetPaceMin: "5:30"      ← ritmo mínimo /km (running) o min/km referencia (cycling)
-  targetPaceMax: "6:00"      ← ritmo máximo /km
-  targetHrMin: 140           ← FC objetivo (opcional)
-  targetHrMax: 155
-  Para intervalos o tempo, añade también intervalStructure con bloques explícitos:
-    intervalStructure: {
-      blocks: [
-        {"label":"Calentamiento progresivo","durationMin":15,"targetPace":"6:00"},
-        {"label":"Series 5x1km","repetitions":5,"distanceKm":1,"targetPace":"4:20","notes":"recuperación 90s trote"},
-        {"label":"Vuelta a la calma","durationMin":10,"targetPace":"6:30"}
-      ]
-    }` : ''}
+${hasRunning || hasCycling ? `${intervalStructureSection}
+` : ''}
 
-Para fuerza y movilidad (agrega array exercises en la sesión):
-  exercises: [
-    {"name":"Nombre","sets":4,"reps":8,"weight":80,"group":"push|pull|legs|core|olympic|mobility|other"},
-    {"name":"Nombre","sets":3,"reps":"30s","mobilityFocus":"hip|ankle|shoulder|spine|knee|full_body"}
-  ]
-  Para fuerza: usa la selección dinámica como base; si quieres explicitar intensidad, hazlo dentro de notes sin crear un campo nuevo.
+${exerciseSchemaSection}
 
-Warmup y cooldown (opcionales):
-  warmup: {"title":"...","durationMin":10,"note":"...","tone":"general","steps":[{"label":"..."},...],"source":"base"}
-  cooldown: {"title":"...","durationMin":7,"note":"...","tone":"recovery","steps":[{"label":"..."},...],"source":"base"}
-Si los omites, el sistema genera protocolos base automáticamente.
-Para create_week, prioriza primero sesiones válidas y compactas; no gastes tokens en warmup/cooldown si no son necesarios.
-Cuando la sesión sea cycling o mobility, NO omitas cyclingDetails o mobilityDetails aunque la propuesta sea compacta.
+${warmupCooldownSection}
 
 ═══ FORMATO DE RESPUESTA ═══
 
@@ -1645,13 +1872,32 @@ Luego el bloque <actions> AL FINAL (sin code fences, sin backticks):
 [{"type":"TIPO",...,"reason":"motivo"}]
 </actions>
 
-EJEMPLO — crear semana completa con detalle:
-${(() => {
+${examplesSection}`
+}
+
+// ─── Template & inline helpers for response instructions ────────────────────
+
+function buildFullPlannerExamples(
+  context: ChatContext,
+  promptContext: ResponsePromptContext,
+): string {
+  const {
+    weekStart,
+    w,
+    strengthPrimarySelection,
+    strengthPrimaryFollowUpSelection,
+    strengthBaseSelection,
+    strengthPrimaryExercisesJson,
+    strengthPrimaryFollowUpExercisesJson,
+    strengthBaseExercisesJson,
+  } = promptContext
+
   const exampleSport: string = getPlanningPrimarySport(context.athleteProfile) ?? context.athleteProfile?.sportContext?.primarySport ?? 'squash'
-  if (exampleSport === 'running') return buildRunningCreateWeekExample(promptContext)
-  if (exampleSport === 'cycling') return buildCyclingCreateWeekExample(promptContext)
-  if (exampleSport === 'strength') {
-    return `<actions>
+  const createWeekExample = (() => {
+    if (exampleSport === 'running') return buildRunningCreateWeekExample(promptContext)
+    if (exampleSport === 'cycling') return buildCyclingCreateWeekExample(promptContext)
+    if (exampleSport === 'strength') {
+      return `<actions>
 [{"type":"create_week",
   "weekObjectives":["desarrollar fuerza upper + lower","movilidad complementaria","recuperación activa"],
   "sessions":[
@@ -1664,10 +1910,13 @@ ${(() => {
   ],
   "reason":"semana base fuerza — upper lunes, lower miércoles, full body viernes, con movilidad complementaria"}]
 </actions>`
-  } else {
+    }
+
     return buildSquashCreateWeekExample(promptContext)
-  }
-})()}
+  })()
+
+  return `EJEMPLO — crear semana completa con detalle:
+${createWeekExample}
 
 EJEMPLO — update_session con ejercicios:
 <actions>
@@ -1684,7 +1933,135 @@ EJEMPLO — microciclo competitivo con partido el sábado:
 ${buildCompetitiveSquashWeekExample(promptContext)}`
 }
 
-// ─── Template & inline helpers for response instructions ────────────────────
+function buildCompactPlannerExamples(
+  context: ChatContext,
+  promptContext: ResponsePromptContext,
+): string {
+  const {
+    weekStart,
+    w,
+    squashMixedBlocksJson,
+    squashMixedDrillsJson,
+    squashCompetitiveDrillsJson,
+    strengthPrimarySelection,
+    strengthPrimaryExercisesJson,
+  } = promptContext
+  const exampleSport: string = getPlanningPrimarySport(context.athleteProfile) ?? context.athleteProfile?.sportContext?.primarySport ?? 'squash'
+
+  if (exampleSport === 'cycling') {
+    return `EJEMPLO — create_week compacto:
+<actions>
+[{"type":"create_week","weekObjectives":["base aeróbica","movilidad útil"],"sessions":[
+  {"date":"${addDaysToISO(weekStart, 0)}","timeBlock":"PM","sessionType":"cycling","title":"Ciclismo Z2","durationMin":70,"objective":"base aeróbica","cyclingDetails":{"sessionCategory":"support aerobic","sessionFamily":"z2_aerobic","targetStructure":"Rodaje Z2 continuo con cadencia estable.","intensityReference":"moderate","executionNotes":"Soporte aerobico sin interferir con el deporte principal."}},
+  {"date":"${addDaysToISO(weekStart, 2)}","timeBlock":"AM","sessionType":"mobility","title":"Movilidad post-cycling","durationMin":30,"objective":"cadera y tobillo","mobilityDetails":{"context":"post_cycling","focusAreas":["hip","ankle_foot"],"targetStructure":"10-15min post sesion con movilidad activa y reset articular.","executionNotes":"Usar como descarga corta y especifica."}},
+  {"date":"${addDaysToISO(weekStart, 4)}","timeBlock":"AM","sessionType":"mobility","title":"Movilidad full body","durationMin":30,"objective":"reset global","mobilityDetails":{"context":"full_body","focusAreas":["hip","ankle_foot","full_body"],"targetStructure":"15-20min de flujo full body suave.","executionNotes":"Mantener disponibilidad articular sin fatiga extra."}}
+],"reason":"semana compacta de ciclismo con movilidad útil"}]
+</actions>
+
+EJEMPLO — update_session compacto:
+<actions>
+[{"type":"update_session","sessionId":"ID_DE_8_CHARS","newObjective":"subir calidad sin alargar","newDurationMin":50,"reason":"ajuste puntual"}]
+</actions>
+
+EJEMPLO — microciclo competitivo con partido el sábado:
+<actions>
+[{"type":"create_week","weekObjectives":["llegar fresco"],"sessions":[{"date":"${addDaysToISO(weekStart, 5)}","timeBlock":"AM","sessionType":"cycling","title":"Activación previa","durationMin":35,"objective":"activar sin fatigar","cyclingDetails":{"sessionCategory":"activation","sessionFamily":"activation","targetStructure":"30-35min suaves con 2-3 aceleraciones cortas.","intensityReference":"low","executionNotes":"Activar piernas sin residuo de fatiga."}}],"reason":"microciclo compacto competitivo"}]
+</actions>`
+  }
+
+  if (exampleSport === 'strength') {
+    return `EJEMPLO — create_week compacto:
+<actions>
+[{"type":"create_week","weekObjectives":["fuerza principal","movilidad complementaria"],"sessions":[
+  {"date":"${addDaysToISO(weekStart, 0)}","timeBlock":"PM","sessionType":"strength","title":"Fuerza principal A","durationMin":60,"objective":"${strengthPrimarySelection.focus}","exercises":[${strengthPrimaryExercisesJson}]},
+  {"date":"${addDaysToISO(weekStart, 2)}","timeBlock":"AM","sessionType":"mobility","title":"Movilidad post-fuerza","durationMin":30,"objective":"reset post fuerza","mobilityDetails":{"context":"post_strength","focusAreas":["hip","ankle_foot","full_body"],"targetStructure":"10-15min de reset post-fuerza + rango suave.","executionNotes":"Descarga complementaria."}}
+],"reason":"semana compacta de fuerza"}]
+</actions>
+
+EJEMPLO — update_session compacto:
+<actions>
+[{"type":"update_session","sessionId":"ID_DE_8_CHARS","newObjective":"fuerza tren superior — 85% 1RM","exercises":[{"name":"Press banca","sets":5,"reps":5,"weight":${w.bench85},"group":"push"},{"name":"Remo con barra","sets":3,"reps":8,"weight":${w.row75},"group":"pull"}],"reason":"ajuste más intenso"}]
+</actions>
+
+EJEMPLO — microciclo competitivo con partido el sábado:
+<actions>
+[{"type":"create_week","weekObjectives":["activar sin DOMS"],"sessions":[{"date":"${addDaysToISO(weekStart, 2)}","timeBlock":"PM","sessionType":"strength","title":"Fuerza neural liviana","durationMin":35,"objective":"activar sin fatigar","exercises":[{"name":"Trap bar deadlift","sets":3,"reps":3,"group":"legs"},{"name":"Pallof press","sets":3,"reps":10,"group":"core"}]}],"reason":"fuerza compacta pre-competencia"}]
+</actions>`
+  }
+
+  return `EJEMPLO — create_week compacto:
+<actions>
+[{"type":"create_week","weekObjectives":["calidad técnica","distribución simple"],"sessions":[
+  {"date":"${addDaysToISO(weekStart, 0)}","timeBlock":"PM","sessionType":"squash","title":"Squash mixto técnico","durationMin":60,"objective":"técnica con cierre controlado","subtype":"training","squashDetails":{"trainingFocus":"technical","sessionMode":"drill_session","sessionKind":"mixed","blocks":${squashMixedBlocksJson},"drills":[${squashMixedDrillsJson}]}},
+  {"date":"${addDaysToISO(weekStart, 3)}","timeBlock":"PM","sessionType":"squash","title":"Partido de entrenamiento con foco tactico","durationMin":55,"objective":"tomar decisiones sin carga competitiva real","subtype":"match","squashDetails":{"trainingFocus":"tactical","sessionMode":"practice_match","sessionKind":"match","drills":[${squashCompetitiveDrillsJson}]}}
+],"reason":"semana compacta de squash"}]
+</actions>
+
+EJEMPLO — update_session compacto:
+<actions>
+[{"type":"update_session","sessionId":"ID_DE_8_CHARS","newObjective":"fuerza tren superior — 85% 1RM","exercises":[{"name":"Press banca","sets":5,"reps":5,"weight":${w.bench85},"group":"push"},{"name":"Remo con barra","sets":3,"reps":8,"weight":${w.row75},"group":"pull"}],"reason":"ajuste más intenso"}]
+</actions>
+
+EJEMPLO — microciclo competitivo con partido el sábado:
+<actions>
+[{"type":"create_week","weekObjectives":["llegar fresco al partido"],"sessions":[
+  {"date":"${addDaysToISO(weekStart, 3)}","timeBlock":"PM","sessionType":"squash","title":"Control pre-partido","durationMin":40,"objective":"timing y sensaciones","subtype":"control","squashDetails":{"trainingFocus":"technical","sessionMode":"drill_session","sessionKind":"control","drills":[${squashCompetitiveDrillsJson}]}},
+  {"date":"${addDaysToISO(weekStart, 5)}","timeBlock":"PM","sessionType":"squash","title":"Partido objetivo","durationMin":60,"objective":"competir fresco","subtype":"match","squashDetails":{"trainingFocus":"tactical","sessionMode":"competition_match","sessionKind":"match","drills":[{"name":"Activación pre-partido de timing","durationMin":12}]}}
+],"reason":"microciclo compacto competitivo"}]
+</actions>`
+}
+
+function buildFullCriticalRulesSection(context: ChatContext): string {
+  return `REGLAS CRÍTICAS:
+1. Si el usuario pide "crear semana", "armar semana", "planificar semana", "dame la propuesta", "dame un plan", "dame la semana", "construye la semana", "hazme la semana", "qué hacemos esta semana", "propuesta de semana" → DEBES responder con create_week. No solo texto. No describas el plan y luego pidas confirmación — créalo directamente.
+2. Si el usuario pide "agregar sesión", "pon un X el día Y", "agrega X" → DEBES responder con add_session. No solo texto.
+3. Si el usuario pide "cambia los ejercicios", "agrégale X", "reemplaza", "mejora la propuesta", "incorpora X", "agrega running", "agrega squash", "baja squash", "sube running" o redistribuir la semana → DEBES priorizar update_session, move_session, replace_session_type o delete_session sobre add_session cuando la intención sea reemplazar o ajustar lo ya existente. No acumules sesiones o ejercicios viejos si la idea es sustituirlos.
+4. Si falta contexto → asume valores razonables para el atleta y explícalo en 1 frase.
+5. Si no hay sesiones en la semana → crea una semana base COMPLETA sin pedir confirmación.
+6. NUNCA respondas con solo texto cuando se pidió una acción. Si describiste el plan en texto, DEBES incluir el bloque <actions> al final en la misma respuesta.
+7. SOLO puedes usar deportes permitidos por la planificación actual: ${getAllowedPlanningSports(context.athleteProfile).join(', ') || 'sin restricción explícita'}. Si running no está en esa lista, NO lo agregues.
+8. Si el usuario pide "plan completo", "todas las semanas", "plan hasta el evento" o especifica semanas exactas con fechas de lunes → genera MÚLTIPLES acciones create_week EN EL MISMO bloque <actions>, UNA POR SEMANA. El array de acciones contendrá [create_week_s1, create_week_s2, ...create_week_sN]. Cada create_week tiene sus propias sessions[] con fechas absolutas dentro de esa semana, y sus weekObjectives. Mantén sesiones COMPACTAS: omite warmup/cooldown (el sistema los genera automáticamente), limita exercises a 4-5 por sesión, objectives en 1 frase. NO describas las semanas en texto y luego pongas solo 1-2 create_week — genera TODAS las semanas solicitadas como acciones.`
+}
+
+function buildCompactCriticalRulesSection(context: ChatContext): string {
+  return `REGLAS CRÍTICAS:
+1. Si el usuario pide crear/armar/planificar la semana → DEBES responder con create_week.
+2. Si pide agregar una sesión puntual → add_session. Si pide ajustar lo existente → update_session, move_session, replace_session_type o delete_session antes que acumular sesiones.
+3. Si falta contexto, asume algo razonable y dilo en 1 frase.
+4. Si la semana está vacía, crea una semana base completa sin pedir confirmación.
+5. NUNCA respondas solo con texto cuando se pidió una acción; cierra con <actions>.
+6. Usa solo deportes permitidos: ${getAllowedPlanningSports(context.athleteProfile).join(', ') || 'sin restricción explícita'}.
+7. Si el usuario pide varias semanas o un plan completo, genera múltiples acciones create_week en el mismo bloque <actions>.
+8. Mantén las sesiones compactas: objectives breves, exercises 4-5, warmup/cooldown opcionales.`
+}
+
+function buildFullCompetitionRulesSection(playsSquash: boolean, hasRunning: boolean): string {
+  return `SEMANA COMPETITIVA Y PRE-TORNEO:
+- Si aparece un partido o torneo, el objetivo principal pasa a ser rendir fresco en cancha.
+- Si faltan 2 dias o menos para competir, evita agregar sesiones que dejen DOMS o fatiga metabolica alta.
+- Fuerza en semana competitiva: volumen bajo, foco neural/estabilidad, nunca pesada pegada al partido.
+${hasRunning ? '- Running en semana competitiva: Z2 corto o activacion; evita tempo o intervalos largos salvo que esten lejos del partido.' : ''}
+- Pre-competencia (deporte principal): sesion tecnica corta o activacion especifica; no sesiones largas de desgaste.${playsSquash ? '\n- Squash pre-partido: control tecnico, precision, sensaciones, T, largo-corto, activacion de pies; no sesiones de RSA ni carga fisica alta.' : ''}
+- Si el usuario menciona torneo, liga, rival, cuadro o fin de semana competitivo, debes responder como coach en taper, no como semana base normal.
+- El deporte accesorio en semana competitiva no debe quitar frescura a la sesion objetivo del deporte principal.
+- Si hay competencia objetivo, prioriza cardio recovery o Z2 corto; deja intensidad alta fuera de la ventana sensible.
+- Si hay varias competencias, distingue entre sesion objetivo inmediata y carga secundaria; protege primero la inmediata.
+- Un control no compite por prioridad con un match o competitive; usalo como ajuste tecnico o activacion.
+${hasRunning ? '- Un match o competitive mas cercano manda sobre cualquier desarrollo de running de esa misma ventana.' : ''}
+- Si el deporte principal es fuerza, trata la fuerza como disciplina principal: lift central, accesorios coherentes, trunk y progresion real.
+- Si la fuerza no es principal, ajusta el volumen para que complemente al deporte objetivo y no robe frescura.
+- No uses la misma receta de pesas para todos: decide entre fuerza, hipertrofia, potencia, estabilidad o recovery segun fase, fatiga, historial y rol de la fuerza.`
+}
+
+function buildCompactCompetitionRulesSection(playsSquash: boolean, hasRunning: boolean): string {
+  return `SEMANA COMPETITIVA Y PRE-TORNEO:
+- Si aparece partido/torneo, planifica como taper: frescura primero.
+- A 0-2 días del evento: nada que deje DOMS o fatiga alta.
+- Fuerza pre-competencia: neural, estable y corta; nunca pesada pegada al evento.
+${hasRunning ? '- Running competitivo: Z2 corto o activación; evita tempo/intervalos cerca del evento.' : ''}
+- El deporte accesorio no debe quitar frescura a la sesión objetivo.
+- Un control no compite por prioridad con un match o competitive; úsalo como activación o ajuste técnico.${playsSquash ? '\n- Squash pre-partido: control técnico, precisión, T y activación de pies; evita RSA o carga alta.' : ''}`
+}
 
 function buildBaseWeekTemplate(promptContext: ResponsePromptContext): string {
   const {
@@ -1814,33 +2191,56 @@ Fuerza lower:
   · Sentadilla ${w.squat75}kg (75%) / ${w.squat85}kg (85%)  · Peso muerto ${w.deadlift75}kg (75%)  · Hip thrust ${hipThrust85}kg  · Lunge ${lunge45}kg`
 }
 
-function buildCyclingMobilityActionSchemaAddendum(promptContext: ResponsePromptContext): string {
+function buildCyclingMobilityActionSchemaAddendum(
+  promptContext: ResponsePromptContext,
+  options?: { compact?: boolean },
+): string {
+  if (!promptContext.hasCycling && !promptContext.hasMobility) {
+    return ''
+  }
+
   const sections: string[] = ['ADDENDUM - CAMPOS EXPLICITOS PARA CYCLING Y MOBILITY']
+  const compact = options?.compact ?? false
 
   if (promptContext.hasCycling) {
-    sections.push(
-      'Cuando sessionType = "cycling", incluye cyclingDetails siempre que la sesion sea creada o actualizada por el coach.',
-      'cyclingDetails: {',
-      '  sessionCategory: "support aerobic" | "primary build" | "fatigue-managed threshold" | "activation" | "recovery",',
-      '  sessionFamily: "z2_aerobic" | "long_ride" | "sweetspot_tempo" | "intervals_vo2" | "activation" | "recovery",',
-      '  targetStructure: "estructura breve y accionable",',
-      '  intensityReference: "low|moderate|moderate-high|high o referencia equivalente",',
-      '  executionNotes: "nota corta de ejecucion"',
-      '}',
-    )
+    if (compact) {
+      sections.push(
+        'Cycling: cuando sessionType="cycling", incluye cyclingDetails.',
+        'cyclingDetails = { sessionCategory: "support aerobic"|"primary build"|"fatigue-managed threshold"|"activation"|"recovery", sessionFamily: "z2_aerobic"|"long_ride"|"sweetspot_tempo"|"intervals_vo2"|"activation"|"recovery", targetStructure: "estructura breve y accionable", intensityReference: "low|moderate|moderate-high|high", executionNotes: "nota corta de ejecucion" }',
+      )
+    } else {
+      sections.push(
+        'Cuando sessionType = "cycling", incluye cyclingDetails siempre que la sesion sea creada o actualizada por el coach.',
+        'cyclingDetails: {',
+        '  sessionCategory: "support aerobic" | "primary build" | "fatigue-managed threshold" | "activation" | "recovery",',
+        '  sessionFamily: "z2_aerobic" | "long_ride" | "sweetspot_tempo" | "intervals_vo2" | "activation" | "recovery",',
+        '  targetStructure: "estructura breve y accionable",',
+        '  intensityReference: "low|moderate|moderate-high|high o referencia equivalente",',
+        '  executionNotes: "nota corta de ejecucion"',
+        '}',
+      )
+    }
   }
 
   if (promptContext.hasMobility) {
-    sections.push(
-      'Cuando sessionType = "mobility", incluye mobilityDetails siempre que la sesion sea creada o actualizada por el coach.',
-      'mobilityDetails: {',
-      '  focusAreas: ["hip"|"ankle_foot"|"shoulder_thoracic"|"full_body"|"sport_specific"|"activation", ...],',
-      '  context: "post_run" | "post_cycling" | "post_squash" | "post_strength" | "pre_training_activation" | "recovery" | "full_body" | "sport_specific",',
-      '  targetStructure: "bloques concretos o flujo resumido",',
-      '  executionNotes: "nota corta de uso o dosificacion"',
-      '}',
-      'Si propones movilidad, el titulo y el objetivo deben reflejar foco anatomico o contexto real; no uses solo "Movilidad".',
-    )
+    if (compact) {
+      sections.push(
+        'Mobility: cuando sessionType="mobility", incluye mobilityDetails.',
+        'mobilityDetails = { focusAreas: ["hip"|"ankle_foot"|"shoulder_thoracic"|"full_body"|"sport_specific"|"activation", ...], context: "post_run"|"post_cycling"|"post_squash"|"post_strength"|"pre_training_activation"|"recovery"|"full_body"|"sport_specific", targetStructure: "bloques concretos o flujo resumido", executionNotes: "nota corta de uso o dosificacion" }',
+        'Si propones movilidad, el titulo y el objetivo deben reflejar foco anatomico o contexto real; no uses solo "Movilidad".',
+      )
+    } else {
+      sections.push(
+        'Cuando sessionType = "mobility", incluye mobilityDetails siempre que la sesion sea creada o actualizada por el coach.',
+        'mobilityDetails: {',
+        '  focusAreas: ["hip"|"ankle_foot"|"shoulder_thoracic"|"full_body"|"sport_specific"|"activation", ...],',
+        '  context: "post_run" | "post_cycling" | "post_squash" | "post_strength" | "pre_training_activation" | "recovery" | "full_body" | "sport_specific",',
+        '  targetStructure: "bloques concretos o flujo resumido",',
+        '  executionNotes: "nota corta de uso o dosificacion"',
+        '}',
+        'Si propones movilidad, el titulo y el objetivo deben reflejar foco anatomico o contexto real; no uses solo "Movilidad".',
+      )
+    }
   }
 
   if (promptContext.hasCycling || promptContext.hasMobility) {

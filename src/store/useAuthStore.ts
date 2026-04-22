@@ -1,8 +1,9 @@
 import { create } from 'zustand'
 import type { User } from '@supabase/supabase-js'
 import { getAuthRedirectUrl, isSupabaseConfigured, supabase } from '../services/auth'
+import type { SyncTierHealthMap } from '../types/syncDiagnostics'
 
-export type SyncStatus = 'idle' | 'syncing' | 'error' | 'offline'
+export type SyncStatus = 'idle' | 'syncing' | 'error' | 'offline' | 'degraded'
 
 export interface SyncDetails {
   pendingOps: number
@@ -18,12 +19,20 @@ export interface SyncDetails {
   lastErrorMessage: string | null
   lastErrorCategory: string | null
   lastBlockedTable: string | null
+  lastErrorEntity: string | null
   retryScheduledAt: number | null
   consecutiveFailures: number
   autoRepairInProgress: boolean
   lastAutoRepairAt: number | null
   memoryLoadRequiredAfterSyncAt: number | null
   memoryLoadedForSyncAt: number | null
+  tierHealthMap: SyncTierHealthMap
+}
+
+const DEFAULT_TIER_HEALTH_MAP: SyncTierHealthMap = {
+  A: 'healthy',
+  B: 'healthy',
+  C: 'healthy',
 }
 
 interface AuthState {
@@ -60,12 +69,14 @@ export const useAuthStore = create<AuthState>((set) => ({
       lastErrorMessage: null,
       lastErrorCategory: null,
       lastBlockedTable: null,
+      lastErrorEntity: null,
       retryScheduledAt: null,
       consecutiveFailures: 0,
       autoRepairInProgress: false,
       lastAutoRepairAt: null,
       memoryLoadRequiredAfterSyncAt: null,
       memoryLoadedForSyncAt: null,
+      tierHealthMap: DEFAULT_TIER_HEALTH_MAP,
     },
 
     signInWithGoogle: async () => {
@@ -102,12 +113,14 @@ export const useAuthStore = create<AuthState>((set) => ({
           lastErrorMessage: null,
           lastErrorCategory: null,
           lastBlockedTable: null,
+          lastErrorEntity: null,
           retryScheduledAt: null,
           consecutiveFailures: 0,
           autoRepairInProgress: false,
           lastAutoRepairAt: null,
           memoryLoadRequiredAfterSyncAt: null,
           memoryLoadedForSyncAt: null,
+          tierHealthMap: DEFAULT_TIER_HEALTH_MAP,
         },
       })
     },

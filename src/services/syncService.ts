@@ -4,7 +4,7 @@
  * Strategy:
  * - UI always reads from Dexie.
  * - Local writes trigger fire-and-forget pushes to Supabase.
- * - After auth, pullAll() merges remote data into Dexie using last-write-wins.
+ * - After auth, runFullSync() drains queue, merges remote data into Dexie (LWW) and re-drains.
  * - If offline or Supabase errors, ops are queued in localStorage and retried.
  */
 
@@ -34,7 +34,6 @@ import {
   isAthleteProfileFullResetRow,
   normalizeAthleteProfilePayload,
   rowToAthleteProfile,
-  scoreEntityData,
   toAthleteProfileSyncRow,
   MAX_RETRIES_PER_OP,
   type AthleteProfileSyncRow,
@@ -43,6 +42,12 @@ import {
   type SyncErrorInfo,
   type SupabaseTable,
 } from './syncUtils'
+import {
+  computeTierHealthMap,
+  recordSyncError,
+  trackSyncEvent,
+} from './syncDiagnostics'
+import { ENTITY_TIER, type SyncTier } from '../types/syncDiagnostics'
 const QUEUE_KEY = 'entrenador_sync_queue_v1'
 const LAST_SYNC_USER_KEY = 'entrenador_sync_user_v1'
 const MIGRATION_KEY_PREFIX = 'entrenador_migrated_v1'
@@ -50,8 +55,70 @@ const INITIAL_PULL_KEY_PREFIX = 'entrenador_initial_pull_v1'
 const REMOTE_WIPE_KEY = 'entrenador_remote_wipe_v1'
 const REMOTE_FULL_RESET_ACK_KEY_PREFIX = 'entrenador_remote_reset_ack_v1'
 const SESSION_DELETE_TOMBSTONES_KEY = 'entrenador_sync_session_tombstones_v1'
-const TOMBSTONE_TTL_MS = 90 * 24 * 60 * 60 * 1000 // 90 days
+const TOMBSTONE_TTL_MS = 180 * 24 * 60 * 60 * 1000 // 180 days (extended from 90d as part of sync hardening)
 const MAX_QUEUE_SIZE = 500
+/** Timeout máximo para un request directo a Supabase (upsert/delete/fetch). Evita que un request colgado bloquee drainQueue indefinidamente. */
+const DIRECT_REQUEST_TIMEOUT_MS = 15_000
+
+// Max retries por tier. Tier C (chat/coach) se dropea rápido para no consumir presupuesto
+// de fiabilidad del core.
+const MAX_RETRIES_BY_TIER: Record<SyncTier, number> = {
+  A: MAX_RETRIES_PER_OP,
+  B: MAX_RETRIES_PER_OP,
+  C: 2,
+}
+
+const TIER_ORDER: Record<SyncTier, number> = { A: 0, B: 1, C: 2 }
+
+// Backoff exponencial con jitter: 5s, 15s, 45s, 120s, 300s (topado en 300s).
+// Reemplaza los pasos fijos 15/30/60s. El jitter evita hammer sincronizado cuando múltiples
+// tabs/devices vuelven online al mismo tiempo.
+const RETRY_BACKOFF_STEPS_MS = [5_000, 15_000, 45_000, 120_000, 300_000]
+const RETRY_JITTER_MAX_MS = 1_000
+
+function computeRetryDelayMs(failureCount: number): number {
+  const index = Math.min(Math.max(failureCount - 1, 0), RETRY_BACKOFF_STEPS_MS.length - 1)
+  const base = RETRY_BACKOFF_STEPS_MS[index]
+  const jitter = Math.floor(Math.random() * RETRY_JITTER_MAX_MS)
+  return base + jitter
+}
+
+function sortQueueByTier(ops: OfflineOp[]): OfflineOp[] {
+  return [...ops].sort((a, b) => {
+    const ta = TIER_ORDER[ENTITY_TIER[a.table] ?? 'C']
+    const tb = TIER_ORDER[ENTITY_TIER[b.table] ?? 'C']
+    return ta - tb
+  })
+}
+
+function getMaxRetriesForTable(table: SupabaseTable): number {
+  const tier = ENTITY_TIER[table] ?? 'C'
+  return MAX_RETRIES_BY_TIER[tier]
+}
+
+/**
+ * Envuelve una promesa con un timeout que rechaza si no resuelve a tiempo.
+ * El error lanzado es clasificable como network_error por classifySyncError.
+ */
+async function withRequestTimeout<T>(
+  source: PromiseLike<T>,
+  label: string,
+  timeoutMs = DIRECT_REQUEST_TIMEOUT_MS,
+): Promise<T> {
+  let timeoutHandle: ReturnType<typeof setTimeout> | null = null
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutHandle = setTimeout(() => {
+      reject(Object.assign(new Error(`Sync request timeout after ${timeoutMs}ms: ${label}`), {
+        name: 'SyncRequestTimeoutError',
+      }))
+    }, timeoutMs)
+  })
+  try {
+    return await Promise.race([Promise.resolve(source), timeoutPromise])
+  } finally {
+    if (timeoutHandle != null) clearTimeout(timeoutHandle)
+  }
+}
 
 interface PendingRemoteWipeEntry {
   tables: SupabaseTable[]
@@ -337,9 +404,16 @@ function getQueueSummary(queue = loadQueue()): QueueSummary {
 function refreshQueueDiagnostics(): void {
   const queue = loadQueue()
   const summary = getQueueSummary(queue)
+  const currentDetails = syncStoreState().syncDetails
+  const lastErrorEntity = (currentDetails.lastErrorEntity as SupabaseTable | null) ?? null
+  const tierHealthMap = computeTierHealthMap({
+    pendingTables: summary.pendingTables,
+    lastErrorEntity,
+  })
 
   syncStoreState().setSyncDetails({
     ...summary,
+    tierHealthMap,
   })
 }
 
@@ -360,6 +434,12 @@ function finishSyncAttempt(status: 'idle' | 'offline' | 'error' = 'idle'): void 
   syncStoreState().setSyncStatus(status)
 }
 
+const ALL_HEALTHY_TIER_MAP: { A: 'healthy'; B: 'healthy'; C: 'healthy' } = {
+  A: 'healthy',
+  B: 'healthy',
+  C: 'healthy',
+}
+
 function markSyncRecovered(): void {
   refreshQueueDiagnostics()
   syncStoreState().setSyncStatus('idle')
@@ -371,9 +451,11 @@ function markSyncRecovered(): void {
     lastErrorMessage: null,
     lastErrorCategory: null,
     lastBlockedTable: null,
+    lastErrorEntity: null,
     retryScheduledAt: null,
     consecutiveFailures: 0,
     autoRepairInProgress: false,
+    tierHealthMap: ALL_HEALTHY_TIER_MAP,
   })
 }
 
@@ -387,9 +469,11 @@ function markSyncHealthy(): void {
     lastErrorMessage: null,
     lastErrorCategory: null,
     lastBlockedTable: null,
+    lastErrorEntity: null,
     retryScheduledAt: null,
     consecutiveFailures: 0,
     autoRepairInProgress: false,
+    tierHealthMap: ALL_HEALTHY_TIER_MAP,
   })
 }
 
@@ -472,16 +556,26 @@ function isEnabled(): boolean {
 }
 
 
-function applySyncFailure(error: unknown, fallbackMessage: string, blockedTable?: SupabaseTable | null): void {
+function applySyncFailure(
+  error: unknown,
+  fallbackMessage: string,
+  blockedTable?: SupabaseTable | null,
+  options?: { madeProgress?: boolean },
+): void {
   const errorInfo = classifySyncError(error, (blockedTable ?? undefined) as SupabaseTable | undefined)
   const message = errorInfo.userMessage || getSyncErrorMessage(error, fallbackMessage)
+  // Si la red se cayó, 'offline'. Si hubo progreso en el último drain y el error es retriable,
+  // el estado es 'degraded' (sync avanza, aún quedan pendientes) en vez de 'error'.
   const status = errorInfo.category === 'network_error'
     ? 'offline' as const
-    : 'error' as const
-  const failureCount = (syncStoreState().syncDetails.consecutiveFailures ?? 0) + 1
-  const retryMs = errorInfo.retriable
-    ? Math.min(60000, failureCount <= 1 ? 15000 : failureCount <= 3 ? 30000 : 60000)
-    : null
+    : options?.madeProgress && errorInfo.retriable
+      ? 'degraded' as const
+      : 'error' as const
+  // QW #3: si en el último drain hubo ops que SÍ subieron (madeProgress=true), no incrementamos
+  // consecutiveFailures — el sync está avanzando aunque todavía queden pendientes.
+  const currentFailures = syncStoreState().syncDetails.consecutiveFailures ?? 0
+  const failureCount = options?.madeProgress ? Math.max(1, currentFailures) : currentFailures + 1
+  const retryMs = errorInfo.retriable ? computeRetryDelayMs(failureCount) : null
 
   syncLog('sync:failure', {
     errorCategory: errorInfo.category,
@@ -490,20 +584,42 @@ function applySyncFailure(error: unknown, fallbackMessage: string, blockedTable?
     technicalMessage: errorInfo.technicalMessage,
     blockedTable,
     failureCount,
+    madeProgress: options?.madeProgress === true,
     retryMs,
   }, 'error')
 
+  recordSyncError({
+    entity: blockedTable ?? null,
+    errorInfo,
+    userId: getUserId(),
+  })
+
+  trackSyncEvent({
+    kind: 'push',
+    status: 'error',
+    entity: blockedTable ?? null,
+    userId: getUserId(),
+    errorCategory: errorInfo.category,
+    detail: errorInfo.technicalMessage,
+  })
+
   refreshQueueDiagnostics()
   syncStoreState().setSyncStatus(status, message)
+  const pendingTables = syncStoreState().syncDetails.pendingTables as SupabaseTable[]
   syncStoreState().setSyncDetails({
     syncAttemptInFlight: false,
     lastErrorAt: Date.now(),
     lastErrorMessage: message,
     lastErrorCategory: errorInfo.category,
     lastBlockedTable: blockedTable ?? null,
+    lastErrorEntity: blockedTable ?? null,
     retryScheduledAt: retryMs != null ? Date.now() + retryMs : null,
     consecutiveFailures: failureCount,
     autoRepairInProgress: false,
+    tierHealthMap: computeTierHealthMap({
+      pendingTables,
+      lastErrorEntity: blockedTable ?? null,
+    }),
   })
 }
 
@@ -561,7 +677,8 @@ async function drainQueue(): Promise<boolean> {
   const queue = loadQueue()
 
   const otherUsersQueue = queue.filter((op) => op.userId !== userId)
-  const currentUserQueue = queue.filter((op) => op.userId === userId)
+  // Drain por tier: A primero (perfil/sesiones/planes), luego B, luego C (chat/coach).
+  const currentUserQueue = sortQueueByTier(queue.filter((op) => op.userId === userId))
   const pendingRemoteWipeTables = getPendingRemoteWipeTables(userId)
 
   if (currentUserQueue.length === 0) {
@@ -572,6 +689,7 @@ async function drainQueue(): Promise<boolean> {
 
   const remaining: OfflineOp[] = []
   const expiredOps: OfflineOp[] = []
+  const silentlyDroppedOps: OfflineOp[] = []
   const initialCount = currentUserQueue.length
   let lastFailureInfo: SyncErrorInfo | null = null
 
@@ -583,41 +701,72 @@ async function drainQueue(): Promise<boolean> {
       continue
     }
 
-    // Drop ops that have exceeded max retries
-    if (opRetryCount >= MAX_RETRIES_PER_OP) {
+    // Drop ops that have exceeded max retries (Tier C: 2; A/B: MAX_RETRIES_PER_OP).
+    const maxRetries = getMaxRetriesForTable(op.table)
+    if (opRetryCount >= maxRetries) {
+      const tier = ENTITY_TIER[op.table] ?? 'C'
       syncLog('queue:op_expired', {
         attemptId,
         table: op.table,
+        tier,
         action: op.action,
         entityId: typeof op.payload.id === 'string' ? op.payload.id : null,
         retryCount: opRetryCount,
         lastErrorCategory: op.lastErrorCategory,
       }, 'warn')
-      expiredOps.push(op)
-      continue // drop it
+      trackSyncEvent({
+        kind: op.action === 'upsert' ? 'push' : 'delete',
+        status: 'dropped',
+        entity: op.table,
+        userId: op.userId,
+        errorCategory: op.lastErrorCategory ?? null,
+        detail: 'max_retries_exceeded',
+      })
+      // Tier C: drop silencioso — no surfaceamos error al usuario (chat/coach recuperables).
+      if (tier === 'C') {
+        silentlyDroppedOps.push(op)
+      } else {
+        expiredOps.push(op)
+      }
+      continue
     }
 
+    const opStartedAt = Date.now()
     try {
       if (op.action === 'upsert') {
         if (op.table === 'athlete_profiles') {
-          await upsertAthleteProfileRow(op.payload, op.userId)
+          await withRequestTimeout(upsertAthleteProfileRow(op.payload, op.userId), `${op.table}.upsert`)
         } else {
-          const { error } = await getSupabase().from(op.table).upsert(op.payload as never)
+          const { error } = await withRequestTimeout(
+            getSupabase().from(op.table).upsert(op.payload as never),
+            `${op.table}.upsert`,
+          )
           if (error) throw error
         }
       } else {
         const payload = op.payload as { id: string; userId?: string }
         const targetUserId = payload.userId ?? op.userId
-        const { error } = await getSupabase()
-          .from(op.table)
-          .delete()
-          .eq('id', payload.id)
-          .eq('user_id', targetUserId)
+        const { error } = await withRequestTimeout(
+          getSupabase()
+            .from(op.table)
+            .delete()
+            .eq('id', payload.id)
+            .eq('user_id', targetUserId),
+          `${op.table}.delete`,
+        )
         if (error) throw error
         if (op.table === 'sessions') {
           clearSessionDeleteTombstone(op.userId, payload.id)
         }
       }
+      trackSyncEvent({
+        kind: op.action === 'upsert' ? 'push' : 'delete',
+        status: 'ok',
+        entity: op.table,
+        userId: op.userId,
+        durationMs: Date.now() - opStartedAt,
+        detail: 'drain',
+      })
     } catch (error) {
       const errorInfo = classifySyncError(error, op.table)
 
@@ -688,6 +837,14 @@ async function drainQueue(): Promise<boolean> {
 
   saveQueue([...otherUsersQueue, ...remaining])
 
+  if (silentlyDroppedOps.length > 0) {
+    syncLog('queue:silent_drop_summary', {
+      attemptId,
+      droppedCount: silentlyDroppedOps.length,
+      tables: [...new Set(silentlyDroppedOps.map((op) => op.table))],
+    }, 'warn')
+  }
+
   if (expiredOps.length > 0) {
     applyExpiredQueueFailure(expiredOps)
     return false
@@ -698,10 +855,14 @@ async function drainQueue(): Promise<boolean> {
   } else if (remaining.length === 0) {
     markSyncHealthy()
   } else if (lastFailureInfo) {
+    // QW #3: si hubo progreso (algunas ops subieron pese a que otras fallaron),
+    // no incrementamos el contador de fallos consecutivos — el sync está avanzando.
+    const madeProgress = remaining.length < initialCount
     applySyncFailure(
       lastFailureInfo.originalError,
       lastFailureInfo.userMessage,
       remaining[0]?.table ?? null,
+      { madeProgress },
     )
   }
   return remaining.length === 0
@@ -769,13 +930,24 @@ async function upsertRow(table: SupabaseTable, row: Record<string, unknown>): Pr
   }
 
   startSyncAttempt()
+  const upsertStartedAt = Date.now()
   try {
     if (table === 'athlete_profiles') {
-      await upsertAthleteProfileRow(row, userId)
+      await withRequestTimeout(upsertAthleteProfileRow(row, userId), `athlete_profiles.upsert`)
     } else {
-      const { error } = await getSupabase().from(table).upsert(row as never)
+      const { error } = await withRequestTimeout(
+        getSupabase().from(table).upsert(row as never),
+        `${table}.upsert`,
+      )
       if (error) throw error
     }
+    trackSyncEvent({
+      kind: 'push',
+      status: 'ok',
+      entity: table,
+      userId,
+      durationMs: Date.now() - upsertStartedAt,
+    })
     const queueDrained = await drainQueue()
     if (queueDrained) {
       syncStoreState().setSyncDetails({
@@ -824,10 +996,21 @@ async function deleteRow(table: SupabaseTable, id: string): Promise<void> {
   }
 
   startSyncAttempt()
+  const deleteStartedAt = Date.now()
   try {
-    const { error } = await getSupabase().from(table).delete().eq('id', id).eq('user_id', userId)
+    const { error } = await withRequestTimeout(
+      getSupabase().from(table).delete().eq('id', id).eq('user_id', userId),
+      `${table}.delete`,
+    )
     if (error) throw error
     if (table === 'sessions') rememberSessionDeleteTombstone(userId, id)
+    trackSyncEvent({
+      kind: 'delete',
+      status: 'ok',
+      entity: table,
+      userId,
+      durationMs: Date.now() - deleteStartedAt,
+    })
     const queueDrained = await drainQueue()
     if (queueDrained) {
       syncStoreState().setSyncDetails({
@@ -1477,6 +1660,8 @@ export async function runFullSync(userId: string): Promise<void> {
     await applyRemoteFullResetIfNeeded(userId)
     startSyncAttempt()
     const failureCountAtStart = syncStoreState().syncDetails.consecutiveFailures ?? 0
+    const fullSyncStartedAt = Date.now()
+    trackSyncEvent({ kind: 'pull', status: 'ok', userId, detail: 'runFullSync:start' })
 
     try {
       await repairLocalNaturalKeyConflicts()
@@ -1485,6 +1670,12 @@ export async function runFullSync(userId: string): Promise<void> {
       await processPendingRemoteWipes(userId)
       await drainQueue()
       await pullRemoteAndMerge(userId)
+      trackSyncEvent({
+        kind: 'merge',
+        status: 'ok',
+        userId,
+        durationMs: Date.now() - fullSyncStartedAt,
+      })
       const failureCountBeforeFinalDrain = syncStoreState().syncDetails.consecutiveFailures ?? 0
       const queueDrainedAfterMerge = await drainQueue()
       const hasPendingRemoteWipe = getPendingRemoteWipeTables(userId).size > 0
@@ -1496,7 +1687,7 @@ export async function runFullSync(userId: string): Promise<void> {
           refreshQueueDiagnostics()
           syncStoreState().setSyncDetails({
             syncAttemptInFlight: false,
-            retryScheduledAt: Date.now() + 15000,
+            retryScheduledAt: Date.now() + computeRetryDelayMs(1),
           })
           syncStoreState().setSyncStatus('syncing', 'Limpiando datos remotos pendientes.')
           return
@@ -1506,18 +1697,27 @@ export async function runFullSync(userId: string): Promise<void> {
           return
         }
         refreshQueueDiagnostics()
-        syncStoreState().setSyncStatus('error', 'Quedaron operaciones pendientes en cola.')
+        const nextFailures = (syncStoreState().syncDetails.consecutiveFailures ?? 0) + 1
+        syncStoreState().setSyncStatus('degraded', 'Quedaron operaciones pendientes en cola.')
         syncStoreState().setSyncDetails({
           syncAttemptInFlight: false,
           lastErrorAt: Date.now(),
           lastErrorMessage: 'Quedaron operaciones pendientes en cola.',
           lastBlockedTable: syncStoreState().syncDetails.pendingTables[0] ?? null,
-          retryScheduledAt: Date.now() + 15000,
-          consecutiveFailures: (syncStoreState().syncDetails.consecutiveFailures ?? 0) + 1,
+          retryScheduledAt: Date.now() + computeRetryDelayMs(nextFailures),
+          consecutiveFailures: nextFailures,
         })
       }
     } catch (error) {
       const errorInfo = classifySyncError(error)
+      trackSyncEvent({
+        kind: 'pull',
+        status: 'error',
+        userId,
+        errorCategory: errorInfo.category,
+        durationMs: Date.now() - fullSyncStartedAt,
+        detail: errorInfo.technicalMessage,
+      })
       if (!errorInfo.retriable && !errorInfo.autoRepairable) {
         syncLog('runFullSync:non_retriable', { category: errorInfo.category }, 'warn')
         applySyncFailure(
@@ -1550,10 +1750,6 @@ export async function runFullSync(userId: string): Promise<void> {
       activeFullSyncPromise = null
     }
   }
-}
-
-export async function pullAll(userId: string): Promise<void> {
-  await runFullSync(userId)
 }
 
 async function mergeSessions(userId: string, context: MergeContext): Promise<void> {
@@ -1592,7 +1788,7 @@ async function mergeSessions(userId: string, context: MergeContext): Promise<voi
     )
   }
 
-  pruneSessionDeleteTombstones(userId, remoteIds)
+  pruneSessionDeleteTombstones(userId, remoteIds, { pullWasComplete: true })
 }
 
 async function mergeDayLogs(userId: string, context: MergeContext): Promise<void> {
@@ -1957,7 +2153,7 @@ function resolveDayLogConflict(local: DayLog | undefined, remote: DayLog): Merge
     return { winner: local, loserId: local.id !== remote.id ? remote.id : undefined }
   }
 
-  if (scoreEntityData(remote) > scoreEntityData(local)) {
+  if (deterministicTiebreaker(remote, local) > 0) {
     return { winner: remote, loserId: local.id !== remote.id ? local.id : undefined }
   }
 
@@ -1982,7 +2178,7 @@ function resolveWeekSummaryConflict(
     return { winner: local, loserId: local.id !== remote.id ? remote.id : undefined }
   }
 
-  if (scoreEntityData(remote) > scoreEntityData(local)) {
+  if (deterministicTiebreaker(remote, local) > 0) {
     return { winner: remote, loserId: local.id !== remote.id ? local.id : undefined }
   }
 
@@ -2030,18 +2226,53 @@ async function repairLocalWeekSummaryConflicts(): Promise<void> {
 
 function compareDayLogsForRepair(a: DayLog, b: DayLog): number {
   if (b.updatedAt !== a.updatedAt) return b.updatedAt - a.updatedAt
-  return scoreEntityData(b) - scoreEntityData(a)
+  // Tiebreaker determinístico: más campos no-nulos gana; id asc como desempate final.
+  return -deterministicTiebreaker(a, b)
 }
 
 function compareWeekSummariesForRepair(a: WeekSummary, b: WeekSummary): number {
   const aUpdatedAt = getWeekSummaryUpdatedAt(a)
   const bUpdatedAt = getWeekSummaryUpdatedAt(b)
   if (bUpdatedAt !== aUpdatedAt) return bUpdatedAt - aUpdatedAt
-  return scoreEntityData(b) - scoreEntityData(a)
+  return -deterministicTiebreaker(a, b)
 }
 
 function getWeekSummaryUpdatedAt(summary: WeekSummary): number {
   return summary.updatedAt ?? 0
+}
+
+/**
+ * Cuenta campos no-nulos en un objeto a nivel top (útil como tiebreaker determinístico
+ * cuando dos registros comparten `updatedAt`). Arrays/objetos vacíos cuentan como nulos.
+ */
+function countNonNullFields(value: unknown): number {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return 0
+  const record = value as Record<string, unknown>
+  let count = 0
+  for (const key of Object.keys(record)) {
+    const v = record[key]
+    if (v == null) continue
+    if (Array.isArray(v) && v.length === 0) continue
+    if (typeof v === 'string' && v.length === 0) continue
+    if (typeof v === 'object' && !Array.isArray(v) && Object.keys(v as object).length === 0) continue
+    count += 1
+  }
+  return count
+}
+
+/**
+ * Tiebreaker determinístico cuando `updatedAt` empata: más campos no-nulos gana;
+ * si sigue empatado, el `id` menor gana (estable independiente del orden del array).
+ * Retorna > 0 si `a` gana, < 0 si `b` gana.
+ */
+function deterministicTiebreaker<T extends { id: string }>(a: T, b: T): number {
+  const aScore = countNonNullFields(a)
+  const bScore = countNonNullFields(b)
+  if (aScore !== bScore) return aScore - bScore
+  // id asc: el "menor" gana → devolvemos positivo cuando a.id < b.id
+  if (a.id < b.id) return 1
+  if (a.id > b.id) return -1
+  return 0
 }
 
 function groupRowsBy<T>(rows: T[], getKey: (row: T) => string): Map<string, T[]> {
@@ -2183,14 +2414,32 @@ function clearSessionDeleteTombstone(userId: string, sessionId: string): void {
   saveSessionDeleteTombstones(userId, tombstones)
 }
 
-function pruneSessionDeleteTombstones(userId: string, remoteIds: Set<string>): void {
+function pruneSessionDeleteTombstones(
+  userId: string,
+  remoteIds: Set<string>,
+  options: { pullWasComplete: boolean },
+): void {
   const tombstones = getSessionDeleteTombstones(userId)
   let changed = false
+  const now = Date.now()
 
+  // QW #10: siempre limpiar tombstones vencidos por TTL (180 días) — esto no depende del remote.
   for (const sessionId of Object.keys(tombstones)) {
-    if (!remoteIds.has(sessionId)) {
+    const deletedAt = tombstones[sessionId]
+    if (now - deletedAt >= TOMBSTONE_TTL_MS) {
       delete tombstones[sessionId]
       changed = true
+    }
+  }
+
+  // Solo pruneo por ausencia remota si la pull fue efectivamente completa.
+  // Si la pull falló silenciosamente y remoteIds está vacío, saltear para no borrar tombstones válidos.
+  if (options.pullWasComplete) {
+    for (const sessionId of Object.keys(tombstones)) {
+      if (!remoteIds.has(sessionId)) {
+        delete tombstones[sessionId]
+        changed = true
+      }
     }
   }
 
@@ -2316,6 +2565,88 @@ export async function migrateLocalDataToCloud(userId: string): Promise<void> {
     console.error('[sync] Migration failed:', error)
     throw error
   }
+}
+
+/**
+ * Reparación explícita de duplicados remotos de `athlete_profiles`.
+ * Se puede invocar manualmente desde el panel de diagnóstico o tras login.
+ * No se llama desde el hot path de push; el drain sigue teniendo su fallback inline.
+ *
+ * Devuelve cuántas filas remotas había y si se ejecutó una reparación.
+ */
+export async function repairAthleteProfileDuplicates(userId: string): Promise<{
+  remoteRowsBefore: number
+  repaired: boolean
+}> {
+  if (!isEnabled()) {
+    return { remoteRowsBefore: 0, repaired: false }
+  }
+  try {
+    syncStoreState().setSyncDetails({ autoRepairInProgress: true })
+    const remoteRows = await fetchAthleteProfileRows(userId)
+    if (remoteRows.length <= 1) {
+      syncStoreState().setSyncDetails({
+        autoRepairInProgress: false,
+        lastAutoRepairAt: Date.now(),
+      })
+      return { remoteRowsBefore: remoteRows.length, repaired: false }
+    }
+    await repairRemoteAthleteProfileRows(userId, remoteRows)
+    syncStoreState().setSyncDetails({
+      autoRepairInProgress: false,
+      lastAutoRepairAt: Date.now(),
+    })
+    trackSyncEvent({
+      kind: 'repair',
+      status: 'ok',
+      entity: 'athlete_profiles',
+      userId,
+      detail: `repaired_${remoteRows.length}_duplicates`,
+    })
+    return { remoteRowsBefore: remoteRows.length, repaired: true }
+  } catch (error) {
+    syncStoreState().setSyncDetails({ autoRepairInProgress: false })
+    trackSyncEvent({
+      kind: 'repair',
+      status: 'error',
+      entity: 'athlete_profiles',
+      userId,
+      detail: error instanceof Error ? error.message : String(error),
+    })
+    throw error
+  }
+}
+
+/**
+ * Limpia de la cola local todas las ops pendientes del usuario actual para las tablas indicadas
+ * (o todas si no se pasa lista). Útil para que el usuario descarte manualmente ops que quedaron
+ * retenidas (p.ej. Tier C en outage prolongado).
+ *
+ * ⚠️ Pierde cambios locales no sincronizados de esas tablas. El caller debe confirmar con el usuario.
+ */
+export function clearPendingOpsForUser(
+  userId: string,
+  tables?: Iterable<SupabaseTable>,
+): number {
+  const tableSet = tables ? new Set(tables) : null
+  const queue = loadQueue()
+  const before = queue.length
+  const next = queue.filter((op) => {
+    if (op.userId !== userId) return true
+    if (!tableSet) return false
+    return !tableSet.has(op.table)
+  })
+  saveQueue(next)
+  refreshQueueDiagnostics()
+  const removed = before - next.length
+  if (removed > 0) {
+    syncLog('queue:manual_clear', {
+      userId,
+      tables: tableSet ? [...tableSet] : 'all',
+      removed,
+    }, 'warn')
+  }
+  return removed
 }
 
 export interface RemoteWipeOutcome {

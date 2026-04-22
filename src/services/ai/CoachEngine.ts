@@ -16,6 +16,15 @@ import { buildAITraceId, getAIRequestPolicy } from './requestPolicy'
 import { useAIDebugStore } from '../../store/useAIDebugStore'
 
 export type CoachActionIntent = 'create_week' | 'create_full_plan' | 'modify_plan' | 'none'
+type CoachSendOptions = {
+  maxTokens?: number
+  temperature?: number
+  onChunk?: (chunk: string) => void
+  surface?: AITechnicalSurface
+}
+type CoachDispatcherOptions = CoachSendOptions & {
+  requestClass?: AIRequestClass
+}
 
 function getConfiguredProviderName(): string {
   if (import.meta.env.PROD) {
@@ -41,71 +50,50 @@ function getActiveProvider(): AIProvider {
 }
 
 export const CoachEngine = {
+  async sendChat(
+    userMessage: string,
+    context: ChatContext,
+    options?: CoachSendOptions,
+  ): Promise<CoachNormalizedResponse> {
+    return sendTrackedCoachRequest(userMessage, context, 'chat_general', 'none', options)
+  },
+
+  async sendAction(
+    userMessage: string,
+    context: ChatContext,
+    options?: CoachSendOptions,
+  ): Promise<CoachNormalizedResponse> {
+    const actionIntent = resolveActionIntent(userMessage, context)
+    const shouldStream = context.intent !== 'plan_week'
+    return sendTrackedCoachRequest(userMessage, context, 'chat_action', actionIntent, {
+      ...options,
+      onChunk: shouldStream ? options?.onChunk : undefined,
+    })
+  },
+
   async send(
     userMessage: string,
     context: ChatContext,
-    options?: {
-      maxTokens?: number
-      temperature?: number
-      onChunk?: (chunk: string) => void
-      requestClass?: AIRequestClass
-      surface?: AITechnicalSurface
-    },
+    options?: CoachDispatcherOptions,
   ): Promise<CoachNormalizedResponse> {
-    const provider = getActiveProvider()
+    if (options?.requestClass === 'weekly_summary') {
+      return sendTrackedCoachRequest(userMessage, context, 'weekly_summary', 'none', options)
+    }
+
+    if (options?.requestClass === 'chat_general') {
+      return this.sendChat(userMessage, context, options)
+    }
+
+    if (options?.requestClass === 'chat_action') {
+      return this.sendAction(userMessage, context, options)
+    }
+
     const actionIntent = inferCoachActionIntent(userMessage)
-    const requestClass = options?.requestClass ?? (actionIntent === 'none' ? 'chat_general' : 'chat_action')
-    const policy = getAIRequestPolicy(requestClass)
-    const traceId = buildAITraceId(requestClass)
-    const startedAt = Date.now()
-    const surface = options?.surface ?? 'chat'
-    const systemPrompt = buildCoachSystemPrompt(context, { requestClass })
-    useAIDebugStore.getState().startRequest({
-      traceId,
-      requestClass,
-      surface,
-      startedAt,
-    })
-
-    let firstChunkSeen = false
-
-    const request: AIRequest = {
-      systemPrompt,
-      userMessage,
-      requestClass,
-      traceId,
-      conversation: (context.recentMessages ?? []).map(message => ({
-        role: message.role === 'coach' ? 'assistant' : 'user',
-        content: message.content,
-      })),
-      maxTokens: options?.maxTokens ?? policy.maxTokens,
-      temperature: options?.temperature ?? policy.temperature,
-      allowFallback: policy.allowFallback,
-      onChunk: (chunk) => {
-        if (!firstChunkSeen) {
-          firstChunkSeen = true
-          useAIDebugStore.getState().markFirstChunk(traceId)
-        }
-        options?.onChunk?.(chunk)
-      },
+    if (actionIntent === 'none') {
+      return this.sendChat(userMessage, context, options)
     }
 
-    try {
-      const response = await sendWithRecovery(provider, request, actionIntent)
-      useAIDebugStore.getState().completeRequest(traceId, {
-        provider: response.provider,
-        model: response.model,
-        durationMs: response.durationMs,
-        retryUsed: response.retryUsed,
-        fallbackUsed: response.fallbackUsed,
-      })
-      return response
-    } catch (error) {
-      useAIDebugStore.getState().failRequest(traceId, {
-        errorCode: error instanceof AIProviderError ? error.code : 'unknown',
-      })
-      throw error
-    }
+    return this.sendAction(userMessage, context, options)
   },
 
   async extractRaw(
@@ -178,6 +166,98 @@ export const CoachEngine = {
   },
 }
 
+async function sendTrackedCoachRequest(
+  userMessage: string,
+  context: ChatContext,
+  requestClass: AIRequestClass,
+  actionIntent: CoachActionIntent,
+  options?: CoachSendOptions,
+): Promise<CoachNormalizedResponse> {
+  const provider = getActiveProvider()
+  const policy = getAIRequestPolicy(requestClass)
+  const surface = options?.surface ?? 'chat'
+
+  return withTracing(requestClass, surface, async (traceId) => {
+    let firstChunkSeen = false
+
+    const request: AIRequest = {
+      systemPrompt: buildCoachSystemPrompt(context, { requestClass, userMessage }),
+      userMessage,
+      requestClass,
+      traceId,
+      conversation: (context.recentMessages ?? []).map(message => ({
+        role: message.role === 'coach' ? 'assistant' : 'user',
+        content: message.content,
+      })),
+      maxTokens: options?.maxTokens ?? policy.maxTokens,
+      temperature: options?.temperature ?? policy.temperature,
+      allowFallback: policy.allowFallback,
+      onChunk: options?.onChunk
+        ? (chunk) => {
+            if (!firstChunkSeen) {
+              firstChunkSeen = true
+              useAIDebugStore.getState().markFirstChunk(traceId)
+            }
+            options.onChunk?.(chunk)
+          }
+        : undefined,
+    }
+
+    return requestClass === 'chat_action'
+      ? sendWithRecovery(provider, request, actionIntent)
+      : sendDirect(provider, request)
+  })
+}
+
+async function withTracing<T extends Pick<CoachNormalizedResponse, 'provider' | 'model' | 'durationMs' | 'retryUsed' | 'fallbackUsed'>>(
+  requestClass: AIRequestClass,
+  surface: AITechnicalSurface,
+  run: (traceId: string) => Promise<T>,
+): Promise<T> {
+  const traceId = buildAITraceId(requestClass)
+  useAIDebugStore.getState().startRequest({
+    traceId,
+    requestClass,
+    surface,
+    startedAt: Date.now(),
+  })
+
+  try {
+    const result = await run(traceId)
+    useAIDebugStore.getState().completeRequest(traceId, {
+      provider: result.provider,
+      model: result.model,
+      durationMs: result.durationMs,
+      retryUsed: result.retryUsed,
+      fallbackUsed: result.fallbackUsed,
+    })
+    return result
+  } catch (error) {
+    useAIDebugStore.getState().failRequest(traceId, {
+      errorCode: error instanceof AIProviderError ? error.code : 'unknown',
+    })
+    throw error
+  }
+}
+
+function resolveActionIntent(userMessage: string, context: ChatContext): CoachActionIntent {
+  const inferred = inferCoachActionIntent(userMessage)
+  if (inferred !== 'none') return inferred
+  if (context.intent === 'plan_week') return 'create_week'
+  if (context.intent === 'adjust_session') return 'modify_plan'
+  return 'modify_plan'
+}
+
+/** Nivel 1 — direct call without format retry (chat_general). */
+async function sendDirect(
+  provider: AIProvider,
+  request: AIRequest,
+): Promise<CoachNormalizedResponse> {
+  const raw = await provider.call(request)
+  return normalizeResponse(raw)
+}
+
+/** Nivel 2 — call with action format retry (chat_action). */
 async function sendWithRecovery(
   provider: AIProvider,
   request: AIRequest,

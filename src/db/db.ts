@@ -1,6 +1,7 @@
 import Dexie, { type Table } from 'dexie'
 import type { Session, DayLog, WeekSummary, ChatMessage, CoachProposal, AthleteProfile } from '../types'
 import type { TrainingPlan, TrainingPlanWeek } from '../types/planBuilder'
+import type { SyncDiagnosticEvent, SyncErrorLogEntry } from '../types/syncDiagnostics'
 import { getOrCreateChatSessionId } from '../utils/chatSession'
 import { toISO, getWeekStart, fromISO } from '../utils/date'
 
@@ -13,6 +14,8 @@ export class EntrenadorDB extends Dexie {
   athleteProfiles!: Table<AthleteProfile>
   trainingPlans!: Table<TrainingPlan>
   trainingPlanWeeks!: Table<TrainingPlanWeek>
+  syncDiagnostics!: Table<SyncDiagnosticEvent, number>
+  syncErrorLog!: Table<SyncErrorLogEntry, number>
 
   constructor() {
     super('EntrenadorDB')
@@ -124,6 +127,21 @@ export class EntrenadorDB extends Dexie {
       athleteProfiles:   'id, updatedAt',
       trainingPlans:     'id, athleteId, goalEventId, status, startDate, updatedAt',
       trainingPlanWeeks: 'id, planId, weekStartDate, status, [planId+weekIndex]',
+    })
+
+    // v10 — add sync diagnostics + error log tables for observability.
+    // These are local-only ring buffers; no Supabase sync.
+    this.version(10).stores({
+      sessions:          'id, date, weekStartDate, type, status, completedAt',
+      dayLogs:           'id, &date',
+      weekSummaries:     'id, &weekStartDate',
+      chatMessages:      'id, timestamp, chatSessionId',
+      coachProposals:    'id, status, createdAt, resolvedAt, chatMessageId',
+      athleteProfiles:   'id, updatedAt',
+      trainingPlans:     'id, athleteId, goalEventId, status, startDate, updatedAt',
+      trainingPlanWeeks: 'id, planId, weekStartDate, status, [planId+weekIndex]',
+      syncDiagnostics:   '++id, timestamp, kind, entity, status',
+      syncErrorLog:      '++id, timestamp, entity, errorCategory',
     })
   }
 }

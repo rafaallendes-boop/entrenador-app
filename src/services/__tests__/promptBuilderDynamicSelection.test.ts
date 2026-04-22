@@ -173,6 +173,33 @@ describe('promptBuilder dynamic cycling and mobility sections', () => {
     expect(prompt).toContain('Movilidad post-running')
   })
 
+  it('filters plan_week sport sections when the message mentions specific sports', () => {
+    const profile = makeProfile({
+      secondarySports: ['running', 'strength', 'cycling', 'mobility'],
+      sportContext: {
+        enabledSports: ['squash', 'running', 'strength', 'cycling', 'mobility'],
+        primarySport: 'squash',
+        secondarySports: ['running', 'strength', 'cycling', 'mobility'],
+        trainingPriority: 'performance',
+      },
+      planWizardConfig: {
+        ...makeProfile().planWizardConfig!,
+        complementarySports: ['running', 'strength', 'cycling', 'mobility'],
+      },
+    })
+
+    const prompt = buildCoachSystemPrompt(makeContext(profile), {
+      requestClass: 'chat_action',
+      userMessage: 'Créame una semana de ciclismo con movilidad para llegar fresco',
+    })
+
+    expect(prompt).toContain('CICLISMO — CONOCIMIENTO TÉCNICO')
+    expect(prompt).toContain('MOVILIDAD — CONOCIMIENTO TÉCNICO')
+    expect(prompt).toContain('SQUASH — CONOCIMIENTO TÉCNICO')
+    expect(prompt).not.toContain('RUNNING — CONOCIMIENTO TÉCNICO')
+    expect(prompt).not.toContain('FUERZA — CONOCIMIENTO TÉCNICO')
+  })
+
   it('includes explicit cyclingDetails guidance when cycling is enabled', () => {
     const prompt = buildCoachSystemPrompt(makeContext(makeProfile()))
 

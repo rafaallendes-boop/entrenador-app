@@ -1,11 +1,12 @@
 import { create } from 'zustand'
 import { db } from '../db/db'
-import type { ChatMessage, ChatContext } from '../types'
+import type { ChatMessage, ChatContext, AIRequestClass } from '../types'
 import { CoachEngine } from '../services/ai/CoachEngine'
 import { inferRequestClassFromIntent, optimizeChatContext } from '../services/ai/contextOptimizer'
 import { useCoachActionsStore } from './useCoachActionsStore'
 import { v4 as uuid } from '../utils/uuid'
 import { AIProviderError } from '../services/ai/types'
+import type { CoachNormalizedResponse } from '../services/ai/types'
 import { getOrCreateChatSessionId, setStoredChatSessionId } from '../utils/chatSession'
 import * as syncService from '../services/syncService'
 import { useAIDebugStore } from './useAIDebugStore'
@@ -56,7 +57,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
     await db.chatMessages.add(userMsg)
     void syncService.pushChatMessage(userMsg)
     const requestClass = inferRequestClassFromIntent(context?.intent)
-    const shouldStreamResponse = !(requestClass === 'chat_action' && context?.intent === 'plan_week')
     set(state => ({ messages: [...state.messages, userMsg], isLoading: true, streamingText: '', responsePhase: 'connecting', error: null }))
 
     // Pasamos historial multi-turno real al provider (excluye el mensaje recién añadido)
@@ -71,54 +71,40 @@ export const useChatStore = create<ChatState>((set, get) => ({
       if (get().currentSessionId !== sessionId) return
       if (!get().isLoading || receivedFirstChunk) return
       set({ responsePhase: 'processing' })
-    }, 1500)
+    }, requestClass === 'chat_general' ? 1000 : 1500)
 
     try {
-      const response = await CoachEngine.send(content, enrichedContext, {
-        requestClass,
-        surface: 'chat',
-        onChunk: shouldStreamResponse
-          ? (chunk) => {
-              if (get().currentSessionId !== sessionId) return
-              receivedFirstChunk = true
-              set(state => ({ streamingText: state.streamingText + chunk, responsePhase: 'responding' }))
-            }
-          : undefined,
-      })
+      const handleChunk = (chunk: string) => {
+        if (get().currentSessionId !== sessionId) return
+        receivedFirstChunk = true
+        set(state => ({ streamingText: state.streamingText + chunk, responsePhase: 'responding' }))
+      }
+
+      const response = requestClass === 'chat_general'
+        ? await CoachEngine.sendChat(content, enrichedContext, {
+            surface: 'chat',
+            onChunk: handleChunk,
+          })
+        : requestClass === 'chat_action'
+          ? await CoachEngine.sendAction(content, enrichedContext, {
+              surface: 'chat',
+              onChunk: handleChunk,
+            })
+          : await CoachEngine.send(content, enrichedContext, {
+              requestClass,
+              surface: 'chat',
+              onChunk: handleChunk,
+            })
       if (get().currentSessionId !== sessionId) {
         return
       }
 
-      // If the model returned structured actions, create a proposal automatically.
-      // Skip weekly summaries and likely truncated responses to avoid partial or unwanted proposals.
-      let proposalId: string | undefined
-      if (
-        requestClass !== 'weekly_summary'
-        && response.actions
-        && response.actions.length > 0
-        && !response.meta?.likelyTruncated
-      ) {
-        const proposal = await useCoachActionsStore.getState().addProposal(
-          response.message.slice(0, 120) + (response.message.length > 120 ? '…' : ''),
-          response.actions,
-          undefined,
-          { source: 'chat' },
-        )
-        proposalId = proposal.id
-      }
+      const { proposalId, coachMsg } = await handleCoachResponse(response, requestClass, sessionId)
+
       useAIDebugStore.getState().completeRequest(response.traceId, {
         proposalCreated: proposalId != null,
       })
 
-      const coachMsg: ChatMessage = {
-        id: uuid(),
-        role: 'coach',
-        content: response.message,
-        timestamp: Date.now(),
-        chatSessionId: sessionId,
-        provider: response.provider,
-        proposalId,
-      }
       await db.chatMessages.add(coachMsg)
       void syncService.pushChatMessage(coachMsg)
       if (get().currentSessionId !== sessionId) return
@@ -163,6 +149,48 @@ export const useChatStore = create<ChatState>((set, get) => ({
     await get().newSession()
   },
 }))
+// ─── Response handling (extracted from sendMessage) ───────────────────────────────
+
+/**
+ * Handles a coach response: creates proposals if needed and builds the
+ * ChatMessage to persist. Extracted from sendMessage to separate concerns.
+ */
+async function handleCoachResponse(
+  response: CoachNormalizedResponse,
+  requestClass: AIRequestClass,
+  chatSessionId: string,
+): Promise<{ proposalId: string | undefined; coachMsg: ChatMessage }> {
+  // Create a proposal if the model returned structured actions.
+  // Skip weekly summaries, chat_general, and truncated responses.
+  let proposalId: string | undefined
+  if (
+    requestClass !== 'weekly_summary'
+    && requestClass !== 'chat_general'
+    && response.actions
+    && response.actions.length > 0
+    && !response.meta?.likelyTruncated
+  ) {
+    const proposal = await useCoachActionsStore.getState().addProposal(
+      response.message.slice(0, 120) + (response.message.length > 120 ? '…' : ''),
+      response.actions,
+      undefined,
+      { source: 'chat' },
+    )
+    proposalId = proposal.id
+  }
+
+  const coachMsg: ChatMessage = {
+    id: uuid(),
+    role: 'coach',
+    content: response.message,
+    timestamp: Date.now(),
+    chatSessionId,
+    provider: response.provider,
+    proposalId,
+  }
+
+  return { proposalId, coachMsg }
+}
 
 // ─── Error formatting ──────────────────────────────────────────────────────────
 
