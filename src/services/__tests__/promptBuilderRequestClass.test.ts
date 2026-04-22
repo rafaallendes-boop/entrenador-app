@@ -70,7 +70,7 @@ describe('promptBuilder request class branching', () => {
 
     expect(prompt).toContain('INSTRUCCIONES DEL COACH-PLANNER')
     expect(prompt).toContain('DEBES responder con create_week')
-    expect(prompt).toContain('NUTRICIÓN Y HIDRATACIÓN')
+    expect(prompt).not.toContain('NUTRICIÓN Y HIDRATACIÓN')
     expect(prompt).not.toContain('INSTRUCCIONES DE AJUSTE')
   })
 

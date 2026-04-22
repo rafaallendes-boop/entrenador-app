@@ -2741,9 +2741,17 @@ async function deleteRemoteAthleteProfileData(userId: string): Promise<void> {
   if (error) throw error
 
   const marker = createAthleteProfileFullResetRow(userId, resetAt)
-  const { error: markerError } = await getSupabase()
-    .from('athlete_profiles')
-    .insert(marker as never)
-
-  if (markerError) throw markerError
+  try {
+    // Prefer the idempotent athlete-profile writer so full reset survives
+    // duplicate rows or existing marker rows better than a raw insert.
+    await persistAthleteProfileRow(marker, userId, [])
+  } catch (primaryError) {
+    // Fallback for environments where upsert(onConflict) is not available
+    // or the remote schema behaves differently during reset.
+    try {
+      await persistAthleteProfileRow(marker, userId)
+    } catch {
+      throw primaryError
+    }
+  }
 }

@@ -283,7 +283,10 @@ describe('promptBuilder dynamic cycling and mobility sections', () => {
           rpe: 6,
         }),
       ],
-    }))
+    }), {
+      requestClass: 'chat_action',
+      userMessage: 'Planifica mi semana y considera nutrición e hidratación para recovery',
+    })
 
     expect(prompt).toContain('Proteína diaria objetivo: ~152g proteína')
     expect(prompt).toContain('Hidratación recomendada:')
@@ -314,7 +317,10 @@ describe('promptBuilder dynamic cycling and mobility sections', () => {
         sleepHours: 5.5,
         updatedAt: 1,
       },
-    }))
+    }), {
+      requestClass: 'chat_action',
+      userMessage: 'Planifica mi semana y ajusta nutrición para recuperación y energía',
+    })
 
     expect(prompt).toContain('Nota de recuperación:')
   })

@@ -16,10 +16,25 @@ export type AITechnicalSurface =
   | 'plan_builder'
   | 'import'
 
+export type CoachPromptRequestType = 'chat_general' | 'adjust_session' | 'plan_week'
+
+export interface PromptTrace {
+  promptRequestType: CoachPromptRequestType
+  intent?: ChatContext['intent']
+  includedSports: SupportedSport[]
+  includedSections: string[]
+  estimatedPromptChars: number
+  estimatedPromptTokens: number
+  profileVariant: 'slim'
+  profileSizeChars: number
+  profileIncludedSports: SupportedSport[]
+}
+
 export interface AITechnicalResult {
   traceId: string
   surface: AITechnicalSurface
   requestClass: AIRequestClass
+  promptTrace?: PromptTrace
   provider?: AIProviderName
   model?: string
   durationMs?: number

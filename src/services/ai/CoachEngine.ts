@@ -4,7 +4,7 @@
 
 import type { AIProvider, AIRequest, CoachNormalizedResponse } from './types'
 import type { AIRequestClass, AITechnicalSurface, ChatContext } from '../../types'
-import { buildCoachSystemPrompt } from './promptBuilder'
+import { buildCoachPrompt } from './promptBuilder'
 import { normalizeResponse } from './responseNormalizer'
 import { AIProviderError, createProviderError } from './types'
 import { ClaudeProvider } from './providers/ClaudeProvider'
@@ -179,9 +179,16 @@ async function sendTrackedCoachRequest(
 
   return withTracing(requestClass, surface, async (traceId) => {
     let firstChunkSeen = false
+    const prompt = buildCoachPrompt(context, { requestClass, userMessage })
+
+    if (prompt.trace) {
+      useAIDebugStore.getState().updateRequest(traceId, {
+        promptTrace: prompt.trace,
+      })
+    }
 
     const request: AIRequest = {
-      systemPrompt: buildCoachSystemPrompt(context, { requestClass, userMessage }),
+      systemPrompt: prompt.systemPrompt,
       userMessage,
       requestClass,
       traceId,

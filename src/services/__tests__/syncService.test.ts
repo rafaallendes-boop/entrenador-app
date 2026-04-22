@@ -492,7 +492,8 @@ describe('syncService', () => {
       'athlete_profiles',
     ])
     expect(updateCalls.some((call) => call.table === 'athlete_profiles')).toBe(false)
-    expect(insertCalls.some((call) => call.table === 'athlete_profiles')).toBe(true)
+    expect(upsertCalls.some((call) => call.table === 'athlete_profiles')).toBe(true)
+    expect(insertCalls.some((call) => call.table === 'athlete_profiles')).toBe(false)
     expect(outcome.completed).toBe(true)
     expect(outcome.pending).toEqual([])
   })

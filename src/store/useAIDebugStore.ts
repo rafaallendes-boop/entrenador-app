@@ -6,6 +6,7 @@ const MAX_DEBUG_REQUESTS = 30
 interface AIDebugState {
   requests: AITechnicalResult[]
   startRequest: (entry: Omit<AITechnicalResult, 'status'> & { status?: AITechnicalResult['status'] }) => void
+  updateRequest: (traceId: string, patch: Partial<AITechnicalResult>) => void
   markFirstChunk: (traceId: string) => void
   completeRequest: (traceId: string, patch: Partial<AITechnicalResult>) => void
   failRequest: (traceId: string, patch: Partial<AITechnicalResult>) => void
@@ -24,6 +25,16 @@ export const useAIDebugStore = create<AIDebugState>((set) => ({
         },
         ...state.requests,
       ].slice(0, MAX_DEBUG_REQUESTS),
+    }))
+  },
+
+  updateRequest: (traceId, patch) => {
+    set((state) => ({
+      requests: state.requests.map((item) => (
+        item.traceId === traceId
+          ? { ...item, ...patch }
+          : item
+      )),
     }))
   },
 
