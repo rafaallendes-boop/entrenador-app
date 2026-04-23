@@ -142,7 +142,7 @@ export const useTrainingStore = create<TrainingState>((set, get) => ({
   },
 
   updateSession: async (id, patch) => {
-    const previous = get().sessions.find(s => s.id === id)
+    const previous = get().sessions.find(s => s.id === id) ?? await db.sessions.get(id)
     if (!previous) return
     const now = Date.now()
     const nextStatus = patch.status ?? previous.status
@@ -183,7 +183,7 @@ export const useTrainingStore = create<TrainingState>((set, get) => ({
   },
 
   deleteSession: async (id) => {
-    const session = get().sessions.find(s => s.id === id)
+    const session = get().sessions.find(s => s.id === id) ?? await db.sessions.get(id)
     if (!session) return
     await db.sessions.delete(id)
     void syncService.deleteSession(id)

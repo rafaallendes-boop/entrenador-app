@@ -251,6 +251,48 @@ describe('responseNormalizer', () => {
     })
   })
 
+  it('drops create_week actions when requestClass is chat_action', () => {
+    const response = normalizeResponse({
+      text: [
+        'Ajuste completo.',
+        '<actions>',
+        JSON.stringify([
+          {
+            type: 'create_week',
+            reason: 'Semana nueva',
+            targetDate: '2026-04-14',
+            sessions: [
+              {
+                date: '2026-04-14',
+                timeBlock: 'AM',
+                sessionType: 'running',
+                title: 'Rodaje',
+                durationMin: 45,
+              },
+            ],
+          },
+          {
+            type: 'update_session',
+            reason: 'Bajar volumen',
+            sessionId: 'abc123',
+            newDurationMin: 35,
+          },
+        ]),
+        '</actions>',
+      ].join('\n'),
+      provider: 'mock',
+      requestClass: 'chat_action',
+    })
+
+    expect(response.actions).toEqual([
+      expect.objectContaining({
+        type: 'update_session',
+        sessionId: 'abc123',
+      }),
+    ])
+    expect(response.meta?.invalidActionCount).toBe(1)
+  })
+
   it('moves practice match drills to the end of a squash drill block', () => {
     const response = normalizeResponse({
       text: [

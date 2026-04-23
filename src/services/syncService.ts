@@ -30,6 +30,7 @@ import {
   compactQueue,
   createAthleteProfileFullResetRow,
   getAthleteProfileFullResetAt,
+  getOfflineOpEntityId,
   getSyncErrorMessage,
   isAthleteProfileFullResetRow,
   normalizeAthleteProfilePayload,
@@ -478,6 +479,7 @@ let activeDrainQueuePromise: ScopedPromise<boolean> | null = null
 let activePullAllPromise: ScopedPromise<void> | null = null
 let activeFullSyncPromise: ScopedPromise<void> | null = null
 let syncAttemptCounter = 0
+const entityMutationLanes = new Map<string, Promise<void>>()
 
 /**
  * Safe accessor for the Supabase client. Throws a typed SyncError
@@ -686,6 +688,72 @@ function enqueue(op: OfflineOp): void {
     }, 'warn')
   }
   saveQueue(queue)
+}
+
+function getEntityMutationKey(
+  userId: string,
+  table: SupabaseTable,
+  payload: Record<string, unknown>,
+): string | null {
+  const entityId = typeof payload.id === 'string' && payload.id.length > 0
+    ? payload.id
+    : null
+  if (!entityId) return null
+  return `${userId}:${table}:${entityId}`
+}
+
+async function withSerializedEntityMutation<T>(
+  userId: string,
+  table: SupabaseTable,
+  payload: Record<string, unknown>,
+  run: () => Promise<T>,
+): Promise<T> {
+  const key = getEntityMutationKey(userId, table, payload)
+  if (!key) return run()
+
+  const previous = entityMutationLanes.get(key) ?? Promise.resolve()
+  let releaseCurrent!: () => void
+  const currentDone = new Promise<void>((resolve) => {
+    releaseCurrent = resolve
+  })
+  const currentTail = previous.catch(() => undefined).then(() => currentDone)
+  entityMutationLanes.set(key, currentTail)
+
+  await previous.catch(() => undefined)
+
+  try {
+    return await run()
+  } finally {
+    releaseCurrent()
+    void currentDone.finally(() => {
+      if (entityMutationLanes.get(key) === currentTail) {
+        entityMutationLanes.delete(key)
+      }
+    })
+  }
+}
+
+function clearQueuedOpsForEntityOlderThan(
+  userId: string,
+  table: SupabaseTable,
+  payload: Record<string, unknown>,
+  cutoffEnqueuedAt: number,
+): void {
+  const entityId = typeof payload.id === 'string' && payload.id.length > 0
+    ? payload.id
+    : null
+  if (!entityId) return
+
+  const queue = loadQueue()
+  const nextQueue = queue.filter((op) => {
+    if (op.userId !== userId || op.table !== table) return true
+    if (getOfflineOpEntityId(op) !== entityId) return true
+    return op.enqueuedAt > cutoffEnqueuedAt
+  })
+
+  if (nextQueue.length !== queue.length) {
+    saveQueue(nextQueue)
+  }
 }
 
 function clearQueuedOpsForTables(userId: string, tables: Iterable<SupabaseTable>): void {
@@ -913,32 +981,34 @@ async function drainQueue(): Promise<boolean> {
 
     const opStartedAt = Date.now()
     try {
-      if (op.action === 'upsert') {
-        if (op.table === 'athlete_profiles') {
-          await withRequestTimeout(upsertAthleteProfileRow(op.payload, op.userId), `${op.table}.upsert`)
+      await withSerializedEntityMutation(op.userId, op.table, op.payload, async () => {
+        if (op.action === 'upsert') {
+          if (op.table === 'athlete_profiles') {
+            await withRequestTimeout(upsertAthleteProfileRow(op.payload, op.userId), `${op.table}.upsert`)
+          } else {
+            const { error } = await withRequestTimeout(
+              getSupabase().from(op.table).upsert(op.payload as never),
+              `${op.table}.upsert`,
+            )
+            if (error) throw error
+          }
         } else {
+          const payload = op.payload as { id: string; userId?: string }
+          const targetUserId = payload.userId ?? op.userId
           const { error } = await withRequestTimeout(
-            getSupabase().from(op.table).upsert(op.payload as never),
-            `${op.table}.upsert`,
+            getSupabase()
+              .from(op.table)
+              .delete()
+              .eq('id', payload.id)
+              .eq('user_id', targetUserId),
+            `${op.table}.delete`,
           )
           if (error) throw error
+          if (op.table === 'sessions') {
+            clearSessionDeleteTombstone(op.userId, payload.id)
+          }
         }
-      } else {
-        const payload = op.payload as { id: string; userId?: string }
-        const targetUserId = payload.userId ?? op.userId
-        const { error } = await withRequestTimeout(
-          getSupabase()
-            .from(op.table)
-            .delete()
-            .eq('id', payload.id)
-            .eq('user_id', targetUserId),
-          `${op.table}.delete`,
-        )
-        if (error) throw error
-        if (op.table === 'sessions') {
-          clearSessionDeleteTombstone(op.userId, payload.id)
-        }
-      }
+      })
       trackSyncEvent({
         kind: op.action === 'upsert' ? 'push' : 'delete',
         status: 'ok',
@@ -1105,72 +1175,76 @@ async function upsertRow(
   const payload = table === 'athlete_profiles'
     ? withAthleteProfileWriteSource(stripAthleteProfileWriteSource(row), athleteProfileWriteSource)
     : row
+  const requestedAt = Date.now()
 
-  if (table === 'athlete_profiles' && !canWriteAthleteProfileLocally(athleteProfileWriteSource, userId)) {
-    syncLog('athlete_profiles:write_suppressed', {
-      reason: hasPendingRemoteWipeForTable(userId, 'athlete_profiles') ? 'pending_remote_wipe' : 'reset_lock',
-      source: athleteProfileWriteSource,
-      userId,
-    }, 'warn')
-    return
-  }
-
-  if (hasPendingRemoteWipeForTable(userId, table)) {
-    enqueue({ userId, table, action: 'upsert', payload, enqueuedAt: Date.now() })
-    scheduleRetry(15000)
-    return
-  }
-
-  if (!navigator.onLine) {
-    finishSyncAttempt('offline')
-    syncStoreState().setSyncStatus('offline')
-    enqueue({ userId, table, action: 'upsert', payload, enqueuedAt: Date.now() })
-    scheduleRetry(15000)
-    return
-  }
-
-  startSyncAttempt()
-  const upsertStartedAt = Date.now()
-  try {
-    if (table === 'athlete_profiles') {
-      await withRequestTimeout(upsertAthleteProfileRow(payload, userId), `athlete_profiles.upsert`)
-    } else {
-      const { error } = await withRequestTimeout(
-        getSupabase().from(table).upsert(payload as never),
-        `${table}.upsert`,
-      )
-      if (error) throw error
-    }
-    trackSyncEvent({
-      kind: 'push',
-      status: 'ok',
-      entity: table,
-      userId,
-      durationMs: Date.now() - upsertStartedAt,
-    })
-    const queueDrained = await drainQueue()
-    if (queueDrained) {
-      syncStoreState().setSyncDetails({
-        lastSuccessfulSyncAt: Date.now(),
-        lastErrorAt: null,
-        lastErrorMessage: null,
-        lastErrorCategory: null,
-        lastBlockedTable: null,
-        retryScheduledAt: null,
-        consecutiveFailures: 0,
-      })
-      finishSyncAttempt('idle')
-    }
-  } catch (error) {
-    const errorInfo = classifySyncError(error, table)
-    if (!errorInfo.retriable && !errorInfo.autoRepairable) {
-      syncLog('upsertRow:non_retriable', { table, category: errorInfo.category }, 'warn')
-      applySyncFailure(error, errorInfo.userMessage, table)
+  await withSerializedEntityMutation(userId, table, payload, async () => {
+    if (table === 'athlete_profiles' && !canWriteAthleteProfileLocally(athleteProfileWriteSource, userId)) {
+      syncLog('athlete_profiles:write_suppressed', {
+        reason: hasPendingRemoteWipeForTable(userId, 'athlete_profiles') ? 'pending_remote_wipe' : 'reset_lock',
+        source: athleteProfileWriteSource,
+        userId,
+      }, 'warn')
       return
     }
-    enqueue({ userId, table, action: 'upsert', payload, enqueuedAt: Date.now() })
-    applySyncFailure(error, errorInfo.userMessage, table)
-  }
+
+    if (hasPendingRemoteWipeForTable(userId, table)) {
+      enqueue({ userId, table, action: 'upsert', payload, enqueuedAt: Date.now() })
+      scheduleRetry(15000)
+      return
+    }
+
+    if (!navigator.onLine) {
+      finishSyncAttempt('offline')
+      syncStoreState().setSyncStatus('offline')
+      enqueue({ userId, table, action: 'upsert', payload, enqueuedAt: Date.now() })
+      scheduleRetry(15000)
+      return
+    }
+
+    startSyncAttempt()
+    const upsertStartedAt = Date.now()
+    try {
+      if (table === 'athlete_profiles') {
+        await withRequestTimeout(upsertAthleteProfileRow(payload, userId), `athlete_profiles.upsert`)
+      } else {
+        const { error } = await withRequestTimeout(
+          getSupabase().from(table).upsert(payload as never),
+          `${table}.upsert`,
+        )
+        if (error) throw error
+      }
+      clearQueuedOpsForEntityOlderThan(userId, table, payload, requestedAt)
+      trackSyncEvent({
+        kind: 'push',
+        status: 'ok',
+        entity: table,
+        userId,
+        durationMs: Date.now() - upsertStartedAt,
+      })
+      const queueDrained = await drainQueue()
+      if (queueDrained) {
+        syncStoreState().setSyncDetails({
+          lastSuccessfulSyncAt: Date.now(),
+          lastErrorAt: null,
+          lastErrorMessage: null,
+          lastErrorCategory: null,
+          lastBlockedTable: null,
+          retryScheduledAt: null,
+          consecutiveFailures: 0,
+        })
+        finishSyncAttempt('idle')
+      }
+    } catch (error) {
+      const errorInfo = classifySyncError(error, table)
+      if (!errorInfo.retriable && !errorInfo.autoRepairable) {
+        syncLog('upsertRow:non_retriable', { table, category: errorInfo.category }, 'warn')
+        applySyncFailure(error, errorInfo.userMessage, table)
+        return
+      }
+      enqueue({ userId, table, action: 'upsert', payload, enqueuedAt: Date.now() })
+      applySyncFailure(error, errorInfo.userMessage, table)
+    }
+  })
 }
 
 async function deleteRow(table: SupabaseTable, id: string): Promise<void> {
@@ -1178,63 +1252,68 @@ async function deleteRow(table: SupabaseTable, id: string): Promise<void> {
 
   const userId = getUserId()
   if (!userId) return
+  const payload = { id, userId }
+  const requestedAt = Date.now()
 
-  if (hasPendingRemoteWipeForTable(userId, table)) {
-    if (table === 'sessions') rememberSessionDeleteTombstone(userId, id)
-    enqueue({ userId, table, action: 'delete', payload: { id, userId }, enqueuedAt: Date.now() })
-    scheduleRetry(15000)
-    return
-  }
-
-  if (!navigator.onLine) {
-    finishSyncAttempt('offline')
-    syncStoreState().setSyncStatus('offline')
-    if (table === 'sessions') rememberSessionDeleteTombstone(userId, id)
-    enqueue({ userId, table, action: 'delete', payload: { id, userId }, enqueuedAt: Date.now() })
-    scheduleRetry(15000)
-    return
-  }
-
-  startSyncAttempt()
-  const deleteStartedAt = Date.now()
-  try {
-    const { error } = await withRequestTimeout(
-      getSupabase().from(table).delete().eq('id', id).eq('user_id', userId),
-      `${table}.delete`,
-    )
-    if (error) throw error
-    if (table === 'sessions') rememberSessionDeleteTombstone(userId, id)
-    trackSyncEvent({
-      kind: 'delete',
-      status: 'ok',
-      entity: table,
-      userId,
-      durationMs: Date.now() - deleteStartedAt,
-    })
-    const queueDrained = await drainQueue()
-    if (queueDrained) {
-      syncStoreState().setSyncDetails({
-        lastSuccessfulSyncAt: Date.now(),
-        lastErrorAt: null,
-        lastErrorMessage: null,
-        lastErrorCategory: null,
-        lastBlockedTable: null,
-        retryScheduledAt: null,
-        consecutiveFailures: 0,
-      })
-      finishSyncAttempt('idle')
-    }
-  } catch (error) {
-    const errorInfo = classifySyncError(error, table)
-    if (!errorInfo.retriable && !errorInfo.autoRepairable) {
-      syncLog('deleteRow:non_retriable', { table, category: errorInfo.category }, 'warn')
-      applySyncFailure(error, errorInfo.userMessage, table)
+  await withSerializedEntityMutation(userId, table, payload, async () => {
+    if (hasPendingRemoteWipeForTable(userId, table)) {
+      if (table === 'sessions') rememberSessionDeleteTombstone(userId, id)
+      enqueue({ userId, table, action: 'delete', payload, enqueuedAt: Date.now() })
+      scheduleRetry(15000)
       return
     }
-    if (table === 'sessions') rememberSessionDeleteTombstone(userId, id)
-    enqueue({ userId, table, action: 'delete', payload: { id, userId }, enqueuedAt: Date.now() })
-    applySyncFailure(error, `No se pudo eliminar en sync ${table}.`, table)
-  }
+
+    if (!navigator.onLine) {
+      finishSyncAttempt('offline')
+      syncStoreState().setSyncStatus('offline')
+      if (table === 'sessions') rememberSessionDeleteTombstone(userId, id)
+      enqueue({ userId, table, action: 'delete', payload, enqueuedAt: Date.now() })
+      scheduleRetry(15000)
+      return
+    }
+
+    startSyncAttempt()
+    const deleteStartedAt = Date.now()
+    try {
+      const { error } = await withRequestTimeout(
+        getSupabase().from(table).delete().eq('id', id).eq('user_id', userId),
+        `${table}.delete`,
+      )
+      if (error) throw error
+      if (table === 'sessions') rememberSessionDeleteTombstone(userId, id)
+      clearQueuedOpsForEntityOlderThan(userId, table, payload, requestedAt)
+      trackSyncEvent({
+        kind: 'delete',
+        status: 'ok',
+        entity: table,
+        userId,
+        durationMs: Date.now() - deleteStartedAt,
+      })
+      const queueDrained = await drainQueue()
+      if (queueDrained) {
+        syncStoreState().setSyncDetails({
+          lastSuccessfulSyncAt: Date.now(),
+          lastErrorAt: null,
+          lastErrorMessage: null,
+          lastErrorCategory: null,
+          lastBlockedTable: null,
+          retryScheduledAt: null,
+          consecutiveFailures: 0,
+        })
+        finishSyncAttempt('idle')
+      }
+    } catch (error) {
+      const errorInfo = classifySyncError(error, table)
+      if (!errorInfo.retriable && !errorInfo.autoRepairable) {
+        syncLog('deleteRow:non_retriable', { table, category: errorInfo.category }, 'warn')
+        applySyncFailure(error, errorInfo.userMessage, table)
+        return
+      }
+      if (table === 'sessions') rememberSessionDeleteTombstone(userId, id)
+      enqueue({ userId, table, action: 'delete', payload, enqueuedAt: Date.now() })
+      applySyncFailure(error, `No se pudo eliminar en sync ${table}.`, table)
+    }
+  })
 }
 
 function sessionToRow(session: Session, userId: string): Record<string, unknown> {
@@ -2328,7 +2407,7 @@ async function mergeTrainingPlans(userId: string, context: MergeContext): Promis
     if (remotePlan.updatedAt > localPlan.updatedAt) {
       await db.trainingPlans.put(remotePlan)
     } else if (localPlan.updatedAt > remotePlan.updatedAt && isSyncablePlanStatus(localPlan.status)) {
-      void pushTrainingPlan(localPlan)
+      context.pendingWrites.push(pushTrainingPlan(localPlan))
     }
   }
 
@@ -2386,7 +2465,7 @@ async function mergeTrainingPlanWeeks(userId: string, context: MergeContext): Pr
     } else if (localWeek.updatedAt > remoteWeek.updatedAt) {
       const localPlan = localPlans.find((plan) => plan.id === localWeek.planId)
       if (localPlan && isSyncablePlanStatus(localPlan.status)) {
-        void pushTrainingPlanWeeks(localPlan, [localWeek])
+        context.pendingWrites.push(pushTrainingPlanWeeks(localPlan, [localWeek]))
       }
     }
   }

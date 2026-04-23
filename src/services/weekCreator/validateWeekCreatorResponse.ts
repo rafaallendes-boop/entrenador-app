@@ -1,6 +1,5 @@
 import type { ChatContext, CoachAction, CoachSessionProposal, DayOfWeek, SupportedSport } from '../../types'
 import type { CoachNormalizedResponse } from '../ai/types'
-import { getAllowedPlanningSports, isSessionTypeAllowedForPlan } from '../planningConstraints'
 import { filterSessionsToWeek, isStrictISODate, pickCreateWeekDiagnostic } from '../week/shared'
 import type { WeekCreatorEffectiveConfig } from './WeekCreatorConfig'
 
@@ -23,7 +22,8 @@ export interface WeekCreatorValidationResult {
 export function validateWeekCreatorResponse(
   input: WeekCreatorValidationInput,
 ): WeekCreatorValidationResult {
-  const createWeekActions = (input.response.actions ?? []).filter((action) => action.type === 'create_week')
+  const responseActions = input.response.actions ?? []
+  const createWeekActions = responseActions.filter((action) => action.type === 'create_week')
   if (createWeekActions.length !== 1) {
     return {
       ok: false,
@@ -31,6 +31,9 @@ export function validateWeekCreatorResponse(
         ? 'El modelo no devolvió ninguna acción create_week.'
         : 'El modelo devolvió más de una acción create_week y este flujo solo admite una semana.',
     }
+  }
+  if (responseActions.length !== createWeekActions.length) {
+    return fail('Week Creator solo admite una acción create_week sin acciones adicionales.')
   }
 
   const action = createWeekActions[0]
@@ -72,7 +75,7 @@ export function validateWeekCreatorResponse(
   const dayError = validateAllowedDays(sessions, input.config)
   if (dayError) return fail(dayError, rawSessionCount, validSessionCount, droppedSessionCount)
 
-  const sportError = validateAllowedSports(sessions, input.context)
+  const sportError = validateAllowedSports(sessions, input.config)
   if (sportError) return fail(sportError, rawSessionCount, validSessionCount, droppedSessionCount)
 
   const detailsError = validateRequiredDetails(sessions)
@@ -148,16 +151,9 @@ function validateAllowedDays(
 
 function validateAllowedSports(
   sessions: CoachSessionProposal[],
-  context: ChatContext,
+  config: WeekCreatorEffectiveConfig,
 ): string | undefined {
-  for (const session of sessions) {
-    if (!isSessionTypeAllowedForPlan(session.sessionType, context.athleteProfile)) {
-      return `La semana incluyó un deporte no permitido para este atleta: ${session.sessionType}.`
-    }
-  }
-
-  const allowedSports = new Set<SupportedSport>(getAllowedPlanningSports(context.athleteProfile))
-  if (allowedSports.size === 0) return undefined
+  const allowedSports = new Set<SupportedSport>(config.allowedSports)
 
   const invalid = sessions.find((session) => {
     const sport = normalizeSessionSport(session)

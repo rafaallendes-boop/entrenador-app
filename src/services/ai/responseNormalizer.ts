@@ -28,6 +28,7 @@ const VALID_SQUASH_TRAINING_FOCUS = new Set(['technical', 'tactical', 'physical'
 const VALID_MOBILITY_CONTEXTS = new Set(['post_run', 'post_cycling', 'post_squash', 'post_strength', 'pre_training_activation', 'recovery', 'full_body', 'sport_specific'])
 
 export function normalizeResponse(raw: AIRawResponse): CoachNormalizedResponse {
+  const requestClass = raw.requestClass ?? 'chat_general'
   let message = raw.text.replace(
     /```[a-z]*\n?(<actions>[\s\S]*?<\/actions>)\n?```/gi,
     '$1',
@@ -65,6 +66,12 @@ export function normalizeResponse(raw: AIRawResponse): CoachNormalizedResponse {
     }
   }
 
+  if (requestClass === 'chat_action' && actions?.length) {
+    const nextActions = actions.filter((action) => action.type !== 'create_week')
+    invalidActionCount += actions.length - nextActions.length
+    actions = nextActions
+  }
+
   message = message.replace(/\n{3,}/g, '\n\n').trim()
 
   return {
@@ -76,7 +83,7 @@ export function normalizeResponse(raw: AIRawResponse): CoachNormalizedResponse {
     timestamp: Date.now(),
     durationMs: raw.durationMs,
     traceId: raw.traceId ?? 'legacy-trace',
-    requestClass: raw.requestClass ?? 'chat_general',
+    requestClass,
     retryUsed: raw.retryUsed,
     fallbackUsed: raw.fallbackUsed,
     meta: {

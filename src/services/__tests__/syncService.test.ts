@@ -92,22 +92,28 @@ function createQueryBuilder(
   }
 }
 
-vi.mock('../auth', () => ({
-  supabase: {
-    from: (table: string) => ({
-      upsert: vi.fn((payload: unknown) => {
-        upsertCalls.push({ table, payload })
-        return Promise.resolve(tableResults.get(table) ?? { data: null, error: null })
-      }),
-      insert: vi.fn((payload: unknown) => {
-        insertCalls.push({ table, payload })
-        return Promise.resolve(tableResults.get(table) ?? { data: null, error: null })
-      }),
-      update: vi.fn((payload: unknown) => createQueryBuilder(table, 'update', payload)),
-      select: vi.fn(() => createQueryBuilder(table, 'select')),
-      delete: vi.fn(() => createQueryBuilder(table, 'delete')),
+function createSupabaseFrom() {
+  return (table: string) => ({
+    upsert: vi.fn((payload: unknown) => {
+      upsertCalls.push({ table, payload })
+      return Promise.resolve(tableResults.get(table) ?? { data: null, error: null })
     }),
-  },
+    insert: vi.fn((payload: unknown) => {
+      insertCalls.push({ table, payload })
+      return Promise.resolve(tableResults.get(table) ?? { data: null, error: null })
+    }),
+    update: vi.fn((payload: unknown) => createQueryBuilder(table, 'update', payload)),
+    select: vi.fn(() => createQueryBuilder(table, 'select')),
+    delete: vi.fn(() => createQueryBuilder(table, 'delete')),
+  })
+}
+
+const supabaseMock = {
+  from: createSupabaseFrom(),
+}
+
+vi.mock('../auth', () => ({
+  supabase: supabaseMock,
 }))
 
 vi.mock('../appMaintenance', () => ({
@@ -209,6 +215,7 @@ describe('syncService', () => {
     syncStatusMock.mockReset()
     syncDetailsMock.mockReset()
     clearAllLocalAppDataMock.mockReset()
+    supabaseMock.from = createSupabaseFrom()
     storeState.user = { id: 'user-1' }
     storeState.syncDetails = createSyncDetailsState()
 
@@ -651,5 +658,192 @@ describe('syncService', () => {
       lastErrorCategory: 'network_error',
       lastBlockedTable: 'sessions',
     }))
+  })
+
+  it('drops stale queued ops for an entity after a newer direct write succeeds', async () => {
+    localStorageState.set('entrenador_sync_queue_v1', JSON.stringify([
+      {
+        userId: 'user-1',
+        table: 'sessions',
+        action: 'upsert',
+        payload: {
+          id: 'session-1',
+          user_id: 'user-1',
+          date: '2026-04-11',
+          week_start_date: '2026-04-06',
+          time_block: 'AM',
+          type: 'running',
+          status: 'planned',
+          created_at: 1,
+          updated_at: 10,
+          data: { title: 'Vieja' },
+        },
+        enqueuedAt: 1,
+      },
+    ]))
+
+    const syncService = await import('../syncService')
+
+    await syncService.pushSession({
+      id: 'session-1',
+      date: '2026-04-11',
+      weekStartDate: '2026-04-06',
+      timeBlock: 'AM',
+      type: 'running',
+      status: 'planned',
+      title: 'Nueva',
+      durationMin: 50,
+      createdAt: 1,
+      updatedAt: 20,
+    })
+
+    expect(upsertCalls.filter((call) => call.table === 'sessions')).toHaveLength(1)
+    expect(JSON.parse(localStorage.getItem('entrenador_sync_queue_v1') ?? '[]')).toEqual([])
+    expect((upsertCalls[0]?.payload as Record<string, unknown>).updated_at).toBe(20)
+  })
+
+  it('serializes concurrent direct writes for the same entity', async () => {
+    const auth = await import('../auth')
+    const originalFrom = auth.supabase.from.bind(auth.supabase)
+    let releaseFirst!: () => void
+
+    auth.supabase.from = ((table: string) => {
+      if (table !== 'sessions') return originalFrom(table)
+      return {
+        upsert: vi.fn((payload: unknown) => {
+          upsertCalls.push({ table, payload })
+          if (upsertCalls.length === 1) {
+            return new Promise<SupabaseResult>((resolve) => {
+              releaseFirst = () => resolve({ data: null, error: null })
+            })
+          }
+          return Promise.resolve({ data: null, error: null })
+        }),
+      }
+    }) as typeof auth.supabase.from
+
+    const syncService = await import('../syncService')
+    const firstWrite = syncService.pushSession({
+      id: 'session-1',
+      date: '2026-04-11',
+      weekStartDate: '2026-04-06',
+      timeBlock: 'AM',
+      type: 'running',
+      status: 'planned',
+      title: 'Primera',
+      durationMin: 45,
+      createdAt: 1,
+      updatedAt: 10,
+    })
+
+    await Promise.resolve()
+
+    const secondWrite = syncService.pushSession({
+      id: 'session-1',
+      date: '2026-04-11',
+      weekStartDate: '2026-04-06',
+      timeBlock: 'AM',
+      type: 'running',
+      status: 'planned',
+      title: 'Segunda',
+      durationMin: 45,
+      createdAt: 1,
+      updatedAt: 20,
+    })
+
+    await Promise.resolve()
+
+    expect(upsertCalls.filter((call) => call.table === 'sessions')).toHaveLength(1)
+
+    releaseFirst()
+    await Promise.all([firstWrite, secondWrite])
+
+    expect(upsertCalls.filter((call) => call.table === 'sessions')).toHaveLength(2)
+    expect(upsertCalls
+      .filter((call) => call.table === 'sessions')
+      .map((call) => (call.payload as Record<string, unknown>).updated_at))
+      .toEqual([10, 20])
+  })
+
+  it('waits for newer local training plan writes before finishing runFullSync', async () => {
+    const localPlan = {
+      id: 'plan-1',
+      athleteId: 'athlete-1',
+      goalEventId: 'evt-1',
+      status: 'active',
+      title: 'Plan local',
+      startDate: '2026-04-14',
+      endDate: '2026-04-20',
+      totalWeeks: 1,
+      phases: [],
+      wizardConfig: {},
+      macroSnapshot: {},
+      createdAt: 1,
+      updatedAt: 200,
+    }
+    trainingPlanRows = [localPlan]
+    tableResults.set('training_plans', {
+      data: [{
+        id: 'plan-1',
+        user_id: 'user-1',
+        goal_event_id: 'evt-1',
+        status: 'active',
+        title: 'Plan remoto',
+        start_date: '2026-04-14',
+        end_date: '2026-04-20',
+        total_weeks: 1,
+        phases: [],
+        wizard_config: {},
+        macro_snapshot: {},
+        created_at: 1,
+        updated_at: 100,
+        deleted_at: null,
+      }],
+      error: null,
+    })
+    tableResults.set('training_plan_weeks', { data: [], error: null })
+
+    const auth = await import('../auth')
+    const originalFrom = auth.supabase.from.bind(auth.supabase)
+    let releasePlanWrite!: () => void
+
+    auth.supabase.from = ((table: string) => {
+      const base = originalFrom(table)
+      if (table !== 'training_plans') return base
+      return {
+        ...base,
+        upsert: vi.fn((payload: unknown) => {
+          upsertCalls.push({ table, payload })
+          return new Promise<SupabaseResult>((resolve) => {
+            releasePlanWrite = () => resolve({ data: null, error: null })
+          })
+        }),
+      }
+    }) as typeof auth.supabase.from
+
+    const { db } = await import('../../db/db')
+    ;(db.trainingPlans.get as ReturnType<typeof vi.fn>).mockImplementation(async (id: string) =>
+      trainingPlanRows.find((plan) => (plan as { id: string }).id === id),
+    )
+
+    const syncService = await import('../syncService')
+    let resolved = false
+    const fullSyncPromise = syncService.runFullSync('user-1').then(() => {
+      resolved = true
+    })
+
+    await Promise.resolve()
+    await Promise.resolve()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(resolved).toBe(false)
+    expect(typeof releasePlanWrite).toBe('function')
+
+    releasePlanWrite()
+    await fullSyncPromise
+
+    expect(resolved).toBe(true)
+    expect(upsertCalls.some((call) => call.table === 'training_plans')).toBe(true)
   })
 })

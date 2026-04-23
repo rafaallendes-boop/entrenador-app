@@ -1,966 +1,190 @@
 # Entrenador App - Review and Roadmap
 
-Actualizado: 2026-04-18
-Ultimo hito relevante: capa de nutricion contextual estructurada, coach nutrition-aware y hardening reciente de plan builder/settings ya integrados en codigo
+Actualizado: 2026-04-23
 
-## Revision 2026-04-14 contrastada con codigo
+## Resumen ejecutivo
 
-La revision de hoy confirma que el roadmap general sigue bien orientado, pero necesitaba quedar mas pegado a lo que ya existe en el repo y a los riesgos que aun siguen abiertos.
+El roadmap anterior estaba demasiado largo y ya mezclaba trabajo cerrado con trabajo pendiente. Hoy la base del producto ya es claramente usable:
 
-Validado en codigo:
+- app React + TypeScript + Vite con superficies reales de semana, día, chat, onboarding, competition plan, import y settings
+- local-first con Dexie + Zustand + sync a Supabase
+- auth con Supabase + Google OAuth
+- coach con proposals persistidas, aplicables y reversibles
+- macroplan, analytics de carga, nutrición contextual y weekly loop visibles
+- plan builder separado del chat
+- `week_creator` ya operativo y enrutable desde chat
 
-- app React + TypeScript + Vite con rutas reales para dashboard, semana, dia, chat, onboarding, competition plan, import y settings
-- estrategia local-first implementada con Dexie, Zustand y sync a Supabase en `src/services/syncService.ts`
-- auth con Supabase + Google OAuth en `src/services/auth.ts`, `src/store/useAuthStore.ts` y `src/components/auth/AuthGate.tsx`
-- proposals persistidas, aceptables y reversibles desde chat, dashboard y weekly view
-- backup/import/export ya operativo con preview, merge y replace
-- weekly action loop ya unificado y reutilizado en dashboard, weekly view y notificaciones
-- notificaciones, macroplan, analytics de carga y planificacion multideporte ya aterrizados en codigo y no solo en docs
-- suite amplia de tests unitarios en stores, hooks y servicios criticos
+La lectura honesta hoy es esta:
 
-Huecos reales detectados en la revision:
+- el producto ya no está en fase prototipo
+- el mayor riesgo técnico sigue siendo sync/convergencia
+- el mayor vacío de producto sigue siendo observabilidad y cierre del loop de activación
+- monetización todavía no existe como sistema real
 
-- sync ya esta bastante maduro, pero sigue siendo el mayor riesgo por convergencia real entre dispositivos, conflictos simultaneos y cola retenida
-- el coach ya puede actuar, pero todavia falta cerrar mejor el ciclo alerta -> propuesta -> aceptacion -> medicion
-- no hay una capa visible de instrumentacion de uso y aceptacion para weekly loop, proposals o reactivacion
-- la relacion chat/proposal ya esta mejor resuelta, pero aun conviene explicitar mejor la politica de lifecycle y auditoria
-- la beta privada ya es viable tecnicamente, pero todavia falta blindar confianza operativa antes de empujar monetizacion
+## Ya implementado y fuera del backlog principal
 
-## Estado actual del producto
-
-Entrenador ya no esta en fase de prototipo. Hoy existe una base seria para atletas hibridos, especialmente en squash + running + fuerza:
-
-- planificacion semanal, vista diaria, historial y ajustes operativos
-- coach AI con propuestas ejecutables y persistidas
-- perfil estructurado del atleta con multi-deporte, recovery, schedule y nutricion
-- onboarding y wizard de plan de competencia funcionando
-- macroplan V2 por deporte ya visible y coherente con la semana
-- sync multi-dispositivo, backup/import-export y recovery offline implementados
-- analytics de carga, ACWR y progresion visibles
-- protocolos de sesion mas ejecutables con warmup/cooldown y feedback por sesion
-- notificaciones operativas con reglas por contexto
-- alertas accionables en dashboard con CTA reales
-- cycling y mobility ahora con mejor criterio de coaching, continuidad y estructura visible
-- weekly action loop unificado visible en WeeklyView y reutilizado en dashboard y notificaciones
-- squash ya distingue mejor partido de entrenamiento vs partido competitivo real
-- squash ahora tambien distingue mejor tecnica, control, sombras, match y sesiones mixtas visibles
-- rollback de propuestas del coach mas robusto para altas, updates y deletes
-- confirm dialogs compartidos en los flujos criticos mas visibles
-- alertas fuertes ahora pueden convertirse en propuestas concretas del coach sin pasar primero por chat libre
-- plan builder ya no deriva semanas con drift por timezone local
-- macroplan ya resuelve mejor eventos recien pasados sin caer falsamente en semana de competencia
-- fallbacks de seleccion para squash y fuerza ya respetan la fase real del macroplan cuando no hay contexto cacheado
-- dashboard ya detecta historial real del atleta aunque la semana visible este vacia
-- wipe selectivo ya limpia artifacts de sync antes del borrado remoto para evitar resubidas accidentales
-- capa de nutricion ya dejo de ser texto generico y ahora responde al contexto real del dia, deporte, carga, objetivo y fatiga reportada
-- dashboard, detalle del dia y coach ya comparten el mismo contexto nutricional estructurado
-- settings ya quedo mas limpio al ocultar el modelo AI visible y remover ruido informativo no esencial
-- plan builder de competencia ahora tiene guardrail operativo de 12 semanas maximas
-
-## Lo ya implementado
-
-Esto ya no deberia volver al backlog principal salvo refinamientos:
+Esto ya existe en código y no debería volver como bloque grande:
 
 - chat del coach con proposals ejecutables
 - athlete profile estructurado y persistido
 - onboarding guiado
 - wizard de plan de competencia
-- plan builder separado del chat
-- ACWR global y ACWR especifico por running, squash y fuerza
-- selectors estructurados para squash, strength, running, cycling y mobility
-- progresion multi-semana visible para el atleta en History
-- validacion de deportes permitidos en planning flow, prompt y persistencia
-- resumen estructurado del plan generado (`planSummary`)
-- validacion visible del plan generado
-- coherencia macroplan <-> semana visible en ProposalDrawer y WeeklyView
-- macroplan V2 con timeline, sportDetails y eventos secundarios visibles
-- protocolos de sesion mas profundos en SessionCard y prompt del coach
-- notificaciones locales con preferencias, scheduling y debug
-- alertas accionables en dashboard priorizadas por severidad
-- contrato explicito para sesiones de cycling y mobility
-- prompt del coach reforzado para emitir `cyclingDetails` y `mobilityDetails`
-- weekly action engine compartido entre WeeklyView, dashboard y notificaciones
-- WeeklyView elevado a superficie principal para actuar sobre la semana
-- squashDetails ahora soporta `sessionMode` para distinguir drill, practice match y competition match
-- `squashDetails` ahora soporta `sessionKind` y `blocks` opcionales sin romper compatibilidad ni schema
-- motor de nutricion estructurado con `NutritionDayType`, hidratacion, meal timing, reasoning y fields derivados compatibles
-- quick actions del coach ya incluyen intents de nutricion concretos en vez de un acceso generico
-- `promptBuilder` ya inyecta contexto nutricional estructurado y no solo strings planos
-- editor de perfil del atleta ya incluye `fuelingGoal` y `sweatRate` como inputs minimos de alto valor
-- tests unitarios ampliados para logica critica
+- `plan_builder_redirect` desde chat para planes largos
+- `week_creator` como flujo separado para crear una sola semana
+- guardrails recientes para que `chat_action` no emita `create_week`
+- defaults conservadores en week creator cuando el perfil viene incompleto
+- validación de deportes permitidos en planning flow
+- macroplan V2 con timeline y sport details
+- ACWR e insights por disciplina principales
+- nutrición contextual estructurada compartida entre dashboard, día y chat
+- notifications + weekly action loop + alertas accionables
+- backup/import/export
 
-## Lo que ya entrega valor real
+## Pendiente real por prioridad
 
-Hoy el producto ya logra seis cosas importantes:
+### Crítico
 
-1. El atleta entiende que entrenar y por que.
-2. El coach AI tiene mas contexto y menos margen para contradicciones obvias.
-3. La planificacion multi-deporte es bastante mas segura que antes.
-4. El usuario ya recibe senales concretas cuando una semana se desordena.
-5. La semana ya tiene un centro de accion claro, no solo visualizacion.
-6. Existe una base razonable para retencion semanal, no solo para generacion de planes.
+1. Blindar `syncService` y recuperar build verde.
+   Estado actual:
+   - `tsc -b` sigue fallando por errores en `src/services/__tests__/syncService.test.ts` sobre `auth.supabase` posiblemente nulo.
+   - sync sigue siendo el riesgo principal para beta multi-dispositivo.
+   Falta:
+   - corregir el contrato nulo en tests y helpers de auth/sync
+   - revalidar convergencia entre desktop/móvil y colas retenidas
+   - documentar mejor deletes, tombstones y recovery
 
-## Lectura honesta del producto
+2. Validación operativa real de sync.
+   Falta:
+   - pruebas manuales y semi-automatizadas de conflictos concurrentes
+   - mejor UX cuando la cola queda atascada o hay divergencia
+   - decidir si realtime es realmente necesario para beta o si recovery actual alcanza
 
-### Lo fuerte hoy
+### Alto
 
-- continuidad visible entre macroplan, semana, sesion y feedback
-- coach AI cada vez mas util para ejecutar, no solo explicar
-- analytics suficientemente buenos para empezar a guiar decisiones
-- capa offline/sync ya mucho mas madura que la mayoria de apps tempranas
-- loop semanal visible y accionable con una superficie principal clara
+1. Medición del loop coach -> propuesta -> aceptación -> impacto.
+   Ya existe:
+   - proposals persistidas
+   - alertas accionables
+   - weekly action loop
+   Falta:
+   - instrumentación visible para saber qué CTA se usan
+   - aceptación/rechazo por tipo de propuesta
+   - trazabilidad de reactivación y retención semanal
 
-### Lo debil hoy
+2. Cerrar mejor automatización del weekly loop.
+   Falta:
+   - disparar ajustes más directos desde alertas y feedback real
+   - usar `sessionFeedback` y `DayLog` para proponer cambios más prescriptivos
+   - medir qué alertas realmente generan retorno al producto
 
-- sync sigue siendo el mayor riesgo comercial porque falta validacion en uso real duro
-- el loop semanal ya existe, pero todavia falta volverlo mas automatico, medible y coherente con el coach
-- el coach todavia explica mejor de lo que reajusta automaticamente
-- falta observabilidad de producto para saber que CTA, alertas y propuestas realmente mueven comportamiento
-- la capa de conflictos y recovery de sync sigue mas fuerte en logica que en validacion operativa visible
-- el packaging comercial sigue incompleto
-- monetizacion todavia no tiene billing, paywall, entitlement ni tracking de conversion como sistema real
+3. Verificación manual end-to-end de los flows nuevos de planificación.
+   Ya existe:
+   - `week_creator`
+   - redirect a plan builder
+   - guardrails de `create_week`
+   Falta:
+   - QA manual de usuario nuevo sin perfil completo
+   - QA de chat_action para asegurar que no cree semanas
+   - QA del redirect a plan builder para requests de plan largo
 
-## Estado por area
+### Medio
 
-### Planificacion y coach
+1. Seguir desacoplando piezas grandes y sensibles.
+   Foco:
+   - `syncService`
+   - bloques puros del prompt builder / lógica del coach
 
-Estado: fuerte
+2. Convertir analytics en decisiones, no solo visualización.
+   Falta:
+   - más traducción de macroplan y carga a sugerencias concretas
+   - umbrales refinados con uso real
+   - mejor lectura de tendencias, no solo snapshots
 
-- proposals persistidas y ejecutables
-- deportes permitidos blindados en varias capas
-- resumen del plan generado ya visible
-- coherencia macroplan <-> semana ya visible y validable
-- alertas accionables ya ayudan a decidir cuando revisar semana o pedir ajuste
-- CTA de ajuste semanal ya conectados con WeeklyView, chat y check-in
+3. Afinar disciplina-specific coaching en bordes.
+   Foco:
+   - squash competitivo
+   - cycling
+   - mobility
+   - nutrición en días mixtos o conflictivos
 
-Pendiente:
+4. Tests focalizados de UI en superficies críticas.
+   Foco:
+   - SessionCard expandido
+   - WeeklyView / ProposalDrawer
+   - estados visibles del sync
 
-- usar alertas y feedback para disparar ajustes mas directos del coach
-- explicar mejor el "por que" de la propuesta usando historial y feedback real
-- pulir templates por disciplina en casos edge
-- medir uso y aceptacion real de ajustes automaticos vs CTA a chat
+### Bajo
 
-### Macroplan
+1. Packaging comercial.
+   Falta:
+   - narrativa de plan pago
+   - definición premium/free
+   - valor empaquetado de nutrición y coach
 
-Estado: fuerte
+2. Monetización real.
+   Falta:
+   - billing
+   - paywall
+   - entitlements
+   - tracking de conversión
 
-- fase actual, semanas restantes y block focus ya existen
-- timeline visible del bloque
-- diferencias por deporte dentro de cada fase
-- eventos secundarios visibles como moduladores
-- la semana refleja la fase y genera warnings de incoherencia
+3. Refinamientos futuros no urgentes.
+   Ejemplos:
+   - más riqueza semántica en squash (`sessionFamily` u otra taxonomía) solo si aparece un límite real
+   - más profundidad cuantitativa para cycling
+   - mejoras cosméticas o de copy en settings y superficies secundarias
 
-Pendiente:
+## Estado por área
 
-- comparacion mas detallada entre semana esperada y semana propuesta
-- cerrar mejor la traduccion de macroplan a sugerencias concretas de ajuste
-- afinar como macroplan modula especificamente cycling de soporte y mobility de descarga
-
-### Progression y carga
-
-Estado: fuerte
-
-- progresion multi-semana en squash y fuerza
-- running con tracking semanal y ACWR separado
-- squash y fuerza ya tienen ACWR propio
-- insights visibles para el atleta
-- selectors y reglas con buena base de tests
-- squash ahora separa mejor practice match vs competencia real en historial y carga
-
-Pendiente:
-
-- convertir mas analytics en decisiones ejecutables, no solo visualizacion
-- refinar thresholds con uso real
-- mejorar lectura historica para que explique tendencia, no solo la muestre
-- sumar capa cuantitativa mejor para cycling y decidir si mobility queda solo como soporte cualitativo
-- seguir usando este split de squash para recomendaciones mas prescriptivas y ajustes automaticos
-
-### Squash competitivo
-
-Estado: consolidado y bastante mas expresivo
-
-- libreria squash ya soporta match-play de entrenamiento
-- el planner puede proponer `subtype: match` con `sessionMode: practice_match`
-- SessionCard distingue partido de entrenamiento vs partido real
-- varias capas criticas ya no tratan automaticamente todo `match` como competencia real
-- historial y analytics ya separan mejor practice match vs competencia real
-- History y ProposalDrawer muestran mejor el rol competitivo de cada sesion
-- taxonomia visible de `sessionKind`: `technical`, `control`, `shadows`, `match` y `mixed`
-- sesiones mixtas opcionales por `blocks[]` ya compatibles con datos legacy y sin tocar Dexie
-- libreria de control ya incluye drills solo/volume mas reales para squash competitivo
-- selector squash ya soporta `desiredKind`, mixtos validos y mantiene match al final
-- `squashWeekPlanner.ts` ya sugiere distribucion semanal por fase, fatiga, ACWR y proximidad de competencia
-- prompt del coach ya recibe esta taxonomia y una semana sugerida, no solo drills sueltos
-- hardening reciente evita `block.kind` invalido, ejemplos mixtos contradictorios y badges duplicados de match
-
-Pendiente:
-
-- enriquecer formatos de match-play con mas contexto y familias
-- medir si el coach realmente sigue `sessionKind`, `blocks` y `weekPlan` en produccion
-- usar esta semantica para recomendaciones y ajustes automaticos todavia mas precisos
-- decidir si en el futuro conviene `sessionFamily` o subtype mas rico, solo si aparece un limite real del modelo actual
-
-### Cycling y mobility
-
-Estado: mucho mejor, ya no basico
-
-- biblioteca de sesiones mas profunda para cycling
-- movilidad ya no actua solo como relleno generico
-- selectores mas sensibles a fase, fatiga, continuidad y rol dentro del atleta hibrido
-- contrato de sesion explicito con `cyclingDetails` y `mobilityDetails`
-- SessionCard muestra mejor contexto, estructura e intencion
-- el prompt del coach ya empuja al modelo a emitir esos campos explicitamente
-
-Pendiente:
-
-- refinar ejemplos de `create_week` para que usen todavia mas el detalle dinamico real
-- medir si el coach efectivamente usa estos campos de forma consistente en produccion
-- integrar mejor cycling y mobility con alertas y ajustes automaticos del coach
-
-### Nutricion contextual
-
-Estado: fuerte como capa de producto, todavia no empaquetada comercialmente
-
-- `nutritionEngine.ts` ahora clasifica el dia como `rest`, `light`, `moderate`, `high`, `double_session`, `competition` o `recovery`
-- recomendaciones ya se adaptan por disciplina, cantidad de sesiones, intensidad, objetivo del atleta y senales simples de fatiga desde `DayLog`
-- dashboard, detalle del dia y coach comparten la misma recomendacion estructurada en vez de recomponer texto en cada superficie
-- quick actions del coach ya permiten pedir `Que comer hoy`, `Pre-entreno`, `Post-entreno`, `Hidratacion` y ajuste por fatiga
-- el perfil del atleta ahora captura `fuelingGoal` y `sweatRate` sin volver compleja la configuracion
-- README y tests ya quedaron alineados con el modelo nuevo
-
-Pendiente:
-
-- medir si la capa nutricional mejora retencion, uso del coach o aceptacion de propuestas
-- decidir si nutricion sera parte del paquete premium o un acelerador de engagement del plan pago
-- sumar mas casos reales de disciplinas combinadas y dias con recovery conflictivo
-- evaluar si conviene persistir feedback nutricional ligero o dejarlo fuera por ahora
-
-### Alertas y activacion
+### Planificación y coach
 
 Estado: fuerte
 
-- notificaciones locales operativas
-- preferencias por categoria
-- resync/debug de notificaciones
-- alertas accionables ya visibles en dashboard
-- loop semanal unificado con action center visible en WeeklyView
-- dashboard y notificaciones ya reutilizan el mismo motor de decision
+- propuestas ejecutables y persistidas
+- chat, week creator y plan builder ya están desacoplados
+- macroplan y semana ya conversan razonablemente bien
 
 Pendiente:
 
-- cerrar el loop semanal completo con mas reactivacion automatica
-- hacer que el coach proponga ajustes mas precisos desde cada CTA del loop
-- medir que alertas realmente hacen volver al usuario
+- más automatización desde alertas y feedback
+- más medición de aceptación y utilidad real
 
 ### Sync
 
-Estado: implementado pero sensible
+Estado: sensible
 
-- cola offline
-- retry automatico
-- dedupe
-- tombstones
-- repair de athlete_profiles
-- backup/import/export
-- mejor visibilidad de estado y cola pendiente
+- la arquitectura existe
+- el riesgo principal sigue abierto
 
 Pendiente:
 
-- validacion fuerte movil + escritorio real
-- conflictos concurrentes mejor resueltos o al menos mejor explicados
-- mensajes todavia mas accionables cuando la cola queda retenida
-- pruebas manuales y semi-automatizadas de convergencia
-- definir si hace falta realtime o si pull oportunista + buen recovery cubre la beta
-- documentar politica de deletes, tombstones y selective wipe como parte del contrato del producto
+- corregir errores actuales de build/test
+- validar convergencia real y recovery duro
 
-### Protocolos y ejecucion de sesion
+### Nutrición contextual
 
 Estado: fuerte
 
-- running con intervalStructure para sesiones mas ejecutables
-- warmup y cooldown checkables desde SessionCard
-- feedback por sesion persistido y visible para el coach
-- prompt reforzado para exigir warmup/cooldown y drills con timing
+- ya es capa de producto real, no texto genérico
 
 Pendiente:
 
-- usar sessionFeedback para recomendaciones y ajustes mas explicitos
-- tests UI puntuales de SessionCard expandido
-- seguir refinando templates de intervalos para cycling en casos edge
+- medir impacto en engagement y retención
+- decidir rol comercial dentro del producto pago
 
-### Tests y deuda tecnica
+### Monetización
 
-Estado: mucho mejor que antes
+Estado: pendiente
 
-- suite de tests ampliada
-- coverage operativa
-- selectors, ACWR, macroplan, protocol engine, notificaciones y alertas ya cubiertos en logica critica
-- selectors de cycling y mobility y contrato dinamico de prompt ya cubiertos en tests focalizados
-- weekly action loop ya cubierto con tests de prioridad y estados base
-- estado semanal blindado mejor frente a carreras de carga y errores silenciosos
-- normalizacion AI mas estricta para evitar acciones malformadas
+- no hay sistema real todavía
 
-Pendiente:
+## Próximos pasos recomendados
 
-- seguir desacoplando syncService
-- extraer mas bloques puros de promptBuilder
-- mantener deuda tecnica incremental, no como proyecto separado
+1. Dejar `tsc -b` y `build` en verde atacando primero `syncService.test.ts`.
+2. Hacer una ronda corta de QA manual de sync + week creator + redirect a plan builder.
+3. Agregar instrumentación mínima para proposals, alertas y aceptación.
+4. Recién después abrir trabajo comercial de billing/paywall.
 
-## Ultimos hitos implementados
+## Nota de revisión
 
-### 1. Running Fase 2 cuantitativa inicial
-
-- tracking semanal de running
-- ACWR separado de running
-- integracion en selector, prompt y dashboard
-
-### 2. UI de progresion multi-semana para el atleta
-
-- historial de partidos squash
-- progresion de fuerza por familias
-- recomendaciones visibles por disciplina
-
-### 3. Blindaje de deportes permitidos en planning flow
-
-- el plan actual manda sobre defaults del perfil
-- filtro defensivo final antes de persistir/renderizar
-- tests de regresion para deportes no permitidos
-
-### 4. Validacion y explicabilidad del plan generado
-
-- `planSummary` estructurado
-- allowed/excluded sports
-- sessionsBySport
-- estimatedLoadBySport
-- weeklyIntent
-- validationStatus e issues
-
-### 5. Coherencia macroplan <-> semana
-
-- currentPhase
-- blockGoal
-- weeklyRule
-- targetDistributionBySport
-- actualDistributionBySport
-- coherenceStatus e issues
-- bloque visible en WeeklyView
-
-### 6. Macroplan V2 por deporte
-
-- headline, timeline y sportDetails en macroplan
-- fase global gobernada por evento principal
-- squash, running y strength con foco distinto por fase
-- eventos secundarios visibles sin romper la prioridad principal
-- integracion en dashboard, coherencia semanal y prompt del coach
-
-### 7. Protocolos y flows de sesion mas profundos
-
-- running con bloques explicitos para intervalos/tempo
-- warmup y cooldown checkables paso a paso
-- feedback a nivel sesion persistido
-- prompt y normalizacion alineados con el nuevo contrato
-
-### 8. Notificaciones operativas
-
-- permisos, scheduling y preferencias
-- reglas para recordatorio de sesion, check-in, semana vacia, coach note y warning de coherencia
-- panel de debug y resync en settings
-
-### 9. Alertas accionables en dashboard
-
-- motor puro de alertas
-- priorizacion por severidad
-- lectura unificada de coherencia, ACWR, adherencia y cierre de check-in
-- CTA reales hacia accion concreta
-
-### 10. Profundizacion de cycling y mobility
-
-- `cyclingDetails` y `mobilityDetails` agregados como contrato explicito y compatible
-- selector de cycling mas rico para soporte, build, taper/race y recovery
-- selector de mobility mas util para reset post-deporte, activacion y mantenimiento de rango
-- SessionCard ahora muestra mejor estructura, contexto e intensidad para estas disciplinas
-- prompt del coach reforzado para emitir estos detalles en acciones
-
-### 11. Weekly action loop unificado
-
-- `weeklyActionLoop` como motor puro compartido
-- WeeklyView convertido en action center de la semana
-- dashboard reducido a resumen del mismo estado semanal
-- notificaciones conectadas a la misma fuente de decision para semana vacia, coherencia, check-in y coach note
-- CTA semanticos a `plan_builder`, `chat_adjust_week`, `today_checkin`, `today_detail` y `generate_coach_note`
-
-### 12. Match-play de entrenamiento en squash
-
-- `SquashDetails.sessionMode` agregado como semantica minima compatible
-- `practice_match` habilitado como modalidad de entrenamiento en planner y prompt
-- libreria squash ampliada con formatos base de partido de entrenamiento
-- guards minimos para no tratar `practice_match` como competencia real en capas criticas
-- badge especifico en SessionCard para distinguir partido de entrenamiento
-
-### 12b. Consolidacion de squash competitivo y match-play
-
-- selector squash ahora rota mejor segun exposicion competitiva reciente
-- historial y progresion ya muestran practice match y competencia real por separado
-- analytics de squash separan `practiceMatchCount` y `competitionMatchCount`
-- surfaces visibles distinguen mejor el modo competitivo en History, SessionCard y ProposalDrawer
-- roadmap ya no necesita tratar esta mejora como bloque grande aislado, sino como refinamiento futuro sobre una base consolidada
-
-### 13. Hardening tecnico del loop semanal
-
-- `useTrainingStore` ya no mezcla semanas visibles ni deja datos viejos cuando falla `loadWeek`
-- proposals del coach ahora guardan snapshots suficientes para rollback mas seguro de create, update y delete
-- notifications ya reutiliza un solo `weeklyActionSummary` por sync
-- `chatSession` usa acceso a storage mas defensivo
-- confirmaciones criticas pasan a un modal compartido en vez de `window.confirm`
-
-### 14. Ajustes automaticos del coach desde alertas
-
-- motor puro para transformar alertas fuertes en propuestas concretas y reversibles
-- heuristicas iniciales para coherencia semanal, riesgo ACWR y baja adherencia
-- propuestas revisables desde `Dashboard` y `WeeklyView` usando `ProposalDrawer`
-- acciones reales generadas: recortar sesion, bajar RPE, mover sesion e insertar recovery cuando corresponde
-- el coach ya puede actuar desde la alerta sin depender solo de `chat_adjust_week`
-
-### 15. Hardening puntual de planificacion, historial y sync
-
-- `PlanBuilderPage` ya genera week starts en fecha local estable y no por `toISOString()`
-- `computeWeeksRemaining` ya no devuelve `race` para eventos que pasaron hace pocos dias
-- `planSummary` ya incluye carga estimada de mobility con su fallback correcto
-- fallbacks de `promptBuilder` para squash y fuerza ya toman la fase real del macroplan
-- `Dashboard` ya usa `allWeekSummaries` para detectar historial real y evitar mensajes falsos de "primera semana"
-- `SettingsPage` ya limpia artifacts de sync antes del wipe remoto selectivo
-
-### 16. Taxonomia nueva de squash + planner semanal inteligente
-
-- `SquashDetails` ahora soporta `sessionKind` y `blocks` opcionales como capa semantica compatible
-- helper de derivacion legacy para no romper sesiones historicas ni rollback
-- libreria de squash enriquecida con control real tipo `solo` / `volume_reps`
-- selector con `desiredKind`, mixtos validos y regla explicita de match al final
-- `squashWeekPlanner.ts` nuevo como advisor deterministico de distribucion semanal
-- prompt y ejemplos de squash actualizados con `sessionKind`, `blocks` y una sesion mixta real
-- SessionCard ya muestra badge de kind y render agrupado por bloques cuando existen
-- hardening adicional en import/prompt/UI para evitar `block.kind` invalido, ejemplos mixtos vacios y duplicacion de badges de partido
-
-### 17. Capa de nutricion contextual integrada al coach
-
-- `nutritionEngine.ts` paso de heuristicas copy-first a una capa estructurada y reusable
-- nuevo `NutritionDayType`: `rest`, `light`, `moderate`, `high`, `double_session`, `competition`, `recovery`
-- helpers separados para macro emphasis, hidratacion, pre/post entrenamiento, recovery notes y reasoning
-- `DayDetail`, `Dashboard` y `NutritionFocusCard` ahora responden mejor a "que comer hoy", "que hacer antes", "que hacer despues" y "por que hoy cambia"
-- `promptBuilder.ts` ahora inyecta contexto nutricional estructurado al coach
-- `QuickActionChips.tsx` ya expone acciones nutricionales concretas
-- `coachProposalMetadata.ts` ya puede etiquetar mejor prompts de nutricion para trazabilidad
-- tests nuevos cubren rest day, squash high-intensity, z2, threshold, strength, double session, mild fat loss y cambios de hidratacion
-
-### 18. Hardening puntual de settings y plan builder comercial
-
-- la UI del coach ya no expone el nombre del modelo AI en chat ni en settings
-- se elimino recuadro de informacion secundaria para dejar `SettingsPage` mas limpia
-- el flujo de competencia del plan builder ahora limita la seleccion a 12 semanas maximas con CTA explicando el guardrail
-- la expectativa de limpieza de datos ya quedo mas alineada con una experiencia multi-dispositivo
-
-## Que hay hoy
-
-Resumen simple del producto actual:
-
-- una app usable para planificar, ejecutar y revisar entrenamiento hibrido
-- un coach con contexto razonable y propuestas accionables
-- un macroplan que ya se siente como sistema, no como texto decorativo
-- una capa inicial de retencion y reactivacion
-- una base casi lista para beta privada fuerte
-
-## Que falta de verdad
-
-Las brechas mas importantes no son tantas, pero si son profundas:
-
-1. Validar sync en uso real entre dispositivos y seguir cerrando carreras alrededor del wipe/selective clear.
-2. Hacer que el coach ajuste mejor la semana usando historial, feedback y el loop semanal ya unificado.
-3. Convertir el loop semanal en reactivacion mas automatica y medible.
-4. Completar packaging de monetizacion y posicionamiento comercial.
-5. Convertir mejoras recientes de disciplinas secundarias en comportamiento estable del coach.
-6. Medir y consolidar el uso real de la nueva taxonomia de squash antes de reabrir refinamientos mas finos.
-7. Completar rollback verdaderamente transaccional para propuestas complejas multi-accion con objetivos y week summaries.
-8. Afinar la calidad y precision de los ajustes automaticos con contexto mas rico por dia, deporte y fatiga.
-9. Construir la capa real de monetizacion: billing, entitlement, paywall, limites gratis/pago y tracking basico de conversion.
-
-## Roadmap vigente
-
-### Fase 1 - Confiabilidad y loop semanal
-
-Objetivo:
-dejar la app lista para una beta privada fuerte, con menos riesgo operativo y una razon clara para volver cada semana.
-
-Bloques:
-
-1. Validacion real de sync y reconciliacion
-2. Ajustes del coach guiados por alertas y feedback
-3. Reactivacion semanal mas automatica y medible
-4. Pulido de UX entre semana, chat y check-in
-
-### Fase 2 - Coaching mas premium
-
-Objetivo:
-hacer que el producto se sienta claramente mejor que una planificacion semanal con dashboards.
-
-Bloques:
-
-1. Analytics mas prescriptivos por disciplina
-2. Consolidacion y refinamiento de cycling y mobility
-3. Continuidad del coach sobre historial real
-4. Templates y recomendaciones mas finas por contexto
-
-### Fase 3 - Monetizacion
-
-Objetivo:
-empaquetar el producto con pricing, valor percibido y limites claros.
-
-Bloques:
-
-1. modelo gratis vs pago
-2. features premium de coach y analytics
-3. packaging comercial y onboarding de conversion
-4. soporte / recovery / confiabilidad nivel producto
-5. instrumentacion minima de activacion y retencion
-6. billing, entitlement y paywall reales
-
-## Siguientes pasos recomendados
-
-### Prioridad 0
-
-**Agregar una capa minima de observabilidad operativa**
-
-Alcance:
-
-- matriz visible de validacion de sync
-- registro simple de aceptacion/rechazo de proposals
-- conteo de uso de CTA del weekly loop
-- trazas minimas para saber cuando una cola queda retenida o se recupera
-
-Por que:
-
-- hoy el repo ya tiene mucha logica de producto, pero poca senal sobre que esta funcionando de verdad en uso real
-- esto reduce riesgo antes de abrir mas superficie o sumar complejidad
-- varias decisiones del roadmap ya no deberian tomarse por intuicion sino por uso real
-
-### Prioridad 1
-
-**Validar y blindar sync entre movil y escritorio**
-
-Alcance:
-
-- create/edit/delete en dos dispositivos reales
-- recovery offline
-- cola retenida
-- convergencia despues de volver online
-- conflictos de edicion simultanea del mismo objeto
-- wipe selectivo y wipe total con cola pendiente
-- import/export como recovery complementario frente a fallos reales
-
-Por que:
-
-- sigue siendo el mayor riesgo de producto
-- es la principal barrera para cobrar con confianza
-- incluso despues de mejoras defensivas recientes, sigue faltando demostrar convergencia real entre cola, wipe selectivo y reconexion
-
-### Prioridad 2
-
-**Hacer que el coach ajuste, no solo explique**
-
-Alcance:
-
-- usar alertas, adherencia y feedback para sugerir acciones concretas
-- convertir ciertos warnings en propuestas del coach
-- priorizar deload, reordenamiento o recorte de soporte cuando haga sentido
-- medir que tipo de ajuste automatico se acepta y cual se descarta
-
-Por que:
-
-- esta es la diferencia entre un coach "inteligente" y un dashboard con texto
-- aumenta mucho el valor percibido
-
-Estado:
-
-- base ya implementada
-- siguiente paso: volverla mas precisa, mas medible y mas personalizada por contexto
-
-### Prioridad 3
-
-**Medir y endurecer el weekly action loop**
-
-Alcance:
-
-- cerrar reactivacion automatica de lunes, mitad de semana y fin de dia
-- medir que CTA se usan y cuales no
-- reducir mas la duplicacion entre superficies y builders de notificaciones
-
-Por que:
-
-- el loop ya existe y ahora hay que volverlo confiable y medible
-- esto define si la retencion semanal es real o solo potencial
-
-Entrega concreta recomendada:
-
-- guardar origen del CTA y resultado del flujo
-- medir aperturas de dashboard, weekly view y chat con intencion explicita
-- detectar si las alertas fuertes terminan en accion, rechazo o abandono
-
-### Prioridad 4
-
-**Cerrar mejor el lifecycle de proposals y ajustes automaticos**
-
-Alcance:
-
-- definir reglas claras para proposals huerfanas, proposals ligadas a chats borrados y proposals de alertas automaticas
-- separar mejor propuesta sugerida, propuesta aceptada y propuesta parcialmente aplicada
-- dejar trazabilidad simple del motivo, superficie de origen y resultado
-
-Por que:
-
-- esta capa ya existe y ahora merece contrato de producto, no solo implementacion tecnica
-- ayuda a medir confianza real del usuario en el coach
-
-### Prioridad 5
-
-**Consolidar cycling y mobility**
-
-Alcance:
-
-- refinar ejemplos del coach para que usen siempre el detalle nuevo
-- integrar mejor estas disciplinas con macroplan, alertas y ajustes automaticos
-- revisar uso real para detectar salidas todavia genericas
-
-Por que:
-
-- el salto base ya esta dado
-- ahora conviene consolidar comportamiento y no solo sumar mas biblioteca
-
-### Prioridad 6
-
-**Refinar squash competitivo sobre la base ya consolidada**
-
-Alcance:
-
-- enriquecer formatos de match-play y familias cuando aparezcan gaps reales de uso
-- usar `sessionKind`, `blocks` y `weekPlan` para recomendaciones y auto-ajustes mas finos
-- medir si la nueva semantica mejora decisiones del coach, lectura del historial y calidad del prompt
-
-Por que:
-
-- la consolidacion base ya esta implementada, incluyendo taxonomia y planner semanal
-- el siguiente salto no es de modelo, sino de precision y uso real
-
-## Priorizacion simple
-
-Si hubiera que resumir el orden real desde hoy:
-
-0. agregar observabilidad minima de producto y sync
-1. validar sync en dispositivos reales
-2. hacer que el coach proponga ajustes guiados por alertas
-3. endurecer y medir el weekly loop
-4. cerrar lifecycle y trazabilidad de proposals
-5. profundizar cycling y mobility
-6. refinar squash competitivo ya consolidado
-7. instrumentar activacion, retencion y monetizacion
-8. agregar billing/paywall/entitlements
-9. abrir beta privada pagada
-
-## Mejoras concretas posibles desde aqui
-
-### Mejora 1 - Matriz de validacion de sync + tablero de diagnostico
-
-- checklist corta de casos reales por dispositivo
-- ultima corrida, resultado y repro
-- estado visible de cola, ultimo sync sano, ultimo error y tabla bloqueada
-
-Impacto:
-
-- muy alto
-- reduce el mayor riesgo operativo del producto
-
-### Mejora 2 - Coach adjustment proposals
-
-Cuando una alerta sea fuerte:
-
-- generar sugerencia concreta del coach
-- permitir aceptar ajuste rapido
-- guardar razon del ajuste
-
-Impacto:
-
-- muy alto
-- sube mucho el valor percibido
-
-### Mejora 3 - Weekly loop instrumentation
-
-- monday empty-week trigger
-- mid-week adherence trigger
-- end-of-day check-in trigger
-- uso de CTA por superficie
-
-Impacto:
-
-- alto en retencion
-- convierte intuicion de producto en una senal medible
-
-### Mejora 4 - Trazabilidad de proposals
-
-- origen de la propuesta: chat, dashboard, weekly loop o alerta automatica
-- resultado: aceptada, rechazada, fallo parcial, rollback
-- razon corta visible para entender por que se sugirio
-
-Impacto:
-
-- alto
-- convierte propuestas en una superficie auditable y medible
-
-### Mejora 4b - Monetizacion operativa minima
-
-- paywall simple con limites claros del plan gratis
-- estado de suscripcion y entitlement local + remoto
-- bloqueo limpio de features premium sin romper UX offline-first
-- evento minimo de conversion: vista de paywall, inicio checkout, compra, cancelacion y restauracion
-
-Impacto:
-
-- muy alto para negocio
-- convierte roadmap comercial en capacidad real de cobrar
-
-### Mejora 5 - Refactor UX-critical
-
-Refactors de codigo con impacto directo en usabilidad:
-
-- navegacion semantica de CTA semanales
-- hooks compartidos para carga de semana y analytics
-- contrato mas robusto para lanzar intents al chat
-
-Impacto:
-
-- medio-alto
-- reduce friccion y deuda al mismo tiempo
-
-## Recomendacion final
-
-La recomendacion hoy no es abrir una refactorizacion amplia.
-
-El mejor orden sigue siendo:
-
-1. agregar observabilidad minima para no decidir a ciegas
-2. validar sync en uso real movil + escritorio
-3. volver mas preciso y medible el coach que ajusta la semana
-4. endurecer el weekly loop como sistema de reactivacion
-5. montar billing/paywall/entitlements antes de cualquier beta pagada
-
-Si hubiera que elegir una sola mejora para avanzar ahora:
-
-**armar y ejecutar una matriz de validacion real de sync multi-dispositivo con diagnostico visible**
-
-Por que esta primero:
-
-- el producto ya tiene suficiente inteligencia y superficie visible para una beta privada seria
-- lo que mas puede romper confianza ahora no es una recomendacion mediocre del coach, sino perder o resucitar datos entre dispositivos
-- los fixes recientes de `SettingsPage` muestran que todavia hay riesgo en orden de operaciones, cola pendiente y wipe selectivo
-- resolver esto deja una base mucho mas segura para despues medir auto-ajustes del coach y weekly loop
-- si ademas se deja diagnostico visible, cualquier bug real de sync pasa de intuicion a incidente reproducible
-
-Alcance minimo recomendado:
-
-- crear matriz corta de casos criticos: create, edit, delete, wipe selectivo, offline->online y conflicto simple
-- correrla en movil + escritorio con mismo usuario
-- documentar resultado, gaps y repro steps
-- convertir cada gap real en test o guardrail tecnico donde valga la pena
-- exponer en UI o debug panel: ultimo sync exitoso, pendientes, tabla bloqueada y ultimo error util
-
-Deuda tecnica si, pero quirurgica:
-
-- seguir desacoplando `syncService`
-- extraer mas bloques puros de `promptBuilder`
-- reducir duplicacion de carga semanal y analytics
-
-Refactor grande o proyecto de seguridad dedicado:
-
-- no todavia, salvo que aparezca un riesgo real en sync, persistencia o manejo de credenciales
-
-## Revision tecnica de usabilidad
-
-### Hallazgos prioritarios
-
-1. La navegacion del weekly loop ya mejoro, pero todavia hay friccion entre superficies y lanzamiento de intents.
-2. Carga repetida de semana y analytics en varias pantallas.
-3. Acoplamiento fragil con `location.state.composerDraft`.
-4. Builders de notificaciones que recalculan el mismo resumen varias veces.
-5. `DailyCheckInCard` mezcla panel, estado y edicion en un solo componente.
-6. Uso disperso de `window.confirm`.
-7. `promptBuilder.ts` sigue siendo un hotspot de complejidad estructural.
-
-### Refactors recomendados
-
-**Corto plazo**
-
-- extraer un `weeklyActionNavigator` o hook equivalente para resolver CTA semanales desde una sola capa
-- crear hooks compartidos para `loadWeek` y snapshots de analytics
-- calcular `weeklyActionSummary` una sola vez dentro de notifications
-- separar el panel reusable de check-in del contenedor especifico de "hoy"
-
-**Medio plazo**
-
-- reemplazar `composerDraft` libre por un contrato explicito de `chatLaunchIntent`
-- reemplazar `window.confirm` por un modal compartido testeable
-- extraer bloques puros de `promptBuilder` por disciplina y por accion
-- seguir aislando rollback de proposals en una capa transaccional reusable
-
-### Lectura final de la revision
-
-- no hace falta una reescritura grande de stores
-- si hace falta reducir acoplamientos de navegacion, carga y lanzamiento de intents
-- el refactor con mejor retorno inmediato es cerrar el contrato de intents y terminar de consolidar el weekly loop entre superficies
-
-## Roadmap de monetizacion
-
-### Posicionamiento recomendado
-
-No vender "IA para entrenar" en general.
-
-La propuesta mas defendible hoy es:
-
-- coach digital para atleta hibrido
-- especialmente fuerte en squash + running + fuerza
-- con continuidad entre macroplan, semana, sesion y feedback real
-
-### Modelo gratis vs pago recomendado
-
-Gratis:
-
-- registro de sesiones y check-ins
-- vista semanal y dashboard base
-- 1 deporte principal
-- coach limitado para consultas simples
-- notificaciones basicas
-
-Pago:
-
-- planificacion multi-deporte completa
-- coach con propuestas ejecutables
-- macroplan por evento y coherencia macroplan <-> semana
-- analytics y alertas accionables
-- nutricion contextual integrada al coach y al detalle del dia
-- protocolos de sesion avanzados
-- historial y progresion por disciplina
-- sync multi-dispositivo y recovery prioritario
-
-### Packaging comercial inicial
-
-Oferta recomendada para empezar:
-
-- beta privada pagada, no lanzamiento abierto
-- 1 solo plan de pago al principio
-- evitar demasiados tiers en la primera iteracion
-
-Hipotesis simple:
-
-- free = utilidad basica y tracking
-- paid = coach + plan + continuidad + nutricion contextual + multi-dispositivo
-
-### Lo que ya esta mas cerca de una propuesta cobrable
-
-- coach accionable con proposals reversibles
-- macroplan conectado con semana y alertas
-- nutricion contextual integrada al dia y al coach
-- plan builder de competencia con guardrails de duracion mas claros
-- sync, backup/import-export y recovery ya bastante por encima de un prototipo
-
-### Lo que sigue bloqueando monetizacion real
-
-1. billing, paywall y entitlements aun no existen como sistema de producto
-2. sync no esta validado todavia en uso real duro entre dispositivos
-3. falta observabilidad minima para activacion, retencion, propuestas y conversion
-4. el coach necesita cerrar mejor el loop ajuste -> aceptacion -> resultado
-5. falta definir con precision que entra en free, que entra en paid y donde se gatilla el valor premium
-6. onboarding de conversion y packaging comercial aun son mas hipotesis que flujo implementado
-
-### Dependencias tecnicas minimas para cobrar
-
-Antes de monetizar de verdad faltan estas piezas:
-
-1. sync validado en movil y escritorio reales
-2. reactivacion semanal estable y medible
-3. coach con capacidad real de reajuste, no solo de explicacion
-4. experiencia suficientemente consistente entre dashboard, semana y chat
-5. billing + entitlements + paywall implementados
-6. eventos minimos de activacion, retencion y conversion
-
-### Tramo recomendado para empezar a monetizar
-
-Orden pragmatico:
-
-1. cerrar observabilidad minima de producto y sync
-2. validar sync en 2 dispositivos reales con matriz corta y reproducible
-3. definir el paquete premium inicial alrededor de coach, plan, nutricion contextual y multi-dispositivo
-4. implementar paywall simple + estado de suscripcion + gating por entitlement
-5. instrumentar conversion basica y abrir beta privada pagada chica
-
-Criterio de salida razonable para cobrar:
-
-- sync confiable en uso real
-- una promesa premium clara y entendible en menos de 10 segundos
-- una superficie de cobro simple
-- soporte y recovery suficientes para resolver incidentes sin perder datos
-
-## Plan Builder V2 — estado de implementacion (MVP Fase A)
-
-### Lo que ya esta en codigo
-
-- Tipos propios de plan en `src/types/planBuilder.ts` (`TrainingPlan`, `TrainingPlanWeek`, `PlanPhaseBlock`, `PlanValidationIssue`, etc.)
-- Schema Dexie v9 con tablas `trainingPlans` y `trainingPlanWeeks` (`src/db/db.ts`)
-- Pipeline separado del chat en `src/services/planBuilder/`:
-  - `buildPlanShell.ts` — shell deterministico apoyado en `computeMacroPlan` y agrupado por fases.
-  - `generateWeek.ts` — un request LLM por semana, reusa `normalizeResponse` y extrae un `create_week` acotado a la fecha objetivo.
-  - `generatePlan.ts` — loop secuencial con `seedPreviousWeek` y streaming via `onWeekUpdate`.
-  - `validator.ts` — estructura, colisiones, deportes permitidos y salto de carga.
-  - `commitPlan.ts` — expande a sesiones reales reusando `useCoachActionsStore.acceptProposal` (protocolos, filtros por deporte permitido, recalculo de week summary).
-- `CoachProposalSource` ahora incluye `plan_builder` para trazabilidad.
-- Store `src/store/usePlanBuilderStore.ts` con `createDraft`, `runGeneration`, `regenerateWeek`, `acceptPlan`, `discard`, `loadDraft`.
-- Pantalla `src/pages/PlanBuilderV2Page.tsx` con timeline + detalle + panel de validacion.
-- Ruta `ROUTES.PLAN_BUILDER_V2 = '/plans/builder'` y router actualizado.
-- Redirecciones: `CompetitionPlanPage.handleGenerate` y `PlanBuilderPage` (weekTarget `completo`) navegan a la pantalla nueva en vez de al chat.
-- Tests iniciales (`src/services/__tests__/planBuilder.test.ts`): shell por 8 y 40 semanas, validator detecta colisiones; el flujo comercial de competencia ahora ademas se acota a 12 semanas como guardrail de UX.
-- `npm run build` limpio; tests pasan (`vitest run planBuilder.test.ts`).
-
-### Lo que queda explicitamente para siguientes iteraciones
-
-**Robustez pipeline (Fase B):**
-- Afinar retry por semana con contexto extendido (hoy reintentos estan dentro de `generateWeek`, no por semana fallida aparte).
-- Streaming real a la UI por chunk (hoy el usuario ve cambios de estado a nivel semana, no streaming de texto).
-- Generacion por pares para reducir total de requests en planes largos.
-- Instrumentacion: medir aceptacion del plan generado, cuantas semanas fallan, tiempo total.
-
-**Sync con Supabase (deliberadamente fuera del MVP):**
-- Push/pull de `trainingPlans` (solo `active`/`archived`) y `trainingPlanWeeks` siguiendo el patron last-write-wins + tombstones.
-- `syncService.ts` todavia no expone helpers para las tablas nuevas. Mientras tanto los planes viven solo local.
-- Cuando se active, respetar la regla: `draft` no sincroniza para reducir cola.
-
-**Validacion y calidad:**
-- Validador de ACWR proyectado y progresion fase-a-fase (hoy cubre estructura, colision y salto de carga simple).
-- Llevar `validateSessionProposal` de `responseNormalizer.ts` a un modulo puro y reusarlo dentro del validator.
-- Tests de integracion end-to-end con `MockProvider` generando planes de 4, 8, 12 semanas sin truncacion.
-
-**Coexistencia con el chat:**
-- `inferCoachActionIntent` sigue reconociendo `create_full_plan` — debe deprecarse en `CoachEngine` una vez validado el flujo nuevo en uso.
-- `promptBuilder.ts` mantiene instrucciones de multi-week que ya no se usan desde el plan builder.
-- Definir politica de trazabilidad entre planes v2 y proposals viejas heredadas.
-
-**UX:**
-- Edicion inline de sesiones antes de aceptar el plan (drag/drop, cambio de RPE o duracion).
-- Regeneracion de fase completa, no solo semana aislada.
-- Confirmacion de descarte con `ConfirmDialog` compartido.
-- Historial de planes (archived / superseded) y comparativa.
-- Aborto real de generacion en curso (hoy `abortSignal` esta tipado pero no usado).
-- Revisar si el limite de 12 semanas debe quedar solo en competition flow o convertirse en regla de producto mas transversal.
-
-**Migracion y datos viejos:**
-- No hay migracion: los planes previos siguen siendo colecciones implicitas de sesiones. Si se decide backfill, agrupar por `goalEventId + weekStartDate` y crear un `TrainingPlan` retroactivo.
-
-### Riesgos abiertos
-
-- El flujo depende de la calidad del provider por semana. Un `MockProvider` devuelve sesiones genericas: hace falta validacion manual con Claude real antes de abrir a usuarios.
-- `commitPlan` usa el store de proposals como bus transaccional. Si un `acceptProposal` falla a mitad del commit, semanas previas ya quedan persistidas (no hay rollback plan-wide todavia).
-- Plan Builder viejo (`PlanBuilderPage` con `weekTarget=completo`) ahora redirige, pero la UI todavia existe; evaluar si se reemplaza por completo.
+Este roadmap intencionalmente deja fuera features ya cerradas. La prioridad real ya no es “sumar más módulos”, sino volver confiable, medible y operable lo que ya existe.

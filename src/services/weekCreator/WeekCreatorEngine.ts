@@ -21,9 +21,6 @@ export const WeekCreatorEngine = {
     options: WeekCreatorOptions,
   ): Promise<CoachNormalizedResponse> {
     const config = resolveWeekCreatorConfig(context.athleteProfile)
-    if (!config) {
-      return buildProfileIncompleteResponse(options.targetWeekStart)
-    }
 
     const provider = getActiveProvider()
     const policy = getAIRequestPolicy('week_creator')
@@ -103,9 +100,15 @@ export const WeekCreatorEngine = {
           fallbackUsed: normalized.fallbackUsed,
         })
 
+        const action = validation.action
+        if (!action) {
+          throw new Error('WeekCreator devolvió una validación exitosa sin acción create_week.')
+        }
+
         return {
           ...normalized,
-          message: normalized.message.trim() || summarizeWeekCreatorAction(validation.action),
+          actions: [action],
+          message: normalized.message.trim() || summarizeWeekCreatorAction(action),
           requestClass: 'week_creator',
           retryUsed: attempt > 1 || normalized.retryUsed,
         }
@@ -140,19 +143,4 @@ export const WeekCreatorEngine = {
       },
     }
   },
-}
-
-function buildProfileIncompleteResponse(targetWeekStart: string): CoachNormalizedResponse {
-  return {
-    message: `No puedo crear la semana de ${targetWeekStart} porque tu perfil todavía no tiene deportes permitidos. Completa tu perfil (deportes habilitados y disponibilidad) para que pueda armarla.`,
-    provider: 'mock',
-    timestamp: Date.now(),
-    traceId: buildAITraceId('week_creator'),
-    requestClass: 'week_creator',
-    meta: {
-      hadActionsMarkup: false,
-      actionParseFailed: false,
-      likelyTruncated: false,
-    },
-  }
 }

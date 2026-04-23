@@ -22,9 +22,6 @@ export function buildWeekCreatorPrompt(
   input: WeekCreatorPromptInput,
 ): WeekCreatorPromptBuildResult {
   const profile = context.athleteProfile
-  if (!profile) {
-    throw new Error('WeekCreatorPromptBuilder requiere athleteProfile.')
-  }
 
   const { config } = input
   const targetWeekSessions = selectSessionsForTargetWeek(context.plannedSessions ?? [], input.targetWeekStart)
@@ -49,7 +46,7 @@ export function buildWeekCreatorPrompt(
     buildCurrentWeekSessionsSummary(targetWeekSessions, input.targetWeekStart),
     buildRecentHistorySummary(recentHistory),
     buildRecentLogsSummary(recentLogs),
-    profile.coachMemory?.trim() ? `Memoria del coach relevante: ${profile.coachMemory.trim()}` : '',
+    profile?.coachMemory?.trim() ? `Memoria del coach relevante: ${profile.coachMemory.trim()}` : '',
     input.retryInstruction ? `Corrección del intento anterior:\n${input.retryInstruction}` : '',
     input.strictFormatting
       ? 'Modo estricto: si dudas, prioriza targetDate correcto, fechas válidas, número exacto de sesiones y detalles obligatorios por deporte antes que creatividad.'
@@ -64,7 +61,9 @@ export function buildWeekCreatorPrompt(
   }
 }
 
-function buildProfileSummary(profile: NonNullable<ChatContext['athleteProfile']>): string {
+function buildProfileSummary(profile: ChatContext['athleteProfile']): string {
+  if (!profile) return 'Perfil: no configurado; usa solo los defaults conservadores entregados.'
+
   const parts: string[] = []
   if (profile.name) parts.push(`Atleta: ${profile.name}`)
   if (profile.age) parts.push(`Edad: ${profile.age}`)
@@ -94,9 +93,14 @@ function buildGoalSummary(
 
 function buildConfigSummary(config: WeekCreatorEffectiveConfig): string {
   const lines = [
-    config.fromWizard
+    config.configSource === 'wizard'
       ? 'Configuración del plan activo (usar como guía fuerte):'
-      : 'Configuración derivada del perfil (no hay wizard de competencia):',
+      : config.configSource === 'schedule'
+        ? 'Configuración derivada del perfil y disponibilidad:'
+        : 'Configuración por defaults conservadores:',
+    config.configSource === 'defaults'
+      ? '⚠ Sin perfil configurado: usa una semana base conservadora (3 sesiones, sin dobles, duración 60min, solo deporte principal).'
+      : '',
     `- Días permitidos: ${config.trainingDays.join(', ')}`,
     `- Sesiones por semana: ${config.sessionsPerWeek}`,
     `- Duración por sesión: ${config.sessionDurationMins} min`,
@@ -161,7 +165,8 @@ function buildRecentLogsSummary(logs: ChatContext['weekDayLogs']): string {
   return ['Day logs recientes:', ...lines].join('\n')
 }
 
-function resolveGoalEvent(profile: NonNullable<ChatContext['athleteProfile']>) {
+function resolveGoalEvent(profile: ChatContext['athleteProfile']) {
+  if (!profile) return undefined
   const goalEventId = profile.planWizardConfig?.goalEventId
   if (goalEventId) {
     const selected = profile.goalEvents?.find((event) => event.id === goalEventId)
@@ -192,5 +197,6 @@ function formatWeekRangeLabel(targetWeekStart: string): string {
 export function summarizeWeekCreatorAction(action: { sessions?: CoachSessionProposal[] } | undefined): string {
   const sessionCount = action?.sessions?.length ?? 0
   if (sessionCount === 0) return 'Te preparé una propuesta de semana para revisar.'
-  return `Te preparé una semana con ${sessionCount} sesión${sessionCount === 1 ? '' : 'es'}. Revísala y, si te hace sentido, aplícala.`
+  const sessionLabel = sessionCount === 1 ? 'sesión' : 'sesiones'
+  return `Te preparé una semana con ${sessionCount} ${sessionLabel}. Revísala y, si te hace sentido, aplícala.`
 }

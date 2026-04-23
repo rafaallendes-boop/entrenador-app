@@ -40,6 +40,35 @@ describe('CoachEngine recovery heuristics', () => {
     expect(shouldRetry(response, 'create_full_plan')).toBe(true)
   })
 
+  it('does not require multiple create_week actions anymore after a valid action response', () => {
+    const response = makeResponse({
+      message: 'Semana propuesta.',
+      actions: [
+        {
+          type: 'create_week',
+          reason: 'Semana compacta',
+          targetDate: '2026-05-04',
+          sessions: [
+            {
+              date: '2026-05-04',
+              timeBlock: 'AM',
+              sessionType: 'running',
+              title: 'Rodaje suave',
+              durationMin: 45,
+            },
+          ],
+        },
+      ],
+      meta: {
+        hadActionsMarkup: true,
+        actionParseFailed: false,
+        likelyTruncated: false,
+      },
+    })
+
+    expect(shouldRetry(response, 'create_full_plan')).toBe(false)
+  })
+
   it('does not retry when no action was requested and no parse failure happened', () => {
     const response = makeResponse({
       message: 'Duerme mejor y mantente hidratado.',

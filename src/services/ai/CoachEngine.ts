@@ -207,7 +207,7 @@ async function withTracing<T extends Pick<CoachNormalizedResponse, 'provider' | 
 
 function resolveActionIntent(userMessage: string, context: ChatContext): CoachActionIntent {
   const inferred = inferCoachActionIntent(userMessage)
-  if (inferred !== 'none') return inferred
+  if (inferred === 'modify_plan') return inferred
   if (context.intent === 'adjust_session') return 'modify_plan'
   return 'modify_plan'
 }
@@ -302,8 +302,6 @@ export function inferCoachActionIntent(userMessage: string): CoachActionIntent {
 export function shouldRetry(response: CoachNormalizedResponse, actionIntent: CoachActionIntent): boolean {
   if (response.meta?.actionParseFailed || response.meta?.likelyTruncated) return true
   if (actionIntent !== 'none' && (!response.actions || response.actions.length === 0)) return true
-  // For full plan, also retry if fewer create_week actions than expected (at least 2)
-  if (actionIntent === 'create_full_plan' && response.actions && response.actions.filter((a) => a.type === 'create_week').length < 2) return true
   return false
 }
 
