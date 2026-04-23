@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import { db } from '../db/db'
 import type { ChatMessage, ChatContext, AIRequestClass } from '../types'
 import { CoachEngine } from '../services/ai/CoachEngine'
-import { inferRequestClassFromIntent, optimizeChatContext } from '../services/ai/contextOptimizer'
+import { optimizeChatContext } from '../services/ai/contextOptimizer'
 import { useCoachActionsStore } from './useCoachActionsStore'
 import { v4 as uuid } from '../utils/uuid'
 import { AIProviderError } from '../services/ai/types'
@@ -10,6 +10,8 @@ import type { CoachNormalizedResponse } from '../services/ai/types'
 import { getOrCreateChatSessionId, setStoredChatSessionId } from '../utils/chatSession'
 import * as syncService from '../services/syncService'
 import { useAIDebugStore } from './useAIDebugStore'
+import { resolveChatRoute, type ChatRouteKind } from '../services/chatRouting'
+import { WeekPlanningEngine } from '../services/weekPlanning/WeekPlanningEngine'
 
 interface ChatState {
   messages: ChatMessage[]
@@ -21,7 +23,7 @@ interface ChatState {
   error: string | null
 
   loadHistory: () => Promise<void>
-  sendMessage: (content: string, context?: ChatContext) => Promise<void>
+  sendMessage: (content: string, context?: ChatContext) => Promise<{ route: ChatRouteKind }>
   newSession: () => Promise<void>
   deleteCurrentSession: () => Promise<void>
 }
@@ -45,6 +47,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   sendMessage: async (content, context) => {
+    const route = resolveChatRoute(content, context)
+    if (route.kind === 'plan_builder_redirect') {
+      return { route: route.kind }
+    }
+
     const sessionId = get().currentSessionId
     const userMsg: ChatMessage = {
       id: uuid(),
@@ -56,7 +63,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
     await db.chatMessages.add(userMsg)
     void syncService.pushChatMessage(userMsg)
-    const requestClass = inferRequestClassFromIntent(context?.intent)
+    const requestClass = mapChatRouteToRequestClass(route.kind)
     set(state => ({ messages: [...state.messages, userMsg], isLoading: true, streamingText: '', responsePhase: 'connecting', error: null }))
 
     // Pasamos historial multi-turno real al provider (excluye el mensaje recién añadido)
@@ -80,7 +87,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
         set(state => ({ streamingText: state.streamingText + chunk, responsePhase: 'responding' }))
       }
 
-      const response = requestClass === 'chat_general'
+      const response = route.kind === 'week_planning'
+        ? await WeekPlanningEngine.sendWeekPlan(content, enrichedContext, {
+            surface: 'chat',
+            targetWeekStart: route.targetWeekStart ?? enrichedContext.currentWeekSummary?.weekStartDate ?? '',
+          })
+        : requestClass === 'chat_general'
         ? await CoachEngine.sendChat(content, enrichedContext, {
             surface: 'chat',
             onChunk: handleChunk,
@@ -96,7 +108,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
               onChunk: handleChunk,
             })
       if (get().currentSessionId !== sessionId) {
-        return
+        return { route: route.kind }
       }
 
       const { proposalId, coachMsg } = await handleCoachResponse(response, requestClass, sessionId)
@@ -107,15 +119,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
       await db.chatMessages.add(coachMsg)
       void syncService.pushChatMessage(coachMsg)
-      if (get().currentSessionId !== sessionId) return
+      if (get().currentSessionId !== sessionId) return { route: route.kind }
       set(state => ({ messages: [...state.messages, coachMsg], isLoading: false, streamingText: '', responsePhase: 'idle' }))
     } catch (e) {
       const errorMsg = formatError(e)
-      if (get().currentSessionId !== sessionId) return
+      if (get().currentSessionId !== sessionId) return { route: route.kind }
       set({ isLoading: false, streamingText: '', responsePhase: 'idle', error: errorMsg })
     } finally {
       window.clearTimeout(processingTimeout)
     }
+
+    return { route: route.kind }
   },
 
   newSession: async () => {
@@ -149,6 +163,20 @@ export const useChatStore = create<ChatState>((set, get) => ({
     await get().newSession()
   },
 }))
+
+function mapChatRouteToRequestClass(route: ChatRouteKind): AIRequestClass {
+  switch (route) {
+    case 'chat_action':
+      return 'chat_action'
+    case 'weekly_summary':
+      return 'weekly_summary'
+    case 'week_planning':
+      return 'plan_builder_week'
+    case 'chat_general':
+    default:
+      return 'chat_general'
+  }
+}
 // ─── Response handling (extracted from sendMessage) ───────────────────────────────
 
 /**

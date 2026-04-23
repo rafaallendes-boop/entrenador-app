@@ -62,13 +62,12 @@ describe('promptBuilder cycling and mobility examples', () => {
     expect(prompt).toContain('"mobilityDetails":{"context":"post_cycling"')
   })
 
-  it('keeps create_week cycling and mobility examples aligned with explicit detail contracts', () => {
+  it('keeps action cycling and mobility examples aligned with explicit detail contracts', () => {
     const prompt = buildCoachSystemPrompt(makeContext())
 
     expect(prompt).toContain('"sessionType":"cycling"')
     expect(prompt).toContain('"sessionType":"mobility"')
     expect(prompt).toContain('"cyclingDetails":{"sessionCategory":"support aerobic"')
     expect(prompt).toContain('"mobilityDetails":{"context":"post_cycling"')
-    expect(prompt).toContain('"mobilityDetails":{"context":"full_body"')
   })
 })

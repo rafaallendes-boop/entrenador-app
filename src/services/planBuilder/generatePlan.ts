@@ -9,13 +9,16 @@ import type { TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
 import { buildAITraceId, getAIRequestPolicy } from '../ai/requestPolicy'
 import { normalizeResponse } from '../ai/responseNormalizer'
 import {
-  filterSessionsToWeek,
   generateWeek,
-  pickCreateWeekDiagnostic,
   summarizeWeekGenerationError,
   validateGeneratedWeekAction,
 } from './generateWeek'
 import { buildWeekBatchSystemPrompt, buildWeekBatchUserPrompt } from './prompts/weekPrompt'
+import {
+  buildWeekRetryInstruction,
+  filterSessionsToWeek,
+  pickCreateWeekDiagnostic,
+} from '../weekPlanning/shared'
 
 function getActiveProvider(): AIProvider {
   if (import.meta.env.PROD) return new ProxyProvider()
@@ -163,13 +166,16 @@ function makeResolvedWeek(
   }
 }
 
-function normalizeRetryInstruction(error: string | undefined, week: TrainingPlanWeek, attempt: number): string | undefined {
+function normalizeRetryInstruction(
+  error: string | undefined,
+  week: TrainingPlanWeek,
+  expectedSessions: number,
+  attempt: number,
+): string | undefined {
   if (attempt <= 1) return undefined
   const base = summarizeWeekGenerationError(error, week)
-  if (attempt === 2) {
-    return `${base} Recuerda respetar exactamente el rango de 7 días que empieza el ${week.weekStartDate} y mantener una única create_week para esa semana.`
-  }
-  return `${base} Usa formato estricto: targetDate=${week.weekStartDate}, sesiones compactas y todas las fechas dentro de esa semana.`
+  return buildWeekRetryInstruction(base, week.weekStartDate, expectedSessions, attempt)
+    ?? `${base} Usa formato estricto: targetDate=${week.weekStartDate}, sesiones compactas y todas las fechas dentro de esa semana.`
 }
 
 async function generateSingleWeekWithRetry(
@@ -200,7 +206,7 @@ async function generateSingleWeekWithRetry(
       profile,
       wizardConfig,
       temperature: attempt === 1 ? 0.4 : 0.25,
-      retryInstruction: normalizeRetryInstruction(lastError, week, attempt),
+      retryInstruction: normalizeRetryInstruction(lastError, week, plan.wizardConfig.sessionsPerWeek, attempt),
       strictFormatting: attempt >= 3,
       onChunk: (chunk) => onChunk?.(week.weekIndex, chunk),
     })

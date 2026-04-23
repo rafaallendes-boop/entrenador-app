@@ -225,9 +225,9 @@ describe('planning prompt allowed sports', () => {
   it('does not reintroduce running into the prompt when the current plan excludes it', () => {
     const prompt = buildCoachSystemPrompt(makeContext(makeProfile()))
 
-    expect(prompt).toContain('Deportes permitidos para este plan: squash, fuerza')
+    expect(prompt).toContain('Usa solo deportes permitidos: squash, strength')
+    expect(prompt).not.toMatch(/CARGAS Y RITMOS[\s\S]*Running:/)
     expect(prompt).not.toContain('Running Z2')
-    expect(prompt).not.toContain('Running tempo')
     expect(prompt).not.toContain('SELECCION DINAMICA DE RUNNING')
   })
 
@@ -239,10 +239,13 @@ describe('planning prompt allowed sports', () => {
       },
     })
 
-    const prompt = buildCoachSystemPrompt(makeContext(profile))
+    const prompt = buildCoachSystemPrompt(makeContext(profile), {
+      requestClass: 'chat_action',
+      userMessage: 'Agrega running Z2',
+    })
 
-    expect(prompt).toContain('Deportes permitidos para este plan: squash, running')
-    expect(prompt).toContain('Running Z2')
+    expect(prompt).toContain('Usa solo deportes permitidos: squash, running')
+    expect(prompt).toContain('Running:')
     expect(prompt).toContain('SELECCION DINAMICA DE RUNNING')
   })
 
@@ -267,8 +270,8 @@ describe('planning prompt allowed sports', () => {
 
     const prompt = buildCoachSystemPrompt(makeContext(profile))
 
-    expect(prompt).toContain('Deportes permitidos para este plan: running')
-    expect(prompt).toContain('Running Z2')
+    expect(prompt).toContain('Usa solo deportes permitidos: running')
+    expect(prompt).toContain('Running:')
     expect(prompt).not.toContain('Fuerza estructurada')
     expect(prompt).not.toContain('Fuerza de apoyo')
     expect(prompt).not.toContain('SELECCION DINAMICA DE FUERZA')
@@ -301,7 +304,7 @@ describe('planning prompt allowed sports', () => {
 
     const prompt = buildCoachSystemPrompt(makeContext(profile))
 
-    expect(prompt).toContain('Deportes permitidos para este plan: ciclismo')
+    expect(prompt).toContain('Usa solo deportes permitidos: cycling')
     expect(prompt).toContain('Ciclismo Z2')
     expect(prompt).not.toContain('Fuerza estructurada')
     expect(prompt).not.toContain('Fuerza de apoyo')

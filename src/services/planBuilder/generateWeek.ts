@@ -1,11 +1,12 @@
 import type { CoachAction, CoachSessionProposal, AthleteProfile, PlanWizardConfig } from '../../types'
 import type { TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
-import type { AIProvider, CoachNormalizedResponse, CreateWeekNormalizationDiagnostic } from '../ai/types'
+import type { AIProvider, CreateWeekNormalizationDiagnostic } from '../ai/types'
 import { buildAITraceId, getAIRequestPolicy } from '../ai/requestPolicy'
 import { normalizeResponse } from '../ai/responseNormalizer'
 import { buildWeekSystemPrompt, buildWeekUserPrompt } from './prompts/weekPrompt'
 import { validatePlanWeek } from './validator'
 import { useAIDebugStore } from '../../store/useAIDebugStore'
+import { filterSessionsToWeek, pickCreateWeekDiagnostic } from '../weekPlanning/shared'
 
 export interface GenerateWeekInput {
   provider: AIProvider
@@ -52,46 +53,6 @@ export interface WeekActionEvaluation {
 export function pickCreateWeekAction(actions: CoachAction[] | undefined, weekStartDate: string): CoachAction | undefined {
   if (!actions || actions.length === 0) return undefined
   return actions.find((a) => a.type === 'create_week' && a.targetDate === weekStartDate)
-}
-
-export function pickCreateWeekDiagnostic(
-  normalized: Pick<CoachNormalizedResponse, 'meta'>,
-  weekStartDate: string,
-  action?: CoachAction,
-): CreateWeekNormalizationDiagnostic | undefined {
-  const diagnostics = normalized.meta?.createWeekDiagnostics
-  if (!diagnostics || diagnostics.length === 0) return undefined
-
-  if (action?.targetDate) {
-    const exact = diagnostics.find((diagnostic) => diagnostic.targetDate === action.targetDate)
-    if (exact) return exact
-  }
-
-  const byWeek = diagnostics.find((diagnostic) => diagnostic.targetDate === weekStartDate)
-  if (byWeek) return byWeek
-
-  return diagnostics.length === 1 ? diagnostics[0] : undefined
-}
-
-function isStrictISODate(value: string): boolean {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
-  const parsed = new Date(`${value}T00:00:00.000Z`)
-  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().startsWith(value)
-}
-
-export function filterSessionsToWeek(
-  sessions: CoachSessionProposal[],
-  weekStartDate: string,
-): CoachSessionProposal[] {
-  const [y, m, d] = weekStartDate.split('-').map(Number)
-  const start = new Date(y, m - 1, d).getTime()
-  const end = start + 7 * 24 * 60 * 60 * 1000
-  return sessions.filter((s) => {
-    if (!isStrictISODate(s.date)) return false
-    const [sy, sm, sd] = s.date.split('-').map(Number)
-    const ts = new Date(sy, sm - 1, sd).getTime()
-    return ts >= start && ts < end
-  })
 }
 
 export function summarizeWeekGenerationError(

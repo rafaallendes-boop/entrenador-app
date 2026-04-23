@@ -62,16 +62,16 @@ describe('promptBuilder request class branching', () => {
     expect(prompt).not.toContain('DEBES responder con create_week')
   })
 
-  it('uses the full planning branch for chat plan requests', () => {
+  it('keeps chat_action on the reduced adjust branch even if the legacy intent says plan_week', () => {
     const prompt = buildCoachSystemPrompt({
       ...makeContext(),
       intent: 'plan_week',
     }, { requestClass: 'chat_action' })
 
-    expect(prompt).toContain('INSTRUCCIONES DEL COACH-PLANNER')
-    expect(prompt).toContain('DEBES responder con create_week')
-    expect(prompt).not.toContain('NUTRICIÓN Y HIDRATACIÓN')
-    expect(prompt).not.toContain('INSTRUCCIONES DE AJUSTE')
+    expect(prompt).toContain('INSTRUCCIONES DE AJUSTE')
+    expect(prompt).toContain('No uses create_week para ajustes puntuales')
+    expect(prompt).not.toContain('DEBES responder con create_week')
+    expect(prompt).not.toContain('EJEMPLO — microciclo competitivo con partido el sábado')
   })
 
   it('uses the reduced adjust branch for targeted action requests', () => {

@@ -4,7 +4,7 @@
  * Design goals:
  * - Coach is primarily a PLANNER, secondarily a conversational advisor
  * - Include enough context (week dates, sessions, profile) for concrete actions
- * - Teach the model ALL available action types including create_week and add_session
+ * - Keep chat prompts scoped to conversation and targeted actions
  * - When the user asks for an action, the model MUST respond with structured actions
  *
  * Per-sport logic is extracted into ./promptModules/{sport}Prompt.ts
@@ -97,7 +97,6 @@ const DEFAULT_SUPPORTED_SPORTS: SupportedSport[] = ['squash', 'running', 'streng
 const PROMPT_TARGET_TOKENS: Record<CoachPromptRequestType, number> = {
   chat_general: 3500,
   adjust_session: 6000,
-  plan_week: 9000,
 }
 
 interface PromptSectionSpec {
@@ -122,7 +121,7 @@ export function buildCoachPrompt(
   options?: { requestClass?: AIRequestClass; userMessage?: string },
 ): CoachPromptBuildResult {
   const requestClass = options?.requestClass ?? 'chat_action'
-  const requestType = resolvePromptRequestType(context, requestClass)
+  const requestType = resolvePromptRequestType(requestClass)
 
   if (!requestType) {
     return {
@@ -133,8 +132,6 @@ export function buildCoachPrompt(
   switch (requestType) {
     case 'chat_general':
       return buildLitePromptResult(context, options?.userMessage)
-    case 'plan_week':
-      return buildPlanWeekPromptResult(context, options?.userMessage)
     case 'adjust_session':
     default:
       return buildAdjustActionPromptResult(context, options?.userMessage)
@@ -179,74 +176,6 @@ function buildLitePromptResult(context: ChatContext, userMessage?: string): Coac
       content: shouldIncludeLoadAnalyticsSection(userMessage) ? buildLoadAnalyticsSection(context, relevantSports) : '',
     },
     { key: 'response_instructions', content: buildGeneralChatResponseInstructionsSection(context), required: true },
-  ]
-
-  return finalizePromptBuildResult(requestType, context, relevantSports, slimProfile, sections)
-}
-
-// ─── Nivel 2: Chat con Acción Puntual (chat_action) ─────────────────────────
-// Includes sport sections filtered by message + primary sport.
-
-function buildPlanWeekPromptResult(context: ChatContext, userMessage?: string): CoachPromptBuildResult {
-  const plannedSessions = getPlannedSessions(context)
-  const requestType: CoachPromptRequestType = 'plan_week'
-  const relevantSports = detectRelevantSports(context, userMessage, requestType)
-  const slimProfile = buildSlimAthleteProfileSection(context, relevantSports)
-  const compactRuleSports = new Set<SupportedSport>(['cycling', 'mobility'])
-  const squashSummary = relevantSports.has('squash') ? buildSquashSelectionSummary(context) : undefined
-  const strengthSummary = relevantSports.has('strength') ? buildStrengthSelectionSummary(context) : undefined
-  const runningSummary = relevantSports.has('running') ? buildRunningSelectionSummary(context) : undefined
-  const cyclingSummary = relevantSports.has('cycling') ? buildCyclingSelectionSummary(context) : undefined
-  const mobilitySummary = relevantSports.has('mobility') ? buildMobilitySelectionSummary(context) : undefined
-
-  const sections: PromptSectionSpec[] = [
-    { key: 'persona', content: buildPersonaSection(context, { allowActions: true, relevantSports, compactRuleSports }), required: true },
-    { key: 'athlete_profile_slim', content: slimProfile.content, required: true },
-    { key: 'macro_plan', content: buildMacroPlanSection(context, relevantSports), required: true },
-    { key: 'plan_wizard', content: buildPlanWizardSection(context), required: true },
-    { key: 'week', content: buildWeekSection(context), required: true },
-    { key: 'sessions', content: buildSessionsSection(plannedSessions, { allowActions: true }), required: true },
-    { key: 'today', content: buildTodaySection(context), required: true },
-    { key: 'fatigue', content: buildFatigueSection(context), required: true },
-    { key: 'coach_memory', content: buildCoachMemorySection(context) },
-    {
-      key: 'nutrition',
-      content: shouldIncludeNutritionContextSection(context, userMessage) ? buildNutritionContextSection(context) : '',
-    },
-    { key: 'week_logs', content: buildWeekDayLogsSection(context) },
-    { key: 'hybrid', content: buildHybridSection(context) },
-    { key: 'competition', content: buildCompetitionSection(context) },
-    { key: 'competition_load', content: buildCompetitionLoadSection(context) },
-    {
-      key: 'load_analytics',
-      content: shouldIncludeLoadAnalyticsSection(userMessage) ? buildLoadAnalyticsSection(context, relevantSports) : '',
-    },
-    { key: 'implicit_priority', content: buildImplicitPrioritySection(context) },
-    { key: 'sport_match_history:squash', content: relevantSports.has('squash') ? buildSquashMatchHistorySection(context) : '' },
-    { key: 'sport_dynamic:squash', content: squashSummary ? buildDynamicSquashSelectionSection(context, squashSummary) : '' },
-    { key: 'sport_dynamic:strength', content: strengthSummary ? buildDynamicStrengthSelectionSection(context, strengthSummary) : '' },
-    { key: 'sport_dynamic:running', content: runningSummary ? buildDynamicRunningSelectionSection(context, runningSummary) : '' },
-    {
-      key: 'sport_dynamic:cycling',
-      content: cyclingSummary ? buildDynamicCyclingSelectionSectionV2(context, cyclingSummary, { compact: true }) : '',
-    },
-    {
-      key: 'sport_dynamic:mobility',
-      content: mobilitySummary ? buildDynamicMobilitySelectionSectionV2(context, mobilitySummary, { compact: true }) : '',
-    },
-    { key: 'sport_dynamic:strength_progression', content: relevantSports.has('strength') ? buildStrengthProgressionSection(context) : '' },
-    {
-      key: 'response_instructions',
-      content: buildResponseInstructionsSection(
-      plannedSessions, context,
-      squashSummary ?? buildSquashSelectionSummary(context),
-      strengthSummary ?? buildStrengthSelectionSummary(context),
-      cyclingSummary ?? buildCyclingSelectionSummary(context),
-      mobilitySummary ?? buildMobilitySelectionSummary(context),
-      { compactAddendum: true, compactExamples: true, relevantSports },
-    ),
-      required: true,
-    },
   ]
 
   return finalizePromptBuildResult(requestType, context, relevantSports, slimProfile, sections)
@@ -351,12 +280,10 @@ function buildWeeklySummarySystemPrompt(context: ChatContext): string {
 // Detects which sports are relevant based on user message content and profile.
 
 function resolvePromptRequestType(
-  context: ChatContext,
   requestClass: AIRequestClass,
 ): CoachPromptRequestType | undefined {
   if (requestClass === 'weekly_summary') return undefined
   if (requestClass === 'chat_general') return 'chat_general'
-  if (context.intent === 'plan_week') return 'plan_week'
   return 'adjust_session'
 }
 
@@ -483,20 +410,6 @@ function findAffectedSession(context: ChatContext, userMessage?: string): Sessio
   return undefined
 }
 
-function getPlanWeekSecondarySports(
-  context: ChatContext,
-  allowedSports: SupportedSport[],
-  primarySport?: SupportedSport,
-): SupportedSport[] {
-  const wizardSports = (context.athleteProfile?.planWizardConfig?.complementarySports ?? [])
-    .filter((sport): sport is SupportedSport => allowedSports.includes(sport))
-  const secondarySports = getSecondarySportsNormalized(context.athleteProfile)
-    .filter((sport) => allowedSports.includes(sport))
-
-  return [...new Set([...wizardSports, ...secondarySports])]
-    .filter((sport) => sport !== primarySport)
-}
-
 function hasCompetitionWithinDays(context: ChatContext, days: number): boolean {
   const today = todayISO()
   const goalEventSoon = (context.athleteProfile?.goalEvents ?? []).some((event) => {
@@ -517,7 +430,7 @@ function shouldIncludeMacroPlanSection(
   context: ChatContext,
   requestType: CoachPromptRequestType,
 ): boolean {
-  return requestType === 'plan_week' || hasCompetitionWithinDays(context, 14)
+  return requestType === 'adjust_session' || hasCompetitionWithinDays(context, 14)
 }
 
 function shouldIncludeNutritionContextSection(context: ChatContext, userMessage?: string): boolean {
@@ -568,19 +481,6 @@ function detectRelevantSports(
     if (selected.size === 0) appendSportIfAllowed(enabledSports[0], selected, enabledSports)
     return selected
   }
-
-  appendSportIfAllowed(primarySport, selected, enabledSports)
-  mentionedSports.forEach((sport) => appendSportIfAllowed(sport, selected, enabledSports))
-
-  if (mentionedSports.size === 0) {
-    const secondarySports = getPlanWeekSecondarySports(context, enabledSports, primarySport)
-    for (const sport of secondarySports) {
-      appendSportIfAllowed(sport, selected, enabledSports)
-      if (selected.size >= (primarySport ? 3 : 2)) break
-    }
-  }
-
-  if (selected.size === 0) appendSportIfAllowed(enabledSports[0], selected, enabledSports)
 
   return selected
 }
@@ -1230,48 +1130,6 @@ function buildMacroPlanSection(context: ChatContext, relevantSports?: Set<Suppor
   return lines.join('\n')
 }
 
-function buildPlanWizardSection(context: ChatContext): string {
-  const config = context.athleteProfile?.planWizardConfig
-  if (!config) return ''
-
-  const DAY_ES: Record<string, string> = {
-    monday: 'lunes', tuesday: 'martes', wednesday: 'miércoles', thursday: 'jueves',
-    friday: 'viernes', saturday: 'sábado', sunday: 'domingo',
-  }
-  const SPORT_ES: Record<string, string> = {
-    squash: 'squash', running: 'running', strength: 'fuerza',
-    mobility: 'movilidad', cycling: 'ciclismo',
-  }
-  const FITNESS_ES: Record<string, string> = {
-    fit: 'en buena forma', normal: 'normal (base sólida)',
-    returning: 'volviendo de descanso o lesión', low: 'bajo de forma',
-  }
-  const FATIGUE_ES: Record<string, string> = {
-    fresh: 'descansado', normal: 'normal', loaded: 'cargado', overloaded: 'muy cargado',
-  }
-
-  const days = config.trainingDays.map(d => DAY_ES[d] ?? d).join(', ')
-  const complementary = config.complementarySports.map(s => SPORT_ES[s] ?? s).join(', ')
-  const allowedSports = getAllowedPlanningSports(context.athleteProfile).map((sport) => SPORT_ES[sport] ?? sport).join(', ')
-
-  const lines: string[] = ['═══ CONFIGURACIÓN DEL PLAN ═══']
-  lines.push('El atleta configuró su plan de competencia con los siguientes parámetros:')
-  if (days) lines.push(`- Días de entrenamiento: ${days}`)
-  lines.push(`- Sesiones por semana: ${config.sessionsPerWeek}`)
-  lines.push(`- Duración por sesión: ${config.sessionDurationMins} min`)
-  lines.push(`- Doble sesión: ${config.allowDoubleSession ? 'sí, cuando sea necesario' : 'no'}`)
-  if (complementary) lines.push(`- Deportes complementarios: ${complementary}`)
-  if (allowedSports) lines.push(`- Deportes permitidos para este plan: ${allowedSports}`)
-  if (config.currentFitnessLevel) lines.push(`- Forma física al inicio: ${FITNESS_ES[config.currentFitnessLevel] ?? config.currentFitnessLevel}`)
-  if (config.currentFatigue) lines.push(`- Fatiga al inicio: ${FATIGUE_ES[config.currentFatigue] ?? config.currentFatigue}`)
-  if (config.injuryNotes?.trim()) lines.push(`- Molestias/restricciones: ${config.injuryNotes.trim()}`)
-  lines.push('')
-  lines.push('REGLAS: Respeta la distribución semanal acordada. Adapta la carga a la condición inicial del atleta.')
-  lines.push('REGLA CRÍTICA: usa SOLO los deportes permitidos para este plan. No agregues running, fuerza, ciclismo u otro deporte si no están explícitamente permitidos aquí, aunque existan en el perfil histórico del atleta.')
-
-  return lines.join('\n')
-}
-
 function buildCoachMemorySection(context: ChatContext): string {
   if (!context.athleteMemory?.trim()) return ''
 
@@ -1623,8 +1481,8 @@ function buildSessionsSection(
   if (futureSessions.length === 0) {
     lines.push('⚠ No hay sesiones planificadas para esta semana.')
     if (allowActions) {
-      lines.push('→ Si el usuario pide crear una semana, usa la acción create_week con sesiones concretas.')
-      lines.push('→ Usa los días de la semana actual indicados en las instrucciones.')
+      lines.push('→ Para este canal, usa add_session sólo si el usuario pidió una sesión puntual.')
+      lines.push('→ No generes semanas completas desde el prompt de ajuste.')
     } else {
       lines.push('→ Si no hay planificación cargada, reconócelo con claridad y resume el contexto disponible sin inventar acciones.')
     }
@@ -2059,7 +1917,7 @@ function buildResponsePromptContext(
   }
 }
 
-function buildResponseInstructionsSection(
+export function buildLegacyPlannerResponseInstructionsSection(
   sessions: Session[],
   context: ChatContext,
   squashSummary: SquashSelectionSummary = buildSquashSelectionSummary(context),
@@ -2558,6 +2416,8 @@ function buildDynamicPromptSelectionSections(promptContext: ResponsePromptContex
 
 function buildReferenceLoadSection(promptContext: ResponsePromptContext): string {
   const {
+    hasRunning,
+    hasStrength,
     z2min,
     z2max,
     tempoMin,
@@ -2569,13 +2429,28 @@ function buildReferenceLoadSection(promptContext: ResponsePromptContext): string
     lunge45,
   } = promptContext
 
-  return `CARGAS Y RITMOS DE REFERENCIA (aplica estos valores en todas las propuestas de running y fuerza):
-Running:
-  · Z2: ${z2min}–${z2max} /km  · Tempo/umbral: ${tempoMin}–${tempoMax} /km  · Intervalos VO2max: ${intervalPaceStr} /km  · Long run: ${longRunPaceStr} /km
-Fuerza upper:
-  · Press banca ${w.bench75}kg (75%) / ${w.bench85}kg (85%)  · Remo con barra ${w.row75}kg  · Press hombro ${w.ohp75}kg (75%)
-Fuerza lower:
-  · Sentadilla ${w.squat75}kg (75%) / ${w.squat85}kg (85%)  · Peso muerto ${w.deadlift75}kg (75%)  · Hip thrust ${hipThrust85}kg  · Lunge ${lunge45}kg`
+  const lines: string[] = []
+
+  if (hasRunning) {
+    lines.push(
+      'Running:',
+      `  · Z2: ${z2min}–${z2max} /km  · Tempo/umbral: ${tempoMin}–${tempoMax} /km  · Intervalos VO2max: ${intervalPaceStr} /km  · Long run: ${longRunPaceStr} /km`,
+    )
+  }
+
+  if (hasStrength) {
+    lines.push(
+      'Fuerza upper:',
+      `  · Press banca ${w.bench75}kg (75%) / ${w.bench85}kg (85%)  · Remo con barra ${w.row75}kg  · Press hombro ${w.ohp75}kg (75%)`,
+      'Fuerza lower:',
+      `  · Sentadilla ${w.squat75}kg (75%) / ${w.squat85}kg (85%)  · Peso muerto ${w.deadlift75}kg (75%)  · Hip thrust ${hipThrust85}kg  · Lunge ${lunge45}kg`,
+    )
+  }
+
+  if (lines.length === 0) return ''
+
+  return `CARGAS Y RITMOS DE REFERENCIA (aplica estos valores sólo cuando el deporte esté seleccionado):
+${lines.join('\n')}`
 }
 
 function buildCyclingMobilityActionSchemaAddendum(

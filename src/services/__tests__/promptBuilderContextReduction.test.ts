@@ -159,7 +159,7 @@ describe('promptBuilder context reduction', () => {
     expect(result.trace?.includedSports).toEqual(['running'])
   })
 
-  it('caps generic plan_week scope to primary plus two justified secondary sports', () => {
+  it('keeps action-scope sport context on the primary sport when no sport is explicit', () => {
     const result = buildCoachPrompt(makeContext({
       intent: 'plan_week',
       athleteProfile: makeProfile({
@@ -180,8 +180,8 @@ describe('promptBuilder context reduction', () => {
       userMessage: 'Armame la semana',
     })
 
-    expect(result.trace?.promptRequestType).toBe('plan_week')
-    expect(result.trace?.includedSports).toEqual(['squash', 'cycling', 'mobility'])
+    expect(result.trace?.promptRequestType).toBe('adjust_session')
+    expect(result.trace?.includedSports).toEqual(['squash'])
   })
 
   it('records promptTrace metrics for chat requests', () => {

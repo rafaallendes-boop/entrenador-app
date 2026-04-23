@@ -57,7 +57,7 @@ describe('contextOptimizer budgets by request class', () => {
 
   it('detects broader plan and summary intents from chat phrasing', () => {
     expect(detectChatIntent('Hazme un plan para esta semana')).toBe('plan_week')
-    expect(detectChatIntent('Armame el lunes con algo liviano')).toBe('plan_week')
+    expect(detectChatIntent('Armame el lunes con running suave')).toBe('adjust_session')
     expect(detectChatIntent('Resumeme la semana y dejame un balance corto')).toBe('weekly_summary')
   })
 

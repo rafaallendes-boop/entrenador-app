@@ -81,7 +81,7 @@ function makeContext(profile: AthleteProfile, overrides: Partial<ChatContext> = 
     historicalSessions: [],
     athleteProfile: profile,
     recentMessages: [],
-    intent: 'plan_week',
+    intent: 'adjust_session',
     ...overrides,
   }
 }
@@ -115,7 +115,10 @@ describe('promptBuilder dynamic cycling and mobility sections', () => {
       ],
     })
 
-    const prompt = buildCoachSystemPrompt(context)
+    const prompt = buildCoachSystemPrompt(context, {
+      requestClass: 'chat_action',
+      userMessage: 'Agrega una sesión de ciclismo suave',
+    })
 
     expect(prompt).toMatch(/CICLISMO[\s\S]*competencia cercana no/)
   })
@@ -167,13 +170,16 @@ describe('promptBuilder dynamic cycling and mobility sections', () => {
       ],
     })
 
-    const prompt = buildCoachSystemPrompt(context)
+    const prompt = buildCoachSystemPrompt(context, {
+      requestClass: 'chat_action',
+      userMessage: 'Agrega movilidad de recuperación post-running',
+    })
 
     expect(prompt).toContain('MOVILIDAD')
     expect(prompt).toContain('Movilidad post-running')
   })
 
-  it('filters plan_week sport sections when the message mentions specific sports', () => {
+  it('filters action-scope sport sections when the message mentions specific sports', () => {
     const profile = makeProfile({
       secondarySports: ['running', 'strength', 'cycling', 'mobility'],
       sportContext: {
@@ -190,18 +196,21 @@ describe('promptBuilder dynamic cycling and mobility sections', () => {
 
     const prompt = buildCoachSystemPrompt(makeContext(profile), {
       requestClass: 'chat_action',
-      userMessage: 'Créame una semana de ciclismo con movilidad para llegar fresco',
+      userMessage: 'Agrega una sesión de ciclismo con movilidad para llegar fresco',
     })
 
     expect(prompt).toContain('CICLISMO — CONOCIMIENTO TÉCNICO')
     expect(prompt).toContain('MOVILIDAD — CONOCIMIENTO TÉCNICO')
-    expect(prompt).toContain('SQUASH — CONOCIMIENTO TÉCNICO')
+    expect(prompt).not.toContain('SQUASH — CONOCIMIENTO TÉCNICO')
     expect(prompt).not.toContain('RUNNING — CONOCIMIENTO TÉCNICO')
     expect(prompt).not.toContain('FUERZA — CONOCIMIENTO TÉCNICO')
   })
 
   it('includes explicit cyclingDetails guidance when cycling is enabled', () => {
-    const prompt = buildCoachSystemPrompt(makeContext(makeProfile()))
+    const prompt = buildCoachSystemPrompt(makeContext(makeProfile()), {
+      requestClass: 'chat_action',
+      userMessage: 'Agrega una sesión de ciclismo Z2',
+    })
 
     expect(prompt).toContain('cyclingDetails')
     expect(prompt).toContain('sessionCategory')
@@ -209,19 +218,24 @@ describe('promptBuilder dynamic cycling and mobility sections', () => {
   })
 
   it('includes explicit mobilityDetails guidance when mobility is enabled', () => {
-    const prompt = buildCoachSystemPrompt(makeContext(makeProfile()))
+    const prompt = buildCoachSystemPrompt(makeContext(makeProfile()), {
+      requestClass: 'chat_action',
+      userMessage: 'Agrega una sesión de movilidad pre entrenamiento',
+    })
 
     expect(prompt).toContain('mobilityDetails')
     expect(prompt).toContain('focusAreas')
     expect(prompt).toContain('pre_training_activation')
   })
 
-  it('includes explicit practice_match guidance for squash planning', () => {
-    const prompt = buildCoachSystemPrompt(makeContext(makeProfile()))
+  it('keeps explicit squash match-mode guidance in the action prompt', () => {
+    const prompt = buildCoachSystemPrompt(makeContext(makeProfile()), {
+      requestClass: 'chat_action',
+      userMessage: 'Agrega una sesión de squash tipo match',
+    })
 
     expect(prompt).toContain('practice_match')
     expect(prompt).toContain('competition_match')
-    expect(prompt).toContain('Partido de entrenamiento con foco tactico')
   })
 
   it('does not teach a mixed squash session with empty blocks in the example schema', () => {
@@ -243,22 +257,37 @@ describe('promptBuilder dynamic cycling and mobility sections', () => {
     expect(prompt).not.toContain('"sessionKind":"mixed","blocks":[]')
   })
 
-  it('includes sessionKind, blocks and weekly distribution guidance for squash', () => {
+  it('includes sessionKind and blocks guidance for squash actions', () => {
     const prompt = buildCoachSystemPrompt(makeContext(makeProfile()))
 
     expect(prompt).toContain('sessionKind')
     expect(prompt).toContain('blocks')
-    expect(prompt).toContain('Distribucion sugerida de la semana')
   })
 
-  it('marks warmup and cooldown as optional for compact create_week responses', () => {
+  it('marks warmup and cooldown as optional for action responses', () => {
     const prompt = buildCoachSystemPrompt(makeContext(makeProfile()))
 
-    expect(prompt).toContain('Warmup y cooldown (opcionales)')
+    expect(prompt).toContain('Warmup y cooldown son opcionales')
     expect(prompt).toContain('el sistema genera protocolos base automáticamente')
   })
   it('keeps extracted reference and schema sections in the final prompt', () => {
-    const prompt = buildCoachSystemPrompt(makeContext(makeProfile()))
+    const profile = makeProfile({
+      secondarySports: ['running', 'cycling', 'mobility'],
+      sportContext: {
+        enabledSports: ['squash', 'running', 'cycling', 'mobility'],
+        primarySport: 'squash',
+        secondarySports: ['running', 'cycling', 'mobility'],
+        trainingPriority: 'performance',
+      },
+      planWizardConfig: {
+        ...makeProfile().planWizardConfig!,
+        complementarySports: ['running', 'cycling', 'mobility'],
+      },
+    })
+    const prompt = buildCoachSystemPrompt(makeContext(profile), {
+      requestClass: 'chat_action',
+      userMessage: 'Agrega running, ciclismo y movilidad',
+    })
 
     expect(prompt).toContain('ADDENDUM - CAMPOS EXPLICITOS PARA CYCLING Y MOBILITY')
     expect(prompt).toContain('CARGAS Y RITMOS DE REFERENCIA')

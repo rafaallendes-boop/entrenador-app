@@ -44,10 +44,11 @@ export function optimizeChatContext(context: ChatContext, requestClass?: AIReque
 export function detectChatIntent(message: string): ChatContext['intent'] {
   const normalized = message.toLowerCase()
   const weekDayPattern = /\b(lunes|martes|miercoles|miércoles|jueves|viernes|sabado|sábado|domingo)\b/
-  const planningVerbPattern = /\b(crea(?:r|me)?|haz(?:me)?|arma(?:me)?|genera(?:r|me)?|planifica(?:r)?|organiza(?:r)?|programa(?:r)?)\b/
+  const planningVerbPattern = /\b(cr[eé]a(?:r|me)?|haz(?:me)?|arma(?:me)?|genera(?:r|me)?|planifica(?:r)?|organiza(?:r)?|programa(?:r)?)\b/
   const planningTargetPattern = /\b(semana|microciclo|plan(?:\s+de\s+entrenamiento)?|rutina)\b/
   const adjustmentVerbPattern = /\b(ajusta(?:r)?|cambia(?:r)?|modifica(?:r)?|mueve|reordena(?:r)?|actualiza(?:r)?|quita(?:r)?|agrega(?:r)?|reemplaza(?:r)?|reduce|baja|sube)\b/
   const adjustmentTargetPattern = /\b(semana|sesion|sesión|plan|carga|running|squash|fuerza|cycling|ciclismo|movilidad)\b/
+  const specificSessionPattern = /\b(sesion|sesión|running|squash|fuerza|cycling|ciclismo|movilidad|am|pm)\b/
 
   if (
     /\b(resumen\s+semanal|coach\s+note|resume\s+mi\s+semana|resumeme\s+la\s+semana|cierre\s+de\s+semana|balance\s+semanal)\b/.test(normalized)
@@ -66,12 +67,18 @@ export function detectChatIntent(message: string): ChatContext['intent'] {
   }
 
   if (
+    planningVerbPattern.test(normalized)
+    && weekDayPattern.test(normalized)
+    && specificSessionPattern.test(normalized)
+    && !planningTargetPattern.test(normalized)
+  ) {
+    return 'adjust_session'
+  }
+
+  if (
     (
       planningVerbPattern.test(normalized)
-      && (
-        planningTargetPattern.test(normalized)
-        || weekDayPattern.test(normalized)
-      )
+      && planningTargetPattern.test(normalized)
     )
     || /\b(plan\s+semanal|plan\s+para\s+esta\s+semana)\b/.test(normalized)
   ) {

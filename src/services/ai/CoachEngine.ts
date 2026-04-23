@@ -7,15 +7,11 @@ import type { AIRequestClass, AITechnicalSurface, ChatContext } from '../../type
 import { buildCoachPrompt } from './promptBuilder'
 import { normalizeResponse } from './responseNormalizer'
 import { AIProviderError, createProviderError } from './types'
-import { ClaudeProvider } from './providers/ClaudeProvider'
-import { OpenAIProvider } from './providers/OpenAIProvider'
-import { MockProvider } from './providers/MockProvider'
-import { GeminiProvider } from './providers/GeminiProvider'
-import { ProxyProvider } from './providers/ProxyProvider'
 import { buildAITraceId, getAIRequestPolicy } from './requestPolicy'
+import { getActiveProvider, isRealProviderConfigured } from './providerResolver'
 import { useAIDebugStore } from '../../store/useAIDebugStore'
 
-export type CoachActionIntent = 'create_week' | 'create_full_plan' | 'modify_plan' | 'none'
+export type CoachActionIntent = 'create_full_plan' | 'modify_plan' | 'none'
 type CoachSendOptions = {
   maxTokens?: number
   temperature?: number
@@ -24,29 +20,6 @@ type CoachSendOptions = {
 }
 type CoachDispatcherOptions = CoachSendOptions & {
   requestClass?: AIRequestClass
-}
-
-function getConfiguredProviderName(): string {
-  if (import.meta.env.PROD) {
-    return 'proxy'
-  }
-  return (import.meta.env.VITE_AI_PROVIDER ?? 'mock').toLowerCase()
-}
-
-function getActiveProvider(): AIProvider {
-  const name = getConfiguredProviderName()
-  switch (name) {
-    case 'proxy':
-      return new ProxyProvider()
-    case 'claude':
-      return new ClaudeProvider()
-    case 'openai':
-      return new OpenAIProvider()
-    case 'gemini':
-      return new GeminiProvider()
-    default:
-      return new MockProvider()
-  }
 }
 
 export const CoachEngine = {
@@ -64,11 +37,7 @@ export const CoachEngine = {
     options?: CoachSendOptions,
   ): Promise<CoachNormalizedResponse> {
     const actionIntent = resolveActionIntent(userMessage, context)
-    const shouldStream = context.intent !== 'plan_week'
-    return sendTrackedCoachRequest(userMessage, context, 'chat_action', actionIntent, {
-      ...options,
-      onChunk: shouldStream ? options?.onChunk : undefined,
-    })
+    return sendTrackedCoachRequest(userMessage, context, 'chat_action', actionIntent, options)
   },
 
   async send(
@@ -151,18 +120,7 @@ export const CoachEngine = {
   },
 
   isRealProviderConfigured(): boolean {
-    const name = getConfiguredProviderName()
-    if (name === 'proxy') return true
-    if (name === 'claude') {
-      return !!(import.meta.env.VITE_CLAUDE_API_KEY ?? import.meta.env.VITE_AI_API_KEY)
-    }
-    if (name === 'openai') {
-      return !!import.meta.env.VITE_OPENAI_API_KEY
-    }
-    if (name === 'gemini') {
-      return !!import.meta.env.VITE_GEMINI_API_KEY
-    }
-    return false
+    return isRealProviderConfigured()
   },
 }
 
@@ -250,7 +208,6 @@ async function withTracing<T extends Pick<CoachNormalizedResponse, 'provider' | 
 function resolveActionIntent(userMessage: string, context: ChatContext): CoachActionIntent {
   const inferred = inferCoachActionIntent(userMessage)
   if (inferred !== 'none') return inferred
-  if (context.intent === 'plan_week') return 'create_week'
   if (context.intent === 'adjust_session') return 'modify_plan'
   return 'modify_plan'
 }
@@ -319,25 +276,14 @@ IMPORTANTE DE FORMATO:
 export function inferCoachActionIntent(userMessage: string): CoachActionIntent {
   const normalized = userMessage.trim().toLowerCase()
   const weekDayPattern = /\b(lunes|martes|miercoles|miércoles|jueves|viernes|sabado|sábado|domingo|hoy|mañana|manana)\b/
-  const creationVerbPattern = /\b(crea(?:r|me)?|haz(?:me)?|arma(?:me)?|genera(?:r)?|planifica(?:r)?|propuesta)\b/
   const modificationVerbPattern = /\b(ajusta(?:r)?|reordena(?:r)?|mueve|cambia|agrega|quita|sube|baja|reduce|simplifica|reemplaza|incorpora)\b/
   if (!normalized) return 'none'
 
   if (
     /\b(plan\s+completo|todas\s+las\s+semanas|plan\s+hasta|semanas\s+hasta|completo\s+hasta|completo\s+para\s+\d+\s+semanas)\b/.test(normalized) ||
-    (/\b(plan|crea(?:r|me)?)\b/.test(normalized) && /\buna\s+acción\s+create_week\s+por\s+semana\b/.test(normalized))
+    (/\b(plan|cr[eé]a(?:r|me)?)\b/.test(normalized) && /\buna\s+acción\s+create_week\s+por\s+semana\b/.test(normalized))
   ) {
     return 'create_full_plan'
-  }
-
-  if (
-    creationVerbPattern.test(normalized) &&
-    (
-      /\b(semana|plan|microciclo)\b/.test(normalized)
-      || weekDayPattern.test(normalized)
-    )
-  ) {
-    return 'create_week'
   }
 
   if (

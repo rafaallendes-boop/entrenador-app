@@ -153,10 +153,17 @@ export default function ChatCoach() {
     }
   }, [sessions, currentWeekSummary, dayLogs, coachMemory, athleteProfile, loadAnalytics])
 
-  const handleSend = useCallback(
-    (message: string) => sendMessage(message, buildContext(message)),
-    [buildContext, sendMessage],
-  )
+  const handleSend = useCallback(async (message: string) => {
+    const result = await sendMessage(message, buildContext(message))
+    if (result.route === 'plan_builder_redirect') {
+      navigate(ROUTES.PLAN_BUILDER, {
+        state: {
+          fromChatRedirect: true,
+          redirectedPrompt: message,
+        },
+      })
+    }
+  }, [buildContext, navigate, sendMessage])
 
   // Auto-submit prompt cuando se llega desde PlanBuilder
   useEffect(() => {

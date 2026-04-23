@@ -15,10 +15,10 @@ function makeResponse(overrides: Partial<CoachNormalizedResponse> = {}): CoachNo
 }
 
 describe('CoachEngine recovery heuristics', () => {
-  it('detects create_week intent from common plan-generation prompts', () => {
-    expect(inferCoachActionIntent('Creame una semana para la proxima semana')).toBe('create_week')
-    expect(inferCoachActionIntent('Hazme el plan de entrenamiento')).toBe('create_week')
-    expect(inferCoachActionIntent('Armame el lunes con running suave')).toBe('create_week')
+  it('only detects explicit full-plan intents for heavy planning', () => {
+    expect(inferCoachActionIntent('Creame una semana para la proxima semana')).toBe('none')
+    expect(inferCoachActionIntent('Hazme el plan de entrenamiento')).toBe('none')
+    expect(inferCoachActionIntent('Hazme el plan hasta el evento')).toBe('create_full_plan')
   })
 
   it('detects modify intent from week-adjustment prompts', () => {
@@ -26,7 +26,7 @@ describe('CoachEngine recovery heuristics', () => {
     expect(inferCoachActionIntent('Reordena las sesiones de running y fuerza')).toBe('modify_plan')
   })
 
-  it('retries when a plan was requested but the model returned prose only', () => {
+  it('retries when a full plan was requested but the model returned prose only', () => {
     const response = makeResponse({
       message: 'Aqui tienes una propuesta general.',
       actions: undefined,
@@ -37,7 +37,7 @@ describe('CoachEngine recovery heuristics', () => {
       },
     })
 
-    expect(shouldRetry(response, 'create_week')).toBe(true)
+    expect(shouldRetry(response, 'create_full_plan')).toBe(true)
   })
 
   it('does not retry when no action was requested and no parse failure happened', () => {
@@ -54,7 +54,7 @@ describe('CoachEngine recovery heuristics', () => {
     expect(shouldRetry(response, 'none')).toBe(false)
   })
 
-  it('retries when a plan response looks truncated even if actions markup is present', () => {
+  it('retries when a full-plan response looks truncated even if actions markup is present', () => {
     const response = makeResponse({
       message: 'Semana propuesta.',
       actions: undefined,
@@ -65,6 +65,6 @@ describe('CoachEngine recovery heuristics', () => {
       },
     })
 
-    expect(shouldRetry(response, 'create_week')).toBe(true)
+    expect(shouldRetry(response, 'create_full_plan')).toBe(true)
   })
 })
