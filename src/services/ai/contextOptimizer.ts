@@ -231,6 +231,7 @@ function getBudget(requestClass: AIRequestClass) {
         maxWeekLogs: 4,
         maxWeekLogChars: 1200,
       }
+    case 'week_creator':
     case 'plan_builder_week':
       return {
         maxRecentMessages: 0,

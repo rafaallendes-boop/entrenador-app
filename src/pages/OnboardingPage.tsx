@@ -129,7 +129,7 @@ export default function OnboardingPage() {
         availableDays,
         doubleSessionDays: doubleSessionDays.length > 0 ? doubleSessionDays : undefined,
       },
-    })
+    }, { source: 'post_reset_onboarding' })
 
     clearOnboardingSkipped(user?.id)
     navigate(ROUTES.HOME, { state: { showProfileNudge: true } })
@@ -137,7 +137,7 @@ export default function OnboardingPage() {
 
   async function handleSkip() {
     try {
-      await saveAthleteProfile({ onboardingDeferredAt: Date.now() })
+      await saveAthleteProfile({ onboardingDeferredAt: Date.now() }, { source: 'post_reset_onboarding' })
     } catch (error) {
       console.error('[onboarding] failed to persist skip flag in athlete profile', error)
     }

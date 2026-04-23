@@ -27,6 +27,12 @@ export const AI_REQUEST_POLICIES: Record<AIRequestClass, AIRequestPolicy> = {
     timeoutMs: 20000,
     allowFallback: true,
   },
+  week_creator: {
+    maxTokens: 3500,
+    temperature: 0.4,
+    timeoutMs: 30000,
+    allowFallback: true,
+  },
   plan_builder_week: {
     maxTokens: 3500,
     temperature: 0.4,

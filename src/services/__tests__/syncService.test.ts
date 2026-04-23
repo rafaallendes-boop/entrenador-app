@@ -34,6 +34,7 @@ function createSyncDetailsState() {
     consecutiveFailures: 0,
     autoRepairInProgress: false,
     lastAutoRepairAt: null,
+    awaitingProfileRecreationAfterReset: false,
     memoryLoadRequiredAfterSyncAt: null,
     memoryLoadedForSyncAt: null,
   }
@@ -494,6 +495,8 @@ describe('syncService', () => {
     expect(updateCalls.some((call) => call.table === 'athlete_profiles')).toBe(false)
     expect(upsertCalls.some((call) => call.table === 'athlete_profiles')).toBe(true)
     expect(insertCalls.some((call) => call.table === 'athlete_profiles')).toBe(false)
+    expect(JSON.parse(localStorage.getItem('entrenador_sync_queue_v1') ?? '[]')).toEqual([])
+    expect(localStorage.getItem('entrenador_profile_reset_lock_v1')).toContain('awaiting_bootstrap_ack')
     expect(outcome.completed).toBe(true)
     expect(outcome.pending).toEqual([])
   })
@@ -589,6 +592,32 @@ describe('syncService', () => {
       },
     }))
     tableResults.set('athlete_profiles', { data: null, error: { message: 'Failed to fetch' } })
+
+    const syncService = await import('../syncService')
+    await syncService.runFullSync('user-1')
+
+    expect(localStorage.getItem('entrenador_initial_pull_v1:user-1')).toBeNull()
+  })
+
+  it('does not mark the initial remote pull complete while the profile recreation lock is still active', async () => {
+    localStorageState.set('entrenador_profile_reset_lock_v1', JSON.stringify({
+      'user-1': {
+        resetAt: 500,
+        status: 'awaiting_onboarding_recreation',
+      },
+    }))
+    athleteProfileRows = [{
+      id: 'default',
+      user_id: 'user-1',
+      coach_memory: null,
+      updated_at: 500,
+      data: {
+        __fullResetAt: 500,
+        __deletedFields: ['name'],
+        __clearCoachMemory: true,
+      },
+    }]
+    tableResults.set('athlete_profiles', { data: athleteProfileRows, error: null })
 
     const syncService = await import('../syncService')
     await syncService.runFullSync('user-1')

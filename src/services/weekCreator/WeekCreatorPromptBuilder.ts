@@ -1,33 +1,32 @@
-import type { ChatContext, CoachSessionProposal, PlanWizardConfig } from '../../types'
-import { buildWeekSystemPrompt } from '../planBuilder/prompts/weekPrompt'
-import { getAllowedPlanningSports, getPlanningPrimarySport } from '../planningConstraints'
+import type { ChatContext, CoachSessionProposal } from '../../types'
 import { addDays, format } from 'date-fns'
 import { es } from 'date-fns/locale'
+import { buildWeekSystemPrompt } from '../week/prompts/weekPrompt'
+import type { WeekCreatorEffectiveConfig } from './WeekCreatorConfig'
 
-export interface WeekPlanningPromptInput {
+export interface WeekCreatorPromptInput {
   userMessage: string
   targetWeekStart: string
+  config: WeekCreatorEffectiveConfig
   retryInstruction?: string
   strictFormatting?: boolean
 }
 
-export interface WeekPlanningPromptBuildResult {
+export interface WeekCreatorPromptBuildResult {
   systemPrompt: string
   userPrompt: string
 }
 
-export function buildWeekPlanningPrompt(
+export function buildWeekCreatorPrompt(
   context: ChatContext,
-  input: WeekPlanningPromptInput,
-): WeekPlanningPromptBuildResult {
+  input: WeekCreatorPromptInput,
+): WeekCreatorPromptBuildResult {
   const profile = context.athleteProfile
-  const config = profile?.planWizardConfig
-  if (!profile || !config) {
-    throw new Error('WeekPlanningPromptBuilder requiere athleteProfile.planWizardConfig.')
+  if (!profile) {
+    throw new Error('WeekCreatorPromptBuilder requiere athleteProfile.')
   }
 
-  const allowedSports = getAllowedPlanningSports(profile)
-  const primarySport = getPlanningPrimarySport(profile)
+  const { config } = input
   const targetWeekSessions = selectSessionsForTargetWeek(context.plannedSessions ?? [], input.targetWeekStart)
   const recentHistory = [...(context.historicalSessions ?? [])]
     .sort((a, b) => b.date.localeCompare(a.date) || b.timeBlock.localeCompare(a.timeBlock))
@@ -46,7 +45,7 @@ export function buildWeekPlanningPrompt(
     '',
     buildProfileSummary(profile),
     buildGoalSummary(goalEvent, profile?.macroPlan?.currentPhase, profile?.macroPlan?.blockFocus),
-    buildWizardSummary(config, allowedSports, primarySport),
+    buildConfigSummary(config),
     buildCurrentWeekSessionsSummary(targetWeekSessions, input.targetWeekStart),
     buildRecentHistorySummary(recentHistory),
     buildRecentLogsSummary(recentLogs),
@@ -88,22 +87,22 @@ function buildGoalSummary(
   if (goalEvent?.sport) parts.push(`Deporte del objetivo: ${goalEvent.sport}`)
   if (currentPhase) parts.push(`Fase actual: ${currentPhase}`)
   if (blockFocus) parts.push(`Foco del bloque: ${blockFocus}`)
-  return parts.length > 0 ? parts.join(' · ') : 'No hay snapshot macro detallado; usa la configuración del plan como fuente principal.'
+  return parts.length > 0
+    ? parts.join(' · ')
+    : 'No hay evento competitivo activo; planifica una semana de entrenamiento general coherente con el perfil.'
 }
 
-function buildWizardSummary(
-  config: PlanWizardConfig,
-  allowedSports: string[],
-  primarySport: string | undefined,
-): string {
+function buildConfigSummary(config: WeekCreatorEffectiveConfig): string {
   const lines = [
-    'Configuración obligatoria del plan:',
-    `- Días permitidos: ${config.trainingDays.join(', ') || 'sin definir'}`,
+    config.fromWizard
+      ? 'Configuración del plan activo (usar como guía fuerte):'
+      : 'Configuración derivada del perfil (no hay wizard de competencia):',
+    `- Días permitidos: ${config.trainingDays.join(', ')}`,
     `- Sesiones por semana: ${config.sessionsPerWeek}`,
     `- Duración por sesión: ${config.sessionDurationMins} min`,
     `- Doble sesión permitido: ${config.allowDoubleSession ? 'sí' : 'no'}`,
-    `- Deportes permitidos: ${allowedSports.join(', ') || 'sin restricción explícita'}`,
-    primarySport ? `- Deporte principal a mantener presente: ${primarySport}` : '',
+    `- Deportes permitidos: ${config.allowedSports.join(', ')}`,
+    config.primarySport ? `- Deporte principal a mantener presente: ${config.primarySport}` : '',
     `- Estado inicial: fitness ${config.currentFitnessLevel} · fatiga ${config.currentFatigue}`,
     config.injuryNotes?.trim() ? `- Restricciones: ${config.injuryNotes.trim()}` : '',
   ].filter(Boolean)
@@ -190,7 +189,7 @@ function formatWeekRangeLabel(targetWeekStart: string): string {
   return `${format(start, 'd MMM', { locale: es })} - ${format(end, 'd MMM', { locale: es })}`
 }
 
-export function summarizeWeekPlanningAction(action: { sessions?: CoachSessionProposal[] } | undefined): string {
+export function summarizeWeekCreatorAction(action: { sessions?: CoachSessionProposal[] } | undefined): string {
   const sessionCount = action?.sessions?.length ?? 0
   if (sessionCount === 0) return 'Te preparé una propuesta de semana para revisar.'
   return `Te preparé una semana con ${sessionCount} sesión${sessionCount === 1 ? '' : 'es'}. Revísala y, si te hace sentido, aplícala.`

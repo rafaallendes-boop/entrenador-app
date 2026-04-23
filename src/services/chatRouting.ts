@@ -4,7 +4,7 @@ import { currentWeekStartISO, fromISO, nextWeek, toISO } from '../utils/date'
 export type ChatRouteKind =
   | 'chat_general'
   | 'chat_action'
-  | 'week_planning'
+  | 'week_creator'
   | 'weekly_summary'
   | 'plan_builder_redirect'
 
@@ -69,7 +69,7 @@ export function resolveChatRoute(
 
   if (isWeekPlanningRequest) {
     return {
-      kind: 'week_planning',
+      kind: 'week_creator',
       targetWeekStart,
     }
   }
@@ -79,7 +79,7 @@ export function resolveChatRoute(
   }
 
   if (context?.intent === 'plan_week') {
-    return { kind: 'week_planning', targetWeekStart }
+    return { kind: 'week_creator', targetWeekStart }
   }
 
   return { kind: 'chat_general' }

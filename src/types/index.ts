@@ -6,6 +6,7 @@ export type AIRequestClass =
   | 'chat_general'
   | 'chat_action'
   | 'weekly_summary'
+  | 'week_creator'
   | 'plan_builder_week'
   | 'plan_builder_pair'
   | 'import_extract'

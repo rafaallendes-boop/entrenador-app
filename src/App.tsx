@@ -41,6 +41,7 @@ function OnboardingGuard({ children }: { children: ReactNode }) {
   const location = useLocation()
   const user = useAuthStore(s => s.user)
   const syncAttemptInFlight = useAuthStore(s => s.syncDetails.syncAttemptInFlight)
+  const awaitingProfileRecreationAfterReset = useAuthStore(s => s.syncDetails.awaitingProfileRecreationAfterReset)
   const memoryLoadRequiredAfterSyncAt = useAuthStore(s => s.syncDetails.memoryLoadRequiredAfterSyncAt)
   const memoryLoadedForSyncAt = useAuthStore(s => s.syncDetails.memoryLoadedForSyncAt)
   const athleteProfile = useCoachMemoryStore(s => s.athleteProfile)
@@ -57,6 +58,12 @@ function OnboardingGuard({ children }: { children: ReactNode }) {
       memoryLoadedForSyncAt !== memoryLoadRequiredAfterSyncAt
     ) return
     if (isSupabaseConfigured && user?.id && memoryLoadRequiredAfterSyncAt == null) return
+
+    if (isSupabaseConfigured && user?.id && awaitingProfileRecreationAfterReset) {
+      navigate(ROUTES.ONBOARDING, { replace: true })
+      return
+    }
+
     const skippedOnboarding = hasSkippedOnboarding(user?.id)
 
     // Multi-device safety: if we have a signed-in user but have never completed a remote pull
@@ -73,7 +80,7 @@ function OnboardingGuard({ children }: { children: ReactNode }) {
     if (needsOnboarding(athleteProfile) && !skippedOnboarding) {
       navigate(ROUTES.ONBOARDING, { replace: true })
     }
-  }, [athleteProfile, hasLoadedMemory, location.pathname, memoryLoadRequiredAfterSyncAt, memoryLoadedForSyncAt, navigate, syncAttemptInFlight, user?.id])
+  }, [athleteProfile, awaitingProfileRecreationAfterReset, hasLoadedMemory, location.pathname, memoryLoadRequiredAfterSyncAt, memoryLoadedForSyncAt, navigate, syncAttemptInFlight, user?.id])
 
   return <>{children}</>
 }

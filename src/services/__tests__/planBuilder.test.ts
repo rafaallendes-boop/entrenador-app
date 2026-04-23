@@ -7,7 +7,7 @@ import {
   buildWeekBatchSystemPrompt,
   buildWeekSystemPrompt,
   buildWeekUserPrompt,
-} from '../planBuilder/prompts/weekPrompt'
+} from '../week/prompts/weekPrompt'
 import { validatePlan } from '../planBuilder/validator'
 import { fromISO, getWeekStart, toISO } from '../../utils/date'
 

@@ -11,7 +11,7 @@ import { getOrCreateChatSessionId, setStoredChatSessionId } from '../utils/chatS
 import * as syncService from '../services/syncService'
 import { useAIDebugStore } from './useAIDebugStore'
 import { resolveChatRoute, type ChatRouteKind } from '../services/chatRouting'
-import { WeekPlanningEngine } from '../services/weekPlanning/WeekPlanningEngine'
+import { WeekCreatorEngine } from '../services/weekCreator/WeekCreatorEngine'
 
 interface ChatState {
   messages: ChatMessage[]
@@ -87,8 +87,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
         set(state => ({ streamingText: state.streamingText + chunk, responsePhase: 'responding' }))
       }
 
-      const response = route.kind === 'week_planning'
-        ? await WeekPlanningEngine.sendWeekPlan(content, enrichedContext, {
+      const response = route.kind === 'week_creator'
+        ? await WeekCreatorEngine.sendWeekCreate(content, enrichedContext, {
             surface: 'chat',
             targetWeekStart: route.targetWeekStart ?? enrichedContext.currentWeekSummary?.weekStartDate ?? '',
           })
@@ -170,8 +170,8 @@ function mapChatRouteToRequestClass(route: ChatRouteKind): AIRequestClass {
       return 'chat_action'
     case 'weekly_summary':
       return 'weekly_summary'
-    case 'week_planning':
-      return 'plan_builder_week'
+    case 'week_creator':
+      return 'week_creator'
     case 'chat_general':
     default:
       return 'chat_general'

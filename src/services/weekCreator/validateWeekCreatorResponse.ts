@@ -1,15 +1,17 @@
-import type { ChatContext, CoachAction, CoachSessionProposal, DayOfWeek, PlanWizardConfig, SupportedSport } from '../../types'
+import type { ChatContext, CoachAction, CoachSessionProposal, DayOfWeek, SupportedSport } from '../../types'
 import type { CoachNormalizedResponse } from '../ai/types'
-import { getAllowedPlanningSports, getPlanningPrimarySport, isSessionTypeAllowedForPlan } from '../planningConstraints'
-import { filterSessionsToWeek, isStrictISODate, pickCreateWeekDiagnostic } from './shared'
+import { getAllowedPlanningSports, isSessionTypeAllowedForPlan } from '../planningConstraints'
+import { filterSessionsToWeek, isStrictISODate, pickCreateWeekDiagnostic } from '../week/shared'
+import type { WeekCreatorEffectiveConfig } from './WeekCreatorConfig'
 
-export interface WeekPlanningValidationInput {
+export interface WeekCreatorValidationInput {
   response: CoachNormalizedResponse
   context: ChatContext
+  config: WeekCreatorEffectiveConfig
   targetWeekStart: string
 }
 
-export interface WeekPlanningValidationResult {
+export interface WeekCreatorValidationResult {
   ok: boolean
   action?: CoachAction
   error?: string
@@ -18,17 +20,9 @@ export interface WeekPlanningValidationResult {
   droppedSessionCount?: number
 }
 
-export function validateWeekPlanningResponse(
-  input: WeekPlanningValidationInput,
-): WeekPlanningValidationResult {
-  const config = input.context.athleteProfile?.planWizardConfig
-  if (!config) {
-    return {
-      ok: false,
-      error: 'Falta planWizardConfig para validar create_week.',
-    }
-  }
-
+export function validateWeekCreatorResponse(
+  input: WeekCreatorValidationInput,
+): WeekCreatorValidationResult {
   const createWeekActions = (input.response.actions ?? []).filter((action) => action.type === 'create_week')
   if (createWeekActions.length !== 1) {
     return {
@@ -48,72 +42,44 @@ export function validateWeekPlanningResponse(
   )
 
   if (action.targetDate !== input.targetWeekStart) {
-    return {
-      ok: false,
-      error: `La acción create_week debe usar targetDate=${input.targetWeekStart}.`,
-      rawSessionCount,
-      validSessionCount,
-      droppedSessionCount,
-    }
+    return fail(`La acción create_week debe usar targetDate=${input.targetWeekStart}.`, rawSessionCount, validSessionCount, droppedSessionCount)
   }
 
   if (!Array.isArray(action.sessions) || action.sessions.length === 0) {
-    return {
-      ok: false,
-      error: 'La acción create_week no trae sesiones válidas.',
-      rawSessionCount,
-      validSessionCount,
-      droppedSessionCount,
-    }
+    return fail('La acción create_week no trae sesiones válidas.', rawSessionCount, validSessionCount, droppedSessionCount)
   }
 
   const sessions = action.sessions
   const weekCheck = validateSessionWeekBoundaries(sessions, input.targetWeekStart)
-  if (weekCheck) {
-    return fail(weekCheck, rawSessionCount, validSessionCount, droppedSessionCount)
-  }
+  if (weekCheck) return fail(weekCheck, rawSessionCount, validSessionCount, droppedSessionCount)
 
-  if (sessions.length !== config.sessionsPerWeek) {
+  if (sessions.length !== input.config.sessionsPerWeek) {
     const droppedInfo = droppedSessionCount && droppedSessionCount > 0
       ? ` Se descartaron ${droppedSessionCount} sesión(es) inválidas durante la normalización.`
       : ''
     return fail(
-      `La semana debe traer exactamente ${config.sessionsPerWeek} sesiones válidas y llegó con ${sessions.length}.${droppedInfo}`,
-      rawSessionCount,
-      validSessionCount,
-      droppedSessionCount,
+      `La semana debe traer exactamente ${input.config.sessionsPerWeek} sesiones válidas y llegó con ${sessions.length}.${droppedInfo}`,
+      rawSessionCount, validSessionCount, droppedSessionCount,
     )
   }
 
   const collisionError = validateCollisions(sessions)
-  if (collisionError) {
-    return fail(collisionError, rawSessionCount, validSessionCount, droppedSessionCount)
-  }
+  if (collisionError) return fail(collisionError, rawSessionCount, validSessionCount, droppedSessionCount)
 
-  const doubleSessionError = validateDoubleSessions(sessions, config)
-  if (doubleSessionError) {
-    return fail(doubleSessionError, rawSessionCount, validSessionCount, droppedSessionCount)
-  }
+  const doubleSessionError = validateDoubleSessions(sessions, input.config)
+  if (doubleSessionError) return fail(doubleSessionError, rawSessionCount, validSessionCount, droppedSessionCount)
 
-  const dayError = validateAllowedDays(sessions, config)
-  if (dayError) {
-    return fail(dayError, rawSessionCount, validSessionCount, droppedSessionCount)
-  }
+  const dayError = validateAllowedDays(sessions, input.config)
+  if (dayError) return fail(dayError, rawSessionCount, validSessionCount, droppedSessionCount)
 
   const sportError = validateAllowedSports(sessions, input.context)
-  if (sportError) {
-    return fail(sportError, rawSessionCount, validSessionCount, droppedSessionCount)
-  }
+  if (sportError) return fail(sportError, rawSessionCount, validSessionCount, droppedSessionCount)
 
   const detailsError = validateRequiredDetails(sessions)
-  if (detailsError) {
-    return fail(detailsError, rawSessionCount, validSessionCount, droppedSessionCount)
-  }
+  if (detailsError) return fail(detailsError, rawSessionCount, validSessionCount, droppedSessionCount)
 
-  const primarySportError = validatePrimarySportPresence(sessions, config, input.context)
-  if (primarySportError) {
-    return fail(primarySportError, rawSessionCount, validSessionCount, droppedSessionCount)
-  }
+  const primarySportError = validatePrimarySportPresence(sessions, input.config)
+  if (primarySportError) return fail(primarySportError, rawSessionCount, validSessionCount, droppedSessionCount)
 
   return {
     ok: true,
@@ -133,11 +99,9 @@ function validateSessionWeekBoundaries(
       return `La sesión ${session.title} tiene fecha inválida (${session.date}).`
     }
   }
-
   if (filterSessionsToWeek(sessions, targetWeekStart).length !== sessions.length) {
     return `Todas las sesiones deben caer entre ${targetWeekStart} y los 6 días siguientes.`
   }
-
   return undefined
 }
 
@@ -145,9 +109,7 @@ function validateCollisions(sessions: CoachSessionProposal[]): string | undefine
   const seen = new Set<string>()
   for (const session of sessions) {
     const key = `${session.date}|${session.timeBlock}`
-    if (seen.has(key)) {
-      return `No se permiten colisiones de sesiones en ${session.date} ${session.timeBlock}.`
-    }
+    if (seen.has(key)) return `No se permiten colisiones de sesiones en ${session.date} ${session.timeBlock}.`
     seen.add(key)
   }
   return undefined
@@ -155,33 +117,30 @@ function validateCollisions(sessions: CoachSessionProposal[]): string | undefine
 
 function validateDoubleSessions(
   sessions: CoachSessionProposal[],
-  config: PlanWizardConfig,
+  config: WeekCreatorEffectiveConfig,
 ): string | undefined {
   if (config.allowDoubleSession) return undefined
-
   const byDate = new Map<string, number>()
   for (const session of sessions) {
     byDate.set(session.date, (byDate.get(session.date) ?? 0) + 1)
   }
-
   for (const [date, count] of byDate.entries()) {
     if (count > 1) {
       return `La configuración actual no permite doble sesión y la semana propone ${count} sesiones el ${date}.`
     }
   }
-
   return undefined
 }
 
 function validateAllowedDays(
   sessions: CoachSessionProposal[],
-  config: PlanWizardConfig,
+  config: WeekCreatorEffectiveConfig,
 ): string | undefined {
   const allowedDays = new Set(config.trainingDays)
   for (const session of sessions) {
     const day = isoDateToDayOfWeek(session.date)
     if (!day || !allowedDays.has(day)) {
-      return `La sesión ${session.title} cae en un día no permitido por el plan (${session.date}).`
+      return `La sesión ${session.title} cae en un día no permitido por la configuración (${session.date}).`
     }
   }
   return undefined
@@ -193,24 +152,20 @@ function validateAllowedSports(
 ): string | undefined {
   for (const session of sessions) {
     if (!isSessionTypeAllowedForPlan(session.sessionType, context.athleteProfile)) {
-      return `La semana incluyó un deporte no permitido para este plan: ${session.sessionType}.`
+      return `La semana incluyó un deporte no permitido para este atleta: ${session.sessionType}.`
     }
   }
 
   const allowedSports = new Set<SupportedSport>(getAllowedPlanningSports(context.athleteProfile))
-  const hasRestrictedPlanningDomain = allowedSports.size > 0
+  if (allowedSports.size === 0) return undefined
 
-  if (!hasRestrictedPlanningDomain) return undefined
-
-  const invalidPlanningSport = sessions.find((session) => {
+  const invalid = sessions.find((session) => {
     const sport = normalizeSessionSport(session)
     return sport != null && !allowedSports.has(sport)
   })
-
-  if (invalidPlanningSport) {
-    return `La sesión ${invalidPlanningSport.title} usa ${invalidPlanningSport.sessionType}, que no está permitido por la configuración del plan.`
+  if (invalid) {
+    return `La sesión ${invalid.title} usa ${invalid.sessionType}, que no está dentro de los deportes permitidos.`
   }
-
   return undefined
 }
 
@@ -221,37 +176,30 @@ function validateRequiredDetails(sessions: CoachSessionProposal[]): string | und
         return `La sesión de squash ${session.title} requiere squashDetails con drills no vacíos.`
       }
     }
-
     if (session.sessionType === 'cycling' && !session.cyclingDetails) {
       return `La sesión de ciclismo ${session.title} requiere cyclingDetails.`
     }
-
     if (session.sessionType === 'mobility' && !session.mobilityDetails) {
       return `La sesión de movilidad ${session.title} requiere mobilityDetails.`
     }
-
     if (session.sessionType === 'strength' && (!Array.isArray(session.exercises) || session.exercises.length === 0)) {
       return `La sesión de fuerza ${session.title} requiere exercises no vacíos.`
     }
   }
-
   return undefined
 }
 
 function validatePrimarySportPresence(
   sessions: CoachSessionProposal[],
-  config: PlanWizardConfig,
-  context: ChatContext,
+  config: WeekCreatorEffectiveConfig,
 ): string | undefined {
-  const primarySport = getPlanningPrimarySport(context.athleteProfile)
+  const primarySport = config.primarySport
   if (!primarySport) return undefined
-
   const count = sessions.filter((session) => session.sessionType === primarySport).length
   const minimum = primarySport === 'squash' && config.sessionsPerWeek >= 5 ? 2 : 1
   if (count < minimum) {
     return `La semana debe incluir al menos ${minimum} sesión${minimum === 1 ? '' : 'es'} de ${primarySport}.`
   }
-
   return undefined
 }
 
@@ -279,12 +227,6 @@ function fail(
   rawSessionCount?: number,
   validSessionCount?: number,
   droppedSessionCount?: number,
-): WeekPlanningValidationResult {
-  return {
-    ok: false,
-    error,
-    rawSessionCount,
-    validSessionCount,
-    droppedSessionCount,
-  }
+): WeekCreatorValidationResult {
+  return { ok: false, error, rawSessionCount, validSessionCount, droppedSessionCount }
 }

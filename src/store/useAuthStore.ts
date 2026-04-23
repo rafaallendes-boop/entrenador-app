@@ -24,6 +24,7 @@ export interface SyncDetails {
   consecutiveFailures: number
   autoRepairInProgress: boolean
   lastAutoRepairAt: number | null
+  awaitingProfileRecreationAfterReset: boolean
   memoryLoadRequiredAfterSyncAt: number | null
   memoryLoadedForSyncAt: number | null
   tierHealthMap: SyncTierHealthMap
@@ -74,6 +75,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       consecutiveFailures: 0,
       autoRepairInProgress: false,
       lastAutoRepairAt: null,
+      awaitingProfileRecreationAfterReset: false,
       memoryLoadRequiredAfterSyncAt: null,
       memoryLoadedForSyncAt: null,
       tierHealthMap: DEFAULT_TIER_HEALTH_MAP,
@@ -118,6 +120,7 @@ export const useAuthStore = create<AuthState>((set) => ({
           consecutiveFailures: 0,
           autoRepairInProgress: false,
           lastAutoRepairAt: null,
+          awaitingProfileRecreationAfterReset: false,
           memoryLoadRequiredAfterSyncAt: null,
           memoryLoadedForSyncAt: null,
           tierHealthMap: DEFAULT_TIER_HEALTH_MAP,

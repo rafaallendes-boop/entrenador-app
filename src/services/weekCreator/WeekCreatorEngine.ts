@@ -4,28 +4,29 @@ import { buildAITraceId, getAIRequestPolicy } from '../ai/requestPolicy'
 import { normalizeResponse } from '../ai/responseNormalizer'
 import { getActiveProvider } from '../ai/providerResolver'
 import { useAIDebugStore } from '../../store/useAIDebugStore'
-import { buildWeekPlanningPrompt, summarizeWeekPlanningAction } from './WeekPlanningPromptBuilder'
-import { validateWeekPlanningResponse } from './validateWeekPlanningResponse'
-import { buildWeekRetryInstruction } from './shared'
+import { buildWeekCreatorPrompt, summarizeWeekCreatorAction } from './WeekCreatorPromptBuilder'
+import { validateWeekCreatorResponse } from './validateWeekCreatorResponse'
+import { resolveWeekCreatorConfig } from './WeekCreatorConfig'
+import { buildWeekRetryInstruction } from '../week/shared'
 
-type WeekPlanningOptions = {
+type WeekCreatorOptions = {
   surface?: AITechnicalSurface
   targetWeekStart: string
 }
 
-export const WeekPlanningEngine = {
-  async sendWeekPlan(
+export const WeekCreatorEngine = {
+  async sendWeekCreate(
     userMessage: string,
     context: ChatContext,
-    options: WeekPlanningOptions,
+    options: WeekCreatorOptions,
   ): Promise<CoachNormalizedResponse> {
-    const config = context.athleteProfile?.planWizardConfig
-    if (!context.athleteProfile || !config) {
-      return buildBlockingResponse(options.targetWeekStart)
+    const config = resolveWeekCreatorConfig(context.athleteProfile)
+    if (!config) {
+      return buildProfileIncompleteResponse(options.targetWeekStart)
     }
 
     const provider = getActiveProvider()
-    const policy = getAIRequestPolicy('plan_builder_week')
+    const policy = getAIRequestPolicy('week_creator')
     const surface = options.surface ?? 'chat'
     let lastFailure: {
       provider?: CoachNormalizedResponse['provider']
@@ -38,18 +39,19 @@ export const WeekPlanningEngine = {
     } | null = null
 
     for (let attempt = 1; attempt <= 3; attempt++) {
-      const traceId = buildAITraceId('plan_builder_week')
+      const traceId = buildAITraceId('week_creator')
       useAIDebugStore.getState().startRequest({
         traceId,
-        requestClass: 'plan_builder_week',
+        requestClass: 'week_creator',
         surface,
         startedAt: Date.now(),
       })
 
       try {
-        const prompt = buildWeekPlanningPrompt(context, {
+        const prompt = buildWeekCreatorPrompt(context, {
           userMessage,
           targetWeekStart: options.targetWeekStart,
+          config,
           retryInstruction: buildWeekRetryInstruction(lastFailure?.error, options.targetWeekStart, config.sessionsPerWeek, attempt),
           strictFormatting: attempt >= 3,
         })
@@ -57,7 +59,7 @@ export const WeekPlanningEngine = {
         const raw = await provider.call({
           systemPrompt: prompt.systemPrompt,
           userMessage: prompt.userPrompt,
-          requestClass: 'plan_builder_week',
+          requestClass: 'week_creator',
           traceId,
           maxTokens: policy.maxTokens,
           temperature: attempt === 1 ? policy.temperature : 0.25,
@@ -65,9 +67,10 @@ export const WeekPlanningEngine = {
         })
 
         const normalized = normalizeResponse(raw)
-        const validation = validateWeekPlanningResponse({
+        const validation = validateWeekCreatorResponse({
           response: normalized,
           context,
+          config,
           targetWeekStart: options.targetWeekStart,
         })
 
@@ -102,8 +105,8 @@ export const WeekPlanningEngine = {
 
         return {
           ...normalized,
-          message: normalized.message.trim() || summarizeWeekPlanningAction(validation.action),
-          requestClass: 'plan_builder_week',
+          message: normalized.message.trim() || summarizeWeekCreatorAction(validation.action),
+          requestClass: 'week_creator',
           retryUsed: attempt > 1 || normalized.retryUsed,
         }
       } catch (error) {
@@ -121,13 +124,13 @@ export const WeekPlanningEngine = {
     }
 
     return {
-      message: 'No pude cerrar una semana válida todavía. Revisa tu configuración del plan y vuelve a intentarlo.',
+      message: 'No pude cerrar una semana válida todavía. Revisa tu perfil y vuelve a intentarlo.',
       provider: lastFailure?.provider ?? provider.name,
       model: lastFailure?.model,
       timestamp: Date.now(),
       durationMs: lastFailure?.durationMs,
-      traceId: lastFailure?.traceId ?? buildAITraceId('plan_builder_week'),
-      requestClass: 'plan_builder_week',
+      traceId: lastFailure?.traceId ?? buildAITraceId('week_creator'),
+      requestClass: 'week_creator',
       retryUsed: lastFailure?.retryUsed,
       fallbackUsed: lastFailure?.fallbackUsed,
       meta: {
@@ -139,13 +142,13 @@ export const WeekPlanningEngine = {
   },
 }
 
-function buildBlockingResponse(targetWeekStart: string): CoachNormalizedResponse {
+function buildProfileIncompleteResponse(targetWeekStart: string): CoachNormalizedResponse {
   return {
-    message: `No puedo crear una semana completa para ${targetWeekStart} porque todavía falta la configuración del plan. Completa el plan de competencia antes de pedir una semana entera.`,
+    message: `No puedo crear la semana de ${targetWeekStart} porque tu perfil todavía no tiene deportes permitidos. Completa tu perfil (deportes habilitados y disponibilidad) para que pueda armarla.`,
     provider: 'mock',
     timestamp: Date.now(),
-    traceId: buildAITraceId('plan_builder_week'),
-    requestClass: 'plan_builder_week',
+    traceId: buildAITraceId('week_creator'),
+    requestClass: 'week_creator',
     meta: {
       hadActionsMarkup: false,
       actionParseFailed: false,

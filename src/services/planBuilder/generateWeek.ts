@@ -3,10 +3,10 @@ import type { TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
 import type { AIProvider, CreateWeekNormalizationDiagnostic } from '../ai/types'
 import { buildAITraceId, getAIRequestPolicy } from '../ai/requestPolicy'
 import { normalizeResponse } from '../ai/responseNormalizer'
-import { buildWeekSystemPrompt, buildWeekUserPrompt } from './prompts/weekPrompt'
+import { buildWeekSystemPrompt, buildWeekUserPrompt } from '../week/prompts/weekPrompt'
 import { validatePlanWeek } from './validator'
 import { useAIDebugStore } from '../../store/useAIDebugStore'
-import { filterSessionsToWeek, pickCreateWeekDiagnostic } from '../weekPlanning/shared'
+import { filterSessionsToWeek, pickCreateWeekDiagnostic } from '../week/shared'
 
 export interface GenerateWeekInput {
   provider: AIProvider

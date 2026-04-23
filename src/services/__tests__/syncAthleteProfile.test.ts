@@ -101,6 +101,7 @@ vi.mock('../../store/useAuthStore', () => ({
         consecutiveFailures: 0,
         autoRepairInProgress: false,
         lastAutoRepairAt: null,
+        awaitingProfileRecreationAfterReset: false,
         memoryLoadRequiredAfterSyncAt: null,
         memoryLoadedForSyncAt: null,
       },
@@ -403,6 +404,62 @@ describe('Athlete Profile Sync - Hardening Fixes', () => {
     expect(payload.data.__clearCoachMemory).toBe(true)
     expect(payload.data.__deletedFields).toEqual(expect.arrayContaining(['name']))
     expect(payload.data.mainGoal).toBe('Competir mejor')
+  })
+
+  it('11. Suppresses automatic athlete profile writes while the post-reset lock is active', async () => {
+    localStorageState.set('entrenador_profile_reset_lock_v1', JSON.stringify({
+      'user-1': {
+        resetAt: 500,
+        status: 'awaiting_onboarding_recreation',
+      },
+    }))
+
+    const syncService = await import('../syncService')
+    await syncService.pushAthleteProfile({
+      id: 'default',
+      name: 'Should Not Sync',
+      updatedAt: 600,
+    })
+
+    expect(upsertCalls).toHaveLength(0)
+    expect(updateCalls).toHaveLength(0)
+    expect(localStorage.getItem('entrenador_sync_queue_v1')).toBeNull()
+  })
+
+  it('12. Allows onboarding recreation to replace the reset marker and clears the lock', async () => {
+    localStorageState.set('entrenador_profile_reset_lock_v1', JSON.stringify({
+      'user-1': {
+        resetAt: 500,
+        status: 'awaiting_onboarding_recreation',
+      },
+    }))
+    athleteProfileRows = [
+      toAthleteProfileSyncRow({
+        id: 'default',
+        user_id: 'user-1',
+        coach_memory: null,
+        updated_at: 500,
+        data: {
+          __fullResetAt: 500,
+          __deletedFields: ['name', 'primarySport'],
+          __clearCoachMemory: true,
+        },
+      }),
+    ]
+
+    const syncService = await import('../syncService')
+    await syncService.pushAthleteProfile({
+      id: 'default',
+      name: 'Rafa Recreated',
+      primarySport: 'squash',
+      updatedAt: 800,
+    }, { source: 'post_reset_onboarding' })
+
+    expect(updateCalls).toHaveLength(1)
+    const payload = updateCalls[0].payload as { data: Record<string, unknown> }
+    expect(payload.data.name).toBe('Rafa Recreated')
+    expect(payload.data.__fullResetAt).toBeUndefined()
+    expect(localStorage.getItem('entrenador_profile_reset_lock_v1') ?? '').not.toContain('user-1')
   })
 
   // Test 6 MUST remain last: it nulls supabase and would contaminate subsequent tests

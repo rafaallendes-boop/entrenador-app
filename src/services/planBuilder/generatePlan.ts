@@ -13,12 +13,12 @@ import {
   summarizeWeekGenerationError,
   validateGeneratedWeekAction,
 } from './generateWeek'
-import { buildWeekBatchSystemPrompt, buildWeekBatchUserPrompt } from './prompts/weekPrompt'
+import { buildWeekBatchSystemPrompt, buildWeekBatchUserPrompt } from '../week/prompts/weekPrompt'
 import {
   buildWeekRetryInstruction,
   filterSessionsToWeek,
   pickCreateWeekDiagnostic,
-} from '../weekPlanning/shared'
+} from '../week/shared'
 
 function getActiveProvider(): AIProvider {
   if (import.meta.env.PROD) return new ProxyProvider()

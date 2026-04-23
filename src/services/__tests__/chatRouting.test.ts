@@ -4,8 +4,8 @@ import { resolveChatRoute } from '../chatRouting'
 
 describe('chatRouting', () => {
   it('routes single-week planning requests to the specialized engine', () => {
-    expect(resolveChatRoute('Créame la semana para esta semana').kind).toBe('week_planning')
-    expect(resolveChatRoute('Créame la semana para la próxima semana').kind).toBe('week_planning')
+    expect(resolveChatRoute('Créame la semana para esta semana').kind).toBe('week_creator')
+    expect(resolveChatRoute('Créame la semana para la próxima semana').kind).toBe('week_creator')
   })
 
   it('routes day-scoped or session-scoped requests to chat_action', () => {

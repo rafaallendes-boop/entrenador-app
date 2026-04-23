@@ -54,11 +54,25 @@ const MIGRATION_KEY_PREFIX = 'entrenador_migrated_v1'
 const INITIAL_PULL_KEY_PREFIX = 'entrenador_initial_pull_v1'
 const REMOTE_WIPE_KEY = 'entrenador_remote_wipe_v1'
 const REMOTE_FULL_RESET_ACK_KEY_PREFIX = 'entrenador_remote_reset_ack_v1'
+const PROFILE_RESET_LOCK_KEY = 'entrenador_profile_reset_lock_v1'
 const SESSION_DELETE_TOMBSTONES_KEY = 'entrenador_sync_session_tombstones_v1'
+const ATHLETE_PROFILE_WRITE_MODE_KEY = '__athleteProfileWriteMode'
 const TOMBSTONE_TTL_MS = 180 * 24 * 60 * 60 * 1000 // 180 days (extended from 90d as part of sync hardening)
 const MAX_QUEUE_SIZE = 500
 /** Timeout máximo para un request directo a Supabase (upsert/delete/fetch). Evita que un request colgado bloquee drainQueue indefinidamente. */
 const DIRECT_REQUEST_TIMEOUT_MS = 15_000
+
+export type AthleteProfileWriteSource = 'automatic' | 'post_reset_onboarding'
+
+type AthleteProfilePersistMode = 'normal' | 'technical_marker' | 'post_reset_onboarding'
+type ProfileResetLockStatus = 'pending_remote_wipe' | 'awaiting_bootstrap_ack' | 'awaiting_onboarding_recreation' | 'released'
+
+interface ProfileResetLockEntry {
+  resetAt: number
+  status: ProfileResetLockStatus
+}
+
+type ProfileResetLockStore = Record<string, ProfileResetLockEntry>
 
 // Max retries por tier. Tier C (chat/coach) se dropea rápido para no consumir presupuesto
 // de fiabilidad del core.
@@ -145,6 +159,150 @@ function getInitialPullKey(userId: string): string {
 
 function getRemoteFullResetAckKey(userId: string): string {
   return `${REMOTE_FULL_RESET_ACK_KEY_PREFIX}:${userId}`
+}
+
+function loadProfileResetLockStore(): ProfileResetLockStore {
+  try {
+    const raw = localStorage.getItem(PROFILE_RESET_LOCK_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw) as unknown
+    if (!parsed || typeof parsed !== 'object') return {}
+
+    const entries = Object.entries(parsed as Record<string, unknown>)
+      .filter(([, value]) => value && typeof value === 'object')
+      .map(([userId, value]) => {
+        const entry = value as Partial<ProfileResetLockEntry>
+        const resetAt = typeof entry.resetAt === 'number' && Number.isFinite(entry.resetAt) ? entry.resetAt : null
+        const status = typeof entry.status === 'string' ? entry.status as ProfileResetLockStatus : null
+        if (resetAt == null || status == null) return null
+        return [userId, { resetAt, status }] as const
+      })
+      .filter((entry): entry is readonly [string, ProfileResetLockEntry] => entry != null)
+
+    return Object.fromEntries(entries)
+  } catch {
+    return {}
+  }
+}
+
+function saveProfileResetLockStore(store: ProfileResetLockStore): void {
+  try {
+    localStorage.setItem(PROFILE_RESET_LOCK_KEY, JSON.stringify(store))
+  } catch {
+    // Ignore storage failures.
+  }
+}
+
+function isProfileResetLockActive(
+  entry: ProfileResetLockEntry | null | undefined,
+): entry is ProfileResetLockEntry {
+  return Boolean(entry && entry.status !== 'released')
+}
+
+function isAwaitingProfileRecreationStatus(status: ProfileResetLockStatus | null | undefined): boolean {
+  return status === 'awaiting_bootstrap_ack' || status === 'awaiting_onboarding_recreation'
+}
+
+function getProfileResetLock(userId: string): ProfileResetLockEntry | null {
+  const store = loadProfileResetLockStore()
+  const entry = store[userId]
+  return isProfileResetLockActive(entry) ? entry : null
+}
+
+function syncProfileResetLockFlag(userId: string): void {
+  if (getUserId() !== userId) return
+  syncStoreState().setSyncDetails({
+    awaitingProfileRecreationAfterReset: isAwaitingAthleteProfileRecreationAfterReset(userId),
+  })
+}
+
+function setProfileResetLock(userId: string, entry: ProfileResetLockEntry): void {
+  const store = loadProfileResetLockStore()
+  store[userId] = entry
+  saveProfileResetLockStore(store)
+  syncProfileResetLockFlag(userId)
+}
+
+function clearProfileResetLock(userId: string): void {
+  const store = loadProfileResetLockStore()
+  if (!(userId in store)) {
+    syncProfileResetLockFlag(userId)
+    return
+  }
+  delete store[userId]
+  saveProfileResetLockStore(store)
+  syncProfileResetLockFlag(userId)
+}
+
+function markProfileResetLockStatus(userId: string, status: ProfileResetLockStatus, resetAt?: number): void {
+  const existing = getProfileResetLock(userId)
+  const nextResetAt = resetAt ?? existing?.resetAt ?? Date.now()
+  if (status === 'released') {
+    clearProfileResetLock(userId)
+    return
+  }
+  setProfileResetLock(userId, {
+    resetAt: nextResetAt,
+    status,
+  })
+}
+
+function getAthleteProfileWriteSource(row: Record<string, unknown>): AthleteProfileWriteSource {
+  return row[ATHLETE_PROFILE_WRITE_MODE_KEY] === 'post_reset_onboarding'
+    ? 'post_reset_onboarding'
+    : 'automatic'
+}
+
+function withAthleteProfileWriteSource(
+  row: Record<string, unknown>,
+  source: AthleteProfileWriteSource,
+): Record<string, unknown> {
+  if (source === 'automatic') {
+    if (!(ATHLETE_PROFILE_WRITE_MODE_KEY in row)) return row
+    const next = { ...row }
+    delete next[ATHLETE_PROFILE_WRITE_MODE_KEY]
+    return next
+  }
+  return {
+    ...row,
+    [ATHLETE_PROFILE_WRITE_MODE_KEY]: source,
+  }
+}
+
+function stripAthleteProfileWriteSource(row: Record<string, unknown>): Record<string, unknown> {
+  if (!(ATHLETE_PROFILE_WRITE_MODE_KEY in row)) return row
+  const next = { ...row }
+  delete next[ATHLETE_PROFILE_WRITE_MODE_KEY]
+  return next
+}
+
+function canAthleteProfileWriteByLock(
+  lock: ProfileResetLockEntry | null,
+  source: AthleteProfileWriteSource,
+): boolean {
+  if (!isProfileResetLockActive(lock)) return true
+  if (lock.status === 'pending_remote_wipe') return false
+  return source === 'post_reset_onboarding'
+}
+
+export function isAwaitingAthleteProfileRecreationAfterReset(userId: string | null | undefined): boolean {
+  if (!userId) return false
+  const lock = getProfileResetLock(userId)
+  return isProfileResetLockActive(lock) && isAwaitingProfileRecreationStatus(lock.status)
+}
+
+export function getProfileResetLockState(userId: string | null | undefined): ProfileResetLockEntry | null {
+  if (!userId) return null
+  return getProfileResetLock(userId)
+}
+
+export function canWriteAthleteProfileLocally(
+  source: AthleteProfileWriteSource = 'automatic',
+  userId = getUserId(),
+): boolean {
+  if (!userId) return true
+  if (hasPendingRemoteWipeForTable(userId, 'athlete_profiles')) return false
+  return canAthleteProfileWriteByLock(getProfileResetLock(userId), source)
 }
 
 export function hasInitialRemotePullCompleted(userId: string | null | undefined): boolean {
@@ -695,9 +853,31 @@ async function drainQueue(): Promise<boolean> {
 
   for (const op of currentUserQueue) {
     const opRetryCount = op.retryCount ?? 0
+    const athleteProfileWriteSource = op.table === 'athlete_profiles'
+      ? getAthleteProfileWriteSource(op.payload)
+      : 'automatic'
 
     if (pendingRemoteWipeTables.has(op.table)) {
       remaining.push(op)
+      continue
+    }
+
+    if (op.table === 'athlete_profiles' && !canWriteAthleteProfileLocally(athleteProfileWriteSource, op.userId)) {
+      if (
+        athleteProfileWriteSource === 'post_reset_onboarding' &&
+        hasPendingRemoteWipeForTable(op.userId, 'athlete_profiles')
+      ) {
+        remaining.push(op)
+        continue
+      }
+      syncLog('queue:op_suppressed', {
+        attemptId,
+        table: op.table,
+        action: op.action,
+        source: athleteProfileWriteSource,
+        reason: hasPendingRemoteWipeForTable(op.userId, 'athlete_profiles') ? 'pending_remote_wipe' : 'reset_lock',
+      }, 'warn')
+      silentlyDroppedOps.push(op)
       continue
     }
 
@@ -909,14 +1089,34 @@ export function pruneStaleQueue(userId: string, maxAgeMs = 7 * 24 * 60 * 60 * 10
 
 export { drainQueue }
 
-async function upsertRow(table: SupabaseTable, row: Record<string, unknown>): Promise<void> {
+async function upsertRow(
+  table: SupabaseTable,
+  row: Record<string, unknown>,
+  options?: { athleteProfileWriteSource?: AthleteProfileWriteSource },
+): Promise<void> {
   if (!isEnabled()) return
 
   const userId = getUserId()
   if (!userId) return
 
+  const athleteProfileWriteSource = table === 'athlete_profiles'
+    ? (options?.athleteProfileWriteSource ?? getAthleteProfileWriteSource(row))
+    : 'automatic'
+  const payload = table === 'athlete_profiles'
+    ? withAthleteProfileWriteSource(stripAthleteProfileWriteSource(row), athleteProfileWriteSource)
+    : row
+
+  if (table === 'athlete_profiles' && !canWriteAthleteProfileLocally(athleteProfileWriteSource, userId)) {
+    syncLog('athlete_profiles:write_suppressed', {
+      reason: hasPendingRemoteWipeForTable(userId, 'athlete_profiles') ? 'pending_remote_wipe' : 'reset_lock',
+      source: athleteProfileWriteSource,
+      userId,
+    }, 'warn')
+    return
+  }
+
   if (hasPendingRemoteWipeForTable(userId, table)) {
-    enqueue({ userId, table, action: 'upsert', payload: row, enqueuedAt: Date.now() })
+    enqueue({ userId, table, action: 'upsert', payload, enqueuedAt: Date.now() })
     scheduleRetry(15000)
     return
   }
@@ -924,7 +1124,7 @@ async function upsertRow(table: SupabaseTable, row: Record<string, unknown>): Pr
   if (!navigator.onLine) {
     finishSyncAttempt('offline')
     syncStoreState().setSyncStatus('offline')
-    enqueue({ userId, table, action: 'upsert', payload: row, enqueuedAt: Date.now() })
+    enqueue({ userId, table, action: 'upsert', payload, enqueuedAt: Date.now() })
     scheduleRetry(15000)
     return
   }
@@ -933,10 +1133,10 @@ async function upsertRow(table: SupabaseTable, row: Record<string, unknown>): Pr
   const upsertStartedAt = Date.now()
   try {
     if (table === 'athlete_profiles') {
-      await withRequestTimeout(upsertAthleteProfileRow(row, userId), `athlete_profiles.upsert`)
+      await withRequestTimeout(upsertAthleteProfileRow(payload, userId), `athlete_profiles.upsert`)
     } else {
       const { error } = await withRequestTimeout(
-        getSupabase().from(table).upsert(row as never),
+        getSupabase().from(table).upsert(payload as never),
         `${table}.upsert`,
       )
       if (error) throw error
@@ -968,7 +1168,7 @@ async function upsertRow(table: SupabaseTable, row: Record<string, unknown>): Pr
       applySyncFailure(error, errorInfo.userMessage, table)
       return
     }
-    enqueue({ userId, table, action: 'upsert', payload: row, enqueuedAt: Date.now() })
+    enqueue({ userId, table, action: 'upsert', payload, enqueuedAt: Date.now() })
     applySyncFailure(error, errorInfo.userMessage, table)
   }
 }
@@ -1263,20 +1463,26 @@ async function fetchRemoteFullResetAt(userId: string): Promise<number | null> {
 
 async function applyRemoteFullResetIfNeeded(userId: string): Promise<number | null> {
   if (hasPendingRemoteWipeForTable(userId, 'athlete_profiles')) {
+    syncProfileResetLockFlag(userId)
     return null
   }
 
   const remoteResetAt = await fetchRemoteFullResetAt(userId)
-  if (remoteResetAt == null) return null
+  if (remoteResetAt == null) {
+    syncProfileResetLockFlag(userId)
+    return null
+  }
 
   const acknowledgedAt = getAcknowledgedRemoteFullResetAt(userId)
   if (acknowledgedAt != null && acknowledgedAt >= remoteResetAt) {
+    markProfileResetLockStatus(userId, 'awaiting_onboarding_recreation', remoteResetAt)
     return remoteResetAt
   }
 
   clearSyncArtifactsForUser(userId)
   await clearAllLocalAppData()
   acknowledgeRemoteFullReset(userId, remoteResetAt)
+  markProfileResetLockStatus(userId, 'awaiting_onboarding_recreation', remoteResetAt)
   return remoteResetAt
 }
 
@@ -1380,9 +1586,51 @@ async function persistAthleteProfileRow(
   row: Record<string, unknown>,
   userId: string,
   remoteRows?: AthleteProfileSyncRow[],
+  options?: { mode?: AthleteProfilePersistMode },
 ): Promise<void> {
-  const profileRow = toAthleteProfileSyncRow(row)
+  const mode = options?.mode ?? 'normal'
+  const profileRow = toAthleteProfileSyncRow(stripAthleteProfileWriteSource(row))
   const existingRows = remoteRows ?? await fetchAthleteProfileRows(userId)
+
+  if (mode === 'technical_marker') {
+    const keeper = existingRows[0]
+    const normalized = normalizeAthleteProfilePayload(profileRow)
+
+    if (!keeper) {
+      const { error } = await getSupabase()
+        .from('athlete_profiles')
+        .upsert({
+          id: normalized.id,
+          user_id: userId,
+          coach_memory: normalized.coach_memory,
+          updated_at: normalized.updated_at,
+          data: normalized.data,
+        } as never, { onConflict: 'user_id' })
+      if (error) throw error
+      return
+    }
+
+    const { error } = await getSupabase()
+      .from('athlete_profiles')
+      .update({
+        coach_memory: normalized.coach_memory,
+        updated_at: normalized.updated_at,
+        data: normalized.data,
+      } as never)
+      .eq('id', keeper.id)
+      .eq('user_id', userId)
+
+    if (error) throw error
+
+    const loserIds = existingRows
+      .filter((candidate) => candidate.id !== keeper.id)
+      .map((candidate) => candidate.id)
+
+    if (loserIds.length > 0) {
+      await deleteAthleteProfileRowsById(userId, loserIds)
+    }
+    return
+  }
 
   if (existingRows.length > 1) {
     await repairRemoteAthleteProfileRows(userId, existingRows, profileRow)
@@ -1423,10 +1671,15 @@ async function persistAthleteProfileRow(
 }
 
 async function upsertAthleteProfileRow(row: Record<string, unknown>, userId: string): Promise<void> {
-  const profileRow = toAthleteProfileSyncRow(row)
+  const writeSource = getAthleteProfileWriteSource(row)
+  const persistMode: AthleteProfilePersistMode = writeSource === 'post_reset_onboarding'
+    ? 'post_reset_onboarding'
+    : 'normal'
+  const profileRow = toAthleteProfileSyncRow(stripAthleteProfileWriteSource(row))
   const remoteRows = await fetchAthleteProfileRows(userId)
 
   logAthleteProfileSync('push:attempt', {
+    writeSource,
     payloadId: profileRow.id,
     payloadUpdatedAt: profileRow.updated_at,
     remoteRows: remoteRows.length,
@@ -1438,6 +1691,9 @@ async function upsertAthleteProfileRow(row: Record<string, unknown>, userId: str
     syncStoreState().setSyncDetails({ autoRepairInProgress: true })
     try {
       await repairRemoteAthleteProfileRows(userId, remoteRows, profileRow)
+      if (writeSource === 'post_reset_onboarding') {
+        clearProfileResetLock(userId)
+      }
     } finally {
       syncStoreState().setSyncDetails({
         autoRepairInProgress: false,
@@ -1447,7 +1703,10 @@ async function upsertAthleteProfileRow(row: Record<string, unknown>, userId: str
     return
   }
 
-  await persistAthleteProfileRow(profileRow, userId, remoteRows)
+  await persistAthleteProfileRow(profileRow, userId, remoteRows, { mode: persistMode })
+  if (writeSource === 'post_reset_onboarding') {
+    clearProfileResetLock(userId)
+  }
 }
 
 export async function pushSession(session: Session): Promise<void> {
@@ -1494,10 +1753,16 @@ export async function pushCoachProposal(proposal: CoachProposal): Promise<void> 
   await upsertRow('coach_proposals', coachProposalToRow(proposal, userId))
 }
 
-export async function pushAthleteProfile(profile: AthleteProfile): Promise<void> {
+export async function pushAthleteProfile(
+  profile: AthleteProfile,
+  options?: { source?: AthleteProfileWriteSource },
+): Promise<void> {
   const userId = getUserId()
   if (!userId) return
-  await upsertRow('athlete_profiles', athleteProfileToRow(profile, userId))
+  const source = options?.source ?? 'automatic'
+  await upsertRow('athlete_profiles', withAthleteProfileWriteSource(athleteProfileToRow(profile, userId), source), {
+    athleteProfileWriteSource: source,
+  })
 }
 
 export async function pushTrainingPlan(plan: TrainingPlan): Promise<void> {
@@ -1598,6 +1863,21 @@ async function processPendingRemoteWipes(userId: string): Promise<RemoteWipeOutc
   clearPendingRemoteWipeTables(userId, [...outcome.succeeded, ...outcome.tolerated] as SupabaseTable[])
   outcome.pending = sortRemoteWipeTables(getPendingRemoteWipeTables(userId))
   outcome.completed = outcome.pending.length === 0
+
+  if (fullReset) {
+    if (outcome.completed) {
+      let remoteResetAt: number | null = null
+      try {
+        remoteResetAt = await fetchRemoteFullResetAt(userId)
+      } catch {
+        remoteResetAt = getProfileResetLock(userId)?.resetAt ?? null
+      }
+      markProfileResetLockStatus(userId, 'awaiting_bootstrap_ack', remoteResetAt ?? undefined)
+    } else if (getProfileResetLock(userId)) {
+      markProfileResetLockStatus(userId, 'pending_remote_wipe')
+    }
+  }
+
   return outcome
 }
 
@@ -1634,7 +1914,7 @@ async function pullRemoteAndMerge(userId: string): Promise<void> {
       await Promise.allSettled(mergeContext.pendingWrites)
     }
 
-    if (!pendingRemoteWipeTables.has('athlete_profiles')) {
+    if (!pendingRemoteWipeTables.has('athlete_profiles') && !isAwaitingAthleteProfileRecreationAfterReset(userId)) {
       markInitialRemotePullComplete(userId)
     }
   })()
@@ -1668,6 +1948,7 @@ export async function runFullSync(userId: string): Promise<void> {
       pruneExpiredTombstones(userId)
       pruneStaleQueue(userId)
       await processPendingRemoteWipes(userId)
+      await applyRemoteFullResetIfNeeded(userId)
       await drainQueue()
       await pullRemoteAndMerge(userId)
       trackSyncEvent({
@@ -1956,6 +2237,19 @@ async function mergeAthleteProfile(userId: string, context: MergeContext): Promi
     throw new Error(classifyAthleteProfileSyncError(error))
   }
 
+  const profileResetLock = getProfileResetLock(userId)
+  if (isProfileResetLockActive(profileResetLock)) {
+    if (remoteRows.length > 0) {
+      const canonicalLockedRow = coalesceAthleteProfileRows(remoteRows)
+      const resetAt = getAthleteProfileFullResetAt(canonicalLockedRow.data)
+      if (resetAt != null) {
+        markProfileResetLockStatus(userId, 'awaiting_onboarding_recreation', resetAt)
+      }
+    }
+    await db.athleteProfiles.clear()
+    return
+  }
+
   if (remoteRows.length > 1) {
     const localPreferred = await db.athleteProfiles.get('default')
     const preferredRow = localPreferred
@@ -1978,6 +2272,11 @@ async function mergeAthleteProfile(userId: string, context: MergeContext): Promi
 
   const canonicalRow = coalesceAthleteProfileRows(remoteRows)
   if (isAthleteProfileFullResetRow(canonicalRow)) {
+    markProfileResetLockStatus(
+      userId,
+      'awaiting_onboarding_recreation',
+      getAthleteProfileFullResetAt(canonicalRow.data) ?? Date.now(),
+    )
     await db.athleteProfiles.clear()
     return
   }
@@ -2373,6 +2672,7 @@ function clearSyncArtifactsForUser(userId: string): void {
     consecutiveFailures: 0,
     autoRepairInProgress: false,
     lastAutoRepairAt: null,
+    awaitingProfileRecreationAfterReset: false,
   })
 }
 
@@ -2478,6 +2778,11 @@ export async function prepareLocalDataForUser(userId: string): Promise<{ shouldM
 
   localStorage.setItem(LAST_SYNC_USER_KEY, userId)
 
+  if (getProfileResetLock(userId)) {
+    syncProfileResetLockFlag(userId)
+    return { shouldMigrate: false }
+  }
+
   const shouldMigrate =
     !localStorage.getItem(getMigrationKey(userId)) &&
     await hasLocalAppData()
@@ -2544,7 +2849,7 @@ export async function migrateLocalDataToCloud(userId: string): Promise<void> {
         .upsert(trainingPlanWeekRows as never)
         .then((result) => ({ table: 'training_plan_weeks', error: result.error }))
       : { table: 'training_plan_weeks', error: null }
-    if (profileRows.length > 0) {
+    if (profileRows.length > 0 && !getProfileResetLock(userId)) {
       const syncRows = profileRows.map(toAthleteProfileSyncRow)
       const coalesced = coalesceAthleteProfileRows(syncRows)
       await persistAthleteProfileRow(coalesced as unknown as Record<string, unknown>, userId)
@@ -2685,10 +2990,12 @@ export async function wipeRemoteAndLocalAppData(userId: string): Promise<RemoteW
   if (!isEnabled()) {
     await clearAllLocalAppData()
     clearSyncArtifactsForUser(userId)
+    clearProfileResetLock(userId)
     acknowledgeRemoteFullReset(userId, Date.now())
     return { ...outcome, pending: [], completed: true }
   }
 
+  markProfileResetLockStatus(userId, 'pending_remote_wipe')
   clearQueuedOpsForTables(userId, allTables)
   clearSessionDeleteTombstoneGroup(userId)
   registerPendingRemoteWipe(userId, allTables, { fullReset: true })
@@ -2700,6 +3007,7 @@ export async function wipeRemoteAndLocalAppData(userId: string): Promise<RemoteW
   clearSyncArtifactsForUser(userId)
   const remoteResetAt = await fetchRemoteFullResetAt(userId)
   acknowledgeRemoteFullReset(userId, remoteResetAt ?? Date.now())
+  markProfileResetLockStatus(userId, 'awaiting_bootstrap_ack', remoteResetAt ?? undefined)
 
   return { ...processed, pending: [], completed: true }
 }
@@ -2732,7 +3040,7 @@ async function clearRemoteAthleteProfileData(userId: string): Promise<void> {
 }
 
 async function deleteRemoteAthleteProfileData(userId: string): Promise<void> {
-  const resetAt = Date.now()
+  const resetAt = getProfileResetLock(userId)?.resetAt ?? Date.now()
   const { error } = await getSupabase()
     .from('athlete_profiles')
     .delete()
@@ -2742,14 +3050,10 @@ async function deleteRemoteAthleteProfileData(userId: string): Promise<void> {
 
   const marker = createAthleteProfileFullResetRow(userId, resetAt)
   try {
-    // Prefer the idempotent athlete-profile writer so full reset survives
-    // duplicate rows or existing marker rows better than a raw insert.
-    await persistAthleteProfileRow(marker, userId, [])
+    await persistAthleteProfileRow(marker, userId, [], { mode: 'technical_marker' })
   } catch (primaryError) {
-    // Fallback for environments where upsert(onConflict) is not available
-    // or the remote schema behaves differently during reset.
     try {
-      await persistAthleteProfileRow(marker, userId)
+      await persistAthleteProfileRow(marker, userId, undefined, { mode: 'technical_marker' })
     } catch {
       throw primaryError
     }
