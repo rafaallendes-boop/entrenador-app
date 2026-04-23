@@ -112,6 +112,13 @@ const supabaseMock = {
   from: createSupabaseFrom(),
 }
 
+function requireMockSupabase(auth: Awaited<typeof import('../auth')>) {
+  if (!auth.supabase) {
+    throw new Error('Expected mocked supabase client to be available in syncService tests')
+  }
+  return auth.supabase
+}
+
 vi.mock('../auth', () => ({
   supabase: supabaseMock,
 }))
@@ -704,10 +711,11 @@ describe('syncService', () => {
 
   it('serializes concurrent direct writes for the same entity', async () => {
     const auth = await import('../auth')
-    const originalFrom = auth.supabase.from.bind(auth.supabase)
+    const supabase = requireMockSupabase(auth)
+    const originalFrom = supabase.from.bind(supabase)
     let releaseFirst!: () => void
 
-    auth.supabase.from = ((table: string) => {
+    supabase.from = ((table: string) => {
       if (table !== 'sessions') return originalFrom(table)
       return {
         upsert: vi.fn((payload: unknown) => {
@@ -720,7 +728,7 @@ describe('syncService', () => {
           return Promise.resolve({ data: null, error: null })
         }),
       }
-    }) as typeof auth.supabase.from
+    }) as typeof supabase.from
 
     const syncService = await import('../syncService')
     const firstWrite = syncService.pushSession({
@@ -804,10 +812,11 @@ describe('syncService', () => {
     tableResults.set('training_plan_weeks', { data: [], error: null })
 
     const auth = await import('../auth')
-    const originalFrom = auth.supabase.from.bind(auth.supabase)
+    const supabase = requireMockSupabase(auth)
+    const originalFrom = supabase.from.bind(supabase)
     let releasePlanWrite!: () => void
 
-    auth.supabase.from = ((table: string) => {
+    supabase.from = ((table: string) => {
       const base = originalFrom(table)
       if (table !== 'training_plans') return base
       return {
@@ -819,7 +828,7 @@ describe('syncService', () => {
           })
         }),
       }
-    }) as typeof auth.supabase.from
+    }) as typeof supabase.from
 
     const { db } = await import('../../db/db')
     ;(db.trainingPlans.get as ReturnType<typeof vi.fn>).mockImplementation(async (id: string) =>
