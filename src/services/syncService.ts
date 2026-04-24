@@ -1559,7 +1559,7 @@ async function applyRemoteFullResetIfNeeded(userId: string): Promise<number | nu
   }
 
   clearSyncArtifactsForUser(userId)
-  await clearAllLocalAppData()
+  await clearAllLocalAppData(userId)
   acknowledgeRemoteFullReset(userId, remoteResetAt)
   markProfileResetLockStatus(userId, 'awaiting_onboarding_recreation', remoteResetAt)
   return remoteResetAt
@@ -2850,7 +2850,7 @@ export async function prepareLocalDataForUser(userId: string): Promise<{ shouldM
   const previousUserId = localStorage.getItem(LAST_SYNC_USER_KEY)
   if (previousUserId && previousUserId !== userId) {
     clearSyncArtifactsForUser(previousUserId)
-    await clearAllLocalAppData()
+    await clearAllLocalAppData(previousUserId)
   }
 
   await applyRemoteFullResetIfNeeded(userId)
@@ -3067,7 +3067,7 @@ export async function wipeRemoteAndLocalAppData(userId: string): Promise<RemoteW
   const outcome: RemoteWipeOutcome = { succeeded: [], tolerated: [], failed: [], pending: allTables, completed: false }
 
   if (!isEnabled()) {
-    await clearAllLocalAppData()
+    await clearAllLocalAppData(userId)
     clearSyncArtifactsForUser(userId)
     clearProfileResetLock(userId)
     acknowledgeRemoteFullReset(userId, Date.now())
@@ -3082,7 +3082,7 @@ export async function wipeRemoteAndLocalAppData(userId: string): Promise<RemoteW
   const processed = await processPendingRemoteWipes(userId)
   if (!processed.completed) return processed
 
-  await clearAllLocalAppData()
+  await clearAllLocalAppData(userId)
   clearSyncArtifactsForUser(userId)
   const remoteResetAt = await fetchRemoteFullResetAt(userId)
   acknowledgeRemoteFullReset(userId, remoteResetAt ?? Date.now())

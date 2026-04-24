@@ -9,6 +9,15 @@ import { currentWeekStartISO, fromISO, toISO } from '../utils/date'
 import { addDays } from 'date-fns'
 import type { Session } from '../types'
 
+const APP_LOCAL_STORAGE_PREFIXES = ['entrenador_', 'coach_', 'entrenador:']
+const APP_LOCAL_STORAGE_KEYS = [
+  'coach_chat_session_id',
+  'entrenador_notification_preferences_v1',
+  'scheduled_session_notifications_v1',
+  'entrenador_sync_user_v1',
+]
+const REMOTE_FULL_RESET_ACK_KEY_PREFIX = 'entrenador_remote_reset_ack_v1'
+
 export type LocalDataGroup =
   | 'trainingData'
   | 'chatHistory'
@@ -118,13 +127,40 @@ export async function clearSelectedLocalAppData(selection: LocalDataSelection): 
   return groups
 }
 
-export async function clearAllLocalAppData(): Promise<void> {
+export async function clearAllLocalAppData(userId?: string): Promise<void> {
   await clearSelectedLocalAppData({
     trainingData: true,
     chatHistory: true,
     coachProposals: true,
     coachMemory: true,
   })
+  clearAllAppLocalStorage(userId)
+}
+
+export function clearAllAppLocalStorage(userId?: string): void {
+  let storage: Storage
+  try {
+    if (typeof window === 'undefined') return
+    storage = window.localStorage
+  } catch {
+    return
+  }
+
+  const keysToRemove = new Set(APP_LOCAL_STORAGE_KEYS)
+  if (userId) {
+    keysToRemove.add(`${REMOTE_FULL_RESET_ACK_KEY_PREFIX}:${userId}`)
+  }
+
+  for (let index = 0; index < storage.length; index += 1) {
+    const key = storage.key(index)
+    if (key && APP_LOCAL_STORAGE_PREFIXES.some((prefix) => key.startsWith(prefix))) {
+      keysToRemove.add(key)
+    }
+  }
+
+  for (const key of keysToRemove) {
+    storage.removeItem(key)
+  }
 }
 
 function syncStoresAfterClear(selection: LocalDataSelection): void {

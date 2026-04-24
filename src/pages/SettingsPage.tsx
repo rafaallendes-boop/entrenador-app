@@ -14,6 +14,7 @@ import {
 } from '../services/dataExport'
 import { clearSelectedRemoteAppData, clearSelectedSyncArtifactsForUser, runFullSync, wipeRemoteAndLocalAppData } from '../services/syncService'
 import {
+  clearAllLocalAppData,
   clearSelectedLocalAppData,
   deleteCoachSessionsByIds,
   getLocalDataCounts,
@@ -338,10 +339,11 @@ export default function SettingsPage() {
 
   const handleWipeAllData = async () => {
     const { user: currentUser } = useAuthStore.getState()
-    if (!currentUser) return
 
     const firstConfirm = window.confirm(
-      'Esto eliminará TODOS tus datos locales y remotos de Entrenador. Se perderán sesiones, check-ins, chat, proposals y perfil. ¿Quieres continuar?',
+      currentUser
+        ? 'Esto eliminará TODOS tus datos locales y remotos de Entrenador. Se perderán sesiones, check-ins, chat, proposals y perfil. ¿Quieres continuar?'
+        : 'Esto eliminará TODOS los datos locales de Entrenador en este navegador. No hay sesión activa, así que no se tocará la nube. ¿Quieres continuar?',
     )
     if (!firstConfirm) return
 
@@ -352,6 +354,21 @@ export default function SettingsPage() {
     setClearStatus(null)
     setImportStatus(null)
     try {
+      if (!currentUser) {
+        await clearAllLocalAppData()
+        clearOnboardingSkipped(undefined)
+        await refreshCounts(setDataCounts)
+        await refreshNotificationDebugState(setNotificationDebugState)
+        await loadMemory()
+        await loadWeek(currentWeekStartISO())
+        setClearSelection({ ...EMPTY_CLEAR_SELECTION })
+        setSelectedCoachSessionIds([])
+        setCoachSessionStatus(null)
+        setClearStatus('Se eliminaron los datos locales de este navegador. La app quedó reiniciada.')
+        navigate(ROUTES.ONBOARDING, { replace: true })
+        return
+      }
+
       const outcome = await wipeRemoteAndLocalAppData(currentUser.id)
       if (!outcome.completed) {
         const pendingTables = outcome.pending.join(', ')
