@@ -182,7 +182,7 @@ describe('WeekCreatorEngine', () => {
     expect(response.requestClass).toBe('week_creator')
   })
 
-  it('accepts a safe partial week when one incomplete session was dropped during normalization', async () => {
+  it('rejects a partial week when one incomplete session was dropped during normalization', async () => {
     mockProviderCall.mockImplementation(async (request: { requestClass: string; traceId: string }) => ({
       text: '<actions>' + JSON.stringify([
         {
@@ -251,31 +251,12 @@ describe('WeekCreatorEngine', () => {
       historicalSessions: [],
     }
 
-    const response = await WeekCreatorEngine.sendWeekCreate(
+    await expect(WeekCreatorEngine.sendWeekCreate(
       'Créame la semana',
       context,
       { surface: 'chat', targetWeekStart: '2026-05-04' },
-    )
+    )).rejects.toThrow('La semana debe traer exactamente 5 sesiones válidas y llegó con 4')
 
-    expect(mockProviderCall).toHaveBeenCalledTimes(1)
-    expect(response.actions?.[0]).toMatchObject({
-      type: 'create_week',
-      targetDate: '2026-05-04',
-    })
-    expect(response.actions?.[0].sessions).toHaveLength(4)
-    expect(response.actions?.[0].sessions?.[0].squashDetails?.drills).toHaveLength(1)
-    expect(response.actions?.[0].sessions?.[2]).toMatchObject({
-      sessionType: 'running',
-      durationMin: 45,
-      timeBlock: 'PM',
-    })
-    expect(response.message).toContain('Nota: Semana parcial: 4 de 5 sesiones válidas')
-    expect(response.meta?.likelyTruncated).toBe(false)
-    expect(response.meta?.createWeekDiagnostics?.[0]).toMatchObject({
-      rawSessions: 5,
-      validSessions: 4,
-      droppedSessions: 1,
-      droppedSessionReasons: [{ index: 4, reason: 'missing-title' }],
-    })
+    expect(mockProviderCall).toHaveBeenCalledTimes(2)
   })
 })

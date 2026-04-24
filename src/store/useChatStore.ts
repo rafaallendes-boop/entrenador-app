@@ -7,7 +7,7 @@ import { useCoachActionsStore } from './useCoachActionsStore'
 import { v4 as uuid } from '../utils/uuid'
 import { AIProviderError } from '../services/ai/types'
 import type { CoachNormalizedResponse } from '../services/ai/types'
-import { getOrCreateChatSessionId, setStoredChatSessionId } from '../utils/chatSession'
+import { getOrCreateChatSessionId, isLocalOnlyChatSessionId, setStoredChatSessionId } from '../utils/chatSession'
 import * as syncService from '../services/syncService'
 import { useAIDebugStore } from './useAIDebugStore'
 import { resolveChatRoute, type ChatRouteKind } from '../services/chatRouting'
@@ -37,11 +37,25 @@ export const useChatStore = create<ChatState>((set, get) => ({
   error: null,
 
   loadHistory: async () => {
-    const sessionId = get().currentSessionId
-    const msgs = await db.chatMessages
+    let sessionId = get().currentSessionId
+    let msgs = await db.chatMessages
       .where('chatSessionId')
       .equals(sessionId)
       .sortBy('timestamp')
+
+    if (msgs.length === 0 && isLocalOnlyChatSessionId(sessionId)) {
+      const latest = await db.chatMessages.orderBy('timestamp').last()
+      if (latest?.chatSessionId) {
+        sessionId = latest.chatSessionId
+        setStoredChatSessionId(sessionId)
+        msgs = await db.chatMessages
+          .where('chatSessionId')
+          .equals(sessionId)
+          .sortBy('timestamp')
+        set({ currentSessionId: sessionId })
+      }
+    }
+
     if (sessionId !== get().currentSessionId) return
     set({ messages: msgs })
   },
@@ -199,6 +213,7 @@ async function handleCoachResponse(
   requestClass: AIRequestClass,
   chatSessionId: string,
 ): Promise<{ proposalId: string | undefined; coachMsg: ChatMessage }> {
+  const coachMessageId = uuid()
   // Create a proposal if the model returned structured actions.
   // Skip weekly summaries, chat_general, and truncated responses.
   let proposalId: string | undefined
@@ -212,14 +227,14 @@ async function handleCoachResponse(
     const proposal = await useCoachActionsStore.getState().addProposal(
       response.message.slice(0, 120) + (response.message.length > 120 ? '…' : ''),
       response.actions,
-      undefined,
+      coachMessageId,
       { source: 'chat' },
     )
     proposalId = proposal.id
   }
 
   const coachMsg: ChatMessage = {
-    id: uuid(),
+    id: coachMessageId,
     role: 'coach',
     content: response.message,
     timestamp: Date.now(),

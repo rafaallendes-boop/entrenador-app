@@ -1,6 +1,7 @@
 import { v4 as uuid } from './uuid'
 
 export const CHAT_SESSION_KEY = 'coach_chat_session_id'
+const CHAT_SESSION_LOCAL_ONLY_KEY = 'coach_chat_session_local_only'
 
 function getStorage(): Storage | null {
   try {
@@ -15,11 +16,20 @@ export function getStoredChatSessionId(): string | null {
 }
 
 export function setStoredChatSessionId(id: string): void {
-  getStorage()?.setItem(CHAT_SESSION_KEY, id)
+  const storage = getStorage()
+  storage?.setItem(CHAT_SESSION_KEY, id)
+  storage?.removeItem(CHAT_SESSION_LOCAL_ONLY_KEY)
 }
 
 export function clearStoredChatSessionId(): void {
-  getStorage()?.removeItem(CHAT_SESSION_KEY)
+  const storage = getStorage()
+  storage?.removeItem(CHAT_SESSION_KEY)
+  storage?.removeItem(CHAT_SESSION_LOCAL_ONLY_KEY)
+}
+
+export function isLocalOnlyChatSessionId(id: string): boolean {
+  const storage = getStorage()
+  return storage?.getItem(CHAT_SESSION_KEY) === id && storage?.getItem(CHAT_SESSION_LOCAL_ONLY_KEY) === '1'
 }
 
 export function getOrCreateChatSessionId(): string {
@@ -27,6 +37,8 @@ export function getOrCreateChatSessionId(): string {
   if (existing) return existing
 
   const id = uuid()
-  setStoredChatSessionId(id)
+  const storage = getStorage()
+  storage?.setItem(CHAT_SESSION_KEY, id)
+  storage?.setItem(CHAT_SESSION_LOCAL_ONLY_KEY, '1')
   return id
 }

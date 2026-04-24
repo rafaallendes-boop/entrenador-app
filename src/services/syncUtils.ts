@@ -714,8 +714,25 @@ export function pickCanonicalAthleteProfileRow(rows: AthleteProfileSyncRow[]): A
 // ─── Queue compaction ────────────────────────────────────────────────────────
 
 export function compactQueue(queue: OfflineOp[], incoming: OfflineOp): OfflineOp[] {
-  const next = queue.filter((queued) => !shouldReplaceQueuedOp(queued, incoming))
-  next.push(incoming)
+  let preservedRetryCount = incoming.retryCount ?? 0
+  let preservedLastErrorCategory = incoming.lastErrorCategory
+  const next = queue.filter((queued) => {
+    if (!shouldReplaceQueuedOp(queued, incoming)) return true
+
+    preservedRetryCount = Math.max(preservedRetryCount, queued.retryCount ?? 0)
+    preservedLastErrorCategory = incoming.lastErrorCategory ?? queued.lastErrorCategory
+    return false
+  })
+  const compacted: OfflineOp = {
+    ...incoming,
+  }
+  if (preservedRetryCount > 0) {
+    compacted.retryCount = preservedRetryCount
+  }
+  if (preservedLastErrorCategory != null) {
+    compacted.lastErrorCategory = preservedLastErrorCategory
+  }
+  next.push(compacted)
   return next
 }
 

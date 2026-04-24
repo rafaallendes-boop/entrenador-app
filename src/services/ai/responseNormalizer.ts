@@ -167,6 +167,10 @@ export function normalizeResponse(raw: AIRawResponse): CoachNormalizedResponse {
   if (requestClass === 'chat_action' && actions?.length) {
     const nextActions = actions.filter((action) => action.type !== 'create_week')
     invalidActionCount += actions.length - nextActions.length
+    if (actions.length > 0 && nextActions.length === 0) {
+      actionParseFailed = true
+      likelyTruncated = true
+    }
     actions = nextActions
   }
 

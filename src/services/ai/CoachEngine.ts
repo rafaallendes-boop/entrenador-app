@@ -207,8 +207,9 @@ async function withTracing<T extends Pick<CoachNormalizedResponse, 'provider' | 
 
 function resolveActionIntent(userMessage: string, context: ChatContext): CoachActionIntent {
   const inferred = inferCoachActionIntent(userMessage)
-  if (inferred === 'modify_plan') return inferred
+  if (inferred !== 'none') return inferred
   if (context.intent === 'adjust_session') return 'modify_plan'
+  if (context.intent === 'plan_week') return 'create_full_plan'
   return 'modify_plan'
 }
 

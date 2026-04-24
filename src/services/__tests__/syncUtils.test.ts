@@ -300,6 +300,28 @@ describe('syncUtils', () => {
     expect(result).toHaveLength(2)
   })
 
+  it('preserves the highest retry count when compacting an entity op', () => {
+    const existing: OfflineOp = {
+      userId: 'user-1',
+      table: 'sessions',
+      action: 'upsert',
+      payload: { id: 'session-A' },
+      enqueuedAt: 1,
+      retryCount: 3,
+    }
+    const incoming: OfflineOp = {
+      userId: 'user-1',
+      table: 'sessions',
+      action: 'upsert',
+      payload: { id: 'session-A' },
+      enqueuedAt: 2,
+    }
+
+    const result = compactQueue([existing], incoming)
+    expect(result).toHaveLength(1)
+    expect(result[0].retryCount).toBe(3)
+  })
+
   it('picks the profile row with the highest score when repairing duplicates (same updated_at)', () => {
     // When updated_at is equal, data richness + id=default are the tiebreakers
     const sparseRow = toAthleteProfileSyncRow({

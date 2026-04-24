@@ -143,7 +143,7 @@ export const useCoachActionsStore = create<CoachActionsState>((set, get) => ({
     const appliedResults: Array<{ index: number; createdSessionIds: string[]; restoredSessions: Session[]; restoredWeekSummaries: WeekSummary[]; deletedWeekSummaryIds: string[] }> = []
     for (let i = 0; i < workingProposal.actions.length; i++) {
       try {
-        const result = await applyCoachAction(workingProposal.actions[i], trainingStore)
+        const result = await applyCoachAction(workingProposal.actions[i], trainingStore, workingProposal.createdAt)
         warnings.push(...result.warnings)
         appliedResults.push({
           index: i,
@@ -372,6 +372,7 @@ async function rollbackAppliedActions(
 async function applyCoachAction(
   action: CoachAction,
   store: ReturnType<typeof useTrainingStore.getState>,
+  proposalCreatedAt?: number,
 ): Promise<ApplyCoachActionResult> {
   const warnings: string[] = []
   const createdSessionIds: string[] = []
@@ -498,6 +499,7 @@ async function applyCoachAction(
         weekObjectives: action.weekObjectives,
         athleteProfile,
         store,
+        replacementCutoffAt: proposalCreatedAt,
       })
       warnings.push(...result.warnings)
       createdSessionIds.push(...result.createdSessionIds)

@@ -39,6 +39,12 @@ const athleteProfileState = {
 
 vi.mock('../../db/db', () => ({
   db: {
+    transaction: vi.fn(async (_mode: string, ...args: unknown[]) => {
+      const callback = args[args.length - 1]
+      if (typeof callback === 'function') {
+        return callback()
+      }
+    }),
     sessions: {
       where: vi.fn(() => ({
         between: vi.fn((start: string, end: string) => ({
@@ -116,6 +122,7 @@ vi.mock('../../db/queries', () => ({
 vi.mock('../syncService', () => ({
   pushSession: vi.fn(),
   deleteSession: vi.fn(),
+  pullSessionsForDateRange: vi.fn(async () => {}),
   pushWeekSummary: vi.fn(),
   pushTrainingPlan: vi.fn(),
   pushTrainingPlanWeeks: vi.fn(),

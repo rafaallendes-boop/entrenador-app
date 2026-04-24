@@ -57,23 +57,14 @@ export function validateWeekCreatorResponse(
   const weekCheck = validateSessionWeekBoundaries(sessions, input.targetWeekStart)
   if (weekCheck) return fail(weekCheck, rawSessionCount, validSessionCount, droppedSessionCount)
 
-  let warning: string | undefined
   if (sessions.length !== input.config.sessionsPerWeek) {
-    const partialWarning = buildPartialWeekWarning({
-      diagnostic,
-      expectedSessions: input.config.sessionsPerWeek,
-      validSessions: sessions.length,
-    })
-    if (!partialWarning) {
-      const droppedInfo = droppedSessionCount && droppedSessionCount > 0
-        ? ` Se descartaron ${droppedSessionCount} sesión(es) inválidas durante la normalización.`
-        : ''
-      return fail(
-        `La semana debe traer exactamente ${input.config.sessionsPerWeek} sesiones válidas y llegó con ${sessions.length}.${droppedInfo}`,
-        rawSessionCount, validSessionCount, droppedSessionCount,
-      )
-    }
-    warning = partialWarning
+    const droppedInfo = droppedSessionCount && droppedSessionCount > 0
+      ? ` Se descartaron ${droppedSessionCount} sesión(es) inválidas durante la normalización.`
+      : ''
+    return fail(
+      `La semana debe traer exactamente ${input.config.sessionsPerWeek} sesiones válidas y llegó con ${sessions.length}.${droppedInfo}`,
+      rawSessionCount, validSessionCount, droppedSessionCount,
+    )
   }
 
   const collisionError = validateCollisions(sessions)
@@ -97,27 +88,10 @@ export function validateWeekCreatorResponse(
   return {
     ok: true,
     action,
-    warning,
     rawSessionCount,
     validSessionCount,
     droppedSessionCount,
   }
-}
-
-function buildPartialWeekWarning(input: {
-  diagnostic: ReturnType<typeof pickCreateWeekDiagnostic>
-  expectedSessions: number
-  validSessions: number
-}): string | undefined {
-  const { diagnostic, expectedSessions, validSessions } = input
-  if (!diagnostic) return undefined
-  if (!diagnostic.droppedSessionReasons || diagnostic.droppedSessionReasons.length === 0) return undefined
-  if (expectedSessions - validSessions !== 1) return undefined
-  if (validSessions < 3) return undefined
-  if (diagnostic.rawSessions !== expectedSessions) return undefined
-  if (diagnostic.droppedSessions !== 1) return undefined
-
-  return `Semana parcial: ${validSessions} de ${expectedSessions} sesiones válidas; se descartó 1 incompleta.`
 }
 
 function validateSessionWeekBoundaries(

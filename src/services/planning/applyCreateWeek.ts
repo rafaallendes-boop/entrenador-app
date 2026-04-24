@@ -28,11 +28,13 @@ export async function applyCreateWeek({
   weekObjectives,
   athleteProfile,
   store,
+  replacementCutoffAt,
 }: {
   sessions: CreateWeekSessionInput
   weekObjectives?: string[]
   athleteProfile: AthleteProfile | null
   store: CreateWeekStoreAdapter
+  replacementCutoffAt?: number
 }): Promise<ApplyCreateWeekResult> {
   const warnings: string[] = []
   const createdSessionIds: string[] = []
@@ -49,7 +51,7 @@ export async function applyCreateWeek({
     return { warnings, createdSessionIds, restoredSessions, restoredWeekSummaries, deletedWeekSummaryIds }
   }
 
-  const replacement = await replacePlannedSessionsForCreateWeek(allowedSessions)
+  const replacement = await replacePlannedSessionsForCreateWeek(allowedSessions, replacementCutoffAt)
   restoredSessions.push(...replacement.replacedSessions)
   warnings.push(...replacement.warnings)
 
@@ -132,6 +134,7 @@ async function findCreateWeekCollisions(
 
 async function replacePlannedSessionsForCreateWeek(
   sessions: CreateWeekSessionInput,
+  replacementCutoffAt?: number,
 ): Promise<{ replacedSessions: Session[]; warnings: string[] }> {
   const warnings: string[] = []
   const weekStarts = [...new Set(sessions.map((session) => toISO(getWeekStart(fromISO(session.date)))))]
@@ -140,6 +143,7 @@ async function replacePlannedSessionsForCreateWeek(
 
   for (const weekStart of weekStarts) {
     const weekEnd = toISO(addDays(fromISO(weekStart), 6))
+    await syncService.pullSessionsForDateRange(weekStart, weekEnd)
     const existingWeekSessions = await db.sessions.where('date').between(weekStart, weekEnd, true, true).toArray()
     const plannedSessions = existingWeekSessions.filter(
       (session) => session.status === 'planned' && replacementDates.has(session.date),
@@ -147,6 +151,13 @@ async function replacePlannedSessionsForCreateWeek(
     const preservedSessions = existingWeekSessions.filter((session) => session.status !== 'planned')
 
     if (plannedSessions.length > 0) {
+      const concurrentSession = replacementCutoffAt != null
+        ? plannedSessions.find((session) => session.updatedAt > replacementCutoffAt)
+        : undefined
+      if (concurrentSession) {
+        throw new Error(`La semana tiene cambios sincronizados mas recientes en ${concurrentSession.date}. Actualiza el plan antes de aceptar esta propuesta.`)
+      }
+
       replacedSessions.push(...plannedSessions.map((session) => ({ ...session })))
       await db.sessions.bulkDelete(plannedSessions.map((session) => session.id))
       plannedSessions.forEach((session) => {

@@ -172,10 +172,23 @@ export async function commitPlan(
       status: acceptedWeeks.includes(w.weekIndex) ? 'accepted' : w.status,
       updatedAt: nowTs,
     }))
-    await db.trainingPlans.put(nextPlan)
-    await Promise.all(
-      nextWeeks.map((w) => db.trainingPlanWeeks.put(w)),
-    )
+    try {
+      await db.transaction('rw', db.trainingPlans, db.trainingPlanWeeks, async () => {
+        await db.trainingPlans.put(nextPlan)
+        await Promise.all(
+          nextWeeks.map((w) => db.trainingPlanWeeks.put(w)),
+        )
+      })
+    } catch (error) {
+      if (appliedSnapshots.length > 0) {
+        await restoreWeekCommitSnapshots(appliedSnapshots)
+        warnings.push(`Se revirtieron ${appliedSnapshots.length} semanas afectadas porque no se pudo activar el plan.`)
+        acceptedWeeks.length = 0
+      }
+      const msg = error instanceof Error ? error.message : String(error)
+      errors.push(`No se pudo activar el plan: ${msg}`)
+      return { errors, warnings, acceptedWeeks }
+    }
     void syncService.pushTrainingPlan(nextPlan)
     void syncService.pushTrainingPlanWeeks(nextPlan, nextWeeks.filter((week) => week.status === 'accepted'))
   }

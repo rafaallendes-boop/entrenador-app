@@ -60,6 +60,7 @@ const SESSION_DELETE_TOMBSTONES_KEY = 'entrenador_sync_session_tombstones_v1'
 const ATHLETE_PROFILE_WRITE_MODE_KEY = '__athleteProfileWriteMode'
 const TOMBSTONE_TTL_MS = 180 * 24 * 60 * 60 * 1000 // 180 days (extended from 90d as part of sync hardening)
 const MAX_QUEUE_SIZE = 500
+const FETCH_PAGE_SIZE = 1000
 /** Timeout máximo para un request directo a Supabase (upsert/delete/fetch). Evita que un request colgado bloquee drainQueue indefinidamente. */
 const DIRECT_REQUEST_TIMEOUT_MS = 15_000
 
@@ -480,6 +481,10 @@ let activePullAllPromise: ScopedPromise<void> | null = null
 let activeFullSyncPromise: ScopedPromise<void> | null = null
 let syncAttemptCounter = 0
 const entityMutationLanes = new Map<string, Promise<void>>()
+let retryTimer: ReturnType<typeof setTimeout> | null = null
+const queueChannel = typeof BroadcastChannel !== 'undefined'
+  ? new BroadcastChannel('sync-queue')
+  : null
 
 /**
  * Safe accessor for the Supabase client. Throws a typed SyncError
@@ -526,7 +531,7 @@ interface QueueSummary {
 interface MergeContext {
   allowDeletes: boolean
   deleteBeforeTs: number | null
-  pendingWrites: Promise<unknown>[]
+  pendingWrites: Array<() => Promise<unknown>>
   pendingRemoteWipeTables: Set<SupabaseTable>
 }
 
@@ -638,7 +643,19 @@ function markSyncHealthy(): void {
 }
 
 function scheduleRetry(ms: number): void {
-  syncStoreState().setSyncDetails({ retryScheduledAt: Date.now() + ms })
+  const retryAt = Date.now() + ms
+  syncStoreState().setSyncDetails({ retryScheduledAt: retryAt })
+
+  if (retryTimer != null) {
+    clearTimeout(retryTimer)
+  }
+
+  retryTimer = setTimeout(() => {
+    retryTimer = null
+    const userId = getUserId()
+    if (!userId || !navigator.onLine) return
+    void runFullSync(userId)
+  }, Math.max(0, retryAt - Date.now()))
 }
 
 function loadQueue(): OfflineOp[] {
@@ -673,10 +690,11 @@ function saveQueue(queue: OfflineOp[]): void {
     // Ignore storage quota failures.
   }
   refreshQueueDiagnostics()
+  queueChannel?.postMessage({ type: 'queue-changed' })
 }
 
 function enqueue(op: OfflineOp): void {
-  const queue = compactQueue(loadQueue(), op)
+  const queue = mergeConcurrentQueueOps(compactQueue(loadQueue(), op), op)
   if (queue.length >= MAX_QUEUE_SIZE) {
     const dropped = queue.shift()
     syncLog('queue:overflow', {
@@ -688,6 +706,32 @@ function enqueue(op: OfflineOp): void {
     }, 'warn')
   }
   saveQueue(queue)
+}
+
+function mergeConcurrentQueueOps(queue: OfflineOp[], incoming: OfflineOp): OfflineOp[] {
+  let merged = queue
+  const latest = loadQueue()
+  for (const op of latest) {
+    if (shouldDropConcurrentQueueOp(op, incoming)) continue
+    if (merged.some((item) => offlineOpsShareIdentity(item, op))) continue
+    merged = compactQueue(merged, op)
+  }
+  return merged
+}
+
+function shouldDropConcurrentQueueOp(existing: OfflineOp, incoming: OfflineOp): boolean {
+  return existing.userId === incoming.userId
+    && existing.table === incoming.table
+    && getOfflineOpEntityId(existing) === getOfflineOpEntityId(incoming)
+    && getOfflineOpEntityId(incoming) != null
+}
+
+function offlineOpsShareIdentity(a: OfflineOp, b: OfflineOp): boolean {
+  return a.userId === b.userId
+    && a.table === b.table
+    && a.action === b.action
+    && a.enqueuedAt === b.enqueuedAt
+    && getOfflineOpEntityId(a) === getOfflineOpEntityId(b)
 }
 
 function getEntityMutationKey(
@@ -1005,7 +1049,7 @@ async function drainQueue(): Promise<boolean> {
           )
           if (error) throw error
           if (op.table === 'sessions') {
-            clearSessionDeleteTombstone(op.userId, payload.id)
+            rememberSessionDeleteTombstone(op.userId, payload.id)
           }
         }
       })
@@ -1131,6 +1175,14 @@ async function drainQueue(): Promise<boolean> {
 
 if (typeof window !== 'undefined') {
   refreshQueueDiagnostics()
+  queueChannel?.addEventListener('message', () => {
+    refreshQueueDiagnostics()
+  })
+  window.addEventListener('storage', (event) => {
+    if (event.key === QUEUE_KEY) {
+      refreshQueueDiagnostics()
+    }
+  })
   window.addEventListener('online', () => {
     syncStoreState().setSyncStatus('syncing')
     void runFullSync(getUserId() ?? '')
@@ -1798,6 +1850,54 @@ export async function deleteSession(id: string): Promise<void> {
   await deleteRow('sessions', id)
 }
 
+export async function pullSessionsForDateRange(startDate: string, endDate: string): Promise<void> {
+  const userId = getUserId()
+  if (!userId || !isEnabled()) return
+  if (typeof navigator !== 'undefined' && !navigator.onLine) return
+
+  const tombstones = getSessionDeleteTombstones(userId)
+  for (let from = 0; ; from += FETCH_PAGE_SIZE) {
+    const to = from + FETCH_PAGE_SIZE - 1
+    const query = getSupabase()
+      .from('sessions')
+      .select('*')
+      .eq('user_id', userId)
+      .gte('date', startDate)
+      .lte('date', endDate)
+    const supportsRange = typeof (query as { range?: unknown }).range === 'function'
+    const pagedQuery = supportsRange
+      ? (query as { range: (from: number, to: number) => PromiseLike<{ data: unknown[] | null; error: unknown }> }).range(from, to)
+      : query as PromiseLike<{ data: unknown[] | null; error: unknown }>
+    const { data, error } = await withRequestTimeout(
+      pagedQuery,
+      'sessions.pullRange',
+    )
+    if (error) throw error
+
+    const page = data ?? []
+    for (const row of page as Record<string, unknown>[]) {
+      const remote = rowToSession(row)
+      const deletedAt = tombstones[remote.id]
+      if (typeof deletedAt === 'number') {
+        if (deletedAt >= remote.updatedAt) {
+          await deleteRow('sessions', remote.id)
+          continue
+        }
+        clearSessionDeleteTombstone(userId, remote.id)
+      }
+
+      const local = await db.sessions.get(remote.id)
+      if (!local || remote.updatedAt > local.updatedAt) {
+        await db.sessions.put(remote)
+      } else if (local.updatedAt > remote.updatedAt) {
+        await pushSession(local)
+      }
+    }
+
+    if (!supportsRange || page.length < FETCH_PAGE_SIZE) break
+  }
+}
+
 export async function pushDayLog(log: DayLog): Promise<void> {
   const userId = getUserId()
   if (!userId) return
@@ -1879,17 +1979,31 @@ export async function softDeleteTrainingPlan(plan: TrainingPlan, weeks: Training
 }
 
 async function fetchAll<T>(table: SupabaseTable, userId: string): Promise<T[]> {
-  const { data, error } = await getSupabase()
-    .from(table)
-    .select('*')
-    .eq('user_id', userId)
+  const rows: T[] = []
 
-  if (error) {
-    console.error(`[sync] fetch error on ${table}:`, error.message)
-    throw error
+  for (let from = 0; ; from += FETCH_PAGE_SIZE) {
+    const to = from + FETCH_PAGE_SIZE - 1
+    const query = getSupabase()
+      .from(table)
+      .select('*')
+      .eq('user_id', userId)
+    const supportsRange = typeof (query as { range?: unknown }).range === 'function'
+    const pagedQuery = supportsRange
+      ? (query as { range: (from: number, to: number) => PromiseLike<{ data: unknown[] | null; error: { message?: string } | null }> }).range(from, to)
+      : query as PromiseLike<{ data: unknown[] | null; error: { message?: string } | null }>
+    const { data, error } = await pagedQuery
+
+    if (error) {
+      console.error(`[sync] fetch error on ${table}:`, error.message)
+      throw error
+    }
+
+    const page = (data ?? []) as T[]
+    rows.push(...page)
+    if (!supportsRange || page.length < FETCH_PAGE_SIZE) break
   }
 
-  return (data ?? []) as T[]
+  return rows
 }
 
 async function wipeRemoteTableByUser(
@@ -1990,7 +2104,13 @@ async function pullRemoteAndMerge(userId: string): Promise<void> {
     await mergeTrainingPlanWeeks(userId, mergeContext)
 
     if (mergeContext.pendingWrites.length > 0) {
-      await Promise.allSettled(mergeContext.pendingWrites)
+      for (const write of mergeContext.pendingWrites) {
+        await write().catch((error) => {
+          syncLog('merge:pending_write_failed', {
+            error: error instanceof Error ? error.message : String(error),
+          }, 'warn')
+        })
+      }
     }
 
     if (!pendingRemoteWipeTables.has('athlete_profiles') && !isAwaitingAthleteProfileRecreationAfterReset(userId)) {
@@ -2125,7 +2245,7 @@ async function mergeSessions(userId: string, context: MergeContext): Promise<voi
     const deletedAt = tombstones[remote.id]
     if (typeof deletedAt === 'number') {
       if (deletedAt >= remote.updatedAt) {
-        context.pendingWrites.push(deleteRow('sessions', remote.id))
+        context.pendingWrites.push(() => deleteRow('sessions', remote.id))
         continue
       }
       clearSessionDeleteTombstone(userId, remote.id)
@@ -2135,7 +2255,7 @@ async function mergeSessions(userId: string, context: MergeContext): Promise<voi
     if (!local || remote.updatedAt > local.updatedAt) {
       await db.sessions.put(remote)
     } else if (local.updatedAt > remote.updatedAt) {
-      context.pendingWrites.push(pushSession(local))
+      context.pendingWrites.push(() => pushSession(local))
     }
   }
 
@@ -2174,19 +2294,19 @@ async function mergeDayLogs(userId: string, context: MergeContext): Promise<void
       await db.dayLogs.delete(localByDate.id)
       await db.dayLogs.put(resolution.winner)
       if (remote.id !== localByDate.id) {
-        context.pendingWrites.push(deleteRow('day_logs', localByDate.id))
+        context.pendingWrites.push(() => deleteRow('day_logs', localByDate.id))
       }
       if (resolution.winner.id !== remote.id) {
-        context.pendingWrites.push(deleteRow('day_logs', remote.id))
+        context.pendingWrites.push(() => deleteRow('day_logs', remote.id))
       }
-      context.pendingWrites.push(pushDayLog(resolution.winner))
+      context.pendingWrites.push(() => pushDayLog(resolution.winner))
       continue
     }
 
     if (resolution.winner === remote) {
       await db.dayLogs.put(remote)
     } else if (resolution.winner.updatedAt > remote.updatedAt) {
-      context.pendingWrites.push(pushDayLog(resolution.winner))
+      context.pendingWrites.push(() => pushDayLog(resolution.winner))
     }
   }
 
@@ -2224,12 +2344,12 @@ async function mergeWeekSummaries(userId: string, context: MergeContext): Promis
       await db.weekSummaries.delete(localByWeek.id)
       await db.weekSummaries.put(resolution.winner)
       if (remote.id !== localByWeek.id) {
-        context.pendingWrites.push(deleteRow('week_summaries', localByWeek.id))
+        context.pendingWrites.push(() => deleteRow('week_summaries', localByWeek.id))
       }
       if (resolution.winner.id !== remote.id) {
-        context.pendingWrites.push(deleteRow('week_summaries', remote.id))
+        context.pendingWrites.push(() => deleteRow('week_summaries', remote.id))
       }
-      context.pendingWrites.push(pushWeekSummary(resolution.winner))
+      context.pendingWrites.push(() => pushWeekSummary(resolution.winner))
       continue
     }
 
@@ -2238,7 +2358,7 @@ async function mergeWeekSummaries(userId: string, context: MergeContext): Promis
     if (resolution.winner === remote) {
       await db.weekSummaries.put(remote)
     } else if (winnerUpdatedAt > remoteUpdatedAt) {
-      context.pendingWrites.push(pushWeekSummary(resolution.winner))
+      context.pendingWrites.push(() => pushWeekSummary(resolution.winner))
     }
   }
 
@@ -2264,6 +2384,10 @@ async function mergeChatMessages(userId: string, context: MergeContext): Promise
     const local = await db.chatMessages.get(remote.id)
     if (!local) {
       await db.chatMessages.put(remote)
+    } else if (remote.timestamp >= local.timestamp && JSON.stringify(remote) !== JSON.stringify(local)) {
+      await db.chatMessages.put(remote)
+    } else if (local.timestamp > remote.timestamp) {
+      context.pendingWrites.push(() => pushChatMessage(local))
     }
   }
 
@@ -2293,7 +2417,7 @@ async function mergeCoachProposals(userId: string, context: MergeContext): Promi
     if (!local || remoteUpdatedAt > localUpdatedAt) {
       await db.coachProposals.put(remote)
     } else if (localUpdatedAt > remoteUpdatedAt) {
-      context.pendingWrites.push(pushCoachProposal(local))
+      context.pendingWrites.push(() => pushCoachProposal(local))
     }
   }
 
@@ -2369,7 +2493,7 @@ async function mergeAthleteProfile(userId: string, context: MergeContext): Promi
   }
 
   if (!athleteProfileRowsEqual(canonicalRow, mergedRow)) {
-    context.pendingWrites.push(pushAthleteProfile(mergedProfile))
+    context.pendingWrites.push(() => pushAthleteProfile(mergedProfile))
   }
 }
 
@@ -2394,7 +2518,7 @@ async function mergeTrainingPlans(userId: string, context: MergeContext): Promis
       if (localPlan && remoteDeletedAt >= localPlan.updatedAt) {
         await deleteLocalTrainingPlan(localPlan.id)
       } else if (localPlan && isSyncablePlanStatus(localPlan.status)) {
-        context.pendingWrites.push(pushTrainingPlan(localPlan))
+        context.pendingWrites.push(() => pushTrainingPlan(localPlan))
       }
       continue
     }
@@ -2407,7 +2531,7 @@ async function mergeTrainingPlans(userId: string, context: MergeContext): Promis
     if (remotePlan.updatedAt > localPlan.updatedAt) {
       await db.trainingPlans.put(remotePlan)
     } else if (localPlan.updatedAt > remotePlan.updatedAt && isSyncablePlanStatus(localPlan.status)) {
-      context.pendingWrites.push(pushTrainingPlan(localPlan))
+      context.pendingWrites.push(() => pushTrainingPlan(localPlan))
     }
   }
 
@@ -2449,7 +2573,7 @@ async function mergeTrainingPlanWeeks(userId: string, context: MergeContext): Pr
       } else if (localWeek) {
         const localPlan = localPlans.find((plan) => plan.id === localWeek.planId)
         if (localPlan && isSyncablePlanStatus(localPlan.status)) {
-          context.pendingWrites.push(pushTrainingPlanWeeks(localPlan, [localWeek]))
+          context.pendingWrites.push(() => pushTrainingPlanWeeks(localPlan, [localWeek]))
         }
       }
       continue
@@ -2465,7 +2589,7 @@ async function mergeTrainingPlanWeeks(userId: string, context: MergeContext): Pr
     } else if (localWeek.updatedAt > remoteWeek.updatedAt) {
       const localPlan = localPlans.find((plan) => plan.id === localWeek.planId)
       if (localPlan && isSyncablePlanStatus(localPlan.status)) {
-        context.pendingWrites.push(pushTrainingPlanWeeks(localPlan, [localWeek]))
+        context.pendingWrites.push(() => pushTrainingPlanWeeks(localPlan, [localWeek]))
       }
     }
   }
@@ -2581,6 +2705,7 @@ async function repairLocalDayLogConflicts(): Promise<void> {
     const loserIds = sorted.slice(1).map((row) => row.id)
     if (loserIds.length > 0) {
       await db.dayLogs.bulkDelete(loserIds)
+      await Promise.all(loserIds.map((id) => deleteRow('day_logs', id)))
       await pushDayLog(winner)
     }
   }
