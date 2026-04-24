@@ -185,7 +185,7 @@ describe('Athlete Profile Sync - Hardening Fixes', () => {
     expect(upsertCalls[0].table).toBe('athlete_profiles')
     expect(upsertCalls[0].options).toEqual({ onConflict: 'user_id' })
     const payload = upsertCalls[0].payload as Record<string, unknown>
-    expect(payload.id).toBe('default')
+    expect(payload.id).toBe('profile:user-1')
     expect(payload.user_id).toBe('user-1')
   })
 

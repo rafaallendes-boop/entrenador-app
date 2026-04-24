@@ -1592,6 +1592,14 @@ async function fetchRemoteFullResetAt(userId: string): Promise<number | null> {
   return latest
 }
 
+async function fetchRemoteFullResetAtBestEffort(userId: string): Promise<number | null> {
+  try {
+    return await fetchRemoteFullResetAt(userId)
+  } catch {
+    return getProfileResetLock(userId)?.resetAt ?? null
+  }
+}
+
 async function applyRemoteFullResetIfNeeded(userId: string): Promise<number | null> {
   if (hasPendingRemoteWipeForTable(userId, 'athlete_profiles')) {
     syncProfileResetLockFlag(userId)
@@ -2059,12 +2067,7 @@ async function processPendingRemoteWipes(userId: string): Promise<RemoteWipeOutc
 
   if (fullReset) {
     if (outcome.completed) {
-      let remoteResetAt: number | null = null
-      try {
-        remoteResetAt = await fetchRemoteFullResetAt(userId)
-      } catch {
-        remoteResetAt = getProfileResetLock(userId)?.resetAt ?? null
-      }
+      const remoteResetAt = await fetchRemoteFullResetAtBestEffort(userId)
       markProfileResetLockStatus(userId, 'awaiting_bootstrap_ack', remoteResetAt ?? undefined)
     } else if (getProfileResetLock(userId)) {
       markProfileResetLockStatus(userId, 'pending_remote_wipe')
@@ -3209,7 +3212,7 @@ export async function wipeRemoteAndLocalAppData(userId: string): Promise<RemoteW
 
   await clearAllLocalAppData(userId)
   clearSyncArtifactsForUser(userId)
-  const remoteResetAt = await fetchRemoteFullResetAt(userId)
+  const remoteResetAt = await fetchRemoteFullResetAtBestEffort(userId)
   acknowledgeRemoteFullReset(userId, remoteResetAt ?? Date.now())
   markProfileResetLockStatus(userId, 'awaiting_bootstrap_ack', remoteResetAt ?? undefined)
 
@@ -3255,11 +3258,22 @@ async function deleteRemoteAthleteProfileData(userId: string): Promise<void> {
   const marker = createAthleteProfileFullResetRow(userId, resetAt)
   try {
     await persistAthleteProfileRow(marker, userId, [], { mode: 'technical_marker' })
-  } catch (primaryError) {
+  } catch {
     try {
       await persistAthleteProfileRow(marker, userId, undefined, { mode: 'technical_marker' })
-    } catch {
-      throw primaryError
+    } catch (fallbackError) {
+      const info = classifySyncError(fallbackError, 'athlete_profiles')
+      syncLog('athlete_profiles:reset_marker_skipped', {
+        category: info.category,
+        message: info.technicalMessage,
+      }, 'warn')
+      trackSyncEvent({
+        kind: 'delete',
+        status: 'skip',
+        entity: 'athlete_profiles',
+        userId,
+        detail: `reset_marker_skipped:${info.category}`,
+      })
     }
   }
 }

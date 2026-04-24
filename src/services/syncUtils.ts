@@ -226,6 +226,7 @@ function isRetryableAuthMessage(normalized: string): boolean {
 
 function isSchemaErrorMessage(normalized: string): boolean {
   return (
+    normalized.includes('schema cache') ||
     normalized.includes("could not find the 'data' column") ||
     normalized.includes('column athlete_profiles.data does not exist') ||
     normalized.includes('invalid input syntax for type json') ||
@@ -337,8 +338,12 @@ const ATHLETE_PROFILE_REMOTE_COLUMNS = new Set([
   'data',
 ])
 
+function getAthleteProfileRemoteId(userId: string): string {
+  return `profile:${userId}`
+}
+
 export function athleteProfileToRow(profile: AthleteProfile, userId: string): Record<string, unknown> {
-  const { id, coachMemory, updatedAt, ...rest } = profile
+  const { id: _localId, coachMemory, updatedAt, ...rest } = profile
   const deletedFields: string[] = []
   const dataEntries: Record<string, unknown> = {}
 
@@ -359,7 +364,7 @@ export function athleteProfileToRow(profile: AthleteProfile, userId: string): Re
   }
 
   return {
-    id,
+    id: getAthleteProfileRemoteId(userId),
     user_id: userId,
     coach_memory: coachMemory ?? null,
     updated_at: updatedAt,
@@ -379,7 +384,7 @@ export function rowToAthleteProfile(row: Record<string, unknown>): AthleteProfil
 
 export function createAthleteProfileFullResetRow(userId: string, resetAt: number): AthleteProfileSyncRow {
   return normalizeAthleteProfilePayload({
-    id: 'default',
+    id: getAthleteProfileRemoteId(userId),
     user_id: userId,
     coach_memory: null,
     updated_at: resetAt,

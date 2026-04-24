@@ -58,6 +58,7 @@ let chatMessageRows: unknown[] = []
 let coachProposalRows: unknown[] = []
 let athleteProfileRows: unknown[] = []
 let tableResults = new Map<string, SupabaseResult>()
+let actionResults = new Map<string, SupabaseResult>()
 const upsertCalls: Array<{ table: string; payload: unknown }> = []
 const insertCalls: Array<{ table: string; payload: unknown }> = []
 const deleteCalls: Array<{ table: string; filters: Array<{ op: 'eq' | 'in'; column: string; value: unknown }> }> = []
@@ -87,20 +88,24 @@ function createQueryBuilder(
       } else if (action === 'select') {
         selectCalls.push({ table, filters: [...filters] })
       }
-      return Promise.resolve(onFulfilled(tableResults.get(table) ?? { data: null, error: null }))
+      return Promise.resolve(onFulfilled(getSupabaseResult(table, action)))
     },
   }
+}
+
+function getSupabaseResult(table: string, action: 'delete' | 'update' | 'select' | 'upsert' | 'insert'): SupabaseResult {
+  return actionResults.get(`${action}:${table}`) ?? tableResults.get(table) ?? { data: null, error: null }
 }
 
 function createSupabaseFrom() {
   return (table: string) => ({
     upsert: vi.fn((payload: unknown) => {
       upsertCalls.push({ table, payload })
-      return Promise.resolve(tableResults.get(table) ?? { data: null, error: null })
+      return Promise.resolve(getSupabaseResult(table, 'upsert'))
     }),
     insert: vi.fn((payload: unknown) => {
       insertCalls.push({ table, payload })
-      return Promise.resolve(tableResults.get(table) ?? { data: null, error: null })
+      return Promise.resolve(getSupabaseResult(table, 'insert'))
     }),
     update: vi.fn((payload: unknown) => createQueryBuilder(table, 'update', payload)),
     select: vi.fn(() => createQueryBuilder(table, 'select')),
@@ -213,6 +218,7 @@ describe('syncService', () => {
     coachProposalRows = []
     athleteProfileRows = []
     tableResults = new Map()
+    actionResults = new Map()
     upsertCalls.length = 0
     insertCalls.length = 0
     deleteCalls.length = 0
@@ -513,6 +519,44 @@ describe('syncService', () => {
     expect(localStorage.getItem('entrenador_profile_reset_lock_v1')).toContain('awaiting_bootstrap_ack')
     expect(outcome.completed).toBe(true)
     expect(outcome.pending).toEqual([])
+  })
+
+  it('tolerates missing optional plan sync tables during a full reset', async () => {
+    tableResults.set('training_plans', {
+      data: null,
+      error: {
+        code: 'PGRST205',
+        message: "Could not find the table 'public.training_plans' in the schema cache",
+      },
+    })
+
+    const syncService = await import('../syncService')
+    const outcome = await syncService.wipeRemoteAndLocalAppData('user-1')
+
+    expect(outcome.completed).toBe(true)
+    expect(outcome.tolerated).toContain('training_plans')
+    expect(outcome.pending).toEqual([])
+    expect(clearAllLocalAppDataMock).toHaveBeenCalled()
+  })
+
+  it('does not block a full reset when the post-delete athlete profile marker cannot be written', async () => {
+    actionResults.set('upsert:athlete_profiles', {
+      data: null,
+      error: {
+        code: 'PGRST204',
+        message: "Could not find the 'data' column of 'athlete_profiles' in the schema cache",
+      },
+    })
+    actionResults.set('select:athlete_profiles', { data: [], error: null })
+
+    const syncService = await import('../syncService')
+    const outcome = await syncService.wipeRemoteAndLocalAppData('user-1')
+
+    expect(deleteCalls.some((call) => call.table === 'athlete_profiles')).toBe(true)
+    expect(upsertCalls.some((call) => call.table === 'athlete_profiles')).toBe(true)
+    expect(outcome.completed).toBe(true)
+    expect(outcome.pending).toEqual([])
+    expect(clearAllLocalAppDataMock).toHaveBeenCalled()
   })
 
   it('clears stale local data before migration when a newer remote full reset marker exists', async () => {

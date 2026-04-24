@@ -40,7 +40,7 @@ describe('syncUtils', () => {
 
     const row = athleteProfileToRow(profile, 'user-1')
     expect(row).toMatchObject({
-      id: 'default',
+      id: 'profile:user-1',
       user_id: 'user-1',
       coach_memory: 'Prefiere competencia',
       updated_at: 123,
