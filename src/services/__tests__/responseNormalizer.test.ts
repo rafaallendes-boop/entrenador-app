@@ -1,7 +1,150 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { normalizeResponse } from '../ai/responseNormalizer'
 
 describe('responseNormalizer', () => {
+  it('repairs squash add_session without squashDetails', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+
+    const response = normalizeResponse({
+      text: [
+        'Ajuste squash.',
+        '<actions>',
+        JSON.stringify([
+          {
+            type: 'add_session',
+            reason: 'Necesita tecnica sin desgaste',
+            targetDate: '2026-04-09',
+            sessionType: 'squash',
+            title: 'Squash tecnico',
+            durationMin: 60,
+            timeBlock: 'PM',
+            objective: 'Control y precision',
+          },
+        ]),
+        '</actions>',
+      ].join('\n'),
+      provider: 'mock',
+    })
+
+    expect(response.actions).toHaveLength(1)
+    expect(response.actions?.[0].squashDetails).toEqual({
+      trainingFocus: 'technical',
+      sessionMode: 'drill_session',
+      drills: [{ name: 'Squash tecnico', durationMin: 60 }],
+    })
+    expect(warn).toHaveBeenCalledWith(
+      '[responseNormalizer] add_session repaired',
+      expect.objectContaining({ repairs: ['squashDetails'] }),
+    )
+
+    warn.mockRestore()
+  })
+
+  it('repairs add_session without durationMin using sport defaults', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+
+    const response = normalizeResponse({
+      text: [
+        'Ajuste running.',
+        '<actions>',
+        JSON.stringify([
+          {
+            type: 'add_session',
+            reason: 'Sostener base aerobica',
+            targetDate: '2026-04-10',
+            sessionType: 'running',
+            title: 'Rodaje Z2',
+            timeBlock: 'AM',
+            objective: 'Base suave',
+          },
+        ]),
+        '</actions>',
+      ].join('\n'),
+      provider: 'mock',
+    })
+
+    expect(response.actions).toHaveLength(1)
+    expect(response.actions?.[0]).toMatchObject({
+      type: 'add_session',
+      sessionType: 'running',
+      durationMin: 45,
+    })
+    expect(warn).toHaveBeenCalledWith(
+      '[responseNormalizer] add_session repaired',
+      expect.objectContaining({ repairs: ['durationMin'] }),
+    )
+
+    warn.mockRestore()
+  })
+
+  it('repairs add_session without timeBlock using PM', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+
+    const response = normalizeResponse({
+      text: [
+        'Ajuste movilidad.',
+        '<actions>',
+        JSON.stringify([
+          {
+            type: 'add_session',
+            reason: 'Descargar cadera y columna',
+            targetDate: '2026-04-11',
+            sessionType: 'mobility',
+            title: 'Movilidad full body',
+            durationMin: 30,
+            objective: 'Soltar sin fatiga',
+          },
+        ]),
+        '</actions>',
+      ].join('\n'),
+      provider: 'mock',
+    })
+
+    expect(response.actions).toHaveLength(1)
+    expect(response.actions?.[0]).toMatchObject({
+      type: 'add_session',
+      sessionType: 'mobility',
+      timeBlock: 'PM',
+    })
+    expect(warn).toHaveBeenCalledWith(
+      '[responseNormalizer] add_session repaired',
+      expect.objectContaining({ repairs: ['timeBlock'] }),
+    )
+
+    warn.mockRestore()
+  })
+
+  it('drops add_session when core fields are too incomplete to repair', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+
+    const response = normalizeResponse({
+      text: [
+        'Ajuste incompleto.',
+        '<actions>',
+        JSON.stringify([
+          {
+            type: 'add_session',
+            reason: 'Falta informacion central',
+            sessionType: 'running',
+            durationMin: 45,
+            timeBlock: 'PM',
+          },
+        ]),
+        '</actions>',
+      ].join('\n'),
+      provider: 'mock',
+    })
+
+    expect(response.actions).toBeUndefined()
+    expect(response.meta?.actionParseFailed).toBe(true)
+    expect(warn).toHaveBeenCalledWith(
+      '[responseNormalizer] add_session dropped',
+      expect.objectContaining({ reason: 'missing-core-fields' }),
+    )
+
+    warn.mockRestore()
+  })
+
   it('keeps a valid practice_match action payload', () => {
     const response = normalizeResponse({
       text: [

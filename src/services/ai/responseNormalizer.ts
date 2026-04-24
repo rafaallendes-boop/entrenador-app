@@ -26,6 +26,14 @@ const VALID_RUNNING_TYPES = new Set<RunningType>(['z2', 'tempo', 'intervals', 'l
 const VALID_SQUASH_SESSION_MODES = new Set<SquashSessionMode>(['drill_session', 'practice_match', 'competition_match'])
 const VALID_SQUASH_TRAINING_FOCUS = new Set(['technical', 'tactical', 'physical', 'conditioned_games'])
 const VALID_MOBILITY_CONTEXTS = new Set(['post_run', 'post_cycling', 'post_squash', 'post_strength', 'pre_training_activation', 'recovery', 'full_body', 'sport_specific'])
+const DEFAULT_SESSION_DURATION_MIN: Partial<Record<CoachSessionProposal['sessionType'], number>> = {
+  squash: 60,
+  running: 45,
+  strength: 60,
+  mobility: 30,
+  cycling: 60,
+  recovery: 30,
+}
 
 export function normalizeResponse(raw: AIRawResponse): CoachNormalizedResponse {
   const requestClass = raw.requestClass ?? 'chat_general'
@@ -237,23 +245,60 @@ function validateAction(obj: unknown): {
         warnDroppedAddSession('missing-core-fields', record)
         return { action: null }
       }
-      if (typeof record.durationMin !== 'number' || record.durationMin < 5 || !isTimeBlock(record.timeBlock)) {
+
+      const repairs: string[] = []
+      const title = record.title.trim()
+      const defaultDurationMin = DEFAULT_SESSION_DURATION_MIN[record.sessionType]
+      const durationMin = typeof record.durationMin === 'number' && record.durationMin >= 5
+        ? record.durationMin
+        : record.durationMin == null && defaultDurationMin != null
+          ? defaultDurationMin
+          : undefined
+      if (durationMin == null) {
         warnDroppedAddSession('invalid-duration-or-time-block', record)
         return { action: null }
       }
-      if (record.sessionType === 'squash' && !isSquashDetails(record.squashDetails)) {
-        warnDroppedAddSession('missing-squash-details', record)
+      if (record.durationMin == null) repairs.push('durationMin')
+
+      const timeBlock = isTimeBlock(record.timeBlock) ? record.timeBlock : record.timeBlock == null ? 'PM' : undefined
+      if (timeBlock == null) {
+        warnDroppedAddSession('invalid-duration-or-time-block', record)
         return { action: null }
       }
+      if (record.timeBlock == null) repairs.push('timeBlock')
+
+      const objective = typeof record.objective === 'string' && record.objective.trim()
+        ? record.objective.trim()
+        : base.reason || title
+      if (typeof record.objective !== 'string' || !record.objective.trim()) repairs.push('objective')
+
+      let squashDetails: SquashDetails | undefined
+      if (record.sessionType === 'squash' && !isSquashDetails(record.squashDetails)) {
+        if (record.squashDetails != null) {
+          warnDroppedAddSession('missing-squash-details', record)
+          return { action: null }
+        }
+        repairs.push('squashDetails')
+        squashDetails = {
+          trainingFocus: 'technical',
+          sessionMode: 'drill_session',
+          drills: [{ name: title, durationMin }],
+        }
+      } else if (isSquashDetails(record.squashDetails)) {
+        squashDetails = normalizeSquashDetails(record.squashDetails)
+      }
+      if (repairs.length > 0) warnRepairedAddSession(repairs, record)
 
       const action: CoachAction = {
         ...base,
         targetDate: record.targetDate,
         sessionType: record.sessionType,
-        title: record.title.trim(),
-        durationMin: record.durationMin,
-        timeBlock: record.timeBlock,
+        title,
+        durationMin,
+        timeBlock,
+        objective,
       }
+      if (squashDetails) action.squashDetails = squashDetails
       return { action: assignOptionalSessionFields(action, record) }
     }
 
@@ -573,6 +618,18 @@ function warnDroppedAddSession(reason: string, record: Record<string, unknown>):
   if (typeof console === 'undefined' || typeof console.warn !== 'function') return
   console.warn('[responseNormalizer] add_session dropped', {
     reason,
+    sessionType: record.sessionType,
+    targetDate: record.targetDate,
+    timeBlock: record.timeBlock,
+    durationMin: record.durationMin,
+    hasSquashDetails: record.squashDetails != null,
+  })
+}
+
+function warnRepairedAddSession(repairs: string[], record: Record<string, unknown>): void {
+  if (typeof console === 'undefined' || typeof console.warn !== 'function') return
+  console.warn('[responseNormalizer] add_session repaired', {
+    repairs,
     sessionType: record.sessionType,
     targetDate: record.targetDate,
     timeBlock: record.timeBlock,

@@ -1,6 +1,6 @@
 # Entrenador App - Review and Roadmap
 
-Actualizado: 2026-04-23
+Actualizado: 2026-04-24
 
 ## Resumen ejecutivo
 
@@ -13,6 +13,7 @@ El roadmap anterior estaba demasiado largo y ya mezclaba trabajo cerrado con tra
 - macroplan, analytics de carga, nutrición contextual y weekly loop visibles
 - plan builder separado del chat
 - `week_creator` ya operativo y enrutable desde chat
+- `responseNormalizer` ya recupera `add_session` incompletos cuando faltan campos reparables
 
 La lectura honesta hoy es esta:
 
@@ -46,10 +47,9 @@ Esto ya existe en código y no debería volver como bloque grande:
 
 1. Blindar `syncService` y recuperar build verde.
    Estado actual:
-   - `tsc -b` sigue fallando por errores en `src/services/__tests__/syncService.test.ts` sobre `auth.supabase` posiblemente nulo.
-   - sync sigue siendo el riesgo principal para beta multi-dispositivo.
+   - `build` volvió a estar en verde.
+   - sync sigue siendo el riesgo principal para beta multi-dispositivo, pero ya no por un rojo inmediato de compilación.
    Falta:
-   - corregir el contrato nulo en tests y helpers de auth/sync
    - revalidar convergencia entre desktop/móvil y colas retenidas
    - documentar mejor deletes, tombstones y recovery
 
@@ -82,9 +82,10 @@ Esto ya existe en código y no debería volver como bloque grande:
    - `week_creator`
    - redirect a plan builder
    - guardrails de `create_week`
+   - hardening de `add_session` en `responseNormalizer` para no perder propuestas reparables
    Falta:
    - QA manual de usuario nuevo sin perfil completo
-   - QA de chat_action para asegurar que no cree semanas
+   - QA de chat_action para asegurar que no cree semanas y que sí persista `add_session` reparados
    - QA del redirect a plan builder para requests de plan largo
 
 ### Medio
@@ -143,6 +144,7 @@ Estado: fuerte
 - propuestas ejecutables y persistidas
 - chat, week creator y plan builder ya están desacoplados
 - macroplan y semana ya conversan razonablemente bien
+- el normalizador ya es más tolerante a respuestas parciales del modelo en `add_session`
 
 Pendiente:
 
@@ -158,7 +160,7 @@ Estado: sensible
 
 Pendiente:
 
-- corregir errores actuales de build/test
+- endurecer pruebas y recovery de sync más allá del build verde actual
 - validar convergencia real y recovery duro
 
 ### Nutrición contextual
@@ -180,9 +182,9 @@ Estado: pendiente
 
 ## Próximos pasos recomendados
 
-1. Dejar `tsc -b` y `build` en verde atacando primero `syncService.test.ts`.
-2. Hacer una ronda corta de QA manual de sync + week creator + redirect a plan builder.
-3. Agregar instrumentación mínima para proposals, alertas y aceptación.
+1. Hacer una ronda corta de QA manual de `chat_action` + `week_creator` + redirect a plan builder, incluyendo casos de `add_session` reparado.
+2. Agregar instrumentación mínima para proposals, alertas y aceptación.
+3. Validar sync en escenarios de conflicto y recovery multi-dispositivo.
 4. Recién después abrir trabajo comercial de billing/paywall.
 
 ## Nota de revisión
