@@ -234,12 +234,15 @@ function validateAction(obj: unknown): {
 
     case 'add_session': {
       if (!isValidDate(record.targetDate) || !isSessionType(record.sessionType) || typeof record.title !== 'string' || !record.title.trim()) {
+        warnDroppedAddSession('missing-core-fields', record)
         return { action: null }
       }
       if (typeof record.durationMin !== 'number' || record.durationMin < 5 || !isTimeBlock(record.timeBlock)) {
+        warnDroppedAddSession('invalid-duration-or-time-block', record)
         return { action: null }
       }
       if (record.sessionType === 'squash' && !isSquashDetails(record.squashDetails)) {
+        warnDroppedAddSession('missing-squash-details', record)
         return { action: null }
       }
 
@@ -564,6 +567,18 @@ function extractJsonArray(text: string): string | null {
   const end = text.lastIndexOf(']')
   if (start === -1 || end === -1 || end < start) return null
   return text.slice(start, end + 1)
+}
+
+function warnDroppedAddSession(reason: string, record: Record<string, unknown>): void {
+  if (typeof console === 'undefined' || typeof console.warn !== 'function') return
+  console.warn('[responseNormalizer] add_session dropped', {
+    reason,
+    sessionType: record.sessionType,
+    targetDate: record.targetDate,
+    timeBlock: record.timeBlock,
+    durationMin: record.durationMin,
+    hasSquashDetails: record.squashDetails != null,
+  })
 }
 
 function extractInlineActionsJson(message: string): { actionsText: string; messageWithoutActions: string } | null {

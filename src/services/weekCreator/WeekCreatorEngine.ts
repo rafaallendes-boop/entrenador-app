@@ -35,7 +35,8 @@ export const WeekCreatorEngine = {
       error?: string
     } | null = null
 
-    for (let attempt = 1; attempt <= 3; attempt++) {
+    const MAX_ATTEMPTS = 2
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
       const traceId = buildAITraceId('week_creator')
       useAIDebugStore.getState().startRequest({
         traceId,
@@ -50,7 +51,7 @@ export const WeekCreatorEngine = {
           targetWeekStart: options.targetWeekStart,
           config,
           retryInstruction: buildWeekRetryInstruction(lastFailure?.error, options.targetWeekStart, config.sessionsPerWeek, attempt),
-          strictFormatting: attempt >= 3,
+          strictFormatting: attempt >= 2,
         })
 
         const raw = await provider.call({
@@ -89,6 +90,13 @@ export const WeekCreatorEngine = {
             fallbackUsed: normalized.fallbackUsed,
             errorCode: 'validation_error',
           })
+          if (typeof console !== 'undefined' && typeof console.warn === 'function') {
+            console.warn('[WeekCreatorEngine] validation failed', {
+              attempt,
+              traceId,
+              error: validation.error,
+            })
+          }
           continue
         }
 
@@ -126,21 +134,19 @@ export const WeekCreatorEngine = {
       }
     }
 
-    return {
-      message: 'No pude cerrar una semana válida todavía. Revisa tu perfil y vuelve a intentarlo.',
-      provider: lastFailure?.provider ?? provider.name,
-      model: lastFailure?.model,
-      timestamp: Date.now(),
-      durationMs: lastFailure?.durationMs,
-      traceId: lastFailure?.traceId ?? buildAITraceId('week_creator'),
-      requestClass: 'week_creator',
-      retryUsed: lastFailure?.retryUsed,
-      fallbackUsed: lastFailure?.fallbackUsed,
-      meta: {
-        hadActionsMarkup: false,
-        actionParseFailed: false,
-        likelyTruncated: false,
-      },
+    // After exhausting retries, surface a real error to the chat store catch
+    // block so the UI shows it instead of staying in an infinite loading state.
+    const failureMessage = lastFailure?.error
+      ? `No pude generar la semana después de ${MAX_ATTEMPTS} intentos: ${lastFailure.error}`
+      : `No pude generar una semana válida después de ${MAX_ATTEMPTS} intentos. Revisa tu perfil y vuelve a intentarlo.`
+    const failureTraceId = lastFailure?.traceId ?? buildAITraceId('week_creator')
+    if (typeof console !== 'undefined' && typeof console.warn === 'function') {
+      console.warn('[WeekCreatorEngine] all attempts failed', {
+        traceId: failureTraceId,
+        provider: lastFailure?.provider,
+        error: lastFailure?.error,
+      })
     }
+    throw new Error(`${failureMessage} (trace ${failureTraceId})`)
   },
 }

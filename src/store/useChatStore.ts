@@ -80,6 +80,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
       set({ responsePhase: 'processing' })
     }, requestClass === 'chat_general' ? 1000 : 1500)
 
+    // Soft UI watchdog: if a request hangs beyond this budget, free the loading
+    // state so the user is not stuck. Does not abort the underlying fetch.
+    const WATCHDOG_MS = requestClass === 'week_creator' ? 75_000 : 60_000
+    const watchdogPromise = new Promise<never>((_, reject) => {
+      window.setTimeout(() => {
+        reject(new Error(`La solicitud tardó demasiado (más de ${Math.round(WATCHDOG_MS / 1000)}s). Intenta de nuevo.`))
+      }, WATCHDOG_MS)
+    })
+
     try {
       const handleChunk = (chunk: string) => {
         if (get().currentSessionId !== sessionId) return
@@ -87,26 +96,28 @@ export const useChatStore = create<ChatState>((set, get) => ({
         set(state => ({ streamingText: state.streamingText + chunk, responsePhase: 'responding' }))
       }
 
-      const response = route.kind === 'week_creator'
-        ? await WeekCreatorEngine.sendWeekCreate(content, enrichedContext, {
+      const enginePromise: Promise<CoachNormalizedResponse> = route.kind === 'week_creator'
+        ? WeekCreatorEngine.sendWeekCreate(content, enrichedContext, {
             surface: 'chat',
             targetWeekStart: route.targetWeekStart ?? enrichedContext.currentWeekSummary?.weekStartDate ?? '',
           })
         : requestClass === 'chat_general'
-        ? await CoachEngine.sendChat(content, enrichedContext, {
+        ? CoachEngine.sendChat(content, enrichedContext, {
             surface: 'chat',
             onChunk: handleChunk,
           })
         : requestClass === 'chat_action'
-          ? await CoachEngine.sendAction(content, enrichedContext, {
+          ? CoachEngine.sendAction(content, enrichedContext, {
               surface: 'chat',
               onChunk: handleChunk,
             })
-          : await CoachEngine.send(content, enrichedContext, {
+          : CoachEngine.send(content, enrichedContext, {
               requestClass,
               surface: 'chat',
               onChunk: handleChunk,
             })
+
+      const response = await Promise.race([enginePromise, watchdogPromise])
       if (get().currentSessionId !== sessionId) {
         return { route: route.kind }
       }

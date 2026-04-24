@@ -58,6 +58,13 @@ export function resolveChatRoute(
     return { kind: 'chat_action' }
   }
 
+  // Single-session creation requests: a weekday + a sport, with no week-level target,
+  // should always reach the action engine even when the verb is colloquial
+  // ("ponme un running el viernes", "haceme squash mañana", "quiero una sesión de fuerza el lunes").
+  if (isSpecificDaySessionRequest) {
+    return { kind: 'chat_action' }
+  }
+
   const isWeekPlanningRequest =
     WEEK_PLANNING_VERB_PATTERN.test(normalized)
     && (

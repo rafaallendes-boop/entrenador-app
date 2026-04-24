@@ -156,7 +156,10 @@ export default function ChatCoach() {
   const handleSend = useCallback(async (message: string) => {
     const result = await sendMessage(message, buildContext(message))
     if (result.route === 'plan_builder_redirect') {
-      navigate(ROUTES.PLAN_BUILDER, {
+      // Navigate straight to the V2 Plan Builder. Going through the legacy
+      // /plan-builder route forwards location.state through <Navigate replace>,
+      // and that lingering state can re-trigger the V2 mount-time generation effect.
+      navigate(ROUTES.PLAN_BUILDER_V2, {
         state: {
           fromChatRedirect: true,
           redirectedPrompt: message,
