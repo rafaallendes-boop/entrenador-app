@@ -64,6 +64,8 @@ export interface CreateWeekNormalizationDiagnostic {
   rawSessions: number
   validSessions: number
   droppedSessions: number
+  repairedSessions?: Array<{ index: number; repairs: string[] }>
+  droppedSessionReasons?: Array<{ index: number; reason: string }>
 }
 
 // ─── Normalized coach response (what the app consumes) ────────────────────────

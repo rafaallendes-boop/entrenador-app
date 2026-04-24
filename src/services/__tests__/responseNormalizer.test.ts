@@ -248,9 +248,129 @@ describe('responseNormalizer', () => {
         rawSessions: 2,
         validSessions: 1,
         droppedSessions: 1,
+        repairedSessions: [{ index: 0, repairs: ['objective'] }],
+        droppedSessionReasons: [{ index: 1, reason: 'invalid-date' }],
       },
     ])
     expect(response.meta?.likelyTruncated).toBe(true)
+  })
+
+  it('repairs squash create_week session proposals without squashDetails', () => {
+    const response = normalizeResponse({
+      text: [
+        'Semana propuesta.',
+        '<actions>',
+        JSON.stringify([
+          {
+            type: 'create_week',
+            reason: 'Semana tecnica',
+            targetDate: '2026-04-06',
+            sessions: [
+              {
+                date: '2026-04-06',
+                timeBlock: 'PM',
+                sessionType: 'squash',
+                title: 'Squash tecnico',
+                durationMin: 60,
+              },
+            ],
+          },
+        ]),
+        '</actions>',
+      ].join('\n'),
+      provider: 'mock',
+    })
+
+    expect(response.actions?.[0].type).toBe('create_week')
+    expect(response.actions?.[0].sessions?.[0]).toMatchObject({
+      sessionType: 'squash',
+      objective: 'Semana tecnica',
+      squashDetails: {
+        trainingFocus: 'technical',
+        sessionMode: 'drill_session',
+        drills: [{ name: 'Squash tecnico', durationMin: 60 }],
+      },
+    })
+    expect(response.meta?.createWeekDiagnostics?.[0].repairedSessions).toEqual([
+      { index: 0, repairs: ['objective', 'squashDetails'] },
+    ])
+  })
+
+  it('repairs create_week session proposals without durationMin or timeBlock', () => {
+    const response = normalizeResponse({
+      text: [
+        'Semana propuesta.',
+        '<actions>',
+        JSON.stringify([
+          {
+            type: 'create_week',
+            reason: 'Semana base',
+            targetDate: '2026-04-06',
+            sessions: [
+              {
+                date: '2026-04-07',
+                sessionType: 'running',
+                title: 'Rodaje Z2',
+              },
+            ],
+          },
+        ]),
+        '</actions>',
+      ].join('\n'),
+      provider: 'mock',
+    })
+
+    expect(response.actions?.[0].sessions?.[0]).toMatchObject({
+      date: '2026-04-07',
+      sessionType: 'running',
+      title: 'Rodaje Z2',
+      durationMin: 45,
+      timeBlock: 'PM',
+      objective: 'Semana base',
+    })
+    expect(response.meta?.createWeekDiagnostics?.[0].repairedSessions).toEqual([
+      { index: 0, repairs: ['durationMin', 'timeBlock', 'objective'] },
+    ])
+  })
+
+  it('drops too-incomplete create_week session proposals with a clear reason', () => {
+    const response = normalizeResponse({
+      text: [
+        'Semana propuesta.',
+        '<actions>',
+        JSON.stringify([
+          {
+            type: 'create_week',
+            reason: 'Semana parcial',
+            targetDate: '2026-04-06',
+            sessions: [
+              {
+                date: '2026-04-07',
+                timeBlock: 'PM',
+                sessionType: 'running',
+                title: 'Rodaje Z2',
+                durationMin: 45,
+              },
+              {
+                date: '2026-04-08',
+                timeBlock: 'PM',
+                durationMin: 45,
+              },
+            ],
+          },
+        ]),
+        '</actions>',
+      ].join('\n'),
+      provider: 'mock',
+    })
+
+    expect(response.actions?.[0].sessions).toHaveLength(1)
+    expect(response.meta?.createWeekDiagnostics?.[0]).toMatchObject({
+      rawSessions: 2,
+      validSessions: 1,
+      droppedSessions: 1,
+      droppedSessionReasons: [{ index: 1, reason: 'missing-sessionType' }],
+    })
   })
 
   it('rejects squashDetails when drills items do not have a valid shape', () => {

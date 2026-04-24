@@ -181,4 +181,101 @@ describe('WeekCreatorEngine', () => {
     expect(response.message).not.toContain('deportes permitidos')
     expect(response.requestClass).toBe('week_creator')
   })
+
+  it('accepts a safe partial week when one incomplete session was dropped during normalization', async () => {
+    mockProviderCall.mockImplementation(async (request: { requestClass: string; traceId: string }) => ({
+      text: '<actions>' + JSON.stringify([
+        {
+          type: 'create_week',
+          reason: 'Semana build con descarte seguro',
+          targetDate: '2026-05-04',
+          sessions: [
+            {
+              date: '2026-05-04',
+              timeBlock: 'AM',
+              sessionType: 'squash',
+              title: 'Squash tecnico base',
+              durationMin: 60,
+            },
+            {
+              date: '2026-05-05',
+              timeBlock: 'PM',
+              sessionType: 'strength',
+              title: 'Fuerza general',
+              durationMin: 45,
+            },
+            {
+              date: '2026-05-06',
+              sessionType: 'running',
+              title: 'Rodaje Z2',
+            },
+            {
+              date: '2026-05-07',
+              timeBlock: 'PM',
+              sessionType: 'squash',
+              title: 'Control y precision',
+              durationMin: 55,
+            },
+            {
+              date: '2026-05-08',
+              timeBlock: 'AM',
+              sessionType: 'running',
+              durationMin: 35,
+            },
+          ],
+        },
+      ]) + '</actions>',
+      provider: 'mock',
+      model: 'mock-week-creator',
+      traceId: request.traceId,
+      requestClass: request.requestClass,
+    }))
+
+    const context: ChatContext = {
+      athleteProfile: makeProfile({
+        planWizardConfig: {
+          goalEventId: 'goal-1',
+          trainingDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
+          sessionsPerWeek: 5,
+          sessionDurationMins: 60,
+          allowDoubleSession: false,
+          complementarySports: ['running', 'strength'],
+          currentFitnessLevel: 'normal',
+          currentFatigue: 'normal',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      }),
+      recentSessions: [],
+      plannedSessions: [],
+      historicalSessions: [],
+    }
+
+    const response = await WeekCreatorEngine.sendWeekCreate(
+      'Créame la semana',
+      context,
+      { surface: 'chat', targetWeekStart: '2026-05-04' },
+    )
+
+    expect(mockProviderCall).toHaveBeenCalledTimes(1)
+    expect(response.actions?.[0]).toMatchObject({
+      type: 'create_week',
+      targetDate: '2026-05-04',
+    })
+    expect(response.actions?.[0].sessions).toHaveLength(4)
+    expect(response.actions?.[0].sessions?.[0].squashDetails?.drills).toHaveLength(1)
+    expect(response.actions?.[0].sessions?.[2]).toMatchObject({
+      sessionType: 'running',
+      durationMin: 45,
+      timeBlock: 'PM',
+    })
+    expect(response.message).toContain('Nota: Semana parcial: 4 de 5 sesiones válidas')
+    expect(response.meta?.likelyTruncated).toBe(false)
+    expect(response.meta?.createWeekDiagnostics?.[0]).toMatchObject({
+      rawSessions: 5,
+      validSessions: 4,
+      droppedSessions: 1,
+      droppedSessionReasons: [{ index: 4, reason: 'missing-title' }],
+    })
+  })
 })

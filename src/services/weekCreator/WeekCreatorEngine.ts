@@ -112,13 +112,20 @@ export const WeekCreatorEngine = {
         if (!action) {
           throw new Error('WeekCreator devolvió una validación exitosa sin acción create_week.')
         }
+        const message = normalized.message.trim() || summarizeWeekCreatorAction(action)
+        const messageWithWarning = validation.warning
+          ? `${message}\n\nNota: ${validation.warning}`
+          : message
 
         return {
           ...normalized,
           actions: [action],
-          message: normalized.message.trim() || summarizeWeekCreatorAction(action),
+          message: messageWithWarning,
           requestClass: 'week_creator',
           retryUsed: attempt > 1 || normalized.retryUsed,
+          meta: validation.warning && normalized.meta
+            ? { ...normalized.meta, likelyTruncated: false }
+            : normalized.meta,
         }
       } catch (error) {
         lastFailure = {

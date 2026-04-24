@@ -35,6 +35,96 @@ const DEFAULT_SESSION_DURATION_MIN: Partial<Record<CoachSessionProposal['session
   recovery: 30,
 }
 
+export type SessionProposalDraftDateField = 'date' | 'targetDate'
+
+export type NormalizeSessionProposalDraftResult =
+  | { session: CoachSessionProposal; repairs: string[] }
+  | { droppedReason: string }
+
+export function normalizeSessionProposalDraft(
+  value: unknown,
+  options: { dateField?: SessionProposalDraftDateField; reason?: string } = {},
+): NormalizeSessionProposalDraftResult {
+  if (!value || typeof value !== 'object') return { droppedReason: 'not-object' }
+
+  const dateField = options.dateField ?? 'date'
+  const record = value as Record<string, unknown>
+  const rawDate = record[dateField]
+  if (!isValidDate(rawDate)) {
+    return { droppedReason: typeof rawDate === 'string' ? `invalid-${dateField}` : `missing-${dateField}` }
+  }
+  if (!isSessionType(record.sessionType)) {
+    return { droppedReason: record.sessionType == null ? 'missing-sessionType' : 'invalid-sessionType' }
+  }
+  if (typeof record.title !== 'string' || !record.title.trim()) {
+    return { droppedReason: 'missing-title' }
+  }
+
+  const repairs: string[] = []
+  const title = record.title.trim()
+  const defaultDurationMin = DEFAULT_SESSION_DURATION_MIN[record.sessionType]
+  const durationMin = typeof record.durationMin === 'number' && record.durationMin >= 5
+    ? record.durationMin
+    : record.durationMin == null && defaultDurationMin != null
+      ? defaultDurationMin
+      : undefined
+  if (durationMin == null) return { droppedReason: 'invalid-durationMin' }
+  if (record.durationMin == null) repairs.push('durationMin')
+
+  const timeBlock = isTimeBlock(record.timeBlock) ? record.timeBlock : record.timeBlock == null ? 'PM' : undefined
+  if (timeBlock == null) return { droppedReason: 'invalid-timeBlock' }
+  if (record.timeBlock == null) repairs.push('timeBlock')
+
+  const objective = typeof record.objective === 'string' && record.objective.trim()
+    ? record.objective.trim()
+    : options.reason?.trim() || title
+  if (typeof record.objective !== 'string' || !record.objective.trim()) repairs.push('objective')
+
+  const session: CoachSessionProposal = {
+    date: rawDate,
+    timeBlock,
+    sessionType: record.sessionType,
+    title,
+    durationMin,
+    objective,
+  }
+
+  if (isRpe(record.rpe)) session.rpe = record.rpe
+  if (isSquashSubtype(record.subtype)) session.subtype = record.subtype
+  if (isRunningType(record.runningType)) session.runningType = record.runningType
+  if (typeof record.targetPaceMin === 'string') session.targetPaceMin = record.targetPaceMin
+  if (typeof record.targetPaceMax === 'string') session.targetPaceMax = record.targetPaceMax
+  if (typeof record.targetHrMin === 'number') session.targetHrMin = record.targetHrMin
+  if (typeof record.targetHrMax === 'number') session.targetHrMax = record.targetHrMax
+  if (isRunningIntervalStructure(record.intervalStructure)) session.intervalStructure = record.intervalStructure
+  if (Array.isArray(record.exercises)) {
+    session.exercises = record.exercises
+      .map(validateExerciseProposal)
+      .filter((item): item is CoachExerciseProposal => item != null)
+  }
+  if (isGeneratedProtocol(record.warmup)) session.warmup = record.warmup
+  if (isGeneratedProtocol(record.cooldown)) session.cooldown = record.cooldown
+  if (isCyclingDetails(record.cyclingDetails)) session.cyclingDetails = record.cyclingDetails
+  if (isMobilityDetails(record.mobilityDetails)) session.mobilityDetails = record.mobilityDetails
+
+  if (record.sessionType === 'squash') {
+    if (isSquashDetails(record.squashDetails)) {
+      session.squashDetails = normalizeSquashDetails(record.squashDetails)
+    } else if (record.squashDetails == null) {
+      repairs.push('squashDetails')
+      session.squashDetails = {
+        trainingFocus: 'technical',
+        sessionMode: 'drill_session',
+        drills: [{ name: title, durationMin }],
+      }
+    } else {
+      return { droppedReason: 'invalid-squashDetails' }
+    }
+  }
+
+  return { session, repairs }
+}
+
 export function normalizeResponse(raw: AIRawResponse): CoachNormalizedResponse {
   const requestClass = raw.requestClass ?? 'chat_general'
   let message = raw.text.replace(
@@ -241,78 +331,42 @@ function validateAction(obj: unknown): {
       }
 
     case 'add_session': {
-      if (!isValidDate(record.targetDate) || !isSessionType(record.sessionType) || typeof record.title !== 'string' || !record.title.trim()) {
-        warnDroppedAddSession('missing-core-fields', record)
+      const result = normalizeSessionProposalDraft(record, { dateField: 'targetDate', reason: base.reason })
+      if ('droppedReason' in result) {
+        warnDroppedAddSession(mapAddSessionDropReason(result.droppedReason), record)
         return { action: null }
       }
-
-      const repairs: string[] = []
-      const title = record.title.trim()
-      const defaultDurationMin = DEFAULT_SESSION_DURATION_MIN[record.sessionType]
-      const durationMin = typeof record.durationMin === 'number' && record.durationMin >= 5
-        ? record.durationMin
-        : record.durationMin == null && defaultDurationMin != null
-          ? defaultDurationMin
-          : undefined
-      if (durationMin == null) {
-        warnDroppedAddSession('invalid-duration-or-time-block', record)
-        return { action: null }
-      }
-      if (record.durationMin == null) repairs.push('durationMin')
-
-      const timeBlock = isTimeBlock(record.timeBlock) ? record.timeBlock : record.timeBlock == null ? 'PM' : undefined
-      if (timeBlock == null) {
-        warnDroppedAddSession('invalid-duration-or-time-block', record)
-        return { action: null }
-      }
-      if (record.timeBlock == null) repairs.push('timeBlock')
-
-      const objective = typeof record.objective === 'string' && record.objective.trim()
-        ? record.objective.trim()
-        : base.reason || title
-      if (typeof record.objective !== 'string' || !record.objective.trim()) repairs.push('objective')
-
-      let squashDetails: SquashDetails | undefined
-      if (record.sessionType === 'squash' && !isSquashDetails(record.squashDetails)) {
-        if (record.squashDetails != null) {
-          warnDroppedAddSession('missing-squash-details', record)
-          return { action: null }
-        }
-        repairs.push('squashDetails')
-        squashDetails = {
-          trainingFocus: 'technical',
-          sessionMode: 'drill_session',
-          drills: [{ name: title, durationMin }],
-        }
-      } else if (isSquashDetails(record.squashDetails)) {
-        squashDetails = normalizeSquashDetails(record.squashDetails)
-      }
-      if (repairs.length > 0) warnRepairedAddSession(repairs, record)
+      if (result.repairs.length > 0) warnRepairedAddSession(result.repairs, record)
 
       const action: CoachAction = {
         ...base,
-        targetDate: record.targetDate,
-        sessionType: record.sessionType,
-        title,
-        durationMin,
-        timeBlock,
-        objective,
+        ...sessionProposalToActionFields(result.session),
       }
-      if (squashDetails) action.squashDetails = squashDetails
-      return { action: assignOptionalSessionFields(action, record) }
+      return { action }
     }
 
     case 'create_week': {
       if (!Array.isArray(record.sessions) || record.sessions.length === 0) return { action: null }
       const rawSessions = record.sessions.length
-      const sessions = record.sessions
-        .map(validateSessionProposal)
-        .filter((item): item is CoachSessionProposal => item != null)
+      const repairedSessions: Array<{ index: number; repairs: string[] }> = []
+      const droppedSessionReasons: Array<{ index: number; reason: string }> = []
+      const sessions = record.sessions.reduce<CoachSessionProposal[]>((acc, item, index) => {
+        const result = validateSessionProposal(item, base.reason)
+        if ('session' in result) {
+          acc.push(result.session)
+          if (result.repairs.length > 0) repairedSessions.push({ index, repairs: result.repairs })
+        } else {
+          droppedSessionReasons.push({ index, reason: result.droppedReason })
+        }
+        return acc
+      }, [])
       const createWeekDiagnostic: CreateWeekNormalizationDiagnostic = {
         targetDate: isValidDate(record.targetDate) ? record.targetDate : undefined,
         rawSessions,
         validSessions: sessions.length,
         droppedSessions: rawSessions - sessions.length,
+        repairedSessions: repairedSessions.length > 0 ? repairedSessions : undefined,
+        droppedSessionReasons: droppedSessionReasons.length > 0 ? droppedSessionReasons : undefined,
       }
       if (sessions.length === 0) return { action: null, createWeekDiagnostic }
 
@@ -363,67 +417,33 @@ function validateAction(obj: unknown): {
   }
 }
 
-function assignOptionalSessionFields(action: CoachAction, record: Record<string, unknown>): CoachAction | null {
-  if (isRpe(record.rpe)) action.rpe = record.rpe
-  if (typeof record.objective === 'string' && record.objective.trim()) action.objective = record.objective.trim()
-  if (isSquashSubtype(record.subtype)) action.subtype = record.subtype
-  if (isRunningType(record.runningType)) action.runningType = record.runningType
-  if (typeof record.targetPaceMin === 'string') action.targetPaceMin = record.targetPaceMin
-  if (typeof record.targetPaceMax === 'string') action.targetPaceMax = record.targetPaceMax
-  if (typeof record.targetHrMin === 'number') action.targetHrMin = record.targetHrMin
-  if (typeof record.targetHrMax === 'number') action.targetHrMax = record.targetHrMax
-  if (isRunningIntervalStructure(record.intervalStructure)) action.intervalStructure = record.intervalStructure
-  if (isGeneratedProtocol(record.warmup)) action.warmup = record.warmup
-  if (isGeneratedProtocol(record.cooldown)) action.cooldown = record.cooldown
-  if (Array.isArray(record.exercises)) {
-    action.exercises = record.exercises
-      .map(validateExerciseProposal)
-      .filter((item): item is CoachExerciseProposal => item != null)
+function sessionProposalToActionFields(session: CoachSessionProposal): Partial<CoachAction> {
+  return {
+    targetDate: session.date,
+    sessionType: session.sessionType,
+    title: session.title,
+    durationMin: session.durationMin,
+    timeBlock: session.timeBlock,
+    objective: session.objective,
+    rpe: session.rpe,
+    subtype: session.subtype,
+    runningType: session.runningType,
+    targetPaceMin: session.targetPaceMin,
+    targetPaceMax: session.targetPaceMax,
+    targetHrMin: session.targetHrMin,
+    targetHrMax: session.targetHrMax,
+    intervalStructure: session.intervalStructure,
+    cyclingDetails: session.cyclingDetails,
+    exercises: session.exercises,
+    mobilityDetails: session.mobilityDetails,
+    squashDetails: session.squashDetails,
+    warmup: session.warmup,
+    cooldown: session.cooldown,
   }
-  if (isCyclingDetails(record.cyclingDetails)) action.cyclingDetails = record.cyclingDetails
-  if (isMobilityDetails(record.mobilityDetails)) action.mobilityDetails = record.mobilityDetails
-  if (isSquashDetails(record.squashDetails)) action.squashDetails = normalizeSquashDetails(record.squashDetails)
-  return action
 }
 
-function validateSessionProposal(value: unknown): CoachSessionProposal | null {
-  if (!value || typeof value !== 'object') return null
-  const record = value as Record<string, unknown>
-  if (!isValidDate(record.date) || !isTimeBlock(record.timeBlock) || !isSessionType(record.sessionType) || typeof record.title !== 'string' || !record.title.trim()) {
-    return null
-  }
-  if (typeof record.durationMin !== 'number' || record.durationMin < 5) return null
-
-  const proposal: CoachSessionProposal = {
-    date: record.date,
-    timeBlock: record.timeBlock,
-    sessionType: record.sessionType,
-    title: record.title.trim(),
-    durationMin: record.durationMin,
-  }
-
-  if (isRpe(record.rpe)) proposal.rpe = record.rpe
-  if (typeof record.objective === 'string' && record.objective.trim()) proposal.objective = record.objective.trim()
-  if (isSquashSubtype(record.subtype)) proposal.subtype = record.subtype
-  if (isRunningType(record.runningType)) proposal.runningType = record.runningType
-  if (typeof record.targetPaceMin === 'string') proposal.targetPaceMin = record.targetPaceMin
-  if (typeof record.targetPaceMax === 'string') proposal.targetPaceMax = record.targetPaceMax
-  if (typeof record.targetHrMin === 'number') proposal.targetHrMin = record.targetHrMin
-  if (typeof record.targetHrMax === 'number') proposal.targetHrMax = record.targetHrMax
-  if (isRunningIntervalStructure(record.intervalStructure)) proposal.intervalStructure = record.intervalStructure
-  if (record.sessionType === 'squash' && !isSquashDetails(record.squashDetails)) return null
-  if (Array.isArray(record.exercises)) {
-    proposal.exercises = record.exercises
-      .map(validateExerciseProposal)
-      .filter((item): item is CoachExerciseProposal => item != null)
-  }
-  if (isGeneratedProtocol(record.warmup)) proposal.warmup = record.warmup
-  if (isGeneratedProtocol(record.cooldown)) proposal.cooldown = record.cooldown
-  if (isCyclingDetails(record.cyclingDetails)) proposal.cyclingDetails = record.cyclingDetails
-  if (isMobilityDetails(record.mobilityDetails)) proposal.mobilityDetails = record.mobilityDetails
-  if (isSquashDetails(record.squashDetails)) proposal.squashDetails = normalizeSquashDetails(record.squashDetails)
-
-  return proposal
+function validateSessionProposal(value: unknown, reason?: string): NormalizeSessionProposalDraftResult {
+  return normalizeSessionProposalDraft(value, { dateField: 'date', reason })
 }
 
 function validateExerciseProposal(value: unknown): CoachExerciseProposal | null {
@@ -612,6 +632,26 @@ function extractJsonArray(text: string): string | null {
   const end = text.lastIndexOf(']')
   if (start === -1 || end === -1 || end < start) return null
   return text.slice(start, end + 1)
+}
+
+function mapAddSessionDropReason(reason: string): string {
+  if (
+    reason === 'missing-targetDate' ||
+    reason === 'invalid-targetDate' ||
+    reason === 'missing-sessionType' ||
+    reason === 'invalid-sessionType' ||
+    reason === 'missing-title' ||
+    reason === 'not-object'
+  ) {
+    return 'missing-core-fields'
+  }
+  if (reason === 'invalid-durationMin' || reason === 'invalid-timeBlock') {
+    return 'invalid-duration-or-time-block'
+  }
+  if (reason === 'invalid-squashDetails') {
+    return 'missing-squash-details'
+  }
+  return reason
 }
 
 function warnDroppedAddSession(reason: string, record: Record<string, unknown>): void {
