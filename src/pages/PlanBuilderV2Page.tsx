@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useRef, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import PlanBuilderLaunchDeck from '../components/planBuilder/PlanBuilderLaunchDeck'
 import Card from '../components/ui/Card'
 import { ROUTES } from '../constants/routes'
@@ -388,6 +388,7 @@ function buildDraftSignature(goalEventId: string, wizardConfig: PlanWizardConfig
 
 export default function PlanBuilderV2Page() {
   const navigate = useNavigate()
+  const location = useLocation()
   const athleteProfile = useCoachMemoryStore((s) => s.athleteProfile)
   const {
     plan, weeks, issues, status, currentWeekIndex, completedWeeks, failedWeekIndexes, streamingTextByWeekIndex, lastError,
@@ -396,6 +397,11 @@ export default function PlanBuilderV2Page() {
 
   const [selectedWeekIndex, setSelectedWeekIndex] = useState<number | null>(null)
   const [initializedPlanId, setInitializedPlanId] = useState<string | null>(null)
+  // Tracks the draft signature for which we have already kicked off load/createDraft
+  // during this mount. Prevents the effect from firing a second async cycle while
+  // the first one is still in flight (which can otherwise produce duplicate draft
+  // creation when location.state propagates through redirects).
+  const inflightSignatureRef = useRef<string | null>(null)
 
   const goalEvent = getPrimaryGoalEvent(athleteProfile)
   const expectedDraftSignature = athleteProfile?.planWizardConfig && goalEvent
@@ -405,10 +411,28 @@ export default function PlanBuilderV2Page() {
     ? buildDraftSignature(plan.goalEventId, plan.wizardConfig)
     : null
 
+  // Consume any location.state coming from the chat redirect once. Without this,
+  // re-renders that re-evaluate the state object can keep retriggering downstream
+  // effects that key off "fromChatRedirect".
+  useEffect(() => {
+    if (!location.state) return
+    navigate(location.pathname, { replace: true, state: null })
+    // We intentionally only run this on first mount when state is present.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   useEffect(() => {
     if (!athleteProfile || !athleteProfile.planWizardConfig || !goalEvent) return
     const wizardConfig = athleteProfile.planWizardConfig
-    if (currentDraftSignature === expectedDraftSignature) return
+    if (currentDraftSignature === expectedDraftSignature) {
+      inflightSignatureRef.current = null
+      return
+    }
+    if (expectedDraftSignature && inflightSignatureRef.current === expectedDraftSignature) {
+      // We already kicked off a draft for this signature; wait for it to settle.
+      return
+    }
+    inflightSignatureRef.current = expectedDraftSignature
     if (plan) {
       void createDraft({ profile: athleteProfile, wizardConfig })
       return
