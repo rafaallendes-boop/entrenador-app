@@ -106,7 +106,26 @@ describe('resolveWeekCreatorConfig', () => {
 })
 
 describe('WeekCreatorEngine', () => {
-  it('tries to generate a base week even when athleteProfile is missing', async () => {
+  it('asks the user to complete the athlete profile when config only has defaults', async () => {
+    const context: ChatContext = {
+      recentSessions: [],
+      plannedSessions: [],
+      historicalSessions: [],
+    }
+
+    const response = await WeekCreatorEngine.sendWeekCreate(
+      'Créame la semana',
+      context,
+      { surface: 'chat', targetWeekStart: '2026-05-04' },
+    )
+
+    expect(mockProviderCall).not.toHaveBeenCalled()
+    expect(response.actions).toEqual([])
+    expect(response.message).toContain('completar tu perfil')
+    expect(response.requestClass).toBe('week_creator')
+  })
+
+  it('generates a base week when profile has schedule context', async () => {
     mockProviderCall.mockImplementation(async (request: { requestClass: string; traceId: string }) => ({
       text: '<actions>' + JSON.stringify([
         {
@@ -160,6 +179,9 @@ describe('WeekCreatorEngine', () => {
     }))
 
     const context: ChatContext = {
+      athleteProfile: makeProfile({
+        scheduleProfile: { availableDays: ['lun', 'mié', 'vie'] },
+      }),
       recentSessions: [],
       plannedSessions: [],
       historicalSessions: [],

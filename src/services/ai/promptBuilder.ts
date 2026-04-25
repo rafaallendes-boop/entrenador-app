@@ -364,7 +364,7 @@ function detectMentionedSports(
 ): Set<SupportedSport> {
   const mentioned = new Set<SupportedSport>()
   const sportKeywords: Record<SupportedSport, RegExp> = {
-    squash: /\b(squash|partido|match|cancha|drills|raqueta|torneo)\b/,
+    squash: /\b(squash|partido|match|cancha|drills|raqueta)\b/,
     running: /\b(running|correr|carrera|ritmo|tempo|intervalos|z2|long run|km)\b/,
     strength: /\b(fuerza|pesas|sentadilla|press|deadlift|peso muerto|gym)\b/,
     cycling: /\b(ciclismo|cycling|bici|bicicleta|pedalear|rodillo)\b/,

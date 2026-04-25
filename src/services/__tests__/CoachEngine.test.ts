@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
-import { inferCoachActionIntent, shouldRetry } from '../ai/CoachEngine'
+import { inferCoachActionIntent } from '../ai/CoachEngine'
+import { shouldRetryAction as shouldRetry } from '../ai/coachRecovery'
 import type { CoachNormalizedResponse } from '../ai/types'
 
 function makeResponse(overrides: Partial<CoachNormalizedResponse> = {}): CoachNormalizedResponse {
@@ -26,7 +27,7 @@ describe('CoachEngine recovery heuristics', () => {
     expect(inferCoachActionIntent('Reordena las sesiones de running y fuerza')).toBe('modify_plan')
   })
 
-  it('retries when a full plan was requested but the model returned prose only', () => {
+  it('does not retry a coherent prose-only response without parse failure', () => {
     const response = makeResponse({
       message: 'Aqui tienes una propuesta general.',
       actions: undefined,
@@ -37,7 +38,7 @@ describe('CoachEngine recovery heuristics', () => {
       },
     })
 
-    expect(shouldRetry(response, 'create_full_plan')).toBe(true)
+    expect(shouldRetry(response)).toBe(false)
   })
 
   it('does not require multiple create_week actions anymore after a valid action response', () => {
@@ -66,7 +67,7 @@ describe('CoachEngine recovery heuristics', () => {
       },
     })
 
-    expect(shouldRetry(response, 'create_full_plan')).toBe(false)
+    expect(shouldRetry(response)).toBe(false)
   })
 
   it('does not retry when no action was requested and no parse failure happened', () => {
@@ -80,7 +81,7 @@ describe('CoachEngine recovery heuristics', () => {
       },
     })
 
-    expect(shouldRetry(response, 'none')).toBe(false)
+    expect(shouldRetry(response)).toBe(false)
   })
 
   it('retries when a full-plan response looks truncated even if actions markup is present', () => {
@@ -94,6 +95,6 @@ describe('CoachEngine recovery heuristics', () => {
       },
     })
 
-    expect(shouldRetry(response, 'create_full_plan')).toBe(true)
+    expect(shouldRetry(response)).toBe(true)
   })
 })

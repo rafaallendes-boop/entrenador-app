@@ -23,6 +23,22 @@ export const WeekCreatorEngine = {
   ): Promise<CoachNormalizedResponse> {
     const config = resolveWeekCreatorConfig(context.athleteProfile)
 
+    if (config.configSource === 'defaults') {
+      return {
+        message: 'Para proponer una semana necesito conocer tus deportes y disponibilidad horaria. ¿Quieres completar tu perfil de atleta primero? Puedes hacerlo desde Configuración → Perfil de atleta.',
+        actions: [],
+        provider: 'mock',
+        model: 'none',
+        timestamp: Date.now(),
+        traceId: buildAITraceId('week_creator'),
+        requestClass: 'week_creator',
+        durationMs: 0,
+        retryUsed: false,
+        fallbackUsed: false,
+        meta: { hadActionsMarkup: false, actionParseFailed: false, likelyTruncated: false },
+      }
+    }
+
     const provider = getActiveProvider()
     const policy = getAIRequestPolicy('week_creator')
     const surface = options.surface ?? 'chat'

@@ -204,13 +204,13 @@ Estado: pendiente
 - Reforzar `coach_proposals` en sync: Tier B, serialización por entidad y tombstones de borrado.
 - Decisión explícita: `coach_proposals` es durable; `chat_messages` queda efímero/Tier C en multi-device.
 
-### Fase 3 — Routing e intención — pendiente
+### Fase 3 — Routing e intención — completada
 
 - Unificar detectores de intención de chat en un solo módulo testeado.
 - Cubrir frases reales de `chat_general`, `chat_action`, `week_creator` y redirect a plan builder.
 - Eliminar heurísticas literales poco probables en `inferCoachActionIntent`.
 
-### Fase 4 — UX y bordes operativos — pendiente
+### Fase 4 — UX y bordes operativos — completada
 
 - Mejorar experiencia de usuario nuevo con perfil incompleto antes de generar semana.
 - Persistir auto-submit keys del plan builder en `sessionStorage`.

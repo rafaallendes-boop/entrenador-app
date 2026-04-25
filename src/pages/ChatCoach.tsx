@@ -19,7 +19,8 @@ import { buildWeeklyActionComposerDraft } from '../services/weeklyLaunchIntent'
 
 const QuickActionChips = lazy(() => import('../components/chat/QuickActionChips'))
 const ProposalDrawer = lazy(() => import('../components/chat/ProposalDrawer'))
-const consumedPlanBuilderAutoSubmitKeys = new Set<string>()
+function markAutoSubmitConsumed(key: string) { sessionStorage.setItem(`plan-builder-consumed-${key}`, '1') }
+function wasAutoSubmitConsumed(key: string) { return sessionStorage.getItem(`plan-builder-consumed-${key}`) === '1' }
 
 const SESSION_TYPE_LABEL: Record<string, string> = {
   squash: 'squash',
@@ -175,9 +176,9 @@ export default function ChatCoach() {
     if (!locationState?.fromPlanBuilder) return
     const draft = composerDraft.trim()
     if (!draft) return
-    if (consumedPlanBuilderAutoSubmitKeys.has(composerDraftKey)) return
+    if (wasAutoSubmitConsumed(composerDraftKey)) return
 
-    consumedPlanBuilderAutoSubmitKeys.add(composerDraftKey)
+    markAutoSubmitConsumed(composerDraftKey)
     autoSentRef.current = true
     void handleSend(draft)
     navigate(location.pathname, { replace: true, state: null })

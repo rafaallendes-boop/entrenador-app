@@ -6,10 +6,12 @@ import type { AIProvider, AIRequest, CoachNormalizedResponse } from './types'
 import type { AIRequestClass, AITechnicalSurface, ChatContext } from '../../types'
 import { buildCoachPrompt } from './promptBuilder'
 import { normalizeResponse } from './responseNormalizer'
-import { AIProviderError, createProviderError } from './types'
+import { AIProviderError } from './types'
 import { buildAITraceId, getAIRequestPolicy } from './requestPolicy'
 import { getActiveProvider, isRealProviderConfigured } from './providerResolver'
 import { useAIDebugStore } from '../../store/useAIDebugStore'
+import { sendWithRecovery } from './coachRecovery'
+import { resolveChatRoute } from '../chatRouting'
 
 export type CoachActionIntent = 'create_full_plan' | 'modify_plan' | 'none'
 type CoachSendOptions = {
@@ -29,7 +31,7 @@ export const CoachEngine = {
     context: ChatContext,
     options?: CoachSendOptions,
   ): Promise<CoachNormalizedResponse> {
-    return sendTrackedCoachRequest(userMessage, context, 'chat_general', 'none', options)
+    return sendTrackedCoachRequest(userMessage, context, 'chat_general', options)
   },
 
   async sendAction(
@@ -37,8 +39,7 @@ export const CoachEngine = {
     context: ChatContext,
     options?: CoachSendOptions,
   ): Promise<CoachNormalizedResponse> {
-    const actionIntent = resolveActionIntent(userMessage, context)
-    return sendTrackedCoachRequest(userMessage, context, 'chat_action', actionIntent, options)
+    return sendTrackedCoachRequest(userMessage, context, 'chat_action', options)
   },
 
   async send(
@@ -47,7 +48,7 @@ export const CoachEngine = {
     options?: CoachDispatcherOptions,
   ): Promise<CoachNormalizedResponse> {
     if (options?.requestClass === 'weekly_summary') {
-      return sendTrackedCoachRequest(userMessage, context, 'weekly_summary', 'none', options)
+      return sendTrackedCoachRequest(userMessage, context, 'weekly_summary', options)
     }
 
     if (options?.requestClass === 'chat_general') {
@@ -58,12 +59,10 @@ export const CoachEngine = {
       return this.sendAction(userMessage, context, options)
     }
 
-    const actionIntent = inferCoachActionIntent(userMessage)
-    if (actionIntent === 'none') {
-      return this.sendChat(userMessage, context, options)
-    }
-
-    return this.sendAction(userMessage, context, options)
+    const route = resolveChatRoute(userMessage, context)
+    return route.kind === 'chat_action'
+      ? this.sendAction(userMessage, context, options)
+      : this.sendChat(userMessage, context, options)
   },
 
   async extractRaw(
@@ -131,7 +130,6 @@ async function sendTrackedCoachRequest(
   userMessage: string,
   context: ChatContext,
   requestClass: AIRequestClass,
-  actionIntent: CoachActionIntent,
   options?: CoachSendOptions,
 ): Promise<CoachNormalizedResponse> {
   const provider = getActiveProvider()
@@ -173,7 +171,7 @@ async function sendTrackedCoachRequest(
     }
 
     return requestClass === 'chat_action'
-      ? sendWithRecovery(provider, request, actionIntent)
+      ? sendWithRecovery(provider, request)
       : sendDirect(provider, request)
   })
 }
@@ -209,14 +207,6 @@ async function withTracing<T extends Pick<CoachNormalizedResponse, 'provider' | 
   }
 }
 
-function resolveActionIntent(userMessage: string, context: ChatContext): CoachActionIntent {
-  const inferred = inferCoachActionIntent(userMessage)
-  if (inferred !== 'none') return inferred
-  if (context.intent === 'adjust_session') return 'modify_plan'
-  if (context.intent === 'plan_week') return 'create_full_plan'
-  return 'modify_plan'
-}
-
 /** Nivel 1 — direct call without format retry (chat_general). */
 async function sendDirect(
   provider: AIProvider,
@@ -226,94 +216,13 @@ async function sendDirect(
   return normalizeResponse(raw)
 }
 
-/** Nivel 2 — call with action format retry (chat_action). */
-async function sendWithRecovery(
-  provider: AIProvider,
-  request: AIRequest,
-  actionIntent: CoachActionIntent,
-): Promise<CoachNormalizedResponse> {
-  const firstRaw = await provider.call(request)
-  const firstNormalized = normalizeResponse(firstRaw)
-
-  if (!shouldRetry(firstNormalized, actionIntent)) {
-    return firstNormalized
-  }
-
-  const retryRaw = await provider.call({
-    ...request,
-    systemPrompt: `${request.systemPrompt}
-
-IMPORTANTE DE FORMATO:
-- Si el usuario pidio crear o modificar un plan, DEBES incluir un bloque <actions> valido.
-- Si usas <actions>, cierra siempre con </actions>.
-- El contenido dentro de <actions> debe ser JSON valido.
-- Para create_week, prioriza una semana compacta y ejecutable.
-- No incluyas warmup/cooldown salvo que aporte valor claro: el sistema completa protocolos base automaticamente si faltan.
-- Si tu respuesta anterior fue solo texto, ahora corrige eso y devuelve acciones reales.`,
-    temperature: Math.min(request.temperature ?? 0.7, 0.3),
-    signal: request.signal,
-    onChunk: undefined,
-  })
-  const retryNormalized = normalizeResponse(retryRaw)
-
-  if (shouldRejectAfterRetry(retryNormalized)) {
-    throw createProviderError(
-      provider.name,
-      'parse_error',
-      'El coach devolvio una respuesta con formato invalido en el bloque de acciones. Intenta de nuevo.',
-      true,
-    )
-  }
-
-  return {
-    ...retryNormalized,
-    retryUsed: true,
-    fallbackUsed: retryNormalized.fallbackUsed || firstNormalized.fallbackUsed,
-    meta: {
-      hadActionsMarkup: retryNormalized.meta?.hadActionsMarkup ?? false,
-      actionParseFailed: retryNormalized.meta?.actionParseFailed ?? false,
-      likelyTruncated: retryNormalized.meta?.likelyTruncated ?? false,
-      invalidActionCount: retryNormalized.meta?.invalidActionCount,
-      createWeekDiagnostics: retryNormalized.meta?.createWeekDiagnostics,
-    },
-  }
-}
-
 export function inferCoachActionIntent(userMessage: string): CoachActionIntent {
-  const normalized = userMessage.trim().toLowerCase()
-  const weekDayPattern = /\b(lunes|martes|miercoles|miércoles|jueves|viernes|sabado|sábado|domingo|hoy|mañana|manana)\b/
-  const modificationVerbPattern = /\b(ajusta(?:r)?|reordena(?:r)?|mueve|cambia|agrega|quita|sube|baja|reduce|simplifica|reemplaza|incorpora)\b/
-  if (!normalized) return 'none'
-
-  if (
-    /\b(plan\s+completo|todas\s+las\s+semanas|plan\s+hasta|semanas\s+hasta|completo\s+hasta|completo\s+para\s+\d+\s+semanas)\b/.test(normalized) ||
-    (/\b(plan|cr[eé]a(?:r|me)?)\b/.test(normalized) && /\buna\s+acción\s+create_week\s+por\s+semana\b/.test(normalized))
-  ) {
-    return 'create_full_plan'
+  switch (resolveChatRoute(userMessage).kind) {
+    case 'plan_builder_redirect':
+      return 'create_full_plan'
+    case 'chat_action':
+      return 'modify_plan'
+    default:
+      return 'none'
   }
-
-  if (
-    modificationVerbPattern.test(normalized) &&
-    (
-      /\b(semana|sesion|sesión|plan|carga|running|squash|fuerza|cycling|ciclismo|movilidad)\b/.test(normalized)
-      || weekDayPattern.test(normalized)
-    )
-  ) {
-    return 'modify_plan'
-  }
-
-  return 'none'
-}
-
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-export function shouldRetry(response: CoachNormalizedResponse, _intent: CoachActionIntent): boolean {
-  // Only retry when the model produced genuinely malformed output.
-  // Empty actions without a parse failure means the model intentionally omitted them — don't waste tokens retrying.
-  return response.meta?.actionParseFailed === true || response.meta?.likelyTruncated === true
-}
-
-function shouldRejectAfterRetry(response: CoachNormalizedResponse): boolean {
-  // Solo rechazar cuando el JSON está genuinamente malformado.
-  // Si el modelo simplemente no incluyó acciones, devolvemos el texto para que el usuario pueda continuar.
-  return response.meta?.actionParseFailed === true
 }

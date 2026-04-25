@@ -28,6 +28,9 @@ export function getActiveProvider(): AIProvider {
   }
 }
 
+// VITE_* API keys below are only read in local dev (PROD always uses 'proxy' above).
+// NEVER set these to real keys in .env.local — they are bundled into the client JS and
+// would be exposed publicly. Use them only as a truthy presence check for dev UI hints.
 export function isRealProviderConfigured(): boolean {
   const name = getConfiguredProviderName()
   if (name === 'proxy') return true

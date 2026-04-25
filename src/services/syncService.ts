@@ -8,7 +8,6 @@
  * - If offline or Supabase errors, ops are queued in localStorage and retried.
  */
 
-import { supabase } from './auth'
 import { db } from '../db/db'
 import { useAuthStore } from '../store/useAuthStore'
 import type {
@@ -27,16 +26,13 @@ import {
   classifyAthleteProfileSyncError,
   classifySyncError,
   coalesceAthleteProfileRows,
-  compactQueue,
   createAthleteProfileFullResetRow,
   getAthleteProfileFullResetAt,
-  getOfflineOpEntityId,
   getSyncErrorMessage,
   isAthleteProfileFullResetRow,
   normalizeAthleteProfilePayload,
   rowToAthleteProfile,
   toAthleteProfileSyncRow,
-  MAX_RETRIES_PER_OP,
   type AthleteProfileSyncRow,
   type OfflineOp,
   type SyncErrorCategory,
@@ -48,22 +44,41 @@ import {
   recordSyncError,
   trackSyncEvent,
 } from './syncDiagnostics'
-import { ENTITY_TIER, type SyncTier } from '../types/syncDiagnostics'
-const QUEUE_KEY = 'entrenador_sync_queue_v1'
-const LAST_SYNC_USER_KEY = 'entrenador_sync_user_v1'
-const MIGRATION_KEY_PREFIX = 'entrenador_migrated_v1'
-const INITIAL_PULL_KEY_PREFIX = 'entrenador_initial_pull_v1'
-const REMOTE_WIPE_KEY = 'entrenador_remote_wipe_v1'
-const REMOTE_FULL_RESET_ACK_KEY_PREFIX = 'entrenador_remote_reset_ack_v1'
-const PROFILE_RESET_LOCK_KEY = 'entrenador_profile_reset_lock_v1'
-const SESSION_DELETE_TOMBSTONES_KEY = 'entrenador_sync_session_tombstones_v1'
-const COACH_PROPOSAL_DELETE_TOMBSTONES_KEY = 'entrenador_sync_coach_proposal_tombstones_v1'
-const ATHLETE_PROFILE_WRITE_MODE_KEY = '__athleteProfileWriteMode'
+import { ENTITY_TIER } from '../types/syncDiagnostics'
+import {
+  FETCH_PAGE_SIZE,
+  fetchAll,
+  getSupabase,
+  withRequestTimeout,
+} from './sync/syncSupabase'
+import {
+  computeRetryDelayMs,
+  getMaxRetriesForTable,
+  sortQueueByTier,
+} from './sync/syncRetry'
+import {
+  MAX_QUEUE_SIZE,
+  clearQueuedOpsForEntityOlderThan,
+  clearQueuedOpsForTables,
+  enqueue as enqueueOp,
+  loadQueue,
+  saveQueue,
+  setQueueChangeListener,
+} from './sync/syncQueue'
+import { createScopedDedup } from './sync/syncDedup'
+import {
+  ATHLETE_PROFILE_WRITE_MODE_KEY,
+  COACH_PROPOSAL_DELETE_TOMBSTONES_KEY,
+  LAST_SYNC_USER_KEY,
+  PROFILE_RESET_LOCK_KEY,
+  QUEUE_KEY,
+  REMOTE_WIPE_KEY,
+  SESSION_DELETE_TOMBSTONES_KEY,
+  getInitialPullKey,
+  getMigrationKey,
+  getRemoteFullResetAckKey,
+} from './sync/syncStorageKeys'
 const TOMBSTONE_TTL_MS = 180 * 24 * 60 * 60 * 1000 // 180 days (extended from 90d as part of sync hardening)
-const MAX_QUEUE_SIZE = 500
-const FETCH_PAGE_SIZE = 1000
-/** Timeout máximo para un request directo a Supabase (upsert/delete/fetch). Evita que un request colgado bloquee drainQueue indefinidamente. */
-const DIRECT_REQUEST_TIMEOUT_MS = 15_000
 
 export type AthleteProfileWriteSource = 'automatic' | 'post_reset_onboarding'
 
@@ -77,66 +92,6 @@ interface ProfileResetLockEntry {
 
 type ProfileResetLockStore = Record<string, ProfileResetLockEntry>
 
-// Max retries por tier. Tier C (chat history) se dropea rápido para no consumir
-// presupuesto de fiabilidad del core. Coach proposals are Tier B because their
-// accepted/rejected state has product impact.
-const MAX_RETRIES_BY_TIER: Record<SyncTier, number> = {
-  A: MAX_RETRIES_PER_OP,
-  B: MAX_RETRIES_PER_OP,
-  C: 2,
-}
-
-const TIER_ORDER: Record<SyncTier, number> = { A: 0, B: 1, C: 2 }
-
-// Backoff exponencial con jitter: 5s, 15s, 45s, 120s, 300s (topado en 300s).
-// Reemplaza los pasos fijos 15/30/60s. El jitter evita hammer sincronizado cuando múltiples
-// tabs/devices vuelven online al mismo tiempo.
-const RETRY_BACKOFF_STEPS_MS = [5_000, 15_000, 45_000, 120_000, 300_000]
-const RETRY_JITTER_MAX_MS = 1_000
-
-function computeRetryDelayMs(failureCount: number): number {
-  const index = Math.min(Math.max(failureCount - 1, 0), RETRY_BACKOFF_STEPS_MS.length - 1)
-  const base = RETRY_BACKOFF_STEPS_MS[index]
-  const jitter = Math.floor(Math.random() * RETRY_JITTER_MAX_MS)
-  return base + jitter
-}
-
-function sortQueueByTier(ops: OfflineOp[]): OfflineOp[] {
-  return [...ops].sort((a, b) => {
-    const ta = TIER_ORDER[ENTITY_TIER[a.table] ?? 'C']
-    const tb = TIER_ORDER[ENTITY_TIER[b.table] ?? 'C']
-    return ta - tb
-  })
-}
-
-function getMaxRetriesForTable(table: SupabaseTable): number {
-  const tier = ENTITY_TIER[table] ?? 'C'
-  return MAX_RETRIES_BY_TIER[tier]
-}
-
-/**
- * Envuelve una promesa con un timeout que rechaza si no resuelve a tiempo.
- * El error lanzado es clasificable como network_error por classifySyncError.
- */
-async function withRequestTimeout<T>(
-  source: PromiseLike<T>,
-  label: string,
-  timeoutMs = DIRECT_REQUEST_TIMEOUT_MS,
-): Promise<T> {
-  let timeoutHandle: ReturnType<typeof setTimeout> | null = null
-  const timeoutPromise = new Promise<never>((_, reject) => {
-    timeoutHandle = setTimeout(() => {
-      reject(Object.assign(new Error(`Sync request timeout after ${timeoutMs}ms: ${label}`), {
-        name: 'SyncRequestTimeoutError',
-      }))
-    }, timeoutMs)
-  })
-  try {
-    return await Promise.race([Promise.resolve(source), timeoutPromise])
-  } finally {
-    if (timeoutHandle != null) clearTimeout(timeoutHandle)
-  }
-}
 
 interface PendingRemoteWipeEntry {
   tables: SupabaseTable[]
@@ -157,13 +112,6 @@ const REMOTE_WIPE_ORDER: SupabaseTable[] = [
   'athlete_profiles',
 ]
 
-function getInitialPullKey(userId: string): string {
-  return `${INITIAL_PULL_KEY_PREFIX}:${userId}`
-}
-
-function getRemoteFullResetAckKey(userId: string): string {
-  return `${REMOTE_FULL_RESET_ACK_KEY_PREFIX}:${userId}`
-}
 
 function loadProfileResetLockStore(): ProfileResetLockStore {
   try {
@@ -477,10 +425,9 @@ function mapSelectionToRemoteTables(
   }
   return sortRemoteWipeTables(tables)
 }
-type ScopedPromise<T> = { userId: string; promise: Promise<T> }
-let activeDrainQueuePromise: ScopedPromise<boolean> | null = null
-let activePullAllPromise: ScopedPromise<void> | null = null
-let activeFullSyncPromise: ScopedPromise<void> | null = null
+const drainQueueDedup = createScopedDedup<boolean>()
+const pullRemoteDedup = createScopedDedup<void>()
+const fullSyncDedup = createScopedDedup<void>()
 let syncAttemptCounter = 0
 const entityMutationLanes = new Map<string, Promise<void>>()
 let retryTimer: ReturnType<typeof setTimeout> | null = null
@@ -488,20 +435,15 @@ const queueChannel = typeof BroadcastChannel !== 'undefined'
   ? new BroadcastChannel('sync-queue')
   : null
 
+setQueueChangeListener(() => {
+  refreshQueueDiagnostics()
+  queueChannel?.postMessage({ type: 'queue-changed' })
+})
+
 /**
  * Safe accessor for the Supabase client. Throws a typed SyncError
  * instead of crashing with a null-reference TypeError.
  */
-function getSupabase() {
-  if (!supabase) {
-    throw Object.assign(
-      new TypeError('Supabase client is null — VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY missing'),
-      { category: 'supabase_not_configured' as SyncErrorCategory },
-    )
-  }
-  return supabase
-}
-
 /**
  * Structured sync logger. All sync events go through here for
  * consistent format and easy debugging.
@@ -660,80 +602,18 @@ function scheduleRetry(ms: number): void {
   }, Math.max(0, retryAt - Date.now()))
 }
 
-function loadQueue(): OfflineOp[] {
-  try {
-    const raw = localStorage.getItem(QUEUE_KEY)
-    if (!raw) return []
-
-    const parsed = JSON.parse(raw) as unknown
-    if (!Array.isArray(parsed)) return []
-
-    return parsed.filter((item): item is OfflineOp => {
-      return (
-        typeof item === 'object' &&
-        item !== null &&
-        typeof (item as OfflineOp).userId === 'string' &&
-        typeof (item as OfflineOp).table === 'string' &&
-        typeof (item as OfflineOp).action === 'string' &&
-        typeof (item as OfflineOp).payload === 'object' &&
-        (item as OfflineOp).payload !== null &&
-        typeof (item as OfflineOp).enqueuedAt === 'number'
-      )
-    })
-  } catch {
-    return []
-  }
-}
-
-function saveQueue(queue: OfflineOp[]): void {
-  try {
-    localStorage.setItem(QUEUE_KEY, JSON.stringify(queue))
-  } catch {
-    // Ignore storage quota failures.
-  }
-  refreshQueueDiagnostics()
-  queueChannel?.postMessage({ type: 'queue-changed' })
-}
-
 function enqueue(op: OfflineOp): void {
-  const queue = mergeConcurrentQueueOps(compactQueue(loadQueue(), op), op)
-  if (queue.length >= MAX_QUEUE_SIZE) {
-    const dropped = queue.shift()
-    syncLog('queue:overflow', {
-      maxQueueSize: MAX_QUEUE_SIZE,
-      droppedTable: dropped?.table,
-      droppedAction: dropped?.action,
-      droppedId: typeof dropped?.payload?.id === 'string' ? dropped.payload.id : null,
-      droppedEnqueuedAt: dropped?.enqueuedAt ?? null,
-    }, 'warn')
-  }
-  saveQueue(queue)
-}
-
-function mergeConcurrentQueueOps(queue: OfflineOp[], incoming: OfflineOp): OfflineOp[] {
-  let merged = queue
-  const latest = loadQueue()
-  for (const op of latest) {
-    if (shouldDropConcurrentQueueOp(op, incoming)) continue
-    if (merged.some((item) => offlineOpsShareIdentity(item, op))) continue
-    merged = compactQueue(merged, op)
-  }
-  return merged
-}
-
-function shouldDropConcurrentQueueOp(existing: OfflineOp, incoming: OfflineOp): boolean {
-  return existing.userId === incoming.userId
-    && existing.table === incoming.table
-    && getOfflineOpEntityId(existing) === getOfflineOpEntityId(incoming)
-    && getOfflineOpEntityId(incoming) != null
-}
-
-function offlineOpsShareIdentity(a: OfflineOp, b: OfflineOp): boolean {
-  return a.userId === b.userId
-    && a.table === b.table
-    && a.action === b.action
-    && a.enqueuedAt === b.enqueuedAt
-    && getOfflineOpEntityId(a) === getOfflineOpEntityId(b)
+  enqueueOp(op, {
+    onOverflow: (dropped) => {
+      syncLog('queue:overflow', {
+        maxQueueSize: MAX_QUEUE_SIZE,
+        droppedTable: dropped.table,
+        droppedAction: dropped.action,
+        droppedId: typeof dropped.payload?.id === 'string' ? dropped.payload.id : null,
+        droppedEnqueuedAt: dropped.enqueuedAt ?? null,
+      }, 'warn')
+    },
+  })
 }
 
 function getEntityMutationKey(
@@ -777,45 +657,6 @@ async function withSerializedEntityMutation<T>(
       }
     })
   }
-}
-
-function clearQueuedOpsForEntityOlderThan(
-  userId: string,
-  table: SupabaseTable,
-  payload: Record<string, unknown>,
-  cutoffEnqueuedAt: number,
-): void {
-  const entityId = typeof payload.id === 'string' && payload.id.length > 0
-    ? payload.id
-    : null
-  if (!entityId) return
-
-  const queue = loadQueue()
-  const nextQueue = queue.filter((op) => {
-    if (op.userId !== userId || op.table !== table) return true
-    if (getOfflineOpEntityId(op) !== entityId) return true
-    return op.enqueuedAt > cutoffEnqueuedAt
-  })
-
-  if (nextQueue.length !== queue.length) {
-    saveQueue(nextQueue)
-  }
-}
-
-function clearQueuedOpsForTables(userId: string, tables: Iterable<SupabaseTable>): void {
-  const selectedTables = new Set(tables)
-  if (selectedTables.size === 0) return
-
-  try {
-    const queue = loadQueue().filter((op) => op.userId !== userId || !selectedTables.has(op.table))
-    saveQueue(queue)
-  } catch {
-    // Ignore storage failures.
-  }
-}
-
-function getMigrationKey(userId: string): string {
-  return `${MIGRATION_KEY_PREFIX}:${userId}`
 }
 
 function getUserId(): string | null {
@@ -939,11 +780,7 @@ async function drainQueue(): Promise<boolean> {
     return loadQueue().length === 0
   }
 
-  if (activeDrainQueuePromise && activeDrainQueuePromise.userId === userId) {
-    return activeDrainQueuePromise.promise
-  }
-
-  const promise = (async () => {
+  return drainQueueDedup.run(userId, async () => {
   const attemptId = ++syncAttemptCounter
   startSyncAttempt()
   const queue = loadQueue()
@@ -1160,17 +997,7 @@ async function drainQueue(): Promise<boolean> {
     )
   }
   return remaining.length === 0
-  })()
-
-  activeDrainQueuePromise = { userId, promise }
-
-  try {
-    return await promise
-  } finally {
-    if (activeDrainQueuePromise?.promise === promise) {
-      activeDrainQueuePromise = null
-    }
-  }
+  })
 }
 
 if (typeof window !== 'undefined') {
@@ -1986,34 +1813,6 @@ export async function softDeleteTrainingPlan(plan: TrainingPlan, weeks: Training
   ])
 }
 
-async function fetchAll<T>(table: SupabaseTable, userId: string): Promise<T[]> {
-  const rows: T[] = []
-
-  for (let from = 0; ; from += FETCH_PAGE_SIZE) {
-    const to = from + FETCH_PAGE_SIZE - 1
-    const query = getSupabase()
-      .from(table)
-      .select('*')
-      .eq('user_id', userId)
-    const supportsRange = typeof (query as { range?: unknown }).range === 'function'
-    const pagedQuery = supportsRange
-      ? (query as { range: (from: number, to: number) => PromiseLike<{ data: unknown[] | null; error: { message?: string } | null }> }).range(from, to)
-      : query as PromiseLike<{ data: unknown[] | null; error: { message?: string } | null }>
-    const { data, error } = await pagedQuery
-
-    if (error) {
-      console.error(`[sync] fetch error on ${table}:`, error.message)
-      throw error
-    }
-
-    const page = (data ?? []) as T[]
-    rows.push(...page)
-    if (!supportsRange || page.length < FETCH_PAGE_SIZE) break
-  }
-
-  return rows
-}
-
 async function wipeRemoteTableByUser(
   userId: string,
   table: SupabaseTable,
@@ -2078,11 +1877,7 @@ async function processPendingRemoteWipes(userId: string): Promise<RemoteWipeOutc
 }
 
 async function pullRemoteAndMerge(userId: string): Promise<void> {
-  if (activePullAllPromise && activePullAllPromise.userId === userId) {
-    return activePullAllPromise.promise
-  }
-
-  const promise = (async () => {
+  return pullRemoteDedup.run(userId, async () => {
     if (!isEnabled()) return
 
     const queueDrained = await drainQueue()
@@ -2119,26 +1914,12 @@ async function pullRemoteAndMerge(userId: string): Promise<void> {
     if (!pendingRemoteWipeTables.has('athlete_profiles') && !isAwaitingAthleteProfileRecreationAfterReset(userId)) {
       markInitialRemotePullComplete(userId)
     }
-  })()
-
-  activePullAllPromise = { userId, promise }
-
-  try {
-    await promise
-  } finally {
-    if (activePullAllPromise?.promise === promise) {
-      activePullAllPromise = null
-    }
-  }
+  })
 }
 
 export async function runFullSync(userId: string): Promise<void> {
   if (!userId || !isEnabled()) return
-  if (activeFullSyncPromise && activeFullSyncPromise.userId === userId) {
-    return activeFullSyncPromise.promise
-  }
-
-  const promise = (async () => {
+  return fullSyncDedup.run(userId, async () => {
     await applyRemoteFullResetIfNeeded(userId)
     startSyncAttempt()
     const failureCountAtStart = syncStoreState().syncDetails.consecutiveFailures ?? 0
@@ -2223,17 +2004,7 @@ export async function runFullSync(userId: string): Promise<void> {
         (syncStoreState().syncDetails.pendingTables[0] as SupabaseTable | undefined) ?? null,
       )
     }
-  })()
-
-  activeFullSyncPromise = { userId, promise }
-
-  try {
-    await promise
-  } finally {
-    if (activeFullSyncPromise?.promise === promise) {
-      activeFullSyncPromise = null
-    }
-  }
+  })
 }
 
 async function mergeSessions(userId: string, context: MergeContext): Promise<void> {
