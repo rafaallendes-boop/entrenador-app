@@ -1,4 +1,4 @@
-import { useState, type KeyboardEvent } from 'react'
+import { useState, useRef, type KeyboardEvent } from 'react'
 import { Send } from 'lucide-react'
 
 interface ChatInputProps {
@@ -9,12 +9,17 @@ interface ChatInputProps {
 
 export default function ChatInput({ onSend, disabled, initialValue = '' }: ChatInputProps) {
   const [value, setValue] = useState(initialValue)
+  const submittingRef = useRef(false)
 
   const handleSend = () => {
     const trimmed = value.trim()
-    if (!trimmed || disabled) return
-    onSend(trimmed)
+    if (!trimmed || disabled || submittingRef.current) return
+    submittingRef.current = true
     setValue('')
+    onSend(trimmed)
+    // Release the lock after a short delay — long enough to let React
+    // re-render with disabled=true from the store's isLoading state.
+    setTimeout(() => { submittingRef.current = false }, 300)
   }
 
   const handleKey = (event: KeyboardEvent<HTMLTextAreaElement>) => {

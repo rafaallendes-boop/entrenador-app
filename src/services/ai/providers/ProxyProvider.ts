@@ -66,7 +66,17 @@ export class ProxyProvider implements AIProvider {
   ): Promise<AIRawResponse> {
     const policy = getAIRequestPolicy(request.requestClass)
     const controller = new AbortController()
-    const timeoutId = window.setTimeout(() => controller.abort(), policy.timeoutMs + 2000)
+    let abortedByTimeout = false
+    const abortFromCaller = () => controller.abort()
+    if (request.signal?.aborted) {
+      controller.abort()
+    } else {
+      request.signal?.addEventListener('abort', abortFromCaller, { once: true })
+    }
+    const timeoutId = window.setTimeout(() => {
+      abortedByTimeout = true
+      controller.abort()
+    }, policy.timeoutMs + 2000)
 
     try {
       const res = await fetch(FUNCTION_URL, {
@@ -127,9 +137,12 @@ export class ProxyProvider implements AIProvider {
       }
     } catch (error) {
       if (error instanceof AIProviderError) throw error
-      throw this.normalizeUnexpectedError(error)
+      throw this.normalizeUnexpectedError(error, {
+        abortedByCaller: request.signal?.aborted === true && !abortedByTimeout,
+      })
     } finally {
       window.clearTimeout(timeoutId)
+      request.signal?.removeEventListener('abort', abortFromCaller)
     }
   }
 
@@ -155,6 +168,7 @@ export class ProxyProvider implements AIProvider {
     let model: string | undefined
     let retryUsed = false
     let fallbackUsed = false
+    let truncated = false
 
     while (true) {
       const { done, value } = await reader.read()
@@ -178,6 +192,7 @@ export class ProxyProvider implements AIProvider {
             error?: string
             errorCode?: AIErrorCode
             traceId?: string
+            truncated?: boolean
           }
 
           if (event.type === 'chunk' && event.chunk) {
@@ -196,12 +211,19 @@ export class ProxyProvider implements AIProvider {
           }
 
           if (event.type === 'error') {
+            if (event.truncated && fullText) {
+              // Stream was cut after emitting partial content. Return what we got
+              // and let responseNormalizer mark it as truncated — no proposal created.
+              truncated = true
+              break
+            }
             throw createProviderError('gemini', event.errorCode ?? 'unknown', event.error ?? 'Streaming falló.')
           }
         } catch (error) {
-          if (error instanceof Error && error.name === 'AIProviderError') throw error
+          if (error instanceof AIProviderError) throw error
         }
       }
+      if (truncated) break
     }
 
     if (!fullText) {
@@ -217,6 +239,7 @@ export class ProxyProvider implements AIProvider {
       requestClass: request.requestClass,
       retryUsed,
       fallbackUsed,
+      truncated,
     }
   }
 
@@ -260,14 +283,19 @@ export class ProxyProvider implements AIProvider {
       )
   }
 
-  private normalizeUnexpectedError(error: unknown): AIProviderError {
+  private normalizeUnexpectedError(
+    error: unknown,
+    options?: { abortedByCaller?: boolean },
+  ): AIProviderError {
     if (error instanceof AIProviderError) return error
     if (error instanceof Error && error.name === 'AbortError') {
       return createProviderError(
         'gemini',
         'timeout',
-        'El servidor del coach tardó demasiado en responder. Intenta de nuevo.',
-        true,
+        options?.abortedByCaller
+          ? 'Solicitud del coach cancelada.'
+          : 'El servidor del coach tardó demasiado en responder. Intenta de nuevo.',
+        !options?.abortedByCaller,
       )
     }
 

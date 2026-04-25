@@ -16,6 +16,7 @@ type CoachSendOptions = {
   maxTokens?: number
   temperature?: number
   onChunk?: (chunk: string) => void
+  signal?: AbortSignal
   surface?: AITechnicalSurface
 }
 type CoachDispatcherOptions = CoachSendOptions & {
@@ -74,6 +75,7 @@ export const CoachEngine = {
       requestClass?: AIRequestClass
       surface?: AITechnicalSurface
       conversation?: AIRequest['conversation']
+      signal?: AbortSignal
     },
   ): Promise<string> {
     const provider = getActiveProvider()
@@ -98,6 +100,7 @@ export const CoachEngine = {
         userMessage,
         maxTokens: options?.maxTokens ?? policy.maxTokens,
         temperature: options?.temperature ?? policy.temperature,
+        signal: options?.signal,
       })
       useAIDebugStore.getState().completeRequest(traceId, {
         provider: raw.provider,
@@ -157,6 +160,7 @@ async function sendTrackedCoachRequest(
       maxTokens: options?.maxTokens ?? policy.maxTokens,
       temperature: options?.temperature ?? policy.temperature,
       allowFallback: policy.allowFallback,
+      signal: options?.signal,
       onChunk: options?.onChunk
         ? (chunk) => {
             if (!firstChunkSeen) {
@@ -247,6 +251,7 @@ IMPORTANTE DE FORMATO:
 - No incluyas warmup/cooldown salvo que aporte valor claro: el sistema completa protocolos base automaticamente si faltan.
 - Si tu respuesta anterior fue solo texto, ahora corrige eso y devuelve acciones reales.`,
     temperature: Math.min(request.temperature ?? 0.7, 0.3),
+    signal: request.signal,
     onChunk: undefined,
   })
   const retryNormalized = normalizeResponse(retryRaw)
@@ -300,10 +305,11 @@ export function inferCoachActionIntent(userMessage: string): CoachActionIntent {
   return 'none'
 }
 
-export function shouldRetry(response: CoachNormalizedResponse, actionIntent: CoachActionIntent): boolean {
-  if (response.meta?.actionParseFailed || response.meta?.likelyTruncated) return true
-  if (actionIntent !== 'none' && (!response.actions || response.actions.length === 0)) return true
-  return false
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export function shouldRetry(response: CoachNormalizedResponse, _intent: CoachActionIntent): boolean {
+  // Only retry when the model produced genuinely malformed output.
+  // Empty actions without a parse failure means the model intentionally omitted them — don't waste tokens retrying.
+  return response.meta?.actionParseFailed === true || response.meta?.likelyTruncated === true
 }
 
 function shouldRejectAfterRetry(response: CoachNormalizedResponse): boolean {

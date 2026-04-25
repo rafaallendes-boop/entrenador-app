@@ -788,6 +788,8 @@ export interface CoachProposalMetadata {
   resolutionOutcome: 'pending' | 'accepted' | 'rejected' | 'partial'
   relatedAlertId?: string
   nutritionPrompts?: string[]
+  /** Warnings generated during normalization, e.g. sessions dropped by the normalizer. */
+  warnings?: string[]
 }
 
 export type PlanValidationStatus = 'ok' | 'warning'

@@ -1,4 +1,4 @@
-import { CheckCircle2, X, Zap } from 'lucide-react'
+import { CheckCircle2, Loader2, X, Zap } from 'lucide-react'
 import type { CoachProposal, CyclingDetails, GeneratedProtocol, MobilityDetails, Session, SquashSessionMode } from '../../types'
 
 const ACTION_LABEL: Record<string, string> = {
@@ -37,6 +37,7 @@ interface ProposalDrawerProps {
   onAccept: () => void
   onReject: () => void
   onClose: () => void
+  isAccepting?: boolean
 }
 
 export default function ProposalDrawer({
@@ -45,6 +46,7 @@ export default function ProposalDrawer({
   onAccept,
   onReject,
   onClose,
+  isAccepting = false,
 }: ProposalDrawerProps) {
   const createWeekAction = proposal.actions.find(action => action.type === 'create_week')
   const chainedAdjustmentSessionIds = getChainedAdjustmentSessionIds(proposal.actions)
@@ -107,6 +109,15 @@ export default function ProposalDrawer({
               <p className="mt-1 text-xs text-amber-100/80 leading-relaxed">
                 Ya existen sesiones con historial en: {collisions.join(', ')}. Las sesiones planificadas se reemplazaran, pero estas se mantendran para no perder adherencia registrada.
               </p>
+            </div>
+          )}
+
+          {proposal.metadata?.warnings && proposal.metadata.warnings.length > 0 && (
+            <div className="rounded-xl border border-yellow-500/20 bg-yellow-500/8 px-3 py-2">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-yellow-300">Aviso</p>
+              {proposal.metadata.warnings.map((warning, i) => (
+                <p key={i} className="mt-1 text-xs text-yellow-100/80 leading-relaxed">{warning}</p>
+              ))}
             </div>
           )}
 
@@ -198,16 +209,18 @@ export default function ProposalDrawer({
           <div className="flex gap-3 pt-1">
             <button
               onClick={onReject}
-              className="flex-1 py-2.5 rounded-xl text-sm font-medium text-ink-muted bg-surface-raised border border-surface-border hover:border-red-500/30 hover:text-red-400 transition-colors"
+              disabled={isAccepting}
+              className="flex-1 py-2.5 rounded-xl text-sm font-medium text-ink-muted bg-surface-raised border border-surface-border hover:border-red-500/30 hover:text-red-400 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
               Rechazar
             </button>
             <button
               onClick={onAccept}
-              className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white bg-brand hover:bg-brand-light active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+              disabled={isAccepting}
+              className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white bg-brand hover:bg-brand-light active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed disabled:active:scale-100"
             >
-              <CheckCircle2 size={14} />
-              Aplicar cambios
+              {isAccepting ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+              {isAccepting ? 'Aplicando…' : 'Aplicar cambios'}
             </button>
           </div>
         </div>

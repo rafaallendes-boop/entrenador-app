@@ -13,6 +13,8 @@ import { useAIDebugStore } from './useAIDebugStore'
 import { resolveChatRoute, type ChatRouteKind } from '../services/chatRouting'
 import { WeekCreatorEngine } from '../services/weekCreator/WeekCreatorEngine'
 
+let activeChatAbortController: AbortController | null = null
+
 interface ChatState {
   messages: ChatMessage[]
   currentSessionId: string
@@ -67,6 +69,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
 
     const sessionId = get().currentSessionId
+    // Lock immediately to prevent double-send before the async persist completes.
+    if (get().isLoading) return { route: route.kind }
+    activeChatAbortController?.abort()
+    const abortController = new AbortController()
+    activeChatAbortController = abortController
+    const requestClass = mapChatRouteToRequestClass(route.kind)
     const userMsg: ChatMessage = {
       id: uuid(),
       role: 'user',
@@ -75,10 +83,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
       chatSessionId: sessionId,
       context,
     }
-    await db.chatMessages.add(userMsg)
-    void syncService.pushChatMessage(userMsg)
-    const requestClass = mapChatRouteToRequestClass(route.kind)
     set(state => ({ messages: [...state.messages, userMsg], isLoading: true, streamingText: '', responsePhase: 'connecting', error: null }))
+    try {
+      await db.chatMessages.add(userMsg)
+    } catch {
+      set({ isLoading: false, responsePhase: 'idle', error: 'No se pudo guardar el mensaje. Verifica el espacio de almacenamiento.' })
+      return { route: route.kind }
+    }
+    void syncService.pushChatMessage(userMsg)
 
     // Pasamos historial multi-turno real al provider (excluye el mensaje recién añadido)
     const recentMessages = get().messages.slice(0, -1).map(m => ({ role: m.role, content: m.content }))
@@ -94,76 +106,119 @@ export const useChatStore = create<ChatState>((set, get) => ({
       set({ responsePhase: 'processing' })
     }, requestClass === 'chat_general' ? 1000 : 1500)
 
-    // Soft UI watchdog: if a request hangs beyond this budget, free the loading
-    // state so the user is not stuck. Does not abort the underlying fetch.
+    // Hard UI watchdog: aborts the provider request and frees the loading state.
     const WATCHDOG_MS = requestClass === 'week_creator' ? 75_000 : 60_000
+    let watchdogTimeout: number | undefined
     const watchdogPromise = new Promise<never>((_, reject) => {
-      window.setTimeout(() => {
+      watchdogTimeout = window.setTimeout(() => {
+        abortController.abort()
         reject(new Error(`La solicitud tardó demasiado (más de ${Math.round(WATCHDOG_MS / 1000)}s). Intenta de nuevo.`))
       }, WATCHDOG_MS)
     })
 
     try {
       const handleChunk = (chunk: string) => {
-        if (get().currentSessionId !== sessionId) return
+        if (!isActiveChatRequest(get().currentSessionId, sessionId, abortController)) return
         receivedFirstChunk = true
         set(state => ({ streamingText: state.streamingText + chunk, responsePhase: 'responding' }))
       }
 
       const enginePromise: Promise<CoachNormalizedResponse> = route.kind === 'week_creator'
         ? WeekCreatorEngine.sendWeekCreate(content, enrichedContext, {
-            surface: 'chat',
-            targetWeekStart: route.targetWeekStart ?? enrichedContext.currentWeekSummary?.weekStartDate ?? '',
-          })
+          surface: 'chat',
+          targetWeekStart: route.targetWeekStart ?? enrichedContext.currentWeekSummary?.weekStartDate ?? '',
+          signal: abortController.signal,
+        })
         : requestClass === 'chat_general'
         ? CoachEngine.sendChat(content, enrichedContext, {
             surface: 'chat',
             onChunk: handleChunk,
+            signal: abortController.signal,
           })
         : requestClass === 'chat_action'
           ? CoachEngine.sendAction(content, enrichedContext, {
               surface: 'chat',
               onChunk: handleChunk,
+              signal: abortController.signal,
             })
           : CoachEngine.send(content, enrichedContext, {
               requestClass,
               surface: 'chat',
               onChunk: handleChunk,
+              signal: abortController.signal,
             })
 
       const response = await Promise.race([enginePromise, watchdogPromise])
-      if (get().currentSessionId !== sessionId) {
+      if (!isActiveChatRequest(get().currentSessionId, sessionId, abortController)) {
         return { route: route.kind }
       }
 
-      const { proposalId, coachMsg } = await handleCoachResponse(response, requestClass, sessionId)
+      const coachMsg = buildCoachMessage(response, sessionId)
+      await db.chatMessages.add(coachMsg)
+      if (!isActiveChatRequest(get().currentSessionId, sessionId, abortController)) {
+        await discardLateCoachArtifacts(coachMsg)
+        return { route: route.kind }
+      }
+      void syncService.pushChatMessage(coachMsg)
+
+      let proposalId: string | undefined
+      if (shouldCreateProposal(response, requestClass) && isActiveChatRequest(get().currentSessionId, sessionId, abortController)) {
+        const normWarnings = buildNormalizationWarnings(response)
+        const proposal = await useCoachActionsStore.getState().addProposal(
+          response.message.slice(0, 120) + (response.message.length > 120 ? '…' : ''),
+          response.actions ?? [],
+          coachMsg.id,
+          { source: 'chat', warnings: normWarnings.length > 0 ? normWarnings : undefined },
+        )
+        proposalId = proposal.id
+        if (!isActiveChatRequest(get().currentSessionId, sessionId, abortController)) {
+          await discardLateCoachArtifacts(coachMsg, proposalId)
+          return { route: route.kind }
+        }
+        coachMsg.proposalId = proposalId
+        await db.chatMessages.update(coachMsg.id, { proposalId })
+        void syncService.pushChatMessage(coachMsg)
+      }
 
       useAIDebugStore.getState().completeRequest(response.traceId, {
         proposalCreated: proposalId != null,
       })
 
-      await db.chatMessages.add(coachMsg)
-      void syncService.pushChatMessage(coachMsg)
-      if (get().currentSessionId !== sessionId) return { route: route.kind }
+      if (!isActiveChatRequest(get().currentSessionId, sessionId, abortController)) {
+        await discardLateCoachArtifacts(coachMsg, proposalId)
+        return { route: route.kind }
+      }
       set(state => ({ messages: [...state.messages, coachMsg], isLoading: false, streamingText: '', responsePhase: 'idle' }))
     } catch (e) {
+      if (abortController.signal.aborted || (e instanceof DOMException && e.name === 'AbortError')) {
+        if (isCurrentChatRequestOwner(get().currentSessionId, sessionId, abortController)) {
+          set({ isLoading: false, streamingText: '', responsePhase: 'idle' })
+        }
+        return { route: route.kind }
+      }
       const errorMsg = formatError(e)
       if (get().currentSessionId !== sessionId) return { route: route.kind }
       set({ isLoading: false, streamingText: '', responsePhase: 'idle', error: errorMsg })
     } finally {
       window.clearTimeout(processingTimeout)
+      if (watchdogTimeout != null) window.clearTimeout(watchdogTimeout)
+      if (activeChatAbortController === abortController) activeChatAbortController = null
     }
 
     return { route: route.kind }
   },
 
   newSession: async () => {
+    activeChatAbortController?.abort()
+    activeChatAbortController = null
     const newId = uuid()
     setStoredChatSessionId(newId)
     set({ currentSessionId: newId, messages: [], isLoading: false, streamingText: '', responsePhase: 'idle', error: null })
   },
 
   deleteCurrentSession: async () => {
+    activeChatAbortController?.abort()
+    activeChatAbortController = null
     const sessionId = get().currentSessionId
     const messageIds = await db.chatMessages
       .where('chatSessionId')
@@ -204,46 +259,75 @@ function mapChatRouteToRequestClass(route: ChatRouteKind): AIRequestClass {
 }
 // ─── Response handling (extracted from sendMessage) ───────────────────────────────
 
-/**
- * Handles a coach response: creates proposals if needed and builds the
- * ChatMessage to persist. Extracted from sendMessage to separate concerns.
- */
-async function handleCoachResponse(
+function isActiveChatRequest(
+  currentSessionId: string,
+  expectedSessionId: string,
+  abortController: AbortController,
+): boolean {
+  return isCurrentChatRequestOwner(currentSessionId, expectedSessionId, abortController)
+    && !abortController.signal.aborted
+}
+
+function isCurrentChatRequestOwner(
+  currentSessionId: string,
+  expectedSessionId: string,
+  abortController: AbortController,
+): boolean {
+  return activeChatAbortController === abortController
+    && currentSessionId === expectedSessionId
+}
+
+function shouldCreateProposal(
   response: CoachNormalizedResponse,
   requestClass: AIRequestClass,
-  chatSessionId: string,
-): Promise<{ proposalId: string | undefined; coachMsg: ChatMessage }> {
-  const coachMessageId = uuid()
-  // Create a proposal if the model returned structured actions.
+): boolean {
   // Skip weekly summaries, chat_general, and truncated responses.
-  let proposalId: string | undefined
-  if (
+  return (
     requestClass !== 'weekly_summary'
     && requestClass !== 'chat_general'
-    && response.actions
-    && response.actions.length > 0
+    && (response.actions?.length ?? 0) > 0
     && !response.meta?.likelyTruncated
-  ) {
-    const proposal = await useCoachActionsStore.getState().addProposal(
-      response.message.slice(0, 120) + (response.message.length > 120 ? '…' : ''),
-      response.actions,
-      coachMessageId,
-      { source: 'chat' },
-    )
-    proposalId = proposal.id
-  }
+  )
+}
 
-  const coachMsg: ChatMessage = {
-    id: coachMessageId,
+function buildCoachMessage(
+  response: CoachNormalizedResponse,
+  chatSessionId: string,
+): ChatMessage {
+  return {
+    id: uuid(),
     role: 'coach',
     content: response.message,
     timestamp: Date.now(),
     chatSessionId,
     provider: response.provider,
-    proposalId,
   }
+}
 
-  return { proposalId, coachMsg }
+async function discardLateCoachArtifacts(coachMsg: ChatMessage, proposalId?: string): Promise<void> {
+  if (proposalId) {
+    await db.coachProposals.delete(proposalId)
+    void syncService.deleteCoachProposals([proposalId])
+    await useCoachActionsStore.getState().loadProposals()
+  }
+  await db.chatMessages.delete(coachMsg.id)
+  void syncService.deleteChatMessages([coachMsg.id])
+}
+
+// ─── Normalization warnings ────────────────────────────────────────────────────
+
+function buildNormalizationWarnings(response: CoachNormalizedResponse): string[] {
+  const warnings: string[] = []
+  const diagnostics = response.meta?.createWeekDiagnostics
+  if (!diagnostics) return warnings
+  for (const diag of diagnostics) {
+    if (diag.droppedSessions > 0) {
+      warnings.push(
+        `${diag.droppedSessions} sesión${diag.droppedSessions > 1 ? 'es' : ''} no pudo generarse por datos incompletos y fue omitida.`,
+      )
+    }
+  }
+  return warnings
 }
 
 // ─── Error formatting ──────────────────────────────────────────────────────────

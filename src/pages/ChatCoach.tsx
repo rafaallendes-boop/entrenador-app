@@ -97,6 +97,7 @@ export default function ChatCoach() {
 
   const [activeProposal, setActiveProposal] = useState<CoachProposal | null>(null)
   const [acceptedFeedback, setAcceptedFeedback] = useState<string | null>(null)
+  const [isAccepting, setIsAccepting] = useState(false)
   const [proposalError, setProposalError] = useState<string | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState(false)
@@ -188,10 +189,12 @@ export default function ChatCoach() {
   }
 
   const handleAccept = async () => {
-    if (!activeProposal) return
+    if (!activeProposal || isAccepting) return
 
+    setIsAccepting(true)
     const proposal = activeProposal
     const result = await acceptProposal(proposal.id)
+    setIsAccepting(false)
     setActiveProposal(null)
     setProposalError(null)
 
@@ -503,6 +506,7 @@ export default function ChatCoach() {
             onAccept={handleAccept}
             onReject={handleReject}
             onClose={() => setActiveProposal(null)}
+            isAccepting={isAccepting}
           />
         </Suspense>
       )}

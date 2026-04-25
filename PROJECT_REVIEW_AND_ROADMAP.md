@@ -187,6 +187,36 @@ Estado: pendiente
 3. Validar sync en escenarios de conflicto y recovery multi-dispositivo.
 4. Recién después abrir trabajo comercial de billing/paywall.
 
+## Plan de estabilización del Coach
+
+### Fase 1 — Estabilización del flujo chat — completada
+
+- Propagar respuestas truncadas desde backend a `responseNormalizer` con `meta.likelyTruncated`.
+- Endurecer `extractInlineActionsJson` para preferir bloques `<actions>` y evitar capturar JSON ajeno.
+- Mostrar warnings cuando `create_week` dropee sesiones inválidas.
+- Evitar reintentos de formato cuando el modelo respondió coherentemente sin acciones.
+- Endurecer parsing de chunks SSE corruptos sin cortar todo el stream.
+- Mover el lock visual de envío antes de persistir el mensaje de usuario.
+
+### Fase 2 — Propuestas y sync — completada
+
+- Hacer `acceptProposal` idempotente frente a doble click con guard local y mutex en store.
+- Reforzar `coach_proposals` en sync: Tier B, serialización por entidad y tombstones de borrado.
+- Decisión explícita: `coach_proposals` es durable; `chat_messages` queda efímero/Tier C en multi-device.
+
+### Fase 3 — Routing e intención — pendiente
+
+- Unificar detectores de intención de chat en un solo módulo testeado.
+- Cubrir frases reales de `chat_general`, `chat_action`, `week_creator` y redirect a plan builder.
+- Eliminar heurísticas literales poco probables en `inferCoachActionIntent`.
+
+### Fase 4 — UX y bordes operativos — pendiente
+
+- Mejorar experiencia de usuario nuevo con perfil incompleto antes de generar semana.
+- Persistir auto-submit keys del plan builder en `sessionStorage`.
+- Refinar falsos positivos de detección deportiva en notas y memoria.
+- Seguir desacoplando bloques puros de `promptBuilder` y superficies sensibles de `syncService`.
+
 ## Nota de revisión
 
 Este roadmap intencionalmente deja fuera features ya cerradas. La prioridad real ya no es “sumar más módulos”, sino volver confiable, medible y operable lo que ya existe.

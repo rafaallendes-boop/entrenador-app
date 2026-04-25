@@ -34,6 +34,7 @@ export interface AIRequest {
   maxTokens?: number
   temperature?: number
   allowFallback?: boolean
+  signal?: AbortSignal
   /** Called with each text chunk as it arrives. When provided, providers that
    *  support SSE streaming will emit chunks in real time. Providers that don't
    *  support streaming (e.g. ProxyProvider) ignore this field. */
@@ -57,6 +58,8 @@ export interface AIRawResponse {
   requestClass?: AIRequestClass
   retryUsed?: boolean
   fallbackUsed?: boolean
+  /** True when the provider stream was cut mid-response due to an error. */
+  truncated?: boolean
 }
 
 export interface CreateWeekNormalizationDiagnostic {

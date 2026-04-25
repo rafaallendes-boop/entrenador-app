@@ -57,6 +57,7 @@ const REMOTE_WIPE_KEY = 'entrenador_remote_wipe_v1'
 const REMOTE_FULL_RESET_ACK_KEY_PREFIX = 'entrenador_remote_reset_ack_v1'
 const PROFILE_RESET_LOCK_KEY = 'entrenador_profile_reset_lock_v1'
 const SESSION_DELETE_TOMBSTONES_KEY = 'entrenador_sync_session_tombstones_v1'
+const COACH_PROPOSAL_DELETE_TOMBSTONES_KEY = 'entrenador_sync_coach_proposal_tombstones_v1'
 const ATHLETE_PROFILE_WRITE_MODE_KEY = '__athleteProfileWriteMode'
 const TOMBSTONE_TTL_MS = 180 * 24 * 60 * 60 * 1000 // 180 days (extended from 90d as part of sync hardening)
 const MAX_QUEUE_SIZE = 500
@@ -76,8 +77,9 @@ interface ProfileResetLockEntry {
 
 type ProfileResetLockStore = Record<string, ProfileResetLockEntry>
 
-// Max retries por tier. Tier C (chat/coach) se dropea rápido para no consumir presupuesto
-// de fiabilidad del core.
+// Max retries por tier. Tier C (chat history) se dropea rápido para no consumir
+// presupuesto de fiabilidad del core. Coach proposals are Tier B because their
+// accepted/rejected state has product impact.
 const MAX_RETRIES_BY_TIER: Record<SyncTier, number> = {
   A: MAX_RETRIES_PER_OP,
   B: MAX_RETRIES_PER_OP,
@@ -1048,9 +1050,7 @@ async function drainQueue(): Promise<boolean> {
             `${op.table}.delete`,
           )
           if (error) throw error
-          if (op.table === 'sessions') {
-            rememberSessionDeleteTombstone(op.userId, payload.id)
-          }
+          rememberDeleteTombstoneForTable(op.table, op.userId, payload.id)
         }
       })
       trackSyncEvent({
@@ -1309,7 +1309,7 @@ async function deleteRow(table: SupabaseTable, id: string): Promise<void> {
 
   await withSerializedEntityMutation(userId, table, payload, async () => {
     if (hasPendingRemoteWipeForTable(userId, table)) {
-      if (table === 'sessions') rememberSessionDeleteTombstone(userId, id)
+      rememberDeleteTombstoneForTable(table, userId, id)
       enqueue({ userId, table, action: 'delete', payload, enqueuedAt: Date.now() })
       scheduleRetry(15000)
       return
@@ -1318,7 +1318,7 @@ async function deleteRow(table: SupabaseTable, id: string): Promise<void> {
     if (!navigator.onLine) {
       finishSyncAttempt('offline')
       syncStoreState().setSyncStatus('offline')
-      if (table === 'sessions') rememberSessionDeleteTombstone(userId, id)
+      rememberDeleteTombstoneForTable(table, userId, id)
       enqueue({ userId, table, action: 'delete', payload, enqueuedAt: Date.now() })
       scheduleRetry(15000)
       return
@@ -1332,7 +1332,7 @@ async function deleteRow(table: SupabaseTable, id: string): Promise<void> {
         `${table}.delete`,
       )
       if (error) throw error
-      if (table === 'sessions') rememberSessionDeleteTombstone(userId, id)
+      rememberDeleteTombstoneForTable(table, userId, id)
       clearQueuedOpsForEntityOlderThan(userId, table, payload, requestedAt)
       trackSyncEvent({
         kind: 'delete',
@@ -1361,7 +1361,7 @@ async function deleteRow(table: SupabaseTable, id: string): Promise<void> {
         applySyncFailure(error, errorInfo.userMessage, table)
         return
       }
-      if (table === 'sessions') rememberSessionDeleteTombstone(userId, id)
+      rememberDeleteTombstoneForTable(table, userId, id)
       enqueue({ userId, table, action: 'delete', payload, enqueuedAt: Date.now() })
       applySyncFailure(error, `No se pudo eliminar en sync ${table}.`, table)
     }
@@ -2148,6 +2148,7 @@ export async function runFullSync(userId: string): Promise<void> {
     try {
       await repairLocalNaturalKeyConflicts()
       pruneExpiredTombstones(userId)
+      pruneExpiredCoachProposalTombstones(userId)
       pruneStaleQueue(userId)
       await processPendingRemoteWipes(userId)
       await applyRemoteFullResetIfNeeded(userId)
@@ -2408,12 +2409,22 @@ async function mergeCoachProposals(userId: string, context: MergeContext): Promi
   if (context.pendingRemoteWipeTables.has('coach_proposals')) return
   const remoteRows = await fetchAll<Record<string, unknown>>('coach_proposals', userId)
   const remoteIds = new Set<string>()
+  const tombstones = getCoachProposalDeleteTombstones(userId)
 
   for (const row of remoteRows) {
     const remote = rowToCoachProposal(row)
     remoteIds.add(remote.id)
 
     const remoteUpdatedAt = (row.updated_at as number) ?? 0
+    const deletedAt = tombstones[remote.id]
+    if (typeof deletedAt === 'number') {
+      if (deletedAt >= remoteUpdatedAt) {
+        context.pendingWrites.push(() => deleteRow('coach_proposals', remote.id))
+        continue
+      }
+      clearCoachProposalDeleteTombstone(userId, remote.id)
+    }
+
     const local = await db.coachProposals.get(remote.id)
     const localUpdatedAt = local?.resolvedAt ?? local?.createdAt ?? 0
 
@@ -2432,6 +2443,8 @@ async function mergeCoachProposals(userId: string, context: MergeContext): Promi
       context.deleteBeforeTs,
     )
   }
+
+  pruneCoachProposalDeleteTombstones(userId, remoteIds, { pullWasComplete: true })
 }
 
 async function mergeAthleteProfile(userId: string, context: MergeContext): Promise<void> {
@@ -2795,8 +2808,16 @@ function groupRowsBy<T>(rows: T[], getKey: (row: T) => string): Map<string, T[]>
 }
 
 function getSessionDeleteTombstones(userId: string): Record<string, number> {
+  return getDeleteTombstones(SESSION_DELETE_TOMBSTONES_KEY, userId)
+}
+
+function getCoachProposalDeleteTombstones(userId: string): Record<string, number> {
+  return getDeleteTombstones(COACH_PROPOSAL_DELETE_TOMBSTONES_KEY, userId)
+}
+
+function getDeleteTombstones(storageKey: string, userId: string): Record<string, number> {
   try {
-    const raw = localStorage.getItem(SESSION_DELETE_TOMBSTONES_KEY)
+    const raw = localStorage.getItem(storageKey)
     if (!raw) return {}
     const parsed = JSON.parse(raw) as Record<string, Record<string, number>>
     const value = parsed?.[userId]
@@ -2818,8 +2839,16 @@ function getSessionDeleteTombstones(userId: string): Record<string, number> {
 
 /** Remove tombstones older than TOMBSTONE_TTL_MS from localStorage for a user. */
 function pruneExpiredTombstones(userId: string): void {
+  pruneExpiredTombstoneGroup(SESSION_DELETE_TOMBSTONES_KEY, userId)
+}
+
+function pruneExpiredCoachProposalTombstones(userId: string): void {
+  pruneExpiredTombstoneGroup(COACH_PROPOSAL_DELETE_TOMBSTONES_KEY, userId)
+}
+
+function pruneExpiredTombstoneGroup(storageKey: string, userId: string): void {
   try {
-    const raw = localStorage.getItem(SESSION_DELETE_TOMBSTONES_KEY)
+    const raw = localStorage.getItem(storageKey)
     if (!raw) return
     const parsed = JSON.parse(raw) as Record<string, Record<string, number>>
     const userTombstones = parsed[userId]
@@ -2835,7 +2864,7 @@ function pruneExpiredTombstones(userId: string): void {
     if (Object.keys(pruned).length !== Object.keys(userTombstones).length) {
       parsed[userId] = pruned
       if (Object.keys(pruned).length === 0) delete parsed[userId]
-      localStorage.setItem(SESSION_DELETE_TOMBSTONES_KEY, JSON.stringify(parsed))
+      localStorage.setItem(storageKey, JSON.stringify(parsed))
     }
   } catch {
     // Ignore storage failures
@@ -2843,14 +2872,22 @@ function pruneExpiredTombstones(userId: string): void {
 }
 
 function saveSessionDeleteTombstones(userId: string, tombstones: Record<string, number>): void {
+  saveDeleteTombstones(SESSION_DELETE_TOMBSTONES_KEY, userId, tombstones)
+}
+
+function saveCoachProposalDeleteTombstones(userId: string, tombstones: Record<string, number>): void {
+  saveDeleteTombstones(COACH_PROPOSAL_DELETE_TOMBSTONES_KEY, userId, tombstones)
+}
+
+function saveDeleteTombstones(storageKey: string, userId: string, tombstones: Record<string, number>): void {
   try {
-    const raw = localStorage.getItem(SESSION_DELETE_TOMBSTONES_KEY)
+    const raw = localStorage.getItem(storageKey)
     const parsed = raw ? JSON.parse(raw) as Record<string, Record<string, number>> : {}
     const next = { ...parsed, [userId]: tombstones }
     if (Object.keys(tombstones).length === 0) {
       delete next[userId]
     }
-    localStorage.setItem(SESSION_DELETE_TOMBSTONES_KEY, JSON.stringify(next))
+    localStorage.setItem(storageKey, JSON.stringify(next))
   } catch {
     // Ignore storage failures.
   }
@@ -2859,6 +2896,7 @@ function saveSessionDeleteTombstones(userId: string, tombstones: Record<string, 
 function clearSyncArtifactsForUser(userId: string): void {
   clearQueuedOpsForTables(userId, REMOTE_WIPE_ORDER)
   clearSessionDeleteTombstoneGroup(userId)
+  clearCoachProposalDeleteTombstoneGroup(userId)
   localStorage.removeItem(getMigrationKey(userId))
   clearInitialRemotePull(userId)
   clearPendingRemoteWipeState(userId)
@@ -2894,18 +2932,34 @@ export function clearSelectedSyncArtifactsForUser(
   if (selection.trainingData) {
     clearSessionDeleteTombstoneGroup(userId)
   }
+  if (selection.coachProposals) {
+    clearCoachProposalDeleteTombstoneGroup(userId)
+  }
 }
 
 function clearSessionDeleteTombstoneGroup(userId: string): void {
+  clearDeleteTombstoneGroup(SESSION_DELETE_TOMBSTONES_KEY, userId)
+}
+
+function clearCoachProposalDeleteTombstoneGroup(userId: string): void {
+  clearDeleteTombstoneGroup(COACH_PROPOSAL_DELETE_TOMBSTONES_KEY, userId)
+}
+
+function clearDeleteTombstoneGroup(storageKey: string, userId: string): void {
   try {
-    const raw = localStorage.getItem(SESSION_DELETE_TOMBSTONES_KEY)
+    const raw = localStorage.getItem(storageKey)
     const parsed = raw ? JSON.parse(raw) as Record<string, Record<string, number>> : {}
     if (!(userId in parsed)) return
     delete parsed[userId]
-    localStorage.setItem(SESSION_DELETE_TOMBSTONES_KEY, JSON.stringify(parsed))
+    localStorage.setItem(storageKey, JSON.stringify(parsed))
   } catch {
     // Ignore storage failures.
   }
+}
+
+function rememberDeleteTombstoneForTable(table: SupabaseTable, userId: string, id: string): void {
+  if (table === 'sessions') rememberSessionDeleteTombstone(userId, id)
+  if (table === 'coach_proposals') rememberCoachProposalDeleteTombstone(userId, id)
 }
 
 function rememberSessionDeleteTombstone(userId: string, sessionId: string): void {
@@ -2914,11 +2968,24 @@ function rememberSessionDeleteTombstone(userId: string, sessionId: string): void
   saveSessionDeleteTombstones(userId, tombstones)
 }
 
+function rememberCoachProposalDeleteTombstone(userId: string, proposalId: string): void {
+  const tombstones = getCoachProposalDeleteTombstones(userId)
+  tombstones[proposalId] = Date.now()
+  saveCoachProposalDeleteTombstones(userId, tombstones)
+}
+
 function clearSessionDeleteTombstone(userId: string, sessionId: string): void {
   const tombstones = getSessionDeleteTombstones(userId)
   if (!(sessionId in tombstones)) return
   delete tombstones[sessionId]
   saveSessionDeleteTombstones(userId, tombstones)
+}
+
+function clearCoachProposalDeleteTombstone(userId: string, proposalId: string): void {
+  const tombstones = getCoachProposalDeleteTombstones(userId)
+  if (!(proposalId in tombstones)) return
+  delete tombstones[proposalId]
+  saveCoachProposalDeleteTombstones(userId, tombstones)
 }
 
 function pruneSessionDeleteTombstones(
@@ -2952,6 +3019,37 @@ function pruneSessionDeleteTombstones(
 
   if (changed) {
     saveSessionDeleteTombstones(userId, tombstones)
+  }
+}
+
+function pruneCoachProposalDeleteTombstones(
+  userId: string,
+  remoteIds: Set<string>,
+  options: { pullWasComplete: boolean },
+): void {
+  const tombstones = getCoachProposalDeleteTombstones(userId)
+  let changed = false
+  const now = Date.now()
+
+  for (const proposalId of Object.keys(tombstones)) {
+    const deletedAt = tombstones[proposalId]
+    if (now - deletedAt >= TOMBSTONE_TTL_MS) {
+      delete tombstones[proposalId]
+      changed = true
+    }
+  }
+
+  if (options.pullWasComplete) {
+    for (const proposalId of Object.keys(tombstones)) {
+      if (!remoteIds.has(proposalId)) {
+        delete tombstones[proposalId]
+        changed = true
+      }
+    }
+  }
+
+  if (changed) {
+    saveCoachProposalDeleteTombstones(userId, tombstones)
   }
 }
 
@@ -3205,6 +3303,7 @@ export async function wipeRemoteAndLocalAppData(userId: string): Promise<RemoteW
   markProfileResetLockStatus(userId, 'pending_remote_wipe')
   clearQueuedOpsForTables(userId, allTables)
   clearSessionDeleteTombstoneGroup(userId)
+  clearCoachProposalDeleteTombstoneGroup(userId)
   registerPendingRemoteWipe(userId, allTables, { fullReset: true })
 
   const processed = await processPendingRemoteWipes(userId)

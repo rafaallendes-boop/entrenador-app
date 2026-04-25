@@ -136,7 +136,7 @@ export function normalizeResponse(raw: AIRawResponse): CoachNormalizedResponse {
   let actions: CoachAction[] | undefined
   let actionParseFailed = false
   let hadActionsMarkup = false
-  let likelyTruncated = false
+  let likelyTruncated = raw.truncated === true
   let invalidActionCount = 0
   let createWeekDiagnostics: CreateWeekNormalizationDiagnostic[] = []
   const extraction = extractActionsText(message)
@@ -685,6 +685,8 @@ function warnRepairedAddSession(repairs: string[], record: Record<string, unknow
 function extractInlineActionsJson(message: string): { actionsText: string; messageWithoutActions: string } | null {
   const jsonArray = extractJsonArray(message)
   if (!jsonArray) return null
+  // Must start with an object literal — avoids capturing numeric/string arrays like "[Z2, Z3]"
+  if (!jsonArray.trimStart().startsWith('[{')) return null
   if (!/"type"\s*:/.test(jsonArray)) return null
 
   return {

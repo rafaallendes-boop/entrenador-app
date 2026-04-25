@@ -344,6 +344,7 @@ function getAthleteProfileRemoteId(userId: string): string {
 
 export function athleteProfileToRow(profile: AthleteProfile, userId: string): Record<string, unknown> {
   const { id: _localId, coachMemory, updatedAt, ...rest } = profile
+  void _localId
   const deletedFields: string[] = []
   const dataEntries: Record<string, unknown> = {}
 

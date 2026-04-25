@@ -22,6 +22,7 @@ type RequestClass =
   | 'chat_general'
   | 'chat_action'
   | 'weekly_summary'
+  | 'week_creator'
   | 'plan_builder_week'
   | 'plan_builder_pair'
   | 'import_extract'
@@ -59,6 +60,12 @@ interface ProviderExecutionResult {
   durationMs: number
 }
 
+interface RequestValidationResult {
+  ok: boolean
+  req?: CoachRequest
+  error?: string
+}
+
 const DEFAULT_MODELS: Record<ProviderName, string> = {
   gemini: 'gemini-2.5-flash',
   openai: 'gpt-4o-mini',
@@ -70,10 +77,34 @@ const REQUEST_TIMEOUTS: Record<RequestClass, number> = {
   chat_general: 15000,
   chat_action: 25000,
   weekly_summary: 20000,
+  week_creator: 30000,
   plan_builder_week: 30000,
   plan_builder_pair: 45000,
   import_extract: 20000,
 }
+const REQUEST_MAX_TOKENS: Record<RequestClass, number> = {
+  chat_general: 2400,
+  chat_action: 4200,
+  weekly_summary: 1600,
+  week_creator: 3500,
+  plan_builder_week: 3500,
+  plan_builder_pair: 5500,
+  import_extract: 2000,
+}
+const SYSTEM_PROMPT_MAX_CHARS: Record<RequestClass, number> = {
+  chat_general: 24000,
+  chat_action: 36000,
+  weekly_summary: 18000,
+  week_creator: 36000,
+  plan_builder_week: 42000,
+  plan_builder_pair: 64000,
+  import_extract: 18000,
+}
+const USER_MESSAGE_MAX_CHARS = 8000
+const CONVERSATION_MAX_MESSAGES = 30
+const CONVERSATION_MESSAGE_MAX_CHARS = 4000
+const CONVERSATION_TOTAL_MAX_CHARS = 30000
+const TRACE_ID_MAX_CHARS = 160
 // Netlify synchronous functions currently allow 60s; keep a small buffer for response finalization.
 const MAX_FUNCTION_WALLCLOCK_MS = 55000
 const MIN_PROVIDER_ATTEMPT_MS = 4000
@@ -93,12 +124,122 @@ function normalizeRequestClass(value: unknown): RequestClass {
   switch (value) {
     case 'chat_action':
     case 'weekly_summary':
+    case 'week_creator':
     case 'plan_builder_week':
     case 'plan_builder_pair':
     case 'import_extract':
       return value
     default:
       return 'chat_general'
+  }
+}
+
+function isKnownRequestClass(value: unknown): value is RequestClass {
+  return value === 'chat_general'
+    || value === 'chat_action'
+    || value === 'weekly_summary'
+    || value === 'week_creator'
+    || value === 'plan_builder_week'
+    || value === 'plan_builder_pair'
+    || value === 'import_extract'
+}
+
+function validateCoachRequest(input: unknown): RequestValidationResult {
+  if (!input || typeof input !== 'object') {
+    return { ok: false, error: 'Invalid JSON body' }
+  }
+
+  const raw = input as Partial<CoachRequest>
+  if (raw.requestClass != null && !isKnownRequestClass(raw.requestClass)) {
+    return { ok: false, error: 'Invalid requestClass' }
+  }
+  const requestClass = normalizeRequestClass(raw.requestClass)
+
+  if (typeof raw.systemPrompt !== 'string' || raw.systemPrompt.trim().length === 0) {
+    return { ok: false, error: 'Missing required field: systemPrompt' }
+  }
+  if (raw.systemPrompt.length > SYSTEM_PROMPT_MAX_CHARS[requestClass]) {
+    return { ok: false, error: `systemPrompt too long for ${requestClass}` }
+  }
+
+  if (typeof raw.userMessage !== 'string' || raw.userMessage.trim().length === 0) {
+    return { ok: false, error: 'Missing required field: userMessage' }
+  }
+  if (raw.userMessage.length > USER_MESSAGE_MAX_CHARS) {
+    return { ok: false, error: 'userMessage too long' }
+  }
+
+  if (raw.conversation != null) {
+    if (!Array.isArray(raw.conversation)) {
+      return { ok: false, error: 'conversation must be an array' }
+    }
+    if (raw.conversation.length > CONVERSATION_MAX_MESSAGES) {
+      return { ok: false, error: 'conversation too long' }
+    }
+
+    let totalChars = 0
+    for (const message of raw.conversation) {
+      if (
+        !message
+        || typeof message !== 'object'
+        || !('role' in message)
+        || !('content' in message)
+      ) {
+        return { ok: false, error: 'conversation contains invalid messages' }
+      }
+      const candidate = message as { role?: unknown; content?: unknown }
+      if (candidate.role !== 'user' && candidate.role !== 'assistant') {
+        return { ok: false, error: 'conversation contains invalid roles' }
+      }
+      if (typeof candidate.content !== 'string') {
+        return { ok: false, error: 'conversation contains invalid content' }
+      }
+      if (candidate.content.length > CONVERSATION_MESSAGE_MAX_CHARS) {
+        return { ok: false, error: 'conversation message too long' }
+      }
+      totalChars += candidate.content.length
+    }
+    if (totalChars > CONVERSATION_TOTAL_MAX_CHARS) {
+      return { ok: false, error: 'conversation total too long' }
+    }
+  }
+
+  if (raw.maxTokens != null) {
+    if (!Number.isInteger(raw.maxTokens) || raw.maxTokens < 1 || raw.maxTokens > REQUEST_MAX_TOKENS[requestClass]) {
+      return { ok: false, error: `maxTokens out of range for ${requestClass}` }
+    }
+  }
+
+  if (raw.temperature != null) {
+    if (typeof raw.temperature !== 'number' || !Number.isFinite(raw.temperature) || raw.temperature < 0 || raw.temperature > 1) {
+      return { ok: false, error: 'temperature out of range' }
+    }
+  }
+
+  if (raw.traceId != null && (typeof raw.traceId !== 'string' || raw.traceId.length > TRACE_ID_MAX_CHARS)) {
+    return { ok: false, error: 'traceId invalid' }
+  }
+
+  if (raw.allowFallback != null && typeof raw.allowFallback !== 'boolean') {
+    return { ok: false, error: 'allowFallback must be boolean' }
+  }
+  if (raw.stream != null && typeof raw.stream !== 'boolean') {
+    return { ok: false, error: 'stream must be boolean' }
+  }
+
+  return {
+    ok: true,
+    req: {
+      systemPrompt: raw.systemPrompt,
+      userMessage: raw.userMessage,
+      conversation: raw.conversation,
+      requestClass,
+      traceId: raw.traceId,
+      maxTokens: raw.maxTokens,
+      temperature: raw.temperature,
+      allowFallback: raw.allowFallback,
+      stream: raw.stream,
+    },
   }
 }
 
@@ -418,10 +559,14 @@ async function readSseStream(
       if (!line.startsWith('data: ')) continue
       const json = line.slice(6).trim()
       if (!json || json === '[DONE]') continue
-      const chunk = pickChunk(json)
-      if (chunk) {
-        fullText += chunk
-        onChunk(chunk)
+      try {
+        const chunk = pickChunk(json)
+        if (chunk) {
+          fullText += chunk
+          onChunk(chunk)
+        }
+      } catch {
+        // Skip malformed SSE chunk — provider sent incomplete JSON fragment.
       }
     }
   }
@@ -588,8 +733,10 @@ function streamResponse(req: CoachRequest): Response {
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
       void (async () => {
+        let sentAnyChunk = false
         try {
           const result = await executeWithPolicy(req, (chunk) => {
+            sentAnyChunk = true
             controller.enqueue(encoder.encode(`${JSON.stringify({ type: 'chunk', chunk, traceId })}\n`))
           })
           controller.enqueue(encoder.encode(`${JSON.stringify({ type: 'done', ...result })}\n`))
@@ -597,6 +744,7 @@ function streamResponse(req: CoachRequest): Response {
           const normalized = normalizeError(error)
           controller.enqueue(encoder.encode(`${JSON.stringify({
             type: 'error',
+            truncated: sentAnyChunk,
             traceId,
             requestClass,
             error: normalized.message,
@@ -617,16 +765,18 @@ export const handler = async (event: LambdaEvent): Promise<LambdaResponse> => {
     return json(405, { error: 'Method not allowed', errorCode: 'unknown' })
   }
 
-  let req: CoachRequest
+  let body: unknown
   try {
-    req = JSON.parse(event.body ?? '{}') as CoachRequest
+    body = JSON.parse(event.body ?? '{}')
   } catch {
     return json(400, { error: 'Invalid JSON body', errorCode: 'unknown' })
   }
 
-  if (!req.systemPrompt || !req.userMessage) {
-    return json(400, { error: 'Missing required fields: systemPrompt, userMessage', errorCode: 'unknown' })
+  const validation = validateCoachRequest(body)
+  if (!validation.ok || !validation.req) {
+    return json(400, { error: validation.error ?? 'Invalid request body', errorCode: 'unknown' })
   }
+  const req = validation.req
 
   if (req.stream) {
     return streamResponse(req)

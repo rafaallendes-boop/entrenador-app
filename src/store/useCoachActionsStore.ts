@@ -12,6 +12,9 @@ import { v4 as uuid } from '../utils/uuid'
 import { useCoachMemoryStore } from './useCoachMemoryStore'
 import { useTrainingStore } from './useTrainingStore'
 
+// Promise cache: repeated accept calls for the same proposal share the same work.
+const activeAcceptProposalPromises = new Map<string, Promise<AcceptProposalResult>>()
+
 interface ApplyCoachActionResult {
   warnings: string[]
   createdSessionIds: string[]
@@ -32,7 +35,7 @@ interface CoachActionsState {
     message: string,
     actions: CoachAction[],
     chatMessageId?: string,
-    options?: { source?: CoachProposalSource; relatedAlertId?: string },
+    options?: { source?: CoachProposalSource; relatedAlertId?: string; warnings?: string[] },
   ) => Promise<CoachProposal>
   acceptProposal: (id: string) => Promise<AcceptProposalResult>
   rejectProposal: (id: string) => Promise<void>
@@ -62,13 +65,16 @@ export const useCoachActionsStore = create<CoachActionsState>((set, get) => ({
       actions: normalized.actions,
       historicalSessions,
     })
+    const metadata = normalized.metadata
+      ? { ...normalized.metadata, warnings: options?.warnings }
+      : normalized.metadata
     const proposal: CoachProposal = {
       id: uuid(),
       chatMessageId,
       message,
       actions: normalized.actions,
       planSummary,
-      metadata: normalized.metadata,
+      metadata,
       status: 'pending',
       createdAt: Date.now(),
     }
@@ -98,93 +104,108 @@ export const useCoachActionsStore = create<CoachActionsState>((set, get) => ({
   },
 
   acceptProposal: async (id) => {
-    const proposal = get().proposals.find((item) => item.id === id)
-    if (!proposal || proposal.status !== 'pending') {
-      return { errors: [], warnings: [] }
-    }
+    const active = activeAcceptProposalPromises.get(id)
+    if (active) return active
 
-    const trainingStore = useTrainingStore.getState()
-    const athleteProfile = useCoachMemoryStore.getState().athleteProfile
-    const errors: string[] = []
-    const warnings: string[] = []
-    const normalized = normalizeCoachProposal(proposal.actions, {
-      source: proposal.metadata?.source ?? 'chat',
-      relatedAlertId: proposal.metadata?.relatedAlertId,
-      existingSessions: trainingStore.sessions,
-      proposalMessage: proposal.message,
-    })
-    const workingProposal: CoachProposal = {
-      ...proposal,
-      actions: normalized.actions,
-      metadata: {
-        ...normalized.metadata,
-        resolutionOutcome: proposal.metadata?.resolutionOutcome ?? 'pending',
-      },
-    }
+    const promise = (async (): Promise<AcceptProposalResult> => {
+      const proposal = await db.coachProposals.get(id) ?? get().proposals.find((item) => item.id === id)
+      if (!proposal || proposal.status !== 'pending') {
+        return { errors: [], warnings: [] }
+      }
 
-    const validationErrors = preValidateActions(workingProposal.actions, trainingStore, athleteProfile)
-    if (validationErrors.length > 0) {
+      const trainingStore = useTrainingStore.getState()
+      const athleteProfile = useCoachMemoryStore.getState().athleteProfile
+      const errors: string[] = []
+      const warnings: string[] = []
+      const normalized = normalizeCoachProposal(proposal.actions, {
+        source: proposal.metadata?.source ?? 'chat',
+        relatedAlertId: proposal.metadata?.relatedAlertId,
+        existingSessions: trainingStore.sessions,
+        proposalMessage: proposal.message,
+      })
+      const workingProposal: CoachProposal = {
+        ...proposal,
+        actions: normalized.actions,
+        metadata: {
+          ...normalized.metadata,
+          warnings: proposal.metadata?.warnings,
+          resolutionOutcome: proposal.metadata?.resolutionOutcome ?? 'pending',
+        },
+      }
+
+      const validationErrors = preValidateActions(workingProposal.actions, trainingStore, athleteProfile)
+      if (validationErrors.length > 0) {
+        const nextProposal: CoachProposal = {
+          ...workingProposal,
+          status: 'rejected',
+          resolvedAt: Date.now(),
+          metadata: workingProposal.metadata
+            ? { ...workingProposal.metadata, resolutionOutcome: 'rejected' }
+            : workingProposal.metadata,
+        }
+        await db.coachProposals.put(nextProposal)
+        void syncService.pushCoachProposal(nextProposal)
+        set((state) => ({
+          proposals: state.proposals.map((item) => (item.id === id ? nextProposal : item)),
+        }))
+        return { errors: validationErrors, warnings: [] }
+      }
+
+      const appliedResults: Array<{ index: number; createdSessionIds: string[]; restoredSessions: Session[]; restoredWeekSummaries: WeekSummary[]; deletedWeekSummaryIds: string[] }> = []
+      for (let i = 0; i < workingProposal.actions.length; i++) {
+        try {
+          const result = await applyCoachAction(workingProposal.actions[i], trainingStore, workingProposal.createdAt)
+          warnings.push(...result.warnings)
+          appliedResults.push({
+            index: i,
+            createdSessionIds: result.createdSessionIds,
+            restoredSessions: result.restoredSessions,
+            restoredWeekSummaries: result.restoredWeekSummaries,
+            deletedWeekSummaryIds: result.deletedWeekSummaryIds,
+          })
+        } catch (error) {
+          errors.push(`Accion ${i + 1} (${workingProposal.actions[i].type}): ${error}`)
+        }
+      }
+
+      if (errors.length > 0 && appliedResults.length > 0) {
+        await rollbackAppliedActions(workingProposal.actions, appliedResults, trainingStore)
+        warnings.push(`Se revirtieron ${appliedResults.length} acciones aplicadas antes del fallo.`)
+      }
+
       const nextProposal: CoachProposal = {
         ...workingProposal,
-        status: 'rejected',
+        status: errors.length === 0 ? 'accepted' : 'rejected',
         resolvedAt: Date.now(),
         metadata: workingProposal.metadata
-          ? { ...workingProposal.metadata, resolutionOutcome: 'rejected' }
+          ? {
+              ...workingProposal.metadata,
+              resolutionOutcome: errors.length === 0 ? 'accepted' : 'rejected',
+            }
           : workingProposal.metadata,
       }
+
       await db.coachProposals.put(nextProposal)
       void syncService.pushCoachProposal(nextProposal)
       set((state) => ({
         proposals: state.proposals.map((item) => (item.id === id ? nextProposal : item)),
       }))
-      return { errors: validationErrors, warnings: [] }
-    }
 
-    const appliedResults: Array<{ index: number; createdSessionIds: string[]; restoredSessions: Session[]; restoredWeekSummaries: WeekSummary[]; deletedWeekSummaryIds: string[] }> = []
-    for (let i = 0; i < workingProposal.actions.length; i++) {
-      try {
-        const result = await applyCoachAction(workingProposal.actions[i], trainingStore, workingProposal.createdAt)
-        warnings.push(...result.warnings)
-        appliedResults.push({
-          index: i,
-          createdSessionIds: result.createdSessionIds,
-          restoredSessions: result.restoredSessions,
-          restoredWeekSummaries: result.restoredWeekSummaries,
-          deletedWeekSummaryIds: result.deletedWeekSummaryIds,
-        })
-      } catch (error) {
-        errors.push(`Accion ${i + 1} (${workingProposal.actions[i].type}): ${error}`)
+      if (errors.length > 0) {
+        console.warn('Coach proposal rejected - all actions rolled back:', errors)
+      }
+
+      return { errors, warnings }
+    })()
+
+    activeAcceptProposalPromises.set(id, promise)
+    try {
+      return await promise
+    } finally {
+      if (activeAcceptProposalPromises.get(id) === promise) {
+        activeAcceptProposalPromises.delete(id)
       }
     }
-
-    if (errors.length > 0 && appliedResults.length > 0) {
-      await rollbackAppliedActions(workingProposal.actions, appliedResults, trainingStore)
-      warnings.push(`Se revirtieron ${appliedResults.length} acciones aplicadas antes del fallo.`)
-    }
-
-    const nextProposal: CoachProposal = {
-      ...workingProposal,
-      status: errors.length === 0 ? 'accepted' : 'rejected',
-      resolvedAt: Date.now(),
-      metadata: workingProposal.metadata
-        ? {
-            ...workingProposal.metadata,
-            resolutionOutcome: errors.length === 0 ? 'accepted' : 'rejected',
-          }
-        : workingProposal.metadata,
-    }
-
-    await db.coachProposals.put(nextProposal)
-    void syncService.pushCoachProposal(nextProposal)
-    set((state) => ({
-      proposals: state.proposals.map((item) => (item.id === id ? nextProposal : item)),
-    }))
-
-    if (errors.length > 0) {
-      console.warn('Coach proposal rejected - all actions rolled back:', errors)
-    }
-
-    return { errors, warnings }
   },
 
   getPendingProposals: () => get().proposals.filter((proposal) => proposal.status === 'pending'),

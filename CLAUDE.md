@@ -22,15 +22,21 @@ Deploy en Netlify. El usuario principal es Rafael Allende (squash competitivo, m
 
 ## Estado actual del producto
 Ver `PROJECT_REVIEW_AND_ROADMAP.md` para el estado completo.
-Resumen: producto usable, lint OK, build OK.
+Resumen: producto usable, lint OK, build OK. Actualizado: 2026-04-24.
 El chunk más pesado es `pdf.worker.min` — ya optimizado, no tocar sin razón.
 
+Mejoras recientes relevantes:
+- `weekCreator` refactorizado en `src/services/weekCreator/` con engine, config, prompt builder y validación propios + tests
+- `syncService` endurecido: bug de reset total corregido, tests en `src/services/__tests__/syncService.test.ts`
+- Timeouts de Netlify Functions realineados a los límites reales del plan (máx 26s) — ver `OPTIMIZATION_AND_COSTS.md`
+- Suite de tests ampliada: ~35 archivos en `src/services/__tests__/`
+
 ## Prioridades abiertas (en orden)
-1. Robustez de notificaciones (scheduling persistente por navegador)
-2. Explotar athlete profile en propuestas de fuerza y running
-3. Personalización real por usuario (desacoplar defaults de "Rafael")
-4. Nutrición más robusta integrada al coach
-5. Merge conflict-aware en backup
+1. Validación operativa real de sync (conflictos concurrentes, recovery multi-dispositivo)
+2. Instrumentación del loop coach → propuesta → aceptación → impacto
+3. QA end-to-end de `week_creator` + `plan_builder` + `chat_action` con perfil incompleto
+4. Robustez de notificaciones (scheduling persistente por navegador)
+5. Explotar athlete profile en propuestas de fuerza y running
 
 ## Reglas del proyecto
 - No modificar `promptBuilder.ts` sin revisar el contexto completo del coach
@@ -41,3 +47,4 @@ El chunk más pesado es `pdf.worker.min` — ya optimizado, no tocar sin razón.
 
 ## Referencias clave
 @./PROJECT_REVIEW_AND_ROADMAP.md
+@./OPTIMIZATION_AND_COSTS.md

@@ -12,6 +12,7 @@ import { buildWeekRetryInstruction } from '../week/shared'
 type WeekCreatorOptions = {
   surface?: AITechnicalSurface
   targetWeekStart: string
+  signal?: AbortSignal
 }
 
 export const WeekCreatorEngine = {
@@ -62,6 +63,7 @@ export const WeekCreatorEngine = {
           maxTokens: policy.maxTokens,
           temperature: attempt === 1 ? policy.temperature : 0.25,
           allowFallback: policy.allowFallback,
+          signal: options.signal,
         })
 
         const normalized = normalizeResponse(raw)
