@@ -653,6 +653,47 @@ describe('responseNormalizer', () => {
     expect(response.meta?.invalidActionCount).toBe(1)
   })
 
+  it('normalizes create_week when model uses "action" as discriminator instead of "type"', () => {
+    const response = normalizeResponse({
+      text: [
+        '<actions>',
+        JSON.stringify({
+          action: 'create_week',
+          type: 'training_week',
+          targetDate: '2026-04-27',
+          reason: 'Semana Peak con squash y fuerza',
+          weekObjectives: ['Priorizar sesiones clave'],
+          sessions: [
+            {
+              date: '2026-04-27',
+              timeBlock: 'AM',
+              sessionType: 'squash',
+              title: 'Squash: Físico en pista',
+              durationMin: 60,
+              objective: 'Mejorar desplazamiento',
+              rpe: 7,
+              squashDetails: {
+                trainingFocus: 'physical',
+                sessionMode: 'drill_session',
+                sessionKind: 'technical',
+                drills: [{ name: 'Ghosting: 4 esquinas', durationMin: 20 }],
+              },
+            },
+          ],
+        }),
+        '</actions>',
+      ].join('\n'),
+      provider: 'mock',
+      requestClass: 'plan_builder_week',
+    })
+
+    expect(response.actions).toHaveLength(1)
+    expect(response.actions?.[0].type).toBe('create_week')
+    expect(response.actions?.[0].targetDate).toBe('2026-04-27')
+    expect(response.actions?.[0].sessions).toHaveLength(1)
+    expect(response.meta?.actionParseFailed).toBeFalsy()
+  })
+
   it('moves practice match drills to the end of a squash drill block', () => {
     const response = normalizeResponse({
       text: [

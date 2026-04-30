@@ -277,6 +277,11 @@ function unwrapActionCandidates(parsed: unknown): unknown[] | null {
       return [record]
     }
 
+    // Fallback: model may use "action" as discriminator instead of "type"
+    if (typeof record.action === 'string' && VALID_ACTION_TYPES.has(record.action as CoachActionType)) {
+      return [record]
+    }
+
     const wrappedActions = unwrapNamedActionPayloads(record)
     if (wrappedActions.length > 0) return wrappedActions
   }
@@ -310,10 +315,14 @@ function validateAction(obj: unknown): {
   if (!obj || typeof obj !== 'object') return { action: null }
   const record = obj as Record<string, unknown>
 
-  if (typeof record.type !== 'string' || !VALID_ACTION_TYPES.has(record.type as CoachActionType)) return { action: null }
+  // Resolve type discriminator from "type" (canonical) or "action" (fallback for model drift)
+  const type = typeof record.type === 'string' && VALID_ACTION_TYPES.has(record.type as CoachActionType)
+    ? record.type as CoachActionType
+    : typeof record.action === 'string' && VALID_ACTION_TYPES.has(record.action as CoachActionType)
+      ? record.action as CoachActionType
+      : null
+  if (!type) return { action: null }
   if (typeof record.reason !== 'string' || !record.reason.trim()) return { action: null }
-
-  const type = record.type as CoachActionType
   const base = {
     type,
     reason: record.reason.trim(),

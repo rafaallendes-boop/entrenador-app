@@ -8,6 +8,7 @@
 
 interface LambdaEvent {
   httpMethod: string
+  headers?: Record<string, string | undefined>
   body: string | null
 }
 
@@ -66,6 +67,11 @@ interface RequestValidationResult {
   error?: string
 }
 
+interface AuthContext {
+  userId: string
+  rateLimitKey: string
+}
+
 const DEFAULT_MODELS: Record<ProviderName, string> = {
   gemini: 'gemini-2.5-flash',
   openai: 'gpt-4o-mini',
@@ -108,6 +114,9 @@ const TRACE_ID_MAX_CHARS = 160
 // Netlify synchronous functions currently allow 60s; keep a small buffer for response finalization.
 const MAX_FUNCTION_WALLCLOCK_MS = 55000
 const MIN_PROVIDER_ATTEMPT_MS = 4000
+const AUTH_REQUIRED = process.env['COACH_PROXY_REQUIRE_AUTH'] !== 'false'
+const RATE_LIMIT_WINDOW_MS = parsePositiveInteger(process.env['COACH_RATE_LIMIT_WINDOW_MS'], 60_000)
+const RATE_LIMIT_MAX = parsePositiveInteger(process.env['COACH_RATE_LIMIT_MAX'], 20)
 
 const JSON_HEADERS = { 'Content-Type': 'application/json' }
 const STREAM_HEADERS = {
@@ -115,9 +124,16 @@ const STREAM_HEADERS = {
   'Cache-Control': 'no-cache, no-transform',
   'Connection': 'keep-alive',
 }
+const rateLimitBuckets = new Map<string, { windowStart: number; count: number }>()
 
 function json(statusCode: number, body: object): LambdaResponse {
   return { statusCode, headers: JSON_HEADERS, body: JSON.stringify(body) }
+}
+
+function parsePositiveInteger(value: string | undefined, fallback: number): number {
+  if (!value) return fallback
+  const parsed = Number(value)
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback
 }
 
 function normalizeRequestClass(value: unknown): RequestClass {
@@ -303,6 +319,89 @@ function computeAttemptTimeoutMs(deadline: number, attemptsRemaining: number): n
 
 function shouldUseTechnicalRetry(requestClass: RequestClass): boolean {
   return requestClass === 'chat_general' || requestClass === 'weekly_summary' || requestClass === 'import_extract'
+}
+
+function getHeader(headers: LambdaEvent['headers'], name: string): string | undefined {
+  if (!headers) return undefined
+  const direct = headers[name] ?? headers[name.toLowerCase()]
+  if (direct) return direct
+  const found = Object.entries(headers).find(([key]) => key.toLowerCase() === name.toLowerCase())
+  return found?.[1]
+}
+
+function getClientIp(event: LambdaEvent): string {
+  const forwardedFor = getHeader(event.headers, 'x-forwarded-for')
+  const forwardedIp = forwardedFor?.split(',')[0]?.trim()
+  return getHeader(event.headers, 'x-nf-client-connection-ip')
+    ?? getHeader(event.headers, 'client-ip')
+    ?? forwardedIp
+    ?? 'unknown'
+}
+
+function getBearerToken(event: LambdaEvent): string | undefined {
+  const authHeader = getHeader(event.headers, 'authorization')?.trim()
+  if (!authHeader) return undefined
+  const match = /^Bearer\s+(.+)$/i.exec(authHeader)
+  return match?.[1]?.trim()
+}
+
+function resolveSupabaseAuthConfig(): { url: string; anonKey: string } {
+  const url = process.env['SUPABASE_URL'] ?? process.env['VITE_SUPABASE_URL']
+  const anonKey = process.env['SUPABASE_ANON_KEY'] ?? process.env['VITE_SUPABASE_ANON_KEY']
+  if (!url || !anonKey) {
+    throw makeError('Autenticación del coach no configurada en el servidor.', 500, 'misconfigured')
+  }
+  return { url, anonKey }
+}
+
+async function resolveAuthContext(event: LambdaEvent): Promise<AuthContext> {
+  const ip = getClientIp(event)
+  if (!AUTH_REQUIRED) {
+    return { userId: 'anonymous', rateLimitKey: `ip:${ip}` }
+  }
+
+  const token = getBearerToken(event)
+  if (!token) {
+    throw makeError('Sesión requerida para usar el coach.', 401, 'unauthorized')
+  }
+
+  const { url, anonKey } = resolveSupabaseAuthConfig()
+  const res = await fetch(`${url.replace(/\/$/, '')}/auth/v1/user`, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      apikey: anonKey,
+    },
+  })
+  if (!res.ok) {
+    throw makeError('Sesión inválida o expirada.', 401, 'unauthorized')
+  }
+
+  const user = await res.json().catch(() => ({})) as { id?: unknown; sub?: unknown }
+  const userId = typeof user.id === 'string'
+    ? user.id
+    : typeof user.sub === 'string'
+      ? user.sub
+      : undefined
+  if (!userId) {
+    throw makeError('Sesión inválida o expirada.', 401, 'unauthorized')
+  }
+
+  return { userId, rateLimitKey: `user:${userId}` }
+}
+
+function enforceRateLimit(auth: AuthContext): void {
+  const now = Date.now()
+  const current = rateLimitBuckets.get(auth.rateLimitKey)
+  if (!current || now - current.windowStart >= RATE_LIMIT_WINDOW_MS) {
+    rateLimitBuckets.set(auth.rateLimitKey, { windowStart: now, count: 1 })
+    return
+  }
+
+  current.count += 1
+  if (current.count > RATE_LIMIT_MAX) {
+    throw makeError('Demasiadas solicitudes al coach. Espera un momento e intenta de nuevo.', 429, 'rate_limit', true)
+  }
 }
 
 async function fetchJsonOrThrow(res: Response): Promise<unknown> {
@@ -777,6 +876,19 @@ export const handler = async (event: LambdaEvent): Promise<LambdaResponse> => {
     return json(400, { error: validation.error ?? 'Invalid request body', errorCode: 'unknown' })
   }
   const req = validation.req
+
+  try {
+    const auth = await resolveAuthContext(event)
+    enforceRateLimit(auth)
+  } catch (error) {
+    const normalized = normalizeError(error)
+    return json(normalized.statusCode ?? 500, {
+      error: normalized.message,
+      errorCode: normalized.errorCode ?? 'unknown',
+      traceId: req.traceId,
+      requestClass: normalizeRequestClass(req.requestClass),
+    })
+  }
 
   if (req.stream) {
     return streamResponse(req)

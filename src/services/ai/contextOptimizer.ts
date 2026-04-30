@@ -46,9 +46,9 @@ export function detectChatIntent(message: string): ChatContext['intent'] {
   const weekDayPattern = /\b(lunes|martes|miercoles|miércoles|jueves|viernes|sabado|sábado|domingo)\b/
   const planningVerbPattern = /\b(cr[eé]a(?:r|me)?|haz(?:me)?|arma(?:me)?|genera(?:r|me)?|planifica(?:r)?|organiza(?:r)?|programa(?:r)?)\b/
   const planningTargetPattern = /\b(semana|microciclo|plan(?:\s+de\s+entrenamiento)?|rutina)\b/
-  const adjustmentVerbPattern = /\b(ajusta(?:r)?|cambia(?:r)?|modifica(?:r)?|mueve|reordena(?:r)?|actualiza(?:r)?|quita(?:r)?|agrega(?:r)?|reemplaza(?:r)?|reduce|baja|sube)\b/
-  const adjustmentTargetPattern = /\b(semana|sesion|sesión|plan|carga|running|squash|fuerza|cycling|ciclismo|movilidad)\b/
-  const specificSessionPattern = /\b(sesion|sesión|running|squash|fuerza|cycling|ciclismo|movilidad|am|pm)\b/
+  const adjustmentVerbPattern = /\b(ajusta(?:r|me)?|ajustame|ajústame|cambia(?:r|me)?|cambiame|cámbiame|cambie|cámbie|modifica(?:r|me)?|modificame|modifícame|mueve|mueveme|muéveme|reordena(?:r|me)?|actualiza(?:r|me)?|quit(?:a|ar|ame|áme)|agrega(?:r|me)?|reemplaza(?:r|me)?|reduce|baja|sube)\b/
+  const adjustmentTargetPattern = /\b(semana|sesion(?:es)?|sesión(?:es)?|plan|carga|running|squash|fuerza|cycling|ciclismo|movilidad)\b/
+  const specificSessionPattern = /\b(sesion(?:es)?|sesión(?:es)?|running|squash|fuerza|cycling|ciclismo|movilidad|am|pm)\b/
 
   if (
     /\b(resumen\s+semanal|coach\s+note|resume\s+mi\s+semana|resumeme\s+la\s+semana|cierre\s+de\s+semana|balance\s+semanal)\b/.test(normalized)

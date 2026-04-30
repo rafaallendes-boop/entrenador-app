@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, useNavigate, useLocation } from 'react-router-dom'
+import { BrowserRouter, Navigate, Routes, Route, useNavigate, useLocation } from 'react-router-dom'
 import { lazy, Suspense, useEffect, type ReactNode } from 'react'
 import AppShell from './components/layout/AppShell'
 import AuthGate from './components/auth/AuthGate'
@@ -19,7 +19,6 @@ const ChatCoach = lazy(() => import('./pages/ChatCoach'))
 const PlanBuilderPage = lazy(() => import('./pages/PlanBuilderPage'))
 const CompetitionPlanPage = lazy(() => import('./pages/CompetitionPlanPage'))
 const PlanBuilderV2Page = lazy(() => import('./pages/PlanBuilderV2Page'))
-const History = lazy(() => import('./pages/History'))
 const ImportPDF = lazy(() => import('./pages/ImportPDF'))
 const SettingsPage = lazy(() => import('./pages/SettingsPage'))
 const OnboardingPage = lazy(() => import('./pages/OnboardingPage'))
@@ -206,7 +205,7 @@ export default function App() {
                 <Route path={ROUTES.PLAN_BUILDER} element={<PlanBuilderPage />} />
                 <Route path={ROUTES.COMPETITION_PLAN} element={<CompetitionPlanPage />} />
                 <Route path={ROUTES.PLAN_BUILDER_V2} element={<PlanBuilderV2Page />} />
-                <Route path={ROUTES.HISTORY} element={<History />} />
+                <Route path="/history" element={<Navigate to={ROUTES.COMPETITION_PLAN} replace />} />
                 <Route path={ROUTES.SETTINGS} element={<SettingsPage />} />
                 <Route path={ROUTES.IMPORT} element={<ImportPDF />} />
               </Route>

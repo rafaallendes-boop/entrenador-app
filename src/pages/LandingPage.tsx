@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { ArrowRight } from 'lucide-react'
 import { isSupabaseConfigured } from '../services/auth'
 import { useAuthStore } from '../store/useAuthStore'
@@ -57,7 +58,6 @@ export default function LandingPage() {
         <QuoteBlock />
         <AccessCard
           onSignup={handleSignIn}
-          onGoogle={handleSignIn}
           authError={authError}
           authAvailable={authAvailable}
         />
@@ -133,17 +133,18 @@ function Hero({ onPrimary }: { onPrimary: () => void }) {
             >
               Empezar gratis <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" strokeWidth={2.5} />
             </button>
-            <a
-              href="#how"
+            <Link
+              to="/features"
               className="inline-flex items-center gap-2 rounded-xl px-7 py-4 text-[15px] font-bold transition-all"
               style={{
                 color: INK,
                 background: 'rgba(255,255,255,0.03)',
                 border: '1px solid rgba(255,255,255,0.08)',
+                textDecoration: 'none',
               }}
             >
               Ver cómo funciona
-            </a>
+            </Link>
           </div>
 
           {/* Proof row */}
@@ -625,16 +626,17 @@ function DisciplinesGrid() {
               Originado en la intensidad del squash, evolucionado para dominar cualquier campo. Una sola carga unificada, cinco lenguajes distintos.
             </p>
           </div>
-          <a
-            href="#"
+          <Link
+            to="/features"
             className="disc-link inline-flex items-center gap-2.5 pb-1.5 font-bold uppercase tracking-[0.26em] transition-colors"
             style={{
               fontFamily: FONT_MONO, fontSize: 11, color: BRAND_LIGHT,
               borderBottom: '1px solid rgba(255,77,0,0.3)',
+              textDecoration: 'none',
             }}
           >
             Ver todas <ArrowRight className="h-3.5 w-3.5" strokeWidth={2.5} />
-          </a>
+          </Link>
         </div>
 
         {/* Grid */}
@@ -847,17 +849,18 @@ function FeatureTeaser() {
 
         {/* CTA */}
         <div className="mt-10 flex justify-center">
-          <a
-            href="#"
+          <Link
+            to="/features"
             className="inline-flex items-center gap-2 rounded-xl px-7 py-3.5 text-[14px] font-bold transition-all"
             style={{
               color: INK,
               background: 'rgba(255,255,255,0.03)',
               border: '1px solid rgba(255,255,255,0.08)',
+              textDecoration: 'none',
             }}
           >
             Ver todas las funcionalidades <ArrowRight className="h-4 w-4" strokeWidth={2.25} />
-          </a>
+          </Link>
         </div>
       </div>
     </section>
@@ -992,9 +995,9 @@ function MetricCard({
 /* ───────────────────────────────────────────────────────── ACCESS CARD */
 
 function AccessCard({
-  onSignup, onGoogle, authError, authAvailable,
+  onSignup, authError, authAvailable,
 }: {
-  onSignup: () => void; onGoogle: () => void;
+  onSignup: () => void;
   authError: string | null; authAvailable: boolean;
 }) {
   return (
@@ -1076,14 +1079,18 @@ function AccessCard({
               >
                 Crear cuenta gratis <ArrowRight className="h-4 w-4" strokeWidth={2.5} />
               </button>
-              <button
-                onClick={onGoogle}
-                disabled={!authAvailable}
-                className="inline-flex items-center justify-center gap-3 rounded-xl bg-white px-7 py-4 text-[15px] font-bold text-black transition-transform hover:bg-white/95 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50"
+              <Link
+                to="/pricing"
+                className="inline-flex items-center gap-2 rounded-xl px-7 py-4 text-[15px] font-bold transition-all"
+                style={{
+                  color: INK,
+                  background: 'rgba(255,255,255,0.03)',
+                  border: '1px solid rgba(255,255,255,0.08)',
+                  textDecoration: 'none',
+                }}
               >
-                <GoogleIcon />
-                Continuar con Google
-              </button>
+                Ver precios
+              </Link>
               <span
                 className="inline-flex items-center gap-2 text-[11px] uppercase tracking-[0.26em]"
                 style={{ fontFamily: FONT_MONO, color: INK_FAINT }}
@@ -1226,17 +1233,6 @@ function BoltIcon() {
         <path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z" fill={BRAND} />
       </svg>
     </span>
-  )
-}
-
-function GoogleIcon() {
-  return (
-    <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0" aria-hidden>
-      <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
-      <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
-      <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05" />
-      <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
-    </svg>
   )
 }
 

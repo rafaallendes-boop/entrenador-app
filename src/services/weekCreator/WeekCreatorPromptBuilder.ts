@@ -52,6 +52,8 @@ export function buildWeekCreatorPrompt(
       ? 'Modo estricto: si dudas, prioriza targetDate correcto, fechas válidas, número exacto de sesiones y detalles obligatorios por deporte antes que creatividad.'
       : '',
     '',
+    'Si hay dos o más sesiones de fuerza, deben tener focos y ejercicios distintos; no repitas exactamente el mismo array exercises en más de una sesión.',
+    '',
     `Regla final: crea una semana cerrada, ejecutable y compacta para ${formatWeekRangeLabel(input.targetWeekStart)}.`,
   ].filter(Boolean)
 

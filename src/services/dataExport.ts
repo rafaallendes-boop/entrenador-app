@@ -615,6 +615,7 @@ function parseChatMessage(value: unknown, index: number): ChatMessage {
     content: requireString(row.content, `chatMessages[${index}].content`),
     timestamp: requireFiniteNumber(row.timestamp, `chatMessages[${index}].timestamp`),
     chatSessionId: optionalString(row.chatSessionId, `chatMessages[${index}].chatSessionId`),
+    contextMeta: optionalChatContextMetadata(row.contextMeta, `chatMessages[${index}].contextMeta`),
     context: optionalChatContext(row.context, `chatMessages[${index}].context`),
     provider: optionalEnum(row.provider, AI_PROVIDERS, `chatMessages[${index}].provider`) as ChatMessage['provider'],
     proposalId: optionalString(row.proposalId, `chatMessages[${index}].proposalId`),
@@ -1091,6 +1092,29 @@ function optionalChatContext(value: unknown, path: string): ChatMessage['context
   }
 
   return context
+}
+
+function optionalChatContextMetadata(value: unknown, path: string): ChatMessage['contextMeta'] {
+  if (value == null) return undefined
+  const row = ensureRecord(value, path)
+  return {
+    contextVersion: 1,
+    intent: row.intent == null
+      ? undefined
+      : requireEnum(
+          row.intent,
+          new Set(['general_chat', 'plan_week', 'adjust_session', 'weekly_summary']),
+          `${path}.intent`,
+        ) as NonNullable<ChatMessage['contextMeta']>['intent'],
+    traceId: optionalString(row.traceId, `${path}.traceId`),
+    plannedSessionCount: optionalFiniteNumber(row.plannedSessionCount, `${path}.plannedSessionCount`),
+    historicalSessionCount: optionalFiniteNumber(row.historicalSessionCount, `${path}.historicalSessionCount`),
+    recentSessionCount: optionalFiniteNumber(row.recentSessionCount, `${path}.recentSessionCount`),
+    weekDayLogCount: optionalFiniteNumber(row.weekDayLogCount, `${path}.weekDayLogCount`),
+    hasDayLog: optionalBoolean(row.hasDayLog, `${path}.hasDayLog`),
+    hasAthleteProfile: optionalBoolean(row.hasAthleteProfile, `${path}.hasAthleteProfile`),
+    hasAthleteMemory: optionalBoolean(row.hasAthleteMemory, `${path}.hasAthleteMemory`),
+  }
 }
 
 function parsePlanWizardConfig(value: unknown, path: string): TrainingPlan['wizardConfig'] {

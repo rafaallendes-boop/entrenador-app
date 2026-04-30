@@ -1,43 +1,51 @@
-import { NavLink } from 'react-router-dom'
+import { NavLink, useLocation } from 'react-router-dom'
 import { ROUTES } from '../../constants/routes'
 
 const tabs = [
   { to: ROUTES.HOME, label: 'Home', icon: 'home' },
   { to: ROUTES.WEEK, label: 'Semana', icon: 'calendar' },
   { to: ROUTES.CHAT, label: 'Coach', icon: 'chat' },
-  { to: ROUTES.HISTORY, label: 'Historial', icon: 'history' },
+  { to: ROUTES.COMPETITION_PLAN, label: 'Plan', icon: 'plan' },
   { to: ROUTES.SETTINGS, label: 'Ajustes', icon: 'settings' },
 ]
 
 export default function BottomNav() {
+  const { pathname } = useLocation()
+
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-40 px-2 pb-2 md:px-4">
       <div className="mx-auto w-full max-w-5xl rounded-t-[1.35rem] border border-surface-soft/70 bg-[linear-gradient(180deg,rgba(32,32,32,0.96),rgba(14,14,14,0.98))] shadow-panel safe-bottom backdrop-blur-xl">
         <div className="flex">
-          {tabs.map(({ to, label, icon }) => (
-            <NavLink
-              key={to}
-              to={to}
-              end={to === ROUTES.HOME}
-              className={({ isActive }) =>
-                `relative flex-1 flex flex-col items-center gap-1 py-3 text-xs font-medium transition-colors ${
-                  isActive
-                    ? 'text-brand-light'
-                    : 'text-ink-faint hover:text-ink-muted'
-                }`
-              }
-            >
-              {({ isActive }) => (
-                <>
-                  {isActive && (
-                    <span className="absolute top-0 left-1/2 h-0.5 w-8 -translate-x-1/2 rounded-full bg-brand" />
-                  )}
-                  <NavIcon name={icon} />
-                  <span className="font-display text-[10px] font-semibold uppercase tracking-wider">{label}</span>
-                </>
-              )}
-            </NavLink>
-          ))}
+          {tabs.map(({ to, label, icon }) => {
+            const isPlanTab = to === ROUTES.COMPETITION_PLAN
+            const planActive = isPlanTab && (pathname === to || pathname.startsWith('/plans'))
+            return (
+              <NavLink
+                key={to}
+                to={to}
+                end={to === ROUTES.HOME}
+                className={({ isActive }) => {
+                  const active = isActive || planActive
+                  return `relative flex-1 flex flex-col items-center gap-1 py-3 text-xs font-medium transition-colors ${
+                    active ? 'text-brand-light' : 'text-ink-faint hover:text-ink-muted'
+                  }`
+                }}
+              >
+                {({ isActive }) => {
+                  const active = isActive || planActive
+                  return (
+                    <>
+                      {active && (
+                        <span className="absolute top-0 left-1/2 h-0.5 w-8 -translate-x-1/2 rounded-full bg-brand" />
+                      )}
+                      <NavIcon name={icon} />
+                      <span className="font-display text-[10px] font-semibold uppercase tracking-wider">{label}</span>
+                    </>
+                  )
+                }}
+              </NavLink>
+            )
+          })}
         </div>
       </div>
     </nav>
@@ -70,12 +78,11 @@ function NavIcon({ name }: { name: string }) {
           <path d="M5.5 18.5 6.2 15A7.5 7.5 0 1 1 12 19.5H5.5Z" />
         </svg>
       )
-    case 'history':
+    case 'plan':
       return (
         <svg {...commonProps}>
-          <path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3" />
-          <path d="M4 6.5v4h4" />
-          <path d="M12 8.5v4l2.8 1.6" />
+          <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" />
+          <line x1="4" y1="22" x2="4" y2="15" />
         </svg>
       )
     case 'settings':

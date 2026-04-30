@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { AthleteProfile, ChatContext } from '../../../types'
+import { validateWeekCreatorResponse } from '../validateWeekCreatorResponse'
 import { resolveWeekCreatorConfig } from '../WeekCreatorConfig'
 import { WeekCreatorEngine } from '../WeekCreatorEngine'
 
@@ -280,5 +281,221 @@ describe('WeekCreatorEngine', () => {
     )).rejects.toThrow('La semana debe traer exactamente 5 sesiones válidas y llegó con 4')
 
     expect(mockProviderCall).toHaveBeenCalledTimes(2)
+  })
+
+  it('retries when two strength sessions repeat exactly the same exercises', async () => {
+    const repeatedExercises = [
+      { name: 'Sentadilla', sets: 4, reps: 6, group: 'legs' },
+      { name: 'Press banca', sets: 4, reps: 6, group: 'push' },
+    ]
+
+    mockProviderCall
+      .mockImplementationOnce(async (request: { requestClass: string; traceId: string }) => ({
+        text: '<actions>' + JSON.stringify([
+          {
+            type: 'create_week',
+            reason: 'Semana fuerza repetida',
+            targetDate: '2026-05-04',
+            sessions: [
+              {
+                date: '2026-05-04',
+                timeBlock: 'AM',
+                sessionType: 'strength',
+                title: 'Fuerza A',
+                durationMin: 60,
+                objective: 'Fuerza base',
+                exercises: repeatedExercises,
+              },
+              {
+                date: '2026-05-06',
+                timeBlock: 'AM',
+                sessionType: 'strength',
+                title: 'Fuerza B',
+                durationMin: 60,
+                objective: 'Fuerza base',
+                exercises: repeatedExercises,
+              },
+            ],
+          },
+        ]) + '</actions>',
+        provider: 'mock',
+        model: 'mock-week-creator',
+        traceId: request.traceId,
+        requestClass: request.requestClass,
+      }))
+      .mockImplementationOnce(async (request: { requestClass: string; traceId: string }) => ({
+        text: '<actions>' + JSON.stringify([
+          {
+            type: 'create_week',
+            reason: 'Semana fuerza diferenciada',
+            targetDate: '2026-05-04',
+            sessions: [
+              {
+                date: '2026-05-04',
+                timeBlock: 'AM',
+                sessionType: 'strength',
+                title: 'Fuerza tren inferior',
+                durationMin: 60,
+                objective: 'Fuerza piernas',
+                exercises: repeatedExercises,
+              },
+              {
+                date: '2026-05-06',
+                timeBlock: 'AM',
+                sessionType: 'strength',
+                title: 'Fuerza tren superior',
+                durationMin: 60,
+                objective: 'Fuerza torso',
+                exercises: [
+                  { name: 'Press militar', sets: 4, reps: 6, group: 'push' },
+                  { name: 'Remo con barra', sets: 4, reps: 8, group: 'pull' },
+                ],
+              },
+            ],
+          },
+        ]) + '</actions>',
+        provider: 'mock',
+        model: 'mock-week-creator',
+        traceId: request.traceId,
+        requestClass: request.requestClass,
+      }))
+
+    const context: ChatContext = {
+      athleteProfile: makeProfile({
+        sportContext: {
+          enabledSports: ['strength'],
+          primarySport: 'strength',
+        },
+        planWizardConfig: {
+          goalEventId: 'goal-1',
+          trainingDays: ['monday', 'wednesday'],
+          sessionsPerWeek: 2,
+          sessionDurationMins: 60,
+          allowDoubleSession: false,
+          complementarySports: [],
+          currentFitnessLevel: 'normal',
+          currentFatigue: 'normal',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      }),
+      recentSessions: [],
+      plannedSessions: [],
+      historicalSessions: [],
+    }
+
+    const response = await WeekCreatorEngine.sendWeekCreate(
+      'Créame una semana con dos sesiones de fuerza',
+      context,
+      { surface: 'chat', targetWeekStart: '2026-05-04' },
+    )
+
+    expect(mockProviderCall).toHaveBeenCalledTimes(2)
+    expect(response.actions?.[0].sessions?.map((session) => session.title)).toEqual([
+      'Fuerza tren inferior',
+      'Fuerza tren superior',
+    ])
+  })
+})
+
+describe('validateWeekCreatorResponse sport details', () => {
+  it('accepts squash details that provide drills inside blocks', () => {
+    const result = validateWeekCreatorResponse({
+      targetWeekStart: '2026-05-04',
+      context: { recentSessions: [], plannedSessions: [], historicalSessions: [] },
+      config: {
+        allowedSports: ['squash'],
+        primarySport: 'squash',
+        sessionsPerWeek: 1,
+        sessionDurationMins: 60,
+        trainingDays: ['monday'],
+        allowDoubleSession: false,
+        currentFitnessLevel: 'normal',
+        currentFatigue: 'normal',
+        fromWizard: true,
+        configSource: 'wizard',
+      },
+      response: {
+        message: 'Semana lista',
+        provider: 'gemini',
+        timestamp: Date.now(),
+        traceId: 'trace-1',
+        requestClass: 'week_creator',
+        actions: [{
+          type: 'create_week',
+          reason: 'Semana squash',
+          targetDate: '2026-05-04',
+          sessions: [{
+            date: '2026-05-04',
+            timeBlock: 'AM',
+            sessionType: 'squash',
+            title: 'Squash bloques',
+            durationMin: 60,
+            squashDetails: {
+              trainingFocus: 'technical',
+              drills: [],
+              blocks: [{
+                kind: 'technical',
+                durationMin: 30,
+                drills: [{ name: 'Drives', durationMin: 30 }],
+              }],
+            },
+          }],
+        }],
+      },
+    })
+
+    expect(result.ok).toBe(true)
+  })
+
+  it('returns soft warnings for incomplete sport details', () => {
+    const result = validateWeekCreatorResponse({
+      targetWeekStart: '2026-05-04',
+      context: { recentSessions: [], plannedSessions: [], historicalSessions: [] },
+      config: {
+        allowedSports: ['running', 'strength'],
+        primarySport: 'running',
+        sessionsPerWeek: 2,
+        sessionDurationMins: 45,
+        trainingDays: ['monday', 'wednesday'],
+        allowDoubleSession: false,
+        currentFitnessLevel: 'normal',
+        currentFatigue: 'normal',
+        fromWizard: true,
+        configSource: 'wizard',
+      },
+      response: {
+        message: 'Semana lista',
+        provider: 'gemini',
+        timestamp: Date.now(),
+        traceId: 'trace-2',
+        requestClass: 'week_creator',
+        actions: [{
+          type: 'create_week',
+          reason: 'Semana base',
+          targetDate: '2026-05-04',
+          sessions: [
+            {
+              date: '2026-05-04',
+              timeBlock: 'AM',
+              sessionType: 'running',
+              title: 'Running sin tipo',
+              durationMin: 45,
+            },
+            {
+              date: '2026-05-06',
+              timeBlock: 'AM',
+              sessionType: 'strength',
+              title: 'Fuerza sin ejercicios',
+              durationMin: 45,
+            },
+          ],
+        }],
+      },
+    })
+
+    expect(result.ok).toBe(true)
+    expect(result.warning).toContain('runningType')
+    expect(result.warning).toContain('no incluye ejercicios')
   })
 })

@@ -578,11 +578,27 @@ export interface ChatMessage {
   content: string
   timestamp: number
   chatSessionId?: string
+  /** Minimal persisted request metadata for new messages. Full context is legacy-only. */
+  contextMeta?: ChatContextMetadata
+  /** Legacy full context kept for backwards compatibility with older local/exported data. */
   context?: ChatContext
   /** Which AI provider generated this message (undefined for user messages) */
   provider?: AIProviderName
   /** ID of the CoachProposal created from this message's actions, if any */
   proposalId?: string
+}
+
+export interface ChatContextMetadata {
+  contextVersion: 1
+  intent?: ChatContext['intent']
+  traceId?: string
+  plannedSessionCount?: number
+  historicalSessionCount?: number
+  recentSessionCount?: number
+  weekDayLogCount?: number
+  hasDayLog?: boolean
+  hasAthleteProfile?: boolean
+  hasAthleteMemory?: boolean
 }
 
 export interface ChatContext {

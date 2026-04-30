@@ -56,4 +56,39 @@ describe('ProxyProvider streaming fallback', () => {
     expect(fetchMock.mock.calls[1]?.[1]?.body).toContain('"stream":false')
     expect(response.text).toBe('Hola de vuelta')
   })
+
+  it('normalizes unauthorized proxy responses', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(
+      JSON.stringify({ error: 'Sesión requerida para usar el coach.', errorCode: 'unauthorized' }),
+      {
+        status: 401,
+        headers: { 'Content-Type': 'application/json' },
+      },
+    )))
+
+    const provider = new ProxyProvider()
+
+    await expect(provider.call(makeRequest({ onChunk: undefined }))).rejects.toMatchObject({
+      code: 'unauthorized',
+      message: 'Sesión requerida para usar el coach.',
+    })
+  })
+
+  it('normalizes rate limit proxy responses as retryable', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(
+      JSON.stringify({ error: 'Demasiadas solicitudes al coach.', errorCode: 'rate_limit' }),
+      {
+        status: 429,
+        headers: { 'Content-Type': 'application/json' },
+      },
+    )))
+
+    const provider = new ProxyProvider()
+
+    await expect(provider.call(makeRequest({ onChunk: undefined }))).rejects.toMatchObject({
+      code: 'rate_limit',
+      retryable: true,
+      message: 'Demasiadas solicitudes al coach.',
+    })
+  })
 })

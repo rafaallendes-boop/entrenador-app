@@ -15,6 +15,7 @@ import type { AIProvider, AIRequest, AIRawResponse, AIErrorCode } from '../types
 import { AIProviderError, createProviderError } from '../types'
 import type { AIProviderName, AIRequestClass } from '../../../types'
 import { getAIRequestPolicy } from '../requestPolicy'
+import { isSupabaseConfigured, supabase } from '../../auth'
 
 const FUNCTION_URL = '/.netlify/functions/coach'
 type ProxyErrorPayload = {
@@ -81,7 +82,7 @@ export class ProxyProvider implements AIProvider {
     try {
       const res = await fetch(FUNCTION_URL, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await buildProxyHeaders(),
         signal: controller.signal,
         body: JSON.stringify({
           systemPrompt: request.systemPrompt,
@@ -306,4 +307,19 @@ export class ProxyProvider implements AIProvider {
       true,
     )
   }
+}
+
+async function buildProxyHeaders(): Promise<Record<string, string>> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  if (!isSupabaseConfigured || !supabase) return headers
+
+  try {
+    const { data } = await supabase.auth.getSession()
+    const token = data.session?.access_token
+    if (token) headers.Authorization = `Bearer ${token}`
+  } catch {
+    // Let the proxy return a controlled 401 if the session cannot be read.
+  }
+
+  return headers
 }

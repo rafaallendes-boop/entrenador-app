@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { db } from '../db/db'
-import type { ChatMessage, ChatContext, AIRequestClass } from '../types'
+import type { ChatMessage, ChatContext, ChatContextMetadata, AIRequestClass } from '../types'
 import { CoachEngine } from '../services/ai/CoachEngine'
 import { optimizeChatContext } from '../services/ai/contextOptimizer'
 import { useCoachActionsStore } from './useCoachActionsStore'
@@ -81,13 +81,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
       content,
       timestamp: Date.now(),
       chatSessionId: sessionId,
-      context,
+      contextMeta: buildChatContextMetadata(context),
     }
     set(state => ({ messages: [...state.messages, userMsg], isLoading: true, streamingText: '', responsePhase: 'connecting', error: null }))
     try {
       await db.chatMessages.add(userMsg)
     } catch {
-      set({ isLoading: false, responsePhase: 'idle', error: 'No se pudo guardar el mensaje. Verifica el espacio de almacenamiento.' })
+      set(state => ({
+        messages: state.messages.filter(message => message.id !== userMsg.id),
+        isLoading: false,
+        streamingText: '',
+        responsePhase: 'idle',
+        error: 'No se pudo guardar el mensaje. Verifica el espacio de almacenamiento.',
+      }))
       return { route: route.kind }
     }
     void syncService.pushChatMessage(userMsg)
@@ -115,6 +121,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
         reject(new Error(`La solicitud tardó demasiado (más de ${Math.round(WATCHDOG_MS / 1000)}s). Intenta de nuevo.`))
       }, WATCHDOG_MS)
     })
+
+    let persistedCoachMsg: ChatMessage | undefined
+    let persistedProposalId: string | undefined
+    let expectedProposal = false
 
     try {
       const handleChunk = (chunk: string) => {
@@ -155,6 +165,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
       const coachMsg = buildCoachMessage(response, sessionId)
       await db.chatMessages.add(coachMsg)
+      persistedCoachMsg = coachMsg
       if (!isActiveChatRequest(get().currentSessionId, sessionId, abortController)) {
         await discardLateCoachArtifacts(coachMsg)
         return { route: route.kind }
@@ -163,6 +174,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
       let proposalId: string | undefined
       if (shouldCreateProposal(response, requestClass) && isActiveChatRequest(get().currentSessionId, sessionId, abortController)) {
+        expectedProposal = true
         const normWarnings = buildNormalizationWarnings(response)
         const proposal = await useCoachActionsStore.getState().addProposal(
           response.message.slice(0, 120) + (response.message.length > 120 ? '…' : ''),
@@ -171,6 +183,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           { source: 'chat', warnings: normWarnings.length > 0 ? normWarnings : undefined },
         )
         proposalId = proposal.id
+        persistedProposalId = proposal.id
         if (!isActiveChatRequest(get().currentSessionId, sessionId, abortController)) {
           await discardLateCoachArtifacts(coachMsg, proposalId)
           return { route: route.kind }
@@ -196,9 +209,23 @@ export const useChatStore = create<ChatState>((set, get) => ({
         }
         return { route: route.kind }
       }
+      if (expectedProposal && persistedCoachMsg && !persistedProposalId) {
+        await discardLateCoachArtifacts(persistedCoachMsg).catch(() => undefined)
+      }
+      const orphanCoachMsg = expectedProposal && persistedCoachMsg && !persistedProposalId
+        ? persistedCoachMsg
+        : undefined
       const errorMsg = formatError(e)
       if (get().currentSessionId !== sessionId) return { route: route.kind }
-      set({ isLoading: false, streamingText: '', responsePhase: 'idle', error: errorMsg })
+      set(state => ({
+        messages: orphanCoachMsg
+          ? state.messages.filter(message => message.id !== orphanCoachMsg.id)
+          : state.messages,
+        isLoading: false,
+        streamingText: '',
+        responsePhase: 'idle',
+        error: errorMsg,
+      }))
     } finally {
       window.clearTimeout(processingTimeout)
       if (watchdogTimeout != null) window.clearTimeout(watchdogTimeout)
@@ -301,6 +328,24 @@ function buildCoachMessage(
     timestamp: Date.now(),
     chatSessionId,
     provider: response.provider,
+    contextMeta: {
+      contextVersion: 1,
+      traceId: response.traceId,
+    },
+  }
+}
+
+function buildChatContextMetadata(context?: ChatContext): ChatContextMetadata {
+  return {
+    contextVersion: 1,
+    intent: context?.intent,
+    plannedSessionCount: context?.plannedSessions?.length,
+    historicalSessionCount: context?.historicalSessions?.length,
+    recentSessionCount: context?.recentSessions?.length,
+    weekDayLogCount: context?.weekDayLogs?.length,
+    hasDayLog: context?.dayLog != null,
+    hasAthleteProfile: context?.athleteProfile != null,
+    hasAthleteMemory: Boolean(context?.athleteMemory?.trim()),
   }
 }
 
@@ -336,7 +381,9 @@ function formatError(e: unknown): string {
   if (e instanceof AIProviderError) {
     switch (e.code) {
       case 'unauthorized':
-        return `API key inválida o no configurada (${e.provider}). Verifica tu .env.`
+        return 'Tu sesión expiró o no está disponible. Inicia sesión nuevamente e intenta de nuevo.'
+      case 'misconfigured':
+        return 'El coach no está configurado correctamente en el servidor.'
       case 'rate_limit':
         return `Límite de uso alcanzado en ${e.provider}. Espera unos minutos e intenta de nuevo.`
       case 'timeout':

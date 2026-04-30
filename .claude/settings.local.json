@@ -33,7 +33,8 @@
       "Bash(cp \"/Users/rafaallendes/.claude/projects/-Users-rafaallendes-Projects-entrenador-app/baac0c53-138a-4ad6-9d30-a6023dc4501d/tool-results/webfetch-1776634520546-0kwag2.bin\" d2.gz)",
       "Bash(gunzip -f d1.gz)",
       "Bash(npx tsc *)",
-      "Bash(npx vitest *)"
+      "Bash(npx vitest *)",
+      "Bash(gunzip -c \"/Users/rafaallendes/.claude/projects/-Users-rafaallendes-Projects-entrenador-app/d4cd627d-7a6b-4a65-accf-f54ea7e13586/tool-results/webfetch-1777577575137-qm8nxa.bin\")"
     ]
   }
 }

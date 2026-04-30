@@ -73,6 +73,9 @@ export function validateWeekCreatorResponse(
   const doubleSessionError = validateDoubleSessions(sessions, input.config)
   if (doubleSessionError) return fail(doubleSessionError, rawSessionCount, validSessionCount, droppedSessionCount)
 
+  const duplicateStrengthError = validateDuplicateStrengthSessions(sessions)
+  if (duplicateStrengthError) return fail(duplicateStrengthError, rawSessionCount, validSessionCount, droppedSessionCount)
+
   const dayError = validateAllowedDays(sessions, input.config)
   if (dayError) return fail(dayError, rawSessionCount, validSessionCount, droppedSessionCount)
 
@@ -85,9 +88,12 @@ export function validateWeekCreatorResponse(
   const primarySportError = validatePrimarySportPresence(sessions, input.config)
   if (primarySportError) return fail(primarySportError, rawSessionCount, validSessionCount, droppedSessionCount)
 
+  const sportWarnings = collectSportDetailWarnings(sessions)
+
   return {
     ok: true,
     action,
+    warning: sportWarnings.length > 0 ? sportWarnings.join(' ') : undefined,
     rawSessionCount,
     validSessionCount,
     droppedSessionCount,
@@ -136,6 +142,34 @@ function validateDoubleSessions(
   return undefined
 }
 
+function validateDuplicateStrengthSessions(sessions: CoachSessionProposal[]): string | undefined {
+  const seen = new Map<string, CoachSessionProposal>()
+  for (const session of sessions) {
+    if (session.sessionType !== 'strength') continue
+    const signature = buildStrengthExerciseSignature(session)
+    if (!signature) continue
+    const previous = seen.get(signature)
+    if (previous) {
+      return `Las sesiones de fuerza "${previous.title}" y "${session.title}" repiten exactamente los mismos ejercicios; deben tener focos o ejercicios distintos.`
+    }
+    seen.set(signature, session)
+  }
+  return undefined
+}
+
+function buildStrengthExerciseSignature(session: CoachSessionProposal): string | undefined {
+  if (!Array.isArray(session.exercises) || session.exercises.length === 0) return undefined
+  return session.exercises
+    .map((exercise) => [
+      exercise.name.trim().toLowerCase(),
+      exercise.sets,
+      String(exercise.reps).trim().toLowerCase(),
+      exercise.weight ?? '',
+      exercise.group ?? '',
+    ].join(':'))
+    .join('|')
+}
+
 function validateAllowedDays(
   sessions: CoachSessionProposal[],
   config: WeekCreatorEffectiveConfig,
@@ -169,12 +203,43 @@ function validateAllowedSports(
 function validateRequiredDetails(sessions: CoachSessionProposal[]): string | undefined {
   for (const session of sessions) {
     if (session.sessionType === 'squash') {
-      if (!session.squashDetails || !Array.isArray(session.squashDetails.drills) || session.squashDetails.drills.length === 0) {
+      if (!session.squashDetails || !hasSquashDrills(session)) {
         return `La sesión de squash ${session.title} requiere squashDetails con drills no vacíos.`
       }
     }
   }
   return undefined
+}
+
+function hasSquashDrills(session: CoachSessionProposal): boolean {
+  const details = session.squashDetails
+  if (!details) return false
+  if (Array.isArray(details.drills) && details.drills.length > 0) return true
+  return Array.isArray(details.blocks)
+    && details.blocks.some(block => Array.isArray(block.drills) && block.drills.length > 0)
+}
+
+function collectSportDetailWarnings(sessions: CoachSessionProposal[]): string[] {
+  const warnings: string[] = []
+  for (const session of sessions) {
+    if (session.sessionType === 'running') {
+      if (!session.runningType) {
+        warnings.push(`La sesión de running "${session.title}" no especifica runningType.`)
+      } else if ((session.runningType === 'tempo' || session.runningType === 'intervals') && !session.intervalStructure) {
+        warnings.push(`La sesión de running "${session.title}" no incluye intervalStructure.`)
+      }
+    }
+    if (session.sessionType === 'strength' && (!Array.isArray(session.exercises) || session.exercises.length === 0)) {
+      warnings.push(`La sesión de fuerza "${session.title}" no incluye ejercicios.`)
+    }
+    if (session.sessionType === 'cycling' && !session.cyclingDetails) {
+      warnings.push(`La sesión de ciclismo "${session.title}" no incluye cyclingDetails.`)
+    }
+    if (session.sessionType === 'mobility' && !session.mobilityDetails) {
+      warnings.push(`La sesión de movilidad "${session.title}" no incluye mobilityDetails.`)
+    }
+  }
+  return warnings
 }
 
 function validatePrimarySportPresence(

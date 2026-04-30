@@ -13,6 +13,12 @@ describe('chatRouting', () => {
     expect(resolveChatRoute('Agrega squash el jueves PM').kind).toBe('chat_action')
   })
 
+  it('routes plural and imperative session changes to chat_action', () => {
+    expect(resolveChatRoute('cámbiame una de las sesiones de fuerza').kind).toBe('chat_action')
+    expect(resolveChatRoute('cambie 1 de las sesiones').kind).toBe('chat_action')
+    expect(resolveChatRoute('modifícame la sesión PM').kind).toBe('chat_action')
+  })
+
   it('routes colloquial single-session creation requests to chat_action', () => {
     // These were falling through to chat_general before the routing widening,
     // which prevented the chat from emitting an actionable proposal.
