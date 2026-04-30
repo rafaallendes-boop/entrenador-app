@@ -1,6 +1,6 @@
-import type { CoachAction, CoachActionType, CoachExerciseProposal, CoachSessionProposal, CyclingDetails, GeneratedProtocol, MobilityDetails, RunningIntervalStructure, RunningType, SquashDetails, SquashSessionMode, SquashSubtype, TimeBlock } from '../../types'
+import type { CoachAction, CoachActionType, CoachExerciseProposal, CoachSessionProposal, CyclingDetails, GeneratedProtocol, MobilityDetails, RunningIntervalStructure, RunningType, SquashDetails, SquashDrill, SquashSessionBlock, SquashSessionBlockKind, SquashSessionKind, SquashSessionMode, SquashSubtype, SquashTrainingFocus, TimeBlock } from '../../types'
 import type { AIRawResponse, CoachNormalizedResponse, CreateWeekNormalizationDiagnostic } from './types'
-import { orderSquashDrillsForSession } from '../training/drillLibrary'
+import { orderSquashBlocksForSession, orderSquashDrillsForSession } from '../training/drillLibrary'
 
 const ACTIONS_BLOCK_RE = /<actions>([\s\S]*?)<\/actions>/i
 const ACTIONS_START_RE = /<actions>/i
@@ -24,6 +24,8 @@ const VALID_TIME_BLOCKS = new Set<TimeBlock>(['AM', 'PM'])
 const VALID_SQUASH_SUBTYPES = new Set<SquashSubtype>(['control', 'training', 'match', 'competitive', 'light'])
 const VALID_RUNNING_TYPES = new Set<RunningType>(['z2', 'tempo', 'intervals', 'long'])
 const VALID_SQUASH_SESSION_MODES = new Set<SquashSessionMode>(['drill_session', 'practice_match', 'competition_match'])
+const VALID_SQUASH_SESSION_KINDS = new Set<SquashSessionKind>(['technical', 'control', 'shadows', 'match', 'mixed'])
+const VALID_SQUASH_BLOCK_KINDS = new Set<SquashSessionBlockKind>(['technical', 'control', 'shadows', 'match'])
 const VALID_SQUASH_TRAINING_FOCUS = new Set(['technical', 'tactical', 'physical', 'conditioned_games'])
 const VALID_MOBILITY_CONTEXTS = new Set(['post_run', 'post_cycling', 'post_squash', 'post_strength', 'pre_training_activation', 'recovery', 'full_body', 'sport_specific'])
 const DEFAULT_SESSION_DURATION_MIN: Partial<Record<CoachSessionProposal['sessionType'], number>> = {
@@ -108,8 +110,10 @@ export function normalizeSessionProposalDraft(
   if (isMobilityDetails(record.mobilityDetails)) session.mobilityDetails = record.mobilityDetails
 
   if (record.sessionType === 'squash') {
-    if (isSquashDetails(record.squashDetails)) {
-      session.squashDetails = normalizeSquashDetails(record.squashDetails)
+    const squashDetails = normalizeSquashDetailsDraft(record.squashDetails)
+    if (squashDetails) {
+      session.squashDetails = squashDetails.details
+      repairs.push(...squashDetails.repairs)
     } else if (record.squashDetails == null) {
       repairs.push('squashDetails')
       session.squashDetails = {
@@ -269,12 +273,34 @@ function unwrapActionCandidates(parsed: unknown): unknown[] | null {
     const record = parsed as Record<string, unknown>
     if (Array.isArray(record.actions)) return record.actions
 
-    if (typeof record.type === 'string') {
+    if (typeof record.type === 'string' && VALID_ACTION_TYPES.has(record.type as CoachActionType)) {
       return [record]
     }
+
+    const wrappedActions = unwrapNamedActionPayloads(record)
+    if (wrappedActions.length > 0) return wrappedActions
   }
 
   return null
+}
+
+function unwrapNamedActionPayloads(record: Record<string, unknown>): unknown[] {
+  const actions: unknown[] = []
+  for (const actionType of VALID_ACTION_TYPES) {
+    const payload = record[actionType]
+    if (Array.isArray(payload)) {
+      for (const item of payload) {
+        if (item && typeof item === 'object') {
+          actions.push({ ...(item as Record<string, unknown>), type: actionType })
+        }
+      }
+      continue
+    }
+    if (payload && typeof payload === 'object') {
+      actions.push({ ...(payload as Record<string, unknown>), type: actionType })
+    }
+  }
+  return actions
 }
 
 function validateAction(obj: unknown): {
@@ -414,7 +440,8 @@ function validateAction(obj: unknown): {
       if (isGeneratedProtocol(record.cooldown)) action.cooldown = record.cooldown
       if (isCyclingDetails(record.cyclingDetails)) action.cyclingDetails = record.cyclingDetails
       if (isMobilityDetails(record.mobilityDetails)) action.mobilityDetails = record.mobilityDetails
-      if (isSquashDetails(record.squashDetails)) action.squashDetails = normalizeSquashDetails(record.squashDetails)
+      const squashDetails = normalizeSquashDetailsDraft(record.squashDetails)
+      if (squashDetails) action.squashDetails = squashDetails.details
 
       return { action: hasAnyUpdateField(action) ? action : null }
     }
@@ -532,39 +559,82 @@ function isMobilityDetails(value: unknown): value is MobilityDetails {
   )
 }
 
-function isSquashDetails(value: unknown): value is SquashDetails {
-  if (value == null) return false
-  if (typeof value !== 'object') return false
+function normalizeSquashDetailsDraft(value: unknown): { details: SquashDetails; repairs: string[] } | null {
+  if (value == null) return null
+  if (typeof value !== 'object') return null
   const record = value as Record<string, unknown>
+  if (
+    typeof record.trainingFocus !== 'string' ||
+    !VALID_SQUASH_TRAINING_FOCUS.has(record.trainingFocus)
+  ) {
+    return null
+  }
   const validMode =
     record.sessionMode == null ||
     (typeof record.sessionMode === 'string' && VALID_SQUASH_SESSION_MODES.has(record.sessionMode as SquashSessionMode))
-  const validDrills =
-    Array.isArray(record.drills) &&
-    record.drills.length > 0 &&
-    record.drills.every((drill) => {
-      if (!drill || typeof drill !== 'object') return false
-      const drillRecord = drill as Record<string, unknown>
-      return (
-        typeof drillRecord.name === 'string' &&
-        drillRecord.name.trim().length > 0 &&
-        (drillRecord.durationMin == null || typeof drillRecord.durationMin === 'number') &&
-        (drillRecord.notes == null || typeof drillRecord.notes === 'string')
-      )
-    })
-  const isValid =
-    typeof record.trainingFocus === 'string' &&
-    VALID_SQUASH_TRAINING_FOCUS.has(record.trainingFocus) &&
-    validDrills &&
-    validMode
-  return isValid
+  if (!validMode) return null
+
+  const validSessionKind =
+    record.sessionKind == null ||
+    (typeof record.sessionKind === 'string' && VALID_SQUASH_SESSION_KINDS.has(record.sessionKind as SquashSessionKind))
+  if (!validSessionKind) return null
+
+  const drills = normalizeSquashDrillsDraft(record.drills)
+  const blocks = record.blocks == null ? undefined : normalizeSquashBlocksDraft(record.blocks)
+  if (record.blocks != null && !blocks) return null
+
+  const repairs: string[] = []
+  const finalDrills = drills ?? (blocks ? blocks.flatMap((block) => block.drills) : null)
+  if (!finalDrills || finalDrills.length === 0) return null
+  if (!drills && blocks) repairs.push('squashDetails.drills')
+
+  const details: SquashDetails = {
+    trainingFocus: record.trainingFocus as SquashTrainingFocus,
+    drills: orderSquashDrillsForSession(finalDrills),
+  }
+  if (typeof record.sessionMode === 'string') details.sessionMode = record.sessionMode as SquashSessionMode
+  if (typeof record.sessionKind === 'string') details.sessionKind = record.sessionKind as SquashSessionKind
+  if (blocks) details.blocks = blocks
+  return { details, repairs }
 }
 
-function normalizeSquashDetails(details: SquashDetails): SquashDetails {
-  return {
-    ...details,
-    drills: orderSquashDrillsForSession(details.drills),
-  }
+function normalizeSquashDrillsDraft(value: unknown): SquashDrill[] | null {
+  if (!Array.isArray(value) || value.length === 0) return null
+  const drills = value.map(normalizeSquashDrillDraft)
+  if (drills.some((drill) => drill == null)) return null
+  return drills as SquashDrill[]
+}
+
+function normalizeSquashDrillDraft(value: unknown): SquashDrill | null {
+  if (!value || typeof value !== 'object') return null
+  const record = value as Record<string, unknown>
+  if (typeof record.name !== 'string' || !record.name.trim()) return null
+  if (record.durationMin != null && typeof record.durationMin !== 'number') return null
+  if (record.notes != null && typeof record.notes !== 'string') return null
+  const drill: SquashDrill = { name: record.name.trim() }
+  if (typeof record.durationMin === 'number') drill.durationMin = record.durationMin
+  if (typeof record.notes === 'string') drill.notes = record.notes
+  return drill
+}
+
+function normalizeSquashBlocksDraft(value: unknown): SquashSessionBlock[] | null {
+  if (!Array.isArray(value) || value.length === 0) return null
+  const blocks = value.map((item) => {
+    if (!item || typeof item !== 'object') return null
+    const record = item as Record<string, unknown>
+    if (typeof record.kind !== 'string' || !VALID_SQUASH_BLOCK_KINDS.has(record.kind as SquashSessionBlockKind)) return null
+    if (record.durationMin != null && typeof record.durationMin !== 'number') return null
+    const drills = normalizeSquashDrillsDraft(record.drills)
+    if (!drills) return null
+    const block: SquashSessionBlock = {
+      kind: record.kind as SquashSessionBlockKind,
+      drills: orderSquashDrillsForSession(drills),
+    }
+    if (typeof record.durationMin === 'number') block.durationMin = record.durationMin
+    return block
+  })
+  if (blocks.some((block) => block == null)) return null
+  return orderSquashBlocksForSession(blocks as SquashSessionBlock[])
 }
 
 function isSessionType(value: unknown): value is CoachSessionProposal['sessionType'] {

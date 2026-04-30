@@ -1,6 +1,5 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { ChevronDown, ChevronUp, ExternalLink } from 'lucide-react'
+import { ChevronDown, ChevronUp } from 'lucide-react'
 import type {
   AthleteProfile,
   NutritionProfile,
@@ -16,8 +15,6 @@ import {
   getPrimarySportNormalized,
   getSportPrioritySummary,
 } from '../../utils/athlete'
-import { computeMacroPlan } from '../../services/macroPlan'
-
 
 const DAYS = ['lun', 'mar', 'mie', 'jue', 'vie', 'sab', 'dom']
 
@@ -42,10 +39,9 @@ interface Props {
   onSave: (patch: Partial<Omit<AthleteProfile, 'id' | 'updatedAt'>>) => Promise<void>
 }
 
-type Section = 'sport' | 'running' | 'strength' | 'recovery' | 'schedule' | 'nutrition' | 'goalEvent'
+type Section = 'sport' | 'running' | 'strength' | 'recovery' | 'schedule' | 'nutrition'
 
 export default function AthleteProfileEditor({ profile, isSaving, onSave }: Props) {
-  const navigate = useNavigate()
   const [open, setOpen] = useState<Section | null>(null)
   const [saved, setSaved] = useState(false)
 
@@ -70,9 +66,6 @@ export default function AthleteProfileEditor({ profile, isSaving, onSave }: Prop
   )
   const [scheduleConstraints, setScheduleConstraints] = useState(profile?.scheduleProfile?.constraints ?? '')
   const [nutrition, setNutrition] = useState<NutritionProfile>(profile?.nutritionProfile ?? {})
-
-  // Goal event is now managed by the Competition Plan wizard
-  const existingEvent = profile?.goalEvents?.[0]
 
   const resolvedPrimarySport = primarySportCtx ?? (enabledSports.length === 1 ? enabledSports[0] : null)
   const secondarySportsCtx = resolvedPrimarySport
@@ -116,15 +109,6 @@ export default function AthleteProfileEditor({ profile, isSaving, onSave }: Prop
       constraints: scheduleConstraints.trim() || undefined,
     }
 
-    // Goal events are managed by the Competition Plan wizard — preserve as-is
-    const goalEvents = profile?.goalEvents
-    const draftProfile: AthleteProfile = {
-      id: profile?.id ?? 'draft',
-      updatedAt: Date.now(),
-      goalEvents,
-    }
-    const macroPlan = computeMacroPlan(draftProfile)
-
     await onSave({
       name: name.trim() || undefined,
       age: numOrUndef(age),
@@ -147,8 +131,6 @@ export default function AthleteProfileEditor({ profile, isSaving, onSave }: Prop
       recoveryProfile: hasData(recovery) ? recovery : undefined,
       scheduleProfile: hasData(scheduleProfile) ? scheduleProfile : undefined,
       nutritionProfile: hasData(nutrition) ? nutrition : undefined,
-      goalEvents,
-      macroPlan,
     })
 
     setSaved(true)
@@ -158,7 +140,7 @@ export default function AthleteProfileEditor({ profile, isSaving, onSave }: Prop
   return (
     <div className="space-y-2">
       <SectionPanel
-        title="Deporte y objetivos"
+        title="Deporte y perfil base"
         open={open === 'sport'}
         onToggle={() => toggle('sport')}
         filled={enabledSports.length > 0 || !!mainGoal}
@@ -483,36 +465,6 @@ export default function AthleteProfileEditor({ profile, isSaving, onSave }: Prop
             />
           </Field>
         </div>
-      </SectionPanel>
-
-      <SectionPanel
-        title="Objetivo principal"
-        open={open === 'goalEvent'}
-        onToggle={() => toggle('goalEvent')}
-        filled={!!existingEvent}
-      >
-        <p className="text-xs text-ink-muted mb-3 leading-relaxed">
-          Tu evento principal se configura con el wizard "Plan de competencia", que también crea el plan de entrenamiento por fases.
-        </p>
-
-        {existingEvent ? (
-          <div className="rounded-xl border border-surface-border bg-surface-raised px-3 py-3 mb-3">
-            <p className="text-[10px] font-medium uppercase tracking-wider text-ink-faint mb-1">Evento activo</p>
-            <p className="text-sm font-medium text-ink">{existingEvent.title}</p>
-            <p className="text-xs text-ink-muted mt-0.5">{existingEvent.date} · {existingEvent.sport}</p>
-          </div>
-        ) : (
-          <p className="text-xs text-ink-faint mb-3">No hay evento configurado.</p>
-        )}
-
-        <a
-          href="/competition-plan"
-          onClick={(e) => { e.preventDefault(); navigate('/competition-plan') }}
-          className="inline-flex items-center gap-1.5 rounded-xl border border-brand/30 bg-brand/10 px-3 py-2 text-sm font-medium text-brand-light hover:bg-brand/20 transition-colors"
-        >
-          <ExternalLink size={14} />
-          {existingEvent ? 'Editar en Plan de competencia' : 'Crear Plan de competencia'}
-        </a>
       </SectionPanel>
 
       <SectionPanel

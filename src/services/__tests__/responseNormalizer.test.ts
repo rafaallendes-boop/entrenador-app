@@ -514,6 +514,103 @@ describe('responseNormalizer', () => {
     })
   })
 
+  it('accepts a create_week action wrapped by action name', () => {
+    const response = normalizeResponse({
+      text: [
+        '<actions>',
+        JSON.stringify({
+          create_week: {
+            type: 'training',
+            reason: 'Semana de entrenamiento general enfocada en squash.',
+            targetDate: '2026-04-27',
+            weekObjectives: ['Mejorar la tecnica de squash.'],
+            sessions: [
+              {
+                date: '2026-04-27',
+                timeBlock: 'AM',
+                sessionType: 'squash',
+                title: 'Squash: Drills Tecnicos',
+                durationMin: 60,
+                objective: 'Consolidar la tecnica de golpeo.',
+                squashDetails: {
+                  trainingFocus: 'technical',
+                  sessionMode: 'drill_session',
+                  sessionKind: 'technical',
+                  drills: [{ name: 'Boast-Drive', durationMin: 15 }],
+                },
+              },
+            ],
+          },
+        }),
+        '</actions>',
+      ].join('\n'),
+      provider: 'mock',
+      requestClass: 'week_creator',
+    })
+
+    expect(response.actions).toHaveLength(1)
+    expect(response.actions?.[0]).toMatchObject({
+      type: 'create_week',
+      reason: 'Semana de entrenamiento general enfocada en squash.',
+      targetDate: '2026-04-27',
+      weekObjectives: ['Mejorar la tecnica de squash.'],
+    })
+    expect(response.actions?.[0].sessions?.[0].title).toBe('Squash: Drills Tecnicos')
+  })
+
+  it('repairs squashDetails when the model sends blocks without flat drills', () => {
+    const response = normalizeResponse({
+      text: [
+        'Entendido.',
+        '<actions>',
+        JSON.stringify([
+          {
+            type: 'add_session',
+            targetDate: '2026-04-30',
+            timeBlock: 'PM',
+            sessionType: 'squash',
+            title: 'Squash: Tecnica y Movimiento',
+            durationMin: 64,
+            objective: 'Mejorar control del T, voleas y movimiento especifico.',
+            squashDetails: {
+              sessionKind: 'mixed',
+              trainingFocus: 'conditioned_games',
+              blocks: [
+                {
+                  kind: 'technical',
+                  durationMin: 34,
+                  drills: [{ name: 'Control del T con patron largo-corto', durationMin: 18 }],
+                },
+                {
+                  kind: 'shadows',
+                  durationMin: 16,
+                  drills: [{ name: 'Split step y recuperacion al T', durationMin: 16 }],
+                },
+                {
+                  kind: 'control',
+                  durationMin: 14,
+                  drills: [{ name: '100 al box de saque', durationMin: 14 }],
+                },
+              ],
+            },
+            reason: 'El usuario solicito añadir la sesion de squash propuesta para hoy.',
+          },
+        ]),
+        '</actions>',
+      ].join('\n'),
+      provider: 'mock',
+      requestClass: 'chat_action',
+    })
+
+    expect(response.actions).toHaveLength(1)
+    expect(response.actions?.[0].squashDetails?.drills.map((drill) => drill.name)).toEqual([
+      'Control del T con patron largo-corto',
+      'Split step y recuperacion al T',
+      '100 al box de saque',
+    ])
+    expect(response.actions?.[0].squashDetails?.blocks).toHaveLength(3)
+  })
+
   it('drops create_week actions when requestClass is chat_action', () => {
     const response = normalizeResponse({
       text: [
