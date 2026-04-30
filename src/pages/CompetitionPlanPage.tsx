@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
+import PlanDashboard from './PlanDashboard'
 import { ChevronLeft, ChevronRight, Target, Sparkles, SkipForward, Trash2 } from 'lucide-react'
 import { ROUTES } from '../constants/routes'
 import ConfirmDialog from '../components/ui/ConfirmDialog'
@@ -260,6 +261,7 @@ export default function CompetitionPlanPage() {
   const existingConfig = athleteProfile?.planWizardConfig
 
   const [step, setStep] = useState(1)
+  const [editMode, setEditMode] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [showDeletePlanConfirm, setShowDeletePlanConfirm] = useState(false)
   const [state, setState] = useState<WizardState>(() =>
@@ -372,6 +374,10 @@ export default function CompetitionPlanPage() {
     } catch {
       setIsSaving(false)
     }
+  }
+
+  if (hasSavedPlan && !editMode) {
+    return <PlanDashboard onEdit={() => setEditMode(true)} />
   }
 
   return (

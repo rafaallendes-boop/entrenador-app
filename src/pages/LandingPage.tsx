@@ -106,7 +106,7 @@ function Hero({ onPrimary }: { onPrimary: () => void }) {
               fontFamily: FONT_MONO,
             }}
           >
-            v2.4 · release en abril
+            v2.4 · lanzamiento en abril
           </div>
 
           <h1
@@ -464,7 +464,7 @@ function HowItWorks() {
           <Step
             num="02"
             phase="Registrar"
-            title="Entrena y checkea"
+            title="Entrena y registra"
             body="Registra cada sesión en &lt; 90 s. Check-in diario de sueño, RPE y dolor. Todo tabular, todo monospace, todo al grano."
             accent={FORGE_LIME}
             icon={
@@ -904,7 +904,7 @@ function QuoteBlock() {
               style={{ fontFamily: FONT_DISPLAY }}
             >
               "Dejé Excel, Notas y tres apps. Lo único que necesito para{' '}
-              <span style={{ color: BRAND }}>entrenar con cabeza</span> está acá adentro."
+              <span style={{ color: BRAND }}>entrenar con cabeza</span> está aquí dentro."
             </blockquote>
             <div className="flex items-center gap-3.5">
               <div
@@ -1068,7 +1068,7 @@ function AccessCard({
               className="mx-auto mb-9 max-w-[520px] text-[16px] leading-[1.55]"
               style={{ color: INK_MUTED }}
             >
-              Únete a la élite y transforma tus hábitos en rendimiento puro. Sin tarjeta, sin permanencia. Tu primera semana de Pro es cortesía de la casa.
+              Únete a la élite y transforma tus hábitos en rendimiento puro. Sin tarjeta, sin permanencia. Tu primera semana de Pro está incluida, sin condiciones.
             </p>
 
             <div className="flex flex-wrap items-center justify-center gap-3">

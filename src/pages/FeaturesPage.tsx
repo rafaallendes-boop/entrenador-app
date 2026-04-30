@@ -75,7 +75,7 @@ function FeaturesHero() {
             <KpiCard value="05" label="Módulos core" note="Coach · Semana · Check-in · Historial · Analytics" color={BRAND_LIGHT} />
             <KpiCard value="05" label="Deportes" note="Squash, running, fuerza, movilidad, ciclismo" color={FORGE_LIME} />
             <KpiCard value="24/7" unit="" label="Coach disponible" note="Propuestas automáticas según tu carga y fatiga" color={FORGE_CYAN} />
-            <KpiCard value="PWA" unit="" label="Local-first" note="Funciona offline. Sincroniza cuando podés." />
+            <KpiCard value="PWA" unit="" label="Local-first" note="Funciona offline. Sincroniza cuando puedes." />
           </div>
         </div>
       </div>
@@ -130,7 +130,7 @@ function FeatureRow1Coach() {
           Propuestas reales, no consejos vagos.
         </h2>
         <p style={{ fontSize: 16, lineHeight: 1.6, color: INK_MUTED, marginBottom: 28 }}>
-          El coach IA lee tu plan, tu adherencia y tu check-in diario. Genera cambios concretos al volumen, intensidad o descansos — con justificación. Aplicás con un tap.
+          El coach IA lee tu plan, tu adherencia y tu check-in diario. Genera cambios concretos al volumen, intensidad o descansos — con justificación. Aplicas con un tap.
         </p>
         <FeatureList items={[
           { title: 'Chat 24/7 con contexto', sub: 'Conoce tu semana, tu historial y tu estado actual. Nada genérico.' },
@@ -169,10 +169,10 @@ function FeatureRow2Semana() {
           Planificación semanal sin fricción.
         </h2>
         <p style={{ fontSize: 16, lineHeight: 1.6, color: INK_MUTED, marginBottom: 28 }}>
-          Una grilla de 7 días que entendés en 5 segundos. Deportes por color, adherencia en tiempo real, duplicación de semanas y plantillas listas por bloque.
+          Una grilla de 7 días que entiendes en 5 segundos. Deportes por color, adherencia en tiempo real, duplicación de semanas y plantillas listas por bloque.
         </p>
         <FeatureList accent={FORGE_LIME} items={[
-          { title: 'Vista día + vista semana', sub: 'Saltá entre foco diario y vuelo de águila sin perder contexto.' },
+          { title: 'Vista día + vista semana', sub: 'Alterna entre foco diario y vista general sin perder contexto.' },
           { title: 'Plantillas por bloque', sub: 'Periodización A/B/C. Copia estructura, ajustá cargas.' },
           { title: 'Adherencia en vivo', sub: 'Porcentaje por semana, volumen real vs planificado.' },
         ]} />
@@ -197,11 +197,11 @@ function FeatureRow3Multi() {
           Cinco deportes. Una sola carga.
         </h2>
         <p style={{ fontSize: 16, lineHeight: 1.6, color: INK_MUTED, marginBottom: 28 }}>
-          El mismo sistema unifica squash, running, fuerza, movilidad y ciclismo. No sumás apps — sumás claridad. La carga total se mide una vez, por todo.
+          El mismo sistema unifica squash, running, fuerza, movilidad y ciclismo. No sumas apps — sumas claridad. La carga total se mide una vez, por todo.
         </p>
         <FeatureList accent={FORGE_CYAN} items={[
           { title: 'Métricas por deporte', sub: 'Zonas en running, series en fuerza, rallies en squash.' },
-          { title: 'Carga unificada', sub: 'ACWR, monotonía y strain calculados sobre todo lo que hacés.' },
+          { title: 'Carga unificada', sub: 'ACWR, monotonía y strain calculados sobre todo lo que haces.' },
         ]} />
       </div>
 
@@ -227,7 +227,7 @@ function FeatureRow4Checkin() {
           Sueño, RPE del día anterior, dolor/molestias, ánimo. El check-in toma medio minuto — y alimenta cada propuesta del coach.
         </p>
         <FeatureList items={[
-          { title: 'Notificación inteligente', sub: 'A la mañana, una sola. No te perseguimos.' },
+          { title: 'Notificación inteligente', sub: 'Por la mañana, una sola. No te perseguimos.' },
           { title: 'Tendencias visibles', sub: '7, 14, 28 días. Detectá patrones antes de que sean lesión.' },
         ]} accent={BRAND} />
       </div>
@@ -432,7 +432,7 @@ function CheckInVisual() {
         <div style={{ width: 6, borderRadius: 3, background: FORGE_LIME, flexShrink: 0 }} />
         <div>
           <div style={{ fontSize: 12, fontWeight: 600, color: INK, marginBottom: 2 }}>Estado: listo para cargar.</div>
-          <div style={{ fontSize: 12, color: INK_MUTED, lineHeight: 1.5 }}>Sueño consolidado, dolor bajo, RPE acumulado estable. Podés ejecutar el plan como está.</div>
+          <div style={{ fontSize: 12, color: INK_MUTED, lineHeight: 1.5 }}>Sueño consolidado, dolor bajo, RPE acumulado estable. Puedes ejecutar el plan como está.</div>
         </div>
       </div>
     </div>
@@ -470,7 +470,7 @@ function FeatureList({
 /* ─── FEATURE MATRIX ────────────────────────────────────── */
 
 const MATRIX_ITEMS = [
-  { icon: 'chart', title: 'Analytics avanzado', desc: 'ACWR, monotonía, strain, peak de forma. Gráficos que leés en 3 segundos.', tag: 'Pro' },
+  { icon: 'chart', title: 'Analytics avanzado', desc: 'ACWR, monotonía, strain, peak de forma. Gráficos que lees en 3 segundos.', tag: 'Pro' },
   { icon: 'star', title: 'Competencias y picos', desc: 'Marcá torneos, carreras o matches. El plan se organiza hacia la fecha.', tag: 'Core' },
   { icon: 'msg', title: 'Notas por sesión', desc: 'Audio, texto, libres. Vinculadas a la sesión — búsqueda full-text.', tag: 'Core' },
   { icon: 'plus', title: 'Bibliotecas de ejercicios', desc: 'Plantillas de intervalos, circuitos, rutinas. Compartibles con tu coach.', tag: 'Core' },
@@ -574,10 +574,10 @@ function FeaturesCTA({ onSignup }: { onSignup: () => void }) {
           <div style={{ position: 'relative' }}>
             <div className="label-mono brand" style={{ marginBottom: 24 }}>Listo para empezar</div>
             <h2 style={{ fontFamily: FONT_DISPLAY, fontSize: 'clamp(28px, 3.6vw, 44px)', fontWeight: 700, letterSpacing: '-0.025em', lineHeight: 1.08, marginBottom: 16, maxWidth: 700, color: INK }}>
-              Empezá <span style={{ color: BRAND }}>gratis.</span><br /> Subí a Pro cuando lo necesites.
+              Empieza <span style={{ color: BRAND }}>gratis.</span><br /> Sube a Pro cuando lo necesites.
             </h2>
             <p style={{ fontSize: 16, color: INK_MUTED, maxWidth: 500, marginBottom: 28, lineHeight: 1.5 }}>
-              5 días de Pro incluidos al registrarte. Sin tarjeta. Sin letra chica.
+              5 días de Pro incluidos al registrarte. Sin tarjeta. Sin letra pequeña.
             </p>
             <div className="flex flex-wrap items-center gap-3">
               <button

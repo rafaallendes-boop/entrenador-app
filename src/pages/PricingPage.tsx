@@ -486,7 +486,7 @@ export default function PricingPage() {
             <span className="p-label brand" style={{ justifyContent: 'center', display: 'inline-flex' }}>
               Precios · sin permanencia
             </span>
-            <h1>Un plan. Sin <span className="hl">letra chica.</span></h1>
+            <h1>Un plan. Sin <span className="hl">letra pequeña.</span></h1>
             <p className="lede">
               Empieza gratis. Sube a Pro cuando necesites el coach IA. Cancela en 2 clicks, cuando quieras, sin preguntas.
             </p>
@@ -506,7 +506,7 @@ export default function PricingPage() {
           <div className="pricing-grid">
             <TierCard
               name="Starter"
-              tagline="Para empezar a loguear sesiones y probar el flujo."
+              tagline="Para empezar a registrar sesiones y probar el flujo."
               monthlyPrice={0}
               annualPrice={0}
               isAnnual={isAnnual}
@@ -555,7 +555,7 @@ export default function PricingPage() {
                 </svg>
               </div>
               <h4>Sin permanencia</h4>
-              <p>Cancelás cuando quieras. Dos clicks desde Ajustes, sin formularios ni llamadas.</p>
+              <p>Cancela cuando quieras. Dos clics desde Ajustes, sin formularios ni llamadas.</p>
             </div>
             <div className="g-item">
               <div className="g-ic">
@@ -582,7 +582,7 @@ export default function PricingPage() {
                 </svg>
               </div>
               <h4>Soporte humano</h4>
-              <p>Escribinos y te responde alguien del equipo — no un bot, no un ticket perdido.</p>
+              <p>Escríbenos y te responde alguien del equipo — no un bot, no un ticket perdido.</p>
             </div>
           </div>
         </div>
@@ -594,7 +594,7 @@ export default function PricingPage() {
           <div className="section-header">
             <span className="p-label" style={{ display: 'inline-flex' }}>Comparación completa</span>
             <h2>¿Qué cambia entre planes?</h2>
-            <p className="r">Todas las funcionalidades, lado a lado. Sin letra chica.</p>
+            <p className="r">Todas las funcionalidades, lado a lado. Sin letra pequeña.</p>
           </div>
           <div className="compare-shell">
             <table className="compare-table">
@@ -643,30 +643,30 @@ export default function PricingPage() {
               <span className="p-label" style={{ display: 'inline-flex' }}>Dudas frecuentes</span>
               <h2>Preguntas honestas, respuestas honestas.</h2>
               <p>
-                Si algo no está acá, <a href="mailto:hola@rallyiq.com">escribinos</a>. Responde una persona, no un bot.
+                Si algo no está aquí, <a href="mailto:hola@rallyiq.com">escríbenos</a>. Responde una persona, no un bot.
               </p>
             </div>
             <div className="faq-list">
               <FaqItem
                 defaultOpen
                 question="¿Puedo cancelar cuando quiera?"
-                answer="Sí. Dos clicks desde Ajustes → Suscripción. Sigues con acceso Pro hasta el final del mes pagado, después bajas automático a Starter. Sin llamadas, sin formularios."
+                answer="Sí. Dos clics desde Ajustes → Suscripción. Sigues con acceso Pro hasta el final del mes pagado, después baja automáticamente a Starter. Sin llamadas, sin formularios."
               />
               <FaqItem
                 question="¿Qué pasa con mis datos si me voy?"
-                answer="Tus datos son tuyos. Podés exportar todo en CSV o JSON desde Ajustes en cualquier plan — no se borran si bajás de tier. Si cerrás la cuenta, te damos 30 días para descargar todo."
+                answer="Tus datos son tuyos. Puedes exportar todo en CSV o JSON desde Ajustes en cualquier plan — no se borran si bajas de nivel. Si cierras la cuenta, tienes 30 días para descargar todo."
               />
               <FaqItem
                 question="¿Funciona offline?"
-                answer="Sí. RallyIQ es una PWA local-first. Registrás sesiones, hacés check-in y ves tu plan sin conexión. Cuando volvés a tener señal, sincroniza en segundo plano. El coach IA sí requiere conexión."
+                answer="Sí. RallyIQ es una PWA local-first. Registras sesiones, haces check-in y ves tu plan sin conexión. Cuando vuelves a tener señal, sincroniza en segundo plano. El coach IA sí requiere conexión."
               />
               <FaqItem
                 question="¿Hay descuento por pago anual?"
-                answer="Sí — 20% off en anual, tanto en Pro como en Elite. El toggle arriba lo calcula automático. También tenemos descuentos para clubes y entrenadores con 5+ atletas: escribinos."
+                answer="Sí — 20% de descuento en anual, tanto en Pro como en Elite. El selector de arriba lo calcula automáticamente. También tenemos descuentos para clubes y entrenadores con 5+ atletas: escríbenos."
               />
               <FaqItem
                 question="¿Qué deportes soporta exactamente?"
-                answer="Squash, running, fuerza (gym), movilidad, ciclismo y recuperación. Si entrenás otro deporte de raqueta o endurance, podés loguearlo con métricas personalizadas."
+                answer="Squash, running, fuerza (gym), movilidad, ciclismo y recuperación. Si practicas otro deporte de raqueta o endurance, puedes registrarlo con métricas personalizadas."
               />
               <FaqItem
                 question="¿Dónde se guardan mis datos?"
@@ -674,7 +674,7 @@ export default function PricingPage() {
               />
               <FaqItem
                 question="¿Puedo probar Pro antes de pagar?"
-                answer="Sí — 14 días de Pro completo al registrarte, sin tarjeta. Al día 14 te avisamos y decidís si seguís en Pro o bajás a Starter. Nunca cobramos sin tu confirmación explícita."
+                answer="Sí — 14 días de Pro completo al registrarte, sin tarjeta. Al día 14 te avisamos y decides si seguir en Pro o bajar a Starter. Nunca cobramos sin tu confirmación explícita."
               />
             </div>
           </div>
@@ -686,9 +686,9 @@ export default function PricingPage() {
         <div className="pricing-wrap">
           <div className="cta-block">
             <div className="cta-grid-bg" />
-            <span className="p-label brand" style={{ display: 'inline-flex' }}>Empezá hoy</span>
+            <span className="p-label brand" style={{ display: 'inline-flex' }}>Empieza hoy</span>
             <h2>14 días de <span className="hl">Pro,</span> sin tarjeta.</h2>
-            <p>Creás la cuenta, probás el coach IA, decidís después.</p>
+            <p>Crea la cuenta, prueba el coach IA, decide después.</p>
             <div className="cta-act">
               <a href="#" className="p-btn p-btn-primary p-btn-lg">Crear cuenta gratis <span>→</span></a>
               <Link to="/features" className="p-btn p-btn-ghost p-btn-lg">Ver funcionalidades</Link>
