@@ -6,16 +6,18 @@
  * streaming NDJSON when the client requests chunks.
  */
 
+import { stream } from '@netlify/functions'
+
 interface LambdaEvent {
   httpMethod: string
   headers?: Record<string, string | undefined>
   body: string | null
 }
 
-type LambdaResponse = Response | {
+type LambdaResponse = {
   statusCode: number
   headers: Record<string, string>
-  body: string
+  body: any
 }
 
 type ProviderName = 'gemini' | 'openai' | 'claude'
@@ -824,7 +826,7 @@ async function executeWithPolicy(
   }
 }
 
-function streamResponse(req: CoachRequest): Response {
+function streamResponse(req: CoachRequest): LambdaResponse {
   const traceId = req.traceId ?? `srv-${Date.now()}`
   const requestClass = normalizeRequestClass(req.requestClass)
   const encoder = new TextEncoder()
@@ -856,10 +858,10 @@ function streamResponse(req: CoachRequest): Response {
     },
   })
 
-  return new Response(stream, { status: 200, headers: STREAM_HEADERS })
+  return { statusCode: 200, headers: STREAM_HEADERS, body: stream }
 }
 
-export const handler = async (event: LambdaEvent): Promise<LambdaResponse> => {
+export const handler = stream(async (event: LambdaEvent): Promise<any> => {
   if (event.httpMethod !== 'POST') {
     return json(405, { error: 'Method not allowed', errorCode: 'unknown' })
   }
@@ -906,4 +908,4 @@ export const handler = async (event: LambdaEvent): Promise<LambdaResponse> => {
       requestClass: normalizeRequestClass(req.requestClass),
     })
   }
-}
+})

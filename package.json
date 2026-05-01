@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.88.0",
+    "@netlify/functions": "^5.2.0",
     "@supabase/supabase-js": "^2.101.1",
     "date-fns": "^4.1.0",
     "dexie": "^4.4.1",

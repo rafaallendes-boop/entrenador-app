@@ -1,6 +1,6 @@
 # Entrenador App - Review and Roadmap
 
-Actualizado: 2026-04-24
+Actualizado: 2026-05-01
 
 ## Resumen ejecutivo
 
@@ -12,14 +12,16 @@ El roadmap anterior estaba demasiado largo y ya mezclaba trabajo cerrado con tra
 - coach con proposals persistidas, aplicables y reversibles
 - macroplan, analytics de carga, nutrición contextual y weekly loop visibles
 - plan builder separado del chat
+- Plan Builder V2 con capa de repair pre-validación, prompts mínimos y telemetría de generación
 - `week_creator` ya operativo y enrutable desde chat
 - `responseNormalizer` ya recupera `add_session` incompletos cuando faltan campos reparables
 
 La lectura honesta hoy es esta:
 
 - el producto ya no está en fase prototipo
+- Plan Builder ya no depende de que el modelo devuelva semanas perfectas
 - el mayor riesgo técnico sigue siendo sync/convergencia
-- el mayor vacío de producto sigue siendo observabilidad y cierre del loop de activación
+- el mayor vacío de producto sigue siendo observabilidad, medición de utilidad y cierre del loop de activación
 - monetización todavía no existe como sistema real
 
 ## Ya implementado y fuera del backlog principal
@@ -31,6 +33,11 @@ Esto ya existe en código y no debería volver como bloque grande:
 - onboarding guiado
 - wizard de plan de competencia
 - `plan_builder_redirect` desde chat para planes largos
+- Plan Builder V2 Fase 1: prompt minimal, repair local y validación post-repair
+- repair de semanas generadas: fechas inválidas, sesiones fuera de semana, días no permitidos, colisiones, deportes no permitidos, detalles faltantes y balance de conteo
+- selectors deportivos integrados en repair para squash, running, strength, mobility y cycling
+- telemetría de repair persistida en `generationMeta`: reparadas, movidas, fallback, filtradas y warnings
+- estrategia de generación configurable con default `single`, `pairs` explícito y modo `auto`
 - `week_creator` como flujo separado para crear una sola semana
 - guardrails recientes para que `chat_action` no emita `create_week`
 - defaults conservadores en week creator cuando el perfil viene incompleto
@@ -45,9 +52,10 @@ Esto ya existe en código y no debería volver como bloque grande:
 
 ### Crítico
 
-1. Blindar `syncService` y recuperar build verde.
+1. Blindar `syncService` y mantener build verde.
    Estado actual:
    - `build` volvió a estar en verde.
+   - Plan Builder V2 también compila con `npm run build`.
    - sync sigue siendo el riesgo principal para beta multi-dispositivo, pero ya no por un rojo inmediato de compilación.
    Falta:
    - revalidar convergencia entre desktop/móvil y colas retenidas
@@ -83,10 +91,13 @@ Esto ya existe en código y no debería volver como bloque grande:
    - redirect a plan builder
    - guardrails de `create_week`
    - hardening de `add_session` en `responseNormalizer` para no perder propuestas reparables
+   - Plan Builder V2 Fase 1 con repair local y métricas de salud de generación
    Falta:
    - QA manual de usuario nuevo sin perfil completo
    - QA de chat_action para asegurar que no cree semanas y que sí persista `add_session` reparados
    - QA del redirect a plan builder para requests de plan largo
+   - QA de generación real en UI revisando repair telemetry en semanas generadas
+   - resolver decisión de prompt genérico: hoy un test espera omitir `MACRO PLAN`, pero el prompt actual lo incluye
 
 ### Medio
 
@@ -94,6 +105,7 @@ Esto ya existe en código y no debería volver como bloque grande:
    Foco:
    - `syncService`
    - bloques puros del prompt builder / lógica del coach
+   - helpers de contexto selector en Plan Builder repair si empieza a crecer
 
 2. Convertir analytics en decisiones, no solo visualización.
    Falta:
@@ -145,11 +157,16 @@ Estado: fuerte
 - chat, week creator y plan builder ya están desacoplados
 - macroplan y semana ya conversan razonablemente bien
 - el normalizador ya es más tolerante a respuestas parciales del modelo en `add_session`
+- Plan Builder V2 repara localmente respuestas parciales antes de validar
+- WeekCreator y Coach Chat siguen usando schema completo; Plan Builder usa schema minimal
+- batch pairs usa prompt minimal y degrada a single cuando el batch falla
 
 Pendiente:
 
 - más automatización desde alertas y feedback
 - más medición de aceptación y utilidad real
+- QA manual con modelos reales y semanas largas
+- decidir si las métricas de repair se muestran como UI visible o quedan como metadata técnica
 
 ### Sync
 
@@ -182,10 +199,61 @@ Estado: pendiente
 
 ## Próximos pasos recomendados
 
-1. Hacer una ronda corta de QA manual de `chat_action` + `week_creator` + redirect a plan builder, incluyendo casos de `add_session` reparado.
-2. Agregar instrumentación mínima para proposals, alertas y aceptación.
-3. Validar sync en escenarios de conflicto y recovery multi-dispositivo.
-4. Recién después abrir trabajo comercial de billing/paywall.
+1. Hacer una ronda corta de QA manual de `chat_action` + `week_creator` + redirect a Plan Builder V2, incluyendo casos de `add_session` reparado y semanas con repair telemetry.
+2. Decidir y corregir el contrato de prompt genérico respecto a `MACRO PLAN` para recuperar suite completa verde.
+3. Agregar instrumentación mínima para proposals, alertas, generación de planes, repair telemetry y aceptación.
+4. Validar sync en escenarios de conflicto y recovery multi-dispositivo.
+5. Recién después abrir trabajo comercial de billing/paywall.
+
+## Plan Builder V2 — Generación robusta
+
+### Fase 1 — Repair pre-validación — completada
+
+Objetivo cumplido: pasar de “el modelo debe generar una semana perfecta” a “el modelo genera intención semanal compacta y la app completa/repara antes de validar”.
+
+Implementado:
+
+- Prompt minimal para Plan Builder single-week.
+- Prompt minimal para generación batch/pairs.
+- Schema completo conservado para `WeekCreatorPromptBuilder` y Coach Chat.
+- `repairGeneratedWeek()` como capa pre-validación.
+- Reparación de fechas inválidas, sesiones fuera de semana, días no permitidos y colisiones.
+- Respeto de `allowDoubleSession=false` al resolver colisiones.
+- Filtrado de deportes no permitidos.
+- Hidratación de detalles con selectors existentes:
+  - `selectSquashDrills`
+  - `selectRunningSession`
+  - `selectStrengthSession`
+  - `selectMobilitySession`
+  - `selectCyclingSession`
+- Balance de conteo con recorte priorizado y fallback máximo de 2 sesiones.
+- `count_mismatch` post-repair como warning si la diferencia es menor o igual a 1; error si es mayor.
+- Post-repair solo `severity: error` es retryable.
+- Telemetría propagada a `TrainingPlanWeek.generationMeta`.
+- Strategy default `single`, con `pairs` explícito y `auto` para planes largos.
+
+Validación automatizada:
+
+- `npm run build`: verde.
+- `npm test -- --run src/services/__tests__/repairWeek.test.ts src/services/__tests__/planBuilder.test.ts src/store/__tests__/usePlanBuilderStore.test.ts`: verde, 37 tests.
+- `npm test`: 368/369 tests verdes. Falla pendiente ajena a Plan Builder V2: `promptBuilderContextReduction.test` espera que chat genérico no incluya `MACRO PLAN`, pero el prompt actual sí lo incluye.
+
+Pendientes menores de Fase 1:
+
+- Decidir si exportar los schema blocks o mantenerlos privados.
+- Centralizar helpers de contexto selector si `repairWeek.ts` sigue creciendo.
+- Ampliar `repairWeek.test.ts` hacia los 14 casos propuestos originalmente si se quiere cobertura más granular.
+- Hacer QA manual de UI con modelos reales revisando las métricas de repair.
+
+### Fase 2 — Observabilidad y ajuste fino — pendiente
+
+Foco recomendado:
+
+- Mostrar repair telemetry de forma comprensible en UI o panel debug.
+- Métricas por generación: ratio de sesiones reparadas, movidas, filtradas y fallback.
+- Diagnóstico de repair en retry instructions solo si producción muestra patrones repetidos.
+- Separar `repairDiagnostics.ts` si la metadata empieza a crecer.
+- Medir si el prompt minimal mejora tasa de éxito, latencia y costo frente al schema completo.
 
 ## Plan de estabilización del Coach
 
