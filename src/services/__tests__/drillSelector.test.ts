@@ -42,25 +42,62 @@ function makePracticeMatchSession(date: string): Session {
     squashDetails: {
       trainingFocus: 'tactical',
       sessionMode: 'practice_match',
-      drills: [{ name: 'Partido de entrenamiento libre a 5 games', durationMin: 20 }],
+      drills: [{ name: 'Partido de entrenamiento al mejor de 5 juegos', durationMin: 20 }],
     },
   } as Session
 }
 
 describe('drillSelector progression', () => {
-  it('keeps library ids unique and metadata fields coherent', () => {
+  it('keeps library ids unique and player-facing metadata coherent', () => {
     const validIntents = new Set(['consistency', 'pressure', 'finishing', 'recovery', 'control'])
     const validPhaseTags = new Set(['base', 'build', 'peak', 'taper'])
+    const obviousEnglishTerms = [
+      'rsa',
+      'ghosting',
+      'split step',
+      'match-play',
+      'games',
+      'sets',
+      'target',
+      'feedback',
+      'touch',
+      'timing',
+      'box',
+      'drop',
+      'drops',
+      'drive',
+      'drives',
+      'boast',
+      'lob',
+      'lift',
+      'nick',
+      'sustain',
+      'land',
+      'rally',
+      'rallies',
+    ]
     const ids = new Set<string>()
 
     for (const drill of SQUASH_DRILL_LIBRARY) {
       expect(ids.has(drill.id)).toBe(false)
       ids.add(drill.id)
+      expect(drill.name.trim().length).toBeGreaterThan(0)
+      expect(drill.description.trim().length).toBeGreaterThan(0)
       expect(drill.tags.some((tag) => validPhaseTags.has(tag))).toBe(true)
 
       if (drill.constraints) {
         expect(drill.constraints.length).toBeGreaterThan(0)
         expect(drill.constraints.every((constraint) => constraint.trim().length > 0)).toBe(true)
+      }
+
+      const playerFacingText = [drill.name, drill.description, ...(drill.constraints ?? [])].join(' ').toLowerCase()
+      const playerFacingTokens = new Set(playerFacingText.split(/[^a-z0-9]+/).filter(Boolean))
+      for (const term of obviousEnglishTerms) {
+        if (term.includes(' ') || term.includes('-')) {
+          expect(playerFacingText).not.toContain(term)
+        } else {
+          expect(playerFacingTokens.has(term)).toBe(false)
+        }
       }
 
       if (drill.intent) {
@@ -71,11 +108,11 @@ describe('drillSelector progression', () => {
 
   it('adds the explicit solo/control drill library expected by the new taxonomy', () => {
     const controlNames = [
-      '100 drops solo',
-      '100 tiros media cancha',
-      '100 al box de saque',
-      '100 paralelas de fondo',
-      'Drops desde media cancha',
+      '100 dejadas solo',
+      '100 tiros desde media cancha',
+      '100 tiros al cuadro de saque',
+      '100 paralelas desde el fondo',
+      'Dejadas desde media cancha',
       'Voleas solo',
     ]
 
@@ -87,8 +124,8 @@ describe('drillSelector progression', () => {
   })
 
   it('includes the new high-intensity squash pressure drills', () => {
-    const backCourtPressure = findSquashDrillByName('Presión de fondo')
-    const threeQuarterPressure = findSquashDrillByName('Presión a 3/4 de cancha')
+    const backCourtPressure = findSquashDrillByName('Juego de fondo profundo')
+    const threeQuarterPressure = findSquashDrillByName('Ataque desde tres cuartos de cancha')
 
     expect(backCourtPressure).toBeTruthy()
     expect(backCourtPressure?.intensity).toBe('high')
@@ -99,6 +136,23 @@ describe('drillSelector progression', () => {
     expect(threeQuarterPressure?.intensity).toBe('high')
     expect(threeQuarterPressure?.intent).toBe('pressure')
     expect(threeQuarterPressure?.tags).toContain('transition')
+  })
+
+  it('keeps aliases for renamed drill names', () => {
+    const aliases = [
+      ['RSA corto 10-15s', 'rsa_short_bursts'],
+      ['Juego condicionado sin segundos botes', 'conditioned_no_two_bounces'],
+      ['Base continua de movimiento específico de squash', 'continuous_squash_movement_base'],
+      ['Intervalos extensivos de movimiento aeróbico', 'extensive_aerobic_movement_intervals'],
+      ['100 drops solo', 'solo_100_drops'],
+      ['Ghosting 4 esquinas', 'ghosting_4_corners'],
+      ['Split step y recuperación al T', 'split_step_t_recovery'],
+      ['Partido de entrenamiento libre a 5 games', 'practice_match_five_games'],
+    ]
+
+    for (const [oldName, id] of aliases) {
+      expect(findSquashDrillByName(oldName)?.id).toBe(id)
+    }
   })
 
   it('forces deload when squash ACWR is in risk', () => {
@@ -184,7 +238,7 @@ describe('drillSelector progression', () => {
     })
 
     expect(selection.sessionKind).toBe('control')
-    expect(selection.drills.some((drill) => drill.name === '100 drops solo' || drill.name === '100 paralelas de fondo')).toBe(true)
+    expect(selection.drills.some((drill) => drill.name === '100 dejadas solo' || drill.name === '100 paralelas desde el fondo')).toBe(true)
     expect(selection.drills.some((drill) => drill.notes?.includes('100 reps'))).toBe(true)
   })
 
@@ -215,21 +269,23 @@ describe('drillSelector progression', () => {
     expect(
       selection.drills.some((drill) =>
         [
-          'Partido de entrenamiento libre a 5 games',
-          'Partido de entrenamiento al mejor de 3 games',
-          'Partido con foco de ataque en puntos cortos',
+          'Partido de entrenamiento al mejor de 5 juegos',
+          'Partido de entrenamiento al mejor de 3 juegos',
+          'Partido con ataque temprano',
         ].includes(drill.name),
       ),
     ).toBe(true)
-    expect(
-      [
-        'Partido de entrenamiento libre a 5 games',
-        'Partido de entrenamiento al mejor de 3 games',
-        'Partido con foco de ataque en puntos cortos',
-      ].includes(selection.drills[selection.drills.length - 1]!.name),
-    ).toBe(true)
     expect(selection.sessionKind).toBe('mixed')
     expect(selection.blocks?.[selection.blocks.length - 1]?.kind).toBe('match')
+    expect(
+      selection.blocks?.[selection.blocks.length - 1]?.drills.some((drill) =>
+        [
+          'Partido de entrenamiento al mejor de 5 juegos',
+          'Partido de entrenamiento al mejor de 3 juegos',
+          'Partido con ataque temprano',
+        ].includes(drill.name),
+      ),
+    ).toBe(true)
   })
 
   it('does not prioritize practice match drills in taper or high fatigue', () => {
@@ -250,9 +306,9 @@ describe('drillSelector progression', () => {
     })
 
     const practiceMatchNames = new Set([
-      'Partido de entrenamiento libre a 5 games',
-      'Partido de entrenamiento al mejor de 3 games',
-      'Partido con foco de ataque en puntos cortos',
+      'Partido de entrenamiento al mejor de 5 juegos',
+      'Partido de entrenamiento al mejor de 3 juegos',
+      'Partido con ataque temprano',
     ])
 
     expect(taperSelection.drills.some((drill) => practiceMatchNames.has(drill.name))).toBe(false)
@@ -276,9 +332,9 @@ describe('drillSelector progression', () => {
     expect(
       selection.drills.some((drill) =>
         [
-          'Partido de entrenamiento libre a 5 games',
-          'Partido de entrenamiento al mejor de 3 games',
-          'Partido con foco de ataque en puntos cortos',
+          'Partido de entrenamiento al mejor de 5 juegos',
+          'Partido de entrenamiento al mejor de 3 juegos',
+          'Partido con ataque temprano',
         ].includes(drill.name),
       ),
     ).toBe(false)
@@ -299,8 +355,8 @@ describe('drillSelector progression', () => {
       recentDrills: [],
     })
 
-    expect(selection.drills.some((drill) => drill.name === 'RecuperaciÃƒÂ³n tÃƒÂ©cnica con largo controlado')).toBe(false)
-    expect(selection.drills.some((drill) => drill.name.includes('Partido') || drill.name.includes('presi'))).toBe(true)
+    expect(selection.drills.some((drill) => drill.name === 'Largo controlado de baja carga')).toBe(false)
+    expect(selection.drills.some((drill) => drill.name.includes('Partido') || drill.name.includes('presionar'))).toBe(true)
   })
 
   it('derives progression focus from the whole recent session instead of only the first drill', () => {
@@ -316,7 +372,7 @@ describe('drillSelector progression', () => {
           trainingFocus: 'technical',
           drills: [
             { name: 'Drives paralelos a profundidad', durationMin: 10 },
-            { name: 'PresiÃƒÂ³n a esquinas de fondo', durationMin: 10 },
+            { name: 'Presión a esquinas de fondo', durationMin: 10 },
             { name: 'Juego condicionado sin segundos botes', durationMin: 10 },
           ],
         },
@@ -327,14 +383,14 @@ describe('drillSelector progression', () => {
   })
 
   it('classifies split step recovery as footwork family', () => {
-    const drill = findSquashDrillByName('Split step y recuperaciÃƒÂ³n al T')
+    const drill = findSquashDrillByName('Salto de reacción y vuelta al T')
     expect(drill).toBeTruthy()
     expect(getSquashDrillFamily(drill!)).toBe('footwork')
   })
 
   it('maps finishing drills into a dedicated family', () => {
-    const nickDrill = findSquashDrillByName('Cierre al nick bajo presiÃ³n')
-    const angleDrill = findSquashDrillByName('DefiniciÃ³n con Ã¡ngulo en zona delantera')
+    const nickDrill = findSquashDrillByName('Cierre a la esquina baja')
+    const angleDrill = findSquashDrillByName('Cierre con ángulo en la zona delantera')
 
     expect(nickDrill?.intent).toBe('finishing')
     expect(angleDrill?.intent).toBe('finishing')
@@ -353,8 +409,8 @@ describe('drillSelector progression', () => {
 
     expect(
       selection.drills.some((drill) =>
-        drill.name.includes('Intervalos extensivos') ||
-        (drill.name.includes('Base continua') && drill.name.includes('squash')),
+        drill.name === 'Intervalos aeróbicos en cancha' ||
+        drill.name === 'Movimiento continuo en cancha',
       ),
     ).toBe(true)
   })
@@ -375,8 +431,8 @@ describe('drillSelector progression', () => {
       recentDrills: [],
     })
     const aerobicBaseNames = new Set([
-      'Base continua de movimiento especÃ­fico de squash',
-      'Intervalos extensivos de movimiento aerÃ³bico',
+      'Movimiento continuo en cancha',
+      'Intervalos aeróbicos en cancha',
     ])
 
     expect(peakSelection.drills.some((drill) => aerobicBaseNames.has(drill.name))).toBe(false)
@@ -384,14 +440,14 @@ describe('drillSelector progression', () => {
   })
 
   it('includes the first constraint in progression notes when a drill provides one', () => {
-    const drill = findSquashDrillByName('Intervalos extensivos de movimiento aerÃ³bico')
+    const drill = findSquashDrillByName('Intervalos aeróbicos en cancha')
     const notes = buildProgressedDrillNotes(drill!, {
       phase: 'build',
       fatigueLevel: 4,
       competitionSoon: false,
       goal: 'mejorar base fisica',
       recentDrills: [],
-      historicalSessions: [makeSquashSession('2026-04-08', 'Base continua de movimiento especÃ­fico de squash')],
+      historicalSessions: [makeSquashSession('2026-04-08', 'Movimiento continuo en cancha')],
     })
 
     expect(notes).toContain('Mantener el mismo ritmo')

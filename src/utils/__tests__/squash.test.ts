@@ -37,7 +37,7 @@ describe('squash session mode compatibility', () => {
       squashDetails: {
         trainingFocus: 'tactical',
         sessionMode: 'practice_match',
-        drills: [{ name: 'Partido de entrenamiento libre a 5 games' }],
+        drills: [{ name: 'Partido de entrenamiento al mejor de 5 juegos' }],
       },
     })
 
@@ -51,7 +51,7 @@ describe('squash session mode compatibility', () => {
         squashDetails: {
           trainingFocus: 'tactical',
           sessionMode: 'practice_match',
-          drills: [{ name: 'Partido de entrenamiento libre a 5 games' }],
+          drills: [{ name: 'Partido de entrenamiento al mejor de 5 juegos' }],
         },
       }),
       makeSquashSession({
@@ -81,7 +81,7 @@ describe('squash session mode compatibility', () => {
         squashDetails: {
           trainingFocus: 'tactical',
           sessionMode: 'practice_match',
-          drills: [{ name: 'Partido de entrenamiento libre a 5 games' }],
+          drills: [{ name: 'Partido de entrenamiento al mejor de 5 juegos' }],
         },
       }),
       makeSquashSession({
@@ -95,7 +95,7 @@ describe('squash session mode compatibility', () => {
         squashDetails: {
           trainingFocus: 'tactical',
           sessionMode: 'practice_match',
-          drills: [{ name: 'Partido de entrenamiento libre a 5 games' }],
+          drills: [{ name: 'Partido de entrenamiento al mejor de 5 juegos' }],
         },
       }),
       makeSquashSession({
@@ -115,14 +115,14 @@ describe('squash session mode compatibility', () => {
       subtype: 'control',
       squashDetails: {
         trainingFocus: 'technical',
-        drills: [{ name: '100 drops solo', durationMin: 18 }],
+        drills: [{ name: '100 dejadas solo', durationMin: 18 }],
       },
     })
     const shadows = makeSquashSession({
       subtype: 'training',
       squashDetails: {
         trainingFocus: 'physical',
-        drills: [{ name: 'Ghosting 4 esquinas', durationMin: 16 }],
+        drills: [{ name: 'Desplazamientos sin pelota a cuatro esquinas', durationMin: 16 }],
       },
     })
     const mixed = makeSquashSession({
@@ -131,12 +131,12 @@ describe('squash session mode compatibility', () => {
         trainingFocus: 'technical',
         sessionKind: 'mixed',
         blocks: [
-          { kind: 'shadows', durationMin: 18, drills: [{ name: 'Ghosting 4 esquinas', durationMin: 18 }] },
-          { kind: 'control', durationMin: 24, drills: [{ name: '100 drops solo', durationMin: 24 }] },
+          { kind: 'shadows', durationMin: 18, drills: [{ name: 'Desplazamientos sin pelota a cuatro esquinas', durationMin: 18 }] },
+          { kind: 'control', durationMin: 24, drills: [{ name: '100 dejadas solo', durationMin: 24 }] },
         ],
         drills: [
-          { name: 'Ghosting 4 esquinas', durationMin: 18 },
-          { name: '100 drops solo', durationMin: 24 },
+          { name: 'Desplazamientos sin pelota a cuatro esquinas', durationMin: 18 },
+          { name: '100 dejadas solo', durationMin: 24 },
         ],
       },
     })

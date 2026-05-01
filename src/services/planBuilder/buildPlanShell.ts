@@ -15,6 +15,7 @@ import type {
 import { fromISO, getWeekStart, toISO } from '../../utils/date'
 import { v4 as uuid } from '../../utils/uuid'
 import { computeMacroPlan, computeWeeksRemaining, resolvePhase } from '../macroPlan'
+import { resolveConfiguredGenerationStrategy } from './generationState'
 
 export interface BuildPlanShellInput {
   athleteId: string
@@ -125,6 +126,7 @@ export function buildPlanShell(input: BuildPlanShellInput): BuildPlanShellResult
     athleteId,
     goalEventId: goalEvent.id,
     status: 'draft',
+    generationState: 'shell',
     title: `Plan ${goalEvent.title}`,
     startDate: toISO(firstWeekStart),
     endDate,
@@ -136,7 +138,7 @@ export function buildPlanShell(input: BuildPlanShellInput): BuildPlanShellResult
     updatedAt: nowTs,
     generationSummary: {
       startedAt: nowTs,
-      strategy: totalWeeks >= 8 ? 'pairs' : 'single',
+      strategy: resolveConfiguredGenerationStrategy(totalWeeks),
       completedWeeks: 0,
       failedWeeks: [],
       totalAttempts: 0,

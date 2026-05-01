@@ -11,8 +11,22 @@ import { generatePlanWeeks } from '../services/planBuilder/generatePlan'
 import { validatePlan } from '../services/planBuilder/validator'
 import { commitPlan } from '../services/planBuilder/commitPlan'
 import { getPrimaryGoalEvent } from '../services/macroPlan'
+import {
+  derivePlanGenerationState,
+  resolveConfiguredGenerationStrategy,
+} from '../services/planBuilder/generationState'
 
-export type PlanBuilderStatus = 'idle' | 'shelling' | 'generating' | 'ready' | 'committing' | 'done' | 'error'
+export type PlanBuilderStatus =
+  | 'idle'
+  | 'shelling'
+  | 'shell_ready'
+  | 'generating'
+  | 'partial'
+  | 'failed'
+  | 'ready'
+  | 'committing'
+  | 'done'
+  | 'error'
 
 interface PlanBuilderState {
   plan: TrainingPlan | null
@@ -27,6 +41,7 @@ interface PlanBuilderState {
 
   createDraft: (input: { profile: AthleteProfile; wizardConfig: PlanWizardConfig }) => Promise<void>
   runGeneration: (profile: AthleteProfile) => Promise<void>
+  retryFullGeneration: (profile: AthleteProfile) => Promise<void>
   regenerateWeek: (weekIndex: number, profile: AthleteProfile) => Promise<void>
   acceptPlan: () => Promise<{ errors: string[]; warnings: string[] }>
   discard: () => Promise<void>
@@ -44,6 +59,45 @@ function buildGenerationFailureMessage(failedWeekIndexes: number[]): string | nu
     return `No se pudo generar la semana ${failedWeekIndexes[0] + 1}. Regénérala para continuar.`
   }
   return `No se pudieron generar ${failedWeekIndexes.length} semanas. Regénéralas para continuar.`
+}
+
+function isReadyWeek(week: TrainingPlanWeek): boolean {
+  return week.status === 'draft' && week.sessions.length > 0
+}
+
+function countReadyWeeks(weeks: TrainingPlanWeek[]): number {
+  return weeks.filter(isReadyWeek).length
+}
+
+function toBuilderStatus(generationState: TrainingPlan['generationState']): PlanBuilderStatus {
+  switch (generationState) {
+    case 'shell': return 'shell_ready'
+    case 'generating': return 'generating'
+    case 'partial': return 'partial'
+    case 'failed': return 'failed'
+    case 'complete': return 'ready'
+  }
+}
+
+function normalizePlanGenerationState(plan: TrainingPlan, weeks: TrainingPlanWeek[]): TrainingPlan {
+  return {
+    ...plan,
+    generationState: plan.status === 'active' || plan.status === 'archived'
+      ? 'complete'
+      : derivePlanGenerationState(weeks),
+  }
+}
+
+function resetWeeksForFullGeneration(weeks: TrainingPlanWeek[]): TrainingPlanWeek[] {
+  const nowTs = Date.now()
+  return weeks.map((week) => ({
+    ...week,
+    status: 'pending',
+    sessions: [],
+    validationIssues: [],
+    generationMeta: { attempts: 0 },
+    updatedAt: nowTs,
+  }))
 }
 
 export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
@@ -77,11 +131,12 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
       set({
         plan,
         weeks,
-        status: 'ready',
+        status: 'shell_ready',
         currentWeekIndex: null,
         completedWeeks: 0,
         failedWeekIndexes: [],
         streamingTextByWeekIndex: {},
+        lastError: null,
       })
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error)
@@ -93,9 +148,10 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
     const { plan, weeks } = get()
     if (!plan) return
     const startedAt = Date.now()
-    const strategy = plan.totalWeeks >= 8 ? 'pairs' : 'single'
+    const strategy = resolveConfiguredGenerationStrategy(plan.totalWeeks)
     const nextPlan: TrainingPlan = {
       ...plan,
+      generationState: 'generating',
       updatedAt: startedAt,
       generationSummary: {
         startedAt,
@@ -105,17 +161,18 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
         totalAttempts: 0,
       },
     }
-    set({
-      plan: nextPlan,
-      status: 'generating',
-      lastError: null,
-      issues: [],
-      completedWeeks: 0,
-      failedWeekIndexes: [],
-      streamingTextByWeekIndex: {},
-    })
     try {
-      await generatePlanWeeks({
+      await db.trainingPlans.put(nextPlan)
+      set({
+        plan: nextPlan,
+        status: 'generating',
+        lastError: null,
+        issues: [],
+        completedWeeks: 0,
+        failedWeekIndexes: [],
+        streamingTextByWeekIndex: {},
+      })
+      const generatedWeeks = await generatePlanWeeks({
         plan: nextPlan,
         weeks,
         profile,
@@ -153,17 +210,20 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
           }))
         },
       })
-      const nextWeeks = get().weeks
+      const generatedByIndex = new Map(generatedWeeks.map((week) => [week.weekIndex, week]))
+      const nextWeeks = get().weeks.map((week) => generatedByIndex.get(week.weekIndex) ?? week)
       const completedAt = Date.now()
+      const generationState = derivePlanGenerationState(nextWeeks)
       const finalPlan: TrainingPlan = {
         ...nextPlan,
+        generationState,
         updatedAt: completedAt,
         generationSummary: {
           startedAt,
           completedAt,
           totalDurationMs: completedAt - startedAt,
           strategy,
-          completedWeeks: nextWeeks.filter((week) => week.status === 'draft').length,
+          completedWeeks: countReadyWeeks(nextWeeks),
           failedWeeks: nextWeeks.filter((week) => week.status === 'error').map((week) => week.weekIndex),
           totalAttempts: nextWeeks.reduce((sum, week) => sum + (week.generationMeta.attempts ?? 0), 0),
           acceptedAt: nextPlan.generationSummary?.acceptedAt,
@@ -171,12 +231,13 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
         },
       }
       await persistPlanState(finalPlan, nextWeeks)
-      const issues = validatePlan({ plan, weeks: nextWeeks })
+      const issues = validatePlan({ plan: finalPlan, weeks: nextWeeks })
       const failedWeekIndexes = finalPlan.generationSummary?.failedWeeks ?? []
       set({
         plan: finalPlan,
+        weeks: nextWeeks,
         issues,
-        status: 'ready',
+        status: toBuilderStatus(generationState),
         currentWeekIndex: null,
         completedWeeks: finalPlan.generationSummary?.completedWeeks ?? 0,
         failedWeekIndexes,
@@ -188,12 +249,57 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
     }
   },
 
+  retryFullGeneration: async (profile) => {
+    const { plan, weeks } = get()
+    if (!plan) return
+    const updatedAt = Date.now()
+    const resetWeeks = resetWeeksForFullGeneration(weeks)
+    const resetPlan: TrainingPlan = {
+      ...plan,
+      generationState: 'shell',
+      updatedAt,
+      generationSummary: {
+        startedAt: updatedAt,
+        strategy: resolveConfiguredGenerationStrategy(plan.totalWeeks),
+        completedWeeks: 0,
+        failedWeeks: [],
+        totalAttempts: 0,
+        acceptedAt: plan.generationSummary?.acceptedAt,
+        discardedAt: plan.generationSummary?.discardedAt,
+      },
+    }
+    try {
+      await persistPlanState(resetPlan, resetWeeks)
+      set({
+        plan: resetPlan,
+        weeks: resetWeeks,
+        issues: [],
+        status: 'shell_ready',
+        currentWeekIndex: null,
+        completedWeeks: 0,
+        failedWeekIndexes: [],
+        streamingTextByWeekIndex: {},
+        lastError: null,
+      })
+      await get().runGeneration(profile)
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error)
+      set({ status: 'error', lastError: msg })
+    }
+  },
+
   regenerateWeek: async (weekIndex, profile) => {
     const { plan, weeks } = get()
     if (!plan) return
     const target = weeks.find((w) => w.weekIndex === weekIndex)
     if (!target) return
+    const generatingPlan: TrainingPlan = {
+      ...plan,
+      generationState: 'generating',
+      updatedAt: Date.now(),
+    }
     set({
+      plan: generatingPlan,
       status: 'generating',
       lastError: null,
       currentWeekIndex: weekIndex,
@@ -203,13 +309,14 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
       },
     })
     try {
-      const previousWeek = weeks.find((w) => w.weekIndex === weekIndex - 1 && w.status === 'draft')
-      const fresh: TrainingPlanWeek = { ...target, status: 'pending', sessions: [], validationIssues: [] }
-      await generatePlanWeeks({
-        plan,
+      await db.trainingPlans.put(generatingPlan)
+      const previousWeek = weeks.find((w) => w.weekIndex === weekIndex - 1 && isReadyWeek(w))
+      const fresh: TrainingPlanWeek = { ...target, status: 'pending', sessions: [], validationIssues: [], generationMeta: { attempts: 0 } }
+      const generatedWeeks = await generatePlanWeeks({
+        plan: generatingPlan,
         weeks: [fresh],
         profile,
-        wizardConfig: plan.wizardConfig,
+        wizardConfig: generatingPlan.wizardConfig,
         seedPreviousWeek: previousWeek,
         onWeekUpdate: (next) => {
           set((state) => ({
@@ -233,30 +340,34 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
         },
         strategy: 'single',
       })
-      const nextWeeks = get().weeks
+      const generated = generatedWeeks[0]
+      const nextWeeks = get().weeks.map((week) => (generated && week.weekIndex === generated.weekIndex ? generated : week))
       const updatedAt = Date.now()
+      const generationState = derivePlanGenerationState(nextWeeks)
       const nextPlan: TrainingPlan = {
-        ...plan,
+        ...generatingPlan,
+        generationState,
         updatedAt,
         generationSummary: {
-          startedAt: plan.generationSummary?.startedAt ?? updatedAt,
+          startedAt: generatingPlan.generationSummary?.startedAt ?? updatedAt,
           completedAt: updatedAt,
-          totalDurationMs: plan.generationSummary?.startedAt ? updatedAt - plan.generationSummary.startedAt : undefined,
-          strategy: plan.generationSummary?.strategy ?? 'single',
-          completedWeeks: nextWeeks.filter((week) => week.status === 'draft').length,
+          totalDurationMs: generatingPlan.generationSummary?.startedAt ? updatedAt - generatingPlan.generationSummary.startedAt : undefined,
+          strategy: generatingPlan.generationSummary?.strategy ?? 'single',
+          completedWeeks: countReadyWeeks(nextWeeks),
           failedWeeks: nextWeeks.filter((week) => week.status === 'error').map((week) => week.weekIndex),
           totalAttempts: nextWeeks.reduce((sum, week) => sum + (week.generationMeta.attempts ?? 0), 0),
-          acceptedAt: plan.generationSummary?.acceptedAt,
-          discardedAt: plan.generationSummary?.discardedAt,
+          acceptedAt: generatingPlan.generationSummary?.acceptedAt,
+          discardedAt: generatingPlan.generationSummary?.discardedAt,
         },
       }
       await persistPlanState(nextPlan, nextWeeks)
-      const issues = validatePlan({ plan, weeks: nextWeeks })
+      const issues = validatePlan({ plan: nextPlan, weeks: nextWeeks })
       const failedWeekIndexes = nextPlan.generationSummary?.failedWeeks ?? []
       set({
         plan: nextPlan,
+        weeks: nextWeeks,
         issues,
-        status: 'ready',
+        status: toBuilderStatus(generationState),
         currentWeekIndex: null,
         completedWeeks: nextPlan.generationSummary?.completedWeeks ?? 0,
         failedWeekIndexes,
@@ -271,6 +382,11 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
   acceptPlan: async () => {
     const { plan, weeks } = get()
     if (!plan) return { errors: ['No hay plan activo'], warnings: [] }
+    if (plan.generationState !== 'complete') {
+      const message = 'El plan todavia no esta completamente generado. Completa la generacion antes de aceptarlo.'
+      set({ status: toBuilderStatus(plan.generationState), lastError: message })
+      return { errors: [message], warnings: [] }
+    }
     set({ status: 'committing', lastError: null })
     const acceptedPlan: TrainingPlan = {
       ...plan,
@@ -287,7 +403,7 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
       const freshWeeks = await db.trainingPlanWeeks.where('planId').equals(plan.id).toArray()
       set({ plan: fresh ?? plan, weeks: freshWeeks.sort((a, b) => a.weekIndex - b.weekIndex), status: 'done' })
     } else {
-      set({ status: 'ready', lastError: result.errors.join(' · ') })
+      set({ status: toBuilderStatus(plan.generationState), lastError: result.errors.join(' · ') })
     }
     return { errors: result.errors, warnings: result.warnings }
   },
@@ -326,17 +442,22 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
     }
     const weeks = await db.trainingPlanWeeks.where('planId').equals(planId).toArray()
     weeks.sort((a, b) => a.weekIndex - b.weekIndex)
-    const issues = validatePlan({ plan, weeks })
+    const normalizedPlan = normalizePlanGenerationState(plan, weeks)
+    if (normalizedPlan.generationState !== plan.generationState) {
+      await db.trainingPlans.put(normalizedPlan)
+    }
+    const issues = validatePlan({ plan: normalizedPlan, weeks })
+    const failedWeekIndexes = weeks.filter((week) => week.status === 'error').map((week) => week.weekIndex)
     set({
-      plan,
+      plan: normalizedPlan,
       weeks,
       issues,
-      status: 'ready',
+      status: toBuilderStatus(normalizedPlan.generationState),
       currentWeekIndex: null,
-      completedWeeks: weeks.filter((week) => week.status === 'draft' || week.status === 'accepted').length,
-      failedWeekIndexes: weeks.filter((week) => week.status === 'error').map((week) => week.weekIndex),
+      completedWeeks: countReadyWeeks(weeks),
+      failedWeekIndexes,
       streamingTextByWeekIndex: {},
-      lastError: buildGenerationFailureMessage(weeks.filter((week) => week.status === 'error').map((week) => week.weekIndex)),
+      lastError: buildGenerationFailureMessage(failedWeekIndexes),
     })
   },
 }))

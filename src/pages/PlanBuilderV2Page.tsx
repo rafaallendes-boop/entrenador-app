@@ -392,7 +392,7 @@ export default function PlanBuilderV2Page() {
   const athleteProfile = useCoachMemoryStore((s) => s.athleteProfile)
   const {
     plan, weeks, issues, status, currentWeekIndex, completedWeeks, failedWeekIndexes, streamingTextByWeekIndex, lastError,
-    createDraft, runGeneration, regenerateWeek, acceptPlan, discard,
+    createDraft, runGeneration, retryFullGeneration, regenerateWeek, acceptPlan, discard,
   } = usePlanBuilderStore()
 
   const [selectedWeekIndex, setSelectedWeekIndex] = useState<number | null>(null)
@@ -480,7 +480,9 @@ export default function PlanBuilderV2Page() {
   const warnings = issues.filter((i) => i.severity === 'warning')
   const hasIncompleteWeeks = weeks.length === 0 || weeks.some((week) => week.status !== 'draft' || week.sessions.length === 0)
   const hasFailedWeeks = failedWeekIndexes.length > 0
+  const canAcceptPlan = plan?.generationState === 'complete' && !hasIncompleteWeeks && errors.length === 0
   const acceptBlockers = [
+    ...(plan?.generationState && plan.generationState !== 'complete' ? ['El plan todavia no esta completamente generado.'] : []),
     ...(hasFailedWeeks ? ['Hay semanas fallidas. Regénéralas para continuar.'] : []),
     ...(!hasFailedWeeks && hasIncompleteWeeks ? ['Completa o regenera todas las semanas antes de aceptar el plan.'] : []),
     ...errors.map((issue) => issue.message),
@@ -510,7 +512,8 @@ export default function PlanBuilderV2Page() {
   const currentPlanId = plan?.id ?? null
   const shouldShowLaunchDeck =
     currentPlanId !== null &&
-    status === 'ready' &&
+    status === 'shell_ready' &&
+    plan?.generationState === 'shell' &&
     weeks.length > 0 &&
     weeks.every((week) => week.status === 'pending') &&
     currentPlanId !== initializedPlanId
@@ -530,6 +533,11 @@ export default function PlanBuilderV2Page() {
     for (const weekIndex of failedWeekIndexes) {
       await regenerateWeek(weekIndex, athleteProfile)
     }
+  }
+
+  async function handleRetryFullGeneration() {
+    if (!athleteProfile || isGenerating || status === 'committing') return
+    await retryFullGeneration(athleteProfile)
   }
 
   return (
@@ -620,6 +628,38 @@ export default function PlanBuilderV2Page() {
             sport={getSportFromGoalEvent(goalEvent)}
             onInitialize={() => { void handleInitializeProtocol() }}
           />
+        ) : status === 'failed' || plan?.generationState === 'failed' ? (
+          <div
+            className="rounded-2xl p-5"
+            style={{ background: 'rgba(248,113,113,0.06)', border: '1px solid rgba(248,113,113,0.18)' }}
+          >
+            <div className="flex items-start gap-3">
+              <AlertTriangle size={18} className="mt-0.5 flex-shrink-0 text-red-400" />
+              <div>
+                <h2 className="font-display text-base font-bold text-ink">La generación no produjo semanas válidas</h2>
+                <p className="mt-1 text-sm text-ink-muted">
+                  Puedes reintentar la generación completa o descartar este shell y volver a construirlo desde cero.
+                </p>
+                {lastError && <p className="mt-2 text-xs text-red-400">{lastError}</p>}
+              </div>
+            </div>
+          </div>
+        ) : status === 'error' ? (
+          <div
+            className="rounded-2xl p-5"
+            style={{ background: 'rgba(248,113,113,0.06)', border: '1px solid rgba(248,113,113,0.18)' }}
+          >
+            <div className="flex items-start gap-3">
+              <AlertTriangle size={18} className="mt-0.5 flex-shrink-0 text-red-400" />
+              <div>
+                <h2 className="font-display text-base font-bold text-ink">Error técnico</h2>
+                <p className="mt-1 text-sm text-ink-muted">
+                  No se pudo completar la operación del Plan Builder.
+                </p>
+                {lastError && <p className="mt-2 text-xs text-red-400">{lastError}</p>}
+              </div>
+            </div>
+          </div>
         ) : (
         <>
           {/* Mobile-only horizontal week strip */}
@@ -896,22 +936,24 @@ export default function PlanBuilderV2Page() {
         {/* Action bar */}
         {status !== 'done' && !shouldShowLaunchDeck && (
           <div className="mt-5 flex flex-wrap items-center gap-3">
-            <button
-              type="button"
-              disabled={isGenerating || status === 'committing' || errors.length > 0 || hasIncompleteWeeks}
-              onClick={async () => {
-                const result = await acceptPlan()
-                if (result.errors.length === 0) navigate(ROUTES.WEEK)
-              }}
-              className="rounded-xl px-5 py-2.5 font-display text-sm font-bold uppercase tracking-[0.15em] text-white transition-all active:scale-[0.98] disabled:opacity-40"
-              style={{
-                background: 'linear-gradient(135deg, #ff5500, #ff4d00)',
-                boxShadow: (!isGenerating && errors.length === 0 && !hasIncompleteWeeks)
-                  ? '0 8px 28px -8px rgba(255,77,0,0.55)' : 'none',
-              }}
-            >
-              {status === 'committing' ? 'Guardando…' : 'Aceptar plan'}
-            </button>
+            {plan?.generationState === 'complete' && (
+              <button
+                type="button"
+                disabled={isGenerating || status === 'committing' || !canAcceptPlan}
+                onClick={async () => {
+                  const result = await acceptPlan()
+                  if (result.errors.length === 0) navigate(ROUTES.WEEK)
+                }}
+                className="rounded-xl px-5 py-2.5 font-display text-sm font-bold uppercase tracking-[0.15em] text-white transition-all active:scale-[0.98] disabled:opacity-40"
+                style={{
+                  background: 'linear-gradient(135deg, #ff5500, #ff4d00)',
+                  boxShadow: (!isGenerating && canAcceptPlan)
+                    ? '0 8px 28px -8px rgba(255,77,0,0.55)' : 'none',
+                }}
+              >
+                {status === 'committing' ? 'Guardando…' : 'Aceptar plan'}
+              </button>
+            )}
             <button
               type="button"
               disabled={isGenerating || status === 'committing'}
@@ -921,7 +963,18 @@ export default function PlanBuilderV2Page() {
             >
               Descartar
             </button>
-            {hasFailedWeeks && (
+            {(status === 'failed' || plan?.generationState === 'failed') && (
+              <button
+                type="button"
+                disabled={isGenerating || status === 'committing'}
+                onClick={() => { void handleRetryFullGeneration() }}
+                className="rounded-xl px-5 py-2.5 font-display text-sm font-bold uppercase tracking-[0.15em] text-white transition-all active:scale-[0.98] disabled:opacity-40"
+                style={{ background: 'linear-gradient(135deg, #ff5500, #ff4d00)' }}
+              >
+                Reintentar
+              </button>
+            )}
+            {plan?.generationState === 'partial' && hasFailedWeeks && (
               <button
                 type="button"
                 disabled={isGenerating || status === 'committing'}
@@ -930,6 +983,17 @@ export default function PlanBuilderV2Page() {
                 style={{ border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.04)' }}
               >
                 Regenerar fallidas
+              </button>
+            )}
+            {plan?.generationState === 'partial' && (
+              <button
+                type="button"
+                disabled={isGenerating || status === 'committing'}
+                onClick={() => { void handleRetryFullGeneration() }}
+                className="rounded-xl px-5 py-2.5 font-display text-sm font-bold uppercase tracking-[0.15em] text-ink-muted transition-all hover:text-ink disabled:opacity-40"
+                style={{ border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.04)' }}
+              >
+                Reintentar completo
               </button>
             )}
             {acceptBlockers.length > 0 && !isGenerating && status !== 'committing' && (

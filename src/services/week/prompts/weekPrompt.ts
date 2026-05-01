@@ -88,7 +88,31 @@ function allowedSportsList(plan: TrainingPlan, wizardConfig: PlanWizardConfig): 
   return Array.from(new Set<SupportedSport>([...fromContext, ...wizardConfig.complementarySports]))
 }
 
-const SESSION_SCHEMA_BLOCK = [
+const SESSION_SCHEMA_BLOCK_MINIMAL = [
+  '',
+  '═══ ESQUEMA DE SESIÓN ═══',
+  'Campos obligatorios por sesión:',
+  '  date: "YYYY-MM-DD" dentro de la semana objetivo',
+  '  timeBlock: "AM" | "PM"',
+  '  sessionType: "squash" | "running" | "cycling" | "strength" | "mobility" | "recovery" | "nutrition"',
+  '  title: string no vacío',
+  '  durationMin: número entero >= 5',
+  '  objective: string corto',
+  '  rpe: número 1-10 (opcional pero recomendado)',
+  '',
+  'Campos opcionales por deporte:',
+  '  squash → subtype: "training" | "match" | "competitive" | "control" | "light"',
+  '  running → runningType: "z2" | "tempo" | "intervals" | "long"',
+  '',
+  'NO incluyas squashDetails, exercises, cyclingDetails ni mobilityDetails.',
+  'La app genera automáticamente estos detalles según el contexto del plan.',
+  'Si los incluyes y son válidos, se conservarán (best-effort).',
+  '',
+  'warmup y cooldown son opcionales; el sistema genera protocolos base si se omiten.',
+  '',
+].join('\n')
+
+const SESSION_SCHEMA_BLOCK_FULL = [
   '',
   '═══ ESQUEMA DE SESIÓN (OBLIGATORIO SEGUIR LITERAL) ═══',
   'Campos base por sesión:',
@@ -139,6 +163,21 @@ const SESSION_SCHEMA_BLOCK = [
   '',
 ].join('\n')
 
+export function buildWeekSystemPromptMinimal(): string {
+  return [
+    'Eres el generador de una sola semana dentro de un plan por evento ya estructurado.',
+    'Respondes EXCLUSIVAMENTE con un bloque <actions> JSON que contenga UNA acción create_week para la semana indicada.',
+    'No explicas nada fuera del bloque <actions>. Nada de texto previo ni posterior.',
+    'La acción create_week debe tener exactamente "type": "create_week" como campo discriminador. Incluye además: targetDate (lunes YYYY-MM-DD), reason, sessions[] y weekObjectives[].',
+    'Respeta strictamente la fase indicada, objetivos de carga y deportes permitidos.',
+    'Debes respetar exactamente el número de sesiones pedido por el wizard y todas deben quedar dentro de los días permitidos.',
+    'Nunca devuelvas menos sesiones que las pedidas. Si una sesión queda incompleta o inválida, corrígela antes de responder; no la omitas.',
+    'Cada sesión debe ser individualmente válida: fecha ISO real, timeBlock AM/PM, title, durationMin >= 5.',
+    'No inventes sesiones fuera de los días permitidos. No dupliques misma fecha+timeBlock.',
+    SESSION_SCHEMA_BLOCK_MINIMAL,
+  ].join('\n')
+}
+
 export function buildWeekSystemPrompt(): string {
   return [
     'Eres el generador de una sola semana dentro de un plan por evento ya estructurado.',
@@ -150,8 +189,23 @@ export function buildWeekSystemPrompt(): string {
     'Nunca devuelvas menos sesiones que las pedidas. Si una sesión queda incompleta o inválida, corrígela antes de responder; no la omitas.',
     'Cada sesión debe ser individualmente válida: fecha ISO real, timeBlock AM/PM, title, durationMin >= 5 y detalles obligatorios del deporte.',
     'No inventes sesiones fuera de los días permitidos. No dupliques misma fecha+timeBlock.',
-    SESSION_SCHEMA_BLOCK,
+    SESSION_SCHEMA_BLOCK_FULL,
     'Revisa dos veces antes de responder: cada squash lleva squashDetails válido con drills[] no vacío; cada cycling lleva cyclingDetails; cada mobility lleva mobilityDetails; cada strength lleva exercises[]. Si una sesión no cumple, corrígela — no la descartes.',
+  ].join('\n')
+}
+
+export function buildWeekBatchSystemPromptMinimal(): string {
+  return [
+    'Eres el generador de DOS semanas consecutivas dentro de un plan por evento ya estructurado.',
+    'Respondes EXCLUSIVAMENTE con un bloque <actions> JSON que contenga EXACTAMENTE DOS acciones create_week, una por cada lunes objetivo.',
+    'No explicas nada fuera del bloque <actions>. Nada de texto previo ni posterior.',
+    'Cada create_week debe tener exactamente "type": "create_week" como campo discriminador. Incluye además: targetDate (lunes YYYY-MM-DD), reason, sessions[] y weekObjectives[].',
+    'Respeta estrictamente la fase indicada, objetivos de carga y deportes permitidos.',
+    'Nunca devuelvas menos sesiones que las pedidas para una semana. Si una sesión queda incompleta o inválida, corrígela antes de responder; no la omitas.',
+    'Cada sesión debe ser individualmente válida: fecha ISO real, timeBlock AM/PM, title, durationMin >= 5.',
+    'No inventes sesiones fuera de los días permitidos. No dupliques misma fecha+timeBlock dentro de cada semana.',
+    'Nunca mezcles sesiones de una semana dentro de la otra. targetDate y fechas deben coincidir exactamente con cada semana pedida.',
+    SESSION_SCHEMA_BLOCK_MINIMAL,
   ].join('\n')
 }
 
@@ -166,7 +220,7 @@ export function buildWeekBatchSystemPrompt(): string {
     'Cada sesión debe ser individualmente válida: fecha ISO real, timeBlock AM/PM, title, durationMin >= 5 y detalles obligatorios del deporte.',
     'No inventes sesiones fuera de los días permitidos. No dupliques misma fecha+timeBlock dentro de cada semana.',
     'Nunca mezcles sesiones de una semana dentro de la otra. targetDate y fechas deben coincidir exactamente con cada semana pedida.',
-    SESSION_SCHEMA_BLOCK,
+    SESSION_SCHEMA_BLOCK_FULL,
     'Revisa dos veces antes de responder: cada squash lleva squashDetails válido con drills[] no vacío; cada cycling lleva cyclingDetails; cada mobility lleva mobilityDetails; cada strength lleva exercises[]. Si una sesión no cumple, corrígela — no la descartes.',
   ].join('\n')
 }

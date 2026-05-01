@@ -13,12 +13,13 @@ import {
   summarizeWeekGenerationError,
   validateGeneratedWeekAction,
 } from './generateWeek'
-import { buildWeekBatchSystemPrompt, buildWeekBatchUserPrompt } from '../week/prompts/weekPrompt'
+import { buildWeekBatchSystemPromptMinimal, buildWeekBatchUserPrompt } from '../week/prompts/weekPrompt'
 import {
   buildWeekRetryInstruction,
   filterSessionsToWeek,
   pickCreateWeekDiagnostic,
 } from '../week/shared'
+import { resolveConfiguredGenerationStrategy } from './generationState'
 
 function getActiveProvider(): AIProvider {
   if (import.meta.env.PROD) return new ProxyProvider()
@@ -52,6 +53,11 @@ interface BatchWeekExtraction {
   rawSessionCount?: number
   validSessionCount?: number
   droppedSessionCount?: number
+  repairedSessionCount?: number
+  movedSessionCount?: number
+  addedFallbackCount?: number
+  filteredSportCount?: number
+  repairWarnings?: Array<{ code: string; message: string }>
 }
 
 interface WeekBatchChunkRouter {
@@ -92,10 +98,7 @@ function createWeekBatchChunkRouter(
 }
 
 function resolveStrategy(input: GeneratePlanWeeksInput): 'single' | 'pairs' {
-  if (input.strategy) return input.strategy
-  if (import.meta.env.PROD) return 'single'
-  if (input.weeks.length >= 8 || input.plan.totalWeeks >= 8) return 'pairs'
-  return 'single'
+  return resolveConfiguredGenerationStrategy(input.plan.totalWeeks, input.strategy)
 }
 
 function makeGeneratingWeek(
@@ -135,6 +138,11 @@ function makeResolvedWeek(
     validSessionCount?: number
     droppedSessionCount?: number
     degradedFromPairs?: boolean
+    repairedSessionCount?: number
+    movedSessionCount?: number
+    addedFallbackCount?: number
+    filteredSportCount?: number
+    repairWarnings?: Array<{ code: string; message: string }>
   },
 ): TrainingPlanWeek {
   const nowTs = Date.now()
@@ -161,6 +169,11 @@ function makeResolvedWeek(
       validSessionCount: input.validSessionCount,
       droppedSessionCount: input.droppedSessionCount,
       degradedFromPairs: input.degradedFromPairs,
+      repairedSessionCount: input.repairedSessionCount,
+      movedSessionCount: input.movedSessionCount,
+      addedFallbackCount: input.addedFallbackCount,
+      filteredSportCount: input.filteredSportCount,
+      repairWarnings: input.repairWarnings,
     },
     updatedAt: nowTs,
   }
@@ -228,9 +241,14 @@ async function generateSingleWeekWithRetry(
         durationMs,
         chunkCount,
         strategy: 'single',
-        rawSessionCount,
-        validSessionCount,
-        droppedSessionCount,
+        rawSessionCount: result.meta.rawSessionCount,
+        validSessionCount: result.meta.validSessionCount,
+        droppedSessionCount: result.meta.droppedSessionCount,
+        repairedSessionCount: result.meta.repairedSessionCount,
+        movedSessionCount: result.meta.movedSessionCount,
+        addedFallbackCount: result.meta.addedFallbackCount,
+        filteredSportCount: result.meta.filteredSportCount,
+        repairWarnings: result.meta.repairWarnings,
       })
     }
   }
@@ -296,7 +314,7 @@ async function generateWeekPair(
     const raw = await provider.call({
       requestClass,
       traceId,
-      systemPrompt: buildWeekBatchSystemPrompt(),
+      systemPrompt: buildWeekBatchSystemPromptMinimal(),
       userMessage: buildWeekBatchUserPrompt({
         plan,
         weeks,
@@ -330,7 +348,7 @@ async function generateWeekPair(
       const targetWeek = weeks.find((week) => week.weekStartDate === targetWeekStart)
       if (!targetWeek) continue
       const diagnostic = pickCreateWeekDiagnostic(normalized, targetWeekStart, action)
-      const evaluation = validateGeneratedWeekAction(plan, targetWeek, action, diagnostic)
+      const evaluation = validateGeneratedWeekAction(plan, targetWeek, profile, action, diagnostic, previousWeek)
       weekResults.set(targetWeekStart, {
         week: targetWeek,
         sessions: evaluation.error ? [] : evaluation.sessions,
@@ -338,6 +356,11 @@ async function generateWeekPair(
         rawSessionCount: evaluation.rawSessionCount,
         validSessionCount: evaluation.validSessionCount,
         droppedSessionCount: evaluation.droppedSessionCount,
+        repairedSessionCount: evaluation.repairedSessionCount,
+        movedSessionCount: evaluation.movedSessionCount,
+        addedFallbackCount: evaluation.addedFallbackCount,
+        filteredSportCount: evaluation.filteredSportCount,
+        repairWarnings: evaluation.repairWarnings,
       })
     }
 
@@ -440,6 +463,11 @@ export async function generatePlanWeeks(input: GeneratePlanWeeksInput): Promise<
             rawSessionCount: batchWeekResult.rawSessionCount,
             validSessionCount: batchWeekResult.validSessionCount,
             droppedSessionCount: batchWeekResult.droppedSessionCount,
+            repairedSessionCount: batchWeekResult.repairedSessionCount,
+            movedSessionCount: batchWeekResult.movedSessionCount,
+            addedFallbackCount: batchWeekResult.addedFallbackCount,
+            filteredSportCount: batchWeekResult.filteredSportCount,
+            repairWarnings: batchWeekResult.repairWarnings,
           })
           input.onWeekUpdate?.(resolved)
           results.push(resolved)

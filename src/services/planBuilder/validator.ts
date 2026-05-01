@@ -109,8 +109,9 @@ function validateWeekConstraints(plan: TrainingPlan, week: TrainingPlanWeek): Pl
   const weekEndExclusive = weekStart + 7 * 24 * 60 * 60 * 1000
 
   if (week.sessions.length !== plan.wizardConfig.sessionsPerWeek) {
+    const diff = Math.abs(week.sessions.length - plan.wizardConfig.sessionsPerWeek)
     issues.push({
-      severity: 'warning',
+      severity: diff <= 1 ? 'warning' : 'error',
       code: 'week.sessions.count_mismatch',
       message: `La semana ${week.weekIndex + 1} tiene ${week.sessions.length} sesiones, pero el wizard esperaba ${plan.wizardConfig.sessionsPerWeek}.`,
       weekIndex: week.weekIndex,
@@ -168,10 +169,13 @@ function validateWeekConstraints(plan: TrainingPlan, week: TrainingPlanWeek): Pl
 
 function validateSportDistributionForWeek(plan: TrainingPlan, week: TrainingPlanWeek): PlanValidationIssue[] {
   const issues: PlanValidationIssue[] = []
-  const allowed = new Set<SupportedSport>(
+  const allowed = new Set<string>(
     [
       ...plan.macroSnapshot.sportDetails.map((d) => d.sport),
       ...(plan.wizardConfig.complementarySports as SupportedSport[]),
+      'mobility',
+      'recovery',
+      'nutrition',
     ],
   )
 

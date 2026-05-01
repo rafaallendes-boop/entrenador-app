@@ -19,7 +19,7 @@ function makeSquashSession(date: string, sessionKind: NonNullable<Session['squas
       trainingFocus: sessionKind === 'shadows' ? 'physical' : 'technical',
       sessionKind,
       sessionMode: sessionKind === 'match' ? 'practice_match' : 'drill_session',
-      drills: [{ name: sessionKind === 'shadows' ? 'Ghosting 4 esquinas' : sessionKind === 'control' ? '100 drops solo' : 'Drives paralelos a profundidad', durationMin: 20 }],
+      drills: [{ name: sessionKind === 'shadows' ? 'Desplazamientos sin pelota a cuatro esquinas' : sessionKind === 'control' ? '100 dejadas solo' : 'Tiros paralelos profundos', durationMin: 20 }],
     },
   } as Session
 }

@@ -9,6 +9,8 @@ import type {
 
 export type PlanStatus = 'draft' | 'active' | 'archived' | 'superseded'
 
+export type PlanGenerationState = 'shell' | 'generating' | 'partial' | 'failed' | 'complete'
+
 export type PlanWeekStatus = 'pending' | 'generating' | 'draft' | 'accepted' | 'error'
 
 export type PlanValidationSeverity = 'error' | 'warning' | 'info'
@@ -47,6 +49,11 @@ export interface PlanGenerationMeta {
   validSessionCount?: number
   droppedSessionCount?: number
   degradedFromPairs?: boolean
+  repairedSessionCount?: number
+  movedSessionCount?: number
+  addedFallbackCount?: number
+  filteredSportCount?: number
+  repairWarnings?: Array<{ code: string; message: string }>
 }
 
 export interface PlanGenerationSummary {
@@ -74,6 +81,7 @@ export interface TrainingPlan {
   athleteId: string
   goalEventId: string
   status: PlanStatus
+  generationState: PlanGenerationState
   title: string
   startDate: string        // YYYY-MM-DD (lunes)
   endDate: string          // YYYY-MM-DD (domingo del último bloque)

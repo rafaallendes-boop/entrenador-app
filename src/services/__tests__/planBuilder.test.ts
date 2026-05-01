@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { addDays } from 'date-fns'
 import type { AthleteProfile, GoalEvent, PlanWizardConfig } from '../../types'
 import { buildPlanShell } from '../planBuilder/buildPlanShell'
@@ -59,7 +59,15 @@ function addDaysIso(date: string, days: number): string {
   return next.toISOString().slice(0, 10)
 }
 
+function createWeekActionText(weekStartDate: string, reason = 'ok'): string {
+  return `{"type":"create_week","reason":"${reason}","targetDate":"${weekStartDate}","sessions":[{"date":"${weekStartDate}","timeBlock":"AM","sessionType":"squash","title":"S1","durationMin":60,"squashDetails":{"trainingFocus":"technical","sessionMode":"drill_session","sessionKind":"technical","drills":[{"name":"Drive","durationMin":10}]}},{"date":"${addDaysIso(weekStartDate, 1)}","timeBlock":"PM","sessionType":"squash","title":"S2","durationMin":45,"squashDetails":{"trainingFocus":"technical","sessionMode":"drill_session","sessionKind":"technical","drills":[{"name":"Boast","durationMin":10}]}}]}`
+}
+
 describe('planBuilder', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
   it('buildPlanShell creates one week per calendar week until event', () => {
     const profile = makeProfile(eventNWeeksFromNow(8))
     const event = profile.goalEvents![0] as GoalEvent
@@ -69,6 +77,7 @@ describe('planBuilder', () => {
       wizardConfig: makeWizardConfig(),
       goalEvent: event,
     })
+    expect(plan.generationState).toBe('shell')
     expect(plan.totalWeeks).toBeGreaterThanOrEqual(8)
     expect(plan.totalWeeks).toBeLessThanOrEqual(10)
     expect(weeks).toHaveLength(plan.totalWeeks)
@@ -257,7 +266,7 @@ describe('planBuilder', () => {
     expect(prompt.match(/ESQUEMA DE SESIÓN \(OBLIGATORIO SEGUIR LITERAL\)/g)).toHaveLength(1)
   })
 
-  it('retries a failed week with stricter context and still continues the pipeline', async () => {
+  it('repairs an out-of-week sparse response without retrying when fallback can complete it', async () => {
     const profile = makeProfile(eventNWeeksFromNow(2))
     const event = profile.goalEvents![0] as GoalEvent
     const wizardConfig = {
@@ -299,11 +308,13 @@ describe('planBuilder', () => {
     })
 
     expect(result[0]?.status).toBe('draft')
-    expect(result[0]?.generationMeta.attempts).toBe(2)
-    expect(prompts[1]).toContain('Corrección del intento anterior')
+    expect(result[0]?.generationMeta.attempts).toBe(1)
+    expect(result[0]?.generationMeta.movedSessionCount).toBe(1)
+    expect(result[0]?.generationMeta.addedFallbackCount).toBe(1)
+    expect(prompts).toHaveLength(1)
   })
 
-  it('retries when the model returns fewer sessions than the wizard requires', async () => {
+  it('adds fallbacks when the model returns fewer sessions than the wizard requires', async () => {
     const profile = makeProfile(eventNWeeksFromNow(2))
     const event = profile.goalEvents![0] as GoalEvent
     const wizardConfig = makeWizardConfig()
@@ -347,8 +358,9 @@ describe('planBuilder', () => {
     })
 
     expect(result[0]?.status).toBe('draft')
-    expect(result[0]?.generationMeta.attempts).toBe(2)
-    expect(prompts[1]).toContain('exactamente el número de sesiones')
+    expect(result[0]?.generationMeta.attempts).toBe(1)
+    expect(result[0]?.generationMeta.addedFallbackCount).toBe(2)
+    expect(prompts).toHaveLength(1)
   })
 
   it('surfaces dropped invalid sessions as a stronger retry instruction', async () => {
@@ -395,7 +407,9 @@ describe('planBuilder', () => {
     })
 
     expect(result[0]?.status).toBe('draft')
-    expect(prompts[1]).toContain('sesiones válidas completas')
+    expect(result[0]?.generationMeta.droppedSessionCount).toBeGreaterThanOrEqual(1)
+    expect(result[0]?.generationMeta.addedFallbackCount).toBe(1)
+    expect(prompts).toHaveLength(1)
   })
 
   it('buildPlanShell starts in transition when the goal event already passed earlier this same week', () => {
@@ -484,7 +498,7 @@ describe('planBuilder', () => {
         if (callCount === 1) {
           return {
             provider: 'mock' as const,
-            text: `<actions>[{"type":"create_week","reason":"batch-1","targetDate":"${week1Monday}","sessions":[{"date":"${week1Monday}","timeBlock":"AM","sessionType":"squash","title":"w1-a","durationMin":40,"squashDetails":{"trainingFocus":"technical","sessionMode":"drill_session","sessionKind":"technical","drills":[{"name":"Drive","durationMin":10}]}},{"date":"${addDaysIso(week1Monday, 1)}","timeBlock":"PM","sessionType":"strength","title":"w1-b","durationMin":45},{"date":"${addDaysIso(week1Monday, 2)}","timeBlock":"AM","sessionType":"running","title":"w1-c","durationMin":35}]},{"type":"create_week","reason":"batch-2","targetDate":"${week2Monday}","sessions":[{"date":"${week2Monday}","timeBlock":"AM","sessionType":"squash","title":"w2-a","durationMin":40,"squashDetails":{"trainingFocus":"technical","sessionMode":"drill_session","sessionKind":"technical","drills":[{"name":"Drive","durationMin":10}]}},{"date":"${addDaysIso(week2Monday, 1)}","timeBlock":"PM","sessionType":"strength","title":"w2-b","durationMin":45},{"date":"${addDaysIso(week2Monday, 2)}","timeBlock":"AM","sessionType":"running","title":"w2-c","durationMin":35}]}]</actions>`,
+            text: `<actions>[{"type":"noop","reason":"malformed pair for ${week1Monday} and ${week2Monday}"}]</actions>`,
           }
         }
         const monday = callCount === 2 ? week1Monday : callCount === 3 ? week2Monday : callCount === 4 ? week3Monday : week4Monday
@@ -600,5 +614,127 @@ describe('planBuilder', () => {
     expect(streamedByWeekIndex[weeks[1].weekIndex]).toContain(`"targetDate":"${weeks[1].weekStartDate}"`)
     expect(result[0]?.status).toBe('draft')
     expect(result[1]?.status).toBe('draft')
+  })
+
+  it('uses single-week generation by default even for long plans', async () => {
+    const profile = makeProfile(eventNWeeksFromNow(8))
+    const event = profile.goalEvents![0] as GoalEvent
+    const wizardConfig = {
+      ...makeWizardConfig(),
+      trainingDays: ['monday', 'tuesday'] as PlanWizardConfig['trainingDays'],
+      sessionsPerWeek: 2,
+    }
+    const { plan, weeks } = buildPlanShell({
+      athleteId: profile.id,
+      profile,
+      wizardConfig,
+      goalEvent: event,
+    })
+
+    const requestClasses: string[] = []
+    let callIndex = 0
+    const provider = {
+      name: 'mock' as const,
+      call: async (request: { requestClass: string }) => {
+        const week = weeks[callIndex]
+        callIndex += 1
+        requestClasses.push(request.requestClass)
+        return {
+          provider: 'mock' as const,
+          text: `<actions>[${createWeekActionText(week.weekStartDate)}]</actions>`,
+        }
+      },
+    }
+
+    const result = await generatePlanWeeks({
+      plan,
+      weeks: weeks.slice(0, 2),
+      profile,
+      wizardConfig,
+      provider,
+    })
+
+    expect(result.every((week) => week.status === 'draft')).toBe(true)
+    expect(requestClasses).toEqual(['plan_builder_week', 'plan_builder_week'])
+  })
+
+  it('uses pair generation only when configured explicitly as pairs', async () => {
+    vi.stubEnv('VITE_PLAN_BUILDER_GENERATION_STRATEGY', 'pairs')
+    const profile = makeProfile(eventNWeeksFromNow(2))
+    const event = profile.goalEvents![0] as GoalEvent
+    const wizardConfig = {
+      ...makeWizardConfig(),
+      trainingDays: ['monday', 'tuesday'] as PlanWizardConfig['trainingDays'],
+      sessionsPerWeek: 2,
+    }
+    const { plan, weeks } = buildPlanShell({
+      athleteId: profile.id,
+      profile,
+      wizardConfig,
+      goalEvent: event,
+    })
+
+    const requestClasses: string[] = []
+    const provider = {
+      name: 'mock' as const,
+      call: async (request: { requestClass: string }) => {
+        requestClasses.push(request.requestClass)
+        return {
+          provider: 'mock' as const,
+          text: `<actions>[${createWeekActionText(weeks[0].weekStartDate, 'pair-1')},${createWeekActionText(weeks[1].weekStartDate, 'pair-2')}]</actions>`,
+        }
+      },
+    }
+
+    const result = await generatePlanWeeks({
+      plan,
+      weeks: weeks.slice(0, 2),
+      profile,
+      wizardConfig,
+      provider,
+    })
+
+    expect(result.every((week) => week.status === 'draft')).toBe(true)
+    expect(requestClasses[0]).toBe('plan_builder_pair')
+  })
+
+  it('uses pair generation for long plans when configured as auto', async () => {
+    vi.stubEnv('VITE_PLAN_BUILDER_GENERATION_STRATEGY', 'auto')
+    const profile = makeProfile(eventNWeeksFromNow(8))
+    const event = profile.goalEvents![0] as GoalEvent
+    const wizardConfig = {
+      ...makeWizardConfig(),
+      trainingDays: ['monday', 'tuesday'] as PlanWizardConfig['trainingDays'],
+      sessionsPerWeek: 2,
+    }
+    const { plan, weeks } = buildPlanShell({
+      athleteId: profile.id,
+      profile,
+      wizardConfig,
+      goalEvent: event,
+    })
+
+    const requestClasses: string[] = []
+    const provider = {
+      name: 'mock' as const,
+      call: async (request: { requestClass: string }) => {
+        requestClasses.push(request.requestClass)
+        return {
+          provider: 'mock' as const,
+          text: `<actions>[${createWeekActionText(weeks[0].weekStartDate, 'auto-1')},${createWeekActionText(weeks[1].weekStartDate, 'auto-2')}]</actions>`,
+        }
+      },
+    }
+
+    const result = await generatePlanWeeks({
+      plan,
+      weeks: weeks.slice(0, 2),
+      profile,
+      wizardConfig,
+      provider,
+    })
+
+    expect(result.every((week) => week.status === 'draft')).toBe(true)
+    expect(requestClasses[0]).toBe('plan_builder_pair')
   })
 })

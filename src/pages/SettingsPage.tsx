@@ -24,15 +24,12 @@ import {
   type LocalDataSelection,
 } from '../services/appMaintenance'
 import {
-  clearTodayNotifications,
-  getNotificationDebugState,
   getNotificationPreferences,
   getNotificationPermission,
   notificationsSupported,
   refreshTodayNotifications,
   requestNotificationPermission,
   saveNotificationPreferences,
-  type NotificationDebugState,
   type NotificationPreferences,
 } from '../services/notifications'
 import { useCoachMemoryStore } from '../store/useCoachMemoryStore'
@@ -88,7 +85,6 @@ export default function SettingsPage() {
   const [memoryDraft, setMemoryDraft] = useState('')
   const [memorySaved, setMemorySaved] = useState(false)
   const [notifPermission, setNotifPermission] = useState<NotificationPermission | null>(null)
-  const [notificationDebugState, setNotificationDebugState] = useState<NotificationDebugState | null>(null)
   const [notificationPreferences, setNotificationPreferences] = useState<NotificationPreferences>(getNotificationPreferences())
   const [dataCounts, setDataCounts] = useState<LocalDataCounts | null>(null)
   const [clearSelection, setClearSelection] = useState<LocalDataSelection>(EMPTY_CLEAR_SELECTION)
@@ -110,10 +106,9 @@ export default function SettingsPage() {
   const [selectedCoachSessionIds, setSelectedCoachSessionIds] = useState<string[]>([])
   const importInputRef = useRef<HTMLInputElement | null>(null)
 
-  const refreshNotificationStatus = async () => {
+  const refreshNotificationStatus = () => {
     setNotifPermission(getNotificationPermission())
     setNotificationPreferences(getNotificationPreferences())
-    await refreshNotificationDebugState(setNotificationDebugState)
   }
 
   useEffect(() => {
@@ -215,7 +210,6 @@ export default function SettingsPage() {
       const result = await importAppDataFromFile(pendingImportFile, importMode)
       await refreshCounts(setDataCounts)
       await loadMemory()
-      await refreshNotificationDebugState(setNotificationDebugState)
       setClearSelection({ ...EMPTY_CLEAR_SELECTION })
       setClearConfirm(false)
       setClearStatus(null)
@@ -291,7 +285,7 @@ export default function SettingsPage() {
   const handleRequestNotifications = async () => {
     const result = await requestNotificationPermission()
     setNotifPermission(result)
-    await refreshNotificationStatus()
+    refreshNotificationStatus()
   }
 
   const handleResyncNotifications = async () => {
@@ -303,7 +297,7 @@ export default function SettingsPage() {
       todayDayLog: dayLogs[todayIsoKey()],
       athleteProfile,
     })
-    await refreshNotificationStatus()
+    refreshNotificationStatus()
   }
 
   const handleToggleNotificationPreference = async (
@@ -332,11 +326,6 @@ export default function SettingsPage() {
     if (currentUser) await runFullSync(currentUser.id)
   }
 
-  const handleClearNotifications = async () => {
-    await clearTodayNotifications()
-    await refreshNotificationStatus()
-  }
-
   const handleWipeAllData = async () => {
     const { user: currentUser } = useAuthStore.getState()
 
@@ -358,7 +347,6 @@ export default function SettingsPage() {
         await clearAllLocalAppData()
         clearOnboardingSkipped(undefined)
         await refreshCounts(setDataCounts)
-        await refreshNotificationDebugState(setNotificationDebugState)
         await loadMemory()
         await loadWeek(currentWeekStartISO())
         setClearSelection({ ...EMPTY_CLEAR_SELECTION })
@@ -382,7 +370,6 @@ export default function SettingsPage() {
 
       clearOnboardingSkipped(currentUser.id)
       await refreshCounts(setDataCounts)
-      await refreshNotificationDebugState(setNotificationDebugState)
       await loadMemory()
       await loadWeek(currentWeekStartISO())
       setClearSelection({ ...EMPTY_CLEAR_SELECTION })
@@ -976,66 +963,6 @@ export default function SettingsPage() {
                     </button>
                   </div>
                 </div>
-                {notificationDebugState && (
-                  <div className="rounded-xl border border-surface-border bg-surface-raised px-3 py-3 space-y-2">
-                    <p className="text-[11px] uppercase tracking-wide text-ink-faint">Estado de hoy ({notificationDebugState.date})</p>
-                    <div className="grid gap-2 sm:grid-cols-2 text-xs text-ink-muted">
-                      <p>Programadas: <span className="text-ink">{notificationDebugState.scheduledCount}</span></p>
-                      <p>Pendientes: <span className="text-ink">{notificationDebugState.pendingCount}</span></p>
-                      <p>Recuperadas: <span className="text-ink">{notificationDebugState.recoveredCount}</span></p>
-                    </div>
-                    <div className="grid gap-2 text-xs text-ink-muted">
-                      <p>Permiso: <span className="text-ink">{notificationDebugState.permission}</span></p>
-                      <p>
-                        Ultima reprogramacion:{' '}
-                        <span className="text-ink">
-                          {notificationDebugState.lastSyncedAt ? formatRuntimeTimestamp(notificationDebugState.lastSyncedAt) : 'sin registro'}
-                        </span>
-                      </p>
-                      <p>
-                        Categorias activas:{' '}
-                        <span className="text-ink">
-                          {formatEnabledNotificationCategories(notificationDebugState.enabledCategories)}
-                        </span>
-                      </p>
-                      {notificationDebugState.lastClearReason && (
-                        <p>
-                          Ultima limpieza:{' '}
-                          <span className="text-ink">{formatNotificationClearReason(notificationDebugState.lastClearReason)}</span>
-                        </p>
-                      )}
-                    </div>
-                    {Object.keys(notificationDebugState.categories).length > 0 && (
-                      <div className="grid gap-2 sm:grid-cols-2 text-xs text-ink-muted">
-                        {Object.entries(notificationDebugState.categories).map(([category, count]) => (
-                          <p key={category}>
-                            {formatNotificationCategory(category)}: <span className="text-ink">{count}</span>
-                          </p>
-                        ))}
-                      </div>
-                    )}
-                    <p className="text-[11px] text-ink-faint">
-                      Si la app o el worker vuelven tarde, intenta recuperar avisos dentro de una ventana de {notificationDebugState.graceMinutes} min.
-                    </p>
-                    <div className="flex flex-wrap gap-2 pt-1">
-                      <button
-                        onClick={() => void handleResyncNotifications()}
-                        className="px-3 py-2 rounded-xl text-xs font-semibold text-ink hover:bg-surface transition-colors"
-                      >
-                        Reprogramar hoy
-                      </button>
-                      <button
-                        onClick={() => void handleClearNotifications()}
-                        className="px-3 py-2 rounded-xl text-xs font-semibold text-ink-muted hover:bg-surface transition-colors"
-                      >
-                        Limpiar estado
-                      </button>
-                    </div>
-                  </div>
-                )}
-                <p className="text-[11px] text-ink-faint leading-relaxed">
-                  En web, los avisos dependen del navegador y del service worker. Si cambias permisos, no tienes sesiones hoy o el navegador suspende procesos, usa "Reprogramar hoy" para forzar el estado actual.
-                </p>
               </div>
             ) : notifPermission === 'denied' ? (
               <div className="space-y-2">
@@ -1363,13 +1290,6 @@ async function refreshCounts(setDataCounts: (counts: LocalDataCounts) => void): 
   setDataCounts(counts)
 }
 
-async function refreshNotificationDebugState(
-  setNotificationDebug: (state: NotificationDebugState | null) => void,
-): Promise<void> {
-  const state = await getNotificationDebugState()
-  setNotificationDebug(state)
-}
-
 function getSelectedGroups(selection: LocalDataSelection): LocalDataGroup[] {
   return CLEARABLE_GROUPS
     .map((group) => group.key)
@@ -1404,35 +1324,6 @@ function buildSettingsMacroWeekCoherence(athleteProfile: AthleteProfile | null |
 function todayIsoKey(): string {
   const now = new Date()
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
-}
-
-function formatNotificationCategory(category: string): string {
-  switch (category) {
-    case 'session_reminders':
-      return 'Sesiones'
-    case 'daily_checkin':
-      return 'Check-in'
-    case 'weekly_planning':
-      return 'Semana vacia'
-    case 'coach_followup':
-      return 'Coach'
-    case 'load_alerts':
-      return 'Carga'
-    default:
-      return category
-  }
-}
-
-function formatEnabledNotificationCategories(preferences: NotificationPreferences): string {
-  const labels = [
-    preferences.sessionReminders ? 'sesiones' : null,
-    preferences.dailyCheckIn ? 'check-in' : null,
-    preferences.weeklyPlanning ? 'semana' : null,
-    preferences.coachFollowUp ? 'coach' : null,
-    preferences.loadAlerts ? 'carga' : null,
-  ].filter(Boolean)
-
-  return labels.length > 0 ? labels.join(', ') : 'ninguna'
 }
 
 function getSyncSummary(status: string, pendingOps: number, syncAttemptInFlight: boolean): { label: string; toneClass: string } {
@@ -1535,21 +1426,6 @@ function formatRuntimeTimestamp(timestamp: number): string {
     }).format(new Date(timestamp))
   } catch {
     return String(timestamp)
-  }
-}
-
-function formatNotificationClearReason(reason: string): string {
-  switch (reason) {
-    case 'permission-not-granted':
-      return 'permiso no concedido'
-    case 'no-sessions':
-      return 'sin sesiones planificadas hoy'
-    case 'no-matching-rules':
-      return 'sin reglas activas para hoy'
-    case 'manual-clear':
-      return 'limpieza manual'
-    default:
-      return reason
   }
 }
 

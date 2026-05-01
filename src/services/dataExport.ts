@@ -26,6 +26,7 @@ import { useCoachMemoryStore } from '../store/useCoachMemoryStore'
 import { usePlanBuilderStore } from '../store/usePlanBuilderStore'
 import { useTrainingStore } from '../store/useTrainingStore'
 import { clearStoredChatSessionId, getOrCreateChatSessionId, setStoredChatSessionId } from '../utils/chatSession'
+import { derivePlanGenerationState } from './planBuilder/generationState'
 
 const BACKUP_APP_NAME = 'Entrenador' as const
 const CURRENT_BACKUP_VERSION = 3 as const
@@ -64,6 +65,7 @@ const MACRO_PLAN_SPORT_ROLES = new Set(['primary', 'support'])
 const MACRO_PLAN_PHASES = new Set(['base', 'build', 'peak', 'taper', 'race', 'transition'])
 const PHASE_SPORT_TARGET_ROLES = new Set(['primary', 'support', 'excluded'])
 const PLAN_STATUSES = new Set(['draft', 'active', 'archived', 'superseded'])
+const PLAN_GENERATION_STATES = new Set(['shell', 'generating', 'partial', 'failed', 'complete'])
 const PLAN_WEEK_STATUSES = new Set(['pending', 'generating', 'draft', 'accepted', 'error'])
 const COACH_ACTION_TYPES = new Set([
   'move_session',
@@ -437,6 +439,11 @@ function parseAppDataExport(value: unknown): AppDataExport {
   const weekSummaries = parseWeekSummariesTable(normalized.tables.weekSummaries)
   const trainingPlans = parseTrainingPlansTable(normalized.tables.trainingPlans ?? [])
   const trainingPlanWeeks = parseTrainingPlanWeeksTable(normalized.tables.trainingPlanWeeks ?? [])
+  const trainingPlansWithGenerationState = trainingPlans.map((plan) => {
+    if (plan.status === 'active' || plan.status === 'archived') return plan
+    const planWeeks = trainingPlanWeeks.filter((week) => week.planId === plan.id)
+    return { ...plan, generationState: derivePlanGenerationState(planWeeks) }
+  })
   const chatMessages = parseChatMessagesTable(normalized.tables.chatMessages)
   const coachProposals = parseCoachProposalsTable(normalized.tables.coachProposals)
   const athleteProfiles = parseAthleteProfilesTable(normalized.tables.athleteProfiles)
@@ -452,7 +459,7 @@ function parseAppDataExport(value: unknown): AppDataExport {
       sessions,
       dayLogs,
       weekSummaries,
-      trainingPlans,
+      trainingPlans: trainingPlansWithGenerationState,
       trainingPlanWeeks,
       chatMessages,
       coachProposals,
@@ -639,6 +646,7 @@ function parseCoachProposal(value: unknown, index: number): CoachProposal {
 
 function parseTrainingPlan(value: unknown, index: number): TrainingPlan {
   const row = ensureRecord(value, `trainingPlans[${index}]`)
+  const status = requireEnum(row.status, PLAN_STATUSES, `trainingPlans[${index}].status`) as TrainingPlan['status']
   const phases = ensureArray(row.phases, `trainingPlans[${index}].phases`).map((phase, phaseIndex) => {
     const phaseRow = ensureRecord(phase, `trainingPlans[${index}].phases[${phaseIndex}]`)
     return {
@@ -654,7 +662,11 @@ function parseTrainingPlan(value: unknown, index: number): TrainingPlan {
     id: requireString(row.id, `trainingPlans[${index}].id`),
     athleteId: requireString(row.athleteId, `trainingPlans[${index}].athleteId`),
     goalEventId: requireString(row.goalEventId, `trainingPlans[${index}].goalEventId`),
-    status: requireEnum(row.status, PLAN_STATUSES, `trainingPlans[${index}].status`) as TrainingPlan['status'],
+    status,
+    generationState: (
+      optionalEnum(row.generationState, PLAN_GENERATION_STATES, `trainingPlans[${index}].generationState`)
+      ?? (status === 'active' || status === 'archived' ? 'complete' : 'shell')
+    ) as TrainingPlan['generationState'],
     title: requireString(row.title, `trainingPlans[${index}].title`),
     startDate: requireISODate(row.startDate, `trainingPlans[${index}].startDate`),
     endDate: requireISODate(row.endDate, `trainingPlans[${index}].endDate`),

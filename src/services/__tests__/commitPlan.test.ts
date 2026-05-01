@@ -148,6 +148,7 @@ function makePlan(totalWeeks = 2): TrainingPlan {
     athleteId: 'athlete-1',
     goalEventId: 'event-1',
     status: 'draft',
+    generationState: 'complete',
     title: 'Plan regional',
     startDate: '2026-05-04',
     endDate: '2026-05-17',

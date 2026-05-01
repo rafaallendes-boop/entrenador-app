@@ -25,14 +25,14 @@ const T = {
   fontDisp:  "'Lexend', 'Inter', system-ui, sans-serif",
 }
 
-// ── Phase display config ─────────────────────────────────────
-const PHASE_DISPLAY: Record<MacroPlanPhase, { label: string; focus: string }> = {
-  base:       { label: 'Base aeróbica',       focus: 'Volumen y resistencia general' },
-  build:      { label: 'Desarrollo técnico',  focus: 'Técnica específica + carga' },
-  peak:       { label: 'Pico competitivo',    focus: 'Intensidad máxima, sparring' },
-  taper:      { label: 'Tapering',            focus: 'Reducción de carga, frescura' },
-  race:       { label: 'Competencia',         focus: 'Semana del evento' },
-  transition: { label: 'Transición',          focus: 'Recuperación post-evento' },
+// ── Phase focus fallback (used for past phases not in timeline) ──
+const PHASE_FOCUS_FALLBACK: Record<MacroPlanPhase, string> = {
+  base:       'Volumen y resistencia general',
+  build:      'Técnica específica + carga',
+  peak:       'Intensidad máxima y calidad',
+  taper:      'Reducción de carga, frescura',
+  race:       'Semana del evento',
+  transition: 'Recuperación post-evento',
 }
 
 const PHASE_ORDER: MacroPlanPhase[] = ['base', 'build', 'peak', 'taper', 'race']
@@ -245,14 +245,15 @@ function KPIPill({ label, value, color = T.brand }: {
 }
 
 // ── Phase card ───────────────────────────────────────────────
-function PhaseCard({ phase, status, weeks, primarySport, complementarySports }: {
+function PhaseCard({ phase, label, focus, status, weeks, primarySport, complementarySports }: {
   phase: MacroPlanPhase
+  label: string
+  focus: string
   status: 'past' | 'current' | 'future'
   weeks?: string
   primarySport?: string
   complementarySports?: string[]
 }) {
-  const display = PHASE_DISPLAY[phase]
   const statusConf = {
     past:    { dot: T.lime,    label: 'Completada', bg: 'rgba(209,252,0,0.05)',    border: 'rgba(209,252,0,0.18)' },
     current: { dot: T.brand,   label: 'En curso',   bg: 'rgba(255,77,0,0.07)',     border: 'rgba(255,77,0,0.28)' },
@@ -282,7 +283,7 @@ function PhaseCard({ phase, status, weeks, primarySport, complementarySports }: 
         <span style={{
           fontFamily: T.fontDisp, fontSize: 13.5, fontWeight: 700, color: T.ink,
         }}>
-          {display.label}
+          {label}
         </span>
         <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
           <div style={{
@@ -295,7 +296,7 @@ function PhaseCard({ phase, status, weeks, primarySport, complementarySports }: 
       <div style={{
         fontFamily: T.fontMono, fontSize: 10.5, color: T.faint, marginBottom: sports.length ? 9 : 0,
       }}>
-        {weeks ?? PHASE_WEEKS[phase] ?? '?'} · {display.focus}
+        {weeks ?? PHASE_WEEKS[phase] ?? '?'} · {focus}
       </div>
       {sports.length > 0 && (
         <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' as const }}>
@@ -426,15 +427,18 @@ export default function PlanDashboard({ onEdit }: { onEdit: () => void }) {
       : idx < currentPhaseIdx ? 'past'
       : 'future'
 
-    // Get week count from timeline if available
-    let weekCount: string | undefined
     const timelineEntry = macroPlan?.timeline.find(e => e.phase === phase)
+
+    let weekCount: string | undefined
     if (timelineEntry) {
       const phaseWeeks = timelineEntry.startWeek - timelineEntry.endWeek + 1
       if (phaseWeeks > 0) weekCount = `${phaseWeeks} sem`
     }
 
-    return { phase, status, weekCount }
+    const label = getPhaseLabel(phase)
+    const focus = timelineEntry?.focus ?? PHASE_FOCUS_FALLBACK[phase]
+
+    return { phase, status, weekCount, label, focus }
   })
 
   // Primary sport from event or profile
@@ -538,16 +542,18 @@ export default function PlanDashboard({ onEdit }: { onEdit: () => void }) {
               color: T.brandLt,
               letterSpacing: '0.2em', textTransform: 'uppercase',
             }}>
-              {PHASE_DISPLAY[currentPhase]?.label}
+              {getPhaseLabel(currentPhase)}
             </span>
           }>
             Fases
           </SectionTitle>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {allPhases.map(({ phase, status, weekCount }) => (
+            {allPhases.map(({ phase, status, weekCount, label, focus }) => (
               <PhaseCard
                 key={phase}
                 phase={phase}
+                label={label}
+                focus={focus}
                 status={status}
                 weeks={weekCount}
                 primarySport={status === 'current' || status === 'future' ? primarySport : undefined}

@@ -1295,6 +1295,7 @@ function rowToTrainingPlan(row: Record<string, unknown>): TrainingPlan {
     athleteId: row.athlete_id as string,
     goalEventId: row.goal_event_id as string,
     status: row.status as TrainingPlan['status'],
+    generationState: 'complete',
     title: row.title as string,
     startDate: row.start_date as string,
     endDate: row.end_date as string,

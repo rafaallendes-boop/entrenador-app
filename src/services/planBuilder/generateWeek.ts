@@ -3,10 +3,11 @@ import type { TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
 import type { AIProvider, CreateWeekNormalizationDiagnostic } from '../ai/types'
 import { buildAITraceId, getAIRequestPolicy } from '../ai/requestPolicy'
 import { normalizeResponse } from '../ai/responseNormalizer'
-import { buildWeekSystemPrompt, buildWeekUserPrompt } from '../week/prompts/weekPrompt'
+import { buildWeekSystemPromptMinimal, buildWeekUserPrompt } from '../week/prompts/weekPrompt'
 import { validatePlanWeek } from './validator'
 import { useAIDebugStore } from '../../store/useAIDebugStore'
-import { filterSessionsToWeek, pickCreateWeekDiagnostic } from '../week/shared'
+import { pickCreateWeekDiagnostic } from '../week/shared'
+import { repairGeneratedWeek, type RepairContext } from './repairWeek'
 
 export interface GenerateWeekInput {
   provider: AIProvider
@@ -39,6 +40,11 @@ export interface GenerateWeekResult {
     rawSessionCount?: number
     validSessionCount?: number
     droppedSessionCount?: number
+    repairedSessionCount?: number
+    movedSessionCount?: number
+    addedFallbackCount?: number
+    filteredSportCount?: number
+    repairWarnings?: Array<{ code: string; message: string }>
   }
 }
 
@@ -48,6 +54,11 @@ export interface WeekActionEvaluation {
   rawSessionCount?: number
   validSessionCount?: number
   droppedSessionCount?: number
+  repairedSessionCount?: number
+  movedSessionCount?: number
+  addedFallbackCount?: number
+  filteredSportCount?: number
+  repairWarnings?: Array<{ code: string; message: string }>
 }
 
 export function pickCreateWeekAction(actions: CoachAction[] | undefined, weekStartDate: string): CoachAction | undefined {
@@ -68,33 +79,33 @@ export function summarizeWeekGenerationError(
   if (error.includes('no devolvió sesiones válidas')) {
     return `Devuelve una acción create_week válida con targetDate=${week.weekStartDate} y sesiones no vacías.`
   }
-  if (error.includes('sesiones válidas de') && error.includes('se descartaron')) {
+  if ((error.includes('sesiones válidas de') || error.includes('sesiones válidas completas')) && error.includes('se descartaron')) {
     return `Devuelve exactamente el número pedido de sesiones válidas completas para la semana ${week.weekStartDate}; no omitas campos ni devuelvas sesiones inválidas.`
   }
   if (error.includes('tiene ') && error.includes('sesiones')) {
-    return `Devuelve exactamente el número de sesiones solicitado por el wizard para la semana que empieza el ${week.weekStartDate}.`
+    return `Devuelve exactamente el número de sesiones pedido, con sesiones válidas completas para la semana que empieza el ${week.weekStartDate}.`
   }
   return `Corrige este problema del intento previo: ${error}`
 }
 
 function getRetryableWeekIssues(plan: TrainingPlan, week: TrainingPlanWeek) {
   return validatePlanWeek(plan, week)
-    .filter((issue) =>
-      issue.severity === 'error'
-      || issue.code === 'week.sessions.count_mismatch'
-      || issue.code === 'week.sessions.out_of_allowed_day'
-      || issue.code === 'week.primary_sport.underweighted'
-      || issue.code.endsWith('missing_details'),
-    )
+    .filter((issue) => issue.severity === 'error')
 }
 
 function formatCountMismatchError(
   plan: TrainingPlan,
   week: TrainingPlanWeek,
   diagnostic: CreateWeekNormalizationDiagnostic | undefined,
+  repairedValidSessions?: number,
+  repairedDroppedSessions = 0,
 ): string {
   if (diagnostic && diagnostic.droppedSessions > 0) {
     return `La semana ${week.weekIndex + 1} quedó con ${diagnostic.validSessions} sesiones válidas de ${diagnostic.rawSessions} propuestas; se descartaron ${diagnostic.droppedSessions} por inválidas y el wizard esperaba ${plan.wizardConfig.sessionsPerWeek}.`
+  }
+
+  if (repairedDroppedSessions > 0) {
+    return `La semana ${week.weekIndex + 1} quedó con ${repairedValidSessions ?? 0} sesiones válidas completas; se descartaron ${repairedDroppedSessions} por inválidas y el wizard esperaba ${plan.wizardConfig.sessionsPerWeek}.`
   }
 
   return `La semana ${week.weekIndex + 1} tiene menos sesiones válidas de las esperadas; devuelve exactamente ${plan.wizardConfig.sessionsPerWeek} sesiones para ${week.weekStartDate}.`
@@ -103,12 +114,14 @@ function formatCountMismatchError(
 export function validateGeneratedWeekAction(
   plan: TrainingPlan,
   week: TrainingPlanWeek,
+  profile: AthleteProfile,
   action: CoachAction | undefined,
   diagnostic?: CreateWeekNormalizationDiagnostic,
+  previousWeek?: TrainingPlanWeek,
 ): WeekActionEvaluation {
   const rawSessionCount = diagnostic?.rawSessions ?? (Array.isArray(action?.sessions) ? action.sessions.length : undefined)
-  const normalizedSessionCount = diagnostic?.validSessions ?? (Array.isArray(action?.sessions) ? action.sessions.length : undefined)
-  const droppedSessionCount = diagnostic?.droppedSessions ?? (rawSessionCount != null && normalizedSessionCount != null ? rawSessionCount - normalizedSessionCount : undefined)
+  let normalizedSessionCount = diagnostic?.validSessions ?? (Array.isArray(action?.sessions) ? action.sessions.length : undefined)
+  const droppedSessionCount = diagnostic?.droppedSessions ?? (rawSessionCount != null && normalizedSessionCount != null ? rawSessionCount - normalizedSessionCount : 0)
 
   if (!action || !Array.isArray(action.sessions) || action.sessions.length === 0) {
     return {
@@ -130,46 +143,56 @@ export function validateGeneratedWeekAction(
     }
   }
 
-  const sessions = filterSessionsToWeek(action.sessions, week.weekStartDate)
-  if (sessions.length !== action.sessions.length) {
-    return {
-      sessions: [],
-      error: 'Las sesiones devueltas no respetaron exactamente la semana objetivo.',
-      rawSessionCount,
-      validSessionCount: sessions.length,
-      droppedSessionCount,
-    }
+  const context: RepairContext = {
+    plan,
+    week,
+    profile,
+    wizardConfig: plan.wizardConfig,
+    previousWeek,
   }
+
+  const repairResult = repairGeneratedWeek(action.sessions, context)
+  normalizedSessionCount = repairResult.sessions.length
 
   const retryableIssues = getRetryableWeekIssues(plan, {
     ...week,
     status: 'draft',
-    sessions,
+    sessions: repairResult.sessions,
   })
   if (retryableIssues.length > 0) {
     const hasCountMismatch = retryableIssues.some((issue) => issue.code === 'week.sessions.count_mismatch')
     return {
       sessions: [],
       error: hasCountMismatch
-        ? formatCountMismatchError(plan, week, diagnostic)
+        ? formatCountMismatchError(plan, week, diagnostic, normalizedSessionCount, repairResult.meta.droppedSessionCount)
         : retryableIssues.slice(0, 2).map((issue) => issue.message).join(' '),
       rawSessionCount,
-      validSessionCount: sessions.length,
-      droppedSessionCount,
+      validSessionCount: normalizedSessionCount,
+      droppedSessionCount: droppedSessionCount + repairResult.meta.droppedSessionCount,
+      repairedSessionCount: repairResult.meta.repairedSessionCount,
+      movedSessionCount: repairResult.meta.movedSessionCount,
+      addedFallbackCount: repairResult.meta.addedFallbackCount,
+      filteredSportCount: repairResult.meta.filteredSportCount,
+      repairWarnings: repairResult.meta.warnings,
     }
   }
 
   return {
-    sessions,
+    sessions: repairResult.sessions,
     rawSessionCount,
-    validSessionCount: sessions.length,
-    droppedSessionCount,
+    validSessionCount: normalizedSessionCount,
+    droppedSessionCount: droppedSessionCount + repairResult.meta.droppedSessionCount,
+    repairedSessionCount: repairResult.meta.repairedSessionCount,
+    movedSessionCount: repairResult.meta.movedSessionCount,
+    addedFallbackCount: repairResult.meta.addedFallbackCount,
+    filteredSportCount: repairResult.meta.filteredSportCount,
+    repairWarnings: repairResult.meta.warnings,
   }
 }
 
 export async function generateWeek(input: GenerateWeekInput): Promise<GenerateWeekResult> {
   const { provider, plan, week, previousWeek, profile, wizardConfig } = input
-  const systemPrompt = buildWeekSystemPrompt()
+  const systemPrompt = buildWeekSystemPromptMinimal()
   const userMessage = buildWeekUserPrompt({
     plan,
     week,
@@ -211,7 +234,7 @@ export async function generateWeek(input: GenerateWeekInput): Promise<GenerateWe
     const normalized = normalizeResponse(raw)
     const action = pickCreateWeekAction(normalized.actions, week.weekStartDate)
     const diagnostic = pickCreateWeekDiagnostic(normalized, week.weekStartDate, action)
-    const evaluation = validateGeneratedWeekAction(plan, week, action, diagnostic)
+    const evaluation = validateGeneratedWeekAction(plan, week, profile, action, diagnostic, previousWeek)
     if (evaluation.error) {
       useAIDebugStore.getState().failRequest(traceId, {
         provider: raw.provider,
@@ -237,6 +260,11 @@ export async function generateWeek(input: GenerateWeekInput): Promise<GenerateWe
           rawSessionCount: evaluation.rawSessionCount,
           validSessionCount: evaluation.validSessionCount,
           droppedSessionCount: evaluation.droppedSessionCount,
+          repairedSessionCount: evaluation.repairedSessionCount,
+          movedSessionCount: evaluation.movedSessionCount,
+          addedFallbackCount: evaluation.addedFallbackCount,
+          filteredSportCount: evaluation.filteredSportCount,
+          repairWarnings: evaluation.repairWarnings,
         },
       }
     }
@@ -263,6 +291,11 @@ export async function generateWeek(input: GenerateWeekInput): Promise<GenerateWe
         rawSessionCount: evaluation.rawSessionCount,
         validSessionCount: evaluation.validSessionCount,
         droppedSessionCount: evaluation.droppedSessionCount,
+        repairedSessionCount: evaluation.repairedSessionCount,
+        movedSessionCount: evaluation.movedSessionCount,
+        addedFallbackCount: evaluation.addedFallbackCount,
+        filteredSportCount: evaluation.filteredSportCount,
+        repairWarnings: evaluation.repairWarnings,
       },
     }
   } catch (error) {
