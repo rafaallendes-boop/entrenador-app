@@ -8,6 +8,7 @@ import { validatePlanWeek } from './validator'
 import { useAIDebugStore } from '../../store/useAIDebugStore'
 import { pickCreateWeekDiagnostic } from '../week/shared'
 import { repairGeneratedWeek, type RepairContext } from './repairWeek'
+import { createStageTracker, type CoachOutcome, type StageTiming } from '../ai/stageLogger'
 
 export interface GenerateWeekInput {
   provider: AIProvider
@@ -45,6 +46,8 @@ export interface GenerateWeekResult {
     addedFallbackCount?: number
     filteredSportCount?: number
     repairWarnings?: Array<{ code: string; message: string }>
+    stageTimings?: StageTiming[]
+    errorClass?: string
   }
 }
 
@@ -192,6 +195,14 @@ export function validateGeneratedWeekAction(
 
 export async function generateWeek(input: GenerateWeekInput): Promise<GenerateWeekResult> {
   const { provider, plan, week, previousWeek, profile, wizardConfig } = input
+  const requestClass = 'plan_builder_week' as const
+  const traceId = buildAITraceId(requestClass)
+  const policy = getAIRequestPolicy(requestClass)
+  const tracker = createStageTracker(traceId, requestClass)
+  let outcome: CoachOutcome = 'error'
+  let chunkCount = 0
+
+  const promptStage = tracker.stage('prompt_build')
   const systemPrompt = buildWeekSystemPromptMinimal()
   const userMessage = buildWeekUserPrompt({
     plan,
@@ -202,11 +213,8 @@ export async function generateWeek(input: GenerateWeekInput): Promise<GenerateWe
     retryInstruction: input.retryInstruction,
     strictFormatting: input.strictFormatting,
   })
+  promptStage.end({ ok: true })
 
-  let chunkCount = 0
-  const requestClass = 'plan_builder_week' as const
-  const traceId = buildAITraceId(requestClass)
-  const policy = getAIRequestPolicy(requestClass)
   useAIDebugStore.getState().startRequest({
     traceId,
     requestClass,
@@ -215,6 +223,7 @@ export async function generateWeek(input: GenerateWeekInput): Promise<GenerateWe
   })
 
   try {
+    const providerStage = tracker.stage('provider_call')
     const raw = await provider.call({
       requestClass,
       traceId,
@@ -231,11 +240,19 @@ export async function generateWeek(input: GenerateWeekInput): Promise<GenerateWe
         input.onChunk?.(chunk)
       },
     })
+    providerStage.end({ ok: true })
+
+    const normalizeStage = tracker.stage('normalize')
     const normalized = normalizeResponse(raw)
     const action = pickCreateWeekAction(normalized.actions, week.weekStartDate)
     const diagnostic = pickCreateWeekDiagnostic(normalized, week.weekStartDate, action)
+    normalizeStage.end({ ok: !!action })
+
+    const repairStage = tracker.stage('repair')
     const evaluation = validateGeneratedWeekAction(plan, week, profile, action, diagnostic, previousWeek)
+    repairStage.end({ ok: !evaluation.error, error: evaluation.error })
     if (evaluation.error) {
+      outcome = 'invalid_schema'
       useAIDebugStore.getState().failRequest(traceId, {
         provider: raw.provider,
         model: raw.model,
@@ -265,6 +282,8 @@ export async function generateWeek(input: GenerateWeekInput): Promise<GenerateWe
           addedFallbackCount: evaluation.addedFallbackCount,
           filteredSportCount: evaluation.filteredSportCount,
           repairWarnings: evaluation.repairWarnings,
+          stageTimings: tracker.timings(),
+          errorClass: normalized.meta?.errorClass,
         },
       }
     }
@@ -276,6 +295,7 @@ export async function generateWeek(input: GenerateWeekInput): Promise<GenerateWe
       retryUsed: raw.retryUsed,
       fallbackUsed: raw.fallbackUsed,
     })
+    outcome = 'ok'
     return {
       sessions: evaluation.sessions,
       meta: {
@@ -296,9 +316,11 @@ export async function generateWeek(input: GenerateWeekInput): Promise<GenerateWe
         addedFallbackCount: evaluation.addedFallbackCount,
         filteredSportCount: evaluation.filteredSportCount,
         repairWarnings: evaluation.repairWarnings,
+        stageTimings: tracker.timings(),
       },
     }
   } catch (error) {
+    outcome = 'error'
     useAIDebugStore.getState().failRequest(traceId, {
       errorCode: error instanceof Error ? error.message : 'unknown',
     })
@@ -311,7 +333,10 @@ export async function generateWeek(input: GenerateWeekInput): Promise<GenerateWe
         traceId,
         lastError: error instanceof Error ? error.message : String(error),
         chunkCount,
+        stageTimings: tracker.timings(),
       },
     }
+  } finally {
+    tracker.flush(outcome, { weekIndex: week.weekIndex })
   }
 }

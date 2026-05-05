@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 
 import type { AthleteProfile, ChatContext, Session } from '../../types'
 
@@ -110,13 +110,20 @@ describe('promptBuilder context reduction', () => {
   let buildCoachPrompt: typeof import('../ai/promptBuilder').buildCoachPrompt
 
   beforeAll(async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-05-05T12:00:00'))
     installLocalStorageMock()
     ;({ buildCoachPrompt } = await import('../ai/promptBuilder'))
   }, 120000)
 
-  it('uses the slim athlete profile and omits heavy sections for generic chat', () => {
+  afterAll(() => {
+    vi.useRealTimers()
+  })
+
+  it('uses the slim athlete profile and omits heavy sections for generic chat without nearby competition', () => {
     const result = buildCoachPrompt(makeContext({
       intent: 'general_chat',
+      athleteProfile: makeProfile({ goalEvents: [] }),
     }), {
       requestClass: 'chat_general',
       userMessage: '¿Cómo ves mi semana?',
@@ -129,6 +136,18 @@ describe('promptBuilder context reduction', () => {
     expect(result.systemPrompt).not.toContain('Cargas de referencia (usa estos valores')
     expect(result.trace?.profileVariant).toBe('slim')
     expect(result.trace?.includedSections).toContain('athlete_profile_slim')
+  })
+
+  it('keeps macro plan context for generic chat when competition is within 14 days', () => {
+    const result = buildCoachPrompt(makeContext({
+      intent: 'general_chat',
+    }), {
+      requestClass: 'chat_general',
+      userMessage: '¿Cómo ves mi semana?',
+    })
+
+    expect(result.systemPrompt).toContain('═══ MACRO PLAN ═══')
+    expect(result.trace?.includedSections).toContain('macro_plan')
   })
 
   it('keeps adjust_session sport detection conservative around the affected session', () => {

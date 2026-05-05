@@ -180,6 +180,14 @@ export function normalizeResponse(raw: AIRawResponse): CoachNormalizedResponse {
 
   message = message.replace(/\n{3,}/g, '\n\n').trim()
 
+  const outcome = classifyOutcome({
+    hadActionsMarkup,
+    actionParseFailed,
+    likelyTruncated,
+    actionsCount: actions?.length ?? 0,
+    messageLength: message.length,
+  })
+
   return {
     message,
     actions: actions && actions.length > 0 ? actions : undefined,
@@ -198,8 +206,46 @@ export function normalizeResponse(raw: AIRawResponse): CoachNormalizedResponse {
       likelyTruncated,
       invalidActionCount,
       createWeekDiagnostics,
+      outcome,
+      errorClass: raw.errorClass,
     },
   }
+}
+
+function classifyOutcome(input: {
+  hadActionsMarkup: boolean
+  actionParseFailed: boolean
+  likelyTruncated: boolean
+  actionsCount: number
+  messageLength: number
+}): 'ok' | 'truncated_mid' | 'truncated_early' | 'parse_invalid' | 'schema_invalid' {
+  // Cleanly parsed text with usable content (text and/or actions).
+  if (!input.actionParseFailed && !input.likelyTruncated) {
+    return 'ok'
+  }
+
+  // Truncation takes precedence over parse_invalid when the actions block
+  // opened: a JSON parse failure inside an unclosed/cut block is almost
+  // always caused by the cut itself, not a malformed schema.
+  if (input.hadActionsMarkup && input.likelyTruncated) {
+    if (input.actionsCount > 0) return 'truncated_mid'
+    return 'truncated_early'
+  }
+
+  // Markup did not open (or did open and closed) but JSON failed to parse.
+  if (input.actionParseFailed && !input.hadActionsMarkup) {
+    return 'schema_invalid'
+  }
+  if (input.actionParseFailed) {
+    return 'parse_invalid'
+  }
+
+  // Truncated text without actions markup is still readable text.
+  if (input.likelyTruncated && input.messageLength > 0) {
+    return 'ok'
+  }
+
+  return 'ok'
 }
 
 function parseActionsBlock(jsonText: string): {

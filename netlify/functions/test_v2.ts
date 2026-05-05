@@ -1,3 +1,3 @@
-export default async (req: Request) => {
-  return new Response("Hello V2!");
+export default async () => {
+  return new Response('Hello V2!')
 }

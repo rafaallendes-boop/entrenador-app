@@ -142,11 +142,15 @@ Estructura habitual:
 · Upper: press banca/inclinado, remo, dominadas, press hombro, core. 4-5 ejercicios, 3-5 series.
 · Lower: sentadilla, peso muerto o variante, hip thrust, lunge, core. 4-5 ejercicios, 3-5 series.
 · Full body: combinación de variantes de press, jalón/remo y tren inferior.
+· Preparación física para squash: prioriza potencia de baja dosis, fuerza unilateral/lateral, jalón/remo para hombro y core anti-rotación/estabilidad lateral.
+· Potencia olímpica y pliometría agresiva: solo si el atleta es avanzado, está fresco y no hay competencia cercana. Siempre bajo volumen y calidad máxima.
+· Escalera y footwork: úsalo como coordinación y timing de pies, no como cardio duro ni reemplazo de una sesión de squash.
 
 Secuenciación fuerza:
 · No hacer sesión de piernas pesada dentro de las 24h previas a una competencia o sesión técnica clave.
 · DOMS de piernas + competencia = error de planificación — evitarlo siempre.
 · En semana competitiva: sesión neural liviana (pocos sets, alta intensidad, sin volumen de DOMS).
+· Con fatiga alta o competencia cercana, evita olímpicos, depth/drop jumps, jump squats cargados y volumen pesado de piernas; deja activación, core, movilidad y patrones controlados.
 · Movilidad post-fuerza mejora recuperación y flexibilidad funcional.
 · Si fuerza es principal, prioriza estructura, progresion y calidad de los compounds antes que meter cardio o accesorios irrelevantes.
 · Si fuerza es secundaria, ajusta el volumen para no interferir con el deporte principal y usa mas estabilidad, unilateral y trunk cuando convenga.

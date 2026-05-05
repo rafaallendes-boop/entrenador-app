@@ -12,6 +12,7 @@ import { getActiveProvider, isRealProviderConfigured } from './providerResolver'
 import { useAIDebugStore } from '../../store/useAIDebugStore'
 import { sendWithRecovery } from './coachRecovery'
 import { resolveChatRoute } from '../chatRouting'
+import { createStageTracker, type CoachOutcome } from './stageLogger'
 
 export type CoachActionIntent = 'create_full_plan' | 'modify_plan' | 'none'
 type CoachSendOptions = {
@@ -137,42 +138,70 @@ async function sendTrackedCoachRequest(
   const surface = options?.surface ?? 'chat'
 
   return withTracing(requestClass, surface, async (traceId) => {
-    let firstChunkSeen = false
-    const prompt = buildCoachPrompt(context, { requestClass, userMessage })
+    const tracker = createStageTracker(traceId, requestClass)
+    let outcome: CoachOutcome = 'error'
+    try {
+      let firstChunkSeen = false
+      const promptStage = tracker.stage('prompt_build')
+      const prompt = buildCoachPrompt(context, { requestClass, userMessage })
+      promptStage.end({ ok: true })
 
-    if (prompt.trace) {
-      useAIDebugStore.getState().updateRequest(traceId, {
-        promptTrace: prompt.trace,
-      })
-    }
+      if (prompt.trace) {
+        useAIDebugStore.getState().updateRequest(traceId, {
+          promptTrace: prompt.trace,
+        })
+      }
 
-    const request: AIRequest = {
-      systemPrompt: prompt.systemPrompt,
-      userMessage,
-      requestClass,
-      traceId,
-      conversation: (context.recentMessages ?? []).map(message => ({
-        role: message.role === 'coach' ? 'assistant' : 'user',
-        content: message.content,
-      })),
-      maxTokens: options?.maxTokens ?? policy.maxTokens,
-      temperature: options?.temperature ?? policy.temperature,
-      allowFallback: policy.allowFallback,
-      signal: options?.signal,
-      onChunk: options?.onChunk
-        ? (chunk) => {
-            if (!firstChunkSeen) {
-              firstChunkSeen = true
-              useAIDebugStore.getState().markFirstChunk(traceId)
+      const request: AIRequest = {
+        systemPrompt: prompt.systemPrompt,
+        userMessage,
+        requestClass,
+        traceId,
+        conversation: (context.recentMessages ?? []).map(message => ({
+          role: message.role === 'coach' ? 'assistant' : 'user',
+          content: message.content,
+        })),
+        maxTokens: options?.maxTokens ?? policy.maxTokens,
+        temperature: options?.temperature ?? policy.temperature,
+        allowFallback: policy.allowFallback,
+        signal: options?.signal,
+        onChunk: options?.onChunk
+          ? (chunk) => {
+              if (!firstChunkSeen) {
+                firstChunkSeen = true
+                useAIDebugStore.getState().markFirstChunk(traceId)
+              }
+              options.onChunk?.(chunk)
             }
-            options.onChunk?.(chunk)
-          }
-        : undefined,
-    }
+          : undefined,
+      }
 
-    return requestClass === 'chat_action'
-      ? sendWithRecovery(provider, request)
-      : sendDirect(provider, request)
+      const providerStage = tracker.stage('provider_call')
+      const result = requestClass === 'chat_action'
+        ? await sendWithRecovery(provider, request)
+        : await sendDirect(provider, request)
+      providerStage.end({ ok: true })
+
+      const normalizedOutcome = result.meta?.outcome
+      outcome =
+        normalizedOutcome === 'truncated_mid' ? 'truncated'
+          : normalizedOutcome === 'truncated_early' ? 'truncated'
+          : normalizedOutcome === 'parse_invalid' ? 'parse_fail'
+          : normalizedOutcome === 'schema_invalid' ? 'invalid_schema'
+          : 'ok'
+      return result
+    } catch (error) {
+      if (error instanceof AIProviderError) {
+        outcome =
+          error.code === 'timeout' ? 'timeout'
+            : error.code === 'rate_limit' ? 'rate_limit'
+            : error.code === 'parse_error' ? 'parse_fail'
+            : 'error'
+      }
+      throw error
+    } finally {
+      tracker.flush(outcome)
+    }
   })
 }
 

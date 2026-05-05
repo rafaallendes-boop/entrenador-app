@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
 import type { Session } from '../../types'
-import { STRENGTH_EXERCISE_LIBRARY } from '../training/exerciseLibrary'
+import {
+  findStrengthExerciseByName,
+  normalizeStrengthExerciseKey,
+  STRENGTH_EXERCISE_LIBRARY,
+} from '../training/exerciseLibrary'
 import {
   deriveProgressionIntent,
   deriveStrengthProgressionState,
@@ -32,6 +36,75 @@ function makeStrengthSession(date: string, exercises: string[]): Session {
 }
 
 describe('strengthSelector progression', () => {
+  it('contains the squash preparation exercise catalogue with aliases', () => {
+    const requested = [
+      'Clean',
+      'Clean High Pull',
+      'Split Jerk',
+      'Barbell Jump Squat',
+      'Trap Bar Deadlift',
+      'Back Squat',
+      'Front Squat',
+      'Bench Press',
+      'Z Press',
+      'BB Reverse Lunge',
+      'BB Side Lunges',
+      'Romanian Deadlift',
+      'Hip Thrust',
+      'Single Leg Hip Thrust',
+      'Bulgarian Split Squat',
+      'Step Up',
+      'Mixed Grip Pull Up',
+      'Weighted Pull Up',
+      'TRX Inverted Row',
+      '1:2 Kneeling Row',
+      'Barbell Single Leg Inverted Row',
+      'Box Jump',
+      'Broad Jump',
+      'Single Leg Broad Jump',
+      'Drop Jump',
+      'Depth Jump',
+      'Half Kneeling Lateral Jump',
+      'Lateral Skater Jumps',
+      'Alternating Step Up Jump',
+      'Pogo Jumps',
+      'Escalera Bipodal Frente Ej 1',
+      'Escalera Bipodal Frente Ej 2',
+      'Escalera Bipodal Frente Ej 3',
+      'Escalera Coordinativo Frente 2',
+      'Escalera Coordinativo Frente 4',
+      'Escalera Bipodal Lateralización Ej 1',
+      'Escalera Bipodal Lateralización Ej 3',
+      'Pallof Press',
+      'Copenhagen Side Plank',
+      'Dead Bug',
+      'Side Plank + Plate Press',
+      'Stability Ball Front Plank',
+      'Lateral Band Walk',
+      'Bird Dog Renegade Row',
+      'Half Kneeling Diagonal Plate Chop',
+    ]
+
+    expect(requested.map((name) => [name, findStrengthExerciseByName(name)?.id])).toEqual(
+      requested.map((name) => [name, expect.any(String)]),
+    )
+  })
+
+  it('keeps exercise ids and aliases unambiguous', () => {
+    const owners = new Map<string, string>()
+
+    for (const exercise of STRENGTH_EXERCISE_LIBRARY) {
+      const keys = [exercise.id, exercise.name, ...(exercise.aliases ?? [])]
+      for (const key of keys) {
+        const normalized = normalizeStrengthExerciseKey(key)
+        const owner = owners.get(normalized)
+
+        expect(owner == null || owner === exercise.id).toBe(true)
+        owners.set(normalized, exercise.id)
+      }
+    }
+  })
+
   it('extracts recent strength exercise keys from completed history only', () => {
     const recent = extractRecentStrengthExercises([
       makeStrengthSession('2026-04-08', ['Back squat', 'Plank']),
@@ -75,6 +148,16 @@ describe('strengthSelector progression', () => {
     const filtered = filterByEquipment(STRENGTH_EXERCISE_LIBRARY, ['bands', 'bodyweight'])
     expect(filtered.some((exercise) => exercise.id === 'back_squat')).toBe(false)
     expect(filtered.some((exercise) => exercise.id === 'plank')).toBe(true)
+  })
+
+  it('supports squash-specific equipment filters without changing standard exercises', () => {
+    const trx = filterByEquipment(STRENGTH_EXERCISE_LIBRARY, ['trx'])
+    const ladder = filterByEquipment(STRENGTH_EXERCISE_LIBRARY, ['ladder'])
+    const stabilityBall = filterByEquipment(STRENGTH_EXERCISE_LIBRARY, ['stability_ball'])
+
+    expect(trx.some((exercise) => exercise.id === 'trx_inverted_row')).toBe(true)
+    expect(ladder.some((exercise) => exercise.id === 'ladder_bipodal_front_1')).toBe(true)
+    expect(stabilityBall.some((exercise) => exercise.id === 'stability_ball_front_plank')).toBe(true)
   })
 
   it('forces deload on strength ACWR risk', () => {
@@ -207,6 +290,56 @@ describe('strengthSelector progression', () => {
     expect(selection.exercises.length).toBeLessThanOrEqual(3)
     expect(selection.focus).toContain('activation')
     expect(selection.exercises.every((exercise) => exercise.intensity !== 'heavy')).toBe(true)
+  })
+
+  it('prioritizes squash-specific power, lateral work and trunk when fresh', () => {
+    const selection = selectStrengthSession({
+      phase: 'build',
+      fatigueLevel: 3,
+      recentExercises: [],
+      goal: 'potencia lateral core para squash',
+      sportProfile: 'hybrid',
+      primarySport: 'squash',
+      experienceLevel: 'advanced',
+      availableEquipment: ['barbell', 'trap bar', 'bodyweight', 'box', 'ladder', 'plate', 'bands', 'trx', 'stability ball'],
+      competitionSoon: false,
+      sessionDurationMin: 55,
+    })
+
+    const selectedDefinitions = selection.exercises.map((exercise) => findStrengthExerciseByName(exercise.name)!)
+
+    expect(selection.focus).toContain('squash')
+    expect(selectedDefinitions.every((exercise) => exercise.sportsTransfer?.includes('squash'))).toBe(true)
+    expect(selectedDefinitions.some((exercise) => exercise.intensityType === 'power')).toBe(true)
+    expect(selectedDefinitions.some((exercise) =>
+      exercise.tags.includes('lateral_strength') ||
+      exercise.tags.includes('lateral_power') ||
+      exercise.tags.includes('court_footwork'),
+    )).toBe(true)
+    expect(selectedDefinitions.some((exercise) => exercise.category === 'core')).toBe(true)
+  })
+
+  it('keeps high-risk squash power out when fatigue is high or competition is close', () => {
+    const riskyPowerIds = new Set(['clean', 'clean_high_pull', 'split_jerk', 'barbell_jump_squat', 'drop_jump', 'depth_jump'])
+    const selection = selectStrengthSession({
+      phase: 'taper',
+      fatigueLevel: 8,
+      recentExercises: [],
+      goal: 'activar squash sin fatigar',
+      sportProfile: 'sport_support',
+      primarySport: 'squash',
+      experienceLevel: 'advanced',
+      availableEquipment: ['barbell', 'trap bar', 'bodyweight', 'box', 'ladder', 'plate', 'bands', 'trx', 'stability ball'],
+      competitionSoon: true,
+      daysToCompetition: 2,
+      sessionDurationMin: 40,
+    })
+
+    const selectedIds = selection.exercises.map((exercise) => findStrengthExerciseByName(exercise.name)?.id)
+
+    expect(selection.exercises.length).toBeLessThanOrEqual(3)
+    expect(selectedIds.every((id) => id == null || !riskyPowerIds.has(id))).toBe(true)
+    expect(selection.exercises.every((exercise) => exercise.intensity !== 'heavy' && exercise.intensity !== 'explosive')).toBe(true)
   })
 
   it('does not duplicate the main lift when a slot falls back in strength_primary', () => {

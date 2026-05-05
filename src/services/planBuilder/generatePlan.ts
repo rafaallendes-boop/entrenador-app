@@ -143,6 +143,8 @@ function makeResolvedWeek(
     addedFallbackCount?: number
     filteredSportCount?: number
     repairWarnings?: Array<{ code: string; message: string }>
+    stageTimings?: Array<{ stage: string; durationMs: number; ok: boolean; error?: string }>
+    errorClass?: string
   },
 ): TrainingPlanWeek {
   const nowTs = Date.now()
@@ -174,6 +176,8 @@ function makeResolvedWeek(
       addedFallbackCount: input.addedFallbackCount,
       filteredSportCount: input.filteredSportCount,
       repairWarnings: input.repairWarnings,
+      stageTimings: input.stageTimings,
+      errorClass: input.errorClass,
     },
     updatedAt: nowTs,
   }
@@ -249,6 +253,8 @@ async function generateSingleWeekWithRetry(
         addedFallbackCount: result.meta.addedFallbackCount,
         filteredSportCount: result.meta.filteredSportCount,
         repairWarnings: result.meta.repairWarnings,
+        stageTimings: result.meta.stageTimings,
+        errorClass: result.meta.errorClass,
       })
     }
   }

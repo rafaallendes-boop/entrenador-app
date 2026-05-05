@@ -170,6 +170,7 @@ export class ProxyProvider implements AIProvider {
     let retryUsed = false
     let fallbackUsed = false
     let truncated = false
+    let truncatedErrorClass: AIErrorCode | undefined
 
     while (true) {
       const { done, value } = await reader.read()
@@ -216,6 +217,7 @@ export class ProxyProvider implements AIProvider {
               // Stream was cut after emitting partial content. Return what we got
               // and let responseNormalizer mark it as truncated — no proposal created.
               truncated = true
+              truncatedErrorClass = event.errorCode
               break
             }
             throw createProviderError('gemini', event.errorCode ?? 'unknown', event.error ?? 'Streaming falló.')
@@ -241,6 +243,7 @@ export class ProxyProvider implements AIProvider {
       retryUsed,
       fallbackUsed,
       truncated,
+      errorClass: truncatedErrorClass,
     }
   }
 

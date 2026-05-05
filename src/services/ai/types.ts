@@ -60,6 +60,8 @@ export interface AIRawResponse {
   fallbackUsed?: boolean
   /** True when the provider stream was cut mid-response due to an error. */
   truncated?: boolean
+  /** Server-side error classification, if any (propagated from coach proxy). */
+  errorClass?: AIErrorCode
 }
 
 export interface CreateWeekNormalizationDiagnostic {
@@ -98,6 +100,17 @@ export interface CoachNormalizedResponse {
     likelyTruncated: boolean
     invalidActionCount?: number
     createWeekDiagnostics?: CreateWeekNormalizationDiagnostic[]
+    /**
+     * Refined classification of how the response failed (or `ok` when fine):
+     * - `ok`: response parsed cleanly with usable actions / text
+     * - `truncated_mid`: actions block opened, some actions parsed, was cut mid-array
+     * - `truncated_early`: response was cut before any usable content
+     * - `parse_invalid`: JSON syntax could not be recovered
+     * - `schema_invalid`: JSON parsed but no valid action shapes
+     */
+    outcome?: 'ok' | 'truncated_mid' | 'truncated_early' | 'parse_invalid' | 'schema_invalid'
+    /** Server-side errorCode propagated through (e.g. timeout, rate_limit). */
+    errorClass?: AIErrorCode
   }
 }
 

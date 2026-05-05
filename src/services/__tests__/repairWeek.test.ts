@@ -205,10 +205,10 @@ describe('repairGeneratedWeek', () => {
   it('7. balances session count by trimming excess', () => {
     // Config asks for 4 sessions. We provide 5.
     const sessions: CoachSessionProposal[] = [
-      { date: '2026-05-04', timeBlock: 'AM', sessionType: 'squash', title: 'Session 1', durationMin: 45, objective: 'obj', squashDetails: {} as any },
+      { date: '2026-05-04', timeBlock: 'AM', sessionType: 'squash', title: 'Session 1', durationMin: 45, objective: 'obj', squashDetails: { trainingFocus: 'technical', drills: [] } },
       { date: '2026-05-04', timeBlock: 'PM', sessionType: 'running', title: 'Session 2', durationMin: 45, objective: 'obj', runningType: 'z2' },
       { date: '2026-05-06', timeBlock: 'AM', sessionType: 'strength', title: 'Session 3', durationMin: 45, objective: 'obj', exercises: [] },
-      { date: '2026-05-08', timeBlock: 'AM', sessionType: 'squash', title: 'Session 4', durationMin: 45, objective: 'obj', squashDetails: {} as any },
+      { date: '2026-05-08', timeBlock: 'AM', sessionType: 'squash', title: 'Session 4', durationMin: 45, objective: 'obj', squashDetails: { trainingFocus: 'technical', drills: [] } },
       { date: '2026-05-09', timeBlock: 'AM', sessionType: 'recovery', title: 'Excess Recovery', durationMin: 45, objective: 'obj' },
     ]
     const { sessions: repaired, meta } = repairGeneratedWeek(sessions, mockContext)
@@ -221,7 +221,7 @@ describe('repairGeneratedWeek', () => {
   it('7. balances session count by adding fallbacks', () => {
     // Config asks for 4 sessions. We provide 2.
     const sessions: CoachSessionProposal[] = [
-      { date: '2026-05-04', timeBlock: 'AM', sessionType: 'squash', title: 'Session 1', durationMin: 45, objective: 'obj', squashDetails: {} as any },
+      { date: '2026-05-04', timeBlock: 'AM', sessionType: 'squash', title: 'Session 1', durationMin: 45, objective: 'obj', squashDetails: { trainingFocus: 'technical', drills: [] } },
       { date: '2026-05-06', timeBlock: 'AM', sessionType: 'running', title: 'Session 2', durationMin: 45, objective: 'obj', runningType: 'z2' },
     ]
     const { sessions: repaired, meta } = repairGeneratedWeek(sessions, mockContext)

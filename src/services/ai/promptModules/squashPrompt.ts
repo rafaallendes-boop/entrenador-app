@@ -187,7 +187,10 @@ export function buildSquashRulesSection(): string {
     '· Si el usuario pide llegar fresco, competir bien o descargar, debes planificar taper real, no solo bajar un poco el RPE.',
     '',
     'Preparación física para squash:',
-    '· Fuerza: tren inferior (sentadilla, hip thrust, lunge con carga) + core rotacional + upper body (remo, press, dominadas). Priorizar potencia y estabilidad sobre hipertrofia pura.',
+    '· Fuerza: tren inferior (trap bar deadlift, sentadilla, hip thrust, lunge frontal/lateral con carga) + core anti-rotación/lateral + upper body (remo, press, dominadas). Priorizar potencia, estabilidad y transferencia sobre hipertrofia pura.',
+    '· Potencia: clean/high pull/split jerk/barbell jump squat solo para atleta avanzado y fresco; si no, usar box jump, broad jump, skater jumps o pogo en bajo volumen.',
+    '· Lateralidad y pies: BB side lunge, half kneeling lateral jump, skater jumps y escalera aportan cambios de dirección; escalera es coordinación, no acondicionamiento duro.',
+    '· Seguridad: con fatiga alta, taper o partido cercano, evita olímpicos, depth/drop jumps y carga pesada de piernas; usa core, activación, movilidad y patrones controlados.',
     '· Running: Z2 sostenido mejora directamente la recuperación para rendir en cancha. Intervalos cortos (RSA-like) complementan el ghosting.',
     '· Movilidad crítica: cadera (flexores, rotadores), tobillo (dorsiflexión) y hombro (CARs, apertura). Son los tres más limitantes en squash.',
   ].join('\n')

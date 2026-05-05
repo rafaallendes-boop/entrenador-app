@@ -731,4 +731,50 @@ describe('responseNormalizer', () => {
       'Partido de entrenamiento al mejor de 3 games',
     ])
   })
+
+  describe('outcome classification', () => {
+    it('classifies a clean response as ok', () => {
+      const response = normalizeResponse({
+        text: 'Va bien la semana, sigue así.',
+        provider: 'mock',
+      })
+      expect(response.meta?.outcome).toBe('ok')
+    })
+
+    it('classifies truncated_mid when some actions parsed but others dropped as invalid', () => {
+      const response = normalizeResponse({
+        text: [
+          'Aquí va.',
+          '<actions>',
+          JSON.stringify([
+            { type: 'skip_session', sessionId: 's1', reason: 'descanso' },
+            { type: 'skip_session' /* missing sessionId/reason → invalid */ },
+          ]),
+          '</actions>',
+        ].join('\n'),
+        provider: 'mock',
+      })
+      expect(response.actions).toHaveLength(1)
+      expect(response.meta?.likelyTruncated).toBe(true)
+      expect(response.meta?.outcome).toBe('truncated_mid')
+    })
+
+    it('classifies truncated_early when actions tag opens but no action parsed', () => {
+      const response = normalizeResponse({
+        text: ['Empezando...', '<actions>', '['].join('\n'),
+        provider: 'mock',
+      })
+      expect(response.meta?.outcome).toBe('truncated_early')
+    })
+
+    it('propagates errorClass from raw to meta', () => {
+      const response = normalizeResponse({
+        text: 'parcial',
+        provider: 'mock',
+        truncated: true,
+        errorClass: 'timeout',
+      })
+      expect(response.meta?.errorClass).toBe('timeout')
+    })
+  })
 })

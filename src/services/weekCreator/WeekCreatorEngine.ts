@@ -4,6 +4,7 @@ import { buildAITraceId, getAIRequestPolicy } from '../ai/requestPolicy'
 import { normalizeResponse } from '../ai/responseNormalizer'
 import { getActiveProvider } from '../ai/providerResolver'
 import { useAIDebugStore } from '../../store/useAIDebugStore'
+import { createStageTracker, type CoachOutcome } from '../ai/stageLogger'
 import { buildWeekCreatorPrompt, summarizeWeekCreatorAction } from './WeekCreatorPromptBuilder'
 import { validateWeekCreatorResponse } from './validateWeekCreatorResponse'
 import { resolveWeekCreatorConfig } from './WeekCreatorConfig'
@@ -55,6 +56,8 @@ export const WeekCreatorEngine = {
     const MAX_ATTEMPTS = 2
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
       const traceId = buildAITraceId('week_creator')
+      const tracker = createStageTracker(traceId, 'week_creator')
+      let outcome: CoachOutcome = 'error'
       useAIDebugStore.getState().startRequest({
         traceId,
         requestClass: 'week_creator',
@@ -63,6 +66,7 @@ export const WeekCreatorEngine = {
       })
 
       try {
+        const promptStage = tracker.stage('prompt_build')
         const prompt = buildWeekCreatorPrompt(context, {
           userMessage,
           targetWeekStart: options.targetWeekStart,
@@ -70,7 +74,9 @@ export const WeekCreatorEngine = {
           retryInstruction: buildWeekRetryInstruction(lastFailure?.error, options.targetWeekStart, config.sessionsPerWeek, attempt),
           strictFormatting: attempt >= 2,
         })
+        promptStage.end({ ok: true })
 
+        const providerStage = tracker.stage('provider_call')
         const raw = await provider.call({
           systemPrompt: prompt.systemPrompt,
           userMessage: prompt.userPrompt,
@@ -81,16 +87,23 @@ export const WeekCreatorEngine = {
           allowFallback: policy.allowFallback,
           signal: options.signal,
         })
+        providerStage.end({ ok: true })
 
+        const normalizeStage = tracker.stage('normalize')
         const normalized = normalizeResponse(raw)
+        normalizeStage.end({ ok: true })
+
+        const validateStage = tracker.stage('validate')
         const validation = validateWeekCreatorResponse({
           response: normalized,
           context,
           config,
           targetWeekStart: options.targetWeekStart,
         })
+        validateStage.end({ ok: validation.ok, error: validation.ok ? undefined : validation.error })
 
         if (!validation.ok) {
+          outcome = 'invalid_schema'
           lastFailure = {
             provider: normalized.provider,
             model: normalized.model,
@@ -115,6 +128,7 @@ export const WeekCreatorEngine = {
               error: validation.error,
             })
           }
+          tracker.flush(outcome, { attempt, validationError: validation.error })
           continue
         }
 
@@ -135,6 +149,8 @@ export const WeekCreatorEngine = {
           ? `${message}\n\nNota: ${validation.warning}`
           : message
 
+        outcome = 'ok'
+        tracker.flush(outcome, { attempt })
         return {
           ...normalized,
           actions: [action],
@@ -146,6 +162,7 @@ export const WeekCreatorEngine = {
             : normalized.meta,
         }
       } catch (error) {
+        outcome = 'error'
         lastFailure = {
           provider: provider.name,
           traceId,
@@ -156,6 +173,7 @@ export const WeekCreatorEngine = {
           provider: provider.name,
           errorCode: error instanceof Error ? error.message : 'unknown',
         })
+        tracker.flush(outcome, { attempt, error: lastFailure.error })
       }
     }
 

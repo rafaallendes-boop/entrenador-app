@@ -6,19 +6,7 @@
  * streaming NDJSON when the client requests chunks.
  */
 
-import { stream } from '@netlify/functions'
-
-interface LambdaEvent {
-  httpMethod: string
-  headers?: Record<string, string | undefined>
-  body: string | null
-}
-
-type LambdaResponse = {
-  statusCode: number
-  headers: Record<string, string>
-  body: any
-}
+import { stream, type HandlerEvent, type StreamingResponse } from '@netlify/functions'
 
 type ProviderName = 'gemini' | 'openai' | 'claude'
 type RequestClass =
@@ -128,7 +116,7 @@ const STREAM_HEADERS = {
 }
 const rateLimitBuckets = new Map<string, { windowStart: number; count: number }>()
 
-function json(statusCode: number, body: object): LambdaResponse {
+function json(statusCode: number, body: object): StreamingResponse {
   return { statusCode, headers: JSON_HEADERS, body: JSON.stringify(body) }
 }
 
@@ -323,7 +311,28 @@ function shouldUseTechnicalRetry(requestClass: RequestClass): boolean {
   return requestClass === 'chat_general' || requestClass === 'weekly_summary' || requestClass === 'import_extract'
 }
 
-function getHeader(headers: LambdaEvent['headers'], name: string): string | undefined {
+const RETRY_BACKOFF_MS = 600
+
+function logCoachAttempt(payload: {
+  traceId: string
+  requestClass: RequestClass
+  attempt: number
+  outcome: 'ok' | 'error'
+  provider: ProviderName
+  attemptTimeoutMs: number
+  durationMs: number
+  errorCode?: TechnicalErrorCode
+  message?: string
+}): void {
+  if (typeof console === 'undefined' || typeof console.info !== 'function') return
+  try {
+    console.info(JSON.stringify({ event: 'coach.attempt', ...payload }))
+  } catch {
+    /* noop */
+  }
+}
+
+function getHeader(headers: HandlerEvent['headers'], name: string): string | undefined {
   if (!headers) return undefined
   const direct = headers[name] ?? headers[name.toLowerCase()]
   if (direct) return direct
@@ -331,7 +340,7 @@ function getHeader(headers: LambdaEvent['headers'], name: string): string | unde
   return found?.[1]
 }
 
-function getClientIp(event: LambdaEvent): string {
+function getClientIp(event: HandlerEvent): string {
   const forwardedFor = getHeader(event.headers, 'x-forwarded-for')
   const forwardedIp = forwardedFor?.split(',')[0]?.trim()
   return getHeader(event.headers, 'x-nf-client-connection-ip')
@@ -340,7 +349,7 @@ function getClientIp(event: LambdaEvent): string {
     ?? 'unknown'
 }
 
-function getBearerToken(event: LambdaEvent): string | undefined {
+function getBearerToken(event: HandlerEvent): string | undefined {
   const authHeader = getHeader(event.headers, 'authorization')?.trim()
   if (!authHeader) return undefined
   const match = /^Bearer\s+(.+)$/i.exec(authHeader)
@@ -356,7 +365,7 @@ function resolveSupabaseAuthConfig(): { url: string; anonKey: string } {
   return { url, anonKey }
 }
 
-async function resolveAuthContext(event: LambdaEvent): Promise<AuthContext> {
+async function resolveAuthContext(event: HandlerEvent): Promise<AuthContext> {
   const ip = getClientIp(event)
   if (!AUTH_REQUIRED) {
     return { userId: 'anonymous', rateLimitKey: `ip:${ip}` }
@@ -750,12 +759,16 @@ async function executeWithPolicy(
   let fallbackUsed = false
   let partialChunks = false
 
+  let attemptIndex = 0
   const runAttempt = async (provider: ProviderName, attemptsRemaining: number) => {
+    attemptIndex += 1
+    const thisAttempt = attemptIndex
     const attemptTimeoutMs = computeAttemptTimeoutMs(deadline, attemptsRemaining)
+    const attemptStartedAt = Date.now()
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), attemptTimeoutMs)
     try {
-      return await invokeProvider(
+      const result = await invokeProvider(
         provider,
         req,
         controller.signal,
@@ -764,14 +777,41 @@ async function executeWithPolicy(
           onChunk(chunk)
         } : undefined,
       )
+      logCoachAttempt({
+        traceId,
+        requestClass,
+        attempt: thisAttempt,
+        outcome: 'ok',
+        provider,
+        attemptTimeoutMs,
+        durationMs: Date.now() - attemptStartedAt,
+      })
+      return result
     } catch (error) {
-      if ((error as Error).name === 'AbortError') {
-        throw makeError(`Timeout del proveedor ${provider} (${attemptTimeoutMs}ms).`, 504, 'timeout', true)
-      }
-      throw normalizeError(error)
+      const normalized = (error as Error).name === 'AbortError'
+        ? makeError(`Timeout del proveedor ${provider} (${attemptTimeoutMs}ms).`, 504, 'timeout', true)
+        : normalizeError(error)
+      logCoachAttempt({
+        traceId,
+        requestClass,
+        attempt: thisAttempt,
+        outcome: 'error',
+        provider,
+        attemptTimeoutMs,
+        durationMs: Date.now() - attemptStartedAt,
+        errorCode: normalized.errorCode,
+        message: normalized.message,
+      })
+      throw normalized
     } finally {
       clearTimeout(timeoutId)
     }
+  }
+
+  const sleepIfBudget = async (ms: number) => {
+    if (ms <= 0) return
+    if (Date.now() + ms >= deadline) return
+    await new Promise<void>((resolve) => setTimeout(resolve, ms))
   }
 
   try {
@@ -788,6 +828,7 @@ async function executeWithPolicy(
     const normalizedFirstError = normalizeError(firstError)
     if (!normalizedFirstError.retryable || partialChunks || maxAttempts <= 1) throw normalizedFirstError
     retryUsed = true
+    await sleepIfBudget(RETRY_BACKOFF_MS)
   }
 
   try {
@@ -813,6 +854,7 @@ async function executeWithPolicy(
       throw normalizedRetryError
     }
     fallbackUsed = true
+    await sleepIfBudget(RETRY_BACKOFF_MS)
   }
 
   const fallbackResult = await runAttempt(fallback!, 1)
@@ -826,7 +868,7 @@ async function executeWithPolicy(
   }
 }
 
-function streamResponse(req: CoachRequest): LambdaResponse {
+function streamResponse(req: CoachRequest): StreamingResponse {
   const traceId = req.traceId ?? `srv-${Date.now()}`
   const requestClass = normalizeRequestClass(req.requestClass)
   const encoder = new TextEncoder()
@@ -861,7 +903,7 @@ function streamResponse(req: CoachRequest): LambdaResponse {
   return { statusCode: 200, headers: STREAM_HEADERS, body: stream }
 }
 
-export const handler = stream(async (event: LambdaEvent): Promise<any> => {
+export const handler = stream(async (event: HandlerEvent): Promise<StreamingResponse> => {
   if (event.httpMethod !== 'POST') {
     return json(405, { error: 'Method not allowed', errorCode: 'unknown' })
   }

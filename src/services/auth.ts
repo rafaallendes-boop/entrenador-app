@@ -14,7 +14,24 @@ export const supabase = isSupabaseConfigured
 
 export function getAuthRedirectUrl(): string {
   const explicitRedirect = (import.meta.env.VITE_AUTH_REDIRECT_URL as string | undefined)?.trim()
-  if (explicitRedirect) return explicitRedirect
+  if (explicitRedirect) {
+    if (typeof window !== 'undefined') {
+      try {
+        const configured = new URL(explicitRedirect)
+        const current = new URL(window.location.origin)
+        if (
+          import.meta.env.DEV &&
+          configured.hostname === current.hostname &&
+          configured.port !== current.port
+        ) {
+          return window.location.origin
+        }
+      } catch {
+        return explicitRedirect
+      }
+    }
+    return explicitRedirect
+  }
 
   if (typeof window !== 'undefined') {
     return window.location.origin

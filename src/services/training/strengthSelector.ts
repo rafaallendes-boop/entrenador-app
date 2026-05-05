@@ -183,11 +183,38 @@ function buildStrengthCandidatePool(
 ): ExerciseDefinition[] {
   return filterByFatigue(
     filterByPhase(
-      filterByExperience(exercises, context),
+      filterBySafetyMetadata(
+        filterByExperience(exercises, context),
+        context,
+      ),
       context,
     ),
     context,
   )
+}
+
+function filterBySafetyMetadata(
+  exercises: ExerciseDefinition[],
+  context: StrengthContext,
+): ExerciseDefinition[] {
+  return exercises.filter((exercise) => {
+    const isHighRisk = exercise.riskLevel === 'high' || exercise.tags.includes('high_impact') || exercise.tags.includes('high_skill')
+    const isHighFatigue = exercise.fatigueCost === 'high'
+
+    if (context.competitionSoon || context.phase === 'taper') {
+      return !isHighRisk && !isHighFatigue
+    }
+
+    if (context.fatigueLevel >= 8) {
+      return exercise.riskLevel !== 'high' && exercise.fatigueCost !== 'high'
+    }
+
+    if (context.fatigueLevel >= 7) {
+      return !isHighRisk
+    }
+
+    return true
+  })
 }
 
 export function pickStrengthStructure(
@@ -369,8 +396,23 @@ function scoreExercises(
         if (exercise.unilateral) score += 2
       }
       if (context.primarySport === 'squash') {
+        if (exercise.sportsTransfer?.includes('squash')) score += 2
         if (exercise.tags.includes('athletic_transfer')) score += 2
+        if (exercise.tags.includes('squash_specific')) score += 4
+        if (exercise.tags.includes('anti_rotation')) score += 3
+        if (exercise.tags.includes('lateral_strength')) score += 3
+        if (exercise.tags.includes('lateral_power')) score += 3
+        if (exercise.tags.includes('court_footwork')) score += 3
+        if (exercise.tags.includes('reactive_stiffness')) score += 2
+        if (exercise.tags.includes('olympic_power') && context.experienceLevel === 'advanced') score += 2
         if (exercise.movement === 'rotation') score += 2
+        if (context.phase === 'build' || context.phase === 'peak') {
+          if (exercise.intensityType === 'power' && exercise.fatigueCost !== 'high') score += 2
+        }
+        if (context.competitionSoon || context.fatigueLevel >= 7) {
+          if (exercise.fatigueCost === 'low') score += 3
+          if (exercise.riskLevel === 'high' || exercise.fatigueCost === 'high') score -= 8
+        }
       }
 
       if (recentExercises.has(normalizeStrengthExerciseKey(exercise.id))) score -= 10
@@ -545,6 +587,18 @@ function deriveStrengthFocus(
   const hasCore = exercises.some((exercise) => exercise.category === 'core')
   const hasPower = exercises.some((exercise) => exercise.intensityType === 'power')
 
+  if (context.primarySport === 'squash') {
+    const hasLateral = exercises.some((exercise) =>
+      exercise.tags.includes('lateral_strength') ||
+      exercise.tags.includes('lateral_power') ||
+      exercise.tags.includes('court_footwork'),
+    )
+
+    if (hasPower && hasLateral) return 'squash power + lateral strength'
+    if (hasPower) return 'squash power + trunk stability'
+    if (hasLateral) return 'squash lateral strength + trunk stability'
+  }
+
   if (context.sportProfile === 'strength_primary') {
     if (main.category === 'upper') return hasCore ? 'upper strength + trunk support' : 'upper strength'
     if (main.category === 'lower') return hasCore ? 'lower strength + trunk stability' : 'lower strength'
@@ -676,7 +730,16 @@ function buildExerciseNotes(
     return 'Prioritize clean execution and stop well before grindy reps.'
   }
   if (exercise.intensityType === 'power') {
+    if (exercise.riskLevel === 'high') {
+      return 'Advanced power drill. Keep volume low, prioritize landing quality and stop if speed or control drops.'
+    }
     return 'Every rep should look fast. Cut the set if speed drops.'
+  }
+  if (context.primarySport === 'squash' && exercise.tags.includes('court_footwork')) {
+    return 'Use this as coordination and footwork quality, not conditioning.'
+  }
+  if (context.primarySport === 'squash' && exercise.tags.includes('anti_rotation')) {
+    return 'Brace against rotation and keep hips stacked for squash transfer.'
   }
   if (index === 0 && context.sportProfile === 'strength_primary') {
     return intensity === 'heavy'
@@ -756,12 +819,18 @@ function pickFirst(
 
 function normalizeEquipment(availableEquipment?: string[]): EquipmentType[] {
   if (!availableEquipment || availableEquipment.length === 0) {
-    return ['barbell', 'dumbbell', 'bodyweight', 'machine', 'cable', 'kettlebell', 'medball', 'bands']
+    return ['barbell', 'dumbbell', 'bodyweight', 'machine', 'cable', 'kettlebell', 'medball', 'bands', 'trap_bar', 'trx', 'box', 'ladder', 'plate', 'stability_ball']
   }
 
   const mapped = availableEquipment
     .map((item) => item.toLowerCase().trim())
     .flatMap<EquipmentType>((item) => {
+      if (item.includes('trap') || item.includes('hex')) return ['trap_bar']
+      if (item.includes('trx') || item.includes('suspension')) return ['trx']
+      if (item.includes('box') || item.includes('cajon') || item.includes('cajón')) return ['box']
+      if (item.includes('ladder') || item.includes('escalera')) return ['ladder']
+      if (item.includes('plate') || item.includes('disco')) return ['plate']
+      if (item.includes('stability') || item.includes('swiss') || item.includes('fitball')) return ['stability_ball']
       if (item.includes('bar')) return ['barbell']
       if (item.includes('manc') || item.includes('dumb')) return ['dumbbell']
       if (item.includes('body') || item.includes('peso')) return ['bodyweight']

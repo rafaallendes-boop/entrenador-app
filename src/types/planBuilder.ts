@@ -54,6 +54,8 @@ export interface PlanGenerationMeta {
   addedFallbackCount?: number
   filteredSportCount?: number
   repairWarnings?: Array<{ code: string; message: string }>
+  stageTimings?: Array<{ stage: string; durationMs: number; ok: boolean; error?: string }>
+  errorClass?: string
 }
 
 export interface PlanGenerationSummary {
