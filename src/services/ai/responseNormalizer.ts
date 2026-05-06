@@ -140,7 +140,7 @@ export function normalizeResponse(raw: AIRawResponse): CoachNormalizedResponse {
   let actions: CoachAction[] | undefined
   let actionParseFailed = false
   let hadActionsMarkup = false
-  let likelyTruncated = raw.truncated === true
+  let likelyTruncated = raw.truncated === true || isMaxTokenFinishReason(raw.finishReason)
   let invalidActionCount = 0
   let createWeekDiagnostics: CreateWeekNormalizationDiagnostic[] = []
   const extraction = extractActionsText(message)
@@ -180,6 +180,10 @@ export function normalizeResponse(raw: AIRawResponse): CoachNormalizedResponse {
 
   message = message.replace(/\n{3,}/g, '\n\n').trim()
 
+  if (requestClass === 'chat_action' && actions?.length && !message) {
+    message = 'Te propongo este cambio:'
+  }
+
   const outcome = classifyOutcome({
     hadActionsMarkup,
     actionParseFailed,
@@ -210,6 +214,15 @@ export function normalizeResponse(raw: AIRawResponse): CoachNormalizedResponse {
       errorClass: raw.errorClass,
     },
   }
+}
+
+function isMaxTokenFinishReason(finishReason: string | undefined): boolean {
+  if (!finishReason) return false
+  const normalized = finishReason.toLowerCase()
+  return normalized === 'max_tokens' ||
+    normalized === 'max_output_tokens' ||
+    normalized === 'length' ||
+    normalized.includes('max_token')
 }
 
 function classifyOutcome(input: {
@@ -373,38 +386,39 @@ function validateAction(obj: unknown): {
     type,
     reason: record.reason.trim(),
   } satisfies Pick<CoachAction, 'type' | 'reason'>
+  const sessionId = getSessionId(record)
 
   switch (type) {
     case 'skip_session':
     case 'delete_session':
-      return { action: typeof record.sessionId === 'string' ? { ...base, sessionId: record.sessionId } : null }
+      return { action: sessionId ? { ...base, sessionId } : null }
 
     case 'replace_session_type':
       return {
-        action: typeof record.sessionId === 'string' && isSessionType(record.newType)
-          ? { ...base, sessionId: record.sessionId, newType: record.newType }
+        action: sessionId && isSessionType(record.newType)
+          ? { ...base, sessionId, newType: record.newType }
           : null,
       }
 
     case 'change_rpe':
       return {
-        action: typeof record.sessionId === 'string' && isRpe(record.newRpe)
-          ? { ...base, sessionId: record.sessionId, newRpe: record.newRpe }
+        action: sessionId && isRpe(record.newRpe)
+          ? { ...base, sessionId, newRpe: record.newRpe }
           : null,
       }
 
     case 'shorten_session':
     case 'lengthen_session':
       return {
-        action: typeof record.sessionId === 'string' && typeof record.newDurationMin === 'number' && record.newDurationMin >= 5
-          ? { ...base, sessionId: record.sessionId, newDurationMin: record.newDurationMin }
+        action: sessionId && typeof record.newDurationMin === 'number' && record.newDurationMin >= 5
+          ? { ...base, sessionId, newDurationMin: record.newDurationMin }
           : null,
       }
 
     case 'move_session':
       return {
-        action: typeof record.sessionId === 'string' && isValidDate(record.targetDate)
-          ? { ...base, sessionId: record.sessionId, targetDate: record.targetDate }
+        action: sessionId && isValidDate(record.targetDate)
+          ? { ...base, sessionId, targetDate: record.targetDate }
           : null,
       }
 
@@ -469,10 +483,10 @@ function validateAction(obj: unknown): {
     }
 
     case 'update_session': {
-      if (typeof record.sessionId !== 'string') return { action: null }
+      if (!sessionId) return { action: null }
       const action: CoachAction = {
         ...base,
-        sessionId: record.sessionId,
+        sessionId,
       }
       if (typeof record.newTitle === 'string' && record.newTitle.trim()) action.newTitle = record.newTitle.trim()
       if (typeof record.newObjective === 'string' && record.newObjective.trim()) action.newObjective = record.newObjective.trim()
@@ -526,6 +540,12 @@ function sessionProposalToActionFields(session: CoachSessionProposal): Partial<C
     warmup: session.warmup,
     cooldown: session.cooldown,
   }
+}
+
+function getSessionId(record: Record<string, unknown>): string | undefined {
+  if (typeof record.sessionId === 'string' && record.sessionId.trim()) return record.sessionId.trim()
+  if (typeof record.session_id === 'string' && record.session_id.trim()) return record.session_id.trim()
+  return undefined
 }
 
 function validateSessionProposal(value: unknown, reason?: string): NormalizeSessionProposalDraftResult {

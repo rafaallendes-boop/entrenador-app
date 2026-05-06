@@ -60,6 +60,8 @@ export interface AIRawResponse {
   fallbackUsed?: boolean
   /** True when the provider stream was cut mid-response due to an error. */
   truncated?: boolean
+  /** Provider stop reason, e.g. MAX_TOKENS / length / max_tokens. */
+  finishReason?: string
   /** Server-side error classification, if any (propagated from coach proxy). */
   errorClass?: AIErrorCode
 }

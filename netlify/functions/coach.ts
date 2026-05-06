@@ -44,6 +44,7 @@ interface ProviderExecutionResult {
   text: string
   provider: ProviderName
   model: string
+  finishReason?: string
   traceId: string
   requestClass: RequestClass
   retryUsed: boolean
@@ -434,7 +435,7 @@ async function callGemini(
   apiKey: string,
   model: string,
   signal: AbortSignal,
-): Promise<{ text: string; model: string }> {
+): Promise<{ text: string; model: string; finishReason?: string }> {
   const res = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
     {
@@ -458,11 +459,11 @@ async function callGemini(
     },
   )
   const data = await fetchJsonOrThrow(res) as {
-    candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>
+    candidates?: Array<{ content?: { parts?: Array<{ text?: string }> }; finishReason?: string }>
   }
   const text = data.candidates?.[0]?.content?.parts?.[0]?.text
   if (!text) throw makeError('Gemini devolvió una respuesta vacía.', 500, 'parse_error')
-  return { text, model }
+  return { text, model, finishReason: data.candidates?.[0]?.finishReason }
 }
 
 async function callOpenAI(
@@ -470,7 +471,7 @@ async function callOpenAI(
   apiKey: string,
   model: string,
   signal: AbortSignal,
-): Promise<{ text: string; model: string }> {
+): Promise<{ text: string; model: string; finishReason?: string }> {
   const res = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -490,12 +491,12 @@ async function callOpenAI(
     }),
   })
   const data = await fetchJsonOrThrow(res) as {
-    choices?: Array<{ message?: { content?: string } }>
+    choices?: Array<{ message?: { content?: string }; finish_reason?: string }>
     model?: string
   }
   const text = data.choices?.[0]?.message?.content
   if (!text) throw makeError('OpenAI devolvió una respuesta vacía.', 500, 'parse_error')
-  return { text, model: data.model ?? model }
+  return { text, model: data.model ?? model, finishReason: data.choices?.[0]?.finish_reason }
 }
 
 async function callClaude(
@@ -503,7 +504,7 @@ async function callClaude(
   apiKey: string,
   model: string,
   signal: AbortSignal,
-): Promise<{ text: string; model: string }> {
+): Promise<{ text: string; model: string; finishReason?: string }> {
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -526,10 +527,11 @@ async function callClaude(
   const data = await fetchJsonOrThrow(res) as {
     content?: Array<{ type?: string; text?: string }>
     model?: string
+    stop_reason?: string
   }
   const text = data.content?.find((item) => item.type === 'text')?.text
   if (!text) throw makeError('Claude devolvió una respuesta vacía.', 500, 'parse_error')
-  return { text, model: data.model ?? model }
+  return { text, model: data.model ?? model, finishReason: data.stop_reason }
 }
 
 async function streamGemini(
@@ -538,7 +540,7 @@ async function streamGemini(
   model: string,
   signal: AbortSignal,
   onChunk: (chunk: string) => void,
-): Promise<{ text: string; model: string }> {
+): Promise<{ text: string; model: string; finishReason?: string }> {
   const res = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${apiKey}`,
     {
@@ -566,8 +568,12 @@ async function streamGemini(
     throw makeError('Gemini streaming falló.', 500, 'server_error')
   }
   return readSseStream(res.body, model, (json) => {
-    const data = JSON.parse(json) as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> }
-    return data.candidates?.[0]?.content?.parts?.[0]?.text ?? ''
+    const data = JSON.parse(json) as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> }; finishReason?: string }> }
+    const candidate = data.candidates?.[0]
+    return {
+      chunk: candidate?.content?.parts?.[0]?.text ?? '',
+      finishReason: candidate?.finishReason,
+    }
   }, onChunk)
 }
 
@@ -577,7 +583,7 @@ async function streamOpenAI(
   model: string,
   signal: AbortSignal,
   onChunk: (chunk: string) => void,
-): Promise<{ text: string; model: string }> {
+): Promise<{ text: string; model: string; finishReason?: string }> {
   const res = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -602,8 +608,12 @@ async function streamOpenAI(
     throw makeError('OpenAI streaming falló.', 500, 'server_error')
   }
   return readSseStream(res.body, model, (json) => {
-    const data = JSON.parse(json) as { choices?: Array<{ delta?: { content?: string } }> }
-    return data.choices?.[0]?.delta?.content ?? ''
+    const data = JSON.parse(json) as { choices?: Array<{ delta?: { content?: string }; finish_reason?: string }> }
+    const choice = data.choices?.[0]
+    return {
+      chunk: choice?.delta?.content ?? '',
+      finishReason: choice?.finish_reason,
+    }
   }, onChunk)
 }
 
@@ -613,7 +623,7 @@ async function streamClaude(
   model: string,
   signal: AbortSignal,
   onChunk: (chunk: string) => void,
-): Promise<{ text: string; model: string }> {
+): Promise<{ text: string; model: string; finishReason?: string }> {
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -639,24 +649,26 @@ async function streamClaude(
     throw makeError('Claude streaming falló.', 500, 'server_error')
   }
   return readSseStream(res.body, model, (json) => {
-    const data = JSON.parse(json) as { type?: string; delta?: { type?: string; text?: string } }
+    const data = JSON.parse(json) as { type?: string; delta?: { type?: string; text?: string }; message?: { stop_reason?: string } }
+    const finishReason = data.message?.stop_reason
     if (data.type === 'content_block_delta' && data.delta?.type === 'text_delta') {
-      return data.delta.text ?? ''
+      return { chunk: data.delta.text ?? '', finishReason }
     }
-    return ''
+    return { chunk: '', finishReason }
   }, onChunk)
 }
 
 async function readSseStream(
   body: ReadableStream<Uint8Array>,
   model: string,
-  pickChunk: (json: string) => string,
+  pickChunk: (json: string) => string | { chunk?: string; finishReason?: string },
   onChunk: (chunk: string) => void,
-): Promise<{ text: string; model: string }> {
+): Promise<{ text: string; model: string; finishReason?: string }> {
   const reader = body.getReader()
   const decoder = new TextDecoder()
   let buffer = ''
   let fullText = ''
+  let finishReason: string | undefined
 
   while (true) {
     const { done, value } = await reader.read()
@@ -670,7 +682,9 @@ async function readSseStream(
       const json = line.slice(6).trim()
       if (!json || json === '[DONE]') continue
       try {
-        const chunk = pickChunk(json)
+        const picked = pickChunk(json)
+        const chunk = typeof picked === 'string' ? picked : picked.chunk ?? ''
+        finishReason = typeof picked === 'string' ? finishReason : picked.finishReason ?? finishReason
         if (chunk) {
           fullText += chunk
           onChunk(chunk)
@@ -682,7 +696,7 @@ async function readSseStream(
   }
 
   if (!fullText) throw makeError('El provider devolvió una respuesta vacía.', 500, 'parse_error')
-  return { text: fullText, model }
+  return { text: fullText, model, finishReason }
 }
 
 function resolveModel(provider: ProviderName): string {
@@ -713,7 +727,7 @@ async function invokeProvider(
   req: CoachRequest,
   signal: AbortSignal,
   onChunk?: (chunk: string) => void,
-): Promise<{ text: string; provider: ProviderName; model: string }> {
+): Promise<{ text: string; provider: ProviderName; model: string; finishReason?: string }> {
   const model = resolveModel(provider)
   const key = resolveApiKey(provider)
 

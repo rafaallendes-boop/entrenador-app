@@ -77,7 +77,7 @@ export class ClaudeProvider implements AIProvider {
       throw createProviderError('claude', 'unknown', detail)
     }
 
-    const data = await res.json() as { content: Array<{ type: string; text: string }>; model: string }
+    const data = await res.json() as { content: Array<{ type: string; text: string }>; model: string; stop_reason?: string }
     const text = data.content.find(c => c.type === 'text')?.text ?? ''
     if (!text) throw createProviderError('claude', 'parse_error', 'La API de Claude devolvió una respuesta vacía.')
 
@@ -89,6 +89,7 @@ export class ClaudeProvider implements AIProvider {
       durationMs: Date.now() - t0,
       traceId: request.traceId,
       requestClass: request.requestClass,
+      finishReason: data.stop_reason,
     }
   }
 
@@ -131,6 +132,7 @@ export class ClaudeProvider implements AIProvider {
     const decoder = new TextDecoder()
     let fullText = ''
     let buffer = ''
+    let finishReason: string | undefined
 
     while (true) {
       const { done, value } = await reader.read()
@@ -145,11 +147,12 @@ export class ClaudeProvider implements AIProvider {
         const jsonStr = line.slice(6).trim()
         if (!jsonStr) continue
         try {
-          const event = JSON.parse(jsonStr) as { type?: string; delta?: { type?: string; text?: string } }
+          const event = JSON.parse(jsonStr) as { type?: string; delta?: { type?: string; text?: string }; message?: { stop_reason?: string } }
           if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta') {
             const chunk = event.delta.text ?? ''
             if (chunk) { fullText += chunk; onChunk(chunk) }
           }
+          finishReason = event.message?.stop_reason ?? finishReason
         } catch { /* skip malformed SSE line */ }
       }
     }
@@ -163,6 +166,7 @@ export class ClaudeProvider implements AIProvider {
       durationMs: Date.now() - t0,
       traceId: request.traceId,
       requestClass: request.requestClass,
+      finishReason,
     }
   }
 }

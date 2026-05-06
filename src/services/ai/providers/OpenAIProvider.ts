@@ -76,7 +76,7 @@ export class OpenAIProvider implements AIProvider {
       throw createProviderError('openai', 'unknown', detail)
     }
 
-    const data = await res.json() as { choices: Array<{ message: { content: string } }>; model: string }
+    const data = await res.json() as { choices: Array<{ message: { content: string }; finish_reason?: string }>; model: string }
     const text = data.choices[0]?.message?.content ?? ''
     if (!text) throw createProviderError('openai', 'parse_error', 'La API de OpenAI devolvio una respuesta vacia.')
 
@@ -88,6 +88,7 @@ export class OpenAIProvider implements AIProvider {
       durationMs: Date.now() - t0,
       traceId: request.traceId,
       requestClass: request.requestClass,
+      finishReason: data.choices[0]?.finish_reason,
     }
   }
 
@@ -122,6 +123,7 @@ export class OpenAIProvider implements AIProvider {
     const decoder = new TextDecoder()
     let fullText = ''
     let buffer = ''
+    let finishReason: string | undefined
 
     while (true) {
       const { done, value } = await reader.read()
@@ -136,9 +138,10 @@ export class OpenAIProvider implements AIProvider {
         const jsonStr = line.slice(6).trim()
         if (!jsonStr || jsonStr === '[DONE]') continue
         try {
-          const event = JSON.parse(jsonStr) as { choices?: Array<{ delta?: { content?: string } }> }
+          const event = JSON.parse(jsonStr) as { choices?: Array<{ delta?: { content?: string }; finish_reason?: string }> }
           const chunk = event.choices?.[0]?.delta?.content ?? ''
           if (chunk) { fullText += chunk; onChunk(chunk) }
+          finishReason = event.choices?.[0]?.finish_reason ?? finishReason
         } catch { /* skip malformed SSE line */ }
       }
     }
@@ -152,6 +155,7 @@ export class OpenAIProvider implements AIProvider {
       durationMs: Date.now() - t0,
       traceId: request.traceId,
       requestClass: request.requestClass,
+      finishReason,
     }
   }
 }

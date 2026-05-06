@@ -16,6 +16,8 @@ import {
   resolveConfiguredGenerationStrategy,
 } from '../services/planBuilder/generationState'
 
+const EMPTY_DRAFT_WEEKS_MESSAGE = 'El draft del Plan Builder no tiene semanas. Descártalo y vuelve a generar el shell desde el wizard.'
+
 export type PlanBuilderStatus =
   | 'idle'
   | 'shelling'
@@ -123,6 +125,9 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
         wizardConfig,
         goalEvent,
       })
+      if (weeks.length === 0) {
+        throw new Error(EMPTY_DRAFT_WEEKS_MESSAGE)
+      }
       if (previousPlan?.status === 'draft' && previousPlan.id !== plan.id) {
         await db.trainingPlanWeeks.where('planId').equals(previousPlan.id).delete()
         await db.trainingPlans.delete(previousPlan.id)
@@ -442,6 +447,20 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
     }
     const weeks = await db.trainingPlanWeeks.where('planId').equals(planId).toArray()
     weeks.sort((a, b) => a.weekIndex - b.weekIndex)
+    if (plan.status === 'draft' && weeks.length === 0) {
+      set({
+        plan,
+        weeks: [],
+        issues: [],
+        status: 'error',
+        currentWeekIndex: null,
+        completedWeeks: 0,
+        failedWeekIndexes: [],
+        streamingTextByWeekIndex: {},
+        lastError: EMPTY_DRAFT_WEEKS_MESSAGE,
+      })
+      return
+    }
     const normalizedPlan = normalizePlanGenerationState(plan, weeks)
     if (normalizedPlan.generationState !== plan.generationState) {
       await db.trainingPlans.put(normalizedPlan)

@@ -2,6 +2,69 @@ import { describe, expect, it, vi } from 'vitest'
 import { normalizeResponse } from '../ai/responseNormalizer'
 
 describe('responseNormalizer', () => {
+  it('adds a readable fallback when chat_action returns only actions', () => {
+    const response = normalizeResponse({
+      text: [
+        '<actions>',
+        JSON.stringify([
+          {
+            type: 'add_session',
+            reason: 'Sumar base aerobica',
+            targetDate: '2026-04-10',
+            sessionType: 'running',
+            title: 'Rodaje Z2',
+            durationMin: 45,
+            timeBlock: 'PM',
+            objective: 'Base suave',
+          },
+        ]),
+        '</actions>',
+      ].join('\n'),
+      provider: 'mock',
+      requestClass: 'chat_action',
+    })
+
+    expect(response.message).toBe('Te propongo este cambio:')
+    expect(response.actions).toHaveLength(1)
+  })
+
+  it('marks max-token provider finishes as likely truncated', () => {
+    const response = normalizeResponse({
+      text: 'Respuesta larga cortada',
+      provider: 'mock',
+      requestClass: 'chat_general',
+      finishReason: 'MAX_TOKENS',
+    })
+
+    expect(response.meta?.likelyTruncated).toBe(true)
+  })
+
+  it('accepts snake_case session_id for update_session actions', () => {
+    const response = normalizeResponse({
+      text: [
+        'Ajusto esa sesion.',
+        '<actions>',
+        JSON.stringify([
+          {
+            type: 'update_session',
+            session_id: 'session-1234',
+            reason: 'Bajar carga',
+            newDurationMin: 35,
+          },
+        ]),
+        '</actions>',
+      ].join('\n'),
+      provider: 'mock',
+      requestClass: 'chat_action',
+    })
+
+    expect(response.actions?.[0]).toMatchObject({
+      type: 'update_session',
+      sessionId: 'session-1234',
+      newDurationMin: 35,
+    })
+  })
+
   it('repairs squash add_session without squashDetails', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
 

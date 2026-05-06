@@ -57,7 +57,7 @@ export class GeminiProvider implements AIProvider {
       throw createProviderError('gemini', 'unknown', detail)
     }
 
-    const data = await res.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> }
+    const data = await res.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> }; finishReason?: string }> }
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? ''
     if (!text) throw createProviderError('gemini', 'parse_error', 'La API de Gemini devolvió una respuesta vacía o inesperada.')
 
@@ -69,6 +69,7 @@ export class GeminiProvider implements AIProvider {
       durationMs: Date.now() - t0,
       traceId: request.traceId,
       requestClass: request.requestClass,
+      finishReason: data.candidates?.[0]?.finishReason,
     }
   }
 
@@ -99,6 +100,7 @@ export class GeminiProvider implements AIProvider {
     const decoder = new TextDecoder()
     let fullText = ''
     let buffer = ''
+    let finishReason: string | undefined
 
     while (true) {
       const { done, value } = await reader.read()
@@ -113,9 +115,10 @@ export class GeminiProvider implements AIProvider {
         const jsonStr = line.slice(6).trim()
         if (!jsonStr || jsonStr === '[DONE]') continue
         try {
-          const data = JSON.parse(jsonStr) as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> }
+          const data = JSON.parse(jsonStr) as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> }; finishReason?: string }> }
           const chunk = data.candidates?.[0]?.content?.parts?.[0]?.text ?? ''
           if (chunk) { fullText += chunk; request.onChunk?.(chunk) }
+          finishReason = data.candidates?.[0]?.finishReason ?? finishReason
         } catch { /* skip malformed SSE line */ }
       }
     }
@@ -129,6 +132,7 @@ export class GeminiProvider implements AIProvider {
       durationMs: Date.now() - t0,
       traceId: request.traceId,
       requestClass: request.requestClass,
+      finishReason,
     }
   }
 }

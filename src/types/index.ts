@@ -592,6 +592,7 @@ export interface ChatContextMetadata {
   contextVersion: 1
   intent?: ChatContext['intent']
   traceId?: string
+  likelyTruncated?: boolean
   plannedSessionCount?: number
   historicalSessionCount?: number
   recentSessionCount?: number
@@ -614,6 +615,14 @@ export interface ChatContext {
   athleteMemory?: string
   athleteProfile?: AthleteProfile
   recentMessages?: { role: MessageRole; content: string }[]
+  recentProposals?: Array<{
+    id: string
+    status: CoachProposal['status']
+    createdAt: number
+    resolvedAt?: number
+    message: string
+    actions: CoachAction[]
+  }>
   intent?: 'general_chat' | 'plan_week' | 'adjust_session' | 'weekly_summary'
   /** Multi-week load analytics — optional, computed async before sending */
   loadAnalytics?: import('../services/loadAnalytics').LoadAnalytics

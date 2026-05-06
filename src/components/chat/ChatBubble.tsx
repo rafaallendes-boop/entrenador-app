@@ -2,7 +2,7 @@ import type React from 'react'
 import type { ChatMessage } from '../../types'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
-import { MessageCircle, Zap } from 'lucide-react'
+import { AlertTriangle, MessageCircle, Zap } from 'lucide-react'
 
 interface ChatBubbleProps {
   message: ChatMessage
@@ -70,6 +70,7 @@ function renderInline(text: string): React.ReactNode {
 export default function ChatBubble({ message, hasProposal, onViewProposal }: ChatBubbleProps) {
   const isCoach = message.role === 'coach'
   const time = format(new Date(message.timestamp), 'HH:mm', { locale: es })
+  const likelyTruncated = message.contextMeta?.likelyTruncated === true
 
   return (
     <div className={`flex gap-2 ${isCoach ? 'items-start' : 'items-start flex-row-reverse'}`}>
@@ -101,6 +102,12 @@ export default function ChatBubble({ message, hasProposal, onViewProposal }: Cha
               <Zap size={10} />
               Ver propuesta
             </button>
+          )}
+          {likelyTruncated && (
+            <span className="flex items-center gap-1 text-[11px] font-medium text-amber-300">
+              <AlertTriangle size={10} />
+              Respuesta truncada
+            </span>
           )}
         </div>
       </div>

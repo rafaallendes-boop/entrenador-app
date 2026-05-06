@@ -331,6 +331,7 @@ function buildCoachMessage(
     contextMeta: {
       contextVersion: 1,
       traceId: response.traceId,
+      likelyTruncated: response.meta?.likelyTruncated === true,
     },
   }
 }

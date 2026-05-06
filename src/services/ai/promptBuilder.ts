@@ -218,6 +218,7 @@ function buildAdjustActionPromptResult(context: ChatContext, userMessage?: strin
     },
     { key: 'week', content: buildWeekSection(context), required: true },
     { key: 'sessions', content: buildSessionsSection(plannedSessions, { allowActions: true }), required: true },
+    { key: 'recent_proposals', content: buildRecentProposalsSection(context) },
     { key: 'today', content: buildTodaySection(context), required: true },
     { key: 'fatigue', content: buildFatigueSection(context), required: true },
     { key: 'coach_memory', content: buildCoachMemorySection(context) },
@@ -562,6 +563,7 @@ function buildAdjustResponseInstructionsSection(
     '- Si pide eliminarla, usa delete_session.',
     '- Si pide saltarla, usa skip_session.',
     '- No uses create_week para ajustes puntuales.',
+    '- Para referencias como lunes/martes/viernes/sábado, usa exactamente la fecha indicada en DÍAS DE LA SEMANA ACTUAL. No sumes días ni interpretes en UTC.',
     `- Usa solo deportes permitidos: ${allowedSports.join(', ') || 'sin restricción explícita'}.`,
     '- No arrastres detalles viejos incompatibles cuando reemplaces tipo, ejercicios o foco de una sesión.',
     '- Mantén las sesiones compactas: título corto, objetivo claro y detalles solo cuando aporten valor real.',
@@ -584,6 +586,7 @@ function buildAdjustResponseInstructionsSection(
     '',
     'Campos mínimos de sesión para add_session:',
     '- targetDate: "YYYY-MM-DD"',
+    '- Si el usuario nombró un día de la semana, targetDate debe coincidir con ese día dentro de DÍAS DE LA SEMANA ACTUAL.',
     '- timeBlock: "AM" | "PM"',
     `- sessionType: ${sessionTypeOptions}`,
     '- title: string corto',
@@ -991,6 +994,7 @@ function buildWeekSection(context: ChatContext): string {
 
   const weekStart = formatDateShort(s.weekStartDate)
   lines.push(`Semana: ${weekStart} (7 días)`)
+  lines.push(buildWeekDatesList(s.weekStartDate))
 
   const adh = s.adherencePct != null ? ` (${s.adherencePct}%)` : ''
   lines.push(`Adherencia global: ${s.completedSessions}/${s.plannedSessions} sesiones${adh}`)
@@ -1573,11 +1577,37 @@ function buildSessionsSection(
   return lines.join('\n')
 }
 
+function buildRecentProposalsSection(context: ChatContext): string {
+  const proposals = context.recentProposals
+  if (!proposals || proposals.length === 0) return ''
+
+  const lines: string[] = ['═══ PROPUESTAS RECIENTES Y RESULTADO ═══']
+  lines.push('Usa estos estados como verdad: accepted se aplicó, rejected no se aplicó, pending aún no cambió el plan.')
+
+  for (const proposal of proposals.slice(0, 5)) {
+    const status = proposal.status
+    const summary = sanitizeUserText(proposal.message, 140)
+    const actionSummary = proposal.actions
+      .slice(0, 3)
+      .map((action) => {
+        const id = action.sessionId ? ` ${action.sessionId.slice(0, 8)}` : ''
+        const date = action.targetDate ? ` ${action.targetDate}` : ''
+        return `${action.type}${id}${date}`
+      })
+      .join(', ')
+    lines.push(`- ${status}: ${summary}${actionSummary ? ` (${actionSummary})` : ''}`)
+  }
+
+  lines.push('No digas que una propuesta rechazada fue aplicada. Si el usuario quiere ajustar una sesión creada antes, búscala en SESIONES DISPONIBLES y usa su ID actual.')
+  return lines.join('\n')
+}
+
 function buildTodaySection(context: ChatContext): string {
   const { dayLog } = context
   const today = todayISO()
 
-  const lines: string[] = [`═══ HOY (${formatDateShort(today)}) ═══`]
+  const todayDayName = getDayName(today)
+  const lines: string[] = [`═══ HOY (${formatDateShort(today)} · ${todayDayName}) ═══`]
 
   if (!dayLog) {
     lines.push('Sin registro diario todavía.')

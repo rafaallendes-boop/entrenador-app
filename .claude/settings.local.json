@@ -34,7 +34,11 @@
       "Bash(gunzip -f d1.gz)",
       "Bash(npx tsc *)",
       "Bash(npx vitest *)",
-      "Bash(gunzip -c \"/Users/rafaallendes/.claude/projects/-Users-rafaallendes-Projects-entrenador-app/d4cd627d-7a6b-4a65-accf-f54ea7e13586/tool-results/webfetch-1777577575137-qm8nxa.bin\")"
+      "Bash(gunzip -c \"/Users/rafaallendes/.claude/projects/-Users-rafaallendes-Projects-entrenador-app/d4cd627d-7a6b-4a65-accf-f54ea7e13586/tool-results/webfetch-1777577575137-qm8nxa.bin\")",
+      "mcp__plugin_playwright_playwright__browser_click",
+      "mcp__plugin_playwright_playwright__browser_snapshot",
+      "mcp__plugin_playwright_playwright__browser_navigate",
+      "mcp__plugin_playwright_playwright__browser_console_messages"
     ]
   }
 }

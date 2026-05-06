@@ -1,290 +1,428 @@
 # Entrenador App - Review and Roadmap
 
-Actualizado: 2026-05-01
+Actualizado: 2026-05-05
 
 ## Resumen ejecutivo
 
-El roadmap anterior estaba demasiado largo y ya mezclaba trabajo cerrado con trabajo pendiente. Hoy la base del producto ya es claramente usable:
+La app ya está en fase de estabilización, no de descubrimiento. El producto tiene superficies reales de uso diario, planificación, chat, propuestas, sync, onboarding, nutrición, macroplan y generación de semanas. La prioridad ahora es que el coach sea confiable en local/dev/prod, que los errores sean observables y que el flujo no se caiga por respuestas parciales del modelo, streaming cortado, sync sensible o contratos duplicados.
 
-- app React + TypeScript + Vite con superficies reales de semana, día, chat, onboarding, competition plan, import y settings
-- local-first con Dexie + Zustand + sync a Supabase
-- auth con Supabase + Google OAuth
-- coach con proposals persistidas, aplicables y reversibles
-- macroplan, analytics de carga, nutrición contextual y weekly loop visibles
-- plan builder separado del chat
-- Plan Builder V2 con capa de repair pre-validación, prompts mínimos y telemetría de generación
-- `week_creator` ya operativo y enrutable desde chat
-- `responseNormalizer` ya recupera `add_session` incompletos cuando faltan campos reparables
+Lectura actual:
 
-La lectura honesta hoy es esta:
+- La base React + TypeScript + Vite está verde en build.
+- El coach funciona por `ProxyProvider` y ya tiene proxy local de Vite para `npm run dev`.
+- El endpoint local `/.netlify/functions/coach` existe vía `dev/coachProxyMiddleware.ts`.
+- Las API keys reales para IA pueden vivir en `.env.local` sin `VITE_` cuando se usa `VITE_AI_PROVIDER=proxy`.
+- Plan Builder V2 ya no depende de que el modelo devuelva semanas perfectas: hay repair local, validación post-repair y telemetría.
+- `week_creator` ya está separado del chat y enrutable.
+- `responseNormalizer` recupera `add_session` incompletos cuando son reparables.
+- `stageLogger` agrega timing estructurado por etapa para coach y plan builder.
+- Existe audit de prompt con `npm run audit:prompt`.
+- La decisión de `MACRO PLAN` quedó cerrada: se omite en chat genérico normal, pero se conserva si hay competencia dentro de 14 días.
+- El mayor riesgo técnico sigue siendo que el chat falle de forma intermitente por streaming/provider/normalización/sync, no falta de features.
 
-- el producto ya no está en fase prototipo
-- Plan Builder ya no depende de que el modelo devuelva semanas perfectas
-- el mayor riesgo técnico sigue siendo sync/convergencia
-- el mayor vacío de producto sigue siendo observabilidad, medición de utilidad y cierre del loop de activación
-- monetización todavía no existe como sistema real
+## Estado actual por área
 
-## Ya implementado y fuera del backlog principal
+### Coach y chat
 
-Esto ya existe en código y no debería volver como bloque grande:
+Estado: fuerte, pero sensible.
 
-- chat del coach con proposals ejecutables
-- athlete profile estructurado y persistido
-- onboarding guiado
-- wizard de plan de competencia
-- `plan_builder_redirect` desde chat para planes largos
-- Plan Builder V2 Fase 1: prompt minimal, repair local y validación post-repair
-- repair de semanas generadas: fechas inválidas, sesiones fuera de semana, días no permitidos, colisiones, deportes no permitidos, detalles faltantes y balance de conteo
-- selectors deportivos integrados en repair para squash, running, strength, mobility y cycling
-- telemetría de repair persistida en `generationMeta`: reparadas, movidas, fallback, filtradas y warnings
-- estrategia de generación configurable con default `single`, `pairs` explícito y modo `auto`
-- `week_creator` como flujo separado para crear una sola semana
-- guardrails recientes para que `chat_action` no emita `create_week`
-- defaults conservadores en week creator cuando el perfil viene incompleto
-- validación de deportes permitidos en planning flow
-- macroplan V2 con timeline y sport details
-- ACWR e insights por disciplina principales
-- nutrición contextual estructurada compartida entre dashboard, día y chat
-- notifications + weekly action loop + alertas accionables
-- backup/import/export
+Ya existe:
 
-## Pendiente real por prioridad
+- Chat general y chat de acción.
+- Routing hacia `chat_general`, `chat_action`, `week_creator` y redirect a Plan Builder.
+- Proposals persistidas, aplicables y con limpieza si falla creación.
+- Recovery para respuestas parciales o inválidas en `chat_action`.
+- Normalización con metadata de outcome, truncado y error class.
+- Streaming con fallback a no-stream si no llegó ningún chunk.
+- Debug técnico en Settings con trace, provider, duración y resultado.
+- Stage timings por request con `stageLogger`.
 
-### Crítico
+Riesgo:
 
-1. Blindar `syncService` y mantener build verde.
-   Estado actual:
-   - `build` volvió a estar en verde.
-   - Plan Builder V2 también compila con `npm run build`.
-   - sync sigue siendo el riesgo principal para beta multi-dispositivo, pero ya no por un rojo inmediato de compilación.
-   Falta:
-   - revalidar convergencia entre desktop/móvil y colas retenidas
-   - documentar mejor deletes, tombstones y recovery
+- El chat todavía puede sentirse frágil si el provider corta stream a mitad, responde texto sin acciones cuando el usuario pidió cambios, devuelve JSON mezclado o si la UI procesa tarde una respuesta cancelada.
+- El estado de chat está repartido entre store, proposal lifecycle, provider, normalizer y sync. Esa dispersión aumenta el costo de razonar fallas.
 
-2. Validación operativa real de sync.
-   Falta:
-   - pruebas manuales y semi-automatizadas de conflictos concurrentes
-   - mejor UX cuando la cola queda atascada o hay divergencia
-   - decidir si realtime es realmente necesario para beta o si recovery actual alcanza
+### Plan Builder V2
 
-### Alto
+Estado: estable para beta técnica.
 
-1. Medición del loop coach -> propuesta -> aceptación -> impacto.
-   Ya existe:
-   - proposals persistidas
-   - alertas accionables
-   - weekly action loop
-   Falta:
-   - instrumentación visible para saber qué CTA se usan
-   - aceptación/rechazo por tipo de propuesta
-   - trazabilidad de reactivación y retención semanal
+Ya existe:
 
-2. Cerrar mejor automatización del weekly loop.
-   Falta:
-   - disparar ajustes más directos desde alertas y feedback real
-   - usar `sessionFeedback` y `DayLog` para proponer cambios más prescriptivos
-   - medir qué alertas realmente generan retorno al producto
+- Prompt minimal para generación single-week.
+- Prompt minimal para batch/pairs.
+- Schema completo conservado en Week Creator y Coach Chat.
+- `repairGeneratedWeek()` antes de validar.
+- Reparación de fechas, sesiones fuera de semana, días no permitidos, colisiones, deportes no permitidos y detalles faltantes.
+- Selectors deportivos integrados: squash, running, strength, mobility y cycling.
+- Balance de conteo con recorte priorizado y fallback conservador.
+- Telemetría en `generationMeta`.
+- Strategy default `single`, con `pairs` explícito y `auto` para planes largos.
+- Separación de `errorClass` y `outcome` en generación de semanas.
 
-3. Verificación manual end-to-end de los flows nuevos de planificación.
-   Ya existe:
-   - `week_creator`
-   - redirect a plan builder
-   - guardrails de `create_week`
-   - hardening de `add_session` en `responseNormalizer` para no perder propuestas reparables
-   - Plan Builder V2 Fase 1 con repair local y métricas de salud de generación
-   Falta:
-   - QA manual de usuario nuevo sin perfil completo
-   - QA de chat_action para asegurar que no cree semanas y que sí persista `add_session` reparados
-   - QA del redirect a plan builder para requests de plan largo
-   - QA de generación real en UI revisando repair telemetry en semanas generadas
-   - resolver decisión de prompt genérico: hoy un test espera omitir `MACRO PLAN`, pero el prompt actual lo incluye
+Pendiente de verificación:
 
-### Medio
+- QA manual con modelos reales en semanas largas.
+- Revisar que repair telemetry sea comprensible en Settings/debug o metadata exportable.
+- Decidir si el usuario final ve la telemetría o si queda solo como herramienta técnica.
 
-1. Seguir desacoplando piezas grandes y sensibles.
-   Foco:
-   - `syncService`
-   - bloques puros del prompt builder / lógica del coach
-   - helpers de contexto selector en Plan Builder repair si empieza a crecer
+### Prompt y contexto
 
-2. Convertir analytics en decisiones, no solo visualización.
-   Falta:
-   - más traducción de macroplan y carga a sugerencias concretas
-   - umbrales refinados con uso real
-   - mejor lectura de tendencias, no solo snapshots
+Estado: más controlado.
 
-3. Afinar disciplina-specific coaching en bordes.
-   Foco:
-   - squash competitivo
-   - cycling
-   - mobility
-   - nutrición en días mixtos o conflictivos
+Ya existe:
 
-4. Tests focalizados de UI en superficies críticas.
-   Foco:
-   - SessionCard expandido
-   - WeeklyView / ProposalDrawer
-   - estados visibles del sync
+- Context reduction para chat genérico.
+- Perfil slim en prompts livianos.
+- `MACRO PLAN` condicionado por tipo de request o competencia cercana.
+- Audit de tokens con `npm run audit:prompt`.
 
-### Bajo
+Decisión cerrada:
 
-1. Packaging comercial.
-   Falta:
-   - narrativa de plan pago
-   - definición premium/free
-   - valor empaquetado de nutrición y coach
+- Chat genérico sin competencia cercana debe mantenerse liviano.
+- Chat genérico con competencia dentro de 14 días debe incluir `MACRO PLAN`.
+- `adjust_session` debe incluir `MACRO PLAN`.
 
-2. Monetización real.
-   Falta:
-   - billing
-   - paywall
-   - entitlements
-   - tracking de conversión
+Riesgo:
 
-3. Refinamientos futuros no urgentes.
-   Ejemplos:
-   - más riqueza semántica en squash (`sessionFamily` u otra taxonomía) solo si aparece un límite real
-   - más profundidad cuantitativa para cycling
-   - mejoras cosméticas o de copy en settings y superficies secundarias
+- `promptBuilder.ts` sigue siendo una superficie grande y sensible. No debería modificarse sin tests de contrato y audit de tokens antes/después.
 
-## Estado por área
+### Dev local y prod
 
-### Planificación y coach
+Estado: listo para probar en dev.
 
-Estado: fuerte
+Ya existe:
 
-- propuestas ejecutables y persistidas
-- chat, week creator y plan builder ya están desacoplados
-- macroplan y semana ya conversan razonablemente bien
-- el normalizador ya es más tolerante a respuestas parciales del modelo en `add_session`
-- Plan Builder V2 repara localmente respuestas parciales antes de validar
-- WeekCreator y Coach Chat siguen usando schema completo; Plan Builder usa schema minimal
-- batch pairs usa prompt minimal y degrada a single cuando el batch falla
+- `vite.config.ts` monta `devCoachProxyPlugin`.
+- `npm run dev` puede responder `/.netlify/functions/coach` localmente.
+- `netlify/functions/coach.ts` sigue siendo el camino prod.
+- `ProxyProvider` es el contrato común del cliente.
 
-Pendiente:
+Configuración esperada en `.env.local` para dev con IA real:
 
-- más automatización desde alertas y feedback
-- más medición de aceptación y utilidad real
-- QA manual con modelos reales y semanas largas
-- decidir si las métricas de repair se muestran como UI visible o quedan como metadata técnica
+```env
+VITE_AI_PROVIDER=proxy
+GEMINI_API_KEY=...
+```
+
+Opcional:
+
+```env
+AI_PROVIDER=openai
+OPENAI_API_KEY=...
+```
+
+```env
+AI_PROVIDER=claude
+CLAUDE_API_KEY=...
+```
+
+Para login local con `npm run dev`, revisar:
+
+```env
+VITE_AUTH_REDIRECT_URL=http://localhost:5173
+```
+
+Para `netlify dev`, puede seguir siendo:
+
+```env
+VITE_AUTH_REDIRECT_URL=http://localhost:8888
+```
 
 ### Sync
 
-Estado: sensible
+Estado: principal riesgo abierto.
 
-- la arquitectura existe
-- el riesgo principal sigue abierto
+Ya existe:
 
-Pendiente:
+- Local-first con Dexie.
+- Sync a Supabase.
+- Colas locales.
+- Backup/import/export.
+- Tombstones y tratamiento más durable para `coach_proposals`.
 
-- endurecer pruebas y recovery de sync más allá del build verde actual
-- validar convergencia real y recovery duro
+Riesgo:
 
-### Nutrición contextual
+- Convergencia multi-dispositivo.
+- Recovery cuando hay cola atascada.
+- Deletes y resets remotos.
+- Experiencia visible cuando sync no está sano.
 
-Estado: fuerte
+### Biblioteca de entrenamiento
 
-- ya es capa de producto real, no texto genérico
+Estado: mejorada, pero grande.
 
-Pendiente:
+Ya existe:
 
-- medir impacto en engagement y retención
-- decidir rol comercial dentro del producto pago
+- Biblioteca amplia con transferencia a squash.
+- Nuevos metadatos de riesgo, fatiga, aliases y transferencia.
+- Ajuste de `lateral_band_walk`: ya no se marca como unilateral.
 
-### Monetización
+Riesgo:
 
-Estado: pendiente
+- El scoring puede degradarse si metadatos semánticos se mezclan sin tests de selección.
+- Conviene mantener cambios futuros como curaduría/refactor, no como expansión masiva.
 
-- no hay sistema real todavía
+## Verificación obligatoria en dev antes de prod
+
+### 1. Verificación técnica rápida
+
+Correr:
+
+```bash
+npm run build
+npm test -- src/services/__tests__/promptBuilderContextReduction.test.ts src/services/__tests__/responseNormalizer.test.ts src/services/__tests__/repairWeek.test.ts src/services/__tests__/stageLogger.test.ts
+npm run audit:prompt
+```
+
+Interpretación esperada:
+
+- Build verde.
+- Tests focalizados verdes.
+- Audit de prompt sin crecimiento inesperado en `chat_general`.
+- `chat_general` debe seguir siendo liviano salvo competencia cercana.
+- `chat_action`, `week_creator` y `plan_builder_week` pueden ser más grandes, pero el crecimiento debe estar justificado.
+
+### 2. Verificación local del coach
+
+Preparar `.env.local`:
+
+```env
+VITE_AI_PROVIDER=proxy
+GEMINI_API_KEY=...
+VITE_AUTH_REDIRECT_URL=http://localhost:5173
+```
+
+Levantar:
+
+```bash
+npm run dev
+```
+
+Abrir:
+
+```text
+http://localhost:5173
+```
+
+Probar en chat:
+
+- Mensaje genérico: "Como ves mi semana?"
+- Acción simple: "Agrega una movilidad suave el viernes PM"
+- Ajuste de sesión: "Ajusta la sesión del martes PM porque estoy cansado"
+- Semana: "Creame la próxima semana"
+- Plan largo: "Armame un plan de 8 semanas para mi torneo"
+- Caso de competencia cercana: preguntar por la semana con torneo dentro de 14 días y verificar que el coach use contexto de macroplan.
+
+Qué mirar:
+
+- El coach responde sin error de configuración.
+- No aparece "El coach no está configurado correctamente en el servidor".
+- No aparece error de conexión al coach.
+- En Settings, la última solicitud muestra trace, provider, duración y resultado técnico.
+- Si la respuesta es acción, se crea proposal.
+- Si se acepta proposal, se aplica una vez aunque haya doble click.
+- Si falla proposal, no queda mensaje huérfano del coach.
+
+### 3. Verificación de streaming y recovery
+
+Probar:
+
+- Enviar una acción con respuesta larga.
+- Cancelar o navegar durante la respuesta.
+- Reintentar después de un error.
+- Pedir una acción ambigua: "cambia eso para que sea más suave".
+
+Qué mirar:
+
+- No quedan loaders pegados.
+- No se duplica el mensaje del usuario.
+- No se duplica la proposal.
+- Si el modelo responde texto sin acción ante una pregunta normal, no debe forzarse retry innecesario.
+- Si el usuario pidió una acción y el modelo falla el formato, debe intentar recovery o mostrar error útil.
+
+### 4. Verificación de Plan Builder V2
+
+Probar:
+
+- Crear plan desde wizard con perfil completo.
+- Crear plan con perfil incompleto.
+- Generar semana individual.
+- Generar plan largo.
+- Revisar semanas con sesiones movidas/reparadas.
+
+Qué mirar:
+
+- No se cae la generación si una sesión viene con fecha inválida o deporte no permitido.
+- El resultado respeta días permitidos y `allowDoubleSession`.
+- Las sesiones tienen detalles suficientes.
+- `generationMeta` registra reparadas, movidas, filtradas, fallback y warnings.
+- Si el batch falla, degrada a single sin romper toda la generación.
+
+### 5. Verificación de sync antes de prod
+
+Probar con dos navegadores o desktop/móvil:
+
+- Login en ambos.
+- Crear sesión manual en A y verificar en B.
+- Crear proposal del coach en A, aceptar en A, verificar en B.
+- Crear cambios offline en A, volver online y verificar cola.
+- Borrar una sesión del coach y verificar que no reaparece.
+- Exportar backup, importar en otro navegador y revisar conteos.
+- Ejecutar reset local y reset local+nube solo si se está en ambiente seguro.
+
+Qué mirar:
+
+- No reaparecen registros borrados.
+- No se duplican proposals.
+- No se pisa un cambio local más nuevo con uno remoto viejo.
+- La UI comunica si sync está pendiente o fallando.
+
+### 6. Verificación de prod antes de release
+
+Antes de deploy:
+
+- Confirmar variables en Netlify: `GEMINI_API_KEY` o provider elegido, Supabase URL/key del servidor y modelo si aplica.
+- Confirmar que no hay keys reales con prefijo `VITE_`.
+- Confirmar que los archivos nuevos críticos entran al commit:
+  - `dev/coachProxyMiddleware.ts`
+  - `scripts/audit-prompt-tokens.test.ts`
+  - `scripts/loadtest-week-creator.mjs`
+  - `src/services/ai/stageLogger.ts`
+  - `src/services/__tests__/stageLogger.test.ts`
+- Correr build limpio.
+- Revisar logs de Netlify Function en primera prueba prod.
+
+## Refactorizaciones permitidas ahora
+
+No abrir features nuevas hasta que esto esté estable. El trabajo recomendado es refactor y hardening.
+
+### 1. Unificar contrato del coach proxy
+
+Problema:
+
+- `ProxyProvider`, `dev/coachProxyMiddleware.ts` y `netlify/functions/coach.ts` comparten contrato, pero los tipos viven duplicados.
+
+Refactor recomendado:
+
+- Crear un módulo compartido de tipos request/response/error para proxy.
+- Reusar los mismos `errorCode`, `requestClass`, payload y shape de respuesta en dev y prod.
+- Agregar test de contrato para que dev proxy y Netlify Function no diverjan.
+
+Impacto:
+
+- Menos caídas por diferencias entre local y prod.
+- Debug más confiable.
+
+### 2. Convertir el flujo de chat en state machine explícita
+
+Problema:
+
+- El estado actual mezcla persistencia de mensaje, streaming, proposal, cancelación, cleanup y sync.
+
+Refactor recomendado:
+
+- Modelar estados: `idle`, `persisting_user_message`, `requesting_coach`, `streaming`, `normalizing`, `creating_proposal`, `completed`, `failed`, `cancelled`.
+- Centralizar cleanup de mensajes tardíos y proposals fallidas.
+- Asegurar idempotencia por `traceId` o `requestId`.
+
+Impacto:
+
+- Menos loaders pegados.
+- Menos mensajes/proposals huérfanos.
+- Más fácil reproducir errores.
+
+### 3. Separar `promptBuilder.ts` por contratos estables
+
+Problema:
+
+- `promptBuilder.ts` es grande, sensible y fácil de romper.
+
+Refactor recomendado:
+
+- Extraer gates de secciones: macroplan, nutrición, carga, historial, feedback.
+- Mantener tests de contrato por request type.
+- Correr `npm run audit:prompt` cada vez que se toque.
+
+Impacto:
+
+- Menos regresiones como perder `MACRO PLAN` antes de competencia.
+- Prompts más baratos y controlados.
+
+### 4. Fortalecer normalización como pipeline auditable
+
+Problema:
+
+- Normalización, recovery, truncado, parse failure y schema invalid son conceptos cercanos pero distintos.
+
+Refactor recomendado:
+
+- Mantener `outcome` y `errorClass` separados.
+- Hacer pipeline explícito: extract, parse, classify, repair, validate.
+- Registrar qué etapa falló.
+- Tests con fixtures reales de respuestas malas.
+
+Impacto:
+
+- Menos falsos errores.
+- Mejor retry.
+- Mejor lectura en Settings.
+
+### 5. Refactor de sync por responsabilidades
+
+Problema:
+
+- `syncService` concentra demasiado: push, pull, merge, deletes, recovery, queues y resets.
+
+Refactor recomendado:
+
+- Separar cola local, merge, tombstones, pull remoto, push remoto y reset.
+- Tests por tabla crítica: sessions, coach_proposals, athlete_profiles.
+- Panel de salud simple para cola y último error.
+
+Impacto:
+
+- Menos riesgo multi-dispositivo.
+- Más confianza antes de beta.
+
+### 6. Smoke tests de estabilidad, no tests enormes
+
+Problema:
+
+- La suite completa puede crecer sin cubrir los casos que rompen uso real.
+
+Refactor recomendado:
+
+- Agregar pocos smoke tests de alto valor:
+  - chat action crea proposal una vez
+  - respuesta truncada no crea proposal inválida
+  - cancelación limpia loader
+  - dev proxy devuelve error `misconfigured` si falta key
+  - prompt genérico con competencia incluye macroplan
+  - prompt genérico sin competencia omite macroplan
+
+Impacto:
+
+- Más seguridad con menos ruido.
+
+## Qué no hacer ahora
+
+- No sumar nuevas pantallas.
+- No ampliar la biblioteca de ejercicios salvo correcciones de calidad.
+- No abrir billing/paywall todavía.
+- No agregar más analytics visibles si no ayudan a estabilizar.
+- No tocar `promptBuilder.ts` sin test + audit.
+- No cambiar sync sin escenario de QA multi-dispositivo.
+- No usar API keys reales con prefijo `VITE_`.
 
 ## Próximos pasos recomendados
 
-1. Hacer una ronda corta de QA manual de `chat_action` + `week_creator` + redirect a Plan Builder V2, incluyendo casos de `add_session` reparado y semanas con repair telemetry.
-2. Decidir y corregir el contrato de prompt genérico respecto a `MACRO PLAN` para recuperar suite completa verde.
-3. Agregar instrumentación mínima para proposals, alertas, generación de planes, repair telemetry y aceptación.
-4. Validar sync en escenarios de conflicto y recovery multi-dispositivo.
-5. Recién después abrir trabajo comercial de billing/paywall.
+1. Hacer QA dev con IA real usando `npm run dev`.
+2. Revisar Settings después de cada caso de chat: trace, provider, duración, error técnico y stage timings.
+3. Validar Plan Builder V2 con semanas reales y mirar `generationMeta`.
+4. Validar sync en dos dispositivos o dos navegadores.
+5. Si algo falla, priorizar refactor de contrato/proxy, normalizer o state machine del chat antes de cualquier feature.
+6. Cuando dev esté estable, hacer deploy controlado y mirar logs de Netlify Function en la primera sesión real.
 
-## Plan Builder V2 — Generación robusta
+## Nota de dirección
 
-### Fase 1 — Repair pre-validación — completada
-
-Objetivo cumplido: pasar de “el modelo debe generar una semana perfecta” a “el modelo genera intención semanal compacta y la app completa/repara antes de validar”.
-
-Implementado:
-
-- Prompt minimal para Plan Builder single-week.
-- Prompt minimal para generación batch/pairs.
-- Schema completo conservado para `WeekCreatorPromptBuilder` y Coach Chat.
-- `repairGeneratedWeek()` como capa pre-validación.
-- Reparación de fechas inválidas, sesiones fuera de semana, días no permitidos y colisiones.
-- Respeto de `allowDoubleSession=false` al resolver colisiones.
-- Filtrado de deportes no permitidos.
-- Hidratación de detalles con selectors existentes:
-  - `selectSquashDrills`
-  - `selectRunningSession`
-  - `selectStrengthSession`
-  - `selectMobilitySession`
-  - `selectCyclingSession`
-- Balance de conteo con recorte priorizado y fallback máximo de 2 sesiones.
-- `count_mismatch` post-repair como warning si la diferencia es menor o igual a 1; error si es mayor.
-- Post-repair solo `severity: error` es retryable.
-- Telemetría propagada a `TrainingPlanWeek.generationMeta`.
-- Strategy default `single`, con `pairs` explícito y `auto` para planes largos.
-
-Validación automatizada:
-
-- `npm run build`: verde.
-- `npm test -- --run src/services/__tests__/repairWeek.test.ts src/services/__tests__/planBuilder.test.ts src/store/__tests__/usePlanBuilderStore.test.ts`: verde, 37 tests.
-- `npm test`: 368/369 tests verdes. Falla pendiente ajena a Plan Builder V2: `promptBuilderContextReduction.test` espera que chat genérico no incluya `MACRO PLAN`, pero el prompt actual sí lo incluye.
-
-Pendientes menores de Fase 1:
-
-- Decidir si exportar los schema blocks o mantenerlos privados.
-- Centralizar helpers de contexto selector si `repairWeek.ts` sigue creciendo.
-- Ampliar `repairWeek.test.ts` hacia los 14 casos propuestos originalmente si se quiere cobertura más granular.
-- Hacer QA manual de UI con modelos reales revisando las métricas de repair.
-
-### Fase 2 — Observabilidad y ajuste fino — pendiente
-
-Foco recomendado:
-
-- Mostrar repair telemetry de forma comprensible en UI o panel debug.
-- Métricas por generación: ratio de sesiones reparadas, movidas, filtradas y fallback.
-- Diagnóstico de repair en retry instructions solo si producción muestra patrones repetidos.
-- Separar `repairDiagnostics.ts` si la metadata empieza a crecer.
-- Medir si el prompt minimal mejora tasa de éxito, latencia y costo frente al schema completo.
-
-## Plan de estabilización del Coach
-
-### Fase 1 — Estabilización del flujo chat — completada
-
-- Propagar respuestas truncadas desde backend a `responseNormalizer` con `meta.likelyTruncated`.
-- Endurecer `extractInlineActionsJson` para preferir bloques `<actions>` y evitar capturar JSON ajeno.
-- Mostrar warnings cuando `create_week` dropee sesiones inválidas.
-- Evitar reintentos de formato cuando el modelo respondió coherentemente sin acciones.
-- Endurecer parsing de chunks SSE corruptos sin cortar todo el stream.
-- Mover el lock visual de envío antes de persistir el mensaje de usuario.
-
-### Fase 2 — Propuestas y sync — completada
-
-- Hacer `acceptProposal` idempotente frente a doble click con guard local y mutex en store.
-- Reforzar `coach_proposals` en sync: Tier B, serialización por entidad y tombstones de borrado.
-- Decisión explícita: `coach_proposals` es durable; `chat_messages` queda efímero/Tier C en multi-device.
-
-### Fase 3 — Routing e intención — completada
-
-- Unificar detectores de intención de chat en un solo módulo testeado.
-- Cubrir frases reales de `chat_general`, `chat_action`, `week_creator` y redirect a plan builder.
-- Eliminar heurísticas literales poco probables en `inferCoachActionIntent`.
-
-### Fase 4 — UX y bordes operativos — completada
-
-- Mejorar experiencia de usuario nuevo con perfil incompleto antes de generar semana.
-- Persistir auto-submit keys del plan builder en `sessionStorage`.
-- Refinar falsos positivos de detección deportiva en notas y memoria.
-- Seguir desacoplando bloques puros de `promptBuilder` y superficies sensibles de `syncService`.
-
-## Nota de revisión
-
-Este roadmap intencionalmente deja fuera features ya cerradas. La prioridad real ya no es “sumar más módulos”, sino volver confiable, medible y operable lo que ya existe.
+La prioridad real ya no es que el coach sea más ambicioso. La prioridad es que sea aburridamente confiable: responder, recuperarse, no duplicar, no dejar basura, explicar errores técnicos y comportarse igual en local, dev y prod.

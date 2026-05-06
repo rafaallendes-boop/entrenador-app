@@ -2897,41 +2897,43 @@ export async function migrateLocalDataToCloud(userId: string): Promise<void> {
     const proposalRows = coachProposals.map((proposal) => coachProposalToRow(proposal, userId))
     const profileRows = athleteProfiles.map((profile) => athleteProfileToRow(profile, userId))
 
+    const upsertMigrationRows = async (
+      table: SupabaseTable,
+      rows: Array<Record<string, unknown>>,
+      options?: { onConflict?: string; ignoreDuplicates?: boolean },
+    ) => {
+      if (rows.length === 0) return { table, error: null }
+      const result = options
+        ? await getSupabase().from(table).upsert(rows as never, options)
+        : await getSupabase().from(table).upsert(rows as never)
+      return { table, error: result.error }
+    }
+
     const migrationResults = await Promise.all([
-      sessionRows.length > 0
-        ? getSupabase().from('sessions').upsert(sessionRows as never).then((result) => ({ table: 'sessions', error: result.error }))
-        : Promise.resolve({ table: 'sessions', error: null }),
-      dayLogRows.length > 0
-        ? getSupabase().from('day_logs').upsert(dayLogRows as never).then((result) => ({ table: 'day_logs', error: result.error }))
-        : Promise.resolve({ table: 'day_logs', error: null }),
-      weekRows.length > 0
-        ? getSupabase().from('week_summaries').upsert(weekRows as never).then((result) => ({ table: 'week_summaries', error: result.error }))
-        : Promise.resolve({ table: 'week_summaries', error: null }),
-      chatRows.length > 0
-        ? getSupabase().from('chat_messages').upsert(chatRows as never).then((result) => ({ table: 'chat_messages', error: result.error }))
-        : Promise.resolve({ table: 'chat_messages', error: null }),
-      proposalRows.length > 0
-        ? getSupabase().from('coach_proposals').upsert(proposalRows as never).then((result) => ({ table: 'coach_proposals', error: result.error }))
-        : Promise.resolve({ table: 'coach_proposals', error: null }),
+      upsertMigrationRows('sessions', sessionRows, { onConflict: 'id' }),
+      upsertMigrationRows('day_logs', dayLogRows, { onConflict: 'user_id,date' }),
+      upsertMigrationRows('week_summaries', weekRows, { onConflict: 'user_id,week_start_date' }),
+      upsertMigrationRows('chat_messages', chatRows),
+      upsertMigrationRows('coach_proposals', proposalRows, { onConflict: 'id' }),
     ])
     const trainingPlanResult = trainingPlanRows.length > 0
       ? await getSupabase()
         .from('training_plans')
-        .upsert(trainingPlanRows as never)
-        .then((result) => ({ table: 'training_plans', error: result.error }))
-      : { table: 'training_plans', error: null }
+        .upsert(trainingPlanRows as never, { onConflict: 'id' })
+        .then((result) => ({ table: 'training_plans' as const, error: result.error }))
+      : { table: 'training_plans' as const, error: null }
     const trainingPlanWeekResult = trainingPlanWeekRows.length > 0
       ? await getSupabase()
         .from('training_plan_weeks')
-        .upsert(trainingPlanWeekRows as never)
-        .then((result) => ({ table: 'training_plan_weeks', error: result.error }))
-      : { table: 'training_plan_weeks', error: null }
+        .upsert(trainingPlanWeekRows as never, { onConflict: 'id' })
+        .then((result) => ({ table: 'training_plan_weeks' as const, error: result.error }))
+      : { table: 'training_plan_weeks' as const, error: null }
     if (profileRows.length > 0 && !getProfileResetLock(userId)) {
       const syncRows = profileRows.map(toAthleteProfileSyncRow)
       const coalesced = coalesceAthleteProfileRows(syncRows)
       await persistAthleteProfileRow(coalesced as unknown as Record<string, unknown>, userId)
     }
-    const profileResult = { table: 'athlete_profiles', error: null }
+    const profileResult = { table: 'athlete_profiles' as const, error: null }
     migrationResults.push(trainingPlanResult, trainingPlanWeekResult, profileResult)
 
     const failedTables = migrationResults.filter((result) => result.error != null)

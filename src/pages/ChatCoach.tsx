@@ -150,10 +150,21 @@ export default function ChatCoach() {
       weekDayLogs: Object.values(dayLogs),
       athleteMemory: coachMemory || undefined,
       athleteProfile: athleteProfile ?? undefined,
+      recentProposals: [...proposals]
+        .sort((a, b) => b.createdAt - a.createdAt)
+        .slice(0, 5)
+        .map((proposal) => ({
+          id: proposal.id,
+          status: proposal.status,
+          createdAt: proposal.createdAt,
+          resolvedAt: proposal.resolvedAt,
+          message: proposal.message,
+          actions: proposal.actions,
+        })),
       intent: detectChatIntent(message),
       loadAnalytics: loadAnalytics ?? undefined,
     }
-  }, [sessions, currentWeekSummary, dayLogs, coachMemory, athleteProfile, loadAnalytics])
+  }, [sessions, currentWeekSummary, dayLogs, coachMemory, athleteProfile, proposals, loadAnalytics])
 
   const handleSend = useCallback(async (message: string) => {
     const result = await sendMessage(message, buildContext(message))
@@ -204,6 +215,8 @@ export default function ChatCoach() {
       setTimeout(() => setProposalError(null), 8000)
       return
     }
+
+    await loadWeek(currentWeekStartISO())
 
     const createWeekAction = proposal.actions.find((action) => action.type === 'create_week')
     const warningSuffix = result.warnings.length > 0 ? ` Nota: ${result.warnings.join(' ')}` : ''

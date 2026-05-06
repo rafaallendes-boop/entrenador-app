@@ -171,6 +171,7 @@ export class ProxyProvider implements AIProvider {
     let fallbackUsed = false
     let truncated = false
     let truncatedErrorClass: AIErrorCode | undefined
+    let finishReason: string | undefined
 
     while (true) {
       const { done, value } = await reader.read()
@@ -195,6 +196,7 @@ export class ProxyProvider implements AIProvider {
             errorCode?: AIErrorCode
             traceId?: string
             truncated?: boolean
+            finishReason?: string
           }
 
           if (event.type === 'chunk' && event.chunk) {
@@ -209,6 +211,7 @@ export class ProxyProvider implements AIProvider {
             retryUsed = event.retryUsed ?? retryUsed
             fallbackUsed = event.fallbackUsed ?? fallbackUsed
             fullText = event.text ?? fullText
+            finishReason = event.finishReason ?? finishReason
             continue
           }
 
@@ -243,6 +246,7 @@ export class ProxyProvider implements AIProvider {
       retryUsed,
       fallbackUsed,
       truncated,
+      finishReason,
       errorClass: truncatedErrorClass,
     }
   }

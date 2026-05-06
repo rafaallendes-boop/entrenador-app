@@ -1119,6 +1119,7 @@ function optionalChatContextMetadata(value: unknown, path: string): ChatMessage[
           `${path}.intent`,
         ) as NonNullable<ChatMessage['contextMeta']>['intent'],
     traceId: optionalString(row.traceId, `${path}.traceId`),
+    likelyTruncated: optionalBoolean(row.likelyTruncated, `${path}.likelyTruncated`),
     plannedSessionCount: optionalFiniteNumber(row.plannedSessionCount, `${path}.plannedSessionCount`),
     historicalSessionCount: optionalFiniteNumber(row.historicalSessionCount, `${path}.historicalSessionCount`),
     recentSessionCount: optionalFiniteNumber(row.recentSessionCount, `${path}.recentSessionCount`),

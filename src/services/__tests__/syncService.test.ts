@@ -59,7 +59,7 @@ let coachProposalRows: unknown[] = []
 let athleteProfileRows: unknown[] = []
 let tableResults = new Map<string, SupabaseResult>()
 let actionResults = new Map<string, SupabaseResult>()
-const upsertCalls: Array<{ table: string; payload: unknown }> = []
+const upsertCalls: Array<{ table: string; payload: unknown; options?: unknown }> = []
 const insertCalls: Array<{ table: string; payload: unknown }> = []
 const deleteCalls: Array<{ table: string; filters: Array<{ op: 'eq' | 'in'; column: string; value: unknown }> }> = []
 const updateCalls: Array<{ table: string; payload: unknown; filters: Array<{ op: 'eq' | 'in'; column: string; value: unknown }> }> = []
@@ -99,8 +99,8 @@ function getSupabaseResult(table: string, action: 'delete' | 'update' | 'select'
 
 function createSupabaseFrom() {
   return (table: string) => ({
-    upsert: vi.fn((payload: unknown) => {
-      upsertCalls.push({ table, payload })
+    upsert: vi.fn((payload: unknown, options?: unknown) => {
+      upsertCalls.push({ table, payload, options })
       return Promise.resolve(getSupabaseResult(table, 'upsert'))
     }),
     insert: vi.fn((payload: unknown) => {
@@ -315,6 +315,45 @@ describe('syncService', () => {
     const weekSummaryUpsert = upsertCalls.find((call) => call.table === 'week_summaries')
     expect(weekSummaryUpsert).toBeTruthy()
     expect((weekSummaryUpsert?.payload as Array<Record<string, unknown>>)[0]?.updated_at).toBe(777)
+    expect(weekSummaryUpsert?.options).toEqual({ onConflict: 'user_id,week_start_date' })
+  })
+
+  it('uses logical unique keys for migration upserts that can collide across devices', async () => {
+    dayLogRows = [{
+      id: 'local-day-log',
+      date: '2026-04-06',
+      updatedAt: 10,
+      sleepHours: 7,
+    }]
+    weekSummaryRows = [{
+      id: 'local-week-summary',
+      weekStartDate: '2026-04-06',
+      updatedAt: 20,
+      totalSessions: 1,
+      totalMinutes: 45,
+      plannedSessions: 1,
+      completedSessions: 0,
+      plannedMinutes: 45,
+      completedMinutes: 0,
+      squashSessions: 0,
+      runningSessions: 1,
+      strengthSessions: 0,
+    }]
+    chatMessageRows = [{
+      id: 'chat-1',
+      role: 'user',
+      content: 'hola',
+      timestamp: 1,
+      chatSessionId: 'thread-1',
+    }]
+
+    const syncService = await import('../syncService')
+
+    await syncService.migrateLocalDataToCloud('user-1')
+
+    expect(upsertCalls.find((call) => call.table === 'day_logs')?.options).toEqual({ onConflict: 'user_id,date' })
+    expect(upsertCalls.find((call) => call.table === 'week_summaries')?.options).toEqual({ onConflict: 'user_id,week_start_date' })
+    expect(upsertCalls.find((call) => call.table === 'chat_messages')?.options).toBeUndefined()
   })
 
   it('migrates only active or archived plans and their weeks', async () => {

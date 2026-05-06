@@ -390,9 +390,11 @@ export default function PlanBuilderV2Page() {
   const navigate = useNavigate()
   const location = useLocation()
   const athleteProfile = useCoachMemoryStore((s) => s.athleteProfile)
+  const hasLoaded = useCoachMemoryStore((s) => s.hasLoaded)
+  const loadMemory = useCoachMemoryStore((s) => s.loadMemory)
   const {
     plan, weeks, issues, status, currentWeekIndex, completedWeeks, failedWeekIndexes, streamingTextByWeekIndex, lastError,
-    createDraft, runGeneration, retryFullGeneration, regenerateWeek, acceptPlan, discard,
+    createDraft, runGeneration, retryFullGeneration, regenerateWeek, acceptPlan, discard, loadDraft,
   } = usePlanBuilderStore()
 
   const [selectedWeekIndex, setSelectedWeekIndex] = useState<number | null>(null)
@@ -420,6 +422,11 @@ export default function PlanBuilderV2Page() {
     // We intentionally only run this on first mount when state is present.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  useEffect(() => {
+    if (hasLoaded) return
+    void loadMemory()
+  }, [hasLoaded, loadMemory])
 
   useEffect(() => {
     if (!athleteProfile || !athleteProfile.planWizardConfig || !goalEvent) return
@@ -451,8 +458,19 @@ export default function PlanBuilderV2Page() {
         .sort((a, b) => b.updatedAt - a.updatedAt)[0]
 
       if (matchingPlan) {
-        await usePlanBuilderStore.getState().loadDraft(matchingPlan.id)
-        return
+        const matchingWeeks = await db.trainingPlanWeeks
+          .where('planId')
+          .equals(matchingPlan.id)
+          .toArray()
+        if (cancelled) return
+        if (matchingWeeks.length > 0) {
+          await loadDraft(matchingPlan.id)
+          return
+        }
+        if (matchingPlan.status === 'draft') {
+          await db.trainingPlanWeeks.where('planId').equals(matchingPlan.id).delete()
+          await db.trainingPlans.delete(matchingPlan.id)
+        }
       }
 
       await createDraft({ profile: athleteProfile, wizardConfig })
@@ -461,7 +479,7 @@ export default function PlanBuilderV2Page() {
     return () => {
       cancelled = true
     }
-  }, [athleteProfile, createDraft, currentDraftSignature, expectedDraftSignature, goalEvent, plan])
+  }, [athleteProfile, createDraft, currentDraftSignature, expectedDraftSignature, goalEvent, loadDraft, plan])
 
   const effectiveSelectedWeekIndex = (() => {
     // If there are failed weeks and the user hasn't explicitly selected one of them,
@@ -487,6 +505,19 @@ export default function PlanBuilderV2Page() {
     ...(!hasFailedWeeks && hasIncompleteWeeks ? ['Completa o regenera todas las semanas antes de aceptar el plan.'] : []),
     ...errors.map((issue) => issue.message),
   ]
+
+  if (!hasLoaded && !athleteProfile) {
+    return (
+      <div className="px-4 pt-12 pb-8 max-w-md mx-auto">
+        <Card className="p-4 space-y-3">
+          <h1 className="text-lg font-bold text-ink">Plan Builder</h1>
+          <p className="text-sm text-ink-muted">
+            Preparando tu perfil antes de construir el plan.
+          </p>
+        </Card>
+      </div>
+    )
+  }
 
   if (!athleteProfile?.planWizardConfig || !goalEvent) {
     return (
@@ -628,6 +659,22 @@ export default function PlanBuilderV2Page() {
             sport={getSportFromGoalEvent(goalEvent)}
             onInitialize={() => { void handleInitializeProtocol() }}
           />
+        ) : plan && weeks.length === 0 ? (
+          <div
+            className="rounded-2xl p-5"
+            style={{ background: 'rgba(248,113,113,0.06)', border: '1px solid rgba(248,113,113,0.18)' }}
+          >
+            <div className="flex items-start gap-3">
+              <AlertTriangle size={18} className="mt-0.5 flex-shrink-0 text-red-400" />
+              <div>
+                <h2 className="font-display text-base font-bold text-ink">El shell no tiene semanas</h2>
+                <p className="mt-1 text-sm text-ink-muted">
+                  El draft guardado quedó incompleto. Descártalo y vuelve a generar el plan desde el wizard.
+                </p>
+                {lastError && <p className="mt-2 text-xs text-red-400">{lastError}</p>}
+              </div>
+            </div>
+          </div>
         ) : status === 'failed' || plan?.generationState === 'failed' ? (
           <div
             className="rounded-2xl p-5"

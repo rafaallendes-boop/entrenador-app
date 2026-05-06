@@ -184,6 +184,21 @@ describe('usePlanBuilderStore', () => {
     expect(state.status).toBe('shell_ready')
   })
 
+  it('loadDraft rejects a draft plan that has no weeks', async () => {
+    await createShell()
+    const planId = usePlanBuilderStore.getState().plan?.id
+    expect(planId).toBeTruthy()
+    mocks.weeks.clear()
+    resetStore()
+
+    await usePlanBuilderStore.getState().loadDraft(planId!)
+
+    const state = usePlanBuilderStore.getState()
+    expect(state.status).toBe('error')
+    expect(state.weeks).toEqual([])
+    expect(state.lastError).toContain('no tiene semanas')
+  })
+
   it('runGeneration complete leaves complete/ready', async () => {
     const profile = await createShell()
     mocks.generatePlanWeeks.mockImplementation(async ({ weeks, onWeekUpdate }: GeneratePlanWeeksMockInput) => {

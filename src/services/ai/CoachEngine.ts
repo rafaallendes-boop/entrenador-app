@@ -13,6 +13,7 @@ import { useAIDebugStore } from '../../store/useAIDebugStore'
 import { sendWithRecovery } from './coachRecovery'
 import { resolveChatRoute } from '../chatRouting'
 import { createStageTracker, type CoachOutcome } from './stageLogger'
+import { postProcessCoachActions } from './actionPostProcessor'
 
 export type CoachActionIntent = 'create_full_plan' | 'modify_plan' | 'none'
 type CoachSendOptions = {
@@ -182,6 +183,9 @@ async function sendTrackedCoachRequest(
         : await sendDirect(provider, request)
       providerStage.end({ ok: true })
 
+      const finalResult = requestClass === 'chat_action'
+        ? postProcessCoachActions(result, context, userMessage)
+        : result
       const normalizedOutcome = result.meta?.outcome
       outcome =
         normalizedOutcome === 'truncated_mid' ? 'truncated'
@@ -189,7 +193,7 @@ async function sendTrackedCoachRequest(
           : normalizedOutcome === 'parse_invalid' ? 'parse_fail'
           : normalizedOutcome === 'schema_invalid' ? 'invalid_schema'
           : 'ok'
-      return result
+      return finalResult
     } catch (error) {
       if (error instanceof AIProviderError) {
         outcome =

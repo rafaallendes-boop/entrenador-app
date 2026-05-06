@@ -89,4 +89,59 @@ describe('promptBuilder request class branching', () => {
     expect(prompt).not.toContain('EJEMPLO — microciclo competitivo con partido el sábado')
     expect(prompt).not.toContain('Para CREAR una semana completa')
   })
+
+  it('pins weekday names to absolute dates for chat_action date resolution', () => {
+    const prompt = buildCoachSystemPrompt({
+      ...makeContext(),
+      currentWeekSummary: {
+        id: 'week-1',
+        weekStartDate: '2026-05-04',
+        totalSessions: 0,
+        totalMinutes: 0,
+        plannedSessions: 0,
+        completedSessions: 0,
+        plannedMinutes: 0,
+        completedMinutes: 0,
+        squashSessions: 0,
+        runningSessions: 0,
+        strengthSessions: 0,
+        updatedAt: 1,
+      },
+    }, {
+      requestClass: 'chat_action',
+      userMessage: 'Agrega running el viernes PM',
+    })
+
+    expect(prompt).toContain('2026-05-08 (viernes)')
+    expect(prompt).toContain('Para referencias como lunes/martes/viernes/sábado, usa exactamente la fecha indicada')
+  })
+
+  it('includes recent proposal outcomes so rejected changes are not treated as applied', () => {
+    const prompt = buildCoachSystemPrompt({
+      ...makeContext(),
+      recentProposals: [{
+        id: 'proposal-1',
+        status: 'rejected',
+        createdAt: 10,
+        resolvedAt: 20,
+        message: 'Agregar running el viernes PM',
+        actions: [{
+          type: 'add_session',
+          targetDate: '2026-05-08',
+          timeBlock: 'PM',
+          sessionType: 'running',
+          title: 'Rodaje',
+          durationMin: 45,
+          reason: 'Sostener base',
+        }],
+      }],
+    }, {
+      requestClass: 'chat_action',
+      userMessage: 'ajusta eso',
+    })
+
+    expect(prompt).toContain('PROPUESTAS RECIENTES Y RESULTADO')
+    expect(prompt).toContain('rejected: <<user-text>>Agregar running el viernes PM<</user-text>>')
+    expect(prompt).toContain('No digas que una propuesta rechazada fue aplicada')
+  })
 })
