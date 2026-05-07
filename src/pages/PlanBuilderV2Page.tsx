@@ -409,7 +409,9 @@ function SportAthleteIllustration({ goalEvent, className }: { goalEvent: GoalEve
 
 function buildDraftSignature(goalEventId: string, wizardConfig: PlanWizardConfig): string {
   // Exclude timestamps so re-running the wizard with the same settings matches an existing draft.
-  const { createdAt: _c, updatedAt: _u, ...stableConfig } = wizardConfig
+  const stableConfig: Partial<PlanWizardConfig> = { ...wizardConfig }
+  delete stableConfig.createdAt
+  delete stableConfig.updatedAt
   return JSON.stringify({ goalEventId, wizardConfig: stableConfig })
 }
 

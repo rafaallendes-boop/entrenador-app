@@ -37,5 +37,7 @@ describe('chatRouting', () => {
   it('redirects explicit multi-week planning requests to Plan Builder', () => {
     expect(resolveChatRoute('Hazme el plan hasta el evento').kind).toBe('plan_builder_redirect')
     expect(resolveChatRoute('Quiero todas las semanas hasta el torneo').kind).toBe('plan_builder_redirect')
+    expect(resolveChatRoute('Créame 2 semanas').kind).toBe('plan_builder_redirect')
+    expect(resolveChatRoute('Armame dos semanas de entrenamiento').kind).toBe('plan_builder_redirect')
   })
 })

@@ -153,8 +153,8 @@ export function computeTierHealthMap(params: {
   const blockedTier = params.lastErrorEntity ? getEntityTier(params.lastErrorEntity) : null
 
   const deriveHealth = (tier: SyncTier): SyncTierHealth => {
-    if (byTier[tier].length === 0) return 'healthy'
     if (blockedTier === tier) return 'blocked'
+    if (byTier[tier].length === 0) return 'healthy'
     return 'degraded'
   }
 

@@ -188,7 +188,7 @@ function validateAllowedSports(
   sessions: CoachSessionProposal[],
   config: WeekCreatorEffectiveConfig,
 ): string | undefined {
-  const allowedSports = new Set<SupportedSport>(config.allowedSports)
+  const allowedSports = new Set<SupportedSport>([...config.allowedSports, 'mobility'])
 
   const invalid = sessions.find((session) => {
     const sport = normalizeSessionSport(session)

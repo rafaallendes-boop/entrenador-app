@@ -3,6 +3,7 @@ import { addDays, format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { buildWeekCreatorSystemPrompt } from '../week/prompts/weekPrompt'
 import type { WeekCreatorEffectiveConfig } from './WeekCreatorConfig'
+import { normalizeSport } from '../../utils/athlete'
 
 export interface WeekCreatorPromptInput {
   userMessage: string
@@ -42,7 +43,7 @@ export function buildWeekCreatorPrompt(
     `No devuelvas texto conversacional fuera de <actions>.`,
     '',
     buildProfileSummary(profile),
-    buildGoalSummary(goalEvent, profile?.macroPlan?.currentPhase, profile?.macroPlan?.blockFocus),
+    buildGoalSummary(goalEvent, profile?.macroPlan?.currentPhase, profile?.macroPlan?.blockFocus, config.primarySport),
     buildConfigSummary(config),
     buildPrioritySportSummary(prioritySport, config.sessionsPerWeek),
     buildCurrentWeekSessionsSummary(targetWeekSessions, input.targetWeekStart),
@@ -113,12 +114,21 @@ function buildGoalSummary(
   goalEvent: { title?: string; date?: string; sport?: string } | undefined,
   currentPhase: string | undefined,
   blockFocus: string | undefined,
+  primarySport: SupportedSport | undefined,
 ): string {
   const parts: string[] = []
+  const goalSport = goalEvent?.sport ? normalizeSport(goalEvent.sport) : undefined
   if (goalEvent?.title || goalEvent?.date) {
-    parts.push(`Evento objetivo: ${goalEvent?.title ?? 'objetivo principal'}${goalEvent?.date ? ` (${goalEvent.date})` : ''}`)
+    const eventLabel = goalSport && primarySport && goalSport !== primarySport
+      ? 'Evento heredado/de plan anterior'
+      : 'Evento objetivo'
+    parts.push(`${eventLabel}: ${goalEvent?.title ?? 'objetivo principal'}${goalEvent?.date ? ` (${goalEvent.date})` : ''}`)
   }
   if (goalEvent?.sport) parts.push(`Deporte del objetivo: ${goalEvent.sport}`)
+  if (goalSport && primarySport && goalSport !== primarySport) {
+    parts.push(`Deporte principal declarado actual: ${primarySport}`)
+    parts.push(`No uses el evento ${goalSport} como restricción dura si el usuario pide una semana de ${primarySport}.`)
+  }
   if (currentPhase) parts.push(`Fase actual: ${currentPhase}`)
   if (blockFocus) parts.push(`Foco del bloque: ${blockFocus}`)
   return parts.length > 0

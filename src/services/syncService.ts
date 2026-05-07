@@ -407,6 +407,31 @@ function sortRemoteWipeTables(tables: Iterable<SupabaseTable>): SupabaseTable[] 
   return unique.sort((a, b) => REMOTE_WIPE_ORDER.indexOf(a) - REMOTE_WIPE_ORDER.indexOf(b))
 }
 
+function isOptionalPlanSyncTable(table: SupabaseTable | null | undefined): boolean {
+  return table === 'training_plans' || table === 'training_plan_weeks'
+}
+
+function isOptionalPlanSchemaMismatch(errorInfo: SyncErrorInfo, table: SupabaseTable | null | undefined): boolean {
+  return isOptionalPlanSyncTable(table) && errorInfo.category === 'schema_mismatch'
+}
+
+function trackOptionalPlanSyncSkip(table: SupabaseTable, errorInfo: SyncErrorInfo, detail: string): void {
+  syncLog('optional_plan_sync:skipped', {
+    table,
+    category: errorInfo.category,
+    technicalMessage: errorInfo.technicalMessage,
+    detail,
+  }, 'warn')
+  trackSyncEvent({
+    kind: 'migration',
+    status: 'skip',
+    entity: table,
+    userId: getUserId(),
+    errorCategory: errorInfo.category,
+    detail: errorInfo.technicalMessage,
+  })
+}
+
 function mapSelectionToRemoteTables(
   selection: { trainingData?: boolean; chatHistory?: boolean; coachProposals?: boolean; coachMemory?: boolean },
 ): SupabaseTable[] {
@@ -1115,6 +1140,11 @@ async function upsertRow(
       }
     } catch (error) {
       const errorInfo = classifySyncError(error, table)
+      if (isOptionalPlanSchemaMismatch(errorInfo, table)) {
+        trackOptionalPlanSyncSkip(table, errorInfo, 'upsert')
+        finishSyncAttempt('idle')
+        return
+      }
       if (!errorInfo.retriable && !errorInfo.autoRepairable) {
         syncLog('upsertRow:non_retriable', { table, category: errorInfo.category }, 'warn')
         applySyncFailure(error, errorInfo.userMessage, table)
@@ -1183,6 +1213,11 @@ async function deleteRow(table: SupabaseTable, id: string): Promise<void> {
       }
     } catch (error) {
       const errorInfo = classifySyncError(error, table)
+      if (isOptionalPlanSchemaMismatch(errorInfo, table)) {
+        trackOptionalPlanSyncSkip(table, errorInfo, 'delete')
+        finishSyncAttempt('idle')
+        return
+      }
       if (!errorInfo.retriable && !errorInfo.autoRepairable) {
         syncLog('deleteRow:non_retriable', { table, category: errorInfo.category }, 'warn')
         applySyncFailure(error, errorInfo.userMessage, table)
@@ -2292,7 +2327,17 @@ async function deleteLocalTrainingPlan(planId: string): Promise<void> {
 
 async function mergeTrainingPlans(userId: string, context: MergeContext): Promise<void> {
   if (context.pendingRemoteWipeTables.has('training_plans')) return
-  const remoteRows = await fetchAll<Record<string, unknown>>('training_plans', userId)
+  let remoteRows: Record<string, unknown>[]
+  try {
+    remoteRows = await fetchAll<Record<string, unknown>>('training_plans', userId)
+  } catch (error) {
+    const errorInfo = classifySyncError(error, 'training_plans')
+    if (isOptionalPlanSchemaMismatch(errorInfo, 'training_plans')) {
+      trackOptionalPlanSyncSkip('training_plans', errorInfo, 'pull')
+      return
+    }
+    throw error
+  }
   const remoteIds = new Set<string>()
 
   for (const row of remoteRows) {
@@ -2336,7 +2381,17 @@ async function mergeTrainingPlans(userId: string, context: MergeContext): Promis
 
 async function mergeTrainingPlanWeeks(userId: string, context: MergeContext): Promise<void> {
   if (context.pendingRemoteWipeTables.has('training_plan_weeks')) return
-  const remoteRows = await fetchAll<Record<string, unknown>>('training_plan_weeks', userId)
+  let remoteRows: Record<string, unknown>[]
+  try {
+    remoteRows = await fetchAll<Record<string, unknown>>('training_plan_weeks', userId)
+  } catch (error) {
+    const errorInfo = classifySyncError(error, 'training_plan_weeks')
+    if (isOptionalPlanSchemaMismatch(errorInfo, 'training_plan_weeks')) {
+      trackOptionalPlanSyncSkip('training_plan_weeks', errorInfo, 'pull')
+      return
+    }
+    throw error
+  }
   const remoteIds = new Set<string>()
   const localPlans = await db.trainingPlans.toArray()
   const syncablePlanIds = new Set(localPlans.filter((plan) => isSyncablePlanStatus(plan.status)).map((plan) => plan.id))
@@ -2920,13 +2975,13 @@ export async function migrateLocalDataToCloud(userId: string): Promise<void> {
       ? await getSupabase()
         .from('training_plans')
         .upsert(trainingPlanRows as never, { onConflict: 'id' })
-        .then((result) => ({ table: 'training_plans' as const, error: result.error }))
+        .then((result) => normalizeOptionalPlanMigrationResult('training_plans', result.error))
       : { table: 'training_plans' as const, error: null }
     const trainingPlanWeekResult = trainingPlanWeekRows.length > 0
       ? await getSupabase()
         .from('training_plan_weeks')
         .upsert(trainingPlanWeekRows as never, { onConflict: 'id' })
-        .then((result) => ({ table: 'training_plan_weeks' as const, error: result.error }))
+        .then((result) => normalizeOptionalPlanMigrationResult('training_plan_weeks', result.error))
       : { table: 'training_plan_weeks' as const, error: null }
     if (profileRows.length > 0 && !getProfileResetLock(userId)) {
       const syncRows = profileRows.map(toAthleteProfileSyncRow)
@@ -3048,6 +3103,27 @@ export interface RemoteWipeOutcome {
 
 function isToleratedRemoteWipeCategory(category: SyncErrorCategory): boolean {
   return category === 'schema_mismatch' || category === 'supabase_not_configured'
+}
+
+function normalizeOptionalPlanMigrationResult(
+  table: 'training_plans' | 'training_plan_weeks',
+  error: null,
+): { table: 'training_plans' | 'training_plan_weeks'; error: null }
+function normalizeOptionalPlanMigrationResult<TError>(
+  table: 'training_plans' | 'training_plan_weeks',
+  error: TError,
+): { table: 'training_plans' | 'training_plan_weeks'; error: TError | null }
+function normalizeOptionalPlanMigrationResult<TError>(
+  table: 'training_plans' | 'training_plan_weeks',
+  error: TError | null,
+): { table: 'training_plans' | 'training_plan_weeks'; error: TError | null } {
+  if (!error) return { table, error: null }
+  const errorInfo = classifySyncError(error, table)
+  if (isOptionalPlanSchemaMismatch(errorInfo, table)) {
+    trackOptionalPlanSyncSkip(table, errorInfo, 'migration')
+    return { table, error: null }
+  }
+  return { table, error }
 }
 
 export async function clearSelectedRemoteAppData(

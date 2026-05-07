@@ -1,4 +1,5 @@
-import type { AITechnicalSurface, ChatContext } from '../../types'
+import type { AITechnicalSurface, AthleteProfile, ChatContext, CoachAction, MacroPlan, PlanWizardConfig, SupportedSport } from '../../types'
+import type { TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
 import type { CoachNormalizedResponse } from '../ai/types'
 import { buildAITraceId, getAIRequestPolicy } from '../ai/requestPolicy'
 import { normalizeResponse } from '../ai/responseNormalizer'
@@ -7,8 +8,9 @@ import { useAIDebugStore } from '../../store/useAIDebugStore'
 import { createStageTracker, type CoachOutcome } from '../ai/stageLogger'
 import { buildWeekCreatorPrompt, summarizeWeekCreatorAction } from './WeekCreatorPromptBuilder'
 import { validateWeekCreatorResponse } from './validateWeekCreatorResponse'
-import { resolveWeekCreatorConfig, withRequestedSessionsPerWeek } from './WeekCreatorConfig'
+import { resolveWeekCreatorConfig, type WeekCreatorEffectiveConfig, withRequestedSessionsPerWeek } from './WeekCreatorConfig'
 import { buildWeekRetryInstruction } from '../week/shared'
+import { repairGeneratedWeek } from '../planBuilder/repairWeek'
 
 type WeekCreatorOptions = {
   surface?: AITechnicalSurface
@@ -96,9 +98,13 @@ export const WeekCreatorEngine = {
         const normalized = normalizeResponse(raw)
         normalizeStage.end({ ok: true })
 
+        const repairStage = tracker.stage('repair')
+        const repaired = repairWeekCreatorResponse(normalized, context, config, options.targetWeekStart)
+        repairStage.end({ ok: true })
+
         const validateStage = tracker.stage('validate')
         const validation = validateWeekCreatorResponse({
-          response: normalized,
+          response: repaired,
           context,
           config,
           targetWeekStart: options.targetWeekStart,
@@ -108,20 +114,20 @@ export const WeekCreatorEngine = {
         if (!validation.ok) {
           outcome = 'invalid_schema'
           lastFailure = {
-            provider: normalized.provider,
-            model: normalized.model,
-            traceId: normalized.traceId,
-            durationMs: normalized.durationMs,
-            fallbackUsed: normalized.fallbackUsed,
-            retryUsed: attempt > 1 || normalized.retryUsed,
+            provider: repaired.provider,
+            model: repaired.model,
+            traceId: repaired.traceId,
+            durationMs: repaired.durationMs,
+            fallbackUsed: repaired.fallbackUsed,
+            retryUsed: attempt > 1 || repaired.retryUsed,
             error: validation.error,
           }
           useAIDebugStore.getState().failRequest(traceId, {
-            provider: normalized.provider,
-            model: normalized.model,
-            durationMs: normalized.durationMs,
-            retryUsed: normalized.retryUsed,
-            fallbackUsed: normalized.fallbackUsed,
+            provider: repaired.provider,
+            model: repaired.model,
+            durationMs: repaired.durationMs,
+            retryUsed: repaired.retryUsed,
+            fallbackUsed: repaired.fallbackUsed,
             errorCode: 'validation_error',
           })
           if (typeof console !== 'undefined' && typeof console.warn === 'function') {
@@ -136,33 +142,37 @@ export const WeekCreatorEngine = {
         }
 
         useAIDebugStore.getState().completeRequest(traceId, {
-          provider: normalized.provider,
-          model: normalized.model,
-          durationMs: normalized.durationMs,
-          retryUsed: normalized.retryUsed,
-          fallbackUsed: normalized.fallbackUsed,
+          provider: repaired.provider,
+          model: repaired.model,
+          durationMs: repaired.durationMs,
+          retryUsed: repaired.retryUsed,
+          fallbackUsed: repaired.fallbackUsed,
         })
 
         const action = validation.action
         if (!action) {
           throw new Error('WeekCreator devolvió una validación exitosa sin acción create_week.')
         }
-        const message = normalized.message.trim() || summarizeWeekCreatorAction(action)
-        const messageWithWarning = validation.warning
-          ? `${message}\n\nNota: ${validation.warning}`
+        const message = repaired.message.trim() || summarizeWeekCreatorAction(action)
+        const warnings = [
+          validation.warning,
+          ...repaired.repairWarnings,
+        ].filter((warning): warning is string => Boolean(warning?.trim()))
+        const messageWithWarning = warnings.length > 0
+          ? `${message}\n\nNota: ${warnings.join(' ')}`
           : message
 
         outcome = 'ok'
         tracker.flush(outcome, { attempt })
         return {
-          ...normalized,
+          ...repaired,
           actions: [action],
           message: messageWithWarning,
           requestClass: 'week_creator',
-          retryUsed: attempt > 1 || normalized.retryUsed,
-          meta: validation.warning && normalized.meta
-            ? { ...normalized.meta, likelyTruncated: false }
-            : normalized.meta,
+          retryUsed: attempt > 1 || repaired.retryUsed,
+          meta: warnings.length > 0 && repaired.meta
+            ? { ...repaired.meta, likelyTruncated: false }
+            : repaired.meta,
         }
       } catch (error) {
         outcome = 'error'
@@ -195,4 +205,147 @@ export const WeekCreatorEngine = {
     }
     throw new Error(`${failureMessage} (trace ${failureTraceId})`)
   },
+}
+
+type RepairedWeekCreatorResponse = CoachNormalizedResponse & {
+  repairWarnings: string[]
+}
+
+function repairWeekCreatorResponse(
+  response: CoachNormalizedResponse,
+  context: ChatContext,
+  config: WeekCreatorEffectiveConfig,
+  targetWeekStart: string,
+): RepairedWeekCreatorResponse {
+  const actions = response.actions ?? []
+  const createWeekActions = actions.filter((action) => action.type === 'create_week')
+  if (createWeekActions.length !== 1) {
+    return { ...response, repairWarnings: [] }
+  }
+
+  const action = createWeekActions[0]
+  if (!Array.isArray(action.sessions) || action.sessions.length === 0) {
+    return { ...response, repairWarnings: [] }
+  }
+
+  const profile = buildRepairProfile(context)
+  const repairContext = buildRepairContext(profile, config, targetWeekStart)
+  const repairResult = repairGeneratedWeek(action.sessions, repairContext)
+  if (repairResult.meta.repairedSessionCount === 0
+    && repairResult.meta.movedSessionCount === 0
+    && repairResult.meta.addedFallbackCount === 0
+    && repairResult.meta.droppedSessionCount === 0
+    && repairResult.meta.filteredSportCount === 0
+  ) {
+    return { ...response, repairWarnings: [] }
+  }
+
+  const repairedAction: CoachAction = {
+    ...action,
+    targetDate: action.targetDate ?? targetWeekStart,
+    sessions: repairResult.sessions,
+  }
+  const repairedActions = actions.map((item) => (item === action ? repairedAction : item))
+  const repairWarnings = repairResult.meta.warnings.map((warning) => warning.message)
+
+  return {
+    ...response,
+    actions: repairedActions,
+    repairWarnings,
+  }
+}
+
+function buildRepairProfile(context: ChatContext): AthleteProfile {
+  if (context.athleteProfile) return context.athleteProfile
+  return {
+    id: 'week-creator-profile',
+    updatedAt: Date.now(),
+  }
+}
+
+function buildRepairContext(
+  profile: ReturnType<typeof buildRepairProfile>,
+  config: WeekCreatorEffectiveConfig,
+  targetWeekStart: string,
+) {
+  const now = Date.now()
+  const primarySport = config.primarySport ?? config.allowedSports[0] ?? 'squash'
+  const sportDetails = buildSportDetails(config.allowedSports, primarySport)
+  const macroSnapshot: MacroPlan = {
+    goalEventId: profile.planWizardConfig?.goalEventId ?? 'week-creator',
+    goalEventDate: addDaysIso(targetWeekStart, 6),
+    currentPhase: profile.macroPlan?.currentPhase ?? 'base',
+    weeksRemaining: profile.macroPlan?.weeksRemaining ?? 0,
+    blockFocus: profile.macroPlan?.blockFocus ?? `Semana base de ${primarySport}`,
+    headline: profile.macroPlan?.headline ?? `Semana de ${primarySport}`,
+    timeline: [],
+    sportDetails,
+    secondaryEvents: [],
+    computedAt: now,
+  }
+  const wizardConfig: PlanWizardConfig = {
+    goalEventId: profile.planWizardConfig?.goalEventId ?? 'week-creator',
+    trainingDays: config.trainingDays,
+    sessionsPerWeek: config.sessionsPerWeek,
+    sessionDurationMins: config.sessionDurationMins,
+    allowDoubleSession: config.allowDoubleSession,
+    complementarySports: config.allowedSports.filter((sport) => sport !== primarySport),
+    currentFitnessLevel: config.currentFitnessLevel,
+    currentFatigue: config.currentFatigue,
+    injuryNotes: config.injuryNotes,
+    createdAt: new Date(now).toISOString(),
+    updatedAt: new Date(now).toISOString(),
+  }
+  const plan: TrainingPlan = {
+    id: 'week-creator-plan',
+    athleteId: profile.id,
+    goalEventId: wizardConfig.goalEventId,
+    status: 'draft',
+    generationState: 'shell',
+    title: 'Week Creator',
+    startDate: targetWeekStart,
+    endDate: addDaysIso(targetWeekStart, 6),
+    totalWeeks: 1,
+    phases: [],
+    wizardConfig,
+    macroSnapshot,
+    createdAt: now,
+    updatedAt: now,
+  }
+  const week: TrainingPlanWeek = {
+    id: 'week-creator-week',
+    planId: plan.id,
+    weekIndex: 0,
+    weekStartDate: targetWeekStart,
+    phase: macroSnapshot.currentPhase,
+    status: 'draft',
+    sessions: [],
+    weekObjectives: [],
+    targetLoadBySport: {},
+    validationIssues: [],
+    generationMeta: { attempts: 1 },
+    createdAt: now,
+    updatedAt: now,
+  }
+
+  return { plan, week, profile, wizardConfig }
+}
+
+function buildSportDetails(allowedSports: SupportedSport[], primarySport: SupportedSport) {
+  const sports = allowedSports.length > 0 ? allowedSports : [primarySport]
+  return [...new Set(sports)].map((sport) => ({
+    sport,
+    role: sport === primarySport ? 'primary' as const : 'support' as const,
+    phaseFocus: sport === primarySport ? 'mantener continuidad del deporte principal' : 'soporte de baja interferencia',
+    weeklyIntent: sport === primarySport ? 'progress' : 'support',
+    volumeBias: sport === primarySport ? 'build' as const : 'hold' as const,
+    intensityBias: 'hold' as const,
+    notes: sport === primarySport ? 'Deporte principal declarado en el perfil.' : 'Deporte complementario habilitado.',
+  }))
+}
+
+function addDaysIso(date: string, days: number): string {
+  const start = new Date(`${date}T00:00:00.000Z`)
+  start.setUTCDate(start.getUTCDate() + days)
+  return start.toISOString().slice(0, 10)
 }

@@ -84,6 +84,7 @@ export default function SettingsPage() {
   const { sessions, dayLogs, currentWeekSummary, loadWeek } = useTrainingStore()
   const [memoryDraft, setMemoryDraft] = useState('')
   const [memorySaved, setMemorySaved] = useState(false)
+  const [profileSaved, setProfileSaved] = useState(false)
   const [notifPermission, setNotifPermission] = useState<NotificationPermission | null>(null)
   const [notificationPreferences, setNotificationPreferences] = useState<NotificationPreferences>(getNotificationPreferences())
   const [dataCounts, setDataCounts] = useState<LocalDataCounts | null>(null)
@@ -324,6 +325,12 @@ export default function SettingsPage() {
   const handleRetrySync = async () => {
     const { user: currentUser } = useAuthStore.getState()
     if (currentUser) await runFullSync(currentUser.id)
+  }
+
+  const handleSaveAthleteProfile = async (patch: Partial<Omit<AthleteProfile, 'id' | 'updatedAt'>>) => {
+    await saveAthleteProfile(patch)
+    setProfileSaved(true)
+    setTimeout(() => setProfileSaved(false), 3000)
   }
 
   const handleWipeAllData = async () => {
@@ -727,11 +734,16 @@ export default function SettingsPage() {
                 <p className="mt-1 text-sm text-ink">{sportSummary || `${enabledSports.length} deportes configurados`}</p>
               </div>
             )}
+            {profileSaved && (
+              <p className="mb-3 rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-xs font-semibold text-emerald-300">
+                Perfil guardado. El coach usará estos cambios en la próxima respuesta.
+              </p>
+            )}
             <AthleteProfileEditor
               key={athleteProfile?.updatedAt ?? 'athlete-profile-empty'}
               profile={athleteProfile}
               isSaving={isSaving}
-              onSave={saveAthleteProfile}
+              onSave={handleSaveAthleteProfile}
             />
             <div className="mt-4 rounded-xl border border-surface-border bg-surface-raised px-3 py-3">
               <p className="text-xs text-ink-muted leading-relaxed">

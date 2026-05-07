@@ -17,6 +17,7 @@ const WEEKDAY_PATTERN = /\b(lunes|martes|miercoles|miércoles|jueves|viernes|sab
 const WEEK_PLANNING_VERB_PATTERN = /\b(cr[eé]a(?:r|me)?|haz(?:me)?|arma(?:me)?|genera(?:r|me)?|planifica(?:r)?|organiza(?:r)?|programa(?:r)?|propuesta)\b/
 const WEEK_PLANNING_TARGET_PATTERN = /\b(semana|microciclo|propuesta\s+de\s+semana|plan(?:\s+de\s+entrenamiento)?)\b/
 const FULL_PLAN_PATTERN = /\b(plan\s+completo|todas\s+las\s+semanas|plan\s+hasta|semanas\s+hasta|hasta\s+el\s+evento|hasta\s+la\s+competencia|hasta\s+el\s+torneo|completo\s+hasta|completo\s+para\s+\d+\s+semanas)\b/
+const MULTI_WEEK_PATTERN = /\b(?:[2-9]|dos|tres|cuatro|cinco|seis|siete|ocho|nueve)\s+semanas\b/
 const SUMMARY_PATTERN = /\b(resumen\s+semanal|coach\s+note|resume\s+mi\s+semana|resumeme\s+la\s+semana|cierre\s+de\s+semana|balance\s+semanal)\b/
 const ADJUSTMENT_VERB_PATTERN = /\b(ajusta(?:r|me)?|ajustame|ajústame|cambia(?:r|me)?|cambiame|cámbiame|cambie|cámbie|modifica(?:r|me)?|modificame|modifícame|mueve|mueveme|muéveme|reordena(?:r|me)?|actualiza(?:r|me)?|quit(?:a|ar|ame|áme)|agrega(?:r|me)?|reemplaza(?:r|me)?|reduce|baja|sube|incorpora)\b/
 const SESSION_TARGET_PATTERN = /\b(sesion(?:es)?|sesión(?:es)?|running|squash|fuerza|strength|cycling|ciclismo|movilidad|recovery|recuperacion|am|pm)\b/
@@ -34,7 +35,7 @@ export function resolveChatRoute(
     return { kind: 'weekly_summary' }
   }
 
-  if (FULL_PLAN_PATTERN.test(normalized)) {
+  if (FULL_PLAN_PATTERN.test(normalized) || MULTI_WEEK_PATTERN.test(normalized)) {
     return { kind: 'plan_builder_redirect', targetWeekStart }
   }
 

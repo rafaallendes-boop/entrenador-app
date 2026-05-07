@@ -412,7 +412,9 @@ function balanceSessionCount(
     const allowedDates = getAllowedDatesInWeek(context)
     const primarySport = getPrimarySport(context)
     const primaryCount = result.filter((s) => s.sessionType === primarySport).length
-    const minimumPrimary = primarySport === 'squash' ? 2 : 1
+    const minimumPrimary = primarySport === 'squash' && context.wizardConfig.sessionsPerWeek >= 4
+      ? Math.floor(context.wizardConfig.sessionsPerWeek / 2) + 1
+      : 1
 
     for (let i = 0; i < maxFallback; i++) {
       const available = findNearestAvailableDate(allowedDates, result, 'AM', undefined, context.wizardConfig.allowDoubleSession)

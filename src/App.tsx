@@ -176,6 +176,7 @@ export default function App() {
     const intervalId = window.setInterval(() => {
       const { syncStatus, syncDetails } = useAuthStore.getState()
       if (syncStatus === 'syncing' || syncDetails.syncAttemptInFlight) return
+      if (syncDetails.pendingOps === 0 && syncStatus === 'error' && syncDetails.retryScheduledAt == null) return
       if (syncDetails.pendingOps === 0 && syncStatus !== 'error' && syncStatus !== 'offline') return
       const retryAt = syncDetails.retryScheduledAt
       if (retryAt != null && retryAt > Date.now()) return

@@ -140,6 +140,51 @@ describe('resolveWeekCreatorConfig', () => {
     expect(config.trainingDays).toEqual(['monday', 'tuesday', 'thursday', 'saturday'])
   })
 
+  it('lets the current athlete profile primary sport override a stale plan event sport', () => {
+    const profile = makeProfile({
+      primarySport: 'running',
+      secondarySports: ['squash', 'strength', 'mobility'],
+      sportContext: {
+        enabledSports: ['running', 'squash', 'strength', 'mobility'],
+        primarySport: 'running',
+        secondarySports: ['squash', 'strength', 'mobility'],
+      },
+      goalEvents: [{ id: 'g1', title: 'Open antiguo', date: '2026-06-01', sport: 'squash', priority: 'primary' }],
+      planWizardConfig: {
+        goalEventId: 'g1',
+        trainingDays: ['monday', 'tuesday', 'thursday', 'saturday'],
+        sessionsPerWeek: 4,
+        sessionDurationMins: 60,
+        allowDoubleSession: false,
+        complementarySports: ['strength', 'mobility'],
+        currentFitnessLevel: 'normal',
+        currentFatigue: 'normal',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+    })
+    const config = resolveWeekCreatorConfig(profile)
+
+    expect(config.primarySport).toBe('running')
+    expect(config.allowedSports).toEqual(expect.arrayContaining(['running', 'squash', 'strength', 'mobility']))
+
+    const prompt = buildWeekCreatorPrompt({
+      athleteProfile: profile,
+      recentSessions: [],
+      plannedSessions: [],
+      historicalSessions: [],
+    }, {
+      userMessage: 'Crea una semana priorizando running',
+      targetWeekStart: '2026-05-04',
+      config,
+    })
+
+    expect(prompt.userPrompt).toContain('- Deporte principal a mantener presente: running')
+    expect(prompt.userPrompt).toContain('Evento heredado/de plan anterior')
+    expect(prompt.userPrompt).toContain('No uses el evento squash como restricción dura')
+    expect(prompt.userPrompt).toContain('Prioridad explícita del usuario: running')
+  })
+
   it('does not let chat text override plan wizard sessions', () => {
     const config = resolveWeekCreatorConfig(makeProfile({
       planWizardConfig: {
@@ -355,7 +400,7 @@ describe('WeekCreatorEngine', () => {
     expect(response.requestClass).toBe('week_creator')
   })
 
-  it('rejects a partial week when one incomplete session was dropped during normalization', async () => {
+  it('repairs a partial week when one incomplete session was dropped during normalization', async () => {
     mockProviderCall.mockImplementation(async (request: { requestClass: string; traceId: string }) => ({
       text: '<actions>' + JSON.stringify([
         {
@@ -424,13 +469,16 @@ describe('WeekCreatorEngine', () => {
       historicalSessions: [],
     }
 
-    await expect(WeekCreatorEngine.sendWeekCreate(
+    const response = await WeekCreatorEngine.sendWeekCreate(
       'Créame la semana',
       context,
       { surface: 'chat', targetWeekStart: '2026-05-04' },
-    )).rejects.toThrow('La semana debe traer exactamente 5 sesiones válidas y llegó con 4')
+    )
 
-    expect(mockProviderCall).toHaveBeenCalledTimes(2)
+    expect(mockProviderCall).toHaveBeenCalledTimes(1)
+    expect(response.actions?.[0].sessions).toHaveLength(5)
+    expect(response.actions?.[0].sessions?.filter((session) => session.sessionType === 'squash')).toHaveLength(3)
+    expect(response.message).toContain('Se agregaron 1 sesiones fallback')
   })
 
   it('retries when two strength sessions repeat exactly the same exercises', async () => {

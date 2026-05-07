@@ -5,8 +5,8 @@ import type {
   WizardFatigueLevel,
   WizardFitnessLevel,
 } from '../../types'
-import { getAllowedPlanningSports, getPlanningPrimarySport } from '../planningConstraints'
-import { getEnabledSports, normalizeSport } from '../../utils/athlete'
+import { getAllowedPlanningSports } from '../planningConstraints'
+import { getEnabledSports, getPrimarySportNormalized, normalizeSport } from '../../utils/athlete'
 
 export interface WeekCreatorEffectiveConfig {
   trainingDays: DayOfWeek[]
@@ -123,14 +123,14 @@ export function extractRequestedSessionsPerWeek(userMessage: string): number | u
 }
 
 function resolveAllowedSports(profile: AthleteProfile | null | undefined): SupportedSport[] {
-  const configuredSports = getAllowedPlanningSports(profile)
-  if (configuredSports.length > 0) return configuredSports
+  const enabledSports = getEnabledSports(profile)
+  if (enabledSports.length > 0) return enabledSports
 
-  const inferredPrimary = getPlanningPrimarySport(profile)
+  const inferredPrimary = getPrimarySportNormalized(profile)
   if (inferredPrimary) return [inferredPrimary]
 
-  const enabledSports = getEnabledSports(profile)
-  if (enabledSports.length > 0) return [enabledSports[0]]
+  const configuredSports = getAllowedPlanningSports(profile)
+  if (configuredSports.length > 0) return configuredSports
 
   const legacyPrimary = profile?.primarySport ? normalizeSport(profile.primarySport) : undefined
   if (legacyPrimary) return [legacyPrimary]
@@ -162,7 +162,7 @@ export function resolveWeekCreatorConfig(profile: AthleteProfile | null | undefi
   }
 
   const allowedSports = resolveAllowedSports(profile)
-  const primarySport = getPlanningPrimarySport(profile) ?? allowedSports[0]
+  const primarySport = getPrimarySportNormalized(profile) ?? allowedSports[0]
   const wizard = profile.planWizardConfig
 
   if (wizard) {
