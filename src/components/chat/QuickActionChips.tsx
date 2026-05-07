@@ -46,12 +46,13 @@ export default function QuickActionChips({
     .map(s => ({
       id: `prioritize_${s}`,
       label: `Priorizar ${SPORT_LABELS[s]}`,
-      prompt: `Créame una semana priorizando ${SPORT_LABELS[s]}`,
+      prompt: `Crea una semana de entrenamiento para esta semana, priorizando ${SPORT_LABELS[s]} dentro de los deportes permitidos. Devuelve una propuesta semanal completa para revisar y aplicar.`,
     }))
 
   const allActions = [...BASE_QUICK_ACTIONS, ...sportChips, ...TAIL_QUICK_ACTIONS]
 
   const handleAction = (action: QuickAction) => {
+    if (disabled) return
     if (action.id === 'create_week') {
       if (onOpenPlanBuilder) {
         onOpenPlanBuilder()
@@ -83,6 +84,7 @@ export default function QuickActionChips({
         </button>
         <button
           onClick={() => setWeekPicker(false)}
+          disabled={disabled}
           className="flex-shrink-0 px-2 py-1.5 rounded-pill text-xs text-ink-faint hover:text-ink-muted transition-colors"
         >
           ✕

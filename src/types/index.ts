@@ -424,6 +424,7 @@ export interface RecoveryProfile {
 export interface ScheduleProfile {
   availableDays?: string[]      // ['lun','mar','mié','jue','vie','sáb','dom']
   doubleSessionDays?: string[]
+  sessionsPerWeek?: number      // explicit weekly target; undefined means auto
   constraints?: string          // free text
 }
 

@@ -230,6 +230,34 @@ describe('planBuilder', () => {
     expect(prompt).toContain('Como doble sesión NO está permitido')
   })
 
+  it('week prompt requires a squash majority in build/peak weeks with four sessions', () => {
+    const profile = makeProfile(eventNWeeksFromNow(6))
+    const event = profile.goalEvents![0] as GoalEvent
+    const wizardConfig = {
+      ...makeWizardConfig(),
+      sessionsPerWeek: 4,
+      complementarySports: ['strength', 'mobility'] as PlanWizardConfig['complementarySports'],
+    }
+    const { plan, weeks } = buildPlanShell({
+      athleteId: profile.id,
+      profile,
+      wizardConfig,
+      goalEvent: event,
+    })
+    const week = { ...weeks[0], phase: 'peak' as const }
+
+    const prompt = buildWeekUserPrompt({
+      plan,
+      week,
+      profile,
+      wizardConfig,
+    })
+
+    expect(prompt).toContain('al menos 3 sesiones de squash')
+    expect(prompt).toContain('mínimo 3 sesiones squash')
+    expect(prompt).toContain('máximo 1 accesorias')
+  })
+
   it('buildWeekSystemPrompt preserves the literal session schema block', () => {
     const prompt = buildWeekSystemPrompt()
 

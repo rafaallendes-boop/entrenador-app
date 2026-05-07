@@ -7,7 +7,7 @@ import { useAIDebugStore } from '../../store/useAIDebugStore'
 import { createStageTracker, type CoachOutcome } from '../ai/stageLogger'
 import { buildWeekCreatorPrompt, summarizeWeekCreatorAction } from './WeekCreatorPromptBuilder'
 import { validateWeekCreatorResponse } from './validateWeekCreatorResponse'
-import { resolveWeekCreatorConfig } from './WeekCreatorConfig'
+import { resolveWeekCreatorConfig, withRequestedSessionsPerWeek } from './WeekCreatorConfig'
 import { buildWeekRetryInstruction } from '../week/shared'
 
 type WeekCreatorOptions = {
@@ -22,7 +22,10 @@ export const WeekCreatorEngine = {
     context: ChatContext,
     options: WeekCreatorOptions,
   ): Promise<CoachNormalizedResponse> {
-    const config = resolveWeekCreatorConfig(context.athleteProfile)
+    const config = withRequestedSessionsPerWeek(
+      resolveWeekCreatorConfig(context.athleteProfile),
+      userMessage,
+    )
 
     if (config.configSource === 'defaults') {
       return {

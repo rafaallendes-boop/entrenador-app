@@ -45,24 +45,31 @@ function buildPrimarySportRule(plan: TrainingPlan, week: TrainingPlanWeek): stri
     return lines
   }
 
-  const minimumByPhase: Record<string, number> = {
-    base: 1,
-    build: primarySport === 'squash' ? 2 : 1,
-    peak: primarySport === 'squash' ? 2 : 1,
-    taper: 1,
-    race: 1,
-  }
-  const minimumSessions = minimumByPhase[week.phase] ?? 1
+  const minimumSessions = requiredPrimarySessions(primarySport, week.phase, plan.wizardConfig.sessionsPerWeek)
   const emphasis =
     week.phase === 'build' || week.phase === 'peak'
       ? ` ${primarySport} debe tener más protagonismo que los deportes de apoyo.`
       : ''
 
-  lines.push(`- Regla crítica: incluye al menos ${minimumSessions} sesión${minimumSessions > 1 ? 'es' : ''} de ${primarySport} dentro de esta semana.${emphasis}`)
-  if (primarySport === 'squash' && plan.wizardConfig.sessionsPerWeek >= 5) {
-    lines.push('- Como el objetivo principal es squash y la semana tiene alto volumen, squash debe ocupar la mayoría de las sesiones.')
+  const sessionLabel = minimumSessions > 1 ? 'sesiones' : 'sesión'
+  lines.push(`- Regla crítica: incluye al menos ${minimumSessions} ${sessionLabel} de ${primarySport} dentro de esta semana.${emphasis}`)
+  if (primarySport === 'squash' && (week.phase === 'build' || week.phase === 'peak') && plan.wizardConfig.sessionsPerWeek >= 4) {
+    lines.push(`- Para squash en fase ${week.phase} con ${plan.wizardConfig.sessionsPerWeek} sesiones, usa mayoría real de squash: mínimo ${minimumSessions} sesiones squash y máximo ${plan.wizardConfig.sessionsPerWeek - minimumSessions} accesorias.`)
   }
   return lines
+}
+
+function requiredPrimarySessions(
+  primarySport: SupportedSport,
+  phase: TrainingPlanWeek['phase'],
+  sessionsPerWeek: number,
+): number {
+  if (phase === 'transition') return 0
+  if (primarySport === 'squash' && (phase === 'build' || phase === 'peak')) {
+    return Math.max(2, Math.floor(sessionsPerWeek / 2) + 1)
+  }
+  if (phase === 'build' || phase === 'peak') return 1
+  return 1
 }
 
 function briefPreviousWeek(previous: TrainingPlanWeek | undefined): string {
@@ -186,6 +193,24 @@ export function buildWeekSystemPrompt(): string {
     'La acción create_week debe tener exactamente "type": "create_week" como campo discriminador. Incluye además: targetDate (lunes YYYY-MM-DD), reason, sessions[] y weekObjectives[].',
     'Respeta strictamente la fase indicada, objetivos de carga y deportes permitidos.',
     'Debes respetar exactamente el número de sesiones pedido por el wizard y todas deben quedar dentro de los días permitidos.',
+    'Nunca devuelvas menos sesiones que las pedidas. Si una sesión queda incompleta o inválida, corrígela antes de responder; no la omitas.',
+    'Cada sesión debe ser individualmente válida: fecha ISO real, timeBlock AM/PM, title, durationMin >= 5 y detalles obligatorios del deporte.',
+    'No inventes sesiones fuera de los días permitidos. No dupliques misma fecha+timeBlock.',
+    SESSION_SCHEMA_BLOCK_FULL,
+    'Revisa dos veces antes de responder: cada squash lleva squashDetails válido con drills[] no vacío; cada cycling lleva cyclingDetails; cada mobility lleva mobilityDetails; cada strength lleva exercises[]. Si una sesión no cumple, corrígela — no la descartes.',
+  ].join('\n')
+}
+
+export function buildWeekCreatorSystemPrompt(): string {
+  return [
+    'Eres un generador de semanas de entrenamiento.',
+    'Puedes crear una semana standalone desde el chat o una semana alineada a un plan/evento cuando ese contexto exista.',
+    'Respondes EXCLUSIVAMENTE con un bloque <actions> JSON que contenga UNA acción create_week para la semana indicada.',
+    'No explicas nada fuera del bloque <actions>. Nada de texto previo ni posterior.',
+    'La acción create_week debe tener exactamente "type": "create_week" como campo discriminador. Incluye además: targetDate (lunes YYYY-MM-DD), reason, sessions[] y weekObjectives[].',
+    'Respeta estrictamente la configuración disponible: días permitidos, número de sesiones, duración, deportes permitidos, fatiga, fitness y restricciones.',
+    'Si no hay evento competitivo activo, planifica una semana general coherente con el perfil y la disponibilidad; no respondas con texto libre.',
+    'Debes respetar exactamente el número de sesiones pedido por la configuración y todas deben quedar dentro de los días permitidos.',
     'Nunca devuelvas menos sesiones que las pedidas. Si una sesión queda incompleta o inválida, corrígela antes de responder; no la omitas.',
     'Cada sesión debe ser individualmente válida: fecha ISO real, timeBlock AM/PM, title, durationMin >= 5 y detalles obligatorios del deporte.',
     'No inventes sesiones fuera de los días permitidos. No dupliques misma fecha+timeBlock.',

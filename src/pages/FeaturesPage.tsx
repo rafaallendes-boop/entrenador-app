@@ -36,7 +36,6 @@ export default function FeaturesPage() {
         <FeatureRow2Semana />
         <FeatureRow3Multi />
         <FeatureRow4Checkin />
-        <FeatureMatrix />
         <FeaturesCTA onSignup={handleSignIn} />
         <FeaturesFooter />
       </main>
@@ -464,96 +463,6 @@ function FeatureList({
         </li>
       ))}
     </ul>
-  )
-}
-
-/* ─── FEATURE MATRIX ────────────────────────────────────── */
-
-const MATRIX_ITEMS = [
-  { icon: 'chart', title: 'Analytics avanzado', desc: 'ACWR, monotonía, strain, peak de forma. Gráficos que lees en 3 segundos.', tag: 'Pro' },
-  { icon: 'star', title: 'Competencias y picos', desc: 'Marcá torneos, carreras o matches. El plan se organiza hacia la fecha.', tag: 'Core' },
-  { icon: 'msg', title: 'Notas por sesión', desc: 'Audio, texto, libres. Vinculadas a la sesión — búsqueda full-text.', tag: 'Core' },
-  { icon: 'plus', title: 'Bibliotecas de ejercicios', desc: 'Plantillas de intervalos, circuitos, rutinas. Compartibles con tu coach.', tag: 'Core' },
-  { icon: 'moon', title: 'Modo noche completo', desc: 'Diseñado desde el día 1 para dark mode. No te quema los ojos a las 6 AM.', tag: 'Core' },
-  { icon: 'box', title: 'Sincronización multi-device', desc: 'Móvil, tablet, web. Local-first con sync transparente.', tag: 'Core' },
-  { icon: 'file', title: 'Export CSV / JSON', desc: 'Tus datos son tuyos. Descargá todo en un click — sin caducidad.', tag: 'Elite' },
-  { icon: 'clock', title: 'Historial ilimitado', desc: 'Cada sesión, cada check-in, cada propuesta. Indexado, buscable, siempre.', tag: 'Pro' },
-  { icon: 'user', title: 'Compartir con coach humano', desc: 'Invitá a tu entrenador. Ve tu plan, comenta, sugiere.', tag: 'Elite' },
-  { icon: 'streak', title: 'Racha y consistency', desc: 'No gamificación tóxica. Solo un contador honesto de adherencia.', tag: 'Core' },
-  { icon: 'tv', title: 'Vista TV / coach-mode', desc: 'Pantalla grande, solo lo esencial. Perfecto para mostrar al equipo.', tag: 'Elite' },
-  { icon: 'api', title: 'API pública', desc: 'Integrá con Garmin, Strava, Whoop. Datos entran y salen.', tag: 'Elite' },
-]
-
-const TAG_COLORS: Record<string, string> = {
-  Core: INK_FAINT,
-  Pro: BRAND_LIGHT,
-  Elite: FORGE_LIME,
-}
-
-function MatrixIcon({ type }: { type: string }) {
-  const paths: Record<string, React.ReactNode> = {
-    chart: <><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></>,
-    star:  <><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></>,
-    msg:   <><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></>,
-    plus:  <><path d="M12 2v20M2 12h20"/></>,
-    moon:  <><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></>,
-    box:   <><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></>,
-    file:  <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></>,
-    clock: <><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></>,
-    user:  <><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></>,
-    streak: <><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></>,
-    tv:    <><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></>,
-    api:   <><path d="M12 1v6m0 6v6"/><path d="M4.22 4.22l4.24 4.24m7.08 7.08l4.24 4.24"/><path d="M1 12h6m6 0h6"/><path d="M4.22 19.78l4.24-4.24m7.08-7.08l4.24-4.24"/></>,
-  }
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-      {paths[type]}
-    </svg>
-  )
-}
-
-function FeatureMatrix() {
-  return (
-    <section style={{ paddingTop: 72, paddingBottom: 80 }}>
-      <div className="mx-auto w-full max-w-7xl px-6 md:px-10">
-        <div className="mb-10 flex items-baseline justify-between gap-6">
-          <div>
-            <div className="label-mono mb-3.5">Todo lo demás</div>
-            <h2 style={{ fontFamily: FONT_DISPLAY, fontSize: 'clamp(28px, 3.4vw, 40px)', fontWeight: 700, letterSpacing: '-0.02em', lineHeight: 1.08, marginTop: 14, maxWidth: 700, color: INK }}>
-              Funcionalidad dura, sin ruido visual.
-            </h2>
-          </div>
-          <p style={{ fontSize: 14, color: INK_MUTED, maxWidth: 340, lineHeight: 1.5 }}>
-            Las piezas que completan el sistema. Cada una pensada para el atleta que ya sabe lo que necesita.
-          </p>
-        </div>
-
-        <div
-          style={{
-            display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)',
-            gap: 2, background: 'rgba(255,255,255,0.06)',
-            border: `1px solid ${SURFACE_BORDER}`, borderRadius: 16, overflow: 'hidden',
-          }}
-        >
-          {MATRIX_ITEMS.map(item => (
-            <div
-              key={item.title}
-              className="matrix-cell"
-              style={{ background: '#111', padding: 28, transition: 'background .2s' }}
-              onMouseEnter={e => ((e.currentTarget as HTMLElement).style.background = '#161616')}
-              onMouseLeave={e => ((e.currentTarget as HTMLElement).style.background = '#111')}
-            >
-              <div style={{ width: 36, height: 36, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.04)', border: `1px solid ${SURFACE_BORDER}`, color: INK_MUTED, marginBottom: 20 }}>
-                <MatrixIcon type={item.icon} />
-              </div>
-              <h4 style={{ fontSize: 14, fontWeight: 600, color: INK, marginBottom: 6, letterSpacing: '-0.005em' }}>{item.title}</h4>
-              <p style={{ fontSize: 13, color: INK_MUTED, lineHeight: 1.5 }}>{item.desc}</p>
-              <div style={{ fontFamily: FONT_MONO, fontSize: 9, letterSpacing: '0.3em', textTransform: 'uppercase', color: TAG_COLORS[item.tag] || INK_FAINT, marginTop: 14 }}>{item.tag}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </section>
   )
 }
 

@@ -2,8 +2,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { AthleteProfile, ChatContext } from '../../../types'
 import { validateWeekCreatorResponse } from '../validateWeekCreatorResponse'
-import { resolveWeekCreatorConfig } from '../WeekCreatorConfig'
+import { extractRequestedSessionsPerWeek, resolveWeekCreatorConfig, withRequestedSessionsPerWeek } from '../WeekCreatorConfig'
 import { WeekCreatorEngine } from '../WeekCreatorEngine'
+import { buildWeekCreatorPrompt } from '../WeekCreatorPromptBuilder'
 
 const mockProviderCall = vi.hoisted(() => vi.fn())
 
@@ -73,6 +74,40 @@ describe('resolveWeekCreatorConfig', () => {
     expect(config.configSource).toBe('schedule')
   })
 
+  it('derives six sessions from seven available days in auto mode', () => {
+    const config = resolveWeekCreatorConfig(makeProfile({
+      scheduleProfile: {
+        availableDays: ['lun', 'mar', 'mié', 'jue', 'vie', 'sáb', 'dom'],
+        doubleSessionDays: ['lun', 'mar', 'mié', 'jue', 'vie'],
+      },
+    }))
+    expect(config.sessionsPerWeek).toBe(6)
+    expect(config.maxSessionsPerWeek).toBe(6)
+  })
+
+  it('derives four sessions from five available days in auto mode', () => {
+    const config = resolveWeekCreatorConfig(makeProfile({
+      scheduleProfile: { availableDays: ['lun', 'mar', 'mié', 'jue', 'vie'] },
+    }))
+    expect(config.sessionsPerWeek).toBe(4)
+  })
+
+  it('uses explicit schedule sessions and clamps them to real capacity', () => {
+    expect(resolveWeekCreatorConfig(makeProfile({
+      scheduleProfile: {
+        availableDays: ['lun', 'mar', 'mié', 'jue', 'vie'],
+        sessionsPerWeek: 5,
+      },
+    })).sessionsPerWeek).toBe(5)
+
+    expect(resolveWeekCreatorConfig(makeProfile({
+      scheduleProfile: {
+        availableDays: ['lun', 'mar', 'mié'],
+        sessionsPerWeek: 6,
+      },
+    })).sessionsPerWeek).toBe(3)
+  })
+
   it('uses inferred primary sport when enabled sports are missing', () => {
     const config = resolveWeekCreatorConfig({
       id: 'athlete-2',
@@ -104,6 +139,34 @@ describe('resolveWeekCreatorConfig', () => {
     expect(config.sessionsPerWeek).toBe(4)
     expect(config.trainingDays).toEqual(['monday', 'tuesday', 'thursday', 'saturday'])
   })
+
+  it('does not let chat text override plan wizard sessions', () => {
+    const config = resolveWeekCreatorConfig(makeProfile({
+      planWizardConfig: {
+        goalEventId: 'g1',
+        trainingDays: ['monday', 'tuesday', 'thursday', 'saturday'],
+        sessionsPerWeek: 4,
+        sessionDurationMins: 60,
+        allowDoubleSession: false,
+        complementarySports: ['running', 'strength'],
+        currentFitnessLevel: 'normal',
+        currentFatigue: 'normal',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+    }))
+
+    expect(withRequestedSessionsPerWeek(config, 'Créame 6 sesiones')).toMatchObject({
+      configSource: 'wizard',
+      sessionsPerWeek: 4,
+    })
+  })
+
+  it('extracts explicit session counts from chat messages', () => {
+    expect(extractRequestedSessionsPerWeek('Créame 6 sesiones priorizando squash')).toBe(6)
+    expect(extractRequestedSessionsPerWeek('Quiero cinco entrenamientos esta semana')).toBe(5)
+    expect(extractRequestedSessionsPerWeek('Crear semana normal')).toBeUndefined()
+  })
 })
 
 describe('WeekCreatorEngine', () => {
@@ -124,6 +187,93 @@ describe('WeekCreatorEngine', () => {
     expect(response.actions).toEqual([])
     expect(response.message).toContain('completar tu perfil')
     expect(response.requestClass).toBe('week_creator')
+  })
+
+  it('prompts prioritized squash weeks as a real majority when four sessions are configured', () => {
+    const context: ChatContext = {
+      athleteProfile: makeProfile({
+        planWizardConfig: {
+          goalEventId: 'goal-1',
+          trainingDays: ['monday', 'tuesday', 'thursday', 'friday'],
+          sessionsPerWeek: 4,
+          sessionDurationMins: 60,
+          allowDoubleSession: false,
+          complementarySports: ['strength', 'mobility'],
+          currentFitnessLevel: 'normal',
+          currentFatigue: 'normal',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      }),
+      recentSessions: [],
+      plannedSessions: [],
+      historicalSessions: [],
+    }
+    const config = resolveWeekCreatorConfig(context.athleteProfile)
+
+    const prompt = buildWeekCreatorPrompt(context, {
+      userMessage: 'Crea una semana priorizando squash',
+      targetWeekStart: '2026-05-04',
+      config,
+    })
+
+    expect(prompt.systemPrompt).toContain('Eres un generador de semanas de entrenamiento.')
+    expect(prompt.systemPrompt).not.toContain('dentro de un plan por evento ya estructurado')
+    expect(prompt.userPrompt).toContain('squash debe ser mayoría real')
+    expect(prompt.userPrompt).toContain('al menos 3 sesiones de squash')
+    expect(prompt.userPrompt).toContain('máximo 1 accesorias')
+  })
+
+  it('honors an explicit six-session request when profile capacity allows it', async () => {
+    mockProviderCall.mockImplementation(async (request: { requestClass: string; traceId: string; userMessage: string }) => {
+      expect(request.userMessage).toContain('- Sesiones por semana: 6')
+      return {
+        text: '<actions>' + JSON.stringify([
+          {
+            type: 'create_week',
+            reason: 'Semana squash de seis sesiones',
+            targetDate: '2026-05-04',
+            sessions: Array.from({ length: 6 }, (_, index) => ({
+              date: `2026-05-${String(4 + index).padStart(2, '0')}`,
+              timeBlock: 'AM',
+              sessionType: 'squash',
+              title: `Squash ${index + 1}`,
+              durationMin: 60,
+              objective: 'Prioridad squash',
+              squashDetails: {
+                trainingFocus: 'technical',
+                sessionMode: 'drill_session',
+                drills: [{ name: `Drill ${index + 1}`, durationMin: 20 }],
+              },
+            })),
+          },
+        ]) + '</actions>',
+        provider: 'mock',
+        model: 'mock-week-creator',
+        traceId: request.traceId,
+        requestClass: request.requestClass,
+      }
+    })
+
+    const context: ChatContext = {
+      athleteProfile: makeProfile({
+        scheduleProfile: {
+          availableDays: ['lun', 'mar', 'mié', 'jue', 'vie', 'sáb', 'dom'],
+          doubleSessionDays: ['lun', 'mar', 'mié', 'jue', 'vie'],
+        },
+      }),
+      recentSessions: [],
+      plannedSessions: [],
+      historicalSessions: [],
+    }
+
+    const response = await WeekCreatorEngine.sendWeekCreate(
+      'Créame 6 sesiones priorizando squash',
+      context,
+      { surface: 'chat', targetWeekStart: '2026-05-04' },
+    )
+
+    expect(response.actions?.[0].sessions).toHaveLength(6)
   })
 
   it('generates a base week when profile has schedule context', async () => {
@@ -407,6 +557,7 @@ describe('validateWeekCreatorResponse sport details', () => {
         allowedSports: ['squash'],
         primarySport: 'squash',
         sessionsPerWeek: 1,
+        maxSessionsPerWeek: 1,
         sessionDurationMins: 60,
         trainingDays: ['monday'],
         allowDoubleSession: false,
@@ -456,6 +607,7 @@ describe('validateWeekCreatorResponse sport details', () => {
         allowedSports: ['running', 'strength'],
         primarySport: 'running',
         sessionsPerWeek: 2,
+        maxSessionsPerWeek: 2,
         sessionDurationMins: 45,
         trainingDays: ['monday', 'wednesday'],
         allowDoubleSession: false,

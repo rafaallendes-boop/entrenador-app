@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import PlanBuilderLaunchDeck from '../components/planBuilder/PlanBuilderLaunchDeck'
 import Card from '../components/ui/Card'
@@ -8,8 +8,14 @@ import { useCoachMemoryStore } from '../store/useCoachMemoryStore'
 import { usePlanBuilderStore } from '../store/usePlanBuilderStore'
 import { getPrimaryGoalEvent } from '../services/macroPlan'
 import { ChevronLeft, RefreshCw, CheckCircle2, AlertTriangle } from 'lucide-react'
-import type { PlanWizardConfig, GoalEvent } from '../types'
+import type { AthleteProfile, PlanWizardConfig, GoalEvent } from '../types'
 import type { TrainingPlanWeek } from '../types/planBuilder'
+
+type PlanBuilderLocationState = {
+  fromWizard?: boolean
+  goalEvent?: GoalEvent
+  wizardConfig?: PlanWizardConfig
+}
 
 const PHASE_LABELS: Record<string, string> = {
   base: 'Base', build: 'Build', peak: 'Peak', taper: 'Taper', race: 'Race', transition: 'Transition',
@@ -22,6 +28,28 @@ const PHASE_DOT: Record<string, string> = {
   taper: 'bg-emerald-400',
   race: 'bg-rose-400',
   transition: 'bg-ink-faint',
+}
+
+function isPlanBuilderLocationState(value: unknown): value is PlanBuilderLocationState {
+  if (!value || typeof value !== 'object') return false
+  const state = value as PlanBuilderLocationState
+  return state.fromWizard === true || Boolean(state.goalEvent || state.wizardConfig)
+}
+
+function mergeWizardStateIntoProfile(
+  profile: AthleteProfile | null,
+  state: PlanBuilderLocationState | null,
+): AthleteProfile | null {
+  if (!profile || !state?.goalEvent || !state.wizardConfig) return profile
+
+  const otherEvents = (profile.goalEvents ?? [])
+    .filter((event) => event.id !== state.goalEvent?.id && event.priority !== 'primary')
+
+  return {
+    ...profile,
+    goalEvents: [state.goalEvent, ...otherEvents],
+    planWizardConfig: state.wizardConfig,
+  }
 }
 
 function buildGenerationSignals(week: TrainingPlanWeek): string[] {
@@ -380,16 +408,22 @@ function SportAthleteIllustration({ goalEvent, className }: { goalEvent: GoalEve
 }
 
 function buildDraftSignature(goalEventId: string, wizardConfig: PlanWizardConfig): string {
-  return JSON.stringify({
-    goalEventId,
-    wizardConfig,
-  })
+  // Exclude timestamps so re-running the wizard with the same settings matches an existing draft.
+  const { createdAt: _c, updatedAt: _u, ...stableConfig } = wizardConfig
+  return JSON.stringify({ goalEventId, wizardConfig: stableConfig })
 }
 
 export default function PlanBuilderV2Page() {
   const navigate = useNavigate()
   const location = useLocation()
   const athleteProfile = useCoachMemoryStore((s) => s.athleteProfile)
+  const launchStateRef = useRef<PlanBuilderLocationState | null>(
+    isPlanBuilderLocationState(location.state) ? location.state : null,
+  )
+  const effectiveAthleteProfile = useMemo(
+    () => mergeWizardStateIntoProfile(athleteProfile, launchStateRef.current),
+    [athleteProfile],
+  )
   const hasLoaded = useCoachMemoryStore((s) => s.hasLoaded)
   const loadMemory = useCoachMemoryStore((s) => s.loadMemory)
   const {
@@ -405,9 +439,9 @@ export default function PlanBuilderV2Page() {
   // creation when location.state propagates through redirects).
   const inflightSignatureRef = useRef<string | null>(null)
 
-  const goalEvent = getPrimaryGoalEvent(athleteProfile)
-  const expectedDraftSignature = athleteProfile?.planWizardConfig && goalEvent
-    ? buildDraftSignature(goalEvent.id, athleteProfile.planWizardConfig)
+  const goalEvent = getPrimaryGoalEvent(effectiveAthleteProfile)
+  const expectedDraftSignature = effectiveAthleteProfile?.planWizardConfig && goalEvent
+    ? buildDraftSignature(goalEvent.id, effectiveAthleteProfile.planWizardConfig)
     : null
   const currentDraftSignature = plan
     ? buildDraftSignature(plan.goalEventId, plan.wizardConfig)
@@ -429,8 +463,8 @@ export default function PlanBuilderV2Page() {
   }, [hasLoaded, loadMemory])
 
   useEffect(() => {
-    if (!athleteProfile || !athleteProfile.planWizardConfig || !goalEvent) return
-    const wizardConfig = athleteProfile.planWizardConfig
+    if (!effectiveAthleteProfile || !effectiveAthleteProfile.planWizardConfig || !goalEvent) return
+    const wizardConfig = effectiveAthleteProfile.planWizardConfig
     if (currentDraftSignature === expectedDraftSignature) {
       inflightSignatureRef.current = null
       return
@@ -441,7 +475,7 @@ export default function PlanBuilderV2Page() {
     }
     inflightSignatureRef.current = expectedDraftSignature
     if (plan) {
-      void createDraft({ profile: athleteProfile, wizardConfig })
+      void createDraft({ profile: effectiveAthleteProfile, wizardConfig })
       return
     }
 
@@ -449,7 +483,7 @@ export default function PlanBuilderV2Page() {
     void (async () => {
       const existingPlans = await db.trainingPlans
         .where('athleteId')
-        .equals(athleteProfile.id)
+        .equals(effectiveAthleteProfile.id)
         .toArray()
       if (cancelled) return
 
@@ -473,13 +507,16 @@ export default function PlanBuilderV2Page() {
         }
       }
 
-      await createDraft({ profile: athleteProfile, wizardConfig })
+      await createDraft({ profile: effectiveAthleteProfile, wizardConfig })
     })()
 
     return () => {
       cancelled = true
+      // Clear the in-flight guard so a re-run (e.g. triggered by a sync update
+      // to athleteProfile) can retry the Dexie query instead of early-returning.
+      inflightSignatureRef.current = null
     }
-  }, [athleteProfile, createDraft, currentDraftSignature, expectedDraftSignature, goalEvent, loadDraft, plan])
+  }, [createDraft, currentDraftSignature, effectiveAthleteProfile, expectedDraftSignature, goalEvent, loadDraft, plan])
 
   const effectiveSelectedWeekIndex = (() => {
     // If there are failed weeks and the user hasn't explicitly selected one of them,
@@ -506,7 +543,7 @@ export default function PlanBuilderV2Page() {
     ...errors.map((issue) => issue.message),
   ]
 
-  if (!hasLoaded && !athleteProfile) {
+  if (!hasLoaded && !effectiveAthleteProfile) {
     return (
       <div className="px-4 pt-12 pb-8 max-w-md mx-auto">
         <Card className="p-4 space-y-3">
@@ -519,7 +556,7 @@ export default function PlanBuilderV2Page() {
     )
   }
 
-  if (!athleteProfile?.planWizardConfig || !goalEvent) {
+  if (!effectiveAthleteProfile?.planWizardConfig || !goalEvent) {
     return (
       <div className="px-4 pt-12 pb-8 max-w-md mx-auto">
         <Card className="p-4 space-y-3">
@@ -553,22 +590,22 @@ export default function PlanBuilderV2Page() {
     : 'Hay un blueprint listo para generar. Conviene inicializar el protocolo desde una estructura estable y consistente.'
 
   async function handleInitializeProtocol() {
-    if (!athleteProfile || !plan || isGenerating || status === 'committing') return
+    if (!effectiveAthleteProfile || !plan || isGenerating || status === 'committing') return
     setInitializedPlanId(plan.id)
-    await runGeneration(athleteProfile)
+    await runGeneration(effectiveAthleteProfile)
   }
 
   async function handleRetryFailedWeeks() {
-    if (!athleteProfile || isGenerating || status === 'committing' || failedWeekIndexes.length === 0) return
+    if (!effectiveAthleteProfile || isGenerating || status === 'committing' || failedWeekIndexes.length === 0) return
 
     for (const weekIndex of failedWeekIndexes) {
-      await regenerateWeek(weekIndex, athleteProfile)
+      await regenerateWeek(weekIndex, effectiveAthleteProfile)
     }
   }
 
   async function handleRetryFullGeneration() {
-    if (!athleteProfile || isGenerating || status === 'committing') return
-    await retryFullGeneration(athleteProfile)
+    if (!effectiveAthleteProfile || isGenerating || status === 'committing') return
+    await retryFullGeneration(effectiveAthleteProfile)
   }
 
   return (
@@ -648,7 +685,22 @@ export default function PlanBuilderV2Page() {
 
       {/* Main grid */}
       <div className="mx-auto max-w-5xl px-4 pt-5 md:px-6">
-        {shouldShowLaunchDeck ? (
+        {(status === 'shelling' || (!plan && weeks.length === 0)) ? (
+          <div
+            className="rounded-2xl p-5"
+            style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}
+          >
+            <div className="flex items-start gap-3">
+              <RefreshCw size={18} className="mt-0.5 flex-shrink-0 animate-spin text-brand" />
+              <div>
+                <h2 className="font-display text-base font-bold text-ink">Preparando el plan</h2>
+                <p className="mt-1 text-sm text-ink-muted">
+                  Estamos armando el shell de semanas antes de iniciar la generación.
+                </p>
+              </div>
+            </div>
+          </div>
+        ) : shouldShowLaunchDeck ? (
           <PlanBuilderLaunchDeck
             title="Plan Builder"
             subtitle="Architect your kinetic framework before the engine expands each week."
@@ -810,7 +862,7 @@ export default function PlanBuilderV2Page() {
                   <button
                     type="button"
                     disabled={isGenerating || status === 'committing'}
-                    onClick={() => athleteProfile && regenerateWeek(selectedWeek.weekIndex, athleteProfile)}
+                    onClick={() => effectiveAthleteProfile && regenerateWeek(selectedWeek.weekIndex, effectiveAthleteProfile)}
                     className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-ink-muted transition-all hover:text-ink disabled:opacity-40"
                     style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
                   >

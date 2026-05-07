@@ -187,7 +187,9 @@ function phasesFromWeeks(weeks: number): string {
 
 function getPlanWindow(eventDate: string, now: Date = new Date()) {
   const totalWeeksUntilEvent = weeksUntil(eventDate, now)
-  const effectivePlanWeeks = Math.min(MAX_COMPETITION_PLAN_WEEKS, Math.max(0, totalWeeksUntilEvent))
+  const effectivePlanWeeks = totalWeeksUntilEvent > 0
+    ? Math.min(MAX_COMPETITION_PLAN_WEEKS, totalWeeksUntilEvent + 1)
+    : 0
   const maxSelectableDate = addDaysToISO(now, MAX_COMPETITION_PLAN_WEEKS * 7)
 
   return {
@@ -370,7 +372,13 @@ export default function CompetitionPlanPage() {
         planWizardConfig: newConfig,
       })
 
-      navigate(ROUTES.PLAN_BUILDER_V2, { state: { fromWizard: true } })
+      navigate(ROUTES.PLAN_BUILDER_V2, {
+        state: {
+          fromWizard: true,
+          goalEvent: newEvent,
+          wizardConfig: newConfig,
+        },
+      })
     } catch {
       setIsSaving(false)
     }
@@ -948,8 +956,8 @@ function Step7Summary({
           {
             label: 'Fecha',
             value: planWindow.exceedsMax
-              ? `${state.eventDate} · ${planWindow.totalWeeksUntilEvent} semanas al evento (${planWindow.effectivePlanWeeks} planificadas)`
-              : `${state.eventDate} · ${planWindow.effectivePlanWeeks} semanas`,
+              ? `${state.eventDate} · ${planWindow.totalWeeksUntilEvent} semanas al evento (${planWindow.effectivePlanWeeks} generadas)`
+              : `${state.eventDate} · ${planWindow.effectivePlanWeeks} semanas incluyendo competencia`,
           },
           { label: 'Objetivo', value: objectiveLabel },
           { label: 'Nivel', value: levelLabel },
@@ -962,7 +970,7 @@ function Step7Summary({
         <p className="text-sm font-medium text-brand-light">{phases}</p>
         {planWindow.exceedsMax && (
           <p className="text-xs text-brand-light mt-1 leading-relaxed">
-            Se crearán las últimas {MAX_COMPETITION_PLAN_WEEKS} semanas previas al evento. Es el máximo disponible para un plan de competencia.
+            Se crearán hasta {MAX_COMPETITION_PLAN_WEEKS} semanas terminando en la semana del evento. Es el máximo disponible para un plan de competencia.
           </p>
         )}
         {macroPlanPhase && (

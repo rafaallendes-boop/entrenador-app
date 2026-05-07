@@ -1388,6 +1388,7 @@ function optionalScheduleProfile(value: unknown, path: string): AthleteProfile['
   return {
     availableDays: optionalStringArray(row.availableDays, `${path}.availableDays`),
     doubleSessionDays: optionalStringArray(row.doubleSessionDays, `${path}.doubleSessionDays`),
+    sessionsPerWeek: optionalFiniteNumber(row.sessionsPerWeek, `${path}.sessionsPerWeek`),
     constraints: optionalString(row.constraints, `${path}.constraints`),
   }
 }

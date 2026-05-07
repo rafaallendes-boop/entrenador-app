@@ -1,7 +1,7 @@
-import type { ChatContext, CoachSessionProposal } from '../../types'
+import type { ChatContext, CoachSessionProposal, SupportedSport } from '../../types'
 import { addDays, format } from 'date-fns'
 import { es } from 'date-fns/locale'
-import { buildWeekSystemPrompt } from '../week/prompts/weekPrompt'
+import { buildWeekCreatorSystemPrompt } from '../week/prompts/weekPrompt'
 import type { WeekCreatorEffectiveConfig } from './WeekCreatorConfig'
 
 export interface WeekCreatorPromptInput {
@@ -32,6 +32,7 @@ export function buildWeekCreatorPrompt(
     .sort((a, b) => b.date.localeCompare(a.date))
     .slice(0, 4)
   const goalEvent = resolveGoalEvent(profile)
+  const prioritySport = extractPrioritySport(input.userMessage, config.allowedSports)
 
   const lines = [
     `Solicitud del usuario: ${input.userMessage}`,
@@ -43,6 +44,7 @@ export function buildWeekCreatorPrompt(
     buildProfileSummary(profile),
     buildGoalSummary(goalEvent, profile?.macroPlan?.currentPhase, profile?.macroPlan?.blockFocus),
     buildConfigSummary(config),
+    buildPrioritySportSummary(prioritySport, config.sessionsPerWeek),
     buildCurrentWeekSessionsSummary(targetWeekSessions, input.targetWeekStart),
     buildRecentHistorySummary(recentHistory),
     buildRecentLogsSummary(recentLogs),
@@ -54,13 +56,44 @@ export function buildWeekCreatorPrompt(
     '',
     'Si hay dos o más sesiones de fuerza, deben tener focos y ejercicios distintos; no repitas exactamente el mismo array exercises en más de una sesión.',
     '',
+    'Contrato de salida obligatorio: aunque la solicitud venga de un chip o sea breve, responde solo con <actions>[{ "type": "create_week", ... }]</actions> y no con texto libre.',
+    '',
     `Regla final: crea una semana cerrada, ejecutable y compacta para ${formatWeekRangeLabel(input.targetWeekStart)}.`,
   ].filter(Boolean)
 
   return {
-    systemPrompt: buildWeekSystemPrompt(),
+    systemPrompt: buildWeekCreatorSystemPrompt(),
     userPrompt: lines.join('\n'),
   }
+}
+
+function buildPrioritySportSummary(prioritySport: SupportedSport | undefined, sessionsPerWeek: number): string {
+  if (!prioritySport) return ''
+  const minimumPrioritySessions = Math.floor(sessionsPerWeek / 2) + 1
+  return [
+    `Prioridad explícita del usuario: ${prioritySport}.`,
+    `- Mantén ${prioritySport} como foco principal de la semana dentro de los deportes permitidos.`,
+    `- Con ${sessionsPerWeek} sesiones semanales, incluye al menos ${minimumPrioritySessions} sesiones de ${prioritySport} y máximo ${sessionsPerWeek - minimumPrioritySessions} accesorias.`,
+    '- Esta prioridad no cambia el contrato de salida: debes devolver una sola acción create_week válida.',
+  ].join('\n')
+}
+
+function extractPrioritySport(
+  userMessage: string,
+  allowedSports: SupportedSport[],
+): SupportedSport | undefined {
+  const normalized = userMessage.toLowerCase()
+  const labels: Record<SupportedSport, RegExp> = {
+    squash: /\bsquash\b/,
+    running: /\b(running|correr|corrida|trote)\b/,
+    cycling: /\b(cycling|ciclismo|bici|bicicleta)\b/,
+    strength: /\b(strength|fuerza|pesas)\b/,
+    mobility: /\b(mobility|movilidad)\b/,
+  }
+
+  return allowedSports.find((sport) =>
+    /\bpriori[zt]/.test(normalized) && labels[sport].test(normalized),
+  )
 }
 
 function buildProfileSummary(profile: ChatContext['athleteProfile']): string {
@@ -109,6 +142,9 @@ function buildConfigSummary(config: WeekCreatorEffectiveConfig): string {
     `- Doble sesión permitido: ${config.allowDoubleSession ? 'sí' : 'no'}`,
     `- Deportes permitidos: ${config.allowedSports.join(', ')}`,
     config.primarySport ? `- Deporte principal a mantener presente: ${config.primarySport}` : '',
+    config.primarySport === 'squash' && config.sessionsPerWeek >= 4
+      ? `- Regla de distribución squash: con ${config.sessionsPerWeek} sesiones, squash debe ser mayoría real (mínimo ${Math.floor(config.sessionsPerWeek / 2) + 1} sesiones squash).`
+      : '',
     `- Estado inicial: fitness ${config.currentFitnessLevel} · fatiga ${config.currentFatigue}`,
     config.injuryNotes?.trim() ? `- Restricciones: ${config.injuryNotes.trim()}` : '',
   ].filter(Boolean)

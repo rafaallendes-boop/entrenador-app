@@ -17,6 +17,7 @@ import {
 } from '../../utils/athlete'
 
 const DAYS = ['lun', 'mar', 'mie', 'jue', 'vie', 'sab', 'dom']
+const SCHEDULE_SESSION_OPTIONS = [2, 3, 4, 5, 6]
 
 const SPORT_OPTIONS: { value: SupportedSport; label: string }[] = [
   { value: 'squash', label: 'Squash' },
@@ -64,6 +65,9 @@ export default function AthleteProfileEditor({ profile, isSaving, onSave }: Prop
   const [doubleSessionDays, setDoubleSessionDays] = useState<string[]>(
     profile?.scheduleProfile?.doubleSessionDays ?? [],
   )
+  const [scheduleSessionsPerWeek, setScheduleSessionsPerWeek] = useState<string>(
+    profile?.scheduleProfile?.sessionsPerWeek != null ? String(profile.scheduleProfile.sessionsPerWeek) : '',
+  )
   const [scheduleConstraints, setScheduleConstraints] = useState(profile?.scheduleProfile?.constraints ?? '')
   const [nutrition, setNutrition] = useState<NutritionProfile>(profile?.nutritionProfile ?? {})
 
@@ -106,6 +110,7 @@ export default function AthleteProfileEditor({ profile, isSaving, onSave }: Prop
     const scheduleProfile: ScheduleProfile = {
       availableDays: availableDays.length > 0 ? availableDays : undefined,
       doubleSessionDays: doubleSessionDays.length > 0 ? doubleSessionDays : undefined,
+      sessionsPerWeek: numOrUndef(scheduleSessionsPerWeek),
       constraints: scheduleConstraints.trim() || undefined,
     }
 
@@ -456,6 +461,35 @@ export default function AthleteProfileEditor({ profile, isSaving, onSave }: Prop
           <DayPicker selected={availableDays} onChange={setAvailableDays} />
           <p className="mt-2 text-xs text-ink-muted">Dias con doble sesion posible</p>
           <DayPicker selected={doubleSessionDays} onChange={setDoubleSessionDays} />
+          <Field label="Sesiones objetivo por semana" hint="Auto reserva descanso segun disponibilidad" className="mt-3">
+            <div className="mt-1 flex flex-wrap gap-1.5">
+              <button
+                type="button"
+                onClick={() => setScheduleSessionsPerWeek('')}
+                className={`rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors ${
+                  scheduleSessionsPerWeek === ''
+                    ? 'border-brand/30 bg-brand/20 text-brand-light'
+                    : 'border-surface-border bg-surface-raised text-ink-muted'
+                }`}
+              >
+                Auto
+              </button>
+              {SCHEDULE_SESSION_OPTIONS.map((amount) => (
+                <button
+                  key={amount}
+                  type="button"
+                  onClick={() => setScheduleSessionsPerWeek(String(amount))}
+                  className={`rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors ${
+                    scheduleSessionsPerWeek === String(amount)
+                      ? 'border-brand/30 bg-brand/20 text-brand-light'
+                      : 'border-surface-border bg-surface-raised text-ink-muted'
+                  }`}
+                >
+                  {amount}
+                </button>
+              ))}
+            </div>
+          </Field>
           <Field label="Restricciones horarias" className="mt-3">
             <input
               value={scheduleConstraints}

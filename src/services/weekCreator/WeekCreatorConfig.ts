@@ -11,6 +11,7 @@ import { getEnabledSports, normalizeSport } from '../../utils/athlete'
 export interface WeekCreatorEffectiveConfig {
   trainingDays: DayOfWeek[]
   sessionsPerWeek: number
+  maxSessionsPerWeek: number
   sessionDurationMins: number
   allowDoubleSession: boolean
   allowedSports: SupportedSport[]
@@ -45,6 +46,7 @@ const SPANISH_DAY_MAP: Record<string, DayOfWeek> = {
 const DEFAULT_ALLOWED_SPORTS: SupportedSport[] = ['squash']
 const DEFAULT_SESSIONS_PER_WEEK = 3
 const DEFAULT_SESSION_DURATION_MINS = 60
+const MAX_SESSIONS_PER_WEEK = 6
 const DEFAULT_FITNESS_LEVEL: WizardFitnessLevel = 'normal'
 const DEFAULT_FATIGUE_LEVEL: WizardFatigueLevel = 'normal'
 
@@ -58,6 +60,66 @@ function normalizeAvailableDays(rawDays: string[] | undefined): DayOfWeek[] {
     if (mapped) seen.add(mapped)
   }
   return Array.from(seen)
+}
+
+function clampSessionsPerWeek(value: number, maxSessionsPerWeek: number): number {
+  return Math.min(Math.max(Math.round(value), DEFAULT_SESSIONS_PER_WEEK), maxSessionsPerWeek)
+}
+
+function resolveMaxSessionsPerWeek(trainingDays: DayOfWeek[], rawDoubleSessionDays?: string[]): number {
+  const trainingDaySet = new Set(trainingDays)
+  const doubleDays = normalizeAvailableDays(rawDoubleSessionDays)
+    .filter((day) => trainingDaySet.has(day))
+  const capacity = trainingDays.length + new Set(doubleDays).size
+  return Math.max(1, Math.min(capacity, MAX_SESSIONS_PER_WEEK))
+}
+
+function deriveScheduleSessionsPerWeek(
+  trainingDays: DayOfWeek[],
+  explicitSessionsPerWeek: number | undefined,
+  maxSessionsPerWeek: number,
+): number {
+  if (explicitSessionsPerWeek != null && Number.isFinite(explicitSessionsPerWeek)) {
+    return clampSessionsPerWeek(explicitSessionsPerWeek, maxSessionsPerWeek)
+  }
+
+  const derived = trainingDays.length >= 5
+    ? trainingDays.length - 1
+    : Math.max(trainingDays.length, DEFAULT_SESSIONS_PER_WEEK)
+  return clampSessionsPerWeek(derived, maxSessionsPerWeek)
+}
+
+export function withRequestedSessionsPerWeek(
+  config: WeekCreatorEffectiveConfig,
+  userMessage: string,
+): WeekCreatorEffectiveConfig {
+  if (config.configSource === 'wizard') return config
+  const requested = extractRequestedSessionsPerWeek(userMessage)
+  if (requested == null) return config
+  return {
+    ...config,
+    sessionsPerWeek: clampSessionsPerWeek(requested, config.maxSessionsPerWeek),
+  }
+}
+
+export function extractRequestedSessionsPerWeek(userMessage: string): number | undefined {
+  const normalized = userMessage
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+
+  const digitMatch = normalized.match(/\b([2-9])\s*(?:sesiones|entrenamientos|sesion(?:es)?|dias?\s+de\s+entreno)\b/)
+  if (digitMatch) return Number(digitMatch[1])
+
+  const wordToNumber: Record<string, number> = {
+    dos: 2,
+    tres: 3,
+    cuatro: 4,
+    cinco: 5,
+    seis: 6,
+  }
+  const wordMatch = normalized.match(/\b(dos|tres|cuatro|cinco|seis)\s*(?:sesiones|entrenamientos|sesion(?:es)?|dias?\s+de\s+entreno)\b/)
+  return wordMatch ? wordToNumber[wordMatch[1]] : undefined
 }
 
 function resolveAllowedSports(profile: AthleteProfile | null | undefined): SupportedSport[] {
@@ -87,6 +149,7 @@ export function resolveWeekCreatorConfig(profile: AthleteProfile | null | undefi
     return {
       trainingDays: [...DEFAULT_TRAINING_DAYS],
       sessionsPerWeek: DEFAULT_SESSIONS_PER_WEEK,
+      maxSessionsPerWeek: MAX_SESSIONS_PER_WEEK,
       sessionDurationMins: DEFAULT_SESSION_DURATION_MINS,
       allowDoubleSession: false,
       allowedSports: [...DEFAULT_ALLOWED_SPORTS],
@@ -103,9 +166,15 @@ export function resolveWeekCreatorConfig(profile: AthleteProfile | null | undefi
   const wizard = profile.planWizardConfig
 
   if (wizard) {
+    const wizardTrainingDays = wizard.trainingDays.length > 0 ? [...wizard.trainingDays] : [...DEFAULT_TRAINING_DAYS]
+    const maxSessionsPerWeek = Math.min(
+      wizardTrainingDays.length * (wizard.allowDoubleSession ? 2 : 1),
+      MAX_SESSIONS_PER_WEEK,
+    )
     return {
-      trainingDays: wizard.trainingDays.length > 0 ? [...wizard.trainingDays] : [...DEFAULT_TRAINING_DAYS],
+      trainingDays: wizardTrainingDays,
       sessionsPerWeek: wizard.sessionsPerWeek,
+      maxSessionsPerWeek: Math.max(1, maxSessionsPerWeek),
       sessionDurationMins: wizard.sessionDurationMins,
       allowDoubleSession: wizard.allowDoubleSession,
       allowedSports,
@@ -121,13 +190,15 @@ export function resolveWeekCreatorConfig(profile: AthleteProfile | null | undefi
   const derivedDays = normalizeAvailableDays(profile.scheduleProfile?.availableDays)
   const trainingDays = derivedDays.length > 0 ? derivedDays : [...DEFAULT_TRAINING_DAYS]
   const hasScheduleSignal = derivedDays.length > 0 || Boolean(profile.scheduleProfile)
+  const maxSessionsPerWeek = resolveMaxSessionsPerWeek(trainingDays, profile.scheduleProfile?.doubleSessionDays)
   const sessionsPerWeek = hasScheduleSignal
-    ? Math.min(Math.max(trainingDays.length, DEFAULT_SESSIONS_PER_WEEK), 4)
+    ? deriveScheduleSessionsPerWeek(trainingDays, profile.scheduleProfile?.sessionsPerWeek, maxSessionsPerWeek)
     : DEFAULT_SESSIONS_PER_WEEK
 
   return {
     trainingDays,
     sessionsPerWeek,
+    maxSessionsPerWeek,
     sessionDurationMins: DEFAULT_SESSION_DURATION_MINS,
     allowDoubleSession: Boolean(profile.scheduleProfile?.doubleSessionDays?.length),
     allowedSports,

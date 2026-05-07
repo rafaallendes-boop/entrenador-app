@@ -249,7 +249,9 @@ function validatePrimarySportPresence(
   const primarySport = config.primarySport
   if (!primarySport) return undefined
   const count = sessions.filter((session) => session.sessionType === primarySport).length
-  const minimum = primarySport === 'squash' && config.sessionsPerWeek >= 5 ? 2 : 1
+  const minimum = primarySport === 'squash' && config.sessionsPerWeek >= 4
+    ? Math.floor(config.sessionsPerWeek / 2) + 1
+    : 1
   if (count < minimum) {
     return `La semana debe incluir al menos ${minimum} sesión${minimum === 1 ? '' : 'es'} de ${primarySport}.`
   }

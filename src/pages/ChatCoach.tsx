@@ -10,6 +10,7 @@ import { currentWeekStartISO, todayISO } from '../utils/date'
 import { getAthleteFirstName, getEnabledSports, getProfileCompleteness } from '../utils/athlete'
 import ChatBubble from '../components/chat/ChatBubble'
 import ChatInput from '../components/chat/ChatInput'
+import ChatMarkdown from '../components/chat/ChatMarkdown'
 import Spinner from '../components/ui/Spinner'
 import type { ChatContext, CoachProposal } from '../types'
 import { ROUTES } from '../constants/routes'
@@ -93,6 +94,7 @@ export default function ChatCoach() {
   const { coachMemory, athleteProfile, loadMemory } = useCoachMemoryStore()
   const { sessions, currentWeekSummary, dayLogs, loadWeek } = useTrainingStore()
   const bottomRef = useRef<HTMLDivElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
   const autoSentRef = useRef(false)
   const { launchIntent, launchId } = useWeeklyLaunchIntent()
 
@@ -133,6 +135,30 @@ export default function ChatCoach() {
     }
   }, [streamingText])
 
+  useEffect(() => {
+    if (!menuOpen) return
+
+    const handlePointerDown = (event: MouseEvent | TouchEvent) => {
+      const target = event.target
+      if (target instanceof Node && menuRef.current?.contains(target)) return
+      setMenuOpen(false)
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMenuOpen(false)
+    }
+
+    document.addEventListener('mousedown', handlePointerDown)
+    document.addEventListener('touchstart', handlePointerDown)
+    document.addEventListener('keydown', handleKeyDown)
+
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown)
+      document.removeEventListener('touchstart', handlePointerDown)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [menuOpen])
+
   const buildContext = useCallback((message: string): ChatContext => {
     const sortedSessions = [...sessions]
       .sort((a, b) => a.date.localeCompare(b.date) || a.timeBlock.localeCompare(b.timeBlock))
@@ -166,7 +192,7 @@ export default function ChatCoach() {
     }
   }, [sessions, currentWeekSummary, dayLogs, coachMemory, athleteProfile, proposals, loadAnalytics])
 
-  const handleSend = useCallback(async (message: string) => {
+  const submitMessage = useCallback(async (message: string) => {
     const result = await sendMessage(message, buildContext(message))
     if (result.route === 'plan_builder_redirect') {
       // Navigate straight to the V2 Plan Builder. Going through the legacy
@@ -181,6 +207,11 @@ export default function ChatCoach() {
     }
   }, [buildContext, navigate, sendMessage])
 
+  const handleSend = useCallback(async (message: string) => {
+    setMenuOpen(false)
+    await submitMessage(message)
+  }, [submitMessage])
+
   // Auto-submit prompt cuando se llega desde PlanBuilder
   useEffect(() => {
     if (autoSentRef.current) return
@@ -191,9 +222,9 @@ export default function ChatCoach() {
 
     markAutoSubmitConsumed(composerDraftKey)
     autoSentRef.current = true
-    void handleSend(draft)
+    void submitMessage(draft)
     navigate(location.pathname, { replace: true, state: null })
-  }, [composerDraft, composerDraftKey, handleSend, location.pathname, locationState?.fromPlanBuilder, navigate])
+  }, [composerDraft, composerDraftKey, location.pathname, locationState?.fromPlanBuilder, navigate, submitMessage])
 
   const handleViewProposal = (proposalId: string) => {
     const proposal = proposals.find((item) => item.id === proposalId)
@@ -267,7 +298,7 @@ export default function ChatCoach() {
   }
 
   return (
-    <div className="h-[100dvh] bg-surface">
+    <div className="relative h-[100dvh] max-h-[100dvh] overflow-hidden bg-surface">
       <div className="fixed inset-x-0 top-0 z-40 border-b border-surface-soft/70 bg-[rgba(14,14,14,0.9)] px-4 pb-3 pt-12 backdrop-blur-xl md:px-6">
         <div className="mx-auto flex w-full max-w-3xl items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-2">
@@ -279,13 +310,15 @@ export default function ChatCoach() {
             </div>
           </div>
 
-          <div className="relative flex flex-shrink-0 items-center gap-1.5">
+          <div ref={menuRef} className="relative flex flex-shrink-0 items-center gap-1.5">
             <button
               onClick={() => {
+                if (isLoading) return
                 setMenuOpen(false)
                 void newSession()
               }}
-              className="inline-flex items-center gap-1.5 rounded-full border border-brand/15 bg-brand/8 px-2.5 py-1.5 text-[11px] font-medium text-brand-light transition-colors hover:bg-brand/12"
+              disabled={isLoading}
+              className="inline-flex items-center gap-1.5 rounded-full border border-brand/15 bg-brand/8 px-2.5 py-1.5 text-[11px] font-medium text-brand-light transition-colors hover:bg-brand/12 disabled:cursor-not-allowed disabled:text-ink-faint/40"
               title="Empezar un nuevo chat"
             >
               <Plus size={14} />
@@ -293,11 +326,11 @@ export default function ChatCoach() {
             </button>
             <button
               onClick={() => {
-                if (!hasMessages) return
+                if (!hasMessages || isLoading) return
                 setMenuOpen(false)
                 setDeleteConfirm(true)
               }}
-              disabled={!hasMessages}
+              disabled={!hasMessages || isLoading}
               className="inline-flex items-center gap-1.5 rounded-full border border-brand/15 bg-brand/8 px-2.5 py-1.5 text-[11px] font-medium text-brand-light transition-colors hover:bg-brand/12 disabled:cursor-not-allowed disabled:text-ink-faint/40"
               title={hasMessages ? 'Borrar conversacion actual' : 'No hay mensajes en esta conversacion'}
             >
@@ -316,20 +349,22 @@ export default function ChatCoach() {
               <div className="absolute right-0 top-full z-10 mt-2 w-44 rounded-lg border border-surface-soft/70 bg-surface-panel shadow-panel">
                 <button
                   onClick={() => {
+                    if (isLoading) return
                     setMenuOpen(false)
                     void newSession()
                   }}
-                  className="w-full border-b border-surface-border px-3 py-2 text-left text-xs text-ink transition-colors hover:bg-surface-raised"
+                  disabled={isLoading}
+                  className="w-full border-b border-surface-border px-3 py-2 text-left text-xs text-ink transition-colors hover:bg-surface-raised disabled:cursor-not-allowed disabled:text-ink-faint/40"
                 >
                   Nuevo chat
                 </button>
                 <button
                   onClick={() => {
-                    if (!hasMessages) return
+                    if (!hasMessages || isLoading) return
                     setMenuOpen(false)
                     setDeleteConfirm(true)
                   }}
-                  disabled={!hasMessages}
+                  disabled={!hasMessages || isLoading}
                   className="w-full px-3 py-2 text-left text-xs text-ink transition-colors hover:bg-surface-raised disabled:cursor-not-allowed disabled:text-ink-faint/40"
                   title={hasMessages ? 'Borrar conversacion actual' : 'No hay mensajes en esta conversacion'}
                 >
@@ -341,7 +376,7 @@ export default function ChatCoach() {
         </div>
       </div>
 
-      <div className="h-full overflow-y-auto px-4 pb-[228px] pt-[108px] md:px-6 md:pb-[208px]">
+      <div className="absolute inset-0 overflow-y-auto overscroll-contain px-4 pb-[228px] pt-[108px] md:px-6 md:pb-[208px]">
         <div className="mx-auto w-full max-w-3xl space-y-4 py-4">
           {showProfileNudge && (
             <div className="hud-border flex items-start gap-2 rounded-xl border border-white/5 bg-[linear-gradient(145deg,rgba(255,77,0,0.12),rgba(14,14,14,0.96))] px-3 py-2 [--hud-accent-start:rgba(255,122,51,0.3)] [--hud-accent-end:rgba(255,77,0,0.14)]">
@@ -427,10 +462,10 @@ export default function ChatCoach() {
               </div>
               <div className="max-w-[90%] rounded-2xl rounded-tl-sm border border-surface-soft/70 bg-[linear-gradient(145deg,rgba(26,26,26,0.96),rgba(14,14,14,0.98))] px-4 py-3 shadow-panel md:max-w-[85%]">
                 {streamingText ? (
-                  <p className="whitespace-pre-wrap text-sm leading-relaxed text-ink">
-                    {streamingText}
+                  <div className="text-sm leading-relaxed text-ink">
+                    <ChatMarkdown text={streamingText} />
                     <span className="ml-0.5 inline-block h-3.5 w-0.5 animate-pulse bg-forge-cyan/70 align-middle" />
-                  </p>
+                  </div>
                 ) : (
                   <div className="flex items-center gap-2 text-sm text-ink-muted">
                     <Spinner />
