@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { db } from '../db/db'
-import type { ChatMessage, ChatContext, ChatContextMetadata, AIRequestClass } from '../types'
+import type { ChatMessage, ChatContext, ChatContextMetadata, AIRequestClass, CoachProposal } from '../types'
 import { CoachEngine } from '../services/ai/CoachEngine'
 import { optimizeChatContext } from '../services/ai/contextOptimizer'
 import { useCoachActionsStore } from './useCoachActionsStore'
@@ -14,6 +14,7 @@ import { resolveChatRoute, type ChatRouteKind } from '../services/chatRouting'
 import { WeekCreatorEngine } from '../services/weekCreator/WeekCreatorEngine'
 
 let activeChatAbortController: AbortController | null = null
+const orphanProposalRepairLocks = new Map<string, Promise<ChatMessage[]>>()
 
 interface ChatState {
   messages: ChatMessage[]
@@ -58,8 +59,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
     }
 
+    const repairedMsgs = await repairOrphanProposalMessages(sessionId, msgs)
     if (sessionId !== get().currentSessionId) return
-    set({ messages: msgs })
+    set({ messages: repairedMsgs })
   },
 
   sendMessage: async (content, context) => {
@@ -217,10 +219,21 @@ export const useChatStore = create<ChatState>((set, get) => ({
         : undefined
       const errorMsg = formatError(e)
       if (get().currentSessionId !== sessionId) return { route: route.kind }
+      const coachErrorMsg = route.kind === 'week_creator'
+        ? buildCoachErrorMessage(errorMsg, sessionId)
+        : undefined
+      if (coachErrorMsg) {
+        await db.chatMessages.add(coachErrorMsg).catch(() => undefined)
+        void syncService.pushChatMessage(coachErrorMsg)
+      }
       set(state => ({
-        messages: orphanCoachMsg
-          ? state.messages.filter(message => message.id !== orphanCoachMsg.id)
-          : state.messages,
+        messages: coachErrorMsg
+          ? orphanCoachMsg
+            ? [...state.messages.filter(message => message.id !== orphanCoachMsg.id), coachErrorMsg]
+            : [...state.messages, coachErrorMsg]
+          : orphanCoachMsg
+            ? state.messages.filter(message => message.id !== orphanCoachMsg.id)
+            : state.messages,
         isLoading: false,
         streamingText: '',
         responsePhase: 'idle',
@@ -336,6 +349,20 @@ function buildCoachMessage(
   }
 }
 
+function buildCoachErrorMessage(errorMessage: string, chatSessionId: string): ChatMessage {
+  return {
+    id: uuid(),
+    role: 'coach',
+    content: `No pude procesar ese pedido.\n\n${errorMessage}\n\nPuedes reintentarlo cuando quieras.`,
+    timestamp: Date.now(),
+    chatSessionId,
+    contextMeta: {
+      contextVersion: 1,
+      likelyTruncated: false,
+    },
+  }
+}
+
 function buildChatContextMetadata(context?: ChatContext): ChatContextMetadata {
   return {
     contextVersion: 1,
@@ -358,6 +385,107 @@ async function discardLateCoachArtifacts(coachMsg: ChatMessage, proposalId?: str
   }
   await db.chatMessages.delete(coachMsg.id)
   void syncService.deleteChatMessages([coachMsg.id])
+}
+
+async function repairOrphanProposalMessages(
+  chatSessionId: string,
+  messages: ChatMessage[],
+): Promise<ChatMessage[]> {
+  const existing = orphanProposalRepairLocks.get(chatSessionId)
+  if (existing) return existing
+
+  const repairPromise = repairOrphanProposalMessagesUnlocked(chatSessionId, messages)
+    .finally(() => {
+      orphanProposalRepairLocks.delete(chatSessionId)
+    })
+  orphanProposalRepairLocks.set(chatSessionId, repairPromise)
+  return repairPromise
+}
+
+async function repairOrphanProposalMessagesUnlocked(
+  chatSessionId: string,
+  messages: ChatMessage[],
+): Promise<ChatMessage[]> {
+  const repairedForSync: Array<{ message: ChatMessage; proposal: CoachProposal }> = []
+  const repairedMessages = await db.transaction('rw', db.chatMessages, db.coachProposals, async () => {
+    const proposals = await db.coachProposals.orderBy('createdAt').toArray()
+    if (proposals.length === 0 || messages.length === 0) return messages
+
+    const nextMessages = [...messages]
+    const messageIds = new Set(nextMessages.map((message) => message.id))
+    const linkedProposalIds = new Set(
+      nextMessages
+        .map((message) => message.proposalId)
+        .filter((proposalId): proposalId is string => typeof proposalId === 'string' && proposalId.length > 0),
+    )
+    const userMessages = nextMessages
+      .filter((message) => message.role === 'user')
+      .sort((a, b) => a.timestamp - b.timestamp)
+
+    for (const proposal of proposals.sort((a, b) => a.createdAt - b.createdAt)) {
+      if (linkedProposalIds.has(proposal.id)) continue
+      if (proposal.chatMessageId && messageIds.has(proposal.chatMessageId)) continue
+
+      const anchor = findProposalAnchorMessage(proposal, userMessages)
+      if (!anchor) continue
+      const hasNearbyCoachReply = nextMessages.some((message) =>
+        message.role === 'coach' &&
+        message.timestamp >= anchor.timestamp &&
+        message.timestamp <= proposal.createdAt + 5 * 60 * 1000
+      )
+      if (hasNearbyCoachReply) continue
+
+      const repairedMessage = buildProposalRecoveredMessage(proposal, chatSessionId, anchor.timestamp)
+      const repairedProposal = { ...proposal, chatMessageId: repairedMessage.id }
+      await db.chatMessages.put(repairedMessage)
+      await db.coachProposals.put(repairedProposal)
+
+      repairedForSync.push({ message: repairedMessage, proposal: repairedProposal })
+      nextMessages.push(repairedMessage)
+      messageIds.add(repairedMessage.id)
+      linkedProposalIds.add(proposal.id)
+    }
+
+    return nextMessages.sort((a, b) => a.timestamp - b.timestamp)
+  })
+
+  for (const repaired of repairedForSync) {
+    void syncService.pushChatMessage(repaired.message)
+    void syncService.pushCoachProposal(repaired.proposal)
+  }
+
+  return repairedMessages
+}
+
+function findProposalAnchorMessage(
+  proposal: CoachProposal,
+  userMessages: ChatMessage[],
+): ChatMessage | undefined {
+  const ORPHAN_REPAIR_WINDOW_MS = 30 * 60 * 1000
+  return [...userMessages]
+    .reverse()
+    .find((message) =>
+      message.timestamp <= proposal.createdAt &&
+      proposal.createdAt - message.timestamp <= ORPHAN_REPAIR_WINDOW_MS
+    )
+}
+
+function buildProposalRecoveredMessage(
+  proposal: CoachProposal,
+  chatSessionId: string,
+  anchorTimestamp: number,
+): ChatMessage {
+  return {
+    id: `recovered-proposal-${proposal.id}`,
+    role: 'coach',
+    content: proposal.message || 'Tengo una propuesta lista para revisar.',
+    timestamp: Math.max(anchorTimestamp + 1, proposal.createdAt),
+    chatSessionId,
+    proposalId: proposal.id,
+    contextMeta: {
+      contextVersion: 1,
+    },
+  }
 }
 
 // ─── Normalization warnings ────────────────────────────────────────────────────

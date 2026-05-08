@@ -49,6 +49,7 @@ export function buildWeekCreatorPrompt(
     buildCurrentWeekSessionsSummary(targetWeekSessions, input.targetWeekStart),
     buildRecentHistorySummary(recentHistory),
     buildRecentLogsSummary(recentLogs),
+    buildRecentCoachAdviceSummary(context.recentMessages),
     profile?.coachMemory?.trim() ? `Memoria del coach relevante: ${profile.coachMemory.trim()}` : '',
     input.retryInstruction ? `Corrección del intento anterior:\n${input.retryInstruction}` : '',
     input.strictFormatting
@@ -211,6 +212,24 @@ function buildRecentLogsSummary(logs: ChatContext['weekDayLogs']): string {
   })
 
   return ['Day logs recientes:', ...lines].join('\n')
+}
+
+function buildRecentCoachAdviceSummary(messages: ChatContext['recentMessages']): string {
+  const coachMessages = (messages ?? [])
+    .filter((message) => message.role === 'coach' && message.content.trim().length > 0)
+    .slice(-2)
+
+  if (coachMessages.length === 0) return ''
+
+  return [
+    'Consejos recientes del coach que debes intentar respetar si no contradicen la configuración:',
+    ...coachMessages.map((message) => `- ${clipForPrompt(message.content, 420)}`),
+  ].join('\n')
+}
+
+function clipForPrompt(value: string, maxLength: number): string {
+  const compact = value.replace(/\s+/g, ' ').trim()
+  return compact.length <= maxLength ? compact : `${compact.slice(0, maxLength - 1)}…`
 }
 
 function resolveGoalEvent(profile: ChatContext['athleteProfile']) {

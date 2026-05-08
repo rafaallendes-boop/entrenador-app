@@ -54,7 +54,7 @@ export function buildActionAlerts(input: ActionAlertsInput): ActionableAlert[] {
   const recoveryAlert = buildRecoveryAlert(input.sessions, today, input.todayDayLog)
   if (recoveryAlert) alerts.push(recoveryAlert)
 
-  const adherenceAlert = buildAdherenceAlert(input.currentWeekSummary)
+  const adherenceAlert = buildAdherenceAlert(input.currentWeekSummary, input.sessions, today)
   if (adherenceAlert) alerts.push(adherenceAlert)
 
   return dedupeAlerts(alerts).sort(compareAlerts)
@@ -165,8 +165,21 @@ function buildRecoveryAlert(
   return null
 }
 
-function buildAdherenceAlert(summary: WeekSummary | null | undefined): ActionableAlert | null {
+function buildAdherenceAlert(
+  summary: WeekSummary | null | undefined,
+  sessions: Session[],
+  today: string,
+): ActionableAlert | null {
   if (!summary || summary.plannedSessions < 3 || summary.completedSessions >= summary.plannedSessions) {
+    return null
+  }
+  const pendingSessions = sessions.filter((session) =>
+    session.status !== 'skipped' && session.status !== 'completed' && session.date >= today,
+  )
+  const pastUncompletedSessions = sessions.filter((session) =>
+    session.status !== 'skipped' && session.status !== 'completed' && session.date < today,
+  )
+  if (pendingSessions.length > 0 && pastUncompletedSessions.length === 0) {
     return null
   }
 

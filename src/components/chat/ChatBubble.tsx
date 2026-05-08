@@ -1,5 +1,5 @@
 import type { ChatMessage } from '../../types'
-import { format } from 'date-fns'
+import { format, isSameYear, isToday, isYesterday } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { AlertTriangle, MessageCircle, Zap } from 'lucide-react'
 import ChatMarkdown from './ChatMarkdown'
@@ -12,7 +12,7 @@ interface ChatBubbleProps {
 
 export default function ChatBubble({ message, hasProposal, onViewProposal }: ChatBubbleProps) {
   const isCoach = message.role === 'coach'
-  const time = format(new Date(message.timestamp), 'HH:mm', { locale: es })
+  const time = formatMessageTimestamp(message.timestamp)
   const likelyTruncated = message.contextMeta?.likelyTruncated === true
 
   return (
@@ -56,4 +56,15 @@ export default function ChatBubble({ message, hasProposal, onViewProposal }: Cha
       </div>
     </div>
   )
+}
+
+function formatMessageTimestamp(timestamp: number): string {
+  const date = new Date(timestamp)
+  const time = format(date, 'HH:mm', { locale: es })
+  if (isToday(date)) return time
+  if (isYesterday(date)) return `ayer ${time}`
+  const day = isSameYear(date, new Date())
+    ? format(date, 'd MMM', { locale: es })
+    : format(date, 'd MMM yyyy', { locale: es })
+  return `${day} ${time}`
 }

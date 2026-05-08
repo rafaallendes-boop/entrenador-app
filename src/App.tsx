@@ -1,5 +1,5 @@
 import { BrowserRouter, Navigate, Routes, Route, useNavigate, useLocation } from 'react-router-dom'
-import { lazy, Suspense, useEffect, type ReactNode } from 'react'
+import { Component, lazy, Suspense, useEffect, type ErrorInfo, type ReactNode } from 'react'
 import AppShell from './components/layout/AppShell'
 import AuthGate from './components/auth/AuthGate'
 import { ROUTES } from './constants/routes'
@@ -29,6 +29,54 @@ function RouteFallback() {
       <div className="w-8 h-8 rounded-full border-2 border-brand border-t-transparent animate-spin" />
     </div>
   )
+}
+
+class AppRouteBoundary extends Component<
+  { children: ReactNode; resetKey: string },
+  { hasError: boolean; message: string | null }
+> {
+  state: { hasError: boolean; message: string | null } = { hasError: false, message: null }
+
+  static getDerivedStateFromError(error: unknown) {
+    return {
+      hasError: true,
+      message: error instanceof Error ? error.message : 'Error inesperado',
+    }
+  }
+
+  componentDidCatch(error: unknown, info: ErrorInfo) {
+    console.error('[router] route render failed', error, info.componentStack)
+  }
+
+  componentDidUpdate(prevProps: { resetKey: string }) {
+    if (prevProps.resetKey !== this.props.resetKey && this.state.hasError) {
+      this.setState({ hasError: false, message: null })
+    }
+  }
+
+  render() {
+    if (!this.state.hasError) return this.props.children
+
+    return (
+      <div className="mx-auto flex min-h-[55vh] w-full max-w-lg flex-col items-center justify-center gap-4 px-4 text-center">
+        <div className="rounded-2xl border border-rose-500/25 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+          No se pudo cargar esta vista.
+          {this.state.message && <span className="mt-1 block text-xs text-rose-200/80">{this.state.message}</span>}
+        </div>
+        <a
+          href={ROUTES.HOME}
+          className="inline-flex items-center rounded-full border border-brand/30 bg-brand/15 px-4 py-2 text-sm font-semibold text-brand-light transition-colors hover:bg-brand/25"
+        >
+          Volver al inicio
+        </a>
+      </div>
+    )
+  }
+}
+
+function RouteBoundary({ children }: { children: ReactNode }) {
+  const location = useLocation()
+  return <AppRouteBoundary resetKey={location.pathname}>{children}</AppRouteBoundary>
 }
 
 /**
@@ -165,6 +213,7 @@ export default function App() {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
         const { syncStatus, syncDetails } = useAuthStore.getState()
+        if (syncStatus === 'error' && syncDetails.lastErrorCategory === 'schema_mismatch' && syncDetails.retryScheduledAt == null) return
         if (syncStatus === 'offline' || syncStatus === 'error' || syncDetails.pendingOps > 0) {
           void syncSignedInUser('visible')
         }
@@ -176,6 +225,7 @@ export default function App() {
     const intervalId = window.setInterval(() => {
       const { syncStatus, syncDetails } = useAuthStore.getState()
       if (syncStatus === 'syncing' || syncDetails.syncAttemptInFlight) return
+      if (syncStatus === 'error' && syncDetails.lastErrorCategory === 'schema_mismatch' && syncDetails.retryScheduledAt == null) return
       if (syncDetails.pendingOps === 0 && syncStatus === 'error' && syncDetails.retryScheduledAt == null) return
       if (syncDetails.pendingOps === 0 && syncStatus !== 'error' && syncStatus !== 'offline') return
       const retryAt = syncDetails.retryScheduledAt
@@ -199,16 +249,21 @@ export default function App() {
             <Routes>
               <Route path={ROUTES.ONBOARDING} element={<OnboardingPage />} />
               <Route element={<AppShell />}>
-                <Route path={ROUTES.HOME} element={<Dashboard />} />
-                <Route path={ROUTES.WEEK} element={<WeeklyView />} />
-                <Route path="/day/:date" element={<DayDetail />} />
-                <Route path={ROUTES.CHAT} element={<ChatCoach />} />
-                <Route path={ROUTES.PLAN_BUILDER} element={<PlanBuilderPage />} />
-                <Route path={ROUTES.COMPETITION_PLAN} element={<CompetitionPlanPage />} />
-                <Route path={ROUTES.PLAN_BUILDER_V2} element={<PlanBuilderV2Page />} />
+                <Route path={ROUTES.HOME} element={<RouteBoundary><Dashboard /></RouteBoundary>} />
+                <Route path={ROUTES.WEEK} element={<RouteBoundary><WeeklyView /></RouteBoundary>} />
+                <Route path="/day/:date" element={<RouteBoundary><DayDetail /></RouteBoundary>} />
+                <Route path={ROUTES.CHAT} element={<RouteBoundary><ChatCoach /></RouteBoundary>} />
+                <Route path={ROUTES.PLAN_BUILDER} element={<RouteBoundary><PlanBuilderPage /></RouteBoundary>} />
+                <Route path={ROUTES.COMPETITION_PLAN} element={<RouteBoundary><CompetitionPlanPage /></RouteBoundary>} />
+                <Route path={ROUTES.PLAN_BUILDER_V2} element={<RouteBoundary><PlanBuilderV2Page /></RouteBoundary>} />
                 <Route path="/history" element={<Navigate to={ROUTES.COMPETITION_PLAN} replace />} />
-                <Route path={ROUTES.SETTINGS} element={<SettingsPage />} />
-                <Route path={ROUTES.IMPORT} element={<ImportPDF />} />
+                <Route path="/coach" element={<Navigate to={ROUTES.CHAT} replace />} />
+                <Route path="/dashboard" element={<Navigate to={ROUTES.HOME} replace />} />
+                <Route path="/plan" element={<Navigate to={ROUTES.COMPETITION_PLAN} replace />} />
+                <Route path="/plan/dashboard" element={<Navigate to={ROUTES.COMPETITION_PLAN} replace />} />
+                <Route path={ROUTES.SETTINGS} element={<RouteBoundary><SettingsPage /></RouteBoundary>} />
+                <Route path={ROUTES.IMPORT} element={<RouteBoundary><ImportPDF /></RouteBoundary>} />
+                <Route path="*" element={<Navigate to={ROUTES.HOME} replace />} />
               </Route>
             </Routes>
           </OnboardingGuard>

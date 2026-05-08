@@ -1,12 +1,14 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Edit2, Flag, ChevronRight, BarChart2, Zap } from 'lucide-react'
 import { useCoachMemoryStore } from '../store/useCoachMemoryStore'
 import { useTrainingStore } from '../store/useTrainingStore'
+import { db } from '../db/db'
 import { computeMacroPlan, getPrimaryGoalEvent, getPhaseLabel } from '../services/macroPlan'
-import { todayISO } from '../utils/date'
+import { fromISO, todayISO } from '../utils/date'
 import { ROUTES } from '../constants/routes'
 import type { MacroPlanPhase } from '../types'
+import type { TrainingPlan } from '../types/planBuilder'
 
 // ── Design tokens ────────────────────────────────────────────
 const T = {
@@ -60,13 +62,13 @@ const SPORT_CONF: Record<string, { color: string; label: string }> = {
 // ── Helpers ──────────────────────────────────────────────────
 function daysToEvent(dateISO: string): number {
   const now = new Date()
-  const event = new Date(dateISO)
+  const event = fromISO(dateISO)
   return Math.max(0, Math.ceil((event.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)))
 }
 
 
 function formatEventDate(dateISO: string): string {
-  const d = new Date(dateISO)
+  const d = fromISO(dateISO)
   return d.toLocaleDateString('es-AR', { day: 'numeric', month: 'long', year: 'numeric' })
 }
 
@@ -142,8 +144,8 @@ function EventCountdown({ title, dateISO, planStartISO }: {
   title: string; dateISO: string; planStartISO?: string;
 }) {
   const days = daysToEvent(dateISO)
-  const planStart = planStartISO ? new Date(planStartISO) : null
-  const eventDate = new Date(dateISO)
+  const planStart = planStartISO ? fromISO(planStartISO) : null
+  const eventDate = fromISO(dateISO)
   const totalDays = planStart
     ? Math.ceil((eventDate.getTime() - planStart.getTime()) / (1000 * 60 * 60 * 24))
     : days * 2
@@ -388,22 +390,49 @@ export default function PlanDashboard({ onEdit }: { onEdit: () => void }) {
   const navigate = useNavigate()
   const { athleteProfile, loadMemory } = useCoachMemoryStore()
   const { allWeekSummaries, loadAllSummaries } = useTrainingStore()
+  const [activeGeneratedPlan, setActiveGeneratedPlan] = useState<TrainingPlan | null>(null)
   const today = todayISO()
 
   useEffect(() => { void loadMemory() }, [loadMemory])
   useEffect(() => { void loadAllSummaries() }, [loadAllSummaries])
+  useEffect(() => {
+    let cancelled = false
+    void db.trainingPlans
+      .where('status')
+      .equals('active')
+      .toArray()
+      .then((plans) => {
+        if (cancelled) return
+        setActiveGeneratedPlan(plans.sort((a, b) => b.updatedAt - a.updatedAt)[0] ?? null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
-  const macroPlan = useMemo(() => computeMacroPlan(athleteProfile), [athleteProfile])
-  const primaryEvent = useMemo(() => getPrimaryGoalEvent(athleteProfile), [athleteProfile])
-  const planConfig = athleteProfile?.planWizardConfig
+  const profileMacroPlan = useMemo(() => computeMacroPlan(athleteProfile), [athleteProfile])
+  const profilePrimaryEvent = useMemo(() => getPrimaryGoalEvent(athleteProfile), [athleteProfile])
+  const macroPlan = profileMacroPlan ?? activeGeneratedPlan?.macroSnapshot ?? null
+  const generatedPrimaryEvent = useMemo(() => activeGeneratedPlan
+    ? {
+      id: activeGeneratedPlan.goalEventId,
+      title: activeGeneratedPlan.title,
+      date: activeGeneratedPlan.macroSnapshot.goalEventDate,
+      sport: activeGeneratedPlan.macroSnapshot.sportDetails.find((detail) => detail.role === 'primary')?.sport ?? 'squash',
+      priority: 'primary' as const,
+    }
+    : null, [activeGeneratedPlan])
+  const primaryEvent = profilePrimaryEvent ?? generatedPrimaryEvent
+  const planConfig = athleteProfile?.planWizardConfig ?? activeGeneratedPlan?.wizardConfig
 
   // Compute weeks
   const totalWeeks = useMemo(() => {
+    if (activeGeneratedPlan) return activeGeneratedPlan.totalWeeks
     if (!primaryEvent?.date || !planConfig?.createdAt) return macroPlan?.weeksRemaining ?? 0
     const start = new Date(planConfig.createdAt)
     const end = new Date(primaryEvent.date)
     return Math.max(1, Math.ceil((end.getTime() - start.getTime()) / (7 * 24 * 60 * 60 * 1000)))
-  }, [primaryEvent, planConfig, macroPlan])
+  }, [activeGeneratedPlan, primaryEvent, planConfig, macroPlan])
 
   const weeksRemaining = macroPlan?.weeksRemaining ?? 0
   const currentWeekNum = Math.max(1, totalWeeks - weeksRemaining + 1)

@@ -66,45 +66,51 @@ export default function QuickActionChips({
 
   if (weekPicker) {
     return (
-      <div className="flex items-center gap-2">
-        <span className="text-xs text-ink-muted flex-shrink-0">¿Para qué semana?</span>
-        <button
-          onClick={() => { setWeekPicker(false); onSelect('Créame una semana de entrenamiento para esta semana') }}
-          disabled={disabled}
-          className="flex-shrink-0 px-3 py-1.5 rounded-pill text-xs font-medium bg-brand/15 border border-brand/30 text-brand-light hover:bg-brand/25 transition-colors disabled:opacity-40"
-        >
-          Esta semana
-        </button>
-        <button
-          onClick={() => { setWeekPicker(false); onSelect('Créame una semana de entrenamiento para la próxima semana') }}
-          disabled={disabled}
-          className="flex-shrink-0 px-3 py-1.5 rounded-pill text-xs font-medium bg-brand/15 border border-brand/30 text-brand-light hover:bg-brand/25 transition-colors disabled:opacity-40"
-        >
-          Próxima semana
-        </button>
-        <button
-          onClick={() => setWeekPicker(false)}
-          disabled={disabled}
-          className="flex-shrink-0 px-2 py-1.5 rounded-pill text-xs text-ink-faint hover:text-ink-muted transition-colors"
-        >
-          ✕
-        </button>
+      <div className="relative -mx-1 overflow-hidden">
+        <div className="flex items-center gap-2 overflow-x-auto px-1 pb-1 scrollbar-none [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <span className="text-xs text-ink-muted flex-shrink-0">¿Para qué semana?</span>
+          <button
+            onClick={() => { setWeekPicker(false); onSelect('Créame una semana de entrenamiento para esta semana') }}
+            disabled={disabled}
+            className="flex-shrink-0 px-3 py-1.5 rounded-pill text-xs font-medium bg-brand/15 border border-brand/30 text-brand-light hover:bg-brand/25 transition-colors disabled:opacity-40"
+          >
+            Esta semana
+          </button>
+          <button
+            onClick={() => { setWeekPicker(false); onSelect('Créame una semana de entrenamiento para la próxima semana') }}
+            disabled={disabled}
+            className="flex-shrink-0 px-3 py-1.5 rounded-pill text-xs font-medium bg-brand/15 border border-brand/30 text-brand-light hover:bg-brand/25 transition-colors disabled:opacity-40"
+          >
+            Próxima semana
+          </button>
+          <button
+            onClick={() => setWeekPicker(false)}
+            disabled={disabled}
+            className="flex-shrink-0 px-2 py-1.5 rounded-pill text-xs text-ink-faint hover:text-ink-muted transition-colors"
+          >
+            ✕
+          </button>
+        </div>
+        <div className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-surface to-transparent" />
       </div>
     )
   }
 
   return (
-    <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
-      {allActions.map(action => (
-        <button
-          key={action.id}
-          onClick={() => handleAction(action)}
-          disabled={disabled}
-          className="flex-shrink-0 px-3 py-1.5 rounded-pill text-xs font-medium bg-surface-raised border border-surface-border text-ink-muted hover:border-brand/40 hover:text-ink transition-colors disabled:opacity-40"
-        >
-          {action.label}
-        </button>
-      ))}
+    <div className="relative -mx-1 overflow-hidden">
+      <div className="flex gap-2 overflow-x-auto px-1 pb-1 scrollbar-none [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {allActions.map(action => (
+          <button
+            key={action.id}
+            onClick={() => handleAction(action)}
+            disabled={disabled}
+            className="flex-shrink-0 px-3 py-1.5 rounded-pill text-xs font-medium bg-surface-raised border border-surface-border text-ink-muted hover:border-brand/40 hover:text-ink transition-colors disabled:opacity-40"
+          >
+            {action.label}
+          </button>
+        ))}
+      </div>
+      <div className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-surface to-transparent" />
     </div>
   )
 }

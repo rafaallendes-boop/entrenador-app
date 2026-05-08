@@ -12,7 +12,7 @@ import {
   previewAppDataImportFile,
   type AppDataImportPreview,
 } from '../services/dataExport'
-import { clearSelectedRemoteAppData, clearSelectedSyncArtifactsForUser, runFullSync, wipeRemoteAndLocalAppData } from '../services/syncService'
+import { clearSchemaMismatchBlocks, clearSelectedRemoteAppData, clearSelectedSyncArtifactsForUser, runFullSync, wipeRemoteAndLocalAppData } from '../services/syncService'
 import {
   clearAllLocalAppData,
   clearSelectedLocalAppData,
@@ -324,7 +324,10 @@ export default function SettingsPage() {
 
   const handleRetrySync = async () => {
     const { user: currentUser } = useAuthStore.getState()
-    if (currentUser) await runFullSync(currentUser.id)
+    if (currentUser) {
+      clearSchemaMismatchBlocks()
+      await runFullSync(currentUser.id)
+    }
   }
 
   const handleSaveAthleteProfile = async (patch: Partial<Omit<AthleteProfile, 'id' | 'updatedAt'>>) => {
@@ -641,7 +644,7 @@ export default function SettingsPage() {
               <p className="text-xs text-ink-faint">Aun no hay trazas IA en esta sesion.</p>
             ) : (
               <div className="space-y-2">
-                {aiDebugRequests.slice(0, 8).map((request) => (
+                {aiDebugRequests.slice(0, 20).map((request) => (
                   <div
                     key={request.traceId}
                     className="rounded-xl border border-surface-border bg-surface-raised px-3 py-2.5 text-xs text-ink-muted"

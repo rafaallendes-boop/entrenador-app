@@ -118,6 +118,27 @@ describe('buildWeeklyActionSummary', () => {
     expect(summary.adherenceStatus).toBe('at_risk')
   })
 
+  it('keeps a newly created future week on track instead of flagging adherence risk', () => {
+    const summary = buildWeeklyActionSummary({
+      sessions: [
+        makeSession({ id: 'session-1', date: '2026-04-10', status: 'planned' }),
+        makeSession({ id: 'session-2', date: '2026-04-11', status: 'planned' }),
+        makeSession({ id: 'session-3', date: '2026-04-12', status: 'planned' }),
+      ],
+      currentWeekSummary: makeSummary({
+        totalSessions: 3,
+        plannedSessions: 3,
+        completedSessions: 0,
+        adherencePct: 0,
+        coachNote: 'Semana recién creada.',
+      }),
+      today: '2026-04-08',
+    })
+
+    expect(summary.primaryAction?.kind).not.toBe('recover_adherence')
+    expect(summary.adherenceStatus).toBe('on_track')
+  })
+
   it('reports on_track when the week has plan, no warnings and check-in is closed', () => {
     const todayDayLog: DayLog = {
       id: 'day-1',

@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => {
     addProposal: vi.fn(),
     loadProposals: vi.fn(),
     pushChatMessage: vi.fn(),
+    pushCoachProposal: vi.fn(),
     deleteChatMessages: vi.fn(),
     deleteCoachProposals: vi.fn(),
   }
@@ -28,6 +29,11 @@ vi.mock('../../db/db', () => ({
       add: vi.fn(async (message: ChatMessage) => {
         if (mocks.addShouldFailForRole === message.role) throw new Error('Dexie failed')
         mocks.chatMessages.push({ ...message })
+      }),
+      put: vi.fn(async (message: ChatMessage) => {
+        const index = mocks.chatMessages.findIndex(item => item.id === message.id)
+        if (index >= 0) mocks.chatMessages[index] = { ...message }
+        else mocks.chatMessages.push({ ...message })
       }),
       update: vi.fn(async (id: string, patch: Partial<ChatMessage>) => {
         const message = mocks.chatMessages.find(item => item.id === id)
@@ -53,13 +59,18 @@ vi.mock('../../db/db', () => ({
     },
     coachProposals: {
       delete: vi.fn(async () => undefined),
+      put: vi.fn(async () => undefined),
       where: vi.fn(() => ({
         anyOf: vi.fn(() => ({
           toArray: vi.fn(async () => []),
           delete: vi.fn(async () => undefined),
         })),
       })),
+      orderBy: vi.fn(() => ({
+        toArray: vi.fn(async () => []),
+      })),
     },
+    transaction: vi.fn(async (_mode: string, _chatMessages: unknown, _coachProposals: unknown, callback: () => unknown) => callback()),
   },
 }))
 
@@ -88,6 +99,7 @@ vi.mock('../useCoachActionsStore', () => ({
 
 vi.mock('../../services/syncService', () => ({
   pushChatMessage: mocks.pushChatMessage,
+  pushCoachProposal: mocks.pushCoachProposal,
   deleteChatMessages: mocks.deleteChatMessages,
   deleteCoachProposals: mocks.deleteCoachProposals,
 }))
@@ -238,6 +250,19 @@ describe('useChatStore.sendMessage', () => {
     expect(mocks.deletedMessageIds).toContain('id-2')
     expect(state.messages.map(message => message.role)).toEqual(['user'])
     expect(state.error).toBe('Proposal failed')
+  })
+
+  it('persists an inline coach error when week creator fails after the user message is saved', async () => {
+    mocks.routeKind = 'week_creator'
+    mocks.sendWeekCreate.mockRejectedValue(new Error('El modelo no devolvió ninguna acción create_week.'))
+
+    await useChatStore.getState().sendMessage('Créame una semana', makeContext())
+
+    const state = useChatStore.getState()
+    expect(state.messages.map(message => message.role)).toEqual(['user', 'coach'])
+    expect(state.messages[1].content).toContain('No pude procesar ese pedido.')
+    expect(state.messages[1].content).toContain('create_week')
+    expect(mocks.chatMessages.map(message => message.role)).toEqual(['user', 'coach'])
   })
 
   it('clears loading without adding a coach message when the request is cancelled', async () => {

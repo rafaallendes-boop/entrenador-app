@@ -82,7 +82,7 @@ export function buildWeeklyActionSummary(input: WeeklyActionLoopInput): WeeklyAc
   const deduped = dedupeAndSort(actions).slice(0, 3)
   const primaryAction = deduped[0] ?? null
   const secondaryActions = deduped.slice(1, 3)
-  const adherenceStatus = buildAdherenceStatus(input.currentWeekSummary)
+  const adherenceStatus = buildAdherenceStatus(input.currentWeekSummary, input.sessions, today)
   const checkInStatus = buildCheckInStatus(input.sessions, today, input.todayDayLog)
   const coherenceStatus = input.macroWeekCoherence?.coherenceStatus ?? 'ok'
   const weekState = buildWeekState({
@@ -190,9 +190,20 @@ function dedupeAndSort(actions: WeeklyActionItem[]): WeeklyActionItem[] {
   return [...byKind.values()].sort((a, b) => a.priority - b.priority || a.title.localeCompare(b.title))
 }
 
-function buildAdherenceStatus(summary: WeekSummary | null | undefined): WeeklyActionAdherenceStatus {
+function buildAdherenceStatus(
+  summary: WeekSummary | null | undefined,
+  sessions: Session[],
+  today: string,
+): WeeklyActionAdherenceStatus {
   if (!summary) return 'unknown'
   if (summary.plannedSessions === 0) return 'no_plan'
+  const hasPastUncompleted = sessions.some((session) =>
+    session.status !== 'skipped' && session.status !== 'completed' && session.date < today,
+  )
+  const hasFutureOrTodayPending = sessions.some((session) =>
+    session.status !== 'skipped' && session.status !== 'completed' && session.date >= today,
+  )
+  if (!hasPastUncompleted && hasFutureOrTodayPending) return 'on_track'
 
   const adherence = summary.adherencePct ?? Math.round((summary.completedSessions / summary.plannedSessions) * 100)
   if (adherence >= 80) return 'on_track'

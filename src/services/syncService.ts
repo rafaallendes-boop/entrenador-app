@@ -19,7 +19,6 @@ import type {
   AthleteProfile,
 } from '../types'
 import type { TrainingPlan, TrainingPlanWeek } from '../types/planBuilder'
-import { clearAllLocalAppData } from './appMaintenance'
 import {
   athleteProfileRowsEqual,
   athleteProfileToRow,
@@ -415,7 +414,10 @@ function isOptionalPlanSchemaMismatch(errorInfo: SyncErrorInfo, table: SupabaseT
   return isOptionalPlanSyncTable(table) && errorInfo.category === 'schema_mismatch'
 }
 
+const SCHEMA_MISMATCH_BLOCK_TTL_MS = 5 * 60 * 1000
+
 function trackOptionalPlanSyncSkip(table: SupabaseTable, errorInfo: SyncErrorInfo, detail: string): void {
+  schemaMismatchBlockedTables.set(table, Date.now())
   syncLog('optional_plan_sync:skipped', {
     table,
     category: errorInfo.category,
@@ -430,6 +432,27 @@ function trackOptionalPlanSyncSkip(table: SupabaseTable, errorInfo: SyncErrorInf
     errorCategory: errorInfo.category,
     detail: errorInfo.technicalMessage,
   })
+}
+
+function isSchemaMismatchBlocked(table: SupabaseTable): boolean {
+  const blockedAt = schemaMismatchBlockedTables.get(table)
+  if (blockedAt == null) return false
+  if (Date.now() - blockedAt < SCHEMA_MISMATCH_BLOCK_TTL_MS) return true
+  schemaMismatchBlockedTables.delete(table)
+  syncLog('optional_plan_sync:block_expired', { table }, 'info')
+  return false
+}
+
+export function clearSchemaMismatchBlocks(): void {
+  if (schemaMismatchBlockedTables.size === 0) return
+  const tables = [...schemaMismatchBlockedTables.keys()]
+  schemaMismatchBlockedTables.clear()
+  syncLog('optional_plan_sync:block_cleared', { tables }, 'info')
+}
+
+async function clearAllLocalAppDataForSync(userId?: string): Promise<void> {
+  const { clearAllLocalAppData } = await import('./appMaintenance')
+  await clearAllLocalAppData(userId)
 }
 
 function mapSelectionToRemoteTables(
@@ -453,6 +476,7 @@ function mapSelectionToRemoteTables(
 const drainQueueDedup = createScopedDedup<boolean>()
 const pullRemoteDedup = createScopedDedup<void>()
 const fullSyncDedup = createScopedDedup<void>()
+const schemaMismatchBlockedTables = new Map<SupabaseTable, number>()
 let syncAttemptCounter = 0
 const entityMutationLanes = new Map<string, Promise<void>>()
 let retryTimer: ReturnType<typeof setTimeout> | null = null
@@ -1069,6 +1093,7 @@ async function upsertRow(
   options?: { athleteProfileWriteSource?: AthleteProfileWriteSource },
 ): Promise<void> {
   if (!isEnabled()) return
+  if (isSchemaMismatchBlocked(table)) return
 
   const userId = getUserId()
   if (!userId) return
@@ -1158,6 +1183,7 @@ async function upsertRow(
 
 async function deleteRow(table: SupabaseTable, id: string): Promise<void> {
   if (!isEnabled()) return
+  if (isSchemaMismatchBlocked(table)) return
 
   const userId = getUserId()
   if (!userId) return
@@ -1482,7 +1508,7 @@ async function applyRemoteFullResetIfNeeded(userId: string): Promise<number | nu
   }
 
   clearSyncArtifactsForUser(userId)
-  await clearAllLocalAppData(userId)
+  await clearAllLocalAppDataForSync(userId)
   acknowledgeRemoteFullReset(userId, remoteResetAt)
   markProfileResetLockStatus(userId, 'awaiting_onboarding_recreation', remoteResetAt)
   return remoteResetAt
@@ -2327,6 +2353,7 @@ async function deleteLocalTrainingPlan(planId: string): Promise<void> {
 
 async function mergeTrainingPlans(userId: string, context: MergeContext): Promise<void> {
   if (context.pendingRemoteWipeTables.has('training_plans')) return
+  if (isSchemaMismatchBlocked('training_plans')) return
   let remoteRows: Record<string, unknown>[]
   try {
     remoteRows = await fetchAll<Record<string, unknown>>('training_plans', userId)
@@ -2381,6 +2408,7 @@ async function mergeTrainingPlans(userId: string, context: MergeContext): Promis
 
 async function mergeTrainingPlanWeeks(userId: string, context: MergeContext): Promise<void> {
   if (context.pendingRemoteWipeTables.has('training_plan_weeks')) return
+  if (isSchemaMismatchBlocked('training_plan_weeks')) return
   let remoteRows: Record<string, unknown>[]
   try {
     remoteRows = await fetchAll<Record<string, unknown>>('training_plan_weeks', userId)
@@ -2903,7 +2931,7 @@ export async function prepareLocalDataForUser(userId: string): Promise<{ shouldM
   const previousUserId = localStorage.getItem(LAST_SYNC_USER_KEY)
   if (previousUserId && previousUserId !== userId) {
     clearSyncArtifactsForUser(previousUserId)
-    await clearAllLocalAppData(previousUserId)
+    await clearAllLocalAppDataForSync(previousUserId)
   }
 
   await applyRemoteFullResetIfNeeded(userId)
@@ -3143,7 +3171,7 @@ export async function wipeRemoteAndLocalAppData(userId: string): Promise<RemoteW
   const outcome: RemoteWipeOutcome = { succeeded: [], tolerated: [], failed: [], pending: allTables, completed: false }
 
   if (!isEnabled()) {
-    await clearAllLocalAppData(userId)
+    await clearAllLocalAppDataForSync(userId)
     clearSyncArtifactsForUser(userId)
     clearProfileResetLock(userId)
     acknowledgeRemoteFullReset(userId, Date.now())
@@ -3159,7 +3187,7 @@ export async function wipeRemoteAndLocalAppData(userId: string): Promise<RemoteW
   const processed = await processPendingRemoteWipes(userId)
   if (!processed.completed) return processed
 
-  await clearAllLocalAppData(userId)
+  await clearAllLocalAppDataForSync(userId)
   clearSyncArtifactsForUser(userId)
   const remoteResetAt = await fetchRemoteFullResetAtBestEffort(userId)
   acknowledgeRemoteFullReset(userId, remoteResetAt ?? Date.now())

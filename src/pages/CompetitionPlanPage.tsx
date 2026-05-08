@@ -1,9 +1,10 @@
-import { useState, useMemo } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import PlanDashboard from './PlanDashboard'
 import { ChevronLeft, ChevronRight, Target, Sparkles, SkipForward, Trash2 } from 'lucide-react'
 import { ROUTES } from '../constants/routes'
 import ConfirmDialog from '../components/ui/ConfirmDialog'
+import { db } from '../db/db'
 import { useCoachMemoryStore } from '../store/useCoachMemoryStore'
 import { computeMacroPlan, getPrimaryGoalEvent, getPhaseLabel } from '../services/macroPlan'
 import { MAX_COMPETITION_PLAN_WEEKS } from '../services/planBuilder/buildPlanShell'
@@ -266,9 +267,24 @@ export default function CompetitionPlanPage() {
   const [editMode, setEditMode] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [showDeletePlanConfirm, setShowDeletePlanConfirm] = useState(false)
+  const [hasActiveGeneratedPlan, setHasActiveGeneratedPlan] = useState(false)
   const [state, setState] = useState<WizardState>(() =>
     initWizardState(athleteProfile, existingEvent, existingConfig)
   )
+
+  useEffect(() => {
+    let cancelled = false
+    void db.trainingPlans
+      .where('status')
+      .equals('active')
+      .count()
+      .then((count) => {
+        if (!cancelled) setHasActiveGeneratedPlan(count > 0)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const update = (patch: Partial<WizardState>) =>
     setState(prev => ({ ...prev, ...patch }))
@@ -278,7 +294,7 @@ export default function CompetitionPlanPage() {
   // Compute macro plan context for the summary step
   const macroPlan = useMemo(() => computeMacroPlan(athleteProfile), [athleteProfile])
   const macroPlanPhaseLabel = macroPlan ? getPhaseLabel(macroPlan.currentPhase) : undefined
-  const hasSavedPlan = Boolean(existingEvent || existingConfig)
+  const hasSavedPlan = Boolean(existingEvent || existingConfig || hasActiveGeneratedPlan)
 
   // Derive primary sport from event type
   const primarySportForEvent = useMemo<SupportedSport | null>(() => {
@@ -314,6 +330,12 @@ export default function CompetitionPlanPage() {
     if (step > 1) setStep(s => s - 1)
     else if (window.history.length > 1) navigate(-1)
     else navigate(ROUTES.SETTINGS)
+  }
+
+  function openEditPlan() {
+    setState(initWizardState(athleteProfile, existingEvent, existingConfig))
+    setStep(1)
+    setEditMode(true)
   }
 
   async function handleDeletePlan() {
@@ -385,7 +407,7 @@ export default function CompetitionPlanPage() {
   }
 
   if (hasSavedPlan && !editMode) {
-    return <PlanDashboard onEdit={() => setEditMode(true)} />
+    return <PlanDashboard onEdit={openEditPlan} />
   }
 
   return (

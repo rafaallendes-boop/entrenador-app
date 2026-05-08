@@ -594,6 +594,51 @@ describe('WeekCreatorEngine', () => {
       'Fuerza tren superior',
     ])
   })
+
+  it('returns a local fallback week when both provider attempts miss create_week', async () => {
+    mockProviderCall.mockImplementation(async (request: { requestClass: string; traceId: string }) => ({
+      text: 'Puedo armar una semana con squash, fuerza y running, pero no incluyo acciones.',
+      provider: 'gemini',
+      model: 'gemini-flash',
+      traceId: request.traceId,
+      requestClass: request.requestClass,
+    }))
+
+    const context: ChatContext = {
+      athleteProfile: makeProfile({
+        planWizardConfig: {
+          goalEventId: 'goal-1',
+          trainingDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
+          sessionsPerWeek: 5,
+          sessionDurationMins: 60,
+          allowDoubleSession: false,
+          complementarySports: ['running', 'strength'],
+          currentFitnessLevel: 'normal',
+          currentFatigue: 'normal',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      }),
+      recentSessions: [],
+      plannedSessions: [],
+      historicalSessions: [],
+    }
+
+    const response = await WeekCreatorEngine.sendWeekCreate(
+      'Créame una semana de entrenamiento para la próxima semana',
+      context,
+      { surface: 'chat', targetWeekStart: '2026-05-04' },
+    )
+
+    expect(mockProviderCall).toHaveBeenCalledTimes(2)
+    expect(response.fallbackUsed).toBe(true)
+    expect(response.actions?.[0]).toMatchObject({
+      type: 'create_week',
+      targetDate: '2026-05-04',
+    })
+    expect(response.actions?.[0].sessions).toHaveLength(5)
+    expect(response.actions?.[0].sessions?.filter((session) => session.sessionType === 'squash')).toHaveLength(3)
+  })
 })
 
 describe('validateWeekCreatorResponse sport details', () => {

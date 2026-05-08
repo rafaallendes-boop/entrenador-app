@@ -230,7 +230,7 @@ describe('alertAdjustmentEngine', () => {
   it('falls back to adherence adjustment when there is no higher-severity draft', () => {
     const draft = buildAutoAdjustmentDraft({
       sessions: [
-        makeSession({ id: 'run-1', type: 'running', title: 'Tempo', date: '2026-04-10' }),
+        makeSession({ id: 'run-1', type: 'running', title: 'Tempo', date: '2026-04-08' }),
         makeSession({ id: 'strength-1', type: 'strength', title: 'Fuerza', date: '2026-04-11' }),
       ],
       currentWeekSummary: makeSummary({ adherencePct: 40 }),

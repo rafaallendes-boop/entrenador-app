@@ -22,8 +22,12 @@ interface MacroPhaseSummaryCardProps {
 }
 
 export default function MacroPhaseSummaryCard({ summary }: MacroPhaseSummaryCardProps) {
-  const sports = (Object.keys(summary.targetDistributionBySport) as SupportedSport[])
-    .filter((sport) => summary.targetDistributionBySport[sport] != null)
+  const sports = Array.from(new Set([
+    ...(Object.keys(summary.targetDistributionBySport) as SupportedSport[]),
+    ...(Object.keys(summary.actualDistributionBySport) as SupportedSport[]),
+  ])).filter((sport) =>
+    summary.targetDistributionBySport[sport] != null || (summary.actualDistributionBySport[sport] ?? 0) > 0,
+  )
 
   return (
     <Card className="p-4 md:p-5">
@@ -57,20 +61,20 @@ export default function MacroPhaseSummaryCard({ summary }: MacroPhaseSummaryCard
         <div className="mt-3 grid gap-2 sm:grid-cols-2">
           {sports.map((sport) => {
             const role = summary.targetDistributionBySport[sport]
-            if (!role) return null
+            const displayRole = role ?? 'support'
 
             return (
               <div key={sport} className="rounded-xl bg-surface-raised/60 px-3 py-2.5">
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-[11px] font-semibold text-ink">{SPORT_LABELS[sport] ?? sport}</p>
                   <span className={`text-[10px] uppercase tracking-wide ${
-                    role === 'primary'
+                    displayRole === 'primary'
                       ? 'text-brand-light'
-                      : role === 'support'
+                      : displayRole === 'support'
                         ? 'text-amber-300'
                         : 'text-ink-faint'
                   }`}>
-                    {ROLE_LABELS[role]}
+                    {ROLE_LABELS[displayRole]}
                   </span>
                 </div>
                 <p className="mt-1 text-[11px] text-ink-faint">

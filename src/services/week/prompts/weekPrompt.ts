@@ -206,8 +206,10 @@ export function buildWeekCreatorSystemPrompt(): string {
     'Eres un generador de semanas de entrenamiento.',
     'Puedes crear una semana standalone desde el chat o una semana alineada a un plan/evento cuando ese contexto exista.',
     'Respondes EXCLUSIVAMENTE con un bloque <actions> JSON que contenga UNA acción create_week para la semana indicada.',
+    'Tu primer caracter debe ser "<" y tu último texto debe ser "</actions>".',
     'No explicas nada fuera del bloque <actions>. Nada de texto previo ni posterior.',
     'La acción create_week debe tener exactamente "type": "create_week" como campo discriminador. Incluye además: targetDate (lunes YYYY-MM-DD), reason, sessions[] y weekObjectives[].',
+    'Formato obligatorio, reemplazando los valores por la semana solicitada: <actions>[{"type":"create_week","targetDate":"YYYY-MM-DD","reason":"...","sessions":[{"date":"YYYY-MM-DD","timeBlock":"AM","sessionType":"running","title":"...","durationMin":45,"objective":"...","rpe":5}],"weekObjectives":["..."]}]</actions>',
     'Respeta estrictamente la configuración disponible: días permitidos, número de sesiones, duración, deportes permitidos, fatiga, fitness y restricciones.',
     'Si no hay evento competitivo activo, planifica una semana general coherente con el perfil y la disponibilidad; no respondas con texto libre.',
     'Debes respetar exactamente el número de sesiones pedido por la configuración y todas deben quedar dentro de los días permitidos.',
@@ -279,6 +281,7 @@ export function buildWeekUserPrompt(input: WeekPromptInput): string {
     `- Deportes permitidos: ${allowed.join(', ')}`,
     `- Carga objetivo por deporte: ${targetLoads}`,
     ...buildPrimarySportRule(plan, week),
+    ...buildRaceWeekRule(plan, week),
     wizardConfig.injuryNotes ? `- Lesiones/restricciones: ${wizardConfig.injuryNotes}` : '',
     '',
     briefPreviousWeek(previousWeek),
@@ -309,6 +312,7 @@ export function buildWeekBatchUserPrompt(input: WeekBatchPromptInput): string {
       `- Carga objetivo por deporte: ${targetLoads}`,
       `- Objetivos: ${week.weekObjectives.map((objective) => objective.goal).join(' | ')}`,
       ...primarySportRule,
+      ...buildRaceWeekRule(plan, week),
     ].join('\n')
   }).join('\n\n')
 
@@ -341,4 +345,13 @@ export function buildWeekBatchUserPrompt(input: WeekBatchPromptInput): string {
     '',
     'Devuelve sólo el bloque <actions> con exactamente dos create_week, una para cada semana pedida.',
   ].filter(Boolean).join('\n')
+}
+
+function buildRaceWeekRule(plan: TrainingPlan, week: TrainingPlanWeek): string[] {
+  if (week.phase !== 'race') return []
+  return [
+    `- Regla crítica de semana Race: marca el evento principal el ${plan.macroSnapshot.goalEventDate} como sesión/competencia si cae dentro de esta semana.`,
+    '- Incluye 1-2 activaciones cortas antes del evento en días permitidos previos al evento; no pongas toda la semana después del evento.',
+    '- Después del evento usa solo recuperación o movilidad suave. El objetivo de la fase es llegar fresco al evento, no empezar el plan post-evento.',
+  ]
 }

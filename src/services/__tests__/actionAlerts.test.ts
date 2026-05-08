@@ -150,4 +150,32 @@ describe('buildActionAlerts', () => {
     expect(alerts[0]?.id).toBe('weekly-adherence-drop')
     expect(alerts[0]?.target).toBe('chat')
   })
+
+  it('does not create an adherence alert when all uncompleted sessions are still upcoming', () => {
+    const summary: WeekSummary = {
+      id: 'week-1',
+      weekStartDate: '2026-05-04',
+      totalSessions: 5,
+      totalMinutes: 300,
+      plannedSessions: 5,
+      completedSessions: 0,
+      plannedMinutes: 300,
+      completedMinutes: 0,
+      adherencePct: 0,
+      squashSessions: 3,
+      runningSessions: 1,
+      strengthSessions: 1,
+    }
+
+    const alerts = buildActionAlerts({
+      sessions: [
+        makeSession({ type: 'squash', date: '2026-05-08', status: 'planned' }),
+        makeSession({ type: 'running', date: '2026-05-09', status: 'planned' }),
+      ],
+      currentWeekSummary: summary,
+      today: '2026-05-08',
+    })
+
+    expect(alerts.some((alert) => alert.id === 'weekly-adherence-drop')).toBe(false)
+  })
 })

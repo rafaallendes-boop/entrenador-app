@@ -1,4 +1,15 @@
-import type { AITechnicalSurface, AthleteProfile, ChatContext, CoachAction, MacroPlan, PlanWizardConfig, SupportedSport } from '../../types'
+import type {
+  AITechnicalSurface,
+  AthleteProfile,
+  ChatContext,
+  CoachAction,
+  CoachSessionProposal,
+  DayOfWeek,
+  MacroPlan,
+  PlanWizardConfig,
+  SupportedSport,
+  TimeBlock,
+} from '../../types'
 import type { TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
 import type { CoachNormalizedResponse } from '../ai/types'
 import { buildAITraceId, getAIRequestPolicy } from '../ai/requestPolicy'
@@ -77,7 +88,7 @@ export const WeekCreatorEngine = {
           targetWeekStart: options.targetWeekStart,
           config,
           retryInstruction: buildWeekRetryInstruction(lastFailure?.error, options.targetWeekStart, config.sessionsPerWeek, attempt),
-          strictFormatting: attempt >= 2,
+          strictFormatting: true,
         })
         promptStage.end({ ok: true })
 
@@ -88,7 +99,7 @@ export const WeekCreatorEngine = {
           requestClass: 'week_creator',
           traceId,
           maxTokens: policy.maxTokens,
-          temperature: attempt === 1 ? policy.temperature : 0.25,
+          temperature: Math.min(policy.temperature, 0.25),
           allowFallback: policy.allowFallback,
           signal: options.signal,
         })
@@ -203,7 +214,41 @@ export const WeekCreatorEngine = {
         error: lastFailure?.error,
       })
     }
-    throw new Error(`${failureMessage} (trace ${failureTraceId})`)
+    const fallback = buildDeterministicWeekCreatorResponse({
+      config,
+      targetWeekStart: options.targetWeekStart,
+      provider: lastFailure?.provider,
+      error: failureMessage,
+    })
+    const fallbackValidation = validateWeekCreatorResponse({
+      response: fallback,
+      context,
+      config,
+      targetWeekStart: options.targetWeekStart,
+    })
+    if (!fallbackValidation.ok || !fallbackValidation.action) {
+      throw new Error(`${failureMessage} (trace ${failureTraceId})`)
+    }
+    useAIDebugStore.getState().startRequest({
+      traceId: fallback.traceId,
+      requestClass: 'week_creator',
+      surface,
+      startedAt: Date.now(),
+    })
+    useAIDebugStore.getState().completeRequest(fallback.traceId, {
+      provider: fallback.provider,
+      model: fallback.model,
+      durationMs: 0,
+      retryUsed: true,
+      fallbackUsed: true,
+    })
+    return {
+      ...fallback,
+      actions: [fallbackValidation.action],
+      retryUsed: true,
+      fallbackUsed: true,
+      message: `${summarizeWeekCreatorAction(fallbackValidation.action)}\n\nNota: Gemini no devolvió el formato estructurado en ${MAX_ATTEMPTS} intentos, así que preparé una semana segura con tu configuración actual.`,
+    }
   },
 }
 
@@ -348,4 +393,218 @@ function addDaysIso(date: string, days: number): string {
   const start = new Date(`${date}T00:00:00.000Z`)
   start.setUTCDate(start.getUTCDate() + days)
   return start.toISOString().slice(0, 10)
+}
+
+function buildDeterministicWeekCreatorResponse(input: {
+  config: WeekCreatorEffectiveConfig
+  targetWeekStart: string
+  provider?: CoachNormalizedResponse['provider']
+  error?: string
+}): CoachNormalizedResponse {
+  const action: CoachAction = {
+    type: 'create_week',
+    reason: 'Fallback local: el provider no entregó una acción create_week válida.',
+    targetDate: input.targetWeekStart,
+    weekObjectives: [
+      'Mantener continuidad con carga controlada.',
+      'Priorizar el deporte principal sin perder soporte complementario.',
+      'Dejar una semana ejecutable y fácil de ajustar.',
+    ],
+    sessions: buildDeterministicSessions(input.config, input.targetWeekStart),
+  }
+
+  return {
+    message: summarizeWeekCreatorAction(action),
+    actions: [action],
+    provider: 'mock',
+    model: `local-week-fallback${input.provider ? `-after-${input.provider}` : ''}`,
+    timestamp: Date.now(),
+    durationMs: 0,
+    traceId: buildAITraceId('week_creator'),
+    requestClass: 'week_creator',
+    retryUsed: true,
+    fallbackUsed: true,
+    raw: input.error ? { fallbackReason: input.error } : undefined,
+    meta: { hadActionsMarkup: true, actionParseFailed: false, likelyTruncated: false, outcome: 'ok' },
+  }
+}
+
+function buildDeterministicSessions(
+  config: WeekCreatorEffectiveConfig,
+  targetWeekStart: string,
+): CoachSessionProposal[] {
+  const sportSequence = buildFallbackSportSequence(config)
+  const plannedSlots = buildFallbackSlots(config, targetWeekStart, sportSequence.length)
+
+  return sportSequence.map((sport, index) => {
+    const slot = plannedSlots[index]
+    return buildFallbackSession(sport, slot.date, slot.timeBlock, config.sessionDurationMins, index)
+  })
+}
+
+function buildFallbackSportSequence(config: WeekCreatorEffectiveConfig): SupportedSport[] {
+  const primary = config.primarySport ?? config.allowedSports[0] ?? 'squash'
+  const allowed = uniqueSports([primary, ...config.allowedSports])
+  const supportSports = allowed.filter((sport) => sport !== primary)
+  const total = Math.max(1, config.sessionsPerWeek)
+  const primaryTarget = primary === 'squash' && total >= 4
+    ? Math.floor(total / 2) + 1
+    : Math.min(total, Math.max(1, Math.ceil(total / 2)))
+  const sequence: SupportedSport[] = []
+  let primaryCount = 0
+  let supportIndex = 0
+
+  for (let index = 0; index < total; index++) {
+    const remainingSlots = total - index
+    const remainingPrimary = primaryTarget - primaryCount
+    const mustUsePrimary = remainingPrimary >= remainingSlots
+    const shouldUsePrimary = primaryCount < primaryTarget && (index % 2 === 0 || supportSports.length === 0)
+    if (mustUsePrimary || shouldUsePrimary) {
+      sequence.push(primary)
+      primaryCount += 1
+      continue
+    }
+
+    sequence.push(supportSports[supportIndex % supportSports.length] ?? primary)
+    supportIndex += 1
+  }
+
+  return sequence
+}
+
+function uniqueSports(sports: SupportedSport[]): SupportedSport[] {
+  return sports.filter((sport, index) => sports.indexOf(sport) === index)
+}
+
+function buildFallbackSlots(
+  config: WeekCreatorEffectiveConfig,
+  targetWeekStart: string,
+  count: number,
+): Array<{ date: string; timeBlock: TimeBlock }> {
+  const fallbackDays: DayOfWeek[] = ['monday', 'wednesday', 'friday']
+  const allowedDays = config.trainingDays.length > 0 ? config.trainingDays : fallbackDays
+  const dates = allowedDays
+    .map((day) => addDaysIso(targetWeekStart, dayOffset(day)))
+    .sort()
+  const slots: Array<{ date: string; timeBlock: TimeBlock }> = []
+
+  for (const date of dates) {
+    slots.push({ date, timeBlock: 'AM' })
+    if (config.allowDoubleSession) slots.push({ date, timeBlock: 'PM' })
+  }
+
+  return slots.slice(0, count)
+}
+
+function dayOffset(day: DayOfWeek): number {
+  const offsets: Record<DayOfWeek, number> = {
+    monday: 0,
+    tuesday: 1,
+    wednesday: 2,
+    thursday: 3,
+    friday: 4,
+    saturday: 5,
+    sunday: 6,
+  }
+  return offsets[day]
+}
+
+function buildFallbackSession(
+  sport: SupportedSport,
+  date: string,
+  timeBlock: TimeBlock,
+  baseDurationMin: number,
+  index: number,
+): CoachSessionProposal {
+  const durationMin = sport === 'mobility' ? Math.min(40, baseDurationMin) : baseDurationMin
+  const base = {
+    date,
+    timeBlock,
+    sessionType: sport,
+    durationMin,
+    rpe: sport === 'mobility' ? 3 : sport === 'strength' ? 6 : 5,
+  }
+
+  if (sport === 'running') {
+    return {
+      ...base,
+      title: 'Rodaje Z2 controlado',
+      objective: 'Sumar carga aeróbica sin interferir con el deporte principal.',
+      runningType: 'z2',
+      targetHrMin: 130,
+      targetHrMax: 150,
+    }
+  }
+
+  if (sport === 'strength') {
+    const variants = [
+      [
+        { name: 'Sentadilla goblet', sets: 3, reps: 8, group: 'legs' as const },
+        { name: 'Remo con mancuerna', sets: 3, reps: 10, group: 'pull' as const },
+        { name: 'Plancha lateral', sets: 3, reps: '30s/lado', group: 'core' as const },
+      ],
+      [
+        { name: 'Peso muerto rumano', sets: 3, reps: 8, group: 'legs' as const },
+        { name: 'Press inclinado', sets: 3, reps: 8, group: 'push' as const },
+        { name: 'Pallof press', sets: 3, reps: '10/lado', group: 'core' as const },
+      ],
+    ]
+    return {
+      ...base,
+      title: index % 2 === 0 ? 'Fuerza base tren inferior' : 'Fuerza soporte torso',
+      objective: 'Construir soporte general con fatiga controlada.',
+      exercises: variants[index % variants.length],
+    }
+  }
+
+  if (sport === 'cycling') {
+    return {
+      ...base,
+      title: 'Ciclismo Z2 suave',
+      objective: 'Base aeróbica de baja interferencia.',
+      cyclingDetails: {
+        sessionCategory: 'support aerobic',
+        sessionFamily: 'z2_aerobic',
+        targetStructure: `${durationMin}min continuos en Z2, cadencia cómoda.`,
+        intensityReference: 'low',
+        executionNotes: 'Mantén sensación conversacional y evita cerrar fuerte.',
+      },
+    }
+  }
+
+  if (sport === 'mobility') {
+    return {
+      ...base,
+      title: 'Movilidad restaurativa',
+      objective: 'Liberar cadera, columna y tobillo para sostener la semana.',
+      exercises: [
+        { name: '90/90 de cadera', sets: 2, reps: '60s/lado', group: 'mobility', mobilityFocus: 'hip' },
+        { name: 'Rotación torácica', sets: 2, reps: '8/lado', group: 'mobility', mobilityFocus: 'spine' },
+        { name: 'Movilidad de tobillo', sets: 2, reps: '10/lado', group: 'mobility', mobilityFocus: 'ankle' },
+      ],
+      mobilityDetails: {
+        focusAreas: ['hip', 'spine', 'ankle'],
+        context: 'full_body',
+        targetStructure: `${durationMin}min de movilidad continua, sin dolor y con respiración nasal.`,
+        executionNotes: 'Usa rango cómodo; debe dejarte mejor, no cansado.',
+      },
+    }
+  }
+
+  return {
+    ...base,
+    sessionType: 'squash',
+    title: index % 2 === 0 ? 'Squash técnico controlado' : 'Squash juegos condicionados',
+    objective: 'Mantener calidad técnica y desplazamiento sin exceder la carga.',
+    subtype: 'training',
+    squashDetails: {
+      trainingFocus: index % 2 === 0 ? 'technical' : 'conditioned_games',
+      sessionMode: 'drill_session',
+      sessionKind: index % 2 === 0 ? 'technical' : 'control',
+      drills: [
+        { name: 'Drives paralelos con recuperación al T', durationMin: 18 },
+        { name: 'Boast y contra-boast con objetivo de profundidad', durationMin: 14 },
+      ],
+    },
+  }
 }

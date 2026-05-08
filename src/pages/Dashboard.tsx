@@ -103,7 +103,7 @@ export default function Dashboard() {
 
   const todayNutrition = getDayNutrition(todaySessions, athleteProfile, dayLogs[today])
 
-  const hasTrainingHistory = allWeekSummaries.length > 0
+  const hasTrainingHistory = allWeekSummaries.length > 0 || sessions.length > 0 || currentWeekSummary != null
   const defaultCoachNote = hasTrainingHistory
     ? `Hola ${athleteFirstName}, ¿cómo viene la semana? Revisa tu semana en curso o solicita al coach que actualice tu plan.`
     : `Bienvenido${athleteProfile?.name ? `, ${athleteFirstName}` : ''}. Carga tu primera semana de entrenamiento y empieza a registrar tu progreso.`

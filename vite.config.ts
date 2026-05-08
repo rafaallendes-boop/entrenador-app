@@ -28,7 +28,27 @@ export default defineConfig(({ mode }) => {
       dedupe: ['react', 'react-dom', 'react-router-dom'],
     },
     optimizeDeps: {
-      include: ['react', 'react-dom', 'react-router-dom'],
+      entries: [
+        'index.html',
+        'src/**/*.{ts,tsx}',
+        '!src/**/*.test.{ts,tsx}',
+        '!src/**/__tests__/**',
+      ],
+      include: [
+        '@supabase/supabase-js',
+        'date-fns',
+        'date-fns/locale',
+        'dexie',
+        'lucide-react',
+        'pdfjs-dist',
+        'pdfjs-dist/build/pdf.min.mjs',
+        'react',
+        'react-dom',
+        'react-dom/client',
+        'react/jsx-runtime',
+        'react-router-dom',
+        'zustand',
+      ],
     },
     server: {
       host: true,

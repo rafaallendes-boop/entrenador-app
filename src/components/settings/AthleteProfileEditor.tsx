@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ChevronDown, ChevronUp } from 'lucide-react'
+import { Check, ChevronDown, ChevronUp } from 'lucide-react'
 import type {
   AthleteProfile,
   NutritionProfile,
@@ -227,7 +227,7 @@ export default function AthleteProfileEditor({ profile, isSaving, onSave }: Prop
                     }`}
                   >
                     {option.label}
-                    {resolvedPrimarySport === option.value && <span className="ml-1 text-brand-light">OK</span>}
+                    {resolvedPrimarySport === option.value && <Check size={12} className="ml-1 text-brand-light" aria-hidden />}
                   </button>
                 ))}
               </div>
