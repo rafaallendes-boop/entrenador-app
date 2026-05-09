@@ -1,5 +1,5 @@
 import { CheckCircle2, Loader2, X, Zap } from 'lucide-react'
-import type { CoachProposal, CyclingDetails, GeneratedProtocol, MobilityDetails, Session, SquashSessionMode } from '../../types'
+import type { CoachProposal, CyclingDetails, GeneratedProtocol, MobilityDetails, Session, SquashSessionBlockKind, SquashSessionMode } from '../../types'
 
 const ACTION_LABEL: Record<string, string> = {
   skip_session: 'Saltar sesion',
@@ -29,6 +29,13 @@ const SQUASH_FOCUS_LABEL: Record<string, string> = {
   tactical: 'Tactico',
   physical: 'Fisico-especifico',
   conditioned_games: 'Juegos condicionados',
+}
+
+const SQUASH_BLOCK_LABEL: Record<SquashSessionBlockKind, string> = {
+  shadows: 'Sombras / pies',
+  technical: 'Tecnica',
+  control: 'Control',
+  match: 'Partido final',
 }
 
 interface ProposalDrawerProps {
@@ -276,7 +283,16 @@ function renderProposalDetails(
     exercises?: Array<{ name: string; sets: number; reps: number | string; weight?: number }>
     cyclingDetails?: CyclingDetails
     mobilityDetails?: MobilityDetails
-    squashDetails?: { trainingFocus: string; sessionMode?: SquashSessionMode; drills?: Array<{ name: string; durationMin?: number; notes?: string }> }
+    squashDetails?: {
+      trainingFocus: string
+      sessionMode?: SquashSessionMode
+      drills?: Array<{ name: string; durationMin?: number; notes?: string }>
+      blocks?: Array<{
+        kind: SquashSessionBlockKind
+        durationMin?: number
+        drills: Array<{ name: string; durationMin?: number; notes?: string }>
+      }>
+    }
     warmup?: GeneratedProtocol
     cooldown?: GeneratedProtocol
   },
@@ -301,18 +317,37 @@ function renderProposalDetails(
               {formatSquashSessionMode(item.squashDetails.sessionMode)}
             </p>
           )}
-          <div className="mt-1 space-y-1">
-            {(item.squashDetails.drills ?? []).slice(0, 4).map((drill, drillIndex) => (
-              <p key={drillIndex} className="truncate text-[10px] text-ink-faint">
-                {drill.name}
-                {drill.durationMin ? ` · ${drill.durationMin}min` : ''}
-                {drill.notes ? ` · ${drill.notes}` : ''}
-              </p>
-            ))}
-            {(item.squashDetails.drills?.length ?? 0) > 4 && (
-              <p className="text-[10px] text-ink-faint/50">+{(item.squashDetails.drills?.length ?? 0) - 4} drills mas</p>
-            )}
-          </div>
+          {item.squashDetails.blocks?.length ? (
+            <div className="mt-1 space-y-1.5">
+              {item.squashDetails.blocks.map((block, blockIndex) => (
+                <div key={`${block.kind}-${blockIndex}`}>
+                  <p className="text-[10px] font-medium text-emerald-200/80">
+                    {SQUASH_BLOCK_LABEL[block.kind] ?? block.kind}
+                    {block.durationMin ? ` · ${block.durationMin}min` : ''}
+                  </p>
+                  {block.drills.slice(0, 3).map((drill, drillIndex) => (
+                    <p key={`${block.kind}-${drillIndex}`} className="truncate text-[10px] text-ink-faint">
+                      {drill.name}
+                      {drill.durationMin ? ` · ${drill.durationMin}min` : ''}
+                    </p>
+                  ))}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="mt-1 space-y-1">
+              {(item.squashDetails.drills ?? []).slice(0, 4).map((drill, drillIndex) => (
+                <p key={drillIndex} className="truncate text-[10px] text-ink-faint">
+                  {drill.name}
+                  {drill.durationMin ? ` · ${drill.durationMin}min` : ''}
+                  {drill.notes ? ` · ${drill.notes}` : ''}
+                </p>
+              ))}
+              {(item.squashDetails.drills?.length ?? 0) > 4 && (
+                <p className="text-[10px] text-ink-faint/50">+{(item.squashDetails.drills?.length ?? 0) - 4} drills mas</p>
+              )}
+            </div>
+          )}
         </div>
       )}
 
