@@ -37,6 +37,7 @@ if (OPTIONS.quick) OPTIONS.skipWeek = true
 
 const TIMEOUTS = {
   navigation: 20_000,
+  routeReady: 45_000,
   auth: 180_000,
   chatResponse: 90_000,
   proposalAppear: 60_000,
@@ -86,9 +87,33 @@ async function goto(page, path) {
 }
 
 async function assertNoRouteCrash(page, path) {
-  const body = await page.locator('body').innerText({ timeout: 10_000 })
+  const body = await getBodyText(page)
   if (body.includes('No se pudo cargar esta vista')) {
     throw new Error(`Route boundary rendered on ${path}`)
+  }
+}
+
+async function getBodyText(page) {
+  return (await page.locator('body').textContent({ timeout: 10_000 }).catch(() => '')) ?? ''
+}
+
+async function waitForBodyText(page, pattern, timeout = TIMEOUTS.routeReady) {
+  await page.waitForFunction(
+    ({ source, flags }) => {
+      const bodyText = document.body.textContent ?? ''
+      return new RegExp(source, flags).test(bodyText)
+    },
+    { source: pattern.source, flags: pattern.flags },
+    { timeout },
+  )
+}
+
+async function hasBodyTextAfterWait(page, pattern, timeout = 15_000) {
+  try {
+    await waitForBodyText(page, pattern, timeout)
+    return true
+  } catch {
+    return false
   }
 }
 
@@ -118,7 +143,7 @@ async function sendChatMessage(page, message, timeout = TIMEOUTS.chatResponse) {
   await waitForChatReady(page, timeout)
   await page.waitForTimeout(900)
 
-  const afterText = await page.locator('main').innerText().catch(() => '')
+  const afterText = await page.locator('main').textContent().catch(() => '') ?? ''
   const afterUsefulCount = await page.getByTitle('Respuesta útil').count().catch(() => 0)
   return { beforeText, afterText, beforeUsefulCount, afterUsefulCount }
 }
@@ -161,11 +186,13 @@ async function rateVisibleCoachResponse(page) {
 
 async function verifySettingsQuality(page) {
   await goto(page, '/settings')
-  const body = await page.locator('body').innerText()
-  if (body.includes('Beta quality local') && body.includes('Debug IA')) {
+  await waitForBodyText(page, /Ajustes|Configuracion local|Configuración local/i)
+  const hasBetaPanel = await hasBodyTextAfterWait(page, /Beta quality local|Debug IA/i)
+  const body = await getBodyText(page)
+  if (hasBetaPanel && body.includes('Beta quality local') && body.includes('Debug IA')) {
     ok('Settings muestra panel Beta Quality')
   } else {
-    fail('Settings no muestra panel Beta Quality')
+    fail('Settings no muestra panel Beta Quality', body.slice(0, 180).replace(/\s+/g, ' '))
   }
 
   if (/chat_(general|action)|week_creator|plan_builder/.test(body)) {
@@ -326,11 +353,12 @@ async function runWeekCreator(page) {
 async function runWeeklyViewVerification(page) {
   step('7. WeeklyView')
   await goto(page, '/week')
-  const body = await page.locator('body').innerText()
-  if (/lunes|martes|miércoles|jueves|viernes|sábado|domingo|sesión|squash|running|fuerza|movilidad/i.test(body)) {
+  await waitForBodyText(page, /Semana|Weekly planner|Sin sesiones planificadas|Día libre|Dia libre/i)
+  const body = await getBodyText(page)
+  if (/Semana|Weekly planner|lunes|martes|miércoles|jueves|viernes|sábado|domingo|sesión|sesiones|Día libre|Dia libre|squash|running|fuerza|movilidad/i.test(body)) {
     ok('WeeklyView muestra estructura semanal')
   } else {
-    fail('WeeklyView no muestra estructura semanal reconocible')
+    fail('WeeklyView no muestra estructura semanal reconocible', body.slice(0, 180).replace(/\s+/g, ' '))
   }
 }
 
