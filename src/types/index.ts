@@ -143,11 +143,13 @@ export type SquashTrainingFocus = 'technical' | 'tactical' | 'physical' | 'condi
 export type SquashSessionMode = 'drill_session' | 'practice_match' | 'competition_match'
 export type SquashSessionKind = 'technical' | 'control' | 'shadows' | 'match' | 'mixed'
 export type SquashSessionBlockKind = Exclude<SquashSessionKind, 'mixed'>
+export type SquashDrillExecutionMode = 'solo' | 'partner' | 'either' | 'match'
 
 export interface SquashDrill {
   name: string
   durationMin?: number
   notes?: string
+  executionMode?: SquashDrillExecutionMode
 }
 
 export interface SquashSessionBlock {

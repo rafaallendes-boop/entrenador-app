@@ -1,5 +1,6 @@
 import type {
   SquashDrill,
+  SquashDrillExecutionMode,
   SquashSessionBlockKind,
   SquashTrainingFocus,
 } from '../../types'
@@ -20,6 +21,7 @@ export interface SquashDrillDefinition {
   intent?: DrillIntent
   constraints?: string[]
   progressionLevel?: DrillProgressionLevel
+  executionMode?: SquashDrillExecutionMode
 }
 
 export function isSquashMatchDrill(value: Pick<SquashDrillDefinition, 'category' | 'tags'>): boolean {
@@ -36,6 +38,30 @@ export function isShadowsDrill(value: Pick<SquashDrillDefinition, 'category' | '
     value.tags.includes('footwork') ||
     value.focus.includes('ghosting')
   )
+}
+
+export function resolveDrillExecutionMode(
+  definition: Pick<SquashDrillDefinition, 'category' | 'tags' | 'executionMode'>,
+): SquashDrillExecutionMode {
+  if (definition.executionMode) return definition.executionMode
+  if (definition.category === 'match' || definition.tags.includes('match_play')) return 'match'
+  if (
+    definition.tags.includes('solo') ||
+    definition.tags.includes('volume_reps') ||
+    definition.tags.includes('ghosting') ||
+    definition.tags.includes('footwork')
+  ) {
+    return 'solo'
+  }
+  if (
+    definition.tags.includes('conditioned_game') ||
+    definition.tags.includes('multiball') ||
+    definition.tags.includes('practice')
+  ) {
+    return 'partner'
+  }
+  if (definition.tags.includes('control_session')) return 'either'
+  return 'either'
 }
 
 export function resolveSquashDrillKind(definition: SquashDrillDefinition): SquashSessionBlockKind {
@@ -55,9 +81,13 @@ export function orderSquashDrillsForSession<T extends { name: string }>(
 }
 
 export function orderSquashBlocksForSession<T extends { kind: SquashSessionBlockKind }>(blocks: T[]): T[] {
-  const regular = blocks.filter((block) => block.kind !== 'match')
-  const matches = blocks.filter((block) => block.kind === 'match')
-  return [...regular, ...matches]
+  const order: Record<SquashSessionBlockKind, number> = {
+    shadows: 0,
+    technical: 1,
+    control: 2,
+    match: 3,
+  }
+  return [...blocks].sort((a, b) => order[a.kind] - order[b.kind])
 }
 
 export const SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
@@ -553,6 +583,7 @@ export function toSquashDrill(definition: SquashDrillDefinition, durationMin?: n
     name: definition.name,
     durationMin,
     notes: notes ?? definition.description,
+    executionMode: resolveDrillExecutionMode(definition),
   }
 }
 

@@ -1,6 +1,7 @@
 import type {
   Session,
   SquashDrill,
+  SquashDrillExecutionMode,
   SquashSessionBlock,
   SquashSessionBlockKind,
   SquashSessionKind,
@@ -15,6 +16,7 @@ import {
   orderSquashBlocksForSession,
   normalizeSquashDrillKey,
   orderSquashDrillsForSession,
+  resolveDrillExecutionMode,
   resolveSquashDrillKind,
   SQUASH_DRILL_LIBRARY,
   type DrillCategory,
@@ -34,7 +36,10 @@ export interface SquashSelectionContext {
   /** Quantitative ACWR signal for squash-specific load */
   squashAcwr?: DisciplineAcwr
   desiredKind?: SquashSelectionDesiredKind
+  partnerAvailability?: SquashPartnerAvailability
 }
+
+export type SquashPartnerAvailability = 'solo' | 'partner' | 'either'
 
 export type SquashSelectionDesiredKind =
   | SquashSessionBlockKind
@@ -104,17 +109,19 @@ export function selectSquashDrills(
   const progressionState = deriveSquashProgressionState(context)
   const byFatigue = filterByFatigue(SQUASH_DRILL_LIBRARY, context)
   const byPhase = filterByPhase(byFatigue, context)
-  const withoutRecent = avoidRecentDrills(byPhase, recentSet)
-  const basePool = withoutRecent.length >= 3 ? withoutRecent : byPhase
+  const byExecutionMode = filterByExecutionMode(byPhase, context.partnerAvailability)
+  const fallbackByExecutionMode = filterByExecutionMode(byFatigue, context.partnerAvailability)
+  const withoutRecent = avoidRecentDrills(byExecutionMode, recentSet)
+  const basePool = withoutRecent.length >= 3 ? withoutRecent : byExecutionMode
 
   if (context.desiredKind) {
-    return selectSquashDrillsByDesiredKind(basePool, byFatigue, context, recentSet, progressionState)
+    return selectSquashDrillsByDesiredKind(basePool, fallbackByExecutionMode, context, recentSet, progressionState)
   }
 
   const selected = pickDiverseDrills(basePool, context, recentSet, progressionState)
   const fallbackSelected = selected.length >= 3
     ? selected
-    : pickDiverseDrills(byFatigue, context, recentSet, progressionState)
+    : pickDiverseDrills(fallbackByExecutionMode, context, recentSet, progressionState)
 
   return buildSelectionResult(fallbackSelected.slice(0, 5), context, progressionState)
 }
@@ -127,6 +134,15 @@ function selectSquashDrillsByDesiredKind(
   progressionState: SquashProgressionState,
 ): SquashSelectionResult {
   const desiredKind = context.desiredKind!
+
+  if (desiredKind === 'match' && context.partnerAvailability === 'solo') {
+    const selected = buildSingleKindSelection('control', basePool, context, recentSet, progressionState)
+    const fallback = selected.length > 0 ? selected : pickDiverseDrills(basePool, context, recentSet, progressionState)
+    return {
+      ...buildSelectionResult(fallback.slice(0, 5), context, progressionState),
+      selectionNote: 'desiredKind=match requiere partner; modalidad solo redirigida a control tecnico sin partido.',
+    }
+  }
 
   if (desiredKind in MIXED_KIND_ORDER) {
     const selected = buildMixedKindSelection(
@@ -262,6 +278,7 @@ function buildSelectionResult(
       name: definition.name,
       durationMin: getDrillDuration(definition, index, context),
       notes: buildProgressedDrillNotes(definition, context, progressionState),
+      executionMode: resolveDrillExecutionMode(definition),
     })),
   )
   const blocks = buildSelectionBlocks(orderedDefinitions, drills)
@@ -271,7 +288,7 @@ function buildSelectionResult(
     trainingFocus: deriveTrainingFocus(orderedDefinitions, context),
     drills,
     sessionKind,
-    blocks: sessionKind === 'mixed' ? blocks : undefined,
+    blocks,
   }
 }
 
@@ -400,6 +417,24 @@ export function filterByPhase(
         !drill.tags.includes('pre_match'),
       )
   }
+}
+
+export function filterByExecutionMode(
+  drills: SquashDrillDefinition[],
+  partnerAvailability: SquashPartnerAvailability = 'either',
+): SquashDrillDefinition[] {
+  if (partnerAvailability === 'either') return drills
+
+  return drills.filter((drill) => {
+    const executionMode: SquashDrillExecutionMode = resolveDrillExecutionMode(drill)
+    if (partnerAvailability === 'solo') {
+      return executionMode === 'solo' || executionMode === 'either'
+    }
+    if (executionMode === 'solo') {
+      return resolveSquashDrillKind(drill) === 'shadows'
+    }
+    return executionMode === 'partner' || executionMode === 'either' || executionMode === 'match'
+  })
 }
 
 export function avoidRecentDrills(

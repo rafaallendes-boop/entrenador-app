@@ -1,0 +1,24 @@
+import { describe, expect, it } from 'vitest'
+
+import {
+  findSquashDrillByName,
+  resolveDrillExecutionMode,
+  SQUASH_DRILL_LIBRARY,
+} from '../training/drillLibrary'
+
+describe('drillLibrary execution mode', () => {
+  it('resolves every library drill to a supported execution mode', () => {
+    const modes = new Set(['solo', 'partner', 'either', 'match'])
+
+    for (const drill of SQUASH_DRILL_LIBRARY) {
+      expect(modes.has(resolveDrillExecutionMode(drill))).toBe(true)
+    }
+  })
+
+  it('covers solo, partner, either and match modes', () => {
+    expect(resolveDrillExecutionMode(findSquashDrillByName('100 dejadas solo')!)).toBe('solo')
+    expect(resolveDrillExecutionMode(findSquashDrillByName('Juego condicionado solo paralelo')!)).toBe('partner')
+    expect(resolveDrillExecutionMode(findSquashDrillByName('Dejadas desde media cancha')!)).toBe('either')
+    expect(resolveDrillExecutionMode(findSquashDrillByName('Partido de entrenamiento al mejor de 3 juegos')!)).toBe('match')
+  })
+})

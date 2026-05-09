@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { Session } from '../../types'
-import { findSquashDrillByName, getSquashDrillFamily, SQUASH_DRILL_LIBRARY } from '../training/drillLibrary'
+import { findSquashDrillByName, getSquashDrillFamily, resolveDrillExecutionMode, SQUASH_DRILL_LIBRARY } from '../training/drillLibrary'
 import {
   buildProgressedDrillNotes,
   deriveSquashProgressionState,
@@ -254,6 +254,57 @@ describe('drillSelector progression', () => {
 
     expect(selection.sessionKind).toBe('mixed')
     expect(selection.blocks?.map((block) => block.kind)).toEqual(['shadows', 'control'])
+  })
+
+  it('filters out partner and match drills when squash availability is solo', () => {
+    const selection = selectSquashDrills({
+      phase: 'build',
+      fatigueLevel: 4,
+      competitionSoon: false,
+      goal: 'control tecnico sin partner',
+      recentDrills: [],
+      desiredKind: 'control',
+      partnerAvailability: 'solo',
+    })
+
+    expect(selection.drills.length).toBeGreaterThan(0)
+    expect(selection.blocks?.length).toBeGreaterThanOrEqual(1)
+    expect(selection.drills.every((drill) => {
+      const definition = findSquashDrillByName(drill.name)
+      const mode = definition ? resolveDrillExecutionMode(definition) : 'either'
+      return mode !== 'partner' && mode !== 'match'
+    })).toBe(true)
+  })
+
+  it('redirects requested match work to a solo-compatible fallback when no partner is available', () => {
+    const selection = selectSquashDrills({
+      phase: 'peak',
+      fatigueLevel: 4,
+      competitionSoon: false,
+      goal: 'partido',
+      recentDrills: [],
+      desiredKind: 'match',
+      partnerAvailability: 'solo',
+    })
+
+    expect(selection.selectionNote).toContain('requiere partner')
+    expect(selection.blocks?.some((block) => block.kind === 'match')).toBe(false)
+    expect(selection.drills.every((drill) => drill.executionMode !== 'partner' && drill.executionMode !== 'match')).toBe(true)
+  })
+
+  it('returns blocks for non-mixed squash selections too', () => {
+    const selection = selectSquashDrills({
+      phase: 'build',
+      fatigueLevel: 4,
+      competitionSoon: false,
+      goal: 'tecnica de drive',
+      recentDrills: [],
+      desiredKind: 'technical',
+    })
+
+    expect(selection.sessionKind).not.toBe('mixed')
+    expect(selection.blocks?.length).toBe(1)
+    expect(selection.blocks?.[0]?.kind).toBe(selection.sessionKind)
   })
 
   it('prioritizes practice match drills in build/peak when the goal is competitive and there is no immediate competition', () => {

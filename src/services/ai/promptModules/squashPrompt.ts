@@ -156,7 +156,8 @@ export function buildSquashRulesSection(): string {
     '· sessionKind resume la intención visible de la sesión',
     '· squashDetails.trainingFocus sigue siendo el foco pedagógico',
     '· squashDetails.sessionMode diferencia drill_session vs practice_match vs competition_match',
-    '· si la sesión es mixta, usa squashDetails.blocks con bloques explícitos y deja squashDetails.drills como vista plana compatible',
+    '· usa siempre squashDetails.blocks con bloques explícitos, incluso si la sesión es de un solo tipo; deja squashDetails.drills como vista plana compatible',
+    '· modalidad de ejecución: solo = sin partner; partner = rival/alimentador requerido; either = adaptable; match = partido y siempre requiere partner',
     '· regla inviolable: si hay bloque de match, va al final',
     '',
     'CUANDO USAR PRACTICE_MATCH:',
@@ -212,7 +213,7 @@ export function buildDynamicSquashSelectionSection(
   lines.push(
     `Contexto selector: fase ${selectionContext.phase} · fatiga ${selectionContext.fatigueLevel}/10 · competencia cercana ${
       selectionContext.competitionSoon ? 'si' : 'no'
-    } · objetivo "${selectionContext.goal}"`,
+    } · modalidad ${selectionContext.partnerAvailability ?? 'either'} · objetivo "${selectionContext.goal}"`,
   )
   lines.push(`Continuidad: ${summarizeSquashProgression(selectionContext)}`)
   if (summary.weekPlan.slots.length > 0) {
@@ -235,6 +236,12 @@ export function buildDynamicSquashSelectionSection(
   if (selection.selectionNote) {
     lines.push(`Nota selector: ${selection.selectionNote}`)
   }
+  if (selectionContext.partnerAvailability === 'solo') {
+    lines.push('Modalidad solo: no propongas drills partner ni match; usa control, sombras, footwork y tecnica adaptable sin rival.')
+  } else if (selectionContext.partnerAvailability === 'partner') {
+    lines.push('Modalidad partner: puedes usar drills con rival/alimentador y match al final; no priorices drills puramente solo salvo calentamiento/sombras.')
+  }
+  lines.push('Devuelve siempre squashDetails.blocks. Si hay partido o match-play, debe ser el ultimo bloque.')
   lines.push('Usa esta seleccion como base prioritaria para las sesiones squash nuevas o actualizadas.')
   lines.push('Si ajustas una sesion squash, intenta mantener este foco y variar solo por restricciones del dia, equipamiento o feedback reciente.')
   lines.push('Si el contexto es build/peak competitivo sin competencia inmediata, puedes convertir la sesion squash principal en subtype "match" con squashDetails.sessionMode "practice_match" y sessionKind "match".')
