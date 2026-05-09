@@ -35,3 +35,9 @@ dist-ssr
 
 # Local Playwright MCP snapshots
 .playwright-mcp/
+
+# Local E2E auth/session artifacts
+scripts/.e2e-auth-state.json
+scripts/e2e-artifacts/
+playwright-report/
+test-results/

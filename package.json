@@ -11,7 +11,13 @@
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "audit:prompt": "vitest run scripts/audit-prompt-tokens.test.ts --reporter=verbose",
-    "loadtest:week-creator": "node scripts/loadtest-week-creator.mjs"
+    "loadtest:week-creator": "node scripts/loadtest-week-creator.mjs",
+    "e2e:auth:help": "node scripts/export-auth-state.mjs",
+    "e2e:auth:import": "node scripts/import-auth-state.mjs",
+    "e2e:dev": "node scripts/e2e-coach-test.mjs",
+    "e2e:dev:headed": "node scripts/e2e-coach-test.mjs --headed",
+    "e2e:dev:quick": "node scripts/e2e-coach-test.mjs --quick",
+    "e2e:dev:apply": "node scripts/e2e-coach-test.mjs --apply --headed"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.88.0",
@@ -38,6 +44,7 @@
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.4.0",
+    "playwright": "^1.59.1",
     "postcss": "^8.5.8",
     "tailwindcss": "^3.4.19",
     "typescript": "~5.9.3",
