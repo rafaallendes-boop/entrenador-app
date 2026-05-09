@@ -111,6 +111,8 @@ export interface CoachNormalizedResponse {
      * - `schema_invalid`: JSON parsed but no valid action shapes
      */
     outcome?: 'ok' | 'truncated_mid' | 'truncated_early' | 'parse_invalid' | 'schema_invalid'
+    /** Non-blocking normalization observations that should not trigger retry by themselves. */
+    warnings?: string[]
     /** Server-side errorCode propagated through (e.g. timeout, rate_limit). */
     errorClass?: AIErrorCode
   }

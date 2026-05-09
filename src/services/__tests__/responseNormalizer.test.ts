@@ -177,6 +177,37 @@ describe('responseNormalizer', () => {
     warn.mockRestore()
   })
 
+  it('marks low-density strength proposals as a non-blocking warning', () => {
+    const response = normalizeResponse({
+      text: [
+        'Ajuste fuerza.',
+        '<actions>',
+        JSON.stringify([
+          {
+            type: 'add_session',
+            reason: 'Preparacion fisica completa',
+            targetDate: '2026-04-10',
+            sessionType: 'strength',
+            title: 'Fuerza squash',
+            durationMin: 60,
+            timeBlock: 'PM',
+            objective: 'Sesion de fuerza de una hora',
+            exercises: [
+              { name: 'Trap Bar Deadlift', sets: 4, reps: 5 },
+              { name: 'Pallof Press', sets: 3, reps: 10 },
+            ],
+          },
+        ]),
+        '</actions>',
+      ].join('\n'),
+      provider: 'mock',
+    })
+
+    expect(response.actions).toHaveLength(1)
+    expect(response.meta?.warnings).toContain('low_density:strength:60min:2/5')
+    expect(response.meta?.outcome).toBe('ok')
+  })
+
   it('drops add_session when core fields are too incomplete to repair', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
 
@@ -667,8 +698,8 @@ describe('responseNormalizer', () => {
 
     expect(response.actions).toHaveLength(1)
     expect(response.actions?.[0].squashDetails?.drills.map((drill) => drill.name)).toEqual([
-      'Control del T con patron largo-corto',
       'Split step y recuperacion al T',
+      'Control del T con patron largo-corto',
       '100 al box de saque',
     ])
     expect(response.actions?.[0].squashDetails?.blocks).toHaveLength(3)

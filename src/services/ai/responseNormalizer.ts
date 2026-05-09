@@ -1,4 +1,4 @@
-import type { CoachAction, CoachActionType, CoachExerciseProposal, CoachSessionProposal, CyclingDetails, GeneratedProtocol, MobilityDetails, RunningIntervalStructure, RunningType, SquashDetails, SquashDrill, SquashSessionBlock, SquashSessionBlockKind, SquashSessionKind, SquashSessionMode, SquashSubtype, SquashTrainingFocus, TimeBlock } from '../../types'
+import type { CoachAction, CoachActionType, CoachExerciseProposal, CoachSessionProposal, CyclingDetails, GeneratedProtocol, MobilityDetails, RunningIntervalStructure, RunningType, SquashDetails, SquashDrill, SquashDrillExecutionMode, SquashSessionBlock, SquashSessionBlockKind, SquashSessionKind, SquashSessionMode, SquashSubtype, SquashTrainingFocus, TimeBlock } from '../../types'
 import type { AIRawResponse, CoachNormalizedResponse, CreateWeekNormalizationDiagnostic } from './types'
 import { orderSquashBlocksForSession, orderSquashDrillsForSession } from '../training/drillLibrary'
 
@@ -26,6 +26,7 @@ const VALID_RUNNING_TYPES = new Set<RunningType>(['z2', 'tempo', 'intervals', 'l
 const VALID_SQUASH_SESSION_MODES = new Set<SquashSessionMode>(['drill_session', 'practice_match', 'competition_match'])
 const VALID_SQUASH_SESSION_KINDS = new Set<SquashSessionKind>(['technical', 'control', 'shadows', 'match', 'mixed'])
 const VALID_SQUASH_BLOCK_KINDS = new Set<SquashSessionBlockKind>(['technical', 'control', 'shadows', 'match'])
+const VALID_SQUASH_EXECUTION_MODES = new Set<SquashDrillExecutionMode>(['solo', 'partner', 'either', 'match'])
 const VALID_SQUASH_TRAINING_FOCUS = new Set(['technical', 'tactical', 'physical', 'conditioned_games'])
 const VALID_MOBILITY_CONTEXTS = new Set(['post_run', 'post_cycling', 'post_squash', 'post_strength', 'pre_training_activation', 'recovery', 'full_body', 'sport_specific'])
 const DEFAULT_SESSION_DURATION_MIN: Partial<Record<CoachSessionProposal['sessionType'], number>> = {
@@ -191,6 +192,7 @@ export function normalizeResponse(raw: AIRawResponse): CoachNormalizedResponse {
     actionsCount: actions?.length ?? 0,
     messageLength: message.length,
   })
+  const warnings = collectNormalizationWarnings(actions)
 
   return {
     message,
@@ -211,6 +213,7 @@ export function normalizeResponse(raw: AIRawResponse): CoachNormalizedResponse {
       invalidActionCount,
       createWeekDiagnostics,
       outcome,
+      warnings,
       errorClass: raw.errorClass,
     },
   }
@@ -594,6 +597,47 @@ function hasAnyUpdateField(action: CoachAction): boolean {
   )
 }
 
+function collectNormalizationWarnings(actions: CoachAction[] | undefined): string[] | undefined {
+  if (!actions?.length) return undefined
+
+  const warnings = actions.flatMap((action) => {
+    if (action.type === 'create_week') {
+      return (action.sessions ?? []).flatMap(getStrengthDensityWarnings)
+    }
+    return getStrengthDensityWarnings(action)
+  })
+
+  return warnings.length > 0 ? [...new Set(warnings)] : undefined
+}
+
+function getStrengthDensityWarnings(item: {
+  sessionType?: CoachSessionProposal['sessionType']
+  newType?: CoachSessionProposal['sessionType']
+  durationMin?: number
+  newDurationMin?: number
+  exercises?: CoachExerciseProposal[]
+}): string[] {
+  const sessionType = item.sessionType ?? item.newType
+  if (sessionType !== 'strength') return []
+
+  const durationMin = item.durationMin ?? item.newDurationMin
+  if (durationMin == null || durationMin < 50 || durationMin > 60) return []
+
+  const exerciseCount = item.exercises?.length ?? 0
+  const minExpected = getMinimumStrengthExerciseCount(durationMin)
+  if (exerciseCount >= minExpected) return []
+
+  return [`low_density:strength:${durationMin}min:${exerciseCount}/${minExpected}`]
+}
+
+function getMinimumStrengthExerciseCount(durationMin: number): number {
+  if (durationMin <= 30) return 3
+  if (durationMin <= 44) return 4
+  if (durationMin <= 54) return 4
+  if (durationMin <= 69) return 5
+  return 6
+}
+
 function isGeneratedProtocol(value: unknown): value is GeneratedProtocol {
   if (value == null) return false
   if (typeof value !== 'object') return false
@@ -689,6 +733,9 @@ function normalizeSquashDrillDraft(value: unknown): SquashDrill | null {
   const drill: SquashDrill = { name: record.name.trim() }
   if (typeof record.durationMin === 'number') drill.durationMin = record.durationMin
   if (typeof record.notes === 'string') drill.notes = record.notes
+  if (typeof record.executionMode === 'string' && VALID_SQUASH_EXECUTION_MODES.has(record.executionMode as SquashDrillExecutionMode)) {
+    drill.executionMode = record.executionMode as SquashDrillExecutionMode
+  }
   return drill
 }
 
