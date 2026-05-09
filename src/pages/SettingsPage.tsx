@@ -39,8 +39,13 @@ import { useTrainingStore } from '../store/useTrainingStore'
 import { currentWeekStartISO } from '../utils/date'
 import { getEnabledSports, getSportPrioritySummary } from '../utils/athlete'
 import { clearOnboardingSkipped } from '../utils/onboarding'
-import type { AthleteProfile, Session } from '../types'
+import type { AITechnicalResult, AthleteProfile, Session } from '../types'
 import { buildMacroWeekCoherenceSummary } from '../services/macroWeekCoherence'
+import {
+  downloadBetaQualitySnapshot,
+  getBetaQualitySnapshot,
+  type BetaQualitySnapshot,
+} from '../services/ai/aiTelemetry'
 
 const CLEARABLE_GROUPS: Array<{
   key: LocalDataGroup
@@ -90,11 +95,14 @@ export default function SettingsPage() {
   const [dataCounts, setDataCounts] = useState<LocalDataCounts | null>(null)
   const [clearSelection, setClearSelection] = useState<LocalDataSelection>(EMPTY_CLEAR_SELECTION)
   const [isExporting, setIsExporting] = useState(false)
+  const [isExportingBetaQuality, setIsExportingBetaQuality] = useState(false)
   const [isImporting, setIsImporting] = useState(false)
   const [isClearing, setIsClearing] = useState(false)
   const [isDeletingCoachSessions, setIsDeletingCoachSessions] = useState(false)
   const [isWipingAllData, setIsWipingAllData] = useState(false)
   const [exportStatus, setExportStatus] = useState<string | null>(null)
+  const [betaQualityStatus, setBetaQualityStatus] = useState<string | null>(null)
+  const [betaQualitySnapshot, setBetaQualitySnapshot] = useState<BetaQualitySnapshot | null>(null)
   const [importStatus, setImportStatus] = useState<string | null>(null)
   const [clearStatus, setClearStatus] = useState<string | null>(null)
   const [coachSessionStatus, setCoachSessionStatus] = useState<string | null>(null)
@@ -118,6 +126,15 @@ export default function SettingsPage() {
     void refreshCounts(setDataCounts)
     void refreshNotificationStatus()
   }, [loadMemory, loadWeek])
+
+  const refreshBetaQualitySnapshot = useCallback(async () => {
+    const snapshot = await getBetaQualitySnapshot(50)
+    setBetaQualitySnapshot(snapshot)
+  }, [])
+
+  useEffect(() => {
+    void refreshBetaQualitySnapshot()
+  }, [aiDebugRequests.length, refreshBetaQualitySnapshot])
 
   const refreshCoachSessions = useCallback(async () => {
     const nextSessions = await getRecentCoachSessions(coachSessionRange)
@@ -182,6 +199,20 @@ export default function SettingsPage() {
       setExportStatus(error instanceof Error ? error.message : 'No se pudo exportar el backup.')
     } finally {
       setIsExporting(false)
+    }
+  }
+
+  const handleExportBetaQuality = async () => {
+    setIsExportingBetaQuality(true)
+    setBetaQualityStatus(null)
+    try {
+      const filename = await downloadBetaQualitySnapshot()
+      await refreshBetaQualitySnapshot()
+      setBetaQualityStatus(`Reporte beta exportado: ${filename}`)
+    } catch (error) {
+      setBetaQualityStatus(error instanceof Error ? error.message : 'No se pudo exportar el reporte beta.')
+    } finally {
+      setIsExportingBetaQuality(false)
     }
   }
 
@@ -633,12 +664,57 @@ export default function SettingsPage() {
               <div className="w-8 h-8 rounded-full bg-brand/15 flex items-center justify-center flex-shrink-0">
                 <Brain size={16} className="text-brand-light" />
               </div>
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <h2 className="text-sm font-semibold text-ink">Debug IA</h2>
                 <p className="text-xs text-ink-muted mt-1 leading-relaxed">
                   Ultimas solicitudes del coach con trace, proveedor, duracion y resultado tecnico.
                 </p>
               </div>
+              <button
+                onClick={() => void refreshBetaQualitySnapshot()}
+                className="rounded-xl bg-surface-raised px-3 py-2 text-xs font-semibold text-ink-muted transition-colors hover:bg-surface hover:text-ink"
+              >
+                Actualizar
+              </button>
+            </div>
+            <div className="mb-3 rounded-xl border border-surface-border bg-surface-raised px-3 py-3">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-[10px] font-medium uppercase tracking-wider text-ink-faint">Beta quality local</p>
+                  <p className="mt-1 text-xs leading-relaxed text-ink-muted">
+                    Metadata local para revisar estabilidad sin guardar prompts ni respuestas completas.
+                  </p>
+                </div>
+                <button
+                  onClick={() => void handleExportBetaQuality()}
+                  disabled={isExportingBetaQuality}
+                  className="inline-flex items-center gap-2 rounded-xl bg-brand px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-brand-light disabled:opacity-60"
+                >
+                  <Download size={13} />
+                  {isExportingBetaQuality ? 'Exportando...' : 'Exportar'}
+                </button>
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+                <BetaMetric label="Requests" value={betaQualitySnapshot?.requestCount ?? aiDebugRequests.length} />
+                <BetaMetric label="Feedback" value={betaQualitySnapshot?.feedbackCount ?? 0} />
+                <BetaMetric label="Positivo" value={betaQualitySnapshot?.positiveFeedback ?? 0} />
+                <BetaMetric label="Negativo" value={betaQualitySnapshot?.negativeFeedback ?? 0} />
+              </div>
+              {betaQualitySnapshot && (
+                <div className="mt-3 grid gap-1 text-[11px] text-ink-muted sm:grid-cols-2">
+                  {Object.entries(betaQualitySnapshot.dailyLimits).map(([requestClass, limit]) => {
+                    const used = betaQualitySnapshot.dailyUsage[requestClass as keyof typeof betaQualitySnapshot.dailyUsage] ?? 0
+                    return (
+                      <p key={requestClass}>
+                        {requestClass}: <span className="text-ink">{used}/{limit}</span>
+                      </p>
+                    )
+                  })}
+                </div>
+              )}
+              {betaQualityStatus && (
+                <p className="mt-3 text-xs text-emerald-400">{betaQualityStatus}</p>
+              )}
             </div>
             {aiDebugRequests.length === 0 ? (
               <p className="text-xs text-ink-faint">Aun no hay trazas IA en esta sesion.</p>
@@ -655,6 +731,11 @@ export default function SettingsPage() {
                         style={{ background: 'rgba(255,255,255,0.06)' }}>
                         {request.status}
                       </span>
+                      {request.outcome && (
+                        <span className="rounded-full border border-surface-border px-2 py-0.5 text-[10px] text-ink-faint">
+                          {formatAIOutcome(request.outcome)}
+                        </span>
+                      )}
                       {request.provider && (
                         <span className="text-ink-faint">{request.provider}{request.model ? ` · ${request.model}` : ''}</span>
                       )}
@@ -665,8 +746,17 @@ export default function SettingsPage() {
                       <p>Duracion: <span className="text-ink">{request.durationMs != null ? `${request.durationMs}ms` : 'pendiente'}</span></p>
                       <p>Retry backend/logico: <span className="text-ink">{request.retryUsed ? 'si' : 'no'}</span></p>
                       <p>Fallback: <span className="text-ink">{request.fallbackUsed ? 'si' : 'no'}</span></p>
+                      {request.responseCharCount != null && (
+                        <p>Respuesta: <span className="text-ink">{request.responseCharCount} chars</span></p>
+                      )}
+                      {request.actionCount != null && (
+                        <p>Acciones: <span className="text-ink">{request.actionCount}</span></p>
+                      )}
                       {request.firstChunkAt && (
                         <p>Primer chunk: <span className="text-ink">{formatRuntimeTimestamp(request.firstChunkAt)}</span></p>
+                      )}
+                      {request.warnings && request.warnings.length > 0 && (
+                        <p className="text-amber-300">Warnings: {request.warnings.join(', ')}</p>
                       )}
                       {request.errorCode && (
                         <p className="text-amber-300">Error: {request.errorCode}</p>
@@ -1299,6 +1389,29 @@ function NotificationPreferenceRow({
   )
 }
 
+function BetaMetric({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-lg border border-white/5 bg-surface px-2.5 py-2">
+      <p className="text-[10px] font-medium uppercase tracking-wider text-ink-faint">{label}</p>
+      <p className="mt-1 font-mono text-sm font-semibold tabular-nums text-ink">{value}</p>
+    </div>
+  )
+}
+
+function formatAIOutcome(outcome: NonNullable<AITechnicalResult['outcome']>): string {
+  switch (outcome) {
+    case 'ok':
+      return 'ok'
+    case 'truncated_mid':
+      return 'truncada parcial'
+    case 'truncated_early':
+      return 'truncada temprano'
+    case 'parse_invalid':
+      return 'parse invalido'
+    case 'schema_invalid':
+      return 'schema invalido'
+  }
+}
 
 async function refreshCounts(setDataCounts: (counts: LocalDataCounts) => void): Promise<void> {
   const counts = await getLocalDataCounts()

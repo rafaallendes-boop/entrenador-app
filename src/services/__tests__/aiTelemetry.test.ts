@@ -42,6 +42,13 @@ vi.mock('../../db/db', () => ({
       put: vi.fn(async (entry: CoachFeedback) => {
         mocks.feedback.set(entry.id, { ...entry })
       }),
+      orderBy: vi.fn(() => ({
+        reverse: vi.fn(() => ({
+          limit: vi.fn((limit: number) => ({
+            toArray: vi.fn(async () => [...mocks.feedback.values()].sort((a, b) => b.createdAt - a.createdAt).slice(0, limit)),
+          })),
+        })),
+      })),
     },
   },
 }))
@@ -49,6 +56,7 @@ vi.mock('../../db/db', () => ({
 import {
   assertDailyAIRequestLimit,
   DEFAULT_DAILY_AI_LIMITS,
+  getBetaQualitySnapshot,
   getDailyAIUsage,
   recordCoachFeedback,
   upsertAIRequestLog,
@@ -118,5 +126,35 @@ describe('aiTelemetry', () => {
     expect(first.id).toBe('feedback:coach_message:msg-1')
     expect(second.createdAt).toBe(first.createdAt)
     expect(mocks.feedback.get('feedback:coach_message:msg-1')?.rating).toBe(-1)
+  })
+
+  it('builds a beta quality snapshot without storing prompts or full responses', async () => {
+    await upsertAIRequestLog({
+      traceId: 'trace-1',
+      requestClass: 'chat_action',
+      surface: 'chat',
+      status: 'completed',
+      provider: 'gemini',
+      outcome: 'ok',
+      responseCharCount: 120,
+      startedAt: Date.now(),
+    })
+    await recordCoachFeedback({
+      targetType: 'coach_message',
+      targetId: 'msg-1',
+      rating: 1,
+      traceId: 'trace-1',
+    })
+
+    const snapshot = await getBetaQualitySnapshot()
+
+    expect(snapshot.requestCount).toBe(1)
+    expect(snapshot.feedbackCount).toBe(1)
+    expect(snapshot.positiveFeedback).toBe(1)
+    expect(snapshot.recentRequests[0]).toMatchObject({
+      traceId: 'trace-1',
+      responseCharCount: 120,
+    })
+    expect(JSON.stringify(snapshot)).not.toContain('systemPrompt')
   })
 })

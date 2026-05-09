@@ -105,6 +105,65 @@ export async function getCoachFeedbackByTarget(
   return db.coachFeedback.get(`feedback:${targetType}:${targetId}`)
 }
 
+export interface BetaQualitySnapshot {
+  exportedAt: string
+  dailyUsage: Partial<Record<AIRequestClass, number>>
+  dailyLimits: Record<AIRequestClass, number>
+  requestCount: number
+  feedbackCount: number
+  positiveFeedback: number
+  negativeFeedback: number
+  recentRequests: AITechnicalResult[]
+  recentFeedback: CoachFeedback[]
+}
+
+export async function getBetaQualitySnapshot(limit = 100): Promise<BetaQualitySnapshot> {
+  const [recentRequests, recentFeedback, dailyUsage] = await Promise.all([
+    getRecentAIRequestLogs(limit),
+    getRecentCoachFeedback(limit),
+    getDailyAIUsage(),
+  ])
+
+  return {
+    exportedAt: new Date().toISOString(),
+    dailyUsage,
+    dailyLimits: DEFAULT_DAILY_AI_LIMITS,
+    requestCount: recentRequests.length,
+    feedbackCount: recentFeedback.length,
+    positiveFeedback: recentFeedback.filter((item) => item.rating === 1).length,
+    negativeFeedback: recentFeedback.filter((item) => item.rating === -1).length,
+    recentRequests,
+    recentFeedback,
+  }
+}
+
+export async function getRecentCoachFeedback(limit = 100): Promise<CoachFeedback[]> {
+  return db.coachFeedback
+    .orderBy('createdAt')
+    .reverse()
+    .limit(limit)
+    .toArray()
+}
+
+export async function downloadBetaQualitySnapshot(): Promise<string> {
+  const snapshot = await getBetaQualitySnapshot(200)
+  const filename = `entrenador-beta-quality-${snapshot.exportedAt.replace(/[:.]/g, '-')}.json`
+  const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: 'application/json;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  try {
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = filename
+    anchor.rel = 'noopener'
+    document.body.appendChild(anchor)
+    anchor.click()
+    anchor.remove()
+    return filename
+  } finally {
+    URL.revokeObjectURL(url)
+  }
+}
+
 function startOfLocalDay(now: number): number {
   const date = new Date(now)
   date.setHours(0, 0, 0, 0)
