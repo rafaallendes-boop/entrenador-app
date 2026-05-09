@@ -16,7 +16,11 @@
     "e2e:dev:headed": "node scripts/e2e-coach-test.mjs --headed",
     "e2e:dev:quick": "node scripts/e2e-coach-test.mjs --quick",
     "e2e:dev:apply": "node scripts/e2e-coach-test.mjs --apply --headed",
-    "e2e:dev:quality": "node scripts/e2e-coach-test.mjs --export-quality"
+    "e2e:dev:quality": "node scripts/e2e-coach-test.mjs --export-quality",
+    "e2e:plan": "node scripts/e2e-plan-builder-test.mjs",
+    "e2e:plan:headed": "node scripts/e2e-plan-builder-test.mjs --headed",
+    "e2e:plan:generate": "node scripts/e2e-plan-builder-test.mjs --generate --headed",
+    "e2e:plan:accept": "node scripts/e2e-plan-builder-test.mjs --accept --headed"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.88.0",

@@ -2,7 +2,7 @@
 
 Guia rapida para probar la app en dev con Gemini y Playwright.
 
-## Flujo recomendado
+## Flujo recomendado coach
 
 1. Levantar la app:
 
@@ -44,6 +44,32 @@ Usar este comando cuando quieras probar el flujo real de aceptar cambios. Puede 
 npm run e2e:dev:quality
 ```
 
+## Plan Builder
+
+Suite segura, no guarda un plan nuevo. Revisa auth, rutas, wizard hasta resumen, builder existente y panel de debug:
+
+```bash
+npm run e2e:plan
+```
+
+Primera corrida o cuando quieras ver el browser:
+
+```bash
+npm run e2e:plan:headed
+```
+
+Generar un plan nuevo con Gemini, sin aceptarlo:
+
+```bash
+npm run e2e:plan:generate
+```
+
+Generar y aceptar el plan. Este comando modifica datos dev/locales y puede reemplazar el plan activo:
+
+```bash
+npm run e2e:plan:accept
+```
+
 ## Checks tecnicos
 
 Lint:
@@ -82,6 +108,12 @@ Para apuntar la suite E2E a otro entorno:
 
 ```bash
 E2E_BASE_URL=http://localhost:8888 npm run e2e:dev
+```
+
+Plan Builder contra otro entorno:
+
+```bash
+E2E_BASE_URL=http://localhost:8888 npm run e2e:plan
 ```
 
 Cuando dev este estable, se puede hacer un smoke test contra produccion:
