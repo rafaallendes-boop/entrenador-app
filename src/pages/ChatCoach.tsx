@@ -13,6 +13,7 @@ import ChatInput from '../components/chat/ChatInput'
 import ChatMarkdown from '../components/chat/ChatMarkdown'
 import Spinner from '../components/ui/Spinner'
 import type { ChatContext, CoachProposal } from '../types'
+import { recordCoachFeedback } from '../services/ai/aiTelemetry'
 import { ROUTES } from '../constants/routes'
 import { useLoadAnalytics } from '../hooks/useWeeklySnapshot'
 import { useWeeklyLaunchIntent } from '../hooks/useWeeklyLaunchIntent'
@@ -229,6 +230,19 @@ export default function ChatCoach() {
   const handleViewProposal = (proposalId: string) => {
     const proposal = proposals.find((item) => item.id === proposalId)
     if (proposal) setActiveProposal(proposal)
+  }
+
+  const handleRateCoachMessage = (messageId: string, rating: -1 | 1) => {
+    const message = messages.find((item) => item.id === messageId)
+    if (!message || message.role !== 'coach') return
+    void recordCoachFeedback({
+      targetType: 'coach_message',
+      targetId: message.id,
+      rating,
+      traceId: message.contextMeta?.traceId,
+      chatMessageId: message.id,
+      proposalId: message.proposalId,
+    })
   }
 
   const handleAccept = async () => {
@@ -451,6 +465,7 @@ export default function ChatCoach() {
                 onViewProposal={
                   isPending && message.proposalId ? () => handleViewProposal(message.proposalId as string) : undefined
                 }
+                onRate={message.role === 'coach' ? (rating) => handleRateCoachMessage(message.id, rating) : undefined}
               />
             )
           })}

@@ -1,19 +1,27 @@
 import type { ChatMessage } from '../../types'
 import { format, isSameYear, isToday, isYesterday } from 'date-fns'
 import { es } from 'date-fns/locale'
-import { AlertTriangle, MessageCircle, Zap } from 'lucide-react'
+import { AlertTriangle, MessageCircle, ThumbsDown, ThumbsUp, Zap } from 'lucide-react'
+import { useState } from 'react'
 import ChatMarkdown from './ChatMarkdown'
 
 interface ChatBubbleProps {
   message: ChatMessage
   hasProposal?: boolean
   onViewProposal?: () => void
+  onRate?: (rating: -1 | 1) => void
 }
 
-export default function ChatBubble({ message, hasProposal, onViewProposal }: ChatBubbleProps) {
+export default function ChatBubble({ message, hasProposal, onViewProposal, onRate }: ChatBubbleProps) {
   const isCoach = message.role === 'coach'
   const time = formatMessageTimestamp(message.timestamp)
   const likelyTruncated = message.contextMeta?.likelyTruncated === true
+  const [rating, setRating] = useState<-1 | 1 | null>(null)
+
+  const handleRate = (nextRating: -1 | 1) => {
+    setRating(nextRating)
+    onRate?.(nextRating)
+  }
 
   return (
     <div className={`flex gap-2 ${isCoach ? 'items-start' : 'items-start flex-row-reverse'}`}>
@@ -51,6 +59,30 @@ export default function ChatBubble({ message, hasProposal, onViewProposal }: Cha
               <AlertTriangle size={10} />
               Respuesta truncada
             </span>
+          )}
+          {isCoach && onRate && (
+            <div className="ml-1 flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => handleRate(1)}
+                title="Respuesta útil"
+                className={`rounded-md p-1 transition-colors ${
+                  rating === 1 ? 'bg-emerald-500/15 text-emerald-300' : 'text-ink-faint hover:bg-surface-raised hover:text-emerald-300'
+                }`}
+              >
+                <ThumbsUp size={11} />
+              </button>
+              <button
+                type="button"
+                onClick={() => handleRate(-1)}
+                title="Respuesta poco útil"
+                className={`rounded-md p-1 transition-colors ${
+                  rating === -1 ? 'bg-rose-500/15 text-rose-300' : 'text-ink-faint hover:bg-surface-raised hover:text-rose-300'
+                }`}
+              >
+                <ThumbsDown size={11} />
+              </button>
+            </div>
           )}
         </div>
       </div>

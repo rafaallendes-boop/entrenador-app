@@ -1,5 +1,5 @@
 import Dexie, { type Table } from 'dexie'
-import type { Session, DayLog, WeekSummary, ChatMessage, CoachProposal, AthleteProfile } from '../types'
+import type { Session, DayLog, WeekSummary, ChatMessage, CoachProposal, AthleteProfile, AITechnicalResult, CoachFeedback } from '../types'
 import type { TrainingPlan, TrainingPlanWeek } from '../types/planBuilder'
 import type { SyncDiagnosticEvent, SyncErrorLogEntry } from '../types/syncDiagnostics'
 import { getOrCreateChatSessionId } from '../utils/chatSession'
@@ -16,6 +16,8 @@ export class EntrenadorDB extends Dexie {
   trainingPlanWeeks!: Table<TrainingPlanWeek>
   syncDiagnostics!: Table<SyncDiagnosticEvent, number>
   syncErrorLog!: Table<SyncErrorLogEntry, number>
+  aiRequestLogs!: Table<AITechnicalResult>
+  coachFeedback!: Table<CoachFeedback>
 
   constructor() {
     super('EntrenadorDB')
@@ -142,6 +144,23 @@ export class EntrenadorDB extends Dexie {
       trainingPlanWeeks: 'id, planId, weekStartDate, status, [planId+weekIndex]',
       syncDiagnostics:   '++id, timestamp, kind, entity, status',
       syncErrorLog:      '++id, timestamp, entity, errorCategory',
+    })
+
+    // v11 — local beta observability. These tables are intentionally local-only
+    // for now: no prompts, no full responses, just request metadata and feedback.
+    this.version(11).stores({
+      sessions:          'id, date, weekStartDate, type, status, completedAt',
+      dayLogs:           'id, &date',
+      weekSummaries:     'id, &weekStartDate',
+      chatMessages:      'id, timestamp, chatSessionId',
+      coachProposals:    'id, status, createdAt, resolvedAt, chatMessageId',
+      athleteProfiles:   'id, updatedAt',
+      trainingPlans:     'id, athleteId, goalEventId, status, startDate, updatedAt',
+      trainingPlanWeeks: 'id, planId, weekStartDate, status, [planId+weekIndex]',
+      syncDiagnostics:   '++id, timestamp, kind, entity, status',
+      syncErrorLog:      '++id, timestamp, entity, errorCategory',
+      aiRequestLogs:     'traceId, requestClass, surface, status, provider, startedAt, completedAt',
+      coachFeedback:     'id, targetType, targetId, traceId, proposalId, chatMessageId, rating, createdAt',
     })
   }
 }

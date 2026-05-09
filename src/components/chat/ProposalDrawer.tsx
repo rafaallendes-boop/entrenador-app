@@ -1,5 +1,7 @@
-import { CheckCircle2, Loader2, X, Zap } from 'lucide-react'
+import { CheckCircle2, Loader2, ThumbsDown, ThumbsUp, X, Zap } from 'lucide-react'
+import { useState } from 'react'
 import type { CoachProposal, CyclingDetails, GeneratedProtocol, MobilityDetails, Session, SquashSessionBlockKind, SquashSessionMode } from '../../types'
+import { recordCoachFeedback } from '../../services/ai/aiTelemetry'
 
 const ACTION_LABEL: Record<string, string> = {
   skip_session: 'Saltar sesion',
@@ -55,6 +57,7 @@ export default function ProposalDrawer({
   onClose,
   isAccepting = false,
 }: ProposalDrawerProps) {
+  const [rating, setRating] = useState<-1 | 1 | null>(null)
   const createWeekAction = proposal.actions.find(action => action.type === 'create_week')
   const chainedAdjustmentSessionIds = getChainedAdjustmentSessionIds(proposal.actions)
   const totalSessions = createWeekAction?.sessions?.length ?? 0
@@ -67,6 +70,17 @@ export default function ProposalDrawer({
     )
     .map(session => `${session.date} ${session.timeBlock}`)
     .filter((value, index, array) => array.indexOf(value) === index) ?? []
+
+  const handleRateProposal = (nextRating: -1 | 1) => {
+    setRating(nextRating)
+    void recordCoachFeedback({
+      targetType: 'coach_proposal',
+      targetId: proposal.id,
+      rating: nextRating,
+      proposalId: proposal.id,
+      chatMessageId: proposal.chatMessageId,
+    })
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col justify-end">
@@ -109,6 +123,32 @@ export default function ProposalDrawer({
               )}
             </div>
           )}
+
+          <div className="flex items-center justify-between rounded-xl border border-surface-border bg-surface-raised px-3 py-2">
+            <span className="text-[11px] font-medium text-ink-faint">¿La propuesta se ve útil?</span>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => handleRateProposal(1)}
+                title="Propuesta útil"
+                className={`rounded-lg p-2 transition-colors ${
+                  rating === 1 ? 'bg-emerald-500/15 text-emerald-300' : 'text-ink-faint hover:bg-emerald-500/10 hover:text-emerald-300'
+                }`}
+              >
+                <ThumbsUp size={14} />
+              </button>
+              <button
+                type="button"
+                onClick={() => handleRateProposal(-1)}
+                title="Propuesta poco útil"
+                className={`rounded-lg p-2 transition-colors ${
+                  rating === -1 ? 'bg-rose-500/15 text-rose-300' : 'text-ink-faint hover:bg-rose-500/10 hover:text-rose-300'
+                }`}
+              >
+                <ThumbsDown size={14} />
+              </button>
+            </div>
+          </div>
 
           {collisions.length > 0 && (
             <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-2">

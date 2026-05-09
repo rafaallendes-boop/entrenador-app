@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { AITechnicalResult } from '../types'
+import { upsertAIRequestLog } from '../services/ai/aiTelemetry'
 
 const MAX_DEBUG_REQUESTS = 30
 const AI_DEBUG_STORAGE_KEY = 'entrenador_ai_debug_requests_v1'
@@ -43,6 +44,10 @@ function persistRequests(requests: AITechnicalResult[]): void {
   }
 }
 
+function persistRequestLog(entry: AITechnicalResult): void {
+  void upsertAIRequestLog(entry)
+}
+
 function commitRequests(next: AITechnicalResult[]): { requests: AITechnicalResult[] } {
   const requests = next.slice(0, MAX_DEBUG_REQUESTS)
   persistRequests(requests)
@@ -60,48 +65,69 @@ export const useAIDebugStore = create<AIDebugState>((set) => ({
         },
         ...state.requests,
       ]))
+    persistRequestLog({ ...entry, status: entry.status ?? 'started' })
   },
 
   updateRequest: (traceId, patch) => {
-    set((state) => commitRequests(state.requests.map((item) => (
-        item.traceId === traceId
-          ? { ...item, ...patch }
-          : item
-      ))))
+    set((state) => {
+      let updated: AITechnicalResult | undefined
+      const next = state.requests.map((item) => {
+        if (item.traceId !== traceId) return item
+        updated = { ...item, ...patch }
+        return updated
+      })
+      if (updated) persistRequestLog(updated)
+      return commitRequests(next)
+    })
   },
 
   markFirstChunk: (traceId) => {
-    set((state) => commitRequests(state.requests.map((item) => (
-        item.traceId === traceId && item.firstChunkAt == null
-          ? { ...item, firstChunkAt: Date.now(), status: 'streaming' }
-          : item
-      ))))
+    set((state) => {
+      let updated: AITechnicalResult | undefined
+      const next = state.requests.map((item) => {
+        if (item.traceId !== traceId || item.firstChunkAt != null) return item
+        updated = { ...item, firstChunkAt: Date.now(), status: 'streaming' }
+        return updated
+      })
+      if (updated) persistRequestLog(updated)
+      return commitRequests(next)
+    })
   },
 
   completeRequest: (traceId, patch) => {
-    set((state) => commitRequests(state.requests.map((item) => (
-        item.traceId === traceId
-          ? {
-              ...item,
-              ...patch,
-              completedAt: patch.completedAt ?? Date.now(),
-              status: 'completed',
-            }
-          : item
-      ))))
+    set((state) => {
+      let updated: AITechnicalResult | undefined
+      const next = state.requests.map((item) => {
+        if (item.traceId !== traceId) return item
+        updated = {
+          ...item,
+          ...patch,
+          completedAt: patch.completedAt ?? Date.now(),
+          status: 'completed',
+        }
+        return updated
+      })
+      if (updated) persistRequestLog(updated)
+      return commitRequests(next)
+    })
   },
 
   failRequest: (traceId, patch) => {
-    set((state) => commitRequests(state.requests.map((item) => (
-        item.traceId === traceId
-          ? {
-              ...item,
-              ...patch,
-              completedAt: patch.completedAt ?? Date.now(),
-              status: 'failed',
-            }
-          : item
-      ))))
+    set((state) => {
+      let updated: AITechnicalResult | undefined
+      const next = state.requests.map((item) => {
+        if (item.traceId !== traceId) return item
+        updated = {
+          ...item,
+          ...patch,
+          completedAt: patch.completedAt ?? Date.now(),
+          status: 'failed',
+        }
+        return updated
+      })
+      if (updated) persistRequestLog(updated)
+      return commitRequests(next)
+    })
   },
 
   clear: () => set(commitRequests([])),

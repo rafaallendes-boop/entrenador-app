@@ -9,6 +9,7 @@ import { useAIDebugStore } from '../../store/useAIDebugStore'
 import { pickCreateWeekDiagnostic } from '../week/shared'
 import { repairGeneratedWeek, type RepairContext } from './repairWeek'
 import { createStageTracker, type CoachOutcome, type StageTiming } from '../ai/stageLogger'
+import { assertDailyAIRequestLimit } from '../ai/aiTelemetry'
 
 export interface GenerateWeekInput {
   provider: AIProvider
@@ -201,6 +202,7 @@ export async function generateWeek(input: GenerateWeekInput): Promise<GenerateWe
   const tracker = createStageTracker(traceId, requestClass)
   let outcome: CoachOutcome = 'error'
   let chunkCount = 0
+  await assertDailyAIRequestLimit(requestClass)
 
   const promptStage = tracker.stage('prompt_build')
   const systemPrompt = buildWeekSystemPromptMinimal()
@@ -294,6 +296,10 @@ export async function generateWeek(input: GenerateWeekInput): Promise<GenerateWe
       durationMs: raw.durationMs,
       retryUsed: raw.retryUsed,
       fallbackUsed: raw.fallbackUsed,
+      outcome: normalized.meta?.outcome,
+      responseCharCount: raw.text.length,
+      actionCount: normalized.actions?.length ?? 0,
+      warnings: normalized.meta?.warnings,
     })
     outcome = 'ok'
     return {

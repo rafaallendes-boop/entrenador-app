@@ -40,13 +40,31 @@ export interface AITechnicalResult {
   model?: string
   durationMs?: number
   status: 'started' | 'streaming' | 'completed' | 'failed'
+  outcome?: 'ok' | 'truncated_mid' | 'truncated_early' | 'parse_invalid' | 'schema_invalid'
   errorCode?: string
   retryUsed?: boolean
   fallbackUsed?: boolean
   proposalCreated?: boolean
+  responseCharCount?: number
+  actionCount?: number
+  warnings?: string[]
   firstChunkAt?: number
   startedAt: number
   completedAt?: number
+}
+
+export interface CoachFeedback {
+  id: string
+  targetType: 'coach_message' | 'coach_proposal'
+  targetId: string
+  rating: -1 | 1
+  comment?: string
+  traceId?: string
+  chatMessageId?: string
+  proposalId?: string
+  requestClass?: AIRequestClass
+  createdAt: number
+  updatedAt: number
 }
 
 // ─── Session types ────────────────────────────────────────────────────────────

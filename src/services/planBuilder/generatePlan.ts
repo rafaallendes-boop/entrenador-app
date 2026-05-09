@@ -8,6 +8,8 @@ import type { AthleteProfile, CoachAction, PlanWizardConfig } from '../../types'
 import type { TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
 import { buildAITraceId, getAIRequestPolicy } from '../ai/requestPolicy'
 import { normalizeResponse } from '../ai/responseNormalizer'
+import { assertDailyAIRequestLimit } from '../ai/aiTelemetry'
+import { useAIDebugStore } from '../../store/useAIDebugStore'
 import {
   generateWeek,
   summarizeWeekGenerationError,
@@ -315,6 +317,13 @@ async function generateWeekPair(
   const policy = getAIRequestPolicy(requestClass)
   let chunkCount = 0
   const chunkRouter = createWeekBatchChunkRouter(weeks, onChunk)
+  await assertDailyAIRequestLimit(requestClass)
+  useAIDebugStore.getState().startRequest({
+    traceId,
+    requestClass,
+    surface: 'plan_builder',
+    startedAt: Date.now(),
+  })
 
   try {
     const raw = await provider.call({
@@ -333,6 +342,9 @@ async function generateWeekPair(
       allowFallback: policy.allowFallback,
       onChunk: (chunk) => {
         chunkCount += 1
+        if (chunkCount === 1) {
+          useAIDebugStore.getState().markFirstChunk(traceId)
+        }
         chunkRouter.push(chunk)
       },
     })
@@ -375,6 +387,17 @@ async function generateWeekPair(
       || normalized.meta?.likelyTruncated === true
       || weekResults.size !== weeks.length
       || Array.from(weekResults.values()).some((result) => result.error != null)
+    useAIDebugStore.getState().completeRequest(traceId, {
+      provider: raw.provider,
+      model: raw.model,
+      durationMs: raw.durationMs,
+      retryUsed: raw.retryUsed,
+      fallbackUsed: raw.fallbackUsed,
+      outcome: normalized.meta?.outcome,
+      responseCharCount: raw.text.length,
+      actionCount: normalized.actions?.length ?? 0,
+      warnings: normalized.meta?.warnings,
+    })
 
     return {
       results: weeks.map((week) => weekResults.get(week.weekStartDate) ?? { week, sessions: [], error: 'Semana no encontrada en batch.' }),
@@ -392,6 +415,9 @@ async function generateWeekPair(
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
+    useAIDebugStore.getState().failRequest(traceId, {
+      errorCode: message,
+    })
     return {
       results: weeks.map((week) => ({
         week,

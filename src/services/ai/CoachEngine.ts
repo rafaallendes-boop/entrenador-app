@@ -14,6 +14,7 @@ import { sendWithRecovery } from './coachRecovery'
 import { resolveChatRoute } from '../chatRouting'
 import { createStageTracker, type CoachOutcome } from './stageLogger'
 import { postProcessCoachActions } from './actionPostProcessor'
+import { assertDailyAIRequestLimit } from './aiTelemetry'
 
 export type CoachActionIntent = 'create_full_plan' | 'modify_plan' | 'none'
 type CoachSendOptions = {
@@ -84,6 +85,7 @@ export const CoachEngine = {
     const policy = getAIRequestPolicy(requestClass)
     const traceId = buildAITraceId(requestClass)
     const surface = options?.surface ?? 'import'
+    await assertDailyAIRequestLimit(requestClass)
     useAIDebugStore.getState().startRequest({
       traceId,
       requestClass,
@@ -109,6 +111,7 @@ export const CoachEngine = {
         durationMs: raw.durationMs,
         retryUsed: raw.retryUsed,
         fallbackUsed: raw.fallbackUsed,
+        responseCharCount: raw.text.length,
       })
       return raw.text
     } catch (error) {
@@ -187,6 +190,12 @@ async function sendTrackedCoachRequest(
         ? postProcessCoachActions(result, context, userMessage)
         : result
       const normalizedOutcome = result.meta?.outcome
+      useAIDebugStore.getState().updateRequest(traceId, {
+        outcome: normalizedOutcome,
+        responseCharCount: finalResult.message.length,
+        actionCount: finalResult.actions?.length ?? 0,
+        warnings: finalResult.meta?.warnings,
+      })
       outcome =
         normalizedOutcome === 'truncated_mid' ? 'truncated'
           : normalizedOutcome === 'truncated_early' ? 'truncated'
@@ -215,6 +224,7 @@ async function withTracing<T extends Pick<CoachNormalizedResponse, 'provider' | 
   run: (traceId: string) => Promise<T>,
 ): Promise<T> {
   const traceId = buildAITraceId(requestClass)
+  await assertDailyAIRequestLimit(requestClass)
   useAIDebugStore.getState().startRequest({
     traceId,
     requestClass,

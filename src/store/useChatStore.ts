@@ -514,6 +514,7 @@ function formatError(e: unknown): string {
       case 'misconfigured':
         return 'El coach no está configurado correctamente en el servidor.'
       case 'rate_limit':
+        if (e.message.includes('Límite diario')) return e.message
         return `Límite de uso alcanzado en ${e.provider}. Espera unos minutos e intenta de nuevo.`
       case 'timeout':
         return e.message.includes('tardó') || e.message.includes('504') || e.message.includes('502') || e.message.includes('503')
