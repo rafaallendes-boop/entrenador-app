@@ -6,10 +6,12 @@
  * apply them. Use --apply when you intentionally want to mutate local/dev data.
  *
  * Usage:
+ *   npm run dev
+ *   npm run e2e:dev:headed  # first run, log in manually if needed
  *   npm run e2e:dev
- *   npm run e2e:dev -- --headed
- *   npm run e2e:dev -- --apply --headed
- *   npm run e2e:dev -- --skip-week
+ *   npm run e2e:dev:quick
+ *   npm run e2e:dev:apply
+ *   npm run e2e:dev:quality
  */
 
 import { chromium } from 'playwright'
