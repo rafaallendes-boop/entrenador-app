@@ -13,6 +13,7 @@ import {
 } from '../../training/strengthContext'
 import {
   extractRecentStrengthExercises,
+  getTargetExerciseDensity,
   runStrengthSelectorSmokeChecks,
   selectStrengthSession,
   summarizeStrengthProgression,
@@ -143,6 +144,7 @@ Estructura habitual:
 · Lower: sentadilla, peso muerto o variante, hip thrust, lunge, core. 4-5 ejercicios, 3-5 series.
 · Full body: combinación de variantes de press, jalón/remo y tren inferior.
 · Preparación física para squash: prioriza potencia de baja dosis, fuerza unilateral/lateral, jalón/remo para hombro y core anti-rotación/estabilidad lateral.
+· Estructura recomendada sport_support/squash: 1) activación/movilidad, 2) potencia o coordinación de baja dosis, 3) fuerza principal, 4) unilateral/lateral, 5) tren superior (jalón, press o estabilidad de hombro), 6) core anti-rotación o estabilidad lateral, 7) cierre/movilidad opcional.
 · Potencia olímpica y pliometría agresiva: solo si el atleta es avanzado, está fresco y no hay competencia cercana. Siempre bajo volumen y calidad máxima.
 · Escalera y footwork: úsalo como coordinación y timing de pies, no como cardio duro ni reemplazo de una sesión de squash.
 
@@ -166,6 +168,8 @@ export function buildDynamicStrengthSelectionSection(
   if (!summary) return ''
 
   const { selection, selectionContext } = summary
+  const density = getTargetExerciseDensity(selectionContext)
+  const durationMin = selectionContext.sessionDurationMin ?? 50
   const lines: string[] = ['SELECCION DINAMICA DE FUERZA']
 
   lines.push(`Foco sugerido: ${selection.focus}`)
@@ -181,6 +185,9 @@ export function buildDynamicStrengthSelectionSection(
   if (selectionContext.strengthAcwr?.status === 'risk') {
     lines.push('Fuerza: carga elevada — progression intent ajustado a deload.')
   }
+  lines.push(`Densidad esperada: ${density.min}-${density.max} ejercicios para ${durationMin} min (target ${density.target}).`)
+  lines.push(`No entregues menos de ${density.min} ejercicios salvo fatiga >=8, taper estricto, competencia inminente o sesion declarada corta (<30 min); si bajas de ese minimo, justificalo explicitamente.`)
+  lines.push('Respeta la duracion objetivo: mas ejercicios no significa inflar series, sino repartir mejor activacion, principal, transferencia, trunk y cierre.')
   lines.push(`Ejercicios sugeridos ahora: ${formatSelectedStrengthExercises(selection.exercises)}`)
   lines.push(`Formato compatible actual: ${stringifyStrengthExercises(selection.exercises)}`)
   lines.push('Si fuerza es principal, esta seleccion manda como sesion real de pesas y no como complemento generico.')

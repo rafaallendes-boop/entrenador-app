@@ -14,6 +14,7 @@ import {
   filterByFatigue,
   filterByPhase,
   getProgressedPrescription,
+  getTargetExerciseDensity,
   pickStrengthStructure,
   selectStrengthSession,
   selectMainLiftWithProgression,
@@ -289,6 +290,92 @@ describe('strengthSelector progression', () => {
 
     expect(selection.exercises.length).toBeLessThanOrEqual(3)
     expect(selection.focus).toContain('activation')
+    expect(selection.exercises.every((exercise) => exercise.intensity !== 'heavy')).toBe(true)
+  })
+
+  it('uses duration as the main driver for strength density', () => {
+    const longSupport = selectStrengthSession({
+      phase: 'build',
+      fatigueLevel: 4,
+      recentExercises: [],
+      goal: 'preparacion fisica squash completa',
+      sportProfile: 'sport_support',
+      primarySport: 'squash',
+      experienceLevel: 'intermediate',
+      availableEquipment: ['dumbbell', 'bands', 'bodyweight', 'medball', 'trx', 'stability ball'],
+      competitionSoon: false,
+      sessionDurationMin: 60,
+    })
+
+    const shortSupport = selectStrengthSession({
+      phase: 'build',
+      fatigueLevel: 4,
+      recentExercises: [],
+      goal: 'preparacion fisica corta',
+      sportProfile: 'sport_support',
+      primarySport: 'squash',
+      experienceLevel: 'intermediate',
+      availableEquipment: ['dumbbell', 'bands', 'bodyweight'],
+      competitionSoon: false,
+      sessionDurationMin: 30,
+    })
+
+    expect(getTargetExerciseDensity({
+      phase: 'build',
+      fatigueLevel: 4,
+      recentExercises: [],
+      goal: 'preparacion fisica squash completa',
+      sportProfile: 'sport_support',
+      primarySport: 'squash',
+      sessionDurationMin: 60,
+    })).toMatchObject({ min: 5, target: 5, max: 6 })
+    expect(longSupport.exercises.length).toBeGreaterThanOrEqual(5)
+    expect(shortSupport.exercises.length).toBeGreaterThanOrEqual(3)
+    expect(shortSupport.exercises.length).toBeLessThanOrEqual(4)
+  })
+
+  it('does not collapse a 60 minute strength session to three exercises on fatigue 7 alone', () => {
+    const selection = selectStrengthSession({
+      phase: 'build',
+      fatigueLevel: 7,
+      recentExercises: [],
+      goal: 'mantener fuerza sin castigar',
+      sportProfile: 'sport_support',
+      primarySport: 'squash',
+      experienceLevel: 'intermediate',
+      availableEquipment: ['dumbbell', 'bands', 'bodyweight', 'trx', 'stability ball'],
+      competitionSoon: false,
+      sessionDurationMin: 60,
+    })
+
+    expect(getTargetExerciseDensity({
+      phase: 'build',
+      fatigueLevel: 7,
+      recentExercises: [],
+      goal: 'mantener fuerza sin castigar',
+      sportProfile: 'sport_support',
+      sessionDurationMin: 60,
+    }).target).toBeGreaterThanOrEqual(4)
+    expect(selection.exercises.length).toBeGreaterThanOrEqual(4)
+  })
+
+  it('reduces a 60 minute session near competition without dropping below coherent volume', () => {
+    const selection = selectStrengthSession({
+      phase: 'build',
+      fatigueLevel: 4,
+      recentExercises: [],
+      goal: 'activar sin DOMS antes de competir',
+      sportProfile: 'sport_support',
+      primarySport: 'squash',
+      experienceLevel: 'intermediate',
+      availableEquipment: ['dumbbell', 'bands', 'bodyweight', 'trx', 'stability ball'],
+      competitionSoon: true,
+      daysToCompetition: 2,
+      sessionDurationMin: 60,
+    })
+
+    expect(selection.exercises.length).toBeGreaterThanOrEqual(4)
+    expect(selection.exercises.length).toBeLessThanOrEqual(5)
     expect(selection.exercises.every((exercise) => exercise.intensity !== 'heavy')).toBe(true)
   })
 

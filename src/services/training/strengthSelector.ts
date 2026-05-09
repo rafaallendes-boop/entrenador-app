@@ -33,6 +33,12 @@ export interface StrengthContext {
   strengthAcwr?: DisciplineAcwr
 }
 
+export interface StrengthExerciseDensity {
+  min: number
+  target: number
+  max: number
+}
+
 export interface StrengthSelectionExercise {
   name: string
   sets: number
@@ -74,9 +80,10 @@ export function selectStrengthSession(
   const experiencePool = buildStrengthCandidatePool(equipmentPool, context)
   const withoutRecent = avoidRecentExercises(experiencePool, recentSet)
   const pool = withoutRecent.length >= 6 ? withoutRecent : experiencePool
+  const density = getTargetExerciseDensity(context)
   const selected = pickStrengthStructure(pool, context, recentSet, progressionState)
 
-  const fallback = selected.length >= 3
+  const fallback = selected.length >= density.min
     ? selected
     : pickStrengthStructure(
         buildStrengthCandidatePool(equipmentPool, { ...context, fatigueLevel: Math.min(context.fatigueLevel, 6) }),
@@ -85,7 +92,7 @@ export function selectStrengthSession(
         progressionState,
       )
 
-  const finalSelection = fallback.slice(0, 6)
+  const finalSelection = fallback.slice(0, density.max)
 
   return {
     focus: deriveStrengthFocus(finalSelection, context),
@@ -227,7 +234,7 @@ export function pickStrengthStructure(
   const selected: ExerciseDefinition[] = []
   const selectedMovements = new Set<MovementPattern>()
   const selectedIds = new Set<string>()
-  const targetCount = getTargetExerciseCount(context)
+  const targetCount = getTargetExerciseDensity(context).target
 
   const mainLift = selectMainLiftWithProgression(scored, context, recentExercises, progressionState)
   if (mainLift) {
@@ -782,15 +789,41 @@ function shouldIncludePower(context: StrengthContext): boolean {
   return context.phase === 'build' || context.phase === 'peak'
 }
 
-function getTargetExerciseCount(context: StrengthContext): number {
-  if (context.competitionSoon || context.phase === 'taper') return 3
-  if (context.fatigueLevel >= 7) return 3
-  if (context.sportProfile === 'strength_primary') {
-    if (context.phase === 'base' || context.phase === 'build') return 5
-    return 4
+export function getTargetExerciseDensity(context: StrengthContext): StrengthExerciseDensity {
+  const duration = context.sessionDurationMin ?? 50
+  const base = getDurationExerciseDensity(duration)
+  let modifier = 0
+
+  if (context.competitionSoon || context.phase === 'taper') modifier -= 1
+  if (context.fatigueLevel >= 7) modifier -= 1
+  if (
+    context.sportProfile === 'strength_primary' &&
+    (context.phase === 'base' || context.phase === 'build') &&
+    !context.competitionSoon &&
+    context.fatigueLevel < 7
+  ) {
+    modifier += 1
   }
-  if (context.sportProfile === 'hybrid') return context.sessionDurationMin && context.sessionDurationMin < 50 ? 4 : 5
-  return 4
+
+  const absoluteMax = 8
+  const minFloor = context.fatigueLevel >= 8 && (context.competitionSoon || context.phase === 'taper') ? 2 : 3
+  const min = clamp(base.min + modifier, minFloor, absoluteMax)
+  const target = clamp(base.target + modifier, min, absoluteMax)
+  const max = clamp(base.max + modifier, target, absoluteMax)
+
+  return { min, target, max }
+}
+
+function getDurationExerciseDensity(durationMin: number): StrengthExerciseDensity {
+  if (durationMin <= 30) return { min: 3, target: 3, max: 4 }
+  if (durationMin <= 44) return { min: 4, target: 4, max: 4 }
+  if (durationMin <= 54) return { min: 4, target: 5, max: 5 }
+  if (durationMin <= 69) return { min: 5, target: 5, max: 6 }
+  return { min: 6, target: 6, max: 7 }
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value))
 }
 
 function filterByExperience(
