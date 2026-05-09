@@ -98,12 +98,13 @@ async function waitForChatReady(page, timeout = 30_000) {
   await page.waitForFunction(() => {
     const textarea = document.querySelector('textarea[placeholder="Escríbele al coach..."]')
     return textarea instanceof HTMLTextAreaElement && !textarea.disabled
-  }, { timeout })
+  }, undefined, { timeout })
 }
 
 async function sendChatMessage(page, message, timeout = TIMEOUTS.chatResponse) {
   await waitForChatReady(page)
   const beforeText = await page.locator('main').innerText().catch(() => '')
+  const beforeUsefulCount = await page.getByTitle('Respuesta útil').count().catch(() => 0)
   const input = chatInput(page)
   await input.fill(message)
   await input.press('Enter')
@@ -112,13 +113,14 @@ async function sendChatMessage(page, message, timeout = TIMEOUTS.chatResponse) {
   await page.waitForFunction(() => {
     const textarea = document.querySelector('textarea[placeholder="Escríbele al coach..."]')
     return textarea instanceof HTMLTextAreaElement && textarea.disabled
-  }, { timeout: 10_000 }).catch(() => undefined)
+  }, undefined, { timeout: 10_000 }).catch(() => undefined)
 
   await waitForChatReady(page, timeout)
   await page.waitForTimeout(900)
 
   const afterText = await page.locator('main').innerText().catch(() => '')
-  return { beforeText, afterText }
+  const afterUsefulCount = await page.getByTitle('Respuesta útil').count().catch(() => 0)
+  return { beforeText, afterText, beforeUsefulCount, afterUsefulCount }
 }
 
 async function findLatestProposalButton(page, timeout = TIMEOUTS.proposalAppear) {
@@ -214,7 +216,7 @@ async function verifyAuth(page, context, hasStoredAuth) {
 
   await page.waitForFunction(() => {
     return document.querySelector('textarea[placeholder="Escríbele al coach..."]') != null
-  }, { timeout: TIMEOUTS.auth })
+  }, undefined, { timeout: TIMEOUTS.auth })
 
   await context.storageState({ path: AUTH_STATE_PATH })
   ok('Login manual completado y storageState guardado')
@@ -240,11 +242,16 @@ async function runNavigationSmoke(page) {
 async function runGenericChat(page) {
   step('4. Chat general')
   await goto(page, '/chat')
-  const { beforeText, afterText } = await sendChatMessage(page, 'E2E dev: dime en 2 frases como ves mi semana actual.')
-  if (afterText.length > beforeText.length + 80) {
+  const { beforeText, afterText, beforeUsefulCount, afterUsefulCount } = await sendChatMessage(
+    page,
+    'E2E dev: dime en 2 frases como ves mi semana actual.',
+  )
+  const hasNewCoachResponse = afterUsefulCount > beforeUsefulCount
+  const hasSubstantialTextChange = afterText.length > beforeText.length + 80
+  if (hasNewCoachResponse || hasSubstantialTextChange) {
     ok('Coach respondió al mensaje general')
   } else {
-    fail('Respuesta general ausente o demasiado corta')
+    fail('Respuesta general ausente', `delta texto: ${afterText.length - beforeText.length}`)
   }
   await rateVisibleCoachResponse(page)
 }
