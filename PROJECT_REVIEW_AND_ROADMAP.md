@@ -1,428 +1,387 @@
 # Entrenador App - Review and Roadmap
 
-Actualizado: 2026-05-05
+Actualizado: 2026-05-10
 
-## Resumen ejecutivo
+## Resumen Ejecutivo
 
-La app ya está en fase de estabilización, no de descubrimiento. El producto tiene superficies reales de uso diario, planificación, chat, propuestas, sync, onboarding, nutrición, macroplan y generación de semanas. La prioridad ahora es que el coach sea confiable en local/dev/prod, que los errores sean observables y que el flujo no se caiga por respuestas parciales del modelo, streaming cortado, sync sensible o contratos duplicados.
+Entrenador ya no esta en fase de descubrimiento. La app tiene una base real y usable: coach AI, week creator, Plan Builder, sync, backup, athlete profile, nutricion contextual, PWA, debug local y suites E2E. El foco ahora es uno solo: **lograr confianza operacional antes de mostrarla a usuarios externos**.
 
-Lectura actual:
+La estrategia correcta sigue siendo progresiva:
 
-- La base React + TypeScript + Vite está verde en build.
-- El coach funciona por `ProxyProvider` y ya tiene proxy local de Vite para `npm run dev`.
-- El endpoint local `/.netlify/functions/coach` existe vía `dev/coachProxyMiddleware.ts`.
-- Las API keys reales para IA pueden vivir en `.env.local` sin `VITE_` cuando se usa `VITE_AI_PROVIDER=proxy`.
-- Plan Builder V2 ya no depende de que el modelo devuelva semanas perfectas: hay repair local, validación post-repair y telemetría.
-- `week_creator` ya está separado del chat y enrutable.
-- `responseNormalizer` recupera `add_session` incompletos cuando son reparables.
-- `stageLogger` agrega timing estructurado por etapa para coach y plan builder.
-- Existe audit de prompt con `npm run audit:prompt`.
-- La decisión de `MACRO PLAN` quedó cerrada: se omite en chat genérico normal, pero se conserva si hay competencia dentro de 14 días.
-- El mayor riesgo técnico sigue siendo que el chat falle de forma intermitente por streaming/provider/normalización/sync, no falta de features.
+1. Primero, el owner debe poder usar la app en dev con Gemini sin crashes y sin semanas absurdas.
+2. Luego, probar en prod como smoke test controlado.
+3. Despues, invitar 3-5 usuarios cercanos.
+4. Finalmente, abrir gradualmente.
 
-## Estado actual por área
+No conviene agregar monetizacion, paywall, mas proveedores por defecto ni integraciones externas hasta que coach, Plan Builder y sync pasen pruebas repetibles.
 
-### Coach y chat
+## Lectura Actual
 
-Estado: fuerte, pero sensible.
+Ya esta hecho:
 
-Ya existe:
+- README actualizado con arquitectura, comandos y estado beta.
+- `BETA_AUDIT_AND_PROVIDER_PLAN.md` consolidado como auditoria vigente.
+- Documentos antiguos no leidos fueron removidos del flujo.
+- Suite E2E de coach y week creator.
+- Suite E2E de Plan Builder.
+- Guia de comandos en `DEV_TESTING_COMMANDS.md`.
+- Beta Quality local en Settings.
+- Feedback de respuesta/propuesta.
+- Mejor densidad de fuerza/preparacion fisica.
+- Squash distingue modalidad `solo`, `partner`, `either`, `match`.
+- Bloques de squash visibles en SessionCard/ProposalDrawer.
+- Warning local para propuestas de fuerza de baja densidad.
+- Prompt audit disponible con `npm run audit:prompt`.
 
-- Chat general y chat de acción.
-- Routing hacia `chat_general`, `chat_action`, `week_creator` y redirect a Plan Builder.
-- Proposals persistidas, aplicables y con limpieza si falla creación.
-- Recovery para respuestas parciales o inválidas en `chat_action`.
-- Normalización con metadata de outcome, truncado y error class.
-- Streaming con fallback a no-stream si no llegó ningún chunk.
-- Debug técnico en Settings con trace, provider, duración y resultado.
-- Stage timings por request con `stageLogger`.
+Mayor riesgo actual:
 
-Riesgo:
+- La app puede pasar tests tecnicos, pero aun falta comprobar con uso real si genera semanas que el owner efectivamente usaria.
+- Sync multi-dispositivo sigue siendo el mayor riesgo antes de usuarios externos.
+- La observabilidad beta todavia es mayormente local; para beta externa falta persistencia resumida por usuario/request.
+- Plan Builder debe probarse con generacion real y aceptacion, no solo wizard seguro.
 
-- El chat todavía puede sentirse frágil si el provider corta stream a mitad, responde texto sin acciones cuando el usuario pidió cambios, devuelve JSON mezclado o si la UI procesa tarde una respuesta cancelada.
-- El estado de chat está repartido entre store, proposal lifecycle, provider, normalizer y sync. Esa dispersión aumenta el costo de razonar fallas.
+## Estado por Area
 
-### Plan Builder V2
+### Coach y Week Creator
 
-Estado: estable para beta técnica.
+Estado: bueno para pruebas internas.
 
-Ya existe:
+Fortalezas:
 
-- Prompt minimal para generación single-week.
-- Prompt minimal para batch/pairs.
-- Schema completo conservado en Week Creator y Coach Chat.
-- `repairGeneratedWeek()` antes de validar.
-- Reparación de fechas, sesiones fuera de semana, días no permitidos, colisiones, deportes no permitidos y detalles faltantes.
-- Selectors deportivos integrados: squash, running, strength, mobility y cycling.
-- Balance de conteo con recorte priorizado y fallback conservador.
-- Telemetría en `generationMeta`.
-- Strategy default `single`, con `pairs` explícito y `auto` para planes largos.
-- Separación de `errorClass` y `outcome` en generación de semanas.
+- Routing separado por `requestClass`.
+- Chat general, chat action y week creator diferenciados.
+- Proposals persistidas y aplicables.
+- Prevalidacion antes de aplicar acciones.
+- Recovery para acciones invalidas o truncadas.
+- Stage logging y telemetria local.
+- E2E completo `npm run e2e:dev` pasa en modo review-only.
 
-Pendiente de verificación:
+Pendiente:
 
-- QA manual con modelos reales en semanas largas.
-- Revisar que repair telemetry sea comprensible en Settings/debug o metadata exportable.
-- Decidir si el usuario final ve la telemetría o si queda solo como herramienta técnica.
+- Correr varias veces con Gemini real y revisar calidad subjetiva.
+- Probar `npm run e2e:dev:apply` en ambiente dev seguro.
+- Exportar Beta Quality despues de pruebas reales.
+- Revisar si week creator produce semanas que el owner usaria, no solo semanas validas.
 
-### Prompt y contexto
+### Plan Builder
 
-Estado: más controlado.
+Estado: base tecnica lista; falta prueba real de generacion.
 
-Ya existe:
+Fortalezas:
 
-- Context reduction para chat genérico.
-- Perfil slim en prompts livianos.
-- `MACRO PLAN` condicionado por tipo de request o competencia cercana.
-- Audit de tokens con `npm run audit:prompt`.
+- Wizard de competencia.
+- Builder en `/plans/builder`.
+- Shell por fases.
+- Generacion semana a semana.
+- Validacion y regeneracion.
+- E2E seguro `npm run e2e:plan` pasa sin guardar plan.
 
-Decisión cerrada:
+Pendiente:
 
-- Chat genérico sin competencia cercana debe mantenerse liviano.
-- Chat genérico con competencia dentro de 14 días debe incluir `MACRO PLAN`.
-- `adjust_session` debe incluir `MACRO PLAN`.
+- Correr `npm run e2e:plan:generate` con Gemini.
+- Revisar calidad de semanas generadas.
+- Correr `npm run e2e:plan:accept` solo en dev/local seguro.
+- Validar que aceptar plan deja WeeklyView usable.
+- Revisar telemetria `plan_builder_week` o `plan_builder_pair` en Settings.
 
-Riesgo:
+### Fuerza y Preparacion Fisica
 
-- `promptBuilder.ts` sigue siendo una superficie grande y sensible. No debería modificarse sin tests de contrato y audit de tokens antes/después.
+Estado: mejorado.
 
-### Dev local y prod
+Ya se corrigio:
 
-Estado: listo para probar en dev.
+- Sesiones de 45-60 min no deberian caer automaticamente a 3 ejercicios.
+- La duracion pesa mas en el target de ejercicios.
+- Fatiga, taper y competencia cercana reducen volumen sin destruir la sesion salvo caso extremo.
+- Prompt de fuerza refuerza estructura orientada a squash.
 
-Ya existe:
+Pendiente:
 
-- `vite.config.ts` monta `devCoachProxyPlugin`.
-- `npm run dev` puede responder `/.netlify/functions/coach` localmente.
-- `netlify/functions/coach.ts` sigue siendo el camino prod.
-- `ProxyProvider` es el contrato común del cliente.
+- Probar manualmente prompts de 45, 60 y 75 min.
+- Revisar que fuerza para squash tenga activacion, potencia/coordinacion, fuerza principal, unilateral/lateral, tren superior, core y cierre opcional cuando corresponde.
 
-Configuración esperada en `.env.local` para dev con IA real:
+### Squash
 
-```env
-VITE_AI_PROVIDER=proxy
-GEMINI_API_KEY=...
-```
+Estado: mejorado.
 
-Opcional:
+Ya se corrigio:
 
-```env
-AI_PROVIDER=openai
-OPENAI_API_KEY=...
-```
+- Drills clasificables por modalidad.
+- Sesiones solo excluyen partner/match.
+- Match queda al final.
+- Sesiones mixtas pueden mostrar bloques.
 
-```env
-AI_PROVIDER=claude
-CLAUDE_API_KEY=...
-```
+Pendiente:
 
-Para login local con `npm run dev`, revisar:
+- Probar prompts reales:
+  - "solo tengo cancha sin partner"
+  - "quiero una sesion con partner"
+  - "quiero partido"
+  - "quiero sombras y tecnica sin partido"
+- Revisar que el coach no mezcle tecnica, control y partido sin separacion clara.
 
-```env
-VITE_AUTH_REDIRECT_URL=http://localhost:5173
-```
+### Prompt Builder
 
-Para `netlify dev`, puede seguir siendo:
+Estado: manejable, pero sensible.
 
-```env
-VITE_AUTH_REDIRECT_URL=http://localhost:8888
-```
+Situacion actual:
+
+- `promptBuilder.ts` sigue siendo grande.
+- `npm run audit:prompt` muestra diferencias por requestClass.
+- `chat_general` se mantiene liviano.
+- `chat_action`, `week_creator` y `plan_builder` son mas grandes y deben serlo.
+
+Decision:
+
+- No refactorizar prompt builder ahora salvo necesidad clara.
+- Antes de tocarlo, correr `npm run audit:prompt`.
+- Si se refactoriza, hacerlo por requestClass y con tests de contrato.
 
 ### Sync
 
-Estado: principal riesgo abierto.
+Estado: principal riesgo antes de beta externa.
 
-Ya existe:
+Fortalezas:
 
 - Local-first con Dexie.
-- Sync a Supabase.
-- Colas locales.
-- Backup/import/export.
-- Tombstones y tratamiento más durable para `coach_proposals`.
+- Supabase auth/sync.
+- Cola local.
+- Diagnostico visible en Settings.
+- Tombstones y delete handling en entidades criticas.
 
-Riesgo:
+Pendiente:
 
-- Convergencia multi-dispositivo.
-- Recovery cuando hay cola atascada.
-- Deletes y resets remotos.
-- Experiencia visible cuando sync no está sano.
+- QA real desktop + mobile.
+- Probar offline/online.
+- Probar deletes.
+- Probar reset local y local+nube solo en ambiente seguro.
+- Confirmar que proposals/sesiones no reaparecen ni se duplican.
 
-### Biblioteca de entrenamiento
+### Observabilidad Beta
 
-Estado: mejorada, pero grande.
+Estado: suficiente para owner QA, insuficiente para beta externa.
 
 Ya existe:
 
-- Biblioteca amplia con transferencia a squash.
-- Nuevos metadatos de riesgo, fatiga, aliases y transferencia.
-- Ajuste de `lateral_band_walk`: ya no se marca como unilateral.
+- Beta Quality local.
+- Feedback positivo/negativo.
+- Export local.
+- Trace, provider, model, duration, outcome y requestClass visibles.
 
-Riesgo:
+Pendiente para beta externa:
 
-- El scoring puede degradarse si metadatos semánticos se mezclan sin tests de selección.
-- Conviene mantener cambios futuros como curaduría/refactor, no como expansión masiva.
+- Persistir telemetria resumida en backend.
+- No guardar prompts completos ni respuestas completas por defecto.
+- Registrar outcome, requestClass, provider, model, duration, token counts si estan disponibles, retry/fallback, errorClass.
+- Asociar feedback de usuario a trace/proposal/session.
 
-## Verificación obligatoria en dev antes de prod
+## Roadmap por Fases
 
-### 1. Verificación técnica rápida
+### Fase 1 - Owner QA con Gemini
 
-Correr:
+Objetivo: que el owner confie en usar la app.
+
+Checklist:
+
+- Correr `npm run e2e:dev`.
+- Correr `npm run e2e:plan`.
+- Correr `npm run e2e:dev:apply` en dev seguro.
+- Correr `npm run e2e:plan:generate`.
+- Generar al menos 5 semanas con el coach.
+- Generar al menos 2 planes con Plan Builder.
+- Revisar Settings/Beta Quality despues de cada bloque.
+- Guardar exports relevantes.
+
+Criterio de salida:
+
+- La app no crashea.
+- El coach responde sin loaders pegados.
+- Las proposals se aplican una sola vez.
+- Week creator genera semanas razonables.
+- Plan Builder genera semanas revisables.
+- El owner usaria al menos una semana generada casi sin cambios.
+
+### Fase 2 - Hardening de Calidad
+
+Objetivo: convertir fallos observados en fixes puntuales.
+
+Prioridades:
+
+- Ajustar prompts solo donde haya evidencia.
+- Ajustar selectors deportivos si el output es valido pero deportivamente pobre.
+- Mejorar normalizer solo si hay fallos de formato repetidos.
+- Mantener cambios pequenos y testeados.
+- Agregar tests focalizados para cada bug real.
+
+No hacer:
+
+- Refactor masivo de prompt builder.
+- Cambiar provider principal.
+- Agregar nuevas features.
+- Tocar monetizacion.
+
+### Fase 3 - Sync y Multi-Dispositivo
+
+Objetivo: evitar sorpresas con usuarios reales.
+
+Escenarios:
+
+- Desktop crea sesion, mobile la ve.
+- Mobile completa sesion, desktop la ve.
+- Coach crea proposal en A, se acepta en A, B converge.
+- Sesion borrada no reaparece.
+- Offline en A, cambios en B, reconnect en A.
+- Export/import conserva conteos.
+- Reset local y reset nube solo en ambiente seguro.
+
+Criterio de salida:
+
+- No hay duplicados.
+- No reaparecen deletes.
+- La UI comunica estado de sync.
+- El usuario entiende si hay cola pendiente o error.
+
+### Fase 4 - Smoke Prod Controlado
+
+Objetivo: validar build, env vars, Netlify Function, Supabase auth y proxy real.
+
+Pasos:
 
 ```bash
+npm run lint
+npm run test
 npm run build
-npm test -- src/services/__tests__/promptBuilderContextReduction.test.ts src/services/__tests__/responseNormalizer.test.ts src/services/__tests__/repairWeek.test.ts src/services/__tests__/stageLogger.test.ts
-npm run audit:prompt
 ```
 
-Interpretación esperada:
+Luego, contra prod:
 
-- Build verde.
-- Tests focalizados verdes.
-- Audit de prompt sin crecimiento inesperado en `chat_general`.
-- `chat_general` debe seguir siendo liviano salvo competencia cercana.
-- `chat_action`, `week_creator` y `plan_builder_week` pueden ser más grandes, pero el crecimiento debe estar justificado.
-
-### 2. Verificación local del coach
-
-Preparar `.env.local`:
-
-```env
-VITE_AI_PROVIDER=proxy
-GEMINI_API_KEY=...
-VITE_AUTH_REDIRECT_URL=http://localhost:5173
+```bash
+E2E_BASE_URL=https://TU_URL_DE_PROD npm run e2e:dev:quick
+E2E_BASE_URL=https://TU_URL_DE_PROD npm run e2e:plan
 ```
 
-Levantar:
+Criterio de salida:
+
+- Auth redirige bien.
+- Proxy responde.
+- No hay keys reales expuestas con `VITE_`.
+- Netlify Function no muestra `misconfigured`.
+- Settings muestra trazas de requestClass.
+
+### Fase 5 - Beta Cerrada 3-5 Usuarios
+
+Objetivo: aprender con usuarios cercanos sin abrir el producto.
+
+Antes de invitar:
+
+- Disclaimer beta claro.
+- Feedback facil en coach/proposals.
+- Limites diarios por requestClass o al menos monitoreo manual.
+- Export de Beta Quality probado.
+- Canal simple para reportar problemas.
+
+Durante beta:
+
+- Revisar feedback semanalmente.
+- Separar fallos por causa:
+  - provider
+  - timeout/streaming
+  - parse/schema
+  - prompt insuficiente
+  - selector/logica deportiva
+  - sync
+- No perseguir todos los comentarios como feature request.
+
+Criterio de salida:
+
+- Menos de 20% feedback negativo en escenarios clave.
+- No hay perdida de datos reportada.
+- No hay bloqueos de auth/sync.
+- El coach genera al menos algunas semanas utiles para terceros.
+
+### Fase 6 - Proveedores, Costos y Persistencia
+
+Objetivo: profesionalizar operacion sin sobredisenar.
+
+Trabajos candidatos:
+
+- Persistir `coach_request_log` resumido.
+- Persistir `coach_feedback`.
+- Agregar limites diarios por usuario/requestClass.
+- Evaluar routing por requestClass en server:
+  - Gemini default.
+  - OpenAI/Claude solo donde haya evidencia de mejor calidad.
+- Registrar tokens cuando provider los exponga.
+
+No hacer antes:
+
+- Migrar todo a otro provider.
+- Optimizar costos sin datos.
+- Agregar billing.
+
+## Comandos de Verificacion
+
+Uso diario:
 
 ```bash
 npm run dev
+npm run e2e:dev:quick
+npm run e2e:plan
 ```
 
-Abrir:
+Coach completo:
 
-```text
-http://localhost:5173
+```bash
+npm run e2e:dev
+npm run e2e:dev:headed
+npm run e2e:dev:apply
+npm run e2e:dev:quality
 ```
 
-Probar en chat:
-
-- Mensaje genérico: "Como ves mi semana?"
-- Acción simple: "Agrega una movilidad suave el viernes PM"
-- Ajuste de sesión: "Ajusta la sesión del martes PM porque estoy cansado"
-- Semana: "Creame la próxima semana"
-- Plan largo: "Armame un plan de 8 semanas para mi torneo"
-- Caso de competencia cercana: preguntar por la semana con torneo dentro de 14 días y verificar que el coach use contexto de macroplan.
-
-Qué mirar:
-
-- El coach responde sin error de configuración.
-- No aparece "El coach no está configurado correctamente en el servidor".
-- No aparece error de conexión al coach.
-- En Settings, la última solicitud muestra trace, provider, duración y resultado técnico.
-- Si la respuesta es acción, se crea proposal.
-- Si se acepta proposal, se aplica una vez aunque haya doble click.
-- Si falla proposal, no queda mensaje huérfano del coach.
-
-### 3. Verificación de streaming y recovery
-
-Probar:
-
-- Enviar una acción con respuesta larga.
-- Cancelar o navegar durante la respuesta.
-- Reintentar después de un error.
-- Pedir una acción ambigua: "cambia eso para que sea más suave".
-
-Qué mirar:
-
-- No quedan loaders pegados.
-- No se duplica el mensaje del usuario.
-- No se duplica la proposal.
-- Si el modelo responde texto sin acción ante una pregunta normal, no debe forzarse retry innecesario.
-- Si el usuario pidió una acción y el modelo falla el formato, debe intentar recovery o mostrar error útil.
-
-### 4. Verificación de Plan Builder V2
-
-Probar:
-
-- Crear plan desde wizard con perfil completo.
-- Crear plan con perfil incompleto.
-- Generar semana individual.
-- Generar plan largo.
-- Revisar semanas con sesiones movidas/reparadas.
-
-Qué mirar:
-
-- No se cae la generación si una sesión viene con fecha inválida o deporte no permitido.
-- El resultado respeta días permitidos y `allowDoubleSession`.
-- Las sesiones tienen detalles suficientes.
-- `generationMeta` registra reparadas, movidas, filtradas, fallback y warnings.
-- Si el batch falla, degrada a single sin romper toda la generación.
-
-### 5. Verificación de sync antes de prod
-
-Probar con dos navegadores o desktop/móvil:
-
-- Login en ambos.
-- Crear sesión manual en A y verificar en B.
-- Crear proposal del coach en A, aceptar en A, verificar en B.
-- Crear cambios offline en A, volver online y verificar cola.
-- Borrar una sesión del coach y verificar que no reaparece.
-- Exportar backup, importar en otro navegador y revisar conteos.
-- Ejecutar reset local y reset local+nube solo si se está en ambiente seguro.
-
-Qué mirar:
-
-- No reaparecen registros borrados.
-- No se duplican proposals.
-- No se pisa un cambio local más nuevo con uno remoto viejo.
-- La UI comunica si sync está pendiente o fallando.
-
-### 6. Verificación de prod antes de release
-
-Antes de deploy:
-
-- Confirmar variables en Netlify: `GEMINI_API_KEY` o provider elegido, Supabase URL/key del servidor y modelo si aplica.
-- Confirmar que no hay keys reales con prefijo `VITE_`.
-- Confirmar que los archivos nuevos críticos entran al commit:
-  - `dev/coachProxyMiddleware.ts`
-  - `scripts/audit-prompt-tokens.test.ts`
-  - `scripts/loadtest-week-creator.mjs`
-  - `src/services/ai/stageLogger.ts`
-  - `src/services/__tests__/stageLogger.test.ts`
-- Correr build limpio.
-- Revisar logs de Netlify Function en primera prueba prod.
-
-## Refactorizaciones permitidas ahora
-
-No abrir features nuevas hasta que esto esté estable. El trabajo recomendado es refactor y hardening.
-
-### 1. Unificar contrato del coach proxy
-
-Problema:
-
-- `ProxyProvider`, `dev/coachProxyMiddleware.ts` y `netlify/functions/coach.ts` comparten contrato, pero los tipos viven duplicados.
-
-Refactor recomendado:
-
-- Crear un módulo compartido de tipos request/response/error para proxy.
-- Reusar los mismos `errorCode`, `requestClass`, payload y shape de respuesta en dev y prod.
-- Agregar test de contrato para que dev proxy y Netlify Function no diverjan.
-
-Impacto:
-
-- Menos caídas por diferencias entre local y prod.
-- Debug más confiable.
-
-### 2. Convertir el flujo de chat en state machine explícita
-
-Problema:
-
-- El estado actual mezcla persistencia de mensaje, streaming, proposal, cancelación, cleanup y sync.
-
-Refactor recomendado:
-
-- Modelar estados: `idle`, `persisting_user_message`, `requesting_coach`, `streaming`, `normalizing`, `creating_proposal`, `completed`, `failed`, `cancelled`.
-- Centralizar cleanup de mensajes tardíos y proposals fallidas.
-- Asegurar idempotencia por `traceId` o `requestId`.
-
-Impacto:
-
-- Menos loaders pegados.
-- Menos mensajes/proposals huérfanos.
-- Más fácil reproducir errores.
-
-### 3. Separar `promptBuilder.ts` por contratos estables
-
-Problema:
-
-- `promptBuilder.ts` es grande, sensible y fácil de romper.
-
-Refactor recomendado:
-
-- Extraer gates de secciones: macroplan, nutrición, carga, historial, feedback.
-- Mantener tests de contrato por request type.
-- Correr `npm run audit:prompt` cada vez que se toque.
-
-Impacto:
-
-- Menos regresiones como perder `MACRO PLAN` antes de competencia.
-- Prompts más baratos y controlados.
-
-### 4. Fortalecer normalización como pipeline auditable
-
-Problema:
-
-- Normalización, recovery, truncado, parse failure y schema invalid son conceptos cercanos pero distintos.
-
-Refactor recomendado:
-
-- Mantener `outcome` y `errorClass` separados.
-- Hacer pipeline explícito: extract, parse, classify, repair, validate.
-- Registrar qué etapa falló.
-- Tests con fixtures reales de respuestas malas.
-
-Impacto:
-
-- Menos falsos errores.
-- Mejor retry.
-- Mejor lectura en Settings.
-
-### 5. Refactor de sync por responsabilidades
-
-Problema:
-
-- `syncService` concentra demasiado: push, pull, merge, deletes, recovery, queues y resets.
-
-Refactor recomendado:
-
-- Separar cola local, merge, tombstones, pull remoto, push remoto y reset.
-- Tests por tabla crítica: sessions, coach_proposals, athlete_profiles.
-- Panel de salud simple para cola y último error.
-
-Impacto:
-
-- Menos riesgo multi-dispositivo.
-- Más confianza antes de beta.
-
-### 6. Smoke tests de estabilidad, no tests enormes
-
-Problema:
-
-- La suite completa puede crecer sin cubrir los casos que rompen uso real.
-
-Refactor recomendado:
-
-- Agregar pocos smoke tests de alto valor:
-  - chat action crea proposal una vez
-  - respuesta truncada no crea proposal inválida
-  - cancelación limpia loader
-  - dev proxy devuelve error `misconfigured` si falta key
-  - prompt genérico con competencia incluye macroplan
-  - prompt genérico sin competencia omite macroplan
-
-Impacto:
-
-- Más seguridad con menos ruido.
-
-## Qué no hacer ahora
-
-- No sumar nuevas pantallas.
-- No ampliar la biblioteca de ejercicios salvo correcciones de calidad.
-- No abrir billing/paywall todavía.
-- No agregar más analytics visibles si no ayudan a estabilizar.
-- No tocar `promptBuilder.ts` sin test + audit.
-- No cambiar sync sin escenario de QA multi-dispositivo.
-- No usar API keys reales con prefijo `VITE_`.
-
-## Próximos pasos recomendados
-
-1. Hacer QA dev con IA real usando `npm run dev`.
-2. Revisar Settings después de cada caso de chat: trace, provider, duración, error técnico y stage timings.
-3. Validar Plan Builder V2 con semanas reales y mirar `generationMeta`.
-4. Validar sync en dos dispositivos o dos navegadores.
-5. Si algo falla, priorizar refactor de contrato/proxy, normalizer o state machine del chat antes de cualquier feature.
-6. Cuando dev esté estable, hacer deploy controlado y mirar logs de Netlify Function en la primera sesión real.
-
-## Nota de dirección
-
-La prioridad real ya no es que el coach sea más ambicioso. La prioridad es que sea aburridamente confiable: responder, recuperarse, no duplicar, no dejar basura, explicar errores técnicos y comportarse igual en local, dev y prod.
+Plan Builder:
+
+```bash
+npm run e2e:plan
+npm run e2e:plan:headed
+npm run e2e:plan:generate
+npm run e2e:plan:accept
+```
+
+Tecnico:
+
+```bash
+npm run lint
+npm run test
+npm run build
+npm run audit:prompt
+```
+
+Load test:
+
+```bash
+npm run loadtest:week-creator
+```
+
+## Reglas de Cambio
+
+- Cambios pequenos, con commits pequenos.
+- No tocar auth, sync, monetizacion o providers en tareas de calidad deportiva salvo pedido explicito.
+- Si se toca prompt, correr audit.
+- Si se toca selector deportivo, agregar test focalizado.
+- Si se toca proposal/apply, correr E2E coach.
+- Si se toca Plan Builder, correr E2E plan.
+- Si se toca sync, hacer QA manual multi-dispositivo.
+
+## Que No Hacer Ahora
+
+- No abrir beta publica.
+- No construir paywall.
+- No sumar integraciones externas.
+- No reescribir prompt builder por estetica.
+- No cambiar Gemini como default sin datos.
+- No meter analytics invasivos.
+- No agregar features antes de cerrar estabilidad.
+
+## Nota de Direccion
+
+La prioridad ya no es que Entrenador sea mas ambicioso. La prioridad es que sea confiable: que genere semanas razonables, que el Plan Builder no se caiga, que sync no sorprenda y que cada fallo deje una pista clara. Cuando eso ocurra repetidamente en dev y luego en prod, recien ahi tiene sentido invitar usuarios.
