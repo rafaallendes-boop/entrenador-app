@@ -1,82 +1,62 @@
 # Entrenador App
 
-Entrenador es una PWA para planificar, registrar y ajustar entrenamiento deportivo con apoyo de un coach AI.
+Entrenador es una PWA local-first para planificar, ajustar y registrar entrenamiento deportivo con apoyo de un coach AI. Nacio para uso personal en squash, running, fuerza, movilidad y recuperacion, y hoy esta evolucionando hacia una beta cerrada con foco en robustez real antes de abrirla a mas usuarios.
 
-La app nacio para uso personal en squash, running, fuerza, movilidad y recuperacion, pero hoy ya esta evolucionando hacia una base multiusuario y potencialmente comercial.
+El producto no es solo un chat: el coach entiende contexto, propone cambios estructurados y puede convertirlos en acciones aplicables sobre la semana o sobre un plan de competencia.
 
-## Que hace el proyecto
+## Estado Actual
 
-Entrenador reune en una sola app:
+La app esta en una fase de **beta interna avanzada**:
 
-- planificacion semanal y vista diaria de sesiones
-- seguimiento real de carga, adherencia y sensaciones
-- check-ins de sueno, energia, dolor, peso y comentarios post sesion
-- coach AI con propuestas ejecutables sobre el plan
-- perfil estructurado del atleta para personalizar recomendaciones
-- backup JSON local con import/export
-- sincronizacion multi-dispositivo con Supabase
-- PWA instalable en celular y escritorio
-- notificaciones web para sesiones del dia
+- usable en dev con Gemini via proxy o provider local
+- con sync multi-dispositivo sobre Supabase
+- con almacenamiento local en IndexedDB
+- con propuestas del coach aceptables/rechazables
+- con Plan Builder por evento competitivo
+- con telemetria local de calidad beta y export
+- con suites E2E para coach, week creator y Plan Builder
 
-No es solo un chat. El foco del producto es que el coach pueda:
+No esta lista todavia para una beta abierta o pagada. Antes de eso hay que seguir endureciendo calidad del coach, observabilidad persistente, feedback de usuarios y pruebas multi-dispositivo reales.
 
-- entender el contexto del atleta
-- leer la semana actual
-- proponer cambios concretos
-- aplicar esos cambios al plan usando acciones estructuradas
+## Funcionalidades Principales
 
-## Casos de uso principales
+- Planificacion semanal y vista diaria de sesiones.
+- Registro de sesiones completadas, ajustadas u omitidas.
+- Check-ins diarios de energia, sueno, dolor, peso y comentarios.
+- Coach AI con respuestas conversacionales y propuestas aplicables.
+- Creacion de semanas completas desde el coach.
+- Plan Builder para eventos competitivos.
+- Perfil estructurado del atleta.
+- Deportes soportados: squash, running, fuerza, movilidad, cycling y recuperacion.
+- Nutricion contextual segun carga del dia.
+- Import/export de backup JSON.
+- Importacion de planificaciones desde PDF.
+- Sync multi-dispositivo con Supabase.
+- PWA instalable en desktop y mobile.
+- Notificaciones web para sesiones del dia.
+- Panel local de debug/quality para revisar requests AI, feedback y limites.
 
-- crear una semana de entrenamiento desde cero
-- ajustar la semana por fatiga, dolor, competencia o falta de tiempo
-- registrar que se hizo realmente
-- revisar adherencia y volumen semanal
-- mantener contexto persistente del atleta
-- respaldar o restaurar la informacion
-- usar la misma cuenta en mas de un dispositivo
-
-## Estado actual del producto
-
-Hoy el proyecto ya tiene una base funcional bastante completa:
-
-- React + TypeScript + Vite
-- Zustand para estado local de UI y dominio
-- Dexie / IndexedDB como base local-first
-- Supabase para auth y sync multi-dispositivo
-- service worker y modo instalable tipo app
-- importacion PDF con carga diferida
-- coach AI con providers intercambiables
-- backup versionado con `preview`, `merge` y `replace`
-- notificaciones con estado visible y reprogramacion manual
-
-Tambien ya existen:
-
-- proposals del coach persistidas
-- reglas competitivas y taper para squash
-- soporte para `athleteProfile` con running, fuerza, recuperacion, nutricion y disponibilidad
-- nombre visible del atleta configurable
-- semana base del coach adaptada al deporte principal del perfil
-
-## Stack tecnico
+## Stack
 
 ### Frontend
 
-- `React 19`
-- `TypeScript`
-- `Vite`
-- `React Router`
-- `Zustand`
-- `Tailwind CSS`
-- `Lucide React`
+- React 19
+- TypeScript
+- Vite
+- React Router
+- Zustand
+- Tailwind CSS
+- Lucide React
 
-### Persistencia y datos
+### Datos
 
-- `Dexie` sobre `IndexedDB` para almacenamiento local
-- `Supabase` para autenticacion y sincronizacion
+- Dexie sobre IndexedDB para persistencia local-first.
+- Supabase para auth y sincronizacion remota.
+- JSON export/import para backup y restore.
 
-### IA
+### AI
 
-Arquitectura de coach con providers normalizados:
+Providers soportados por contrato comun:
 
 - `mock`
 - `gemini`
@@ -84,15 +64,9 @@ Arquitectura de coach con providers normalizados:
 - `claude`
 - `proxy`
 
-En produccion la ruta recomendada es `proxy` via Netlify Functions para no exponer API keys en el cliente.
+En produccion, la ruta recomendada es `proxy` mediante Netlify Functions para no exponer API keys en el bundle del cliente.
 
-### Otros componentes relevantes
-
-- `pdfjs-dist` para importacion de PDFs
-- `date-fns` para manejo de fechas
-- service worker para PWA y notificaciones
-
-## Arquitectura general
+## Arquitectura
 
 Flujo simplificado:
 
@@ -100,40 +74,34 @@ Flujo simplificado:
 UI React
   -> Zustand stores
   -> Dexie / IndexedDB
-  -> servicios de dominio (coach, backup, sync, notificaciones, nutricion)
-  -> Supabase / AI provider / service worker
+  -> servicios de dominio
+  -> Supabase / Netlify Function / AI provider / Service Worker
 ```
 
-Principios del proyecto:
+Principios de diseno:
 
-- local-first
-- la app debe seguir siendo usable sin red
-- el coach no responde solo texto: puede generar acciones aplicables
-- el modelo de dominio importa mas que una UI de demo
+- Local-first: la app debe seguir siendo usable aunque la red falle.
+- AI asistida, no AI sin control: los outputs pasan por normalizadores, validaciones y reparaciones.
+- Acciones estructuradas: el coach no solo responde texto, tambien propone cambios aplicables.
+- Dominio deportivo primero: selectors y planners deterministas sostienen parte importante de la calidad.
+- Observabilidad beta: cada request importante debe dejar senales revisables.
 
-## Modulos importantes
+## Modulos Importantes
 
-### 1. Planificacion y seguimiento
+### Coach AI
 
-Permite:
+El coach usa contexto de:
 
-- crear sesiones manualmente o desde el coach
-- editar duracion, RPE, objetivo y ejercicios
-- marcar sesiones como `planned`, `completed`, `adjusted` o `skipped`
-- revisar resumen semanal con adherencia y volumen
-
-### 2. Coach AI
-
-El coach construye prompts a partir de:
-
+- semana actual
 - sesiones recientes y futuras
-- resumen semanal
-- logs diarios
-- memoria libre del atleta
-- `athleteProfile` estructurado
+- day logs
+- memoria libre del coach
+- perfil estructurado del atleta
+- deportes habilitados
 - contexto competitivo
+- restricciones, fatiga y disponibilidad
 
-Puede sugerir acciones como:
+Puede producir acciones como:
 
 - `create_week`
 - `add_session`
@@ -142,29 +110,87 @@ Puede sugerir acciones como:
 - `skip_session`
 - `insert_recovery`
 
-Las propuestas se guardan y luego pueden aceptarse o rechazarse desde la UI.
+Las acciones se muestran como propuestas antes de aplicarse. El flujo tiene prevalidacion y rollback si algo falla durante la aplicacion.
 
-### 3. Athlete Profile
+### Week Creator
 
-El `AthleteProfile` agrega contexto persistente mas util que una simple nota libre.
+El week creator genera semanas completas y combina:
 
-Hoy soporta:
+- prompt especializado
+- normalizacion de respuesta
+- reparacion de sesiones
+- selectors deportivos deterministas
+- fallback local si el provider no entrega una semana valida
+
+La meta es que una semana generada sea razonable para usarla, no solo una lista bonita de sesiones.
+
+### Plan Builder
+
+El Plan Builder crea planes por evento competitivo:
+
+- wizard de evento en `/competition-plan`
+- builder en `/plans/builder`
+- shell de semanas por fases
+- generacion semanal con AI
+- validaciones por semana
+- regeneracion de semanas fallidas
+- aceptacion del plan hacia la vista semanal
+
+Comandos E2E dedicados permiten probarlo sin guardar, generando o aceptando el plan.
+
+### Fuerza y Preparacion Fisica
+
+La seleccion de fuerza considera:
+
+- duracion objetivo
+- fase del plan
+- fatiga
+- competencia cercana
+- progresion
+- historial
+- perfil deportivo
+
+Para sesiones de 45-60 minutos, la app busca una densidad razonable y evita que una preparacion fisica quede reducida a 3 ejercicios salvo caso extremo.
+
+### Squash
+
+El squash distingue mejor entre:
+
+- sombras / pies
+- tecnica
+- control
+- juego condicionado / partner
+- partido final
+
+Los drills pueden clasificarse por modalidad:
+
+- `solo`
+- `partner`
+- `either`
+- `match`
+
+Si hay match, debe quedar al final.
+
+### Athlete Profile
+
+El perfil estructurado guarda:
 
 - nombre visible
 - deporte principal y secundarios
-- objetivos
-- marcas y ritmos de running
-- 1RM de fuerza y referencias
-- lesiones, restricciones y disponibilidad semanal
-- datos base de nutricion
+- objetivo deportivo
+- eventos objetivo
+- disponibilidad semanal
+- historial y preferencias
+- ritmos y marcas de running
+- referencias de fuerza
+- lesiones y restricciones
+- preferencias nutricionales
 
-Esto permite que el coach empiece a dar recomendaciones mas personalizadas.
+Esto alimenta al coach, week creator y plan builder.
 
-### 4. Nutricion
+### Nutricion
 
-La capa de nutricion ya funciona como una subcapa contextual del coach, no como texto suelto.
-
-El motor clasifica el dia en uno de estos tipos:
+La capa de nutricion clasifica el dia segun carga:
 
 - `rest`
 - `light`
@@ -174,127 +200,63 @@ El motor clasifica el dia en uno de estos tipos:
 - `competition`
 - `recovery`
 
-La clasificacion usa:
+Entrega foco, accion clave, timing, hidratacion y nota de recuperacion cuando aplica.
 
-- disciplina de la o las sesiones del dia
-- cantidad de sesiones
-- duracion y RPE
-- tipo de running o familia de ciclismo
-- contexto competitivo
-- señales de fatiga del `DayLog` del mismo dia
-- objetivo del atleta y preferencias del perfil nutricional
+### Sync Multi-Dispositivo
 
-La salida del motor ya no es solo copy plano. Ahora entrega una recomendacion estructurada con:
+La app usa Supabase para sincronizar entidades del dominio entre dispositivos, manteniendo IndexedDB como fuente local operativa. El sync incluye diagnostico visible en Ajustes y herramientas manuales para reintentar o limpiar cola.
 
-- foco principal del dia
-- accion nutricional clave
-- razon corta de por que hoy es distinto
-- guia de hidratacion
-- timing pre/post entrenamiento
-- nota de recuperacion cuando hay fatiga
+### Backup y Restore
 
-En UI, esto permite responder mejor:
-
-- que comer hoy
-- que priorizar antes de entrenar
-- que priorizar despues
-- por que la recomendacion cambia segun la carga
-
-En el `AthleteProfile`, nutricion sigue siendo pragmatica. Ademas de composicion corporal, ahora puede guardar:
-
-- `fuelingGoal`
-- `sweatRate`
-
-El coach AI recibe este contexto nutricional estructurado dentro del prompt. Lo usa cuando el usuario pregunta por comidas, hidratacion, energia o recuperacion, y tambien cuando la nutricion es directamente relevante para la sesion o competencia del dia.
-
-### 5. Backup y restore
-
-La app puede exportar e importar un backup JSON con:
+El backup JSON cubre:
 
 - sesiones
-- check-ins
+- day logs
 - resumenes semanales
-- mensajes
-- proposals
-- memoria y perfil del atleta
+- mensajes de chat
+- propuestas
+- memoria del coach
+- athlete profile
+- datos relacionados al plan
 
-El restore soporta:
+El restore soporta preview, merge, replace y validacion estructural.
 
-- `replace`
-- `merge`
-- preview antes de importar
-- validacion estructural
-- versionado base del formato
-- resolucion base de conflictos por `updatedAt`
+## Estructura del Repo
 
-### 6. Sync multi-dispositivo
+```text
+src/
+  components/       Componentes visuales y de dominio
+  constants/        Rutas y constantes compartidas
+  db/               Dexie, schema local y seed
+  hooks/            Hooks de UI/dominio
+  pages/            Pantallas principales
+  services/         Coach, AI, sync, backup, plan builder, training, nutricion
+  store/            Stores Zustand
+  types/            Tipos centrales del dominio
+  utils/            Fechas, schedule, UUID, helpers
 
-La app ya no depende solo del navegador local.
+netlify/functions/  Proxy serverless para AI
+public/             Assets, manifest y service worker
+scripts/            E2E, load tests y audit de prompts
+```
 
-Con Supabase puedes:
-
-- iniciar sesion
-- mantener datos asociados al usuario
-- sincronizar entre dispositivos
-
-La estrategia sigue siendo `local-first`, con sync posterior.
-
-### 7. Notificaciones
-
-La app puede programar notificaciones para sesiones del dia.
-
-Hoy ya incluye:
-
-- reprogramacion automatica al volver a foco
-- recuperacion de avisos recientes dentro de una ventana de gracia
-- estado visible en Ajustes
-- reprogramacion y limpieza manual
-- refresco del permiso al volver a la app
-
-Importante: en web esto sigue dependiendo de las limitaciones del navegador y del service worker.
-
-## Estructura aproximada del repo
-
-Rutas importantes:
-
-- `src/pages/`
-  pantallas principales como dashboard, semana, dia, coach, ajustes e importacion PDF
-- `src/components/`
-  componentes visuales y de dominio
-- `src/store/`
-  stores Zustand
-- `src/services/`
-  logica de IA, backup, notificaciones, sync, nutricion y mantenimiento
-- `src/db/`
-  Dexie, queries y seed
-- `netlify/functions/`
-  proxy serverless para IA en produccion
-- `public/sw.js`
-  service worker
-
-## Como correrlo en local
+## Instalacion
 
 Requisitos:
 
 - Node.js 18+
 - npm
 
-Instalacion:
+Instalar dependencias:
 
 ```bash
 npm install
 ```
 
-Desarrollo:
+Levantar dev server:
 
 ```bash
 npm run dev
-```
-
-Lint:
-
-```bash
-npm run lint
 ```
 
 Build:
@@ -303,126 +265,269 @@ Build:
 npm run build
 ```
 
-Preview local del build:
+Preview del build:
 
 ```bash
 npm run preview
 ```
 
-## Variables de entorno
+## Variables de Entorno
 
-La app puede funcionar en modo local/mock, pero para IA real y sync necesitas variables de entorno.
+La app puede correr en modo mock/local, pero para IA real, auth y sync necesitas variables.
 
 ### Frontend
 
-Dependiendo de tu configuracion, puedes necesitar variables tipo:
+Variables habituales:
 
-- `VITE_AI_PROVIDER`
-- `VITE_SUPABASE_URL`
-- `VITE_SUPABASE_ANON_KEY`
-- `VITE_AUTH_REDIRECT_URL`
+```bash
+VITE_AI_PROVIDER=proxy
+VITE_SUPABASE_URL=...
+VITE_SUPABASE_ANON_KEY=...
+VITE_AUTH_REDIRECT_URL=http://localhost:5173
+```
 
-Para auth con Google en dev, `VITE_AUTH_REDIRECT_URL` puede apuntar a tu host local, por ejemplo:
+Providers directos en dev:
 
-- `VITE_AUTH_REDIRECT_URL=http://localhost:5173`
+```bash
+VITE_AI_PROVIDER=gemini
+VITE_GEMINI_API_KEY=...
+VITE_GEMINI_MODEL=gemini-2.5-flash
+```
 
-Importante:
+Tambien existen providers directos para OpenAI y Claude en dev:
 
-- esa URL tambien debe estar autorizada en Supabase Auth
-- si Supabase/Google solo tienen autorizada la URL de produccion, el login puede terminar devolviendote a prod aunque hayas iniciado desde dev
+```bash
+VITE_AI_PROVIDER=openai
+VITE_OPENAI_API_KEY=...
+VITE_OPENAI_MODEL=...
 
-### Produccion segura con Netlify
+VITE_AI_PROVIDER=claude
+VITE_CLAUDE_API_KEY=...
+VITE_CLAUDE_MODEL=...
+```
 
-Para no exponer keys del proveedor AI en el bundle del cliente, la estrategia recomendada es:
+En produccion, el cliente fuerza `proxy`.
 
-- frontend en Netlify
-- llamadas del cliente a `/.netlify/functions/coach`
-- provider real resuelto en la function
+### Netlify Function
 
-Variables tipicas del lado servidor:
+Variables servidor habituales:
 
-- `AI_PROVIDER=gemini`
-- `GEMINI_API_KEY=...`
+```bash
+AI_PROVIDER=gemini
+GEMINI_API_KEY=...
+GEMINI_MODEL=...
 
-o equivalentes para OpenAI / Claude.
+SUPABASE_URL=...
+SUPABASE_ANON_KEY=...
+COACH_PROXY_REQUIRE_AUTH=true
+COACH_RATE_LIMIT_WINDOW_MS=60000
+COACH_RATE_LIMIT_MAX=20
+```
 
-Mas detalle en:
+Para load tests locales contra Netlify dev se puede usar:
 
-- [NETLIFY_PRODUCTION_READY.md](/c:/Users/RafaelAllendesPerez/.gemini/antigravity/scratch/Entrenador_App/NETLIFY_PRODUCTION_READY.md)
+```bash
+COACH_PROXY_REQUIRE_AUTH=false
+```
 
-## Uso como PWA
+solo en dev.
 
-La app puede instalarse como aplicacion:
+## Comandos
 
-### Android
+### Desarrollo
+
+```bash
+npm run dev
+npm run build
+npm run preview
+```
+
+### Calidad
+
+```bash
+npm run lint
+npm run test
+npm run test:coverage
+npm run audit:prompt
+```
+
+### Coach E2E
+
+```bash
+npm run e2e:dev:headed
+npm run e2e:dev:quick
+npm run e2e:dev
+npm run e2e:dev:apply
+npm run e2e:dev:quality
+```
+
+Notas:
+
+- `e2e:dev` prueba el flujo completo del coach y week creator sin aplicar propuestas.
+- `e2e:dev:quick` omite week creator para iterar rapido.
+- `e2e:dev:apply` aplica propuestas y modifica datos dev/locales.
+- `e2e:dev:quality` valida export de Beta Quality.
+
+### Plan Builder E2E
+
+```bash
+npm run e2e:plan
+npm run e2e:plan:headed
+npm run e2e:plan:generate
+npm run e2e:plan:accept
+```
+
+Notas:
+
+- `e2e:plan` es seguro: recorre wizard hasta resumen y no guarda plan nuevo.
+- `e2e:plan:generate` genera un plan con Gemini y modifica draft/perfil.
+- `e2e:plan:accept` genera y acepta el plan; modifica datos dev/locales.
+
+### Load Test
+
+```bash
+npm run loadtest:week-creator
+```
+
+Por defecto apunta a:
+
+```text
+http://localhost:8888/.netlify/functions/coach
+```
+
+Puedes cambiarlo con:
+
+```bash
+COACH_ENDPOINT=http://localhost:8888/.netlify/functions/coach npm run loadtest:week-creator
+LOADTEST_N=20 npm run loadtest:week-creator
+```
+
+## Flujo Recomendado de Pruebas
+
+1. Levantar dev:
+
+```bash
+npm run dev
+```
+
+2. Ver el coach en vivo:
+
+```bash
+npm run e2e:dev:headed
+```
+
+3. Validar suite completa del coach:
+
+```bash
+npm run e2e:dev
+```
+
+4. Validar Plan Builder sin guardar:
+
+```bash
+npm run e2e:plan
+```
+
+5. Probar generacion real del Plan Builder:
+
+```bash
+npm run e2e:plan:generate
+```
+
+6. Antes de cualquier deploy:
+
+```bash
+npm run lint
+npm run test
+npm run build
+```
+
+Mas detalle en [DEV_TESTING_COMMANDS.md](DEV_TESTING_COMMANDS.md).
+
+## PWA
+
+La app puede instalarse como PWA.
+
+Android:
 
 1. Abrir en Chrome.
-2. Elegir `Instalar app` o `Agregar a pantalla principal`.
+2. Usar `Instalar app` o `Agregar a pantalla principal`.
 
-### iPhone
+iPhone:
 
 1. Abrir en Safari.
 2. Compartir.
 3. Elegir `Agregar a pantalla de inicio`.
 
-## Que datos guarda
+Limitaciones:
+
+- las notificaciones dependen del navegador
+- iOS y Android no se comportan igual
+- el service worker no equivale a un scheduler nativo
+
+## Datos Guardados
 
 Localmente:
 
 - sesiones
 - day logs
 - resumenes semanales
-- historial de chat
-- proposals
+- chat
+- propuestas
+- memoria del coach
 - athlete profile
+- planes y semanas del Plan Builder
+- logs locales de AI/quality
 
-Remotamente, si activas sync:
+Remotamente, si el usuario esta autenticado y el sync esta activo:
 
-- las mismas entidades de dominio, asociadas a la cuenta autenticada
+- entidades principales del dominio asociadas al usuario
+- datos necesarios para continuidad multi-dispositivo
 
-## Limitaciones actuales
+No se deberian persistir prompts completos ni respuestas completas del provider como telemetria operacional de beta.
 
-Estas son las mas importantes hoy:
+## Beta Quality y Observabilidad
 
-- las notificaciones web dependen de limites del navegador
-- el scheduling no equivale a notificaciones nativas del sistema operativo
-- el flujo PDF sigue siendo la parte mas pesada del build cuando se usa
-- la nutricion sigue en estado MVP comparada con el coach principal
-- el sync esta bastante solido, pero todavia puede endurecerse mas en casos borde
-- persiste la advertencia conocida de `INEFFECTIVE_DYNAMIC_IMPORT` en `src/db/db.ts`
+La app incluye un panel local en Ajustes para revisar:
 
-## Roadmap resumido
+- requestClass
+- provider/model
+- duracion
+- outcome
+- retries/fallback
+- feedback positivo/negativo
+- limites locales por clase
 
-Las lineas abiertas mas relevantes hoy son:
+Esto sirve para pruebas personales y beta interna. Para una beta externa, el siguiente paso importante es persistir telemetria resumida por usuario/request en backend, sin guardar prompts completos ni datos sensibles.
 
-- robustecer notificaciones en escenarios reales de navegador
-- enriquecer el modulo de nutricion e integrarlo mejor al coach
-- seguir avanzando en personalizacion real por usuario
-- mejorar UX de sync y recovery offline
-- evaluar integraciones externas como WHOOP y Apple Health
-- construir una analitica deportiva mas rica
+## Limitaciones Conocidas
 
-Roadmap completo:
+- El proyecto todavia esta orientado a beta interna, no a beta abierta.
+- La calidad del coach debe seguir midiendose con E2E + uso real.
+- La telemetria persistente de beta todavia necesita endurecerse.
+- El sync requiere QA real multi-dispositivo antes de usuarios externos.
+- Los providers directos en browser son solo para dev; produccion debe usar proxy.
+- PDF import sigue siendo una parte pesada cuando se usa.
+- Notificaciones web tienen limites propios del navegador.
 
-- [PROJECT_REVIEW_AND_ROADMAP.md](/c:/Users/RafaelAllendesPerez/.gemini/antigravity/scratch/Entrenador_App/PROJECT_REVIEW_AND_ROADMAP.md)
+## Roadmap Corto
 
-## Documentos utiles del repo
+Prioridad actual:
 
-- [PROJECT_REVIEW_AND_ROADMAP.md](/c:/Users/RafaelAllendesPerez/.gemini/antigravity/scratch/Entrenador_App/PROJECT_REVIEW_AND_ROADMAP.md)
-- [NETLIFY_PRODUCTION_READY.md](/c:/Users/RafaelAllendesPerez/.gemini/antigravity/scratch/Entrenador_App/NETLIFY_PRODUCTION_READY.md)
-- [MULTI_DEVICE_SYNC_FOR_NETLIFY_APP.md](/c:/Users/RafaelAllendesPerez/.gemini/antigravity/scratch/Entrenador_App/MULTI_DEVICE_SYNC_FOR_NETLIFY_APP.md)
-- [AI_INTEGRATION_PLAN.md](/c:/Users/RafaelAllendesPerez/.gemini/antigravity/scratch/Entrenador_App/AI_INTEGRATION_PLAN.md)
-- [COACH_PLANNER_IMPROVEMENTS.md](/c:/Users/RafaelAllendesPerez/.gemini/antigravity/scratch/Entrenador_App/COACH_PLANNER_IMPROVEMENTS.md)
-- [COACH_STABILITY_AND_PLANNER_FIXES.md](/c:/Users/RafaelAllendesPerez/.gemini/antigravity/scratch/Entrenador_App/COACH_STABILITY_AND_PLANNER_FIXES.md)
+1. Consolidar pruebas personales con Gemini.
+2. Lograr que el coach genere semanas que el owner usaria realmente.
+3. Validar Plan Builder con generacion y aceptacion.
+4. Mejorar observabilidad persistente para beta.
+5. Probar sync real entre desktop y mobile.
+6. Recien despues invitar 3-5 usuarios cercanos.
 
-## En que etapa esta el proyecto
+## Documentos Utiles
 
-No esta en fase de idea ni en MVP vacio.
+- [DEV_TESTING_COMMANDS.md](DEV_TESTING_COMMANDS.md)
+- [PROJECT_REVIEW_AND_ROADMAP.md](PROJECT_REVIEW_AND_ROADMAP.md)
+- [OPTIMIZATION_AND_COSTS.md](OPTIMIZATION_AND_COSTS.md)
+- [DESIGN.md](DESIGN.md)
 
-Tampoco esta todavia en producto comercial totalmente endurecido.
+## Estado en Una Frase
 
-La mejor forma de describirlo hoy es:
-
-- producto usable
-- base tecnica ya seria
-- con foco actual en robustez, personalizacion y preparacion para uso por terceros
+Entrenador ya es una app deportiva real y usable, con una base tecnica seria; el foco ahora no es agregar mas features, sino comprobar estabilidad, calidad del coach, Plan Builder y sync hasta que sea confiable para usuarios externos.
