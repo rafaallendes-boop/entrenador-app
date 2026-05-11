@@ -330,6 +330,7 @@ function completeStrengthExercises(session: CoachSessionProposal, context: Repai
     goal: session.objective ?? context.profile.mainGoal ?? '',
     sportProfile,
     primarySport: context.profile.sportContext?.primarySport,
+    sessionDurationMin: session.durationMin,
   })
   session.exercises = result.exercises.map<CoachExerciseProposal>((e) => ({
     name: e.name,

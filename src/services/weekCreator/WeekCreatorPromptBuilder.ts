@@ -45,7 +45,7 @@ export function buildWeekCreatorPrompt(
     buildProfileSummary(profile),
     buildGoalSummary(goalEvent, profile?.macroPlan?.currentPhase, profile?.macroPlan?.blockFocus, config.primarySport),
     buildConfigSummary(config),
-    buildPrioritySportSummary(prioritySport, config.sessionsPerWeek),
+    buildPrioritySportSummary(prioritySport, config),
     buildCurrentWeekSessionsSummary(targetWeekSessions, input.targetWeekStart),
     buildRecentHistorySummary(recentHistory),
     buildRecentLogsSummary(recentLogs),
@@ -69,9 +69,12 @@ export function buildWeekCreatorPrompt(
   }
 }
 
-function buildPrioritySportSummary(prioritySport: SupportedSport | undefined, sessionsPerWeek: number): string {
+function buildPrioritySportSummary(prioritySport: SupportedSport | undefined, config: WeekCreatorEffectiveConfig): string {
   if (!prioritySport) return ''
-  const minimumPrioritySessions = Math.floor(sessionsPerWeek / 2) + 1
+  const sessionsPerWeek = config.sessionsPerWeek
+  const minimumPrioritySessions = prioritySport === 'squash'
+    ? getSquashMinimumSessions({ ...config, primarySport: 'squash' }) ?? Math.floor(sessionsPerWeek / 2) + 1
+    : Math.floor(sessionsPerWeek / 2) + 1
   return [
     `Prioridad explícita del usuario: ${prioritySport}.`,
     `- Mantén ${prioritySport} como foco principal de la semana dentro de los deportes permitidos.`,
@@ -138,6 +141,7 @@ function buildGoalSummary(
 }
 
 function buildConfigSummary(config: WeekCreatorEffectiveConfig): string {
+  const squashMinimum = getSquashMinimumSessions(config)
   const lines = [
     config.configSource === 'wizard'
       ? 'Configuración del plan activo (usar como guía fuerte):'
@@ -153,14 +157,23 @@ function buildConfigSummary(config: WeekCreatorEffectiveConfig): string {
     `- Doble sesión permitido: ${config.allowDoubleSession ? 'sí' : 'no'}`,
     `- Deportes permitidos: ${config.allowedSports.join(', ')}`,
     config.primarySport ? `- Deporte principal a mantener presente: ${config.primarySport}` : '',
-    config.primarySport === 'squash' && config.sessionsPerWeek >= 4
-      ? `- Regla de distribución squash: con ${config.sessionsPerWeek} sesiones, squash debe ser mayoría real (mínimo ${Math.floor(config.sessionsPerWeek / 2) + 1} sesiones squash).`
+    squashMinimum
+      ? `- Regla de distribución squash: con ${config.sessionsPerWeek} sesiones, incluye al menos ${squashMinimum} sesiones squash y evita dos squash el mismo día si hay deportes de soporte disponibles.`
       : '',
     `- Estado inicial: fitness ${config.currentFitnessLevel} · fatiga ${config.currentFatigue}`,
     config.injuryNotes?.trim() ? `- Restricciones: ${config.injuryNotes.trim()}` : '',
   ].filter(Boolean)
 
   return lines.join('\n')
+}
+
+function getSquashMinimumSessions(config: WeekCreatorEffectiveConfig): number | undefined {
+  if (config.primarySport !== 'squash' || config.sessionsPerWeek < 4) return undefined
+  const majorityTarget = Math.floor(config.sessionsPerWeek / 2) + 1
+  const hasSupportSports = config.allowedSports.some((sport) => sport !== 'squash')
+  return hasSupportSports
+    ? Math.min(majorityTarget, Math.max(1, config.trainingDays.length))
+    : majorityTarget
 }
 
 function buildCurrentWeekSessionsSummary(

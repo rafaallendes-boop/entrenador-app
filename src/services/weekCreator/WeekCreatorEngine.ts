@@ -447,9 +447,7 @@ function buildFallbackSportSequence(config: WeekCreatorEffectiveConfig): Support
   const allowed = uniqueSports([primary, ...config.allowedSports])
   const supportSports = allowed.filter((sport) => sport !== primary)
   const total = Math.max(1, config.sessionsPerWeek)
-  const primaryTarget = primary === 'squash' && total >= 4
-    ? Math.floor(total / 2) + 1
-    : Math.min(total, Math.max(1, Math.ceil(total / 2)))
+  const primaryTarget = getFallbackPrimaryTarget(config, primary, total, supportSports.length > 0)
   const sequence: SupportedSport[] = []
   let primaryCount = 0
   let supportIndex = 0
@@ -470,6 +468,25 @@ function buildFallbackSportSequence(config: WeekCreatorEffectiveConfig): Support
   }
 
   return sequence
+}
+
+function getFallbackPrimaryTarget(
+  config: WeekCreatorEffectiveConfig,
+  primary: SupportedSport,
+  total: number,
+  hasSupportSports: boolean,
+): number {
+  const majorityTarget = primary === 'squash' && total >= 4
+    ? Math.floor(total / 2) + 1
+    : Math.min(total, Math.max(1, Math.ceil(total / 2)))
+
+  if (!hasSupportSports) return majorityTarget
+
+  // If capacity comes from double sessions across only a few days, avoid
+  // forcing the same primary sport twice on one date. A squash+strength day is
+  // much more useful than squash+squash when we are in local fallback mode.
+  const perDayPrimaryCap = Math.max(1, config.trainingDays.length)
+  return Math.min(majorityTarget, perDayPrimaryCap)
 }
 
 function uniqueSports(sports: SupportedSport[]): SupportedSport[] {
@@ -541,11 +558,15 @@ function buildFallbackSession(
       [
         { name: 'Sentadilla goblet', sets: 3, reps: 8, group: 'legs' as const },
         { name: 'Remo con mancuerna', sets: 3, reps: 10, group: 'pull' as const },
+        { name: 'Press medio arrodillado', sets: 3, reps: '8/lado', group: 'push' as const },
+        { name: 'Zancada lateral controlada', sets: 3, reps: '8/lado', group: 'legs' as const },
         { name: 'Plancha lateral', sets: 3, reps: '30s/lado', group: 'core' as const },
       ],
       [
         { name: 'Peso muerto rumano', sets: 3, reps: 8, group: 'legs' as const },
         { name: 'Press inclinado', sets: 3, reps: 8, group: 'push' as const },
+        { name: 'Remo pecho apoyado', sets: 3, reps: 10, group: 'pull' as const },
+        { name: 'Split squat', sets: 3, reps: '8/lado', group: 'legs' as const },
         { name: 'Pallof press', sets: 3, reps: '10/lado', group: 'core' as const },
       ],
     ]

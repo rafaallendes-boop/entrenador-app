@@ -249,13 +249,22 @@ function validatePrimarySportPresence(
   const primarySport = config.primarySport
   if (!primarySport) return undefined
   const count = sessions.filter((session) => session.sessionType === primarySport).length
-  const minimum = primarySport === 'squash' && config.sessionsPerWeek >= 4
-    ? Math.floor(config.sessionsPerWeek / 2) + 1
-    : 1
+  const minimum = getMinimumPrimarySessions(config, primarySport)
   if (count < minimum) {
     return `La semana debe incluir al menos ${minimum} sesión${minimum === 1 ? '' : 'es'} de ${primarySport}.`
   }
   return undefined
+}
+
+function getMinimumPrimarySessions(
+  config: WeekCreatorEffectiveConfig,
+  primarySport: SupportedSport,
+): number {
+  if (primarySport !== 'squash' || config.sessionsPerWeek < 4) return 1
+  const supportSports = config.allowedSports.filter((sport) => sport !== primarySport)
+  const majorityTarget = Math.floor(config.sessionsPerWeek / 2) + 1
+  if (supportSports.length === 0) return majorityTarget
+  return Math.min(majorityTarget, Math.max(1, config.trainingDays.length))
 }
 
 function isoDateToDayOfWeek(date: string): DayOfWeek | null {

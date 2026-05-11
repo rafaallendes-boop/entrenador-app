@@ -214,10 +214,10 @@ export function buildWeekCreatorSystemPrompt(): string {
     'Si no hay evento competitivo activo, planifica una semana general coherente con el perfil y la disponibilidad; no respondas con texto libre.',
     'Debes respetar exactamente el número de sesiones pedido por la configuración y todas deben quedar dentro de los días permitidos.',
     'Nunca devuelvas menos sesiones que las pedidas. Si una sesión queda incompleta o inválida, corrígela antes de responder; no la omitas.',
-    'Cada sesión debe ser individualmente válida: fecha ISO real, timeBlock AM/PM, title, durationMin >= 5 y detalles obligatorios del deporte.',
+    'Cada sesión debe ser individualmente válida: fecha ISO real, timeBlock AM/PM, title y durationMin >= 5.',
     'No inventes sesiones fuera de los días permitidos. No dupliques misma fecha+timeBlock.',
-    SESSION_SCHEMA_BLOCK_FULL,
-    'Revisa dos veces antes de responder: cada squash lleva squashDetails válido con drills[] no vacío; cada cycling lleva cyclingDetails; cada mobility lleva mobilityDetails; cada strength lleva exercises[]. Si una sesión no cumple, corrígela — no la descartes.',
+    SESSION_SCHEMA_BLOCK_MINIMAL,
+    'La app completará detalles deportivos avanzados cuando falten. Prioriza devolver una create_week parseable, completa y coherente.',
   ].join('\n')
 }
 

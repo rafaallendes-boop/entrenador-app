@@ -580,6 +580,40 @@ describe('responseNormalizer', () => {
     expect(response.message).toContain('Aqui va la propuesta compacta.')
   })
 
+  it('parses a single inline JSON action object when the model omits the actions tag', () => {
+    const response = normalizeResponse({
+      text: JSON.stringify({
+        type: 'create_week',
+        reason: 'Semana base compacta',
+        targetDate: '2026-04-06',
+        sessions: [
+          {
+            date: '2026-04-06',
+            timeBlock: 'PM',
+            sessionType: 'squash',
+            title: 'Squash tecnico',
+            durationMin: 60,
+            subtype: 'training',
+            squashDetails: {
+              trainingFocus: 'technical',
+              drills: [{ name: 'Drives paralelos', durationMin: 20 }],
+              sessionMode: 'drill_session',
+            },
+          },
+        ],
+      }),
+      provider: 'mock',
+      requestClass: 'week_creator',
+    })
+
+    expect(response.actions).toHaveLength(1)
+    expect(response.actions?.[0]).toMatchObject({
+      type: 'create_week',
+      targetDate: '2026-04-06',
+    })
+    expect(response.message).toBe('')
+  })
+
   it('accepts actions wrapped in an object payload', () => {
     const response = normalizeResponse({
       text: [

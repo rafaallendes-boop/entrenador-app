@@ -3,7 +3,6 @@ import { fromISO, getWeekDays, formatDay, formatDayNum, isDateToday, toISO } fro
 import { useUIStore } from '../../store/useUIStore'
 import { useTrainingStore } from '../../store/useTrainingStore'
 import { SESSION_TYPE_CONFIG } from '../../constants/sessionTypes'
-import type { SessionType } from '../../types'
 
 interface WeekStripProps {
   showNav?: boolean
@@ -48,7 +47,6 @@ export default function WeekStrip({ showNav = true, onDayPress }: WeekStripProps
           const isToday = isDateToday(iso)
           const daySessions = getSessionsForDate(iso)
           const activeSessions = daySessions.filter(s => s.status !== 'skipped')
-          const types = [...new Set(activeSessions.map(s => s.type))] as SessionType[]
 
           return (
             <button
@@ -70,11 +68,11 @@ export default function WeekStrip({ showNav = true, onDayPress }: WeekStripProps
               </span>
               {/* Type dots */}
               <div className="flex gap-0.5 min-h-[6px]">
-                {types.slice(0, 3).map(type => (
+                {activeSessions.slice(0, 3).map((session, index) => (
                   <div
-                    key={type}
+                    key={`${session.id}-${index}`}
                     className={`w-1.5 h-1.5 rounded-full ${
-                      isSelected ? 'bg-white/70' : SESSION_TYPE_CONFIG[type].dotClass
+                      isSelected ? 'bg-white/70' : SESSION_TYPE_CONFIG[session.type].dotClass
                     }`}
                   />
                 ))}

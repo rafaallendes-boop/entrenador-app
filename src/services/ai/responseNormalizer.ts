@@ -876,13 +876,44 @@ function warnRepairedAddSession(repairs: string[], record: Record<string, unknow
 
 function extractInlineActionsJson(message: string): { actionsText: string; messageWithoutActions: string } | null {
   const jsonArray = extractJsonArray(message)
-  if (!jsonArray) return null
-  // Must start with an object literal — avoids capturing numeric/string arrays like "[Z2, Z3]"
-  if (!jsonArray.trimStart().startsWith('[{')) return null
-  if (!/"type"\s*:/.test(jsonArray)) return null
+  if (jsonArray) {
+    // Must start with an object literal — avoids capturing numeric/string arrays like "[Z2, Z3]"
+    if (jsonArray.trimStart().startsWith('[{') && /"type"\s*:/.test(jsonArray)) {
+      return {
+        actionsText: jsonArray,
+        messageWithoutActions: message.replace(jsonArray, '').trim(),
+      }
+    }
+  }
 
+  const jsonObject = extractInlineActionObject(message)
+  if (!jsonObject) return null
   return {
-    actionsText: jsonArray,
-    messageWithoutActions: message.replace(jsonArray, '').trim(),
+    actionsText: jsonObject,
+    messageWithoutActions: message.replace(jsonObject, '').trim(),
   }
 }
+
+function extractInlineActionObject(message: string): string | null {
+  const start = message.indexOf('{')
+  const end = message.lastIndexOf('}')
+  if (start === -1 || end === -1 || end < start) return null
+
+  const candidate = message.slice(start, end + 1)
+  if (
+    !/"type"\s*:/.test(candidate) &&
+    !/"actions"\s*:/.test(candidate) &&
+    !VALID_ACTION_TYPES_VALUES_RE.test(candidate)
+  ) {
+    return null
+  }
+
+  try {
+    const parsed = JSON.parse(candidate) as unknown
+    return unwrapActionCandidates(parsed) ? candidate : null
+  } catch {
+    return null
+  }
+}
+
+const VALID_ACTION_TYPES_VALUES_RE = /"(?:skip_session|change_rpe|shorten_session|lengthen_session|move_session|replace_session_type|insert_recovery|add_session|create_week|delete_session|update_session)"\s*:/

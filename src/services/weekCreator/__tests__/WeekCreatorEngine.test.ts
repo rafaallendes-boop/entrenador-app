@@ -264,9 +264,9 @@ describe('WeekCreatorEngine', () => {
 
     expect(prompt.systemPrompt).toContain('Eres un generador de semanas de entrenamiento.')
     expect(prompt.systemPrompt).not.toContain('dentro de un plan por evento ya estructurado')
-    expect(prompt.userPrompt).toContain('squash debe ser mayoría real')
     expect(prompt.userPrompt).toContain('al menos 3 sesiones de squash')
     expect(prompt.userPrompt).toContain('máximo 1 accesorias')
+    expect(prompt.userPrompt).toContain('evita dos squash el mismo día')
   })
 
   it('honors an explicit six-session request when profile capacity allows it', async () => {
@@ -638,6 +638,54 @@ describe('WeekCreatorEngine', () => {
     })
     expect(response.actions?.[0].sessions).toHaveLength(5)
     expect(response.actions?.[0].sessions?.filter((session) => session.sessionType === 'squash')).toHaveLength(3)
+  })
+
+  it('does not stack duplicate squash sessions on the same day in six-session fallback weeks', async () => {
+    mockProviderCall.mockImplementation(async (request: { requestClass: string; traceId: string }) => ({
+      text: 'Puedo armar una semana, pero no incluyo acciones.',
+      provider: 'gemini',
+      model: 'gemini-flash',
+      traceId: request.traceId,
+      requestClass: request.requestClass,
+    }))
+
+    const context: ChatContext = {
+      athleteProfile: makeProfile({
+        planWizardConfig: {
+          goalEventId: 'goal-1',
+          trainingDays: ['monday', 'tuesday', 'wednesday'],
+          sessionsPerWeek: 6,
+          sessionDurationMins: 60,
+          allowDoubleSession: true,
+          complementarySports: ['running', 'strength'],
+          currentFitnessLevel: 'normal',
+          currentFatigue: 'normal',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      }),
+      recentSessions: [],
+      plannedSessions: [],
+      historicalSessions: [],
+    }
+
+    const response = await WeekCreatorEngine.sendWeekCreate(
+      'Créame una semana de entrenamiento para la próxima semana',
+      context,
+      { surface: 'chat', targetWeekStart: '2026-05-04' },
+    )
+
+    const sessions = response.actions?.[0].sessions ?? []
+    const squashDates = sessions
+      .filter((session) => session.sessionType === 'squash')
+      .map((session) => session.date)
+    const strength = sessions.find((session) => session.sessionType === 'strength')
+
+    expect(response.fallbackUsed).toBe(true)
+    expect(sessions).toHaveLength(6)
+    expect(new Set(squashDates).size).toBe(squashDates.length)
+    expect(strength?.durationMin).toBe(60)
+    expect(strength?.exercises?.length).toBeGreaterThanOrEqual(5)
   })
 })
 
