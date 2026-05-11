@@ -416,7 +416,7 @@ export const SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
     focus: ['multiball', 'pressure', 'finish'],
     intensity: 'high',
     tags: ['multiball', 'pressure', 'peak', 'attack'],
-    description: 'El alimentador entrega varias pelotas seguidas y debes jugar profundo hasta recibir una pelota atacable. El objetivo es cerrar con una dejada, ángulo o pelota ganadora sin apurarte antes de tiempo.',
+    description: 'El alimentador entrega varias pelotas seguidas y debes jugar profundo hasta recibir una pelota atacable. El objetivo es cerrar con un drop, ángulo o pelota ganadora sin apurarte antes de tiempo.',
     intent: 'pressure',
     progressionLevel: 3,
   },

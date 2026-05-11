@@ -115,7 +115,7 @@ describe('squash session mode compatibility', () => {
       subtype: 'control',
       squashDetails: {
         trainingFocus: 'technical',
-        drills: [{ name: '100 dejadas solo', durationMin: 18 }],
+        drills: [{ name: '100 drops en solitario (50 por lado)', durationMin: 18 }],
       },
     })
     const shadows = makeSquashSession({
@@ -132,11 +132,11 @@ describe('squash session mode compatibility', () => {
         sessionKind: 'mixed',
         blocks: [
           { kind: 'shadows', durationMin: 18, drills: [{ name: 'Desplazamientos sin pelota a cuatro esquinas', durationMin: 18 }] },
-          { kind: 'control', durationMin: 24, drills: [{ name: '100 dejadas solo', durationMin: 24 }] },
+          { kind: 'control', durationMin: 24, drills: [{ name: '100 drops en solitario (50 por lado)', durationMin: 24 }] },
         ],
         drills: [
           { name: 'Desplazamientos sin pelota a cuatro esquinas', durationMin: 18 },
-          { name: '100 dejadas solo', durationMin: 24 },
+          { name: '100 drops en solitario (50 por lado)', durationMin: 24 },
         ],
       },
     })

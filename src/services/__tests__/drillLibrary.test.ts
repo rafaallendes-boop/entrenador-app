@@ -16,9 +16,9 @@ describe('drillLibrary execution mode', () => {
   })
 
   it('covers solo, partner, either and match modes', () => {
-    expect(resolveDrillExecutionMode(findSquashDrillByName('100 dejadas solo')!)).toBe('solo')
+    expect(resolveDrillExecutionMode(findSquashDrillByName('100 drops en solitario (50 por lado)')!)).toBe('solo')
     expect(resolveDrillExecutionMode(findSquashDrillByName('Juego condicionado solo paralelo')!)).toBe('partner')
-    expect(resolveDrillExecutionMode(findSquashDrillByName('Dejadas desde media cancha')!)).toBe('either')
+    expect(resolveDrillExecutionMode(findSquashDrillByName('Drops desde media cancha')!)).toBe('either')
     expect(resolveDrillExecutionMode(findSquashDrillByName('Partido de entrenamiento al mejor de 3 juegos')!)).toBe('match')
   })
 })

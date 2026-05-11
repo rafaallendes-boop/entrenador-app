@@ -69,13 +69,13 @@ describe('strengthSelector progression', () => {
       'Lateral Skater Jumps',
       'Alternating Step Up Jump',
       'Pogo Jumps',
-      'Escalera Bipodal Frente Ej 1',
-      'Escalera Bipodal Frente Ej 2',
-      'Escalera Bipodal Frente Ej 3',
-      'Escalera Coordinativo Frente 2',
-      'Escalera Coordinativo Frente 4',
-      'Escalera Bipodal Lateralización Ej 1',
-      'Escalera Bipodal Lateralización Ej 3',
+      'Escalera frontal – dos pies por cuadro',
+      'Escalera frontal – in-in-out-out',
+      'Escalera frontal – salto bipodal por cuadro',
+      'Escalera frontal – un pie por cuadro',
+      'Escalera frontal – Icky shuffle',
+      'Escalera lateral – dos pies por cuadro',
+      'Escalera lateral – shuffle in-in-out',
       'Pallof Press',
       'Copenhagen Side Plank',
       'Dead Bug',
@@ -103,6 +103,31 @@ describe('strengthSelector progression', () => {
         expect(owner == null || owner === exercise.id).toBe(true)
         owners.set(normalized, exercise.id)
       }
+    }
+  })
+
+  it('keeps player-facing strength and ladder names understandable for beta testers', () => {
+    const bannedVisiblePatterns = [
+      /\bEj\s+\d+\b/i,
+      new RegExp('Lateralizaci' + '[oó]n', 'i'),
+    ]
+    const expectedSpanishNamesById = new Map([
+      ['back_squat', 'Sentadilla trasera con barra'],
+      ['trap_bar_deadlift', 'Peso muerto con trap bar'],
+      ['bench_press', 'Press banca'],
+      ['weighted_pull_up', 'Dominada lastrada'],
+      ['single_leg_hip_thrust', 'Empuje de cadera a una pierna'],
+      ['ladder_bipodal_front_1', 'Escalera frontal – dos pies por cuadro'],
+      ['ladder_bipodal_lateral_1', 'Escalera lateral – dos pies por cuadro'],
+    ])
+
+    for (const exercise of STRENGTH_EXERCISE_LIBRARY) {
+      const playerFacingText = [exercise.name, exercise.description].join(' ')
+      for (const pattern of bannedVisiblePatterns) {
+        expect(playerFacingText).not.toMatch(pattern)
+      }
+      expect(exercise.description).toMatch(/[áéíóúñ]|\b(con|de|del|para|en|sin|hacia|desde)\b/i)
+      expect(expectedSpanishNamesById.get(exercise.id) ?? exercise.name).toBe(exercise.name)
     }
   })
 

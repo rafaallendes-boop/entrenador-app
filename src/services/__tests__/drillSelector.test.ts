@@ -51,30 +51,21 @@ describe('drillSelector progression', () => {
   it('keeps library ids unique and player-facing metadata coherent', () => {
     const validIntents = new Set(['consistency', 'pressure', 'finishing', 'recovery', 'control'])
     const validPhaseTags = new Set(['base', 'build', 'peak', 'taper'])
-    const obviousEnglishTerms = [
-      'rsa',
-      'ghosting',
-      'split step',
+    const crypticEnglishTerms = [
       'match-play',
       'games',
       'sets',
-      'target',
       'feedback',
-      'touch',
-      'timing',
-      'box',
-      'drop',
-      'drops',
-      'drive',
-      'drives',
-      'boast',
-      'lob',
-      'lift',
-      'nick',
       'sustain',
       'land',
       'rally',
       'rallies',
+    ]
+    const bannedVisiblePatterns = [
+      new RegExp('de' + 'jada', 'i'),
+      new RegExp('contra-' + 'de' + 'jada', 'i'),
+      /\bEj\s+\d+\b/i,
+      new RegExp('Lateralizaci' + '[oó]n', 'i'),
     ]
     const ids = new Set<string>()
 
@@ -91,8 +82,11 @@ describe('drillSelector progression', () => {
       }
 
       const playerFacingText = [drill.name, drill.description, ...(drill.constraints ?? [])].join(' ').toLowerCase()
+      for (const pattern of bannedVisiblePatterns) {
+        expect(playerFacingText).not.toMatch(pattern)
+      }
       const playerFacingTokens = new Set(playerFacingText.split(/[^a-z0-9]+/).filter(Boolean))
-      for (const term of obviousEnglishTerms) {
+      for (const term of crypticEnglishTerms) {
         if (term.includes(' ') || term.includes('-')) {
           expect(playerFacingText).not.toContain(term)
         } else {
@@ -108,12 +102,12 @@ describe('drillSelector progression', () => {
 
   it('adds the explicit solo/control drill library expected by the new taxonomy', () => {
     const controlNames = [
-      '100 dejadas solo',
-      '100 tiros desde media cancha',
-      '100 tiros al cuadro de saque',
-      '100 paralelas desde el fondo',
-      'Dejadas desde media cancha',
-      'Voleas solo',
+      '100 drops en solitario (50 por lado)',
+      '100 drives desde media cancha',
+      '100 drives al cuadro de saque',
+      '100 drives paralelos desde el fondo',
+      'Drops desde media cancha',
+      'Voleas en solitario',
     ]
 
     for (const name of controlNames) {
@@ -124,7 +118,7 @@ describe('drillSelector progression', () => {
   })
 
   it('includes the new high-intensity squash pressure drills', () => {
-    const backCourtPressure = findSquashDrillByName('Juego de fondo profundo')
+    const backCourtPressure = findSquashDrillByName('Juego condicionado solo al fondo (intenso)')
     const threeQuarterPressure = findSquashDrillByName('Ataque desde tres cuartos de cancha')
 
     expect(backCourtPressure).toBeTruthy()
@@ -238,7 +232,7 @@ describe('drillSelector progression', () => {
     })
 
     expect(selection.sessionKind).toBe('control')
-    expect(selection.drills.some((drill) => drill.name === '100 dejadas solo' || drill.name === '100 paralelas desde el fondo')).toBe(true)
+    expect(selection.drills.some((drill) => drill.name === '100 drops en solitario (50 por lado)' || drill.name === '100 drives paralelos desde el fondo')).toBe(true)
     expect(selection.drills.some((drill) => drill.notes?.includes('100 reps'))).toBe(true)
   })
 
@@ -434,7 +428,7 @@ describe('drillSelector progression', () => {
   })
 
   it('classifies split step recovery as footwork family', () => {
-    const drill = findSquashDrillByName('Salto de reacción y vuelta al T')
+    const drill = findSquashDrillByName('Split-step y vuelta a la T')
     expect(drill).toBeTruthy()
     expect(getSquashDrillFamily(drill!)).toBe('footwork')
   })
@@ -461,7 +455,7 @@ describe('drillSelector progression', () => {
     expect(
       selection.drills.some((drill) =>
         drill.name === 'Intervalos aeróbicos en cancha' ||
-        drill.name === 'Movimiento continuo en cancha',
+        drill.name === 'Movimiento continuo de base aeróbica',
       ),
     ).toBe(true)
   })
@@ -482,7 +476,7 @@ describe('drillSelector progression', () => {
       recentDrills: [],
     })
     const aerobicBaseNames = new Set([
-      'Movimiento continuo en cancha',
+      'Movimiento continuo de base aeróbica',
       'Intervalos aeróbicos en cancha',
     ])
 
@@ -498,7 +492,7 @@ describe('drillSelector progression', () => {
       competitionSoon: false,
       goal: 'mejorar base fisica',
       recentDrills: [],
-      historicalSessions: [makeSquashSession('2026-04-08', 'Movimiento continuo en cancha')],
+      historicalSessions: [makeSquashSession('2026-04-08', 'Movimiento continuo de base aeróbica')],
     })
 
     expect(notes).toContain('Mantener el mismo ritmo')
