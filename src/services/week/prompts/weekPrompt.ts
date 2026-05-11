@@ -282,6 +282,7 @@ export function buildWeekUserPrompt(input: WeekPromptInput): string {
     `- Carga objetivo por deporte: ${targetLoads}`,
     ...buildPrimarySportRule(plan, week),
     ...buildRaceWeekRule(plan, week),
+    ...buildSquashStrengthThemeRule(plan, wizardConfig),
     wizardConfig.injuryNotes ? `- Lesiones/restricciones: ${wizardConfig.injuryNotes}` : '',
     '',
     briefPreviousWeek(previousWeek),
@@ -291,6 +292,26 @@ export function buildWeekUserPrompt(input: WeekPromptInput): string {
     '',
     'Devuelve sólo el bloque <actions> con una única create_week para esta semana.',
   ].filter(Boolean).join('\n')
+}
+
+function buildSquashStrengthThemeRule(
+  plan: TrainingPlan,
+  wizardConfig: PlanWizardConfig,
+): string[] {
+  const primarySport = getPrimarySport(plan)
+  const allowedSports = allowedSportsList(plan, wizardConfig)
+
+  if (
+    primarySport !== 'squash' ||
+    !allowedSports.includes('strength') ||
+    wizardConfig.sessionsPerWeek < 3
+  ) {
+    return []
+  }
+
+  return [
+    '- Si esta semana asigna 3-4 sesiones de fuerza para el atleta de squash, distribuye los focos asi: dia de fuerza mas temprano -> olimpico + sentadilla; segundo dia de fuerza -> press + estocadas unilaterales; tercer dia -> peso muerto/hinge + cadena posterior; cuarto dia, si existe -> velocidad/footwork + plio ligera. Esta es una plantilla de referencia: si fase, fatiga o competencia lo desaconsejan, ajustala y explicita el cambio en objective o title.',
+  ]
 }
 
 export function buildWeekBatchUserPrompt(input: WeekBatchPromptInput): string {

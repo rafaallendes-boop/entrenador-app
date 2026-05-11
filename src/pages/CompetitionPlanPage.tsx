@@ -50,12 +50,39 @@ const OBJECTIVE_OPTIONS: { value: GoalEventObjective; label: string; sub: string
   { value: 'personal_best', label: 'Mejorar mi marca', sub: 'Superar mi mejor tiempo o rendimiento' },
 ]
 
-const LEVEL_OPTIONS: { value: GoalEventLevel; label: string }[] = [
-  { value: 'recreational', label: 'Recreativo' },
-  { value: 'competitive',  label: 'Competitivo amateur' },
-  { value: 'masters',      label: 'Masters / Veterano' },
-  { value: 'elite',        label: 'Elite amateur' },
-]
+const LEVEL_OPTIONS_BY_SPORT: Record<'squash' | 'running' | 'cycling' | 'other', { value: GoalEventLevel; label: string }[]> = {
+  squash: [
+    { value: 'recreational', label: 'Jugador Novicio (5ta-6ta)' },
+    { value: 'competitive',  label: 'Jugador Intermedio (3ra-4ta)' },
+    { value: 'masters',      label: 'Jugador Avanzado (1ra-2da)' },
+    { value: 'elite',        label: 'Jugador Profesional' },
+  ],
+  running: [
+    { value: 'recreational', label: 'Principiante' },
+    { value: 'competitive',  label: 'Aficionado' },
+    { value: 'masters',      label: 'Competitivo amateur' },
+    { value: 'elite',        label: 'Elite / Sub-élite' },
+  ],
+  cycling: [
+    { value: 'recreational', label: 'Recreativo' },
+    { value: 'competitive',  label: 'Aficionado (categoría 3-4)' },
+    { value: 'masters',      label: 'Competitivo (categoría 1-2)' },
+    { value: 'elite',        label: 'Elite / Profesional' },
+  ],
+  other: [
+    { value: 'recreational', label: 'Recreativo' },
+    { value: 'competitive',  label: 'Competitivo amateur' },
+    { value: 'masters',      label: 'Masters / Veterano' },
+    { value: 'elite',        label: 'Elite amateur' },
+  ],
+}
+
+function getLevelOptionsForSport(sport: SupportedSport | null): { value: GoalEventLevel; label: string }[] {
+  if (sport === 'squash')  return LEVEL_OPTIONS_BY_SPORT.squash
+  if (sport === 'running') return LEVEL_OPTIONS_BY_SPORT.running
+  if (sport === 'cycling') return LEVEL_OPTIONS_BY_SPORT.cycling
+  return LEVEL_OPTIONS_BY_SPORT.other
+}
 
 const DAYS_OF_WEEK: { value: DayOfWeek; label: string; short: string }[] = [
   { value: 'monday',    label: 'Lunes',    short: 'L' },
@@ -436,7 +463,7 @@ export default function CompetitionPlanPage() {
       <div className="flex-1">
         {step === 1 && <Step1EventType state={state} update={update} />}
         {step === 2 && <Step2EventDate state={state} update={update} planWindow={planWindow} />}
-        {step === 3 && <Step3Objective state={state} update={update} />}
+        {step === 3 && <Step3Objective state={state} update={update} primarySport={primarySportForEvent} />}
         {step === 4 && <Step4Schedule state={state} update={update} updateWith={updateWith} />}
         {step === 5 && (
           <Step5ComplementarySports
@@ -647,10 +674,13 @@ function Step2EventDate({
 function Step3Objective({
   state,
   update,
+  primarySport,
 }: {
   state: WizardState
   update: (p: Partial<WizardState>) => void
+  primarySport: SupportedSport | null
 }) {
+  const levelOptions = getLevelOptionsForSport(primarySport)
   return (
     <div>
       <StepLabel step={3} />
@@ -673,7 +703,7 @@ function Step3Objective({
 
       <label className="text-sm font-medium text-ink block mb-2">Nivel competitivo</label>
       <div className="flex flex-wrap gap-2">
-        {LEVEL_OPTIONS.map(opt => (
+        {levelOptions.map(opt => (
           <button
             key={opt.value}
             type="button"
@@ -949,7 +979,7 @@ function Step7Summary({
 }) {
   const eventTypeLabel = EVENT_TYPE_OPTIONS.find(o => o.value === state.eventType)?.label ?? '—'
   const objectiveLabel = OBJECTIVE_OPTIONS.find(o => o.value === state.objective)?.label ?? '—'
-  const levelLabel = LEVEL_OPTIONS.find(o => o.value === state.competitiveLevel)?.label ?? '—'
+  const levelLabel = getLevelOptionsForSport(primarySport).find(o => o.value === state.competitiveLevel)?.label ?? '—'
   const fitnessLabel = FITNESS_OPTIONS.find(o => o.value === state.fitnessLevel)?.label ?? '—'
   const fatigueLabel = FATIGUE_OPTIONS.find(o => o.value === state.fatigue)?.label ?? '—'
 

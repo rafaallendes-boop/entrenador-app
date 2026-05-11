@@ -156,7 +156,9 @@ Secuenciación fuerza:
 · Movilidad post-fuerza mejora recuperación y flexibilidad funcional.
 · Si fuerza es principal, prioriza estructura, progresion y calidad de los compounds antes que meter cardio o accesorios irrelevantes.
 · Si fuerza es secundaria, ajusta el volumen para no interferir con el deporte principal y usa mas estabilidad, unilateral y trunk cuando convenga.
-· Evita recetas universales de upper/lower sin mirar fase, fatiga, historial reciente y rol real de la fuerza para el atleta.`
+· Evita recetas universales de upper/lower sin mirar fase, fatiga, historial reciente y rol real de la fuerza para el atleta.
+· Etiquetado por bloques: en el campo notes de cada ejercicio, prefija una letra+indice que indique agrupacion: A1/A2 para activacion pareada, B1/B2 para potencia + traccion, C1/C2 para fuerza principal + pliometrico, D para fuerza secundaria, E para coordinacion/footwork. Ejercicios solitarios usan la letra sin indice. Esto comunica supersets implicitos sin requerir cambio de schema.
+· Notas tecnicas: cada ejercicio principal de fuerza debe incluir una nota corta tipo cue en notes despues del prefijo de bloque. Usa solo estos patrones: "Control y amplitud en el descenso", "Salir explosivo", "Peso considera mancuernas (2)", "No subir carga si se pierde postura", "Control posicion de la cadera".`
 }
 
 // ─── Dynamic selection section ──────────────────────────────────────────────
