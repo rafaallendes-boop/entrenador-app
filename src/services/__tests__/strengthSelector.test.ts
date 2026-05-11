@@ -328,8 +328,8 @@ describe('strengthSelector progression', () => {
       sportProfile: 'sport_support',
       primarySport: 'squash',
       sessionDurationMin: 60,
-    })).toMatchObject({ min: 5, target: 5, max: 6 })
-    expect(longSupport.exercises.length).toBeGreaterThanOrEqual(5)
+    })).toMatchObject({ min: 5, target: 6, max: 7 })
+    expect(longSupport.exercises.length).toBeGreaterThanOrEqual(6)
     expect(shortSupport.exercises.length).toBeGreaterThanOrEqual(3)
     expect(shortSupport.exercises.length).toBeLessThanOrEqual(4)
   })

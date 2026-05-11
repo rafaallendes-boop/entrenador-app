@@ -6,6 +6,11 @@ import { useTrainingStore } from '../store/useTrainingStore'
 import { db } from '../db/db'
 import { computeMacroPlan, getPrimaryGoalEvent, getPhaseLabel } from '../services/macroPlan'
 import { fromISO, todayISO } from '../utils/date'
+import {
+  resolveCurrentPlanWeekNumber,
+  resolvePlanStartDate,
+  resolvePlanWeekNumber,
+} from '../services/planBuilder/planProgress'
 import { ROUTES } from '../constants/routes'
 import type { MacroPlanPhase } from '../types'
 import type { TrainingPlan } from '../types/planBuilder'
@@ -424,6 +429,10 @@ export default function PlanDashboard({ onEdit }: { onEdit: () => void }) {
     : null, [activeGeneratedPlan])
   const primaryEvent = profilePrimaryEvent ?? generatedPrimaryEvent
   const planConfig = athleteProfile?.planWizardConfig ?? activeGeneratedPlan?.wizardConfig
+  const planStartISO = useMemo(() => resolvePlanStartDate({
+    planStartDate: activeGeneratedPlan?.startDate,
+    createdAt: planConfig?.createdAt,
+  }), [activeGeneratedPlan?.startDate, planConfig?.createdAt])
 
   // Compute weeks
   const totalWeeks = useMemo(() => {
@@ -435,7 +444,12 @@ export default function PlanDashboard({ onEdit }: { onEdit: () => void }) {
   }, [activeGeneratedPlan, primaryEvent, planConfig, macroPlan])
 
   const weeksRemaining = macroPlan?.weeksRemaining ?? 0
-  const currentWeekNum = Math.max(1, totalWeeks - weeksRemaining + 1)
+  const currentWeekNum = resolveCurrentPlanWeekNumber({
+    planStartDate: planStartISO,
+    totalWeeks,
+    dateISO: today,
+    weeksRemaining,
+  })
 
   // Adherence from last 8 weeks with data
   const avgAdherence = useMemo(() => {
@@ -477,16 +491,20 @@ export default function PlanDashboard({ onEdit }: { onEdit: () => void }) {
   // Recent weeks for the weekly breakdown
   const recentWeeks = useMemo(() => {
     return allWeekSummaries
-      .filter(w => w.weekStartDate <= today)
+      .filter(w => w.weekStartDate <= today && (!planStartISO || w.weekStartDate >= planStartISO))
       .sort((a, b) => b.weekStartDate.localeCompare(a.weekStartDate))
       .slice(0, 4)
       .reverse()
-      .map((w, i, arr) => {
-        const weekNum = Math.max(1, currentWeekNum - (arr.length - 1 - i))
-        const isActive = i === arr.length - 1
-        return { weekNum, phaseName: getPhaseLabel(currentPhase), adherence: w.adherencePct, isActive }
+      .map((w) => {
+        const weekNum = resolvePlanWeekNumber({
+          planStartDate: planStartISO,
+          totalWeeks,
+          dateISO: w.weekStartDate,
+        })
+        const isActive = weekNum === currentWeekNum
+        return { weekStartDate: w.weekStartDate, weekNum, phaseName: getPhaseLabel(currentPhase), adherence: w.adherencePct, isActive }
       })
-  }, [allWeekSummaries, today, currentWeekNum, currentPhase])
+  }, [allWeekSummaries, today, planStartISO, totalWeeks, currentWeekNum, currentPhase])
 
   if (!primaryEvent || !macroPlan) return null
 
@@ -541,7 +559,7 @@ export default function PlanDashboard({ onEdit }: { onEdit: () => void }) {
         <EventCountdown
           title={primaryEvent.title}
           dateISO={primaryEvent.date}
-          planStartISO={planConfig?.createdAt}
+          planStartISO={planStartISO}
         />
 
         {/* KPI row */}
@@ -603,7 +621,7 @@ export default function PlanDashboard({ onEdit }: { onEdit: () => void }) {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {recentWeeks.map(w => (
                 <WeekRow
-                  key={w.weekNum}
+                  key={w.weekStartDate}
                   weekNum={w.weekNum}
                   phaseName={w.phaseName}
                   adherence={w.adherence}

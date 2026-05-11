@@ -277,6 +277,7 @@ export function buildWeekUserPrompt(input: WeekPromptInput): string {
     wizardConfig.allowDoubleSession
       ? '- Puedes usar AM y PM el mismo día si ayuda a cumplir el volumen, sin duplicar el mismo bloque.'
       : '- Como doble sesión NO está permitido, reparte las sesiones entre días permitidos sin repetir un mismo día.',
+    ...buildDoubleSessionPreferenceRule(wizardConfig, week.phase),
     `- Nivel actual: ${wizardConfig.currentFitnessLevel} · Fatiga: ${wizardConfig.currentFatigue}`,
     `- Deportes permitidos: ${allowed.join(', ')}`,
     `- Carga objetivo por deporte: ${targetLoads}`,
@@ -292,6 +293,22 @@ export function buildWeekUserPrompt(input: WeekPromptInput): string {
     '',
     'Devuelve sólo el bloque <actions> con una única create_week para esta semana.',
   ].filter(Boolean).join('\n')
+}
+
+function buildDoubleSessionPreferenceRule(
+  wizardConfig: PlanWizardConfig,
+  phase: TrainingPlanWeek['phase'],
+): string[] {
+  if (!wizardConfig.allowDoubleSession) return []
+  if (phase === 'race' || phase === 'taper' || wizardConfig.currentFatigue === 'overloaded') return []
+
+  const hasEnoughVolumeForPreference = wizardConfig.sessionsPerWeek >= 5
+  const canCreateRestDay = wizardConfig.sessionsPerWeek <= wizardConfig.trainingDays.length
+  if (!hasEnoughVolumeForPreference || !canCreateRestDay) return []
+
+  return [
+    '- Preferencia de distribucion: como el usuario habilito doble sesion y hay volumen suficiente, usa al menos 1 dia doble AM/PM en esta semana y deja 1 dia permitido libre como descarga. Evita juntar dos estimulos duros el mismo dia; combina tecnica/skill con fuerza soporte, movilidad o aerobico suave.',
+  ]
 }
 
 function buildSquashStrengthThemeRule(
@@ -352,6 +369,7 @@ export function buildWeekBatchUserPrompt(input: WeekBatchPromptInput): string {
     wizardConfig.allowDoubleSession
       ? '- Puedes usar AM y PM el mismo día si ayuda a cumplir el volumen, sin duplicar el mismo bloque dentro de una semana.'
       : '- Como doble sesión NO está permitido, reparte las sesiones de cada semana entre días permitidos sin repetir un mismo día.',
+    ...buildDoubleSessionPreferenceRule(wizardConfig, weeks[0].phase),
     `- Nivel actual: ${wizardConfig.currentFitnessLevel} · Fatiga: ${wizardConfig.currentFatigue}`,
     `- Deportes permitidos: ${allowed.join(', ')}`,
     primarySport ? `- Deporte principal transversal: ${primarySport}` : '',

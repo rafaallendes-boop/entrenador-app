@@ -258,6 +258,35 @@ describe('planBuilder', () => {
     expect(prompt).toContain('máximo 1 accesorias')
   })
 
+  it('week prompt prefers one double-session day when double sessions are enabled with enough volume', () => {
+    const profile = makeProfile(eventNWeeksFromNow(6))
+    const event = profile.goalEvents![0] as GoalEvent
+    const wizardConfig = {
+      ...makeWizardConfig(),
+      trainingDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'] as PlanWizardConfig['trainingDays'],
+      sessionsPerWeek: 6,
+      allowDoubleSession: true,
+    }
+    const { plan, weeks } = buildPlanShell({
+      athleteId: profile.id,
+      profile,
+      wizardConfig,
+      goalEvent: event,
+    })
+    const week = { ...weeks[0], phase: 'build' as const }
+
+    const prompt = buildWeekUserPrompt({
+      plan,
+      week,
+      profile,
+      wizardConfig,
+    })
+
+    expect(prompt).toContain('usa al menos 1 dia doble AM/PM')
+    expect(prompt).toContain('deja 1 dia permitido libre como descarga')
+    expect(prompt).toContain('Evita juntar dos estimulos duros')
+  })
+
   it('buildWeekSystemPrompt preserves the literal session schema block', () => {
     const prompt = buildWeekSystemPrompt()
 

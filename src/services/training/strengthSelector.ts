@@ -730,31 +730,31 @@ function buildExerciseNotes(
   index: number,
 ): string | undefined {
   if (context.competitionSoon) {
-    if (exercise.category === 'lower') return 'Activation only. Leave reps in reserve and avoid soreness.'
-    return 'Keep it crisp and low-fatigue before competition.'
+    if (exercise.category === 'lower') return 'Solo activación. Deja repeticiones en reserva y evita generar dolor muscular.'
+    return 'Ejecución limpia y sin fatiga acumulada antes de la competencia.'
   }
   if (context.fatigueLevel >= 7) {
-    return 'Prioritize clean execution and stop well before grindy reps.'
+    return 'Prioriza técnica limpia y detente mucho antes de llegar al fallo.'
   }
   if (exercise.intensityType === 'power') {
     if (exercise.riskLevel === 'high') {
-      return 'Advanced power drill. Keep volume low, prioritize landing quality and stop if speed or control drops.'
+      return 'Ejercicio de potencia avanzado. Volumen bajo, prioriza calidad de aterrizaje y detente si cae la velocidad o el control.'
     }
-    return 'Every rep should look fast. Cut the set if speed drops.'
+    return 'Cada repetición debe verse rápida. Corta la serie si cae la velocidad.'
   }
   if (context.primarySport === 'squash' && exercise.tags.includes('court_footwork')) {
-    return 'Use this as coordination and footwork quality, not conditioning.'
+    return 'Usá este bloque como coordinación y calidad de pisada, no como acondicionamiento.'
   }
   if (context.primarySport === 'squash' && exercise.tags.includes('anti_rotation')) {
-    return 'Brace against rotation and keep hips stacked for squash transfer.'
+    return 'Resiste la rotación y mantén las caderas apiladas para transferencia al squash.'
   }
   if (index === 0 && context.sportProfile === 'strength_primary') {
     return intensity === 'heavy'
-      ? 'Main lift of the day. Prioritize bar speed and repeatable technique.'
-      : 'Main lift of the day. Build quality volume without missing reps.'
+      ? 'Ejercicio principal del día. Prioriza velocidad de barra y técnica repetible.'
+      : 'Ejercicio principal del día. Construye volumen de calidad sin perder repeticiones.'
   }
   if (exercise.unilateral) {
-    return 'Use controlled tempo and match both sides.'
+    return 'Usá tempo controlado e igualá ambos lados.'
   }
   return undefined
 }
@@ -818,8 +818,8 @@ function getDurationExerciseDensity(durationMin: number): StrengthExerciseDensit
   if (durationMin <= 30) return { min: 3, target: 3, max: 4 }
   if (durationMin <= 44) return { min: 4, target: 4, max: 4 }
   if (durationMin <= 54) return { min: 4, target: 5, max: 5 }
-  if (durationMin <= 69) return { min: 5, target: 5, max: 6 }
-  return { min: 6, target: 6, max: 7 }
+  if (durationMin <= 69) return { min: 5, target: 6, max: 7 }
+  return { min: 6, target: 7, max: 8 }
 }
 
 function clamp(value: number, min: number, max: number): number {
