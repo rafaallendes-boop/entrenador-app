@@ -350,7 +350,7 @@ describe('WeekCreatorEngine', () => {
               squashDetails: {
                 trainingFocus: 'technical',
                 sessionMode: 'drill_session',
-                drills: [{ name: 'Boast y recuperacion al T', durationMin: 20 }],
+                drills: [{ name: 'Tiros cruzados profundos', durationMin: 20 }],
               },
             },
             {
@@ -687,6 +687,45 @@ describe('WeekCreatorEngine', () => {
     expect(strength?.durationMin).toBe(60)
     expect(strength?.exercises?.length).toBeGreaterThanOrEqual(5)
   })
+
+  it('spreads six-session fallback weeks across available days before using doubles', async () => {
+    mockProviderCall.mockImplementation(async (request: { requestClass: string; traceId: string }) => ({
+      text: 'Rate limit del provider, sin acciones.',
+      provider: 'gemini',
+      model: 'gemini-flash',
+      traceId: request.traceId,
+      requestClass: request.requestClass,
+    }))
+
+    const context: ChatContext = {
+      athleteProfile: makeProfile({
+        scheduleProfile: {
+          availableDays: ['lun', 'mar', 'mié', 'jue', 'vie', 'sáb', 'dom'],
+          doubleSessionDays: ['lun', 'mar', 'mié', 'jue', 'vie'],
+        },
+      }),
+      recentSessions: [],
+      plannedSessions: [],
+      historicalSessions: [],
+    }
+
+    const response = await WeekCreatorEngine.sendWeekCreate(
+      'Créame 6 sesiones priorizando squash',
+      context,
+      { surface: 'chat', targetWeekStart: '2026-05-11' },
+    )
+
+    const sessions = response.actions?.[0].sessions ?? []
+    const visibleText = JSON.stringify(sessions)
+
+    expect(response.fallbackUsed).toBe(true)
+    expect(sessions).toHaveLength(6)
+    expect(sessions.every((session) => session.timeBlock === 'AM')).toBe(true)
+    expect(new Set(sessions.map((session) => session.date)).size).toBe(6)
+    expect(visibleText).not.toMatch(new RegExp('recuperaci' + '[oó]n a' + 'l T', 'i'))
+    expect(visibleText).not.toContain('Drives paralelos con ' + 'recuperaci' + 'ón a' + 'l T')
+    expect(visibleText).toContain('Tiros paralelos profundos')
+  })
 })
 
 describe('validateWeekCreatorResponse sport details', () => {
@@ -729,7 +768,7 @@ describe('validateWeekCreatorResponse sport details', () => {
               blocks: [{
                 kind: 'technical',
                 durationMin: 30,
-                drills: [{ name: 'Drives', durationMin: 30 }],
+                drills: [{ name: 'Tiros paralelos profundos', durationMin: 30 }],
               }],
             },
           }],
@@ -791,4 +830,161 @@ describe('validateWeekCreatorResponse sport details', () => {
     expect(result.warning).toContain('runningType')
     expect(result.warning).toContain('no incluye ejercicios')
   })
+
+  it('rejects squash sessions stacked on the same date when there are enough training days', () => {
+    const result = validateWeekCreatorResponse({
+      targetWeekStart: '2026-05-11',
+      context: { recentSessions: [], plannedSessions: [], historicalSessions: [] },
+      config: {
+        allowedSports: ['squash', 'strength'],
+        primarySport: 'squash',
+        sessionsPerWeek: 4,
+        maxSessionsPerWeek: 6,
+        sessionDurationMins: 60,
+        trainingDays: ['monday', 'tuesday', 'wednesday', 'thursday'],
+        allowDoubleSession: true,
+        currentFitnessLevel: 'normal',
+        currentFatigue: 'normal',
+        fromWizard: false,
+        configSource: 'schedule',
+      },
+      response: {
+        message: 'Semana lista',
+        provider: 'gemini',
+        timestamp: Date.now(),
+        traceId: 'trace-same-day-squash',
+        requestClass: 'week_creator',
+        actions: [{
+          type: 'create_week',
+          reason: 'Semana con squash duplicado',
+          targetDate: '2026-05-11',
+          sessions: [
+            squashSession('2026-05-11', 'AM', 'Squash técnico A', 'Tiros paralelos profundos'),
+            squashSession('2026-05-11', 'PM', 'Squash técnico B', 'Tiros cruzados profundos'),
+            squashSession('2026-05-12', 'AM', 'Squash control', '100 drops en solitario (50 por lado)'),
+            {
+              date: '2026-05-13',
+              timeBlock: 'AM',
+              sessionType: 'strength',
+              title: 'Fuerza soporte',
+              durationMin: 60,
+              exercises: [{ name: 'Sentadilla goblet', sets: 3, reps: 8 }],
+            },
+          ],
+        }],
+      },
+    })
+
+    expect(result.ok).toBe(false)
+    expect(result.error).toContain('hay suficientes días disponibles')
+  })
+
+  it('rejects double days when the week has enough available days to spread sessions', () => {
+    const result = validateWeekCreatorResponse({
+      targetWeekStart: '2026-05-11',
+      context: { recentSessions: [], plannedSessions: [], historicalSessions: [] },
+      config: {
+        allowedSports: ['squash', 'running', 'strength'],
+        primarySport: 'squash',
+        sessionsPerWeek: 4,
+        maxSessionsPerWeek: 6,
+        sessionDurationMins: 60,
+        trainingDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
+        allowDoubleSession: true,
+        currentFitnessLevel: 'normal',
+        currentFatigue: 'normal',
+        fromWizard: false,
+        configSource: 'schedule',
+      },
+      response: {
+        message: 'Semana lista',
+        provider: 'gemini',
+        timestamp: Date.now(),
+        traceId: 'trace-double-day',
+        requestClass: 'week_creator',
+        actions: [{
+          type: 'create_week',
+          reason: 'Semana apilada',
+          targetDate: '2026-05-11',
+          sessions: [
+            squashSession('2026-05-11', 'AM', 'Squash técnico', 'Tiros paralelos profundos'),
+            {
+              date: '2026-05-11',
+              timeBlock: 'PM',
+              sessionType: 'running',
+              title: 'Running Z2',
+              durationMin: 45,
+              runningType: 'z2',
+            },
+            {
+              date: '2026-05-12',
+              timeBlock: 'AM',
+              sessionType: 'strength',
+              title: 'Fuerza soporte',
+              durationMin: 60,
+              exercises: [{ name: 'Sentadilla goblet', sets: 3, reps: 8 }],
+            },
+            squashSession('2026-05-13', 'AM', 'Squash control', '100 drops en solitario (50 por lado)'),
+          ],
+        }],
+      },
+    })
+
+    expect(result.ok).toBe(false)
+    expect(result.error).toContain('hay suficientes días disponibles')
+  })
+
+  it('rejects squash drill names that do not resolve to the visible library', () => {
+    const result = validateWeekCreatorResponse({
+      targetWeekStart: '2026-05-11',
+      context: { recentSessions: [], plannedSessions: [], historicalSessions: [] },
+      config: {
+        allowedSports: ['squash'],
+        primarySport: 'squash',
+        sessionsPerWeek: 1,
+        maxSessionsPerWeek: 1,
+        sessionDurationMins: 60,
+        trainingDays: ['monday'],
+        allowDoubleSession: false,
+        currentFitnessLevel: 'normal',
+        currentFatigue: 'normal',
+        fromWizard: true,
+        configSource: 'wizard',
+      },
+      response: {
+        message: 'Semana lista',
+        provider: 'gemini',
+        timestamp: Date.now(),
+        traceId: 'trace-unknown-drill',
+        requestClass: 'week_creator',
+        actions: [{
+          type: 'create_week',
+          reason: 'Semana con drill libre',
+          targetDate: '2026-05-11',
+          sessions: [
+            squashSession('2026-05-11', 'AM', 'Squash técnico', 'Drives paralelos con ' + 'recuperaci' + 'ón a' + 'l T'),
+          ],
+        }],
+      },
+    })
+
+    expect(result.ok).toBe(false)
+    expect(result.error).toContain('drill fuera de catálogo')
+  })
 })
+
+function squashSession(date: string, timeBlock: 'AM' | 'PM', title: string, drillName: string) {
+  return {
+    date,
+    timeBlock,
+    sessionType: 'squash' as const,
+    title,
+    durationMin: 60,
+    squashDetails: {
+      trainingFocus: 'technical' as const,
+      sessionMode: 'drill_session' as const,
+      sessionKind: 'technical' as const,
+      drills: [{ name: drillName, durationMin: 20 }],
+    },
+  }
+}

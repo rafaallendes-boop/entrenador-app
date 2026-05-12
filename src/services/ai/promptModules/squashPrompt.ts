@@ -138,7 +138,7 @@ export function buildSquashRulesSection(): string {
     'Taxonomía de sesión:',
     '· sessionKind="technical": rally/drills con rival, calidad de golpe, drives, voleas, boast, drop rally, patrones técnico-tácticos.',
     '· sessionKind="control": volumen solo o sin rival, repeticiones por cuenta fija, precisión y timing sin presión. Ejemplos válidos: 100 drops, 100 paralelas, 100 al box, voleas solo.',
-    '· sessionKind="shadows": ghosting, footwork, split step, recuperación al T, movement work específico.',
+    '· sessionKind="shadows": ghosting, footwork, split step, vuelta a la T, movement work específico.',
     '· sessionKind="match": practice_match o competition_match.',
     '· sessionKind="mixed": SOLO cuando combinas 2 bloques compatibles dentro de la misma sesión.',
     '',
@@ -400,7 +400,7 @@ export function buildCompetitiveSquashWeekExample(opts: {
       ? `{"date":"${addDaysToISO(weekStart, 2)}","timeBlock":"PM","sessionType":"strength","title":"Fuerza neural liviana","durationMin":40,"rpe":5,"objective":"${strengthSupportSelection.focus}","exercises":[${strengthSupportExercisesJson}]}`
       : null,
     `{"date":"${addDaysToISO(weekStart, 3)}","timeBlock":"PM","sessionType":"squash","title":"Squash control pre-partido","durationMin":45,"rpe":5,"objective":"Timing, precisión, pies y sensaciones. Nada de desgaste.","subtype":"control","squashDetails":{"trainingFocus":"${squashCompetitiveSelection.trainingFocus}","sessionMode":"drill_session","sessionKind":"control","drills":[${squashCompetitiveDrillsJson}]}}`,
-    `{"date":"${addDaysToISO(weekStart, 5)}","timeBlock":"PM","sessionType":"squash","title":"Partido objetivo","durationMin":60,"rpe":8,"objective":"Competir fresco y con buena toma de T","subtype":"match","squashDetails":{"trainingFocus":"${squashCompetitiveSelection.trainingFocus}","sessionMode":"competition_match","sessionKind":"match","drills":[${squashMatchDayDrillsJson}]}}`,
+    `{"date":"${addDaysToISO(weekStart, 5)}","timeBlock":"PM","sessionType":"squash","title":"Partido objetivo","durationMin":60,"rpe":8,"objective":"Competir fresco y con buena toma de la T","subtype":"match","squashDetails":{"trainingFocus":"${squashCompetitiveSelection.trainingFocus}","sessionMode":"competition_match","sessionKind":"match","drills":[${squashMatchDayDrillsJson}]}}`,
   ].filter(Boolean).join(',\n    ')
 
   return `<actions>

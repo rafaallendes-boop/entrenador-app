@@ -236,14 +236,18 @@ function completeSportDetails(
   context: RepairContext,
   meta: RepairMeta,
 ): void {
+  const currentWeekSquashDrills = extractRecentSquashDrills(context.previousWeek)
+  const currentWeekStrengthExercises = extractRecentStrengthExercises(context.previousWeek)
+
   for (const session of sessions) {
     try {
       switch (session.sessionType) {
         case 'squash':
           if (!hasValidSquashDetails(session)) {
-            completeSquashDetails(session, context)
+            completeSquashDetails(session, context, currentWeekSquashDrills)
             meta.repairedSessionCount++
           }
+          currentWeekSquashDrills.push(...extractSquashDrillNames(session))
           break
         case 'running':
           if (!session.runningType) {
@@ -253,9 +257,10 @@ function completeSportDetails(
           break
         case 'strength':
           if (!session.exercises || session.exercises.length === 0) {
-            completeStrengthExercises(session, context)
+            completeStrengthExercises(session, context, currentWeekStrengthExercises)
             meta.repairedSessionCount++
           }
+          currentWeekStrengthExercises.push(...(session.exercises ?? []).map((exercise) => exercise.name))
           break
         case 'mobility':
           if (!session.mobilityDetails) {
@@ -282,16 +287,19 @@ function hasValidSquashDetails(session: CoachSessionProposal): boolean {
   return Boolean(d.trainingFocus) && Array.isArray(d.drills) && d.drills.length > 0 && Boolean(d.sessionKind)
 }
 
-function completeSquashDetails(session: CoachSessionProposal, context: RepairContext): void {
+function completeSquashDetails(
+  session: CoachSessionProposal,
+  context: RepairContext,
+  recentDrills = extractRecentSquashDrills(context.previousWeek),
+): void {
   const phase = mapPhase(context.week.phase) as SquashSelectionPhase
-  const recentDrills = extractRecentSquashDrills(context.previousWeek)
   const result = selectSquashDrills({
     fatigueLevel: fatigueToNumber(context.wizardConfig.currentFatigue),
     phase,
     recentDrills,
     goal: context.profile.mainGoal ?? '',
     competitionSoon: false,
-    desiredKind: mapSubtypeToDesiredKind(session.subtype),
+    desiredKind: mapSubtypeToDesiredKind(session.subtype) ?? inferSquashDesiredKind(session, recentDrills),
   })
   session.squashDetails = {
     trainingFocus: result.trainingFocus,
@@ -319,9 +327,12 @@ function completeRunningDetails(session: CoachSessionProposal, context: RepairCo
   }
 }
 
-function completeStrengthExercises(session: CoachSessionProposal, context: RepairContext): void {
+function completeStrengthExercises(
+  session: CoachSessionProposal,
+  context: RepairContext,
+  recentExercises = extractRecentStrengthExercises(context.previousWeek),
+): void {
   const phase = mapPhase(context.week.phase) as StrengthPhase
-  const recentExercises = extractRecentStrengthExercises(context.previousWeek)
   const sportProfile = deriveStrengthSportProfile(context)
   const result = selectStrengthSession({
     fatigueLevel: fatigueToNumber(context.wizardConfig.currentFatigue),
@@ -423,7 +434,7 @@ function balanceSessionCount(
 
       const needPrimary = i === 0 && primarySport && primaryCount < minimumPrimary
       const fallback = needPrimary
-        ? buildPrimaryFallbackSession(primarySport, available.date, context)
+        ? buildPrimaryFallbackSession(primarySport, available.date, context, result)
         : buildMobilityFallbackSession(available.date, context)
 
       fallback.timeBlock = available.timeBlock
@@ -458,7 +469,12 @@ function buildMobilityFallbackSession(date: string, context: RepairContext): Coa
   return session
 }
 
-function buildPrimaryFallbackSession(sport: string, date: string, context: RepairContext): CoachSessionProposal {
+function buildPrimaryFallbackSession(
+  sport: string,
+  date: string,
+  context: RepairContext,
+  currentSessions: CoachSessionProposal[] = [],
+): CoachSessionProposal {
   const session: CoachSessionProposal = {
     date,
     timeBlock: 'AM',
@@ -471,7 +487,7 @@ function buildPrimaryFallbackSession(sport: string, date: string, context: Repai
   }
   try {
     switch (sport) {
-      case 'squash': completeSquashDetails(session, context); break
+      case 'squash': completeSquashDetails(session, context, currentSessions.flatMap(extractSquashDrillNames)); break
       case 'running': completeRunningDetails(session, context); break
       case 'strength': completeStrengthExercises(session, context); break
       case 'cycling': completeCyclingDetails(session, context); break
@@ -557,6 +573,20 @@ function mapSubtypeToDesiredKind(subtype?: string) {
   return undefined
 }
 
+function inferSquashDesiredKind(session: CoachSessionProposal, recentDrills: string[]) {
+  const text = `${session.title ?? ''} ${session.objective ?? ''}`
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+
+  if (text.includes('control') || text.includes('precision')) return 'control' as const
+  if (text.includes('desplaz') || text.includes('movimiento') || text.includes('shadow')) return 'shadows' as const
+  if (text.includes('partido') || text.includes('match')) return 'match' as const
+  if (recentDrills.length >= 3 || text.includes('juego') || text.includes('condicionado')) return 'shadows' as const
+  if (recentDrills.length > 0) return 'control' as const
+  return undefined
+}
+
 function deriveRunningSportProfile(context: RepairContext): RunningSportProfile {
   const primary = context.profile.sportContext?.primarySport
   if (primary === 'running') return 'running_primary'
@@ -588,6 +618,15 @@ function extractRecentSquashDrills(previousWeek?: TrainingPlanWeek): string[] {
   return previousWeek.sessions
     .filter((s) => s.sessionType === 'squash' && s.squashDetails?.drills)
     .flatMap((s) => s.squashDetails!.drills.map((d) => d.name))
+}
+
+function extractSquashDrillNames(session: CoachSessionProposal): string[] {
+  const details = session.squashDetails
+  if (!details) return []
+  return [
+    ...(details.drills ?? []).map((drill) => drill.name),
+    ...((details.blocks ?? []).flatMap((block) => block.drills.map((drill) => drill.name))),
+  ]
 }
 
 function extractRecentRunningSessions(previousWeek?: TrainingPlanWeek): string[] {

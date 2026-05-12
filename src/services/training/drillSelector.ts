@@ -891,14 +891,14 @@ export function runSquashDrillSelectorSmokeChecks(): string[] {
     phase: 'build',
     fatigueLevel: 4,
     competitionSoon: false,
-    goal: 'mejorar tactica y control del T',
+    goal: 'mejorar tactica y control de la T',
     recentDrills: ['drive_parallel_depth', 'ghosting_4_corners'],
   })
   const buildB = selectSquashDrills({
     phase: 'build',
     fatigueLevel: 4,
     competitionSoon: false,
-    goal: 'mejorar tactica y control del T',
+    goal: 'mejorar tactica y control de la T',
     recentDrills: buildA.drills.map((drill) => normalizeSquashDrillKey(drill.name)),
   })
   outputs.push(`build_variation=${buildA.sessionKind}:${buildA.drills.map((d) => d.name).join(' | ')} <> ${buildB.sessionKind}:${buildB.drills.map((d) => d.name).join(' | ')}`)
@@ -924,7 +924,7 @@ export function runSquashDrillSelectorSmokeChecks(): string[] {
     phase: 'build',
     fatigueLevel: 4,
     competitionSoon: false,
-    goal: 'mejorar tactica y control del T',
+    goal: 'mejorar tactica y control de la T',
     recentDrills: buildA.drills.map((drill) => normalizeSquashDrillKey(drill.name)),
     historicalSessions: [],
   })}`)

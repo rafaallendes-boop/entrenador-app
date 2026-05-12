@@ -1,5 +1,6 @@
 import type { ChatContext, CoachAction, CoachSessionProposal, DayOfWeek, SupportedSport } from '../../types'
 import type { CoachNormalizedResponse } from '../ai/types'
+import { findSquashDrillByName } from '../training/drillLibrary'
 import { filterSessionsToWeek, isStrictISODate, pickCreateWeekDiagnostic } from '../week/shared'
 import type { WeekCreatorEffectiveConfig } from './WeekCreatorConfig'
 
@@ -73,6 +74,12 @@ export function validateWeekCreatorResponse(
   const doubleSessionError = validateDoubleSessions(sessions, input.config)
   if (doubleSessionError) return fail(doubleSessionError, rawSessionCount, validSessionCount, droppedSessionCount)
 
+  const sameDaySquashError = validateSameDaySquashSessions(sessions, input.config)
+  if (sameDaySquashError) return fail(sameDaySquashError, rawSessionCount, validSessionCount, droppedSessionCount)
+
+  const duplicateSquashError = validateDuplicateSquashSessions(sessions)
+  if (duplicateSquashError) return fail(duplicateSquashError, rawSessionCount, validSessionCount, droppedSessionCount)
+
   const duplicateStrengthError = validateDuplicateStrengthSessions(sessions)
   if (duplicateStrengthError) return fail(duplicateStrengthError, rawSessionCount, validSessionCount, droppedSessionCount)
 
@@ -129,17 +136,78 @@ function validateDoubleSessions(
   sessions: CoachSessionProposal[],
   config: WeekCreatorEffectiveConfig,
 ): string | undefined {
-  if (config.allowDoubleSession) return undefined
   const byDate = new Map<string, number>()
   for (const session of sessions) {
     byDate.set(session.date, (byDate.get(session.date) ?? 0) + 1)
   }
+
+  if (config.allowDoubleSession && config.trainingDays.length >= sessions.length) {
+    const repeatedDate = [...byDate.entries()].find(([, count]) => count > 1)
+    if (repeatedDate) {
+      return `Evita doble jornada el ${repeatedDate[0]}: hay suficientes días disponibles para repartir ${sessions.length} sesiones.`
+    }
+    return undefined
+  }
+
+  if (config.allowDoubleSession) return undefined
+
   for (const [date, count] of byDate.entries()) {
     if (count > 1) {
       return `La configuración actual no permite doble sesión y la semana propone ${count} sesiones el ${date}.`
     }
   }
   return undefined
+}
+
+function validateSameDaySquashSessions(
+  sessions: CoachSessionProposal[],
+  config: WeekCreatorEffectiveConfig,
+): string | undefined {
+  const squashSessions = sessions.filter((session) => session.sessionType === 'squash')
+  if (squashSessions.length < 2) return undefined
+
+  const byDate = new Map<string, CoachSessionProposal[]>()
+  for (const session of squashSessions) {
+    byDate.set(session.date, [...(byDate.get(session.date) ?? []), session])
+  }
+
+  const repeatedDate = [...byDate.entries()].find(([, items]) => items.length > 1)
+  if (!repeatedDate) return undefined
+
+  if (config.trainingDays.length >= squashSessions.length) {
+    return `No programes dos sesiones de squash el mismo día (${repeatedDate[0]}) cuando hay días disponibles para separarlas.`
+  }
+
+  if (config.allowedSports.some((sport) => sport !== 'squash')) {
+    return `Evita duplicar squash el ${repeatedDate[0]}; usa la segunda jornada para fuerza, running, cycling o movilidad si están permitidos.`
+  }
+
+  return undefined
+}
+
+function validateDuplicateSquashSessions(sessions: CoachSessionProposal[]): string | undefined {
+  const seen = new Map<string, CoachSessionProposal>()
+  for (const session of sessions) {
+    if (session.sessionType !== 'squash') continue
+    const signature = buildSquashDrillSignature(session)
+    if (!signature) continue
+
+    const previous = seen.get(signature)
+    if (previous) {
+      return `Las sesiones de squash "${previous.title}" y "${session.title}" repiten los mismos drills; deben tener focos o ejercicios distintos.`
+    }
+    seen.set(signature, session)
+  }
+  return undefined
+}
+
+function buildSquashDrillSignature(session: CoachSessionProposal): string | undefined {
+  const drills = getSquashDrills(session)
+  if (drills.length === 0) return undefined
+  return drills
+    .map((drill) => findSquashDrillByName(drill.name)?.id ?? drill.name.trim().toLowerCase())
+    .sort()
+    .join('|')
 }
 
 function validateDuplicateStrengthSessions(sessions: CoachSessionProposal[]): string | undefined {
@@ -206,6 +274,10 @@ function validateRequiredDetails(sessions: CoachSessionProposal[]): string | und
       if (!session.squashDetails || !hasSquashDrills(session)) {
         return `La sesión de squash ${session.title} requiere squashDetails con drills no vacíos.`
       }
+      const unknownDrill = getSquashDrills(session).find((drill) => !findSquashDrillByName(drill.name))
+      if (unknownDrill) {
+        return `La sesión de squash ${session.title} usa un drill fuera de catálogo: "${unknownDrill.name}". Usa nombres de la librería visible.`
+      }
     }
   }
   return undefined
@@ -217,6 +289,17 @@ function hasSquashDrills(session: CoachSessionProposal): boolean {
   if (Array.isArray(details.drills) && details.drills.length > 0) return true
   return Array.isArray(details.blocks)
     && details.blocks.some(block => Array.isArray(block.drills) && block.drills.length > 0)
+}
+
+function getSquashDrills(session: CoachSessionProposal) {
+  const details = session.squashDetails
+  if (!details) return []
+  return [
+    ...(Array.isArray(details.drills) ? details.drills : []),
+    ...(Array.isArray(details.blocks)
+      ? details.blocks.flatMap((block) => Array.isArray(block.drills) ? block.drills : [])
+      : []),
+  ].filter((drill) => typeof drill.name === 'string' && drill.name.trim().length > 0)
 }
 
 function collectSportDetailWarnings(sessions: CoachSessionProposal[]): string[] {

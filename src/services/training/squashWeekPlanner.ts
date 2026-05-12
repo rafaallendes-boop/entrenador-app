@@ -155,7 +155,7 @@ function buildSlotRationale(
     case 'control':
       return 'Sesión de precisión repetible y bajo costo de fatiga para consolidar timing.'
     case 'shadows':
-      return 'Movimiento específico y recuperación al T sin disfrazar la sesión como físico genérico.'
+      return 'Movimiento específico y vuelta a la T sin disfrazar la sesión como físico genérico.'
     case 'match':
       return 'Exposición a ritmo real y toma de decisiones; va al final de la progresión semanal.'
     case 'mixed-control-technical':

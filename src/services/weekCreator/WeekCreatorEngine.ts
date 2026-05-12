@@ -507,7 +507,12 @@ function buildFallbackSlots(
 
   for (const date of dates) {
     slots.push({ date, timeBlock: 'AM' })
-    if (config.allowDoubleSession) slots.push({ date, timeBlock: 'PM' })
+  }
+
+  if (config.allowDoubleSession) {
+    for (const date of dates) {
+      slots.push({ date, timeBlock: 'PM' })
+    }
   }
 
   return slots.slice(0, count)
@@ -557,17 +562,17 @@ function buildFallbackSession(
     const variants = [
       [
         { name: 'Sentadilla goblet', sets: 3, reps: 8, group: 'legs' as const },
-        { name: 'Remo con mancuerna', sets: 3, reps: 10, group: 'pull' as const },
-        { name: 'Press medio arrodillado', sets: 3, reps: '8/lado', group: 'push' as const },
-        { name: 'Zancada lateral controlada', sets: 3, reps: '8/lado', group: 'legs' as const },
+        { name: 'Remo con pecho apoyado', sets: 3, reps: 10, group: 'pull' as const },
+        { name: 'Press sobre cabeza', sets: 3, reps: '8/lado', group: 'push' as const },
+        { name: 'Zancada lateral con barra', sets: 3, reps: '8/lado', group: 'legs' as const },
         { name: 'Plancha lateral', sets: 3, reps: '30s/lado', group: 'core' as const },
       ],
       [
         { name: 'Peso muerto rumano', sets: 3, reps: 8, group: 'legs' as const },
-        { name: 'Press inclinado', sets: 3, reps: 8, group: 'push' as const },
-        { name: 'Remo pecho apoyado', sets: 3, reps: 10, group: 'pull' as const },
-        { name: 'Split squat', sets: 3, reps: '8/lado', group: 'legs' as const },
-        { name: 'Pallof press', sets: 3, reps: '10/lado', group: 'core' as const },
+        { name: 'Press inclinado con mancuernas', sets: 3, reps: 8, group: 'push' as const },
+        { name: 'Remo invertido', sets: 3, reps: 10, group: 'pull' as const },
+        { name: 'Sentadilla en zancada', sets: 3, reps: '8/lado', group: 'legs' as const },
+        { name: 'Press Pallof', sets: 3, reps: '10/lado', group: 'core' as const },
       ],
     ]
     return {
@@ -612,20 +617,75 @@ function buildFallbackSession(
     }
   }
 
+  const squashVariants = [
+    {
+      title: 'Squash técnico de profundidad',
+      trainingFocus: 'technical' as const,
+      sessionKind: 'technical' as const,
+      drills: [
+        { name: 'Tiros paralelos profundos', durationMin: 18 },
+        { name: 'Tiros cruzados profundos', durationMin: 16 },
+      ],
+    },
+    {
+      title: 'Squash control en solitario',
+      trainingFocus: 'technical' as const,
+      sessionKind: 'control' as const,
+      drills: [
+        { name: '100 drops en solitario (50 por lado)', durationMin: 20 },
+        { name: '100 drives al cuadro de saque', durationMin: 18 },
+      ],
+    },
+    {
+      title: 'Squash desplazamientos y timing',
+      trainingFocus: 'physical' as const,
+      sessionKind: 'shadows' as const,
+      drills: [
+        { name: 'Ghosting a cuatro esquinas', durationMin: 18 },
+        { name: 'Split-step y vuelta a la T', durationMin: 14 },
+      ],
+    },
+    {
+      title: 'Squash presión de fondo',
+      trainingFocus: 'tactical' as const,
+      sessionKind: 'technical' as const,
+      drills: [
+        { name: 'Presión a esquinas de fondo', durationMin: 18 },
+        { name: 'Juego condicionado solo al fondo', durationMin: 16 },
+      ],
+    },
+    {
+      title: 'Squash ataque controlado',
+      trainingFocus: 'conditioned_games' as const,
+      sessionKind: 'technical' as const,
+      drills: [
+        { name: 'Ataque desde tres cuartos de cancha', durationMin: 18 },
+        { name: 'Definición con ángulo en zona delantera', durationMin: 14 },
+      ],
+    },
+    {
+      title: 'Squash voleas y transición',
+      trainingFocus: 'technical' as const,
+      sessionKind: 'technical' as const,
+      drills: [
+        { name: 'Volea de control desde media cancha', durationMin: 16 },
+        { name: 'Transición frente-fondo con vuelta a la T', durationMin: 16 },
+      ],
+    },
+  ]
+  const variant = squashVariants[index % squashVariants.length]
+
   return {
     ...base,
     sessionType: 'squash',
-    title: index % 2 === 0 ? 'Squash técnico controlado' : 'Squash juegos condicionados',
+    title: variant.title,
     objective: 'Mantener calidad técnica y desplazamiento sin exceder la carga.',
     subtype: 'training',
     squashDetails: {
-      trainingFocus: index % 2 === 0 ? 'technical' : 'conditioned_games',
+      trainingFocus: variant.trainingFocus,
       sessionMode: 'drill_session',
-      sessionKind: index % 2 === 0 ? 'technical' : 'control',
-      drills: [
-        { name: 'Drives paralelos con recuperación al T', durationMin: 18 },
-        { name: 'Boast y contra-boast con objetivo de profundidad', durationMin: 14 },
-      ],
+      sessionKind: variant.sessionKind,
+      drills: variant.drills,
     },
   }
 }

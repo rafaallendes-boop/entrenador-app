@@ -2146,7 +2146,7 @@ Para squash training o control (agrega en la sesión cuando hay drills concretos
   IMPORTANTE: para sesiones de subtype "training" o "control", drills[] es obligatorio. Incluye siempre durationMin por drill.
   Si sessionKind="mixed", añade además blocks[] y deja drills[] como vista plana compatible:
     blocks: [
-      {"kind":"shadows","durationMin":18,"drills":[{"name":"Ghosting 4 esquinas","durationMin":18,"notes":"control de ritmo y recuperación al T"}]},
+      {"kind":"shadows","durationMin":18,"drills":[{"name":"Ghosting a cuatro esquinas","durationMin":18,"notes":"control de ritmo y vuelta a la T"}]},
       {"kind":"control","durationMin":24,"drills":[{"name":"100 drops solo","durationMin":24,"notes":"100 reps totales, 50 por lado"}]}
     ]
   Para squash subtype "match":
@@ -2339,7 +2339,7 @@ function buildFullCompetitionRulesSection(playsSquash: boolean, hasRunning: bool
 - Si faltan 2 dias o menos para competir, evita agregar sesiones que dejen DOMS o fatiga metabolica alta.
 - Fuerza en semana competitiva: volumen bajo, foco neural/estabilidad, nunca pesada pegada al partido.
 ${hasRunning ? '- Running en semana competitiva: Z2 corto o activacion; evita tempo o intervalos largos salvo que esten lejos del partido.' : ''}
-- Pre-competencia (deporte principal): sesion tecnica corta o activacion especifica; no sesiones largas de desgaste.${playsSquash ? '\n- Squash pre-partido: control tecnico, precision, sensaciones, T, largo-corto, activacion de pies; no sesiones de RSA ni carga fisica alta.' : ''}
+- Pre-competencia (deporte principal): sesion tecnica corta o activacion especifica; no sesiones largas de desgaste.${playsSquash ? '\n- Squash pre-partido: control tecnico, precision, sensaciones, la T, largo-corto, activacion de pies; no sesiones de RSA ni carga fisica alta.' : ''}
 - Si el usuario menciona torneo, liga, rival, cuadro o fin de semana competitivo, debes responder como coach en taper, no como semana base normal.
 - El deporte accesorio en semana competitiva no debe quitar frescura a la sesion objetivo del deporte principal.
 - Si hay competencia objetivo, prioriza cardio recovery o Z2 corto; deja intensidad alta fuera de la ventana sensible.
@@ -2358,7 +2358,7 @@ function buildCompactCompetitionRulesSection(playsSquash: boolean, hasRunning: b
 - Fuerza pre-competencia: neural, estable y corta; nunca pesada pegada al evento.
 ${hasRunning ? '- Running competitivo: Z2 corto o activación; evita tempo/intervalos cerca del evento.' : ''}
 - El deporte accesorio no debe quitar frescura a la sesión objetivo.
-- Un control no compite por prioridad con un match o competitive; úsalo como activación o ajuste técnico.${playsSquash ? '\n- Squash pre-partido: control técnico, precisión, T y activación de pies; evita RSA o carga alta.' : ''}`
+- Un control no compite por prioridad con un match o competitive; úsalo como activación o ajuste técnico.${playsSquash ? '\n- Squash pre-partido: control técnico, precisión, la T y activación de pies; evita RSA o carga alta.' : ''}`
 }
 
 function buildBaseWeekTemplate(promptContext: ResponsePromptContext): string {

@@ -131,7 +131,7 @@ export const SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
     focus: ['boast', 'drive', 'recovery'],
     intensity: 'moderate',
     tags: ['boast', 'drive', 'build', 'recovery_technical'],
-    description: 'Juega un boast (pared lateral hacia el frente) y responde con un drive paralelo profundo. Tienes que salir del rincón y recuperar la T antes del siguiente golpe.',
+    description: 'Juega un boast (pared lateral hacia el frente) y responde con un drive paralelo profundo. Tienes que salir del rincón y recuperar a la T antes del siguiente golpe.',
     progressionLevel: 2,
   },
   {
@@ -233,7 +233,7 @@ export const SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
     focus: ['volley', 'pressure', 'attack'],
     intensity: 'moderate',
     tags: ['volley', 'pressure', 'attack', 'build', 'peak'],
-    description: 'Desde media cancha o cerca del T, volea temprano hacia una esquina profunda o una pelota corta clara. El objetivo es quitarle tiempo al rival y dejarlo golpeando incómodo.',
+    description: 'Desde media cancha o cerca de la T, volea temprano hacia una esquina profunda o una pelota corta clara. El objetivo es quitarle tiempo al rival y dejarlo golpeando incómodo.',
     progressionLevel: 2,
   },
   {
@@ -245,7 +245,7 @@ export const SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
     tags: ['volley', 't_control', 'build', 'peak'],
     description: 'Volea desde media cancha y vuelve a la T apenas termines el golpe. El ejercicio está bien hecho si llegas al centro antes de que salga la siguiente pelota.',
     intent: 'recovery',
-    constraints: ['Recuperar a la T antes del siguiente golpe'],
+    constraints: ['Recuperación a la T antes del siguiente golpe'],
     progressionLevel: 2,
   },
   {
@@ -297,9 +297,9 @@ export const SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
     focus: ['transition', 'pressure', 'mid_court'],
     intensity: 'high',
     tags: ['transition', 'pressure', 'mid_court', 'conditioned_game', 'build', 'peak'],
-    description: 'Juega desde la zona entre media cancha y el fondo, tomando la pelota temprano antes de que se meta atrás. El objetivo es avanzar hacia el T y atacar la siguiente pelota en la mitad delantera.',
+    description: 'Juega desde la zona entre media cancha y el fondo, tomando la pelota temprano antes de que se meta atrás. El objetivo es avanzar hacia la T y atacar la siguiente pelota en la mitad delantera.',
     intent: 'pressure',
-    constraints: ['Tomar la pelota antes de que llegue a la esquina del fondo', 'Volver al T después de cada golpe'],
+    constraints: ['Tomar la pelota antes de que llegue a la esquina del fondo', 'Volver a la T después de cada golpe'],
     progressionLevel: 3,
   },
   {
@@ -353,7 +353,7 @@ export const SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
     focus: ['conditioned_game', 'boast', 'transition'],
     intensity: 'moderate',
     tags: ['conditioned_game', 'boast', 'transition', 'build'],
-    description: 'Cada punto empieza con una pelota jugada a la pared lateral para llevarla al frente. El objetivo es salir de esa primera situación, recuperar el T y jugar el punto ordenado.',
+    description: 'Cada punto empieza con una pelota jugada a la pared lateral para llevarla al frente. El objetivo es salir de esa primera situación, recuperar a la T y jugar el punto ordenado.',
     progressionLevel: 2,
   },
   {
@@ -429,7 +429,7 @@ export const SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
     tags: ['lob', 'recovery_technical', 'base', 'build', 'taper', 'back_court'],
     description: 'Desde una posición incómoda, juega un lob alto hacia el fondo para ganar tiempo. Vuelve a la T antes de que el rival golpee.',
     intent: 'recovery',
-    constraints: ['La pelota debe pasar alta y llegar al fondo', 'Recuperar a la T antes del siguiente golpe'],
+    constraints: ['La pelota debe pasar alta y llegar al fondo', 'Recuperación a la T antes del siguiente golpe'],
     progressionLevel: 1,
   },
   {
@@ -533,7 +533,7 @@ export const SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
     focus: ['activation', 'timing', 'confidence'],
     intensity: 'low',
     tags: ['pre_match', 'taper', 'timing', 'activation'],
-    description: 'Antes de competir, combina voleas suaves, paralelas profundas y salidas cortas desde el T. El objetivo es sentir contacto limpio y piernas despiertas sin fatigarte.',
+    description: 'Antes de competir, combina voleas suaves, paralelas profundas y salidas cortas desde la T. El objetivo es sentir contacto limpio y piernas despiertas sin fatigarte.',
     progressionLevel: 1,
   },
   {
@@ -643,9 +643,11 @@ const DRILL_NAME_ALIASES: Record<string, string> = {
   juego_condicionado_sin_segundos_botes: 'conditioned_no_two_bounces',
   juego_condicionado_iniciando_en_boast: 'conditioned_boast_start',
   transicion_frente_fondo_con_recuperacion: 'front_back_transition',
+  volea_con_vuelta_al_t: 'volley_t_recover',
   ghosting_4_esquinas: 'ghosting_4_corners',
   ghosting_6_puntos: 'ghosting_6_points',
   split_step_y_recuperacion_al_t: 'split_step_t_recovery',
+  split_step_y_vuelta_a_la_t: 'split_step_t_recovery',
   rsa_corto_10_15s: 'rsa_short_bursts',
   multiball_de_presion_y_cierre: 'multiball_pressure_finishes',
   lob_defensivo_alto_con_recuperacion: 'defensive_high_lob_recovery',

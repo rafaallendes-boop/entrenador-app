@@ -140,7 +140,7 @@ describe('drillSelector progression', () => {
       ['Intervalos extensivos de movimiento aeróbico', 'extensive_aerobic_movement_intervals'],
       ['100 drops solo', 'solo_100_drops'],
       ['Ghosting 4 esquinas', 'ghosting_4_corners'],
-      ['Split step y recuperación al T', 'split_step_t_recovery'],
+      ['Split step y vuelta a la T', 'split_step_t_recovery'],
       ['Partido de entrenamiento libre a 5 games', 'practice_match_five_games'],
     ]
 

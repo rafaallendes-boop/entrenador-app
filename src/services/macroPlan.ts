@@ -162,7 +162,7 @@ const SPORT_RULES: Record<'squash' | 'running' | 'strength' | 'cycling' | 'mobil
         weeklyIntent: 'Bajar volumen total y dejar solo las sesiones que eleven precision competitiva.',
         volumeBias: 'reduce',
         intensityBias: 'build',
-        notes: 'Menos cantidad, mas sharpness y toma de T.',
+        notes: 'Menos cantidad, mas sharpness y toma de la T.',
       },
       support: {
         phaseFocus: 'Squash como activacion especifica corta y de alta utilidad.',

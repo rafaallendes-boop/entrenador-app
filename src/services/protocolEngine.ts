@@ -103,7 +103,7 @@ export function getBaseProtocolBySport(
           [
             step('Movilidad dinámica de tobillo, cadera y torácica'),
             step('Skipping, desplazamientos laterales y split step progresivo'),
-            step('Ghosting corto con foco en volver al T'),
+            step('Ghosting corto con foco en volver a la T'),
             step('Peloteo progresivo antes de la parte fuerte'),
           ],
         ),

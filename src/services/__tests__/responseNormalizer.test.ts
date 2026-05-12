@@ -699,7 +699,7 @@ describe('responseNormalizer', () => {
             sessionType: 'squash',
             title: 'Squash: Tecnica y Movimiento',
             durationMin: 64,
-            objective: 'Mejorar control del T, voleas y movimiento especifico.',
+            objective: 'Mejorar control de la T, voleas y movimiento especifico.',
             squashDetails: {
               sessionKind: 'mixed',
               trainingFocus: 'conditioned_games',
@@ -707,12 +707,12 @@ describe('responseNormalizer', () => {
                 {
                   kind: 'technical',
                   durationMin: 34,
-                  drills: [{ name: 'Control del T con patron largo-corto', durationMin: 18 }],
+                  drills: [{ name: 'Control de la T con patron largo-corto', durationMin: 18 }],
                 },
                 {
                   kind: 'shadows',
                   durationMin: 16,
-                  drills: [{ name: 'Split step y recuperacion al T', durationMin: 16 }],
+                  drills: [{ name: 'Split-step y vuelta a la T', durationMin: 16 }],
                 },
                 {
                   kind: 'control',
@@ -732,8 +732,8 @@ describe('responseNormalizer', () => {
 
     expect(response.actions).toHaveLength(1)
     expect(response.actions?.[0].squashDetails?.drills.map((drill) => drill.name)).toEqual([
-      'Split step y recuperacion al T',
-      'Control del T con patron largo-corto',
+      'Split-step y vuelta a la T',
+      'Control de la T con patron largo-corto',
       '100 al box de saque',
     ])
     expect(response.actions?.[0].squashDetails?.blocks).toHaveLength(3)
