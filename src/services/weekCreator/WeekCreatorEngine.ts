@@ -29,6 +29,29 @@ type WeekCreatorOptions = {
   signal?: AbortSignal
 }
 
+type WeekCreatorFallbackReason =
+  | 'missing_create_week'
+  | 'actions_parse_failed'
+  | 'multiple_create_week'
+  | 'extra_actions'
+  | 'wrong_target_date'
+  | 'missing_sessions'
+  | 'session_count_mismatch'
+  | 'invalid_week_dates'
+  | 'schedule_conflict'
+  | 'unsupported_sport'
+  | 'missing_sport_details'
+  | 'missing_primary_sport'
+  | 'provider_error'
+  | 'schema_invalid'
+
+type WeekCreatorFailure = {
+  reason: WeekCreatorFallbackReason
+  error: string
+  outcome: 'parse_invalid' | 'schema_invalid'
+  warnings: string[]
+}
+
 export const WeekCreatorEngine = {
   async sendWeekCreate(
     userMessage: string,
@@ -66,7 +89,10 @@ export const WeekCreatorEngine = {
       durationMs?: number
       fallbackUsed?: boolean
       retryUsed?: boolean
+      fallbackReason?: WeekCreatorFallbackReason
+      outcome?: WeekCreatorFailure['outcome']
       error?: string
+      warnings?: string[]
     } | null = null
 
     const MAX_ATTEMPTS = 2
@@ -123,6 +149,7 @@ export const WeekCreatorEngine = {
         validateStage.end({ ok: validation.ok, error: validation.ok ? undefined : validation.error })
 
         if (!validation.ok) {
+          const failure = classifyWeekCreatorFailure(validation.error, repaired)
           outcome = 'invalid_schema'
           lastFailure = {
             provider: repaired.provider,
@@ -131,7 +158,10 @@ export const WeekCreatorEngine = {
             durationMs: repaired.durationMs,
             fallbackUsed: repaired.fallbackUsed,
             retryUsed: attempt > 1 || repaired.retryUsed,
-            error: validation.error,
+            fallbackReason: failure.reason,
+            outcome: failure.outcome,
+            error: failure.error,
+            warnings: failure.warnings,
           }
           useAIDebugStore.getState().failRequest(traceId, {
             provider: repaired.provider,
@@ -139,7 +169,9 @@ export const WeekCreatorEngine = {
             durationMs: repaired.durationMs,
             retryUsed: repaired.retryUsed,
             fallbackUsed: repaired.fallbackUsed,
-            errorCode: 'validation_error',
+            errorCode: failure.reason,
+            outcome: failure.outcome,
+            warnings: failure.warnings,
           })
           if (typeof console !== 'undefined' && typeof console.warn === 'function') {
             console.warn('[WeekCreatorEngine] validation failed', {
@@ -148,7 +180,7 @@ export const WeekCreatorEngine = {
               error: validation.error,
             })
           }
-          tracker.flush(outcome, { attempt, validationError: validation.error })
+          tracker.flush(outcome, { attempt, fallbackReason: failure.reason, validationError: failure.error })
           continue
         }
 
@@ -191,11 +223,14 @@ export const WeekCreatorEngine = {
           provider: provider.name,
           traceId,
           retryUsed: attempt > 1,
+          fallbackReason: 'provider_error',
           error: error instanceof Error ? error.message : String(error),
+          warnings: [`week_creator_failure:provider_error`, error instanceof Error ? error.message : String(error)],
         }
         useAIDebugStore.getState().failRequest(traceId, {
           provider: provider.name,
-          errorCode: error instanceof Error ? error.message : 'unknown',
+          errorCode: 'provider_error',
+          warnings: lastFailure.warnings,
         })
         tracker.flush(outcome, { attempt, error: lastFailure.error })
       }
@@ -241,7 +276,12 @@ export const WeekCreatorEngine = {
       durationMs: 0,
       retryUsed: true,
       fallbackUsed: true,
-      warnings: [buildWeekCreatorFallbackNote(lastFailure?.provider, MAX_ATTEMPTS)],
+      errorCode: lastFailure?.fallbackReason,
+      outcome: lastFailure?.outcome ?? 'schema_invalid',
+      warnings: [
+        buildWeekCreatorFallbackNote(lastFailure?.provider, MAX_ATTEMPTS),
+        ...(lastFailure?.warnings ?? []),
+      ],
     })
     return {
       ...fallback,
@@ -251,6 +291,54 @@ export const WeekCreatorEngine = {
       message: `${summarizeWeekCreatorAction(fallbackValidation.action)}\n\nNota: ${buildWeekCreatorFallbackNote(lastFailure?.provider, MAX_ATTEMPTS)}`,
     }
   },
+}
+
+function classifyWeekCreatorFailure(
+  error: string | undefined,
+  response: CoachNormalizedResponse,
+): WeekCreatorFailure {
+  const message = error?.trim() || 'La respuesta del modelo no pasó la validación del Week Creator.'
+  const meta = response.meta
+  let reason: WeekCreatorFallbackReason = 'schema_invalid'
+  let outcome: WeekCreatorFailure['outcome'] = 'schema_invalid'
+
+  if (meta?.actionParseFailed || meta?.outcome === 'parse_invalid') {
+    reason = 'actions_parse_failed'
+    outcome = 'parse_invalid'
+  } else if (/ninguna acción create_week/i.test(message)) {
+    reason = 'missing_create_week'
+  } else if (/más de una acción create_week/i.test(message)) {
+    reason = 'multiple_create_week'
+  } else if (/solo admite una acción create_week/i.test(message)) {
+    reason = 'extra_actions'
+  } else if (/targetDate=/i.test(message)) {
+    reason = 'wrong_target_date'
+  } else if (/no trae sesiones válidas/i.test(message)) {
+    reason = 'missing_sessions'
+  } else if (/exactamente \d+ sesiones válidas/i.test(message)) {
+    reason = 'session_count_mismatch'
+  } else if (/entre .* y los 6 días siguientes|fecha inválida/i.test(message)) {
+    reason = 'invalid_week_dates'
+  } else if (/colisiones|doble jornada|doble sesión|día no permitido|dos sesiones de squash el mismo día|duplicar squash/i.test(message)) {
+    reason = 'schedule_conflict'
+  } else if (/deportes permitidos|no está dentro de los deportes permitidos/i.test(message)) {
+    reason = 'unsupported_sport'
+  } else if (/requiere .*Details|drill fuera de catálogo|ejercicios|cyclingDetails|mobilityDetails/i.test(message)) {
+    reason = 'missing_sport_details'
+  } else if (/deporte principal/i.test(message)) {
+    reason = 'missing_primary_sport'
+  }
+
+  return {
+    reason,
+    error: message,
+    outcome,
+    warnings: [
+      `week_creator_failure:${reason}`,
+      message,
+      ...(meta?.warnings ?? []),
+    ],
+  }
 }
 
 function buildWeekCreatorFallbackNote(

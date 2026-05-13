@@ -5,6 +5,7 @@ import { validateWeekCreatorResponse } from '../validateWeekCreatorResponse'
 import { extractRequestedSessionsPerWeek, resolveWeekCreatorConfig, withRequestedSessionsPerWeek } from '../WeekCreatorConfig'
 import { WeekCreatorEngine } from '../WeekCreatorEngine'
 import { buildWeekCreatorPrompt } from '../WeekCreatorPromptBuilder'
+import { useAIDebugStore } from '../../../store/useAIDebugStore'
 
 const mockProviderCall = vi.hoisted(() => vi.fn())
 
@@ -29,6 +30,7 @@ function makeProfile(overrides: Partial<AthleteProfile> = {}): AthleteProfile {
 
 beforeEach(() => {
   mockProviderCall.mockReset()
+  useAIDebugStore.getState().clear()
 })
 
 describe('resolveWeekCreatorConfig', () => {
@@ -640,6 +642,20 @@ describe('WeekCreatorEngine', () => {
     expect(response.actions?.[0].sessions?.filter((session) => session.sessionType === 'squash')).toHaveLength(3)
     expect(response.message).toContain('El proveedor gemini no devolvió una semana aplicable')
     expect(response.message).not.toContain('Gemini no devolvió el formato estructurado')
+
+    const requests = useAIDebugStore.getState().requests
+    expect(requests.some((request) =>
+      request.status === 'failed' &&
+      request.errorCode === 'missing_create_week' &&
+      request.outcome === 'schema_invalid' &&
+      request.warnings?.some((warning) => warning.includes('week_creator_failure:missing_create_week')),
+    )).toBe(true)
+    expect(requests[0]).toMatchObject({
+      status: 'completed',
+      fallbackUsed: true,
+      errorCode: 'missing_create_week',
+      outcome: 'schema_invalid',
+    })
   })
 
   it('does not stack duplicate squash sessions on the same day in six-session fallback weeks', async () => {
