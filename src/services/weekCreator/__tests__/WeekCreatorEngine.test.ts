@@ -269,6 +269,9 @@ describe('WeekCreatorEngine', () => {
     expect(prompt.userPrompt).toContain('al menos 3 sesiones de squash')
     expect(prompt.userPrompt).toContain('máximo 1 accesorias')
     expect(prompt.userPrompt).toContain('evita dos squash el mismo día')
+    expect(prompt.userPrompt).toContain('Sesión solo técnica')
+    expect(prompt.userPrompt).toContain('al menos 4 drills técnicos')
+    expect(prompt.userPrompt).toContain('2 drills de ghosting y 2-3 drills de control')
   })
 
   it('honors an explicit six-session request when profile capacity allows it', async () => {
@@ -735,11 +738,21 @@ describe('WeekCreatorEngine', () => {
 
     const sessions = response.actions?.[0].sessions ?? []
     const visibleText = JSON.stringify(sessions)
+    const squashSessions = sessions.filter((session) => session.sessionType === 'squash')
 
     expect(response.fallbackUsed).toBe(true)
     expect(sessions).toHaveLength(6)
     expect(sessions.every((session) => session.timeBlock === 'AM')).toBe(true)
     expect(new Set(sessions.map((session) => session.date)).size).toBe(6)
+    expect(squashSessions.every((session) => (session.squashDetails?.drills.length ?? 0) >= 4)).toBe(true)
+    expect(squashSessions.some((session) => session.squashDetails?.sessionKind === 'mixed')).toBe(true)
+    expect(squashSessions.some((session) =>
+      session.squashDetails?.blocks?.some((block) => block.kind === 'match'),
+    )).toBe(true)
+    expect(squashSessions.some((session) =>
+      session.squashDetails?.blocks?.some((block) => block.kind === 'shadows') &&
+      session.squashDetails?.blocks?.some((block) => block.kind === 'control'),
+    )).toBe(true)
     expect(visibleText).not.toMatch(new RegExp('recuperaci' + '[oó]n a' + 'l T', 'i'))
     expect(visibleText).not.toContain('Drives paralelos con ' + 'recuperaci' + 'ón a' + 'l T')
     expect(visibleText).toContain('Tiros paralelos profundos')

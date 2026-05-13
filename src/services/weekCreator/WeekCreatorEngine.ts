@@ -7,6 +7,10 @@ import type {
   DayOfWeek,
   MacroPlan,
   PlanWizardConfig,
+  SquashDrill,
+  SquashSessionBlock,
+  SquashSessionMode,
+  SquashTrainingFocus,
   SupportedSport,
   TimeBlock,
 } from '../../types'
@@ -50,6 +54,15 @@ type WeekCreatorFailure = {
   error: string
   outcome: 'parse_invalid' | 'schema_invalid'
   warnings: string[]
+}
+
+type SquashFallbackVariant = {
+  title: string
+  objective: string
+  trainingFocus: SquashTrainingFocus
+  sessionMode: SquashSessionMode
+  sessionKind: 'technical' | 'control' | 'shadows' | 'match' | 'mixed'
+  blocks: SquashSessionBlock[]
 }
 
 export const WeekCreatorEngine = {
@@ -534,10 +547,13 @@ function buildDeterministicSessions(
 ): CoachSessionProposal[] {
   const sportSequence = buildFallbackSportSequence(config)
   const plannedSlots = buildFallbackSlots(config, targetWeekStart, sportSequence.length)
+  const sportCounts = new Map<SupportedSport, number>()
 
   return sportSequence.map((sport, index) => {
     const slot = plannedSlots[index]
-    return buildFallbackSession(sport, slot.date, slot.timeBlock, config.sessionDurationMins, index)
+    const sportIndex = sportCounts.get(sport) ?? 0
+    sportCounts.set(sport, sportIndex + 1)
+    return buildFallbackSession(sport, slot.date, slot.timeBlock, config.sessionDurationMins, sportIndex)
   })
 }
 
@@ -716,75 +732,187 @@ function buildFallbackSession(
     }
   }
 
-  const squashVariants = [
+  const squashVariants: SquashFallbackVariant[] = [
     {
       title: 'Squash técnico de profundidad',
       trainingFocus: 'technical' as const,
       sessionKind: 'technical' as const,
-      drills: [
-        { name: 'Tiros paralelos profundos', durationMin: 18 },
-        { name: 'Tiros cruzados profundos', durationMin: 16 },
+      sessionMode: 'drill_session',
+      objective: 'Construir profundidad, dirección y salida técnica sin exceder la carga.',
+      blocks: [{
+        kind: 'technical',
+        drills: [
+          drill('Tiros paralelos profundos', 12),
+          drill('Tiros cruzados profundos', 12),
+          drill('Cambio de paralelo a cruzado', 12),
+          drill('Largo controlado de baja carga', 10),
+        ],
+        durationMin: 46,
+      }],
+    },
+    {
+      title: 'Squash ghosting + control',
+      trainingFocus: 'physical',
+      sessionKind: 'mixed',
+      sessionMode: 'drill_session',
+      objective: 'Ordenar pies y vuelta a la T, luego estabilizar control de pelota.',
+      blocks: [
+        {
+          kind: 'shadows',
+          drills: [
+            drill('Ghosting a cuatro esquinas', 10),
+            drill('Split-step y vuelta a la T', 10),
+          ],
+          durationMin: 20,
+        },
+        {
+          kind: 'control',
+          drills: [
+            drill('100 drives desde media cancha', 10),
+            drill('100 drives al cuadro de saque', 10),
+            drill('100 drops en solitario (50 por lado)', 8),
+          ],
+          durationMin: 28,
+        },
       ],
     },
     {
-      title: 'Squash control en solitario',
-      trainingFocus: 'technical' as const,
-      sessionKind: 'control' as const,
-      drills: [
-        { name: '100 drops en solitario (50 por lado)', durationMin: 20 },
-        { name: '100 drives al cuadro de saque', durationMin: 18 },
+      title: 'Squash mixto técnico + juegos',
+      trainingFocus: 'conditioned_games',
+      sessionKind: 'mixed',
+      sessionMode: 'practice_match',
+      objective: 'Transferir técnica a puntos condicionados y cerrar con games cortos.',
+      blocks: [
+        {
+          kind: 'technical',
+          drills: [
+            drill('Tiros paralelos profundos', 10),
+            drill('Cambio de paralelo a cruzado', 10),
+          ],
+          durationMin: 20,
+        },
+        {
+          kind: 'control',
+          drills: [
+            drill('Juego condicionado solo paralelo', 10),
+            drill('Juego condicionado solo al fondo', 10),
+          ],
+          durationMin: 20,
+        },
+        {
+          kind: 'match',
+          drills: [
+            drill('Puntos de partido a 5 u 8', 12),
+          ],
+          durationMin: 12,
+        },
       ],
     },
     {
-      title: 'Squash desplazamientos y timing',
-      trainingFocus: 'physical' as const,
-      sessionKind: 'shadows' as const,
-      drills: [
-        { name: 'Ghosting a cuatro esquinas', durationMin: 18 },
-        { name: 'Split-step y vuelta a la T', durationMin: 14 },
+      title: 'Squash técnico de manos y frente',
+      trainingFocus: 'technical',
+      sessionKind: 'technical',
+      sessionMode: 'drill_session',
+      objective: 'Mejorar tacto, preparación y precisión en media cancha/frente con baja interferencia.',
+      blocks: [{
+        kind: 'technical',
+        drills: [
+          drill('Drops desde media cancha', 12),
+          drill('Drop y contra-drop por ambos lados', 10),
+          drill('Volea de control desde media cancha', 12),
+          drill('Boast y drive paralelo de salida', 12),
+        ],
+        durationMin: 46,
+      }],
+    },
+    {
+      title: 'Squash presión controlada',
+      trainingFocus: 'conditioned_games',
+      sessionKind: 'mixed',
+      sessionMode: 'practice_match',
+      objective: 'Practicar presión desde largo y media cancha con cierre en puntos cortos.',
+      blocks: [
+        {
+          kind: 'technical',
+          drills: [
+            drill('Presión a esquinas de fondo', 10),
+            drill('Ataque desde tres cuartos de cancha', 10),
+          ],
+          durationMin: 20,
+        },
+        {
+          kind: 'control',
+          drills: [
+            drill('Juego condicionado solo al fondo', 10),
+            drill('Juego condicionado en media cancha', 10),
+          ],
+          durationMin: 20,
+        },
+        {
+          kind: 'match',
+          drills: [
+            drill('Partido de entrenamiento al mejor de 3 juegos', 12),
+          ],
+          durationMin: 12,
+        },
       ],
     },
     {
-      title: 'Squash presión de fondo',
-      trainingFocus: 'tactical' as const,
-      sessionKind: 'technical' as const,
-      drills: [
-        { name: 'Presión a esquinas de fondo', durationMin: 18 },
-        { name: 'Juego condicionado solo al fondo', durationMin: 16 },
-      ],
-    },
-    {
-      title: 'Squash ataque controlado',
-      trainingFocus: 'conditioned_games' as const,
-      sessionKind: 'technical' as const,
-      drills: [
-        { name: 'Ataque desde tres cuartos de cancha', durationMin: 18 },
-        { name: 'Definición con ángulo en zona delantera', durationMin: 14 },
-      ],
-    },
-    {
-      title: 'Squash voleas y transición',
-      trainingFocus: 'technical' as const,
-      sessionKind: 'technical' as const,
-      drills: [
-        { name: 'Volea de control desde media cancha', durationMin: 16 },
-        { name: 'Transición frente-fondo con vuelta a la T', durationMin: 16 },
+      title: 'Squash voleas, transición y games',
+      trainingFocus: 'conditioned_games',
+      sessionKind: 'mixed',
+      sessionMode: 'practice_match',
+      objective: 'Conectar voleas y transición frente-fondo con aplicación en juegos sueltos.',
+      blocks: [
+        {
+          kind: 'technical',
+          drills: [
+            drill('Volea de control desde media cancha', 10),
+            drill('Transición frente-fondo con vuelta a la T', 10),
+          ],
+          durationMin: 20,
+        },
+        {
+          kind: 'control',
+          drills: [
+            drill('Patrón largo-corto desde la T', 10),
+            drill('Juego condicionado con zona prohibida', 10),
+          ],
+          durationMin: 20,
+        },
+        {
+          kind: 'match',
+          drills: [
+            drill('Puntos de partido a 5 u 8', 12),
+          ],
+          durationMin: 12,
+        },
       ],
     },
   ]
   const variant = squashVariants[index % squashVariants.length]
+  const drills = flattenSquashBlocks(variant.blocks)
 
   return {
     ...base,
     sessionType: 'squash',
     title: variant.title,
-    objective: 'Mantener calidad técnica y desplazamiento sin exceder la carga.',
+    objective: variant.objective,
     subtype: 'training',
     squashDetails: {
       trainingFocus: variant.trainingFocus,
-      sessionMode: 'drill_session',
+      sessionMode: variant.sessionMode,
       sessionKind: variant.sessionKind,
-      drills: variant.drills,
+      drills,
+      blocks: variant.blocks,
     },
   }
+}
+
+function drill(name: string, durationMin: number, notes?: string): SquashDrill {
+  return notes ? { name, durationMin, notes } : { name, durationMin }
+}
+
+function flattenSquashBlocks(blocks: SquashSessionBlock[]): SquashDrill[] {
+  return blocks.flatMap((block) => block.drills)
 }

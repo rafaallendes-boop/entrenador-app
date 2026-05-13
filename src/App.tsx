@@ -23,6 +23,9 @@ const ImportPDF = lazy(() => import('./pages/ImportPDF'))
 const SettingsPage = lazy(() => import('./pages/SettingsPage'))
 const OnboardingPage = lazy(() => import('./pages/OnboardingPage'))
 
+const AUTO_SYNC_RETRY_COOLDOWN_MS = 15_000
+const AUTO_SYNC_ON_FOCUS_STALE_MS = 30_000
+
 function RouteFallback() {
   return (
     <div className="min-h-[50vh] flex items-center justify-center px-4">
@@ -147,11 +150,11 @@ export default function App() {
     let syncInFlight = false
     let lastAutoRetryAt = 0
 
-    const syncSignedInUser = async (reason: 'initial' | 'online' | 'visible' = 'initial') => {
+    const syncSignedInUser = async (reason: 'initial' | 'online' | 'visible' | 'focus' = 'initial') => {
       if (syncInFlight) return
       if (reason !== 'initial') {
         const now = Date.now()
-        if (now - lastAutoRetryAt < 15000) return
+        if (now - lastAutoRetryAt < AUTO_SYNC_RETRY_COOLDOWN_MS) return
         lastAutoRetryAt = now
       }
       syncInFlight = true
@@ -214,13 +217,22 @@ export default function App() {
       if (document.visibilityState === 'visible') {
         const { syncStatus, syncDetails } = useAuthStore.getState()
         if (syncStatus === 'error' && syncDetails.lastErrorCategory === 'schema_mismatch' && syncDetails.retryScheduledAt == null) return
-        if (syncStatus === 'offline' || syncStatus === 'error' || syncDetails.pendingOps > 0) {
+        if (shouldAutoSyncOnFocus(syncStatus, syncDetails)) {
           void syncSignedInUser('visible')
         }
       }
     }
 
+    const handleFocus = () => {
+      const { syncStatus, syncDetails } = useAuthStore.getState()
+      if (syncStatus === 'error' && syncDetails.lastErrorCategory === 'schema_mismatch' && syncDetails.retryScheduledAt == null) return
+      if (shouldAutoSyncOnFocus(syncStatus, syncDetails)) {
+        void syncSignedInUser('focus')
+      }
+    }
+
     window.addEventListener('online', handleOnline)
+    window.addEventListener('focus', handleFocus)
     document.addEventListener('visibilitychange', handleVisibilityChange)
     const intervalId = window.setInterval(() => {
       const { syncStatus, syncDetails } = useAuthStore.getState()
@@ -236,6 +248,7 @@ export default function App() {
     return () => {
       cancelled = true
       window.removeEventListener('online', handleOnline)
+      window.removeEventListener('focus', handleFocus)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
       window.clearInterval(intervalId)
     }
@@ -271,4 +284,14 @@ export default function App() {
       </Suspense>
     </BrowserRouter>
   )
+}
+
+function shouldAutoSyncOnFocus(
+  syncStatus: ReturnType<typeof useAuthStore.getState>['syncStatus'],
+  syncDetails: ReturnType<typeof useAuthStore.getState>['syncDetails'],
+): boolean {
+  if (syncStatus === 'syncing' || syncDetails.syncAttemptInFlight) return false
+  if (syncStatus === 'offline' || syncStatus === 'error' || syncDetails.pendingOps > 0) return true
+  const lastSuccess = syncDetails.lastSuccessfulSyncAt
+  return lastSuccess == null || Date.now() - lastSuccess > AUTO_SYNC_ON_FOCUS_STALE_MS
 }
