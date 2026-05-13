@@ -166,6 +166,19 @@ export function normalizeResponse(raw: AIRawResponse): CoachNormalizedResponse {
       if (parseResult.actions.length > 0) {
         message = inlineJson.messageWithoutActions
       }
+    } else {
+      const wholeJson = extractWholeResponseActionsJson(message, requestClass)
+      if (wholeJson) {
+        const parseResult = parseActionsBlock(wholeJson.actionsText)
+        actions = parseResult.actions
+        actionParseFailed = parseResult.parseFailed
+        likelyTruncated = parseResult.likelyTruncated
+        invalidActionCount = parseResult.invalidActionCount
+        createWeekDiagnostics = parseResult.createWeekDiagnostics
+        if (parseResult.actions.length > 0 || parseResult.parseFailed) {
+          message = wholeJson.messageWithoutActions
+        }
+      }
     }
   }
 
@@ -891,6 +904,24 @@ function extractInlineActionsJson(message: string): { actionsText: string; messa
   return {
     actionsText: jsonObject,
     messageWithoutActions: message.replace(jsonObject, '').trim(),
+  }
+}
+
+function extractWholeResponseActionsJson(message: string, requestClass: string): { actionsText: string; messageWithoutActions: string } | null {
+  const trimmed = message.trim()
+  if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) return null
+  if (
+    requestClass !== 'week_creator' &&
+    !/"type"\s*:/.test(trimmed) &&
+    !/"actions"\s*:/.test(trimmed) &&
+    !VALID_ACTION_TYPES_VALUES_RE.test(trimmed)
+  ) {
+    return null
+  }
+
+  return {
+    actionsText: trimmed,
+    messageWithoutActions: message.replace(trimmed, '').trim(),
   }
 }
 

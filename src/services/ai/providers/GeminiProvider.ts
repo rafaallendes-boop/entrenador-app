@@ -4,6 +4,16 @@ import { createProviderError } from '../types'
 const DEFAULT_MODEL = 'gemini-2.5-flash'
 const BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/models/'
 
+function buildGenerationConfig(request: AIRequest): Record<string, unknown> {
+  const generationConfig: Record<string, unknown> = {
+    maxOutputTokens: request.maxTokens ?? 1024,
+    temperature: request.temperature ?? 0.7,
+  }
+  if (request.responseMimeType) generationConfig.responseMimeType = request.responseMimeType
+  if (request.responseSchema) generationConfig.responseSchema = request.responseSchema
+  return generationConfig
+}
+
 export class GeminiProvider implements AIProvider {
   readonly name = 'gemini' as const
 
@@ -30,10 +40,7 @@ export class GeminiProvider implements AIProvider {
         })),
         { role: 'user', parts: [{ text: request.userMessage }] },
       ],
-      generationConfig: {
-        maxOutputTokens: request.maxTokens ?? 1024,
-        temperature: request.temperature ?? 0.7,
-      },
+      generationConfig: buildGenerationConfig(request),
     })
 
     if (request.onChunk) {

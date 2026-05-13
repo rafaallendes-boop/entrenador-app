@@ -33,6 +33,8 @@ export interface AIRequest {
   traceId: string
   maxTokens?: number
   temperature?: number
+  responseMimeType?: 'application/json'
+  responseSchema?: Record<string, unknown>
   allowFallback?: boolean
   signal?: AbortSignal
   /** Called with each text chunk as it arrives. When provided, providers that

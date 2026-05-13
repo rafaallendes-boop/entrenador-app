@@ -10,7 +10,7 @@
  * Heuristic: 1 token ≈ 4 chars. Comparing blocks within the same row is
  * directionally correct even if absolute numbers are imprecise.
  */
-import { beforeAll, describe, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 
 import type { AthleteProfile, ChatContext } from '../src/types'
 
@@ -21,6 +21,14 @@ const REQUEST_CLASSES = [
   'plan_builder_week',
   'weekly_summary',
 ] as const
+
+const TOKEN_BASELINES: Record<typeof REQUEST_CLASSES[number], { target: number; tolerancePct: number }> = {
+  chat_general: { target: 504, tolerancePct: 10 },
+  chat_action: { target: 3576, tolerancePct: 10 },
+  week_creator: { target: 3576, tolerancePct: 10 },
+  plan_builder_week: { target: 3576, tolerancePct: 10 },
+  weekly_summary: { target: 3339, tolerancePct: 10 },
+}
 
 function approxTokens(text: string): number {
   return Math.ceil(text.length / 4)
@@ -108,5 +116,22 @@ describe('prompt token audit', () => {
     console.log('\n=== Prompt token audit (1 token ≈ 4 chars) ===')
     console.table(rows)
     console.log('Use this table to identify large blocks to trim per requestClass.\n')
+
+    for (const row of rows) {
+      const requestClass = row.requestClass as typeof REQUEST_CLASSES[number]
+      const baseline = TOKEN_BASELINES[requestClass]
+      const approxTokenCount = row.approxTokens as number
+      const lowerBound = Math.floor(baseline.target * (1 - baseline.tolerancePct / 100))
+      const upperBound = Math.ceil(baseline.target * (1 + baseline.tolerancePct / 100))
+
+      expect(
+        approxTokenCount,
+        `${requestClass} prompt drifted outside ${baseline.tolerancePct}% of baseline ${baseline.target}`,
+      ).toBeGreaterThanOrEqual(lowerBound)
+      expect(
+        approxTokenCount,
+        `${requestClass} prompt drifted outside ${baseline.tolerancePct}% of baseline ${baseline.target}`,
+      ).toBeLessThanOrEqual(upperBound)
+    }
   })
 })

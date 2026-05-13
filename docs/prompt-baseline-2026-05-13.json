@@ -1,0 +1,32 @@
+{
+  "date": "2026-05-13",
+  "tokenHeuristic": "1 token ~= 4 chars",
+  "fixture": "scripts/audit-prompt-tokens.test.ts buildFixtureContext",
+  "requestClasses": {
+    "chat_general": {
+      "totalChars": 2014,
+      "approxTokens": 504,
+      "tolerancePct": 10
+    },
+    "chat_action": {
+      "totalChars": 14304,
+      "approxTokens": 3576,
+      "tolerancePct": 10
+    },
+    "week_creator": {
+      "totalChars": 14304,
+      "approxTokens": 3576,
+      "tolerancePct": 10
+    },
+    "plan_builder_week": {
+      "totalChars": 14304,
+      "approxTokens": 3576,
+      "tolerancePct": 10
+    },
+    "weekly_summary": {
+      "totalChars": 13355,
+      "approxTokens": 3339,
+      "tolerancePct": 10
+    }
+  }
+}

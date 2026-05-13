@@ -1,6 +1,12 @@
 import type { ChatContext, CoachSessionProposal, SupportedSport } from '../../types'
 import { addDays, format } from 'date-fns'
 import { es } from 'date-fns/locale'
+import { ACTION_CONTRACTS } from '../ai/prompt/core/outputContract'
+import { buildWeekCreatorSquashRules } from '../ai/prompt/packs/sports/squash'
+import {
+  renderWeekCreatorContractReminder,
+  renderWeekCreatorTargetInstructions,
+} from '../ai/prompt/renderers/proseSchema'
 import { buildWeekCreatorSystemPrompt } from '../week/prompts/weekPrompt'
 import type { WeekCreatorEffectiveConfig } from './WeekCreatorConfig'
 import { normalizeSport } from '../../utils/athlete'
@@ -11,6 +17,7 @@ export interface WeekCreatorPromptInput {
   config: WeekCreatorEffectiveConfig
   retryInstruction?: string
   strictFormatting?: boolean
+  structuredOutput?: boolean
 }
 
 export interface WeekCreatorPromptBuildResult {
@@ -34,19 +41,19 @@ export function buildWeekCreatorPrompt(
     .slice(0, 4)
   const goalEvent = resolveGoalEvent(profile)
   const prioritySport = extractPrioritySport(input.userMessage, config.allowedSports)
+  const createWeekContract = ACTION_CONTRACTS.create_week
 
   const lines = [
     `Solicitud del usuario: ${input.userMessage}`,
     '',
     `Genera una sola semana completa para el lunes objetivo ${input.targetWeekStart}.`,
-    `Debes devolver EXACTAMENTE una acción create_week con targetDate=${input.targetWeekStart}.`,
-    `No devuelvas texto conversacional fuera de <actions>.`,
+    ...renderWeekCreatorTargetInstructions(createWeekContract, input.targetWeekStart, input.structuredOutput),
     '',
     buildProfileSummary(profile),
     buildGoalSummary(goalEvent, profile?.macroPlan?.currentPhase, profile?.macroPlan?.blockFocus, config.primarySport),
     buildConfigSummary(config),
     buildPrioritySportSummary(prioritySport, config),
-    buildSquashContentRules(config),
+    buildWeekCreatorSquashRules(config),
     buildCurrentWeekSessionsSummary(targetWeekSessions, input.targetWeekStart),
     buildRecentHistorySummary(recentHistory),
     buildRecentLogsSummary(recentLogs),
@@ -59,7 +66,7 @@ export function buildWeekCreatorPrompt(
     '',
     'Si hay dos o más sesiones de fuerza, deben tener focos y ejercicios distintos; no repitas exactamente el mismo array exercises en más de una sesión.',
     '',
-    'Contrato de salida obligatorio: aunque la solicitud venga de un chip o sea breve, responde solo con <actions>[{ "type": "create_week", ... }]</actions> y no con texto libre.',
+    renderWeekCreatorContractReminder(createWeekContract, input.structuredOutput),
     '',
     `Regla final: crea una semana cerrada, ejecutable y compacta para ${formatWeekRangeLabel(input.targetWeekStart)}.`,
   ].filter(Boolean)
@@ -68,17 +75,6 @@ export function buildWeekCreatorPrompt(
     systemPrompt: buildWeekCreatorSystemPrompt(),
     userPrompt: lines.join('\n'),
   }
-}
-
-function buildSquashContentRules(config: WeekCreatorEffectiveConfig): string {
-  if (!config.allowedSports.includes('squash') && config.primarySport !== 'squash') return ''
-  return [
-    'Reglas de contenido para sesiones squash:',
-    '- Sesión solo técnica: usa sessionKind="technical" y entrega al menos 4 drills técnicos concretos.',
-    '- Sesión mixta técnica + juego: usa sessionKind="mixed", blocks[] y drills[] plano; incluye 2 drills técnicos, 2 juegos condicionados y un bloque match/game corto cuando corresponda.',
-    '- Sesión mixta ghosting + control: usa sessionKind="mixed", blocks[] y drills[] plano; incluye 2 drills de ghosting y 2-3 drills de control.',
-    '- No dejes una sesión squash con solo 1-2 drills salvo que sea partido competitivo real o activación pre-partido muy corta.',
-  ].join('\n')
 }
 
 function buildPrioritySportSummary(prioritySport: SupportedSport | undefined, config: WeekCreatorEffectiveConfig): string {

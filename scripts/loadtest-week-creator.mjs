@@ -1,28 +1,34 @@
 #!/usr/bin/env node
 /**
- * Loadtest for week_creator against a running netlify dev (default :8888).
+ * Loadtest for week_creator against the local dev coach proxy.
  *
- *   npm run dev          # in another terminal (or `netlify dev`)
+ *   npm run dev          # in another terminal
  *   npm run loadtest:week-creator
  *
  * Notes:
  * - Sequential, NOT concurrent. Gemini Flash free tier rate-limits hard.
  * - Reports success rate, p50/p95 duration, error class distribution.
- * - Uses a minimal "create a week" user message; the server validates auth so
- *   you may need to set COACH_PROXY_REQUIRE_AUTH=false in .env (dev only) or
- *   pass an auth token via COACH_AUTH_TOKEN.
+ * - Defaults to the Vite dev proxy on :5173. If you intentionally use
+ *   `netlify dev`, pass COACH_ENDPOINT=http://localhost:8888/.netlify/functions/coach.
  */
 
-const ENDPOINT = process.env.COACH_ENDPOINT ?? 'http://localhost:8888/.netlify/functions/coach'
+const ENDPOINT = process.env.COACH_ENDPOINT ?? 'http://localhost:5173/.netlify/functions/coach'
 const N = Number(process.env.LOADTEST_N ?? 10)
 const AUTH_TOKEN = process.env.COACH_AUTH_TOKEN
 
-const SYSTEM_PROMPT = `Eres el coach de un atleta de squash competitivo.
-INSTRUCCIONES DE WEEK_CREATOR:
-- Devuelve <actions> con un solo create_week.
-- targetDate=lunes ISO de la semana solicitada.
-- 5 sesiones: 2 squash, 1 running z2, 1 strength full-body, 1 mobility 30min.
-- Cierra el bloque con </actions>.`
+const SYSTEM_PROMPT = `Eres un generador de semanas de entrenamiento.
+Respondes EXCLUSIVAMENTE con un bloque <actions> JSON que contenga UNA acción create_week.
+Tu primer caracter debe ser "<" y tu último texto debe ser "</actions>".
+No expliques nada fuera del bloque <actions>. Nada de texto previo ni posterior.
+Dentro de <actions> debe haber un JSON array válido parseable con JSON.parse.
+PROHIBIDO usar <action>, XML, atributos HTML/XML, timeBlock="evening", horarios tipo "18:00 - 19:00", markdown o comentarios.
+La acción create_week debe tener exactamente "type": "create_week", targetDate, reason, sessions[] y weekObjectives[].
+Cada sesión debe tener date, timeBlock, sessionType, title, durationMin y objective.
+timeBlock acepta SOLO "AM" o "PM".
+Planifica exactamente 5 sesiones: 2 squash, 1 running z2, 1 strength full-body y 1 mobility 30min.
+Formato exacto esperado:
+<actions>[{"type":"create_week","targetDate":"YYYY-MM-DD","reason":"loadtest","weekObjectives":["semana completa"],"sessions":[{"date":"YYYY-MM-DD","timeBlock":"AM","sessionType":"squash","title":"Squash tecnico","durationMin":60,"objective":"tecnica y control"}]}]</actions>
+Cierra siempre el bloque con </actions>.`
 
 const TARGET = nextMonday()
 
@@ -38,6 +44,92 @@ function pXX(arr, p) {
   const sorted = arr.slice().sort((a, b) => a - b)
   const idx = Math.min(sorted.length - 1, Math.floor((sorted.length - 1) * p))
   return sorted[idx]
+}
+
+function stripCodeFences(text) {
+  return text
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .trim()
+}
+
+function parseJsonSafely(text) {
+  try {
+    return JSON.parse(stripCodeFences(text))
+  } catch {
+    return null
+  }
+}
+
+function extractJsonArray(text) {
+  const start = text.indexOf('[')
+  const end = text.lastIndexOf(']')
+  if (start === -1 || end === -1 || end <= start) return null
+  return text.slice(start, end + 1)
+}
+
+function extractJsonObject(text) {
+  const start = text.indexOf('{')
+  const end = text.lastIndexOf('}')
+  if (start === -1 || end === -1 || end <= start) return null
+  return text.slice(start, end + 1)
+}
+
+function normalizeActionsPayload(text) {
+  if (typeof text !== 'string' || text.trim().length === 0) {
+    return { actions: null, reason: 'empty_response' }
+  }
+
+  const actionsMatch = text.match(/<actions>([\s\S]*?)<\/actions>/i)
+  if (actionsMatch?.[1]) {
+    if (/<\/?action(?:\s|>)/i.test(actionsMatch[1])) {
+      return { actions: null, reason: 'pseudo_xml_action_tag' }
+    }
+    const parsed = parseJsonSafely(actionsMatch[1])
+    return {
+      actions: Array.isArray(parsed) ? parsed : parsed ? [parsed] : null,
+      reason: parsed ? undefined : 'malformed_actions_json',
+    }
+  }
+
+  const wholeParsed = parseJsonSafely(text)
+  if (Array.isArray(wholeParsed)) return { actions: wholeParsed }
+  if (wholeParsed && typeof wholeParsed === 'object') return { actions: [wholeParsed] }
+
+  const jsonArray = extractJsonArray(text)
+  if (jsonArray) {
+    const parsed = parseJsonSafely(jsonArray)
+    if (Array.isArray(parsed)) return { actions: parsed }
+  }
+
+  const jsonObject = extractJsonObject(text)
+  if (jsonObject) {
+    const parsed = parseJsonSafely(jsonObject)
+    if (parsed && typeof parsed === 'object') return { actions: [parsed] }
+  }
+
+  return { actions: null, reason: /<\/?\w+[\s>]/.test(text) ? 'xml_like_payload' : 'missing_json_payload' }
+}
+
+function validateCreateWeekPayload(text) {
+  const { actions, reason } = normalizeActionsPayload(text)
+  const createWeek = actions?.find((action) => action?.type === 'create_week')
+  if (!createWeek) return { ok: false, reason: reason ?? 'missing_create_week' }
+  if (createWeek.targetDate !== TARGET) return { ok: false, reason: 'wrong_targetDate' }
+  if (!Array.isArray(createWeek.sessions) || createWeek.sessions.length === 0) {
+    return { ok: false, reason: 'missing_sessions' }
+  }
+  return {
+    ok: true,
+    actionCount: actions.length,
+    sessionCount: createWeek.sessions.length,
+  }
+}
+
+function snippet(text, maxLength = 220) {
+  if (typeof text !== 'string') return ''
+  const compact = text.replace(/\s+/g, ' ').trim()
+  return compact.length <= maxLength ? compact : `${compact.slice(0, maxLength - 1)}…`
 }
 
 async function runOne(i) {
@@ -64,15 +156,17 @@ async function runOne(i) {
     if (!res.ok) {
       return { ok: false, dur, errorClass: data.errorCode ?? `http_${res.status}`, message: data.error }
     }
-    const hasActions = typeof data.text === 'string' && /<actions>[\s\S]*<\/actions>/i.test(data.text)
-    const hasCreateWeek = hasActions && /"type"\s*:\s*"create_week"/.test(data.text)
+    const payloadCheck = validateCreateWeekPayload(data.text)
     return {
-      ok: hasCreateWeek,
+      ok: payloadCheck.ok,
       dur,
       provider: data.provider,
       retryUsed: data.retryUsed,
       fallbackUsed: data.fallbackUsed,
-      errorClass: hasCreateWeek ? null : 'invalid_payload',
+      actionCount: payloadCheck.actionCount,
+      sessionCount: payloadCheck.sessionCount,
+      errorClass: payloadCheck.ok ? null : `invalid_payload:${payloadCheck.reason}`,
+      sample: payloadCheck.ok ? undefined : snippet(data.text),
     }
   } catch (error) {
     return {
@@ -87,8 +181,8 @@ async function runOne(i) {
 async function main() {
   console.log(`Loadtest: ${N} sequential requests against ${ENDPOINT}`)
   console.log(`Target week start: ${TARGET}`)
-  if (!AUTH_TOKEN) {
-    console.log('No COACH_AUTH_TOKEN set — make sure COACH_PROXY_REQUIRE_AUTH=false in dev .env, or expect 401s.')
+  if (!AUTH_TOKEN && ENDPOINT.includes(':8888')) {
+    console.log('No COACH_AUTH_TOKEN set — Netlify function auth may return 401 unless dev auth is disabled.')
   }
   const results = []
   for (let i = 0; i < N; i++) {
@@ -121,6 +215,17 @@ async function main() {
 
   console.log('\n=== Summary ===')
   console.log(JSON.stringify(summary, null, 2))
+
+  const invalidSamples = results
+    .filter((result) => !result.ok && result.sample)
+    .slice(0, 3)
+
+  if (invalidSamples.length > 0) {
+    console.log('\n=== Invalid payload samples ===')
+    invalidSamples.forEach((result, index) => {
+      console.log(`[${index + 1}] ${result.errorClass}: ${result.sample}`)
+    })
+  }
 
   // Exit code mirrors the success criterion in the plan: ≥90% and p95 < 20s.
   const passed = ok.length / N >= 0.9 && summary.p95ms < 20000

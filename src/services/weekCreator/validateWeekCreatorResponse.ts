@@ -1,8 +1,21 @@
 import type { ChatContext, CoachAction, CoachSessionProposal, DayOfWeek, SupportedSport } from '../../types'
 import type { CoachNormalizedResponse } from '../ai/types'
+import { ACTION_CONTRACTS } from '../ai/prompt/core/outputContract'
+import { validateAgainstContract } from '../ai/prompt/validators/validateAgainstContract'
 import { findSquashDrillByName } from '../training/drillLibrary'
 import { filterSessionsToWeek, isStrictISODate, pickCreateWeekDiagnostic } from '../week/shared'
 import type { WeekCreatorEffectiveConfig } from './WeekCreatorConfig'
+
+/**
+ * Fields where structural recursion stops. Their internal validation is owned
+ * by the imperative checks below because:
+ *   - squashDetails / cyclingDetails / mobilityDetails — required-ness depends
+ *     on the sibling sessionType discriminator, and inner rules (drill catalog
+ *     membership, focus consistency) are deportive business logic.
+ *   - exercises — items use union types (e.g. reps accepts number | string)
+ *     that the structural FieldSpec cannot currently express.
+ */
+const SKIP_DEEP_FIELDS = ['squashDetails', 'cyclingDetails', 'mobilityDetails', 'exercises'] as const
 
 export interface WeekCreatorValidationInput {
   response: CoachNormalizedResponse
@@ -46,15 +59,21 @@ export function validateWeekCreatorResponse(
     rawSessionCount != null && validSessionCount != null ? rawSessionCount - validSessionCount : undefined
   )
 
+  const shapeCheck = validateAgainstContract(action, ACTION_CONTRACTS.create_week, {
+    skipDeep: SKIP_DEEP_FIELDS,
+  })
+  if (!shapeCheck.ok) {
+    return fail(
+      `La acción create_week no cumple el contrato estructural — ${shapeCheck.error}.`,
+      rawSessionCount, validSessionCount, droppedSessionCount,
+    )
+  }
+
   if (action.targetDate !== input.targetWeekStart) {
     return fail(`La acción create_week debe usar targetDate=${input.targetWeekStart}.`, rawSessionCount, validSessionCount, droppedSessionCount)
   }
 
-  if (!Array.isArray(action.sessions) || action.sessions.length === 0) {
-    return fail('La acción create_week no trae sesiones válidas.', rawSessionCount, validSessionCount, droppedSessionCount)
-  }
-
-  const sessions = action.sessions
+  const sessions = action.sessions as CoachSessionProposal[]
   const weekCheck = validateSessionWeekBoundaries(sessions, input.targetWeekStart)
   if (weekCheck) return fail(weekCheck, rawSessionCount, validSessionCount, droppedSessionCount)
 

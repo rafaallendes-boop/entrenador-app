@@ -204,7 +204,7 @@ async function runWizardToSummary(page) {
   ok('Paso 2 completo', eventDate)
 
   await clickButton(page, /Rendir al máximo/i)
-  await clickButton(page, /Competitivo amateur/i)
+  await clickButton(page, /Jugador Intermedio|Competitivo amateur/i)
   await clickButton(page, /continuar/i)
   await waitForBodyText(page, /Cuándo y cuánto|Cuando y cuanto/i)
   ok('Paso 3 completo')
@@ -231,7 +231,7 @@ async function runWizardToSummary(page) {
   ok('Paso 6 completo')
 
   const summary = await getBodyText(page)
-  if (summary.includes(eventTitle) && /Squash|5|1 hora|Competitivo amateur/i.test(summary)) {
+  if (summary.includes(eventTitle) && /Squash|5|1 hora|Jugador Intermedio|Competitivo amateur/i.test(summary)) {
     ok('Resumen del wizard coherente')
   } else {
     fail('Resumen del wizard no refleja datos esperados', summary.slice(0, 220).replace(/\s+/g, ' '))
@@ -425,6 +425,8 @@ async function main() {
       await acceptGeneratedPlan(page)
     }
     await verifySettingsTelemetry(page)
+  } catch (error) {
+    fail('Error fatal del runner', error instanceof Error ? error.message : String(error))
   } finally {
     await saveFailureArtifacts(page)
     await browser.close()

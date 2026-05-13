@@ -18,6 +18,7 @@ type RequestClass =
   | 'plan_builder_pair'
   | 'import_extract'
 type TechnicalErrorCode = 'timeout' | 'rate_limit' | 'parse_error' | 'server_error' | 'misconfigured' | 'unknown' | 'unauthorized'
+type ResponseSchema = Record<string, unknown>
 
 interface CoachRequest {
   systemPrompt: string
@@ -30,6 +31,8 @@ interface CoachRequest {
   traceId?: string
   maxTokens?: number
   temperature?: number
+  responseMimeType?: 'application/json'
+  responseSchema?: ResponseSchema
   allowFallback?: boolean
   stream?: boolean
 }
@@ -102,6 +105,7 @@ const CONVERSATION_MAX_MESSAGES = 30
 const CONVERSATION_MESSAGE_MAX_CHARS = 4000
 const CONVERSATION_TOTAL_MAX_CHARS = 30000
 const TRACE_ID_MAX_CHARS = 160
+const RESPONSE_SCHEMA_MAX_CHARS = 20000
 // Netlify synchronous functions currently allow 60s; keep a small buffer for response finalization.
 const MAX_FUNCTION_WALLCLOCK_MS = 55000
 const MIN_PROVIDER_ATTEMPT_MS = 4000
@@ -223,6 +227,19 @@ function validateCoachRequest(input: unknown): RequestValidationResult {
     }
   }
 
+  if (raw.responseMimeType != null && raw.responseMimeType !== 'application/json') {
+    return { ok: false, error: 'responseMimeType unsupported' }
+  }
+
+  if (raw.responseSchema != null) {
+    if (!raw.responseSchema || typeof raw.responseSchema !== 'object' || Array.isArray(raw.responseSchema)) {
+      return { ok: false, error: 'responseSchema must be an object' }
+    }
+    if (JSON.stringify(raw.responseSchema).length > RESPONSE_SCHEMA_MAX_CHARS) {
+      return { ok: false, error: 'responseSchema too long' }
+    }
+  }
+
   if (raw.traceId != null && (typeof raw.traceId !== 'string' || raw.traceId.length > TRACE_ID_MAX_CHARS)) {
     return { ok: false, error: 'traceId invalid' }
   }
@@ -244,6 +261,8 @@ function validateCoachRequest(input: unknown): RequestValidationResult {
       traceId: raw.traceId,
       maxTokens: raw.maxTokens,
       temperature: raw.temperature,
+      responseMimeType: raw.responseMimeType,
+      responseSchema: raw.responseSchema,
       allowFallback: raw.allowFallback,
       stream: raw.stream,
     },
@@ -430,6 +449,16 @@ async function fetchJsonOrThrow(res: Response): Promise<unknown> {
   throw makeError(detail, res.status, 'server_error')
 }
 
+function buildGeminiGenerationConfig(req: CoachRequest): Record<string, unknown> {
+  const generationConfig: Record<string, unknown> = {
+    maxOutputTokens: req.maxTokens ?? 1024,
+    temperature: req.temperature ?? 0.7,
+  }
+  if (req.responseMimeType) generationConfig.responseMimeType = req.responseMimeType
+  if (req.responseSchema) generationConfig.responseSchema = req.responseSchema
+  return generationConfig
+}
+
 async function callGemini(
   req: CoachRequest,
   apiKey: string,
@@ -451,10 +480,7 @@ async function callGemini(
           })),
           { role: 'user', parts: [{ text: req.userMessage }] },
         ],
-        generationConfig: {
-          maxOutputTokens: req.maxTokens ?? 1024,
-          temperature: req.temperature ?? 0.7,
-        },
+        generationConfig: buildGeminiGenerationConfig(req),
       }),
     },
   )
@@ -556,10 +582,7 @@ async function streamGemini(
           })),
           { role: 'user', parts: [{ text: req.userMessage }] },
         ],
-        generationConfig: {
-          maxOutputTokens: req.maxTokens ?? 1024,
-          temperature: req.temperature ?? 0.7,
-        },
+        generationConfig: buildGeminiGenerationConfig(req),
       }),
     },
   )

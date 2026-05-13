@@ -26,6 +26,7 @@ import { validateWeekCreatorResponse } from './validateWeekCreatorResponse'
 import { resolveWeekCreatorConfig, type WeekCreatorEffectiveConfig, withRequestedSessionsPerWeek } from './WeekCreatorConfig'
 import { buildWeekRetryInstruction } from '../week/shared'
 import { repairGeneratedWeek } from '../planBuilder/repairWeek'
+import { WEEK_CREATOR_RESPONSE_SCHEMA } from './weekCreatorResponseSchema'
 
 type WeekCreatorOptions = {
   surface?: AITechnicalSurface
@@ -128,6 +129,7 @@ export const WeekCreatorEngine = {
           config,
           retryInstruction: buildWeekRetryInstruction(lastFailure?.error, options.targetWeekStart, config.sessionsPerWeek, attempt),
           strictFormatting: true,
+          structuredOutput: true,
         })
         promptStage.end({ ok: true })
 
@@ -138,7 +140,9 @@ export const WeekCreatorEngine = {
           requestClass: 'week_creator',
           traceId,
           maxTokens: policy.maxTokens,
-          temperature: Math.min(policy.temperature, 0.25),
+          temperature: Math.min(policy.temperature, 0.15),
+          responseMimeType: 'application/json',
+          responseSchema: WEEK_CREATOR_RESPONSE_SCHEMA,
           allowFallback: policy.allowFallback,
           signal: options.signal,
         })

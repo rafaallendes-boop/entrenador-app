@@ -275,8 +275,16 @@ describe('WeekCreatorEngine', () => {
   })
 
   it('honors an explicit six-session request when profile capacity allows it', async () => {
-    mockProviderCall.mockImplementation(async (request: { requestClass: string; traceId: string; userMessage: string }) => {
+    mockProviderCall.mockImplementation(async (request: { requestClass: string; traceId: string; userMessage: string; responseMimeType?: string; responseSchema?: Record<string, unknown> }) => {
       expect(request.userMessage).toContain('- Sesiones por semana: 6')
+      expect(request.userMessage).toContain('responde solo con un objeto JSON')
+      expect(request.responseMimeType).toBe('application/json')
+      expect(request.responseSchema).toMatchObject({
+        type: 'OBJECT',
+        properties: expect.objectContaining({
+          sessions: expect.any(Object),
+        }),
+      })
       return {
         text: '<actions>' + JSON.stringify([
           {
@@ -340,6 +348,7 @@ describe('WeekCreatorEngine', () => {
               sessionType: 'squash',
               title: 'Squash tecnico base',
               durationMin: 60,
+              objective: 'sesión planificada',
               squashDetails: {
                 trainingFocus: 'technical',
                 sessionMode: 'drill_session',
@@ -352,6 +361,7 @@ describe('WeekCreatorEngine', () => {
               sessionType: 'squash',
               title: 'Control y precision',
               durationMin: 60,
+              objective: 'sesión planificada',
               squashDetails: {
                 trainingFocus: 'technical',
                 sessionMode: 'drill_session',
@@ -364,6 +374,7 @@ describe('WeekCreatorEngine', () => {
               sessionType: 'squash',
               title: 'Juegos condicionados suaves',
               durationMin: 60,
+              objective: 'sesión planificada',
               squashDetails: {
                 trainingFocus: 'conditioned_games',
                 sessionMode: 'drill_session',
@@ -405,6 +416,96 @@ describe('WeekCreatorEngine', () => {
     expect(response.requestClass).toBe('week_creator')
   })
 
+  it('accepts a schema-mode raw JSON create_week response without actions markup', async () => {
+    mockProviderCall.mockImplementation(async (request: { requestClass: string; traceId: string }) => ({
+      text: JSON.stringify({
+        type: 'create_week',
+        reason: 'Semana JSON estructurada',
+        targetDate: '2026-05-04',
+        sessions: [
+          {
+            date: '2026-05-04',
+            timeBlock: 'AM',
+            sessionType: 'squash',
+            title: 'Squash tecnico',
+            durationMin: 60,
+            objective: 'Mejorar profundidad y control.',
+            squashDetails: {
+              trainingFocus: 'technical',
+              sessionMode: 'drill_session',
+              drills: [
+                { name: 'Tiros paralelos profundos', durationMin: 12 },
+                { name: 'Tiros cruzados profundos', durationMin: 12 },
+                { name: 'Volea de control', durationMin: 10 },
+                { name: 'Boast y recuperacion', durationMin: 10 },
+              ],
+            },
+          },
+          {
+            date: '2026-05-06',
+            timeBlock: 'AM',
+            sessionType: 'squash',
+            title: 'Squash control',
+            durationMin: 60,
+            objective: 'Sostener rallies con precision.',
+            squashDetails: {
+              trainingFocus: 'control',
+              sessionMode: 'drill_session',
+              drills: [
+                { name: 'Drive con objetivo de zona', durationMin: 12 },
+                { name: 'Drop controlado', durationMin: 10 },
+                { name: 'Lob defensivo', durationMin: 10 },
+                { name: 'Rally a media velocidad', durationMin: 12 },
+              ],
+            },
+          },
+          {
+            date: '2026-05-08',
+            timeBlock: 'AM',
+            sessionType: 'strength',
+            title: 'Fuerza base',
+            durationMin: 60,
+            objective: 'Construir soporte general.',
+            exercises: [
+              { name: 'Sentadilla goblet', sets: 3, reps: 8, group: 'legs' },
+              { name: 'Peso muerto rumano', sets: 3, reps: 8, group: 'hinge' },
+              { name: 'Remo mancuerna', sets: 3, reps: 10, group: 'pull' },
+              { name: 'Plancha lateral', sets: 3, reps: '30s', group: 'core' },
+              { name: 'Split squat', sets: 3, reps: 8, group: 'legs' },
+            ],
+          },
+        ],
+      }),
+      provider: 'mock',
+      model: 'mock-week-creator',
+      traceId: request.traceId,
+      requestClass: request.requestClass,
+    }))
+
+    const context: ChatContext = {
+      athleteProfile: makeProfile({
+        scheduleProfile: { availableDays: ['lun', 'mié', 'vie'] },
+      }),
+      recentSessions: [],
+      plannedSessions: [],
+      historicalSessions: [],
+    }
+
+    const response = await WeekCreatorEngine.sendWeekCreate(
+      'Créame la semana',
+      context,
+      { surface: 'chat', targetWeekStart: '2026-05-04' },
+    )
+
+    expect(mockProviderCall).toHaveBeenCalledTimes(1)
+    expect(response.fallbackUsed).toBeFalsy()
+    expect(response.actions?.[0]).toMatchObject({
+      type: 'create_week',
+      targetDate: '2026-05-04',
+    })
+    expect(response.actions?.[0].sessions).toHaveLength(3)
+  })
+
   it('repairs a partial week when one incomplete session was dropped during normalization', async () => {
     mockProviderCall.mockImplementation(async (request: { requestClass: string; traceId: string }) => ({
       text: '<actions>' + JSON.stringify([
@@ -419,6 +520,7 @@ describe('WeekCreatorEngine', () => {
               sessionType: 'squash',
               title: 'Squash tecnico base',
               durationMin: 60,
+              objective: 'sesión planificada',
             },
             {
               date: '2026-05-05',
@@ -426,6 +528,7 @@ describe('WeekCreatorEngine', () => {
               sessionType: 'strength',
               title: 'Fuerza general',
               durationMin: 45,
+              objective: 'sesión planificada',
             },
             {
               date: '2026-05-06',
@@ -438,12 +541,14 @@ describe('WeekCreatorEngine', () => {
               sessionType: 'squash',
               title: 'Control y precision',
               durationMin: 55,
+              objective: 'sesión planificada',
             },
             {
               date: '2026-05-08',
               timeBlock: 'AM',
               sessionType: 'running',
               durationMin: 35,
+              objective: 'sesión planificada',
             },
           ],
         },
@@ -793,6 +898,7 @@ describe('validateWeekCreatorResponse sport details', () => {
             sessionType: 'squash',
             title: 'Squash bloques',
             durationMin: 60,
+            objective: 'sesión planificada',
             squashDetails: {
               trainingFocus: 'technical',
               drills: [],
@@ -844,6 +950,7 @@ describe('validateWeekCreatorResponse sport details', () => {
               sessionType: 'running',
               title: 'Running sin tipo',
               durationMin: 45,
+              objective: 'sesión planificada',
             },
             {
               date: '2026-05-06',
@@ -851,6 +958,7 @@ describe('validateWeekCreatorResponse sport details', () => {
               sessionType: 'strength',
               title: 'Fuerza sin ejercicios',
               durationMin: 45,
+              objective: 'sesión planificada',
             },
           ],
         }],
@@ -899,6 +1007,7 @@ describe('validateWeekCreatorResponse sport details', () => {
               sessionType: 'strength',
               title: 'Fuerza soporte',
               durationMin: 60,
+              objective: 'sesión planificada',
               exercises: [{ name: 'Sentadilla goblet', sets: 3, reps: 8 }],
             },
           ],
@@ -945,6 +1054,7 @@ describe('validateWeekCreatorResponse sport details', () => {
               sessionType: 'running',
               title: 'Running Z2',
               durationMin: 45,
+              objective: 'sesión planificada',
               runningType: 'z2',
             },
             {
@@ -953,6 +1063,7 @@ describe('validateWeekCreatorResponse sport details', () => {
               sessionType: 'strength',
               title: 'Fuerza soporte',
               durationMin: 60,
+              objective: 'sesión planificada',
               exercises: [{ name: 'Sentadilla goblet', sets: 3, reps: 8 }],
             },
             squashSession('2026-05-13', 'AM', 'Squash control', '100 drops en solitario (50 por lado)'),
@@ -1011,6 +1122,7 @@ function squashSession(date: string, timeBlock: 'AM' | 'PM', title: string, dril
     sessionType: 'squash' as const,
     title,
     durationMin: 60,
+    objective: 'sesión planificada',
     squashDetails: {
       trainingFocus: 'technical' as const,
       sessionMode: 'drill_session' as const,
