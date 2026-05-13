@@ -241,15 +241,26 @@ export const WeekCreatorEngine = {
       durationMs: 0,
       retryUsed: true,
       fallbackUsed: true,
+      warnings: [buildWeekCreatorFallbackNote(lastFailure?.provider, MAX_ATTEMPTS)],
     })
     return {
       ...fallback,
       actions: [fallbackValidation.action],
       retryUsed: true,
       fallbackUsed: true,
-      message: `${summarizeWeekCreatorAction(fallbackValidation.action)}\n\nNota: Gemini no devolvió el formato estructurado en ${MAX_ATTEMPTS} intentos, así que preparé una semana segura con tu configuración actual.`,
+      message: `${summarizeWeekCreatorAction(fallbackValidation.action)}\n\nNota: ${buildWeekCreatorFallbackNote(lastFailure?.provider, MAX_ATTEMPTS)}`,
     }
   },
+}
+
+function buildWeekCreatorFallbackNote(
+  provider: CoachNormalizedResponse['provider'] | undefined,
+  attempts: number,
+): string {
+  const providerLabel = provider && provider !== 'mock'
+    ? `El proveedor ${provider}`
+    : 'El proveedor de IA'
+  return `${providerLabel} no devolvió una semana aplicable en formato estructurado después de ${attempts} intentos. Preparé una semana base segura con tu configuración actual para que puedas revisarla y ajustarla antes de aplicarla.`
 }
 
 type RepairedWeekCreatorResponse = CoachNormalizedResponse & {

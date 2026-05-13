@@ -638,6 +638,8 @@ describe('WeekCreatorEngine', () => {
     })
     expect(response.actions?.[0].sessions).toHaveLength(5)
     expect(response.actions?.[0].sessions?.filter((session) => session.sessionType === 'squash')).toHaveLength(3)
+    expect(response.message).toContain('El proveedor gemini no devolvió una semana aplicable')
+    expect(response.message).not.toContain('Gemini no devolvió el formato estructurado')
   })
 
   it('does not stack duplicate squash sessions on the same day in six-session fallback weeks', async () => {
