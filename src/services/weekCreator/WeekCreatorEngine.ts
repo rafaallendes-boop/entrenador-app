@@ -336,7 +336,7 @@ function classifyWeekCreatorFailure(
     reason = 'session_count_mismatch'
   } else if (/entre .* y los 6 días siguientes|fecha inválida/i.test(message)) {
     reason = 'invalid_week_dates'
-  } else if (/colisiones|doble jornada|doble sesión|día no permitido|dos sesiones de squash el mismo día|duplicar squash/i.test(message)) {
+  } else if (/colisiones|doble jornada|doble sesión|día no permitido|restricciones horarias|dos sesiones de squash el mismo día|duplicar squash/i.test(message)) {
     reason = 'schedule_conflict'
   } else if (/deportes permitidos|no está dentro de los deportes permitidos/i.test(message)) {
     reason = 'unsupported_sport'
@@ -450,6 +450,8 @@ function buildRepairContext(
     sessionsPerWeek: config.sessionsPerWeek,
     sessionDurationMins: config.sessionDurationMins,
     allowDoubleSession: config.allowDoubleSession,
+    doubleSessionDays: config.doubleSessionDays,
+    scheduleConstraints: config.scheduleConstraints,
     complementarySports: config.allowedSports.filter((sport) => sport !== primarySport),
     currentFitnessLevel: config.currentFitnessLevel,
     currentFatigue: config.currentFatigue,
@@ -629,12 +631,25 @@ function buildFallbackSlots(
   }
 
   if (config.allowDoubleSession) {
+    const configuredDoubleDays = config.doubleSessionDays ?? []
+    const doubleDays = configuredDoubleDays.length > 0
+      ? configuredDoubleDays
+      : allowedDays
+    const doubleDaySet = new Set(doubleDays)
     for (const date of dates) {
+      const day = dayOfWeekFromTargetDate(targetWeekStart, date)
+      if (day && !doubleDaySet.has(day)) continue
       slots.push({ date, timeBlock: 'PM' })
     }
   }
 
   return slots.slice(0, count)
+}
+
+function dayOfWeekFromTargetDate(_targetWeekStart: string, date: string): DayOfWeek | null {
+  const weekday = new Date(`${date}T00:00:00.000Z`).getUTCDay()
+  const mapping: DayOfWeek[] = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
+  return mapping[weekday] ?? null
 }
 
 function dayOffset(day: DayOfWeek): number {

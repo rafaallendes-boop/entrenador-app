@@ -94,6 +94,21 @@ describe('resolveWeekCreatorConfig', () => {
     expect(config.sessionsPerWeek).toBe(4)
   })
 
+  it('derives an auto double-session target when schedule capacity explicitly allows it', () => {
+    const config = resolveWeekCreatorConfig(makeProfile({
+      scheduleProfile: {
+        availableDays: ['lun', 'mar', 'jue', 'vie', 'dom'],
+        doubleSessionDays: ['lun', 'mar', 'jue', 'vie'],
+        constraints: 'solo AM los martes, no disponible sabados',
+      },
+    }))
+
+    expect(config.trainingDays).toEqual(['monday', 'tuesday', 'thursday', 'friday', 'sunday'])
+    expect(config.doubleSessionDays).toEqual(['monday', 'tuesday', 'thursday', 'friday'])
+    expect(config.sessionsPerWeek).toBe(6)
+    expect(config.scheduleConstraints).toContain('solo AM')
+  })
+
   it('uses explicit schedule sessions and clamps them to real capacity', () => {
     expect(resolveWeekCreatorConfig(makeProfile({
       scheduleProfile: {
@@ -140,6 +155,35 @@ describe('resolveWeekCreatorConfig', () => {
     expect(config.configSource).toBe('wizard')
     expect(config.sessionsPerWeek).toBe(4)
     expect(config.trainingDays).toEqual(['monday', 'tuesday', 'thursday', 'saturday'])
+  })
+
+  it('lets current schedule availability override stale plan wizard days for week creator', () => {
+    const config = resolveWeekCreatorConfig(makeProfile({
+      scheduleProfile: {
+        availableDays: ['lun', 'mar', 'jue', 'vie', 'dom'],
+        doubleSessionDays: ['lun', 'mar', 'jue', 'vie'],
+        constraints: 'solo AM los martes, no disponible sabados',
+      },
+      planWizardConfig: {
+        goalEventId: 'g1',
+        trainingDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'],
+        sessionsPerWeek: 6,
+        sessionDurationMins: 60,
+        allowDoubleSession: false,
+        complementarySports: ['running', 'strength'],
+        currentFitnessLevel: 'normal',
+        currentFatigue: 'normal',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+    }))
+
+    expect(config.fromWizard).toBe(true)
+    expect(config.trainingDays).toEqual(['monday', 'tuesday', 'thursday', 'friday', 'sunday'])
+    expect(config.doubleSessionDays).toEqual(['monday', 'tuesday', 'thursday', 'friday'])
+    expect(config.sessionsPerWeek).toBe(6)
+    expect(config.allowDoubleSession).toBe(true)
+    expect(config.scheduleConstraints).toContain('no disponible sabados')
   })
 
   it('lets the current athlete profile primary sport override a stale plan event sport', () => {
@@ -589,6 +633,113 @@ describe('WeekCreatorEngine', () => {
     expect(response.actions?.[0].sessions).toHaveLength(5)
     expect(response.actions?.[0].sessions?.filter((session) => session.sessionType === 'squash')).toHaveLength(3)
     expect(response.message).toContain('Se agregaron 1 sesiones fallback')
+  })
+
+  it('repairs duplicate squash drills locally instead of retrying the whole week', async () => {
+    const duplicateSquashDetails = {
+      trainingFocus: 'technical' as const,
+      sessionMode: 'drill_session' as const,
+      sessionKind: 'technical' as const,
+      drills: [{ name: 'Tiros paralelos profundos', durationMin: 20 }],
+    }
+
+    mockProviderCall.mockImplementation(async (request: { requestClass: string; traceId: string }) => ({
+      text: '<actions>' + JSON.stringify([
+        {
+          type: 'create_week',
+          reason: 'Semana squash con un duplicado reparable',
+          targetDate: '2026-05-04',
+          sessions: [
+            {
+              date: '2026-05-04',
+              timeBlock: 'AM',
+              sessionType: 'squash',
+              title: 'Squash tecnica de golpes',
+              durationMin: 60,
+              objective: 'Profundidad y control de golpe.',
+              squashDetails: duplicateSquashDetails,
+            },
+            {
+              date: '2026-05-05',
+              timeBlock: 'AM',
+              sessionType: 'squash',
+              title: 'Squash ghosting y drills de control',
+              durationMin: 60,
+              objective: 'Desplazamiento, vuelta a la T y control.',
+              squashDetails: duplicateSquashDetails,
+            },
+            {
+              date: '2026-05-06',
+              timeBlock: 'AM',
+              sessionType: 'strength',
+              title: 'Fuerza soporte squash',
+              durationMin: 60,
+              objective: 'Soporte general para squash.',
+              exercises: [
+                { name: 'Sentadilla goblet', sets: 3, reps: 8, group: 'legs' },
+                { name: 'Remo con pecho apoyado', sets: 3, reps: 10, group: 'pull' },
+                { name: 'Press Pallof', sets: 3, reps: '10/lado', group: 'core' },
+                { name: 'Zancada lateral con barra', sets: 3, reps: '8/lado', group: 'legs' },
+                { name: 'Plancha lateral', sets: 3, reps: '30s/lado', group: 'core' },
+              ],
+            },
+            {
+              date: '2026-05-07',
+              timeBlock: 'AM',
+              sessionType: 'squash',
+              title: 'Squash control frontal',
+              durationMin: 60,
+              objective: 'Tacto y control en zona delantera.',
+              squashDetails: {
+                trainingFocus: 'technical' as const,
+                sessionMode: 'drill_session' as const,
+                sessionKind: 'control' as const,
+                drills: [{ name: '100 drops en solitario (50 por lado)', durationMin: 20 }],
+              },
+            },
+          ],
+        },
+      ]) + '</actions>',
+      provider: 'mock',
+      model: 'mock-week-creator',
+      traceId: request.traceId,
+      requestClass: request.requestClass,
+    }))
+
+    const context: ChatContext = {
+      athleteProfile: makeProfile({
+        planWizardConfig: {
+          goalEventId: 'goal-1',
+          trainingDays: ['monday', 'tuesday', 'wednesday', 'thursday'],
+          sessionsPerWeek: 4,
+          sessionDurationMins: 60,
+          allowDoubleSession: false,
+          complementarySports: ['strength'],
+          currentFitnessLevel: 'normal',
+          currentFatigue: 'normal',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      }),
+      recentSessions: [],
+      plannedSessions: [],
+      historicalSessions: [],
+    }
+
+    const response = await WeekCreatorEngine.sendWeekCreate(
+      'Créame una semana manteniendo squash como prioridad',
+      context,
+      { surface: 'chat', targetWeekStart: '2026-05-04' },
+    )
+
+    const squashSignatures = (response.actions?.[0].sessions ?? [])
+      .filter((session) => session.sessionType === 'squash')
+      .map((session) => session.squashDetails?.drills.map((drill) => drill.name).sort().join('|'))
+
+    expect(mockProviderCall).toHaveBeenCalledTimes(1)
+    expect(response.fallbackUsed).toBeFalsy()
+    expect(new Set(squashSignatures).size).toBe(squashSignatures.length)
+    expect(response.message).toContain('evitar repetir los mismos drills')
   })
 
   it('retries when two strength sessions repeat exactly the same exercises', async () => {
@@ -1074,6 +1225,95 @@ describe('validateWeekCreatorResponse sport details', () => {
 
     expect(result.ok).toBe(false)
     expect(result.error).toContain('hay suficientes días disponibles')
+  })
+
+  it('accepts double days when the date is explicitly marked as double-session capable', () => {
+    const result = validateWeekCreatorResponse({
+      targetWeekStart: '2026-05-11',
+      context: { recentSessions: [], plannedSessions: [], historicalSessions: [] },
+      config: {
+        allowedSports: ['squash', 'running', 'strength'],
+        primarySport: 'squash',
+        sessionsPerWeek: 4,
+        maxSessionsPerWeek: 6,
+        sessionDurationMins: 60,
+        trainingDays: ['monday', 'tuesday', 'thursday', 'friday', 'sunday'],
+        doubleSessionDays: ['monday', 'tuesday', 'thursday', 'friday'],
+        allowDoubleSession: true,
+        currentFitnessLevel: 'normal',
+        currentFatigue: 'normal',
+        fromWizard: false,
+        configSource: 'schedule',
+      },
+      response: {
+        message: 'Semana lista',
+        provider: 'gemini',
+        timestamp: Date.now(),
+        traceId: 'trace-explicit-double-day',
+        requestClass: 'week_creator',
+        actions: [{
+          type: 'create_week',
+          reason: 'Semana con doble permitida',
+          targetDate: '2026-05-11',
+          sessions: [
+            squashSession('2026-05-11', 'AM', 'Squash técnico', 'Tiros paralelos profundos'),
+            {
+              date: '2026-05-11',
+              timeBlock: 'PM',
+              sessionType: 'strength',
+              title: 'Fuerza soporte',
+              durationMin: 60,
+              objective: 'Soporte sin repetir squash.',
+              exercises: [{ name: 'Sentadilla goblet', sets: 3, reps: 8 }],
+            },
+            squashSession('2026-05-12', 'AM', 'Squash control', '100 drops en solitario (50 por lado)'),
+            squashSession('2026-05-14', 'AM', 'Squash frente', 'Drops desde media cancha'),
+          ],
+        }],
+      },
+    })
+
+    expect(result.ok).toBe(true)
+  })
+
+  it('rejects simple schedule time constraints such as only AM on Tuesdays', () => {
+    const result = validateWeekCreatorResponse({
+      targetWeekStart: '2026-05-11',
+      context: { recentSessions: [], plannedSessions: [], historicalSessions: [] },
+      config: {
+        allowedSports: ['squash'],
+        primarySport: 'squash',
+        sessionsPerWeek: 1,
+        maxSessionsPerWeek: 6,
+        sessionDurationMins: 60,
+        trainingDays: ['monday', 'tuesday', 'thursday', 'friday', 'sunday'],
+        doubleSessionDays: ['monday', 'tuesday', 'thursday', 'friday'],
+        allowDoubleSession: true,
+        scheduleConstraints: 'solo AM los martes, no disponible sabados',
+        currentFitnessLevel: 'normal',
+        currentFatigue: 'normal',
+        fromWizard: false,
+        configSource: 'schedule',
+      },
+      response: {
+        message: 'Semana lista',
+        provider: 'gemini',
+        timestamp: Date.now(),
+        traceId: 'trace-time-constraint',
+        requestClass: 'week_creator',
+        actions: [{
+          type: 'create_week',
+          reason: 'Semana con martes PM',
+          targetDate: '2026-05-11',
+          sessions: [
+            squashSession('2026-05-12', 'PM', 'Squash martes tarde', 'Tiros paralelos profundos'),
+          ],
+        }],
+      },
+    })
+
+    expect(result.ok).toBe(false)
+    expect(result.error).toContain('solo AM')
   })
 
   it('rejects squash drill names that do not resolve to the visible library', () => {

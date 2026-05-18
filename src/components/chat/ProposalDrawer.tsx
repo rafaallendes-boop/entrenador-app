@@ -40,6 +40,9 @@ const SQUASH_BLOCK_LABEL: Record<SquashSessionBlockKind, string> = {
   match: 'Partido final',
 }
 
+const SQUASH_PROPOSAL_GUIDANCE =
+  'Orden y volumen orientativos: ajusta repeticiones, pausas y tiempo real segun cancha, nivel y sensaciones.'
+
 interface ProposalDrawerProps {
   proposal: CoachProposal
   existingSessions: Session[]
@@ -357,18 +360,20 @@ function renderProposalDetails(
               {formatSquashSessionMode(item.squashDetails.sessionMode)}
             </p>
           )}
+          <p className="mt-1 text-[10px] leading-snug text-emerald-100/55">
+            {SQUASH_PROPOSAL_GUIDANCE}
+          </p>
           {item.squashDetails.blocks?.length ? (
             <div className="mt-1 space-y-1.5">
               {item.squashDetails.blocks.map((block, blockIndex) => (
                 <div key={`${block.kind}-${blockIndex}`}>
                   <p className="text-[10px] font-medium text-emerald-200/80">
                     {SQUASH_BLOCK_LABEL[block.kind] ?? block.kind}
-                    {block.durationMin ? ` · ${block.durationMin}min` : ''}
                   </p>
                   {block.drills.slice(0, 3).map((drill, drillIndex) => (
                     <p key={`${block.kind}-${drillIndex}`} className="truncate text-[10px] text-ink-faint">
                       {drill.name}
-                      {drill.durationMin ? ` · ${drill.durationMin}min` : ''}
+                      {drill.notes ? ` · ${drill.notes}` : ''}
                     </p>
                   ))}
                 </div>
@@ -379,7 +384,6 @@ function renderProposalDetails(
               {(item.squashDetails.drills ?? []).slice(0, 4).map((drill, drillIndex) => (
                 <p key={drillIndex} className="truncate text-[10px] text-ink-faint">
                   {drill.name}
-                  {drill.durationMin ? ` · ${drill.durationMin}min` : ''}
                   {drill.notes ? ` · ${drill.notes}` : ''}
                 </p>
               ))}

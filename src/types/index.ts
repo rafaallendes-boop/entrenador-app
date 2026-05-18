@@ -494,6 +494,8 @@ export interface PlanWizardConfig {
   sessionsPerWeek: number
   sessionDurationMins: number       // 30 | 45 | 60 | 90 | 120
   allowDoubleSession: boolean
+  doubleSessionDays?: DayOfWeek[]
+  scheduleConstraints?: string
   complementarySports: SupportedSport[]
   currentFitnessLevel: WizardFitnessLevel
   currentFatigue: WizardFatigueLevel

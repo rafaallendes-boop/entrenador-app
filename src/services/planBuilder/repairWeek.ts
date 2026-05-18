@@ -3,14 +3,17 @@ import type {
   CoachExerciseProposal,
   CoachSessionProposal,
   DayOfWeek,
+  GoalEventLevel,
   PlanWizardConfig,
   SupportedSport,
   WizardFatigueLevel,
 } from '../../types'
 import type { TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
-import { selectSquashDrills, type SquashSelectionPhase } from '../training/drillSelector'
+import { selectSquashDrills, type SquashSelectionDesiredKind, type SquashSelectionPhase } from '../training/drillSelector'
+import { findSquashDrillByName, normalizeSquashDrillKey } from '../training/drillLibrary'
 import { selectRunningSession, type RunningPhase, type RunningSportProfile } from '../training/runningSelector'
 import { selectStrengthSession, type StrengthPhase, type StrengthSportProfile } from '../training/strengthSelector'
+import type { ExperienceLevel } from '../training/exerciseLibrary'
 import { selectMobilitySession, type MobilityPhase } from '../training/mobilitySelector'
 import { selectCyclingSession, type CyclingPhase, type CyclingSportProfile } from '../training/cyclingSelector'
 import type { MobilitySportContext } from '../training/mobilitySessionLibrary'
@@ -99,6 +102,9 @@ export function repairGeneratedWeek(
   // 7. Balance session count
   sessions = balanceSessionCount(sessions, context, meta)
 
+  // 8. Diversify duplicated sport content after fallbacks are added
+  diversifyDuplicateSquashSessions(sessions, context, meta)
+
   return { sessions, meta }
 }
 
@@ -125,7 +131,7 @@ function moveOutOfWeekSessions(
     const ts = new Date(`${s.date}T00:00:00.000Z`).getTime()
     if (ts >= weekStart && ts < weekEndExclusive) return s
 
-    const available = findNearestAvailableDate(allowedDates, sessions, s.timeBlock, undefined, context.wizardConfig.allowDoubleSession)
+    const available = findNearestAvailableDate(allowedDates, sessions, s.timeBlock, undefined, context.wizardConfig)
     if (available) {
       meta.movedSessionCount++
       meta.warnings.push({ code: 'moved_into_week', message: `Sesión "${s.title}" movida de ${s.date} a ${available.date} (fuera de semana).`, sessionDate: s.date })
@@ -152,7 +158,7 @@ function moveOutOfAllowedDaySessions(
     const dayOfWeek = isoDateToDayOfWeek(s.date)
     if (dayOfWeek && allowedDays.has(dayOfWeek)) return s
 
-    const available = findNearestAvailableDate(allowedDates, sessions, s.timeBlock, s.date, context.wizardConfig.allowDoubleSession)
+    const available = findNearestAvailableDate(allowedDates, sessions, s.timeBlock, s.date, context.wizardConfig)
     if (available) {
       meta.movedSessionCount++
       meta.warnings.push({ code: 'moved_allowed_day', message: `Sesión "${s.title}" movida de ${s.date} a ${available.date} (día no permitido).`, sessionDate: s.date })
@@ -184,7 +190,7 @@ function resolveCollisions(
     // Try opposite timeBlock on the same date
     const oppositeBlock = s.timeBlock === 'AM' ? 'PM' : 'AM'
     const oppositeKey = `${s.date}|${oppositeBlock}`
-    if (allowDoubleSession && !occupied.has(oppositeKey)) {
+    if (allowDoubleSession && canUseDoubleSessionOnDate(s.date, context.wizardConfig) && !occupied.has(oppositeKey)) {
       occupied.add(oppositeKey)
       meta.movedSessionCount++
       meta.warnings.push({ code: 'collision_resolved', message: `Sesión "${s.title}" movida a ${s.date} ${oppositeBlock} (colisión).`, sessionDate: s.date })
@@ -194,7 +200,7 @@ function resolveCollisions(
 
     // Try a different allowed date
     const allowedDates = getAllowedDatesInWeek(context)
-    const available = findNearestAvailableDate(allowedDates, [...sessions, ...result], s.timeBlock, s.date, allowDoubleSession)
+    const available = findNearestAvailableDate(allowedDates, [...sessions, ...result], s.timeBlock, s.date, context.wizardConfig)
     if (available) {
       const newKey = `${available.date}|${available.timeBlock}`
       occupied.add(newKey)
@@ -297,10 +303,18 @@ function completeSquashDetails(
     fatigueLevel: fatigueToNumber(context.wizardConfig.currentFatigue),
     phase,
     recentDrills,
-    goal: context.profile.mainGoal ?? '',
+    goal: buildLevelAwareGoal(context, context.profile.mainGoal ?? ''),
     competitionSoon: false,
+    competitiveLevel: deriveCompetitiveLevel(context),
     desiredKind: mapSubtypeToDesiredKind(session.subtype) ?? inferSquashDesiredKind(session, recentDrills),
   })
+  applySquashSelection(session, result)
+}
+
+function applySquashSelection(
+  session: CoachSessionProposal,
+  result: ReturnType<typeof selectSquashDrills>,
+): void {
   session.squashDetails = {
     trainingFocus: result.trainingFocus,
     drills: result.drills,
@@ -308,6 +322,94 @@ function completeSquashDetails(
     sessionKind: result.sessionKind,
     blocks: result.blocks,
   }
+}
+
+function diversifyDuplicateSquashSessions(
+  sessions: CoachSessionProposal[],
+  context: RepairContext,
+  meta: RepairMeta,
+): void {
+  const squashSessions = sessions.filter((session) => session.sessionType === 'squash')
+  if (squashSessions.length < 2) return
+
+  const seen = new Set<string>()
+  const usedDrills = extractRecentSquashDrills(context.previousWeek)
+  let repairedCount = 0
+
+  for (const session of squashSessions) {
+    const signature = buildSquashDrillSignature(session)
+    if (signature && !seen.has(signature)) {
+      seen.add(signature)
+      usedDrills.push(...extractSquashDrillNames(session))
+      continue
+    }
+
+    const repaired = rebuildSquashDetailsAvoidingDuplicates(session, context, usedDrills, seen)
+    const nextSignature = buildSquashDrillSignature(session)
+    if (repaired && nextSignature && !seen.has(nextSignature)) {
+      seen.add(nextSignature)
+      usedDrills.push(...extractSquashDrillNames(session))
+      repairedCount++
+      continue
+    }
+
+    if (nextSignature) seen.add(nextSignature)
+    usedDrills.push(...extractSquashDrillNames(session))
+  }
+
+  if (repairedCount > 0) {
+    meta.repairedSessionCount += repairedCount
+    meta.warnings.push({
+      code: 'squash_duplicate_drills_repaired',
+      message: `Se regeneraron ${repairedCount} sesiones de squash para evitar repetir los mismos drills.`,
+    })
+  }
+}
+
+function rebuildSquashDetailsAvoidingDuplicates(
+  session: CoachSessionProposal,
+  context: RepairContext,
+  usedDrills: string[],
+  seenSignatures: Set<string>,
+): boolean {
+  const preferred = inferSquashDesiredKind(session, usedDrills)
+  const candidatePool: SquashSelectionDesiredKind[] = [
+    ...(preferred ? [preferred] : []),
+    'mixed-shadows-control',
+    'control',
+    'technical',
+    'mixed-control-technical',
+    'mixed-shadows-technical',
+    'match',
+  ]
+  const candidates = candidatePool.filter((kind, index, all) => all.indexOf(kind) === index)
+
+  for (const desiredKind of candidates) {
+    const result = selectSquashDrills({
+      fatigueLevel: fatigueToNumber(context.wizardConfig.currentFatigue),
+      phase: mapPhase(context.week.phase) as SquashSelectionPhase,
+      recentDrills: usedDrills,
+      goal: buildLevelAwareGoal(context, session.objective ?? context.profile.mainGoal ?? ''),
+      competitionSoon: false,
+      competitiveLevel: deriveCompetitiveLevel(context),
+      desiredKind,
+    })
+    applySquashSelection(session, result)
+    const signature = buildSquashDrillSignature(session)
+    if (signature && !seenSignatures.has(signature)) return true
+    usedDrills.push(...extractSquashDrillNames(session))
+  }
+
+  return false
+}
+
+function buildSquashDrillSignature(session: CoachSessionProposal): string | undefined {
+  const drillNames = extractSquashDrillNames(session)
+  if (drillNames.length === 0) return undefined
+  return drillNames
+    .map((name) => findSquashDrillByName(name)?.id ?? normalizeSquashDrillKey(name))
+    .sort()
+    .join('|')
 }
 
 function completeRunningDetails(session: CoachSessionProposal, context: RepairContext): void {
@@ -341,6 +443,7 @@ function completeStrengthExercises(
     goal: session.objective ?? context.profile.mainGoal ?? '',
     sportProfile,
     primarySport: context.profile.sportContext?.primarySport,
+    experienceLevel: deriveStrengthExperienceLevel(context),
     sessionDurationMin: session.durationMin,
   })
   session.exercises = result.exercises.map<CoachExerciseProposal>((e) => ({
@@ -429,7 +532,7 @@ function balanceSessionCount(
       : 1
 
     for (let i = 0; i < maxFallback; i++) {
-      const available = findNearestAvailableDate(allowedDates, result, 'AM', undefined, context.wizardConfig.allowDoubleSession)
+      const available = findNearestAvailableDate(allowedDates, result, 'AM', undefined, context.wizardConfig)
       if (!available) break
 
       const needPrimary = i === 0 && primarySport && primaryCount < minimumPrimary
@@ -518,22 +621,33 @@ function findNearestAvailableDate(
   currentSessions: CoachSessionProposal[],
   preferredBlock: 'AM' | 'PM',
   referenceDate?: string,
-  allowDoubleSession = true,
+  wizardConfig?: PlanWizardConfig,
 ): { date: string; timeBlock: 'AM' | 'PM' } | null {
   const occupied = new Set(currentSessions.map((s) => `${s.date}|${s.timeBlock}`))
   const occupiedDates = new Set(currentSessions.map((s) => s.date))
+  const allowDoubleSession = wizardConfig?.allowDoubleSession ?? true
   // Sort by proximity to referenceDate if provided
   const sorted = referenceDate
     ? [...allowedDates].sort((a, b) => Math.abs(new Date(a).getTime() - new Date(referenceDate).getTime()) - Math.abs(new Date(b).getTime() - new Date(referenceDate).getTime()))
     : allowedDates
 
   for (const date of sorted) {
-    if (!allowDoubleSession && occupiedDates.has(date)) continue
+    const dateAlreadyOccupied = occupiedDates.has(date)
+    const canDouble = allowDoubleSession && canUseDoubleSessionOnDate(date, wizardConfig)
+    if (dateAlreadyOccupied && !canDouble) continue
     if (!occupied.has(`${date}|${preferredBlock}`)) return { date, timeBlock: preferredBlock }
     const opposite = preferredBlock === 'AM' ? 'PM' : 'AM'
-    if (allowDoubleSession && !occupied.has(`${date}|${opposite}`)) return { date, timeBlock: opposite }
+    if (canDouble && !occupied.has(`${date}|${opposite}`)) return { date, timeBlock: opposite }
   }
   return null
+}
+
+function canUseDoubleSessionOnDate(date: string, wizardConfig?: PlanWizardConfig): boolean {
+  if (!wizardConfig?.allowDoubleSession) return false
+  const doubleDays = wizardConfig.doubleSessionDays
+  if (!doubleDays || doubleDays.length === 0) return true
+  const day = isoDateToDayOfWeek(date)
+  return Boolean(day && doubleDays.includes(day))
 }
 
 function isoDateToDayOfWeek(date: string): DayOfWeek | null {
@@ -580,7 +694,7 @@ function inferSquashDesiredKind(session: CoachSessionProposal, recentDrills: str
     .replace(/[\u0300-\u036f]/g, '')
 
   if (text.includes('control') || text.includes('precision')) return 'control' as const
-  if (text.includes('desplaz') || text.includes('movimiento') || text.includes('shadow')) return 'shadows' as const
+  if (text.includes('desplaz') || text.includes('movimiento') || text.includes('shadow') || text.includes('ghost')) return 'mixed-shadows-control' as const
   if (text.includes('partido') || text.includes('match')) return 'match' as const
   if (recentDrills.length >= 3 || text.includes('juego') || text.includes('condicionado')) return 'shadows' as const
   if (recentDrills.length > 0) return 'control' as const
@@ -599,6 +713,38 @@ function deriveStrengthSportProfile(context: RepairContext): StrengthSportProfil
   if (primary === 'strength') return 'strength_primary'
   if (primary) return 'sport_support'
   return 'hybrid'
+}
+
+function deriveStrengthExperienceLevel(context: RepairContext): ExperienceLevel {
+  const fitness = context.wizardConfig.currentFitnessLevel
+  if (fitness === 'low' || fitness === 'returning') return 'beginner'
+  const competitiveLevel = deriveCompetitiveLevel(context)
+  if (competitiveLevel === 'elite' || competitiveLevel === 'masters') return 'advanced'
+  if (competitiveLevel === 'competitive' || fitness === 'fit') return 'intermediate'
+  return 'intermediate'
+}
+
+function deriveCompetitiveLevel(context: RepairContext): GoalEventLevel | undefined {
+  const goalEventId = context.wizardConfig.goalEventId
+  const event = context.profile.goalEvents?.find((item) => item.id === goalEventId)
+    ?? context.profile.goalEvents?.find((item) => item.priority === 'primary')
+    ?? context.profile.goalEvents?.[0]
+  return event?.competitiveLevel
+}
+
+function buildLevelAwareGoal(context: RepairContext, goal: string): string {
+  const competitiveLevel = deriveCompetitiveLevel(context)
+  const fitness = context.wizardConfig.currentFitnessLevel
+  const parts = [goal]
+  if (competitiveLevel) parts.push(`nivel competitivo ${competitiveLevel}`)
+  parts.push(`fitness ${fitness}`)
+  if (competitiveLevel === 'elite' || competitiveLevel === 'masters') {
+    parts.push('priorizar transferencia competitiva, presion, tactica y especificidad')
+  }
+  if (fitness === 'low' || fitness === 'returning') {
+    parts.push('priorizar retorno seguro, control tecnico y baja complejidad')
+  }
+  return parts.filter(Boolean).join(' · ')
 }
 
 function deriveCyclingRole(context: RepairContext): CyclingRole {

@@ -8,7 +8,7 @@ import {
   renderWeekCreatorTargetInstructions,
 } from '../ai/prompt/renderers/proseSchema'
 import { buildWeekCreatorSystemPrompt } from '../week/prompts/weekPrompt'
-import type { WeekCreatorEffectiveConfig } from './WeekCreatorConfig'
+import { deriveWeekCreatorAthleteTier, type WeekCreatorAthleteTier, type WeekCreatorEffectiveConfig } from './WeekCreatorConfig'
 import { normalizeSport } from '../../utils/athlete'
 
 export interface WeekCreatorPromptInput {
@@ -52,6 +52,7 @@ export function buildWeekCreatorPrompt(
     buildProfileSummary(profile),
     buildGoalSummary(goalEvent, profile?.macroPlan?.currentPhase, profile?.macroPlan?.blockFocus, config.primarySport),
     buildConfigSummary(config),
+    buildAthleteLevelRules(config),
     buildPrioritySportSummary(prioritySport, config),
     buildWeekCreatorSquashRules(config),
     buildCurrentWeekSessionsSummary(targetWeekSessions, input.targetWeekStart),
@@ -150,6 +151,8 @@ function buildGoalSummary(
 
 function buildConfigSummary(config: WeekCreatorEffectiveConfig): string {
   const squashMinimum = getSquashMinimumSessions(config)
+  const doubleSessionDays = config.doubleSessionDays ?? []
+  const athleteTier = deriveWeekCreatorAthleteTier(config)
   const lines = [
     config.configSource === 'wizard'
       ? 'Configuración del plan activo (usar como guía fuerte):'
@@ -160,19 +163,74 @@ function buildConfigSummary(config: WeekCreatorEffectiveConfig): string {
       ? '⚠ Sin perfil configurado: usa una semana base conservadora (3 sesiones, sin dobles, duración 60min, solo deporte principal).'
       : '',
     `- Días permitidos: ${config.trainingDays.join(', ')}`,
+    doubleSessionDays.length > 0
+      ? `- Días con doble sesión posible: ${doubleSessionDays.join(', ')}. Si usas doble sesión, usa solo esos días y separa AM/PM.`
+      : '',
     `- Sesiones por semana: ${config.sessionsPerWeek}`,
     `- Duración por sesión: ${config.sessionDurationMins} min`,
     `- Doble sesión permitido: ${config.allowDoubleSession ? 'sí' : 'no'}`,
+    config.allowDoubleSession && config.sessionsPerWeek > config.trainingDays.length
+      ? '- Como las sesiones superan los días disponibles, debes usar al menos una doble sesión en un día marcado como doble.'
+      : '',
     `- Deportes permitidos: ${config.allowedSports.join(', ')}`,
     config.primarySport ? `- Deporte principal a mantener presente: ${config.primarySport}` : '',
+    `- Nivel operativo del atleta: ${athleteTier}${config.competitiveLevel ? ` · competitivo ${config.competitiveLevel}` : ''}${config.trainingPriority ? ` · prioridad ${config.trainingPriority}` : ''}`,
     squashMinimum
       ? `- Regla de distribución squash: con ${config.sessionsPerWeek} sesiones, incluye al menos ${squashMinimum} sesiones squash y evita dos squash el mismo día si hay deportes de soporte disponibles.`
       : '',
     `- Estado inicial: fitness ${config.currentFitnessLevel} · fatiga ${config.currentFatigue}`,
+    config.scheduleConstraints?.trim() ? `- Restricciones horarias: ${config.scheduleConstraints.trim()}` : '',
     config.injuryNotes?.trim() ? `- Restricciones: ${config.injuryNotes.trim()}` : '',
   ].filter(Boolean)
 
   return lines.join('\n')
+}
+
+function buildAthleteLevelRules(config: WeekCreatorEffectiveConfig): string {
+  const tier = deriveWeekCreatorAthleteTier(config)
+  const base = [
+    'Reglas por nivel del atleta:',
+    ...buildTierRules(tier, config),
+    '- El nivel nunca permite ignorar fatiga, lesiones, restricciones horarias, días permitidos ni número exacto de sesiones.',
+  ]
+  return base.join('\n')
+}
+
+function buildTierRules(
+  tier: WeekCreatorAthleteTier,
+  config: WeekCreatorEffectiveConfig,
+): string[] {
+  const squashPrimary = config.primarySport === 'squash' || config.allowedSports.includes('squash')
+  switch (tier) {
+    case 'elite':
+      return [
+        '- Nivel elite/profesional: evita semanas genéricas. Cada sesión principal debe tener un foco táctico/técnico claro y transferencia real al rendimiento.',
+        squashPrimary ? '- Squash elite: prioriza presión controlada, toma de la T, patrones largo-corto, ataque/defensa y juegos condicionados; usa control básico solo como soporte, activación o descarga.' : '',
+        '- Fuerza elite: si hay fuerza, usa transferencia deportiva concreta (potencia lateral, desaceleración, rotación/anti-rotación, unilateral) y evita rutinas genéricas de gimnasio.',
+        '- Running/cycling elite cuando no son deporte principal: deben ser soporte aeróbico o recuperación, no competir con la calidad del deporte principal.',
+      ].filter(Boolean)
+    case 'advanced':
+      return [
+        '- Nivel avanzado: usa menos educación básica y más intención de entrenamiento; combina técnica con toma de decisión, presión o aplicación competitiva.',
+        squashPrimary ? '- Squash avanzado: no abuses de solo drives/control aislado; al menos una sesión de la semana debe transferir a rally, presión o juego condicionado si la fatiga lo permite.' : '',
+        '- Fuerza avanzada: prioriza patrones atléticos y específicos antes que full-body genérico.',
+      ].filter(Boolean)
+    case 'competitive':
+      return [
+        '- Nivel competitivo: progresión clara pero sostenible; mezcla técnica sólida, control y una dosis de aplicación específica.',
+        squashPrimary ? '- Squash competitivo: incluye técnica y control, pero evita que toda la semana sea repetición aislada sin contexto de juego.' : '',
+      ].filter(Boolean)
+    case 'foundation':
+      return [
+        '- Nivel retorno/bajo de forma: reduce complejidad, riesgo e impacto; prioriza consistencia, técnica limpia y tolerancia de tejidos.',
+        '- Evita sesiones de alta presión, potencia avanzada o match-play intenso salvo que el usuario lo pida explícitamente y la fatiga sea baja.',
+      ]
+    case 'recreational':
+    default:
+      return [
+        '- Nivel recreativo/general: prioriza adherencia, técnica clara y carga comprensible antes que complejidad competitiva.',
+      ]
+  }
 }
 
 function getSquashMinimumSessions(config: WeekCreatorEffectiveConfig): number | undefined {
@@ -195,13 +253,45 @@ function buildCurrentWeekSessionsSummary(
   const lines = sessions
     .slice()
     .sort((a, b) => a.date.localeCompare(b.date) || a.timeBlock.localeCompare(b.timeBlock))
-    .map((session) => `- ${session.date} ${session.timeBlock} · ${session.type} · ${session.title} · ${session.durationMin}min`)
+    .map((session) => {
+      const details = summarizeExistingSessionDetails(session)
+      return `- ${session.date} ${session.timeBlock} · ${session.type} · ${session.title} · ${session.durationMin}min${details ? ` · ${details}` : ''}`
+    })
 
   return [
     `Sesiones ya planificadas dentro de la semana objetivo ${targetWeekStart}:`,
     ...lines,
-    'Puedes reorganizar la semana completa, pero mantén una distribución coherente con esta base si aporta estabilidad.',
+    'Puedes reorganizar la semana completa, pero no repitas exactamente los mismos drills o ejercicios si ya hay focos creados.',
   ].join('\n')
+}
+
+function summarizeExistingSessionDetails(
+  session: NonNullable<ChatContext['plannedSessions']>[number],
+): string {
+  if (session.type === 'squash' && session.squashDetails) {
+    const blockKinds = session.squashDetails.blocks
+      ?.map((block) => block.kind)
+      .filter(Boolean)
+      .join('+')
+    const drills = [
+      ...(session.squashDetails.drills ?? []),
+      ...((session.squashDetails.blocks ?? []).flatMap((block) => block.drills ?? [])),
+    ]
+      .map((drill) => drill.name)
+      .filter(Boolean)
+      .slice(0, 5)
+    return [
+      session.squashDetails.sessionKind ? `kind ${session.squashDetails.sessionKind}` : '',
+      blockKinds ? `bloques ${blockKinds}` : '',
+      drills.length > 0 ? `drills ${drills.join(', ')}` : '',
+    ].filter(Boolean).join(' · ')
+  }
+
+  if (session.type === 'strength' && Array.isArray(session.exercises) && session.exercises.length > 0) {
+    return `ejercicios ${session.exercises.map((exercise) => exercise.name).slice(0, 6).join(', ')}`
+  }
+
+  return ''
 }
 
 function buildRecentHistorySummary(sessions: ChatContext['historicalSessions']): string {

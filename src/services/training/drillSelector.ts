@@ -6,6 +6,7 @@ import type {
   SquashSessionBlockKind,
   SquashSessionKind,
   SquashTrainingFocus,
+  GoalEventLevel,
 } from '../../types'
 import { getRecentSquashCompetitiveExposure } from '../../utils/squash'
 import {
@@ -37,6 +38,7 @@ export interface SquashSelectionContext {
   squashAcwr?: DisciplineAcwr
   desiredKind?: SquashSelectionDesiredKind
   partnerAvailability?: SquashPartnerAvailability
+  competitiveLevel?: GoalEventLevel
 }
 
 export type SquashPartnerAvailability = 'solo' | 'partner' | 'either'
@@ -563,6 +565,21 @@ function scoreDrills(
       if (goal.includes('control') && drill.tags.includes('length_control')) score += 4
       if (goal.includes('recuper') && drill.tags.includes('recovery_technical')) score += 5
       if (goal.includes('presion') && drill.tags.includes('pressure')) score += 4
+
+      if (context.competitiveLevel === 'elite' || context.competitiveLevel === 'masters') {
+        if (drill.category === 'tactical') score += 3
+        if (drill.tags.includes('pressure')) score += 4
+        if (drill.tags.includes('conditioned_game')) score += 3
+        if (drill.tags.includes('match_play') && context.partnerAvailability !== 'solo') score += 3
+        if ((drill.progressionLevel ?? 1) >= 3) score += context.competitiveLevel === 'elite' ? 3 : 2
+        if (drill.tags.includes('volume_reps') && !context.goal.toLowerCase().includes('control')) score -= 3
+      } else if (context.competitiveLevel === 'competitive') {
+        if (drill.tags.includes('pressure') || drill.tags.includes('conditioned_game')) score += 2
+        if ((drill.progressionLevel ?? 1) >= 2) score += 1
+      } else if (context.competitiveLevel === 'recreational') {
+        if ((drill.progressionLevel ?? 1) >= 3) score -= 3
+        if (drill.intensity === 'low' || drill.tags.includes('control_session')) score += 2
+      }
 
       if (!context.competitionSoon && context.fatigueLevel <= 6 && (context.phase === 'build' || context.phase === 'peak')) {
         if (drill.tags.includes('match_play') && drill.tags.includes('practice') && wantsCompetitiveExposure) score += 8

@@ -105,6 +105,9 @@ export function validateWeekCreatorResponse(
   const dayError = validateAllowedDays(sessions, input.config)
   if (dayError) return fail(dayError, rawSessionCount, validSessionCount, droppedSessionCount)
 
+  const timeConstraintError = validateScheduleTimeConstraints(sessions, input.config)
+  if (timeConstraintError) return fail(timeConstraintError, rawSessionCount, validSessionCount, droppedSessionCount)
+
   const sportError = validateAllowedSports(sessions, input.config)
   if (sportError) return fail(sportError, rawSessionCount, validSessionCount, droppedSessionCount)
 
@@ -160,15 +163,26 @@ function validateDoubleSessions(
     byDate.set(session.date, (byDate.get(session.date) ?? 0) + 1)
   }
 
-  if (config.allowDoubleSession && config.trainingDays.length >= sessions.length) {
-    const repeatedDate = [...byDate.entries()].find(([, count]) => count > 1)
-    if (repeatedDate) {
-      return `Evita doble jornada el ${repeatedDate[0]}: hay suficientes días disponibles para repartir ${sessions.length} sesiones.`
+  if (config.allowDoubleSession) {
+    for (const [date, count] of byDate.entries()) {
+      if (count <= 1) continue
+      if (count > 2) {
+        return `No programes más de dos sesiones el mismo día (${date}).`
+      }
+      if (!canUseDoubleSessionOnDate(date, config)) {
+        return `La doble sesión del ${date} cae en un día no marcado como doble sesión posible.`
+      }
+    }
+
+    const hasExplicitDoubleDays = (config.doubleSessionDays ?? []).length > 0
+    if (!hasExplicitDoubleDays && config.trainingDays.length >= sessions.length) {
+      const repeatedDate = [...byDate.entries()].find(([, count]) => count > 1)
+      if (repeatedDate) {
+        return `Evita doble jornada el ${repeatedDate[0]}: hay suficientes días disponibles para repartir ${sessions.length} sesiones.`
+      }
     }
     return undefined
   }
-
-  if (config.allowDoubleSession) return undefined
 
   for (const [date, count] of byDate.entries()) {
     if (count > 1) {
@@ -176,6 +190,17 @@ function validateDoubleSessions(
     }
   }
   return undefined
+}
+
+function canUseDoubleSessionOnDate(
+  date: string,
+  config: WeekCreatorEffectiveConfig,
+): boolean {
+  if (!config.allowDoubleSession) return false
+  const doubleSessionDays = config.doubleSessionDays ?? []
+  if (doubleSessionDays.length === 0) return true
+  const day = isoDateToDayOfWeek(date)
+  return Boolean(day && doubleSessionDays.includes(day))
 }
 
 function validateSameDaySquashSessions(
@@ -269,6 +294,67 @@ function validateAllowedDays(
     }
   }
   return undefined
+}
+
+function validateScheduleTimeConstraints(
+  sessions: CoachSessionProposal[],
+  config: WeekCreatorEffectiveConfig,
+): string | undefined {
+  const constraints = normalizeConstraintText(config.scheduleConstraints)
+  if (!constraints) return undefined
+
+  for (const session of sessions) {
+    const day = isoDateToDayOfWeek(session.date)
+    if (!day) continue
+    const labels = DAY_CONSTRAINT_LABELS[day]
+
+    if (hasDayScopedConstraint(constraints, labels, ['no disponible', 'sin disponibilidad'])) {
+      return `La sesión ${session.title} cae en ${session.date}, pero las restricciones horarias indican que ese día no está disponible.`
+    }
+    if (hasDayScopedConstraint(constraints, labels, ['solo am', 'solamente am', 'unicamente am']) && session.timeBlock !== 'AM') {
+      return `La sesión ${session.title} cae en ${session.date} ${session.timeBlock}, pero las restricciones horarias indican solo AM para ese día.`
+    }
+    if (hasDayScopedConstraint(constraints, labels, ['solo pm', 'solamente pm', 'unicamente pm']) && session.timeBlock !== 'PM') {
+      return `La sesión ${session.title} cae en ${session.date} ${session.timeBlock}, pero las restricciones horarias indican solo PM para ese día.`
+    }
+  }
+
+  return undefined
+}
+
+function hasDayScopedConstraint(
+  constraints: string,
+  dayLabels: string[],
+  phrases: string[],
+): boolean {
+  return dayLabels.some((label) =>
+    phrases.some((phrase) =>
+      constraints.includes(`${phrase} ${label}`) ||
+      constraints.includes(`${phrase} los ${label}`) ||
+      constraints.includes(`${phrase} el ${label}`) ||
+      constraints.includes(`${label} ${phrase}`) ||
+      constraints.includes(`los ${label} ${phrase}`),
+    ),
+  )
+}
+
+const DAY_CONSTRAINT_LABELS: Record<DayOfWeek, string[]> = {
+  monday: ['lunes', 'lun', 'monday'],
+  tuesday: ['martes', 'mar', 'tuesday'],
+  wednesday: ['miercoles', 'mie', 'wednesday'],
+  thursday: ['jueves', 'jue', 'thursday'],
+  friday: ['viernes', 'vie', 'friday'],
+  saturday: ['sabados', 'sabado', 'sab', 'saturday'],
+  sunday: ['domingos', 'domingo', 'dom', 'sunday'],
+}
+
+function normalizeConstraintText(value: string | undefined): string {
+  return (value ?? '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
 }
 
 function validateAllowedSports(
