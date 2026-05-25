@@ -85,7 +85,7 @@ describe('planningConstraints', () => {
     expect(getAllowedPlanningSports(profile)).toEqual(['squash', 'strength'])
   })
 
-  it('allows only squash when the plan has no complementary sports', () => {
+  it('infers support sports from enabled sports when the plan has no explicit complementary sports', () => {
     const profile = makeProfile({
       planWizardConfig: {
         ...makeProfile().planWizardConfig!,
@@ -93,7 +93,48 @@ describe('planningConstraints', () => {
       },
     })
 
+    expect(getAllowedPlanningSports(profile)).toEqual(['squash', 'running', 'strength'])
+  })
+
+  it('allows only squash when it is the only enabled sport', () => {
+    const profile = makeProfile({
+      sportContext: {
+        enabledSports: ['squash'],
+        primarySport: 'squash',
+        secondarySports: [],
+        trainingPriority: 'performance',
+      },
+      planWizardConfig: {
+        ...makeProfile().planWizardConfig!,
+        complementarySports: [],
+      },
+    })
+
     expect(getAllowedPlanningSports(profile)).toEqual(['squash'])
+  })
+
+  it('infers support sports from structured running and strength profiles', () => {
+    const profile = makeProfile({
+      sportContext: {
+        enabledSports: ['squash'],
+        primarySport: 'squash',
+        secondarySports: [],
+        trainingPriority: 'performance',
+      },
+      runningProfile: {
+        z2PaceMin: '5:20',
+        z2PaceMax: '5:45',
+      },
+      strengthProfile: {
+        squat1RM: 120,
+      },
+      planWizardConfig: {
+        ...makeProfile().planWizardConfig!,
+        complementarySports: [],
+      },
+    })
+
+    expect(getAllowedPlanningSports(profile)).toEqual(['squash', 'running', 'strength'])
   })
 
   it('starts a new plan with no complementary sports selected by default', () => {
@@ -166,12 +207,7 @@ describe('planningConstraints', () => {
   })
 
   it('filters direct session proposals with a disallowed sport', () => {
-    const profile = makeProfile({
-      planWizardConfig: {
-        ...makeProfile().planWizardConfig!,
-        complementarySports: [],
-      },
-    })
+    const profile = makeProfile()
 
     const actions: CoachAction[] = [
       {
@@ -252,6 +288,12 @@ describe('planning prompt allowed sports', () => {
 
   it('does not reintroduce strength into a running-only plan', () => {
     const profile = makeProfile({
+      sportContext: {
+        enabledSports: ['running'],
+        primarySport: 'running',
+        secondarySports: [],
+        trainingPriority: 'performance',
+      },
       goalEvents: [
         {
           id: 'goal-running',
@@ -281,9 +323,9 @@ describe('planning prompt allowed sports', () => {
   it('does not reintroduce strength into a cycling-only plan', () => {
     const profile = makeProfile({
       sportContext: {
-        enabledSports: ['cycling', 'strength'],
+        enabledSports: ['cycling'],
         primarySport: 'cycling',
-        secondarySports: ['strength'],
+        secondarySports: [],
         trainingPriority: 'performance',
       },
       goalEvents: [

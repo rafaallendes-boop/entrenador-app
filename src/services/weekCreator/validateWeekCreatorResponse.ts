@@ -9,13 +9,13 @@ import type { WeekCreatorEffectiveConfig } from './WeekCreatorConfig'
 /**
  * Fields where structural recursion stops. Their internal validation is owned
  * by the imperative checks below because:
- *   - squashDetails / cyclingDetails / mobilityDetails — required-ness depends
+ *   - squashDetails / cyclingDetails / mobilityDetails / intervalStructure — required-ness depends
  *     on the sibling sessionType discriminator, and inner rules (drill catalog
  *     membership, focus consistency) are deportive business logic.
  *   - exercises — items use union types (e.g. reps accepts number | string)
  *     that the structural FieldSpec cannot currently express.
  */
-const SKIP_DEEP_FIELDS = ['squashDetails', 'cyclingDetails', 'mobilityDetails', 'exercises'] as const
+const SKIP_DEEP_FIELDS = ['squashDetails', 'cyclingDetails', 'mobilityDetails', 'intervalStructure', 'exercises'] as const
 
 export interface WeekCreatorValidationInput {
   response: CoachNormalizedResponse

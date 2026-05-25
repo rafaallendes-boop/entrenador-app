@@ -3,6 +3,21 @@ import { getEnabledSports, getPrimarySportNormalized, normalizeSport } from '../
 
 export const RESTRICTED_PLANNING_SPORTS: SupportedSport[] = ['squash', 'running', 'strength', 'cycling']
 
+function hasStructuredProfileSignal(value: object | undefined): boolean {
+  if (!value) return false
+  return Object.values(value as Record<string, unknown>).some((item) => {
+    if (typeof item === 'string') return item.trim().length > 0
+    return item !== undefined && item !== null
+  })
+}
+
+function getImplicitSupportSports(profile: AthleteProfile): SupportedSport[] {
+  const sports = [...getEnabledSports(profile)]
+  if (hasStructuredProfileSignal(profile.runningProfile)) sports.push('running')
+  if (hasStructuredProfileSignal(profile.strengthProfile)) sports.push('strength')
+  return [...new Set(sports)]
+}
+
 function getPlanGoalEventSport(profile: AthleteProfile | null | undefined): SupportedSport | undefined {
   if (!profile?.goalEvents || profile.goalEvents.length === 0) return undefined
 
@@ -29,11 +44,20 @@ export function getAllowedPlanningSports(profile: AthleteProfile | null | undefi
     return getEnabledSports(profile)
   }
 
+  const configuredComplementarySports = config.complementarySports
+    .map((sport) => normalizeSport(sport))
+    .filter((sport): sport is SupportedSport => sport !== undefined)
+
+  if (configuredComplementarySports.length === 0) {
+    return [...new Set([
+      planningPrimary,
+      ...getImplicitSupportSports(profile).filter((sport) => sport !== planningPrimary),
+    ])]
+  }
+
   return [...new Set([
     planningPrimary,
-    ...config.complementarySports
-      .map((sport) => normalizeSport(sport))
-      .filter((sport): sport is SupportedSport => sport !== undefined),
+    ...configuredComplementarySports,
   ])]
 }
 

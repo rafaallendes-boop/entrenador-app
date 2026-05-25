@@ -66,11 +66,14 @@ export function postProcessCoachActions(
       : {
           ...response.meta,
           hadActionsMarkup: response.meta?.hadActionsMarkup ?? false,
-          actionParseFailed: response.meta?.actionParseFailed ?? false,
-          likelyTruncated: response.meta?.likelyTruncated ?? false,
+          actionParseFailed: false,
+          likelyTruncated: false,
           warnings: [
             ...(response.meta?.warnings ?? []),
             'chat_action_without_actions_repaired',
+            ...(response.meta?.actionParseFailed || response.meta?.likelyTruncated
+              ? ['chat_action_malformed_response_repaired']
+              : []),
           ],
         },
   }
@@ -114,7 +117,7 @@ function buildFallbackSingleSessionActions(
 }
 
 function isClearSingleSessionCreationRequest(normalizedMessage: string): boolean {
-  const hasCreateIntent = /\b(crea(?:r|me)?|crear|haz(?:me)?|hacer|arma(?:me)?|programa(?:me)?|agenda(?:me)?|agrega(?:me)?|pon(?:me)?)\b/.test(normalizedMessage)
+  const hasCreateIntent = /\b(crea(?:r|me)?|crear|genera(?:r|me)?|generar|haz(?:me)?|hacer|arma(?:me)?|programa(?:me)?|agenda(?:me)?|agrega(?:me)?|pon(?:me)?)\b/.test(normalizedMessage)
   const hasSessionTarget = /\b(sesion|fuerza|pesas|gym|gimnasio|running|correr|squash|cycling|ciclismo|bici|movilidad|recovery|recuperacion)\b/.test(normalizedMessage)
   const hasDay = /\b(hoy|manana|lunes|martes|miercoles|jueves|viernes|sabado|domingo)\b/.test(normalizedMessage)
   const weekTarget = /\b(semana|microciclo|plan completo|planificar semana)\b/.test(normalizedMessage)
@@ -558,4 +561,7 @@ function normalizeText(text: string): string {
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\ba\s*hoy\b/g, 'hoy')
+    .replace(/\bahoy\b/g, 'hoy')
+    .replace(/\bmanan[ao]\b/g, 'manana')
 }

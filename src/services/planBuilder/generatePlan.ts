@@ -23,6 +23,9 @@ import {
 } from '../week/shared'
 import { resolveConfiguredGenerationStrategy } from './generationState'
 import { getExpectedSessionsForPlanWeek } from './dateRange'
+import { buildLocalFallbackWeek } from './fallbackWeek'
+
+const MAX_SINGLE_WEEK_PROVIDER_ATTEMPTS = 2
 
 function getActiveProvider(): AIProvider {
   if (import.meta.env.PROD) return new ProxyProvider()
@@ -186,6 +189,80 @@ function makeResolvedWeek(
   }
 }
 
+function makeLocalFallbackResolvedWeek(input: {
+  plan: TrainingPlan
+  week: TrainingPlanWeek
+  previousWeek?: TrainingPlanWeek
+  profile: AthleteProfile
+  wizardConfig: PlanWizardConfig
+  attempts: number
+  provider: string
+  model?: string
+  requestClass?: 'plan_builder_week' | 'plan_builder_pair'
+  traceId?: string
+  lastError?: string
+  durationMs?: number
+  chunkCount?: number
+  strategy: 'single' | 'pairs'
+  batchId?: string
+  rawSessionCount?: number
+  droppedSessionCount?: number
+  degradedFromPairs?: boolean
+}): TrainingPlanWeek {
+  const fallback = buildLocalFallbackWeek({
+    plan: input.plan,
+    week: input.week,
+    previousWeek: input.previousWeek,
+    profile: input.profile,
+    wizardConfig: input.wizardConfig,
+  })
+
+  if (fallback.sessions.length === 0) {
+    return makeResolvedWeek(input.week, [], {
+      attempts: input.attempts,
+      provider: input.provider,
+      model: input.model,
+      requestClass: input.requestClass,
+      traceId: input.traceId,
+      lastError: input.lastError,
+      durationMs: input.durationMs,
+      chunkCount: input.chunkCount,
+      strategy: input.strategy,
+      batchId: input.batchId,
+      rawSessionCount: input.rawSessionCount,
+      droppedSessionCount: input.droppedSessionCount,
+      degradedFromPairs: input.degradedFromPairs,
+    })
+  }
+
+  return makeResolvedWeek(input.week, fallback.sessions, {
+    attempts: input.attempts,
+    provider: input.provider,
+    model: input.model ? `${input.model}+local-plan-fallback` : 'local-plan-fallback',
+    requestClass: input.requestClass,
+    traceId: input.traceId,
+    lastError: input.lastError,
+    durationMs: input.durationMs,
+    chunkCount: input.chunkCount,
+    fallbackUsed: true,
+    strategy: input.strategy,
+    batchId: input.batchId,
+    rawSessionCount: input.rawSessionCount ?? 0,
+    validSessionCount: fallback.sessions.length,
+    droppedSessionCount: input.droppedSessionCount ?? 0,
+    degradedFromPairs: input.degradedFromPairs,
+    repairedSessionCount: fallback.meta.repairedSessionCount,
+    movedSessionCount: fallback.meta.movedSessionCount,
+    addedFallbackCount: fallback.meta.addedFallbackCount,
+    filteredSportCount: fallback.meta.filteredSportCount,
+    repairWarnings: [
+      { code: 'local_plan_fallback', message: `Se generó una semana base local después de ${input.attempts} intento(s) fallidos del proveedor.` },
+      ...fallback.meta.warnings,
+    ],
+    errorClass: 'local_plan_fallback',
+  })
+}
+
 function normalizeRetryInstruction(
   error: string | undefined,
   plan: TrainingPlan,
@@ -215,10 +292,9 @@ async function generateSingleWeekWithRetry(
   let durationMs = 0
   let chunkCount = 0
   let rawSessionCount: number | undefined
-  let validSessionCount: number | undefined
   let droppedSessionCount: number | undefined
 
-  for (let attempt = 1; attempt <= 3; attempt++) {
+  for (let attempt = 1; attempt <= MAX_SINGLE_WEEK_PROVIDER_ATTEMPTS; attempt++) {
     const result = await generateWeek({
       provider,
       plan,
@@ -238,7 +314,6 @@ async function generateSingleWeekWithRetry(
     durationMs += result.meta.durationMs ?? 0
     chunkCount += result.meta.chunkCount ?? 0
     rawSessionCount = result.meta.rawSessionCount
-    validSessionCount = result.meta.validSessionCount
     droppedSessionCount = result.meta.droppedSessionCount
 
     if (result.sessions.length > 0) {
@@ -263,7 +338,12 @@ async function generateSingleWeekWithRetry(
     }
   }
 
-  return makeResolvedWeek(week, [], {
+  return makeLocalFallbackResolvedWeek({
+    plan,
+    week,
+    previousWeek,
+    profile,
+    wizardConfig,
     attempts,
     provider: providerName,
     model,
@@ -272,7 +352,6 @@ async function generateSingleWeekWithRetry(
     chunkCount,
     strategy: 'single',
     rawSessionCount,
-    validSessionCount,
     droppedSessionCount,
   })
 }
@@ -384,11 +463,13 @@ async function generateWeekPair(
       })
     }
 
-    const degradeToSingle =
-      normalized.meta?.actionParseFailed === true
-      || normalized.meta?.likelyTruncated === true
-      || weekResults.size !== weeks.length
-      || Array.from(weekResults.values()).some((result) => result.error != null)
+    const batchWarnings = [
+      ...(normalized.meta?.warnings ?? []),
+      ...Array.from(weekResults.values())
+        .filter((result) => result.error)
+        .map((result) => `validation_error:week_${result.week.weekIndex + 1}:${result.error}`),
+    ]
+    const degradeToSingle = false
     useAIDebugStore.getState().completeRequest(traceId, {
       provider: raw.provider,
       model: raw.model,
@@ -398,7 +479,7 @@ async function generateWeekPair(
       outcome: normalized.meta?.outcome,
       responseCharCount: raw.text.length,
       actionCount: normalized.actions?.length ?? 0,
-      warnings: normalized.meta?.warnings,
+      warnings: batchWarnings.length > 0 ? batchWarnings : undefined,
     })
 
     return {
@@ -432,7 +513,7 @@ async function generateWeekPair(
         chunkCount,
         lastError: message,
         batchId,
-        degradeToSingle: true,
+        degradeToSingle: false,
       },
     }
   }
@@ -511,29 +592,30 @@ export async function generatePlanWeeks(input: GeneratePlanWeeksInput): Promise<
           continue
         }
 
-        const fallbackResolved = await generateSingleWeekWithRetry(
-          provider,
-          input.plan,
-          batchWeekResult.week,
+        const localFallback = makeLocalFallbackResolvedWeek({
+          plan: input.plan,
+          week: batchWeekResult.week,
           previousWeek,
-          input.profile,
-          input.wizardConfig,
-          input.onChunk,
-        )
-        const adjustedFallback: TrainingPlanWeek = {
-          ...fallbackResolved,
-          generationMeta: {
-            ...fallbackResolved.generationMeta,
-            attempts: (fallbackResolved.generationMeta.attempts ?? 0) + 1,
-            durationMs: (fallbackResolved.generationMeta.durationMs ?? 0) + (batchResult.meta.durationMs ?? 0),
-            chunkCount: (fallbackResolved.generationMeta.chunkCount ?? 0) + batchResult.meta.chunkCount,
-            degradedFromPairs: true,
-          },
-        }
-        input.onWeekUpdate?.(adjustedFallback)
-        results.push(adjustedFallback)
-        if (adjustedFallback.status === 'draft') {
-          previousWeek = adjustedFallback
+          profile: input.profile,
+          wizardConfig: input.wizardConfig,
+          attempts: 1,
+          provider: batchResult.meta.provider,
+          model: batchResult.meta.model,
+          requestClass: 'plan_builder_pair',
+          traceId: batchResult.meta.traceId,
+          lastError: batchWeekResult.error,
+          durationMs: batchResult.meta.durationMs,
+          chunkCount: batchResult.meta.chunkCount,
+          strategy: 'pairs',
+          batchId: batchResult.meta.batchId,
+          rawSessionCount: batchWeekResult.rawSessionCount,
+          droppedSessionCount: batchWeekResult.droppedSessionCount,
+          degradedFromPairs: batchResult.meta.degradeToSingle,
+        })
+        input.onWeekUpdate?.(localFallback)
+        results.push(localFallback)
+        if (localFallback.status === 'draft') {
+          previousWeek = localFallback
         }
       }
 

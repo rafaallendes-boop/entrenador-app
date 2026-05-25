@@ -28,7 +28,7 @@ export function shouldRetryAction(response: CoachNormalizedResponse): boolean {
 function shouldRejectAfterRetry(response: CoachNormalizedResponse): boolean {
   // Only reject when JSON is genuinely malformed.
   // If the model simply omitted actions, return the text so the user can continue.
-  return response.meta?.actionParseFailed === true
+  return response.meta?.actionParseFailed === true && !response.message.trim()
 }
 
 /** Retryable transient provider errors at the client layer (in addition to server retries). */

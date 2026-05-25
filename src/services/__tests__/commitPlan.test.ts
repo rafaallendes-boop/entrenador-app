@@ -141,6 +141,7 @@ vi.mock('../../store/useCoachMemoryStore', () => ({
 }))
 
 import { commitPlan } from '../planBuilder/commitPlan'
+import { analyzePlanCommitImpact } from '../planBuilder/commitImpact'
 
 function makePlan(totalWeeks = 2): TrainingPlan {
   return {
@@ -265,6 +266,15 @@ function makeStoredSession(id: string, date: string, title: string): Session {
   }
 }
 
+function makeStoredHistorySession(id: string, date: string, timeBlock: Session['timeBlock'], title: string): Session {
+  return {
+    ...makeStoredSession(id, date, title),
+    timeBlock,
+    status: 'completed',
+    completedAt: 1,
+  }
+}
+
 beforeEach(() => {
   sessionsById.clear()
   weekSummariesByStart.clear()
@@ -277,6 +287,40 @@ beforeEach(() => {
 })
 
 describe('commitPlan', () => {
+  it('previews which planned sessions will be replaced and which history is preserved', async () => {
+    const plan = {
+      ...makePlan(1),
+      wizardConfig: {
+        ...makePlan().wizardConfig,
+        allowDoubleSession: true,
+      },
+    }
+    const plannedToReplace = makeStoredSession('old-planned', '2026-05-05', 'Sesion previa')
+    const completedToPreserve = makeStoredHistorySession('done-1', '2026-05-05', 'PM', 'Sesion completada')
+    const untouchedPlanned = makeStoredSession('untouched', '2026-05-06', 'Sesion futura')
+    sessionsById.set(plannedToReplace.id, plannedToReplace)
+    sessionsById.set(completedToPreserve.id, completedToPreserve)
+    sessionsById.set(untouchedPlanned.id, untouchedPlanned)
+
+    const impact = await analyzePlanCommitImpact(plan, [
+      makeWeek({
+        id: 'week-1',
+        weekIndex: 0,
+        weekStartDate: '2026-05-04',
+        sessions: makeProposalSession('2026-05-05'),
+      }),
+    ], athleteProfileState.athleteProfile)
+
+    expect(impact.totals.generatedSessions).toBe(2)
+    expect(impact.totals.creatableSessions).toBe(1)
+    expect(impact.totals.replacedPlannedSessions).toBe(1)
+    expect(impact.totals.preservedHistorySessions).toBe(1)
+    expect(impact.totals.blockedByHistorySessions).toBe(1)
+    expect(impact.totals.untouchedPlannedSessions).toBe(1)
+    expect(impact.hasHistoryConflicts).toBe(true)
+    expect(impact.weeks[0]?.blockedByHistorySessions[0]?.existing.id).toBe('done-1')
+  })
+
   it('refuses to activate a plan when at least one week is not ready', async () => {
     const result = await commitPlan(makePlan(), [
       makeWeek({

@@ -510,6 +510,59 @@ describe('planBuilder', () => {
     expect(prompts).toHaveLength(1)
   })
 
+  it('uses a local fallback week after invalid Gemini-style responses exhaust retries', async () => {
+    const profile = makeProfile('2026-07-20')
+    const event = profile.goalEvents![0] as GoalEvent
+    const wizardConfig = makeWizardConfig()
+    const { plan, weeks } = buildPlanShell({
+      athleteId: profile.id,
+      profile,
+      wizardConfig,
+      goalEvent: event,
+      now: new Date('2026-05-17T10:00:00'),
+    })
+    const peakWeek = { ...weeks[0], phase: 'peak' as const }
+
+    let callCount = 0
+    const provider = {
+      name: 'gemini' as const,
+      call: async () => {
+        callCount += 1
+        return {
+          provider: 'gemini' as const,
+          model: 'gemini-2.5-flash',
+          text: '<actions>[{"type":"noop","reason":"sin create_week valido"}]</actions>',
+        }
+      },
+    }
+
+    const result = await generatePlanWeeks({
+      plan: { ...plan, totalWeeks: 1 },
+      weeks: [peakWeek],
+      profile,
+      wizardConfig,
+      provider,
+      strategy: 'single',
+    })
+
+    const sessions = result[0]?.sessions ?? []
+    const counts = sessions.reduce<Record<string, number>>((acc, session) => {
+      acc[session.sessionType] = (acc[session.sessionType] ?? 0) + 1
+      return acc
+    }, {})
+
+    expect(callCount).toBe(2)
+    expect(result[0]?.status).toBe('draft')
+    expect(result[0]?.generationMeta.fallbackUsed).toBe(true)
+    expect(result[0]?.generationMeta.errorClass).toBe('local_plan_fallback')
+    expect(result[0]?.generationMeta.attempts).toBe(2)
+    expect(sessions).toHaveLength(5)
+    expect(counts.squash).toBe(3)
+    expect(counts.running).toBe(1)
+    expect(counts.strength).toBe(1)
+    expect(sessions.find((session) => session.sessionType === 'running')?.intervalStructure?.blocks?.length).toBeGreaterThan(0)
+  })
+
   it('surfaces dropped invalid sessions as a stronger retry instruction', async () => {
     const profile = makeProfile('2026-07-20')
     const event = profile.goalEvents![0] as GoalEvent
@@ -574,7 +627,7 @@ describe('planBuilder', () => {
     expect(weeks[0]?.phase).toBe('transition')
   })
 
-  it('falls back from pair generation to single-week generation when only one week resolves from the batch', async () => {
+  it('fills a missing pair week locally without spending extra single-week requests', async () => {
     const profile = makeProfile('2026-07-20')
     const event = profile.goalEvents![0] as GoalEvent
     const wizardConfig = {
@@ -595,15 +648,9 @@ describe('planBuilder', () => {
       name: 'mock' as const,
       call: async () => {
         callCount += 1
-        if (callCount === 1) {
-          return {
-            provider: 'mock' as const,
-            text: `<actions>[{"type":"create_week","reason":"batch","targetDate":"${weeks[0].weekStartDate}","sessions":[{"date":"${weeks[0].weekStartDate}","timeBlock":"AM","sessionType":"squash","title":"w1-a","durationMin":30,"squashDetails":{"trainingFocus":"technical","sessionMode":"drill_session","sessionKind":"technical","drills":[{"name":"Drive","durationMin":10}]}},{"date":"${addDaysIso(weeks[0].weekStartDate, 1)}","timeBlock":"PM","sessionType":"squash","title":"w1-b","durationMin":35,"squashDetails":{"trainingFocus":"technical","sessionMode":"drill_session","sessionKind":"control","drills":[{"name":"Drop","durationMin":10}]}}]}]</actions>`,
-          }
-        }
         return {
           provider: 'mock' as const,
-          text: `<actions>[{"type":"create_week","reason":"single","targetDate":"${weeks[1].weekStartDate}","sessions":[{"date":"${weeks[1].weekStartDate}","timeBlock":"AM","sessionType":"squash","title":"w2-a","durationMin":45,"squashDetails":{"trainingFocus":"technical","sessionMode":"drill_session","sessionKind":"technical","drills":[{"name":"Drive","durationMin":10}]}},{"date":"${addDaysIso(weeks[1].weekStartDate, 1)}","timeBlock":"PM","sessionType":"squash","title":"w2-b","durationMin":35,"squashDetails":{"trainingFocus":"technical","sessionMode":"drill_session","sessionKind":"control","drills":[{"name":"Drop","durationMin":10}]}}]}]</actions>`,
+          text: `<actions>[{"type":"create_week","reason":"batch","targetDate":"${weeks[0].weekStartDate}","sessions":[{"date":"${weeks[0].weekStartDate}","timeBlock":"AM","sessionType":"squash","title":"w1-a","durationMin":30,"squashDetails":{"trainingFocus":"technical","sessionMode":"drill_session","sessionKind":"technical","drills":[{"name":"Drive","durationMin":10}]}},{"date":"${addDaysIso(weeks[0].weekStartDate, 1)}","timeBlock":"PM","sessionType":"squash","title":"w1-b","durationMin":35,"squashDetails":{"trainingFocus":"technical","sessionMode":"drill_session","sessionKind":"control","drills":[{"name":"Drop","durationMin":10}]}}]}]</actions>`,
         }
       },
     }
@@ -617,14 +664,15 @@ describe('planBuilder', () => {
       strategy: 'pairs',
     })
 
-    expect(callCount).toBe(2)
+    expect(callCount).toBe(1)
     expect(result[0]?.status).toBe('draft')
     expect(result[1]?.status).toBe('draft')
     expect(result[0]?.generationMeta.strategy).toBe('pairs')
-    expect(result[1]?.generationMeta.strategy).toBe('single')
+    expect(result[1]?.generationMeta.strategy).toBe('pairs')
+    expect(result[1]?.generationMeta.fallbackUsed).toBe(true)
   })
 
-  it('degrades the remaining pipeline to single-week generation after a malformed pair batch', async () => {
+  it('keeps long-plan pair generation and fills malformed pair weeks locally', async () => {
     const profile = makeProfile('2026-07-20')
     const event = profile.goalEvents![0] as GoalEvent
     const wizardConfig = makeWizardConfig()
@@ -651,10 +699,9 @@ describe('planBuilder', () => {
             text: `<actions>[{"type":"noop","reason":"malformed pair for ${week1Monday} and ${week2Monday}"}]</actions>`,
           }
         }
-        const monday = callCount === 2 ? week1Monday : callCount === 3 ? week2Monday : callCount === 4 ? week3Monday : week4Monday
         return {
           provider: 'mock' as const,
-          text: `<actions>[{"type":"create_week","reason":"single-ok","targetDate":"${monday}","sessions":[{"date":"${monday}","timeBlock":"AM","sessionType":"squash","title":"a","durationMin":60,"squashDetails":{"trainingFocus":"technical","sessionMode":"drill_session","sessionKind":"technical","drills":[{"name":"Drive","durationMin":10}]}},{"date":"${addDaysIso(monday, 1)}","timeBlock":"PM","sessionType":"strength","title":"b","durationMin":45},{"date":"${addDaysIso(monday, 2)}","timeBlock":"AM","sessionType":"squash","title":"c","durationMin":30,"squashDetails":{"trainingFocus":"technical","sessionMode":"drill_session","sessionKind":"technical","drills":[{"name":"Boast","durationMin":10}]}},{"date":"${addDaysIso(monday, 3)}","timeBlock":"PM","sessionType":"squash","title":"d","durationMin":50,"squashDetails":{"trainingFocus":"technical","sessionMode":"drill_session","sessionKind":"control","drills":[{"name":"Drops","durationMin":10}]}},{"date":"${addDaysIso(monday, 5)}","timeBlock":"AM","sessionType":"running","title":"e","durationMin":40}]}]</actions>`,
+          text: `<actions>[${createWeekActionText(week3Monday, 'pair-3')},${createWeekActionText(week4Monday, 'pair-4')}]</actions>`,
         }
       },
     }
@@ -668,11 +715,12 @@ describe('planBuilder', () => {
       strategy: 'pairs',
     })
 
-    expect(callCount).toBe(5)
+    expect(callCount).toBe(2)
     expect(result.every((week) => week.status === 'draft')).toBe(true)
-    expect(result[0]?.generationMeta.strategy).toBe('single')
-    expect(result[2]?.generationMeta.strategy).toBe('single')
-    expect(result[0]?.generationMeta.degradedFromPairs).toBe(true)
+    expect(result[0]?.generationMeta.strategy).toBe('pairs')
+    expect(result[1]?.generationMeta.fallbackUsed).toBe(true)
+    expect(result[2]?.generationMeta.strategy).toBe('pairs')
+    expect(result[0]?.generationMeta.degradedFromPairs).toBe(false)
   })
 
   it('streams chunks through the plan generator callback', async () => {
@@ -766,7 +814,7 @@ describe('planBuilder', () => {
     expect(result[1]?.status).toBe('draft')
   })
 
-  it('uses single-week generation by default even for long plans', async () => {
+  it('uses pair generation by default for long plans', async () => {
     const profile = makeProfile(eventNWeeksFromNow(8))
     const event = profile.goalEvents![0] as GoalEvent
     const wizardConfig = {
@@ -782,16 +830,13 @@ describe('planBuilder', () => {
     })
 
     const requestClasses: string[] = []
-    let callIndex = 0
     const provider = {
       name: 'mock' as const,
       call: async (request: { requestClass: string }) => {
-        const week = weeks[callIndex]
-        callIndex += 1
         requestClasses.push(request.requestClass)
         return {
           provider: 'mock' as const,
-          text: `<actions>[${createWeekActionText(week.weekStartDate)}]</actions>`,
+          text: `<actions>[${createWeekActionText(weeks[0].weekStartDate, 'default-1')},${createWeekActionText(weeks[1].weekStartDate, 'default-2')}]</actions>`,
         }
       },
     }
@@ -805,7 +850,7 @@ describe('planBuilder', () => {
     })
 
     expect(result.every((week) => week.status === 'draft')).toBe(true)
-    expect(requestClasses).toEqual(['plan_builder_week', 'plan_builder_week'])
+    expect(requestClasses).toEqual(['plan_builder_pair'])
   })
 
   it('uses pair generation only when configured explicitly as pairs', async () => {

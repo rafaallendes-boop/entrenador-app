@@ -87,6 +87,25 @@ describe('resolveWeekCreatorConfig', () => {
     expect(config.allowedSports).toEqual(['squash', 'strength'])
   })
 
+  it('uses enabled sports as implicit support when wizard complementary sports are empty', () => {
+    const config = resolveWeekCreatorConfig(makeProfile({
+      planWizardConfig: {
+        goalEventId: 'goal-1',
+        trainingDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
+        sessionsPerWeek: 5,
+        sessionDurationMins: 60,
+        allowDoubleSession: false,
+        complementarySports: [],
+        currentFitnessLevel: 'normal',
+        currentFatigue: 'normal',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+    }))
+
+    expect(config.allowedSports).toEqual(['squash', 'running', 'strength'])
+  })
+
   it('translates spanish scheduleProfile.availableDays to DayOfWeek', () => {
     const config = resolveWeekCreatorConfig(makeProfile({
       scheduleProfile: { availableDays: ['lun', 'mié', 'vie', 'sáb'] },
@@ -723,6 +742,62 @@ describe('WeekCreatorEngine', () => {
     expect(sessions.filter((session) => session.sessionType === 'squash')).toHaveLength(3)
     expect(sessions.some((session) => session.sessionType === 'running')).toBe(true)
     expect(sessions.some((session) => session.sessionType === 'strength')).toBe(true)
+    expect(response.message).toContain('Se ajustó la distribución final')
+  })
+
+  it('finalizes an all-squash provider week with implicit support sports from the athlete context', async () => {
+    mockProviderCall.mockImplementation(async (request: { requestClass: string; traceId: string }) => ({
+      text: '<actions>' + JSON.stringify([
+        {
+          type: 'create_week',
+          reason: 'Semana con soporte omitido por el modelo',
+          targetDate: '2026-05-04',
+          sessions: [
+            squashSession('2026-05-04', 'AM', 'Squash 1', 'Tiros paralelos profundos'),
+            squashSession('2026-05-05', 'AM', 'Squash 2', 'Tiros cruzados profundos'),
+            squashSession('2026-05-06', 'AM', 'Squash 3', 'Boast y drive paralelo de salida'),
+            squashSession('2026-05-07', 'AM', 'Squash 4', 'Drop y contra-drop por ambos lados'),
+            squashSession('2026-05-08', 'AM', 'Squash 5', 'Drops desde media cancha'),
+          ],
+        },
+      ]) + '</actions>',
+      provider: 'mock',
+      model: 'mock-week-creator',
+      traceId: request.traceId,
+      requestClass: request.requestClass,
+    }))
+
+    const context: ChatContext = {
+      athleteProfile: makeProfile({
+        planWizardConfig: {
+          goalEventId: 'goal-1',
+          trainingDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
+          sessionsPerWeek: 5,
+          sessionDurationMins: 60,
+          allowDoubleSession: false,
+          complementarySports: [],
+          currentFitnessLevel: 'normal',
+          currentFatigue: 'normal',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      }),
+      recentSessions: [],
+      plannedSessions: [],
+      historicalSessions: [],
+    }
+
+    const response = await WeekCreatorEngine.sendWeekCreate(
+      'Créame una semana de entrenamiento',
+      context,
+      { surface: 'chat', targetWeekStart: '2026-05-04' },
+    )
+
+    const sessionTypes = response.actions?.[0].sessions?.map((session) => session.sessionType) ?? []
+    expect(sessionTypes).toHaveLength(5)
+    expect(sessionTypes.filter((type) => type === 'squash')).toHaveLength(3)
+    expect(sessionTypes).toContain('running')
+    expect(sessionTypes).toContain('strength')
     expect(response.message).toContain('Se ajustó la distribución final')
   })
 

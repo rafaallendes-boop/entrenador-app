@@ -5,6 +5,8 @@ import type {
   DayOfWeek,
   GoalEventLevel,
   PlanWizardConfig,
+  RunningIntervalStructure,
+  RunningType,
   SupportedSport,
   WizardFatigueLevel,
 } from '../../types'
@@ -269,8 +271,7 @@ function completeSportDetails(
           currentWeekSquashDrills.push(...extractSquashDrillNames(session))
           break
         case 'running':
-          if (!session.runningType) {
-            completeRunningDetails(session, context)
+          if (completeRunningDetails(session, context)) {
             meta.repairedSessionCount++
           }
           break
@@ -433,7 +434,8 @@ function buildSquashDrillSignature(session: CoachSessionProposal): string | unde
     .join('|')
 }
 
-function completeRunningDetails(session: CoachSessionProposal, context: RepairContext): void {
+function completeRunningDetails(session: CoachSessionProposal, context: RepairContext): boolean {
+  let changed = false
   const phase = mapPhase(context.week.phase) as RunningPhase
   const recentSessions = extractRecentRunningSessions(context.previousWeek)
   const sportProfile = deriveRunningSportProfile(context)
@@ -447,7 +449,177 @@ function completeRunningDetails(session: CoachSessionProposal, context: RepairCo
   })
   if (!session.runningType) {
     session.runningType = result.session.runningType
+    changed = true
   }
+
+  const runningType = session.runningType ?? result.session.runningType
+  const targets = buildRunningTargets(runningType, context.profile.runningProfile)
+
+  if (!session.targetPaceMin && targets.targetPaceMin) {
+    session.targetPaceMin = targets.targetPaceMin
+    changed = true
+  }
+  if (!session.targetPaceMax && targets.targetPaceMax) {
+    session.targetPaceMax = targets.targetPaceMax
+    changed = true
+  }
+  if (session.targetHrMin == null && targets.targetHrMin != null) {
+    session.targetHrMin = targets.targetHrMin
+    changed = true
+  }
+  if (session.targetHrMax == null && targets.targetHrMax != null) {
+    session.targetHrMax = targets.targetHrMax
+    changed = true
+  }
+
+  if (!hasRunningStructure(session)) {
+    session.intervalStructure = buildRunningIntervalStructure(
+      runningType,
+      session.durationMin,
+      {
+        targetPaceMin: session.targetPaceMin,
+        targetPaceMax: session.targetPaceMax,
+        targetHrMin: session.targetHrMin,
+        targetHrMax: session.targetHrMax,
+      },
+      result.session.structure,
+    )
+    changed = true
+  }
+
+  return changed
+}
+
+function hasRunningStructure(session: CoachSessionProposal): boolean {
+  return Array.isArray(session.intervalStructure?.blocks) && session.intervalStructure.blocks.length > 0
+}
+
+function buildRunningTargets(
+  runningType: RunningType,
+  profile: AthleteProfile['runningProfile'],
+): Pick<CoachSessionProposal, 'targetPaceMin' | 'targetPaceMax' | 'targetHrMin' | 'targetHrMax'> {
+  switch (runningType) {
+    case 'tempo': {
+      const threshold = profile?.thresholdPace
+      return {
+        targetPaceMin: threshold ? addSecsToPace(threshold, -10) : '4:40',
+        targetPaceMax: threshold ?? '5:00',
+        targetHrMin: 155,
+        targetHrMax: 170,
+      }
+    }
+    case 'intervals': {
+      const intervalPace = profile?.fiveKTime
+        ? derivePaceFromFiveK(profile.fiveKTime)
+        : profile?.thresholdPace
+          ? addSecsToPace(profile.thresholdPace, -25)
+          : '4:15'
+      return {
+        targetPaceMin: intervalPace,
+        targetPaceMax: addSecsToPace(intervalPace, 15),
+        targetHrMin: 165,
+        targetHrMax: 180,
+      }
+    }
+    case 'long': {
+      const pace = profile?.longRunPace ?? profile?.easyPaceMax ?? profile?.z2PaceMax ?? '6:00'
+      return {
+        targetPaceMin: profile?.easyPaceMin ?? profile?.z2PaceMin ?? pace,
+        targetPaceMax: pace,
+        targetHrMin: 130,
+        targetHrMax: 150,
+      }
+    }
+    case 'z2':
+    default:
+      return {
+        targetPaceMin: profile?.z2PaceMin ?? profile?.easyPaceMin ?? '5:30',
+        targetPaceMax: profile?.z2PaceMax ?? profile?.easyPaceMax ?? '6:00',
+        targetHrMin: 130,
+        targetHrMax: 150,
+      }
+  }
+}
+
+function buildRunningIntervalStructure(
+  runningType: RunningType,
+  durationMin: number,
+  targets: Pick<CoachSessionProposal, 'targetPaceMin' | 'targetPaceMax' | 'targetHrMin' | 'targetHrMax'>,
+  selectorStructure?: string,
+): RunningIntervalStructure {
+  const pace = formatPaceTarget(targets)
+  const warmup = Math.min(10, Math.max(5, Math.floor(durationMin * 0.2)))
+  const cooldown = warmup
+
+  if (runningType === 'tempo') {
+    const main = Math.max(15, Math.min(35, durationMin - warmup - cooldown))
+    return {
+      blocks: [
+        { label: 'Calentamiento Z2', durationMin: warmup, targetPace: pace.z2, notes: 'Trote facil + movilidad dinamica.' },
+        { label: 'Tempo umbral controlado', durationMin: main, targetPace: pace.main, targetHrMax: targets.targetHrMax, notes: selectorStructure ?? 'RPE 6.5-7.5; sostenido, sin cerrar a tope.' },
+        { label: 'Enfriamiento Z2', durationMin: cooldown, targetPace: pace.z2, notes: 'Soltar hasta respiracion comoda.' },
+      ],
+    }
+  }
+
+  if (runningType === 'intervals') {
+    const repetitions = durationMin >= 60 ? 5 : 4
+    return {
+      blocks: [
+        { label: 'Calentamiento Z2', durationMin: warmup, targetPace: pace.z2, notes: 'Incluye 3 progresivos de 20s.' },
+        { label: 'Series principales', repetitions, distanceKm: 0.8, targetPace: pace.main, targetHrMax: targets.targetHrMax, notes: selectorStructure ?? 'Recupera 2-3 min trotando entre repeticiones.' },
+        { label: 'Enfriamiento Z2', durationMin: cooldown, targetPace: pace.z2, notes: 'Baja pulsaciones sin apurar.' },
+      ],
+    }
+  }
+
+  if (runningType === 'long') {
+    return {
+      blocks: [
+        { label: 'Fondo Z2', durationMin, targetPace: pace.main, targetHrMax: targets.targetHrMax, notes: selectorStructure ?? 'Ritmo conversacional; hidrata si supera 60 min.' },
+      ],
+    }
+  }
+
+  return {
+    blocks: [
+      { label: 'Rodaje Z2', durationMin, targetPace: pace.main, targetHrMax: targets.targetHrMax, notes: selectorStructure ?? 'Ritmo conversacional y respiracion estable.' },
+    ],
+  }
+}
+
+function formatPaceTarget(targets: Pick<CoachSessionProposal, 'targetPaceMin' | 'targetPaceMax'>): { main?: string; z2?: string } {
+  const main = targets.targetPaceMin && targets.targetPaceMax
+    ? targets.targetPaceMin === targets.targetPaceMax
+      ? `${targets.targetPaceMin} /km`
+      : `${targets.targetPaceMin}-${targets.targetPaceMax} /km`
+    : targets.targetPaceMin
+      ? `${targets.targetPaceMin} /km`
+      : targets.targetPaceMax
+        ? `${targets.targetPaceMax} /km`
+        : undefined
+  return { main, z2: main }
+}
+
+function addSecsToPace(pace: string, secs: number): string {
+  const match = pace.trim().match(/^(\d+):(\d{1,2})$/)
+  if (!match) return pace
+  const total = Math.max(60, Number(match[1]) * 60 + Number(match[2]) + secs)
+  const minutes = Math.floor(total / 60)
+  const seconds = total % 60
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`
+}
+
+function derivePaceFromFiveK(fiveKTime: string): string {
+  const parts = fiveKTime.trim().split(':').map(Number)
+  if (parts.length < 2 || parts.length > 3 || parts.some((value) => Number.isNaN(value))) return '4:15'
+  const total = parts.length === 3
+    ? parts[0] * 3600 + parts[1] * 60 + parts[2]
+    : parts[0] * 60 + parts[1]
+  const pace = Math.round(total / 5)
+  const minutes = Math.floor(pace / 60)
+  const seconds = pace % 60
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`
 }
 
 function completeStrengthExercises(

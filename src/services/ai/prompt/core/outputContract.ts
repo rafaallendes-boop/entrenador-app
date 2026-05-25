@@ -82,7 +82,17 @@ const sessionFields = [
   field('targetPaceMax', 'STRING'),
   field('targetHrMin', 'INTEGER'),
   field('targetHrMax', 'INTEGER'),
-  field('intervalStructure', 'STRING'),
+  objectField('intervalStructure', [
+    arrayField('blocks', objectField('block', [
+      field('label', 'STRING', { required: true }),
+      field('repetitions', 'INTEGER'),
+      field('durationMin', 'INTEGER'),
+      field('distanceKm', 'NUMBER'),
+      field('targetPace', 'STRING'),
+      field('targetHrMax', 'INTEGER'),
+      field('notes', 'STRING'),
+    ]), { required: true }),
+  ]),
   arrayField('exercises', objectField('exercise', [
     field('name', 'STRING', { required: true }),
     field('sets', 'INTEGER'),

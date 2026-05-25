@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
 import { inferCoachActionIntent } from '../ai/CoachEngine'
-import { shouldRetryAction as shouldRetry } from '../ai/coachRecovery'
-import type { CoachNormalizedResponse } from '../ai/types'
+import { sendWithRecovery, shouldRetryAction as shouldRetry } from '../ai/coachRecovery'
+import type { AIProvider, CoachNormalizedResponse } from '../ai/types'
 
 function makeResponse(overrides: Partial<CoachNormalizedResponse> = {}): CoachNormalizedResponse {
   return {
@@ -96,5 +96,30 @@ describe('CoachEngine recovery heuristics', () => {
     })
 
     expect(shouldRetry(response)).toBe(true)
+  })
+
+  it('returns a truncated action response with prose so local post-processing can repair simple requests', async () => {
+    const provider: AIProvider = {
+      name: 'mock',
+      call: async (request) => ({
+        text: 'Te preparo una sesion de fuerza.\n\n<actions>[{"type":"add_session","targetDate":"2026-05-25","timeBlock":"PM","sessionType":"strength","title":"Fuerza","durationMin":60,"exercises":[{"name":"Press Z","sets":4,"reps":3,"group"',
+        provider: 'mock',
+        model: 'mock',
+        traceId: request.traceId,
+        requestClass: request.requestClass,
+      }),
+    }
+
+    const response = await sendWithRecovery(provider, {
+      systemPrompt: 'Responde con acciones.',
+      userMessage: 'genera una sesion de pesas para hoy',
+      requestClass: 'chat_action',
+      traceId: 'trace-recovery',
+    })
+
+    expect(response.retryUsed).toBe(true)
+    expect(response.message).toContain('Te preparo una sesion de fuerza')
+    expect(response.actions).toBeUndefined()
+    expect(response.meta?.actionParseFailed).toBe(true)
   })
 })

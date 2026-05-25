@@ -270,6 +270,11 @@ export async function generateWeek(input: GenerateWeekInput): Promise<GenerateWe
         errorCode: 'validation_error',
         retryUsed: raw.retryUsed,
         fallbackUsed: raw.fallbackUsed,
+        warnings: [
+          `validation_error:${evaluation.error}`,
+          `sessions:${evaluation.validSessionCount ?? 0}/${evaluation.rawSessionCount ?? 0}`,
+          ...(evaluation.repairWarnings ?? []).map((warning) => `${warning.code}:${warning.message}`),
+        ],
       })
       return {
         sessions: [],

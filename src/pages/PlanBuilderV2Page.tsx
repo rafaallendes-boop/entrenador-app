@@ -7,8 +7,11 @@ import { db } from '../db/db'
 import { useCoachMemoryStore } from '../store/useCoachMemoryStore'
 import { usePlanBuilderStore } from '../store/usePlanBuilderStore'
 import { getPrimaryGoalEvent } from '../services/macroPlan'
-import { ChevronLeft, RefreshCw, CheckCircle2, AlertTriangle } from 'lucide-react'
-import type { AthleteProfile, PlanWizardConfig, GoalEvent } from '../types'
+import { analyzePlanCommitImpact } from '../services/planBuilder/commitImpact'
+import { reviewPlanQuality } from '../services/planBuilder/qualityReview'
+import { ChevronLeft, RefreshCw, CheckCircle2, AlertTriangle, X } from 'lucide-react'
+import type { AthleteProfile, PlanWizardConfig, GoalEvent, CoachSessionProposal, Session } from '../types'
+import type { PlanCommitImpact } from '../services/planBuilder/commitImpact'
 import type { TrainingPlanWeek } from '../types/planBuilder'
 
 type PlanBuilderLocationState = {
@@ -75,7 +78,7 @@ function buildGenerationSignals(week: TrainingPlanWeek): string[] {
     signals.push('Retry técnico aplicado')
   }
   if (meta.fallbackUsed) {
-    signals.push('Fallback de provider')
+    signals.push(meta.errorClass === 'local_plan_fallback' ? 'Semana base local' : 'Fallback de provider')
   }
 
   return signals
@@ -92,6 +95,41 @@ function getWeekGenerationStatus(week: TrainingPlanWeek): string {
   }
   if (week.status === 'generating') return 'generando'
   return 'lista'
+}
+
+function sportLabel(value: string): string {
+  const labels: Record<string, string> = {
+    squash: 'Squash',
+    running: 'Running',
+    strength: 'Fuerza',
+    mobility: 'Movilidad',
+    cycling: 'Bici',
+    recovery: 'Recovery',
+    nutrition: 'Nutrición',
+  }
+  return labels[value] ?? value
+}
+
+function proposalLabel(session: CoachSessionProposal): string {
+  return `${session.date} ${session.timeBlock} · ${sportLabel(session.sessionType)} · ${session.title}`
+}
+
+function storedSessionLabel(session: Session): string {
+  return `${session.date} ${session.timeBlock} · ${sportLabel(session.type)} · ${session.title}`
+}
+
+function qualityLabel(grade: string): string {
+  if (grade === 'excellent') return 'Excelente'
+  if (grade === 'good') return 'Buena'
+  if (grade === 'needs_review') return 'Revisar'
+  return 'Débil'
+}
+
+function qualityColor(score: number): string {
+  if (score >= 90) return '#34d399'
+  if (score >= 78) return '#a3e635'
+  if (score >= 62) return '#fbbf24'
+  return '#f87171'
 }
 
 
@@ -435,6 +473,10 @@ export default function PlanBuilderV2Page() {
 
   const [selectedWeekIndex, setSelectedWeekIndex] = useState<number | null>(null)
   const [initializedPlanId, setInitializedPlanId] = useState<string | null>(null)
+  const [commitImpact, setCommitImpact] = useState<PlanCommitImpact | null>(null)
+  const [isImpactOpen, setIsImpactOpen] = useState(false)
+  const [isImpactLoading, setIsImpactLoading] = useState(false)
+  const [impactError, setImpactError] = useState<string | null>(null)
   // Tracks the draft signature for which we have already kicked off load/createDraft
   // during this mount. Prevents the effect from firing a second async cycle while
   // the first one is still in flight (which can otherwise produce duplicate draft
@@ -535,6 +577,10 @@ export default function PlanBuilderV2Page() {
   const selectedWeekSignals = selectedWeek ? buildGenerationSignals(selectedWeek) : []
   const errors = issues.filter((i) => i.severity === 'error')
   const warnings = issues.filter((i) => i.severity === 'warning')
+  const qualityReview = useMemo(() => (plan ? reviewPlanQuality(plan, weeks) : null), [plan, weeks])
+  const selectedWeekQuality = selectedWeek && qualityReview
+    ? qualityReview.weeks.find((week) => week.weekIndex === selectedWeek.weekIndex)
+    : null
   const hasIncompleteWeeks = weeks.length === 0 || weeks.some((week) => week.status !== 'draft' || week.sessions.length === 0)
   const hasFailedWeeks = failedWeekIndexes.length > 0
   const canAcceptPlan = plan?.generationState === 'complete' && !hasIncompleteWeeks && errors.length === 0
@@ -608,6 +654,29 @@ export default function PlanBuilderV2Page() {
   async function handleRetryFullGeneration() {
     if (!effectiveAthleteProfile || isGenerating || status === 'committing') return
     await retryFullGeneration(effectiveAthleteProfile)
+  }
+
+  async function handlePreviewAcceptPlan() {
+    if (!plan || !canAcceptPlan || status === 'committing') return
+    setImpactError(null)
+    setIsImpactLoading(true)
+    try {
+      const impact = await analyzePlanCommitImpact(plan, weeks, effectiveAthleteProfile)
+      setCommitImpact(impact)
+      setIsImpactOpen(true)
+    } catch (error) {
+      setImpactError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setIsImpactLoading(false)
+    }
+  }
+
+  async function handleConfirmAcceptPlan() {
+    const result = await acceptPlan()
+    if (result.errors.length === 0) {
+      setIsImpactOpen(false)
+      navigate(ROUTES.WEEK)
+    }
   }
 
   return (
@@ -873,8 +942,8 @@ export default function PlanBuilderV2Page() {
                   </button>
                 </div>
 
-                {selectedWeekSignals.length > 0 && (
-                  <div className="flex flex-wrap gap-2">
+	                {selectedWeekSignals.length > 0 && (
+	                  <div className="flex flex-wrap gap-2">
                     {selectedWeekSignals.map((signal) => (
                       <span
                         key={signal}
@@ -884,10 +953,31 @@ export default function PlanBuilderV2Page() {
                         {signal}
                       </span>
                     ))}
-                  </div>
-                )}
+	                  </div>
+	                )}
 
-                {selectedWeek.weekObjectives.length > 0 && (
+	                {selectedWeekQuality && (
+	                  <div className="rounded-xl px-3 py-2.5 text-xs"
+	                    style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}>
+	                    <div className="flex items-center justify-between gap-3">
+	                      <div>
+	                        <p className="font-mono text-[9px] font-bold uppercase tracking-[0.22em] text-ink-faint">Calidad semana</p>
+	                        <p className="mt-1 text-ink-muted">{qualityLabel(selectedWeekQuality.grade)}</p>
+	                      </div>
+	                      <div className="text-right">
+	                        <p className="font-display text-2xl font-bold" style={{ color: qualityColor(selectedWeekQuality.score) }}>{selectedWeekQuality.score}</p>
+	                        <p className="font-mono text-[9px] uppercase tracking-[0.14em] text-ink-faint">/100</p>
+	                      </div>
+	                    </div>
+	                    {selectedWeekQuality.issues.length > 0 && (
+	                      <p className="mt-2 text-[11px] text-amber-300">
+	                        {selectedWeekQuality.issues.slice(0, 2).map((item) => item.message).join(' ')}
+	                      </p>
+	                    )}
+	                  </div>
+	                )}
+
+	                {selectedWeek.weekObjectives.length > 0 && (
                   <div className="rounded-xl px-3 py-2.5 text-xs"
                     style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}>
                     <p className="font-mono text-[9px] font-bold uppercase tracking-[0.24em] text-ink-faint mb-1.5">Objetivos</p>
@@ -995,10 +1085,43 @@ export default function PlanBuilderV2Page() {
             className="rounded-2xl p-3.5 space-y-2 md:max-h-[72vh] md:overflow-y-auto"
             style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}
           >
-            <p className="font-mono text-[9px] font-bold uppercase tracking-[0.28em] text-ink-faint px-1">
-              Validación
-            </p>
-            {errors.length === 0 && warnings.length === 0 && (
+	            <p className="font-mono text-[9px] font-bold uppercase tracking-[0.28em] text-ink-faint px-1">
+	              Validación
+	            </p>
+	            {qualityReview && (
+	              <div className="rounded-xl px-3 py-3"
+	                style={{ background: 'rgba(255,255,255,0.045)', border: '1px solid rgba(255,255,255,0.09)' }}>
+	                <div className="flex items-center justify-between gap-3">
+	                  <div>
+	                    <p className="font-mono text-[9px] font-bold uppercase tracking-[0.18em] text-ink-faint">Calidad del plan</p>
+	                    <p className="mt-1 text-sm font-semibold text-ink">{qualityLabel(qualityReview.grade)}</p>
+	                  </div>
+	                  <div className="text-right">
+	                    <p className="font-display text-3xl font-bold" style={{ color: qualityColor(qualityReview.score) }}>{qualityReview.score}</p>
+	                    <p className="font-mono text-[9px] uppercase tracking-[0.14em] text-ink-faint">/100</p>
+	                  </div>
+	                </div>
+	                <div className="mt-2 flex flex-wrap gap-1.5 text-[10px]">
+	                  <span className="rounded-full px-2 py-0.5 text-ink-muted" style={{ background: 'rgba(255,255,255,0.06)' }}>
+	                    {qualityReview.warningCount} warnings
+	                  </span>
+	                  <span className="rounded-full px-2 py-0.5 text-ink-muted" style={{ background: 'rgba(255,255,255,0.06)' }}>
+	                    {qualityReview.repairCount} reparaciones
+	                  </span>
+	                  {qualityReview.criticalIssueCount > 0 && (
+	                    <span className="rounded-full px-2 py-0.5 text-red-300" style={{ background: 'rgba(248,113,113,0.10)' }}>
+	                      {qualityReview.criticalIssueCount} críticas
+	                    </span>
+	                  )}
+	                </div>
+	                {qualityReview.issues.length > 0 && (
+	                  <p className="mt-2 text-[11px] leading-relaxed text-ink-muted">
+	                    {qualityReview.issues.slice(0, 2).map((item) => item.message).join(' ')}
+	                  </p>
+	                )}
+	              </div>
+	            )}
+	            {errors.length === 0 && warnings.length === 0 && (
               <div className="rounded-xl px-3 py-2.5 text-xs text-emerald-400 flex items-center gap-1.5"
                 style={{ background: 'rgba(52,211,153,0.08)', border: '1px solid rgba(52,211,153,0.18)' }}>
                 <CheckCircle2 size={12} /> Sin alertas
@@ -1035,26 +1158,23 @@ export default function PlanBuilderV2Page() {
         )}
 
         {/* Action bar */}
-        {status !== 'done' && !shouldShowLaunchDeck && (
-          <div className="mt-5 flex flex-wrap items-center gap-3">
+	        {status !== 'done' && !shouldShowLaunchDeck && (
+	          <div className="mt-5 flex flex-wrap items-center gap-3">
             {plan?.generationState === 'complete' && (
-              <button
-                type="button"
-                disabled={isGenerating || status === 'committing' || !canAcceptPlan}
-                onClick={async () => {
-                  const result = await acceptPlan()
-                  if (result.errors.length === 0) navigate(ROUTES.WEEK)
-                }}
-                className="rounded-xl px-5 py-2.5 font-display text-sm font-bold uppercase tracking-[0.15em] text-white transition-all active:scale-[0.98] disabled:opacity-40"
-                style={{
-                  background: 'linear-gradient(135deg, #ff5500, #ff4d00)',
-                  boxShadow: (!isGenerating && canAcceptPlan)
-                    ? '0 8px 28px -8px rgba(255,77,0,0.55)' : 'none',
-                }}
-              >
-                {status === 'committing' ? 'Guardando…' : 'Aceptar plan'}
-              </button>
-            )}
+	              <button
+	                type="button"
+	                disabled={isGenerating || status === 'committing' || isImpactLoading || !canAcceptPlan}
+	                onClick={() => { void handlePreviewAcceptPlan() }}
+	                className="rounded-xl px-5 py-2.5 font-display text-sm font-bold uppercase tracking-[0.15em] text-white transition-all active:scale-[0.98] disabled:opacity-40"
+	                style={{
+	                  background: 'linear-gradient(135deg, #ff5500, #ff4d00)',
+	                  boxShadow: (!isGenerating && !isImpactLoading && canAcceptPlan)
+	                    ? '0 8px 28px -8px rgba(255,77,0,0.55)' : 'none',
+	                }}
+	              >
+	                {status === 'committing' ? 'Guardando…' : isImpactLoading ? 'Analizando…' : 'Aceptar plan'}
+	              </button>
+	            )}
             <button
               type="button"
               disabled={isGenerating || status === 'committing'}
@@ -1097,12 +1217,154 @@ export default function PlanBuilderV2Page() {
                 Reintentar completo
               </button>
             )}
-            {acceptBlockers.length > 0 && !isGenerating && status !== 'committing' && (
-              <p className="text-xs text-ink-faint">{acceptBlockers[0]}</p>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
-  )
+	            {acceptBlockers.length > 0 && !isGenerating && status !== 'committing' && (
+	              <p className="text-xs text-ink-faint">{acceptBlockers[0]}</p>
+	            )}
+	            {impactError && (
+	              <p className="text-xs text-red-400">{impactError}</p>
+	            )}
+	          </div>
+	        )}
+	        {isImpactOpen && commitImpact && (
+	          <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 px-3 py-4 backdrop-blur-sm md:items-center">
+	            <div
+	              className="w-full max-w-3xl max-h-[86vh] overflow-hidden rounded-2xl"
+	              style={{ background: 'rgba(18,18,18,0.98)', border: '1px solid rgba(255,255,255,0.12)', boxShadow: '0 24px 80px -28px rgba(0,0,0,0.9)' }}
+	            >
+	              <div className="flex items-start justify-between gap-3 px-4 py-3" style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+	                <div>
+	                  <p className="font-mono text-[9px] font-bold uppercase tracking-[0.28em] text-ink-faint">Impacto al aplicar</p>
+	                  <h2 className="mt-1 font-display text-lg font-bold text-ink">Confirmar cambios del calendario</h2>
+	                </div>
+	                <button
+	                  type="button"
+	                  onClick={() => setIsImpactOpen(false)}
+	                  className="rounded-lg p-2 text-ink-muted transition-all hover:text-ink"
+	                  style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}
+	                >
+	                  <X size={16} />
+	                </button>
+	              </div>
+
+	              <div className="max-h-[58vh] overflow-y-auto px-4 py-4 space-y-4">
+	                <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+	                  {[
+	                    ['Crea', commitImpact.totals.creatableSessions],
+	                    ['Reemplaza', commitImpact.totals.replacedPlannedSessions],
+	                    ['Conserva', commitImpact.totals.preservedHistorySessions],
+	                    ['No toca', commitImpact.totals.untouchedPlannedSessions],
+	                  ].map(([label, value]) => (
+	                    <div key={label} className="rounded-xl px-3 py-2.5" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+	                      <p className="font-mono text-[9px] font-bold uppercase tracking-[0.16em] text-ink-faint">{label}</p>
+	                      <p className="mt-1 font-display text-2xl font-bold text-ink">{value}</p>
+	                    </div>
+	                  ))}
+	                </div>
+
+	                {(commitImpact.hasHistoryConflicts || commitImpact.hasFilteredSessions) && (
+	                  <div className="rounded-xl px-3 py-2.5 text-xs text-amber-300"
+	                    style={{ background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.18)' }}>
+	                    {commitImpact.hasHistoryConflicts && (
+	                      <p>Hay sesiones con historial en fechas del plan. Se conservarán y no se sobrescribirá adherencia registrada.</p>
+	                    )}
+	                    {commitImpact.hasFilteredSessions && (
+	                      <p>Algunas sesiones serán filtradas porque no pertenecen a deportes permitidos para esta planificación.</p>
+	                    )}
+	                  </div>
+	                )}
+
+	                <div className="space-y-2">
+	                  {commitImpact.weeks.map((week) => (
+	                    <details
+	                      key={week.weekIndex}
+	                      className="rounded-xl px-3 py-2.5"
+	                      style={{ background: 'rgba(255,255,255,0.035)', border: '1px solid rgba(255,255,255,0.08)' }}
+	                      open={week.replacedPlannedSessions.length > 0 || week.preservedHistorySessions.length > 0 || week.blockedByHistorySessions.length > 0}
+	                    >
+	                      <summary className="cursor-pointer list-none">
+	                        <div className="flex flex-wrap items-center justify-between gap-2">
+	                          <div>
+	                            <p className="text-sm font-semibold text-ink">Semana {week.weekIndex + 1}</p>
+	                            <p className="text-[11px] text-ink-faint">{week.weekStartDate} a {week.weekEndDate}</p>
+	                          </div>
+	                          <div className="flex flex-wrap gap-1.5 text-[10px]">
+	                            <span className="rounded-full px-2 py-0.5 text-emerald-300" style={{ background: 'rgba(52,211,153,0.09)' }}>{week.creatableSessions.length} crea</span>
+	                            {week.replacedPlannedSessions.length > 0 && (
+	                              <span className="rounded-full px-2 py-0.5 text-amber-300" style={{ background: 'rgba(251,191,36,0.09)' }}>{week.replacedPlannedSessions.length} reemplaza</span>
+	                            )}
+	                            {week.preservedHistorySessions.length > 0 && (
+	                              <span className="rounded-full px-2 py-0.5 text-sky-300" style={{ background: 'rgba(56,189,248,0.09)' }}>{week.preservedHistorySessions.length} conserva</span>
+	                            )}
+	                          </div>
+	                        </div>
+	                      </summary>
+	                      <div className="mt-3 grid gap-3 text-xs md:grid-cols-2">
+	                        <div>
+	                          <p className="mb-1.5 font-mono text-[9px] font-bold uppercase tracking-[0.18em] text-ink-faint">Se crearán</p>
+	                          <ul className="space-y-1 text-ink-muted">
+	                            {week.creatableSessions.slice(0, 6).map((session, index) => (
+	                              <li key={`${session.date}-${session.timeBlock}-${index}`}>{proposalLabel(session)}</li>
+	                            ))}
+	                            {week.creatableSessions.length > 6 && <li>+{week.creatableSessions.length - 6} más</li>}
+	                          </ul>
+	                        </div>
+	                        <div className="space-y-3">
+	                          {week.replacedPlannedSessions.length > 0 && (
+	                            <div>
+	                              <p className="mb-1.5 font-mono text-[9px] font-bold uppercase tracking-[0.18em] text-amber-300">Se reemplazarán</p>
+	                              <ul className="space-y-1 text-ink-muted">
+	                                {week.replacedPlannedSessions.slice(0, 5).map((session) => (
+	                                  <li key={session.id}>{storedSessionLabel(session)}</li>
+	                                ))}
+	                                {week.replacedPlannedSessions.length > 5 && <li>+{week.replacedPlannedSessions.length - 5} más</li>}
+	                              </ul>
+	                            </div>
+	                          )}
+	                          {week.preservedHistorySessions.length > 0 && (
+	                            <div>
+	                              <p className="mb-1.5 font-mono text-[9px] font-bold uppercase tracking-[0.18em] text-sky-300">Se conservarán</p>
+	                              <ul className="space-y-1 text-ink-muted">
+	                                {week.preservedHistorySessions.slice(0, 5).map((session) => (
+	                                  <li key={session.id}>{storedSessionLabel(session)}</li>
+	                                ))}
+	                                {week.preservedHistorySessions.length > 5 && <li>+{week.preservedHistorySessions.length - 5} más</li>}
+	                              </ul>
+	                            </div>
+	                          )}
+	                          {week.untouchedPlannedSessions.length > 0 && (
+	                            <p className="text-[11px] text-ink-faint">{week.untouchedPlannedSessions.length} sesión(es) planificadas quedan fuera de las fechas que este plan toca.</p>
+	                          )}
+	                        </div>
+	                      </div>
+	                    </details>
+	                  ))}
+	                </div>
+	              </div>
+
+	              <div className="flex flex-wrap items-center justify-end gap-2 px-4 py-3" style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+	                <button
+	                  type="button"
+	                  onClick={() => setIsImpactOpen(false)}
+	                  disabled={status === 'committing'}
+	                  className="rounded-xl px-4 py-2 text-sm font-semibold text-ink-muted transition-all hover:text-ink disabled:opacity-40"
+	                  style={{ border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.04)' }}
+	                >
+	                  Revisar
+	                </button>
+	                <button
+	                  type="button"
+	                  onClick={() => { void handleConfirmAcceptPlan() }}
+	                  disabled={status === 'committing'}
+	                  className="rounded-xl px-4 py-2 font-display text-sm font-bold uppercase tracking-[0.14em] text-white transition-all active:scale-[0.98] disabled:opacity-40"
+	                  style={{ background: 'linear-gradient(135deg, #ff5500, #ff4d00)' }}
+	                >
+	                  {status === 'committing' ? 'Guardando…' : 'Confirmar'}
+	                </button>
+	              </div>
+	            </div>
+	          </div>
+	        )}
+	      </div>
+	    </div>
+	  )
 }

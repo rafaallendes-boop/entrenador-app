@@ -140,6 +140,42 @@ describe('repairGeneratedWeek', () => {
     expect(mockContext.wizardConfig.trainingDays).toContain(dayName)
   })
 
+  it('repairs tempo running sessions with pace targets and interval structure', () => {
+    mockContext.profile.runningProfile = {
+      z2PaceMin: '5:20',
+      z2PaceMax: '5:45',
+      thresholdPace: '4:35',
+    }
+
+    const sessions: CoachSessionProposal[] = [
+      {
+        date: '2026-05-05',
+        timeBlock: 'AM',
+        sessionType: 'running',
+        title: 'Carrera Tempo - Resistencia Especifica',
+        durationMin: 60,
+        runningType: 'tempo',
+        objective: 'Resistencia especifica',
+      },
+      { date: '2026-05-04', timeBlock: 'AM', sessionType: 'squash', title: 'Squash 1', durationMin: 45, objective: 'obj' },
+      { date: '2026-05-07', timeBlock: 'AM', sessionType: 'strength', title: 'Fuerza', durationMin: 45, objective: 'obj', exercises: [{ name: 'Sentadilla goblet', sets: 3, reps: 8, group: 'legs' }] },
+      { date: '2026-05-09', timeBlock: 'AM', sessionType: 'mobility', title: 'Movilidad', durationMin: 30, objective: 'obj', exercises: [{ name: '90/90 de cadera', sets: 2, reps: '60s/lado', group: 'mobility' }] },
+    ]
+
+    const { sessions: repaired, meta } = repairGeneratedWeek(sessions, mockContext)
+    const tempo = repaired.find((session) => session.sessionType === 'running')
+
+    expect(meta.repairedSessionCount).toBeGreaterThan(0)
+    expect(tempo?.targetPaceMin).toBe('4:25')
+    expect(tempo?.targetPaceMax).toBe('4:35')
+    expect(tempo?.intervalStructure?.blocks.map((block) => block.label)).toEqual([
+      'Calentamiento Z2',
+      'Tempo umbral controlado',
+      'Enfriamiento Z2',
+    ])
+    expect(tempo?.intervalStructure?.blocks[1].targetPace).toBe('4:25-4:35 /km')
+  })
+
   it('3. moves sessions on disallowed days to allowed days', () => {
     // Thursday is not allowed
     const sessions: CoachSessionProposal[] = [
@@ -231,7 +267,20 @@ describe('repairGeneratedWeek', () => {
           blocks: [],
         },
       },
-      { date: '2026-05-06', timeBlock: 'AM', sessionType: 'running', title: 'Run valid', durationMin: 45, objective: 'obj', runningType: 'z2' },
+      {
+        date: '2026-05-06',
+        timeBlock: 'AM',
+        sessionType: 'running',
+        title: 'Run valid',
+        durationMin: 45,
+        objective: 'obj',
+        runningType: 'z2',
+        targetPaceMin: '5:30',
+        targetPaceMax: '6:00',
+        targetHrMin: 130,
+        targetHrMax: 150,
+        intervalStructure: { blocks: [{ label: 'Rodaje Z2', durationMin: 45 }] },
+      },
       {
         date: '2026-05-08',
         timeBlock: 'AM',

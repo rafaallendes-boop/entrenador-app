@@ -289,4 +289,46 @@ describe('actionPostProcessor', () => {
     expect(response.fallbackUsed).toBe(true)
     expect(response.meta?.warnings).toContain('chat_action_without_actions_repaired')
   })
+
+  it('repairs a truncated single-session action response with a local proposal', () => {
+    vi.setSystemTime(new Date('2026-05-25T12:00:00.000Z'))
+
+    const response = postProcessCoachActions({
+      message: 'Para hoy te preparo una sesión de fuerza, pero el bloque de acciones llegó incompleto.',
+      provider: 'mock',
+      traceId: 'trace-1',
+      requestClass: 'chat_action',
+      timestamp: 1,
+      meta: {
+        hadActionsMarkup: true,
+        actionParseFailed: true,
+        likelyTruncated: true,
+        outcome: 'truncated_early',
+      },
+    }, makeContext([], {
+      athleteProfile: {
+        id: 'athlete-1',
+        updatedAt: 1,
+        sportContext: { primarySport: 'squash' },
+        strengthProfile: {
+          deadlift1RM: 150,
+          squat1RM: 140,
+          benchPress1RM: 100,
+          overheadPress1RM: 60,
+        },
+      },
+    }), 'genera una sesión de pesas par ahoy')
+
+    expect(response.actions?.[0]).toMatchObject({
+      type: 'add_session',
+      targetDate: '2026-05-25',
+      sessionType: 'strength',
+    })
+    expect(response.meta?.actionParseFailed).toBe(false)
+    expect(response.meta?.likelyTruncated).toBe(false)
+    expect(response.meta?.warnings).toEqual(expect.arrayContaining([
+      'chat_action_without_actions_repaired',
+      'chat_action_malformed_response_repaired',
+    ]))
+  })
 })
