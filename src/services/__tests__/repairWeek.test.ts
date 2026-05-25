@@ -20,8 +20,16 @@ vi.mock('../training/runningSelector', () => ({
 }))
 vi.mock('../training/strengthSelector', () => ({
   selectStrengthSession: vi.fn(() => ({
-    exercises: [{ name: 'Squat', sets: 3, reps: 10, group: 'legs' }],
+    exercises: [
+      { name: 'Sentadilla goblet', sets: 3, reps: 8, group: 'legs' },
+      { name: 'Remo medio arrodillado', sets: 3, reps: 10, group: 'pull' },
+      { name: 'Press sobre cabeza', sets: 3, reps: 8, group: 'push' },
+      { name: 'Zancada lateral con barra', sets: 3, reps: '8/lado', group: 'legs' },
+      { name: 'Plancha lateral', sets: 3, reps: '30s/lado', group: 'core' },
+      { name: 'Bici de asalto', sets: 1, reps: '4 min: 30s fuerte / 30s suave', group: 'cardio' },
+    ],
   })),
+  getTargetExerciseDensity: vi.fn(() => ({ min: 6, target: 8, max: 9 })),
 }))
 vi.mock('../training/mobilitySelector', () => ({
   selectMobilitySession: vi.fn(() => ({
@@ -44,6 +52,10 @@ describe('repairGeneratedWeek', () => {
       name: 'Rafa',
       updatedAt: Date.now(),
       sportContext: { primarySport: 'squash' },
+      strengthProfile: {
+        deadlift1RM: 150,
+        overheadPress1RM: 60,
+      },
     }
 
     const wizardConfig: PlanWizardConfig = {
@@ -200,6 +212,55 @@ describe('repairGeneratedWeek', () => {
 
     const mob = repaired.find((s) => s.sessionType === 'mobility')!
     expect(mob.mobilityDetails).toBeDefined()
+  })
+
+  it('6b. normalizes and enriches existing strength sessions during repair', () => {
+    const sessions: CoachSessionProposal[] = [
+      {
+        date: '2026-05-04',
+        timeBlock: 'AM',
+        sessionType: 'squash',
+        title: 'Squash valid',
+        durationMin: 45,
+        objective: 'obj',
+        squashDetails: {
+          trainingFocus: 'technical',
+          sessionMode: 'drill_session',
+          sessionKind: 'technical',
+          drills: [{ name: 'Tiros paralelos profundos', durationMin: 15 }],
+          blocks: [],
+        },
+      },
+      { date: '2026-05-06', timeBlock: 'AM', sessionType: 'running', title: 'Run valid', durationMin: 45, objective: 'obj', runningType: 'z2' },
+      {
+        date: '2026-05-08',
+        timeBlock: 'AM',
+        sessionType: 'strength',
+        title: 'Strength flat',
+        durationMin: 60,
+        objective: 'obj',
+        exercises: [
+          { name: 'Peso muerto con trap bar', sets: 4, reps: 6 },
+          { name: 'Escalera lateral – dos pies por cuadro', sets: 3, reps: 10 },
+          { name: 'Press Pallof', sets: 3, reps: 10 },
+        ],
+      },
+      { date: '2026-05-09', timeBlock: 'AM', sessionType: 'recovery', title: 'Recovery valid', durationMin: 30, objective: 'obj' },
+    ]
+
+    const { sessions: repaired, meta } = repairGeneratedWeek(sessions, mockContext)
+
+    const strength = repaired.find((s) => s.sessionType === 'strength')!
+    expect(meta.repairedSessionCount).toBe(1)
+    expect(strength.exercises?.length).toBeGreaterThanOrEqual(8)
+    expect(strength.exercises?.slice(0, 2).map((exercise) => exercise.group)).toEqual(['core', 'core'])
+    expect(strength.exercises?.[0].name).toBe('Control de tronco dead bug')
+    expect(strength.exercises?.filter((exercise) => !['core', 'cardio', 'mobility'].includes(exercise.group ?? '')).length).toBeGreaterThanOrEqual(4)
+    expect(strength.exercises?.find((exercise) => exercise.name === 'Peso muerto con trap bar')).toMatchObject({
+      weight: 110,
+      targetPercent1RM: 77.5,
+    })
+    expect(strength.exercises?.at(-1)?.name).toBe('Escalera lateral – dos pies por cuadro')
   })
 
   it('7. balances session count by trimming excess', () => {

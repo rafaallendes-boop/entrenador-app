@@ -93,10 +93,11 @@ export function selectStrengthSession(
       )
 
   const finalSelection = fallback.slice(0, density.max)
+  const builtExercises = finalSelection.map((exercise, index) => buildSelectionExercise(exercise, context, index, progressionState))
 
   return {
     focus: deriveStrengthFocus(finalSelection, context),
-    exercises: finalSelection.map((exercise, index) => buildSelectionExercise(exercise, context, index, progressionState)),
+    exercises: orderStrengthExercisesForSession(builtExercises, context),
   }
 }
 
@@ -235,6 +236,9 @@ export function pickStrengthStructure(
   const selectedMovements = new Set<MovementPattern>()
   const selectedIds = new Set<string>()
   const targetCount = getTargetExerciseDensity(context).target
+  const coreTarget = getTargetCoreCount(context, targetCount)
+  const cardioTarget = getSpecificCardioTarget(scored, context, targetCount)
+  const nonCoreLimit = Math.max(1, targetCount - coreTarget - cardioTarget)
 
   const mainLift = selectMainLiftWithProgression(scored, context, recentExercises, progressionState)
   if (mainLift) {
@@ -244,9 +248,10 @@ export function pickStrengthStructure(
   }
 
   const powerNeeded = shouldIncludePower(context)
-  if (powerNeeded) {
+  if (powerNeeded && selected.length < nonCoreLimit) {
     const powerExercise = pickFirst(scored, context, (exercise) =>
       exercise.intensityType === 'power' &&
+      !isSpecificCardioExercise(exercise) &&
       !selectedIds.has(exercise.id),
     )
     if (powerExercise) {
@@ -256,51 +261,66 @@ export function pickStrengthStructure(
     }
   }
 
-  const accessory = pickFirst(scored, context, (exercise) =>
-    !selectedIds.has(exercise.id) &&
-    exercise.category !== 'core' &&
-    exercise.intensityType !== 'recovery' &&
-    (!selectedMovements.has(exercise.movement) || context.sportProfile === 'strength_primary'),
-  (exercise) =>
-    !selectedIds.has(exercise.id) &&
-    exercise.category !== 'core' &&
-    exercise.intensityType !== 'recovery',
-  )
-  if (accessory) {
-    selected.push(accessory)
-    selectedMovements.add(accessory.movement)
-    selectedIds.add(accessory.id)
+  if (selected.length < nonCoreLimit) {
+    const accessory = pickFirst(scored, context, (exercise) =>
+      !selectedIds.has(exercise.id) &&
+      exercise.category !== 'core' &&
+      !isSpecificCardioExercise(exercise) &&
+      exercise.intensityType !== 'recovery' &&
+      (!selectedMovements.has(exercise.movement) || context.sportProfile === 'strength_primary'),
+    (exercise) =>
+      !selectedIds.has(exercise.id) &&
+      exercise.category !== 'core' &&
+      !isSpecificCardioExercise(exercise) &&
+      exercise.intensityType !== 'recovery',
+    )
+    if (accessory) {
+      selected.push(accessory)
+      selectedMovements.add(accessory.movement)
+      selectedIds.add(accessory.id)
+    }
   }
 
-  const unilateralOrStability = pickFirst(scored, context, (exercise) =>
-    !selectedIds.has(exercise.id) &&
-    (exercise.unilateral || exercise.intensityType === 'stability') &&
-    exercise.category !== 'core',
-  (exercise) =>
-    !selectedIds.has(exercise.id) &&
-    exercise.category !== 'core',
-  )
-  if (unilateralOrStability) {
-    selected.push(unilateralOrStability)
-    selectedMovements.add(unilateralOrStability.movement)
-    selectedIds.add(unilateralOrStability.id)
+  if (selected.length < nonCoreLimit) {
+    const unilateralOrStability = pickFirst(scored, context, (exercise) =>
+      !selectedIds.has(exercise.id) &&
+      !isSpecificCardioExercise(exercise) &&
+      (exercise.unilateral || exercise.intensityType === 'stability') &&
+      exercise.category !== 'core',
+    (exercise) =>
+      !selectedIds.has(exercise.id) &&
+      !isSpecificCardioExercise(exercise) &&
+      exercise.category !== 'core',
+    )
+    if (unilateralOrStability) {
+      selected.push(unilateralOrStability)
+      selectedMovements.add(unilateralOrStability.movement)
+      selectedIds.add(unilateralOrStability.id)
+    }
   }
 
-  const trunk = pickFirst(scored, context, (exercise) =>
-    !selectedIds.has(exercise.id) &&
-    exercise.category === 'core',
-  (exercise) => !selectedIds.has(exercise.id))
-  if (trunk) {
+  const trunkBlock = pickCoreBlock(scored, context, selectedIds, coreTarget)
+  for (const trunk of trunkBlock) {
     selected.push(trunk)
     selectedIds.add(trunk.id)
   }
 
+  if (cardioTarget > 0 && selected.length < targetCount) {
+    const cardioBlock = pickSpecificCardioBlock(scored, context, selectedIds, Math.min(cardioTarget, targetCount - selected.length))
+    for (const cardio of cardioBlock) {
+      selected.push(cardio)
+      selectedIds.add(cardio.id)
+    }
+  }
+
   const upperOptional = pickFirst(scored, context, (exercise) =>
     !selectedIds.has(exercise.id) &&
+    !isSpecificCardioExercise(exercise) &&
     exercise.category === 'upper' &&
     (context.sportProfile !== 'sport_support' || context.competitionSoon || context.primarySport === 'running'),
   (exercise) =>
     !selectedIds.has(exercise.id) &&
+    !isSpecificCardioExercise(exercise) &&
     exercise.category === 'upper',
   )
   if (upperOptional && selected.length < targetCount) {
@@ -311,11 +331,212 @@ export function pickStrengthStructure(
   for (const { exercise } of scored) {
     if (selected.length >= targetCount) break
     if (selectedIds.has(exercise.id)) continue
+    if (isSpecificCardioExercise(exercise)) continue
     selected.push(exercise)
     selectedIds.add(exercise.id)
   }
 
   return selected.slice(0, targetCount)
+}
+
+function shouldIncludeSpecificCardio(context: StrengthContext, targetCount: number): boolean {
+  const duration = context.sessionDurationMin ?? 50
+  const goal = context.goal.toLowerCase()
+  const explicitlyWantsCardio =
+    goal.includes('cardio') ||
+    goal.includes('acondicion') ||
+    goal.includes('puntos cortos') ||
+    goal.includes('repeat sprint') ||
+    goal.includes('footwork') ||
+    goal.includes('escalera') ||
+    goal.includes('bici de asalto') ||
+    goal.includes('trotadora')
+
+  if (context.fatigueLevel >= 7 || context.competitionSoon || context.phase === 'taper') return false
+  if (context.primarySport !== 'squash' && !explicitlyWantsCardio) return false
+  if (duration < 55 && !explicitlyWantsCardio) return false
+  if (targetCount < 5 && !explicitlyWantsCardio) return false
+  return context.phase === 'base' || context.phase === 'build' || context.phase === 'peak' || explicitlyWantsCardio
+}
+
+function isSpecificCardioExercise(exercise: ExerciseDefinition): boolean {
+  return isMachineSpecificCardioExercise(exercise) || isFootworkSpecificCardioExercise(exercise)
+}
+
+function isMachineSpecificCardioExercise(exercise: ExerciseDefinition): boolean {
+  return (
+    exercise.equipment.includes('assault_bike') ||
+    exercise.equipment.includes('air_treadmill') ||
+    exercise.tags.includes('court_conditioning') ||
+    exercise.tags.includes('cardio_specific')
+  )
+}
+
+function isFootworkSpecificCardioExercise(exercise: ExerciseDefinition): boolean {
+  return exercise.equipment.includes('ladder') || exercise.tags.includes('court_footwork')
+}
+
+function getSpecificCardioTarget(
+  scored: ScoredExercise[],
+  context: StrengthContext,
+  targetCount: number,
+): number {
+  if (!shouldIncludeSpecificCardio(context, targetCount)) return 0
+
+  const goal = context.goal.toLowerCase()
+  const wantsFootwork = goal.includes('footwork') || goal.includes('escalera') || goal.includes('coordinacion') || goal.includes('coordinación')
+  const wantsMachine = goal.includes('bici') || goal.includes('bike') || goal.includes('asalto') || goal.includes('trotadora') || goal.includes('runner') || goal.includes('cinta')
+  const hasFootwork = scored.some(({ exercise }) => isFootworkSpecificCardioExercise(exercise))
+  const hasMachine = scored.some(({ exercise }) => isMachineSpecificCardioExercise(exercise))
+
+  if ((wantsFootwork || (!wantsMachine && !hasMachine)) && hasFootwork) {
+    if (targetCount <= 5) return 1
+    if (wantsFootwork && (context.sessionDurationMin ?? 50) >= 65 && context.fatigueLevel <= 4 && targetCount >= 8) return 3
+    return 2
+  }
+
+  return hasMachine || hasFootwork ? 1 : 0
+}
+
+function pickSpecificCardioBlock(
+  scored: ScoredExercise[],
+  context: StrengthContext,
+  selectedIds: Set<string>,
+  targetCount: number,
+): ExerciseDefinition[] {
+  const goal = context.goal.toLowerCase()
+  const prefersAirTreadmill = goal.includes('trotadora') || goal.includes('runner') || goal.includes('cinta')
+  const prefersAssaultBike = goal.includes('bici') || goal.includes('bike') || goal.includes('asalto')
+  const prefersFootwork = goal.includes('footwork') || goal.includes('escalera') || goal.includes('coordinacion') || goal.includes('coordinación')
+
+  const preferredId = prefersAirTreadmill
+    ? 'air_treadmill_20_20'
+    : prefersAssaultBike
+      ? 'assault_bike_30_30'
+      : undefined
+
+  if (preferredId) {
+    const preferred = scored.find(({ exercise }) => exercise.id === preferredId && !selectedIds.has(exercise.id))
+    if (preferred) return [preferred.exercise]
+  }
+
+  if (prefersFootwork || !scored.some(({ exercise }) => isMachineSpecificCardioExercise(exercise))) {
+    const footwork = pickFootworkCardioBlock(scored, context, selectedIds, targetCount)
+    if (footwork.length > 0) return footwork
+  }
+
+  const machine = pickFirst(scored, context, (exercise) =>
+    isMachineSpecificCardioExercise(exercise) &&
+    !selectedIds.has(exercise.id),
+  )
+  if (machine) return [machine]
+
+  return pickFootworkCardioBlock(scored, context, selectedIds, targetCount)
+}
+
+function pickFootworkCardioBlock(
+  scored: ScoredExercise[],
+  context: StrengthContext,
+  selectedIds: Set<string>,
+  targetCount: number,
+): ExerciseDefinition[] {
+  const picked: ExerciseDefinition[] = []
+  const add = (predicate: (exercise: ExerciseDefinition) => boolean): void => {
+    if (picked.length >= targetCount) return
+    const next = pickFirst(scored, context, (exercise) =>
+      isFootworkSpecificCardioExercise(exercise) &&
+      !selectedIds.has(exercise.id) &&
+      !picked.some((selected) => selected.id === exercise.id) &&
+      predicate(exercise),
+    (exercise) =>
+      isFootworkSpecificCardioExercise(exercise) &&
+      !selectedIds.has(exercise.id) &&
+      !picked.some((selected) => selected.id === exercise.id),
+    )
+    if (next) picked.push(next)
+  }
+
+  add((exercise) => exercise.tags.includes('lateral_power') || exercise.squashTransfer?.includes('lateral_movement') === true)
+  add((exercise) => exercise.squashTransfer?.includes('split_step_quality') === true)
+  add((exercise) => exercise.squashTransfer?.includes('court_reacceleration') === true)
+
+  while (picked.length < targetCount) {
+    const before = picked.length
+    add(() => true)
+    if (picked.length === before) break
+  }
+
+  return picked
+}
+
+function getTargetCoreCount(context: StrengthContext, targetCount: number): number {
+  if (targetCount <= 0) return 0
+  const duration = context.sessionDurationMin ?? 50
+  const goal = context.goal.toLowerCase()
+  const explicitlyWantsCore =
+    goal.includes('core') ||
+    goal.includes('trunk') ||
+    goal.includes('zona media') ||
+    goal.includes('plancha') ||
+    goal.includes('dead bug') ||
+    goal.includes('deadbug')
+
+  if (targetCount <= 3) return explicitlyWantsCore ? 1 : 0
+  if (duration < 45 && !explicitlyWantsCore) return 1
+
+  if (context.primarySport === 'squash' || context.sportProfile === 'hybrid' || context.sportProfile === 'sport_support') {
+    return targetCount >= 5 ? 2 : 1
+  }
+
+  return explicitlyWantsCore && targetCount >= 5 ? 2 : 1
+}
+
+function pickCoreBlock(
+  scored: ScoredExercise[],
+  context: StrengthContext,
+  selectedIds: Set<string>,
+  targetCount: number,
+): ExerciseDefinition[] {
+  if (targetCount <= 0) return []
+
+  const picked: ExerciseDefinition[] = []
+  const pick = (predicate: (exercise: ExerciseDefinition) => boolean): void => {
+    if (picked.length >= targetCount) return
+    const next = pickFirst(scored, context, (exercise) =>
+      exercise.category === 'core' &&
+      !selectedIds.has(exercise.id) &&
+      !picked.some((selected) => selected.id === exercise.id) &&
+      predicate(exercise),
+    (exercise) =>
+      exercise.category === 'core' &&
+      !selectedIds.has(exercise.id) &&
+      !picked.some((selected) => selected.id === exercise.id),
+    )
+    if (next) picked.push(next)
+  }
+
+  pick((exercise) =>
+    exercise.tags.includes('anti_extension') ||
+    exercise.tags.includes('lateral_stability') ||
+    exercise.squashTransfer?.includes('pelvic_control') ||
+    exercise.id === 'plank' ||
+    exercise.id === 'dead_bug' ||
+    exercise.id === 'side_plank',
+  )
+
+  pick((exercise) =>
+    exercise.tags.includes('anti_rotation') ||
+    exercise.tags.includes('lateral_stability') ||
+    exercise.movement === 'rotation',
+  )
+
+  while (picked.length < targetCount) {
+    const before = picked.length
+    pick(() => true)
+    if (picked.length === before) break
+  }
+
+  return picked
 }
 
 function scoreExercises(
@@ -406,7 +627,13 @@ function scoreExercises(
         if (exercise.sportsTransfer?.includes('squash')) score += 2
         if (exercise.tags.includes('athletic_transfer')) score += 2
         if (exercise.tags.includes('squash_specific')) score += 4
+        if (exercise.tags.includes('court_conditioning')) score += 4
+        if (exercise.tags.includes('repeat_sprint')) score += 3
         if (exercise.tags.includes('anti_rotation')) score += 3
+        if (exercise.tags.includes('anti_extension')) score += 3
+        if (exercise.tags.includes('lateral_stability')) score += 3
+        if (exercise.tags.includes('trunk_stability')) score += 2
+        if (exercise.squashTransfer?.includes('pelvic_control')) score += 2
         if (exercise.tags.includes('lateral_strength')) score += 3
         if (exercise.tags.includes('lateral_power')) score += 3
         if (exercise.tags.includes('court_footwork')) score += 3
@@ -641,6 +868,28 @@ function buildSelectionExercise(
   }
 }
 
+function orderStrengthExercisesForSession(
+  exercises: StrengthSelectionExercise[],
+  context: StrengthContext,
+): StrengthSelectionExercise[] {
+  if (exercises.length <= 1) return exercises
+
+  const wantsEarlyCore =
+    context.primarySport === 'squash' ||
+    context.sportProfile === 'hybrid' ||
+    context.sportProfile === 'sport_support' ||
+    context.goal.toLowerCase().includes('zona media')
+
+  if (!wantsEarlyCore) return exercises
+
+  const core = exercises.filter((exercise) => exercise.group === 'core')
+  const strength = exercises.filter((exercise) => exercise.group !== 'core' && exercise.group !== 'cardio' && exercise.group !== 'mobility')
+  const cardio = exercises.filter((exercise) => exercise.group === 'cardio')
+  const mobility = exercises.filter((exercise) => exercise.group === 'mobility')
+
+  return [...core, ...strength, ...cardio, ...mobility]
+}
+
 function getPrescription(
   exercise: ExerciseDefinition,
   context: StrengthContext,
@@ -651,6 +900,22 @@ function getPrescription(
   intensity: StrengthSelectionExercise['intensity']
 } {
   const isLead = index === 0
+
+  if (exercise.id === 'assault_bike_30_30') {
+    return {
+      sets: context.phase === 'build' && context.fatigueLevel <= 4 && (context.sessionDurationMin ?? 50) >= 65 ? 2 : 1,
+      reps: '4 min: 30s fuerte / 30s suave',
+      intensity: 'explosive',
+    }
+  }
+
+  if (exercise.id === 'air_treadmill_20_20') {
+    return {
+      sets: context.phase === 'build' && context.fatigueLevel <= 4 && (context.sessionDurationMin ?? 50) >= 65 ? 2 : 1,
+      reps: '4 min: 20s fuerte / 20s suave',
+      intensity: 'explosive',
+    }
+  }
 
   switch (exercise.intensityType) {
     case 'strength':
@@ -729,6 +994,15 @@ function buildExerciseNotes(
   intensity: StrengthSelectionExercise['intensity'],
   index: number,
 ): string | undefined {
+  if (exercise.category === 'core') {
+    if (exercise.tags.includes('anti_extension') || exercise.id === 'plank' || exercise.id === 'dead_bug') {
+      return 'Zona media: controla pelvis y costillas antes de pasar a la fuerza principal.'
+    }
+    if (exercise.tags.includes('lateral_stability')) {
+      return 'Zona media: estabilidad lateral, cadera alta y respiración controlada.'
+    }
+    return 'Zona media: tronco firme, sin compensar con lumbar ni hombros.'
+  }
   if (context.competitionSoon) {
     if (exercise.category === 'lower') return 'Solo activación. Deja repeticiones en reserva y evita generar dolor muscular.'
     return 'Ejecución limpia y sin fatiga acumulada antes de la competencia.'
@@ -737,6 +1011,9 @@ function buildExerciseNotes(
     return 'Prioriza técnica limpia y detente mucho antes de llegar al fallo.'
   }
   if (exercise.intensityType === 'power') {
+    if (exercise.tags.includes('court_conditioning')) {
+      return 'Cardio específico al final: potencia corta y recuperación entre puntos; corta el bloque si cae la mecánica.'
+    }
     if (exercise.riskLevel === 'high') {
       return 'Ejercicio de potencia avanzado. Volumen bajo, prioriza calidad de aterrizaje y detente si cae la velocidad o el control.'
     }
@@ -794,8 +1071,8 @@ export function getTargetExerciseDensity(context: StrengthContext): StrengthExer
   const base = getDurationExerciseDensity(duration)
   let modifier = 0
 
-  if (context.competitionSoon || context.phase === 'taper') modifier -= 1
-  if (context.fatigueLevel >= 7) modifier -= 1
+  if (context.competitionSoon || context.phase === 'taper') modifier -= 3
+  if (context.fatigueLevel >= 7) modifier -= 2
   if (
     context.sportProfile === 'strength_primary' &&
     (context.phase === 'base' || context.phase === 'build') &&
@@ -805,7 +1082,7 @@ export function getTargetExerciseDensity(context: StrengthContext): StrengthExer
     modifier += 1
   }
 
-  const absoluteMax = 8
+  const absoluteMax = 10
   const minFloor = context.fatigueLevel >= 8 && (context.competitionSoon || context.phase === 'taper') ? 2 : 3
   const min = clamp(base.min + modifier, minFloor, absoluteMax)
   const target = clamp(base.target + modifier, min, absoluteMax)
@@ -817,9 +1094,9 @@ export function getTargetExerciseDensity(context: StrengthContext): StrengthExer
 function getDurationExerciseDensity(durationMin: number): StrengthExerciseDensity {
   if (durationMin <= 30) return { min: 3, target: 3, max: 4 }
   if (durationMin <= 44) return { min: 4, target: 4, max: 4 }
-  if (durationMin <= 54) return { min: 4, target: 5, max: 5 }
-  if (durationMin <= 69) return { min: 5, target: 6, max: 7 }
-  return { min: 6, target: 7, max: 8 }
+  if (durationMin <= 54) return { min: 5, target: 6, max: 7 }
+  if (durationMin <= 69) return { min: 6, target: 8, max: 9 }
+  return { min: 7, target: 9, max: 10 }
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -852,7 +1129,7 @@ function pickFirst(
 
 function normalizeEquipment(availableEquipment?: string[]): EquipmentType[] {
   if (!availableEquipment || availableEquipment.length === 0) {
-    return ['barbell', 'dumbbell', 'bodyweight', 'machine', 'cable', 'kettlebell', 'medball', 'bands', 'trap_bar', 'trx', 'box', 'ladder', 'plate', 'stability_ball']
+    return ['barbell', 'dumbbell', 'bodyweight', 'machine', 'cable', 'kettlebell', 'medball', 'bands', 'trap_bar', 'trx', 'box', 'ladder', 'plate', 'stability_ball', 'assault_bike', 'air_treadmill']
   }
 
   const mapped = availableEquipment
@@ -862,6 +1139,8 @@ function normalizeEquipment(availableEquipment?: string[]): EquipmentType[] {
       if (item.includes('trx') || item.includes('suspension')) return ['trx']
       if (item.includes('box') || item.includes('cajon') || item.includes('cajón')) return ['box']
       if (item.includes('ladder') || item.includes('escalera')) return ['ladder']
+      if (item.includes('assault') || item.includes('asalto') || item.includes('air bike') || item.includes('bici')) return ['assault_bike']
+      if (item.includes('air runner') || item.includes('trotadora') || item.includes('cinta') || item.includes('curved') || item.includes('curva')) return ['air_treadmill']
       if (item.includes('plate') || item.includes('disco')) return ['plate']
       if (item.includes('stability') || item.includes('swiss') || item.includes('fitball')) return ['stability_ball']
       if (item.includes('bar')) return ['barbell']

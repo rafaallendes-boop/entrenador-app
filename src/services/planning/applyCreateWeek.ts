@@ -1,8 +1,9 @@
 import { addDays } from 'date-fns'
 import { db } from '../../db/db'
-import { recalculateWeekSummary, upsertWeekSummary } from '../../db/queries'
+import { getWeekSummary, recalculateWeekSummary, upsertWeekSummary } from '../../db/queries'
 import { filterCoachSessionsToAllowedSports } from '../planningConstraints'
 import { ensureSessionProtocols } from '../trainingProtocols'
+import { enhanceStrengthSessionExercises } from '../training/strengthSessionStructure'
 import * as syncService from '../syncService'
 import { fromISO, getWeekStart, toISO } from '../../utils/date'
 import { v4 as uuid } from '../../utils/uuid'
@@ -75,7 +76,14 @@ export async function applyCreateWeek({
       rpe: session.rpe,
       objective: session.objective,
       status: 'planned',
-      exercises: session.exercises?.map((exercise) => ({ ...exercise, id: uuid(), completed: false })),
+      exercises: (
+        session.sessionType === 'strength'
+          ? enhanceStrengthSessionExercises(session.exercises, {
+              durationMin: session.durationMin,
+              strengthProfile: athleteProfile?.strengthProfile,
+            })
+          : session.exercises
+      )?.map((exercise) => ({ ...exercise, id: uuid(), completed: false })),
       runningDetails: session.runningType
         ? {
             runningType: session.runningType,
@@ -102,11 +110,14 @@ export async function applyCreateWeek({
 
   if (weekObjectives && weekObjectives.length > 0) {
     const weekStart = toISO(getWeekStart(fromISO(allowedSessions[0].date)))
-    const previousSummary = await db.weekSummaries.get(weekStart)
+    const previousSummary = await getWeekSummary(weekStart)
     if (previousSummary) {
       restoredWeekSummaries.push({ ...previousSummary })
     } else {
-      deletedWeekSummaryIds.push(weekStart)
+      const created = await upsertWeekSummary(weekStart, { objectives: weekObjectives })
+      deletedWeekSummaryIds.push(created.id)
+      await store.loadWeek(weekStart)
+      return { warnings, createdSessionIds, restoredSessions, restoredWeekSummaries, deletedWeekSummaryIds }
     }
     await upsertWeekSummary(weekStart, { objectives: weekObjectives })
     await store.loadWeek(weekStart)

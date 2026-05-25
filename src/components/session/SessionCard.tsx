@@ -441,26 +441,22 @@ export default function SessionCard({ session, compact = false, onDelete }: Sess
               ))}
             </div>
           )}
-          {hasExercises && <ExerciseChecklist sessionId={session.id} exercises={session.exercises!} />}
-          {hasProtocols && (
-            <div className="space-y-2">
-              {warmup && (
-                <ProtocolStaticCard
-                  title="Warm-up"
-                  accentClass="border-brand/20 bg-brand/5"
-                  headingClass="text-brand-light/80"
-                  protocol={warmup}
-                />
-              )}
-              {cooldown && (
-                <ProtocolStaticCard
-                  title="Post / cool-down"
-                  accentClass="border-violet-500/20 bg-violet-500/5"
-                  headingClass="text-violet-300/80"
-                  protocol={cooldown}
-                />
-              )}
-            </div>
+          {warmup && (
+            <ProtocolStaticCard
+              title="Warm-up"
+              accentClass="border-brand/20 bg-brand/5"
+              headingClass="text-brand-light/80"
+              protocol={warmup}
+            />
+          )}
+          {hasExercises && <ExerciseChecklist sessionId={session.id} exercises={session.exercises!} sessionType={session.type} />}
+          {cooldown && (
+            <ProtocolStaticCard
+              title="Cool-down"
+              accentClass="border-violet-500/20 bg-violet-500/5"
+              headingClass="text-violet-300/80"
+              protocol={cooldown}
+            />
           )}
           {session.notes && <p className="text-xs italic text-ink-muted">"{session.notes}"</p>}
           {session.completionNotes && <p className="text-xs italic text-ink-muted">Post: "{session.completionNotes}"</p>}
@@ -496,7 +492,7 @@ function ProtocolStaticCard({
     <div className={`rounded-lg border p-2 ${accentClass}`}>
       <div className="flex items-center justify-between">
         <p className={`text-[10px] font-medium uppercase tracking-wider ${headingClass}`}>{title}</p>
-        <span className="text-[11px] text-ink-faint">{protocol.durationMin} min</span>
+        <span className="text-[11px] text-ink-faint">Guia</span>
       </div>
       <p className="mt-1 text-xs text-ink">{protocol.title}</p>
       {protocol.note && <p className="mt-1 text-[11px] text-ink-faint">{protocol.note}</p>}

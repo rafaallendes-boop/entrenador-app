@@ -117,6 +117,9 @@ export function validateWeekCreatorResponse(
   const primarySportError = validatePrimarySportPresence(sessions, input.config)
   if (primarySportError) return fail(primarySportError, rawSessionCount, validSessionCount, droppedSessionCount)
 
+  const supportSportError = validateSupportSportPresence(sessions, input.config)
+  if (supportSportError) return fail(supportSportError, rawSessionCount, validSessionCount, droppedSessionCount)
+
   const sportWarnings = collectSportDetailWarnings(sessions)
 
   return {
@@ -441,6 +444,43 @@ function validatePrimarySportPresence(
   if (count < minimum) {
     return `La semana debe incluir al menos ${minimum} sesión${minimum === 1 ? '' : 'es'} de ${primarySport}.`
   }
+  return undefined
+}
+
+function validateSupportSportPresence(
+  sessions: CoachSessionProposal[],
+  config: WeekCreatorEffectiveConfig,
+): string | undefined {
+  const primarySport = config.primarySport
+  if (primarySport !== 'squash' || config.sessionsPerWeek < 4) return undefined
+
+  const supportSports = config.allowedSports.filter((sport) => sport !== primarySport)
+  if (supportSports.length === 0) return undefined
+
+  const minimumPrimary = getMinimumPrimarySessions(config, primarySport)
+  const supportSlots = Math.max(0, config.sessionsPerWeek - minimumPrimary)
+  if (supportSlots === 0) return undefined
+
+  const presentSupportSports = new Set(
+    sessions
+      .map((session) => normalizeSessionSport(session))
+      .filter((sport): sport is SupportedSport => sport != null && sport !== primarySport && supportSports.includes(sport)),
+  )
+
+  if (supportSlots === 1) {
+    if (presentSupportSports.size === 0) {
+      return `La semana debe usar 1 cupo accesorio con un deporte de soporte permitido (${supportSports.join(', ')}).`
+    }
+    return undefined
+  }
+
+  const requiredSupportSports = supportSports.slice(0, supportSlots)
+  const missing = requiredSupportSports.filter((sport) => !presentSupportSports.has(sport))
+
+  if (missing.length > 0) {
+    return `La semana debe usar ${supportSlots} cupo${supportSlots === 1 ? '' : 's'} accesorio${supportSlots === 1 ? '' : 's'} con deportes de soporte permitidos (${requiredSupportSports.join(', ')}); faltan ${missing.join(', ')}.`
+  }
+
   return undefined
 }
 

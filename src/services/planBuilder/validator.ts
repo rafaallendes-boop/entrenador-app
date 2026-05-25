@@ -1,5 +1,6 @@
 import type { CoachSessionProposal, DayOfWeek, SupportedSport } from '../../types'
 import type { PlanValidationIssue, TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
+import { getExpectedSessionsForPlanWeek, getPlanWeekDateRange } from './dateRange'
 
 export interface ValidatePlanInput {
   plan: TrainingPlan
@@ -30,11 +31,14 @@ function validateStructure(plan: TrainingPlan, weeks: TrainingPlanWeek[]): PlanV
   return issues
 }
 
-function validateWeekSessions(week: TrainingPlanWeek): PlanValidationIssue[] {
+function validateWeekSessions(plan: TrainingPlan, week: TrainingPlanWeek): PlanValidationIssue[] {
   const issues: PlanValidationIssue[] = []
   if (week.status !== 'draft' && week.status !== 'accepted') return issues
 
+  const expectedSessions = getExpectedSessionsForPlanWeek(plan, week)
+
   if (!Array.isArray(week.sessions) || week.sessions.length === 0) {
+    if (expectedSessions === 0) return issues
     issues.push({
       severity: 'warning',
       code: 'week.sessions.empty',
@@ -105,15 +109,15 @@ function validateWeekConstraints(plan: TrainingPlan, week: TrainingPlanWeek): Pl
 
   const expectedDays = new Set(plan.wizardConfig.trainingDays)
   const sessionCountByDate = new Map<string, number>()
-  const weekStart = new Date(`${week.weekStartDate}T00:00:00.000Z`).getTime()
-  const weekEndExclusive = weekStart + 7 * 24 * 60 * 60 * 1000
+  const validRange = getPlanWeekDateRange(plan, week)
+  const expectedSessions = getExpectedSessionsForPlanWeek(plan, week)
 
-  if (week.sessions.length !== plan.wizardConfig.sessionsPerWeek) {
-    const diff = Math.abs(week.sessions.length - plan.wizardConfig.sessionsPerWeek)
+  if (week.sessions.length !== expectedSessions) {
+    const diff = Math.abs(week.sessions.length - expectedSessions)
     issues.push({
       severity: diff <= 1 ? 'warning' : 'error',
       code: 'week.sessions.count_mismatch',
-      message: `La semana ${week.weekIndex + 1} tiene ${week.sessions.length} sesiones, pero el wizard esperaba ${plan.wizardConfig.sessionsPerWeek}.`,
+      message: `La semana ${week.weekIndex + 1} tiene ${week.sessions.length} sesiones, pero el rango válido permite ${expectedSessions}.`,
       weekIndex: week.weekIndex,
     })
   }
@@ -129,12 +133,11 @@ function validateWeekConstraints(plan: TrainingPlan, week: TrainingPlanWeek): Pl
       continue
     }
 
-    const sessionTs = new Date(`${session.date}T00:00:00.000Z`).getTime()
-    if (sessionTs < weekStart || sessionTs >= weekEndExclusive) {
+    if (session.date < validRange.startDate || session.date > validRange.endDate) {
       issues.push({
         severity: 'error',
         code: 'week.sessions.out_of_week',
-        message: `La sesión ${session.title} (${session.date}) cae fuera de la semana ${week.weekIndex + 1}.`,
+        message: `La sesión ${session.title} (${session.date}) cae fuera del rango válido ${validRange.startDate} a ${validRange.endDate} para la semana ${week.weekIndex + 1}.`,
         weekIndex: week.weekIndex,
       })
     }
@@ -226,11 +229,19 @@ function validateLoadProgression(weeks: TrainingPlanWeek[]): PlanValidationIssue
 }
 
 
-function minimumPrimarySessions(primarySport: SupportedSport, phase: TrainingPlanWeek['phase']): number {
+function minimumPrimarySessions(primarySport: SupportedSport, phase: TrainingPlanWeek['phase'], expectedSessions: number): number {
   if (phase === 'transition') return 0
-  if (phase === 'build' || phase === 'peak') return primarySport === 'squash' ? 2 : 1
-  if (phase === 'taper' || phase === 'race' || phase === 'base') return 1
-  return 1
+  if (expectedSessions <= 0) return 0
+  if (phase === 'build' || phase === 'peak') {
+    if (primarySport === 'squash') {
+      return expectedSessions >= 4
+        ? Math.min(expectedSessions, Math.floor(expectedSessions / 2) + 1)
+        : Math.min(expectedSessions, 2)
+    }
+    return 1
+  }
+  if (phase === 'taper' || phase === 'race' || phase === 'base') return Math.min(expectedSessions, 1)
+  return Math.min(expectedSessions, 1)
 }
 
 function validatePrimarySportCoherence(plan: TrainingPlan, weeks: TrainingPlanWeek[]): PlanValidationIssue[] {
@@ -248,7 +259,7 @@ function validatePrimarySportCoherence(plan: TrainingPlan, weeks: TrainingPlanWe
       if (sport === primarySport) return total
       return total + (count ?? 0)
     }, 0)
-    const minimum = minimumPrimarySessions(primarySport, week.phase)
+    const minimum = minimumPrimarySessions(primarySport, week.phase, getExpectedSessionsForPlanWeek(plan, week))
 
     if (primaryCount === 0 && minimum > 0) {
       issues.push({
@@ -285,7 +296,7 @@ function validatePrimarySportCoherence(plan: TrainingPlan, weeks: TrainingPlanWe
 
 export function validatePlanWeek(plan: TrainingPlan, week: TrainingPlanWeek): PlanValidationIssue[] {
   return [
-    ...validateWeekSessions(week),
+    ...validateWeekSessions(plan, week),
     ...validateWeekConstraints(plan, week),
     ...validateSportDistributionForWeek(plan, week),
     ...validatePrimarySportCoherence(plan, [week]),

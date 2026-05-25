@@ -1982,13 +1982,13 @@ async function pullRemoteAndMerge(userId: string): Promise<void> {
 export async function runFullSync(userId: string): Promise<void> {
   if (!userId || !isEnabled()) return
   return fullSyncDedup.run(userId, async () => {
-    await applyRemoteFullResetIfNeeded(userId)
     startSyncAttempt()
     const failureCountAtStart = syncStoreState().syncDetails.consecutiveFailures ?? 0
     const fullSyncStartedAt = Date.now()
     trackSyncEvent({ kind: 'pull', status: 'ok', userId, detail: 'runFullSync:start' })
 
     try {
+      await applyRemoteFullResetIfNeeded(userId)
       await repairLocalNaturalKeyConflicts()
       pruneExpiredTombstones(userId)
       pruneExpiredCoachProposalTombstones(userId)

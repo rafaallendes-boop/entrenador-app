@@ -18,7 +18,7 @@ type PlanBuilderLocationState = {
 }
 
 const PHASE_LABELS: Record<string, string> = {
-  base: 'Base', build: 'Build', peak: 'Peak', taper: 'Taper', race: 'Race', transition: 'Transition',
+  base: 'Base', build: 'Build', peak: 'Peak', taper: 'Taper', race: 'Competencia', transition: 'Transition',
 }
 
 const PHASE_DOT: Record<string, string> = {

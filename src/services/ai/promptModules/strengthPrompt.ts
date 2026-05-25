@@ -5,6 +5,7 @@
 import type { ChatContext, CoachExerciseProposal, MacroPlanPhase } from '../../../types'
 import { isCompetitionSquashMatch } from '../../../utils/squash'
 import { todayISO } from '../../../utils/date'
+import { buildStrengthLoadPack } from '../prompt/packs/quality/strengthLoad'
 import { getAllowedPlanningSports, getPlanningPrimarySport } from '../../planningConstraints'
 import {
   deriveStrengthExperienceLevel as deriveStrengthExperienceLevelFromProfile,
@@ -76,7 +77,7 @@ export function getStrengthSelectionContext(context: ChatContext): StrengthConte
     sportProfile: deriveStrengthSportProfile(context),
     primarySport,
     experienceLevel: deriveStrengthExperienceLevel(context),
-    sessionDurationMin: primarySport === 'strength' ? 65 : 50,
+    sessionDurationMin: primarySport === 'strength' ? 65 : 60,
     competitionSoon,
     daysToCompetition,
     historicalSessions,
@@ -140,11 +141,15 @@ Estructura habitual:
 · strength_primary: la fuerza es disciplina principal. Debe sentirse como una sesion real de pesas con lift principal, accesorios, trunk y una logica clara de progresion.
 · hybrid: la fuerza debe construir rendimiento sin comerse la frescura de los otros deportes. Prioriza eficiencia, transferencia y fatiga controlada.
 · sport_support: la fuerza complementa un deporte principal. Volumen moderado, transferencia alta y nada de destruir piernas innecesariamente.
-· Upper: press banca/inclinado, remo, dominadas, press hombro, core. 4-5 ejercicios, 3-5 series.
-· Lower: sentadilla, peso muerto o variante, hip thrust, lunge, core. 4-5 ejercicios, 3-5 series.
+· Upper/Lower de 60 min: debe sentirse como una sesión real de preparador físico, no como lista mínima. Apunta a 7-9 ejercicios totales: 2 zona media + 4-5 fuerza/accesorios/correctivos + 0-1 cardio específico si aplica.
 · Full body: combinación de variantes de press, jalón/remo y tren inferior.
+· Warm-up de fuerza: puede ser mayormente movilidad/prep de tejidos y rango (gemelos, isquios, glúteos, aductores, cuádriceps, espalda alta, cadera, tobillo, torácica, hombro) más series de aproximación. No lo mezcles con zona media ni con trabajo principal.
 · Preparación física para squash: prioriza potencia de baja dosis, fuerza unilateral/lateral, jalón/remo para hombro y core anti-rotación/estabilidad lateral.
-· Estructura recomendada sport_support/squash: 1) activación/movilidad, 2) potencia o coordinación de baja dosis, 3) fuerza principal, 4) unilateral/lateral, 5) tren superior (jalón, press o estabilidad de hombro), 6) core anti-rotación o estabilidad lateral, 7) cierre/movilidad opcional.
+· Estructura recomendada sport_support/squash: 1) warm-up/activación/movilidad, 2) zona media explícita, 3) fuerza principal, 4) unilateral/lateral, 5) tren superior (jalón, press o estabilidad de hombro), 6) cardio específico opcional de baja dosis, 7) cooldown/movilidad.
+· Zona media no es opcional en sesiones normales de fuerza de 45+ min: incluye 1-2 ejercicios antes de la fuerza principal. Combina control anti-extensión/lumbo-pélvico (dead bug, plancha frontal, fitball plank) con anti-rotación/lateral (Pallof, plancha lateral, Copenhagen, chop controlado).
+· En retorno de lesión: mantén la densidad de una sesión útil, pero con ejercicios seguros, RPE 6-7, técnica controlada, sin impacto agresivo ni volumen que genere DOMS innecesario.
+· No cuentes un remo medio arrodillado o un lunge lateral como único trabajo de zona media aunque tengan demanda de tronco; si los usas, agrega igualmente una plancha/dead bug/Pallof/plancha lateral cuando la duración lo permita.
+· Cardio específico opcional para squash va SIEMPRE al final, después de la fuerza: escalera/footwork, bici de asalto 30s on/30s off en bloque de 4 min, o trotadora de aire 20s on/20s off en bloque de 4 min. Usa 1 bloque por defecto; 2 bloques sólo si está fresco, sesión >=65 min y fase build/base sin competencia cercana.
 · Potencia olímpica y pliometría agresiva: solo si el atleta es avanzado, está fresco y no hay competencia cercana. Siempre bajo volumen y calidad máxima.
 · Escalera y footwork: úsalo como coordinación y timing de pies, no como cardio duro ni reemplazo de una sesión de squash.
 
@@ -189,7 +194,10 @@ export function buildDynamicStrengthSelectionSection(
   }
   lines.push(`Densidad esperada: ${density.min}-${density.max} ejercicios para ${durationMin} min (target ${density.target}).`)
   lines.push(`No entregues menos de ${density.min} ejercicios salvo fatiga >=8, taper estricto, competencia inminente o sesion declarada corta (<30 min); si bajas de ese minimo, justificalo explicitamente.`)
-  lines.push('Respeta la duracion objetivo: mas ejercicios no significa inflar series, sino repartir mejor activacion, principal, transferencia, trunk y cierre.')
+  lines.push('Orden de bloque recomendado: warm-up/protocolos -> zona media -> fuerza principal -> accesorios/transferencia -> cardio especifico opcional -> cooldown.')
+  lines.push('Respeta la duracion objetivo: mas ejercicios no significa inflar series, sino repartir mejor activacion, zona media, principal, transferencia y cierre.')
+  lines.push('Zona media esperada: en sesiones de 45+ min incluye 1-2 ejercicios core reales (plancha/dead bug/Pallof/plancha lateral/Copenhagen), no solo ejercicios que demandan estabilidad de forma indirecta.')
+  lines.push('Cardio especifico opcional: si aplica para squash y hay frescura, usa escalera/footwork o 1 bloque de bici de asalto 30/30 o trotadora de aire 20/20 al final; no lo mezcles con fuerza principal.')
   lines.push(`Ejercicios sugeridos ahora: ${formatSelectedStrengthExercises(selection.exercises)}`)
   lines.push(`Formato compatible actual: ${stringifyStrengthExercises(selection.exercises)}`)
   lines.push('Si fuerza es principal, esta seleccion manda como sesion real de pesas y no como complemento generico.')
@@ -201,6 +209,14 @@ export function buildDynamicStrengthSelectionSection(
   }
 
   return lines.join('\n')
+}
+
+// ─── Load prescription section ──────────────────────────────────────────────
+
+export function buildStrengthLoadPrescriptionSection(context: ChatContext): string {
+  const enabledSports = getAllowedPlanningSports(context.athleteProfile)
+  if (!enabledSports.includes('strength')) return ''
+  return buildStrengthLoadPack({ strengthProfile: context.athleteProfile?.strengthProfile })
 }
 
 // ─── Progression section ────────────────────────────────────────────────────

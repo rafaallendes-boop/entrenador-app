@@ -2,7 +2,9 @@ import type { AthleteProfile, PlanWizardConfig, SupportedSport } from '../../../
 import type { TrainingPlan, TrainingPlanWeek } from '../../../types/planBuilder'
 import { buildWeekCreatorCoachContract } from '../../ai/prompt/core/coachContract'
 import { ACTION_CONTRACTS } from '../../ai/prompt/core/outputContract'
+import { buildStrengthLoadPack } from '../../ai/prompt/packs/quality/strengthLoad'
 import { renderActionAsProse } from '../../ai/prompt/renderers/proseSchema'
+import { getExpectedSessionsForPlanWeek, getPlanWeekDateRange } from '../../planBuilder/dateRange'
 
 export interface WeekPromptInput {
   plan: TrainingPlan
@@ -48,7 +50,8 @@ function buildPrimarySportRule(plan: TrainingPlan, week: TrainingPlanWeek): stri
     return lines
   }
 
-  const minimumSessions = requiredPrimarySessions(primarySport, week.phase, plan.wizardConfig.sessionsPerWeek)
+  const expectedSessions = getExpectedSessionsForPlanWeek(plan, week)
+  const minimumSessions = requiredPrimarySessions(primarySport, week.phase, expectedSessions)
   const emphasis =
     week.phase === 'build' || week.phase === 'peak'
       ? ` ${primarySport} debe tener más protagonismo que los deportes de apoyo.`
@@ -56,8 +59,8 @@ function buildPrimarySportRule(plan: TrainingPlan, week: TrainingPlanWeek): stri
 
   const sessionLabel = minimumSessions > 1 ? 'sesiones' : 'sesión'
   lines.push(`- Regla crítica: incluye al menos ${minimumSessions} ${sessionLabel} de ${primarySport} dentro de esta semana.${emphasis}`)
-  if (primarySport === 'squash' && (week.phase === 'build' || week.phase === 'peak') && plan.wizardConfig.sessionsPerWeek >= 4) {
-    lines.push(`- Para squash en fase ${week.phase} con ${plan.wizardConfig.sessionsPerWeek} sesiones, usa mayoría real de squash: mínimo ${minimumSessions} sesiones squash y máximo ${plan.wizardConfig.sessionsPerWeek - minimumSessions} accesorias.`)
+  if (primarySport === 'squash' && (week.phase === 'build' || week.phase === 'peak') && expectedSessions >= 4) {
+    lines.push(`- Para squash en fase ${week.phase} con ${expectedSessions} sesiones efectivas, usa mayoría real de squash: mínimo ${minimumSessions} sesiones squash y máximo ${expectedSessions - minimumSessions} accesorias.`)
   }
   return lines
 }
@@ -178,15 +181,24 @@ export function buildWeekBatchSystemPrompt(): string {
 export function buildWeekUserPrompt(input: WeekPromptInput): string {
   const { plan, week, previousWeek, profile, wizardConfig, retryInstruction, strictFormatting } = input
   const allowed = allowedSportsList(plan, wizardConfig)
+  const validRange = getPlanWeekDateRange(plan, week)
+  const expectedSessions = getExpectedSessionsForPlanWeek(plan, week)
   const targetLoads = Object.entries(week.targetLoadBySport)
     .map(([sport, load]) => `${sport}: ${load}`)
     .join(', ')
   const days = wizardConfig.trainingDays.join(', ')
 
+  const allowsStrength = allowed.includes('strength')
+  const strengthLoadSection = allowsStrength
+    ? buildStrengthLoadPack({ strengthProfile: profile.strengthProfile })
+    : ''
+  const strengthStructureSection = allowsStrength ? buildStrengthStructureSection() : ''
+
   return [
     `Generar semana ${week.weekIndex + 1} de ${plan.totalWeeks} del plan "${plan.title}".`,
     `Evento principal: ${plan.macroSnapshot.goalEventDate} · Fase: ${PHASE_LABEL[week.phase] ?? week.phase}`,
     `Semana que empieza el lunes ${week.weekStartDate}.`,
+    `Rango válido para sesiones de esta semana: ${validRange.startDate} a ${validRange.endDate}. No programes entrenamientos antes de ${validRange.startDate} ni después de ${validRange.endDate}.`,
     `Foco del bloque: ${plan.phases.find((p) => week.weekIndex >= p.startWeekIndex && week.weekIndex <= p.endWeekIndex)?.blockFocus ?? ''}`,
     '',
     briefAthlete(profile),
@@ -194,7 +206,9 @@ export function buildWeekUserPrompt(input: WeekPromptInput): string {
     `Configuración del wizard:`,
     `- Días permitidos: ${days}`,
     `- Sesiones por semana: ${wizardConfig.sessionsPerWeek}`,
-    `- Regla crítica de cantidad: devuelve EXACTAMENTE ${wizardConfig.sessionsPerWeek} sesiones para esta semana.`,
+    expectedSessions === wizardConfig.sessionsPerWeek
+      ? `- Regla crítica de cantidad: devuelve EXACTAMENTE ${expectedSessions} sesiones para esta semana.`
+      : `- Regla crítica de cantidad: esta semana tiene rango parcial; devuelve EXACTAMENTE ${expectedSessions} sesiones válidas, no ${wizardConfig.sessionsPerWeek}.`,
     `- Duración por sesión: ${wizardConfig.sessionDurationMins} min`,
     `- Doble sesión permitido: ${wizardConfig.allowDoubleSession ? 'sí' : 'no'}`,
     wizardConfig.allowDoubleSession
@@ -213,6 +227,8 @@ export function buildWeekUserPrompt(input: WeekPromptInput): string {
     '',
     retryInstruction ? `Corrección del intento anterior:\n${retryInstruction}\n` : '',
     strictFormatting ? 'Modo estricto: si dudas, prioriza fechas válidas, targetDate correcto, sesiones completas y exactamente la cantidad pedida antes que creatividad.' : '',
+    strengthStructureSection,
+    strengthLoadSection,
     '',
     'Devuelve sólo el bloque <actions> con una única create_week para esta semana.',
   ].filter(Boolean).join('\n')
@@ -260,6 +276,8 @@ export function buildWeekBatchUserPrompt(input: WeekBatchPromptInput): string {
   const days = wizardConfig.trainingDays.join(', ')
   const primarySport = getPrimarySport(plan)
   const weeksText = weeks.map((week) => {
+    const validRange = getPlanWeekDateRange(plan, week)
+    const expectedSessions = getExpectedSessionsForPlanWeek(plan, week)
     const targetLoads = Object.entries(week.targetLoadBySport)
       .map(([sport, load]) => `${sport}: ${load}`)
       .join(', ')
@@ -268,6 +286,8 @@ export function buildWeekBatchUserPrompt(input: WeekBatchPromptInput): string {
     return [
       `Semana ${week.weekIndex + 1}/${plan.totalWeeks}`,
       `- Lunes objetivo: ${week.weekStartDate}`,
+      `- Rango válido de sesiones: ${validRange.startDate} a ${validRange.endDate}. No uses fechas fuera de ese rango.`,
+      `- Cantidad efectiva para esta semana: EXACTAMENTE ${expectedSessions} sesiones.`,
       `- Fase: ${PHASE_LABEL[week.phase] ?? week.phase}`,
       `- Foco del bloque: ${blockFocus}`,
       `- Carga objetivo por deporte: ${targetLoads}`,
@@ -286,7 +306,7 @@ export function buildWeekBatchUserPrompt(input: WeekBatchPromptInput): string {
     'Configuración del wizard:',
     `- Días permitidos: ${days}`,
     `- Sesiones por semana: ${wizardConfig.sessionsPerWeek}`,
-    `- Regla crítica de cantidad: cada semana debe tener EXACTAMENTE ${wizardConfig.sessionsPerWeek} sesiones.`,
+    '- Regla crítica de cantidad: cada semana debe respetar su cantidad efectiva indicada abajo; si el rango es parcial puede ser menor que el valor base del wizard.',
     `- Duración por sesión: ${wizardConfig.sessionDurationMins} min`,
     `- Doble sesión permitido: ${wizardConfig.allowDoubleSession ? 'sí' : 'no'}`,
     wizardConfig.allowDoubleSession
@@ -304,9 +324,25 @@ export function buildWeekBatchUserPrompt(input: WeekBatchPromptInput): string {
     '',
     retryInstruction ? `Corrección del intento anterior:\n${retryInstruction}\n` : '',
     strictFormatting ? 'Modo estricto: devuelve exactamente dos create_week, una por cada targetDate indicado, sin mezclar fechas entre semanas y con la cantidad exacta de sesiones válidas por semana.' : '',
+    allowed.includes('strength') ? buildStrengthStructureSection() : '',
+    allowed.includes('strength') ? buildStrengthLoadPack({ strengthProfile: profile.strengthProfile }) : '',
     '',
     'Devuelve sólo el bloque <actions> con exactamente dos create_week, una para cada semana pedida.',
   ].filter(Boolean).join('\n')
+}
+
+function buildStrengthStructureSection(): string {
+  return [
+    'ESTRUCTURA DE FUERZA',
+    '- Para cada sesión de fuerza normal de 45+ min usa esta secuencia: warm-up/activación -> zona media -> fuerza principal -> accesorios/transferencia -> cardio específico opcional -> cooldown/movilidad.',
+    '- Warm-up tipo preparador físico: puede ser principalmente movilidad/prep de tejidos y rango (foam roller o movilidad de gemelos, isquios, glúteos, aductores, cuádriceps, espalda alta, cadera, tobillo, torácica y hombro), más series de aproximación. No lo mezcles con zona media.',
+    '- Para sesiones de 60 min busca densidad útil: 2 ejercicios de zona media + 4-5 ejercicios de fuerza/accesorios/correctivos + 0-1 cardio específico si aplica. No entregues sólo 2-3 ejercicios de fuerza para una sesión de una hora.',
+    '- Zona media debe ser explícita y aparecer antes de los ejercicios principales: 1-2 ejercicios tipo dead bug, plancha frontal, Pallof, plancha lateral, Copenhagen, fitball plank o chop controlado.',
+    '- No cuentes remos medio arrodillados, lunges o bisagras como único core aunque tengan demanda de tronco; si los usas, agrega un core real cuando la duración lo permita.',
+    '- Para squash prioriza anti-extensión, anti-rotación y estabilidad lateral.',
+    '- En retorno de lesión o fitness returning: conserva una estructura completa, pero usa RPE 6-7, tempo controlado, ejercicios de bajo riesgo y evita impacto agresivo o volumen que deje DOMS fuerte.',
+    '- Cardio específico opcional va al final: escalera/footwork, bici de asalto 30s on/30s off por 4 min, o trotadora de aire 20s on/20s off por 4 min. Usa 1 bloque por defecto; 2 sólo si está fresco y la sesión dura 65+ min.',
+  ].join('\n')
 }
 
 function buildRaceWeekRule(plan: TrainingPlan, week: TrainingPlanWeek): string[] {

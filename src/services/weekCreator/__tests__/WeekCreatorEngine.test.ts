@@ -6,6 +6,7 @@ import { extractRequestedSessionsPerWeek, resolveWeekCreatorConfig, withRequeste
 import { WeekCreatorEngine } from '../WeekCreatorEngine'
 import { buildWeekCreatorPrompt } from '../WeekCreatorPromptBuilder'
 import { useAIDebugStore } from '../../../store/useAIDebugStore'
+import { findSquashDrillByName } from '../../training/drillLibrary'
 
 const mockProviderCall = vi.hoisted(() => vi.fn())
 
@@ -67,6 +68,25 @@ describe('resolveWeekCreatorConfig', () => {
     expect(config.trainingDays.length).toBeGreaterThan(0)
   })
 
+  it('uses the active plan sports when wizard config exists', () => {
+    const config = resolveWeekCreatorConfig(makeProfile({
+      planWizardConfig: {
+        goalEventId: 'goal-1',
+        trainingDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
+        sessionsPerWeek: 5,
+        sessionDurationMins: 60,
+        allowDoubleSession: false,
+        complementarySports: ['strength'],
+        currentFitnessLevel: 'normal',
+        currentFatigue: 'normal',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+    }))
+
+    expect(config.allowedSports).toEqual(['squash', 'strength'])
+  })
+
   it('translates spanish scheduleProfile.availableDays to DayOfWeek', () => {
     const config = resolveWeekCreatorConfig(makeProfile({
       scheduleProfile: { availableDays: ['lun', 'mié', 'vie', 'sáb'] },
@@ -92,6 +112,19 @@ describe('resolveWeekCreatorConfig', () => {
       scheduleProfile: { availableDays: ['lun', 'mar', 'mié', 'jue', 'vie'] },
     }))
     expect(config.sessionsPerWeek).toBe(4)
+  })
+
+  it('derives six sessions from six available days when auto mode has double-session days', () => {
+    const config = resolveWeekCreatorConfig(makeProfile({
+      scheduleProfile: {
+        availableDays: ['lun', 'mar', 'mié', 'jue', 'vie', 'sáb'],
+        doubleSessionDays: ['lun', 'mié', 'vie'],
+      },
+    }))
+
+    expect(config.sessionsPerWeek).toBe(6)
+    expect(config.maxSessionsPerWeek).toBe(6)
+    expect(config.allowDoubleSession).toBe(true)
   })
 
   it('derives an auto double-session target when schedule capacity explicitly allows it', () => {
@@ -312,6 +345,7 @@ describe('WeekCreatorEngine', () => {
     expect(prompt.systemPrompt).not.toContain('dentro de un plan por evento ya estructurado')
     expect(prompt.userPrompt).toContain('al menos 3 sesiones de squash')
     expect(prompt.userPrompt).toContain('máximo 1 accesorias')
+    expect(prompt.userPrompt).toContain('Usa el 1 cupo accesorio con deportes de soporte permitidos')
     expect(prompt.userPrompt).toContain('evita dos squash el mismo día')
     expect(prompt.userPrompt).toContain('Sesión solo técnica')
     expect(prompt.userPrompt).toContain('al menos 4 drills técnicos')
@@ -635,6 +669,146 @@ describe('WeekCreatorEngine', () => {
     expect(response.message).toContain('Se agregaron 1 sesiones fallback')
   })
 
+  it('finalizes an all-squash provider week into the required support mix', async () => {
+    mockProviderCall.mockImplementation(async (request: { requestClass: string; traceId: string }) => ({
+      text: '<actions>' + JSON.stringify([
+        {
+          type: 'create_week',
+          reason: 'Semana con soporte omitido por el modelo',
+          targetDate: '2026-05-04',
+          sessions: [
+            squashSession('2026-05-04', 'AM', 'Squash 1', 'Tiros paralelos profundos'),
+            squashSession('2026-05-05', 'AM', 'Squash 2', 'Tiros cruzados profundos'),
+            squashSession('2026-05-06', 'AM', 'Squash 3', 'Boast y drive paralelo de salida'),
+            squashSession('2026-05-07', 'AM', 'Squash 4', 'Drop y contra-drop por ambos lados'),
+            squashSession('2026-05-08', 'AM', 'Squash 5', 'Drops desde media cancha'),
+          ],
+        },
+      ]) + '</actions>',
+      provider: 'mock',
+      model: 'mock-week-creator',
+      traceId: request.traceId,
+      requestClass: request.requestClass,
+    }))
+
+    const context: ChatContext = {
+      athleteProfile: makeProfile({
+        planWizardConfig: {
+          goalEventId: 'goal-1',
+          trainingDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
+          sessionsPerWeek: 5,
+          sessionDurationMins: 60,
+          allowDoubleSession: false,
+          complementarySports: ['running', 'strength'],
+          currentFitnessLevel: 'normal',
+          currentFatigue: 'normal',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      }),
+      recentSessions: [],
+      plannedSessions: [],
+      historicalSessions: [],
+    }
+
+    const response = await WeekCreatorEngine.sendWeekCreate(
+      'Créame una semana con squash, running y fuerza',
+      context,
+      { surface: 'chat', targetWeekStart: '2026-05-04' },
+    )
+
+    const sessions = response.actions?.[0].sessions ?? []
+    expect(mockProviderCall).toHaveBeenCalledTimes(1)
+    expect(sessions).toHaveLength(5)
+    expect(sessions.filter((session) => session.sessionType === 'squash')).toHaveLength(3)
+    expect(sessions.some((session) => session.sessionType === 'running')).toBe(true)
+    expect(sessions.some((session) => session.sessionType === 'strength')).toBe(true)
+    expect(response.message).toContain('Se ajustó la distribución final')
+  })
+
+  it('salvages a structurally valid provider week that uses an out-of-catalog squash drill', async () => {
+    mockProviderCall.mockImplementation(async (request: { requestClass: string; traceId: string }) => ({
+      text: '<actions>' + JSON.stringify([
+        {
+          type: 'create_week',
+          reason: 'Semana squash con un drill fuera de catálogo',
+          targetDate: '2026-05-04',
+          sessions: [
+            squashSession('2026-05-04', 'AM', 'Squash 1', 'Tiros paralelos profundos'),
+            squashSession('2026-05-05', 'AM', 'Squash 2', 'Drives paralelos con ' + 'recuperaci' + 'ón a' + 'l T'),
+            squashSession('2026-05-06', 'AM', 'Squash 3', 'Boast y drive paralelo de salida'),
+            {
+              date: '2026-05-07',
+              timeBlock: 'AM',
+              sessionType: 'strength',
+              title: 'Fuerza soporte squash',
+              durationMin: 60,
+              objective: 'Soporte general para squash.',
+              exercises: [
+                { name: 'Sentadilla goblet', sets: 3, reps: 8, group: 'legs' },
+                { name: 'Remo con pecho apoyado', sets: 3, reps: 10, group: 'pull' },
+                { name: 'Press Pallof', sets: 3, reps: '10/lado', group: 'core' },
+                { name: 'Zancada lateral con barra', sets: 3, reps: '8/lado', group: 'legs' },
+                { name: 'Plancha lateral', sets: 3, reps: '30s/lado', group: 'core' },
+              ],
+            },
+            {
+              date: '2026-05-08',
+              timeBlock: 'AM',
+              sessionType: 'running',
+              title: 'Rodaje Z2 controlado',
+              durationMin: 45,
+              objective: 'Sumar base aeróbica de baja interferencia.',
+              runningType: 'z2',
+            },
+          ],
+        },
+      ]) + '</actions>',
+      provider: 'gemini',
+      model: 'gemini-flash',
+      traceId: request.traceId,
+      requestClass: request.requestClass,
+    }))
+
+    const context: ChatContext = {
+      athleteProfile: makeProfile({
+        planWizardConfig: {
+          goalEventId: 'goal-1',
+          trainingDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
+          sessionsPerWeek: 5,
+          sessionDurationMins: 60,
+          allowDoubleSession: false,
+          complementarySports: ['running', 'strength'],
+          currentFitnessLevel: 'normal',
+          currentFatigue: 'normal',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      }),
+      recentSessions: [],
+      plannedSessions: [],
+      historicalSessions: [],
+    }
+
+    const response = await WeekCreatorEngine.sendWeekCreate(
+      'Créame la semana',
+      context,
+      { surface: 'chat', targetWeekStart: '2026-05-04' },
+    )
+
+    const sessions = response.actions?.[0].sessions ?? []
+    const squashDrills = sessions
+      .filter((session) => session.sessionType === 'squash')
+      .flatMap((session) => session.squashDetails?.drills ?? [])
+
+    expect(mockProviderCall).toHaveBeenCalledTimes(1)
+    expect(response.fallbackUsed).toBeFalsy()
+    expect(sessions).toHaveLength(5)
+    expect(sessions.filter((session) => session.sessionType === 'squash')).toHaveLength(3)
+    expect(squashDrills.length).toBeGreaterThan(0)
+    expect(squashDrills.every((drill) => findSquashDrillByName(drill.name) != null)).toBe(true)
+  })
+
   it('repairs duplicate squash drills locally instead of retrying the whole week', async () => {
     const duplicateSquashDetails = {
       trainingFocus: 'technical' as const,
@@ -899,6 +1073,10 @@ describe('WeekCreatorEngine', () => {
     })
     expect(response.actions?.[0].sessions).toHaveLength(5)
     expect(response.actions?.[0].sessions?.filter((session) => session.sessionType === 'squash')).toHaveLength(3)
+    const strength = response.actions?.[0].sessions?.find((session) => session.sessionType === 'strength')
+    expect(strength?.exercises?.slice(0, 2).every((exercise) => exercise.group === 'core')).toBe(true)
+    expect(strength?.exercises?.some((exercise) => exercise.group === 'cardio')).toBe(true)
+    expect(strength?.exercises?.at(-1)?.group).toBe('cardio')
     expect(response.message).toContain('El proveedor gemini no devolvió una semana aplicable')
     expect(response.message).not.toContain('Gemini no devolvió el formato estructurado')
 
@@ -962,7 +1140,9 @@ describe('WeekCreatorEngine', () => {
     expect(sessions).toHaveLength(6)
     expect(new Set(squashDates).size).toBe(squashDates.length)
     expect(strength?.durationMin).toBe(60)
-    expect(strength?.exercises?.length).toBeGreaterThanOrEqual(5)
+    expect(strength?.exercises?.length).toBeGreaterThanOrEqual(6)
+    expect(strength?.exercises?.slice(0, 2).every((exercise) => exercise.group === 'core')).toBe(true)
+    expect(strength?.exercises?.at(-1)?.group).toBe('cardio')
   })
 
   it('spreads six-session fallback weeks across available days before using doubles', async () => {
@@ -1065,6 +1245,50 @@ describe('validateWeekCreatorResponse sport details', () => {
     })
 
     expect(result.ok).toBe(true)
+  })
+
+  it('rejects all-squash weeks when support sports should fill accessory slots', () => {
+    const result = validateWeekCreatorResponse({
+      targetWeekStart: '2026-05-04',
+      context: { recentSessions: [], plannedSessions: [], historicalSessions: [] },
+      config: {
+        allowedSports: ['squash', 'running', 'strength'],
+        primarySport: 'squash',
+        sessionsPerWeek: 5,
+        maxSessionsPerWeek: 5,
+        sessionDurationMins: 60,
+        trainingDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
+        allowDoubleSession: false,
+        currentFitnessLevel: 'normal',
+        currentFatigue: 'normal',
+        fromWizard: true,
+        configSource: 'wizard',
+      },
+      response: {
+        message: 'Semana lista',
+        provider: 'gemini',
+        timestamp: Date.now(),
+        traceId: 'trace-support',
+        requestClass: 'week_creator',
+        actions: [{
+          type: 'create_week',
+          reason: 'Semana squash sin soporte',
+          targetDate: '2026-05-04',
+          sessions: [
+            squashSession('2026-05-04', 'AM', 'Squash 1', 'Tiros paralelos profundos'),
+            squashSession('2026-05-05', 'AM', 'Squash 2', 'Tiros cruzados profundos'),
+            squashSession('2026-05-06', 'AM', 'Squash 3', 'Boast y drive paralelo de salida'),
+            squashSession('2026-05-07', 'AM', 'Squash 4', 'Drop y contra-drop por ambos lados'),
+            squashSession('2026-05-08', 'AM', 'Squash 5', 'Drops desde media cancha'),
+          ],
+        }],
+      },
+    })
+
+    expect(result.ok).toBe(false)
+    expect(result.error).toContain('deportes de soporte permitidos')
+    expect(result.error).toContain('running')
+    expect(result.error).toContain('strength')
   })
 
   it('returns soft warnings for incomplete sport details', () => {

@@ -3,6 +3,7 @@ import { addDays } from 'date-fns'
 import type { AthleteProfile, GoalEvent, PlanWizardConfig } from '../../types'
 import { buildPlanShell } from '../planBuilder/buildPlanShell'
 import { generatePlanWeeks } from '../planBuilder/generatePlan'
+import { repairGeneratedWeek } from '../planBuilder/repairWeek'
 import {
   buildWeekBatchSystemPrompt,
   buildWeekSystemPrompt,
@@ -86,6 +87,91 @@ describe('planBuilder', () => {
     expect(plan.phases.length).toBeGreaterThan(0)
   })
 
+  it('buildPlanShell starts training from the request date and skips past calendar days', () => {
+    const profile = makeProfile('2026-07-20')
+    const event = profile.goalEvents![0] as GoalEvent
+    const wizardConfig = makeWizardConfig()
+    const { plan, weeks } = buildPlanShell({
+      athleteId: profile.id,
+      profile,
+      wizardConfig,
+      goalEvent: event,
+      now: new Date('2026-05-17T10:00:00'),
+    })
+
+    expect(plan.startDate).toBe('2026-05-17')
+    expect(plan.endDate).toBe('2026-07-20')
+    expect(plan.totalWeeks).toBe(10)
+    expect(weeks[0]?.weekStartDate).toBe('2026-05-18')
+    expect(weeks[weeks.length - 1]?.weekStartDate).toBe('2026-07-20')
+  })
+
+  it('week prompt and validation respect a partial first-week range', () => {
+    const profile = makeProfile('2026-07-20')
+    const event = profile.goalEvents![0] as GoalEvent
+    const wizardConfig = {
+      ...makeWizardConfig(),
+      trainingDays: ['thursday', 'saturday'] as PlanWizardConfig['trainingDays'],
+      sessionsPerWeek: 2,
+    }
+    const { plan, weeks } = buildPlanShell({
+      athleteId: profile.id,
+      profile,
+      wizardConfig,
+      goalEvent: event,
+      now: new Date('2026-05-13T10:00:00'),
+    })
+    const week = weeks[0]
+    const prompt = buildWeekUserPrompt({ plan, week, profile, wizardConfig })
+
+    expect(week.weekStartDate).toBe('2026-05-11')
+    expect(prompt).toContain('Rango válido para sesiones de esta semana: 2026-05-13 a 2026-05-17')
+
+    const issues = validatePlan({
+      plan,
+      weeks: [{
+        ...week,
+        status: 'draft',
+        sessions: [
+          { date: '2026-05-11', timeBlock: 'AM', sessionType: 'squash', title: 'Past', durationMin: 45 },
+          { date: '2026-05-14', timeBlock: 'AM', sessionType: 'squash', title: 'Valid', durationMin: 45 },
+        ],
+      }],
+    })
+
+    expect(issues.some((issue) => issue.code === 'week.sessions.out_of_week')).toBe(true)
+  })
+
+  it('repairGeneratedWeek moves first-week sessions that fall before the request date', () => {
+    const profile = makeProfile('2026-07-20')
+    const event = profile.goalEvents![0] as GoalEvent
+    const wizardConfig = {
+      ...makeWizardConfig(),
+      trainingDays: ['thursday', 'saturday'] as PlanWizardConfig['trainingDays'],
+      sessionsPerWeek: 2,
+    }
+    const { plan, weeks } = buildPlanShell({
+      athleteId: profile.id,
+      profile,
+      wizardConfig,
+      goalEvent: event,
+      now: new Date('2026-05-13T10:00:00'),
+    })
+
+    const result = repairGeneratedWeek([
+      { date: '2026-05-11', timeBlock: 'AM', sessionType: 'squash', title: 'Past', durationMin: 45 },
+      { date: '2026-05-16', timeBlock: 'AM', sessionType: 'squash', title: 'Valid', durationMin: 45 },
+    ], {
+      plan,
+      week: weeks[0],
+      profile,
+      wizardConfig,
+    })
+
+    expect(result.sessions.map((session) => session.date)).not.toContain('2026-05-11')
+    expect(result.sessions.every((session) => session.date >= '2026-05-13')).toBe(true)
+  })
+
   it('buildPlanShell caps at 12 weeks for far events and anchors the plan to the event block', () => {
     const profile = makeProfile(eventNWeeksFromNow(40))
     const event = profile.goalEvents![0] as GoalEvent
@@ -96,12 +182,11 @@ describe('planBuilder', () => {
       goalEvent: event,
     })
     const expectedStartDate = toISO(addDays(getWeekStart(fromISO(event.date)), -(11 * 7)))
-    const expectedEndDate = toISO(addDays(getWeekStart(fromISO(event.date)), 6))
 
     expect(plan.totalWeeks).toBe(12)
     expect(weeks).toHaveLength(12)
     expect(plan.startDate).toBe(expectedStartDate)
-    expect(plan.endDate).toBe(expectedEndDate)
+    expect(plan.endDate).toBe(event.date)
   })
 
   it('buildPlanShell keeps the goal-event primary sport in target loads even if the profile context omits it', () => {
@@ -175,6 +260,7 @@ describe('planBuilder', () => {
       profile,
       wizardConfig,
       goalEvent: event,
+      now: new Date('2026-05-17T10:00:00'),
     })
 
     weeks[0].status = 'draft'
@@ -215,6 +301,7 @@ describe('planBuilder', () => {
       profile,
       wizardConfig,
       goalEvent: event,
+      now: new Date('2026-05-17T10:00:00'),
     })
 
     const prompt = buildWeekUserPrompt({
@@ -243,6 +330,7 @@ describe('planBuilder', () => {
       profile,
       wizardConfig,
       goalEvent: event,
+      now: new Date('2026-05-17T10:00:00'),
     })
     const week = { ...weeks[0], phase: 'peak' as const }
 
@@ -324,7 +412,7 @@ describe('planBuilder', () => {
   })
 
   it('repairs an out-of-week sparse response without retrying when fallback can complete it', async () => {
-    const profile = makeProfile(eventNWeeksFromNow(2))
+    const profile = makeProfile('2026-07-20')
     const event = profile.goalEvents![0] as GoalEvent
     const wizardConfig = {
       ...makeWizardConfig(),
@@ -336,6 +424,7 @@ describe('planBuilder', () => {
       profile,
       wizardConfig,
       goalEvent: event,
+      now: new Date('2026-05-17T10:00:00'),
     })
 
     const prompts: string[] = []
@@ -372,7 +461,7 @@ describe('planBuilder', () => {
   })
 
   it('adds fallbacks when the model returns fewer sessions than the wizard requires', async () => {
-    const profile = makeProfile(eventNWeeksFromNow(2))
+    const profile = makeProfile('2026-07-20')
     const event = profile.goalEvents![0] as GoalEvent
     const wizardConfig = makeWizardConfig()
     const { plan, weeks } = buildPlanShell({
@@ -380,6 +469,7 @@ describe('planBuilder', () => {
       profile,
       wizardConfig,
       goalEvent: event,
+      now: new Date('2026-05-17T10:00:00'),
     })
 
     const prompts: string[] = []
@@ -421,7 +511,7 @@ describe('planBuilder', () => {
   })
 
   it('surfaces dropped invalid sessions as a stronger retry instruction', async () => {
-    const profile = makeProfile(eventNWeeksFromNow(2))
+    const profile = makeProfile('2026-07-20')
     const event = profile.goalEvents![0] as GoalEvent
     const wizardConfig = makeWizardConfig()
     const { plan, weeks } = buildPlanShell({
@@ -429,6 +519,7 @@ describe('planBuilder', () => {
       profile,
       wizardConfig,
       goalEvent: event,
+      now: new Date('2026-05-17T10:00:00'),
     })
 
     const prompts: string[] = []
@@ -484,7 +575,7 @@ describe('planBuilder', () => {
   })
 
   it('falls back from pair generation to single-week generation when only one week resolves from the batch', async () => {
-    const profile = makeProfile(eventNWeeksFromNow(8))
+    const profile = makeProfile('2026-07-20')
     const event = profile.goalEvents![0] as GoalEvent
     const wizardConfig = {
       ...makeWizardConfig(),
@@ -496,6 +587,7 @@ describe('planBuilder', () => {
       profile,
       wizardConfig,
       goalEvent: event,
+      now: new Date('2026-05-17T10:00:00'),
     })
 
     let callCount = 0
@@ -533,7 +625,7 @@ describe('planBuilder', () => {
   })
 
   it('degrades the remaining pipeline to single-week generation after a malformed pair batch', async () => {
-    const profile = makeProfile(eventNWeeksFromNow(8))
+    const profile = makeProfile('2026-07-20')
     const event = profile.goalEvents![0] as GoalEvent
     const wizardConfig = makeWizardConfig()
     const { plan, weeks } = buildPlanShell({
@@ -541,6 +633,7 @@ describe('planBuilder', () => {
       profile,
       wizardConfig,
       goalEvent: event,
+      now: new Date('2026-05-17T10:00:00'),
     })
 
     let callCount = 0

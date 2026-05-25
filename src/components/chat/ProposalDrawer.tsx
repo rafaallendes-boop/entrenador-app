@@ -1,7 +1,8 @@
 import { CheckCircle2, Loader2, ThumbsDown, ThumbsUp, X, Zap } from 'lucide-react'
 import { useState } from 'react'
-import type { CoachProposal, CyclingDetails, GeneratedProtocol, MobilityDetails, Session, SquashSessionBlockKind, SquashSessionMode } from '../../types'
+import type { CoachProposal, CyclingDetails, ExerciseGroup, GeneratedProtocol, MobilityDetails, Session, SquashSessionBlockKind, SquashSessionMode } from '../../types'
 import { recordCoachFeedback } from '../../services/ai/aiTelemetry'
+import { resolveStrengthExerciseBlock } from '../../services/training/strengthSessionStructure'
 
 const ACTION_LABEL: Record<string, string> = {
   skip_session: 'Saltar sesion',
@@ -323,7 +324,9 @@ function renderProposalDetails(
     targetPaceMax?: string
     targetHrMin?: number
     targetHrMax?: number
-    exercises?: Array<{ name: string; sets: number; reps: number | string; weight?: number }>
+    sessionType?: string
+    newType?: string
+    exercises?: Array<{ name: string; sets: number; reps: number | string; weight?: number; targetPercent1RM?: number; targetRpe?: number; group?: ExerciseGroup }>
     cyclingDetails?: CyclingDetails
     mobilityDetails?: MobilityDetails
     squashDetails?: {
@@ -435,25 +438,16 @@ function renderProposalDetails(
         </div>
       )}
 
-      {item.exercises && item.exercises.length > 0 && (
-        <div className={`${indentClassName} mt-1`}>
-          <p className="text-[10px] text-ink-faint/60 uppercase tracking-wide">Ejercicios ({item.exercises.length})</p>
-          {item.exercises.slice(0, 5).map((exercise, exerciseIndex) => (
-            <p key={exerciseIndex} className="text-[10px] text-ink-faint">
-              {exercise.name} {exercise.sets}x{exercise.reps}{exercise.weight ? ` ${exercise.weight}kg` : ''}
-            </p>
-          ))}
-          {item.exercises.length > 5 && (
-            <p className="text-[10px] text-ink-faint/50">+{item.exercises.length - 5} mas</p>
-          )}
-        </div>
-      )}
+      {item.exercises && item.exercises.length > 0 && renderExercisePreview(item.exercises, {
+        className: indentClassName,
+        strength: item.sessionType === 'strength' || item.newType === 'strength',
+      })}
 
       {item.warmup && (
         <div className={`${indentClassName} mt-1 rounded-lg border border-brand/20 bg-brand/5 px-2.5 py-2`}>
           <p className="text-[10px] text-brand-light/80 uppercase tracking-wide">Warm-up</p>
           <p className="mt-1 text-[10px] text-ink-faint">
-            {item.warmup.title} · {item.warmup.durationMin}min
+            {item.warmup.title}
           </p>
           <p className="text-[10px] text-ink-faint/80">{item.warmup.note}</p>
           {item.warmup.steps.slice(0, 3).map((step, stepIndex) => (
@@ -466,7 +460,7 @@ function renderProposalDetails(
         <div className={`${indentClassName} mt-1 rounded-lg border border-violet-500/20 bg-violet-500/5 px-2.5 py-2`}>
           <p className="text-[10px] text-violet-300/80 uppercase tracking-wide">Post / cool-down</p>
           <p className="mt-1 text-[10px] text-ink-faint">
-            {item.cooldown.title} · {item.cooldown.durationMin}min
+            {item.cooldown.title}
           </p>
           <p className="text-[10px] text-ink-faint/80">{item.cooldown.note}</p>
           {item.cooldown.steps.slice(0, 3).map((step, stepIndex) => (
@@ -476,6 +470,94 @@ function renderProposalDetails(
       )}
     </>
   )
+}
+
+type ProposalExercise = {
+  name: string
+  sets: number
+  reps: number | string
+  weight?: number
+  targetPercent1RM?: number
+  targetRpe?: number
+  group?: ExerciseGroup
+}
+
+type ProposalStrengthBlock = 'core' | 'strength' | 'cardio' | 'mobility'
+
+const PROPOSAL_STRENGTH_LABEL: Record<ProposalStrengthBlock, string> = {
+  core: 'Zona media',
+  strength: 'Trabajo de fuerza',
+  cardio: 'Cardio especifico',
+  mobility: 'Movilidad / cierre',
+}
+
+const PROPOSAL_STRENGTH_ORDER: ProposalStrengthBlock[] = ['core', 'strength', 'cardio', 'mobility']
+
+function renderExercisePreview(
+  exercises: ProposalExercise[],
+  options: { className: string; strength: boolean },
+) {
+  if (!options.strength) {
+    return (
+      <div className={`${options.className} mt-1`}>
+        <p className="text-[10px] uppercase tracking-wide text-ink-faint/60">Ejercicios ({exercises.length})</p>
+        {exercises.slice(0, 5).map((exercise, exerciseIndex) => (
+          <p key={exerciseIndex} className="text-[10px] text-ink-faint">
+            {formatProposalExercise(exercise)}
+          </p>
+        ))}
+        {exercises.length > 5 && (
+          <p className="text-[10px] text-ink-faint/50">+{exercises.length - 5} mas</p>
+        )}
+      </div>
+    )
+  }
+
+  const sections = groupProposalStrengthExercises(exercises)
+  return (
+    <div className={`${options.className} mt-1 space-y-1.5`}>
+      <p className="text-[10px] uppercase tracking-wide text-ink-faint/60">Fuerza estructurada</p>
+      {sections.map((section) => (
+        <div key={section.block} className="rounded-lg border border-amber-500/10 bg-amber-500/5 px-2.5 py-1.5">
+          <p className="text-[10px] font-medium uppercase tracking-wide text-amber-300/80">
+            {PROPOSAL_STRENGTH_LABEL[section.block]}
+          </p>
+          {section.exercises.slice(0, 4).map((exercise, exerciseIndex) => (
+            <p key={`${section.block}-${exerciseIndex}`} className="truncate text-[10px] text-ink-faint">
+              {formatProposalExercise(exercise)}
+            </p>
+          ))}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function groupProposalStrengthExercises(exercises: ProposalExercise[]): Array<{ block: ProposalStrengthBlock; exercises: ProposalExercise[] }> {
+  const groups = new Map<ProposalStrengthBlock, ProposalExercise[]>()
+  for (const exercise of exercises) {
+    const block = toProposalStrengthBlock(resolveStrengthExerciseBlock(exercise))
+    groups.set(block, [...(groups.get(block) ?? []), exercise])
+  }
+  return PROPOSAL_STRENGTH_ORDER
+    .map((block) => ({ block, exercises: groups.get(block) ?? [] }))
+    .filter((section) => section.exercises.length > 0)
+}
+
+function toProposalStrengthBlock(group: ExerciseGroup): ProposalStrengthBlock {
+  if (group === 'core') return 'core'
+  if (group === 'cardio') return 'cardio'
+  if (group === 'mobility') return 'mobility'
+  return 'strength'
+}
+
+function formatProposalExercise(exercise: ProposalExercise): string {
+  const load = exercise.weight != null
+    ? ` · ${exercise.weight}kg${exercise.targetPercent1RM != null ? ` (${Math.round(exercise.targetPercent1RM)}%)` : ''}`
+    : exercise.targetRpe != null
+      ? ` · RPE ${exercise.targetRpe}`
+      : ''
+  return `${exercise.name} ${exercise.sets}x${exercise.reps}${load}`
 }
 
 function formatProposalSource(source: NonNullable<CoachProposal['metadata']>['source']): string {

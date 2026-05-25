@@ -8,6 +8,8 @@ import { applyCreateWeek } from '../services/planning/applyCreateWeek'
 import { normalizeCoachProposal } from '../services/coachProposalMetadata'
 import * as syncService from '../services/syncService'
 import { ensureSessionProtocols, generateDefaultProtocols } from '../services/trainingProtocols'
+import { enhanceStrengthSessionExercises } from '../services/training/strengthSessionStructure'
+import { normalizeSport } from '../utils/athlete'
 import { v4 as uuid } from '../utils/uuid'
 import { useCoachMemoryStore } from './useCoachMemoryStore'
 import { useTrainingStore } from './useTrainingStore'
@@ -46,14 +48,20 @@ export const useCoachActionsStore = create<CoachActionsState>((set, get) => ({
   proposals: [],
 
   loadProposals: async () => {
-    const proposals = await db.coachProposals.orderBy('createdAt').toArray()
+    const athleteProfile = useCoachMemoryStore.getState().athleteProfile
+    const proposals = (await db.coachProposals.orderBy('createdAt').toArray())
+      .map((proposal) => ({
+        ...proposal,
+        actions: prepareProposalActionsForDisplay(proposal.actions, athleteProfile),
+      }))
     set({ proposals })
   },
 
   addProposal: async (message, actions, chatMessageId, options) => {
     const athleteProfile = useCoachMemoryStore.getState().athleteProfile
     const sanitized = sanitizeCoachActionsForPlan(actions, athleteProfile)
-    const normalized = normalizeCoachProposal(sanitized.actions, {
+    const displayReadyActions = prepareProposalActionsForDisplay(sanitized.actions, athleteProfile)
+    const normalized = normalizeCoachProposal(displayReadyActions, {
       source: options?.source ?? 'chat',
       relatedAlertId: options?.relatedAlertId,
       existingSessions: useTrainingStore.getState().sessions,
@@ -211,6 +219,75 @@ export const useCoachActionsStore = create<CoachActionsState>((set, get) => ({
   getPendingProposals: () => get().proposals.filter((proposal) => proposal.status === 'pending'),
 }))
 
+function prepareProposalActionsForDisplay(actions: CoachAction[], athleteProfile: AthleteProfile | null): CoachAction[] {
+  return actions.map((action) => {
+    if ((action.type === 'add_session' || action.type === 'update_session') && action.exercises) {
+      const durationMin = action.type === 'add_session' ? action.durationMin : action.newDurationMin
+      const sessionType = normalizeSport((action.type === 'add_session' ? action.sessionType : action.newType) ?? '')
+      if (sessionType !== 'strength') return action
+      return {
+        ...action,
+        ...(action.type === 'add_session' ? { sessionType } : { newType: sessionType }),
+        exercises: enhanceStrengthSessionExercises(action.exercises, {
+          durationMin,
+          strengthProfile: athleteProfile?.strengthProfile,
+        }),
+      }
+    }
+
+    if (action.type === 'create_week' && action.sessions) {
+      return {
+        ...action,
+        sessions: action.sessions.map((session) => (
+          normalizeSport(session.sessionType) === 'strength'
+            ? stripSquashInternalDurations({
+                ...session,
+                sessionType: 'strength',
+                exercises: enhanceStrengthSessionExercises(session.exercises, {
+                  durationMin: session.durationMin,
+                  strengthProfile: athleteProfile?.strengthProfile,
+                }),
+              })
+            : stripSquashInternalDurations(session)
+        )),
+      }
+    }
+
+    if ((action.type === 'add_session' || action.type === 'update_session') && action.squashDetails) {
+      return stripSquashInternalDurations(action)
+    }
+
+    return action
+  })
+}
+
+function stripSquashInternalDurations<T extends { squashDetails?: CoachAction['squashDetails'] }>(item: T): T {
+  if (!item.squashDetails) return item
+  return {
+    ...item,
+    squashDetails: {
+      ...item.squashDetails,
+      drills: item.squashDetails.drills?.map((drill) => {
+        const next = { ...drill }
+        delete next.durationMin
+        return next
+      }),
+      blocks: item.squashDetails.blocks?.map((block) => {
+        const nextBlock = { ...block }
+        delete nextBlock.durationMin
+        return {
+          ...nextBlock,
+          drills: block.drills.map((drill) => {
+            const next = { ...drill }
+            delete next.durationMin
+            return next
+          }),
+        }
+      }),
+    },
+  }
+}
+
 function preValidateActions(
   actions: CoachAction[],
   store: ReturnType<typeof useTrainingStore.getState>,
@@ -283,6 +360,9 @@ function preValidateActions(
           errors.push(`${label}: sessions array requerido`)
         } else {
           action.sessions.forEach((session, sessionIndex) => {
+            if (!isSessionTypeAllowedForPlan(session.sessionType, athleteProfile)) {
+              errors.push(`${label}: sesion ${sessionIndex + 1} usa tipo ${session.sessionType} no permitido en planificacion actual`)
+            }
             if (session.sessionType === 'squash' && !session.squashDetails) {
               errors.push(`${label}: sesion ${sessionIndex + 1} requiere squashDetails`)
             }
@@ -490,7 +570,14 @@ async function applyCoachAction(
         rpe: action.rpe ?? action.newRpe,
         objective: action.objective,
         status: 'planned',
-        exercises: action.exercises?.map((exercise) => ({ ...exercise, id: uuid(), completed: false })),
+        exercises: (
+          action.sessionType === 'strength'
+            ? enhanceStrengthSessionExercises(action.exercises, {
+                durationMin: action.durationMin,
+                strengthProfile: athleteProfile?.strengthProfile,
+              })
+            : action.exercises
+        )?.map((exercise) => ({ ...exercise, id: uuid(), completed: false })),
         runningDetails: action.runningType
           ? {
               runningType: action.runningType,
@@ -561,7 +648,7 @@ async function applyCoachAction(
         patch.subtype = action.subtype ?? current.subtype
         patch.squashDetails = action.squashDetails ?? current.squashDetails
       }
-      if (nextType === 'running' || nextType === 'cycling') {
+      if (nextType === 'running') {
         patch.runningDetails = action.runningType || action.targetPaceMin || action.targetPaceMax || action.targetHrMin != null || action.targetHrMax != null || action.intervalStructure != null
           ? {
               runningType: action.runningType ?? current.runningDetails?.runningType ?? 'z2',
@@ -572,12 +659,21 @@ async function applyCoachAction(
               intervalStructure: action.intervalStructure ?? current.runningDetails?.intervalStructure,
             }
           : current.runningDetails
-        patch.cyclingDetails = nextType === 'cycling'
-          ? action.cyclingDetails ?? current.cyclingDetails
-          : undefined
+        patch.cyclingDetails = undefined
+      }
+      if (nextType === 'cycling') {
+        patch.runningDetails = undefined
+        patch.cyclingDetails = action.cyclingDetails ?? current.cyclingDetails
       }
       if (Array.isArray(action.exercises)) {
-        patch.exercises = action.exercises.map((exercise) => ({ ...exercise, id: uuid(), completed: false }))
+        patch.exercises = (
+          nextType === 'strength'
+            ? enhanceStrengthSessionExercises(action.exercises, {
+                durationMin: action.newDurationMin ?? current.durationMin,
+                strengthProfile: athleteProfile?.strengthProfile,
+              })
+            : action.exercises
+        )?.map((exercise) => ({ ...exercise, id: uuid(), completed: false }))
       } else if (nextType === 'strength' || nextType === 'mobility') {
         patch.exercises = current.exercises
       }
@@ -586,7 +682,7 @@ async function applyCoachAction(
       }
 
       const resolvedRunningType =
-        nextType === 'running' || nextType === 'cycling'
+        nextType === 'running'
           ? action.runningType ?? current.runningDetails?.runningType
           : undefined
       const defaults = generateDefaultProtocols({

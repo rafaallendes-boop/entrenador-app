@@ -105,9 +105,9 @@ export function sanitizeCoachActionsForPlan(
         continue
       }
       if (allowedSessions.length !== (action.sessions?.length ?? 0)) {
-        warnings.push('Se filtraron sesiones de deportes no permitidos dentro de create_week.')
+        warnings.push('create_week incluye sesiones de deportes no permitidos; se mantiene completa para rechazarla antes de aplicar en vez de guardar una semana parcial.')
       }
-      nextActions.push({ ...action, sessions: allowedSessions })
+      nextActions.push(action)
       continue
     }
 

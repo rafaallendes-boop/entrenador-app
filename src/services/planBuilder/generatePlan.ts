@@ -22,6 +22,7 @@ import {
   pickCreateWeekDiagnostic,
 } from '../week/shared'
 import { resolveConfiguredGenerationStrategy } from './generationState'
+import { getExpectedSessionsForPlanWeek } from './dateRange'
 
 function getActiveProvider(): AIProvider {
   if (import.meta.env.PROD) return new ProxyProvider()
@@ -187,12 +188,13 @@ function makeResolvedWeek(
 
 function normalizeRetryInstruction(
   error: string | undefined,
+  plan: TrainingPlan,
   week: TrainingPlanWeek,
   expectedSessions: number,
   attempt: number,
 ): string | undefined {
   if (attempt <= 1) return undefined
-  const base = summarizeWeekGenerationError(error, week)
+  const base = summarizeWeekGenerationError(error, week, plan)
   return buildWeekRetryInstruction(base, week.weekStartDate, expectedSessions, attempt)
     ?? `${base} Usa formato estricto: targetDate=${week.weekStartDate}, sesiones compactas y todas las fechas dentro de esa semana.`
 }
@@ -225,7 +227,7 @@ async function generateSingleWeekWithRetry(
       profile,
       wizardConfig,
       temperature: attempt === 1 ? 0.4 : 0.25,
-      retryInstruction: normalizeRetryInstruction(lastError, week, plan.wizardConfig.sessionsPerWeek, attempt),
+      retryInstruction: normalizeRetryInstruction(lastError, plan, week, getExpectedSessionsForPlanWeek(plan, week), attempt),
       strictFormatting: attempt >= 3,
       onChunk: (chunk) => onChunk?.(week.weekIndex, chunk),
     })

@@ -24,7 +24,6 @@ const SettingsPage = lazy(() => import('./pages/SettingsPage'))
 const OnboardingPage = lazy(() => import('./pages/OnboardingPage'))
 
 const AUTO_SYNC_RETRY_COOLDOWN_MS = 15_000
-const AUTO_SYNC_ON_FOCUS_STALE_MS = 30_000
 
 function RouteFallback() {
   return (
@@ -291,7 +290,5 @@ function shouldAutoSyncOnFocus(
   syncDetails: ReturnType<typeof useAuthStore.getState>['syncDetails'],
 ): boolean {
   if (syncStatus === 'syncing' || syncDetails.syncAttemptInFlight) return false
-  if (syncStatus === 'offline' || syncStatus === 'error' || syncDetails.pendingOps > 0) return true
-  const lastSuccess = syncDetails.lastSuccessfulSyncAt
-  return lastSuccess == null || Date.now() - lastSuccess > AUTO_SYNC_ON_FOCUS_STALE_MS
+  return true
 }

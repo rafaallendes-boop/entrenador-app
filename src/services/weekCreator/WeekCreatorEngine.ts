@@ -3,6 +3,7 @@ import type {
   AthleteProfile,
   ChatContext,
   CoachAction,
+  CoachExerciseProposal,
   CoachSessionProposal,
   DayOfWeek,
   MacroPlan,
@@ -27,6 +28,7 @@ import { resolveWeekCreatorConfig, type WeekCreatorEffectiveConfig, withRequeste
 import { buildWeekRetryInstruction } from '../week/shared'
 import { repairGeneratedWeek } from '../planBuilder/repairWeek'
 import { WEEK_CREATOR_RESPONSE_SCHEMA } from './weekCreatorResponseSchema'
+import { enhanceStrengthSessionExercises } from '../training/strengthSessionStructure'
 
 type WeekCreatorOptions = {
   surface?: AITechnicalSurface
@@ -269,6 +271,7 @@ export const WeekCreatorEngine = {
     const fallback = buildDeterministicWeekCreatorResponse({
       config,
       targetWeekStart: options.targetWeekStart,
+      profile: context.athleteProfile ?? undefined,
       provider: lastFailure?.provider,
       error: failureMessage,
     })
@@ -392,11 +395,17 @@ function repairWeekCreatorResponse(
   const profile = buildRepairProfile(context)
   const repairContext = buildRepairContext(profile, config, targetWeekStart)
   const repairResult = repairGeneratedWeek(action.sessions, repairContext)
+  const shouldFinalize = shouldFinalizeWeekCreatorSessions(repairResult.sessions, config)
+  const finalizedSessions = shouldFinalize
+    ? finalizeWeekCreatorSessions(repairResult.sessions, config, targetWeekStart, profile)
+    : repairResult.sessions
+  const finalizedChanged = shouldFinalize && !areSessionListsEquivalent(repairResult.sessions, finalizedSessions)
   if (repairResult.meta.repairedSessionCount === 0
     && repairResult.meta.movedSessionCount === 0
     && repairResult.meta.addedFallbackCount === 0
     && repairResult.meta.droppedSessionCount === 0
     && repairResult.meta.filteredSportCount === 0
+    && !finalizedChanged
   ) {
     return { ...response, repairWarnings: [] }
   }
@@ -404,16 +413,107 @@ function repairWeekCreatorResponse(
   const repairedAction: CoachAction = {
     ...action,
     targetDate: action.targetDate ?? targetWeekStart,
-    sessions: repairResult.sessions,
+    sessions: finalizedSessions,
   }
   const repairedActions = actions.map((item) => (item === action ? repairedAction : item))
-  const repairWarnings = repairResult.meta.warnings.map((warning) => warning.message)
+  const repairWarnings = [
+    ...repairResult.meta.warnings.map((warning) => warning.message),
+    ...(finalizedChanged
+      ? ['Se ajustó la distribución final de la semana para respetar cantidad, días y deportes de soporte.']
+      : []),
+  ]
 
   return {
     ...response,
     actions: repairedActions,
     repairWarnings,
   }
+}
+
+function shouldFinalizeWeekCreatorSessions(
+  sessions: CoachSessionProposal[],
+  config: WeekCreatorEffectiveConfig,
+): boolean {
+  const expected = Math.max(1, config.sessionsPerWeek)
+  if (sessions.length !== expected) return true
+
+  const allowedSports = new Set<SupportedSport>([...(config.allowedSports.length > 0 ? config.allowedSports : []), 'mobility'])
+  if (allowedSports.size > 0 && sessions.some((session) => !allowedSports.has(session.sessionType as SupportedSport))) return true
+
+  const primary = config.primarySport ?? config.allowedSports[0]
+  if (primary !== 'squash' || expected < 4) return false
+
+  const supportSports = config.allowedSports.filter((sport) => sport !== primary)
+  if (supportSports.length === 0) return false
+
+  const primaryTarget = getFallbackPrimaryTarget(config, primary, expected, true)
+  const primaryCount = sessions.filter((session) => session.sessionType === primary).length
+  if (primaryCount < primaryTarget) return true
+
+  const supportSlots = Math.max(0, expected - primaryTarget)
+  if (supportSlots === 0) return false
+
+  const presentSupportSports = new Set(
+    sessions
+      .map((session) => session.sessionType as SupportedSport)
+      .filter((sport) => sport !== primary && supportSports.includes(sport)),
+  )
+  if (supportSlots === 1) return presentSupportSports.size === 0
+
+  const requiredSupportSports = supportSports.slice(0, supportSlots)
+  return requiredSupportSports.some((sport) => !presentSupportSports.has(sport))
+}
+
+function finalizeWeekCreatorSessions(
+  sessions: CoachSessionProposal[],
+  config: WeekCreatorEffectiveConfig,
+  targetWeekStart: string,
+  profile?: AthleteProfile,
+): CoachSessionProposal[] {
+  const expected = Math.max(1, config.sessionsPerWeek)
+  const targetSports = buildFallbackSportSequence(config).slice(0, expected)
+  const slots = buildFallbackSlots(config, targetWeekStart, expected)
+  if (targetSports.length === 0 || slots.length < expected) return sessions
+
+  const allowedSports = new Set<SupportedSport>([...(config.allowedSports.length > 0 ? config.allowedSports : targetSports), 'mobility'])
+  const remaining = sessions
+    .filter((session) => allowedSports.has(session.sessionType as SupportedSport))
+    .map((session) => ({ ...session }))
+  const sportCounts = new Map<SupportedSport, number>()
+
+  const finalized = targetSports.map((sport, index) => {
+    const existingIndex = remaining.findIndex((session) => session.sessionType === sport)
+    const slot = slots[index]
+    const sportIndex = sportCounts.get(sport) ?? 0
+    sportCounts.set(sport, sportIndex + 1)
+
+    const session = existingIndex >= 0
+      ? remaining.splice(existingIndex, 1)[0]
+      : buildFallbackSession(sport, slot.date, slot.timeBlock, config.sessionDurationMins, sportIndex, config, profile)
+
+    return {
+      ...session,
+      date: slot.date,
+      timeBlock: slot.timeBlock,
+    }
+  })
+
+  return finalized.sort((a, b) => a.date.localeCompare(b.date) || a.timeBlock.localeCompare(b.timeBlock))
+}
+
+function areSessionListsEquivalent(
+  a: CoachSessionProposal[],
+  b: CoachSessionProposal[],
+): boolean {
+  if (a.length !== b.length) return false
+  return a.every((session, index) => {
+    const other = b[index]
+    return other != null
+      && session.date === other.date
+      && session.timeBlock === other.timeBlock
+      && session.sessionType === other.sessionType
+      && session.title === other.title
+  })
 }
 
 function buildRepairProfile(context: ChatContext): AthleteProfile {
@@ -516,6 +616,7 @@ function addDaysIso(date: string, days: number): string {
 function buildDeterministicWeekCreatorResponse(input: {
   config: WeekCreatorEffectiveConfig
   targetWeekStart: string
+  profile?: AthleteProfile
   provider?: CoachNormalizedResponse['provider']
   error?: string
 }): CoachNormalizedResponse {
@@ -528,7 +629,7 @@ function buildDeterministicWeekCreatorResponse(input: {
       'Priorizar el deporte principal sin perder soporte complementario.',
       'Dejar una semana ejecutable y fácil de ajustar.',
     ],
-    sessions: buildDeterministicSessions(input.config, input.targetWeekStart),
+    sessions: buildDeterministicSessions(input.config, input.targetWeekStart, input.profile),
   }
 
   return {
@@ -550,6 +651,7 @@ function buildDeterministicWeekCreatorResponse(input: {
 function buildDeterministicSessions(
   config: WeekCreatorEffectiveConfig,
   targetWeekStart: string,
+  profile?: AthleteProfile,
 ): CoachSessionProposal[] {
   const sportSequence = buildFallbackSportSequence(config)
   const plannedSlots = buildFallbackSlots(config, targetWeekStart, sportSequence.length)
@@ -559,7 +661,7 @@ function buildDeterministicSessions(
     const slot = plannedSlots[index]
     const sportIndex = sportCounts.get(sport) ?? 0
     sportCounts.set(sport, sportIndex + 1)
-    return buildFallbackSession(sport, slot.date, slot.timeBlock, config.sessionDurationMins, sportIndex)
+    return buildFallbackSession(sport, slot.date, slot.timeBlock, config.sessionDurationMins, sportIndex, config, profile)
   })
 }
 
@@ -671,6 +773,8 @@ function buildFallbackSession(
   timeBlock: TimeBlock,
   baseDurationMin: number,
   index: number,
+  config: WeekCreatorEffectiveConfig,
+  profile?: AthleteProfile,
 ): CoachSessionProposal {
   const durationMin = sport === 'mobility' ? Math.min(40, baseDurationMin) : baseDurationMin
   const base = {
@@ -693,27 +797,42 @@ function buildFallbackSession(
   }
 
   if (sport === 'strength') {
-    const variants = [
+    const includeSpecificCardio =
+      config.primarySport === 'squash' &&
+      durationMin >= 55 &&
+      config.currentFatigue !== 'overloaded'
+    const variants: CoachExerciseProposal[][] = [
       [
+        { name: 'Control de tronco dead bug', sets: 3, reps: '8/lado', group: 'core' as const },
+        { name: 'Plancha lateral', sets: 3, reps: '30s/lado', group: 'core' as const },
         { name: 'Sentadilla goblet', sets: 3, reps: 8, group: 'legs' as const },
         { name: 'Remo con pecho apoyado', sets: 3, reps: 10, group: 'pull' as const },
         { name: 'Press sobre cabeza', sets: 3, reps: '8/lado', group: 'push' as const },
         { name: 'Zancada lateral con barra', sets: 3, reps: '8/lado', group: 'legs' as const },
-        { name: 'Plancha lateral', sets: 3, reps: '30s/lado', group: 'core' as const },
+        ...(includeSpecificCardio
+          ? [{ name: 'Bici de asalto 30/30', sets: 1, reps: '4 min: 30s fuerte / 30s suave', group: 'cardio' as const }]
+          : []),
       ],
       [
+        { name: 'Control de tronco dead bug', sets: 3, reps: '8/lado', group: 'core' as const },
+        { name: 'Press Pallof', sets: 3, reps: '10/lado', group: 'core' as const },
         { name: 'Peso muerto rumano', sets: 3, reps: 8, group: 'legs' as const },
         { name: 'Press inclinado con mancuernas', sets: 3, reps: 8, group: 'push' as const },
         { name: 'Remo invertido', sets: 3, reps: 10, group: 'pull' as const },
         { name: 'Sentadilla en zancada', sets: 3, reps: '8/lado', group: 'legs' as const },
-        { name: 'Press Pallof', sets: 3, reps: '10/lado', group: 'core' as const },
+        ...(includeSpecificCardio
+          ? [{ name: 'Trotadora de aire 20/20', sets: 1, reps: '4 min: 20s fuerte / 20s suave', group: 'cardio' as const }]
+          : []),
       ],
     ]
     return {
       ...base,
       title: index % 2 === 0 ? 'Fuerza base tren inferior' : 'Fuerza soporte torso',
       objective: 'Construir soporte general con fatiga controlada.',
-      exercises: variants[index % variants.length],
+      exercises: enhanceStrengthSessionExercises(variants[index % variants.length], {
+        durationMin,
+        strengthProfile: profile?.strengthProfile,
+      }),
     }
   }
 

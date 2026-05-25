@@ -204,7 +204,7 @@ describe('responseNormalizer', () => {
     })
 
     expect(response.actions).toHaveLength(1)
-    expect(response.meta?.warnings).toContain('low_density:strength:60min:2/5')
+    expect(response.meta?.warnings).toContain('low_density:strength:60min:3/5')
     expect(response.meta?.outcome).toBe('ok')
   })
 
@@ -465,6 +465,101 @@ describe('responseNormalizer', () => {
       droppedSessions: 1,
       droppedSessionReasons: [{ index: 1, reason: 'missing-sessionType' }],
     })
+  })
+
+  it('preserves strength load metadata (targetPercent1RM, targetRpe, warmupSets) on exercise proposals', () => {
+    const response = normalizeResponse({
+      text: [
+        '<actions>',
+        JSON.stringify([
+          {
+            type: 'add_session',
+            reason: 'fuerza con cargas sugeridas',
+            targetDate: '2026-04-10',
+            sessionType: 'strength',
+            title: 'Lower pesado',
+            durationMin: 60,
+            timeBlock: 'AM',
+            exercises: [
+              {
+                name: 'Sentadilla',
+                sets: 4,
+                reps: 6,
+                weight: 110,
+                targetPercent1RM: 80,
+                warmupSets: [
+                  { reps: 5, weight: 55, percent1RM: 40 },
+                  { reps: 3, weight: 80, percent1RM: 60 },
+                ],
+              },
+              {
+                name: 'Curl femoral',
+                sets: 3,
+                reps: 10,
+                targetRpe: 8,
+              },
+            ],
+          },
+        ]),
+        '</actions>',
+      ].join('\n'),
+      provider: 'mock',
+    })
+
+    const action = response.actions?.[0]
+    const sentadilla = action?.exercises?.find((exercise) => exercise.name === 'Sentadilla')
+    expect(sentadilla).toMatchObject({
+      name: 'Sentadilla',
+      weight: 110,
+      targetPercent1RM: 80,
+      warmupSets: [
+        { reps: 5, weight: 55, percent1RM: 40 },
+        { reps: 3, weight: 80, percent1RM: 60 },
+      ],
+    })
+    const curl = action?.exercises?.find((exercise) => exercise.name === 'Curl femoral')
+    expect(curl).toMatchObject({
+      name: 'Curl femoral',
+      targetRpe: 8,
+    })
+  })
+
+  it('drops out-of-range strength load metadata during normalization', () => {
+    const response = normalizeResponse({
+      text: [
+        '<actions>',
+        JSON.stringify([
+          {
+            type: 'add_session',
+            reason: 'fuerza con cargas invalidas',
+            targetDate: '2026-04-10',
+            sessionType: 'strength',
+            title: 'Lower pesado',
+            durationMin: 60,
+            timeBlock: 'AM',
+            exercises: [
+              {
+                name: 'Sentadilla',
+                sets: 4,
+                reps: 6,
+                targetPercent1RM: 180,
+                targetRpe: 12,
+                warmupSets: [
+                  { reps: 5, weight: 55, percent1RM: 140 },
+                ],
+              },
+            ],
+          },
+        ]),
+        '</actions>',
+      ].join('\n'),
+      provider: 'mock',
+    })
+
+    const exercise = response.actions?.[0].exercises?.find((item) => item.name === 'Sentadilla')
+    expect(exercise?.targetPercent1RM).toBeUndefined()
+    expect(exercise?.targetRpe).toBeUndefined()
+    expect(exercise?.warmupSets?.[0]).toEqual({ reps: 5, weight: 55 })
   })
 
   it('rejects squashDetails when drills items do not have a valid shape', () => {

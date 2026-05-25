@@ -29,6 +29,12 @@ describe('chatRouting', () => {
     expect(resolveChatRoute('agéndame movilidad hoy PM').kind).toBe('chat_action')
   })
 
+  it('routes typo-tolerant strength session requests to chat_action', () => {
+    expect(resolveChatRoute('crea una sesión de pesas par ahoy').kind).toBe('chat_action')
+    expect(resolveChatRoute('crea una sesion de gym a hoy').kind).toBe('chat_action')
+    expect(resolveChatRoute('hazme pesas manana').kind).toBe('chat_action')
+  })
+
   it('still routes generic conversation to chat_general', () => {
     expect(resolveChatRoute('cómo va mi semana').kind).toBe('chat_general')
     expect(resolveChatRoute('qué opinas de mi progreso').kind).toBe('chat_general')

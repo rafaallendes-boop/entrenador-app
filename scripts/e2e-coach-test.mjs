@@ -15,7 +15,7 @@
  */
 
 import { chromium } from 'playwright'
-import { existsSync, mkdirSync, writeFileSync } from 'fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { resolve, dirname } from 'path'
 import { fileURLToPath } from 'url'
 
@@ -48,6 +48,50 @@ let passed = 0
 let failed = 0
 const results = []
 const browserEvents = []
+
+function getStoredAuthInfo() {
+  if (!existsSync(AUTH_STATE_PATH)) return { exists: false }
+
+  try {
+    const storageState = JSON.parse(readFileSync(AUTH_STATE_PATH, 'utf8'))
+    const origins = Array.isArray(storageState.origins) ? storageState.origins : []
+    for (const origin of origins) {
+      const localStorage = Array.isArray(origin.localStorage) ? origin.localStorage : []
+      for (const item of localStorage) {
+        if (typeof item?.value !== 'string' || !item.value.includes('expires_at')) continue
+
+        const parsed = JSON.parse(item.value)
+        const session = parsed.currentSession ?? parsed.session ?? parsed
+        if (!session?.access_token || typeof session.expires_at !== 'number') continue
+
+        const expiresAtMs = session.expires_at * 1000
+        return {
+          exists: true,
+          expiresAtMs,
+          expiresAtIso: new Date(expiresAtMs).toISOString(),
+          expired: expiresAtMs <= Date.now(),
+        }
+      }
+    }
+  } catch (error) {
+    return {
+      exists: true,
+      parseError: error instanceof Error ? error.message : String(error),
+    }
+  }
+
+  return { exists: true }
+}
+
+function formatAuthRecoveryDetail(authInfo) {
+  if (authInfo.expired && authInfo.expiresAtIso) {
+    return `Expiró ${authInfo.expiresAtIso}; corre npm run e2e:dev:headed`
+  }
+  if (authInfo.parseError) {
+    return `No se pudo leer auth state (${authInfo.parseError}); corre npm run e2e:dev:headed`
+  }
+  return 'Regenera scripts/.e2e-auth-state.json con npm run e2e:dev:headed'
+}
 
 function log(message) {
   console.log(`  ${message}`)
@@ -222,7 +266,7 @@ async function exportBetaQualityIfRequested(page) {
   ok('Export Beta Quality descarga JSON', download.suggestedFilename())
 }
 
-async function verifyAuth(page, context, hasStoredAuth) {
+async function verifyAuth(page, context, authInfo) {
   step('2. Autenticación')
   await goto(page, '/chat')
   await page.waitForTimeout(1_000)
@@ -233,8 +277,8 @@ async function verifyAuth(page, context, hasStoredAuth) {
     return
   }
 
-  if (!OPTIONS.headed && hasStoredAuth) {
-    fail('Auth state guardado no autenticó la sesión', 'Regenera scripts/.e2e-auth-state.json')
+  if (!OPTIONS.headed && authInfo.exists) {
+    fail('Auth state guardado no autenticó la sesión', formatAuthRecoveryDetail(authInfo))
     throw new Error('Auth state inválido')
   }
 
@@ -403,7 +447,14 @@ async function main() {
   console.log(`  Auth state: ${existsSync(AUTH_STATE_PATH) ? AUTH_STATE_PATH : 'no guardado'}`)
   console.log(`  Flags: ${[...args].join(' ') || 'default'}\n`)
 
-  const hasStoredAuth = existsSync(AUTH_STATE_PATH)
+  const authInfo = getStoredAuthInfo()
+  const hasStoredAuth = authInfo.exists
+  if (authInfo.expiresAtIso) {
+    console.log(`  Auth vence: ${authInfo.expiresAtIso}${authInfo.expired ? ' (vencido)' : ''}`)
+  } else if (authInfo.parseError) {
+    console.log(`  Auth state warning: no se pudo leer (${authInfo.parseError})`)
+  }
+
   const headed = OPTIONS.headed || !hasStoredAuth
   const browser = await chromium.launch({ headless: !headed })
   const context = await browser.newContext({
@@ -426,7 +477,7 @@ async function main() {
     if (/Entrenador/i.test(title)) ok('App cargó correctamente', title)
     else fail('Título inesperado', title)
 
-    await verifyAuth(page, context, hasStoredAuth)
+    await verifyAuth(page, context, authInfo)
     await runNavigationSmoke(page)
     await runGenericChat(page)
     await runActionProposal(page)

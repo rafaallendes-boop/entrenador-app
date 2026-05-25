@@ -173,13 +173,14 @@ export function getBaseProtocolBySport(
       return {
         warmup: protocol(
           'Preparación general para fuerza',
-          12,
-          'Calienta general primero y luego activa el patrón principal del día.',
+          14,
+          'Abre rango, sube temperatura y activa el patrón principal del día.',
           'general',
           [
-            step('8-10 min de bici, trote o elíptica suave'),
-            step('Movilidad de tobillo, cadera, torácica y hombro según el foco'),
-            step('Series de aproximación del primer ejercicio'),
+            step('3-5 min de bici, trote o elíptica suave si llegas frío'),
+            step('Movilidad/foam roller de gemelos, isquios, glúteos, aductores, cuádriceps y espalda alta'),
+            step('Movilidad dinámica de tobillo, cadera, torácica y hombro según el foco'),
+            step('Series de aproximación del primer ejercicio de fuerza'),
           ],
         ),
         cooldown: protocol(

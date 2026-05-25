@@ -113,7 +113,7 @@ describe('promptBuilder request class branching', () => {
     })
 
     expect(prompt).toContain('2026-05-08 (viernes)')
-    expect(prompt).toContain('Para referencias como lunes/martes/viernes/sábado, usa exactamente la fecha indicada')
+    expect(prompt).toContain('Para referencias como lunes/martes/viernes/sábado, usa la fecha correspondiente dentro de la semana solicitada')
   })
 
   it('includes recent proposal outcomes so rejected changes are not treated as applied', () => {

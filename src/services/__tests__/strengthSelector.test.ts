@@ -76,6 +76,8 @@ describe('strengthSelector progression', () => {
       'Escalera frontal – Icky shuffle',
       'Escalera lateral – dos pies por cuadro',
       'Escalera lateral – shuffle in-in-out',
+      'Bici de asalto',
+      'Trotadora de aire',
       'Pallof Press',
       'Copenhagen Side Plank',
       'Dead Bug',
@@ -180,10 +182,14 @@ describe('strengthSelector progression', () => {
     const trx = filterByEquipment(STRENGTH_EXERCISE_LIBRARY, ['trx'])
     const ladder = filterByEquipment(STRENGTH_EXERCISE_LIBRARY, ['ladder'])
     const stabilityBall = filterByEquipment(STRENGTH_EXERCISE_LIBRARY, ['stability_ball'])
+    const assaultBike = filterByEquipment(STRENGTH_EXERCISE_LIBRARY, ['assault_bike'])
+    const airTreadmill = filterByEquipment(STRENGTH_EXERCISE_LIBRARY, ['air_treadmill'])
 
     expect(trx.some((exercise) => exercise.id === 'trx_inverted_row')).toBe(true)
     expect(ladder.some((exercise) => exercise.id === 'ladder_bipodal_front_1')).toBe(true)
     expect(stabilityBall.some((exercise) => exercise.id === 'stability_ball_front_plank')).toBe(true)
+    expect(assaultBike.some((exercise) => exercise.id === 'assault_bike_30_30')).toBe(true)
+    expect(airTreadmill.some((exercise) => exercise.id === 'air_treadmill_20_20')).toBe(true)
   })
 
   it('forces deload on strength ACWR risk', () => {
@@ -353,8 +359,8 @@ describe('strengthSelector progression', () => {
       sportProfile: 'sport_support',
       primarySport: 'squash',
       sessionDurationMin: 60,
-    })).toMatchObject({ min: 5, target: 6, max: 7 })
-    expect(longSupport.exercises.length).toBeGreaterThanOrEqual(6)
+    })).toMatchObject({ min: 6, target: 8, max: 9 })
+    expect(longSupport.exercises.length).toBeGreaterThanOrEqual(8)
     expect(shortSupport.exercises.length).toBeGreaterThanOrEqual(3)
     expect(shortSupport.exercises.length).toBeLessThanOrEqual(4)
   })
@@ -429,6 +435,78 @@ describe('strengthSelector progression', () => {
       exercise.tags.includes('court_footwork'),
     )).toBe(true)
     expect(selectedDefinitions.some((exercise) => exercise.category === 'core')).toBe(true)
+  })
+
+  it('keeps an explicit early core block for normal squash strength sessions', () => {
+    const selection = selectStrengthSession({
+      phase: 'build',
+      fatigueLevel: 3,
+      recentExercises: [],
+      goal: 'fuerza lateral para squash',
+      sportProfile: 'hybrid',
+      primarySport: 'squash',
+      experienceLevel: 'intermediate',
+      availableEquipment: ['barbell', 'trap bar', 'bodyweight', 'bands', 'cable', 'stability ball'],
+      competitionSoon: false,
+      sessionDurationMin: 50,
+    })
+
+    const selectedDefinitions = selection.exercises.map((exercise) => findStrengthExerciseByName(exercise.name)!)
+    const coreExercises = selectedDefinitions.filter((exercise) => exercise.category === 'core')
+
+    expect(coreExercises).toHaveLength(2)
+    expect(selection.exercises.slice(0, 2).every((exercise) => exercise.group === 'core')).toBe(true)
+    expect(coreExercises.some((exercise) =>
+      exercise.tags.includes('anti_extension') ||
+      exercise.tags.includes('lateral_stability') ||
+      exercise.id === 'dead_bug' ||
+      exercise.id === 'plank',
+    )).toBe(true)
+  })
+
+  it('adds squash-specific cardio at the end when the athlete is fresh enough', () => {
+    const selection = selectStrengthSession({
+      phase: 'build',
+      fatigueLevel: 3,
+      recentExercises: [],
+      goal: 'fuerza para squash y puntos cortos',
+      sportProfile: 'hybrid',
+      primarySport: 'squash',
+      experienceLevel: 'intermediate',
+      availableEquipment: ['barbell', 'trap bar', 'bodyweight', 'bands', 'cable', 'assault bike', 'trotadora de aire'],
+      competitionSoon: false,
+      sessionDurationMin: 65,
+    })
+
+    const selectedDefinitions = selection.exercises.map((exercise) => findStrengthExerciseByName(exercise.name)!)
+    const last = selectedDefinitions.at(-1)
+
+    expect(last?.tags).toContain('cardio_specific')
+    expect(['assault_bike_30_30', 'air_treadmill_20_20']).toContain(last?.id)
+    expect(selection.exercises.at(-1)?.group).toBe('cardio')
+  })
+
+  it('uses a short footwork series when squash-specific cardio is ladder based', () => {
+    const selection = selectStrengthSession({
+      phase: 'build',
+      fatigueLevel: 3,
+      recentExercises: [],
+      goal: 'fuerza para squash con cardio especifico de escalera y footwork',
+      sportProfile: 'hybrid',
+      primarySport: 'squash',
+      experienceLevel: 'intermediate',
+      availableEquipment: ['barbell', 'trap bar', 'bodyweight', 'bands', 'cable', 'ladder', 'stability ball'],
+      competitionSoon: false,
+      sessionDurationMin: 65,
+    })
+
+    const selectedDefinitions = selection.exercises.map((exercise) => findStrengthExerciseByName(exercise.name)!)
+    const footwork = selectedDefinitions.filter((exercise) => exercise.tags.includes('court_footwork'))
+    const firstFootworkIndex = selectedDefinitions.findIndex((exercise) => exercise.tags.includes('court_footwork'))
+
+    expect(footwork).toHaveLength(3)
+    expect(selection.exercises.slice(firstFootworkIndex).every((exercise) => exercise.group === 'cardio')).toBe(true)
+    expect(footwork.every((exercise) => exercise.equipment.includes('ladder'))).toBe(true)
   })
 
   it('keeps high-risk squash power out when fatigue is high or competition is close', () => {

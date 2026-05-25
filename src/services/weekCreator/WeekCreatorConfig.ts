@@ -107,8 +107,8 @@ function deriveScheduleSessionsPerWeek(
   const base = trainingDays.length >= 5
     ? trainingDays.length - 1
     : Math.max(trainingDays.length, DEFAULT_SESSIONS_PER_WEEK)
-  const doubleCapacity = doubleSessionDays.length > 0 && maxSessionsPerWeek > trainingDays.length
-    ? Math.min(maxSessionsPerWeek, base + 2)
+  const doubleCapacity = doubleSessionDays.length > 0
+    ? Math.min(maxSessionsPerWeek, Math.max(trainingDays.length, base + 2))
     : base
   const derived = Math.max(base, doubleCapacity)
   return clampSessionsPerWeek(derived, maxSessionsPerWeek)
@@ -168,13 +168,19 @@ export function deriveWeekCreatorAthleteTier(
 }
 
 function resolveAllowedSports(profile: AthleteProfile | null | undefined): SupportedSport[] {
+  const configuredSports = getAllowedPlanningSports(profile)
+  if (profile?.planWizardConfig && configuredSports.length > 0) {
+    const currentPrimary = getPrimarySportNormalized(profile)
+    if (!currentPrimary || configuredSports.includes(currentPrimary)) return configuredSports
+    return [...new Set([currentPrimary, ...configuredSports, ...getEnabledSports(profile)])]
+  }
+
   const enabledSports = getEnabledSports(profile)
   if (enabledSports.length > 0) return enabledSports
 
   const inferredPrimary = getPrimarySportNormalized(profile)
   if (inferredPrimary) return [inferredPrimary]
 
-  const configuredSports = getAllowedPlanningSports(profile)
   if (configuredSports.length > 0) return configuredSports
 
   const legacyPrimary = profile?.primarySport ? normalizeSport(profile.primarySport) : undefined

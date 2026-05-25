@@ -45,7 +45,7 @@ describe('strengthPrompt', () => {
     })
 
     expect(rules).toContain('Estructura recomendada sport_support/squash')
-    expect(dynamic).toContain('Densidad esperada: 5-7 ejercicios para 60 min')
-    expect(dynamic).toContain('No entregues menos de 5 ejercicios')
+    expect(dynamic).toContain('Densidad esperada: 6-9 ejercicios para 60 min')
+    expect(dynamic).toContain('No entregues menos de 6 ejercicios')
   })
 })

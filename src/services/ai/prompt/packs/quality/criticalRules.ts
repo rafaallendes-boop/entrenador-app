@@ -20,7 +20,7 @@ function buildFullCriticalRulesSection(allowedSportsLabel: string): string {
 5. Si no hay sesiones en la semana → crea una semana base COMPLETA sin pedir confirmación.
 6. NUNCA respondas con solo texto cuando se pidió una acción. Si describiste el plan en texto, DEBES incluir el bloque <actions> al final en la misma respuesta.
 7. SOLO puedes usar deportes permitidos por la planificación actual: ${allowedSportsLabel}. Si running no está en esa lista, NO lo agregues.
-8. Si el usuario pide "plan completo", "todas las semanas", "plan hasta el evento" o especifica semanas exactas con fechas de lunes → genera MÚLTIPLES acciones create_week EN EL MISMO bloque <actions>, UNA POR SEMANA. El array de acciones contendrá [create_week_s1, create_week_s2, ...create_week_sN]. Cada create_week tiene sus propias sessions[] con fechas absolutas dentro de esa semana, y sus weekObjectives. Mantén sesiones COMPACTAS: omite warmup/cooldown (el sistema los genera automáticamente), limita exercises a 4-5 por sesión, objectives en 1 frase. NO describas las semanas en texto y luego pongas solo 1-2 create_week — genera TODAS las semanas solicitadas como acciones.`
+8. Si el usuario pide "plan completo", "todas las semanas", "plan hasta el evento" o especifica semanas exactas con fechas de lunes → genera MÚLTIPLES acciones create_week EN EL MISMO bloque <actions>, UNA POR SEMANA. El array de acciones contendrá [create_week_s1, create_week_s2, ...create_week_sN]. Cada create_week tiene sus propias sessions[] con fechas absolutas dentro de esa semana, y sus weekObjectives. Mantén sesiones compactas pero útiles: omite warmup/cooldown (el sistema los genera automáticamente), en fuerza usa la densidad según duración (60 min suele necesitar 7-9 ejercicios entre zona media, fuerza, accesorios y cardio específico opcional), objectives en 1 frase. NO describas las semanas en texto y luego pongas solo 1-2 create_week — genera TODAS las semanas solicitadas como acciones.`
 }
 
 function buildCompactCriticalRulesSection(allowedSportsLabel: string): string {
@@ -32,5 +32,5 @@ function buildCompactCriticalRulesSection(allowedSportsLabel: string): string {
 5. NUNCA respondas solo con texto cuando se pidió una acción; cierra con <actions>.
 6. Usa solo deportes permitidos: ${allowedSportsLabel}.
 7. Si el usuario pide varias semanas o un plan completo, genera múltiples acciones create_week en el mismo bloque <actions>.
-8. Mantén las sesiones compactas: objectives breves, exercises 4-5, warmup/cooldown opcionales.`
+8. Mantén las sesiones compactas: objectives breves y warmup/cooldown opcionales; en fuerza usa densidad según duración (60 min suele requerir 7-9 ejercicios entre zona media, fuerza, accesorios y cardio específico opcional).`
 }

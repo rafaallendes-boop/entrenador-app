@@ -38,6 +38,19 @@ describe('WEEK_CREATOR_RESPONSE_SCHEMA', () => {
     expect(cyclingDetails.properties).not.toHaveProperty('targetCadenceMin')
   })
 
+  it('declares squash blocks with the kind discriminator the normalizer expects', () => {
+    const squashDetails = getSessionProperties().squashDetails
+    const block = squashDetails.properties?.blocks?.items
+
+    expect(block?.properties).toHaveProperty('kind')
+    expect(block?.properties?.kind).toEqual(expect.objectContaining({
+      type: 'STRING',
+      enum: expect.arrayContaining(['technical', 'control', 'shadows', 'match']),
+    }))
+    expect(block?.properties).not.toHaveProperty('label')
+    expect(block?.required).toEqual(['kind', 'drills'])
+  })
+
   it('keeps mobilityDetails aligned with the app session contract', () => {
     const mobilityDetails = getSessionProperties().mobilityDetails
 

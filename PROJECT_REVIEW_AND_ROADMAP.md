@@ -1,135 +1,247 @@
 # Entrenador App - Review and Roadmap
 
-Actualizado: 2026-05-13
+Actualizado: 2026-05-25
 
 ## Resumen Ejecutivo
 
-Entrenador ya no esta en fase de descubrimiento. La app tiene una base real y usable: coach AI, week creator, Plan Builder, sync, backup, athlete profile, nutricion contextual, PWA, debug local y suites E2E. En los ultimos ciclos ya hubo pruebas reales de generacion semanal con Gemini y uso multi-dispositivo desktop/mobile. El foco sigue siendo uno solo: **lograr confianza operacional antes de mostrarla a usuarios externos**.
+Entrenador esta en beta interna avanzada. La app ya tiene una base usable: coach AI, Week Creator, Plan Builder, sync local-first con Supabase, backup/export, perfil de atleta, nutricion contextual, PWA, diagnostico local, suites de tests y scripts E2E. El estado actual del repo muestra una mejora clara respecto del review anterior: el foco ya no es solo que Gemini devuelva JSON aplicable, sino que las semanas y sesiones tengan mejor calidad operacional, fechas correctas y preparacion fisica mas util.
+
+El working tree actual contiene cambios relevantes sin commit. No son cambios cosmeticos: agregan prescripcion de carga por 1RM/RPE, estructura real de fuerza por bloques, cardio especifico para squash, postprocesado de fechas para ajustes de chat, fallback estructurado cuando el modelo responde solo texto, soporte de semanas parciales en Plan Builder, reparacion de minimo de deporte principal, mejoras de sync y tests nuevos.
+
+Restriccion operativa: por limite de Netlify, no se debe subir a produccion hasta el 2026-05-29. Hasta esa fecha, el trabajo debe ser QA en DEV/local. El 2026-05-29 se hara una prueba fuerte en DEV, luego smoke controlado en prod, despues beta privada y finalmente beta con mas personas.
 
 La estrategia correcta sigue siendo progresiva:
 
-1. Primero, el owner debe poder usar la app en dev con Gemini sin crashes y sin semanas absurdas.
-2. Luego, probar en prod como smoke test controlado.
-3. Despues, invitar 3-5 usuarios cercanos.
-4. Finalmente, abrir gradualmente.
+1. Owner QA en DEV hasta el 2026-05-29.
+2. Smoke test controlado en prod despues de que Netlify permita deploy.
+3. Beta privada con 3-5 usuarios cercanos.
+4. Beta ampliada solo despues de datos reales de calidad, sync y estabilidad.
 
-No conviene agregar monetizacion, paywall, mas proveedores por defecto ni integraciones externas hasta que coach, Week Creator, Plan Builder y sync pasen pruebas repetibles.
+No conviene agregar monetizacion, paywall, proveedores por defecto ni integraciones externas hasta que coach, Week Creator, Plan Builder y sync pasen pruebas repetibles con uso real.
 
-## Lectura Actual
+## Estado Actual del Repo
 
-Ya esta hecho:
+### Validacion local corrida el 2026-05-25
 
-- README actualizado con arquitectura, comandos y estado beta.
-- `BETA_AUDIT_AND_PROVIDER_PLAN.md` consolidado como auditoria vigente.
-- Documentos antiguos no leidos fueron removidos del flujo.
-- Suite E2E de coach y week creator.
-- Suite E2E de Plan Builder.
-- Guia de comandos en `DEV_TESTING_COMMANDS.md`.
-- Beta Quality local en Settings.
-- Feedback de respuesta/propuesta.
-- Mejor densidad de fuerza/preparacion fisica.
-- Squash distingue modalidad `solo`, `partner`, `either`, `match`.
-- Bloques de squash visibles en SessionCard/ProposalDrawer.
-- Warning local para propuestas de fuerza de baja densidad.
-- Prompt audit disponible con `npm run audit:prompt`, ahora con baseline versionado y assertions por requestClass.
-- Week Creator tiene fallback local mas explicito cuando Gemini no entrega una semana aplicable.
-- Week Creator registra mejor `errorCode`, `outcome`, warnings y causa de fallback.
-- Week Creator ahora usa salida estructurada Gemini (`responseMimeType: application/json` + `responseSchema`) para reducir fallos `actions_parse_failed`.
-- El normalizador acepta JSON puro de `create_week`, ademas del formato historico con `<actions>`.
-- El contrato `create_week` quedo centralizado en `src/services/ai/prompt/core/outputContract.ts`.
-- `WEEK_CREATOR_RESPONSE_SCHEMA` y los bloques de schema en prosa se derivan del mismo contrato.
-- `WeekCreatorPromptBuilder` consume el contrato central, renderers de schema y pack deportivo de squash.
-- `chat_action` ya usa `renderActionCatalog` para el catalogo de acciones de ajuste.
-- `chat_general` migro su contrato lite e instrucciones generales a la nueva estructura modular.
-- Se agrego test de paridad entre contrato, prosa y schema JSON.
-- Las sesiones squash generadas por fallback ya tienen mayor densidad:
-  - tecnica: al menos 4 drills.
-  - tecnica + juego: drills tecnicos, juegos condicionados y match/game.
-  - ghosting + control: ghosting y control separados.
-- Sync manual mobile -> desktop fue probado y funciono al presionar `SYNC`.
-- Se agrego auto-sync en focus/visibilidad para reducir la necesidad de presionar `SYNC` manualmente.
+Verde en el estado actual:
 
-Mayor riesgo actual:
+```bash
+npm test
+npm run lint
+npm run build
+npm run audit:prompt
+```
 
-- Week Creator ya recupero estabilidad tecnica en loadtest local post-refactor: 10/10 requests OK contra `/.netlify/functions/coach`, sin `missing_create_week`.
-- La calidad deportiva de squash mejoro, pero aun debe probarse con mas semanas completas aplicadas, no solo propuestas validas.
-- Sync multi-dispositivo funciono manualmente, pero el auto-sync recien implementado requiere QA real.
-- La observabilidad beta todavia es mayormente local; para beta externa falta persistencia resumida por usuario/request.
-- Plan Builder debe probarse con generacion real y aceptacion, no solo wizard seguro.
+Resultados:
 
-## Hallazgos de QA Real - 2026-05-13
+- `npm test`: 66 archivos, 524 tests OK.
+- `npm run lint`: OK.
+- `npm run build`: OK.
+- `npm run audit:prompt`: OK.
+  - `chat_general`: 2014 chars / ~504 tokens.
+  - `chat_action`: 14650 chars / ~3663 tokens.
+  - `week_creator`: 14650 chars / ~3663 tokens.
+  - `plan_builder_week`: 14650 chars / ~3663 tokens.
+  - `weekly_summary`: 14654 chars / ~3664 tokens.
 
-### Week Creator con Gemini
+Tests focalizados corridos durante el cierre:
 
-Se probaron generaciones reales de 1 semana. Al inicio Gemini respondio, pero el sistema no pudo aplicar la salida en varios intentos. Despues del refactor de contrato/schema/prompt, el loadtest local dejo de reproducir el fallo.
+- `npm test -- strengthLoadPrescription strengthSelector repairWeek strengthPrompt strengthSessionStructure actionPostProcessor WeekCreatorEngine`: 8 archivos, 113 tests OK.
+- `npm test -- actionPostProcessor chatRouting responseNormalizer strengthSelector`: 4 archivos, 71 tests OK.
 
-Hallazgos:
+No revalidado hoy:
 
-- Falla recurrente: `actions_parse_failed`.
-- Sintoma: "El modelo no devolvio ninguna accion create_week".
-- En otro intento hubo `missing_sport_details`, con drills squash repetidos y warning de baja densidad en fuerza.
-- El fallback local genero semana aplicable, por lo que el usuario no quedo bloqueado.
-- El problema principal no parece ser caida del proveedor, sino fragilidad de contrato entre prompt, respuesta Gemini y parser.
+- `npm run e2e:dev`
+- `npm run e2e:dev:apply`
+- `npm run e2e:plan`
+- `npm run e2e:plan:generate`
+- `npm run e2e:plan:accept`
+- `npm run loadtest:week-creator`
 
-Acciones tomadas:
+Ultima referencia previa documentada:
 
-- Se agrego clasificacion de fallos de Week Creator.
-- Se mejoro el mensaje de fallback para explicar que se uso perfil/configuracion actual.
-- Se agrego salida estructurada Gemini con schema JSON para `week_creator`.
-- Se agrego soporte para parsear respuesta JSON pura.
-- Se agrego test para respuesta `create_week` sin `<actions>`.
-- Se centralizo el contrato `create_week` en `outputContract`.
-- Se derivan desde el contrato tanto el schema Gemini como la prosa usada por prompts.
-- Se endurecio el loadtest para detectar `missing_create_week`, pseudo XML y payloads invalidos.
-- Ultima corrida reportada de `npm run loadtest:week-creator`: 10/10 OK, successRate 100%, p50 4993ms, p95 5903ms, max 6558ms.
+- `npm run e2e:dev:headed --export-quality`: 20/20 OK.
+- `npm run e2e:plan`: 15/15 OK en review-only.
+- `npm run loadtest:week-creator`: 10/10 OK, successRate 100%, p50 4993ms, p95 5903ms, max 6558ms.
 
-Pendiente:
+## Mejoras Recientes Detectadas
 
-- Probar aceptacion real con `npm run e2e:dev:apply` en ambiente dev seguro.
-- Generar 3-5 semanas reales y revisar si el owner las usaria con pocos ajustes.
-- Exportar Beta Quality si aparece cualquier warning/fallback.
-- Confirmar que la mejora se mantiene fuera del loadtest sintetico.
+### Fuerza y prescripcion de carga
 
-### Calidad Squash
+Estado: mejora importante implementada y cubierta por tests focalizados. La fuerza ya no debe mostrarse como una lista plana antigua cuando viene desde chat, Week Creator, Plan Builder o fallback.
 
-Se observaron sesiones squash con solo 2 drills, insuficientes para una guia util.
+Cambios principales:
 
-Regla actualizada:
+- Nuevo servicio `src/services/training/strengthLoadPrescription.ts`.
+- Nuevo servicio `src/services/training/strengthSessionStructure.ts`.
+- Mapeo de ejercicios a referencias de fuerza:
+  - banca, press inclinado, press declinado, agarre cerrado, fondos.
+  - sentadilla, front squat, bulgaras, zancadas, hip thrust.
+  - peso muerto, RDL, sumo, trap bar.
+  - press hombro/OHP/push press.
+  - Press Z, remos medio arrodillados, remos con barra y dominadas.
+- Calculo de peso objetivo desde porcentaje de 1RM con redondeo.
+- Generacion de rampas de calentamiento segun intensidad.
+- Lista canonica de referencias disponibles del perfil.
+- Nuevos campos en ejercicios:
+  - `targetPercent1RM`
+  - `targetRpe`
+  - `warmupSets`
+- El normalizador acepta esos campos en respuestas del coach.
+- Export/import de datos preserva esos campos y valida rangos.
+- UI muestra carga en `ProposalDrawer` y `ExerciseChecklist`.
+- El prompt de fuerza ahora instruye como usar 1RM, RPE, warmups y estructura por bloques.
+- `actionPostProcessor` completa pesos cuando el modelo entrega `%1RM` y hay referencia en perfil.
+- Las sesiones de fuerza de 45+ min se separan visualmente en:
+  - warm-up.
+  - zona media.
+  - trabajo de fuerza.
+  - cardio especifico opcional.
+  - cool-down.
+- El warm-up de fuerza ahora se parece mas a una preparacion real: movilidad/prep de tejidos y rango, mas series de aproximacion.
+- Para 60 min, el selector apunta a 6-9 ejercicios totales, no a 3-5:
+  - 1-2 zona media.
+  - 4-5 fuerza/accesorios/correctivos.
+  - 0-1 cardio especifico si aplica.
+- Cardio especifico para squash queda al final:
+  - escalera/footwork.
+  - bici de asalto 30s on / 30s off en bloque de 4 min.
+  - trotadora de aire 20s on / 20s off en bloque de 4 min.
+- `repairWeek` densifica sesiones de fuerza pobres que vengan de Gemini/fallback antes de aplicarlas.
+- `create_week` del chat tambien densifica fuerza antes de guardar propuesta.
+- Si `chat_action` responde solo texto ante un pedido claro como "crea una sesion de fuerza para mañana", el postprocesador crea un `add_session` estructurado.
 
-- Sesion solo tecnica: al menos 4 ejercicios.
-- Sesion mixta tecnica + juego: 2 ejercicios tecnicos, 2 juegos condicionados y match/games sueltos.
-- Sesion mixta ghosting + control: 2 ejercicios ghosting y 2-3 ejercicios de control.
+Tests nuevos/relevantes:
 
-Estado:
+- `src/services/__tests__/strengthLoadPrescription.test.ts`
+- `src/services/__tests__/dataExportStrengthLoad.test.ts`
+- Extensiones en `actionPostProcessor`, `responseNormalizer` y prompts.
 
-- El fallback local ya respeta mejor esta densidad.
-- En la ultima revision visual del usuario, las sesiones se ven "un poco mejor".
-- El prompt modular de Week Creator incluye reglas squash especificas desde `packs/sports/squash.ts`.
-- Falta revisar variedad en semanas reales aplicadas, porque validez tecnica no garantiza utilidad deportiva.
+Riesgo pendiente:
+
+- Falta QA visual/manual en DEV con perfiles reales de fuerza para confirmar que las cargas sugeridas se sienten razonables.
+- Dominadas aun se tratan como referencia por reps, no como peso calculado.
+- Hay que revisar que el coach use `targetRpe` solo cuando no hay 1RM util.
+- Revisar si el selector debe bajar todavia mas impacto/pliometria cuando el atleta viene volviendo de lesion.
+
+### Ajustes de chat y fechas
+
+Estado: mejora concreta para evitar propuestas en semanas/dias incorrectos y respuestas no aplicables.
+
+Cambios principales:
+
+- El prompt de `chat_action` distingue "esta semana" vs "proxima semana".
+- El postprocesador alinea acciones a la semana solicitada.
+- Si el usuario marca un dia como descanso/libre/off, el sistema evita programar ahi.
+- Se considera ocupacion AM/PM para no colisionar slots cuando se mueven o agregan sesiones.
+- Se mantiene la conversion de `add_session` a `update_session` cuando el mensaje realmente ajusta una sesion existente.
+- Se corrigio el manejo de detalles al cambiar entre running y cycling para no arrastrar estructuras incompatibles.
+- "mañana" ahora se interpreta como fecha relativa, no como bloque AM por accidente.
+- Si el modelo responde solo en texto a una accion puntual clara, se genera una propuesta aplicable en vez de dejar al usuario sin boton de aplicar.
+
+Riesgo pendiente:
+
+- Probar prompts reales ambiguos:
+  - "dejame el lunes libre y agregame fuerza la proxima semana"
+  - "mueve lo del martes al jueves"
+  - "cambia la bici por trote"
+  - "pon squash el viernes de la siguiente semana"
+  - "crea una sesion de fuerza para mañana"
+  - "hazme pesas manana PM"
+
+### Plan Builder
+
+Estado: base mas robusta; falta generacion real con proveedor.
+
+Cambios principales:
+
+- Nuevo helper `src/services/planBuilder/dateRange.ts`.
+- El plan ahora distingue:
+  - `startDate`: fecha efectiva desde la que se puede entrenar.
+  - `endDate`: fecha final solicitada/evento, que puede cortar la ultima semana.
+- Las semanas parciales ya no fuerzan sesiones fuera del rango real.
+- `getExpectedSessionsForPlanWeek` limita la cantidad esperada segun capacidad real de dias permitidos y doble sesion.
+- Prompts de generacion semanal incluyen rango valido y cantidad efectiva.
+- Retry instructions ahora usan rango valido, no solo lunes + 6 dias.
+- Repair mueve sesiones fuera de rango al slot valido mas cercano.
+- Validator usa rango efectivo y cantidad esperada.
+- Repair intenta preservar un minimo de deporte principal, especialmente squash en build/peak.
+- UI cambia etiqueta `race` a `Competencia`.
+
+Riesgo pendiente:
+
+- Repetir `npm run e2e:plan`.
+- Correr `npm run e2e:plan:generate` con Gemini.
+- Correr `npm run e2e:plan:accept` solo en dev/local seguro.
+- Confirmar que una ultima semana parcial antes del evento queda usable en WeeklyView.
+- Revisar si el minimo de deporte principal no sobrecorrige reemplazando demasiado soporte.
+
+### Week Creator y contrato de salida
+
+Estado: estable en tests locales; pendiente de repetir loadtest real en DEV antes del 2026-05-29.
+
+Ya estaba consolidado:
+
+- Contrato `create_week` centralizado en `src/services/ai/prompt/core/outputContract.ts`.
+- Structured output Gemini para `week_creator`.
+- Normalizador compatible con JSON puro y `<actions>`.
+- Paridad entre contrato, prosa y JSON Schema.
+- Loadtest anterior 10/10 OK contra `/.netlify/functions/coach`.
+
+Mejora reciente:
+
+- El contrato `create_week` ahora incluye campos de fuerza:
+  - `weight` como numero.
+  - `targetPercent1RM`.
+  - `targetRpe`.
+  - `warmupSets`.
+- Prompts de semana y batch pueden incluir el pack de prescripcion de carga cuando strength esta permitido.
+- Plan Builder y Week Creator se benefician del mismo lenguaje de fuerza.
+- Week Creator y Plan Builder reciben reglas explicitas de fuerza tipo preparador fisico: warm-up de movilidad, zona media, fuerza, cardio especifico opcional y cool-down.
+- La reparacion posterior corrige fuerza pobre aunque el modelo haya devuelto un array antiguo o demasiado corto.
+
+Riesgo pendiente:
+
+- Repetir `npm run loadtest:week-creator`.
+- Confirmar que Gemini usa cargas/RPE de manera consistente y no inventa 1RM no presentes.
+- Confirmar que el output con `warmupSets` no vuelve fragil el parser.
 
 ### Sync
 
-Prueba real:
+Estado: mejora pequena pero importante; sigue siendo un riesgo antes de beta externa.
 
-- Sesiones creadas desde celular.
-- Al entrar desde PC aparecio desfase inicial.
-- Al hacer clic en `SYNC`, sincronizo y funciono.
+Cambios recientes:
 
-Accion tomada:
+- Auto-sync en focus/visibilidad queda mas agresivo: si no hay sync en curso, intenta sincronizar.
+- `runFullSync` mueve `applyRemoteFullResetIfNeeded` dentro del bloque instrumentado por intento, lo que deberia mejorar tracking/estado cuando hay reset remoto.
 
-- Se agrego auto-sync al volver a enfocar la app o cambiar visibilidad, con cooldown para no saturar.
+Riesgo pendiente:
 
-Pendiente:
+- QA real desktop + mobile sin tocar `SYNC`.
+- Probar que el auto-sync mas frecuente no molesta ni genera exceso de requests.
+- Probar delete/tombstones y que no reaparezcan sesiones.
+- Probar offline/online y conflictos basicos.
 
-- Probar entrada PC -> celular sin presionar `SYNC`.
-- Probar entrada celular -> PC sin presionar `SYNC`.
-- Confirmar que no duplica sesiones ni revive borrados.
+### Export/import y modelo de datos
+
+Estado: mejorado.
+
+Cambios principales:
+
+- `parseAppDataExport` queda exportado para tests.
+- Backup valida y preserva `targetPercent1RM`, `targetRpe` y `warmupSets`.
+- Nuevos tests aseguran roundtrip de campos de carga de fuerza.
+
+Riesgo pendiente:
+
+- Probar export/import manual desde Settings con datos reales.
+- Confirmar compatibilidad con backups viejos que no tienen esos campos.
 
 ## Estado por Area
 
 ### Coach y Week Creator
 
-Estado: beta interna en hardening. La estabilidad de formato mejoro significativamente; ahora el foco pasa de "parsear/aplicar" a "calidad deportiva y aceptacion real".
+Estado: beta interna en hardening. La estabilidad de formato habia mejorado; ahora el foco real es calidad deportiva, fechas correctas, aceptacion real y que las acciones puntuales nunca queden solo como texto.
 
 Fortalezas:
 
@@ -139,23 +251,22 @@ Fortalezas:
 - Prevalidacion antes de aplicar acciones.
 - Recovery para acciones invalidas o truncadas.
 - Stage logging y telemetria local.
-- E2E completo `npm run e2e:dev` pasa en modo review-only.
-- E2E completo `npm run e2e:dev:headed --export-quality` paso 20/20 incluyendo export Beta Quality.
-- Fallback local de Week Creator mantiene al usuario avanzando cuando Gemini falla.
 - Salida estructurada por schema para `week_creator`.
 - Normalizador compatible con JSON puro y `<actions>`.
-- Loadtest Week Creator paso 10/10 OK despues de consolidar contrato y endurecer prompt/schema.
+- Postprocesado corrige fechas de ajustes puntuales y completa cargas de fuerza cuando hay 1RM.
+- Postprocesado crea fallback `add_session` cuando el modelo responde solo texto ante una accion puntual clara.
+- Tests locales verdes.
 
 Pendiente:
 
 - Probar `npm run e2e:dev:apply` en ambiente dev seguro.
-- Revisar si week creator produce semanas que el owner usaria, no solo semanas validas.
+- Generar 3-5 semanas reales y revisar si el owner las usaria con pocos ajustes.
 - Confirmar que las semanas generadas por Gemini no dependen del fallback local.
 - Revisar export Beta Quality despues de corridas aplicadas, no solo review-only.
 
 ### Plan Builder
 
-Estado: base tecnica lista; falta prueba real profunda de generacion y aceptacion.
+Estado: base tecnica fortalecida; falta prueba real profunda de generacion y aceptacion.
 
 Fortalezas:
 
@@ -164,39 +275,48 @@ Fortalezas:
 - Shell por fases.
 - Generacion semana a semana.
 - Validacion y regeneracion.
-- E2E seguro `npm run e2e:plan` pasa sin guardar plan.
-- Ultima corrida reportada de `npm run e2e:plan`: 15/15 OK en review-only.
+- Soporte de semanas parciales por rango efectivo.
+- Repair con fechas validas, cantidad esperada y minimo de deporte principal.
+- Prompts de semana/batch alineados con cantidad efectiva y rango valido.
+- Tests locales verdes.
 
 Pendiente:
 
+- Correr `npm run e2e:plan`.
 - Correr `npm run e2e:plan:generate` con Gemini.
 - Revisar calidad de semanas generadas.
 - Correr `npm run e2e:plan:accept` solo en dev/local seguro.
 - Validar que aceptar plan deja WeeklyView usable.
 - Revisar telemetria `plan_builder_week` o `plan_builder_pair` en Settings.
-- Comparar si Plan Builder tiene mejor estabilidad que Week Creator con Gemini real.
-- Si Plan Builder funciona mejor, considerar reutilizar parte de su contrato/schema en Week Creator.
 
 ### Fuerza y Preparacion Fisica
 
-Estado: mejorado; falta QA manual focalizado.
+Estado: mejorado de forma sustantiva; falta QA manual focalizado.
 
-Ya se corrigio:
+Ya se corrigio/mejoro:
 
 - Sesiones de 45-60 min no deberian caer automaticamente a 3 ejercicios.
 - La duracion pesa mas en el target de ejercicios.
 - Fatiga, taper y competencia cercana reducen volumen sin destruir la sesion salvo caso extremo.
 - Prompt de fuerza refuerza estructura orientada a squash.
+- Hay prescripcion por `%1RM`, RPE y warmups.
+- UI/export/parser preservan la nueva informacion.
+- Las sesiones se separan por zona de entrenamiento en UI/propuestas.
+- Week Creator, Plan Builder, chat y fallback pasan por normalizacion/densificacion.
+- Warm-up se ajusto a referencias reales tipo preparador fisico: movilidad/prep de tejidos, movilidad dinamica y aproximaciones.
+- Cardio especifico queda al final y no reemplaza la fuerza principal.
 
 Pendiente:
 
 - Probar manualmente prompts de 45, 60 y 75 min.
+- Probar con perfil con 1RM completo, parcial y sin 1RM.
 - Revisar que fuerza para squash tenga activacion, potencia/coordinacion, fuerza principal, unilateral/lateral, tren superior, core y cierre opcional cuando corresponde.
 - Revisar warnings `low_density:strength` en exports reales.
+- Comparar 2-3 sesiones generadas contra las referencias PDF personales y ajustar heuristicas solo si hay patrones repetidos.
 
 ### Squash
 
-Estado: mejorado; el ultimo feedback visual indica avance, pero aun no cerrado.
+Estado: mejorado, pero aun no cerrado.
 
 Ya se corrigio:
 
@@ -206,6 +326,7 @@ Ya se corrigio:
 - Sesiones mixtas pueden mostrar bloques.
 - Week Creator fallback genera mas drills por sesion squash.
 - Reglas explicitas de densidad squash estan en el prompt de Week Creator.
+- Plan Builder repair protege minimo de squash en fases build/peak.
 
 Pendiente:
 
@@ -220,78 +341,25 @@ Pendiente:
 
 ### Prompt Architecture
 
-Estado: refactor modular en curso, con fases 0-5 completadas para los caminos de mayor riesgo.
+Estado: refactor modular suficientemente bueno para beta interna; no conviene seguir por estetica.
 
 Ya se hizo:
 
 - Baseline de prompts guardado en `docs/prompt-baseline-2026-05-13.json`.
-- `npm run audit:prompt` ahora falla si una requestClass se sale del rango esperado sin decision explicita.
-- `src/services/ai/prompt/core/outputContract.ts` concentra el contrato de acciones y, especialmente, `create_week`.
-- `src/services/ai/prompt/renderers/proseSchema.ts` genera schema en prosa para prompts.
-- `src/services/ai/prompt/renderers/jsonSchema.ts` genera schema JSON para structured output.
-- `src/services/weekCreator/weekCreatorResponseSchema.ts` ya deriva de `ACTION_CONTRACTS.create_week`.
-- `src/services/week/prompts/weekPrompt.ts` usa una fuente comun para bloques `minimal/full` y mantiene shims publicos para no romper Plan Builder.
-- `src/services/weekCreator/WeekCreatorPromptBuilder.ts` consume `coachContract`, `outputContract`, renderers y `packs/sports/squash`.
-- `chat_action` usa `renderActionCatalog` para el set de acciones de ajuste.
-- `chat_general` migro su contrato lite e instrucciones generales a `coachContract` y `packs/quality/generalChat`.
-- Test de paridad de contrato agregado en `src/services/ai/prompt/__tests__/outputContractParity.test.ts`.
-
-Validacion reportada:
-
-- `npm run audit:prompt` verde.
-- Tests focalizados de prompt/coach verdes.
-- `npm test` verde.
-- `npm run lint` verde.
-- `npm run build` verde.
-- `npm run e2e:dev:headed --export-quality` verde: 20/20.
-- `npm run e2e:plan` verde: 15/15.
-- `npm run loadtest:week-creator` verde: 10/10.
-
-Pendiente:
-
-- Reducir mas `promptBuilder.ts` solo si hay beneficio directo; evitar refactor estetico.
-- Revisar si los packs `quality` deben integrarse por completo o dejarse para una fase posterior controlada.
-- Crear snapshots completos por requestClass si se decide seguir modularizando `chat_action`.
-- Evaluar mover Plan Builder al mismo contrato unico despues de pruebas reales de generacion/accept.
-
-#### Refactor de prompts - estado por fase
-
-- Fase 0, baseline e instrumentacion: completada. `audit:prompt` tiene baseline y assertions; baseline guardado en `docs/prompt-baseline-2026-05-13.json`.
-- Fase 1, contrato `create_week`: completada. `ACTION_CONTRACTS.create_week` es la fuente comun para prosa y JSON Schema.
-- Fase 2, Week Creator modular: completada. `WeekCreatorPromptBuilder` consume `coachContract`, `outputContract`, renderers y pack squash.
-- Fase 3, quality packs: parcialmente completada. Existen packs `criticalRules`, `competitionRules` y `goldenRule`; integrarlos totalmente al builder principal queda pendiente porque la fase 4 del usuario reordeno `promptBuilder.ts`.
-- Fase 4, `chat_action` action catalog: completada en alcance inicial. El catalogo de acciones de ajuste se renderiza desde `renderActionCatalog`.
-- Fase 5, `chat_general` minimo: completada. Persona lite e instrucciones generales salieron del builder monolitico.
+- `npm run audit:prompt` falla si una requestClass se sale del rango esperado sin decision explicita.
+- `outputContract.ts` concentra el contrato de acciones y `create_week`.
+- Renderers de schema en prosa y JSON.
+- `WeekCreatorPromptBuilder` consume contratos/renderers/packs.
+- `chat_action` usa catalogo de acciones.
+- `chat_general` migro su contrato lite e instrucciones generales.
+- Pack de fuerza `quality/strengthLoad.ts` incorporado a prompts relevantes.
+- Audit verde el 2026-05-25.
 
 Decision actual:
 
-- Cerrar este bloque de refactor como exitoso para la beta interna.
-- No seguir reduciendo `promptBuilder.ts` por estetica.
-- Solo abrir una siguiente fase si aparece evidencia en Beta Quality, loadtest o E2E aplicada.
+- Cerrar este bloque de refactor como exitoso para beta interna.
+- No seguir reduciendo `promptBuilder.ts` salvo evidencia de Beta Quality, loadtest o E2E aplicada.
 - El siguiente candidato tecnico real es persistir telemetria resumida, no seguir moviendo texto de prompts sin impacto medible.
-
-### Sync
-
-Estado: principal riesgo antes de beta externa. Sync manual funciono en una prueba real; auto-sync requiere validacion.
-
-Fortalezas:
-
-- Local-first con Dexie.
-- Supabase auth/sync.
-- Cola local.
-- Diagnostico visible en Settings.
-- Tombstones y delete handling en entidades criticas.
-- Sync manual mobile -> desktop probado con resultado correcto.
-- Auto-sync en focus/visibilidad implementado.
-
-Pendiente:
-
-- QA real desktop + mobile.
-- QA especifico de auto-sync sin presionar boton manual.
-- Probar offline/online.
-- Probar deletes.
-- Probar reset local y local+nube solo en ambiente seguro.
-- Confirmar que proposals/sesiones no reaparecen ni se duplican.
 
 ### Observabilidad Beta
 
@@ -303,7 +371,6 @@ Ya existe:
 - Feedback positivo/negativo.
 - Export local.
 - Trace, provider, model, duration, outcome y requestClass visibles.
-- Export Beta Quality ya permitio identificar fallos reales `week_creator`.
 - Warnings de Week Creator incluyen causa de fallback y validacion deportiva.
 
 Pendiente para beta externa:
@@ -313,34 +380,139 @@ Pendiente para beta externa:
 - Registrar outcome, requestClass, provider, model, duration, token counts si estan disponibles, retry/fallback, errorClass.
 - Asociar feedback de usuario a trace/proposal/session.
 
-## Roadmap por Fases
+## Plan de Cierre y Despliegue
 
-### Fase 1 - Owner QA con Gemini
+### Ventana hasta 2026-05-29
 
-Objetivo: que el owner confie en usar la app. Esta fase ya empezo con pruebas reales y dejo bugs accionables.
+Restriccion: no subir a produccion antes del 2026-05-29 por limite de Netlify.
+
+Uso hasta esa fecha:
+
+- Probar solo en DEV/local.
+- No mezclar fixes de calidad deportiva con cambios de monetizacion, auth o providers.
+- Guardar evidencia de cada bug real: prompt usado, propuesta, captura, export si corresponde.
+- Priorizar sesiones de fuerza, Week Creator, Plan Builder y sync.
+- No abrir beta a terceros todavia.
+
+### 2026-05-29 - QA fuerte en DEV
+
+Objetivo: decidir si el build esta listo para smoke prod.
 
 Checklist:
 
-- Correr `npm run e2e:dev`.
-- Correr `npm run e2e:plan`.
+- Correr validacion local completa.
+- Correr `npm run loadtest:week-creator`.
+- Crear al menos 3 semanas con Week Creator.
+- Crear al menos 1 plan con Plan Builder.
+- Crear sesiones puntuales desde chat:
+  - fuerza mañana.
+  - fuerza hoy PM.
+  - squash tecnico.
+  - movilidad/recovery.
+- Revisar que fuerza tenga estructura completa y pesos cuando el perfil lo permita.
+- Probar aceptar propuestas y verificar WeeklyView.
+- Probar en mobile/desktop con sync normal.
+- Exportar Beta Quality si aparecen fallos.
+
+Decision:
+
+- Si DEV esta estable, preparar deploy prod.
+- Si aparece bug critico, corregir en DEV y repetir el flujo afectado.
+
+### Post 2026-05-29 - Smoke Prod Controlado
+
+Objetivo: validar que prod no rompa por build, env vars, Netlify Function, auth o Supabase.
+
+Pasos:
+
+- Deploy prod.
+- Login real.
+- Crear una sesion puntual desde chat.
+- Crear una semana desde Week Creator.
+- Aceptar una propuesta simple.
+- Revisar Settings/traces.
+- Probar app en mobile.
+
+Criterio de salida:
+
+- Proxy responde.
+- No hay `misconfigured`.
+- No hay keys privadas expuestas.
+- No hay loaders pegados.
+- Proposals se aplican una vez.
+- Sync converge entre dispositivos.
+
+### Beta Privada
+
+Objetivo: usar con 3-5 personas cercanas cuando prod este estable.
+
+Antes de invitar:
+
+- Dejar disclaimer beta.
+- Tener canal simple de feedback.
+- Tener instruccion corta para exportar/reportar bugs.
+- Tener limites diarios o monitoreo manual de uso de IA.
+
+Durante beta privada:
+
+- Revisar feedback semanal.
+- Clasificar fallos por causa:
+  - formato/provider.
+  - calidad deportiva.
+  - fechas.
+  - sync.
+  - UI/aplicacion de propuestas.
+- Corregir bugs pequenos con tests focalizados.
+
+### Beta Ampliada
+
+Objetivo: invitar mas personas solo cuando beta privada sea estable.
+
+Requisitos previos:
+
+- Sin perdida de datos reportada.
+- Feedback negativo bajo en Week Creator y fuerza.
+- Sync estable en al menos 2 dispositivos propios y 1-2 usuarios privados.
+- Proposals aplicables sin confusion.
+- Telemetria/feedback minimo suficiente para entender errores.
+
+## Roadmap por Fases
+
+### Fase 1 - Cerrar Owner QA en DEV
+
+Objetivo: que el owner confie en usar la app en DEV antes del 2026-05-29.
+
+Checklist inmediato:
+
+- Repetir `npm run e2e:dev`.
+- Repetir `npm run e2e:plan`.
 - Correr `npm run e2e:dev:apply` en dev seguro.
 - Correr `npm run e2e:plan:generate`.
-- Generar al menos 5 semanas con el coach post-schema.
+- Correr `npm run loadtest:week-creator`.
+- Generar al menos 5 semanas con el coach.
 - Generar al menos 2 planes con Plan Builder.
 - Revisar Settings/Beta Quality despues de cada bloque.
 - Guardar exports relevantes.
 - Probar auto-sync PC/celular sin presionar `SYNC`.
 - Revisar 3-5 sesiones squash tecnicas/mixtas para densidad de drills.
+- Revisar 3-5 sesiones de fuerza con estructura completa:
+  - warm-up.
+  - zona media.
+  - fuerza.
+  - cardio especifico si aplica.
+  - cool-down.
+  - `%1RM`, RPE, pesos y warmups si hay perfil.
 
 Criterio de salida:
 
 - La app no crashea.
 - El coach responde sin loaders pegados.
 - Las proposals se aplican una sola vez.
-- Week creator genera semanas razonables.
-- Week creator deja de caer al fallback local en casos normales.
+- Week Creator genera semanas razonables sin caer al fallback local en casos normales.
 - Plan Builder genera semanas revisables.
+- Las fechas caen dentro del rango solicitado.
 - El owner usaria al menos una semana generada casi sin cambios.
+- Una sesion puntual de fuerza creada por chat queda aplicable sin tener que pedirlo de nuevo.
 
 ### Fase 2 - Hardening de Calidad
 
@@ -354,6 +526,7 @@ Prioridades:
 - Mantener cambios pequenos y testeados.
 - Agregar tests focalizados para cada bug real.
 - Usar exports Beta Quality como fuente principal para priorizar.
+- Revisar si la prescripcion de carga necesita limites por experiencia, fatiga o semana de competencia.
 
 No hacer:
 
@@ -374,7 +547,7 @@ Escenarios:
 - Coach crea proposal en A, se acepta en A, B converge.
 - Sesion borrada no reaparece.
 - Offline en A, cambios en B, reconnect en A.
-- Export/import conserva conteos.
+- Export/import conserva conteos y campos nuevos de fuerza.
 - Reset local y reset nube solo en ambiente seguro.
 - Abrir app en dispositivo B y verificar sync automatico sin tocar boton.
 
@@ -386,11 +559,11 @@ Criterio de salida:
 - El usuario entiende si hay cola pendiente o error.
 - El boton `SYNC` queda como respaldo, no como paso obligatorio.
 
-### Fase 4 - Smoke Prod Controlado
+### Fase 4 - Smoke Prod Controlado desde 2026-05-29
 
 Objetivo: validar build, env vars, Netlify Function, Supabase auth y proxy real.
 
-Pasos:
+Pasos locales:
 
 ```bash
 npm run lint
@@ -413,7 +586,7 @@ Criterio de salida:
 - Netlify Function no muestra `misconfigured`.
 - Settings muestra trazas de requestClass.
 
-### Fase 5 - Beta Cerrada 3-5 Usuarios
+### Fase 5 - Beta Privada 3-5 Usuarios
 
 Objetivo: aprender con usuarios cercanos sin abrir el producto.
 
@@ -444,7 +617,19 @@ Criterio de salida:
 - No hay bloqueos de auth/sync.
 - El coach genera al menos algunas semanas utiles para terceros.
 
-### Fase 6 - Proveedores, Costos y Persistencia
+### Fase 6 - Beta Ampliada y Operacion
+
+Objetivo: abrir a mas personas con menor riesgo operacional.
+
+Trabajos antes de ampliar:
+
+- Persistir telemetria resumida.
+- Persistir feedback asociado a trace/proposal/session.
+- Definir limites diarios por usuario/requestClass.
+- Documentar criterios de soporte beta.
+- Mantener rollback mental claro: si sync o propuestas fallan, pausar invitaciones.
+
+### Fase 7 - Proveedores, Costos y Persistencia
 
 Objetivo: profesionalizar operacion sin sobredisenar.
 
@@ -516,10 +701,12 @@ npm run loadtest:week-creator
 - Si se toca proposal/apply, correr E2E coach.
 - Si se toca Plan Builder, correr E2E plan.
 - Si se toca sync, hacer QA manual multi-dispositivo.
+- Si se toca modelo/export, probar backup viejo y backup nuevo.
 
 ## Que No Hacer Ahora
 
 - No abrir beta publica.
+- No subir a prod antes del 2026-05-29 por la limitacion actual de Netlify.
 - No construir paywall.
 - No sumar integraciones externas.
 - No reescribir prompt builder por estetica.
@@ -529,4 +716,4 @@ npm run loadtest:week-creator
 
 ## Nota de Direccion
 
-La prioridad ya no es que Entrenador sea mas ambicioso. La prioridad es que sea confiable: que genere semanas razonables, que el Plan Builder no se caiga, que sync no sorprenda y que cada fallo deje una pista clara. Cuando eso ocurra repetidamente en dev y luego en prod, recien ahi tiene sentido invitar usuarios.
+La prioridad no es que Entrenador sea mas ambicioso. La prioridad es que sea confiable: que genere semanas razonables, que respete fechas, que la fuerza tenga cargas accionables, que Plan Builder no se caiga, que sync no sorprenda y que cada fallo deje una pista clara. Cuando eso ocurra repetidamente en dev y luego en prod, recien ahi tiene sentido invitar usuarios.

@@ -9,11 +9,20 @@ import type {
   WizardFatigueLevel,
 } from '../../types'
 import type { TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
+import { getExpectedSessionsForPlanWeek, getPlanWeekDateRange, isDateInsidePlanWeekRange } from './dateRange'
 import { selectSquashDrills, type SquashSelectionDesiredKind, type SquashSelectionPhase } from '../training/drillSelector'
 import { findSquashDrillByName, normalizeSquashDrillKey } from '../training/drillLibrary'
 import { selectRunningSession, type RunningPhase, type RunningSportProfile } from '../training/runningSelector'
-import { selectStrengthSession, type StrengthPhase, type StrengthSportProfile } from '../training/strengthSelector'
-import type { ExperienceLevel } from '../training/exerciseLibrary'
+import {
+  getTargetExerciseDensity,
+  selectStrengthSession,
+  type StrengthContext,
+  type StrengthPhase,
+  type StrengthSelectionExercise,
+  type StrengthSportProfile,
+} from '../training/strengthSelector'
+import { enhanceStrengthSessionExercises, resolveStrengthExerciseBlock } from '../training/strengthSessionStructure'
+import { findStrengthExerciseByName, normalizeStrengthExerciseKey, type ExperienceLevel } from '../training/exerciseLibrary'
 import { selectMobilitySession, type MobilityPhase } from '../training/mobilitySelector'
 import { selectCyclingSession, type CyclingPhase, type CyclingSportProfile } from '../training/cyclingSelector'
 import type { MobilitySportContext } from '../training/mobilitySessionLibrary'
@@ -102,7 +111,10 @@ export function repairGeneratedWeek(
   // 7. Balance session count
   sessions = balanceSessionCount(sessions, context, meta)
 
-  // 8. Diversify duplicated sport content after fallbacks are added
+  // 8. Preserve primary-sport minimums after fallback/trim decisions
+  sessions = ensurePrimarySportMinimum(sessions, context, meta)
+
+  // 9. Diversify duplicated sport content after fallbacks are added
   diversifyDuplicateSquashSessions(sessions, context, meta)
 
   return { sessions, meta }
@@ -123,18 +135,15 @@ function moveOutOfWeekSessions(
   context: RepairContext,
   meta: RepairMeta,
 ): CoachSessionProposal[] {
-  const weekStart = new Date(`${context.week.weekStartDate}T00:00:00.000Z`).getTime()
-  const weekEndExclusive = weekStart + 7 * 24 * 60 * 60 * 1000
   const allowedDates = getAllowedDatesInWeek(context)
 
   return sessions.map((s) => {
-    const ts = new Date(`${s.date}T00:00:00.000Z`).getTime()
-    if (ts >= weekStart && ts < weekEndExclusive) return s
+    if (isDateInsidePlanWeekRange(s.date, context.plan, context.week)) return s
 
     const available = findNearestAvailableDate(allowedDates, sessions, s.timeBlock, undefined, context.wizardConfig)
     if (available) {
       meta.movedSessionCount++
-      meta.warnings.push({ code: 'moved_into_week', message: `Sesión "${s.title}" movida de ${s.date} a ${available.date} (fuera de semana).`, sessionDate: s.date })
+      meta.warnings.push({ code: 'moved_into_week', message: `Sesión "${s.title}" movida de ${s.date} a ${available.date} (fuera del rango válido de la semana).`, sessionDate: s.date })
       return { ...s, date: available.date, timeBlock: available.timeBlock }
     }
 
@@ -252,6 +261,10 @@ function completeSportDetails(
           if (!hasValidSquashDetails(session)) {
             completeSquashDetails(session, context, currentWeekSquashDrills)
             meta.repairedSessionCount++
+          } else if (hasUnresolvedSquashDrills(session)) {
+            completeSquashDetails(session, context, currentWeekSquashDrills)
+            meta.repairedSessionCount++
+            meta.warnings.push({ code: 'squash_unknown_drills_repaired', message: `Sesión "${session.title}" regenerada: usaba drills fuera de catálogo.`, sessionDate: session.date })
           }
           currentWeekSquashDrills.push(...extractSquashDrillNames(session))
           break
@@ -264,6 +277,8 @@ function completeSportDetails(
         case 'strength':
           if (!session.exercises || session.exercises.length === 0) {
             completeStrengthExercises(session, context, currentWeekStrengthExercises)
+            meta.repairedSessionCount++
+          } else if (enhanceStrengthSessionDetails(session, context, currentWeekStrengthExercises)) {
             meta.repairedSessionCount++
           }
           currentWeekStrengthExercises.push(...(session.exercises ?? []).map((exercise) => exercise.name))
@@ -291,6 +306,12 @@ function hasValidSquashDetails(session: CoachSessionProposal): boolean {
   const d = session.squashDetails
   if (!d) return false
   return Boolean(d.trainingFocus) && Array.isArray(d.drills) && d.drills.length > 0 && Boolean(d.sessionKind)
+}
+
+function hasUnresolvedSquashDrills(session: CoachSessionProposal): boolean {
+  const names = extractSquashDrillNames(session)
+  if (names.length === 0) return false
+  return names.some((name) => findSquashDrillByName(name) == null)
 }
 
 function completeSquashDetails(
@@ -434,18 +455,7 @@ function completeStrengthExercises(
   context: RepairContext,
   recentExercises = extractRecentStrengthExercises(context.previousWeek),
 ): void {
-  const phase = mapPhase(context.week.phase) as StrengthPhase
-  const sportProfile = deriveStrengthSportProfile(context)
-  const result = selectStrengthSession({
-    fatigueLevel: fatigueToNumber(context.wizardConfig.currentFatigue),
-    phase,
-    recentExercises,
-    goal: session.objective ?? context.profile.mainGoal ?? '',
-    sportProfile,
-    primarySport: context.profile.sportContext?.primarySport,
-    experienceLevel: deriveStrengthExperienceLevel(context),
-    sessionDurationMin: session.durationMin,
-  })
+  const result = selectStrengthSession(buildStrengthSelectionContext(session, context, recentExercises))
   session.exercises = result.exercises.map<CoachExerciseProposal>((e) => ({
     name: e.name,
     sets: e.sets,
@@ -453,6 +463,111 @@ function completeStrengthExercises(
     group: e.group,
     notes: e.notes,
   }))
+  enhanceStrengthSessionDetails(session, context, recentExercises)
+}
+
+function enhanceStrengthSessionDetails(
+  session: CoachSessionProposal,
+  context: RepairContext,
+  recentExercises = extractRecentStrengthExercises(context.previousWeek),
+): boolean {
+  const before = JSON.stringify(session.exercises ?? [])
+  const enhanced = enhanceStrengthSessionExercises(session.exercises, {
+    durationMin: session.durationMin,
+    strengthProfile: context.profile.strengthProfile,
+  })
+  session.exercises = completeStrengthExerciseDensity(session, context, recentExercises, enhanced)
+  return before !== JSON.stringify(session.exercises ?? [])
+}
+
+function buildStrengthSelectionContext(
+  session: CoachSessionProposal,
+  context: RepairContext,
+  recentExercises: string[],
+): StrengthContext {
+  return {
+    fatigueLevel: fatigueToNumber(context.wizardConfig.currentFatigue),
+    phase: mapPhase(context.week.phase) as StrengthPhase,
+    recentExercises,
+    goal: buildLevelAwareGoal(context, session.objective ?? context.profile.mainGoal ?? ''),
+    sportProfile: deriveStrengthSportProfile(context),
+    primarySport: context.profile.sportContext?.primarySport,
+    experienceLevel: deriveStrengthExperienceLevel(context),
+    sessionDurationMin: session.durationMin,
+  }
+}
+
+function completeStrengthExerciseDensity(
+  session: CoachSessionProposal,
+  context: RepairContext,
+  recentExercises: string[],
+  exercises: CoachExerciseProposal[] | undefined,
+): CoachExerciseProposal[] | undefined {
+  if (!exercises || exercises.length === 0) return exercises
+
+  const selectionContext = buildStrengthSelectionContext(session, context, recentExercises)
+  const density = getTargetExerciseDensity(selectionContext)
+  if (exercises.length >= density.target) return exercises
+
+  const selected = selectStrengthSession(selectionContext).exercises
+  const existingKeys = new Set(exercises.map(getStrengthExerciseKey))
+  const additions: CoachExerciseProposal[] = []
+  const minimumStrengthWork = getMinimumStrengthWorkCount(session.durationMin)
+  let strengthWorkCount = exercises.filter(isStrengthWorkExercise).length
+
+  const candidates = selected
+    .map(toCoachExerciseProposal)
+    .filter((exercise) => !existingKeys.has(getStrengthExerciseKey(exercise)))
+
+  for (const candidate of candidates) {
+    if (exercises.length + additions.length >= density.target) break
+    if (!isStrengthWorkExercise(candidate)) continue
+    additions.push(candidate)
+    existingKeys.add(getStrengthExerciseKey(candidate))
+    strengthWorkCount++
+    if (strengthWorkCount >= minimumStrengthWork) break
+  }
+
+  for (const candidate of candidates) {
+    if (exercises.length + additions.length >= density.target) break
+    const key = getStrengthExerciseKey(candidate)
+    if (existingKeys.has(key)) continue
+    additions.push(candidate)
+    existingKeys.add(key)
+  }
+
+  if (additions.length === 0) return exercises
+
+  return enhanceStrengthSessionExercises([...exercises, ...additions], {
+    durationMin: session.durationMin,
+    strengthProfile: context.profile.strengthProfile,
+  })
+}
+
+function toCoachExerciseProposal(exercise: StrengthSelectionExercise): CoachExerciseProposal {
+  return {
+    name: exercise.name,
+    sets: exercise.sets,
+    reps: exercise.reps,
+    group: exercise.group,
+    notes: exercise.notes,
+  }
+}
+
+function getMinimumStrengthWorkCount(durationMin: number): number {
+  if (durationMin >= 70) return 5
+  if (durationMin >= 55) return 4
+  if (durationMin >= 45) return 3
+  return 2
+}
+
+function isStrengthWorkExercise(exercise: CoachExerciseProposal): boolean {
+  const block = resolveStrengthExerciseBlock(exercise)
+  return block !== 'core' && block !== 'cardio' && block !== 'mobility'
+}
+
+function getStrengthExerciseKey(exercise: Pick<CoachExerciseProposal, 'name'>): string {
+  return findStrengthExerciseByName(exercise.name)?.id ?? normalizeStrengthExerciseKey(exercise.name)
 }
 
 function completeMobilityDetails(session: CoachSessionProposal, context: RepairContext): void {
@@ -498,7 +613,7 @@ function balanceSessionCount(
   context: RepairContext,
   meta: RepairMeta,
 ): CoachSessionProposal[] {
-  const expected = context.wizardConfig.sessionsPerWeek
+  const expected = getExpectedSessionsForPlanWeek(context.plan, context.week)
   let result = [...sessions]
 
   // Trim excess: remove least important first (recovery > mobility > complementary)
@@ -527,9 +642,9 @@ function balanceSessionCount(
     const allowedDates = getAllowedDatesInWeek(context)
     const primarySport = getPrimarySport(context)
     const primaryCount = result.filter((s) => s.sessionType === primarySport).length
-    const minimumPrimary = primarySport === 'squash' && context.wizardConfig.sessionsPerWeek >= 4
-      ? Math.floor(context.wizardConfig.sessionsPerWeek / 2) + 1
-      : 1
+    const minimumPrimary = primarySport === 'squash' && expected >= 4
+      ? Math.floor(expected / 2) + 1
+      : Math.min(expected, 1)
 
     for (let i = 0; i < maxFallback; i++) {
       const available = findNearestAvailableDate(allowedDates, result, 'AM', undefined, context.wizardConfig)
@@ -601,16 +716,71 @@ function buildPrimaryFallbackSession(
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
+function minimumPrimarySessionsForWeek(context: RepairContext): number {
+  const primarySport = getPrimarySport(context)
+  const expected = getExpectedSessionsForPlanWeek(context.plan, context.week)
+  if (!primarySport || expected <= 0 || context.week.phase === 'transition') return 0
+  if (primarySport === 'squash' && (context.week.phase === 'build' || context.week.phase === 'peak')) {
+    return expected >= 4
+      ? Math.min(expected, Math.floor(expected / 2) + 1)
+      : Math.min(expected, 2)
+  }
+  return Math.min(expected, 1)
+}
+
+function ensurePrimarySportMinimum(
+  sessions: CoachSessionProposal[],
+  context: RepairContext,
+  meta: RepairMeta,
+): CoachSessionProposal[] {
+  const primarySport = getPrimarySport(context)
+  const minimum = minimumPrimarySessionsForWeek(context)
+  if (!primarySport || minimum <= 0) return sessions
+
+  let primaryCount = sessions.filter((session) => session.sessionType === primarySport).length
+  if (primaryCount >= minimum) return sessions
+
+  const next = [...sessions]
+  const replacementOrder = ['mobility', 'recovery', 'nutrition', 'strength', 'running', 'cycling']
+
+  for (const sport of replacementOrder) {
+    for (let i = 0; i < next.length && primaryCount < minimum; i++) {
+      if (next[i].sessionType === primarySport || next[i].sessionType !== sport) continue
+      const replacement = buildPrimaryFallbackSession(primarySport, next[i].date, context, next)
+      replacement.timeBlock = next[i].timeBlock
+      next[i] = {
+        ...replacement,
+        title: replacement.title,
+        durationMin: Math.max(30, Math.min(next[i].durationMin, replacement.durationMin)),
+      }
+      primaryCount++
+      meta.repairedSessionCount++
+    }
+  }
+
+  if (primaryCount >= minimum) {
+    meta.warnings.push({
+      code: 'primary_sport_minimum_repaired',
+      message: `Se ajustaron sesiones accesorias para cumplir el mínimo de ${primarySport}.`,
+    })
+  }
+
+  return next
+}
+
 function getAllowedDatesInWeek(context: RepairContext): string[] {
   const weekStart = new Date(`${context.week.weekStartDate}T00:00:00.000Z`)
+  const validRange = getPlanWeekDateRange(context.plan, context.week)
   const allowedDays = new Set(context.wizardConfig.trainingDays)
   const dayMapping: DayOfWeek[] = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
   const dates: string[] = []
   for (let i = 0; i < 7; i++) {
     const d = new Date(weekStart.getTime() + i * 24 * 60 * 60 * 1000)
+    const iso = d.toISOString().slice(0, 10)
+    if (iso < validRange.startDate || iso > validRange.endDate) continue
     const dayOfWeek = dayMapping[d.getUTCDay()]
     if (allowedDays.has(dayOfWeek)) {
-      dates.push(d.toISOString().slice(0, 10))
+      dates.push(iso)
     }
   }
   return dates

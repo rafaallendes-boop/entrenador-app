@@ -17,6 +17,7 @@ import type {
   Session,
   SupportedSport,
   TrainingPriority,
+  WarmupSet,
   WeekSummary,
 } from '../types'
 import type { TrainingPlan, TrainingPlanWeek } from '../types/planBuilder'
@@ -431,7 +432,7 @@ async function readBackupFromFile(file: File): Promise<AppDataExport> {
   return parseAppDataExport(parsed)
 }
 
-function parseAppDataExport(value: unknown): AppDataExport {
+export function parseAppDataExport(value: unknown): AppDataExport {
   const normalized = normalizeBackupEnvelope(value)
 
   const sessions = parseSessionsTable(normalized.tables.sessions)
@@ -785,6 +786,9 @@ function optionalExercises(value: unknown, path: string): Session['exercises'] {
       group: optionalString(row.group, `${path}[${index}].group`) as NonNullable<Session['exercises']>[number]['group'],
       mobilityFocus: optionalString(row.mobilityFocus, `${path}[${index}].mobilityFocus`) as NonNullable<Session['exercises']>[number]['mobilityFocus'],
       durationSec: optionalFiniteNumber(row.durationSec, `${path}[${index}].durationSec`),
+      targetPercent1RM: optionalPercent1RM(row.targetPercent1RM, `${path}[${index}].targetPercent1RM`),
+      targetRpe: optionalRpe(row.targetRpe, `${path}[${index}].targetRpe`),
+      warmupSets: optionalWarmupSets(row.warmupSets, `${path}[${index}].warmupSets`),
     }
   })
 }
@@ -885,8 +889,45 @@ function optionalCoachExercises(value: unknown, path: string): CoachAction['exer
       notes: optionalString(row.notes, `${path}[${index}].notes`),
       group: optionalString(row.group, `${path}[${index}].group`) as NonNullable<CoachAction['exercises']>[number]['group'],
       mobilityFocus: optionalString(row.mobilityFocus, `${path}[${index}].mobilityFocus`) as NonNullable<CoachAction['exercises']>[number]['mobilityFocus'],
+      targetPercent1RM: optionalPercent1RM(row.targetPercent1RM, `${path}[${index}].targetPercent1RM`),
+      targetRpe: optionalRpe(row.targetRpe, `${path}[${index}].targetRpe`),
+      warmupSets: optionalWarmupSets(row.warmupSets, `${path}[${index}].warmupSets`),
     }
   })
+}
+
+function optionalWarmupSets(value: unknown, path: string): WarmupSet[] | undefined {
+  if (value == null) return undefined
+  const sets = ensureArray(value, path).map((set, index) => {
+    const row = ensureRecord(set, `${path}[${index}]`)
+    return {
+      reps: requireNumberOrString(row.reps, `${path}[${index}].reps`),
+      weight: optionalPositiveNumber(row.weight, `${path}[${index}].weight`),
+      percent1RM: optionalPercent1RM(row.percent1RM, `${path}[${index}].percent1RM`),
+    }
+  })
+  return sets.length > 0 ? sets : undefined
+}
+
+function optionalPercent1RM(value: unknown, path: string): number | undefined {
+  const number = optionalPositiveNumber(value, path)
+  if (number == null) return undefined
+  if (number > 100) throw new Error(`${path} debe ser menor o igual a 100.`)
+  return number
+}
+
+function optionalRpe(value: unknown, path: string): number | undefined {
+  if (value == null) return undefined
+  const number = requireFiniteNumber(value, path)
+  if (number < 1 || number > 10) throw new Error(`${path} debe estar entre 1 y 10.`)
+  return number
+}
+
+function optionalPositiveNumber(value: unknown, path: string): number | undefined {
+  if (value == null) return undefined
+  const number = requireFiniteNumber(value, path)
+  if (number <= 0) throw new Error(`${path} debe ser mayor que 0.`)
+  return number
 }
 
 function optionalCoachSessions(value: unknown, path: string): CoachAction['sessions'] {

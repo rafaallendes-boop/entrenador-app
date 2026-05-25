@@ -33,6 +33,9 @@ export interface BuildPlanShellResult {
 
 export const MAX_COMPETITION_PLAN_WEEKS = 12
 
+const DAY_MS = 24 * 60 * 60 * 1000
+const WEEK_MS = 7 * DAY_MS
+
 const INTENT_BY_PHASE: Record<MacroPlanPhase, string> = {
   base: 'Construir base amplia con continuidad y dosis sostenible.',
   build: 'Subir especificidad manteniendo soporte util y frescura.',
@@ -55,6 +58,33 @@ function defaultLoadForPhase(phase: MacroPlanPhase): number {
 
 function resolvePhaseForWeekOffset(offsetFromEvent: number): MacroPlanPhase {
   return resolvePhase(offsetFromEvent)
+}
+
+function dayOfWeek(date: Date): PlanWizardConfig['trainingDays'][number] {
+  const mapping: PlanWizardConfig['trainingDays'][number][] = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
+  return mapping[date.getDay()]
+}
+
+function startOfLocalDay(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate())
+}
+
+function findFirstTrainingDateOnOrAfter(
+  requestedDate: Date,
+  eventDate: Date,
+  wizardConfig: PlanWizardConfig,
+): Date {
+  const allowedDays = new Set(wizardConfig.trainingDays)
+  const start = startOfLocalDay(requestedDate)
+  const end = startOfLocalDay(eventDate)
+  const maxLookaheadDays = Math.max(0, Math.ceil((end.getTime() - start.getTime()) / DAY_MS))
+
+  for (let i = 0; i <= maxLookaheadDays; i++) {
+    const candidate = addDays(start, i)
+    if (allowedDays.has(dayOfWeek(candidate))) return candidate
+  }
+
+  return start
 }
 
 function groupIntoPhases(weekPhases: MacroPlanPhase[]): PlanPhaseBlock[] {
@@ -80,19 +110,28 @@ function groupIntoPhases(weekPhases: MacroPlanPhase[]): PlanPhaseBlock[] {
 export function buildPlanShell(input: BuildPlanShellInput): BuildPlanShellResult {
   const { athleteId, profile, wizardConfig, goalEvent } = input
   const now = input.now ?? new Date()
+  const requestedStartDate = startOfLocalDay(now)
+  const goalEventDate = fromISO(goalEvent.date)
   const macroSnapshot = input.macroPlan ?? computeMacroPlan(profile, now)
   if (!macroSnapshot) {
     throw new Error('No se puede generar el plan sin un MacroPlan base (falta evento principal).')
   }
 
-  const weeksUntilEvent = Math.max(0, computeWeeksRemaining(goalEvent.date, now))
-  const uncappedTotalWeeks = Math.max(1, weeksUntilEvent + 1)
-  const totalWeeks = Math.min(MAX_COMPETITION_PLAN_WEEKS, uncappedTotalWeeks)
+  const firstTrainingDate = findFirstTrainingDateOnOrAfter(requestedStartDate, goalEventDate, wizardConfig)
   const eventWeekStart = getWeekStart(fromISO(goalEvent.date))
+  const uncappedFirstWeekStart = getWeekStart(firstTrainingDate)
+  const uncappedTotalWeeks = Math.max(
+    1,
+    Math.floor((eventWeekStart.getTime() - uncappedFirstWeekStart.getTime()) / WEEK_MS) + 1,
+  )
+  const totalWeeks = Math.min(MAX_COMPETITION_PLAN_WEEKS, uncappedTotalWeeks)
   const firstWeekStart =
     uncappedTotalWeeks > MAX_COMPETITION_PLAN_WEEKS
       ? addWeeks(eventWeekStart, -(MAX_COMPETITION_PLAN_WEEKS - 1))
-      : getWeekStart(now)
+      : uncappedFirstWeekStart
+  const planStartDate = uncappedTotalWeeks > MAX_COMPETITION_PLAN_WEEKS
+    ? toISO(firstWeekStart)
+    : toISO(requestedStartDate)
 
   const weekPhases: MacroPlanPhase[] = []
   for (let i = 0; i < totalWeeks; i++) {
@@ -107,7 +146,8 @@ export function buildPlanShell(input: BuildPlanShellInput): BuildPlanShellResult
   }
 
   const phases = groupIntoPhases(weekPhases)
-  const endDate = toISO(addDays(addWeeks(firstWeekStart, totalWeeks - 1), 6))
+  const calendarEndDate = toISO(addDays(addWeeks(firstWeekStart, totalWeeks - 1), 6))
+  const endDate = goalEvent.date >= planStartDate ? goalEvent.date : calendarEndDate
 
   const allowedSports: SupportedSport[] = Array.from(
     new Set<SupportedSport>([
@@ -128,7 +168,7 @@ export function buildPlanShell(input: BuildPlanShellInput): BuildPlanShellResult
     status: 'draft',
     generationState: 'shell',
     title: `Plan ${goalEvent.title}`,
-    startDate: toISO(firstWeekStart),
+    startDate: planStartDate,
     endDate,
     totalWeeks,
     phases,

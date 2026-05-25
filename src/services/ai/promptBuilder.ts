@@ -33,6 +33,7 @@ import { classifyDayLoad, getDayNutrition, getLoadTypeLabel } from '../nutrition
 import { computeMacroPlan, getPrimaryGoalEvent, getPhaseLabel, formatWeeksRemaining } from '../macroPlan'
 import { selectSquashDrills } from '../training/drillSelector'
 import { selectStrengthSession } from '../training/strengthSelector'
+import { listAvailableStrengthReferences } from '../training/strengthLoadPrescription'
 
 // ─── Per-sport modules ──────────────────────────────────────────────────────
 
@@ -69,6 +70,7 @@ import {
   buildStrengthSelectionSummary,
   buildStrengthRulesSection,
   buildDynamicStrengthSelectionSection,
+  buildStrengthLoadPrescriptionSection,
   buildStrengthProgressionSection,
   formatSelectedStrengthExercises,
   stringifyStrengthExercises,
@@ -255,13 +257,14 @@ function buildAdjustActionPromptResult(context: ChatContext, userMessage?: strin
     { key: 'sport_dynamic:cycling', content: cyclingSummary ? buildDynamicCyclingSelectionSectionV2(context, cyclingSummary) : '' },
     { key: 'sport_dynamic:mobility', content: mobilitySummary ? buildDynamicMobilitySelectionSectionV2(context, mobilitySummary) : '' },
     { key: 'sport_dynamic:strength_progression', content: relevantSports.has('strength') ? buildStrengthProgressionSection(context) : '' },
+    { key: 'sport_dynamic:strength_load', content: relevantSports.has('strength') ? buildStrengthLoadPrescriptionSection(context) : '' },
     {
       key: 'session_feedback',
       content: shouldIncludeSessionFeedbackSection(context, userMessage)
         ? buildSessionFeedbackSection(context.historicalSessions, relevantSports)
         : '',
     },
-    { key: 'response_instructions', content: buildAdjustResponseInstructionsSection(context, promptContext), required: true },
+    { key: 'response_instructions', content: buildAdjustResponseInstructionsSection(context, promptContext, userMessage), required: true },
   ]
 
   return finalizePromptBuildResult(requestType, context, relevantSports, slimProfile, sections)
@@ -533,6 +536,7 @@ function buildLitePersonaSection(context: ChatContext): string {
 function buildAdjustResponseInstructionsSection(
   context: ChatContext,
   promptContext: ResponsePromptContext,
+  userMessage?: string,
 ): string {
   const allowedSports = getAllowedPlanningSports(context.athleteProfile)
   const allowedSessionTypes = [
@@ -544,6 +548,7 @@ function buildAdjustResponseInstructionsSection(
   const defaultSessionType = allowedSports[0] ?? 'recovery'
   const addendum = buildCyclingMobilityActionSchemaAddendum(promptContext, { compact: true })
   const referenceLoads = buildReferenceLoadSection(promptContext)
+  const requestedWeekInstruction = buildRequestedWeekInstruction(context, userMessage)
 
   const sections: string[] = [
     '═══ INSTRUCCIONES DE AJUSTE ═══',
@@ -562,7 +567,9 @@ function buildAdjustResponseInstructionsSection(
     '- Si pide eliminarla, usa delete_session.',
     '- Si pide saltarla, usa skip_session.',
     '- No uses create_week para ajustes puntuales.',
-    '- Para referencias como lunes/martes/viernes/sábado, usa exactamente la fecha indicada en DÍAS DE LA SEMANA ACTUAL. No sumes días ni interpretes en UTC.',
+    '- Para referencias como lunes/martes/viernes/sábado, usa la fecha correspondiente dentro de la semana solicitada. Si el usuario dice "próxima semana", usa la semana siguiente, no la semana actual.',
+    '- Si el usuario marca un día como descanso/libre/off, no programes add_session ni move_session en ese día aunque lo haya nombrado.',
+    ...requestedWeekInstruction,
     `- Usa solo deportes permitidos: ${allowedSports.join(', ') || 'sin restricción explícita'}.`,
     '- No arrastres detalles viejos incompatibles cuando reemplaces tipo, ejercicios o foco de una sesión.',
     '- Mantén las sesiones compactas: título corto, objetivo claro y detalles solo cuando aporten valor real.',
@@ -580,7 +587,7 @@ function buildAdjustResponseInstructionsSection(
     '',
     'Campos mínimos de sesión para add_session:',
     '- targetDate: "YYYY-MM-DD"',
-    '- Si el usuario nombró un día de la semana, targetDate debe coincidir con ese día dentro de DÍAS DE LA SEMANA ACTUAL.',
+    '- Si el usuario nombró un día de la semana para agendar, targetDate debe coincidir con ese día dentro de la semana solicitada.',
     '- timeBlock: "AM" | "PM"',
     `- sessionType: ${sessionTypeOptions}`,
     '- title: string corto',
@@ -612,6 +619,30 @@ function buildAdjustResponseInstructionsSection(
   }
 
   return sections.join('\n')
+}
+
+function buildRequestedWeekInstruction(context: ChatContext, userMessage?: string): string[] {
+  if (!userMessage?.trim()) return []
+  const normalized = normalizePromptText(userMessage)
+  const currentWeekStart = context.currentWeekSummary?.weekStartDate ?? currentWeekStartISO()
+
+  if (/\b(proxima\s+semana|siguiente\s+semana)\b/.test(normalized)) {
+    const start = addDaysToISO(currentWeekStart, 7)
+    return [`- Semana solicitada por el usuario: PRÓXIMA SEMANA (${start} a ${addDaysToISO(start, 6)}).`]
+  }
+
+  if (/\b(esta\s+semana|semana\s+actual)\b/.test(normalized)) {
+    return [`- Semana solicitada por el usuario: ESTA SEMANA (${currentWeekStart} a ${addDaysToISO(currentWeekStart, 6)}).`]
+  }
+
+  return []
+}
+
+function normalizePromptText(text: string): string {
+  return text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
 }
 
 function buildGeneralChatResponseInstructionsSection(context: ChatContext): string {
@@ -834,18 +865,7 @@ function buildSlimRunningReferences(profile: NonNullable<ChatContext['athletePro
 }
 
 function buildSlimStrengthReferences(profile: NonNullable<ChatContext['athleteProfile']>): string {
-  const strengthProfile = profile.strengthProfile
-  if (!strengthProfile) return ''
-
-  const references = [
-    strengthProfile.squat1RM ? `sentadilla ${strengthProfile.squat1RM}kg` : '',
-    strengthProfile.deadlift1RM ? `peso muerto ${strengthProfile.deadlift1RM}kg` : '',
-    strengthProfile.benchPress1RM ? `press banca ${strengthProfile.benchPress1RM}kg` : '',
-    strengthProfile.overheadPress1RM ? `press hombro ${strengthProfile.overheadPress1RM}kg` : '',
-    strengthProfile.pullUpMaxReps ? `dominadas ${strengthProfile.pullUpMaxReps} reps` : '',
-  ].filter(Boolean)
-
-  return references.slice(0, 2).join(' · ')
+  return listAvailableStrengthReferences(profile.strengthProfile).join(' · ')
 }
 
 function buildNutritionContextSection(context: ChatContext): string {

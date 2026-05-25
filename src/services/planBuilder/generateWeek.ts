@@ -10,6 +10,7 @@ import { pickCreateWeekDiagnostic } from '../week/shared'
 import { repairGeneratedWeek, type RepairContext } from './repairWeek'
 import { createStageTracker, type CoachOutcome, type StageTiming } from '../ai/stageLogger'
 import { assertDailyAIRequestLimit } from '../ai/aiTelemetry'
+import { getExpectedSessionsForPlanWeek, getPlanWeekDateRange } from './dateRange'
 
 export interface GenerateWeekInput {
   provider: AIProvider
@@ -73,12 +74,18 @@ export function pickCreateWeekAction(actions: CoachAction[] | undefined, weekSta
 export function summarizeWeekGenerationError(
   error: string | undefined,
   week: TrainingPlanWeek,
+  plan?: TrainingPlan,
 ): string {
+  const validRange = plan ? getPlanWeekDateRange(plan, week) : undefined
   if (!error) {
-    return `La semana ${week.weekIndex + 1} debe contener sesiones válidas dentro del rango ${week.weekStartDate} a los 6 días siguientes.`
+    return validRange
+      ? `La semana ${week.weekIndex + 1} debe contener sesiones válidas dentro del rango ${validRange.startDate} a ${validRange.endDate}.`
+      : `La semana ${week.weekIndex + 1} debe contener sesiones válidas dentro del rango ${week.weekStartDate} a los 6 días siguientes.`
   }
-  if (error.includes('fuera de la semana')) {
-    return `Todas las sesiones deben caer dentro de la semana que comienza el ${week.weekStartDate}.`
+  if (error.includes('fuera de la semana') || error.includes('fuera del rango')) {
+    return validRange
+      ? `Todas las sesiones deben caer dentro del rango válido ${validRange.startDate} a ${validRange.endDate}.`
+      : `Todas las sesiones deben caer dentro de la semana que comienza el ${week.weekStartDate}.`
   }
   if (error.includes('no devolvió sesiones válidas')) {
     return `Devuelve una acción create_week válida con targetDate=${week.weekStartDate} y sesiones no vacías.`
@@ -104,15 +111,16 @@ function formatCountMismatchError(
   repairedValidSessions?: number,
   repairedDroppedSessions = 0,
 ): string {
+  const expectedSessions = getExpectedSessionsForPlanWeek(plan, week)
   if (diagnostic && diagnostic.droppedSessions > 0) {
-    return `La semana ${week.weekIndex + 1} quedó con ${diagnostic.validSessions} sesiones válidas de ${diagnostic.rawSessions} propuestas; se descartaron ${diagnostic.droppedSessions} por inválidas y el wizard esperaba ${plan.wizardConfig.sessionsPerWeek}.`
+    return `La semana ${week.weekIndex + 1} quedó con ${diagnostic.validSessions} sesiones válidas de ${diagnostic.rawSessions} propuestas; se descartaron ${diagnostic.droppedSessions} por inválidas y el rango válido permite ${expectedSessions}.`
   }
 
   if (repairedDroppedSessions > 0) {
-    return `La semana ${week.weekIndex + 1} quedó con ${repairedValidSessions ?? 0} sesiones válidas completas; se descartaron ${repairedDroppedSessions} por inválidas y el wizard esperaba ${plan.wizardConfig.sessionsPerWeek}.`
+    return `La semana ${week.weekIndex + 1} quedó con ${repairedValidSessions ?? 0} sesiones válidas completas; se descartaron ${repairedDroppedSessions} por inválidas y el rango válido permite ${expectedSessions}.`
   }
 
-  return `La semana ${week.weekIndex + 1} tiene menos sesiones válidas de las esperadas; devuelve exactamente ${plan.wizardConfig.sessionsPerWeek} sesiones para ${week.weekStartDate}.`
+  return `La semana ${week.weekIndex + 1} tiene menos sesiones válidas de las esperadas; devuelve exactamente ${expectedSessions} sesiones para ${week.weekStartDate}.`
 }
 
 export function validateGeneratedWeekAction(

@@ -1,6 +1,7 @@
-import type { CoachAction, CoachActionType, CoachExerciseProposal, CoachSessionProposal, CyclingDetails, GeneratedProtocol, MobilityDetails, RunningIntervalStructure, RunningType, SquashDetails, SquashDrill, SquashDrillExecutionMode, SquashSessionBlock, SquashSessionBlockKind, SquashSessionKind, SquashSessionMode, SquashSubtype, SquashTrainingFocus, TimeBlock } from '../../types'
+import type { CoachAction, CoachActionType, CoachExerciseProposal, CoachSessionProposal, CyclingDetails, GeneratedProtocol, MobilityDetails, RunningIntervalStructure, RunningType, SquashDetails, SquashDrill, SquashDrillExecutionMode, SquashSessionBlock, SquashSessionBlockKind, SquashSessionKind, SquashSessionMode, SquashSubtype, SquashTrainingFocus, TimeBlock, WarmupSet } from '../../types'
 import type { AIRawResponse, CoachNormalizedResponse, CreateWeekNormalizationDiagnostic } from './types'
 import { orderSquashBlocksForSession, orderSquashDrillsForSession } from '../training/drillLibrary'
+import { normalizeStrengthSessionExercises } from '../training/strengthSessionStructure'
 
 const ACTIONS_BLOCK_RE = /<actions>([\s\S]*?)<\/actions>/i
 const ACTIONS_START_RE = /<actions>/i
@@ -101,9 +102,12 @@ export function normalizeSessionProposalDraft(
   if (typeof record.targetHrMax === 'number') session.targetHrMax = record.targetHrMax
   if (isRunningIntervalStructure(record.intervalStructure)) session.intervalStructure = record.intervalStructure
   if (Array.isArray(record.exercises)) {
-    session.exercises = record.exercises
+    const exercises = record.exercises
       .map(validateExerciseProposal)
       .filter((item): item is CoachExerciseProposal => item != null)
+    session.exercises = record.sessionType === 'strength'
+      ? normalizeStrengthSessionExercises(exercises, { durationMin })
+      : exercises
   }
   if (isGeneratedProtocol(record.warmup)) session.warmup = record.warmup
   if (isGeneratedProtocol(record.cooldown)) session.cooldown = record.cooldown
@@ -517,9 +521,12 @@ function validateAction(obj: unknown): {
       if (typeof record.targetHrMax === 'number') action.targetHrMax = record.targetHrMax
       if (isRunningIntervalStructure(record.intervalStructure)) action.intervalStructure = record.intervalStructure
       if (Array.isArray(record.exercises)) {
-        action.exercises = record.exercises
+        const exercises = record.exercises
           .map(validateExerciseProposal)
           .filter((item): item is CoachExerciseProposal => item != null)
+        action.exercises = action.newType === 'strength'
+          ? normalizeStrengthSessionExercises(exercises, { durationMin: action.newDurationMin })
+          : exercises
       }
       if (isGeneratedProtocol(record.warmup)) action.warmup = record.warmup
       if (isGeneratedProtocol(record.cooldown)) action.cooldown = record.cooldown
@@ -584,7 +591,29 @@ function validateExerciseProposal(value: unknown): CoachExerciseProposal | null 
   if (typeof record.notes === 'string') exercise.notes = record.notes
   if (typeof record.group === 'string') exercise.group = record.group as CoachExerciseProposal['group']
   if (typeof record.mobilityFocus === 'string') exercise.mobilityFocus = record.mobilityFocus as CoachExerciseProposal['mobilityFocus']
+  if (typeof record.targetPercent1RM === 'number' && record.targetPercent1RM > 0 && record.targetPercent1RM <= 100) {
+    exercise.targetPercent1RM = record.targetPercent1RM
+  }
+  if (typeof record.targetRpe === 'number' && record.targetRpe >= 1 && record.targetRpe <= 10) {
+    exercise.targetRpe = record.targetRpe
+  }
+  if (Array.isArray(record.warmupSets)) {
+    const warmups = record.warmupSets
+      .map((raw) => validateWarmupSet(raw))
+      .filter((set): set is WarmupSet => set != null)
+    if (warmups.length > 0) exercise.warmupSets = warmups
+  }
   return exercise
+}
+
+function validateWarmupSet(value: unknown): WarmupSet | null {
+  if (!value || typeof value !== 'object') return null
+  const record = value as Record<string, unknown>
+  if (typeof record.reps !== 'number' && typeof record.reps !== 'string') return null
+  const set: WarmupSet = { reps: record.reps as number | string }
+  if (typeof record.weight === 'number' && record.weight > 0) set.weight = record.weight
+  if (typeof record.percent1RM === 'number' && record.percent1RM > 0 && record.percent1RM <= 100) set.percent1RM = record.percent1RM
+  return set
 }
 
 function hasAnyUpdateField(action: CoachAction): boolean {

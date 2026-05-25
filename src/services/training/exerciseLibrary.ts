@@ -18,6 +18,8 @@ export type EquipmentType =
   | 'ladder'
   | 'plate'
   | 'stability_ball'
+  | 'assault_bike'
+  | 'air_treadmill'
 export type ExperienceLevel = 'beginner' | 'intermediate' | 'advanced'
 export type ExerciseRiskLevel = 'low' | 'medium' | 'high'
 export type ExerciseFatigueCost = 'low' | 'medium' | 'high'
@@ -951,6 +953,38 @@ export const STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
     fatigueCost: 'low',
   },
   {
+    id: 'assault_bike_30_30',
+    name: 'Bici de asalto 30/30',
+    category: 'full_body',
+    movement: 'locomotion',
+    intensityType: 'power',
+    equipment: ['assault_bike', 'machine'],
+    tags: ['cardio_specific', 'court_conditioning', 'repeat_sprint', 'squash_specific'],
+    description: 'Bloque final de repeat sprint en bici de asalto: 30 segundos fuerte / 30 segundos suave durante 4 minutos. Mantén potencia alta sin perder postura ni respiración.',
+    aliases: ['Bici de asalto', 'Assault bike', 'Air bike', 'Bicicleta de asalto', 'Bici assault 30/30'],
+    difficulty: 'intermediate',
+    sportsTransfer: ['strength', 'squash'],
+    squashTransfer: ['repeat_sprint_capacity', 'short_point_recovery'],
+    riskLevel: 'low',
+    fatigueCost: 'high',
+  },
+  {
+    id: 'air_treadmill_20_20',
+    name: 'Trotadora de aire 20/20',
+    category: 'full_body',
+    movement: 'locomotion',
+    intensityType: 'power',
+    equipment: ['air_treadmill', 'machine'],
+    tags: ['cardio_specific', 'court_conditioning', 'repeat_sprint', 'squash_specific'],
+    description: 'Bloque final en trotadora curva/de aire: 20 segundos fuerte / 20 segundos suave durante 4 minutos. Mejor para aceleraciones cortas y mecánica rápida sin alargar demasiado el esfuerzo.',
+    aliases: ['Trotadora de aire', 'Air runner', 'Curved treadmill', 'Trotadora curva', 'Cinta curva', 'Air treadmill'],
+    difficulty: 'intermediate',
+    sportsTransfer: ['strength', 'squash', 'running'],
+    squashTransfer: ['repeat_sprint_capacity', 'short_point_recovery', 'acceleration'],
+    riskLevel: 'medium',
+    fatigueCost: 'high',
+  },
+  {
     id: 'copenhagen_side_plank',
     name: 'Plancha lateral Copenhagen',
     category: 'core',
@@ -1204,6 +1238,14 @@ export function findStrengthExerciseByName(name: string): ExerciseDefinition | u
 }
 
 export function getExerciseGroupForDefinition(exercise: ExerciseDefinition): ExerciseGroup {
+  if (
+    exercise.equipment.includes('ladder') ||
+    exercise.equipment.includes('assault_bike') ||
+    exercise.equipment.includes('air_treadmill') ||
+    exercise.tags.includes('court_footwork') ||
+    exercise.tags.includes('court_conditioning') ||
+    exercise.tags.includes('cardio_specific')
+  ) return 'cardio'
   if (exercise.tags.includes('olympic_power')) return 'olympic'
   if (exercise.category === 'core') return 'core'
   if (exercise.movement === 'push') return 'push'

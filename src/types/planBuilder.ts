@@ -85,8 +85,8 @@ export interface TrainingPlan {
   status: PlanStatus
   generationState: PlanGenerationState
   title: string
-  startDate: string        // YYYY-MM-DD (lunes)
-  endDate: string          // YYYY-MM-DD (domingo del último bloque)
+  startDate: string        // YYYY-MM-DD (fecha efectiva desde la que se puede entrenar)
+  endDate: string          // YYYY-MM-DD (fecha final solicitada/evento; puede cortar la última semana)
   totalWeeks: number
   phases: PlanPhaseBlock[]
   wizardConfig: PlanWizardConfig

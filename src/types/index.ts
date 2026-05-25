@@ -107,6 +107,15 @@ export interface Exercise {
   group?: ExerciseGroup        // strength sessions
   mobilityFocus?: MobilityFocus // mobility sessions
   durationSec?: number         // for timed exercises (e.g. 30s holds)
+  targetPercent1RM?: number    // strength: target intensity as % of reference 1RM
+  targetRpe?: number           // strength: fallback target effort when no 1RM available (1-10)
+  warmupSets?: WarmupSet[]     // strength: approach sets before the working set
+}
+
+export interface WarmupSet {
+  reps: number | string
+  weight?: number
+  percent1RM?: number
 }
 
 export interface RunningDetails {
@@ -754,6 +763,9 @@ export interface CoachExerciseProposal {
   notes?: string
   group?: ExerciseGroup
   mobilityFocus?: MobilityFocus
+  targetPercent1RM?: number
+  targetRpe?: number
+  warmupSets?: WarmupSet[]
 }
 
 /** Session proposal used inside create_week actions */

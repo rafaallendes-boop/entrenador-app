@@ -130,7 +130,7 @@ describe('planningConstraints', () => {
     expect(getAllowedPlanningSports(profile)).toEqual(['squash', 'strength'])
   })
 
-  it('filters disallowed sports from create_week before persisting/rendering', () => {
+  it('keeps mixed create_week intact so partial weeks are rejected before applying', () => {
     const profile = makeProfile()
     const actions: CoachAction[] = [
       {
@@ -159,9 +159,10 @@ describe('planningConstraints', () => {
     const result = sanitizeCoachActionsForPlan(actions, profile)
     expect(result.actions).toHaveLength(1)
     expect(result.actions[0].type).toBe('create_week')
-    expect(result.actions[0].sessions).toHaveLength(1)
-    expect(result.actions[0].sessions?.[0].sessionType).toBe('squash')
+    expect(result.actions[0].sessions).toHaveLength(2)
+    expect(result.actions[0].sessions?.map((session) => session.sessionType)).toEqual(['squash', 'running'])
     expect(result.warnings).toHaveLength(1)
+    expect(result.warnings[0]).toContain('rechazarla antes de aplicar')
   })
 
   it('filters direct session proposals with a disallowed sport', () => {

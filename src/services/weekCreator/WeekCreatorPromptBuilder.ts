@@ -55,6 +55,7 @@ export function buildWeekCreatorPrompt(
     buildAthleteLevelRules(config),
     buildPrioritySportSummary(prioritySport, config),
     buildWeekCreatorSquashRules(config),
+    buildStrengthStructureRules(config),
     buildCurrentWeekSessionsSummary(targetWeekSessions, input.targetWeekStart),
     buildRecentHistorySummary(recentHistory),
     buildRecentLogsSummary(recentLogs),
@@ -76,6 +77,22 @@ export function buildWeekCreatorPrompt(
     systemPrompt: buildWeekCreatorSystemPrompt(),
     userPrompt: lines.join('\n'),
   }
+}
+
+function buildStrengthStructureRules(config: WeekCreatorEffectiveConfig): string {
+  if (!config.allowedSports.includes('strength')) return ''
+  return [
+    'Reglas de estructura para sesiones de fuerza:',
+    '- Estructura preferida: warm-up/activación -> zona media -> fuerza principal -> accesorios/transferencia -> cardio específico opcional -> cooldown/movilidad.',
+    '- Warm-up tipo preparador físico: puede ser principalmente movilidad/prep de tejidos y rango (foam roller o movilidad de gemelos, isquios, glúteos, aductores, cuádriceps, espalda alta, cadera, tobillo, torácica y hombro), más series de aproximación. No lo mezcles con zona media.',
+    '- Para sesiones de 60 min busca densidad útil: 2 ejercicios de zona media + 4-5 ejercicios de fuerza/accesorios/correctivos + 0-1 bloque de cardio específico si aplica. No entregues sólo 2-3 ejercicios de fuerza para una sesión de una hora.',
+    '- En sesiones de fuerza de 45+ min incluye zona media explícita con 1-2 ejercicios reales antes de la fuerza principal.',
+    '- Zona media útil: dead bug, plancha frontal, fitball plank, Pallof press, plancha lateral, Copenhagen o chop controlado.',
+    '- No cuentes un remo medio arrodillado, zancada o bisagra como único core aunque exija estabilidad; agrega una plancha/dead bug/Pallof/lateral cuando la duración lo permita.',
+    '- Para squash, prioriza anti-extensión, anti-rotación y estabilidad lateral por encima de abdominales genéricos.',
+    '- En retorno de lesión o fitness returning: conserva una estructura completa, pero usa RPE 6-7, tempo controlado, ejercicios de bajo riesgo y evita impacto agresivo o volumen que deje DOMS fuerte.',
+    '- Cardio específico opcional va al final: si es bici de asalto 30s on/30s off o trotadora de aire 20s on/20s off, usa 1 bloque de 4 min; si es escalera/footwork, puede ser una mini-serie de 2-3 ejercicios coordinativos cortos.',
+  ].join('\n')
 }
 
 function buildPrioritySportSummary(prioritySport: SupportedSport | undefined, config: WeekCreatorEffectiveConfig): string {
@@ -151,6 +168,7 @@ function buildGoalSummary(
 
 function buildConfigSummary(config: WeekCreatorEffectiveConfig): string {
   const squashMinimum = getSquashMinimumSessions(config)
+  const supportSlots = squashMinimum ? Math.max(0, config.sessionsPerWeek - squashMinimum) : 0
   const doubleSessionDays = config.doubleSessionDays ?? []
   const athleteTier = deriveWeekCreatorAthleteTier(config)
   const lines = [
@@ -177,6 +195,9 @@ function buildConfigSummary(config: WeekCreatorEffectiveConfig): string {
     `- Nivel operativo del atleta: ${athleteTier}${config.competitiveLevel ? ` · competitivo ${config.competitiveLevel}` : ''}${config.trainingPriority ? ` · prioridad ${config.trainingPriority}` : ''}`,
     squashMinimum
       ? `- Regla de distribución squash: con ${config.sessionsPerWeek} sesiones, incluye al menos ${squashMinimum} sesiones squash y evita dos squash el mismo día si hay deportes de soporte disponibles.`
+      : '',
+    squashMinimum && supportSlots > 0 && config.allowedSports.some((sport) => sport !== 'squash')
+      ? `- Usa ${supportSlots === 1 ? 'el 1 cupo accesorio' : `los ${supportSlots} cupos accesorios`} con deportes de soporte permitidos (${config.allowedSports.filter((sport) => sport !== 'squash').slice(0, supportSlots).join(', ')}); no los reemplaces por más squash.`
       : '',
     `- Estado inicial: fitness ${config.currentFitnessLevel} · fatiga ${config.currentFatigue}`,
     config.scheduleConstraints?.trim() ? `- Restricciones horarias: ${config.scheduleConstraints.trim()}` : '',
