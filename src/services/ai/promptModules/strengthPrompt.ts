@@ -152,6 +152,7 @@ Estructura habitual:
 · Cardio específico opcional para squash va SIEMPRE al final, después de la fuerza: escalera/footwork, bici de asalto 30s on/30s off en bloque de 4 min, o trotadora de aire 20s on/20s off en bloque de 4 min. Usa 1 bloque por defecto; 2 bloques sólo si está fresco, sesión >=65 min y fase build/base sin competencia cercana.
 · Potencia olímpica y pliometría agresiva: solo si el atleta es avanzado, está fresco y no hay competencia cercana. Siempre bajo volumen y calidad máxima.
 · Escalera y footwork: úsalo como coordinación y timing de pies, no como cardio duro ni reemplazo de una sesión de squash.
+· Realismo de cargas: no uses porcentajes de 1RM de barra como si fueran carga directa para mancuernas/kettlebells. Sentadilla goblet normalmente 16-40kg; sobre 40kg cámbiala por sentadilla frontal/trasera. Press/remo con mancuernas y búlgaras deben usar cargas implementables, no equivalentes de barra.
 
 Secuenciación fuerza:
 · No hacer sesión de piernas pesada dentro de las 24h previas a una competencia o sesión técnica clave.

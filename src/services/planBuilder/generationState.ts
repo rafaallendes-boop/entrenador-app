@@ -14,12 +14,11 @@ export function derivePlanGenerationState(weeks: TrainingPlanWeek[]): PlanGenera
   return 'shell'
 }
 
-export function resolveConfiguredGenerationStrategy(totalWeeks: number, requested?: 'single' | 'pairs'): 'single' | 'pairs' {
+export function resolveConfiguredGenerationStrategy(_totalWeeks: number, requested?: 'single' | 'pairs'): 'single' | 'pairs' {
   if (requested) return requested
 
-  const configured = (import.meta.env.VITE_PLAN_BUILDER_GENERATION_STRATEGY ?? 'auto').toLowerCase()
+  const configured = (import.meta.env.VITE_PLAN_BUILDER_GENERATION_STRATEGY ?? '').toLowerCase()
   if (configured === 'pairs') return 'pairs'
-  if (configured === 'auto') return totalWeeks >= 8 ? 'pairs' : 'single'
 
   return 'single'
 }

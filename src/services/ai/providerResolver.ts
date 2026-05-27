@@ -1,4 +1,5 @@
 import type { AIProvider } from './types'
+import type { AIRequestClass } from '../../types'
 import { ClaudeProvider } from './providers/ClaudeProvider'
 import { OpenAIProvider } from './providers/OpenAIProvider'
 import { MockProvider } from './providers/MockProvider'
@@ -26,6 +27,36 @@ export function getActiveProvider(): AIProvider {
     default:
       return new MockProvider()
   }
+}
+
+function providerFromName(name: string): AIProvider {
+  switch (name.toLowerCase()) {
+    case 'proxy': return new ProxyProvider()
+    case 'claude': return new ClaudeProvider()
+    case 'openai': return new OpenAIProvider()
+    case 'gemini': return new GeminiProvider()
+    case 'mock': return new MockProvider()
+    default: return new MockProvider()
+  }
+}
+
+/**
+ * Returns a provider, optionally overridden per requestClass via env var.
+ *
+ * Env var convention: `VITE_AI_PROVIDER_<REQUEST_CLASS_UPPER>` (e.g.
+ * `VITE_AI_PROVIDER_PLAN_BUILDER_WEEK=claude`). In PROD, overrides are ignored
+ * and the function always returns the ProxyProvider via `getActiveProvider()`.
+ *
+ * Falls back to `getActiveProvider()` when no override is set.
+ */
+export function getProviderForRequestClass(requestClass: AIRequestClass): AIProvider {
+  if (import.meta.env.PROD) {
+    return getActiveProvider()
+  }
+  const envKey = `VITE_AI_PROVIDER_${requestClass.toUpperCase()}`
+  const override = (import.meta.env as Record<string, string | undefined>)[envKey]
+  if (!override) return getActiveProvider()
+  return providerFromName(override)
 }
 
 // VITE_* API keys below are only read in local dev (PROD always uses 'proxy' above).

@@ -13,6 +13,7 @@ import type {
   Session,
   SupportedSport,
 } from '../types'
+import { normalizeMobilityDetails } from './training/mobilitySessionLibrary'
 
 type DetailSport = 'cycling' | 'mobility' | 'nutrition'
 
@@ -344,12 +345,12 @@ export function buildFallbackMobilityDetails(
   const focusAreas = inferMobilityFocusAreas(text, item.exercises, currentSession)
   const context = inferMobilityContext(text, currentSession)
 
-  return {
+  return normalizeMobilityDetails({
     context,
     focusAreas,
     targetStructure: currentSession?.mobilityDetails?.targetStructure ?? inferMobilityStructure(context, focusAreas),
     executionNotes: currentSession?.mobilityDetails?.executionNotes ?? 'Detalle inferido automaticamente para no guardar una propuesta de movilidad generica.',
-  }
+  })
 }
 
 function inferCyclingFamily(text: string, runningType?: string): string {

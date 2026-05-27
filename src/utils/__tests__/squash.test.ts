@@ -6,6 +6,7 @@ import {
   isCompetitionSquashMatch,
   isPracticeSquashMatch,
   resolveSquashSessionKind,
+  resolveSquashSessionMode,
 } from '../squash'
 
 function makeSquashSession(overrides: Partial<Session> = {}): Session {
@@ -144,5 +145,53 @@ describe('squash session mode compatibility', () => {
     expect(resolveSquashSessionKind(control)).toBe('control')
     expect(resolveSquashSessionKind(shadows)).toBe('shadows')
     expect(resolveSquashSessionKind(mixed)).toBe('mixed')
+  })
+
+  it('does not treat shadow/control blocks as match-play even if legacy metadata says practice_match', () => {
+    const session = makeSquashSession({
+      subtype: 'match',
+      title: 'Squash - Sombras y Salidas',
+      squashDetails: {
+        trainingFocus: 'technical',
+        sessionMode: 'practice_match',
+        sessionKind: 'match',
+        blocks: [
+          { kind: 'shadows', drills: [{ name: 'Split-step y vuelta a la T' }] },
+          { kind: 'control', drills: [{ name: 'Voleas en solitario' }] },
+        ],
+        drills: [
+          { name: 'Split-step y vuelta a la T' },
+          { name: 'Voleas en solitario' },
+        ],
+      },
+    })
+
+    expect(resolveSquashSessionMode(session.squashDetails)).toBe('drill_session')
+    expect(resolveSquashSessionKind(session)).toBe('mixed')
+    expect(isPracticeSquashMatch(session)).toBe(false)
+  })
+
+  it('treats mixed drill sessions with a final match block as drills, not full match-play', () => {
+    const session = makeSquashSession({
+      subtype: 'match',
+      title: 'Squash - Aplicación Táctica',
+      squashDetails: {
+        trainingFocus: 'tactical',
+        sessionMode: 'practice_match',
+        sessionKind: 'mixed',
+        blocks: [
+          { kind: 'technical', drills: [{ name: 'Ataque desde tres cuartos de cancha' }] },
+          { kind: 'match', drills: [{ name: 'Partido con ataque temprano' }] },
+        ],
+        drills: [
+          { name: 'Ataque desde tres cuartos de cancha' },
+          { name: 'Partido con ataque temprano' },
+        ],
+      },
+    })
+
+    expect(resolveSquashSessionMode(session.squashDetails)).toBe('drill_session')
+    expect(resolveSquashSessionKind(session)).toBe('mixed')
+    expect(isPracticeSquashMatch(session)).toBe(false)
   })
 })

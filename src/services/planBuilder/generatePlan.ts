@@ -1,9 +1,5 @@
 import type { AIProvider } from '../ai/types'
-import { ClaudeProvider } from '../ai/providers/ClaudeProvider'
-import { OpenAIProvider } from '../ai/providers/OpenAIProvider'
-import { GeminiProvider } from '../ai/providers/GeminiProvider'
-import { MockProvider } from '../ai/providers/MockProvider'
-import { ProxyProvider } from '../ai/providers/ProxyProvider'
+import { getProviderForRequestClass } from '../ai/providerResolver'
 import type { AthleteProfile, CoachAction, PlanWizardConfig } from '../../types'
 import type { TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
 import { buildAITraceId, getAIRequestPolicy } from '../ai/requestPolicy'
@@ -15,7 +11,8 @@ import {
   summarizeWeekGenerationError,
   validateGeneratedWeekAction,
 } from './generateWeek'
-import { buildWeekBatchSystemPromptMinimal, buildWeekBatchUserPrompt } from '../week/prompts/weekPrompt'
+import { buildWeekBatchStructuredSystemPromptMinimal, buildWeekBatchUserPrompt } from '../week/prompts/weekPrompt'
+import { createStreamingActionsParser } from '../week/streamingActionsParser'
 import {
   buildWeekRetryInstruction,
   filterSessionsToWeek,
@@ -24,20 +21,9 @@ import {
 import { resolveConfiguredGenerationStrategy } from './generationState'
 import { getExpectedSessionsForPlanWeek } from './dateRange'
 import { buildLocalFallbackWeek } from './fallbackWeek'
+import { PLAN_BUILDER_PAIR_RESPONSE_SCHEMA } from './planBuilderResponseSchema'
 
 const MAX_SINGLE_WEEK_PROVIDER_ATTEMPTS = 2
-
-function getActiveProvider(): AIProvider {
-  if (import.meta.env.PROD) return new ProxyProvider()
-  const name = (import.meta.env.VITE_AI_PROVIDER ?? 'mock').toLowerCase()
-  switch (name) {
-    case 'proxy': return new ProxyProvider()
-    case 'claude': return new ClaudeProvider()
-    case 'openai': return new OpenAIProvider()
-    case 'gemini': return new GeminiProvider()
-    default: return new MockProvider()
-  }
-}
 
 export interface GeneratePlanWeeksInput {
   plan: TrainingPlan
@@ -321,6 +307,7 @@ async function generateSingleWeekWithRetry(
         attempts,
         provider: providerName,
         model,
+        requestClass: 'plan_builder_week',
         durationMs,
         chunkCount,
         strategy: 'single',
@@ -336,6 +323,10 @@ async function generateSingleWeekWithRetry(
         errorClass: result.meta.errorClass,
       })
     }
+
+    if (result.meta.errorClass === 'rate_limit') {
+      break
+    }
   }
 
   return makeLocalFallbackResolvedWeek({
@@ -347,6 +338,7 @@ async function generateSingleWeekWithRetry(
     attempts,
     provider: providerName,
     model,
+    requestClass: 'plan_builder_week',
     lastError,
     durationMs,
     chunkCount,
@@ -398,6 +390,7 @@ async function generateWeekPair(
   const policy = getAIRequestPolicy(requestClass)
   let chunkCount = 0
   const chunkRouter = createWeekBatchChunkRouter(weeks, onChunk)
+  const streamingParser = createStreamingActionsParser()
   await assertDailyAIRequestLimit(requestClass)
   useAIDebugStore.getState().startRequest({
     traceId,
@@ -410,26 +403,34 @@ async function generateWeekPair(
     const raw = await provider.call({
       requestClass,
       traceId,
-      systemPrompt: buildWeekBatchSystemPromptMinimal(),
+      systemPrompt: buildWeekBatchStructuredSystemPromptMinimal(),
       userMessage: buildWeekBatchUserPrompt({
         plan,
         weeks,
         previousWeek,
         profile,
         wizardConfig,
+        outputFormat: 'json',
       }),
       maxTokens: policy.maxTokens,
       temperature: policy.temperature,
       allowFallback: policy.allowFallback,
+      responseMimeType: 'application/json',
+      responseSchema: PLAN_BUILDER_PAIR_RESPONSE_SCHEMA,
       onChunk: (chunk) => {
         chunkCount += 1
         if (chunkCount === 1) {
           useAIDebugStore.getState().markFirstChunk(traceId)
         }
         chunkRouter.push(chunk)
+        streamingParser.push(chunk)
       },
     })
     const normalized = normalizeResponse(raw)
+    const streamedActions = streamingParser.flush().completeActions
+    const finalActions = normalized.actions && normalized.actions.length > 0
+      ? normalized.actions
+      : streamedActions
     const weekResults = new Map<string, BatchWeekExtraction>()
 
     for (const week of weeks) {
@@ -440,7 +441,7 @@ async function generateWeekPair(
       })
     }
 
-    const createWeekActions = (normalized.actions ?? []).filter((action) => action.type === 'create_week')
+    const createWeekActions = finalActions.filter((action) => action.type === 'create_week')
     for (const action of createWeekActions) {
       const targetWeekStart = getActionTargetWeekStart(action, weeks)
       if (!targetWeekStart || !Array.isArray(action.sessions)) continue
@@ -469,7 +470,8 @@ async function generateWeekPair(
         .filter((result) => result.error)
         .map((result) => `validation_error:week_${result.week.weekIndex + 1}:${result.error}`),
     ]
-    const degradeToSingle = false
+    const degradeToSingle = Array.from(weekResults.values())
+      .some((result) => result.sessions.length === 0)
     useAIDebugStore.getState().completeRequest(traceId, {
       provider: raw.provider,
       model: raw.model,
@@ -478,7 +480,7 @@ async function generateWeekPair(
       fallbackUsed: raw.fallbackUsed,
       outcome: normalized.meta?.outcome,
       responseCharCount: raw.text.length,
-      actionCount: normalized.actions?.length ?? 0,
+      actionCount: finalActions.length,
       warnings: batchWarnings.length > 0 ? batchWarnings : undefined,
     })
 
@@ -525,7 +527,9 @@ async function generateWeekPair(
  * Calls onWeekUpdate as weeks transition so the UI can stream and track progress.
  */
 export async function generatePlanWeeks(input: GeneratePlanWeeksInput): Promise<TrainingPlanWeek[]> {
-  const provider = input.provider ?? getActiveProvider()
+  const provider = input.provider ?? getProviderForRequestClass(
+    resolveStrategy(input) === 'pairs' ? 'plan_builder_pair' : 'plan_builder_week',
+  )
   const results: TrainingPlanWeek[] = []
   const strategy = resolveStrategy(input)
   let batchStrategyEnabled = strategy === 'pairs'
@@ -592,7 +596,26 @@ export async function generatePlanWeeks(input: GeneratePlanWeeksInput): Promise<
           continue
         }
 
-        const localFallback = makeLocalFallbackResolvedWeek({
+        let recovered: TrainingPlanWeek | undefined
+        if (batchResult.meta.degradeToSingle) {
+          recovered = await generateSingleWeekWithRetry(
+            provider,
+            input.plan,
+            batchWeekResult.week,
+            previousWeek,
+            input.profile,
+            input.wizardConfig,
+            input.onChunk,
+          )
+          if (recovered.sessions.length > 0 && !recovered.generationMeta.fallbackUsed) {
+            input.onWeekUpdate?.(recovered)
+            results.push(recovered)
+            previousWeek = recovered
+            continue
+          }
+        }
+
+        const localFallback = recovered ?? makeLocalFallbackResolvedWeek({
           plan: input.plan,
           week: batchWeekResult.week,
           previousWeek,
@@ -610,7 +633,7 @@ export async function generatePlanWeeks(input: GeneratePlanWeeksInput): Promise<
           batchId: batchResult.meta.batchId,
           rawSessionCount: batchWeekResult.rawSessionCount,
           droppedSessionCount: batchWeekResult.droppedSessionCount,
-          degradedFromPairs: batchResult.meta.degradeToSingle,
+          degradedFromPairs: true,
         })
         input.onWeekUpdate?.(localFallback)
         results.push(localFallback)

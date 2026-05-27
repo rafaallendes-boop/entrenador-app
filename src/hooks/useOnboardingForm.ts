@@ -4,6 +4,7 @@ import { getEnabledSports, getPrimarySportNormalized } from '../utils/athlete'
 import {
   type OnboardingDayKey,
   ONBOARDING_DAY_ORDER,
+  normalizeOnboardingDayKey,
   orderSelectedValues,
   replaceOrderedValues,
   toggleOrderedValue,
@@ -46,8 +47,12 @@ const EMPTY_STATE: OnboardingFormState = {
 
 function buildStateFromProfile(profile: AthleteProfile | null | undefined): Omit<OnboardingFormState, 'step'> {
   const enabledSports = getEnabledSports(profile)
-  const availableDays = (profile?.scheduleProfile?.availableDays ?? []) as OnboardingDayKey[]
-  const doubleSessionDays = (profile?.scheduleProfile?.doubleSessionDays ?? []) as OnboardingDayKey[]
+  const availableDays = (profile?.scheduleProfile?.availableDays ?? [])
+    .map(normalizeOnboardingDayKey)
+    .filter((day): day is OnboardingDayKey => day !== undefined)
+  const doubleSessionDays = (profile?.scheduleProfile?.doubleSessionDays ?? [])
+    .map(normalizeOnboardingDayKey)
+    .filter((day): day is OnboardingDayKey => day !== undefined)
 
   return {
     name: profile?.name?.trim() ?? '',

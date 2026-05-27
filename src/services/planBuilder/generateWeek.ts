@@ -1,9 +1,9 @@
 import type { CoachAction, CoachSessionProposal, AthleteProfile, PlanWizardConfig } from '../../types'
 import type { TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
-import type { AIProvider, CreateWeekNormalizationDiagnostic } from '../ai/types'
+import { AIProviderError, type AIProvider, type CreateWeekNormalizationDiagnostic } from '../ai/types'
 import { buildAITraceId, getAIRequestPolicy } from '../ai/requestPolicy'
 import { normalizeResponse } from '../ai/responseNormalizer'
-import { buildWeekSystemPromptMinimal, buildWeekUserPrompt } from '../week/prompts/weekPrompt'
+import { buildWeekStructuredSystemPromptMinimal, buildWeekUserPrompt } from '../week/prompts/weekPrompt'
 import { validatePlanWeek } from './validator'
 import { useAIDebugStore } from '../../store/useAIDebugStore'
 import { pickCreateWeekDiagnostic } from '../week/shared'
@@ -11,6 +11,7 @@ import { repairGeneratedWeek, type RepairContext } from './repairWeek'
 import { createStageTracker, type CoachOutcome, type StageTiming } from '../ai/stageLogger'
 import { assertDailyAIRequestLimit } from '../ai/aiTelemetry'
 import { getExpectedSessionsForPlanWeek, getPlanWeekDateRange } from './dateRange'
+import { PLAN_BUILDER_WEEK_RESPONSE_SCHEMA } from './planBuilderResponseSchema'
 
 export interface GenerateWeekInput {
   provider: AIProvider
@@ -209,30 +210,34 @@ export async function generateWeek(input: GenerateWeekInput): Promise<GenerateWe
   const policy = getAIRequestPolicy(requestClass)
   const tracker = createStageTracker(traceId, requestClass)
   let outcome: CoachOutcome = 'error'
-  let chunkCount = 0
-  await assertDailyAIRequestLimit(requestClass)
-
-  const promptStage = tracker.stage('prompt_build')
-  const systemPrompt = buildWeekSystemPromptMinimal()
-  const userMessage = buildWeekUserPrompt({
-    plan,
-    week,
-    previousWeek,
-    profile,
-    wizardConfig,
-    retryInstruction: input.retryInstruction,
-    strictFormatting: input.strictFormatting,
-  })
-  promptStage.end({ ok: true })
-
-  useAIDebugStore.getState().startRequest({
-    traceId,
-    requestClass,
-    surface: 'plan_builder',
-    startedAt: Date.now(),
-  })
+  const chunkCount = 0
+  let requestStarted = false
 
   try {
+    await assertDailyAIRequestLimit(requestClass)
+
+    const promptStage = tracker.stage('prompt_build')
+    const systemPrompt = buildWeekStructuredSystemPromptMinimal()
+    const userMessage = buildWeekUserPrompt({
+      plan,
+      week,
+      previousWeek,
+      profile,
+      wizardConfig,
+      retryInstruction: input.retryInstruction,
+      strictFormatting: input.strictFormatting,
+      outputFormat: 'json',
+    })
+    promptStage.end({ ok: true })
+
+    useAIDebugStore.getState().startRequest({
+      traceId,
+      requestClass,
+      surface: 'plan_builder',
+      startedAt: Date.now(),
+    })
+    requestStarted = true
+
     const providerStage = tracker.stage('provider_call')
     const raw = await provider.call({
       requestClass,
@@ -242,13 +247,8 @@ export async function generateWeek(input: GenerateWeekInput): Promise<GenerateWe
       maxTokens: policy.maxTokens,
       temperature: input.temperature ?? policy.temperature,
       allowFallback: policy.allowFallback,
-      onChunk: (chunk) => {
-        chunkCount += 1
-        if (chunkCount === 1) {
-          useAIDebugStore.getState().markFirstChunk(traceId)
-        }
-        input.onChunk?.(chunk)
-      },
+      responseMimeType: 'application/json',
+      responseSchema: PLAN_BUILDER_WEEK_RESPONSE_SCHEMA,
     })
     providerStage.end({ ok: true })
 
@@ -270,9 +270,15 @@ export async function generateWeek(input: GenerateWeekInput): Promise<GenerateWe
         errorCode: 'validation_error',
         retryUsed: raw.retryUsed,
         fallbackUsed: raw.fallbackUsed,
+        outcome: normalized.meta?.outcome,
+        responseCharCount: raw.text.length,
+        responsePreview: previewResponse(raw.text),
+        finishReason: raw.finishReason,
+        actionCount: normalized.actions?.length ?? 0,
         warnings: [
           `validation_error:${evaluation.error}`,
           `sessions:${evaluation.validSessionCount ?? 0}/${evaluation.rawSessionCount ?? 0}`,
+          `normalizer_outcome:${normalized.meta?.outcome ?? 'unknown'}`,
           ...(evaluation.repairWarnings ?? []).map((warning) => `${warning.code}:${warning.message}`),
         ],
       })
@@ -311,6 +317,8 @@ export async function generateWeek(input: GenerateWeekInput): Promise<GenerateWe
       fallbackUsed: raw.fallbackUsed,
       outcome: normalized.meta?.outcome,
       responseCharCount: raw.text.length,
+      responsePreview: previewResponse(raw.text),
+      finishReason: raw.finishReason,
       actionCount: normalized.actions?.length ?? 0,
       warnings: normalized.meta?.warnings,
     })
@@ -340,9 +348,13 @@ export async function generateWeek(input: GenerateWeekInput): Promise<GenerateWe
     }
   } catch (error) {
     outcome = 'error'
-    useAIDebugStore.getState().failRequest(traceId, {
-      errorCode: error instanceof Error ? error.message : 'unknown',
-    })
+    const errorCode = error instanceof AIProviderError ? error.code : undefined
+    const message = error instanceof Error ? error.message : String(error)
+    if (requestStarted) {
+      useAIDebugStore.getState().failRequest(traceId, {
+        errorCode: errorCode ?? message,
+      })
+    }
     return {
       sessions: [],
       meta: {
@@ -350,12 +362,19 @@ export async function generateWeek(input: GenerateWeekInput): Promise<GenerateWe
         provider: provider.name,
         requestClass,
         traceId,
-        lastError: error instanceof Error ? error.message : String(error),
+        lastError: message,
         chunkCount,
         stageTimings: tracker.timings(),
+        errorClass: errorCode,
       },
     }
   } finally {
     tracker.flush(outcome, { weekIndex: week.weekIndex })
   }
+}
+
+function previewResponse(text: string): string | undefined {
+  const normalized = text.replace(/\s+/g, ' ').trim()
+  if (!normalized) return undefined
+  return normalized.slice(0, 500)
 }

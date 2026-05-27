@@ -177,6 +177,40 @@ describe('responseNormalizer', () => {
     warn.mockRestore()
   })
 
+  it('normalizes mobility details to Spanish before exposing actions', () => {
+    const response = normalizeResponse({
+      text: [
+        'Ajuste movilidad.',
+        '<actions>',
+        JSON.stringify([
+          {
+            type: 'add_session',
+            reason: 'Descargar cadera y columna',
+            targetDate: '2026-04-11',
+            timeBlock: 'PM',
+            sessionType: 'mobility',
+            title: 'Movilidad full body',
+            durationMin: 30,
+            objective: 'Soltar sin fatiga',
+            mobilityDetails: {
+              context: 'full_body',
+              focusAreas: ['full_body', 'hip'],
+              targetStructure: 'Worlds greatest stretch 5/l + Hip 90/90 flow 2min/l + Thoracic rotation 10/l + Childs pose 3min.',
+            },
+          },
+        ]),
+        '</actions>',
+      ].join('\n'),
+      provider: 'mock',
+    })
+
+    expect(response.actions?.[0]).toMatchObject({
+      mobilityDetails: {
+        targetStructure: 'Estocada larga con rotacion 5/lado + Flujo 90/90 de cadera 2 min/lado + Rotacion toracica 10/lado + Postura del nino 3 min.',
+      },
+    })
+  })
+
   it('marks low-density strength proposals as a non-blocking warning', () => {
     const response = normalizeResponse({
       text: [
@@ -424,6 +458,77 @@ describe('responseNormalizer', () => {
     })
     expect(response.meta?.createWeekDiagnostics?.[0].repairedSessions).toEqual([
       { index: 0, repairs: ['durationMin', 'timeBlock', 'objective'] },
+    ])
+  })
+
+  it('accepts a raw fenced JSON create_week response for plan_builder_week', () => {
+    const response = normalizeResponse({
+      text: [
+        '```json',
+        JSON.stringify({
+          type: 'create_week',
+          reason: 'Semana especifica',
+          targetDate: '2026-06-08',
+          weekObjectives: ['Afinar control'],
+          sessions: [
+            {
+              date: '2026-06-08',
+              timeBlock: 'PM',
+              sessionType: 'running',
+              title: 'Rodaje Z2',
+              durationMin: 45,
+              objective: 'Base suave',
+            },
+          ],
+        }),
+        '```',
+      ].join('\n'),
+      provider: 'mock',
+      requestClass: 'plan_builder_week',
+    })
+
+    expect(response.actions).toHaveLength(1)
+    expect(response.actions?.[0]).toMatchObject({
+      type: 'create_week',
+      targetDate: '2026-06-08',
+      sessions: [{ sessionType: 'running', title: 'Rodaje Z2' }],
+    })
+    expect(response.meta?.outcome).toBe('ok')
+  })
+
+  it('repairs non-canonical squash create_week session types from structured JSON', () => {
+    const response = normalizeResponse({
+      text: JSON.stringify({
+        type: 'create_week',
+        reason: 'Semana con control tecnico',
+        targetDate: '2026-06-08',
+        sessions: [
+          {
+            date: '2026-06-08',
+            timeBlock: 'AM',
+            sessionType: 'squash/control',
+            title: 'Squash - Control de juego',
+            durationMin: 60,
+            objective: 'Mejorar precision y consistencia',
+          },
+        ],
+      }),
+      provider: 'mock',
+      requestClass: 'plan_builder_week',
+    })
+
+    expect(response.actions).toHaveLength(1)
+    expect(response.actions?.[0].sessions?.[0]).toMatchObject({
+      sessionType: 'squash',
+      subtype: 'control',
+      squashDetails: {
+        trainingFocus: 'technical',
+        sessionMode: 'drill_session',
+        drills: [{ name: 'Squash - Control de juego', durationMin: 60 }],
+      },
+    })
+    expect(response.meta?.createWeekDiagnostics?.[0].repairedSessions).toEqual([
+      { index: 0, repairs: ['sessionType', 'subtype', 'squashDetails'] },
     ])
   })
 

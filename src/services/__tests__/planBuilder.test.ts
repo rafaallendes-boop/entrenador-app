@@ -399,16 +399,15 @@ describe('planBuilder', () => {
     expect(prompt).toContain('Si una sesión no cumple, corrígela — no la descartes.')
   })
 
-  it('buildWeekBatchSystemPrompt reuses the schema block and keeps batch-specific constraints', () => {
+  it('buildWeekBatchSystemPrompt omits the schema block and keeps batch-specific constraints', () => {
     const prompt = buildWeekBatchSystemPrompt()
 
     expect(prompt).toContain('EXACTAMENTE DOS acciones create_week')
     expect(prompt).toContain('Nunca mezcles sesiones de una semana dentro de la otra.')
-    expect(prompt).toContain('═══ ESQUEMA DE SESIÓN (OBLIGATORIO SEGUIR LITERAL) ═══')
-    expect(prompt).toContain('cyclingDetails es OBLIGATORIO')
-    expect(prompt).toContain('mobilityDetails es OBLIGATORIO')
-    expect(prompt).toContain('warmup y cooldown son opcionales')
-    expect(prompt.match(/ESQUEMA DE SESIÓN \(OBLIGATORIO SEGUIR LITERAL\)/g)).toHaveLength(1)
+    expect(prompt).not.toContain('═══ ESQUEMA DE SESIÓN (OBLIGATORIO SEGUIR LITERAL) ═══')
+    expect(prompt).not.toContain('cyclingDetails es OBLIGATORIO')
+    expect(prompt).not.toContain('mobilityDetails es OBLIGATORIO')
+    expect(prompt.match(/ESQUEMA DE SESIÓN \(OBLIGATORIO SEGUIR LITERAL\)/g)).toBeNull()
   })
 
   it('repairs an out-of-week sparse response without retrying when fallback can complete it', async () => {
@@ -563,6 +562,58 @@ describe('planBuilder', () => {
     expect(sessions.find((session) => session.sessionType === 'running')?.intervalStructure?.blocks?.length).toBeGreaterThan(0)
   })
 
+  it('spreads local fallback sessions across available days before using double sessions', async () => {
+    const profile = makeProfile('2026-07-20')
+    const event = profile.goalEvents![0] as GoalEvent
+    const wizardConfig: PlanWizardConfig = {
+      ...makeWizardConfig(),
+      trainingDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'],
+      doubleSessionDays: ['monday', 'wednesday', 'friday'],
+      sessionsPerWeek: 6,
+      allowDoubleSession: true,
+    }
+    const { plan, weeks } = buildPlanShell({
+      athleteId: profile.id,
+      profile,
+      wizardConfig,
+      goalEvent: event,
+      now: new Date('2026-05-17T10:00:00'),
+    })
+    const peakWeek = { ...weeks[0], phase: 'peak' as const }
+
+    const provider = {
+      name: 'gemini' as const,
+      call: async () => ({
+        provider: 'gemini' as const,
+        model: 'gemini-2.5-flash',
+        text: '<actions>[{"type":"noop","reason":"sin create_week valido"}]</actions>',
+      }),
+    }
+
+    const result = await generatePlanWeeks({
+      plan: { ...plan, totalWeeks: 1, wizardConfig },
+      weeks: [peakWeek],
+      profile,
+      wizardConfig,
+      provider,
+      strategy: 'single',
+    })
+
+    const sessions = result[0]?.sessions ?? []
+    const dates = sessions.map((session) => session.date)
+    const counts = sessions.reduce<Record<string, number>>((acc, session) => {
+      acc[session.sessionType] = (acc[session.sessionType] ?? 0) + 1
+      return acc
+    }, {})
+
+    expect(sessions).toHaveLength(6)
+    expect(new Set(dates).size).toBe(6)
+    expect(sessions.every((session) => session.timeBlock === 'AM')).toBe(true)
+    expect(counts.squash).toBe(4)
+    expect(counts.running).toBe(1)
+    expect(counts.strength).toBe(1)
+  })
+
   it('surfaces dropped invalid sessions as a stronger retry instruction', async () => {
     const profile = makeProfile('2026-07-20')
     const event = profile.goalEvents![0] as GoalEvent
@@ -627,7 +678,7 @@ describe('planBuilder', () => {
     expect(weeks[0]?.phase).toBe('transition')
   })
 
-  it('fills a missing pair week locally without spending extra single-week requests', async () => {
+  it('degrades a missing pair week to single before local fallback', async () => {
     const profile = makeProfile('2026-07-20')
     const event = profile.goalEvents![0] as GoalEvent
     const wizardConfig = {
@@ -664,15 +715,16 @@ describe('planBuilder', () => {
       strategy: 'pairs',
     })
 
-    expect(callCount).toBe(1)
+    expect(callCount).toBe(3)
     expect(result[0]?.status).toBe('draft')
     expect(result[1]?.status).toBe('draft')
     expect(result[0]?.generationMeta.strategy).toBe('pairs')
-    expect(result[1]?.generationMeta.strategy).toBe('pairs')
+    expect(result[1]?.generationMeta.strategy).toBe('single')
+    expect(result[1]?.generationMeta.requestClass).toBe('plan_builder_week')
     expect(result[1]?.generationMeta.fallbackUsed).toBe(true)
   })
 
-  it('keeps long-plan pair generation and fills malformed pair weeks locally', async () => {
+  it('disables pair generation after malformed pair weeks and continues as single', async () => {
     const profile = makeProfile('2026-07-20')
     const event = profile.goalEvents![0] as GoalEvent
     const wizardConfig = makeWizardConfig()
@@ -715,15 +767,15 @@ describe('planBuilder', () => {
       strategy: 'pairs',
     })
 
-    expect(callCount).toBe(2)
+    expect(callCount).toBe(7)
     expect(result.every((week) => week.status === 'draft')).toBe(true)
-    expect(result[0]?.generationMeta.strategy).toBe('pairs')
+    expect(result[0]?.generationMeta.strategy).toBe('single')
     expect(result[1]?.generationMeta.fallbackUsed).toBe(true)
-    expect(result[2]?.generationMeta.strategy).toBe('pairs')
-    expect(result[0]?.generationMeta.degradedFromPairs).toBe(false)
+    expect(result[2]?.generationMeta.strategy).toBe('single')
+    expect(result[0]?.generationMeta.requestClass).toBe('plan_builder_week')
   })
 
-  it('streams chunks through the plan generator callback', async () => {
+  it('does not stream chunks for single-week structured JSON generation', async () => {
     const profile = makeProfile(eventNWeeksFromNow(2))
     const event = profile.goalEvents![0] as GoalEvent
     const wizardConfig = {
@@ -739,9 +791,11 @@ describe('planBuilder', () => {
     })
 
     const chunks: string[] = []
+    let receivedOnChunk = false
     const provider = {
       name: 'mock' as const,
       call: async (request: { onChunk?: (chunk: string) => void }) => {
+        receivedOnChunk = typeof request.onChunk === 'function'
         request.onChunk?.('uno')
         request.onChunk?.('dos')
         return {
@@ -761,8 +815,9 @@ describe('planBuilder', () => {
       onChunk: (_weekIndex, chunk) => chunks.push(chunk),
     })
 
-    expect(chunks).toEqual(['uno', 'dos'])
-    expect(result[0]?.generationMeta.chunkCount).toBe(2)
+    expect(receivedOnChunk).toBe(false)
+    expect(chunks).toEqual([])
+    expect(result[0]?.generationMeta.chunkCount).toBe(0)
   })
 
   it('routes pair-batch streaming chunks to the matching week index', async () => {
@@ -814,7 +869,7 @@ describe('planBuilder', () => {
     expect(result[1]?.status).toBe('draft')
   })
 
-  it('uses pair generation by default for long plans', async () => {
+  it('uses single generation by default for long plans', async () => {
     const profile = makeProfile(eventNWeeksFromNow(8))
     const event = profile.goalEvents![0] as GoalEvent
     const wizardConfig = {
@@ -850,7 +905,7 @@ describe('planBuilder', () => {
     })
 
     expect(result.every((week) => week.status === 'draft')).toBe(true)
-    expect(requestClasses).toEqual(['plan_builder_pair'])
+    expect(requestClasses).toEqual(['plan_builder_week', 'plan_builder_week'])
   })
 
   it('uses pair generation only when configured explicitly as pairs', async () => {
@@ -893,7 +948,7 @@ describe('planBuilder', () => {
     expect(requestClasses[0]).toBe('plan_builder_pair')
   })
 
-  it('uses pair generation for long plans when configured as auto', async () => {
+  it('treats auto strategy as single for long plans', async () => {
     vi.stubEnv('VITE_PLAN_BUILDER_GENERATION_STRATEGY', 'auto')
     const profile = makeProfile(eventNWeeksFromNow(8))
     const event = profile.goalEvents![0] as GoalEvent
@@ -930,6 +985,6 @@ describe('planBuilder', () => {
     })
 
     expect(result.every((week) => week.status === 'draft')).toBe(true)
-    expect(requestClasses[0]).toBe('plan_builder_pair')
+    expect(requestClasses).toEqual(['plan_builder_week', 'plan_builder_week'])
   })
 })

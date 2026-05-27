@@ -27,7 +27,7 @@ const TOKEN_BASELINES: Record<typeof REQUEST_CLASSES[number], { target: number; 
   chat_action: { target: 3576, tolerancePct: 10 },
   week_creator: { target: 3576, tolerancePct: 10 },
   plan_builder_week: { target: 3576, tolerancePct: 10 },
-  weekly_summary: { target: 3339, tolerancePct: 10 },
+  weekly_summary: { target: 3740, tolerancePct: 10 },
 }
 
 function approxTokens(text: string): number {

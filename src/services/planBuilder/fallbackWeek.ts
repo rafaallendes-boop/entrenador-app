@@ -19,15 +19,15 @@ function canUseDoubleSessionOnDate(date: string, wizardConfig: PlanWizardConfig)
   return Boolean(day && wizardConfig.doubleSessionDays.includes(day))
 }
 
-function buildSlots(plan: TrainingPlan, week: TrainingPlanWeek): Slot[] {
+function buildSlots(plan: TrainingPlan, week: TrainingPlanWeek, expected: number): Slot[] {
   const dates = getPlanWeekTrainingDates(plan, week)
   const singles = dates.map((date) => ({ date, timeBlock: 'AM' as const }))
   const doubles = dates
     .filter((date) => canUseDoubleSessionOnDate(date, plan.wizardConfig))
     .map((date) => ({ date, timeBlock: 'PM' as const }))
 
-  return [...singles, ...doubles]
-    .sort((a, b) => a.date.localeCompare(b.date) || a.timeBlock.localeCompare(b.timeBlock))
+  if (expected <= singles.length) return singles.slice(0, expected)
+  return [...singles, ...doubles].slice(0, expected)
 }
 
 function getPrimarySport(plan: TrainingPlan): SupportedSport | undefined {
@@ -52,6 +52,9 @@ function minimumPrimarySessions(plan: TrainingPlan, week: TrainingPlanWeek, expe
       ? Math.min(expected, Math.floor(expected / 2) + 1)
       : Math.min(expected, 2)
   }
+  if (primary === 'squash' && (week.phase === 'taper' || week.phase === 'race')) {
+    return expected >= 4 ? 2 : Math.min(expected, 1)
+  }
   return Math.min(expected, 1)
 }
 
@@ -69,56 +72,108 @@ function supportSports(plan: TrainingPlan, primary: SupportedSport | undefined):
 
 function buildSportSequence(plan: TrainingPlan, week: TrainingPlanWeek, expected: number): SupportedSport[] {
   const primary = getPrimarySport(plan)
-  const sequence: SupportedSport[] = []
   const primaryMinimum = minimumPrimarySessions(plan, week, expected)
-
-  if (primary) {
-    for (let i = 0; i < primaryMinimum; i++) {
-      sequence.push(primary)
+  const supports = supportSports(plan, primary).filter((sport) => {
+    if (primary === 'squash' && (week.phase === 'taper' || week.phase === 'race')) {
+      return sport !== 'running' && sport !== 'cycling'
     }
+    return true
+  })
+
+  if (!primary) {
+    const sequence = [...supports]
+    while (sequence.length < expected) sequence.push(supports[0] ?? 'mobility')
+    return sequence.slice(0, expected)
   }
 
-  const supports = supportSports(plan, primary)
-  for (const sport of supports) {
-    if (sequence.length >= expected) break
-    sequence.push(sport)
-  }
+  const sequence: SupportedSport[] = [primary]
+  let primaryCount = 1
+  let supportIndex = 0
 
   while (sequence.length < expected) {
-    sequence.push(primary ?? supports[0] ?? 'mobility')
+    const remainingSlots = expected - sequence.length
+    const remainingPrimary = Math.max(0, primaryMinimum - primaryCount)
+    const shouldAddSupport = supportIndex < supports.length && remainingSlots > remainingPrimary
+
+    if (shouldAddSupport) {
+      sequence.push(supports[supportIndex])
+      supportIndex += 1
+    } else {
+      sequence.push(primary)
+      primaryCount += 1
+    }
   }
 
   return sequence.slice(0, expected)
 }
 
-function squashSubtype(index: number, phase: TrainingPlanWeek['phase']): CoachSessionProposal['subtype'] {
+function squashSubtype(index: number, phase: TrainingPlanWeek['phase'], weekIndex: number): CoachSessionProposal['subtype'] {
   if (phase === 'race' || phase === 'taper') return index === 0 ? 'control' : 'light'
-  if (index === 0) return 'training'
-  if (index === 1) return 'control'
-  return 'match'
+  const rotation: Array<NonNullable<CoachSessionProposal['subtype']>> = ['training', 'control', 'match', 'competitive']
+  return rotation[(index + weekIndex) % rotation.length]
 }
 
 function runningTypeForWeek(week: TrainingPlanWeek): RunningType {
-  if (week.phase === 'peak' || week.phase === 'build') return 'tempo'
-  if (week.phase === 'base') return 'z2'
   if (week.phase === 'race' || week.phase === 'taper') return 'z2'
+  if (week.phase === 'base') return week.weekIndex % 3 === 2 ? 'long' : 'z2'
+  if (week.phase === 'peak' || week.phase === 'build') {
+    const rotation: RunningType[] = ['tempo', 'intervals', 'z2']
+    return rotation[week.weekIndex % rotation.length]
+  }
   return 'z2'
+}
+
+function squashTitle(index: number, week: TrainingPlanWeek): string {
+  const buildTitles = [
+    'Squash - Técnica Aplicada',
+    'Squash - Control y Patrones',
+    'Squash - Juego Condicionado',
+    'Squash - Sombras y Salidas',
+    'Squash - Aplicación Táctica',
+    'Squash - Match Play Controlado',
+  ]
+  const taperTitles = [
+    'Squash - Ritmo y Precisión',
+    'Squash - Activación Técnica',
+    'Squash - Control Ligero',
+    'Squash - Puntos Cortos',
+  ]
+  const titles = week.phase === 'taper' || week.phase === 'race' ? taperTitles : buildTitles
+  return titles[(index + week.weekIndex) % titles.length]
+}
+
+function runningTitle(week: TrainingPlanWeek): string {
+  switch (runningTypeForWeek(week)) {
+    case 'tempo':
+      return 'Carrera Tempo - Resistencia Específica'
+    case 'intervals':
+      return 'Intervalos Running - Cambios Controlados'
+    case 'long':
+      return 'Rodaje Largo - Base Aeróbica'
+    case 'z2':
+    default:
+      return 'Rodaje Z2 - Base Aeróbica'
+  }
+}
+
+function strengthTitle(week: TrainingPlanWeek): string {
+  const titles = [
+    'Fuerza Soporte Squash',
+    'Fuerza Potencia Lateral',
+    'Fuerza Estabilidad y Core',
+    'Fuerza Tren Superior y Frenado',
+  ]
+  return titles[week.weekIndex % titles.length]
 }
 
 function fallbackTitle(sport: SupportedSport, index: number, week: TrainingPlanWeek): string {
   switch (sport) {
     case 'squash':
-      return index === 0
-        ? 'Squash - Técnica Aplicada'
-        : index === 1
-          ? 'Squash - Control y Patrones'
-          : 'Squash - Juego Condicionado'
+      return squashTitle(index, week)
     case 'running':
-      return runningTypeForWeek(week) === 'tempo'
-        ? 'Carrera Tempo - Resistencia Específica'
-        : 'Rodaje Z2 - Base Aeróbica'
+      return runningTitle(week)
     case 'strength':
-      return 'Fuerza Soporte Squash'
+      return strengthTitle(week)
     case 'cycling':
       return 'Bici Z2 - Descarga Aeróbica'
     case 'mobility':
@@ -173,7 +228,7 @@ function buildSeedSession(
     durationMin,
     rpe: fallbackRpe(sport, week),
     objective: fallbackObjective(sport, week),
-    subtype: sport === 'squash' ? squashSubtype(index, week.phase) : undefined,
+    subtype: sport === 'squash' ? squashSubtype(index, week.phase, week.weekIndex) : undefined,
     runningType: sport === 'running' ? runningTypeForWeek(week) : undefined,
   }
 }
@@ -186,7 +241,7 @@ export function buildLocalFallbackWeek(input: {
   wizardConfig: PlanWizardConfig
 }): RepairResult {
   const expected = getExpectedSessionsForPlanWeek(input.plan, input.week)
-  const slots = buildSlots(input.plan, input.week).slice(0, expected)
+  const slots = buildSlots(input.plan, input.week, expected)
   const sports = buildSportSequence(input.plan, input.week, slots.length)
   const sportCounts = new Map<SupportedSport, number>()
   const seedSessions = slots.map((slot, index) => {

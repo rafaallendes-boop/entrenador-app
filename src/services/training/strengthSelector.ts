@@ -74,7 +74,7 @@ export function selectStrengthSession(
   context: StrengthContext,
 ): { focus: string; exercises: StrengthSelectionExercise[] } {
   const normalizedEquipment = normalizeEquipment(context.availableEquipment)
-  const recentSet = new Set(context.recentExercises.map(normalizeStrengthExerciseKey))
+  const recentSet = buildRecentStrengthKeySet(context.recentExercises)
   const progressionState = deriveStrengthProgressionState(context)
   const equipmentPool = filterByEquipment(STRENGTH_EXERCISE_LIBRARY, normalizedEquipment)
   const experiencePool = buildStrengthCandidatePool(equipmentPool, context)
@@ -99,6 +99,16 @@ export function selectStrengthSession(
     focus: deriveStrengthFocus(finalSelection, context),
     exercises: orderStrengthExercisesForSession(builtExercises, context),
   }
+}
+
+function buildRecentStrengthKeySet(recentExercises: string[]): Set<string> {
+  const keys = new Set<string>()
+  for (const exercise of recentExercises) {
+    keys.add(normalizeStrengthExerciseKey(exercise))
+    const definition = findStrengthExerciseByName(exercise)
+    if (definition) keys.add(normalizeStrengthExerciseKey(definition.id))
+  }
+  return keys
 }
 
 export function extractRecentStrengthExercises(historicalSessions: Session[]): string[] {

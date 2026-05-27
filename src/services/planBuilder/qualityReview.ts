@@ -79,6 +79,18 @@ function getSportCompletenessIssues(week: TrainingPlanWeek): PlanValidationIssue
   const issues: PlanValidationIssue[] = []
 
   for (const session of week.sessions) {
+    if (week.phase === 'taper' || week.phase === 'race') {
+      const durationCap = getTaperDurationCap(session.sessionType)
+      if (session.durationMin > durationCap) {
+        issues.push(issue({
+          severity: 'warning',
+          code: 'quality.taper.session_too_long',
+          message: `Taper con sesión demasiado larga (${session.durationMin}min) en ${session.date}; sugerido <=${durationCap}min.`,
+          weekIndex: week.weekIndex,
+        }))
+      }
+    }
+
     if (session.sessionType === 'running' && !hasRunningStructure(session)) {
       issues.push(issue({
         severity: 'warning',
@@ -119,10 +131,77 @@ function getSportCompletenessIssues(week: TrainingPlanWeek): PlanValidationIssue
           weekIndex: week.weekIndex,
         }))
       }
+      if (hasSquashModeMismatch(session)) {
+        issues.push(issue({
+          severity: 'warning',
+          code: 'quality.squash.mode_mismatch',
+          message: `Squash etiquetado como match-play aunque sus bloques no son partido completo (${session.date}).`,
+          weekIndex: week.weekIndex,
+        }))
+      }
+      if (hasSquashTitleMismatch(session)) {
+        issues.push(issue({
+          severity: 'warning',
+          code: 'quality.squash.title_mismatch',
+          message: `Título de squash no calza con los bloques reales (${session.date}).`,
+          weekIndex: week.weekIndex,
+        }))
+      }
+    }
+
+    if (session.sessionType === 'mobility' && /world|thoracic|childs|ankle circles|hip 90\/90 flow/i.test(session.mobilityDetails?.targetStructure ?? '')) {
+      issues.push(issue({
+        severity: 'warning',
+        code: 'quality.mobility.english_structure',
+        message: `Movilidad con estructura poco localizada al español en ${session.date}.`,
+        weekIndex: week.weekIndex,
+      }))
     }
   }
 
   return issues
+}
+
+function hasSquashModeMismatch(session: CoachSessionProposal): boolean {
+  const details = session.squashDetails
+  if (!details || details.sessionMode !== 'practice_match') return false
+  const blocks = details.blocks ?? []
+  if (blocks.length > 0) return !blocks.every((block) => block.kind === 'match')
+  if (details.sessionKind && details.sessionKind !== 'match') return true
+  return false
+}
+
+function hasSquashTitleMismatch(session: CoachSessionProposal): boolean {
+  const details = session.squashDetails
+  if (!details) return false
+  const blockKinds: string[] = [...new Set((details.blocks ?? []).map((block) => block.kind))]
+  if (blockKinds.length === 0) return false
+  const normalized = normalizeExerciseName(session.title)
+  const has = (kind: string) => blockKinds.includes(kind)
+  const saysMatch = normalized.includes('match') || normalized.includes('partido') || normalized.includes('juego condicionado')
+  const saysShadows = normalized.includes('sombra') || normalized.includes('salida')
+  const saysControl = normalized.includes('control') || normalized.includes('patron') || normalized.includes('precision')
+  const saysTechnical = normalized.includes('tecnica') || normalized.includes('aplicacion tactica') || normalized.includes('activacion')
+
+  if (saysMatch && !has('match')) return true
+  if (saysShadows && !has('shadows')) return true
+  if (saysControl && !has('control')) return true
+  if (saysTechnical && blockKinds.length === 1 && has('match')) return true
+  if (blockKinds.length > 1 && has('shadows') && has('control') && !saysControl) return true
+  if (blockKinds.length > 1 && has('technical') && has('match') && !saysMatch) return true
+  return false
+}
+
+function getTaperDurationCap(sessionType: CoachSessionProposal['sessionType']): number {
+  switch (sessionType) {
+    case 'squash': return 50
+    case 'strength': return 40
+    case 'running':
+    case 'cycling': return 35
+    case 'mobility':
+    case 'recovery': return 30
+    default: return 35
+  }
 }
 
 function getDistributionIssues(plan: TrainingPlan, week: TrainingPlanWeek): PlanValidationIssue[] {
@@ -156,6 +235,19 @@ function getDistributionIssues(plan: TrainingPlan, week: TrainingPlanWeek): Plan
       severity: 'warning',
       code: 'quality.support.missing_aerobic',
       message: `Semana ${week.weekIndex + 1} no incluye trabajo aeróbico complementario.`,
+      weekIndex: week.weekIndex,
+    }))
+  }
+
+  if (
+    primarySport === 'squash'
+    && (week.phase === 'taper' || week.phase === 'race')
+    && ((counts.running ?? 0) > 0 || (counts.cycling ?? 0) > 0)
+  ) {
+    issues.push(issue({
+      severity: 'warning',
+      code: 'quality.taper.accessory_aerobic_present',
+      message: `Semana taper ${week.weekIndex + 1} mantiene running/ciclismo accesorio; para squash competitivo debería ser opcional y muy corto.`,
       weekIndex: week.weekIndex,
     }))
   }
@@ -194,6 +286,15 @@ function getPlanLevelIssues(weeks: TrainingPlanWeek[]): PlanValidationIssue[] {
   const issues: PlanValidationIssue[] = []
   const generated = weeks.filter((week) => week.sessions.length > 0).sort((a, b) => a.weekIndex - b.weekIndex)
 
+  const fallbackWeeks = generated.filter((week) => week.generationMeta.fallbackUsed)
+  if (generated.length > 0 && fallbackWeeks.length / generated.length >= 0.5) {
+    issues.push(issue({
+      severity: 'warning',
+      code: 'quality.generation.fallback_reliance',
+      message: `${fallbackWeeks.length}/${generated.length} semanas fueron generadas por fallback local; revisar prompts/modelo aunque el plan sea aplicable.`,
+    }))
+  }
+
   for (let i = 1; i < generated.length; i++) {
     const prev = weekLoad(generated[i - 1])
     const curr = weekLoad(generated[i])
@@ -225,7 +326,33 @@ function getPlanLevelIssues(weeks: TrainingPlanWeek[]): PlanValidationIssue[] {
     }
   }
 
+  for (let i = 1; i < generated.length; i++) {
+    const prevStrength = generated[i - 1].sessions.find((session) => session.sessionType === 'strength')
+    const currStrength = generated[i].sessions.find((session) => session.sessionType === 'strength')
+    if (!prevStrength?.exercises?.length || !currStrength?.exercises?.length) continue
+    const prevKeys = new Set(prevStrength.exercises.map((exercise) => normalizeExerciseName(exercise.name)))
+    const currKeys = currStrength.exercises.map((exercise) => normalizeExerciseName(exercise.name))
+    const overlap = currKeys.filter((key) => prevKeys.has(key)).length
+    if (overlap >= Math.min(5, currKeys.length)) {
+      issues.push(issue({
+        severity: 'warning',
+        code: 'quality.strength.repeated_template',
+        message: `La fuerza se repite demasiado entre semanas ${generated[i - 1].weekIndex + 1} y ${generated[i].weekIndex + 1}.`,
+        weekIndex: generated[i].weekIndex,
+      }))
+    }
+  }
+
   return issues
+}
+
+function normalizeExerciseName(name: string): string {
+  return name
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
 }
 
 function scoreWeek(issues: PlanValidationIssue[], repairCount: number): number {

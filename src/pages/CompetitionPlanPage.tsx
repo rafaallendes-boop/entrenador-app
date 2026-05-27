@@ -143,6 +143,7 @@ interface WizardState {
   objective?: GoalEventObjective
   competitiveLevel?: GoalEventLevel
   trainingDays: DayOfWeek[]
+  doubleSessionDays: DayOfWeek[]
   sessionsPerWeek?: number
   sessionDurationMins?: number
   allowDoubleSession: boolean
@@ -167,7 +168,12 @@ function initWizardState(
     existingConfig?.trainingDays ?? mapOnboardingDaysToTrainingDays(athleteProfile?.scheduleProfile?.availableDays),
     DAY_OF_WEEK_ORDER,
   )
-  const allowDoubleSession = existingConfig?.allowDoubleSession ?? false
+  const profileDoubleSessionDays = mapOnboardingDaysToTrainingDays(athleteProfile?.scheduleProfile?.doubleSessionDays)
+  const doubleSessionDays = orderSelectedValues(
+    (existingConfig?.doubleSessionDays ?? profileDoubleSessionDays).filter((day) => trainingDays.includes(day)),
+    DAY_OF_WEEK_ORDER,
+  )
+  const allowDoubleSession = existingConfig?.allowDoubleSession ?? doubleSessionDays.length > 0
 
   return {
     eventType: existingEvent?.eventType,
@@ -176,11 +182,13 @@ function initWizardState(
     objective: existingEvent?.objective,
     competitiveLevel: existingEvent?.competitiveLevel,
     trainingDays,
+    doubleSessionDays,
     sessionsPerWeek: clampSessionsPerWeekToAvailability(
       existingConfig?.sessionsPerWeek
         ?? (trainingDays.length >= 2 ? Math.min(trainingDays.length, Math.max(...SESSIONS_PER_WEEK_OPTIONS)) : undefined),
       trainingDays,
       allowDoubleSession,
+      doubleSessionDays,
     ),
     sessionDurationMins: existingConfig?.sessionDurationMins,
     allowDoubleSession,
@@ -405,6 +413,9 @@ export default function CompetitionPlanPage() {
       const newConfig = {
         goalEventId: eventId,
         trainingDays: state.trainingDays,
+        doubleSessionDays: state.allowDoubleSession
+          ? state.doubleSessionDays.filter((day) => state.trainingDays.includes(day))
+          : undefined,
         sessionsPerWeek: state.sessionsPerWeek!,
         sessionDurationMins: state.sessionDurationMins!,
         allowDoubleSession: state.allowDoubleSession,
@@ -732,10 +743,17 @@ function Step4Schedule({
   function toggleDay(day: DayOfWeek) {
     updateWith((current) => {
       const trainingDays = toggleOrderedValue(current.trainingDays, day, DAY_OF_WEEK_ORDER)
+      const doubleSessionDays = current.doubleSessionDays.filter((item) => trainingDays.includes(item))
       return {
         ...current,
         trainingDays,
-        sessionsPerWeek: clampSessionsPerWeekToAvailability(current.sessionsPerWeek, trainingDays, current.allowDoubleSession),
+        doubleSessionDays,
+        sessionsPerWeek: clampSessionsPerWeekToAvailability(
+          current.sessionsPerWeek,
+          trainingDays,
+          current.allowDoubleSession,
+          doubleSessionDays,
+        ),
       }
     })
   }
@@ -743,15 +761,45 @@ function Step4Schedule({
   function replaceTrainingDays(days: DayOfWeek[]) {
     updateWith((current) => {
       const trainingDays = replaceOrderedValues(current.trainingDays, days, DAY_OF_WEEK_ORDER)
+      const doubleSessionDays = current.doubleSessionDays.filter((item) => trainingDays.includes(item))
       return {
         ...current,
         trainingDays,
-        sessionsPerWeek: clampSessionsPerWeekToAvailability(current.sessionsPerWeek, trainingDays, current.allowDoubleSession),
+        doubleSessionDays,
+        sessionsPerWeek: clampSessionsPerWeekToAvailability(
+          current.sessionsPerWeek,
+          trainingDays,
+          current.allowDoubleSession,
+          doubleSessionDays,
+        ),
       }
     })
   }
 
-  const maxSessions = state.trainingDays.length * (state.allowDoubleSession ? 2 : 1)
+  function toggleDoubleDay(day: DayOfWeek) {
+    updateWith((current) => {
+      const doubleSessionDays = toggleOrderedValue(current.doubleSessionDays, day, DAY_OF_WEEK_ORDER)
+        .filter((item) => current.trainingDays.includes(item))
+      return {
+        ...current,
+        doubleSessionDays,
+        allowDoubleSession: doubleSessionDays.length > 0,
+        sessionsPerWeek: clampSessionsPerWeekToAvailability(
+          current.sessionsPerWeek,
+          current.trainingDays,
+          doubleSessionDays.length > 0,
+          doubleSessionDays,
+        ),
+      }
+    })
+  }
+
+  const doubleCapacity = state.allowDoubleSession
+    ? (state.doubleSessionDays.length > 0
+      ? state.doubleSessionDays.filter((day) => state.trainingDays.includes(day)).length
+      : state.trainingDays.length)
+    : 0
+  const maxSessions = state.trainingDays.length + doubleCapacity
 
   return (
     <div>
@@ -830,10 +878,19 @@ function Step4Schedule({
           type="button"
           onClick={() => updateWith((current) => {
             const allowDoubleSession = !current.allowDoubleSession
+            const doubleSessionDays = allowDoubleSession
+              ? (current.doubleSessionDays.length > 0 ? current.doubleSessionDays : current.trainingDays)
+              : []
             return {
               ...current,
               allowDoubleSession,
-              sessionsPerWeek: clampSessionsPerWeekToAvailability(current.sessionsPerWeek, current.trainingDays, allowDoubleSession),
+              doubleSessionDays,
+              sessionsPerWeek: clampSessionsPerWeekToAvailability(
+                current.sessionsPerWeek,
+                current.trainingDays,
+                allowDoubleSession,
+                doubleSessionDays,
+              ),
             }
           })}
           className={`relative w-11 h-6 rounded-full transition-colors ${state.allowDoubleSession ? 'bg-brand' : 'bg-surface-border'}`}
@@ -843,6 +900,27 @@ function Step4Schedule({
           />
         </button>
       </div>
+      {state.allowDoubleSession && (
+        <div className="mt-4">
+          <label className="text-sm font-medium text-ink block mb-2">Días aptos para doble sesión</label>
+          <div className="flex gap-2">
+            {DAYS_OF_WEEK.map(d => {
+              const enabled = state.trainingDays.includes(d.value)
+              return (
+                <button
+                  key={d.value}
+                  type="button"
+                  onClick={() => toggleDoubleDay(d.value)}
+                  disabled={!enabled}
+                  className={`${dayChipCls(state.doubleSessionDays.includes(d.value))} disabled:cursor-not-allowed disabled:opacity-30`}
+                >
+                  {d.short}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

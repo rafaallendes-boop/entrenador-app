@@ -248,7 +248,8 @@ describe('actionPostProcessor', () => {
 
     expect(response.actions?.[0].type).toBe('add_session')
     const pullUp = response.actions?.[0].exercises?.find((exercise) => exercise.name === 'Dominadas pronadas')
-    expect(pullUp).toMatchObject({ name: 'Dominadas pronadas', targetPercent1RM: 80 })
+    expect(pullUp).toMatchObject({ name: 'Dominadas pronadas' })
+    expect(pullUp?.targetPercent1RM).toBeUndefined()
     expect(pullUp?.weight).toBeUndefined()
   })
 

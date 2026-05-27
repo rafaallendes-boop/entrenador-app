@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { CoachSessionProposal, PlanWizardConfig } from '../../types'
 import type { TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
+import { getExpectedSessionsForPlanWeek } from '../planBuilder/dateRange'
 import { reviewPlanQuality } from '../planBuilder/qualityReview'
 
 function makeWizardConfig(): PlanWizardConfig {
@@ -95,6 +96,25 @@ function makeWeek(sessions: CoachSessionProposal[]): TrainingPlanWeek {
   }
 }
 
+function strength(date: string, exercises?: CoachSessionProposal['exercises']): CoachSessionProposal {
+  return {
+    date,
+    timeBlock: 'AM',
+    sessionType: 'strength',
+    title: 'Fuerza soporte',
+    durationMin: 60,
+    rpe: 6,
+    exercises: exercises ?? [
+      { name: 'Dead bug', sets: 3, reps: 8, group: 'core' },
+      { name: 'Plancha lateral', sets: 3, reps: '30s', group: 'core' },
+      { name: 'Sentadilla frontal', sets: 4, reps: 4, group: 'legs' },
+      { name: 'Press Z', sets: 4, reps: 4, group: 'push' },
+      { name: 'Peso muerto rumano', sets: 3, reps: 6, group: 'legs' },
+      { name: 'Remo unilateral', sets: 3, reps: 8, group: 'pull' },
+    ],
+  }
+}
+
 describe('reviewPlanQuality', () => {
   it('scores a complete squash plan week as good or better', () => {
     const plan = makePlan()
@@ -154,5 +174,114 @@ describe('reviewPlanQuality', () => {
     expect(review.score).toBeLessThan(90)
     expect(review.issues.some((item) => item.code === 'quality.support.missing_strength')).toBe(true)
     expect(review.issues.some((item) => item.code === 'quality.support.missing_aerobic')).toBe(true)
+  })
+
+  it('caps expected sessions for final taper week and flags excessive taper volume', () => {
+    const plan: TrainingPlan = {
+      ...makePlan(),
+      endDate: '2026-06-05',
+      wizardConfig: {
+        ...makeWizardConfig(),
+        trainingDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'],
+        sessionsPerWeek: 6,
+        allowDoubleSession: true,
+        doubleSessionDays: ['monday', 'wednesday', 'friday'],
+      },
+    }
+    const week: TrainingPlanWeek = {
+      ...makeWeek([
+        squash('2026-06-01', 'Toque'),
+        strength('2026-06-01'),
+        { date: '2026-06-02', timeBlock: 'AM', sessionType: 'running', title: 'Z2', durationMin: 60, rpe: 4, runningType: 'z2', intervalStructure: { blocks: [{ label: 'Z2', durationMin: 45 }] } },
+        { date: '2026-06-02', timeBlock: 'PM', sessionType: 'mobility', title: 'Movilidad', durationMin: 60, rpe: 2, mobilityDetails: { context: 'full_body', focusAreas: ['full_body'], targetStructure: 'Worlds greatest stretch 5/l' } },
+        squash('2026-06-03', 'Puntos cortos'),
+        { date: '2026-06-03', timeBlock: 'PM', sessionType: 'recovery', title: 'Recovery', durationMin: 60, rpe: 2 },
+      ]),
+      weekStartDate: '2026-06-01',
+      phase: 'taper',
+    }
+
+    const review = reviewPlanQuality(plan, [week])
+
+    expect(getExpectedSessionsForPlanWeek(plan, week)).toBe(4)
+    expect(review.issues.some((item) => item.code === 'week.sessions.count_mismatch')).toBe(true)
+    expect(review.issues.some((item) => item.code === 'quality.taper.session_too_long')).toBe(true)
+    expect(review.issues.some((item) => item.code === 'quality.mobility.english_structure')).toBe(true)
+  })
+
+  it('flags repeated strength templates across adjacent weeks', () => {
+    const plan = { ...makePlan(), totalWeeks: 2 }
+    const first = makeWeek([
+      squash('2026-05-04', 'Squash 1'),
+      squash('2026-05-05', 'Squash 2'),
+      squash('2026-05-06', 'Squash 3'),
+      { date: '2026-05-07', timeBlock: 'AM', sessionType: 'running', title: 'Z2', durationMin: 45, rpe: 5, runningType: 'z2', intervalStructure: { blocks: [{ label: 'Z2', durationMin: 35 }] } },
+      strength('2026-05-08'),
+    ])
+    const second: TrainingPlanWeek = {
+      ...makeWeek([
+        squash('2026-05-11', 'Squash 1'),
+        squash('2026-05-12', 'Squash 2'),
+        squash('2026-05-13', 'Squash 3'),
+        { date: '2026-05-14', timeBlock: 'AM', sessionType: 'running', title: 'Z2', durationMin: 45, rpe: 5, runningType: 'z2', intervalStructure: { blocks: [{ label: 'Z2', durationMin: 35 }] } },
+        strength('2026-05-15'),
+      ]),
+      id: 'week-2',
+      weekIndex: 1,
+      weekStartDate: '2026-05-11',
+    }
+
+    const review = reviewPlanQuality(plan, [first, second])
+
+    expect(review.issues.some((item) => item.code === 'quality.strength.repeated_template')).toBe(true)
+  })
+
+  it('flags fallback reliance and squash semantic mismatches', () => {
+    const plan = { ...makePlan(), totalWeeks: 2 }
+    const first = {
+      ...makeWeek([
+        {
+          ...squash('2026-05-04', 'Squash - Sombras y Salidas'),
+          subtype: 'match',
+          squashDetails: {
+            trainingFocus: 'technical',
+            sessionMode: 'practice_match',
+            sessionKind: 'mixed',
+            blocks: [
+              { kind: 'shadows', drills: [{ name: 'Split-step y vuelta a la T' }] },
+              { kind: 'control', drills: [{ name: 'Voleas en solitario' }] },
+            ],
+            drills: [
+              { name: 'Split-step y vuelta a la T' },
+              { name: 'Voleas en solitario' },
+            ],
+          },
+        },
+        squash('2026-05-05', 'Squash control'),
+        squash('2026-05-06', 'Squash juego'),
+        { date: '2026-05-07', timeBlock: 'AM', sessionType: 'running', title: 'Z2', durationMin: 45, rpe: 5, runningType: 'z2', targetPaceMin: '5:30', intervalStructure: { blocks: [{ label: 'Z2', durationMin: 35 }] } },
+        strength('2026-05-08'),
+      ]),
+      generationMeta: { attempts: 1, fallbackUsed: true, repairedSessionCount: 2 },
+    } satisfies TrainingPlanWeek
+    const second: TrainingPlanWeek = {
+      ...makeWeek([
+        squash('2026-05-11', 'Squash 1'),
+        squash('2026-05-12', 'Squash 2'),
+        squash('2026-05-13', 'Squash 3'),
+        { date: '2026-05-14', timeBlock: 'AM', sessionType: 'running', title: 'Z2', durationMin: 45, rpe: 5, runningType: 'z2', targetPaceMin: '5:30', intervalStructure: { blocks: [{ label: 'Z2', durationMin: 35 }] } },
+        strength('2026-05-15'),
+      ]),
+      id: 'week-2',
+      weekIndex: 1,
+      weekStartDate: '2026-05-11',
+      generationMeta: { attempts: 1, fallbackUsed: true, repairedSessionCount: 2 },
+    }
+
+    const review = reviewPlanQuality(plan, [first, second])
+
+    expect(review.issues.some((item) => item.code === 'quality.generation.fallback_reliance')).toBe(true)
+    expect(review.issues.some((item) => item.code === 'quality.squash.mode_mismatch')).toBe(true)
+    expect(review.issues.some((item) => item.code === 'quality.squash.title_mismatch')).toBe(true)
   })
 })

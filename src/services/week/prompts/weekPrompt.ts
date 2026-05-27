@@ -14,6 +14,7 @@ export interface WeekPromptInput {
   wizardConfig: PlanWizardConfig
   retryInstruction?: string
   strictFormatting?: boolean
+  outputFormat?: 'actions' | 'json'
 }
 
 export interface WeekBatchPromptInput {
@@ -24,6 +25,7 @@ export interface WeekBatchPromptInput {
   wizardConfig: PlanWizardConfig
   retryInstruction?: string
   strictFormatting?: boolean
+  outputFormat?: 'actions' | 'json'
 }
 
 const PHASE_LABEL: Record<string, string> = {
@@ -146,13 +148,20 @@ function buildWeekSystemPromptBase(options: WeekSystemPromptOptions): string {
           : 'No inventes sesiones fuera de los días permitidos. No dupliques misma fecha+timeBlock.',
       ]
 
+  // Batch mode: schema is delivered via responseSchema API parameter — no need to embed it in text.
+  const schemaBlock = batchMode
+    ? ''
+    : fullSchema
+      ? SESSION_SCHEMA_BLOCK_FULL
+      : SESSION_SCHEMA_BLOCK_MINIMAL
+
   return [
     ...lines,
-    fullSchema ? SESSION_SCHEMA_BLOCK_FULL : SESSION_SCHEMA_BLOCK_MINIMAL,
+    schemaBlock,
     standaloneMode
       ? 'La app completará detalles deportivos avanzados cuando falten. Prioriza devolver una create_week parseable, completa y coherente.'
       : '',
-    fullSchema
+    fullSchema && !batchMode
       ? 'Revisa dos veces antes de responder: cada squash lleva squashDetails válido con drills[] no vacío; cada cycling lleva cyclingDetails; cada mobility lleva mobilityDetails; cada strength lleva exercises[]. Si una sesión no cumple, corrígela — no la descartes.'
       : '',
   ].filter(Boolean).join('\n')
@@ -160,6 +169,17 @@ function buildWeekSystemPromptBase(options: WeekSystemPromptOptions): string {
 
 export function buildWeekSystemPromptMinimal(): string {
   return buildWeekSystemPromptBase({ mode: 'single', density: 'minimal' })
+}
+
+export function buildWeekStructuredSystemPromptMinimal(): string {
+  return [
+    'Eres el generador de una sola semana dentro de un plan por evento ya estructurado.',
+    'Responde SOLO con un objeto JSON que cumpla el responseSchema configurado por la app. Sin markdown, sin texto fuera, sin wrappers XML.',
+    'El objeto debe ser una create_week: type="create_week", targetDate (lunes YYYY-MM-DD), reason, sessions[] y weekObjectives[].',
+    'Respeta exactamente el targetDate, el rango válido de fechas, los días permitidos, deportes permitidos y cantidad de sesiones pedida.',
+    'Cada sesión debe ser válida: date ISO dentro de la semana, timeBlock AM/PM, sessionType permitido, title, objective y durationMin>=5.',
+    'No devuelvas menos sesiones que las pedidas. Si una sesión queda incompleta, corrígela antes de responder.',
+  ].join('\n')
 }
 
 export function buildWeekSystemPrompt(): string {
@@ -174,12 +194,24 @@ export function buildWeekBatchSystemPromptMinimal(): string {
   return buildWeekSystemPromptBase({ mode: 'batch', density: 'minimal' })
 }
 
+export function buildWeekBatchStructuredSystemPromptMinimal(): string {
+  return [
+    'Eres el generador de DOS semanas consecutivas dentro de un plan por evento ya estructurado.',
+    'Responde SOLO con un objeto JSON que cumpla el responseSchema configurado por la app. Sin markdown, sin texto fuera, sin wrappers XML.',
+    'El objeto debe tener actions[] con EXACTAMENTE DOS create_week, una por cada lunes objetivo.',
+    'Cada create_week debe incluir type="create_week", targetDate (lunes YYYY-MM-DD), reason, sessions[] y weekObjectives[].',
+    'Respeta el targetDate, rango válido, días permitidos, deportes permitidos y cantidad de sesiones pedida para cada semana.',
+    'Nunca mezcles sesiones de una semana dentro de la otra. Nunca devuelvas menos sesiones que las pedidas.',
+  ].join('\n')
+}
+
 export function buildWeekBatchSystemPrompt(): string {
   return buildWeekSystemPromptBase({ mode: 'batch', density: 'full' })
 }
 
 export function buildWeekUserPrompt(input: WeekPromptInput): string {
   const { plan, week, previousWeek, profile, wizardConfig, retryInstruction, strictFormatting } = input
+  const outputFormat = input.outputFormat ?? 'actions'
   const allowed = allowedSportsList(plan, wizardConfig)
   const validRange = getPlanWeekDateRange(plan, week)
   const expectedSessions = getExpectedSessionsForPlanWeek(plan, week)
@@ -230,7 +262,9 @@ export function buildWeekUserPrompt(input: WeekPromptInput): string {
     strengthStructureSection,
     strengthLoadSection,
     '',
-    'Devuelve sólo el bloque <actions> con una única create_week para esta semana.',
+    outputFormat === 'json'
+      ? 'Devuelve sólo un objeto JSON create_week para esta semana. No uses wrappers XML, markdown ni texto explicativo.'
+      : 'Devuelve sólo el bloque <actions> con una única create_week para esta semana.',
   ].filter(Boolean).join('\n')
 }
 
@@ -272,9 +306,12 @@ function buildSquashStrengthThemeRule(
 
 export function buildWeekBatchUserPrompt(input: WeekBatchPromptInput): string {
   const { plan, weeks, previousWeek, profile, wizardConfig, retryInstruction, strictFormatting } = input
+  const outputFormat = input.outputFormat ?? 'actions'
   const allowed = allowedSportsList(plan, wizardConfig)
   const days = wizardConfig.trainingDays.join(', ')
   const primarySport = getPrimarySport(plan)
+  const anyStrength = allowed.includes('strength')
+    && weeks.some((w) => (w.targetLoadBySport.strength ?? 0) > 0)
   const weeksText = weeks.map((week) => {
     const validRange = getPlanWeekDateRange(plan, week)
     const expectedSessions = getExpectedSessionsForPlanWeek(plan, week)
@@ -324,10 +361,12 @@ export function buildWeekBatchUserPrompt(input: WeekBatchPromptInput): string {
     '',
     retryInstruction ? `Corrección del intento anterior:\n${retryInstruction}\n` : '',
     strictFormatting ? 'Modo estricto: devuelve exactamente dos create_week, una por cada targetDate indicado, sin mezclar fechas entre semanas y con la cantidad exacta de sesiones válidas por semana.' : '',
-    allowed.includes('strength') ? buildStrengthStructureSection() : '',
-    allowed.includes('strength') ? buildStrengthLoadPack({ strengthProfile: profile.strengthProfile }) : '',
+    anyStrength ? buildStrengthStructureSection() : '',
+    anyStrength ? buildStrengthLoadPack({ strengthProfile: profile.strengthProfile }) : '',
     '',
-    'Devuelve sólo el bloque <actions> con exactamente dos create_week, una para cada semana pedida.',
+    outputFormat === 'json'
+      ? 'Devuelve sólo un objeto JSON con actions[] y exactamente dos create_week, una para cada semana pedida. No uses wrappers XML, markdown ni texto explicativo.'
+      : 'Devuelve sólo el bloque <actions> con exactamente dos create_week, una para cada semana pedida.',
   ].filter(Boolean).join('\n')
 }
 

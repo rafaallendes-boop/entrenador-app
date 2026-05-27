@@ -30,11 +30,13 @@ describe('schedule utils', () => {
 
   it('maps onboarding availability to plan-training days in calendar order', () => {
     expect(mapOnboardingDaysToTrainingDays(['sáb', 'lun', 'vie'])).toEqual(['monday', 'friday', 'saturday'])
+    expect(mapOnboardingDaysToTrainingDays(['sab', 'mie', 'lun'])).toEqual(['monday', 'wednesday', 'saturday'])
   })
 
   it('clamps sessions per week to the current day availability', () => {
     expect(clampSessionsPerWeekToAvailability(5, ['monday', 'wednesday', 'friday'], false)).toBe(3)
     expect(clampSessionsPerWeekToAvailability(5, ['monday', 'wednesday', 'friday'], true)).toBe(5)
+    expect(clampSessionsPerWeekToAvailability(6, ['monday', 'wednesday', 'friday'], true, ['monday'])).toBe(4)
     expect(clampSessionsPerWeekToAvailability(3, [], false)).toBeUndefined()
   })
 })

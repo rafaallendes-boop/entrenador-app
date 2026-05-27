@@ -164,6 +164,23 @@ export async function downloadBetaQualitySnapshot(): Promise<string> {
   }
 }
 
+export async function resetDailyAIUsageForClasses(requestClasses: readonly AIRequestClass[], now = Date.now()): Promise<number> {
+  const start = startOfLocalDay(now)
+  const classSet = new Set(requestClasses)
+  const logs = await db.aiRequestLogs
+    .where('startedAt')
+    .aboveOrEqual(start)
+    .toArray()
+  const logsToDelete = logs.filter((log) => classSet.has(log.requestClass))
+  if (logsToDelete.length === 0) return 0
+  await db.aiRequestLogs.bulkDelete(logsToDelete.map((log) => log.traceId))
+  return logsToDelete.length
+}
+
+export function resetPlanBuilderDailyUsage(now = Date.now()): Promise<number> {
+  return resetDailyAIUsageForClasses(['plan_builder_pair', 'plan_builder_week'], now)
+}
+
 function startOfLocalDay(now: number): number {
   const date = new Date(now)
   date.setHours(0, 0, 0, 0)

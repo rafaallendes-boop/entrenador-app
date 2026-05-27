@@ -603,7 +603,7 @@ export default function AddSessionModal({ defaultDate, onClose }: Props) {
                           type="text"
                           value={exercise.name}
                           onChange={(event) => updateExercise(exercise.id, 'name', event.target.value)}
-                          placeholder={type === 'mobility' ? 'Ej: Hip flexor stretch' : 'Ej: Press banca'}
+                          placeholder={type === 'mobility' ? 'Ej: Flexor de cadera en banco' : 'Ej: Press banca'}
                           className="flex-1 rounded-lg border border-surface-border bg-surface px-2.5 py-1.5 text-sm text-ink placeholder-ink-faint focus:border-brand/50 focus:outline-none"
                         />
                         <button onClick={() => removeExercise(exercise.id)} className="p-1 text-ink-faint transition-colors hover:text-red-400">

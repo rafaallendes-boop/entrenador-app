@@ -324,6 +324,24 @@ describe('strengthSelector progression', () => {
     expect(selection.exercises.every((exercise) => exercise.intensity !== 'heavy')).toBe(true)
   })
 
+  it('treats recent exercise names as library ids when rotating support sessions', () => {
+    const selection = selectStrengthSession({
+      phase: 'peak',
+      fatigueLevel: 3,
+      recentExercises: ['Press Z', 'Press sobre cabeza', 'Plancha lateral con press de disco'],
+      goal: 'Fuerza de soporte squash',
+      sportProfile: 'sport_support',
+      primarySport: 'squash',
+      availableEquipment: ['barbell', 'dumbbell', 'kettlebell', 'bands', 'bodyweight', 'medicine_ball', 'cable', 'machine', 'bike'],
+      experienceLevel: 'advanced',
+      sessionDurationMin: 60,
+    })
+
+    const names = selection.exercises.map((exercise) => exercise.name)
+    expect(names).not.toContain('Press Z')
+    expect(names).not.toContain('Press sobre cabeza')
+  })
+
   it('uses duration as the main driver for strength density', () => {
     const longSupport = selectStrengthSession({
       phase: 'build',

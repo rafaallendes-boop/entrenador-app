@@ -33,6 +33,46 @@ export const DAY_OF_WEEK_TO_ONBOARDING: Record<DayOfWeek, OnboardingDayKey> = {
   sunday: 'dom',
 }
 
+const ONBOARDING_DAY_ALIASES: Record<string, OnboardingDayKey> = {
+  lun: 'lun',
+  lunes: 'lun',
+  mon: 'lun',
+  monday: 'lun',
+  mar: 'mar',
+  martes: 'mar',
+  tue: 'mar',
+  tuesday: 'mar',
+  mie: 'mié',
+  mié: 'mié',
+  miercoles: 'mié',
+  miércoles: 'mié',
+  wed: 'mié',
+  wednesday: 'mié',
+  jue: 'jue',
+  jueves: 'jue',
+  thu: 'jue',
+  thursday: 'jue',
+  vie: 'vie',
+  viernes: 'vie',
+  fri: 'vie',
+  friday: 'vie',
+  sab: 'sáb',
+  sáb: 'sáb',
+  sabado: 'sáb',
+  sábado: 'sáb',
+  sat: 'sáb',
+  saturday: 'sáb',
+  dom: 'dom',
+  domingo: 'dom',
+  sun: 'dom',
+  sunday: 'dom',
+}
+
+export function normalizeOnboardingDayKey(day: string | undefined): OnboardingDayKey | undefined {
+  if (!day) return undefined
+  return ONBOARDING_DAY_ALIASES[day.trim().toLowerCase()]
+}
+
 export function orderSelectedValues<T extends string>(values: readonly T[], order: readonly T[]): T[] {
   const unique = new Set(values)
   return order.filter((value): value is T => unique.has(value))
@@ -59,7 +99,10 @@ export function mapOnboardingDaysToTrainingDays(days: readonly string[] | undefi
 
   return orderSelectedValues(
     days
-      .map((day) => ONBOARDING_TO_DAY_OF_WEEK[day as OnboardingDayKey])
+      .map((day) => {
+        const normalized = normalizeOnboardingDayKey(day)
+        return normalized ? ONBOARDING_TO_DAY_OF_WEEK[normalized] : undefined
+      })
       .filter((day): day is DayOfWeek => day !== undefined),
     DAY_OF_WEEK_ORDER,
   )
@@ -69,10 +112,16 @@ export function clampSessionsPerWeekToAvailability(
   sessionsPerWeek: number | undefined,
   trainingDays: readonly DayOfWeek[],
   allowDoubleSession: boolean,
+  doubleSessionDays?: readonly DayOfWeek[],
 ): number | undefined {
   if (sessionsPerWeek == null) return undefined
 
-  const maxSessions = trainingDays.length * (allowDoubleSession ? 2 : 1)
+  const doubleCapacity = allowDoubleSession
+    ? (doubleSessionDays && doubleSessionDays.length > 0
+      ? doubleSessionDays.filter((day) => trainingDays.includes(day)).length
+      : trainingDays.length)
+    : 0
+  const maxSessions = trainingDays.length + doubleCapacity
   if (maxSessions <= 0) return undefined
 
   return Math.min(sessionsPerWeek, maxSessions)

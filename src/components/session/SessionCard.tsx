@@ -8,6 +8,7 @@ import SessionTypeIcon from './SessionTypeIcon'
 import ExerciseChecklist from './ExerciseChecklist'
 import { useTrainingStore } from '../../store/useTrainingStore'
 import { normalizeGeneratedProtocol } from '../../services/trainingProtocols'
+import { formatMobilityFocusAreas, normalizeMobilityTargetStructure } from '../../services/training/mobilitySessionLibrary'
 
 const STATUS_CONFIG: Record<SessionStatus, { label: string; badge: string; icon: string }> = {
   planned:   { label: 'Planificado', badge: 'bg-surface-raised text-ink-faint border border-surface-border',       icon: '○' },
@@ -90,15 +91,16 @@ export default function SessionCard({ session, compact = false, onDelete }: Sess
     hasMobilityDetails ||
     hasProtocols ||
     hasCompletedFeedback
-  const isPracticeMatch = isPracticeSquashMatch(session)
-  const isCompetitionMatch = isCompetitionSquashMatch(session)
-  const subtypeLabel = session.subtype && !(isPracticeMatch || isCompetitionMatch)
-    ? SQUASH_SUBTYPE_LABELS[session.subtype]
-    : null
   const squashSessionKind = resolveSquashSessionKind(session)
   const squashSessionMode = session.type === 'squash' && session.squashDetails
     ? resolveSquashSessionMode(session.squashDetails)
     : undefined
+  const isPracticeMatch = isPracticeSquashMatch(session)
+  const isCompetitionMatch = isCompetitionSquashMatch(session)
+  const suppressMismatchMatchSubtype = session.subtype === 'match' && squashSessionKind && squashSessionKind !== 'match'
+  const subtypeLabel = session.subtype && !(isPracticeMatch || isCompetitionMatch || suppressMismatchMatchSubtype)
+    ? SQUASH_SUBTYPE_LABELS[session.subtype]
+    : null
   const squashKindBadgeLabel = (isPracticeMatch || isCompetitionMatch)
     ? null
     : squashSessionKind === 'mixed' && squashBlocks.length > 1
@@ -204,7 +206,7 @@ export default function SessionCard({ session, compact = false, onDelete }: Sess
               <span className="font-mono text-xs tabular-nums text-sky-300">{session.cyclingDetails.intensityReference}</span>
             )}
             {session.type === 'mobility' && (session.mobilityDetails?.focusAreas?.length ?? 0) > 0 && (
-              <span className="text-xs text-pink-300">{session.mobilityDetails?.focusAreas?.join(', ')}</span>
+              <span className="text-xs text-pink-300">{formatMobilityFocusAreas(session.mobilityDetails?.focusAreas)}</span>
             )}
             {session.opponent && <span className="text-xs text-ink-faint">vs {session.opponent}</span>}
           </div>
@@ -325,15 +327,15 @@ export default function SessionCard({ session, compact = false, onDelete }: Sess
                 </div>
                 <div className="rounded-lg bg-pink-500/10 p-2">
                   <p className="mb-0.5 text-[10px] font-medium uppercase tracking-wider text-pink-300/70">Foco</p>
-                  <p className="text-sm font-semibold text-pink-300">{session.mobilityDetails.focusAreas.join(', ')}</p>
+                  <p className="text-sm font-semibold text-pink-300">{formatMobilityFocusAreas(session.mobilityDetails.focusAreas)}</p>
                 </div>
               </div>
               <div className="rounded-lg bg-surface-raised p-2">
                 <p className="mb-0.5 text-[10px] font-medium uppercase tracking-wider text-ink-faint">Estructura</p>
-                <p className="text-sm text-ink">{session.mobilityDetails.targetStructure}</p>
+                <p className="text-sm text-ink">{normalizeMobilityTargetStructure(session.mobilityDetails.targetStructure)}</p>
               </div>
               {session.mobilityDetails.executionNotes && (
-                <p className="text-[11px] leading-snug text-ink-faint">{session.mobilityDetails.executionNotes}</p>
+                <p className="text-[11px] leading-snug text-ink-faint">{normalizeMobilityTargetStructure(session.mobilityDetails.executionNotes)}</p>
               )}
             </div>
           )}

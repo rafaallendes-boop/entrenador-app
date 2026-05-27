@@ -38,7 +38,12 @@
       "mcp__plugin_playwright_playwright__browser_click",
       "mcp__plugin_playwright_playwright__browser_snapshot",
       "mcp__plugin_playwright_playwright__browser_navigate",
-      "mcp__plugin_playwright_playwright__browser_console_messages"
+      "mcp__plugin_playwright_playwright__browser_console_messages",
+      "Bash(ls /Users/rafaallendes/.claude/plugins/cache/claude-plugins-official/superpowers/5.1.0/skills/subagent-driven-development/)",
+      "Read(//Users/rafaallendes/.claude/plugins/cache/claude-plugins-official/superpowers/5.1.0/skills/subagent-driven-development/**)",
+      "Bash(npx eslint *)",
+      "Bash(chmod +x /tmp/verify.sh)",
+      "Bash(/tmp/verify.sh)"
     ]
   }
 }

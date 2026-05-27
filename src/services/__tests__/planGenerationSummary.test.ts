@@ -108,6 +108,14 @@ describe('planGenerationSummary', () => {
 
   it('does not include strength or running for a squash-only plan', () => {
     const profile = makeProfile({
+      primarySport: 'squash',
+      secondarySports: [],
+      sportContext: {
+        enabledSports: ['squash'],
+        primarySport: 'squash',
+        secondarySports: [],
+        trainingPriority: 'performance',
+      },
       planWizardConfig: {
         ...makeProfile().planWizardConfig!,
         complementarySports: [],
@@ -157,6 +165,14 @@ describe('planGenerationSummary', () => {
 
   it('flags a validation warning when a disallowed sport appears', () => {
     const profile = makeProfile({
+      primarySport: 'squash',
+      secondarySports: [],
+      sportContext: {
+        enabledSports: ['squash'],
+        primarySport: 'squash',
+        secondarySports: [],
+        trainingPriority: 'performance',
+      },
       planWizardConfig: {
         ...makeProfile().planWizardConfig!,
         complementarySports: [],
@@ -173,7 +189,9 @@ describe('planGenerationSummary', () => {
     })
 
     expect(result.validationStatus).toBe('warning')
-    expect(result.validationIssues[0]).toContain('deporte no permitido')
+    expect(result.validationIssues).toEqual(
+      expect.arrayContaining([expect.stringContaining('deporte no permitido')]),
+    )
   })
 
   it('calculates sessionsBySport and excludedSports correctly', () => {

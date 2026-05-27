@@ -14,7 +14,11 @@ export interface SquashCompetitiveExposureSummary {
 }
 
 export function resolveSquashSessionMode(squashDetails?: SquashDetails): SquashSessionMode {
-  return squashDetails?.sessionMode ?? 'drill_session'
+  if (!squashDetails) return 'drill_session'
+  if (squashDetails.sessionMode === 'practice_match' && !hasDedicatedSquashMatchContent(squashDetails)) {
+    return 'drill_session'
+  }
+  return squashDetails.sessionMode ?? 'drill_session'
 }
 
 export function resolveSquashSessionKind(
@@ -28,15 +32,22 @@ export function resolveSquashSessionKind(
     return undefined
   }
 
-  if (details.sessionKind) return details.sessionKind
-
   const blockKinds = [...new Set((details.blocks ?? []).map((block) => block.kind))]
   if (blockKinds.length > 1) return 'mixed'
   if (blockKinds.length === 1) return blockKinds[0]
 
+  if (details.sessionKind) {
+    if (details.sessionKind === 'match' && !hasDedicatedSquashMatchContent(details)) return inferSquashKindFromDrills(details)
+    return details.sessionKind
+  }
+
   if (session.subtype === 'match' || session.subtype === 'competitive') return 'match'
   if (resolveSquashSessionMode(details) !== 'drill_session') return 'match'
 
+  return inferSquashKindFromDrills(details)
+}
+
+function inferSquashKindFromDrills(details: SquashDetails): SquashSessionKind {
   const counts = new Map<SquashSessionKind, number>()
   for (const drill of details.drills ?? []) {
     const definition = findSquashDrillByName(drill.name)
@@ -61,6 +72,19 @@ export function resolveSquashSessionKind(
   if (topKind === 'match' && sortedKinds.length > 1) return 'mixed'
   if (tiedTop.length > 1) return 'mixed'
   return topKind
+}
+
+function hasDedicatedSquashMatchContent(details: SquashDetails): boolean {
+  const blocks = details.blocks ?? []
+  if (blocks.length > 0) return blocks.every((block) => block.kind === 'match')
+  const drills = details.drills ?? []
+  if (drills.length === 0) return details.sessionKind === 'match'
+
+  return drills.every((drill) => {
+    const definition = findSquashDrillByName(drill.name)
+    if (definition && isSquashMatchDrill(definition)) return true
+    return /\b(match|partido)\b/i.test(drill.name)
+  })
 }
 
 export function isPracticeSquashMatch(session: Pick<Session, 'type' | 'subtype' | 'squashDetails'>): boolean {

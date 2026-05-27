@@ -28,6 +28,7 @@ const REFERENCE_TABLE: ReferenceEntry[] = [
   { pattern: /(press[\s-]+(de[\s-]+)?hombro|press[\s-]+sobre[\s-]+cabeza|press[\s-]+militar|overhead[\s-]+press|\bohp\b|strict[\s-]+press)/i, lift: 'overheadPress', factor: 1.0 },
   // Squat variants (front before generic so "front squat" wins over "squat")
   { pattern: /(sentadilla[\s-]+frontal|front[\s-]+squat)/i, lift: 'squat', factor: 0.85 },
+  { pattern: /(goblet|sentadilla[\s-]+goblet)/i, lift: 'squat', factor: 0.3 },
   { pattern: /(b[uú]lgar|split[\s-]+squat)/i, lift: 'squat', factor: 0.35 },
   { pattern: /(zancad|\blunge(s)?\b)/i, lift: 'squat', factor: 0.4 },
   { pattern: /(hip[\s-]+thrust|empuje[\s-]+de[\s-]+cadera|glute[\s-]+bridge)/i, lift: 'squat', factor: 1.2 },

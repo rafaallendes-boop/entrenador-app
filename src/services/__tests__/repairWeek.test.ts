@@ -176,6 +176,84 @@ describe('repairGeneratedWeek', () => {
     expect(tempo?.intervalStructure?.blocks[1].targetPace).toBe('4:25-4:35 /km')
   })
 
+  it('aligns squash match metadata when the actual blocks are shadows and control', () => {
+    const sessions: CoachSessionProposal[] = [
+      {
+        date: '2026-05-04',
+        timeBlock: 'AM',
+        sessionType: 'squash',
+        subtype: 'match',
+        title: 'Squash - Sombras y Salidas',
+        durationMin: 60,
+        objective: 'Control y desplazamientos',
+        squashDetails: {
+          trainingFocus: 'technical',
+          sessionMode: 'practice_match',
+          sessionKind: 'match',
+          blocks: [
+            { kind: 'shadows', drills: [{ name: 'Split-step y vuelta a la T' }] },
+            { kind: 'control', drills: [{ name: 'Voleas en solitario' }] },
+          ],
+          drills: [
+            { name: 'Split-step y vuelta a la T' },
+            { name: 'Voleas en solitario' },
+          ],
+        },
+      },
+      { date: '2026-05-06', timeBlock: 'AM', sessionType: 'running', title: 'Run', durationMin: 45, objective: 'obj' },
+      { date: '2026-05-08', timeBlock: 'AM', sessionType: 'strength', title: 'Strength', durationMin: 45, objective: 'obj' },
+      { date: '2026-05-09', timeBlock: 'AM', sessionType: 'recovery', title: 'Recovery', durationMin: 30, objective: 'obj' },
+    ]
+
+    const { sessions: repaired, meta } = repairGeneratedWeek(sessions, mockContext)
+    const squash = repaired.find((session) => session.date === '2026-05-04' && session.sessionType === 'squash')
+
+    expect(squash?.squashDetails?.sessionMode).toBe('drill_session')
+    expect(squash?.squashDetails?.sessionKind).toBe('mixed')
+    expect(squash?.subtype).toBe('training')
+    expect(squash?.title).toBe('Squash - Sombras y Control')
+    expect(meta.warnings).toEqual(expect.arrayContaining([expect.objectContaining({ code: 'squash_mode_aligned' })]))
+  })
+
+  it('keeps mixed technical plus points as drills instead of labeling the whole session match-play', () => {
+    const sessions: CoachSessionProposal[] = [
+      {
+        date: '2026-05-04',
+        timeBlock: 'AM',
+        sessionType: 'squash',
+        subtype: 'match',
+        title: 'Squash - Técnica Aplicada',
+        durationMin: 60,
+        objective: 'Aplicacion tactica',
+        squashDetails: {
+          trainingFocus: 'tactical',
+          sessionMode: 'practice_match',
+          sessionKind: 'match',
+          blocks: [
+            { kind: 'technical', drills: [{ name: 'Ataque desde tres cuartos de cancha' }] },
+            { kind: 'match', drills: [{ name: 'Partido con ataque temprano' }] },
+          ],
+          drills: [
+            { name: 'Ataque desde tres cuartos de cancha' },
+            { name: 'Partido con ataque temprano' },
+          ],
+        },
+      },
+      { date: '2026-05-06', timeBlock: 'AM', sessionType: 'running', title: 'Run', durationMin: 45, objective: 'obj' },
+      { date: '2026-05-08', timeBlock: 'AM', sessionType: 'strength', title: 'Strength', durationMin: 45, objective: 'obj' },
+      { date: '2026-05-09', timeBlock: 'AM', sessionType: 'recovery', title: 'Recovery', durationMin: 30, objective: 'obj' },
+    ]
+
+    const { sessions: repaired, meta } = repairGeneratedWeek(sessions, mockContext)
+    const squash = repaired.find((session) => session.date === '2026-05-04' && session.sessionType === 'squash')
+
+    expect(squash?.squashDetails?.sessionMode).toBe('drill_session')
+    expect(squash?.squashDetails?.sessionKind).toBe('mixed')
+    expect(squash?.subtype).toBe('training')
+    expect(squash?.title).toBe('Squash - Técnica y Juego Condicionado')
+    expect(meta.warnings).toEqual(expect.arrayContaining([expect.objectContaining({ code: 'squash_mode_aligned' })]))
+  })
+
   it('3. moves sessions on disallowed days to allowed days', () => {
     // Thursday is not allowed
     const sessions: CoachSessionProposal[] = [

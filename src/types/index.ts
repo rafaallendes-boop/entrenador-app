@@ -46,6 +46,8 @@ export interface AITechnicalResult {
   fallbackUsed?: boolean
   proposalCreated?: boolean
   responseCharCount?: number
+  responsePreview?: string
+  finishReason?: string
   actionCount?: number
   warnings?: string[]
   firstChunkAt?: number

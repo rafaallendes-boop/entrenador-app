@@ -1,8 +1,10 @@
 import { CheckCircle2, Loader2, ThumbsDown, ThumbsUp, X, Zap } from 'lucide-react'
 import { useState } from 'react'
-import type { CoachProposal, CyclingDetails, ExerciseGroup, GeneratedProtocol, MobilityDetails, Session, SquashSessionBlockKind, SquashSessionMode } from '../../types'
+import type { CoachProposal, CyclingDetails, ExerciseGroup, GeneratedProtocol, MobilityDetails, Session, SquashDetails, SquashSessionBlockKind, SquashSessionMode } from '../../types'
 import { recordCoachFeedback } from '../../services/ai/aiTelemetry'
 import { resolveStrengthExerciseBlock } from '../../services/training/strengthSessionStructure'
+import { formatMobilityFocusAreas, normalizeMobilityTargetStructure } from '../../services/training/mobilitySessionLibrary'
+import { resolveSquashSessionMode } from '../../utils/squash'
 
 const ACTION_LABEL: Record<string, string> = {
   skip_session: 'Saltar sesion',
@@ -360,7 +362,7 @@ function renderProposalDetails(
           </p>
           {item.squashDetails.sessionMode && (
             <p className="mt-1 text-[10px] text-emerald-200/80">
-              {formatSquashSessionMode(item.squashDetails.sessionMode)}
+              {formatSquashSessionMode(resolveSquashSessionMode(item.squashDetails as SquashDetails))}
             </p>
           )}
           <p className="mt-1 text-[10px] leading-snug text-emerald-100/55">
@@ -429,11 +431,11 @@ function renderProposalDetails(
           <p className="text-[10px] text-pink-300/80 uppercase tracking-wide">Mobility</p>
           <p className="mt-1 text-[10px] text-ink-faint">
             {formatMobilityContext(item.mobilityDetails.context)}
-            {item.mobilityDetails.focusAreas.length > 0 ? ` · ${item.mobilityDetails.focusAreas.join(', ')}` : ''}
+            {item.mobilityDetails.focusAreas.length > 0 ? ` · ${formatMobilityFocusAreas(item.mobilityDetails.focusAreas)}` : ''}
           </p>
-          <p className="text-[10px] text-ink-faint/85">{item.mobilityDetails.targetStructure}</p>
+          <p className="text-[10px] text-ink-faint/85">{normalizeMobilityTargetStructure(item.mobilityDetails.targetStructure)}</p>
           {item.mobilityDetails.executionNotes && (
-            <p className="text-[10px] text-ink-faint/70">{item.mobilityDetails.executionNotes}</p>
+            <p className="text-[10px] text-ink-faint/70">{normalizeMobilityTargetStructure(item.mobilityDetails.executionNotes)}</p>
           )}
         </div>
       )}

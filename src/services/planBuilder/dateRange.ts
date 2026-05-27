@@ -76,5 +76,11 @@ export function getPlanWeekSessionCapacity(plan: TrainingPlan, week: TrainingPla
 }
 
 export function getExpectedSessionsForPlanWeek(plan: TrainingPlan, week: TrainingPlanWeek): number {
-  return Math.min(plan.wizardConfig.sessionsPerWeek, getPlanWeekSessionCapacity(plan, week))
+  const baseExpected = Math.min(plan.wizardConfig.sessionsPerWeek, getPlanWeekSessionCapacity(plan, week))
+  if (week.phase !== 'taper' && week.phase !== 'race') return baseExpected
+
+  const daysToEventFromWeekStart = Math.round((dateToUtcMs(plan.endDate) - dateToUtcMs(getPlanWeekDateRange(plan, week).startDate)) / DAY_MS)
+  if (daysToEventFromWeekStart <= 6) return Math.min(baseExpected, 4)
+  if (daysToEventFromWeekStart <= 13) return Math.min(baseExpected, 5)
+  return Math.min(baseExpected, Math.max(4, plan.wizardConfig.sessionsPerWeek - 1))
 }

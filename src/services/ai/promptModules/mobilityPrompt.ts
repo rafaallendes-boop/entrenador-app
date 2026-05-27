@@ -12,6 +12,7 @@ import {
   type MobilityPhase,
   type MobilitySelectionResult,
 } from '../../training/mobilitySelector'
+import { normalizeMobilityTargetStructure } from '../../training/mobilitySessionLibrary'
 import {
   deriveFatigueLevel,
   getHistoricalSessions,
@@ -156,7 +157,7 @@ export function buildDynamicMobilitySelectionSection(
   lines.push(`Deporte principal: ${selectionContext.primarySport} · fase ${selectionContext.phase}`)
   lines.push(`Sesión sugerida: ${selection.session.name} (${selection.session.typicalDuration})`)
   lines.push(`Foco: ${selection.session.focus.join(', ')}`)
-  lines.push(`Estructura: ${selection.session.typicalStructure}`)
+  lines.push(`Estructura: ${normalizeMobilityTargetStructure(selection.session.typicalStructure)}`)
   if (sportDetail) {
     lines.push(`Macroplan mobility: ${sportDetail.weeklyIntent} · volumen ${sportDetail.volumeBias} · intensidad ${sportDetail.intensityBias}`)
   }
@@ -194,7 +195,8 @@ export function buildDynamicMobilitySelectionSectionV2(
     'DETALLE EXPLICITO PARA MOBILITY:',
     `- Usa mobilityDetails.context = "${inferMobilityPromptContext(selection)}"`,
     `- Usa mobilityDetails.focusAreas con focos derivados de la seleccion actual`,
-    `- Usa mobilityDetails.targetStructure con una estructura breve y accionable`,
+    `- Usa mobilityDetails.targetStructure en español claro, con ejercicios y dosis: "Estocada larga con rotacion 5/lado + Flujo 90/90 de cadera 2 min/lado + Rotacion toracica 10/lado..."`,
+    '- No uses nombres en ingles como World greatest stretch, child pose, ankle circles o thoracic rotation; traducelos.',
     '- Evita sesiones llamadas solo "Movilidad" sin contexto ni foco anatomico',
   ].join('\n')
 
@@ -214,7 +216,7 @@ function buildCompactMobilitySelectionSection(
   lines.push(`Deporte principal: ${selectionContext.primarySport} · fase ${selectionContext.phase}`)
   lines.push(`Sesión sugerida: ${selection.session.name} (${selection.session.typicalDuration})`)
   lines.push(`Foco: ${selection.session.focus.join(', ')}`)
-  lines.push(`Estructura: ${selection.session.typicalStructure}`)
+  lines.push(`Estructura: ${normalizeMobilityTargetStructure(selection.session.typicalStructure)}`)
   if (sportDetail) {
     lines.push(`Macroplan mobility: ${sportDetail.weeklyIntent}`)
   }

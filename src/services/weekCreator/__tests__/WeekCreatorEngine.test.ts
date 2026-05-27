@@ -991,82 +991,45 @@ describe('WeekCreatorEngine', () => {
     expect(response.message).toContain('evitar repetir los mismos drills')
   })
 
-  it('retries when two strength sessions repeat exactly the same exercises', async () => {
+  it('repairs duplicate strength sessions locally instead of retrying the whole week', async () => {
     const repeatedExercises = [
       { name: 'Sentadilla', sets: 4, reps: 6, group: 'legs' },
       { name: 'Press banca', sets: 4, reps: 6, group: 'push' },
     ]
 
-    mockProviderCall
-      .mockImplementationOnce(async (request: { requestClass: string; traceId: string }) => ({
-        text: '<actions>' + JSON.stringify([
-          {
-            type: 'create_week',
-            reason: 'Semana fuerza repetida',
-            targetDate: '2026-05-04',
-            sessions: [
-              {
-                date: '2026-05-04',
-                timeBlock: 'AM',
-                sessionType: 'strength',
-                title: 'Fuerza A',
-                durationMin: 60,
-                objective: 'Fuerza base',
-                exercises: repeatedExercises,
-              },
-              {
-                date: '2026-05-06',
-                timeBlock: 'AM',
-                sessionType: 'strength',
-                title: 'Fuerza B',
-                durationMin: 60,
-                objective: 'Fuerza base',
-                exercises: repeatedExercises,
-              },
-            ],
-          },
-        ]) + '</actions>',
-        provider: 'mock',
-        model: 'mock-week-creator',
-        traceId: request.traceId,
-        requestClass: request.requestClass,
-      }))
-      .mockImplementationOnce(async (request: { requestClass: string; traceId: string }) => ({
-        text: '<actions>' + JSON.stringify([
-          {
-            type: 'create_week',
-            reason: 'Semana fuerza diferenciada',
-            targetDate: '2026-05-04',
-            sessions: [
-              {
-                date: '2026-05-04',
-                timeBlock: 'AM',
-                sessionType: 'strength',
-                title: 'Fuerza tren inferior',
-                durationMin: 60,
-                objective: 'Fuerza piernas',
-                exercises: repeatedExercises,
-              },
-              {
-                date: '2026-05-06',
-                timeBlock: 'AM',
-                sessionType: 'strength',
-                title: 'Fuerza tren superior',
-                durationMin: 60,
-                objective: 'Fuerza torso',
-                exercises: [
-                  { name: 'Press militar', sets: 4, reps: 6, group: 'push' },
-                  { name: 'Remo con barra', sets: 4, reps: 8, group: 'pull' },
-                ],
-              },
-            ],
-          },
-        ]) + '</actions>',
-        provider: 'mock',
-        model: 'mock-week-creator',
-        traceId: request.traceId,
-        requestClass: request.requestClass,
-      }))
+    mockProviderCall.mockImplementationOnce(async (request: { requestClass: string; traceId: string }) => ({
+      text: '<actions>' + JSON.stringify([
+        {
+          type: 'create_week',
+          reason: 'Semana fuerza repetida',
+          targetDate: '2026-05-04',
+          sessions: [
+            {
+              date: '2026-05-04',
+              timeBlock: 'AM',
+              sessionType: 'strength',
+              title: 'Fuerza A',
+              durationMin: 60,
+              objective: 'Fuerza base',
+              exercises: repeatedExercises,
+            },
+            {
+              date: '2026-05-06',
+              timeBlock: 'AM',
+              sessionType: 'strength',
+              title: 'Fuerza B',
+              durationMin: 60,
+              objective: 'Fuerza base',
+              exercises: repeatedExercises,
+            },
+          ],
+        },
+      ]) + '</actions>',
+      provider: 'mock',
+      model: 'mock-week-creator',
+      traceId: request.traceId,
+      requestClass: request.requestClass,
+    }))
 
     const context: ChatContext = {
       athleteProfile: makeProfile({
@@ -1098,11 +1061,13 @@ describe('WeekCreatorEngine', () => {
       { surface: 'chat', targetWeekStart: '2026-05-04' },
     )
 
-    expect(mockProviderCall).toHaveBeenCalledTimes(2)
-    expect(response.actions?.[0].sessions?.map((session) => session.title)).toEqual([
-      'Fuerza tren inferior',
-      'Fuerza tren superior',
-    ])
+    const strengthSignatures = (response.actions?.[0].sessions ?? [])
+      .filter((session) => session.sessionType === 'strength')
+      .map((session) => session.exercises?.map((exercise) => exercise.name).join('|'))
+
+    expect(mockProviderCall).toHaveBeenCalledTimes(1)
+    expect(response.fallbackUsed).toBeFalsy()
+    expect(new Set(strengthSignatures).size).toBe(strengthSignatures.length)
   })
 
   it('returns a local fallback week when both provider attempts miss create_week', async () => {

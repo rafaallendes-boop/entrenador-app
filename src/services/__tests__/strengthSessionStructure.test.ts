@@ -82,4 +82,27 @@ describe('normalizeStrengthSessionExercises', () => {
     expect(cardio.weight).toBeUndefined()
     expect(result.at(-1)?.group).toBe('cardio')
   })
+
+  it('does not prescribe barbell-scale loads for goblet squats or dumbbell accessories', () => {
+    const input: CoachExerciseProposal[] = [
+      { name: 'Sentadilla Goblet', sets: 3, reps: 10 },
+      { name: 'Press de Hombros con Mancuernas', sets: 3, reps: 12, weight: 80, targetPercent1RM: 60 },
+    ]
+    const result = enhanceStrengthSessionExercises(input, {
+      durationMin: 60,
+      strengthProfile: {
+        squat1RM: 120,
+        overheadPress1RM: 65,
+      },
+    })!
+
+    const goblet = result.find((exercise) => exercise.name === 'Sentadilla Goblet')!
+    const dumbbellPress = result.find((exercise) => exercise.name === 'Press de Hombros con Mancuernas')!
+
+    expect(goblet.weight).toBeLessThanOrEqual(30)
+    expect(goblet.targetPercent1RM).toBeUndefined()
+    expect(goblet.warmupSets).toBeUndefined()
+    expect(dumbbellPress.weight).toBe(50)
+    expect(dumbbellPress.targetPercent1RM).toBeUndefined()
+  })
 })

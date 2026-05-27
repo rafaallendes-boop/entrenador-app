@@ -7,13 +7,14 @@ import type {
   PlanWizardConfig,
   RunningIntervalStructure,
   RunningType,
+  SquashSessionKind,
   SupportedSport,
   WizardFatigueLevel,
 } from '../../types'
 import type { TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
 import { getExpectedSessionsForPlanWeek, getPlanWeekDateRange, isDateInsidePlanWeekRange } from './dateRange'
 import { selectSquashDrills, type SquashSelectionDesiredKind, type SquashSelectionPhase } from '../training/drillSelector'
-import { findSquashDrillByName, normalizeSquashDrillKey } from '../training/drillLibrary'
+import { findSquashDrillByName, isControlDrill, isShadowsDrill, isSquashMatchDrill, normalizeSquashDrillKey } from '../training/drillLibrary'
 import { selectRunningSession, type RunningPhase, type RunningSportProfile } from '../training/runningSelector'
 import {
   getTargetExerciseDensity,
@@ -27,7 +28,7 @@ import { enhanceStrengthSessionExercises, resolveStrengthExerciseBlock } from '.
 import { findStrengthExerciseByName, normalizeStrengthExerciseKey, type ExperienceLevel } from '../training/exerciseLibrary'
 import { selectMobilitySession, type MobilityPhase } from '../training/mobilitySelector'
 import { selectCyclingSession, type CyclingPhase, type CyclingSportProfile } from '../training/cyclingSelector'
-import type { MobilitySportContext } from '../training/mobilitySessionLibrary'
+import { normalizeMobilityDetails, type MobilitySportContext } from '../training/mobilitySessionLibrary'
 import type { CyclingRole } from '../training/cyclingSessionLibrary'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -109,14 +110,18 @@ export function repairGeneratedWeek(
 
   // 6. Complete sport details (best-effort)
   completeSportDetails(sessions, context, meta)
+  normalizeSquashSemanticMetadata(sessions, meta)
 
-  // 7. Balance session count
+  // 7. Keep taper/race weeks fresh even when model output is too voluminous.
+  sessions = normalizeCompetitionTaperLoad(sessions, context, meta)
+
+  // 8. Balance session count
   sessions = balanceSessionCount(sessions, context, meta)
 
-  // 8. Preserve primary-sport minimums after fallback/trim decisions
+  // 9. Preserve primary-sport minimums after fallback/trim decisions
   sessions = ensurePrimarySportMinimum(sessions, context, meta)
 
-  // 9. Diversify duplicated sport content after fallbacks are added
+  // 10. Diversify duplicated sport content after fallbacks are added
   diversifyDuplicateSquashSessions(sessions, context, meta)
 
   return { sessions, meta }
@@ -288,6 +293,10 @@ function completeSportDetails(
           if (!session.mobilityDetails) {
             completeMobilityDetails(session, context)
             meta.repairedSessionCount++
+          } else {
+            const before = JSON.stringify(session.mobilityDetails)
+            session.mobilityDetails = normalizeMobilityDetails(session.mobilityDetails)
+            if (before !== JSON.stringify(session.mobilityDetails)) meta.repairedSessionCount++
           }
           break
         case 'cycling':
@@ -344,6 +353,147 @@ function applySquashSelection(
     sessionKind: result.sessionKind,
     blocks: result.blocks,
   }
+}
+
+function normalizeSquashSemanticMetadata(sessions: CoachSessionProposal[], meta: RepairMeta): void {
+  for (const session of sessions) {
+    if (session.sessionType !== 'squash' || !session.squashDetails) continue
+
+    const details = session.squashDetails
+    const blockKinds = [...new Set((details.blocks ?? []).map((block) => block.kind))]
+    const hasBlocks = blockKinds.length > 0
+    const hasMatchBlock = blockKinds.includes('match')
+    const inferredKind = hasBlocks
+      ? blockKinds.length > 1 ? 'mixed' : blockKinds[0]
+      : inferSquashKindFromProposalDetails(session)
+    const dedicatedMatchContent = hasBlocks ? blockKinds.length === 1 && hasMatchBlock : inferredKind === 'match'
+
+    if (inferredKind && details.sessionKind !== inferredKind) {
+      details.sessionKind = inferredKind
+      meta.repairedSessionCount++
+      meta.warnings.push({
+        code: 'squash_kind_aligned',
+        message: `Se alineó el tipo de sesión squash con sus bloques reales (${inferredKind}).`,
+        sessionDate: session.date,
+      })
+    }
+
+    if (details.sessionMode === 'practice_match' && !dedicatedMatchContent) {
+      details.sessionMode = 'drill_session'
+      meta.repairedSessionCount++
+      meta.warnings.push({
+        code: 'squash_mode_aligned',
+        message: 'Se cambió match-play por sesión de drills porque los bloques eran técnicos/control/sombras.',
+        sessionDate: session.date,
+      })
+    }
+
+    const alignedSubtype = resolveSquashSubtypeFromKind(inferredKind, session.subtype)
+    if (alignedSubtype && session.subtype !== alignedSubtype && shouldAlignSquashSubtype(session.subtype)) {
+      session.subtype = alignedSubtype
+      meta.repairedSessionCount++
+      meta.warnings.push({
+        code: 'squash_subtype_aligned',
+        message: `Se alineó el subtipo squash con el contenido real (${alignedSubtype}).`,
+        sessionDate: session.date,
+      })
+    }
+
+    const alignedTitle = buildSquashTitleFromKind(inferredKind, blockKinds)
+    if (alignedTitle && shouldAlignSquashTitle(session.title, inferredKind, blockKinds)) {
+      session.title = alignedTitle
+      meta.repairedSessionCount++
+      meta.warnings.push({
+        code: 'squash_title_aligned',
+        message: `Se alineó el título squash con sus bloques reales (${alignedTitle}).`,
+        sessionDate: session.date,
+      })
+    }
+  }
+}
+
+function shouldAlignSquashSubtype(subtype: CoachSessionProposal['subtype']): boolean {
+  return subtype === 'match' || subtype === 'competitive'
+}
+
+function resolveSquashSubtypeFromKind(
+  kind: SquashSessionKind,
+  currentSubtype: CoachSessionProposal['subtype'],
+): CoachSessionProposal['subtype'] {
+  if (kind === 'match') return 'match'
+  if (kind === 'control') return 'control'
+  if (currentSubtype === 'light') return 'light'
+  return 'training'
+}
+
+function buildSquashTitleFromKind(kind: SquashSessionKind, blockKinds: Array<string>): string {
+  if (kind === 'match') return 'Squash - Juego Condicionado'
+  if (kind === 'control') return 'Squash - Control y Precisión'
+  if (kind === 'shadows') return 'Squash - Sombras y Salidas'
+  if (kind === 'technical') return 'Squash - Técnica Aplicada'
+
+  const has = (blockKind: string) => blockKinds.includes(blockKind)
+  if (has('shadows') && has('control') && !has('match')) return 'Squash - Sombras y Control'
+  if (has('technical') && has('match')) return 'Squash - Técnica y Juego Condicionado'
+  if (has('control') && has('match')) return 'Squash - Control y Puntos'
+  return 'Squash - Sesión Mixta'
+}
+
+function shouldAlignSquashTitle(title: string, kind: SquashSessionKind, blockKinds: Array<string>): boolean {
+  const normalized = normalizeText(title)
+  const has = (blockKind: string) => blockKinds.includes(blockKind)
+  const saysMatch = normalized.includes('match') || normalized.includes('partido') || normalized.includes('juego condicionado')
+  const saysShadows = normalized.includes('sombra') || normalized.includes('salida')
+  const saysControl = normalized.includes('control') || normalized.includes('patron') || normalized.includes('precision')
+  const saysTechnical = normalized.includes('tecnica') || normalized.includes('aplicacion tactica') || normalized.includes('activacion')
+
+  if (saysMatch && kind !== 'match' && !has('match')) return true
+  if (saysShadows && !has('shadows')) return true
+  if (saysControl && kind !== 'control' && !has('control')) return true
+  if (saysTechnical && kind === 'match') return true
+  if (kind === 'mixed' && saysMatch && !has('match')) return true
+  if (kind === 'mixed' && has('shadows') && has('control') && !saysControl) return true
+  if (kind === 'mixed' && has('technical') && has('match') && !saysMatch) return true
+  if (kind === 'mixed' && has('control') && has('match') && !saysMatch) return true
+  return false
+}
+
+function normalizeText(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+}
+
+function inferSquashKindFromProposalDetails(session: CoachSessionProposal): SquashSessionKind {
+  const details = session.squashDetails
+  if (!details) return session.subtype === 'match' || session.subtype === 'competitive' ? 'match' : 'technical'
+  if (details.sessionKind && details.sessionKind !== 'match') return details.sessionKind
+
+  const counts = new Map<SquashSessionKind, number>()
+  for (const drill of details.drills ?? []) {
+    const definition = findSquashDrillByName(drill.name)
+    const kind = definition
+      ? isSquashMatchDrill(definition)
+        ? 'match'
+        : isShadowsDrill(definition)
+          ? 'shadows'
+          : isControlDrill(definition)
+            ? 'control'
+            : 'technical'
+      : /\b(match|partido)\b/i.test(drill.name)
+        ? 'match'
+        : 'technical'
+    counts.set(kind, (counts.get(kind) ?? 0) + 1)
+  }
+
+  if (counts.size === 0) return details.sessionKind ?? (session.subtype === 'match' || session.subtype === 'competitive' ? 'match' : 'technical')
+  const sortedKinds = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+  const [topKind, topCount] = sortedKinds[0]!
+  const tiedTop = sortedKinds.filter(([, count]) => count === topCount)
+  if (topKind === 'match' && sortedKinds.length > 1) return 'mixed'
+  if (tiedTop.length > 1) return 'mixed'
+  return topKind
 }
 
 function diversifyDuplicateSquashSessions(
@@ -751,11 +901,11 @@ function completeMobilityDetails(session: CoachSessionProposal, context: RepairC
     recentSessionIds: [],
     fatigueLevel: fatigueToNumber(context.wizardConfig.currentFatigue),
   })
-  session.mobilityDetails = {
+  session.mobilityDetails = normalizeMobilityDetails({
     focusAreas: result.recommendedFocus,
-    context: 'full_body',
+    context: 'full_body' as const,
     targetStructure: result.session.typicalStructure,
-  }
+  })
 }
 
 function completeCyclingDetails(session: CoachSessionProposal, context: RepairContext): void {
@@ -778,6 +928,59 @@ function completeCyclingDetails(session: CoachSessionProposal, context: RepairCo
   }
 }
 
+function normalizeCompetitionTaperLoad(
+  sessions: CoachSessionProposal[],
+  context: RepairContext,
+  meta: RepairMeta,
+): CoachSessionProposal[] {
+  if (context.week.phase !== 'taper' && context.week.phase !== 'race') return sessions
+
+  return sessions.map((session) => {
+    const daysToEvent = daysBetween(session.date, context.plan.endDate)
+    const finalWeek = daysToEvent <= 6
+    const caps = getTaperSessionCaps(session.sessionType, finalWeek)
+    const durationMin = Math.min(session.durationMin, caps.durationMin)
+    const rpe = session.rpe == null ? caps.rpe : Math.min(session.rpe, caps.rpe)
+
+    if (durationMin === session.durationMin && rpe === session.rpe) return session
+
+    meta.repairedSessionCount++
+    meta.warnings.push({
+      code: 'taper_load_reduced',
+      message: `Se redujo carga de "${session.title}" para proteger frescura en taper.`,
+      sessionDate: session.date,
+    })
+    return { ...session, durationMin, rpe }
+  })
+}
+
+function getTaperSessionCaps(
+  sessionType: CoachSessionProposal['sessionType'],
+  finalWeek: boolean,
+): { durationMin: number; rpe: number } {
+  switch (sessionType) {
+    case 'squash':
+      return finalWeek ? { durationMin: 40, rpe: 5 } : { durationMin: 50, rpe: 6 }
+    case 'strength':
+      return finalWeek ? { durationMin: 30, rpe: 4 } : { durationMin: 40, rpe: 5 }
+    case 'running':
+    case 'cycling':
+      return finalWeek ? { durationMin: 25, rpe: 3 } : { durationMin: 35, rpe: 4 }
+    case 'mobility':
+    case 'recovery':
+      return finalWeek ? { durationMin: 25, rpe: 2 } : { durationMin: 30, rpe: 3 }
+    default:
+      return finalWeek ? { durationMin: 25, rpe: 3 } : { durationMin: 35, rpe: 4 }
+  }
+}
+
+function daysBetween(fromDate: string, toDate: string): number {
+  const from = new Date(`${fromDate}T00:00:00.000Z`).getTime()
+  const to = new Date(`${toDate}T00:00:00.000Z`).getTime()
+  if (!Number.isFinite(from) || !Number.isFinite(to)) return Number.POSITIVE_INFINITY
+  return Math.round((to - from) / (24 * 60 * 60 * 1000))
+}
+
 // ─── 7. Balance session count ───────────────────────────────────────────────
 
 function balanceSessionCount(
@@ -790,9 +993,7 @@ function balanceSessionCount(
 
   // Trim excess: remove least important first (recovery > mobility > complementary)
   if (result.length > expected) {
-    const trimPriority: Record<string, number> = {
-      recovery: 0, nutrition: 1, mobility: 2,
-    }
+    const trimPriority = getTrimPriority(context)
     const primarySport = getPrimarySport(context)
     result.sort((a, b) => {
       const pa = trimPriority[a.sessionType] ?? (a.sessionType === primarySport ? 10 : 5)
@@ -841,6 +1042,25 @@ function balanceSessionCount(
   }
 
   return result
+}
+
+function getTrimPriority(context: RepairContext): Record<string, number> {
+  if (context.week.phase === 'taper' || context.week.phase === 'race') {
+    return {
+      running: 0,
+      cycling: 0,
+      recovery: 1,
+      nutrition: 2,
+      mobility: 3,
+      strength: 4,
+    }
+  }
+
+  return {
+    recovery: 0,
+    nutrition: 1,
+    mobility: 2,
+  }
 }
 
 function buildMobilityFallbackSession(date: string, context: RepairContext): CoachSessionProposal {
@@ -896,6 +1116,9 @@ function minimumPrimarySessionsForWeek(context: RepairContext): number {
     return expected >= 4
       ? Math.min(expected, Math.floor(expected / 2) + 1)
       : Math.min(expected, 2)
+  }
+  if (primarySport === 'squash' && (context.week.phase === 'taper' || context.week.phase === 'race')) {
+    return expected >= 4 ? 2 : Math.min(expected, 1)
   }
   return Math.min(expected, 1)
 }
@@ -1128,5 +1351,5 @@ function extractRecentStrengthExercises(previousWeek?: TrainingPlanWeek): string
   if (!previousWeek) return []
   return previousWeek.sessions
     .filter((s) => s.sessionType === 'strength' && s.exercises)
-    .flatMap((s) => s.exercises!.map((e) => e.name))
+    .flatMap((s) => s.exercises!.map(getStrengthExerciseKey))
 }

@@ -109,6 +109,34 @@ describe('SessionCard squash match badges', () => {
     expect(html).toContain('Sombras + Control')
   })
 
+  it('renders shadow/control sessions as drills when stale metadata says practice match', () => {
+    const html = renderToStaticMarkup(
+      <SessionCard
+        session={makeSession({
+          subtype: 'match',
+          title: 'Squash - Sombras y Salidas',
+          squashDetails: {
+            trainingFocus: 'technical',
+            sessionKind: 'match',
+            sessionMode: 'practice_match',
+            blocks: [
+              { kind: 'shadows', drills: [{ name: 'Split-step y vuelta a la T' }] },
+              { kind: 'control', drills: [{ name: 'Voleas en solitario' }] },
+            ],
+            drills: [
+              { name: 'Split-step y vuelta a la T' },
+              { name: 'Voleas en solitario' },
+            ],
+          },
+        })}
+      />,
+    )
+
+    expect(html).toContain('Sombras + Control')
+    expect(html).not.toContain('Match-play de entrenamiento')
+    expect(html).not.toContain('>Partido<')
+  })
+
   it('uses the session total duration as the main time reference for squash details', () => {
     const html = renderToStaticMarkup(
       <SessionCard

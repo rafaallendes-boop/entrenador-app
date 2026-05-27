@@ -1,7 +1,8 @@
-import type { CoachAction, CoachActionType, CoachExerciseProposal, CoachSessionProposal, CyclingDetails, GeneratedProtocol, MobilityDetails, RunningIntervalStructure, RunningType, SquashDetails, SquashDrill, SquashDrillExecutionMode, SquashSessionBlock, SquashSessionBlockKind, SquashSessionKind, SquashSessionMode, SquashSubtype, SquashTrainingFocus, TimeBlock, WarmupSet } from '../../types'
+import type { CoachAction, CoachActionType, CoachExerciseProposal, CoachSessionProposal, CyclingDetails, GeneratedProtocol, MobilityDetails, RunningIntervalStructure, RunningType, SessionType, SquashDetails, SquashDrill, SquashDrillExecutionMode, SquashSessionBlock, SquashSessionBlockKind, SquashSessionKind, SquashSessionMode, SquashSubtype, SquashTrainingFocus, TimeBlock, WarmupSet } from '../../types'
 import type { AIRawResponse, CoachNormalizedResponse, CreateWeekNormalizationDiagnostic } from './types'
 import { orderSquashBlocksForSession, orderSquashDrillsForSession } from '../training/drillLibrary'
 import { normalizeStrengthSessionExercises } from '../training/strengthSessionStructure'
+import { normalizeMobilityDetails } from '../training/mobilitySessionLibrary'
 
 const ACTIONS_BLOCK_RE = /<actions>([\s\S]*?)<\/actions>/i
 const ACTIONS_START_RE = /<actions>/i
@@ -57,7 +58,8 @@ export function normalizeSessionProposalDraft(
   if (!isValidDate(rawDate)) {
     return { droppedReason: typeof rawDate === 'string' ? `invalid-${dateField}` : `missing-${dateField}` }
   }
-  if (!isSessionType(record.sessionType)) {
+  const sessionType = normalizeSessionTypeDraft(record.sessionType)
+  if (!sessionType) {
     return { droppedReason: record.sessionType == null ? 'missing-sessionType' : 'invalid-sessionType' }
   }
   if (typeof record.title !== 'string' || !record.title.trim()) {
@@ -65,8 +67,9 @@ export function normalizeSessionProposalDraft(
   }
 
   const repairs: string[] = []
+  if (record.sessionType !== sessionType) repairs.push('sessionType')
   const title = record.title.trim()
-  const defaultDurationMin = DEFAULT_SESSION_DURATION_MIN[record.sessionType]
+  const defaultDurationMin = DEFAULT_SESSION_DURATION_MIN[sessionType]
   const durationMin = typeof record.durationMin === 'number' && record.durationMin >= 5
     ? record.durationMin
     : record.durationMin == null && defaultDurationMin != null
@@ -87,14 +90,19 @@ export function normalizeSessionProposalDraft(
   const session: CoachSessionProposal = {
     date: rawDate,
     timeBlock,
-    sessionType: record.sessionType,
+    sessionType,
     title,
     durationMin,
     objective,
   }
 
   if (isRpe(record.rpe)) session.rpe = record.rpe
+  const inferredSubtype = inferSquashSubtype(record.sessionType)
   if (isSquashSubtype(record.subtype)) session.subtype = record.subtype
+  else if (sessionType === 'squash' && inferredSubtype) {
+    session.subtype = inferredSubtype
+    repairs.push('subtype')
+  }
   if (isRunningType(record.runningType)) session.runningType = record.runningType
   if (typeof record.targetPaceMin === 'string') session.targetPaceMin = record.targetPaceMin
   if (typeof record.targetPaceMax === 'string') session.targetPaceMax = record.targetPaceMax
@@ -105,16 +113,16 @@ export function normalizeSessionProposalDraft(
     const exercises = record.exercises
       .map(validateExerciseProposal)
       .filter((item): item is CoachExerciseProposal => item != null)
-    session.exercises = record.sessionType === 'strength'
+    session.exercises = sessionType === 'strength'
       ? normalizeStrengthSessionExercises(exercises, { durationMin })
       : exercises
   }
   if (isGeneratedProtocol(record.warmup)) session.warmup = record.warmup
   if (isGeneratedProtocol(record.cooldown)) session.cooldown = record.cooldown
   if (isCyclingDetails(record.cyclingDetails)) session.cyclingDetails = record.cyclingDetails
-  if (isMobilityDetails(record.mobilityDetails)) session.mobilityDetails = record.mobilityDetails
+  if (isMobilityDetails(record.mobilityDetails)) session.mobilityDetails = normalizeMobilityDetails(record.mobilityDetails)
 
-  if (record.sessionType === 'squash') {
+  if (sessionType === 'squash') {
     const squashDetails = normalizeSquashDetailsDraft(record.squashDetails)
     if (squashDetails) {
       session.squashDetails = squashDetails.details
@@ -140,6 +148,7 @@ export function normalizeResponse(raw: AIRawResponse): CoachNormalizedResponse {
     /```[a-z]*\n?(<actions>[\s\S]*?<\/actions>)\n?```/gi,
     '$1',
   )
+  message = unwrapJsonCodeFence(message)
   message = message.replace(/```[a-z]*\n?\s*\n?```/g, '')
 
   let actions: CoachAction[] | undefined
@@ -531,7 +540,7 @@ function validateAction(obj: unknown): {
       if (isGeneratedProtocol(record.warmup)) action.warmup = record.warmup
       if (isGeneratedProtocol(record.cooldown)) action.cooldown = record.cooldown
       if (isCyclingDetails(record.cyclingDetails)) action.cyclingDetails = record.cyclingDetails
-      if (isMobilityDetails(record.mobilityDetails)) action.mobilityDetails = record.mobilityDetails
+      if (isMobilityDetails(record.mobilityDetails)) action.mobilityDetails = normalizeMobilityDetails(record.mobilityDetails)
       const squashDetails = normalizeSquashDetailsDraft(record.squashDetails)
       if (squashDetails) action.squashDetails = squashDetails.details
 
@@ -805,12 +814,41 @@ function isSessionType(value: unknown): value is CoachSessionProposal['sessionTy
   return typeof value === 'string' && VALID_SESSION_TYPES.has(value)
 }
 
+function normalizeSessionTypeDraft(value: unknown): SessionType | undefined {
+  if (isSessionType(value)) return value
+  if (typeof value !== 'string') return undefined
+
+  const normalized = value.trim().toLowerCase()
+  if (!normalized) return undefined
+
+  if (/\bsquash\b/.test(normalized)) return 'squash'
+  if (/\brunning\b|\brun\b|\bcorrer\b/.test(normalized)) return 'running'
+  if (/\bcycling\b|\bbike\b|\bbicicleta\b|\bciclismo\b/.test(normalized)) return 'cycling'
+  if (/\bstrength\b|\bfuerza\b|\bgym\b|\bpesas\b/.test(normalized)) return 'strength'
+  if (/\bmobility\b|\bmovilidad\b/.test(normalized)) return 'mobility'
+  if (/\brecovery\b|\brecuperaci[oó]n\b/.test(normalized)) return 'recovery'
+  if (/\bnutrition\b|\bnutrici[oó]n\b/.test(normalized)) return 'nutrition'
+
+  return undefined
+}
+
 function isTimeBlock(value: unknown): value is TimeBlock {
   return typeof value === 'string' && VALID_TIME_BLOCKS.has(value as TimeBlock)
 }
 
 function isSquashSubtype(value: unknown): value is SquashSubtype {
   return typeof value === 'string' && VALID_SQUASH_SUBTYPES.has(value as SquashSubtype)
+}
+
+function inferSquashSubtype(value: unknown): SquashSubtype | undefined {
+  if (typeof value !== 'string') return undefined
+  const normalized = value.trim().toLowerCase()
+  if (normalized.includes('control')) return 'control'
+  if (normalized.includes('match') || normalized.includes('partido')) return 'match'
+  if (normalized.includes('competitive') || normalized.includes('competitivo')) return 'competitive'
+  if (normalized.includes('light') || normalized.includes('suave')) return 'light'
+  if (normalized.includes('training') || normalized.includes('drill') || normalized.includes('tecnica') || normalized.includes('técnica')) return 'training'
+  return undefined
 }
 
 function isRunningType(value: unknown): value is RunningType {
@@ -825,6 +863,13 @@ function isValidDate(value: unknown): value is string {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
   const parsed = new Date(`${value}T00:00:00.000Z`)
   return !Number.isNaN(parsed.getTime()) && parsed.toISOString().startsWith(value)
+}
+
+function unwrapJsonCodeFence(message: string): string {
+  const trimmed = message.trim()
+  const match = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i)
+  if (match?.[1]) return match[1].trim()
+  return trimmed.replace(/^```(?:json)?\s*/i, '')
 }
 
 function extractActionsText(message: string): { actionsText: string; messageWithoutActions: string; openOnly: boolean } | null {

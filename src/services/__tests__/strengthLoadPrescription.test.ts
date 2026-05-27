@@ -35,6 +35,11 @@ describe('mapExerciseTo1RMReference', () => {
     expect(ref?.factor).toBe(0.85)
   })
 
+  it('matches goblet squat as an implement-limited squat variant', () => {
+    const ref = mapExerciseTo1RMReference('Sentadilla Goblet', fullProfile)
+    expect(ref).toMatchObject({ lift: 'squat', factor: 0.3 })
+  })
+
   it('matches hip thrust as squat-referenced with 1.2 factor', () => {
     const ref = mapExerciseTo1RMReference('Hip thrust con barra', fullProfile)
     expect(ref).toMatchObject({ lift: 'squat', factor: 1.2 })

@@ -1,6 +1,6 @@
 import { type ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Bell, Brain, Download, LogOut, ShieldAlert, Trash2, Upload, User } from 'lucide-react'
+import { Bell, Brain, Download, LogOut, RotateCcw, ShieldAlert, Trash2, Upload, User } from 'lucide-react'
 import Card from '../components/ui/Card'
 import AthleteProfileEditor from '../components/settings/AthleteProfileEditor'
 import SyncStatusBadge from '../components/sync/SyncStatusBadge'
@@ -8,6 +8,7 @@ import SyncDiagnosticsPanel from '../components/sync/SyncDiagnosticsPanel'
 import { ROUTES } from '../constants/routes'
 import {
   downloadAppDataExport,
+  downloadAthleteProfileTestExport,
   importAppDataFromFile,
   previewAppDataImportFile,
   type AppDataImportPreview,
@@ -44,6 +45,7 @@ import { buildMacroWeekCoherenceSummary } from '../services/macroWeekCoherence'
 import {
   downloadBetaQualitySnapshot,
   getBetaQualitySnapshot,
+  resetPlanBuilderDailyUsage,
   type BetaQualitySnapshot,
 } from '../services/ai/aiTelemetry'
 
@@ -95,12 +97,15 @@ export default function SettingsPage() {
   const [dataCounts, setDataCounts] = useState<LocalDataCounts | null>(null)
   const [clearSelection, setClearSelection] = useState<LocalDataSelection>(EMPTY_CLEAR_SELECTION)
   const [isExporting, setIsExporting] = useState(false)
+  const [isExportingProfile, setIsExportingProfile] = useState(false)
   const [isExportingBetaQuality, setIsExportingBetaQuality] = useState(false)
+  const [isResettingPlanBuilderUsage, setIsResettingPlanBuilderUsage] = useState(false)
   const [isImporting, setIsImporting] = useState(false)
   const [isClearing, setIsClearing] = useState(false)
   const [isDeletingCoachSessions, setIsDeletingCoachSessions] = useState(false)
   const [isWipingAllData, setIsWipingAllData] = useState(false)
   const [exportStatus, setExportStatus] = useState<string | null>(null)
+  const [profileExportStatus, setProfileExportStatus] = useState<string | null>(null)
   const [betaQualityStatus, setBetaQualityStatus] = useState<string | null>(null)
   const [betaQualitySnapshot, setBetaQualitySnapshot] = useState<BetaQualitySnapshot | null>(null)
   const [importStatus, setImportStatus] = useState<string | null>(null)
@@ -202,6 +207,19 @@ export default function SettingsPage() {
     }
   }
 
+  const handleExportAthleteProfile = async () => {
+    setIsExportingProfile(true)
+    setProfileExportStatus(null)
+    try {
+      const filename = await downloadAthleteProfileTestExport()
+      setProfileExportStatus(`Perfil exportado: ${filename}`)
+    } catch (error) {
+      setProfileExportStatus(error instanceof Error ? error.message : 'No se pudo exportar el perfil.')
+    } finally {
+      setIsExportingProfile(false)
+    }
+  }
+
   const handleExportBetaQuality = async () => {
     setIsExportingBetaQuality(true)
     setBetaQualityStatus(null)
@@ -213,6 +231,20 @@ export default function SettingsPage() {
       setBetaQualityStatus(error instanceof Error ? error.message : 'No se pudo exportar el reporte beta.')
     } finally {
       setIsExportingBetaQuality(false)
+    }
+  }
+
+  const handleResetPlanBuilderUsage = async () => {
+    setIsResettingPlanBuilderUsage(true)
+    setBetaQualityStatus(null)
+    try {
+      const deleted = await resetPlanBuilderDailyUsage()
+      await refreshBetaQualitySnapshot()
+      setBetaQualityStatus(`Plan Builder reiniciado para pruebas: ${deleted} traza(s) local(es) borrada(s).`)
+    } catch (error) {
+      setBetaQualityStatus(error instanceof Error ? error.message : 'No se pudo reiniciar el contador de Plan Builder.')
+    } finally {
+      setIsResettingPlanBuilderUsage(false)
     }
   }
 
@@ -685,14 +717,24 @@ export default function SettingsPage() {
                     Metadata local para revisar estabilidad sin guardar prompts ni respuestas completas.
                   </p>
                 </div>
-                <button
-                  onClick={() => void handleExportBetaQuality()}
-                  disabled={isExportingBetaQuality}
-                  className="inline-flex items-center gap-2 rounded-xl bg-brand px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-brand-light disabled:opacity-60"
-                >
-                  <Download size={13} />
-                  {isExportingBetaQuality ? 'Exportando...' : 'Exportar'}
-                </button>
+                <div className="flex shrink-0 flex-wrap justify-end gap-2">
+                  <button
+                    onClick={() => void handleResetPlanBuilderUsage()}
+                    disabled={isResettingPlanBuilderUsage}
+                    className="inline-flex items-center gap-2 rounded-xl bg-surface px-3 py-2 text-xs font-semibold text-brand-light transition-colors hover:bg-surface-border disabled:opacity-60"
+                  >
+                    <RotateCcw size={13} />
+                    {isResettingPlanBuilderUsage ? 'Reiniciando...' : 'Reset Plan Builder'}
+                  </button>
+                  <button
+                    onClick={() => void handleExportBetaQuality()}
+                    disabled={isExportingBetaQuality}
+                    className="inline-flex items-center gap-2 rounded-xl bg-brand px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-brand-light disabled:opacity-60"
+                  >
+                    <Download size={13} />
+                    {isExportingBetaQuality ? 'Exportando...' : 'Exportar'}
+                  </button>
+                </div>
               </div>
               <div className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
                 <BetaMetric label="Requests" value={betaQualitySnapshot?.requestCount ?? aiDebugRequests.length} />
@@ -838,6 +880,27 @@ export default function SettingsPage() {
               isSaving={isSaving}
               onSave={handleSaveAthleteProfile}
             />
+            <div className="mt-4 rounded-xl border border-surface-border bg-surface-raised px-3 py-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-ink">Export de pruebas del perfil</p>
+                  <p className="mt-1 text-xs leading-relaxed text-ink-muted">
+                    Incluye perfil deportivo, disponibilidad, ritmos, cargas, evento objetivo y plan activo.
+                  </p>
+                </div>
+                <button
+                  onClick={() => void handleExportAthleteProfile()}
+                  disabled={isExportingProfile}
+                  className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-surface px-3 py-2 text-xs font-semibold text-brand-light transition-colors hover:bg-surface-border disabled:opacity-60"
+                >
+                  <Download size={13} />
+                  {isExportingProfile ? 'Exportando...' : 'Exportar perfil'}
+                </button>
+              </div>
+              {profileExportStatus && (
+                <p className="mt-3 text-xs text-emerald-400">{profileExportStatus}</p>
+              )}
+            </div>
             <div className="mt-4 rounded-xl border border-surface-border bg-surface-raised px-3 py-3">
               <p className="text-xs text-ink-muted leading-relaxed">
                 Si quieres volver a la configuración guiada sin borrar toda la cuenta, puedes relanzar el onboarding.

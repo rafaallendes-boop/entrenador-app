@@ -1,5 +1,5 @@
 import type { CoachExerciseProposal, Exercise, ExerciseGroup, StrengthProfile } from '../../types'
-import { findStrengthExerciseByName, getExerciseGroupForDefinition } from './exerciseLibrary'
+import { findStrengthExerciseByName, getExerciseGroupForDefinition, type ExerciseDefinition } from './exerciseLibrary'
 import {
   buildWarmupRamp,
   computeWeightFromPercent,
@@ -102,11 +102,16 @@ function completeStrengthLoadAndEffort<T extends StrengthExerciseLike>(
 ): T {
   if (!isLoadBearingStrengthExercise(exercise)) return exercise
 
+  const definition = findStrengthExerciseByName(exercise.name)
+  const exposePercent1RM = shouldExposePercent1RM(exercise, definition)
   const targetRpe = exercise.targetRpe ?? (isMainLift ? 7 : 6)
   const targetPercent1RM = exercise.targetPercent1RM ?? inferTargetPercent1RM(exercise, isMainLift)
-  const withEffort = { ...exercise, targetRpe, targetPercent1RM }
+  const withEffort = sanitizePercentLoadMetadata({ ...exercise, targetRpe }, exposePercent1RM, targetPercent1RM)
 
-  if (exercise.weight != null) return withEffort
+  if (exercise.weight != null) {
+    const weight = limitImplementableWeight(exercise, definition, exercise.weight)
+    return sanitizeWarmupSets({ ...withEffort, weight }, exposePercent1RM, weight, targetPercent1RM)
+  }
 
   const reference = mapExerciseTo1RMReference(exercise.name, profile)
   if (!reference || reference.lift === 'pullUp') return withEffort
@@ -114,12 +119,12 @@ function completeStrengthLoadAndEffort<T extends StrengthExerciseLike>(
   const weight = computeWeightFromPercent(reference.referenceKg, targetPercent1RM, {
     factor: reference.factor,
   })
+  const implementableWeight = limitImplementableWeight(exercise, definition, weight)
 
-  return {
+  return sanitizeWarmupSets({
     ...withEffort,
-    weight,
-    warmupSets: exercise.warmupSets ?? buildWarmupRamp(weight, targetPercent1RM),
-  }
+    weight: implementableWeight,
+  }, exposePercent1RM, implementableWeight, targetPercent1RM)
 }
 
 function isLoadBearingStrengthExercise(exercise: StrengthExerciseLike): boolean {
@@ -148,6 +153,76 @@ function inferTargetPercent1RM(exercise: StrengthExerciseLike, isMainLift: boole
 
   if (!isMainLift) percent -= 5
   return Math.max(55, Math.min(85, percent))
+}
+
+function shouldExposePercent1RM(
+  exercise: StrengthExerciseLike,
+  definition: ExerciseDefinition | undefined,
+): boolean {
+  const name = normalizeText(exercise.name)
+  if (/\bmancuerna(s)?\b|\bdumbbell(s)?\b|\bkettlebell(s)?\b|\bpesa(s)?\s+rusa(s)?\b/.test(name) && !/\bbarra\b|\bbarbell\b/.test(name)) {
+    return false
+  }
+  if (!definition) return true
+  if (definition.id === 'goblet_squat') return false
+  const hasBarbellReference = definition.equipment.includes('barbell') || definition.equipment.includes('trap_bar') || definition.equipment.includes('machine')
+  return hasBarbellReference && !definition.unilateral
+}
+
+function limitImplementableWeight(
+  exercise: StrengthExerciseLike,
+  definition: ExerciseDefinition | undefined,
+  weight: number,
+): number {
+  if (!Number.isFinite(weight) || weight <= 0) return weight
+  const maxWeight = getImplementableMaxWeight(exercise, definition)
+  if (maxWeight == null) return weight
+  return Math.min(weight, maxWeight)
+}
+
+function getImplementableMaxWeight(
+  exercise: StrengthExerciseLike,
+  definition: ExerciseDefinition | undefined,
+): number | undefined {
+  const name = normalizeText(exercise.name)
+  if (definition?.id === 'goblet_squat' || /\bgoblet\b/.test(name)) return 40
+  if (definition?.unilateral || /\b(bulgar|zancada|lunge|split\s*squat|step\s*up|subida)\b/.test(name)) return 50
+  if (/\bremo\b.*\bmancuerna\b|\bdumbbell\s*row\b/.test(name)) return 45
+  if (/\bpress\b.*\bmancuerna(s)?\b|\bdumbbell\s*press\b/.test(name)) return 50
+  if (definition?.equipment.includes('kettlebell') && !definition.equipment.includes('barbell')) return 40
+  if (definition?.equipment.includes('dumbbell') && !definition.equipment.includes('barbell')) return 50
+  if (definition?.equipment.includes('medball')) return 15
+  if (definition?.equipment.includes('plate')) return 25
+  return undefined
+}
+
+function sanitizePercentLoadMetadata<T extends StrengthExerciseLike>(
+  exercise: T,
+  exposePercent1RM: boolean,
+  targetPercent1RM: number,
+): T {
+  if (exposePercent1RM) return { ...exercise, targetPercent1RM }
+  const rest = { ...exercise }
+  delete rest.targetPercent1RM
+  delete rest.warmupSets
+  return rest as T
+}
+
+function sanitizeWarmupSets<T extends StrengthExerciseLike>(
+  exercise: T,
+  exposePercent1RM: boolean,
+  weight: number,
+  targetPercent1RM: number,
+): T {
+  if (!exposePercent1RM) {
+    const rest = { ...exercise }
+    delete rest.warmupSets
+    return rest as T
+  }
+  return {
+    ...exercise,
+    warmupSets: exercise.warmupSets ?? buildWarmupRamp(weight, targetPercent1RM),
+  }
 }
 
 function extractRepresentativeReps(reps: number | string): number | undefined {

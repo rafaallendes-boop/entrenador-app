@@ -99,6 +99,18 @@ export interface AppDataExport {
   }
 }
 
+export interface AthleteProfileTestExport {
+  app: typeof BACKUP_APP_NAME
+  type: 'athlete_profile_test_export'
+  version: 1
+  exportedAt: string
+  exportedFromAppVersion: string
+  athleteProfile: AthleteProfile | null
+  goalEvents: GoalEvent[]
+  planWizardConfig: AthleteProfile['planWizardConfig'] | null
+  activeTrainingPlan: TrainingPlan | null
+}
+
 export interface AppDataImportResult {
   mode: 'replace' | 'merge'
   importedAt: string
@@ -142,6 +154,11 @@ function buildFilename(exportedAt: Date): string {
   return `entrenador-backup-${iso}.json`
 }
 
+function buildAthleteProfileFilename(exportedAt: Date): string {
+  const iso = exportedAt.toISOString().replace(/[:.]/g, '-')
+  return `entrenador-athlete-profile-${iso}.json`
+}
+
 export async function exportAppData(): Promise<{ filename: string; json: string }> {
   const exportedAt = new Date()
   const [sessions, dayLogs, weekSummaries, trainingPlans, trainingPlanWeeks, chatMessages, coachProposals, athleteProfiles] = await Promise.all([
@@ -176,6 +193,50 @@ export async function exportAppData(): Promise<{ filename: string; json: string 
     filename: buildFilename(exportedAt),
     json: JSON.stringify(payload, null, 2),
   }
+}
+
+export async function exportAthleteProfileTestData(): Promise<{ filename: string; json: string }> {
+  const exportedAt = new Date()
+  const [profiles, activePlans] = await Promise.all([
+    db.athleteProfiles.toArray(),
+    db.trainingPlans.where('status').equals('active').toArray(),
+  ])
+  const athleteProfile = profiles.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))[0] ?? null
+  const activeTrainingPlan = activePlans.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))[0] ?? null
+
+  const payload: AthleteProfileTestExport = {
+    app: BACKUP_APP_NAME,
+    type: 'athlete_profile_test_export',
+    version: 1,
+    exportedAt: exportedAt.toISOString(),
+    exportedFromAppVersion: APP_INFO.version,
+    athleteProfile,
+    goalEvents: athleteProfile?.goalEvents ?? [],
+    planWizardConfig: athleteProfile?.planWizardConfig ?? null,
+    activeTrainingPlan,
+  }
+
+  return {
+    filename: buildAthleteProfileFilename(exportedAt),
+    json: JSON.stringify(payload, null, 2),
+  }
+}
+
+export async function downloadAthleteProfileTestExport(): Promise<string> {
+  const { filename, json } = await exportAthleteProfileTestData()
+  const blob = new Blob([json], { type: 'application/json;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+
+  try {
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = filename
+    anchor.click()
+  } finally {
+    URL.revokeObjectURL(url)
+  }
+
+  return filename
 }
 
 export async function downloadAppDataExport(): Promise<string> {
