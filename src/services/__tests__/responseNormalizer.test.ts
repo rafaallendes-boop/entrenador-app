@@ -242,6 +242,75 @@ describe('responseNormalizer', () => {
     expect(response.meta?.outcome).toBe('ok')
   })
 
+  it('does NOT emit low_density warning when strength session has 0 exercises (repair will fill them)', () => {
+    const response = normalizeResponse({
+      text: [
+        'Semana propuesta.',
+        '<actions>',
+        JSON.stringify([
+          {
+            type: 'create_week',
+            reason: 'Semana build',
+            sessions: [
+              {
+                date: '2026-04-08',
+                timeBlock: 'AM',
+                sessionType: 'strength',
+                title: 'Fuerza squash',
+                durationMin: 60,
+                objective: 'Sesion de fuerza completa',
+                exercises: [],
+              },
+            ],
+          },
+        ]),
+        '</actions>',
+      ].join('\n'),
+      provider: 'mock',
+    })
+
+    expect(response.actions).toHaveLength(1)
+    const warnings = response.meta?.warnings ?? []
+    const densityWarnings = warnings.filter((w) => w.startsWith('low_density:strength'))
+    expect(densityWarnings).toHaveLength(0)
+  })
+
+  it('DOES emit low_density warning when strength session has some (but too few) exercises', () => {
+    const response = normalizeResponse({
+      text: [
+        'Semana propuesta.',
+        '<actions>',
+        JSON.stringify([
+          {
+            type: 'create_week',
+            reason: 'Semana build',
+            sessions: [
+              {
+                date: '2026-04-08',
+                timeBlock: 'AM',
+                sessionType: 'strength',
+                title: 'Fuerza squash',
+                durationMin: 60,
+                objective: 'Sesion de fuerza',
+                exercises: [
+                  { name: 'Sentadilla', sets: 4, reps: 5 },
+                  { name: 'Press banca', sets: 3, reps: 8 },
+                ],
+              },
+            ],
+          },
+        ]),
+        '</actions>',
+      ].join('\n'),
+      provider: 'mock',
+    })
+
+    expect(response.actions).toHaveLength(1)
+    // normalizeStrengthSessionExercises adds a core block for durationMin >= 45,
+    // so 2 input exercises become 3 after normalization, still below the min of 5
+    expect(response.meta?.warnings).toContain('low_density:strength:60min:3/5')
+  })
+
   it('drops add_session when core fields are too incomplete to repair', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
 
@@ -530,6 +599,48 @@ describe('responseNormalizer', () => {
     expect(response.meta?.createWeekDiagnostics?.[0].repairedSessions).toEqual([
       { index: 0, repairs: ['sessionType', 'subtype', 'squashDetails'] },
     ])
+  })
+
+  it('recovers complete sessions from a truncated raw create_week JSON response', () => {
+    const response = normalizeResponse({
+      text: [
+        '{',
+        '"type":"create_week",',
+        '"targetDate":"2026-06-08",',
+        '"reason":"Respuesta parcial de Gemini",',
+        '"weekObjectives":["Mantener calidad"],',
+        '"sessions":[',
+        JSON.stringify({
+          date: '2026-06-08',
+          timeBlock: 'AM',
+          sessionType: 'squash/control',
+          title: 'Squash - Control',
+          durationMin: 60,
+          objective: 'Controlar la T y consistencia',
+        }),
+        ',{"date":"2026-06-09","timeBlock":"PM","sessionType":"strength","title":"Fuerza',
+      ].join(''),
+      provider: 'mock',
+      requestClass: 'plan_builder_week',
+    })
+
+    expect(response.actions).toHaveLength(1)
+    expect(response.actions?.[0]).toMatchObject({
+      type: 'create_week',
+      targetDate: '2026-06-08',
+      sessions: [
+        {
+          date: '2026-06-08',
+          sessionType: 'squash',
+          subtype: 'control',
+        },
+      ],
+    })
+    expect(response.meta?.likelyTruncated).toBe(true)
+    expect(response.meta?.createWeekDiagnostics?.[0]).toMatchObject({
+      rawSessions: 1,
+      validSessions: 1,
+    })
   })
 
   it('drops too-incomplete create_week session proposals with a clear reason', () => {

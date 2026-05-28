@@ -374,13 +374,17 @@ Notas:
 npm run e2e:plan
 npm run e2e:plan:headed
 npm run e2e:plan:generate
+npm run e2e:plan:generate:headed
+npm run e2e:plan:generate:quality
 npm run e2e:plan:accept
 ```
 
 Notas:
 
 - `e2e:plan` es seguro: recorre wizard hasta resumen y no guarda plan nuevo.
-- `e2e:plan:generate` genera un plan con Gemini y modifica draft/perfil.
+- `e2e:plan:generate` genera un plan con Gemini en Playwright headless y modifica draft/perfil.
+- `e2e:plan:generate:headed` hace lo mismo con navegador visible, útil para login.
+- `e2e:plan:generate:quality` genera y guarda el export Beta Quality en `scripts/e2e-artifacts/`.
 - `e2e:plan:accept` genera y acepta el plan; modifica datos dev/locales.
 
 ### Load Test
@@ -432,6 +436,12 @@ npm run e2e:plan
 
 ```bash
 npm run e2e:plan:generate
+```
+
+Para generar y exportar el reporte Beta Quality automáticamente:
+
+```bash
+npm run e2e:plan:generate:quality
 ```
 
 6. Antes de cualquier deploy:

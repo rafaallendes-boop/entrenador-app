@@ -301,6 +301,9 @@ function parseActionsBlock(jsonText: string): {
   try {
     parsed = JSON.parse(jsonText.trim())
   } catch {
+    const recoveredCreateWeek = recoverPartialCreateWeekActions(jsonText)
+    if (recoveredCreateWeek) return recoveredCreateWeek
+
     const fixedJson = extractJsonArray(jsonText)
     if (!fixedJson) {
       return {
@@ -351,6 +354,51 @@ function parseActionsBlock(jsonText: string): {
     likelyTruncated: invalidActionCount > 0 || droppedCreateWeekSessions || isLikelyTruncatedJson(jsonText),
     invalidActionCount,
     createWeekDiagnostics,
+  }
+}
+
+function recoverPartialCreateWeekActions(jsonText: string): {
+  actions: CoachAction[]
+  parseFailed: boolean
+  likelyTruncated: boolean
+  invalidActionCount: number
+  createWeekDiagnostics: CreateWeekNormalizationDiagnostic[]
+} | null {
+  if (!/"type"\s*:\s*"create_week"/.test(jsonText)) return null
+  if (!/"sessions"\s*:/.test(jsonText)) return null
+
+  const sessionCandidates = extractCompleteObjectsFromArrayProperty(jsonText, 'sessions')
+  if (sessionCandidates.length === 0) return null
+
+  const rawSessions = sessionCandidates
+    .map((candidate) => {
+      try {
+        return JSON.parse(candidate) as unknown
+      } catch {
+        return null
+      }
+    })
+    .filter((candidate): candidate is Record<string, unknown> => !!candidate && typeof candidate === 'object' && !Array.isArray(candidate))
+
+  if (rawSessions.length === 0) return null
+
+  const recoveredAction = {
+    type: 'create_week',
+    reason: extractJsonStringProperty(jsonText, 'reason') ?? 'Semana recuperada desde respuesta parcial.',
+    targetDate: extractJsonStringProperty(jsonText, 'targetDate'),
+    weekObjectives: extractStringArrayProperty(jsonText, 'weekObjectives'),
+    sessions: rawSessions,
+  }
+
+  const result = validateAction(recoveredAction)
+  const actions = result.action ? [result.action] : []
+  const diagnostics = result.createWeekDiagnostic ? [result.createWeekDiagnostic] : []
+  return {
+    actions,
+    parseFailed: actions.length === 0,
+    likelyTruncated: true,
+    invalidActionCount: actions.length > 0 ? 0 : rawSessions.length,
+    createWeekDiagnostics: diagnostics,
   }
 }
 
@@ -676,6 +724,7 @@ function getStrengthDensityWarnings(item: {
 
   const exerciseCount = item.exercises?.length ?? 0
   const minExpected = getMinimumStrengthExerciseCount(durationMin)
+  if (exerciseCount === 0) return []  // empty exercises will be filled by repair; not a density issue
   if (exerciseCount >= minExpected) return []
 
   return [`low_density:strength:${durationMin}min:${exerciseCount}/${minExpected}`]
@@ -915,6 +964,120 @@ function extractJsonArray(text: string): string | null {
   const end = text.lastIndexOf(']')
   if (start === -1 || end === -1 || end < start) return null
   return text.slice(start, end + 1)
+}
+
+function extractCompleteObjectsFromArrayProperty(text: string, propertyName: string): string[] {
+  const keyMatch = new RegExp(`"${escapeRegex(propertyName)}"\\s*:`).exec(text)
+  if (!keyMatch) return []
+
+  const arrayStart = text.indexOf('[', keyMatch.index + keyMatch[0].length)
+  if (arrayStart === -1) return []
+
+  const objects: string[] = []
+  let inString = false
+  let escaped = false
+  let depth = 0
+  let objectStart = -1
+
+  for (let index = arrayStart + 1; index < text.length; index += 1) {
+    const char = text[index]
+    if (escaped) {
+      escaped = false
+      continue
+    }
+    if (char === '\\' && inString) {
+      escaped = true
+      continue
+    }
+    if (char === '"') {
+      inString = !inString
+      continue
+    }
+    if (inString) continue
+
+    if (char === '{') {
+      if (depth === 0) objectStart = index
+      depth += 1
+      continue
+    }
+    if (char === '}') {
+      if (depth === 0) continue
+      depth -= 1
+      if (depth === 0 && objectStart !== -1) {
+        objects.push(text.slice(objectStart, index + 1))
+        objectStart = -1
+      }
+      continue
+    }
+    if (char === ']' && depth === 0) break
+  }
+
+  return objects
+}
+
+function extractJsonStringProperty(text: string, propertyName: string): string | undefined {
+  const match = new RegExp(`"${escapeRegex(propertyName)}"\\s*:\\s*"((?:\\\\.|[^"\\\\])*)"`).exec(text)
+  if (!match?.[1]) return undefined
+  try {
+    return JSON.parse(`"${match[1]}"`) as string
+  } catch {
+    return match[1]
+  }
+}
+
+function extractStringArrayProperty(text: string, propertyName: string): string[] | undefined {
+  const keyMatch = new RegExp(`"${escapeRegex(propertyName)}"\\s*:`).exec(text)
+  if (!keyMatch) return undefined
+  const arrayStart = text.indexOf('[', keyMatch.index + keyMatch[0].length)
+  if (arrayStart === -1) return undefined
+
+  const arrayText = extractBalancedJsonValue(text, arrayStart)
+  if (!arrayText) return undefined
+  try {
+    const parsed = JSON.parse(arrayText) as unknown
+    if (!Array.isArray(parsed)) return undefined
+    return parsed.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+  } catch {
+    return undefined
+  }
+}
+
+function extractBalancedJsonValue(text: string, start: number): string | null {
+  const opener = text[start]
+  const closer = opener === '[' ? ']' : opener === '{' ? '}' : null
+  if (!closer) return null
+
+  let inString = false
+  let escaped = false
+  let depth = 0
+  for (let index = start; index < text.length; index += 1) {
+    const char = text[index]
+    if (escaped) {
+      escaped = false
+      continue
+    }
+    if (char === '\\' && inString) {
+      escaped = true
+      continue
+    }
+    if (char === '"') {
+      inString = !inString
+      continue
+    }
+    if (inString) continue
+
+    if (char === opener) depth += 1
+    if (char === closer) {
+      depth -= 1
+      if (depth === 0) return text.slice(start, index + 1)
+    }
+  }
+
+  return null
+}
+
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
 function mapAddSessionDropReason(reason: string): string {

@@ -53,7 +53,14 @@ export function resolveStrengthExerciseBlock(exercise: Pick<StrengthExerciseLike
 function normalizeStrengthExerciseGroup<T extends StrengthExerciseLike>(exercise: T): T {
   const definition = findStrengthExerciseByName(exercise.name)
   const group = definition ? getStrengthBlockForDefinition(definition) : inferExerciseGroup(exercise)
-  return { ...exercise, group }
+  const reps = normalizePlankReps(exercise.name, exercise.reps)
+  return { ...exercise, group, reps }
+}
+
+function normalizePlankReps(name: string, reps: number | string): number | string {
+  if (typeof reps !== 'number') return reps
+  if (/plancha|plank/i.test(normalizeText(name))) return `${reps}s`
+  return reps
 }
 
 function getStrengthBlockForDefinition(definition: NonNullable<ReturnType<typeof findStrengthExerciseByName>>): ExerciseGroup {
@@ -128,6 +135,9 @@ function completeStrengthLoadAndEffort<T extends StrengthExerciseLike>(
 }
 
 function isLoadBearingStrengthExercise(exercise: StrengthExerciseLike): boolean {
+  const name = normalizeText(exercise.name ?? '')
+  if (/\b(warm.?up|cool.?down|calentamiento|enfriamiento|activaci[oó]n|activacion)\b/i.test(name)) return false
+
   const group = resolveStrengthExerciseBlock(exercise)
   if (group === 'core' || group === 'cardio' || group === 'mobility') return false
 

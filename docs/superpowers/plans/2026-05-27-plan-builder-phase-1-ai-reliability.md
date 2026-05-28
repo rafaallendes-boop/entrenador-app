@@ -1208,17 +1208,33 @@ git commit -m "chore(prompt-baseline): record plan_builder_pair size reduction p
 
 ## Task 10: Smoke E2E en dev contra Gemini real
 
-Sin TDD aquí — es validación manual de que la fase cumple su métrica de éxito.
+Validación Playwright contra Gemini real para confirmar que la fase cumple su métrica de éxito.
 
 - [ ] **Step 1: Setup dev**
 
 ```bash
-./start.sh
+npm run dev
 ```
 
 Confirmar `VITE_AI_PROVIDER=gemini` (o equivalente para hitting Gemini real, no mock).
 
-- [ ] **Step 2: Generar plan de 9 semanas en `/plans/builder`**
+- [ ] **Step 2: Generar plan de 9 semanas con Playwright**
+
+```bash
+npm run e2e:plan:generate
+```
+
+Si necesitas ver el navegador o regenerar login:
+
+```bash
+npm run e2e:plan:generate:headed
+```
+
+Si quieres dejar el JSON de Beta Quality listo para revisión:
+
+```bash
+npm run e2e:plan:generate:quality
+```
 
 Configuración mínima del wizard:
 - Evento: torneo squash a 9 semanas vista
@@ -1230,7 +1246,7 @@ Configuración mínima del wizard:
 
 - [ ] **Step 3: Validar en Settings → Beta Quality**
 
-Después de generar, abrir Settings → Beta Quality. Confirmar:
+Después de generar, abrir Settings → Beta Quality o revisar `scripts/e2e-artifacts/entrenador-beta-quality-*.json` si usaste `e2e:plan:generate:quality`. Confirmar:
 - `dailyUsage.plan_builder_week`: 9 (single como default).
 - Outcome de cada uno: `ok` (no `truncated_early`).
 - `responseCharCount` por trace > 5000 chars.

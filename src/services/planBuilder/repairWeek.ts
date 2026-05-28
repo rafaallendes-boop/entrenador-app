@@ -124,6 +124,12 @@ export function repairGeneratedWeek(
   // 10. Diversify duplicated sport content after fallbacks are added
   diversifyDuplicateSquashSessions(sessions, context, meta)
 
+  // 11. Diversify repeated strength exercises from previous week
+  repairDuplicateStrengthExercises(sessions, context, meta)
+
+  // 12. Check double session utilization
+  sessions = checkDoubleSessionUtilization(sessions, context, meta)
+
   return { sessions, meta }
 }
 
@@ -538,6 +544,44 @@ function diversifyDuplicateSquashSessions(
   }
 }
 
+function repairDuplicateStrengthExercises(
+  sessions: CoachSessionProposal[],
+  context: RepairContext,
+  meta: RepairMeta,
+): void {
+  if (!context.previousWeek) return
+
+  const recentExercises = new Set(extractRecentStrengthExercises(context.previousWeek))
+  if (recentExercises.size === 0) return
+
+  const strengthSessions = sessions.filter((s) => s.sessionType === 'strength')
+  if (strengthSessions.length === 0) return
+
+  let repairedCount = 0
+
+  for (const session of strengthSessions) {
+    const workExercises = (session.exercises ?? []).filter(isStrengthWorkExercise)
+    if (workExercises.length === 0) continue
+
+    const matching = workExercises.filter((e) => recentExercises.has(getStrengthExerciseKey(e)))
+    const matchCount = matching.length
+    const matchRatio = matchCount / workExercises.length
+
+    if (matchCount >= 4 || matchRatio >= 0.6) {
+      completeStrengthExercises(session, context, Array.from(recentExercises))
+      repairedCount++
+    }
+  }
+
+  if (repairedCount > 0) {
+    meta.repairedSessionCount += repairedCount
+    meta.warnings.push({
+      code: 'strength_duplicate_exercises_repaired',
+      message: `Se regeneraron ${repairedCount} sesión(es) de fuerza para evitar repetir los mismos ejercicios de la semana anterior.`,
+    })
+  }
+}
+
 function rebuildSquashDetailsAvoidingDuplicates(
   session: CoachSessionProposal,
   context: RepairContext,
@@ -942,15 +986,46 @@ function normalizeCompetitionTaperLoad(
     const durationMin = Math.min(session.durationMin, caps.durationMin)
     const rpe = session.rpe == null ? caps.rpe : Math.min(session.rpe, caps.rpe)
 
-    if (durationMin === session.durationMin && rpe === session.rpe) return session
+    const TAPER_LOAD_CAP = 70
+    let exercises = session.exercises
+    let loadCapped = false
+
+    if (session.sessionType === 'strength' && session.exercises && session.exercises.length > 0) {
+      const cappedExercises = session.exercises.map((ex) => {
+        if (ex.targetPercent1RM != null && ex.targetPercent1RM > TAPER_LOAD_CAP) {
+          const newWeight =
+            ex.weight != null
+              ? Math.round((ex.weight * TAPER_LOAD_CAP / ex.targetPercent1RM) / 2.5) * 2.5
+              : ex.weight
+          loadCapped = true
+          return { ...ex, targetPercent1RM: TAPER_LOAD_CAP, weight: newWeight }
+        }
+        return ex
+      })
+      if (loadCapped) exercises = cappedExercises
+    }
+
+    if (durationMin === session.durationMin && rpe === session.rpe && !loadCapped) return session
 
     meta.repairedSessionCount++
-    meta.warnings.push({
-      code: 'taper_load_reduced',
-      message: `Se redujo carga de "${session.title}" para proteger frescura en taper.`,
-      sessionDate: session.date,
-    })
-    return { ...session, durationMin, rpe }
+
+    if (durationMin !== session.durationMin || rpe !== session.rpe) {
+      meta.warnings.push({
+        code: 'taper_load_reduced',
+        message: `Se redujo carga de "${session.title}" para proteger frescura en taper.`,
+        sessionDate: session.date,
+      })
+    }
+
+    if (loadCapped) {
+      meta.warnings.push({
+        code: 'taper_load_capped',
+        message: `Se limitó la intensidad de ejercicios de fuerza en "${session.title}" al 70% para proteger frescura en taper.`,
+        sessionDate: session.date,
+      })
+    }
+
+    return { ...session, durationMin, rpe, exercises }
   })
 }
 
@@ -1161,6 +1236,80 @@ function ensurePrimarySportMinimum(
   }
 
   return next
+}
+
+// ─── 12. Double session utilization ─────────────────────────────────────────
+
+function checkDoubleSessionUtilization(
+  sessions: CoachSessionProposal[],
+  context: RepairContext,
+  meta: RepairMeta,
+): CoachSessionProposal[] {
+  if (!context.wizardConfig.allowDoubleSession) return sessions
+  const doubleDays = context.wizardConfig.doubleSessionDays
+  if (!doubleDays || doubleDays.length < 2) return sessions
+
+  const allowedDates = getAllowedDatesInWeek(context)
+  const doubleDayDates = allowedDates.filter((d) => canUseDoubleSessionOnDate(d, context.wizardConfig))
+  if (doubleDayDates.length === 0) return sessions
+
+  // Build date → sessions map
+  const sessionsByDate = new Map<string, CoachSessionProposal[]>()
+  for (const s of sessions) {
+    const list = sessionsByDate.get(s.date) ?? []
+    list.push(s)
+    sessionsByDate.set(s.date, list)
+  }
+
+  const actualDoubles = doubleDayDates.filter((d) => (sessionsByDate.get(d)?.length ?? 0) >= 2).length
+  const utilization = actualDoubles / doubleDayDates.length
+  if (utilization >= 0.5) return sessions // good enough — no warning, no action
+
+  // Underutilized: best-effort relocation
+  const result = [...sessions]
+  let relocated = 0
+
+  // Compute non-double training days so we can protect full-spread schedules
+  const nonDoubleDayDates = allowedDates.filter((d) => !canUseDoubleSessionOnDate(d, context.wizardConfig))
+
+  for (const doubleDayDate of doubleDayDates) {
+    const onDoubleDay = sessionsByDate.get(doubleDayDate) ?? []
+    if (onDoubleDay.length >= 2) continue // already a double
+
+    const targetBlock: 'AM' | 'PM' = onDoubleDay.length === 0 ? 'AM' : 'PM'
+    if (result.some((s) => s.date === doubleDayDate && s.timeBlock === targetBlock)) continue
+
+    // Guard: if every non-double training day already has a session, relocating
+    // would create a gap — skip to avoid breaking a well-spread schedule.
+    const allNonDoubleDaysCovered = nonDoubleDayDates.every((d) => (sessionsByDate.get(d)?.length ?? 0) >= 1)
+    if (allNonDoubleDaysCovered) continue
+
+    // Find a moveable session: on a non-double day, only session on that date
+    const candidateIndex = result.findIndex((s) => {
+      if (s.date === doubleDayDate) return false
+      if (canUseDoubleSessionOnDate(s.date, context.wizardConfig)) return false // already on a double day
+      const siblings = sessionsByDate.get(s.date) ?? []
+      return siblings.length === 1 // sole session on that date — safe to move
+    })
+    if (candidateIndex === -1) continue
+
+    const candidate = result[candidateIndex]!
+    const moved = { ...candidate, date: doubleDayDate, timeBlock: targetBlock }
+    result[candidateIndex] = moved
+
+    // Update map
+    sessionsByDate.delete(candidate.date)
+    sessionsByDate.set(doubleDayDate, [...onDoubleDay, moved])
+    relocated++
+    meta.movedSessionCount++
+  }
+
+  meta.warnings.push({
+    code: 'double_session_underutilized',
+    message: `Solo ${actualDoubles}/${doubleDayDates.length} días dobles configurados se usaron${relocated > 0 ? ` — se reubicaron ${relocated} sesión(es)` : ''}.`,
+  })
+
+  return result.sort((a, b) => a.date.localeCompare(b.date) || a.timeBlock.localeCompare(b.timeBlock))
 }
 
 function getAllowedDatesInWeek(context: RepairContext): string[] {

@@ -34,15 +34,15 @@ export const AI_REQUEST_POLICIES: Record<AIRequestClass, AIRequestPolicy> = {
     allowFallback: true,
   },
   plan_builder_week: {
-    maxTokens: 3500,
-    temperature: 0.4,
-    timeoutMs: 30000,
+    maxTokens: 8000,
+    temperature: 0.35,
+    timeoutMs: 45000,
     allowFallback: true,
   },
   plan_builder_pair: {
-    maxTokens: 5500,
+    maxTokens: 12000,
     temperature: 0.35,
-    timeoutMs: 45000,
+    timeoutMs: 60000,
     allowFallback: true,
   },
   import_extract: {

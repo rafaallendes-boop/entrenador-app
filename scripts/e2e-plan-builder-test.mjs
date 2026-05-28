@@ -10,6 +10,8 @@
  *   npm run e2e:plan:headed
  *   npm run e2e:plan
  *   npm run e2e:plan:generate
+ *   npm run e2e:plan:generate:headed
+ *   npm run e2e:plan:generate:quality
  *   npm run e2e:plan:accept
  */
 
@@ -29,6 +31,7 @@ const OPTIONS = {
   accept: args.has('--accept'),
   headed: args.has('--headed'),
   debug: args.has('--debug'),
+  exportQuality: args.has('--export-quality'),
 }
 
 const TIMEOUTS = {
@@ -38,6 +41,8 @@ const TIMEOUTS = {
   generation: 10 * 60_000,
   save: 60_000,
 }
+
+const GENERATION_FINAL_STATE_RE = /Aceptar plan|Plan aceptado|La generación no produjo|La generacion no produjo|Error técnico|Error tecnico|Reintentar(?:\s+completo)?|Regenerar fallidas/i
 
 let passed = 0
 let failed = 0
@@ -328,28 +333,50 @@ async function initializeAndWaitForGeneration(page) {
   if (initializeClicked) ok('Initialize Protocol ejecutado')
   else ok('Plan Builder ya estaba inicializado')
 
-  await page.waitForFunction(
-    () => {
-      const body = document.body.textContent ?? ''
-      return /Aceptar plan|Plan aceptado|La generación no produjo|Error técnico|Reintentar completo|Regenerar fallidas/i.test(body)
-    },
-    undefined,
-    { timeout: TIMEOUTS.generation },
-  )
+  await waitForGenerationFinalState(page)
 
   const body = await getBodyText(page)
-  if (/La generación no produjo|Error técnico/i.test(body)) {
+  if (/La generación no produjo|La generacion no produjo|Error técnico|Error tecnico/i.test(body)) {
     fail('Generación terminó en error', body.slice(0, 260).replace(/\s+/g, ' '))
     return
   }
 
   if (/Aceptar plan|Plan aceptado/i.test(body)) {
     ok('Generación completó plan aceptable')
-  } else if (/Reintentar completo|Regenerar fallidas/i.test(body)) {
+  } else if (/Reintentar(?:\s+completo)?|Regenerar fallidas/i.test(body)) {
     fail('Generación quedó parcial o con semanas fallidas', body.slice(0, 260).replace(/\s+/g, ' '))
   } else {
     fail('Estado final de generación no reconocido', body.slice(0, 260).replace(/\s+/g, ' '))
   }
+}
+
+async function waitForGenerationFinalState(page) {
+  const startedAt = Date.now()
+  let lastProgress = ''
+
+  while (Date.now() - startedAt < TIMEOUTS.generation) {
+    const body = await getBodyText(page)
+    if (GENERATION_FINAL_STATE_RE.test(body)) return
+
+    const elapsedSec = Math.round((Date.now() - startedAt) / 1000)
+    const progressMatch = body.match(/(\d+)\/(\d+)\s+semanas\s+listas/i)
+    const currentWeekMatch = body.match(/Semana\s+(\d+)/i)
+    const progress = progressMatch
+      ? `${progressMatch[1]}/${progressMatch[2]} semanas listas`
+      : currentWeekMatch
+        ? `mostrando semana ${currentWeekMatch[1]}`
+        : 'sin estado final visible'
+
+    if (progress !== lastProgress || elapsedSec % 30 === 0) {
+      log(`Generación en curso (${elapsedSec}s): ${progress}`)
+      lastProgress = progress
+    }
+
+    await page.waitForTimeout(5_000)
+  }
+
+  const body = await getBodyText(page)
+  throw new Error(`Timeout esperando estado final de generación. Último estado: ${body.slice(0, 320).replace(/\s+/g, ' ')}`)
 }
 
 async function verifyGeneratedPlanShape(page) {
@@ -395,6 +422,23 @@ async function verifySettingsTelemetry(page) {
   }
 }
 
+async function exportBetaQualityIfRequested(page) {
+  if (!OPTIONS.exportQuality) return
+  step('10. Export Beta Quality JSON')
+  await goto(page, '/settings')
+  const betaQualityTitle = page.getByText('Beta quality local').first()
+  await betaQualityTitle.waitFor({ state: 'visible', timeout: 10_000 })
+  const betaQualityPanel = betaQualityTitle.locator('xpath=ancestor::div[contains(@class,"rounded-xl")][1]')
+  const exportButton = betaQualityPanel.getByRole('button', { name: /exportar/i })
+  const downloadPromise = page.waitForEvent('download', { timeout: 15_000 })
+  await exportButton.click()
+  const download = await downloadPromise
+  mkdirSync(ARTIFACT_DIR, { recursive: true })
+  const downloadPath = resolve(ARTIFACT_DIR, download.suggestedFilename())
+  await download.saveAs(downloadPath)
+  ok('Export Beta Quality descarga JSON', downloadPath)
+}
+
 async function saveFailureArtifacts(page) {
   if (failed === 0) return
   mkdirSync(ARTIFACT_DIR, { recursive: true })
@@ -413,6 +457,9 @@ function printSummary() {
   console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
   console.log(`  Resultado: ${passed}/${total} checks pasaron`)
   console.log(`  Modo: ${OPTIONS.accept ? 'generate+accept' : OPTIONS.generate ? 'generate' : 'review-only'}`)
+  if (OPTIONS.exportQuality) {
+    console.log(`  Quality artifact dir: ${ARTIFACT_DIR}`)
+  }
 
   if (browserEvents.length > 0 && OPTIONS.debug) {
     console.log('\n  Browser events:')
@@ -476,6 +523,7 @@ async function main() {
       await acceptGeneratedPlan(page)
     }
     await verifySettingsTelemetry(page)
+    await exportBetaQualityIfRequested(page)
   } catch (error) {
     fail('Error fatal del runner', error instanceof Error ? error.message : String(error))
   } finally {

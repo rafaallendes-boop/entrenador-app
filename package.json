@@ -19,7 +19,9 @@
     "e2e:dev:quality": "node scripts/e2e-coach-test.mjs --export-quality",
     "e2e:plan": "node scripts/e2e-plan-builder-test.mjs",
     "e2e:plan:headed": "node scripts/e2e-plan-builder-test.mjs --headed",
-    "e2e:plan:generate": "node scripts/e2e-plan-builder-test.mjs --generate --headed",
+    "e2e:plan:generate": "node scripts/e2e-plan-builder-test.mjs --generate",
+    "e2e:plan:generate:headed": "node scripts/e2e-plan-builder-test.mjs --generate --headed",
+    "e2e:plan:generate:quality": "node scripts/e2e-plan-builder-test.mjs --generate --export-quality",
     "e2e:plan:accept": "node scripts/e2e-plan-builder-test.mjs --accept --headed"
   },
   "dependencies": {
