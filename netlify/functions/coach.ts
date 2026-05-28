@@ -101,9 +101,7 @@ const SYSTEM_PROMPT_MAX_CHARS: Record<RequestClass, number> = {
   import_extract: 18000,
 }
 const USER_MESSAGE_MAX_CHARS = 8000
-const CONVERSATION_MAX_MESSAGES = 30
 const CONVERSATION_MESSAGE_MAX_CHARS = 4000
-const CONVERSATION_TOTAL_MAX_CHARS = 30000
 const TRACE_ID_MAX_CHARS = 160
 const RESPONSE_SCHEMA_MAX_CHARS = 20000
 // Netlify synchronous functions currently allow 60s; keep a small buffer for response finalization.
@@ -123,6 +121,122 @@ const rateLimitBuckets = new Map<string, { windowStart: number; count: number }>
 
 function json(statusCode: number, body: object): StreamingResponse {
   return { statusCode, headers: JSON_HEADERS, body: JSON.stringify(body) }
+}
+
+export interface ConversationMessage {
+  role: 'user' | 'assistant'
+  content: string
+}
+
+export function trimConversationHistory(
+  conversation: ConversationMessage[] | undefined,
+  maxMessages = 8,
+  maxChars = 8000,
+): ConversationMessage[] {
+  if (!conversation || conversation.length === 0) return []
+
+  const limit = maxMessages % 2 === 0 ? maxMessages : maxMessages - 1
+  const trimmed = conversation.slice(-limit)
+
+  let totalLength = 0
+  const result: ConversationMessage[] = []
+
+  for (let i = trimmed.length - 1; i >= 0; i--) {
+    const msg = trimmed[i]
+    if (totalLength + msg.content.length > maxChars) {
+      break
+    }
+    totalLength += msg.content.length
+    result.unshift(msg)
+  }
+
+  return result
+}
+
+function getISOForWeekdayOrRelative(dayKeyword: string): string {
+  const now = new Date()
+  const today = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()))
+
+  if (dayKeyword === 'hoy') {
+    return today.toISOString().split('T')[0]
+  }
+  if (dayKeyword === 'manana') {
+    const tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000)
+    return tomorrow.toISOString().split('T')[0]
+  }
+
+  const dayLabels = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo']
+  const targetIndex = dayLabels.indexOf(dayKeyword.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase())
+  if (targetIndex === -1) return ''
+
+  const currentDay = today.getUTCDay()
+  const currentWeekdayOffset = currentDay === 0 ? 6 : currentDay - 1
+
+  const diff = targetIndex - currentWeekdayOffset
+  const targetDate = new Date(today.getTime() + diff * 24 * 60 * 60 * 1000)
+
+  return targetDate.toISOString().split('T')[0]
+}
+
+export interface DeterministicAction {
+  type: string
+  reason: string
+  sessionId?: string
+  targetDate?: string
+  [key: string]: unknown
+}
+
+export function tryDeterministicBypass(userMessage: string): DeterministicAction[] | null {
+  const msg = userMessage.trim().toLowerCase()
+  const normalized = msg.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+
+  const daysRegexStr = '(lunes|martes|miercoles|jueves|viernes|sabado|domingo|hoy|manana)'
+
+  // Caso 1: Insertar descanso
+  const restPatterns = [
+    new RegExp(`(?:descanso|recuperacion|libre|off)\\s+(?:el\\s+|de\\s+|este\\s+|para\\s+el\\s+)?${daysRegexStr}`, 'i'),
+    new RegExp(`${daysRegexStr}\\s+(?:de\\s+)?(?:descanso|recuperacion|libre|off)`, 'i'),
+    new RegExp(`(?:pon|marca|inserta|agrega|deja|quiero)\\s+(?:un\\s+)?(?:descanso|recuperacion|libre|off)\\s*(?:el\\s+|para\\s+el\\s+|este\\s+)?${daysRegexStr}?`, 'i')
+  ]
+
+  for (const pattern of restPatterns) {
+    const match = normalized.match(pattern)
+    if (match) {
+      const day = match[1] || 'hoy'
+      const targetDate = getISOForWeekdayOrRelative(day)
+      return [{
+        type: 'insert_recovery',
+        reason: 'Solicitado por el usuario mediante atajo directo de descanso.',
+        targetDate: targetDate || '2026-01-01',
+      }]
+    }
+  }
+
+  // Caso 2: Borrar sesión
+  const deletePatterns = [
+    new RegExp(`(?:borra|elimina|quita|suspende)\\s+(?:el\\s+)?(?:entreno|entrenamiento|sesion)\\s+(?:del\\s+|de\\s+|este\\s+)?${daysRegexStr}`, 'i'),
+    new RegExp(`${daysRegexStr}\\s+(?:no\\s+entreno|sin\\s+entreno|eliminar\\s+entreno|borrar\\s+entreno)`, 'i')
+  ]
+
+  for (const pattern of deletePatterns) {
+    const match = normalized.match(pattern)
+    if (match) {
+      const day = match[1]
+      const targetDate = getISOForWeekdayOrRelative(day)
+      return [{
+        type: 'delete_session',
+        reason: 'Eliminación directa solicitada por el usuario.',
+        sessionId: 'placeholder-id',
+        targetDate: targetDate || '2026-01-01',
+      }]
+    }
+  }
+
+  return null
+}
+
+export function shouldUseDeterministicBypass(requestClass: RequestClass): boolean {
+  return requestClass === 'chat_action'
 }
 
 function parsePositiveInteger(value: string | undefined, fallback: number): number {
@@ -180,15 +294,12 @@ function validateCoachRequest(input: unknown): RequestValidationResult {
     return { ok: false, error: 'userMessage too long' }
   }
 
+  let processedConversation: ConversationMessage[] | undefined
   if (raw.conversation != null) {
     if (!Array.isArray(raw.conversation)) {
       return { ok: false, error: 'conversation must be an array' }
     }
-    if (raw.conversation.length > CONVERSATION_MAX_MESSAGES) {
-      return { ok: false, error: 'conversation too long' }
-    }
 
-    let totalChars = 0
     for (const message of raw.conversation) {
       if (
         !message
@@ -208,11 +319,9 @@ function validateCoachRequest(input: unknown): RequestValidationResult {
       if (candidate.content.length > CONVERSATION_MESSAGE_MAX_CHARS) {
         return { ok: false, error: 'conversation message too long' }
       }
-      totalChars += candidate.content.length
     }
-    if (totalChars > CONVERSATION_TOTAL_MAX_CHARS) {
-      return { ok: false, error: 'conversation total too long' }
-    }
+
+    processedConversation = trimConversationHistory(raw.conversation as ConversationMessage[], 8, 8000)
   }
 
   if (raw.maxTokens != null) {
@@ -256,7 +365,7 @@ function validateCoachRequest(input: unknown): RequestValidationResult {
     req: {
       systemPrompt: raw.systemPrompt,
       userMessage: raw.userMessage,
-      conversation: raw.conversation,
+      conversation: processedConversation,
       requestClass,
       traceId: raw.traceId,
       maxTokens: raw.maxTokens,
@@ -449,10 +558,34 @@ async function fetchJsonOrThrow(res: Response): Promise<unknown> {
   throw makeError(detail, res.status, 'server_error')
 }
 
-function buildGeminiGenerationConfig(req: CoachRequest): Record<string, unknown> {
+function supportsGeminiThinkingConfig(model: string): boolean {
+  return /gemini-2\.5-(flash|flash-lite)/i.test(model)
+}
+
+function getGeminiThinkingBudget(requestClass: RequestClass): number {
+  switch (requestClass) {
+    case 'plan_builder_week':
+    case 'plan_builder_pair':
+      return 1024
+    case 'chat_action':
+    case 'week_creator':
+      return 256
+    case 'chat_general':
+    case 'weekly_summary':
+    case 'import_extract':
+      return 0
+  }
+}
+
+function buildGeminiGenerationConfig(req: CoachRequest, model: string): Record<string, unknown> {
   const generationConfig: Record<string, unknown> = {
     maxOutputTokens: req.maxTokens ?? 1024,
     temperature: req.temperature ?? 0.7,
+  }
+  if (supportsGeminiThinkingConfig(model)) {
+    generationConfig.thinkingConfig = {
+      thinkingBudget: getGeminiThinkingBudget(normalizeRequestClass(req.requestClass)),
+    }
   }
   if (req.responseMimeType) generationConfig.responseMimeType = req.responseMimeType
   if (req.responseSchema) generationConfig.responseSchema = req.responseSchema
@@ -480,7 +613,7 @@ async function callGemini(
           })),
           { role: 'user', parts: [{ text: req.userMessage }] },
         ],
-        generationConfig: buildGeminiGenerationConfig(req),
+        generationConfig: buildGeminiGenerationConfig(req, model),
       }),
     },
   )
@@ -582,7 +715,7 @@ async function streamGemini(
           })),
           { role: 'user', parts: [{ text: req.userMessage }] },
         ],
-        generationConfig: buildGeminiGenerationConfig(req),
+        generationConfig: buildGeminiGenerationConfig(req, model),
       }),
     },
   )
@@ -969,6 +1102,39 @@ export const handler = stream(async (event: HandlerEvent): Promise<StreamingResp
       traceId: req.traceId,
       requestClass: normalizeRequestClass(req.requestClass),
     })
+  }
+
+  const requestClass = normalizeRequestClass(req.requestClass)
+  const bypassActions = shouldUseDeterministicBypass(requestClass)
+    ? tryDeterministicBypass(req.userMessage)
+    : null
+  if (bypassActions) {
+    const text = `He procesado tu comando directamente.\n\n<actions>\n${JSON.stringify(bypassActions, null, 2)}\n</actions>`
+    const result = {
+      text,
+      provider: 'gemini' as ProviderName,
+      model: 'local_regex (deterministic_bypass)',
+      finishReason: 'stop',
+      traceId: req.traceId ?? `srv-direct-${Date.now()}`,
+      requestClass,
+      retryUsed: false,
+      fallbackUsed: false,
+      durationMs: 1,
+    }
+
+    if (req.stream) {
+      const encoder = new TextEncoder()
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(encoder.encode(`${JSON.stringify({ type: 'chunk', chunk: text, traceId: result.traceId })}\n`))
+          controller.enqueue(encoder.encode(`${JSON.stringify({ type: 'done', ...result })}\n`))
+          controller.close()
+        }
+      })
+      return { statusCode: 200, headers: STREAM_HEADERS, body: stream }
+    } else {
+      return json(200, result)
+    }
   }
 
   if (req.stream) {

@@ -195,6 +195,32 @@ describe('actionPostProcessor', () => {
     })
   })
 
+  it('replaces placeholder delete_session and skip_session ids when there is one affected session', () => {
+    const session = makeSession()
+
+    const responseDelete = postProcessCoachActions(makeResponse([{
+      type: 'delete_session',
+      sessionId: 'placeholder-id',
+      reason: 'Eliminación directa',
+    }]), makeContext([session]), 'Borra el entreno del viernes PM')
+
+    expect(responseDelete.actions?.[0]).toMatchObject({
+      type: 'delete_session',
+      sessionId: session.id,
+    })
+
+    const responseSkip = postProcessCoachActions(makeResponse([{
+      type: 'skip_session',
+      sessionId: 'placeholder-id',
+      reason: 'Saltear entreno',
+    }]), makeContext([session]), 'Saltea el entreno del viernes PM')
+
+    expect(responseSkip.actions?.[0]).toMatchObject({
+      type: 'skip_session',
+      sessionId: session.id,
+    })
+  })
+
   it('fills missing strength weight from targetPercent1RM when profile has a matching 1RM', () => {
     const response = postProcessCoachActions(makeResponse([{
       type: 'add_session',

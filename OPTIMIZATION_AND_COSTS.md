@@ -32,11 +32,20 @@ MIN_PROVIDER_ATTEMPT: 3s (para permitir 3 reintentos)
 - ✅ Más tiempo para reintentos técnicos
 - ✅ Menos "gateway timeouts" en producción
 
-### 2. **Limitar output tokens a 1536 máximo**
+### 2. **Limitar output tokens por tipo de solicitud**
 
-- Gemini, OpenAI y Claude: capped en 1536 tokens de salida
+- Chat/resúmenes/import: caps bajos para respuestas concisas
+- Plan Builder week/pair: caps controlados en 3500/5500 tokens
 - Razón: Tokens grandes → respuestas más lentas → timeouts
 - Impacto: Respuestas más concisas (~1200 tokens típicos) = más rápidas
+
+### 3. **Gemini thinking budget explícito**
+
+- Plan Builder: `thinkingBudget: 1024`
+- Chat action / Week Creator: `thinkingBudget: 256`
+- Chat general / weekly summary / import: `thinkingBudget: 0`
+
+Esto evita que Gemini 2.5 Flash use razonamiento dinámico sin límite explícito en beta privada.
 
 **Nota:** Esto es suficiente para:
 - Ajustes de sesión

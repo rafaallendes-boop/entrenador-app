@@ -44,11 +44,12 @@ Las fases son secuenciales pero cada una entrega valor independiente y es mergea
 - Drills/ejercicios por referencia: el prompt incluye `"drillIds": ["drop_contra_drop", "drives_100_target"]` en vez de objetos completos con name + notes + durationMin. La hidratación a `name/notes/duration` ocurre en `repairWeek` consultando los catálogos (que en Fase 2 son explícitos; mientras tanto, hidratación contra los maps actuales).
 - Target medible: prompt batch ≤ 2000 tokens estimados (50% reducción desde ~3500 actuales).
 
-#### 1.2 Subir `maxTokens` y revisar timeouts en `requestPolicy`
+#### 1.2 Alinear `maxTokens` y timeouts en `requestPolicy`
 
-- `plan_builder_pair`: `maxTokens` 1536 → 4096, `timeout` 20s → 24s (debajo del límite Netlify 26s).
-- `plan_builder_week`: `maxTokens` 1536 → 2048, `timeout` se mantiene 20s.
-- `MAX_FUNCTION_WALLCLOCK` revisado y respetado.
+- `plan_builder_pair`: `maxTokens` 5500 y `timeout` 45s, alineado entre cliente y proxy.
+- `plan_builder_week`: `maxTokens` 3500 y `timeout` 30s, alineado entre cliente y proxy.
+- `MAX_FUNCTION_WALLCLOCK` revisado con buffer de finalización de respuesta.
+- Gemini usa `thinkingBudget` explícito: 1024 para Plan Builder, 256 para acciones/Week Creator y 0 para solicitudes simples.
 
 #### 1.3 Default a single, pair como optimización opcional
 
@@ -81,14 +82,14 @@ Las fases son secuenciales pero cada una entrega valor independiente y es mergea
 - `streamingActionsParser.test.ts` — parser parcial con respuestas truncadas reales (usar samples del beta-quality export).
 - `generatePlan.degradation.test.ts` — pair falla 1 semana, single recupera.
 - `weekPrompt.compact.test.ts` — prompt batch ≤ 2000 tokens estimado.
-- `requestPolicy.timeout.test.ts` — todos los timeouts ≤ 26s, todos los maxTokens consistentes.
+- `requestPolicy.timeout.test.ts` — todos los timeouts y maxTokens consistentes entre cliente y proxy.
 - `providerRouting.test.ts` — env var override produce provider correcto.
 
 #### 1.8 Métricas de cierre de Fase 1
 
 1. `npm run loadtest:week-creator` — éxito ≥ 9/10.
 2. Generar plan de 9 semanas en dev: ≥ 8/9 semanas vienen de IA real. Validar con `npm run e2e:plan:generate` extendido para reportar `fallbackUsed` por semana.
-3. Ningún `plan_builder_pair` o `plan_builder_week` supera 24s wallclock.
+3. Ningún `plan_builder_pair` supera 45s wallclock y ningún `plan_builder_week` supera 30s wallclock.
 4. Para cada semana de IA, `validSessionCount === expectedSessions`.
 5. `npm run lint && npm run build && npm test` — verde.
 

@@ -4,10 +4,34 @@ import { createProviderError } from '../types'
 const DEFAULT_MODEL = 'gemini-2.5-flash'
 const BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/models/'
 
-function buildGenerationConfig(request: AIRequest): Record<string, unknown> {
+function supportsThinkingConfig(model: string): boolean {
+  return /gemini-2\.5-(flash|flash-lite)/i.test(model)
+}
+
+function getThinkingBudget(requestClass: AIRequest['requestClass']): number {
+  switch (requestClass) {
+    case 'plan_builder_week':
+    case 'plan_builder_pair':
+      return 1024
+    case 'chat_action':
+    case 'week_creator':
+      return 256
+    case 'chat_general':
+    case 'weekly_summary':
+    case 'import_extract':
+      return 0
+  }
+}
+
+function buildGenerationConfig(request: AIRequest, model: string): Record<string, unknown> {
   const generationConfig: Record<string, unknown> = {
     maxOutputTokens: request.maxTokens ?? 1024,
     temperature: request.temperature ?? 0.7,
+  }
+  if (supportsThinkingConfig(model)) {
+    generationConfig.thinkingConfig = {
+      thinkingBudget: getThinkingBudget(request.requestClass),
+    }
   }
   if (request.responseMimeType) generationConfig.responseMimeType = request.responseMimeType
   if (request.responseSchema) generationConfig.responseSchema = request.responseSchema
@@ -40,7 +64,7 @@ export class GeminiProvider implements AIProvider {
         })),
         { role: 'user', parts: [{ text: request.userMessage }] },
       ],
-      generationConfig: buildGenerationConfig(request),
+      generationConfig: buildGenerationConfig(request, model),
     })
 
     if (request.onChunk) {

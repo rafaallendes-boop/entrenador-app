@@ -49,7 +49,21 @@ export function postProcessCoachActions(
       return convertAddSessionToUpdateSession(loadAligned, affectedSession)
     }
 
-    if (loadAligned.type === 'update_session' && affectedSession && !resolvesKnownSession(loadAligned.sessionId, sessions)) {
+    const sessionActionsWithId = [
+      'update_session',
+      'delete_session',
+      'skip_session',
+      'change_rpe',
+      'shorten_session',
+      'lengthen_session',
+      'move_session',
+      'replace_session_type'
+    ]
+    if (
+      sessionActionsWithId.includes(loadAligned.type) &&
+      affectedSession &&
+      !resolvesKnownSession(loadAligned.sessionId, sessions)
+    ) {
       return { ...loadAligned, sessionId: affectedSession.id }
     }
 
