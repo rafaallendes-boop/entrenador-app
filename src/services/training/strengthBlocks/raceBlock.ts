@@ -8,5 +8,7 @@ export const RACE: StrengthBlockTemplate = {
   slots: [
     { pattern: 'core', required: true },
     { pattern: 'plyo', required: false },
+    { pattern: 'push', required: false },
+    { pattern: 'mobility', required: true },
   ],
 }

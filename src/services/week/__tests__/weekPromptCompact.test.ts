@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  buildWeekBatchSystemPromptMinimal,
+  buildWeekBatchStructuredSystemPromptMinimal,
   buildWeekBatchUserPrompt,
 } from '../prompts/weekPrompt'
 import type { TrainingPlan, TrainingPlanWeek } from '../../../types/planBuilder'
@@ -60,7 +60,7 @@ function makeWizard(): PlanWizardConfig {
 
 describe('weekPrompt batch compaction (Phase 1)', () => {
   it('batch system prompt minimal stays under 700 estimated tokens', () => {
-    const sys = buildWeekBatchSystemPromptMinimal()
+    const sys = buildWeekBatchStructuredSystemPromptMinimal()
     expect(estimateTokens(sys)).toBeLessThan(700)
   })
 

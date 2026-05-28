@@ -344,6 +344,7 @@ function completeSquashDetails(
     goal: buildLevelAwareGoal(context, context.profile.mainGoal ?? ''),
     competitionSoon: false,
     competitiveLevel: deriveCompetitiveLevel(context),
+    partnerAvailability: context.wizardConfig.partnerAvailability ?? 'either',
     desiredKind: mapSubtypeToDesiredKind(session.subtype) ?? inferSquashDesiredKind(session, recentDrills),
   })
   applySquashSelection(session, result)
@@ -609,6 +610,7 @@ function rebuildSquashDetailsAvoidingDuplicates(
       goal: buildLevelAwareGoal(context, session.objective ?? context.profile.mainGoal ?? ''),
       competitionSoon: false,
       competitiveLevel: deriveCompetitiveLevel(context),
+      partnerAvailability: context.wizardConfig.partnerAvailability ?? 'either',
       desiredKind,
     })
     applySquashSelection(session, result)
@@ -875,6 +877,7 @@ function buildStrengthSelectionContext(
     weekIndexInBlock: getWeekIndexInBlock(context),
     available1RM: athleteParameters.available1RM,
     rpeAdjustment: athleteParameters.rpeAdjustment,
+    requireExtraRecovery: athleteParameters.requireExtraRecovery,
   }
 }
 
@@ -1415,13 +1418,26 @@ function mapStrengthPhase(phase: string): string {
   return phase
 }
 
-function getWeekIndexInBlock(context: RepairContext): number {
-  const containingPhase = context.plan.phases?.find((phase) =>
-    context.week.weekIndex >= phase.startWeekIndex && context.week.weekIndex <= phase.endWeekIndex,
+export function computeWeekIndexInBlock(input: {
+  planPhases?: Array<{ startWeekIndex: number; endWeekIndex: number }>
+  weekIndex: number
+}): number {
+  const containingPhase = input.planPhases?.find((phase) =>
+    input.weekIndex >= phase.startWeekIndex && input.weekIndex <= phase.endWeekIndex,
   )
 
-  if (!containingPhase) return context.week.weekIndex
-  return Math.max(0, context.week.weekIndex - containingPhase.startWeekIndex)
+  if (!containingPhase) return 0
+  return Math.max(0, input.weekIndex - containingPhase.startWeekIndex)
+}
+
+function getWeekIndexInBlock(context: RepairContext): number {
+  return computeWeekIndexInBlock({
+    planPhases: context.plan.phases?.map((phase) => ({
+      startWeekIndex: phase.startWeekIndex,
+      endWeekIndex: phase.endWeekIndex,
+    })),
+    weekIndex: context.week.weekIndex,
+  })
 }
 
 function mapSubtypeToDesiredKind(subtype?: string) {

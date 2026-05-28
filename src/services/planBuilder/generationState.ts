@@ -1,6 +1,6 @@
 import type { PlanGenerationState, TrainingPlanWeek } from '../../types/planBuilder'
 
-export type PlanBuilderGenerationStrategy = 'single' | 'pairs' | 'auto'
+export type PlanBuilderGenerationStrategy = 'single' | 'pairs'
 
 export function derivePlanGenerationState(weeks: TrainingPlanWeek[]): PlanGenerationState {
   if (weeks.some((week) => week.status === 'generating')) return 'generating'
@@ -17,7 +17,7 @@ export function derivePlanGenerationState(weeks: TrainingPlanWeek[]): PlanGenera
 export function resolveConfiguredGenerationStrategy(_totalWeeks: number, requested?: 'single' | 'pairs'): 'single' | 'pairs' {
   if (requested) return requested
 
-  const configured = (import.meta.env.VITE_PLAN_BUILDER_GENERATION_STRATEGY ?? '').toLowerCase()
+  const configured = (import.meta.env.VITE_PLAN_BUILDER_STRATEGY ?? '').toLowerCase()
   if (configured === 'pairs') return 'pairs'
 
   return 'single'

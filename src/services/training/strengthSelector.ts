@@ -37,6 +37,7 @@ export interface StrengthContext {
   weekIndexInBlock?: number
   available1RM?: Exercise1RMReference[]
   rpeAdjustment?: number
+  requireExtraRecovery?: boolean
 }
 
 export interface StrengthExerciseDensity {
@@ -284,6 +285,8 @@ function scoreBlockCandidates(
       else score -= 30
       if (recentSet.has(normalizeStrengthExerciseKey(exercise.id)) || recentSet.has(normalizeStrengthExerciseKey(exercise.name))) score -= 60
       if (context.fatigueLevel >= 7 && (exercise.intensityType === 'strength' || exercise.intensityType === 'power')) score -= 12
+      if (context.requireExtraRecovery && exercise.fatigueCost === 'high') score -= 25
+      if (context.requireExtraRecovery && exercise.tags.includes('olympic_power')) score -= 18
       return { exercise, score }
     })
     .sort((a, b) => b.score - a.score || a.exercise.id.localeCompare(b.exercise.id))
@@ -293,6 +296,7 @@ function matchesBlockSlotPattern(exercise: ExerciseDefinition, pattern: Strength
   if (pattern === 'core') return exercise.category === 'core'
   if (pattern === 'cardio') return isSpecificCardioExercise(exercise)
   if (pattern === 'plyo') return exercise.intensityType === 'power' && !isSpecificCardioExercise(exercise)
+  if (pattern === 'mobility') return exercise.intensityType === 'recovery' || exercise.tags.includes('recovery')
   if (pattern === 'lunge') {
     return exercise.unilateral === true || exercise.tags.includes('court_lunge') || exercise.tags.includes('lateral_strength')
   }
@@ -876,6 +880,11 @@ function scoreExercises(
       } else if (context.fatigueLevel <= 3) {
         if (exercise.intensityType === 'strength' || exercise.intensityType === 'power') score += 2
       }
+      if (context.requireExtraRecovery) {
+        if (exercise.fatigueCost === 'high') score -= 25
+        if (exercise.tags.includes('olympic_power')) score -= 18
+        if (exercise.intensityType === 'stability' || exercise.fatigueCost === 'low') score += 3
+      }
 
       if (context.competitionSoon) {
         if (exercise.intensityType === 'recovery' || exercise.intensityType === 'stability') score += 4
@@ -1347,6 +1356,7 @@ export function getTargetExerciseDensity(context: StrengthContext): StrengthExer
 
   if (context.competitionSoon || context.phase === 'taper') modifier -= 3
   if (context.fatigueLevel >= 7) modifier -= 2
+  if (context.requireExtraRecovery) modifier -= 1
   if (
     context.sportProfile === 'strength_primary' &&
     (context.phase === 'base' || context.phase === 'build') &&

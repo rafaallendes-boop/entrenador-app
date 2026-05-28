@@ -397,6 +397,65 @@ async function verifyGeneratedPlanShape(page) {
   else fail('Sesiones no muestran duración')
 }
 
+async function reportPlanBuilderAIMetric(page) {
+  if (!OPTIONS.generate) return
+  const metric = await page.evaluate(async () => {
+    function request(db, storeName, mode, run) {
+      return new Promise((resolvePromise, reject) => {
+        const tx = db.transaction(storeName, mode)
+        const store = tx.objectStore(storeName)
+        const req = run(store)
+        req.onsuccess = () => resolvePromise(req.result)
+        req.onerror = () => reject(req.error)
+      })
+    }
+
+    const db = await new Promise((resolvePromise, reject) => {
+      const open = indexedDB.open('EntrenadorDB')
+      open.onsuccess = () => resolvePromise(open.result)
+      open.onerror = () => reject(open.error)
+    })
+
+    try {
+      const plans = await request(db, 'trainingPlans', 'readonly', (store) => store.getAll())
+      const latestPlan = plans
+        .filter((plan) => plan?.generationSummary || plan?.generationState)
+        .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))[0]
+      if (!latestPlan) return null
+
+      const weeks = await request(db, 'trainingPlanWeeks', 'readonly', (store) => store.getAll())
+      const planWeeks = weeks
+        .filter((week) => week.planId === latestPlan.id)
+        .sort((a, b) => a.weekIndex - b.weekIndex)
+      return {
+        weeks: planWeeks.map((week) => ({
+          weekIndex: week.weekIndex,
+          fallbackUsed: !!week.generationMeta?.fallbackUsed,
+          reason: (week.generationMeta?.repairWarnings ?? []).map((warning) => warning.code).join(',') || '-',
+        })),
+      }
+    } finally {
+      db.close()
+    }
+  }).catch((error) => ({ error: error instanceof Error ? error.message : String(error) }))
+
+  if (!metric || metric.error || metric.weeks.length === 0) {
+    fail('No se pudo leer métrica IA/fallback del Plan Builder', metric?.error ?? 'sin semanas persistidas')
+    return
+  }
+
+  const totalWeeks = metric.weeks.length
+  const aiWeeks = metric.weeks.filter((week) => !week.fallbackUsed).length
+  const ratio = totalWeeks > 0 ? aiWeeks / totalWeeks : 0
+  console.log(`\n=== Phase 1 metric ===\n${aiWeeks}/${totalWeeks} weeks from AI (${(ratio * 100).toFixed(1)}%)`)
+  for (const week of metric.weeks) {
+    console.log(`  week ${week.weekIndex + 1}: fallback=${week.fallbackUsed} reason=${week.reason}`)
+  }
+
+  if (ratio >= 0.8) ok('Métrica IA real >=80%', `${aiWeeks}/${totalWeeks}`)
+  else fail('Métrica IA real bajo 80%', `${aiWeeks}/${totalWeeks}`)
+}
+
 async function acceptGeneratedPlan(page) {
   if (!OPTIONS.accept) return
   step('8. Aceptar plan')
@@ -520,6 +579,7 @@ async function main() {
     if (builderResult.canGenerate) {
       await initializeAndWaitForGeneration(page)
       await verifyGeneratedPlanShape(page)
+      await reportPlanBuilderAIMetric(page)
       await acceptGeneratedPlan(page)
     }
     await verifySettingsTelemetry(page)

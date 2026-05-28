@@ -369,6 +369,7 @@ async function generateWeekPair(
   profile: AthleteProfile,
   wizardConfig: PlanWizardConfig,
   onChunk: ((weekIndex: number, chunk: string) => void) | undefined,
+  batchId?: string,
 ): Promise<{
   results: BatchWeekExtraction[]
   meta: {
@@ -384,7 +385,7 @@ async function generateWeekPair(
     degradeToSingle: boolean
   }
 }> {
-  const batchId = createBatchId(weeks[0].weekIndex)
+  const effectiveBatchId = batchId ?? createBatchId(weeks[0].weekIndex)
   const requestClass = 'plan_builder_pair' as const
   const traceId = buildAITraceId(requestClass)
   const policy = getAIRequestPolicy(requestClass)
@@ -494,7 +495,7 @@ async function generateWeekPair(
         chunkCount,
         retryUsed: raw.retryUsed,
         fallbackUsed: raw.fallbackUsed,
-        batchId,
+        batchId: effectiveBatchId,
         degradeToSingle,
       },
     }
@@ -514,7 +515,7 @@ async function generateWeekPair(
         traceId,
         chunkCount,
         lastError: message,
-        batchId,
+        batchId: effectiveBatchId,
         degradeToSingle: false,
       },
     }
@@ -560,6 +561,7 @@ export async function generatePlanWeeks(input: GeneratePlanWeeksInput): Promise<
         input.profile,
         input.wizardConfig,
         input.onChunk,
+        batchId,
       )
       if (batchResult.meta.degradeToSingle) {
         batchStrategyEnabled = false

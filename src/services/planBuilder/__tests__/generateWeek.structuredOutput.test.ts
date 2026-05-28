@@ -65,7 +65,7 @@ it('generateWeek passes responseSchema and responseMimeType=application/json to 
   if (!callArgs) throw new Error('Expected provider call')
   expect(callArgs.responseMimeType).toBe('application/json')
   expect(callArgs.responseSchema).toEqual(PLAN_BUILDER_WEEK_RESPONSE_SCHEMA)
-  expect(callArgs.onChunk).toBeUndefined()
+  expect(callArgs.onChunk).toEqual(expect.any(Function))
   expect(callArgs.systemPrompt).not.toContain('<actions>')
   expect(callArgs.userMessage).not.toContain('<actions>')
   expect(callArgs.userMessage).toContain('objeto JSON create_week')

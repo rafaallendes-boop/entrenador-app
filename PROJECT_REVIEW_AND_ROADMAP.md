@@ -108,6 +108,25 @@ Ultima referencia previa documentada:
 
 ## Mejoras Recientes Detectadas
 
+### Hardening Fases 1+2 post-review
+
+- `generateWeek` vuelve a propagar streaming y `chunkCount`, evitando telemetria falsa en semanas single.
+- Timeouts cliente/proxy realineados a Netlify Pro sync 26s: wallclock 24s, `plan_builder_week` 18s y `plan_builder_pair` 23s.
+- Env var del Plan Builder alineada al spec: `VITE_PLAN_BUILDER_STRATEGY`.
+- Cobertura 1RM ampliada con `incline_bench_press`, `close_grip_bench_press`, `sumo_deadlift` y `landmine_press`.
+- `partnerAvailability` y `requireExtraRecovery` ahora se consumen en reparacion/seleccion.
+- Semanas fuera de fases declaradas reinician rotacion de bloque en indice 0.
+- Race block y Build B/C quedaron menos fragiles para sesiones cortas o semanas de competencia.
+- `quality.strength.repeated_template` ahora advierte repeticion de fuerza dentro del mismo bloque con umbral >=3 ejercicios.
+- E2E Plan Builder reporta ratio IA real vs fallback por semana.
+- `requestPolicyTimeoutConsistency.test.ts` previene drift entre timeouts de cliente y wallclock del proxy.
+
+Riesgos abiertos:
+
+- La metrica empirica >=80% IA real requiere correr `npm run e2e:plan:generate` en DEV con Gemini real y un plan suficientemente largo.
+- Drill-by-id por referencia sigue diferido.
+- El schema canonico declarativo de fuerza/drills queda como deuda de Fase 2.5 si aparece friccion real.
+
 ### Fuerza y prescripcion de carga
 
 Estado: mejora importante implementada y cubierta por tests focalizados. La fuerza ya no debe mostrarse como una lista plana antigua cuando viene desde chat, Week Creator, Plan Builder o fallback.

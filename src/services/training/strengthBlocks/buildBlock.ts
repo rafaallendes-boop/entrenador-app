@@ -24,8 +24,8 @@ export const BUILD_B: StrengthBlockTemplate = {
     { pattern: 'core', required: true },
     { pattern: 'hinge', preferredRotationGroup: 'A', required: true, isStarLiftCandidate: true },
     { pattern: 'push', preferredRotationGroup: 'A', required: true },
-    { pattern: 'pull', preferredRotationGroup: 'B', required: true },
-    { pattern: 'lunge', preferredRotationGroup: 'C', required: true, minDurationMin: 55 },
+    { pattern: 'pull', preferredRotationGroup: 'B', required: false, minDurationMin: 55 },
+    { pattern: 'lunge', preferredRotationGroup: 'C', required: false, minDurationMin: 55 },
     { pattern: 'cardio', required: false, minDurationMin: 60 },
   ],
 }
@@ -39,8 +39,8 @@ export const BUILD_C: StrengthBlockTemplate = {
     { pattern: 'core', required: true },
     { pattern: 'lunge', preferredRotationGroup: 'C', required: true, isStarLiftCandidate: true },
     { pattern: 'push', preferredRotationGroup: 'C', required: true },
-    { pattern: 'pull', preferredRotationGroup: 'C', required: true },
-    { pattern: 'hinge', preferredRotationGroup: 'C', required: true, minDurationMin: 55 },
+    { pattern: 'pull', preferredRotationGroup: 'C', required: false, minDurationMin: 55 },
+    { pattern: 'hinge', preferredRotationGroup: 'C', required: false, minDurationMin: 55 },
     { pattern: 'plyo', required: false, minDurationMin: 60 },
   ],
 }

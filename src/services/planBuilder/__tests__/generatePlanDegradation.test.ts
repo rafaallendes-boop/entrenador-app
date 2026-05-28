@@ -74,6 +74,41 @@ function createWeekActionText(targetDate: string, titlePrefix: string): string {
 }
 
 describe('generatePlanWeeks pair → single degradation', () => {
+  it('preserves the same batchId across generating and resolved states', async () => {
+    const weeks = [makeWeek('2026-06-01', 0), makeWeek('2026-06-08', 1)]
+    const callSpy = vi.fn(async () => ({
+      text: JSON.stringify({
+        actions: [
+          JSON.parse(createWeekActionText(weeks[0]!.weekStartDate, 'pair-a')),
+          JSON.parse(createWeekActionText(weeks[1]!.weekStartDate, 'pair-b')),
+        ],
+      }),
+      provider: 'gemini',
+      model: 'gemini-2.5-flash',
+      durationMs: 1000,
+      traceId: 'pair-trace',
+    }))
+    const provider = { name: 'gemini', call: callSpy } as unknown as AIProvider
+    const updates: Record<number, string[]> = {}
+
+    await generatePlanWeeks({
+      plan: makePlan(),
+      weeks,
+      profile: makeProfile(),
+      wizardConfig: makeWizard(),
+      provider,
+      strategy: 'pairs',
+      onWeekUpdate: (week) => {
+        if (!week.generationMeta.batchId) return
+        updates[week.weekIndex] = [...(updates[week.weekIndex] ?? []), week.generationMeta.batchId]
+      },
+    })
+
+    expect(new Set(updates[0]).size).toBe(1)
+    expect(new Set(updates[1]).size).toBe(1)
+    expect(updates[0]?.[0]).toBe(updates[1]?.[0])
+  })
+
   it('when pair returns only week A, retries week B as single before fallback', async () => {
     let callIndex = 0
     const callSpy = vi.fn(async (request: { requestClass: string }) => {

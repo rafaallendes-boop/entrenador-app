@@ -68,4 +68,21 @@ describe('selectStrengthSession Fase 2', () => {
     expect(week0.starLift?.targetPercent1RM).toBe(75)
     expect(week1.starLift?.targetPercent1RM).toBe(80)
   })
+
+  it('reduces target density when requireExtraRecovery is true', () => {
+    const baseline = selectStrengthSession(context({ phase: 'peak', requireExtraRecovery: false }))
+    const easier = selectStrengthSession(context({ phase: 'peak', requireExtraRecovery: true }))
+    const fatigueRank = (name: string): number => {
+      const fatigueCost = findStrengthExerciseByName(name)?.fatigueCost
+      if (fatigueCost === 'high') return 3
+      if (fatigueCost === 'medium') return 2
+      if (fatigueCost === 'low') return 1
+      return 0
+    }
+
+    expect(easier.exercises.length).toBeLessThanOrEqual(baseline.exercises.length)
+    expect(Math.max(...easier.exercises.map((exercise) => fatigueRank(exercise.name)))).toBeLessThanOrEqual(
+      Math.max(...baseline.exercises.map((exercise) => fatigueRank(exercise.name))),
+    )
+  })
 })

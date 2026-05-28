@@ -775,7 +775,7 @@ describe('planBuilder', () => {
     expect(result[0]?.generationMeta.requestClass).toBe('plan_builder_week')
   })
 
-  it('does not stream chunks for single-week structured JSON generation', async () => {
+  it('streams chunks for single-week structured JSON generation', async () => {
     const profile = makeProfile(eventNWeeksFromNow(2))
     const event = profile.goalEvents![0] as GoalEvent
     const wizardConfig = {
@@ -815,9 +815,9 @@ describe('planBuilder', () => {
       onChunk: (_weekIndex, chunk) => chunks.push(chunk),
     })
 
-    expect(receivedOnChunk).toBe(false)
-    expect(chunks).toEqual([])
-    expect(result[0]?.generationMeta.chunkCount).toBe(0)
+    expect(receivedOnChunk).toBe(true)
+    expect(chunks).toEqual(['uno', 'dos'])
+    expect(result[0]?.generationMeta.chunkCount).toBe(2)
   })
 
   it('routes pair-batch streaming chunks to the matching week index', async () => {
@@ -909,7 +909,7 @@ describe('planBuilder', () => {
   })
 
   it('uses pair generation only when configured explicitly as pairs', async () => {
-    vi.stubEnv('VITE_PLAN_BUILDER_GENERATION_STRATEGY', 'pairs')
+    vi.stubEnv('VITE_PLAN_BUILDER_STRATEGY', 'pairs')
     const profile = makeProfile(eventNWeeksFromNow(2))
     const event = profile.goalEvents![0] as GoalEvent
     const wizardConfig = {
@@ -948,8 +948,8 @@ describe('planBuilder', () => {
     expect(requestClasses[0]).toBe('plan_builder_pair')
   })
 
-  it('treats auto strategy as single for long plans', async () => {
-    vi.stubEnv('VITE_PLAN_BUILDER_GENERATION_STRATEGY', 'auto')
+  it('treats unsupported strategy as single for long plans', async () => {
+    vi.stubEnv('VITE_PLAN_BUILDER_STRATEGY', 'auto')
     const profile = makeProfile(eventNWeeksFromNow(8))
     const event = profile.goalEvents![0] as GoalEvent
     const wizardConfig = {

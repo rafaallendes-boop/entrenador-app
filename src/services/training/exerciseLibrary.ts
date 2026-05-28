@@ -160,6 +160,22 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
     sportsTransfer: ['strength'],
   },
   {
+    id: 'sumo_deadlift',
+    name: 'Peso muerto sumo',
+    category: 'lower',
+    movement: 'hinge',
+    intensityType: 'strength',
+    equipment: ['barbell'],
+    tags: ['lower_strength', 'gym', 'compound', 'posterior_chain'],
+    description: 'Peso muerto con stance ancho y agarre dentro de las piernas. Variante de bisagra pesada con mayor demanda de aductores y tronco.',
+    aliases: ['Sumo deadlift', 'Peso muerto estilo sumo'],
+    difficulty: 'intermediate',
+    sportsTransfer: ['strength', 'squash'],
+    squashTransfer: ['force_production', 'posterior_chain'],
+    riskLevel: 'medium',
+    fatigueCost: 'high',
+  },
+  {
     id: 'trap_bar_deadlift',
     name: 'Peso muerto con trap bar',
     category: 'lower',
@@ -225,6 +241,38 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
     fatigueCost: 'medium',
   },
   {
+    id: 'incline_bench_press',
+    name: 'Press inclinado con barra',
+    category: 'upper',
+    movement: 'push',
+    intensityType: 'strength',
+    equipment: ['barbell'],
+    tags: ['upper_strength', 'gym', 'compound'],
+    description: 'Press inclinado con barra a 30-45 grados. Variante pesada de empuje con sesgo en pectoral superior y hombro anterior.',
+    aliases: ['Incline bench press', 'Press banca inclinado'],
+    difficulty: 'intermediate',
+    sportsTransfer: ['strength', 'squash'],
+    squashTransfer: ['upper_body_resilience'],
+    riskLevel: 'medium',
+    fatigueCost: 'medium',
+  },
+  {
+    id: 'close_grip_bench_press',
+    name: 'Press banca agarre cerrado',
+    category: 'upper',
+    movement: 'push',
+    intensityType: 'strength',
+    equipment: ['barbell'],
+    tags: ['upper_strength', 'gym', 'compound', 'triceps'],
+    description: 'Press horizontal con agarre mas cerrado. Mantiene transferencia de banca y suma enfasis en triceps sin cambiar el patron principal.',
+    aliases: ['Close grip bench press', 'Press cerrado'],
+    difficulty: 'intermediate',
+    sportsTransfer: ['strength', 'squash'],
+    squashTransfer: ['upper_body_resilience'],
+    riskLevel: 'medium',
+    fatigueCost: 'medium',
+  },
+  {
     id: 'incline_dumbbell_press',
     name: 'Press inclinado con mancuernas',
     category: 'upper',
@@ -265,6 +313,22 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
     aliases: ['Push press'],
     difficulty: 'advanced',
     sportsTransfer: ['strength', 'squash'],
+  },
+  {
+    id: 'landmine_press',
+    name: 'Landmine press',
+    category: 'upper',
+    movement: 'push',
+    intensityType: 'strength',
+    equipment: ['barbell'],
+    tags: ['upper_strength', 'gym', 'athletic_transfer', 'shoulder_friendly', 'squash_specific'],
+    description: 'Press diagonal con barra en landmine. Empuje fuerte con menor demanda overhead pura y buen control de tronco.',
+    aliases: ['Press landmine', 'Landmine shoulder press'],
+    difficulty: 'beginner',
+    sportsTransfer: ['strength', 'squash'],
+    squashTransfer: ['trunk_stiffness', 'shoulder_resilience'],
+    riskLevel: 'low',
+    fatigueCost: 'medium',
   },
   {
     id: 'pull_up',
@@ -1175,11 +1239,15 @@ const EXERCISE_1RM_REFERENCES: Partial<Record<string, Exercise1RMReference>> = {
   front_squat: 'squat',
   goblet_squat: 'squat',
   deadlift: 'deadlift',
+  sumo_deadlift: 'deadlift',
   romanian_deadlift: 'deadlift',
   trap_bar_deadlift: 'deadlift',
   bench_press: 'benchPress',
+  incline_bench_press: 'benchPress',
+  close_grip_bench_press: 'benchPress',
   incline_dumbbell_press: 'benchPress',
   overhead_press: 'overheadPress',
+  landmine_press: 'overheadPress',
   push_press: 'overheadPress',
   z_press: 'overheadPress',
 }
@@ -1192,11 +1260,15 @@ const EXERCISE_ROTATION_GROUPS: Partial<Record<string, ExerciseRotationGroup>> =
   pull_up: 'A',
   front_squat: 'B',
   romanian_deadlift: 'B',
+  sumo_deadlift: 'B',
   incline_dumbbell_press: 'B',
+  incline_bench_press: 'B',
   push_press: 'B',
   bent_over_row: 'B',
   bulgarian_split_squat: 'C',
   hip_thrust: 'C',
+  close_grip_bench_press: 'C',
+  landmine_press: 'C',
   z_press: 'C',
   chin_up: 'C',
   trx_inverted_row: 'C',
@@ -1206,7 +1278,7 @@ function inferAppropriateForPhases(exercise: ExerciseDefinition): ExercisePhase[
   if (exercise.intensityType === 'strength') return ['base', 'build', 'peak']
   if (exercise.intensityType === 'power') return ['build', 'peak']
   if (exercise.intensityType === 'hypertrophy') return ['base', 'build']
-  if (exercise.intensityType === 'stability') return ['base', 'build', 'peak', 'taper']
+  if (exercise.intensityType === 'stability') return ['base', 'build', 'peak', 'taper', 'race']
   if (exercise.intensityType === 'recovery') return ['base', 'taper', 'transition', 'race']
   return ['base', 'build']
 }
@@ -1221,6 +1293,11 @@ function withExercisePhase2Metadata(exercise: ExerciseDefinition): ExerciseDefin
 }
 
 export const STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = RAW_STRENGTH_EXERCISE_LIBRARY.map(withExercisePhase2Metadata)
+export const EXERCISE_LIBRARY = STRENGTH_EXERCISE_LIBRARY
+
+export function getExerciseById(id: string): ExerciseDefinition | undefined {
+  return STRENGTH_EXERCISE_LIBRARY.find((exercise) => exercise.id === id)
+}
 
 export function getStrengthExerciseRole(definition: ExerciseDefinition, index = 0): StrengthExerciseRole {
   if (definition.category === 'core') return 'trunk'

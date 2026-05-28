@@ -210,7 +210,7 @@ export async function generateWeek(input: GenerateWeekInput): Promise<GenerateWe
   const policy = getAIRequestPolicy(requestClass)
   const tracker = createStageTracker(traceId, requestClass)
   let outcome: CoachOutcome = 'error'
-  const chunkCount = 0
+  let chunkCount = 0
   let requestStarted = false
 
   try {
@@ -249,6 +249,10 @@ export async function generateWeek(input: GenerateWeekInput): Promise<GenerateWe
       allowFallback: policy.allowFallback,
       responseMimeType: 'application/json',
       responseSchema: PLAN_BUILDER_WEEK_RESPONSE_SCHEMA,
+      onChunk: (chunk) => {
+        chunkCount += 1
+        input.onChunk?.(chunk)
+      },
     })
     providerStage.end({ ok: true })
 

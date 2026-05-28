@@ -519,6 +519,7 @@ export interface PlanWizardConfig {
   allowDoubleSession: boolean
   doubleSessionDays?: DayOfWeek[]
   scheduleConstraints?: string
+  partnerAvailability?: 'solo' | 'partner' | 'either'
   complementarySports: SupportedSport[]
   currentFitnessLevel: WizardFitnessLevel
   currentFatigue: WizardFatigueLevel

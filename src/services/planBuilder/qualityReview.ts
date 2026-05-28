@@ -326,20 +326,58 @@ function getPlanLevelIssues(weeks: TrainingPlanWeek[]): PlanValidationIssue[] {
     }
   }
 
-  for (let i = 1; i < generated.length; i++) {
-    const prevStrength = generated[i - 1].sessions.find((session) => session.sessionType === 'strength')
-    const currStrength = generated[i].sessions.find((session) => session.sessionType === 'strength')
-    if (!prevStrength?.exercises?.length || !currStrength?.exercises?.length) continue
-    const prevKeys = new Set(prevStrength.exercises.map((exercise) => normalizeExerciseName(exercise.name)))
-    const currKeys = currStrength.exercises.map((exercise) => normalizeExerciseName(exercise.name))
-    const overlap = currKeys.filter((key) => prevKeys.has(key)).length
-    if (overlap >= Math.min(5, currKeys.length)) {
-      issues.push(issue({
-        severity: 'warning',
-        code: 'quality.strength.repeated_template',
-        message: `La fuerza se repite demasiado entre semanas ${generated[i - 1].weekIndex + 1} y ${generated[i].weekIndex + 1}.`,
-        weekIndex: generated[i].weekIndex,
-      }))
+  return issues
+}
+
+function getPlanPhaseForWeek(plan: TrainingPlan, week: TrainingPlanWeek): string {
+  if (plan.phases.length === 0) return `${week.phase}:legacy`
+  const phase = plan.phases.find((candidate) =>
+    week.weekIndex >= candidate.startWeekIndex && week.weekIndex <= candidate.endWeekIndex,
+  )
+  return `${phase?.phase ?? week.phase}:${phase?.startWeekIndex ?? week.weekIndex}:${phase?.endWeekIndex ?? week.weekIndex}`
+}
+
+function getStrengthExerciseKeys(week: TrainingPlanWeek): Set<string> {
+  return new Set(
+    week.sessions
+      .filter((session) => session.sessionType === 'strength')
+      .flatMap((session) => session.exercises ?? [])
+      .map((exercise) => normalizeExerciseName(exercise.name))
+      .filter(Boolean),
+  )
+}
+
+function getRepeatedStrengthTemplateIssues(plan: TrainingPlan, weeks: TrainingPlanWeek[]): PlanValidationIssue[] {
+  const issues: PlanValidationIssue[] = []
+  const generated = weeks.filter((week) => week.sessions.length > 0).sort((a, b) => a.weekIndex - b.weekIndex)
+  const byBlock = new Map<string, TrainingPlanWeek[]>()
+
+  for (const week of generated) {
+    const key = getPlanPhaseForWeek(plan, week)
+    byBlock.set(key, [...(byBlock.get(key) ?? []), week])
+  }
+
+  for (const blockWeeks of byBlock.values()) {
+    for (let i = 0; i < blockWeeks.length; i++) {
+      const first = blockWeeks[i]
+      const firstKeys = getStrengthExerciseKeys(first)
+      if (firstKeys.size === 0) continue
+
+      for (let j = i + 1; j < blockWeeks.length; j++) {
+        const second = blockWeeks[j]
+        const secondKeys = getStrengthExerciseKeys(second)
+        if (secondKeys.size === 0) continue
+
+        const overlap = [...secondKeys].filter((key) => firstKeys.has(key)).length
+        if (overlap < 3) continue
+
+        issues.push(issue({
+          severity: 'warning',
+          code: 'quality.strength.repeated_template',
+          message: `Semanas ${first.weekIndex + 1} y ${second.weekIndex + 1} del bloque ${second.phase} comparten ${overlap} ejercicios de fuerza.`,
+          weekIndex: second.weekIndex,
+        }))
+      }
     }
   }
 
@@ -384,7 +422,10 @@ function countRepairs(week: TrainingPlanWeek): number {
 export function reviewPlanQuality(plan: TrainingPlan, weeks: TrainingPlanWeek[]): PlanQualityReview {
   const sortedWeeks = [...weeks].sort((a, b) => a.weekIndex - b.weekIndex)
   const planValidationIssues = validatePlan({ plan, weeks: sortedWeeks })
-  const planLevelQualityIssues = getPlanLevelIssues(sortedWeeks)
+  const planLevelQualityIssues = [
+    ...getPlanLevelIssues(sortedWeeks),
+    ...getRepeatedStrengthTemplateIssues(plan, sortedWeeks),
+  ]
 
   const weekReviews = sortedWeeks.map((week) => {
     const issues = [

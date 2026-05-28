@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { resolveConfiguredGenerationStrategy } from '../generationState'
 
 describe('resolveConfiguredGenerationStrategy', () => {
-  const envKey = 'VITE_PLAN_BUILDER_GENERATION_STRATEGY'
+  const envKey = 'VITE_PLAN_BUILDER_STRATEGY'
   const originalValue = (import.meta.env as Record<string, string | undefined>)[envKey]
 
   afterEach(() => {
@@ -25,12 +25,12 @@ describe('resolveConfiguredGenerationStrategy', () => {
     expect(resolveConfiguredGenerationStrategy(9, 'single')).toBe('single')
   })
 
-  it('honors VITE_PLAN_BUILDER_GENERATION_STRATEGY=pairs env var', () => {
+  it('honors VITE_PLAN_BUILDER_STRATEGY=pairs env var', () => {
     ;(import.meta.env as Record<string, string>)[envKey] = 'pairs'
     expect(resolveConfiguredGenerationStrategy(9, undefined)).toBe('pairs')
   })
 
-  it('treats auto and any other env value as single', () => {
+  it('treats unsupported env values as single', () => {
     ;(import.meta.env as Record<string, string>)[envKey] = 'auto'
     expect(resolveConfiguredGenerationStrategy(9, undefined)).toBe('single')
     ;(import.meta.env as Record<string, string>)[envKey] = 'bogus'

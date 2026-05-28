@@ -17,14 +17,15 @@ plan_builder_pair: 45s ❌ (>26s máx)
 
 Después (realista, respetando 26s máx):
 ```
-chat_general: 12s
+chat_general: 15s
 chat_action: 18s
-weekly_summary: 15s
-plan_builder_week: 20s ✅
-plan_builder_pair: 20s ✅
-import_extract: 15s
-MAX_FUNCTION_WALLCLOCK: 25s (reserva 1s overhead)
-MIN_PROVIDER_ATTEMPT: 3s (para permitir 3 reintentos)
+weekly_summary: 18s
+week_creator: 18s
+plan_builder_week: 18s ✅
+plan_builder_pair: 23s ✅
+import_extract: 18s
+MAX_FUNCTION_WALLCLOCK: 24s (2s buffer antes del corte real 26s de Netlify Pro)
+MIN_PROVIDER_ATTEMPT: 4s
 ```
 
 **Ventajas:**
@@ -35,7 +36,7 @@ MIN_PROVIDER_ATTEMPT: 3s (para permitir 3 reintentos)
 ### 2. **Limitar output tokens por tipo de solicitud**
 
 - Chat/resúmenes/import: caps bajos para respuestas concisas
-- Plan Builder week/pair: caps controlados en 3500/5500 tokens
+- Plan Builder week/pair: caps controlados en 3500/4200 tokens
 - Razón: Tokens grandes → respuestas más lentas → timeouts
 - Impacto: Respuestas más concisas (~1200 tokens típicos) = más rápidas
 
@@ -46,6 +47,8 @@ MIN_PROVIDER_ATTEMPT: 3s (para permitir 3 reintentos)
 - Chat general / weekly summary / import: `thinkingBudget: 0`
 
 Esto evita que Gemini 2.5 Flash use razonamiento dinámico sin límite explícito en beta privada.
+
+**Revisión 2026-05-28:** Netlify Pro corta funciones síncronas a 26s. El proxy baja su wallclock a 24s para dejar margen de serialización, y los timeouts cliente/proxy quedan por debajo de ese techo para que el recovery de Plan Builder ocurra en app y no como 504 de plataforma.
 
 **Nota:** Esto es suficiente para:
 - Ajustes de sesión

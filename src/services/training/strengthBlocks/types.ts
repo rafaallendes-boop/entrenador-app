@@ -1,6 +1,6 @@
 import type { ExercisePhase, ExerciseRotationGroup, MovementPattern } from '../exerciseLibrary'
 
-export type StrengthBlockPattern = MovementPattern | 'core' | 'cardio' | 'plyo' | 'lunge'
+export type StrengthBlockPattern = MovementPattern | 'core' | 'cardio' | 'plyo' | 'lunge' | 'mobility'
 
 export interface StrengthBlockSlot {
   pattern: StrengthBlockPattern

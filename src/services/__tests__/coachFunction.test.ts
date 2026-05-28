@@ -79,11 +79,11 @@ describe('plan builder request policy', () => {
   it('keeps client-side caps aligned with the coach proxy caps', () => {
     expect(getAIRequestPolicy('plan_builder_week')).toMatchObject({
       maxTokens: 3500,
-      timeoutMs: 30000,
+      timeoutMs: 18000,
     })
     expect(getAIRequestPolicy('plan_builder_pair')).toMatchObject({
-      maxTokens: 5500,
-      timeoutMs: 45000,
+      maxTokens: 4200,
+      timeoutMs: 23000,
     })
   })
 })

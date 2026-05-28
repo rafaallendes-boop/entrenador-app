@@ -75,12 +75,12 @@ const DEFAULT_MODELS: Record<ProviderName, string> = {
 // Timeouts aligned with client-side requestPolicy.ts.
 const REQUEST_TIMEOUTS: Record<RequestClass, number> = {
   chat_general: 15000,
-  chat_action: 25000,
-  weekly_summary: 20000,
-  week_creator: 30000,
-  plan_builder_week: 30000,
-  plan_builder_pair: 45000,
-  import_extract: 20000,
+  chat_action: 18000,
+  weekly_summary: 18000,
+  week_creator: 18000,
+  plan_builder_week: 18000,
+  plan_builder_pair: 23000,
+  import_extract: 18000,
 }
 const REQUEST_MAX_TOKENS: Record<RequestClass, number> = {
   chat_general: 2400,
@@ -88,7 +88,7 @@ const REQUEST_MAX_TOKENS: Record<RequestClass, number> = {
   weekly_summary: 1600,
   week_creator: 3500,
   plan_builder_week: 3500,
-  plan_builder_pair: 5500,
+  plan_builder_pair: 4200,
   import_extract: 2000,
 }
 const SYSTEM_PROMPT_MAX_CHARS: Record<RequestClass, number> = {
@@ -104,8 +104,8 @@ const USER_MESSAGE_MAX_CHARS = 8000
 const CONVERSATION_MESSAGE_MAX_CHARS = 4000
 const TRACE_ID_MAX_CHARS = 160
 const RESPONSE_SCHEMA_MAX_CHARS = 20000
-// Netlify synchronous functions currently allow 60s; keep a small buffer for response finalization.
-const MAX_FUNCTION_WALLCLOCK_MS = 55000
+// Netlify Pro synchronous functions cut off at 26s; keep 2s for response finalization.
+const MAX_FUNCTION_WALLCLOCK_MS = 24000
 const MIN_PROVIDER_ATTEMPT_MS = 4000
 const AUTH_REQUIRED = process.env['COACH_PROXY_REQUIRE_AUTH'] !== 'false'
 const RATE_LIMIT_WINDOW_MS = parsePositiveInteger(process.env['COACH_RATE_LIMIT_WINDOW_MS'], 60_000)

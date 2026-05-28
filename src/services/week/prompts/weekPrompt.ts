@@ -190,10 +190,6 @@ export function buildWeekCreatorSystemPrompt(): string {
   return buildWeekSystemPromptBase({ mode: 'standalone', density: 'minimal' })
 }
 
-export function buildWeekBatchSystemPromptMinimal(): string {
-  return buildWeekSystemPromptBase({ mode: 'batch', density: 'minimal' })
-}
-
 export function buildWeekBatchStructuredSystemPromptMinimal(): string {
   return [
     'Eres el generador de DOS semanas consecutivas dentro de un plan por evento ya estructurado.',
