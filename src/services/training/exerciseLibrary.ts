@@ -23,6 +23,9 @@ export type EquipmentType =
 export type ExperienceLevel = 'beginner' | 'intermediate' | 'advanced'
 export type ExerciseRiskLevel = 'low' | 'medium' | 'high'
 export type ExerciseFatigueCost = 'low' | 'medium' | 'high'
+export type ExercisePhase = 'base' | 'build' | 'peak' | 'taper' | 'transition' | 'race'
+export type ExerciseRotationGroup = 'A' | 'B' | 'C'
+export type Exercise1RMReference = 'squat' | 'deadlift' | 'benchPress' | 'overheadPress'
 
 export interface ExerciseDefinition {
   id: string
@@ -40,11 +43,14 @@ export interface ExerciseDefinition {
   squashTransfer?: string[]
   riskLevel?: ExerciseRiskLevel
   fatigueCost?: ExerciseFatigueCost
+  has1RMReference?: Exercise1RMReference
+  appropriateForPhases?: ExercisePhase[]
+  blockRotationGroup?: ExerciseRotationGroup
 }
 
 export type StrengthExerciseRole = 'main_lift' | 'accessory' | 'trunk' | 'power'
 
-export const STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
+const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   {
     id: 'back_squat',
     name: 'Sentadilla trasera con barra',
@@ -1163,6 +1169,58 @@ export const STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
     sportsTransfer: ['strength', 'general_fitness'],
   },
 ]
+
+const EXERCISE_1RM_REFERENCES: Partial<Record<string, Exercise1RMReference>> = {
+  back_squat: 'squat',
+  front_squat: 'squat',
+  goblet_squat: 'squat',
+  deadlift: 'deadlift',
+  romanian_deadlift: 'deadlift',
+  trap_bar_deadlift: 'deadlift',
+  bench_press: 'benchPress',
+  incline_dumbbell_press: 'benchPress',
+  overhead_press: 'overheadPress',
+  push_press: 'overheadPress',
+  z_press: 'overheadPress',
+}
+
+const EXERCISE_ROTATION_GROUPS: Partial<Record<string, ExerciseRotationGroup>> = {
+  back_squat: 'A',
+  deadlift: 'A',
+  bench_press: 'A',
+  overhead_press: 'A',
+  pull_up: 'A',
+  front_squat: 'B',
+  romanian_deadlift: 'B',
+  incline_dumbbell_press: 'B',
+  push_press: 'B',
+  bent_over_row: 'B',
+  bulgarian_split_squat: 'C',
+  hip_thrust: 'C',
+  z_press: 'C',
+  chin_up: 'C',
+  trx_inverted_row: 'C',
+}
+
+function inferAppropriateForPhases(exercise: ExerciseDefinition): ExercisePhase[] {
+  if (exercise.intensityType === 'strength') return ['base', 'build', 'peak']
+  if (exercise.intensityType === 'power') return ['build', 'peak']
+  if (exercise.intensityType === 'hypertrophy') return ['base', 'build']
+  if (exercise.intensityType === 'stability') return ['base', 'build', 'peak', 'taper']
+  if (exercise.intensityType === 'recovery') return ['base', 'taper', 'transition', 'race']
+  return ['base', 'build']
+}
+
+function withExercisePhase2Metadata(exercise: ExerciseDefinition): ExerciseDefinition {
+  return {
+    ...exercise,
+    has1RMReference: exercise.has1RMReference ?? EXERCISE_1RM_REFERENCES[exercise.id],
+    appropriateForPhases: exercise.appropriateForPhases ?? inferAppropriateForPhases(exercise),
+    blockRotationGroup: exercise.blockRotationGroup ?? EXERCISE_ROTATION_GROUPS[exercise.id],
+  }
+}
+
+export const STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = RAW_STRENGTH_EXERCISE_LIBRARY.map(withExercisePhase2Metadata)
 
 export function getStrengthExerciseRole(definition: ExerciseDefinition, index = 0): StrengthExerciseRole {
   if (definition.category === 'core') return 'trunk'

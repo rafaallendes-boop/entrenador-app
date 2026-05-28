@@ -30,6 +30,7 @@ import { selectMobilitySession, type MobilityPhase } from '../training/mobilityS
 import { selectCyclingSession, type CyclingPhase, type CyclingSportProfile } from '../training/cyclingSelector'
 import { normalizeMobilityDetails, type MobilitySportContext } from '../training/mobilitySessionLibrary'
 import type { CyclingRole } from '../training/cyclingSessionLibrary'
+import { buildAthleteParameters } from './profileAdapter'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -828,7 +829,15 @@ function completeStrengthExercises(
     reps: e.reps,
     group: e.group,
     notes: e.notes,
+    targetPercent1RM: e.targetPercent1RM,
+    targetRpe: e.targetRpe,
   }))
+  if (result.starLift) {
+    session.metadata = {
+      ...(session.metadata ?? {}),
+      starLift: result.starLift,
+    }
+  }
   enhanceStrengthSessionDetails(session, context, recentExercises)
 }
 
@@ -851,15 +860,21 @@ function buildStrengthSelectionContext(
   context: RepairContext,
   recentExercises: string[],
 ): StrengthContext {
+  const athleteParameters = buildAthleteParameters(context.profile, context.wizardConfig)
+
   return {
     fatigueLevel: fatigueToNumber(context.wizardConfig.currentFatigue),
-    phase: mapPhase(context.week.phase) as StrengthPhase,
+    phase: mapStrengthPhase(context.week.phase) as StrengthPhase,
     recentExercises,
     goal: buildLevelAwareGoal(context, session.objective ?? context.profile.mainGoal ?? ''),
     sportProfile: deriveStrengthSportProfile(context),
     primarySport: context.profile.sportContext?.primarySport,
     experienceLevel: deriveStrengthExperienceLevel(context),
+    availableEquipment: athleteParameters.availableEquipment,
     sessionDurationMin: session.durationMin,
+    weekIndexInBlock: getWeekIndexInBlock(context),
+    available1RM: athleteParameters.available1RM,
+    rpeAdjustment: athleteParameters.rpeAdjustment,
   }
 }
 
@@ -917,6 +932,8 @@ function toCoachExerciseProposal(exercise: StrengthSelectionExercise): CoachExer
     reps: exercise.reps,
     group: exercise.group,
     notes: exercise.notes,
+    targetPercent1RM: exercise.targetPercent1RM,
+    targetRpe: exercise.targetRpe,
   }
 }
 
@@ -1391,6 +1408,20 @@ function mapPhase(phase: string): string {
   if (phase === 'race') return 'taper'
   if (phase === 'transition') return 'base'
   return phase
+}
+
+function mapStrengthPhase(phase: string): string {
+  if (phase === 'transition') return 'base'
+  return phase
+}
+
+function getWeekIndexInBlock(context: RepairContext): number {
+  const containingPhase = context.plan.phases?.find((phase) =>
+    context.week.weekIndex >= phase.startWeekIndex && context.week.weekIndex <= phase.endWeekIndex,
+  )
+
+  if (!containingPhase) return context.week.weekIndex
+  return Math.max(0, context.week.weekIndex - containingPhase.startWeekIndex)
 }
 
 function mapSubtypeToDesiredKind(subtype?: string) {

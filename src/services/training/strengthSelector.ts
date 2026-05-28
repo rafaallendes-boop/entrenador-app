@@ -6,14 +6,17 @@ import {
   normalizeStrengthExerciseKey,
   STRENGTH_EXERCISE_LIBRARY,
   type EquipmentType,
+  type Exercise1RMReference,
   type ExerciseDefinition,
+  type ExercisePhase,
   type ExperienceLevel,
   type MovementPattern,
   type StrengthExerciseRole,
 } from './exerciseLibrary'
+import { selectStrengthBlockTemplate, type StrengthBlockSlot } from './strengthBlocks'
 import type { DisciplineAcwr } from '../loadAnalytics'
 
-export type StrengthPhase = 'base' | 'build' | 'peak' | 'taper' | 'transition'
+export type StrengthPhase = 'base' | 'build' | 'peak' | 'taper' | 'transition' | 'race'
 export type StrengthSportProfile = 'strength_primary' | 'hybrid' | 'sport_support'
 
 export interface StrengthContext {
@@ -31,6 +34,9 @@ export interface StrengthContext {
   historicalSessions?: Session[]
   /** Quantitative ACWR signal for strength-specific load */
   strengthAcwr?: DisciplineAcwr
+  weekIndexInBlock?: number
+  available1RM?: Exercise1RMReference[]
+  rpeAdjustment?: number
 }
 
 export interface StrengthExerciseDensity {
@@ -46,6 +52,15 @@ export interface StrengthSelectionExercise {
   intensity: 'light' | 'moderate' | 'moderate-heavy' | 'heavy' | 'explosive' | 'controlled'
   notes?: string
   group?: ExerciseGroup
+  targetPercent1RM?: number
+  targetRpe?: number
+}
+
+export interface StarLiftInfo {
+  name: string
+  targetPercent1RM?: number
+  targetRpe?: number
+  weekProgression: number
 }
 
 interface ScoredExercise {
@@ -72,7 +87,11 @@ export interface StrengthProgressionState {
 
 export function selectStrengthSession(
   context: StrengthContext,
-): { focus: string; exercises: StrengthSelectionExercise[] } {
+): { focus: string; exercises: StrengthSelectionExercise[]; starLift?: StarLiftInfo } {
+  if (shouldUseBlockTemplateSelection(context)) {
+    return selectBlockStrengthSession(context)
+  }
+
   const normalizedEquipment = normalizeEquipment(context.availableEquipment)
   const recentSet = buildRecentStrengthKeySet(context.recentExercises)
   const progressionState = deriveStrengthProgressionState(context)
@@ -99,6 +118,251 @@ export function selectStrengthSession(
     focus: deriveStrengthFocus(finalSelection, context),
     exercises: orderStrengthExercisesForSession(builtExercises, context),
   }
+}
+
+function shouldUseBlockTemplateSelection(context: StrengthContext): boolean {
+  return (
+    context.weekIndexInBlock != null ||
+    (context.available1RM != null && context.available1RM.length > 0) ||
+    context.rpeAdjustment != null
+  )
+}
+
+function selectBlockStrengthSession(
+  context: StrengthContext,
+): { focus: string; exercises: StrengthSelectionExercise[]; starLift?: StarLiftInfo } {
+  const phase = toExercisePhase(context.phase)
+  const weekIndexInBlock = context.weekIndexInBlock ?? 0
+  const template = selectStrengthBlockTemplate(phase, weekIndexInBlock)
+  const normalizedEquipment = normalizeEquipment(context.availableEquipment)
+  const recentSet = buildRecentStrengthKeySet(context.recentExercises)
+  const available1RM = new Set(context.available1RM ?? [])
+  const selectedDefinitions: ExerciseDefinition[] = []
+  const selectedIds = new Set<string>()
+  let starDefinition: ExerciseDefinition | undefined
+
+  for (const slot of template.slots) {
+    if (!slot.required && slot.minDurationMin != null && (context.sessionDurationMin ?? 50) < slot.minDurationMin) continue
+
+    const candidate = selectExerciseForBlockSlot({
+      slot,
+      phase,
+      context,
+      normalizedEquipment,
+      recentSet,
+      available1RM,
+      selectedIds,
+    })
+    if (!candidate) continue
+
+    selectedDefinitions.push(candidate)
+    selectedIds.add(candidate.id)
+    if (!starDefinition && slot.isStarLiftCandidate) {
+      starDefinition = candidate
+    }
+  }
+
+  const density = getTargetExerciseDensity(context)
+  if (selectedDefinitions.length < density.target) {
+    const fillers = pickBlockFillers({
+      phase,
+      context,
+      normalizedEquipment,
+      recentSet,
+      available1RM,
+      selectedIds,
+      targetCount: density.target - selectedDefinitions.length,
+    })
+    for (const filler of fillers) {
+      selectedDefinitions.push(filler)
+      selectedIds.add(filler.id)
+    }
+  }
+
+  const finalSelection = selectedDefinitions.slice(0, density.max)
+  const builtExercises = finalSelection.map((exercise, index) =>
+    buildBlockSelectionExercise(exercise, context, index, exercise.id === starDefinition?.id),
+  )
+  const ordered = orderStrengthExercisesForSession(builtExercises, context)
+  const starLift = starDefinition ? selectStarLift(starDefinition, context, weekIndexInBlock) : undefined
+
+  return {
+    focus: deriveStrengthFocus(finalSelection, context),
+    exercises: ordered,
+    starLift,
+  }
+}
+
+function selectExerciseForBlockSlot({
+  slot,
+  phase,
+  context,
+  normalizedEquipment,
+  recentSet,
+  available1RM,
+  selectedIds,
+}: {
+  slot: StrengthBlockSlot
+  phase: ExercisePhase
+  context: StrengthContext
+  normalizedEquipment: EquipmentType[]
+  recentSet: Set<string>
+  available1RM: Set<Exercise1RMReference>
+  selectedIds: Set<string>
+}): ExerciseDefinition | undefined {
+  const pool = buildStrengthCandidatePool(STRENGTH_EXERCISE_LIBRARY, context)
+    .filter((exercise) => !selectedIds.has(exercise.id))
+    .filter((exercise) => exercise.appropriateForPhases?.includes(phase) ?? true)
+    .filter((exercise) => matchesBlockSlotPattern(exercise, slot.pattern))
+
+  const scored = scoreBlockCandidates(pool, {
+    slot,
+    context,
+    normalizedEquipment,
+    recentSet,
+    available1RM,
+  })
+
+  return scored[0]?.exercise
+}
+
+function pickBlockFillers({
+  phase,
+  context,
+  normalizedEquipment,
+  recentSet,
+  available1RM,
+  selectedIds,
+  targetCount,
+}: {
+  phase: ExercisePhase
+  context: StrengthContext
+  normalizedEquipment: EquipmentType[]
+  recentSet: Set<string>
+  available1RM: Set<Exercise1RMReference>
+  selectedIds: Set<string>
+  targetCount: number
+}): ExerciseDefinition[] {
+  const pool = buildStrengthCandidatePool(STRENGTH_EXERCISE_LIBRARY, context)
+    .filter((exercise) => !selectedIds.has(exercise.id))
+    .filter((exercise) => exercise.appropriateForPhases?.includes(phase) ?? true)
+
+  return scoreBlockCandidates(pool, {
+    context,
+    normalizedEquipment,
+    recentSet,
+    available1RM,
+  }).slice(0, targetCount).map(({ exercise }) => exercise)
+}
+
+function scoreBlockCandidates(
+  exercises: ExerciseDefinition[],
+  {
+    slot,
+    context,
+    normalizedEquipment,
+    recentSet,
+    available1RM,
+  }: {
+    slot?: StrengthBlockSlot
+    context: StrengthContext
+    normalizedEquipment: EquipmentType[]
+    recentSet: Set<string>
+    available1RM: Set<Exercise1RMReference>
+  },
+): ScoredExercise[] {
+  return exercises
+    .map((exercise) => {
+      let score = 0
+      if (slot?.preferredRotationGroup && exercise.blockRotationGroup === slot.preferredRotationGroup) score += 30
+      if (exercise.has1RMReference && available1RM.has(exercise.has1RMReference)) score += 35
+      if (exercise.tags.includes('athletic_transfer')) score += 6
+      if (context.primarySport === 'squash' && exercise.sportsTransfer?.includes('squash')) score += 5
+      if (exercise.unilateral) score += slot?.pattern === 'lunge' ? 10 : 2
+      if (exercise.category === 'core') score += 4
+      if (exercise.equipment.some((item) => normalizedEquipment.includes(item))) score += 8
+      else score -= 30
+      if (recentSet.has(normalizeStrengthExerciseKey(exercise.id)) || recentSet.has(normalizeStrengthExerciseKey(exercise.name))) score -= 60
+      if (context.fatigueLevel >= 7 && (exercise.intensityType === 'strength' || exercise.intensityType === 'power')) score -= 12
+      return { exercise, score }
+    })
+    .sort((a, b) => b.score - a.score || a.exercise.id.localeCompare(b.exercise.id))
+}
+
+function matchesBlockSlotPattern(exercise: ExerciseDefinition, pattern: StrengthBlockSlot['pattern']): boolean {
+  if (pattern === 'core') return exercise.category === 'core'
+  if (pattern === 'cardio') return isSpecificCardioExercise(exercise)
+  if (pattern === 'plyo') return exercise.intensityType === 'power' && !isSpecificCardioExercise(exercise)
+  if (pattern === 'lunge') {
+    return exercise.unilateral === true || exercise.tags.includes('court_lunge') || exercise.tags.includes('lateral_strength')
+  }
+  return exercise.movement === pattern
+}
+
+function buildBlockSelectionExercise(
+  exercise: ExerciseDefinition,
+  context: StrengthContext,
+  index: number,
+  isStarLift: boolean,
+): StrengthSelectionExercise {
+  const base = buildSelectionExercise(exercise, context, index)
+  const targetRpe = clamp(resolveTargetRpe(base.intensity) + (context.rpeAdjustment ?? 0), 4, 9)
+  const targetPercent1RM = exercise.has1RMReference && context.available1RM?.includes(exercise.has1RMReference)
+    ? resolveTargetPercent1RM(context, isStarLift)
+    : undefined
+
+  return {
+    ...base,
+    targetRpe,
+    targetPercent1RM,
+  }
+}
+
+export function selectStarLift(
+  exercise: ExerciseDefinition,
+  context: StrengthContext,
+  weekIndexInBlock = context.weekIndexInBlock ?? 0,
+): StarLiftInfo {
+  const targetPercent1RM = exercise.has1RMReference && context.available1RM?.includes(exercise.has1RMReference)
+    ? resolveTargetPercent1RM(context, true)
+    : undefined
+
+  return {
+    name: exercise.name,
+    targetPercent1RM,
+    targetRpe: clamp(resolveTargetRpe(context.phase === 'peak' ? 'heavy' : 'moderate-heavy') + (context.rpeAdjustment ?? 0), 4, 9),
+    weekProgression: weekIndexInBlock,
+  }
+}
+
+function resolveTargetPercent1RM(context: StrengthContext, isStarLift: boolean): number {
+  const weekStep = Math.abs(context.weekIndexInBlock ?? 0) % 3
+  if (context.phase === 'peak') return isStarLift ? [80, 82, 85][weekStep]! : 72
+  if (context.phase === 'build') return isStarLift ? [75, 80, 85][weekStep]! : 70
+  if (context.phase === 'base') return isStarLift ? 70 : 65
+  return 60
+}
+
+function resolveTargetRpe(intensity: StrengthSelectionExercise['intensity']): number {
+  switch (intensity) {
+    case 'heavy':
+      return 8
+    case 'moderate-heavy':
+      return 7
+    case 'moderate':
+      return 6
+    case 'explosive':
+      return 7
+    case 'controlled':
+      return 6
+    case 'light':
+    default:
+      return 5
+  }
+}
+
+function toExercisePhase(phase: StrengthPhase): ExercisePhase {
+  return phase
 }
 
 function buildRecentStrengthKeySet(recentExercises: string[]): Set<string> {

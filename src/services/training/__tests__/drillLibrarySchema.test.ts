@@ -1,0 +1,43 @@
+import { describe, expect, it } from 'vitest'
+
+import { SQUASH_DRILL_LIBRARY } from '../drillLibrary'
+
+describe('SquashDrillDefinition schema Fase 2', () => {
+  it('every drill declares phaseAppropriate as a non-empty valid subset', () => {
+    const validPhases = new Set(['base', 'build', 'peak', 'taper', 'transition', 'race'])
+
+    for (const drill of SQUASH_DRILL_LIBRARY) {
+      expect(drill.phaseAppropriate, `drill ${drill.id}`).toBeDefined()
+      expect(drill.phaseAppropriate?.length).toBeGreaterThan(0)
+      for (const phase of drill.phaseAppropriate ?? []) {
+        expect(validPhases.has(phase)).toBe(true)
+      }
+    }
+  })
+
+  it('every drill declares partnerRequired', () => {
+    for (const drill of SQUASH_DRILL_LIBRARY) {
+      expect(typeof drill.partnerRequired).toBe('boolean')
+    }
+  })
+
+  it('match drills are not phaseAppropriate for base phase', () => {
+    const matchDrills = SQUASH_DRILL_LIBRARY.filter((drill) =>
+      drill.category === 'match' || drill.tags.includes('match_play')
+    )
+
+    for (const drill of matchDrills) {
+      expect(drill.phaseAppropriate).not.toContain('base')
+    }
+  })
+
+  it('shadows and ghosting drills do not require a partner', () => {
+    const soloDrills = SQUASH_DRILL_LIBRARY.filter((drill) =>
+      /ghosting|sombras|shadows/i.test(drill.name) || drill.tags.includes('ghosting')
+    )
+
+    for (const drill of soloDrills) {
+      expect(drill.partnerRequired).toBe(false)
+    }
+  })
+})

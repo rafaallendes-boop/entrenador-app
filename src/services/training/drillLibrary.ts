@@ -9,6 +9,7 @@ export type DrillCategory = 'technical' | 'tactical' | 'physical' | 'match'
 export type DrillIntensity = 'low' | 'moderate' | 'high'
 export type DrillProgressionLevel = 1 | 2 | 3
 export type DrillIntent = 'consistency' | 'pressure' | 'finishing' | 'recovery' | 'control'
+export type DrillPhase = 'base' | 'build' | 'peak' | 'taper' | 'transition' | 'race'
 
 export interface SquashDrillDefinition {
   id: string
@@ -22,6 +23,8 @@ export interface SquashDrillDefinition {
   constraints?: string[]
   progressionLevel?: DrillProgressionLevel
   executionMode?: SquashDrillExecutionMode
+  phaseAppropriate?: DrillPhase[]
+  partnerRequired?: boolean
 }
 
 export function isSquashMatchDrill(value: Pick<SquashDrillDefinition, 'category' | 'tags'>): boolean {
@@ -90,7 +93,7 @@ export function orderSquashBlocksForSession<T extends { kind: SquashSessionBlock
   return [...blocks].sort((a, b) => order[a.kind] - order[b.kind])
 }
 
-export const SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
+const RAW_SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
   {
     id: 'drive_parallel_depth',
     name: 'Tiros paralelos profundos',
@@ -577,6 +580,38 @@ export const SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
     progressionLevel: 3,
   },
 ]
+
+function inferDrillPhaseAppropriate(drill: SquashDrillDefinition): DrillPhase[] {
+  if (drill.phaseAppropriate) return drill.phaseAppropriate
+  if (drill.category === 'match') {
+    return drill.tags.includes('pre_match') ? ['taper', 'race'] : ['build', 'peak', 'race']
+  }
+  if (drill.tags.includes('pre_match')) return ['taper', 'race']
+  if (drill.tags.includes('recovery_technical')) return ['base', 'taper', 'transition', 'race']
+  if (drill.category === 'physical') return ['base', 'build', 'peak']
+  if (drill.category === 'tactical' || drill.intent === 'pressure' || drill.tags.includes('pressure')) return ['build', 'peak']
+  if (drill.category === 'technical' || drill.tags.includes('control_session')) return ['base', 'build', 'peak', 'taper']
+  return ['base', 'build']
+}
+
+function inferPartnerRequired(drill: SquashDrillDefinition): boolean {
+  if (drill.partnerRequired != null) return drill.partnerRequired
+  if (drill.category === 'match') return true
+  if (drill.tags.includes('solo') || drill.tags.includes('ghosting') || drill.tags.includes('footwork')) return false
+  if (drill.tags.includes('practice') || drill.tags.includes('match_play') || drill.tags.includes('multiball')) return true
+  if (drill.tags.includes('conditioned_game')) return true
+  return false
+}
+
+function withDrillPhase2Metadata(drill: SquashDrillDefinition): SquashDrillDefinition {
+  return {
+    ...drill,
+    phaseAppropriate: inferDrillPhaseAppropriate(drill),
+    partnerRequired: inferPartnerRequired(drill),
+  }
+}
+
+export const SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = RAW_SQUASH_DRILL_LIBRARY.map(withDrillPhase2Metadata)
 
 export function toSquashDrill(definition: SquashDrillDefinition, durationMin?: number, notes?: string): SquashDrill {
   return {

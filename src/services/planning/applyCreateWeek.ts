@@ -99,6 +99,7 @@ export async function applyCreateWeek({
       squashDetails: session.squashDetails,
       warmup: session.warmup,
       cooldown: session.cooldown,
+      metadata: session.metadata,
     }))
     createdSessionIds.push(created.id)
   }

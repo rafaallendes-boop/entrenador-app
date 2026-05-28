@@ -90,6 +90,8 @@ const MIXED_KIND_ORDER: Record<Exclude<SquashSelectionDesiredKind, SquashSession
 }
 
 function isPhaseAllowed(drill: SquashDrillDefinition, phase: SquashSelectionPhase): boolean {
+  if (drill.phaseAppropriate) return drill.phaseAppropriate.includes(phase)
+
   switch (phase) {
     case 'base':
       return drill.tags.includes('base') || drill.tags.includes('recovery_technical')
@@ -430,6 +432,7 @@ export function filterByExecutionMode(
   return drills.filter((drill) => {
     const executionMode: SquashDrillExecutionMode = resolveDrillExecutionMode(drill)
     if (partnerAvailability === 'solo') {
+      if (drill.partnerRequired) return false
       return executionMode === 'solo' || executionMode === 'either'
     }
     if (executionMode === 'solo') {

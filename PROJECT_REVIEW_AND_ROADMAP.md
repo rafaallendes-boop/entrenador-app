@@ -1,12 +1,12 @@
 # Entrenador App - Review and Roadmap
 
-Actualizado: 2026-05-25
+Actualizado: 2026-05-28
 
 ## Resumen Ejecutivo
 
 Entrenador esta en beta interna avanzada. La app ya tiene una base usable: coach AI, Week Creator, Plan Builder, sync local-first con Supabase, backup/export, perfil de atleta, nutricion contextual, PWA, diagnostico local, suites de tests y scripts E2E. El estado actual del repo muestra una mejora clara respecto del review anterior: el foco ya no es solo que Gemini devuelva JSON aplicable, sino que las semanas y sesiones tengan mejor calidad operacional, fechas correctas y preparacion fisica mas util.
 
-El working tree actual contiene cambios relevantes sin commit. No son cambios cosmeticos: agregan prescripcion de carga por 1RM/RPE, estructura real de fuerza por bloques, cardio especifico para squash, postprocesado de fechas para ajustes de chat, fallback estructurado cuando el modelo responde solo texto, soporte de semanas parciales en Plan Builder, reparacion de minimo de deporte principal, mejoras de sync y tests nuevos.
+El working tree actual contiene cambios relevantes sin commit. No son cambios cosmeticos: agregan prescripcion de carga por 1RM/RPE, estructura real de fuerza por bloques, cardio especifico para squash, postprocesado de fechas para ajustes de chat, fallback estructurado cuando el modelo responde solo texto, soporte de semanas parciales en Plan Builder, reparacion de minimo de deporte principal, especificidad deportiva Fase 2 para Plan Builder, mejoras de sync y tests nuevos.
 
 Restriccion operativa: por limite de Netlify, no se debe subir a produccion hasta el 2026-05-29. Hasta esa fecha, el trabajo debe ser QA en DEV/local. El 2026-05-29 se hara una prueba fuerte en DEV, luego smoke controlado en prod, despues beta privada y finalmente beta con mas personas.
 
@@ -20,6 +20,48 @@ La estrategia correcta sigue siendo progresiva:
 No conviene agregar monetizacion, paywall, proveedores por defecto ni integraciones externas hasta que coach, Week Creator, Plan Builder y sync pasen pruebas repetibles con uso real.
 
 ## Estado Actual del Repo
+
+### Validacion local corrida el 2026-05-28
+
+Verde en el estado actual:
+
+```bash
+npm run lint
+npm test
+npm run build
+npm run audit:prompt
+```
+
+Resultados:
+
+- `npm run lint`: OK.
+- `npm test`: 86 archivos, 629 tests OK.
+- `npm run build`: OK.
+- `npm run audit:prompt`: OK.
+  - `chat_general`: 2014 chars / ~504 tokens.
+  - `chat_action`: 14650 chars / ~3663 tokens.
+  - `week_creator`: 14650 chars / ~3663 tokens.
+  - `plan_builder_week`: 14650 chars / ~3663 tokens.
+  - `weekly_summary`: 14958 chars / ~3740 tokens.
+
+Tests focalizados nuevos/relevantes de Fase 2:
+
+- `src/services/training/__tests__/exerciseLibrarySchema.test.ts`
+- `src/services/training/__tests__/drillLibrarySchema.test.ts`
+- `src/services/training/__tests__/strengthBlocks.test.ts`
+- `src/services/training/__tests__/strengthSelectorPhase2.test.ts`
+- `src/services/training/__tests__/drillSelectorPhase.test.ts`
+- `src/services/planBuilder/__tests__/profileAdapter.test.ts`
+- `src/services/planBuilder/__tests__/repairWeekPhase2Wiring.test.ts`
+
+No revalidado hoy:
+
+- `npm run e2e:dev`
+- `npm run e2e:dev:apply`
+- `npm run e2e:plan`
+- `npm run e2e:plan:generate`
+- `npm run e2e:plan:accept`
+- `npm run loadtest:week-creator`
 
 ### Validacion local corrida el 2026-05-25
 
@@ -151,7 +193,7 @@ Riesgo pendiente:
 
 ### Plan Builder
 
-Estado: base mas robusta; falta generacion real con proveedor.
+Estado: base mas robusta y Fase 2 de especificidad deportiva iniciada; falta generacion real con proveedor y QA de calidad del plan completo.
 
 Cambios principales:
 
@@ -167,6 +209,16 @@ Cambios principales:
 - Validator usa rango efectivo y cantidad esperada.
 - Repair intenta preservar un minimo de deporte principal, especialmente squash en build/peak.
 - UI cambia etiqueta `race` a `Competencia`.
+- Fase 2 empieza a usar la libreria actual como catalogo declarativo, sin crear una segunda fuente de verdad.
+- `exerciseLibrary` expone metadata de fase, rotacion de bloque y referencia 1RM por ejercicio.
+- `drillLibrary` expone metadata de fase y `partnerRequired`.
+- Nuevo `strengthBlocks/` con templates build A/B/C, peak A/B/C, taper A/B y race.
+- Nuevo `profileAdapter` traduce perfil + wizard a parametros de selector: 1RM disponibles, ajuste RPE, edad masters y equipo opcional.
+- `selectStrengthSession` usa templates cuando recibe contexto de bloque/perfil, rota lift estrella y expone `starLift`.
+- `repairWeek` calcula `weekIndexInBlock`, pasa 1RM/RPE al selector y persiste `metadata.starLift` en la propuesta.
+- `applyCreateWeek` conserva metadata de sesion al guardar el plan aceptado.
+- `drillSelector` ya consume `phaseAppropriate` y excluye drills con partner cuando la sesion es solo.
+- QA con export real del 2026-05-28 detecto que Gemini estaba insertando `Warm-up...` y `Cooldown...` como ejercicios dentro de fuerza, duplicando las secciones dedicadas. `strengthSessionStructure` ahora filtra ejercicios protocolarios cuando hay trabajo real de fuerza.
 
 Riesgo pendiente:
 
@@ -175,6 +227,13 @@ Riesgo pendiente:
 - Correr `npm run e2e:plan:accept` solo en dev/local seguro.
 - Confirmar que una ultima semana parcial antes del evento queda usable en WeeklyView.
 - Revisar si el minimo de deporte principal no sobrecorrige reemplazando demasiado soporte.
+- Generar un plan de 9 semanas con perfil de fuerza completo y validar:
+  - 0 sesiones de fuerza clonadas con 3+ ejercicios repetidos dentro del mismo bloque.
+  - al menos 4 ejercicios del plan usando referencia 1RM.
+  - cada fuerza de 60 min con core, squat/hinge, push/pull, unilateral y accesorios.
+  - al menos 6 drills distintos de squash across plan.
+  - ausencia de warning `quality.strength.repeated_template`.
+- Regenerar/repairar planes aceptados antes de esta correccion si se quieren limpiar sesiones ya guardadas con warm-up/cooldown dentro del array de ejercicios.
 
 ### Week Creator y contrato de salida
 
@@ -266,7 +325,7 @@ Pendiente:
 
 ### Plan Builder
 
-Estado: base tecnica fortalecida; falta prueba real profunda de generacion y aceptacion.
+Estado: base tecnica fortalecida y Fase 2 parcialmente implementada; falta prueba real profunda de generacion, aceptacion y calidad deportiva del plan completo.
 
 Fortalezas:
 
@@ -277,7 +336,11 @@ Fortalezas:
 - Validacion y regeneracion.
 - Soporte de semanas parciales por rango efectivo.
 - Repair con fechas validas, cantidad esperada y minimo de deporte principal.
+- Repair con seleccion de fuerza por bloque, perfil 1RM y metadata de lift estrella.
 - Prompts de semana/batch alineados con cantidad efectiva y rango valido.
+- Catalogos actuales enriquecidos con metadata de fase/rotacion/partner.
+- Templates de fuerza por fase y rotacion A/B/C.
+- Tests focalizados de catalogo, blocks, profile adapter, selector y wiring.
 - Tests locales verdes.
 
 Pendiente:
@@ -288,6 +351,7 @@ Pendiente:
 - Correr `npm run e2e:plan:accept` solo en dev/local seguro.
 - Validar que aceptar plan deja WeeklyView usable.
 - Revisar telemetria `plan_builder_week` o `plan_builder_pair` en Settings.
+- Validar metricas Fase 2 en un plan real de 8-12 semanas: rotacion de fuerza, uso de 1RM, variedad de drills y ausencia de templates repetidos.
 
 ### Fuerza y Preparacion Fisica
 
@@ -516,10 +580,13 @@ Criterio de salida:
 
 ### Fase 2 - Hardening de Calidad
 
-Objetivo: convertir fallos observados en fixes puntuales.
+Objetivo: convertir fallos observados en fixes puntuales y cerrar la especificidad deportiva del Plan Builder antes de ampliar beta.
 
 Prioridades:
 
+- Completar QA real de Plan Builder Fase 2 con perfil squash competitivo y 1RM completos.
+- Medir si el plan cumple rotacion de fuerza, lift estrella y variedad de drills en 8-12 semanas.
+- Ajustar selector de fuerza solo con evidencia de planes reales, no por intuicion.
 - Ajustar prompts solo donde haya evidencia.
 - Ajustar selectors deportivos si el output es valido pero deportivamente pobre.
 - Mejorar normalizer/schema solo si hay fallos de formato repetidos.

@@ -212,6 +212,17 @@ export interface GeneratedProtocol {
   source: 'base' | 'adapted'
 }
 
+export interface SessionStarLiftMetadata {
+  name: string
+  targetPercent1RM?: number
+  targetRpe?: number
+  weekProgression: number
+}
+
+export interface SessionMetadata {
+  starLift?: SessionStarLiftMetadata
+}
+
 export interface ProtocolContext {
   kind: ProtocolKind
   sport?: SupportedSport
@@ -248,6 +259,7 @@ export interface SessionBase {
   completionNotes?: string
   warmup?: GeneratedProtocol
   cooldown?: GeneratedProtocol
+  metadata?: SessionMetadata
   sessionFeedback?: SessionFeedback
   completedAt?: number
   createdAt: number
@@ -792,6 +804,7 @@ export interface CoachSessionProposal {
   squashDetails?: SquashDetails        // for squash training/control sessions
   warmup?: GeneratedProtocol
   cooldown?: GeneratedProtocol
+  metadata?: SessionMetadata
 }
 
 export interface CoachAction {

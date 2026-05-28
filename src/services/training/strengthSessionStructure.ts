@@ -17,7 +17,8 @@ export function normalizeStrengthSessionExercises<T extends StrengthExerciseLike
   if (!exercises || exercises.length === 0) return exercises
 
   const durationMin = options.durationMin ?? 50
-  const normalized = exercises.map((exercise) => normalizeStrengthExerciseGroup(exercise))
+  const protocolFiltered = removeProtocolExercisesWhenStrengthWorkExists(exercises)
+  const normalized = protocolFiltered.map((exercise) => normalizeStrengthExerciseGroup(exercise))
   const withCore = durationMin >= 45
     ? ensureCoreBlock(normalized)
     : normalized
@@ -27,6 +28,12 @@ export function normalizeStrengthSessionExercises<T extends StrengthExerciseLike
     if (groupDelta !== 0) return groupDelta
     return coreRank(a) - coreRank(b)
   })
+}
+
+function removeProtocolExercisesWhenStrengthWorkExists<T extends StrengthExerciseLike>(exercises: T[]): T[] {
+  const hasStrengthWork = exercises.some((exercise) => !isProtocolExercise(exercise) && inferExerciseGroup(exercise) !== 'mobility')
+  if (!hasStrengthWork) return exercises
+  return exercises.filter((exercise) => !isProtocolExercise(exercise))
 }
 
 export function enhanceStrengthSessionExercises<T extends StrengthExerciseLike>(
@@ -135,8 +142,7 @@ function completeStrengthLoadAndEffort<T extends StrengthExerciseLike>(
 }
 
 function isLoadBearingStrengthExercise(exercise: StrengthExerciseLike): boolean {
-  const name = normalizeText(exercise.name ?? '')
-  if (/\b(warm.?up|cool.?down|calentamiento|enfriamiento|activaci[oó]n|activacion)\b/i.test(name)) return false
+  if (isProtocolExercise(exercise)) return false
 
   const group = resolveStrengthExerciseBlock(exercise)
   if (group === 'core' || group === 'cardio' || group === 'mobility') return false
@@ -145,6 +151,15 @@ function isLoadBearingStrengthExercise(exercise: StrengthExerciseLike): boolean 
   if (definition?.intensityType === 'power' && exercise.weight == null && exercise.targetPercent1RM == null) return false
 
   return true
+}
+
+function isProtocolExercise(exercise: Pick<StrengthExerciseLike, 'name'>): boolean {
+  const name = normalizeText(exercise.name ?? '')
+  return (
+    /\b(warm.?up|cool.?down|calentamiento|enfriamiento|estiramiento|estiramientos|stretch|static\s+stretch|foam\s+roller|liberacion\s+miofascial)\b/.test(name) ||
+    /\bmovilidad\b/.test(name) ||
+    /\bactivacion\b/.test(name)
+  )
 }
 
 function inferTargetPercent1RM(exercise: StrengthExerciseLike, isMainLift: boolean): number {
