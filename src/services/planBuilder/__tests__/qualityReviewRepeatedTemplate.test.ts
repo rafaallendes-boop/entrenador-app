@@ -71,4 +71,25 @@ describe('qualityReview repeated strength templates', () => {
 
     expect(review.issues.some((issue) => issue.code === 'quality.strength.repeated_template')).toBe(false)
   })
+
+  it('flags each week at most once even when a whole block shares the same template', () => {
+    const threeWeekBlock: TrainingPlan = {
+      ...plan(),
+      totalWeeks: 3,
+      phases: [{ phase: 'build', startWeekIndex: 0, endWeekIndex: 2, blockFocus: '', intentBySport: {} }],
+    } as TrainingPlan
+    const sameTemplate = ['Dead bug', 'Back squat', 'Bench press', 'Pull up']
+
+    const review = reviewPlanQuality(threeWeekBlock, [
+      week(0, sameTemplate),
+      week(1, sameTemplate),
+      week(2, sameTemplate),
+    ])
+
+    const repeated = review.issues.filter((issue) => issue.code === 'quality.strength.repeated_template')
+    // Linear (one per later week), not quadratic C(3,2)=3.
+    expect(repeated.length).toBe(2)
+    const flaggedWeeks = repeated.map((issue) => issue.weekIndex)
+    expect(new Set(flaggedWeeks).size).toBe(flaggedWeeks.length)
+  })
 })

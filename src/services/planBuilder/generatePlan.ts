@@ -262,7 +262,7 @@ function normalizeRetryInstruction(
     ?? `${base} Usa formato estricto: targetDate=${week.weekStartDate}, sesiones compactas y todas las fechas dentro de esa semana.`
 }
 
-async function generateSingleWeekWithRetry(
+export async function generateSingleWeekWithRetry(
   provider: AIProvider,
   plan: TrainingPlan,
   week: TrainingPlanWeek,
@@ -516,7 +516,7 @@ async function generateWeekPair(
         chunkCount,
         lastError: message,
         batchId: effectiveBatchId,
-        degradeToSingle: false,
+        degradeToSingle: true,
       },
     }
   }

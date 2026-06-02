@@ -1,6 +1,6 @@
 # Plan Builder — Producto Estrella
 
-**Estado:** Diseño aprobado, pendiente de implementación
+**Estado:** Implementacion parcial/adaptada. Fases 1-2 mayormente implementadas con hardening posterior; Fase 3 parcial; Fase 4 condicional fuera del MVP.
 **Fecha:** 2026-05-27
 **Autor:** Rafael Allendes (colaboración con Claude)
 **Stakeholder:** beta privada Entrenador App

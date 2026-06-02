@@ -460,5 +460,47 @@ describe('commitPlan', () => {
     expect(trainingStoreState.addSession).toHaveBeenCalledTimes(2)
     expect(trainingPlanPuts).toHaveLength(1)
     expect(trainingPlanWeekPuts).toHaveLength(1)
+    expect(trainingPlanPuts[0]?.generationSummary?.qualityReview).toBeDefined()
+    expect(trainingPlanPuts[0]?.generationSummary?.qualityReview?.weeks).toHaveLength(1)
+  })
+
+  it('recomputes qualityReview on commit instead of preserving a stale generation review', async () => {
+    const plan = {
+      ...makePlan(1),
+      generationSummary: {
+        startedAt: 1,
+        strategy: 'single' as const,
+        completedWeeks: 1,
+        failedWeeks: [],
+        totalAttempts: 1,
+        qualityReview: {
+          score: 42,
+          grade: 'poor' as const,
+          issues: [],
+          weeks: [],
+          repairCount: 0,
+          criticalIssueCount: 0,
+          warningCount: 0,
+        },
+      },
+      wizardConfig: {
+        ...makePlan().wizardConfig,
+        allowDoubleSession: true,
+        trainingDays: ['monday'] as TrainingPlan['wizardConfig']['trainingDays'],
+        sessionsPerWeek: 2,
+      },
+    }
+
+    const result = await commitPlan(plan, [
+      makeWeek({
+        id: 'week-1',
+        weekIndex: 0,
+        weekStartDate: '2026-05-04',
+        sessions: makeProposalSession('2026-05-05'),
+      }),
+    ])
+
+    expect(result.errors).toEqual([])
+    expect(trainingPlanPuts[0]?.generationSummary?.qualityReview?.score).not.toBe(42)
   })
 })

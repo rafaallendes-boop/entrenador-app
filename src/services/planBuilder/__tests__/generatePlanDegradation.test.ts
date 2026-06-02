@@ -196,6 +196,46 @@ describe('generatePlanWeeks pair → single degradation', () => {
     expect(results[1]!.generationMeta.fallbackUsed).not.toBe(true)
   })
 
+  it('when the pair request fails entirely, retries both weeks as single before fallback', async () => {
+    let callIndex = 0
+    const callSpy = vi.fn(async (request: { requestClass: string }) => {
+      callIndex += 1
+      if (callIndex === 1) {
+        throw new Error('batch timeout')
+      }
+      const targetDate = request.requestClass === 'plan_builder_week' && callIndex === 2
+        ? '2026-06-01'
+        : '2026-06-08'
+      return {
+        text: `<actions>[${createWeekActionText(targetDate, `single-${callIndex}`)}]</actions>`,
+        provider: 'gemini',
+        model: 'gemini-2.5-flash',
+        durationMs: 1000,
+        traceId: `single-${callIndex}`,
+      }
+    })
+    const provider = { name: 'gemini', call: callSpy } as unknown as AIProvider
+
+    const results = await generatePlanWeeks({
+      plan: makePlan(),
+      weeks: [makeWeek('2026-06-01', 0), makeWeek('2026-06-08', 1)],
+      profile: makeProfile(),
+      wizardConfig: makeWizard(),
+      provider,
+      strategy: 'pairs',
+    })
+
+    expect(callSpy).toHaveBeenCalledTimes(3)
+    expect(callSpy.mock.calls.map((call) => call[0]?.requestClass)).toEqual([
+      'plan_builder_pair',
+      'plan_builder_week',
+      'plan_builder_week',
+    ])
+    expect(results).toHaveLength(2)
+    expect(results.every((week) => week.status === 'draft')).toBe(true)
+    expect(results.every((week) => week.generationMeta.fallbackUsed !== true)).toBe(true)
+  })
+
   it('when pair returns nothing and single also returns nothing, falls back to local for both weeks', async () => {
     const callSpy = vi.fn(async () => ({
       text: '<actions>[]</actions>',

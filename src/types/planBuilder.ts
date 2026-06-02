@@ -6,12 +6,13 @@ import type {
   PlanWizardConfig,
   SupportedSport,
 } from './index'
+import type { PlanQualityReview } from '../services/planBuilder/qualityReview'
 
 export type PlanStatus = 'draft' | 'active' | 'archived' | 'superseded'
 
 export type PlanGenerationState = 'shell' | 'generating' | 'partial' | 'failed' | 'complete'
 
-export type PlanWeekStatus = 'pending' | 'generating' | 'draft' | 'accepted' | 'error'
+export type PlanWeekStatus = 'pending' | 'generating' | 'draft' | 'accepted' | 'error' | 'regenerating'
 
 export type PlanValidationSeverity = 'error' | 'warning' | 'info'
 
@@ -68,6 +69,13 @@ export interface PlanGenerationSummary {
   totalAttempts: number
   acceptedAt?: number
   discardedAt?: number
+  qualityReview?: PlanQualityReview
+}
+
+export interface RegenerationMeta {
+  attempts: number
+  lastRegeneratedAt: number
+  previousFallbackUsed?: boolean
 }
 
 export interface PlanValidationIssue {
@@ -110,6 +118,7 @@ export interface TrainingPlanWeek {
   targetLoadBySport: Partial<Record<SupportedSport, number>>
   validationIssues: PlanValidationIssue[]
   generationMeta: PlanGenerationMeta
+  regenerationMeta?: RegenerationMeta
   createdAt: number
   updatedAt: number
 }

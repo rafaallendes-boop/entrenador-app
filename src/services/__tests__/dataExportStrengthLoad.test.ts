@@ -29,6 +29,10 @@ const coachExercises = strengthExercises.map((exercise) => ({
   warmupSets: exercise.warmupSets,
 }))
 
+function clone<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T
+}
+
 function backupFixture() {
   return {
     app: 'Entrenador',
@@ -49,7 +53,7 @@ function backupFixture() {
           durationMin: 60,
           createdAt: 1,
           updatedAt: 2,
-          exercises: strengthExercises,
+          exercises: clone(strengthExercises),
         },
       ],
       dayLogs: [],
@@ -70,7 +74,7 @@ function backupFixture() {
               sessionType: 'strength',
               title: 'Fuerza lower',
               durationMin: 60,
-              exercises: coachExercises,
+              exercises: clone(coachExercises),
             },
           ],
           weekObjectives: [],
@@ -95,7 +99,7 @@ function backupFixture() {
               title: 'Fuerza lower',
               durationMin: 60,
               timeBlock: 'AM',
-              exercises: coachExercises,
+              exercises: clone(coachExercises),
             },
           ],
           status: 'pending',
@@ -142,5 +146,14 @@ describe('dataExport strength load metadata', () => {
     backup.tables.sessions[0].exercises[0].targetPercent1RM = 140
 
     expect(() => parseAppDataExport(backup)).toThrow(/targetPercent1RM/)
+  })
+
+  it('accepts regenerating plan weeks during backup import', () => {
+    const backup = backupFixture()
+    backup.tables.trainingPlanWeeks[0].status = 'regenerating'
+
+    const parsed = parseAppDataExport(backup)
+
+    expect(parsed.tables.trainingPlanWeeks[0].status).toBe('regenerating')
   })
 })

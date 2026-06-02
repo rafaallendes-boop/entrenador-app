@@ -12,6 +12,7 @@ import {
   resolvePlanWeekNumber,
 } from '../services/planBuilder/planProgress'
 import { ROUTES } from '../constants/routes'
+import { PlanQualityBadge } from '../components/planBuilder/PlanQualityBadge'
 import type { MacroPlanPhase } from '../types'
 import type { TrainingPlan } from '../types/planBuilder'
 
@@ -576,6 +577,10 @@ export default function PlanDashboard({ onEdit }: { onEdit: () => void }) {
             color={T.cyan}
           />
         </div>
+
+        {activeGeneratedPlan?.generationSummary?.qualityReview && (
+          <PlanQualityBadge review={activeGeneratedPlan.generationSummary.qualityReview} />
+        )}
 
         {/* Phases */}
         <div style={{

@@ -358,26 +358,36 @@ function getRepeatedStrengthTemplateIssues(plan: TrainingPlan, weeks: TrainingPl
   }
 
   for (const blockWeeks of byBlock.values()) {
-    for (let i = 0; i < blockWeeks.length; i++) {
-      const first = blockWeeks[i]
-      const firstKeys = getStrengthExerciseKeys(first)
-      if (firstKeys.size === 0) continue
+    // Precompute each week's strength key set once instead of recomputing per pair.
+    const keysByWeek = blockWeeks.map((week) => ({ week, keys: getStrengthExerciseKeys(week) }))
 
-      for (let j = i + 1; j < blockWeeks.length; j++) {
-        const second = blockWeeks[j]
-        const secondKeys = getStrengthExerciseKeys(second)
-        if (secondKeys.size === 0) continue
+    for (let j = 1; j < keysByWeek.length; j++) {
+      const current = keysByWeek[j]
+      if (current.keys.size === 0) continue
 
-        const overlap = [...secondKeys].filter((key) => firstKeys.has(key)).length
-        if (overlap < 3) continue
-
-        issues.push(issue({
-          severity: 'warning',
-          code: 'quality.strength.repeated_template',
-          message: `Semanas ${first.weekIndex + 1} y ${second.weekIndex + 1} del bloque ${second.phase} comparten ${overlap} ejercicios de fuerza.`,
-          weekIndex: second.weekIndex,
-        }))
+      // Flag each week at most once: against the earlier week in the same block
+      // with the largest exercise overlap. Avoids quadratic warning blow-up that
+      // would over-penalize a single non-rotating block in scorePlan/scoreWeek.
+      let worstOverlap = 0
+      let worstWeek: TrainingPlanWeek | undefined
+      for (let i = 0; i < j; i++) {
+        const earlier = keysByWeek[i]
+        if (earlier.keys.size === 0) continue
+        const overlap = [...current.keys].filter((key) => earlier.keys.has(key)).length
+        if (overlap > worstOverlap) {
+          worstOverlap = overlap
+          worstWeek = earlier.week
+        }
       }
+
+      if (worstOverlap < 3 || !worstWeek) continue
+
+      issues.push(issue({
+        severity: 'warning',
+        code: 'quality.strength.repeated_template',
+        message: `Semanas ${worstWeek.weekIndex + 1} y ${current.week.weekIndex + 1} del bloque ${current.week.phase} comparten ${worstOverlap} ejercicios de fuerza.`,
+        weekIndex: current.week.weekIndex,
+      }))
     }
   }
 

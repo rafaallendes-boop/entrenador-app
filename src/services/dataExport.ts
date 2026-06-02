@@ -67,7 +67,7 @@ const MACRO_PLAN_PHASES = new Set(['base', 'build', 'peak', 'taper', 'race', 'tr
 const PHASE_SPORT_TARGET_ROLES = new Set(['primary', 'support', 'excluded'])
 const PLAN_STATUSES = new Set(['draft', 'active', 'archived', 'superseded'])
 const PLAN_GENERATION_STATES = new Set(['shell', 'generating', 'partial', 'failed', 'complete'])
-const PLAN_WEEK_STATUSES = new Set(['pending', 'generating', 'draft', 'accepted', 'error'])
+const PLAN_WEEK_STATUSES = new Set(['pending', 'generating', 'draft', 'accepted', 'error', 'regenerating'])
 const COACH_ACTION_TYPES = new Set([
   'move_session',
   'change_rpe',

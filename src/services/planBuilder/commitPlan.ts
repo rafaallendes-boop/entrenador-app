@@ -9,6 +9,7 @@ import { useTrainingStore } from '../../store/useTrainingStore'
 import { fromISO, toISO } from '../../utils/date'
 import { applyCreateWeek } from '../planning/applyCreateWeek'
 import { validatePlan } from './validator'
+import { reviewPlanQuality } from './qualityReview'
 
 export interface CommitPlanResult {
   errors: string[]
@@ -155,6 +156,12 @@ export async function commitPlan(
 
   if (errors.length === 0) {
     const nowTs = Date.now()
+    const nextWeeks = orderedWeeks.map((w) => ({
+      ...w,
+      status: acceptedWeeks.includes(w.weekIndex) ? 'accepted' as const : w.status,
+      updatedAt: nowTs,
+    }))
+    const qualityReview = reviewPlanQuality(plan, nextWeeks)
     const nextPlan: TrainingPlan = {
       ...plan,
       status: 'active',
@@ -164,14 +171,18 @@ export async function commitPlan(
         ? {
           ...plan.generationSummary,
           acceptedAt: plan.generationSummary.acceptedAt ?? nowTs,
+          qualityReview,
         }
-        : undefined,
+        : {
+          startedAt: plan.createdAt,
+          strategy: 'single',
+          completedWeeks: nextWeeks.length,
+          failedWeeks: [],
+          totalAttempts: nextWeeks.reduce((sum, week) => sum + (week.generationMeta.attempts ?? 0), 0),
+          acceptedAt: nowTs,
+          qualityReview,
+        },
     }
-    const nextWeeks = orderedWeeks.map((w) => ({
-      ...w,
-      status: acceptedWeeks.includes(w.weekIndex) ? 'accepted' : w.status,
-      updatedAt: nowTs,
-    }))
     try {
       await db.transaction('rw', db.trainingPlans, db.trainingPlanWeeks, async () => {
         await db.trainingPlans.put(nextPlan)
