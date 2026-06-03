@@ -9,6 +9,7 @@ import { usePlanBuilderStore } from '../store/usePlanBuilderStore'
 import { getPrimaryGoalEvent } from '../services/macroPlan'
 import { analyzePlanCommitImpact } from '../services/planBuilder/commitImpact'
 import { reviewPlanQuality } from '../services/planBuilder/qualityReview'
+import { shouldShowPlanQuality } from '../services/ai/showPlanQualityFlag'
 import { ChevronLeft, RefreshCw, CheckCircle2, AlertTriangle, X } from 'lucide-react'
 import type { AthleteProfile, PlanWizardConfig, GoalEvent, CoachSessionProposal, Session } from '../types'
 import type { PlanCommitImpact } from '../services/planBuilder/commitImpact'
@@ -95,6 +96,16 @@ function getWeekGenerationStatus(week: TrainingPlanWeek): string {
   }
   if (week.status === 'generating') return 'generando'
   return 'lista'
+}
+
+function getWeekGenerationStepIndex(week: TrainingPlanWeek): number {
+  const meta = week.generationMeta
+  if (week.status === 'draft') return 4
+  if (week.status === 'error') return 3
+  if ((meta.repairWarnings?.length ?? 0) > 0 || meta.retryUsed || (meta.attempts ?? 0) > 1) return 3
+  if (meta.validSessionCount != null || meta.rawSessionCount != null) return 2
+  if ((meta.attempts ?? 0) > 0 || meta.requestClass) return 1
+  return 0
 }
 
 function sportLabel(value: string): string {
@@ -467,8 +478,8 @@ export default function PlanBuilderV2Page() {
   const hasLoaded = useCoachMemoryStore((s) => s.hasLoaded)
   const loadMemory = useCoachMemoryStore((s) => s.loadMemory)
   const {
-    plan, weeks, issues, status, currentWeekIndex, completedWeeks, failedWeekIndexes, streamingTextByWeekIndex, lastError,
-    createDraft, runGeneration, retryFullGeneration, regenerateWeek, acceptPlan, discard, loadDraft,
+    plan, weeks, issues, status, currentWeekIndex, completedWeeks, failedWeekIndexes, lastError,
+    createDraft, runGeneration, retryFullGeneration, regenerateWeek, retryFailedWeeks, acceptPlan, discard, loadDraft,
   } = usePlanBuilderStore()
 
   const [selectedWeekIndex, setSelectedWeekIndex] = useState<number | null>(null)
@@ -577,7 +588,11 @@ export default function PlanBuilderV2Page() {
   const selectedWeekSignals = selectedWeek ? buildGenerationSignals(selectedWeek) : []
   const errors = issues.filter((i) => i.severity === 'error')
   const warnings = issues.filter((i) => i.severity === 'warning')
-  const qualityReview = useMemo(() => (plan ? reviewPlanQuality(plan, weeks) : null), [plan, weeks])
+  const showPlanQualityDebug = shouldShowPlanQuality()
+  const qualityReview = useMemo(
+    () => (showPlanQualityDebug && plan ? reviewPlanQuality(plan, weeks) : null),
+    [plan, showPlanQualityDebug, weeks],
+  )
   const selectedWeekQuality = selectedWeek && qualityReview
     ? qualityReview.weeks.find((week) => week.weekIndex === selectedWeek.weekIndex)
     : null
@@ -645,10 +660,7 @@ export default function PlanBuilderV2Page() {
 
   async function handleRetryFailedWeeks() {
     if (!effectiveAthleteProfile || isGenerating || status === 'committing' || failedWeekIndexes.length === 0) return
-
-    for (const weekIndex of failedWeekIndexes) {
-      await regenerateWeek(weekIndex, effectiveAthleteProfile)
-    }
+    await retryFailedWeeks(effectiveAthleteProfile)
   }
 
   async function handleRetryFullGeneration() {
@@ -749,6 +761,10 @@ export default function PlanBuilderV2Page() {
                   }}
                 />
               </div>
+              <p className="mt-2 text-[11px] leading-relaxed text-ink-faint">
+                La generación sigue en segundo plano mientras navegás por la app. Podés volver cuando quieras para revisar el avance.
+                {currentWeekIndex != null && ` Ahora: semana ${currentWeekIndex + 1}.`}
+              </p>
             </div>
           )}
         </div>
@@ -774,7 +790,7 @@ export default function PlanBuilderV2Page() {
         ) : shouldShowLaunchDeck ? (
           <PlanBuilderLaunchDeck
             title="Plan Builder"
-            subtitle="Architect your kinetic framework before the engine expands each week."
+            subtitle="Revisa el objetivo y genera un plan por semanas con control de carga, taper y sesiones clave."
             insight={launchInsight}
             weeksLabel={`${plan?.totalWeeks ?? weeks.length} semanas listas para inicializar.`}
             goalLabel={goalEvent ? `Evento objetivo: ${goalEvent.title} · ${goalEvent.date}` : 'Macro-plan listo para generar.'}
@@ -930,16 +946,18 @@ export default function PlanBuilderV2Page() {
                       {selectedWeek.weekStartDate}
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    disabled={isGenerating || status === 'committing'}
-                    onClick={() => effectiveAthleteProfile && regenerateWeek(selectedWeek.weekIndex, effectiveAthleteProfile)}
-                    className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-ink-muted transition-all hover:text-ink disabled:opacity-40"
-                    style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
-                  >
-                    <RefreshCw size={11} className={selectedWeek.status === 'generating' ? 'animate-spin' : ''} />
-                    Regenerar
-                  </button>
+                  {showPlanQualityDebug && (
+                    <button
+                      type="button"
+                      disabled={isGenerating || status === 'committing'}
+                      onClick={() => effectiveAthleteProfile && regenerateWeek(selectedWeek.weekIndex, effectiveAthleteProfile)}
+                      className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-ink-muted transition-all hover:text-ink disabled:opacity-40"
+                      style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
+                    >
+                      <RefreshCw size={11} className={selectedWeek.status === 'generating' ? 'animate-spin' : ''} />
+                      Regenerar
+                    </button>
+                  )}
                 </div>
 
 	                {selectedWeekSignals.length > 0 && (
@@ -1000,12 +1018,38 @@ export default function PlanBuilderV2Page() {
                           <RefreshCw size={20} className="animate-spin text-brand" />
                         </div>
                         <p className="text-xs text-ink-muted">{getWeekGenerationStatus(selectedWeek)}…</p>
-                        {streamingTextByWeekIndex[selectedWeek.weekIndex] && (
-                          <div className="mt-3 rounded-xl px-3 py-2.5 text-left text-xs text-ink-muted whitespace-pre-wrap"
-                            style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}>
-                            {streamingTextByWeekIndex[selectedWeek.weekIndex]}
+                        <div
+                          className="mt-4 rounded-xl px-3 py-3 text-left"
+                          style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}
+                        >
+                          {[
+                            'Diseñando estructura semanal',
+                            'Asignando deportes y bloques',
+                            'Validando fechas y sesiones',
+                            'Ajustando carga y calidad',
+                          ].map((label, index) => {
+                            const isDone = index < getWeekGenerationStepIndex(selectedWeek)
+                            const isActiveStep = index === getWeekGenerationStepIndex(selectedWeek)
+                            return (
+                              <div key={label} className="flex items-center gap-2 py-1.5">
+                                <span
+                                  className={`h-2 w-2 rounded-full ${isActiveStep ? 'animate-pulse bg-brand' : isDone ? 'bg-emerald-400' : 'bg-white/15'}`}
+                                />
+                                <span className={`text-[11px] ${isDone || isActiveStep ? 'text-ink-muted' : 'text-ink-faint'}`}>
+                                  {label}
+                                </span>
+                              </div>
+                            )
+                          })}
+                          <div className="mt-3 space-y-2">
+                            {[0, 1, 2].map((item) => (
+                              <div key={item} className="rounded-lg px-3 py-2" style={{ background: 'rgba(255,255,255,0.035)' }}>
+                                <div className="h-2 w-20 rounded-full bg-white/10" />
+                                <div className="mt-2 h-2 w-4/5 rounded-full bg-white/10" />
+                              </div>
+                            ))}
                           </div>
-                        )}
+                        </div>
                       </>
                     ) : selectedWeek.status === 'error' ? (
                       <div className="space-y-2">

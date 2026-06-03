@@ -29,10 +29,13 @@ import { buildWeekRetryInstruction } from '../week/shared'
 import { repairGeneratedWeek } from '../planBuilder/repairWeek'
 import { WEEK_CREATOR_RESPONSE_SCHEMA } from './weekCreatorResponseSchema'
 import { enhanceStrengthSessionExercises } from '../training/strengthSessionStructure'
+import { todayISO } from '../../utils/date'
+import { applyWeekCreatorDateWindowToConfig, resolveWeekCreatorDateWindow } from './WeekCreatorDateWindow'
 
 type WeekCreatorOptions = {
   surface?: AITechnicalSurface
   targetWeekStart: string
+  today?: string
   signal?: AbortSignal
 }
 
@@ -74,12 +77,12 @@ export const WeekCreatorEngine = {
     context: ChatContext,
     options: WeekCreatorOptions,
   ): Promise<CoachNormalizedResponse> {
-    const config = withRequestedSessionsPerWeek(
+    const baseConfig = withRequestedSessionsPerWeek(
       resolveWeekCreatorConfig(context.athleteProfile),
       userMessage,
     )
 
-    if (config.configSource === 'defaults') {
+    if (baseConfig.configSource === 'defaults') {
       return {
         message: 'Para proponer una semana necesito conocer tus deportes y disponibilidad horaria. ¿Quieres completar tu perfil de atleta primero? Puedes hacerlo desde Configuración → Perfil de atleta.',
         actions: [],
@@ -94,6 +97,9 @@ export const WeekCreatorEngine = {
         meta: { hadActionsMarkup: false, actionParseFailed: false, likelyTruncated: false },
       }
     }
+
+    const dateWindow = resolveWeekCreatorDateWindow(options.targetWeekStart, options.today ?? todayISO())
+    const config = applyWeekCreatorDateWindowToConfig(baseConfig, dateWindow)
 
     const provider = getActiveProvider()
     const policy = getAIRequestPolicy('week_creator')
@@ -128,6 +134,8 @@ export const WeekCreatorEngine = {
         const prompt = buildWeekCreatorPrompt(context, {
           userMessage,
           targetWeekStart: options.targetWeekStart,
+          planningStartDate: dateWindow.planningStartDate,
+          weekEndDate: dateWindow.weekEndDate,
           config,
           retryInstruction: buildWeekRetryInstruction(lastFailure?.error, options.targetWeekStart, config.sessionsPerWeek, attempt),
           strictFormatting: true,
@@ -155,7 +163,7 @@ export const WeekCreatorEngine = {
         normalizeStage.end({ ok: true })
 
         const repairStage = tracker.stage('repair')
-        const repaired = repairWeekCreatorResponse(normalized, context, config, options.targetWeekStart)
+        const repaired = repairWeekCreatorResponse(normalized, context, config, options.targetWeekStart, dateWindow.planningStartDate)
         repairStage.end({ ok: true })
 
         const validateStage = tracker.stage('validate')
@@ -164,6 +172,7 @@ export const WeekCreatorEngine = {
           context,
           config,
           targetWeekStart: options.targetWeekStart,
+          planningStartDate: dateWindow.planningStartDate,
         })
         validateStage.end({ ok: validation.ok, error: validation.ok ? undefined : validation.error })
 
@@ -271,6 +280,7 @@ export const WeekCreatorEngine = {
     const fallback = buildDeterministicWeekCreatorResponse({
       config,
       targetWeekStart: options.targetWeekStart,
+      planningStartDate: dateWindow.planningStartDate,
       profile: context.athleteProfile ?? undefined,
       provider: lastFailure?.provider,
       error: failureMessage,
@@ -280,6 +290,7 @@ export const WeekCreatorEngine = {
       context,
       config,
       targetWeekStart: options.targetWeekStart,
+      planningStartDate: dateWindow.planningStartDate,
     })
     if (!fallbackValidation.ok || !fallbackValidation.action) {
       throw new Error(`${failureMessage} (trace ${failureTraceId})`)
@@ -380,6 +391,7 @@ function repairWeekCreatorResponse(
   context: ChatContext,
   config: WeekCreatorEffectiveConfig,
   targetWeekStart: string,
+  planningStartDate = targetWeekStart,
 ): RepairedWeekCreatorResponse {
   const actions = response.actions ?? []
   const createWeekActions = actions.filter((action) => action.type === 'create_week')
@@ -393,11 +405,11 @@ function repairWeekCreatorResponse(
   }
 
   const profile = buildRepairProfile(context)
-  const repairContext = buildRepairContext(profile, config, targetWeekStart)
+  const repairContext = buildRepairContext(profile, config, targetWeekStart, planningStartDate)
   const repairResult = repairGeneratedWeek(action.sessions, repairContext)
   const shouldFinalize = shouldFinalizeWeekCreatorSessions(repairResult.sessions, config)
   const finalizedSessions = shouldFinalize
-    ? finalizeWeekCreatorSessions(repairResult.sessions, config, targetWeekStart, profile)
+    ? finalizeWeekCreatorSessions(repairResult.sessions, config, targetWeekStart, planningStartDate, profile)
     : repairResult.sessions
   const finalizedChanged = shouldFinalize && !areSessionListsEquivalent(repairResult.sessions, finalizedSessions)
   if (repairResult.meta.repairedSessionCount === 0
@@ -468,11 +480,12 @@ function finalizeWeekCreatorSessions(
   sessions: CoachSessionProposal[],
   config: WeekCreatorEffectiveConfig,
   targetWeekStart: string,
+  planningStartDate = targetWeekStart,
   profile?: AthleteProfile,
 ): CoachSessionProposal[] {
   const expected = Math.max(1, config.sessionsPerWeek)
   const targetSports = buildFallbackSportSequence(config).slice(0, expected)
-  const slots = buildFallbackSlots(config, targetWeekStart, expected)
+  const slots = buildFallbackSlots(config, targetWeekStart, expected, planningStartDate)
   if (targetSports.length === 0 || slots.length < expected) return sessions
 
   const allowedSports = new Set<SupportedSport>([...(config.allowedSports.length > 0 ? config.allowedSports : targetSports), 'mobility'])
@@ -528,6 +541,7 @@ function buildRepairContext(
   profile: ReturnType<typeof buildRepairProfile>,
   config: WeekCreatorEffectiveConfig,
   targetWeekStart: string,
+  planningStartDate = targetWeekStart,
 ) {
   const now = Date.now()
   const primarySport = config.primarySport ?? config.allowedSports[0] ?? 'squash'
@@ -566,7 +580,7 @@ function buildRepairContext(
     status: 'draft',
     generationState: 'shell',
     title: 'Week Creator',
-    startDate: targetWeekStart,
+    startDate: planningStartDate,
     endDate: addDaysIso(targetWeekStart, 6),
     totalWeeks: 1,
     phases: [],
@@ -616,6 +630,7 @@ function addDaysIso(date: string, days: number): string {
 function buildDeterministicWeekCreatorResponse(input: {
   config: WeekCreatorEffectiveConfig
   targetWeekStart: string
+  planningStartDate?: string
   profile?: AthleteProfile
   provider?: CoachNormalizedResponse['provider']
   error?: string
@@ -629,7 +644,7 @@ function buildDeterministicWeekCreatorResponse(input: {
       'Priorizar el deporte principal sin perder soporte complementario.',
       'Dejar una semana ejecutable y fácil de ajustar.',
     ],
-    sessions: buildDeterministicSessions(input.config, input.targetWeekStart, input.profile),
+    sessions: buildDeterministicSessions(input.config, input.targetWeekStart, input.planningStartDate ?? input.targetWeekStart, input.profile),
   }
 
   return {
@@ -651,10 +666,11 @@ function buildDeterministicWeekCreatorResponse(input: {
 function buildDeterministicSessions(
   config: WeekCreatorEffectiveConfig,
   targetWeekStart: string,
+  planningStartDate = targetWeekStart,
   profile?: AthleteProfile,
 ): CoachSessionProposal[] {
   const sportSequence = buildFallbackSportSequence(config)
-  const plannedSlots = buildFallbackSlots(config, targetWeekStart, sportSequence.length)
+  const plannedSlots = buildFallbackSlots(config, targetWeekStart, sportSequence.length, planningStartDate)
   const sportCounts = new Map<SupportedSport, number>()
 
   return sportSequence.map((sport, index) => {
@@ -720,11 +736,13 @@ function buildFallbackSlots(
   config: WeekCreatorEffectiveConfig,
   targetWeekStart: string,
   count: number,
+  planningStartDate = targetWeekStart,
 ): Array<{ date: string; timeBlock: TimeBlock }> {
   const fallbackDays: DayOfWeek[] = ['monday', 'wednesday', 'friday']
   const allowedDays = config.trainingDays.length > 0 ? config.trainingDays : fallbackDays
   const dates = allowedDays
     .map((day) => addDaysIso(targetWeekStart, dayOffset(day)))
+    .filter((date) => date >= planningStartDate)
     .sort()
   const slots: Array<{ date: string; timeBlock: TimeBlock }> = []
 

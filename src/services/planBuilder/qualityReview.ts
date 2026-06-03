@@ -409,16 +409,16 @@ function scoreWeek(issues: PlanValidationIssue[], repairCount: number): number {
     if (item.severity === 'warning') return total + 7
     return total + 3
   }, 0)
-  const repairCredit = Math.min(6, repairCount)
-  return clampScore(100 - penalty + repairCredit)
+  const repairPenalty = Math.min(10, Math.floor(repairCount / 2))
+  return clampScore(100 - penalty - repairPenalty)
 }
 
 function scorePlan(weeks: PlanQualityWeekReview[], planIssues: PlanValidationIssue[], repairCount: number): number {
   if (weeks.length === 0) return 0
   const average = weeks.reduce((total, week) => total + week.score, 0) / weeks.length
   const planPenalty = planIssues.reduce((total, item) => total + (item.severity === 'error' ? 14 : item.severity === 'warning' ? 5 : 2), 0)
-  const repairCredit = Math.min(4, Math.floor(repairCount / 2))
-  return clampScore(average - planPenalty + repairCredit)
+  const repairPenalty = Math.min(8, Math.floor(repairCount / 8))
+  return clampScore(average - planPenalty - repairPenalty)
 }
 
 function countRepairs(week: TrainingPlanWeek): number {

@@ -14,6 +14,8 @@ import { normalizeSport } from '../../utils/athlete'
 export interface WeekCreatorPromptInput {
   userMessage: string
   targetWeekStart: string
+  planningStartDate?: string
+  weekEndDate?: string
   config: WeekCreatorEffectiveConfig
   retryInstruction?: string
   strictFormatting?: boolean
@@ -42,12 +44,18 @@ export function buildWeekCreatorPrompt(
   const goalEvent = resolveGoalEvent(profile)
   const prioritySport = extractPrioritySport(input.userMessage, config.allowedSports)
   const createWeekContract = ACTION_CONTRACTS.create_week
+  const planningStartDate = input.planningStartDate ?? input.targetWeekStart
+  const weekEndDate = input.weekEndDate ?? addDaysIso(input.targetWeekStart, 6)
+  const isPartialCurrentWeek = planningStartDate > input.targetWeekStart
 
   const lines = [
     `Solicitud del usuario: ${input.userMessage}`,
     '',
-    `Genera una sola semana completa para el lunes objetivo ${input.targetWeekStart}.`,
+    `Genera una sola semana para el lunes objetivo ${input.targetWeekStart}.`,
     ...renderWeekCreatorTargetInstructions(createWeekContract, input.targetWeekStart, input.structuredOutput),
+    isPartialCurrentWeek
+      ? `La semana objetivo ya está en curso: programa sesiones solo desde ${planningStartDate} hasta ${weekEndDate}. No propongas sesiones en días pasados de esta semana.`
+      : '',
     '',
     buildProfileSummary(profile),
     buildGoalSummary(goalEvent, profile?.macroPlan?.currentPhase, profile?.macroPlan?.blockFocus, config.primarySport),
@@ -70,7 +78,7 @@ export function buildWeekCreatorPrompt(
     '',
     renderWeekCreatorContractReminder(createWeekContract, input.structuredOutput),
     '',
-    `Regla final: crea una semana cerrada, ejecutable y compacta para ${formatWeekRangeLabel(input.targetWeekStart)}.`,
+    `Regla final: crea una semana cerrada, ejecutable y compacta para ${formatWeekRangeLabel(planningStartDate, weekEndDate)}${isPartialCurrentWeek ? ` (semana calendario ${formatWeekRangeLabel(input.targetWeekStart)})` : ''}.`,
   ].filter(Boolean)
 
   return {
@@ -387,9 +395,14 @@ function selectSessionsForTargetWeek(
   })
 }
 
-function formatWeekRangeLabel(targetWeekStart: string): string {
-  const start = new Date(`${targetWeekStart}T00:00:00.000Z`)
-  const end = addDays(start, 6)
+function addDaysIso(date: string, days: number): string {
+  const start = new Date(`${date}T00:00:00.000Z`)
+  return addDays(start, days).toISOString().slice(0, 10)
+}
+
+function formatWeekRangeLabel(startDate: string, endDate?: string): string {
+  const start = new Date(`${startDate}T00:00:00.000Z`)
+  const end = endDate ? new Date(`${endDate}T00:00:00.000Z`) : addDays(start, 6)
   return `${format(start, 'd MMM', { locale: es })} - ${format(end, 'd MMM', { locale: es })}`
 }
 

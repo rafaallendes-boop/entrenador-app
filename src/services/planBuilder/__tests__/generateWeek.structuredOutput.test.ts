@@ -69,4 +69,6 @@ it('generateWeek passes responseSchema and responseMimeType=application/json to 
   expect(callArgs.systemPrompt).not.toContain('<actions>')
   expect(callArgs.userMessage).not.toContain('<actions>')
   expect(callArgs.userMessage).toContain('objeto JSON create_week')
+  expect(callArgs.userMessage).toContain('running/cycling son soporte')
+  expect(callArgs.userMessage).toContain('No uses tempo, intervalos, long run')
 })

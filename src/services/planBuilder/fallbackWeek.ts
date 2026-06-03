@@ -74,6 +74,9 @@ function buildSportSequence(plan: TrainingPlan, week: TrainingPlanWeek, expected
   const primary = getPrimarySport(plan)
   const primaryMinimum = minimumPrimarySessions(plan, week, expected)
   const supports = supportSports(plan, primary).filter((sport) => {
+    if (primary === 'squash' && week.phase === 'race') {
+      return sport === 'mobility'
+    }
     if (primary === 'squash' && (week.phase === 'taper' || week.phase === 'race')) {
       return sport !== 'running' && sport !== 'cycling'
     }
@@ -108,12 +111,14 @@ function buildSportSequence(plan: TrainingPlan, week: TrainingPlanWeek, expected
 }
 
 function squashSubtype(index: number, phase: TrainingPlanWeek['phase'], weekIndex: number): CoachSessionProposal['subtype'] {
-  if (phase === 'race' || phase === 'taper') return index === 0 ? 'control' : 'light'
+  if (phase === 'race') return index === 0 ? 'match' : 'light'
+  if (phase === 'taper') return index === 0 ? 'control' : 'light'
   const rotation: Array<NonNullable<CoachSessionProposal['subtype']>> = ['training', 'control', 'match', 'competitive']
   return rotation[(index + weekIndex) % rotation.length]
 }
 
-function runningTypeForWeek(week: TrainingPlanWeek): RunningType {
+function runningTypeForWeek(plan: TrainingPlan, week: TrainingPlanWeek): RunningType {
+  if (getPrimarySport(plan) === 'squash' && (week.phase === 'build' || week.phase === 'peak')) return 'z2'
   if (week.phase === 'race' || week.phase === 'taper') return 'z2'
   if (week.phase === 'base') return week.weekIndex % 3 === 2 ? 'long' : 'z2'
   if (week.phase === 'peak' || week.phase === 'build') {
@@ -142,8 +147,10 @@ function squashTitle(index: number, week: TrainingPlanWeek): string {
   return titles[(index + week.weekIndex) % titles.length]
 }
 
-function runningTitle(week: TrainingPlanWeek): string {
-  switch (runningTypeForWeek(week)) {
+function runningTitle(runningType: RunningType, squashSupport: boolean): string {
+  if (squashSupport) return 'Rodaje Z2 - Soporte Squash'
+
+  switch (runningType) {
     case 'tempo':
       return 'Carrera Tempo - Resistencia Específica'
     case 'intervals':
@@ -166,12 +173,12 @@ function strengthTitle(week: TrainingPlanWeek): string {
   return titles[week.weekIndex % titles.length]
 }
 
-function fallbackTitle(sport: SupportedSport, index: number, week: TrainingPlanWeek): string {
+function fallbackTitle(sport: SupportedSport, index: number, plan: TrainingPlan, week: TrainingPlanWeek): string {
   switch (sport) {
     case 'squash':
       return squashTitle(index, week)
     case 'running':
-      return runningTitle(week)
+      return runningTitle(runningTypeForWeek(plan, week), getPrimarySport(plan) === 'squash')
     case 'strength':
       return strengthTitle(week)
     case 'cycling':
@@ -213,23 +220,28 @@ function buildSeedSession(
   sport: SupportedSport,
   slot: Slot,
   index: number,
+  plan: TrainingPlan,
   week: TrainingPlanWeek,
   wizardConfig: PlanWizardConfig,
 ): CoachSessionProposal {
-  const durationMin = sport === 'mobility'
-    ? Math.min(45, wizardConfig.sessionDurationMins)
-    : wizardConfig.sessionDurationMins
+  const squashPrimary = getPrimarySport(plan) === 'squash'
+  const durationMin = sport === 'running' && squashPrimary
+    ? Math.min(40, wizardConfig.sessionDurationMins)
+    : sport === 'mobility'
+      ? Math.min(45, wizardConfig.sessionDurationMins)
+      : wizardConfig.sessionDurationMins
+  const runningType = sport === 'running' ? runningTypeForWeek(plan, week) : undefined
 
   return {
     date: slot.date,
     timeBlock: slot.timeBlock,
     sessionType: sport,
-    title: fallbackTitle(sport, index, week),
+    title: fallbackTitle(sport, index, plan, week),
     durationMin,
-    rpe: fallbackRpe(sport, week),
+    rpe: sport === 'running' && squashPrimary ? 4 : fallbackRpe(sport, week),
     objective: fallbackObjective(sport, week),
     subtype: sport === 'squash' ? squashSubtype(index, week.phase, week.weekIndex) : undefined,
-    runningType: sport === 'running' ? runningTypeForWeek(week) : undefined,
+    runningType,
   }
 }
 
@@ -248,7 +260,7 @@ export function buildLocalFallbackWeek(input: {
     const sport = sports[index] ?? 'mobility'
     const sportIndex = sportCounts.get(sport) ?? 0
     sportCounts.set(sport, sportIndex + 1)
-    return buildSeedSession(sport, slot, sportIndex, input.week, input.wizardConfig)
+    return buildSeedSession(sport, slot, sportIndex, input.plan, input.week, input.wizardConfig)
   })
 
   return repairGeneratedWeek(seedSessions, {

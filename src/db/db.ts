@@ -1,6 +1,6 @@
 import Dexie, { type Table } from 'dexie'
 import type { Session, DayLog, WeekSummary, ChatMessage, CoachProposal, AthleteProfile, AITechnicalResult, CoachFeedback } from '../types'
-import type { TrainingPlan, TrainingPlanWeek } from '../types/planBuilder'
+import type { PlanGenerationJob, TrainingPlan, TrainingPlanWeek } from '../types/planBuilder'
 import type { SyncDiagnosticEvent, SyncErrorLogEntry } from '../types/syncDiagnostics'
 import { getOrCreateChatSessionId } from '../utils/chatSession'
 import { toISO, getWeekStart, fromISO } from '../utils/date'
@@ -14,6 +14,7 @@ export class EntrenadorDB extends Dexie {
   athleteProfiles!: Table<AthleteProfile>
   trainingPlans!: Table<TrainingPlan>
   trainingPlanWeeks!: Table<TrainingPlanWeek>
+  planGenerationJobs!: Table<PlanGenerationJob>
   syncDiagnostics!: Table<SyncDiagnosticEvent, number>
   syncErrorLog!: Table<SyncErrorLogEntry, number>
   aiRequestLogs!: Table<AITechnicalResult>
@@ -161,6 +162,25 @@ export class EntrenadorDB extends Dexie {
       syncErrorLog:      '++id, timestamp, entity, errorCategory',
       aiRequestLogs:     'traceId, requestClass, surface, status, provider, startedAt, completedAt',
       coachFeedback:     'id, targetType, targetId, traceId, proposalId, chatMessageId, rating, createdAt',
+    })
+
+    // v12 — durable local Plan Builder jobs. These jobs allow the user to leave
+    // the builder screen while generation continues, and let the app resume from
+    // persisted week checkpoints after a reload.
+    this.version(12).stores({
+      sessions:           'id, date, weekStartDate, type, status, completedAt',
+      dayLogs:            'id, &date',
+      weekSummaries:      'id, &weekStartDate',
+      chatMessages:       'id, timestamp, chatSessionId',
+      coachProposals:     'id, status, createdAt, resolvedAt, chatMessageId',
+      athleteProfiles:    'id, updatedAt',
+      trainingPlans:      'id, athleteId, goalEventId, status, startDate, updatedAt',
+      trainingPlanWeeks:  'id, planId, weekStartDate, status, [planId+weekIndex]',
+      planGenerationJobs: 'id, planId, athleteId, status, updatedAt, createdAt',
+      syncDiagnostics:    '++id, timestamp, kind, entity, status',
+      syncErrorLog:       '++id, timestamp, entity, errorCategory',
+      aiRequestLogs:      'traceId, requestClass, surface, status, provider, startedAt, completedAt',
+      coachFeedback:      'id, targetType, targetId, traceId, proposalId, chatMessageId, rating, createdAt',
     })
   }
 }

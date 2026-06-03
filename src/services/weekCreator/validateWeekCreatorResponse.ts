@@ -22,6 +22,7 @@ export interface WeekCreatorValidationInput {
   context: ChatContext
   config: WeekCreatorEffectiveConfig
   targetWeekStart: string
+  planningStartDate?: string
 }
 
 export interface WeekCreatorValidationResult {
@@ -74,7 +75,7 @@ export function validateWeekCreatorResponse(
   }
 
   const sessions = action.sessions as CoachSessionProposal[]
-  const weekCheck = validateSessionWeekBoundaries(sessions, input.targetWeekStart)
+  const weekCheck = validateSessionWeekBoundaries(sessions, input.targetWeekStart, input.planningStartDate)
   if (weekCheck) return fail(weekCheck, rawSessionCount, validSessionCount, droppedSessionCount)
 
   if (sessions.length !== input.config.sessionsPerWeek) {
@@ -135,6 +136,7 @@ export function validateWeekCreatorResponse(
 function validateSessionWeekBoundaries(
   sessions: CoachSessionProposal[],
   targetWeekStart: string,
+  planningStartDate = targetWeekStart,
 ): string | undefined {
   for (const session of sessions) {
     if (!isStrictISODate(session.date)) {
@@ -144,7 +146,17 @@ function validateSessionWeekBoundaries(
   if (filterSessionsToWeek(sessions, targetWeekStart).length !== sessions.length) {
     return `Todas las sesiones deben caer entre ${targetWeekStart} y los 6 días siguientes.`
   }
+  const weekEnd = addDaysIso(targetWeekStart, 6)
+  if (sessions.some((session) => session.date < planningStartDate || session.date > weekEnd)) {
+    return `Todas las sesiones deben caer entre ${planningStartDate} y ${weekEnd}.`
+  }
   return undefined
+}
+
+function addDaysIso(date: string, days: number): string {
+  const start = new Date(`${date}T00:00:00.000Z`)
+  start.setUTCDate(start.getUTCDate() + days)
+  return start.toISOString().slice(0, 10)
 }
 
 function validateCollisions(sessions: CoachSessionProposal[]): string | undefined {

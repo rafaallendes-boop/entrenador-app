@@ -124,6 +124,24 @@ export async function commitPlan(
     return { errors: validationErrors, warnings, acceptedWeeks }
   }
 
+  const preCommitQualityReview = reviewPlanQuality(plan, orderedWeeks)
+  if (preCommitQualityReview.grade === 'poor' || preCommitQualityReview.criticalIssueCount > 0) {
+    const headlineIssues = preCommitQualityReview.issues
+      .slice(0, 4)
+      .map((issue) => issue.message)
+    return {
+      errors: [
+        `El plan necesita revisión antes de aceptarse (score ${preCommitQualityReview.score}/100).`,
+        ...headlineIssues,
+      ],
+      warnings,
+      acceptedWeeks,
+    }
+  }
+  if (preCommitQualityReview.grade === 'needs_review') {
+    warnings.push(`El plan queda con revisión recomendada (score ${preCommitQualityReview.score}/100).`)
+  }
+
   const appliedSnapshots: WeekCommitSnapshot[] = []
 
   for (const week of orderedWeeks) {
@@ -135,6 +153,10 @@ export async function commitPlan(
         weekObjectives: week.weekObjectives.map((objective) => objective.goal),
         athleteProfile,
         store: trainingStore,
+        replacementRange: {
+          startDate: week.weekStartDate,
+          endDate: getWeekEndDate(week.weekStartDate),
+        },
       })
       warnings.push(...result.warnings)
       acceptedWeeks.push(week.weekIndex)

@@ -14,6 +14,8 @@ export type PlanGenerationState = 'shell' | 'generating' | 'partial' | 'failed' 
 
 export type PlanWeekStatus = 'pending' | 'generating' | 'draft' | 'accepted' | 'error' | 'regenerating'
 
+export type PlanGenerationJobStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled'
+
 export type PlanValidationSeverity = 'error' | 'warning' | 'info'
 
 export interface PlanPhaseBlock {
@@ -128,4 +130,23 @@ export interface PlanBuilderProgress {
   completedWeeks: number
   currentWeekIndex: number | null
   failedWeeks: number[]
+}
+
+export interface PlanGenerationJob {
+  id: string
+  planId: string
+  athleteId: string
+  status: PlanGenerationJobStatus
+  strategy: 'single' | 'pairs'
+  targetWeekIndexes?: number[]
+  totalWeeks: number
+  completedWeeks: number
+  failedWeekIndexes: number[]
+  currentWeekIndex: number | null
+  startedAt?: number
+  completedAt?: number
+  heartbeatAt?: number
+  lastError?: string
+  createdAt: number
+  updatedAt: number
 }

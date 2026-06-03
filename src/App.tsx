@@ -7,6 +7,7 @@ import { useAuthStore } from './store/useAuthStore'
 import { runFullSync, migrateLocalDataToCloud, prepareLocalDataForUser, hasInitialRemotePullCompleted } from './services/syncService'
 import { useTrainingStore } from './store/useTrainingStore'
 import { useCoachMemoryStore } from './store/useCoachMemoryStore'
+import { usePlanBuilderStore } from './store/usePlanBuilderStore'
 import { currentWeekStartISO } from './utils/date'
 import { db } from './db/db'
 import { hasSkippedOnboarding, needsOnboarding } from './utils/onboarding'
@@ -137,10 +138,17 @@ function OnboardingGuard({ children }: { children: ReactNode }) {
 export default function App() {
   const user = useAuthStore(s => s.user)
   const userId = user?.id ?? null
+  const athleteProfile = useCoachMemoryStore(s => s.athleteProfile)
+  const hasLoadedMemory = useCoachMemoryStore(s => s.hasLoaded)
 
   useEffect(() => {
     void db.open().catch(console.error)
   }, [])
+
+  useEffect(() => {
+    if (!hasLoadedMemory || !athleteProfile) return
+    void usePlanBuilderStore.getState().resumeGenerationJobs(athleteProfile)
+  }, [athleteProfile, hasLoadedMemory])
 
   useEffect(() => {
     if (!userId) return

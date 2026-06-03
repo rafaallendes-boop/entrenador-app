@@ -30,12 +30,14 @@ export async function applyCreateWeek({
   athleteProfile,
   store,
   replacementCutoffAt,
+  replacementRange,
 }: {
   sessions: CreateWeekSessionInput
   weekObjectives?: string[]
   athleteProfile: AthleteProfile | null
   store: CreateWeekStoreAdapter
   replacementCutoffAt?: number
+  replacementRange?: { startDate: string; endDate: string }
 }): Promise<ApplyCreateWeekResult> {
   const warnings: string[] = []
   const createdSessionIds: string[] = []
@@ -52,7 +54,7 @@ export async function applyCreateWeek({
     return { warnings, createdSessionIds, restoredSessions, restoredWeekSummaries, deletedWeekSummaryIds }
   }
 
-  const replacement = await replacePlannedSessionsForCreateWeek(allowedSessions, replacementCutoffAt)
+  const replacement = await replacePlannedSessionsForCreateWeek(allowedSessions, replacementCutoffAt, replacementRange)
   restoredSessions.push(...replacement.replacedSessions)
   warnings.push(...replacement.warnings)
 
@@ -147,6 +149,7 @@ async function findCreateWeekCollisions(
 async function replacePlannedSessionsForCreateWeek(
   sessions: CreateWeekSessionInput,
   replacementCutoffAt?: number,
+  replacementRange?: { startDate: string; endDate: string },
 ): Promise<{ replacedSessions: Session[]; warnings: string[] }> {
   const warnings: string[] = []
   const weekStarts = [...new Set(sessions.map((session) => toISO(getWeekStart(fromISO(session.date)))))]
@@ -157,8 +160,14 @@ async function replacePlannedSessionsForCreateWeek(
     const weekEnd = toISO(addDays(fromISO(weekStart), 6))
     await syncService.pullSessionsForDateRange(weekStart, weekEnd)
     const existingWeekSessions = await db.sessions.where('date').between(weekStart, weekEnd, true, true).toArray()
+    const shouldReplaceSession = (session: Session): boolean => {
+      if (replacementRange) {
+        return session.date >= replacementRange.startDate && session.date <= replacementRange.endDate
+      }
+      return replacementDates.has(session.date)
+    }
     const plannedSessions = existingWeekSessions.filter(
-      (session) => session.status === 'planned' && replacementDates.has(session.date),
+      (session) => session.status === 'planned' && shouldReplaceSession(session),
     )
     const preservedSessions = existingWeekSessions.filter((session) => session.status !== 'planned')
 
@@ -178,7 +187,7 @@ async function replacePlannedSessionsForCreateWeek(
       warnings.push(`Se reemplazo la planificacion previa de ${weekStart} (${plannedSessions.length} sesiones planificadas).`)
     }
 
-    const preservedOnReplacementDates = preservedSessions.filter((session) => replacementDates.has(session.date))
+    const preservedOnReplacementDates = preservedSessions.filter(shouldReplaceSession)
     if (preservedOnReplacementDates.length > 0) {
       warnings.push(`Se conservaron ${preservedOnReplacementDates.length} sesiones con historial en la misma semana para no borrar adherencia ya registrada.`)
     }

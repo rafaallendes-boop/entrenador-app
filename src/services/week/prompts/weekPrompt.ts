@@ -248,6 +248,7 @@ export function buildWeekUserPrompt(input: WeekPromptInput): string {
     `- Carga objetivo por deporte: ${targetLoads}`,
     ...buildPrimarySportRule(plan, week),
     ...buildRaceWeekRule(plan, week),
+    ...buildSquashCompetitionRules(plan, week),
     ...buildSquashStrengthThemeRule(plan, wizardConfig),
     wizardConfig.injuryNotes ? `- Lesiones/restricciones: ${wizardConfig.injuryNotes}` : '',
     '',
@@ -327,6 +328,7 @@ export function buildWeekBatchUserPrompt(input: WeekBatchPromptInput): string {
       `- Objetivos: ${week.weekObjectives.map((objective) => objective.goal).join(' | ')}`,
       ...primarySportRule,
       ...buildRaceWeekRule(plan, week),
+      ...buildSquashCompetitionRules(plan, week),
     ].join('\n')
   }).join('\n\n')
 
@@ -384,7 +386,34 @@ function buildRaceWeekRule(plan: TrainingPlan, week: TrainingPlanWeek): string[]
   if (week.phase !== 'race') return []
   return [
     `- Regla crítica de semana Race: marca el evento principal el ${plan.macroSnapshot.goalEventDate} como sesión/competencia si cae dentro de esta semana.`,
+    '- Si el deporte principal es squash, el día del evento debe ser squash match/competencia; no programes running/cycling ese mismo día.',
     '- Incluye 1-2 activaciones cortas antes del evento en días permitidos previos al evento; no pongas toda la semana después del evento.',
     '- Después del evento usa solo recuperación o movilidad suave. El objetivo de la fase es llegar fresco al evento, no empezar el plan post-evento.',
   ]
+}
+
+function buildSquashCompetitionRules(plan: TrainingPlan, week: TrainingPlanWeek): string[] {
+  if (getPrimarySport(plan) !== 'squash') return []
+
+  if (week.phase === 'build' || week.phase === 'peak') {
+    return [
+      '- Regla squash competitivo: running/cycling son soporte, no estímulo principal. Si incluyes running, debe ser Z2 corto <=45min, RPE <=5. No uses tempo, intervalos, long run ni test de carrera.',
+      '- En peak de squash, la intensidad alta debe venir de squash específico: pressure drills, control bajo fatiga, patrones a la T, puntos condicionados o match-play controlado.',
+    ]
+  }
+
+  if (week.phase === 'taper') {
+    return [
+      '- Regla taper squash: reduce de verdad la carga. Prioriza 2-3 toques de squash cortos/calidad, 0-1 fuerza neural corta, movilidad. Running sólo si es activación Z2/recovery <=25min RPE <=3; cycling evita salvo recuperación muy justificada.',
+      '- No rellenes taper con dobles ligeros repetidos. Cada sesión debe tener un propósito competitivo claro: frescura, precisión, timing, movilidad o activación neural.',
+    ]
+  }
+
+  if (week.phase === 'race') {
+    return [
+      '- Regla race squash: el evento manda. Devuelve una sesión squash match/competitive el día del torneo y, como máximo, movilidad/activación muy suave alrededor. No agregues running/cycling de soporte.',
+    ]
+  }
+
+  return []
 }

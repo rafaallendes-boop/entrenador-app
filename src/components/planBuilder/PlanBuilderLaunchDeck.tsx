@@ -15,26 +15,26 @@ interface PlanBuilderLaunchDeckProps {
 
 const SPORT_COPY: Record<LaunchSport, { label: string; tagline: string; caption: string }> = {
   squash: {
-    label: 'Squash Protocol',
-    tagline: 'Competition Macro-Plan',
+    label: 'Protocolo squash',
+    tagline: 'Macroplan competitivo',
     caption:
       'Pista silenciosa, swing explosivo. Periodización afilada para sostener potencia y lectura táctica sobre la T.',
   },
   running: {
-    label: 'Running Protocol',
-    tagline: 'Race Macro-Plan',
+    label: 'Protocolo running',
+    tagline: 'Macroplan de carrera',
     caption:
       'Tartán, nocturno, zancada cerrada. Periodización fasada para llegar fresco y con techo aeróbico al día del evento.',
   },
   cycling: {
-    label: 'Cycling Protocol',
-    tagline: 'Race Macro-Plan',
+    label: 'Protocolo ciclismo',
+    tagline: 'Macroplan de carrera',
     caption:
       'Velódromo, tuck aero, watts sostenidos. Periodización por fases para construir umbral y descargar sin perder chispa.',
   },
   other: {
-    label: 'Hybrid Protocol',
-    tagline: 'Competition Macro-Plan',
+    label: 'Protocolo híbrido',
+    tagline: 'Macroplan competitivo',
     caption:
       'Un evento propio, un protocolo propio. Periodización fasada para llegar agudo, cargado y enfocado al día objetivo.',
   },
@@ -66,7 +66,7 @@ export default function PlanBuilderLaunchDeck({
       <div className="relative mx-auto max-w-3xl space-y-4">
         <div className="space-y-1">
           <p className="font-mono text-[10px] font-bold uppercase tracking-[0.34em] text-[#c56b3a]">
-            Obsidian Forge
+            Preparación inteligente
           </p>
           <h2 className="font-display text-3xl font-black uppercase tracking-tight text-white sm:text-4xl">
             {title}
@@ -81,7 +81,7 @@ export default function PlanBuilderLaunchDeck({
             </div>
             <div>
               <p className="font-mono text-[11px] font-bold uppercase tracking-[0.2em] text-[#ff7a33]">
-                Forge Intelligence
+                Inteligencia del plan
               </p>
               <p className="mt-1 text-sm leading-6 text-white/72">{insight}</p>
             </div>
@@ -98,7 +98,7 @@ export default function PlanBuilderLaunchDeck({
           <div className="relative flex flex-col items-center gap-4">
             <div className="flex w-full items-center justify-between gap-3">
               <span className="inline-flex items-center rounded-full bg-[#ff5a1f] px-2.5 py-1 font-mono text-[10px] font-bold uppercase tracking-[0.22em] text-white">
-                Elite Tier
+                Nivel elite
               </span>
               <div className="flex items-center gap-2 text-[#ff7a33]">
                 <Trophy size={14} />
@@ -129,7 +129,7 @@ export default function PlanBuilderLaunchDeck({
               className="relative z-10 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[#ff5a1f] px-4 py-3 font-display text-sm font-black uppercase tracking-[0.18em] text-white shadow-[0_10px_30px_-10px_rgba(255,90,31,0.75)] transition-transform duration-150 hover:scale-[1.01] disabled:cursor-wait disabled:opacity-70 sm:max-w-[360px]"
             >
               <Sparkles size={16} className={isInitializing ? 'animate-pulse' : ''} />
-              {isInitializing ? 'Initializing…' : 'Initialize Protocol'}
+              {isInitializing ? 'Inicializando…' : 'Iniciar generación'}
             </button>
           </div>
         </div>

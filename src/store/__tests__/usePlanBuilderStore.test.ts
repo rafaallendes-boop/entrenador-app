@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AthleteProfile, PlanWizardConfig } from '../../types'
-import type { TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
+import type { PlanGenerationJob, TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
 
 interface GeneratePlanWeeksMockInput {
   weeks: TrainingPlanWeek[]
@@ -10,10 +10,12 @@ interface GeneratePlanWeeksMockInput {
 const mocks = vi.hoisted(() => {
   const plans = new Map<string, TrainingPlan>()
   const weeks = new Map<string, TrainingPlanWeek>()
+  const jobs = new Map<string, PlanGenerationJob>()
 
   return {
     plans,
     weeks,
+    jobs,
     generatePlanWeeks: vi.fn(),
     commitPlan: vi.fn(),
     db: {
@@ -27,6 +29,9 @@ const mocks = vi.hoisted(() => {
         }),
       },
       trainingPlanWeeks: {
+        put: vi.fn(async (week: TrainingPlanWeek) => {
+          weeks.set(week.id, week)
+        }),
         bulkPut: vi.fn(async (nextWeeks: TrainingPlanWeek[]) => {
           for (const week of nextWeeks) weeks.set(week.id, week)
         }),
@@ -38,6 +43,27 @@ const mocks = vi.hoisted(() => {
               }
             }),
             toArray: vi.fn(async () => Array.from(weeks.values()).filter((week) => week.planId === planId)),
+          })),
+        })),
+      },
+      planGenerationJobs: {
+        put: vi.fn(async (job: PlanGenerationJob) => {
+          jobs.set(job.id, job)
+        }),
+        get: vi.fn(async (id: string) => jobs.get(id)),
+        where: vi.fn((field: string) => ({
+          equals: vi.fn((value: string) => ({
+            toArray: vi.fn(async () => Array.from(jobs.values()).filter((job) => {
+              if (field === 'planId') return job.planId === value
+              if (field === 'athleteId') return job.athleteId === value
+              if (field === 'status') return job.status === value
+              return false
+            })),
+            delete: vi.fn(async () => {
+              for (const [id, job] of jobs.entries()) {
+                if (field === 'planId' && job.planId === value) jobs.delete(id)
+              }
+            }),
           })),
         })),
       },
@@ -162,14 +188,24 @@ function resetStore() {
     completedWeeks: 0,
     failedWeekIndexes: [],
     streamingTextByWeekIndex: {},
+    generationJob: null,
     lastError: null,
   })
+}
+
+async function waitForStore(predicate: () => boolean) {
+  for (let attempt = 0; attempt < 80; attempt++) {
+    if (predicate()) return
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  }
+  throw new Error('Timed out waiting for store update')
 }
 
 describe('usePlanBuilderStore', () => {
   beforeEach(() => {
     mocks.plans.clear()
     mocks.weeks.clear()
+    mocks.jobs.clear()
     mocks.generatePlanWeeks.mockReset()
     mocks.commitPlan.mockReset()
     mocks.commitPlan.mockResolvedValue({ errors: [], warnings: [] })
@@ -208,6 +244,7 @@ describe('usePlanBuilderStore', () => {
     })
 
     await usePlanBuilderStore.getState().runGeneration(profile)
+    await waitForStore(() => usePlanBuilderStore.getState().plan?.generationState === 'complete')
 
     const state = usePlanBuilderStore.getState()
     expect(state.plan?.generationState).toBe('complete')
@@ -218,12 +255,13 @@ describe('usePlanBuilderStore', () => {
   it('runGeneration partial leaves partial/partial', async () => {
     const profile = await createShell()
     mocks.generatePlanWeeks.mockImplementation(async ({ weeks, onWeekUpdate }: GeneratePlanWeeksMockInput) => {
-      const result = weeks.map((week, index) => (index === 0 ? generatedWeek(week) : failedWeek(week)))
+      const result = weeks.map((week) => (week.weekIndex === 0 ? generatedWeek(week) : failedWeek(week)))
       result.forEach((week) => onWeekUpdate?.(week))
       return result
     })
 
     await usePlanBuilderStore.getState().runGeneration(profile)
+    await waitForStore(() => usePlanBuilderStore.getState().plan?.generationState === 'partial')
 
     const state = usePlanBuilderStore.getState()
     expect(state.plan?.generationState).toBe('partial')
@@ -240,6 +278,7 @@ describe('usePlanBuilderStore', () => {
     })
 
     await usePlanBuilderStore.getState().runGeneration(profile)
+    await waitForStore(() => usePlanBuilderStore.getState().plan?.generationState === 'failed')
 
     const state = usePlanBuilderStore.getState()
     expect(state.plan?.generationState).toBe('failed')
@@ -251,20 +290,22 @@ describe('usePlanBuilderStore', () => {
     mocks.generatePlanWeeks.mockRejectedValue(new Error('provider down'))
 
     await usePlanBuilderStore.getState().runGeneration(profile)
+    await waitForStore(() => usePlanBuilderStore.getState().plan?.generationState === 'failed')
 
     const state = usePlanBuilderStore.getState()
-    expect(state.status).toBe('error')
-    expect(state.lastError).toBe('provider down')
+    expect(state.status).toBe('failed')
+    expect(state.lastError).toContain('semana')
   })
 
   it('acceptPlan rejects when generationState is not complete', async () => {
     const profile = await createShell()
     mocks.generatePlanWeeks.mockImplementation(async ({ weeks, onWeekUpdate }: GeneratePlanWeeksMockInput) => {
-      const result = weeks.map((week, index) => (index === 0 ? generatedWeek(week) : failedWeek(week)))
+      const result = weeks.map((week) => (week.weekIndex === 0 ? generatedWeek(week) : failedWeek(week)))
       result.forEach((week) => onWeekUpdate?.(week))
       return result
     })
     await usePlanBuilderStore.getState().runGeneration(profile)
+    await waitForStore(() => usePlanBuilderStore.getState().plan?.generationState === 'partial')
 
     const result = await usePlanBuilderStore.getState().acceptPlan()
 
@@ -274,20 +315,22 @@ describe('usePlanBuilderStore', () => {
 
   it('regenerateWeek can promote partial to complete', async () => {
     const profile = await createShell()
-    mocks.generatePlanWeeks.mockImplementationOnce(async ({ weeks, onWeekUpdate }: GeneratePlanWeeksMockInput) => {
-      const result = weeks.map((week, index) => (index === weeks.length - 1 ? failedWeek(week) : generatedWeek(week)))
+    mocks.generatePlanWeeks.mockImplementation(async ({ weeks, onWeekUpdate }: GeneratePlanWeeksMockInput) => {
+      const result = weeks.map((week) => (week.weekIndex === 2 ? failedWeek(week) : generatedWeek(week)))
       result.forEach((week) => onWeekUpdate?.(week))
       return result
     })
     await usePlanBuilderStore.getState().runGeneration(profile)
+    await waitForStore(() => usePlanBuilderStore.getState().plan?.generationState === 'partial')
 
-    mocks.generatePlanWeeks.mockImplementationOnce(async ({ weeks, onWeekUpdate }: GeneratePlanWeeksMockInput) => {
+    mocks.generatePlanWeeks.mockImplementation(async ({ weeks, onWeekUpdate }: GeneratePlanWeeksMockInput) => {
       const result = weeks.map(generatedWeek)
       result.forEach((week) => onWeekUpdate?.(week))
       return result
     })
     const failedIndex = usePlanBuilderStore.getState().failedWeekIndexes[0]
     await usePlanBuilderStore.getState().regenerateWeek(failedIndex, profile)
+    await waitForStore(() => usePlanBuilderStore.getState().plan?.generationState === 'complete')
 
     const state = usePlanBuilderStore.getState()
     expect(state.plan?.generationState).toBe('complete')

@@ -126,13 +126,13 @@ describe('reviewPlanQuality', () => {
         date: '2026-05-07',
         timeBlock: 'AM',
         sessionType: 'running',
-        title: 'Tempo',
-        durationMin: 60,
-        rpe: 6,
-        runningType: 'tempo',
-        targetPaceMin: '4:25',
-        targetPaceMax: '4:35',
-        intervalStructure: { blocks: [{ label: 'Tempo', durationMin: 30, targetPace: '4:25-4:35 /km' }] },
+        title: 'Z2 soporte squash',
+        durationMin: 40,
+        rpe: 4,
+        runningType: 'z2',
+        targetHrMin: 130,
+        targetHrMax: 145,
+        intervalStructure: { blocks: [{ label: 'Z2', durationMin: 35 }] },
       },
       {
         date: '2026-05-08',
@@ -157,6 +157,33 @@ describe('reviewPlanQuality', () => {
     expect(review.score).toBeGreaterThanOrEqual(78)
     expect(review.grade).not.toBe('poor')
     expect(review.weeks[0]?.repairCount).toBe(2)
+  })
+
+  it('rejects hard running support inside squash peak weeks', () => {
+    const plan = makePlan()
+    const week = makeWeek([
+      squash('2026-05-04', 'Squash técnico'),
+      squash('2026-05-05', 'Squash control'),
+      squash('2026-05-06', 'Squash juego'),
+      {
+        date: '2026-05-07',
+        timeBlock: 'AM',
+        sessionType: 'running',
+        title: 'Tempo',
+        durationMin: 60,
+        rpe: 6,
+        runningType: 'tempo',
+        targetPaceMin: '4:25',
+        targetPaceMax: '4:35',
+        intervalStructure: { blocks: [{ label: 'Tempo', durationMin: 30, targetPace: '4:25-4:35 /km' }] },
+      },
+      strength('2026-05-08'),
+    ])
+
+    const review = reviewPlanQuality(plan, [week])
+
+    expect(review.issues.some((item) => item.code === 'squash.support_aerobic.too_hard')).toBe(true)
+    expect(review.criticalIssueCount).toBeGreaterThan(0)
   })
 
   it('penalizes missing support work and incomplete session details', () => {
@@ -207,6 +234,88 @@ describe('reviewPlanQuality', () => {
     expect(review.issues.some((item) => item.code === 'week.sessions.count_mismatch')).toBe(true)
     expect(review.issues.some((item) => item.code === 'quality.taper.session_too_long')).toBe(true)
     expect(review.issues.some((item) => item.code === 'quality.mobility.english_structure')).toBe(true)
+  })
+
+  it('reduces expected taper sessions progressively as the squash event approaches', () => {
+    const plan: TrainingPlan = {
+      ...makePlan(),
+      endDate: '2026-07-20',
+      wizardConfig: {
+        ...makeWizardConfig(),
+        trainingDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'],
+        sessionsPerWeek: 6,
+        allowDoubleSession: true,
+        doubleSessionDays: ['monday', 'wednesday', 'friday'],
+      },
+    }
+    const week21DaysOut: TrainingPlanWeek = {
+      ...makeWeek([]),
+      weekStartDate: '2026-06-29',
+      phase: 'taper',
+    }
+    const week14DaysOut: TrainingPlanWeek = {
+      ...week21DaysOut,
+      weekStartDate: '2026-07-06',
+    }
+    const week7DaysOut: TrainingPlanWeek = {
+      ...week21DaysOut,
+      weekStartDate: '2026-07-13',
+    }
+
+    expect(getExpectedSessionsForPlanWeek(plan, week21DaysOut)).toBe(5)
+    expect(getExpectedSessionsForPlanWeek(plan, week14DaysOut)).toBe(4)
+    expect(getExpectedSessionsForPlanWeek(plan, week7DaysOut)).toBe(4)
+  })
+
+  it('rejects race-day running and requires a squash match event session', () => {
+    const plan: TrainingPlan = {
+      ...makePlan(),
+      startDate: '2026-06-01',
+      endDate: '2026-06-01',
+      macroSnapshot: {
+        ...makePlan().macroSnapshot,
+        goalEventDate: '2026-06-01',
+      },
+      wizardConfig: {
+        ...makeWizardConfig(),
+        trainingDays: ['monday'],
+        sessionsPerWeek: 2,
+        allowDoubleSession: true,
+        doubleSessionDays: ['monday'],
+      },
+    }
+    const week: TrainingPlanWeek = {
+      ...makeWeek([
+        {
+          date: '2026-06-01',
+          timeBlock: 'AM',
+          sessionType: 'running',
+          title: 'Activación running',
+          durationMin: 20,
+          rpe: 3,
+          runningType: 'z2',
+        },
+        {
+          ...squash('2026-06-01', 'Squash técnico ligero'),
+          timeBlock: 'PM',
+          subtype: 'light',
+          squashDetails: {
+            trainingFocus: 'technical',
+            sessionMode: 'drill_session',
+            sessionKind: 'technical',
+            drills: [{ name: 'Drive cruzado', durationMin: 10 }],
+          },
+        },
+      ]),
+      weekStartDate: '2026-06-01',
+      phase: 'race',
+    }
+
+    const review = reviewPlanQuality(plan, [week])
+
+    expect(getExpectedSessionsForPlanWeek(plan, week)).toBe(2)
+    expect(review.issues.some((item) => item.code === 'squash.race_day.non_squash')).toBe(true)
+    expect(review.issues.some((item) => item.code === 'squash.race_day.missing_event')).toBe(true)
   })
 
   it('flags repeated strength templates across adjacent weeks', () => {

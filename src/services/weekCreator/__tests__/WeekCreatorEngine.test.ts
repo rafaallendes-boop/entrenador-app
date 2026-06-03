@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { AthleteProfile, ChatContext } from '../../../types'
+import type { AthleteProfile, ChatContext, DayOfWeek } from '../../../types'
 import { validateWeekCreatorResponse } from '../validateWeekCreatorResponse'
 import { extractRequestedSessionsPerWeek, resolveWeekCreatorConfig, withRequestedSessionsPerWeek } from '../WeekCreatorConfig'
 import { WeekCreatorEngine } from '../WeekCreatorEngine'
@@ -369,6 +369,207 @@ describe('WeekCreatorEngine', () => {
     expect(prompt.userPrompt).toContain('Sesión solo técnica')
     expect(prompt.userPrompt).toContain('al menos 4 drills técnicos')
     expect(prompt.userPrompt).toContain('2 drills de ghosting y 2-3 drills de control')
+  })
+
+  it('prompts current-week creation as a partial week from today onward', () => {
+    const context: ChatContext = {
+      athleteProfile: makeProfile({
+        primarySport: 'running',
+        sportContext: {
+          enabledSports: ['running'],
+          primarySport: 'running',
+        },
+        scheduleProfile: {
+          availableDays: ['lun', 'mar', 'jue', 'sáb'],
+          sessionsPerWeek: 4,
+        },
+      }),
+      recentSessions: [],
+      plannedSessions: [],
+      historicalSessions: [],
+    }
+    const config = {
+      ...resolveWeekCreatorConfig(context.athleteProfile),
+      trainingDays: ['thursday', 'saturday'] as DayOfWeek[],
+      sessionsPerWeek: 2,
+      maxSessionsPerWeek: 2,
+      scheduleConstraints: 'Semana parcial: planificar solo desde 2026-05-06 hasta 2026-05-10; no usar días pasados de esta semana.',
+    }
+
+    const prompt = buildWeekCreatorPrompt(context, {
+      userMessage: 'Créame la semana',
+      targetWeekStart: '2026-05-04',
+      planningStartDate: '2026-05-06',
+      weekEndDate: '2026-05-10',
+      config,
+    })
+
+    expect(prompt.userPrompt).toContain('targetDate=2026-05-04')
+    expect(prompt.userPrompt).toContain('programa sesiones solo desde 2026-05-06 hasta 2026-05-10')
+    expect(prompt.userPrompt).toContain('- Sesiones por semana: 2')
+    expect(prompt.userPrompt).toContain('- Días permitidos: thursday, saturday')
+  })
+
+  it('rejects current-week sessions before the effective planning start', () => {
+    const profile = makeProfile({
+      primarySport: 'running',
+      sportContext: {
+        enabledSports: ['running'],
+        primarySport: 'running',
+      },
+      scheduleProfile: {
+        availableDays: ['lun', 'mar', 'jue', 'sáb'],
+        sessionsPerWeek: 4,
+      },
+    })
+    const context: ChatContext = {
+      athleteProfile: profile,
+      recentSessions: [],
+      plannedSessions: [],
+      historicalSessions: [],
+    }
+    const config = {
+      ...resolveWeekCreatorConfig(profile),
+      trainingDays: ['thursday', 'saturday'] as DayOfWeek[],
+      sessionsPerWeek: 2,
+      maxSessionsPerWeek: 2,
+    }
+
+    const validation = validateWeekCreatorResponse({
+      response: {
+        message: 'Semana parcial',
+        actions: [{
+          type: 'create_week',
+          reason: 'test',
+          targetDate: '2026-05-04',
+          weekObjectives: [],
+          sessions: [
+            {
+              date: '2026-05-04',
+              timeBlock: 'AM',
+              sessionType: 'running',
+              title: 'Running pasado',
+              durationMin: 45,
+              objective: 'No debe pasar',
+              runningType: 'z2',
+            },
+            {
+              date: '2026-05-07',
+              timeBlock: 'AM',
+              sessionType: 'running',
+              title: 'Running valido',
+              durationMin: 45,
+              objective: 'Sesion valida',
+              runningType: 'z2',
+            },
+          ],
+        }],
+        provider: 'mock',
+        model: 'mock',
+        timestamp: Date.now(),
+        requestClass: 'week_creator',
+        traceId: 'trace-test',
+        durationMs: 0,
+        retryUsed: false,
+        fallbackUsed: false,
+        meta: { hadActionsMarkup: true, actionParseFailed: false, likelyTruncated: false },
+      },
+      context,
+      config,
+      targetWeekStart: '2026-05-04',
+      planningStartDate: '2026-05-06',
+    })
+
+    expect(validation.ok).toBe(false)
+    expect(validation.error).toContain('entre 2026-05-06 y 2026-05-10')
+  })
+
+  it('repairs current-week creation so past weekdays are not scheduled', async () => {
+    mockProviderCall.mockImplementation(async (request: { requestClass: string; traceId: string; userMessage: string }) => {
+      expect(request.userMessage).toContain('programa sesiones solo desde 2026-05-06 hasta 2026-05-10')
+      expect(request.userMessage).toContain('- Sesiones por semana: 2')
+      return {
+        text: '<actions>' + JSON.stringify([
+          {
+            type: 'create_week',
+            reason: 'Semana parcial',
+            targetDate: '2026-05-04',
+            sessions: [
+              {
+                date: '2026-05-04',
+                timeBlock: 'AM',
+                sessionType: 'running',
+                title: 'Running lunes',
+                durationMin: 45,
+                objective: 'Base aeróbica',
+                runningType: 'z2',
+              },
+              {
+                date: '2026-05-05',
+                timeBlock: 'AM',
+                sessionType: 'running',
+                title: 'Running martes',
+                durationMin: 45,
+                objective: 'Base aeróbica',
+                runningType: 'z2',
+              },
+              {
+                date: '2026-05-07',
+                timeBlock: 'AM',
+                sessionType: 'running',
+                title: 'Running jueves',
+                durationMin: 45,
+                objective: 'Base aeróbica',
+                runningType: 'z2',
+              },
+              {
+                date: '2026-05-09',
+                timeBlock: 'AM',
+                sessionType: 'running',
+                title: 'Running sabado',
+                durationMin: 45,
+                objective: 'Base aeróbica',
+                runningType: 'z2',
+              },
+            ],
+          },
+        ]) + '</actions>',
+        provider: 'mock',
+        model: 'mock-week-creator',
+        traceId: request.traceId,
+        requestClass: request.requestClass,
+      }
+    })
+
+    const context: ChatContext = {
+      athleteProfile: makeProfile({
+        primarySport: 'running',
+        sportContext: {
+          enabledSports: ['running'],
+          primarySport: 'running',
+        },
+        scheduleProfile: {
+          availableDays: ['lun', 'mar', 'jue', 'sáb'],
+          sessionsPerWeek: 4,
+        },
+      }),
+      recentSessions: [],
+      plannedSessions: [],
+      historicalSessions: [],
+    }
+
+    const response = await WeekCreatorEngine.sendWeekCreate(
+      'Créame la semana',
+      context,
+      { surface: 'chat', targetWeekStart: '2026-05-04', today: '2026-05-06' },
+    )
+
+    const sessions = response.actions?.[0].sessions ?? []
+    expect(response.actions?.[0].targetDate).toBe('2026-05-04')
+    expect(sessions).toHaveLength(2)
+    expect(sessions.every((session) => session.date >= '2026-05-06' && session.date <= '2026-05-10')).toBe(true)
+    expect(sessions.map((session) => session.date)).not.toContain('2026-05-04')
+    expect(sessions.map((session) => session.date)).not.toContain('2026-05-05')
   })
 
   it('honors an explicit six-session request when profile capacity allows it', async () => {

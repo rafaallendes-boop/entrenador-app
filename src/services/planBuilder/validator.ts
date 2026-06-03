@@ -294,12 +294,95 @@ function validatePrimarySportCoherence(plan: TrainingPlan, weeks: TrainingPlanWe
   return issues
 }
 
+function getPrimarySport(plan: TrainingPlan): SupportedSport | undefined {
+  return plan.macroSnapshot.sportDetails.find((detail) => detail.role === 'primary')?.sport
+}
+
+function validateSquashCompetitionReadiness(plan: TrainingPlan, week: TrainingPlanWeek): PlanValidationIssue[] {
+  const issues: PlanValidationIssue[] = []
+  if (week.status !== 'draft' && week.status !== 'accepted') return issues
+  if (!Array.isArray(week.sessions) || week.sessions.length === 0) return issues
+  if (getPrimarySport(plan) !== 'squash') return issues
+
+  const validRange = getPlanWeekDateRange(plan, week)
+  const eventDate = plan.macroSnapshot.goalEventDate
+  const eventInsideWeek = eventDate >= validRange.startDate && eventDate <= validRange.endDate
+
+  for (const session of week.sessions) {
+    if (session.sessionType === 'running' || session.sessionType === 'cycling') {
+      if (week.phase === 'build' || week.phase === 'peak') {
+        const isHardRunning = session.sessionType === 'running' && (session.runningType === 'tempo' || session.runningType === 'intervals' || session.runningType === 'long')
+        if (isHardRunning || (session.rpe ?? 6) > 5 || session.durationMin > 45) {
+          issues.push({
+            severity: 'error',
+            code: 'squash.support_aerobic.too_hard',
+            message: `Para squash en ${week.phase}, ${session.title} (${session.date}) debe ser soporte aeróbico suave: Z2 corta, RPE <=5 y <=45min; no tempo/intervalos/long.`,
+            weekIndex: week.weekIndex,
+          })
+        }
+      }
+
+      if (week.phase === 'taper' || week.phase === 'race') {
+        const isTooMuchSupport = session.sessionType === 'cycling'
+          || session.runningType === 'tempo'
+          || session.runningType === 'intervals'
+          || session.runningType === 'long'
+          || (session.rpe ?? 4) > 3
+          || session.durationMin > 25
+        if (isTooMuchSupport) {
+          issues.push({
+            severity: 'error',
+            code: 'squash.taper.support_aerobic.too_much',
+            message: `En taper/race de squash, ${session.title} (${session.date}) no debe sumar fatiga: evita cycling y limita running a Z2/recovery <=25min RPE <=3.`,
+            weekIndex: week.weekIndex,
+          })
+        }
+      }
+
+    }
+
+    if (
+      week.phase === 'race'
+      && session.date === eventDate
+      && session.sessionType !== 'squash'
+      && session.sessionType !== 'mobility'
+      && session.sessionType !== 'recovery'
+    ) {
+      issues.push({
+        severity: 'error',
+        code: 'squash.race_day.non_squash',
+        message: `El día del torneo (${eventDate}) no debe incluir ${session.sessionType}; reserva esa fecha para competencia/activación específica de squash.`,
+        weekIndex: week.weekIndex,
+      })
+    }
+  }
+
+  if (week.phase === 'race' && eventInsideWeek) {
+    const hasEventSquash = week.sessions.some((session) =>
+      session.date === eventDate
+      && session.sessionType === 'squash'
+      && (session.subtype === 'match' || session.subtype === 'competitive' || session.squashDetails?.sessionKind === 'match'),
+    )
+    if (!hasEventSquash) {
+      issues.push({
+        severity: 'error',
+        code: 'squash.race_day.missing_event',
+        message: `La semana de carrera debe marcar el torneo de squash el ${eventDate} como sesión match/competitiva.`,
+        weekIndex: week.weekIndex,
+      })
+    }
+  }
+
+  return issues
+}
+
 export function validatePlanWeek(plan: TrainingPlan, week: TrainingPlanWeek): PlanValidationIssue[] {
   return [
     ...validateWeekSessions(plan, week),
     ...validateWeekConstraints(plan, week),
     ...validateSportDistributionForWeek(plan, week),
     ...validatePrimarySportCoherence(plan, [week]),
+    ...validateSquashCompetitionReadiness(plan, week),
   ]
 }
 

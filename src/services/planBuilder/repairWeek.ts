@@ -116,19 +116,22 @@ export function repairGeneratedWeek(
   // 7. Keep taper/race weeks fresh even when model output is too voluminous.
   sessions = normalizeCompetitionTaperLoad(sessions, context, meta)
 
-  // 8. Balance session count
+  // 8. Keep aerobic support non-interfering when squash is the primary target.
+  sessions = normalizeSquashSupportAerobicLoad(sessions, context, meta)
+
+  // 9. Balance session count
   sessions = balanceSessionCount(sessions, context, meta)
 
-  // 9. Preserve primary-sport minimums after fallback/trim decisions
+  // 10. Preserve primary-sport minimums after fallback/trim decisions
   sessions = ensurePrimarySportMinimum(sessions, context, meta)
 
-  // 10. Diversify duplicated sport content after fallbacks are added
+  // 11. Diversify duplicated sport content after fallbacks are added
   diversifyDuplicateSquashSessions(sessions, context, meta)
 
-  // 11. Diversify repeated strength exercises from previous week
+  // 12. Diversify repeated strength exercises from previous week
   repairDuplicateStrengthExercises(sessions, context, meta)
 
-  // 12. Check double session utilization
+  // 13. Check double session utilization
   sessions = checkDoubleSessionUtilization(sessions, context, meta)
 
   return { sessions, meta }
@@ -1067,6 +1070,83 @@ function getTaperSessionCaps(
     default:
       return finalWeek ? { durationMin: 25, rpe: 3 } : { durationMin: 35, rpe: 4 }
   }
+}
+
+function normalizeSquashSupportAerobicLoad(
+  sessions: CoachSessionProposal[],
+  context: RepairContext,
+  meta: RepairMeta,
+): CoachSessionProposal[] {
+  if (getPrimarySport(context) !== 'squash') return sessions
+  if (context.week.phase !== 'build' && context.week.phase !== 'peak') return sessions
+
+  return sessions.map((session) => {
+    if (session.sessionType !== 'running' && session.sessionType !== 'cycling') return session
+
+    const durationMin = Math.min(session.durationMin, 40)
+    const rpe = Math.min(session.rpe ?? 4, 4)
+
+    if (session.sessionType === 'running') {
+      const needsRepair = session.runningType !== 'z2'
+        || session.durationMin !== durationMin
+        || session.rpe !== rpe
+        || session.intervalStructure == null
+      if (!needsRepair) return session
+
+      meta.repairedSessionCount++
+      meta.warnings.push({
+        code: 'squash_support_running_softened',
+        message: `Se transformó "${session.title}" en Z2 corto para evitar interferencia con squash.`,
+        sessionDate: session.date,
+      })
+
+      return {
+        ...session,
+        title: /tempo|interval|largo|long/i.test(session.title) ? 'Rodaje Z2 - Soporte Squash' : session.title,
+        objective: 'Sumar soporte aeróbico suave sin interferir con la calidad específica de squash.',
+        durationMin,
+        rpe,
+        runningType: 'z2',
+        targetPaceMin: undefined,
+        targetPaceMax: undefined,
+        targetHrMin: session.targetHrMin ?? 130,
+        targetHrMax: session.targetHrMax ?? 145,
+        intervalStructure: {
+          blocks: [
+            {
+              label: 'Z2 soporte squash',
+              durationMin: Math.max(20, durationMin - 5),
+              targetHrMax: session.targetHrMax ?? 145,
+              notes: `Mantener entre ${session.targetHrMin ?? 130}-${session.targetHrMax ?? 145} lpm, conversacional.`,
+            },
+          ],
+        },
+      }
+    }
+
+    if (session.durationMin === durationMin && session.rpe === rpe) return session
+
+    meta.repairedSessionCount++
+    meta.warnings.push({
+      code: 'squash_support_cycling_softened',
+      message: `Se redujo "${session.title}" para que el ciclismo sea soporte y no carga principal.`,
+      sessionDate: session.date,
+    })
+
+    return {
+      ...session,
+      durationMin,
+      rpe,
+      objective: 'Soporte aeróbico de baja interferencia para sostener frescura en squash.',
+      cyclingDetails: session.cyclingDetails
+        ? {
+            ...session.cyclingDetails,
+            intensityReference: 'low',
+            executionNotes: 'Mantener sensación conversacional; no cerrar fuerte ni buscar adaptación principal.',
+          }
+        : session.cyclingDetails,
+    }
+  })
 }
 
 function daysBetween(fromDate: string, toDate: string): number {
