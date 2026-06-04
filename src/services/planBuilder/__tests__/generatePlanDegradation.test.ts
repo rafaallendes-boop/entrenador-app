@@ -89,6 +89,7 @@ describe('generatePlanWeeks pair → single degradation', () => {
       traceId: 'pair-trace',
     }))
     const provider = { name: 'gemini', call: callSpy } as unknown as AIProvider
+
     const updates: Record<number, string[]> = {}
 
     await generatePlanWeeks({
@@ -97,6 +98,7 @@ describe('generatePlanWeeks pair → single degradation', () => {
       profile: makeProfile(),
       wizardConfig: makeWizard(),
       provider,
+      deterministicPrimary: false,
       strategy: 'pairs',
       onWeekUpdate: (week) => {
         if (!week.generationMeta.batchId) return
@@ -129,12 +131,14 @@ describe('generatePlanWeeks pair → single degradation', () => {
     })
     const provider = { name: 'gemini', call: callSpy } as unknown as AIProvider
 
+
     const results = await generatePlanWeeks({
       plan: makePlan(),
       weeks: [makeWeek('2026-06-01', 0), makeWeek('2026-06-08', 1)],
       profile: makeProfile(),
       wizardConfig: makeWizard(),
       provider,
+      deterministicPrimary: false,
       strategy: 'pairs',
     })
 
@@ -178,12 +182,14 @@ describe('generatePlanWeeks pair → single degradation', () => {
     })
     const provider = { name: 'gemini', call: callSpy } as unknown as AIProvider
 
+
     const results = await generatePlanWeeks({
       plan: makePlan(),
       weeks: [makeWeek('2026-06-01', 0), makeWeek('2026-06-08', 1)],
       profile: makeProfile(),
       wizardConfig: makeWizard(),
       provider,
+      deterministicPrimary: false,
       strategy: 'pairs',
     })
 
@@ -216,12 +222,14 @@ describe('generatePlanWeeks pair → single degradation', () => {
     })
     const provider = { name: 'gemini', call: callSpy } as unknown as AIProvider
 
+
     const results = await generatePlanWeeks({
       plan: makePlan(),
       weeks: [makeWeek('2026-06-01', 0), makeWeek('2026-06-08', 1)],
       profile: makeProfile(),
       wizardConfig: makeWizard(),
       provider,
+      deterministicPrimary: false,
       strategy: 'pairs',
     })
 
@@ -243,12 +251,14 @@ describe('generatePlanWeeks pair → single degradation', () => {
     }))
     const provider = { name: 'gemini', call: callSpy } as unknown as AIProvider
 
+
     const results = await generatePlanWeeks({
       plan: makePlan(),
       weeks: [makeWeek('2026-06-01', 0), makeWeek('2026-06-08', 1)],
       profile: makeProfile(),
       wizardConfig: makeWizard(),
       provider,
+      deterministicPrimary: false,
       strategy: 'pairs',
     })
 

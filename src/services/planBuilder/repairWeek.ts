@@ -113,25 +113,33 @@ export function repairGeneratedWeek(
   completeSportDetails(sessions, context, meta)
   normalizeSquashSemanticMetadata(sessions, meta)
 
-  // 7. Keep taper/race weeks fresh even when model output is too voluminous.
+  // 7. Keep squash drill/block timing aligned with the session duration.
+  normalizeSquashDurationConsistency(sessions, meta)
+
+  // 8. Keep taper/race weeks fresh even when model output is too voluminous.
   sessions = normalizeCompetitionTaperLoad(sessions, context, meta)
 
-  // 8. Keep aerobic support non-interfering when squash is the primary target.
+  // 9. Taper caps can shorten sessions, so re-fit nested squash blocks after caps.
+  normalizeSquashDurationConsistency(sessions, meta)
+
+  // 10. Keep aerobic support non-interfering when squash is the primary target.
   sessions = normalizeSquashSupportAerobicLoad(sessions, context, meta)
 
-  // 9. Balance session count
+  // 11. Balance session count
   sessions = balanceSessionCount(sessions, context, meta)
 
-  // 10. Preserve primary-sport minimums after fallback/trim decisions
+  // 12. Preserve primary-sport minimums after fallback/trim decisions
   sessions = ensurePrimarySportMinimum(sessions, context, meta)
 
-  // 11. Diversify duplicated sport content after fallbacks are added
+  // 13. Diversify duplicated sport content after fallbacks are added
   diversifyDuplicateSquashSessions(sessions, context, meta)
+  normalizeSquashSemanticMetadata(sessions, meta)
+  normalizeSquashDurationConsistency(sessions, meta)
 
-  // 12. Diversify repeated strength exercises from previous week
+  // 14. Diversify repeated strength exercises from previous week
   repairDuplicateStrengthExercises(sessions, context, meta)
 
-  // 13. Check double session utilization
+  // 15. Check double session utilization
   sessions = checkDoubleSessionUtilization(sessions, context, meta)
 
   return { sessions, meta }
@@ -253,12 +261,30 @@ function filterDisallowedSports(
   const allowed = getAllowedSports(context)
 
   return sessions.filter((s) => {
-    if (allowed.has(s.sessionType as SupportedSport)) return true
+    if (allowed.has(s.sessionType as SupportedSport) && isPhaseAllowedSessionType(s, context)) return true
     meta.filteredSportCount++
     meta.droppedSessionCount++
-    meta.warnings.push({ code: 'sport_not_allowed', message: `Sesión "${s.title}" eliminada: deporte ${s.sessionType} no permitido.`, sessionDate: s.date })
+    meta.warnings.push({ code: 'sport_not_allowed', message: `Sesión "${s.title}" eliminada: deporte ${s.sessionType} no permitido para esta fase.`, sessionDate: s.date })
     return false
   })
+}
+
+function isPhaseAllowedSessionType(session: CoachSessionProposal, context: RepairContext): boolean {
+  if (getPrimarySport(context) !== 'squash') return true
+
+  if (context.week.phase === 'race') {
+    // Race week: no aerobic cross-training — only squash, strength (minimal), mobility/recovery.
+    return session.sessionType !== 'running' && session.sessionType !== 'cycling'
+  }
+
+  if (context.week.phase === 'taper') {
+    // Taper: cycling is dropped entirely; running is allowed only if it can be a short Z2 recovery.
+    // normalizeSquashSupportAerobicLoad (step 10) will cap it to ≤25 min / RPE ≤3 / Z2.
+    if (session.sessionType === 'cycling') return false
+    return true
+  }
+
+  return true
 }
 
 // ─── 6. Complete sport details ──────────────────────────────────────────────
@@ -421,6 +447,84 @@ function normalizeSquashSemanticMetadata(sessions: CoachSessionProposal[], meta:
       })
     }
   }
+}
+
+function normalizeSquashDurationConsistency(sessions: CoachSessionProposal[], meta: RepairMeta): void {
+  for (const session of sessions) {
+    if (session.sessionType !== 'squash' || !session.squashDetails || session.durationMin <= 0) continue
+
+    const details = session.squashDetails
+    const drillTotal = sumDurations(details.drills)
+    const blockTotal = sumDurations(details.blocks)
+    const total = Math.max(drillTotal, blockTotal)
+    if (total <= session.durationMin) continue
+
+    const factor = session.durationMin / total
+    const scaledDrills = scaleDurations(details.drills, factor, session.durationMin)
+    const scaledBlocks = details.blocks?.map((block) => {
+      const blockTarget = Math.max(3, Math.round((sumDurations(block.drills) * factor) / 2) * 2)
+      const drills = scaleDurations(block.drills, factor, blockTarget)
+      return {
+        ...block,
+        drills,
+        durationMin: sumDurations(drills),
+      }
+    })
+
+    details.drills = scaledDrills
+    details.blocks = fitBlockDurationsToTarget(scaledBlocks, session.durationMin)
+    meta.repairedSessionCount++
+    meta.warnings.push({
+      code: 'squash_duration_aligned',
+      message: `Se ajustaron los bloques de "${session.title}" para calzar con ${session.durationMin}min.`,
+      sessionDate: session.date,
+    })
+  }
+}
+
+function fitBlockDurationsToTarget<T extends { durationMin?: number }>(
+  blocks: T[] | undefined,
+  targetTotal: number,
+): T[] | undefined {
+  if (!blocks) return blocks
+  let overflow = sumDurations(blocks) - targetTotal
+  if (overflow <= 0) return blocks
+
+  const fitted = [...blocks]
+  for (let i = fitted.length - 1; i >= 0 && overflow > 0; i--) {
+    const current = fitted[i]!.durationMin ?? 0
+    const reduction = Math.min(overflow, Math.max(0, current - 3))
+    fitted[i] = { ...fitted[i]!, durationMin: current - reduction }
+    overflow -= reduction
+  }
+  return fitted
+}
+
+function sumDurations(items: Array<{ durationMin?: number }> | undefined): number {
+  return (items ?? []).reduce((total, item) => total + (item.durationMin ?? 0), 0)
+}
+
+function scaleDurations<T extends { durationMin?: number }>(
+  items: T[] | undefined,
+  factor: number,
+  targetTotal: number,
+): T[] {
+  if (!items || items.length === 0) return []
+
+  const scaled = items.map((item) => ({
+    ...item,
+    durationMin: Math.max(3, Math.round(((item.durationMin ?? 0) * factor) / 2) * 2),
+  }))
+
+  let overflow = sumDurations(scaled) - targetTotal
+  for (let i = scaled.length - 1; i >= 0 && overflow > 0; i--) {
+    const current = scaled[i]!.durationMin ?? 0
+    const reduction = Math.min(overflow, Math.max(0, current - 3))
+    scaled[i] = { ...scaled[i]!, durationMin: current - reduction }
+    overflow -= reduction
+  }
+
+  return scaled
 }
 
 function shouldAlignSquashSubtype(subtype: CoachSessionProposal['subtype']): boolean {
@@ -1002,7 +1106,7 @@ function normalizeCompetitionTaperLoad(
 ): CoachSessionProposal[] {
   if (context.week.phase !== 'taper' && context.week.phase !== 'race') return sessions
 
-  return sessions.map((session) => {
+  const cappedSessions = sessions.map((session) => {
     const daysToEvent = daysBetween(session.date, context.plan.endDate)
     const finalWeek = daysToEvent <= 6
     const caps = getTaperSessionCaps(session.sessionType, finalWeek)
@@ -1050,6 +1154,62 @@ function normalizeCompetitionTaperLoad(
 
     return { ...session, durationMin, rpe, exercises }
   })
+
+  if (context.week.phase !== 'taper' || !context.previousWeek || context.previousWeek.sessions.length === 0) {
+    return cappedSessions
+  }
+
+  const previousLoad = calculateWeekLoad(context.previousWeek.sessions)
+  const currentLoad = calculateWeekLoad(cappedSessions)
+  const weeklyCap = previousLoad * 0.85
+  if (previousLoad <= 0 || currentLoad <= weeklyCap) return cappedSessions
+
+  const factor = weeklyCap / currentLoad
+  meta.repairedSessionCount++
+  meta.warnings.push({
+    code: 'taper_week_load_reduced',
+    message: `Se redujo carga semanal taper para quedar bajo 85% de la semana previa.`,
+  })
+
+  return cappedSessions.map((session) => scaleSessionLoad(session, factor))
+}
+
+function calculateWeekLoad(sessions: CoachSessionProposal[]): number {
+  return sessions.reduce((total, session) => total + session.durationMin * (session.rpe ?? 6), 0)
+}
+
+function scaleSessionLoad(session: CoachSessionProposal, factor: number): CoachSessionProposal {
+  const minDuration = getMinimumSessionDuration(session.sessionType)
+  const scaledDuration = Math.max(minDuration, Math.round((session.durationMin * factor) / 5) * 5)
+  const scaledRpe = session.rpe == null
+    ? session.rpe
+    : Math.max(getMinimumSessionRpe(session.sessionType), Math.min(session.rpe, Math.round(session.rpe * Math.sqrt(factor))))
+
+  return {
+    ...session,
+    durationMin: scaledDuration,
+    rpe: scaledRpe,
+  }
+}
+
+function getMinimumSessionDuration(sessionType: CoachSessionProposal['sessionType']): number {
+  switch (sessionType) {
+    case 'squash': return 25
+    case 'strength': return 25
+    case 'mobility':
+    case 'recovery': return 20
+    default: return 20
+  }
+}
+
+function getMinimumSessionRpe(sessionType: CoachSessionProposal['sessionType']): number {
+  switch (sessionType) {
+    case 'squash': return 3
+    case 'strength': return 3
+    case 'mobility':
+    case 'recovery': return 2
+    default: return 2
+  }
 }
 
 function getTaperSessionCaps(
@@ -1078,13 +1238,18 @@ function normalizeSquashSupportAerobicLoad(
   meta: RepairMeta,
 ): CoachSessionProposal[] {
   if (getPrimarySport(context) !== 'squash') return sessions
-  if (context.week.phase !== 'build' && context.week.phase !== 'peak') return sessions
+  const phase = context.week.phase
+  if (phase !== 'build' && phase !== 'peak' && phase !== 'taper') return sessions
+
+  // Taper running is allowed but strictly capped: ≤25 min, RPE ≤3, always Z2.
+  // Build/peak running is softened to ≤40 min, RPE ≤4, Z2.
+  const isTaper = phase === 'taper'
 
   return sessions.map((session) => {
     if (session.sessionType !== 'running' && session.sessionType !== 'cycling') return session
 
-    const durationMin = Math.min(session.durationMin, 40)
-    const rpe = Math.min(session.rpe ?? 4, 4)
+    const durationMin = Math.min(session.durationMin, isTaper ? 25 : 40)
+    const rpe = Math.min(session.rpe ?? (isTaper ? 3 : 4), isTaper ? 3 : 4)
 
     if (session.sessionType === 'running') {
       const needsRepair = session.runningType !== 'z2'
@@ -1096,28 +1261,39 @@ function normalizeSquashSupportAerobicLoad(
       meta.repairedSessionCount++
       meta.warnings.push({
         code: 'squash_support_running_softened',
-        message: `Se transformó "${session.title}" en Z2 corto para evitar interferencia con squash.`,
+        message: isTaper
+          ? `Se ajustó "${session.title}" a Z2 muy corto (taper): ≤25 min, RPE ≤3.`
+          : `Se transformó "${session.title}" en Z2 corto para evitar interferencia con squash.`,
         sessionDate: session.date,
       })
 
+      const taperTitle = 'Activación Aeróbica - Recuperación Taper'
+      const buildTitle = 'Rodaje Z2 - Soporte Squash'
+      const needsTitleChange = isTaper || /tempo|interval|largo|long/i.test(session.title)
+      const newTitle = needsTitleChange ? (isTaper ? taperTitle : buildTitle) : session.title
+
       return {
         ...session,
-        title: /tempo|interval|largo|long/i.test(session.title) ? 'Rodaje Z2 - Soporte Squash' : session.title,
-        objective: 'Sumar soporte aeróbico suave sin interferir con la calidad específica de squash.',
+        title: newTitle,
+        objective: isTaper
+          ? 'Activación aeróbica muy suave para mantener la circulación sin generar fatiga antes de la competencia.'
+          : 'Sumar soporte aeróbico suave sin interferir con la calidad específica de squash.',
         durationMin,
         rpe,
         runningType: 'z2',
         targetPaceMin: undefined,
         targetPaceMax: undefined,
         targetHrMin: session.targetHrMin ?? 130,
-        targetHrMax: session.targetHrMax ?? 145,
+        targetHrMax: session.targetHrMax ?? (isTaper ? 140 : 145),
         intervalStructure: {
           blocks: [
             {
-              label: 'Z2 soporte squash',
-              durationMin: Math.max(20, durationMin - 5),
-              targetHrMax: session.targetHrMax ?? 145,
-              notes: `Mantener entre ${session.targetHrMin ?? 130}-${session.targetHrMax ?? 145} lpm, conversacional.`,
+              label: isTaper ? 'Z2 activación taper' : 'Z2 soporte squash',
+              durationMin: Math.max(isTaper ? 15 : 20, durationMin - 5),
+              targetHrMax: session.targetHrMax ?? (isTaper ? 140 : 145),
+              notes: isTaper
+                ? `Trote muy suave, conversacional. Mantener <140 lpm. No forzar ritmo.`
+                : `Mantener entre ${session.targetHrMin ?? 130}-${session.targetHrMax ?? 145} lpm, conversacional.`,
             },
           ],
         },
@@ -1346,6 +1522,7 @@ function checkDoubleSessionUtilization(
   meta: RepairMeta,
 ): CoachSessionProposal[] {
   if (!context.wizardConfig.allowDoubleSession) return sessions
+  if (context.week.phase === 'taper' || context.week.phase === 'race' || context.week.phase === 'transition') return sessions
   const doubleDays = context.wizardConfig.doubleSessionDays
   if (!doubleDays || doubleDays.length < 2) return sessions
 
@@ -1362,8 +1539,10 @@ function checkDoubleSessionUtilization(
   }
 
   const actualDoubles = doubleDayDates.filter((d) => (sessionsByDate.get(d)?.length ?? 0) >= 2).length
-  const utilization = actualDoubles / doubleDayDates.length
-  if (utilization >= 0.5) return sessions // good enough — no warning, no action
+  const requiredDoubles = context.wizardConfig.sessionsPerWeek <= context.wizardConfig.trainingDays.length
+    ? 1
+    : Math.ceil(doubleDayDates.length * 0.5)
+  if (actualDoubles >= requiredDoubles) return sessions
 
   // Underutilized: best-effort relocation
   const result = [...sessions]
@@ -1406,7 +1585,7 @@ function checkDoubleSessionUtilization(
 
   meta.warnings.push({
     code: 'double_session_underutilized',
-    message: `Solo ${actualDoubles}/${doubleDayDates.length} días dobles configurados se usaron${relocated > 0 ? ` — se reubicaron ${relocated} sesión(es)` : ''}.`,
+    message: `Solo ${actualDoubles}/${requiredDoubles} días dobles requeridos se usaron${relocated > 0 ? ` — se reubicaron ${relocated} sesión(es)` : ''}.`,
   })
 
   return result.sort((a, b) => a.date.localeCompare(b.date) || a.timeBlock.localeCompare(b.timeBlock))

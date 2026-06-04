@@ -20,7 +20,7 @@ import {
 } from '../week/shared'
 import { resolveConfiguredGenerationStrategy } from './generationState'
 import { getExpectedSessionsForPlanWeek } from './dateRange'
-import { buildLocalFallbackWeek } from './fallbackWeek'
+import { buildDeterministicWeek, buildLocalFallbackWeek } from './fallbackWeek'
 import { PLAN_BUILDER_PAIR_RESPONSE_SCHEMA } from './planBuilderResponseSchema'
 
 const MAX_SINGLE_WEEK_PROVIDER_ATTEMPTS = 2
@@ -31,6 +31,14 @@ export interface GeneratePlanWeeksInput {
   profile: AthleteProfile
   wizardConfig: PlanWizardConfig
   provider?: AIProvider
+  /**
+   * When true (the default for production), each week is built with the
+   * deterministic engine first. The AI provider is only used when this flag
+   * is explicitly set to false AND a provider is supplied (e.g. in tests or
+   * future AI-prose enhancement). Keeping this explicit avoids accidentally
+   * bypassing or enabling AI based on whether a provider happens to be passed.
+   */
+  deterministicPrimary?: boolean
   onWeekUpdate?: (week: TrainingPlanWeek) => void
   onChunk?: (weekIndex: number, chunk: string) => void
   abortSignal?: AbortSignal
@@ -137,6 +145,7 @@ function makeResolvedWeek(
     repairWarnings?: Array<{ code: string; message: string }>
     stageTimings?: Array<{ stage: string; durationMs: number; ok: boolean; error?: string }>
     errorClass?: string
+    generationSource?: 'ai' | 'deterministic'
   },
 ): TrainingPlanWeek {
   const nowTs = Date.now()
@@ -170,9 +179,49 @@ function makeResolvedWeek(
       repairWarnings: input.repairWarnings,
       stageTimings: input.stageTimings,
       errorClass: input.errorClass,
+      generationSource: input.generationSource,
     },
     updatedAt: nowTs,
   }
+}
+
+function makeDeterministicResolvedWeek(input: {
+  plan: TrainingPlan
+  week: TrainingPlanWeek
+  previousWeek?: TrainingPlanWeek
+  profile: AthleteProfile
+  wizardConfig: PlanWizardConfig
+  strategy: 'single' | 'pairs'
+  batchId?: string
+}): TrainingPlanWeek {
+  const startedAt = Date.now()
+  const result = buildDeterministicWeek({
+    plan: input.plan,
+    week: input.week,
+    previousWeek: input.previousWeek,
+    profile: input.profile,
+    wizardConfig: input.wizardConfig,
+  })
+
+  return makeResolvedWeek(input.week, result.sessions, {
+    attempts: 1,
+    provider: 'local',
+    model: 'deterministic-plan-builder',
+    durationMs: Date.now() - startedAt,
+    chunkCount: 0,
+    fallbackUsed: false,
+    strategy: input.strategy,
+    batchId: input.batchId,
+    rawSessionCount: result.meta.rawSessionCount,
+    validSessionCount: result.sessions.length,
+    droppedSessionCount: result.meta.droppedSessionCount,
+    repairedSessionCount: result.meta.repairedSessionCount,
+    movedSessionCount: result.meta.movedSessionCount,
+    addedFallbackCount: result.meta.addedFallbackCount,
+    filteredSportCount: result.meta.filteredSportCount,
+    repairWarnings: result.meta.warnings,
+    generationSource: 'deterministic',
+  })
 }
 
 function makeLocalFallbackResolvedWeek(input: {
@@ -528,11 +577,13 @@ async function generateWeekPair(
  * Calls onWeekUpdate as weeks transition so the UI can stream and track progress.
  */
 export async function generatePlanWeeks(input: GeneratePlanWeeksInput): Promise<TrainingPlanWeek[]> {
-  const provider = input.provider ?? getProviderForRequestClass(
-    resolveStrategy(input) === 'pairs' ? 'plan_builder_pair' : 'plan_builder_week',
-  )
   const results: TrainingPlanWeek[] = []
   const strategy = resolveStrategy(input)
+  const provider = input.provider ?? getProviderForRequestClass(
+    strategy === 'pairs' ? 'plan_builder_pair' : 'plan_builder_week',
+  )
+  // Deterministic is the default; only use AI when explicitly opted-in with a provider.
+  const deterministicPrimary = input.deterministicPrimary ?? true
   let batchStrategyEnabled = strategy === 'pairs'
   let previousWeek: TrainingPlanWeek | undefined = input.seedPreviousWeek
 
@@ -545,6 +596,24 @@ export async function generatePlanWeeks(input: GeneratePlanWeeksInput): Promise<
 
     const nextWeek = input.weeks[index + 1]
     const canBatch = batchStrategyEnabled && nextWeek != null
+
+    if (deterministicPrimary) {
+      input.onWeekUpdate?.(makeGeneratingWeek(week, 'single'))
+      const resolved = makeDeterministicResolvedWeek({
+        plan: input.plan,
+        week,
+        previousWeek,
+        profile: input.profile,
+        wizardConfig: input.wizardConfig,
+        strategy: 'single',
+      })
+      input.onWeekUpdate?.(resolved)
+      results.push(resolved)
+      if (resolved.status === 'draft') {
+        previousWeek = resolved
+      }
+      continue
+    }
 
     if (canBatch) {
       const batchWeeks: [TrainingPlanWeek, TrainingPlanWeek] = [week, nextWeek]

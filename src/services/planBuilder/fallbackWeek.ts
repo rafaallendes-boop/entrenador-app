@@ -2,6 +2,7 @@ import type { AthleteProfile, CoachSessionProposal, DayOfWeek, PlanWizardConfig,
 import type { TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
 import { getExpectedSessionsForPlanWeek, getPlanWeekTrainingDates } from './dateRange'
 import { repairGeneratedWeek, type RepairResult } from './repairWeek'
+import { selectStrengthBlockTemplate } from '../training/strengthBlocks'
 
 type Slot = { date: string; timeBlock: 'AM' | 'PM' }
 
@@ -21,13 +22,71 @@ function canUseDoubleSessionOnDate(date: string, wizardConfig: PlanWizardConfig)
 
 function buildSlots(plan: TrainingPlan, week: TrainingPlanWeek, expected: number): Slot[] {
   const dates = getPlanWeekTrainingDates(plan, week)
-  const singles = dates.map((date) => ({ date, timeBlock: 'AM' as const }))
-  const doubles = dates
-    .filter((date) => canUseDoubleSessionOnDate(date, plan.wizardConfig))
-    .map((date) => ({ date, timeBlock: 'PM' as const }))
+  if (expected <= 0 || dates.length === 0) return []
 
-  if (expected <= singles.length) return singles.slice(0, expected)
-  return [...singles, ...doubles].slice(0, expected)
+  if (week.phase === 'race') {
+    // Race week: keep it calm and minimal. We don't know the exact competition day,
+    // so we don't try to schedule around it. At most 2 light single-session days —
+    // no doubles, no forced AM+PM on the event date.
+    const calmSlots = dates.slice(0, Math.min(expected, 2)).map((date) => ({ date, timeBlock: 'AM' as const }))
+    return calmSlots.length > 0 ? calmSlots : dates.slice(0, 1).map((date) => ({ date, timeBlock: 'AM' as const }))
+  }
+
+  const doubleDates = dates.filter((date) => canUseDoubleSessionOnDate(date, plan.wizardConfig))
+  const strategicDoubleDate = pickStrategicDoubleDate(plan, week, expected, doubleDates)
+
+  if (strategicDoubleDate && expected <= dates.length) {
+    const skipDate = pickRestDateAfterStrategicDouble(dates, strategicDoubleDate)
+    const slots: Slot[] = []
+
+    for (const date of dates) {
+      if (date === skipDate) continue
+      slots.push({ date, timeBlock: 'AM' })
+      if (date === strategicDoubleDate) slots.push({ date, timeBlock: 'PM' })
+      if (slots.length >= expected) break
+    }
+
+    return slots.slice(0, expected)
+  }
+
+  const slots: Slot[] = []
+  for (const date of dates) {
+    slots.push({ date, timeBlock: 'AM' })
+    if ((date === strategicDoubleDate || expected > dates.length) && canUseDoubleSessionOnDate(date, plan.wizardConfig)) {
+      slots.push({ date, timeBlock: 'PM' })
+    }
+    if (slots.length >= expected) return slots.slice(0, expected)
+  }
+
+  for (const date of doubleDates) {
+    if (slots.length >= expected) break
+    if (!slots.some((slot) => slot.date === date && slot.timeBlock === 'PM')) {
+      slots.push({ date, timeBlock: 'PM' })
+    }
+  }
+
+  return slots.slice(0, expected)
+}
+
+function pickStrategicDoubleDate(
+  plan: TrainingPlan,
+  week: TrainingPlanWeek,
+  expected: number,
+  doubleDates: string[],
+): string | undefined {
+  if (!plan.wizardConfig.allowDoubleSession || doubleDates.length === 0) return undefined
+  if (expected < 6) return undefined
+  if (getPrimarySport(plan) !== 'squash') return undefined
+  if (week.phase === 'taper' || week.phase === 'race' || week.phase === 'transition') return undefined
+
+  const preferredMiddleIndex = Math.min(1, doubleDates.length - 1)
+  return doubleDates[preferredMiddleIndex]
+}
+
+function pickRestDateAfterStrategicDouble(dates: string[], doubleDate: string): string | undefined {
+  const afterDouble = dates.find((date) => date > doubleDate)
+  if (afterDouble) return afterDouble
+  return [...dates].reverse().find((date) => date !== doubleDate)
 }
 
 function getPrimarySport(plan: TrainingPlan): SupportedSport | undefined {
@@ -72,16 +131,10 @@ function supportSports(plan: TrainingPlan, primary: SupportedSport | undefined):
 
 function buildSportSequence(plan: TrainingPlan, week: TrainingPlanWeek, expected: number): SupportedSport[] {
   const primary = getPrimarySport(plan)
+  if (primary === 'squash') return buildSquashPrimarySportSequence(plan, week, expected)
+
   const primaryMinimum = minimumPrimarySessions(plan, week, expected)
-  const supports = supportSports(plan, primary).filter((sport) => {
-    if (primary === 'squash' && week.phase === 'race') {
-      return sport === 'mobility'
-    }
-    if (primary === 'squash' && (week.phase === 'taper' || week.phase === 'race')) {
-      return sport !== 'running' && sport !== 'cycling'
-    }
-    return true
-  })
+  const supports = supportSports(plan, primary)
 
   if (!primary) {
     const sequence = [...supports]
@@ -110,8 +163,40 @@ function buildSportSequence(plan: TrainingPlan, week: TrainingPlanWeek, expected
   return sequence.slice(0, expected)
 }
 
+function buildSquashPrimarySportSequence(plan: TrainingPlan, week: TrainingPlanWeek, expected: number): SupportedSport[] {
+  const allowedSupports = new Set(supportSports(plan, 'squash'))
+  const canUse = (sport: SupportedSport) => sport === 'squash' || allowedSupports.has(sport)
+  const withoutAerobic = (sport: SupportedSport) => sport !== 'running' && sport !== 'cycling'
+  const pushIfAllowed = (sequence: SupportedSport[], sport: SupportedSport) => {
+    if (canUse(sport)) sequence.push(sport)
+  }
+
+  const template: SupportedSport[] = []
+
+  if (week.phase === 'race') {
+    pushIfAllowed(template, 'mobility')
+    pushIfAllowed(template, 'squash')
+  } else if (week.phase === 'taper') {
+    for (const sport of ['strength', 'squash', 'mobility', 'squash', 'strength', 'squash'] as SupportedSport[]) {
+      if (withoutAerobic(sport)) pushIfAllowed(template, sport)
+    }
+  } else if (week.phase === 'peak') {
+    for (const sport of ['strength', 'squash', 'strength', 'squash', 'squash', 'squash', 'mobility'] as SupportedSport[]) {
+      if (withoutAerobic(sport)) pushIfAllowed(template, sport)
+    }
+  } else {
+    for (const sport of ['strength', 'squash', 'running', 'squash', 'strength', 'squash', 'mobility'] as SupportedSport[]) {
+      pushIfAllowed(template, sport)
+    }
+  }
+
+  if (template.length === 0) template.push('squash')
+  while (template.length < expected) template.push('squash')
+  return template.slice(0, expected)
+}
+
 function squashSubtype(index: number, phase: TrainingPlanWeek['phase'], weekIndex: number): CoachSessionProposal['subtype'] {
-  if (phase === 'race') return index === 0 ? 'match' : 'light'
+  if (phase === 'race') return 'light'  // calm activation — competition day/time unknown
   if (phase === 'taper') return index === 0 ? 'control' : 'light'
   const rotation: Array<NonNullable<CoachSessionProposal['subtype']>> = ['training', 'control', 'match', 'competitive']
   return rotation[(index + weekIndex) % rotation.length]
@@ -163,14 +248,23 @@ function runningTitle(runningType: RunningType, squashSupport: boolean): string 
   }
 }
 
-function strengthTitle(week: TrainingPlanWeek): string {
-  const titles = [
-    'Fuerza Soporte Squash',
-    'Fuerza Potencia Lateral',
-    'Fuerza Estabilidad y Core',
-    'Fuerza Tren Superior y Frenado',
-  ]
-  return titles[week.weekIndex % titles.length]
+function getWeekIndexInPhaseBlock(plan: TrainingPlan, week: TrainingPlanWeek): number {
+  const block = plan.phases.find((phase) =>
+    week.weekIndex >= phase.startWeekIndex && week.weekIndex <= phase.endWeekIndex,
+  )
+  return Math.max(0, week.weekIndex - (block?.startWeekIndex ?? week.weekIndex))
+}
+
+function strengthTitle(plan: TrainingPlan, week: TrainingPlanWeek, strengthIndex: number): string {
+  const template = selectStrengthBlockTemplate(week.phase, getWeekIndexInPhaseBlock(plan, week) + strengthIndex)
+  const description = template.description
+    .replace(/^Peak\s+[ABC]\s+-\s+/i, '')
+    .replace(/^Build\s+[ABC]\s+-\s+/i, '')
+    .replace(/^Taper\s+[ABC]?\s*-?\s*/i, '')
+    .trim()
+  return description
+    ? `Gym Tipo ${template.subTemplate} - ${description}`
+    : `Gym Tipo ${template.subTemplate}`
 }
 
 function fallbackTitle(sport: SupportedSport, index: number, plan: TrainingPlan, week: TrainingPlanWeek): string {
@@ -180,7 +274,7 @@ function fallbackTitle(sport: SupportedSport, index: number, plan: TrainingPlan,
     case 'running':
       return runningTitle(runningTypeForWeek(plan, week), getPrimarySport(plan) === 'squash')
     case 'strength':
-      return strengthTitle(week)
+      return strengthTitle(plan, week, index)
     case 'cycling':
       return 'Bici Z2 - Descarga Aeróbica'
     case 'mobility':
@@ -231,21 +325,33 @@ function buildSeedSession(
       ? Math.min(45, wizardConfig.sessionDurationMins)
       : wizardConfig.sessionDurationMins
   const runningType = sport === 'running' ? runningTypeForWeek(plan, week) : undefined
+  const subtype = sport === 'squash' ? squashSubtype(index, week.phase, week.weekIndex) : undefined
+  const timeBlock = resolvePreferredTimeBlock(sport, subtype, slot.timeBlock)
 
   return {
     date: slot.date,
-    timeBlock: slot.timeBlock,
+    timeBlock,
     sessionType: sport,
     title: fallbackTitle(sport, index, plan, week),
     durationMin,
     rpe: sport === 'running' && squashPrimary ? 4 : fallbackRpe(sport, week),
     objective: fallbackObjective(sport, week),
-    subtype: sport === 'squash' ? squashSubtype(index, week.phase, week.weekIndex) : undefined,
+    subtype,
     runningType,
   }
 }
 
-export function buildLocalFallbackWeek(input: {
+function resolvePreferredTimeBlock(
+  sport: SupportedSport,
+  subtype: CoachSessionProposal['subtype'],
+  fallback: Slot['timeBlock'],
+): Slot['timeBlock'] {
+  if (sport === 'strength') return 'AM'
+  if (sport === 'squash' && (subtype === 'match' || subtype === 'competitive')) return 'PM'
+  return fallback
+}
+
+export function buildDeterministicWeek(input: {
   plan: TrainingPlan
   week: TrainingPlanWeek
   previousWeek?: TrainingPlanWeek
@@ -271,3 +377,5 @@ export function buildLocalFallbackWeek(input: {
     wizardConfig: input.wizardConfig,
   })
 }
+
+export const buildLocalFallbackWeek = buildDeterministicWeek

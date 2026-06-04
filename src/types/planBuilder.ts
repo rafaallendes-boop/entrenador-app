@@ -59,6 +59,7 @@ export interface PlanGenerationMeta {
   repairWarnings?: Array<{ code: string; message: string }>
   stageTimings?: Array<{ stage: string; durationMs: number; ok: boolean; error?: string }>
   errorClass?: string
+  generationSource?: 'ai' | 'deterministic'
 }
 
 export interface PlanGenerationSummary {

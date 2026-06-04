@@ -186,7 +186,7 @@ describe('reviewPlanQuality', () => {
     expect(review.criticalIssueCount).toBeGreaterThan(0)
   })
 
-  it('penalizes missing support work and incomplete session details', () => {
+  it('penalizes missing strength support without requiring aerobic work in squash peak', () => {
     const plan = makePlan()
     const week = makeWeek([
       squash('2026-05-04', 'Squash 1'),
@@ -198,9 +198,9 @@ describe('reviewPlanQuality', () => {
 
     const review = reviewPlanQuality(plan, [week])
 
-    expect(review.score).toBeLessThan(90)
+    expect(review.score).toBeLessThan(100)
     expect(review.issues.some((item) => item.code === 'quality.support.missing_strength')).toBe(true)
-    expect(review.issues.some((item) => item.code === 'quality.support.missing_aerobic')).toBe(true)
+    expect(review.issues.some((item) => item.code === 'quality.support.missing_aerobic')).toBe(false)
   })
 
   it('caps expected sessions for final taper week and flags excessive taper volume', () => {

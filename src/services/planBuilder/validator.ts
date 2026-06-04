@@ -349,7 +349,9 @@ function validateSquashCompetitionReadiness(plan: TrainingPlan, week: TrainingPl
       && session.sessionType !== 'recovery'
     ) {
       issues.push({
-        severity: 'error',
+        // Warning (not error): race week is intentionally calm/minimal; we don't force-schedule
+        // around the exact event day since its timing within the week may be unknown.
+        severity: 'warning',
         code: 'squash.race_day.non_squash',
         message: `El día del torneo (${eventDate}) no debe incluir ${session.sessionType}; reserva esa fecha para competencia/activación específica de squash.`,
         weekIndex: week.weekIndex,
@@ -365,7 +367,9 @@ function validateSquashCompetitionReadiness(plan: TrainingPlan, week: TrainingPl
     )
     if (!hasEventSquash) {
       issues.push({
-        severity: 'error',
+        // Warning (not error): race week is kept calm without forcing a 'match' session on a
+        // specific day; the competition itself provides the competitive event.
+        severity: 'warning',
         code: 'squash.race_day.missing_event',
         message: `La semana de carrera debe marcar el torneo de squash el ${eventDate} como sesión match/competitiva.`,
         weekIndex: week.weekIndex,

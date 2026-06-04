@@ -450,6 +450,7 @@ describe('planBuilder', () => {
       profile,
       wizardConfig,
       provider,
+      deterministicPrimary: false,
     })
 
     expect(result[0]?.status).toBe('draft')
@@ -501,6 +502,7 @@ describe('planBuilder', () => {
       profile,
       wizardConfig,
       provider,
+      deterministicPrimary: false,
     })
 
     expect(result[0]?.status).toBe('draft')
@@ -541,6 +543,7 @@ describe('planBuilder', () => {
       profile,
       wizardConfig,
       provider,
+      deterministicPrimary: false,
       strategy: 'single',
     })
 
@@ -557,12 +560,12 @@ describe('planBuilder', () => {
     expect(result[0]?.generationMeta.attempts).toBe(2)
     expect(sessions).toHaveLength(5)
     expect(counts.squash).toBe(3)
-    expect(counts.running).toBe(1)
-    expect(counts.strength).toBe(1)
-    expect(sessions.find((session) => session.sessionType === 'running')?.intervalStructure?.blocks?.length).toBeGreaterThan(0)
+    expect(counts.running ?? 0).toBe(0)
+    expect(counts.strength).toBe(2)
+    expect(sessions.filter((session) => session.sessionType === 'strength').every((session) => /^Gym Tipo [ABC]/.test(session.title))).toBe(true)
   })
 
-  it('spreads local fallback sessions across available days before using double sessions', async () => {
+  it('uses strategic double sessions for squash peak weeks when doubles are enabled', async () => {
     const profile = makeProfile('2026-07-20')
     const event = profile.goalEvents![0] as GoalEvent
     const wizardConfig: PlanWizardConfig = {
@@ -596,6 +599,7 @@ describe('planBuilder', () => {
       profile,
       wizardConfig,
       provider,
+      deterministicPrimary: false,
       strategy: 'single',
     })
 
@@ -607,11 +611,11 @@ describe('planBuilder', () => {
     }, {})
 
     expect(sessions).toHaveLength(6)
-    expect(new Set(dates).size).toBe(6)
-    expect(sessions.every((session) => session.timeBlock === 'AM')).toBe(true)
+    expect(new Set(dates).size).toBe(5)
+    expect(dates.some((date) => sessions.filter((session) => session.date === date).length >= 2)).toBe(true)
     expect(counts.squash).toBe(4)
-    expect(counts.running).toBe(1)
-    expect(counts.strength).toBe(1)
+    expect(counts.running ?? 0).toBe(0)
+    expect(counts.strength).toBe(2)
   })
 
   it('surfaces dropped invalid sessions as a stronger retry instruction', async () => {
@@ -656,6 +660,7 @@ describe('planBuilder', () => {
       profile,
       wizardConfig,
       provider,
+      deterministicPrimary: false,
     })
 
     expect(result[0]?.status).toBe('draft')
@@ -712,6 +717,7 @@ describe('planBuilder', () => {
       profile,
       wizardConfig,
       provider,
+      deterministicPrimary: false,
       strategy: 'pairs',
     })
 
@@ -764,6 +770,7 @@ describe('planBuilder', () => {
       profile,
       wizardConfig,
       provider,
+      deterministicPrimary: false,
       strategy: 'pairs',
     })
 
@@ -812,6 +819,7 @@ describe('planBuilder', () => {
       profile,
       wizardConfig,
       provider,
+      deterministicPrimary: false,
       onChunk: (_weekIndex, chunk) => chunks.push(chunk),
     })
 
@@ -857,6 +865,7 @@ describe('planBuilder', () => {
       profile,
       wizardConfig,
       provider,
+      deterministicPrimary: false,
       strategy: 'pairs',
       onChunk: (weekIndex, chunk) => {
         streamedByWeekIndex[weekIndex] = (streamedByWeekIndex[weekIndex] ?? '') + chunk
@@ -902,6 +911,7 @@ describe('planBuilder', () => {
       profile,
       wizardConfig,
       provider,
+      deterministicPrimary: false,
     })
 
     expect(result.every((week) => week.status === 'draft')).toBe(true)
@@ -942,6 +952,7 @@ describe('planBuilder', () => {
       profile,
       wizardConfig,
       provider,
+      deterministicPrimary: false,
     })
 
     expect(result.every((week) => week.status === 'draft')).toBe(true)
@@ -982,6 +993,7 @@ describe('planBuilder', () => {
       profile,
       wizardConfig,
       provider,
+      deterministicPrimary: false,
     })
 
     expect(result.every((week) => week.status === 'draft')).toBe(true)

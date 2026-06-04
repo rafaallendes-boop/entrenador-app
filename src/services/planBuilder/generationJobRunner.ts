@@ -260,6 +260,7 @@ async function runPlanGenerationJobInternal({ jobId, profile, callbacks }: RunGe
         wizardConfig: latestPlan.wizardConfig,
         seedPreviousWeek: previousWeek,
         strategy: 'single',
+        deterministicPrimary: true,
         onWeekUpdate: (next) => {
           weeks = replaceWeek(weeks, next)
           callbacks?.onWeekUpdate?.(next)

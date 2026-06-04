@@ -226,7 +226,7 @@ function getDistributionIssues(plan: TrainingPlan, week: TrainingPlanWeek): Plan
 
   if (
     primarySport === 'squash'
-    && (week.phase === 'build' || week.phase === 'peak')
+    && week.phase === 'build'
     && expected >= 5
     && (counts.running ?? 0) === 0
     && (counts.cycling ?? 0) === 0
