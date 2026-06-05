@@ -86,6 +86,10 @@ describe('tryDeterministicBypass', () => {
 
 describe('plan builder request policy', () => {
   it('keeps client-side caps aligned with the coach proxy caps', () => {
+    expect(getAIRequestPolicy('week_creator')).toMatchObject({
+      maxTokens: 3500,
+      timeoutMs: 23000,
+    })
     expect(getAIRequestPolicy('plan_builder_week')).toMatchObject({
       maxTokens: 3500,
       timeoutMs: 18000,

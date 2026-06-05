@@ -77,7 +77,7 @@ const REQUEST_TIMEOUTS: Record<RequestClass, number> = {
   chat_general: 15000,
   chat_action: 18000,
   weekly_summary: 18000,
-  week_creator: 18000,
+  week_creator: 23000,
   plan_builder_week: 18000,
   plan_builder_pair: 23000,
   import_extract: 18000,
