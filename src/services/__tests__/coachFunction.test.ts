@@ -1,3 +1,8 @@
+/// <reference types="node" />
+// Este test importa la Netlify function (contexto Node) y manipula process.env.
+// No lo cubre ningún tsconfig del proyecto (app excluye *.test.ts; node solo
+// incluye netlify/functions), así que declaramos los tipos de node explícitamente
+// para que el language server reconozca `process`.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@netlify/functions', () => ({
@@ -6,6 +11,7 @@ vi.mock('@netlify/functions', () => ({
 
 import { getAIRequestPolicy } from '../ai/requestPolicy'
 import {
+  buildClaudeBody,
   buildOpenAIBody,
   providerEnvKey,
   resolveFallbackProvider,
@@ -188,6 +194,41 @@ describe('OpenAI request body', () => {
     expect(buildOpenAIBody(baseRequest, 'gpt-4.1-mini')).toMatchObject({
       temperature: 0.15,
     })
+  })
+})
+
+describe('Claude request body', () => {
+  const baseRequest = {
+    systemPrompt: 'Sistema',
+    userMessage: 'Usuario',
+    requestClass: 'plan_builder_week' as const,
+    maxTokens: 3500,
+    temperature: 0.35,
+  }
+
+  it('sends a plain message body when no responseSchema is provided', () => {
+    const body = buildClaudeBody(baseRequest, 'claude-sonnet-4-6')
+    expect(body).not.toHaveProperty('tools')
+    expect(body).not.toHaveProperty('tool_choice')
+    expect(body).toMatchObject({ model: 'claude-sonnet-4-6', max_tokens: 3500, temperature: 0.35 })
+  })
+
+  it('forces structured output via tool_use when responseSchema is present', () => {
+    const responseSchema = {
+      type: 'object',
+      properties: { week: { type: 'object' } },
+      required: ['week'],
+    }
+    const body = buildClaudeBody({ ...baseRequest, responseSchema }, 'claude-sonnet-4-6')
+    expect(body.tool_choice).toMatchObject({ type: 'tool' })
+    const tools = body.tools as Array<{ name: string; input_schema: unknown }>
+    expect(tools).toHaveLength(1)
+    expect(tools[0].input_schema).toMatchObject({ type: 'object' })
+    expect((body.tool_choice as { name: string }).name).toBe(tools[0].name)
+  })
+
+  it('sets stream flag when streaming', () => {
+    expect(buildClaudeBody(baseRequest, 'claude-sonnet-4-6', true)).toMatchObject({ stream: true })
   })
 })
 

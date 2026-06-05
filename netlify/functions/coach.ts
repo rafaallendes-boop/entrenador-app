@@ -663,6 +663,53 @@ export function buildOpenAIBody(req: CoachRequest, model: string, streamOutput =
   return body
 }
 
+// Claude no expone un `response_format` JSON como OpenAI/Gemini. La forma soportada
+// de forzar salida estructurada es declarar una tool con `input_schema` y obligar al
+// modelo a invocarla con tool_choice. El `input` del bloque tool_use es el JSON final,
+// equivalente a lo que devuelven OpenAI/Gemini con responseSchema.
+const CLAUDE_STRUCTURED_TOOL_NAME = 'emit_structured_result'
+
+function buildClaudeToolConfig(req: CoachRequest): Record<string, unknown> | undefined {
+  if (!req.responseSchema) return undefined
+  return {
+    tools: [
+      {
+        name: CLAUDE_STRUCTURED_TOOL_NAME,
+        description: 'Devuelve el resultado estructurado solicitado siguiendo el schema exacto.',
+        input_schema: normalizeJsonSchemaForOpenAI(req.responseSchema),
+      },
+    ],
+    tool_choice: { type: 'tool', name: CLAUDE_STRUCTURED_TOOL_NAME },
+  }
+}
+
+export function buildClaudeBody(req: CoachRequest, model: string, streamOutput = false): Record<string, unknown> {
+  const body: Record<string, unknown> = {
+    model,
+    max_tokens: req.maxTokens ?? 1024,
+    temperature: req.temperature ?? 0.7,
+    system: req.systemPrompt,
+    messages: [
+      ...(req.conversation ?? []).map((message) => ({ role: message.role, content: message.content })),
+      { role: 'user', content: req.userMessage },
+    ],
+  }
+  const toolConfig = buildClaudeToolConfig(req)
+  if (toolConfig) Object.assign(body, toolConfig)
+  if (streamOutput) body.stream = true
+  return body
+}
+
+// Extrae el texto de una respuesta Claude no-streaming: prioriza el bloque tool_use
+// (salida estructurada) y cae al bloque de texto plano para requests sin schema.
+function extractClaudeText(content: Array<{ type?: string; text?: string; input?: unknown }> | undefined): string | undefined {
+  const toolBlock = content?.find((item) => item.type === 'tool_use')
+  if (toolBlock && toolBlock.input !== undefined) {
+    return JSON.stringify(toolBlock.input)
+  }
+  return content?.find((item) => item.type === 'text')?.text
+}
+
 async function callGemini(
   req: CoachRequest,
   apiKey: string,
@@ -734,23 +781,14 @@ async function callClaude(
       'anthropic-version': '2023-06-01',
     },
     signal,
-    body: JSON.stringify({
-      model,
-      max_tokens: req.maxTokens ?? 1024,
-      temperature: req.temperature ?? 0.7,
-      system: req.systemPrompt,
-      messages: [
-        ...(req.conversation ?? []).map((message) => ({ role: message.role, content: message.content })),
-        { role: 'user', content: req.userMessage },
-      ],
-    }),
+    body: JSON.stringify(buildClaudeBody(req, model)),
   })
   const data = await fetchJsonOrThrow(res) as {
-    content?: Array<{ type?: string; text?: string }>
+    content?: Array<{ type?: string; text?: string; input?: unknown }>
     model?: string
     stop_reason?: string
   }
-  const text = data.content?.find((item) => item.type === 'text')?.text
+  const text = extractClaudeText(data.content)
   if (!text) throw makeError('Claude devolvió una respuesta vacía.', 500, 'parse_error')
   return { text, model: data.model ?? model, finishReason: data.stop_reason }
 }
@@ -840,27 +878,24 @@ async function streamClaude(
       'anthropic-version': '2023-06-01',
     },
     signal,
-    body: JSON.stringify({
-      model,
-      max_tokens: req.maxTokens ?? 1024,
-      temperature: req.temperature ?? 0.7,
-      system: req.systemPrompt,
-      stream: true,
-      messages: [
-        ...(req.conversation ?? []).map((message) => ({ role: message.role, content: message.content })),
-        { role: 'user', content: req.userMessage },
-      ],
-    }),
+    body: JSON.stringify(buildClaudeBody(req, model, true)),
   })
   if (!res.ok || !res.body) {
     await fetchJsonOrThrow(res)
     throw makeError('Claude streaming falló.', 500, 'server_error')
   }
   return readSseStream(res.body, model, (json) => {
-    const data = JSON.parse(json) as { type?: string; delta?: { type?: string; text?: string }; message?: { stop_reason?: string } }
+    const data = JSON.parse(json) as {
+      type?: string
+      delta?: { type?: string; text?: string; partial_json?: string }
+      message?: { stop_reason?: string }
+    }
     const finishReason = data.message?.stop_reason
-    if (data.type === 'content_block_delta' && data.delta?.type === 'text_delta') {
-      return { chunk: data.delta.text ?? '', finishReason }
+    if (data.type === 'content_block_delta') {
+      // text_delta: respuesta de texto plano. input_json_delta: fragmentos del JSON
+      // de la tool estructurada — se acumulan igual que el texto y forman el JSON final.
+      if (data.delta?.type === 'text_delta') return { chunk: data.delta.text ?? '', finishReason }
+      if (data.delta?.type === 'input_json_delta') return { chunk: data.delta.partial_json ?? '', finishReason }
     }
     return { chunk: '', finishReason }
   }, onChunk)
