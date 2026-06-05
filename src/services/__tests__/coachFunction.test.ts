@@ -99,7 +99,7 @@ describe('plan builder request policy', () => {
     })
     expect(getAIRequestPolicy('plan_builder_week')).toMatchObject({
       maxTokens: 3500,
-      timeoutMs: 18000,
+      timeoutMs: 22000,
     })
     expect(getAIRequestPolicy('plan_builder_pair')).toMatchObject({
       maxTokens: 4200,
