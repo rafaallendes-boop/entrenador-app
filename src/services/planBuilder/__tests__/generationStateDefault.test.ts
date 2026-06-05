@@ -54,10 +54,10 @@ describe('resolveConfiguredGenerationMode', () => {
     }
   })
 
-  it('defaults to deterministic mode', () => {
+  it('defaults to hybrid mode (AI-primary with local fallback)', () => {
     delete (import.meta.env as Record<string, unknown>)[envKey]
-    expect(resolveConfiguredGenerationMode()).toBe('deterministic')
-    expect(shouldUseDeterministicPrimary(resolveConfiguredGenerationMode())).toBe(true)
+    expect(resolveConfiguredGenerationMode()).toBe('hybrid')
+    expect(shouldUseDeterministicPrimary(resolveConfiguredGenerationMode())).toBe(false)
   })
 
   it('honors hybrid mode and ai alias', () => {
@@ -66,6 +66,17 @@ describe('resolveConfiguredGenerationMode', () => {
     expect(shouldUseDeterministicPrimary(resolveConfiguredGenerationMode())).toBe(false)
 
     ;(import.meta.env as Record<string, string>)[envKey] = 'ai'
+    expect(resolveConfiguredGenerationMode()).toBe('hybrid')
+  })
+
+  it('honors explicit deterministic opt-out', () => {
+    ;(import.meta.env as Record<string, string>)[envKey] = 'deterministic'
+    expect(resolveConfiguredGenerationMode()).toBe('deterministic')
+    expect(shouldUseDeterministicPrimary(resolveConfiguredGenerationMode())).toBe(true)
+  })
+
+  it('treats unknown values as the hybrid default', () => {
+    ;(import.meta.env as Record<string, string>)[envKey] = 'bogus'
     expect(resolveConfiguredGenerationMode()).toBe('hybrid')
   })
 })

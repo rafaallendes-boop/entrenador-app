@@ -28,9 +28,12 @@ export function resolveConfiguredGenerationMode(requested?: PlanBuilderGeneratio
   if (requested) return requested
 
   const configured = (import.meta.env.VITE_PLAN_BUILDER_GENERATION_MODE ?? '').toLowerCase()
-  if (configured === 'hybrid' || configured === 'ai') return 'hybrid'
+  // AI-primary is the default for the Plan Builder (el producto estrella). Cada semana
+  // la genera la IA; el motor determinístico solo actúa como fallback local cuando el
+  // modelo falla. Solo un opt-out explícito vuelve a templates determinísticos.
+  if (configured === 'deterministic') return 'deterministic'
 
-  return 'deterministic'
+  return 'hybrid'
 }
 
 export function shouldUseDeterministicPrimary(mode: PlanBuilderGenerationMode): boolean {

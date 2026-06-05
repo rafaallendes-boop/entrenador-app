@@ -1,4 +1,4 @@
-import { addDays } from 'date-fns'
+import { addDays, getDay } from 'date-fns'
 import { db } from '../../db/db'
 import type { DayLog, Session, SessionType, WeekSummary } from '../../types'
 import type { TrainingPlan } from '../../types/planBuilder'
@@ -19,11 +19,27 @@ export interface PlanBuilderRecentWeekContext {
   sessionHighlights: string[]
 }
 
+export interface PlanBuilderWeeklyStructureSport {
+  sport: SessionType
+  count: number
+  typicalDurationMin?: number
+}
+
+export interface PlanBuilderWeeklyStructureDay {
+  /** ISO weekday: 1 = lunes ... 7 = domingo. */
+  weekday: number
+  sports: PlanBuilderWeeklyStructureSport[]
+}
+
 export interface PlanBuilderRecentContext {
   referenceDate: string
   lookbackWeeks: number
   hasHistory: boolean
   weeks: PlanBuilderRecentWeekContext[]
+  /** Número de semanas reales usadas para derivar el esqueleto estructural. */
+  structureWeeks: number
+  /** Esqueleto semanal por día derivado del último bloque real del atleta. */
+  weeklyStructure: PlanBuilderWeeklyStructureDay[]
   summary: {
     avgAdherencePct?: number
     avgCompletedMinutes?: number
@@ -37,10 +53,51 @@ export interface PlanBuilderRecentContext {
 }
 
 const DEFAULT_LOOKBACK_WEEKS = 6
+const STRUCTURE_WEEKS = 3
+const WEEKDAY_LABELS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
 
 function average(values: number[]): number | undefined {
   if (values.length === 0) return undefined
   return Math.round((values.reduce((sum, value) => sum + value, 0) / values.length) * 10) / 10
+}
+
+/** ISO weekday: 1 = lunes ... 7 = domingo (date-fns getDay devuelve 0 = domingo). */
+function isoWeekday(dateIso: string): number {
+  return ((getDay(fromISO(dateIso)) + 6) % 7) + 1
+}
+
+/**
+ * Deriva el esqueleto semanal del atleta a partir de sesiones reales: qué deporte
+ * cae en cada día, cuántas veces y su duración planificada típica. Sirve para que la
+ * IA replique la estructura que ya le funcionó, adaptándola al contexto del plan.
+ */
+export function summarizeWeeklyStructure(sessions: Session[]): PlanBuilderWeeklyStructureDay[] {
+  const byDay = new Map<number, Map<SessionType, { count: number; durations: number[] }>>()
+  for (const session of sessions) {
+    if (session.status === 'skipped') continue
+    const weekday = isoWeekday(session.date)
+    const sportsForDay = byDay.get(weekday) ?? new Map<SessionType, { count: number; durations: number[] }>()
+    const entry = sportsForDay.get(session.type) ?? { count: 0, durations: [] }
+    entry.count += 1
+    if (session.durationMin > 0) entry.durations.push(session.durationMin)
+    sportsForDay.set(session.type, entry)
+    byDay.set(weekday, sportsForDay)
+  }
+
+  return [...byDay.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([weekday, sportsMap]) => ({
+      weekday,
+      sports: [...sportsMap.entries()]
+        .map(([sport, data]) => ({
+          sport,
+          count: data.count,
+          typicalDurationMin: data.durations.length > 0
+            ? Math.round(data.durations.reduce((sum, value) => sum + value, 0) / data.durations.length)
+            : undefined,
+        }))
+        .sort((a, b) => b.count - a.count),
+    }))
 }
 
 function getActualMinutes(session: Session): number {
@@ -187,13 +244,37 @@ export async function buildPlanBuilderRecentContext(
     weeks.push(buildWeekContext(weekStartDate, weekSessions, weekLogs, summary))
   }
 
+  const structureWeekStarts = [...sessionsByWeek.keys()].sort().slice(-STRUCTURE_WEEKS)
+  const structureSessions = structureWeekStarts.flatMap((weekStart) => sessionsByWeek.get(weekStart) ?? [])
+
   return {
     referenceDate,
     lookbackWeeks,
     hasHistory: weeks.length > 0,
     weeks,
+    structureWeeks: structureWeekStarts.length,
+    weeklyStructure: summarizeWeeklyStructure(structureSessions),
     summary: buildSummary(weeks),
   }
+}
+
+function renderWeeklyStructure(context: PlanBuilderRecentContext): string {
+  if (!context.weeklyStructure || context.weeklyStructure.length === 0) return ''
+  const dayLines = context.weeklyStructure.map((day) => {
+    const sports = day.sports
+      .map((sport) => {
+        const reps = sport.count > 1 ? ` ×${sport.count}` : ''
+        const duration = sport.typicalDurationMin ? ` ~${sport.typicalDurationMin}min` : ''
+        return `${sport.sport}${reps}${duration}`
+      })
+      .join(', ')
+    return `- ${WEEKDAY_LABELS[day.weekday - 1]}: ${sports}`
+  })
+  return [
+    `Esqueleto semanal de tu último bloque real (${context.structureWeeks} sem · referencia de estructura, no copiar literal):`,
+    ...dayLines,
+    'Usa esta distribución por días como base de la estructura cuando el contexto lo permita; ajusta deportes, volumen e intensidad según fase, evento y fatiga.',
+  ].join('\n')
 }
 
 export function renderPlanBuilderRecentContext(context: PlanBuilderRecentContext | undefined): string {
@@ -237,6 +318,7 @@ export function renderPlanBuilderRecentContext(context: PlanBuilderRecentContext
     ...header,
     weekLines.length > 0 ? 'Últimas semanas:' : '',
     ...weekLines,
+    renderWeeklyStructure(context),
     'Uso del historial: calibra el arranque del plan con estos datos, pero respeta evento, fase, días disponibles y deportes permitidos.',
   ].filter(Boolean).join('\n')
 }
