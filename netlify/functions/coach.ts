@@ -640,16 +640,22 @@ function buildOpenAIResponseFormat(req: CoachRequest): Record<string, unknown> |
   return undefined
 }
 
-function buildOpenAIBody(req: CoachRequest, model: string, streamOutput = false): Record<string, unknown> {
+function supportsOpenAITemperature(model: string): boolean {
+  return !model.toLowerCase().startsWith('gpt-5')
+}
+
+export function buildOpenAIBody(req: CoachRequest, model: string, streamOutput = false): Record<string, unknown> {
   const body: Record<string, unknown> = {
     model,
     max_completion_tokens: req.maxTokens ?? 1024,
-    temperature: req.temperature ?? 0.7,
     messages: [
       { role: 'system', content: req.systemPrompt },
       ...(req.conversation ?? []).map((message) => ({ role: message.role, content: message.content })),
       { role: 'user', content: req.userMessage },
     ],
+  }
+  if (supportsOpenAITemperature(model)) {
+    body.temperature = req.temperature ?? 0.7
   }
   const responseFormat = buildOpenAIResponseFormat(req)
   if (responseFormat) body.response_format = responseFormat

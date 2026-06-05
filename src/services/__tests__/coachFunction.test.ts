@@ -6,6 +6,7 @@ vi.mock('@netlify/functions', () => ({
 
 import { getAIRequestPolicy } from '../ai/requestPolicy'
 import {
+  buildOpenAIBody,
   providerEnvKey,
   resolveFallbackProvider,
   resolvePrimaryProvider,
@@ -152,6 +153,26 @@ describe('provider routing by request class', () => {
 
     expect(resolveFallbackProvider('week_creator')).toBeUndefined()
     expect(resolveFallbackProvider('plan_builder_week')).toBe('gemini')
+  })
+})
+
+describe('OpenAI request body', () => {
+  const baseRequest = {
+    systemPrompt: 'Sistema',
+    userMessage: 'Usuario',
+    requestClass: 'week_creator' as const,
+    maxTokens: 1200,
+    temperature: 0.15,
+  }
+
+  it('omits temperature for GPT-5 models that only accept the default value', () => {
+    expect(buildOpenAIBody(baseRequest, 'gpt-5-mini')).not.toHaveProperty('temperature')
+  })
+
+  it('keeps temperature for older Chat Completions models', () => {
+    expect(buildOpenAIBody(baseRequest, 'gpt-4.1-mini')).toMatchObject({
+      temperature: 0.15,
+    })
   })
 })
 

@@ -15,6 +15,10 @@ vi.mock('../../ai/providerResolver', () => ({
     name: 'mock',
     call: mockProviderCall,
   }),
+  getProviderForRequestClass: () => ({
+    name: 'mock',
+    call: mockProviderCall,
+  }),
 }))
 
 function makeProfile(overrides: Partial<AthleteProfile> = {}): AthleteProfile {
@@ -1318,8 +1322,10 @@ describe('WeekCreatorEngine', () => {
     expect(strength?.exercises?.slice(0, 2).every((exercise) => exercise.group === 'core')).toBe(true)
     expect(strength?.exercises?.some((exercise) => exercise.group === 'cardio')).toBe(true)
     expect(strength?.exercises?.at(-1)?.group).toBe('cardio')
-    expect(response.message).toContain('El proveedor gemini no devolvió una semana aplicable')
+    expect(response.message).not.toContain('El proveedor')
+    expect(response.message).not.toContain('no devolvió una semana aplicable')
     expect(response.message).not.toContain('Gemini no devolvió el formato estructurado')
+    expect(response.actions?.[0].reason).not.toContain('provider')
 
     const requests = useAIDebugStore.getState().requests
     expect(requests.some((request) =>
@@ -1327,6 +1333,9 @@ describe('WeekCreatorEngine', () => {
       request.errorCode === 'missing_create_week' &&
       request.outcome === 'schema_invalid' &&
       request.warnings?.some((warning) => warning.includes('week_creator_failure:missing_create_week')),
+    )).toBe(true)
+    expect(requests.some((request) =>
+      request.warnings?.some((warning) => warning.includes('week_creator_fallback:local_after_provider_failure')),
     )).toBe(true)
     expect(requests[0]).toMatchObject({
       status: 'completed',

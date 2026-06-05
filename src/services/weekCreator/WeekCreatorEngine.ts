@@ -19,7 +19,7 @@ import type { TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
 import type { CoachNormalizedResponse } from '../ai/types'
 import { buildAITraceId, getAIRequestPolicy } from '../ai/requestPolicy'
 import { normalizeResponse } from '../ai/responseNormalizer'
-import { getActiveProvider } from '../ai/providerResolver'
+import { getProviderForRequestClass } from '../ai/providerResolver'
 import { useAIDebugStore } from '../../store/useAIDebugStore'
 import { createStageTracker, type CoachOutcome } from '../ai/stageLogger'
 import { buildWeekCreatorPrompt, summarizeWeekCreatorAction } from './WeekCreatorPromptBuilder'
@@ -101,7 +101,7 @@ export const WeekCreatorEngine = {
     const dateWindow = resolveWeekCreatorDateWindow(options.targetWeekStart, options.today ?? todayISO())
     const config = applyWeekCreatorDateWindowToConfig(baseConfig, dateWindow)
 
-    const provider = getActiveProvider()
+    const provider = getProviderForRequestClass('week_creator')
     const policy = getAIRequestPolicy('week_creator')
     const surface = options.surface ?? 'chat'
     let lastFailure: {
@@ -310,7 +310,7 @@ export const WeekCreatorEngine = {
       errorCode: lastFailure?.fallbackReason,
       outcome: lastFailure?.outcome ?? 'schema_invalid',
       warnings: [
-        buildWeekCreatorFallbackNote(lastFailure?.provider, MAX_ATTEMPTS),
+        buildWeekCreatorFallbackWarning(lastFailure?.provider, MAX_ATTEMPTS),
         ...(lastFailure?.warnings ?? []),
       ],
     })
@@ -319,7 +319,7 @@ export const WeekCreatorEngine = {
       actions: [fallbackValidation.action],
       retryUsed: true,
       fallbackUsed: true,
-      message: `${summarizeWeekCreatorAction(fallbackValidation.action)}\n\nNota: ${buildWeekCreatorFallbackNote(lastFailure?.provider, MAX_ATTEMPTS)}`,
+      message: summarizeWeekCreatorAction(fallbackValidation.action),
     }
   },
 }
@@ -372,14 +372,14 @@ function classifyWeekCreatorFailure(
   }
 }
 
-function buildWeekCreatorFallbackNote(
+function buildWeekCreatorFallbackWarning(
   provider: CoachNormalizedResponse['provider'] | undefined,
   attempts: number,
 ): string {
   const providerLabel = provider && provider !== 'mock'
-    ? `El proveedor ${provider}`
-    : 'El proveedor de IA'
-  return `${providerLabel} no devolvió una semana aplicable en formato estructurado después de ${attempts} intentos. Preparé una semana base segura con tu configuración actual para que puedas revisarla y ajustarla antes de aplicarla.`
+    ? provider
+    : 'unknown'
+  return `week_creator_fallback:local_after_provider_failure provider=${providerLabel} attempts=${attempts}`
 }
 
 type RepairedWeekCreatorResponse = CoachNormalizedResponse & {
@@ -637,7 +637,7 @@ function buildDeterministicWeekCreatorResponse(input: {
 }): CoachNormalizedResponse {
   const action: CoachAction = {
     type: 'create_week',
-    reason: 'Fallback local: el provider no entregó una acción create_week válida.',
+    reason: 'Semana base generada con tu configuración actual para que puedas revisarla y ajustarla antes de aplicarla.',
     targetDate: input.targetWeekStart,
     weekObjectives: [
       'Mantener continuidad con carga controlada.',
@@ -651,7 +651,7 @@ function buildDeterministicWeekCreatorResponse(input: {
     message: summarizeWeekCreatorAction(action),
     actions: [action],
     provider: 'mock',
-    model: `local-week-fallback${input.provider ? `-after-${input.provider}` : ''}`,
+    model: 'local-week-fallback',
     timestamp: Date.now(),
     durationMs: 0,
     traceId: buildAITraceId('week_creator'),

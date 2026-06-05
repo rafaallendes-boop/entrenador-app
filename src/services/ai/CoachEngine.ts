@@ -8,7 +8,7 @@ import { buildCoachPrompt } from './promptBuilder'
 import { normalizeResponse } from './responseNormalizer'
 import { AIProviderError } from './types'
 import { buildAITraceId, getAIRequestPolicy } from './requestPolicy'
-import { getActiveProvider, isRealProviderConfigured } from './providerResolver'
+import { getActiveProvider, getProviderForRequestClass, isRealProviderConfigured } from './providerResolver'
 import { useAIDebugStore } from '../../store/useAIDebugStore'
 import { sendWithRecovery } from './coachRecovery'
 import { resolveChatRoute } from '../chatRouting'
@@ -80,8 +80,8 @@ export const CoachEngine = {
       signal?: AbortSignal
     },
   ): Promise<string> {
-    const provider = getActiveProvider()
     const requestClass = options?.requestClass ?? 'import_extract'
+    const provider = getProviderForRequestClass(requestClass)
     const policy = getAIRequestPolicy(requestClass)
     const traceId = buildAITraceId(requestClass)
     const surface = options?.surface ?? 'import'
@@ -137,7 +137,7 @@ async function sendTrackedCoachRequest(
   requestClass: AIRequestClass,
   options?: CoachSendOptions,
 ): Promise<CoachNormalizedResponse> {
-  const provider = getActiveProvider()
+  const provider = getProviderForRequestClass(requestClass)
   const policy = getAIRequestPolicy(requestClass)
   const surface = options?.surface ?? 'chat'
 

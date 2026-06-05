@@ -212,16 +212,22 @@ function buildOpenAIResponseFormat(request: CoachRequest): Record<string, unknow
   return undefined
 }
 
+function supportsOpenAITemperature(model: string): boolean {
+  return !model.toLowerCase().startsWith('gpt-5')
+}
+
 async function callOpenAI(request: CoachRequest, apiKey: string, model: string): Promise<ProviderResult> {
   const body: Record<string, unknown> = {
     model,
     max_completion_tokens: request.maxTokens ?? 1024,
-    temperature: request.temperature ?? 0.7,
     messages: [
       { role: 'system', content: request.systemPrompt },
       ...(request.conversation ?? []).map((message) => ({ role: message.role, content: message.content })),
       { role: 'user', content: request.userMessage },
     ],
+  }
+  if (supportsOpenAITemperature(model)) {
+    body.temperature = request.temperature ?? 0.7
   }
   const responseFormat = buildOpenAIResponseFormat(request)
   if (responseFormat) body.response_format = responseFormat

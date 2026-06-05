@@ -62,6 +62,10 @@ function buildResponseFormat(request: AIRequest): Record<string, unknown> | unde
   return undefined
 }
 
+function supportsOpenAITemperature(model: string): boolean {
+  return !model.toLowerCase().startsWith('gpt-5')
+}
+
 function buildRequestBody(
   request: AIRequest,
   model: string,
@@ -71,8 +75,10 @@ function buildRequestBody(
   const body: Record<string, unknown> = {
     model,
     max_completion_tokens: request.maxTokens ?? 1024,
-    temperature: request.temperature ?? 0.7,
     messages,
+  }
+  if (supportsOpenAITemperature(model)) {
+    body.temperature = request.temperature ?? 0.7
   }
   const responseFormat = buildResponseFormat(request)
   if (responseFormat) body.response_format = responseFormat
