@@ -54,6 +54,27 @@ describe('normalizeStrengthSessionExercises', () => {
     expect(result.at(-1)?.name).toBe('Trotadora de aire 20/20')
   })
 
+  it('expands generic 4 min ladder footwork into a short coordination series', () => {
+    const input: CoachExerciseProposal[] = [
+      { name: 'Sentadilla con barra', sets: 4, reps: '8-10' },
+      { name: 'Footwork escalera (cardio específico)', sets: 1, reps: '4 min', notes: 'Agilidad y coordinación' },
+    ]
+
+    const result = normalizeStrengthSessionExercises(input, { durationMin: 60 })!
+    const footwork = result.filter((exercise) => /Escalera/.test(exercise.name))
+
+    expect(footwork).toHaveLength(3)
+    expect(footwork.map((exercise) => exercise.name)).toEqual([
+      'Escalera lateral – dos pies por cuadro',
+      'Escalera frontal – in-in-out-out',
+      'Escalera frontal – Icky shuffle',
+    ])
+    expect(footwork.every((exercise) => exercise.group === 'cardio')).toBe(true)
+    expect(footwork.every((exercise) => exercise.sets === 2)).toBe(true)
+    expect(footwork.every((exercise) => String(exercise.reps).includes('pasadas'))).toBe(true)
+    expect(result.at(-3)?.name).toBe('Escalera lateral – dos pies por cuadro')
+  })
+
   it('adds load prescriptions from strength profile after normalizing blocks', () => {
     const input: CoachExerciseProposal[] = [
       { name: 'Peso muerto con trap bar', sets: 4, reps: 6 },

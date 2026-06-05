@@ -385,7 +385,7 @@ function buildStrengthStructureSection(): string {
     '- No cuentes remos medio arrodillados, lunges o bisagras como único core aunque tengan demanda de tronco; si los usas, agrega un core real cuando la duración lo permita.',
     '- Para squash prioriza anti-extensión, anti-rotación y estabilidad lateral.',
     '- En retorno de lesión o fitness returning: conserva una estructura completa, pero usa RPE 6-7, tempo controlado, ejercicios de bajo riesgo y evita impacto agresivo o volumen que deje DOMS fuerte.',
-    '- Cardio específico opcional va al final: escalera/footwork, bici de asalto 30s on/30s off por 4 min, o trotadora de aire 20s on/20s off por 4 min. Usa 1 bloque por defecto; 2 sólo si está fresco y la sesión dura 65+ min.',
+    '- Cardio específico opcional va al final: bici de asalto 30s on/30s off por 4 min, trotadora de aire 20s on/20s off por 4 min, o escalera/footwork como 2-3 ejercicios concretos con sets/reps tipo "2 pasadas por lado". Para escalera/footwork NO uses "1x4 min". Usa 1 bloque por defecto; 2 sólo si está fresco y la sesión dura 65+ min.',
   ].join('\n')
 }
 

@@ -99,7 +99,7 @@ function buildStrengthStructureRules(config: WeekCreatorEffectiveConfig): string
     '- No cuentes un remo medio arrodillado, zancada o bisagra como único core aunque exija estabilidad; agrega una plancha/dead bug/Pallof/lateral cuando la duración lo permita.',
     '- Para squash, prioriza anti-extensión, anti-rotación y estabilidad lateral por encima de abdominales genéricos.',
     '- En retorno de lesión o fitness returning: conserva una estructura completa, pero usa RPE 6-7, tempo controlado, ejercicios de bajo riesgo y evita impacto agresivo o volumen que deje DOMS fuerte.',
-    '- Cardio específico opcional va al final: si es bici de asalto 30s on/30s off o trotadora de aire 20s on/20s off, usa 1 bloque de 4 min; si es escalera/footwork, puede ser una mini-serie de 2-3 ejercicios coordinativos cortos.',
+    '- Cardio específico opcional va al final: si es bici de asalto 30s on/30s off o trotadora de aire 20s on/20s off, usa 1 bloque de 4 min; si es escalera/footwork, NO uses "1x4 min": entrega 2-3 ejercicios concretos de escalera con sets/reps tipo "2 pasadas por lado" o "2 pasadas".',
   ].join('\n')
 }
 

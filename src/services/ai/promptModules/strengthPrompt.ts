@@ -149,7 +149,7 @@ Estructura habitual:
 · Zona media no es opcional en sesiones normales de fuerza de 45+ min: incluye 1-2 ejercicios antes de la fuerza principal. Combina control anti-extensión/lumbo-pélvico (dead bug, plancha frontal, fitball plank) con anti-rotación/lateral (Pallof, plancha lateral, Copenhagen, chop controlado).
 · En retorno de lesión: mantén la densidad de una sesión útil, pero con ejercicios seguros, RPE 6-7, técnica controlada, sin impacto agresivo ni volumen que genere DOMS innecesario.
 · No cuentes un remo medio arrodillado o un lunge lateral como único trabajo de zona media aunque tengan demanda de tronco; si los usas, agrega igualmente una plancha/dead bug/Pallof/plancha lateral cuando la duración lo permita.
-· Cardio específico opcional para squash va SIEMPRE al final, después de la fuerza: escalera/footwork, bici de asalto 30s on/30s off en bloque de 4 min, o trotadora de aire 20s on/20s off en bloque de 4 min. Usa 1 bloque por defecto; 2 bloques sólo si está fresco, sesión >=65 min y fase build/base sin competencia cercana.
+· Cardio específico opcional para squash va SIEMPRE al final, después de la fuerza: bici de asalto 30s on/30s off en bloque de 4 min, trotadora de aire 20s on/20s off en bloque de 4 min, o escalera/footwork como mini-serie de 2-3 ejercicios concretos. Para escalera/footwork NO uses "1x4 min": usa sets/reps tipo "2 pasadas por lado" o "2 pasadas". Usa 1 bloque por defecto; 2 bloques sólo si está fresco, sesión >=65 min y fase build/base sin competencia cercana.
 · Potencia olímpica y pliometría agresiva: solo si el atleta es avanzado, está fresco y no hay competencia cercana. Siempre bajo volumen y calidad máxima.
 · Escalera y footwork: úsalo como coordinación y timing de pies, no como cardio duro ni reemplazo de una sesión de squash.
 · Realismo de cargas: no uses porcentajes de 1RM de barra como si fueran carga directa para mancuernas/kettlebells. Sentadilla goblet normalmente 16-40kg; sobre 40kg cámbiala por sentadilla frontal/trasera. Press/remo con mancuernas y búlgaras deben usar cargas implementables, no equivalentes de barra.
@@ -198,7 +198,7 @@ export function buildDynamicStrengthSelectionSection(
   lines.push('Orden de bloque recomendado: warm-up/protocolos -> zona media -> fuerza principal -> accesorios/transferencia -> cardio especifico opcional -> cooldown.')
   lines.push('Respeta la duracion objetivo: mas ejercicios no significa inflar series, sino repartir mejor activacion, zona media, principal, transferencia y cierre.')
   lines.push('Zona media esperada: en sesiones de 45+ min incluye 1-2 ejercicios core reales (plancha/dead bug/Pallof/plancha lateral/Copenhagen), no solo ejercicios que demandan estabilidad de forma indirecta.')
-  lines.push('Cardio especifico opcional: si aplica para squash y hay frescura, usa escalera/footwork o 1 bloque de bici de asalto 30/30 o trotadora de aire 20/20 al final; no lo mezcles con fuerza principal.')
+    lines.push('Cardio especifico opcional: si aplica para squash y hay frescura, usa escalera/footwork como 2-3 ejercicios con pasadas, o 1 bloque de bici de asalto 30/30 o trotadora de aire 20/20 al final; no lo mezcles con fuerza principal.')
   lines.push(`Ejercicios sugeridos ahora: ${formatSelectedStrengthExercises(selection.exercises)}`)
   lines.push(`Formato compatible actual: ${stringifyStrengthExercises(selection.exercises)}`)
   lines.push('Si fuerza es principal, esta seleccion manda como sesion real de pesas y no como complemento generico.')

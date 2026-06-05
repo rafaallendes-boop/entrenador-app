@@ -18,7 +18,8 @@ export function normalizeStrengthSessionExercises<T extends StrengthExerciseLike
 
   const durationMin = options.durationMin ?? 50
   const protocolFiltered = removeProtocolExercisesWhenStrengthWorkExists(exercises)
-  const normalized = protocolFiltered.map((exercise) => normalizeStrengthExerciseGroup(exercise))
+  const expanded = expandGenericFootworkBlocks(protocolFiltered)
+  const normalized = expanded.map((exercise) => normalizeStrengthExerciseGroup(exercise))
   const withCore = durationMin >= 45
     ? ensureCoreBlock(normalized)
     : normalized
@@ -62,6 +63,61 @@ function normalizeStrengthExerciseGroup<T extends StrengthExerciseLike>(exercise
   const group = definition ? getStrengthBlockForDefinition(definition) : inferExerciseGroup(exercise)
   const reps = normalizePlankReps(exercise.name, exercise.reps)
   return { ...exercise, group, reps }
+}
+
+function expandGenericFootworkBlocks<T extends StrengthExerciseLike>(exercises: T[]): T[] {
+  return exercises.flatMap((exercise) => {
+    if (!isGenericFootworkBlock(exercise)) return [exercise]
+    return buildFootworkSeriesFromGenericBlock(exercise)
+  })
+}
+
+function isGenericFootworkBlock(exercise: StrengthExerciseLike): boolean {
+  if (findStrengthExerciseByName(exercise.name)) return false
+  const name = normalizeText(exercise.name)
+  const reps = normalizeText(String(exercise.reps ?? ''))
+  const isFootwork = /\b(escalera|ladder|footwork)\b/.test(name)
+  const isTimedBlock = /\b(4\s*min|minuto|minutos)\b/.test(`${name} ${reps}`)
+  return isFootwork && isTimedBlock
+}
+
+function buildFootworkSeriesFromGenericBlock<T extends StrengthExerciseLike>(exercise: T): T[] {
+  const base = {
+    ...exercise,
+    group: 'cardio' as ExerciseGroup,
+    weight: undefined,
+    targetPercent1RM: undefined,
+    targetRpe: undefined,
+    warmupSets: undefined,
+  }
+
+  return [
+    {
+      ...base,
+      name: 'Escalera lateral – dos pies por cuadro',
+      sets: 2,
+      reps: '2 pasadas por lado',
+      notes: appendExerciseNote(exercise.notes, 'E1 coordinación lateral: calidad de apoyo, cadera baja y regreso caminando.'),
+    },
+    {
+      ...base,
+      name: 'Escalera frontal – in-in-out-out',
+      sets: 2,
+      reps: '2 pasadas',
+      notes: appendExerciseNote(exercise.notes, 'E2 ritmo de pies: precisión antes que velocidad.'),
+    },
+    {
+      ...base,
+      name: 'Escalera frontal – Icky shuffle',
+      sets: 2,
+      reps: '2 pasadas',
+      notes: appendExerciseNote(exercise.notes, 'E3 coordinación diagonal: pies activos sin convertirlo en cardio duro.'),
+    },
+  ] as T[]
+}
+
+function appendExerciseNote(original: string | undefined, addition: string): string {
+  return original?.trim() ? `${addition} ${original.trim()}` : addition
 }
 
 function normalizePlankReps(name: string, reps: number | string): number | string {
