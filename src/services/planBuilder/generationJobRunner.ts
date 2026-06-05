@@ -2,7 +2,14 @@ import { db } from '../../db/db'
 import type { AthleteProfile } from '../../types'
 import type { PlanGenerationJob, TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
 import { generatePlanWeeks } from './generatePlan'
-import { derivePlanGenerationState, resolveConfiguredGenerationStrategy } from './generationState'
+import { buildPlanBuilderRecentContext } from './recentContext'
+import { reviewPlanQuality } from './qualityReview'
+import {
+  derivePlanGenerationState,
+  resolveConfiguredGenerationMode,
+  resolveConfiguredGenerationStrategy,
+  shouldUseDeterministicPrimary,
+} from './generationState'
 
 const ACTIVE_JOB_STATUSES = new Set<PlanGenerationJob['status']>(['queued', 'running'])
 const runningJobs = new Map<string, Promise<void>>()
@@ -19,6 +26,7 @@ interface CreateGenerationJobInput {
   weeks: TrainingPlanWeek[]
   targetWeekIndexes?: number[]
   strategy?: 'single' | 'pairs'
+  repairInstructions?: Record<number, string>
 }
 
 interface RunGenerationJobInput {
@@ -72,6 +80,9 @@ function buildPlanCheckpoint(
   completedAt?: number,
 ): TrainingPlan {
   const terminalState = derivePlanGenerationState(weeks)
+  const qualityReview = completedAt
+    ? reviewPlanQuality(plan, weeks)
+    : plan.generationSummary?.qualityReview
   return {
     ...plan,
     generationState: completedAt ? terminalState : 'generating',
@@ -88,7 +99,7 @@ function buildPlanCheckpoint(
       totalAttempts: totalAttempts(weeks),
       acceptedAt: plan.generationSummary?.acceptedAt,
       discardedAt: plan.generationSummary?.discardedAt,
-      qualityReview: plan.generationSummary?.qualityReview,
+      qualityReview,
     },
   }
 }
@@ -157,6 +168,7 @@ export async function createPlanGenerationJob(input: CreateGenerationJobInput): 
     completedWeeks: countReadyWeeks(input.weeks),
     failedWeekIndexes: failedIndexes(input.weeks),
     currentWeekIndex: null,
+    repairInstructions: input.repairInstructions,
     createdAt: timestamp,
     updatedAt: timestamp,
   }
@@ -212,6 +224,8 @@ async function runPlanGenerationJobInternal({ jobId, profile, callbacks }: RunGe
 
   let weeks = await loadPlanWeeks(plan.id)
   const startedAt = job.startedAt ?? now()
+  const generationMode = resolveConfiguredGenerationMode()
+  const recentContext = await buildPlanBuilderRecentContext(plan).catch(() => undefined)
   job = buildJobUpdate(job, weeks, {
     status: 'running',
     startedAt,
@@ -260,7 +274,9 @@ async function runPlanGenerationJobInternal({ jobId, profile, callbacks }: RunGe
         wizardConfig: latestPlan.wizardConfig,
         seedPreviousWeek: previousWeek,
         strategy: 'single',
-        deterministicPrimary: true,
+        deterministicPrimary: shouldUseDeterministicPrimary(generationMode),
+        recentContext,
+        repairInstructionsByWeekIndex: job.repairInstructions,
         onWeekUpdate: (next) => {
           weeks = replaceWeek(weeks, next)
           callbacks?.onWeekUpdate?.(next)

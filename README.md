@@ -306,6 +306,15 @@ VITE_CLAUDE_API_KEY=...
 VITE_CLAUDE_MODEL=...
 ```
 
+Plan Builder usa generacion deterministica por defecto. Para probar el modelo hibrido
+IA primero + fallback local usando el provider principal:
+
+```bash
+VITE_PLAN_BUILDER_GENERATION_MODE=hybrid
+VITE_AI_PROVIDER=gemini
+VITE_AI_PROVIDER_WEEK_CREATOR=openai
+```
+
 En produccion, el cliente fuerza `proxy`.
 
 ### Netlify Function
@@ -322,6 +331,16 @@ SUPABASE_ANON_KEY=...
 COACH_PROXY_REQUIRE_AUTH=true
 COACH_RATE_LIMIT_WINDOW_MS=60000
 COACH_RATE_LIMIT_MAX=20
+```
+
+El proxy permite rutear providers por `requestClass` sin cambiar todo el coach:
+
+```bash
+AI_PROVIDER_WEEK_CREATOR=openai
+AI_PROVIDER_PLAN_BUILDER_WEEK=gemini
+AI_FALLBACK_PROVIDER_PLAN_BUILDER_WEEK=gemini
+OPENAI_API_KEY=...
+OPENAI_MODEL=...
 ```
 
 Para load tests locales contra Netlify dev se puede usar:

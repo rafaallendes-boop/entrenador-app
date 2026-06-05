@@ -12,6 +12,7 @@ import { createStageTracker, type CoachOutcome, type StageTiming } from '../ai/s
 import { assertDailyAIRequestLimit } from '../ai/aiTelemetry'
 import { getExpectedSessionsForPlanWeek, getPlanWeekDateRange } from './dateRange'
 import { PLAN_BUILDER_WEEK_RESPONSE_SCHEMA } from './planBuilderResponseSchema'
+import type { PlanBuilderRecentContext } from './recentContext'
 
 export interface GenerateWeekInput {
   provider: AIProvider
@@ -24,6 +25,7 @@ export interface GenerateWeekInput {
   onChunk?: (chunk: string) => void
   retryInstruction?: string
   strictFormatting?: boolean
+  recentContext?: PlanBuilderRecentContext
 }
 
 export interface GenerateWeekResult {
@@ -227,6 +229,7 @@ export async function generateWeek(input: GenerateWeekInput): Promise<GenerateWe
       retryInstruction: input.retryInstruction,
       strictFormatting: input.strictFormatting,
       outputFormat: 'json',
+      recentContext: input.recentContext,
     })
     promptStage.end({ ok: true })
 

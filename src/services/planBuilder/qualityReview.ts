@@ -24,6 +24,8 @@ export interface PlanQualityReview {
   warningCount: number
 }
 
+export type PlanQualityRepairInstructions = Record<number, string>
+
 function clampScore(score: number): number {
   return Math.max(0, Math.min(100, Math.round(score)))
 }
@@ -481,4 +483,36 @@ export function reviewPlanQuality(plan: TrainingPlan, weeks: TrainingPlanWeek[])
     criticalIssueCount: uniqueIssues.filter((item) => item.severity === 'error').length,
     warningCount: uniqueIssues.filter((item) => item.severity === 'warning').length,
   }
+}
+
+export function buildPlanQualityRepairInstructions(review: PlanQualityReview): PlanQualityRepairInstructions {
+  const byWeek = new Map<number, string[]>()
+
+  for (const issue of review.issues) {
+    if (issue.weekIndex == null) continue
+    const items = byWeek.get(issue.weekIndex) ?? []
+    items.push(issue.message)
+    byWeek.set(issue.weekIndex, items)
+  }
+
+  for (const week of review.weeks) {
+    if (week.grade !== 'poor' && week.grade !== 'needs_review') continue
+    const items = byWeek.get(week.weekIndex) ?? []
+    if (items.length === 0) {
+      items.push(`Semana con score ${week.score}/100; reequilibra carga, especificidad deportiva y variedad de sesiones.`)
+    }
+    byWeek.set(week.weekIndex, items)
+  }
+
+  return Object.fromEntries(
+    [...byWeek.entries()].map(([weekIndex, issues]) => [
+      weekIndex,
+      [
+        `Repara la semana ${weekIndex + 1} del Plan Builder manteniendo el mismo targetDate.`,
+        `Problemas detectados: ${issues.slice(0, 5).join(' · ')}`,
+        'Genera una semana completa y aplicable, con exactamente la cantidad de sesiones pedida, fechas válidas, deportes permitidos, mejor progresión de carga, menos repetición de fuerza y taper/peak coherente según fase.',
+        'No expliques fuera del JSON; corrige el plan en la acción create_week.',
+      ].join('\n'),
+    ]),
+  )
 }

@@ -51,7 +51,8 @@ interface PlanBuilderState {
   createDraft: (input: { profile: AthleteProfile; wizardConfig: PlanWizardConfig }) => Promise<void>
   runGeneration: (profile: AthleteProfile) => Promise<void>
   retryFullGeneration: (profile: AthleteProfile) => Promise<void>
-  regenerateWeek: (weekIndex: number, profile: AthleteProfile) => Promise<void>
+  regenerateWeek: (weekIndex: number, profile: AthleteProfile, repairInstruction?: string) => Promise<void>
+  regenerateWeeks: (weekIndexes: number[], profile: AthleteProfile, repairInstructions?: Record<number, string>) => Promise<void>
   retryFailedWeeks: (profile: AthleteProfile) => Promise<void>
   resumeGenerationJobs: (profile: AthleteProfile) => Promise<void>
   acceptPlan: () => Promise<{ errors: string[]; warnings: string[] }>
@@ -323,36 +324,52 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
     }
   },
 
-  regenerateWeek: async (weekIndex, profile) => {
+  regenerateWeek: async (weekIndex, profile, repairInstruction) => {
+    await get().regenerateWeeks(
+      [weekIndex],
+      profile,
+      repairInstruction ? { [weekIndex]: repairInstruction } : undefined,
+    )
+  },
+
+  regenerateWeeks: async (weekIndexes, profile, repairInstructions) => {
     const { plan, weeks } = get()
     if (!plan) return
-    const target = weeks.find((w) => w.weekIndex === weekIndex)
-    if (!target) return
+    const targetSet = new Set(weekIndexes)
+    if (targetSet.size === 0) return
+    const targets = weeks.filter((w) => targetSet.has(w.weekIndex))
+    if (targets.length === 0) return
     const updatedAt = Date.now()
     const generatingPlan: TrainingPlan = {
       ...plan,
       generationState: 'generating',
       updatedAt,
     }
-    const nextWeeks = weeks.map((week) => (week.weekIndex === weekIndex
+    const nextWeeks = weeks.map((week) => (targetSet.has(week.weekIndex)
       ? {
         ...week,
         status: 'pending' as const,
         sessions: [],
         validationIssues: [],
         generationMeta: { attempts: 0 },
+        regenerationMeta: {
+          attempts: (week.regenerationMeta?.attempts ?? 0) + 1,
+          lastRegeneratedAt: updatedAt,
+          previousFallbackUsed: week.generationMeta.fallbackUsed,
+        },
         updatedAt,
       }
       : week))
+    const firstWeekIndex = targets[0]?.weekIndex ?? null
     set({
       plan: generatingPlan,
       weeks: nextWeeks,
       status: 'generating',
       lastError: null,
-      currentWeekIndex: weekIndex,
+      currentWeekIndex: firstWeekIndex,
       streamingTextByWeekIndex: {
         ...get().streamingTextByWeekIndex,
-        [weekIndex]: '',
+        ...Object.fromEntries(targets.map((week) => [week.weekIndex, ''])),
       },
     })
     try {
@@ -361,8 +378,9 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
       const job = await createPlanGenerationJob({
         plan: generatingPlan,
         weeks: nextWeeks,
-        targetWeekIndexes: [weekIndex],
+        targetWeekIndexes: targets.map((week) => week.weekIndex),
         strategy: 'single',
+        repairInstructions,
       })
       set({
         generationJob: job,

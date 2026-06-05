@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { CoachSessionProposal, PlanWizardConfig } from '../../types'
 import type { TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
 import { getExpectedSessionsForPlanWeek } from '../planBuilder/dateRange'
-import { reviewPlanQuality } from '../planBuilder/qualityReview'
+import { buildPlanQualityRepairInstructions, reviewPlanQuality } from '../planBuilder/qualityReview'
 
 function makeWizardConfig(): PlanWizardConfig {
   return {
@@ -201,6 +201,24 @@ describe('reviewPlanQuality', () => {
     expect(review.score).toBeLessThan(100)
     expect(review.issues.some((item) => item.code === 'quality.support.missing_strength')).toBe(true)
     expect(review.issues.some((item) => item.code === 'quality.support.missing_aerobic')).toBe(false)
+  })
+
+  it('turns quality issues into targeted repair instructions by week', () => {
+    const plan = makePlan()
+    const week = makeWeek([
+      squash('2026-05-04', 'Squash 1'),
+      squash('2026-05-05', 'Squash 2'),
+      squash('2026-05-06', 'Squash 3'),
+      squash('2026-05-07', 'Squash 4'),
+      squash('2026-05-08', 'Squash 5'),
+    ])
+
+    const review = reviewPlanQuality(plan, [week])
+    const instructions = buildPlanQualityRepairInstructions(review)
+
+    expect(instructions[0]).toContain('Repara la semana 1')
+    expect(instructions[0]).toContain('Problemas detectados')
+    expect(instructions[0]).toContain('create_week')
   })
 
   it('caps expected sessions for final taper week and flags excessive taper volume', () => {

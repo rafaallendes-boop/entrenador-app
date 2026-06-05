@@ -8,7 +8,7 @@ import { useCoachMemoryStore } from '../store/useCoachMemoryStore'
 import { usePlanBuilderStore } from '../store/usePlanBuilderStore'
 import { getPrimaryGoalEvent } from '../services/macroPlan'
 import { analyzePlanCommitImpact } from '../services/planBuilder/commitImpact'
-import { reviewPlanQuality } from '../services/planBuilder/qualityReview'
+import { buildPlanQualityRepairInstructions, reviewPlanQuality } from '../services/planBuilder/qualityReview'
 import { shouldShowPlanQuality } from '../services/ai/showPlanQualityFlag'
 import { ChevronLeft, RefreshCw, CheckCircle2, AlertTriangle, X } from 'lucide-react'
 import type { AthleteProfile, PlanWizardConfig, GoalEvent, CoachSessionProposal, Session } from '../types'
@@ -479,7 +479,7 @@ export default function PlanBuilderV2Page() {
   const loadMemory = useCoachMemoryStore((s) => s.loadMemory)
   const {
     plan, weeks, issues, status, currentWeekIndex, completedWeeks, failedWeekIndexes, lastError,
-    createDraft, runGeneration, retryFullGeneration, regenerateWeek, retryFailedWeeks, acceptPlan, discard, loadDraft,
+    createDraft, runGeneration, retryFullGeneration, regenerateWeek, regenerateWeeks, retryFailedWeeks, acceptPlan, discard, loadDraft,
   } = usePlanBuilderStore()
 
   const [selectedWeekIndex, setSelectedWeekIndex] = useState<number | null>(null)
@@ -590,20 +590,37 @@ export default function PlanBuilderV2Page() {
   const warnings = issues.filter((i) => i.severity === 'warning')
   const showPlanQualityDebug = shouldShowPlanQuality()
   const qualityReview = useMemo(
-    () => (showPlanQualityDebug && plan ? reviewPlanQuality(plan, weeks) : null),
-    [plan, showPlanQualityDebug, weeks],
+    () => (plan ? reviewPlanQuality(plan, weeks) : null),
+    [plan, weeks],
+  )
+  const shouldShowQualityReview = Boolean(qualityReview && (showPlanQualityDebug || plan?.generationState === 'complete'))
+  const qualityBlocksAccept = Boolean(
+    plan?.generationState === 'complete'
+    && qualityReview
+    && (qualityReview.grade === 'poor' || qualityReview.criticalIssueCount > 0),
+  )
+  const qualityBlocker = qualityBlocksAccept && qualityReview
+    ? `El plan necesita revisión antes de aceptarse (score ${qualityReview.score}/100). Regenera el plan o ajusta las semanas marcadas.`
+    : null
+  const qualityRepairInstructions = useMemo(
+    () => (qualityReview ? buildPlanQualityRepairInstructions(qualityReview) : {}),
+    [qualityReview],
   )
   const selectedWeekQuality = selectedWeek && qualityReview
     ? qualityReview.weeks.find((week) => week.weekIndex === selectedWeek.weekIndex)
     : null
+  const selectedWeekRepairInstruction = selectedWeek
+    ? qualityRepairInstructions[selectedWeek.weekIndex]
+    : undefined
   const hasIncompleteWeeks = weeks.length === 0 || weeks.some((week) => week.status !== 'draft' || week.sessions.length === 0)
   const hasFailedWeeks = failedWeekIndexes.length > 0
-  const canAcceptPlan = plan?.generationState === 'complete' && !hasIncompleteWeeks && errors.length === 0
+  const canAcceptPlan = plan?.generationState === 'complete' && !hasIncompleteWeeks && errors.length === 0 && !qualityBlocksAccept
   const acceptBlockers = [
     ...(plan?.generationState && plan.generationState !== 'complete' ? ['El plan todavia no esta completamente generado.'] : []),
     ...(hasFailedWeeks ? ['Hay semanas fallidas. Regénéralas para continuar.'] : []),
     ...(!hasFailedWeeks && hasIncompleteWeeks ? ['Completa o regenera todas las semanas antes de aceptar el plan.'] : []),
     ...errors.map((issue) => issue.message),
+    ...(qualityBlocker ? [qualityBlocker] : []),
   ]
 
   if (!hasLoaded && !effectiveAthleteProfile) {
@@ -668,8 +685,26 @@ export default function PlanBuilderV2Page() {
     await retryFullGeneration(effectiveAthleteProfile)
   }
 
+  async function handleRegenerateSelectedWeek() {
+    if (!effectiveAthleteProfile || !selectedWeek || isGenerating || status === 'committing') return
+    await regenerateWeek(selectedWeek.weekIndex, effectiveAthleteProfile, selectedWeekRepairInstruction)
+  }
+
+  async function handleRepairQualityIssues() {
+    if (!effectiveAthleteProfile || isGenerating || status === 'committing') return
+    const weekIndexes = Object.keys(qualityRepairInstructions)
+      .map((key) => Number(key))
+      .filter((value) => Number.isInteger(value))
+    if (weekIndexes.length === 0) return
+    await regenerateWeeks(weekIndexes, effectiveAthleteProfile, qualityRepairInstructions)
+  }
+
   async function handlePreviewAcceptPlan() {
-    if (!plan || !canAcceptPlan || status === 'committing') return
+    if (!plan || status === 'committing') return
+    if (!canAcceptPlan) {
+      setImpactError(acceptBlockers[0] ?? 'El plan no está listo para aceptarse.')
+      return
+    }
     setImpactError(null)
     setIsImpactLoading(true)
     try {
@@ -684,10 +719,13 @@ export default function PlanBuilderV2Page() {
   }
 
   async function handleConfirmAcceptPlan() {
+    setImpactError(null)
     const result = await acceptPlan()
     if (result.errors.length === 0) {
       setIsImpactOpen(false)
       navigate(ROUTES.WEEK)
+    } else {
+      setImpactError(result.errors.join(' · '))
     }
   }
 
@@ -946,16 +984,16 @@ export default function PlanBuilderV2Page() {
                       {selectedWeek.weekStartDate}
                     </p>
                   </div>
-                  {showPlanQualityDebug && (
+                  {plan?.generationState === 'complete' && selectedWeek.status === 'draft' && (
                     <button
                       type="button"
                       disabled={isGenerating || status === 'committing'}
-                      onClick={() => effectiveAthleteProfile && regenerateWeek(selectedWeek.weekIndex, effectiveAthleteProfile)}
+                      onClick={() => { void handleRegenerateSelectedWeek() }}
                       className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-ink-muted transition-all hover:text-ink disabled:opacity-40"
                       style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
                     >
-                      <RefreshCw size={11} className={selectedWeek.status === 'generating' ? 'animate-spin' : ''} />
-                      Regenerar
+                      <RefreshCw size={11} />
+                      {selectedWeekRepairInstruction ? 'Reparar semana' : 'Regenerar semana'}
                     </button>
                   )}
                 </div>
@@ -1132,7 +1170,7 @@ export default function PlanBuilderV2Page() {
 	            <p className="font-mono text-[9px] font-bold uppercase tracking-[0.28em] text-ink-faint px-1">
 	              Validación
 	            </p>
-	            {qualityReview && (
+	            {shouldShowQualityReview && qualityReview && (
 	              <div className="rounded-xl px-3 py-3"
 	                style={{ background: 'rgba(255,255,255,0.045)', border: '1px solid rgba(255,255,255,0.09)' }}>
 	                <div className="flex items-center justify-between gap-3">
@@ -1261,6 +1299,30 @@ export default function PlanBuilderV2Page() {
                 Reintentar completo
               </button>
             )}
+            {plan?.generationState === 'complete' && (
+              Object.keys(qualityRepairInstructions).length > 0 && (
+                <button
+                  type="button"
+                  disabled={isGenerating || status === 'committing'}
+                  onClick={() => { void handleRepairQualityIssues() }}
+                  className="rounded-xl px-5 py-2.5 font-display text-sm font-bold uppercase tracking-[0.15em] text-white transition-all active:scale-[0.98] disabled:opacity-40"
+                  style={{ background: 'linear-gradient(135deg, #f59e0b, #ff4d00)' }}
+                >
+                  Reparar semanas marcadas
+                </button>
+              )
+            )}
+            {plan?.generationState === 'complete' && (
+              <button
+                type="button"
+                disabled={isGenerating || status === 'committing'}
+                onClick={() => { void handleRetryFullGeneration() }}
+                className="rounded-xl px-5 py-2.5 font-display text-sm font-bold uppercase tracking-[0.15em] text-ink-muted transition-all hover:text-ink disabled:opacity-40"
+                style={{ border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.04)' }}
+              >
+                Regenerar plan
+              </button>
+            )}
 	            {acceptBlockers.length > 0 && !isGenerating && status !== 'committing' && (
 	              <p className="text-xs text-ink-faint">{acceptBlockers[0]}</p>
 	            )}
@@ -1385,7 +1447,14 @@ export default function PlanBuilderV2Page() {
 	                </div>
 	              </div>
 
-	              <div className="flex flex-wrap items-center justify-end gap-2 px-4 py-3" style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+	              <div className="px-4 py-3" style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+	                {impactError && (
+	                  <p className="mb-3 rounded-xl px-3 py-2 text-xs leading-relaxed text-red-300"
+	                    style={{ background: 'rgba(248,113,113,0.08)', border: '1px solid rgba(248,113,113,0.18)' }}>
+	                    {impactError}
+	                  </p>
+	                )}
+	                <div className="flex flex-wrap items-center justify-end gap-2">
 	                <button
 	                  type="button"
 	                  onClick={() => setIsImpactOpen(false)}
@@ -1404,6 +1473,7 @@ export default function PlanBuilderV2Page() {
 	                >
 	                  {status === 'committing' ? 'Guardando…' : 'Confirmar'}
 	                </button>
+	                </div>
 	              </div>
 	            </div>
 	          </div>

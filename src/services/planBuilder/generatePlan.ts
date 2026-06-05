@@ -22,6 +22,7 @@ import { resolveConfiguredGenerationStrategy } from './generationState'
 import { getExpectedSessionsForPlanWeek } from './dateRange'
 import { buildDeterministicWeek, buildLocalFallbackWeek } from './fallbackWeek'
 import { PLAN_BUILDER_PAIR_RESPONSE_SCHEMA } from './planBuilderResponseSchema'
+import type { PlanBuilderRecentContext } from './recentContext'
 
 const MAX_SINGLE_WEEK_PROVIDER_ATTEMPTS = 2
 
@@ -44,6 +45,8 @@ export interface GeneratePlanWeeksInput {
   abortSignal?: AbortSignal
   seedPreviousWeek?: TrainingPlanWeek
   strategy?: 'single' | 'pairs'
+  recentContext?: PlanBuilderRecentContext
+  repairInstructionsByWeekIndex?: Record<number, string>
 }
 
 interface BatchWeekExtraction {
@@ -145,7 +148,7 @@ function makeResolvedWeek(
     repairWarnings?: Array<{ code: string; message: string }>
     stageTimings?: Array<{ stage: string; durationMs: number; ok: boolean; error?: string }>
     errorClass?: string
-    generationSource?: 'ai' | 'deterministic'
+    generationSource?: 'ai' | 'deterministic' | 'fallback'
   },
 ): TrainingPlanWeek {
   const nowTs = Date.now()
@@ -295,6 +298,7 @@ function makeLocalFallbackResolvedWeek(input: {
       ...fallback.meta.warnings,
     ],
     errorClass: 'local_plan_fallback',
+    generationSource: 'fallback',
   })
 }
 
@@ -319,6 +323,8 @@ export async function generateSingleWeekWithRetry(
   profile: AthleteProfile,
   wizardConfig: PlanWizardConfig,
   onChunk: ((weekIndex: number, chunk: string) => void) | undefined,
+  recentContext?: PlanBuilderRecentContext,
+  initialRepairInstruction?: string,
 ): Promise<TrainingPlanWeek> {
   let attempts = 0
   let lastError: string | undefined
@@ -338,8 +344,11 @@ export async function generateSingleWeekWithRetry(
       profile,
       wizardConfig,
       temperature: attempt === 1 ? 0.4 : 0.25,
-      retryInstruction: normalizeRetryInstruction(lastError, plan, week, getExpectedSessionsForPlanWeek(plan, week), attempt),
+      retryInstruction: attempt === 1 && initialRepairInstruction
+        ? initialRepairInstruction
+        : normalizeRetryInstruction(lastError, plan, week, getExpectedSessionsForPlanWeek(plan, week), attempt),
       strictFormatting: attempt >= 3,
+      recentContext,
       onChunk: (chunk) => onChunk?.(week.weekIndex, chunk),
     })
     attempts += result.meta.attempts
@@ -370,6 +379,7 @@ export async function generateSingleWeekWithRetry(
         repairWarnings: result.meta.repairWarnings,
         stageTimings: result.meta.stageTimings,
         errorClass: result.meta.errorClass,
+        generationSource: 'ai',
       })
     }
 
@@ -418,6 +428,7 @@ async function generateWeekPair(
   profile: AthleteProfile,
   wizardConfig: PlanWizardConfig,
   onChunk: ((weekIndex: number, chunk: string) => void) | undefined,
+  recentContext?: PlanBuilderRecentContext,
   batchId?: string,
 ): Promise<{
   results: BatchWeekExtraction[]
@@ -460,6 +471,7 @@ async function generateWeekPair(
         previousWeek,
         profile,
         wizardConfig,
+        recentContext,
         outputFormat: 'json',
       }),
       maxTokens: policy.maxTokens,
@@ -630,6 +642,7 @@ export async function generatePlanWeeks(input: GeneratePlanWeeksInput): Promise<
         input.profile,
         input.wizardConfig,
         input.onChunk,
+        input.recentContext,
         batchId,
       )
       if (batchResult.meta.degradeToSingle) {
@@ -658,6 +671,7 @@ export async function generatePlanWeeks(input: GeneratePlanWeeksInput): Promise<
             addedFallbackCount: batchWeekResult.addedFallbackCount,
             filteredSportCount: batchWeekResult.filteredSportCount,
             repairWarnings: batchWeekResult.repairWarnings,
+            generationSource: 'ai',
           })
           input.onWeekUpdate?.(resolved)
           results.push(resolved)
@@ -677,6 +691,8 @@ export async function generatePlanWeeks(input: GeneratePlanWeeksInput): Promise<
             input.profile,
             input.wizardConfig,
             input.onChunk,
+            input.recentContext,
+            input.repairInstructionsByWeekIndex?.[batchWeekResult.week.weekIndex],
           )
           if (recovered.sessions.length > 0 && !recovered.generationMeta.fallbackUsed) {
             input.onWeekUpdate?.(recovered)
@@ -726,6 +742,8 @@ export async function generatePlanWeeks(input: GeneratePlanWeeksInput): Promise<
       input.profile,
       input.wizardConfig,
       input.onChunk,
+      input.recentContext,
+      input.repairInstructionsByWeekIndex?.[week.weekIndex],
     )
     input.onWeekUpdate?.(resolved)
     results.push(resolved)

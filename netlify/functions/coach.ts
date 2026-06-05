@@ -68,7 +68,7 @@ interface AuthContext {
 
 const DEFAULT_MODELS: Record<ProviderName, string> = {
   gemini: 'gemini-2.5-flash',
-  openai: 'gpt-4o-mini',
+  openai: 'gpt-5-mini',
   claude: 'claude-sonnet-4-6',
 }
 
@@ -423,6 +423,20 @@ function parseProviderName(value: string | undefined, envName: string): Provider
   )
 }
 
+export function providerEnvKey(prefix: 'AI_PROVIDER' | 'AI_FALLBACK_PROVIDER', requestClass: RequestClass): string {
+  return `${prefix}_${requestClass.toUpperCase()}`
+}
+
+export function resolvePrimaryProvider(requestClass: RequestClass): ProviderName {
+  const classKey = providerEnvKey('AI_PROVIDER', requestClass)
+  return parseProviderName(process.env[classKey] ?? process.env['AI_PROVIDER'] ?? 'gemini', classKey) ?? 'gemini'
+}
+
+export function resolveFallbackProvider(requestClass: RequestClass): ProviderName | undefined {
+  const classKey = providerEnvKey('AI_FALLBACK_PROVIDER', requestClass)
+  return parseProviderName(process.env[classKey] ?? process.env['AI_FALLBACK_PROVIDER'], classKey)
+}
+
 function computeAttemptTimeoutMs(deadline: number, attemptsRemaining: number): number {
   const remainingBudget = deadline - Date.now()
   if (remainingBudget <= 0) {
@@ -592,6 +606,57 @@ function buildGeminiGenerationConfig(req: CoachRequest, model: string): Record<s
   return generationConfig
 }
 
+function normalizeJsonSchemaForOpenAI(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(normalizeJsonSchemaForOpenAI)
+  if (!value || typeof value !== 'object') return value
+
+  const input = value as Record<string, unknown>
+  const output: Record<string, unknown> = {}
+  for (const [key, child] of Object.entries(input)) {
+    if (key === 'type' && typeof child === 'string') {
+      output[key] = child.toLowerCase()
+      continue
+    }
+    output[key] = normalizeJsonSchemaForOpenAI(child)
+  }
+  return output
+}
+
+function buildOpenAIResponseFormat(req: CoachRequest): Record<string, unknown> | undefined {
+  const requestClass = normalizeRequestClass(req.requestClass)
+  if (req.responseSchema) {
+    return {
+      type: 'json_schema',
+      json_schema: {
+        name: requestClass,
+        strict: false,
+        schema: normalizeJsonSchemaForOpenAI(req.responseSchema),
+      },
+    }
+  }
+  if (req.responseMimeType === 'application/json') {
+    return { type: 'json_object' }
+  }
+  return undefined
+}
+
+function buildOpenAIBody(req: CoachRequest, model: string, streamOutput = false): Record<string, unknown> {
+  const body: Record<string, unknown> = {
+    model,
+    max_completion_tokens: req.maxTokens ?? 1024,
+    temperature: req.temperature ?? 0.7,
+    messages: [
+      { role: 'system', content: req.systemPrompt },
+      ...(req.conversation ?? []).map((message) => ({ role: message.role, content: message.content })),
+      { role: 'user', content: req.userMessage },
+    ],
+  }
+  const responseFormat = buildOpenAIResponseFormat(req)
+  if (responseFormat) body.response_format = responseFormat
+  if (streamOutput) body.stream = true
+  return body
+}
+
 async function callGemini(
   req: CoachRequest,
   apiKey: string,
@@ -638,16 +703,7 @@ async function callOpenAI(
       'Authorization': `Bearer ${apiKey}`,
     },
     signal,
-    body: JSON.stringify({
-      model,
-      max_tokens: req.maxTokens ?? 1024,
-      temperature: req.temperature ?? 0.7,
-      messages: [
-        { role: 'system', content: req.systemPrompt },
-        ...(req.conversation ?? []).map((message) => ({ role: message.role, content: message.content })),
-        { role: 'user', content: req.userMessage },
-      ],
-    }),
+    body: JSON.stringify(buildOpenAIBody(req, model)),
   })
   const data = await fetchJsonOrThrow(res) as {
     choices?: Array<{ message?: { content?: string }; finish_reason?: string }>
@@ -747,17 +803,7 @@ async function streamOpenAI(
       'Authorization': `Bearer ${apiKey}`,
     },
     signal,
-    body: JSON.stringify({
-      model,
-      max_tokens: req.maxTokens ?? 1024,
-      temperature: req.temperature ?? 0.7,
-      stream: true,
-      messages: [
-        { role: 'system', content: req.systemPrompt },
-        ...(req.conversation ?? []).map((message) => ({ role: message.role, content: message.content })),
-        { role: 'user', content: req.userMessage },
-      ],
-    }),
+    body: JSON.stringify(buildOpenAIBody(req, model, true)),
   })
   if (!res.ok || !res.body) {
     await fetchJsonOrThrow(res)
@@ -916,8 +962,8 @@ async function executeWithPolicy(
   const requestClass = normalizeRequestClass(req.requestClass)
   const traceId = req.traceId ?? `srv-${Date.now()}`
   const startedAt = Date.now()
-  const primary = parseProviderName(process.env['AI_PROVIDER'] ?? 'gemini', 'AI_PROVIDER') ?? 'gemini'
-  const fallback = parseProviderName(process.env['AI_FALLBACK_PROVIDER'], 'AI_FALLBACK_PROVIDER')
+  const primary = resolvePrimaryProvider(requestClass)
+  const fallback = resolveFallbackProvider(requestClass)
   const timeoutMs = REQUEST_TIMEOUTS[requestClass]
   const totalBudgetMs = Math.min(timeoutMs, MAX_FUNCTION_WALLCLOCK_MS)
   const deadline = startedAt + totalBudgetMs

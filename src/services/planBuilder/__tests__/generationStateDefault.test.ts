@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { resolveConfiguredGenerationStrategy } from '../generationState'
+import {
+  resolveConfiguredGenerationMode,
+  resolveConfiguredGenerationStrategy,
+  shouldUseDeterministicPrimary,
+} from '../generationState'
 
 describe('resolveConfiguredGenerationStrategy', () => {
   const envKey = 'VITE_PLAN_BUILDER_STRATEGY'
@@ -35,5 +39,33 @@ describe('resolveConfiguredGenerationStrategy', () => {
     expect(resolveConfiguredGenerationStrategy(9, undefined)).toBe('single')
     ;(import.meta.env as Record<string, string>)[envKey] = 'bogus'
     expect(resolveConfiguredGenerationStrategy(9, undefined)).toBe('single')
+  })
+})
+
+describe('resolveConfiguredGenerationMode', () => {
+  const envKey = 'VITE_PLAN_BUILDER_GENERATION_MODE'
+  const originalValue = (import.meta.env as Record<string, string | undefined>)[envKey]
+
+  afterEach(() => {
+    if (originalValue === undefined) {
+      delete (import.meta.env as Record<string, unknown>)[envKey]
+    } else {
+      ;(import.meta.env as Record<string, string>)[envKey] = originalValue
+    }
+  })
+
+  it('defaults to deterministic mode', () => {
+    delete (import.meta.env as Record<string, unknown>)[envKey]
+    expect(resolveConfiguredGenerationMode()).toBe('deterministic')
+    expect(shouldUseDeterministicPrimary(resolveConfiguredGenerationMode())).toBe(true)
+  })
+
+  it('honors hybrid mode and ai alias', () => {
+    ;(import.meta.env as Record<string, string>)[envKey] = 'hybrid'
+    expect(resolveConfiguredGenerationMode()).toBe('hybrid')
+    expect(shouldUseDeterministicPrimary(resolveConfiguredGenerationMode())).toBe(false)
+
+    ;(import.meta.env as Record<string, string>)[envKey] = 'ai'
+    expect(resolveConfiguredGenerationMode()).toBe('hybrid')
   })
 })

@@ -5,6 +5,7 @@ import { ACTION_CONTRACTS } from '../../ai/prompt/core/outputContract'
 import { buildStrengthLoadPack } from '../../ai/prompt/packs/quality/strengthLoad'
 import { renderActionAsProse } from '../../ai/prompt/renderers/proseSchema'
 import { getExpectedSessionsForPlanWeek, getPlanWeekDateRange } from '../../planBuilder/dateRange'
+import { renderPlanBuilderRecentContext, type PlanBuilderRecentContext } from '../../planBuilder/recentContext'
 
 export interface WeekPromptInput {
   plan: TrainingPlan
@@ -15,6 +16,7 @@ export interface WeekPromptInput {
   retryInstruction?: string
   strictFormatting?: boolean
   outputFormat?: 'actions' | 'json'
+  recentContext?: PlanBuilderRecentContext
 }
 
 export interface WeekBatchPromptInput {
@@ -26,6 +28,7 @@ export interface WeekBatchPromptInput {
   retryInstruction?: string
   strictFormatting?: boolean
   outputFormat?: 'actions' | 'json'
+  recentContext?: PlanBuilderRecentContext
 }
 
 const PHASE_LABEL: Record<string, string> = {
@@ -254,6 +257,8 @@ export function buildWeekUserPrompt(input: WeekPromptInput): string {
     '',
     briefPreviousWeek(previousWeek),
     '',
+    renderPlanBuilderRecentContext(input.recentContext),
+    '',
     retryInstruction ? `Corrección del intento anterior:\n${retryInstruction}\n` : '',
     strictFormatting ? 'Modo estricto: si dudas, prioriza fechas válidas, targetDate correcto, sesiones completas y exactamente la cantidad pedida antes que creatividad.' : '',
     strengthStructureSection,
@@ -354,6 +359,8 @@ export function buildWeekBatchUserPrompt(input: WeekBatchPromptInput): string {
     wizardConfig.injuryNotes ? `- Lesiones/restricciones: ${wizardConfig.injuryNotes}` : '',
     '',
     briefPreviousWeek(previousWeek),
+    '',
+    renderPlanBuilderRecentContext(input.recentContext),
     '',
     weeksText,
     '',

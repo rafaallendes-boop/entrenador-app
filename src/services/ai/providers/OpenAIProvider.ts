@@ -7,7 +7,7 @@
  *   VITE_OPENAI_API_KEY - your OpenAI API key (sk-...)
  *
  * Optional env vars:
- *   VITE_OPENAI_MODEL - model ID (default: gpt-4.1-mini)
+ *   VITE_OPENAI_MODEL - model ID (default: gpt-5-mini)
  *
  * To activate: set VITE_AI_PROVIDER=openai in your .env file.
  *
@@ -16,7 +16,7 @@
  *   The system prompt from promptBuilder works identically for both providers.
  *
  * Note on actions:
- *   The <actions>...</actions> block in the system prompt works with GPT-4.1 mini.
+ *   The <actions>...</actions> block in the system prompt works with GPT-5 mini.
  *   For higher reliability, consider OpenAI tool calling in a future upgrade.
  *
  * Security: the key is embedded in the bundle.
@@ -26,8 +26,59 @@
 import type { AIProvider, AIRequest, AIRawResponse } from '../types'
 import { createProviderError } from '../types'
 
-const DEFAULT_MODEL = 'gpt-4.1-mini'
+const DEFAULT_MODEL = 'gpt-5-mini'
 const API_URL = 'https://api.openai.com/v1/chat/completions'
+
+function normalizeJsonSchemaForOpenAI(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(normalizeJsonSchemaForOpenAI)
+  if (!value || typeof value !== 'object') return value
+
+  const input = value as Record<string, unknown>
+  const output: Record<string, unknown> = {}
+  for (const [key, child] of Object.entries(input)) {
+    if (key === 'type' && typeof child === 'string') {
+      output[key] = child.toLowerCase()
+      continue
+    }
+    output[key] = normalizeJsonSchemaForOpenAI(child)
+  }
+  return output
+}
+
+function buildResponseFormat(request: AIRequest): Record<string, unknown> | undefined {
+  if (request.responseSchema) {
+    return {
+      type: 'json_schema',
+      json_schema: {
+        name: request.requestClass,
+        strict: false,
+        schema: normalizeJsonSchemaForOpenAI(request.responseSchema),
+      },
+    }
+  }
+  if (request.responseMimeType === 'application/json') {
+    return { type: 'json_object' }
+  }
+  return undefined
+}
+
+function buildRequestBody(
+  request: AIRequest,
+  model: string,
+  messages: Array<{ role: string; content: string }>,
+  stream = false,
+): Record<string, unknown> {
+  const body: Record<string, unknown> = {
+    model,
+    max_completion_tokens: request.maxTokens ?? 1024,
+    temperature: request.temperature ?? 0.7,
+    messages,
+  }
+  const responseFormat = buildResponseFormat(request)
+  if (responseFormat) body.response_format = responseFormat
+  if (stream) body.stream = true
+  return body
+}
 
 export class OpenAIProvider implements AIProvider {
   readonly name = 'openai' as const
@@ -62,7 +113,7 @@ export class OpenAIProvider implements AIProvider {
       res = await fetch(API_URL, {
         method: 'POST',
         headers: HEADERS,
-        body: JSON.stringify({ model, max_tokens: request.maxTokens ?? 1024, temperature: request.temperature ?? 0.7, messages }),
+        body: JSON.stringify(buildRequestBody(request, model, messages)),
       })
     } catch {
       throw createProviderError('openai', 'timeout', 'No se pudo conectar con la API de OpenAI. Verifica tu conexion.', true)
@@ -105,7 +156,7 @@ export class OpenAIProvider implements AIProvider {
       res = await fetch(API_URL, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ model, max_tokens: request.maxTokens ?? 1024, temperature: request.temperature ?? 0.7, stream: true, messages }),
+        body: JSON.stringify(buildRequestBody(request, model, messages, true)),
       })
     } catch {
       throw createProviderError('openai', 'timeout', 'No se pudo conectar con la API de OpenAI. Verifica tu conexion.', true)

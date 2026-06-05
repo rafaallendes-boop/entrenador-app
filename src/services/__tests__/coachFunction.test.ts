@@ -1,11 +1,19 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@netlify/functions', () => ({
   stream: <T>(handler: T) => handler,
 }))
 
 import { getAIRequestPolicy } from '../ai/requestPolicy'
-import { shouldUseDeterministicBypass, trimConversationHistory, tryDeterministicBypass, type ConversationMessage } from '../../../netlify/functions/coach'
+import {
+  providerEnvKey,
+  resolveFallbackProvider,
+  resolvePrimaryProvider,
+  shouldUseDeterministicBypass,
+  trimConversationHistory,
+  tryDeterministicBypass,
+  type ConversationMessage,
+} from '../../../netlify/functions/coach'
 
 describe('trimConversationHistory', () => {
   it('returns empty array when conversation is undefined or empty', () => {
@@ -94,6 +102,56 @@ describe('shouldUseDeterministicBypass', () => {
     expect(shouldUseDeterministicBypass('chat_general')).toBe(false)
     expect(shouldUseDeterministicBypass('plan_builder_week')).toBe(false)
     expect(shouldUseDeterministicBypass('plan_builder_pair')).toBe(false)
+  })
+})
+
+describe('provider routing by request class', () => {
+  const managedKeys = [
+    'AI_PROVIDER',
+    'AI_FALLBACK_PROVIDER',
+    providerEnvKey('AI_PROVIDER', 'week_creator'),
+    providerEnvKey('AI_PROVIDER', 'plan_builder_week'),
+    providerEnvKey('AI_PROVIDER', 'plan_builder_pair'),
+    providerEnvKey('AI_FALLBACK_PROVIDER', 'plan_builder_week'),
+  ]
+  let snapshot: Record<string, string | undefined>
+
+  beforeEach(() => {
+    snapshot = {}
+    for (const key of managedKeys) {
+      snapshot[key] = process.env[key]
+      delete process.env[key]
+    }
+  })
+
+  afterEach(() => {
+    for (const key of managedKeys) {
+      const value = snapshot[key]
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
+  })
+
+  it('routes only week_creator to OpenAI when the class override is configured', () => {
+    process.env.AI_PROVIDER = 'gemini'
+    process.env.AI_PROVIDER_WEEK_CREATOR = 'openai'
+
+    expect(resolvePrimaryProvider('week_creator')).toBe('openai')
+    expect(resolvePrimaryProvider('chat_action')).toBe('gemini')
+    expect(resolvePrimaryProvider('chat_general')).toBe('gemini')
+    expect(resolvePrimaryProvider('weekly_summary')).toBe('gemini')
+    expect(resolvePrimaryProvider('plan_builder_week')).toBe('gemini')
+    expect(resolvePrimaryProvider('plan_builder_pair')).toBe('gemini')
+    expect(resolvePrimaryProvider('import_extract')).toBe('gemini')
+  })
+
+  it('keeps Plan Builder fallback pinned to Gemini when configured', () => {
+    process.env.AI_PROVIDER = 'gemini'
+    process.env.AI_PROVIDER_WEEK_CREATOR = 'openai'
+    process.env.AI_FALLBACK_PROVIDER_PLAN_BUILDER_WEEK = 'gemini'
+
+    expect(resolveFallbackProvider('week_creator')).toBeUndefined()
+    expect(resolveFallbackProvider('plan_builder_week')).toBe('gemini')
   })
 })
 

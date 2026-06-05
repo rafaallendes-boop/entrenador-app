@@ -20,6 +20,8 @@ interface CoachRequest {
   traceId?: string
   maxTokens?: number
   temperature?: number
+  responseMimeType?: 'application/json'
+  responseSchema?: Record<string, unknown>
 }
 
 interface ProviderResult {
@@ -38,7 +40,7 @@ const FUNCTION_URL = '/.netlify/functions/coach'
 const JSON_HEADERS = { 'Content-Type': 'application/json' }
 const DEFAULT_MODELS: Record<ProviderName, string> = {
   gemini: 'gemini-2.5-flash',
-  openai: 'gpt-4o-mini',
+  openai: 'gpt-5-mini',
   claude: 'claude-sonnet-4-6',
 }
 
@@ -68,7 +70,7 @@ async function handleCoachRequest(
   try {
     const body = await readJsonBody(req)
     const coachRequest = validateRequest(body)
-    const provider = resolveProvider(env)
+    const provider = resolveProvider(env, coachRequest.requestClass)
     const result = await callProvider(provider, coachRequest, env)
 
     sendJson(res, 200, {
@@ -127,6 +129,10 @@ function validateRequest(input: unknown): CoachRequest {
     traceId: typeof raw.traceId === 'string' ? raw.traceId : `dev-${Date.now()}`,
     maxTokens: typeof raw.maxTokens === 'number' ? raw.maxTokens : undefined,
     temperature: typeof raw.temperature === 'number' ? raw.temperature : undefined,
+    responseMimeType: raw.responseMimeType === 'application/json' ? raw.responseMimeType : undefined,
+    responseSchema: raw.responseSchema && typeof raw.responseSchema === 'object' && !Array.isArray(raw.responseSchema)
+      ? raw.responseSchema
+      : undefined,
   }
 }
 
@@ -164,6 +170,8 @@ async function callGemini(request: CoachRequest, apiKey: string, model: string):
       generationConfig: {
         maxOutputTokens: request.maxTokens ?? 1024,
         temperature: request.temperature ?? 0.7,
+        ...(request.responseMimeType ? { responseMimeType: request.responseMimeType } : {}),
+        ...(request.responseSchema ? { responseSchema: request.responseSchema } : {}),
       },
     }),
   })
@@ -173,23 +181,58 @@ async function callGemini(request: CoachRequest, apiKey: string, model: string):
   return { text, provider: 'gemini', model }
 }
 
+function normalizeJsonSchemaForOpenAI(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(normalizeJsonSchemaForOpenAI)
+  if (!value || typeof value !== 'object') return value
+
+  const input = value as Record<string, unknown>
+  const output: Record<string, unknown> = {}
+  for (const [key, child] of Object.entries(input)) {
+    if (key === 'type' && typeof child === 'string') {
+      output[key] = child.toLowerCase()
+      continue
+    }
+    output[key] = normalizeJsonSchemaForOpenAI(child)
+  }
+  return output
+}
+
+function buildOpenAIResponseFormat(request: CoachRequest): Record<string, unknown> | undefined {
+  if (request.responseSchema) {
+    return {
+      type: 'json_schema',
+      json_schema: {
+        name: request.requestClass ?? 'chat_general',
+        strict: false,
+        schema: normalizeJsonSchemaForOpenAI(request.responseSchema),
+      },
+    }
+  }
+  if (request.responseMimeType === 'application/json') return { type: 'json_object' }
+  return undefined
+}
+
 async function callOpenAI(request: CoachRequest, apiKey: string, model: string): Promise<ProviderResult> {
+  const body: Record<string, unknown> = {
+    model,
+    max_completion_tokens: request.maxTokens ?? 1024,
+    temperature: request.temperature ?? 0.7,
+    messages: [
+      { role: 'system', content: request.systemPrompt },
+      ...(request.conversation ?? []).map((message) => ({ role: message.role, content: message.content })),
+      { role: 'user', content: request.userMessage },
+    ],
+  }
+  const responseFormat = buildOpenAIResponseFormat(request)
+  if (responseFormat) body.response_format = responseFormat
+
   const res = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
       ...JSON_HEADERS,
       Authorization: `Bearer ${apiKey}`,
     },
-    body: JSON.stringify({
-      model,
-      max_tokens: request.maxTokens ?? 1024,
-      temperature: request.temperature ?? 0.7,
-      messages: [
-        { role: 'system', content: request.systemPrompt },
-        ...(request.conversation ?? []).map((message) => ({ role: message.role, content: message.content })),
-        { role: 'user', content: request.userMessage },
-      ],
-    }),
+    body: JSON.stringify(body),
   })
   const data = await fetchJsonOrThrow(res) as { choices?: Array<{ message?: { content?: string } }>; model?: string }
   const text = data.choices?.[0]?.message?.content
@@ -237,8 +280,9 @@ async function fetchJsonOrThrow(res: Response): Promise<unknown> {
   throw makeError(detail, res.status, 'server_error')
 }
 
-function resolveProvider(env: Record<string, string>): ProviderName {
-  const value = (env.AI_PROVIDER ?? 'gemini').toLowerCase()
+function resolveProvider(env: Record<string, string>, requestClass: RequestClass | undefined): ProviderName {
+  const classKey = requestClass ? `AI_PROVIDER_${requestClass.toUpperCase()}` : undefined
+  const value = ((classKey ? env[classKey] : undefined) ?? env.AI_PROVIDER ?? 'gemini').toLowerCase()
   if (value === 'openai' || value === 'claude' || value === 'gemini') return value
   return 'gemini'
 }

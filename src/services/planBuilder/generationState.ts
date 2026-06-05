@@ -1,6 +1,7 @@
 import type { PlanGenerationState, TrainingPlanWeek } from '../../types/planBuilder'
 
 export type PlanBuilderGenerationStrategy = 'single' | 'pairs'
+export type PlanBuilderGenerationMode = 'deterministic' | 'hybrid'
 
 export function derivePlanGenerationState(weeks: TrainingPlanWeek[]): PlanGenerationState {
   if (weeks.some((week) => week.status === 'generating')) return 'generating'
@@ -21,4 +22,17 @@ export function resolveConfiguredGenerationStrategy(_totalWeeks: number, request
   if (configured === 'pairs') return 'pairs'
 
   return 'single'
+}
+
+export function resolveConfiguredGenerationMode(requested?: PlanBuilderGenerationMode): PlanBuilderGenerationMode {
+  if (requested) return requested
+
+  const configured = (import.meta.env.VITE_PLAN_BUILDER_GENERATION_MODE ?? '').toLowerCase()
+  if (configured === 'hybrid' || configured === 'ai') return 'hybrid'
+
+  return 'deterministic'
+}
+
+export function shouldUseDeterministicPrimary(mode: PlanBuilderGenerationMode): boolean {
+  return mode === 'deterministic'
 }

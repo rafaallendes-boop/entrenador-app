@@ -59,7 +59,7 @@ export interface PlanGenerationMeta {
   repairWarnings?: Array<{ code: string; message: string }>
   stageTimings?: Array<{ stage: string; durationMs: number; ok: boolean; error?: string }>
   errorClass?: string
-  generationSource?: 'ai' | 'deterministic'
+  generationSource?: 'ai' | 'deterministic' | 'fallback'
 }
 
 export interface PlanGenerationSummary {
@@ -144,6 +144,7 @@ export interface PlanGenerationJob {
   completedWeeks: number
   failedWeekIndexes: number[]
   currentWeekIndex: number | null
+  repairInstructions?: Record<number, string>
   startedAt?: number
   completedAt?: number
   heartbeatAt?: number
