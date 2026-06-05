@@ -907,7 +907,14 @@ async function readSseStream(
   return { text: fullText, model, finishReason }
 }
 
-function resolveModel(provider: ProviderName): string {
+function modelEnvKey(provider: ProviderName, requestClass: RequestClass): string {
+  return `${provider.toUpperCase()}_MODEL_${requestClass.toUpperCase()}`
+}
+
+export function resolveModel(provider: ProviderName, requestClass: RequestClass): string {
+  const classModel = process.env[modelEnvKey(provider, requestClass)]
+  if (classModel?.trim()) return classModel.trim()
+
   switch (provider) {
     case 'gemini':
       return process.env['GEMINI_MODEL'] ?? DEFAULT_MODELS.gemini
@@ -936,7 +943,7 @@ async function invokeProvider(
   signal: AbortSignal,
   onChunk?: (chunk: string) => void,
 ): Promise<{ text: string; provider: ProviderName; model: string; finishReason?: string }> {
-  const model = resolveModel(provider)
+  const model = resolveModel(provider, normalizeRequestClass(req.requestClass))
   const key = resolveApiKey(provider)
 
   switch (provider) {

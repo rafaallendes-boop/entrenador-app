@@ -1337,6 +1337,9 @@ describe('WeekCreatorEngine', () => {
     expect(requests.some((request) =>
       request.warnings?.some((warning) => warning.includes('week_creator_fallback:local_after_provider_failure')),
     )).toBe(true)
+    expect(requests.some((request) =>
+      request.warnings?.some((warning) => warning.includes('provider=')),
+    )).toBe(false)
     expect(requests[0]).toMatchObject({
       status: 'completed',
       fallbackUsed: true,

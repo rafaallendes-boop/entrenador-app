@@ -310,7 +310,7 @@ export const WeekCreatorEngine = {
       errorCode: lastFailure?.fallbackReason,
       outcome: lastFailure?.outcome ?? 'schema_invalid',
       warnings: [
-        buildWeekCreatorFallbackWarning(lastFailure?.provider, MAX_ATTEMPTS),
+        buildWeekCreatorFallbackWarning(MAX_ATTEMPTS),
         ...(lastFailure?.warnings ?? []),
       ],
     })
@@ -372,14 +372,8 @@ function classifyWeekCreatorFailure(
   }
 }
 
-function buildWeekCreatorFallbackWarning(
-  provider: CoachNormalizedResponse['provider'] | undefined,
-  attempts: number,
-): string {
-  const providerLabel = provider && provider !== 'mock'
-    ? provider
-    : 'unknown'
-  return `week_creator_fallback:local_after_provider_failure provider=${providerLabel} attempts=${attempts}`
+function buildWeekCreatorFallbackWarning(attempts: number): string {
+  return `week_creator_fallback:local_after_provider_failure attempts=${attempts}`
 }
 
 type RepairedWeekCreatorResponse = CoachNormalizedResponse & {

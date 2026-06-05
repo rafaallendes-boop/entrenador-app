@@ -9,6 +9,7 @@ import {
   buildOpenAIBody,
   providerEnvKey,
   resolveFallbackProvider,
+  resolveModel,
   resolvePrimaryProvider,
   shouldUseDeterministicBypass,
   trimConversationHistory,
@@ -114,6 +115,8 @@ describe('provider routing by request class', () => {
   const managedKeys = [
     'AI_PROVIDER',
     'AI_FALLBACK_PROVIDER',
+    'OPENAI_MODEL',
+    'OPENAI_MODEL_WEEK_CREATOR',
     providerEnvKey('AI_PROVIDER', 'week_creator'),
     providerEnvKey('AI_PROVIDER', 'plan_builder_week'),
     providerEnvKey('AI_PROVIDER', 'plan_builder_pair'),
@@ -157,6 +160,14 @@ describe('provider routing by request class', () => {
 
     expect(resolveFallbackProvider('week_creator')).toBeUndefined()
     expect(resolveFallbackProvider('plan_builder_week')).toBe('gemini')
+  })
+
+  it('honors request-class model overrides before the provider default model', () => {
+    process.env.OPENAI_MODEL = 'gpt-5-mini'
+    process.env.OPENAI_MODEL_WEEK_CREATOR = 'gpt-4.1-mini'
+
+    expect(resolveModel('openai', 'week_creator')).toBe('gpt-4.1-mini')
+    expect(resolveModel('openai', 'chat_general')).toBe('gpt-5-mini')
   })
 })
 

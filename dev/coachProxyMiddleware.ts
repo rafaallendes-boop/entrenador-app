@@ -142,7 +142,7 @@ async function callProvider(
   env: Record<string, string>,
 ): Promise<ProviderResult> {
   const apiKey = resolveApiKey(provider, env)
-  const model = resolveModel(provider, env)
+  const model = resolveModel(provider, env, request.requestClass)
 
   switch (provider) {
     case 'gemini':
@@ -293,7 +293,11 @@ function resolveProvider(env: Record<string, string>, requestClass: RequestClass
   return 'gemini'
 }
 
-function resolveModel(provider: ProviderName, env: Record<string, string>): string {
+function resolveModel(provider: ProviderName, env: Record<string, string>, requestClass?: RequestClass): string {
+  const classKey = requestClass ? `${provider.toUpperCase()}_MODEL_${requestClass.toUpperCase()}` : undefined
+  const classModel = classKey ? env[classKey]?.trim() : undefined
+  if (classModel) return classModel
+
   switch (provider) {
     case 'gemini':
       return env.GEMINI_MODEL || DEFAULT_MODELS.gemini
