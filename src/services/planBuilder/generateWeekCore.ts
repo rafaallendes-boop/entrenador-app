@@ -1,35 +1,19 @@
-import type { CoachAction, CoachSessionProposal, AthleteProfile, PlanWizardConfig } from '../../types'
+import type { AthleteProfile, CoachAction, CoachSessionProposal, PlanWizardConfig } from '../../types'
 import type { TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
-import { AIProviderError, type AIRawResponse, type AIProvider, type CreateWeekNormalizationDiagnostic } from '../ai/types'
-import { buildAITraceId, getAIRequestPolicy } from '../ai/requestPolicy'
-import { validatePlanWeek } from './validator'
-import { useAIDebugStore } from '../../store/useAIDebugStore'
-import { repairGeneratedWeek, type RepairContext } from './repairWeek'
-import { createStageTracker, type CoachOutcome, type StageTiming } from '../ai/stageLogger'
-import { assertDailyAIRequestLimit } from '../ai/aiTelemetry'
+import type { AIRawResponse, AIRequest, CreateWeekNormalizationDiagnostic } from '../ai/types'
+import { normalizeResponse } from '../ai/responseNormalizer'
+import { buildWeekStructuredSystemPromptMinimal, buildWeekUserPrompt } from '../week/prompts/weekPrompt'
+import { pickCreateWeekDiagnostic } from '../week/shared'
 import { getExpectedSessionsForPlanWeek, getPlanWeekDateRange } from './dateRange'
-import { generateWeekCore } from './generateWeekCore'
-import type { PlanBuilderRecentContext } from './recentContext'
-
-export interface GenerateWeekInput {
-  provider: AIProvider
-  plan: TrainingPlan
-  week: TrainingPlanWeek
-  previousWeek?: TrainingPlanWeek
-  profile: AthleteProfile
-  wizardConfig: PlanWizardConfig
-  temperature?: number
-  onChunk?: (chunk: string) => void
-  retryInstruction?: string
-  strictFormatting?: boolean
-  recentContext?: PlanBuilderRecentContext
-}
+import { PLAN_BUILDER_WEEK_RESPONSE_SCHEMA } from './planBuilderResponseSchema'
+import { repairGeneratedWeek, type RepairContext } from './repairWeek'
+import { validatePlanWeek } from './validator'
 
 export interface GenerateWeekResult {
   sessions: CoachSessionProposal[]
   meta: {
     attempts: number
-    provider: AIProvider['name']
+    provider: AIRawResponse['provider']
     model?: string
     requestClass: 'plan_builder_week'
     traceId: string
@@ -48,7 +32,7 @@ export interface GenerateWeekResult {
     addedFallbackCount?: number
     filteredSportCount?: number
     repairWarnings?: Array<{ code: string; message: string }>
-    stageTimings?: StageTiming[]
+    stageTimings?: Array<{ stage: string; durationMs: number; ok: boolean; error?: string }>
     errorClass?: string
   }
 }
@@ -64,6 +48,23 @@ export interface WeekActionEvaluation {
   addedFallbackCount?: number
   filteredSportCount?: number
   repairWarnings?: Array<{ code: string; message: string }>
+}
+
+export type WeekLLMCaller = (req: AIRequest) => Promise<AIRawResponse>
+
+export interface GenerateWeekCoreInput {
+  plan: TrainingPlan
+  week: TrainingPlanWeek
+  previousWeek?: TrainingPlanWeek
+  profile: AthleteProfile
+  wizardConfig: PlanWizardConfig
+  recentContext?: unknown
+  retryInstruction?: string
+  strictFormatting?: boolean
+  temperature?: number
+  maxTokens?: number
+  traceId: string
+  callLLM: WeekLLMCaller
 }
 
 export function pickCreateWeekAction(actions: CoachAction[] | undefined, weekStartDate: string): CoachAction | undefined {
@@ -202,144 +203,58 @@ export function validateGeneratedWeekAction(
   }
 }
 
-export async function generateWeek(input: GenerateWeekInput): Promise<GenerateWeekResult> {
-  const { provider, plan, week, previousWeek, profile, wizardConfig } = input
+export async function generateWeekCore(input: GenerateWeekCoreInput): Promise<GenerateWeekResult> {
   const requestClass = 'plan_builder_week' as const
-  const traceId = buildAITraceId(requestClass)
-  const policy = getAIRequestPolicy(requestClass)
-  const tracker = createStageTracker(traceId, requestClass)
-  let outcome: CoachOutcome = 'error'
-  let chunkCount = 0
-  let requestStarted = false
+  const systemPrompt = buildWeekStructuredSystemPromptMinimal()
+  const userMessage = buildWeekUserPrompt({
+    plan: input.plan,
+    week: input.week,
+    previousWeek: input.previousWeek,
+    profile: input.profile,
+    wizardConfig: input.wizardConfig,
+    retryInstruction: input.retryInstruction,
+    strictFormatting: input.strictFormatting,
+    outputFormat: 'json',
+    recentContext: input.recentContext as never,
+  })
 
-  try {
-    await assertDailyAIRequestLimit(requestClass)
+  const raw = await input.callLLM({
+    requestClass,
+    traceId: input.traceId,
+    systemPrompt,
+    userMessage,
+    maxTokens: input.maxTokens,
+    temperature: input.temperature,
+    responseMimeType: 'application/json',
+    responseSchema: PLAN_BUILDER_WEEK_RESPONSE_SCHEMA,
+  })
 
-    const promptStage = tracker.stage('prompt_build')
-    promptStage.end({ ok: true })
+  const normalized = normalizeResponse(raw)
+  const action = pickCreateWeekAction(normalized.actions, input.week.weekStartDate)
+  const diagnostic = pickCreateWeekDiagnostic(normalized, input.week.weekStartDate, action)
+  const evaluation = validateGeneratedWeekAction(input.plan, input.week, input.profile, action, diagnostic, input.previousWeek)
 
-    useAIDebugStore.getState().startRequest({
-      traceId,
+  return {
+    sessions: evaluation.error ? [] : evaluation.sessions,
+    meta: {
+      attempts: 1,
+      provider: raw.provider,
+      model: raw.model,
       requestClass,
-      surface: 'plan_builder',
-      startedAt: Date.now(),
-    })
-    requestStarted = true
-
-    const providerStage = tracker.stage('provider_call')
-    const debugRef: { raw?: AIRawResponse } = {}
-    const result = await generateWeekCore({
-      plan,
-      week,
-      previousWeek,
-      profile,
-      wizardConfig,
-      retryInstruction: input.retryInstruction,
-      strictFormatting: input.strictFormatting,
-      recentContext: input.recentContext,
-      traceId,
-      maxTokens: policy.maxTokens,
-      temperature: input.temperature ?? policy.temperature,
-      callLLM: async (req) => {
-        const raw = await provider.call({
-          ...req,
-          allowFallback: policy.allowFallback,
-          onChunk: (chunk) => {
-            chunkCount += 1
-            input.onChunk?.(chunk)
-          },
-        })
-        debugRef.raw = raw
-        return raw
-      },
-    })
-    providerStage.end({ ok: true })
-
-    const normalizeStage = tracker.stage('normalize')
-    normalizeStage.end({ ok: !result.meta.errorClass })
-
-    const repairStage = tracker.stage('repair')
-    repairStage.end({ ok: !result.meta.lastError, error: result.meta.lastError })
-    if (result.meta.lastError) {
-      outcome = 'invalid_schema'
-      const raw = debugRef.raw
-      useAIDebugStore.getState().failRequest(traceId, {
-        provider: raw?.provider ?? result.meta.provider,
-        model: raw?.model ?? result.meta.model,
-        durationMs: raw?.durationMs ?? result.meta.durationMs,
-        errorCode: 'validation_error',
-        retryUsed: raw?.retryUsed ?? result.meta.retryUsed,
-        fallbackUsed: raw?.fallbackUsed ?? result.meta.fallbackUsed,
-        responseCharCount: raw?.text.length,
-        responsePreview: raw ? previewResponse(raw.text) : undefined,
-        finishReason: raw?.finishReason,
-        warnings: [
-          `validation_error:${result.meta.lastError}`,
-          `sessions:${result.meta.validSessionCount ?? 0}/${result.meta.rawSessionCount ?? 0}`,
-          ...(result.meta.repairWarnings ?? []).map((warning) => `${warning.code}:${warning.message}`),
-        ],
-      })
-      return {
-        sessions: [],
-        meta: {
-          ...result.meta,
-          provider: provider.name,
-          chunkCount,
-          stageTimings: tracker.timings(),
-        },
-      }
-    }
-
-    const raw = debugRef.raw
-    useAIDebugStore.getState().completeRequest(traceId, {
-      provider: raw?.provider ?? result.meta.provider,
-      model: raw?.model ?? result.meta.model,
-      durationMs: raw?.durationMs ?? result.meta.durationMs,
-      retryUsed: raw?.retryUsed ?? result.meta.retryUsed,
-      fallbackUsed: raw?.fallbackUsed ?? result.meta.fallbackUsed,
-      responseCharCount: raw?.text.length,
-      responsePreview: raw ? previewResponse(raw.text) : undefined,
-      finishReason: raw?.finishReason,
-    })
-    outcome = 'ok'
-    return {
-      sessions: result.sessions,
-      meta: {
-        ...result.meta,
-        provider: provider.name,
-        chunkCount,
-        stageTimings: tracker.timings(),
-      },
-    }
-  } catch (error) {
-    outcome = 'error'
-    const errorCode = error instanceof AIProviderError ? error.code : undefined
-    const message = error instanceof Error ? error.message : String(error)
-    if (requestStarted) {
-      useAIDebugStore.getState().failRequest(traceId, {
-        errorCode: errorCode ?? message,
-      })
-    }
-    return {
-      sessions: [],
-      meta: {
-        attempts: 1,
-        provider: provider.name,
-        requestClass,
-        traceId,
-        lastError: message,
-        chunkCount,
-        stageTimings: tracker.timings(),
-        errorClass: errorCode,
-      },
-    }
-  } finally {
-    tracker.flush(outcome, { weekIndex: week.weekIndex })
+      traceId: raw.traceId ?? input.traceId,
+      lastError: evaluation.error,
+      durationMs: raw.durationMs,
+      retryUsed: raw.retryUsed,
+      fallbackUsed: raw.fallbackUsed,
+      rawSessionCount: evaluation.rawSessionCount,
+      validSessionCount: evaluation.validSessionCount,
+      droppedSessionCount: evaluation.droppedSessionCount,
+      repairedSessionCount: evaluation.repairedSessionCount,
+      movedSessionCount: evaluation.movedSessionCount,
+      addedFallbackCount: evaluation.addedFallbackCount,
+      filteredSportCount: evaluation.filteredSportCount,
+      repairWarnings: evaluation.repairWarnings,
+      errorClass: normalized.meta?.errorClass,
+    },
   }
-}
-
-function previewResponse(text: string): string | undefined {
-  const normalized = text.replace(/\s+/g, ' ').trim()
-  if (!normalized) return undefined
-  return normalized.slice(0, 500)
 }

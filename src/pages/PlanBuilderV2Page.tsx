@@ -479,7 +479,7 @@ export default function PlanBuilderV2Page() {
   const loadMemory = useCoachMemoryStore((s) => s.loadMemory)
   const {
     plan, weeks, issues, status, currentWeekIndex, completedWeeks, failedWeekIndexes, lastError,
-    createDraft, runGeneration, retryFullGeneration, regenerateWeek, regenerateWeeks, retryFailedWeeks, acceptPlan, discard, loadDraft,
+    createDraft, runGeneration, retryFullGeneration, regenerateWeek, regenerateWeeks, retryFailedWeeks, cancelGeneration, acceptPlan, discard, loadDraft,
   } = usePlanBuilderStore()
 
   const [selectedWeekIndex, setSelectedWeekIndex] = useState<number | null>(null)
@@ -680,6 +680,10 @@ export default function PlanBuilderV2Page() {
     await retryFailedWeeks(effectiveAthleteProfile)
   }
 
+  async function handleCancelGeneration() {
+    await cancelGeneration()
+  }
+
   async function handleRetryFullGeneration() {
     if (!effectiveAthleteProfile || isGenerating || status === 'committing') return
     await retryFullGeneration(effectiveAthleteProfile)
@@ -803,6 +807,15 @@ export default function PlanBuilderV2Page() {
                 La generación sigue en segundo plano mientras navegás por la app. Podés volver cuando quieras para revisar el avance.
                 {currentWeekIndex != null && ` Ahora: semana ${currentWeekIndex + 1}.`}
               </p>
+              <button
+                type="button"
+                onClick={() => { void handleCancelGeneration() }}
+                className="mt-3 inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-red-300 transition-all hover:text-red-200"
+                style={{ background: 'rgba(248,113,113,0.08)', border: '1px solid rgba(248,113,113,0.18)' }}
+              >
+                <X size={12} />
+                Detener
+              </button>
             </div>
           )}
         </div>
@@ -849,6 +862,22 @@ export default function PlanBuilderV2Page() {
                   El draft guardado quedó incompleto. Descártalo y vuelve a generar el plan desde el wizard.
                 </p>
                 {lastError && <p className="mt-2 text-xs text-red-400">{lastError}</p>}
+              </div>
+            </div>
+          </div>
+        ) : status === 'cancelled' || plan?.generationState === 'cancelled' ? (
+          <div
+            className="rounded-2xl p-5"
+            style={{ background: 'rgba(251,191,36,0.06)', border: '1px solid rgba(251,191,36,0.18)' }}
+          >
+            <div className="flex items-start gap-3">
+              <X size={18} className="mt-0.5 flex-shrink-0 text-amber-300" />
+              <div>
+                <h2 className="font-display text-base font-bold text-ink">Generación detenida</h2>
+                <p className="mt-1 text-sm text-ink-muted">
+                  Se conservaron las semanas ya generadas. Puedes reintentar las pendientes cuando quieras.
+                </p>
+                {lastError && <p className="mt-2 text-xs text-amber-300">{lastError}</p>}
               </div>
             </div>
           </div>
