@@ -35,7 +35,7 @@ export default function ChatInput({ onSend, disabled, initialValue = '' }: ChatI
         value={value}
         onChange={(event) => setValue(event.target.value)}
         onKeyDown={handleKey}
-        placeholder="Escríbele al coach..."
+        placeholder="Escríbele a RallyIQ..."
         rows={1}
         disabled={disabled}
         className="flex-1 bg-transparent text-sm text-ink placeholder-ink-faint resize-none focus:outline-none py-1.5 px-2 max-h-32 min-h-[42px]"

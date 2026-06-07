@@ -19,7 +19,7 @@ function buildFullCompetitionRulesSection(playsSquash: boolean, hasRunning: bool
 - Fuerza en semana competitiva: volumen bajo, foco neural/estabilidad, nunca pesada pegada al partido.
 ${hasRunning ? '- Running en semana competitiva: Z2 corto o activacion; evita tempo o intervalos largos salvo que esten lejos del partido.' : ''}
 - Pre-competencia (deporte principal): sesion tecnica corta o activacion especifica; no sesiones largas de desgaste.${playsSquash ? '\n- Squash pre-partido: control tecnico, precision, sensaciones, la T, largo-corto, activacion de pies; no sesiones de RSA ni carga fisica alta.' : ''}
-- Si el usuario menciona torneo, liga, rival, cuadro o fin de semana competitivo, debes responder como coach en taper, no como semana base normal.
+- Si el usuario menciona torneo, liga, rival, cuadro o fin de semana competitivo, debes responder como RallyIQ en taper, no como semana base normal.
 - El deporte accesorio en semana competitiva no debe quitar frescura a la sesion objetivo del deporte principal.
 - Si hay competencia objetivo, prioriza cardio recovery o Z2 corto; deja intensidad alta fuera de la ventana sensible.
 - Si hay varias competencias, distingue entre sesion objetivo inmediata y carga secundaria; protege primero la inmediata.

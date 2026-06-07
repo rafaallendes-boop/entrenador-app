@@ -68,7 +68,7 @@ export function buildWeekCreatorPrompt(
     buildRecentHistorySummary(recentHistory),
     buildRecentLogsSummary(recentLogs),
     buildRecentCoachAdviceSummary(context.recentMessages),
-    profile?.coachMemory?.trim() ? `Memoria del coach relevante: ${profile.coachMemory.trim()}` : '',
+    profile?.coachMemory?.trim() ? `Memoria de RallyIQ relevante: ${profile.coachMemory.trim()}` : '',
     input.retryInstruction ? `Corrección del intento anterior:\n${input.retryInstruction}` : '',
     input.strictFormatting
       ? 'Modo estricto: si dudas, prioriza targetDate correcto, fechas válidas, número exacto de sesiones y detalles obligatorios por deporte antes que creatividad.'
@@ -362,7 +362,7 @@ function buildRecentCoachAdviceSummary(messages: ChatContext['recentMessages']):
   if (coachMessages.length === 0) return ''
 
   return [
-    'Consejos recientes del coach que debes intentar respetar si no contradicen la configuración:',
+    'Consejos recientes de RallyIQ que debes intentar respetar si no contradicen la configuración:',
     ...coachMessages.map((message) => `- ${clipForPrompt(message.content, 420)}`),
   ].join('\n')
 }

@@ -38,7 +38,7 @@ export default function LoginScreen() {
           className="mt-5 font-mono text-[9.5px] font-semibold uppercase text-ink-faint"
           style={{ letterSpacing: '0.42em' }}
         >
-          Entrenador AI
+          RallyIQ AI
         </p>
 
         {/* Headline */}
@@ -58,7 +58,7 @@ export default function LoginScreen() {
             </span>
           </h1>
           <p className="mt-3.5 text-[13px] leading-relaxed text-ink-muted">
-            Coach IA para squash, running y fuerza. Tu plan semanal, carga y seguimiento en un solo lugar.
+            RallyIQ AI para squash, running y fuerza. Tu plan semanal, carga y seguimiento en un solo lugar.
           </p>
         </div>
 
@@ -239,7 +239,7 @@ function LogoMark() {
 
 const FEATURES = [
   'Planificación semanal',
-  'Coach IA',
+  'RallyIQ AI',
   'ACWR y carga',
   'Multi-deporte',
   'Offline',

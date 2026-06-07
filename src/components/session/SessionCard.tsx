@@ -138,7 +138,7 @@ export default function SessionCard({ session, compact = false, onDelete }: Sess
             </span>
             {session.source === 'coach' && (
               <span className="rounded-full border border-brand/25 bg-brand/10 px-1.5 py-0.5 text-xs font-medium text-brand-light">
-                Coach
+                RallyIQ
               </span>
             )}
             {subtypeLabel && (
@@ -548,7 +548,7 @@ function SessionFeedbackForm({ session, onUpdate }: SessionFeedbackFormProps) {
       onClick={(e) => e.stopPropagation()}
     >
       <p className="text-sm font-medium text-ink">¿Cómo fue?</p>
-      <p className="mt-1 text-[11px] text-ink-faint">Guarda una señal corta para que el coach lea sensaciones reales de esta sesión.</p>
+      <p className="mt-1 text-[11px] text-ink-faint">Guarda una señal corta para que RallyIQ lea sensaciones reales de esta sesión.</p>
 
       <div className="mt-3">
         <p className="text-[10px] font-medium uppercase tracking-wider text-ink-faint">Rating</p>

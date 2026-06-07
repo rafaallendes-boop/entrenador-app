@@ -512,20 +512,20 @@ function formatError(e: unknown): string {
       case 'unauthorized':
         return 'Tu sesión expiró o no está disponible. Inicia sesión nuevamente e intenta de nuevo.'
       case 'misconfigured':
-        return 'El coach no está configurado correctamente en el servidor.'
+        return 'RallyIQ no está configurado correctamente en el servidor.'
       case 'rate_limit':
         if (e.message.includes('Límite diario')) return e.message
         return `Límite de uso alcanzado en ${e.provider}. Espera unos minutos e intenta de nuevo.`
       case 'timeout':
         return e.message.includes('tardó') || e.message.includes('504') || e.message.includes('502') || e.message.includes('503')
           ? e.message
-          : 'Sin conexión con el coach. Verifica tu internet e intenta de nuevo.'
+          : 'Sin conexión con RallyIQ. Verifica tu internet e intenta de nuevo.'
       case 'parse_error':
-        return 'El coach devolvió una respuesta inesperada. Intenta de nuevo.'
+        return 'RallyIQ devolvió una respuesta inesperada. Intenta de nuevo.'
       default:
-        return `Error del coach (${e.provider}): ${e.message}`
+        return `Error de RallyIQ (${e.provider}): ${e.message}`
     }
   }
   if (e instanceof Error) return e.message
-  return 'Error desconocido al conectar con el coach. Intenta de nuevo.'
+  return 'Error desconocido al conectar con RallyIQ. Intenta de nuevo.'
 }

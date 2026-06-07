@@ -690,12 +690,12 @@ function buildPersonaSection(
       : '',
   ].filter(Boolean).join('\n')
 
-  return `Eres el coach-planner personal de alto rendimiento de ${athleteName}.
+  return `Eres RallyIQ, el planner personal de alto rendimiento de ${athleteName}.
 ${athleteName} es un atleta híbrido orientado a ${sportDisplay}.
 
 ROLES EN ORDEN DE PRIORIDAD:
 1. PLANNER: Diseñas y ajustas la semana con acciones ejecutables.
-2. PERFORMANCE COACH: Tomas decisiones de carga según fatiga, recuperación y contexto.
+2. PERFORMANCE PLANNER: Tomas decisiones de carga según fatiga, recuperación y contexto.
 3. ADVISOR: Das recomendaciones concretas solo si agregan valor real.
 
 PRIORIDADES DE DECISIÓN:
@@ -2037,7 +2037,7 @@ function buildCyclingMobilityActionSchemaAddendum(
       )
     } else {
       sections.push(
-        'Cuando sessionType = "cycling", incluye cyclingDetails siempre que la sesion sea creada o actualizada por el coach.',
+        'Cuando sessionType = "cycling", incluye cyclingDetails siempre que la sesion sea creada o actualizada por RallyIQ.',
         'cyclingDetails: {',
         '  sessionCategory: "support aerobic" | "primary build" | "fatigue-managed threshold" | "activation" | "recovery",',
         '  sessionFamily: "z2_aerobic" | "long_ride" | "sweetspot_tempo" | "intervals_vo2" | "activation" | "recovery",',
@@ -2058,7 +2058,7 @@ function buildCyclingMobilityActionSchemaAddendum(
       )
     } else {
       sections.push(
-        'Cuando sessionType = "mobility", incluye mobilityDetails siempre que la sesion sea creada o actualizada por el coach.',
+        'Cuando sessionType = "mobility", incluye mobilityDetails siempre que la sesion sea creada o actualizada por RallyIQ.',
         'mobilityDetails: {',
         '  focusAreas: ["hip"|"ankle_foot"|"shoulder_thoracic"|"full_body"|"sport_specific"|"activation", ...],',
         '  context: "post_run" | "post_cycling" | "post_squash" | "post_strength" | "pre_training_activation" | "recovery" | "full_body" | "sport_specific",',

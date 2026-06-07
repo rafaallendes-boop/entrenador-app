@@ -345,7 +345,7 @@ export default function WeeklyView() {
                 className="inline-flex items-center gap-1.5 rounded-lg bg-brand/10 px-3 py-1.5 text-[11px] font-medium text-brand-light transition-colors disabled:cursor-not-allowed disabled:opacity-60 hover:bg-brand/15"
               >
                 <MessageSquareText size={13} />
-                {isGeneratingNote ? 'Generando...' : currentWeekSummary.coachNote ? 'Regenerar coach note' : 'Generar coach note'}
+                {isGeneratingNote ? 'Generando...' : currentWeekSummary.coachNote ? 'Regenerar nota RallyIQ' : 'Generar nota RallyIQ'}
               </button>
             )}
           </div>
@@ -384,8 +384,8 @@ export default function WeeklyView() {
 
       <ConfirmDialog
         open={pendingCoachDeleteId != null}
-        title="Eliminar sesion del coach"
-        message="Esta sesion del coach se eliminara solo para esta semana. Esta accion no se puede deshacer."
+        title="Eliminar sesion de RallyIQ"
+        message="Esta sesion de RallyIQ se eliminara solo para esta semana. Esta accion no se puede deshacer."
         confirmLabel="Eliminar"
         destructive
         onCancel={() => setPendingCoachDeleteId(null)}

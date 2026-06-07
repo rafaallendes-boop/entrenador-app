@@ -102,7 +102,7 @@ export default function WeeklyActionCenterCard({ summary, onSelectAction, onOpen
             <div>
               <p className="text-sm font-semibold text-ink">Semana bajo control</p>
               <p className="mt-1 text-sm text-ink-muted leading-relaxed">
-                No hay una acción crítica por ejecutar. Mantén el check-in y usa el coach si cambia tu fatiga o disponibilidad.
+                No hay una acción crítica por ejecutar. Mantén el check-in y usa RallyIQ si cambia tu fatiga o disponibilidad.
               </p>
             </div>
           </div>

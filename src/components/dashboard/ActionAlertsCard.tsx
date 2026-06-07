@@ -45,7 +45,7 @@ export default function ActionAlertsCard({ summary, onSelectAction, onOpenAutoAd
           <div className="min-w-0">
             <p className="text-sm font-semibold text-ink">Sin alertas urgentes</p>
             <p className="mt-1 text-xs text-ink-muted leading-relaxed">
-              La semana viene alineada. Mantén el check-in al día para seguir afinando el coaching.
+              La semana viene alineada. Mantén el check-in al día para seguir afinando con RallyIQ.
             </p>
           </div>
         </div>

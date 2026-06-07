@@ -449,12 +449,12 @@ export default function PricingPage() {
     { text: 'Historial', note: 'últimos 30 días' },
     { text: '1 deporte', note: 'a elegir' },
     { text: 'App PWA offline' },
-    { text: 'Coach AI', dim: true },
+    { text: 'RallyIQ AI', dim: true },
     { text: 'Propuestas automáticas', dim: true },
   ]
 
   const proFeatures: TierFeature[] = [
-    { text: 'Coach AI ilimitado 24/7' },
+    { text: 'RallyIQ AI ilimitado 24/7' },
     { text: 'Propuestas automáticas con diff' },
     { text: 'Los 5 deportes' },
     { text: 'Historial', note: 'ilimitado' },
@@ -464,12 +464,12 @@ export default function PricingPage() {
   ]
 
   const eliteFeatures: TierFeature[] = [
-    { text: 'Sesión 1-a-1 mensual con coach' },
-    { text: 'Compartir con coach humano' },
+    { text: 'Sesión 1-a-1 mensual con entrenador' },
+    { text: 'Compartir con entrenador humano' },
     { text: 'Periodización por competencia' },
     { text: 'Export CSV / JSON sin caducidad' },
     { text: 'API pública (Garmin, Strava, Whoop)' },
-    { text: 'Vista TV / coach-mode' },
+    { text: 'Vista TV / RallyIQ mode' },
     { text: 'Priority support < 12h' },
   ]
 
@@ -488,7 +488,7 @@ export default function PricingPage() {
             </span>
             <h1>Un plan. Sin <span className="hl">letra pequeña.</span></h1>
             <p className="lede">
-              Empieza gratis. Sube a Pro cuando necesites el coach IA. Cancela en 2 clicks, cuando quieras, sin preguntas.
+              Empieza gratis. Sube a Pro cuando necesites RallyIQ AI. Cancela en 2 clicks, cuando quieras, sin preguntas.
             </p>
             <div className="billing-toggle">
               <button className={!isAnnual ? 'on' : ''} onClick={() => setIsAnnual(false)}>Mensual</button>
@@ -517,7 +517,7 @@ export default function PricingPage() {
             />
             <TierCard
               name="Pro"
-              tagline="Para el atleta serio que necesita coach IA sin fricción."
+              tagline="Para el atleta serio que necesita RallyIQ AI sin fricción."
               monthlyPrice={12}
               annualPrice={10}
               isAnnual={isAnnual}
@@ -531,7 +531,7 @@ export default function PricingPage() {
             />
             <TierCard
               name="Elite"
-              tagline="Para competitivos que además tienen coach humano."
+              tagline="Para competitivos que además tienen entrenador humano."
               monthlyPrice={29}
               annualPrice={23}
               isAnnual={isAnnual}
@@ -573,7 +573,7 @@ export default function PricingPage() {
                 </svg>
               </div>
               <h4>5 días de Pro gratis</h4>
-              <p>Prueba el coach IA completo al registrarte. Sin tarjeta. Vuelve a Starter si no te convence.</p>
+              <p>Prueba RallyIQ AI completo al registrarte. Sin tarjeta. Vuelve a Starter si no te convence.</p>
             </div>
             <div className="g-item">
               <div className="g-ic">
@@ -613,11 +613,11 @@ export default function PricingPage() {
                 <tr><td>Periodización por competencia</td><td className="dash">—</td><td className="dash">—</td><td><span className="chk">✓</span></td></tr>
                 <tr><td>Deportes soportados</td><td>1</td><td className="pro">5</td><td>5</td></tr>
 
-                <tr className="section-row"><td colSpan={4}>Coach AI</td></tr>
+                <tr className="section-row"><td colSpan={4}>RallyIQ AI</td></tr>
                 <tr><td>Chat con contexto</td><td className="dash">—</td><td className="pro"><span className="chk brand">Ilimitado</span></td><td><span className="chk">Ilimitado</span></td></tr>
                 <tr><td>Propuestas automáticas</td><td className="dash">—</td><td className="pro"><span className="chk brand">✓</span></td><td><span className="chk">✓</span></td></tr>
                 <tr><td>Razonamiento transparente</td><td className="dash">—</td><td className="pro"><span className="chk brand">✓</span></td><td><span className="chk">✓</span></td></tr>
-                <tr><td>Sesión mensual con coach humano</td><td className="dash">—</td><td className="dash">—</td><td><span className="chk">✓</span></td></tr>
+                <tr><td>Sesión mensual con entrenador humano</td><td className="dash">—</td><td className="dash">—</td><td><span className="chk">✓</span></td></tr>
 
                 <tr className="section-row"><td colSpan={4}>Analytics & datos</td></tr>
                 <tr><td>Historial</td><td>30 días</td><td className="pro">Ilimitado</td><td>Ilimitado</td></tr>
@@ -626,8 +626,8 @@ export default function PricingPage() {
                 <tr><td>API pública</td><td className="dash">—</td><td className="dash">—</td><td><span className="chk">✓</span></td></tr>
 
                 <tr className="section-row"><td colSpan={4}>Colaboración & soporte</td></tr>
-                <tr><td>Compartir con coach humano</td><td className="dash">—</td><td className="dash">—</td><td><span className="chk">✓</span></td></tr>
-                <tr><td>Vista TV / coach-mode</td><td className="dash">—</td><td className="dash">—</td><td><span className="chk">✓</span></td></tr>
+                <tr><td>Compartir con entrenador humano</td><td className="dash">—</td><td className="dash">—</td><td><span className="chk">✓</span></td></tr>
+                <tr><td>Vista TV / RallyIQ mode</td><td className="dash">—</td><td className="dash">—</td><td><span className="chk">✓</span></td></tr>
                 <tr><td>Soporte</td><td>Comunidad</td><td className="pro">Email &lt; 48h</td><td>Priority &lt; 12h</td></tr>
               </tbody>
             </table>
@@ -658,7 +658,7 @@ export default function PricingPage() {
               />
               <FaqItem
                 question="¿Funciona offline?"
-                answer="Sí. RallyIQ es una PWA local-first. Registras sesiones, haces check-in y ves tu plan sin conexión. Cuando vuelves a tener señal, sincroniza en segundo plano. El coach IA sí requiere conexión."
+                answer="Sí. RallyIQ es una PWA local-first. Registras sesiones, haces check-in y ves tu plan sin conexión. Cuando vuelves a tener señal, sincroniza en segundo plano. RallyIQ AI sí requiere conexión."
               />
               <FaqItem
                 question="¿Hay descuento por pago anual?"
@@ -688,7 +688,7 @@ export default function PricingPage() {
             <div className="cta-grid-bg" />
             <span className="p-label brand" style={{ display: 'inline-flex' }}>Empieza hoy</span>
             <h2>14 días de <span className="hl">Pro,</span> sin tarjeta.</h2>
-            <p>Crea la cuenta, prueba el coach IA, decide después.</p>
+            <p>Crea la cuenta, prueba RallyIQ AI, decide después.</p>
             <div className="cta-act">
               <a href="#" className="p-btn p-btn-primary p-btn-lg">Crear cuenta gratis <span>→</span></a>
               <Link to="/features" className="p-btn p-btn-ghost p-btn-lg">Ver funcionalidades</Link>
@@ -708,7 +708,7 @@ export default function PricingPage() {
                 </span>
                 RallyIQ
               </Link>
-              <p>Entrenador AI para atletas de raqueta y endurance. Hecho por atletas, para atletas.</p>
+              <p>RallyIQ AI para atletas de raqueta y endurance. Hecho por atletas, para atletas.</p>
             </div>
             <div className="footer-col">
               <h4>Producto</h4>

@@ -113,7 +113,7 @@ function Hero({ onPrimary }: { onPrimary: () => void }) {
             className="text-[2.75rem] font-extrabold leading-[1.04] tracking-[-0.035em] text-white md:text-[4.25rem]"
             style={{ fontFamily: FONT_DISPLAY, marginBottom: 20 }}
           >
-            Un coach de élite,<br />
+            RallyIQ de élite,<br />
             en tu{' '}
             <span style={{ color: BRAND }}>bolsillo.</span>
           </h1>
@@ -155,7 +155,7 @@ function Hero({ onPrimary }: { onPrimary: () => void }) {
             <ProofStat value="5" unit=" deportes" label="Cobertura" />
             <ProofStat value="< 90" unit=" s" label="Log por sesión" />
             <ProofStat value="100" unit="%" label="Local-first PWA" />
-            <ProofStat value="24/7" label="Coach disponible" />
+            <ProofStat value="24/7" label="RallyIQ disponible" />
           </div>
         </div>
 
@@ -280,7 +280,7 @@ function PhoneMockup() {
           meta={[['Vol', '24′'], ['Int', 'Alta'], ['Zona', '4']]}
         />
 
-        {/* Coach proposal */}
+        {/* RallyIQ proposal */}
         <div
           style={{
             background: 'rgba(24,24,24,0.6)',
@@ -290,7 +290,7 @@ function PhoneMockup() {
         >
           <div className="flex justify-between" style={{ marginBottom: 10 }}>
             <span style={{ fontFamily: FONT_MONO, fontSize: 9, letterSpacing: '0.24em', textTransform: 'uppercase', color: FORGE_LIME, fontWeight: 700 }}>
-              PROPUESTA · COACH
+              PROPUESTA · RALLYIQ
             </span>
             <span style={{ fontFamily: FONT_MONO, fontSize: 9, letterSpacing: '0.18em', textTransform: 'uppercase', color: INK_FAINT }}>
               hace 3 min
@@ -476,7 +476,7 @@ function HowItWorks() {
           <Step
             num="03"
             phase="Ajustar"
-            title="El coach propone"
+            title="RallyIQ propone"
             body="La IA lee tu carga, tu fatiga y tu historial. Propone cambios concretos — no consejos vagos. Aplicas con un tap."
             accent={FORGE_CYAN}
             icon={
@@ -753,13 +753,13 @@ function FeatureTeaser() {
             className="max-w-[320px] text-[14px] leading-[1.55]"
             style={{ color: INK_MUTED }}
           >
-            RallyIQ combina planificación, registro, coach IA y analytics en un solo flujo diseñado para el atleta que ya sabe lo que hace.
+            RallyIQ combina planificación, registro, IA y analytics en un solo flujo diseñado para el atleta que ya sabe lo que hace.
           </p>
         </div>
 
         {/* 2-card grid */}
         <div className="grid grid-cols-1 gap-3.5 md:grid-cols-2">
-          {/* Coach AI */}
+          {/* RallyIQ AI */}
           <div
             className="relative overflow-hidden rounded-2xl p-8"
             style={{
@@ -771,7 +771,7 @@ function FeatureTeaser() {
               className="mb-5 inline-block text-[9px] font-bold uppercase tracking-[0.3em]"
               style={{ fontFamily: FONT_MONO, color: BRAND_LIGHT }}
             >
-              Coach AI
+              RallyIQ AI
             </div>
             {/* Mini chat */}
             <div
@@ -791,7 +791,7 @@ function FeatureTeaser() {
               Propuestas reales, no consejos vagos
             </h3>
             <p className="text-[13px] leading-[1.55]" style={{ color: INK_MUTED }}>
-              El coach IA genera cambios concretos a tu plan — volumen, intensidad, descansos. Aplicas con un tap o descartas.
+              RallyIQ AI genera cambios concretos a tu plan — volumen, intensidad, descansos. Aplicas con un tap o descartas.
             </p>
           </div>
 
@@ -935,7 +935,7 @@ function QuoteBlock() {
 
           {/* Metrics */}
           <div className="grid grid-cols-2 gap-4">
-            <MetricCard value="+18" unit="%" label="Adherencia" color={FORGE_LIME} note="Atletas con coach IA completan más del plan que con planillas." />
+            <MetricCard value="+18" unit="%" label="Adherencia" color={FORGE_LIME} note="Atletas con RallyIQ AI completan más del plan que con planillas." />
             <MetricCard value="90" unit="s" label="Log promedio" color={BRAND_LIGHT} note="Registrar una sesión completa — sin teclado, mínima fricción." />
             <div
               className="col-span-2 rounded-xl p-4 md:p-5"
@@ -947,7 +947,7 @@ function QuoteBlock() {
               >
                 {SPORTS.length}
                 <span style={{ color: INK_FAINT, fontSize: 14, fontWeight: 500 }}> deportes ·</span>{' '}
-                24<span style={{ color: INK_FAINT, fontSize: 14, fontWeight: 500 }}>/7 coach ·</span>{' '}
+                24<span style={{ color: INK_FAINT, fontSize: 14, fontWeight: 500 }}>/7 RallyIQ ·</span>{' '}
                 0<span style={{ color: INK_FAINT, fontSize: 14, fontWeight: 500 }}> permanencia</span>
               </div>
               <div
@@ -1161,7 +1161,7 @@ function Footer() {
             className="mt-3 text-[13px] leading-relaxed"
             style={{ color: INK_MUTED }}
           >
-            Entrenador AI para atletas de raqueta y endurance. Hecho por atletas, para atletas.
+            RallyIQ AI para atletas de raqueta y endurance. Hecho por atletas, para atletas.
           </p>
         </div>
 

@@ -29,7 +29,8 @@ import { useTrainingStore } from '../store/useTrainingStore'
 import { clearStoredChatSessionId, getOrCreateChatSessionId, setStoredChatSessionId } from '../utils/chatSession'
 import { derivePlanGenerationState } from './planBuilder/generationState'
 
-const BACKUP_APP_NAME = 'Entrenador' as const
+const BACKUP_APP_NAME = 'RallyIQ' as const
+const LEGACY_BACKUP_APP_NAME = 'Entrenador' as const
 const CURRENT_BACKUP_VERSION = 3 as const
 const MIN_SUPPORTED_BACKUP_VERSION = 1 as const
 
@@ -83,7 +84,7 @@ const COACH_ACTION_TYPES = new Set([
 ])
 
 export interface AppDataExport {
-  app: typeof BACKUP_APP_NAME
+  app: typeof BACKUP_APP_NAME | typeof LEGACY_BACKUP_APP_NAME
   version: typeof CURRENT_BACKUP_VERSION
   exportedAt: string
   exportedFromAppVersion: string
@@ -100,7 +101,7 @@ export interface AppDataExport {
 }
 
 export interface AthleteProfileTestExport {
-  app: typeof BACKUP_APP_NAME
+  app: typeof BACKUP_APP_NAME | typeof LEGACY_BACKUP_APP_NAME
   type: 'athlete_profile_test_export'
   version: 1
   exportedAt: string
@@ -478,7 +479,7 @@ export async function importAppDataFromFile(
 
 async function readBackupFromFile(file: File): Promise<AppDataExport> {
   if (!file.name.toLowerCase().endsWith('.json')) {
-    throw new Error('El archivo debe ser un JSON exportado por Entrenador.')
+    throw new Error('El archivo debe ser un JSON exportado por RallyIQ.')
   }
 
   const raw = await file.text()
@@ -1627,8 +1628,8 @@ function normalizeBackupEnvelope(value: unknown): {
     throw new Error('Formato de backup invalido.')
   }
 
-  if (value.app !== BACKUP_APP_NAME) {
-    throw new Error('El archivo no corresponde a un backup de Entrenador.')
+  if (value.app !== BACKUP_APP_NAME && value.app !== LEGACY_BACKUP_APP_NAME) {
+    throw new Error('El archivo no corresponde a un backup de RallyIQ.')
   }
 
   if (typeof value.version !== 'number' || !Number.isInteger(value.version)) {

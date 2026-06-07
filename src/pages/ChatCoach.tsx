@@ -49,9 +49,9 @@ function ContextualProfileBanner({
     message = 'Completa tu perfil para personalizar nombre, deportes, ritmos, cargas y restricciones.'
   } else if (completeness.state === 'missing_sports') {
     message =
-      'Indica tu deporte principal y, si aplica, tus deportes secundarios para que el coach sepa que datos pedirte.'
+      'Indica tu deporte principal y, si aplica, tus deportes secundarios para que RallyIQ sepa que datos pedirte.'
   } else {
-    message = `Faltan ${missingText} en tu perfil. El coach seguira usando valores genericos para esa parte.`
+    message = `Faltan ${missingText} en tu perfil. RallyIQ seguira usando valores genericos para esa parte.`
     if (recommendedText) message += ` Tambien puedes agregar ${recommendedText}.`
   }
 
@@ -317,8 +317,8 @@ export default function ChatCoach() {
         <div className="mx-auto flex w-full max-w-3xl items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-2">
             <div className="min-w-0">
-              <p className="font-display text-[10px] font-semibold uppercase tracking-[0.22em] text-ink-faint">AI coach chat</p>
-              <h1 className="text-xl font-bold text-ink">Coach</h1>
+              <p className="font-display text-[10px] font-semibold uppercase tracking-[0.22em] text-ink-faint">RallyIQ chat</p>
+              <h1 className="text-xl font-bold text-ink">RallyIQ</h1>
               <p className="mt-0.5 text-[11px] text-ink-faint">Perfil activo: {athleteFirstName}</p>
               <p className="mt-0.5 text-xs text-ink-muted">Planner · Advisor</p>
             </div>
@@ -415,7 +415,7 @@ export default function ChatCoach() {
             <div className="hud-border flex items-start gap-2 rounded-xl border border-white/5 bg-[linear-gradient(145deg,rgba(255,77,0,0.14),rgba(14,14,14,0.96))] px-3 py-2 [--hud-accent-start:rgba(255,122,51,0.28)] [--hud-accent-end:rgba(255,77,0,0.12)]">
               <span className="mt-0.5 flex-shrink-0 text-xs text-brand-light">i</span>
               <span className="flex-1 text-xs leading-relaxed text-[#ffd2bf]">
-                Plan Builder: el prompt fue enviado automáticamente al coach para generar tu semana.
+                Plan Builder: el prompt fue enviado automáticamente a RallyIQ para generar tu semana.
               </span>
             </div>
           )}
@@ -433,7 +433,7 @@ export default function ChatCoach() {
               <div className="flex h-14 w-14 items-center justify-center rounded-full border border-forge-cyan/20 bg-forge-cyan/10 shadow-[0_0_40px_-18px_rgba(0,227,253,0.6)]">
                 <span className="text-2xl">🏋️</span>
               </div>
-              <p className="font-display text-lg font-medium text-ink">Tu coach-planner</p>
+              <p className="font-display text-lg font-medium text-ink">Tu planner RallyIQ</p>
               <p className="text-sm leading-relaxed text-ink-muted">
                 Pideme que cree tu semana, agregue sesiones o ajuste tu plan. Tambien puedo analizar tu progreso y
                 darte recomendaciones.
@@ -486,9 +486,9 @@ export default function ChatCoach() {
                     <Spinner />
                     <span>
                       {responsePhase === 'connecting'
-                        ? 'Conectando con el coach…'
+                        ? 'Conectando con RallyIQ…'
                         : responsePhase === 'processing'
-                          ? 'Coach procesando contexto…'
+                          ? 'RallyIQ procesando contexto…'
                           : 'Pensando respuesta…'}
                     </span>
                   </div>

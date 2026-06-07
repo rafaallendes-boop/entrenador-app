@@ -65,15 +65,15 @@ function FeaturesHero() {
             </h1>
             <p style={{ fontSize: 18, lineHeight: 1.55, color: INK_MUTED, maxWidth: '56ch' }}>
               RallyIQ no es otro tracker. Es un sistema cerrado —
-              plan, registro, coach IA y analytics — diseñado para atletas que entrenan
+              plan, registro, RallyIQ AI y analytics — diseñado para atletas que entrenan
               en serio y no tienen tiempo para planillas.
             </p>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            <KpiCard value="05" label="Módulos core" note="Coach · Semana · Check-in · Historial · Analytics" color={BRAND_LIGHT} />
+            <KpiCard value="05" label="Módulos core" note="RallyIQ · Semana · Check-in · Historial · Analytics" color={BRAND_LIGHT} />
             <KpiCard value="05" label="Deportes" note="Squash, running, fuerza, movilidad, ciclismo" color={FORGE_LIME} />
-            <KpiCard value="24/7" unit="" label="Coach disponible" note="Propuestas automáticas según tu carga y fatiga" color={FORGE_CYAN} />
+            <KpiCard value="24/7" unit="" label="RallyIQ disponible" note="Propuestas automáticas según tu carga y fatiga" color={FORGE_CYAN} />
             <KpiCard value="PWA" unit="" label="Local-first" note="Funciona offline. Sincroniza cuando puedes." />
           </div>
         </div>
@@ -123,13 +123,13 @@ function FeatureRow1Coach() {
       <div style={{ maxWidth: 520 }}>
         <div className="label-mono brand flex items-center gap-2 mb-4">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z"/></svg>
-          COACH AI
+          RALLYIQ AI
         </div>
         <h2 style={{ fontFamily: FONT_DISPLAY, fontSize: 38, fontWeight: 700, letterSpacing: '-0.02em', lineHeight: 1.1, margin: '0 0 18px', color: INK }}>
           Propuestas reales, no consejos vagos.
         </h2>
         <p style={{ fontSize: 16, lineHeight: 1.6, color: INK_MUTED, marginBottom: 28 }}>
-          El coach IA lee tu plan, tu adherencia y tu check-in diario. Genera cambios concretos al volumen, intensidad o descansos — con justificación. Aplicas con un tap.
+          RallyIQ AI lee tu plan, tu adherencia y tu check-in diario. Genera cambios concretos al volumen, intensidad o descansos — con justificación. Aplicas con un tap.
         </p>
         <FeatureList items={[
           { title: 'Chat 24/7 con contexto', sub: 'Conoce tu semana, tu historial y tu estado actual. Nada genérico.' },
@@ -138,7 +138,7 @@ function FeatureRow1Coach() {
         ]} accent={BRAND} />
       </div>
 
-      <VisualCard accent={BRAND} tag="COACH · EN VIVO">
+      <VisualCard accent={BRAND} tag="RALLYIQ · EN VIVO">
         <div className="flex flex-col gap-2.5">
           <ChatBub type="u">Mañana tengo match pero dormí mal 3 días.</ChatBub>
           <ChatBub type="a">
@@ -223,7 +223,7 @@ function FeatureRow4Checkin() {
           30 segundos por día. Datos para toda la temporada.
         </h2>
         <p style={{ fontSize: 16, lineHeight: 1.6, color: INK_MUTED, marginBottom: 28 }}>
-          Sueño, RPE del día anterior, dolor/molestias, ánimo. El check-in toma medio minuto — y alimenta cada propuesta del coach.
+          Sueño, RPE del día anterior, dolor/molestias, ánimo. El check-in toma medio minuto — y alimenta cada propuesta de RallyIQ.
         </p>
         <FeatureList items={[
           { title: 'Notificación inteligente', sub: 'Por la mañana, una sola. No te perseguimos.' },
@@ -517,7 +517,7 @@ function FeaturesFooter() {
             <BoltIcon />
             <span style={{ fontFamily: FONT_DISPLAY, fontSize: 15, fontWeight: 900, letterSpacing: '-0.03em', color: '#fff' }}>RallyIQ</span>
           </div>
-          <p style={{ marginTop: 12, fontSize: 13, lineHeight: 1.6, color: INK_MUTED }}>Entrenador AI para atletas de raqueta y endurance. Hecho por atletas, para atletas.</p>
+          <p style={{ marginTop: 12, fontSize: 13, lineHeight: 1.6, color: INK_MUTED }}>RallyIQ AI para atletas de raqueta y endurance. Hecho por atletas, para atletas.</p>
         </div>
         <div className="flex flex-wrap gap-12">
           {[

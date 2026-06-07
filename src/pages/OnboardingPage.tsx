@@ -236,7 +236,7 @@ export default function OnboardingPage() {
       }
       description={
         step === 1
-          ? 'El coach usará esta información para personalizar tus recomendaciones desde el primer día.'
+          ? 'RallyIQ usará esta información para personalizar tus recomendaciones desde el primer día.'
           : step === 2
             ? 'Esto ayuda a priorizar mejor la planificación cuando entrenas más de un deporte.'
             : step === 3

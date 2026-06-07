@@ -303,8 +303,8 @@ export class ProxyProvider implements AIProvider {
         'gemini',
         'timeout',
         options?.abortedByCaller
-          ? 'Solicitud del coach cancelada.'
-          : 'El servidor del coach tardó demasiado en responder. Intenta de nuevo.',
+          ? 'Solicitud de RallyIQ cancelada.'
+          : 'El servidor de RallyIQ tardó demasiado en responder. Intenta de nuevo.',
         !options?.abortedByCaller,
       )
     }
@@ -312,7 +312,7 @@ export class ProxyProvider implements AIProvider {
     return createProviderError(
       'gemini',
       'timeout',
-      'No se pudo conectar con el servidor del coach. Verifica tu conexión.',
+      'No se pudo conectar con el servidor de RallyIQ. Verifica tu conexión.',
       true,
     )
   }

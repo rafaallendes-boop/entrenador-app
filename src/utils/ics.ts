@@ -64,7 +64,7 @@ function sessionToVEVENT(session: Session, uid: string): string {
   ].filter(Boolean).join('\r\n')
 }
 
-export function generateICS(sessions: Session[], calendarName = 'Entrenador — Semana'): string {
+export function generateICS(sessions: Session[], calendarName = 'RallyIQ - Semana'): string {
   const events = sessions
     .filter(s => s.status !== 'skipped')
     .map((s, i) => sessionToVEVENT(s, `${s.id}-${i}`))
@@ -73,7 +73,7 @@ export function generateICS(sessions: Session[], calendarName = 'Entrenador — 
   return [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
-    'PRODID:-//Entrenador App//ES',
+    'PRODID:-//RallyIQ App//ES',
     `X-WR-CALNAME:${escapeICS(calendarName)}`,
     'CALSCALE:GREGORIAN',
     'METHOD:PUBLISH',

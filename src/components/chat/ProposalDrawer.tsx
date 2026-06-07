@@ -101,7 +101,7 @@ export default function ProposalDrawer({
             <h2 className="text-sm font-semibold text-ink">
               {createWeekAction
                 ? `Semana propuesta · ${totalSessions} sesiones`
-                : 'Propuesta del coach'}
+                : 'Propuesta de RallyIQ'}
             </h2>
           </div>
           <button onClick={onClose} className="text-ink-faint hover:text-ink p-1">

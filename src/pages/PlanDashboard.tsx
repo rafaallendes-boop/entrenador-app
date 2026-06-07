@@ -670,7 +670,7 @@ export default function PlanDashboard({ onEdit }: { onEdit: () => void }) {
             }}
           >
             <BarChart2 size={14} />
-            Consultar al coach
+            Consultar a RallyIQ
           </button>
         </div>
 

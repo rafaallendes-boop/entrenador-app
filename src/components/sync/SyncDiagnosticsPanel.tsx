@@ -201,7 +201,7 @@ export default function SyncDiagnosticsPanel({ tierHealthMap, refreshToken, user
             disabled={actionsDisabled}
             className="rounded-lg border border-surface-border px-3 py-1.5 text-[11px] font-medium text-ink-muted transition-colors hover:bg-surface-raised disabled:opacity-50"
           >
-            Reset chat/coach
+            Reset chat/RallyIQ
           </button>
           <button
             type="button"

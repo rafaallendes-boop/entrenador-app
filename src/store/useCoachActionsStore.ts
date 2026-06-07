@@ -543,7 +543,7 @@ async function applyCoachAction(
         source: 'coach',
         type: 'recovery',
         status: 'planned',
-        title: 'Recuperacion activa (coach)',
+        title: 'Recuperacion activa (RallyIQ)',
         durationMin: 30,
         objective: action.reason,
       }))

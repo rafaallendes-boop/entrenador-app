@@ -82,7 +82,7 @@ export default function CoachMessageCard({ message }: CoachMessageCardProps) {
       >
         <div className="mb-4 flex items-center justify-between gap-3">
           <span className="inline-flex items-center rounded-full border border-forge-cyan/20 bg-forge-cyan/10 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-forge-cyan">
-            Canal coach
+            Canal RallyIQ
           </span>
           <ChevronRight size={14} className="flex-shrink-0 text-ink-faint" />
         </div>

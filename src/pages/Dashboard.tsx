@@ -105,7 +105,7 @@ export default function Dashboard() {
 
   const hasTrainingHistory = allWeekSummaries.length > 0 || sessions.length > 0 || currentWeekSummary != null
   const defaultCoachNote = hasTrainingHistory
-    ? `Hola ${athleteFirstName}, ¿cómo viene la semana? Revisa tu semana en curso o solicita al coach que actualice tu plan.`
+    ? `Hola ${athleteFirstName}, ¿cómo viene la semana? Revisa tu semana en curso o solicita a RallyIQ que actualice tu plan.`
     : `Bienvenido${athleteProfile?.name ? `, ${athleteFirstName}` : ''}. Carga tu primera semana de entrenamiento y empieza a registrar tu progreso.`
   const coachNote = currentWeekSummary?.coachNote ?? defaultCoachNote
 
@@ -207,7 +207,7 @@ export default function Dashboard() {
               </span>
             </h1>
             <p className="mt-2.5 max-w-xs text-[13px] leading-relaxed text-ink-faint">
-              Tu centro de control · carga, coach y decisiones en tiempo real.
+              Tu centro de control · carga, RallyIQ y decisiones en tiempo real.
             </p>
           </div>
 
@@ -278,12 +278,12 @@ export default function Dashboard() {
               <span className="mt-0.5 text-base leading-none text-forge-ember">▲</span>
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-semibold text-ink">
-                  Completa tu perfil para mejorar el coach
+                  Completa tu perfil para mejorar RallyIQ
                 </p>
                 <p className="mt-1 text-xs leading-relaxed text-ink-muted">
                   {profileCompleteness.state === 'missing_sports'
-                    ? 'Configura tu deporte principal para que el coach pueda personalizar tus entrenamientos.'
-                    : `Falta: ${profileCompleteness.missing.join(', ')}. Con esos datos el coach propone cargas reales.`}
+                    ? 'Configura tu deporte principal para que RallyIQ pueda personalizar tus entrenamientos.'
+                    : `Falta: ${profileCompleteness.missing.join(', ')}. Con esos datos RallyIQ propone cargas reales.`}
                 </p>
                 <p className="mt-2 text-xs font-medium text-forge-ember">Ir a Ajustes →</p>
               </div>

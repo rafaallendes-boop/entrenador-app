@@ -61,17 +61,17 @@ const CLEARABLE_GROUPS: Array<{
   },
   {
     key: 'chatHistory',
-    title: 'Chat del coach',
-    description: 'Conversaciones guardadas del coach actual y anteriores.',
+    title: 'Chat de RallyIQ',
+    description: 'Conversaciones guardadas de RallyIQ actuales y anteriores.',
   },
   {
     key: 'coachProposals',
-    title: 'Proposals del coach',
+    title: 'Proposals de RallyIQ',
     description: 'Propuestas pendientes, aceptadas o rechazadas.',
   },
   {
     key: 'coachMemory',
-    title: 'Memoria del coach',
+    title: 'Memoria de RallyIQ',
     description: 'Contexto persistente del atleta, lesiones y preferencias.',
   },
 ]
@@ -404,8 +404,8 @@ export default function SettingsPage() {
 
     const firstConfirm = window.confirm(
       currentUser
-        ? 'Esto eliminará TODOS tus datos locales y remotos de Entrenador. Se perderán sesiones, check-ins, chat, proposals y perfil. ¿Quieres continuar?'
-        : 'Esto eliminará TODOS los datos locales de Entrenador en este navegador. No hay sesión activa, así que no se tocará la nube. ¿Quieres continuar?',
+        ? 'Esto eliminará TODOS tus datos locales y remotos de RallyIQ. Se perderán sesiones, check-ins, chat, proposals y perfil. ¿Quieres continuar?'
+        : 'Esto eliminará TODOS los datos locales de RallyIQ en este navegador. No hay sesión activa, así que no se tocará la nube. ¿Quieres continuar?',
     )
     if (!firstConfirm) return
 
@@ -501,7 +501,7 @@ export default function SettingsPage() {
   const handleDeleteSelectedCoachSessions = async () => {
     if (selectedCoachSessionIds.length === 0) return
     const confirmed = window.confirm(
-      `Se eliminaran ${selectedCoachSessionIds.length} entrenamientos creados por el coach. Esta accion no se puede deshacer.`,
+      `Se eliminaran ${selectedCoachSessionIds.length} entrenamientos creados por RallyIQ. Esta accion no se puede deshacer.`,
     )
     if (!confirmed) return
 
@@ -515,8 +515,8 @@ export default function SettingsPage() {
       setSelectedCoachSessionIds([])
       setCoachSessionStatus(
         deleted > 0
-          ? `Se eliminaron ${deleted} entrenamientos del coach.`
-          : 'No se encontraron entrenamientos del coach para eliminar.',
+          ? `Se eliminaron ${deleted} entrenamientos de RallyIQ.`
+          : 'No se encontraron entrenamientos de RallyIQ para eliminar.',
       )
     } finally {
       setIsDeletingCoachSessions(false)
@@ -527,7 +527,7 @@ export default function SettingsPage() {
     <div className="px-4 pt-12 pb-8 space-y-5 md:px-6 md:space-y-6">
       <div>
         <h1 className="text-xl font-bold text-ink mb-1">Ajustes</h1>
-        <p className="text-sm text-ink-muted">Configuracion local, contexto del coach y mantenimiento.</p>
+        <p className="text-sm text-ink-muted">Configuracion local, contexto de RallyIQ y mantenimiento.</p>
       </div>
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
@@ -699,7 +699,7 @@ export default function SettingsPage() {
               <div className="min-w-0 flex-1">
                 <h2 className="text-sm font-semibold text-ink">Debug IA</h2>
                 <p className="text-xs text-ink-muted mt-1 leading-relaxed">
-                  Ultimas solicitudes del coach con trace, proveedor, duracion y resultado tecnico.
+                  Ultimas solicitudes de RallyIQ con trace, proveedor, duracion y resultado tecnico.
                 </p>
               </div>
               <button
@@ -819,9 +819,9 @@ export default function SettingsPage() {
                 <Brain size={16} className="text-brand-light" />
               </div>
               <div>
-                <h2 className="text-sm font-semibold text-ink">Memoria del coach</h2>
+                <h2 className="text-sm font-semibold text-ink">Memoria de RallyIQ</h2>
                 <p className="text-xs text-ink-muted mt-1 leading-relaxed">
-                  Datos persistentes que el coach debe considerar siempre: lesiones, preferencias, torneos o restricciones.
+                  Datos persistentes que RallyIQ debe considerar siempre: lesiones, preferencias, torneos o restricciones.
                 </p>
               </div>
             </div>
@@ -859,7 +859,7 @@ export default function SettingsPage() {
               <div>
                 <h2 className="text-sm font-semibold text-ink">Perfil del atleta</h2>
                 <p className="text-xs text-ink-muted mt-1 leading-relaxed">
-                  Datos estructurados para que el coach proponga ritmos, cargas y semanas más precisos.
+                  Datos estructurados para que RallyIQ proponga ritmos, cargas y semanas más precisos.
                 </p>
               </div>
             </div>
@@ -871,7 +871,7 @@ export default function SettingsPage() {
             )}
             {profileSaved && (
               <p className="mb-3 rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-xs font-semibold text-emerald-300">
-                Perfil guardado. El coach usará estos cambios en la próxima respuesta.
+                Perfil guardado. RallyIQ usará estos cambios en la próxima respuesta.
               </p>
             )}
             <AthleteProfileEditor
@@ -919,7 +919,7 @@ export default function SettingsPage() {
               <div className="min-w-0 flex-1">
                 <h2 className="text-sm font-semibold text-ink">Backup JSON</h2>
                 <p className="text-xs text-ink-muted mt-1 leading-relaxed">
-                  Exporta o restaura sesiones, check-ins, resumenes semanales, chat, proposals y memoria del coach.
+                  Exporta o restaura sesiones, check-ins, resumenes semanales, chat, proposals y memoria de RallyIQ.
                 </p>
               </div>
               <div className="flex w-full flex-col sm:w-auto sm:flex-row gap-2">
@@ -1110,7 +1110,7 @@ export default function SettingsPage() {
                       onChange={(checked) => void handleToggleNotificationPreference('weeklyPlanning', checked)}
                     />
                     <NotificationPreferenceRow
-                      label="Follow-up del coach"
+                      label="Follow-up de RallyIQ"
                       description="Recuerda generar o revisar la nota semanal."
                       checked={notificationPreferences.coachFollowUp}
                       onChange={(checked) => void handleToggleNotificationPreference('coachFollowUp', checked)}
@@ -1161,9 +1161,9 @@ export default function SettingsPage() {
                 <Trash2 size={16} className="text-amber-400" />
               </div>
               <div>
-                <h2 className="text-sm font-semibold text-ink">Entrenamientos del coach</h2>
+                <h2 className="text-sm font-semibold text-ink">Entrenamientos de RallyIQ</h2>
                 <p className="text-xs text-ink-muted mt-1 leading-relaxed">
-                  Elimina sesiones creadas por el coach sin borrar todo el bloque de entrenamiento.
+                  Elimina sesiones creadas por RallyIQ sin borrar todo el bloque de entrenamiento.
                 </p>
               </div>
             </div>
@@ -1200,7 +1200,7 @@ export default function SettingsPage() {
             </div>
 
             {coachSessions.length === 0 ? (
-              <p className="text-xs text-ink-muted">No hay entrenamientos del coach en este rango.</p>
+              <p className="text-xs text-ink-muted">No hay entrenamientos de RallyIQ en este rango.</p>
             ) : (
               <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
                 {coachSessions.map((session) => {
@@ -1228,7 +1228,7 @@ export default function SettingsPage() {
                               {session.date} · {session.timeBlock} · {session.type}
                             </p>
                           </div>
-                          <span className="text-[11px] font-medium text-amber-400">Coach</span>
+                          <span className="text-[11px] font-medium text-amber-400">RallyIQ</span>
                         </div>
                       </div>
                     </label>
@@ -1294,7 +1294,7 @@ export default function SettingsPage() {
                 onClick={() => applyClearPreset({ chatHistory: true, coachProposals: true })}
                 className="px-3 py-2 rounded-xl text-xs font-semibold text-ink hover:bg-surface-raised transition-colors"
               >
-                Solo coach
+                Solo RallyIQ
               </button>
               <button
                 onClick={() => applyClearPreset({})}
@@ -1632,7 +1632,7 @@ function formatGroupList(groups: LocalDataGroup[]): string {
       case 'coachProposals':
         return 'proposals'
       case 'coachMemory':
-        return 'memoria del coach'
+        return 'memoria de RallyIQ'
     }
   })
 

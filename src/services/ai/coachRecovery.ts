@@ -74,7 +74,7 @@ export async function sendWithRecovery(
     throw createProviderError(
       provider.name,
       'parse_error',
-      'El coach devolvio una respuesta con formato invalido en el bloque de acciones. Intenta de nuevo.',
+      'RallyIQ devolvio una respuesta con formato invalido en el bloque de acciones. Intenta de nuevo.',
       true,
     )
   }

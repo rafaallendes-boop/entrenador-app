@@ -4,7 +4,7 @@ import { ROUTES } from '../../constants/routes'
 const tabs = [
   { to: ROUTES.HOME, label: 'Home', icon: 'home' },
   { to: ROUTES.WEEK, label: 'Semana', icon: 'calendar' },
-  { to: ROUTES.CHAT, label: 'Coach', icon: 'chat' },
+  { to: ROUTES.CHAT, label: 'RallyIQ', icon: 'chat' },
   { to: ROUTES.COMPETITION_PLAN, label: 'Plan', icon: 'plan' },
   { to: ROUTES.SETTINGS, label: 'Ajustes', icon: 'settings' },
 ]
