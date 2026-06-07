@@ -315,6 +315,7 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
         completedWeeks: 0,
         failedWeeks: [],
         totalAttempts: 0,
+        heartbeatAt: startedAt,
       },
     }
     try {
@@ -418,6 +419,9 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
       ...plan,
       generationState: 'generating',
       updatedAt,
+      generationSummary: plan.generationSummary
+        ? { ...plan.generationSummary, heartbeatAt: updatedAt }
+        : undefined,
     }
     const nextWeeks = weeks.map((week) => (targetSet.has(week.weekIndex)
       ? {
@@ -514,6 +518,9 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
       ...plan,
       generationState: 'generating',
       updatedAt,
+      generationSummary: plan.generationSummary
+        ? { ...plan.generationSummary, heartbeatAt: updatedAt }
+        : undefined,
     }
     try {
       await persistPlanState(generatingPlan, nextWeeks)

@@ -22,6 +22,18 @@ interface AuthContext {
 
 const JSON_HEADERS = { 'Content-Type': 'application/json' }
 const MAX_WEEKS = 40
+const AUTH_TIMEOUT_MS = 10_000
+const SUPABASE_OP_TIMEOUT_MS = 15_000
+
+function withTimeout<T>(promise: PromiseLike<T>, ms: number, label: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error(`Timeout after ${ms}ms: ${label}`)), ms)
+    Promise.resolve(promise).then(
+      (v) => { clearTimeout(t); resolve(v) },
+      (e) => { clearTimeout(t); reject(e) },
+    )
+  })
+}
 
 function json(statusCode: number, body: object) {
   return { statusCode, headers: JSON_HEADERS, body: JSON.stringify(body) }
@@ -51,25 +63,23 @@ function getSupabaseAnonKey(): string {
   return key
 }
 
-function getSupabaseServiceRoleKey(): string {
-  const key = process.env['SUPABASE_SERVICE_ROLE_KEY']
-  if (!key) throw new Error('SUPABASE_SERVICE_ROLE_KEY no configurada.')
-  return key
-}
-
-async function resolveAuthContext(event: HandlerEvent): Promise<AuthContext> {
+async function resolveAuthContext(event: HandlerEvent): Promise<AuthContext & { token: string }> {
   const token = getBearerToken(event)
   if (!token) throw Object.assign(new Error('Sesión requerida.'), { statusCode: 401 })
 
   const url = getSupabaseUrl()
   const anonKey = getSupabaseAnonKey()
-  const response = await fetch(`${url.replace(/\/$/, '')}/auth/v1/user`, {
-    method: 'GET',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      apikey: anonKey,
-    },
-  })
+  const response = await withTimeout(
+    fetch(`${url.replace(/\/$/, '')}/auth/v1/user`, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        apikey: anonKey,
+      },
+    }),
+    AUTH_TIMEOUT_MS,
+    'auth.getUser',
+  )
   if (!response.ok) throw Object.assign(new Error('Sesión inválida o expirada.'), { statusCode: 401 })
   const user = await response.json().catch(() => ({})) as { id?: unknown; sub?: unknown }
   const userId = typeof user.id === 'string'
@@ -78,7 +88,7 @@ async function resolveAuthContext(event: HandlerEvent): Promise<AuthContext> {
       ? user.sub
       : undefined
   if (!userId) throw Object.assign(new Error('Sesión inválida o expirada.'), { statusCode: 401 })
-  return { userId }
+  return { userId, token }
 }
 
 function isPayload(input: unknown): input is GeneratePlanPayload {
@@ -101,44 +111,47 @@ function createJobId(planId: string): string {
   return `plan-bg-${planId}-${Date.now()}-${Math.random().toString(36).slice(2)}`
 }
 
-function createSupabaseWriter(userId: string): AsyncPlanGenerationWriter {
-  const supabase = createClient(getSupabaseUrl(), getSupabaseServiceRoleKey(), {
+function createSupabaseWriter(userId: string, token: string): AsyncPlanGenerationWriter {
+  const supabase = createClient(getSupabaseUrl(), getSupabaseAnonKey(), {
     auth: { persistSession: false, autoRefreshToken: false },
+    global: { headers: { Authorization: `Bearer ${token}` } },
   })
 
   return {
     async checkCancelled(planId) {
-      const { data, error } = await supabase
-        .from('training_plans')
-        .select('generation_summary')
-        .eq('user_id', userId)
-        .eq('id', planId)
-        .maybeSingle()
+      const { data, error } = await withTimeout(
+        supabase.from('training_plans').select('generation_summary').eq('user_id', userId).eq('id', planId).maybeSingle(),
+        SUPABASE_OP_TIMEOUT_MS,
+        'checkCancelled',
+      )
       if (error) throw error
       return Boolean(
         (data?.generation_summary as { cancelRequested?: boolean } | null)?.cancelRequested,
       )
     },
     async getPlan(planId) {
-      const { data, error } = await supabase
-        .from('training_plans')
-        .select('*')
-        .eq('user_id', userId)
-        .eq('id', planId)
-        .maybeSingle()
+      const { data, error } = await withTimeout(
+        supabase.from('training_plans').select('*').eq('user_id', userId).eq('id', planId).maybeSingle(),
+        SUPABASE_OP_TIMEOUT_MS,
+        'getPlan',
+      )
       if (error) throw error
       return data ? rowToTrainingPlan(data as Record<string, unknown>) : null
     },
     async putPlan(plan) {
-      const { error } = await supabase
-        .from('training_plans')
-        .upsert(trainingPlanToRow(plan, userId), { onConflict: 'id' })
+      const { error } = await withTimeout(
+        supabase.from('training_plans').upsert(trainingPlanToRow(plan, userId), { onConflict: 'id' }),
+        SUPABASE_OP_TIMEOUT_MS,
+        'putPlan',
+      )
       if (error) throw error
     },
     async putWeek(week) {
-      const { error } = await supabase
-        .from('training_plan_weeks')
-        .upsert(trainingPlanWeekToRow(week, userId), { onConflict: 'id' })
+      const { error } = await withTimeout(
+        supabase.from('training_plan_weeks').upsert(trainingPlanWeekToRow(week, userId), { onConflict: 'id' }),
+        SUPABASE_OP_TIMEOUT_MS,
+        'putWeek',
+      )
       if (error) throw error
     },
   }
@@ -162,9 +175,13 @@ export const handler: Handler = async (event) => {
 
   try {
     const auth = await resolveAuthContext(event)
-    const writer = createSupabaseWriter(auth.userId)
+    const writer = createSupabaseWriter(auth.userId, auth.token)
     const jobId = createJobId(body.plan.id)
     const startedAt = Date.now()
+    const planId = body.plan.id
+    const weekCount = body.weeks.length
+    console.log(`[generate-plan] start planId=${planId} weeks=${weekCount} jobId=${jobId}`)
+
     const plan: TrainingPlan = {
       ...body.plan,
       generationState: 'generating',
@@ -182,8 +199,9 @@ export const handler: Handler = async (event) => {
 
     await writer.putPlan(plan)
     await Promise.all(body.weeks.map((week) => writer.putWeek(week)))
+    console.log(`[generate-plan] initial writes ok planId=${planId}`)
 
-    await runAsyncPlanGeneration({
+    const result = await runAsyncPlanGeneration({
       plan,
       weeks: body.weeks,
       profile: body.profile,
@@ -196,12 +214,19 @@ export const handler: Handler = async (event) => {
       callLLM: callAnthropicForWeek,
     })
 
+    const finalState = result.plan.generationState
+    const completed = result.plan.generationSummary?.completedWeeks ?? 0
+    const failed = result.plan.generationSummary?.failedWeeks?.length ?? 0
+    const durationMs = Date.now() - startedAt
+    console.log(`[generate-plan] done planId=${planId} state=${finalState} completed=${completed} failed=${failed} durationMs=${durationMs}`)
+
     return json(202, { ok: true, jobId })
   } catch (error) {
     const statusCode = typeof (error as { statusCode?: unknown }).statusCode === 'number'
       ? (error as { statusCode: number }).statusCode
       : 500
     const message = error instanceof Error ? error.message : String(error)
+    console.error(`[generate-plan] error planId=${body?.plan?.id ?? 'unknown'}: ${message}`)
     return json(statusCode, { error: message })
   }
 }

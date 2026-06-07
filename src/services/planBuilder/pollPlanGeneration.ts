@@ -40,7 +40,8 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
 }
 
 export function derivePollingSnapshot(plan: TrainingPlan, weeks: TrainingPlanWeek[], now = Date.now(), stalledAfterMs = DEFAULT_STALLED_AFTER_MS): PlanGenerationSnapshot {
-  const heartbeatAt = plan.generationSummary?.heartbeatAt
+  // Fall back to startedAt when the background function hasn't written a heartbeat yet.
+  const heartbeatAt = plan.generationSummary?.heartbeatAt ?? plan.generationSummary?.startedAt
   const isTerminal = TERMINAL_STATES.has(plan.generationState)
   const isStalled = plan.generationState === 'generating'
     && typeof heartbeatAt === 'number'
