@@ -2,6 +2,7 @@ import type { AthleteProfile, PlanWizardConfig } from '../../types'
 import type { AIRawResponse, AIRequest } from '../ai/types'
 import type { PlanGenerationSummary, TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
 import { generateWeekCore } from './generateWeekCore'
+import { countReadyWeeks, isReadyWeek, sortWeeks } from './weekUtils'
 
 export interface AsyncPlanGenerationWriter {
   getPlan(planId: string): Promise<TrainingPlan | null>
@@ -33,18 +34,6 @@ export interface AsyncPlanGenerationResult {
 
 const DEFAULT_MAX_TOKENS = 3500
 const DEFAULT_TEMPERATURE = 0.25
-
-function sortWeeks(weeks: TrainingPlanWeek[]): TrainingPlanWeek[] {
-  return [...weeks].sort((a, b) => a.weekIndex - b.weekIndex)
-}
-
-function isReadyWeek(week: TrainingPlanWeek): boolean {
-  return (week.status === 'draft' || week.status === 'accepted') && week.sessions.length > 0
-}
-
-function countReadyWeeks(weeks: TrainingPlanWeek[]): number {
-  return weeks.filter(isReadyWeek).length
-}
 
 function failedWeeks(weeks: TrainingPlanWeek[]): number[] {
   return weeks

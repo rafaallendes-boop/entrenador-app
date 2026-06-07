@@ -22,6 +22,7 @@ import {
   runPlanGenerationJob,
 } from '../services/planBuilder/generationJobRunner'
 import { buildPlanBuilderRecentContext } from '../services/planBuilder/recentContext'
+import { countReadyWeeks, sortWeeks } from '../services/planBuilder/weekUtils'
 import { pollPlanGeneration, type PlanGenerationSnapshot } from '../services/planBuilder/pollPlanGeneration'
 import { triggerBackgroundGeneration } from '../services/planBuilder/triggerBackgroundGeneration'
 import { pushTrainingPlan, pushTrainingPlanWeeks } from '../services/syncService'
@@ -85,18 +86,6 @@ function buildGenerationFailureMessage(failedWeekIndexes: number[]): string | nu
     return `No se pudo generar la semana ${failedWeekIndexes[0] + 1}. Regénérala para continuar.`
   }
   return `No se pudieron generar ${failedWeekIndexes.length} semanas. Regénéralas para continuar.`
-}
-
-function isReadyWeek(week: TrainingPlanWeek): boolean {
-  return week.status === 'draft' && week.sessions.length > 0
-}
-
-function countReadyWeeks(weeks: TrainingPlanWeek[]): number {
-  return weeks.filter(isReadyWeek).length
-}
-
-function sortWeeks(weeks: TrainingPlanWeek[]): TrainingPlanWeek[] {
-  return [...weeks].sort((a, b) => a.weekIndex - b.weekIndex)
 }
 
 function toBuilderStatus(generationState: TrainingPlan['generationState']): PlanBuilderStatus {

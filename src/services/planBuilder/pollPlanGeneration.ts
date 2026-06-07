@@ -2,6 +2,7 @@ import { db } from '../../db/db'
 import type { TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
 import { supabase } from '../auth'
 import { rowToTrainingPlan, rowToTrainingPlanWeek } from './planRows'
+import { sortWeeks } from './weekUtils'
 
 export interface PlanGenerationSnapshot {
   plan: TrainingPlan
@@ -21,10 +22,6 @@ export interface PollPlanGenerationInput {
 const DEFAULT_INTERVAL_MS = 4_000
 const DEFAULT_STALLED_AFTER_MS = 3 * 60_000
 const TERMINAL_STATES = new Set<TrainingPlan['generationState']>(['complete', 'partial', 'failed', 'cancelled'])
-
-function sortWeeks(weeks: TrainingPlanWeek[]): TrainingPlanWeek[] {
-  return [...weeks].sort((a, b) => a.weekIndex - b.weekIndex)
-}
 
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
