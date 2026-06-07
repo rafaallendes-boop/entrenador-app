@@ -41,7 +41,7 @@ export async function triggerBackgroundGeneration(
     body: JSON.stringify(input),
   })
   const payload = await response.json().catch(() => ({})) as { jobId?: string; error?: string }
-  if (!response.ok && response.status !== 202) {
+  if (!response.ok) {
     throw new Error(payload.error ?? `No se pudo iniciar la generación async (${response.status}).`)
   }
   return { jobId: payload.jobId }

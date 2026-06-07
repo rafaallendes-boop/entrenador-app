@@ -680,10 +680,6 @@ export default function PlanBuilderV2Page() {
     await retryFailedWeeks(effectiveAthleteProfile)
   }
 
-  async function handleCancelGeneration() {
-    await cancelGeneration()
-  }
-
   async function handleRetryFullGeneration() {
     if (!effectiveAthleteProfile || isGenerating || status === 'committing') return
     await retryFullGeneration(effectiveAthleteProfile)
@@ -809,7 +805,7 @@ export default function PlanBuilderV2Page() {
               </p>
               <button
                 type="button"
-                onClick={() => { void handleCancelGeneration() }}
+                onClick={() => { void cancelGeneration() }}
                 className="mt-3 inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-red-300 transition-all hover:text-red-200"
                 style={{ background: 'rgba(248,113,113,0.08)', border: '1px solid rgba(248,113,113,0.18)' }}
               >

@@ -173,9 +173,9 @@ export const handler: Handler = async (event) => {
         startedAt,
         jobId,
         strategy: 'single',
-        completedWeeks: body.weeks.filter((week) => week.status === 'draft' && week.sessions.length > 0).length,
-        failedWeeks: body.weeks.filter((week) => week.status === 'error').map((week) => week.weekIndex),
-        totalAttempts: body.weeks.reduce((sum, week) => sum + (week.generationMeta.attempts ?? 0), 0),
+        completedWeeks: 0,
+        failedWeeks: [],
+        totalAttempts: 0,
         heartbeatAt: startedAt,
       },
     }
