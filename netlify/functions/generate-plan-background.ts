@@ -107,6 +107,18 @@ function createSupabaseWriter(userId: string): AsyncPlanGenerationWriter {
   })
 
   return {
+    async checkCancelled(planId) {
+      const { data, error } = await supabase
+        .from('training_plans')
+        .select('generation_summary')
+        .eq('user_id', userId)
+        .eq('id', planId)
+        .maybeSingle()
+      if (error) throw error
+      return Boolean(
+        (data?.generation_summary as { cancelRequested?: boolean } | null)?.cancelRequested,
+      )
+    },
     async getPlan(planId) {
       const { data, error } = await supabase
         .from('training_plans')

@@ -5,6 +5,8 @@ import { generateWeekCore } from './generateWeekCore'
 import { countReadyWeeks, isReadyWeek, sortWeeks } from './weekUtils'
 
 export interface AsyncPlanGenerationWriter {
+  /** Consulta ligera opcional: solo lee cancelRequested. Si no está, usa getPlan. */
+  checkCancelled?: (planId: string) => Promise<boolean>
   getPlan(planId: string): Promise<TrainingPlan | null>
   putPlan(plan: TrainingPlan): Promise<void>
   putWeek(week: TrainingPlanWeek): Promise<void>
@@ -199,10 +201,18 @@ export async function runAsyncPlanGeneration(input: RunAsyncPlanGenerationInput)
     : weeks.map((week) => week.weekIndex)
 
   for (const weekIndex of targetWeekIndexes) {
-    const freshPlan = await input.writer.getPlan(plan.id)
-    if (freshPlan?.generationSummary?.cancelRequested) {
+    let cancelRequested = false
+    try {
+      cancelRequested = input.writer.checkCancelled
+        ? await input.writer.checkCancelled(plan.id)
+        : Boolean((await input.writer.getPlan(plan.id))?.generationSummary?.cancelRequested)
+    } catch {
+      // No se pudo leer el estado de cancelación — continuar generando
+    }
+
+    if (cancelRequested) {
       const timestamp = getNow()
-      plan = buildPlanCheckpoint(freshPlan, weeks, {
+      plan = buildPlanCheckpoint(plan, weeks, {
         generationState: 'cancelled',
         jobId: input.jobId,
         startedAt,
@@ -221,7 +231,7 @@ export async function runAsyncPlanGeneration(input: RunAsyncPlanGenerationInput)
     const generatingWeek = makeGeneratingWeek(target, getNow())
     weeks = replaceWeek(weeks, generatingWeek)
     await input.writer.putWeek(generatingWeek)
-    plan = buildPlanCheckpoint(freshPlan ?? plan, weeks, {
+    plan = buildPlanCheckpoint(plan, weeks, {
       generationState: 'generating',
       jobId: input.jobId,
       startedAt,

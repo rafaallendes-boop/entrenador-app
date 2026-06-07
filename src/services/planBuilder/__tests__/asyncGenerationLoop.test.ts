@@ -188,4 +188,67 @@ describe('runAsyncPlanGeneration', () => {
     expect(result.plan.generationState).toBe('cancelled')
     expect(writer.weeks).toHaveLength(0)
   })
+
+  it('completa generación normalmente cuando getPlan lanza un error de red', async () => {
+    const plan = makePlan()
+    const weeks = [makeWeek(0, '2026-06-01')]
+
+    const throwingWriter: AsyncPlanGenerationWriter & { plans: TrainingPlan[]; weeks: TrainingPlanWeek[] } = {
+      plans: [],
+      weeks: [],
+      async getPlan() { throw new Error('Network error') },
+      async putPlan(next) { this.plans.push(next) },
+      async putWeek(next) { this.weeks.push(next) },
+    }
+
+    const result = await runAsyncPlanGeneration({
+      plan,
+      weeks,
+      profile: makeProfile(),
+      wizardConfig: makeWizardConfig(),
+      jobId: 'job-err',
+      writer: throwingWriter,
+      callLLM: vi.fn(async () => makeRaw('2026-06-01')),
+    })
+
+    expect(result.plan.generationState).not.toBe('generating')
+    const lastPlan = throwingWriter.plans[throwingWriter.plans.length - 1]
+    expect(['complete', 'partial', 'failed']).toContain(lastPlan.generationState)
+  })
+
+  it('usa checkCancelled en vez de getPlan cuando está disponible', async () => {
+    const plan = makePlan()
+    const weeks = [makeWeek(0, '2026-06-01')]
+
+    let checkCancelledCalls = 0
+    let getPlanCalls = 0
+
+    const writer: AsyncPlanGenerationWriter & { plans: TrainingPlan[]; weeks: TrainingPlanWeek[] } = {
+      plans: [],
+      weeks: [],
+      async checkCancelled() {
+        checkCancelledCalls++
+        return false
+      },
+      async getPlan() {
+        getPlanCalls++
+        return plan
+      },
+      async putPlan(next) { this.plans.push(next) },
+      async putWeek(next) { this.weeks.push(next) },
+    }
+
+    await runAsyncPlanGeneration({
+      plan,
+      weeks,
+      profile: makeProfile(),
+      wizardConfig: makeWizardConfig(),
+      jobId: 'job-cc',
+      writer,
+      callLLM: vi.fn(async () => makeRaw('2026-06-01')),
+    })
+
+    expect(checkCancelledCalls).toBe(1)
+    expect(getPlanCalls).toBe(0)
+  })
 })
