@@ -218,7 +218,13 @@ export const handler: Handler = async (event) => {
     const completed = result.plan.generationSummary?.completedWeeks ?? 0
     const failed = result.plan.generationSummary?.failedWeeks?.length ?? 0
     const durationMs = Date.now() - startedAt
+    const failedErrors = result.weeks
+      .filter((w) => w.status === 'error')
+      .map((w) => `w${w.weekIndex}:${w.generationMeta.lastError ?? 'unknown'}`)
     console.log(`[generate-plan] done planId=${planId} state=${finalState} completed=${completed} failed=${failed} durationMs=${durationMs}`)
+    if (failedErrors.length > 0) {
+      console.error(`[generate-plan] week errors planId=${planId}: ${failedErrors.join(' | ')}`)
+    }
 
     return json(202, { ok: true, jobId })
   } catch (error) {
