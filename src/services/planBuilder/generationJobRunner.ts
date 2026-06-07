@@ -10,6 +10,7 @@ import {
   resolveConfiguredGenerationStrategy,
   shouldUseDeterministicPrimary,
 } from './generationState'
+import { countReadyWeeks, isReadyWeek, sortWeeks } from './weekUtils'
 
 const ACTIVE_JOB_STATUSES = new Set<PlanGenerationJob['status']>(['queued', 'running'])
 const runningJobs = new Map<string, Promise<void>>()
@@ -46,17 +47,6 @@ function createJobId(planId: string) {
   return `plan-job-${planId}-${now()}-${Math.random().toString(36).slice(2)}`
 }
 
-function sortWeeks(weeks: TrainingPlanWeek[]): TrainingPlanWeek[] {
-  return [...weeks].sort((a, b) => a.weekIndex - b.weekIndex)
-}
-
-function isReadyWeek(week: TrainingPlanWeek): boolean {
-  return (week.status === 'draft' || week.status === 'accepted') && week.sessions.length > 0
-}
-
-function countReadyWeeks(weeks: TrainingPlanWeek[]): number {
-  return weeks.filter(isReadyWeek).length
-}
 
 function failedIndexes(weeks: TrainingPlanWeek[]): number[] {
   return weeks
