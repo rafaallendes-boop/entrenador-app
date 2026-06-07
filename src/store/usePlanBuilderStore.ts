@@ -612,9 +612,15 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
   cancelGeneration: async () => {
     const { plan } = get()
     if (!plan || plan.generationState !== 'generating') return
+
+    // Detener el poller inmediatamente — evita que onSnapshot sobreescriba tras el abort
+    generationPollingController?.abort()
+    generationPollingController = null
+
     const updatedAt = Date.now()
     const nextPlan: TrainingPlan = {
       ...plan,
+      generationState: 'cancelled',
       updatedAt,
       generationSummary: {
         ...(plan.generationSummary ?? {
@@ -630,19 +636,11 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
     }
     try {
       await db.trainingPlans.put(nextPlan)
-      if (supabase) {
-        const { error } = await supabase
-          .from('training_plans')
-          .update({
-            updated_at: updatedAt,
-            generation_summary: nextPlan.generationSummary,
-          })
-          .eq('id', nextPlan.id)
-        if (error) throw error
-      }
+      await pushTrainingPlan(nextPlan)
       set({
         plan: nextPlan,
-        lastError: 'Solicitud de detención enviada. La semana en curso puede terminar antes de cortar.',
+        status: 'cancelled',
+        lastError: 'Generación detenida. Las semanas ya generadas se conservan.',
       })
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error)
