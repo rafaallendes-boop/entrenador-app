@@ -25,7 +25,7 @@ import { buildPlanBuilderRecentContext } from '../services/planBuilder/recentCon
 import { countReadyWeeks, sortWeeks } from '../services/planBuilder/weekUtils'
 import { pollPlanGeneration, type PlanGenerationSnapshot } from '../services/planBuilder/pollPlanGeneration'
 import { triggerBackgroundGeneration } from '../services/planBuilder/triggerBackgroundGeneration'
-import { pushTrainingPlan, pushTrainingPlanWeeks } from '../services/syncService'
+import { pushTrainingPlan } from '../services/syncService'
 import { supabase } from '../services/auth'
 import { useAuthStore } from './useAuthStore'
 
@@ -344,7 +344,6 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
         return
       }
       await pushTrainingPlan(nextPlan)
-      await pushTrainingPlanWeeks(nextPlan, resetWeeks)
       const recentContext = await buildPlanBuilderRecentContext(nextPlan).catch(() => undefined)
       await triggerBackgroundGeneration({
         plan: nextPlan,
@@ -474,7 +473,6 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
         return
       }
       await pushTrainingPlan(generatingPlan)
-      await pushTrainingPlanWeeks(generatingPlan, nextWeeks)
       const recentContext = await buildPlanBuilderRecentContext(generatingPlan).catch(() => undefined)
       await triggerBackgroundGeneration({
         plan: generatingPlan,
@@ -548,7 +546,6 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
         return
       }
       await pushTrainingPlan(generatingPlan)
-      await pushTrainingPlanWeeks(generatingPlan, nextWeeks)
       const recentContext = await buildPlanBuilderRecentContext(generatingPlan).catch(() => undefined)
       await triggerBackgroundGeneration({
         plan: generatingPlan,
