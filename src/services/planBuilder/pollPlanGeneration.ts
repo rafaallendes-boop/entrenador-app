@@ -17,6 +17,8 @@ export interface PollPlanGenerationInput {
   stalledAfterMs?: number
   signal?: AbortSignal
   onSnapshot?: (snapshot: PlanGenerationSnapshot) => void
+  /** @internal For testing only — overrides fetchPlanGenerationSnapshot */
+  _fetchFn?: (planId: string, options?: { stalledAfterMs?: number }) => Promise<PlanGenerationSnapshot | null>
 }
 
 const DEFAULT_INTERVAL_MS = 4_000
@@ -75,11 +77,13 @@ export async function fetchPlanGenerationSnapshot(
 export async function pollPlanGeneration(input: PollPlanGenerationInput): Promise<PlanGenerationSnapshot | null> {
   let latest: PlanGenerationSnapshot | null = null
   const intervalMs = input.intervalMs ?? DEFAULT_INTERVAL_MS
+  const doFetch = input._fetchFn ?? fetchPlanGenerationSnapshot
 
   while (!input.signal?.aborted) {
-    latest = await fetchPlanGenerationSnapshot(input.planId, {
+    latest = await doFetch(input.planId, {
       stalledAfterMs: input.stalledAfterMs,
     })
+    if (input.signal?.aborted) break  // guard: abort pudo ocurrir durante el await
     if (latest) {
       input.onSnapshot?.(latest)
       if (latest.isTerminal || latest.isStalled) return latest
