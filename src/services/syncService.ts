@@ -20,6 +20,12 @@ import type {
 } from '../types'
 import type { TrainingPlan, TrainingPlanWeek } from '../types/planBuilder'
 import {
+  rowToTrainingPlan,
+  rowToTrainingPlanWeek,
+  trainingPlanToRow,
+  trainingPlanWeekToRow,
+} from './planBuilder/planRows'
+import {
   athleteProfileRowsEqual,
   athleteProfileToRow,
   classifyAthleteProfileSyncError,
@@ -534,7 +540,7 @@ interface MergeResolution<T extends { id: string }> {
 }
 
 function isSyncablePlanStatus(status: TrainingPlan['status']): boolean {
-  return status === 'active' || status === 'archived'
+  return status === 'draft' || status === 'active' || status === 'archived' || status === 'superseded'
 }
 
 function syncStoreState() {
@@ -1325,89 +1331,6 @@ function rowToWeekSummary(row: Record<string, unknown>): WeekSummary {
     updatedAt: (row.updated_at as number | undefined) ?? undefined,
     ...data,
   } as WeekSummary
-}
-
-function trainingPlanToRow(plan: TrainingPlan, userId: string, deletedAt?: number | null): Record<string, unknown> {
-  return {
-    id: plan.id,
-    user_id: userId,
-    athlete_id: plan.athleteId,
-    goal_event_id: plan.goalEventId,
-    status: plan.status,
-    title: plan.title,
-    start_date: plan.startDate,
-    end_date: plan.endDate,
-    total_weeks: plan.totalWeeks,
-    phases: plan.phases,
-    wizard_config: plan.wizardConfig,
-    macro_snapshot: plan.macroSnapshot,
-    created_at: plan.createdAt,
-    updated_at: plan.updatedAt,
-    accepted_at: plan.acceptedAt ?? null,
-    notes: plan.notes ?? null,
-    generation_summary: plan.generationSummary ?? null,
-    deleted_at: deletedAt ?? null,
-  }
-}
-
-function rowToTrainingPlan(row: Record<string, unknown>): TrainingPlan {
-  return {
-    id: row.id as string,
-    athleteId: row.athlete_id as string,
-    goalEventId: row.goal_event_id as string,
-    status: row.status as TrainingPlan['status'],
-    generationState: 'complete',
-    title: row.title as string,
-    startDate: row.start_date as string,
-    endDate: row.end_date as string,
-    totalWeeks: row.total_weeks as number,
-    phases: (row.phases as TrainingPlan['phases']) ?? [],
-    wizardConfig: row.wizard_config as TrainingPlan['wizardConfig'],
-    macroSnapshot: row.macro_snapshot as TrainingPlan['macroSnapshot'],
-    createdAt: row.created_at as number,
-    updatedAt: row.updated_at as number,
-    acceptedAt: (row.accepted_at as number | null) ?? undefined,
-    notes: (row.notes as string | null) ?? undefined,
-    generationSummary: (row.generation_summary as TrainingPlan['generationSummary'] | null) ?? undefined,
-  }
-}
-
-function trainingPlanWeekToRow(week: TrainingPlanWeek, userId: string, deletedAt?: number | null): Record<string, unknown> {
-  return {
-    id: week.id,
-    user_id: userId,
-    plan_id: week.planId,
-    week_index: week.weekIndex,
-    week_start_date: week.weekStartDate,
-    phase: week.phase,
-    status: week.status,
-    sessions: week.sessions,
-    week_objectives: week.weekObjectives,
-    target_load_by_sport: week.targetLoadBySport,
-    validation_issues: week.validationIssues,
-    generation_meta: week.generationMeta,
-    created_at: week.createdAt,
-    updated_at: week.updatedAt,
-    deleted_at: deletedAt ?? null,
-  }
-}
-
-function rowToTrainingPlanWeek(row: Record<string, unknown>): TrainingPlanWeek {
-  return {
-    id: row.id as string,
-    planId: row.plan_id as string,
-    weekIndex: row.week_index as number,
-    weekStartDate: row.week_start_date as string,
-    phase: row.phase as TrainingPlanWeek['phase'],
-    status: row.status as TrainingPlanWeek['status'],
-    sessions: (row.sessions as TrainingPlanWeek['sessions']) ?? [],
-    weekObjectives: (row.week_objectives as TrainingPlanWeek['weekObjectives']) ?? [],
-    targetLoadBySport: (row.target_load_by_sport as TrainingPlanWeek['targetLoadBySport']) ?? {},
-    validationIssues: (row.validation_issues as TrainingPlanWeek['validationIssues']) ?? [],
-    generationMeta: (row.generation_meta as TrainingPlanWeek['generationMeta']) ?? { attempts: 0 },
-    createdAt: row.created_at as number,
-    updatedAt: row.updated_at as number,
-  }
 }
 
 function chatMessageToRow(msg: ChatMessage, userId: string): Record<string, unknown> {

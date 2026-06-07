@@ -5,7 +5,7 @@ import { ACTION_CONTRACTS } from '../../ai/prompt/core/outputContract'
 import { buildStrengthLoadPack } from '../../ai/prompt/packs/quality/strengthLoad'
 import { renderActionAsProse } from '../../ai/prompt/renderers/proseSchema'
 import { getExpectedSessionsForPlanWeek, getPlanWeekDateRange } from '../../planBuilder/dateRange'
-import { renderPlanBuilderRecentContext, type PlanBuilderRecentContext } from '../../planBuilder/recentContext'
+import { renderPlanBuilderRecentContext, type PlanBuilderRecentContext } from '../../planBuilder/recentContextRender'
 
 export interface WeekPromptInput {
   plan: TrainingPlan

@@ -21,6 +21,13 @@ import {
   getRunnablePlanGenerationJobs,
   runPlanGenerationJob,
 } from '../services/planBuilder/generationJobRunner'
+import { buildPlanBuilderRecentContext } from '../services/planBuilder/recentContext'
+import { countReadyWeeks, sortWeeks } from '../services/planBuilder/weekUtils'
+import { pollPlanGeneration, type PlanGenerationSnapshot } from '../services/planBuilder/pollPlanGeneration'
+import { triggerBackgroundGeneration } from '../services/planBuilder/triggerBackgroundGeneration'
+import { pushTrainingPlan } from '../services/syncService'
+import { supabase } from '../services/auth'
+import { useAuthStore } from './useAuthStore'
 
 const EMPTY_DRAFT_WEEKS_MESSAGE = 'El draft del Plan Builder no tiene semanas. Descártalo y vuelve a generar el shell desde el wizard.'
 
@@ -31,6 +38,7 @@ export type PlanBuilderStatus =
   | 'generating'
   | 'partial'
   | 'failed'
+  | 'cancelled'
   | 'ready'
   | 'committing'
   | 'done'
@@ -55,6 +63,7 @@ interface PlanBuilderState {
   regenerateWeeks: (weekIndexes: number[], profile: AthleteProfile, repairInstructions?: Record<number, string>) => Promise<void>
   retryFailedWeeks: (profile: AthleteProfile) => Promise<void>
   resumeGenerationJobs: (profile: AthleteProfile) => Promise<void>
+  cancelGeneration: () => Promise<void>
   acceptPlan: () => Promise<{ errors: string[]; warnings: string[] }>
   discard: () => Promise<void>
   loadDraft: (planId: string) => Promise<void>
@@ -63,6 +72,8 @@ interface PlanBuilderState {
 type PlanBuilderSet = (
   partial: Partial<PlanBuilderState> | ((state: PlanBuilderState) => Partial<PlanBuilderState>),
 ) => void
+
+let generationPollingController: AbortController | null = null
 
 async function persistPlanState(plan: TrainingPlan, weeks: TrainingPlanWeek[]) {
   await db.trainingPlans.put(plan)
@@ -77,29 +88,76 @@ function buildGenerationFailureMessage(failedWeekIndexes: number[]): string | nu
   return `No se pudieron generar ${failedWeekIndexes.length} semanas. Regénéralas para continuar.`
 }
 
-function isReadyWeek(week: TrainingPlanWeek): boolean {
-  return week.status === 'draft' && week.sessions.length > 0
-}
-
-function countReadyWeeks(weeks: TrainingPlanWeek[]): number {
-  return weeks.filter(isReadyWeek).length
-}
-
-function sortWeeks(weeks: TrainingPlanWeek[]): TrainingPlanWeek[] {
-  return [...weeks].sort((a, b) => a.weekIndex - b.weekIndex)
-}
-
 function toBuilderStatus(generationState: TrainingPlan['generationState']): PlanBuilderStatus {
   switch (generationState) {
     case 'shell': return 'shell_ready'
     case 'generating': return 'generating'
     case 'partial': return 'partial'
     case 'failed': return 'failed'
+    case 'cancelled': return 'cancelled'
     case 'complete': return 'ready'
   }
 }
 
+function applyGenerationSnapshot(
+  snapshot: PlanGenerationSnapshot,
+  set: PlanBuilderSet,
+) {
+  const orderedWeeks = sortWeeks(snapshot.weeks)
+  const failedWeekIndexes = snapshot.plan.generationSummary?.failedWeeks ?? orderedWeeks
+    .filter((week) => week.status === 'error')
+    .map((week) => week.weekIndex)
+  const currentWeekIndex = orderedWeeks.find((week) => week.status === 'generating')?.weekIndex ?? null
+  const lastError = snapshot.isStalled
+    ? 'La generación quedó sin señales de progreso. Puedes reintentar las semanas pendientes.'
+    : snapshot.plan.generationState === 'partial' || snapshot.plan.generationState === 'failed'
+      ? buildGenerationFailureMessage(failedWeekIndexes)
+      : snapshot.plan.generationState === 'cancelled'
+        ? 'Generación detenida. Puedes reintentar cuando quieras.'
+        : null
+
+  set({
+    plan: snapshot.plan,
+    weeks: orderedWeeks,
+    issues: validatePlan({ plan: snapshot.plan, weeks: orderedWeeks }),
+    status: snapshot.isStalled ? 'failed' : toBuilderStatus(snapshot.plan.generationState),
+    currentWeekIndex,
+    completedWeeks: snapshot.plan.generationSummary?.completedWeeks ?? countReadyWeeks(orderedWeeks),
+    failedWeekIndexes,
+    streamingTextByWeekIndex: currentWeekIndex == null ? {} : { [currentWeekIndex]: '' },
+    generationJob: null,
+    lastError,
+  })
+}
+
+function startGenerationPolling(
+  planId: string,
+  set: PlanBuilderSet,
+) {
+  generationPollingController?.abort()
+  const controller = new AbortController()
+  generationPollingController = controller
+  void pollPlanGeneration({
+    planId,
+    signal: controller.signal,
+    onSnapshot: (snapshot) => applyGenerationSnapshot(snapshot, set),
+  }).catch((error) => {
+    if (controller.signal.aborted) return
+    const msg = error instanceof Error ? error.message : String(error)
+    set({ status: 'error', lastError: msg })
+  }).finally(() => {
+    if (generationPollingController === controller) {
+      generationPollingController = null
+    }
+  })
+}
+
+function canUseRemoteGeneration(): boolean {
+  return Boolean(supabase && useAuthStore.getState().user)
+}
+
 function normalizePlanGenerationState(plan: TrainingPlan, weeks: TrainingPlanWeek[]): TrainingPlan {
+  if (plan.generationState === 'generating' || plan.generationState === 'cancelled') return plan
   return {
     ...plan,
     generationState: plan.status === 'active' || plan.status === 'archived'
@@ -246,6 +304,7 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
     if (!plan) return
     const startedAt = Date.now()
     const strategy = resolveConfiguredGenerationStrategy(plan.totalWeeks, 'single')
+    const resetWeeks = resetWeeksForFullGeneration(weeks)
     const nextPlan: TrainingPlan = {
       ...plan,
       generationState: 'generating',
@@ -259,11 +318,11 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
       },
     }
     try {
-      await db.trainingPlans.put(nextPlan)
-      const job = await createPlanGenerationJob({ plan: nextPlan, weeks, strategy: 'single' })
+      await persistPlanState(nextPlan, resetWeeks)
       set({
         plan: nextPlan,
-        generationJob: job,
+        weeks: resetWeeks,
+        generationJob: null,
         status: 'generating',
         lastError: null,
         issues: [],
@@ -271,14 +330,29 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
         failedWeekIndexes: [],
         streamingTextByWeekIndex: {},
       })
-      void runPlanGenerationJob({
-        jobId: job.id,
+      if (!canUseRemoteGeneration()) {
+        const job = await createPlanGenerationJob({ plan: nextPlan, weeks: resetWeeks, strategy: 'single' })
+        set({ generationJob: job })
+        void runPlanGenerationJob({
+          jobId: job.id,
+          profile,
+          callbacks: buildRunnerCallbacks(set, get),
+        }).catch((error) => {
+          const msg = error instanceof Error ? error.message : String(error)
+          set({ status: 'error', lastError: msg })
+        })
+        return
+      }
+      await pushTrainingPlan(nextPlan)
+      const recentContext = await buildPlanBuilderRecentContext(nextPlan).catch(() => undefined)
+      await triggerBackgroundGeneration({
+        plan: nextPlan,
+        weeks: resetWeeks,
         profile,
-        callbacks: buildRunnerCallbacks(set, get),
-      }).catch((error) => {
-        const msg = error instanceof Error ? error.message : String(error)
-        set({ status: 'error', lastError: msg })
+        wizardConfig: nextPlan.wizardConfig,
+        recentContext,
       })
+      startGenerationPolling(nextPlan.id, set)
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error)
       set({ status: 'error', lastError: msg })
@@ -375,26 +449,46 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
     try {
       await db.trainingPlans.put(generatingPlan)
       await db.trainingPlanWeeks.bulkPut(nextWeeks)
-      const job = await createPlanGenerationJob({
+      if (!canUseRemoteGeneration()) {
+        const job = await createPlanGenerationJob({
+          plan: generatingPlan,
+          weeks: nextWeeks,
+          targetWeekIndexes: targets.map((week) => week.weekIndex),
+          strategy: 'single',
+          repairInstructions,
+        })
+        set({
+          generationJob: job,
+          completedWeeks: countReadyWeeks(nextWeeks),
+          failedWeekIndexes: nextWeeks.filter((week) => week.status === 'error').map((week) => week.weekIndex),
+        })
+        void runPlanGenerationJob({
+          jobId: job.id,
+          profile,
+          callbacks: buildRunnerCallbacks(set, get),
+        }).catch((error) => {
+          const msg = error instanceof Error ? error.message : String(error)
+          set({ status: 'error', lastError: msg })
+        })
+        return
+      }
+      await pushTrainingPlan(generatingPlan)
+      const recentContext = await buildPlanBuilderRecentContext(generatingPlan).catch(() => undefined)
+      await triggerBackgroundGeneration({
         plan: generatingPlan,
         weeks: nextWeeks,
+        profile,
+        wizardConfig: generatingPlan.wizardConfig,
+        recentContext,
         targetWeekIndexes: targets.map((week) => week.weekIndex),
-        strategy: 'single',
         repairInstructions,
       })
       set({
-        generationJob: job,
+        generationJob: null,
         completedWeeks: countReadyWeeks(nextWeeks),
         failedWeekIndexes: nextWeeks.filter((week) => week.status === 'error').map((week) => week.weekIndex),
       })
-      void runPlanGenerationJob({
-        jobId: job.id,
-        profile,
-        callbacks: buildRunnerCallbacks(set, get),
-      }).catch((error) => {
-        const msg = error instanceof Error ? error.message : String(error)
-        set({ status: 'error', lastError: msg })
-      })
+      startGenerationPolling(generatingPlan.id, set)
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error)
       set({ status: 'error', lastError: msg })
@@ -423,16 +517,48 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
     }
     try {
       await persistPlanState(generatingPlan, nextWeeks)
-      const job = await createPlanGenerationJob({
+      if (!canUseRemoteGeneration()) {
+        const job = await createPlanGenerationJob({
+          plan: generatingPlan,
+          weeks: nextWeeks,
+          targetWeekIndexes: failedWeekIndexes,
+          strategy: 'single',
+        })
+        set({
+          plan: generatingPlan,
+          weeks: nextWeeks,
+          generationJob: job,
+          status: 'generating',
+          currentWeekIndex: failedWeekIndexes[0] ?? null,
+          completedWeeks: countReadyWeeks(nextWeeks),
+          failedWeekIndexes: [],
+          streamingTextByWeekIndex: {},
+          lastError: null,
+        })
+        void runPlanGenerationJob({
+          jobId: job.id,
+          profile,
+          callbacks: buildRunnerCallbacks(set, get),
+        }).catch((error) => {
+          const msg = error instanceof Error ? error.message : String(error)
+          set({ status: 'error', lastError: msg })
+        })
+        return
+      }
+      await pushTrainingPlan(generatingPlan)
+      const recentContext = await buildPlanBuilderRecentContext(generatingPlan).catch(() => undefined)
+      await triggerBackgroundGeneration({
         plan: generatingPlan,
         weeks: nextWeeks,
+        profile,
+        wizardConfig: generatingPlan.wizardConfig,
+        recentContext,
         targetWeekIndexes: failedWeekIndexes,
-        strategy: 'single',
       })
       set({
         plan: generatingPlan,
         weeks: nextWeeks,
-        generationJob: job,
+        generationJob: null,
         status: 'generating',
         currentWeekIndex: failedWeekIndexes[0] ?? null,
         completedWeeks: countReadyWeeks(nextWeeks),
@@ -440,14 +566,7 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
         streamingTextByWeekIndex: {},
         lastError: null,
       })
-      void runPlanGenerationJob({
-        jobId: job.id,
-        profile,
-        callbacks: buildRunnerCallbacks(set, get),
-      }).catch((error) => {
-        const msg = error instanceof Error ? error.message : String(error)
-        set({ status: 'error', lastError: msg })
-      })
+      startGenerationPolling(generatingPlan.id, set)
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error)
       set({ status: 'error', lastError: msg })
@@ -487,6 +606,45 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
     }
   },
 
+  cancelGeneration: async () => {
+    const { plan } = get()
+    if (!plan || plan.generationState !== 'generating') return
+
+    // Detener el poller inmediatamente — evita que onSnapshot sobreescriba tras el abort
+    generationPollingController?.abort()
+    generationPollingController = null
+
+    const updatedAt = Date.now()
+    const nextPlan: TrainingPlan = {
+      ...plan,
+      generationState: 'cancelled',
+      updatedAt,
+      generationSummary: {
+        ...(plan.generationSummary ?? {
+          startedAt: updatedAt,
+          strategy: 'single' as const,
+          completedWeeks: get().completedWeeks,
+          failedWeeks: get().failedWeekIndexes,
+          totalAttempts: 0,
+        }),
+        cancelRequested: true,
+        heartbeatAt: plan.generationSummary?.heartbeatAt ?? updatedAt,
+      },
+    }
+    try {
+      await db.trainingPlans.put(nextPlan)
+      await pushTrainingPlan(nextPlan)
+      set({
+        plan: nextPlan,
+        status: 'cancelled',
+        lastError: 'Generación detenida. Las semanas ya generadas se conservan.',
+      })
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error)
+      set({ lastError: msg })
+    }
+  },
+
   acceptPlan: async () => {
     const { plan, weeks } = get()
     if (!plan) return { errors: ['No hay plan activo'], warnings: [] }
@@ -518,6 +676,8 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
 
   discard: async () => {
     const { plan } = get()
+    generationPollingController?.abort()
+    generationPollingController = null
     if (plan) {
       console.info('[plan-builder] discard', {
         planId: plan.id,
@@ -586,5 +746,8 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
       streamingTextByWeekIndex: {},
       lastError: jobIsActive ? null : buildGenerationFailureMessage(failedWeekIndexes),
     })
+    if (normalizedPlan.generationState === 'generating') {
+      startGenerationPolling(normalizedPlan.id, set)
+    }
   },
 }))

@@ -10,7 +10,7 @@ import type { PlanQualityReview } from '../services/planBuilder/qualityReview'
 
 export type PlanStatus = 'draft' | 'active' | 'archived' | 'superseded'
 
-export type PlanGenerationState = 'shell' | 'generating' | 'partial' | 'failed' | 'complete'
+export type PlanGenerationState = 'shell' | 'generating' | 'partial' | 'failed' | 'complete' | 'cancelled'
 
 export type PlanWeekStatus = 'pending' | 'generating' | 'draft' | 'accepted' | 'error' | 'regenerating'
 
@@ -64,12 +64,15 @@ export interface PlanGenerationMeta {
 
 export interface PlanGenerationSummary {
   startedAt: number
+  jobId?: string
   completedAt?: number
   totalDurationMs?: number
   strategy: 'single' | 'pairs'
   completedWeeks: number
   failedWeeks: number[]
   totalAttempts: number
+  heartbeatAt?: number
+  cancelRequested?: boolean
   acceptedAt?: number
   discardedAt?: number
   qualityReview?: PlanQualityReview

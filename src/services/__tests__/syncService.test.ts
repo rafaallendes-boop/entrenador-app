@@ -356,7 +356,7 @@ describe('syncService', () => {
     expect(upsertCalls.find((call) => call.table === 'chat_messages')?.options).toBeUndefined()
   })
 
-  it('migrates only active or archived plans and their weeks', async () => {
+  it('migrates syncable plans (active, archived, draft, superseded) and their weeks', async () => {
     trainingPlanRows = [
       {
         id: 'plan-active',
@@ -428,11 +428,14 @@ describe('syncService', () => {
     const planUpsert = upsertCalls.find((call) => call.table === 'training_plans')
     const weekUpsert = upsertCalls.find((call) => call.table === 'training_plan_weeks')
     expect(planUpsert).toBeTruthy()
-    expect((planUpsert?.payload as Array<Record<string, unknown>>)).toHaveLength(1)
-    expect((planUpsert?.payload as Array<Record<string, unknown>>)[0]?.id).toBe('plan-active')
+    // draft plans are now syncable (needed for async generation)
+    const syncedPlanIds = (planUpsert?.payload as Array<Record<string, unknown>>).map((p) => p.id)
+    expect(syncedPlanIds).toContain('plan-active')
+    expect(syncedPlanIds).toContain('plan-draft')
     expect(weekUpsert).toBeTruthy()
-    expect((weekUpsert?.payload as Array<Record<string, unknown>>)).toHaveLength(1)
-    expect((weekUpsert?.payload as Array<Record<string, unknown>>)[0]?.id).toBe('week-active')
+    const syncedWeekIds = (weekUpsert?.payload as Array<Record<string, unknown>>).map((w) => w.id)
+    expect(syncedWeekIds).toContain('week-active')
+    expect(syncedWeekIds).toContain('week-draft')
     expect(upsertCalls.findIndex((call) => call.table === 'training_plans')).toBeLessThan(
       upsertCalls.findIndex((call) => call.table === 'training_plan_weeks'),
     )
