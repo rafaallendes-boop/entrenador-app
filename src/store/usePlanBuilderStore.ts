@@ -361,42 +361,9 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
   },
 
   retryFullGeneration: async (profile) => {
-    const { plan, weeks } = get()
+    const { plan } = get()
     if (!plan) return
-    const updatedAt = Date.now()
-    const resetWeeks = resetWeeksForFullGeneration(weeks)
-    const resetPlan: TrainingPlan = {
-      ...plan,
-      generationState: 'shell',
-      updatedAt,
-      generationSummary: {
-        startedAt: updatedAt,
-        strategy: resolveConfiguredGenerationStrategy(plan.totalWeeks),
-        completedWeeks: 0,
-        failedWeeks: [],
-        totalAttempts: 0,
-        acceptedAt: plan.generationSummary?.acceptedAt,
-        discardedAt: plan.generationSummary?.discardedAt,
-      },
-    }
-    try {
-      await persistPlanState(resetPlan, resetWeeks)
-      set({
-        plan: resetPlan,
-        weeks: resetWeeks,
-        issues: [],
-        status: 'shell_ready',
-        currentWeekIndex: null,
-        completedWeeks: 0,
-        failedWeekIndexes: [],
-        streamingTextByWeekIndex: {},
-        lastError: null,
-      })
-      await get().runGeneration(profile)
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error)
-      set({ status: 'error', lastError: msg })
-    }
+    await get().runGeneration(profile)
   },
 
   regenerateWeek: async (weekIndex, profile, repairInstruction) => {
