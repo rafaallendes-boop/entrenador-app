@@ -27,6 +27,7 @@ describe('chatRouting', () => {
     expect(resolveChatRoute('ponme una sesión de fuerza el lunes').kind).toBe('chat_action')
     expect(resolveChatRoute('necesito cycling el sábado AM').kind).toBe('chat_action')
     expect(resolveChatRoute('agéndame movilidad hoy PM').kind).toBe('chat_action')
+    expect(resolveChatRoute('Dame la sesión de pesas para mañana lunes').kind).toBe('chat_action')
   })
 
   it('routes typo-tolerant strength session requests to chat_action', () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { pollPlanGeneration } from '../pollPlanGeneration'
+import { pollPlanGeneration, shouldKeepLocalGenerationSnapshot } from '../pollPlanGeneration'
 import type { PlanGenerationSnapshot } from '../pollPlanGeneration'
 import type { TrainingPlan, TrainingPlanWeek } from '../../../types/planBuilder'
 
@@ -83,5 +83,25 @@ describe('pollPlanGeneration — abort race', () => {
     })
 
     expect(onSnapshot).toHaveBeenCalledWith(snapshot)
+  })
+
+  it('keeps a newer local generating plan over an older remote shell snapshot', () => {
+    const local = makePlan('generating')
+    const remote = {
+      ...makePlan('shell'),
+      updatedAt: local.updatedAt - 1,
+    }
+
+    expect(shouldKeepLocalGenerationSnapshot(local, remote)).toBe(true)
+  })
+
+  it('does not keep local generating plan over a newer remote snapshot', () => {
+    const local = makePlan('generating')
+    const remote = {
+      ...makePlan('shell'),
+      updatedAt: local.updatedAt + 1,
+    }
+
+    expect(shouldKeepLocalGenerationSnapshot(local, remote)).toBe(false)
   })
 })

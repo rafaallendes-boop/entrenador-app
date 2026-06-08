@@ -1,4 +1,5 @@
 import { Flame, Loader2, Sparkles, Trophy } from 'lucide-react'
+import { useState } from 'react'
 
 export type LaunchSport = 'squash' | 'running' | 'cycling' | 'other'
 
@@ -12,7 +13,7 @@ interface PlanBuilderLaunchDeckProps {
   /** True when a background generation job is already running for this plan. */
   isBackgroundGenerating?: boolean
   sport: LaunchSport
-  onInitialize: () => void
+  onInitialize: () => void | Promise<void>
 }
 
 const SPORT_COPY: Record<LaunchSport, { label: string; tagline: string; caption: string }> = {
@@ -54,6 +55,18 @@ export default function PlanBuilderLaunchDeck({
   onInitialize,
 }: PlanBuilderLaunchDeckProps) {
   const copy = SPORT_COPY[sport]
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const isLaunchBlocked = isInitializing || isSubmitting
+
+  async function handleInitializeClick() {
+    if (isLaunchBlocked || isBackgroundGenerating) return
+    setIsSubmitting(true)
+    try {
+      await onInitialize()
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
 
   return (
     <section className="relative overflow-hidden rounded-[28px] border border-white/10 bg-[#120d0b] px-4 py-5 shadow-[0_24px_80px_-28px_rgba(255,77,0,0.45)] sm:px-5">
@@ -154,12 +167,12 @@ export default function PlanBuilderLaunchDeck({
             ) : (
               <button
                 type="button"
-                disabled={isInitializing}
-                onClick={onInitialize}
+                disabled={isLaunchBlocked}
+                onClick={() => { void handleInitializeClick() }}
                 className="relative z-10 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[#ff5a1f] px-4 py-3 font-display text-sm font-black uppercase tracking-[0.18em] text-white shadow-[0_10px_30px_-10px_rgba(255,90,31,0.75)] transition-transform duration-150 hover:scale-[1.01] disabled:cursor-wait disabled:opacity-70 sm:max-w-[360px]"
               >
-                <Sparkles size={16} className={isInitializing ? 'animate-pulse' : ''} />
-                {isInitializing ? 'Inicializando…' : 'Iniciar generación'}
+                <Sparkles size={16} className={isLaunchBlocked ? 'animate-pulse' : ''} />
+                {isLaunchBlocked ? 'Inicializando…' : 'Iniciar generación'}
               </button>
             )}
           </div>

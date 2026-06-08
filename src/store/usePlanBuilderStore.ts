@@ -145,7 +145,14 @@ function startGenerationPolling(
       // Ignore stale 'shell' snapshots while local store already shows generation in progress.
       // This prevents the LaunchDeck from flashing back when pushTrainingPlan was queued
       // (offline / slow network) and Supabase still shows the pre-generation state.
-      if (snapshot.plan.generationState === 'shell' && get().status === 'generating') return
+      const current = get()
+      if (
+        snapshot.plan.generationState === 'shell' &&
+        (current.status === 'generating' || current.plan?.generationState === 'generating') &&
+        (snapshot.plan.updatedAt ?? 0) <= (current.plan?.updatedAt ?? 0)
+      ) {
+        return
+      }
       applyGenerationSnapshot(snapshot, set)
     },
   }).catch((error) => {

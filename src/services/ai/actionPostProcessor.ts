@@ -34,16 +34,18 @@ export function postProcessCoachActions(
   const affectedSession = findAffectedSession(context, normalizedMessage, resolvedDate)
   const adjustmentIntent = isExistingSessionAdjustment(normalizedMessage)
   const sessions = getContextSessions(context)
-  const occupiedSlots = buildOccupiedSlotSet(sessions, requestedWeekStart)
+  const alignmentWeekStart = requestedWeekStart ?? (resolvedDate ? getWeekStartISO(resolvedDate) : undefined)
+  const occupiedSlots = buildOccupiedSlotSet(sessions, alignmentWeekStart)
   const sourceActions = response.actions ?? buildFallbackSingleSessionActions(normalizedMessage, context, resolvedDate)
   if (!sourceActions?.length) return response
 
   const actions = sourceActions.map((action) => {
     const dateAligned = resolvedDate ? alignActionDate(action, resolvedDate) : action
-    const weekAligned = requestedWeekStart
-      ? alignActionToRequestedWeek(dateAligned, requestedWeekStart, restOffsets, occupiedSlots)
+    const weekAligned = alignmentWeekStart
+      ? alignActionToRequestedWeek(dateAligned, alignmentWeekStart, restOffsets, occupiedSlots)
       : dateAligned
-    const loadAligned = completeStrengthLoads(weekAligned, context)
+    const requestAligned = alignSingleSessionSportToRequest(weekAligned, normalizedMessage, context)
+    const loadAligned = completeStrengthLoads(requestAligned, context)
 
     if (loadAligned.type === 'add_session' && adjustmentIntent && affectedSession) {
       return convertAddSessionToUpdateSession(loadAligned, affectedSession)
@@ -131,11 +133,12 @@ function buildFallbackSingleSessionActions(
 }
 
 function isClearSingleSessionCreationRequest(normalizedMessage: string): boolean {
-  const hasCreateIntent = /\b(crea(?:r|me)?|crear|genera(?:r|me)?|generar|haz(?:me)?|hacer|arma(?:me)?|programa(?:me)?|agenda(?:me)?|agrega(?:me)?|pon(?:me)?)\b/.test(normalizedMessage)
+  const hasCreateIntent = /\b(crea(?:r|me)?|crear|genera(?:r|me)?|generar|haz(?:me)?|hacer|arma(?:me)?|programa(?:me)?|agenda(?:me)?|agrega(?:me)?|pon(?:me)?|dame|entrega(?:me)?)\b/.test(normalizedMessage)
   const hasSessionTarget = /\b(sesion|fuerza|pesas|gym|gimnasio|running|correr|squash|cycling|ciclismo|bici|movilidad|recovery|recuperacion)\b/.test(normalizedMessage)
   const hasDay = /\b(hoy|manana|lunes|martes|miercoles|jueves|viernes|sabado|domingo)\b/.test(normalizedMessage)
-  const weekTarget = /\b(semana|microciclo|plan completo|planificar semana)\b/.test(normalizedMessage)
-  return hasCreateIntent && hasSessionTarget && hasDay && !weekTarget
+  const broadWeekTarget = /\b(microciclo|plan completo|planificar semana)\b/.test(normalizedMessage)
+  const explicitWeekCreation = /\b(crea(?:r|me)?|crear|genera(?:r|me)?|generar|haz(?:me)?|hacer|arma(?:me)?)\b.{0,24}\bsemana\b/.test(normalizedMessage)
+  return hasCreateIntent && hasSessionTarget && hasDay && !broadWeekTarget && !explicitWeekCreation
 }
 
 function inferRequestedSessionType(normalizedMessage: string): SessionType | undefined {
@@ -231,6 +234,55 @@ function completeStrengthLoads(action: CoachAction, context: ChatContext): Coach
   }
 
   return action
+}
+
+function alignSingleSessionSportToRequest(
+  action: CoachAction,
+  normalizedMessage: string,
+  context: ChatContext,
+): CoachAction {
+  if (action.type !== 'add_session') return action
+  if (!isClearSingleSessionCreationRequest(normalizedMessage)) return action
+
+  const requestedSessionType = inferRequestedSessionType(normalizedMessage)
+  if (!requestedSessionType || action.sessionType === requestedSessionType) return action
+
+  const next: CoachAction = {
+    ...action,
+    sessionType: requestedSessionType,
+    title: buildFallbackTitle(requestedSessionType),
+    durationMin: action.durationMin ?? inferRequestedDuration(normalizedMessage, requestedSessionType),
+    objective: buildFallbackObjective(requestedSessionType, normalizedMessage),
+    subtype: undefined,
+    runningType: undefined,
+    targetPaceMin: undefined,
+    targetPaceMax: undefined,
+    targetHrMin: undefined,
+    targetHrMax: undefined,
+    intervalStructure: undefined,
+    cyclingDetails: undefined,
+    mobilityDetails: undefined,
+    squashDetails: undefined,
+    exercises: undefined,
+  }
+
+  if (requestedSessionType === 'strength') {
+    const selection = selectStrengthSession(buildStrengthSelectionContextForAction(
+      context,
+      next.durationMin,
+      next.objective,
+    ))
+    next.rpe = action.rpe ?? 7
+    next.exercises = selection.exercises.map((exercise) => ({
+      name: exercise.name,
+      sets: exercise.sets,
+      reps: exercise.reps,
+      group: exercise.group,
+      notes: exercise.notes,
+    }))
+  }
+
+  return next
 }
 
 function enrichStrengthExercises(
@@ -568,6 +620,13 @@ function addDaysToISO(isoDate: string, days: number): string {
   const mm = String(date.getMonth() + 1).padStart(2, '0')
   const dd = String(date.getDate()).padStart(2, '0')
   return `${yy}-${mm}-${dd}`
+}
+
+function getWeekStartISO(isoDate: string): string {
+  const [year, month, day] = isoDate.split('-').map(Number)
+  const date = new Date(year, month - 1, day)
+  const offset = (date.getDay() + 6) % 7
+  return addDaysToISO(isoDate, -offset)
 }
 
 function normalizeText(text: string): string {

@@ -493,6 +493,7 @@ export default function PlanBuilderV2Page() {
   // the first one is still in flight (which can otherwise produce duplicate draft
   // creation when location.state propagates through redirects).
   const inflightSignatureRef = useRef<string | null>(null)
+  const initializeLockRef = useRef<string | null>(null)
 
   const goalEvent = getPrimaryGoalEvent(effectiveAthleteProfile)
   const expectedDraftSignature = effectiveAthleteProfile?.planWizardConfig && goalEvent
@@ -671,8 +672,14 @@ export default function PlanBuilderV2Page() {
 
   async function handleInitializeProtocol() {
     if (!effectiveAthleteProfile || !plan || isGenerating || status === 'committing') return
+    if (initializeLockRef.current === plan.id) return
+    initializeLockRef.current = plan.id
     setInitializedPlanId(plan.id)
-    await runGeneration(effectiveAthleteProfile)
+    try {
+      await runGeneration(effectiveAthleteProfile)
+    } finally {
+      initializeLockRef.current = null
+    }
   }
 
   async function handleRetryFailedWeeks() {

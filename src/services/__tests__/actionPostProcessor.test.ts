@@ -317,6 +317,83 @@ describe('actionPostProcessor', () => {
     expect(response.meta?.warnings).toContain('chat_action_without_actions_repaired')
   })
 
+  it('builds requested weights tomorrow and avoids an occupied squash PM slot', () => {
+    vi.setSystemTime(new Date('2026-06-07T12:00:00.000Z'))
+    const squashPm = makeSession({
+      id: 'monday-squash-pm',
+      date: '2026-06-08',
+      weekStartDate: '2026-06-08',
+      timeBlock: 'PM',
+      type: 'squash',
+      title: 'Squash técnico',
+      durationMin: 60,
+      squashDetails: {
+        trainingFocus: 'technical',
+        sessionMode: 'drill_session',
+        drills: [{ name: 'Tiros paralelos profundos' }],
+      },
+    })
+
+    const response = postProcessCoachActions({
+      message: 'Aquí tienes la sesión de fuerza para mañana lunes.',
+      provider: 'mock',
+      traceId: 'trace-1',
+      requestClass: 'chat_action',
+      timestamp: 1,
+    }, makeContext([squashPm], {
+      athleteProfile: {
+        id: 'athlete-1',
+        updatedAt: 1,
+        sportContext: { primarySport: 'squash' },
+        strengthProfile: {
+          deadlift1RM: 150,
+          squat1RM: 140,
+          benchPress1RM: 100,
+          overheadPress1RM: 60,
+        },
+      },
+    }), 'Dame la sesión de pesas para mañana lunes')
+
+    const action = response.actions?.[0]
+    expect(action).toMatchObject({
+      type: 'add_session',
+      targetDate: '2026-06-08',
+      timeBlock: 'AM',
+      sessionType: 'strength',
+      title: 'Fuerza estructurada',
+      durationMin: 60,
+    })
+    expect(action?.exercises?.length).toBeGreaterThanOrEqual(8)
+  })
+
+  it('overrides model sport drift when a single-session request explicitly asks for weights', () => {
+    vi.setSystemTime(new Date('2026-06-07T12:00:00.000Z'))
+
+    const response = postProcessCoachActions(makeResponse([{
+      type: 'add_session',
+      reason: 'El modelo confundió el contexto de squash con la solicitud puntual.',
+      targetDate: '2026-06-08',
+      timeBlock: 'PM',
+      sessionType: 'squash',
+      title: 'Squash técnico',
+      durationMin: 60,
+      squashDetails: {
+        trainingFocus: 'technical',
+        sessionMode: 'drill_session',
+        drills: [{ name: 'Tiros paralelos profundos' }],
+      },
+    }]), makeContext(), 'Dame la sesión de pesas para mañana lunes')
+
+    expect(response.actions?.[0]).toMatchObject({
+      type: 'add_session',
+      targetDate: '2026-06-08',
+      sessionType: 'strength',
+      title: 'Fuerza estructurada',
+    })
+    expect(response.actions?.[0].squashDetails).toBeUndefined()
+    expect(response.actions?.[0].exercises?.length).toBeGreaterThan(0)
+  })
+
   it('repairs a truncated single-session action response with a local proposal', () => {
     vi.setSystemTime(new Date('2026-05-25T12:00:00.000Z'))
 

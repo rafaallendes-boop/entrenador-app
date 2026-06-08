@@ -14,7 +14,7 @@ export interface ChatRouteResolution {
 }
 
 const WEEKDAY_PATTERN = /\b(lunes|martes|miercoles|jueves|viernes|sabado|domingo|hoy|manana)\b/
-const WEEK_PLANNING_VERB_PATTERN = /\b(crea(?:r|me)?|haz(?:me)?|arma(?:me)?|genera(?:r|me)?|planifica(?:r)?|organiza(?:r)?|programa(?:r)?|propuesta)\b/
+const WEEK_PLANNING_VERB_PATTERN = /\b(crea(?:r|me)?|haz(?:me)?|arma(?:me)?|genera(?:r|me)?|planifica(?:r)?|organiza(?:r)?|programa(?:r)?|propuesta|dame|entrega(?:me)?)\b/
 const WEEK_PLANNING_TARGET_PATTERN = /\b(semana|microciclo|propuesta\s+de\s+semana|plan(?:\s+de\s+entrenamiento)?)\b/
 const FULL_PLAN_PATTERN = /\b(plan\s+completo|todas\s+las\s+semanas|plan\s+hasta|semanas\s+hasta|hasta\s+el\s+evento|hasta\s+la\s+competencia|hasta\s+el\s+torneo|completo\s+hasta|completo\s+para\s+\d+\s+semanas)\b/
 const MULTI_WEEK_PATTERN = /\b(?:[2-9]|dos|tres|cuatro|cinco|seis|siete|ocho|nueve)\s+semanas\b/

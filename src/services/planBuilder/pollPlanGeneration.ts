@@ -65,6 +65,20 @@ export async function fetchPlanGenerationSnapshot(
 
   const plan = rowToTrainingPlan(planRow as Record<string, unknown>)
   const weeks = ((weekRows ?? []) as Record<string, unknown>[]).map(rowToTrainingPlanWeek)
+  const localPlan = await db.trainingPlans.get(planId)
+  const localWeeks = localPlan
+    ? await db.trainingPlanWeeks.where('planId').equals(planId).toArray()
+    : []
+
+  if (shouldKeepLocalGenerationSnapshot(localPlan, plan)) {
+    return derivePollingSnapshot(
+      localPlan,
+      localWeeks.length > 0 ? localWeeks : weeks,
+      options?.now ?? Date.now(),
+      options?.stalledAfterMs,
+    )
+  }
+
   const snapshot = derivePollingSnapshot(plan, weeks, options?.now ?? Date.now(), options?.stalledAfterMs)
 
   await db.transaction('rw', db.trainingPlans, db.trainingPlanWeeks, async () => {
@@ -73,6 +87,17 @@ export async function fetchPlanGenerationSnapshot(
   })
 
   return snapshot
+}
+
+export function shouldKeepLocalGenerationSnapshot(
+  localPlan: TrainingPlan | undefined,
+  remotePlan: TrainingPlan,
+): localPlan is TrainingPlan {
+  if (!localPlan) return false
+  if (localPlan.id !== remotePlan.id) return false
+  if (localPlan.generationState !== 'generating') return false
+  if (remotePlan.generationState !== 'shell') return false
+  return (remotePlan.updatedAt ?? 0) <= (localPlan.updatedAt ?? 0)
 }
 
 export async function pollPlanGeneration(input: PollPlanGenerationInput): Promise<PlanGenerationSnapshot | null> {
