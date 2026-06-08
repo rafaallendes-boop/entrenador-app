@@ -133,6 +133,7 @@ function applyGenerationSnapshot(
 function startGenerationPolling(
   planId: string,
   set: PlanBuilderSet,
+  get: () => PlanBuilderState,
 ) {
   generationPollingController?.abort()
   const controller = new AbortController()
@@ -140,7 +141,13 @@ function startGenerationPolling(
   void pollPlanGeneration({
     planId,
     signal: controller.signal,
-    onSnapshot: (snapshot) => applyGenerationSnapshot(snapshot, set),
+    onSnapshot: (snapshot) => {
+      // Ignore stale 'shell' snapshots while local store already shows generation in progress.
+      // This prevents the LaunchDeck from flashing back when pushTrainingPlan was queued
+      // (offline / slow network) and Supabase still shows the pre-generation state.
+      if (snapshot.plan.generationState === 'shell' && get().status === 'generating') return
+      applyGenerationSnapshot(snapshot, set)
+    },
   }).catch((error) => {
     if (controller.signal.aborted) return
     const msg = error instanceof Error ? error.message : String(error)
@@ -353,7 +360,7 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
         wizardConfig: nextPlan.wizardConfig,
         recentContext,
       })
-      startGenerationPolling(nextPlan.id, set)
+      startGenerationPolling(nextPlan.id, set, get)
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error)
       set({ status: 'error', lastError: msg })
@@ -459,7 +466,7 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
         completedWeeks: countReadyWeeks(nextWeeks),
         failedWeekIndexes: nextWeeks.filter((week) => week.status === 'error').map((week) => week.weekIndex),
       })
-      startGenerationPolling(generatingPlan.id, set)
+      startGenerationPolling(generatingPlan.id, set, get)
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error)
       set({ status: 'error', lastError: msg })
@@ -540,7 +547,7 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
         streamingTextByWeekIndex: {},
         lastError: null,
       })
-      startGenerationPolling(generatingPlan.id, set)
+      startGenerationPolling(generatingPlan.id, set, get)
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error)
       set({ status: 'error', lastError: msg })
@@ -721,7 +728,7 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
       lastError: jobIsActive ? null : buildGenerationFailureMessage(failedWeekIndexes),
     })
     if (normalizedPlan.generationState === 'generating') {
-      startGenerationPolling(normalizedPlan.id, set)
+      startGenerationPolling(normalizedPlan.id, set, get)
     }
   },
 }))

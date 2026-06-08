@@ -780,38 +780,50 @@ export default function PlanBuilderV2Page() {
             )}
           </div>
 
-          {/* Generation progress bar */}
+          {/* Generation progress banner */}
           {isGenerating && weeks.length > 0 && (
-            <div className="mt-4">
-              <div className="mb-1.5 flex items-center justify-between">
-                <span className="font-mono text-[9px] font-bold uppercase tracking-[0.28em] text-ink-faint">
-                  Generando · {completedWeeks}/{weeks.length} semanas
-                </span>
-                <span className="font-mono text-[9px] font-bold" style={{ color: '#ff7a33' }}>{generationProgress}%</span>
+            <div
+              className="mt-4 rounded-2xl p-4"
+              style={{ background: 'rgba(255,90,31,0.07)', border: '1px solid rgba(255,90,31,0.18)' }}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-start gap-3 min-w-0">
+                  <RefreshCw size={15} className="mt-0.5 flex-shrink-0 animate-spin text-brand" />
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-mono text-[10px] font-bold uppercase tracking-[0.28em] text-brand">
+                        Generando en segundo plano
+                      </span>
+                      <span className="font-mono text-[10px] text-ink-faint">
+                        {completedWeeks}/{weeks.length} semanas
+                        {currentWeekIndex != null && ` · S${currentWeekIndex + 1} en curso`}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-[12px] leading-5 text-ink-muted">
+                      Puedes navegar por la app mientras se genera tu plan. Vuelve cuando quieras para revisar el resultado.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => { void cancelGeneration() }}
+                  className="flex-shrink-0 inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-red-300 transition-all hover:text-red-200"
+                  style={{ background: 'rgba(248,113,113,0.08)', border: '1px solid rgba(248,113,113,0.15)' }}
+                >
+                  <X size={11} />
+                  Detener
+                </button>
               </div>
-              <div className="overflow-hidden rounded-full" style={{ height: '3px', background: 'rgba(255,255,255,0.08)' }}>
+              <div className="mt-3 overflow-hidden rounded-full" style={{ height: '3px', background: 'rgba(255,255,255,0.07)' }}>
                 <div
-                  className="h-full rounded-full transition-[width] duration-500"
+                  className="h-full rounded-full transition-[width] duration-700"
                   style={{
                     width: `${generationProgress}%`,
                     background: 'linear-gradient(90deg, #ff4d00, #ff7a33)',
-                    boxShadow: '0 0 8px 2px rgba(255,77,0,0.55)',
+                    boxShadow: '0 0 8px 2px rgba(255,77,0,0.5)',
                   }}
                 />
               </div>
-              <p className="mt-2 text-[11px] leading-relaxed text-ink-faint">
-                La generación sigue en segundo plano mientras navegás por la app. Podés volver cuando quieras para revisar el avance.
-                {currentWeekIndex != null && ` Ahora: semana ${currentWeekIndex + 1}.`}
-              </p>
-              <button
-                type="button"
-                onClick={() => { void cancelGeneration() }}
-                className="mt-3 inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-red-300 transition-all hover:text-red-200"
-                style={{ background: 'rgba(248,113,113,0.08)', border: '1px solid rgba(248,113,113,0.18)' }}
-              >
-                <X size={12} />
-                Detener
-              </button>
             </div>
           )}
         </div>
@@ -842,6 +854,7 @@ export default function PlanBuilderV2Page() {
             weeksLabel={`${plan?.totalWeeks ?? weeks.length} semanas listas para inicializar.`}
             goalLabel={goalEvent ? `Evento objetivo: ${goalEvent.title} · ${goalEvent.date}` : 'Macro-plan listo para generar.'}
             isInitializing={isGenerating}
+            isBackgroundGenerating={plan?.generationState === 'generating'}
             sport={getSportFromGoalEvent(goalEvent)}
             onInitialize={() => { void handleInitializeProtocol() }}
           />

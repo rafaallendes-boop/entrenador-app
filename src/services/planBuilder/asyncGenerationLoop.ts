@@ -34,7 +34,7 @@ export interface AsyncPlanGenerationResult {
   cancelled: boolean
 }
 
-const DEFAULT_MAX_TOKENS = 3500
+const DEFAULT_MAX_TOKENS = 5000
 const DEFAULT_TEMPERATURE = 0.25
 
 function failedWeeks(weeks: TrainingPlanWeek[]): number[] {

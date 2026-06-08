@@ -1,4 +1,4 @@
-import { Flame, Sparkles, Trophy } from 'lucide-react'
+import { Flame, Loader2, Sparkles, Trophy } from 'lucide-react'
 
 export type LaunchSport = 'squash' | 'running' | 'cycling' | 'other'
 
@@ -9,6 +9,8 @@ interface PlanBuilderLaunchDeckProps {
   weeksLabel: string
   goalLabel: string
   isInitializing: boolean
+  /** True when a background generation job is already running for this plan. */
+  isBackgroundGenerating?: boolean
   sport: LaunchSport
   onInitialize: () => void
 }
@@ -47,6 +49,7 @@ export default function PlanBuilderLaunchDeck({
   weeksLabel,
   goalLabel,
   isInitializing,
+  isBackgroundGenerating = false,
   sport,
   onInitialize,
 }: PlanBuilderLaunchDeckProps) {
@@ -122,15 +125,43 @@ export default function PlanBuilderLaunchDeck({
               <p>{goalLabel}</p>
             </div>
 
-            <button
-              type="button"
-              disabled={isInitializing}
-              onClick={onInitialize}
-              className="relative z-10 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[#ff5a1f] px-4 py-3 font-display text-sm font-black uppercase tracking-[0.18em] text-white shadow-[0_10px_30px_-10px_rgba(255,90,31,0.75)] transition-transform duration-150 hover:scale-[1.01] disabled:cursor-wait disabled:opacity-70 sm:max-w-[360px]"
-            >
-              <Sparkles size={16} className={isInitializing ? 'animate-pulse' : ''} />
-              {isInitializing ? 'Inicializando…' : 'Iniciar generación'}
-            </button>
+            {isBackgroundGenerating ? (
+              <div className="w-full space-y-3 sm:max-w-[360px]">
+                <div
+                  className="flex items-center gap-3 rounded-2xl px-4 py-3"
+                  style={{ background: 'rgba(255,90,31,0.10)', border: '1px solid rgba(255,90,31,0.22)' }}
+                >
+                  <Loader2 size={16} className="flex-shrink-0 animate-spin text-[#ff7a33]" />
+                  <div className="min-w-0 text-left">
+                    <p className="font-mono text-[10px] font-bold uppercase tracking-[0.22em] text-[#ff7a33]">
+                      Generación en curso
+                    </p>
+                    <p className="mt-0.5 text-[12px] leading-5 text-white/60">
+                      Tu plan se está generando. Puedes navegar y volver en unos minutos.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  disabled
+                  className="relative z-10 inline-flex w-full cursor-not-allowed items-center justify-center gap-2 rounded-2xl px-4 py-3 font-display text-sm font-black uppercase tracking-[0.18em] text-white/40 sm:max-w-[360px]"
+                  style={{ background: 'rgba(255,90,31,0.15)', border: '1px solid rgba(255,90,31,0.18)' }}
+                >
+                  <Loader2 size={16} className="animate-spin" />
+                  Generando…
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                disabled={isInitializing}
+                onClick={onInitialize}
+                className="relative z-10 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[#ff5a1f] px-4 py-3 font-display text-sm font-black uppercase tracking-[0.18em] text-white shadow-[0_10px_30px_-10px_rgba(255,90,31,0.75)] transition-transform duration-150 hover:scale-[1.01] disabled:cursor-wait disabled:opacity-70 sm:max-w-[360px]"
+              >
+                <Sparkles size={16} className={isInitializing ? 'animate-pulse' : ''} />
+                {isInitializing ? 'Inicializando…' : 'Iniciar generación'}
+              </button>
+            )}
           </div>
         </div>
       </div>

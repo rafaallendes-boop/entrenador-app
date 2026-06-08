@@ -2,7 +2,7 @@ import type { AIRawResponse, AIRequest } from '../../../src/services/ai/types'
 
 const CLAUDE_STRUCTURED_TOOL_NAME = 'emit_structured_result'
 const DEFAULT_MODEL = 'claude-sonnet-4-6'
-const DEFAULT_TIMEOUT_MS = 60_000
+const DEFAULT_TIMEOUT_MS = 120_000
 
 function normalizeJsonSchema(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(normalizeJsonSchema)
@@ -90,6 +90,10 @@ export async function callAnthropicForWeek(request: AIRequest, options?: {
       model?: string
       stop_reason?: string
     }
+    const contentTypes = data.content?.map((b) => b.type) ?? []
+    const toolBlock = data.content?.find((b) => b.type === 'tool_use')
+    const sessionsVal = toolBlock ? (toolBlock.input as Record<string, unknown> | null)?.sessions : undefined
+    console.log(`[anthropicCaller] stop_reason=${data.stop_reason} blocks=${JSON.stringify(contentTypes)} hasTool=${Boolean(toolBlock)} sessionsType=${Array.isArray(sessionsVal) ? 'array' : typeof sessionsVal} sessionsLen=${Array.isArray(sessionsVal) ? sessionsVal.length : 'n/a'}`)
     const text = extractClaudeText(data.content)
     if (!text) throw new Error('Claude devolvió una respuesta vacía.')
 
