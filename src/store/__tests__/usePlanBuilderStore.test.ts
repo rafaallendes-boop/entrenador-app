@@ -275,6 +275,34 @@ describe('usePlanBuilderStore', () => {
     expect(state.lastError).toContain('no tiene semanas')
   })
 
+  it('loadDraft keeps a generating draft without synced weeks in generating state', async () => {
+    await createShell()
+    const plan = usePlanBuilderStore.getState().plan!
+    const generatingPlan: TrainingPlan = {
+      ...plan,
+      generationState: 'generating',
+      generationSummary: {
+        startedAt: Date.now(),
+        jobId: 'job-1',
+        strategy: 'single',
+        completedWeeks: 0,
+        failedWeeks: [],
+        totalAttempts: 0,
+        heartbeatAt: Date.now(),
+      },
+    }
+    await mocks.db.trainingPlans.put(generatingPlan)
+    mocks.weeks.clear()
+    resetStore()
+
+    await usePlanBuilderStore.getState().loadDraft(plan.id)
+
+    const state = usePlanBuilderStore.getState()
+    expect(state.status).toBe('generating')
+    expect(state.weeks).toEqual([])
+    expect(state.lastError).toBeNull()
+  })
+
   it('runGeneration complete leaves complete/ready', async () => {
     const profile = await createShell()
     mocks.generatePlanWeeks.mockImplementation(async ({ weeks, onWeekUpdate }: GeneratePlanWeeksMockInput) => {

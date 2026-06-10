@@ -752,7 +752,7 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
     }
     const weeks = await db.trainingPlanWeeks.where('planId').equals(planId).toArray()
     weeks.sort((a, b) => a.weekIndex - b.weekIndex)
-    if (plan.status === 'draft' && weeks.length === 0) {
+    if (plan.status === 'draft' && plan.generationState === 'shell' && weeks.length === 0) {
       set({
         plan,
         weeks: [],

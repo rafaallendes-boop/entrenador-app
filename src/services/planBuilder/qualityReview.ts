@@ -297,6 +297,24 @@ function getPlanLevelIssues(weeks: TrainingPlanWeek[]): PlanValidationIssue[] {
     }))
   }
 
+  const repairedByFallback = generated.filter((week) => (week.generationMeta.addedFallbackCount ?? 0) > 0)
+  if (generated.length > 0 && repairedByFallback.length / generated.length >= 0.5) {
+    issues.push(issue({
+      severity: 'warning',
+      code: 'quality.generation.repair_fallback_reliance',
+      message: `${repairedByFallback.length}/${generated.length} semanas necesitaron sesiones fallback durante reparación; revisar calidad antes de aceptar.`,
+    }))
+  }
+
+  const droppedSessionWeeks = generated.filter((week) => (week.generationMeta.droppedSessionCount ?? 0) > 0)
+  if (generated.length > 0 && droppedSessionWeeks.length / generated.length >= 0.5) {
+    issues.push(issue({
+      severity: 'warning',
+      code: 'quality.generation.dropped_session_reliance',
+      message: `${droppedSessionWeeks.length}/${generated.length} semanas descartaron sesiones inválidas durante normalización.`,
+    }))
+  }
+
   for (let i = 1; i < generated.length; i++) {
     const prev = weekLoad(generated[i - 1])
     const curr = weekLoad(generated[i])
@@ -326,6 +344,42 @@ function getPlanLevelIssues(weeks: TrainingPlanWeek[]): PlanValidationIssue[] {
         weekIndex: week.weekIndex,
       }))
     }
+  }
+
+  return issues
+}
+
+function getGenerationReliabilityIssues(week: TrainingPlanWeek): PlanValidationIssue[] {
+  const issues: PlanValidationIssue[] = []
+  const dropped = week.generationMeta.droppedSessionCount ?? 0
+  const fallbackAdded = week.generationMeta.addedFallbackCount ?? 0
+  const repaired = week.generationMeta.repairedSessionCount ?? 0
+
+  if (dropped > 0) {
+    issues.push(issue({
+      severity: dropped >= 2 ? 'warning' : 'info',
+      code: 'quality.generation.dropped_sessions',
+      message: `Semana ${week.weekIndex + 1} descartó ${dropped} sesión(es) inválidas durante normalización.`,
+      weekIndex: week.weekIndex,
+    }))
+  }
+
+  if (fallbackAdded > 0) {
+    issues.push(issue({
+      severity: fallbackAdded >= 2 ? 'warning' : 'info',
+      code: 'quality.generation.repair_fallback_added',
+      message: `Semana ${week.weekIndex + 1} necesitó ${fallbackAdded} sesión(es) fallback para quedar completa.`,
+      weekIndex: week.weekIndex,
+    }))
+  }
+
+  if (repaired >= 8) {
+    issues.push(issue({
+      severity: 'warning',
+      code: 'quality.generation.high_repair_count',
+      message: `Semana ${week.weekIndex + 1} requirió ${repaired} reparaciones automáticas; revisar coherencia manualmente.`,
+      weekIndex: week.weekIndex,
+    }))
   }
 
   return issues
@@ -429,6 +483,7 @@ function countRepairs(week: TrainingPlanWeek): number {
     + (meta.movedSessionCount ?? 0)
     + (meta.addedFallbackCount ?? 0)
     + (meta.filteredSportCount ?? 0)
+    + (meta.droppedSessionCount ?? 0)
 }
 
 export function reviewPlanQuality(plan: TrainingPlan, weeks: TrainingPlanWeek[]): PlanQualityReview {
@@ -445,6 +500,7 @@ export function reviewPlanQuality(plan: TrainingPlan, weeks: TrainingPlanWeek[])
       ...getSportCompletenessIssues(week),
       ...getDistributionIssues(plan, week),
       ...getHardSessionClusterIssues(week),
+      ...getGenerationReliabilityIssues(week),
       ...planLevelQualityIssues.filter((item) => item.weekIndex === week.weekIndex),
     ]
     const repairCount = countRepairs(week)

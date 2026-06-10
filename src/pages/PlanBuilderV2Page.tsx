@@ -555,6 +555,12 @@ export default function PlanBuilderV2Page() {
   const currentDraftSignature = plan
     ? buildDraftSignature(plan.goalEventId, plan.wizardConfig)
     : null
+  const hasGenerationProgress = Boolean(plan?.generationSummary?.jobId || plan?.generationSummary?.heartbeatAt) ||
+    weeks.some((week) =>
+      week.status !== 'pending' ||
+      week.sessions.length > 0 ||
+      (week.generationMeta.attempts ?? 0) > 0
+    )
 
   // Consume any location.state coming from the chat redirect once. Without this,
   // re-renders that re-evaluate the state object can keep retriggering downstream
@@ -575,7 +581,7 @@ export default function PlanBuilderV2Page() {
     if (!effectiveAthleteProfile || !effectiveAthleteProfile.planWizardConfig || !goalEvent) return
     if (supabase && authIsLoading) return
     const wizardConfig = effectiveAthleteProfile.planWizardConfig
-    if (plan?.generationState === 'generating' || status === 'generating') {
+    if (plan && plan.generationState !== 'shell') {
       inflightSignatureRef.current = null
       return
     }
@@ -589,6 +595,10 @@ export default function PlanBuilderV2Page() {
     }
     inflightSignatureRef.current = expectedDraftSignature
     if (plan) {
+      if (hasGenerationProgress) {
+        inflightSignatureRef.current = null
+        return
+      }
       void createDraft({ profile: effectiveAthleteProfile, wizardConfig })
       return
     }
@@ -647,7 +657,7 @@ export default function PlanBuilderV2Page() {
       // to athleteProfile) can retry the Dexie query instead of early-returning.
       inflightSignatureRef.current = null
     }
-  }, [authIsLoading, authUser, createDraft, currentDraftSignature, effectiveAthleteProfile, expectedDraftSignature, goalEvent, loadDraft, plan, status])
+  }, [authIsLoading, authUser, createDraft, currentDraftSignature, effectiveAthleteProfile, expectedDraftSignature, goalEvent, hasGenerationProgress, loadDraft, plan, status])
 
   const effectiveSelectedWeekIndex = (() => {
     // If there are failed weeks and the user hasn't explicitly selected one of them,
@@ -669,7 +679,10 @@ export default function PlanBuilderV2Page() {
     () => (plan ? reviewPlanQuality(plan, weeks) : null),
     [plan, weeks],
   )
-  const shouldShowQualityReview = Boolean(qualityReview && (showPlanQualityDebug || plan?.generationState === 'complete'))
+  const shouldShowQualityReview = Boolean(
+    qualityReview &&
+    (showPlanQualityDebug || plan?.generationState === 'complete' || plan?.generationState === 'partial')
+  )
   const qualityBlocksAccept = Boolean(
     plan?.generationState === 'complete'
     && qualityReview
@@ -734,12 +747,6 @@ export default function PlanBuilderV2Page() {
   const isGenerating = status === 'generating'
   const generationProgress = weeks.length > 0 ? Math.round((completedWeeks / weeks.length) * 100) : 0
   const currentPlanId = plan?.id ?? null
-  const hasGenerationProgress = Boolean(plan?.generationSummary?.jobId || plan?.generationSummary?.heartbeatAt) ||
-    weeks.some((week) =>
-      week.status !== 'pending' ||
-      week.sessions.length > 0 ||
-      (week.generationMeta.attempts ?? 0) > 0
-    )
   const shouldShowLaunchDeck =
     currentPlanId !== null &&
     status === 'shell_ready' &&
@@ -947,6 +954,21 @@ export default function PlanBuilderV2Page() {
             sport={getSportFromGoalEvent(goalEvent)}
             onInitialize={handleInitializeProtocol}
           />
+        ) : plan && weeks.length === 0 && (isGenerating || plan.generationState === 'generating') ? (
+          <div
+            className="rounded-2xl p-5"
+            style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}
+          >
+            <div className="flex items-start gap-3">
+              <RefreshCw size={18} className="mt-0.5 flex-shrink-0 animate-spin text-brand" />
+              <div>
+                <h2 className="font-display text-base font-bold text-ink">Inicializando generación</h2>
+                <p className="mt-1 text-sm text-ink-muted">
+                  Estamos preparando las semanas remotas. El progreso aparecerá en unos segundos.
+                </p>
+              </div>
+            </div>
+          </div>
         ) : plan && weeks.length === 0 ? (
           <div
             className="rounded-2xl p-5"

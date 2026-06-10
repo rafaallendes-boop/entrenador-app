@@ -203,6 +203,64 @@ describe('reviewPlanQuality', () => {
     expect(review.issues.some((item) => item.code === 'quality.support.missing_aerobic')).toBe(false)
   })
 
+  it('flags weeks that relied on dropped sessions and repair fallbacks', () => {
+    const plan = makePlan()
+    const week = {
+      ...makeWeek([
+        squash('2026-05-04', 'Squash 1'),
+        squash('2026-05-05', 'Squash 2'),
+        squash('2026-05-06', 'Squash 3'),
+        squash('2026-05-07', 'Squash 4'),
+        strength('2026-05-08'),
+      ]),
+      generationMeta: {
+        attempts: 1,
+        droppedSessionCount: 3,
+        addedFallbackCount: 2,
+        repairedSessionCount: 10,
+      },
+    }
+
+    const review = reviewPlanQuality(plan, [week])
+
+    expect(review.issues.some((item) => item.code === 'quality.generation.dropped_sessions')).toBe(true)
+    expect(review.issues.some((item) => item.code === 'quality.generation.repair_fallback_added')).toBe(true)
+    expect(review.issues.some((item) => item.code === 'quality.generation.high_repair_count')).toBe(true)
+    expect(review.weeks[0]?.repairCount).toBe(15)
+  })
+
+  it('flags plan-level reliance on repair fallbacks and dropped sessions', () => {
+    const plan = makePlan()
+    const first = {
+      ...makeWeek([
+        squash('2026-05-04', 'Squash 1'),
+        squash('2026-05-05', 'Squash 2'),
+        squash('2026-05-06', 'Squash 3'),
+        squash('2026-05-07', 'Squash 4'),
+        strength('2026-05-08'),
+      ]),
+      generationMeta: { attempts: 1, droppedSessionCount: 2, addedFallbackCount: 2 },
+    }
+    const second = {
+      ...makeWeek([
+        squash('2026-05-11', 'Squash 1'),
+        squash('2026-05-12', 'Squash 2'),
+        squash('2026-05-13', 'Squash 3'),
+        squash('2026-05-14', 'Squash 4'),
+        strength('2026-05-15'),
+      ]),
+      id: 'week-2',
+      weekIndex: 1,
+      weekStartDate: '2026-05-11',
+      generationMeta: { attempts: 1, droppedSessionCount: 2, addedFallbackCount: 2 },
+    }
+
+    const review = reviewPlanQuality(plan, [first, second])
+
+    expect(review.issues.some((item) => item.code === 'quality.generation.repair_fallback_reliance')).toBe(true)
+    expect(review.issues.some((item) => item.code === 'quality.generation.dropped_session_reliance')).toBe(true)
+  })
+
   it('turns quality issues into targeted repair instructions by week', () => {
     const plan = makePlan()
     const week = makeWeek([
