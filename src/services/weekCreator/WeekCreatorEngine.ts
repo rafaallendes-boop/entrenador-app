@@ -319,9 +319,13 @@ export const WeekCreatorEngine = {
       actions: [fallbackValidation.action],
       retryUsed: true,
       fallbackUsed: true,
-      message: summarizeWeekCreatorAction(fallbackValidation.action),
+      message: buildWeekCreatorFallbackMessage(fallbackValidation.action),
     }
   },
+}
+
+function buildWeekCreatorFallbackMessage(action: CoachAction): string {
+  return `Generé una semana base automática porque la IA no devolvió una semana válida tras 2 intentos. Revísala antes de aplicarla.\n\n${summarizeWeekCreatorAction(action)}`
 }
 
 function classifyWeekCreatorFailure(

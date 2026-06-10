@@ -28,7 +28,7 @@ export const AI_REQUEST_POLICIES: Record<AIRequestClass, AIRequestPolicy> = {
     allowFallback: true,
   },
   week_creator: {
-    maxTokens: 3500,
+    maxTokens: 8000,
     temperature: 0.4,
     timeoutMs: 23000,
     allowFallback: true,

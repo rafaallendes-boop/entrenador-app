@@ -1,8 +1,10 @@
 import type { AthleteProfile, PlanWizardConfig } from '../../types'
 import type { AIRawResponse, AIRequest } from '../ai/types'
 import type { PlanGenerationSummary, TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
-import { generateWeekCore } from './generateWeekCore'
+import { generateWeekCore, summarizeWeekGenerationError } from './generateWeekCore'
 import { countReadyWeeks, isReadyWeek, sortWeeks } from './weekUtils'
+import { getExpectedSessionsForPlanWeek } from './dateRange'
+import { buildWeekRetryInstruction } from '../week/shared'
 
 export interface AsyncPlanGenerationWriter {
   /** Consulta ligera opcional: solo lee cancelRequested. Si no está, usa getPlan. */
@@ -26,6 +28,8 @@ export interface RunAsyncPlanGenerationInput {
   now?: () => number
   maxTokens?: number
   temperature?: number
+  /** Presupuesto total del worker; las semanas que no alcancen a generarse quedan en error explícito. */
+  budgetMs?: number
 }
 
 export interface AsyncPlanGenerationResult {
@@ -34,8 +38,15 @@ export interface AsyncPlanGenerationResult {
   cancelled: boolean
 }
 
-const DEFAULT_MAX_TOKENS = 5000
+const DEFAULT_MAX_TOKENS = 12000
 const DEFAULT_TEMPERATURE = 0.25
+const MAX_WEEK_ATTEMPTS = 2
+// Netlify background functions se cortan a los 15 min; reservamos margen para
+// cerrar el plan con un estado terminal en vez de morir a mitad de una semana.
+const DEFAULT_WORKER_BUDGET_MS = 13 * 60_000
+const WORKER_BUDGET_EXHAUSTED_MESSAGE = 'Generación detenida: se agotó el presupuesto de tiempo del worker antes de llegar a esta semana. Reintenta para generar las semanas pendientes.'
+
+type GenerateWeekCoreResult = Awaited<ReturnType<typeof generateWeekCore>>
 
 function failedWeeks(weeks: TrainingPlanWeek[]): number[] {
   return weeks
@@ -167,7 +178,7 @@ function makeResolvedWeek(
   }
 }
 
-function makeErroredWeek(week: TrainingPlanWeek, message: string, timestamp: number): TrainingPlanWeek {
+function makeErroredWeek(week: TrainingPlanWeek, message: string, timestamp: number, errorClass?: string): TrainingPlanWeek {
   return {
     ...week,
     status: 'error',
@@ -179,8 +190,150 @@ function makeErroredWeek(week: TrainingPlanWeek, message: string, timestamp: num
       lastAttemptAt: timestamp,
       strategy: 'single',
       generationSource: 'ai',
+      errorClass,
     },
     updatedAt: timestamp,
+  }
+}
+
+function classifyThrownProviderError(message: string): 'timeout' | 'rate_limit' | 'server_error' {
+  const normalized = message.toLowerCase()
+  if (normalized.includes('rate limit') || normalized.includes('rate_limit') || normalized.includes('429')) {
+    return 'rate_limit'
+  }
+  if (normalized.includes('timeout') || normalized.includes('timed out') || normalized.includes('abort')) {
+    return 'timeout'
+  }
+  return 'server_error'
+}
+
+function makeThrownAttemptResult(
+  message: string,
+  traceId: string,
+  provider: AIRawResponse['provider'],
+): GenerateWeekCoreResult {
+  return {
+    sessions: [],
+    meta: {
+      attempts: 1,
+      provider,
+      requestClass: 'plan_builder_week',
+      traceId,
+      lastError: message,
+      errorClass: classifyThrownProviderError(message),
+    },
+  }
+}
+
+function buildAsyncRetryInstruction(
+  previousError: string | undefined,
+  plan: TrainingPlan,
+  week: TrainingPlanWeek,
+  attempt: number,
+): string | undefined {
+  if (attempt <= 1) return undefined
+  const base = summarizeWeekGenerationError(previousError, week, plan)
+  const expectedSessions = getExpectedSessionsForPlanWeek(plan, week)
+  const retryInstruction = buildWeekRetryInstruction(base, week.weekStartDate, expectedSessions, attempt)
+  if (previousError?.includes('truncada') || previousError?.includes('tokens')) {
+    return `${retryInstruction ?? base} La respuesta anterior se cortó por max_tokens: usa descripciones compactas, evita texto redundante y conserva exactamente ${expectedSessions} sesiones completas.`
+  }
+  return retryInstruction
+    ?? `${base} Usa formato estricto: targetDate=${week.weekStartDate}, ${expectedSessions} sesiones compactas y todas las fechas dentro de esa semana.`
+}
+
+async function generateWeekCoreWithRetry(input: {
+  plan: TrainingPlan
+  week: TrainingPlanWeek
+  previousWeek?: TrainingPlanWeek
+  profile: AthleteProfile
+  wizardConfig: PlanWizardConfig
+  recentContext?: unknown
+  initialRepairInstruction?: string
+  traceId: string
+  maxTokens: number
+  temperature: number
+  callLLM: (request: AIRequest) => Promise<AIRawResponse>
+  /** Hook para refrescar heartbeat antes de un reintento; los fallos se ignoran. */
+  onBeforeRetry?: () => Promise<void>
+}): Promise<GenerateWeekCoreResult> {
+  let attempts = 0
+  let totalDurationMs = 0
+  let lastResult: GenerateWeekCoreResult | undefined
+  let lastError: string | undefined
+
+  for (let attempt = 1; attempt <= MAX_WEEK_ATTEMPTS; attempt++) {
+    if (attempt > 1) {
+      try {
+        await input.onBeforeRetry?.()
+      } catch {
+        // Heartbeat best-effort: no abortar el reintento por un fallo de escritura.
+      }
+    }
+    const retryInstruction = attempt === 1
+      ? input.initialRepairInstruction
+      : buildAsyncRetryInstruction(lastError, input.plan, input.week, attempt)
+    const maxTokens = lastResult?.meta.errorClass === 'truncated'
+      ? Math.max(input.maxTokens, DEFAULT_MAX_TOKENS)
+      : input.maxTokens
+    const attemptTraceId = attempt === 1 ? input.traceId : `${input.traceId}-attempt-${attempt}`
+    let result: GenerateWeekCoreResult
+    const attemptStartedAt = Date.now()
+    try {
+      result = await generateWeekCore({
+        plan: input.plan,
+        week: input.week,
+        previousWeek: input.previousWeek,
+        profile: input.profile,
+        wizardConfig: input.wizardConfig,
+        recentContext: input.recentContext as never,
+        retryInstruction,
+        strictFormatting: attempt > 1,
+        traceId: attemptTraceId,
+        maxTokens,
+        temperature: attempt === 1 ? input.temperature : Math.min(input.temperature, DEFAULT_TEMPERATURE),
+        callLLM: input.callLLM,
+      })
+    } catch (error) {
+      // Fallos técnicos del proveedor (timeout, 429, 5xx, red) también consumen
+      // un intento y habilitan el reintento, igual que una semana inválida.
+      const message = error instanceof Error ? error.message : String(error)
+      result = makeThrownAttemptResult(message, attemptTraceId, lastResult?.meta.provider ?? 'claude')
+      result.meta.durationMs = Date.now() - attemptStartedAt
+    }
+
+    attempts += result.meta.attempts
+    totalDurationMs += result.meta.durationMs ?? 0
+    lastResult = result
+    lastError = result.meta.lastError
+
+    if (result.sessions.length > 0) {
+      return {
+        ...result,
+        meta: {
+          ...result.meta,
+          attempts,
+          durationMs: totalDurationMs || result.meta.durationMs,
+          retryUsed: attempts > 1 || result.meta.retryUsed,
+        },
+      }
+    }
+
+    if (result.meta.errorClass === 'rate_limit') break
+  }
+
+  if (!lastResult) {
+    throw new Error('La generación no produjo respuesta del modelo.')
+  }
+
+  return {
+    ...lastResult,
+    meta: {
+      ...lastResult.meta,
+      attempts,
+      durationMs: totalDurationMs || lastResult.meta.durationMs,
+      retryUsed: attempts > 1 || lastResult.meta.retryUsed,
+    },
   }
 }
 
@@ -200,7 +353,23 @@ export async function runAsyncPlanGeneration(input: RunAsyncPlanGenerationInput)
     ? [...input.targetWeekIndexes].sort((a, b) => a - b)
     : weeks.map((week) => week.weekIndex)
 
-  for (const weekIndex of targetWeekIndexes) {
+  const deadlineAt = getNow() + (input.budgetMs ?? DEFAULT_WORKER_BUDGET_MS)
+
+  for (let targetPosition = 0; targetPosition < targetWeekIndexes.length; targetPosition++) {
+    const weekIndex = targetWeekIndexes[targetPosition]
+
+    if (getNow() >= deadlineAt) {
+      for (const remainingIndex of targetWeekIndexes.slice(targetPosition)) {
+        const remainingWeek = weeks.find((week) => week.weekIndex === remainingIndex)
+        if (!remainingWeek) continue
+        if (!input.targetWeekIndexes?.length && isReadyWeek(remainingWeek)) continue
+        const erroredWeek = makeErroredWeek(remainingWeek, WORKER_BUDGET_EXHAUSTED_MESSAGE, getNow(), 'timeout')
+        weeks = replaceWeek(weeks, erroredWeek)
+        await input.writer.putWeek(erroredWeek)
+      }
+      break
+    }
+
     let cancelRequested = false
     try {
       cancelRequested = input.writer.checkCancelled
@@ -241,18 +410,27 @@ export async function runAsyncPlanGeneration(input: RunAsyncPlanGenerationInput)
 
     try {
       const previousWeek = weeks.find((week) => week.weekIndex === weekIndex - 1 && isReadyWeek(week))
-      const result = await generateWeekCore({
+      const result = await generateWeekCoreWithRetry({
         plan,
         week: generatingWeek,
         previousWeek,
         profile: input.profile,
         wizardConfig: input.wizardConfig,
         recentContext: input.recentContext as never,
-        retryInstruction: input.repairInstructions?.[weekIndex],
+        initialRepairInstruction: input.repairInstructions?.[weekIndex],
         traceId: `${input.jobId}-week-${weekIndex}`,
         maxTokens: input.maxTokens ?? DEFAULT_MAX_TOKENS,
         temperature: input.temperature ?? DEFAULT_TEMPERATURE,
         callLLM: input.callLLM,
+        onBeforeRetry: async () => {
+          plan = buildPlanCheckpoint(plan, weeks, {
+            generationState: 'generating',
+            jobId: input.jobId,
+            startedAt,
+            updatedAt: getNow(),
+          })
+          await input.writer.putPlan(plan)
+        },
       })
       const resolvedWeek = makeResolvedWeek(generatingWeek, result, getNow())
       weeks = replaceWeek(weeks, resolvedWeek)

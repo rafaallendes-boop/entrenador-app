@@ -42,13 +42,13 @@ export function optimizeChatContext(context: ChatContext, requestClass?: AIReque
 }
 
 export function detectChatIntent(message: string): ChatContext['intent'] {
-  const normalized = message.toLowerCase()
-  const weekDayPattern = /\b(lunes|martes|miercoles|miércoles|jueves|viernes|sabado|sábado|domingo)\b/
+  const normalized = message.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  const weekDayPattern = /\b(lunes|martes|miercoles|jueves|viernes|sabado|domingo|hoy|manana)\b/
   const planningVerbPattern = /\b(cr[eé]a(?:r|me)?|haz(?:me)?|arma(?:me)?|genera(?:r|me)?|planifica(?:r)?|organiza(?:r)?|programa(?:r)?)\b/
   const planningTargetPattern = /\b(semana|microciclo|plan(?:\s+de\s+entrenamiento)?|rutina)\b/
-  const adjustmentVerbPattern = /\b(ajusta(?:r|me)?|ajustame|ajústame|cambia(?:r|me)?|cambiame|cámbiame|cambie|cámbie|modifica(?:r|me)?|modificame|modifícame|mueve|mueveme|muéveme|reordena(?:r|me)?|actualiza(?:r|me)?|quit(?:a|ar|ame|áme)|agrega(?:r|me)?|reemplaza(?:r|me)?|reduce|baja|sube)\b/
-  const adjustmentTargetPattern = /\b(semana|sesion(?:es)?|sesión(?:es)?|plan|carga|running|squash|fuerza|cycling|ciclismo|movilidad)\b/
-  const specificSessionPattern = /\b(sesion(?:es)?|sesión(?:es)?|running|squash|fuerza|cycling|ciclismo|movilidad|am|pm)\b/
+  const adjustmentVerbPattern = /\b(ajusta(?:r|me)?|ajustame|cambia(?:r|me)?|cambiame|cambie|modifica(?:r|me)?|modificame|mueve|mueveme|reordena(?:r|me)?|actualiza(?:r|me)?|quit(?:a|ar|ame)|borra(?:r|me)?|borrame|elimina(?:r|me)?|eliminame|saca(?:r|me)?|sacame|pon(?:er|me)?|agrega(?:r|me)?|reemplaza(?:r|me)?|reduce|baja|sube|incorpora)\b/
+  const adjustmentTargetPattern = /\b(semana|sesion(?:es)?|entreno|entrenamiento|descanso|libre|off|plan|carga|running|squash|fuerza|cycling|ciclismo|movilidad)\b/
+  const specificSessionPattern = /\b(sesion(?:es)?|entreno|entrenamiento|descanso|libre|off|running|squash|fuerza|cycling|ciclismo|movilidad|am|pm)\b/
 
   if (
     /\b(resumen\s+semanal|coach\s+note|resume\s+mi\s+semana|resumeme\s+la\s+semana|cierre\s+de\s+semana|balance\s+semanal)\b/.test(normalized)

@@ -13,6 +13,13 @@ describe('chatRouting', () => {
     expect(resolveChatRoute('Agrega squash el jueves PM').kind).toBe('chat_action')
   })
 
+  it('routes canonical deterministic bypass phrases to chat_action', () => {
+    expect(resolveChatRoute('pon descanso el lunes').kind).toBe('chat_action')
+    expect(resolveChatRoute('borra el entreno del jueves').kind).toBe('chat_action')
+    expect(resolveChatRoute('elimina el entrenamiento del viernes').kind).toBe('chat_action')
+    expect(resolveChatRoute('sácame la sesión de mañana').kind).toBe('chat_action')
+  })
+
   it('routes plural and imperative session changes to chat_action', () => {
     expect(resolveChatRoute('cámbiame una de las sesiones de fuerza').kind).toBe('chat_action')
     expect(resolveChatRoute('cambie 1 de las sesiones').kind).toBe('chat_action')

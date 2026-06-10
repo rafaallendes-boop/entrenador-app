@@ -126,6 +126,7 @@ export type AIErrorCode =
   | 'unauthorized'   // bad or missing API key
   | 'rate_limit'     // 429 from provider
   | 'timeout'        // fetch timeout
+  | 'truncated'      // provider stopped because output token budget was exhausted
   | 'parse_error'    // response could not be parsed
   | 'misconfigured'  // server or provider config missing
   | 'server_error'   // internal proxy/backend error

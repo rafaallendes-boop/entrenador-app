@@ -117,10 +117,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
     // Hard UI watchdog: aborts the provider request and frees the loading state.
     const WATCHDOG_MS = requestClass === 'week_creator' ? 75_000 : 60_000
     let watchdogTimeout: number | undefined
+    let abortedByWatchdog = false
+    const watchdogErrorMessage = `La solicitud tardó demasiado (más de ${Math.round(WATCHDOG_MS / 1000)}s). Intenta de nuevo.`
     const watchdogPromise = new Promise<never>((_, reject) => {
       watchdogTimeout = window.setTimeout(() => {
+        abortedByWatchdog = true
         abortController.abort()
-        reject(new Error(`La solicitud tardó demasiado (más de ${Math.round(WATCHDOG_MS / 1000)}s). Intenta de nuevo.`))
+        reject(new Error(watchdogErrorMessage))
       }, WATCHDOG_MS)
     })
 
@@ -205,7 +208,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
       set(state => ({ messages: [...state.messages, coachMsg], isLoading: false, streamingText: '', responsePhase: 'idle' }))
     } catch (e) {
-      if (abortController.signal.aborted || (e instanceof DOMException && e.name === 'AbortError')) {
+      if (!abortedByWatchdog && (abortController.signal.aborted || (e instanceof DOMException && e.name === 'AbortError'))) {
         if (isCurrentChatRequestOwner(get().currentSessionId, sessionId, abortController)) {
           set({ isLoading: false, streamingText: '', responsePhase: 'idle' })
         }
@@ -217,7 +220,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const orphanCoachMsg = expectedProposal && persistedCoachMsg && !persistedProposalId
         ? persistedCoachMsg
         : undefined
-      const errorMsg = formatError(e)
+      const errorMsg = abortedByWatchdog ? watchdogErrorMessage : formatError(e)
       if (get().currentSessionId !== sessionId) return { route: route.kind }
       const coachErrorMsg = route.kind === 'week_creator'
         ? buildCoachErrorMessage(errorMsg, sessionId)

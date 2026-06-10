@@ -4,6 +4,14 @@ const CLAUDE_STRUCTURED_TOOL_NAME = 'emit_structured_result'
 const DEFAULT_MODEL = 'claude-sonnet-4-6'
 const DEFAULT_TIMEOUT_MS = 120_000
 
+function isMaxTokenStopReason(stopReason: string | undefined): boolean {
+  if (!stopReason) return false
+  const normalized = stopReason.toLowerCase()
+  return normalized === 'max_tokens' ||
+    normalized === 'max_output_tokens' ||
+    normalized.includes('max_token')
+}
+
 function normalizeJsonSchema(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(normalizeJsonSchema)
   if (!value || typeof value !== 'object') return value
@@ -96,12 +104,15 @@ export async function callAnthropicForWeek(request: AIRequest, options?: {
     console.log(`[anthropicCaller] stop_reason=${data.stop_reason} blocks=${JSON.stringify(contentTypes)} hasTool=${Boolean(toolBlock)} sessionsType=${Array.isArray(sessionsVal) ? 'array' : typeof sessionsVal} sessionsLen=${Array.isArray(sessionsVal) ? sessionsVal.length : 'n/a'}`)
     const text = extractClaudeText(data.content)
     if (!text) throw new Error('Claude devolvió una respuesta vacía.')
+    const truncated = isMaxTokenStopReason(data.stop_reason)
 
     return {
       text,
       provider: 'claude',
       model: data.model ?? model,
       finishReason: data.stop_reason,
+      truncated,
+      errorClass: truncated ? 'truncated' : undefined,
       durationMs: Date.now() - startedAt,
       traceId: request.traceId,
       requestClass: request.requestClass,

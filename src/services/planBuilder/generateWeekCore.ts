@@ -203,6 +203,16 @@ export function validateGeneratedWeekAction(
   }
 }
 
+function isProviderTruncated(raw: AIRawResponse): boolean {
+  if (raw.truncated === true || raw.errorClass === 'truncated') return true
+  if (!raw.finishReason) return false
+  const normalized = raw.finishReason.toLowerCase()
+  return normalized === 'max_tokens' ||
+    normalized === 'max_output_tokens' ||
+    normalized === 'length' ||
+    normalized.includes('max_token')
+}
+
 export async function generateWeekCore(input: GenerateWeekCoreInput): Promise<GenerateWeekResult> {
   const requestClass = 'plan_builder_week' as const
   const systemPrompt = buildWeekStructuredSystemPromptMinimal()
@@ -233,6 +243,10 @@ export async function generateWeekCore(input: GenerateWeekCoreInput): Promise<Ge
   const action = pickCreateWeekAction(normalized.actions, input.week.weekStartDate)
   const diagnostic = pickCreateWeekDiagnostic(normalized, input.week.weekStartDate, action)
   const evaluation = validateGeneratedWeekAction(input.plan, input.week, input.profile, action, diagnostic, input.previousWeek)
+  const wasTruncated = isProviderTruncated(raw)
+  const lastError = evaluation.error && wasTruncated
+    ? `La respuesta del modelo fue truncada por presupuesto de tokens antes de devolver sesiones válidas para la semana ${input.week.weekIndex + 1}.`
+    : evaluation.error
 
   return {
     sessions: evaluation.error ? [] : evaluation.sessions,
@@ -242,7 +256,7 @@ export async function generateWeekCore(input: GenerateWeekCoreInput): Promise<Ge
       model: raw.model,
       requestClass,
       traceId: raw.traceId ?? input.traceId,
-      lastError: evaluation.error,
+      lastError,
       durationMs: raw.durationMs,
       retryUsed: raw.retryUsed,
       fallbackUsed: raw.fallbackUsed,
@@ -254,7 +268,7 @@ export async function generateWeekCore(input: GenerateWeekCoreInput): Promise<Ge
       addedFallbackCount: evaluation.addedFallbackCount,
       filteredSportCount: evaluation.filteredSportCount,
       repairWarnings: evaluation.repairWarnings,
-      errorClass: normalized.meta?.errorClass,
+      errorClass: evaluation.error && wasTruncated ? 'truncated' : normalized.meta?.errorClass,
     },
   }
 }

@@ -94,7 +94,7 @@ describe('tryDeterministicBypass', () => {
 describe('plan builder request policy', () => {
   it('keeps client-side caps aligned with the coach proxy caps', () => {
     expect(getAIRequestPolicy('week_creator')).toMatchObject({
-      maxTokens: 3500,
+      maxTokens: 8000,
       timeoutMs: 23000,
     })
     expect(getAIRequestPolicy('plan_builder_week')).toMatchObject({
@@ -187,13 +187,21 @@ describe('OpenAI request body', () => {
   }
 
   it('omits temperature for GPT-5 models that only accept the default value', () => {
-    expect(buildOpenAIBody(baseRequest, 'gpt-5-mini')).not.toHaveProperty('temperature')
+    const body = buildOpenAIBody(baseRequest, 'gpt-5-mini')
+    expect(body).not.toHaveProperty('temperature')
+    expect(body).toMatchObject({ reasoning_effort: 'low' })
+  })
+
+  it('uses minimal reasoning effort for fast request classes on GPT-5', () => {
+    const body = buildOpenAIBody({ ...baseRequest, requestClass: 'chat_general' as const }, 'gpt-5-mini')
+    expect(body).toMatchObject({ reasoning_effort: 'minimal' })
   })
 
   it('keeps temperature for older Chat Completions models', () => {
     expect(buildOpenAIBody(baseRequest, 'gpt-4.1-mini')).toMatchObject({
       temperature: 0.15,
     })
+    expect(buildOpenAIBody(baseRequest, 'gpt-4.1-mini')).not.toHaveProperty('reasoning_effort')
   })
 })
 

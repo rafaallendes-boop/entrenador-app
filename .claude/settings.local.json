@@ -44,7 +44,9 @@
       "Bash(npx eslint *)",
       "Bash(chmod +x /tmp/verify.sh)",
       "Bash(/tmp/verify.sh)",
-      "Skill(code-review)"
+      "Skill(code-review)",
+      "Read(//Users/rafaallendes/Downloads/**)",
+      "Bash(python3 -c ' *)"
     ]
   }
 }

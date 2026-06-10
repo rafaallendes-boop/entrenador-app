@@ -22,7 +22,9 @@ export interface PollPlanGenerationInput {
 }
 
 const DEFAULT_INTERVAL_MS = 4_000
-const DEFAULT_STALLED_AFTER_MS = 3 * 60_000
+// El worker puede pasar hasta ~2 intentos de 120s en una semana antes de
+// refrescar heartbeat entre intentos; 5 min evita marcar "stalled" en falso.
+const DEFAULT_STALLED_AFTER_MS = 5 * 60_000
 const TERMINAL_STATES = new Set<TrainingPlan['generationState']>(['complete', 'partial', 'failed', 'cancelled'])
 
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {

@@ -86,7 +86,7 @@ const REQUEST_MAX_TOKENS: Record<RequestClass, number> = {
   chat_general: 2400,
   chat_action: 4200,
   weekly_summary: 1600,
-  week_creator: 3500,
+  week_creator: 8000,
   plan_builder_week: 3500,
   plan_builder_pair: 4200,
   import_extract: 2000,
@@ -644,6 +644,26 @@ function supportsOpenAITemperature(model: string): boolean {
   return !model.toLowerCase().startsWith('gpt-5')
 }
 
+function supportsOpenAIReasoningEffort(model: string): boolean {
+  return model.toLowerCase().startsWith('gpt-5')
+}
+
+// Análogo a getGeminiThinkingBudget: todas las clases corren bajo el techo
+// síncrono de 26s, así que el esfuerzo alto nunca aplica aquí.
+function getOpenAIReasoningEffort(requestClass: RequestClass): 'minimal' | 'low' {
+  switch (requestClass) {
+    case 'chat_action':
+    case 'week_creator':
+    case 'plan_builder_week':
+    case 'plan_builder_pair':
+      return 'low'
+    case 'chat_general':
+    case 'weekly_summary':
+    case 'import_extract':
+      return 'minimal'
+  }
+}
+
 export function buildOpenAIBody(req: CoachRequest, model: string, streamOutput = false): Record<string, unknown> {
   const body: Record<string, unknown> = {
     model,
@@ -656,6 +676,9 @@ export function buildOpenAIBody(req: CoachRequest, model: string, streamOutput =
   }
   if (supportsOpenAITemperature(model)) {
     body.temperature = req.temperature ?? 0.7
+  }
+  if (supportsOpenAIReasoningEffort(model)) {
+    body.reasoning_effort = getOpenAIReasoningEffort(normalizeRequestClass(req.requestClass))
   }
   const responseFormat = buildOpenAIResponseFormat(req)
   if (responseFormat) body.response_format = responseFormat
@@ -1027,16 +1050,34 @@ async function executeWithPolicy(
   const runAttempt = async (provider: ProviderName, attemptsRemaining: number) => {
     attemptIndex += 1
     const thisAttempt = attemptIndex
-    const attemptTimeoutMs = computeAttemptTimeoutMs(deadline, attemptsRemaining)
+    let attemptTimeoutMs = computeAttemptTimeoutMs(deadline, attemptsRemaining)
     const attemptStartedAt = Date.now()
     const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), attemptTimeoutMs)
+    let timeoutId: ReturnType<typeof setTimeout> | undefined
+    let streamingDeadlineExtended = false
+    const armTimeout = (ms: number) => {
+      if (timeoutId) clearTimeout(timeoutId)
+      timeoutId = setTimeout(() => controller.abort(), ms)
+    }
+    const extendTimeoutForStreaming = () => {
+      if (streamingDeadlineExtended) return
+      streamingDeadlineExtended = true
+      const remainingBudget = deadline - Date.now()
+      if (remainingBudget <= 0) {
+        controller.abort()
+        return
+      }
+      attemptTimeoutMs = Date.now() - attemptStartedAt + remainingBudget
+      armTimeout(remainingBudget)
+    }
+    armTimeout(attemptTimeoutMs)
     try {
       const result = await invokeProvider(
         provider,
         req,
         controller.signal,
         onChunk ? (chunk) => {
+          extendTimeoutForStreaming()
           partialChunks = true
           onChunk(chunk)
         } : undefined,
@@ -1068,7 +1109,7 @@ async function executeWithPolicy(
       })
       throw normalized
     } finally {
-      clearTimeout(timeoutId)
+      if (timeoutId) clearTimeout(timeoutId)
     }
   }
 

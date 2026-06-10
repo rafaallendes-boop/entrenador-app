@@ -66,6 +66,22 @@ function supportsOpenAITemperature(model: string): boolean {
   return !model.toLowerCase().startsWith('gpt-5')
 }
 
+function supportsOpenAIReasoningEffort(model: string): boolean {
+  return model.toLowerCase().startsWith('gpt-5')
+}
+
+// Espejo de getOpenAIReasoningEffort en netlify/functions/coach.ts: las clases
+// rápidas usan minimal y las que generan semanas/acciones usan low.
+const OPENAI_REASONING_EFFORT_BY_CLASS: Partial<Record<AIRequest['requestClass'], 'minimal' | 'low'>> = {
+  chat_general: 'minimal',
+  weekly_summary: 'minimal',
+  import_extract: 'minimal',
+}
+
+function getOpenAIReasoningEffort(requestClass: AIRequest['requestClass']): 'minimal' | 'low' {
+  return OPENAI_REASONING_EFFORT_BY_CLASS[requestClass] ?? 'low'
+}
+
 function buildRequestBody(
   request: AIRequest,
   model: string,
@@ -79,6 +95,9 @@ function buildRequestBody(
   }
   if (supportsOpenAITemperature(model)) {
     body.temperature = request.temperature ?? 0.7
+  }
+  if (supportsOpenAIReasoningEffort(model)) {
+    body.reasoning_effort = getOpenAIReasoningEffort(request.requestClass)
   }
   const responseFormat = buildResponseFormat(request)
   if (responseFormat) body.response_format = responseFormat

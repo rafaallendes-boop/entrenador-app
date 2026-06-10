@@ -1322,6 +1322,7 @@ describe('WeekCreatorEngine', () => {
     expect(strength?.exercises?.slice(0, 2).every((exercise) => exercise.group === 'core')).toBe(true)
     expect(strength?.exercises?.some((exercise) => exercise.group === 'cardio')).toBe(true)
     expect(strength?.exercises?.at(-1)?.group).toBe('cardio')
+    expect(response.message).toContain('semana base automática')
     expect(response.message).not.toContain('El proveedor')
     expect(response.message).not.toContain('no devolvió una semana aplicable')
     expect(response.message).not.toContain('Gemini no devolvió el formato estructurado')
