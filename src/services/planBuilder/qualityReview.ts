@@ -461,6 +461,7 @@ function normalizeExerciseName(name: string): string {
 
 function scoreWeek(issues: PlanValidationIssue[], repairCount: number): number {
   const penalty = issues.reduce((total, item) => {
+    if (isGenerationReliabilitySignal(item)) return total
     if (item.severity === 'error') return total + 22
     if (item.severity === 'warning') return total + 7
     return total + 3
@@ -472,9 +473,16 @@ function scoreWeek(issues: PlanValidationIssue[], repairCount: number): number {
 function scorePlan(weeks: PlanQualityWeekReview[], planIssues: PlanValidationIssue[], repairCount: number): number {
   if (weeks.length === 0) return 0
   const average = weeks.reduce((total, week) => total + week.score, 0) / weeks.length
-  const planPenalty = planIssues.reduce((total, item) => total + (item.severity === 'error' ? 14 : item.severity === 'warning' ? 5 : 2), 0)
+  const planPenalty = planIssues.reduce((total, item) => {
+    if (isGenerationReliabilitySignal(item)) return total
+    return total + (item.severity === 'error' ? 14 : item.severity === 'warning' ? 5 : 2)
+  }, 0)
   const repairPenalty = Math.min(8, Math.floor(repairCount / 8))
   return clampScore(average - planPenalty - repairPenalty)
+}
+
+function isGenerationReliabilitySignal(issue: PlanValidationIssue): boolean {
+  return issue.code.startsWith('quality.generation.')
 }
 
 function countRepairs(week: TrainingPlanWeek): number {
@@ -483,7 +491,6 @@ function countRepairs(week: TrainingPlanWeek): number {
     + (meta.movedSessionCount ?? 0)
     + (meta.addedFallbackCount ?? 0)
     + (meta.filteredSportCount ?? 0)
-    + (meta.droppedSessionCount ?? 0)
 }
 
 export function reviewPlanQuality(plan: TrainingPlan, weeks: TrainingPlanWeek[]): PlanQualityReview {

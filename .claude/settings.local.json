@@ -46,7 +46,8 @@
       "Bash(/tmp/verify.sh)",
       "Skill(code-review)",
       "Read(//Users/rafaallendes/Downloads/**)",
-      "Bash(python3 -c ' *)"
+      "Bash(python3 -c ' *)",
+      "Read(//tmp/**)"
     ]
   }
 }

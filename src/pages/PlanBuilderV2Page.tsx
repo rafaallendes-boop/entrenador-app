@@ -10,6 +10,7 @@ import { usePlanBuilderStore } from '../store/usePlanBuilderStore'
 import { supabase } from '../services/auth'
 import { getPrimaryGoalEvent } from '../services/macroPlan'
 import { analyzePlanCommitImpact } from '../services/planBuilder/commitImpact'
+import { shouldDeleteEmptyShellDraft, shouldLoadMatchingDraftPlan } from '../services/planBuilder/draftAutoload'
 import { rowToTrainingPlan, rowToTrainingPlanWeek } from '../services/planBuilder/planRows'
 import { buildPlanQualityRepairInstructions, reviewPlanQuality } from '../services/planBuilder/qualityReview'
 import { shouldShowPlanQuality } from '../services/ai/showPlanQualityFlag'
@@ -621,11 +622,11 @@ export default function PlanBuilderV2Page() {
           .equals(matchingPlan.id)
           .toArray()
         if (cancelled) return
-        if (matchingWeeks.length > 0) {
+        if (shouldLoadMatchingDraftPlan(matchingPlan, matchingWeeks.length)) {
           await loadDraft(matchingPlan.id)
           return
         }
-        if (matchingPlan.status === 'draft') {
+        if (shouldDeleteEmptyShellDraft(matchingPlan, matchingWeeks.length)) {
           await db.trainingPlanWeeks.where('planId').equals(matchingPlan.id).delete()
           await db.trainingPlans.delete(matchingPlan.id)
         }
@@ -966,6 +967,13 @@ export default function PlanBuilderV2Page() {
                 <p className="mt-1 text-sm text-ink-muted">
                   Estamos preparando las semanas remotas. El progreso aparecerá en unos segundos.
                 </p>
+                <button
+                  type="button"
+                  onClick={() => { void cancelGeneration() }}
+                  className="mt-3 rounded-xl border border-white/10 px-3 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-ink-muted hover:border-red-400/40 hover:text-red-300"
+                >
+                  Detener
+                </button>
               </div>
             </div>
           </div>

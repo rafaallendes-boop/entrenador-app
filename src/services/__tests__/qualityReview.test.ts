@@ -226,7 +226,8 @@ describe('reviewPlanQuality', () => {
     expect(review.issues.some((item) => item.code === 'quality.generation.dropped_sessions')).toBe(true)
     expect(review.issues.some((item) => item.code === 'quality.generation.repair_fallback_added')).toBe(true)
     expect(review.issues.some((item) => item.code === 'quality.generation.high_repair_count')).toBe(true)
-    expect(review.weeks[0]?.repairCount).toBe(15)
+    expect(review.weeks[0]?.repairCount).toBe(12)
+    expect(review.score).toBeGreaterThanOrEqual(90)
   })
 
   it('flags plan-level reliance on repair fallbacks and dropped sessions', () => {
