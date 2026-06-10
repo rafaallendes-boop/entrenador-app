@@ -192,6 +192,16 @@ function hasGenerationProgress(weeks: TrainingPlanWeek[]): boolean {
   )
 }
 
+function shouldResumeRemoteGenerationSnapshot(snapshot: PlanGenerationSnapshot): boolean {
+  if (snapshot.plan.generationState === 'generating') {
+    return Boolean(snapshot.plan.generationSummary?.jobId) || hasGenerationProgress(snapshot.weeks)
+  }
+  if (snapshot.plan.generationState === 'shell') {
+    return hasGenerationProgress(snapshot.weeks)
+  }
+  return true
+}
+
 function resetWeeksForFullGeneration(weeks: TrainingPlanWeek[]): TrainingPlanWeek[] {
   const nowTs = Date.now()
   return weeks.map((week) => ({
@@ -336,7 +346,7 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
       const remoteSnapshot = await fetchPlanGenerationSnapshot(plan.id).catch(() => null)
       if (
         remoteSnapshot &&
-        (remoteSnapshot.plan.generationState !== 'shell' || hasGenerationProgress(remoteSnapshot.weeks))
+        shouldResumeRemoteGenerationSnapshot(remoteSnapshot)
       ) {
         applyGenerationSnapshot(remoteSnapshot, set)
         if (!remoteSnapshot.isTerminal && !remoteSnapshot.isStalled) {

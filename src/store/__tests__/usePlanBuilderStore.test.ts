@@ -22,6 +22,7 @@ const mocks = vi.hoisted(() => {
     fetchPlanGenerationSnapshot: vi.fn(),
     pollPlanGeneration: vi.fn(),
     triggerBackgroundGeneration: vi.fn(),
+    pushTrainingPlan: vi.fn(),
     commitPlan: vi.fn(),
     db: {
       trainingPlans: {
@@ -99,6 +100,9 @@ vi.mock('../../services/planBuilder/pollPlanGeneration', async (importActual) =>
 })
 vi.mock('../../services/planBuilder/triggerBackgroundGeneration', () => ({
   triggerBackgroundGeneration: mocks.triggerBackgroundGeneration,
+}))
+vi.mock('../../services/syncService', () => ({
+  pushTrainingPlan: mocks.pushTrainingPlan,
 }))
 
 import { usePlanBuilderStore } from '../usePlanBuilderStore'
@@ -238,6 +242,9 @@ describe('usePlanBuilderStore', () => {
     mocks.pollPlanGeneration.mockReset()
     mocks.pollPlanGeneration.mockResolvedValue(null)
     mocks.triggerBackgroundGeneration.mockReset()
+    mocks.triggerBackgroundGeneration.mockResolvedValue({ jobId: 'new-job' })
+    mocks.pushTrainingPlan.mockReset()
+    mocks.pushTrainingPlan.mockResolvedValue(undefined)
     mocks.commitPlan.mockReset()
     mocks.commitPlan.mockResolvedValue({ errors: [], warnings: [] })
     mocks.supabase = null
@@ -362,6 +369,44 @@ describe('usePlanBuilderStore', () => {
     expect(mocks.triggerBackgroundGeneration).not.toHaveBeenCalled()
     expect(usePlanBuilderStore.getState().plan?.generationSummary?.jobId).toBe('existing-job')
     expect(usePlanBuilderStore.getState().status).toBe('generating')
+  })
+
+  it('ignores an orphan remote generating marker without job id or week progress', async () => {
+    const profile = await createShell()
+    const stateBefore = usePlanBuilderStore.getState()
+    const plan = stateBefore.plan!
+    const weeks = stateBefore.weeks
+    mocks.supabase = { auth: {} }
+    mocks.authUser = { id: 'user-1' }
+    mocks.fetchPlanGenerationSnapshot.mockResolvedValue({
+      plan: {
+        ...plan,
+        generationState: 'generating',
+        generationSummary: {
+          startedAt: Date.now(),
+          strategy: 'single',
+          completedWeeks: 0,
+          failedWeeks: [],
+          totalAttempts: 0,
+          heartbeatAt: Date.now(),
+        },
+      },
+      weeks: [],
+      isTerminal: false,
+      isStalled: false,
+    })
+
+    await usePlanBuilderStore.getState().runGeneration(profile)
+
+    expect(mocks.fetchPlanGenerationSnapshot).toHaveBeenCalledWith(plan.id)
+    expect(mocks.pushTrainingPlan).toHaveBeenCalled()
+    expect(mocks.triggerBackgroundGeneration).toHaveBeenCalledWith(expect.objectContaining({
+      plan: expect.objectContaining({
+        id: plan.id,
+        generationState: 'generating',
+      }),
+      weeks: expect.arrayContaining(weeks.map((week) => expect.objectContaining({ id: week.id }))),
+    }))
   })
 
   it('acceptPlan rejects when generationState is not complete', async () => {

@@ -114,6 +114,7 @@ function createJobId(planId: string): string {
 
 function isActiveGeneration(plan: TrainingPlan | null, now: number): plan is TrainingPlan {
   if (!plan || plan.generationState !== 'generating') return false
+  if (!plan.generationSummary?.jobId) return false
   if (plan.generationSummary?.cancelRequested) return false
   const heartbeatAt = plan.generationSummary?.heartbeatAt
     ?? plan.generationSummary?.startedAt
