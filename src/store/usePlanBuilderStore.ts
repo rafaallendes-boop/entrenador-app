@@ -23,7 +23,11 @@ import {
 } from '../services/planBuilder/generationJobRunner'
 import { buildPlanBuilderRecentContext } from '../services/planBuilder/recentContext'
 import { countReadyWeeks, sortWeeks } from '../services/planBuilder/weekUtils'
-import { pollPlanGeneration, type PlanGenerationSnapshot } from '../services/planBuilder/pollPlanGeneration'
+import {
+  fetchPlanGenerationSnapshot,
+  pollPlanGeneration,
+  type PlanGenerationSnapshot,
+} from '../services/planBuilder/pollPlanGeneration'
 import { triggerBackgroundGeneration } from '../services/planBuilder/triggerBackgroundGeneration'
 import { pushTrainingPlan } from '../services/syncService'
 import { supabase } from '../services/auth'
@@ -693,7 +697,20 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
   },
 
   loadDraft: async (planId) => {
-    const plan = await db.trainingPlans.get(planId)
+    let plan = await db.trainingPlans.get(planId)
+
+    if (supabase && (!plan || plan.generationState === 'shell' || plan.generationState === 'generating')) {
+      const remoteSnapshot = await fetchPlanGenerationSnapshot(planId).catch(() => null)
+      if (remoteSnapshot) {
+        applyGenerationSnapshot(remoteSnapshot, set)
+        if (remoteSnapshot.plan.generationState === 'generating') {
+          startGenerationPolling(remoteSnapshot.plan.id, set, get)
+        }
+        return
+      }
+      plan = await db.trainingPlans.get(planId)
+    }
+
     if (!plan) {
       set({ status: 'error', lastError: 'Plan no encontrado' })
       return

@@ -5,9 +5,12 @@ import Card from '../components/ui/Card'
 import { ROUTES } from '../constants/routes'
 import { db } from '../db/db'
 import { useCoachMemoryStore } from '../store/useCoachMemoryStore'
+import { useAuthStore } from '../store/useAuthStore'
 import { usePlanBuilderStore } from '../store/usePlanBuilderStore'
+import { supabase } from '../services/auth'
 import { getPrimaryGoalEvent } from '../services/macroPlan'
 import { analyzePlanCommitImpact } from '../services/planBuilder/commitImpact'
+import { rowToTrainingPlan, rowToTrainingPlanWeek } from '../services/planBuilder/planRows'
 import { buildPlanQualityRepairInstructions, reviewPlanQuality } from '../services/planBuilder/qualityReview'
 import { shouldShowPlanQuality } from '../services/ai/showPlanQualityFlag'
 import { ChevronLeft, RefreshCw, CheckCircle2, AlertTriangle, X } from 'lucide-react'
@@ -464,10 +467,60 @@ function buildDraftSignature(goalEventId: string, wizardConfig: PlanWizardConfig
   return JSON.stringify({ goalEventId, wizardConfig: stableConfig })
 }
 
+async function fetchRemoteMatchingDraft(input: {
+  athleteId: string
+  goalEventId: string
+  expectedDraftSignature: string
+}): Promise<string | null> {
+  if (!supabase) return null
+
+  const { data: planRows, error: plansError } = await supabase
+    .from('training_plans')
+    .select('*')
+    .eq('athlete_id', input.athleteId)
+    .eq('goal_event_id', input.goalEventId)
+    .eq('status', 'draft')
+    .is('deleted_at', null)
+
+  if (plansError) throw plansError
+
+  const matchingPlans = ((planRows ?? []) as Record<string, unknown>[])
+    .map(rowToTrainingPlan)
+    .filter((candidate) => (
+      buildDraftSignature(candidate.goalEventId, candidate.wizardConfig) === input.expectedDraftSignature
+    ))
+    .sort((a, b) => b.updatedAt - a.updatedAt)
+
+  for (const remotePlan of matchingPlans) {
+    const { data: weekRows, error: weeksError } = await supabase
+      .from('training_plan_weeks')
+      .select('*')
+      .eq('plan_id', remotePlan.id)
+      .is('deleted_at', null)
+
+    if (weeksError) throw weeksError
+
+    const remoteWeeks = ((weekRows ?? []) as Record<string, unknown>[])
+      .map(rowToTrainingPlanWeek)
+      .sort((a, b) => a.weekIndex - b.weekIndex)
+    if (remoteWeeks.length === 0) continue
+
+    await db.transaction('rw', db.trainingPlans, db.trainingPlanWeeks, async () => {
+      await db.trainingPlans.put(remotePlan)
+      await db.trainingPlanWeeks.bulkPut(remoteWeeks)
+    })
+    return remotePlan.id
+  }
+
+  return null
+}
+
 export default function PlanBuilderV2Page() {
   const navigate = useNavigate()
   const location = useLocation()
   const athleteProfile = useCoachMemoryStore((s) => s.athleteProfile)
+  const authUser = useAuthStore((s) => s.user)
+  const authIsLoading = useAuthStore((s) => s.isLoading)
   const launchStateRef = useRef<PlanBuilderLocationState | null>(
     isPlanBuilderLocationState(location.state) ? location.state : null,
   )
@@ -520,6 +573,7 @@ export default function PlanBuilderV2Page() {
 
   useEffect(() => {
     if (!effectiveAthleteProfile || !effectiveAthleteProfile.planWizardConfig || !goalEvent) return
+    if (supabase && authIsLoading) return
     const wizardConfig = effectiveAthleteProfile.planWizardConfig
     if (currentDraftSignature === expectedDraftSignature) {
       inflightSignatureRef.current = null
@@ -563,6 +617,23 @@ export default function PlanBuilderV2Page() {
         }
       }
 
+      if (authUser && expectedDraftSignature && goalEvent) {
+        try {
+          const remotePlanId = await fetchRemoteMatchingDraft({
+            athleteId: effectiveAthleteProfile.id,
+            goalEventId: goalEvent.id,
+            expectedDraftSignature,
+          })
+          if (cancelled) return
+          if (remotePlanId) {
+            await loadDraft(remotePlanId)
+            return
+          }
+        } catch (error) {
+          console.warn('[plan-builder] remote draft lookup failed', error)
+        }
+      }
+
       await createDraft({ profile: effectiveAthleteProfile, wizardConfig })
     })()
 
@@ -572,7 +643,7 @@ export default function PlanBuilderV2Page() {
       // to athleteProfile) can retry the Dexie query instead of early-returning.
       inflightSignatureRef.current = null
     }
-  }, [createDraft, currentDraftSignature, effectiveAthleteProfile, expectedDraftSignature, goalEvent, loadDraft, plan])
+  }, [authIsLoading, authUser, createDraft, currentDraftSignature, effectiveAthleteProfile, expectedDraftSignature, goalEvent, loadDraft, plan])
 
   const effectiveSelectedWeekIndex = (() => {
     // If there are failed weeks and the user hasn't explicitly selected one of them,
