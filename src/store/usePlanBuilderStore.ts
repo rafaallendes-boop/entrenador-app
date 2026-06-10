@@ -184,6 +184,14 @@ function normalizePlanGenerationState(plan: TrainingPlan, weeks: TrainingPlanWee
   }
 }
 
+function hasGenerationProgress(weeks: TrainingPlanWeek[]): boolean {
+  return weeks.some((week) =>
+    week.status !== 'pending' ||
+    week.sessions.length > 0 ||
+    (week.generationMeta.attempts ?? 0) > 0
+  )
+}
+
 function resetWeeksForFullGeneration(weeks: TrainingPlanWeek[]): TrainingPlanWeek[] {
   const nowTs = Date.now()
   return weeks.map((week) => ({
@@ -320,6 +328,23 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
   runGeneration: async (profile) => {
     const { plan, weeks } = get()
     if (!plan) return
+    if (plan.generationState === 'generating' || get().status === 'generating') {
+      startGenerationPolling(plan.id, set, get)
+      return
+    }
+    if (canUseRemoteGeneration()) {
+      const remoteSnapshot = await fetchPlanGenerationSnapshot(plan.id).catch(() => null)
+      if (
+        remoteSnapshot &&
+        (remoteSnapshot.plan.generationState !== 'shell' || hasGenerationProgress(remoteSnapshot.weeks))
+      ) {
+        applyGenerationSnapshot(remoteSnapshot, set)
+        if (!remoteSnapshot.isTerminal && !remoteSnapshot.isStalled) {
+          startGenerationPolling(remoteSnapshot.plan.id, set, get)
+        }
+        return
+      }
+    }
     const startedAt = Date.now()
     const strategy = resolveConfiguredGenerationStrategy(plan.totalWeeks, 'single')
     const resetWeeks = resetWeeksForFullGeneration(weeks)

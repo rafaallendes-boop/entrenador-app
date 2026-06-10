@@ -16,7 +16,12 @@ const mocks = vi.hoisted(() => {
     plans,
     weeks,
     jobs,
+    supabase: null as unknown,
+    authUser: null as { id: string } | null,
     generatePlanWeeks: vi.fn(),
+    fetchPlanGenerationSnapshot: vi.fn(),
+    pollPlanGeneration: vi.fn(),
+    triggerBackgroundGeneration: vi.fn(),
     commitPlan: vi.fn(),
     db: {
       trainingPlans: {
@@ -72,8 +77,29 @@ const mocks = vi.hoisted(() => {
 })
 
 vi.mock('../../db/db', () => ({ db: mocks.db }))
+vi.mock('../../services/auth', () => ({
+  get supabase() {
+    return mocks.supabase
+  },
+}))
+vi.mock('../useAuthStore', () => ({
+  useAuthStore: {
+    getState: () => ({ user: mocks.authUser }),
+  },
+}))
 vi.mock('../../services/planBuilder/generatePlan', () => ({ generatePlanWeeks: mocks.generatePlanWeeks }))
 vi.mock('../../services/planBuilder/commitPlan', () => ({ commitPlan: mocks.commitPlan }))
+vi.mock('../../services/planBuilder/pollPlanGeneration', async (importActual) => {
+  const actual = await importActual<typeof import('../../services/planBuilder/pollPlanGeneration')>()
+  return {
+    ...actual,
+    fetchPlanGenerationSnapshot: mocks.fetchPlanGenerationSnapshot,
+    pollPlanGeneration: mocks.pollPlanGeneration,
+  }
+})
+vi.mock('../../services/planBuilder/triggerBackgroundGeneration', () => ({
+  triggerBackgroundGeneration: mocks.triggerBackgroundGeneration,
+}))
 
 import { usePlanBuilderStore } from '../usePlanBuilderStore'
 
@@ -207,8 +233,15 @@ describe('usePlanBuilderStore', () => {
     mocks.weeks.clear()
     mocks.jobs.clear()
     mocks.generatePlanWeeks.mockReset()
+    mocks.fetchPlanGenerationSnapshot.mockReset()
+    mocks.fetchPlanGenerationSnapshot.mockResolvedValue(null)
+    mocks.pollPlanGeneration.mockReset()
+    mocks.pollPlanGeneration.mockResolvedValue(null)
+    mocks.triggerBackgroundGeneration.mockReset()
     mocks.commitPlan.mockReset()
     mocks.commitPlan.mockResolvedValue({ errors: [], warnings: [] })
+    mocks.supabase = null
+    mocks.authUser = null
     resetStore()
   })
 
@@ -295,6 +328,40 @@ describe('usePlanBuilderStore', () => {
     const state = usePlanBuilderStore.getState()
     expect(state.status).toBe('failed')
     expect(state.lastError).toContain('semana')
+  })
+
+  it('does not trigger a second remote generation when Supabase already has an active plan', async () => {
+    const profile = await createShell()
+    const stateBefore = usePlanBuilderStore.getState()
+    const plan = stateBefore.plan!
+    const weeks = stateBefore.weeks
+    mocks.supabase = { auth: {} }
+    mocks.authUser = { id: 'user-1' }
+    mocks.fetchPlanGenerationSnapshot.mockResolvedValue({
+      plan: {
+        ...plan,
+        generationState: 'generating',
+        generationSummary: {
+          startedAt: Date.now(),
+          jobId: 'existing-job',
+          strategy: 'single',
+          completedWeeks: 0,
+          failedWeeks: [],
+          totalAttempts: 0,
+          heartbeatAt: Date.now(),
+        },
+      },
+      weeks,
+      isTerminal: false,
+      isStalled: false,
+    })
+
+    await usePlanBuilderStore.getState().runGeneration(profile)
+
+    expect(mocks.fetchPlanGenerationSnapshot).toHaveBeenCalledWith(plan.id)
+    expect(mocks.triggerBackgroundGeneration).not.toHaveBeenCalled()
+    expect(usePlanBuilderStore.getState().plan?.generationSummary?.jobId).toBe('existing-job')
+    expect(usePlanBuilderStore.getState().status).toBe('generating')
   })
 
   it('acceptPlan rejects when generationState is not complete', async () => {

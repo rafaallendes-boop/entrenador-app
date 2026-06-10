@@ -40,6 +40,24 @@ function makeSnapshot(state: TrainingPlan['generationState'] = 'generating'): Pl
   }
 }
 
+function makeWeek(status: TrainingPlanWeek['status'] = 'pending'): TrainingPlanWeek {
+  return {
+    id: `week-${status}`,
+    planId: 'plan-1',
+    weekIndex: 0,
+    weekStartDate: '2026-06-01',
+    phase: 'build',
+    status,
+    sessions: [],
+    weekObjectives: [],
+    targetLoadBySport: {},
+    validationIssues: [],
+    generationMeta: { attempts: status === 'pending' ? 0 : 1 },
+    createdAt: 1,
+    updatedAt: 2,
+  }
+}
+
 describe('pollPlanGeneration — abort race', () => {
   it('does not call onSnapshot when signal aborts during in-flight fetchPlanGenerationSnapshot', async () => {
     const controller = new AbortController()
@@ -103,5 +121,15 @@ describe('pollPlanGeneration — abort race', () => {
     }
 
     expect(shouldKeepLocalGenerationSnapshot(local, remote)).toBe(false)
+  })
+
+  it('does not keep local pending weeks when a stale remote shell already has week progress', () => {
+    const local = makePlan('generating')
+    const remote = {
+      ...makePlan('shell'),
+      updatedAt: local.updatedAt - 1,
+    }
+
+    expect(shouldKeepLocalGenerationSnapshot(local, remote, [makeWeek('draft')])).toBe(false)
   })
 })

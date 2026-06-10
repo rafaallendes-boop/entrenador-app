@@ -2,7 +2,7 @@ import { db } from '../../db/db'
 import type { TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
 import { supabase } from '../auth'
 import { rowToTrainingPlan, rowToTrainingPlanWeek } from './planRows'
-import { sortWeeks } from './weekUtils'
+import { countReadyWeeks, sortWeeks } from './weekUtils'
 
 export interface PlanGenerationSnapshot {
   plan: TrainingPlan
@@ -51,6 +51,72 @@ export function derivePollingSnapshot(plan: TrainingPlan, weeks: TrainingPlanWee
   return { plan, weeks: sortWeeks(weeks), isTerminal, isStalled }
 }
 
+function failedWeekIndexes(weeks: TrainingPlanWeek[]): number[] {
+  return weeks
+    .filter((week) => week.status === 'error')
+    .map((week) => week.weekIndex)
+    .sort((a, b) => a - b)
+}
+
+function hasRemoteWeekProgress(weeks: TrainingPlanWeek[]): boolean {
+  return weeks.some((week) =>
+    week.status !== 'pending' ||
+    week.sessions.length > 0 ||
+    (week.generationMeta.attempts ?? 0) > 0
+  )
+}
+
+function derivePlanStateFromWeeks(plan: TrainingPlan, weeks: TrainingPlanWeek[]): TrainingPlan['generationState'] {
+  if (weeks.length === 0) return plan.generationState
+  if (weeks.some((week) => week.status === 'generating')) return 'generating'
+  const readyWeeks = countReadyWeeks(weeks)
+  if (weeks.some((week) => week.status === 'pending' || week.status === 'regenerating')) {
+    return plan.generationState === 'generating' || hasRemoteWeekProgress(weeks)
+      ? 'generating'
+      : plan.generationState
+  }
+  if (readyWeeks === weeks.length) return 'complete'
+  if (readyWeeks > 0) return 'partial'
+  if (weeks.some((week) => week.status === 'error' || (week.generationMeta.attempts ?? 0) > 0)) return 'failed'
+  return plan.generationState
+}
+
+function mergePlanWithRemoteWeeks(
+  basePlan: TrainingPlan,
+  remoteWeeks: TrainingPlanWeek[],
+  now: number,
+): TrainingPlan {
+  const sortedWeeks = sortWeeks(remoteWeeks)
+  const heartbeatAt = Math.max(
+    basePlan.generationSummary?.heartbeatAt ?? basePlan.generationSummary?.startedAt ?? basePlan.updatedAt ?? now,
+    ...sortedWeeks.map((week) => week.updatedAt ?? 0),
+  )
+  const generationState = derivePlanStateFromWeeks(basePlan, sortedWeeks)
+  const completedAt = generationState === 'complete' || generationState === 'partial' || generationState === 'failed'
+    ? now
+    : basePlan.generationSummary?.completedAt
+
+  return {
+    ...basePlan,
+    generationState,
+    updatedAt: Math.max(basePlan.updatedAt ?? 0, heartbeatAt),
+    generationSummary: {
+      ...(basePlan.generationSummary ?? {
+        startedAt: now,
+        strategy: 'single' as const,
+        completedWeeks: 0,
+        failedWeeks: [],
+        totalAttempts: 0,
+      }),
+      completedAt,
+      completedWeeks: countReadyWeeks(sortedWeeks),
+      failedWeeks: failedWeekIndexes(sortedWeeks),
+      totalAttempts: sortedWeeks.reduce((sum, week) => sum + (week.generationMeta.attempts ?? 0), 0),
+      heartbeatAt,
+    },
+  }
+}
+
 export async function fetchPlanGenerationSnapshot(
   planId: string,
   options?: { stalledAfterMs?: number; now?: number },
@@ -72,16 +138,25 @@ export async function fetchPlanGenerationSnapshot(
     ? await db.trainingPlanWeeks.where('planId').equals(planId).toArray()
     : []
 
-  if (shouldKeepLocalGenerationSnapshot(localPlan, plan)) {
+  const now = options?.now ?? Date.now()
+  if (localPlan && shouldKeepLocalGenerationSnapshot(localPlan, plan, weeks)) {
     return derivePollingSnapshot(
       localPlan,
       localWeeks.length > 0 ? localWeeks : weeks,
-      options?.now ?? Date.now(),
+      now,
       options?.stalledAfterMs,
     )
   }
 
-  const snapshot = derivePollingSnapshot(plan, weeks, options?.now ?? Date.now(), options?.stalledAfterMs)
+  const snapshot = plan.generationState === 'shell' &&
+    hasRemoteWeekProgress(weeks)
+    ? derivePollingSnapshot(
+      mergePlanWithRemoteWeeks(localPlan?.generationState === 'generating' ? localPlan : plan, weeks, now),
+      weeks,
+      now,
+      options?.stalledAfterMs,
+    )
+    : derivePollingSnapshot(plan, weeks, now, options?.stalledAfterMs)
 
   await db.transaction('rw', db.trainingPlans, db.trainingPlanWeeks, async () => {
     await db.trainingPlans.put(snapshot.plan)
@@ -94,11 +169,13 @@ export async function fetchPlanGenerationSnapshot(
 export function shouldKeepLocalGenerationSnapshot(
   localPlan: TrainingPlan | undefined,
   remotePlan: TrainingPlan,
-): localPlan is TrainingPlan {
+  remoteWeeks: TrainingPlanWeek[] = [],
+): boolean {
   if (!localPlan) return false
   if (localPlan.id !== remotePlan.id) return false
   if (localPlan.generationState !== 'generating') return false
   if (remotePlan.generationState !== 'shell') return false
+  if (hasRemoteWeekProgress(remoteWeeks)) return false
   return (remotePlan.updatedAt ?? 0) <= (localPlan.updatedAt ?? 0)
 }
 

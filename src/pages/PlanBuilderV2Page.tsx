@@ -575,6 +575,10 @@ export default function PlanBuilderV2Page() {
     if (!effectiveAthleteProfile || !effectiveAthleteProfile.planWizardConfig || !goalEvent) return
     if (supabase && authIsLoading) return
     const wizardConfig = effectiveAthleteProfile.planWizardConfig
+    if (plan?.generationState === 'generating' || status === 'generating') {
+      inflightSignatureRef.current = null
+      return
+    }
     if (currentDraftSignature === expectedDraftSignature) {
       inflightSignatureRef.current = null
       return
@@ -643,7 +647,7 @@ export default function PlanBuilderV2Page() {
       // to athleteProfile) can retry the Dexie query instead of early-returning.
       inflightSignatureRef.current = null
     }
-  }, [authIsLoading, authUser, createDraft, currentDraftSignature, effectiveAthleteProfile, expectedDraftSignature, goalEvent, loadDraft, plan])
+  }, [authIsLoading, authUser, createDraft, currentDraftSignature, effectiveAthleteProfile, expectedDraftSignature, goalEvent, loadDraft, plan, status])
 
   const effectiveSelectedWeekIndex = (() => {
     // If there are failed weeks and the user hasn't explicitly selected one of them,
@@ -730,10 +734,17 @@ export default function PlanBuilderV2Page() {
   const isGenerating = status === 'generating'
   const generationProgress = weeks.length > 0 ? Math.round((completedWeeks / weeks.length) * 100) : 0
   const currentPlanId = plan?.id ?? null
+  const hasGenerationProgress = Boolean(plan?.generationSummary?.jobId || plan?.generationSummary?.heartbeatAt) ||
+    weeks.some((week) =>
+      week.status !== 'pending' ||
+      week.sessions.length > 0 ||
+      (week.generationMeta.attempts ?? 0) > 0
+    )
   const shouldShowLaunchDeck =
     currentPlanId !== null &&
     status === 'shell_ready' &&
     plan?.generationState === 'shell' &&
+    !hasGenerationProgress &&
     weeks.length > 0 &&
     weeks.every((week) => week.status === 'pending') &&
     currentPlanId !== initializedPlanId
@@ -934,7 +945,7 @@ export default function PlanBuilderV2Page() {
             isInitializing={isGenerating}
             isBackgroundGenerating={plan?.generationState === 'generating'}
             sport={getSportFromGoalEvent(goalEvent)}
-            onInitialize={() => { void handleInitializeProtocol() }}
+            onInitialize={handleInitializeProtocol}
           />
         ) : plan && weeks.length === 0 ? (
           <div

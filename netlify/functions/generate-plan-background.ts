@@ -24,6 +24,7 @@ const JSON_HEADERS = { 'Content-Type': 'application/json' }
 const MAX_WEEKS = 40
 const AUTH_TIMEOUT_MS = 10_000
 const SUPABASE_OP_TIMEOUT_MS = 15_000
+const ACTIVE_GENERATION_TTL_MS = 16 * 60_000
 
 function withTimeout<T>(promise: PromiseLike<T>, ms: number, label: string): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -111,6 +112,15 @@ function createJobId(planId: string): string {
   return `plan-bg-${planId}-${Date.now()}-${Math.random().toString(36).slice(2)}`
 }
 
+function isActiveGeneration(plan: TrainingPlan | null, now: number): plan is TrainingPlan {
+  if (!plan || plan.generationState !== 'generating') return false
+  if (plan.generationSummary?.cancelRequested) return false
+  const heartbeatAt = plan.generationSummary?.heartbeatAt
+    ?? plan.generationSummary?.startedAt
+    ?? plan.updatedAt
+  return typeof heartbeatAt === 'number' && now - heartbeatAt < ACTIVE_GENERATION_TTL_MS
+}
+
 function createSupabaseWriter(userId: string, token: string): AsyncPlanGenerationWriter {
   const supabase = createClient(getSupabaseUrl(), getSupabaseAnonKey(), {
     auth: { persistSession: false, autoRefreshToken: false },
@@ -153,6 +163,7 @@ function createSupabaseWriter(userId: string, token: string): AsyncPlanGeneratio
         'putWeek',
       )
       if (error) throw error
+      console.log(`[generate-plan] week checkpoint planId=${week.planId} week=${week.weekIndex} status=${week.status} sessions=${week.sessions.length} attempts=${week.generationMeta.attempts ?? 0} errorClass=${week.generationMeta.errorClass ?? 'none'}`)
     },
   }
 }
@@ -176,10 +187,17 @@ export const handler: Handler = async (event) => {
   try {
     const auth = await resolveAuthContext(event)
     const writer = createSupabaseWriter(auth.userId, auth.token)
-    const jobId = createJobId(body.plan.id)
     const startedAt = Date.now()
     const planId = body.plan.id
     const weekCount = body.weeks.length
+    const existingPlan = await writer.getPlan(planId)
+    if (isActiveGeneration(existingPlan, startedAt)) {
+      const existingJobId = existingPlan.generationSummary?.jobId
+      console.log(`[generate-plan] dedupe active planId=${planId} jobId=${existingJobId ?? 'unknown'}`)
+      return json(202, { ok: true, deduped: true, jobId: existingJobId })
+    }
+
+    const jobId = createJobId(body.plan.id)
     console.log(`[generate-plan] start planId=${planId} weeks=${weekCount} jobId=${jobId}`)
 
     const plan: TrainingPlan = {

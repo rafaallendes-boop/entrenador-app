@@ -44,6 +44,8 @@ const MAX_WEEK_ATTEMPTS = 2
 // Netlify background functions se cortan a los 15 min; reservamos margen para
 // cerrar el plan con un estado terminal en vez de morir a mitad de una semana.
 const DEFAULT_WORKER_BUDGET_MS = 13 * 60_000
+const MIN_WEEK_START_BUDGET_MS = 150_000
+const MIN_RETRY_BUDGET_MS = 150_000
 const WORKER_BUDGET_EXHAUSTED_MESSAGE = 'Generación detenida: se agotó el presupuesto de tiempo del worker antes de llegar a esta semana. Reintenta para generar las semanas pendientes.'
 
 type GenerateWeekCoreResult = Awaited<ReturnType<typeof generateWeekCore>>
@@ -256,6 +258,7 @@ async function generateWeekCoreWithRetry(input: {
   callLLM: (request: AIRequest) => Promise<AIRawResponse>
   /** Hook para refrescar heartbeat antes de un reintento; los fallos se ignoran. */
   onBeforeRetry?: () => Promise<void>
+  getRemainingBudgetMs?: () => number
 }): Promise<GenerateWeekCoreResult> {
   let attempts = 0
   let totalDurationMs = 0
@@ -264,6 +267,9 @@ async function generateWeekCoreWithRetry(input: {
 
   for (let attempt = 1; attempt <= MAX_WEEK_ATTEMPTS; attempt++) {
     if (attempt > 1) {
+      if ((input.getRemainingBudgetMs?.() ?? Number.POSITIVE_INFINITY) < MIN_RETRY_BUDGET_MS) {
+        break
+      }
       try {
         await input.onBeforeRetry?.()
       } catch {
@@ -358,7 +364,7 @@ export async function runAsyncPlanGeneration(input: RunAsyncPlanGenerationInput)
   for (let targetPosition = 0; targetPosition < targetWeekIndexes.length; targetPosition++) {
     const weekIndex = targetWeekIndexes[targetPosition]
 
-    if (getNow() >= deadlineAt) {
+    if (deadlineAt - getNow() < MIN_WEEK_START_BUDGET_MS) {
       for (const remainingIndex of targetWeekIndexes.slice(targetPosition)) {
         const remainingWeek = weeks.find((week) => week.weekIndex === remainingIndex)
         if (!remainingWeek) continue
@@ -422,6 +428,7 @@ export async function runAsyncPlanGeneration(input: RunAsyncPlanGenerationInput)
         maxTokens: input.maxTokens ?? DEFAULT_MAX_TOKENS,
         temperature: input.temperature ?? DEFAULT_TEMPERATURE,
         callLLM: input.callLLM,
+        getRemainingBudgetMs: () => deadlineAt - getNow(),
         onBeforeRetry: async () => {
           plan = buildPlanCheckpoint(plan, weeks, {
             generationState: 'generating',
