@@ -20,6 +20,8 @@ export interface WeekCreatorPromptInput {
   retryInstruction?: string
   strictFormatting?: boolean
   structuredOutput?: boolean
+  /** Objetivos de la semana del plan activo (TrainingPlanWeek.weekObjectives), si existe. */
+  weekObjectives?: string[]
 }
 
 export interface WeekCreatorPromptBuildResult {
@@ -57,28 +59,30 @@ export function buildWeekCreatorPrompt(
       ? `La semana objetivo ya está en curso: programa sesiones solo desde ${planningStartDate} hasta ${weekEndDate}. No propongas sesiones en días pasados de esta semana.`
       : '',
     '',
-    buildProfileSummary(profile),
+    buildProfileSummaryV2(profile, config),
     buildGoalSummary(goalEvent, profile?.macroPlan?.currentPhase, profile?.macroPlan?.blockFocus, config.primarySport),
+    buildWeekObjectivesBlock(profile, input.weekObjectives),
     buildConfigSummary(config),
     buildAthleteLevelRules(config),
     buildPrioritySportSummary(prioritySport, config),
     buildWeekCreatorSquashRules(config),
     buildStrengthStructureRules(config),
+    config.allowedSports.includes('strength')
+      ? 'Si hay dos o más sesiones de fuerza, deben tener focos y ejercicios distintos; no repitas exactamente el mismo array exercises en más de una sesión.'
+      : '',
+    buildSquashPhaseContentGuide(config, profile, goalEvent),
+    buildProgressionContext(config, recentHistory, recentLogs),
     buildCurrentWeekSessionsSummary(targetWeekSessions, input.targetWeekStart),
-    buildRecentHistorySummary(recentHistory),
-    buildRecentLogsSummary(recentLogs),
     buildRecentCoachAdviceSummary(context.recentMessages),
-    profile?.coachMemory?.trim() ? `Memoria de RallyIQ relevante: ${profile.coachMemory.trim()}` : '',
-    input.retryInstruction ? `Corrección del intento anterior:\n${input.retryInstruction}` : '',
+    profile?.coachMemory?.trim() ? `## MEMORIA DEL COACH\n${profile.coachMemory.trim()}` : '',
+    input.retryInstruction ? `## CORRECCIÓN DEL INTENTO ANTERIOR\n${input.retryInstruction}` : '',
     input.strictFormatting
       ? 'Modo estricto: si dudas, prioriza targetDate correcto, fechas válidas, número exacto de sesiones y detalles obligatorios por deporte antes que creatividad.'
       : '',
     '',
-    'Si hay dos o más sesiones de fuerza, deben tener focos y ejercicios distintos; no repitas exactamente el mismo array exercises en más de una sesión.',
+    `Regla final: crea una semana cerrada, ejecutable y compacta para ${formatWeekRangeLabel(planningStartDate, weekEndDate)}${isPartialCurrentWeek ? ` (semana calendario ${formatWeekRangeLabel(input.targetWeekStart)})` : ''}.`,
     '',
     renderWeekCreatorContractReminder(createWeekContract, input.structuredOutput),
-    '',
-    `Regla final: crea una semana cerrada, ejecutable y compacta para ${formatWeekRangeLabel(planningStartDate, weekEndDate)}${isPartialCurrentWeek ? ` (semana calendario ${formatWeekRangeLabel(input.targetWeekStart)})` : ''}.`,
   ].filter(Boolean)
 
   return {
@@ -135,17 +139,81 @@ function extractPrioritySport(
   )
 }
 
-function buildProfileSummary(profile: ChatContext['athleteProfile']): string {
-  if (!profile) return 'Perfil: no configurado; usa solo los defaults conservadores entregados.'
+function buildProfileSummaryV2(
+  profile: ChatContext['athleteProfile'],
+  config: WeekCreatorEffectiveConfig,
+): string {
+  const athleteTier = deriveWeekCreatorAthleteTier(config)
+  if (!profile) {
+    return [
+      '## PERFIL DEL ATLETA',
+      'Perfil no configurado; usa solo los defaults conservadores entregados.',
+      `- Nivel operativo: ${athleteTier}`,
+      `- Estado de forma y fatiga: fitness ${config.currentFitnessLevel} · fatiga ${config.currentFatigue}`,
+      buildRestrictionSummary(undefined, config),
+    ].filter(Boolean).join('\n')
+  }
 
-  const parts: string[] = []
-  if (profile.name) parts.push(`Atleta: ${profile.name}`)
-  if (profile.age) parts.push(`Edad: ${profile.age}`)
-  if (profile.weightKg) parts.push(`Peso: ${profile.weightKg}kg`)
-  if (profile.sportContext?.primarySport) parts.push(`Deporte principal declarado: ${profile.sportContext.primarySport}`)
-  if (profile.mainGoal) parts.push(`Objetivo principal: ${profile.mainGoal}`)
-  if (profile.secondaryGoal) parts.push(`Objetivo secundario: ${profile.secondaryGoal}`)
-  return parts.length > 0 ? parts.join(' · ') : 'Perfil: disponible pero mínimo.'
+  const primarySport = profile.sportContext?.primarySport ?? profile.primarySport ?? config.primarySport
+  const lines = [
+    '## PERFIL DEL ATLETA',
+    profile.name ? `- Nombre: ${profile.name}` : '',
+    profile.age ? `- Edad: ${profile.age}` : '',
+    profile.weightKg ? `- Peso: ${profile.weightKg}kg` : '',
+    primarySport ? `- Deporte principal: ${primarySport}` : '',
+    profile.mainGoal ? `- Objetivo principal: ${profile.mainGoal}` : '',
+    profile.secondaryGoal ? `- Objetivo secundario: ${profile.secondaryGoal}` : '',
+    `- Nivel operativo: ${athleteTier}`,
+    config.competitiveLevel ? `- Nivel competitivo: ${config.competitiveLevel}` : '',
+    config.trainingPriority ? `- Prioridad de entrenamiento: ${config.trainingPriority}` : '',
+    `- Estado de forma y fatiga: fitness ${config.currentFitnessLevel} · fatiga ${config.currentFatigue}`,
+    buildStrengthProfileSummary(profile),
+    buildRestrictionSummary(profile, config),
+  ].filter(Boolean)
+
+  return lines.join('\n')
+}
+
+function buildStrengthProfileSummary(profile: NonNullable<ChatContext['athleteProfile']>): string {
+  const strength = profile.strengthProfile
+  if (!strength) return ''
+
+  const references = [
+    strength.squat1RM != null ? `Back Squat/Sentadilla ${strength.squat1RM}kg 1RM` : '',
+    strength.benchPress1RM != null ? `Bench Press ${strength.benchPress1RM}kg 1RM` : '',
+    strength.deadlift1RM != null ? `Deadlift/Trap Bar ref. ${strength.deadlift1RM}kg 1RM` : '',
+    strength.overheadPress1RM != null ? `Overhead Press ${strength.overheadPress1RM}kg 1RM` : '',
+    strength.pullUpMaxReps != null ? `Dominadas max ${strength.pullUpMaxReps} reps` : '',
+  ].filter(Boolean)
+
+  if (references.length === 0 && !strength.notes?.trim()) return ''
+
+  return [
+    references.length > 0 ? `- Cargas históricas: ${references.join(' · ')}` : '',
+    strength.notes?.trim() ? `- Notas de fuerza: ${strength.notes.trim()}` : '',
+  ].filter(Boolean).join('\n')
+}
+
+function buildRestrictionSummary(
+  profile: ChatContext['athleteProfile'],
+  config: WeekCreatorEffectiveConfig,
+): string {
+  const sources = [
+    profile?.recoveryProfile?.restrictions?.trim(),
+    config.injuryNotes?.trim(),
+  ].filter((value): value is string => Boolean(value))
+
+  // Concatena ambas fuentes; descarta solo duplicados textuales (mismo contenido).
+  const seen = new Set<string>()
+  const restrictions = sources.filter((value) => {
+    const key = value.toLowerCase()
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+
+  if (restrictions.length === 0) return ''
+  return `- ⚠️ Restricciones activas: ${restrictions.join(' · ')}. Adapta carga, ejercicios, impactos y RPE a estas restricciones.`
 }
 
 function buildGoalSummary(
@@ -170,16 +238,16 @@ function buildGoalSummary(
   if (currentPhase) parts.push(`Fase actual: ${currentPhase}`)
   if (blockFocus) parts.push(`Foco del bloque: ${blockFocus}`)
   return parts.length > 0
-    ? parts.join(' · ')
-    : 'No hay evento competitivo activo; planifica una semana de entrenamiento general coherente con el perfil.'
+    ? ['## OBJETIVO COMPETITIVO', parts.join(' · ')].join('\n')
+    : '## OBJETIVO COMPETITIVO\nNo hay evento competitivo activo; planifica una semana de entrenamiento general coherente con el perfil.'
 }
 
 function buildConfigSummary(config: WeekCreatorEffectiveConfig): string {
   const squashMinimum = getSquashMinimumSessions(config)
   const supportSlots = squashMinimum ? Math.max(0, config.sessionsPerWeek - squashMinimum) : 0
   const doubleSessionDays = config.doubleSessionDays ?? []
-  const athleteTier = deriveWeekCreatorAthleteTier(config)
   const lines = [
+    '## CONFIGURACIÓN DE SESIONES',
     config.configSource === 'wizard'
       ? 'Configuración del plan activo (usar como guía fuerte):'
       : config.configSource === 'schedule'
@@ -200,16 +268,13 @@ function buildConfigSummary(config: WeekCreatorEffectiveConfig): string {
       : '',
     `- Deportes permitidos: ${config.allowedSports.join(', ')}`,
     config.primarySport ? `- Deporte principal a mantener presente: ${config.primarySport}` : '',
-    `- Nivel operativo del atleta: ${athleteTier}${config.competitiveLevel ? ` · competitivo ${config.competitiveLevel}` : ''}${config.trainingPriority ? ` · prioridad ${config.trainingPriority}` : ''}`,
     squashMinimum
       ? `- Regla de distribución squash: con ${config.sessionsPerWeek} sesiones, incluye al menos ${squashMinimum} sesiones squash y evita dos squash el mismo día si hay deportes de soporte disponibles.`
       : '',
     squashMinimum && supportSlots > 0 && config.allowedSports.some((sport) => sport !== 'squash')
       ? `- Usa ${supportSlots === 1 ? 'el 1 cupo accesorio' : `los ${supportSlots} cupos accesorios`} con deportes de soporte permitidos (${config.allowedSports.filter((sport) => sport !== 'squash').slice(0, supportSlots).join(', ')}); no los reemplaces por más squash.`
       : '',
-    `- Estado inicial: fitness ${config.currentFitnessLevel} · fatiga ${config.currentFatigue}`,
     config.scheduleConstraints?.trim() ? `- Restricciones horarias: ${config.scheduleConstraints.trim()}` : '',
-    config.injuryNotes?.trim() ? `- Restricciones: ${config.injuryNotes.trim()}` : '',
   ].filter(Boolean)
 
   return lines.join('\n')
@@ -218,11 +283,80 @@ function buildConfigSummary(config: WeekCreatorEffectiveConfig): string {
 function buildAthleteLevelRules(config: WeekCreatorEffectiveConfig): string {
   const tier = deriveWeekCreatorAthleteTier(config)
   const base = [
-    'Reglas por nivel del atleta:',
+    '## REGLAS POR NIVEL DEL ATLETA',
     ...buildTierRules(tier, config),
     '- El nivel nunca permite ignorar fatiga, lesiones, restricciones horarias, días permitidos ni número exacto de sesiones.',
   ]
   return base.join('\n')
+}
+
+function buildWeekObjectivesBlock(
+  profile: ChatContext['athleteProfile'],
+  planWeekObjectives: string[] | undefined,
+): string {
+  // Fuente primaria: objetivos de la TrainingPlanWeek del plan activo (resueltos por el engine).
+  // Fallback: intención semanal por deporte del macro plan.
+  const objectives = planWeekObjectives?.length
+    ? planWeekObjectives
+    : deriveMacroWeeklyIntents(profile)
+  if (objectives.length === 0) return ''
+
+  return [
+    '## OBJETIVOS DE LA SEMANA',
+    'Cada sesión debe conectarse a al menos uno de estos objetivos. Úsalos para determinar tipo de estímulo, RPE y contenido.',
+    ...objectives.map((objective, index) => `${index + 1}. ${objective}`),
+  ].join('\n')
+}
+
+function deriveMacroWeeklyIntents(profile: ChatContext['athleteProfile']): string[] {
+  const details = profile?.macroPlan?.sportDetails ?? []
+  return details
+    .map((detail) => {
+      const intent = detail.weeklyIntent?.trim()
+      return intent ? `${detail.sport}: ${intent}` : ''
+    })
+    .filter(Boolean)
+}
+
+function buildSquashPhaseContentGuide(
+  config: WeekCreatorEffectiveConfig,
+  profile: ChatContext['athleteProfile'],
+  goalEvent: { title?: string; date?: string; sport?: string } | undefined,
+): string {
+  if (config.primarySport !== 'squash' || !goalEvent) return ''
+
+  const phase = profile?.macroPlan?.currentPhase
+  if (!phase) return ''
+
+  const guides: Record<typeof phase, string[]> = {
+    base: [
+      '- Squash: técnica fundamental, ghosting básico y rallies cooperativos. RPE 5-6.',
+      '- Evita presión de resultado; busca calidad de golpeo, desplazamiento limpio y tolerancia de tejidos.',
+    ],
+    build: [
+      '- Squash: pressure drills, puntos condicionados y trabajo a la T.',
+      '- Incluye al menos 1 match-play controlado en la semana si la fatiga lo permite. RPE 7-8.',
+    ],
+    peak: [
+      '- Squash: presión bajo fatiga, simulación de partido y control emocional.',
+      '- Apunta a 3-4 sesiones de squash por semana si la configuración lo permite.',
+      '- Respeta mínimo 12h entre squash intenso y gimnasio pesado.',
+    ],
+    taper: [
+      '- Squash: 2-3 toques cortos de calidad. Sin squash exhaustivo.',
+      '- Fuerza: 0-1 sesión neural corta; nada que genere DOMS.',
+    ],
+    race: [
+      '- Máximo 1-2 activaciones antes del torneo.',
+      '- Nada más el día del partido, salvo la competencia/partido objetivo.',
+    ],
+    transition: [
+      '- Recuperación activa. RPE <= 5 en todo.',
+      '- Usa squash suave solo como continuidad técnica o disfrute, no como carga.',
+    ],
+  }
+
+  return [`## GUÍA DE CONTENIDO — FASE ${phase.toUpperCase()}`, ...guides[phase]].join('\n')
 }
 
 function buildTierRules(
@@ -276,7 +410,7 @@ function buildCurrentWeekSessionsSummary(
   targetWeekStart: string,
 ): string {
   if (!sessions || sessions.length === 0) {
-    return `No hay sesiones planificadas actualmente dentro de la semana objetivo ${targetWeekStart}.`
+    return `## SEMANA ACTUAL\nNo hay sesiones planificadas actualmente dentro de la semana objetivo ${targetWeekStart}.`
   }
 
   const lines = sessions
@@ -288,6 +422,7 @@ function buildCurrentWeekSessionsSummary(
     })
 
   return [
+    '## SEMANA ACTUAL',
     `Sesiones ya planificadas dentro de la semana objetivo ${targetWeekStart}:`,
     ...lines,
     'Puedes reorganizar la semana completa, pero no repitas exactamente los mismos drills o ejercicios si ya hay focos creados.',
@@ -323,35 +458,91 @@ function summarizeExistingSessionDetails(
   return ''
 }
 
-function buildRecentHistorySummary(sessions: ChatContext['historicalSessions']): string {
-  if (!sessions || sessions.length === 0) {
-    return 'No hay historial reciente relevante disponible.'
-  }
+function buildProgressionContext(
+  config: WeekCreatorEffectiveConfig,
+  sessions: ChatContext['historicalSessions'],
+  logs: ChatContext['weekDayLogs'],
+): string {
+  const rpeStats = computeRecentRpeStats(sessions)
+  const sessionLines = sessions && sessions.length > 0
+    ? sessions.map((session) => {
+      const rpe = session.actualRpe ?? session.rpe
+      return `- ${session.date} ${session.timeBlock} · ${session.type} · ${session.title} · ${session.durationMin}min${rpe ? ` · RPE ${rpe}` : ''}`
+    })
+    : ['- Sin historial reciente de sesiones.']
+  const logLines = logs && logs.length > 0
+    ? logs.map(formatDayLogLine)
+    : ['- Sin day logs recientes.']
 
-  const lines = sessions.map((session) =>
-    `- ${session.date} ${session.timeBlock} · ${session.type} · ${session.title} · ${session.durationMin}min${session.rpe ? ` · RPE ${session.rpe}` : ''}`,
-  )
-
-  return ['Historial reciente útil:', ...lines].join('\n')
+  return [
+    '## PROGRESIÓN Y DIRECTIVA DE CARGA',
+    `Directiva de carga: ${buildLoadDirective(config, sessions, logs, rpeStats)}`,
+    'Historial de sesiones:',
+    ...sessionLines,
+    rpeStats.count > 0
+      ? `RPE promedio reciente: ${formatDecimal(rpeStats.average)}/10 (${rpeStats.count} sesiones con RPE).`
+      : 'RPE promedio reciente: no disponible.',
+    'Day logs recientes:',
+    ...logLines,
+  ].join('\n')
 }
 
-function buildRecentLogsSummary(logs: ChatContext['weekDayLogs']): string {
-  if (!logs || logs.length === 0) {
-    return 'No hay day logs recientes para usar como restricción.'
+function buildLoadDirective(
+  config: WeekCreatorEffectiveConfig,
+  sessions: ChatContext['historicalSessions'],
+  logs: ChatContext['weekDayLogs'],
+  rpeStats: { average: number; count: number },
+): string {
+  const latestLog = logs?.[0]
+  if (config.currentFatigue === 'overloaded') {
+    return 'REDUCIR CARGA — atleta llega con fatiga acumulada. Baja volumen e intensidad. RPE máximo 6-7.'
   }
+  if (
+    latestLog &&
+    ((latestLog.energyLevel != null && latestLog.energyLevel <= 4) ||
+      (latestLog.painLevel != null && latestLog.painLevel >= 6))
+  ) {
+    return 'REDUCIR CARGA — último day log indica energía baja o dolor elevado. Baja volumen, evita impactos agresivos y deja las sesiones duras en RPE máximo 6-7.'
+  }
+  if (config.currentFatigue === 'loaded') {
+    return 'MANTENER SIN SUBIR — atleta llega con carga acumulada. Conserva los estímulos de calidad, recorta volumen accesorio y no agregues intensidad extra esta semana.'
+  }
+  if (config.currentFatigue === 'fresh') {
+    return 'SUBIR CARGA — atleta está fresco. Puedes incrementar volumen o intensidad un escalón, no ambos a la vez.'
+  }
+  if (!sessions || sessions.length === 0) {
+    return 'INICIAR CON CARGA CONSERVADORA — sin historial previo. RPE 6-7.'
+  }
+  if (rpeStats.count >= 3 && rpeStats.average >= 8) {
+    return 'MANTENER O BAJAR LIGERAMENTE — viene de semana de alta carga. Conserva calidad, baja un punto de RPE o reduce volumen accesorio.'
+  }
+  return 'MANTENER PROGRESIÓN NORMAL — fatiga normal, sin señales de alerta.'
+}
 
-  const lines = logs.map((log) => {
-    const parts = [
-      log.generalNotes?.trim(),
-      log.energyLevel != null ? `energía ${log.energyLevel}/10` : '',
-      log.painLevel != null ? `dolor ${log.painLevel}/10` : '',
-      log.sleepHours != null ? `sueño ${log.sleepHours}h` : '',
-      log.rpeActual != null ? `RPE real ${log.rpeActual}/10` : '',
-    ].filter(Boolean)
-    return `- ${log.date}: ${parts.join(' · ')}`
-  })
+function computeRecentRpeStats(sessions: ChatContext['historicalSessions']): { average: number; count: number } {
+  const values = (sessions ?? [])
+    .map((session) => session.actualRpe ?? session.rpe)
+    .filter((value): value is number => typeof value === 'number' && Number.isFinite(value))
+  if (values.length === 0) return { average: 0, count: 0 }
+  return {
+    average: values.reduce((sum, value) => sum + value, 0) / values.length,
+    count: values.length,
+  }
+}
 
-  return ['Day logs recientes:', ...lines].join('\n')
+function formatDayLogLine(log: NonNullable<ChatContext['weekDayLogs']>[number]): string {
+  const parts = [
+    log.generalNotes?.trim(),
+    log.energyLevel != null ? `energía ${log.energyLevel}/10` : '',
+    log.painLevel != null ? `dolor ${log.painLevel}/10` : '',
+    log.sleepHours != null ? `sueño ${log.sleepHours}h` : '',
+    log.rpeActual != null ? `RPE real ${log.rpeActual}/10` : '',
+  ].filter(Boolean)
+  return `- ${log.date}: ${parts.length > 0 ? parts.join(' · ') : 'sin métricas accionables'}`
+}
+
+function formatDecimal(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toFixed(1)
 }
 
 function buildRecentCoachAdviceSummary(messages: ChatContext['recentMessages']): string {
@@ -362,6 +553,7 @@ function buildRecentCoachAdviceSummary(messages: ChatContext['recentMessages']):
   if (coachMessages.length === 0) return ''
 
   return [
+    '## CONSEJOS RECIENTES DEL COACH',
     'Consejos recientes de RallyIQ que debes intentar respetar si no contradicen la configuración:',
     ...coachMessages.map((message) => `- ${clipForPrompt(message.content, 420)}`),
   ].join('\n')

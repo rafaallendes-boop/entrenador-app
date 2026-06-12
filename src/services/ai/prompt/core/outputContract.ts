@@ -76,8 +76,8 @@ const sessionFields = [
   field('durationMin', 'INTEGER', { required: true }),
   field('rpe', 'INTEGER'),
   field('objective', 'STRING', { required: true }),
-  field('subtype', 'STRING'),
-  field('runningType', 'STRING'),
+  field('subtype', 'STRING', { enumValues: ['training', 'match', 'competitive', 'control', 'light'] }),
+  field('runningType', 'STRING', { enumValues: ['z2', 'tempo', 'intervals', 'long'] }),
   field('targetPaceMin', 'STRING'),
   field('targetPaceMax', 'STRING'),
   field('targetHrMin', 'INTEGER'),
@@ -98,7 +98,7 @@ const sessionFields = [
     field('sets', 'INTEGER'),
     field('reps', 'STRING'),
     field('weight', 'NUMBER'),
-    field('group', 'STRING'),
+    field('group', 'STRING', { enumValues: ['push', 'pull', 'legs', 'core', 'olympic', 'cardio', 'mobility', 'other'] }),
     field('notes', 'STRING'),
     field('targetPercent1RM', 'NUMBER'),
     field('targetRpe', 'NUMBER'),
@@ -109,9 +109,17 @@ const sessionFields = [
     ])),
   ])),
   objectField('squashDetails', [
-    field('trainingFocus', 'STRING', { required: true }),
-    field('sessionMode', 'STRING', { required: true }),
-    field('sessionKind', 'STRING'),
+    field('trainingFocus', 'STRING', {
+      required: true,
+      enumValues: ['technical', 'tactical', 'physical', 'conditioned_games'],
+    }),
+    field('sessionMode', 'STRING', {
+      required: true,
+      enumValues: ['drill_session', 'practice_match', 'competition_match'],
+    }),
+    field('sessionKind', 'STRING', {
+      enumValues: ['technical', 'control', 'shadows', 'match', 'mixed'],
+    }),
     arrayField('drills', objectField('drill', drillFields), { required: true }),
     arrayField('blocks', objectField('block', [
       field('kind', 'STRING', {
@@ -223,7 +231,7 @@ export const CREATE_WEEK_ACTION_CONTRACT: ActionContract = {
       '    {"blocks": [{"label": string, "durationMin"?: number, "distanceKm"?: number, "repetitions"?: number, "targetPace"?: string, "notes"?: string}, ...]}',
       '',
       'Para sessionType="strength":',
-      '  exercises es OBLIGATORIO: array de {"name": string, "sets": number, "reps": number | string, "weight"?: number, "group"?: "push"|"pull"|"legs"|"core"|"olympic"|"mobility"|"other", "notes"?: string, "targetPercent1RM"?: number, "targetRpe"?: number, "warmupSets"?: [{"reps": number|string, "weight"?: number, "percent1RM"?: number}, ...]}',
+      '  exercises es OBLIGATORIO: array de {"name": string, "sets": number, "reps": number | string, "weight"?: number, "group"?: "push"|"pull"|"legs"|"core"|"olympic"|"cardio"|"mobility"|"other", "notes"?: string, "targetPercent1RM"?: number, "targetRpe"?: number, "warmupSets"?: [{"reps": number|string, "weight"?: number, "percent1RM"?: number}, ...]}',
       '  weight y targetPercent1RM van juntos cuando hay 1RM de referencia en el perfil (ej. weight=95, targetPercent1RM=75 → "95kg al 75% 1RM").',
       '  targetRpe se usa SOLO si no hay 1RM disponible para ese ejercicio (ej. targetRpe=8 → "RPE 8").',
       '  warmupSets describe series de aproximación previas al set efectivo, idealmente 2-4 series con cargas crecientes.',

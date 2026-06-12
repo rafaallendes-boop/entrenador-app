@@ -2,6 +2,7 @@ import type { Handler, HandlerEvent } from '@netlify/functions'
 import { createClient } from '@supabase/supabase-js'
 import type { AthleteProfile, PlanWizardConfig } from '../../src/types'
 import type { TrainingPlan, TrainingPlanWeek } from '../../src/types/planBuilder'
+import { isActivePlanGeneration } from '../../src/services/planBuilder/activeGeneration'
 import { runAsyncPlanGeneration, type AsyncPlanGenerationWriter } from '../../src/services/planBuilder/asyncGenerationLoop'
 import { rowToTrainingPlan, trainingPlanToRow, trainingPlanWeekToRow } from '../../src/services/planBuilder/planRows'
 import { callAnthropicForWeek } from './_shared/anthropicCaller'
@@ -24,7 +25,6 @@ const JSON_HEADERS = { 'Content-Type': 'application/json' }
 const MAX_WEEKS = 40
 const AUTH_TIMEOUT_MS = 10_000
 const SUPABASE_OP_TIMEOUT_MS = 15_000
-const ACTIVE_GENERATION_TTL_MS = 16 * 60_000
 
 function withTimeout<T>(promise: PromiseLike<T>, ms: number, label: string): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -112,16 +112,6 @@ function createJobId(planId: string): string {
   return `plan-bg-${planId}-${Date.now()}-${Math.random().toString(36).slice(2)}`
 }
 
-function isActiveGeneration(plan: TrainingPlan | null, now: number): plan is TrainingPlan {
-  if (!plan || plan.generationState !== 'generating') return false
-  if (!plan.generationSummary?.jobId) return false
-  if (plan.generationSummary?.cancelRequested) return false
-  const heartbeatAt = plan.generationSummary?.heartbeatAt
-    ?? plan.generationSummary?.startedAt
-    ?? plan.updatedAt
-  return typeof heartbeatAt === 'number' && now - heartbeatAt < ACTIVE_GENERATION_TTL_MS
-}
-
 function createSupabaseWriter(userId: string, token: string): AsyncPlanGenerationWriter {
   const supabase = createClient(getSupabaseUrl(), getSupabaseAnonKey(), {
     auth: { persistSession: false, autoRefreshToken: false },
@@ -192,14 +182,15 @@ export const handler: Handler = async (event) => {
     const planId = body.plan.id
     const weekCount = body.weeks.length
     const existingPlan = await writer.getPlan(planId)
-    if (isActiveGeneration(existingPlan, startedAt)) {
+    if (isActivePlanGeneration(existingPlan, startedAt)) {
       const existingJobId = existingPlan.generationSummary?.jobId
       console.log(`[generate-plan] dedupe active planId=${planId} jobId=${existingJobId ?? 'unknown'}`)
       return json(202, { ok: true, deduped: true, jobId: existingJobId })
     }
 
     const jobId = createJobId(body.plan.id)
-    console.log(`[generate-plan] start planId=${planId} weeks=${weekCount} jobId=${jobId}`)
+    const targetsLabel = body.targetWeekIndexes?.length ? body.targetWeekIndexes.join(',') : 'all'
+    console.log(`[generate-plan] start planId=${planId} weeks=${weekCount} targets=${targetsLabel} jobId=${jobId}`)
 
     const plan: TrainingPlan = {
       ...body.plan,

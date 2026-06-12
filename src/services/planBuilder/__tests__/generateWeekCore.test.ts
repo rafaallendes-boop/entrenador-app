@@ -140,5 +140,29 @@ describe('generateWeekCore', () => {
     expect(result.meta.provider).toBe('claude')
     expect(result.meta.model).toBe('claude-sonnet-4-6')
     expect(result.meta.lastError).toContain('no devolvió sesiones válidas')
+    expect(result.meta.errorClass).toBe('validation')
+  })
+})
+
+describe('week generation error summaries', () => {
+  it('aggregates dropped session reasons with counts', async () => {
+    const { summarizeDroppedSessionReasons } = await import('../generateWeekCore')
+    expect(summarizeDroppedSessionReasons(undefined)).toBeUndefined()
+    expect(summarizeDroppedSessionReasons([
+      { index: 1, reason: 'invalid-squashDetails' },
+      { index: 2, reason: 'invalid-squashDetails' },
+      { index: 4, reason: 'missing-title' },
+    ])).toBe('invalid-squashDetails x2, missing-title')
+  })
+
+  it('appends actionable hints to the retry instruction when sessions were dropped', async () => {
+    const { summarizeWeekGenerationError } = await import('../generateWeekCore')
+    const week = { weekIndex: 1, weekStartDate: '2026-06-15' } as TrainingPlanWeek
+    const summary = summarizeWeekGenerationError(
+      'La semana 2 quedó con 2 sesiones válidas de 6 propuestas; se descartaron 4 por inválidas y el rango válido permite 6. Motivos de descarte: invalid-squashDetails x3, invalid-timeBlock.',
+      week,
+    )
+    expect(summary).toContain('trainingFocus en {technical, tactical, physical, conditioned_games}')
+    expect(summary).toContain('timeBlock debe ser exactamente "AM" o "PM"')
   })
 })

@@ -533,7 +533,7 @@ export default function PlanBuilderV2Page() {
   const loadMemory = useCoachMemoryStore((s) => s.loadMemory)
   const {
     plan, weeks, issues, status, currentWeekIndex, completedWeeks, failedWeekIndexes, lastError,
-    createDraft, runGeneration, retryFullGeneration, regenerateWeek, regenerateWeeks, retryFailedWeeks, cancelGeneration, acceptPlan, discard, loadDraft,
+    createDraft, runGeneration, retryFullGeneration, regenerateWeek, regenerateWeeks, retryFailedWeeks, retryIncompleteWeeks, cancelGeneration, acceptPlan, discard, loadDraft,
   } = usePlanBuilderStore()
 
   const [selectedWeekIndex, setSelectedWeekIndex] = useState<number | null>(null)
@@ -661,13 +661,13 @@ export default function PlanBuilderV2Page() {
   }, [authIsLoading, authUser, createDraft, currentDraftSignature, effectiveAthleteProfile, expectedDraftSignature, goalEvent, hasGenerationProgress, loadDraft, plan, status])
 
   const effectiveSelectedWeekIndex = (() => {
-    // If there are failed weeks and the user hasn't explicitly selected one of them,
-    // surface the first failed week automatically (no setState-in-effect needed)
-    if (failedWeekIndexes.length > 0 && !(selectedWeekIndex != null && failedWeekIndexes.includes(selectedWeekIndex))) {
-      return failedWeekIndexes[0]!
-    }
+    // Respect an explicit selection always; only auto-surface the first failed week
+    // when the user hasn't picked one yet (no setState-in-effect needed).
     if (selectedWeekIndex != null && weeks.some((week) => week.weekIndex === selectedWeekIndex)) {
       return selectedWeekIndex
+    }
+    if (failedWeekIndexes.length > 0) {
+      return failedWeekIndexes[0]!
     }
     return weeks[0]?.weekIndex ?? 0
   })()
@@ -704,6 +704,8 @@ export default function PlanBuilderV2Page() {
     : undefined
   const hasIncompleteWeeks = weeks.length === 0 || weeks.some((week) => week.status !== 'draft' || week.sessions.length === 0)
   const hasFailedWeeks = failedWeekIndexes.length > 0
+  const hasReadyWeeks = weeks.some((week) => week.status === 'draft' && week.sessions.length > 0)
+  const isFailedState = status === 'failed' || plan?.generationState === 'failed'
   const canAcceptPlan = plan?.generationState === 'complete' && !hasIncompleteWeeks && errors.length === 0 && !qualityBlocksAccept
   const acceptBlockers = [
     ...(plan?.generationState && plan.generationState !== 'complete' ? ['El plan todavia no esta completamente generado.'] : []),
@@ -780,6 +782,11 @@ export default function PlanBuilderV2Page() {
   async function handleRetryFullGeneration() {
     if (!effectiveAthleteProfile || isGenerating || status === 'committing') return
     await retryFullGeneration(effectiveAthleteProfile)
+  }
+
+  async function handleRetryIncompleteWeeks() {
+    if (!effectiveAthleteProfile || isGenerating || status === 'committing') return
+    await retryIncompleteWeeks(effectiveAthleteProfile)
   }
 
   async function handleRegenerateSelectedWeek() {
@@ -1009,7 +1016,7 @@ export default function PlanBuilderV2Page() {
               </div>
             </div>
           </div>
-        ) : status === 'failed' || plan?.generationState === 'failed' ? (
+        ) : isFailedState && !hasReadyWeeks ? (
           <div
             className="rounded-2xl p-5"
             style={{ background: 'rgba(248,113,113,0.06)', border: '1px solid rgba(248,113,113,0.18)' }}
@@ -1019,7 +1026,7 @@ export default function PlanBuilderV2Page() {
               <div>
                 <h2 className="font-display text-base font-bold text-ink">La generación no produjo semanas válidas</h2>
                 <p className="mt-1 text-sm text-ink-muted">
-                  Puedes reintentar la generación completa o descartar este shell y volver a construirlo desde cero.
+                  Puedes reintentar la generación o descartar este shell y volver a construirlo desde cero.
                 </p>
                 {lastError && <p className="mt-2 text-xs text-red-400">{lastError}</p>}
               </div>
@@ -1043,6 +1050,25 @@ export default function PlanBuilderV2Page() {
           </div>
         ) : (
         <>
+          {/* Failed-with-progress banner: keep the generated weeks visible and retry only the incomplete ones */}
+          {isFailedState && hasReadyWeeks && (
+            <div
+              className="mb-3 rounded-2xl p-4"
+              style={{ background: 'rgba(248,113,113,0.06)', border: '1px solid rgba(248,113,113,0.18)' }}
+            >
+              <div className="flex items-start gap-3">
+                <AlertTriangle size={16} className="mt-0.5 flex-shrink-0 text-red-400" />
+                <div>
+                  <h2 className="font-display text-sm font-bold text-ink">La generación quedó incompleta</h2>
+                  <p className="mt-1 text-xs text-ink-muted">
+                    Las semanas ya generadas se conservan. Usa “Reintentar pendientes” para completar solo las que faltan, sin volver a generar todo el plan.
+                  </p>
+                  {lastError && <p className="mt-1.5 text-xs text-red-400">{lastError}</p>}
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Mobile-only horizontal week strip */}
           {weeks.length > 0 && (
             <div className="mb-3 md:hidden">
@@ -1423,15 +1449,26 @@ export default function PlanBuilderV2Page() {
             >
               Descartar
             </button>
-            {(status === 'failed' || plan?.generationState === 'failed') && (
+            {isFailedState && (
+              <button
+                type="button"
+                disabled={isGenerating || status === 'committing'}
+                onClick={() => { void handleRetryIncompleteWeeks() }}
+                className="rounded-xl px-5 py-2.5 font-display text-sm font-bold uppercase tracking-[0.15em] text-white transition-all active:scale-[0.98] disabled:opacity-40"
+                style={{ background: 'linear-gradient(135deg, #ff5500, #ff4d00)' }}
+              >
+                {hasReadyWeeks ? 'Reintentar pendientes' : 'Reintentar'}
+              </button>
+            )}
+            {isFailedState && hasReadyWeeks && (
               <button
                 type="button"
                 disabled={isGenerating || status === 'committing'}
                 onClick={() => { void handleRetryFullGeneration() }}
-                className="rounded-xl px-5 py-2.5 font-display text-sm font-bold uppercase tracking-[0.15em] text-white transition-all active:scale-[0.98] disabled:opacity-40"
-                style={{ background: 'linear-gradient(135deg, #ff5500, #ff4d00)' }}
+                className="rounded-xl px-5 py-2.5 font-display text-sm font-bold uppercase tracking-[0.15em] text-ink-muted transition-all hover:text-ink disabled:opacity-40"
+                style={{ border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.04)' }}
               >
-                Reintentar
+                Reintentar completo
               </button>
             )}
             {plan?.generationState === 'partial' && hasFailedWeeks && (

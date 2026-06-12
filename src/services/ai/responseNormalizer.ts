@@ -127,15 +127,15 @@ export function normalizeSessionProposalDraft(
     if (squashDetails) {
       session.squashDetails = squashDetails.details
       repairs.push(...squashDetails.repairs)
-    } else if (record.squashDetails == null) {
+    } else {
+      // squashDetails ausente o irreparable: degradar a un detalle mínimo en vez de
+      // descartar la sesión completa; repairWeek la densifica después.
       repairs.push('squashDetails')
       session.squashDetails = {
         trainingFocus: 'technical',
         sessionMode: 'drill_session',
         drills: [{ name: title, durationMin }],
       }
-    } else {
-      return { droppedReason: 'invalid-squashDetails' }
     }
   }
 
@@ -778,41 +778,81 @@ function isMobilityDetails(value: unknown): value is MobilityDetails {
   )
 }
 
+const SQUASH_TRAINING_FOCUS_SYNONYMS: Record<string, SquashTrainingFocus> = {
+  control: 'technical',
+  precision: 'technical',
+  technique: 'technical',
+  shadows: 'physical',
+  ghosting: 'physical',
+  movement: 'physical',
+  conditioning: 'physical',
+  fitness: 'physical',
+  match: 'conditioned_games',
+  match_play: 'conditioned_games',
+  matchplay: 'conditioned_games',
+  competitive: 'conditioned_games',
+  game: 'conditioned_games',
+  games: 'conditioned_games',
+  pressure: 'tactical',
+  strategy: 'tactical',
+  strategic: 'tactical',
+}
+
+function coerceSquashTrainingFocus(value: unknown): { focus: SquashTrainingFocus; repaired: boolean } {
+  if (typeof value === 'string') {
+    if (VALID_SQUASH_TRAINING_FOCUS.has(value)) {
+      return { focus: value as SquashTrainingFocus, repaired: false }
+    }
+    const synonym = SQUASH_TRAINING_FOCUS_SYNONYMS[value.trim().toLowerCase()]
+    if (synonym) return { focus: synonym, repaired: true }
+  }
+  return { focus: 'technical', repaired: true }
+}
+
+function coerceSquashSessionMode(
+  value: unknown,
+  sessionKind: SquashSessionKind | undefined,
+): { mode: SquashSessionMode | undefined; repaired: boolean } {
+  if (value == null) return { mode: undefined, repaired: false }
+  if (typeof value === 'string' && VALID_SQUASH_SESSION_MODES.has(value as SquashSessionMode)) {
+    return { mode: value as SquashSessionMode, repaired: false }
+  }
+  // Valor inventado por el modelo: degradar a un modo coherente en vez de descartar la sesión.
+  return { mode: sessionKind === 'match' ? 'practice_match' : 'drill_session', repaired: true }
+}
+
 function normalizeSquashDetailsDraft(value: unknown): { details: SquashDetails; repairs: string[] } | null {
   if (value == null) return null
   if (typeof value !== 'object') return null
   const record = value as Record<string, unknown>
-  if (
-    typeof record.trainingFocus !== 'string' ||
-    !VALID_SQUASH_TRAINING_FOCUS.has(record.trainingFocus)
-  ) {
-    return null
-  }
-  const validMode =
-    record.sessionMode == null ||
-    (typeof record.sessionMode === 'string' && VALID_SQUASH_SESSION_MODES.has(record.sessionMode as SquashSessionMode))
-  if (!validMode) return null
+  const repairs: string[] = []
 
-  const validSessionKind =
-    record.sessionKind == null ||
-    (typeof record.sessionKind === 'string' && VALID_SQUASH_SESSION_KINDS.has(record.sessionKind as SquashSessionKind))
-  if (!validSessionKind) return null
+  const { focus, repaired: focusRepaired } = coerceSquashTrainingFocus(record.trainingFocus)
+  if (focusRepaired) repairs.push('squashDetails.trainingFocus')
+
+  const sessionKind =
+    typeof record.sessionKind === 'string' && VALID_SQUASH_SESSION_KINDS.has(record.sessionKind as SquashSessionKind)
+      ? (record.sessionKind as SquashSessionKind)
+      : undefined
+  if (record.sessionKind != null && !sessionKind) repairs.push('squashDetails.sessionKind')
+
+  const { mode, repaired: modeRepaired } = coerceSquashSessionMode(record.sessionMode, sessionKind)
+  if (modeRepaired) repairs.push('squashDetails.sessionMode')
 
   const drills = normalizeSquashDrillsDraft(record.drills)
-  const blocks = record.blocks == null ? undefined : normalizeSquashBlocksDraft(record.blocks)
-  if (record.blocks != null && !blocks) return null
+  const blocks = record.blocks == null ? undefined : (normalizeSquashBlocksDraft(record.blocks) ?? undefined)
+  if (record.blocks != null && !blocks) repairs.push('squashDetails.blocks')
 
-  const repairs: string[] = []
   const finalDrills = drills ?? (blocks ? blocks.flatMap((block) => block.drills) : null)
   if (!finalDrills || finalDrills.length === 0) return null
   if (!drills && blocks) repairs.push('squashDetails.drills')
 
   const details: SquashDetails = {
-    trainingFocus: record.trainingFocus as SquashTrainingFocus,
+    trainingFocus: focus,
     drills: orderSquashDrillsForSession(finalDrills),
   }
-  if (typeof record.sessionMode === 'string') details.sessionMode = record.sessionMode as SquashSessionMode
-  if (typeof record.sessionKind === 'string') details.sessionKind = record.sessionKind as SquashSessionKind
+  if (mode) details.sessionMode = mode
+  if (sessionKind) details.sessionKind = sessionKind
   if (blocks) details.blocks = blocks
   return { details, repairs }
 }

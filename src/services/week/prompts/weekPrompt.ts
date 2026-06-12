@@ -181,6 +181,7 @@ export function buildWeekStructuredSystemPromptMinimal(): string {
     'El objeto debe ser una create_week: type="create_week", targetDate (lunes YYYY-MM-DD), reason, sessions[] y weekObjectives[].',
     'Respeta exactamente el targetDate, el rango válido de fechas, los días permitidos, deportes permitidos y cantidad de sesiones pedida.',
     'Cada sesión debe ser válida: date ISO dentro de la semana, timeBlock AM/PM, sessionType permitido, title, objective y durationMin>=5.',
+    'Para sesiones de squash incluye squashDetails con trainingFocus, sessionMode y drills[] (cada drill con name y durationMin). Para strength incluye exercises[] con name, sets y reps.',
     'No devuelvas menos sesiones que las pedidas. Si una sesión queda incompleta, corrígela antes de responder.',
   ].join('\n')
 }
@@ -232,7 +233,14 @@ export function buildWeekUserPrompt(input: WeekPromptInput): string {
     `Rango válido para sesiones de esta semana: ${validRange.startDate} a ${validRange.endDate}. No programes entrenamientos antes de ${validRange.startDate} ni después de ${validRange.endDate}.`,
     `Foco del bloque: ${plan.phases.find((p) => week.weekIndex >= p.startWeekIndex && week.weekIndex <= p.endWeekIndex)?.blockFocus ?? ''}`,
     '',
+    'PERFIL DEL ATLETA',
     briefAthlete(profile),
+    `Nivel de condición al iniciar el plan: ${wizardConfig.currentFitnessLevel} · Fatiga declarada al iniciar el plan: ${wizardConfig.currentFatigue}`,
+    wizardConfig.injuryNotes
+      ? `Lesiones/restricciones activas: ${wizardConfig.injuryNotes} — adapta cargas, evita movimientos de riesgo para la zona afectada y deja el ajuste explícito en objective o notes.`
+      : '',
+    '',
+    ...buildWeekObjectivesSection(week),
     '',
     `Configuración del wizard:`,
     `- Días permitidos: ${days}`,
@@ -246,16 +254,16 @@ export function buildWeekUserPrompt(input: WeekPromptInput): string {
       ? '- Puedes usar AM y PM el mismo día si ayuda a cumplir el volumen, sin duplicar el mismo bloque.'
       : '- Como doble sesión NO está permitido, reparte las sesiones entre días permitidos sin repetir un mismo día.',
     ...buildDoubleSessionPreferenceRule(wizardConfig, week.phase),
-    `- Nivel actual: ${wizardConfig.currentFitnessLevel} · Fatiga: ${wizardConfig.currentFatigue}`,
     `- Deportes permitidos: ${allowed.join(', ')}`,
     `- Carga objetivo por deporte: ${targetLoads}`,
     ...buildPrimarySportRule(plan, week),
     ...buildRaceWeekRule(plan, week),
     ...buildSquashCompetitionRules(plan, week),
     ...buildSquashStrengthThemeRule(plan, wizardConfig),
-    wizardConfig.injuryNotes ? `- Lesiones/restricciones: ${wizardConfig.injuryNotes}` : '',
     '',
-    briefPreviousWeek(previousWeek),
+    ...buildProgressionSection(previousWeek, week, wizardConfig),
+    '',
+    ...buildPhaseContentGuide(plan, week),
     '',
     renderPlanBuilderRecentContext(input.recentContext),
     '',
@@ -268,6 +276,100 @@ export function buildWeekUserPrompt(input: WeekPromptInput): string {
       ? 'Devuelve sólo un objeto JSON create_week para esta semana. No uses wrappers XML, markdown ni texto explicativo.'
       : 'Devuelve sólo el bloque <actions> con una única create_week para esta semana.',
   ].filter(Boolean).join('\n')
+}
+
+function buildWeekObjectivesSection(week: TrainingPlanWeek): string[] {
+  if (week.weekObjectives.length === 0) return []
+  return [
+    'OBJETIVOS DE ESTA SEMANA',
+    'Cada sesión debe contribuir a al menos uno de estos objetivos; úsalos para decidir tipo de estímulo, contenido y RPE.',
+    ...week.weekObjectives.map((objective, index) => `${index + 1}. ${objective.goal}`),
+  ]
+}
+
+function sumTargetLoads(loads: Record<string, number> | undefined): number {
+  if (!loads) return 0
+  return Object.values(loads).reduce((sum, load) => sum + (Number.isFinite(load) ? load : 0), 0)
+}
+
+function buildLoadDirective(
+  previousWeek: TrainingPlanWeek | undefined,
+  week: TrainingPlanWeek,
+  wizardConfig: PlanWizardConfig,
+): string {
+  if (week.phase === 'race') {
+    return 'CONSERVAR energía: el evento manda. Solo activaciones suaves alrededor del torneo, nada pesado.'
+  }
+  if (week.phase === 'taper') {
+    return 'REDUCIR carga de verdad: baja el volumen 30-40% respecto a la semana previa, conserva toques cortos de intensidad/timing y prioriza frescura.'
+  }
+  if (week.phase === 'transition') {
+    return 'RECUPERAR: actividad suave y agradable, RPE <= 5 en todo, sin presión de volumen ni intensidad.'
+  }
+  if (!previousWeek || previousWeek.sessions.length === 0) {
+    const startsLoaded = wizardConfig.currentFatigue === 'loaded' || wizardConfig.currentFatigue === 'overloaded'
+    return startsLoaded
+      ? 'Primera semana con el atleta cargado: arranca conservador (RPE 6 máximo en lo duro, volumen contenido) y prioriza calidad técnica sobre acumulación.'
+      : 'Primera semana del plan: carga moderada (RPE 6-7), prioriza técnica y adaptación, y deja margen real para progresar en las semanas siguientes.'
+  }
+  const previousTotal = sumTargetLoads(previousWeek.targetLoadBySport)
+  const currentTotal = sumTargetLoads(week.targetLoadBySport)
+  if (previousTotal > 0 && currentTotal <= previousTotal * 0.85) {
+    return `BAJAR carga: el plan marca descarga esta semana (carga objetivo total ${currentTotal} vs ${previousTotal} de la previa). Reduce volumen ~20-30% y baja 1 punto de RPE; mantén solo estímulos de calidad.`
+  }
+  if (previousTotal > 0 && currentTotal >= previousTotal * 1.1) {
+    return `SUBIR carga: el plan marca progresión esta semana (carga objetivo total ${currentTotal} vs ${previousTotal} de la previa). Incrementa volumen o intensidad un escalón respecto a la semana previa, no ambos a la vez.`
+  }
+  return 'MANTENER con progresión ligera: conserva la estructura que funcionó la semana previa y ajusta un solo parámetro (algo más de densidad, precisión o carga puntual).'
+}
+
+function buildProgressionSection(
+  previousWeek: TrainingPlanWeek | undefined,
+  week: TrainingPlanWeek,
+  wizardConfig: PlanWizardConfig,
+): string[] {
+  const lines = ['PROGRESIÓN RESPECTO A LA SEMANA PREVIA']
+  if (previousWeek && previousWeek.phase !== week.phase) {
+    lines.push(`Cambio de fase: ${PHASE_LABEL[previousWeek.phase] ?? previousWeek.phase} -> ${PHASE_LABEL[week.phase] ?? week.phase}. El carácter de las sesiones debe reflejar la fase nueva, no repetir la anterior.`)
+  }
+  lines.push(`Directiva de carga: ${buildLoadDirective(previousWeek, week, wizardConfig)}`)
+  lines.push('No clones las sesiones de la semana previa: conserva lo que progresa y varía drills, ejercicios y estímulos.')
+  lines.push(briefPreviousWeek(previousWeek))
+  return lines
+}
+
+function buildPhaseContentGuide(plan: TrainingPlan, week: TrainingPlanWeek): string[] {
+  if (getPrimarySport(plan) !== 'squash') return []
+
+  const guides: Partial<Record<TrainingPlanWeek['phase'], string[]>> = {
+    base: [
+      'Squash: técnica fundamental, patrones de movimiento, ghosting básico y rallies cooperativos. RPE 5-6, sin presión de resultado.',
+      'Fuerza: adaptación y aprendizaje de movimientos, RPE 6-7; prioriza rango de movimiento sobre carga.',
+      'Aeróbico: Z2 exclusivamente, construir base sin comprometer la recuperación.',
+    ],
+    build: [
+      'Squash: intensidad progresiva. Incluye pressure drills, puntos condicionados, trabajo a la T y al menos 1 match-play controlado en la semana.',
+      'Fuerza: cargas progresivas semana a semana con un componente explosivo (saltos, cargadas o high pulls). RPE 7-8.',
+      'Variedad: no repitas el mismo drill principal de squash dos sesiones seguidas; alterna ejes técnico/táctico/físico.',
+    ],
+    peak: [
+      'Squash: máxima especificidad. Pressure drills bajo fatiga, simulación de partido, puntos clave con presión de marcador. La intensidad alta viene del squash, no del cardio accesorio.',
+      'Fuerza: volumen moderado e intensidad puntual alta, foco en potencia y explosividad. Nada que genere DOMS profundo.',
+      'Recuperación: separa al menos 12h entre squash intenso y fuerza pesada.',
+    ],
+    taper: [
+      'Squash: 2-3 toques cortos de calidad centrados en timing, precisión y sensaciones. Sin sesiones exhaustivas.',
+      'Fuerza: 0-1 sesión neural corta (<= 45 min, pocas series, cargas moderadas movidas rápido). No generes DOMS.',
+      'Cada sesión necesita un propósito competitivo claro: frescura, precisión, activación o movilidad.',
+    ],
+    transition: [
+      'Recuperación activa: actividad suave y variada, RPE <= 5 en todo, sin estructura exigente.',
+    ],
+  }
+
+  const guide = guides[week.phase]
+  if (!guide) return []
+  return [`GUÍA DE CONTENIDO — FASE ${(PHASE_LABEL[week.phase] ?? week.phase).toUpperCase()}`, ...guide]
 }
 
 function buildDoubleSessionPreferenceRule(

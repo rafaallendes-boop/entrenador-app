@@ -31,12 +31,51 @@ import { WEEK_CREATOR_RESPONSE_SCHEMA } from './weekCreatorResponseSchema'
 import { enhanceStrengthSessionExercises } from '../training/strengthSessionStructure'
 import { todayISO } from '../../utils/date'
 import { applyWeekCreatorDateWindowToConfig, resolveWeekCreatorDateWindow } from './WeekCreatorDateWindow'
+import { db } from '../../db/db'
+
+/**
+ * Objetivos de la semana objetivo cuando existe un plan activo que la cubre.
+ * Best-effort: cualquier fallo de lectura devuelve [] y el prompt usa el
+ * fallback de intención semanal del macro plan.
+ */
+export async function resolveActivePlanWeekObjectives(
+  targetWeekStart: string,
+  athleteId?: string,
+): Promise<string[]> {
+  try {
+    const candidateWeeks = await db.trainingPlanWeeks
+      .where('weekStartDate')
+      .equals(targetWeekStart)
+      .toArray()
+    if (candidateWeeks.length === 0) return []
+
+    for (const week of candidateWeeks) {
+      const plan = await db.trainingPlans.get(week.planId)
+      if (plan?.status !== 'active') continue
+      if (athleteId && plan.athleteId !== athleteId) continue
+      const objectives = normalizePlanWeekObjectives(week.weekObjectives)
+      if (objectives.length > 0) return objectives
+    }
+    return []
+  } catch {
+    return []
+  }
+}
+
+function normalizePlanWeekObjectives(weekObjectives: TrainingPlanWeek['weekObjectives'] | undefined): string[] {
+  if (!Array.isArray(weekObjectives)) return []
+  return weekObjectives
+    .map((objective) => objective.goal?.trim() ?? '')
+    .filter(Boolean)
+}
 
 type WeekCreatorOptions = {
   surface?: AITechnicalSurface
   targetWeekStart: string
   today?: string
   signal?: AbortSignal
+  /** Override de objetivos semanales; si falta, se resuelven desde el plan activo en Dexie. */
+  weekObjectives?: string[]
 }
 
 type WeekCreatorFallbackReason =
@@ -100,6 +139,8 @@ export const WeekCreatorEngine = {
 
     const dateWindow = resolveWeekCreatorDateWindow(options.targetWeekStart, options.today ?? todayISO())
     const config = applyWeekCreatorDateWindowToConfig(baseConfig, dateWindow)
+    const weekObjectives = options.weekObjectives
+      ?? await resolveActivePlanWeekObjectives(options.targetWeekStart, context.athleteProfile?.id)
 
     const provider = getProviderForRequestClass('week_creator')
     const policy = getAIRequestPolicy('week_creator')
@@ -140,6 +181,7 @@ export const WeekCreatorEngine = {
           retryInstruction: buildWeekRetryInstruction(lastFailure?.error, options.targetWeekStart, config.sessionsPerWeek, attempt),
           strictFormatting: true,
           structuredOutput: true,
+          weekObjectives,
         })
         promptStage.end({ ok: true })
 

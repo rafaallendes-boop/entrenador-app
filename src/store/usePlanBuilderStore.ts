@@ -22,7 +22,8 @@ import {
   runPlanGenerationJob,
 } from '../services/planBuilder/generationJobRunner'
 import { buildPlanBuilderRecentContext } from '../services/planBuilder/recentContext'
-import { countReadyWeeks, sortWeeks } from '../services/planBuilder/weekUtils'
+import { buildRetriggerPlan, isActivePlanGeneration } from '../services/planBuilder/activeGeneration'
+import { countReadyWeeks, isReadyWeek, sortWeeks } from '../services/planBuilder/weekUtils'
 import {
   fetchPlanGenerationSnapshot,
   pollPlanGeneration,
@@ -61,11 +62,13 @@ interface PlanBuilderState {
   lastError: string | null
 
   createDraft: (input: { profile: AthleteProfile; wizardConfig: PlanWizardConfig }) => Promise<void>
-  runGeneration: (profile: AthleteProfile) => Promise<void>
+  runGeneration: (profile: AthleteProfile, options?: { forceNew?: boolean }) => Promise<void>
   retryFullGeneration: (profile: AthleteProfile) => Promise<void>
   regenerateWeek: (weekIndex: number, profile: AthleteProfile, repairInstruction?: string) => Promise<void>
   regenerateWeeks: (weekIndexes: number[], profile: AthleteProfile, repairInstructions?: Record<number, string>) => Promise<void>
   retryFailedWeeks: (profile: AthleteProfile) => Promise<void>
+  /** Reintenta solo las semanas sin sesiones listas (pending/error/colgadas), conservando las draft ya generadas. */
+  retryIncompleteWeeks: (profile: AthleteProfile) => Promise<void>
   resumeGenerationJobs: (profile: AthleteProfile) => Promise<void>
   cancelGeneration: () => Promise<void>
   acceptPlan: () => Promise<{ errors: string[]; warnings: string[] }>
@@ -335,7 +338,7 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
     }
   },
 
-  runGeneration: async (profile) => {
+  runGeneration: async (profile, options) => {
     const { plan, weeks } = get()
     if (!plan) return
     if (plan.generationState === 'generating' || get().status === 'generating') {
@@ -344,7 +347,16 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
     }
     if (canUseRemoteGeneration()) {
       const remoteSnapshot = await fetchPlanGenerationSnapshot(plan.id).catch(() => null)
-      if (
+      if (remoteSnapshot && options?.forceNew) {
+        // Incluso forzando una generación nueva, nunca pisar un worker remoto vivo:
+        // reiniciarlo borraría su jobId y el dedupe del backend dejaría de verlo,
+        // habilitando dos workers en paralelo (doble costo).
+        if (isActivePlanGeneration(remoteSnapshot.plan, Date.now())) {
+          applyGenerationSnapshot(remoteSnapshot, set)
+          startGenerationPolling(remoteSnapshot.plan.id, set, get)
+          return
+        }
+      } else if (
         remoteSnapshot &&
         shouldResumeRemoteGenerationSnapshot(remoteSnapshot)
       ) {
@@ -416,7 +428,7 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
   retryFullGeneration: async (profile) => {
     const { plan } = get()
     if (!plan) return
-    await get().runGeneration(profile)
+    await get().runGeneration(profile, { forceNew: true })
   },
 
   regenerateWeek: async (weekIndex, profile, repairInstruction) => {
@@ -435,14 +447,6 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
     const targets = weeks.filter((w) => targetSet.has(w.weekIndex))
     if (targets.length === 0) return
     const updatedAt = Date.now()
-    const generatingPlan: TrainingPlan = {
-      ...plan,
-      generationState: 'generating',
-      updatedAt,
-      generationSummary: plan.generationSummary
-        ? { ...plan.generationSummary, heartbeatAt: updatedAt }
-        : undefined,
-    }
     const nextWeeks = weeks.map((week) => (targetSet.has(week.weekIndex)
       ? {
         ...week,
@@ -458,6 +462,7 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
         updatedAt,
       }
       : week))
+    const generatingPlan = buildRetriggerPlan(plan, nextWeeks, updatedAt)
     const firstWeekIndex = targets[0]?.weekIndex ?? null
     set({
       plan: generatingPlan,
@@ -534,14 +539,7 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
         updatedAt,
       }
       : week))
-    const generatingPlan: TrainingPlan = {
-      ...plan,
-      generationState: 'generating',
-      updatedAt,
-      generationSummary: plan.generationSummary
-        ? { ...plan.generationSummary, heartbeatAt: updatedAt }
-        : undefined,
-    }
+    const generatingPlan = buildRetriggerPlan(plan, nextWeeks, updatedAt)
     try {
       await persistPlanState(generatingPlan, nextWeeks)
       if (!canUseRemoteGeneration()) {
@@ -598,6 +596,16 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
       const msg = error instanceof Error ? error.message : String(error)
       set({ status: 'error', lastError: msg })
     }
+  },
+
+  retryIncompleteWeeks: async (profile) => {
+    const { plan, weeks } = get()
+    if (!plan) return
+    const incompleteIndexes = weeks
+      .filter((week) => !isReadyWeek(week))
+      .map((week) => week.weekIndex)
+    if (incompleteIndexes.length === 0) return
+    await get().regenerateWeeks(incompleteIndexes, profile)
   },
 
   resumeGenerationJobs: async (profile) => {

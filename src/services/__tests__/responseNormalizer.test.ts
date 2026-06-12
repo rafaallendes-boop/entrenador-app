@@ -778,7 +778,7 @@ describe('responseNormalizer', () => {
     expect(exercise?.warmupSets?.[0]).toEqual({ reps: 5, weight: 55 })
   })
 
-  it('rejects squashDetails when drills items do not have a valid shape', () => {
+  it('repairs squashDetails with minimal defaults when drills items do not have a valid shape', () => {
     const response = normalizeResponse({
       text: [
         'Semana propuesta.',
@@ -803,10 +803,14 @@ describe('responseNormalizer', () => {
       provider: 'mock',
     })
 
-    expect(response.actions?.[0].squashDetails).toBeUndefined()
+    expect(response.actions?.[0].squashDetails).toEqual({
+      trainingFocus: 'technical',
+      sessionMode: 'drill_session',
+      drills: [{ name: 'Squash tecnico', durationMin: 45 }],
+    })
   })
 
-  it('rejects squashDetails when drills is empty and flags likelyTruncated', () => {
+  it('repairs squashDetails when drills is empty instead of dropping the session', () => {
     const response = normalizeResponse({
       text: [
         'Semana propuesta.',
@@ -831,8 +835,12 @@ describe('responseNormalizer', () => {
       provider: 'mock',
     })
 
-    expect(response.actions?.[0].squashDetails).toBeUndefined()
-    expect(response.meta?.likelyTruncated).toBe(true)
+    expect(response.actions?.[0]).toMatchObject({ type: 'add_session', title: 'Squash tecnico' })
+    expect(response.actions?.[0].squashDetails).toEqual({
+      trainingFocus: 'technical',
+      sessionMode: 'drill_session',
+      drills: [{ name: 'Squash tecnico', durationMin: 45 }],
+    })
   })
 
   it('marks likelyTruncated when JSON is valid but actions are semantically incomplete', () => {
@@ -1214,6 +1222,77 @@ describe('responseNormalizer', () => {
         errorClass: 'timeout',
       })
       expect(response.meta?.errorClass).toBe('timeout')
+    })
+  })
+
+  describe('tolerant squashDetails normalization', () => {
+    function createWeekWithSquashDetails(squashDetails: unknown) {
+      return normalizeResponse({
+        text: [
+          '<actions>',
+          JSON.stringify([
+            {
+              type: 'create_week',
+              reason: 'Semana de presion',
+              targetDate: '2026-06-15',
+              sessions: [
+                {
+                  date: '2026-06-15',
+                  timeBlock: 'PM',
+                  sessionType: 'squash',
+                  title: 'Pressure drills',
+                  durationMin: 60,
+                  objective: 'Presion bajo fatiga',
+                  squashDetails,
+                },
+              ],
+            },
+          ]),
+          '</actions>',
+        ].join('\n'),
+        provider: 'mock',
+      })
+    }
+
+    it('coerces an invalid trainingFocus synonym instead of dropping the session', () => {
+      const response = createWeekWithSquashDetails({
+        trainingFocus: 'match_play',
+        sessionMode: 'drill_session',
+        drills: [{ name: 'Puntos condicionados', durationMin: 40 }],
+      })
+
+      expect(response.meta?.createWeekDiagnostics?.[0].droppedSessions).toBe(0)
+      expect(response.actions?.[0].sessions?.[0].squashDetails).toMatchObject({
+        trainingFocus: 'conditioned_games',
+        drills: [{ name: 'Puntos condicionados', durationMin: 40 }],
+      })
+    })
+
+    it('coerces an invented sessionMode keeping the model drills', () => {
+      const response = createWeekWithSquashDetails({
+        trainingFocus: 'tactical',
+        sessionMode: 'match',
+        sessionKind: 'match',
+        drills: [{ name: 'Match play controlado', durationMin: 45 }],
+      })
+
+      expect(response.meta?.createWeekDiagnostics?.[0].droppedSessions).toBe(0)
+      expect(response.actions?.[0].sessions?.[0].squashDetails).toMatchObject({
+        trainingFocus: 'tactical',
+        sessionMode: 'practice_match',
+        sessionKind: 'match',
+      })
+    })
+
+    it('falls back to minimal default details when squashDetails is unusable', () => {
+      const response = createWeekWithSquashDetails({ trainingFocus: 'technical', drills: [] })
+
+      expect(response.meta?.createWeekDiagnostics?.[0].droppedSessions).toBe(0)
+      expect(response.actions?.[0].sessions?.[0].squashDetails).toMatchObject({
+        trainingFocus: 'technical',
+        sessionMode: 'drill_session',
+        drills: [{ name: 'Pressure drills', durationMin: 60 }],
+      })
     })
   })
 })

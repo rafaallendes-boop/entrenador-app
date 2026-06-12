@@ -72,6 +72,36 @@ export function pickCreateWeekAction(actions: CoachAction[] | undefined, weekSta
   return actions.find((a) => a.type === 'create_week' && a.targetDate === weekStartDate)
 }
 
+const DROP_REASON_HINTS: ReadonlyArray<readonly [token: string, hint: string]> = [
+  ['squashDetails', 'Cada sesión de squash debe incluir squashDetails con trainingFocus en {technical, tactical, physical, conditioned_games}, sessionMode en {drill_session, practice_match, competition_match} y drills[] con al menos un drill con name.'],
+  ['durationMin', 'durationMin debe ser un número entero >= 5 en cada sesión.'],
+  ['timeBlock', 'timeBlock debe ser exactamente "AM" o "PM" en cada sesión.'],
+  ['sessionType', 'sessionType debe ser uno de: squash, running, cycling, strength, mobility, recovery.'],
+  ['title', 'Cada sesión necesita title no vacío.'],
+  ['date', 'Cada sesión necesita date en formato YYYY-MM-DD dentro del rango válido de la semana.'],
+]
+
+function buildDropReasonHints(error: string | undefined): string {
+  if (!error) return ''
+  const hints = DROP_REASON_HINTS
+    .filter(([token]) => error.includes(token))
+    .map(([, hint]) => hint)
+  return hints.length > 0 ? ` ${hints.join(' ')}` : ''
+}
+
+export function summarizeDroppedSessionReasons(
+  reasons: Array<{ index: number; reason: string }> | undefined,
+): string | undefined {
+  if (!reasons || reasons.length === 0) return undefined
+  const counts = new Map<string, number>()
+  for (const { reason } of reasons) {
+    counts.set(reason, (counts.get(reason) ?? 0) + 1)
+  }
+  return Array.from(counts.entries())
+    .map(([reason, count]) => (count > 1 ? `${reason} x${count}` : reason))
+    .join(', ')
+}
+
 export function summarizeWeekGenerationError(
   error: string | undefined,
   week: TrainingPlanWeek,
@@ -92,7 +122,7 @@ export function summarizeWeekGenerationError(
     return `Devuelve una acción create_week válida con targetDate=${week.weekStartDate} y sesiones no vacías.`
   }
   if ((error.includes('sesiones válidas de') || error.includes('sesiones válidas completas')) && error.includes('se descartaron')) {
-    return `Devuelve exactamente el número pedido de sesiones válidas completas para la semana ${week.weekStartDate}; no omitas campos ni devuelvas sesiones inválidas.`
+    return `Devuelve exactamente el número pedido de sesiones válidas completas para la semana ${week.weekStartDate}; no omitas campos ni devuelvas sesiones inválidas.${buildDropReasonHints(error)}`
   }
   if (error.includes('tiene ') && error.includes('sesiones')) {
     return `Devuelve exactamente el número de sesiones pedido, con sesiones válidas completas para la semana que empieza el ${week.weekStartDate}.`
@@ -114,7 +144,8 @@ function formatCountMismatchError(
 ): string {
   const expectedSessions = getExpectedSessionsForPlanWeek(plan, week)
   if (diagnostic && diagnostic.droppedSessions > 0) {
-    return `La semana ${week.weekIndex + 1} quedó con ${diagnostic.validSessions} sesiones válidas de ${diagnostic.rawSessions} propuestas; se descartaron ${diagnostic.droppedSessions} por inválidas y el rango válido permite ${expectedSessions}.`
+    const reasons = summarizeDroppedSessionReasons(diagnostic.droppedSessionReasons)
+    return `La semana ${week.weekIndex + 1} quedó con ${diagnostic.validSessions} sesiones válidas de ${diagnostic.rawSessions} propuestas; se descartaron ${diagnostic.droppedSessions} por inválidas y el rango válido permite ${expectedSessions}.${reasons ? ` Motivos de descarte: ${reasons}.` : ''}`
   }
 
   if (repairedDroppedSessions > 0) {
@@ -268,7 +299,9 @@ export async function generateWeekCore(input: GenerateWeekCoreInput): Promise<Ge
       addedFallbackCount: evaluation.addedFallbackCount,
       filteredSportCount: evaluation.filteredSportCount,
       repairWarnings: evaluation.repairWarnings,
-      errorClass: evaluation.error && wasTruncated ? 'truncated' : normalized.meta?.errorClass,
+      errorClass: evaluation.error
+        ? (wasTruncated ? 'truncated' : 'validation')
+        : normalized.meta?.errorClass,
     },
   }
 }
