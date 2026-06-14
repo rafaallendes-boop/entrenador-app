@@ -15,10 +15,10 @@ const ENQUEUE_URL = '/.netlify/functions/enqueue-plan-generation'
 export const MAX_PAYLOAD_BYTES = 200 * 1024
 
 /**
- * Thrown when the enqueue endpoint definitively rejects the request (non-2xx).
- * The worker did NOT start, so callers should surface the error rather than
- * fall back to "keep polling" — that path is reserved for ambiguous network
- * failures where the request may still have reached the server.
+ * Thrown when the generation request is definitively rejected before any worker
+ * can start. Callers should surface it rather than falling back to polling; that
+ * path is reserved for ambiguous network failures where the request may still
+ * have reached the server.
  */
 export class PlanEnqueueRejectedError extends Error {
   readonly statusCode: number
@@ -52,13 +52,22 @@ export async function triggerBackgroundGeneration(
   input: TriggerBackgroundGenerationInput,
 ): Promise<TriggerBackgroundGenerationResult> {
   if (!supabase) {
-    throw new Error('Supabase no está configurado; no se puede iniciar generación async.')
+    throw new PlanEnqueueRejectedError(
+      'Supabase no está configurado; no se puede iniciar generación async.',
+      503,
+    )
   }
 
-  const { data } = await supabase.auth.getSession()
+  const { data } = await supabase.auth.getSession().catch((error) => {
+    const message = error instanceof Error ? error.message : String(error)
+    throw new PlanEnqueueRejectedError(`No se pudo verificar la sesión: ${message}`, 401)
+  })
   const token = data.session?.access_token
   if (!token) {
-    throw new Error('Necesitas iniciar sesión para generar el plan en segundo plano.')
+    throw new PlanEnqueueRejectedError(
+      'Necesitas iniciar sesión para generar el plan en segundo plano.',
+      401,
+    )
   }
 
   const payload: TriggerBackgroundGenerationInput = {
@@ -68,8 +77,9 @@ export async function triggerBackgroundGeneration(
   const body = JSON.stringify(payload)
   const sizeBytes = byteLength(body)
   if (sizeBytes > MAX_PAYLOAD_BYTES) {
-    throw new Error(
+    throw new PlanEnqueueRejectedError(
       `El plan es demasiado grande para enviarlo a generación (${Math.round(sizeBytes / 1024)} KB sobre el límite de ${Math.round(MAX_PAYLOAD_BYTES / 1024)} KB). Reduce el rango de semanas y vuelve a intentarlo.`,
+      413,
     )
   }
 

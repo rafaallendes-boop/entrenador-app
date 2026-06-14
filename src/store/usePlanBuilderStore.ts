@@ -245,6 +245,63 @@ function resetWeeksForFullGeneration(weeks: TrainingPlanWeek[]): TrainingPlanWee
   }))
 }
 
+async function markGenerationStartRejected(input: {
+  plan: TrainingPlan
+  weeks: TrainingPlanWeek[]
+  message: string
+  set: PlanBuilderSet
+  publishRemote?: boolean
+  failedWeekIndexes?: number[]
+}) {
+  generationPollingController?.abort()
+  generationPollingController = null
+
+  const updatedAt = Date.now()
+  const orderedWeeks = sortWeeks(input.weeks)
+  const failedWeekIndexes = Array.from(new Set(input.failedWeekIndexes ?? [])).sort((a, b) => a - b)
+  const completedWeeks = countReadyWeeks(orderedWeeks)
+  const failedPlan: TrainingPlan = {
+    ...input.plan,
+    generationState: 'failed',
+    updatedAt,
+    generationSummary: {
+      ...(input.plan.generationSummary ?? {
+        startedAt: updatedAt,
+        strategy: 'single' as const,
+        completedWeeks,
+        failedWeeks: failedWeekIndexes,
+        totalAttempts: 0,
+      }),
+      completedAt: updatedAt,
+      heartbeatAt: input.plan.generationSummary?.heartbeatAt ?? updatedAt,
+      completedWeeks,
+      failedWeeks: failedWeekIndexes,
+    },
+  }
+
+  await persistPlanState(failedPlan, orderedWeeks).catch((error) => {
+    console.warn('[plan-builder] failed to persist rejected generation state', error)
+  })
+  if (input.publishRemote) {
+    await pushTrainingPlan(failedPlan).catch((error) => {
+      console.warn('[plan-builder] failed to publish rejected generation state', error)
+    })
+  }
+
+  input.set({
+    plan: failedPlan,
+    weeks: orderedWeeks,
+    issues: validatePlan({ plan: failedPlan, weeks: orderedWeeks }),
+    generationJob: null,
+    status: 'error',
+    currentWeekIndex: null,
+    completedWeeks,
+    failedWeekIndexes,
+    streamingTextByWeekIndex: {},
+    lastError: input.message,
+  })
+}
+
 function buildRunnerCallbacks(
   set: PlanBuilderSet,
   get: () => PlanBuilderState,
@@ -450,10 +507,17 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
       })
       startGenerationPolling(nextPlan.id, set, get)
     } catch (error) {
-      // A definitive enqueue rejection means the worker never started: surface it
-      // instead of resuming into a poll that can only end in a 5-min stalled state.
-      if (error instanceof PlanEnqueueRejectedError) {
-        set({ status: 'error', lastError: error.message })
+      // A definitive start failure means the worker never started: surface it
+      // instead of resuming into a poll that can only end in a stalled state.
+      if (error instanceof PlanEnqueueRejectedError || !remotePlanPublished) {
+        const msg = error instanceof Error ? error.message : String(error)
+        await markGenerationStartRejected({
+          plan: nextPlan,
+          weeks: resetWeeks,
+          message: msg,
+          set,
+          publishRemote: remotePlanPublished,
+        })
         return
       }
       if (canUseRemoteGeneration() && remotePlanPublished) {
@@ -562,10 +626,18 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
       })
       startGenerationPolling(generatingPlan.id, set, get)
     } catch (error) {
-      // A definitive enqueue rejection means the worker never started: surface it
-      // instead of resuming into a poll that can only end in a 5-min stalled state.
-      if (error instanceof PlanEnqueueRejectedError) {
-        set({ status: 'error', lastError: error.message })
+      // A definitive start failure means the worker never started: surface it
+      // instead of resuming into a poll that can only end in a stalled state.
+      if (error instanceof PlanEnqueueRejectedError || !remotePlanPublished) {
+        const msg = error instanceof Error ? error.message : String(error)
+        await markGenerationStartRejected({
+          plan: generatingPlan,
+          weeks: nextWeeks,
+          message: msg,
+          set,
+          publishRemote: remotePlanPublished,
+          failedWeekIndexes: targets.map((week) => week.weekIndex),
+        })
         return
       }
       if (canUseRemoteGeneration() && remotePlanPublished) {
@@ -649,10 +721,18 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
       })
       startGenerationPolling(generatingPlan.id, set, get)
     } catch (error) {
-      // A definitive enqueue rejection means the worker never started: surface it
-      // instead of resuming into a poll that can only end in a 5-min stalled state.
-      if (error instanceof PlanEnqueueRejectedError) {
-        set({ status: 'error', lastError: error.message })
+      // A definitive start failure means the worker never started: surface it
+      // instead of resuming into a poll that can only end in a stalled state.
+      if (error instanceof PlanEnqueueRejectedError || !remotePlanPublished) {
+        const msg = error instanceof Error ? error.message : String(error)
+        await markGenerationStartRejected({
+          plan: generatingPlan,
+          weeks: nextWeeks,
+          message: msg,
+          set,
+          publishRemote: remotePlanPublished,
+          failedWeekIndexes,
+        })
         return
       }
       if (canUseRemoteGeneration() && remotePlanPublished) {

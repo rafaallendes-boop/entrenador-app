@@ -65,7 +65,17 @@ describe('triggerBackgroundGeneration', () => {
     const huge = { 0: 'x'.repeat(MAX_PAYLOAD_BYTES + 2_000) }
 
     await expect(triggerBackgroundGeneration(makeInput({ repairInstructions: huge })))
-      .rejects.toThrow(/demasiado grande/i)
+      .rejects.toBeInstanceOf(PlanEnqueueRejectedError)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('treats a missing session as a definitive start rejection', async () => {
+    getSession.mockResolvedValueOnce({ data: { session: null } })
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(triggerBackgroundGeneration(makeInput()))
+      .rejects.toMatchObject({ statusCode: 401 })
     expect(fetchMock).not.toHaveBeenCalled()
   })
 

@@ -464,6 +464,7 @@ describe('usePlanBuilderStore', () => {
 
   it('surfaces a definitive enqueue rejection as an error instead of polling until stalled', async () => {
     const profile = await createShell()
+    const plan = usePlanBuilderStore.getState().plan!
     mocks.supabase = { auth: {} }
     mocks.authUser = { id: 'user-1' }
     mocks.triggerBackgroundGeneration.mockRejectedValueOnce(
@@ -474,8 +475,32 @@ describe('usePlanBuilderStore', () => {
 
     const state = usePlanBuilderStore.getState()
     expect(state.status).toBe('error')
+    expect(state.plan?.generationState).toBe('failed')
     expect(state.lastError).toContain('Payload inválido')
     expect(mocks.pollPlanGeneration).not.toHaveBeenCalled()
+    expect(mocks.plans.get(plan.id)?.generationState).toBe('failed')
+    expect(mocks.pushTrainingPlan).toHaveBeenLastCalledWith(expect.objectContaining({
+      id: plan.id,
+      generationState: 'failed',
+    }))
+  })
+
+  it('marks generation as failed when the remote draft cannot be published before enqueue', async () => {
+    const profile = await createShell()
+    const plan = usePlanBuilderStore.getState().plan!
+    mocks.supabase = { auth: {} }
+    mocks.authUser = { id: 'user-1' }
+    mocks.pushTrainingPlan.mockRejectedValueOnce(new Error('sync offline'))
+
+    await usePlanBuilderStore.getState().runGeneration(profile)
+
+    const state = usePlanBuilderStore.getState()
+    expect(state.status).toBe('error')
+    expect(state.plan?.generationState).toBe('failed')
+    expect(state.lastError).toContain('sync offline')
+    expect(mocks.triggerBackgroundGeneration).not.toHaveBeenCalled()
+    expect(mocks.pollPlanGeneration).not.toHaveBeenCalled()
+    expect(mocks.plans.get(plan.id)?.generationState).toBe('failed')
   })
 
   it('acceptPlan rejects when generationState is not complete', async () => {

@@ -1,5 +1,9 @@
-import { describe, expect, it } from 'vitest'
-import { isGeneratePlanPayload, MAX_WEEKS } from '../../../../netlify/functions/_shared/planGenerationShared'
+import { afterEach, describe, expect, it } from 'vitest'
+import {
+  isGeneratePlanPayload,
+  MAX_WEEKS,
+  resolveSelfBaseUrl,
+} from '../../../../netlify/functions/_shared/planGenerationShared'
 
 function validPayload(weekCount = 1) {
   return {
@@ -31,5 +35,34 @@ describe('isGeneratePlanPayload', () => {
     const payload = validPayload()
     payload.weeks[0].planId = 'other-plan'
     expect(isGeneratePlanPayload(payload)).toBe(false)
+  })
+})
+
+describe('resolveSelfBaseUrl', () => {
+  const originalUrl = process.env.URL
+
+  afterEach(() => {
+    if (originalUrl == null) {
+      delete process.env.URL
+    } else {
+      process.env.URL = originalUrl
+    }
+  })
+
+  it('prefers the inbound request host over the production URL env var', () => {
+    process.env.URL = 'https://prod.example.com'
+
+    expect(resolveSelfBaseUrl({
+      headers: {
+        host: 'deploy-preview-7--app.netlify.app',
+        'x-forwarded-proto': 'https',
+      },
+    } as never)).toBe('https://deploy-preview-7--app.netlify.app')
+  })
+
+  it('falls back to URL when host headers are missing', () => {
+    process.env.URL = 'https://prod.example.com/'
+
+    expect(resolveSelfBaseUrl({ headers: {} } as never)).toBe('https://prod.example.com')
   })
 })

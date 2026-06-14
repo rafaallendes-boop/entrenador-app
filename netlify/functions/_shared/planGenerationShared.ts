@@ -162,13 +162,15 @@ export function createSupabaseWriter(userId: string, token: string): AsyncPlanGe
 
 /**
  * Resolves the site base URL so one function can invoke another over HTTP.
- * Prefers Netlify-provided env vars; falls back to the inbound request host.
+ * Prefers the inbound request host so deploy previews call their own worker;
+ * falls back to Netlify-provided env vars only when host headers are missing.
  */
 export function resolveSelfBaseUrl(event: HandlerEvent): string {
+  const proto = getHeader(event.headers, 'x-forwarded-proto') ?? 'https'
+  const host = getHeader(event.headers, 'x-forwarded-host') ?? getHeader(event.headers, 'host')
+  if (host) return `${proto}://${host}`.replace(/\/$/, '')
+
   const fromEnv = process.env['URL'] ?? process.env['DEPLOY_PRIME_URL'] ?? process.env['DEPLOY_URL']
   if (fromEnv) return fromEnv.replace(/\/$/, '')
-  const proto = getHeader(event.headers, 'x-forwarded-proto') ?? 'https'
-  const host = getHeader(event.headers, 'host')
-  if (!host) throw new Error('No se pudo resolver la URL base para invocar el worker.')
-  return `${proto}://${host}`
+  throw new Error('No se pudo resolver la URL base para invocar el worker.')
 }
