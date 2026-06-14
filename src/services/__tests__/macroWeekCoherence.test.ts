@@ -95,7 +95,7 @@ describe('macroWeekCoherence', () => {
 
   it('build prioritizes primary sport specificity', () => {
     const profile = makeProfile({
-      goalEvents: [{ ...makeProfile().goalEvents![0], date: '2026-06-20' }],
+      goalEvents: [{ ...makeProfile().goalEvents![0], date: '2026-05-19' }],
     })
 
     const summary = buildMacroWeekCoherenceSummary({
@@ -113,7 +113,7 @@ describe('macroWeekCoherence', () => {
 
   it('peak warns when accessory work dominates over the primary sport', () => {
     const profile = makeProfile({
-      goalEvents: [{ ...makeProfile().goalEvents![0], date: '2026-05-20' }],
+      goalEvents: [{ ...makeProfile().goalEvents![0], date: '2026-05-12' }],
     })
 
     const summary = buildMacroWeekCoherenceSummary({
@@ -130,7 +130,7 @@ describe('macroWeekCoherence', () => {
 
   it('taper warns when running or accessory load stays too high', () => {
     const profile = makeProfile({
-      goalEvents: [{ ...makeProfile().goalEvents![0], date: '2026-04-25' }],
+      goalEvents: [{ ...makeProfile().goalEvents![0], date: '2026-04-14' }],
       planWizardConfig: {
         ...makeProfile().planWizardConfig!,
         complementarySports: ['strength', 'running'],
@@ -151,7 +151,7 @@ describe('macroWeekCoherence', () => {
 
   it('taper warns explicitly when average load stays too high for freshness', () => {
     const profile = makeProfile({
-      goalEvents: [{ ...makeProfile().goalEvents![0], date: '2026-04-25' }],
+      goalEvents: [{ ...makeProfile().goalEvents![0], date: '2026-04-14' }],
       sportContext: {
         enabledSports: ['squash'],
         primarySport: 'squash',
@@ -178,7 +178,7 @@ describe('macroWeekCoherence', () => {
 
   it('produces different coherence guidance for build squash and peak running', () => {
     const squashProfile = makeProfile({
-      goalEvents: [{ ...makeProfile().goalEvents![0], date: '2026-06-20' }],
+      goalEvents: [{ ...makeProfile().goalEvents![0], date: '2026-05-19' }],
     })
     const runningProfile = makeProfile({
       primarySport: 'running',

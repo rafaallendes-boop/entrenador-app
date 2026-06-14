@@ -177,6 +177,34 @@ function canUseRemoteGeneration(): boolean {
   return Boolean(supabase && useAuthStore.getState().user)
 }
 
+async function resumeUncertainRemoteGeneration(
+  planId: string,
+  set: PlanBuilderSet,
+  get: () => PlanBuilderState,
+): Promise<boolean> {
+  const remoteSnapshot = await fetchPlanGenerationSnapshot(planId).catch(() => null)
+  if (remoteSnapshot) {
+    applyGenerationSnapshot(remoteSnapshot, set)
+    if (!remoteSnapshot.isTerminal && !remoteSnapshot.isStalled) {
+      startGenerationPolling(remoteSnapshot.plan.id, set, get)
+    }
+    return true
+  }
+
+  const current = get()
+  if (current.plan?.id !== planId || current.plan.generationState !== 'generating') {
+    return false
+  }
+
+  set({
+    status: 'generating',
+    generationJob: null,
+    lastError: null,
+  })
+  startGenerationPolling(planId, set, get)
+  return true
+}
+
 function normalizePlanGenerationState(plan: TrainingPlan, weeks: TrainingPlanWeek[]): TrainingPlan {
   if (plan.generationState === 'generating' || plan.generationState === 'cancelled') return plan
   return {
@@ -383,6 +411,7 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
         heartbeatAt: startedAt,
       },
     }
+    let remotePlanPublished = false
     try {
       await persistPlanState(nextPlan, resetWeeks)
       set({
@@ -410,6 +439,7 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
         return
       }
       await pushTrainingPlan(nextPlan)
+      remotePlanPublished = true
       const recentContext = await buildPlanBuilderRecentContext(nextPlan).catch(() => undefined)
       await triggerBackgroundGeneration({
         plan: nextPlan,
@@ -420,6 +450,11 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
       })
       startGenerationPolling(nextPlan.id, set, get)
     } catch (error) {
+      if (canUseRemoteGeneration() && remotePlanPublished) {
+        console.warn('[plan-builder] remote generation confirmation lost; keeping plan in background mode', error)
+        const resumed = await resumeUncertainRemoteGeneration(nextPlan.id, set, get)
+        if (resumed) return
+      }
       const msg = error instanceof Error ? error.message : String(error)
       set({ status: 'error', lastError: msg })
     }
@@ -475,6 +510,7 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
         ...Object.fromEntries(targets.map((week) => [week.weekIndex, ''])),
       },
     })
+    let remotePlanPublished = false
     try {
       await db.trainingPlans.put(generatingPlan)
       await db.trainingPlanWeeks.bulkPut(nextWeeks)
@@ -502,6 +538,7 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
         return
       }
       await pushTrainingPlan(generatingPlan)
+      remotePlanPublished = true
       const recentContext = await buildPlanBuilderRecentContext(generatingPlan).catch(() => undefined)
       await triggerBackgroundGeneration({
         plan: generatingPlan,
@@ -519,6 +556,11 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
       })
       startGenerationPolling(generatingPlan.id, set, get)
     } catch (error) {
+      if (canUseRemoteGeneration() && remotePlanPublished) {
+        console.warn('[plan-builder] remote regeneration confirmation lost; keeping plan in background mode', error)
+        const resumed = await resumeUncertainRemoteGeneration(generatingPlan.id, set, get)
+        if (resumed) return
+      }
       const msg = error instanceof Error ? error.message : String(error)
       set({ status: 'error', lastError: msg })
     }
@@ -540,6 +582,7 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
       }
       : week))
     const generatingPlan = buildRetriggerPlan(plan, nextWeeks, updatedAt)
+    let remotePlanPublished = false
     try {
       await persistPlanState(generatingPlan, nextWeeks)
       if (!canUseRemoteGeneration()) {
@@ -571,6 +614,7 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
         return
       }
       await pushTrainingPlan(generatingPlan)
+      remotePlanPublished = true
       const recentContext = await buildPlanBuilderRecentContext(generatingPlan).catch(() => undefined)
       await triggerBackgroundGeneration({
         plan: generatingPlan,
@@ -593,6 +637,11 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
       })
       startGenerationPolling(generatingPlan.id, set, get)
     } catch (error) {
+      if (canUseRemoteGeneration() && remotePlanPublished) {
+        console.warn('[plan-builder] remote retry confirmation lost; keeping plan in background mode', error)
+        const resumed = await resumeUncertainRemoteGeneration(generatingPlan.id, set, get)
+        if (resumed) return
+      }
       const msg = error instanceof Error ? error.message : String(error)
       set({ status: 'error', lastError: msg })
     }

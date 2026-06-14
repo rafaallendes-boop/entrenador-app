@@ -78,13 +78,21 @@ describe('macroPlan', () => {
     expect(resolvePhase(-1)).toBe('transition')
   })
 
+  it('uses a shorter taper for squash tournament preparation', () => {
+    expect(resolvePhase(6, 'squash')).toBe('build')
+    expect(resolvePhase(5, 'squash')).toBe('peak')
+    expect(resolvePhase(2, 'squash')).toBe('peak')
+    expect(resolvePhase(1, 'squash')).toBe('taper')
+    expect(resolvePhase(0, 'squash')).toBe('race')
+  })
+
   it('computes a deterministic macro plan from the primary event', () => {
     const plan = computeMacroPlan(makeProfile('2026-05-05'), new Date('2026-04-07T09:00:00'))
     expect(plan).toMatchObject({
       goalEventId: 'goal-1',
       goalEventDate: '2026-05-05',
       weeksRemaining: 4,
-      currentPhase: 'taper',
+      currentPhase: 'peak',
     })
     expect(plan?.headline.length).toBeGreaterThan(0)
     expect(plan?.timeline.length).toBeGreaterThan(0)

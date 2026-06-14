@@ -92,4 +92,31 @@ describe('qualityReview repeated strength templates', () => {
     const flaggedWeeks = repeated.map((issue) => issue.weekIndex)
     expect(new Set(flaggedWeeks).size).toBe(flaggedWeeks.length)
   })
+
+  it('prorates partial first weeks before flagging load jumps', () => {
+    const partialPlan: TrainingPlan = {
+      ...plan(),
+      startDate: '2026-06-12',
+      endDate: '2026-06-28',
+      totalWeeks: 3,
+      phases: [{ phase: 'build', startWeekIndex: 0, endWeekIndex: 2, blockFocus: '', intentBySport: {} }],
+    } as TrainingPlan
+    const firstPartialWeek: TrainingPlanWeek = {
+      ...week(0, ['Dead bug', 'Back squat']),
+      weekStartDate: '2026-06-08',
+      sessions: [strength(['Dead bug', 'Back squat'])],
+    } as TrainingPlanWeek
+    const secondFullWeek: TrainingPlanWeek = {
+      ...week(1, ['Side plank', 'Front squat']),
+      weekStartDate: '2026-06-15',
+      sessions: [
+        { ...strength(['Side plank', 'Front squat']), date: '2026-06-16', durationMin: 50 },
+        { ...strength(['Pallof press', 'Romanian deadlift']), date: '2026-06-18', durationMin: 50 },
+      ],
+    } as TrainingPlanWeek
+
+    const review = reviewPlanQuality(partialPlan, [firstPartialWeek, secondFullWeek])
+
+    expect(review.issues.some((issue) => issue.code === 'quality.load.progression_jump')).toBe(false)
+  })
 })

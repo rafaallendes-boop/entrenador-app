@@ -25,7 +25,7 @@ import { createStageTracker, type CoachOutcome } from '../ai/stageLogger'
 import { buildWeekCreatorPrompt, summarizeWeekCreatorAction } from './WeekCreatorPromptBuilder'
 import { validateWeekCreatorResponse } from './validateWeekCreatorResponse'
 import { resolveWeekCreatorConfig, type WeekCreatorEffectiveConfig, withRequestedSessionsPerWeek } from './WeekCreatorConfig'
-import { buildWeekRetryInstruction } from '../week/shared'
+import { buildWeekRetryInstruction, isStrictISODate } from '../week/shared'
 import { repairGeneratedWeek } from '../planBuilder/repairWeek'
 import { WEEK_CREATOR_RESPONSE_SCHEMA } from './weekCreatorResponseSchema'
 import { enhanceStrengthSessionExercises } from '../training/strengthSessionStructure'
@@ -124,6 +124,22 @@ export const WeekCreatorEngine = {
     if (baseConfig.configSource === 'defaults') {
       return {
         message: 'Para proponer una semana necesito conocer tus deportes y disponibilidad horaria. ¿Quieres completar tu perfil de atleta primero? Puedes hacerlo desde Configuración → Perfil de atleta.',
+        actions: [],
+        provider: 'mock',
+        model: 'none',
+        timestamp: Date.now(),
+        traceId: buildAITraceId('week_creator'),
+        requestClass: 'week_creator',
+        durationMs: 0,
+        retryUsed: false,
+        fallbackUsed: false,
+        meta: { hadActionsMarkup: false, actionParseFailed: false, likelyTruncated: false },
+      }
+    }
+
+    if (!isStrictISODate(options.targetWeekStart)) {
+      return {
+        message: 'No pude determinar la semana objetivo. Vuelve a intentarlo indicando la semana que quieres planificar.',
         actions: [],
         provider: 'mock',
         model: 'none',
@@ -289,6 +305,17 @@ export const WeekCreatorEngine = {
         }
       } catch (error) {
         outcome = 'error'
+        // A user/watchdog abort must short-circuit: no retry and no deterministic
+        // fallback week, otherwise we silently hand back a plan nobody asked for.
+        if (isAbortError(error, options.signal)) {
+          useAIDebugStore.getState().failRequest(traceId, {
+            provider: provider.name,
+            errorCode: 'aborted',
+            warnings: ['week_creator_aborted'],
+          })
+          tracker.flush(outcome, { attempt, aborted: true })
+          throw error instanceof Error ? error : new Error(String(error))
+        }
         lastFailure = {
           provider: provider.name,
           traceId,
@@ -364,6 +391,12 @@ export const WeekCreatorEngine = {
       message: buildWeekCreatorFallbackMessage(fallbackValidation.action),
     }
   },
+}
+
+function isAbortError(error: unknown, signal?: AbortSignal): boolean {
+  if (signal?.aborted) return true
+  if (error instanceof Error) return error.name === 'AbortError'
+  return false
 }
 
 function buildWeekCreatorFallbackMessage(action: CoachAction): string {
@@ -812,6 +845,11 @@ function dayOfWeekFromTargetDate(_targetWeekStart: string, date: string): DayOfW
   return mapping[weekday] ?? null
 }
 
+// Offsets assume targetWeekStart is a Monday (the only value the chat router
+// produces via startOfWeek(..., { weekStartsOn: 1 })). The AI path validates
+// against the real weekday, so this hard-coded origin only feeds the
+// deterministic fallback builder; revisit if a non-Monday week start is ever
+// introduced upstream.
 function dayOffset(day: DayOfWeek): number {
   const offsets: Record<DayOfWeek, number> = {
     monday: 0,

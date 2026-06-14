@@ -238,7 +238,11 @@ export function resolveWeekCreatorConfig(profile: AthleteProfile | null | undefi
       : Math.min(trainingDays.length, MAX_SESSIONS_PER_WEEK)
     const sessionsPerWeek = hasCurrentScheduleDays
       ? deriveScheduleSessionsPerWeek(trainingDays, doubleSessionDays, profile.scheduleProfile?.sessionsPerWeek, Math.max(1, maxSessionsPerWeek))
-      : wizard.sessionsPerWeek
+      // Cap the wizard target to the real day/double capacity. We only clamp the
+      // upper bound (no floor) so explicit low-volume wizards keep their value,
+      // while an over-capacity wizard can no longer outrun the available slots
+      // and crash the deterministic fallback builder.
+      : Math.min(Math.max(1, wizard.sessionsPerWeek), Math.max(1, maxSessionsPerWeek))
     return {
       trainingDays,
       doubleSessionDays,

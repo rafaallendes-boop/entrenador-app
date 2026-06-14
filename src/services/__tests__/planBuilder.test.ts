@@ -106,6 +106,30 @@ describe('planBuilder', () => {
     expect(weeks[weeks.length - 1]?.weekStartDate).toBe('2026-07-20')
   })
 
+  it('keeps squash tournament taper to the final pre-event week', () => {
+    const profile = makeProfile('2026-07-20')
+    const event = profile.goalEvents![0] as GoalEvent
+    const { weeks } = buildPlanShell({
+      athleteId: profile.id,
+      profile,
+      wizardConfig: makeWizardConfig(),
+      goalEvent: event,
+      now: new Date('2026-06-12T10:00:00'),
+    })
+
+    expect(weeks).toHaveLength(7)
+    expect(weeks.map((week) => week.phase)).toEqual([
+      'build',
+      'peak',
+      'peak',
+      'peak',
+      'peak',
+      'taper',
+      'race',
+    ])
+    expect(new Set(Object.values(weeks[1]!.targetLoadBySport)).size).toBeGreaterThan(1)
+  })
+
   it('week prompt and validation respect a partial first-week range', () => {
     const profile = makeProfile('2026-07-20')
     const event = profile.goalEvents![0] as GoalEvent

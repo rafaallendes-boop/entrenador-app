@@ -100,4 +100,37 @@ describe('repairWeek Fase 2 wiring', () => {
 
     expect(week0.sessions[0]?.metadata?.starLift?.name).not.toBe(week1.sessions[0]?.metadata?.starLift?.name)
   })
+
+  it('maps unknown squash drills without regenerating the whole session template', () => {
+    const result = repairGeneratedWeek([
+      {
+        date: '2026-06-02',
+        timeBlock: 'AM',
+        sessionType: 'squash',
+        title: 'Intensidad Alta y Puntos Clave bajo Presión',
+        durationMin: 60,
+        rpe: 8,
+        subtype: 'competitive',
+        objective: 'Puntos condicionados con presión de marcador y toma de la T.',
+        squashDetails: {
+          trainingFocus: 'conditioned_games',
+          sessionMode: 'drill_session',
+          sessionKind: 'mixed',
+          drills: [
+            { name: 'Juego condicionado solo al fondo', durationMin: 16 },
+            { name: 'Puntos clave bajo presión', durationMin: 16 },
+          ],
+        },
+      },
+    ] as never, makeContext(0))
+
+    const squash = result.sessions[0]
+    const drillNames = squash?.squashDetails?.drills.map((drill) => drill.name) ?? []
+
+    expect(result.meta.warnings.some((warning) => warning.code === 'squash_unknown_drills_mapped')).toBe(true)
+    expect(result.meta.warnings.some((warning) => warning.code === 'squash_unknown_drills_repaired')).toBe(false)
+    expect(drillNames).toContain('Juego condicionado solo al fondo')
+    expect(drillNames.length).toBeGreaterThanOrEqual(3)
+    expect(squash?.squashDetails?.blocks?.length).toBeGreaterThan(0)
+  })
 })

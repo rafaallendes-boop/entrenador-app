@@ -56,8 +56,55 @@ function defaultLoadForPhase(phase: MacroPlanPhase): number {
   }
 }
 
-function resolvePhaseForWeekOffset(offsetFromEvent: number): MacroPlanPhase {
-  return resolvePhase(offsetFromEvent)
+function supportLoadForSport(
+  sport: SupportedSport,
+  phase: MacroPlanPhase,
+  primarySport: SupportedSport | undefined,
+  primaryLoad: number,
+): number {
+  if (sport === primarySport) return primaryLoad
+
+  const multiplierBySport: Partial<Record<SupportedSport, Partial<Record<MacroPlanPhase, number>>>> = {
+    strength: {
+      base: 0.55,
+      build: 0.6,
+      peak: 0.5,
+      taper: 0.3,
+      race: 0.15,
+      transition: 0.25,
+    },
+    running: {
+      base: primarySport === 'squash' ? 0.45 : 0.55,
+      build: primarySport === 'squash' ? 0.4 : 0.55,
+      peak: primarySport === 'squash' ? 0.25 : 0.45,
+      taper: 0.15,
+      race: 0,
+      transition: 0.25,
+    },
+    cycling: {
+      base: 0.45,
+      build: 0.35,
+      peak: 0.2,
+      taper: 0,
+      race: 0,
+      transition: 0.25,
+    },
+    mobility: {
+      base: 0.3,
+      build: 0.3,
+      peak: 0.35,
+      taper: 0.45,
+      race: 0.35,
+      transition: 0.5,
+    },
+  }
+
+  const multiplier = multiplierBySport[sport]?.[phase] ?? 0.35
+  return Math.round(primaryLoad * multiplier)
+}
+
+function resolvePhaseForWeekOffset(offsetFromEvent: number, primarySport?: SupportedSport): MacroPlanPhase {
+  return resolvePhase(offsetFromEvent, primarySport)
 }
 
 function dayOfWeek(date: Date): PlanWizardConfig['trainingDays'][number] {
@@ -134,6 +181,7 @@ export function buildPlanShell(input: BuildPlanShellInput): BuildPlanShellResult
     : toISO(requestedStartDate)
 
   const weekPhases: MacroPlanPhase[] = []
+  const primarySport = macroSnapshot.sportDetails.find((detail) => detail.role === 'primary')?.sport
   for (let i = 0; i < totalWeeks; i++) {
     const weekStart = addWeeks(firstWeekStart, i)
     const weekReferenceDate = weekStart.getTime() > now.getTime()
@@ -142,7 +190,7 @@ export function buildPlanShell(input: BuildPlanShellInput): BuildPlanShellResult
         ? now
         : weekStart
     const remaining = computeWeeksRemaining(goalEvent.date, weekReferenceDate)
-    weekPhases.push(resolvePhaseForWeekOffset(remaining))
+    weekPhases.push(resolvePhaseForWeekOffset(remaining, primarySport))
   }
 
   const phases = groupIntoPhases(weekPhases)
@@ -190,9 +238,7 @@ export function buildPlanShell(input: BuildPlanShellInput): BuildPlanShellResult
     const targetLoadBySport: Partial<Record<SupportedSport, number>> = {}
     const baseline = defaultLoadForPhase(phase)
     for (const sport of allowedSports) {
-      targetLoadBySport[sport] = sport === macroSnapshot.sportDetails.find(d => d.role === 'primary')?.sport
-        ? baseline
-        : Math.round(baseline * 0.55)
+      targetLoadBySport[sport] = supportLoadForSport(sport, phase, primarySport, baseline)
     }
     return {
       id: uuid(),

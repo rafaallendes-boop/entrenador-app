@@ -551,8 +551,8 @@ export function computeMacroPlan(
 
   const refDate = now ?? new Date()
   const weeksRemaining = computeWeeksRemaining(event.date, refDate)
-  const currentPhase = resolvePhase(weeksRemaining)
   const primarySport = getPlanningPrimarySport(profile) ?? normalizeSport(event.sport)
+  const currentPhase = resolvePhase(weeksRemaining, primarySport)
   const allowedSports = getAllowedPlanningSports(profile)
   const detailSports = resolveDetailSports(primarySport, allowedSports)
   const sportDetails = detailSports.map((sport) =>
@@ -624,9 +624,18 @@ export function computeWeeksRemaining(eventDateISO: string, refDate: Date): numb
   return diffDays >= 0 ? Math.ceil(diffDays / 7) : Math.floor(diffDays / 7)
 }
 
-export function resolvePhase(weeksRemaining: number): MacroPlanPhase {
+export function resolvePhase(
+  weeksRemaining: number,
+  primarySport?: SupportedSport,
+): MacroPlanPhase {
   if (weeksRemaining < 0) return 'transition'
   if (weeksRemaining === 0) return 'race'
+  if (primarySport === 'squash') {
+    if (weeksRemaining <= 1) return 'taper'
+    if (weeksRemaining <= 5) return 'peak'
+    if (weeksRemaining <= 10) return 'build'
+    return 'base'
+  }
   if (weeksRemaining <= 4) return 'taper'
   if (weeksRemaining <= 8) return 'peak'
   if (weeksRemaining <= 12) return 'build'

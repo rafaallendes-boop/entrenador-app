@@ -47,7 +47,8 @@
       "Skill(code-review)",
       "Read(//Users/rafaallendes/Downloads/**)",
       "Bash(python3 -c ' *)",
-      "Read(//tmp/**)"
+      "Read(//tmp/**)",
+      "Bash(python3 *)"
     ]
   }
 }

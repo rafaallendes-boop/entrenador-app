@@ -6,6 +6,9 @@
 [functions]
   node_bundler = "esbuild"
 
+[functions."generate-plan-background"]
+  background = true
+
 [[redirects]]
   from = "/*"
   to = "/index.html"

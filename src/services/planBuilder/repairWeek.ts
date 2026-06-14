@@ -7,6 +7,9 @@ import type {
   PlanWizardConfig,
   RunningIntervalStructure,
   RunningType,
+  SquashDrill,
+  SquashSessionBlock,
+  SquashSessionBlockKind,
   SquashSessionKind,
   SupportedSport,
   WizardFatigueLevel,
@@ -14,7 +17,7 @@ import type {
 import type { TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
 import { getExpectedSessionsForPlanWeek, getPlanWeekDateRange, isDateInsidePlanWeekRange } from './dateRange'
 import { selectSquashDrills, type SquashSelectionDesiredKind, type SquashSelectionPhase } from '../training/drillSelector'
-import { findSquashDrillByName, isControlDrill, isShadowsDrill, isSquashMatchDrill, normalizeSquashDrillKey } from '../training/drillLibrary'
+import { findSquashDrillByName, isControlDrill, isShadowsDrill, isSquashMatchDrill, normalizeSquashDrillKey, orderSquashBlocksForSession, resolveSquashDrillKind, toSquashDrill } from '../training/drillLibrary'
 import { selectRunningSession, type RunningPhase, type RunningSportProfile } from '../training/runningSelector'
 import {
   getTargetExerciseDensity,
@@ -305,9 +308,12 @@ function completeSportDetails(
             completeSquashDetails(session, context, currentWeekSquashDrills)
             meta.repairedSessionCount++
           } else if (hasUnresolvedSquashDrills(session)) {
-            completeSquashDetails(session, context, currentWeekSquashDrills)
+            repairUnresolvedSquashDrills(session, context, currentWeekSquashDrills)
             meta.repairedSessionCount++
-            meta.warnings.push({ code: 'squash_unknown_drills_repaired', message: `Sesión "${session.title}" regenerada: usaba drills fuera de catálogo.`, sessionDate: session.date })
+            meta.warnings.push({ code: 'squash_unknown_drills_mapped', message: `Sesión "${session.title}" conservada: se mapearon/completaron drills fuera de catálogo.`, sessionDate: session.date })
+          } else if (densifySparseSquashDetails(session, context, currentWeekSquashDrills)) {
+            meta.repairedSessionCount++
+            meta.warnings.push({ code: 'squash_sparse_drills_repaired', message: `Sesión "${session.title}" densificada: tenía pocos drills para su duración.`, sessionDate: session.date })
           }
           currentWeekSquashDrills.push(...extractSquashDrillNames(session))
           break
@@ -390,6 +396,131 @@ function applySquashSelection(
     sessionKind: result.sessionKind,
     blocks: result.blocks,
   }
+}
+
+function repairUnresolvedSquashDrills(
+  session: CoachSessionProposal,
+  context: RepairContext,
+  recentDrills: string[],
+): void {
+  const details = session.squashDetails
+  if (!details) {
+    completeSquashDetails(session, context, recentDrills)
+    return
+  }
+
+  const mappedDrills = (details.drills ?? [])
+    .map((drill) => {
+      const definition = findSquashDrillByName(drill.name)
+      return definition
+        ? toSquashDrill(definition, drill.durationMin, drill.notes)
+        : null
+    })
+    .filter((drill): drill is SquashDrill => drill !== null)
+
+  if (mappedDrills.length === 0) {
+    completeSquashDetails(session, context, recentDrills)
+    return
+  }
+
+  const selection = selectContextualSquashCompletion(session, context, [
+    ...recentDrills,
+    ...mappedDrills.map((drill) => drill.name),
+  ])
+  const targetCount = Math.max(
+    getMinimumSquashDrillCount(session),
+    Math.min(details.drills?.length ?? 0, 5),
+  )
+  details.drills = completeSquashDrillSet(mappedDrills, selection.drills, targetCount)
+  details.trainingFocus = details.trainingFocus ?? selection.trainingFocus
+  details.sessionKind = details.sessionKind ?? selection.sessionKind
+  details.blocks = buildSquashBlocksFromDrills(details.drills)
+}
+
+function densifySparseSquashDetails(
+  session: CoachSessionProposal,
+  context: RepairContext,
+  recentDrills: string[],
+): boolean {
+  const details = session.squashDetails
+  if (!details?.drills) return false
+
+  const targetCount = getMinimumSquashDrillCount(session)
+  if (details.drills.length >= targetCount) return false
+
+  const selection = selectContextualSquashCompletion(session, context, [
+    ...recentDrills,
+    ...details.drills.map((drill) => drill.name),
+  ])
+  const nextDrills = completeSquashDrillSet(details.drills, selection.drills, targetCount)
+  if (nextDrills.length === details.drills.length) return false
+
+  details.drills = nextDrills
+  details.blocks = buildSquashBlocksFromDrills(nextDrills)
+  return true
+}
+
+function getMinimumSquashDrillCount(session: CoachSessionProposal): number {
+  if (session.durationMin >= 60) return 4
+  if (session.durationMin >= 45) return session.squashDetails?.sessionKind === 'match' ? 2 : 3
+  if (session.durationMin >= 30) return 2
+  return 1
+}
+
+function selectContextualSquashCompletion(
+  session: CoachSessionProposal,
+  context: RepairContext,
+  recentDrills: string[],
+): ReturnType<typeof selectSquashDrills> {
+  return selectSquashDrills({
+    fatigueLevel: fatigueToNumber(context.wizardConfig.currentFatigue),
+    phase: mapPhase(context.week.phase) as SquashSelectionPhase,
+    recentDrills,
+    goal: buildLevelAwareGoal(context, `${session.objective ?? context.profile.mainGoal ?? ''} ${session.title}`),
+    competitionSoon: context.week.phase === 'taper' || context.week.phase === 'race',
+    competitiveLevel: deriveCompetitiveLevel(context),
+    partnerAvailability: context.wizardConfig.partnerAvailability ?? 'either',
+    desiredKind: mapSubtypeToDesiredKind(session.subtype) ?? inferSquashDesiredKind(session, recentDrills),
+  })
+}
+
+function completeSquashDrillSet(
+  current: SquashDrill[],
+  candidates: SquashDrill[],
+  targetCount: number,
+): SquashDrill[] {
+  const next = [...current]
+  const keys = new Set(next.map((drill) => findSquashDrillByName(drill.name)?.id ?? normalizeSquashDrillKey(drill.name)))
+
+  for (const candidate of candidates) {
+    if (next.length >= targetCount) break
+    const key = findSquashDrillByName(candidate.name)?.id ?? normalizeSquashDrillKey(candidate.name)
+    if (keys.has(key)) continue
+    next.push(candidate)
+    keys.add(key)
+  }
+
+  return next
+}
+
+function buildSquashBlocksFromDrills(drills: SquashDrill[]): SquashSessionBlock[] {
+  const blockMap = new Map<SquashSessionBlockKind, SquashDrill[]>()
+
+  for (const drill of drills) {
+    const definition = findSquashDrillByName(drill.name)
+    const kind = definition ? resolveSquashDrillKind(definition) : 'technical'
+    const existing = blockMap.get(kind) ?? []
+    existing.push(drill)
+    blockMap.set(kind, existing)
+  }
+
+  return orderSquashBlocksForSession(
+    [...blockMap.entries()].map(([kind, blockDrills]) => ({
+      kind,
+      drills: blockDrills,
+      durationMin: blockDrills.reduce((sum, drill) => sum + (drill.durationMin ?? 0), 0) || undefined,
+    })),
+  )
 }
 
 function normalizeSquashSemanticMetadata(sessions: CoachSessionProposal[], meta: RepairMeta): void {

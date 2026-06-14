@@ -530,8 +530,9 @@ export interface PlanWizardConfig {
 
 /**
  * Deterministic macro phases resolved locally from distance to goal event.
- * Thresholds (in weeks to event):
+ * Generic thresholds (in weeks to event):
  *   >12 → base, 8-12 → build, 4-8 → peak, 1-4 → taper, 0 → race, <0 → transition
+ * Sport-specific overrides may shorten taper windows (squash uses taper only at <=1 week).
  */
 export type MacroPlanPhase =
   | 'base'

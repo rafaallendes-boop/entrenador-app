@@ -1,6 +1,6 @@
 import type { CoachSessionProposal, SupportedSport } from '../../types'
 import type { PlanValidationIssue, TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
-import { getExpectedSessionsForPlanWeek } from './dateRange'
+import { getExpectedSessionsForPlanWeek, getPlanWeekDateRange } from './dateRange'
 import { validatePlan, validatePlanWeek } from './validator'
 
 export type PlanQualityGrade = 'excellent' | 'good' | 'needs_review' | 'poor'
@@ -60,6 +60,18 @@ function countBySport(sessions: CoachSessionProposal[]): Partial<Record<Supporte
 
 function weekLoad(week: TrainingPlanWeek): number {
   return week.sessions.reduce((total, session) => total + session.durationMin * (session.rpe ?? 6), 0)
+}
+
+function weekLoadForProgression(plan: TrainingPlan, week: TrainingPlanWeek): number {
+  const rawLoad = weekLoad(week)
+  const { startDate, endDate } = getPlanWeekDateRange(plan, week)
+  const start = new Date(`${startDate}T00:00:00.000Z`).getTime()
+  const end = new Date(`${endDate}T00:00:00.000Z`).getTime()
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return rawLoad
+
+  const days = Math.round((end - start) / (24 * 60 * 60 * 1000)) + 1
+  if (days >= 7 || days <= 0) return rawLoad
+  return rawLoad * (7 / days)
 }
 
 function hasRunningStructure(session: CoachSessionProposal): boolean {
@@ -284,7 +296,7 @@ function getHardSessionClusterIssues(week: TrainingPlanWeek): PlanValidationIssu
   return issues
 }
 
-function getPlanLevelIssues(weeks: TrainingPlanWeek[]): PlanValidationIssue[] {
+function getPlanLevelIssues(plan: TrainingPlan, weeks: TrainingPlanWeek[]): PlanValidationIssue[] {
   const issues: PlanValidationIssue[] = []
   const generated = weeks.filter((week) => week.sessions.length > 0).sort((a, b) => a.weekIndex - b.weekIndex)
 
@@ -316,8 +328,8 @@ function getPlanLevelIssues(weeks: TrainingPlanWeek[]): PlanValidationIssue[] {
   }
 
   for (let i = 1; i < generated.length; i++) {
-    const prev = weekLoad(generated[i - 1])
-    const curr = weekLoad(generated[i])
+    const prev = weekLoadForProgression(plan, generated[i - 1])
+    const curr = weekLoadForProgression(plan, generated[i])
     if (prev <= 0) continue
     const jump = (curr - prev) / prev
     if (jump > 0.3 && generated[i].phase !== 'race') {
@@ -334,8 +346,8 @@ function getPlanLevelIssues(weeks: TrainingPlanWeek[]): PlanValidationIssue[] {
     const week = generated[i]
     const prev = generated[i - 1]
     if (week.phase !== 'taper') continue
-    const prevLoad = weekLoad(prev)
-    const taperLoad = weekLoad(week)
+    const prevLoad = weekLoadForProgression(plan, prev)
+    const taperLoad = weekLoadForProgression(plan, week)
     if (prevLoad > 0 && taperLoad > prevLoad * 0.9) {
       issues.push(issue({
         severity: 'warning',
@@ -497,7 +509,7 @@ export function reviewPlanQuality(plan: TrainingPlan, weeks: TrainingPlanWeek[])
   const sortedWeeks = [...weeks].sort((a, b) => a.weekIndex - b.weekIndex)
   const planValidationIssues = validatePlan({ plan, weeks: sortedWeeks })
   const planLevelQualityIssues = [
-    ...getPlanLevelIssues(sortedWeeks),
+    ...getPlanLevelIssues(plan, sortedWeeks),
     ...getRepeatedStrengthTemplateIssues(plan, sortedWeeks),
   ]
 

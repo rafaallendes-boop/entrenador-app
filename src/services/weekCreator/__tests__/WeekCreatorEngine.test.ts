@@ -165,6 +165,26 @@ describe('resolveWeekCreatorConfig', () => {
     expect(config.scheduleConstraints).toContain('solo AM')
   })
 
+  it('clamps wizard sessions to the real day capacity when no doubles are available', () => {
+    const config = resolveWeekCreatorConfig(makeProfile({
+      planWizardConfig: {
+        goalEventId: 'goal-1',
+        trainingDays: ['monday', 'tuesday', 'wednesday'],
+        sessionsPerWeek: 5,
+        sessionDurationMins: 60,
+        allowDoubleSession: false,
+        complementarySports: ['strength'],
+        currentFitnessLevel: 'normal',
+        currentFatigue: 'normal',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+    }))
+
+    expect(config.maxSessionsPerWeek).toBe(3)
+    expect(config.sessionsPerWeek).toBe(3)
+  })
+
   it('uses explicit schedule sessions and clamps them to real capacity', () => {
     expect(resolveWeekCreatorConfig(makeProfile({
       scheduleProfile: {
@@ -1446,6 +1466,96 @@ describe('WeekCreatorEngine', () => {
     expect(visibleText).not.toMatch(new RegExp('recuperaci' + '[oó]n a' + 'l T', 'i'))
     expect(visibleText).not.toContain('Drives paralelos con ' + 'recuperaci' + 'ón a' + 'l T')
     expect(visibleText).toContain('Tiros paralelos profundos')
+  })
+
+  it('returns a valid fallback week when wizard sessions exceed day capacity', async () => {
+    mockProviderCall.mockImplementation(async (request: { requestClass: string; traceId: string }) => ({
+      text: 'No incluyo acciones.',
+      provider: 'gemini',
+      model: 'gemini-flash',
+      traceId: request.traceId,
+      requestClass: request.requestClass,
+    }))
+
+    const context: ChatContext = {
+      athleteProfile: makeProfile({
+        planWizardConfig: {
+          goalEventId: 'goal-1',
+          trainingDays: ['monday', 'tuesday', 'wednesday'],
+          sessionsPerWeek: 5,
+          sessionDurationMins: 60,
+          allowDoubleSession: false,
+          complementarySports: ['strength'],
+          currentFitnessLevel: 'normal',
+          currentFatigue: 'normal',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      }),
+      recentSessions: [],
+      plannedSessions: [],
+      historicalSessions: [],
+    }
+
+    const response = await WeekCreatorEngine.sendWeekCreate(
+      'Créame una semana de entrenamiento',
+      context,
+      { surface: 'chat', targetWeekStart: '2026-05-04' },
+    )
+
+    const sessions = response.actions?.[0].sessions ?? []
+    expect(response.fallbackUsed).toBe(true)
+    expect(sessions).toHaveLength(3)
+    expect(new Set(sessions.map((session) => session.date)).size).toBe(3)
+  })
+
+  it('returns a friendly message instead of throwing when targetWeekStart is missing', async () => {
+    const context: ChatContext = {
+      athleteProfile: makeProfile({
+        scheduleProfile: { availableDays: ['lun', 'mié', 'vie'] },
+      }),
+      recentSessions: [],
+      plannedSessions: [],
+      historicalSessions: [],
+    }
+
+    const response = await WeekCreatorEngine.sendWeekCreate(
+      'Créame la semana',
+      context,
+      { surface: 'chat', targetWeekStart: '' },
+    )
+
+    expect(mockProviderCall).not.toHaveBeenCalled()
+    expect(response.actions).toEqual([])
+    expect(response.message).toMatch(/semana/i)
+    expect(response.fallbackUsed).toBe(false)
+  })
+
+  it('propagates aborts without retrying or producing a fallback week', async () => {
+    const controller = new AbortController()
+    mockProviderCall.mockImplementation(async () => {
+      controller.abort()
+      const error = new Error('The operation was aborted')
+      error.name = 'AbortError'
+      throw error
+    })
+
+    const context: ChatContext = {
+      athleteProfile: makeProfile({
+        scheduleProfile: { availableDays: ['lun', 'mié', 'vie'] },
+      }),
+      recentSessions: [],
+      plannedSessions: [],
+      historicalSessions: [],
+    }
+
+    await expect(WeekCreatorEngine.sendWeekCreate(
+      'Créame la semana',
+      context,
+      { surface: 'chat', targetWeekStart: '2026-05-04', signal: controller.signal },
+    )).rejects.toThrow(/abort/i)
+
+    expect(mockProviderCall).toHaveBeenCalledTimes(1)
   })
 })
 

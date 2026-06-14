@@ -437,6 +437,26 @@ describe('usePlanBuilderStore', () => {
     }))
   })
 
+  it('keeps background generation alive when the client loses trigger confirmation after publishing the plan', async () => {
+    const profile = await createShell()
+    const plan = usePlanBuilderStore.getState().plan!
+    mocks.supabase = { auth: {} }
+    mocks.authUser = { id: 'user-1' }
+    mocks.triggerBackgroundGeneration.mockRejectedValueOnce(new Error('Failed to fetch'))
+
+    await usePlanBuilderStore.getState().runGeneration(profile)
+
+    const state = usePlanBuilderStore.getState()
+    expect(mocks.pushTrainingPlan).toHaveBeenCalled()
+    expect(mocks.triggerBackgroundGeneration).toHaveBeenCalled()
+    expect(mocks.pollPlanGeneration).toHaveBeenCalledWith(expect.objectContaining({
+      planId: plan.id,
+    }))
+    expect(state.status).toBe('generating')
+    expect(state.plan?.generationState).toBe('generating')
+    expect(state.lastError).toBeNull()
+  })
+
   it('acceptPlan rejects when generationState is not complete', async () => {
     const profile = await createShell()
     mocks.generatePlanWeeks.mockImplementation(async ({ weeks, onWeekUpdate }: GeneratePlanWeeksMockInput) => {
