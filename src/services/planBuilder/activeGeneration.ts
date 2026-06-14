@@ -26,6 +26,22 @@ export function isActivePlanGeneration(
 }
 
 /**
+ * Decide si el worker background debe dedupearse contra una generación ya activa.
+ * Solo dedupea cuando hay un run activo cuyo jobId difiere del que arranca: así el
+ * background invocado por `enqueue` (que ya escribió este jobId de forma durable)
+ * reconoce su propio trabajo y procede, en vez de bloquearse contra sí mismo.
+ */
+export function shouldDedupeActiveGeneration(
+  existingPlan: TrainingPlan | null,
+  resolvedJobId: string,
+  now: number,
+  ttlMs: number = ACTIVE_GENERATION_TTL_MS,
+): boolean {
+  if (!isActivePlanGeneration(existingPlan, now, ttlMs)) return false
+  return existingPlan.generationSummary?.jobId !== resolvedJobId
+}
+
+/**
  * Estado 'generating' que el cliente publica ANTES de disparar la función background.
  * Crítico: NO debe arrastrar jobId/completedAt del run anterior — si lo hace, la función
  * se dedupea contra ese run terminado y la regeneración nunca ocurre (el cliente queda

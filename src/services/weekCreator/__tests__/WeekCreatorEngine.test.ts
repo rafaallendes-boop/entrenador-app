@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { AthleteProfile, ChatContext, DayOfWeek } from '../../../types'
+import type { AthleteProfile, ChatContext, CoachSessionProposal, DayOfWeek } from '../../../types'
 import { validateWeekCreatorResponse } from '../validateWeekCreatorResponse'
 import { extractRequestedSessionsPerWeek, resolveWeekCreatorConfig, withRequestedSessionsPerWeek } from '../WeekCreatorConfig'
-import { WeekCreatorEngine } from '../WeekCreatorEngine'
+import { areSessionListsEquivalent, WeekCreatorEngine } from '../WeekCreatorEngine'
 import { buildWeekCreatorPrompt } from '../WeekCreatorPromptBuilder'
 import { useAIDebugStore } from '../../../store/useAIDebugStore'
 import { findSquashDrillByName } from '../../training/drillLibrary'
@@ -1556,6 +1556,55 @@ describe('WeekCreatorEngine', () => {
     )).rejects.toThrow(/abort/i)
 
     expect(mockProviderCall).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('areSessionListsEquivalent', () => {
+  const strengthSession = (exercises: CoachSessionProposal['exercises']): CoachSessionProposal => ({
+    date: '2026-05-04',
+    timeBlock: 'AM',
+    sessionType: 'strength',
+    title: 'Fuerza base',
+    durationMin: 60,
+    objective: 'Construir soporte general.',
+    exercises,
+  })
+
+  const squashSessionWith = (drillName: string): CoachSessionProposal => ({
+    date: '2026-05-05',
+    timeBlock: 'AM',
+    sessionType: 'squash',
+    title: 'Squash técnico',
+    durationMin: 60,
+    objective: 'Técnica de profundidad.',
+    squashDetails: {
+      trainingFocus: 'technical',
+      sessionMode: 'drill_session',
+      drills: [{ name: drillName, durationMin: 30 }],
+      blocks: [],
+    },
+  })
+
+  it('treats sessions with identical content as equivalent', () => {
+    const exercises = [{ name: 'Sentadilla goblet', sets: 3, reps: 8, group: 'legs' as const }]
+    expect(areSessionListsEquivalent(
+      [strengthSession(exercises)],
+      [strengthSession([...exercises])],
+    )).toBe(true)
+  })
+
+  it('detects different strength exercises even when date, block, type and title match', () => {
+    expect(areSessionListsEquivalent(
+      [strengthSession([{ name: 'Sentadilla goblet', sets: 3, reps: 8, group: 'legs' }])],
+      [strengthSession([{ name: 'Peso muerto rumano', sets: 3, reps: 8, group: 'legs' }])],
+    )).toBe(false)
+  })
+
+  it('detects different squash drills behind identical session headers', () => {
+    expect(areSessionListsEquivalent(
+      [squashSessionWith('Tiros paralelos profundos')],
+      [squashSessionWith('Drops desde media cancha')],
+    )).toBe(false)
   })
 })
 

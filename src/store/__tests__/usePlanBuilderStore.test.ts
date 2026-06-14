@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AthleteProfile, PlanWizardConfig } from '../../types'
 import type { PlanGenerationJob, TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
+import { PlanEnqueueRejectedError } from '../../services/planBuilder/triggerBackgroundGeneration'
 
 interface GeneratePlanWeeksMockInput {
   weeks: TrainingPlanWeek[]
@@ -98,9 +99,13 @@ vi.mock('../../services/planBuilder/pollPlanGeneration', async (importActual) =>
     pollPlanGeneration: mocks.pollPlanGeneration,
   }
 })
-vi.mock('../../services/planBuilder/triggerBackgroundGeneration', () => ({
-  triggerBackgroundGeneration: mocks.triggerBackgroundGeneration,
-}))
+vi.mock('../../services/planBuilder/triggerBackgroundGeneration', async (importActual) => {
+  const actual = await importActual<typeof import('../../services/planBuilder/triggerBackgroundGeneration')>()
+  return {
+    ...actual,
+    triggerBackgroundGeneration: mocks.triggerBackgroundGeneration,
+  }
+})
 vi.mock('../../services/syncService', () => ({
   pushTrainingPlan: mocks.pushTrainingPlan,
 }))
@@ -455,6 +460,22 @@ describe('usePlanBuilderStore', () => {
     expect(state.status).toBe('generating')
     expect(state.plan?.generationState).toBe('generating')
     expect(state.lastError).toBeNull()
+  })
+
+  it('surfaces a definitive enqueue rejection as an error instead of polling until stalled', async () => {
+    const profile = await createShell()
+    mocks.supabase = { auth: {} }
+    mocks.authUser = { id: 'user-1' }
+    mocks.triggerBackgroundGeneration.mockRejectedValueOnce(
+      new PlanEnqueueRejectedError('Payload inválido para generar plan.', 400),
+    )
+
+    await usePlanBuilderStore.getState().runGeneration(profile)
+
+    const state = usePlanBuilderStore.getState()
+    expect(state.status).toBe('error')
+    expect(state.lastError).toContain('Payload inválido')
+    expect(mocks.pollPlanGeneration).not.toHaveBeenCalled()
   })
 
   it('acceptPlan rejects when generationState is not complete', async () => {

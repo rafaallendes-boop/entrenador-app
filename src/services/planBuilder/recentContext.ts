@@ -201,6 +201,27 @@ function buildSummary(weeks: PlanBuilderRecentWeekContext[]): PlanBuilderRecentC
   }
 }
 
+const PAYLOAD_MAX_WEEKS = 4
+const PAYLOAD_MAX_HIGHLIGHTS = 3
+const PAYLOAD_MAX_PAIN_NOTES = 3
+
+/**
+ * Reduces the recent context to a payload-friendly subset before sending it to
+ * the background generator: only the most recent weeks, with capped per-week
+ * highlight/pain arrays. The summary and weekly structure are kept intact
+ * because they are already bounded and carry the highest signal per byte.
+ */
+export function trimRecentContextForPayload(context: PlanBuilderRecentContext): PlanBuilderRecentContext {
+  return {
+    ...context,
+    weeks: context.weeks.slice(-PAYLOAD_MAX_WEEKS).map((week) => ({
+      ...week,
+      sessionHighlights: week.sessionHighlights.slice(0, PAYLOAD_MAX_HIGHLIGHTS),
+      painNotes: week.painNotes.slice(0, PAYLOAD_MAX_PAIN_NOTES),
+    })),
+  }
+}
+
 export async function buildPlanBuilderRecentContext(
   plan: TrainingPlan,
   lookbackWeeks = DEFAULT_LOOKBACK_WEEKS,

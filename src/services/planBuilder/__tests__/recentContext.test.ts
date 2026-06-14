@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Session } from '../../../types'
-import type { PlanBuilderRecentContext } from '../recentContext'
-import { renderPlanBuilderRecentContext, summarizeWeeklyStructure } from '../recentContext'
+import type { PlanBuilderRecentContext, PlanBuilderRecentWeekContext } from '../recentContext'
+import { renderPlanBuilderRecentContext, summarizeWeeklyStructure, trimRecentContextForPayload } from '../recentContext'
 
 function makeSession(partial: Partial<Session> & Pick<Session, 'date' | 'type'>): Session {
   return {
@@ -116,5 +116,65 @@ describe('summarizeWeeklyStructure', () => {
     expect(result.find((day) => day.weekday === 3)?.sports[0]).toMatchObject({ sport: 'running', count: 1 })
     // Skipped Friday session is ignored.
     expect(result.find((day) => day.weekday === 5)).toBeUndefined()
+  })
+})
+
+describe('trimRecentContextForPayload', () => {
+  function makeWeek(overrides: Partial<PlanBuilderRecentWeekContext> = {}): PlanBuilderRecentWeekContext {
+    return {
+      weekStartDate: '2026-06-01',
+      plannedSessions: 5,
+      completedSessions: 4,
+      plannedMinutes: 300,
+      completedMinutes: 240,
+      sports: { squash: 3, strength: 1 },
+      painNotes: [],
+      sessionHighlights: [],
+      ...overrides,
+    }
+  }
+
+  function makeContext(overrides: Partial<PlanBuilderRecentContext> = {}): PlanBuilderRecentContext {
+    return {
+      referenceDate: '2026-07-01',
+      lookbackWeeks: 6,
+      hasHistory: true,
+      weeks: [],
+      structureWeeks: 3,
+      weeklyStructure: [],
+      summary: {
+        dominantSports: [{ sport: 'squash', sessions: 12 }],
+        recentPainNotes: [],
+        recommendation: 'normal',
+      },
+      ...overrides,
+    }
+  }
+
+  it('keeps only the most recent weeks', () => {
+    const weeks = Array.from({ length: 6 }, (_, i) => makeWeek({ weekStartDate: `2026-0${i + 1}-01` }))
+    const trimmed = trimRecentContextForPayload(makeContext({ weeks }))
+    expect(trimmed.weeks).toHaveLength(4)
+    expect(trimmed.weeks.map((week) => week.weekStartDate)).toEqual([
+      '2026-03-01', '2026-04-01', '2026-05-01', '2026-06-01',
+    ])
+  })
+
+  it('caps per-week highlights and pain notes', () => {
+    const week = makeWeek({
+      sessionHighlights: Array.from({ length: 10 }, (_, i) => `highlight ${i}`),
+      painNotes: Array.from({ length: 8 }, (_, i) => `pain ${i}`),
+    })
+    const trimmed = trimRecentContextForPayload(makeContext({ weeks: [week] }))
+    expect(trimmed.weeks[0].sessionHighlights).toHaveLength(3)
+    expect(trimmed.weeks[0].painNotes).toHaveLength(3)
+  })
+
+  it('preserves the summary and structural fields', () => {
+    const context = makeContext({ weeklyStructure: [{ weekday: 1, sports: [{ sport: 'squash', count: 2 }] }] })
+    const trimmed = trimRecentContextForPayload(context)
+    expect(trimmed.summary).toEqual(context.summary)
+    expect(trimmed.weeklyStructure).toEqual(context.weeklyStructure)
+    expect(trimmed.referenceDate).toBe('2026-07-01')
   })
 })

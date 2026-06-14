@@ -587,7 +587,7 @@ function finalizeWeekCreatorSessions(
   return finalized.sort((a, b) => a.date.localeCompare(b.date) || a.timeBlock.localeCompare(b.timeBlock))
 }
 
-function areSessionListsEquivalent(
+export function areSessionListsEquivalent(
   a: CoachSessionProposal[],
   b: CoachSessionProposal[],
 ): boolean {
@@ -599,7 +599,35 @@ function areSessionListsEquivalent(
       && session.timeBlock === other.timeBlock
       && session.sessionType === other.sessionType
       && session.title === other.title
+      && sessionContentSignature(session) === sessionContentSignature(other)
   })
+}
+
+/**
+ * Captures the parts of a session that finalize/fallback can rewrite without
+ * touching date/timeBlock/sessionType/title (objective, strength exercises,
+ * squash drills). Without it, a content-only change would be reported as "no
+ * change" and the finalized sessions could be silently discarded.
+ */
+function sessionContentSignature(session: CoachSessionProposal): string {
+  const exercises = Array.isArray(session.exercises)
+    ? session.exercises
+        .map((exercise) => `${exercise.name}|${exercise.sets}|${String(exercise.reps)}|${exercise.group ?? ''}`)
+        .join(',')
+    : ''
+  const drills = squashDrillNames(session).join(',')
+  return `${session.objective ?? ''}::${exercises}::${drills}`
+}
+
+function squashDrillNames(session: CoachSessionProposal): string[] {
+  const details = session.squashDetails
+  if (!details) return []
+  return [
+    ...(Array.isArray(details.drills) ? details.drills : []),
+    ...(Array.isArray(details.blocks)
+      ? details.blocks.flatMap((block) => (Array.isArray(block.drills) ? block.drills : []))
+      : []),
+  ].map((drill) => drill.name)
 }
 
 function buildRepairProfile(context: ChatContext): AthleteProfile {

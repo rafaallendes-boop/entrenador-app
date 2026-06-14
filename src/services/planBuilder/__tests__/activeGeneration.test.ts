@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { TrainingPlan, TrainingPlanWeek } from '../../../types/planBuilder'
-import { ACTIVE_GENERATION_TTL_MS, buildRetriggerPlan, isActivePlanGeneration } from '../activeGeneration'
+import { ACTIVE_GENERATION_TTL_MS, buildRetriggerPlan, isActivePlanGeneration, shouldDedupeActiveGeneration } from '../activeGeneration'
 
 const NOW = 1_750_000_000_000
 
@@ -80,6 +80,30 @@ describe('isActivePlanGeneration', () => {
     expect(isActivePlanGeneration(cancelled, NOW)).toBe(false)
     expect(isActivePlanGeneration(makePlan({ generationState: 'partial' }), NOW)).toBe(false)
     expect(isActivePlanGeneration(null, NOW)).toBe(false)
+  })
+})
+
+describe('shouldDedupeActiveGeneration', () => {
+  it('does not dedupe when no plan exists yet', () => {
+    expect(shouldDedupeActiveGeneration(null, 'plan-bg-new', NOW)).toBe(false)
+  })
+
+  it('does not dedupe against our own enqueued job (same jobId)', () => {
+    const plan = makePlan()
+    plan.generationSummary = { ...plan.generationSummary!, jobId: 'plan-bg-mine' }
+    expect(shouldDedupeActiveGeneration(plan, 'plan-bg-mine', NOW)).toBe(false)
+  })
+
+  it('dedupes against a different active worker', () => {
+    const plan = makePlan()
+    plan.generationSummary = { ...plan.generationSummary!, jobId: 'plan-bg-other' }
+    expect(shouldDedupeActiveGeneration(plan, 'plan-bg-mine', NOW)).toBe(true)
+  })
+
+  it('does not dedupe when the existing run is no longer active', () => {
+    const plan = makePlan()
+    plan.generationSummary = { ...plan.generationSummary!, jobId: 'plan-bg-other', completedAt: NOW - 120_000 }
+    expect(shouldDedupeActiveGeneration(plan, 'plan-bg-mine', NOW)).toBe(false)
   })
 })
 

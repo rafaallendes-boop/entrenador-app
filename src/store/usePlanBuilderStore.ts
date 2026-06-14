@@ -29,7 +29,7 @@ import {
   pollPlanGeneration,
   type PlanGenerationSnapshot,
 } from '../services/planBuilder/pollPlanGeneration'
-import { triggerBackgroundGeneration } from '../services/planBuilder/triggerBackgroundGeneration'
+import { PlanEnqueueRejectedError, triggerBackgroundGeneration } from '../services/planBuilder/triggerBackgroundGeneration'
 import { pushTrainingPlan } from '../services/syncService'
 import { supabase } from '../services/auth'
 import { useAuthStore } from './useAuthStore'
@@ -450,6 +450,12 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
       })
       startGenerationPolling(nextPlan.id, set, get)
     } catch (error) {
+      // A definitive enqueue rejection means the worker never started: surface it
+      // instead of resuming into a poll that can only end in a 5-min stalled state.
+      if (error instanceof PlanEnqueueRejectedError) {
+        set({ status: 'error', lastError: error.message })
+        return
+      }
       if (canUseRemoteGeneration() && remotePlanPublished) {
         console.warn('[plan-builder] remote generation confirmation lost; keeping plan in background mode', error)
         const resumed = await resumeUncertainRemoteGeneration(nextPlan.id, set, get)
@@ -556,6 +562,12 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
       })
       startGenerationPolling(generatingPlan.id, set, get)
     } catch (error) {
+      // A definitive enqueue rejection means the worker never started: surface it
+      // instead of resuming into a poll that can only end in a 5-min stalled state.
+      if (error instanceof PlanEnqueueRejectedError) {
+        set({ status: 'error', lastError: error.message })
+        return
+      }
       if (canUseRemoteGeneration() && remotePlanPublished) {
         console.warn('[plan-builder] remote regeneration confirmation lost; keeping plan in background mode', error)
         const resumed = await resumeUncertainRemoteGeneration(generatingPlan.id, set, get)
@@ -637,6 +649,12 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
       })
       startGenerationPolling(generatingPlan.id, set, get)
     } catch (error) {
+      // A definitive enqueue rejection means the worker never started: surface it
+      // instead of resuming into a poll that can only end in a 5-min stalled state.
+      if (error instanceof PlanEnqueueRejectedError) {
+        set({ status: 'error', lastError: error.message })
+        return
+      }
       if (canUseRemoteGeneration() && remotePlanPublished) {
         console.warn('[plan-builder] remote retry confirmation lost; keeping plan in background mode', error)
         const resumed = await resumeUncertainRemoteGeneration(generatingPlan.id, set, get)
