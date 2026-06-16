@@ -4,6 +4,17 @@ import type { AIRawResponse } from '../../ai/types'
 import type { TrainingPlan, TrainingPlanWeek } from '../../../types/planBuilder'
 import { runAsyncPlanGeneration, type AsyncPlanGenerationWriter } from '../asyncGenerationLoop'
 
+function addWeeksISO(startDate: string, weeks: number): string {
+  const date = new Date(`${startDate}T00:00:00.000Z`)
+  date.setUTCDate(date.getUTCDate() + weeks * 7)
+  return date.toISOString().slice(0, 10)
+}
+
+function targetDateFromTrace(traceId: string): string {
+  const index = Number(traceId.match(/week-(\d+)/)?.[1] ?? 0)
+  return addWeeksISO('2026-06-01', index)
+}
+
 function makeRaw(targetDate: string, overrides: Partial<AIRawResponse> = {}): AIRawResponse {
   return {
     text: JSON.stringify({
@@ -173,10 +184,51 @@ describe('runAsyncPlanGeneration', () => {
     })
 
     expect(callLLM).toHaveBeenCalledTimes(2)
-    expect(callLLM.mock.calls[0]?.[0].maxTokens).toBe(12000)
+    expect(callLLM.mock.calls[0]?.[0].maxTokens).toBe(5000)
     expect(result.plan.generationState).toBe('complete')
     expect(result.plan.generationSummary?.completedWeeks).toBe(2)
     expect(writer.weeks.filter((week) => week.status === 'draft')).toHaveLength(2)
+  })
+
+  it('generates weeks concurrently without exceeding the configured limit', async () => {
+    const plan = {
+      ...makePlan(),
+      totalWeeks: 4,
+      endDate: '2026-06-28',
+      phases: [{ phase: 'build', startWeekIndex: 0, endWeekIndex: 3, blockFocus: '', intentBySport: {} }],
+    } as TrainingPlan
+    const weeks = [
+      makeWeek(0, '2026-06-01'),
+      makeWeek(1, '2026-06-08'),
+      makeWeek(2, '2026-06-15'),
+      makeWeek(3, '2026-06-22'),
+    ]
+    const writer = makeWriter(plan)
+    let activeCalls = 0
+    let maxActiveCalls = 0
+    const callLLM = vi.fn(async (request) => {
+      activeCalls++
+      maxActiveCalls = Math.max(maxActiveCalls, activeCalls)
+      await new Promise((resolve) => setTimeout(resolve, 10))
+      activeCalls--
+      return makeRaw(targetDateFromTrace(request.traceId))
+    })
+
+    const result = await runAsyncPlanGeneration({
+      plan,
+      weeks,
+      profile: makeProfile(),
+      wizardConfig: makeWizardConfig(),
+      jobId: 'job-concurrent',
+      writer,
+      callLLM,
+      concurrency: 2,
+    })
+
+    expect(callLLM).toHaveBeenCalledTimes(4)
+    expect(maxActiveCalls).toBeLessThanOrEqual(2)
+    expect(result.plan.generationState).toBe('complete')
+    expect(result.plan.generationSummary?.completedWeeks).toBe(4)
   })
 
   it('reintenta una semana truncada por max_tokens y guarda el resultado exitoso', async () => {
@@ -346,6 +398,50 @@ describe('runAsyncPlanGeneration', () => {
     expect(result.cancelled).toBe(true)
     expect(result.plan.generationState).toBe('cancelled')
     expect(writer.weeks).toHaveLength(0)
+  })
+
+  it('stops launching new weeks after cancellation while preserving in-flight weeks', async () => {
+    const plan = {
+      ...makePlan(),
+      totalWeeks: 3,
+      endDate: '2026-06-21',
+      phases: [{ phase: 'build', startWeekIndex: 0, endWeekIndex: 2, blockFocus: '', intentBySport: {} }],
+    } as TrainingPlan
+    const weeks = [
+      makeWeek(0, '2026-06-01'),
+      makeWeek(1, '2026-06-08'),
+      makeWeek(2, '2026-06-15'),
+    ]
+    const writer = makeWriter(plan)
+    let cancelChecks = 0
+    const writerWithCancel: AsyncPlanGenerationWriter & { plans: TrainingPlan[]; weeks: TrainingPlanWeek[] } = {
+      ...writer,
+      async checkCancelled() {
+        cancelChecks++
+        return cancelChecks > 2
+      },
+    }
+    const callLLM = vi.fn(async (request) => {
+      await new Promise((resolve) => setTimeout(resolve, 10))
+      return makeRaw(targetDateFromTrace(request.traceId))
+    })
+
+    const result = await runAsyncPlanGeneration({
+      plan,
+      weeks,
+      profile: makeProfile(),
+      wizardConfig: makeWizardConfig(),
+      jobId: 'job-cancel-in-flight',
+      writer: writerWithCancel,
+      callLLM,
+      concurrency: 2,
+    })
+
+    expect(result.cancelled).toBe(true)
+    expect(result.plan.generationState).toBe('cancelled')
+    expect(callLLM).toHaveBeenCalledTimes(2)
+    expect(result.weeks.filter((week) => week.status === 'draft')).toHaveLength(2)
+    expect(result.weeks.find((week) => week.weekIndex === 2)?.status).toBe('pending')
   })
 
   it('completa generación normalmente cuando getPlan lanza un error de red', async () => {

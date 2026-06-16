@@ -11,6 +11,13 @@ import {
   resolveAuthContext,
 } from './_shared/planGenerationShared'
 
+function resolvePlanBuilderConcurrency(): number | undefined {
+  const raw = process.env['PLAN_BUILDER_WEEK_CONCURRENCY']
+  if (!raw) return undefined
+  const value = Number(raw)
+  return Number.isFinite(value) ? value : undefined
+}
+
 export const handler: Handler = async (event) => {
   if (event.httpMethod !== 'POST') {
     return json(405, { error: 'Method not allowed' })
@@ -76,6 +83,7 @@ export const handler: Handler = async (event) => {
       jobId,
       writer,
       callLLM: callAnthropicForWeek,
+      concurrency: resolvePlanBuilderConcurrency(),
     })
 
     const finalState = result.plan.generationState

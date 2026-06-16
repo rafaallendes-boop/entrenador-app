@@ -28,6 +28,8 @@ export interface RunAsyncPlanGenerationInput {
   now?: () => number
   maxTokens?: number
   temperature?: number
+  /** Cantidad máxima de semanas generadas en paralelo. Default: 3. */
+  concurrency?: number
   /** Presupuesto total del worker; las semanas que no alcancen a generarse quedan en error explícito. */
   budgetMs?: number
 }
@@ -38,9 +40,12 @@ export interface AsyncPlanGenerationResult {
   cancelled: boolean
 }
 
-const DEFAULT_MAX_TOKENS = 12000
+const DEFAULT_MAX_TOKENS = 5000
+const TRUNCATED_RETRY_MAX_TOKENS = 12000
 const DEFAULT_TEMPERATURE = 0.25
 const MAX_WEEK_ATTEMPTS = 2
+const DEFAULT_CONCURRENCY = 3
+const MAX_CONCURRENCY = 6
 // Netlify background functions se cortan a los 15 min; reservamos margen para
 // cerrar el plan con un estado terminal en vez de morir a mitad de una semana.
 const DEFAULT_WORKER_BUDGET_MS = 13 * 60_000
@@ -73,6 +78,11 @@ function deriveAsyncGenerationState(weeks: TrainingPlanWeek[]): TrainingPlan['ge
 
 function replaceWeek(weeks: TrainingPlanWeek[], next: TrainingPlanWeek): TrainingPlanWeek[] {
   return sortWeeks(weeks.map((week) => (week.weekIndex === next.weekIndex ? next : week)))
+}
+
+function normalizeConcurrency(value: number | undefined): number {
+  if (value == null || !Number.isFinite(value)) return DEFAULT_CONCURRENCY
+  return Math.min(MAX_CONCURRENCY, Math.max(1, Math.round(value)))
 }
 
 function buildSummary(
@@ -280,7 +290,7 @@ async function generateWeekCoreWithRetry(input: {
       ? input.initialRepairInstruction
       : buildAsyncRetryInstruction(lastError, input.plan, input.week, attempt)
     const maxTokens = lastResult?.meta.errorClass === 'truncated'
-      ? Math.max(input.maxTokens, DEFAULT_MAX_TOKENS)
+      ? Math.max(input.maxTokens, TRUNCATED_RETRY_MAX_TOKENS)
       : input.maxTokens
     const attemptTraceId = attempt === 1 ? input.traceId : `${input.traceId}-attempt-${attempt}`
     let result: GenerateWeekCoreResult
@@ -360,48 +370,68 @@ export async function runAsyncPlanGeneration(input: RunAsyncPlanGenerationInput)
     : weeks.map((week) => week.weekIndex)
 
   const deadlineAt = getNow() + (input.budgetMs ?? DEFAULT_WORKER_BUDGET_MS)
+  const concurrency = normalizeConcurrency(input.concurrency)
+  let targetPosition = 0
+  let stopLaunching = false
+  let cancelled = false
 
-  for (let targetPosition = 0; targetPosition < targetWeekIndexes.length; targetPosition++) {
-    const weekIndex = targetWeekIndexes[targetPosition]
-
-    if (deadlineAt - getNow() < MIN_WEEK_START_BUDGET_MS) {
-      for (const remainingIndex of targetWeekIndexes.slice(targetPosition)) {
-        const remainingWeek = weeks.find((week) => week.weekIndex === remainingIndex)
-        if (!remainingWeek) continue
-        if (!input.targetWeekIndexes?.length && isReadyWeek(remainingWeek)) continue
-        const erroredWeek = makeErroredWeek(remainingWeek, WORKER_BUDGET_EXHAUSTED_MESSAGE, getNow(), 'timeout')
-        weeks = replaceWeek(weeks, erroredWeek)
-        await input.writer.putWeek(erroredWeek)
-      }
-      break
-    }
-
-    let cancelRequested = false
+  const checkCancelled = async (): Promise<boolean> => {
     try {
-      cancelRequested = input.writer.checkCancelled
+      return input.writer.checkCancelled
         ? await input.writer.checkCancelled(plan.id)
         : Boolean((await input.writer.getPlan(plan.id))?.generationSummary?.cancelRequested)
     } catch {
       // No se pudo leer el estado de cancelación — continuar generando
+      return false
     }
+  }
 
-    if (cancelRequested) {
-      const timestamp = getNow()
-      plan = buildPlanCheckpoint(plan, weeks, {
-        generationState: 'cancelled',
-        jobId: input.jobId,
-        startedAt,
-        updatedAt: timestamp,
-        completedAt: timestamp,
-        cancelRequested: true,
-      })
-      await input.writer.putPlan(plan)
-      return { plan, weeks, cancelled: true }
+  const markRemainingBudgetErrors = async (fromPosition: number): Promise<void> => {
+    for (const remainingIndex of targetWeekIndexes.slice(fromPosition)) {
+      const remainingWeek = weeks.find((week) => week.weekIndex === remainingIndex)
+      if (!remainingWeek) continue
+      if (!input.targetWeekIndexes?.length && isReadyWeek(remainingWeek)) continue
+      const erroredWeek = makeErroredWeek(remainingWeek, WORKER_BUDGET_EXHAUSTED_MESSAGE, getNow(), 'timeout')
+      weeks = replaceWeek(weeks, erroredWeek)
+      await input.writer.putWeek(erroredWeek)
     }
+  }
 
+  let takeNextQueue = Promise.resolve()
+  const takeNextWeekIndex = (): Promise<number | undefined> => {
+    const run = takeNextQueue.then(async (): Promise<number | undefined> => {
+      while (!stopLaunching && targetPosition < targetWeekIndexes.length) {
+        if (deadlineAt - getNow() < MIN_WEEK_START_BUDGET_MS) {
+          await markRemainingBudgetErrors(targetPosition)
+          targetPosition = targetWeekIndexes.length
+          stopLaunching = true
+          return undefined
+        }
+
+        if (await checkCancelled()) {
+          cancelled = true
+          stopLaunching = true
+          return undefined
+        }
+
+        const weekIndex = targetWeekIndexes[targetPosition]
+        targetPosition++
+        const target = weeks.find((week) => week.weekIndex === weekIndex)
+        if (!target) continue
+        if (!input.targetWeekIndexes?.length && isReadyWeek(target)) continue
+        return weekIndex
+      }
+
+      return undefined
+    })
+    takeNextQueue = run.then(() => undefined, () => undefined)
+    return run
+  }
+
+  const generateTargetWeek = async (weekIndex: number): Promise<void> => {
     const target = weeks.find((week) => week.weekIndex === weekIndex)
-    if (!target) continue
-    if (!input.targetWeekIndexes?.length && isReadyWeek(target)) continue
+    if (!target) return
+    if (!input.targetWeekIndexes?.length && isReadyWeek(target)) return
 
     const generatingWeek = makeGeneratingWeek(target, getNow())
     weeks = replaceWeek(weeks, generatingWeek)
@@ -462,6 +492,30 @@ export async function runAsyncPlanGeneration(input: RunAsyncPlanGenerationInput)
       })
       await input.writer.putPlan(plan)
     }
+  }
+
+  const worker = async (): Promise<void> => {
+    while (true) {
+      const weekIndex = await takeNextWeekIndex()
+      if (weekIndex == null) return
+      await generateTargetWeek(weekIndex)
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(concurrency, Math.max(1, targetWeekIndexes.length)) }, () => worker()))
+
+  if (cancelled) {
+    const timestamp = getNow()
+    plan = buildPlanCheckpoint(plan, weeks, {
+      generationState: 'cancelled',
+      jobId: input.jobId,
+      startedAt,
+      updatedAt: timestamp,
+      completedAt: timestamp,
+      cancelRequested: true,
+    })
+    await input.writer.putPlan(plan)
+    return { plan, weeks, cancelled: true }
   }
 
   const completedAt = getNow()
