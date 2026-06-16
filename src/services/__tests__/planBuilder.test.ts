@@ -341,7 +341,7 @@ describe('planBuilder', () => {
     expect(prompt).toContain('Como doble sesión NO está permitido')
   })
 
-  it('week prompt requires a squash majority in build/peak weeks with four sessions', () => {
+  it('week prompt preserves squash presence while materializing target support sports', () => {
     const profile = makeProfile(eventNWeeksFromNow(6))
     const event = profile.goalEvents![0] as GoalEvent
     const wizardConfig = {
@@ -365,9 +365,10 @@ describe('planBuilder', () => {
       wizardConfig,
     })
 
-    expect(prompt).toContain('al menos 3 sesiones de squash')
-    expect(prompt).toContain('mínimo 3 sesiones squash')
-    expect(prompt).toContain('máximo 1 accesorias')
+    expect(prompt).toContain('al menos 2 sesiones de squash')
+    expect(prompt).toContain('mínimo 2 sesiones squash')
+    expect(prompt).toContain('máximo 2 accesorias')
+    expect(prompt).toContain('1 sessionType="running"')
   })
 
   it('week prompt prefers one double-session day when double sessions are enabled with enough volume', () => {
@@ -509,7 +510,7 @@ describe('planBuilder', () => {
         if (prompts.length === 1) {
           return {
             provider: 'mock' as const,
-            text: `<actions>[{"type":"create_week","reason":"corta","targetDate":"${monday}","sessions":[{"date":"${monday}","timeBlock":"AM","sessionType":"squash","title":"S1","durationMin":60,"squashDetails":{"trainingFocus":"technical","sessionMode":"drill_session","sessionKind":"technical","drills":[{"name":"Drive","durationMin":10}]}},{"date":"${tuesday}","timeBlock":"PM","sessionType":"strength","title":"S2","durationMin":45},{"date":"${thursday}","timeBlock":"AM","sessionType":"running","title":"S3","durationMin":30}]}]</actions>`,
+            text: `<actions>[{"type":"create_week","reason":"corta","targetDate":"${monday}","sessions":[{"date":"${monday}","timeBlock":"AM","sessionType":"squash","title":"S1","durationMin":60,"squashDetails":{"trainingFocus":"technical","sessionMode":"drill_session","sessionKind":"technical","drills":[{"name":"Drive","durationMin":10}]}},{"date":"${tuesday}","timeBlock":"PM","sessionType":"squash","title":"S2","durationMin":45,"squashDetails":{"trainingFocus":"technical","sessionMode":"drill_session","sessionKind":"technical","drills":[{"name":"Boast","durationMin":10}]}},{"date":"${thursday}","timeBlock":"AM","sessionType":"running","title":"S3","durationMin":30}]}]</actions>`,
           }
         }
 
@@ -583,8 +584,8 @@ describe('planBuilder', () => {
     expect(result[0]?.generationMeta.errorClass).toBe('local_plan_fallback')
     expect(result[0]?.generationMeta.attempts).toBe(2)
     expect(sessions).toHaveLength(5)
-    expect(counts.squash).toBe(3)
-    expect(counts.running ?? 0).toBe(0)
+    expect(counts.squash).toBe(2)
+    expect(counts.running).toBe(1)
     expect(counts.strength).toBe(2)
     expect(sessions.filter((session) => session.sessionType === 'strength').every((session) => /^Gym Tipo [ABC]/.test(session.title))).toBe(true)
   })
@@ -637,8 +638,8 @@ describe('planBuilder', () => {
     expect(sessions).toHaveLength(6)
     expect(new Set(dates).size).toBe(5)
     expect(dates.some((date) => sessions.filter((session) => session.date === date).length >= 2)).toBe(true)
-    expect(counts.squash).toBe(4)
-    expect(counts.running ?? 0).toBe(0)
+    expect(counts.squash).toBe(3)
+    expect(counts.running).toBe(1)
     expect(counts.strength).toBe(2)
   })
 

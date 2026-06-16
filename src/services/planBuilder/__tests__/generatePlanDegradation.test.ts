@@ -119,13 +119,13 @@ describe('generatePlanWeeks pair → single degradation', () => {
       if (callIndex === 1) {
         // First call: pair — devuelve solo la semana A
         return {
-          text: '<actions>[{"type":"create_week","targetDate":"2026-06-01","reason":"ok","sessions":[{"date":"2026-06-01","timeBlock":"AM","sessionType":"squash","title":"S1","durationMin":60}],"weekObjectives":[]}]</actions>',
+          text: `<actions>[${createWeekActionText('2026-06-01', 'pair-a')}]</actions>`,
           provider: 'gemini', model: 'gemini-2.5-flash', durationMs: 1000, traceId: 't1',
         }
       }
       // Second call: single for week B
       return {
-        text: '<actions>[{"type":"create_week","targetDate":"2026-06-08","reason":"ok","sessions":[{"date":"2026-06-08","timeBlock":"AM","sessionType":"squash","title":"S2","durationMin":60}],"weekObjectives":[]}]</actions>',
+        text: `<actions>[${createWeekActionText('2026-06-08', 'single-b')}]</actions>`,
         provider: 'gemini', model: 'gemini-2.5-flash', durationMs: 1000, traceId: 't2',
       }
     })

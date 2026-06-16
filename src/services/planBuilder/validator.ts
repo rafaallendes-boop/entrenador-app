@@ -229,18 +229,24 @@ function validateLoadProgression(weeks: TrainingPlanWeek[]): PlanValidationIssue
 }
 
 
-function minimumPrimarySessions(primarySport: SupportedSport, phase: TrainingPlanWeek['phase'], expectedSessions: number): number {
-  if (phase === 'transition') return 0
+function minimumPrimarySessions(primarySport: SupportedSport, week: TrainingPlanWeek, expectedSessions: number): number {
+  if (week.phase === 'transition') return 0
   if (expectedSessions <= 0) return 0
-  if (phase === 'build' || phase === 'peak') {
+  if (week.phase === 'build' || week.phase === 'peak') {
     if (primarySport === 'squash') {
+      const loadedSupportSports = (['running', 'strength', 'cycling', 'mobility'] as SupportedSport[])
+        .filter((sport) => (week.targetLoadBySport[sport] ?? 0) > 0)
+        .length
+      if (loadedSupportSports >= 2 && expectedSessions >= 4) {
+        return Math.max(2, Math.floor(expectedSessions / 2))
+      }
       return expectedSessions >= 4
         ? Math.min(expectedSessions, Math.floor(expectedSessions / 2) + 1)
         : Math.min(expectedSessions, 2)
     }
     return 1
   }
-  if (phase === 'taper' || phase === 'race' || phase === 'base') return Math.min(expectedSessions, 1)
+  if (week.phase === 'taper' || week.phase === 'race' || week.phase === 'base') return Math.min(expectedSessions, 1)
   return Math.min(expectedSessions, 1)
 }
 
@@ -259,7 +265,7 @@ function validatePrimarySportCoherence(plan: TrainingPlan, weeks: TrainingPlanWe
       if (sport === primarySport) return total
       return total + (count ?? 0)
     }, 0)
-    const minimum = minimumPrimarySessions(primarySport, week.phase, getExpectedSessionsForPlanWeek(plan, week))
+    const minimum = minimumPrimarySessions(primarySport, week, getExpectedSessionsForPlanWeek(plan, week))
 
     if (primaryCount === 0 && minimum > 0) {
       issues.push({

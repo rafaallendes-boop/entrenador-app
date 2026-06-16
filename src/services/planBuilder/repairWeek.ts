@@ -11,6 +11,7 @@ import type {
   SquashSessionBlock,
   SquashSessionBlockKind,
   SquashSessionKind,
+  SquashTrainingFocus,
   SupportedSport,
   WizardFatigueLevel,
 } from '../../types'
@@ -114,7 +115,9 @@ export function repairGeneratedWeek(
 
   // 6. Complete sport details (best-effort)
   completeSportDetails(sessions, context, meta)
-  normalizeSquashSemanticMetadata(sessions, meta)
+  sanitizeSquashDrillSets(sessions, context, meta)
+  normalizeSquashSemanticMetadata(sessions, meta, context)
+  ensureSquashCompetitionMatchExposure(sessions, context, meta)
 
   // 7. Keep squash drill/block timing aligned with the session duration.
   normalizeSquashDurationConsistency(sessions, meta)
@@ -128,6 +131,10 @@ export function repairGeneratedWeek(
   // 10. Keep aerobic support non-interfering when squash is the primary target.
   sessions = normalizeSquashSupportAerobicLoad(sessions, context, meta)
 
+  // 10b. If the macro allocated running load, it must exist as running, not as
+  // an aerobic-looking squash drill.
+  sessions = ensureTargetRunningSupportSession(sessions, context, meta)
+
   // 11. Balance session count
   sessions = balanceSessionCount(sessions, context, meta)
 
@@ -136,7 +143,8 @@ export function repairGeneratedWeek(
 
   // 13. Diversify duplicated sport content after fallbacks are added
   diversifyDuplicateSquashSessions(sessions, context, meta)
-  normalizeSquashSemanticMetadata(sessions, meta)
+  normalizeSquashSemanticMetadata(sessions, meta, context)
+  ensureSquashCompetitionMatchExposure(sessions, context, meta)
   normalizeSquashDurationConsistency(sessions, meta)
 
   // 14. Diversify repeated strength exercises from previous week
@@ -392,7 +400,11 @@ function applySquashSelection(
   session.squashDetails = {
     trainingFocus: result.trainingFocus,
     drills: result.drills,
-    sessionMode: session.subtype === 'match' || session.subtype === 'competitive' ? 'practice_match' : 'drill_session',
+    sessionMode: session.subtype === 'competitive'
+      ? 'competition_match'
+      : session.subtype === 'match'
+        ? 'practice_match'
+        : 'drill_session',
     sessionKind: result.sessionKind,
     blocks: result.blocks,
   }
@@ -523,7 +535,101 @@ function buildSquashBlocksFromDrills(drills: SquashDrill[]): SquashSessionBlock[
   )
 }
 
-function normalizeSquashSemanticMetadata(sessions: CoachSessionProposal[], meta: RepairMeta): void {
+function sanitizeSquashDrillSets(
+  sessions: CoachSessionProposal[],
+  context: RepairContext,
+  meta: RepairMeta,
+): void {
+  const recentDrills = extractRecentSquashDrills(context.previousWeek)
+
+  for (const session of sessions) {
+    if (session.sessionType !== 'squash' || !session.squashDetails) continue
+
+    const details = session.squashDetails
+    const originalDrills = details.drills ?? []
+    const withoutGenericAerobic = originalDrills.filter((drill) => !isGenericAerobicSquashDrill(drill.name))
+    const removedGenericAerobic = withoutGenericAerobic.length !== originalDrills.length
+    const dedupedDrills = dedupeSquashDrillsByName(withoutGenericAerobic)
+    const removedDuplicates = dedupedDrills.length !== withoutGenericAerobic.length
+
+    if (!removedGenericAerobic && !removedDuplicates) {
+      recentDrills.push(...extractSquashDrillNames(session))
+      continue
+    }
+
+    const selection = selectContextualSquashCompletion(session, context, [
+      ...recentDrills,
+      ...dedupedDrills.map((drill) => drill.name),
+    ])
+    const targetCount = Math.max(getMinimumSquashDrillCount(session), dedupedDrills.length)
+    const completedDrills = completeSquashDrillSet(dedupedDrills, selection.drills, targetCount)
+
+    details.drills = completedDrills
+    details.blocks = buildSquashBlocksFromDrills(completedDrills)
+    details.trainingFocus = inferTrainingFocusFromSquashDrills(completedDrills, details.trainingFocus)
+    details.sessionKind = inferSquashKindFromProposalDetails(session)
+    meta.repairedSessionCount++
+
+    if (removedDuplicates) {
+      meta.warnings.push({
+        code: 'squash_duplicate_drills_deduped',
+        message: `Se eliminaron drills duplicados dentro de "${session.title}".`,
+        sessionDate: session.date,
+      })
+    }
+
+    if (removedGenericAerobic) {
+      meta.warnings.push({
+        code: 'squash_generic_aerobic_drills_removed',
+        message: `Se quitaron drills aeróbicos genéricos de squash en "${session.title}"; el soporte aeróbico debe programarse como running/cycling real.`,
+        sessionDate: session.date,
+      })
+    }
+
+    recentDrills.push(...extractSquashDrillNames(session))
+  }
+}
+
+function dedupeSquashDrillsByName(drills: SquashDrill[]): SquashDrill[] {
+  const seen = new Set<string>()
+  const result: SquashDrill[] = []
+
+  for (const drill of drills) {
+    const key = findSquashDrillByName(drill.name)?.id ?? normalizeSquashDrillKey(drill.name)
+    if (!key || seen.has(key)) continue
+    seen.add(key)
+    result.push(drill)
+  }
+
+  return result
+}
+
+function isGenericAerobicSquashDrill(name: string): boolean {
+  const normalized = normalizeText(name)
+  return (
+    /\b(intervalos?|rodaje|z2|carrera|trote|fartlek|tempo|aerobic[oa]s?)\b/.test(normalized)
+    && !/\b(partido|match|puntos?|juego condicionado)\b/.test(normalized)
+  )
+}
+
+function inferTrainingFocusFromSquashDrills(
+  drills: SquashDrill[],
+  fallback: SquashTrainingFocus | undefined,
+): SquashTrainingFocus {
+  const definitions = drills
+    .map((drill) => findSquashDrillByName(drill.name))
+    .filter((definition): definition is NonNullable<ReturnType<typeof findSquashDrillByName>> => definition != null)
+  if (definitions.some((definition) => isSquashMatchDrill(definition))) return 'conditioned_games'
+  if (definitions.some((definition) => isShadowsDrill(definition))) return 'physical'
+  if (definitions.some((definition) => definition.category === 'tactical')) return 'tactical'
+  return fallback ?? 'technical'
+}
+
+function normalizeSquashSemanticMetadata(
+  sessions: CoachSessionProposal[],
+  meta: RepairMeta,
+  context?: RepairContext,
+): void {
   for (const session of sessions) {
     if (session.sessionType !== 'squash' || !session.squashDetails) continue
 
@@ -531,10 +637,24 @@ function normalizeSquashSemanticMetadata(sessions: CoachSessionProposal[], meta:
     const blockKinds = [...new Set((details.blocks ?? []).map((block) => block.kind))]
     const hasBlocks = blockKinds.length > 0
     const hasMatchBlock = blockKinds.includes('match')
-    const inferredKind = hasBlocks
+    const contentSaysMatch = isSquashMatchIntent(session)
+      && !(context?.wizardConfig.partnerAvailability === 'solo' && !hasMatchBlock)
+    const inferredKind = contentSaysMatch
+      ? 'match'
+      : hasBlocks
       ? blockKinds.length > 1 ? 'mixed' : blockKinds[0]
       : inferSquashKindFromProposalDetails(session)
-    const dedicatedMatchContent = hasBlocks ? blockKinds.length === 1 && hasMatchBlock : inferredKind === 'match'
+    const dedicatedMatchContent = contentSaysMatch || (hasBlocks ? blockKinds.length === 1 && hasMatchBlock : inferredKind === 'match')
+
+    if (contentSaysMatch && !hasMatchBlock) {
+      applySquashMatchDetails(session, contextlessSquashMatchMode(session))
+      meta.repairedSessionCount++
+      meta.warnings.push({
+        code: 'squash_match_mode_repaired',
+        message: `Se alineó "${session.title}" como sesión real de partido por su título/objetivo.`,
+        sessionDate: session.date,
+      })
+    }
 
     if (inferredKind && details.sessionKind !== inferredKind) {
       details.sessionKind = inferredKind
@@ -578,6 +698,105 @@ function normalizeSquashSemanticMetadata(sessions: CoachSessionProposal[], meta:
       })
     }
   }
+}
+
+function ensureSquashCompetitionMatchExposure(
+  sessions: CoachSessionProposal[],
+  context: RepairContext,
+  meta: RepairMeta,
+): void {
+  if (!shouldEnsureSquashCompetitionMatch(context)) return
+  const squashSessions = sessions.filter((session) => session.sessionType === 'squash')
+  if (squashSessions.length === 0) return
+  if (squashSessions.some((session) => session.squashDetails?.sessionMode === 'competition_match')) return
+
+  const candidate = squashSessions.find(isSquashMatchIntent)
+    ?? squashSessions.find((session) => session.squashDetails?.sessionKind === 'match')
+    ?? [...squashSessions].sort((a, b) => (b.rpe ?? 6) - (a.rpe ?? 6))[0]
+
+  if (!candidate) return
+
+  applySquashMatchDetails(candidate, 'competition_match')
+  meta.repairedSessionCount++
+  meta.warnings.push({
+    code: 'squash_competition_match_added',
+    message: `Se aseguró exposición competitiva real de squash en fase ${context.week.phase}.`,
+    sessionDate: candidate.date,
+  })
+}
+
+function shouldEnsureSquashCompetitionMatch(context: RepairContext): boolean {
+  if (getPrimarySport(context) !== 'squash') return false
+  if (context.week.phase !== 'peak' && context.week.phase !== 'taper' && context.week.phase !== 'race') return false
+  if (getExpectedSessionsForPlanWeek(context.plan, context.week) < 3 && context.week.phase !== 'race') return false
+
+  const level = deriveCompetitiveLevel(context)
+  if (level === 'elite' || level === 'masters' || level === 'competitive') return true
+
+  const primaryEvent = context.profile.goalEvents?.find((event) => event.id === context.wizardConfig.goalEventId)
+    ?? context.profile.goalEvents?.find((event) => event.priority === 'primary')
+  return primaryEvent?.sport === 'squash'
+}
+
+function contextlessSquashMatchMode(session: CoachSessionProposal): 'practice_match' | 'competition_match' {
+  const text = normalizeText(`${session.title ?? ''} ${session.objective ?? ''}`)
+  if (
+    session.subtype === 'competitive'
+    || text.includes('competitivo')
+    || text.includes('competencia')
+    || text.includes('torneo')
+  ) {
+    return 'competition_match'
+  }
+  return 'practice_match'
+}
+
+function applySquashMatchDetails(
+  session: CoachSessionProposal,
+  mode: 'practice_match' | 'competition_match',
+): void {
+  const drills = buildSquashMatchDrills(session, mode)
+  const durationMin = sumDurations(drills) || Math.min(session.durationMin, mode === 'competition_match' ? 55 : 45)
+  session.subtype = mode === 'competition_match' ? 'competitive' : 'match'
+  session.title = mode === 'competition_match'
+    ? 'Squash - Match Play Competitivo'
+    : 'Squash - Match Play Controlado'
+  session.objective = mode === 'competition_match'
+    ? 'Competir con marcador real, presión de cierre y rutinas entre puntos.'
+    : 'Practicar decisiones y ritmo de partido con marcador controlado.'
+  const details: NonNullable<CoachSessionProposal['squashDetails']> = session.squashDetails ?? {
+    trainingFocus: 'conditioned_games',
+    drills: [],
+  }
+  details.trainingFocus = 'conditioned_games'
+  details.sessionMode = mode
+  details.sessionKind = 'match'
+  details.drills = drills
+  details.blocks = [{
+    kind: 'match',
+    drills,
+    durationMin,
+  }]
+  session.squashDetails = details
+}
+
+function buildSquashMatchDrills(
+  session: CoachSessionProposal,
+  mode: 'practice_match' | 'competition_match',
+): SquashDrill[] {
+  const names = mode === 'competition_match'
+    ? ['Puntos de partido a 5 u 8', 'Partido de entrenamiento al mejor de 3 juegos']
+    : ['Partido de entrenamiento al mejor de 3 juegos', 'Partido con ataque temprano']
+  const targetDurations = session.durationMin >= 60 ? [25, 25] : [20, 15]
+  const drills = names
+    .map((name, index) => {
+      const definition = findSquashDrillByName(name)
+      return definition ? toSquashDrill(definition, targetDurations[index]) : null
+    })
+    .filter((drill): drill is SquashDrill => drill !== null)
+
+  if (drills.length > 0) return drills
+  return [{ name: mode === 'competition_match' ? 'Puntos de partido a 5 u 8' : 'Partido de entrenamiento al mejor de 3 juegos', durationMin: Math.min(session.durationMin, 40) }]
 }
 
 function normalizeSquashDurationConsistency(sessions: CoachSessionProposal[], meta: RepairMeta): void {
@@ -666,6 +885,7 @@ function resolveSquashSubtypeFromKind(
   kind: SquashSessionKind,
   currentSubtype: CoachSessionProposal['subtype'],
 ): CoachSessionProposal['subtype'] {
+  if (kind === 'match' && currentSubtype === 'competitive') return 'competitive'
   if (kind === 'match') return 'match'
   if (kind === 'control') return 'control'
   if (currentSubtype === 'light') return 'light'
@@ -709,6 +929,29 @@ function normalizeText(value: string): string {
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
+}
+
+function isSquashMatchIntent(session: CoachSessionProposal): boolean {
+  if (session.sessionType !== 'squash') return false
+  const details = session.squashDetails
+  const blockKinds = [...new Set((details?.blocks ?? []).map((block) => block.kind))]
+  if (blockKinds.length > 0) {
+    if (blockKinds.every((kind) => kind === 'match')) return true
+    const titleObjective = normalizeText([session.title, session.objective].filter(Boolean).join(' '))
+    return /\b(partido|match|match play|match-play|simulacion|marcador|mejor de [35]|puntos? de partido)\b/.test(titleObjective)
+  }
+
+  if (session.subtype === 'match' || session.subtype === 'competitive') return true
+  if (details?.sessionKind === 'match' || details?.sessionMode === 'practice_match' || details?.sessionMode === 'competition_match') return true
+
+  const text = normalizeText([
+    session.title,
+    session.objective,
+    ...(details?.drills ?? []).map((drill) => drill.name),
+    ...((details?.blocks ?? []).flatMap((block) => block.drills.map((drill) => drill.name))),
+  ].filter(Boolean).join(' '))
+
+  return /\b(partido|match|match play|match-play|simulacion|marcador|mejor de [35]|puntos? de partido)\b/.test(text)
 }
 
 function inferSquashKindFromProposalDetails(session: CoachSessionProposal): SquashSessionKind {
@@ -1456,6 +1699,117 @@ function normalizeSquashSupportAerobicLoad(
   })
 }
 
+function ensureTargetRunningSupportSession(
+  sessions: CoachSessionProposal[],
+  context: RepairContext,
+  meta: RepairMeta,
+): CoachSessionProposal[] {
+  const runningLoad = context.week.targetLoadBySport.running ?? 0
+  if (runningLoad <= 0) return sessions
+  if (!getAllowedSports(context).has('running')) return sessions
+  if (context.week.phase === 'race' || context.week.phase === 'transition') return sessions
+  if (sessions.some((session) => session.sessionType === 'running')) return sessions
+
+  const expected = getExpectedSessionsForPlanWeek(context.plan, context.week)
+  const allowedDates = getAllowedDatesInWeek(context)
+  const next = [...sessions]
+
+  if (next.length < expected) {
+    const available = findNearestAvailableDate(allowedDates, next, 'AM', undefined, context.wizardConfig)
+    if (!available) return sessions
+    const running = buildSupportRunningSession(available.date, available.timeBlock, context)
+    next.push(running)
+    meta.addedFallbackCount++
+    meta.repairedSessionCount++
+    meta.warnings.push({
+      code: 'running_support_materialized',
+      message: `Se agregó running real porque la semana tenía carga objetivo running=${runningLoad}.`,
+      sessionDate: running.date,
+    })
+    return next.sort((a, b) => a.date.localeCompare(b.date) || a.timeBlock.localeCompare(b.timeBlock))
+  }
+
+  const replacementIndex = findRunningSupportReplacementIndex(next, context)
+  if (replacementIndex === -1) return sessions
+
+  const replaced = next[replacementIndex]!
+  next[replacementIndex] = buildSupportRunningSession(replaced.date, replaced.timeBlock, context, replaced.durationMin)
+  meta.repairedSessionCount++
+  meta.warnings.push({
+    code: 'running_support_materialized',
+    message: `Se reemplazó "${replaced.title}" por running real porque la semana tenía carga objetivo running=${runningLoad}.`,
+    sessionDate: replaced.date,
+  })
+
+  return next.sort((a, b) => a.date.localeCompare(b.date) || a.timeBlock.localeCompare(b.timeBlock))
+}
+
+function findRunningSupportReplacementIndex(
+  sessions: CoachSessionProposal[],
+  context: RepairContext,
+): number {
+  const accessoryOrder = ['recovery', 'nutrition', 'mobility', 'cycling']
+  for (const sport of accessoryOrder) {
+    const index = sessions.findIndex((session) => session.sessionType === sport)
+    if (index !== -1) return index
+  }
+
+  const primarySport = getPrimarySport(context)
+  const primaryCount = sessions.filter((session) => session.sessionType === primarySport).length
+  const minimumPrimary = minimumPrimarySessionsForWeek(context)
+  if (primarySport === 'squash' && primaryCount > minimumPrimary) {
+    const aerobicSquash = sessions.findIndex((session) =>
+      session.sessionType === 'squash'
+      && (session.squashDetails?.drills ?? []).some((drill) => isGenericAerobicSquashDrill(drill.name)),
+    )
+    if (aerobicSquash !== -1) return aerobicSquash
+
+    return sessions.findIndex((session) => session.sessionType === 'squash')
+  }
+
+  return sessions.findIndex((session) => session.sessionType !== primarySport && session.sessionType !== 'strength')
+}
+
+function buildSupportRunningSession(
+  date: string,
+  timeBlock: 'AM' | 'PM',
+  context: RepairContext,
+  replacedDurationMin?: number,
+): CoachSessionProposal {
+  const isTaper = context.week.phase === 'taper'
+  const durationMin = Math.min(replacedDurationMin ?? context.wizardConfig.sessionDurationMins, isTaper ? 25 : 40)
+  const session: CoachSessionProposal = {
+    date,
+    timeBlock,
+    sessionType: 'running',
+    title: isTaper ? 'Activación Aeróbica - Recuperación Taper' : 'Rodaje Z2 - Soporte Squash',
+    durationMin,
+    rpe: isTaper ? 3 : 4,
+    objective: isTaper
+      ? 'Activación aeróbica muy suave para mantener circulación sin fatiga residual.'
+      : 'Materializar el soporte aeróbico objetivo con baja interferencia para squash.',
+    runningType: 'z2',
+    targetHrMin: 130,
+    targetHrMax: isTaper ? 140 : 145,
+    intervalStructure: {
+      blocks: [{
+        label: isTaper ? 'Z2 activación taper' : 'Z2 soporte squash',
+        durationMin,
+        targetHrMax: isTaper ? 140 : 145,
+        notes: 'Ritmo conversacional; cortar si aparece fatiga de piernas.',
+      }],
+    },
+  }
+
+  try {
+    completeRunningDetails(session, context)
+  } catch {
+    // La estructura Z2 mínima ya queda cargada arriba.
+  }
+
+  return session
+}
+
 function daysBetween(fromDate: string, toDate: string): number {
   const from = new Date(`${fromDate}T00:00:00.000Z`).getTime()
   const to = new Date(`${toDate}T00:00:00.000Z`).getTime()
@@ -1497,9 +1851,7 @@ function balanceSessionCount(
     const allowedDates = getAllowedDatesInWeek(context)
     const primarySport = getPrimarySport(context)
     const primaryCount = result.filter((s) => s.sessionType === primarySport).length
-    const minimumPrimary = primarySport === 'squash' && expected >= 4
-      ? Math.floor(expected / 2) + 1
-      : Math.min(expected, 1)
+    const minimumPrimary = minimumPrimarySessionsForWeek(context)
 
     for (let i = 0; i < maxFallback; i++) {
       const available = findNearestAvailableDate(allowedDates, result, 'AM', undefined, context.wizardConfig)
@@ -1595,6 +1947,12 @@ function minimumPrimarySessionsForWeek(context: RepairContext): number {
   const expected = getExpectedSessionsForPlanWeek(context.plan, context.week)
   if (!primarySport || expected <= 0 || context.week.phase === 'transition') return 0
   if (primarySport === 'squash' && (context.week.phase === 'build' || context.week.phase === 'peak')) {
+    const loadedSupportSports = (['running', 'strength', 'cycling', 'mobility'] as SupportedSport[])
+      .filter((sport) => (context.week.targetLoadBySport[sport] ?? 0) > 0)
+      .length
+    if (loadedSupportSports >= 2 && expected >= 4) {
+      return Math.max(2, Math.floor(expected / 2))
+    }
     return expected >= 4
       ? Math.min(expected, Math.floor(expected / 2) + 1)
       : Math.min(expected, 2)

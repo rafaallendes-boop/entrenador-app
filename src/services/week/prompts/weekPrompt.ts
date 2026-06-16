@@ -56,7 +56,7 @@ function buildPrimarySportRule(plan: TrainingPlan, week: TrainingPlanWeek): stri
   }
 
   const expectedSessions = getExpectedSessionsForPlanWeek(plan, week)
-  const minimumSessions = requiredPrimarySessions(primarySport, week.phase, expectedSessions)
+  const minimumSessions = requiredPrimarySessions(primarySport, week, expectedSessions)
   const emphasis =
     week.phase === 'build' || week.phase === 'peak'
       ? ` ${primarySport} debe tener más protagonismo que los deportes de apoyo.`
@@ -72,11 +72,18 @@ function buildPrimarySportRule(plan: TrainingPlan, week: TrainingPlanWeek): stri
 
 function requiredPrimarySessions(
   primarySport: SupportedSport,
-  phase: TrainingPlanWeek['phase'],
+  week: TrainingPlanWeek,
   sessionsPerWeek: number,
 ): number {
+  const phase = week.phase
   if (phase === 'transition') return 0
   if (primarySport === 'squash' && (phase === 'build' || phase === 'peak')) {
+    const loadedSupportSports = (['running', 'strength', 'cycling', 'mobility'] as SupportedSport[])
+      .filter((sport) => (week.targetLoadBySport[sport] ?? 0) > 0)
+      .length
+    if (loadedSupportSports >= 2 && sessionsPerWeek >= 4) {
+      return Math.max(2, Math.floor(sessionsPerWeek / 2))
+    }
     return Math.max(2, Math.floor(sessionsPerWeek / 2) + 1)
   }
   if (phase === 'build' || phase === 'peak') return 1
@@ -256,6 +263,7 @@ export function buildWeekUserPrompt(input: WeekPromptInput): string {
     ...buildDoubleSessionPreferenceRule(wizardConfig, week.phase),
     `- Deportes permitidos: ${allowed.join(', ')}`,
     `- Carga objetivo por deporte: ${targetLoads}`,
+    ...buildTargetLoadMaterializationRules(plan, week, wizardConfig),
     ...buildPrimarySportRule(plan, week),
     ...buildRaceWeekRule(plan, week),
     ...buildSquashCompetitionRules(plan, week),
@@ -433,6 +441,7 @@ export function buildWeekBatchUserPrompt(input: WeekBatchPromptInput): string {
       `- Foco del bloque: ${blockFocus}`,
       `- Carga objetivo por deporte: ${targetLoads}`,
       `- Objetivos: ${week.weekObjectives.map((objective) => objective.goal).join(' | ')}`,
+      ...buildTargetLoadMaterializationRules(plan, week, wizardConfig),
       ...primarySportRule,
       ...buildRaceWeekRule(plan, week),
       ...buildSquashCompetitionRules(plan, week),
@@ -501,6 +510,26 @@ function buildRaceWeekRule(plan: TrainingPlan, week: TrainingPlanWeek): string[]
   ]
 }
 
+function buildTargetLoadMaterializationRules(
+  plan: TrainingPlan,
+  week: TrainingPlanWeek,
+  wizardConfig: PlanWizardConfig,
+): string[] {
+  const allowed = allowedSportsList(plan, wizardConfig)
+  if (
+    !allowed.includes('running')
+    || (week.targetLoadBySport.running ?? 0) <= 0
+    || week.phase === 'race'
+    || week.phase === 'transition'
+  ) {
+    return []
+  }
+
+  return [
+    `- running=${week.targetLoadBySport.running}: 1 sessionType="running"; no squash drill.`,
+  ]
+}
+
 function buildSquashCompetitionRules(plan: TrainingPlan, week: TrainingPlanWeek): string[] {
   if (getPrimarySport(plan) !== 'squash') return []
 
@@ -508,6 +537,8 @@ function buildSquashCompetitionRules(plan: TrainingPlan, week: TrainingPlanWeek)
     return [
       '- Regla squash competitivo: running/cycling son soporte, no estímulo principal. Si incluyes running, debe ser Z2 corto <=45min, RPE <=5. No uses tempo, intervalos, long run ni test de carrera.',
       '- En peak de squash, la intensidad alta debe venir de squash específico: pressure drills, control bajo fatiga, patrones a la T, puntos condicionados o match-play controlado.',
+      '- Match/simulación => sessionMode practice_match/competition_match + sessionKind match; no drill_session.',
+      '- No repitas drills; rota familias.',
       '- Usa nombres exactos de drills de squash del catálogo/sugerencias del prompt. No inventes nombres nuevos para conceptos similares; si quieres presión de marcador usa un drill existente de puntos condicionados o match-play.',
     ]
   }
@@ -515,6 +546,8 @@ function buildSquashCompetitionRules(plan: TrainingPlan, week: TrainingPlanWeek)
   if (week.phase === 'taper') {
     return [
       '- Regla taper squash: reduce de verdad la carga. Prioriza 2-3 toques de squash cortos/calidad, 0-1 fuerza neural corta, movilidad. Running sólo si es activación Z2/recovery <=25min RPE <=3; cycling evita salvo recuperación muy justificada.',
+      '- Match taper: corto, sessionMode competition_match/practice_match + sessionKind match; no drill_session.',
+      '- No repitas drills.',
       '- No rellenes taper con dobles ligeros repetidos. Cada sesión debe tener un propósito competitivo claro: frescura, precisión, timing, movilidad o activación neural.',
       '- Usa nombres exactos de drills de squash del catálogo/sugerencias del prompt para evitar que la reparación automática reemplace la intención original.',
     ]

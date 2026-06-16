@@ -176,6 +176,48 @@ describe('repairGeneratedWeek', () => {
     expect(tempo?.intervalStructure?.blocks[1].targetPace).toBe('4:25-4:35 /km')
   })
 
+  it('materializes target running load as a real running session instead of squash aerobic drills', () => {
+    mockContext.week.phase = 'peak'
+    mockContext.week.targetLoadBySport = { squash: 75, running: 20, strength: 30 }
+    mockContext.wizardConfig.sessionsPerWeek = 4
+
+    const sessions: CoachSessionProposal[] = [
+      {
+        date: '2026-05-04',
+        timeBlock: 'AM',
+        sessionType: 'squash',
+        title: 'Squash técnico con aeróbico embutido',
+        durationMin: 60,
+        rpe: 6,
+        objective: 'Control técnico y base aeróbica',
+        squashDetails: {
+          trainingFocus: 'physical',
+          sessionMode: 'drill_session',
+          sessionKind: 'mixed',
+          drills: [
+            { name: 'Volea y vuelta a la T', durationMin: 12 },
+            { name: 'Intervalos aeróbicos en cancha', durationMin: 18 },
+          ],
+        },
+      },
+      { date: '2026-05-06', timeBlock: 'AM', sessionType: 'squash', title: 'Squash 2', durationMin: 60, objective: 'obj' },
+      { date: '2026-05-08', timeBlock: 'AM', sessionType: 'squash', title: 'Squash 3', durationMin: 60, objective: 'obj' },
+      { date: '2026-05-09', timeBlock: 'AM', sessionType: 'strength', title: 'Strength', durationMin: 45, objective: 'obj' },
+    ]
+
+    const { sessions: repaired, meta } = repairGeneratedWeek(sessions, mockContext)
+
+    expect(repaired.some((session) => session.sessionType === 'running')).toBe(true)
+    const squashDrillNames = repaired
+      .filter((session) => session.sessionType === 'squash')
+      .flatMap((session) => session.squashDetails?.drills.map((drill) => drill.name) ?? [])
+    expect(squashDrillNames).not.toContain('Intervalos aeróbicos en cancha')
+    expect(meta.warnings).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'running_support_materialized' }),
+      expect.objectContaining({ code: 'squash_generic_aerobic_drills_removed' }),
+    ]))
+  })
+
   it('aligns squash match metadata when the actual blocks are shadows and control', () => {
     const sessions: CoachSessionProposal[] = [
       {
@@ -254,6 +296,49 @@ describe('repairGeneratedWeek', () => {
     expect(meta.warnings).toEqual(expect.arrayContaining([expect.objectContaining({ code: 'squash_mode_aligned' })]))
   })
 
+  it('promotes match-like squash sessions to competition match metadata in peak', () => {
+    mockContext.week.phase = 'peak'
+    mockContext.profile.goalEvents = [{
+      id: 'event1',
+      title: 'Nacional',
+      date: '2026-06-01',
+      sport: 'squash',
+      priority: 'primary',
+      competitiveLevel: 'elite',
+    }]
+
+    const sessions: CoachSessionProposal[] = [
+      {
+        date: '2026-05-04',
+        timeBlock: 'AM',
+        sessionType: 'squash',
+        subtype: 'training',
+        title: 'Simulación de Partido - presión competitiva',
+        durationMin: 60,
+        objective: 'Jugar puntos con marcador y cierre bajo presión',
+        squashDetails: {
+          trainingFocus: 'technical',
+          sessionMode: 'drill_session',
+          sessionKind: 'technical',
+          drills: [{ name: 'Volea y vuelta a la T', durationMin: 12 }],
+        },
+      },
+      { date: '2026-05-06', timeBlock: 'AM', sessionType: 'squash', title: 'Squash 2', durationMin: 45, objective: 'obj' },
+      { date: '2026-05-08', timeBlock: 'AM', sessionType: 'strength', title: 'Strength', durationMin: 45, objective: 'obj' },
+      { date: '2026-05-09', timeBlock: 'AM', sessionType: 'running', title: 'Run', durationMin: 35, objective: 'obj' },
+    ]
+
+    const { sessions: repaired, meta } = repairGeneratedWeek(sessions, mockContext)
+    const match = repaired.find((session) => session.title.includes('Match Play') || session.squashDetails?.sessionMode === 'competition_match')
+
+    expect(match?.sessionType).toBe('squash')
+    expect(match?.subtype).toBe('competitive')
+    expect(match?.squashDetails?.sessionMode).toBe('competition_match')
+    expect(match?.squashDetails?.sessionKind).toBe('match')
+    expect(match?.squashDetails?.blocks?.every((block) => block.kind === 'match')).toBe(true)
+    expect(meta.warnings).toEqual(expect.arrayContaining([expect.objectContaining({ code: 'squash_match_mode_repaired' })]))
+  })
+
   it('3. moves sessions on disallowed days to allowed days', () => {
     // Thursday is not allowed
     const sessions: CoachSessionProposal[] = [
@@ -326,6 +411,40 @@ describe('repairGeneratedWeek', () => {
 
     const mob = repaired.find((s) => s.sessionType === 'mobility')!
     expect(mob.mobilityDetails).toBeDefined()
+  })
+
+  it('deduplicates squash drills by name inside a session', () => {
+    const sessions: CoachSessionProposal[] = [
+      {
+        date: '2026-05-04',
+        timeBlock: 'AM',
+        sessionType: 'squash',
+        title: 'Squash con drills duplicados',
+        durationMin: 60,
+        objective: 'obj',
+        squashDetails: {
+          trainingFocus: 'technical',
+          sessionMode: 'drill_session',
+          sessionKind: 'technical',
+          drills: [
+            { name: 'Volea y vuelta a la T', durationMin: 12 },
+            { name: 'Volea y vuelta a la T', durationMin: 12 },
+            { name: '100 drives al cuadro de saque', durationMin: 10 },
+          ],
+        },
+      },
+      { date: '2026-05-06', timeBlock: 'AM', sessionType: 'running', title: 'Run', durationMin: 45, objective: 'obj' },
+      { date: '2026-05-08', timeBlock: 'AM', sessionType: 'strength', title: 'Strength', durationMin: 45, objective: 'obj' },
+      { date: '2026-05-09', timeBlock: 'AM', sessionType: 'mobility', title: 'Mobility', durationMin: 30, objective: 'obj' },
+    ]
+
+    const { sessions: repaired, meta } = repairGeneratedWeek(sessions, mockContext)
+    const squash = repaired.find((session) => session.sessionType === 'squash')!
+    const drillNames = squash.squashDetails?.drills.map((drill) => drill.name) ?? []
+
+    expect(drillNames.filter((name) => name === 'Volea y vuelta a la T')).toHaveLength(1)
+    expect(new Set(drillNames).size).toBe(drillNames.length)
+    expect(meta.warnings).toEqual(expect.arrayContaining([expect.objectContaining({ code: 'squash_duplicate_drills_deduped' })]))
   })
 
   it('6b. normalizes and enriches existing strength sessions during repair', () => {
