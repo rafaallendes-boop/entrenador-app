@@ -231,6 +231,44 @@ describe('runAsyncPlanGeneration', () => {
     expect(result.plan.generationSummary?.completedWeeks).toBe(4)
   })
 
+  it('uses the previous week shell for load progression even when it is not generated yet (parallel)', async () => {
+    const plan = {
+      ...makePlan(),
+      totalWeeks: 2,
+    } as TrainingPlan
+    // Week 1 carries a higher target load than week 0 -> the progression directive
+    // must say "SUBIR carga", not treat it as the first week of the plan.
+    const weeks = [
+      { ...makeWeek(0, '2026-06-01'), targetLoadBySport: { squash: 50 } },
+      { ...makeWeek(1, '2026-06-08'), targetLoadBySport: { squash: 80 } },
+    ]
+    const writer = makeWriter(plan)
+    const promptsByTrace: Record<string, string> = {}
+    const callLLM = vi.fn(async (request) => {
+      promptsByTrace[request.traceId] = request.userMessage
+      // Hold each call open so week 0 stays in "generating" while week 1 builds
+      // its prompt -> week 1 only has week 0's shell available, not the result.
+      await new Promise((resolve) => setTimeout(resolve, 10))
+      return makeRaw(targetDateFromTrace(request.traceId))
+    })
+
+    await runAsyncPlanGeneration({
+      plan,
+      weeks,
+      profile: makeProfile(),
+      wizardConfig: makeWizardConfig(),
+      jobId: 'job-progression',
+      writer,
+      callLLM,
+      concurrency: 2,
+    })
+
+    const week1Prompt = promptsByTrace['job-progression-week-1']
+    expect(week1Prompt).toBeDefined()
+    expect(week1Prompt).toContain('80 vs 50')
+    expect(week1Prompt).not.toContain('Primera semana del plan')
+  })
+
   it('reintenta una semana truncada por max_tokens y guarda el resultado exitoso', async () => {
     const plan = makePlan()
     const weeks = [makeWeek(0, '2026-06-01')]

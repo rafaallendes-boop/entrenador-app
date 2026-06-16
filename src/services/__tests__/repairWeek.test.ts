@@ -196,7 +196,7 @@ describe('repairGeneratedWeek', () => {
           sessionKind: 'mixed',
           drills: [
             { name: 'Volea y vuelta a la T', durationMin: 12 },
-            { name: 'Intervalos aeróbicos en cancha', durationMin: 18 },
+            { name: 'Rodaje continuo Z2 fuera de cancha', durationMin: 18 },
           ],
         },
       },
@@ -207,15 +207,126 @@ describe('repairGeneratedWeek', () => {
 
     const { sessions: repaired, meta } = repairGeneratedWeek(sessions, mockContext)
 
+    // El soporte aeróbico objetivo se materializa como running real, no como un
+    // drill aeróbico genérico colado dentro de squash.
     expect(repaired.some((session) => session.sessionType === 'running')).toBe(true)
     const squashDrillNames = repaired
       .filter((session) => session.sessionType === 'squash')
       .flatMap((session) => session.squashDetails?.drills.map((drill) => drill.name) ?? [])
-    expect(squashDrillNames).not.toContain('Intervalos aeróbicos en cancha')
+    expect(squashDrillNames).not.toContain('Rodaje continuo Z2 fuera de cancha')
     expect(meta.warnings).toEqual(expect.arrayContaining([
       expect.objectContaining({ code: 'running_support_materialized' }),
+    ]))
+  })
+
+  it('keeps catalog squash drills whose names sound aerobic (e.g. "Intervalos aeróbicos en cancha")', () => {
+    mockContext.week.phase = 'build'
+    mockContext.week.targetLoadBySport = { squash: 75, strength: 30 }
+    mockContext.wizardConfig.sessionsPerWeek = 4
+
+    const sessions: CoachSessionProposal[] = [
+      {
+        date: '2026-05-04',
+        timeBlock: 'AM',
+        sessionType: 'squash',
+        title: 'Squash físico en cancha',
+        durationMin: 60,
+        rpe: 6,
+        objective: 'Base aeróbica específica de squash',
+        squashDetails: {
+          trainingFocus: 'physical',
+          sessionMode: 'drill_session',
+          sessionKind: 'mixed',
+          drills: [
+            { name: 'Volea y vuelta a la T', durationMin: 20 },
+            { name: 'Intervalos aeróbicos en cancha', durationMin: 20 },
+          ],
+        },
+      },
+      { date: '2026-05-06', timeBlock: 'AM', sessionType: 'squash', title: 'Squash 2', durationMin: 60, objective: 'obj' },
+      { date: '2026-05-08', timeBlock: 'AM', sessionType: 'squash', title: 'Squash 3', durationMin: 60, objective: 'obj' },
+      { date: '2026-05-09', timeBlock: 'AM', sessionType: 'strength', title: 'Strength', durationMin: 45, objective: 'obj' },
+    ]
+
+    const { sessions: repaired, meta } = repairGeneratedWeek(sessions, mockContext)
+
+    const squashDrillNames = repaired
+      .filter((session) => session.sessionType === 'squash')
+      .flatMap((session) => session.squashDetails?.drills.map((drill) => drill.name) ?? [])
+    expect(squashDrillNames).toContain('Intervalos aeróbicos en cancha')
+    expect(meta.warnings).not.toEqual(expect.arrayContaining([
       expect.objectContaining({ code: 'squash_generic_aerobic_drills_removed' }),
     ]))
+  })
+
+  it('adds a competition match session instead of overwriting a designed pressure session when there is room', () => {
+    mockContext.week.phase = 'peak'
+    mockContext.wizardConfig.sessionsPerWeek = 4
+    mockContext.profile.goalEvents = [{
+      id: 'event1',
+      title: 'Nacional',
+      date: '2026-06-01',
+      sport: 'squash',
+      priority: 'primary',
+      competitiveLevel: 'elite',
+    }]
+
+    // Only 3 sessions for an expected-4 week => there is room to add a match.
+    const sessions: CoachSessionProposal[] = [
+      {
+        date: '2026-05-04',
+        timeBlock: 'AM',
+        sessionType: 'squash',
+        subtype: 'training',
+        title: 'Squash - Presión bajo fatiga',
+        durationMin: 60,
+        rpe: 8,
+        objective: 'Pressure drills y control bajo fatiga',
+        squashDetails: {
+          trainingFocus: 'physical',
+          sessionMode: 'drill_session',
+          sessionKind: 'mixed',
+          drills: [
+            { name: 'Presión a esquinas de fondo', durationMin: 20 },
+            { name: 'Multibola para presionar y cerrar', durationMin: 20 },
+          ],
+        },
+      },
+      { date: '2026-05-06', timeBlock: 'AM', sessionType: 'strength', title: 'Strength', durationMin: 45, objective: 'obj' },
+      { date: '2026-05-08', timeBlock: 'AM', sessionType: 'squash', title: 'Squash técnico', durationMin: 45, objective: 'obj' },
+    ]
+
+    const { sessions: repaired, meta } = repairGeneratedWeek(sessions, mockContext)
+
+    // The designed pressure session must survive untouched.
+    const designed = repaired.find((session) => session.title === 'Squash - Presión bajo fatiga')
+    expect(designed).toBeDefined()
+    expect(designed?.squashDetails?.sessionMode).not.toBe('competition_match')
+
+    // A dedicated competition match session must have been added.
+    expect(repaired.some((session) => session.squashDetails?.sessionMode === 'competition_match')).toBe(true)
+    expect(meta.warnings).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'squash_competition_match_added' }),
+    ]))
+  })
+
+  it('does not sacrifice mobility/recovery to materialize running support in taper', () => {
+    mockContext.week.phase = 'taper'
+    mockContext.week.targetLoadBySport = { squash: 40, running: 15, strength: 20 }
+    mockContext.wizardConfig.sessionsPerWeek = 4
+
+    // Week already at the session cap (no room to add): the running support must
+    // not be materialized by replacing the intentional mobility session.
+    const sessions: CoachSessionProposal[] = [
+      { date: '2026-05-04', timeBlock: 'AM', sessionType: 'squash', title: 'Squash calidad 1', durationMin: 40, objective: 'obj' },
+      { date: '2026-05-06', timeBlock: 'AM', sessionType: 'squash', title: 'Squash calidad 2', durationMin: 40, objective: 'obj' },
+      { date: '2026-05-08', timeBlock: 'AM', sessionType: 'mobility', title: 'Movilidad y activación', durationMin: 30, objective: 'obj' },
+      { date: '2026-05-09', timeBlock: 'AM', sessionType: 'strength', title: 'Fuerza neural corta', durationMin: 30, objective: 'obj' },
+    ]
+
+    const { sessions: repaired } = repairGeneratedWeek(sessions, mockContext)
+
+    expect(repaired.some((session) => session.sessionType === 'mobility')).toBe(true)
   })
 
   it('aligns squash match metadata when the actual blocks are shadows and control', () => {

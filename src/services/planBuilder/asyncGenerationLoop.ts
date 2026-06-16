@@ -40,6 +40,12 @@ export interface AsyncPlanGenerationResult {
   cancelled: boolean
 }
 
+// Presupuesto de tokens en dos niveles: el primer intento usa un cap ajustado
+// (cubre con holgura el output típico de plan_builder_week, ~3500 tokens según
+// OPTIMIZATION_AND_COSTS.md) para bajar latencia/costo bajo concurrencia; solo
+// las semanas que truncan reintentan con el cap amplio. No subir el default a
+// 12000 sin datos de tasa de truncado real (Beta Quality), o se pierde la
+// ganancia de latencia para todas las semanas.
 const DEFAULT_MAX_TOKENS = 5000
 const TRUNCATED_RETRY_MAX_TOKENS = 12000
 const DEFAULT_TEMPERATURE = 0.25
@@ -445,7 +451,13 @@ export async function runAsyncPlanGeneration(input: RunAsyncPlanGenerationInput)
     await input.writer.putPlan(plan)
 
     try {
+      // En generación paralela la semana previa puede no estar lista todavía.
+      // Usamos la versión generada si existe (para evitar clonar sesiones), y si
+      // no, caemos al shell de la semana previa: conserva fase y carga objetivo
+      // para que la directiva de progresión sea correcta y no trate una semana
+      // intermedia como "primera semana del plan".
       const previousWeek = weeks.find((week) => week.weekIndex === weekIndex - 1 && isReadyWeek(week))
+        ?? weeks.find((week) => week.weekIndex === weekIndex - 1)
       const result = await generateWeekCoreWithRetry({
         plan,
         week: generatingWeek,

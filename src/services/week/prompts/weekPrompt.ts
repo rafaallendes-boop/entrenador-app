@@ -91,7 +91,10 @@ function requiredPrimarySessions(
 }
 
 function briefPreviousWeek(previous: TrainingPlanWeek | undefined): string {
-  if (!previous || previous.sessions.length === 0) return 'No hay semana previa (es la primera).'
+  if (!previous) return 'No hay semana previa (es la primera).'
+  if (previous.sessions.length === 0) {
+    return 'Semana previa aún sin detalle (generándose en paralelo): no clones estructuras típicas de la fase; varía drills y ejercicios.'
+  }
   const lines = previous.sessions.map((s) =>
     `  - ${s.date} ${s.timeBlock} · ${s.sessionType}${s.subtype ? `/${s.subtype}` : ''} · ${s.title} · ${s.durationMin}min${s.rpe ? ` · RPE ${s.rpe}` : ''}`,
   )
@@ -314,13 +317,17 @@ function buildLoadDirective(
   if (week.phase === 'transition') {
     return 'RECUPERAR: actividad suave y agradable, RPE <= 5 en todo, sin presión de volumen ni intensidad.'
   }
-  if (!previousWeek || previousWeek.sessions.length === 0) {
+  const previousTotal = previousWeek ? sumTargetLoads(previousWeek.targetLoadBySport) : 0
+  // Tratamos como "primera semana" solo cuando no hay semana previa o su carga
+  // objetivo es nula. Una semana previa sin sesiones detalladas todavía (puede
+  // pasar en generación paralela) igual aporta su carga objetivo para fijar la
+  // directiva de progresión.
+  if (!previousWeek || previousTotal <= 0) {
     const startsLoaded = wizardConfig.currentFatigue === 'loaded' || wizardConfig.currentFatigue === 'overloaded'
     return startsLoaded
       ? 'Primera semana con el atleta cargado: arranca conservador (RPE 6 máximo en lo duro, volumen contenido) y prioriza calidad técnica sobre acumulación.'
       : 'Primera semana del plan: carga moderada (RPE 6-7), prioriza técnica y adaptación, y deja margen real para progresar en las semanas siguientes.'
   }
-  const previousTotal = sumTargetLoads(previousWeek.targetLoadBySport)
   const currentTotal = sumTargetLoads(week.targetLoadBySport)
   if (previousTotal > 0 && currentTotal <= previousTotal * 0.85) {
     return `BAJAR carga: el plan marca descarga esta semana (carga objetivo total ${currentTotal} vs ${previousTotal} de la previa). Reduce volumen ~20-30% y baja 1 punto de RPE; mantén solo estímulos de calidad.`

@@ -117,7 +117,7 @@ export function repairGeneratedWeek(
   completeSportDetails(sessions, context, meta)
   sanitizeSquashDrillSets(sessions, context, meta)
   normalizeSquashSemanticMetadata(sessions, meta, context)
-  ensureSquashCompetitionMatchExposure(sessions, context, meta)
+  sessions = ensureSquashCompetitionMatchExposure(sessions, context, meta)
 
   // 7. Keep squash drill/block timing aligned with the session duration.
   normalizeSquashDurationConsistency(sessions, meta)
@@ -144,7 +144,7 @@ export function repairGeneratedWeek(
   // 13. Diversify duplicated sport content after fallbacks are added
   diversifyDuplicateSquashSessions(sessions, context, meta)
   normalizeSquashSemanticMetadata(sessions, meta, context)
-  ensureSquashCompetitionMatchExposure(sessions, context, meta)
+  sessions = ensureSquashCompetitionMatchExposure(sessions, context, meta)
   normalizeSquashDurationConsistency(sessions, meta)
 
   // 14. Diversify repeated strength exercises from previous week
@@ -605,6 +605,11 @@ function dedupeSquashDrillsByName(drills: SquashDrill[]): SquashDrill[] {
 }
 
 function isGenericAerobicSquashDrill(name: string): boolean {
+  // Un drill reconocido del catálogo de squash es contenido válido aunque su
+  // nombre suene aeróbico (p.ej. "Intervalos aeróbicos en cancha" es movimiento
+  // específico desde la T, no running). Solo tratamos como genérico-aeróbico lo
+  // que NO resuelve en el catálogo.
+  if (findSquashDrillByName(name)) return false
   const normalized = normalizeText(name)
   return (
     /\b(intervalos?|rodaje|z2|carrera|trote|fartlek|tempo|aerobic[oa]s?)\b/.test(normalized)
@@ -704,17 +709,39 @@ function ensureSquashCompetitionMatchExposure(
   sessions: CoachSessionProposal[],
   context: RepairContext,
   meta: RepairMeta,
-): void {
-  if (!shouldEnsureSquashCompetitionMatch(context)) return
+): CoachSessionProposal[] {
+  if (!shouldEnsureSquashCompetitionMatch(context)) return sessions
   const squashSessions = sessions.filter((session) => session.sessionType === 'squash')
-  if (squashSessions.length === 0) return
-  if (squashSessions.some((session) => session.squashDetails?.sessionMode === 'competition_match')) return
+  if (squashSessions.length === 0) return sessions
+  if (squashSessions.some((session) => session.squashDetails?.sessionMode === 'competition_match')) return sessions
 
+  // Preferir AGREGAR una sesión de match si la semana tiene cupo, para no
+  // descartar una sesión de squash diseñada (p.ej. pressure drills) reescribiéndola.
+  const expected = getExpectedSessionsForPlanWeek(context.plan, context.week)
+  if (sessions.length < expected) {
+    const next = [...sessions]
+    const available = findNearestAvailableDate(getAllowedDatesInWeek(context), next, 'PM', undefined, context.wizardConfig)
+    if (available) {
+      const added = buildSquashCompetitionMatchSession(available.date, available.timeBlock, context)
+      next.push(added)
+      meta.addedFallbackCount++
+      meta.repairedSessionCount++
+      meta.warnings.push({
+        code: 'squash_competition_match_added',
+        message: `Se agregó exposición competitiva real de squash en fase ${context.week.phase}.`,
+        sessionDate: added.date,
+      })
+      return next.sort((a, b) => a.date.localeCompare(b.date) || a.timeBlock.localeCompare(b.timeBlock))
+    }
+  }
+
+  // Sin cupo: convertir, priorizando una sesión que ya apunta a match antes de
+  // tocar la sesión específica de mayor RPE.
   const candidate = squashSessions.find(isSquashMatchIntent)
     ?? squashSessions.find((session) => session.squashDetails?.sessionKind === 'match')
     ?? [...squashSessions].sort((a, b) => (b.rpe ?? 6) - (a.rpe ?? 6))[0]
 
-  if (!candidate) return
+  if (!candidate) return sessions
 
   applySquashMatchDetails(candidate, 'competition_match')
   meta.repairedSessionCount++
@@ -723,6 +750,26 @@ function ensureSquashCompetitionMatchExposure(
     message: `Se aseguró exposición competitiva real de squash en fase ${context.week.phase}.`,
     sessionDate: candidate.date,
   })
+  return sessions
+}
+
+function buildSquashCompetitionMatchSession(
+  date: string,
+  timeBlock: 'AM' | 'PM',
+  context: RepairContext,
+): CoachSessionProposal {
+  const session: CoachSessionProposal = {
+    date,
+    timeBlock,
+    sessionType: 'squash',
+    subtype: 'competitive',
+    title: 'Squash - Match Play Competitivo',
+    durationMin: Math.min(context.wizardConfig.sessionDurationMins, 55),
+    rpe: 7,
+    objective: 'Competir con marcador real, presión de cierre y rutinas entre puntos.',
+  }
+  applySquashMatchDetails(session, 'competition_match')
+  return session
 }
 
 function shouldEnsureSquashCompetitionMatch(context: RepairContext): boolean {
@@ -1748,7 +1795,11 @@ function findRunningSupportReplacementIndex(
   sessions: CoachSessionProposal[],
   context: RepairContext,
 ): number {
-  const accessoryOrder = ['recovery', 'nutrition', 'mobility', 'cycling']
+  // En taper, movilidad y recovery son contenido intencional (la regla de taper
+  // las prioriza); no las sacrificamos para materializar running de soporte.
+  const accessoryOrder = context.week.phase === 'taper'
+    ? ['cycling', 'nutrition']
+    : ['recovery', 'nutrition', 'mobility', 'cycling']
   for (const sport of accessoryOrder) {
     const index = sessions.findIndex((session) => session.sessionType === sport)
     if (index !== -1) return index
@@ -1766,6 +1817,10 @@ function findRunningSupportReplacementIndex(
 
     return sessions.findIndex((session) => session.sessionType === 'squash')
   }
+
+  // En taper, si no hay accesorio sacrificable preferimos no materializar running
+  // antes que romper movilidad/recovery; el soporte aeróbico ya es opcional aquí.
+  if (context.week.phase === 'taper') return -1
 
   return sessions.findIndex((session) => session.sessionType !== primarySport && session.sessionType !== 'strength')
 }
