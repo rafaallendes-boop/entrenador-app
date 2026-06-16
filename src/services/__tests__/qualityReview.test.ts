@@ -115,6 +115,21 @@ function strength(date: string, exercises?: CoachSessionProposal['exercises']): 
   }
 }
 
+function running(date: string): CoachSessionProposal {
+  return {
+    date,
+    timeBlock: 'AM',
+    sessionType: 'running',
+    title: 'Z2 soporte squash',
+    durationMin: 40,
+    rpe: 4,
+    runningType: 'z2',
+    targetHrMin: 130,
+    targetHrMax: 145,
+    intervalStructure: { blocks: [{ label: 'Z2', durationMin: 35 }] },
+  }
+}
+
 describe('reviewPlanQuality', () => {
   it('scores a complete squash plan week as good or better', () => {
     const plan = makePlan()
@@ -186,7 +201,7 @@ describe('reviewPlanQuality', () => {
     expect(review.criticalIssueCount).toBeGreaterThan(0)
   })
 
-  it('penalizes missing strength support without requiring aerobic work in squash peak', () => {
+  it('penalizes missing strength and target aerobic support in squash peak', () => {
     const plan = makePlan()
     const week = makeWeek([
       squash('2026-05-04', 'Squash 1'),
@@ -200,7 +215,7 @@ describe('reviewPlanQuality', () => {
 
     expect(review.score).toBeLessThan(100)
     expect(review.issues.some((item) => item.code === 'quality.support.missing_strength')).toBe(true)
-    expect(review.issues.some((item) => item.code === 'quality.support.missing_aerobic')).toBe(false)
+    expect(review.issues.some((item) => item.code === 'quality.support.missing_aerobic')).toBe(true)
   })
 
   it('flags weeks that relied on dropped sessions and repair fallbacks', () => {
@@ -210,7 +225,7 @@ describe('reviewPlanQuality', () => {
         squash('2026-05-04', 'Squash 1'),
         squash('2026-05-05', 'Squash 2'),
         squash('2026-05-06', 'Squash 3'),
-        squash('2026-05-07', 'Squash 4'),
+        running('2026-05-07'),
         strength('2026-05-08'),
       ]),
       generationMeta: {

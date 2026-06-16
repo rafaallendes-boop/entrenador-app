@@ -145,6 +145,15 @@ function getSportCompletenessIssues(week: TrainingPlanWeek): PlanValidationIssue
           weekIndex: week.weekIndex,
         }))
       }
+      const duplicateDrills = getDuplicateSquashDrillNames(session)
+      if (duplicateDrills.length > 0) {
+        issues.push(issue({
+          severity: 'warning',
+          code: 'quality.squash.repeated_drills',
+          message: `Squash repite drills dentro de la misma sesión (${duplicateDrills.slice(0, 3).join(', ')}) en ${session.date}.`,
+          weekIndex: week.weekIndex,
+        }))
+      }
       if (hasSquashModeMismatch(session)) {
         issues.push(issue({
           severity: 'warning',
@@ -174,6 +183,32 @@ function getSportCompletenessIssues(week: TrainingPlanWeek): PlanValidationIssue
   }
 
   return issues
+}
+
+function getSquashDrillKeys(session: CoachSessionProposal): string[] {
+  const details = session.squashDetails
+  if (!details) return []
+  const names = (details.drills?.length ?? 0) > 0
+    ? details.drills!.map((drill) => drill.name)
+    : ((details.blocks ?? []).flatMap((block) => block.drills.map((drill) => drill.name)))
+  return names
+    .map(normalizeExerciseName)
+    .filter(Boolean)
+}
+
+function getDuplicateSquashDrillNames(session: CoachSessionProposal): string[] {
+  const seen = new Set<string>()
+  const duplicates = new Set<string>()
+
+  for (const key of getSquashDrillKeys(session)) {
+    if (seen.has(key)) {
+      duplicates.add(key)
+    } else {
+      seen.add(key)
+    }
+  }
+
+  return [...duplicates]
 }
 
 function hasSquashModeMismatch(session: CoachSessionProposal): boolean {
@@ -240,8 +275,9 @@ function getDistributionIssues(plan: TrainingPlan, week: TrainingPlanWeek): Plan
 
   if (
     primarySport === 'squash'
-    && week.phase === 'build'
-    && expected >= 5
+    && (week.phase === 'build' || week.phase === 'peak')
+    && expected >= 4
+    && ((week.targetLoadBySport.running ?? 0) > 0 || (week.targetLoadBySport.cycling ?? 0) > 0)
     && (counts.running ?? 0) === 0
     && (counts.cycling ?? 0) === 0
   ) {
@@ -462,6 +498,46 @@ function getRepeatedStrengthTemplateIssues(plan: TrainingPlan, weeks: TrainingPl
   return issues
 }
 
+function getSquashDrillVarietyIssues(plan: TrainingPlan, weeks: TrainingPlanWeek[]): PlanValidationIssue[] {
+  if (getPrimarySport(plan) !== 'squash') return []
+
+  const generated = weeks.filter((week) => week.sessions.length > 0).sort((a, b) => a.weekIndex - b.weekIndex)
+  const byBlock = new Map<string, TrainingPlanWeek[]>()
+
+  for (const week of generated) {
+    const key = getPlanPhaseForWeek(plan, week)
+    byBlock.set(key, [...(byBlock.get(key) ?? []), week])
+  }
+
+  const issues: PlanValidationIssue[] = []
+  for (const blockWeeks of byBlock.values()) {
+    const squashSessions = blockWeeks.flatMap((week) => week.sessions.filter((session) => session.sessionType === 'squash'))
+    const drillKeys = squashSessions.flatMap(getSquashDrillKeys)
+    if (squashSessions.length < 3 || drillKeys.length < 8) continue
+
+    const counts = new Map<string, number>()
+    for (const key of drillKeys) {
+      counts.set(key, (counts.get(key) ?? 0) + 1)
+    }
+
+    const uniqueCount = counts.size
+    const varietyRatio = uniqueCount / drillKeys.length
+    const topCount = Math.max(...counts.values())
+    const topSessionRatio = topCount / squashSessions.length
+    if (varietyRatio > 0.45 && topSessionRatio < 0.75) continue
+
+    const lastWeek = blockWeeks[blockWeeks.length - 1]
+    issues.push(issue({
+      severity: 'warning',
+      code: 'quality.squash.low_drill_variety',
+      message: `Bloque ${lastWeek.phase} con baja variedad de squash: ${uniqueCount} drills únicos sobre ${drillKeys.length} usos.`,
+      weekIndex: lastWeek.weekIndex,
+    }))
+  }
+
+  return issues
+}
+
 function normalizeExerciseName(name: string): string {
   return name
     .toLowerCase()
@@ -511,6 +587,7 @@ export function reviewPlanQuality(plan: TrainingPlan, weeks: TrainingPlanWeek[])
   const planLevelQualityIssues = [
     ...getPlanLevelIssues(plan, sortedWeeks),
     ...getRepeatedStrengthTemplateIssues(plan, sortedWeeks),
+    ...getSquashDrillVarietyIssues(plan, sortedWeeks),
   ]
 
   const weekReviews = sortedWeeks.map((week) => {

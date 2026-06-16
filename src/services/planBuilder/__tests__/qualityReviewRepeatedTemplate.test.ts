@@ -44,11 +44,38 @@ function strength(exerciseNames: string[]): CoachSessionProposal {
   }
 }
 
+function squash(drillNames: string[]): CoachSessionProposal {
+  return {
+    date: '2026-06-01',
+    timeBlock: 'AM',
+    sessionType: 'squash',
+    title: 'Squash',
+    objective: 'Squash',
+    durationMin: 60,
+    rpe: 6,
+    squashDetails: {
+      trainingFocus: 'technical',
+      sessionMode: 'drill_session',
+      sessionKind: 'technical',
+      drills: drillNames.map((name) => ({ name, durationMin: 10 })),
+    },
+  }
+}
+
 function week(weekIndex: number, exerciseNames: string[]): TrainingPlanWeek {
   return {
     id: `w${weekIndex}`, planId: 'p1', weekIndex, weekStartDate: weekIndex === 0 ? '2026-06-01' : '2026-06-08',
     phase: 'build', status: 'draft', sessions: [strength(exerciseNames)],
     weekObjectives: [], targetLoadBySport: { strength: 100 }, validationIssues: [],
+    generationMeta: { attempts: 1 }, createdAt: 0, updatedAt: 0,
+  } as TrainingPlanWeek
+}
+
+function squashWeek(weekIndex: number, sessions: CoachSessionProposal[]): TrainingPlanWeek {
+  return {
+    id: `sw${weekIndex}`, planId: 'p1', weekIndex, weekStartDate: weekIndex === 0 ? '2026-06-01' : '2026-06-08',
+    phase: 'build', status: 'draft', sessions,
+    weekObjectives: [], targetLoadBySport: { squash: 100 }, validationIssues: [],
     generationMeta: { attempts: 1 }, createdAt: 0, updatedAt: 0,
   } as TrainingPlanWeek
 }
@@ -118,5 +145,42 @@ describe('qualityReview repeated strength templates', () => {
     const review = reviewPlanQuality(partialPlan, [firstPartialWeek, secondFullWeek])
 
     expect(review.issues.some((issue) => issue.code === 'quality.load.progression_jump')).toBe(false)
+  })
+
+  it('warns for duplicate squash drills inside a session', () => {
+    const review = reviewPlanQuality(plan(), [
+      squashWeek(0, [
+        squash(['Volea y vuelta a la T', 'Volea y vuelta a la T', '100 drives al cuadro de saque']),
+        squash(['Tiros paralelos profundos', 'Boast y drive paralelo de salida', 'Drops desde media cancha']),
+      ]),
+    ])
+
+    expect(review.issues.some((issue) => issue.code === 'quality.squash.repeated_drills')).toBe(true)
+  })
+
+  it('warns for low squash drill variety across a block but not a varied plan', () => {
+    const monotonous = reviewPlanQuality(plan(), [
+      squashWeek(0, [
+        squash(['Volea y vuelta a la T', '100 drives al cuadro de saque', '100 drives desde media cancha']),
+        squash(['Volea y vuelta a la T', '100 drives al cuadro de saque', '100 drives desde media cancha']),
+      ]),
+      squashWeek(1, [
+        squash(['Volea y vuelta a la T', '100 drives al cuadro de saque', '100 drives desde media cancha']),
+        squash(['Volea y vuelta a la T', '100 drives al cuadro de saque', '100 drives desde media cancha']),
+      ]),
+    ])
+    const varied = reviewPlanQuality(plan(), [
+      squashWeek(0, [
+        squash(['Tiros paralelos profundos', 'Tiros cruzados profundos', 'Boast y drive paralelo de salida']),
+        squash(['Drops desde media cancha', 'Volea ofensiva desde media cancha', 'Patrón largo-corto desde la T']),
+      ]),
+      squashWeek(1, [
+        squash(['Ghosting a cuatro esquinas', 'Presión a esquinas de fondo', 'Juego condicionado solo paralelo']),
+        squash(['Partido de entrenamiento al mejor de 3 juegos', 'Puntos de partido a 5 u 8', 'Nick: cierre a la unión baja']),
+      ]),
+    ])
+
+    expect(monotonous.issues.some((issue) => issue.code === 'quality.squash.low_drill_variety')).toBe(true)
+    expect(varied.issues.some((issue) => issue.code === 'quality.squash.low_drill_variety')).toBe(false)
   })
 })
