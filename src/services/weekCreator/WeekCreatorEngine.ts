@@ -1064,7 +1064,7 @@ function buildFallbackSession(
         {
           kind: 'match',
           drills: [
-            drill('Puntos de partido a 5 u 8', 12),
+            drill('Game a 11 con marcador real', 12),
           ],
           durationMin: 12,
         },
@@ -1145,7 +1145,7 @@ function buildFallbackSession(
         {
           kind: 'match',
           drills: [
-            drill('Puntos de partido a 5 u 8', 12),
+            drill('Game a 11 con marcador real', 12),
           ],
           durationMin: 12,
         },

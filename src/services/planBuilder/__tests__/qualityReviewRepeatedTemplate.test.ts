@@ -176,7 +176,7 @@ describe('qualityReview repeated strength templates', () => {
       ]),
       squashWeek(1, [
         squash(['Ghosting a cuatro esquinas', 'Presión a esquinas de fondo', 'Juego condicionado solo paralelo']),
-        squash(['Partido de entrenamiento al mejor de 3 juegos', 'Puntos de partido a 5 u 8', 'Nick: cierre a la unión baja']),
+        squash(['Partido de entrenamiento al mejor de 3 juegos', 'Game a 11 con marcador real', 'Nick: cierre a la unión baja']),
       ]),
     ])
 

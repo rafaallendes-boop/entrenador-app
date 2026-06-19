@@ -541,12 +541,12 @@ const RAW_SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
   },
   {
     id: 'match_sim_points_short_sets',
-    name: 'Puntos de partido a 5 u 8',
+    name: 'Game a 11 con marcador real',
     category: 'match',
     focus: ['match_play', 'decision_making', 'pressure'],
     intensity: 'high',
     tags: ['match_play', 'peak', 'pressure', 'competitive'],
-    description: 'Juega puntos con marcador corto (a 5 u 8). Practica inicio de punto, cierre y concentración cuando cada intercambio pesa. Cuenta el marcador en voz alta para meter presión real.',
+    description: 'Juega a 11 puntos con diferencia de 2, marcador real y servicio alternado como en competencia. Foco en arranque de punto, cierre y rutinas entre puntos cuando cada intercambio pesa. Es la unidad competitiva más corta: presión real sin acumular la carga de un mejor de 3 o 5.',
     progressionLevel: 3,
   },
   {
@@ -696,6 +696,8 @@ const DRILL_NAME_ALIASES: Record<string, string> = {
   recuperacion_tecnica_con_largo_controlado: 'technical_recovery_length',
   activacion_pre_partido_de_timing: 'pre_match_activation_timing',
   puntos_de_partido_en_sets_cortos: 'match_sim_points_short_sets',
+  puntos_de_partido_a_5_u_8: 'match_sim_points_short_sets',
+  game_a_11_con_marcador_real: 'match_sim_points_short_sets',
   partido_de_entrenamiento_libre_a_5_games: 'practice_match_five_games',
   partido_de_entrenamiento_al_mejor_de_3_games: 'practice_match_best_of_3',
   partido_con_foco_de_ataque_en_puntos_cortos: 'practice_match_short_points_attack',
