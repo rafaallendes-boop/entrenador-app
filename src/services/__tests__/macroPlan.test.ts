@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import type { AthleteProfile } from '../../types'
+import type { AthleteProfile, MacroPlanPhase } from '../../types'
 import {
   computeMacroPlan,
   computeWeeksRemaining,
@@ -174,6 +174,32 @@ describe('resolvePhase squash periodization', () => {
     // startWeek should be 0-based offset from plan start: ascending across the timeline
     for (let i = 1; i < startWeeks.length; i++) {
       expect(startWeeks[i]).toBeGreaterThanOrEqual(startWeeks[i - 1])
+    }
+  })
+
+  it('timeline phase labels are coherent with resolvePhase for squash (no peak band where resolvePhase says build)', () => {
+    // 6-week squash plan: weeksRemaining=6, event on 2026-07-31, ref 2026-06-19
+    // resolvePhase(squash): 6=build, 5=build, 4=build, 3=peak, 2=peak, 1=taper, 0=race
+    // Before fix: getPhaseRange('peak')={min:5,max:8} → timeline shows 'peak' for weeksRemaining 5-6 (build territory)
+    const profile = makeProfile('2026-07-31')
+    const plan = computeMacroPlan(profile, new Date('2026-06-19T00:00:00'))
+    expect(plan).toBeDefined()
+    const weeksRemaining = plan!.weeksRemaining // should be 6
+
+    for (const entry of plan!.timeline) {
+      // For each timeline band, check that at least one week in [startWeek, endWeek]
+      // agrees with the band's phase label via resolvePhase.
+      // Concretely: NO 'peak' entry should cover weeks that resolvePhase maps to 'build'.
+      // Convert plan-offset weeks back to weeksRemaining (countdown):
+      //   weeksFromEvent = weeksRemaining - planOffset
+      const bandWeeks: MacroPlanPhase[] = []
+      for (let offset = entry.startWeek; offset <= entry.endWeek; offset++) {
+        const wr = weeksRemaining - offset
+        bandWeeks.push(resolvePhase(wr, 'squash'))
+      }
+      // At least one week in the band must agree with the entry's declared phase
+      const hasConsistentWeek = bandWeeks.some((p) => p === entry.phase)
+      expect(hasConsistentWeek, `Timeline entry '${entry.phase}' (startWeek=${entry.startWeek}, endWeek=${entry.endWeek}) has no week where resolvePhase agrees; got [${bandWeeks.join(',')}]`).toBe(true)
     }
   })
 })

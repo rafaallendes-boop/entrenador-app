@@ -748,7 +748,7 @@ function buildTimeline(args: {
 
   const entries = PHASE_ORDER
     .map((phase) => {
-      const range = getPhaseRange(phase)
+      const range = getPhaseRange(phase, primarySport)
       const intersection = intersectWeekRanges({ min: 0, max: weeksRemaining }, range)
       if (!intersection) return null
 
@@ -781,7 +781,25 @@ function buildTimeline(args: {
   return entries
 }
 
-function getPhaseRange(phase: MacroPlanPhase): { min: number; max: number } {
+function getPhaseRange(phase: MacroPlanPhase, primarySport?: SupportedSport): { min: number; max: number } {
+  if (primarySport === 'squash') {
+    // Squash-specific boundaries in weeksRemaining space, matching resolvePhase(wr, 'squash'):
+    //   race: 0, taper: 1, peak: 2-3, build: 4-9, base: 10+
+    switch (phase) {
+      case 'base':
+        return { min: 10, max: Number.MAX_SAFE_INTEGER }
+      case 'build':
+        return { min: 4, max: 9 }
+      case 'peak':
+        return { min: 2, max: 3 }
+      case 'taper':
+        return { min: 1, max: 1 }
+      case 'race':
+        return { min: 0, max: 0 }
+      case 'transition':
+        return { min: Number.MIN_SAFE_INTEGER, max: -1 }
+    }
+  }
   switch (phase) {
     case 'base':
       return { min: 13, max: Number.MAX_SAFE_INTEGER }
