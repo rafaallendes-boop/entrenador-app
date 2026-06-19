@@ -635,7 +635,7 @@ function normalizeSquashSemanticMetadata(
   meta: RepairMeta,
   context?: RepairContext,
 ): void {
-  for (const session of sessions) {
+  for (const [sessionIdx, session] of sessions.entries()) {
     if (session.sessionType !== 'squash' || !session.squashDetails) continue
 
     const details = session.squashDetails
@@ -652,7 +652,7 @@ function normalizeSquashSemanticMetadata(
     const dedicatedMatchContent = contentSaysMatch || (hasBlocks ? blockKinds.length === 1 && hasMatchBlock : inferredKind === 'match')
 
     if (contentSaysMatch && !hasMatchBlock) {
-      applySquashMatchDetails(session, contextlessSquashMatchMode(session))
+      applySquashMatchDetails(session, contextlessSquashMatchMode(session), context?.week.weekIndex ?? sessionIdx)
       meta.repairedSessionCount++
       meta.warnings.push({
         code: 'squash_match_mode_repaired',
@@ -743,7 +743,7 @@ function ensureSquashCompetitionMatchExposure(
 
   if (!candidate) return sessions
 
-  applySquashMatchDetails(candidate, 'competition_match')
+  applySquashMatchDetails(candidate, 'competition_match', context.week.weekIndex)
   meta.repairedSessionCount++
   meta.warnings.push({
     code: 'squash_competition_match_added',
@@ -768,7 +768,7 @@ function buildSquashCompetitionMatchSession(
     rpe: 7,
     objective: 'Competir con marcador real, presión de cierre y rutinas entre puntos.',
   }
-  applySquashMatchDetails(session, 'competition_match')
+  applySquashMatchDetails(session, 'competition_match', context.week.weekIndex)
   return session
 }
 
@@ -801,8 +801,9 @@ function contextlessSquashMatchMode(session: CoachSessionProposal): 'practice_ma
 function applySquashMatchDetails(
   session: CoachSessionProposal,
   mode: 'practice_match' | 'competition_match',
+  variantIndex = 0,
 ): void {
-  const drills = buildSquashMatchDrills(session, mode)
+  const drills = buildSquashMatchDrills(session, mode, variantIndex)
   const durationMin = sumDurations(drills) || Math.min(session.durationMin, mode === 'competition_match' ? 55 : 45)
   session.subtype = mode === 'competition_match' ? 'competitive' : 'match'
   session.title = mode === 'competition_match'
@@ -827,13 +828,23 @@ function applySquashMatchDetails(
   session.squashDetails = details
 }
 
-function buildSquashMatchDrills(
+const COMPETITION_MATCH_VARIANTS: string[][] = [
+  ['Game a 11 con marcador real', 'Partido de entrenamiento al mejor de 3 juegos'],
+  ['Partido de entrenamiento al mejor de 3 juegos', 'Partido con ataque temprano'],
+  ['Partido con ataque temprano', 'Game a 11 con marcador real'],
+]
+const PRACTICE_MATCH_VARIANTS: string[][] = [
+  ['Partido de entrenamiento al mejor de 3 juegos', 'Partido con ataque temprano'],
+  ['Game a 11 con marcador real', 'Partido de entrenamiento al mejor de 3 juegos'],
+]
+
+export function buildSquashMatchDrills(
   session: CoachSessionProposal,
   mode: 'practice_match' | 'competition_match',
+  variantIndex = 0,
 ): SquashDrill[] {
-  const names = mode === 'competition_match'
-    ? ['Game a 11 con marcador real', 'Partido de entrenamiento al mejor de 3 juegos']
-    : ['Partido de entrenamiento al mejor de 3 juegos', 'Partido con ataque temprano']
+  const variants = mode === 'competition_match' ? COMPETITION_MATCH_VARIANTS : PRACTICE_MATCH_VARIANTS
+  const names = variants[variantIndex % variants.length]
   const targetDurations = session.durationMin >= 60 ? [25, 25] : [20, 15]
   const drills = names
     .map((name, index) => {
@@ -843,7 +854,7 @@ function buildSquashMatchDrills(
     .filter((drill): drill is SquashDrill => drill !== null)
 
   if (drills.length > 0) return drills
-  return [{ name: mode === 'competition_match' ? 'Game a 11 con marcador real' : 'Partido de entrenamiento al mejor de 3 juegos', durationMin: Math.min(session.durationMin, 40) }]
+  return [{ name: names[0], durationMin: Math.min(session.durationMin, 40) }]
 }
 
 function normalizeSquashDurationConsistency(sessions: CoachSessionProposal[], meta: RepairMeta): void {
