@@ -80,19 +80,23 @@ describe('macroPlan', () => {
 
   it('uses a shorter taper for squash tournament preparation', () => {
     expect(resolvePhase(6, 'squash')).toBe('build')
-    expect(resolvePhase(5, 'squash')).toBe('peak')
+    // peak is now only 2 weeks (weeksRemaining 2-3)
+    expect(resolvePhase(5, 'squash')).toBe('build')
+    expect(resolvePhase(4, 'squash')).toBe('build')
+    expect(resolvePhase(3, 'squash')).toBe('peak')
     expect(resolvePhase(2, 'squash')).toBe('peak')
     expect(resolvePhase(1, 'squash')).toBe('taper')
     expect(resolvePhase(0, 'squash')).toBe('race')
   })
 
   it('computes a deterministic macro plan from the primary event', () => {
+    // weeksRemaining=4 → build under new squash peak window (peak is only 2-3 weeks out)
     const plan = computeMacroPlan(makeProfile('2026-05-05'), new Date('2026-04-07T09:00:00'))
     expect(plan).toMatchObject({
       goalEventId: 'goal-1',
       goalEventDate: '2026-05-05',
       weeksRemaining: 4,
-      currentPhase: 'peak',
+      currentPhase: 'build',
     })
     expect(plan?.headline.length).toBeGreaterThan(0)
     expect(plan?.timeline.length).toBeGreaterThan(0)
@@ -103,8 +107,9 @@ describe('macroPlan', () => {
   })
 
   it('adds sport detail and visible secondary events without changing the primary phase', () => {
+    // weeksRemaining=8 (2026-06-02 from 2026-04-07) → build under new squash thresholds (build: 4-9)
     const profile: AthleteProfile = {
-      ...makeProfile('2026-06-15'),
+      ...makeProfile('2026-06-02'),
       sportContext: {
         enabledSports: ['squash', 'running', 'strength'],
         primarySport: 'squash',
@@ -124,11 +129,11 @@ describe('macroPlan', () => {
         updatedAt: '2026-04-01',
       },
       goalEvents: [
-        ...makeProfile('2026-06-15').goalEvents!,
+        ...makeProfile('2026-06-02').goalEvents!,
         {
           id: 'secondary-1',
           title: '10K tune-up',
-          date: '2026-05-30',
+          date: '2026-05-10',
           sport: 'running',
           priority: 'secondary',
         },
@@ -148,5 +153,27 @@ describe('macroPlan', () => {
     expect(formatWeeksRemaining(0)).toBe('Semana Competencia')
     expect(formatWeeksRemaining(1)).toBe('1 semana')
     expect(formatWeeksRemaining(3)).toBe('3 semanas')
+  })
+})
+
+describe('resolvePhase squash periodization', () => {
+  it('keeps peak to at most 2 weeks for squash', () => {
+    const phasesByRemaining = [0, 1, 2, 3, 4, 5].map((r) => resolvePhase(r, 'squash'))
+    // remaining: 0=race, 1=taper, 2-3=peak, 4-5=build
+    expect(phasesByRemaining).toEqual(['race', 'taper', 'peak', 'peak', 'build', 'build'])
+    const peakCount = phasesByRemaining.filter((p) => p === 'peak').length
+    expect(peakCount).toBeLessThanOrEqual(2)
+  })
+
+  it('produces a timeline with non-decreasing startWeek', () => {
+    // 6-week squash plan: event on 2026-07-31, ref 2026-06-19 → weeksRemaining=6
+    const profile = makeProfile('2026-07-31')
+    const plan = computeMacroPlan(profile, new Date('2026-06-19T00:00:00'))
+    expect(plan).toBeDefined()
+    const startWeeks = plan!.timeline.map((t) => t.startWeek)
+    // startWeek should be 0-based offset from plan start: ascending across the timeline
+    for (let i = 1; i < startWeeks.length; i++) {
+      expect(startWeeks[i]).toBeGreaterThanOrEqual(startWeeks[i - 1])
+    }
   })
 })

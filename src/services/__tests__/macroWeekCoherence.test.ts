@@ -112,8 +112,9 @@ describe('macroWeekCoherence', () => {
   })
 
   it('peak warns when accessory work dominates over the primary sport', () => {
+    // weeksRemaining=3 → peak under new squash window (peak is only 2-3 weeks out)
     const profile = makeProfile({
-      goalEvents: [{ ...makeProfile().goalEvents![0], date: '2026-05-12' }],
+      goalEvents: [{ ...makeProfile().goalEvents![0], date: '2026-04-28' }],
     })
 
     const summary = buildMacroWeekCoherenceSummary({

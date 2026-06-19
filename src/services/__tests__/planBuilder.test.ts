@@ -118,10 +118,11 @@ describe('planBuilder', () => {
     })
 
     expect(weeks).toHaveLength(7)
+    // peak is now at most 2 weeks (weeksRemaining 2-3); weeks with 4-6 remaining → build
     expect(weeks.map((week) => week.phase)).toEqual([
       'build',
-      'peak',
-      'peak',
+      'build',
+      'build',
       'peak',
       'peak',
       'taper',
