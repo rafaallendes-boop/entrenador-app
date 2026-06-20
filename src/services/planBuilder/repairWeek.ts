@@ -29,7 +29,7 @@ import {
   type StrengthSportProfile,
 } from '../training/strengthSelector'
 import { enhanceStrengthSessionExercises, resolveStrengthExerciseBlock } from '../training/strengthSessionStructure'
-import { findStrengthExerciseByName, normalizeStrengthExerciseKey, type ExperienceLevel } from '../training/exerciseLibrary'
+import { findStrengthExerciseByName, normalizeStrengthExerciseKey, STRENGTH_EXERCISE_LIBRARY, type ExerciseDefinition, type ExperienceLevel } from '../training/exerciseLibrary'
 import { selectMobilitySession, type MobilityPhase } from '../training/mobilitySelector'
 import { selectCyclingSession, type CyclingPhase, type CyclingSportProfile } from '../training/cyclingSelector'
 import { normalizeMobilityDetails, type MobilitySportContext } from '../training/mobilitySessionLibrary'
@@ -1088,6 +1088,74 @@ function diversifyDuplicateSquashSessions(
   }
 }
 
+// Matches qualityReview.normalizeExerciseName so the prevention here clears the
+// same `quality.strength.repeated_template` overlap the review detects.
+function normalizeStrengthOverlapKey(name: string): string {
+  return name
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+}
+
+function exerciseRiskRank(exercise: ExerciseDefinition): number {
+  return exercise.riskLevel === 'low' ? 0 : exercise.riskLevel === 'high' ? 2 : 1
+}
+
+// Finds a catalog exercise of the same movement pattern that is neither in the
+// previous week nor already in the current session. In peak/taper we prefer the
+// lowest-risk option (masters: less technical residue near competition).
+function findRotationReplacement(
+  name: string,
+  recentKeys: Set<string>,
+  currentKeys: Set<string>,
+  preferLowRisk: boolean,
+): ExerciseDefinition | undefined {
+  const def = findStrengthExerciseByName(name)
+  const candidates = STRENGTH_EXERCISE_LIBRARY.filter((candidate) => {
+    const key = normalizeStrengthOverlapKey(candidate.name)
+    if (recentKeys.has(key) || currentKeys.has(key)) return false
+    if (def && candidate.movement !== def.movement) return false
+    return true
+  })
+  if (candidates.length === 0) return undefined
+  if (!preferLowRisk) return candidates[0]
+  return [...candidates].sort((a, b) => exerciseRiskRank(a) - exerciseRiskRank(b))[0]
+}
+
+// Force consecutive strength weeks under 3 shared exercises by swapping the
+// repeated ones for same-pattern alternatives. Returns true if anything changed.
+function rotateRepeatedStrengthExercises(
+  session: CoachSessionProposal,
+  recentKeys: Set<string>,
+  phase: string,
+): boolean {
+  const exercises = session.exercises ?? []
+  if (exercises.length === 0) return false
+
+  const currentKeys = new Set(exercises.map((e) => normalizeStrengthOverlapKey(e.name)))
+  const overlapping = () => exercises.filter((e) => recentKeys.has(normalizeStrengthOverlapKey(e.name)))
+  if (overlapping().length < 3) return false
+
+  const preferLowRisk = phase === 'peak' || phase === 'taper' || phase === 'race'
+  let changed = false
+
+  // Replace from the end first so sticky main lifts at the top survive when possible.
+  for (const exercise of [...exercises].reverse()) {
+    if (overlapping().length < 3) break
+    if (!recentKeys.has(normalizeStrengthOverlapKey(exercise.name))) continue
+    const replacement = findRotationReplacement(exercise.name, recentKeys, currentKeys, preferLowRisk)
+    if (!replacement) continue
+    currentKeys.delete(normalizeStrengthOverlapKey(exercise.name))
+    exercise.name = replacement.name
+    currentKeys.add(normalizeStrengthOverlapKey(replacement.name))
+    changed = true
+  }
+
+  return changed
+}
+
 function repairDuplicateStrengthExercises(
   sessions: CoachSessionProposal[],
   context: RepairContext,
@@ -1095,26 +1163,33 @@ function repairDuplicateStrengthExercises(
 ): void {
   if (!context.previousWeek) return
 
-  const recentExercises = new Set(extractRecentStrengthExercises(context.previousWeek))
-  if (recentExercises.size === 0) return
+  const recentNames = context.previousWeek.sessions
+    .filter((s) => s.sessionType === 'strength')
+    .flatMap((s) => s.exercises ?? [])
+    .map((e) => e.name)
+  const recentKeys = new Set(recentNames.map(normalizeStrengthOverlapKey).filter(Boolean))
+  if (recentKeys.size === 0) return
 
   const strengthSessions = sessions.filter((s) => s.sessionType === 'strength')
   if (strengthSessions.length === 0) return
 
+  const recentForSelector = Array.from(new Set(extractRecentStrengthExercises(context.previousWeek)))
   let repairedCount = 0
 
   for (const session of strengthSessions) {
-    const workExercises = (session.exercises ?? []).filter(isStrengthWorkExercise)
-    if (workExercises.length === 0) continue
+    const allExercises = session.exercises ?? []
+    if (allExercises.length === 0) continue
 
-    const matching = workExercises.filter((e) => recentExercises.has(getStrengthExerciseKey(e)))
-    const matchCount = matching.length
-    const matchRatio = matchCount / workExercises.length
+    const overlapCount = allExercises.filter((e) => recentKeys.has(normalizeStrengthOverlapKey(e.name))).length
+    // Mirror the repeated_template threshold (>=3 shared) instead of waiting for a
+    // near-clone so 3-of-N overlaps are prevented, not just flagged.
+    if (overlapCount < 3) continue
 
-    if (matchCount >= 4 || matchRatio >= 0.6) {
-      completeStrengthExercises(session, context, Array.from(recentExercises))
-      repairedCount++
-    }
+    // First regenerate while penalizing recent exercises; then force-rotate any
+    // sticky main lifts that the selector keeps across the block.
+    completeStrengthExercises(session, context, recentForSelector)
+    rotateRepeatedStrengthExercises(session, recentKeys, context.week.phase)
+    repairedCount++
   }
 
   if (repairedCount > 0) {
