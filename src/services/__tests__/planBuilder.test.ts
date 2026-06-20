@@ -585,9 +585,12 @@ describe('planBuilder', () => {
     expect(result[0]?.generationMeta.errorClass).toBe('local_plan_fallback')
     expect(result[0]?.generationMeta.attempts).toBe(2)
     expect(sessions).toHaveLength(5)
-    expect(counts.squash).toBe(2)
+    // Peak keeps squash dominant over accessory work (P3): one support session is
+    // reconverted into squash so the primary sport outweighs the support block.
+    expect(counts.squash).toBe(3)
     expect(counts.running).toBe(1)
-    expect(counts.strength).toBe(2)
+    expect(counts.strength).toBe(1)
+    expect(counts.squash).toBeGreaterThan(sessions.length - counts.squash)
     expect(sessions.filter((session) => session.sessionType === 'strength').every((session) => /^Gym Tipo [ABC]/.test(session.title))).toBe(true)
   })
 
@@ -639,9 +642,11 @@ describe('planBuilder', () => {
     expect(sessions).toHaveLength(6)
     expect(new Set(dates).size).toBe(5)
     expect(dates.some((date) => sessions.filter((session) => session.date === date).length >= 2)).toBe(true)
-    expect(counts.squash).toBe(3)
+    // Peak keeps squash dominant over accessory work (P3).
+    expect(counts.squash).toBe(4)
     expect(counts.running).toBe(1)
-    expect(counts.strength).toBe(2)
+    expect(counts.strength).toBe(1)
+    expect(counts.squash).toBeGreaterThan(sessions.length - counts.squash)
   })
 
   it('surfaces dropped invalid sessions as a stronger retry instruction', async () => {

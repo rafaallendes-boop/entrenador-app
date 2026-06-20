@@ -141,6 +141,9 @@ export function repairGeneratedWeek(
   // 12. Preserve primary-sport minimums after fallback/trim decisions
   sessions = ensurePrimarySportMinimum(sessions, context, meta)
 
+  // 12b. In build/peak the primary sport must outweigh accessory work
+  sessions = ensurePrimarySportDominance(sessions, context, meta)
+
   // 13. Diversify duplicated sport content after fallbacks are added
   diversifyDuplicateSquashSessions(sessions, context, meta)
   normalizeSquashSemanticMetadata(sessions, meta, context)
@@ -2063,6 +2066,58 @@ function ensurePrimarySportMinimum(
     meta.warnings.push({
       code: 'primary_sport_minimum_repaired',
       message: `Se ajustaron sesiones accesorias para cumplir el mínimo de ${primarySport}.`,
+    })
+  }
+
+  return next
+}
+
+// In build/peak, the primary sport should have strictly more sessions than the
+// accessory work combined. `ensurePrimarySportMinimum` only guarantees a floor,
+// which can tie with support and trip `week.primary_sport.underweighted`. Here we
+// convert the lowest-value accessory sessions into primary work until the primary
+// dominates, mirroring the validator rule. If no accessory is convertible, we leave
+// the week as-is and let the warning stand.
+function ensurePrimarySportDominance(
+  sessions: CoachSessionProposal[],
+  context: RepairContext,
+  meta: RepairMeta,
+): CoachSessionProposal[] {
+  if (context.week.phase !== 'build' && context.week.phase !== 'peak') return sessions
+  const primarySport = getPrimarySport(context)
+  if (!primarySport) return sessions
+
+  const next = [...sessions]
+  const primaryCount = () => next.filter((session) => session.sessionType === primarySport).length
+  const supportCount = () => next.length - primaryCount()
+
+  // Don't fabricate dominance out of a week with no primary sessions — that case is
+  // handled by ensurePrimarySportMinimum / the missing-sport validation.
+  if (primaryCount() === 0) return sessions
+  if (primaryCount() > supportCount()) return sessions
+
+  const replacementOrder = ['mobility', 'recovery', 'nutrition', 'strength', 'running', 'cycling']
+  let converted = 0
+
+  for (const sport of replacementOrder) {
+    for (let i = 0; i < next.length && primaryCount() <= supportCount(); i++) {
+      if (next[i].sessionType !== sport) continue
+      const replacement = buildPrimaryFallbackSession(primarySport, next[i].date, context, next)
+      replacement.timeBlock = next[i].timeBlock
+      next[i] = {
+        ...replacement,
+        durationMin: Math.max(30, Math.min(next[i].durationMin, replacement.durationMin)),
+      }
+      converted++
+    }
+    if (primaryCount() > supportCount()) break
+  }
+
+  if (converted > 0) {
+    meta.repairedSessionCount += converted
+    meta.warnings.push({
+      code: 'primary_sport_dominance_repaired',
+      message: `Se reconvirtieron ${converted} sesión(es) accesoria(s) en ${primarySport} para que domine la fase ${context.week.phase}.`,
     })
   }
 
