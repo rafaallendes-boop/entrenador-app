@@ -70,9 +70,19 @@ Landing en paralelo.
 4. Pagos (D) cuando se abra cobro.
 5. Robustez/operación (E) como gate antes de invitar externos.
 
-## Inputs pendientes del dueño del producto
+## Definiciones (2026-06-20)
 
-- Entidad/responsable legal y email de contacto público.
-- Jurisdicción (¿Chile? ¿usuarios UE?).
-- Procesador de pagos y política de reembolso.
+- **Jurisdicción:** Chile primero (Ley 19.628 + 21.719), redactando
+  **GDPR-compatible** para expandir al extranjero sin reescribir.
+- **Titularidad:** piloto como **persona natural**; **constituir SpA** antes de
+  habilitar el cobro (limita responsabilidad, permite contratar procesador y
+  emitir boletas SII).
+- **Cobro:** piloto **gratis/invitación** → sin procesador todavía. Procesador a
+  decidir antes de cobrar (**Stripe** si se va al extranjero; Mercado Pago/Flow
+  si Chile-only con medios locales).
+
+## Inputs aún pendientes
+
+- **Email de contacto público** para T&C/Privacidad.
+- Confirmar **nombre del responsable** a publicar en el piloto (o usar solo email).
 - Marca pública definitiva (RallyIQ).

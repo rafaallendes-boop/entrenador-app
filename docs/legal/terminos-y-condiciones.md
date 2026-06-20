@@ -5,9 +5,11 @@
 >
 > Completar los marcadores `[[...]]` antes de publicar.
 
-**Titular del servicio:** [[ENTIDAD / NOMBRE DEL RESPONSABLE]]
-**Contacto:** [[EMAIL DE CONTACTO]]
-**Jurisdicción:** [[PAÍS / REGIÓN — p. ej. Chile]]
+**Titular del servicio (piloto):** [[NOMBRE DEL RESPONSABLE]] (persona natural).
+  Antes de habilitar el cobro de suscripciones se constituirá una sociedad
+  (p. ej. SpA en Chile) que pasará a ser la titular; esta sección se actualizará.
+**Contacto:** [[EMAIL DE CONTACTO PÚBLICO]]
+**Jurisdicción:** Chile (con expansión internacional posterior).
 
 Al crear una cuenta o usar RallyIQ ("el servicio") aceptás estos Términos. Si no
 estás de acuerdo, no uses el servicio.
@@ -28,6 +30,9 @@ de estos Términos.
 
 ## 3. Suscripción, pagos y renovación
 
+- **Durante el piloto cerrado el acceso es por invitación y sin costo.** Las
+  condiciones de esta sección aplican cuando se habilite el cobro; se te avisará
+  antes de cualquier cargo.
 - El acceso se ofrece bajo **suscripción mensual**. El precio vigente se muestra
   antes de contratar.
 - La suscripción **se renueva automáticamente** cada período hasta que la
@@ -76,9 +81,10 @@ que no puedan limitarse según la ley de protección al consumidor aplicable.
 
 ## 9. Ley aplicable
 
-Estos Términos se rigen por las leyes de [[JURISDICCIÓN]] y cualquier disputa se
+Estos Términos se rigen por las leyes de **Chile** y cualquier disputa se
 someterá a sus tribunales competentes, sin perjuicio de los derechos
-irrenunciables del consumidor.
+irrenunciables del consumidor (Ley 19.496). [[Al expandir al extranjero, revisar
+ley aplicable y foro para usuarios fuera de Chile.]]
 
 ## 10. Contacto
 

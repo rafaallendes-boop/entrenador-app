@@ -3,11 +3,14 @@
 > **Estado:** Borrador funcional. Requiere revisión legal antes de publicar.
 > **Última actualización:** 2026-06-20
 >
-> Completar los marcadores `[[...]]`. Pensado para Chile (Ley 19.628 y su
-> reforma de datos personales). Si hay usuarios en la UE/Reino Unido, sumar
-> base legal GDPR y derechos ARCO+.
+> Completar los marcadores `[[...]]`. Pensado para **Chile** (Ley 19.628 y la
+> nueva **Ley 21.719** de protección de datos, que trata la salud como dato
+> sensible y exige consentimiento explícito). Redactada **compatible con GDPR**
+> a propósito, para no reescribir al expandir al extranjero (la app ya soporta
+> exportar y eliminar datos, que es el requisito más costoso).
 
-**Responsable del tratamiento:** [[ENTIDAD / NOMBRE]] — [[EMAIL DE CONTACTO]]
+**Responsable del tratamiento (piloto):** [[NOMBRE — persona natural; pasará a
+la sociedad (SpA) antes de habilitar el cobro]] — [[EMAIL DE CONTACTO]]
 
 Esta política explica qué datos tratamos, para qué y qué derechos tenés.
 
