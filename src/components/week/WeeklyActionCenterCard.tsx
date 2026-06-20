@@ -18,12 +18,12 @@ const STATUS_LABELS = {
   },
   checkIn: {
     complete: 'Check-in al día',
-    pending: 'Check-in pendiente',
+    pending: 'Check-in por completar',
     not_needed: 'Sin check-in crítico',
   },
   coherence: {
     ok: 'Coherencia ok',
-    warning: 'Coherencia con warning',
+    warning: 'Coherencia a revisar',
   },
   weekState: {
     empty: 'Semana vacía',

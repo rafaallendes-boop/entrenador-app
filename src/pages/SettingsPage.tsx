@@ -42,6 +42,7 @@ import { getEnabledSports, getSportPrioritySummary } from '../utils/athlete'
 import { clearOnboardingSkipped } from '../utils/onboarding'
 import type { AITechnicalResult, AthleteProfile, Session } from '../types'
 import { buildMacroWeekCoherenceSummary } from '../services/macroWeekCoherence'
+import { isDevToolsEnabled } from '../services/devTools'
 import {
   downloadBetaQualitySnapshot,
   getBetaQualitySnapshot,
@@ -67,7 +68,7 @@ const CLEARABLE_GROUPS: Array<{
   {
     key: 'coachProposals',
     title: 'Proposals de RallyIQ',
-    description: 'Propuestas pendientes, aceptadas o rechazadas.',
+    description: 'Propuestas por revisar, aceptadas o rechazadas.',
   },
   {
     key: 'coachMemory',
@@ -119,6 +120,7 @@ export default function SettingsPage() {
   const [coachSessions, setCoachSessions] = useState<Session[]>([])
   const [selectedCoachSessionIds, setSelectedCoachSessionIds] = useState<string[]>([])
   const importInputRef = useRef<HTMLInputElement | null>(null)
+  const showDevTools = isDevToolsEnabled()
 
   const refreshNotificationStatus = () => {
     setNotifPermission(getNotificationPermission())
@@ -201,7 +203,8 @@ export default function SettingsPage() {
       const filename = await downloadAppDataExport()
       setExportStatus(`Backup exportado: ${filename}`)
     } catch (error) {
-      setExportStatus(error instanceof Error ? error.message : 'No se pudo exportar el backup.')
+      console.error('[settings] export backup failed', error)
+      setExportStatus('No se pudo exportar. Probá de nuevo en un momento.')
     } finally {
       setIsExporting(false)
     }
@@ -214,7 +217,8 @@ export default function SettingsPage() {
       const filename = await downloadAthleteProfileTestExport()
       setProfileExportStatus(`Perfil exportado: ${filename}`)
     } catch (error) {
-      setProfileExportStatus(error instanceof Error ? error.message : 'No se pudo exportar el perfil.')
+      console.error('[settings] export athlete profile failed', error)
+      setProfileExportStatus('No se pudo exportar el perfil.')
     } finally {
       setIsExportingProfile(false)
     }
@@ -228,7 +232,8 @@ export default function SettingsPage() {
       await refreshBetaQualitySnapshot()
       setBetaQualityStatus(`Reporte beta exportado: ${filename}`)
     } catch (error) {
-      setBetaQualityStatus(error instanceof Error ? error.message : 'No se pudo exportar el reporte beta.')
+      console.error('[settings] export beta quality failed', error)
+      setBetaQualityStatus('No se pudo exportar el reporte beta.')
     } finally {
       setIsExportingBetaQuality(false)
     }
@@ -242,7 +247,8 @@ export default function SettingsPage() {
       await refreshBetaQualitySnapshot()
       setBetaQualityStatus(`Plan Builder reiniciado para pruebas: ${deleted} traza(s) local(es) borrada(s).`)
     } catch (error) {
-      setBetaQualityStatus(error instanceof Error ? error.message : 'No se pudo reiniciar el contador de Plan Builder.')
+      console.error('[settings] reset plan builder usage failed', error)
+      setBetaQualityStatus('No se pudo reiniciar el contador de Plan Builder.')
     } finally {
       setIsResettingPlanBuilderUsage(false)
     }
@@ -259,9 +265,10 @@ export default function SettingsPage() {
       setPendingImportFile(file)
       setImportPreview(preview)
     } catch (error) {
+      console.error('[settings] preview import failed', error)
       setPendingImportFile(null)
       setImportPreview(null)
-      setImportStatus(error instanceof Error ? error.message : 'No se pudo leer el backup.')
+      setImportStatus('No se pudo leer el backup.')
     }
   }
 
@@ -283,7 +290,8 @@ export default function SettingsPage() {
         `Backup importado en modo ${result.mode === 'merge' ? 'merge' : 'replace'} (${result.importedAt}): ${result.counts.sessions} sesiones, ${result.counts.dayLogs} check-ins, ${result.counts.weekSummaries} resumenes y ${result.counts.chatMessages} mensajes.`
       )
     } catch (error) {
-      setImportStatus(error instanceof Error ? error.message : 'No se pudo importar el backup.')
+      console.error('[settings] import backup failed', error)
+      setImportStatus('No se pudo importar el backup.')
     } finally {
       setIsImporting(false)
     }
@@ -320,27 +328,23 @@ export default function SettingsPage() {
       const remotePending = remoteOutcome?.pending ?? []
       const baseMessage = currentUser
         ? remotePending.length === 0
-          ? `Se eliminaron ${formatGroupList(clearedGroups)} en este dispositivo y en tu cuenta. Tus otros dispositivos se limpiaran al sincronizar.`
-          : `Se eliminaron ${formatGroupList(clearedGroups)} en este dispositivo. La limpieza remota seguirá pendiente hasta el próximo sync.`
+          ? `Se eliminaron ${formatGroupList(clearedGroups)} en este dispositivo y en tu cuenta. Tus otros dispositivos se actualizarán automáticamente.`
+          : `Se eliminaron ${formatGroupList(clearedGroups)} en este dispositivo. La limpieza de tu cuenta se completará automáticamente cuando vuelva la conexión.`
         : `Se eliminaron ${formatGroupList(clearedGroups)} en este dispositivo.`
       const warnings: string[] = []
-      if (remoteFailed.length > 0) {
+      if (showDevTools && remoteFailed.length > 0) {
         warnings.push(`Sigue pendiente en la nube: ${remoteFailed.map((entry) => entry.table).join(', ')}.`)
       }
-      if (remoteTolerated.length > 0) {
+      if (showDevTools && remoteTolerated.length > 0) {
         warnings.push(`Tablas sin configurar en la nube se ignoraron: ${remoteTolerated.join(', ')}.`)
       }
-      if (remotePending.length > 0 && remoteFailed.length === 0) {
+      if (showDevTools && remotePending.length > 0 && remoteFailed.length === 0) {
         warnings.push(`Pendiente remoto: ${remotePending.join(', ')}.`)
       }
       setClearStatus([baseMessage, ...warnings].join(' '))
     } catch (error) {
       console.error('[settings] selective data wipe failed', error)
-      setClearStatus(
-        error instanceof Error
-          ? `${error.message} Revisa tu conexión y reintenta.`
-          : 'No se pudieron eliminar los datos seleccionados.',
-      )
+      setClearStatus('No se pudieron eliminar los datos seleccionados. Revisá tu conexión y probá de nuevo.')
     } finally {
       setIsClearing(false)
     }
@@ -432,12 +436,8 @@ export default function SettingsPage() {
 
       const outcome = await wipeRemoteAndLocalAppData(currentUser.id)
       if (!outcome.completed) {
-        const pendingTables = outcome.pending.join(', ')
-        setClearStatus(
-          pendingTables
-            ? `No se pudo completar el reinicio total de la cuenta. Sigue pendiente borrar en la nube: ${pendingTables}. Tus datos locales no se reiniciaron para evitar inconsistencias.`
-            : 'No se pudo completar el reinicio total de la cuenta.',
-        )
+        console.warn('[settings] full reset did not complete', outcome.pending)
+        setClearStatus('No se pudo completar el reinicio total de la cuenta. Tus datos locales no se reiniciaron para evitar inconsistencias.')
         return
       }
 
@@ -451,14 +451,14 @@ export default function SettingsPage() {
 
       const baseMessage = 'Se eliminaron los datos locales y se intentó limpiar la nube. La app quedó reiniciada para este usuario.'
       const warnings: string[] = []
-      if (outcome.tolerated.length > 0) {
+      if (showDevTools && outcome.tolerated.length > 0) {
         warnings.push(`Tablas sin configurar en la nube se ignoraron: ${outcome.tolerated.join(', ')}.`)
       }
       setClearStatus([baseMessage, ...warnings].join(' '))
       navigate(ROUTES.ONBOARDING, { replace: true })
     } catch (error) {
       console.error('[settings] full reset failed', error)
-      setClearStatus(error instanceof Error ? error.message : 'No se pudo borrar todo el entorno del usuario.')
+      setClearStatus('No se pudo borrar todo el entorno del usuario.')
     } finally {
       setIsWipingAllData(false)
     }
@@ -490,6 +490,13 @@ export default function SettingsPage() {
     syncDetails.pendingTables.length > 0 ||
     syncDetails.lastErrorMessage != null ||
     syncDetails.oldestPendingOpAt != null
+  const syncErrorNeedsSupport =
+    syncDetails.lastErrorCategory === 'schema_mismatch' ||
+    syncDetails.lastErrorCategory === 'supabase_not_configured' ||
+    syncDetails.lastErrorCategory === 'rls_error'
+  const syncErrorMessage = syncErrorNeedsSupport
+    ? 'Tus cambios están guardados en este dispositivo. Si esto persiste, contactá soporte.'
+    : 'Tus cambios están guardados en este dispositivo y se subirán automáticamente.'
 
   const toggleCoachSessionSelection = (sessionId: string) => {
     setSelectedCoachSessionIds((current) =>
@@ -538,7 +545,7 @@ export default function SettingsPage() {
                 <User size={16} className="text-brand-light" />
               </div>
               <div className="flex-1 min-w-0">
-                <h2 className="text-sm font-semibold text-ink">Cuenta y sincronizacion</h2>
+                <h2 className="text-sm font-semibold text-ink">Cuenta</h2>
                 <p className="text-xs text-ink-muted mt-1 truncate">{user?.email ?? 'Sesion activa'}</p>
               </div>
               <SyncStatusBadge
@@ -551,27 +558,20 @@ export default function SettingsPage() {
             </div>
             {syncDetails.autoRepairInProgress && (
               <p className="mb-3 rounded-xl border border-brand/20 bg-brand/10 px-3 py-2 text-xs text-brand-light animate-pulse">
-                Reparando tu perfil en la nube. Esto solo toma unos segundos.
+                Estamos actualizando tu perfil. Esto solo toma unos segundos.
               </p>
             )}
-            {syncStatus === 'error' && syncError && !syncDetails.autoRepairInProgress && (
+            {syncStatus === 'error' && !syncDetails.autoRepairInProgress && (
               <p className="mb-3 rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
-                {syncDetails.lastErrorCategory === 'schema_mismatch'
-                  ? 'Hay un problema de configuración en el servidor. Contacta soporte si persiste.'
-                  : syncDetails.lastErrorCategory === 'supabase_not_configured'
-                    ? 'La conexión a la nube no está configurada. Verifica tu cuenta.'
-                    : syncDetails.lastErrorCategory === 'rls_error'
-                      ? 'No se pudo acceder a tus datos en la nube. Intenta cerrar sesión y volver a entrar.'
-                      : profileSyncAffected
-                        ? 'Tu perfil no se pudo actualizar en la nube.'
-                        : syncError}
-                <span className="block mt-1 text-amber-200/80">
-                  {syncDetails.lastErrorCategory === 'schema_mismatch' || syncDetails.lastErrorCategory === 'supabase_not_configured'
-                    ? 'Este problema no afecta tus datos locales.'
-                    : 'Tus cambios siguen guardados en este dispositivo. Se reintentará automáticamente.'}
-                </span>
+                {syncErrorMessage}
+                {showDevTools && syncError && (
+                  <span className="block mt-1 text-amber-200/80">
+                    [{syncDetails.lastErrorCategory ?? 'error'}] {syncError}
+                  </span>
+                )}
               </p>
             )}
+            {showDevTools && (
             <div className="mb-3 rounded-xl border border-surface-border bg-surface-raised px-3 py-3">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
@@ -662,6 +662,7 @@ export default function SettingsPage() {
                 userId={user?.id ?? null}
               />
             </div>
+            )}
             <div className="flex flex-wrap gap-2">
               <button
                 onClick={() => void signOut()}
@@ -670,7 +671,7 @@ export default function SettingsPage() {
                 <LogOut size={14} />
                 Cerrar sesion
               </button>
-              {syncStatus === 'error' && (
+              {showDevTools && syncStatus === 'error' && (
                 <button
                   onClick={() => void handleRetrySync()}
                   disabled={syncDetails.syncAttemptInFlight}
@@ -679,7 +680,7 @@ export default function SettingsPage() {
                   {syncDetails.syncAttemptInFlight ? 'Reintentando...' : 'Reintentar ahora'}
                 </button>
               )}
-              {(syncDetails.pendingOps > 0 || syncStatus === 'offline') && syncStatus !== 'error' && (
+              {showDevTools && (syncDetails.pendingOps > 0 || syncStatus === 'offline') && syncStatus !== 'error' && (
                 <button
                   onClick={() => void handleRetrySync()}
                   disabled={syncDetails.syncAttemptInFlight}
@@ -691,6 +692,7 @@ export default function SettingsPage() {
             </div>
           </Card>
 
+          {showDevTools && (
           <Card className="p-4">
             <div className="flex items-start gap-3 mb-3">
               <div className="w-8 h-8 rounded-full bg-brand/15 flex items-center justify-center flex-shrink-0">
@@ -812,6 +814,7 @@ export default function SettingsPage() {
               </div>
             )}
           </Card>
+          )}
 
           <Card className="p-4">
             <div className="flex items-start gap-3 mb-3">

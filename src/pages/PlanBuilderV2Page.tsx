@@ -13,7 +13,7 @@ import { analyzePlanCommitImpact } from '../services/planBuilder/commitImpact'
 import { shouldDeleteEmptyShellDraft, shouldLoadMatchingDraftPlan } from '../services/planBuilder/draftAutoload'
 import { rowToTrainingPlan, rowToTrainingPlanWeek } from '../services/planBuilder/planRows'
 import { buildPlanQualityRepairInstructions, reviewPlanQuality } from '../services/planBuilder/qualityReview'
-import { shouldShowPlanQuality } from '../services/ai/showPlanQualityFlag'
+import { isDevToolsEnabled } from '../services/devTools'
 import { ChevronLeft, RefreshCw, CheckCircle2, AlertTriangle, X } from 'lucide-react'
 import type { AthleteProfile, PlanWizardConfig, GoalEvent, CoachSessionProposal, Session } from '../types'
 import type { PlanCommitImpact } from '../services/planBuilder/commitImpact'
@@ -87,19 +87,6 @@ function buildGenerationSignals(week: TrainingPlanWeek): string[] {
   }
 
   return signals
-}
-
-function getWeekGenerationStatus(week: TrainingPlanWeek): string {
-  if (week.status === 'error') return 'error final'
-  if (week.status === 'generating' && (week.generationMeta.attempts ?? 0) >= 2) {
-    const lastError = week.generationMeta.lastError?.toLowerCase() ?? ''
-    if (lastError.includes('formato') || lastError.includes('targetdate') || lastError.includes('válidas')) {
-      return 'corrigiendo formato'
-    }
-    return 'reintentando por validación'
-  }
-  if (week.status === 'generating') return 'generando'
-  return 'lista'
 }
 
 function getWeekGenerationStepIndex(week: TrainingPlanWeek): number {
@@ -672,48 +659,64 @@ export default function PlanBuilderV2Page() {
     return weeks[0]?.weekIndex ?? 0
   })()
   const selectedWeek = weeks.find((w) => w.weekIndex === effectiveSelectedWeekIndex)
-  const selectedWeekSignals = selectedWeek ? buildGenerationSignals(selectedWeek) : []
   const errors = issues.filter((i) => i.severity === 'error')
   const warnings = issues.filter((i) => i.severity === 'warning')
-  const showPlanQualityDebug = shouldShowPlanQuality()
+  const showPlanQualityDebug = isDevToolsEnabled()
+  const selectedWeekSignals = showPlanQualityDebug && selectedWeek ? buildGenerationSignals(selectedWeek) : []
+  const hasIncompleteWeeks = weeks.length === 0 || weeks.some((week) => week.status !== 'draft' || week.sessions.length === 0)
+  const hasFailedWeeks = failedWeekIndexes.length > 0
+  const hasReadyWeeks = weeks.some((week) => week.status === 'draft' && week.sessions.length > 0)
+  const isFailedState = status === 'failed' || plan?.generationState === 'failed'
   const qualityReview = useMemo(
     () => (plan ? reviewPlanQuality(plan, weeks) : null),
     [plan, weeks],
   )
-  const shouldShowQualityReview = Boolean(
-    qualityReview &&
-    (showPlanQualityDebug || plan?.generationState === 'complete' || plan?.generationState === 'partial')
-  )
+  const shouldShowQualityReview = Boolean(qualityReview && showPlanQualityDebug)
   const qualityBlocksAccept = Boolean(
     plan?.generationState === 'complete'
     && qualityReview
     && (qualityReview.grade === 'poor' || qualityReview.criticalIssueCount > 0),
   )
   const qualityBlocker = qualityBlocksAccept && qualityReview
-    ? `El plan necesita revisión antes de aceptarse (score ${qualityReview.score}/100). Regenera el plan o ajusta las semanas marcadas.`
+    ? showPlanQualityDebug
+      ? `El plan necesita revisión antes de aceptarse (score ${qualityReview.score}/100). Regenera el plan o ajusta las semanas marcadas.`
+      : 'El plan necesita un ajuste final antes de aceptarse.'
     : null
   const qualityRepairInstructions = useMemo(
     () => (qualityReview ? buildPlanQualityRepairInstructions(qualityReview) : {}),
     [qualityReview],
   )
-  const selectedWeekQuality = selectedWeek && qualityReview
+  const selectedWeekQuality = showPlanQualityDebug && selectedWeek && qualityReview
     ? qualityReview.weeks.find((week) => week.weekIndex === selectedWeek.weekIndex)
     : null
   const selectedWeekRepairInstruction = selectedWeek
     ? qualityRepairInstructions[selectedWeek.weekIndex]
     : undefined
-  const hasIncompleteWeeks = weeks.length === 0 || weeks.some((week) => week.status !== 'draft' || week.sessions.length === 0)
-  const hasFailedWeeks = failedWeekIndexes.length > 0
-  const hasReadyWeeks = weeks.some((week) => week.status === 'draft' && week.sessions.length > 0)
-  const isFailedState = status === 'failed' || plan?.generationState === 'failed'
+  const planReadinessBlocker = (() => {
+    if (plan?.generationState && plan.generationState !== 'complete') return 'Todavía estamos preparando tu plan.'
+    if (hasFailedWeeks || hasIncompleteWeeks) return 'No pudimos preparar todas las semanas. Probá de nuevo en un momento.'
+    if (errors.length > 0) {
+      return (showPlanQualityDebug ? errors[0]?.message : undefined) ?? 'Hay un ajuste final antes de guardar el plan.'
+    }
+    return null
+  })()
   const canAcceptPlan = plan?.generationState === 'complete' && !hasIncompleteWeeks && errors.length === 0 && !qualityBlocksAccept
   const acceptBlockers = [
-    ...(plan?.generationState && plan.generationState !== 'complete' ? ['El plan todavia no esta completamente generado.'] : []),
-    ...(hasFailedWeeks ? ['Hay semanas fallidas. Regénéralas para continuar.'] : []),
-    ...(!hasFailedWeeks && hasIncompleteWeeks ? ['Completa o regenera todas las semanas antes de aceptar el plan.'] : []),
-    ...errors.map((issue) => issue.message),
+    ...(planReadinessBlocker ? [planReadinessBlocker] : []),
+    ...(showPlanQualityDebug ? errors.slice(1).map((issue) => issue.message) : []),
     ...(qualityBlocker ? [qualityBlocker] : []),
   ]
+  const showConsumerPlanRecovery = !showPlanQualityDebug && Boolean(
+    isFailedState ||
+    plan?.generationState === 'partial' ||
+    (plan?.generationState === 'complete' && qualityBlocksAccept),
+  )
+  const consumerPlanRecoveryLabel = plan?.generationState === 'complete' && qualityBlocksAccept
+    ? 'Ajustar plan'
+    : 'Intentar de nuevo'
+  // Consumer-facing readiness: the technical recovery controls are dev-only, so the
+  // clean card must reflect reality instead of claiming success or implying endless progress.
+  const isActivelyGenerating = status === 'generating' || plan?.generationState === 'generating'
 
   if (!hasLoaded && !effectiveAthleteProfile) {
     return (
@@ -801,6 +804,32 @@ export default function PlanBuilderV2Page() {
       .filter((value) => Number.isInteger(value))
     if (weekIndexes.length === 0) return
     await regenerateWeeks(weekIndexes, effectiveAthleteProfile, qualityRepairInstructions)
+  }
+
+  async function handleConsumerPlanRecovery() {
+    if (!effectiveAthleteProfile || isGenerating || status === 'committing') return
+    if (plan?.generationState === 'complete' && qualityBlocksAccept) {
+      const weekIndexes = Object.keys(qualityRepairInstructions)
+        .map((key) => Number(key))
+        .filter((value) => Number.isInteger(value))
+      if (weekIndexes.length > 0) {
+        await regenerateWeeks(weekIndexes, effectiveAthleteProfile, qualityRepairInstructions)
+        return
+      }
+      await retryFullGeneration(effectiveAthleteProfile)
+      return
+    }
+    if (plan?.generationState === 'partial' && hasFailedWeeks) {
+      await retryFailedWeeks(effectiveAthleteProfile)
+      return
+    }
+    if (isFailedState) {
+      await retryIncompleteWeeks(effectiveAthleteProfile)
+      return
+    }
+    if (plan?.generationState === 'partial') {
+      await retryFullGeneration(effectiveAthleteProfile)
+    }
   }
 
   async function handlePreviewAcceptPlan() {
@@ -970,9 +999,9 @@ export default function PlanBuilderV2Page() {
             <div className="flex items-start gap-3">
               <RefreshCw size={18} className="mt-0.5 flex-shrink-0 animate-spin text-brand" />
               <div>
-                <h2 className="font-display text-base font-bold text-ink">Inicializando generación</h2>
+                <h2 className="font-display text-base font-bold text-ink">Preparando tu plan</h2>
                 <p className="mt-1 text-sm text-ink-muted">
-                  Estamos preparando las semanas remotas. El progreso aparecerá en unos segundos.
+                  Estamos armando tus semanas. El progreso aparecerá en unos segundos.
                 </p>
                 <button
                   type="button"
@@ -992,11 +1021,11 @@ export default function PlanBuilderV2Page() {
             <div className="flex items-start gap-3">
               <AlertTriangle size={18} className="mt-0.5 flex-shrink-0 text-red-400" />
               <div>
-                <h2 className="font-display text-base font-bold text-ink">El shell no tiene semanas</h2>
+                <h2 className="font-display text-base font-bold text-ink">No encontramos semanas para este plan</h2>
                 <p className="mt-1 text-sm text-ink-muted">
-                  El draft guardado quedó incompleto. Descártalo y vuelve a generar el plan desde el wizard.
+                  Descartá este intento y volvé a preparar el plan desde el inicio.
                 </p>
-                {lastError && <p className="mt-2 text-xs text-red-400">{lastError}</p>}
+                {showPlanQualityDebug && lastError && <p className="mt-2 text-xs text-red-400">{lastError}</p>}
               </div>
             </div>
           </div>
@@ -1008,11 +1037,11 @@ export default function PlanBuilderV2Page() {
             <div className="flex items-start gap-3">
               <X size={18} className="mt-0.5 flex-shrink-0 text-amber-300" />
               <div>
-                <h2 className="font-display text-base font-bold text-ink">Generación detenida</h2>
+                <h2 className="font-display text-base font-bold text-ink">Preparación detenida</h2>
                 <p className="mt-1 text-sm text-ink-muted">
-                  Se conservaron las semanas ya generadas. Puedes reintentar las pendientes cuando quieras.
+                  Se conservaron las semanas que ya estaban listas.
                 </p>
-                {lastError && <p className="mt-2 text-xs text-amber-300">{lastError}</p>}
+                {showPlanQualityDebug && lastError && <p className="mt-2 text-xs text-amber-300">{lastError}</p>}
               </div>
             </div>
           </div>
@@ -1024,11 +1053,11 @@ export default function PlanBuilderV2Page() {
             <div className="flex items-start gap-3">
               <AlertTriangle size={18} className="mt-0.5 flex-shrink-0 text-red-400" />
               <div>
-                <h2 className="font-display text-base font-bold text-ink">La generación no produjo semanas válidas</h2>
+                <h2 className="font-display text-base font-bold text-ink">No pudimos preparar tu plan ahora</h2>
                 <p className="mt-1 text-sm text-ink-muted">
-                  Puedes reintentar la generación o descartar este shell y volver a construirlo desde cero.
+                  Probá de nuevo en un momento o descartá este intento para volver a empezar.
                 </p>
-                {lastError && <p className="mt-2 text-xs text-red-400">{lastError}</p>}
+                {showPlanQualityDebug && lastError && <p className="mt-2 text-xs text-red-400">{lastError}</p>}
               </div>
             </div>
           </div>
@@ -1040,11 +1069,11 @@ export default function PlanBuilderV2Page() {
             <div className="flex items-start gap-3">
               <AlertTriangle size={18} className="mt-0.5 flex-shrink-0 text-red-400" />
               <div>
-                <h2 className="font-display text-base font-bold text-ink">Error técnico</h2>
+                <h2 className="font-display text-base font-bold text-ink">No pudimos completar la operación</h2>
                 <p className="mt-1 text-sm text-ink-muted">
-                  No se pudo completar la operación del Plan Builder.
+                  Tus datos siguen guardados. Probá de nuevo en un momento.
                 </p>
-                {lastError && <p className="mt-2 text-xs text-red-400">{lastError}</p>}
+                {showPlanQualityDebug && lastError && <p className="mt-2 text-xs text-red-400">{lastError}</p>}
               </div>
             </div>
           </div>
@@ -1061,9 +1090,9 @@ export default function PlanBuilderV2Page() {
                 <div>
                   <h2 className="font-display text-sm font-bold text-ink">La generación quedó incompleta</h2>
                   <p className="mt-1 text-xs text-ink-muted">
-                    Las semanas ya generadas se conservan. Usa “Reintentar pendientes” para completar solo las que faltan, sin volver a generar todo el plan.
+                    Las semanas que ya están listas se conservaron. Podés descartar este intento y volver a empezar en un momento.
                   </p>
-                  {lastError && <p className="mt-1.5 text-xs text-red-400">{lastError}</p>}
+                  {showPlanQualityDebug && lastError && <p className="mt-1.5 text-xs text-red-400">{lastError}</p>}
                 </div>
               </div>
             </div>
@@ -1167,7 +1196,7 @@ export default function PlanBuilderV2Page() {
                       {selectedWeek.weekStartDate}
                     </p>
                   </div>
-                  {plan?.generationState === 'complete' && selectedWeek.status === 'draft' && (
+                  {showPlanQualityDebug && plan?.generationState === 'complete' && selectedWeek.status === 'draft' && (
                     <button
                       type="button"
                       disabled={isGenerating || status === 'committing'}
@@ -1181,7 +1210,7 @@ export default function PlanBuilderV2Page() {
                   )}
                 </div>
 
-	                {selectedWeekSignals.length > 0 && (
+	                {showPlanQualityDebug && selectedWeekSignals.length > 0 && (
 	                  <div className="flex flex-wrap gap-2">
                     {selectedWeekSignals.map((signal) => (
                       <span
@@ -1195,7 +1224,7 @@ export default function PlanBuilderV2Page() {
 	                  </div>
 	                )}
 
-	                {selectedWeekQuality && (
+	                {showPlanQualityDebug && selectedWeekQuality && (
 	                  <div className="rounded-xl px-3 py-2.5 text-xs"
 	                    style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}>
 	                    <div className="flex items-center justify-between gap-3">
@@ -1238,7 +1267,7 @@ export default function PlanBuilderV2Page() {
                         <div className="mb-3 flex justify-center">
                           <RefreshCw size={20} className="animate-spin text-brand" />
                         </div>
-                        <p className="text-xs text-ink-muted">{getWeekGenerationStatus(selectedWeek)}…</p>
+                        <p className="text-xs text-ink-muted">Preparando tu semana…</p>
                         <div
                           className="mt-4 rounded-xl px-3 py-3 text-left"
                           style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}
@@ -1246,8 +1275,8 @@ export default function PlanBuilderV2Page() {
                           {[
                             'Diseñando estructura semanal',
                             'Asignando deportes y bloques',
-                            'Validando fechas y sesiones',
-                            'Ajustando carga y calidad',
+                            'Ordenando calendario y sesiones',
+                            'Ajustando cargas',
                           ].map((label, index) => {
                             const isDone = index < getWeekGenerationStepIndex(selectedWeek)
                             const isActiveStep = index === getWeekGenerationStepIndex(selectedWeek)
@@ -1275,9 +1304,14 @@ export default function PlanBuilderV2Page() {
                     ) : selectedWeek.status === 'error' ? (
                       <div className="space-y-2">
                         <p className="text-xs text-red-400">
-                          Error: {selectedWeek.generationMeta.lastError ?? 'Generación fallida'}
+                          No pudimos preparar esta semana.
                         </p>
-                        {(selectedWeek.generationMeta.validSessionCount != null || selectedWeek.generationMeta.degradedFromPairs) && (
+                        {showPlanQualityDebug && selectedWeek.generationMeta.lastError && (
+                          <p className="text-xs text-red-400">
+                            Error: {selectedWeek.generationMeta.lastError}
+                          </p>
+                        )}
+                        {showPlanQualityDebug && (selectedWeek.generationMeta.validSessionCount != null || selectedWeek.generationMeta.degradedFromPairs) && (
                           <div
                             className="rounded-xl px-3 py-2.5 text-left text-[11px] text-amber-300"
                             style={{ background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.16)' }}
@@ -1301,7 +1335,7 @@ export default function PlanBuilderV2Page() {
                   </div>
                 ) : (
                   <>
-                    {selectedWeekSignals.length > 0 && (
+                    {showPlanQualityDebug && selectedWeekSignals.length > 0 && (
                       <div
                         className="rounded-xl px-3 py-2 text-[11px] text-amber-300"
                         style={{ background: 'rgba(251,191,36,0.06)', border: '1px solid rgba(251,191,36,0.12)' }}
@@ -1346,78 +1380,119 @@ export default function PlanBuilderV2Page() {
           </div>
 
           {/* Validation panel */}
-          <div
-            className="rounded-2xl p-3.5 space-y-2 md:max-h-[72vh] md:overflow-y-auto"
-            style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}
-          >
-	            <p className="font-mono text-[9px] font-bold uppercase tracking-[0.28em] text-ink-faint px-1">
-	              Validación
-	            </p>
-	            {shouldShowQualityReview && qualityReview && (
-	              <div className="rounded-xl px-3 py-3"
-	                style={{ background: 'rgba(255,255,255,0.045)', border: '1px solid rgba(255,255,255,0.09)' }}>
-	                <div className="flex items-center justify-between gap-3">
-	                  <div>
-	                    <p className="font-mono text-[9px] font-bold uppercase tracking-[0.18em] text-ink-faint">Calidad del plan</p>
-	                    <p className="mt-1 text-sm font-semibold text-ink">{qualityLabel(qualityReview.grade)}</p>
-	                  </div>
-	                  <div className="text-right">
-	                    <p className="font-display text-3xl font-bold" style={{ color: qualityColor(qualityReview.score) }}>{qualityReview.score}</p>
-	                    <p className="font-mono text-[9px] uppercase tracking-[0.14em] text-ink-faint">/100</p>
-	                  </div>
-	                </div>
-	                <div className="mt-2 flex flex-wrap gap-1.5 text-[10px]">
-	                  <span className="rounded-full px-2 py-0.5 text-ink-muted" style={{ background: 'rgba(255,255,255,0.06)' }}>
-	                    {qualityReview.warningCount} warnings
-	                  </span>
-	                  <span className="rounded-full px-2 py-0.5 text-ink-muted" style={{ background: 'rgba(255,255,255,0.06)' }}>
-	                    {qualityReview.repairCount} reparaciones
-	                  </span>
-	                  {qualityReview.criticalIssueCount > 0 && (
-	                    <span className="rounded-full px-2 py-0.5 text-red-300" style={{ background: 'rgba(248,113,113,0.10)' }}>
-	                      {qualityReview.criticalIssueCount} críticas
-	                    </span>
-	                  )}
-	                </div>
-	                {qualityReview.issues.length > 0 && (
-	                  <p className="mt-2 text-[11px] leading-relaxed text-ink-muted">
-	                    {qualityReview.issues.slice(0, 2).map((item) => item.message).join(' ')}
-	                  </p>
-	                )}
-	              </div>
-	            )}
-	            {errors.length === 0 && warnings.length === 0 && (
-              <div className="rounded-xl px-3 py-2.5 text-xs text-emerald-400 flex items-center gap-1.5"
-                style={{ background: 'rgba(52,211,153,0.08)', border: '1px solid rgba(52,211,153,0.18)' }}>
-                <CheckCircle2 size={12} /> Sin alertas
-              </div>
-            )}
-            {errors.map((issue, i) => (
-              <div key={`e${i}`} className="rounded-xl px-3 py-2.5 text-xs text-red-400 flex items-start gap-2"
-                style={{ background: 'rgba(248,113,113,0.08)', border: '1px solid rgba(248,113,113,0.18)' }}>
-                <AlertTriangle size={12} className="mt-0.5 flex-shrink-0" />
-                <span>{issue.message}</span>
-              </div>
-            ))}
-            {warnings.map((issue, i) => (
-              <div key={`w${i}`} className="rounded-xl px-3 py-2.5 text-xs text-amber-400 flex items-start gap-2"
-                style={{ background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.18)' }}>
-                <AlertTriangle size={12} className="mt-0.5 flex-shrink-0" />
-                <span>{issue.message}</span>
-              </div>
-            ))}
+          {showPlanQualityDebug ? (
+            <div
+              className="rounded-2xl p-3.5 space-y-2 md:max-h-[72vh] md:overflow-y-auto"
+              style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}
+            >
+              <p className="font-mono text-[9px] font-bold uppercase tracking-[0.28em] text-ink-faint px-1">
+                Validación
+              </p>
+              {shouldShowQualityReview && qualityReview && (
+                <div className="rounded-xl px-3 py-3"
+                  style={{ background: 'rgba(255,255,255,0.045)', border: '1px solid rgba(255,255,255,0.09)' }}>
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="font-mono text-[9px] font-bold uppercase tracking-[0.18em] text-ink-faint">Calidad del plan</p>
+                      <p className="mt-1 text-sm font-semibold text-ink">{qualityLabel(qualityReview.grade)}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-display text-3xl font-bold" style={{ color: qualityColor(qualityReview.score) }}>{qualityReview.score}</p>
+                      <p className="font-mono text-[9px] uppercase tracking-[0.14em] text-ink-faint">/100</p>
+                    </div>
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-1.5 text-[10px]">
+                    <span className="rounded-full px-2 py-0.5 text-ink-muted" style={{ background: 'rgba(255,255,255,0.06)' }}>
+                      {qualityReview.warningCount} warnings
+                    </span>
+                    <span className="rounded-full px-2 py-0.5 text-ink-muted" style={{ background: 'rgba(255,255,255,0.06)' }}>
+                      {qualityReview.repairCount} reparaciones
+                    </span>
+                    {qualityReview.criticalIssueCount > 0 && (
+                      <span className="rounded-full px-2 py-0.5 text-red-300" style={{ background: 'rgba(248,113,113,0.10)' }}>
+                        {qualityReview.criticalIssueCount} críticas
+                      </span>
+                    )}
+                  </div>
+                  {qualityReview.issues.length > 0 && (
+                    <p className="mt-2 text-[11px] leading-relaxed text-ink-muted">
+                      {qualityReview.issues.slice(0, 2).map((item) => item.message).join(' ')}
+                    </p>
+                  )}
+                </div>
+              )}
+              {errors.length === 0 && warnings.length === 0 && (
+                <div className="rounded-xl px-3 py-2.5 text-xs text-emerald-400 flex items-center gap-1.5"
+                  style={{ background: 'rgba(52,211,153,0.08)', border: '1px solid rgba(52,211,153,0.18)' }}>
+                  <CheckCircle2 size={12} /> Sin alertas
+                </div>
+              )}
+              {errors.map((issue, i) => (
+                <div key={`e${i}`} className="rounded-xl px-3 py-2.5 text-xs text-red-400 flex items-start gap-2"
+                  style={{ background: 'rgba(248,113,113,0.08)', border: '1px solid rgba(248,113,113,0.18)' }}>
+                  <AlertTriangle size={12} className="mt-0.5 flex-shrink-0" />
+                  <span>{issue.message}</span>
+                </div>
+              ))}
+              {warnings.map((issue, i) => (
+                <div key={`w${i}`} className="rounded-xl px-3 py-2.5 text-xs text-amber-400 flex items-start gap-2"
+                  style={{ background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.18)' }}>
+                  <AlertTriangle size={12} className="mt-0.5 flex-shrink-0" />
+                  <span>{issue.message}</span>
+                </div>
+              ))}
 
-            {plan?.generationSummary && (
-              <div className="mt-3 pt-3 text-xs text-ink-faint space-y-1"
-                style={{ borderTop: '1px solid rgba(255,255,255,0.07)' }}>
-                <p>Estrategia: <span className="text-ink-muted">{plan.generationSummary.strategy}</span></p>
-                <p>{completedWeeks}/{weeks.length} semanas listas</p>
-                {failedWeekIndexes.length > 0 && (
-                  <p className="text-amber-400">{failedWeekIndexes.length} semana(s) fallida(s)</p>
-                )}
+              {plan?.generationSummary && (
+                <div className="mt-3 pt-3 text-xs text-ink-faint space-y-1"
+                  style={{ borderTop: '1px solid rgba(255,255,255,0.07)' }}>
+                  <p>Estrategia: <span className="text-ink-muted">{plan.generationSummary.strategy}</span></p>
+                  <p>{completedWeeks}/{weeks.length} semanas listas</p>
+                  {failedWeekIndexes.length > 0 && (
+                    <p className="text-amber-400">{failedWeekIndexes.length} semana(s) fallida(s)</p>
+                  )}
+                </div>
+              )}
+            </div>
+          ) : canAcceptPlan ? (
+            <div
+              className="rounded-2xl p-4 flex items-center gap-3"
+              style={{ background: 'rgba(52,211,153,0.06)', border: '1px solid rgba(52,211,153,0.16)' }}
+            >
+              <CheckCircle2 size={18} className="text-emerald-400 flex-shrink-0" />
+              <div>
+                <p className="text-sm font-semibold text-ink">Tu plan está listo</p>
+                <p className="text-xs text-ink-muted mt-0.5">
+                  {weeks.length} semana{weeks.length === 1 ? '' : 's'} hasta tu evento. Revisalo y aceptalo cuando quieras.
+                </p>
               </div>
-            )}
-          </div>
+            </div>
+          ) : isActivelyGenerating ? (
+            <div
+              className="rounded-2xl p-4 flex items-center gap-3"
+              style={{ background: 'rgba(52,211,153,0.06)', border: '1px solid rgba(52,211,153,0.16)' }}
+            >
+              <RefreshCw size={18} className="text-brand flex-shrink-0 animate-spin" />
+              <div>
+                <p className="text-sm font-semibold text-ink">Estamos preparando tu plan</p>
+                <p className="text-xs text-ink-muted mt-0.5">
+                  Las semanas disponibles se conservaron mientras terminamos de ajustar el plan.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div
+              className="rounded-2xl p-4 flex items-start gap-3"
+              style={{ background: 'rgba(251,191,36,0.06)', border: '1px solid rgba(251,191,36,0.16)' }}
+            >
+              <AlertTriangle size={18} className="mt-0.5 flex-shrink-0 text-amber-300" />
+              <div className="flex-1">
+                <p className="text-sm font-semibold text-ink">Necesitamos un ajuste más</p>
+                <p className="text-xs text-ink-muted mt-0.5">
+                  No pudimos dejar tu plan 100% listo. Podés intentar de nuevo o descartar este intento para empezar de nuevo.
+                </p>
+              </div>
+            </div>
+          )}
         </div>
         </>
         )}
@@ -1449,52 +1524,64 @@ export default function PlanBuilderV2Page() {
             >
               Descartar
             </button>
-            {isFailedState && (
+            {showConsumerPlanRecovery && (
               <button
                 type="button"
                 disabled={isGenerating || status === 'committing'}
-                onClick={() => { void handleRetryIncompleteWeeks() }}
+                onClick={() => { void handleConsumerPlanRecovery() }}
                 className="rounded-xl px-5 py-2.5 font-display text-sm font-bold uppercase tracking-[0.15em] text-white transition-all active:scale-[0.98] disabled:opacity-40"
                 style={{ background: 'linear-gradient(135deg, #ff5500, #ff4d00)' }}
               >
-                {hasReadyWeeks ? 'Reintentar pendientes' : 'Reintentar'}
+                {consumerPlanRecoveryLabel}
               </button>
             )}
-            {isFailedState && hasReadyWeeks && (
-              <button
-                type="button"
-                disabled={isGenerating || status === 'committing'}
-                onClick={() => { void handleRetryFullGeneration() }}
-                className="rounded-xl px-5 py-2.5 font-display text-sm font-bold uppercase tracking-[0.15em] text-ink-muted transition-all hover:text-ink disabled:opacity-40"
-                style={{ border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.04)' }}
-              >
-                Reintentar completo
-              </button>
-            )}
-            {plan?.generationState === 'partial' && hasFailedWeeks && (
-              <button
-                type="button"
-                disabled={isGenerating || status === 'committing'}
-                onClick={() => { void handleRetryFailedWeeks() }}
-                className="rounded-xl px-5 py-2.5 font-display text-sm font-bold uppercase tracking-[0.15em] text-ink-muted transition-all hover:text-ink disabled:opacity-40"
-                style={{ border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.04)' }}
-              >
-                Regenerar fallidas
-              </button>
-            )}
-            {plan?.generationState === 'partial' && (
-              <button
-                type="button"
-                disabled={isGenerating || status === 'committing'}
-                onClick={() => { void handleRetryFullGeneration() }}
-                className="rounded-xl px-5 py-2.5 font-display text-sm font-bold uppercase tracking-[0.15em] text-ink-muted transition-all hover:text-ink disabled:opacity-40"
-                style={{ border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.04)' }}
-              >
-                Reintentar completo
-              </button>
-            )}
-            {plan?.generationState === 'complete' && (
-              Object.keys(qualityRepairInstructions).length > 0 && (
+            {showPlanQualityDebug && (
+              <>
+                {isFailedState && (
+                  <button
+                    type="button"
+                    disabled={isGenerating || status === 'committing'}
+                    onClick={() => { void handleRetryIncompleteWeeks() }}
+                    className="rounded-xl px-5 py-2.5 font-display text-sm font-bold uppercase tracking-[0.15em] text-white transition-all active:scale-[0.98] disabled:opacity-40"
+                    style={{ background: 'linear-gradient(135deg, #ff5500, #ff4d00)' }}
+                  >
+                    {hasReadyWeeks ? 'Reintentar pendientes' : 'Reintentar'}
+                  </button>
+                )}
+                {isFailedState && hasReadyWeeks && (
+                  <button
+                    type="button"
+                    disabled={isGenerating || status === 'committing'}
+                    onClick={() => { void handleRetryFullGeneration() }}
+                    className="rounded-xl px-5 py-2.5 font-display text-sm font-bold uppercase tracking-[0.15em] text-ink-muted transition-all hover:text-ink disabled:opacity-40"
+                    style={{ border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.04)' }}
+                  >
+                    Reintentar completo
+                  </button>
+                )}
+                {plan?.generationState === 'partial' && hasFailedWeeks && (
+                  <button
+                    type="button"
+                    disabled={isGenerating || status === 'committing'}
+                    onClick={() => { void handleRetryFailedWeeks() }}
+                    className="rounded-xl px-5 py-2.5 font-display text-sm font-bold uppercase tracking-[0.15em] text-ink-muted transition-all hover:text-ink disabled:opacity-40"
+                    style={{ border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.04)' }}
+                  >
+                    Regenerar fallidas
+                  </button>
+                )}
+                {plan?.generationState === 'partial' && (
+                  <button
+                    type="button"
+                    disabled={isGenerating || status === 'committing'}
+                    onClick={() => { void handleRetryFullGeneration() }}
+                    className="rounded-xl px-5 py-2.5 font-display text-sm font-bold uppercase tracking-[0.15em] text-ink-muted transition-all hover:text-ink disabled:opacity-40"
+                    style={{ border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.04)' }}
+                  >
+                    Reintentar completo
+                  </button>
+                )}
+                {plan?.generationState === 'complete' && Object.keys(qualityRepairInstructions).length > 0 && (
                 <button
                   type="button"
                   disabled={isGenerating || status === 'committing'}
@@ -1504,18 +1591,19 @@ export default function PlanBuilderV2Page() {
                 >
                   Reparar semanas marcadas
                 </button>
-              )
-            )}
-            {plan?.generationState === 'complete' && (
-              <button
-                type="button"
-                disabled={isGenerating || status === 'committing'}
-                onClick={() => { void handleRetryFullGeneration() }}
-                className="rounded-xl px-5 py-2.5 font-display text-sm font-bold uppercase tracking-[0.15em] text-ink-muted transition-all hover:text-ink disabled:opacity-40"
-                style={{ border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.04)' }}
-              >
-                Regenerar plan
-              </button>
+                )}
+                {plan?.generationState === 'complete' && (
+                  <button
+                    type="button"
+                    disabled={isGenerating || status === 'committing'}
+                    onClick={() => { void handleRetryFullGeneration() }}
+                    className="rounded-xl px-5 py-2.5 font-display text-sm font-bold uppercase tracking-[0.15em] text-ink-muted transition-all hover:text-ink disabled:opacity-40"
+                    style={{ border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.04)' }}
+                  >
+                    Regenerar plan
+                  </button>
+                )}
+              </>
             )}
 	            {acceptBlockers.length > 0 && !isGenerating && status !== 'committing' && (
 	              <p className="text-xs text-ink-faint">{acceptBlockers[0]}</p>

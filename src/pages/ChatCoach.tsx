@@ -264,7 +264,9 @@ export default function ChatCoach() {
     await loadWeek(currentWeekStartISO())
 
     const createWeekAction = proposal.actions.find((action) => action.type === 'create_week')
-    const warningSuffix = result.warnings.length > 0 ? ` Nota: ${result.warnings.join(' ')}` : ''
+    const warningSuffix = result.warnings.length > 0
+      ? ' Revisá la semana para confirmar que quedó como esperabas.'
+      : ''
 
     if (createWeekAction?.sessions) {
       const count = createWeekAction.sessions.length

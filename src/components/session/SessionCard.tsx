@@ -353,7 +353,7 @@ export default function SessionCard({ session, compact = false, onDelete }: Sess
                           : 'text-ink'
                     }`}
                   >
-                    {session.matchResult ? MATCH_RESULT_LABELS[session.matchResult] : 'Pendiente'}
+                    {session.matchResult ? MATCH_RESULT_LABELS[session.matchResult] : 'Por registrar'}
                     {(session.gamesWon != null || session.gamesLost != null) && (
                       <span className="ml-1 font-normal text-ink-muted">
                         {session.gamesWon ?? '?'}-{session.gamesLost ?? '?'}

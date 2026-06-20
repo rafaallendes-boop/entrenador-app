@@ -345,7 +345,7 @@ export default function WeeklyView() {
                 className="inline-flex items-center gap-1.5 rounded-lg bg-brand/10 px-3 py-1.5 text-[11px] font-medium text-brand-light transition-colors disabled:cursor-not-allowed disabled:opacity-60 hover:bg-brand/15"
               >
                 <MessageSquareText size={13} />
-                {isGeneratingNote ? 'Generando...' : currentWeekSummary.coachNote ? 'Regenerar nota RallyIQ' : 'Generar nota RallyIQ'}
+                {isGeneratingNote ? 'Preparando nota...' : currentWeekSummary.coachNote ? 'Actualizar nota' : 'Generar nota'}
               </button>
             )}
           </div>

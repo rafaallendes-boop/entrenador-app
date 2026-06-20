@@ -632,8 +632,8 @@ export function resolvePhase(
   if (weeksRemaining === 0) return 'race'
   if (primarySport === 'squash') {
     if (weeksRemaining <= 1) return 'taper'
-    if (weeksRemaining <= 5) return 'peak'
-    if (weeksRemaining <= 10) return 'build'
+    if (weeksRemaining <= 3) return 'peak'
+    if (weeksRemaining <= 9) return 'build'
     return 'base'
   }
   if (weeksRemaining <= 4) return 'taper'
@@ -748,7 +748,7 @@ function buildTimeline(args: {
 
   const entries = PHASE_ORDER
     .map((phase) => {
-      const range = getPhaseRange(phase)
+      const range = getPhaseRange(phase, primarySport)
       const intersection = intersectWeekRanges({ min: 0, max: weeksRemaining }, range)
       if (!intersection) return null
 
@@ -765,8 +765,11 @@ function buildTimeline(args: {
 
       return {
         phase,
-        startWeek: intersection.max,
-        endWeek: intersection.min,
+        // startWeek/endWeek are 0-based offsets from plan start (week 0 = first plan week),
+        // ascending across the timeline.  Convert from weeks-remaining (countdown):
+        //   planOffset = weeksRemaining - weeksFromEvent
+        startWeek: weeksRemaining - intersection.max,
+        endWeek: weeksRemaining - intersection.min,
         label: getPhaseLabel(phase),
         focus,
         isCurrent: phase === currentPhase,
@@ -778,7 +781,25 @@ function buildTimeline(args: {
   return entries
 }
 
-function getPhaseRange(phase: MacroPlanPhase): { min: number; max: number } {
+function getPhaseRange(phase: MacroPlanPhase, primarySport?: SupportedSport): { min: number; max: number } {
+  if (primarySport === 'squash') {
+    // Squash-specific boundaries in weeksRemaining space, matching resolvePhase(wr, 'squash'):
+    //   race: 0, taper: 1, peak: 2-3, build: 4-9, base: 10+
+    switch (phase) {
+      case 'base':
+        return { min: 10, max: Number.MAX_SAFE_INTEGER }
+      case 'build':
+        return { min: 4, max: 9 }
+      case 'peak':
+        return { min: 2, max: 3 }
+      case 'taper':
+        return { min: 1, max: 1 }
+      case 'race':
+        return { min: 0, max: 0 }
+      case 'transition':
+        return { min: Number.MIN_SAFE_INTEGER, max: -1 }
+    }
+  }
   switch (phase) {
     case 'base':
       return { min: 13, max: Number.MAX_SAFE_INTEGER }

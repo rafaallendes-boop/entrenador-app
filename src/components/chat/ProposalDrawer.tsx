@@ -2,6 +2,7 @@ import { CheckCircle2, Loader2, ThumbsDown, ThumbsUp, X, Zap } from 'lucide-reac
 import { useState } from 'react'
 import type { CoachProposal, CyclingDetails, ExerciseGroup, GeneratedProtocol, MobilityDetails, Session, SquashDetails, SquashSessionBlockKind, SquashSessionMode } from '../../types'
 import { recordCoachFeedback } from '../../services/ai/aiTelemetry'
+import { isDevToolsEnabled } from '../../services/devTools'
 import { resolveStrengthExerciseBlock } from '../../services/training/strengthSessionStructure'
 import { formatMobilityFocusAreas, normalizeMobilityTargetStructure } from '../../services/training/mobilitySessionLibrary'
 import { resolveSquashSessionMode } from '../../utils/squash'
@@ -64,6 +65,7 @@ export default function ProposalDrawer({
   isAccepting = false,
 }: ProposalDrawerProps) {
   const [rating, setRating] = useState<-1 | 1 | null>(null)
+  const showDevTools = isDevToolsEnabled()
   const createWeekAction = proposal.actions.find(action => action.type === 'create_week')
   const chainedAdjustmentSessionIds = getChainedAdjustmentSessionIds(proposal.actions)
   const totalSessions = createWeekAction?.sessions?.length ?? 0
@@ -114,7 +116,7 @@ export default function ProposalDrawer({
             <p className="text-xs text-ink-muted leading-relaxed">{compactMessage}</p>
           )}
 
-          {proposal.metadata && (
+          {showDevTools && proposal.metadata && (
             <div className="flex flex-wrap gap-2">
               <span className="rounded-full border border-surface-border bg-surface-raised px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-ink-faint">
                 {formatProposalSource(proposal.metadata.source)}
@@ -165,7 +167,7 @@ export default function ProposalDrawer({
             </div>
           )}
 
-          {proposal.metadata?.warnings && proposal.metadata.warnings.length > 0 && (
+          {showDevTools && proposal.metadata?.warnings && proposal.metadata.warnings.length > 0 && (
             <div className="rounded-xl border border-yellow-500/20 bg-yellow-500/8 px-3 py-2">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-yellow-300">Aviso</p>
               {proposal.metadata.warnings.map((warning, i) => (

@@ -42,7 +42,7 @@ export default function MacroPhaseSummaryCard({ summary }: MacroPhaseSummaryCard
             : 'bg-emerald-500/10 text-emerald-300'
         }`}>
           {summary.coherenceStatus === 'warning' ? <AlertTriangle size={12} /> : <CheckCircle2 size={12} />}
-          {summary.coherenceStatus === 'warning' ? 'Warning' : 'OK'}
+          {summary.coherenceStatus === 'warning' ? 'A revisar' : 'OK'}
         </div>
       </div>
 

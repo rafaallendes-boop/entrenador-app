@@ -29,7 +29,7 @@ import {
   type StrengthSportProfile,
 } from '../training/strengthSelector'
 import { enhanceStrengthSessionExercises, resolveStrengthExerciseBlock } from '../training/strengthSessionStructure'
-import { findStrengthExerciseByName, normalizeStrengthExerciseKey, type ExperienceLevel } from '../training/exerciseLibrary'
+import { findStrengthExerciseByName, normalizeStrengthExerciseKey, STRENGTH_EXERCISE_LIBRARY, type ExerciseDefinition, type ExperienceLevel } from '../training/exerciseLibrary'
 import { selectMobilitySession, type MobilityPhase } from '../training/mobilitySelector'
 import { selectCyclingSession, type CyclingPhase, type CyclingSportProfile } from '../training/cyclingSelector'
 import { normalizeMobilityDetails, type MobilitySportContext } from '../training/mobilitySessionLibrary'
@@ -140,6 +140,9 @@ export function repairGeneratedWeek(
 
   // 12. Preserve primary-sport minimums after fallback/trim decisions
   sessions = ensurePrimarySportMinimum(sessions, context, meta)
+
+  // 12b. In build/peak the primary sport must outweigh accessory work
+  sessions = ensurePrimarySportDominance(sessions, context, meta)
 
   // 13. Diversify duplicated sport content after fallbacks are added
   diversifyDuplicateSquashSessions(sessions, context, meta)
@@ -635,7 +638,7 @@ function normalizeSquashSemanticMetadata(
   meta: RepairMeta,
   context?: RepairContext,
 ): void {
-  for (const session of sessions) {
+  for (const [sessionIdx, session] of sessions.entries()) {
     if (session.sessionType !== 'squash' || !session.squashDetails) continue
 
     const details = session.squashDetails
@@ -652,7 +655,7 @@ function normalizeSquashSemanticMetadata(
     const dedicatedMatchContent = contentSaysMatch || (hasBlocks ? blockKinds.length === 1 && hasMatchBlock : inferredKind === 'match')
 
     if (contentSaysMatch && !hasMatchBlock) {
-      applySquashMatchDetails(session, contextlessSquashMatchMode(session))
+      applySquashMatchDetails(session, contextlessSquashMatchMode(session), context?.week.weekIndex ?? sessionIdx)
       meta.repairedSessionCount++
       meta.warnings.push({
         code: 'squash_match_mode_repaired',
@@ -743,7 +746,7 @@ function ensureSquashCompetitionMatchExposure(
 
   if (!candidate) return sessions
 
-  applySquashMatchDetails(candidate, 'competition_match')
+  applySquashMatchDetails(candidate, 'competition_match', context.week.weekIndex)
   meta.repairedSessionCount++
   meta.warnings.push({
     code: 'squash_competition_match_added',
@@ -768,7 +771,7 @@ function buildSquashCompetitionMatchSession(
     rpe: 7,
     objective: 'Competir con marcador real, presión de cierre y rutinas entre puntos.',
   }
-  applySquashMatchDetails(session, 'competition_match')
+  applySquashMatchDetails(session, 'competition_match', context.week.weekIndex)
   return session
 }
 
@@ -801,8 +804,9 @@ function contextlessSquashMatchMode(session: CoachSessionProposal): 'practice_ma
 function applySquashMatchDetails(
   session: CoachSessionProposal,
   mode: 'practice_match' | 'competition_match',
+  variantIndex = 0,
 ): void {
-  const drills = buildSquashMatchDrills(session, mode)
+  const drills = buildSquashMatchDrills(session, mode, variantIndex)
   const durationMin = sumDurations(drills) || Math.min(session.durationMin, mode === 'competition_match' ? 55 : 45)
   session.subtype = mode === 'competition_match' ? 'competitive' : 'match'
   session.title = mode === 'competition_match'
@@ -827,13 +831,23 @@ function applySquashMatchDetails(
   session.squashDetails = details
 }
 
-function buildSquashMatchDrills(
+const COMPETITION_MATCH_VARIANTS: string[][] = [
+  ['Game a 11 con marcador real', 'Partido de entrenamiento al mejor de 3 juegos'],
+  ['Partido de entrenamiento al mejor de 3 juegos', 'Partido con ataque temprano'],
+  ['Partido con ataque temprano', 'Game a 11 con marcador real'],
+]
+const PRACTICE_MATCH_VARIANTS: string[][] = [
+  ['Partido de entrenamiento al mejor de 3 juegos', 'Partido con ataque temprano'],
+  ['Game a 11 con marcador real', 'Partido de entrenamiento al mejor de 3 juegos'],
+]
+
+export function buildSquashMatchDrills(
   session: CoachSessionProposal,
   mode: 'practice_match' | 'competition_match',
+  variantIndex = 0,
 ): SquashDrill[] {
-  const names = mode === 'competition_match'
-    ? ['Game a 11 con marcador real', 'Partido de entrenamiento al mejor de 3 juegos']
-    : ['Partido de entrenamiento al mejor de 3 juegos', 'Partido con ataque temprano']
+  const variants = mode === 'competition_match' ? COMPETITION_MATCH_VARIANTS : PRACTICE_MATCH_VARIANTS
+  const names = variants[variantIndex % variants.length]
   const targetDurations = session.durationMin >= 60 ? [25, 25] : [20, 15]
   const drills = names
     .map((name, index) => {
@@ -843,7 +857,7 @@ function buildSquashMatchDrills(
     .filter((drill): drill is SquashDrill => drill !== null)
 
   if (drills.length > 0) return drills
-  return [{ name: mode === 'competition_match' ? 'Game a 11 con marcador real' : 'Partido de entrenamiento al mejor de 3 juegos', durationMin: Math.min(session.durationMin, 40) }]
+  return [{ name: names[0], durationMin: Math.min(session.durationMin, 40) }]
 }
 
 function normalizeSquashDurationConsistency(sessions: CoachSessionProposal[], meta: RepairMeta): void {
@@ -1074,6 +1088,74 @@ function diversifyDuplicateSquashSessions(
   }
 }
 
+// Matches qualityReview.normalizeExerciseName so the prevention here clears the
+// same `quality.strength.repeated_template` overlap the review detects.
+function normalizeStrengthOverlapKey(name: string): string {
+  return name
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+}
+
+function exerciseRiskRank(exercise: ExerciseDefinition): number {
+  return exercise.riskLevel === 'low' ? 0 : exercise.riskLevel === 'high' ? 2 : 1
+}
+
+// Finds a catalog exercise of the same movement pattern that is neither in the
+// previous week nor already in the current session. In peak/taper we prefer the
+// lowest-risk option (masters: less technical residue near competition).
+function findRotationReplacement(
+  name: string,
+  recentKeys: Set<string>,
+  currentKeys: Set<string>,
+  preferLowRisk: boolean,
+): ExerciseDefinition | undefined {
+  const def = findStrengthExerciseByName(name)
+  const candidates = STRENGTH_EXERCISE_LIBRARY.filter((candidate) => {
+    const key = normalizeStrengthOverlapKey(candidate.name)
+    if (recentKeys.has(key) || currentKeys.has(key)) return false
+    if (def && candidate.movement !== def.movement) return false
+    return true
+  })
+  if (candidates.length === 0) return undefined
+  if (!preferLowRisk) return candidates[0]
+  return [...candidates].sort((a, b) => exerciseRiskRank(a) - exerciseRiskRank(b))[0]
+}
+
+// Force consecutive strength weeks under 3 shared exercises by swapping the
+// repeated ones for same-pattern alternatives. Returns true if anything changed.
+function rotateRepeatedStrengthExercises(
+  session: CoachSessionProposal,
+  recentKeys: Set<string>,
+  phase: string,
+): boolean {
+  const exercises = session.exercises ?? []
+  if (exercises.length === 0) return false
+
+  const currentKeys = new Set(exercises.map((e) => normalizeStrengthOverlapKey(e.name)))
+  const overlapping = () => exercises.filter((e) => recentKeys.has(normalizeStrengthOverlapKey(e.name)))
+  if (overlapping().length < 3) return false
+
+  const preferLowRisk = phase === 'peak' || phase === 'taper' || phase === 'race'
+  let changed = false
+
+  // Replace from the end first so sticky main lifts at the top survive when possible.
+  for (const exercise of [...exercises].reverse()) {
+    if (overlapping().length < 3) break
+    if (!recentKeys.has(normalizeStrengthOverlapKey(exercise.name))) continue
+    const replacement = findRotationReplacement(exercise.name, recentKeys, currentKeys, preferLowRisk)
+    if (!replacement) continue
+    currentKeys.delete(normalizeStrengthOverlapKey(exercise.name))
+    exercise.name = replacement.name
+    currentKeys.add(normalizeStrengthOverlapKey(replacement.name))
+    changed = true
+  }
+
+  return changed
+}
+
 function repairDuplicateStrengthExercises(
   sessions: CoachSessionProposal[],
   context: RepairContext,
@@ -1081,26 +1163,33 @@ function repairDuplicateStrengthExercises(
 ): void {
   if (!context.previousWeek) return
 
-  const recentExercises = new Set(extractRecentStrengthExercises(context.previousWeek))
-  if (recentExercises.size === 0) return
+  const recentNames = context.previousWeek.sessions
+    .filter((s) => s.sessionType === 'strength')
+    .flatMap((s) => s.exercises ?? [])
+    .map((e) => e.name)
+  const recentKeys = new Set(recentNames.map(normalizeStrengthOverlapKey).filter(Boolean))
+  if (recentKeys.size === 0) return
 
   const strengthSessions = sessions.filter((s) => s.sessionType === 'strength')
   if (strengthSessions.length === 0) return
 
+  const recentForSelector = Array.from(new Set(extractRecentStrengthExercises(context.previousWeek)))
   let repairedCount = 0
 
   for (const session of strengthSessions) {
-    const workExercises = (session.exercises ?? []).filter(isStrengthWorkExercise)
-    if (workExercises.length === 0) continue
+    const allExercises = session.exercises ?? []
+    if (allExercises.length === 0) continue
 
-    const matching = workExercises.filter((e) => recentExercises.has(getStrengthExerciseKey(e)))
-    const matchCount = matching.length
-    const matchRatio = matchCount / workExercises.length
+    const overlapCount = allExercises.filter((e) => recentKeys.has(normalizeStrengthOverlapKey(e.name))).length
+    // Mirror the repeated_template threshold (>=3 shared) instead of waiting for a
+    // near-clone so 3-of-N overlaps are prevented, not just flagged.
+    if (overlapCount < 3) continue
 
-    if (matchCount >= 4 || matchRatio >= 0.6) {
-      completeStrengthExercises(session, context, Array.from(recentExercises))
-      repairedCount++
-    }
+    // First regenerate while penalizing recent exercises; then force-rotate any
+    // sticky main lifts that the selector keeps across the block.
+    completeStrengthExercises(session, context, recentForSelector)
+    rotateRepeatedStrengthExercises(session, recentKeys, context.week.phase)
+    repairedCount++
   }
 
   if (repairedCount > 0) {
@@ -2052,6 +2141,58 @@ function ensurePrimarySportMinimum(
     meta.warnings.push({
       code: 'primary_sport_minimum_repaired',
       message: `Se ajustaron sesiones accesorias para cumplir el mínimo de ${primarySport}.`,
+    })
+  }
+
+  return next
+}
+
+// In build/peak, the primary sport should have strictly more sessions than the
+// accessory work combined. `ensurePrimarySportMinimum` only guarantees a floor,
+// which can tie with support and trip `week.primary_sport.underweighted`. Here we
+// convert the lowest-value accessory sessions into primary work until the primary
+// dominates, mirroring the validator rule. If no accessory is convertible, we leave
+// the week as-is and let the warning stand.
+function ensurePrimarySportDominance(
+  sessions: CoachSessionProposal[],
+  context: RepairContext,
+  meta: RepairMeta,
+): CoachSessionProposal[] {
+  if (context.week.phase !== 'build' && context.week.phase !== 'peak') return sessions
+  const primarySport = getPrimarySport(context)
+  if (!primarySport) return sessions
+
+  const next = [...sessions]
+  const primaryCount = () => next.filter((session) => session.sessionType === primarySport).length
+  const supportCount = () => next.length - primaryCount()
+
+  // Don't fabricate dominance out of a week with no primary sessions — that case is
+  // handled by ensurePrimarySportMinimum / the missing-sport validation.
+  if (primaryCount() === 0) return sessions
+  if (primaryCount() > supportCount()) return sessions
+
+  const replacementOrder = ['mobility', 'recovery', 'nutrition', 'strength', 'running', 'cycling']
+  let converted = 0
+
+  for (const sport of replacementOrder) {
+    for (let i = 0; i < next.length && primaryCount() <= supportCount(); i++) {
+      if (next[i].sessionType !== sport) continue
+      const replacement = buildPrimaryFallbackSession(primarySport, next[i].date, context, next)
+      replacement.timeBlock = next[i].timeBlock
+      next[i] = {
+        ...replacement,
+        durationMin: Math.max(30, Math.min(next[i].durationMin, replacement.durationMin)),
+      }
+      converted++
+    }
+    if (primaryCount() > supportCount()) break
+  }
+
+  if (converted > 0) {
+    meta.repairedSessionCount += converted
+    meta.warnings.push({
+      code: 'primary_sport_dominance_repaired',
+      message: `Se reconvirtieron ${converted} sesión(es) accesoria(s) en ${primarySport} para que domine la fase ${context.week.phase}.`,
     })
   }
 

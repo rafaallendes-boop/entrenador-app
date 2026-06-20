@@ -208,20 +208,28 @@ function countSessionsBySport(sessions: CoachSessionProposal[]): Partial<Record<
   }, {})
 }
 
-function validateLoadProgression(weeks: TrainingPlanWeek[]): PlanValidationIssue[] {
+export function validateLoadProgression(weeks: TrainingPlanWeek[], plan?: TrainingPlan): PlanValidationIssue[] {
   const issues: PlanValidationIssue[] = []
   const generated = weeks.filter((w) => w.sessions.length > 0).sort((a, b) => a.weekIndex - b.weekIndex)
   for (let i = 1; i < generated.length; i++) {
-    const prev = computeWeekLoad(generated[i - 1].sessions)
-    const curr = computeWeekLoad(generated[i].sessions)
+    const prevWeek = generated[i - 1]
+    const currWeek = generated[i]
+    const prevExpected = plan ? getExpectedSessionsForPlanWeek(plan, prevWeek) : prevWeek.sessions.length
+    const currExpected = plan ? getExpectedSessionsForPlanWeek(plan, currWeek) : currWeek.sessions.length
+    if (prevExpected === 0 || currExpected === 0) continue
+    // Normalize by expected session capacity, not the actual count. This keeps a
+    // genuinely short first/last week comparable while still flagging incomplete
+    // generated weeks followed by a full-volume week.
+    const prev = computeWeekLoad(prevWeek.sessions) / prevExpected
+    const curr = computeWeekLoad(currWeek.sessions) / currExpected
     if (prev === 0) continue
     const jump = (curr - prev) / prev
-    if (jump > 0.4 && generated[i].phase !== 'race') {
+    if (jump > 0.4 && currWeek.phase !== 'race') {
       issues.push({
         severity: 'warning',
         code: 'plan.load.jump',
-        message: `Salto de carga ${Math.round(jump * 100)}% entre semanas ${generated[i - 1].weekIndex + 1} y ${generated[i].weekIndex + 1}.`,
-        weekIndex: generated[i].weekIndex,
+        message: `Salto de carga ${Math.round(jump * 100)}% entre semanas ${prevWeek.weekIndex + 1} y ${currWeek.weekIndex + 1}.`,
+        weekIndex: currWeek.weekIndex,
       })
     }
   }
@@ -401,6 +409,6 @@ export function validatePlan(input: ValidatePlanInput): PlanValidationIssue[] {
   return [
     ...validateStructure(plan, weeks),
     ...weeks.flatMap((week) => validatePlanWeek(plan, week)),
-    ...validateLoadProgression(weeks),
+    ...validateLoadProgression(weeks, plan),
   ]
 }

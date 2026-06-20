@@ -142,7 +142,12 @@ describe('deterministic primary squash plan generation', () => {
 
     const peak = result[0]!
     expect(peak.sessions).toHaveLength(6)
-    expect(peak.sessions.filter((session) => session.sessionType === 'strength')).toHaveLength(2)
+    // Peak keeps squash dominant over accessory work (P3): support is trimmed to a
+    // single maintenance strength session plus one aerobic Z2 run.
+    const peakSquash = peak.sessions.filter((session) => session.sessionType === 'squash').length
+    const peakSupport = peak.sessions.length - peakSquash
+    expect(peakSquash).toBeGreaterThan(peakSupport)
+    expect(peak.sessions.filter((session) => session.sessionType === 'strength')).toHaveLength(1)
     expect(peak.sessions.some((session) => session.sessionType === 'running')).toBe(true)
     expect(peak.sessions.some((session) => peak.sessions.filter((other) => other.date === session.date).length >= 2)).toBe(true)
     expect(peak.sessions.filter((session) => session.sessionType === 'strength').every((session) => /^Gym Tipo [ABC]/.test(session.title))).toBe(true)

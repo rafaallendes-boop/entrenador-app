@@ -475,7 +475,7 @@ export default function PlanDashboard({ onEdit }: { onEdit: () => void }) {
 
     let weekCount: string | undefined
     if (timelineEntry) {
-      const phaseWeeks = timelineEntry.startWeek - timelineEntry.endWeek + 1
+      const phaseWeeks = timelineEntry.endWeek - timelineEntry.startWeek + 1
       if (phaseWeeks > 0) weekCount = `${phaseWeeks} sem`
     }
 

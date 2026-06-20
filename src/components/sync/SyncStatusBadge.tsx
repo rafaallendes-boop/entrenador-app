@@ -1,4 +1,5 @@
 import { Cloud, CloudOff, Wrench } from 'lucide-react'
+import { isDevToolsEnabled } from '../../services/devTools'
 
 interface SyncStatusBadgeProps {
   status: string
@@ -19,6 +20,19 @@ export default function SyncStatusBadge({
 }: SyncStatusBadgeProps) {
   const iconSize = compact ? 11 : 12
   const labelClass = compact ? 'text-[10px]' : 'text-xs'
+
+  if (!isDevToolsEnabled()) {
+    if (status === 'offline') {
+      return (
+        <span className={`inline-flex items-center gap-1 text-ink-muted ${labelClass}`}>
+          <CloudOff size={iconSize} />
+          Sin conexión
+        </span>
+      )
+    }
+
+    return null
+  }
 
   // Auto-repair takes visual priority
   if (autoRepairInProgress) {
