@@ -709,7 +709,9 @@ export default function PlanBuilderV2Page() {
   const showConsumerPlanRecovery = !showPlanQualityDebug && Boolean(
     isFailedState ||
     plan?.generationState === 'partial' ||
-    (plan?.generationState === 'complete' && qualityBlocksAccept),
+    // A "complete" plan can still be unacceptable (validation errors, not just
+    // quality blocks); the consumer card promises a retry, so surface the button.
+    (plan?.generationState === 'complete' && !canAcceptPlan),
   )
   const consumerPlanRecoveryLabel = plan?.generationState === 'complete' && qualityBlocksAccept
     ? 'Ajustar plan'
@@ -828,6 +830,11 @@ export default function PlanBuilderV2Page() {
       return
     }
     if (plan?.generationState === 'partial') {
+      await retryFullGeneration(effectiveAthleteProfile)
+      return
+    }
+    // Complete but not acceptable (e.g. residual validation errors): regenerate.
+    if (plan?.generationState === 'complete') {
       await retryFullGeneration(effectiveAthleteProfile)
     }
   }
