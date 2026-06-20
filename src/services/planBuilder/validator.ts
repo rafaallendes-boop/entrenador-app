@@ -208,19 +208,25 @@ function countSessionsBySport(sessions: CoachSessionProposal[]): Partial<Record<
   }, {})
 }
 
-function validateLoadProgression(weeks: TrainingPlanWeek[]): PlanValidationIssue[] {
+export function validateLoadProgression(weeks: TrainingPlanWeek[]): PlanValidationIssue[] {
   const issues: PlanValidationIssue[] = []
   const generated = weeks.filter((w) => w.sessions.length > 0).sort((a, b) => a.weekIndex - b.weekIndex)
   for (let i = 1; i < generated.length; i++) {
-    const prev = computeWeekLoad(generated[i - 1].sessions)
-    const curr = computeWeekLoad(generated[i].sessions)
+    const prevSessions = generated[i - 1].sessions.length
+    const currSessions = generated[i].sessions.length
+    if (prevSessions === 0 || currSessions === 0) continue
+    // Compare average load per session, not the weekly total: a partial first/last
+    // week (e.g. a plan that starts mid-week) has fewer sessions but the same
+    // intensity, which would otherwise read as a spurious jump.
+    const prev = computeWeekLoad(generated[i - 1].sessions) / prevSessions
+    const curr = computeWeekLoad(generated[i].sessions) / currSessions
     if (prev === 0) continue
     const jump = (curr - prev) / prev
     if (jump > 0.4 && generated[i].phase !== 'race') {
       issues.push({
         severity: 'warning',
         code: 'plan.load.jump',
-        message: `Salto de carga ${Math.round(jump * 100)}% entre semanas ${generated[i - 1].weekIndex + 1} y ${generated[i].weekIndex + 1}.`,
+        message: `Salto de intensidad ${Math.round(jump * 100)}% entre semanas ${generated[i - 1].weekIndex + 1} y ${generated[i].weekIndex + 1}.`,
         weekIndex: generated[i].weekIndex,
       })
     }
