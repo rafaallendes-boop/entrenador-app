@@ -265,7 +265,7 @@ export default function ChatCoach() {
 
     const createWeekAction = proposal.actions.find((action) => action.type === 'create_week')
     const warningSuffix = result.warnings.length > 0
-      ? ' Revisá la semana para confirmar que quedó como esperabas.'
+      ? ' Revisa la semana para confirmar que quedó como esperabas.'
       : ''
 
     if (createWeekAction?.sessions) {

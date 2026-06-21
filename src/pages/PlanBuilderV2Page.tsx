@@ -694,7 +694,7 @@ export default function PlanBuilderV2Page() {
     : undefined
   const planReadinessBlocker = (() => {
     if (plan?.generationState && plan.generationState !== 'complete') return 'Todavía estamos preparando tu plan.'
-    if (hasFailedWeeks || hasIncompleteWeeks) return 'No pudimos preparar todas las semanas. Probá de nuevo en un momento.'
+    if (hasFailedWeeks || hasIncompleteWeeks) return 'No pudimos preparar todas las semanas. Inténtalo de nuevo en un momento.'
     if (errors.length > 0) {
       return (showPlanQualityDebug ? errors[0]?.message : undefined) ?? 'Hay un ajuste final antes de guardar el plan.'
     }
@@ -739,7 +739,7 @@ export default function PlanBuilderV2Page() {
         <Card className="p-4 space-y-3">
           <h1 className="text-lg font-bold text-ink">Plan Builder</h1>
           <p className="text-sm text-ink-muted">
-            Necesitás completar el wizard de plan de competencia antes de generar un plan por evento.
+            Necesitas completar el wizard de plan de competencia antes de generar un plan por evento.
           </p>
           <button
             onClick={() => navigate(ROUTES.COMPETITION_PLAN)}
@@ -1030,7 +1030,7 @@ export default function PlanBuilderV2Page() {
               <div>
                 <h2 className="font-display text-base font-bold text-ink">No encontramos semanas para este plan</h2>
                 <p className="mt-1 text-sm text-ink-muted">
-                  Descartá este intento y volvé a preparar el plan desde el inicio.
+                  Descarta este intento y vuelve a preparar el plan desde el inicio.
                 </p>
                 {showPlanQualityDebug && lastError && <p className="mt-2 text-xs text-red-400">{lastError}</p>}
               </div>
@@ -1062,7 +1062,7 @@ export default function PlanBuilderV2Page() {
               <div>
                 <h2 className="font-display text-base font-bold text-ink">No pudimos preparar tu plan ahora</h2>
                 <p className="mt-1 text-sm text-ink-muted">
-                  Probá de nuevo en un momento o descartá este intento para volver a empezar.
+                  Inténtalo de nuevo en un momento o descarta este intento para volver a empezar.
                 </p>
                 {showPlanQualityDebug && lastError && <p className="mt-2 text-xs text-red-400">{lastError}</p>}
               </div>
@@ -1078,7 +1078,7 @@ export default function PlanBuilderV2Page() {
               <div>
                 <h2 className="font-display text-base font-bold text-ink">No pudimos completar la operación</h2>
                 <p className="mt-1 text-sm text-ink-muted">
-                  Tus datos siguen guardados. Probá de nuevo en un momento.
+                  Tus datos siguen guardados. Inténtalo de nuevo en un momento.
                 </p>
                 {showPlanQualityDebug && lastError && <p className="mt-2 text-xs text-red-400">{lastError}</p>}
               </div>
@@ -1097,7 +1097,7 @@ export default function PlanBuilderV2Page() {
                 <div>
                   <h2 className="font-display text-sm font-bold text-ink">La generación quedó incompleta</h2>
                   <p className="mt-1 text-xs text-ink-muted">
-                    Las semanas que ya están listas se conservaron. Podés descartar este intento y volver a empezar en un momento.
+                    Las semanas que ya están listas se conservaron. Puedes descartar este intento y volver a empezar en un momento.
                   </p>
                   {showPlanQualityDebug && lastError && <p className="mt-1.5 text-xs text-red-400">{lastError}</p>}
                 </div>
@@ -1469,7 +1469,7 @@ export default function PlanBuilderV2Page() {
               <div>
                 <p className="text-sm font-semibold text-ink">Tu plan está listo</p>
                 <p className="text-xs text-ink-muted mt-0.5">
-                  {weeks.length} semana{weeks.length === 1 ? '' : 's'} hasta tu evento. Revisalo y aceptalo cuando quieras.
+                  {weeks.length} semana{weeks.length === 1 ? '' : 's'} hasta tu evento. Revísalo y acéptalo cuando quieras.
                 </p>
               </div>
             </div>
@@ -1495,7 +1495,7 @@ export default function PlanBuilderV2Page() {
               <div className="flex-1">
                 <p className="text-sm font-semibold text-ink">Necesitamos un ajuste más</p>
                 <p className="text-xs text-ink-muted mt-0.5">
-                  No pudimos dejar tu plan 100% listo. Podés intentar de nuevo o descartar este intento para empezar de nuevo.
+                  No pudimos dejar tu plan 100% listo. Puedes intentarlo de nuevo o descartar este intento para empezar de nuevo.
                 </p>
               </div>
             </div>

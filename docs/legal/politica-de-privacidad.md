@@ -12,12 +12,12 @@
 **Responsable del tratamiento (piloto):** [[NOMBRE — persona natural; pasará a
 la sociedad (SpA) antes de habilitar el cobro]] — [[EMAIL DE CONTACTO]]
 
-Esta política explica qué datos tratamos, para qué y qué derechos tenés.
+Esta política explica qué datos tratamos, para qué y qué derechos tienes.
 
 ## 1. Qué datos tratamos
 
 - **Cuenta:** nombre y correo provistos por el inicio de sesión con Google.
-- **Datos de entrenamiento y salud declarados por vos:** edad, peso, objetivos,
+- **Datos de entrenamiento y salud que declaras:** edad, peso, objetivos,
   deporte, disponibilidad, referencias de fuerza (1RM), tiempos de carrera,
   percepción de fatiga, lesiones/molestias, sesiones y registros. Algunos de
   estos pueden considerarse **datos sensibles** (salud); los tratamos solo para
@@ -52,7 +52,7 @@ Esta política explica qué datos tratamos, para qué y qué derechos tenés.
 
 - **Acceso, rectificación, cancelación (eliminación) y oposición** sobre tus
   datos.
-- Podés **exportar** todos tus datos y **eliminar tu cuenta y datos** desde
+- Puedes **exportar** todos tus datos y **eliminar tu cuenta y datos** desde
   Ajustes en cualquier momento.
 - Para ejercer estos derechos o hacer consultas: [[EMAIL DE CONTACTO]].
 

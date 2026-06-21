@@ -383,7 +383,8 @@ interface TierCardProps {
 
 function TierCard({ name, tagline, monthlyPrice, annualPrice, isAnnual, featured, ribbon, ctaText, ctaStyle = 'ghost', featLabel, features, origMonthly }: TierCardProps) {
   const price = isAnnual ? annualPrice : monthlyPrice
-  const unit = isAnnual ? '€ / MES · PAGO ANUAL' : '€ / MES'
+  const unit = isAnnual ? 'CLP / mes · pago anual' : 'CLP / mes'
+  const formatClp = (value: number) => `$${value.toLocaleString('es-CL')}`
 
   return (
     <div className={`tier${featured ? ' featured' : ''}`}>
@@ -391,10 +392,16 @@ function TierCard({ name, tagline, monthlyPrice, annualPrice, isAnnual, featured
       <h3>{name}</h3>
       <p className="tier-sub">{tagline}</p>
       <div className="tier-price">
-        <span className="price-num">{price}</span>
-        <span className="price-unit">{unit}</span>
-        {!isAnnual && origMonthly && price < origMonthly && (
-          <span className="price-orig">{origMonthly} €</span>
+        {price === 0 ? (
+          <span className="price-num">Gratis</span>
+        ) : (
+          <>
+            <span className="price-num">{formatClp(price)}</span>
+            <span className="price-unit">{unit}</span>
+            {!isAnnual && origMonthly && price < origMonthly && (
+              <span className="price-orig">{formatClp(origMonthly)}</span>
+            )}
+          </>
         )}
       </div>
       <a href="#" className={`p-btn p-btn-lg p-btn-block p-btn-${ctaStyle}`} style={{ marginBottom: '28px' }}>
@@ -444,33 +451,29 @@ export default function PricingPage() {
   }
 
   const starterFeatures: TierFeature[] = [
-    { text: 'Planificación semanal manual' },
-    { text: 'Check-in diario básico' },
-    { text: 'Historial', note: 'últimos 30 días' },
+    { text: 'Tu semana de entrenamiento clara' },
+    { text: 'Registro diario de cómo llegas' },
     { text: '1 deporte', note: 'a elegir' },
-    { text: 'App PWA offline' },
-    { text: 'RallyIQ AI', dim: true },
-    { text: 'Propuestas automáticas', dim: true },
+    { text: 'Funciona sin conexión' },
+    { text: 'Plan inteligente de torneo', dim: true },
+    { text: 'Ajustes automáticos', dim: true },
   ]
 
   const proFeatures: TierFeature[] = [
-    { text: 'RallyIQ AI ilimitado 24/7' },
-    { text: 'Propuestas automáticas con diff' },
-    { text: 'Los 5 deportes' },
-    { text: 'Historial', note: 'ilimitado' },
-    { text: 'Analytics avanzado (ACWR, strain)' },
-    { text: 'Plantillas por bloque' },
-    { text: 'Competencias y picos' },
+    { text: 'Plan de torneo que se ajusta a cómo llegas' },
+    { text: 'Squash, fuerza, running y movilidad' },
+    { text: 'Ajustes según fatiga y molestias' },
+    { text: 'Fuerza con transferencia a la cancha' },
+    { text: 'Puesta a punto para tu evento' },
+    { text: 'Historial completo' },
   ]
 
   const eliteFeatures: TierFeature[] = [
-    { text: 'Sesión 1-a-1 mensual con entrenador' },
-    { text: 'Compartir con entrenador humano' },
+    { text: 'Revisión mensual de un entrenador' },
+    { text: 'Tu plan revisado antes de entregártelo' },
     { text: 'Periodización por competencia' },
-    { text: 'Export CSV / JSON sin caducidad' },
-    { text: 'API pública (Garmin, Strava, Whoop)' },
-    { text: 'Vista TV / RallyIQ mode' },
-    { text: 'Priority support < 12h' },
+    { text: 'Exporta tus datos cuando quieras' },
+    { text: 'Soporte prioritario' },
   ]
 
   return (
@@ -486,9 +489,9 @@ export default function PricingPage() {
             <span className="p-label brand" style={{ justifyContent: 'center', display: 'inline-flex' }}>
               Precios · sin permanencia
             </span>
-            <h1>Un plan. Sin <span className="hl">letra pequeña.</span></h1>
+            <h1>Preparación premium. Sin <span className="hl">letra pequeña.</span></h1>
             <p className="lede">
-              Empieza gratis. Sube a Pro cuando necesites RallyIQ AI. Cancela en 2 clicks, cuando quieras, sin preguntas.
+              Estamos en piloto cerrado para jugadores de squash que compiten. Solicita tu cupo; cuando abramos el cobro, cancelas cuando quieras, sin preguntas.
             </p>
             <div className="billing-toggle">
               <button className={!isAnnual ? 'on' : ''} onClick={() => setIsAnnual(false)}>Mensual</button>
@@ -505,39 +508,39 @@ export default function PricingPage() {
         <div className="pricing-wrap">
           <div className="pricing-grid">
             <TierCard
-              name="Starter"
-              tagline="Para empezar a registrar sesiones y probar el flujo."
+              name="Piloto"
+              tagline="Acceso por invitación durante la beta cerrada. Sin costo."
               monthlyPrice={0}
               annualPrice={0}
               isAnnual={isAnnual}
-              ctaText="Crear cuenta gratis"
+              ctaText="Solicitar cupo piloto"
               ctaStyle="ghost"
               featLabel="Incluye"
               features={starterFeatures}
             />
             <TierCard
-              name="Pro"
-              tagline="Para el atleta serio que necesita RallyIQ AI sin fricción."
-              monthlyPrice={12}
-              annualPrice={10}
+              name="RallyIQ"
+              tagline="Tu plan de torneo de squash, con fuerza y recuperación que transfieren a la cancha."
+              monthlyPrice={9990}
+              annualPrice={7990}
               isAnnual={isAnnual}
               featured
-              ribbon="Más popular"
-              ctaText="Empezar 14 días gratis"
+              ribbon="Recomendado"
+              ctaText="Solicitar cupo piloto"
               ctaStyle="primary"
-              featLabel="Todo de Starter, más"
+              featLabel="Todo del Piloto, más"
               features={proFeatures}
-              origMonthly={15}
+              origMonthly={12990}
             />
             <TierCard
-              name="Elite"
-              tagline="Para competitivos que además tienen entrenador humano."
-              monthlyPrice={29}
-              annualPrice={23}
+              name="RallyIQ + Coach"
+              tagline="Para competitivos que quieren la revisión de un entrenador cada mes."
+              monthlyPrice={34900}
+              annualPrice={27920}
               isAnnual={isAnnual}
-              ctaText="Hablar con ventas"
+              ctaText="Solicitar cupo con coach"
               ctaStyle="ghost"
-              featLabel="Todo de Pro, más"
+              featLabel="Todo de RallyIQ, más"
               features={eliteFeatures}
             />
           </div>

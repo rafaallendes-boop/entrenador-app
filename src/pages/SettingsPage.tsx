@@ -204,7 +204,7 @@ export default function SettingsPage() {
       setExportStatus(`Backup exportado: ${filename}`)
     } catch (error) {
       console.error('[settings] export backup failed', error)
-      setExportStatus('No se pudo exportar. Probá de nuevo en un momento.')
+      setExportStatus('No se pudo exportar. Inténtalo de nuevo en un momento.')
     } finally {
       setIsExporting(false)
     }
@@ -344,7 +344,7 @@ export default function SettingsPage() {
       setClearStatus([baseMessage, ...warnings].join(' '))
     } catch (error) {
       console.error('[settings] selective data wipe failed', error)
-      setClearStatus('No se pudieron eliminar los datos seleccionados. Revisá tu conexión y probá de nuevo.')
+      setClearStatus('No se pudieron eliminar los datos seleccionados. Revisa tu conexión e inténtalo de nuevo.')
     } finally {
       setIsClearing(false)
     }

@@ -11,7 +11,7 @@
 **Contacto:** [[EMAIL DE CONTACTO PÚBLICO]]
 **Jurisdicción:** Chile (con expansión internacional posterior).
 
-Al crear una cuenta o usar RallyIQ ("el servicio") aceptás estos Términos. Si no
+Al crear una cuenta o usar RallyIQ ("el servicio") aceptas estos Términos. Si no
 estás de acuerdo, no uses el servicio.
 
 ## 1. Qué es el servicio
@@ -24,8 +24,8 @@ de estos Términos.
 
 ## 2. Cuenta y acceso
 
-- Necesitás una cuenta (vía inicio de sesión con Google) para usar el servicio.
-- Sos responsable de la actividad de tu cuenta y de mantener segura tu sesión.
+- Necesitas una cuenta (vía inicio de sesión con Google) para usar el servicio.
+- Eres responsable de la actividad de tu cuenta y de mantener segura tu sesión.
 - Debés ser mayor de edad en tu jurisdicción para contratar.
 
 ## 3. Suscripción, pagos y renovación
@@ -36,7 +36,7 @@ de estos Términos.
 - El acceso se ofrece bajo **suscripción mensual**. El precio vigente se muestra
   antes de contratar.
 - La suscripción **se renueva automáticamente** cada período hasta que la
-  canceles. Podés cancelar en cualquier momento; la cancelación aplica al final
+  canceles. Puedes cancelar en cualquier momento; la cancelación aplica al final
   del período ya pagado.
 - Los pagos se procesan a través de [[PROCESADOR DE PAGOS — p. ej. Stripe]]. No
   almacenamos datos completos de tu tarjeta.
@@ -48,16 +48,16 @@ de estos Términos.
 
 ## 4. Uso aceptable
 
-No podés: usar el servicio para fines ilegales; revender o redistribuir los
+No puedes: usar el servicio para fines ilegales; revender o redistribuir los
 planes como si fueran un producto propio; intentar vulnerar la seguridad,
 extraer datos masivamente o interferir con el funcionamiento del servicio.
 
 ## 5. Tus datos y contenido
 
-- Conservás la titularidad de los datos que ingresás (perfil, sesiones,
-  registros). Nos otorgás una licencia limitada para procesarlos y prestarte el
+- Conservas la titularidad de los datos que ingresas (perfil, sesiones,
+  registros). Nos otorgas una licencia limitada para procesarlos y prestarte el
   servicio (ver [Política de Privacidad](./politica-de-privacidad.md)).
-- Podés **exportar y eliminar** tus datos desde Ajustes.
+- Puedes **exportar y eliminar** tus datos desde Ajustes.
 
 ## 6. Inteligencia artificial
 
