@@ -1,334 +1,437 @@
 # Entrenador App - Review and Roadmap
 
-Actualizado: 2026-06-14
+Actualizado: 2026-06-20
 
 ## Resumen Ejecutivo
 
-Entrenador esta en mejor estado tecnico que el corte del 2026-06-02, pero todavia debe tratarse como beta interna controlada, no como apertura amplia. El foco del repo se movio hacia Plan Builder async, reparacion deportiva mas fuerte para squash, fases macro ajustadas para torneo de squash y observabilidad local de calidad.
+Entrenador/RallyIQ ya no se siente como un experimento tecnico temprano. El motor de planificacion, el flujo async de Plan Builder, la reparacion de semanas, el soporte de squash/fuerza y el sistema de export/backup estan lo suficientemente avanzados para cambiar de etapa.
 
-El corte local esta verde en lint, tests, build y audit de prompts. Lo que falta para subir confianza no es mas refactor: son pruebas reales con dev/prod, provider, Supabase y login vigente. Hay dos decisiones antes de beta ampliada: si las acciones de calidad/regeneracion de Plan Builder son feature visible o debug interno, y como confirmar mejor que la background function realmente arranco cuando el cliente pierde la respuesta del trigger.
+La recomendacion ahora es pasar de "beta interna tecnica" a "preparacion para clientes premium en piloto cerrado". No significa abrir pago publico todavia. Significa preparar la experiencia completa que un atleta real va a ver: landing clara, promesa creible, UI menos tecnica, terminos/privacidad, disclaimers de salud, soporte, onboarding y un protocolo de revision de calidad antes de invitar clientes.
 
-## Estado Del Corte 2026-06-14
+El producto debe sentirse como un entrenador digital premium para squash competitivo, con fuerza y recuperacion integradas. La app no deberia hablar como software de IA; deberia hablar como un sistema de preparacion: carga, pista, fuerza, molestias, torneo, revision semanal y decisiones simples.
 
-Working tree con cambios sin commit en Plan Builder, macro plan, quality review, repair week, prompts, store, tipos, Netlify y tests. `src/services/weekCreator/WeekCreatorEngine.ts` no tiene diff local, pero fue revisado porque resuelve objetivos desde planes activos y usa el pipeline de reparacion/validacion de semanas.
+## Cambio De Etapa
 
-Cambios locales revisados:
+Estado anterior:
 
-- `netlify.toml`: `generate-plan-background` queda configurada como background function.
-- `src/store/usePlanBuilderStore.ts`: intenta sostener polling cuando el plan ya fue publicado pero se pierde la confirmacion del trigger remoto.
-- `src/services/macroPlan.ts` y `src/services/planBuilder/buildPlanShell.ts`: taper de squash se acorta a la ultima semana pre-evento y las cargas de soporte se ajustan por deporte/fase.
-- `src/services/planBuilder/repairWeek.ts`: conserva drills de squash reconocidos, mapea/completa alrededor de drills desconocidos y densifica sesiones pobres.
-- `src/services/planBuilder/qualityReview.ts`: prorratea cargas en semanas parciales antes de marcar saltos de progresion.
-- `src/services/week/prompts/weekPrompt.ts`: refuerza uso de nombres exactos del catalogo de squash.
-- Tests actualizados para fases de squash, reparacion de drills, prorrateo de carga parcial, continuidad de generacion remota y bordes de Week Creator (capacidad, fallback, abort).
+- Beta interna enfocada en robustez tecnica.
+- Validacion local de tests, build, prompts y flujos async.
+- Preguntas abiertas sobre debug vs feature visible.
 
-## Validacion Local Ejecutada
+Estado recomendado ahora:
 
-Comandos corridos en este corte:
+- Piloto premium cerrado en preparacion.
+- Mantener QA tecnico, pero mover el foco a confianza del cliente.
+- Preparar una primera oferta comercial controlada, sin paywall publico todavia.
+- Revisar cada plan generado como lo haria un entrenador antes de mostrarlo como producto.
 
-```bash
-npm run lint
-npm test
-npm run build
-npm run audit:prompt
-npx vitest run src/services/__tests__/macroPlan.test.ts src/services/__tests__/macroWeekCoherence.test.ts src/services/__tests__/planBuilder.test.ts src/services/__tests__/repairWeek.test.ts src/services/planBuilder/__tests__/qualityReviewRepeatedTemplate.test.ts src/services/planBuilder/__tests__/repairWeekPhase2Wiring.test.ts src/store/__tests__/usePlanBuilderStore.test.ts
-```
+La pregunta principal deja de ser "puede generar un plan?" y pasa a ser:
 
-Resultados:
+"Un jugador de squash pagaria y confiaria en esto despues de verlo 5 minutos?"
 
-- `npm run lint`: OK.
-- `npm test`: 112 archivos, 790 tests OK.
-- `npm run build`: OK.
-- `npm run audit:prompt`: OK.
-  - `chat_general`: 2030 chars / ~508 tokens.
-  - `chat_action`: 14655 chars / ~3664 tokens.
-  - `week_creator`: 14655 chars / ~3664 tokens.
-  - `plan_builder_week`: 14655 chars / ~3664 tokens.
-  - `weekly_summary`: 15104 chars / ~3776 tokens.
-- Tests focalizados: 7 archivos, 76 tests OK.
+## Evidencia Del Corte 2026-06-20
 
-No revalidado en este corte:
+Se revisaron los exports locales mencionados en este corte:
 
-- `npm run loadtest:week-creator`: requiere dev server y provider real.
-- `npm run e2e:dev`
-- `npm run e2e:dev:apply`
-- `npm run e2e:dev:quality`
-- `npm run e2e:plan`
-- `npm run e2e:plan:generate`
-- `npm run e2e:plan:generate:quality`
-- `npm run e2e:plan:accept`
+- `entrenador-athlete-profile-2026-06-20T20-47-06-212Z.json`
+- `entrenador-backup-2026-06-20T20-47-16-931Z.json`
 
-Motivo operativo: `scripts/.e2e-auth-state.json` existe, pero la sesion guardada expiro el 2026-05-25. Para correr E2E sin falsos negativos hay que renovar login con los scripts headed.
+Senales positivas:
 
-## Revision De Codigo
+- Existe backup completo con tablas de sesiones, semanas, planes, chat, proposals y perfil.
+- Hay un plan activo llamado `Plan Torneo nacional`.
+- El plan fue generado por background job y aceptado.
+- `generationSummary.completedWeeks`: 5/5.
+- `generationSummary.failedWeeks`: 0.
+- Duracion de generacion: ~132 s.
+- Quality review global: score 77, `needs_review`, sin issues criticos.
+- Backup con 23 sesiones:
+  - 15 squash.
+  - 4 fuerza.
+  - 3 running.
+  - 1 movilidad.
+- Perfil con referencias 1RM para squat, deadlift, bench press y overhead press.
 
-### Hallazgo 1 - Regeneracion/calidad visible aunque el flag dice debug interno
+Senales que piden revision de entrenador antes de cliente:
 
-Severidad: media.
+- Warning de salto de carga entre semanas 1 y 2.
+- Warning de baja variedad de drills en un bloque build.
+- Warning de squash etiquetado como match-play cuando los bloques no eran partido completo.
+- Varias semanas requirieron reparaciones automaticas altas.
 
-`src/services/ai/showPlanQualityFlag.ts` documenta que badges y controles de regeneracion se habilitan local/dev con `VITE_SHOW_PLAN_QUALITY=true` y se fuerzan off en prod. Sin embargo, `src/pages/PlanBuilderV2Page.tsx` muestra calidad cuando el plan esta `complete` o `partial`, y expone `Regenerar semana`, `Reparar semanas marcadas` y `Regenerar plan` por estado del plan, no por el flag.
+Lectura premium: esto es bueno. No es un bloqueo; es exactamente el tipo de cola de revision que deberia existir antes de entregar un plan de alto rendimiento. Para cliente final, esos warnings no deben aparecer como lenguaje tecnico. Para entrenador/admin, son el checklist de control.
 
-Impacto: si Fase 3 sigue siendo debug interno, esos controles pueden aparecer a usuarios beta/prod y convertir una herramienta de QA en superficie publica. Si ahora se decidio que regenerar es feature de producto, entonces hay que actualizar el comentario del flag, el roadmap y la UX como capacidad soportada.
+## Lectura Como Coach De Squash Y Preparador Fisico
 
-Referencia local:
+La propuesta con mas fuerza no es "app de IA para entrenar". Eso suena generico y facil de desconfiar.
 
-- `src/services/ai/showPlanQualityFlag.ts`
-- `src/pages/PlanBuilderV2Page.tsx` alrededor de `shouldShowQualityReview`, `Regenerar semana`, `Reparar semanas marcadas` y `Regenerar plan`.
+La propuesta mas premium es:
 
-Decision recomendada: antes de beta ampliada, elegir una de dos:
+> Preparacion inteligente para jugadores de squash que compiten: plan de torneo, carga semanal, fuerza especifica, recuperacion y ajustes segun como llega el cuerpo.
 
-- Gatear calidad/reparacion/regeneracion con `shouldShowPlanQuality()`.
-- Mantener regeneracion como feature visible, pero separar "debug quality" de "acciones de recuperacion" y testearlo como flujo de usuario.
+Pilares deportivos:
 
-### Hallazgo 2 - Confirmacion remota perdida puede dejar polling fantasma
+- Squash primero: desplazamientos, cambios de direccion, repeticion de rallies, aceleracion/frenado, tolerancia a puntos largos y toma de decision bajo fatiga.
+- Fuerza con transferencia: tren inferior, core anti-rotacion, potencia, estabilidad unilateral, hombro/escapula y tolerancia de tejidos.
+- Carga controlada: no sumar running/fuerza porque si; todo debe justificar su transferencia o su rol aerobico/recuperativo.
+- Taper entendible: menos ruido en la semana final, mas frescura, activacion, velocidad y confianza.
+- Feedback diario: sueno, dolor, fatiga y disponibilidad deben modificar el plan sin dramatismo.
 
-Severidad: media-baja.
+Regla de producto:
 
-El nuevo `resumeUncertainRemoteGeneration` evita perder una generacion si el cliente publica el plan y luego no recibe confirmacion del trigger. Es una buena defensa para requests que si llegaron al worker, pero tambien puede ocultar el caso contrario: `triggerBackgroundGeneration` falla antes de invocar la funcion y el cliente queda en `generating` hasta que el polling marque stalled.
+RallyIQ puede generar y proponer. El entrenador premium revisa, filtra y entrega. En piloto, esa supervision humana es parte del valor.
 
-Impacto: en mala red o error temprano del trigger, el usuario puede ver una generacion viva durante varios minutos sin worker real.
+## Posicionamiento Recomendado
 
-Referencia local:
+Nombre publico:
 
-- `src/store/usePlanBuilderStore.ts`
-- `netlify/functions/generate-plan-background.ts`
+- Elegir una identidad principal: `RallyIQ` o `Entrenador`.
+- Hoy la app mezcla ambos. Para clientes, la marca visible deberia ser una sola.
+- Recomendacion: usar `RallyIQ` como producto y `Entrenador App` como nombre interno/repo.
 
-Decision recomendada: agregar una confirmacion corta de arranque remoto. Por ejemplo, despues de perder el trigger, esperar un snapshot con `jobId`, progreso de semana o heartbeat remoto nuevo; si no aparece en una ventana corta, mostrar error recuperable en vez de esperar el timeout largo de stalled.
+Cliente inicial:
 
-### Hallazgo 3 - Config local sensible esta bien ignorada, pero cuidar rotacion
+- Jugador de squash amateur competitivo.
+- Tiene torneo, liga, ranking, club o meta concreta.
+- Entrena 3-6 dias/semana.
+- Necesita ordenar squash, fuerza, running/movilidad y recuperacion.
+- No quiere planillas ni explicaciones tecnicas largas.
 
-Severidad: baja.
+Oferta piloto:
 
-`.env.local` esta ignorado por `.gitignore`, y `.env.production` es el archivo trackeado esperado para config publica de build. Aun asi, como el entorno local contiene claves de provider, cualquier salida compartida accidentalmente debe tratarse como exposicion y disparar rotacion.
+- Plan de preparacion de 4 a 8 semanas.
+- Onboarding inicial con perfil, disponibilidad, historial de lesiones y objetivo.
+- Plan semanal en app.
+- Check-in diario corto.
+- Ajustes con RallyIQ.
+- Revision semanal premium por entrenador durante el piloto.
+- Export/backup disponible.
 
-Decision recomendada: antes de deploy externo, confirmar que ninguna key privada vive en `VITE_*`, que Netlify usa env vars server-side y que cualquier clave mostrada fuera del equipo fue rotada.
+CTA recomendado para esta etapa:
 
-### Hallazgo 4 - Sin bloqueo funcional en Week Creator local
+- "Solicitar cupo piloto".
+- "Agendar evaluacion".
+- "Preparar mi proximo torneo".
 
-Severidad: informativo.
+Evitar por ahora:
 
-`WeekCreatorEngine` no tiene diff local y su flujo sigue razonable: resuelve objetivos desde plan activo, construye prompt estructurado, repara sesiones, valida contrato y cae a fallback deterministico si agota intentos. El cambio de `repairWeek` mejora indirectamente Week Creator porque conserva sesiones de squash con drills parcialmente reconocibles y agrega bloques cuando densifica.
+- "Empezar gratis" como CTA principal si no hay flujo comercial completo.
+- "IA ilimitada 24/7" como promesa central.
+- Claims de mejora porcentual sin evidencia real.
+- Lenguaje como provider, local-first, schema, background, quality score, regeneration.
 
-## Estado Del Spec Plan Builder
+## Diagnostico De Superficie Publica
 
-Referencia: `docs/superpowers/specs/2026-05-27-plan-builder-star-product-design.md`.
+Paginas existentes:
 
-### Fase 1 - IA Confiable
+- `src/pages/LandingPage.tsx`
+- `src/pages/FeaturesPage.tsx`
+- `src/pages/PricingPage.tsx`
+- `src/components/SharedPublicNav.tsx`
 
-Estado: mayormente implementada, con async remoto mas maduro.
+Lo bueno:
 
-Implementado:
+- Ya hay una identidad visual fuerte.
+- Hay landing, features, pricing y nav publica.
+- La app transmite energia de producto, no solo prototipo.
+- El foco en squash, running, fuerza, movilidad y ciclismo ya esta presente.
 
-- `single` es default y `pairs` queda configurable.
-- `plan_builder_week` y `plan_builder_pair` usan schema/structured output.
-- Provider routing por requestClass existe.
-- Parser streaming existe para recuperar acciones completas en batch truncado.
-- Pair degrada a single antes de fallback local.
-- Background generation existe para Plan Builder remoto.
-- Polling mezcla estado remoto/local y detecta stalled con TTL conservador.
+Lo que hay que cambiar para clientes:
 
-Pendiente:
+- La landing habla demasiado como producto tech.
+- Aparecen versiones/lanzamientos que pueden quedar obsoletos.
+- Hay claims comerciales que necesitan evidencia o suavizado.
+- `Privacidad` y `Terminos` aparecen como links de footer, pero todavia no hay rutas/documentos reales.
+- Pricing parece mas abierto de lo que conviene para un piloto cerrado.
+- El valor premium de squash competitivo todavia no esta en primer plano.
 
-- Verificar en ambiente real que Netlify background function escribe `jobId`, heartbeat, semanas y estado terminal sin depender del cliente.
-- Revalidar `e2e:plan:generate:quality` con provider/proxy real.
+Nueva direccion de copy:
 
-### Fase 2 - Especificidad Deportiva
+- Menos "sistema cerrado, PWA, AI, analytics".
+- Mas "llega fresco al torneo, ordena la semana, ajusta carga, entrena fuerza con sentido, registra molestias, revisa decisiones".
+- El usuario debe entender el beneficio antes de entender la tecnologia.
 
-Estado: mayormente implementada y mejor que el corte anterior para squash competitivo.
+## UI Menos Tecnica
 
-Implementado:
+Objetivo: que la app se sienta como una herramienta de atleta, no como consola de QA.
 
-- `exerciseLibrary` y `drillLibrary` siguen como fuentes principales.
-- `strengthBlocks/` tiene templates por fase y rotacion.
-- `profileAdapter` traduce perfil + wizard a parametros de selectores.
-- `selectStrengthSession` usa fase, bloque, recientes, fatiga y referencias 1RM.
-- `repairWeek` hidrata/densifica fuerza y squash.
-- Taper de squash se acorta a la ultima semana pre-evento; peak/build sostienen especificidad hasta mas cerca del torneo.
-- Cargas de soporte se reducen por fase y deporte, especialmente running/cycling cuando squash es primario.
-- `qualityReview` detecta templates de fuerza repetidos y ahora prorratea semanas parciales antes de marcar saltos.
+Cambios recomendados:
 
-Pendiente de evidencia real:
+- `Plan Builder` -> `Crear plan`.
+- `Quality review` -> interno/admin; si se muestra al usuario, usar `Revision del plan`.
+- `needs_review` -> `Requiere revision del coach`.
+- `Regenerar semana` -> `Mejorar semana` o `Ajustar semana`.
+- `Reparar semanas marcadas` -> oculto para cliente o mover a modo entrenador.
+- `Beta quality` -> solo Settings interno/admin.
+- `Taper` -> `puesta a punto` en UI de cliente.
+- `Background generation`/`polling` -> nunca visible para cliente.
+- `Fallback` -> nunca visible para cliente.
 
-- Generar 1 plan real de 8-12 semanas con squash competitivo, fuerza y 1RM completos.
-- Confirmar 0 sesiones de fuerza clonadas con 3+ ejercicios repetidos dentro del mismo bloque.
-- Confirmar al menos 4 ejercicios usando referencias 1RM.
-- Confirmar al menos 6 drills squash distintos across plan.
-- Confirmar ausencia o reparabilidad clara de `quality.strength.repeated_template`.
+Principio:
 
-### Fase 3 - Trust y Observabilidad
+El usuario no debe sentir que esta evaluando una IA. Debe sentir que tiene una semana clara, revisable y adaptable.
 
-Estado: parcial-avanzada, con una decision pendiente de producto/debug.
+## Legal, Confianza Y Seguridad
 
-Implementado:
+Antes de cobrar o invitar fuera del circulo cercano, crear al menos estas paginas:
 
-- `commitPlan` recalcula y persiste `generationSummary.qualityReview`.
-- `PlanQualityBadge` existe y se fuerza off en produccion mediante `shouldShowPlanQuality()`.
-- Store tiene `regenerateWeek`, `regenerateWeeks`, `retryFailedWeeks` y `retryIncompleteWeeks`.
-- `PlanBuilderV2Page` permite regenerar semana, regenerar fallidas, reparar semanas marcadas y regenerar plan.
-- Settings tiene `Beta quality local` con export/reset y metricas basicas de requests/feedback/usage.
-- `PlanWeekStatus` incluye `regenerating`.
+- Terminos y condiciones.
+- Politica de privacidad.
+- Disclaimer medico/deportivo.
+- Politica de cancelacion/reembolsos, aunque el piloto sea manual.
+- Consentimiento de uso de IA y limites del servicio.
 
-Pendiente:
+Contenido minimo:
 
-- Decidir si los controles de regeneracion/calidad son debug interno o feature visible.
-- Si son debug: gatearlos con `shouldShowPlanQuality()` y testear que prod no los renderiza.
-- Si son feature: documentar el flujo de usuario, textos, estados de error y garantias de no perder semanas aceptadas.
-- Agregar rollup de planes mas especifico en Settings/Beta Quality: N/M semanas IA vs fallback, failed weeks, quality score agregado por plan.
-- E2E de regeneracion: una semana reemplazada mantiene el resto intacto y deja qualityReview actualizado.
+- RallyIQ no reemplaza evaluacion medica, kinesiologica ni urgencias.
+- El usuario debe detener entrenamiento ante dolor agudo, mareos, sintomas neurologicos, dolor toracico o lesion.
+- La app entrega planificacion y recomendaciones generales/personalizadas por datos declarados, no diagnostico medico.
+- Datos que se guardan: perfil, sesiones, check-ins, chat/proposals, planes y backups.
+- Explicar login, sincronizacion, exportacion y eliminacion de datos.
+- Explicar que respuestas de IA pueden ser revisadas/mejoradas y no son garantia de resultado competitivo.
+- Incluir contacto de soporte.
 
-### Fase 4 - Telemetria Persistida
+Nota operativa: antes de pago publico, revisar estos textos con abogado segun mercado objetivo. Para Chile/LatAm, cuidar tratamiento de datos personales y claims de salud/rendimiento.
 
-Estado: no implementada y fuera del MVP actual.
+## Roadmap Cliente - Junio/Julio 2026
 
-No empezar antes de:
+### 1. Oferta Y Posicionamiento
 
-- Decision Fase 3 debug vs feature visible.
-- Beta interna activa al menos 2 semanas.
-- Volumen suficiente de `aiRequestLogs` y feedback.
-- Decision de privacidad sobre que se persiste remotamente.
-
-## Readiness Para Produccion
-
-Estado recomendado: no abrir beta ampliada. Avanzar solo a smoke prod controlado cuando los gates E2E/loadtest reales esten verdes.
-
-Bloqueantes antes de deploy prod:
-
-- Renovar auth E2E con `npm run e2e:dev:headed` o `npm run e2e:plan:headed`.
-- Correr `npm run loadtest:week-creator`.
-- Correr `npm run e2e:dev:quality`.
-- Correr `npm run e2e:plan`.
-- Correr `npm run e2e:plan:generate:quality` con provider/proxy real.
-- Revisar un export Beta Quality nuevo.
-- Decidir/gatear controles de calidad y regeneracion de Plan Builder.
-- Confirmar `.env` de prod: `VITE_AI_PROVIDER=proxy`, function proxy configurada, sin keys privadas en `VITE_*`.
-- Smoke sync basico desktop/mobile en ambiente seguro.
-- Cortar deploy desde un commit limpio y trazable.
-- Fijar runtime Node/npm para Netlify/local (`engines`, `.nvmrc` o `NODE_VERSION`).
-- Agregar CI minima o ejecutar checklist automatizado equivalente antes del deploy.
-- Validar que el schema Supabase real cubre tablas actuales y migraciones necesarias.
-
-Criterio para permitir deploy:
-
-- Build local verde.
-- Runtime reproducible entre local y Netlify.
-- Proxy responde sin `misconfigured`.
-- Week Creator genera al menos una semana real sin caer sistematicamente en fallback local.
-- Plan Builder genera un plan revisable de 8-12 semanas.
-- Background Plan Builder escribe `jobId`, heartbeat y estado terminal remoto.
-- No hay loaders pegados.
-- Proposals se aplican una vez.
-- Settings/Beta Quality muestra trazas utiles.
-- No hay cambios locales no revisados en el corte de deploy.
-
-Criterio para invitar beta interna 3-5 personas:
-
-- Smoke prod controlado verde.
-- Canal de feedback simple.
-- Instruccion corta para exportar Beta Quality.
-- Uso inicial acompanado 1:1.
-- Sin promesa de estabilidad multi-dispositivo hasta completar QA sync.
-
-## Roadmap Junio 2026
-
-### 1. Cerrar Decisiones De Superficie Plan Builder
-
-Objetivo: evitar que debug interno se convierta accidentalmente en producto.
+Objetivo: una promesa clara y premium para el primer nicho.
 
 Checklist:
 
-- Decidir si quality review bloquea aceptacion en prod.
-- Decidir si `Regenerar semana`, `Reparar semanas marcadas` y `Regenerar plan` son controles visibles.
-- Si son debug: gatear con `shouldShowPlanQuality()` y agregar tests de prod-off.
-- Si son feature: escribir tests de UX/estado para regeneracion visible.
+- Definir marca publica principal: RallyIQ vs Entrenador.
+- Escribir one-liner de producto.
+- Definir nicho inicial: squash competitivo.
+- Definir oferta piloto: duracion, cupos, nivel de soporte, precio o invitacion.
+- Definir CTA principal: cupo piloto/evaluacion.
+- Definir que incluye y que no incluye.
 
-### 2. Rebaseline Tecnico y Deportivo
+Resultado esperado:
 
-Objetivo: generar evidencia fresca de Junio antes de decidir invitaciones.
+- Una persona entiende en 10 segundos para quien es, que resuelve y que debe hacer.
+
+### 2. Landing Y Paginas Publicas
+
+Objetivo: convertir interes en solicitud de piloto, no explicar arquitectura.
 
 Checklist:
 
-- `npm run lint` - hecho 2026-06-14.
-- `npm test` - hecho 2026-06-14.
-- `npm run build` - hecho 2026-06-14.
-- `npm run audit:prompt` - hecho 2026-06-14.
+- Reescribir hero con foco squash/torneo.
+- Remover `v2.4`, "lanzamiento en abril" y claims temporales.
+- Cambiar CTA principal a piloto/evaluacion.
+- Agregar seccion "Como funciona" en 3 pasos:
+  - Perfil y objetivo.
+  - Plan semanal revisado.
+  - Check-in y ajustes.
+- Agregar seccion "Para quien es".
+- Agregar seccion "Que no es".
+- Agregar prueba visual real de app o screenshots limpios.
+- Actualizar pricing a "piloto fundador" o waitlist.
+- Conectar footer a rutas reales de privacidad/terminos.
+
+### 3. UI De Atleta
+
+Objetivo: reducir friccion y bajar lenguaje tecnico dentro de la app.
+
+Checklist:
+
+- Revisar labels de Plan Builder V2.
+- Ocultar controles debug para usuario normal.
+- Mantener herramientas de calidad en modo entrenador/admin.
+- Convertir warnings tecnicos en estados accionables:
+  - `Revisar carga`.
+  - `Ajustar variedad`.
+  - `Confirmar objetivo de la semana`.
+- Mejorar empty states y errores con lenguaje humano.
+- Revisar onboarding para pedir datos deportivos reales:
+  - torneo/fecha.
+  - disponibilidad.
+  - molestias.
+  - historial de entrenamiento.
+  - fuerza/1RM si existe.
+  - acceso a cancha y sesiones con partner.
+
+### 4. Documentos De Confianza
+
+Objetivo: poder invitar clientes sin links rotos ni zona gris legal.
+
+Checklist:
+
+- Crear `/terms`.
+- Crear `/privacy`.
+- Crear `/health-disclaimer` o incluirlo claramente en terminos.
+- Agregar consentimiento en onboarding o signup.
+- Agregar links reales en landing/features/pricing/footer.
+- Revisar textos con abogado antes de cobro publico.
+
+### 5. QA Deportiva De Planes
+
+Objetivo: cada plan piloto debe pasar por filtro de entrenador.
+
+Checklist minimo por plan:
+
+- 0 issues criticos.
+- Saltos de carga justificados o corregidos.
+- Variedad suficiente de drills de squash por bloque.
+- Fuerza sin plantillas clonadas semana a semana.
+- 1RM usado cuando existe.
+- Taper/puesta a punto clara en semana final.
+- Running/ciclismo solo si aporta al objetivo.
+- Movilidad y recuperacion presentes cuando la carga sube.
+- Sesiones comprensibles para el atleta sin leer contexto tecnico.
+
+Arquetipos de prueba:
+
+- Torneo en 4 semanas.
+- Jugador con 3 dias disponibles.
+- Jugador con 5-6 dias y doble sesion ocasional.
+- Retorno con molestia de rodilla/tobillo/hombro.
+- Semana con poco sueno y match cercano.
+
+### 6. Operacion De Piloto Premium
+
+Objetivo: aprender con pocos clientes sin romper confianza.
+
+Checklist:
+
+- Invitar 3 clientes primero, no mas.
+- Onboarding 1:1 de 20-30 min.
+- Revisar manualmente el primer plan antes de entregarlo.
+- Pedir check-in diario durante 7 dias.
+- Hacer review semanal breve.
+- Tener canal de soporte claro.
+- Registrar feedback por categoria:
+  - plan deportivo.
+  - claridad UI.
+  - confianza.
+  - fallos tecnicos.
+  - sync/datos.
+  - pricing/oferta.
+
+Metricas de exito:
+
+- Cliente entiende su semana sin explicacion extra.
+- Cliente registra al menos 4 dias de 7.
+- 0 perdida de datos.
+- 0 planes con criticos.
+- Menos de 2 momentos de confusion fuerte por cliente/semana.
+- Feedback cualitativo: "esto me ordena" o "esto me ayuda a llegar mejor".
+
+## Pendientes Tecnicos Que Siguen Importando
+
+Estos puntos no deben bloquear la preparacion comercial, pero si bloquean apertura amplia:
+
 - Renovar auth E2E.
-- `npm run loadtest:week-creator`.
-- `npm run e2e:dev:quality`.
-- `npm run e2e:plan`.
-- `npm run e2e:plan:generate:quality`.
-- Generar 1 plan real de 8-12 semanas con squash + fuerza + 1RM completos.
-- Exportar Beta Quality y guardar hallazgos accionables.
+- Correr E2E reales con login vigente.
+- Correr smoke prod controlado.
+- Verificar Netlify background function con Supabase real.
+- Confirmar que background generation escribe `jobId`, heartbeat y estado terminal.
+- Validar sync desktop/mobile:
+  - crear sesion en desktop, verla en mobile.
+  - completar sesion en mobile, verla en desktop.
+  - aceptar proposal en un dispositivo y converger en el otro.
+  - delete/tombstone no reaparece.
+- Revisar `.env` prod:
+  - `VITE_AI_PROVIDER=proxy`.
+  - sin keys privadas en `VITE_*`.
+  - funciones server-side configuradas.
+- Fijar runtime Node/npm para Netlify/local.
+- Agregar CI minima o checklist automatizado antes de deploy.
+- Confirmar schema Supabase real y migraciones necesarias.
 
-### 3. Async Plan Builder Hardening
+## Sprint Recomendado - 7 Dias
 
-Objetivo: que el usuario nunca quede mirando un polling sin worker real.
+### Dia 1 - Oferta
 
-Checklist:
+- Decidir nombre publico.
+- Escribir one-liner y promesa.
+- Definir cupos piloto y CTA.
+- Definir si habra precio fundador o invitacion manual.
 
-- Confirmacion corta de arranque remoto tras perdida de trigger.
-- Test: trigger falla antes de worker -> error recuperable, no polling largo.
-- Test: trigger llega pero cliente pierde respuesta -> polling sigue y captura `jobId`/progreso.
-- Smoke Netlify background function con Supabase real.
+### Dias 2-3 - Landing
 
-### 4. QA Sync y Multi-Dispositivo
+- Reescribir landing.
+- Reescribir features.
+- Cambiar pricing a piloto/waitlist.
+- Remover links muertos y claims no probados.
+- Agregar screenshots o visuales mas cercanos al uso real.
 
-Objetivo: evitar sorpresas de datos antes de usuarios reales.
+### Dia 4 - Legal Y Confianza
 
-Escenarios:
+- Crear rutas de terminos, privacidad y disclaimer.
+- Agregar footer links reales.
+- Agregar copy de limites del servicio.
+- Preparar version para revision legal.
 
-- Desktop crea sesion, mobile la ve.
-- Mobile completa sesion, desktop la ve.
-- Proposal aceptada en un dispositivo converge en el otro.
-- Delete/tombstone no reaparece.
-- Offline/online con cola pendiente converge.
-- Backup/export conserva campos nuevos de fuerza, squash y estados de Plan Builder.
+### Dia 5 - UI De Cliente
 
-### 5. Smoke Prod Controlado
+- Renombrar labels tecnicos.
+- Ocultar debug.
+- Convertir acciones de regeneracion en lenguaje de atleta/coach.
+- Revisar onboarding y estados vacios.
 
-Objetivo: validar build, env vars, Netlify Function, auth, Supabase y proxy real.
+### Dia 6 - QA Deportiva
 
-Pasos:
+- Generar/revisar 3 planes arquetipo.
+- Guardar export Beta Quality/backup por plan.
+- Crear checklist manual de revision de entrenador.
+- Corregir warnings que afecten confianza.
 
-- Deploy prod desde commit limpio.
-- Login real.
-- Crear una sesion puntual desde chat.
-- Crear una semana desde Week Creator.
-- Crear un plan con Plan Builder.
-- Regenerar o reparar una semana si la decision de producto lo permite.
-- Aceptar una propuesta simple.
-- Revisar Settings/Beta Quality.
-- Probar app en mobile.
+### Dia 7 - Smoke Y Primer Piloto
 
-### 6. Beta Interna 3-5 Personas
+- Smoke prod o entorno seguro.
+- Probar login, plan, semana, chat, export y sync basico.
+- Invitar 1 cliente acompanado.
+- Observar sin agregar features durante la sesion.
 
-Objetivo: aprender con usuarios cercanos sin abrir el producto.
+## Que Hacer Primero
 
-Reglas:
+Recomendacion inmediata:
 
-- Invitar de a uno.
-- Pedir feedback semanal.
-- Clasificar fallos por provider, schema, prompt, logica deportiva, fechas, sync o UI.
-- No perseguir todo comentario como feature request.
-- Pausar invitaciones si aparece perdida de datos, auth roto o sync inconsistente.
+1. Actualizar landing/features/pricing hacia "piloto premium de squash".
+2. Agregar paginas reales de terminos/privacidad/disclaimer.
+3. Hacer UI pass para esconder lenguaje tecnico.
+4. Crear checklist de revision de plan como entrenador.
+5. Invitar solo 1 cliente acompanado cuando el flujo publico no tenga links rotos.
 
 ## Que No Hacer Ahora
 
 - No abrir beta publica.
-- No agregar monetizacion/paywall.
-- No migrar todo a Claude/OpenAI sin datos.
-- No sumar features grandes antes de cerrar estabilidad.
-- No persistir prompts completos o respuestas largas en remoto.
-- No refactorizar prompts por estetica.
+- No activar pagos automaticos sin terminos, privacidad y soporte.
+- No prometer prevencion de lesiones ni mejoras porcentuales sin evidencia.
+- No mostrar warnings tecnicos crudos a clientes.
+- No vender "IA ilimitada" como valor principal.
+- No invitar 10+ personas antes del primer piloto acompanado.
+- No agregar features grandes antes de corregir la superficie cliente.
+- No persistir prompts completos o respuestas largas como telemetria operacional.
 
-## Pasos Ejecutados Al Final De Esta Revision
+## Decision De Producto Sobre Calidad Y Regeneracion
 
-- Corrido `npm run lint`.
-- Corrido `npm test`.
-- Corrido `npm run build`.
-- Corrido `npm run audit:prompt`.
-- Corridos tests focalizados de macro plan, Plan Builder, repair week, quality review y store.
-- Verificado que la auth E2E guardada esta expirada desde 2026-05-25, por lo que los E2E reales quedan como siguiente paso con login renovado.
+Recomendacion actual:
+
+- La regeneracion debe existir como feature de entrenador/cliente, pero renombrada.
+- La calidad tecnica debe quedar interna.
+- El cliente puede ver estados simples:
+  - `Listo`.
+  - `Revisar con coach`.
+  - `Ajuste recomendado`.
+- El entrenador/admin puede ver:
+  - score.
+  - issues.
+  - repair count.
+  - warnings por semana.
+
+Esto conserva confianza. La app se muestra premium hacia afuera y sigue siendo auditable hacia adentro.
 
 ## Proximo Paso Inmediato
 
-Renovar la sesion E2E con `npm run e2e:plan:headed` y correr `npm run e2e:plan:generate:quality`. Si ese gate queda verde, seguir con `npm run loadtest:week-creator` y un smoke prod controlado.
+Empezar por superficie publica:
+
+- Landing enfocada en squash competitivo.
+- Pricing convertido a piloto fundador.
+- Rutas reales de terminos y privacidad.
+- Footer sin links muertos.
+
+Despues de eso, hacer el pass de UI interna para que Plan Builder y quality review dejen de sonar a herramienta tecnica y empiecen a sonar a experiencia de atleta/coach.

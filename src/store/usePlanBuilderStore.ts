@@ -30,6 +30,12 @@ import {
   type PlanGenerationSnapshot,
 } from '../services/planBuilder/pollPlanGeneration'
 import { PlanEnqueueRejectedError, triggerBackgroundGeneration } from '../services/planBuilder/triggerBackgroundGeneration'
+import {
+  assertPlanBuilderWeekRateLimit,
+  releasePlanBuilderWeekReservations,
+  reservePlanBuilderWeekUsage,
+  syncPlanBuilderWeekUsageFromWeeks,
+} from '../services/planBuilder/rateLimit'
 import { pushTrainingPlan } from '../services/syncService'
 import { supabase } from '../services/auth'
 import { useAuthStore } from './useAuthStore'
@@ -111,6 +117,7 @@ function applyGenerationSnapshot(
   set: PlanBuilderSet,
 ) {
   const orderedWeeks = sortWeeks(snapshot.weeks)
+  void syncPlanBuilderWeekUsageFromWeeks(snapshot.plan.id, orderedWeeks)
   const failedWeekIndexes = snapshot.plan.generationSummary?.failedWeeks ?? orderedWeeks
     .filter((week) => week.status === 'error')
     .map((week) => week.weekIndex)
@@ -302,6 +309,32 @@ async function markGenerationStartRejected(input: {
   })
 }
 
+async function guardRemotePlanBuilderRateLimit(
+  weekIndexes: readonly number[],
+  set: PlanBuilderSet,
+): Promise<boolean> {
+  try {
+    await assertPlanBuilderWeekRateLimit(weekIndexes)
+    return true
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error)
+    set({
+      status: 'error',
+      lastError: msg,
+      generationJob: null,
+      currentWeekIndex: null,
+      streamingTextByWeekIndex: {},
+    })
+    return false
+  }
+}
+
+async function releaseReservedRemoteUsage(planId: string, weekIndexes: readonly number[]): Promise<void> {
+  await releasePlanBuilderWeekReservations({ planId, weekIndexes }).catch((error) => {
+    console.warn('[plan-builder] failed to release reserved rate-limit usage', error)
+  })
+}
+
 function buildRunnerCallbacks(
   set: PlanBuilderSet,
   get: () => PlanBuilderState,
@@ -452,9 +485,16 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
         return
       }
     }
+    const resetWeeks = resetWeeksForFullGeneration(weeks)
+    const targetWeekIndexes = resetWeeks.map((week) => week.weekIndex)
+    const useRemoteGeneration = canUseRemoteGeneration()
+    if (useRemoteGeneration) {
+      const canStart = await guardRemotePlanBuilderRateLimit(targetWeekIndexes, set)
+      if (!canStart) return
+    }
+
     const startedAt = Date.now()
     const strategy = resolveConfiguredGenerationStrategy(plan.totalWeeks, 'single')
-    const resetWeeks = resetWeeksForFullGeneration(weeks)
     const nextPlan: TrainingPlan = {
       ...plan,
       generationState: 'generating',
@@ -469,6 +509,7 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
       },
     }
     let remotePlanPublished = false
+    let reservedRemoteUsage = false
     try {
       await persistPlanState(nextPlan, resetWeeks)
       set({
@@ -482,7 +523,7 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
         failedWeekIndexes: [],
         streamingTextByWeekIndex: {},
       })
-      if (!canUseRemoteGeneration()) {
+      if (!useRemoteGeneration) {
         const job = await createPlanGenerationJob({ plan: nextPlan, weeks: resetWeeks, strategy: 'single' })
         set({ generationJob: job })
         void runPlanGenerationJob({
@@ -497,6 +538,8 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
       }
       await pushTrainingPlan(nextPlan)
       remotePlanPublished = true
+      await reservePlanBuilderWeekUsage({ planId: nextPlan.id, weekIndexes: targetWeekIndexes })
+      reservedRemoteUsage = true
       const recentContext = await buildPlanBuilderRecentContext(nextPlan).catch(() => undefined)
       await triggerBackgroundGeneration({
         plan: nextPlan,
@@ -510,6 +553,9 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
       // A definitive start failure means the worker never started: surface it
       // instead of resuming into a poll that can only end in a stalled state.
       if (error instanceof PlanEnqueueRejectedError || !remotePlanPublished) {
+        if (reservedRemoteUsage) {
+          await releaseReservedRemoteUsage(nextPlan.id, targetWeekIndexes)
+        }
         const msg = error instanceof Error ? error.message : String(error)
         await markGenerationStartRejected({
           plan: nextPlan,
@@ -551,6 +597,13 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
     if (targetSet.size === 0) return
     const targets = weeks.filter((w) => targetSet.has(w.weekIndex))
     if (targets.length === 0) return
+    const targetWeekIndexes = targets.map((week) => week.weekIndex)
+    const useRemoteGeneration = canUseRemoteGeneration()
+    if (useRemoteGeneration) {
+      const canStart = await guardRemotePlanBuilderRateLimit(targetWeekIndexes, set)
+      if (!canStart) return
+    }
+
     const updatedAt = Date.now()
     const nextWeeks = weeks.map((week) => (targetSet.has(week.weekIndex)
       ? {
@@ -581,14 +634,15 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
       },
     })
     let remotePlanPublished = false
+    let reservedRemoteUsage = false
     try {
       await db.trainingPlans.put(generatingPlan)
       await db.trainingPlanWeeks.bulkPut(nextWeeks)
-      if (!canUseRemoteGeneration()) {
+      if (!useRemoteGeneration) {
         const job = await createPlanGenerationJob({
           plan: generatingPlan,
           weeks: nextWeeks,
-          targetWeekIndexes: targets.map((week) => week.weekIndex),
+          targetWeekIndexes,
           strategy: 'single',
           repairInstructions,
         })
@@ -609,6 +663,8 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
       }
       await pushTrainingPlan(generatingPlan)
       remotePlanPublished = true
+      await reservePlanBuilderWeekUsage({ planId: generatingPlan.id, weekIndexes: targetWeekIndexes })
+      reservedRemoteUsage = true
       const recentContext = await buildPlanBuilderRecentContext(generatingPlan).catch(() => undefined)
       await triggerBackgroundGeneration({
         plan: generatingPlan,
@@ -616,7 +672,7 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
         profile,
         wizardConfig: generatingPlan.wizardConfig,
         recentContext,
-        targetWeekIndexes: targets.map((week) => week.weekIndex),
+        targetWeekIndexes,
         repairInstructions,
       })
       set({
@@ -629,6 +685,9 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
       // A definitive start failure means the worker never started: surface it
       // instead of resuming into a poll that can only end in a stalled state.
       if (error instanceof PlanEnqueueRejectedError || !remotePlanPublished) {
+        if (reservedRemoteUsage) {
+          await releaseReservedRemoteUsage(generatingPlan.id, targetWeekIndexes)
+        }
         const msg = error instanceof Error ? error.message : String(error)
         await markGenerationStartRejected({
           plan: generatingPlan,
@@ -636,7 +695,7 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
           message: msg,
           set,
           publishRemote: remotePlanPublished,
-          failedWeekIndexes: targets.map((week) => week.weekIndex),
+          failedWeekIndexes: targetWeekIndexes,
         })
         return
       }
@@ -653,6 +712,12 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
   retryFailedWeeks: async (profile) => {
     const { plan, weeks, failedWeekIndexes } = get()
     if (!plan || failedWeekIndexes.length === 0) return
+    const useRemoteGeneration = canUseRemoteGeneration()
+    if (useRemoteGeneration) {
+      const canStart = await guardRemotePlanBuilderRateLimit(failedWeekIndexes, set)
+      if (!canStart) return
+    }
+
     const updatedAt = Date.now()
     const failedSet = new Set(failedWeekIndexes)
     const nextWeeks = weeks.map((week) => (failedSet.has(week.weekIndex)
@@ -667,9 +732,10 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
       : week))
     const generatingPlan = buildRetriggerPlan(plan, nextWeeks, updatedAt)
     let remotePlanPublished = false
+    let reservedRemoteUsage = false
     try {
       await persistPlanState(generatingPlan, nextWeeks)
-      if (!canUseRemoteGeneration()) {
+      if (!useRemoteGeneration) {
         const job = await createPlanGenerationJob({
           plan: generatingPlan,
           weeks: nextWeeks,
@@ -699,6 +765,8 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
       }
       await pushTrainingPlan(generatingPlan)
       remotePlanPublished = true
+      await reservePlanBuilderWeekUsage({ planId: generatingPlan.id, weekIndexes: failedWeekIndexes })
+      reservedRemoteUsage = true
       const recentContext = await buildPlanBuilderRecentContext(generatingPlan).catch(() => undefined)
       await triggerBackgroundGeneration({
         plan: generatingPlan,
@@ -724,6 +792,9 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
       // A definitive start failure means the worker never started: surface it
       // instead of resuming into a poll that can only end in a stalled state.
       if (error instanceof PlanEnqueueRejectedError || !remotePlanPublished) {
+        if (reservedRemoteUsage) {
+          await releaseReservedRemoteUsage(generatingPlan.id, failedWeekIndexes)
+        }
         const msg = error instanceof Error ? error.message : String(error)
         await markGenerationStartRejected({
           plan: generatingPlan,

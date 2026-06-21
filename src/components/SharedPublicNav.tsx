@@ -108,7 +108,7 @@ export default function SharedPublicNav({ onSignup, onLogin, scrollAware }: Shar
           {/* Desktop links */}
           <div
             style={{
-              display: 'flex', alignItems: 'center', gap: 28, flex: 1,
+              alignItems: 'center', gap: 28, flex: 1,
               justifyContent: 'center',
               // hide on mobile via media-query class
             }}

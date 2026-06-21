@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AITechnicalResult, CoachFeedback } from '../../types'
+import type { TrainingPlanWeek } from '../../types/planBuilder'
 
 const mocks = vi.hoisted(() => ({
   logs: [] as AITechnicalResult[],
@@ -61,6 +62,46 @@ import {
   recordCoachFeedback,
   upsertAIRequestLog,
 } from '../ai/aiTelemetry'
+import {
+  assertPlanBuilderWeekRateLimit,
+  reservePlanBuilderWeekUsage,
+  syncPlanBuilderWeekUsageFromWeeks,
+} from '../planBuilder/rateLimit'
+
+function makeRemoteWeek(input: {
+  planId?: string
+  weekIndex?: number
+  now: number
+  status?: TrainingPlanWeek['status']
+  traceId?: string
+}): TrainingPlanWeek {
+  const weekIndex = input.weekIndex ?? 0
+  return {
+    id: `week-${weekIndex}`,
+    planId: input.planId ?? 'plan-1',
+    weekIndex,
+    weekStartDate: '2026-05-04',
+    phase: 'base',
+    status: input.status ?? 'draft',
+    sessions: [],
+    weekObjectives: [],
+    targetLoadBySport: {},
+    validationIssues: [],
+    generationMeta: {
+      attempts: 1,
+      provider: 'claude',
+      model: 'claude-sonnet-test',
+      requestClass: 'plan_builder_week',
+      traceId: input.traceId ?? `trace-week-${weekIndex}`,
+      durationMs: 5000,
+      lastAttemptAt: input.now,
+      retryUsed: false,
+      fallbackUsed: false,
+    },
+    createdAt: input.now,
+    updatedAt: input.now,
+  }
+}
 
 describe('aiTelemetry', () => {
   beforeEach(() => {
@@ -106,6 +147,76 @@ describe('aiTelemetry', () => {
 
     await expect(assertDailyAIRequestLimit('plan_builder_pair', now)).rejects.toMatchObject({
       code: 'rate_limit',
+    })
+  })
+
+  it('reserves async Plan Builder week usage so background jobs appear in daily usage', async () => {
+    const now = new Date('2026-05-09T12:00:00').getTime()
+
+    await reservePlanBuilderWeekUsage({
+      planId: 'plan-1',
+      weekIndexes: [0, 1],
+      now,
+    })
+
+    expect(await getDailyAIUsage(now)).toMatchObject({
+      plan_builder_week: 2,
+    })
+    expect(mocks.logs).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        traceId: expect.stringContaining('plan-builder-week-reservation:plan-1:0:'),
+        status: 'started',
+        requestClass: 'plan_builder_week',
+      }),
+      expect.objectContaining({
+        traceId: expect.stringContaining('plan-builder-week-reservation:plan-1:1:'),
+        status: 'started',
+        requestClass: 'plan_builder_week',
+      }),
+    ]))
+  })
+
+  it('blocks async Plan Builder starts that would exceed the remaining weekly cap', async () => {
+    const now = new Date('2026-05-09T12:00:00').getTime()
+    for (let i = 0; i < DEFAULT_DAILY_AI_LIMITS.plan_builder_week - 1; i++) {
+      mocks.logs.push({
+        traceId: `trace-${i}`,
+        requestClass: 'plan_builder_week',
+        surface: 'plan_builder',
+        status: 'completed',
+        startedAt: now,
+      })
+    }
+
+    await expect(assertPlanBuilderWeekRateLimit([0], now)).resolves.toBeUndefined()
+    await expect(assertPlanBuilderWeekRateLimit([0, 1], now)).rejects.toMatchObject({
+      code: 'rate_limit',
+    })
+  })
+
+  it('replaces an async reservation with the real remote week trace when polling syncs results', async () => {
+    const now = new Date('2026-05-09T12:00:00').getTime()
+    await reservePlanBuilderWeekUsage({
+      planId: 'plan-1',
+      weekIndexes: [0],
+      now: now - 10_000,
+    })
+
+    await syncPlanBuilderWeekUsageFromWeeks('plan-1', [
+      makeRemoteWeek({ now, traceId: 'remote-trace-1' }),
+    ], now)
+
+    expect(mocks.logs).toHaveLength(1)
+    expect(mocks.logs[0]).toMatchObject({
+      traceId: 'remote-trace-1',
+      requestClass: 'plan_builder_week',
+      surface: 'plan_builder',
+      status: 'completed',
+      provider: 'claude',
+      model: 'claude-sonnet-test',
+      durationMs: 5000,
+      startedAt: now - 5000,
+      completedAt: now,
     })
   })
 

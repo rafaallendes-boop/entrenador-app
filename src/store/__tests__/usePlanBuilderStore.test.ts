@@ -25,6 +25,10 @@ const mocks = vi.hoisted(() => {
     triggerBackgroundGeneration: vi.fn(),
     pushTrainingPlan: vi.fn(),
     commitPlan: vi.fn(),
+    assertPlanBuilderWeekRateLimit: vi.fn(),
+    reservePlanBuilderWeekUsage: vi.fn(),
+    releasePlanBuilderWeekReservations: vi.fn(),
+    syncPlanBuilderWeekUsageFromWeeks: vi.fn(),
     db: {
       trainingPlans: {
         put: vi.fn(async (plan: TrainingPlan) => {
@@ -106,6 +110,12 @@ vi.mock('../../services/planBuilder/triggerBackgroundGeneration', async (importA
     triggerBackgroundGeneration: mocks.triggerBackgroundGeneration,
   }
 })
+vi.mock('../../services/planBuilder/rateLimit', () => ({
+  assertPlanBuilderWeekRateLimit: mocks.assertPlanBuilderWeekRateLimit,
+  reservePlanBuilderWeekUsage: mocks.reservePlanBuilderWeekUsage,
+  releasePlanBuilderWeekReservations: mocks.releasePlanBuilderWeekReservations,
+  syncPlanBuilderWeekUsageFromWeeks: mocks.syncPlanBuilderWeekUsageFromWeeks,
+}))
 vi.mock('../../services/syncService', () => ({
   pushTrainingPlan: mocks.pushTrainingPlan,
 }))
@@ -252,6 +262,14 @@ describe('usePlanBuilderStore', () => {
     mocks.pushTrainingPlan.mockResolvedValue(undefined)
     mocks.commitPlan.mockReset()
     mocks.commitPlan.mockResolvedValue({ errors: [], warnings: [] })
+    mocks.assertPlanBuilderWeekRateLimit.mockReset()
+    mocks.assertPlanBuilderWeekRateLimit.mockResolvedValue(undefined)
+    mocks.reservePlanBuilderWeekUsage.mockReset()
+    mocks.reservePlanBuilderWeekUsage.mockResolvedValue([])
+    mocks.releasePlanBuilderWeekReservations.mockReset()
+    mocks.releasePlanBuilderWeekReservations.mockResolvedValue(0)
+    mocks.syncPlanBuilderWeekUsageFromWeeks.mockReset()
+    mocks.syncPlanBuilderWeekUsageFromWeeks.mockResolvedValue(undefined)
     mocks.supabase = null
     mocks.authUser = null
     resetStore()
@@ -442,6 +460,41 @@ describe('usePlanBuilderStore', () => {
     }))
   })
 
+  it('checks and reserves async Plan Builder rate-limit usage before remote enqueue', async () => {
+    const profile = await createShell()
+    const stateBefore = usePlanBuilderStore.getState()
+    const plan = stateBefore.plan!
+    const weekIndexes = stateBefore.weeks.map((week) => week.weekIndex)
+    mocks.supabase = { auth: {} }
+    mocks.authUser = { id: 'user-1' }
+
+    await usePlanBuilderStore.getState().runGeneration(profile)
+
+    expect(mocks.assertPlanBuilderWeekRateLimit).toHaveBeenCalledWith(weekIndexes)
+    expect(mocks.reservePlanBuilderWeekUsage).toHaveBeenCalledWith({
+      planId: plan.id,
+      weekIndexes,
+    })
+    expect(mocks.triggerBackgroundGeneration).toHaveBeenCalled()
+  })
+
+  it('does not publish or enqueue a remote generation when Plan Builder weekly quota is exhausted', async () => {
+    const profile = await createShell()
+    mocks.supabase = { auth: {} }
+    mocks.authUser = { id: 'user-1' }
+    mocks.assertPlanBuilderWeekRateLimit.mockRejectedValueOnce(new Error('Límite diario beta alcanzado para Plan Builder'))
+
+    await usePlanBuilderStore.getState().runGeneration(profile)
+
+    const state = usePlanBuilderStore.getState()
+    expect(state.status).toBe('error')
+    expect(state.plan?.generationState).toBe('shell')
+    expect(state.lastError).toContain('Límite diario')
+    expect(mocks.pushTrainingPlan).not.toHaveBeenCalled()
+    expect(mocks.reservePlanBuilderWeekUsage).not.toHaveBeenCalled()
+    expect(mocks.triggerBackgroundGeneration).not.toHaveBeenCalled()
+  })
+
   it('keeps background generation alive when the client loses trigger confirmation after publishing the plan', async () => {
     const profile = await createShell()
     const plan = usePlanBuilderStore.getState().plan!
@@ -483,6 +536,10 @@ describe('usePlanBuilderStore', () => {
       id: plan.id,
       generationState: 'failed',
     }))
+    expect(mocks.releasePlanBuilderWeekReservations).toHaveBeenCalledWith({
+      planId: plan.id,
+      weekIndexes: expect.arrayContaining(usePlanBuilderStore.getState().weeks.map((week) => week.weekIndex)),
+    })
   })
 
   it('marks generation as failed when the remote draft cannot be published before enqueue', async () => {
