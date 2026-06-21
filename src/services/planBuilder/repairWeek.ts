@@ -110,6 +110,9 @@ export function repairGeneratedWeek(
   // 4. Resolve date+timeBlock collisions
   sessions = resolveCollisions(sessions, context, meta)
 
+  // 4b. A day may be a valid training day but still not allow AM+PM work.
+  sessions = enforceDoubleSessionDayConstraints(sessions, context, meta)
+
   // 5. Filter disallowed sports
   sessions = filterDisallowedSports(sessions, context, meta)
 
@@ -117,6 +120,7 @@ export function repairGeneratedWeek(
   completeSportDetails(sessions, context, meta)
   sanitizeSquashDrillSets(sessions, context, meta)
   normalizeSquashSemanticMetadata(sessions, meta, context)
+  normalizeLateTaperSquashMatchPlay(sessions, context, meta)
   sessions = ensureSquashCompetitionMatchExposure(sessions, context, meta)
 
   // 7. Keep squash drill/block timing aligned with the session duration.
@@ -147,6 +151,7 @@ export function repairGeneratedWeek(
   // 13. Diversify duplicated sport content after fallbacks are added
   diversifyDuplicateSquashSessions(sessions, context, meta)
   normalizeSquashSemanticMetadata(sessions, meta, context)
+  normalizeLateTaperSquashMatchPlay(sessions, context, meta)
   sessions = ensureSquashCompetitionMatchExposure(sessions, context, meta)
   normalizeSquashDurationConsistency(sessions, meta)
 
@@ -154,6 +159,7 @@ export function repairGeneratedWeek(
   repairDuplicateStrengthExercises(sessions, context, meta)
 
   // 15. Check double session utilization
+  sessions = enforceDoubleSessionDayConstraints(sessions, context, meta)
   sessions = checkDoubleSessionUtilization(sessions, context, meta)
 
   return { sessions, meta }
@@ -263,6 +269,80 @@ function resolveCollisions(
   }
 
   return result
+}
+
+function enforceDoubleSessionDayConstraints(
+  sessions: CoachSessionProposal[],
+  context: RepairContext,
+  meta: RepairMeta,
+): CoachSessionProposal[] {
+  if (sessions.length < 2) return sessions
+
+  const allowedDates = getAllowedDatesInWeek(context)
+  let result = [...sessions]
+  const sessionsByDate = new Map<string, CoachSessionProposal[]>()
+
+  for (const session of result) {
+    const onDate = sessionsByDate.get(session.date) ?? []
+    onDate.push(session)
+    sessionsByDate.set(session.date, onDate)
+  }
+
+  for (const [date, onDate] of sessionsByDate.entries()) {
+    if (onDate.length <= 1) continue
+    if (canUseDoubleSessionOnDate(date, context.wizardConfig)) continue
+
+    const sorted = [...onDate].sort((a, b) => {
+      const priorityDiff = getSessionKeepPriority(context, b) - getSessionKeepPriority(context, a)
+      if (priorityDiff !== 0) return priorityDiff
+      return a.timeBlock.localeCompare(b.timeBlock)
+    })
+    const extras = sorted.slice(1)
+
+    for (const extra of extras) {
+      result = result.filter((session) => session !== extra)
+      const available = findNearestAvailableDate(
+        allowedDates,
+        result,
+        extra.timeBlock,
+        extra.date,
+        context.wizardConfig,
+      )
+
+      if (!available) {
+        meta.droppedSessionCount++
+        meta.warnings.push({
+          code: 'double_session_day_dropped',
+          message: `Sesión "${extra.title}" eliminada: ${extra.date} no permite doble sesión y no había otro cupo válido.`,
+          sessionDate: extra.date,
+        })
+        continue
+      }
+
+      result.push({ ...extra, date: available.date, timeBlock: available.timeBlock })
+      meta.movedSessionCount++
+      meta.warnings.push({
+        code: 'double_session_day_repaired',
+        message: `Sesión "${extra.title}" movida de ${extra.date} a ${available.date} ${available.timeBlock}: el día original no permite doble sesión.`,
+        sessionDate: extra.date,
+      })
+    }
+  }
+
+  return result.sort((a, b) => a.date.localeCompare(b.date) || a.timeBlock.localeCompare(b.timeBlock))
+}
+
+function getSessionKeepPriority(context: RepairContext, session: CoachSessionProposal): number {
+  const primarySport = getPrimarySport(context)
+  let priority = 0
+  if (session.sessionType === primarySport) priority += 100
+  if (session.sessionType === 'squash' && (session.subtype === 'competitive' || session.subtype === 'match' || isSquashMatchIntent(session))) priority += 35
+  if (session.sessionType === 'strength') priority += 20
+  if (session.sessionType === 'running' || session.sessionType === 'cycling') priority += 10
+  priority += (session.rpe ?? 5) * 2
+  priority += Math.min(session.durationMin ?? 0, 90) / 30
+  if (session.timeBlock === 'AM') priority += 0.5
+  return priority
 }
 
 // ─── 5. Filter disallowed sports ────────────────────────────────────────────
@@ -716,14 +796,18 @@ function ensureSquashCompetitionMatchExposure(
   if (!shouldEnsureSquashCompetitionMatch(context)) return sessions
   const squashSessions = sessions.filter((session) => session.sessionType === 'squash')
   if (squashSessions.length === 0) return sessions
-  if (squashSessions.some((session) => session.squashDetails?.sessionMode === 'competition_match')) return sessions
+  if (squashSessions.some((session) => session.squashDetails?.sessionMode === 'competition_match' && isSafeSquashCompetitionExposureDate(session.date, context))) return sessions
+
+  const safeSquashSessions = squashSessions.filter((session) => isSafeSquashCompetitionExposureDate(session.date, context))
+  if (context.week.phase === 'taper' && safeSquashSessions.length === 0) return sessions
 
   // Preferir AGREGAR una sesión de match si la semana tiene cupo, para no
   // descartar una sesión de squash diseñada (p.ej. pressure drills) reescribiéndola.
   const expected = getExpectedSessionsForPlanWeek(context.plan, context.week)
   if (sessions.length < expected) {
     const next = [...sessions]
-    const available = findNearestAvailableDate(getAllowedDatesInWeek(context), next, 'PM', undefined, context.wizardConfig)
+    const candidateDates = getAllowedDatesInWeek(context).filter((date) => isSafeSquashCompetitionExposureDate(date, context))
+    const available = findNearestAvailableDate(candidateDates, next, 'PM', undefined, context.wizardConfig)
     if (available) {
       const added = buildSquashCompetitionMatchSession(available.date, available.timeBlock, context)
       next.push(added)
@@ -740,9 +824,9 @@ function ensureSquashCompetitionMatchExposure(
 
   // Sin cupo: convertir, priorizando una sesión que ya apunta a match antes de
   // tocar la sesión específica de mayor RPE.
-  const candidate = squashSessions.find(isSquashMatchIntent)
-    ?? squashSessions.find((session) => session.squashDetails?.sessionKind === 'match')
-    ?? [...squashSessions].sort((a, b) => (b.rpe ?? 6) - (a.rpe ?? 6))[0]
+  const candidate = safeSquashSessions.find(isSquashMatchIntent)
+    ?? safeSquashSessions.find((session) => session.squashDetails?.sessionKind === 'match')
+    ?? [...safeSquashSessions].sort((a, b) => (b.rpe ?? 6) - (a.rpe ?? 6))[0]
 
   if (!candidate) return sessions
 
@@ -786,6 +870,79 @@ function shouldEnsureSquashCompetitionMatch(context: RepairContext): boolean {
   const primaryEvent = context.profile.goalEvents?.find((event) => event.id === context.wizardConfig.goalEventId)
     ?? context.profile.goalEvents?.find((event) => event.priority === 'primary')
   return primaryEvent?.sport === 'squash'
+}
+
+// Single source of truth for "event day", aligned with the validator
+// (`validateSquashCompetitionReadiness` uses macroSnapshot.goalEventDate). Falls
+// back to the plan end date if the macro snapshot lacks it.
+function getSquashEventDate(context: RepairContext): string {
+  return context.plan.macroSnapshot?.goalEventDate ?? context.plan.endDate
+}
+
+function isSafeSquashCompetitionExposureDate(date: string, context: RepairContext): boolean {
+  if (context.week.phase !== 'taper' && context.week.phase !== 'race') return true
+  return daysBetween(date, getSquashEventDate(context)) >= 3
+}
+
+function normalizeLateTaperSquashMatchPlay(
+  sessions: CoachSessionProposal[],
+  context: RepairContext,
+  meta: RepairMeta,
+): void {
+  if (context.week.phase !== 'taper' && context.week.phase !== 'race') return
+
+  const eventDate = getSquashEventDate(context)
+  for (const session of sessions) {
+    if (session.sessionType !== 'squash') continue
+    // The event day itself IS the competition — never down-grade that session to
+    // activation/control; the validator (squash.race_day) expects a match there.
+    if (session.date === eventDate) continue
+    if (daysBetween(session.date, eventDate) > 2) continue
+    if (!isSquashMatchIntent(session) && session.squashDetails?.sessionMode !== 'competition_match') continue
+
+    const previousTitle = session.title
+    applyPreEventSquashActivationDetails(session, context)
+    meta.repairedSessionCount++
+    meta.warnings.push({
+      code: 'late_taper_match_controlled',
+      message: `Se cambió "${previousTitle}" a activación/control: está demasiado cerca del evento para match-play.`,
+      sessionDate: session.date,
+    })
+  }
+}
+
+function applyPreEventSquashActivationDetails(
+  session: CoachSessionProposal,
+  context: RepairContext,
+): void {
+  const selection = selectSquashDrills({
+    fatigueLevel: fatigueToNumber(context.wizardConfig.currentFatigue),
+    phase: 'taper',
+    recentDrills: extractRecentSquashDrills(context.previousWeek),
+    goal: buildLevelAwareGoal(context, `${session.objective ?? context.profile.mainGoal ?? ''} activación control pre torneo`),
+    competitionSoon: true,
+    competitiveLevel: deriveCompetitiveLevel(context),
+    partnerAvailability: context.wizardConfig.partnerAvailability ?? 'either',
+    desiredKind: 'mixed-control-technical',
+  })
+  const safeDrills = selection.drills.filter((drill) => {
+    const definition = findSquashDrillByName(drill.name)
+    return !definition || !isSquashMatchDrill(definition)
+  })
+  const drills = safeDrills.length > 0 ? safeDrills : selection.drills
+
+  session.subtype = 'control'
+  session.title = 'Squash - Activación y Control Pre-Torneo'
+  session.objective = 'Último toque de cancha: timing, longitud, precisión y confianza sin puntos largos ni fatiga residual.'
+  session.durationMin = Math.min(session.durationMin, 35)
+  session.rpe = Math.min(session.rpe ?? 4, 4)
+  session.squashDetails = {
+    trainingFocus: selection.trainingFocus,
+    sessionMode: 'drill_session',
+    sessionKind: selection.sessionKind === 'match' ? 'control' : selection.sessionKind,
+    drills,
+    blocks: buildSquashBlocksFromDrills(drills),
+  }
 }
 
 function contextlessSquashMatchMode(session: CoachSessionProposal): 'practice_match' | 'competition_match' {

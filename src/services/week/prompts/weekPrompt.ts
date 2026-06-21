@@ -261,7 +261,9 @@ export function buildWeekUserPrompt(input: WeekPromptInput): string {
     `- Duración por sesión: ${wizardConfig.sessionDurationMins} min`,
     `- Doble sesión permitido: ${wizardConfig.allowDoubleSession ? 'sí' : 'no'}`,
     wizardConfig.allowDoubleSession
-      ? '- Puedes usar AM y PM el mismo día si ayuda a cumplir el volumen, sin duplicar el mismo bloque.'
+      ? wizardConfig.doubleSessionDays?.length
+        ? `- Días dobles AM/PM: ${wizardConfig.doubleSessionDays.join(', ')}. Otros días: máximo 1 sesión.`
+        : '- Puedes usar AM y PM el mismo día si ayuda a cumplir el volumen, sin duplicar el mismo bloque.'
       : '- Como doble sesión NO está permitido, reparte las sesiones entre días permitidos sin repetir un mismo día.',
     ...buildDoubleSessionPreferenceRule(wizardConfig, week.phase),
     `- Deportes permitidos: ${allowed.join(', ')}`,
@@ -398,8 +400,12 @@ function buildDoubleSessionPreferenceRule(
   const canCreateRestDay = wizardConfig.sessionsPerWeek <= wizardConfig.trainingDays.length
   if (!hasEnoughVolumeForPreference || !canCreateRestDay) return []
 
+  const allowedDoubleDays = wizardConfig.doubleSessionDays?.length
+    ? ` solo en: ${wizardConfig.doubleSessionDays.join(', ')}`
+    : ''
+
   return [
-    '- Preferencia de distribucion: como el usuario habilito doble sesion y hay volumen suficiente, usa al menos 1 dia doble AM/PM en esta semana y deja 1 dia permitido libre como descarga. Evita juntar dos estimulos duros el mismo dia; combina tecnica/skill con fuerza soporte, movilidad o aerobico suave.',
+    `- Preferencia: usa 1 dia doble AM/PM${allowedDoubleDays} y deja 1 dia permitido libre. No juntes dos estimulos duros.`,
   ]
 }
 
@@ -468,7 +474,9 @@ export function buildWeekBatchUserPrompt(input: WeekBatchPromptInput): string {
     `- Duración por sesión: ${wizardConfig.sessionDurationMins} min`,
     `- Doble sesión permitido: ${wizardConfig.allowDoubleSession ? 'sí' : 'no'}`,
     wizardConfig.allowDoubleSession
-      ? '- Puedes usar AM y PM el mismo día si ayuda a cumplir el volumen, sin duplicar el mismo bloque dentro de una semana.'
+      ? wizardConfig.doubleSessionDays?.length
+        ? `- Días dobles AM/PM: ${wizardConfig.doubleSessionDays.join(', ')}. Otros días: máximo 1 sesión.`
+        : '- Puedes usar AM y PM el mismo día si ayuda a cumplir el volumen, sin duplicar el mismo bloque dentro de una semana.'
       : '- Como doble sesión NO está permitido, reparte las sesiones de cada semana entre días permitidos sin repetir un mismo día.',
     ...buildDoubleSessionPreferenceRule(wizardConfig, weeks[0].phase),
     `- Nivel actual: ${wizardConfig.currentFitnessLevel} · Fatiga: ${wizardConfig.currentFatigue}`,
@@ -553,7 +561,7 @@ function buildSquashCompetitionRules(plan: TrainingPlan, week: TrainingPlanWeek)
   if (week.phase === 'taper') {
     return [
       '- Regla taper squash: reduce de verdad la carga. Prioriza 2-3 toques de squash cortos/calidad, 0-1 fuerza neural corta, movilidad. Running sólo si es activación Z2/recovery <=25min RPE <=3; cycling evita salvo recuperación muy justificada.',
-      '- Match taper: corto, sessionMode competition_match/practice_match + sessionKind match; no drill_session.',
+      '- Match taper: solo 3+ dias antes del evento. Ultimas 48h: NO match-play; solo activación/control/timing, RPE <=4.',
       '- No repitas drills.',
       '- No rellenes taper con dobles ligeros repetidos. Cada sesión debe tener un propósito competitivo claro: frescura, precisión, timing, movilidad o activación neural.',
       '- Usa nombres exactos de drills de squash del catálogo/sugerencias del prompt para evitar que la reparación automática reemplace la intención original.',

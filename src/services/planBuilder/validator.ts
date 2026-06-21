@@ -165,6 +165,19 @@ function validateWeekConstraints(plan: TrainingPlan, week: TrainingPlanWeek): Pl
         weekIndex: week.weekIndex,
       })
     }
+  } else if (plan.wizardConfig.doubleSessionDays && plan.wizardConfig.doubleSessionDays.length > 0) {
+    const doubleDays = new Set(plan.wizardConfig.doubleSessionDays)
+    for (const [date, count] of sessionCountByDate.entries()) {
+      if (count <= 1) continue
+      const dayOfWeek = isoDateToDayOfWeek(date)
+      if (dayOfWeek && doubleDays.has(dayOfWeek)) continue
+      issues.push({
+        severity: 'error',
+        code: 'week.sessions.double_session_day_not_allowed',
+        message: `La semana ${week.weekIndex + 1} tiene ${count} sesiones el ${date}, pero ese día no está habilitado para doble sesión.`,
+        weekIndex: week.weekIndex,
+      })
+    }
   }
 
   return issues

@@ -621,6 +621,15 @@ describe('repairGeneratedWeek', () => {
   })
 
   it('7. balances session count by trimming excess', () => {
+    mockContext.wizardConfig = {
+      ...mockContext.wizardConfig,
+      allowDoubleSession: true,
+      doubleSessionDays: ['monday'],
+    }
+    mockContext.plan = {
+      ...mockContext.plan,
+      wizardConfig: mockContext.wizardConfig,
+    }
     // Config asks for 4 sessions. We provide 5.
     const sessions: CoachSessionProposal[] = [
       { date: '2026-05-04', timeBlock: 'AM', sessionType: 'squash', title: 'Session 1', durationMin: 45, objective: 'obj', squashDetails: { trainingFocus: 'technical', drills: [] } },
