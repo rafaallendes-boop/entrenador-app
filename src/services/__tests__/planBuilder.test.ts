@@ -298,6 +298,35 @@ describe('planBuilder', () => {
     expect(issues.some((i) => i.code === 'week.sessions.double_session_not_allowed' && i.severity === 'error')).toBe(true)
   })
 
+  it('validatePlan rejects double sessions on days not configured for doubles', () => {
+    const profile = makeProfile(eventNWeeksFromNow(6))
+    const event = profile.goalEvents![0] as GoalEvent
+    const wizardConfig = {
+      ...makeWizardConfig(),
+      sessionsPerWeek: 3,
+      trainingDays: ['monday', 'tuesday', 'wednesday'] as PlanWizardConfig['trainingDays'],
+      allowDoubleSession: true,
+      doubleSessionDays: ['monday'] as PlanWizardConfig['doubleSessionDays'],
+    }
+    const { plan, weeks } = buildPlanShell({
+      athleteId: profile.id,
+      profile,
+      wizardConfig,
+      goalEvent: event,
+      now: new Date('2026-05-17T10:00:00'),
+    })
+
+    const tuesday = addDaysIso(weeks[0].weekStartDate, 1)
+    weeks[0].status = 'draft'
+    weeks[0].sessions = [
+      { date: tuesday, timeBlock: 'AM', sessionType: 'squash', title: 'AM squash', durationMin: 60, squashDetails: { trainingFocus: 'technical', sessionMode: 'drill_session', drills: [] } },
+      { date: tuesday, timeBlock: 'PM', sessionType: 'running', title: 'PM running', durationMin: 45 },
+    ]
+
+    const issues = validatePlan({ plan, weeks })
+    expect(issues.some((i) => i.code === 'week.sessions.double_session_day_not_allowed' && i.severity === 'error')).toBe(true)
+  })
+
   it('validatePlan rejects squash weeks without any squash sessions', () => {
     const profile = makeProfile(eventNWeeksFromNow(6))
     const event = profile.goalEvents![0] as GoalEvent
@@ -396,9 +425,9 @@ describe('planBuilder', () => {
       wizardConfig,
     })
 
-    expect(prompt).toContain('usa al menos 1 dia doble AM/PM')
-    expect(prompt).toContain('deja 1 dia permitido libre como descarga')
-    expect(prompt).toContain('Evita juntar dos estimulos duros')
+    expect(prompt).toContain('usa 1 dia doble AM/PM')
+    expect(prompt).toContain('deja 1 dia permitido libre')
+    expect(prompt).toContain('No juntes dos estimulos duros')
   })
 
   it('buildWeekSystemPrompt preserves the literal session schema block', () => {

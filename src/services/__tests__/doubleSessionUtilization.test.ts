@@ -42,6 +42,29 @@ function makeDoubleSessionContext(): RepairContext {
 }
 
 describe('double session utilization', () => {
+  it('moves accidental doubles away from days not configured for double sessions', () => {
+    const context = makeDoubleSessionContext()
+    context.wizardConfig = { ...context.wizardConfig, sessionsPerWeek: 5 }
+
+    const sessions = [
+      { date: '2026-06-15', timeBlock: 'AM', sessionType: 'squash', title: 'Squash lun', durationMin: 60, rpe: 6 },    // monday
+      { date: '2026-06-16', timeBlock: 'AM', sessionType: 'strength', title: 'Fuerza mar', durationMin: 60, rpe: 7 }, // tuesday
+      { date: '2026-06-16', timeBlock: 'PM', sessionType: 'running', title: 'Running mar', durationMin: 35, rpe: 4 },  // tuesday, not allowed as double
+      { date: '2026-06-17', timeBlock: 'AM', sessionType: 'squash', title: 'Squash mie', durationMin: 60, rpe: 6 },    // wednesday
+      { date: '2026-06-18', timeBlock: 'AM', sessionType: 'squash', title: 'Squash jue', durationMin: 60, rpe: 6 },    // thursday
+    ] as never
+
+    const result = repairGeneratedWeek(sessions, context)
+    const countsByDate = result.sessions.reduce<Record<string, number>>((acc, session) => {
+      acc[session.date] = (acc[session.date] ?? 0) + 1
+      return acc
+    }, {})
+
+    expect(countsByDate['2026-06-16']).toBe(1)
+    expect(result.sessions.filter((session) => session.date === '2026-06-15')).toHaveLength(2)
+    expect(result.meta.warnings.some((w) => w.code === 'double_session_day_repaired')).toBe(true)
+  })
+
   it('emits warning when double days are underutilized (no doubles in week)', () => {
     const context = makeDoubleSessionContext()
     // All 5 training days have 1 session each — no doubles used

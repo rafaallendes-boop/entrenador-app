@@ -102,4 +102,73 @@ describe('taper load capping', () => {
     const result = repairGeneratedWeek(sessions, context)
     expect(result.meta.warnings.some((w) => w.code === 'taper_load_capped')).toBe(false)
   })
+
+  it('keeps match-play 3-4 days before the event and turns the final court touch into activation/control', () => {
+    const context = makeTaperContext()
+    context.plan = {
+      ...context.plan,
+      startDate: '2026-07-20',
+      endDate: '2026-07-24',
+      wizardConfig: {
+        ...context.wizardConfig,
+        sessionsPerWeek: 4,
+      },
+    }
+    context.week = {
+      ...context.week,
+      weekStartDate: '2026-07-20',
+      phase: 'taper',
+      targetLoadBySport: { squash: 45, strength: 14, mobility: 20 },
+    }
+    context.wizardConfig = {
+      ...context.wizardConfig,
+      sessionsPerWeek: 4,
+    }
+    context.profile = {
+      id: 'default',
+      updatedAt: 0,
+      mainGoal: 'Competir mejor',
+      sportContext: { primarySport: 'squash', enabledSports: ['squash', 'strength', 'mobility'] },
+      goalEvents: [{ id: 'e1', date: '2026-07-24', sport: 'squash', priority: 'primary', title: 'Torneo', competitiveLevel: 'elite' }],
+    } as never
+
+    const sessions = [
+      {
+        date: '2026-07-20', timeBlock: 'AM', sessionType: 'squash',
+        title: 'Squash timing', durationMin: 40, rpe: 5,
+        objective: 'Timing y sensaciones competitivas sin fatiga.',
+      },
+      {
+        date: '2026-07-21', timeBlock: 'AM', sessionType: 'strength',
+        title: 'Fuerza neural', durationMin: 30, rpe: 4,
+      },
+      {
+        date: '2026-07-22', timeBlock: 'AM', sessionType: 'mobility',
+        title: 'Movilidad', durationMin: 25, rpe: 2,
+      },
+      {
+        date: '2026-07-23', timeBlock: 'AM', sessionType: 'squash',
+        title: 'Squash - Match Play Competitivo', durationMin: 40, rpe: 5,
+        objective: 'Competir con marcador real el día previo.',
+        subtype: 'competitive',
+        squashDetails: {
+          trainingFocus: 'conditioned_games',
+          sessionMode: 'competition_match',
+          sessionKind: 'match',
+          drills: [{ name: 'Partido de entrenamiento al mejor de 3 juegos', durationMin: 20 }],
+          blocks: [{ kind: 'match', durationMin: 20, drills: [{ name: 'Partido de entrenamiento al mejor de 3 juegos', durationMin: 20 }] }],
+        },
+      },
+    ] as never
+
+    const result = repairGeneratedWeek(sessions, context)
+    const safeMatch = result.sessions.find((session) => session.date === '2026-07-20' && session.sessionType === 'squash')
+    const finalTouch = result.sessions.find((session) => session.date === '2026-07-23' && session.sessionType === 'squash')
+
+    expect(safeMatch?.squashDetails?.sessionMode).toBe('competition_match')
+    expect(finalTouch?.title).toBe('Squash - Activación y Control Pre-Torneo')
+    expect(finalTouch?.squashDetails?.sessionMode).toBe('drill_session')
+    expect(finalTouch?.squashDetails?.blocks?.some((block) => block.kind === 'match')).toBe(false)
+    expect(result.meta.warnings.some((w) => w.code === 'late_taper_match_controlled')).toBe(true)
+  })
 })
