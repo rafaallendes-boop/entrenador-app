@@ -41,3 +41,6 @@ scripts/.e2e-auth-state.json
 scripts/e2e-artifacts/
 playwright-report/
 test-results/
+
+# Local API notes / credentials
+Api Whoop

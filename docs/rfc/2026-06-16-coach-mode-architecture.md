@@ -2,12 +2,18 @@
 
 - **Estado:** Draft / Diseño (no implementar todavía)
 - **Autor:** Principal Product Architect (sesión Claude)
-- **Fecha:** 2026-06-16
+- **Fecha:** 2026-06-16 · **Revisado:** 2026-06-22 (reconciliación con beta privada + piloto Whoop)
 - **Horizonte:** 12 meses
 - **Alcance:** diseño arquitectónico y plan estratégico. No incluye código.
 
 > Decisión de producto explícita: **NO** se implementa el módulo de entrenadores ahora.
 > Este documento define cómo llegar ahí sin romper el modelo individual actual.
+>
+> **Revisión 2026-06-22:** (1) durante la beta privada solo avanza el desacople interno
+> invisible — ver §14.1 "Track Coach-ready foundation"; F1 "duro" (re-scope de sync +
+> RLS v2) espera una ventana de migración controlada (ver §5 "Riesgos de migración").
+> (2) Whoop se adelanta como piloto individual sobre `user_id`, como excepción táctica
+> previa a F4 — ver §9.
 
 ---
 
@@ -252,6 +258,15 @@ Introducir **tres conceptos nuevos** y re-scopear los datos de entrenamiento de
 - El bug histórico de "reset total" de sync (ya corregido) recuerda que **cualquier cambio
   de scope de sync es zona de alto riesgo de pérdida de datos** → feature-flag + dry-run.
 
+> **Tensión con la beta privada (decisión 2026-06-22).** F1 toca a la vez `athlete_id`,
+> Dexie, Supabase, RLS y sync — exactamente la zona de mayor riesgo de pérdida de datos, y
+> coincide con la ventana en que se están invitando los primeros atletas del piloto. **No
+> meter F1 completo mientras la beta privada está activa.** Lo que sí puede avanzar en
+> paralelo es el desacople interno (ver §14.1 "Track Coach-ready foundation"), que es
+> invisible para el atleta y no cambia el scope de datos. El re-scope real de sync
+> (`user_id`→`athlete_id`) y RLS v2 solo se ejecutan **detrás de flag, con dry-run y backup
+> verificado, en una ventana de migración controlada**, no durante una invitación activa.
+
 ---
 
 ## 6. Navegación / UX para entrenadores
@@ -308,6 +323,19 @@ mensajería coach↔atleta, wearables, facturación, branding.
 ---
 
 ## 9. Integración futura con wearables (F4)
+
+> **Excepción táctica: piloto Whoop previo a F4 (decisión 2026-06-22).** Existe un plan
+> aprobado para adelantar Whoop como **piloto individual sobre `user_id`**, sin esperar a
+> F1/F4 y **sin webhooks** (poll diario UTC idempotente + "sincronizar ahora").
+> Ver `docs/superpowers/specs/2026-06-21-whoop-integration-design.md` y
+> `docs/superpowers/plans/2026-06-21-whoop-integration.md`. Es contexto pasivo (tarjeta
+> + prefill editable del check-in + línea de readiness para el coach), **no** ajuste
+> automático de carga. Difiere de la visión F4 a propósito: F4 asume `athlete_id`,
+> webhooks y feed al loop de ajuste. El piloto crea las tablas `whoop_connections`,
+> `biometric_readings` y `readiness_daily` scopeadas por `user_id`; cuando llegue F1, esas
+> tablas se re-scopean a `athlete_id` junto con el resto del modelo (deuda documentada en
+> el spec). En otras palabras: el piloto valida valor con un usuario antes de pagar el
+> costo de la arquitectura multi-atleta; F4 es la versión "de producto" de lo mismo.
 
 ### 9.1 Modelo común
 
@@ -413,3 +441,41 @@ No empezar por la UI de coach. Empezar por **F0 (hardening)** y el **desacople i
 `athlete_id`** (F1 sin UI): es invisible para el usuario actual, reduce el riesgo del item
 XL (re-scope de sync) y deja el motor listo. La UI de coach (F2) recién cuando el modelo
 de datos multi-atleta esté en producción y estable detrás de flag.
+
+### 14.1 Track "Coach-ready foundation" (paralelo a la beta privada)
+
+Coach Mode y la beta privada **son compatibles**, siempre que el track de Coach Mode sea
+**trabajo invisible de arquitectura** que no cambie la experiencia del atleta actual ni
+ponga en riesgo sus datos. La beta enseña qué necesita un jugador real; esta fundación
+prepara la venta posterior a entrenadores. Mientras la beta esté activa, avanzar **solo**
+este subconjunto de F0/F1, en este orden (cada paso es reversible y sin cambio de scope de
+datos):
+
+1. **Auditar y encapsular todos los usos de `id: 'default'`** (hoy cableado en
+   `syncService`, `syncUtils`, stores). Inventario completo antes de tocar nada.
+2. **Introducir `getActiveAthleteId()`** como única fuente de verdad, manteniendo
+   `'default'` por debajo. Reemplazar los accesos directos por el helper sin cambiar el
+   valor que devuelve.
+3. **Preparar tipos y stores para `activeAthleteId`** (en `useAuthStore`/training store),
+   **sin roster ni switcher visibles**. El atleta individual nunca ve un selector.
+4. **Tests de migración Dexie y de sync ANTES de tocar datos reales** — el upgrade v13 y
+   el re-scope deben tener cobertura de upgrade y un dry-run reproducible antes de correr
+   contra datos de la beta.
+5. **Plan Builder / background jobs pasan `athleteId` explícito** en todos los bordes
+   (entrada del store, writer, enqueue/background) — el motor ya lo acepta (§1.5, §10);
+   se trata de dejar de inyectar `'default'` implícito.
+6. **Recién después: diseñar tablas `athletes` / `coach_athlete_links` detrás de flag**,
+   sin activarlas en producción de la beta.
+
+**Qué NO hacer durante la beta privada** (esperar a una ventana de migración controlada,
+fuera de una invitación activa):
+
+- RLS v2 completa (políticas por membresía).
+- Multi-atleta visible (roster, switcher, "vista como atleta X").
+- Invitaciones, aceptación, roles (coach/assistant/viewer).
+- Roster real o cuentas de coach (`account_type = coach`) en producción.
+- Re-scope masivo de sync `user_id`→`athlete_id` sin flag + dry-run + backup verificado.
+
+Resultado: al terminar la beta, el desacople interno está hecho y testeado, y F1 "duro"
+(re-scope + RLS v2) queda como un paso acotado y de bajo riesgo en una ventana dedicada —
+no como una reescritura corriendo sobre datos de usuarios activos.
