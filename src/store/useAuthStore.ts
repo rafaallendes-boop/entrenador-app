@@ -39,12 +39,14 @@ const DEFAULT_TIER_HEALTH_MAP: SyncTierHealthMap = {
 interface AuthState {
   user: User | null
   isLoading: boolean
+  activeAthleteId: string | null
   syncStatus: SyncStatus
   syncError: string | null
   syncDetails: SyncDetails
 
   signInWithGoogle: () => Promise<void>
   signOut: () => Promise<void>
+  setActiveAthleteId: (id: string | null) => void
   setSyncStatus: (status: SyncStatus, error?: string) => void
   setSyncDetails: (patch: Partial<SyncDetails>) => void
 }
@@ -54,6 +56,7 @@ let authBootstrapVersion = 0
 export const useAuthStore = create<AuthState>((set) => ({
     user: null,
     isLoading: isSupabaseConfigured,
+    activeAthleteId: null,
     syncStatus: 'idle',
     syncError: null,
     syncDetails: {
@@ -99,6 +102,7 @@ export const useAuthStore = create<AuthState>((set) => ({
 
       set({
         user: null,
+        activeAthleteId: null,
         syncStatus: 'idle',
         syncError: null,
         syncDetails: {
@@ -126,6 +130,10 @@ export const useAuthStore = create<AuthState>((set) => ({
           tierHealthMap: DEFAULT_TIER_HEALTH_MAP,
         },
       })
+    },
+
+    setActiveAthleteId: (id) => {
+      set({ activeAthleteId: id })
     },
 
     setSyncStatus: (status, error) => {

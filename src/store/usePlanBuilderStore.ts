@@ -39,6 +39,7 @@ import {
 import { pushTrainingPlan } from '../services/syncService'
 import { supabase } from '../services/auth'
 import { useAuthStore } from './useAuthStore'
+import { ATHLETE_PROFILE_LOCAL_ID, getActiveAthleteId } from '../services/athlete/activeAthlete'
 
 const EMPTY_DRAFT_WEEKS_MESSAGE = 'El draft del Plan Builder no tiene semanas. Descártalo y vuelve a generar el shell desde el wizard.'
 
@@ -425,8 +426,9 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
       const previousPlan = get().plan
       const goalEvent = getPrimaryGoalEvent(profile)
       if (!goalEvent) throw new Error('Falta un evento principal en el perfil para construir el plan.')
+      const athleteId = getActiveAthleteId() ?? ATHLETE_PROFILE_LOCAL_ID
       const { plan, weeks } = buildPlanShell({
-        athleteId: profile.id,
+        athleteId,
         profile,
         wizardConfig,
         goalEvent,

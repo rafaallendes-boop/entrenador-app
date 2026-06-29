@@ -50,6 +50,7 @@ import {
   trackSyncEvent,
 } from './syncDiagnostics'
 import { ENTITY_TIER } from '../types/syncDiagnostics'
+import { ATHLETE_PROFILE_LOCAL_ID } from './athlete/activeAthlete'
 import {
   FETCH_PAGE_SIZE,
   fetchAll,
@@ -1464,7 +1465,7 @@ async function repairRemoteAthleteProfileRows(
   const keeper = rows.find((row) => row.id === winner.id) ?? rows[0]
   const nextRow: AthleteProfileSyncRow = {
     ...canonical,
-    id: keeper?.id ?? 'default',
+    id: keeper?.id ?? ATHLETE_PROFILE_LOCAL_ID,
   }
 
   logAthleteProfileSync('repair:start', {
@@ -2226,7 +2227,7 @@ async function mergeAthleteProfile(userId: string, context: MergeContext): Promi
   }
 
   if (remoteRows.length > 1) {
-    const localPreferred = await db.athleteProfiles.get('default')
+    const localPreferred = await db.athleteProfiles.get(ATHLETE_PROFILE_LOCAL_ID)
     const preferredRow = localPreferred
       ? toAthleteProfileSyncRow(athleteProfileToRow(localPreferred, userId))
       : undefined
@@ -2237,7 +2238,7 @@ async function mergeAthleteProfile(userId: string, context: MergeContext): Promi
 
   if (remoteRows.length === 0) {
     if (context.allowDeletes && context.deleteBeforeTs != null) {
-      const local = await db.athleteProfiles.get('default')
+      const local = await db.athleteProfiles.get(ATHLETE_PROFILE_LOCAL_ID)
       if (local && local.updatedAt <= context.deleteBeforeTs) {
         await db.athleteProfiles.clear()
       }
@@ -2255,13 +2256,13 @@ async function mergeAthleteProfile(userId: string, context: MergeContext): Promi
     await db.athleteProfiles.clear()
     return
   }
-  const local = await db.athleteProfiles.get('default')
+  const local = await db.athleteProfiles.get(ATHLETE_PROFILE_LOCAL_ID)
   const localRow = local ? toAthleteProfileSyncRow(athleteProfileToRow(local, userId)) : null
   const mergedRow = localRow ? coalesceAthleteProfileRows([localRow, canonicalRow]) : canonicalRow
   const mergedProfile = rowToAthleteProfile(mergedRow)
 
   if (!localRow || !athleteProfileRowsEqual(localRow, mergedRow)) {
-    await db.athleteProfiles.put({ ...mergedProfile, id: 'default' })
+    await db.athleteProfiles.put({ ...mergedProfile, id: ATHLETE_PROFILE_LOCAL_ID })
   }
 
   if (!athleteProfileRowsEqual(canonicalRow, mergedRow)) {
@@ -3121,7 +3122,7 @@ export async function wipeRemoteAndLocalAppData(userId: string): Promise<RemoteW
 
 async function clearRemoteAthleteProfileData(userId: string): Promise<void> {
   const clearedProfile: AthleteProfile = {
-    id: 'default',
+    id: ATHLETE_PROFILE_LOCAL_ID,
     updatedAt: Date.now(),
     coachMemory: undefined,
     onboardingDeferredAt: undefined,

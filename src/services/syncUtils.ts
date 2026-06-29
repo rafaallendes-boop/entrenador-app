@@ -1,4 +1,5 @@
 import type { AthleteProfile } from '../types'
+import { ATHLETE_PROFILE_LOCAL_ID } from './athlete/activeAthlete'
 
 export type SupabaseTable =
   | 'sessions'
@@ -376,7 +377,7 @@ export function athleteProfileToRow(profile: AthleteProfile, userId: string): Re
 export function rowToAthleteProfile(row: Record<string, unknown>): AthleteProfile {
   const { data } = parseAthleteProfileData(row.data as Record<string, unknown> | null)
   return {
-    id: 'default',
+    id: ATHLETE_PROFILE_LOCAL_ID,
     coachMemory: (row.coach_memory as string | null) ?? undefined,
     updatedAt: row.updated_at as number,
     ...data,
@@ -413,7 +414,7 @@ export function isAthleteProfileFullResetRow(row: AthleteProfileSyncRow): boolea
 
 export function toAthleteProfileSyncRow(row: Record<string, unknown>): AthleteProfileSyncRow {
   return {
-    id: String(row.id ?? 'default'),
+    id: String(row.id ?? ATHLETE_PROFILE_LOCAL_ID),
     user_id: String(row.user_id ?? ''),
     coach_memory: (row.coach_memory as string | null) ?? null,
     updated_at: Number(row.updated_at ?? 0),
@@ -710,8 +711,8 @@ export function pickCanonicalAthleteProfileRow(rows: AthleteProfileSyncRow[]): A
     if (b.updated_at !== a.updated_at) return b.updated_at - a.updated_at
     const scoreDiff = scoreAthleteProfileRow(b) - scoreAthleteProfileRow(a)
     if (scoreDiff !== 0) return scoreDiff
-    if (a.id === 'default') return -1
-    if (b.id === 'default') return 1
+    if (a.id === ATHLETE_PROFILE_LOCAL_ID) return -1
+    if (b.id === ATHLETE_PROFILE_LOCAL_ID) return 1
     return a.id.localeCompare(b.id)
   })
   return sorted[0]
