@@ -31,8 +31,8 @@ const FONT_DISPLAY = "'Lexend', 'Inter', system-ui, sans-serif"
 const FONT_MONO = "'JetBrains Mono', 'Fira Mono', monospace"
 
 const HERO_STATS = [
+  { value: '5', unit: ' deportes', label: 'un solo plan' },
   { value: '12', unit: ' semanas', label: 'macro plan' },
-  { value: '3-4', unit: ' dias', label: 'match prep' },
   { value: '<90', unit: ' s', label: 'registro' },
   { value: '24/7', unit: '', label: 'RallyIQ AI' },
 ] as const
@@ -139,6 +139,7 @@ export default function LandingPage() {
       <main>
         <Hero onPrimary={handleSignIn} />
         <TrustStrip />
+        <DisciplinesGrid />
         <SquashSystem />
         <WorkflowSection />
         <CompetitionBlock />
@@ -164,21 +165,21 @@ function Hero({ onPrimary }: { onPrimary: () => void }) {
       <div className="relative z-10 mx-auto flex min-h-[780px] w-full max-w-7xl items-center px-6 pb-20 pt-28 md:px-10 md:pt-32">
         <div className="max-w-[720px]">
           <div className="label-mono brand mb-6">
-            Squash competitivo · beta privada
+            Multideporte · beta privada
           </div>
           <h1
             className="max-w-[760px] text-5xl font-black leading-[1.02] text-white md:text-7xl"
             style={{ fontFamily: FONT_DISPLAY }}
           >
-            Llega al match con un plan, no con intuicion.
+            Un solo plan para todo lo que entrenas.
           </h1>
           <p
             className="mt-6 max-w-[600px] text-[17px] font-medium leading-8 md:text-lg"
             style={{ color: INK_MUTED }}
           >
-            RallyIQ es una app premium para squash competitivo: crea tu bloque por torneo,
-            controla la carga y ajusta cada semana con un coach AI que entiende taper, fatiga
-            y preparacion fisica real.
+            RallyIQ une squash, fuerza, running, movilidad y ciclismo en una sola carga
+            semanal. Originado en la intensidad del squash, evolucionado para preparar
+            cualquier objetivo — con un coach AI que ajusta taper, fatiga y recuperacion.
           </p>
 
           <div className="mt-8 flex flex-wrap items-center gap-3">
@@ -186,7 +187,7 @@ function Hero({ onPrimary }: { onPrimary: () => void }) {
               onClick={onPrimary}
               className="btn-primary-pill group inline-flex items-center gap-2 rounded-xl px-7 py-4 text-[15px] font-bold text-white"
             >
-              Crear plan competitivo
+              Crear mi plan
               <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" strokeWidth={2.5} />
             </button>
             <Link
@@ -469,14 +470,164 @@ function TrustStrip() {
   )
 }
 
+const DISCIPLINE_CARDS: Array<{
+  title: string
+  tag: string
+  blurb: string
+  accent: string
+  image: string
+  alt: string
+  fallback: string
+}> = [
+  {
+    title: 'Squash',
+    tag: 'Herencia tecnica',
+    blurb: 'Drills tecnicos, match-play y lectura de partido real.',
+    accent: BRAND,
+    image:
+      'https://lh3.googleusercontent.com/aida-public/AB6AXuAehGJU9K_OKOG721C0R2W6efCxo9k4vnJS2siZJ6r47KylE_SqGjYl6wqVNmsNsHo695j0fDYZJszFHImcukQyfIt11IMQaarNd2Ju_JO4KbOGfpIv95U-mHQ7RlMX1n-Eo_TwC9xhni6GC9zE1OyJ1Q60J7BIwSTL9sqafKMUXQ4IRrNq3lXtdN-soKtqNdFpyjgcCdBGGr9Crwr85fMjflG6zgbUXMt5Dpq7zA3kDIPttPBwznZ647jYa8oaUalfRtkZpWZmlM5M',
+    alt: 'Cancha de squash con iluminacion dramatica',
+    fallback: 'linear-gradient(150deg, rgba(255,77,0,0.25), rgba(20,10,5,1) 70%)',
+  },
+  {
+    title: 'Running',
+    tag: 'Resistencia pura',
+    blurb: 'Series, tempo y progresion aerobica con carga vigilada.',
+    accent: FORGE_CYAN,
+    image:
+      'https://lh3.googleusercontent.com/aida-public/AB6AXuB1XpnMPHAGOKmb10vEIGlEkjFFsQpBcabcXJScQFNeZQEaPTXvSuh9IdSQZxskEl5o9rXxP2EIo0-kx_XkUMUALbhNZtSKijwsqsC4GUFHE2NkF1mWHUNPRyLH4Oc6D-PhFmIn-g_h00TNJoXN78Xe4b2rTOPkppYShfhNKvujUcBTueSN24mCYAIkJlmBTi59ChH9qZwaWStenfQFC-uBew5HGgNbstLO-uO-8T_Be8lib8OQXL1IUJG-sBQl6kc7AjHzGxqGalLb',
+    alt: 'Atleta en bloque de salida sobre pista nocturna',
+    fallback: 'linear-gradient(150deg, rgba(0,227,253,0.18), rgba(5,10,20,1) 70%)',
+  },
+  {
+    title: 'Fuerza',
+    tag: 'Potencia explosiva',
+    blurb: 'Fuerza maxima, potencia y transferencia a la cancha.',
+    accent: BRAND,
+    image:
+      'https://lh3.googleusercontent.com/aida-public/AB6AXuDO55mUlnqFLj10LgEBdpx3rgQvK75EbYiMu-nWB81BdO2-HKxQ78wYltIQDKebUvvJ17Y5lNRVckdRnkQqZui46jajP9gaNofgQiaCnbgmHDUU4VCLg2MwRdF6nsc1ygZEVrU3BTLrh1E75USOen2NITEXCyuMGadHRmrKJ-eP-WzJd7j5OY7-DGkL31wtXzB9heXSOFD_THWJt_MYI6-HSNkIlDhaCrPerQ3qfoqLxzCbk6huvshWtbdvdGwYL1c8vslvjVV5fc2t',
+    alt: 'Barra olimpica en gimnasio oscuro',
+    fallback: 'linear-gradient(150deg, rgba(255,77,0,0.2), rgba(15,10,5,1) 70%)',
+  },
+  {
+    title: 'Ciclismo',
+    tag: 'Soporte aerobico',
+    blurb: 'Volumen de bajo impacto y build de base para dias largos.',
+    accent: FORGE_CYAN,
+    image: '/landing/cycling.jpg',
+    alt: 'Ciclista de elite en posicion aerodinamica',
+    fallback: 'linear-gradient(150deg, rgba(0,227,253,0.15), rgba(10,8,6,1) 70%)',
+  },
+  {
+    title: 'Movilidad',
+    tag: 'Recuperacion activa',
+    blurb: 'Reset post-sesion, rango articular y desbloqueo de cadenas.',
+    accent: FORGE_LIME,
+    image:
+      'https://lh3.googleusercontent.com/aida-public/AB6AXuCIbwLT9cKRxWbV62Fnkn8ICVaOu9FuYhPEB4Ufh6Rtihsw-Ko7v8cU1e1kTVp5YmkF6P_hWgoHUWzclzFcapaSyTTedIlC_xqSq8nSVuQF26xJey1npfXaEcg0o8LCfdWXmLqtn9Evz1qW105Y8ehoLRN-HeXhi1wXdcSMbnvTh80OoQclnJ0SYa2av5NMuza9DfKSJ4SyIfsyy6vA0gief7BNPzyQSfDnFwYr4Xtdh-FNdqWSxkd3lwPsTyn4tzSm3czhlnp4kOhk',
+    alt: 'Silueta realizando flow de movilidad al amanecer',
+    fallback: 'linear-gradient(150deg, rgba(209,252,0,0.14), rgba(8,10,15,1) 70%)',
+  },
+]
+
+function DisciplinesGrid() {
+  return (
+    <section id="disciplines" className="landing-section pt-0">
+      <div className="mx-auto w-full max-w-7xl px-6 md:px-10">
+        <div className="mb-10 flex flex-col items-start justify-between gap-6 md:flex-row md:items-end">
+          <div>
+            <div className="label-mono mb-4">Multidisciplina</div>
+            <h2
+              className="text-[2rem] font-bold leading-[1.05] tracking-[-0.02em] text-white md:text-[3rem]"
+              style={{ fontFamily: FONT_DISPLAY }}
+            >
+              Cinco deportes,
+              <br />
+              <span style={{ color: BRAND }}>una sola carga.</span>
+            </h2>
+            <p className="mt-3 max-w-[400px] text-[15px] leading-[1.55]" style={{ color: INK_MUTED }}>
+              Originado en la intensidad del squash, evolucionado para dominar cualquier campo.
+              Cinco lenguajes distintos que RallyIQ lee como una sola semana.
+            </p>
+          </div>
+          <Link
+            to="/features"
+            className="disc-link inline-flex items-center gap-2.5 pb-1.5 font-bold uppercase transition-colors"
+            style={{
+              fontFamily: FONT_MONO,
+              fontSize: 11,
+              letterSpacing: '0.26em',
+              color: BRAND_LIGHT,
+              borderBottom: '1px solid rgba(255,77,0,0.3)',
+              textDecoration: 'none',
+            }}
+          >
+            Ver todas <ArrowRight className="h-3.5 w-3.5" strokeWidth={2.5} />
+          </Link>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3.5 sm:grid-cols-2 lg:grid-cols-5">
+          {DISCIPLINE_CARDS.map((card) => (
+            <article
+              key={card.title}
+              className="disc-card group relative overflow-hidden rounded-2xl"
+              style={{
+                aspectRatio: '3 / 4',
+                background: card.fallback,
+                border: '1px solid rgba(255,255,255,0.06)',
+              }}
+            >
+              <img
+                src={card.image}
+                alt={card.alt}
+                loading="lazy"
+                decoding="async"
+                draggable={false}
+                className="disc-art absolute inset-0 h-full w-full object-cover"
+                onError={(e) => {
+                  e.currentTarget.style.display = 'none'
+                }}
+              />
+              <div
+                className="pointer-events-none absolute inset-0"
+                style={{
+                  background:
+                    'linear-gradient(180deg, transparent 40%, rgba(8,8,8,0.65) 75%, rgba(8,8,8,0.95) 100%)',
+                }}
+              />
+              <div
+                className="disc-hover-glow pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-500"
+                style={{ background: `radial-gradient(circle at 75% 15%, ${card.accent}22, transparent 65%)` }}
+              />
+              <div className="absolute inset-x-0 bottom-0 z-10 p-5 md:p-6">
+                <div className="disc-line mb-3 h-px transition-all duration-500" style={{ width: 32, background: card.accent }} />
+                <h5
+                  className="text-[1.35rem] font-black leading-tight tracking-tight text-white md:text-[1.5rem]"
+                  style={{ fontFamily: FONT_DISPLAY, marginBottom: 4 }}
+                >
+                  {card.title}
+                </h5>
+                <span className="text-[10px] font-bold uppercase tracking-[0.22em]" style={{ color: card.accent }}>
+                  {card.tag}
+                </span>
+                <p className="disc-blurb mt-2 text-[12px] leading-relaxed text-white/80">{card.blurb}</p>
+              </div>
+            </article>
+          ))}
+        </div>
+      </div>
+    </section>
+  )
+}
+
 function SquashSystem() {
   return (
     <section id="system" className="landing-section">
       <div className="mx-auto w-full max-w-7xl px-6 md:px-10">
         <SectionHeader
-          label="Sistema competitivo"
-          title={<>Todo lo que afecta tu partido, en una sola pantalla.</>}
-          body="El squash no se prepara solo con mas cancha. Necesitas ordenar intensidad, fuerza, recuperacion y taper para que el cuerpo llegue listo cuando importa."
+          label="Sistema de entrenamiento"
+          title={<>Todo lo que afecta tu rendimiento, en una sola pantalla.</>}
+          body="No alcanza con sumar sesiones. Necesitas ordenar intensidad, fuerza, recuperacion y taper entre todos tus deportes para que el cuerpo llegue listo cuando importa."
         />
 
         <div className="grid grid-cols-1 gap-3.5 md:grid-cols-2 lg:grid-cols-4">
@@ -1203,6 +1354,33 @@ const css = `
 
   .phone-card { border-radius: 14px; padding: 14px; }
   .scene-panel { border-radius: 18px; }
+
+  .disc-card { transition: transform .5s, border-color .5s; }
+  .disc-card:hover { transform: translateY(-4px); border-color: rgba(255,255,255,0.14) !important; }
+  .disc-art {
+    filter: grayscale(1) brightness(0.72);
+    transition: filter .7s ease, transform .7s ease;
+  }
+  .disc-card:hover .disc-art { filter: grayscale(0) brightness(0.92); transform: scale(1.08); }
+  .disc-card:hover .disc-hover-glow { opacity: 1; }
+  .disc-card:hover .disc-line { width: 56px !important; }
+  .disc-blurb {
+    max-height: 0;
+    opacity: 0;
+    overflow: hidden;
+    transition: max-height .5s ease, opacity .5s ease, margin-top .5s ease;
+  }
+  .disc-card:hover .disc-blurb { max-height: 80px; opacity: 1; }
+  .disc-link:hover { color: #ffffff; }
+
+  @media (hover: none) {
+    .disc-art { filter: grayscale(0) brightness(0.85); }
+    .disc-blurb { max-height: 80px; opacity: 1; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .disc-card, .disc-art, .disc-blurb, .disc-line { transition: none; }
+  }
 
   .system-card::after {
     content: '';
