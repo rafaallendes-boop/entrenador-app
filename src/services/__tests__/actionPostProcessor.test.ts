@@ -366,6 +366,59 @@ describe('actionPostProcessor', () => {
     expect(action?.exercises?.length).toBeGreaterThanOrEqual(8)
   })
 
+  it('keeps explicit tomorrow requests on tomorrow even when that date is occupied', () => {
+    vi.setSystemTime(new Date('2026-06-29T12:00:00.000Z'))
+    const occupiedTomorrow = [
+      makeSession({
+        id: 'tuesday-am',
+        date: '2026-06-30',
+        weekStartDate: '2026-06-29',
+        timeBlock: 'AM',
+        type: 'squash',
+        title: 'Squash AM',
+      }),
+      makeSession({
+        id: 'tuesday-pm',
+        date: '2026-06-30',
+        weekStartDate: '2026-06-29',
+        timeBlock: 'PM',
+        type: 'strength',
+        title: 'Fuerza PM',
+      }),
+    ]
+
+    const response = postProcessCoachActions(makeResponse([{
+      type: 'add_session',
+      reason: 'El modelo eligió hoy, pero el usuario pidió mañana.',
+      targetDate: '2026-06-29',
+      timeBlock: 'PM',
+      sessionType: 'running',
+      title: 'Running suave',
+      durationMin: 45,
+    }]), makeContext(occupiedTomorrow, {
+      currentWeekSummary: {
+        id: 'week-2026-06-29',
+        weekStartDate: '2026-06-29',
+        totalSessions: occupiedTomorrow.length,
+        totalMinutes: 105,
+        plannedSessions: occupiedTomorrow.length,
+        completedSessions: 0,
+        plannedMinutes: 105,
+        completedMinutes: 0,
+        squashSessions: 1,
+        runningSessions: 0,
+        strengthSessions: 1,
+        updatedAt: 1,
+      },
+    }), 'Hazme un entrenamiento de running para mañana')
+
+    expect(response.actions?.[0]).toMatchObject({
+      type: 'add_session',
+      targetDate: '2026-06-30',
+      sessionType: 'running',
+    })
+  })
+
   it('overrides model sport drift when a single-session request explicitly asks for weights', () => {
     vi.setSystemTime(new Date('2026-06-07T12:00:00.000Z'))
 

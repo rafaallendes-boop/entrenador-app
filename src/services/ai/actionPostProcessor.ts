@@ -42,7 +42,7 @@ export function postProcessCoachActions(
   const actions = sourceActions.map((action) => {
     const dateAligned = resolvedDate ? alignActionDate(action, resolvedDate) : action
     const weekAligned = alignmentWeekStart
-      ? alignActionToRequestedWeek(dateAligned, alignmentWeekStart, restOffsets, occupiedSlots)
+      ? alignActionToRequestedWeek(dateAligned, alignmentWeekStart, restOffsets, occupiedSlots, { lockDate: Boolean(resolvedDate) })
       : dateAligned
     const requestAligned = alignSingleSessionSportToRequest(weekAligned, normalizedMessage, context)
     const loadAligned = completeStrengthLoads(requestAligned, context)
@@ -432,6 +432,7 @@ function alignActionToRequestedWeek(
   requestedWeekStart: string,
   restOffsets: Set<number>,
   occupiedSlots: Set<string>,
+  options: { lockDate?: boolean } = {},
 ): CoachAction {
   if (action.type !== 'add_session' && action.type !== 'move_session' && action.type !== 'insert_recovery') {
     return action
@@ -439,6 +440,19 @@ function alignActionToRequestedWeek(
 
   const targetDate = action.targetDate
   const timeBlock = action.type === 'add_session' ? action.timeBlock : undefined
+  if (options.lockDate && targetDate && isDateInWeek(targetDate, requestedWeekStart)) {
+    if (timeBlock && occupiedSlots.has(`${targetDate}|${timeBlock}`)) {
+      const replacementBlock = findAvailableTimeBlockForDate(targetDate, timeBlock, occupiedSlots)
+      if (replacementBlock) {
+        occupiedSlots.add(`${targetDate}|${replacementBlock}`)
+        return { ...action, timeBlock: replacementBlock }
+      }
+    } else if (timeBlock) {
+      occupiedSlots.add(`${targetDate}|${timeBlock}`)
+    }
+    return action
+  }
+
   if (
     targetDate &&
     isDateInWeek(targetDate, requestedWeekStart) &&
@@ -482,6 +496,15 @@ function resolveRelativeDate(normalizedMessage: string): string | undefined {
   if (/\bhoy\b/.test(normalizedMessage)) return todayISO()
   if (/\bmanana\b/.test(normalizedMessage)) return addDaysToISO(todayISO(), 1)
   return undefined
+}
+
+function findAvailableTimeBlockForDate(
+  date: string,
+  preferredBlock: TimeBlock,
+  occupiedSlots: Set<string>,
+): TimeBlock | undefined {
+  const fallbackBlock = preferredBlock === 'AM' ? 'PM' : 'AM'
+  return occupiedSlots.has(`${date}|${fallbackBlock}`) ? undefined : fallbackBlock
 }
 
 function resolveRequestedWeekStart(normalizedMessage: string, context: ChatContext): string | undefined {
