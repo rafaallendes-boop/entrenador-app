@@ -11,6 +11,7 @@
 
 import { supabase } from '../auth'
 import type { SupabaseTable, SyncErrorCategory } from '../syncUtils'
+import { resolveReadScope } from '../athlete/readScope'
 
 /** Page size for paginated remote fetches via `.range(from, to)`. */
 export const FETCH_PAGE_SIZE = 1000
@@ -61,13 +62,21 @@ export async function withRequestTimeout<T>(
  */
 export async function fetchAll<T>(table: SupabaseTable, userId: string): Promise<T[]> {
   const rows: T[] = []
+  // Athlete Scope Foundation (Fase D): when the flag is on AND an athlete is
+  // hydrated, scope by athlete_id but keep legacy rows (athlete_id IS NULL) so
+  // flipping the flag never hides existing data. Flag off → identical to before.
+  const scope = resolveReadScope()
 
   for (let from = 0; ; from += FETCH_PAGE_SIZE) {
     const to = from + FETCH_PAGE_SIZE - 1
-    const query = getSupabase()
+    const base = getSupabase()
       .from(table)
       .select('*')
-      .eq('user_id', userId)
+    const query = table === 'athletes'
+      ? base.eq('owner_account_id', userId)
+      : scope.mode === 'athlete'
+      ? base.or(`athlete_id.eq.${scope.athleteId},and(athlete_id.is.null,user_id.eq.${userId})`)
+      : base.eq('user_id', userId)
     const supportsRange = typeof (query as { range?: unknown }).range === 'function'
     const pagedQuery = supportsRange
       ? (query as { range: (from: number, to: number) => PromiseLike<{ data: unknown[] | null; error: { message?: string } | null }> }).range(from, to)

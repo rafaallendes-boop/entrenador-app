@@ -114,6 +114,7 @@ export interface TrainingPlan {
 
 export interface TrainingPlanWeek {
   id: string
+  athleteId?: string        // scope key (text); derived from the parent plan. Legacy rows: undefined.
   planId: string
   weekIndex: number         // 0-based
   weekStartDate: string     // YYYY-MM-DD (lunes)

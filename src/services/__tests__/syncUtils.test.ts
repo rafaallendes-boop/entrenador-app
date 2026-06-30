@@ -9,6 +9,7 @@ import {
   compactQueue,
   getOfflineOpEntityId,
   mergeAthleteProfileRows,
+  normalizeAthleteProfilePayload,
   pickCanonicalAthleteProfileRow,
   rowToAthleteProfile,
   scoreEntityData,
@@ -50,6 +51,53 @@ describe('syncUtils', () => {
     expect(restored.id).toBe('default')
     expect(restored.name).toBe('Rafa')
     expect(restored.primarySport).toBe('squash')
+  })
+
+  it('maps athlete profile scope through top-level athlete_id', () => {
+    const profile: AthleteProfile = {
+      id: 'default',
+      athleteId: 'ath_user-1',
+      updatedAt: 123,
+      name: 'Rafa',
+    }
+
+    const row = athleteProfileToRow(profile, 'user-1')
+    expect(row.athlete_id).toBe('ath_user-1')
+    expect((row.data as Record<string, unknown> | null)?.athleteId).toBe('ath_user-1')
+
+    const restored = rowToAthleteProfile({
+      ...row,
+      data: { ...(row.data as Record<string, unknown>), athleteId: 'legacy-athlete' },
+    })
+    expect(restored.athleteId).toBe('ath_user-1')
+  })
+
+  it('falls back to data.athleteId for legacy athlete profile rows', () => {
+    const restored = rowToAthleteProfile({
+      id: 'profile:user-1',
+      user_id: 'user-1',
+      athlete_id: null,
+      coach_memory: null,
+      updated_at: 123,
+      data: { athleteId: 'legacy-athlete', name: 'Rafa' },
+    })
+
+    expect(restored.athleteId).toBe('legacy-athlete')
+  })
+
+  it('preserves athlete_id when normalizing athlete profile payloads', () => {
+    const normalized = normalizeAthleteProfilePayload({
+      id: 'profile:user-1',
+      user_id: 'user-1',
+      athlete_id: 'ath_user-1',
+      coach_memory: null,
+      updated_at: 123,
+      data: { name: 'Rafa' },
+      unknown_column: true,
+    })
+
+    expect(normalized.athlete_id).toBe('ath_user-1')
+    expect(normalized.unknown_column).toBeUndefined()
   })
 
   it('normalizes remote athlete profile rows and picks the most canonical winner', () => {

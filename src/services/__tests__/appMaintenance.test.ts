@@ -20,6 +20,7 @@ const dbMock = {
   chatMessages: table(),
   coachProposals: table(),
   athleteProfiles: table(),
+  athletes: table(),
   transaction: vi.fn(async (_mode: string, _tables: unknown[], callback: () => Promise<void>) => {
     await callback()
   }),
@@ -149,6 +150,7 @@ describe('appMaintenance', () => {
     expect(dbMock.weekSummaries.clear).toHaveBeenCalled()
     expect(dbMock.trainingPlanWeeks.clear).toHaveBeenCalled()
     expect(dbMock.trainingPlans.clear).toHaveBeenCalled()
+    expect(dbMock.athletes.clear).toHaveBeenCalled()
     expect(dbMock.chatMessages.clear).toHaveBeenCalled()
     expect(dbMock.coachProposals.clear).toHaveBeenCalled()
     expect(dbMock.athleteProfiles.clear).toHaveBeenCalled()
@@ -156,5 +158,22 @@ describe('appMaintenance', () => {
       key.startsWith('entrenador_') || key.startsWith('coach_') || key.startsWith('entrenador:')
     ))).toEqual([])
     expect(localStorage.getItem('unrelated_key')).toBe('keep')
+  })
+
+  it('clears athletes when clearing selected local training data', async () => {
+    const { clearSelectedLocalAppData } = await import('../appMaintenance')
+
+    await clearSelectedLocalAppData({ trainingData: true })
+
+    expect(dbMock.transaction).toHaveBeenCalledWith(
+      'rw',
+      expect.arrayContaining([dbMock.athletes]),
+      expect.any(Function),
+    )
+    expect(dbMock.sessions.clear).toHaveBeenCalled()
+    expect(dbMock.athletes.clear).toHaveBeenCalled()
+    expect(dbMock.chatMessages.clear).not.toHaveBeenCalled()
+    expect(dbMock.coachProposals.clear).not.toHaveBeenCalled()
+    expect(dbMock.athleteProfiles.clear).not.toHaveBeenCalled()
   })
 })

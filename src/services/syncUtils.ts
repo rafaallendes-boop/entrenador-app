@@ -7,6 +7,7 @@ export type SupabaseTable =
   | 'week_summaries'
   | 'chat_messages'
   | 'coach_proposals'
+  | 'athletes'
   | 'athlete_profiles'
   | 'training_plans'
   | 'training_plan_weeks'
@@ -302,6 +303,7 @@ export const MAX_RETRIES_PER_OP = 5
 export interface AthleteProfileSyncRow extends Record<string, unknown> {
   id: string
   user_id: string
+  athlete_id: string | null
   coach_memory: string | null
   updated_at: number
   data: Record<string, unknown> | null
@@ -334,6 +336,7 @@ const ATHLETE_PROFILE_RESETTABLE_FIELDS = [
 const ATHLETE_PROFILE_REMOTE_COLUMNS = new Set([
   'id',
   'user_id',
+  'athlete_id',
   'coach_memory',
   'updated_at',
   'data',
@@ -368,6 +371,7 @@ export function athleteProfileToRow(profile: AthleteProfile, userId: string): Re
   return {
     id: getAthleteProfileRemoteId(userId),
     user_id: userId,
+    athlete_id: profile.athleteId ?? null,
     coach_memory: coachMemory ?? null,
     updated_at: updatedAt,
     data: Object.keys(dataEntries).length > 0 ? dataEntries : null,
@@ -376,11 +380,14 @@ export function athleteProfileToRow(profile: AthleteProfile, userId: string): Re
 
 export function rowToAthleteProfile(row: Record<string, unknown>): AthleteProfile {
   const { data } = parseAthleteProfileData(row.data as Record<string, unknown> | null)
+  const athleteIdValue = row.athlete_id ?? data.athleteId
+  const athleteId = typeof athleteIdValue === 'string' ? athleteIdValue : undefined
   return {
     id: ATHLETE_PROFILE_LOCAL_ID,
     coachMemory: (row.coach_memory as string | null) ?? undefined,
     updatedAt: row.updated_at as number,
     ...data,
+    ...(athleteId !== undefined ? { athleteId } : {}),
   } as AthleteProfile
 }
 
@@ -413,13 +420,23 @@ export function isAthleteProfileFullResetRow(row: AthleteProfileSyncRow): boolea
 }
 
 export function toAthleteProfileSyncRow(row: Record<string, unknown>): AthleteProfileSyncRow {
+  const data = ((row.data as Record<string, unknown> | null) ?? null)
   return {
     id: String(row.id ?? ATHLETE_PROFILE_LOCAL_ID),
     user_id: String(row.user_id ?? ''),
+    athlete_id: getAthleteProfileAthleteId(row, data),
     coach_memory: (row.coach_memory as string | null) ?? null,
     updated_at: Number(row.updated_at ?? 0),
-    data: ((row.data as Record<string, unknown> | null) ?? null),
+    data,
   }
+}
+
+function getAthleteProfileAthleteId(
+  row: Record<string, unknown>,
+  data: Record<string, unknown> | null,
+): string | null {
+  const value = row.athlete_id ?? row.athleteId ?? data?.athleteId
+  return typeof value === 'string' ? value : null
 }
 
 /**
@@ -681,6 +698,7 @@ export function mergeAthleteProfileRows(
   return normalizeAthleteProfilePayload({
     id: incomingRow.id,
     user_id: incomingRow.user_id,
+    athlete_id: incomingRow.athlete_id ?? baseRow.athlete_id,
     coach_memory: mergedCoachMemory,
     updated_at: incomingRow.updated_at,
     data: serializeAthleteProfileData(mergedData, mergedDeletedFields, incomingClearsCoachMemory),

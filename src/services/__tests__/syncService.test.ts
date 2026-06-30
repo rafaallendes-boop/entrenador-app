@@ -14,6 +14,8 @@ const clearAllLocalAppDataMock = vi.fn(async () => {
   chatMessageRows = []
   coachProposalRows = []
   athleteProfileRows = []
+  athleteRows = []
+  planGenerationJobRows = []
 })
 function createSyncDetailsState() {
   return {
@@ -57,6 +59,8 @@ let trainingPlanWeekRows: unknown[] = []
 let chatMessageRows: unknown[] = []
 let coachProposalRows: unknown[] = []
 let athleteProfileRows: unknown[] = []
+let athleteRows: Array<{ id: string; [key: string]: unknown }> = []
+let planGenerationJobRows: unknown[] = []
 let tableResults = new Map<string, SupabaseResult>()
 let actionResults = new Map<string, SupabaseResult>()
 const upsertCalls: Array<{ table: string; payload: unknown; options?: unknown }> = []
@@ -113,6 +117,17 @@ function createSupabaseFrom() {
   })
 }
 
+function mergeRowsById(current: unknown[], incoming: unknown[]): unknown[] {
+  const next = [...current]
+  for (const row of incoming) {
+    const id = (row as { id?: unknown }).id
+    const index = next.findIndex((item) => (item as { id?: unknown }).id === id)
+    if (index >= 0) next[index] = row
+    else next.push(row)
+  }
+  return next
+}
+
 const supabaseMock = {
   from: createSupabaseFrom(),
 }
@@ -145,6 +160,9 @@ vi.mock('../../db/db', () => ({
       count: vi.fn(async () => sessionsRows.length),
       get: vi.fn(async () => undefined),
       put: vi.fn(async () => {}),
+      bulkPut: vi.fn(async (rows: unknown[]) => {
+        sessionsRows = mergeRowsById(sessionsRows, rows)
+      }),
       delete: vi.fn(async () => {}),
       bulkDelete: vi.fn(async () => {}),
     },
@@ -153,6 +171,9 @@ vi.mock('../../db/db', () => ({
       count: vi.fn(async () => dayLogRows.length),
       get: vi.fn(async () => undefined),
       put: vi.fn(async () => {}),
+      bulkPut: vi.fn(async (rows: unknown[]) => {
+        dayLogRows = mergeRowsById(dayLogRows, rows)
+      }),
       delete: vi.fn(async () => {}),
       bulkDelete: vi.fn(async () => {}),
       where: vi.fn(() => ({ equals: vi.fn(async () => undefined) })),
@@ -162,6 +183,9 @@ vi.mock('../../db/db', () => ({
       count: vi.fn(async () => weekSummaryRows.length),
       get: vi.fn(async () => undefined),
       put: vi.fn(async () => {}),
+      bulkPut: vi.fn(async (rows: unknown[]) => {
+        weekSummaryRows = mergeRowsById(weekSummaryRows, rows)
+      }),
       delete: vi.fn(async () => {}),
       bulkDelete: vi.fn(async () => {}),
       where: vi.fn(() => ({ equals: vi.fn(async () => undefined) })),
@@ -171,6 +195,9 @@ vi.mock('../../db/db', () => ({
       count: vi.fn(async () => trainingPlanRows.length),
       get: vi.fn(async () => undefined),
       put: vi.fn(async () => {}),
+      bulkPut: vi.fn(async (rows: unknown[]) => {
+        trainingPlanRows = mergeRowsById(trainingPlanRows, rows)
+      }),
       delete: vi.fn(async () => {}),
       bulkDelete: vi.fn(async () => {}),
     },
@@ -179,6 +206,9 @@ vi.mock('../../db/db', () => ({
       count: vi.fn(async () => trainingPlanWeekRows.length),
       get: vi.fn(async () => undefined),
       put: vi.fn(async () => {}),
+      bulkPut: vi.fn(async (rows: unknown[]) => {
+        trainingPlanWeekRows = mergeRowsById(trainingPlanWeekRows, rows)
+      }),
       delete: vi.fn(async () => {}),
       bulkDelete: vi.fn(async () => {}),
       where: vi.fn(() => ({ equals: vi.fn(() => ({ delete: vi.fn(async () => {}), toArray: vi.fn(async () => []) })) })),
@@ -188,6 +218,9 @@ vi.mock('../../db/db', () => ({
       count: vi.fn(async () => chatMessageRows.length),
       get: vi.fn(async () => undefined),
       put: vi.fn(async () => {}),
+      bulkPut: vi.fn(async (rows: unknown[]) => {
+        chatMessageRows = mergeRowsById(chatMessageRows, rows)
+      }),
       bulkDelete: vi.fn(async () => {}),
     },
     coachProposals: {
@@ -195,6 +228,9 @@ vi.mock('../../db/db', () => ({
       count: vi.fn(async () => coachProposalRows.length),
       get: vi.fn(async () => undefined),
       put: vi.fn(async () => {}),
+      bulkPut: vi.fn(async (rows: unknown[]) => {
+        coachProposalRows = mergeRowsById(coachProposalRows, rows)
+      }),
       bulkDelete: vi.fn(async () => {}),
     },
     athleteProfiles: {
@@ -202,7 +238,37 @@ vi.mock('../../db/db', () => ({
       count: vi.fn(async () => athleteProfileRows.length),
       get: vi.fn(async () => undefined),
       put: vi.fn(async () => {}),
+      bulkPut: vi.fn(async (rows: unknown[]) => {
+        athleteProfileRows = mergeRowsById(athleteProfileRows, rows)
+      }),
       clear: vi.fn(async () => {}),
+    },
+    athletes: {
+      toArray: vi.fn(async () => athleteRows),
+      count: vi.fn(async () => athleteRows.length),
+      get: vi.fn(async (id: string) => athleteRows.find((row) => row.id === id)),
+      put: vi.fn(async (row: { id: string; [key: string]: unknown }) => {
+        const index = athleteRows.findIndex((item) => item.id === row.id)
+        if (index >= 0) athleteRows[index] = row
+        else athleteRows.push(row)
+      }),
+      bulkPut: vi.fn(async (rows: Array<{ id: string; [key: string]: unknown }>) => {
+        for (const row of rows) {
+          const index = athleteRows.findIndex((item) => item.id === row.id)
+          if (index >= 0) athleteRows[index] = row
+          else athleteRows.push(row)
+        }
+      }),
+      clear: vi.fn(async () => {
+        athleteRows = []
+      }),
+    },
+    planGenerationJobs: {
+      toArray: vi.fn(async () => planGenerationJobRows),
+      count: vi.fn(async () => planGenerationJobRows.length),
+      bulkPut: vi.fn(async (rows: unknown[]) => {
+        planGenerationJobRows = rows
+      }),
     },
   },
 }))
@@ -217,6 +283,8 @@ describe('syncService', () => {
     chatMessageRows = []
     coachProposalRows = []
     athleteProfileRows = []
+    athleteRows = []
+    planGenerationJobRows = []
     tableResults = new Map()
     actionResults = new Map()
     upsertCalls.length = 0
@@ -356,6 +424,33 @@ describe('syncService', () => {
     expect(upsertCalls.find((call) => call.table === 'chat_messages')?.options).toBeUndefined()
   })
 
+  it('stamps athlete_id during bulk migration and ensures the remote athlete first', async () => {
+    sessionsRows = [{
+      id: 'session-1',
+      date: '2026-04-11',
+      weekStartDate: '2026-04-06',
+      timeBlock: 'AM',
+      type: 'running',
+      status: 'planned',
+      title: 'Tempo',
+      durationMin: 45,
+      createdAt: 1,
+      updatedAt: 2,
+    }]
+
+    const syncService = await import('../syncService')
+    await syncService.migrateLocalDataToCloud('user-1')
+
+    expect(upsertCalls[0]?.table).toBe('athletes')
+    const athletePayload = upsertCalls[0]?.payload as Record<string, unknown>
+    expect(athletePayload.id).toBe('ath_user-1')
+    expect(athletePayload.owner_account_id).toBe('user-1')
+
+    const sessionUpsert = upsertCalls.find((call) => call.table === 'sessions')
+    const sessionPayload = (sessionUpsert?.payload as Array<Record<string, unknown>>)[0]
+    expect(sessionPayload.athlete_id).toBe('ath_user-1')
+  })
+
   it('migrates syncable plans (active, archived, draft, superseded) and their weeks', async () => {
     trainingPlanRows = [
       {
@@ -463,6 +558,31 @@ describe('syncService', () => {
     expect(queue[0]?.table).toBe('sessions')
   })
 
+  it('ensures the remote athlete before pushing scoped rows', async () => {
+    const syncService = await import('../syncService')
+
+    await syncService.pushSession({
+      id: 'session-1',
+      athleteId: 'ath_user-1',
+      date: '2026-04-11',
+      weekStartDate: '2026-04-06',
+      timeBlock: 'AM',
+      type: 'running',
+      status: 'planned',
+      title: 'Tempo',
+      durationMin: 45,
+      createdAt: 1,
+      updatedAt: 2,
+    })
+
+    expect(upsertCalls[0]?.table).toBe('athletes')
+    expect(upsertCalls[1]?.table).toBe('sessions')
+    expect(upsertCalls[1]?.payload).toMatchObject({
+      id: 'session-1',
+      athlete_id: 'ath_user-1',
+    })
+  })
+
   it('runFullSync drains a retryable queued op and clears diagnostics when the backend recovers', async () => {
     tableResults.set('sessions', { data: null, error: { message: 'JWT expired', status: 401 } })
     const syncService = await import('../syncService')
@@ -553,6 +673,7 @@ describe('syncService', () => {
       'day_logs',
       'sessions',
       'athlete_profiles',
+      'athletes',
     ])
     expect(updateCalls.some((call) => call.table === 'athlete_profiles')).toBe(false)
     expect(upsertCalls.some((call) => call.table === 'athlete_profiles')).toBe(true)

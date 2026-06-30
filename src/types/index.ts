@@ -243,6 +243,7 @@ export interface ProtocolContext {
 /** Common fields shared by all session types. */
 export interface SessionBase {
   id: string
+  athleteId?: string       // scope key (text); maps to Supabase athlete_id. Legacy rows: undefined.
   date: string             // ISO "YYYY-MM-DD"
   weekStartDate?: string   // ISO "YYYY-MM-DD", Monday — indexed in Dexie for efficient week queries
   timeBlock: TimeBlock
@@ -341,6 +342,7 @@ export interface SessionFeedback {
 
 export interface DayLog {
   id: string
+  athleteId?: string       // scope key (text); maps to Supabase athlete_id. Legacy rows: undefined.
   date: string             // ISO "YYYY-MM-DD"
   sleepHours?: number
   sleepQuality?: number    // 1-5
@@ -356,6 +358,7 @@ export interface DayLog {
 
 export interface WeekSummary {
   id: string
+  athleteId?: string       // scope key (text); maps to Supabase athlete_id. Legacy rows: undefined.
   weekStartDate: string    // ISO "YYYY-MM-DD", always Monday
   updatedAt?: number
   totalSessions: number
@@ -589,8 +592,19 @@ export interface MacroPlan {
   computedAt: number      // Date.now() timestamp of last computation
 }
 
+export interface Athlete {
+  id: string                      // text PK, e.g. "ath_<userId>"
+  ownerAccountId: string
+  linkedAccountId?: string | null
+  displayName?: string | null
+  status: string                  // 'active' | ...
+  createdAt: number
+  updatedAt: number
+}
+
 export interface AthleteProfile {
   id: string
+  athleteId?: string       // scope key (text); maps to Supabase athlete_id. Legacy rows: undefined.
   coachMemory?: string
   onboardingDeferredAt?: number
   updatedAt: number
@@ -622,6 +636,7 @@ export interface AthleteProfile {
 
 export interface ChatMessage {
   id: string
+  athleteId?: string       // scope key (text); maps to Supabase athlete_id. Legacy rows: undefined.
   role: MessageRole
   content: string
   timestamp: number
@@ -900,6 +915,7 @@ export interface PlanGenerationSummary {
 
 export interface CoachProposal {
   id: string
+  athleteId?: string       // scope key (text); maps to Supabase athlete_id. Legacy rows: undefined.
   chatMessageId?: string   // link to the chat message that generated this
   message: string          // human-readable summary of the proposal
   actions: CoachAction[]

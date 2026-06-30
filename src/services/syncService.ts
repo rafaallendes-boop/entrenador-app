@@ -17,6 +17,7 @@ import type {
   ChatMessage,
   CoachProposal,
   AthleteProfile,
+  Athlete,
 } from '../types'
 import type { TrainingPlan, TrainingPlanWeek } from '../types/planBuilder'
 import {
@@ -50,7 +51,10 @@ import {
   trackSyncEvent,
 } from './syncDiagnostics'
 import { ENTITY_TIER } from '../types/syncDiagnostics'
-import { ATHLETE_PROFILE_LOCAL_ID } from './athlete/activeAthlete'
+import { ATHLETE_PROFILE_LOCAL_ID, getActiveAthleteId } from './athlete/activeAthlete'
+import { hydrateActiveAthlete } from './athlete/hydrateActiveAthlete'
+import { backfillLocalAthleteScope } from './athlete/athleteScopeMigration'
+import { athleteToRow, rowToAthlete, type AthleteRow } from './athleteRows'
 import {
   FETCH_PAGE_SIZE,
   fetchAll,
@@ -116,7 +120,10 @@ const REMOTE_WIPE_ORDER: SupabaseTable[] = [
   'day_logs',
   'sessions',
   'athlete_profiles',
+  'athletes',
 ]
+
+const remoteAthleteEnsurePromises = new Map<string, Promise<void>>()
 
 
 function loadProfileResetLockStore(): ProfileResetLockStore {
@@ -1140,6 +1147,9 @@ async function upsertRow(
     startSyncAttempt()
     const upsertStartedAt = Date.now()
     try {
+      if (table !== 'athletes' && payload.athlete_id != null) {
+        await withRequestTimeout(ensureRemoteAthlete(userId), 'athletes.ensure')
+      }
       if (table === 'athlete_profiles') {
         await withRequestTimeout(upsertAthleteProfileRow(payload, userId), `athlete_profiles.upsert`)
       } else {
@@ -1217,8 +1227,11 @@ async function deleteRow(table: SupabaseTable, id: string): Promise<void> {
     startSyncAttempt()
     const deleteStartedAt = Date.now()
     try {
+      const deleteQuery = table === 'athletes'
+        ? getSupabase().from(table).delete().eq('id', id).eq('owner_account_id', userId)
+        : getSupabase().from(table).delete().eq('id', id).eq('user_id', userId)
       const { error } = await withRequestTimeout(
-        getSupabase().from(table).delete().eq('id', id).eq('user_id', userId),
+        deleteQuery,
         `${table}.delete`,
       )
       if (error) throw error
@@ -1278,6 +1291,10 @@ function sessionToRow(session: Session, userId: string): Record<string, unknown>
   }
 }
 
+function getRowAthleteId(row: Record<string, unknown>, data: Record<string, unknown>): string | undefined {
+  return ((row.athlete_id as string | null | undefined) ?? (data.athleteId as string | undefined)) || undefined
+}
+
 function rowToSession(row: Record<string, unknown>): Session {
   const data = (row.data as Record<string, unknown>) ?? {}
   return {
@@ -1289,6 +1306,7 @@ function rowToSession(row: Record<string, unknown>): Session {
     createdAt: row.created_at as number,
     updatedAt: row.updated_at as number,
     ...data,
+    athleteId: getRowAthleteId(row, data),
   } as Session
 }
 
@@ -1310,6 +1328,7 @@ function rowToDayLog(row: Record<string, unknown>): DayLog {
     date: row.date as string,
     updatedAt: row.updated_at as number,
     ...data,
+    athleteId: getRowAthleteId(row, data),
   } as DayLog
 }
 
@@ -1331,6 +1350,7 @@ function rowToWeekSummary(row: Record<string, unknown>): WeekSummary {
     weekStartDate: (row.week_start_date ?? data.weekStartDate) as string,
     updatedAt: (row.updated_at as number | undefined) ?? undefined,
     ...data,
+    athleteId: getRowAthleteId(row, data),
   } as WeekSummary
 }
 
@@ -1356,6 +1376,7 @@ function rowToChatMessage(row: Record<string, unknown>): ChatMessage {
     timestamp: row.timestamp as number,
     chatSessionId: (row.chat_session_id as string | undefined) ?? undefined,
     ...data,
+    athleteId: getRowAthleteId(row, data),
   } as ChatMessage
 }
 
@@ -1379,13 +1400,14 @@ function rowToCoachProposal(row: Record<string, unknown>): CoachProposal {
     status: row.status as CoachProposal['status'],
     createdAt: row.created_at as number,
     ...data,
+    athleteId: getRowAthleteId(row, data),
   } as CoachProposal
 }
 
 async function fetchAthleteProfileRows(userId: string): Promise<AthleteProfileSyncRow[]> {
   const { data, error } = await getSupabase()
     .from('athlete_profiles')
-    .select('id, user_id, coach_memory, updated_at, data')
+    .select('id, user_id, athlete_id, coach_memory, updated_at, data')
     .eq('user_id', userId)
 
   if (error) throw error
@@ -1451,6 +1473,15 @@ async function deleteAthleteProfileRowsById(userId: string, ids: string[]): Prom
   if (error) throw error
 }
 
+function athleteProfilePersistencePayload(row: AthleteProfileSyncRow): Record<string, unknown> {
+  return {
+    athlete_id: (row as Record<string, unknown>).athlete_id ?? null,
+    coach_memory: row.coach_memory,
+    updated_at: row.updated_at,
+    data: row.data,
+  }
+}
+
 async function repairRemoteAthleteProfileRows(
   userId: string,
   rows: AthleteProfileSyncRow[],
@@ -1481,11 +1512,7 @@ async function repairRemoteAthleteProfileRows(
     const normalized = normalizeAthleteProfilePayload(nextRow)
     const { error: updateError } = await getSupabase()
       .from('athlete_profiles')
-      .update({
-        coach_memory: normalized.coach_memory,
-        updated_at: normalized.updated_at,
-        data: normalized.data,
-      } as never)
+      .update(athleteProfilePersistencePayload(normalized) as never)
       .eq('id', keeper.id)
       .eq('user_id', userId)
 
@@ -1499,9 +1526,7 @@ async function repairRemoteAthleteProfileRows(
       .insert({
         id: normalized.id,
         user_id: userId,
-        coach_memory: normalized.coach_memory,
-        updated_at: normalized.updated_at,
-        data: normalized.data,
+        ...athleteProfilePersistencePayload(normalized),
       } as never)
 
     if (insertError) {
@@ -1554,9 +1579,7 @@ async function persistAthleteProfileRow(
         .upsert({
           id: normalized.id,
           user_id: userId,
-          coach_memory: normalized.coach_memory,
-          updated_at: normalized.updated_at,
-          data: normalized.data,
+          ...athleteProfilePersistencePayload(normalized),
         } as never, { onConflict: 'user_id' })
       if (error) throw error
       return
@@ -1564,11 +1587,7 @@ async function persistAthleteProfileRow(
 
     const { error } = await getSupabase()
       .from('athlete_profiles')
-      .update({
-        coach_memory: normalized.coach_memory,
-        updated_at: normalized.updated_at,
-        data: normalized.data,
-      } as never)
+      .update(athleteProfilePersistencePayload(normalized) as never)
       .eq('id', keeper.id)
       .eq('user_id', userId)
 
@@ -1601,9 +1620,7 @@ async function persistAthleteProfileRow(
       .upsert({
         id: rowToPersist.id,
         user_id: userId,
-        coach_memory: rowToPersist.coach_memory,
-        updated_at: rowToPersist.updated_at,
-        data: rowToPersist.data,
+        ...athleteProfilePersistencePayload(rowToPersist),
       } as never, { onConflict: 'user_id' })
     if (error) throw error
     return
@@ -1611,11 +1628,7 @@ async function persistAthleteProfileRow(
 
   const { error } = await getSupabase()
     .from('athlete_profiles')
-    .update({
-      coach_memory: rowToPersist.coach_memory,
-      updated_at: rowToPersist.updated_at,
-      data: rowToPersist.data,
-    } as never)
+    .update(athleteProfilePersistencePayload(rowToPersist) as never)
     .eq('id', existingRow.id)
     .eq('user_id', userId)
 
@@ -1661,10 +1674,58 @@ async function upsertAthleteProfileRow(row: Record<string, unknown>, userId: str
   }
 }
 
+/**
+ * Dual-write helper (Athlete Scope Foundation, Fase D): attach the top-level
+ * `athlete_id` column to a remote row, preferring the entity's own scope, else
+ * the hydrated active athlete. Independent of the read flag — writing both ids is
+ * always safe once the Supabase column exists (deploy gate: apply migration 007
+ * before shipping this). When no athlete is resolved yet, the column is omitted
+ * (the row stays legacy/null and is recovered by legacy-aware reads).
+ */
+function withAthleteId(row: Record<string, unknown>, entityAthleteId?: string): Record<string, unknown> {
+  if (row.athlete_id != null) return row
+  const athleteId = entityAthleteId ?? getActiveAthleteId() ?? undefined
+  return athleteId ? { ...row, athlete_id: athleteId } : row
+}
+
+async function ensureRemoteAthleteOnce(userId: string): Promise<void> {
+  if (!isEnabled()) return
+
+  const athleteId = await backfillLocalAthleteScope(userId)
+  await hydrateActiveAthlete(userId)
+
+  const now = Date.now()
+  const localAthlete = await db.athletes.get(athleteId)
+  const athlete: Athlete = localAthlete ?? {
+    id: athleteId,
+    ownerAccountId: userId,
+    linkedAccountId: userId,
+    status: 'active',
+    createdAt: now,
+    updatedAt: now,
+  }
+
+  const { error } = await getSupabase()
+    .from('athletes')
+    .upsert(athleteToRow(athlete) as never, { onConflict: 'id' })
+  if (error) throw error
+}
+
+async function ensureRemoteAthlete(userId: string): Promise<void> {
+  const existing = remoteAthleteEnsurePromises.get(userId)
+  if (existing) return existing
+
+  const promise = ensureRemoteAthleteOnce(userId).finally(() => {
+    remoteAthleteEnsurePromises.delete(userId)
+  })
+  remoteAthleteEnsurePromises.set(userId, promise)
+  return promise
+}
+
 export async function pushSession(session: Session): Promise<void> {
   const userId = getUserId()
   if (!userId) return
-  await upsertRow('sessions', sessionToRow(session, userId))
+  await upsertRow('sessions', withAthleteId(sessionToRow(session, userId), session.athleteId))
 }
 
 export async function deleteSession(id: string): Promise<void> {
@@ -1722,19 +1783,19 @@ export async function pullSessionsForDateRange(startDate: string, endDate: strin
 export async function pushDayLog(log: DayLog): Promise<void> {
   const userId = getUserId()
   if (!userId) return
-  await upsertRow('day_logs', dayLogToRow(log, userId))
+  await upsertRow('day_logs', withAthleteId(dayLogToRow(log, userId), log.athleteId))
 }
 
 export async function pushWeekSummary(summary: WeekSummary): Promise<void> {
   const userId = getUserId()
   if (!userId) return
-  await upsertRow('week_summaries', weekSummaryToRow(summary, userId))
+  await upsertRow('week_summaries', withAthleteId(weekSummaryToRow(summary, userId), summary.athleteId))
 }
 
 export async function pushChatMessage(msg: ChatMessage): Promise<void> {
   const userId = getUserId()
   if (!userId) return
-  await upsertRow('chat_messages', chatMessageToRow(msg, userId))
+  await upsertRow('chat_messages', withAthleteId(chatMessageToRow(msg, userId), msg.athleteId))
 }
 
 export async function deleteChatMessages(ids: string[]): Promise<void> {
@@ -1750,7 +1811,7 @@ export async function deleteCoachProposals(ids: string[]): Promise<void> {
 export async function pushCoachProposal(proposal: CoachProposal): Promise<void> {
   const userId = getUserId()
   if (!userId) return
-  await upsertRow('coach_proposals', coachProposalToRow(proposal, userId))
+  await upsertRow('coach_proposals', withAthleteId(coachProposalToRow(proposal, userId), proposal.athleteId))
 }
 
 export async function pushAthleteProfile(
@@ -1760,7 +1821,7 @@ export async function pushAthleteProfile(
   const userId = getUserId()
   if (!userId) return
   const source = options?.source ?? 'automatic'
-  await upsertRow('athlete_profiles', withAthleteProfileWriteSource(athleteProfileToRow(profile, userId), source), {
+  await upsertRow('athlete_profiles', withAthleteProfileWriteSource(withAthleteId(athleteProfileToRow(profile, userId), profile.athleteId), source), {
     athleteProfileWriteSource: source,
   })
 }
@@ -1774,7 +1835,10 @@ export async function pushTrainingPlan(plan: TrainingPlan): Promise<void> {
 export async function pushTrainingPlanWeeks(plan: TrainingPlan, weeks: TrainingPlanWeek[]): Promise<void> {
   const userId = getUserId()
   if (!userId || !isSyncablePlanStatus(plan.status)) return
-  await Promise.all(weeks.map((week) => upsertRow('training_plan_weeks', trainingPlanWeekToRow(week, userId))))
+  // Weeks derive their athlete scope from the parent plan (not user_id).
+  await Promise.all(weeks.map((week) =>
+    upsertRow('training_plan_weeks', withAthleteId(trainingPlanWeekToRow(week, userId), week.athleteId ?? plan.athleteId)),
+  ))
 }
 
 export async function archiveTrainingPlan(plan: TrainingPlan, weeks: TrainingPlanWeek[]): Promise<void> {
@@ -1810,6 +1874,11 @@ async function wipeRemoteTableByUser(
     } else {
       await clearRemoteAthleteProfileData(userId)
     }
+    return
+  }
+  if (table === 'athletes') {
+    const { error } = await getSupabase().from('athletes').delete().eq('owner_account_id', userId)
+    if (error) throw error
     return
   }
 
@@ -1862,9 +1931,39 @@ async function processPendingRemoteWipes(userId: string): Promise<RemoteWipeOutc
   return outcome
 }
 
+/**
+ * Pull the owner's athlete rows FIRST (Tier-A intent) and re-hydrate the active
+ * athlete, so any athlete-scoped read/write later in the sync uses a resolved id.
+ * Scoped by owner_account_id (athletes has no user_id). Degrades gracefully if the
+ * table/migration is not present yet.
+ */
+async function pullAthletes(userId: string): Promise<void> {
+  // Fully defensive: athlete scope is additive, so a failure here (missing table,
+  // pre-migration env, mocked db without the store) must NEVER break the sync.
+  try {
+    await ensureRemoteAthlete(userId)
+    const { data, error } = await getSupabase()
+      .from('athletes')
+      .select('*')
+      .eq('owner_account_id', userId)
+    if (error) {
+      syncLog('pullAthletes:error', { error: error.message }, 'warn')
+    } else if (data && data.length) {
+      await db.athletes.bulkPut((data as AthleteRow[]).map(rowToAthlete))
+    }
+    await hydrateActiveAthlete(userId)
+  } catch (error) {
+    syncLog('pullAthletes:exception', {
+      error: error instanceof Error ? error.message : String(error),
+    }, 'warn')
+  }
+}
+
 async function pullRemoteAndMerge(userId: string): Promise<void> {
   return pullRemoteDedup.run(userId, async () => {
     if (!isEnabled()) return
+
+    await pullAthletes(userId)
 
     const queueDrained = await drainQueue()
     const { syncDetails } = useAuthStore.getState()
@@ -2879,6 +2978,8 @@ export async function migrateLocalDataToCloud(userId: string): Promise<void> {
   if (localStorage.getItem(getMigrationKey(userId))) return
 
   try {
+    await ensureRemoteAthlete(userId)
+
     const [sessions, dayLogs, weekSummaries, trainingPlans, trainingPlanWeeks, chatMessages, coachProposals, athleteProfiles] =
       await Promise.all([
         db.sessions.toArray(),
@@ -2893,16 +2994,19 @@ export async function migrateLocalDataToCloud(userId: string): Promise<void> {
 
     const syncablePlans = trainingPlans.filter((plan) => isSyncablePlanStatus(plan.status))
     const syncablePlanIds = new Set(syncablePlans.map((plan) => plan.id))
+    const syncablePlanAthleteIds = new Map(syncablePlans.map((plan) => [plan.id, plan.athleteId]))
     const syncableWeeks = trainingPlanWeeks.filter((week) => syncablePlanIds.has(week.planId))
 
-    const sessionRows = sessions.map((session) => sessionToRow(session, userId))
-    const dayLogRows = dayLogs.map((dayLog) => dayLogToRow(dayLog, userId))
-    const weekRows = weekSummaries.map((summary) => weekSummaryToRow(summary, userId))
+    const sessionRows = sessions.map((session) => withAthleteId(sessionToRow(session, userId), session.athleteId))
+    const dayLogRows = dayLogs.map((dayLog) => withAthleteId(dayLogToRow(dayLog, userId), dayLog.athleteId))
+    const weekRows = weekSummaries.map((summary) => withAthleteId(weekSummaryToRow(summary, userId), summary.athleteId))
     const trainingPlanRows = syncablePlans.map((plan) => trainingPlanToRow(plan, userId))
-    const trainingPlanWeekRows = syncableWeeks.map((week) => trainingPlanWeekToRow(week, userId))
-    const chatRows = chatMessages.map((message) => chatMessageToRow(message, userId))
-    const proposalRows = coachProposals.map((proposal) => coachProposalToRow(proposal, userId))
-    const profileRows = athleteProfiles.map((profile) => athleteProfileToRow(profile, userId))
+    const trainingPlanWeekRows = syncableWeeks.map((week) =>
+      withAthleteId(trainingPlanWeekToRow(week, userId), week.athleteId ?? syncablePlanAthleteIds.get(week.planId)),
+    )
+    const chatRows = chatMessages.map((message) => withAthleteId(chatMessageToRow(message, userId), message.athleteId))
+    const proposalRows = coachProposals.map((proposal) => withAthleteId(coachProposalToRow(proposal, userId), proposal.athleteId))
+    const profileRows = athleteProfiles.map((profile) => withAthleteId(athleteProfileToRow(profile, userId), profile.athleteId))
 
     const upsertMigrationRows = async (
       table: SupabaseTable,

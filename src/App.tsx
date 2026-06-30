@@ -12,6 +12,9 @@ import { currentWeekStartISO } from './utils/date'
 import { db } from './db/db'
 import { hasSkippedOnboarding, needsOnboarding } from './utils/onboarding'
 import { isSupabaseConfigured } from './services/auth'
+import { backfillLocalAthleteScope } from './services/athlete/athleteScopeMigration'
+import { hydrateActiveAthlete } from './services/athlete/hydrateActiveAthlete'
+import { getActiveAthleteId } from './services/athlete/activeAthlete'
 
 const Dashboard = lazy(() => import('./pages/Dashboard'))
 const WeeklyView = lazy(() => import('./pages/WeeklyView'))
@@ -150,6 +153,29 @@ export default function App() {
     void usePlanBuilderStore.getState().resumeGenerationJobs(athleteProfile)
   }, [athleteProfile, hasLoadedMemory])
 
+  // Athlete Scope Foundation: ensure the owner's athlete row + stamp athleteId on
+  // legacy local rows, then hydrate the active athlete id. Additive and invisible
+  // with VITE_ATHLETE_SCOPE off; prepares data so the flag can be flipped safely.
+  useEffect(() => {
+    if (!userId) return
+    let cancelled = false
+    void (async () => {
+      try {
+        await db.open().catch(() => {})
+        await backfillLocalAthleteScope(userId)
+        if (cancelled) return
+        await hydrateActiveAthlete(userId)
+        if (cancelled) return
+        useAuthStore.getState().setActiveAthleteId(getActiveAthleteId())
+      } catch (error) {
+        console.error('[athlete-scope] hydration failed', error)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [userId])
+
   useEffect(() => {
     if (!userId) return
 
@@ -172,6 +198,13 @@ export default function App() {
       })
 
       try {
+        await db.open().catch(() => {})
+        await backfillLocalAthleteScope(userId)
+        if (cancelled) return
+        await hydrateActiveAthlete(userId)
+        if (cancelled) return
+        useAuthStore.getState().setActiveAthleteId(getActiveAthleteId())
+
         const { shouldMigrate } = await prepareLocalDataForUser(userId)
         if (cancelled) return
 
