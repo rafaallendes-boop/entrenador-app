@@ -1,5 +1,5 @@
 import Dexie, { type Table } from 'dexie'
-import type { Session, DayLog, WeekSummary, ChatMessage, CoachProposal, AthleteProfile, AITechnicalResult, CoachFeedback } from '../types'
+import type { Session, DayLog, WeekSummary, ChatMessage, CoachProposal, AthleteProfile, Athlete, AITechnicalResult, CoachFeedback } from '../types'
 import type { PlanGenerationJob, TrainingPlan, TrainingPlanWeek } from '../types/planBuilder'
 import type { SyncDiagnosticEvent, SyncErrorLogEntry } from '../types/syncDiagnostics'
 import { getOrCreateChatSessionId } from '../utils/chatSession'
@@ -19,6 +19,7 @@ export class EntrenadorDB extends Dexie {
   syncErrorLog!: Table<SyncErrorLogEntry, number>
   aiRequestLogs!: Table<AITechnicalResult>
   coachFeedback!: Table<CoachFeedback>
+  athletes!: Table<Athlete>
 
   constructor() {
     super('EntrenadorDB')
@@ -181,6 +182,28 @@ export class EntrenadorDB extends Dexie {
       syncErrorLog:       '++id, timestamp, entity, errorCategory',
       aiRequestLogs:      'traceId, requestClass, surface, status, provider, startedAt, completedAt',
       coachFeedback:      'id, targetType, targetId, traceId, proposalId, chatMessageId, rating, createdAt',
+    })
+
+    // v13 — Athlete Scope Foundation. Purely additive: new `athletes` table +
+    // `athleteId` indices on synced stores. No data is dropped or rewritten; the
+    // local backfill of athleteId runs at runtime via backfillLocalAthleteScope
+    // (it needs the authenticated user id, unavailable inside a Dexie upgrade).
+    // A client with VITE_ATHLETE_SCOPE off behaves identically to v12.
+    this.version(13).stores({
+      sessions:           'id, date, weekStartDate, type, status, completedAt, athleteId',
+      dayLogs:            'id, &date, athleteId',
+      weekSummaries:      'id, &weekStartDate, athleteId',
+      chatMessages:       'id, timestamp, chatSessionId, athleteId',
+      coachProposals:     'id, status, createdAt, resolvedAt, chatMessageId, athleteId',
+      athleteProfiles:    'id, updatedAt, athleteId',
+      trainingPlans:      'id, athleteId, goalEventId, status, startDate, updatedAt',
+      trainingPlanWeeks:  'id, planId, weekStartDate, status, [planId+weekIndex], athleteId',
+      planGenerationJobs: 'id, planId, athleteId, status, updatedAt, createdAt',
+      syncDiagnostics:    '++id, timestamp, kind, entity, status',
+      syncErrorLog:       '++id, timestamp, entity, errorCategory',
+      aiRequestLogs:      'traceId, requestClass, surface, status, provider, startedAt, completedAt',
+      coachFeedback:      'id, targetType, targetId, traceId, proposalId, chatMessageId, rating, createdAt',
+      athletes:           'id, ownerAccountId, updatedAt',
     })
   }
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { SQUASH_DRILL_LIBRARY } from '../drillLibrary'
+import { SQUASH_DRILL_LIBRARY, toSquashDrill } from '../drillLibrary'
 
 describe('SquashDrillDefinition schema Fase 2', () => {
   it('every drill declares phaseAppropriate as a non-empty valid subset', () => {
@@ -38,6 +38,17 @@ describe('SquashDrillDefinition schema Fase 2', () => {
 
     for (const drill of soloDrills) {
       expect(drill.partnerRequired).toBe(false)
+    }
+  })
+
+  it('every drill exposes player-facing notes with objective and execution cue', () => {
+    for (const definition of SQUASH_DRILL_LIBRARY) {
+      expect(definition.description.length, `drill ${definition.id}`).toBeGreaterThan(120)
+      expect(definition.description, `drill ${definition.id}`).toContain('Objetivo:')
+      expect(definition.description, `drill ${definition.id}`).toContain('Clave:')
+
+      const drill = toSquashDrill(definition)
+      expect(drill.notes, `drill ${definition.id}`).toBe(definition.description)
     }
   })
 })

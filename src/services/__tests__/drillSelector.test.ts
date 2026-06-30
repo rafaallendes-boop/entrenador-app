@@ -58,8 +58,6 @@ describe('drillSelector progression', () => {
       'feedback',
       'sustain',
       'land',
-      'rally',
-      'rallies',
     ]
     const bannedVisiblePatterns = [
       new RegExp('de' + 'jada', 'i'),

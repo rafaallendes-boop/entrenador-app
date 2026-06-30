@@ -59,6 +59,7 @@ export function trainingPlanWeekToRow(week: TrainingPlanWeek, userId: string, de
   return {
     id: week.id,
     user_id: userId,
+    athlete_id: week.athleteId ?? null,
     plan_id: week.planId,
     week_index: week.weekIndex,
     week_start_date: week.weekStartDate,
@@ -78,6 +79,7 @@ export function trainingPlanWeekToRow(week: TrainingPlanWeek, userId: string, de
 export function rowToTrainingPlanWeek(row: PlanWeekRow): TrainingPlanWeek {
   return {
     id: row.id as string,
+    athleteId: (row.athlete_id as string | null) ?? undefined,
     planId: row.plan_id as string,
     weekIndex: row.week_index as number,
     weekStartDate: row.week_start_date as string,
