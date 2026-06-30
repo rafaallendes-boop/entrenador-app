@@ -6,6 +6,7 @@ import { normalizeMobilityDetails } from '../training/mobilitySessionLibrary'
 
 const ACTIONS_BLOCK_RE = /<actions>([\s\S]*?)<\/actions>/i
 const ACTIONS_START_RE = /<actions>/i
+const INTERNAL_SESSION_REF_RE = /\s*\[([a-z0-9_-]{6,12})\]/gi
 
 const VALID_ACTION_TYPES = new Set<CoachActionType>([
   'skip_session',
@@ -205,7 +206,7 @@ export function normalizeResponse(raw: AIRawResponse): CoachNormalizedResponse {
     actions = nextActions
   }
 
-  message = message.replace(/\n{3,}/g, '\n\n').trim()
+  message = sanitizeVisibleCoachMessage(message.replace(/\n{3,}/g, '\n\n'))
 
   if (requestClass === 'chat_action' && actions?.length && !message) {
     message = 'Te propongo este cambio:'
@@ -243,6 +244,16 @@ export function normalizeResponse(raw: AIRawResponse): CoachNormalizedResponse {
       errorClass: raw.errorClass,
     },
   }
+}
+
+function sanitizeVisibleCoachMessage(message: string): string {
+  return message
+    .replace(INTERNAL_SESSION_REF_RE, (match, token: string) => {
+      return /\d|[_-]/.test(token) ? '' : match
+    })
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/\s+([.,;:!?])/g, '$1')
+    .trim()
 }
 
 function isMaxTokenFinishReason(finishReason: string | undefined): boolean {

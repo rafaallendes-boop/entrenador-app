@@ -65,6 +65,33 @@ describe('responseNormalizer', () => {
     })
   })
 
+  it('removes internal short session ids from the visible coach message', () => {
+    const response = normalizeResponse({
+      text: [
+        'Movería la fuerza del jueves 2 de julio [08673c59] para cuidar frescura.',
+        '<actions>',
+        JSON.stringify([
+          {
+            type: 'move_session',
+            sessionId: '08673c59-full-id',
+            targetDate: '2026-07-03',
+            timeBlock: 'PM',
+            reason: 'Cuidar frescura antes del squash',
+          },
+        ]),
+        '</actions>',
+      ].join('\n'),
+      provider: 'mock',
+      requestClass: 'chat_action',
+    })
+
+    expect(response.message).toBe('Movería la fuerza del jueves 2 de julio para cuidar frescura.')
+    expect(response.actions?.[0]).toMatchObject({
+      type: 'move_session',
+      sessionId: '08673c59-full-id',
+    })
+  })
+
   it('repairs squash add_session without squashDetails', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
 

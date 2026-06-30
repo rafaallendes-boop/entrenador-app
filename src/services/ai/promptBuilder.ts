@@ -556,7 +556,7 @@ function buildAdjustResponseInstructionsSection(
     'Objetivo de este request:',
     '- El usuario está pidiendo un ajuste puntual, no una planificación semanal completa.',
     '- Prioriza cambios concretos, válidos y fáciles de ejecutar.',
-    '- Usa las sesiones existentes e IDs visibles como fuente principal para modificar la semana.',
+    '- Usa las sesiones existentes y sus IDs internos como fuente principal para modificar la semana.',
     '',
     'Reglas obligatorias:',
     '- Si el usuario pide agregar una sesión nueva, usa add_session.',
@@ -568,12 +568,14 @@ function buildAdjustResponseInstructionsSection(
     '- Si pide saltarla, usa skip_session.',
     '- No uses create_week para ajustes puntuales.',
     '- Para referencias como lunes/martes/viernes/sábado, usa la fecha correspondiente dentro de la semana solicitada. Si el usuario dice "próxima semana", usa la semana siguiente, no la semana actual.',
+    '- Para referencias como hoy/mañana/pasado mañana, compara contra la etiqueta relativa y la fecha absoluta de cada sesión. No llames "mañana" a una sesión marcada HOY.',
     '- Si el usuario marca un día como descanso/libre/off, no programes add_session ni move_session en ese día aunque lo haya nombrado.',
     ...requestedWeekInstruction,
     `- Usa solo deportes permitidos: ${allowedSports.join(', ') || 'sin restricción explícita'}.`,
     '- No arrastres detalles viejos incompatibles cuando reemplaces tipo, ejercicios o foco de una sesión.',
     '- Mantén las sesiones compactas: título corto, objetivo claro y detalles solo cuando aporten valor real.',
     '- Warmup y cooldown son opcionales; si los omites, el sistema genera protocolos base automáticamente.',
+    '- En la respuesta visible al usuario, no muestres IDs internos como [08673c59], sessionId ni códigos entre corchetes. Nombra las sesiones por día, bloque y título: "la fuerza del jueves PM".',
     '- Responde siempre en español.',
   ]
 
@@ -624,18 +626,31 @@ function buildAdjustResponseInstructionsSection(
 function buildRequestedWeekInstruction(context: ChatContext, userMessage?: string): string[] {
   if (!userMessage?.trim()) return []
   const normalized = normalizePromptText(userMessage)
+  const dateText = stripMorningTimePhrase(normalized)
   const currentWeekStart = context.currentWeekSummary?.weekStartDate ?? currentWeekStartISO()
+  const today = todayISO()
+  const tomorrow = addDaysToISO(today, 1)
+  const afterTomorrow = addDaysToISO(today, 2)
+  const instructions: string[] = []
 
   if (/\b(proxima\s+semana|siguiente\s+semana)\b/.test(normalized)) {
     const start = addDaysToISO(currentWeekStart, 7)
-    return [`- Semana solicitada por el usuario: PRÓXIMA SEMANA (${start} a ${addDaysToISO(start, 6)}).`]
+    instructions.push(`- Semana solicitada por el usuario: PRÓXIMA SEMANA (${start} a ${addDaysToISO(start, 6)}).`)
   }
 
   if (/\b(esta\s+semana|semana\s+actual)\b/.test(normalized)) {
-    return [`- Semana solicitada por el usuario: ESTA SEMANA (${currentWeekStart} a ${addDaysToISO(currentWeekStart, 6)}).`]
+    instructions.push(`- Semana solicitada por el usuario: ESTA SEMANA (${currentWeekStart} a ${addDaysToISO(currentWeekStart, 6)}).`)
   }
 
-  return []
+  if (/\bpasado\s+manana\b/.test(dateText)) {
+    instructions.push(`- Fecha solicitada por el usuario: PASADO MAÑANA (${afterTomorrow} · ${getDayName(afterTomorrow)}). Usa esa fecha para targetDate y para razonar carga.`)
+  } else if (/\bmanana\b/.test(dateText)) {
+    instructions.push(`- Fecha solicitada por el usuario: MAÑANA (${tomorrow} · ${getDayName(tomorrow)}). Usa solo sesiones con fecha ${tomorrow} cuando razones sobre la carga de mañana.`)
+  } else if (/\bhoy\b/.test(dateText)) {
+    instructions.push(`- Fecha solicitada por el usuario: HOY (${today} · ${getDayName(today)}). No mezcles sesiones de mañana al razonar sobre hoy.`)
+  }
+
+  return instructions
 }
 
 function normalizePromptText(text: string): string {
@@ -643,6 +658,10 @@ function normalizePromptText(text: string): string {
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
+}
+
+function stripMorningTimePhrase(text: string): string {
+  return text.replace(/\b(?:por|en|de)\s+la\s+manana\b/g, '')
 }
 
 function buildGeneralChatResponseInstructionsSection(context: ChatContext): string {
@@ -1525,14 +1544,15 @@ function buildSessionsSection(
     return lines.join('\n')
   }
 
-  lines.push('(IDs incluidos — úsalos en las acciones si propones cambios)')
+  lines.push(`Referencia temporal: HOY=${today}; MAÑANA=${addDaysToISO(today, 1)}; PASADO MAÑANA=${addDaysToISO(today, 2)}.`)
+  lines.push('(IDs internos incluidos solo para acciones JSON: úsalos en sessionId, pero no los muestres al usuario.)')
 
   const sorted = [...futureSessions].sort(
     (a, b) => a.date.localeCompare(b.date) || a.timeBlock.localeCompare(b.timeBlock)
   )
 
   for (const s of sorted) {
-    const dayName = getDayName(s.date)
+    const dateLabel = formatSessionDateForPrompt(s.date, today)
     const type = SESSION_TYPE_ES[s.type] ?? s.type
     const subtype = s.subtype ? ` (${SQUASH_SUBTYPE_ES[s.subtype] ?? s.subtype})` : ''
     const status = STATUS_ES[s.status] ?? s.status
@@ -1541,7 +1561,7 @@ function buildSessionsSection(
     const flag = s.status === 'completed' ? '✓' : s.status === 'skipped' ? '✗' : s.status === 'adjusted' ? '~' : '○'
     const matchMeta = formatMatchMeta(s)
 
-    lines.push(`${flag} [${s.id.slice(0, 8)}] ${dayName} ${s.timeBlock} · ${type}${subtype} "${s.title}" · ${duration}${rpe} · ${status}${matchMeta}`)
+    lines.push(`${flag} [${s.id.slice(0, 8)}] ${dateLabel} ${s.timeBlock} · ${type}${subtype} "${s.title}" · ${duration}${rpe} · ${status}${matchMeta}`)
 
     if (s.squashDetails) {
       const focus = s.squashDetails.trainingFocus
@@ -1584,6 +1604,19 @@ function buildSessionsSection(
   }
 
   return lines.join('\n')
+}
+
+function formatSessionDateForPrompt(isoDate: string, today = todayISO()): string {
+  const relativeLabel = getRelativeDateLabel(isoDate, today)
+  const base = `${isoDate} (${formatDateShort(isoDate)} · ${getDayName(isoDate)})`
+  return relativeLabel ? `${base} · ${relativeLabel}` : base
+}
+
+function getRelativeDateLabel(isoDate: string, today: string): string {
+  if (isoDate === today) return 'HOY'
+  if (isoDate === addDaysToISO(today, 1)) return 'MAÑANA'
+  if (isoDate === addDaysToISO(today, 2)) return 'PASADO MAÑANA'
+  return ''
 }
 
 function buildRecentProposalsSection(context: ChatContext): string {
@@ -1808,7 +1841,7 @@ function buildResponsePromptContext(
   const plannedSessionLines = sessions
     .filter(s => s.status === 'planned' && s.date >= today)
     .slice(0, 10)
-    .map(s => `  [${s.id.slice(0, 8)}] ${getDayName(s.date)} ${s.timeBlock} · ${SESSION_TYPE_ES[s.type] ?? s.type} "${s.title}"`)
+    .map(s => `  [${s.id.slice(0, 8)}] ${formatSessionDateForPrompt(s.date, today)} ${s.timeBlock} · ${SESSION_TYPE_ES[s.type] ?? s.type} "${s.title}"`)
     .join('\n')
 
   const primary = getPlanningPrimarySport(context.athleteProfile)
