@@ -24,10 +24,15 @@ import type { TrainingPlan, TrainingPlanWeek } from '../types/planBuilder'
 import { useChatStore } from '../store/useChatStore'
 import { useCoachActionsStore } from '../store/useCoachActionsStore'
 import { useCoachMemoryStore } from '../store/useCoachMemoryStore'
+import { useAuthStore } from '../store/useAuthStore'
 import { usePlanBuilderStore } from '../store/usePlanBuilderStore'
 import { useTrainingStore } from '../store/useTrainingStore'
 import { clearStoredChatSessionId, getOrCreateChatSessionId, setStoredChatSessionId } from '../utils/chatSession'
 import { derivePlanGenerationState } from './planBuilder/generationState'
+import { getActiveAthleteId } from './athlete/activeAthlete'
+import { effectiveAthleteKey, isScopedAthleteId } from './athlete/effectiveAthleteKey'
+import { invalidateBackfillMarker, markBackfillDirtyAfterImport } from './athlete/athleteScopeMigration'
+import { v4 as uuid } from '../utils/uuid'
 
 const BACKUP_APP_NAME = 'RallyIQ' as const
 const LEGACY_BACKUP_APP_NAME = 'Entrenador' as const
@@ -352,6 +357,159 @@ async function computeMergeConflicts(backup: AppDataExport): Promise<MergeConfli
   return { localNewerCount, backupNewerCount, newInBackupCount }
 }
 
+function stampImportedAthleteId<T extends { athleteId?: string }>(
+  row: T,
+  activeAthleteId: string | null,
+): T {
+  if (!activeAthleteId || isScopedAthleteId(row.athleteId)) return row
+  return { ...row, athleteId: activeAthleteId }
+}
+
+function compareImportRows<T extends { id: string; athleteId?: string }>(
+  a: T,
+  b: T,
+  getUpdatedAt: (row: T) => number,
+): number {
+  const updatedDelta = getUpdatedAt(b) - getUpdatedAt(a)
+  if (updatedDelta !== 0) return updatedDelta
+  const scopedDelta = Number(isScopedAthleteId(b.athleteId)) - Number(isScopedAthleteId(a.athleteId))
+  if (scopedDelta !== 0) return scopedDelta
+  return a.id.localeCompare(b.id)
+}
+
+function pickLocalBaseRow<T extends { id: string; athleteId?: string }>(
+  rows: T[],
+  getUpdatedAt: (row: T) => number,
+): T {
+  return [...rows].sort((a, b) => {
+    const scopedDelta = Number(isScopedAthleteId(b.athleteId)) - Number(isScopedAthleteId(a.athleteId))
+    if (scopedDelta !== 0) return scopedDelta
+    return compareImportRows(a, b, getUpdatedAt)
+  })[0]
+}
+
+function normalizeLocalNaturalKeyGroup<T extends { id: string; athleteId?: string }>(
+  rows: T[],
+  activeAthleteId: string | null,
+  getUpdatedAt: (row: T) => number,
+): { row: T; idsToDelete: string[]; needsWrite: boolean } {
+  const base = pickLocalBaseRow(rows, getUpdatedAt)
+  const dataWinner = [...rows].sort((a, b) => compareImportRows(a, b, getUpdatedAt))[0]
+  const baseAthleteId = isScopedAthleteId(base.athleteId) ? base.athleteId : undefined
+  const normalized = stampImportedAthleteId({
+    ...dataWinner,
+    id: base.id,
+    ...(baseAthleteId ? { athleteId: baseAthleteId } : {}),
+  } as T, activeAthleteId)
+  const idsToDelete = rows.filter((row) => row.id !== base.id).map((row) => row.id)
+  const needsWrite = idsToDelete.length > 0 ||
+    normalized.id !== dataWinner.id ||
+    normalized.athleteId !== base.athleteId
+  return { row: normalized, idsToDelete, needsWrite }
+}
+
+function uniqueImportedId(
+  preferredId: string,
+  reservedLocalIds: Set<string>,
+  assignedIds: Set<string>,
+): string {
+  if (!reservedLocalIds.has(preferredId) && !assignedIds.has(preferredId)) return preferredId
+  let next = uuid()
+  while (reservedLocalIds.has(next) || assignedIds.has(next)) next = uuid()
+  return next
+}
+
+function coalesceImportedRowsByNaturalKey<T extends { id: string; athleteId?: string }>(
+  importedRows: T[],
+  localRows: T[],
+  activeAthleteId: string | null,
+  keyOf: (row: T, activeAthleteId: string | null) => string,
+  getUpdatedAt: (row: T) => number,
+): { rowsToWrite: T[]; localIdsToDelete: string[] } {
+  const localGroups = new Map<string, T[]>()
+  for (const row of localRows) {
+    const key = keyOf(row, activeAthleteId)
+    const group = localGroups.get(key)
+    if (group) group.push(row)
+    else localGroups.set(key, [row])
+  }
+  const localByKey = new Map<string, T>()
+  const cleanupKeys = new Set<string>()
+  const localIdsToDeleteByKey = new Map<string, string[]>()
+  for (const [key, rows] of localGroups) {
+    const normalized = normalizeLocalNaturalKeyGroup(rows, activeAthleteId, getUpdatedAt)
+    localByKey.set(key, normalized.row)
+    if (normalized.needsWrite) cleanupKeys.add(key)
+    if (normalized.idsToDelete.length > 0) localIdsToDeleteByKey.set(key, normalized.idsToDelete)
+  }
+
+  const reservedLocalIds = new Set(localRows.map((row) => row.id))
+  const assignedIds = new Set<string>()
+  const localIdsToDelete = new Set<string>()
+  const resolved = new Map<string, T>()
+
+  for (const raw of importedRows) {
+    const imported = stampImportedAthleteId(raw, activeAthleteId)
+    const key = keyOf(imported, activeAthleteId)
+    const local = localByKey.get(key)
+    const prior = resolved.get(key)
+    const incumbent = prior ?? local
+    if (cleanupKeys.has(key)) {
+      for (const id of localIdsToDeleteByKey.get(key) ?? []) localIdsToDelete.add(id)
+    }
+
+    if (incumbent && getUpdatedAt(incumbent) >= getUpdatedAt(imported)) {
+      if (!prior && local && cleanupKeys.has(key)) {
+        resolved.set(key, local)
+        assignedIds.add(local.id)
+      }
+      continue
+    }
+
+    const id = local?.id ?? prior?.id ?? uniqueImportedId(imported.id, reservedLocalIds, assignedIds)
+    assignedIds.add(id)
+    resolved.set(key, {
+      ...imported,
+      id,
+    } as T)
+  }
+
+  return {
+    rowsToWrite: [...resolved.values()],
+    localIdsToDelete: [...localIdsToDelete].filter((id) => !assignedIds.has(id)),
+  }
+}
+
+async function putImportedDayLogs(importedRows: DayLog[]): Promise<void> {
+  if (importedRows.length === 0) return
+  const activeAthleteId = getActiveAthleteId()
+  const localRows = await db.dayLogs.toArray()
+  const { rowsToWrite, localIdsToDelete } = coalesceImportedRowsByNaturalKey(
+    importedRows,
+    localRows,
+    activeAthleteId,
+    (row, aid) => `${effectiveAthleteKey(row.athleteId, aid)}::${row.date}`,
+    (row) => row.updatedAt,
+  )
+  if (localIdsToDelete.length > 0) await db.dayLogs.bulkDelete(localIdsToDelete)
+  if (rowsToWrite.length > 0) await db.dayLogs.bulkPut(rowsToWrite)
+}
+
+async function putImportedWeekSummaries(importedRows: WeekSummary[]): Promise<void> {
+  if (importedRows.length === 0) return
+  const activeAthleteId = getActiveAthleteId()
+  const localRows = await db.weekSummaries.toArray()
+  const { rowsToWrite, localIdsToDelete } = coalesceImportedRowsByNaturalKey(
+    importedRows,
+    localRows,
+    activeAthleteId,
+    (row, aid) => `${effectiveAthleteKey(row.athleteId, aid)}::${row.weekStartDate}`,
+    (row) => row.updatedAt ?? 0,
+  )
+  if (localIdsToDelete.length > 0) await db.weekSummaries.bulkDelete(localIdsToDelete)
+  if (rowsToWrite.length > 0) await db.weekSummaries.bulkPut(rowsToWrite)
+}
+
 export async function importAppDataFromFile(
   file: File,
   mode: 'replace' | 'merge' = 'replace',
@@ -374,8 +532,8 @@ export async function importAppDataFromFile(
         await db.athleteProfiles.clear()
 
         if (backup.tables.sessions.length > 0) await db.sessions.bulkPut(backup.tables.sessions)
-        if (backup.tables.dayLogs.length > 0) await db.dayLogs.bulkPut(backup.tables.dayLogs)
-        if (backup.tables.weekSummaries.length > 0) await db.weekSummaries.bulkPut(backup.tables.weekSummaries)
+        await putImportedDayLogs(backup.tables.dayLogs)
+        await putImportedWeekSummaries(backup.tables.weekSummaries)
         if (backup.tables.trainingPlans.length > 0) await db.trainingPlans.bulkPut(backup.tables.trainingPlans)
         if (backup.tables.trainingPlanWeeks.length > 0) await db.trainingPlanWeeks.bulkPut(backup.tables.trainingPlanWeeks)
         if (backup.tables.chatMessages.length > 0) await db.chatMessages.bulkPut(backup.tables.chatMessages)
@@ -400,23 +558,9 @@ export async function importAppDataFromFile(
         })
         if (sessionsToWrite.length > 0) await db.sessions.bulkPut(sessionsToWrite)
 
-        // DayLogs
-        const localDayLogs = await db.dayLogs.toArray()
-        const localDayLogsById = new Map(localDayLogs.map(d => [d.id, d]))
-        const dayLogsToWrite = backup.tables.dayLogs.filter(bd => {
-          const local = localDayLogsById.get(bd.id)
-          return !local || bd.updatedAt > local.updatedAt
-        })
-        if (dayLogsToWrite.length > 0) await db.dayLogs.bulkPut(dayLogsToWrite)
-
-        // WeekSummaries — no updatedAt, only add new
-        const localSummaries = await db.weekSummaries.toArray()
-        const localSummariesById = new Map(localSummaries.map(s => [s.id, s]))
-        const summariesToWrite = backup.tables.weekSummaries.filter(bs => {
-          const local = localSummariesById.get(bs.id)
-          return !local || (bs.updatedAt ?? 0) > (local.updatedAt ?? 0)
-        })
-        if (summariesToWrite.length > 0) await db.weekSummaries.bulkPut(summariesToWrite)
+        // DayLogs / WeekSummaries use athlete-scoped natural keys under Dexie v14.
+        await putImportedDayLogs(backup.tables.dayLogs)
+        await putImportedWeekSummaries(backup.tables.weekSummaries)
 
         const localPlans = await db.trainingPlans.toArray()
         const localPlansById = new Map(localPlans.map((plan) => [plan.id, plan]))
@@ -457,6 +601,10 @@ export async function importAppDataFromFile(
       },
     )
   }
+
+  const ownerAccountId = useAuthStore.getState().user?.id
+  if (ownerAccountId) invalidateBackfillMarker(ownerAccountId)
+  else markBackfillDirtyAfterImport()
 
   syncStoresAfterImport(preferredChatSessionId)
 
@@ -592,6 +740,7 @@ function parseSession(value: unknown, index: number): Session {
 
   return {
     id: requireString(row.id, `sessions[${index}].id`),
+    athleteId: optionalString(row.athleteId, `sessions[${index}].athleteId`),
     date: requireISODate(row.date, `sessions[${index}].date`),
     timeBlock: requireEnum(row.timeBlock, TIME_BLOCKS, `sessions[${index}].timeBlock`) as Session['timeBlock'],
     source: optionalEnum(row.source, SESSION_SOURCES, `sessions[${index}].source`) as Session['source'],
@@ -629,6 +778,7 @@ function parseDayLog(value: unknown, index: number): DayLog {
 
   return {
     id: requireString(row.id, `dayLogs[${index}].id`),
+    athleteId: optionalString(row.athleteId, `dayLogs[${index}].athleteId`),
     date: requireISODate(row.date, `dayLogs[${index}].date`),
     updatedAt: requireFiniteNumber(row.updatedAt, `dayLogs[${index}].updatedAt`),
     sleepHours: optionalFiniteNumber(row.sleepHours, `dayLogs[${index}].sleepHours`),
@@ -648,6 +798,7 @@ function parseWeekSummary(value: unknown, index: number): WeekSummary {
 
   return {
     id: requireString(row.id, `weekSummaries[${index}].id`),
+    athleteId: optionalString(row.athleteId, `weekSummaries[${index}].athleteId`),
     weekStartDate: requireISODate(row.weekStartDate, `weekSummaries[${index}].weekStartDate`),
     updatedAt: optionalFiniteNumber(row.updatedAt, `weekSummaries[${index}].updatedAt`),
     totalSessions: requireFiniteNumber(row.totalSessions, `weekSummaries[${index}].totalSessions`),

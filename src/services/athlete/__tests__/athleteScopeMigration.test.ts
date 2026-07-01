@@ -77,6 +77,8 @@ function installLocalStorage(): void {
 import {
   athleteIdForOwner,
   backfillLocalAthleteScope,
+  invalidateBackfillMarker,
+  markBackfillDirtyAfterImport,
   planAthleteScopeMigration,
 } from '../athleteScopeMigration'
 
@@ -163,5 +165,53 @@ describe('backfillLocalAthleteScope', () => {
     await fakes.db.sessions.put({ id: 's2', date: 'x', athleteId: 'ath_other' })
     await backfillLocalAthleteScope('user-1')
     expect((await fakes.db.sessions.get('s2'))?.athleteId).toBe('ath_other')
+  })
+
+  it('re-scans once for clients that completed the old v1 marker', async () => {
+    installLocalStorage()
+    localStorage.setItem('entrenador_athlete_scope_backfill_v1:user-1', 'ath_user-1')
+    await fakes.db.athletes.put({
+      id: 'ath_user-1',
+      ownerAccountId: 'user-1',
+      linkedAccountId: 'user-1',
+      status: 'active',
+      createdAt: 1,
+      updatedAt: 1,
+    })
+    await fakes.db.sessions.put({ id: 's-old', date: '2026-06-30' })
+    const spy = vi.spyOn(fakes.db.sessions, 'toArray')
+
+    await backfillLocalAthleteScope('user-1')
+
+    expect(spy).toHaveBeenCalled()
+    expect((await fakes.db.sessions.get('s-old'))?.athleteId).toBe('ath_user-1')
+    spy.mockRestore()
+  })
+
+  it('invalidates the v2 marker so the next backfill re-scans', async () => {
+    installLocalStorage()
+    await backfillLocalAthleteScope('user-1')
+    invalidateBackfillMarker('user-1')
+    const spy = vi.spyOn(fakes.db.sessions, 'toArray')
+
+    await backfillLocalAthleteScope('user-1')
+
+    expect(spy).toHaveBeenCalled()
+    spy.mockRestore()
+  })
+
+  it('global import dirty marker forces one re-scan and is cleared after backfill', async () => {
+    installLocalStorage()
+    await backfillLocalAthleteScope('user-1')
+    await fakes.db.sessions.put({ id: 's-imported', date: '2026-06-30' })
+    markBackfillDirtyAfterImport()
+    const spy = vi.spyOn(fakes.db.sessions, 'toArray')
+
+    await backfillLocalAthleteScope('user-1')
+
+    expect(spy).toHaveBeenCalled()
+    expect((await fakes.db.sessions.get('s-imported'))?.athleteId).toBe('ath_user-1')
+    expect(localStorage.getItem('entrenador_athlete_scope_import_dirty_v1')).toBeNull()
+    spy.mockRestore()
   })
 })

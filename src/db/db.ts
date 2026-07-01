@@ -205,6 +205,13 @@ export class EntrenadorDB extends Dexie {
       coachFeedback:      'id, targetType, targetId, traceId, proposalId, chatMessageId, rating, createdAt',
       athletes:           'id, ownerAccountId, updatedAt',
     })
+
+    // v14 — F2 data prereq: day/week natural keys become athlete-scoped.
+    // Runtime backfill (marker v2) stamps legacy rows outside the Dexie upgrade.
+    this.version(14).stores({
+      dayLogs:       'id, date, athleteId, &[athleteId+date]',
+      weekSummaries: 'id, weekStartDate, athleteId, &[athleteId+weekStartDate]',
+    })
   }
 }
 

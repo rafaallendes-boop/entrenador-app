@@ -5,6 +5,20 @@ import { toISO, getWeekStart, fromISO } from '../utils/date'
 import { isCompetitionSquashMatch, isPracticeSquashMatch } from '../utils/squash'
 import { addDays } from 'date-fns'
 import { v4 as uuid } from '../utils/uuid'
+import { getActiveAthleteId } from '../services/athlete/activeAthlete'
+import { isScopedAthleteId } from '../services/athlete/effectiveAthleteKey'
+
+function stripAthleteId<T extends object>(patch: T): Omit<T, 'athleteId'> {
+  const rest = { ...patch } as T & { athleteId?: unknown }
+  delete rest.athleteId
+  return rest
+}
+
+function pickLegacyOrOnlyRow<T extends { athleteId?: string }>(rows: T[]): T | undefined {
+  const legacy = rows.find((row) => !isScopedAthleteId(row.athleteId))
+  if (legacy) return legacy
+  return rows.length === 1 ? rows[0] : undefined
+}
 
 export const getSessionsForWeek = async (
   weekStartISO: string
@@ -15,33 +29,94 @@ export const getSessionsForWeek = async (
 
 export const getDayLogsForWeek = async (weekStartISO: string): Promise<DayLog[]> => {
   const end = toISO(addDays(fromISO(weekStartISO), 6))
-  return db.dayLogs.where('date').between(weekStartISO, end, true, true).toArray()
+  const activeAthleteId = getActiveAthleteId()
+  if (!activeAthleteId) {
+    return db.dayLogs.where('date').between(weekStartISO, end, true, true).toArray()
+  }
+
+  const scoped = await db.dayLogs
+    .where('[athleteId+date]')
+    .between([activeAthleteId, weekStartISO], [activeAthleteId, end], true, true)
+    .toArray()
+  const byDate = new Map<string, DayLog>(scoped.map((row) => [row.date, row]))
+  const inRange = await db.dayLogs.where('date').between(weekStartISO, end, true, true).toArray()
+  const adopted: DayLog[] = []
+
+  for (const row of inRange) {
+    if (byDate.has(row.date)) continue
+    if (isScopedAthleteId(row.athleteId)) continue
+    byDate.set(row.date, row)
+    adopted.push(row)
+  }
+
+  return [...scoped, ...adopted].sort((a, b) => a.date.localeCompare(b.date))
 }
 
 export const getSessionsForDay = async (dateISO: string): Promise<Session[]> =>
   db.sessions.where('date').equals(dateISO).toArray()
 
-export const getDayLog = async (dateISO: string): Promise<DayLog | undefined> =>
-  db.dayLogs.where('date').equals(dateISO).first()
+export const getDayLog = async (dateISO: string): Promise<DayLog | undefined> => {
+  const activeAthleteId = getActiveAthleteId()
+  if (!activeAthleteId) {
+    const candidates = await db.dayLogs.where('date').equals(dateISO).toArray()
+    return pickLegacyOrOnlyRow(candidates)
+  }
+
+  const scoped = await db.dayLogs.where('[athleteId+date]').equals([activeAthleteId, dateISO]).first()
+  if (scoped) return scoped
+
+  const candidates = await db.dayLogs.where('date').equals(dateISO).toArray()
+  return candidates.find((row) => !isScopedAthleteId(row.athleteId))
+}
 
 export const upsertDayLog = async (
   dateISO: string,
-  patch: Partial<Omit<DayLog, 'id' | 'date' | 'updatedAt'>>
+  patch: Partial<Omit<DayLog, 'id' | 'date' | 'updatedAt' | 'athleteId'>>
 ): Promise<DayLog> => {
   const existing = await getDayLog(dateISO)
   const now = Date.now()
+  const activeAthleteId = getActiveAthleteId()
+  const safePatch = stripAthleteId(patch)
   if (existing) {
-    const updated = { ...existing, ...patch, updatedAt: now }
+    const resolvedAthleteId = isScopedAthleteId(existing.athleteId)
+      ? existing.athleteId
+      : activeAthleteId ?? undefined
+    const updated: DayLog = {
+      ...existing,
+      ...safePatch,
+      updatedAt: now,
+      ...(resolvedAthleteId ? { athleteId: resolvedAthleteId } : {}),
+    }
     await db.dayLogs.put(updated)
     return updated
   }
-  const created: DayLog = { id: uuid(), date: dateISO, updatedAt: now, ...patch }
+  const created: DayLog = {
+    id: uuid(),
+    date: dateISO,
+    updatedAt: now,
+    ...safePatch,
+    ...(activeAthleteId ? { athleteId: activeAthleteId } : {}),
+  }
   await db.dayLogs.put(created)
   return created
 }
 
-export const getWeekSummary = async (weekStartISO: string): Promise<WeekSummary | undefined> =>
-  db.weekSummaries.where('weekStartDate').equals(weekStartISO).first()
+export const getWeekSummary = async (weekStartISO: string): Promise<WeekSummary | undefined> => {
+  const activeAthleteId = getActiveAthleteId()
+  if (!activeAthleteId) {
+    const candidates = await db.weekSummaries.where('weekStartDate').equals(weekStartISO).toArray()
+    return pickLegacyOrOnlyRow(candidates)
+  }
+
+  const scoped = await db.weekSummaries
+    .where('[athleteId+weekStartDate]')
+    .equals([activeAthleteId, weekStartISO])
+    .first()
+  if (scoped) return scoped
+
+  const candidates = await db.weekSummaries.where('weekStartDate').equals(weekStartISO).toArray()
+  return candidates.find((row) => !isScopedAthleteId(row.athleteId))
+}
 
 export function hasWeekSummaryMeaningfulChanges(
   existing: WeekSummary,
@@ -58,16 +133,27 @@ export function hasWeekSummaryMeaningfulChanges(
 
 export const upsertWeekSummary = async (
   weekStartISO: string,
-  patch: Partial<Omit<WeekSummary, 'id' | 'weekStartDate' | 'updatedAt'>>
+  patch: Partial<Omit<WeekSummary, 'id' | 'weekStartDate' | 'updatedAt' | 'athleteId'>>
 ): Promise<WeekSummary> => {
   const existing = await getWeekSummary(weekStartISO)
   const updatedAt = Date.now()
+  const activeAthleteId = getActiveAthleteId()
+  const safePatch = stripAthleteId(patch)
   if (existing) {
-    if (!hasWeekSummaryMeaningfulChanges(existing, patch)) {
+    const resolvedAthleteId = isScopedAthleteId(existing.athleteId)
+      ? existing.athleteId
+      : activeAthleteId ?? undefined
+    const needsAthleteStamp = !!activeAthleteId && !isScopedAthleteId(existing.athleteId)
+    if (!needsAthleteStamp && !hasWeekSummaryMeaningfulChanges(existing, safePatch)) {
       return existing
     }
 
-    const updated = { ...existing, ...patch, updatedAt }
+    const updated: WeekSummary = {
+      ...existing,
+      ...safePatch,
+      updatedAt,
+      ...(resolvedAthleteId ? { athleteId: resolvedAthleteId } : {}),
+    }
     await db.weekSummaries.put(updated)
     void syncService.pushWeekSummary(updated)
     return updated
@@ -85,7 +171,8 @@ export const upsertWeekSummary = async (
     squashSessions: 0,
     runningSessions: 0,
     strengthSessions: 0,
-    ...patch,
+    ...safePatch,
+    ...(activeAthleteId ? { athleteId: activeAthleteId } : {}),
   }
   await db.weekSummaries.put(created)
   void syncService.pushWeekSummary(created)

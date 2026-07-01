@@ -1,7 +1,8 @@
 import { db } from '../../db/db'
-import { ATHLETE_PROFILE_LOCAL_ID } from './activeAthlete'
+import { isScopedAthleteId } from './effectiveAthleteKey'
 
-const BACKFILL_MARKER_KEY_PREFIX = 'entrenador_athlete_scope_backfill_v1'
+const BACKFILL_MARKER_KEY_PREFIX = 'entrenador_athlete_scope_backfill_v2'
+const IMPORT_DIRTY_MARKER_KEY = 'entrenador_athlete_scope_import_dirty_v1'
 
 /** Deterministic athlete id for an owner account. Mirrors the SQL backfill ('ath_' || user_id). */
 export function athleteIdForOwner(ownerAccountId: string): string {
@@ -10,7 +11,7 @@ export function athleteIdForOwner(ownerAccountId: string): string {
 
 /** A row is pending scope when it has no athleteId or still holds ATHLETE_PROFILE_LOCAL_ID. */
 function isPending(athleteId: string | null | undefined): boolean {
-  return athleteId == null || athleteId === ATHLETE_PROFILE_LOCAL_ID
+  return !isScopedAthleteId(athleteId)
 }
 
 // Minimal structural view of a Dexie table — avoids Dexie's invariant Table<T>
@@ -40,6 +41,7 @@ function backfillMarkerKey(ownerAccountId: string): string {
 function isBackfillMarkedComplete(ownerAccountId: string, athleteId: string): boolean {
   try {
     if (typeof localStorage === 'undefined') return false
+    if (localStorage.getItem(IMPORT_DIRTY_MARKER_KEY) === '1') return false
     return localStorage.getItem(backfillMarkerKey(ownerAccountId)) === athleteId
   } catch {
     return false
@@ -50,8 +52,27 @@ function markBackfillComplete(ownerAccountId: string, athleteId: string): void {
   try {
     if (typeof localStorage === 'undefined') return
     localStorage.setItem(backfillMarkerKey(ownerAccountId), athleteId)
+    localStorage.removeItem(IMPORT_DIRTY_MARKER_KEY)
   } catch {
     // localStorage may be unavailable in private/SSR contexts; the backfill stays safe and idempotent.
+  }
+}
+
+export function invalidateBackfillMarker(ownerAccountId: string): void {
+  try {
+    if (typeof localStorage === 'undefined') return
+    localStorage.removeItem(backfillMarkerKey(ownerAccountId))
+  } catch {
+    // localStorage may be unavailable in private/SSR contexts.
+  }
+}
+
+export function markBackfillDirtyAfterImport(): void {
+  try {
+    if (typeof localStorage === 'undefined') return
+    localStorage.setItem(IMPORT_DIRTY_MARKER_KEY, '1')
+  } catch {
+    // localStorage may be unavailable in private/SSR contexts.
   }
 }
 

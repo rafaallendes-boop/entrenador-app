@@ -1,6 +1,7 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { addDays } from 'date-fns'
 import type { AthleteProfile, GoalEvent, PlanWizardConfig } from '../../types'
+import { db } from '../../db/db'
 import { buildPlanShell } from '../planBuilder/buildPlanShell'
 import { generatePlanWeeks } from '../planBuilder/generatePlan'
 import { repairGeneratedWeek } from '../planBuilder/repairWeek'
@@ -65,7 +66,14 @@ function createWeekActionText(weekStartDate: string, reason = 'ok'): string {
 }
 
 describe('planBuilder', () => {
+  beforeEach(async () => {
+    db.close()
+    await db.delete()
+    await db.open()
+  })
+
   afterEach(() => {
+    db.close()
     vi.unstubAllEnvs()
   })
 

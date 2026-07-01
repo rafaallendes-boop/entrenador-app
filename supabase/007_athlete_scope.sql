@@ -255,22 +255,21 @@ begin
        ) then
       execute format('create index if not exists %I on public.%I (athlete_id)', tbl || '_athlete_idx', tbl);
 
-      -- training_plans already has athlete_id text not null in the deployed app,
-      -- and current clients may still write the legacy 'default' value until Fase D.
-      if tbl <> 'training_plans' then
-        constraint_name := tbl || '_athlete_fk';
-        if not exists (
-          select 1
-          from pg_constraint
-          where conname = constraint_name
-            and conrelid = format('public.%I', tbl)::regclass
-        ) then
-          execute format(
-            'alter table public.%I add constraint %I foreign key (athlete_id) references public.athletes(id) on delete cascade not valid',
-            tbl,
-            constraint_name
-          );
-        end if;
+      -- FK for all scoped tables, including training_plans. Section 3a backfills
+      -- training_plans.athlete_id ('default' -> 'ath_<user_id>') before this runs,
+      -- and the constraint is NOT VALID, so adding it never blocks on existing rows.
+      constraint_name := tbl || '_athlete_fk';
+      if not exists (
+        select 1
+        from pg_constraint
+        where conname = constraint_name
+          and conrelid = format('public.%I', tbl)::regclass
+      ) then
+        execute format(
+          'alter table public.%I add constraint %I foreign key (athlete_id) references public.athletes(id) on delete cascade not valid',
+          tbl,
+          constraint_name
+        );
       end if;
     end if;
   end loop;

@@ -13,6 +13,7 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [react(), devCoachProxyPlugin(env)],
     test: {
+      setupFiles: ['./vitest.setup.ts'],
       coverage: {
         provider: 'v8',
         reporter: ['text', 'json-summary', 'html'],

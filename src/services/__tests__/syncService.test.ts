@@ -65,16 +65,16 @@ let tableResults = new Map<string, SupabaseResult>()
 let actionResults = new Map<string, SupabaseResult>()
 const upsertCalls: Array<{ table: string; payload: unknown; options?: unknown }> = []
 const insertCalls: Array<{ table: string; payload: unknown }> = []
-const deleteCalls: Array<{ table: string; filters: Array<{ op: 'eq' | 'in'; column: string; value: unknown }> }> = []
-const updateCalls: Array<{ table: string; payload: unknown; filters: Array<{ op: 'eq' | 'in'; column: string; value: unknown }> }> = []
-const selectCalls: Array<{ table: string; filters: Array<{ op: 'eq' | 'in'; column: string; value: unknown }> }> = []
+const deleteCalls: Array<{ table: string; filters: Array<{ op: 'eq' | 'in' | 'or'; column: string; value: unknown }> }> = []
+const updateCalls: Array<{ table: string; payload: unknown; filters: Array<{ op: 'eq' | 'in' | 'or'; column: string; value: unknown }> }> = []
+const selectCalls: Array<{ table: string; filters: Array<{ op: 'eq' | 'in' | 'or'; column: string; value: unknown }> }> = []
 
 function createQueryBuilder(
   table: string,
   action: 'delete' | 'update' | 'select',
   payload?: unknown,
 ) {
-  const filters: Array<{ op: 'eq' | 'in'; column: string; value: unknown }> = []
+  const filters: Array<{ op: 'eq' | 'in' | 'or'; column: string; value: unknown }> = []
   return {
     eq(column: string, value: unknown) {
       filters.push({ op: 'eq', column, value })
@@ -82,6 +82,10 @@ function createQueryBuilder(
     },
     in(column: string, value: unknown) {
       filters.push({ op: 'in', column, value })
+      return this
+    },
+    or(expression: string) {
+      filters.push({ op: 'or', column: 'or', value: expression })
       return this
     },
     then(onFulfilled: (value: SupabaseResult) => unknown) {
@@ -128,6 +132,19 @@ function mergeRowsById(current: unknown[], incoming: unknown[]): unknown[] {
   return next
 }
 
+function putRowById(current: unknown[], row: unknown): unknown[] {
+  return mergeRowsById(current, [row])
+}
+
+function deleteRowsById(current: unknown[], ids: string[]): unknown[] {
+  return current.filter((row) => !ids.includes((row as { id?: string }).id ?? ''))
+}
+
+function matchesIndex(row: unknown, index: string, value: unknown): boolean {
+  const record = row as Record<string, unknown>
+  return record[index] === value
+}
+
 const supabaseMock = {
   from: createSupabaseFrom(),
 }
@@ -158,37 +175,65 @@ vi.mock('../../db/db', () => ({
     sessions: {
       toArray: vi.fn(async () => sessionsRows),
       count: vi.fn(async () => sessionsRows.length),
-      get: vi.fn(async () => undefined),
-      put: vi.fn(async () => {}),
+      get: vi.fn(async (id: string) => sessionsRows.find((row) => (row as { id?: string }).id === id)),
+      put: vi.fn(async (row: unknown) => {
+        sessionsRows = putRowById(sessionsRows, row)
+      }),
       bulkPut: vi.fn(async (rows: unknown[]) => {
         sessionsRows = mergeRowsById(sessionsRows, rows)
       }),
-      delete: vi.fn(async () => {}),
-      bulkDelete: vi.fn(async () => {}),
+      delete: vi.fn(async (id: string) => {
+        sessionsRows = deleteRowsById(sessionsRows, [id])
+      }),
+      bulkDelete: vi.fn(async (ids: string[]) => {
+        sessionsRows = deleteRowsById(sessionsRows, ids)
+      }),
     },
     dayLogs: {
       toArray: vi.fn(async () => dayLogRows),
       count: vi.fn(async () => dayLogRows.length),
-      get: vi.fn(async () => undefined),
-      put: vi.fn(async () => {}),
+      get: vi.fn(async (id: string) => dayLogRows.find((row) => (row as { id?: string }).id === id)),
+      put: vi.fn(async (row: unknown) => {
+        dayLogRows = putRowById(dayLogRows, row)
+      }),
       bulkPut: vi.fn(async (rows: unknown[]) => {
         dayLogRows = mergeRowsById(dayLogRows, rows)
       }),
-      delete: vi.fn(async () => {}),
-      bulkDelete: vi.fn(async () => {}),
-      where: vi.fn(() => ({ equals: vi.fn(async () => undefined) })),
+      delete: vi.fn(async (id: string) => {
+        dayLogRows = deleteRowsById(dayLogRows, [id])
+      }),
+      bulkDelete: vi.fn(async (ids: string[]) => {
+        dayLogRows = deleteRowsById(dayLogRows, ids)
+      }),
+      where: vi.fn((index: string) => ({
+        equals: vi.fn((value: unknown) => ({
+          first: vi.fn(async () => dayLogRows.find((row) => matchesIndex(row, index, value))),
+          toArray: vi.fn(async () => dayLogRows.filter((row) => matchesIndex(row, index, value))),
+        })),
+      })),
     },
     weekSummaries: {
       toArray: vi.fn(async () => weekSummaryRows),
       count: vi.fn(async () => weekSummaryRows.length),
-      get: vi.fn(async () => undefined),
-      put: vi.fn(async () => {}),
+      get: vi.fn(async (id: string) => weekSummaryRows.find((row) => (row as { id?: string }).id === id)),
+      put: vi.fn(async (row: unknown) => {
+        weekSummaryRows = putRowById(weekSummaryRows, row)
+      }),
       bulkPut: vi.fn(async (rows: unknown[]) => {
         weekSummaryRows = mergeRowsById(weekSummaryRows, rows)
       }),
-      delete: vi.fn(async () => {}),
-      bulkDelete: vi.fn(async () => {}),
-      where: vi.fn(() => ({ equals: vi.fn(async () => undefined) })),
+      delete: vi.fn(async (id: string) => {
+        weekSummaryRows = deleteRowsById(weekSummaryRows, [id])
+      }),
+      bulkDelete: vi.fn(async (ids: string[]) => {
+        weekSummaryRows = deleteRowsById(weekSummaryRows, ids)
+      }),
+      where: vi.fn((index: string) => ({
+        equals: vi.fn((value: unknown) => ({
+          first: vi.fn(async () => weekSummaryRows.find((row) => matchesIndex(row, index, value))),
+          toArray: vi.fn(async () => weekSummaryRows.filter((row) => matchesIndex(row, index, value))),
+        })),
+      })),
     },
     trainingPlans: {
       toArray: vi.fn(async () => trainingPlanRows),
@@ -320,6 +365,7 @@ describe('syncService', () => {
   })
 
   afterEach(() => {
+    vi.unstubAllEnvs()
     vi.resetModules()
   })
 
@@ -611,6 +657,81 @@ describe('syncService', () => {
       lastBlockedTable: null,
       consecutiveFailures: 0,
     }))
+  })
+
+  it('merges day logs by effective athlete key during a full-user pull', async () => {
+    const { setActiveAthleteId } = await import('../athlete/activeAthlete')
+    setActiveAthleteId('ath_A')
+    dayLogRows = [
+      { id: 'local-a', athleteId: 'ath_A', date: '2026-06-30', updatedAt: 1, sleepHours: 5 },
+      { id: 'local-b', athleteId: 'ath_B', date: '2026-06-30', updatedAt: 1, sleepHours: 4 },
+    ]
+    tableResults.set('day_logs', {
+      data: [{
+        id: 'remote-b',
+        user_id: 'user-1',
+        athlete_id: 'ath_B',
+        date: '2026-06-30',
+        updated_at: 9,
+        data: { sleepHours: 8 },
+      }],
+      error: null,
+    })
+
+    const syncService = await import('../syncService')
+    await syncService.runFullSync('user-1')
+
+    expect(dayLogRows.map((row) => (row as { id: string }).id).sort()).toEqual(['local-a', 'remote-b'])
+    expect(dayLogRows.find((row) => (row as { id: string }).id === 'local-a')).toMatchObject({
+      athleteId: 'ath_A',
+      sleepHours: 5,
+    })
+    expect(dayLogRows.find((row) => (row as { id: string }).id === 'remote-b')).toMatchObject({
+      athleteId: 'ath_B',
+      sleepHours: 8,
+    })
+  })
+
+  it('only deletes missing day logs inside an athlete-scoped pull', async () => {
+    vi.stubEnv('VITE_ATHLETE_SCOPE', 'true')
+    const { setActiveAthleteId } = await import('../athlete/activeAthlete')
+    setActiveAthleteId('ath_A')
+    storeState.syncDetails.lastSuccessfulSyncAt = 1_000
+    sessionsRows = [
+      { id: 'SA1', athleteId: 'ath_user-1', date: '2026-06-30', updatedAt: 10 },
+      { id: 'SB1', athleteId: 'ath_B', date: '2026-07-01', updatedAt: 10 },
+      { id: 'SL1', date: '2026-07-02', updatedAt: 10 },
+    ]
+    dayLogRows = [
+      { id: 'A1', athleteId: 'ath_user-1', date: '2026-06-30', updatedAt: 10 },
+      { id: 'B1', athleteId: 'ath_B', date: '2026-07-01', updatedAt: 10 },
+      { id: 'L1', date: '2026-07-02', updatedAt: 10 },
+    ]
+    tableResults.set('sessions', { data: [], error: null })
+    tableResults.set('day_logs', { data: [], error: null })
+
+    const syncService = await import('../syncService')
+    await syncService.runFullSync('user-1')
+
+    expect(sessionsRows.map((row) => (row as { id: string }).id)).toEqual(['SB1'])
+    expect(dayLogRows.map((row) => (row as { id: string }).id)).toEqual(['B1'])
+  })
+
+  it('deletes missing day logs across all athletes during a full-user pull', async () => {
+    const { setActiveAthleteId } = await import('../athlete/activeAthlete')
+    setActiveAthleteId('ath_A')
+    storeState.syncDetails.lastSuccessfulSyncAt = 1_000
+    dayLogRows = [
+      { id: 'A1', athleteId: 'ath_user-1', date: '2026-06-30', updatedAt: 10 },
+      { id: 'B1', athleteId: 'ath_B', date: '2026-07-01', updatedAt: 10 },
+      { id: 'L1', date: '2026-07-02', updatedAt: 10 },
+    ]
+    tableResults.set('day_logs', { data: [], error: null })
+
+    const syncService = await import('../syncService')
+    await syncService.runFullSync('user-1')
+
+    expect(dayLogRows).toEqual([])
   })
 
   it('clears remote data in dependency-safe order and wipes athlete profile by blanking it', async () => {

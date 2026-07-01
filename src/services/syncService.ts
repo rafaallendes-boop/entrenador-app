@@ -52,9 +52,11 @@ import {
 } from './syncDiagnostics'
 import { ENTITY_TIER } from '../types/syncDiagnostics'
 import { ATHLETE_PROFILE_LOCAL_ID, getActiveAthleteId } from './athlete/activeAthlete'
+import { effectiveAthleteKey, isInAthleteScope, isScopedAthleteId } from './athlete/effectiveAthleteKey'
 import { hydrateActiveAthlete } from './athlete/hydrateActiveAthlete'
 import { backfillLocalAthleteScope } from './athlete/athleteScopeMigration'
 import { athleteToRow, rowToAthlete, type AthleteRow } from './athleteRows'
+import { resolveReadScope, type ReadScope } from './athlete/readScope'
 import {
   FETCH_PAGE_SIZE,
   fetchAll,
@@ -538,6 +540,8 @@ interface QueueSummary {
 interface MergeContext {
   allowDeletes: boolean
   deleteBeforeTs: number | null
+  readScope: ReadScope
+  activeAthleteId: string | null
   pendingWrites: Array<() => Promise<unknown>>
   pendingRemoteWipeTables: Set<SupabaseTable>
 }
@@ -553,6 +557,10 @@ function isSyncablePlanStatus(status: TrainingPlan['status']): boolean {
 
 function syncStoreState() {
   return useAuthStore.getState()
+}
+
+function deleteAthleteScope(context: MergeContext): string | undefined {
+  return context.readScope.mode === 'athlete' ? context.readScope.athleteId : undefined
 }
 
 function getQueueSummary(queue = loadQueue()): QueueSummary {
@@ -1295,6 +1303,21 @@ function getRowAthleteId(row: Record<string, unknown>, data: Record<string, unkn
   return ((row.athlete_id as string | null | undefined) ?? (data.athleteId as string | undefined)) || undefined
 }
 
+function getRemoteRowAthleteId(row: Record<string, unknown>): string | undefined {
+  const data = (row.data as Record<string, unknown>) ?? {}
+  return getRowAthleteId(row, data)
+}
+
+function stampAthleteIdIfLegacy<T extends { athleteId?: string }>(
+  row: T,
+  activeAthleteId: string | null,
+): { row: T; changed: boolean } {
+  if (!activeAthleteId || isScopedAthleteId(row.athleteId)) {
+    return { row, changed: false }
+  }
+  return { row: { ...row, athleteId: activeAthleteId } as T, changed: true }
+}
+
 function rowToSession(row: Record<string, unknown>): Session {
   const data = (row.data as Record<string, unknown>) ?? {}
   return {
@@ -1968,9 +1991,13 @@ async function pullRemoteAndMerge(userId: string): Promise<void> {
     const queueDrained = await drainQueue()
     const { syncDetails } = useAuthStore.getState()
     const pendingRemoteWipeTables = getPendingRemoteWipeTables(userId)
+    const readScope = resolveReadScope()
+    const activeAthleteId = readScope.mode === 'athlete' ? readScope.athleteId : getActiveAthleteId()
     const mergeContext: MergeContext = {
       allowDeletes: queueDrained,
       deleteBeforeTs: queueDrained ? (syncDetails.lastSuccessfulSyncAt ?? null) : null,
+      readScope,
+      activeAthleteId,
       pendingWrites: [],
       pendingRemoteWipeTables,
     }
@@ -2094,7 +2121,7 @@ export async function runFullSync(userId: string): Promise<void> {
 
 async function mergeSessions(userId: string, context: MergeContext): Promise<void> {
   if (context.pendingRemoteWipeTables.has('sessions')) return
-  const remoteRows = await fetchAll<Record<string, unknown>>('sessions', userId)
+  const remoteRows = await fetchAll<Record<string, unknown>>('sessions', userId, context.readScope)
   const remoteIds = new Set<string>()
   const tombstones = getSessionDeleteTombstones(userId)
 
@@ -2125,6 +2152,7 @@ async function mergeSessions(userId: string, context: MergeContext): Promise<voi
       remoteIds,
       (session: Session) => session.updatedAt,
       context.deleteBeforeTs,
+      deleteAthleteScope(context),
     )
   }
 
@@ -2133,40 +2161,55 @@ async function mergeSessions(userId: string, context: MergeContext): Promise<voi
 
 async function mergeDayLogs(userId: string, context: MergeContext): Promise<void> {
   if (context.pendingRemoteWipeTables.has('day_logs')) return
-  const remoteRows = await fetchAll<Record<string, unknown>>('day_logs', userId)
+  const activeAthleteId = context.activeAthleteId
+  const remoteRows = await fetchAll<Record<string, unknown>>('day_logs', userId, context.readScope)
   const remoteIds = new Set<string>()
 
   for (const row of remoteRows) {
+    const remoteAthleteId = getRemoteRowAthleteId(row)
     const remote = rowToDayLog(row)
     const localById = await db.dayLogs.get(remote.id)
-    const localByDate = localById ?? await findDayLogConflictByDate(remote.date)
+    const localByDate = localById ?? await findDayLogConflictByDate(remote.date, remoteAthleteId, activeAthleteId)
     const resolution = resolveDayLogConflict(localByDate, remote)
+    const stamped = stampAthleteIdIfLegacy(resolution.winner, activeAthleteId)
+    const winner = stamped.row
 
     remoteIds.add(remote.id)
-    remoteIds.add(resolution.winner.id)
+    remoteIds.add(winner.id)
 
     if (!localByDate) {
-      await db.dayLogs.put(resolution.winner)
+      await db.dayLogs.put(winner)
+      if (stamped.changed) {
+        context.pendingWrites.push(() => pushDayLog(winner))
+      }
       continue
     }
 
-    if (resolution.winner.id !== localByDate.id) {
+    if (winner.id !== localByDate.id) {
       await db.dayLogs.delete(localByDate.id)
-      await db.dayLogs.put(resolution.winner)
+      await db.dayLogs.put(winner)
       if (remote.id !== localByDate.id) {
         context.pendingWrites.push(() => deleteRow('day_logs', localByDate.id))
       }
-      if (resolution.winner.id !== remote.id) {
+      if (winner.id !== remote.id) {
         context.pendingWrites.push(() => deleteRow('day_logs', remote.id))
       }
-      context.pendingWrites.push(() => pushDayLog(resolution.winner))
+      context.pendingWrites.push(() => pushDayLog(winner))
       continue
     }
 
     if (resolution.winner === remote) {
-      await db.dayLogs.put(remote)
-    } else if (resolution.winner.updatedAt > remote.updatedAt) {
-      context.pendingWrites.push(() => pushDayLog(resolution.winner))
+      await db.dayLogs.put(winner)
+      if (stamped.changed) {
+        context.pendingWrites.push(() => pushDayLog(winner))
+      }
+    } else {
+      if (stamped.changed) {
+        await db.dayLogs.put(winner)
+      }
+      if (stamped.changed || winner.updatedAt > remote.updatedAt) {
+        context.pendingWrites.push(() => pushDayLog(winner))
+      }
     }
   }
 
@@ -2176,49 +2219,65 @@ async function mergeDayLogs(userId: string, context: MergeContext): Promise<void
       remoteIds,
       (dayLog: DayLog) => dayLog.updatedAt,
       context.deleteBeforeTs,
+      deleteAthleteScope(context),
     )
   }
 }
 
 async function mergeWeekSummaries(userId: string, context: MergeContext): Promise<void> {
   if (context.pendingRemoteWipeTables.has('week_summaries')) return
-  const remoteRows = await fetchAll<Record<string, unknown>>('week_summaries', userId)
+  const activeAthleteId = context.activeAthleteId
+  const remoteRows = await fetchAll<Record<string, unknown>>('week_summaries', userId, context.readScope)
   const remoteIds = new Set<string>()
 
   for (const row of remoteRows) {
+    const remoteAthleteId = getRemoteRowAthleteId(row)
     const remote = rowToWeekSummary(row)
     const remoteUpdatedAt = (row.updated_at as number) ?? 0
     const localById = await db.weekSummaries.get(remote.id)
-    const localByWeek = localById ?? await findWeekSummaryConflictByWeekStart(remote.weekStartDate)
+    const localByWeek = localById ?? await findWeekSummaryConflictByWeekStart(remote.weekStartDate, remoteAthleteId, activeAthleteId)
     const resolution = resolveWeekSummaryConflict(localByWeek, remote, remoteUpdatedAt)
+    const stamped = stampAthleteIdIfLegacy(resolution.winner, activeAthleteId)
+    const winner = stamped.row
 
     remoteIds.add(remote.id)
-    remoteIds.add(resolution.winner.id)
+    remoteIds.add(winner.id)
 
     if (!localByWeek) {
-      await db.weekSummaries.put(resolution.winner)
+      await db.weekSummaries.put(winner)
+      if (stamped.changed) {
+        context.pendingWrites.push(() => pushWeekSummary(winner))
+      }
       continue
     }
 
-    if (resolution.winner.id !== localByWeek.id) {
+    if (winner.id !== localByWeek.id) {
       await db.weekSummaries.delete(localByWeek.id)
-      await db.weekSummaries.put(resolution.winner)
+      await db.weekSummaries.put(winner)
       if (remote.id !== localByWeek.id) {
         context.pendingWrites.push(() => deleteRow('week_summaries', localByWeek.id))
       }
-      if (resolution.winner.id !== remote.id) {
+      if (winner.id !== remote.id) {
         context.pendingWrites.push(() => deleteRow('week_summaries', remote.id))
       }
-      context.pendingWrites.push(() => pushWeekSummary(resolution.winner))
+      context.pendingWrites.push(() => pushWeekSummary(winner))
       continue
     }
 
-    const winnerUpdatedAt = getWeekSummaryUpdatedAt(resolution.winner)
+    const winnerUpdatedAt = getWeekSummaryUpdatedAt(winner)
 
     if (resolution.winner === remote) {
-      await db.weekSummaries.put(remote)
-    } else if (winnerUpdatedAt > remoteUpdatedAt) {
-      context.pendingWrites.push(() => pushWeekSummary(resolution.winner))
+      await db.weekSummaries.put(winner)
+      if (stamped.changed) {
+        context.pendingWrites.push(() => pushWeekSummary(winner))
+      }
+    } else {
+      if (stamped.changed) {
+        await db.weekSummaries.put(winner)
+      }
+      if (stamped.changed || winnerUpdatedAt > remoteUpdatedAt) {
+        context.pendingWrites.push(() => pushWeekSummary(winner))
+      }
     }
   }
 
@@ -2228,13 +2287,14 @@ async function mergeWeekSummaries(userId: string, context: MergeContext): Promis
       remoteIds,
       (summary: WeekSummary) => ((summary as unknown as { updatedAt?: number }).updatedAt) ?? null,
       context.deleteBeforeTs,
+      deleteAthleteScope(context),
     )
   }
 }
 
 async function mergeChatMessages(userId: string, context: MergeContext): Promise<void> {
   if (context.pendingRemoteWipeTables.has('chat_messages')) return
-  const remoteRows = await fetchAll<Record<string, unknown>>('chat_messages', userId)
+  const remoteRows = await fetchAll<Record<string, unknown>>('chat_messages', userId, context.readScope)
   const remoteIds = new Set<string>()
 
   for (const row of remoteRows) {
@@ -2257,13 +2317,14 @@ async function mergeChatMessages(userId: string, context: MergeContext): Promise
       remoteIds,
       (message: ChatMessage) => message.timestamp,
       context.deleteBeforeTs,
+      deleteAthleteScope(context),
     )
   }
 }
 
 async function mergeCoachProposals(userId: string, context: MergeContext): Promise<void> {
   if (context.pendingRemoteWipeTables.has('coach_proposals')) return
-  const remoteRows = await fetchAll<Record<string, unknown>>('coach_proposals', userId)
+  const remoteRows = await fetchAll<Record<string, unknown>>('coach_proposals', userId, context.readScope)
   const remoteIds = new Set<string>()
   const tombstones = getCoachProposalDeleteTombstones(userId)
 
@@ -2297,6 +2358,7 @@ async function mergeCoachProposals(userId: string, context: MergeContext): Promi
       remoteIds,
       (proposal: CoachProposal) => proposal.resolvedAt ?? proposal.createdAt,
       context.deleteBeforeTs,
+      deleteAthleteScope(context),
     )
   }
 
@@ -2379,7 +2441,7 @@ async function mergeTrainingPlans(userId: string, context: MergeContext): Promis
   if (isSchemaMismatchBlocked('training_plans')) return
   let remoteRows: Record<string, unknown>[]
   try {
-    remoteRows = await fetchAll<Record<string, unknown>>('training_plans', userId)
+    remoteRows = await fetchAll<Record<string, unknown>>('training_plans', userId, context.readScope)
   } catch (error) {
     const errorInfo = classifySyncError(error, 'training_plans')
     if (isOptionalPlanSchemaMismatch(errorInfo, 'training_plans')) {
@@ -2421,7 +2483,9 @@ async function mergeTrainingPlans(userId: string, context: MergeContext): Promis
   if (!context.allowDeletes || context.deleteBeforeTs == null) return
 
   const localPlans = await db.trainingPlans.toArray()
+  const athleteScope = deleteAthleteScope(context)
   for (const localPlan of localPlans) {
+    if (athleteScope !== undefined && !isInAthleteScope(localPlan.athleteId, athleteScope)) continue
     if (!isSyncablePlanStatus(localPlan.status)) continue
     if (remoteIds.has(localPlan.id)) continue
     if (localPlan.updatedAt > context.deleteBeforeTs) continue
@@ -2434,7 +2498,7 @@ async function mergeTrainingPlanWeeks(userId: string, context: MergeContext): Pr
   if (isSchemaMismatchBlocked('training_plan_weeks')) return
   let remoteRows: Record<string, unknown>[]
   try {
-    remoteRows = await fetchAll<Record<string, unknown>>('training_plan_weeks', userId)
+    remoteRows = await fetchAll<Record<string, unknown>>('training_plan_weeks', userId, context.readScope)
   } catch (error) {
     const errorInfo = classifySyncError(error, 'training_plan_weeks')
     if (isOptionalPlanSchemaMismatch(errorInfo, 'training_plan_weeks')) {
@@ -2491,7 +2555,9 @@ async function mergeTrainingPlanWeeks(userId: string, context: MergeContext): Pr
   if (!context.allowDeletes || context.deleteBeforeTs == null) return
 
   const localWeeks = await db.trainingPlanWeeks.toArray()
+  const athleteScope = deleteAthleteScope(context)
   for (const localWeek of localWeeks) {
+    if (athleteScope !== undefined && !isInAthleteScope(localWeek.athleteId, athleteScope)) continue
     if (!syncablePlanIds.has(localWeek.planId)) continue
     if (remoteIds.has(localWeek.id)) continue
     if (localWeek.updatedAt > context.deleteBeforeTs) continue
@@ -2499,11 +2565,12 @@ async function mergeTrainingPlanWeeks(userId: string, context: MergeContext): Pr
   }
 }
 
-async function deleteMissingLocalRows<T extends { id: string }>(
+async function deleteMissingLocalRows<T extends { id: string; athleteId?: string }>(
   table: { toArray: () => Promise<T[]>; bulkDelete: (keys: string[]) => Promise<void> },
   remoteIds: Set<string>,
   getLocalUpdatedAt: (row: T) => number | null | undefined,
   deleteBeforeTs: number | null,
+  athleteScope?: string | null,
 ): Promise<void> {
   if (deleteBeforeTs == null) {
     return
@@ -2513,6 +2580,7 @@ async function deleteMissingLocalRows<T extends { id: string }>(
   const idsToDelete = localRows
     .filter((row) => {
       if (remoteIds.has(row.id)) return false
+      if (athleteScope !== undefined && !isInAthleteScope(row.athleteId, athleteScope)) return false
 
       const localUpdatedAt = getLocalUpdatedAt(row)
       if (typeof localUpdatedAt !== 'number' || Number.isNaN(localUpdatedAt)) {
@@ -2528,12 +2596,40 @@ async function deleteMissingLocalRows<T extends { id: string }>(
   }
 }
 
-async function findDayLogConflictByDate(date: string): Promise<DayLog | undefined> {
-  return db.dayLogs.where('date').equals(date).first()
+async function findDayLogConflictByDate(
+  date: string,
+  remoteAthleteId: string | undefined,
+  activeAthleteId: string | null,
+): Promise<DayLog | undefined> {
+  const remoteKey = effectiveAthleteKey(remoteAthleteId, activeAthleteId)
+  const candidates = await db.dayLogs.where('date').equals(date).toArray()
+  return candidates
+    .filter((row) => effectiveAthleteKey(row.athleteId, activeAthleteId) === remoteKey)
+    .sort(compareDayLogConflictCandidates)[0]
 }
 
-async function findWeekSummaryConflictByWeekStart(weekStartDate: string): Promise<WeekSummary | undefined> {
-  return db.weekSummaries.where('weekStartDate').equals(weekStartDate).first()
+async function findWeekSummaryConflictByWeekStart(
+  weekStartDate: string,
+  remoteAthleteId: string | undefined,
+  activeAthleteId: string | null,
+): Promise<WeekSummary | undefined> {
+  const remoteKey = effectiveAthleteKey(remoteAthleteId, activeAthleteId)
+  const candidates = await db.weekSummaries.where('weekStartDate').equals(weekStartDate).toArray()
+  return candidates
+    .filter((row) => effectiveAthleteKey(row.athleteId, activeAthleteId) === remoteKey)
+    .sort(compareWeekSummaryConflictCandidates)[0]
+}
+
+function compareDayLogConflictCandidates(a: DayLog, b: DayLog): number {
+  const scopedDelta = Number(isScopedAthleteId(b.athleteId)) - Number(isScopedAthleteId(a.athleteId))
+  if (scopedDelta !== 0) return scopedDelta
+  return compareDayLogsForRepair(a, b)
+}
+
+function compareWeekSummaryConflictCandidates(a: WeekSummary, b: WeekSummary): number {
+  const scopedDelta = Number(isScopedAthleteId(b.athleteId)) - Number(isScopedAthleteId(a.athleteId))
+  if (scopedDelta !== 0) return scopedDelta
+  return compareWeekSummariesForRepair(a, b)
 }
 
 function resolveDayLogConflict(local: DayLog | undefined, remote: DayLog): MergeResolution<DayLog> {
@@ -2590,15 +2686,20 @@ async function repairLocalNaturalKeyConflicts(): Promise<void> {
 
 async function repairLocalDayLogConflicts(): Promise<void> {
   const rows = await db.dayLogs.toArray()
-  const groups = groupRowsBy(rows, (row) => row.date)
+  const activeAthleteId = getActiveAthleteId()
+  const groups = groupRowsBy(rows, (row) => `${effectiveAthleteKey(row.athleteId, activeAthleteId)}::${row.date}`)
 
   for (const duplicates of groups.values()) {
     if (duplicates.length <= 1) continue
     const sorted = [...duplicates].sort(compareDayLogsForRepair)
-    const winner = sorted[0]
+    const stamped = stampAthleteIdIfLegacy(sorted[0], activeAthleteId)
+    const winner = stamped.row
     const loserIds = sorted.slice(1).map((row) => row.id)
     if (loserIds.length > 0) {
       await db.dayLogs.bulkDelete(loserIds)
+      if (stamped.changed) {
+        await db.dayLogs.put(winner)
+      }
       await Promise.all(loserIds.map((id) => deleteRow('day_logs', id)))
       await pushDayLog(winner)
     }
@@ -2607,15 +2708,20 @@ async function repairLocalDayLogConflicts(): Promise<void> {
 
 async function repairLocalWeekSummaryConflicts(): Promise<void> {
   const rows = await db.weekSummaries.toArray()
-  const groups = groupRowsBy(rows, (row) => row.weekStartDate)
+  const activeAthleteId = getActiveAthleteId()
+  const groups = groupRowsBy(rows, (row) => `${effectiveAthleteKey(row.athleteId, activeAthleteId)}::${row.weekStartDate}`)
 
   for (const duplicates of groups.values()) {
     if (duplicates.length <= 1) continue
     const sorted = [...duplicates].sort(compareWeekSummariesForRepair)
-    const winner = sorted[0]
+    const stamped = stampAthleteIdIfLegacy(sorted[0], activeAthleteId)
+    const winner = stamped.row
     const loserIds = sorted.slice(1).map((row) => row.id)
     if (loserIds.length > 0) {
       await db.weekSummaries.bulkDelete(loserIds)
+      if (stamped.changed) {
+        await db.weekSummaries.put(winner)
+      }
       await pushWeekSummary(winner)
     }
   }
