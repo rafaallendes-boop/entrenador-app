@@ -537,8 +537,8 @@ function FeaturesFooter() {
       <div className="mx-auto flex w-full max-w-7xl items-center justify-between px-6 md:px-10" style={{ borderTop: `1px solid ${SURFACE_BORDER}`, marginTop: 48, paddingTop: 20 }}>
         <span style={{ fontFamily: FONT_MONO, fontSize: 11, color: INK_FAINT }}>© 2026 · RALLYIQ LABS</span>
         <div className="flex gap-4">
-          <span style={{ fontFamily: FONT_MONO, fontSize: 11, color: INK_FAINT }}>v2.4.0</span>
-          <span style={{ fontFamily: FONT_MONO, fontSize: 11, color: INK_FAINT }}>BUILT IN BUENOS AIRES</span>
+          <span style={{ fontFamily: FONT_MONO, fontSize: 11, color: INK_FAINT }}>v1.0</span>
+          <span style={{ fontFamily: FONT_MONO, fontSize: 11, color: INK_FAINT }}>HECHO EN CHILE</span>
         </div>
       </div>
     </footer>

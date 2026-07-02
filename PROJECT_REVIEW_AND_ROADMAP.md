@@ -1,309 +1,212 @@
-# Entrenador App - Review and Roadmap
+# RallyIQ - Project Review and Roadmap
 
-Actualizado: 2026-06-21
+Actualizado: 2026-07-01
+
+Base de contraste:
+
+- Commits recientes en `main` hasta `6e33926 feat: add athlete-scoped day and week data prereqs`.
+- Estado actual del repo al 2026-07-01.
+- Resultado reportado de `supabase/008a_athlete_scope_preflight.sql`: 0 nulls y 0 duplicados legacy en `day_logs` / `week_summaries`.
 
 ## Resumen Ejecutivo
 
-Entrenador/RallyIQ ya no se siente como un experimento tecnico temprano. El motor de planificacion, el flujo async de Plan Builder, la reparacion de semanas, el soporte de squash/fuerza y el sistema de export/backup estan lo suficientemente avanzados para cambiar de etapa.
+RallyIQ ya esta en una etapa distinta a la del roadmap anterior. El core deportivo, Plan Builder async, calidad de semanas, landing inicial, borradores legales y la base de datos para `athlete_id` ya avanzaron bastante. Lo mas importante del ultimo bloque es que se cerro un riesgo invisible pero critico para F2: `day_logs` y `week_summaries` ya no dependen de fecha sola como clave natural local, sino de `(athleteId, fecha)`.
 
-La recomendacion ahora es pasar de "beta interna tecnica" a "preparacion para clientes premium en piloto cerrado". No significa abrir pago publico todavia. Significa preparar la experiencia completa que un atleta real va a ver: landing clara, promesa creible, UI menos tecnica, terminos/privacidad, disclaimers de salud, soporte, onboarding y un protocolo de revision de calidad antes de invitar clientes.
+Lectura como lider tecnico: la app esta cerca de poder mostrarse en piloto acompanado. No esta lista para pago publico self-serve, pero si puede acercarse a monetizacion manual con 1-3 clientes fundadores despues de cerrar superficie publica, rutas legales, smoke real y protocolo de soporte/revision.
 
-El producto debe sentirse como un entrenador digital premium para squash competitivo, con fuerza y recuperacion integradas. La app no deberia hablar como software de IA; deberia hablar como un sistema de preparacion: carga, pista, fuerza, molestias, torneo, revision semanal y decisiones simples.
+La mayor parte de lo que falta ya no es "motor". Es confianza comercial: copy consistente, links legales reales, onboarding/consentimiento, soporte, smoke de produccion y revision humana de los primeros planes.
 
-## Avances Implementados Al 2026-06-21
+## Estado Actual En Una Frase
 
-Desde el corte anterior ya se avanzaron puntos importantes de producto, calidad deportiva y preparacion para clientes:
+RallyIQ esta suficientemente avanzado para preparar demos y pilotos controlados, pero aun necesita un cierre de presentacion, legal y operacion antes de cobrar fuera del circulo cercano.
 
-- Superficie publica:
-  - Landing principal reescrita hacia squash competitivo, torneo, taper, carga, preparacion fisica y RallyIQ AI.
-  - Se elimino la prueba social ficticia/testimonial inventado y se reemplazo por un componente de criterios del sistema: match play 3-4 dias antes, ultimo dia de activacion, fuerza con transferencia y carga unificada.
-  - Se corrigio el nav publico mobile que podia mostrar links desktop por un `display` inline.
-  - Pricing ya esta orientado a piloto cerrado/fundador, no a pago publico masivo.
-- Plan Builder y calidad deportiva:
-  - Double sessions ahora se validan y reparan respetando los dias configurados.
-  - El generador utiliza dobles de forma mas estrategica cuando el atleta los permite.
-  - Semana taper/race queda mas protegida: menos carga accesoria, strength cap, running/cycling muy limitados y movilidad/recovery preservados.
-  - Match play fuerte se empuja a 3-4 dias antes del evento; el ultimo dia se orienta a activacion/control.
-  - Se agregaron tests para double sessions, taper load cap, reparacion de semanas y coherencia de Plan Builder.
-- Rate limit del Plan Builder async:
-  - Se agrego preflight local antes de encolar generaciones remotas.
-  - La app reserva consumo por semana al iniciar background generation.
-  - Si el enqueue falla definitivamente, libera la reserva.
-  - Cuando polling recibe semanas generadas, sincroniza la reserva con el `traceId` real del worker para que Settings refleje el consumo.
-- Validacion tecnica reciente:
-  - `npm test` completo paso con 122 archivos y 854 tests.
-  - `npm run lint` paso.
-  - `npm run build` paso.
+## Porcentaje De Avance
 
-Lectura actual: el producto ya puede moverse a preparacion de piloto cerrado, pero aun falta cerrar confianza publica, legal, lenguaje de cliente y smoke real en entorno DEV/PROD.
+Mi estimacion actual:
 
-## Cambio De Etapa
+- Para mostrar la app en demo/piloto acompanado: 85% listo / 15% pendiente.
+- Para cobrar un piloto manual a 1-3 clientes fundadores: 72% listo / 28% pendiente.
+- Para monetizacion publica self-serve: 50% listo / 50% pendiente.
 
-Estado anterior:
+Traduccion practica: no falta construir otro producto. Falta cerrar el envoltorio de confianza y probar el flujo real end-to-end con gente.
 
-- Beta interna enfocada en robustez tecnica.
-- Validacion local de tests, build, prompts y flujos async.
-- Preguntas abiertas sobre debug vs feature visible.
+## Avances Ya Implementados
 
-Estado recomendado ahora:
+### Producto Publico Y Marca
 
-- Piloto premium cerrado en preparacion.
-- Mantener QA tecnico, pero mover el foco a confianza del cliente.
-- Preparar una primera oferta comercial controlada, sin paywall publico todavia.
-- Revisar cada plan generado como lo haria un entrenador antes de mostrarlo como producto.
+- Marca publica operativa: `RallyIQ` (`src/constants/contact.ts`).
+- Landing principal reorientada a squash competitivo, torneo, taper, carga, match play y preparacion fisica.
+- Pricing movido hacia piloto/fundador y CLP, aunque todavia conserva textos legacy que hay que limpiar.
+- Contact email centralizado: `CONTACT_EMAIL = 'hola@rallyiq.cl'`.
+- Se elimino prueba social inventada de la landing y se reemplazo por criterios del sistema.
 
-La pregunta principal deja de ser "puede generar un plan?" y pasa a ser:
+### Legal Y Confianza
 
-"Un jugador de squash pagaria y confiaria en esto despues de verlo 5 minutos?"
+- Borradores legales creados en `docs/legal/`:
+  - `terminos-y-condiciones.md`.
+  - `politica-de-privacidad.md`.
+  - `descargo-de-salud.md`.
+- Textos alineados a piloto Chile/persona natural y billing diferido.
+- Falta convertir esos documentos en rutas publicas reales dentro de la app.
 
-## Evidencia Del Corte 2026-06-20
+### Plan Builder Y Calidad Deportiva
 
-Se revisaron los exports locales mencionados en este corte:
+- Plan Builder async operativo con rate limit local y reservas de uso.
+- Mejoras de taper/race week, double sessions, squash priority, match play y reparacion de semanas.
+- Tests de Plan Builder, double sessions, repair, rate limits, active generation y calidad deportiva.
+- Copys internos del coach humanizados en parte (`5d8ecda`), reduciendo referencias tecnicas crudas en sesiones.
+- Sigue pendiente una revision deportiva manual de planes arquetipo antes del primer piloto pagado.
 
-- `entrenador-athlete-profile-2026-06-20T20-47-06-212Z.json`
-- `entrenador-backup-2026-06-20T20-47-16-931Z.json`
+### Athlete Scope Y Seguridad De Datos
 
-Senales positivas:
+- `007_athlete_scope.sql` implementado:
+  - tabla `athletes`.
+  - backfill por usuario.
+  - `athlete_id` agregado/backfilled en tablas relevantes.
+  - RLS transicional de lectura por atleta.
+- Foundation endurecida:
+  - hidratacion de atleta activo.
+  - read scope.
+  - tests de migracion/scope.
+  - dry-run script.
+- F2 data prerequisites implementado (`6e33926`):
+  - Dexie v14.
+  - `dayLogs` con unico compuesto `[athleteId+date]`.
+  - `weekSummaries` con unico compuesto `[athleteId+weekStartDate]`.
+  - lookups athlete-aware.
+  - merge/sync/import/export seguro por clave natural scoped.
+  - tests con `fake-indexeddb`.
+  - `008a_athlete_scope_preflight.sql` report-only.
+- Preflight reportado por usuario: 0 nulls y 0 duplicados en day/week. Esto es una muy buena senal.
 
-- Existe backup completo con tablas de sesiones, semanas, planes, chat, proposals y perfil.
-- Hay un plan activo llamado `Plan Torneo nacional`.
-- El plan fue generado por background job y aceptado.
-- `generationSummary.completedWeeks`: 5/5.
-- `generationSummary.failedWeeks`: 0.
-- Duracion de generacion: ~132 s.
-- Quality review global: score 77, `needs_review`, sin issues criticos.
-- Backup con 23 sesiones:
-  - 15 squash.
-  - 4 fuerza.
-  - 3 running.
-  - 1 movilidad.
-- Perfil con referencias 1RM para squat, deadlift, bench press y overhead press.
+### Verificacion Tecnica Reciente
 
-Senales que piden revision de entrenador antes de cliente:
+- Ultima verificacion del bloque F2: `npm run lint`, `npm test`, `npm run build` pasaron.
+- Suite al cierre de ese bloque: 134 archivos / 934 tests.
 
-- Warning de salto de carga entre semanas 1 y 2.
-- Warning de baja variedad de drills en un bloque build.
-- Warning de squash etiquetado como match-play cuando los bloques no eran partido completo.
-- Varias semanas requirieron reparaciones automaticas altas.
+## Lo Que Ya No Deberia Figurar Como Pendiente
 
-Lectura premium: esto es bueno. No es un bloqueo; es exactamente el tipo de cola de revision que deberia existir antes de entregar un plan de alto rendimiento. Para cliente final, esos warnings no deben aparecer como lenguaje tecnico. Para entrenador/admin, son el checklist de control.
+- Definir una marca publica operativa: ya es `RallyIQ`.
+- Crear borradores legales base: ya existen en `docs/legal`.
+- Preparar foundation de `athlete_id`: ya esta en `007`.
+- Resolver la clave natural local de day/week para multi-atleta: ya esta en Dexie v14.
+- Crear preflight report-only para day/week: ya esta en `008a`.
+- Confirmar que prod no tiene deuda visible de null/duplicados day/week: el usuario ya corrio el preflight y dio 0.
 
-## Lectura Como Coach De Squash Y Preparador Fisico
+## Riesgos Que Siguen Vivos
 
-La propuesta con mas fuerza no es "app de IA para entrenar". Eso suena generico y facil de desconfiar.
+### 1. Superficie publica con residuos legacy y friccion de conversion
 
-La propuesta mas premium es:
+La superficie publica ya esta mas cerca, pero todavia mezcla promesa premium con senales de producto interno: versiones visibles, CTAs de cuenta gratis/trial, copy tecnico (`PWA/local-first`, `analytics`) y links sin destino real. Eso no rompe la app, pero si baja confianza antes de cobrar.
 
-> Preparacion inteligente para jugadores de squash que compiten: plan de torneo, carga semanal, fuerza especifica, recuperacion y ajustes segun como llega el cuerpo.
+Nota de revision front: `lanzamiento` no aparece como texto literal en el codigo revisado; no es un problema por si mismo. Solo conviene evitar claims temporales si se vuelven permanentes o si prometen una ventana comercial que no existe.
 
-Pilares deportivos:
+Archivos relevantes:
 
-- Squash primero: desplazamientos, cambios de direccion, repeticion de rallies, aceleracion/frenado, tolerancia a puntos largos y toma de decision bajo fatiga.
-- Fuerza con transferencia: tren inferior, core anti-rotacion, potencia, estabilidad unilateral, hombro/escapula y tolerancia de tejidos.
-- Carga controlada: no sumar running/fuerza porque si; todo debe justificar su transferencia o su rol aerobico/recuperativo.
-- Taper entendible: menos ruido en la semana final, mas frescura, activacion, velocidad y confianza.
-- Feedback diario: sueno, dolor, fatiga y disponibilidad deben modificar el plan sin dramatismo.
+- `src/pages/FeaturesPage.tsx`.
+- `src/pages/PricingPage.tsx`.
+- `src/components/SharedPublicNav.tsx`.
+- `src/pages/LandingPage.tsx` footer.
 
-Regla de producto:
+### 2. Legal existe como docs, no como experiencia publica
 
-RallyIQ puede generar y proponer. El entrenador premium revisa, filtra y entrega. En piloto, esa supervision humana es parte del valor.
+Los documentos legales ya existen, pero no hay rutas publicas como `/terms`, `/privacy` o `/health-disclaimer`. `AuthGate` hoy solo expone publicamente landing, features y pricing.
 
-## Posicionamiento Recomendado
+Esto bloquea cobro serio y tambien dificulta enviar links claros en invitaciones.
 
-Nombre publico:
+### 3. Consentimiento todavia no esta cerrado en producto
 
-- Elegir una identidad principal: `RallyIQ` o `Entrenador`.
-- Hoy la app mezcla ambos. Para clientes, la marca visible deberia ser una sola.
-- Recomendacion: usar `RallyIQ` como producto y `Entrenador App` como nombre interno/repo.
+Falta registrar aceptacion de terminos, privacidad, descargo de salud y uso de IA antes de crear cuenta o antes del primer plan.
 
-Cliente inicial:
+Para piloto manual se puede compensar temporalmente con aceptacion externa/documentada, pero para escalar debe vivir en app.
 
-- Jugador de squash amateur competitivo.
-- Tiene torneo, liga, ranking, club o meta concreta.
-- Entrena 3-6 dias/semana.
-- Necesita ordenar squash, fuerza, running/movilidad y recuperacion.
-- No quiere planillas ni explicaciones tecnicas largas.
+### 4. 008b sigue gated
 
-Oferta piloto:
+`008a` esta OK y es seguro. `008b` no debe aplicarse todavia.
 
-- Plan de preparacion de 4 a 8 semanas.
-- Onboarding inicial con perfil, disponibilidad, historial de lesiones y objetivo.
-- Plan semanal en app.
-- Check-in diario corto.
-- Ajustes con RallyIQ.
-- Revision semanal premium por entrenador durante el piloto.
-- Export/backup disponible.
+Antes de un indice unico parcial remoto en `(athlete_id, date)` y `(athlete_id, week_start_date)`, hay que cambiar el write path remoto:
 
-CTA recomendado para esta etapa:
+- `upsertRow` no puede depender de PK `id` cuando hay clave natural duplicable por import/sync.
+- `migrateLocalDataToCloud` debe abandonar `onConflict: 'user_id,date'` / `user_id,week_start_date`.
+- La resolucion remota debe ser natural-key-safe con `select -> update` o estrategia equivalente, legacy-null-aware.
+- Smoke posterior: crear/editar day log y week summary sin `23505`.
 
-- "Solicitar cupo piloto".
-- "Agendar evaluacion".
-- "Preparar mi proximo torneo".
+Este gate no bloquea mostrar la app ni pilotos manuales pequenos. Si bloquea endurecer integridad remota para escala.
 
-Evitar por ahora:
+### 5. No hay todavia operacion comercial completa
 
-- "Empezar gratis" como CTA principal si no hay flujo comercial completo.
-- "IA ilimitada 24/7" como promesa central.
-- Claims de mejora porcentual sin evidencia real.
-- Lenguaje como provider, local-first, schema, background, quality score, regeneration.
+Faltan soporte, cancelacion/reembolso, proceso de pago manual, mensaje de invitacion, protocolo de revision semanal y canal claro de feedback.
 
-## Diagnostico De Superficie Publica
-
-Paginas existentes:
-
-- `src/pages/LandingPage.tsx`
-- `src/pages/FeaturesPage.tsx`
-- `src/pages/PricingPage.tsx`
-- `src/components/SharedPublicNav.tsx`
-
-Estado actual:
-
-- Landing principal: actualizada hacia squash competitivo y promesa premium creible.
-- Pricing: orientado a piloto cerrado/fundador, aunque todavia necesita pulir footer, terminos y algunos textos legacy.
-- Features: todavia demasiado generica/tech; mantiene `v2.4`, PWA/local-first y narrativa multideporte como foco principal.
-- SharedPublicNav: corregido el comportamiento mobile.
-- Footer publico: todavia tiene links muertos o textos legacy en algunas paginas.
-
-Lo que ya mejoro:
-
-- La landing ya no vende "app de IA generica"; vende preparacion para squash competitivo.
-- Se removio prueba social falsa/testimonial inventado.
-- El hero y las secciones principales hablan de torneo, taper, match play, carga y preparacion fisica.
-- El pricing ya no empuja pago publico abierto como primer paso.
-
-Lo que sigue pendiente para clientes:
-
-- Reescribir `FeaturesPage` con el mismo foco de squash competitivo.
-- Remover versiones/lanzamientos (`v2.4`, "BUENOS AIRES", claims temporales) de features/pricing/footer.
-- Crear rutas reales para `Privacidad`, `Terminos` y disclaimer medico/deportivo.
-- Conectar todos los footers a rutas reales; eliminar links `href="#"`.
-- Hacer smoke de `/`, `/features`, `/pricing` en DEV/PROD y revisar cache/service worker si el navegador muestra pantalla negra.
-- Revisar copy de pricing para que no prometa resultados, prevencion de lesiones ni mejoras porcentuales.
-
-Nueva direccion de copy:
-
-- Menos "sistema cerrado, PWA, AI, analytics".
-- Mas "llega fresco al torneo, ordena la semana, ajusta carga, entrena fuerza con sentido, registra molestias, revisa decisiones".
-- El usuario debe entender el beneficio antes de entender la tecnologia.
-
-## UI Menos Tecnica
-
-Objetivo: que la app se sienta como una herramienta de atleta, no como consola de QA.
-
-Cambios recomendados:
-
-- `Plan Builder` -> `Crear plan`.
-- `Quality review` -> interno/admin; si se muestra al usuario, usar `Revision del plan`.
-- `needs_review` -> `Requiere revision del coach`.
-- `Regenerar semana` -> `Mejorar semana` o `Ajustar semana`.
-- `Reparar semanas marcadas` -> oculto para cliente o mover a modo entrenador.
-- `Beta quality` -> solo Settings interno/admin.
-- `Taper` -> `puesta a punto` en UI de cliente.
-- `Background generation`/`polling` -> nunca visible para cliente.
-- `Fallback` -> nunca visible para cliente.
-
-Principio:
-
-El usuario no debe sentir que esta evaluando una IA. Debe sentir que tiene una semana clara, revisable y adaptable.
-
-## Legal, Confianza Y Seguridad
-
-Antes de cobrar o invitar fuera del circulo cercano, crear al menos estas paginas:
-
-- Terminos y condiciones.
-- Politica de privacidad.
-- Disclaimer medico/deportivo.
-- Politica de cancelacion/reembolsos, aunque el piloto sea manual.
-- Consentimiento de uso de IA y limites del servicio.
-
-Contenido minimo:
-
-- RallyIQ no reemplaza evaluacion medica, kinesiologica ni urgencias.
-- El usuario debe detener entrenamiento ante dolor agudo, mareos, sintomas neurologicos, dolor toracico o lesion.
-- La app entrega planificacion y recomendaciones generales/personalizadas por datos declarados, no diagnostico medico.
-- Datos que se guardan: perfil, sesiones, check-ins, chat/proposals, planes y backups.
-- Explicar login, sincronizacion, exportacion y eliminacion de datos.
-- Explicar que respuestas de IA pueden ser revisadas/mejoradas y no son garantia de resultado competitivo.
-- Incluir contacto de soporte.
-
-Nota operativa: antes de pago publico, revisar estos textos con abogado segun mercado objetivo. Para Chile/LatAm, cuidar tratamiento de datos personales y claims de salud/rendimiento.
-
-## Roadmap Cliente - Checklist Maestro Junio/Julio 2026
+## Checklist Actualizado Para Mostrar Y Monetizar
 
 ### A. Oferta Y Posicionamiento
 
-Objetivo: una promesa clara y premium para el primer nicho.
+Objetivo: que una persona entienda en 10 segundos para quien es y por que pedir acceso.
 
-- [ ] Definir marca publica final: `RallyIQ` como producto, `Entrenador App` como interno/repo.
-- [x] Definir nicho inicial: squash competitivo.
-- [x] Reorientar la landing principal a squash competitivo.
-- [ ] Escribir one-liner final para sitio, pitch y WhatsApp.
-- [ ] Definir oferta piloto: duracion, cupos, soporte incluido y si sera gratis, fundador o pagado manualmente.
-- [ ] Definir CTA principal unico: `Solicitar cupo piloto`, `Agendar evaluacion` o `Preparar mi proximo torneo`.
-- [ ] Definir que incluye y que no incluye el piloto.
-- [ ] Preparar mensaje corto para invitar a los primeros 3 jugadores.
-
-Resultado esperado: una persona entiende en 10 segundos para quien es, que resuelve y que debe hacer.
+- [x] Marca publica operativa: `RallyIQ`.
+- [x] Nicho inicial: squash competitivo.
+- [x] Landing principal con foco squash/torneo/carga.
+- [ ] One-liner final para sitio, WhatsApp y demo.
+- [ ] Oferta piloto cerrada: duracion, cupos, precio fundador, soporte incluido.
+- [ ] CTA unico en toda la superficie publica: recomendado `Solicitar cupo piloto` o `Agendar evaluacion`.
+- [ ] Mensaje corto para invitar a los primeros 3 jugadores.
+- [ ] Definir que no incluye el piloto: urgencias medicas, diagnostico, garantia de resultado, supervision presencial.
 
 ### B. Superficie Publica
 
-Objetivo: convertir interes en solicitud de piloto, no explicar arquitectura.
+Objetivo: confianza antes que explicacion tecnica.
 
-- [x] Reescribir hero con foco squash/torneo.
-- [x] Agregar narrativa de taper, match play, carga y preparacion fisica.
-- [x] Remover testimonial/prueba social falsa de la landing.
-- [x] Agregar componente honesto de criterios del sistema.
-- [x] Corregir nav publico mobile.
-- [x] Actualizar pricing hacia piloto cerrado/fundador.
-- [ ] Reescribir `FeaturesPage` con foco squash competitivo.
-- [ ] Remover `v2.4`, "lanzamiento", "BUENOS AIRES" y textos temporales de paginas publicas.
-- [ ] Cambiar CTAs publicos inconsistentes (`Empezar gratis`) hacia piloto/evaluacion donde corresponda.
-- [ ] Agregar seccion "Para quien es".
-- [ ] Agregar seccion "Que no es".
-- [ ] Agregar screenshots reales o mockups basados en pantallas actuales de la app.
-- [ ] Conectar footer a rutas reales de privacidad/terminos/disclaimer.
-- [ ] Eliminar links muertos `href="#"`.
-- [ ] Smoke manual de `/`, `/features`, `/pricing` en DEV.
-- [ ] Smoke manual de `/`, `/features`, `/pricing` en deploy/PROD.
-- [ ] Si aparece pantalla negra en DEV, limpiar service worker/cache y documentar el fix.
+- [x] Landing reorientada a squash competitivo.
+- [x] Pricing parcialmente orientado a piloto/fundador.
+- [x] Email y marca centralizados.
+- [ ] Reescribir el hero/KPIs de `FeaturesPage`: hoy todavia lee como feature grid tecnico (`sistema cerrado`, `analytics`, `PWA/local-first`) mas que como preparacion para squash competitivo.
+- [ ] Hacer grep final de labels de version/localidad (`v2.4`, `v1.0`, `BUENOS AIRES`, `HECHO EN CHILE`). Como criterio front, la version publica visible no aporta confianza; la localidad solo mantenerla si es parte deliberada de marca.
+- [ ] Alinear CTAs con el funnel real: si el piloto sera manual, cambiar `Empezar gratis`, `Crear cuenta gratis` y trial copy hacia `Solicitar cupo piloto` / `Agendar evaluacion`; si habra trial real, documentar ese flujo.
+- [ ] Eliminar `href="#"` de pricing/features/landing footer; cada link debe navegar o no mostrarse.
+- [ ] Conectar footer a rutas legales reales.
+- [ ] Agregar seccion corta "Para quien es".
+- [ ] Agregar seccion corta "Que no es".
+- [ ] Agregar 2-4 screenshots reales o mockups honestos de la app.
+- [x] No hay texto literal `lanzamiento` detectado en la superficie publica revisada; no requiere cambio salvo que vuelva como claim temporal.
+- [ ] Smoke DEV de `/`, `/features`, `/pricing` y rutas legales.
+- [ ] Smoke PROD/deploy de las mismas rutas.
 
 ### C. Legal, Confianza Y Seguridad
 
-Objetivo: poder invitar clientes sin links rotos ni zona gris legal.
+Objetivo: poder enviar links y cobrar sin zona gris innecesaria.
 
-- [ ] Crear ruta `/terms`.
-- [ ] Crear ruta `/privacy`.
-- [ ] Crear ruta `/health-disclaimer` o integrar disclaimer claro en terminos.
-- [ ] Agregar consentimiento de uso de IA y limites del servicio.
-- [ ] Agregar consentimiento medico/deportivo en onboarding o signup.
-- [ ] Explicar datos guardados: perfil, sesiones, check-ins, chat/proposals, planes y backups.
-- [ ] Explicar exportacion/eliminacion de datos.
-- [ ] Agregar contacto de soporte.
-- [ ] Revisar textos con abogado antes de cobro publico.
-- [ ] Verificar que pricing y landing no prometan prevencion de lesiones ni mejoras de rendimiento no demostradas.
+- [x] Borrador de terminos.
+- [x] Borrador de politica de privacidad.
+- [x] Borrador de descargo de salud.
+- [ ] Crear ruta publica `/terms`.
+- [ ] Crear ruta publica `/privacy`.
+- [ ] Crear ruta publica `/health-disclaimer`.
+- [ ] Linkear las rutas desde landing, pricing, features y signup/login.
+- [ ] Agregar consentimiento de terminos/privacidad/descargo/IA en signup u onboarding.
+- [ ] Registrar version y fecha de consentimiento.
+- [ ] Agregar politica simple de cancelacion/reembolso para piloto manual.
+- [ ] Validar textos con abogado antes de pago publico o anuncios masivos.
 
 ### D. Plan Builder Y Calidad Deportiva
 
-Objetivo: que los planes piloto sean confiables antes de entregarlos.
+Objetivo: que el primer plan pagado se pueda mirar a la cara.
 
-- [x] Validar double sessions solo en dias configurados.
-- [x] Reparar/utilizar double sessions de forma estrategica cuando estan habilitadas.
-- [x] Proteger taper/race contra exceso de carga accesoria.
-- [x] Limitar strength en taper para preservar frescura.
-- [x] Empujar match play fuerte a 3-4 dias antes del evento.
-- [x] Orientar ultimo dia a activacion/control.
-- [x] Agregar tests para double sessions, taper y reparacion.
-- [x] Implementar rate limit visible para Plan Builder async.
-- [ ] Generar 3 planes arquetipo y revisarlos como entrenador.
-- [ ] Guardar export/backup de cada plan arquetipo.
-- [ ] Crear checklist manual de revision por plan dentro de docs o admin.
-- [ ] Reducir warnings de variedad de drills en bloques build/peak.
-- [ ] Revisar que fuerza no repita plantillas clonadas semana a semana.
-- [ ] Verificar uso de 1RM cuando existe.
-- [ ] Confirmar que running/ciclismo aparezcan solo si aportan al objetivo.
-- [ ] Confirmar que todas las sesiones sean entendibles sin leer contexto tecnico.
+- [x] Double sessions validadas por dias configurados.
+- [x] Taper/race week protegida de carga accesoria excesiva.
+- [x] Match play fuerte empujado a 3-4 dias antes del evento.
+- [x] Ultimo dia orientado a activacion/control.
+- [x] Rate limit local visible para Plan Builder async.
+- [x] Tests de Plan Builder, repairs y generacion async.
+- [x] Copys de sesiones del coach parcialmente humanizados.
+- [ ] Generar y revisar 3 planes arquetipo.
+- [ ] Guardar backup/export de cada plan arquetipo.
+- [ ] Crear checklist manual de revision de entrenador.
+- [ ] Revisar warnings de variedad de drills en build/peak.
+- [ ] Confirmar que fuerza no repita plantillas clonadas semana a semana.
+- [ ] Confirmar que 1RM se usa cuando existe.
+- [ ] Confirmar que running/ciclismo aparecen solo si aportan al objetivo.
 
-Arquetipos obligatorios:
+Arquetipos recomendados:
 
 - [ ] Torneo en 4 semanas.
 - [ ] Jugador con 3 dias disponibles.
@@ -311,182 +214,172 @@ Arquetipos obligatorios:
 - [ ] Retorno con molestia de rodilla/tobillo/hombro.
 - [ ] Semana con poco sueno y match cercano.
 
-### E. UI De Atleta
+### E. Datos, Sync Y Athlete Scope
 
-Objetivo: reducir friccion y bajar lenguaje tecnico dentro de la app.
+Objetivo: cero perdida de datos y base lista para F2.
 
-- [ ] Revisar labels de Plan Builder V2.
+- [x] Athlete scope foundation (`007`).
+- [x] Backfill de `athlete_id` en tablas relevantes.
+- [x] Dexie v14 con clave natural compuesta en day/week.
+- [x] Lookups day/week athlete-aware.
+- [x] Merge/sync/import/export day/week por scope efectivo.
+- [x] `008a` preflight report-only.
+- [x] Preflight ejecutado con 0 nulls / 0 duplicados reportados por el usuario.
+- [ ] Cambiar write path remoto day/week para ser natural-key-safe.
+- [ ] Re-ejecutar `008a` justo antes de 008b.
+- [ ] Aplicar `008b` solo cuando el gate remoto este cerrado.
+- [ ] Smoke post-008b: day log + week summary create/edit sin `23505`.
+- [ ] F2 real mas adelante: `coach_athlete_links`, `account_type`, roster, switcher, permisos de coach.
+
+### F. UI De Atleta
+
+Objetivo: que el atleta no sienta que esta usando una consola de QA.
+
+- [x] Debug de quality gated en prod por test (`planBuilderDetech.test.tsx`).
+- [ ] Revisar labels visibles de Plan Builder V2.
 - [ ] `Plan Builder` -> `Crear plan` o `Plan competitivo` en UI cliente.
 - [ ] `Quality review` -> interno/admin; cliente ve `Revision del plan`.
 - [ ] `needs_review` -> `Requiere revision del coach`.
 - [ ] `Regenerar semana` -> `Mejorar semana` o `Ajustar semana`.
 - [ ] Ocultar controles debug para usuario normal.
-- [ ] Mantener herramientas de calidad en modo entrenador/admin.
-- [ ] Convertir warnings tecnicos en estados accionables:
-  - [ ] `Revisar carga`.
-  - [ ] `Ajustar variedad`.
-  - [ ] `Confirmar objetivo de la semana`.
 - [ ] Mejorar empty states y errores con lenguaje humano.
-- [ ] Revisar onboarding para datos deportivos reales:
-  - [ ] torneo/fecha.
-  - [ ] disponibilidad.
-  - [ ] molestias.
-  - [ ] historial de entrenamiento.
-  - [ ] fuerza/1RM si existe.
-  - [ ] acceso a cancha.
-  - [ ] sesiones con partner.
+- [ ] Revisar onboarding para datos deportivos reales: torneo, disponibilidad, molestias, historial, fuerza/1RM, acceso a cancha y partner.
 
-### F. Operacion De Piloto Premium
+### G. Operacion De Piloto Premium
 
 Objetivo: aprender con pocos clientes sin romper confianza.
 
-- [ ] Invitar 1 cliente acompanado primero.
-- [ ] Luego invitar maximo 3 clientes iniciales.
+- [ ] Elegir 1 primer cliente acompanado.
 - [ ] Onboarding 1:1 de 20-30 min.
-- [ ] Revisar manualmente el primer plan antes de entregarlo.
+- [ ] Generar primer plan y revisarlo manualmente antes de entregarlo.
+- [ ] Definir canal de soporte: WhatsApp/email.
+- [ ] Definir precio fundador o si el primer caso sera gratis a cambio de feedback.
 - [ ] Pedir check-in diario durante 7 dias.
 - [ ] Hacer review semanal breve.
-- [ ] Tener canal de soporte claro.
 - [ ] Registrar feedback por categoria:
-  - [ ] plan deportivo.
-  - [ ] claridad UI.
-  - [ ] confianza.
-  - [ ] fallos tecnicos.
-  - [ ] sync/datos.
-  - [ ] pricing/oferta.
+  - plan deportivo.
+  - claridad UI.
+  - confianza.
+  - fallos tecnicos.
+  - sync/datos.
+  - pricing/oferta.
 
-Metricas de exito:
+Metricas de exito del primer piloto:
 
-- [ ] Cliente entiende su semana sin explicacion extra.
-- [ ] Cliente registra al menos 4 dias de 7.
+- [ ] El cliente entiende su semana sin explicacion extra.
+- [ ] Registra al menos 4 dias de 7.
 - [ ] 0 perdida de datos.
-- [ ] 0 planes con criticos.
-- [ ] Menos de 2 momentos de confusion fuerte por cliente/semana.
+- [ ] 0 planes con issues criticos.
+- [ ] Menos de 2 momentos de confusion fuerte por semana.
 - [ ] Feedback cualitativo: "esto me ordena" o "esto me ayuda a llegar mejor".
 
-## Pendientes Tecnicos Que Siguen Importando
+## Sprint Recomendado - 5 Dias Para Mostrar
 
-Estos puntos no deben bloquear la preparacion comercial, pero si bloquean apertura amplia:
+### Dia 1 - Cierre Publico
 
-- [x] Rate limit local visible para Plan Builder async.
-- [x] Tests unitarios/store para rate limit async.
-- [x] Tests completos recientes pasando.
-- [ ] Renovar auth E2E.
-- [ ] Correr E2E reales con login vigente.
-- [ ] Correr smoke DEV de rutas publicas:
-  - [ ] `/`.
-  - [ ] `/features`.
-  - [ ] `/pricing`.
-  - [ ] limpiar service worker/cache si aparece pantalla negra.
-- [ ] Correr smoke prod controlado.
-- [ ] Verificar Netlify background function con Supabase real.
-- [ ] Confirmar que background generation escribe `jobId`, heartbeat y estado terminal.
-- [ ] Validar sync desktop/mobile:
-  - [ ] crear sesion en desktop, verla en mobile.
-  - [ ] completar sesion en mobile, verla en desktop.
-  - [ ] aceptar proposal en un dispositivo y converger en el otro.
-  - [ ] delete/tombstone no reaparece.
-- [ ] Revisar `.env` prod:
-  - [ ] `VITE_AI_PROVIDER=proxy`.
-  - [ ] sin keys privadas en `VITE_*`.
-  - [ ] funciones server-side configuradas.
-- [ ] Fijar runtime Node/npm para Netlify/local.
-- [ ] Agregar CI minima o checklist automatizado antes de deploy.
-- [ ] Confirmar schema Supabase real y migraciones necesarias.
+- Reescribir `FeaturesPage`.
+- Limpiar `PricingPage`.
+- Limpiar `SharedPublicNav`.
+- Remover versiones visibles innecesarias, CTAs inconsistentes y links muertos.
 
-## Sprint Recomendado - 7 Dias
+### Dia 2 - Legal En App
 
-### Dia 1 - Cierre De Oferta
+- Crear `/terms`, `/privacy`, `/health-disclaimer`.
+- Reutilizar `docs/legal` como fuente.
+- Linkear desde footer, pricing y signup/login.
+- Agregar politica simple de cancelacion/reembolso del piloto.
 
-- Cerrar nombre publico.
-- Escribir one-liner final.
-- Definir cupos piloto, soporte incluido y CTA unico.
-- Escribir mensaje de invitacion para primer jugador.
+### Dia 3 - Smoke Real
 
-### Dias 2-3 - Features, Pricing Y Footer
+- Smoke DEV y PROD:
+  - landing.
+  - features.
+  - pricing.
+  - legal.
+  - signup/login.
+  - crear plan.
+  - crear check-in.
+  - chat/proposal basico.
+  - export/backup.
+  - sync desktop/mobile minimo.
 
-- Reescribir `FeaturesPage` hacia squash competitivo.
-- Pulir `PricingPage` para piloto fundador sin textos legacy.
-- Remover `v2.4`, `BUENOS AIRES` y links muertos.
-- Agregar links reales o placeholders seguros hacia legal.
-- Smoke DEV de `/`, `/features`, `/pricing`.
+### Dia 4 - QA Deportiva
 
-### Dia 4 - Legal Y Confianza
+- Generar 3 planes arquetipo.
+- Revisarlos como coach/preparador.
+- Guardar export/backup.
+- Ajustar los warnings que afecten confianza.
 
-- Crear rutas de terminos, privacidad y disclaimer.
-- Agregar footer links reales.
-- Agregar copy de limites del servicio.
-- Preparar version para revision legal.
+### Dia 5 - Primer Piloto
 
-### Dia 5 - UI De Cliente
+- Enviar invitacion a 1 cliente acompanado.
+- Hacer onboarding 1:1.
+- Entregar plan revisado.
+- Observar uso durante 7 dias sin abrir beta amplia.
 
-- Renombrar labels tecnicos.
-- Ocultar debug.
-- Convertir acciones de regeneracion en lenguaje de atleta/coach.
-- Revisar onboarding y estados vacios.
+## Camino A Monetizacion
 
-### Dia 6 - QA Deportiva
+### Nivel 1 - Demo Acompanada
 
-- Generar/revisar 3 planes arquetipo.
-- Guardar export Beta Quality/backup por plan.
-- Crear checklist manual de revision de entrenador.
-- Corregir warnings que afecten confianza.
+Estado: casi listo.
 
-### Dia 7 - Smoke Y Primer Piloto
+Pendiente minimo:
 
-- Smoke prod o entorno seguro.
-- Probar login, plan, semana, chat, export y sync basico.
-- Invitar 1 cliente acompanado.
-- Observar sin agregar features durante la sesion.
+- Limpiar superficie publica.
+- Agregar rutas legales.
+- Smoke deploy.
+- Tener un pitch de 2 frases.
+
+### Nivel 2 - Piloto Manual Pagado
+
+Estado: viable despues del sprint de 5 dias.
+
+Pendiente minimo:
+
+- Precio fundador.
+- Terminos/privacidad/descargo linkeados.
+- Consentimiento o aceptacion documentada.
+- Canal de soporte.
+- Revision manual de los primeros planes.
+- Proceso simple de pago externo/manual.
+
+### Nivel 3 - Pago Publico Self-Serve
+
+Estado: todavia no.
+
+Pendiente minimo:
+
+- Payment flow.
+- Consentimiento in-app versionado.
+- E2E auth/pago/onboarding.
+- Politica de soporte y reembolso cerrada.
+- CI/smoke automatizado.
+- 008b remoto aplicado despues del gate.
+- Mejor separacion usuario/coach/atleta si se vende a entrenadores.
 
 ## Que Hacer Primero
 
-Recomendacion inmediata:
+Orden recomendado:
 
-1. Reescribir `FeaturesPage` para que deje de sonar a producto tech generico.
-2. Pulir `PricingPage` y footers: quitar textos legacy, links muertos y claims no probados.
-3. Crear paginas reales de terminos/privacidad/disclaimer.
-4. Hacer UI pass para esconder lenguaje tecnico en Plan Builder.
-5. Generar 3 planes arquetipo y revisarlos como entrenador.
-6. Smoke DEV/PROD de rutas publicas, login, plan, semana, chat, export y sync basico.
-7. Invitar solo 1 cliente acompanado cuando el flujo publico no tenga links rotos.
+1. Public surface cleanup: Features, Pricing, Nav, Footer.
+2. Legal routes publicas y links reales.
+3. Smoke DEV/PROD completo.
+4. Tres planes arquetipo con revision manual.
+5. Invitacion a 1 cliente acompanado.
+6. Solo despues, definir cobro fundador para 1-3 pilotos.
 
 ## Que No Hacer Ahora
 
 - No abrir beta publica.
-- No activar pagos automaticos sin terminos, privacidad y soporte.
-- No prometer prevencion de lesiones ni mejoras porcentuales sin evidencia.
-- No mostrar warnings tecnicos crudos a clientes.
-- No vender "IA ilimitada" como valor principal.
+- No activar pagos automaticos todavia.
+- No aplicar `008b` hasta cerrar el write path remoto.
+- No prometer prevencion de lesiones ni mejoras porcentuales.
+- No vender "IA ilimitada" como valor central.
 - No invitar 10+ personas antes del primer piloto acompanado.
-- No agregar features grandes antes de corregir la superficie cliente.
-- No persistir prompts completos o respuestas largas como telemetria operacional.
+- No agregar features grandes antes de cerrar confianza publica/legal.
 
-## Decision De Producto Sobre Calidad Y Regeneracion
+## Veredicto
 
-Recomendacion actual:
+RallyIQ ya no esta lejos por falta de producto. Esta cerca, pero la siguiente milla es de confianza: que un atleta vea una marca clara, entienda la promesa, tenga links legales, pueda pedir acceso, entre sin friccion, genere un plan revisado y sienta que hay alguien responsable detras.
 
-- La regeneracion debe existir como feature de entrenador/cliente, pero renombrada.
-- La calidad tecnica debe quedar interna.
-- El cliente puede ver estados simples:
-  - `Listo`.
-  - `Revisar con coach`.
-  - `Ajuste recomendado`.
-- El entrenador/admin puede ver:
-  - score.
-  - issues.
-  - repair count.
-  - warnings por semana.
-
-Esto conserva confianza. La app se muestra premium hacia afuera y sigue siendo auditable hacia adentro.
-
-## Proximo Paso Inmediato
-
-Empezar por superficie publica pendiente:
-
-- Features enfocada en squash competitivo.
-- Pricing y footer sin textos legacy.
-- Rutas reales de terminos, privacidad y disclaimer.
-- Smoke de rutas publicas para descartar cache/service worker o pantalla negra.
-
-Despues de eso, hacer el pass de UI interna para que Plan Builder y quality review dejen de sonar a herramienta tecnica y empiecen a sonar a experiencia de atleta/coach.
+Si se ejecuta el sprint de 5 dias, mi recomendacion seria pasar a primer piloto acompanado. Para monetizacion manual, apuntaria a estar listo despues de ese primer piloto si el flujo no muestra fallos de datos, confusion fuerte ni planes con issues criticos.

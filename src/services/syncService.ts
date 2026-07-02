@@ -1165,7 +1165,12 @@ async function upsertRow(
           getSupabase().from(table).upsert(payload as never),
           `${table}.upsert`,
         )
-        if (error) throw error
+        if (error) {
+          // Natural-key (23505) conflicts on day_logs/week_summaries are reconciled by
+          // resolving the remote row and applying LWW; anything else rethrows as today.
+          const handled = await reconcileNaturalKeyConflict(table, payload, userId, error)
+          if (!handled) throw error
+        }
       }
       clearQueuedOpsForEntityOlderThan(userId, table, payload, requestedAt)
       trackSyncEvent({
@@ -1316,6 +1321,146 @@ function stampAthleteIdIfLegacy<T extends { athleteId?: string }>(
     return { row, changed: false }
   }
   return { row: { ...row, athleteId: activeAthleteId } as T, changed: true }
+}
+
+const NATURAL_KEY_DATE_COLUMN: Partial<Record<SupabaseTable, 'date' | 'week_start_date'>> = {
+  day_logs: 'date',
+  week_summaries: 'week_start_date',
+}
+
+type NaturalKeyDateColumn = 'date' | 'week_start_date'
+type NaturalKeyRemoteRow = { id: string; updated_at: unknown }
+
+function isReconcilableNaturalKeyConflict(
+  table: SupabaseTable,
+  payload: Record<string, unknown>,
+  error: unknown,
+): boolean {
+  if ((error as { code?: unknown } | null)?.code !== '23505') return false
+  const dateCol = NATURAL_KEY_DATE_COLUMN[table]
+  if (!dateCol) return false
+  const athleteId = payload.athlete_id
+  if (typeof athleteId !== 'string' || athleteId.length === 0) return false
+  const dateValue = payload[dateCol]
+  return typeof dateValue === 'string' && dateValue.length > 0
+}
+
+async function selectRemoteNaturalKeyRow(
+  table: SupabaseTable,
+  dateCol: NaturalKeyDateColumn,
+  userId: string,
+  athleteId: string,
+  dateValue: unknown,
+  label: string,
+): Promise<NaturalKeyRemoteRow | undefined> {
+  const { data: rows, error } = await withRequestTimeout(
+    getSupabase()
+      .from(table)
+      .select('id, updated_at')
+      .eq('user_id', userId)
+      .eq('athlete_id', athleteId)
+      .eq(dateCol, dateValue)
+      .limit(1),
+    label,
+  )
+  if (error) throw error
+  return (rows as NaturalKeyRemoteRow[] | null)?.[0]
+}
+
+async function retryNaturalKeyUpsertOnce(
+  table: SupabaseTable,
+  payload: Record<string, unknown>,
+): Promise<boolean> {
+  const { error } = await withRequestTimeout(
+    getSupabase().from(table).upsert(payload as never),
+    `${table}.reconcile.retry`,
+  )
+  if (!error) return true
+  if ((error as { code?: unknown }).code === '23505') return false
+  throw error
+}
+
+/**
+ * Reactive natural-key reconciliation for a `23505` on day_logs/week_summaries.
+ * Returns true when the conflict is resolved (in-place update, LWW skip, or a
+ * successful retry). Returns false when not reconcilable (guards), updated_at is
+ * non-finite, or the retry stays 23505 (caller rethrows the original 23505). A
+ * real error (network/auth/RLS) in select/update/non-23505-retry is thrown as
+ * itself, so upsertRow's catch classifies it on the correct (retriable) path.
+ * The local Dexie id is NOT touched; mergeDayLogs/mergeWeekSummaries converge it
+ * on the next pull (see the `merges day logs by effective athlete key during a
+ * full-user pull` test).
+ *
+ * Exported for direct unit testing of its many branches — test-visible/internal,
+ * NOT part of the public sync API. Callers outside syncService should use
+ * pushDayLog/pushWeekSummary.
+ */
+export async function reconcileNaturalKeyConflict(
+  table: SupabaseTable,
+  payload: Record<string, unknown>,
+  userId: string,
+  error: unknown,
+): Promise<boolean> {
+  if (!isReconcilableNaturalKeyConflict(table, payload, error)) return false
+  const dateCol = NATURAL_KEY_DATE_COLUMN[table]!
+  const athleteId = payload.athlete_id as string
+  const dateValue = payload[dateCol]
+
+  // 1. Locate the remote row occupying the natural key (cross-tenant defense: also user_id).
+  const remote = await selectRemoteNaturalKeyRow(
+    table,
+    dateCol,
+    userId,
+    athleteId,
+    dateValue,
+    `${table}.reconcile.select`,
+  )
+
+  // Race: the conflicting row vanished between the failed insert and the select → retry once.
+  if (!remote) {
+    return retryNaturalKeyUpsertOnce(table, payload)
+  }
+
+  // updated_at coercion: never decide LWW on a non-finite timestamp.
+  const localUpdatedAt = Number(payload.updated_at)
+  const remoteUpdatedAt = Number(remote.updated_at)
+  if (!Number.isFinite(localUpdatedAt) || !Number.isFinite(remoteUpdatedAt)) return false
+
+  // 2. LWW: remote newer-or-equal (tie → remote wins) → skip; the next pull converges.
+  if (remoteUpdatedAt >= localUpdatedAt) return true
+
+  // local newer → atomic conditional update guarded by lt(updated_at).
+  // The WHERE also re-pins athlete_id + dateCol so a concurrent scope/date change on that row
+  // (rare race or a faulty update) can't make us overwrite a row that no longer owns this natural key.
+  const body = { ...payload }
+  delete (body as Record<string, unknown>).id
+  const { data: updatedRows, error: updateError } = await withRequestTimeout(
+    getSupabase()
+      .from(table)
+      .update(body as never)
+      .eq('id', remote.id)
+      .eq('user_id', userId)
+      .eq('athlete_id', athleteId)
+      .eq(dateCol, dateValue)
+      .lt('updated_at', localUpdatedAt)
+      .select('id'),
+    `${table}.reconcile.update`,
+  )
+  if (updateError) throw updateError // real error surfaces; 0-rows is NOT an error (data: [], error: null)
+  if (Array.isArray(updatedRows) && updatedRows.length > 0) return true
+
+  // 0 rows can mean a concurrent remote winner, or that the row vanished/changed natural key.
+  // Re-check the natural key before declaring the push handled.
+  const currentRemote = await selectRemoteNaturalKeyRow(
+    table,
+    dateCol,
+    userId,
+    athleteId,
+    dateValue,
+    `${table}.reconcile.recheck`,
+  )
+  if (currentRemote) return true
+  return retryNaturalKeyUpsertOnce(table, payload)
 }
 
 function rowToSession(row: Record<string, unknown>): Session {

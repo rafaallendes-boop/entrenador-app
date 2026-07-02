@@ -743,7 +743,7 @@ export default function PricingPage() {
           </div>
           <div className="footer-bottom">
             <div>© 2026 · RALLYIQ LABS</div>
-            <div className="r"><span>v2.4.0</span><span>BUILT IN BUENOS AIRES</span></div>
+            <div className="r"><span>v1.0</span><span>HECHO EN CHILE</span></div>
           </div>
         </div>
       </footer>

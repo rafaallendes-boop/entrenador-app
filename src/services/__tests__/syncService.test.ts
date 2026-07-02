@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 type SupabaseResult = { data: unknown; error: unknown }
+type SupabaseResultSource = SupabaseResult | SupabaseResult[]
 
 const localStorageState = new Map<string, string>()
 const syncStatusMock = vi.fn()
@@ -61,20 +62,22 @@ let coachProposalRows: unknown[] = []
 let athleteProfileRows: unknown[] = []
 let athleteRows: Array<{ id: string; [key: string]: unknown }> = []
 let planGenerationJobRows: unknown[] = []
-let tableResults = new Map<string, SupabaseResult>()
-let actionResults = new Map<string, SupabaseResult>()
+let tableResults = new Map<string, SupabaseResultSource>()
+let actionResults = new Map<string, SupabaseResultSource>()
+type MockFilter = { op: 'eq' | 'in' | 'or' | 'lt' | 'lte'; column: string; value: unknown }
+
 const upsertCalls: Array<{ table: string; payload: unknown; options?: unknown }> = []
 const insertCalls: Array<{ table: string; payload: unknown }> = []
-const deleteCalls: Array<{ table: string; filters: Array<{ op: 'eq' | 'in' | 'or'; column: string; value: unknown }> }> = []
-const updateCalls: Array<{ table: string; payload: unknown; filters: Array<{ op: 'eq' | 'in' | 'or'; column: string; value: unknown }> }> = []
-const selectCalls: Array<{ table: string; filters: Array<{ op: 'eq' | 'in' | 'or'; column: string; value: unknown }> }> = []
+const deleteCalls: Array<{ table: string; filters: Array<MockFilter> }> = []
+const updateCalls: Array<{ table: string; payload: unknown; filters: Array<MockFilter> }> = []
+const selectCalls: Array<{ table: string; filters: Array<MockFilter> }> = []
 
 function createQueryBuilder(
   table: string,
   action: 'delete' | 'update' | 'select',
   payload?: unknown,
 ) {
-  const filters: Array<{ op: 'eq' | 'in' | 'or'; column: string; value: unknown }> = []
+  const filters: Array<MockFilter> = []
   return {
     eq(column: string, value: unknown) {
       filters.push({ op: 'eq', column, value })
@@ -86,6 +89,20 @@ function createQueryBuilder(
     },
     or(expression: string) {
       filters.push({ op: 'or', column: 'or', value: expression })
+      return this
+    },
+    lte(column: string, value: unknown) {
+      filters.push({ op: 'lte', column, value })
+      return this
+    },
+    lt(column: string, value: unknown) {
+      filters.push({ op: 'lt', column, value })
+      return this
+    },
+    limit() {
+      return this
+    },
+    select() {
       return this
     },
     then(onFulfilled: (value: SupabaseResult) => unknown) {
@@ -101,8 +118,15 @@ function createQueryBuilder(
   }
 }
 
+function takeSupabaseResult(source: SupabaseResultSource | undefined): SupabaseResult | undefined {
+  if (!Array.isArray(source)) return source
+  return source.shift() ?? { data: null, error: null }
+}
+
 function getSupabaseResult(table: string, action: 'delete' | 'update' | 'select' | 'upsert' | 'insert'): SupabaseResult {
-  return actionResults.get(`${action}:${table}`) ?? tableResults.get(table) ?? { data: null, error: null }
+  return takeSupabaseResult(actionResults.get(`${action}:${table}`))
+    ?? takeSupabaseResult(tableResults.get(table))
+    ?? { data: null, error: null }
 }
 
 function createSupabaseFrom() {
@@ -1182,5 +1206,154 @@ describe('syncService', () => {
 
     expect(resolved).toBe(true)
     expect(upsertCalls.some((call) => call.table === 'training_plans')).toBe(true)
+  })
+
+  describe('reconcileNaturalKeyConflict', () => {
+    let reconcile: typeof import('../syncService')['reconcileNaturalKeyConflict']
+    beforeEach(async () => {
+      reconcile = (await import('../syncService')).reconcileNaturalKeyConflict
+    })
+
+    const basePayload = () => ({
+      id: 'local-a', user_id: 'user-1', athlete_id: 'ath_A',
+      date: '2026-06-30', updated_at: 10, data: {},
+    })
+
+    it('non-23505 error is not reconciled', async () => {
+      expect(await reconcile('day_logs', basePayload(), 'user-1', { code: '23503' })).toBe(false)
+    })
+
+    it('non day/week table is not reconciled', async () => {
+      expect(await reconcile('sessions', basePayload(), 'user-1', { code: '23505' })).toBe(false)
+    })
+
+    it('payload without athlete_id is not reconciled', async () => {
+      const noAthlete = { ...basePayload() }
+      delete (noAthlete as Record<string, unknown>).athlete_id
+      expect(await reconcile('day_logs', noAthlete, 'user-1', { code: '23505' })).toBe(false)
+    })
+
+    it('payload without the natural date column is not reconciled', async () => {
+      const noDate = { ...basePayload() }
+      delete (noDate as Record<string, unknown>).date
+      expect(await reconcile('day_logs', noDate, 'user-1', { code: '23505' })).toBe(false)
+    })
+
+    it('local newer → atomic conditional update by remote id (id stripped from body)', async () => {
+      actionResults.set('select:day_logs', { data: [{ id: 'remote-b', updated_at: 5 }], error: null })
+      actionResults.set('update:day_logs', { data: [{ id: 'remote-b' }], error: null })
+      expect(await reconcile('day_logs', basePayload(), 'user-1', { code: '23505' })).toBe(true)
+      const upd = updateCalls.find((c) => c.table === 'day_logs')
+      expect(upd?.filters).toEqual(expect.arrayContaining([
+        { op: 'eq', column: 'id', value: 'remote-b' },
+        { op: 'eq', column: 'user_id', value: 'user-1' },
+        { op: 'eq', column: 'athlete_id', value: 'ath_A' },
+        { op: 'eq', column: 'date', value: '2026-06-30' },
+        { op: 'lt', column: 'updated_at', value: 10 },
+      ]))
+      expect((upd?.payload as Record<string, unknown>).id).toBeUndefined()
+    })
+
+    it('remote newer/equal (tie) → skip, no update issued', async () => {
+      actionResults.set('select:day_logs', { data: [{ id: 'remote-b', updated_at: 10 }], error: null })
+      expect(await reconcile('day_logs', basePayload(), 'user-1', { code: '23505' })).toBe(true)
+      expect(updateCalls.find((c) => c.table === 'day_logs')).toBeUndefined()
+    })
+
+    it('conditional update affects 0 rows and natural key still exists → handled skip', async () => {
+      actionResults.set('select:day_logs', [
+        { data: [{ id: 'remote-b', updated_at: 5 }], error: null },
+        { data: [{ id: 'remote-b', updated_at: 10 }], error: null },
+      ])
+      actionResults.set('update:day_logs', { data: [], error: null })
+      expect(await reconcile('day_logs', basePayload(), 'user-1', { code: '23505' })).toBe(true)
+      expect(upsertCalls.filter((c) => c.table === 'day_logs')).toHaveLength(0)
+    })
+
+    it('conditional update affects 0 rows and natural key disappeared → retry upsert once', async () => {
+      actionResults.set('select:day_logs', [
+        { data: [{ id: 'remote-b', updated_at: 5 }], error: null },
+        { data: [], error: null },
+      ])
+      actionResults.set('update:day_logs', { data: [], error: null })
+      actionResults.set('upsert:day_logs', { data: null, error: null })
+      expect(await reconcile('day_logs', basePayload(), 'user-1', { code: '23505' })).toBe(true)
+      expect(upsertCalls.filter((c) => c.table === 'day_logs')).toHaveLength(1)
+    })
+
+    it('legacy (user_id,date) 23505 same athlete reconciles like post-008b', async () => {
+      actionResults.set('select:day_logs', { data: [{ id: 'remote-b', updated_at: 5 }], error: null })
+      actionResults.set('update:day_logs', { data: [{ id: 'remote-b' }], error: null })
+      expect(await reconcile('day_logs', basePayload(), 'user-1', { code: '23505' })).toBe(true)
+    })
+
+    it('SELECT finds no row → retry upsert once (success → handled)', async () => {
+      actionResults.set('select:day_logs', { data: [], error: null })
+      actionResults.set('upsert:day_logs', { data: null, error: null })
+      expect(await reconcile('day_logs', basePayload(), 'user-1', { code: '23505' })).toBe(true)
+      expect(upsertCalls.filter((c) => c.table === 'day_logs').length).toBe(1)
+    })
+
+    it('SELECT none → retry still 23505 → not handled (no false success)', async () => {
+      actionResults.set('select:day_logs', { data: [], error: null })
+      actionResults.set('upsert:day_logs', { data: null, error: { code: '23505' } })
+      expect(await reconcile('day_logs', basePayload(), 'user-1', { code: '23505' })).toBe(false)
+    })
+
+    it('SELECT fails with a non-23505 error → throws the REAL error (not the original 23505)', async () => {
+      actionResults.set('select:day_logs', { data: null, error: { message: 'network down', status: 503 } })
+      await expect(reconcile('day_logs', basePayload(), 'user-1', { code: '23505' }))
+        .rejects.toMatchObject({ status: 503 })
+    })
+
+    it('retry fails with a non-23505 error → throws the REAL error', async () => {
+      actionResults.set('select:day_logs', { data: [], error: null })
+      actionResults.set('upsert:day_logs', { data: null, error: { message: 'jwt expired', status: 401 } })
+      await expect(reconcile('day_logs', basePayload(), 'user-1', { code: '23505' }))
+        .rejects.toMatchObject({ status: 401 })
+    })
+
+    it('conditional update fails with a non-23505 error → throws the REAL error', async () => {
+      actionResults.set('select:day_logs', { data: [{ id: 'remote-b', updated_at: 5 }], error: null })
+      actionResults.set('update:day_logs', { data: null, error: { message: 'rls denied', status: 403 } })
+      await expect(reconcile('day_logs', basePayload(), 'user-1', { code: '23505' }))
+        .rejects.toMatchObject({ status: 403 })
+    })
+
+    it('non-finite remote updated_at → safe path (not handled)', async () => {
+      actionResults.set('select:day_logs', { data: [{ id: 'remote-b', updated_at: 'nope' }], error: null })
+      expect(await reconcile('day_logs', basePayload(), 'user-1', { code: '23505' })).toBe(false)
+    })
+
+    it('week_summaries uses week_start_date as the natural date column', async () => {
+      const wk = { id: 'local-w', user_id: 'user-1', athlete_id: 'ath_A', week_start_date: '2026-06-29', updated_at: 10, data: {} }
+      actionResults.set('select:week_summaries', { data: [{ id: 'remote-w', updated_at: 5 }], error: null })
+      actionResults.set('update:week_summaries', { data: [{ id: 'remote-w' }], error: null })
+      expect(await reconcile('week_summaries', wk, 'user-1', { code: '23505' })).toBe(true)
+      const sel = selectCalls.find((c) => c.table === 'week_summaries')
+      expect(sel?.filters).toEqual(expect.arrayContaining([{ op: 'eq', column: 'week_start_date', value: '2026-06-29' }]))
+      const upd = updateCalls.find((c) => c.table === 'week_summaries')
+      expect(upd?.filters).toEqual(expect.arrayContaining([
+        { op: 'eq', column: 'id', value: 'remote-w' },
+        { op: 'eq', column: 'athlete_id', value: 'ath_A' },
+        { op: 'eq', column: 'week_start_date', value: '2026-06-29' },
+        { op: 'lt', column: 'updated_at', value: 10 },
+      ]))
+    })
+  })
+
+  describe('pushDayLog reconciles a 23505 instead of throwing', () => {
+    it('does not throw and issues a conditional update when local is newer', async () => {
+      actionResults.set('upsert:day_logs', { data: null, error: { code: '23505' } })
+      actionResults.set('select:day_logs', { data: [{ id: 'remote-b', updated_at: 1 }], error: null })
+      actionResults.set('update:day_logs', { data: [{ id: 'remote-b' }], error: null })
+
+      const syncService = await import('../syncService')
+      await expect(
+        syncService.pushDayLog({ id: 'local-a', date: '2026-06-30', updatedAt: 10, athleteId: 'ath_A' } as never),
+      ).resolves.not.toThrow()
+
+      expect(updateCalls.find((c) => c.table === 'day_logs')).toBeDefined()
+    })
   })
 })
