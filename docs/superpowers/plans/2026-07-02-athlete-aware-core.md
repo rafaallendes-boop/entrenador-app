@@ -31,7 +31,7 @@
 ```
 src/services/athlete/
   activeAthlete.ts                        [MODIFY: + selfAthleteId holder + isSelfScopeActive]
-  activeScopeFilter.ts                    [NEW: isRowInActiveScope + filterRowsToActiveScope]
+  activeScopeFilter.ts                    [NEW: isRowInActiveScope + filterRowsToActiveScope + withActiveAthleteStamp]
   athleteSelection.ts                     [NEW: persistencia de selección activa]
   hydrateActiveAthlete.ts                 [MODIFY: selection-aware + setSelfAthleteId]
   __tests__/activeAthlete.test.ts         [EXTEND]
@@ -52,11 +52,13 @@ src/services/
   planning/applyCreateWeek.ts             [MODIFY: filter scope]
   loadAnalytics.ts                        [MODIFY: filter scope]
   progressionInsights.ts                  [MODIFY: filter scope]
-  __tests__/activeScopeReads.test.ts      [NEW: servicios de contexto scoped]
+  planning/__tests__/applyCreateWeekScope.test.ts  [NEW: test destructivo real]
+  __tests__/commitPlan.test.ts            [EXTEND: rollback con fila fuera de scope]
 
 src/store/
-  useCoachActionsStore.ts                 [MODIFY: proposals + historial scoped]
-  useChatStore.ts                         [MODIFY: re-resolve session + fallback scoped]
+  useTrainingStore.ts                     [MODIFY: addSession estampa athleteId]
+  useCoachActionsStore.ts                 [MODIFY: proposals + historial scoped + addProposal estampa]
+  useChatStore.ts                         [MODIFY: re-resolve session + fallback scoped + repair scoped + mensajes estampan]
 
 src/utils/
   chatSession.ts                          [MODIFY: storage key por atleta]
@@ -416,13 +418,13 @@ export const getHistoricalSessionsWindow = async (
 
 export const getMatchSessions = async (): Promise<Session[]> => {
   const sessions = await db.sessions
-    .filter((s) => isPracticeSquashMatch(s) || isPracticeSquashMatch(s) === false && isCompetitionSquashMatch(s))
+    .filter((s) => isPracticeSquashMatch(s) || isCompetitionSquashMatch(s))
     .toArray()
   return filterRowsToActiveScope(sessions).sort((a, b) => b.date.localeCompare(a.date))
 }
 ```
 
-> Nota: en `getMatchSessions` mantener el predicado original `isPracticeSquashMatch(s) || isCompetitionSquashMatch(s)` — el cambio es solo aplicar `filterRowsToActiveScope` antes del sort.
+> El único cambio respecto del original es aplicar `filterRowsToActiveScope` antes del sort; el predicado de match no se toca.
 
 (2) Adopción legacy self-only — en `getDayLog` (rama de miss del compound):
 
@@ -568,50 +570,87 @@ Expected: verdes.
 - Modify: `src/services/planBuilder/recentContext.ts:233,241`
 - Modify: `src/services/loadAnalytics.ts:623`
 - Modify: `src/services/progressionInsights.ts:385`
-- Test: `src/services/__tests__/activeScopeReads.test.ts` (create)
+- Test: `src/services/planning/__tests__/applyCreateWeekScope.test.ts` (create)
+- Test: `src/services/__tests__/commitPlan.test.ts` (extend: rollback con fila fuera de scope)
 
 **Interfaces:**
 - Consumes: `filterRowsToActiveScope` (Task 2).
 - Behavior: toda lectura por rango/fecha/global de `db.sessions`/`db.weekSummaries` en estos servicios filtra por scope activo ANTES de usar/borrar. Crítico en `commitPlan` y `applyCreateWeek`, que **borran** sesiones derivadas de esas lecturas — sin filtro, un plan del gestionado podría borrar sesiones del self en la misma fecha.
 
-- [ ] **Step 1: Write the failing test (Dexie real, los dos casos destructivos)**
+- [ ] **Step 1: Write the failing DESTRUCTIVE integration test for `applyCreateWeek`**
 
-Create `src/services/__tests__/activeScopeReads.test.ts`:
+Create `src/services/planning/__tests__/applyCreateWeekScope.test.ts`. `applyCreateWeek` es exportado (`applyCreateWeek.ts:27`) y recibe `{ sessions, weekObjectives?, athleteProfile, store, replacementCutoffAt?, replacementRange? }`. Internamente llama `syncService.pullSessionsForDateRange`, `syncService.deleteSession`, `syncService.pushSession` → mockear el módulo entero; Dexie real (fake-indexeddb):
 
 ```typescript
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { db } from '../../db/db'
-import { setActiveAthleteId, setSelfAthleteId } from '../athlete/activeAthlete'
-import { filterRowsToActiveScope } from '../athlete/activeScopeFilter'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 
-// Los servicios grandes (commitPlan/applyCreateWeek) se testean vía el filtro aplicado
-// a sus lecturas: el fixture reproduce la lectura y verifica que el set filtrado
-// excluye a otros atletas. El smoke destructivo real (no borrar sesiones ajenas)
-// se cubre con el test de integración de applyCreateWeek de abajo.
+vi.mock('../../syncService', () => ({
+  pullSessionsForDateRange: vi.fn(async () => {}),
+  deleteSession: vi.fn(async () => {}),
+  pushSession: vi.fn(async () => {}),
+  pushWeekSummary: vi.fn(async () => {}),
+}))
 
-describe('applyCreateWeek no toca sesiones de otro atleta en la misma semana', () => {
-  beforeEach(async () => { db.close(); await db.delete(); await db.open() })
+import { db } from '../../../db/db'
+import { applyCreateWeek } from '../applyCreateWeek'
+import { setActiveAthleteId, setSelfAthleteId } from '../../athlete/activeAthlete'
+import * as syncService from '../../syncService'
+
+const storeAdapter = { loadWeek: vi.fn(async () => {}) } as never
+
+describe('applyCreateWeek no borra planned sessions de otro atleta', () => {
+  beforeEach(async () => { db.close(); await db.delete(); await db.open(); vi.clearAllMocks() })
   afterEach(() => { setActiveAthleteId(null); setSelfAthleteId(null); db.close() })
 
-  it('las lecturas por rango de fecha excluyen filas fuera del scope activo', async () => {
+  it('gestionado activo reemplaza SUS planned, no las del self en la misma semana', async () => {
     await db.sessions.bulkPut([
-      { id: 'self-plan', athleteId: 'ath_self', date: '2026-07-06', type: 'squash', status: 'planned', durationMin: 60 },
-      { id: 'managed-plan', athleteId: 'ath_m_1', date: '2026-07-06', type: 'squash', status: 'planned', durationMin: 60 },
+      { id: 'self-planned', athleteId: 'ath_self', date: '2026-07-06', type: 'squash', status: 'planned', durationMin: 60, updatedAt: 1 },
+      { id: 'managed-planned', athleteId: 'ath_m_1', date: '2026-07-06', type: 'squash', status: 'planned', durationMin: 60, updatedAt: 1 },
     ] as never)
     setSelfAthleteId('ath_self')
     setActiveAthleteId('ath_m_1')
-    const weekRows = await db.sessions.where('date').between('2026-07-06', '2026-07-12', true, true).toArray()
-    expect(filterRowsToActiveScope(weekRows).map((r) => r.id)).toEqual(['managed-plan'])
+
+    await applyCreateWeek({
+      sessions: [{ date: '2026-07-06', type: 'squash', durationMin: 45, timeBlock: 'AM' }] as never,
+      athleteProfile: null,
+      store: storeAdapter,
+    })
+
+    expect(await db.sessions.get('self-planned')).toBeDefined()          // intocada
+    expect(await db.sessions.get('managed-planned')).toBeUndefined()     // reemplazada
+    expect(vi.mocked(syncService.deleteSession)).not.toHaveBeenCalledWith('self-planned')
   })
 })
 ```
 
-> Este test valida el helper sobre el shape real de la lectura. El paso clave de la task es el **wiring** (Step 3) + la verificación de que la suite existente de `commitPlan`/`applyCreateWeek`/`planBuilder` sigue verde (esas suites corren con active/self nulos → filtro no-op).
+> Ajustar el shape de `sessions` (CreateWeekSessionInput = `NonNullable<CoachAction['sessions']>`) y el `store` adapter a los tipos reales (`applyCreateWeek.ts:12-18`); castear con `as never` lo que falte. Lo esencial: la planned del self **sobrevive** y no se llama `deleteSession('self-planned')`.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [ ] **Step 1b: Write the failing rollback test for `commitPlan`**
 
-Run: `npx vitest run src/services/__tests__/activeScopeReads.test.ts`
-Expected: PASS del helper (es puro) — este archivo es la red del wiring. El "fail" de esta task se materializa en Step 3→4: aplicar el wiring y verificar suite completa.
+Extender `src/services/__tests__/commitPlan.test.ts` (ya existe con el arnés de mocks de commitPlan). En el test de rollback existente (el que fuerza un fallo a mitad de commit y verifica `restoreWeekCommitSnapshots`), sembrar ANTES una sesión fuera de scope en la misma semana del plan y afirmar al final:
+
+```typescript
+    // Sembrado adicional al inicio del test de rollback, con gestionado activo:
+    // setSelfAthleteId('ath_self'); setActiveAthleteId('ath_m_1')
+    await db.sessions.put({
+      id: 'self-untouched', athleteId: 'ath_self', date: weekStartDate,
+      type: 'squash', status: 'completed', durationMin: 60, updatedAt: 1,
+    } as never)
+
+    // ...commit que falla + rollback existente...
+
+    // La sesión del self ni se borra (restore no la ve como "extra") ni se restaura pisada:
+    const survivor = await db.sessions.get('self-untouched')
+    expect(survivor?.status).toBe('completed')
+    expect(survivor?.athleteId).toBe('ath_self')
+```
+
+> Si el arnés de `commitPlan.test.ts` usa un fake de `db` en vez de Dexie real, aplicar el mismo sembrado/aserciones sobre ese fake. Si no existe un test de rollback explícito, crear uno mínimo que llame al camino de fallo (una semana inválida tras una válida) — el objetivo es cubrir `captureWeekCommitSnapshot`/`restoreWeekCommitSnapshots` (`commitPlan.ts:32,51`) con una fila fuera de scope presente.
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run: `npx vitest run src/services/planning/__tests__/applyCreateWeekScope.test.ts src/services/__tests__/commitPlan.test.ts`
+Expected: FAIL — hoy `replacePlannedSessionsForCreateWeek` borra `self-planned` y el restore de commitPlan trata la fila ajena como "extra" a eliminar.
 
 - [ ] **Step 3: Wire `filterRowsToActiveScope` en cada lectura**
 
@@ -641,10 +680,10 @@ Import en cada archivo: `import { filterRowsToActiveScope } from '../athlete/act
 
 En cada sitio: solo se envuelve el **resultado de la lectura**; la lógica posterior (incluidos deletes por id derivados) no cambia.
 
-- [ ] **Step 4: Run full suite + build**
+- [ ] **Step 4: Run the new tests + full suite + build**
 
-Run: `npm test && npm run build`
-Expected: verdes — todas las suites existentes de plan builder / analytics corren sin atleta activo (filtro no-op).
+Run: `npx vitest run src/services/planning/__tests__/applyCreateWeekScope.test.ts src/services/__tests__/commitPlan.test.ts && npm test && npm run build`
+Expected: verdes — los dos tests destructivos pasan tras el wiring; las suites existentes de plan builder / analytics corren sin atleta activo (filtro no-op).
 
 - [ ] **Step 5: Commit** (no-op)
 
@@ -705,12 +744,157 @@ En `src/store/useChatStore.ts` (~`:49-60`), el fallback local-only adopta el úl
 
 Import: `import { isRowInActiveScope } from '../services/athlete/activeScopeFilter'`.
 
-- [ ] **Step 4: Run full suite + build**
+- [ ] **Step 4: Scope `repairOrphanProposalMessagesUnlocked`**
+
+En `src/store/useChatStore.ts` (~`:414`), el repair de propuestas huérfanas lee TODAS las
+propuestas dentro de la transacción — con chat por atleta, podría reenganchar una propuesta
+de otro atleta al hilo actual si coincide por timing. Filtrar al scope activo:
+
+```typescript
+  const repairedMessages = await db.transaction('rw', db.chatMessages, db.coachProposals, async () => {
+    const proposals = filterRowsToActiveScope(await db.coachProposals.orderBy('createdAt').toArray())
+    if (proposals.length === 0 || messages.length === 0) return messages
+    // ...resto sin cambios...
+```
+
+Import adicional en el store: `filterRowsToActiveScope` (mismo módulo que `isRowInActiveScope`).
+
+- [ ] **Step 5: Run full suite + build**
 
 Run: `npm test && npm run build`
 Expected: verdes (con active/self nulos todo es no-op; los tests de stores existentes no cambian de resultado).
 
-- [ ] **Step 5: Commit** (no-op)
+- [ ] **Step 6: Commit** (no-op)
+
+---
+
+## Task 6b: Estampar `athleteId` en escrituras locales de stores
+
+**Rationale (hallazgo del review):** el plan scopea lecturas, pero `useTrainingStore.addSession`, los mensajes de `useChatStore` y `useCoachActionsStore.addProposal` crean filas locales **sin** `athleteId`. Con un gestionado activo, esa fila recién creada es legacy → la política self-only (Tasks 2–3) la haría **desaparecer de la vista del gestionado** hasta que el sync la converja. Estampar al crear cierra el loop local-first.
+
+**Files:**
+- Modify: `src/services/athlete/activeScopeFilter.ts` (+ helper de estampado)
+- Modify: `src/store/useTrainingStore.ts:124` (`addSession`)
+- Modify: `src/store/useChatStore.ts` (creación de `userMsg` ~`:80`, `coachMsg` ~`:172`, `coachErrorMsg` ~`:229`)
+- Modify: `src/store/useCoachActionsStore.ts:89` (`addProposal`)
+- Test: `src/services/athlete/__tests__/activeScopeFilter.test.ts` (extend), `src/services/__tests__/activeScopeReads.test.ts` no aplica — usar `src/store/__tests__/` si existe test del store; si no, el test Dexie-real de abajo
+
+**Interfaces:**
+- Consumes: `getActiveAthleteId`, `isScopedAthleteId`.
+- Produces: `withActiveAthleteStamp<T extends { athleteId?: string }>(row: T): T` en `activeScopeFilter.ts` — estampa el atleta activo al crear; **preserva** un `athleteId` ya scoped (updates/rollbacks/restores nunca se re-estampan); sin atleta activo devuelve la fila intacta (legacy, comportamiento actual).
+
+- [ ] **Step 1: Write the failing helper test**
+
+Añadir a `src/services/athlete/__tests__/activeScopeFilter.test.ts`:
+
+```typescript
+import { withActiveAthleteStamp } from '../activeScopeFilter'
+
+describe('withActiveAthleteStamp', () => {
+  afterEach(() => { setActiveAthleteId(null); setSelfAthleteId(null) })
+
+  it('estampa el atleta activo en filas nuevas sin scope', () => {
+    setActiveAthleteId('ath_m_1')
+    expect(withActiveAthleteStamp({ id: 'x' }).athleteId).toBe('ath_m_1')
+    expect(withActiveAthleteStamp({ id: 'x', athleteId: 'default' }).athleteId).toBe('ath_m_1')
+  })
+
+  it('preserva un athleteId ya scoped (updates/rollbacks intactos)', () => {
+    setActiveAthleteId('ath_m_1')
+    expect(withActiveAthleteStamp({ id: 'x', athleteId: 'ath_self' }).athleteId).toBe('ath_self')
+  })
+
+  it('sin atleta activo devuelve la fila intacta (no escribe athleteId)', () => {
+    const row = withActiveAthleteStamp({ id: 'x' })
+    expect('athleteId' in row && row.athleteId !== undefined).toBe(false)
+  })
+})
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `npx vitest run src/services/athlete/__tests__/activeScopeFilter.test.ts`
+Expected: FAIL — `withActiveAthleteStamp` no existe.
+
+- [ ] **Step 3: Implement the helper**
+
+En `src/services/athlete/activeScopeFilter.ts`:
+
+```typescript
+/**
+ * Stamp the ACTIVE athlete on a locally-created row. Preserves an existing
+ * scoped athleteId (an update/rollback/restore is never re-stamped); with no
+ * active athlete the row stays legacy (today's behavior). Local-first
+ * counterpart of the read policy: what you create while training athlete X
+ * must remain visible under athlete X's scope immediately.
+ */
+export function withActiveAthleteStamp<T extends { athleteId?: string }>(row: T): T {
+  if (isScopedAthleteId(row.athleteId)) return row
+  const active = getActiveAthleteId()
+  return active ? { ...row, athleteId: active } : row
+}
+```
+
+- [ ] **Step 4: Wire into the three stores**
+
+- `src/store/useTrainingStore.ts` (`addSession`, ~`:124`):
+
+```typescript
+    const session: Session = withActiveAthleteStamp({
+      ...partial, weekStartDate, id: uuid(), createdAt: now, updatedAt: now,
+    })
+```
+
+  Verificar además que ningún `db.sessions.update(id, patch)` del store meta `athleteId` en el patch (hoy no lo hace — mantenerlo así; los updates preservan el valor existente por ser parciales).
+
+- `src/store/useChatStore.ts`: envolver los TRES object literals de mensajes antes de su `db.chatMessages.add(...)` — `userMsg` (~`:80`), `coachMsg` (~`:172`) y `coachErrorMsg` (~`:229`):
+
+```typescript
+    const userMsg: ChatMessage = withActiveAthleteStamp({
+      id: uuid(), role: 'user', content, timestamp: Date.now(),
+      chatSessionId: sessionId, contextMeta: buildChatContextMetadata(context),
+    })
+```
+
+  (mismo patrón para `coachMsg` y `coachErrorMsg`; el objeto que va al estado y el que se persiste deben ser el MISMO objeto estampado).
+
+- `src/store/useCoachActionsStore.ts` (`addProposal`, ~`:89`): estampar la propuesta normalizada antes de persistir/estado:
+
+```typescript
+    const proposal = withActiveAthleteStamp(normalized.proposal)
+    await db.coachProposals.put(proposal)
+```
+
+  (ajustar al nombre real de la variable que hoy se persiste en `:89`; el estado del store y el push deben usar la versión estampada).
+
+Import en los tres stores: `import { withActiveAthleteStamp } from '../services/athlete/activeScopeFilter'`.
+
+- [ ] **Step 5: Write the failing round-trip test (Dexie real)**
+
+Añadir a `src/db/__tests__/queriesActiveScope.test.ts` (mismo arnés de aislamiento):
+
+```typescript
+import { withActiveAthleteStamp } from '../../services/athlete/activeScopeFilter'
+
+it('una sesión creada con gestionado activo queda visible en su scope de inmediato', async () => {
+  setSelfAthleteId('ath_self'); setActiveAthleteId('ath_m_1')
+  const session = withActiveAthleteStamp({
+    id: 's-new', date: '2026-07-06', type: 'squash', status: 'planned', durationMin: 45,
+    weekStartDate: '2026-07-06', createdAt: 1, updatedAt: 1,
+  }) as never
+  await db.sessions.add(session)
+  expect((await getSessionsForWeek('2026-07-06')).map((s) => s.id)).toEqual(['s-new'])
+})
+```
+
+> Este round-trip valida el contrato helper→lectura. Si existe suite de `useTrainingStore`/`useChatStore` en `src/store/__tests__/`, agregar ahí la aserción store-level equivalente (`addSession` con gestionado activo produce `athleteId: 'ath_m_1'`); si no existe, el wiring queda cubierto por este round-trip + la suite completa.
+
+- [ ] **Step 6: Run tests + full suite + build**
+
+Run: `npx vitest run src/services/athlete/__tests__/activeScopeFilter.test.ts src/db/__tests__/queriesActiveScope.test.ts && npm test && npm run build`
+Expected: verdes (sin atleta activo el estampado es no-op → cero regresión single-athlete).
+
+- [ ] **Step 7: Commit** (no-op)
 
 ---
 
@@ -1020,7 +1204,8 @@ Con `npm run dev`: login normal → dashboard/semana/chat/planes se ven idéntic
 
 ## Self-Review Notes
 
-- **Spec coverage (Parte 1):** política legacy self-only (§3.6) → Tasks 1–4 (holder, helper, queries, sync anclado a self); scoping sessions/summaries/proposals/contexto IA (§3.6) → Tasks 3, 5, 6; chat athlete-scoped por key, decisión del owner (§3.6) → Task 7; selección activa persistida + hidratación selection-aware + no-clobber de `pullAthletes`/`ensureRemoteAthlete` (§3.3) → Task 8 (sin tocar los callers: ambos llaman `hydrateActiveAthlete`). Fuera de esta parte (Parte 2, plan siguiente): gating/allowlist §3.1, perfiles multi-atleta + 009 §3.2, API gestionados + ensure por athleteId §3.4, switcher/roster §3.5/§3.7.
-- **Riesgo destructivo cubierto:** `commitPlan`/`applyCreateWeek` leen por fecha y borran — Task 5 filtra antes de decidir deletes.
-- **Type consistency:** `getSelfAthleteId`/`setSelfAthleteId`/`isSelfScopeActive` (Task 1) usados idéntico en Tasks 2–4, 7, 8; `isRowInActiveScope`/`filterRowsToActiveScope` (Task 2) en Tasks 3, 5, 6; `getPersistedAthleteSelection`/`persistAthleteSelection` (Task 8) reservados para `switchActiveAthlete` en Parte 2.
-- **Regresión single-athlete:** cada rama nueva colapsa al comportamiento actual cuando `active === self` o ambos null; Task 4 Step 4 alinea los setups de tests existentes al escenario real (self seteado).
+- **Spec coverage (Parte 1):** política legacy self-only (§3.6) → Tasks 1–4 (holder, helper, queries, sync anclado a self); scoping sessions/summaries/proposals/contexto IA (§3.6) → Tasks 3, 5, 6; escrituras locales estampadas (cierre local-first de la política; hallazgo del review) → Task 6b; chat athlete-scoped por key, decisión del owner (§3.6) → Task 7; selección activa persistida + hidratación selection-aware + no-clobber de `pullAthletes`/`ensureRemoteAthlete` (§3.3) → Task 8 (sin tocar los callers: ambos llaman `hydrateActiveAthlete`). Fuera de esta parte (Parte 2, plan siguiente): gating/allowlist §3.1, perfiles multi-atleta + 009 §3.2, API gestionados + ensure por athleteId §3.4, switcher/roster §3.5/§3.7.
+- **Riesgo destructivo cubierto con tests reales (review):** Task 5 tiene integración destructiva de `applyCreateWeek` (planned del self sobrevive un reemplazo con gestionado activo) y rollback de `commitPlan` (fila fuera de scope ni se borra ni se pisa), no solo el helper puro.
+- **Repair de chat scoped (review):** `repairOrphanProposalMessagesUnlocked` filtra proposals al scope activo (Task 6 Step 4) para no reenganchar propuestas de otro atleta al hilo actual.
+- **Type consistency:** `getSelfAthleteId`/`setSelfAthleteId`/`isSelfScopeActive` (Task 1) usados idéntico en Tasks 2–4, 7, 8; `isRowInActiveScope`/`filterRowsToActiveScope`/`withActiveAthleteStamp` (Tasks 2/6b) en Tasks 3, 5, 6, 6b; `getPersistedAthleteSelection`/`persistAthleteSelection` (Task 8) reservados para `switchActiveAthlete` en Parte 2.
+- **Regresión single-athlete:** cada rama nueva colapsa al comportamiento actual cuando `active === self` o ambos null (incluido el estampado de Task 6b, no-op sin atleta activo); Task 4 Step 4 alinea los setups de tests existentes al escenario real (self seteado).

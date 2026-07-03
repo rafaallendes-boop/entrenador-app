@@ -26,7 +26,6 @@ import {
   getAthleteSportsSummary,
   getPrimarySportNormalized,
   getSecondarySportsNormalized,
-  getSportPrioritySummary,
 } from '../../utils/athlete'
 import { getAllowedPlanningSports, getPlanningPrimarySport } from '../planningConstraints'
 import { classifyDayLoad, getDayNutrition, getLoadTypeLabel } from '../nutritionEngine'
@@ -112,6 +111,7 @@ const DEFAULT_SUPPORTED_SPORTS: SupportedSport[] = ['squash', 'running', 'streng
 const PROMPT_TARGET_TOKENS: Record<CoachPromptRequestType, number> = {
   chat_general: 3500,
   adjust_session: 6000,
+  weekly_summary: 4000,
 }
 
 interface PromptSectionSpec {
@@ -138,13 +138,9 @@ export function buildCoachPrompt(
   const requestClass = options?.requestClass ?? 'chat_action'
   const requestType = resolvePromptRequestType(requestClass)
 
-  if (!requestType) {
-    return {
-      systemPrompt: buildWeeklySummarySystemPrompt(context),
-    }
-  }
-
   switch (requestType) {
+    case 'weekly_summary':
+      return buildWeeklySummaryPromptResult(context, options?.userMessage)
     case 'chat_general':
       return buildLitePromptResult(context, options?.userMessage)
     case 'adjust_session':
@@ -272,25 +268,31 @@ function buildAdjustActionPromptResult(context: ChatContext, userMessage?: strin
 
 // ─── Weekly Summary System Prompt ───────────────────────────────────────────
 
-function buildWeeklySummarySystemPrompt(context: ChatContext): string {
+function buildWeeklySummaryPromptResult(context: ChatContext, userMessage?: string): CoachPromptBuildResult {
   const plannedSessions = getPlannedSessions(context)
+  const requestType: CoachPromptRequestType = 'weekly_summary'
+  const relevantSports = detectRelevantSports(context, userMessage, requestType)
+  const slimProfile = buildSlimAthleteProfileSection(context, relevantSports)
 
-  const sections: string[] = [
-    buildPersonaSection(context, { allowActions: false }),
-    buildAthleteProfileSection(context),
-    buildMacroPlanSection(context),
-    buildCoachMemorySection(context),
-    buildFatigueSection(context),
-    buildWeekSection(context),
-    buildSessionsSection(plannedSessions, { allowActions: false }),
-    buildWeekDayLogsSection(context),
-    buildTodaySection(context),
-    buildLoadAnalyticsSection(context),
-    buildSessionFeedbackSection(context.historicalSessions),
-    buildWeeklySummaryResponseInstructionsSection(),
+  const sections: PromptSectionSpec[] = [
+    { key: 'persona', content: buildLitePersonaSection(context), required: true },
+    { key: 'athlete_profile_slim', content: slimProfile.content, required: true },
+    {
+      key: 'macro_plan',
+      content: shouldIncludeMacroPlanSection(context, requestType) ? buildMacroPlanSection(context, relevantSports) : '',
+    },
+    { key: 'coach_memory', content: buildCoachMemorySection(context) },
+    { key: 'fatigue', content: buildFatigueSection(context, { compact: true }), required: true },
+    { key: 'week', content: buildWeekSection(context), required: true },
+    { key: 'sessions', content: buildSessionsSection(plannedSessions, { allowActions: false }), required: true },
+    { key: 'week_logs', content: buildWeekDayLogsSection(context) },
+    { key: 'today', content: buildTodaySection(context) },
+    { key: 'load_analytics', content: buildLoadAnalyticsSection(context, relevantSports) },
+    { key: 'session_feedback', content: buildSessionFeedbackSection(context.historicalSessions, relevantSports) },
+    { key: 'response_instructions', content: buildWeeklySummaryResponseInstructionsSection(), required: true },
   ]
 
-  return sections.filter(Boolean).join('\n\n')
+  return finalizePromptBuildResult(requestType, context, relevantSports, slimProfile, sections)
 }
 
 // ─── Sport Detection for Nivel 2 ────────────────────────────────────────────
@@ -298,8 +300,8 @@ function buildWeeklySummarySystemPrompt(context: ChatContext): string {
 
 function resolvePromptRequestType(
   requestClass: AIRequestClass,
-): CoachPromptRequestType | undefined {
-  if (requestClass === 'weekly_summary') return undefined
+): CoachPromptRequestType {
+  if (requestClass === 'weekly_summary') return 'weekly_summary'
   if (requestClass === 'chat_general') return 'chat_general'
   return 'adjust_session'
 }
@@ -497,8 +499,13 @@ function detectRelevantSports(
     ? findAffectedSession(context, userMessage)?.type as SupportedSport | undefined
     : undefined
 
-  if (requestType === 'chat_general') {
+  if (requestType === 'chat_general' || requestType === 'weekly_summary') {
     mentionedSports.forEach((sport) => appendSportIfAllowed(sport, selected, enabledSports))
+    if (requestType === 'weekly_summary') {
+      for (const session of getAllContextSessions(context)) {
+        appendSportIfAllowed(session.type as SupportedSport, selected, enabledSports)
+      }
+    }
     appendSportIfAllowed(primarySport, selected, enabledSports)
     if (selected.size === 0) appendSportIfAllowed(enabledSports[0], selected, enabledSports)
     return selected
@@ -1053,90 +1060,6 @@ function buildWeekSection(context: ChatContext): string {
     lines.push(`Objetivos semana: ${s.objectives.join(' / ')}`)
   }
 
-  return lines.join('\n')
-}
-
-function buildAthleteProfileSection(context: ChatContext): string {
-  const p = context.athleteProfile
-  if (!p) return ''
-  const primarySport = getPrimarySportNormalized(p)
-  const secondarySports = getSecondarySportsNormalized(p)
-  const sportPrioritySummary = getSportPrioritySummary(p)
-
-  const lines: string[] = ['═══ PERFIL DEL ATLETA ═══']
-
-  const basicParts: string[] = []
-  if (p.age) basicParts.push(`${p.age} años`)
-  if (p.weightKg) basicParts.push(`${p.weightKg} kg`)
-  if (basicParts.length > 0) lines.push(`Atleta: ${basicParts.join(' · ')}`)
-
-  if (primarySport) lines.push(`Deporte principal: ${primarySport}`)
-  if (secondarySports.length) lines.push(`Deportes secundarios: ${secondarySports.join(', ')}`)
-  if (sportPrioritySummary) lines.push(`Prioridad deportiva: ${sportPrioritySummary}`)
-  if (p.mainGoal) lines.push(`Objetivo principal: ${sanitizeUserText(p.mainGoal, 240)}`)
-  if (p.secondaryGoal) lines.push(`Objetivo secundario: ${sanitizeUserText(p.secondaryGoal, 240)}`)
-
-  const r = p.runningProfile
-  if (r) {
-    const runLines: string[] = []
-    if (r.fiveKTime) runLines.push(`5K: ${r.fiveKTime}`)
-    if (r.tenKTime) runLines.push(`10K: ${r.tenKTime}`)
-    if (r.halfMarathonTime) runLines.push(`Media maratón: ${r.halfMarathonTime}`)
-    if (r.z2PaceMin || r.z2PaceMax) {
-      const z2 = [r.z2PaceMin, r.z2PaceMax].filter(Boolean).join('–')
-      runLines.push(`Ritmo Z2: ${z2} /km`)
-    }
-    if (r.easyPaceMin || r.easyPaceMax) {
-      const easy = [r.easyPaceMin, r.easyPaceMax].filter(Boolean).join('–')
-      runLines.push(`Ritmo easy: ${easy} /km`)
-    }
-    if (r.thresholdPace) runLines.push(`Umbral: ${r.thresholdPace} /km`)
-    if (r.longRunPace) runLines.push(`Long run: ${r.longRunPace} /km`)
-    if (r.notes) runLines.push(`Nota running: ${sanitizeUserText(r.notes, 500)}`)
-    if (runLines.length > 0) lines.push(`Running — ${runLines.join(' · ')}`)
-  }
-
-  const s = p.strengthProfile
-  if (s) {
-    const strLines: string[] = []
-    if (s.benchPress1RM) strLines.push(`press banca ${s.benchPress1RM}kg`)
-    if (s.squat1RM) strLines.push(`sentadilla ${s.squat1RM}kg`)
-    if (s.deadlift1RM) strLines.push(`peso muerto ${s.deadlift1RM}kg`)
-    if (s.overheadPress1RM) strLines.push(`press hombro ${s.overheadPress1RM}kg`)
-    if (s.pullUpMaxReps) strLines.push(`dominadas ${s.pullUpMaxReps} reps`)
-    if (s.notes) strLines.push(`nota: ${sanitizeUserText(s.notes, 500)}`)
-    if (strLines.length > 0) lines.push(`Fuerza (1RM ref) — ${strLines.join(' · ')}`)
-  }
-
-  const rec = p.recoveryProfile
-  if (rec) {
-    if (rec.currentInjuries?.trim()) lines.push(`Lesión/molestia actual: ${sanitizeUserText(rec.currentInjuries, 500)}`)
-    if (rec.restrictions?.trim()) lines.push(`Restricciones: ${sanitizeUserText(rec.restrictions, 500)}`)
-    if (rec.previousInjuries?.trim()) lines.push(`Lesiones previas: ${sanitizeUserText(rec.previousInjuries, 500)}`)
-  }
-
-  const sch = p.scheduleProfile
-  if (sch) {
-    if (sch.availableDays?.length) lines.push(`Disponibilidad: ${sch.availableDays.join(', ')}`)
-    if (sch.doubleSessionDays?.length) lines.push(`Doble sesión posible: ${sch.doubleSessionDays.join(', ')}`)
-    if (sch.constraints?.trim()) lines.push(`Restricción horaria: ${sanitizeUserText(sch.constraints, 500)}`)
-  }
-
-  if (s) {
-    const pctLines: string[] = []
-    if (s.benchPress1RM) pctLines.push(`press banca: ~${Math.round(s.benchPress1RM * 0.75)}kg al 75%, ~${Math.round(s.benchPress1RM * 0.85)}kg al 85%`)
-    if (s.squat1RM) pctLines.push(`sentadilla: ~${Math.round(s.squat1RM * 0.75)}kg al 75%, ~${Math.round(s.squat1RM * 0.85)}kg al 85%`)
-    if (s.deadlift1RM) pctLines.push(`peso muerto: ~${Math.round(s.deadlift1RM * 0.75)}kg al 75%, ~${Math.round(s.deadlift1RM * 0.85)}kg al 85%`)
-    if (s.overheadPress1RM) pctLines.push(`press hombro: ~${Math.round(s.overheadPress1RM * 0.75)}kg al 75%, ~${Math.round(s.overheadPress1RM * 0.85)}kg al 85%`)
-    if (pctLines.length > 0) {
-      lines.push(`Cargas de referencia (usa estos valores en exercises.weight, ajusta según objetivo del día):`)
-      pctLines.forEach(l => lines.push(`  · ${l}`))
-    }
-  }
-
-  if (lines.length === 1) return ''
-  lines.push('')
-  lines.push('Usa este perfil para proponer ritmos realistas, cargas de fuerza por % del 1RM y priorizar el deporte principal al armar la semana.')
   return lines.join('\n')
 }
 

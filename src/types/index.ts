@@ -17,7 +17,7 @@ export type AITechnicalSurface =
   | 'plan_builder'
   | 'import'
 
-export type CoachPromptRequestType = 'chat_general' | 'adjust_session'
+export type CoachPromptRequestType = 'chat_general' | 'adjust_session' | 'weekly_summary'
 
 export interface PromptTrace {
   promptRequestType: CoachPromptRequestType
