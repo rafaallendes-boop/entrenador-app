@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Download, Plus, FileUp, Sparkles, MessageSquareText } from 'lucide-react'
+import { AlertCircle, Download, Plus, FileUp, Sparkles, MessageSquareText } from 'lucide-react'
 import { useTrainingStore } from '../store/useTrainingStore'
 import { useCoachActionsStore } from '../store/useCoachActionsStore'
 import { useCoachMemoryStore } from '../store/useCoachMemoryStore'
@@ -38,6 +38,7 @@ export default function WeeklyView() {
 
   const [showAddModal, setShowAddModal] = useState(false)
   const [isGeneratingNote, setIsGeneratingNote] = useState(false)
+  const [coachNoteError, setCoachNoteError] = useState<string | null>(null)
   const [checkInExpandToken, setCheckInExpandToken] = useState(0)
   const [pendingCoachDeleteId, setPendingCoachDeleteId] = useState<string | null>(null)
   const [activeProposal, setActiveProposal] = useState<CoachProposal | null>(null)
@@ -100,13 +101,18 @@ export default function WeeklyView() {
   }
 
   const handleGenerateCoachNote = useCallback(async () => {
+    if (isGeneratingNote) return
+    setCoachNoteError(null)
     setIsGeneratingNote(true)
     try {
       await generateCoachNote(currentWeekStart)
+    } catch (error) {
+      console.error('[weekly] generate coach note failed', error)
+      setCoachNoteError(formatCoachNoteError(error))
     } finally {
       setIsGeneratingNote(false)
     }
-  }, [currentWeekStart, generateCoachNote])
+  }, [currentWeekStart, generateCoachNote, isGeneratingNote])
 
   const handleConfirmDeleteCoachSession = async () => {
     if (!pendingCoachDeleteId) return
@@ -340,8 +346,10 @@ export default function WeeklyView() {
             <p className="font-display text-sm font-semibold uppercase tracking-wider text-ink-muted">Resumen semanal</p>
             {currentWeekSummary && (
               <button
+                type="button"
                 onClick={handleGenerateCoachNote}
                 disabled={isGeneratingNote}
+                aria-busy={isGeneratingNote}
                 className="inline-flex items-center gap-1.5 rounded-lg bg-brand/10 px-3 py-1.5 text-[11px] font-medium text-brand-light transition-colors disabled:cursor-not-allowed disabled:opacity-60 hover:bg-brand/15"
               >
                 <MessageSquareText size={13} />
@@ -350,6 +358,14 @@ export default function WeeklyView() {
             )}
           </div>
           <div className="space-y-3">
+            {coachNoteError && (
+              <Card variant="panel" className="border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+                <div className="flex items-start gap-2">
+                  <AlertCircle size={14} className="mt-0.5 flex-shrink-0" />
+                  <span>{coachNoteError}</span>
+                </div>
+              </Card>
+            )}
             {proposalError && (
               <Card variant="panel" className="border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-300">
                 {proposalError}
@@ -405,4 +421,11 @@ export default function WeeklyView() {
       )}
     </div>
   )
+}
+
+function formatCoachNoteError(error: unknown): string {
+  if (error instanceof Error && error.message.trim()) {
+    return `No pude generar la nota: ${error.message}`
+  }
+  return 'No pude generar la nota. Intenta nuevamente.'
 }

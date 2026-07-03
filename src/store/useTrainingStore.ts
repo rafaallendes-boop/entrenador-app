@@ -257,13 +257,18 @@ export const useTrainingStore = create<TrainingState>((set, get) => ({
         { maxTokens: 700, temperature: 0.4, requestClass: 'weekly_summary', surface: 'weekly_summary' },
       )
 
-      const summary = await upsertWeekSummary(weekStart, { coachNote: response.message })
+      const coachNote = response.message.trim()
+      if (!coachNote) {
+        throw new Error('El coach devolvio una nota vacia. Intenta nuevamente.')
+      }
+
+      const summary = await upsertWeekSummary(weekStart, { coachNote })
       const activeWeekStart = getActiveWeekStart(get())
       if (activeWeekStart === weekStart) {
         set({ currentWeekSummary: summary })
       }
       await get().loadAllSummaries()
-      return response.message
+      return coachNote
     } finally {
       set({ isLoading: false })
     }
