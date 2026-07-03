@@ -716,6 +716,44 @@ describe('syncService', () => {
     })
   })
 
+  it('a full pull with a MANAGED athlete active stamps legacy rows with the SELF athlete', async () => {
+    const { setActiveAthleteId, setSelfAthleteId, getActiveAthleteId } = await import('../athlete/activeAthlete')
+    const { persistAthleteSelection } = await import('../athlete/athleteSelection')
+    const { db: mockedDb } = await import('../../db/db')
+    // Coach entrenando a un gestionado: selección persistida válida + fila local
+    // del gestionado, para que la re-hidratación del sync la respete (Task 8).
+    const now = Date.now()
+    await mockedDb.athletes.put({ id: 'ath_m_1', ownerAccountId: 'user-1', status: 'active', createdAt: now, updatedAt: now } as never)
+    persistAthleteSelection('user-1', 'ath_m_1')
+    setSelfAthleteId('ath_user-1')
+    setActiveAthleteId('ath_m_1')
+
+    tableResults.set('day_logs', {
+      data: [{
+        id: 'remote-legacy',
+        user_id: 'user-1',
+        athlete_id: null,
+        date: '2026-06-30',
+        updated_at: 50,
+        data: { sleepHours: 7 },
+      }],
+      error: null,
+    })
+
+    const syncService = await import('../syncService')
+    await syncService.runFullSync('user-1')
+
+    // La fila legacy pertenece al SELF resuelto (ath_user-1), nunca al gestionado activo.
+    const local = dayLogRows.find((row) => (row as { id: string }).id === 'remote-legacy')
+    expect(local).toMatchObject({ athleteId: 'ath_user-1' })
+    // Y el sync NO pisó la selección del gestionado (hidratación selection-aware).
+    expect(getActiveAthleteId()).toBe('ath_m_1')
+
+    persistAthleteSelection('user-1', null)
+    setActiveAthleteId(null)
+    setSelfAthleteId(null)
+  })
+
   it('only deletes missing day logs inside an athlete-scoped pull', async () => {
     vi.stubEnv('VITE_ATHLETE_SCOPE', 'true')
     const { setActiveAthleteId } = await import('../athlete/activeAthlete')

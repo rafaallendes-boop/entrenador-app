@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { db } from '../db'
 import { getDayLog, getDayLogsForWeek, getWeekSummary, upsertDayLog, upsertWeekSummary } from '../queries'
-import { setActiveAthleteId } from '../../services/athlete/activeAthlete'
+import { setActiveAthleteId, setSelfAthleteId } from '../../services/athlete/activeAthlete'
 import type { WeekSummary } from '../../types'
 
 vi.mock('../../services/syncService', () => ({
@@ -13,10 +13,13 @@ describe('upsertDayLog athlete scope', () => {
     db.close()
     await db.delete()
     await db.open()
+    // Single-athlete scenario: the owner's self athlete IS the active one.
+    setSelfAthleteId('ath_A')
   })
 
   afterEach(() => {
     setActiveAthleteId(null)
+    setSelfAthleteId(null)
     db.close()
   })
 
@@ -63,10 +66,13 @@ describe('upsertWeekSummary athlete scope', () => {
     db.close()
     await db.delete()
     await db.open()
+    // Single-athlete scenario: the owner's self athlete IS the active one.
+    setSelfAthleteId('ath_A')
   })
 
   afterEach(() => {
     setActiveAthleteId(null)
+    setSelfAthleteId(null)
     db.close()
   })
 
@@ -111,10 +117,13 @@ describe('athlete-aware lookups', () => {
     db.close()
     await db.delete()
     await db.open()
+    // Single-athlete scenario: the owner's self athlete IS the active one.
+    setSelfAthleteId('ath_A')
   })
 
   afterEach(() => {
     setActiveAthleteId(null)
+    setSelfAthleteId(null)
     db.close()
   })
 

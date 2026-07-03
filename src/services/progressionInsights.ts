@@ -1,5 +1,6 @@
 import { db } from '../db/db'
 import { getAthleteProfile } from '../db/queries'
+import { filterRowsToActiveScope } from './athlete/activeScopeFilter'
 import { computeMacroPlan } from './macroPlan'
 import type { AthleteProfile, DayLog, MatchResult, Session, SquashSessionMode } from '../types'
 import { getEnabledSports, getPrimarySportNormalized } from '../utils/athlete'
@@ -381,11 +382,13 @@ function buildStrengthContext(
 
 export async function getAthleteProgressionInsights(): Promise<AthleteProgressionInsights> {
   const today = todayISO()
-  const [allSessions, dayLogs, profile] = await Promise.all([
+  const [allSessionsRaw, dayLogsRaw, profile] = await Promise.all([
     db.sessions.toArray(),
     db.dayLogs.toArray(),
     getAthleteProfile(),
   ])
+  const allSessions = filterRowsToActiveScope(allSessionsRaw)
+  const dayLogs = filterRowsToActiveScope(dayLogsRaw)
 
   const completedSessions = allSessions.filter(
     (session) => session.status === 'completed' || session.status === 'adjusted',

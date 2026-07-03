@@ -14,6 +14,7 @@ import { toISO, fromISO, getWeekStart } from '../utils/date'
 import { isCompetitionSquashMatch, isPracticeSquashMatch } from '../utils/squash'
 import { addDays, subWeeks } from 'date-fns'
 import type { Session, SessionType } from '../types'
+import { filterRowsToActiveScope } from './athlete/activeScopeFilter'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -620,10 +621,12 @@ export async function computeLoadAnalytics(
   // Query all sessions in the date range in a single Dexie call
   const oldestWeekStart = weekStarts[weekStarts.length - 1]
   const endDate = toISO(addDays(fromISO(currentWeekStart), 6))
-  const allSessions = await db.sessions
-    .where('date')
-    .between(oldestWeekStart, endDate, true, true)
-    .toArray()
+  const allSessions = filterRowsToActiveScope(
+    await db.sessions
+      .where('date')
+      .between(oldestWeekStart, endDate, true, true)
+      .toArray(),
+  )
 
   // Group sessions by week
   const sessionsByWeek = new Map<string, Session[]>()

@@ -27,7 +27,7 @@ import { useCoachMemoryStore } from '../store/useCoachMemoryStore'
 import { useAuthStore } from '../store/useAuthStore'
 import { usePlanBuilderStore } from '../store/usePlanBuilderStore'
 import { useTrainingStore } from '../store/useTrainingStore'
-import { clearStoredChatSessionId, getOrCreateChatSessionId, setStoredChatSessionId } from '../utils/chatSession'
+import { clearAllStoredChatSessionIds, getOrCreateChatSessionId, setStoredChatSessionId } from '../utils/chatSession'
 import { derivePlanGenerationState } from './planBuilder/generationState'
 import { getActiveAthleteId } from './athlete/activeAthlete'
 import { effectiveAthleteKey, isScopedAthleteId } from './athlete/effectiveAthleteKey'
@@ -1859,10 +1859,11 @@ function syncStoresAfterImport(preferredChatSessionId: string | null): void {
     loadedWeekStart: null,
   })
 
+  // Import es account-global: limpiar TODAS las keys de sesión (legacy y por
+  // atleta) antes de setear la preferida en el scope activo del momento.
+  clearAllStoredChatSessionIds()
   if (preferredChatSessionId) {
     setStoredChatSessionId(preferredChatSessionId)
-  } else {
-    clearStoredChatSessionId()
   }
 
   const nextSessionId = preferredChatSessionId ?? getOrCreateChatSessionId()

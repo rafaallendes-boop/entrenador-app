@@ -1,50 +1,64 @@
-# Entrenador App — CLAUDE.md
+# Entrenador App (RallyIQ) — CLAUDE.md
 
 ## Proyecto
-App web personal de entrenamiento para squash, running y fuerza.
+App web de entrenamiento para squash, running y fuerza. Marca pública: **RallyIQ**.
 Stack: React + TypeScript + Vite + Tailwind + Dexie (local-first) + Supabase (sync) + Google OAuth.
-Deploy en Netlify. El usuario principal es Rafael Allende (squash competitivo, masters).
+Deploy en Netlify. Usuario principal: Rafael Allendes (squash competitivo, masters).
+Etapa: preparando piloto premium acompañado (1-3 clientes fundadores) + Coach Mode F2-lite.
 
 ## Comandos clave
 - Dev: `./start.sh` o `npm run dev`
 - Lint: `npm run lint`
+- Tests: `npm test`
 - Build: `npm run build`
-- Antes de commitear: `npm run lint && npm run build`
+- Antes de commitear: `npm run lint && npm test && npm run build`
 
 ## Arquitectura
 - `src/pages/` — vistas principales
 - `src/services/` — lógica de negocio (AI, sync, notificaciones, PDF, export)
+- `src/services/athlete/` — athlete scope: `activeAthlete.ts` (holders active/self), `activeScopeFilter.ts` (política de lectura + estampado), `athleteSelection.ts`, `hydrateActiveAthlete.ts`, `effectiveAthleteKey.ts`, `readScope.ts`
 - `src/store/` — estado global con Zustand
 - `src/types/` — tipos compartidos
 - `src/utils/` — helpers
 - `src/services/ai/promptBuilder.ts` — prompt del coach IA (tocar con cuidado)
 - `public/sw.js` — service worker para notificaciones
+- `supabase/00X_*.sql` — migraciones remotas numeradas, de aplicación manual
 
 ## Estado actual del producto
-Ver `PROJECT_REVIEW_AND_ROADMAP.md` para el estado completo.
-Resumen: producto usable, lint OK, build OK. Actualizado: 2026-04-24.
+Ver `PROJECT_REVIEW_AND_ROADMAP.md` para el estado completo. Actualizado: 2026-07-03.
+Suite: 139 archivos / 990 tests. Lint OK, build OK.
 El chunk más pesado es `pdf.worker.min` — ya optimizado, no tocar sin razón.
 
-Mejoras recientes relevantes:
-- `weekCreator` refactorizado en `src/services/weekCreator/` con engine, config, prompt builder y validación propios + tests
-- `syncService` endurecido: bug de reset total corregido, tests en `src/services/__tests__/syncService.test.ts`
-- Timeouts de Netlify Functions realineados a los límites reales del plan (máx 26s) — ver `OPTIMIZATION_AND_COSTS.md`
-- Suite de tests ampliada: ~35 archivos en `src/services/__tests__/`
+Bloques recientes relevantes:
+- **Athlete scope foundation** (`007`): tabla `athletes`, `athlete_id` backfilleado, hidratación de atleta activo, flag `VITE_ATHLETE_SCOPE` (off).
+- **F2 data prereqs**: Dexie **v14** con únicos compuestos `[athleteId+date]` / `[athleteId+weekStartDate]`; merges/import/export athlete-aware. (v15 reservada para Whoop.)
+- **008b write path**: handler reactivo de `23505` (`reconcileNaturalKeyConflict`) commiteado y aplicado en prod; mantener `008a` como preflight operativo antes de futuros cambios de contrato.
+- **Athlete-aware core (Coach F2-lite Parte 1)**: política legacy self-only, lecturas scoped (sessions/summaries/proposals/chat/contexto IA), estampado local, chat session por atleta, selección activa persistida. Plan: `docs/superpowers/plans/2026-07-02-athlete-aware-core.md`.
 
 ## Prioridades abiertas (en orden)
-1. Validación operativa real de sync (conflictos concurrentes, recovery multi-dispositivo)
-2. Instrumentación del loop coach → propuesta → aceptación → impacto
-3. QA end-to-end de `week_creator` + `plan_builder` + `chat_action` con perfil incompleto
-4. Robustez de notificaciones (scheduling persistente por navegador)
-5. Explotar athlete profile en propuestas de fuerza y running
+1. Deploy + smoke de Athlete-Aware Core en prod (single-athlete no debe cambiar).
+2. Superficie pública + rutas legales + consentimiento + smoke (piloto premium, ver roadmap).
+3. Coach UI F2-lite **Parte 2**: perfiles multi-atleta + migración `009` + API de atletas gestionados + switcher/roster gated por allowlist. Spec: `docs/superpowers/specs/2026-07-02-coach-ui-f2-mvp-design.md`.
+4. QA deportiva: 3 planes arquetipo (como atletas gestionados, post Parte 2).
+5. Validación operativa real de sync (conflictos concurrentes, recovery multi-dispositivo).
 
 ## Reglas del proyecto
-- No modificar `promptBuilder.ts` sin revisar el contexto completo del coach
-- El modelo de datos local es Dexie — cualquier cambio de schema requiere migración
-- Sync con Supabase ya está implementado — no duplicar lógica de sync
-- No agregar dependencias pesadas sin revisar el impacto en el bundle
-- Las notificaciones web tienen límites reales por navegador — documentar antes de cambiar
+- **Athlete scope — reglas duras:**
+  - Nunca el literal `'default'` fuera de `activeAthlete.ts` (hay guard test); usar `ATHLETE_PROFILE_LOCAL_ID`, `getActiveAthleteId()` o `getSelfAthleteId()`.
+  - Toda lectura de `sessions`/`dayLogs`/`weekSummaries`/`coachProposals`/`chatMessages` fuera de sync/export pasa por `filterRowsToActiveScope`/`isRowInActiveScope`. **Filas legacy/unscoped pertenecen SOLO al self** — un atleta gestionado nunca las ve ni las adopta.
+  - Toda creación local de esas filas se estampa con `withActiveAthleteStamp`.
+  - En sync, el fallback legacy se ancla a `getSelfAthleteId()`, nunca al atleta activo.
+  - `isInAthleteScope` (effectiveAthleteKey) es para delete-scoping de sync; para lecturas usar `activeScopeFilter`.
+- El modelo local es Dexie (**v14**) — cualquier cambio de schema requiere migración + test de upgrade real (fake-indexeddb ya instalado; patrón: `db.close(); await db.delete(); await db.open()` por test).
+- `athlete_profiles` remoto tiene UNIQUE por `user_id` (`002`) — **no** crear un segundo perfil por cuenta hasta aplicar la migración `009` (mini expand/contract, ver spec F2-lite §3.2).
+- No modificar `promptBuilder.ts` sin revisar el contexto completo del coach.
+- Sync con Supabase ya está implementado — no duplicar lógica de sync.
+- No agregar dependencias pesadas sin revisar impacto en bundle.
+- Las notificaciones web tienen límites reales por navegador — documentar antes de cambiar.
+- Los commits los hace el owner — no ejecutar `git commit`/`git add` salvo pedido explícito.
 
 ## Referencias clave
 @./PROJECT_REVIEW_AND_ROADMAP.md
 @./OPTIMIZATION_AND_COSTS.md
+- RFC Coach Mode: `docs/rfc/2026-06-16-coach-mode-architecture.md`
+- Specs y planes: `docs/superpowers/specs/` y `docs/superpowers/plans/`

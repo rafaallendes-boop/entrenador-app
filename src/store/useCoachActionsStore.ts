@@ -6,6 +6,7 @@ import { buildPlanGenerationSummary } from '../services/planGenerationSummary'
 import { isSessionTypeAllowedForPlan, sanitizeCoachActionsForPlan } from '../services/planningConstraints'
 import { applyCreateWeek } from '../services/planning/applyCreateWeek'
 import { normalizeCoachProposal } from '../services/coachProposalMetadata'
+import { filterRowsToActiveScope, withActiveAthleteStamp } from '../services/athlete/activeScopeFilter'
 import * as syncService from '../services/syncService'
 import { ensureSessionProtocols, generateDefaultProtocols } from '../services/trainingProtocols'
 import { enhanceStrengthSessionExercises } from '../services/training/strengthSessionStructure'
@@ -49,7 +50,7 @@ export const useCoachActionsStore = create<CoachActionsState>((set, get) => ({
 
   loadProposals: async () => {
     const athleteProfile = useCoachMemoryStore.getState().athleteProfile
-    const proposals = (await db.coachProposals.orderBy('createdAt').toArray())
+    const proposals = filterRowsToActiveScope(await db.coachProposals.orderBy('createdAt').toArray())
       .map((proposal) => ({
         ...proposal,
         actions: prepareProposalActionsForDisplay(proposal.actions, athleteProfile),
@@ -67,7 +68,7 @@ export const useCoachActionsStore = create<CoachActionsState>((set, get) => ({
       existingSessions: useTrainingStore.getState().sessions,
       proposalMessage: message,
     })
-    const historicalSessions = await db.sessions.toArray()
+    const historicalSessions = filterRowsToActiveScope(await db.sessions.toArray())
     const planSummary = buildPlanGenerationSummary({
       athleteProfile,
       actions: normalized.actions,
@@ -76,7 +77,7 @@ export const useCoachActionsStore = create<CoachActionsState>((set, get) => ({
     const metadata = normalized.metadata
       ? { ...normalized.metadata, warnings: options?.warnings }
       : normalized.metadata
-    const proposal: CoachProposal = {
+    const proposal: CoachProposal = withActiveAthleteStamp<CoachProposal>({
       id: uuid(),
       chatMessageId,
       message,
@@ -85,7 +86,7 @@ export const useCoachActionsStore = create<CoachActionsState>((set, get) => ({
       metadata,
       status: 'pending',
       createdAt: Date.now(),
-    }
+    })
     await db.coachProposals.put(proposal)
     void syncService.pushCoachProposal(proposal)
     set((state) => ({ proposals: [...state.proposals, proposal] }))

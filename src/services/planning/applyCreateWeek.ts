@@ -5,6 +5,7 @@ import { filterCoachSessionsToAllowedSports } from '../planningConstraints'
 import { ensureSessionProtocols } from '../trainingProtocols'
 import { enhanceStrengthSessionExercises } from '../training/strengthSessionStructure'
 import * as syncService from '../syncService'
+import { filterRowsToActiveScope } from '../athlete/activeScopeFilter'
 import { fromISO, getWeekStart, toISO } from '../../utils/date'
 import { v4 as uuid } from '../../utils/uuid'
 import type { AthleteProfile, CoachAction, Session, WeekSummary } from '../../types'
@@ -133,7 +134,9 @@ async function findCreateWeekCollisions(
   sessions: CreateWeekSessionInput,
 ): Promise<Array<{ date: string; timeBlock: string }>> {
   const targetDates = [...new Set(sessions.map((session) => session.date))]
-  const existingSessions = await db.sessions.where('date').anyOf(targetDates).toArray()
+  const existingSessions = filterRowsToActiveScope(
+    await db.sessions.where('date').anyOf(targetDates).toArray(),
+  )
 
   return sessions
     .filter((session) =>
@@ -159,7 +162,9 @@ async function replacePlannedSessionsForCreateWeek(
   for (const weekStart of weekStarts) {
     const weekEnd = toISO(addDays(fromISO(weekStart), 6))
     await syncService.pullSessionsForDateRange(weekStart, weekEnd)
-    const existingWeekSessions = await db.sessions.where('date').between(weekStart, weekEnd, true, true).toArray()
+    const existingWeekSessions = filterRowsToActiveScope(
+      await db.sessions.where('date').between(weekStart, weekEnd, true, true).toArray(),
+    )
     const shouldReplaceSession = (session: Session): boolean => {
       if (replacementRange) {
         return session.date >= replacementRange.startDate && session.date <= replacementRange.endDate

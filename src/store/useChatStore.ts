@@ -8,6 +8,8 @@ import { v4 as uuid } from '../utils/uuid'
 import { AIProviderError } from '../services/ai/types'
 import type { CoachNormalizedResponse } from '../services/ai/types'
 import { getOrCreateChatSessionId, isLocalOnlyChatSessionId, setStoredChatSessionId } from '../utils/chatSession'
+import { isRowInActiveScope, filterRowsToActiveScope, withActiveAthleteStamp } from '../services/athlete/activeScopeFilter'
+import { isScopedAthleteId } from '../services/athlete/effectiveAthleteKey'
 import * as syncService from '../services/syncService'
 import { useAIDebugStore } from './useAIDebugStore'
 import { resolveChatRoute, type ChatRouteKind } from '../services/chatRouting'
@@ -40,21 +42,38 @@ export const useChatStore = create<ChatState>((set, get) => ({
   error: null,
 
   loadHistory: async () => {
-    let sessionId = get().currentSessionId
-    let msgs = await db.chatMessages
-      .where('chatSessionId')
-      .equals(sessionId)
-      .sortBy('timestamp')
+    // La key de sesión es athlete-scoped: re-resolverla en cada load para que un
+    // cambio de atleta (remount) no arrastre el hilo del atleta anterior.
+    const resolvedSessionId = getOrCreateChatSessionId()
+    if (resolvedSessionId !== get().currentSessionId) {
+      set({ currentSessionId: resolvedSessionId, messages: [] })
+    }
+    let sessionId = resolvedSessionId
+    // Filtrar SIEMPRE por scope: una key scoped puede apuntar a un thread con
+    // filas de otro atleta (import, estado viejo, colisión de session id).
+    let msgs = filterRowsToActiveScope(
+      await db.chatMessages
+        .where('chatSessionId')
+        .equals(sessionId)
+        .sortBy('timestamp'),
+    )
 
     if (msgs.length === 0 && isLocalOnlyChatSessionId(sessionId)) {
-      const latest = await db.chatMessages.orderBy('timestamp').last()
+      // Adopt only a thread within the ACTIVE athlete's scope — never another athlete's.
+      const latest = await db.chatMessages
+        .orderBy('timestamp')
+        .reverse()
+        .filter((message) => isRowInActiveScope(message.athleteId))
+        .first()
       if (latest?.chatSessionId) {
         sessionId = latest.chatSessionId
         setStoredChatSessionId(sessionId)
-        msgs = await db.chatMessages
-          .where('chatSessionId')
-          .equals(sessionId)
-          .sortBy('timestamp')
+        msgs = filterRowsToActiveScope(
+          await db.chatMessages
+            .where('chatSessionId')
+            .equals(sessionId)
+            .sortBy('timestamp'),
+        )
         set({ currentSessionId: sessionId })
       }
     }
@@ -77,14 +96,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const abortController = new AbortController()
     activeChatAbortController = abortController
     const requestClass = mapChatRouteToRequestClass(route.kind)
-    const userMsg: ChatMessage = {
+    const userMsg: ChatMessage = withActiveAthleteStamp<ChatMessage>({
       id: uuid(),
       role: 'user',
       content,
       timestamp: Date.now(),
       chatSessionId: sessionId,
       contextMeta: buildChatContextMetadata(context),
-    }
+    })
     set(state => ({ messages: [...state.messages, userMsg], isLoading: true, streamingText: '', responsePhase: 'connecting', error: null }))
     try {
       await db.chatMessages.add(userMsg)
@@ -263,24 +282,32 @@ export const useChatStore = create<ChatState>((set, get) => ({
     activeChatAbortController?.abort()
     activeChatAbortController = null
     const sessionId = get().currentSessionId
-    const messageIds = await db.chatMessages
-      .where('chatSessionId')
-      .equals(sessionId)
-      .primaryKeys() as string[]
+    // Borrar SOLO mensajes del scope activo: un thread puede contener filas de
+    // otro atleta (import, estado viejo, colisión de session id). Se derivan los
+    // ids desde la lista filtrada y se borra por ids, nunca por chatSessionId.
+    const sessionMessages = filterRowsToActiveScope(
+      await db.chatMessages
+        .where('chatSessionId')
+        .equals(sessionId)
+        .toArray(),
+    )
+    const messageIds = sessionMessages.map((message) => message.id)
 
-    // Delete proposals linked to any message in this session
-    const linkedProposals = await db.coachProposals
-      .where('chatMessageId')
-      .anyOf(messageIds)
-      .toArray()
+    // Delete proposals linked to any in-scope message in this session
+    const linkedProposals = messageIds.length > 0
+      ? await db.coachProposals
+          .where('chatMessageId')
+          .anyOf(messageIds)
+          .toArray()
+      : []
     const proposalIds = linkedProposals.map(p => p.id)
     if (proposalIds.length > 0) {
-      await db.coachProposals.where('chatMessageId').anyOf(messageIds).delete()
+      await db.coachProposals.bulkDelete(proposalIds)
       await syncService.deleteCoachProposals(proposalIds)
       await useCoachActionsStore.getState().loadProposals()
     }
 
-    await db.chatMessages.where('chatSessionId').equals(sessionId).delete()
+    await db.chatMessages.bulkDelete(messageIds)
     await syncService.deleteChatMessages(messageIds)
     // After deleting current session, start a new one
     await get().newSession()
@@ -337,7 +364,7 @@ function buildCoachMessage(
   response: CoachNormalizedResponse,
   chatSessionId: string,
 ): ChatMessage {
-  return {
+  return withActiveAthleteStamp<ChatMessage>({
     id: uuid(),
     role: 'coach',
     content: response.message,
@@ -349,11 +376,11 @@ function buildCoachMessage(
       traceId: response.traceId,
       likelyTruncated: response.meta?.likelyTruncated === true,
     },
-  }
+  })
 }
 
 function buildCoachErrorMessage(errorMessage: string, chatSessionId: string): ChatMessage {
-  return {
+  return withActiveAthleteStamp<ChatMessage>({
     id: uuid(),
     role: 'coach',
     content: `No pude procesar ese pedido.\n\n${errorMessage}\n\nPuedes reintentarlo cuando quieras.`,
@@ -363,7 +390,7 @@ function buildCoachErrorMessage(errorMessage: string, chatSessionId: string): Ch
       contextVersion: 1,
       likelyTruncated: false,
     },
-  }
+  })
 }
 
 function buildChatContextMetadata(context?: ChatContext): ChatContextMetadata {
@@ -411,7 +438,9 @@ async function repairOrphanProposalMessagesUnlocked(
 ): Promise<ChatMessage[]> {
   const repairedForSync: Array<{ message: ChatMessage; proposal: CoachProposal }> = []
   const repairedMessages = await db.transaction('rw', db.chatMessages, db.coachProposals, async () => {
-    const proposals = await db.coachProposals.orderBy('createdAt').toArray()
+    // Scope the repair pool: a proposal from another athlete must never be
+    // re-attached to the current thread just because the timing matches.
+    const proposals = filterRowsToActiveScope(await db.coachProposals.orderBy('createdAt').toArray())
     if (proposals.length === 0 || messages.length === 0) return messages
 
     const nextMessages = [...messages]
@@ -438,7 +467,12 @@ async function repairOrphanProposalMessagesUnlocked(
       )
       if (hasNearbyCoachReply) continue
 
-      const repairedMessage = buildProposalRecoveredMessage(proposal, chatSessionId, anchor.timestamp)
+      // El mensaje recuperado hereda el scope de su propuesta (ya filtrada al
+      // scope activo); si la propuesta es legacy, cae al estampado genérico.
+      const recovered = buildProposalRecoveredMessage(proposal, chatSessionId, anchor.timestamp)
+      const repairedMessage = isScopedAthleteId(proposal.athleteId)
+        ? { ...recovered, athleteId: proposal.athleteId }
+        : withActiveAthleteStamp(recovered)
       const repairedProposal = { ...proposal, chatMessageId: repairedMessage.id }
       await db.chatMessages.put(repairedMessage)
       await db.coachProposals.put(repairedProposal)

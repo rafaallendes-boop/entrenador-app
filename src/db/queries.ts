@@ -5,8 +5,9 @@ import { toISO, getWeekStart, fromISO } from '../utils/date'
 import { isCompetitionSquashMatch, isPracticeSquashMatch } from '../utils/squash'
 import { addDays } from 'date-fns'
 import { v4 as uuid } from '../utils/uuid'
-import { getActiveAthleteId } from '../services/athlete/activeAthlete'
+import { getActiveAthleteId, isSelfScopeActive } from '../services/athlete/activeAthlete'
 import { isScopedAthleteId } from '../services/athlete/effectiveAthleteKey'
+import { filterRowsToActiveScope } from '../services/athlete/activeScopeFilter'
 
 function stripAthleteId<T extends object>(patch: T): Omit<T, 'athleteId'> {
   const rest = { ...patch } as T & { athleteId?: unknown }
@@ -24,7 +25,8 @@ export const getSessionsForWeek = async (
   weekStartISO: string
 ): Promise<Session[]> => {
   const end = toISO(addDays(fromISO(weekStartISO), 6))
-  return db.sessions.where('date').between(weekStartISO, end, true, true).toArray()
+  const rows = await db.sessions.where('date').between(weekStartISO, end, true, true).toArray()
+  return filterRowsToActiveScope(rows)
 }
 
 export const getDayLogsForWeek = async (weekStartISO: string): Promise<DayLog[]> => {
@@ -38,6 +40,11 @@ export const getDayLogsForWeek = async (weekStartISO: string): Promise<DayLog[]>
     .where('[athleteId+date]')
     .between([activeAthleteId, weekStartISO], [activeAthleteId, end], true, true)
     .toArray()
+  // Legacy adoption is self-only (spec §3.6): a managed athlete never reads
+  // the owner's unscoped rows.
+  if (!isSelfScopeActive()) {
+    return scoped.sort((a, b) => a.date.localeCompare(b.date))
+  }
   const byDate = new Map<string, DayLog>(scoped.map((row) => [row.date, row]))
   const inRange = await db.dayLogs.where('date').between(weekStartISO, end, true, true).toArray()
   const adopted: DayLog[] = []
@@ -53,7 +60,7 @@ export const getDayLogsForWeek = async (weekStartISO: string): Promise<DayLog[]>
 }
 
 export const getSessionsForDay = async (dateISO: string): Promise<Session[]> =>
-  db.sessions.where('date').equals(dateISO).toArray()
+  filterRowsToActiveScope(await db.sessions.where('date').equals(dateISO).toArray())
 
 export const getDayLog = async (dateISO: string): Promise<DayLog | undefined> => {
   const activeAthleteId = getActiveAthleteId()
@@ -65,6 +72,9 @@ export const getDayLog = async (dateISO: string): Promise<DayLog | undefined> =>
   const scoped = await db.dayLogs.where('[athleteId+date]').equals([activeAthleteId, dateISO]).first()
   if (scoped) return scoped
 
+  // Legacy adoption is self-only (spec §3.6): a managed athlete never reads
+  // the owner's unscoped rows.
+  if (!isSelfScopeActive()) return undefined
   const candidates = await db.dayLogs.where('date').equals(dateISO).toArray()
   return candidates.find((row) => !isScopedAthleteId(row.athleteId))
 }
@@ -114,6 +124,8 @@ export const getWeekSummary = async (weekStartISO: string): Promise<WeekSummary 
     .first()
   if (scoped) return scoped
 
+  // Legacy adoption is self-only (spec §3.6).
+  if (!isSelfScopeActive()) return undefined
   const candidates = await db.weekSummaries.where('weekStartDate').equals(weekStartISO).toArray()
   return candidates.find((row) => !isScopedAthleteId(row.athleteId))
 }
@@ -272,24 +284,25 @@ export const recalculateWeekSummary = async (dateISO: string): Promise<void> => 
 }
 
 export const getAllWeekSummaries = async (): Promise<WeekSummary[]> =>
-  db.weekSummaries.orderBy('weekStartDate').reverse().toArray()
+  filterRowsToActiveScope(await db.weekSummaries.orderBy('weekStartDate').reverse().toArray())
 
 export const getHistoricalSessionsWindow = async (
   referenceDateISO: string,
   weeks = 8,
 ): Promise<Session[]> => {
   const start = toISO(addDays(fromISO(referenceDateISO), -(weeks * 7)))
-  return db.sessions
+  const rows = await db.sessions
     .where('date')
     .between(start, referenceDateISO, true, false)
     .toArray()
+  return filterRowsToActiveScope(rows)
 }
 
 export const getMatchSessions = async (): Promise<Session[]> => {
   const sessions = await db.sessions
     .filter((s) => isPracticeSquashMatch(s) || isCompetitionSquashMatch(s))
     .toArray()
-  return sessions.sort((a, b) => b.date.localeCompare(a.date))
+  return filterRowsToActiveScope(sessions).sort((a, b) => b.date.localeCompare(a.date))
 }
 
 const ATHLETE_PROFILE_ID = 'default'

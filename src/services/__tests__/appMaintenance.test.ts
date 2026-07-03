@@ -64,6 +64,14 @@ vi.mock('../../utils/chatSession', () => ({
   clearStoredChatSessionId: vi.fn(() => {
     localStorage.removeItem('coach_chat_session_id')
   }),
+  clearAllStoredChatSessionIds: vi.fn(() => {
+    // Mirrors the real account-global cleanup: every legacy/scoped session key.
+    for (const key of Object.keys(localStorage)) {
+      if (key.startsWith('coach_chat_session_id') || key.startsWith('coach_chat_session_local_only')) {
+        localStorage.removeItem(key)
+      }
+    }
+  }),
   getOrCreateChatSessionId: vi.fn(() => {
     localStorage.setItem('coach_chat_session_id', 'next-session')
     return 'next-session'

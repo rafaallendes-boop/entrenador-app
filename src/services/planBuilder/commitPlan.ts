@@ -8,6 +8,7 @@ import * as syncService from '../syncService'
 import { useTrainingStore } from '../../store/useTrainingStore'
 import { fromISO, toISO } from '../../utils/date'
 import { applyCreateWeek } from '../planning/applyCreateWeek'
+import { filterRowsToActiveScope } from '../athlete/activeScopeFilter'
 import { validatePlan } from './validator'
 import { reviewPlanQuality } from './qualityReview'
 
@@ -29,10 +30,12 @@ function getWeekEndDate(weekStartDate: string): string {
 }
 
 async function captureWeekCommitSnapshot(week: TrainingPlanWeek): Promise<WeekCommitSnapshot> {
-  const sessions = await db.sessions
-    .where('date')
-    .between(week.weekStartDate, getWeekEndDate(week.weekStartDate), true, true)
-    .toArray()
+  const sessions = filterRowsToActiveScope(
+    await db.sessions
+      .where('date')
+      .between(week.weekStartDate, getWeekEndDate(week.weekStartDate), true, true)
+      .toArray(),
+  )
   const summary = await getWeekSummary(week.weekStartDate)
 
   return {
@@ -48,10 +51,12 @@ async function restoreWeekCommitSnapshots(snapshots: WeekCommitSnapshot[]): Prom
   const affectedWeekStarts = new Set<string>()
 
   for (const snapshot of [...snapshots].reverse()) {
-    const currentSessions = await db.sessions
-      .where('date')
-      .between(snapshot.weekStartDate, getWeekEndDate(snapshot.weekStartDate), true, true)
-      .toArray()
+    const currentSessions = filterRowsToActiveScope(
+      await db.sessions
+        .where('date')
+        .between(snapshot.weekStartDate, getWeekEndDate(snapshot.weekStartDate), true, true)
+        .toArray(),
+    )
     const snapshotSessionIds = new Set(snapshot.sessions.map((session) => session.id))
 
     for (const session of currentSessions) {

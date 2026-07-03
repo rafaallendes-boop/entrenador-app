@@ -18,6 +18,7 @@ import { optimizeChatContext } from '../services/ai/contextOptimizer'
 import * as syncService from '../services/syncService'
 import { toISO, fromISO, getWeekStart } from '../utils/date'
 import { v4 as uuid } from '../utils/uuid'
+import { withActiveAthleteStamp } from '../services/athlete/activeScopeFilter'
 
 const STATUS_CYCLE: SessionStatus[] = ['planned', 'completed', 'adjusted', 'skipped']
 
@@ -121,7 +122,9 @@ export const useTrainingStore = create<TrainingState>((set, get) => ({
   addSession: async (partial) => {
     const now = Date.now()
     const weekStartDate = getWeekStartDate(partial.date)
-    const session: Session = { ...partial, weekStartDate, id: uuid(), createdAt: now, updatedAt: now }
+    const session: Session = withActiveAthleteStamp<Session>({
+      ...partial, weekStartDate, id: uuid(), createdAt: now, updatedAt: now,
+    })
     await db.sessions.add(session)
     void syncService.pushSession(session)
     await recalculateWeekSummary(session.date)

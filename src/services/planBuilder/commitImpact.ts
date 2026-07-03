@@ -4,6 +4,7 @@ import type { AthleteProfile, CoachSessionProposal, Session } from '../../types'
 import type { TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
 import { fromISO, toISO } from '../../utils/date'
 import { filterCoachSessionsToAllowedSports } from '../planningConstraints'
+import { filterRowsToActiveScope } from '../athlete/activeScopeFilter'
 
 export interface PlanCommitWeekImpact {
   weekIndex: number
@@ -77,10 +78,12 @@ export async function analyzePlanCommitImpact(
     const allowedSet = new Set(allowedSessions)
     const filteredSessions = generatedSessions.filter((session) => !allowedSet.has(session))
     const replacementDates = new Set(allowedSessions.map((session) => session.date))
-    const existingWeekSessions = await db.sessions
-      .where('date')
-      .between(weekStartDate, weekEndDate, true, true)
-      .toArray()
+    const existingWeekSessions = filterRowsToActiveScope(
+      await db.sessions
+        .where('date')
+        .between(weekStartDate, weekEndDate, true, true)
+        .toArray(),
+    )
 
     const replacedPlannedSessions = existingWeekSessions.filter(
       (session) => session.status === 'planned' && replacementDates.has(session.date),

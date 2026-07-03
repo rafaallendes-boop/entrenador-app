@@ -13,3 +13,24 @@ export function getActiveAthleteId(): string | null {
 export function setActiveAthleteId(id: string | null): void {
   activeAthleteId = id
 }
+
+// Deterministic self athlete of the signed-in owner (ath_<owner>), hydrated
+// alongside activeAthleteId. Legacy/unscoped rows always belong to the self
+// athlete — never to a managed one (F2-lite legacy policy).
+let selfAthleteId: string | null = null
+
+export function getSelfAthleteId(): string | null {
+  return selfAthleteId
+}
+
+export function setSelfAthleteId(id: string | null): void {
+  selfAthleteId = id
+}
+
+/**
+ * True when reads may adopt legacy/unscoped rows: no active athlete yet
+ * (pre-hydration legacy mode) or the active athlete IS the self athlete.
+ */
+export function isSelfScopeActive(): boolean {
+  return activeAthleteId === null || activeAthleteId === selfAthleteId
+}

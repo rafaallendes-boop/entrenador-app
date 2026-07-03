@@ -58,7 +58,8 @@ src/services/
 src/store/
   useTrainingStore.ts                     [MODIFY: addSession estampa athleteId]
   useCoachActionsStore.ts                 [MODIFY: proposals + historial scoped + addProposal estampa]
-  useChatStore.ts                         [MODIFY: re-resolve session + fallback scoped + repair scoped + mensajes estampan]
+  useChatStore.ts                         [MODIFY: re-resolve session + fallback scoped + repair scoped + mensajes y repairedMessage estampan]
+  __tests__/useTrainingStore.test.ts      [EXTEND: addSession estampa (obligatorio)]
 
 src/utils/
   chatSession.ts                          [MODIFY: storage key por atleta]
@@ -575,7 +576,57 @@ Expected: verdes.
 
 **Interfaces:**
 - Consumes: `filterRowsToActiveScope` (Task 2).
+- Produces: `withActiveAthleteStamp<T extends { athleteId?: string }>(row: T): T` en `activeScopeFilter.ts` (creado aquí en Step 0 porque este task ya lo necesita en su test; Task 6b lo consume para el wiring de stores).
 - Behavior: toda lectura por rango/fecha/global de `db.sessions`/`db.weekSummaries` en estos servicios filtra por scope activo ANTES de usar/borrar. Crítico en `commitPlan` y `applyCreateWeek`, que **borran** sesiones derivadas de esas lecturas — sin filtro, un plan del gestionado podría borrar sesiones del self en la misma fecha.
+
+- [ ] **Step 0a: Write the failing test for `withActiveAthleteStamp`**
+
+Añadir a `src/services/athlete/__tests__/activeScopeFilter.test.ts`:
+
+```typescript
+import { withActiveAthleteStamp } from '../activeScopeFilter'
+
+describe('withActiveAthleteStamp', () => {
+  afterEach(() => { setActiveAthleteId(null); setSelfAthleteId(null) })
+
+  it('estampa el atleta activo en filas nuevas sin scope', () => {
+    setActiveAthleteId('ath_m_1')
+    expect(withActiveAthleteStamp({ id: 'x' }).athleteId).toBe('ath_m_1')
+    expect(withActiveAthleteStamp({ id: 'x', athleteId: 'default' }).athleteId).toBe('ath_m_1')
+  })
+
+  it('preserva un athleteId ya scoped (updates/rollbacks intactos)', () => {
+    setActiveAthleteId('ath_m_1')
+    expect(withActiveAthleteStamp({ id: 'x', athleteId: 'ath_self' }).athleteId).toBe('ath_self')
+  })
+
+  it('sin atleta activo devuelve la fila intacta (no escribe athleteId)', () => {
+    const row = withActiveAthleteStamp({ id: 'x' })
+    expect('athleteId' in row && row.athleteId !== undefined).toBe(false)
+  })
+})
+```
+
+- [ ] **Step 0b: Run test to verify it fails, then implement**
+
+Run: `npx vitest run src/services/athlete/__tests__/activeScopeFilter.test.ts` → FAIL (`withActiveAthleteStamp` no existe). Implementar en `src/services/athlete/activeScopeFilter.ts`:
+
+```typescript
+/**
+ * Stamp the ACTIVE athlete on a locally-created row. Preserves an existing
+ * scoped athleteId (an update/rollback/restore is never re-stamped); with no
+ * active athlete the row stays legacy (today's behavior). Local-first
+ * counterpart of the read policy: what you create while training athlete X
+ * must remain visible under athlete X's scope immediately.
+ */
+export function withActiveAthleteStamp<T extends { athleteId?: string }>(row: T): T {
+  if (isScopedAthleteId(row.athleteId)) return row
+  const active = getActiveAthleteId()
+  return active ? { ...row, athleteId: active } : row
+}
+```
+
+Re-run → PASS.
 
 - [ ] **Step 1: Write the failing DESTRUCTIVE integration test for `applyCreateWeek`**
 
@@ -594,9 +645,22 @@ vi.mock('../../syncService', () => ({
 import { db } from '../../../db/db'
 import { applyCreateWeek } from '../applyCreateWeek'
 import { setActiveAthleteId, setSelfAthleteId } from '../../athlete/activeAthlete'
+import { withActiveAthleteStamp } from '../../athlete/activeScopeFilter'
+import { v4 as uuid } from '../../../utils/uuid'
 import * as syncService from '../../syncService'
+import type { Session } from '../../../types'
 
-const storeAdapter = { loadWeek: vi.fn(async () => {}) } as never
+// CreateWeekStoreAdapter exige addSession + loadWeek (applyCreateWeek.ts:14-17).
+// addSession imita a useTrainingStore.addSession post-Task-6b: persiste y estampa.
+const storeAdapter = {
+  loadWeek: vi.fn(async () => {}),
+  addSession: vi.fn(async (partial: Omit<Session, 'id' | 'createdAt' | 'updatedAt'>) => {
+    const now = Date.now()
+    const session = withActiveAthleteStamp({ ...partial, id: uuid(), createdAt: now, updatedAt: now }) as Session
+    await db.sessions.add(session)
+    return session
+  }),
+}
 
 describe('applyCreateWeek no borra planned sessions de otro atleta', () => {
   beforeEach(async () => { db.close(); await db.delete(); await db.open(); vi.clearAllMocks() })
@@ -611,7 +675,8 @@ describe('applyCreateWeek no borra planned sessions de otro atleta', () => {
     setActiveAthleteId('ath_m_1')
 
     await applyCreateWeek({
-      sessions: [{ date: '2026-07-06', type: 'squash', durationMin: 45, timeBlock: 'AM' }] as never,
+      // El input usa sessionType (no type): ver el mapeo type: session.sessionType en applyCreateWeek.
+      sessions: [{ date: '2026-07-06', sessionType: 'squash', title: 'Drills', timeBlock: 'AM', durationMin: 45 }] as never,
       athleteProfile: null,
       store: storeAdapter,
     })
@@ -619,11 +684,12 @@ describe('applyCreateWeek no borra planned sessions de otro atleta', () => {
     expect(await db.sessions.get('self-planned')).toBeDefined()          // intocada
     expect(await db.sessions.get('managed-planned')).toBeUndefined()     // reemplazada
     expect(vi.mocked(syncService.deleteSession)).not.toHaveBeenCalledWith('self-planned')
+    expect(storeAdapter.addSession).toHaveBeenCalled()                   // la semana nueva sí se creó
   })
 })
 ```
 
-> Ajustar el shape de `sessions` (CreateWeekSessionInput = `NonNullable<CoachAction['sessions']>`) y el `store` adapter a los tipos reales (`applyCreateWeek.ts:12-18`); castear con `as never` lo que falte. Lo esencial: la planned del self **sobrevive** y no se llama `deleteSession('self-planned')`.
+> `CreateWeekSessionInput = NonNullable<CoachAction['sessions']>` — si el tipo exige más campos (p.ej. `description`), completarlos en el fixture; el cast `as never` cubre lo opcional. El helper `withActiveAthleteStamp` ya existe (Step 0 de esta task). Lo esencial: la planned del self **sobrevive**, no se llama `deleteSession('self-planned')`, y `applyCreateWeek` corre completo (con `store.addSession` real-mínimo, no un stub ausente que rompa antes de llegar al bug).
 
 - [ ] **Step 1b: Write the failing rollback test for `commitPlan`**
 
@@ -773,67 +839,16 @@ Expected: verdes (con active/self nulos todo es no-op; los tests de stores exist
 **Rationale (hallazgo del review):** el plan scopea lecturas, pero `useTrainingStore.addSession`, los mensajes de `useChatStore` y `useCoachActionsStore.addProposal` crean filas locales **sin** `athleteId`. Con un gestionado activo, esa fila recién creada es legacy → la política self-only (Tasks 2–3) la haría **desaparecer de la vista del gestionado** hasta que el sync la converja. Estampar al crear cierra el loop local-first.
 
 **Files:**
-- Modify: `src/services/athlete/activeScopeFilter.ts` (+ helper de estampado)
 - Modify: `src/store/useTrainingStore.ts:124` (`addSession`)
-- Modify: `src/store/useChatStore.ts` (creación de `userMsg` ~`:80`, `coachMsg` ~`:172`, `coachErrorMsg` ~`:229`)
-- Modify: `src/store/useCoachActionsStore.ts:89` (`addProposal`)
-- Test: `src/services/athlete/__tests__/activeScopeFilter.test.ts` (extend), `src/services/__tests__/activeScopeReads.test.ts` no aplica — usar `src/store/__tests__/` si existe test del store; si no, el test Dexie-real de abajo
+- Modify: `src/store/useChatStore.ts` (creación de `userMsg` ~`:80`, `coachMsg` ~`:172`, `coachErrorMsg` ~`:229`, `repairedMessage` ~`:441`)
+- Modify: `src/store/useCoachActionsStore.ts:79-88` (`addProposal`, literal del `CoachProposal`)
+- Test: `src/db/__tests__/queriesActiveScope.test.ts` (extend: round-trip)
+- Test: `src/store/__tests__/useTrainingStore.test.ts` (extend: OBLIGATORIO, wiring de `addSession`)
+
+(El helper `withActiveAthleteStamp` y su test unitario se crean en **Task 5 Step 0**.)
 
 **Interfaces:**
-- Consumes: `getActiveAthleteId`, `isScopedAthleteId`.
-- Produces: `withActiveAthleteStamp<T extends { athleteId?: string }>(row: T): T` en `activeScopeFilter.ts` — estampa el atleta activo al crear; **preserva** un `athleteId` ya scoped (updates/rollbacks/restores nunca se re-estampan); sin atleta activo devuelve la fila intacta (legacy, comportamiento actual).
-
-- [ ] **Step 1: Write the failing helper test**
-
-Añadir a `src/services/athlete/__tests__/activeScopeFilter.test.ts`:
-
-```typescript
-import { withActiveAthleteStamp } from '../activeScopeFilter'
-
-describe('withActiveAthleteStamp', () => {
-  afterEach(() => { setActiveAthleteId(null); setSelfAthleteId(null) })
-
-  it('estampa el atleta activo en filas nuevas sin scope', () => {
-    setActiveAthleteId('ath_m_1')
-    expect(withActiveAthleteStamp({ id: 'x' }).athleteId).toBe('ath_m_1')
-    expect(withActiveAthleteStamp({ id: 'x', athleteId: 'default' }).athleteId).toBe('ath_m_1')
-  })
-
-  it('preserva un athleteId ya scoped (updates/rollbacks intactos)', () => {
-    setActiveAthleteId('ath_m_1')
-    expect(withActiveAthleteStamp({ id: 'x', athleteId: 'ath_self' }).athleteId).toBe('ath_self')
-  })
-
-  it('sin atleta activo devuelve la fila intacta (no escribe athleteId)', () => {
-    const row = withActiveAthleteStamp({ id: 'x' })
-    expect('athleteId' in row && row.athleteId !== undefined).toBe(false)
-  })
-})
-```
-
-- [ ] **Step 2: Run test to verify it fails**
-
-Run: `npx vitest run src/services/athlete/__tests__/activeScopeFilter.test.ts`
-Expected: FAIL — `withActiveAthleteStamp` no existe.
-
-- [ ] **Step 3: Implement the helper**
-
-En `src/services/athlete/activeScopeFilter.ts`:
-
-```typescript
-/**
- * Stamp the ACTIVE athlete on a locally-created row. Preserves an existing
- * scoped athleteId (an update/rollback/restore is never re-stamped); with no
- * active athlete the row stays legacy (today's behavior). Local-first
- * counterpart of the read policy: what you create while training athlete X
- * must remain visible under athlete X's scope immediately.
- */
-export function withActiveAthleteStamp<T extends { athleteId?: string }>(row: T): T {
-  if (isScopedAthleteId(row.athleteId)) return row
-  const active = getActiveAthleteId()
-  return active ? { ...row, athleteId: active } : row
-}
-```
+- Consumes: `withActiveAthleteStamp` (creado en **Task 5 Step 0** con su test unitario — esta task solo lo cablea), `getActiveAthleteId`, `isScopedAthleteId`.
 
 - [ ] **Step 4: Wire into the three stores**
 
@@ -858,14 +873,34 @@ export function withActiveAthleteStamp<T extends { athleteId?: string }>(row: T)
 
   (mismo patrón para `coachMsg` y `coachErrorMsg`; el objeto que va al estado y el que se persiste deben ser el MISMO objeto estampado).
 
-- `src/store/useCoachActionsStore.ts` (`addProposal`, ~`:89`): estampar la propuesta normalizada antes de persistir/estado:
+- `src/store/useChatStore.ts` (`repairOrphanProposalMessagesUnlocked`, ~`:441`): el mensaje recuperado también debe quedar scoped — hereda el scope de su propuesta (ya filtrada al scope activo en Task 6 Step 4) y solo cae al estampado genérico si la propuesta es legacy:
 
 ```typescript
-    const proposal = withActiveAthleteStamp(normalized.proposal)
+      const recovered = buildProposalRecoveredMessage(proposal, chatSessionId, anchor.timestamp)
+      const repairedMessage = isScopedAthleteId(proposal.athleteId)
+        ? { ...recovered, athleteId: proposal.athleteId }
+        : withActiveAthleteStamp(recovered)
+```
+
+  Import adicional: `isScopedAthleteId` desde `../services/athlete/effectiveAthleteKey`.
+
+- `src/store/useCoachActionsStore.ts` (`addProposal`): `normalizeCoachProposal` devuelve `{ actions, metadata }`, NO un proposal — el `CoachProposal` se construye como literal en `:79-88`. Envolver ese literal:
+
+```typescript
+    const proposal: CoachProposal = withActiveAthleteStamp({
+      id: uuid(),
+      chatMessageId,
+      message,
+      actions: normalized.actions,
+      planSummary,
+      metadata,
+      status: 'pending',
+      createdAt: Date.now(),
+    })
     await db.coachProposals.put(proposal)
 ```
 
-  (ajustar al nombre real de la variable que hoy se persiste en `:89`; el estado del store y el push deben usar la versión estampada).
+  (el `put`, el `pushCoachProposal` y el `set` de estado que siguen ya usan `proposal` — no cambian).
 
 Import en los tres stores: `import { withActiveAthleteStamp } from '../services/athlete/activeScopeFilter'`.
 
@@ -887,11 +922,56 @@ it('una sesión creada con gestionado activo queda visible en su scope de inmedi
 })
 ```
 
-> Este round-trip valida el contrato helper→lectura. Si existe suite de `useTrainingStore`/`useChatStore` en `src/store/__tests__/`, agregar ahí la aserción store-level equivalente (`addSession` con gestionado activo produce `athleteId: 'ath_m_1'`); si no existe, el wiring queda cubierto por este round-trip + la suite completa.
+> Este round-trip valida el contrato helper→lectura, pero NO que los stores usen el helper.
+
+- [ ] **Step 5b: Store-level test OBLIGATORIO — `addSession` estampa (wiring real)**
+
+Extender `src/store/__tests__/useTrainingStore.test.ts`. **Ojo con el arnés:** el archivo hoy
+solo prueba helpers puros (`resolveVisibleSessionsAfterUpdate`, etc.) y NO mockea
+`db`/`syncService`. Para el test de `addSession` hace falta arnés propio en un `describe`
+nuevo: Dexie real (fake-indexeddb ya está en `vitest.setup.ts`) con aislamiento por test, y
+mock del módulo `syncService` (el flujo `addSession → pushSession` y
+`recalculateWeekSummary → upsertWeekSummary → pushWeekSummary` sale a sync). El `vi.mock`
+es top-level y no afecta los tests puros existentes (no tocan sync):
+
+```typescript
+// Agregar a los imports del archivo:
+import { vi, beforeEach, afterEach } from 'vitest'
+
+vi.mock('../../services/syncService', () => ({
+  pushSession: vi.fn(async () => {}),
+  pushWeekSummary: vi.fn(async () => {}),
+  pushDayLog: vi.fn(async () => {}),
+  deleteSession: vi.fn(async () => {}),
+}))
+
+import { db } from '../../db/db'
+import { useTrainingStore } from '../useTrainingStore'
+import { setActiveAthleteId, setSelfAthleteId } from '../../services/athlete/activeAthlete'
+
+describe('addSession athlete stamping (Dexie real)', () => {
+  beforeEach(async () => { db.close(); await db.delete(); await db.open() })
+  afterEach(() => { setActiveAthleteId(null); setSelfAthleteId(null); db.close() })
+
+  it('addSession estampa el atleta activo en la fila creada', async () => {
+    setSelfAthleteId('ath_self')
+    setActiveAthleteId('ath_m_1')
+
+    const created = await useTrainingStore.getState().addSession({
+      date: '2026-07-06', type: 'squash', status: 'planned', durationMin: 45, title: 'Drills', timeBlock: 'AM',
+    } as never)
+
+    expect(created.athleteId).toBe('ath_m_1')
+    expect((await db.sessions.get(created.id))?.athleteId).toBe('ath_m_1')
+  })
+})
+```
+
+> Si el mock del módulo `syncService` necesita más miembros (el store importa `* as syncService`), agregar los `vi.fn` que el path de `addSession` toque — solo fallan los llamados no definidos. Si el arnés lo permite con poco costo, agregar la aserción equivalente para `useCoachActionsStore.addProposal` (proposal creada con `athleteId: 'ath_m_1'`); el de `addSession` es el obligatorio de esta task.
 
 - [ ] **Step 6: Run tests + full suite + build**
 
-Run: `npx vitest run src/services/athlete/__tests__/activeScopeFilter.test.ts src/db/__tests__/queriesActiveScope.test.ts && npm test && npm run build`
+Run: `npx vitest run src/services/athlete/__tests__/activeScopeFilter.test.ts src/db/__tests__/queriesActiveScope.test.ts src/store/__tests__/useTrainingStore.test.ts && npm test && npm run build`
 Expected: verdes (sin atleta activo el estampado es no-op → cero regresión single-athlete).
 
 - [ ] **Step 7: Commit** (no-op)
@@ -901,8 +981,10 @@ Expected: verdes (sin atleta activo el estampado es no-op → cero regresión si
 ## Task 7: Chat session key por atleta
 
 **Files:**
-- Modify: `src/utils/chatSession.ts`
+- Modify: `src/utils/chatSession.ts` (+ `clearAllStoredChatSessionIds` para flujos globales)
 - Modify: `src/store/useChatStore.ts:42-44` (re-resolver session al cargar)
+- Modify: `src/services/appMaintenance.ts:191` (limpieza global usa clearAll)
+- Modify: `src/services/dataExport.ts` (import limpia todas las keys antes de setear la preferida)
 - Test: `src/utils/__tests__/chatSession.test.ts` (create)
 
 **Interfaces:**
@@ -916,7 +998,8 @@ Create `src/utils/__tests__/chatSession.test.ts`:
 ```typescript
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import {
-  getStoredChatSessionId, setStoredChatSessionId, getOrCreateChatSessionId, clearStoredChatSessionId,
+  getStoredChatSessionId, setStoredChatSessionId, getOrCreateChatSessionId,
+  clearStoredChatSessionId, clearAllStoredChatSessionIds,
 } from '../chatSession'
 import { setActiveAthleteId, setSelfAthleteId } from '../../services/athlete/activeAthlete'
 
@@ -958,6 +1041,17 @@ describe('chat session key por atleta', () => {
     expect(localStorage.getItem('coach_chat_session_id:ath_m_1')).toBeNull()
     expect(localStorage.getItem('coach_chat_session_id')).toBe('sess-self')
   })
+
+  it('clearAllStoredChatSessionIds borra keys legacy, scoped y markers local-only', () => {
+    setSelfAthleteId('ath_self'); setActiveAthleteId('ath_m_1')
+    getOrCreateChatSessionId() // scoped + marker local-only del gestionado
+    setActiveAthleteId('ath_self'); setStoredChatSessionId('sess-self') // legacy
+
+    clearAllStoredChatSessionIds()
+    expect(localStorage.getItem('coach_chat_session_id')).toBeNull()
+    expect(localStorage.getItem('coach_chat_session_id:ath_m_1')).toBeNull()
+    expect(localStorage.getItem('coach_chat_session_local_only:ath_m_1')).toBeNull()
+  })
 })
 ```
 
@@ -996,6 +1090,36 @@ function localOnlyKey(): string {
 ```
 
 Reemplazar en TODAS las funciones del archivo los usos de `CHAT_SESSION_KEY` → `sessionKey()` y `CHAT_SESSION_LOCAL_ONLY_KEY` → `localOnlyKey()` (getStored/setStored/clearStored/isLocalOnly/getOrCreate; misma lógica, key resuelta por llamada).
+
+**Callers globales (hallazgo del review): mantenimiento e import operan sobre TODAS las keys, no la del atleta activo.** Agregar al final de `chatSession.ts`:
+
+```typescript
+/**
+ * Remove EVERY chat session key — legacy and athlete-scoped — plus their
+ * local-only markers. For account-global flows (local data reset, backup
+ * import) that must not leave stale per-athlete sessions behind.
+ */
+export function clearAllStoredChatSessionIds(): void {
+  const storage = getStorage()
+  if (!storage) return
+  const doomed: string[] = []
+  for (let i = 0; i < storage.length; i++) {
+    const key = storage.key(i)
+    if (!key) continue
+    if (key.startsWith(CHAT_SESSION_KEY) || key.startsWith(CHAT_SESSION_LOCAL_ONLY_KEY)) {
+      doomed.push(key)
+    }
+  }
+  doomed.forEach((key) => storage.removeItem(key))
+}
+```
+
+(Nota: `CHAT_SESSION_LOCAL_ONLY_KEY` no comparte prefijo con `CHAT_SESSION_KEY` — hay que chequear ambos. `CHAT_SESSION_LOCAL_ONLY_KEY` deja de ser solo-local del módulo si hace falta exportarlo para el test; preferible testear por literal.)
+
+Wiring de los callers globales:
+
+- `src/services/appMaintenance.ts:191`: reemplazar `clearStoredChatSessionId()` por `clearAllStoredChatSessionIds()` (la limpieza local es de toda la cuenta; el `getOrCreateChatSessionId()` siguiente recrea la sesión del scope activo). Ajustar el import de `../utils/chatSession`.
+- `src/services/dataExport.ts` (flujo de import, ver imports en `:30` y `syncStoresAfterImport(preferredChatSessionId)` en `:609`): en el camino de import que hoy llama `clearStoredChatSessionId()`, limpiar TODO primero con `clearAllStoredChatSessionIds()` y luego `setStoredChatSessionId(preferred)` como hoy (el preferred aplica a la key del scope activo en el momento del import — documentado, aceptable para un import account-global).
 
 - [ ] **Step 4: Re-resolver la sesión al cargar historia**
 
@@ -1207,5 +1331,5 @@ Con `npm run dev`: login normal → dashboard/semana/chat/planes se ven idéntic
 - **Spec coverage (Parte 1):** política legacy self-only (§3.6) → Tasks 1–4 (holder, helper, queries, sync anclado a self); scoping sessions/summaries/proposals/contexto IA (§3.6) → Tasks 3, 5, 6; escrituras locales estampadas (cierre local-first de la política; hallazgo del review) → Task 6b; chat athlete-scoped por key, decisión del owner (§3.6) → Task 7; selección activa persistida + hidratación selection-aware + no-clobber de `pullAthletes`/`ensureRemoteAthlete` (§3.3) → Task 8 (sin tocar los callers: ambos llaman `hydrateActiveAthlete`). Fuera de esta parte (Parte 2, plan siguiente): gating/allowlist §3.1, perfiles multi-atleta + 009 §3.2, API gestionados + ensure por athleteId §3.4, switcher/roster §3.5/§3.7.
 - **Riesgo destructivo cubierto con tests reales (review):** Task 5 tiene integración destructiva de `applyCreateWeek` (planned del self sobrevive un reemplazo con gestionado activo) y rollback de `commitPlan` (fila fuera de scope ni se borra ni se pisa), no solo el helper puro.
 - **Repair de chat scoped (review):** `repairOrphanProposalMessagesUnlocked` filtra proposals al scope activo (Task 6 Step 4) para no reenganchar propuestas de otro atleta al hilo actual.
-- **Type consistency:** `getSelfAthleteId`/`setSelfAthleteId`/`isSelfScopeActive` (Task 1) usados idéntico en Tasks 2–4, 7, 8; `isRowInActiveScope`/`filterRowsToActiveScope`/`withActiveAthleteStamp` (Tasks 2/6b) en Tasks 3, 5, 6, 6b; `getPersistedAthleteSelection`/`persistAthleteSelection` (Task 8) reservados para `switchActiveAthlete` en Parte 2.
+- **Type consistency:** `getSelfAthleteId`/`setSelfAthleteId`/`isSelfScopeActive` (Task 1) usados idéntico en Tasks 2–4, 7, 8; `isRowInActiveScope`/`filterRowsToActiveScope` (Task 2) en Tasks 3, 5, 6; `withActiveAthleteStamp` (Task 5 Step 0) en Tasks 5 y 6b; `clearAllStoredChatSessionIds` (Task 7) cablea `appMaintenance`/`dataExport`; `getPersistedAthleteSelection`/`persistAthleteSelection` (Task 8) reservados para `switchActiveAthlete` en Parte 2.
 - **Regresión single-athlete:** cada rama nueva colapsa al comportamiento actual cuando `active === self` o ambos null (incluido el estampado de Task 6b, no-op sin atleta activo); Task 4 Step 4 alinea los setups de tests existentes al escenario real (self seteado).

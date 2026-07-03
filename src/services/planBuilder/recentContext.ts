@@ -3,6 +3,7 @@ import { db } from '../../db/db'
 import type { DayLog, Session, SessionType, WeekSummary } from '../../types'
 import type { TrainingPlan } from '../../types/planBuilder'
 import { fromISO, getWeekStart, toISO } from '../../utils/date'
+import { filterRowsToActiveScope } from '../athlete/activeScopeFilter'
 
 export interface PlanBuilderRecentWeekContext {
   weekStartDate: string
@@ -230,18 +231,24 @@ export async function buildPlanBuilderRecentContext(
   const referenceWeekStart = getWeekStart(fromISO(referenceDate))
   const firstWeekStart = toISO(addDays(referenceWeekStart, -(lookbackWeeks * 7)))
   const lastHistoryDate = toISO(addDays(referenceWeekStart, -1))
-  const sessions = await db.sessions
-    .where('date')
-    .between(firstWeekStart, lastHistoryDate, true, true)
-    .toArray()
-  const dayLogs = await db.dayLogs
-    .where('date')
-    .between(firstWeekStart, lastHistoryDate, true, true)
-    .toArray()
-  const summaries = await db.weekSummaries
-    .where('weekStartDate')
-    .between(firstWeekStart, lastHistoryDate, true, true)
-    .toArray()
+  const sessions = filterRowsToActiveScope(
+    await db.sessions
+      .where('date')
+      .between(firstWeekStart, lastHistoryDate, true, true)
+      .toArray(),
+  )
+  const dayLogs = filterRowsToActiveScope(
+    await db.dayLogs
+      .where('date')
+      .between(firstWeekStart, lastHistoryDate, true, true)
+      .toArray(),
+  )
+  const summaries = filterRowsToActiveScope(
+    await db.weekSummaries
+      .where('weekStartDate')
+      .between(firstWeekStart, lastHistoryDate, true, true)
+      .toArray(),
+  )
   const summariesByWeek = new Map(summaries.map((summary) => [summary.weekStartDate, summary]))
   const sessionsByWeek = new Map<string, Session[]>()
   const logsByWeek = new Map<string, DayLog[]>()

@@ -51,7 +51,7 @@ import {
   trackSyncEvent,
 } from './syncDiagnostics'
 import { ENTITY_TIER } from '../types/syncDiagnostics'
-import { ATHLETE_PROFILE_LOCAL_ID, getActiveAthleteId } from './athlete/activeAthlete'
+import { ATHLETE_PROFILE_LOCAL_ID, getActiveAthleteId, getSelfAthleteId } from './athlete/activeAthlete'
 import { effectiveAthleteKey, isInAthleteScope, isScopedAthleteId } from './athlete/effectiveAthleteKey'
 import { hydrateActiveAthlete } from './athlete/hydrateActiveAthlete'
 import { backfillLocalAthleteScope } from './athlete/athleteScopeMigration'
@@ -2137,7 +2137,10 @@ async function pullRemoteAndMerge(userId: string): Promise<void> {
     const { syncDetails } = useAuthStore.getState()
     const pendingRemoteWipeTables = getPendingRemoteWipeTables(userId)
     const readScope = resolveReadScope()
-    const activeAthleteId = readScope.mode === 'athlete' ? readScope.athleteId : getActiveAthleteId()
+    // Legacy rows always belong to the SELF athlete (F2-lite legacy policy):
+    // the merge fallback must never stamp/group them under a managed athlete.
+    const activeAthleteId = getSelfAthleteId()
+      ?? (readScope.mode === 'athlete' ? readScope.athleteId : getActiveAthleteId())
     const mergeContext: MergeContext = {
       allowDeletes: queueDrained,
       deleteBeforeTs: queueDrained ? (syncDetails.lastSuccessfulSyncAt ?? null) : null,
@@ -2831,7 +2834,8 @@ async function repairLocalNaturalKeyConflicts(): Promise<void> {
 
 async function repairLocalDayLogConflicts(): Promise<void> {
   const rows = await db.dayLogs.toArray()
-  const activeAthleteId = getActiveAthleteId()
+  // Legacy rows group/stamp under the SELF athlete, never a managed active one.
+  const activeAthleteId = getSelfAthleteId() ?? getActiveAthleteId()
   const groups = groupRowsBy(rows, (row) => `${effectiveAthleteKey(row.athleteId, activeAthleteId)}::${row.date}`)
 
   for (const duplicates of groups.values()) {
@@ -2853,7 +2857,8 @@ async function repairLocalDayLogConflicts(): Promise<void> {
 
 async function repairLocalWeekSummaryConflicts(): Promise<void> {
   const rows = await db.weekSummaries.toArray()
-  const activeAthleteId = getActiveAthleteId()
+  // Legacy rows group/stamp under the SELF athlete, never a managed active one.
+  const activeAthleteId = getSelfAthleteId() ?? getActiveAthleteId()
   const groups = groupRowsBy(rows, (row) => `${effectiveAthleteKey(row.athleteId, activeAthleteId)}::${row.weekStartDate}`)
 
   for (const duplicates of groups.values()) {

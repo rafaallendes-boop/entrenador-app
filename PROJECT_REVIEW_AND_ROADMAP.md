@@ -1,47 +1,48 @@
 # RallyIQ - Project Review and Roadmap
 
-Actualizado: 2026-07-02
+Actualizado: 2026-07-03
 
 Base de contraste:
 
-- `main` hasta `8f3c721 Prepare athlete scope 008b rollout and coach F2 plan`.
+- `main` hasta `8f3c721 Prepare athlete scope 008b rollout and coach F2 plan`, mas el commit actual de Athlete-Aware Core.
 - `007` aplicado y F2 data prereqs en `6e33926`.
 - `008a` ya fue corrido en produccion con 0 nulls / 0 duplicados reportados.
-- `008b` esta commiteado, pero su aplicacion en la base y smoke quedan como paso operacional.
+- `008b` fue aplicado en produccion despues del deploy del write path; `008a` volvio a reportar 0 duplicados/null debt operativo.
+- Athlete-Aware Core esta implementado localmente: scoping de lecturas, seleccion activa, chat session por atleta y estampado local. Falta deploy + smoke.
 - Coach UI F2-lite tiene spec aprobado conceptualmente en `docs/superpowers/specs/2026-07-02-coach-ui-f2-mvp-design.md`; todavia no esta implementado.
 
 ## Resumen Ejecutivo
 
-RallyIQ esta en una etapa donde el core ya no es el cuello de botella principal. El motor de planificacion, Plan Builder async, calidad deportiva base, athlete scope foundation, claves naturales locales por atleta y el write path remoto seguro para day/week ya estan construidos o listos para rollout.
+RallyIQ esta en una etapa donde el core ya no es el cuello de botella principal. El motor de planificacion, Plan Builder async, calidad deportiva base, athlete scope foundation, claves naturales locales por atleta, write path remoto seguro para day/week y Athlete-Aware Core ya estan construidos.
 
 Lo que queda antes de mostrar/cobrar con confianza se divide en tres carriles:
 
-1. **Cierre operacional de datos:** desplegar el commit actual, aplicar `008b` y smoke real en produccion.
+1. **Cierre operacional de core:** desplegar Athlete-Aware Core y smoke real en produccion.
 2. **Cierre comercial/legal:** superficie publica, rutas legales, consentimiento, soporte y oferta piloto.
-3. **Coach/F2-lite:** construir la UI interna para operar atletas gestionados, despues de cerrar `008b`.
+3. **Coach/F2-lite Parte 2:** perfiles multi-atleta, `009`, API de gestionados y roster/switcher.
 
 Mi lectura como lider tecnico: ya se puede preparar demo y piloto acompanado. No esta listo para self-serve publico. Para cobrar manualmente a 1-3 fundadores, falta menos producto que operacion y confianza.
 
 ## Estado Actual En Una Frase
 
-RallyIQ esta cerca de un piloto manual serio; el proximo paso no deberia ser abrir beta, sino cerrar `008b`, limpiar confianza publica/legal y decidir si F2-lite entra antes o despues del primer piloto acompanado.
+RallyIQ esta cerca de un piloto manual serio; el proximo paso no deberia ser abrir beta, sino desplegar/smokear Athlete-Aware Core, limpiar confianza publica/legal y decidir si F2-lite Parte 2 entra antes o despues del primer piloto acompanado.
 
 ## Porcentaje De Avance
 
 Estimacion actual:
 
-- Demo acompanada: **88% listo / 12% pendiente**.
-- Piloto manual pagado 1-3 clientes: **76% listo / 24% pendiente**.
-- Coach UI F2-lite MVP: **35% listo / 65% pendiente**.
-- Monetizacion publica self-serve: **52% listo / 48% pendiente**.
+- Demo acompanada: **91% listo / 9% pendiente**.
+- Piloto manual pagado 1-3 clientes: **80% listo / 20% pendiente**.
+- Coach UI F2-lite MVP: **50% listo / 50% pendiente**.
+- Monetizacion publica self-serve: **55% listo / 45% pendiente**.
 
 Traduccion practica: el producto ya tiene sustancia; lo pendiente es reducir riesgo percibido y riesgo operacional.
 
 ## Lo Nuevo Desde El Roadmap Anterior
 
-### 1. `008b` paso de plan a commit
+### 1. `008b` paso de plan a produccion
 
-Se commiteo:
+Se commiteo, desplego y aplico en produccion:
 
 - `reconcileNaturalKeyConflict` cableado en `upsertRow`.
 - Resolucion reactiva de `23505` para `day_logs` / `week_summaries`.
@@ -51,9 +52,23 @@ Se commiteo:
 - `supabase/008b_athlete_scope_unique.sql`.
 - Plan y spec de rollout `008b`.
 
-Estado: **codigo listo y pusheado**. Falta **deploy + DB migration + smoke**.
+Estado: **cerrado como gate de integridad day/week**. Mantener `008a` como preflight operativo antes de futuros cambios de contrato.
 
-### 2. Coach UI F2-lite quedo especificado
+### 2. Athlete-Aware Core quedo implementado
+
+Parte 1 del camino F2-lite:
+
+- Holder de self athlete + seleccion activa persistida.
+- Politica legacy self-only (`activeScopeFilter`).
+- Lecturas de sessions/day logs/week summaries/proposals/contexto IA filtradas por atleta activo.
+- Escrituras locales de sessions/chat/proposals estampan `athleteId`.
+- Chat session scoped por atleta, incluyendo import/reset global con `clearAllStoredChatSessionIds`.
+- `hydrateActiveAthlete` respeta seleccion valida y no la pisa durante sync.
+- Tests de rollback/destructivos para `commitPlan`, `applyCreateWeek`, chat mixto y sync legacy.
+
+Estado: **implementado y verificado localmente**. Falta **deploy + smoke single-athlete + smoke con gestionado cuando exista UI**.
+
+### 3. Coach UI F2-lite quedo especificado
 
 Spec aprobado conceptualmente:
 
@@ -64,9 +79,9 @@ Spec aprobado conceptualmente:
 - Legacy/unscoped solo se adopta para el self, nunca para gestionados.
 - Chat session debe ser athlete-scoped.
 
-Estado: **listo para plan de implementacion**, pero no conviene ejecutarlo antes de cerrar `008b`.
+Estado: **Parte 1 de datos core implementada**. Falta plan/implementacion Parte 2: perfiles multi-atleta + `009`, API gestionados y UI `/coach`.
 
-### 3. Superficie publica avanzo, pero aun tiene residuos
+### 4. Superficie publica avanzo, pero aun tiene residuos
 
 Se tocaron `FeaturesPage` y `PricingPage`, pero el grep todavia muestra:
 
@@ -115,30 +130,41 @@ Estado: **parcialmente mejorado**, no cerrado para conversion.
 - Lookups y merges day/week athlete-aware.
 - Import/export day/week por clave efectiva.
 - `008a` preflight report-only.
-- `008b` code path commiteado y listo para rollout.
+- `008b` aplicado en produccion.
+- Athlete-Aware Core:
+  - legacy/unscoped se adopta solo para el self.
+  - sessions/summaries/proposals/chat/contexto IA ya filtran por atleta activo.
+  - creacion local de sessions/chat/proposals estampa `athleteId`.
+  - chat session storage es athlete-scoped, con limpieza global para import/reset.
+  - sync estampa legacy bajo el self aunque un gestionado este activo.
 
 ### Verificacion Tecnica Reciente
 
-Antes del commit `8f3c721`:
+Antes de cerrar Athlete-Aware Core:
 
 - `npm run lint`: OK.
 - `git diff --check`: OK.
-- `npm test`: OK, 134 archivos / 951 tests.
+- `npm test`: OK, 139 archivos / 990 tests.
 - `npm run build`: OK.
 
 ## Riesgos Que Siguen Vivos
 
-### 1. `008b` aun no esta confirmado en produccion
+### 1. Athlete-Aware Core aun no esta confirmado en produccion
 
 El codigo esta listo, pero falta la parte operacional:
 
-1. Esperar deploy de `8f3c721`.
+1. Esperar deploy del commit actual.
 2. Confirmar bundle nuevo en prod.
-3. Re-correr `008a`.
-4. Aplicar `008b`.
-5. Smoke day log + week summary create/edit sin `23505`.
+3. Smoke single-athlete:
+   - dashboard/semana.
+   - crear/editar sesion.
+   - check-in/day log.
+   - week summary/coach note.
+   - chat/proposal.
+   - import/export si aplica.
+4. Hard refresh y confirmar persistencia/sync.
 
-Esto es el primer gate antes de cualquier UI multi-atleta.
+Esto reemplaza a `008b` como gate inmediato antes de cualquier UI multi-atleta.
 
 ### 2. Superficie publica aun no transmite confianza completa
 
@@ -148,15 +174,14 @@ Todavia hay residuos visibles de producto interno: versiones, localidad inconsis
 
 No hay rutas publicas `/terms`, `/privacy`, `/health-disclaimer`. Tampoco hay consentimiento versionado en app.
 
-### 4. Coach UI F2-lite requiere trabajo real de datos
+### 4. Coach UI F2-lite Parte 2 requiere trabajo real de datos
 
-El spec esta bien, pero la implementacion no es pequena. Requiere:
+El core invisible ya esta hecho. Lo pendiente no es una UI superficial; requiere:
 
-- Scoping de lecturas de sessions/summaries/proposals/chat/contexto IA.
 - Perfiles por atleta + migracion `009`.
-- Seleccion activa persistida.
 - API de atletas gestionados.
 - Roster/switcher.
+- Smoke con self + 1 gestionado.
 
 No hay que confundirlo con una UI superficial.
 
@@ -172,7 +197,7 @@ Objetivo: mostrar y cobrar antes, con 1 atleta/piloto acompanado.
 
 Orden:
 
-1. Cerrar `008b`.
+1. Desplegar y smokear Athlete-Aware Core.
 2. Limpiar superficie publica.
 3. Rutas legales.
 4. Consentimiento minimo o aceptacion documentada.
@@ -189,12 +214,12 @@ Objetivo: que Rafael opere varios atletas/arquetipos desde la app sin contaminar
 
 Orden:
 
-1. Cerrar `008b`.
-2. Plan de implementacion F2-lite desde el spec aprobado.
-3. Scoping de lecturas.
-4. Perfiles + `009`.
-5. API de gestionados.
-6. Roster/switcher.
+1. Desplegar y smokear Athlete-Aware Core.
+2. Plan de implementacion F2-lite Parte 2 desde el spec aprobado.
+3. Perfiles + `009`.
+4. API de gestionados.
+5. Roster/switcher.
+6. Smoke self + 1 gestionado.
 
 Ventaja: mejor herramienta interna para piloto premium y QA de arquetipos.
 
@@ -206,23 +231,27 @@ Si la prioridad es **monetizar pronto**, elegir Opcion A.
 
 Si la prioridad es **operar bien 3-5 atletas desde tu cuenta**, elegir Opcion B, pero mantener F2-lite estrictamente acotado.
 
-Mi recomendacion actual: **cerrar `008b` primero y luego hacer una semana corta de confianza publica/legal antes de F2-lite**, salvo que la operacion de arquetipos se vuelva dolorosa ya.
+Mi recomendacion actual: **desplegar/smokear Athlete-Aware Core y luego hacer una semana corta de confianza publica/legal antes de F2-lite Parte 2**, salvo que la operacion de arquetipos se vuelva dolorosa ya.
 
 ## Checklist Actualizado Para Mostrar Y Monetizar
 
-### A. Gate Inmediato: `008b`
+### A. Gate Inmediato: Athlete-Aware Core
 
-Objetivo: dejar la base remota protegida para day/week antes de seguir F2.
+Objetivo: confirmar en produccion que el core athlete-aware no altera la experiencia single-athlete actual.
 
 - [x] Write path remoto natural-key-safe commiteado.
 - [x] `008b_athlete_scope_unique.sql` commiteado.
-- [ ] Confirmar deploy de `8f3c721`.
+- [x] `008b` aplicado en produccion.
+- [x] `008a` post-008b en 0.
+- [x] Athlete-Aware Core implementado.
+- [ ] Confirmar deploy del commit actual.
 - [ ] Hard refresh / confirmar bundle nuevo en prod.
-- [ ] Re-correr `008a` justo antes de `008b`.
-- [ ] Aplicar `008b`.
-- [ ] Smoke post-008b:
+- [ ] Smoke post-deploy:
+  - [ ] dashboard y semana cargan igual.
+  - [ ] crear/editar sesion.
   - [ ] crear/editar day log.
   - [ ] crear/editar week summary o coach note semanal.
+  - [ ] chat/proposal basico.
   - [ ] hard refresh y confirmar persistencia.
   - [ ] re-correr `008a` y confirmar duplicados en 0.
 
@@ -312,17 +341,19 @@ Arquetipos recomendados:
 
 Objetivo: operar varios atletas gestionados desde tu cuenta sin contaminar datos.
 
-Estado: spec aprobado, implementacion pendiente.
+Estado: spec aprobado. Parte 1 invisible (`Athlete-Aware Core`) implementada; Parte 2 visible pendiente.
 
 Gates:
 
-- [ ] Cerrar `008b`.
-- [ ] Crear plan de implementacion desde `2026-07-02-coach-ui-f2-mvp-design.md`.
-- [ ] Auditoria/scoping de lecturas.
-- [ ] Seleccion activa selection-aware.
+- [x] `008b` aplicado.
+- [x] Auditoria/scoping de lecturas core.
+- [x] Seleccion activa selection-aware.
+- [x] Chat session athlete-scoped.
+- [x] Escrituras locales estampan atleta activo.
+- [ ] Deploy + smoke de Athlete-Aware Core.
+- [ ] Crear plan de implementacion Parte 2 desde `2026-07-02-coach-ui-f2-mvp-design.md`.
 - [ ] Perfiles por atleta + `009` expand/contract.
 - [ ] API de atletas gestionados.
-- [ ] Chat session athlete-scoped.
 - [ ] Switcher y roster `/coach`.
 - [ ] Smoke con self + 1 gestionado.
 
@@ -380,10 +411,10 @@ Metricas de exito:
 
 ### Dia 0 - Gate De Datos
 
-- Confirmar deploy de `8f3c721`.
-- Re-correr `008a`.
-- Aplicar `008b`.
-- Smoke day/week.
+- Confirmar deploy del commit Athlete-Aware Core.
+- Hard refresh y confirmar bundle nuevo.
+- Smoke dashboard/semana/sesiones/day log/week summary/chat.
+- Re-correr `008a` y confirmar duplicados en 0.
 
 ### Dia 1 - Cierre Publico
 
@@ -435,7 +466,7 @@ Estado: casi listo.
 
 Pendiente minimo:
 
-- Cerrar `008b`.
+- Desplegar/smokear Athlete-Aware Core.
 - Limpiar superficie publica basica.
 - Agregar rutas legales.
 - Smoke deploy.
@@ -460,8 +491,8 @@ Estado: prometedor, pero necesita F2-lite.
 
 Pendiente minimo:
 
-- `008b` aplicado.
-- Coach UI F2-lite.
+- Deploy/smoke de Athlete-Aware Core.
+- Coach UI F2-lite Parte 2.
 - `009` perfiles.
 - Roster/switcher.
 - Protocolo de revision semanal.
@@ -483,7 +514,7 @@ Pendiente minimo:
 
 Orden recomendado:
 
-1. Cerrar rollout `008b`.
+1. Desplegar y smokear Athlete-Aware Core.
 2. Limpiar superficie publica critica: CTA, links muertos, versiones/localidad.
 3. Crear rutas legales publicas.
 4. Smoke DEV/PROD completo.
@@ -494,7 +525,7 @@ Orden recomendado:
 
 - No abrir beta publica.
 - No activar pagos automaticos todavia.
-- No aplicar Coach UI F2-lite antes de cerrar `008b`.
+- No construir Coach UI F2-lite Parte 2 antes de smokear Athlete-Aware Core en prod.
 - No prometer prevencion de lesiones ni mejoras porcentuales.
 - No vender "IA ilimitada" como valor central.
 - No invitar 10+ personas antes del primer piloto acompanado.
@@ -504,4 +535,4 @@ Orden recomendado:
 
 RallyIQ ya tiene producto suficiente para empezar a buscar senales reales con una demo acompanada. El siguiente cuello de botella es confianza: que el atleta entienda la promesa, vea una superficie seria, tenga links legales, pueda pedir acceso, genere un plan revisado y no pierda datos.
 
-Mi recomendacion: cerrar `008b`, hacer el sprint de confianza publica/legal y luego decidir entre primer piloto acompanado o F2-lite. Si el objetivo es monetizar antes, piloto primero. Si el objetivo es operar multiples atletas desde tu cuenta sin contaminar datos, F2-lite primero.
+Mi recomendacion: desplegar/smokear Athlete-Aware Core, hacer el sprint de confianza publica/legal y luego decidir entre primer piloto acompanado o F2-lite Parte 2. Si el objetivo es monetizar antes, piloto primero. Si el objetivo es operar multiples atletas desde tu cuenta sin contaminar datos, F2-lite primero.

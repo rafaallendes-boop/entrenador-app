@@ -1,11 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ChatContext, ChatMessage, CoachAction } from '../../types'
+import type { ChatContext, ChatMessage, CoachAction, CoachProposal } from '../../types'
 
 const mocks = vi.hoisted(() => {
   const chatMessages: ChatMessage[] = []
+  const coachProposals: CoachProposal[] = []
   return {
     chatMessages,
+    coachProposals,
     deletedMessageIds: [] as string[],
+    deletedProposalIds: [] as string[],
     addShouldFailForRole: undefined as ChatMessage['role'] | undefined,
     routeKind: 'chat_action' as 'chat_general' | 'chat_action' | 'weekly_summary' | 'week_creator' | 'plan_builder_redirect',
     idCounter: 0,
@@ -44,30 +47,81 @@ vi.mock('../../db/db', () => ({
         const index = mocks.chatMessages.findIndex(message => message.id === id)
         if (index >= 0) mocks.chatMessages.splice(index, 1)
       }),
+      bulkDelete: vi.fn(async (ids: string[]) => {
+        for (const id of ids) {
+          mocks.deletedMessageIds.push(id)
+          const index = mocks.chatMessages.findIndex(message => message.id === id)
+          if (index >= 0) mocks.chatMessages.splice(index, 1)
+        }
+      }),
       where: vi.fn(() => ({
-        equals: vi.fn(() => ({
-          sortBy: vi.fn(async () => [...mocks.chatMessages]),
-          primaryKeys: vi.fn(async () => mocks.chatMessages.map(message => message.id)),
+        equals: vi.fn((sessionId: string) => ({
+          sortBy: vi.fn(async () =>
+            mocks.chatMessages
+              .filter(message => message.chatSessionId === sessionId)
+              .sort((a, b) => a.timestamp - b.timestamp),
+          ),
+          toArray: vi.fn(async () =>
+            mocks.chatMessages.filter(message => message.chatSessionId === sessionId),
+          ),
+          primaryKeys: vi.fn(async () =>
+            mocks.chatMessages
+              .filter(message => message.chatSessionId === sessionId)
+              .map(message => message.id),
+          ),
           delete: vi.fn(async () => {
-            mocks.chatMessages.splice(0, mocks.chatMessages.length)
+            for (let i = mocks.chatMessages.length - 1; i >= 0; i--) {
+              if (mocks.chatMessages[i].chatSessionId === sessionId) mocks.chatMessages.splice(i, 1)
+            }
           }),
         })),
       })),
       orderBy: vi.fn(() => ({
         last: vi.fn(async () => mocks.chatMessages.at(-1)),
+        reverse: vi.fn(() => ({
+          filter: vi.fn((predicate: (message: ChatMessage) => boolean) => ({
+            first: vi.fn(async () =>
+              [...mocks.chatMessages]
+                .sort((a, b) => b.timestamp - a.timestamp)
+                .find(predicate),
+            ),
+          })),
+        })),
       })),
     },
     coachProposals: {
       delete: vi.fn(async () => undefined),
-      put: vi.fn(async () => undefined),
+      bulkDelete: vi.fn(async (ids: string[]) => {
+        for (const id of ids) {
+          mocks.deletedProposalIds.push(id)
+          const index = mocks.coachProposals.findIndex(proposal => proposal.id === id)
+          if (index >= 0) mocks.coachProposals.splice(index, 1)
+        }
+      }),
+      put: vi.fn(async (proposal: CoachProposal) => {
+        const index = mocks.coachProposals.findIndex(item => item.id === proposal.id)
+        if (index >= 0) mocks.coachProposals[index] = { ...proposal }
+        else mocks.coachProposals.push({ ...proposal })
+      }),
       where: vi.fn(() => ({
-        anyOf: vi.fn(() => ({
-          toArray: vi.fn(async () => []),
-          delete: vi.fn(async () => undefined),
+        anyOf: vi.fn((messageIds: string[]) => ({
+          toArray: vi.fn(async () =>
+            mocks.coachProposals.filter(proposal =>
+              proposal.chatMessageId != null && messageIds.includes(proposal.chatMessageId),
+            ),
+          ),
+          delete: vi.fn(async () => {
+            for (let i = mocks.coachProposals.length - 1; i >= 0; i--) {
+              const proposal = mocks.coachProposals[i]
+              if (proposal.chatMessageId != null && messageIds.includes(proposal.chatMessageId)) {
+                mocks.coachProposals.splice(i, 1)
+              }
+            }
+          }),
         })),
       })),
       orderBy: vi.fn(() => ({
-        toArray: vi.fn(async () => []),
+        toArray: vi.fn(async () => [...mocks.coachProposals]),
       })),
     },
     transaction: vi.fn(async (_mode: string, _chatMessages: unknown, _coachProposals: unknown, callback: () => unknown) => callback()),
@@ -165,7 +219,9 @@ beforeEach(() => {
     value: globalThis,
   })
   mocks.chatMessages.splice(0, mocks.chatMessages.length)
+  mocks.coachProposals.splice(0, mocks.coachProposals.length)
   mocks.deletedMessageIds.splice(0, mocks.deletedMessageIds.length)
+  mocks.deletedProposalIds.splice(0, mocks.deletedProposalIds.length)
   mocks.addShouldFailForRole = undefined
   mocks.routeKind = 'chat_action'
   mocks.idCounter = 0
@@ -283,5 +339,99 @@ describe('useChatStore.sendMessage', () => {
     expect(state.isLoading).toBe(false)
     expect(state.streamingText).toBe('')
     expect(state.messages).toEqual([])
+  })
+})
+
+describe('scoping por atleta del thread de chat', () => {
+  const seedMixedThread = () => {
+    mocks.chatMessages.push(
+      {
+        id: 'msg-self', role: 'user', content: 'hola (self/legacy)', timestamp: 1,
+        chatSessionId: 'session-1',
+      } as ChatMessage,
+      {
+        id: 'msg-managed', role: 'user', content: 'hola (managed)', timestamp: 2,
+        chatSessionId: 'session-1', athleteId: 'ath_m_1',
+      } as ChatMessage,
+    )
+  }
+
+  const seedMixedThreadWithProposals = () => {
+    seedMixedThread()
+    mocks.coachProposals.push(
+      {
+        id: 'proposal-self',
+        chatMessageId: 'msg-self',
+        message: 'self proposal',
+        actions: [],
+        status: 'pending',
+        createdAt: 1,
+      },
+      {
+        id: 'proposal-managed',
+        chatMessageId: 'msg-managed',
+        message: 'managed proposal',
+        actions: [],
+        status: 'pending',
+        createdAt: 2,
+        athleteId: 'ath_m_1',
+      },
+    )
+  }
+
+  it('loadHistory con gestionado activo no muestra mensajes legacy/self del mismo chatSessionId', async () => {
+    const { setActiveAthleteId, setSelfAthleteId } = await import('../../services/athlete/activeAthlete')
+    setSelfAthleteId('ath_self')
+    setActiveAthleteId('ath_m_1')
+    try {
+      seedMixedThread()
+      const { useChatStore } = await import('../useChatStore')
+      await useChatStore.getState().loadHistory()
+      expect(useChatStore.getState().messages.map((m) => m.id)).toEqual(['msg-managed'])
+    } finally {
+      setActiveAthleteId(null)
+      setSelfAthleteId(null)
+    }
+  })
+
+  it('deleteCurrentSession con gestionado activo borra solo sus mensajes, no los del self', async () => {
+    const { setActiveAthleteId, setSelfAthleteId } = await import('../../services/athlete/activeAthlete')
+    setSelfAthleteId('ath_self')
+    setActiveAthleteId('ath_m_1')
+    try {
+      seedMixedThread()
+      const { useChatStore } = await import('../useChatStore')
+      useChatStore.setState({ currentSessionId: 'session-1' })
+
+      await useChatStore.getState().deleteCurrentSession()
+
+      // El mensaje legacy/self sobrevive local y NO se pide su borrado remoto.
+      expect(mocks.chatMessages.map((m) => m.id)).toEqual(['msg-self'])
+      expect(mocks.deleteChatMessages).toHaveBeenCalledWith(['msg-managed'])
+      expect(mocks.deletedMessageIds).not.toContain('msg-self')
+    } finally {
+      setActiveAthleteId(null)
+      setSelfAthleteId(null)
+    }
+  })
+
+  it('deleteCurrentSession borra solo propuestas vinculadas a mensajes in-scope', async () => {
+    const { setActiveAthleteId, setSelfAthleteId } = await import('../../services/athlete/activeAthlete')
+    setSelfAthleteId('ath_self')
+    setActiveAthleteId('ath_m_1')
+    try {
+      seedMixedThreadWithProposals()
+      const { useChatStore } = await import('../useChatStore')
+      useChatStore.setState({ currentSessionId: 'session-1' })
+
+      await useChatStore.getState().deleteCurrentSession()
+
+      expect(mocks.coachProposals.map((proposal) => proposal.id)).toEqual(['proposal-self'])
+      expect(mocks.deleteCoachProposals).toHaveBeenCalledWith(['proposal-managed'])
+      expect(mocks.deletedProposalIds).toEqual(['proposal-managed'])
+    } finally {
+      setActiveAthleteId(null)
+      setSelfAthleteId(null)
+    }
   })
 })

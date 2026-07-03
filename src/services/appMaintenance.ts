@@ -4,7 +4,7 @@ import { useCoachActionsStore } from '../store/useCoachActionsStore'
 import { useCoachMemoryStore } from '../store/useCoachMemoryStore'
 import { usePlanBuilderStore } from '../store/usePlanBuilderStore'
 import { useTrainingStore } from '../store/useTrainingStore'
-import { clearStoredChatSessionId, getOrCreateChatSessionId } from '../utils/chatSession'
+import { clearAllStoredChatSessionIds, getOrCreateChatSessionId } from '../utils/chatSession'
 import { currentWeekStartISO, fromISO, toISO } from '../utils/date'
 import { addDays } from 'date-fns'
 import type { Session } from '../types'
@@ -188,7 +188,8 @@ function syncStoresAfterClear(selection: LocalDataSelection): void {
   }
 
   if (selection.chatHistory) {
-    clearStoredChatSessionId()
+    // Limpieza account-global: borra las sesiones de chat de TODOS los atletas.
+    clearAllStoredChatSessionIds()
     const nextSessionId = getOrCreateChatSessionId()
     useChatStore.setState({
       messages: [],

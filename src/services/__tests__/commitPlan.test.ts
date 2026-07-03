@@ -435,6 +435,78 @@ describe('commitPlan', () => {
     expect(trainingStoreState.loadAllSummaries).toHaveBeenCalledTimes(1)
   })
 
+  it('rollback con gestionado activo no toca ni re-pushea sesiones del self (fuera de scope)', async () => {
+    const { setActiveAthleteId, setSelfAthleteId } = await import('../athlete/activeAthlete')
+    const syncService = await import('../syncService')
+    setSelfAthleteId('ath_self')
+    setActiveAthleteId('ath_m_1')
+    try {
+      const plan = {
+        ...makePlan(),
+        wizardConfig: {
+          ...makePlan().wizardConfig,
+          allowDoubleSession: true,
+          trainingDays: ['monday'] as TrainingPlan['wizardConfig']['trainingDays'],
+          sessionsPerWeek: 2,
+        },
+      }
+      const managedOriginal: Session = {
+        ...makeStoredSession('managed-old', '2026-05-05', 'Sesion previa del gestionado'),
+        athleteId: 'ath_m_1',
+      }
+      const selfUntouched: Session = {
+        ...makeStoredSession('self-untouched', '2026-05-05', 'Sesion del self'),
+        timeBlock: 'PM',
+        status: 'completed',
+        athleteId: 'ath_self',
+      }
+      sessionsById.set(managedOriginal.id, managedOriginal)
+      sessionsById.set(selfUntouched.id, selfUntouched)
+
+      trainingStoreState.addSession.mockImplementation(async (session: Omit<Session, 'id' | 'createdAt' | 'updatedAt'>) => {
+        if (session.date === '2026-05-12') {
+          throw new Error('fallo al guardar semana')
+        }
+        const created: Session = {
+          ...session,
+          id: 'new-1',
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          weekStartDate: session.weekStartDate ?? '2026-05-04',
+        }
+        sessionsById.set(created.id, created)
+        return created
+      })
+
+      const result = await commitPlan(plan, [
+        makeWeek({
+          id: 'week-1',
+          weekIndex: 0,
+          weekStartDate: '2026-05-04',
+          sessions: makeProposalSession('2026-05-05'),
+        }),
+        makeWeek({
+          id: 'week-2',
+          weekIndex: 1,
+          weekStartDate: '2026-05-11',
+          sessions: makeProposalSession('2026-05-12'),
+        }),
+      ])
+
+      expect(result.acceptedWeeks).toEqual([])
+      // La sesión del self sobrevive intacta: ni borrada ni restaurada pisada.
+      expect(sessionsById.get('self-untouched')).toMatchObject({ status: 'completed', athleteId: 'ath_self' })
+      // Y el rollback NO la re-pushea ni la borra remotamente (estaba fuera de scope).
+      const pushedIds = vi.mocked(syncService.pushSession).mock.calls.map(([s]) => (s as Session).id)
+      expect(pushedIds).not.toContain('self-untouched')
+      const deletedIds = vi.mocked(syncService.deleteSession).mock.calls.map(([id]) => id)
+      expect(deletedIds).not.toContain('self-untouched')
+    } finally {
+      setActiveAthleteId(null)
+      setSelfAthleteId(null)
+    }
+  })
+
   it('commits accepted weeks without going through coach proposals', async () => {
     const plan = {
       ...makePlan(1),

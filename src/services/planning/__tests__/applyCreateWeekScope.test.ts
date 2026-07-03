@@ -1,0 +1,64 @@
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import type { Session } from '../../../types'
+
+vi.mock('../../syncService', () => ({
+  pullSessionsForDateRange: vi.fn(async () => {}),
+  deleteSession: vi.fn(async () => {}),
+  pushSession: vi.fn(async () => {}),
+  pushWeekSummary: vi.fn(async () => {}),
+  pushDayLog: vi.fn(async () => {}),
+}))
+
+import { db } from '../../../db/db'
+import { applyCreateWeek } from '../applyCreateWeek'
+import { setActiveAthleteId, setSelfAthleteId } from '../../athlete/activeAthlete'
+import { withActiveAthleteStamp } from '../../athlete/activeScopeFilter'
+import { v4 as uuid } from '../../../utils/uuid'
+import * as syncService from '../../syncService'
+
+// CreateWeekStoreAdapter exige addSession + loadWeek (applyCreateWeek.ts:14-17).
+// addSession imita a useTrainingStore.addSession post-Task-6b: persiste y estampa.
+const storeAdapter = {
+  loadWeek: vi.fn(async () => {}),
+  addSession: vi.fn(async (partial: Omit<Session, 'id' | 'createdAt' | 'updatedAt'>) => {
+    const now = Date.now()
+    const session = withActiveAthleteStamp({ ...partial, id: uuid(), createdAt: now, updatedAt: now }) as Session
+    await db.sessions.add(session)
+    return session
+  }),
+}
+
+describe('applyCreateWeek no borra planned sessions de otro atleta', () => {
+  beforeEach(async () => {
+    db.close()
+    await db.delete()
+    await db.open()
+    vi.clearAllMocks()
+  })
+  afterEach(() => {
+    setActiveAthleteId(null)
+    setSelfAthleteId(null)
+    db.close()
+  })
+
+  it('gestionado activo reemplaza SUS planned, no las del self en la misma semana', async () => {
+    await db.sessions.bulkPut([
+      { id: 'self-planned', athleteId: 'ath_self', date: '2026-07-06', timeBlock: 'PM', type: 'squash', status: 'planned', durationMin: 60, updatedAt: 1 },
+      { id: 'managed-planned', athleteId: 'ath_m_1', date: '2026-07-06', timeBlock: 'PM', type: 'squash', status: 'planned', durationMin: 60, updatedAt: 1 },
+    ] as never)
+    setSelfAthleteId('ath_self')
+    setActiveAthleteId('ath_m_1')
+
+    await applyCreateWeek({
+      // El input usa sessionType (no type): ver el mapeo type: session.sessionType en applyCreateWeek.
+      sessions: [{ date: '2026-07-06', sessionType: 'squash', title: 'Drills', timeBlock: 'AM', durationMin: 45 }] as never,
+      athleteProfile: null,
+      store: storeAdapter as never,
+    })
+
+    expect(await db.sessions.get('self-planned')).toBeDefined() // intocada
+    expect(await db.sessions.get('managed-planned')).toBeUndefined() // reemplazada
+    expect(vi.mocked(syncService.deleteSession)).not.toHaveBeenCalledWith('self-planned')
+    expect(storeAdapter.addSession).toHaveBeenCalled() // la semana nueva sí se creó
+  })
+})

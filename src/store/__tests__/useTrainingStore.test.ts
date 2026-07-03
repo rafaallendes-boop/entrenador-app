@@ -1,6 +1,16 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Session } from '../../types'
-import { resolveVisibleSessionsAfterUpdate, shouldKeepDayLogInVisibleWeek } from '../useTrainingStore'
+
+vi.mock('../../services/syncService', () => ({
+  pushSession: vi.fn(async () => {}),
+  pushWeekSummary: vi.fn(async () => {}),
+  pushDayLog: vi.fn(async () => {}),
+  deleteSession: vi.fn(async () => {}),
+}))
+
+import { db } from '../../db/db'
+import { resolveVisibleSessionsAfterUpdate, shouldKeepDayLogInVisibleWeek, useTrainingStore } from '../useTrainingStore'
+import { setActiveAthleteId, setSelfAthleteId } from '../../services/athlete/activeAthlete'
 
 function makeSession(partial: Partial<Session> = {}): Session {
   return {
@@ -50,5 +60,35 @@ describe('useTrainingStore visibility helpers', () => {
     expect(shouldKeepDayLogInVisibleWeek('2026-04-07', '2026-04-06')).toBe(true)
     expect(shouldKeepDayLogInVisibleWeek('2026-04-14', '2026-04-06')).toBe(false)
     expect(shouldKeepDayLogInVisibleWeek('2026-04-07', null)).toBe(false)
+  })
+})
+
+describe('addSession athlete stamping (Dexie real)', () => {
+  beforeEach(async () => {
+    db.close()
+    await db.delete()
+    await db.open()
+  })
+  afterEach(() => {
+    setActiveAthleteId(null)
+    setSelfAthleteId(null)
+    db.close()
+  })
+
+  it('addSession estampa el atleta activo en la fila creada', async () => {
+    setSelfAthleteId('ath_self')
+    setActiveAthleteId('ath_m_1')
+
+    const created = await useTrainingStore.getState().addSession({
+      date: '2026-07-06',
+      type: 'squash',
+      status: 'planned',
+      durationMin: 45,
+      title: 'Drills',
+      timeBlock: 'AM',
+    } as never)
+
+    expect(created.athleteId).toBe('ath_m_1')
+    expect((await db.sessions.get(created.id))?.athleteId).toBe('ath_m_1')
   })
 })
