@@ -12,6 +12,7 @@ import {
   resolvePlanWeekNumber,
 } from '../services/planBuilder/planProgress'
 import { ROUTES } from '../constants/routes'
+import { resolveGeneratedWeeksRoute } from './planDashboardNavigation'
 import { PlanQualityBadge } from '../components/planBuilder/PlanQualityBadge'
 import type { MacroPlanPhase } from '../types'
 import type { TrainingPlan } from '../types/planBuilder'
@@ -640,7 +641,7 @@ export default function PlanDashboard({ onEdit }: { onEdit: () => void }) {
         {/* Actions */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <button
-            onClick={() => navigate(ROUTES.PLAN_BUILDER_V2)}
+            onClick={() => navigate(resolveGeneratedWeeksRoute(activeGeneratedPlan))}
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
               width: '100%', padding: '15px 20px', borderRadius: 14,
