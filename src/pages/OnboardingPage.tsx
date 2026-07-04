@@ -10,6 +10,7 @@ import type { SupportedSport, TrainingPriority } from '../types'
 import type { OnboardingDayKey } from '../utils/schedule'
 import { ONBOARDING_DAY_ORDER } from '../utils/schedule'
 import { clearOnboardingSkipped, markOnboardingSkipped } from '../utils/onboarding'
+import { buildOnboardingAthleteProfilePatch } from '../utils/onboardingProfilePatch'
 
 const SPORT_OPTIONS: Array<{ value: SupportedSport; label: string; emoji: string }> = [
   { value: 'squash', label: 'Squash', emoji: '🎾' },
@@ -67,7 +68,14 @@ const DAYS: Array<{ key: OnboardingDayKey; label: string; shortLabel: string }> 
   { key: 'dom', label: 'Domingo', shortLabel: 'D' },
 ]
 
-const TOTAL_STEPS = 4
+const TOTAL_STEPS = 5
+
+const FIELD_STYLE = {
+  background: 'rgba(255,255,255,0.05)',
+  border: '1px solid rgba(255,255,255,0.1)',
+} as const
+
+const TEXT_INPUT_CLASS = 'w-full rounded-xl px-4 py-3 text-sm text-ink placeholder:text-ink-faint outline-none transition-all'
 
 export default function OnboardingPage() {
   const navigate = useNavigate()
@@ -81,6 +89,18 @@ export default function OnboardingPage() {
     priority,
     availableDays,
     doubleSessionDays,
+    goalEventTitle,
+    goalEventDate,
+    goalEventNotes,
+    availabilityNotes,
+    currentInjuries,
+    previousInjuries,
+    restrictions,
+    strengthNotes,
+    squat1RM,
+    deadlift1RM,
+    benchPress1RM,
+    overheadPress1RM,
     canGoNext,
     canFinish,
     setStep,
@@ -91,6 +111,7 @@ export default function OnboardingPage() {
     toggleDay,
     replaceAvailableDays,
     toggleDoubleDay,
+    setTextField,
   } = useOnboardingForm(athleteProfile, hasLoaded, isSaving)
 
   useEffect(() => {
@@ -105,31 +126,71 @@ export default function OnboardingPage() {
   const summary = useMemo(() => {
     if (!primarySport || !priority) return []
 
-    return [
+    const items = [
       `Deportes: ${selectedSports.map((sport) => SPORT_LABELS[sport]).join(', ')}`,
       `Principal: ${SPORT_LABELS[primarySport]}`,
       `Objetivo: ${GOAL_MAIN_LABEL[priority]}`,
     ]
-  }, [primarySport, priority, selectedSports])
+
+    if (goalEventTitle.trim() && goalEventDate.trim()) {
+      items.push(`Evento: ${goalEventTitle.trim()} · ${goalEventDate.trim()}`)
+    }
+    if (
+      availabilityNotes.trim() ||
+      currentInjuries.trim() ||
+      previousInjuries.trim() ||
+      restrictions.trim() ||
+      strengthNotes.trim() ||
+      squat1RM.trim() ||
+      deadlift1RM.trim() ||
+      benchPress1RM.trim() ||
+      overheadPress1RM.trim()
+    ) {
+      items.push('Contexto real: agregado')
+    }
+
+    return items
+  }, [
+    availabilityNotes,
+    benchPress1RM,
+    currentInjuries,
+    deadlift1RM,
+    goalEventDate,
+    goalEventTitle,
+    overheadPress1RM,
+    primarySport,
+    priority,
+    previousInjuries,
+    restrictions,
+    selectedSports,
+    squat1RM,
+    strengthNotes,
+  ])
 
   async function handleFinish() {
     if (!primarySport || !priority) return
 
-    await saveAthleteProfile({
-      name: name.trim() || undefined,
-      onboardingDeferredAt: undefined,
-      sportContext: {
-        enabledSports: selectedSports,
-        primarySport,
-        secondarySports: selectedSports.filter((sport) => sport !== primarySport),
-        trainingPriority: priority,
-      },
-      mainGoal: GOAL_MAIN_LABEL[priority],
-      scheduleProfile: {
-        availableDays,
-        doubleSessionDays: doubleSessionDays.length > 0 ? doubleSessionDays : undefined,
-      },
-    }, { source: 'post_reset_onboarding' })
+    await saveAthleteProfile(buildOnboardingAthleteProfilePatch({
+      existingProfile: athleteProfile,
+      name,
+      selectedSports,
+      primarySport,
+      priority,
+      availableDays,
+      doubleSessionDays,
+      goalEventTitle,
+      goalEventDate,
+      goalEventNotes,
+      availabilityNotes,
+      currentInjuries,
+      previousInjuries,
+      restrictions,
+      strengthNotes,
+      squat1RM,
+      deadlift1RM,
+      benchPress1RM,
+      overheadPress1RM,
+    }), { source: 'post_reset_onboarding' })
 
     clearOnboardingSkipped(user?.id)
     navigate(ROUTES.HOME, { state: { showProfileNudge: true } })
@@ -164,12 +225,12 @@ export default function OnboardingPage() {
       )
     }
 
-    if (step === 4) {
+    if (step === 5) {
       return (
         <div className="flex gap-3">
           <button
             type="button"
-            onClick={() => setStep(3)}
+            onClick={() => setStep(4)}
             className="flex-1 rounded-xl py-3.5 font-display text-sm font-bold uppercase tracking-[0.18em] text-ink-muted transition-all hover:text-ink"
             style={{ border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.04)' }}
           >
@@ -199,7 +260,7 @@ export default function OnboardingPage() {
       <div className="flex gap-3">
         <button
           type="button"
-          onClick={() => setStep((step - 1) as 1 | 2 | 3)}
+          onClick={() => setStep((step - 1) as 1 | 2 | 3 | 4)}
           className="flex-1 rounded-xl py-3.5 font-display text-sm font-bold uppercase tracking-[0.18em] text-ink-muted transition-all hover:text-ink"
           style={{ border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.04)' }}
         >
@@ -208,7 +269,7 @@ export default function OnboardingPage() {
         <button
           type="button"
           disabled={!canGoNext}
-          onClick={() => setStep((step + 1) as 2 | 3 | 4)}
+          onClick={() => setStep((step + 1) as 2 | 3 | 4 | 5)}
           className="flex-1 rounded-xl py-3.5 font-display text-sm font-bold uppercase tracking-[0.18em] text-white transition-all active:scale-[0.98] disabled:opacity-40"
           style={{
             background: 'linear-gradient(135deg, #ff5500, #ff4d00)',
@@ -230,18 +291,22 @@ export default function OnboardingPage() {
           ? 'Cuéntame quién eres'
           : step === 2
             ? '¿Cuál es tu disciplina principal?'
-            : step === 3
-              ? '¿Cuál es tu objetivo principal?'
-              : '¿Cuándo puedes entrenar?'
+          : step === 3
+            ? '¿Cuál es tu objetivo principal?'
+            : step === 4
+              ? '¿Cuándo puedes entrenar?'
+              : 'Contexto deportivo real'
       }
       description={
         step === 1
           ? 'RallyIQ usará esta información para personalizar tus recomendaciones desde el primer día.'
           : step === 2
             ? 'Esto ayuda a priorizar mejor la planificación cuando entrenas más de un deporte.'
-            : step === 3
-              ? 'El foco principal cambia cómo priorizamos cargas, sesiones y recomendaciones.'
-              : 'Selecciona los días disponibles y, si aplica, cuándo podrías hacer doble sesión.'
+          : step === 3
+            ? 'El foco principal cambia cómo priorizamos cargas, sesiones y recomendaciones.'
+            : step === 4
+              ? 'Selecciona los días disponibles y, si aplica, cuándo podrías hacer doble sesión.'
+              : 'Agrega lo que un coach preguntaría antes de planificar: evento, disponibilidad real, molestias, historial, fuerza y acceso a cancha o partner.'
       }
       actions={actions}
       onSkip={() => {
@@ -428,6 +493,155 @@ export default function OnboardingPage() {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {step === 5 && (
+        <div className="space-y-6">
+          <div className="space-y-3">
+            <div className="grid gap-3 sm:grid-cols-[1fr_150px]">
+              <label className="block">
+                <span className="mb-2 block text-sm font-medium text-ink-muted">Próximo torneo o evento</span>
+                <input
+                  type="text"
+                  value={goalEventTitle}
+                  onChange={(event) => setTextField('goalEventTitle', event.target.value)}
+                  placeholder="Ej. Nacional, 10K, liga del club"
+                  className={TEXT_INPUT_CLASS}
+                  style={FIELD_STYLE}
+                />
+              </label>
+              <label className="block">
+                <span className="mb-2 block text-sm font-medium text-ink-muted">Fecha</span>
+                <input
+                  type="date"
+                  value={goalEventDate}
+                  onChange={(event) => setTextField('goalEventDate', event.target.value)}
+                  className={TEXT_INPUT_CLASS}
+                  style={{ ...FIELD_STYLE, colorScheme: 'dark' }}
+                />
+              </label>
+            </div>
+            <label className="block">
+              <span className="mb-2 block text-sm font-medium text-ink-muted">Notas del evento</span>
+              <textarea
+                value={goalEventNotes}
+                onChange={(event) => setTextField('goalEventNotes', event.target.value)}
+                placeholder="Formato, rondas, distancia, objetivo o cualquier detalle competitivo."
+                className={`${TEXT_INPUT_CLASS} min-h-[84px] resize-none`}
+                style={FIELD_STYLE}
+              />
+            </label>
+          </div>
+
+          <label className="block">
+            <span className="mb-2 block text-sm font-medium text-ink-muted">Disponibilidad real, cancha y partner</span>
+            <textarea
+              value={availabilityNotes}
+              onChange={(event) => setTextField('availabilityNotes', event.target.value)}
+              placeholder="Ej. martes solo 45 min, jueves con partner, cancha disponible sábados AM."
+              className={`${TEXT_INPUT_CLASS} min-h-[96px] resize-none`}
+              style={FIELD_STYLE}
+            />
+          </label>
+
+          <div className="space-y-3">
+            <label className="block">
+              <span className="mb-2 block text-sm font-medium text-ink-muted">Molestias actuales</span>
+              <textarea
+                value={currentInjuries}
+                onChange={(event) => setTextField('currentInjuries', event.target.value)}
+                placeholder="Dolor, fatiga, zonas sensibles o molestias recientes."
+                className={`${TEXT_INPUT_CLASS} min-h-[92px] resize-none`}
+                style={FIELD_STYLE}
+              />
+            </label>
+            <label className="block">
+              <span className="mb-2 block text-sm font-medium text-ink-muted">Historial</span>
+              <textarea
+                value={previousInjuries}
+                onChange={(event) => setTextField('previousInjuries', event.target.value)}
+                placeholder="Lesiones previas o recaídas importantes."
+                className={`${TEXT_INPUT_CLASS} min-h-[92px] resize-none`}
+                style={FIELD_STYLE}
+              />
+            </label>
+            <label className="block">
+              <span className="mb-2 block text-sm font-medium text-ink-muted">Restricciones</span>
+              <textarea
+                value={restrictions}
+                onChange={(event) => setTextField('restrictions', event.target.value)}
+                placeholder="Movimientos a evitar, indicaciones médicas o límites de impacto."
+                className={`${TEXT_INPUT_CLASS} min-h-[92px] resize-none`}
+                style={FIELD_STYLE}
+              />
+            </label>
+          </div>
+
+          <div>
+            <p className="text-sm font-medium text-ink-muted">Fuerza / 1RM estimado</p>
+            <p className="mt-1 text-xs text-ink-faint">Opcional. Usa kg si tienes referencias reales o estimadas.</p>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <label className="block">
+                <span className="mb-2 block text-xs font-medium text-ink-faint">Sentadilla</span>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={squat1RM}
+                  onChange={(event) => setTextField('squat1RM', event.target.value)}
+                  placeholder="kg"
+                  className={TEXT_INPUT_CLASS}
+                  style={FIELD_STYLE}
+                />
+              </label>
+              <label className="block">
+                <span className="mb-2 block text-xs font-medium text-ink-faint">Peso muerto</span>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={deadlift1RM}
+                  onChange={(event) => setTextField('deadlift1RM', event.target.value)}
+                  placeholder="kg"
+                  className={TEXT_INPUT_CLASS}
+                  style={FIELD_STYLE}
+                />
+              </label>
+              <label className="block">
+                <span className="mb-2 block text-xs font-medium text-ink-faint">Press banca</span>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={benchPress1RM}
+                  onChange={(event) => setTextField('benchPress1RM', event.target.value)}
+                  placeholder="kg"
+                  className={TEXT_INPUT_CLASS}
+                  style={FIELD_STYLE}
+                />
+              </label>
+              <label className="block">
+                <span className="mb-2 block text-xs font-medium text-ink-faint">Press hombro</span>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={overheadPress1RM}
+                  onChange={(event) => setTextField('overheadPress1RM', event.target.value)}
+                  placeholder="kg"
+                  className={TEXT_INPUT_CLASS}
+                  style={FIELD_STYLE}
+                />
+              </label>
+            </div>
+            <label className="mt-3 block">
+              <span className="mb-2 block text-sm font-medium text-ink-muted">Notas de fuerza</span>
+              <textarea
+                value={strengthNotes}
+                onChange={(event) => setTextField('strengthNotes', event.target.value)}
+                placeholder="Equipamiento, ejercicios dominantes, límites técnicos o cargas recientes."
+                className={`${TEXT_INPUT_CLASS} min-h-[84px] resize-none`}
+                style={FIELD_STYLE}
+              />
+            </label>
+          </div>
         </div>
       )}
     </OnboardingStepFrame>

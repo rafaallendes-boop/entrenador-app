@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { db } from '../../db/db'
 import { useAuthStore } from '../../store/useAuthStore'
 import { setActiveAthleteId } from '../athlete/activeAthlete'
-import { importAppDataFromFile, parseAppDataExport } from '../dataExport'
+import { exportAppData, importAppDataFromFile, parseAppDataExport } from '../dataExport'
 
 function weekSummary(overrides: Record<string, unknown> = {}) {
   return {
@@ -43,6 +43,8 @@ function backupFixture(overrides: {
   sessions?: unknown[]
   dayLogs?: unknown[]
   weekSummaries?: unknown[]
+  athleteProfiles?: unknown[]
+  athletes?: unknown[]
 } = {}) {
   return {
     app: 'RallyIQ',
@@ -57,7 +59,8 @@ function backupFixture(overrides: {
       trainingPlanWeeks: [],
       chatMessages: [],
       coachProposals: [],
-      athleteProfiles: [],
+      athleteProfiles: overrides.athleteProfiles ?? [],
+      athletes: overrides.athletes ?? [],
     },
   }
 }
@@ -104,6 +107,97 @@ describe('dataExport athleteId import support', () => {
     expect(parsed.tables.sessions[0].athleteId).toBe('ath_A')
     expect(parsed.tables.dayLogs[0].athleteId).toBe('ath_A')
     expect(parsed.tables.weekSummaries[0].athleteId).toBe('ath_A')
+  })
+
+  it('preserves athletes and enriched goal event fields in parsed backups', () => {
+    const parsed = parseAppDataExport(backupFixture({
+      athletes: [{
+        id: 'ath_m_1',
+        ownerAccountId: 'user-1',
+        linkedAccountId: null,
+        displayName: 'Cliente 1',
+        status: 'active',
+        createdAt: 1,
+        updatedAt: 2,
+      }],
+      athleteProfiles: [{
+        id: 'ath_m_1',
+        athleteId: 'ath_m_1',
+        onboardingDeferredAt: 4,
+        updatedAt: 3,
+        goalEvents: [{
+          id: 'event-1',
+          title: '10K',
+          date: '2026-08-01',
+          sport: 'running',
+          priority: 'primary',
+          notes: 'A race',
+          eventType: 'race',
+          objective: 'personal_best',
+          competitiveLevel: 'competitive',
+        }],
+        planWizardConfig: {
+          goalEventId: 'event-1',
+          trainingDays: ['monday', 'wednesday'],
+          sessionsPerWeek: 4,
+          sessionDurationMins: 60,
+          allowDoubleSession: true,
+          doubleSessionDays: ['wednesday'],
+          scheduleConstraints: 'miércoles doble',
+          partnerAvailability: 'either',
+          complementarySports: ['strength'],
+          currentFitnessLevel: 'fit',
+          currentFatigue: 'normal',
+          injuryNotes: 'sin dolor',
+          createdAt: '2026-07-01T00:00:00.000Z',
+          updatedAt: '2026-07-02T00:00:00.000Z',
+        },
+      }],
+    }))
+
+    expect(parsed.tables.athletes).toEqual([{
+      id: 'ath_m_1',
+      ownerAccountId: 'user-1',
+      linkedAccountId: null,
+      displayName: 'Cliente 1',
+      status: 'active',
+      createdAt: 1,
+      updatedAt: 2,
+    }])
+    expect(parsed.tables.athleteProfiles[0].goalEvents?.[0]).toMatchObject({
+      eventType: 'race',
+      objective: 'personal_best',
+      competitiveLevel: 'competitive',
+    })
+    expect(parsed.tables.athleteProfiles[0]).toMatchObject({
+      athleteId: 'ath_m_1',
+      onboardingDeferredAt: 4,
+      planWizardConfig: {
+        goalEventId: 'event-1',
+        trainingDays: ['monday', 'wednesday'],
+        doubleSessionDays: ['wednesday'],
+        scheduleConstraints: 'miércoles doble',
+        partnerAvailability: 'either',
+      },
+    })
+  })
+
+  it('exports athletes with the rest of the app data', async () => {
+    await db.athletes.put({
+      id: 'ath_m_1',
+      ownerAccountId: 'user-1',
+      linkedAccountId: null,
+      displayName: 'Cliente 1',
+      status: 'active',
+      createdAt: 1,
+      updatedAt: 2,
+    })
+
+    const exported = await exportAppData()
+    const parsed = JSON.parse(exported.json) as { tables: { athletes: unknown[] } }
+
+    expect(parsed.tables.athletes).toHaveLength(1)
+    expect(parsed.tables.athletes[0]).toMatchObject({ id: 'ath_m_1', displayName: 'Cliente 1' })
   })
 
   it('leaves old backup day/week athleteId undefined when absent', () => {
@@ -234,6 +328,63 @@ describe('dataExport athleteId import support', () => {
       sleepHours: 8,
     })
     expect(await db.dayLogs.get('new-id')).toBeUndefined()
+  })
+
+  it('replace restores athletes before the next backfill/sync cycle', async () => {
+    await db.athletes.put({
+      id: 'ath_old',
+      ownerAccountId: 'user-1',
+      status: 'active',
+      createdAt: 1,
+      updatedAt: 1,
+    })
+
+    await importAppDataFromFile(backupFile({
+      athletes: [{
+        id: 'ath_m_1',
+        ownerAccountId: 'user-1',
+        linkedAccountId: null,
+        displayName: 'Cliente 1',
+        status: 'active',
+        createdAt: 10,
+        updatedAt: 11,
+      }],
+    }), 'replace')
+
+    expect(await db.athletes.get('ath_old')).toBeUndefined()
+    expect(await db.athletes.get('ath_m_1')).toMatchObject({
+      ownerAccountId: 'user-1',
+      displayName: 'Cliente 1',
+    })
+  })
+
+  it('merge keeps a newer local athlete row over the backup roster row', async () => {
+    await db.athletes.put({
+      id: 'ath_m_1',
+      ownerAccountId: 'user-1',
+      linkedAccountId: null,
+      displayName: 'Nombre local',
+      status: 'active',
+      createdAt: 1,
+      updatedAt: 20,
+    })
+
+    await importAppDataFromFile(backupFile({
+      athletes: [{
+        id: 'ath_m_1',
+        ownerAccountId: 'user-1',
+        linkedAccountId: null,
+        displayName: 'Nombre backup',
+        status: 'active',
+        createdAt: 1,
+        updatedAt: 10,
+      }],
+    }), 'merge')
+
+    expect(await db.athletes.get('ath_m_1')).toMatchObject({
+      displayName: 'Nombre local',
+      updatedAt: 20,
+    })
   })
 
   it('invalidates the owner backfill marker after import', async () => {

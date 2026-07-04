@@ -33,6 +33,7 @@ export interface LocalDataCounts {
     weekSummaries: number
     trainingPlans: number
     trainingPlanWeeks: number
+    athletes: number
   }
   chatHistory: number
   coachProposals: number
@@ -68,12 +69,13 @@ export async function deleteCoachSessionsByIds(ids: string[]): Promise<number> {
 }
 
 export async function getLocalDataCounts(): Promise<LocalDataCounts> {
-  const [sessions, dayLogs, weekSummaries, trainingPlans, trainingPlanWeeks, chatHistory, coachProposals, coachMemory] = await Promise.all([
+  const [sessions, dayLogs, weekSummaries, trainingPlans, trainingPlanWeeks, athletes, chatHistory, coachProposals, coachMemory] = await Promise.all([
     db.sessions.count(),
     db.dayLogs.count(),
     db.weekSummaries.count(),
     db.trainingPlans.count(),
     db.trainingPlanWeeks.count(),
+    db.athletes.count(),
     db.chatMessages.count(),
     db.coachProposals.count(),
     db.athleteProfiles.count(),
@@ -86,6 +88,7 @@ export async function getLocalDataCounts(): Promise<LocalDataCounts> {
       weekSummaries,
       trainingPlans,
       trainingPlanWeeks,
+      athletes,
     },
     chatHistory,
     coachProposals,

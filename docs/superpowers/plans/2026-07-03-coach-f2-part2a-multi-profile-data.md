@@ -95,7 +95,7 @@ describe('athleteProfileGroupKey', () => {
     expect(athleteProfileGroupKey('ath_self', 'ath_self')).toBe(ATHLETE_PROFILE_SELF_GROUP)
     expect(athleteProfileGroupKey(null, 'ath_self')).toBe(ATHLETE_PROFILE_SELF_GROUP)
     expect(athleteProfileGroupKey(undefined, 'ath_self')).toBe(ATHLETE_PROFILE_SELF_GROUP)
-    expect(athleteProfileGroupKey('default', 'ath_self')).toBe(ATHLETE_PROFILE_SELF_GROUP)
+    expect(athleteProfileGroupKey(ATHLETE_PROFILE_LOCAL_ID, 'ath_self')).toBe(ATHLETE_PROFILE_SELF_GROUP)
   })
   it('un gestionado es su propio grupo', () => {
     expect(athleteProfileGroupKey('ath_m_1', 'ath_self')).toBe('ath_m_1')
@@ -306,7 +306,7 @@ describe('perfil por atleta', () => {
   it('self activo lee/escribe la fila default (compat)', async () => {
     asSelf()
     const created = await upsertAthleteProfile({ name: 'Rafa' })
-    expect(created.id).toBe('default')
+    expect(created.id).toBe(ATHLETE_PROFILE_LOCAL_ID) // importar desde services/athlete/activeAthlete
     expect((await getAthleteProfile())?.name).toBe('Rafa')
   })
 
@@ -329,7 +329,7 @@ describe('perfil por atleta', () => {
   it('sin atleta activo, comportamiento legacy intacto', async () => {
     setActiveAthleteId(null); setSelfAthleteId(null)
     const created = await upsertAthleteProfile({ name: 'Legacy' })
-    expect(created.id).toBe('default')
+    expect(created.id).toBe(ATHLETE_PROFILE_LOCAL_ID)
   })
 
   it('un patch con athleteId NO puede re-scopear el perfil (se ignora en create y update)', async () => {
@@ -415,12 +415,12 @@ Expected: verdes (con self activo, `resolveProfileLocalId()` = `'default'` → i
 ## Task 3: Push path de perfiles por grupo (`syncService.ts`)
 
 **Files:**
-- Modify: `src/services/syncService.ts` (`persistAthleteProfileRow` ~`:1730`, `upsertAthleteProfileRow` ~`:1806`, `repairRemoteAthleteProfileRows` ~`:1653`)
+- Modify: `src/services/syncService.ts` (`persistAthleteProfileRow` ~`:1730`, `upsertAthleteProfileRow` ~`:1806`, `repairRemoteAthleteProfileRows` ~`:1653`, auto-repair del drain ~`:999-1027`, `repairAthleteProfileDuplicates` ~`:3328`)
 - Test: `src/services/__tests__/syncService.test.ts` (extend)
 
 **Interfaces:**
 - Consumes: `groupAthleteProfileRows`, `athleteProfileGroupKey`, `ATHLETE_PROFILE_SELF_GROUP` (Task 1; agregarlos al import de `./syncUtils`), `getSelfAthleteId` (ya importado), `athleteIdForOwner` (importar desde `./athlete/athleteScopeMigration` — hoy syncService NO lo importa).
-- Behavior: TODO repair/persist/dedupe opera dentro del grupo de la fila que se escribe. `onConflict` de perfiles pasa a `'user_id,athlete_id'`. El modo `technical_marker` y los reset markers operan sobre el grupo self.
+- Behavior: TODO repair/persist/dedupe opera dentro del grupo de la fila que se escribe — incluye el auto-repair del drain de la cola (grupo de la op) y `repairAthleteProfileDuplicates` del panel diagnóstico (por bucket, solo buckets con >1 filas). `onConflict` de perfiles pasa a `'user_id,athlete_id'`. El modo `technical_marker` y los reset markers operan sobre el grupo self.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -451,6 +451,28 @@ it('pushear el perfil de un gestionado no repara/borra el perfil remoto del self
     expect(deleteCalls.find((c) => c.table === 'athlete_profiles')).toBeUndefined()
   } finally {
     setActiveAthleteId(null)
+    setSelfAthleteId(null)
+  }
+})
+
+it('repairAthleteProfileDuplicates NO trata self + gestionado como duplicados', async () => {
+  const { setSelfAthleteId } = await import('../athlete/activeAthlete')
+  setSelfAthleteId('ath_user-1')
+  try {
+    actionResults.set('select:athlete_profiles', {
+      data: [
+        { id: 'profile:user-1', user_id: 'user-1', athlete_id: 'ath_user-1', coach_memory: null, updated_at: 5, data: { name: 'Rafa' } },
+        { id: 'profile:user-1:ath_m_1', user_id: 'user-1', athlete_id: 'ath_m_1', coach_memory: null, updated_at: 6, data: { name: 'Cliente 1' } },
+      ],
+      error: null,
+    })
+    const syncService = await import('../syncService')
+    const result = await syncService.repairAthleteProfileDuplicates('user-1')
+
+    // Dos grupos con una fila cada uno: nada que reparar, cero deletes.
+    expect(result).toMatchObject({ remoteRowsBefore: 2, repaired: false })
+    expect(deleteCalls.filter((c) => c.table === 'athlete_profiles')).toHaveLength(0)
+  } finally {
     setSelfAthleteId(null)
   }
 })
@@ -515,7 +537,29 @@ El resto del cuerpo (repair si `>1`, persist) queda igual pero opera sobre las f
  */
 ```
 
-(e) El branch de cola (~`:941` y ~`:1003`) usa `upsertAthleteProfileRow`/`fetchAthleteProfileRows` — verificar con grep que ambos puntos pasan por (b) (el `:1003` que hace fetch directo para diagnóstico puede quedarse global; solo decide reintentos).
+(e) **Auto-repair del drain de la cola (~`:999-1027`): scoping por grupo obligatorio.** El branch actual fetchea TODAS las filas remotas y con `remoteRows.length > 1` ejecuta `repairRemoteAthleteProfileRows` sobre todas — con self + gestionado legítimos, un `23505` coalescería perfiles de grupos distintos y borraría uno. Reemplazar el fetch global:
+
+```typescript
+          const groupKey = profileGroupOf(op.payload, op.userId)
+          const remoteRows = await fetchAthleteProfileRowsForGroup(op.userId, groupKey)
+```
+
+El resto del branch queda igual (repara solo si el GRUPO tiene >1 filas). El branch de upsert de cola (~`:941`) ya pasa por (b) vía `upsertAthleteProfileRow` — verificar con grep.
+
+(f) **`repairAthleteProfileDuplicates` (~`:3328`, panel diagnóstico): reparar por bucket, nunca cross-grupo.** Hoy repara globalmente con todas las filas. Reescribir el núcleo:
+
+```typescript
+    const remoteRows = await fetchAthleteProfileRows(userId)
+    const groups = groupAthleteProfileRows(remoteRows, groupingSelfAthleteId(userId))
+    const dupGroups = [...groups.values()].filter((rows) => rows.length > 1)
+    if (dupGroups.length === 0) {
+      // ...branch actual de "repaired: false" con remoteRowsBefore: remoteRows.length...
+    }
+    for (const rows of dupGroups) {
+      await repairRemoteAthleteProfileRows(userId, rows)
+    }
+    // ...branch actual de éxito: repaired: true, remoteRowsBefore: remoteRows.length...
+```
 
 - [ ] **Step 4: Run test + full suite + build**
 
@@ -534,7 +578,7 @@ Expected: verdes. Los tests existentes de perfiles (single-profile) siguen pasan
 
 **Interfaces:**
 - Consumes: Task 1 helpers + `rowToAthleteProfile(row, selfAthleteId)`.
-- Behavior: el merge agrupa filas remotas; el grupo self conserva TODA la lógica actual (reset lock account-level, full-reset row, repair, LWW vs `'default'`, delete-si-vacío); cada grupo gestionado hace repair-si-duplicado + LWW contra su fila local `id = athleteId`; un perfil local gestionado sin remoto se pushea **solo si es nuevo/local más reciente** — dentro de la ventana de deletes (`context.allowDeletes && local.updatedAt <= context.deleteBeforeTs`) se borra localmente en vez de resucitar un delete remoto (mismo contrato que el grupo self en `:2549-2551` y que el resto de tablas). `migrateLocalDataToCloud` coalescea por grupo, no globalmente.
+- Behavior: el merge agrupa filas remotas; el grupo self conserva la lógica actual (reset lock account-level, full-reset row, repair, LWW vs `'default'`) con UNA excepción: el branch "self remoto vacío" pasa de `clear()` a borrar SOLO la fila `'default'` — `clear()` queda reservado a reset lock/full reset account-level; cada grupo gestionado hace repair-si-duplicado + LWW contra su fila local `id = athleteId`; un perfil local gestionado sin remoto se pushea **solo si es nuevo/local más reciente** — dentro de la ventana de deletes (`context.allowDeletes && local.updatedAt <= context.deleteBeforeTs`) se borra localmente en vez de resucitar un delete remoto (mismo contrato que el grupo self en `:2549-2551` y que el resto de tablas). `migrateLocalDataToCloud` coalescea por grupo, no globalmente.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -556,12 +600,37 @@ it('un full pull con perfiles de self y gestionado converge cada uno a su fila l
     await syncService.runFullSync('user-1')
 
     const local = athleteProfileRows as Array<{ id: string; name?: string }>
-    const self = local.find((p) => p.id === 'default')
+    const self = local.find((p) => p.id === ATHLETE_PROFILE_LOCAL_ID)
     const managed = local.find((p) => p.id === 'ath_m_1')
     expect(self?.name).toBe('Rafa')
     expect(managed?.name).toBe('Cliente 1')
     // Dos grupos NO son duplicados: nadie borró filas remotas.
     expect(deleteCalls.filter((c) => c.table === 'athlete_profiles')).toHaveLength(0)
+  } finally {
+    setSelfAthleteId(null)
+    setActiveAthleteId(null)
+  }
+})
+
+it('self remoto vacío en ventana de deletes borra SOLO la fila default, nunca perfiles gestionados', async () => {
+  const { setSelfAthleteId, setActiveAthleteId } = await import('../athlete/activeAthlete')
+  setSelfAthleteId('ath_user-1')
+  try {
+    // Local: self viejo (en ventana de deletes) + gestionado fresco. Remoto: SOLO el gestionado.
+    athleteProfileRows.push(
+      { id: ATHLETE_PROFILE_LOCAL_ID, athleteId: 'ath_user-1', updatedAt: 5, name: 'Rafa' } as never,
+      { id: 'ath_m_1', athleteId: 'ath_m_1', updatedAt: 50, name: 'Cliente 1' } as never,
+    )
+    actionResults.set('select:athlete_profiles', {
+      data: [{ id: 'profile:user-1:ath_m_1', user_id: 'user-1', athlete_id: 'ath_m_1', coach_memory: null, updated_at: 50, data: { name: 'Cliente 1' } }],
+      error: null,
+    })
+    // Arnés: allowDeletes true con deleteBeforeTs >= 5 (ver test anterior).
+    const syncService = await import('../syncService')
+    await syncService.runFullSync('user-1')
+
+    expect(athleteProfileRows.find((p: { id: string }) => p.id === ATHLETE_PROFILE_LOCAL_ID)).toBeUndefined()
+    expect(athleteProfileRows.find((p: { id: string }) => p.id === 'ath_m_1')).toBeDefined()
   } finally {
     setSelfAthleteId(null)
     setActiveAthleteId(null)
@@ -660,7 +729,13 @@ async function mergeAthleteProfile(userId: string, context: MergeContext): Promi
 }
 ```
 
-`mergeSelfProfileGroup(userId, selfRows, context)` = el cuerpo actual desde el check `remoteRows.length > 1` hasta el final (`:2538-2579`), reemplazando cada `remoteRows` por `selfRows`, el re-fetch post-repair por `fetchAthleteProfileRowsForGroup(userId, ATHLETE_PROFILE_SELF_GROUP)`, y el `rowToAthleteProfile(mergedRow)` de `:2571` por `rowToAthleteProfile(mergedRow, groupingSelfAthleteId(userId))` (el param ya quedó requerido en Task 1; esto reemplaza el fix interino). Sin otros cambios: repair, branch vacío con delete-por-antigüedad, full-reset row, coalesce + LWW contra `'default'`, `pendingWrites` con `pushAthleteProfile(mergedProfile)`.
+`mergeSelfProfileGroup(userId, selfRows, context)` = el cuerpo actual desde el check `remoteRows.length > 1` hasta el final (`:2538-2579`), con TRES sustituciones:
+
+1. Cada `remoteRows` → `selfRows`; el re-fetch post-repair → `fetchAthleteProfileRowsForGroup(userId, ATHLETE_PROFILE_SELF_GROUP)`.
+2. `rowToAthleteProfile(mergedRow)` de `:2571` → `rowToAthleteProfile(mergedRow, groupingSelfAthleteId(userId))` (el param ya quedó requerido en Task 1; esto reemplaza el fix interino).
+3. **El branch "self remoto vacío" (`:2548-2556`) NO puede seguir usando `db.athleteProfiles.clear()`**: en multi-perfil, que falte el perfil self remoto no autoriza borrar perfiles gestionados locales. Cambiar `:2552` a `db.athleteProfiles.delete(ATHLETE_PROFILE_LOCAL_ID)`. `clear()` queda SOLO en los paths account-level: reset lock activo y full-reset row (`:2565`), que son nucleares por diseño.
+
+Sin otros cambios: repair, full-reset row, coalesce + LWW contra `'default'`, `pendingWrites` con `pushAthleteProfile(mergedProfile)`.
 
 `mergeManagedProfileGroup`:
 
@@ -713,10 +788,12 @@ En `migrateLocalDataToCloud` (~`:3298`), reemplazar el bloque de perfiles:
     }
 ```
 
-- [ ] **Step 5: Run test + full suite + build**
+- [ ] **Step 5: Run test + full suite + build + grep de callers**
 
 Run: `npx vitest run src/services/__tests__/syncService.test.ts && npm test && npm run build`
 Expected: verdes (single-profile: un solo grupo → flujo idéntico al actual).
+
+Grep final OBLIGATORIO: `rg "repairRemoteAthleteProfileRows\(" src/services/syncService.ts` — revisar CADA caller y confirmar que todos pasan filas ya filtradas por grupo (post Tasks 3–4 deben ser: `upsertAthleteProfileRow`, `persistAthleteProfileRow`, auto-repair de cola, `repairAthleteProfileDuplicates` por bucket, `mergeSelfProfileGroup`, `mergeManagedProfileGroup`). Si aparece un caller con filas globales, es un bug de esta task.
 
 - [ ] **Step 6: Commit** (no-op)
 
@@ -1126,9 +1203,11 @@ Expected: verdes.
 - [ ] **Step 3:** Aplicar `supabase/009b_athlete_profiles_expand.sql` (unique compuesto; el viejo sigue vivo).
 - [ ] **Step 4:** Commit (owner) + deploy de **Parte 2a** (Tasks 1–7). El cliente nuevo usa `onConflict: 'user_id,athlete_id'`, que requiere 009b ya aplicada.
 - [ ] **Step 5:** Confirmar bundle nuevo en prod (hard refresh; bump del SW si aplica). Smoke: **editar y guardar el perfil self** sin error (el upsert compuesto matchea la fila existente).
-- [ ] **Step 6:** Aplicar `supabase/009c_athlete_profiles_contract.sql` (drop del unique viejo; el DO-guard verifica 009b + null debt).
+- [ ] **Step 6:** Aplicar `supabase/009c_athlete_profiles_contract.sql` (`athlete_id not null` + drop del unique viejo; el DO-guard verifica 009b + null debt antes del `alter column`).
 - [ ] **Step 7:** Smoke post-contract: crear un atleta gestionado vía consola dev (`createManagedAthlete(...)` + `switch` manual con `persistAthleteSelection` + reload) y guardar su perfil → **sin `23505`**, dos filas en `athlete_profiles` remoto, la del self intacta. Este smoke se vuelve trivial con la UI de la Parte 2b; si se prefiere, diferirlo al cierre de 2b.
 - [ ] **Step 8:** Anotar resultado en el roadmap. Recién aquí queda habilitado crear gestionados reales.
+
+> **Gate heredado para la Parte 2b — day/week uniques legacy.** `008b` fue ADITIVO: los uniques legacy `(user_id, date)` / `(user_id, week_start_date)` siguen vivos (y `migrateLocalDataToCloud` aún usa esos `onConflict`). Con dos atletas bajo la misma cuenta, el SEGUNDO day log de una misma fecha (o week summary de una misma semana) choca `23505` remoto. `009` solo destraba PERFILES multi-atleta; **no habilitar check-ins/week summaries multi-atleta reales** hasta cerrar el contract equivalente para `day_logs`/`week_summaries` (mini expand/contract análogo a 009, fuera del scope de 2a). Anotarlo en el roadmap como prerequisito de la 2b operativa.
 
 ---
 
@@ -1140,4 +1219,6 @@ Expected: verdes.
 - **Type consistency:** `athleteProfileGroupKey(athleteId, selfAthleteId)`, `groupAthleteProfileRows(rows, selfAthleteId)`, `ATHLETE_PROFILE_SELF_GROUP`, `rowToAthleteProfile(row, selfAthleteId)` (requerido), `groupingSelfAthleteId(userId)`, `fetchAthleteProfileRowsForGroup(userId, groupKey)`, `ensureRemoteAthlete(userId, athleteId?)`, `createManagedAthlete(ownerAccountId, displayName)`, `listOwnedAthletes(ownerAccountId)`, `pushAthlete(athlete)` — usados idéntico entre tasks.
 - **Regresión single-athlete:** un solo grupo (`self`) hace de cada cambio la identidad del flujo actual; el remote id del self no cambia; `onConflict` compuesto matchea la fila única existente post-009b.
 - **Ajustes de review (2026-07-03):** (1) el patch de `upsertAthleteProfile` ya no puede re-scopear — `athleteId` fuera del tipo + strip runtime + test; (2) invariante remoto `athlete_id` no-null en `athleteProfileToRow` Y en `createAthleteProfileFullResetRow` (el marker con NULL insertaría una segunda fila self post-009c en vez de conflictuar); (3) `rowToAthleteProfile(row, selfAthleteId)` requerido, sin default — y el grouping en syncService usa `groupingSelfAthleteId(userId)` (`getSelfAthleteId() ?? athleteIdForOwner(userId)`) para no depender del timing de hidratación; (4) un gestionado local sin remoto respeta `allowDeletes`/`deleteBeforeTs` antes de pushearse (no resucita deletes); (5) snippet del test de Task 1 con `ATHLETE_PROFILE_LOCAL_ID` directo.
+- **Ajustes de review, ronda 3 (2026-07-03):** (1) el auto-repair del drain de cola (~`:999-1027`) y `repairAthleteProfileDuplicates` (~`:3328`) dejan de ser cross-grupo — la cola filtra por `profileGroupOf(op.payload, op.userId)` y el repair manual agrupa y repara solo buckets con >1 filas, con test (self + gestionado ≠ duplicados, cero deletes); (2) el branch "self remoto vacío" de `mergeSelfProfileGroup` pasa de `db.athleteProfiles.clear()` a `delete(ATHLETE_PROFILE_LOCAL_ID)` — `clear()` queda solo en reset lock/full reset account-level, con test; (3) gate heredado documentado en Task 8: los uniques legacy de `day_logs`/`week_summaries` (aditivos en `008b`) bloquean check-ins multi-atleta reales hasta su propio contract (prerequisito de la 2b operativa, fuera del scope de 2a).
+- **Ajustes de review, ronda 4 (2026-07-04):** (1) `009c` deja de ser solo contract de índice: después del guard de null debt aplica `alter column athlete_id set not null`, evitando que clientes stale/manuales vuelvan a insertar perfiles con `NULL` tras eliminar el unique legacy; (2) backup/import pasa a incluir `athletes` con merge por `updatedAt`, preview/counts en Settings y compatibilidad con backups v1-v3 sin esa tabla (`athletes: []`); (3) parser de `athleteProfiles` conserva `athleteId`, `onboardingDeferredAt`, `planWizardConfig` y `goalEvents.eventType/objective/competitiveLevel`; (4) el patch del onboarding se extrae a helper puro testeado para torneo/evento, disponibilidad, lesiones y fuerza/1RM.
 - **Ajustes de review, ronda 2 (2026-07-03):** (1) el ensure de gestionados se cablea en los TRES paths de escritura remota — `upsertRow`, drain de cola (~`:938`; el drain hace upsert directo y sin ensure un child encolado pegaría `23503`) y `migrateLocalDataToCloud` (hoy solo asegura el self; se asegura cada atleta local del owner antes de los batch upserts) — con test de cola que aserta el orden ensure→child; (2) `athleteProfileToRow` deriva `athlete_id` SOLO del id local (sentinel → `athleteIdForOwner`; otro → `localId`) — `profile.athleteId` ya no participa, con tests de mismatch (`default`+`ath_m_1` sale self; `ath_m_1`+`ath_m_2` sale `ath_m_1`); (3) snippet del reset marker actualizado a la firma nueva `getAthleteProfileRemoteId(userId, ATHLETE_PROFILE_LOCAL_ID)`.

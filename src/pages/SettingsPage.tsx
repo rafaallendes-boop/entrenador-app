@@ -287,7 +287,7 @@ export default function SettingsPage() {
       setPendingImportFile(null)
       setImportPreview(null)
       setImportStatus(
-        `Backup importado en modo ${result.mode === 'merge' ? 'merge' : 'replace'} (${result.importedAt}): ${result.counts.sessions} sesiones, ${result.counts.dayLogs} check-ins, ${result.counts.weekSummaries} resumenes y ${result.counts.chatMessages} mensajes.`
+        `Backup importado en modo ${result.mode === 'merge' ? 'merge' : 'replace'} (${result.importedAt}): ${result.counts.sessions} sesiones, ${result.counts.dayLogs} check-ins, ${result.counts.weekSummaries} resumenes, ${result.counts.athletes} atletas y ${result.counts.chatMessages} mensajes.`
       )
     } catch (error) {
       console.error('[settings] import backup failed', error)
@@ -994,6 +994,7 @@ export default function SettingsPage() {
                     { label: 'Sesiones', backup: importPreview.counts.sessions, local: dataCounts?.trainingData.sessions },
                     { label: 'Check-ins', backup: importPreview.counts.dayLogs, local: dataCounts?.trainingData.dayLogs },
                     { label: 'Resúmenes', backup: importPreview.counts.weekSummaries, local: dataCounts?.trainingData.weekSummaries },
+                    { label: 'Atletas', backup: importPreview.counts.athletes, local: dataCounts?.trainingData.athletes },
                     { label: 'Mensajes', backup: importPreview.counts.chatMessages, local: dataCounts?.chatHistory },
                     { label: 'Proposals', backup: importPreview.counts.coachProposals, local: null },
                   ].map(row => (
@@ -1495,8 +1496,8 @@ function formatCountLabel(group: LocalDataGroup, counts: LocalDataCounts | null)
 
   switch (group) {
     case 'trainingData': {
-      const { sessions, dayLogs, weekSummaries } = counts.trainingData
-      return `${sessions} sesiones - ${dayLogs} check-ins - ${weekSummaries} resumenes`
+      const { sessions, dayLogs, weekSummaries, athletes } = counts.trainingData
+      return `${sessions} sesiones - ${dayLogs} check-ins - ${weekSummaries} resumenes - ${athletes} atletas`
     }
     case 'chatHistory':
       return `${counts.chatHistory} mensajes`

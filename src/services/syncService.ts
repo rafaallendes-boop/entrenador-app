@@ -27,7 +27,9 @@ import {
   trainingPlanWeekToRow,
 } from './planBuilder/planRows'
 import {
+  ATHLETE_PROFILE_SELF_GROUP,
   athleteProfileRowsEqual,
+  athleteProfileGroupKey,
   athleteProfileToRow,
   classifyAthleteProfileSyncError,
   classifySyncError,
@@ -35,6 +37,7 @@ import {
   createAthleteProfileFullResetRow,
   getAthleteProfileFullResetAt,
   getSyncErrorMessage,
+  groupAthleteProfileRows,
   isAthleteProfileFullResetRow,
   normalizeAthleteProfilePayload,
   rowToAthleteProfile,
@@ -54,7 +57,7 @@ import { ENTITY_TIER } from '../types/syncDiagnostics'
 import { ATHLETE_PROFILE_LOCAL_ID, getActiveAthleteId, getSelfAthleteId } from './athlete/activeAthlete'
 import { effectiveAthleteKey, isInAthleteScope, isScopedAthleteId } from './athlete/effectiveAthleteKey'
 import { hydrateActiveAthlete } from './athlete/hydrateActiveAthlete'
-import { backfillLocalAthleteScope } from './athlete/athleteScopeMigration'
+import { athleteIdForOwner, backfillLocalAthleteScope } from './athlete/athleteScopeMigration'
 import { athleteToRow, rowToAthlete, type AthleteRow } from './athleteRows'
 import { resolveReadScope, type ReadScope } from './athlete/readScope'
 import {
@@ -937,6 +940,15 @@ async function drainQueue(): Promise<boolean> {
     try {
       await withSerializedEntityMutation(op.userId, op.table, op.payload, async () => {
         if (op.action === 'upsert') {
+          if (op.table !== 'athletes' && op.payload.athlete_id != null) {
+            await withRequestTimeout(
+              ensureRemoteAthlete(
+                op.userId,
+                typeof op.payload.athlete_id === 'string' ? op.payload.athlete_id : undefined,
+              ),
+              'athletes.ensure',
+            )
+          }
           if (op.table === 'athlete_profiles') {
             await withRequestTimeout(upsertAthleteProfileRow(op.payload, op.userId), `${op.table}.upsert`)
           } else {
@@ -1000,7 +1012,8 @@ async function drainQueue(): Promise<boolean> {
       if (errorInfo.autoRepairable && op.table === 'athlete_profiles') {
         try {
           syncStoreState().setSyncDetails({ autoRepairInProgress: true })
-          const remoteRows = await fetchAthleteProfileRows(op.userId)
+          const groupKey = profileGroupOf(op.payload, op.userId)
+          const remoteRows = await fetchAthleteProfileRowsForGroup(op.userId, groupKey)
           if (remoteRows.length > 1) {
             const profileRow = toAthleteProfileSyncRow(op.payload)
             await repairRemoteAthleteProfileRows(op.userId, remoteRows, profileRow)
@@ -1156,7 +1169,13 @@ async function upsertRow(
     const upsertStartedAt = Date.now()
     try {
       if (table !== 'athletes' && payload.athlete_id != null) {
-        await withRequestTimeout(ensureRemoteAthlete(userId), 'athletes.ensure')
+        await withRequestTimeout(
+          ensureRemoteAthlete(
+            userId,
+            typeof payload.athlete_id === 'string' ? payload.athlete_id : undefined,
+          ),
+          'athletes.ensure',
+        )
       }
       if (table === 'athlete_profiles') {
         await withRequestTimeout(upsertAthleteProfileRow(payload, userId), `athlete_profiles.upsert`)
@@ -1582,6 +1601,29 @@ async function fetchAthleteProfileRows(userId: string): Promise<AthleteProfileSy
   return ((data ?? []) as Record<string, unknown>[]).map(toAthleteProfileSyncRow)
 }
 
+// Prefer the hydrated holder, but never group with a null self: before hydration,
+// the deterministic owner id still identifies the self row produced by SQL/client backfills.
+function groupingSelfAthleteId(userId: string): string {
+  return getSelfAthleteId() ?? athleteIdForOwner(userId)
+}
+
+function profileGroupOf(row: Record<string, unknown>, userId: string): string {
+  const athleteId = row.athlete_id
+  return athleteProfileGroupKey(
+    typeof athleteId === 'string' ? athleteId : null,
+    groupingSelfAthleteId(userId),
+  )
+}
+
+async function fetchAthleteProfileRowsForGroup(
+  userId: string,
+  groupKey: string,
+): Promise<AthleteProfileSyncRow[]> {
+  const selfAthleteId = groupingSelfAthleteId(userId)
+  const rows = await fetchAthleteProfileRows(userId)
+  return rows.filter((row) => athleteProfileGroupKey(row.athlete_id, selfAthleteId) === groupKey)
+}
+
 async function fetchRemoteFullResetAt(userId: string): Promise<number | null> {
   const rows = await fetchAthleteProfileRows(userId)
   let latest: number | null = null
@@ -1657,9 +1699,11 @@ async function repairRemoteAthleteProfileRows(
 ): Promise<AthleteProfileSyncRow> {
   const candidates = preferredRow ? [...rows, preferredRow] : [...rows]
   const winner = coalesceAthleteProfileRows(candidates)
+  const winnerGroupKey = profileGroupOf(winner as unknown as Record<string, unknown>, userId)
   const canonical: AthleteProfileSyncRow = {
     ...winner,
     user_id: userId,
+    athlete_id: winnerGroupKey === ATHLETE_PROFILE_SELF_GROUP ? athleteIdForOwner(userId) : winnerGroupKey,
   }
   const keeper = rows.find((row) => row.id === winner.id) ?? rows[0]
   const nextRow: AthleteProfileSyncRow = {
@@ -1721,9 +1765,13 @@ async function repairRemoteAthleteProfileRows(
 }
 
 /**
+ * Repairs duplicates within one profile group. Callers must pre-filter rows by
+ * athleteProfileGroupKey so self and managed profiles are never treated as
+ * duplicates of each other.
+ *
  * Idempotent write for athlete_profiles.
  * Strategy:
- * 1. If unique constraint on user_id exists → use upsert with onConflict
+ * 1. If composite unique exists → use upsert with onConflict
  * 2. If duplicates detected → repair first, then write
  * 3. Fallback to fetch-then-update for compatibility
  */
@@ -1735,7 +1783,10 @@ async function persistAthleteProfileRow(
 ): Promise<void> {
   const mode = options?.mode ?? 'normal'
   const profileRow = toAthleteProfileSyncRow(stripAthleteProfileWriteSource(row))
-  const existingRows = remoteRows ?? await fetchAthleteProfileRows(userId)
+  const existingRows = remoteRows ?? await fetchAthleteProfileRowsForGroup(
+    userId,
+    profileGroupOf(profileRow as unknown as Record<string, unknown>, userId),
+  )
 
   if (mode === 'technical_marker') {
     const keeper = existingRows[0]
@@ -1748,7 +1799,7 @@ async function persistAthleteProfileRow(
           id: normalized.id,
           user_id: userId,
           ...athleteProfilePersistencePayload(normalized),
-        } as never, { onConflict: 'user_id' })
+        } as never, { onConflict: 'user_id,athlete_id' })
       if (error) throw error
       return
     }
@@ -1782,14 +1833,14 @@ async function persistAthleteProfileRow(
     : profileRow
 
   if (!existingRow) {
-    // Try upsert with onConflict first (requires unique constraint on user_id)
+    // Try upsert with onConflict first (requires composite unique).
     const { error } = await getSupabase()
       .from('athlete_profiles')
       .upsert({
         id: rowToPersist.id,
         user_id: userId,
         ...athleteProfilePersistencePayload(rowToPersist),
-      } as never, { onConflict: 'user_id' })
+      } as never, { onConflict: 'user_id,athlete_id' })
     if (error) throw error
     return
   }
@@ -1809,10 +1860,12 @@ async function upsertAthleteProfileRow(row: Record<string, unknown>, userId: str
     ? 'post_reset_onboarding'
     : 'normal'
   const profileRow = toAthleteProfileSyncRow(stripAthleteProfileWriteSource(row))
-  const remoteRows = await fetchAthleteProfileRows(userId)
+  const groupKey = profileGroupOf(profileRow as unknown as Record<string, unknown>, userId)
+  const remoteRows = await fetchAthleteProfileRowsForGroup(userId, groupKey)
 
   logAthleteProfileSync('push:attempt', {
     writeSource,
+    groupKey,
     payloadId: profileRow.id,
     payloadUpdatedAt: profileRow.updated_at,
     remoteRows: remoteRows.length,
@@ -1879,14 +1932,35 @@ async function ensureRemoteAthleteOnce(userId: string): Promise<void> {
   if (error) throw error
 }
 
-async function ensureRemoteAthlete(userId: string): Promise<void> {
-  const existing = remoteAthleteEnsurePromises.get(userId)
+async function ensureRemoteManagedAthleteOnce(userId: string, athleteId: string): Promise<void> {
+  if (!isEnabled()) return
+
+  const local = await db.athletes.get(athleteId)
+  if (!local || local.ownerAccountId !== userId) {
+    throw new Error(`managed athlete ${athleteId} not found locally; deferring child push`)
+  }
+
+  const { error } = await getSupabase()
+    .from('athletes')
+    .upsert(athleteToRow(local) as never, { onConflict: 'id' })
+  if (error) throw error
+}
+
+async function ensureRemoteAthlete(userId: string, athleteId?: string): Promise<void> {
+  const isManaged = typeof athleteId === 'string'
+    && isScopedAthleteId(athleteId)
+    && athleteId !== athleteIdForOwner(userId)
+  const cacheKey = isManaged ? `${userId}::${athleteId}` : userId
+  const existing = remoteAthleteEnsurePromises.get(cacheKey)
   if (existing) return existing
 
-  const promise = ensureRemoteAthleteOnce(userId).finally(() => {
-    remoteAthleteEnsurePromises.delete(userId)
+  const promise = (isManaged
+    ? ensureRemoteManagedAthleteOnce(userId, athleteId)
+    : ensureRemoteAthleteOnce(userId)
+  ).finally(() => {
+    remoteAthleteEnsurePromises.delete(cacheKey)
   })
-  remoteAthleteEnsurePromises.set(userId, promise)
+  remoteAthleteEnsurePromises.set(cacheKey, promise)
   return promise
 }
 
@@ -1894,6 +1968,12 @@ export async function pushSession(session: Session): Promise<void> {
   const userId = getUserId()
   if (!userId) return
   await upsertRow('sessions', withAthleteId(sessionToRow(session, userId), session.athleteId))
+}
+
+export async function pushAthlete(athlete: Athlete): Promise<void> {
+  const userId = getUserId()
+  if (!userId || athlete.ownerAccountId !== userId) return
+  await upsertRow('athletes', athleteToRow(athlete) as unknown as Record<string, unknown>)
 }
 
 export async function deleteSession(id: string): Promise<void> {
@@ -2045,7 +2125,11 @@ async function wipeRemoteTableByUser(
     return
   }
   if (table === 'athletes') {
-    const { error } = await getSupabase().from('athletes').delete().eq('owner_account_id', userId)
+    const deleteQuery = getSupabase().from('athletes').delete().eq('owner_account_id', userId)
+    const scopedDelete = options?.fullReset
+      ? deleteQuery.neq('id', athleteIdForOwner(userId))
+      : deleteQuery
+    const { error } = await scopedDelete
     if (error) throw error
     return
   }
@@ -2522,10 +2606,14 @@ async function mergeAthleteProfile(userId: string, context: MergeContext): Promi
     throw new Error(classifyAthleteProfileSyncError(error))
   }
 
+  const selfAthleteId = groupingSelfAthleteId(userId)
+  const groups = groupAthleteProfileRows(remoteRows, selfAthleteId)
+  const selfRows = groups.get(ATHLETE_PROFILE_SELF_GROUP) ?? []
+
   const profileResetLock = getProfileResetLock(userId)
   if (isProfileResetLockActive(profileResetLock)) {
-    if (remoteRows.length > 0) {
-      const canonicalLockedRow = coalesceAthleteProfileRows(remoteRows)
+    if (selfRows.length > 0) {
+      const canonicalLockedRow = coalesceAthleteProfileRows(selfRows)
       const resetAt = getAthleteProfileFullResetAt(canonicalLockedRow.data)
       if (resetAt != null) {
         markProfileResetLockStatus(userId, 'awaiting_onboarding_recreation', resetAt)
@@ -2535,27 +2623,52 @@ async function mergeAthleteProfile(userId: string, context: MergeContext): Promi
     return
   }
 
-  if (remoteRows.length > 1) {
+  await mergeSelfProfileGroup(userId, selfRows, context)
+
+  for (const [groupKey, rows] of groups) {
+    if (groupKey === ATHLETE_PROFILE_SELF_GROUP) continue
+    await mergeManagedProfileGroup(userId, groupKey, rows, context, selfAthleteId)
+  }
+
+  const localProfiles = await db.athleteProfiles.toArray()
+  for (const local of localProfiles) {
+    if (local.id === ATHLETE_PROFILE_LOCAL_ID) continue
+    if (groups.has(local.id)) continue
+    if (context.allowDeletes && context.deleteBeforeTs != null && local.updatedAt <= context.deleteBeforeTs) {
+      await db.athleteProfiles.delete(local.id)
+      continue
+    }
+    context.pendingWrites.push(() => pushAthleteProfile(local))
+  }
+}
+
+async function mergeSelfProfileGroup(
+  userId: string,
+  selfRows: AthleteProfileSyncRow[],
+  context: MergeContext,
+): Promise<void> {
+  let groupRows = selfRows
+  if (groupRows.length > 1) {
     const localPreferred = await db.athleteProfiles.get(ATHLETE_PROFILE_LOCAL_ID)
     const preferredRow = localPreferred
       ? toAthleteProfileSyncRow(athleteProfileToRow(localPreferred, userId))
       : undefined
 
-    await repairRemoteAthleteProfileRows(userId, remoteRows, preferredRow)
-    remoteRows = await fetchAthleteProfileRows(userId)
+    await repairRemoteAthleteProfileRows(userId, groupRows, preferredRow)
+    groupRows = await fetchAthleteProfileRowsForGroup(userId, ATHLETE_PROFILE_SELF_GROUP)
   }
 
-  if (remoteRows.length === 0) {
+  if (groupRows.length === 0) {
     if (context.allowDeletes && context.deleteBeforeTs != null) {
       const local = await db.athleteProfiles.get(ATHLETE_PROFILE_LOCAL_ID)
       if (local && local.updatedAt <= context.deleteBeforeTs) {
-        await db.athleteProfiles.clear()
+        await db.athleteProfiles.delete(ATHLETE_PROFILE_LOCAL_ID)
       }
     }
     return
   }
 
-  const canonicalRow = coalesceAthleteProfileRows(remoteRows)
+  const canonicalRow = coalesceAthleteProfileRows(groupRows)
   if (isAthleteProfileFullResetRow(canonicalRow)) {
     markProfileResetLockStatus(
       userId,
@@ -2565,10 +2678,11 @@ async function mergeAthleteProfile(userId: string, context: MergeContext): Promi
     await db.athleteProfiles.clear()
     return
   }
+
   const local = await db.athleteProfiles.get(ATHLETE_PROFILE_LOCAL_ID)
   const localRow = local ? toAthleteProfileSyncRow(athleteProfileToRow(local, userId)) : null
   const mergedRow = localRow ? coalesceAthleteProfileRows([localRow, canonicalRow]) : canonicalRow
-  const mergedProfile = rowToAthleteProfile(mergedRow)
+  const mergedProfile = rowToAthleteProfile(mergedRow, groupingSelfAthleteId(userId))
 
   if (!localRow || !athleteProfileRowsEqual(localRow, mergedRow)) {
     await db.athleteProfiles.put({ ...mergedProfile, id: ATHLETE_PROFILE_LOCAL_ID })
@@ -2576,6 +2690,38 @@ async function mergeAthleteProfile(userId: string, context: MergeContext): Promi
 
   if (!athleteProfileRowsEqual(canonicalRow, mergedRow)) {
     context.pendingWrites.push(() => pushAthleteProfile(mergedProfile))
+  }
+}
+
+async function mergeManagedProfileGroup(
+  userId: string,
+  groupKey: string,
+  rows: AthleteProfileSyncRow[],
+  context: MergeContext,
+  selfAthleteId: string | null,
+): Promise<void> {
+  let groupRows = rows
+  if (groupRows.length > 1) {
+    const localPreferred = await db.athleteProfiles.get(groupKey)
+    const preferredRow = localPreferred
+      ? toAthleteProfileSyncRow(athleteProfileToRow(localPreferred, userId))
+      : undefined
+    await repairRemoteAthleteProfileRows(userId, groupRows, preferredRow)
+    groupRows = await fetchAthleteProfileRowsForGroup(userId, groupKey)
+    if (groupRows.length === 0) return
+  }
+
+  const canonicalRow = coalesceAthleteProfileRows(groupRows)
+  const local = await db.athleteProfiles.get(groupKey)
+  const localRow = local ? toAthleteProfileSyncRow(athleteProfileToRow(local, userId)) : null
+  const mergedRow = localRow ? coalesceAthleteProfileRows([localRow, canonicalRow]) : canonicalRow
+  const mergedProfile = rowToAthleteProfile(mergedRow, selfAthleteId)
+
+  if (!localRow || !athleteProfileRowsEqual(localRow, mergedRow)) {
+    await db.athleteProfiles.put({ ...mergedProfile, id: groupKey })
+  }
+  if (!athleteProfileRowsEqual(canonicalRow, mergedRow)) {
+    context.pendingWrites.push(() => pushAthleteProfile({ ...mergedProfile, id: groupKey }))
   }
 }
 
@@ -3235,6 +3381,12 @@ export async function migrateLocalDataToCloud(userId: string): Promise<void> {
 
   try {
     await ensureRemoteAthlete(userId)
+    const localAthletes = await db.athletes.toArray()
+    for (const athlete of localAthletes) {
+      if (athlete.ownerAccountId !== userId) continue
+      if (athlete.id === athleteIdForOwner(userId)) continue
+      await ensureRemoteAthlete(userId, athlete.id)
+    }
 
     const [sessions, dayLogs, weekSummaries, trainingPlans, trainingPlanWeeks, chatMessages, coachProposals, athleteProfiles] =
       await Promise.all([
@@ -3297,8 +3449,11 @@ export async function migrateLocalDataToCloud(userId: string): Promise<void> {
       : { table: 'training_plan_weeks' as const, error: null }
     if (profileRows.length > 0 && !getProfileResetLock(userId)) {
       const syncRows = profileRows.map(toAthleteProfileSyncRow)
-      const coalesced = coalesceAthleteProfileRows(syncRows)
-      await persistAthleteProfileRow(coalesced as unknown as Record<string, unknown>, userId)
+      const migrateGroups = groupAthleteProfileRows(syncRows, groupingSelfAthleteId(userId))
+      for (const groupRows of migrateGroups.values()) {
+        const coalesced = coalesceAthleteProfileRows(groupRows)
+        await persistAthleteProfileRow(coalesced as unknown as Record<string, unknown>, userId)
+      }
     }
     const profileResult = { table: 'athlete_profiles' as const, error: null }
     migrationResults.push(trainingPlanResult, trainingPlanWeekResult, profileResult)
@@ -3335,14 +3490,18 @@ export async function repairAthleteProfileDuplicates(userId: string): Promise<{
   try {
     syncStoreState().setSyncDetails({ autoRepairInProgress: true })
     const remoteRows = await fetchAthleteProfileRows(userId)
-    if (remoteRows.length <= 1) {
+    const groups = groupAthleteProfileRows(remoteRows, groupingSelfAthleteId(userId))
+    const duplicateGroups = [...groups.values()].filter((rows) => rows.length > 1)
+    if (duplicateGroups.length === 0) {
       syncStoreState().setSyncDetails({
         autoRepairInProgress: false,
         lastAutoRepairAt: Date.now(),
       })
       return { remoteRowsBefore: remoteRows.length, repaired: false }
     }
-    await repairRemoteAthleteProfileRows(userId, remoteRows)
+    for (const rows of duplicateGroups) {
+      await repairRemoteAthleteProfileRows(userId, rows)
+    }
     syncStoreState().setSyncDetails({
       autoRepairInProgress: false,
       lastAutoRepairAt: Date.now(),
@@ -3352,7 +3511,7 @@ export async function repairAthleteProfileDuplicates(userId: string): Promise<{
       status: 'ok',
       entity: 'athlete_profiles',
       userId,
-      detail: `repaired_${remoteRows.length}_duplicates`,
+      detail: `repaired_${duplicateGroups.length}_profile_groups`,
     })
     return { remoteRowsBefore: remoteRows.length, repaired: true }
   } catch (error) {
@@ -3517,11 +3676,17 @@ async function deleteRemoteAthleteProfileData(userId: string): Promise<void> {
   if (error) throw error
 
   const marker = createAthleteProfileFullResetRow(userId, resetAt)
+  const persistResetMarker = async (remoteRows?: AthleteProfileSyncRow[]): Promise<void> => {
+    // The marker now has athlete_id, so the self athlete must exist and must
+    // survive the later athletes wipe; otherwise the FK cascade removes it.
+    await ensureRemoteAthlete(userId)
+    await persistAthleteProfileRow(marker, userId, remoteRows, { mode: 'technical_marker' })
+  }
   try {
-    await persistAthleteProfileRow(marker, userId, [], { mode: 'technical_marker' })
+    await persistResetMarker([])
   } catch {
     try {
-      await persistAthleteProfileRow(marker, userId, undefined, { mode: 'technical_marker' })
+      await persistResetMarker(undefined)
     } catch (fallbackError) {
       const info = classifySyncError(fallbackError, 'athlete_profiles')
       syncLog('athlete_profiles:reset_marker_skipped', {

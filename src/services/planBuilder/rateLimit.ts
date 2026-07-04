@@ -34,7 +34,7 @@ export async function assertPlanBuilderWeekRateLimit(
       throw new AIProviderError(
         'gemini',
         'rate_limit',
-        `Límite diario beta alcanzado para Plan Builder: necesitas ${requested} semana(s), quedan ${remaining}/${limit}. Vuelve mañana o reduce las semanas a regenerar.`,
+        `Alcanzaste el límite diario para crear planes: necesitas ${requested} semana(s) y quedan ${remaining}/${limit}. Vuelve mañana o reduce las semanas a ajustar.`,
         false,
       )
     }

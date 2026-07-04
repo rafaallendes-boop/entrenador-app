@@ -10,7 +10,21 @@ import {
   toggleOrderedValue,
 } from '../utils/schedule'
 
-export type OnboardingStep = 1 | 2 | 3 | 4
+export type OnboardingStep = 1 | 2 | 3 | 4 | 5
+
+type OnboardingTextField =
+  | 'goalEventTitle'
+  | 'goalEventDate'
+  | 'goalEventNotes'
+  | 'availabilityNotes'
+  | 'currentInjuries'
+  | 'previousInjuries'
+  | 'restrictions'
+  | 'strengthNotes'
+  | 'squat1RM'
+  | 'deadlift1RM'
+  | 'benchPress1RM'
+  | 'overheadPress1RM'
 
 interface OnboardingFormState {
   step: OnboardingStep
@@ -20,6 +34,18 @@ interface OnboardingFormState {
   priority: TrainingPriority | null
   availableDays: OnboardingDayKey[]
   doubleSessionDays: OnboardingDayKey[]
+  goalEventTitle: string
+  goalEventDate: string
+  goalEventNotes: string
+  availabilityNotes: string
+  currentInjuries: string
+  previousInjuries: string
+  restrictions: string
+  strengthNotes: string
+  squat1RM: string
+  deadlift1RM: string
+  benchPress1RM: string
+  overheadPress1RM: string
 }
 
 interface UseOnboardingFormResult extends OnboardingFormState {
@@ -33,6 +59,7 @@ interface UseOnboardingFormResult extends OnboardingFormState {
   toggleDay: (day: OnboardingDayKey) => void
   replaceAvailableDays: (days: OnboardingDayKey[]) => void
   toggleDoubleDay: (day: OnboardingDayKey) => void
+  setTextField: (field: OnboardingTextField, value: string) => void
 }
 
 const EMPTY_STATE: OnboardingFormState = {
@@ -43,10 +70,25 @@ const EMPTY_STATE: OnboardingFormState = {
   priority: null,
   availableDays: [],
   doubleSessionDays: [],
+  goalEventTitle: '',
+  goalEventDate: '',
+  goalEventNotes: '',
+  availabilityNotes: '',
+  currentInjuries: '',
+  previousInjuries: '',
+  restrictions: '',
+  strengthNotes: '',
+  squat1RM: '',
+  deadlift1RM: '',
+  benchPress1RM: '',
+  overheadPress1RM: '',
 }
 
 function buildStateFromProfile(profile: AthleteProfile | null | undefined): Omit<OnboardingFormState, 'step'> {
   const enabledSports = getEnabledSports(profile)
+  const goalEvent = profile?.goalEvents?.find((event) => event.priority === 'primary') ?? profile?.goalEvents?.[0]
+  const recovery = profile?.recoveryProfile
+  const strength = profile?.strengthProfile
   const availableDays = (profile?.scheduleProfile?.availableDays ?? [])
     .map(normalizeOnboardingDayKey)
     .filter((day): day is OnboardingDayKey => day !== undefined)
@@ -64,6 +106,18 @@ function buildStateFromProfile(profile: AthleteProfile | null | undefined): Omit
       doubleSessionDays.filter((day) => availableDays.includes(day)),
       ONBOARDING_DAY_ORDER,
     ),
+    goalEventTitle: goalEvent?.title ?? '',
+    goalEventDate: goalEvent?.date ?? '',
+    goalEventNotes: goalEvent?.notes ?? '',
+    availabilityNotes: profile?.scheduleProfile?.constraints ?? '',
+    currentInjuries: recovery?.currentInjuries ?? '',
+    previousInjuries: recovery?.previousInjuries ?? '',
+    restrictions: recovery?.restrictions ?? '',
+    strengthNotes: strength?.notes ?? '',
+    squat1RM: strength?.squat1RM != null ? String(strength.squat1RM) : '',
+    deadlift1RM: strength?.deadlift1RM != null ? String(strength.deadlift1RM) : '',
+    benchPress1RM: strength?.benchPress1RM != null ? String(strength.benchPress1RM) : '',
+    overheadPress1RM: strength?.overheadPress1RM != null ? String(strength.overheadPress1RM) : '',
   }
 }
 
@@ -91,9 +145,11 @@ export function useOnboardingForm(
       case 3:
         return state.priority !== null
       case 4:
+        return state.availableDays.length > 0
+      case 5:
         return false
     }
-  }, [state.primarySport, state.priority, state.selectedSports.length, state.step])
+  }, [state.availableDays.length, state.primarySport, state.priority, state.selectedSports.length, state.step])
 
   const canFinish = state.availableDays.length > 0 && !isSaving
 
@@ -152,5 +208,10 @@ export function useOnboardingForm(
           doubleSessionDays: toggleOrderedValue(resolvedState.doubleSessionDays, day, ONBOARDING_DAY_ORDER),
         }
       }),
+    setTextField: (field, value) =>
+      setDraftState((current) => ({
+        ...(current ?? baseState),
+        [field]: value,
+      })),
   }
 }

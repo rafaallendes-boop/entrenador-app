@@ -1,5 +1,7 @@
 import type { AthleteProfile } from '../types'
 import { ATHLETE_PROFILE_LOCAL_ID } from './athlete/activeAthlete'
+import { isScopedAthleteId } from './athlete/effectiveAthleteKey'
+import { athleteIdForOwner } from './athlete/athleteScopeMigration'
 
 export type SupabaseTable =
   | 'sessions'
@@ -342,13 +344,44 @@ const ATHLETE_PROFILE_REMOTE_COLUMNS = new Set([
   'data',
 ])
 
-function getAthleteProfileRemoteId(userId: string): string {
-  return `profile:${userId}`
+export const ATHLETE_PROFILE_SELF_GROUP = 'self'
+
+/**
+ * Profile group key (Parte 2a): a scoped athlete_id that is NOT the self
+ * athlete forms its own group; self, legacy null and the local sentinel all
+ * collapse into the 'self' group. Repair/persist/merge NEVER cross groups.
+ */
+export function athleteProfileGroupKey(
+  athleteId: string | null | undefined,
+  selfAthleteId: string | null,
+): string {
+  if (isScopedAthleteId(athleteId) && athleteId !== selfAthleteId) return athleteId
+  return ATHLETE_PROFILE_SELF_GROUP
+}
+
+export function groupAthleteProfileRows(
+  rows: AthleteProfileSyncRow[],
+  selfAthleteId: string | null,
+): Map<string, AthleteProfileSyncRow[]> {
+  const groups = new Map<string, AthleteProfileSyncRow[]>()
+  for (const row of rows) {
+    const key = athleteProfileGroupKey(row.athlete_id, selfAthleteId)
+    const bucket = groups.get(key)
+    if (bucket) bucket.push(row)
+    else groups.set(key, [row])
+  }
+  return groups
+}
+
+function getAthleteProfileRemoteId(userId: string, localProfileId: string): string {
+  // The self singleton keeps its historic remote id (no row migration);
+  // managed profiles get a per-athlete remote id.
+  if (localProfileId === ATHLETE_PROFILE_LOCAL_ID) return `profile:${userId}`
+  return `profile:${userId}:${localProfileId}`
 }
 
 export function athleteProfileToRow(profile: AthleteProfile, userId: string): Record<string, unknown> {
-  const { id: _localId, coachMemory, updatedAt, ...rest } = profile
-  void _localId
+  const { id: localId, coachMemory, updatedAt, ...rest } = profile
   const deletedFields: string[] = []
   const dataEntries: Record<string, unknown> = {}
 
@@ -369,21 +402,31 @@ export function athleteProfileToRow(profile: AthleteProfile, userId: string): Re
   }
 
   return {
-    id: getAthleteProfileRemoteId(userId),
+    id: getAthleteProfileRemoteId(userId, localId),
     user_id: userId,
-    athlete_id: profile.athleteId ?? null,
+    // The local id is the source of truth for scope: profile.athleteId never
+    // decides it (a corrupt/imported self profile with a managed athleteId
+    // must not re-scope the self row). Post-009 invariant: never null — the
+    // composite unique (user_id, athlete_id) does not deduplicate NULLs, so a
+    // null upsert would insert instead of conflict.
+    athlete_id: localId === ATHLETE_PROFILE_LOCAL_ID ? athleteIdForOwner(userId) : localId,
     coach_memory: coachMemory ?? null,
     updated_at: updatedAt,
     data: Object.keys(dataEntries).length > 0 ? dataEntries : null,
   }
 }
 
-export function rowToAthleteProfile(row: Record<string, unknown>): AthleteProfile {
+export function rowToAthleteProfile(
+  row: Record<string, unknown>,
+  selfAthleteId: string | null,
+): AthleteProfile {
   const { data } = parseAthleteProfileData(row.data as Record<string, unknown> | null)
   const athleteIdValue = row.athlete_id ?? data.athleteId
   const athleteId = typeof athleteIdValue === 'string' ? athleteIdValue : undefined
+  const groupKey = athleteProfileGroupKey(athleteId ?? null, selfAthleteId)
+  const localId = groupKey === ATHLETE_PROFILE_SELF_GROUP ? ATHLETE_PROFILE_LOCAL_ID : groupKey
   return {
-    id: ATHLETE_PROFILE_LOCAL_ID,
+    id: localId,
     coachMemory: (row.coach_memory as string | null) ?? undefined,
     updatedAt: row.updated_at as number,
     ...data,
@@ -393,8 +436,9 @@ export function rowToAthleteProfile(row: Record<string, unknown>): AthleteProfil
 
 export function createAthleteProfileFullResetRow(userId: string, resetAt: number): AthleteProfileSyncRow {
   return normalizeAthleteProfilePayload({
-    id: getAthleteProfileRemoteId(userId),
+    id: getAthleteProfileRemoteId(userId, ATHLETE_PROFILE_LOCAL_ID),
     user_id: userId,
+    athlete_id: athleteIdForOwner(userId),
     coach_memory: null,
     updated_at: resetAt,
     data: {

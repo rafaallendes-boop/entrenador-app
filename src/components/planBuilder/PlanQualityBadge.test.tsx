@@ -37,8 +37,8 @@ describe('PlanQualityBadge', () => {
   it('renders global grade when flag is on', () => {
     const html = renderToStaticMarkup(<PlanQualityBadge review={review} />)
 
-    expect(html).toContain('good')
-    expect(html).toContain('score 81')
+    expect(html).toContain('Bueno')
+    expect(html).toContain('Puntaje 81')
   })
 
   it('renders nothing when flag is off', () => {
@@ -54,6 +54,7 @@ describe('PlanQualityBadge', () => {
 
     expect(html).toContain('Semana 1')
     expect(html).toContain('Semana 2')
-    expect(html).toContain('needs_review')
+    expect(html).toContain('Requiere revisión del coach')
+    expect(html).not.toContain('needs_review')
   })
 })

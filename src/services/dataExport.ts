@@ -1,6 +1,7 @@
 import { db } from '../db/db'
 import { APP_INFO } from '../constants/appInfo'
 import type {
+  Athlete,
   AthleteProfile,
   ChatMessage,
   CoachAction,
@@ -66,6 +67,9 @@ const PROPOSAL_STATUSES = new Set(['pending', 'accepted', 'rejected', 'partial']
 const SUPPORTED_SPORTS = new Set(['squash', 'running', 'strength', 'mobility', 'cycling'])
 const TRAINING_PRIORITIES = new Set(['performance', 'fitness', 'body_composition', 'return_to_play'])
 const GOAL_EVENT_PRIORITIES = new Set(['primary', 'secondary'])
+const GOAL_EVENT_TYPES = new Set(['tournament', 'race', 'cycling_event', 'other'])
+const GOAL_EVENT_OBJECTIVES = new Set(['win', 'perform', 'finish', 'personal_best'])
+const GOAL_EVENT_LEVELS = new Set(['recreational', 'competitive', 'masters', 'elite'])
 const MACRO_PLAN_LOAD_BIASES = new Set(['build', 'hold', 'reduce', 'minimal'])
 const MACRO_PLAN_EVENT_TIMINGS = new Set(['upcoming', 'active', 'past'])
 const MACRO_PLAN_SPORT_ROLES = new Set(['primary', 'support'])
@@ -102,6 +106,7 @@ export interface AppDataExport {
     chatMessages: ChatMessage[]
     coachProposals: CoachProposal[]
     athleteProfiles: AthleteProfile[]
+    athletes: Athlete[]
   }
 }
 
@@ -130,6 +135,7 @@ export interface AppDataImportResult {
     chatMessages: number
     coachProposals: number
     athleteProfiles: number
+    athletes: number
   }
 }
 
@@ -167,7 +173,7 @@ function buildAthleteProfileFilename(exportedAt: Date): string {
 
 export async function exportAppData(): Promise<{ filename: string; json: string }> {
   const exportedAt = new Date()
-  const [sessions, dayLogs, weekSummaries, trainingPlans, trainingPlanWeeks, chatMessages, coachProposals, athleteProfiles] = await Promise.all([
+  const [sessions, dayLogs, weekSummaries, trainingPlans, trainingPlanWeeks, chatMessages, coachProposals, athleteProfiles, athletes] = await Promise.all([
     db.sessions.toArray(),
     db.dayLogs.toArray(),
     db.weekSummaries.toArray(),
@@ -176,6 +182,7 @@ export async function exportAppData(): Promise<{ filename: string; json: string 
     db.chatMessages.toArray(),
     db.coachProposals.toArray(),
     db.athleteProfiles.toArray(),
+    db.athletes.toArray(),
   ])
 
   const payload: AppDataExport = {
@@ -192,6 +199,7 @@ export async function exportAppData(): Promise<{ filename: string; json: string 
       chatMessages,
       coachProposals,
       athleteProfiles,
+      athletes,
     },
   }
 
@@ -285,6 +293,7 @@ export async function previewAppDataImportFile(file: File): Promise<AppDataImpor
       chatMessages: backup.tables.chatMessages.length,
       coachProposals: backup.tables.coachProposals.length,
       athleteProfiles: backup.tables.athleteProfiles.length,
+      athletes: backup.tables.athletes.length,
     },
     sessionDateRange,
     mergeConflicts,
@@ -292,7 +301,7 @@ export async function previewAppDataImportFile(file: File): Promise<AppDataImpor
 }
 
 async function computeMergeConflicts(backup: AppDataExport): Promise<MergeConflictSummary> {
-  const [localSessions, localDayLogs, localWeekSummaries, localChatMessages, localProposals, localProfiles] =
+  const [localSessions, localDayLogs, localWeekSummaries, localChatMessages, localProposals, localProfiles, localAthletes] =
     await Promise.all([
       db.sessions.toArray(),
       db.dayLogs.toArray(),
@@ -300,6 +309,7 @@ async function computeMergeConflicts(backup: AppDataExport): Promise<MergeConfli
       db.chatMessages.toArray(),
       db.coachProposals.toArray(),
       db.athleteProfiles.toArray(),
+      db.athletes.toArray(),
     ])
 
   let localNewerCount = 0
@@ -352,6 +362,15 @@ async function computeMergeConflicts(backup: AppDataExport): Promise<MergeConfli
     if (!local) newInBackupCount++
     else if (local.updatedAt > bp.updatedAt) localNewerCount++
     else if (bp.updatedAt > local.updatedAt) backupNewerCount++
+  }
+
+  // Athletes — roster rows also have updatedAt and are required for managed profiles.
+  const localAthletesById = new Map(localAthletes.map(a => [a.id, a]))
+  for (const ba of backup.tables.athletes) {
+    const local = localAthletesById.get(ba.id)
+    if (!local) newInBackupCount++
+    else if (local.updatedAt > ba.updatedAt) localNewerCount++
+    else if (ba.updatedAt > local.updatedAt) backupNewerCount++
   }
 
   return { localNewerCount, backupNewerCount, newInBackupCount }
@@ -520,7 +539,7 @@ export async function importAppDataFromFile(
   if (mode === 'replace') {
     await db.transaction(
       'rw',
-      [db.sessions, db.dayLogs, db.weekSummaries, db.trainingPlans, db.trainingPlanWeeks, db.chatMessages, db.coachProposals, db.athleteProfiles],
+      [db.sessions, db.dayLogs, db.weekSummaries, db.trainingPlans, db.trainingPlanWeeks, db.chatMessages, db.coachProposals, db.athleteProfiles, db.athletes],
       async () => {
         await db.sessions.clear()
         await db.dayLogs.clear()
@@ -530,6 +549,7 @@ export async function importAppDataFromFile(
         await db.chatMessages.clear()
         await db.coachProposals.clear()
         await db.athleteProfiles.clear()
+        await db.athletes.clear()
 
         if (backup.tables.sessions.length > 0) await db.sessions.bulkPut(backup.tables.sessions)
         await putImportedDayLogs(backup.tables.dayLogs)
@@ -539,6 +559,7 @@ export async function importAppDataFromFile(
         if (backup.tables.chatMessages.length > 0) await db.chatMessages.bulkPut(backup.tables.chatMessages)
         if (backup.tables.coachProposals.length > 0) await db.coachProposals.bulkPut(backup.tables.coachProposals)
         if (backup.tables.athleteProfiles.length > 0) await db.athleteProfiles.bulkPut(backup.tables.athleteProfiles)
+        if (backup.tables.athletes.length > 0) await db.athletes.bulkPut(backup.tables.athletes)
       },
     )
   } else {
@@ -547,7 +568,7 @@ export async function importAppDataFromFile(
     // WeekSummaries have no updatedAt — only add records missing locally.
     await db.transaction(
       'rw',
-      [db.sessions, db.dayLogs, db.weekSummaries, db.trainingPlans, db.trainingPlanWeeks, db.chatMessages, db.coachProposals, db.athleteProfiles],
+      [db.sessions, db.dayLogs, db.weekSummaries, db.trainingPlans, db.trainingPlanWeeks, db.chatMessages, db.coachProposals, db.athleteProfiles, db.athletes],
       async () => {
         // Sessions
         const localSessions = await db.sessions.toArray()
@@ -598,6 +619,15 @@ export async function importAppDataFromFile(
           return !local || bp.updatedAt > local.updatedAt
         })
         if (profilesToWrite.length > 0) await db.athleteProfiles.bulkPut(profilesToWrite)
+
+        // Athletes
+        const localAthletes = await db.athletes.toArray()
+        const localAthletesById = new Map(localAthletes.map((athlete) => [athlete.id, athlete]))
+        const athletesToWrite = backup.tables.athletes.filter((backupAthlete) => {
+          const local = localAthletesById.get(backupAthlete.id)
+          return !local || backupAthlete.updatedAt > local.updatedAt
+        })
+        if (athletesToWrite.length > 0) await db.athletes.bulkPut(athletesToWrite)
       },
     )
   }
@@ -621,6 +651,7 @@ export async function importAppDataFromFile(
       chatMessages: backup.tables.chatMessages.length,
       coachProposals: backup.tables.coachProposals.length,
       athleteProfiles: backup.tables.athleteProfiles.length,
+      athletes: backup.tables.athletes.length,
     },
   }
 }
@@ -658,6 +689,7 @@ export function parseAppDataExport(value: unknown): AppDataExport {
   const chatMessages = parseChatMessagesTable(normalized.tables.chatMessages)
   const coachProposals = parseCoachProposalsTable(normalized.tables.coachProposals)
   const athleteProfiles = parseAthleteProfilesTable(normalized.tables.athleteProfiles)
+  const athletes = parseAthletesTable(normalized.tables.athletes ?? [])
 
   ensureChatProposalLinks(chatMessages, coachProposals)
 
@@ -675,6 +707,7 @@ export function parseAppDataExport(value: unknown): AppDataExport {
       chatMessages,
       coachProposals,
       athleteProfiles,
+      athletes,
     },
   }
 }
@@ -733,6 +766,13 @@ function parseAthleteProfilesTable(value: unknown): AthleteProfile[] {
   const profiles = rows.map((row, index) => parseAthleteProfile(row, index))
   ensureUniqueIds(profiles, 'athleteProfiles')
   return profiles
+}
+
+function parseAthletesTable(value: unknown): Athlete[] {
+  const rows = ensureArray(value, 'athletes')
+  const athletes = rows.map((row, index) => parseAthlete(row, index))
+  ensureUniqueIds(athletes, 'athletes')
+  return athletes
 }
 
 function parseSession(value: unknown, index: number): Session {
@@ -923,7 +963,9 @@ function parseAthleteProfile(value: unknown, index: number): AthleteProfile {
 
   return {
     id: requireString(row.id, `athleteProfiles[${index}].id`),
+    athleteId: optionalString(row.athleteId, `athleteProfiles[${index}].athleteId`),
     coachMemory: optionalString(row.coachMemory, `athleteProfiles[${index}].coachMemory`),
+    onboardingDeferredAt: optionalFiniteNumber(row.onboardingDeferredAt, `athleteProfiles[${index}].onboardingDeferredAt`),
     updatedAt: requireFiniteNumber(row.updatedAt, `athleteProfiles[${index}].updatedAt`),
     name: optionalString(row.name, `athleteProfiles[${index}].name`),
     age: optionalFiniteNumber(row.age, `athleteProfiles[${index}].age`),
@@ -940,6 +982,21 @@ function parseAthleteProfile(value: unknown, index: number): AthleteProfile {
     nutritionProfile: optionalNutritionProfile(row.nutritionProfile, `athleteProfiles[${index}].nutritionProfile`),
     goalEvents: optionalGoalEvents(row.goalEvents, `athleteProfiles[${index}].goalEvents`),
     macroPlan: optionalMacroPlan(row.macroPlan, `athleteProfiles[${index}].macroPlan`),
+    planWizardConfig: optionalPlanWizardConfig(row.planWizardConfig, `athleteProfiles[${index}].planWizardConfig`),
+  }
+}
+
+function parseAthlete(value: unknown, index: number): Athlete {
+  const row = ensureRecord(value, `athletes[${index}]`)
+
+  return {
+    id: requireString(row.id, `athletes[${index}].id`),
+    ownerAccountId: requireString(row.ownerAccountId, `athletes[${index}].ownerAccountId`),
+    linkedAccountId: optionalNullableString(row.linkedAccountId, `athletes[${index}].linkedAccountId`),
+    displayName: optionalNullableString(row.displayName, `athletes[${index}].displayName`),
+    status: requireString(row.status, `athletes[${index}].status`),
+    createdAt: requireFiniteNumber(row.createdAt, `athletes[${index}].createdAt`),
+    updatedAt: requireFiniteNumber(row.updatedAt, `athletes[${index}].updatedAt`),
   }
 }
 
@@ -1396,6 +1453,17 @@ function parsePlanWizardConfig(value: unknown, path: string): TrainingPlan['wiza
     sessionsPerWeek: requireFiniteNumber(row.sessionsPerWeek, `${path}.sessionsPerWeek`),
     sessionDurationMins: requireFiniteNumber(row.sessionDurationMins, `${path}.sessionDurationMins`),
     allowDoubleSession: requireBoolean(row.allowDoubleSession, `${path}.allowDoubleSession`),
+    doubleSessionDays: optionalEnumArray(
+      row.doubleSessionDays,
+      new Set(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']),
+      `${path}.doubleSessionDays`,
+    ) as TrainingPlan['wizardConfig']['doubleSessionDays'],
+    scheduleConstraints: optionalString(row.scheduleConstraints, `${path}.scheduleConstraints`),
+    partnerAvailability: optionalEnum(
+      row.partnerAvailability,
+      new Set(['solo', 'partner', 'either']),
+      `${path}.partnerAvailability`,
+    ) as TrainingPlan['wizardConfig']['partnerAvailability'],
     complementarySports: optionalEnumArray(row.complementarySports, SUPPORTED_SPORTS, `${path}.complementarySports`) as TrainingPlan['wizardConfig']['complementarySports'] ?? [],
     currentFitnessLevel: requireEnum(
       row.currentFitnessLevel,
@@ -1411,6 +1479,11 @@ function parsePlanWizardConfig(value: unknown, path: string): TrainingPlan['wiza
     createdAt: requireString(row.createdAt, `${path}.createdAt`),
     updatedAt: requireString(row.updatedAt, `${path}.updatedAt`),
   }
+}
+
+function optionalPlanWizardConfig(value: unknown, path: string): AthleteProfile['planWizardConfig'] {
+  if (value == null) return undefined
+  return parsePlanWizardConfig(value, path)
 }
 
 function optionalTrainingPlanGenerationSummary(value: unknown, path: string): TrainingPlan['generationSummary'] {
@@ -1520,6 +1593,12 @@ function requireString(value: unknown, path: string): string {
 
 function optionalString(value: unknown, path: string): string | undefined {
   if (value == null) return undefined
+  return requireString(value, path)
+}
+
+function optionalNullableString(value: unknown, path: string): string | null | undefined {
+  if (value === null) return null
+  if (value === undefined) return undefined
   return requireString(value, path)
 }
 
@@ -1689,6 +1768,9 @@ function optionalGoalEvents(value: unknown, path: string): GoalEvent[] | undefin
         ? 'primary'
         : requireEnum(row.priority, GOAL_EVENT_PRIORITIES, `${path}[${index}].priority`)) as GoalEvent['priority'],
       notes: optionalString(row.notes, `${path}[${index}].notes`),
+      eventType: optionalEnum(row.eventType, GOAL_EVENT_TYPES, `${path}[${index}].eventType`) as GoalEvent['eventType'],
+      objective: optionalEnum(row.objective, GOAL_EVENT_OBJECTIVES, `${path}[${index}].objective`) as GoalEvent['objective'],
+      competitiveLevel: optionalEnum(row.competitiveLevel, GOAL_EVENT_LEVELS, `${path}[${index}].competitiveLevel`) as GoalEvent['competitiveLevel'],
     }
   })
 }

@@ -6,10 +6,10 @@ interface PlanQualityBadgeProps {
 }
 
 const GRADE_LABELS: Record<PlanQualityGrade, string> = {
-  excellent: 'excellent',
-  good: 'good',
-  needs_review: 'needs_review',
-  poor: 'poor',
+  excellent: 'Excelente',
+  good: 'Bueno',
+  needs_review: 'Requiere revisión del coach',
+  poor: 'Necesita ajustes',
 }
 
 const GRADE_TONE: Record<PlanQualityGrade, { border: string; color: string; background: string }> = {
@@ -52,8 +52,8 @@ export function PlanQualityBadge({ review }: PlanQualityBadgeProps) {
           >
             {GRADE_LABELS[review.grade]}
           </span>
-          <span style={{ color: 'rgba(245,245,247,0.88)', fontWeight: 700 }}>score {review.score}</span>
-          <span style={{ color: 'rgba(176,176,179,0.95)' }}>{review.warningCount} warnings</span>
+          <span style={{ color: 'rgba(245,245,247,0.88)', fontWeight: 700 }}>Puntaje {review.score}</span>
+          <span style={{ color: 'rgba(176,176,179,0.95)' }}>{review.warningCount} alertas</span>
           {review.repairCount > 0 && (
             <span style={{ color: 'rgba(176,176,179,0.95)' }}>{review.repairCount} reparaciones</span>
           )}
@@ -64,7 +64,7 @@ export function PlanQualityBadge({ review }: PlanQualityBadgeProps) {
       </div>
       <details style={{ marginTop: 8 }}>
         <summary style={{ cursor: 'pointer', color: 'rgba(176,176,179,0.95)', fontSize: 11 }}>
-          detalle por semana
+          Revisión por semana
         </summary>
         <ul style={{ margin: '8px 0 0', padding: 0, listStyle: 'none', display: 'grid', gap: 5 }}>
           {review.weeks.map((week) => {
@@ -81,9 +81,9 @@ export function PlanQualityBadge({ review }: PlanQualityBadgeProps) {
                 }}
               >
                 <span style={{ color: 'rgba(245,245,247,0.9)', fontWeight: 600 }}>Semana {week.weekIndex + 1}</span>
-                <span style={{ color: weekTone.color }}>{week.grade}</span>
-                <span>score {week.score}</span>
-                {week.issues.length > 0 && <span>{week.issues.length} issue(s)</span>}
+                <span style={{ color: weekTone.color }}>{GRADE_LABELS[week.grade]}</span>
+                <span>Puntaje {week.score}</span>
+                {week.issues.length > 0 && <span>{week.issues.length} alerta(s)</span>}
                 {week.repairCount > 0 && <span>{week.repairCount} reparaciones</span>}
               </li>
             )

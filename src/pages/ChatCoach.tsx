@@ -417,7 +417,7 @@ export default function ChatCoach() {
             <div className="hud-border flex items-start gap-2 rounded-xl border border-white/5 bg-[linear-gradient(145deg,rgba(255,77,0,0.14),rgba(14,14,14,0.96))] px-3 py-2 [--hud-accent-start:rgba(255,122,51,0.28)] [--hud-accent-end:rgba(255,77,0,0.12)]">
               <span className="mt-0.5 flex-shrink-0 text-xs text-brand-light">i</span>
               <span className="flex-1 text-xs leading-relaxed text-[#ffd2bf]">
-                Plan Builder: el prompt fue enviado automáticamente a RallyIQ para generar tu semana.
+                Crear plan: enviamos tu pedido a RallyIQ para preparar la semana.
               </span>
             </div>
           )}

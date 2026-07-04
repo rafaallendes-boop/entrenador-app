@@ -9,8 +9,10 @@ import {
   getSessionsForDay,
   getHistoricalSessionsWindow,
   getMatchSessions,
+  getAthleteProfile,
+  upsertAthleteProfile,
 } from '../queries'
-import { setActiveAthleteId, setSelfAthleteId } from '../../services/athlete/activeAthlete'
+import { ATHLETE_PROFILE_LOCAL_ID, setActiveAthleteId, setSelfAthleteId } from '../../services/athlete/activeAthlete'
 import { withActiveAthleteStamp } from '../../services/athlete/activeScopeFilter'
 
 const asManaged = () => {
@@ -117,5 +119,59 @@ describe('lecturas athlete-aware con política legacy self-only', () => {
     setActiveAthleteId(null)
     setSelfAthleteId(null)
     expect((await getSessionsForWeek('2026-06-29')).map((s) => s.id)).toEqual(['s1'])
+  })
+})
+
+describe('perfil por atleta', () => {
+  beforeEach(async () => {
+    db.close()
+    await db.delete()
+    await db.open()
+  })
+  afterEach(() => {
+    setActiveAthleteId(null)
+    setSelfAthleteId(null)
+    db.close()
+  })
+
+  it('self activo lee/escribe la fila default (compat)', async () => {
+    asSelf()
+    const created = await upsertAthleteProfile({ name: 'Rafa' })
+    expect(created.id).toBe(ATHLETE_PROFILE_LOCAL_ID)
+    expect((await getAthleteProfile())?.name).toBe('Rafa')
+  })
+
+  it('gestionado activo NO ve el perfil del self y crea su propia fila', async () => {
+    asSelf()
+    await upsertAthleteProfile({ name: 'Rafa' })
+
+    asManaged()
+    expect(await getAthleteProfile()).toBeUndefined()
+    const managed = await upsertAthleteProfile({ name: 'Cliente 1' })
+    expect(managed.id).toBe('ath_m_1')
+    expect(managed.athleteId).toBe('ath_m_1')
+    expect((await getAthleteProfile())?.name).toBe('Cliente 1')
+
+    asSelf()
+    expect((await getAthleteProfile())?.name).toBe('Rafa')
+    expect(await db.athleteProfiles.count()).toBe(2)
+  })
+
+  it('sin atleta activo, comportamiento legacy intacto', async () => {
+    setActiveAthleteId(null)
+    setSelfAthleteId(null)
+    const created = await upsertAthleteProfile({ name: 'Legacy' })
+    expect(created.id).toBe(ATHLETE_PROFILE_LOCAL_ID)
+  })
+
+  it('un patch con athleteId NO puede re-scopear el perfil', async () => {
+    asSelf()
+    const created = await upsertAthleteProfile({ name: 'Rafa', athleteId: 'ath_m_2' } as never)
+    expect(created.athleteId).toBe('ath_self')
+
+    const updated = await upsertAthleteProfile({ athleteId: 'ath_m_2' } as never)
+    expect(updated.athleteId).toBe('ath_self')
+    expect(updated.name).toBe('Rafa')
+    expect(await db.athleteProfiles.count()).toBe(1)
   })
 })

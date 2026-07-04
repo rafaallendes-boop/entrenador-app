@@ -358,8 +358,11 @@ Gates:
 - [x] Escrituras locales estampan atleta activo.
 - [ ] Deploy + smoke de Athlete-Aware Core.
 - [ ] Crear plan de implementacion Parte 2 desde `2026-07-02-coach-ui-f2-mvp-design.md`.
-- [ ] Perfiles por atleta + `009` expand/contract.
-- [ ] API de atletas gestionados.
+- [x] Perfiles por atleta + push/merge por grupo implementados localmente.
+- [x] API local de atletas gestionados implementada.
+- [x] Backup/import preserva roster `athletes` y eventos enriquecidos.
+- [x] `009` expand/contract listo; `009c` endurece `athlete_id not null`.
+- [ ] Aplicar `009a`/`009b`/`009c` en produccion con bundle nuevo confirmado.
 - [ ] Switcher y roster `/coach`.
 - [ ] Smoke con self + 1 gestionado.
 
@@ -376,14 +379,14 @@ No entra todavia:
 Objetivo: que el atleta no sienta que usa una consola de QA.
 
 - [x] Debug de quality gated en prod por test (`planBuilderDetech.test.tsx`).
-- [ ] Revisar labels visibles de Plan Builder V2.
-- [ ] `Plan Builder` -> `Crear plan` o `Plan competitivo` en UI cliente.
-- [ ] `Quality review` -> interno/admin; cliente ve `Revision del plan`.
-- [ ] `needs_review` -> `Requiere revision del coach`.
-- [ ] `Regenerar semana` -> `Mejorar semana` o `Ajustar semana`.
-- [ ] Ocultar controles debug para usuario normal.
-- [ ] Mejorar empty states y errores con lenguaje humano.
-- [ ] Revisar onboarding para datos deportivos reales: torneo, disponibilidad, molestias, historial, fuerza/1RM, acceso a cancha y partner.
+- [x] Revisar labels visibles de Plan Builder V2.
+- [x] `Plan Builder` -> `Crear plan` o `Plan competitivo` en UI cliente.
+- [x] `Quality review` -> interno/admin; cliente ve `Revision del plan`.
+- [x] `needs_review` -> `Requiere revision del coach`.
+- [x] `Regenerar semana` -> `Mejorar semana` o `Ajustar semana`.
+- [x] Ocultar controles debug para usuario normal.
+- [x] Mejorar empty states y errores con lenguaje humano.
+- [x] Revisar onboarding para datos deportivos reales: torneo, disponibilidad, molestias, historial, fuerza/1RM, acceso a cancha y partner.
 
 ### H. Operacion De Piloto Premium
 

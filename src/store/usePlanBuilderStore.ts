@@ -41,7 +41,7 @@ import { supabase } from '../services/auth'
 import { useAuthStore } from './useAuthStore'
 import { ATHLETE_PROFILE_LOCAL_ID, getActiveAthleteId } from '../services/athlete/activeAthlete'
 
-const EMPTY_DRAFT_WEEKS_MESSAGE = 'El draft del Plan Builder no tiene semanas. Descártalo y vuelve a generar el shell desde el wizard.'
+const EMPTY_DRAFT_WEEKS_MESSAGE = 'No encontramos semanas para este plan. Descártalo y vuelve a prepararlo desde el inicio.'
 
 export type PlanBuilderStatus =
   | 'idle'
@@ -97,9 +97,9 @@ async function persistPlanState(plan: TrainingPlan, weeks: TrainingPlanWeek[]) {
 function buildGenerationFailureMessage(failedWeekIndexes: number[]): string | null {
   if (failedWeekIndexes.length === 0) return null
   if (failedWeekIndexes.length === 1) {
-    return `No se pudo generar la semana ${failedWeekIndexes[0] + 1}. Regénérala para continuar.`
+    return `No se pudo preparar la semana ${failedWeekIndexes[0] + 1}. Ajústala para continuar.`
   }
-  return `No se pudieron generar ${failedWeekIndexes.length} semanas. Regénéralas para continuar.`
+  return `No se pudieron preparar ${failedWeekIndexes.length} semanas. Ajústalas para continuar.`
 }
 
 function toBuilderStatus(generationState: TrainingPlan['generationState']): PlanBuilderStatus {
@@ -124,11 +124,11 @@ function applyGenerationSnapshot(
     .map((week) => week.weekIndex)
   const currentWeekIndex = orderedWeeks.find((week) => week.status === 'generating')?.weekIndex ?? null
   const lastError = snapshot.isStalled
-    ? 'La generación quedó sin señales de progreso. Puedes reintentar las semanas pendientes.'
+    ? 'La preparación quedó sin señales de progreso. Puedes reintentar las semanas pendientes.'
     : snapshot.plan.generationState === 'partial' || snapshot.plan.generationState === 'failed'
       ? buildGenerationFailureMessage(failedWeekIndexes)
       : snapshot.plan.generationState === 'cancelled'
-        ? 'Generación detenida. Puedes reintentar cuando quieras.'
+        ? 'Preparación detenida. Puedes reintentar cuando quieras.'
         : null
 
   set({
@@ -892,7 +892,7 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
       set({
         plan: nextPlan,
         status: 'cancelled',
-        lastError: 'Generación detenida. Las semanas ya generadas se conservan.',
+        lastError: 'Preparación detenida. Las semanas ya listas se conservan.',
       })
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error)
@@ -904,7 +904,7 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
     const { plan, weeks } = get()
     if (!plan) return { errors: ['No hay plan activo'], warnings: [] }
     if (plan.generationState !== 'complete') {
-      const message = 'El plan todavia no esta completamente generado. Completa la generacion antes de aceptarlo.'
+      const message = 'El plan todavía no está completamente preparado. Completa la preparación antes de aceptarlo.'
       set({ status: toBuilderStatus(plan.generationState), lastError: message })
       return { errors: [message], warnings: [] }
     }

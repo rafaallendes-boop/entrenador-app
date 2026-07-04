@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { ATHLETE_PROFILE_LOCAL_ID } from '../athlete/activeAthlete'
 
 type SupabaseResult = { data: unknown; error: unknown }
 type SupabaseResultSource = SupabaseResult | SupabaseResult[]
@@ -64,7 +65,7 @@ let athleteRows: Array<{ id: string; [key: string]: unknown }> = []
 let planGenerationJobRows: unknown[] = []
 let tableResults = new Map<string, SupabaseResultSource>()
 let actionResults = new Map<string, SupabaseResultSource>()
-type MockFilter = { op: 'eq' | 'in' | 'or' | 'lt' | 'lte'; column: string; value: unknown }
+type MockFilter = { op: 'eq' | 'neq' | 'in' | 'or' | 'lt' | 'lte'; column: string; value: unknown }
 
 const upsertCalls: Array<{ table: string; payload: unknown; options?: unknown }> = []
 const insertCalls: Array<{ table: string; payload: unknown }> = []
@@ -81,6 +82,10 @@ function createQueryBuilder(
   return {
     eq(column: string, value: unknown) {
       filters.push({ op: 'eq', column, value })
+      return this
+    },
+    neq(column: string, value: unknown) {
+      filters.push({ op: 'neq', column, value })
       return this
     },
     in(column: string, value: unknown) {
@@ -305,12 +310,19 @@ vi.mock('../../db/db', () => ({
     athleteProfiles: {
       toArray: vi.fn(async () => athleteProfileRows),
       count: vi.fn(async () => athleteProfileRows.length),
-      get: vi.fn(async () => undefined),
-      put: vi.fn(async () => {}),
+      get: vi.fn(async (id: string) => athleteProfileRows.find((row) => (row as { id?: string }).id === id)),
+      put: vi.fn(async (row: unknown) => {
+        athleteProfileRows = putRowById(athleteProfileRows, row)
+      }),
       bulkPut: vi.fn(async (rows: unknown[]) => {
         athleteProfileRows = mergeRowsById(athleteProfileRows, rows)
       }),
-      clear: vi.fn(async () => {}),
+      delete: vi.fn(async (id: string) => {
+        athleteProfileRows = deleteRowsById(athleteProfileRows, [id])
+      }),
+      clear: vi.fn(async () => {
+        athleteProfileRows = []
+      }),
     },
     athletes: {
       toArray: vi.fn(async () => athleteRows),
@@ -653,6 +665,208 @@ describe('syncService', () => {
     })
   })
 
+  it('pushear el perfil de un gestionado no repara/borra el perfil remoto del self', async () => {
+    const { setActiveAthleteId, setSelfAthleteId } = await import('../athlete/activeAthlete')
+    const { db: mockedDb } = await import('../../db/db')
+    setSelfAthleteId('ath_user-1')
+    setActiveAthleteId('ath_m_1')
+    try {
+      const now = Date.now()
+      await mockedDb.athletes.put({
+        id: 'ath_m_1',
+        ownerAccountId: 'user-1',
+        linkedAccountId: null,
+        status: 'active',
+        createdAt: now,
+        updatedAt: now,
+      } as never)
+      actionResults.set('select:athlete_profiles', {
+        data: [{
+          id: 'profile:user-1',
+          user_id: 'user-1',
+          athlete_id: 'ath_user-1',
+          coach_memory: null,
+          updated_at: 5,
+          data: { name: 'Rafa' },
+        }],
+        error: null,
+      })
+      const syncService = await import('../syncService')
+      await syncService.pushAthleteProfile({
+        id: 'ath_m_1',
+        athleteId: 'ath_m_1',
+        updatedAt: 10,
+        name: 'Cliente 1',
+      } as never)
+
+      const profileUpsert = upsertCalls.find((call) => call.table === 'athlete_profiles')
+      expect(profileUpsert?.payload).toMatchObject({
+        id: 'profile:user-1:ath_m_1',
+        athlete_id: 'ath_m_1',
+      })
+      expect(profileUpsert?.options).toMatchObject({ onConflict: 'user_id,athlete_id' })
+      expect(updateCalls.find((call) => call.table === 'athlete_profiles')).toBeUndefined()
+      expect(deleteCalls.find((call) => call.table === 'athlete_profiles')).toBeUndefined()
+    } finally {
+      setActiveAthleteId(null)
+      setSelfAthleteId(null)
+    }
+  })
+
+  it('repairAthleteProfileDuplicates NO trata self + gestionado como duplicados', async () => {
+    const { setSelfAthleteId } = await import('../athlete/activeAthlete')
+    setSelfAthleteId('ath_user-1')
+    try {
+      actionResults.set('select:athlete_profiles', {
+        data: [
+          {
+            id: 'profile:user-1',
+            user_id: 'user-1',
+            athlete_id: 'ath_user-1',
+            coach_memory: null,
+            updated_at: 5,
+            data: { name: 'Rafa' },
+          },
+          {
+            id: 'profile:user-1:ath_m_1',
+            user_id: 'user-1',
+            athlete_id: 'ath_m_1',
+            coach_memory: null,
+            updated_at: 6,
+            data: { name: 'Cliente 1' },
+          },
+        ],
+        error: null,
+      })
+      const syncService = await import('../syncService')
+      const result = await syncService.repairAthleteProfileDuplicates('user-1')
+
+      expect(result).toMatchObject({ remoteRowsBefore: 2, repaired: false })
+      expect(deleteCalls.filter((call) => call.table === 'athlete_profiles')).toHaveLength(0)
+    } finally {
+      setSelfAthleteId(null)
+    }
+  })
+
+  it('repairAthleteProfileDuplicates estampa athlete_id self al reparar duplicados legacy', async () => {
+    actionResults.set('select:athlete_profiles', {
+      data: [
+        {
+          id: 'legacy-a',
+          user_id: 'user-1',
+          athlete_id: null,
+          coach_memory: null,
+          updated_at: 5,
+          data: { name: 'A' },
+        },
+        {
+          id: 'legacy-b',
+          user_id: 'user-1',
+          athlete_id: null,
+          coach_memory: null,
+          updated_at: 10,
+          data: { name: 'B' },
+        },
+      ],
+      error: null,
+    })
+
+    const syncService = await import('../syncService')
+    const result = await syncService.repairAthleteProfileDuplicates('user-1')
+
+    expect(result).toMatchObject({ remoteRowsBefore: 2, repaired: true })
+    expect(updateCalls.find((call) => call.table === 'athlete_profiles')?.payload)
+      .toMatchObject({ athlete_id: 'ath_user-1' })
+  })
+
+  it('pushear un day log de un gestionado asegura SU fila de athletes primero', async () => {
+    const { setActiveAthleteId, setSelfAthleteId } = await import('../athlete/activeAthlete')
+    const { db: mockedDb } = await import('../../db/db')
+    setSelfAthleteId('ath_user-1')
+    setActiveAthleteId('ath_m_1')
+    try {
+      const now = Date.now()
+      await mockedDb.athletes.put({
+        id: 'ath_m_1',
+        ownerAccountId: 'user-1',
+        linkedAccountId: null,
+        status: 'active',
+        createdAt: now,
+        updatedAt: now,
+      } as never)
+
+      const syncService = await import('../syncService')
+      await syncService.pushDayLog({ id: 'dl-1', date: '2026-07-06', updatedAt: 10, athleteId: 'ath_m_1' } as never)
+
+      const managedEnsureIdx = upsertCalls.findIndex((call) =>
+        call.table === 'athletes' && (call.payload as { id?: string }).id === 'ath_m_1')
+      const childIdx = upsertCalls.findIndex((call) => call.table === 'day_logs')
+      expect(managedEnsureIdx).toBeGreaterThanOrEqual(0)
+      expect(childIdx).toBeGreaterThan(managedEnsureIdx)
+    } finally {
+      setActiveAthleteId(null)
+      setSelfAthleteId(null)
+    }
+  })
+
+  it('drenar una op encolada de un gestionado asegura SU fila de athletes antes del child', async () => {
+    const { setSelfAthleteId } = await import('../athlete/activeAthlete')
+    const { db: mockedDb } = await import('../../db/db')
+    setSelfAthleteId('ath_user-1')
+    try {
+      const now = Date.now()
+      await mockedDb.athletes.put({
+        id: 'ath_m_1',
+        ownerAccountId: 'user-1',
+        linkedAccountId: null,
+        status: 'active',
+        createdAt: now,
+        updatedAt: now,
+      } as never)
+      localStorageState.set('entrenador_sync_queue_v1', JSON.stringify([
+        {
+          table: 'day_logs',
+          action: 'upsert',
+          userId: 'user-1',
+          enqueuedAt: 1,
+          attempts: 0,
+          payload: {
+            id: 'dl-q1',
+            user_id: 'user-1',
+            date: '2026-07-06',
+            updated_at: 10,
+            athlete_id: 'ath_m_1',
+          },
+        },
+      ]))
+
+      const syncService = await import('../syncService')
+      await syncService.drainQueue()
+
+      const managedEnsureIdx = upsertCalls.findIndex((call) =>
+        call.table === 'athletes' && (call.payload as { id?: string }).id === 'ath_m_1')
+      const childIdx = upsertCalls.findIndex((call) => call.table === 'day_logs')
+      expect(managedEnsureIdx).toBeGreaterThanOrEqual(0)
+      expect(childIdx).toBeGreaterThan(managedEnsureIdx)
+    } finally {
+      setSelfAthleteId(null)
+    }
+  })
+
+  it('un gestionado inexistente localmente NO escribe el child row', async () => {
+    const { setActiveAthleteId, setSelfAthleteId } = await import('../athlete/activeAthlete')
+    setSelfAthleteId('ath_user-1')
+    setActiveAthleteId('ath_ghost')
+    try {
+      const syncService = await import('../syncService')
+      await syncService.pushDayLog({ id: 'dl-2', date: '2026-07-06', updatedAt: 10, athleteId: 'ath_ghost' } as never)
+      expect(upsertCalls.find((call) => call.table === 'day_logs')).toBeUndefined()
+    } finally {
+      setActiveAthleteId(null)
+      setSelfAthleteId(null)
+    }
+  })
+
   it('runFullSync drains a retryable queued op and clears diagnostics when the backend recovers', async () => {
     tableResults.set('sessions', { data: null, error: { message: 'JWT expired', status: 401 } })
     const syncService = await import('../syncService')
@@ -752,6 +966,112 @@ describe('syncService', () => {
     persistAthleteSelection('user-1', null)
     setActiveAthleteId(null)
     setSelfAthleteId(null)
+  })
+
+  it('un full pull con perfiles de self y gestionado converge cada uno a su fila local', async () => {
+    const { setSelfAthleteId, setActiveAthleteId } = await import('../athlete/activeAthlete')
+    setSelfAthleteId('ath_user-1')
+    try {
+      actionResults.set('select:athlete_profiles', {
+        data: [
+          {
+            id: 'profile:user-1',
+            user_id: 'user-1',
+            athlete_id: 'ath_user-1',
+            coach_memory: null,
+            updated_at: 20,
+            data: { name: 'Rafa' },
+          },
+          {
+            id: 'profile:user-1:ath_m_1',
+            user_id: 'user-1',
+            athlete_id: 'ath_m_1',
+            coach_memory: null,
+            updated_at: 30,
+            data: { name: 'Cliente 1' },
+          },
+        ],
+        error: null,
+      })
+
+      const syncService = await import('../syncService')
+      await syncService.runFullSync('user-1')
+
+      const self = athleteProfileRows.find((profile) => (profile as { id?: string }).id === ATHLETE_PROFILE_LOCAL_ID)
+      const managed = athleteProfileRows.find((profile) => (profile as { id?: string }).id === 'ath_m_1')
+      expect(self).toMatchObject({ name: 'Rafa' })
+      expect(managed).toMatchObject({ name: 'Cliente 1', athleteId: 'ath_m_1' })
+      expect(deleteCalls.filter((call) => call.table === 'athlete_profiles')).toHaveLength(0)
+    } finally {
+      setSelfAthleteId(null)
+      setActiveAthleteId(null)
+    }
+  })
+
+  it('self remoto vacío en ventana de deletes borra SOLO la fila default, nunca perfiles gestionados', async () => {
+    const { setSelfAthleteId, setActiveAthleteId } = await import('../athlete/activeAthlete')
+    setSelfAthleteId('ath_user-1')
+    storeState.syncDetails.lastSuccessfulSyncAt = 10
+    try {
+      athleteProfileRows = [
+        { id: ATHLETE_PROFILE_LOCAL_ID, athleteId: 'ath_user-1', updatedAt: 5, name: 'Rafa' },
+        { id: 'ath_m_1', athleteId: 'ath_m_1', updatedAt: 50, name: 'Cliente 1' },
+      ]
+      actionResults.set('select:athlete_profiles', {
+        data: [{
+          id: 'profile:user-1:ath_m_1',
+          user_id: 'user-1',
+          athlete_id: 'ath_m_1',
+          coach_memory: null,
+          updated_at: 50,
+          data: { name: 'Cliente 1' },
+        }],
+        error: null,
+      })
+
+      const syncService = await import('../syncService')
+      await syncService.runFullSync('user-1')
+
+      expect(athleteProfileRows.find((profile) => (profile as { id?: string }).id === ATHLETE_PROFILE_LOCAL_ID)).toBeUndefined()
+      expect(athleteProfileRows.find((profile) => (profile as { id?: string }).id === 'ath_m_1')).toBeDefined()
+    } finally {
+      setSelfAthleteId(null)
+      setActiveAthleteId(null)
+    }
+  })
+
+  it('un gestionado local sin remoto dentro de la ventana de deletes se borra en vez de resucitar', async () => {
+    const { setSelfAthleteId, setActiveAthleteId } = await import('../athlete/activeAthlete')
+    setSelfAthleteId('ath_user-1')
+    storeState.syncDetails.lastSuccessfulSyncAt = 10
+    try {
+      athleteProfileRows = [
+        { id: 'ath_m_del', athleteId: 'ath_m_del', updatedAt: 5, name: 'Ex cliente' },
+      ]
+      actionResults.set('select:athlete_profiles', {
+        data: [{
+          id: 'profile:user-1',
+          user_id: 'user-1',
+          athlete_id: 'ath_user-1',
+          coach_memory: null,
+          updated_at: 20,
+          data: { name: 'Rafa' },
+        }],
+        error: null,
+      })
+
+      const syncService = await import('../syncService')
+      await syncService.runFullSync('user-1')
+
+      expect(athleteProfileRows.find((profile) => (profile as { id?: string }).id === 'ath_m_del')).toBeUndefined()
+      expect(upsertCalls.find((call) =>
+        call.table === 'athlete_profiles'
+        && (call.payload as { id?: string }).id === 'profile:user-1:ath_m_del',
+      )).toBeUndefined()
+    } finally {
+      setSelfAthleteId(null)
+      setActiveAthleteId(null)
+    }
   })
 
   it('only deletes missing day logs inside an athlete-scoped pull', async () => {
@@ -861,10 +1181,36 @@ describe('syncService', () => {
     expect(updateCalls.some((call) => call.table === 'athlete_profiles')).toBe(false)
     expect(upsertCalls.some((call) => call.table === 'athlete_profiles')).toBe(true)
     expect(insertCalls.some((call) => call.table === 'athlete_profiles')).toBe(false)
+    expect(deleteCalls.find((call) => call.table === 'athletes')?.filters).toEqual([
+      { op: 'eq', column: 'owner_account_id', value: 'user-1' },
+      { op: 'neq', column: 'id', value: 'ath_user-1' },
+    ])
     expect(JSON.parse(localStorage.getItem('entrenador_sync_queue_v1') ?? '[]')).toEqual([])
     expect(localStorage.getItem('entrenador_profile_reset_lock_v1')).toContain('awaiting_bootstrap_ack')
     expect(outcome.completed).toBe(true)
     expect(outcome.pending).toEqual([])
+  })
+
+  it('preserves the self athlete so the full reset marker is not cascade-deleted', async () => {
+    const syncService = await import('../syncService')
+    await syncService.wipeRemoteAndLocalAppData('user-1')
+
+    const selfAthleteUpsertIndex = upsertCalls.findIndex((call) =>
+      call.table === 'athletes'
+      && (call.payload as { id?: string }).id === 'ath_user-1',
+    )
+    const markerUpsertIndex = upsertCalls.findIndex((call) =>
+      call.table === 'athlete_profiles'
+      && ((call.payload as { data?: Record<string, unknown> }).data?.__fullResetAt != null),
+    )
+    const athleteDelete = deleteCalls.find((call) => call.table === 'athletes')
+
+    expect(selfAthleteUpsertIndex).toBeGreaterThanOrEqual(0)
+    expect(markerUpsertIndex).toBeGreaterThan(selfAthleteUpsertIndex)
+    expect(athleteDelete?.filters).toEqual([
+      { op: 'eq', column: 'owner_account_id', value: 'user-1' },
+      { op: 'neq', column: 'id', value: 'ath_user-1' },
+    ])
   })
 
   it('tolerates missing optional plan sync tables during a full reset', async () => {
@@ -1221,6 +1567,14 @@ describe('syncService', () => {
     }) as typeof supabase.from
 
     const { db } = await import('../../db/db')
+    await db.athletes.put({
+      id: 'athlete-1',
+      ownerAccountId: 'user-1',
+      linkedAccountId: null,
+      status: 'active',
+      createdAt: 1,
+      updatedAt: 1,
+    } as never)
     ;(db.trainingPlans.get as ReturnType<typeof vi.fn>).mockImplementation(async (id: string) =>
       trainingPlanRows.find((plan) => (plan as { id: string }).id === id),
     )
@@ -1382,6 +1736,15 @@ describe('syncService', () => {
 
   describe('pushDayLog reconciles a 23505 instead of throwing', () => {
     it('does not throw and issues a conditional update when local is newer', async () => {
+      const { db } = await import('../../db/db')
+      await db.athletes.put({
+        id: 'ath_A',
+        ownerAccountId: 'user-1',
+        linkedAccountId: null,
+        status: 'active',
+        createdAt: 1,
+        updatedAt: 1,
+      } as never)
       actionResults.set('upsert:day_logs', { data: null, error: { code: '23505' } })
       actionResults.set('select:day_logs', { data: [{ id: 'remote-b', updated_at: 1 }], error: null })
       actionResults.set('update:day_logs', { data: [{ id: 'remote-b' }], error: null })

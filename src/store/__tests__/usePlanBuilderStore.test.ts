@@ -295,7 +295,7 @@ describe('usePlanBuilderStore', () => {
     const state = usePlanBuilderStore.getState()
     expect(state.status).toBe('error')
     expect(state.weeks).toEqual([])
-    expect(state.lastError).toContain('no tiene semanas')
+    expect(state.lastError).toContain('No encontramos semanas')
   })
 
   it('loadDraft keeps a generating draft without synced weeks in generating state', async () => {
@@ -482,14 +482,14 @@ describe('usePlanBuilderStore', () => {
     const profile = await createShell()
     mocks.supabase = { auth: {} }
     mocks.authUser = { id: 'user-1' }
-    mocks.assertPlanBuilderWeekRateLimit.mockRejectedValueOnce(new Error('Límite diario beta alcanzado para Plan Builder'))
+    mocks.assertPlanBuilderWeekRateLimit.mockRejectedValueOnce(new Error('Alcanzaste el límite diario para crear planes'))
 
     await usePlanBuilderStore.getState().runGeneration(profile)
 
     const state = usePlanBuilderStore.getState()
     expect(state.status).toBe('error')
     expect(state.plan?.generationState).toBe('shell')
-    expect(state.lastError).toContain('Límite diario')
+    expect(state.lastError).toContain('límite diario')
     expect(mocks.pushTrainingPlan).not.toHaveBeenCalled()
     expect(mocks.reservePlanBuilderWeekUsage).not.toHaveBeenCalled()
     expect(mocks.triggerBackgroundGeneration).not.toHaveBeenCalled()

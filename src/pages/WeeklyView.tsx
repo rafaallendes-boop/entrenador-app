@@ -238,7 +238,7 @@ export default function WeeklyView() {
               className="flex items-center gap-1.5 rounded-lg bg-brand px-4 py-2 text-xs font-medium text-white transition-colors active:scale-95 hover:bg-brand-light"
             >
               <Sparkles size={14} />
-              <span>Plan Builder</span>
+              <span>Crear plan</span>
             </button>
           ) : (
             <>

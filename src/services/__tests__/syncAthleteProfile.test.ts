@@ -115,16 +115,24 @@ vi.mock('../../db/db', () => ({
   db: {
     athleteProfiles: {
       toArray: vi.fn(async () => []),
+      bulkPut: vi.fn(async () => {}),
       count: vi.fn(async () => 0),
       get: vi.fn(async () => undefined),
       put: vi.fn(async () => {}),
       clear: vi.fn(async () => {}),
     },
-    sessions: { count: vi.fn(async () => 0) },
-    dayLogs: { count: vi.fn(async () => 0) },
-    weekSummaries: { count: vi.fn(async () => 0) },
-    chatMessages: { count: vi.fn(async () => 0) },
-    coachProposals: { count: vi.fn(async () => 0) },
+    athletes: {
+      get: vi.fn(async () => undefined),
+      put: vi.fn(async () => {}),
+    },
+    sessions: { count: vi.fn(async () => 0), toArray: vi.fn(async () => []), bulkPut: vi.fn(async () => {}) },
+    dayLogs: { count: vi.fn(async () => 0), toArray: vi.fn(async () => []), bulkPut: vi.fn(async () => {}) },
+    weekSummaries: { count: vi.fn(async () => 0), toArray: vi.fn(async () => []), bulkPut: vi.fn(async () => {}) },
+    chatMessages: { count: vi.fn(async () => 0), toArray: vi.fn(async () => []), bulkPut: vi.fn(async () => {}) },
+    coachProposals: { count: vi.fn(async () => 0), toArray: vi.fn(async () => []), bulkPut: vi.fn(async () => {}) },
+    trainingPlans: { toArray: vi.fn(async () => []), bulkPut: vi.fn(async () => {}) },
+    trainingPlanWeeks: { toArray: vi.fn(async () => []), bulkPut: vi.fn(async () => {}) },
+    planGenerationJobs: { toArray: vi.fn(async () => []), bulkPut: vi.fn(async () => {}) },
   },
 }))
 
@@ -181,10 +189,12 @@ describe('Athlete Profile Sync - Hardening Fixes', () => {
       updatedAt: 100,
     })
 
-    expect(upsertCalls).toHaveLength(1)
-    expect(upsertCalls[0].table).toBe('athlete_profiles')
-    expect(upsertCalls[0].options).toEqual({ onConflict: 'user_id' })
-    const payload = upsertCalls[0].payload as Record<string, unknown>
+    // ensureRemoteAthlete now fires for the self profile too (athlete_id is
+    // always non-null), so filter to the athlete_profiles calls specifically.
+    const profileUpserts = upsertCalls.filter((call) => call.table === 'athlete_profiles')
+    expect(profileUpserts).toHaveLength(1)
+    expect(profileUpserts[0].options).toEqual({ onConflict: 'user_id,athlete_id' })
+    const payload = profileUpserts[0].payload as Record<string, unknown>
     expect(payload.id).toBe('profile:user-1')
     expect(payload.user_id).toBe('user-1')
   })

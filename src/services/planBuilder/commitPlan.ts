@@ -136,7 +136,7 @@ export async function commitPlan(
       .map((issue) => issue.message)
     return {
       errors: [
-        `El plan necesita revisión antes de aceptarse (score ${preCommitQualityReview.score}/100).`,
+        `El plan necesita revisión del coach antes de aceptarse (puntaje ${preCommitQualityReview.score}/100).`,
         ...headlineIssues,
       ],
       warnings,
@@ -144,7 +144,7 @@ export async function commitPlan(
     }
   }
   if (preCommitQualityReview.grade === 'needs_review') {
-    warnings.push(`El plan queda con revisión recomendada (score ${preCommitQualityReview.score}/100).`)
+    warnings.push(`El plan queda con revisión recomendada del coach (puntaje ${preCommitQualityReview.score}/100).`)
   }
 
   const appliedSnapshots: WeekCommitSnapshot[] = []

@@ -5,7 +5,7 @@ import { toISO, getWeekStart, fromISO } from '../utils/date'
 import { isCompetitionSquashMatch, isPracticeSquashMatch } from '../utils/squash'
 import { addDays } from 'date-fns'
 import { v4 as uuid } from '../utils/uuid'
-import { getActiveAthleteId, isSelfScopeActive } from '../services/athlete/activeAthlete'
+import { ATHLETE_PROFILE_LOCAL_ID, getActiveAthleteId, isSelfScopeActive } from '../services/athlete/activeAthlete'
 import { isScopedAthleteId } from '../services/athlete/effectiveAthleteKey'
 import { filterRowsToActiveScope } from '../services/athlete/activeScopeFilter'
 
@@ -305,31 +305,44 @@ export const getMatchSessions = async (): Promise<Session[]> => {
   return filterRowsToActiveScope(sessions).sort((a, b) => b.date.localeCompare(a.date))
 }
 
-const ATHLETE_PROFILE_ID = 'default'
+// The profile row key follows the athlete scope: the owner's own profile keeps
+// the historic singleton row; a managed athlete gets its own row keyed by its
+// athleteId and never adopts the owner's profile.
+function resolveProfileLocalId(): string {
+  const active = getActiveAthleteId()
+  if (!active || isSelfScopeActive()) return ATHLETE_PROFILE_LOCAL_ID
+  return active
+}
 
 export const getAthleteProfile = async (): Promise<AthleteProfile | undefined> =>
-  db.athleteProfiles.get(ATHLETE_PROFILE_ID)
+  db.athleteProfiles.get(resolveProfileLocalId())
 
 export const upsertAthleteProfile = async (
-  patch: Partial<Omit<AthleteProfile, 'id' | 'updatedAt'>>
+  patch: Partial<Omit<AthleteProfile, 'id' | 'updatedAt' | 'athleteId'>>
 ): Promise<AthleteProfile> => {
-  const existing = await getAthleteProfile()
+  const localId = resolveProfileLocalId()
+  const { athleteId: _callerScope, ...safePatch } = patch as Partial<AthleteProfile>
+  void _callerScope
+  const existing = await db.athleteProfiles.get(localId)
   const updatedAt = Date.now()
+  const activeAthleteId = getActiveAthleteId()
 
   if (existing) {
     const updated: AthleteProfile = {
       ...existing,
-      ...patch,
+      ...safePatch,
       updatedAt,
+      ...(activeAthleteId && !isScopedAthleteId(existing.athleteId) ? { athleteId: activeAthleteId } : {}),
     }
     await db.athleteProfiles.put(updated)
     return updated
   }
 
   const created: AthleteProfile = {
-    id: ATHLETE_PROFILE_ID,
+    id: localId,
     updatedAt,
-    ...patch,
+    ...safePatch,
+    ...(activeAthleteId ? { athleteId: activeAthleteId } : {}),
   }
   await db.athleteProfiles.put(created)
   return created

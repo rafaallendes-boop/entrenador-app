@@ -47,7 +47,7 @@ describe('syncUtils', () => {
       updated_at: 123,
     })
 
-    const restored = rowToAthleteProfile(row)
+    const restored = rowToAthleteProfile(row, 'ath_user-1')
     expect(restored.id).toBe('default')
     expect(restored.name).toBe('Rafa')
     expect(restored.primarySport).toBe('squash')
@@ -65,22 +65,28 @@ describe('syncUtils', () => {
     expect(row.athlete_id).toBe('ath_user-1')
     expect((row.data as Record<string, unknown> | null)?.athleteId).toBe('ath_user-1')
 
-    const restored = rowToAthleteProfile({
-      ...row,
-      data: { ...(row.data as Record<string, unknown>), athleteId: 'legacy-athlete' },
-    })
+    const restored = rowToAthleteProfile(
+      {
+        ...row,
+        data: { ...(row.data as Record<string, unknown>), athleteId: 'legacy-athlete' },
+      },
+      'ath_user-1',
+    )
     expect(restored.athleteId).toBe('ath_user-1')
   })
 
   it('falls back to data.athleteId for legacy athlete profile rows', () => {
-    const restored = rowToAthleteProfile({
-      id: 'profile:user-1',
-      user_id: 'user-1',
-      athlete_id: null,
-      coach_memory: null,
-      updated_at: 123,
-      data: { athleteId: 'legacy-athlete', name: 'Rafa' },
-    })
+    const restored = rowToAthleteProfile(
+      {
+        id: 'profile:user-1',
+        user_id: 'user-1',
+        athlete_id: null,
+        coach_memory: null,
+        updated_at: 123,
+        data: { athleteId: 'legacy-athlete', name: 'Rafa' },
+      },
+      null,
+    )
 
     expect(restored.athleteId).toBe('legacy-athlete')
   })

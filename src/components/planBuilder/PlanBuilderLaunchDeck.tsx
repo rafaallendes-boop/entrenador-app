@@ -147,10 +147,10 @@ export default function PlanBuilderLaunchDeck({
                   <Loader2 size={16} className="flex-shrink-0 animate-spin text-[#ff7a33]" />
                   <div className="min-w-0 text-left">
                     <p className="font-mono text-[10px] font-bold uppercase tracking-[0.22em] text-[#ff7a33]">
-                      Generación en curso
+                      Plan en preparación
                     </p>
                     <p className="mt-0.5 text-[12px] leading-5 text-white/60">
-                      Tu plan se está generando. Puedes navegar y volver en unos minutos.
+                      Estamos preparando tu plan. Puedes navegar y volver en unos minutos.
                     </p>
                   </div>
                 </div>
@@ -161,7 +161,7 @@ export default function PlanBuilderLaunchDeck({
                   style={{ background: 'rgba(255,90,31,0.15)', border: '1px solid rgba(255,90,31,0.18)' }}
                 >
                   <Loader2 size={16} className="animate-spin" />
-                  Generando…
+                  Preparando…
                 </button>
               </div>
             ) : (
@@ -172,7 +172,7 @@ export default function PlanBuilderLaunchDeck({
                 className="relative z-10 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[#ff5a1f] px-4 py-3 font-display text-sm font-black uppercase tracking-[0.18em] text-white shadow-[0_10px_30px_-10px_rgba(255,90,31,0.75)] transition-transform duration-150 hover:scale-[1.01] disabled:cursor-wait disabled:opacity-70 sm:max-w-[360px]"
               >
                 <Sparkles size={16} className={isLaunchBlocked ? 'animate-pulse' : ''} />
-                {isLaunchBlocked ? 'Inicializando…' : 'Iniciar generación'}
+                {isLaunchBlocked ? 'Preparando…' : 'Crear plan'}
               </button>
             )}
           </div>

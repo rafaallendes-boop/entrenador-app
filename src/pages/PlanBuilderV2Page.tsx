@@ -38,6 +38,9 @@ const PHASE_DOT: Record<string, string> = {
   transition: 'bg-ink-faint',
 }
 
+const PLAN_BUILDER_CLIENT_LABEL = 'Crear plan'
+const PLAN_BUILDER_COMPETITIVE_LABEL = 'Plan competitivo'
+
 function isPlanBuilderLocationState(value: unknown): value is PlanBuilderLocationState {
   if (!value || typeof value !== 'object') return false
   const state = value as PlanBuilderLocationState
@@ -123,8 +126,8 @@ function storedSessionLabel(session: Session): string {
 function qualityLabel(grade: string): string {
   if (grade === 'excellent') return 'Excelente'
   if (grade === 'good') return 'Buena'
-  if (grade === 'needs_review') return 'Revisar'
-  return 'Débil'
+  if (grade === 'needs_review') return 'Requiere revisión del coach'
+  return 'Necesita ajustes'
 }
 
 function qualityColor(score: number): string {
@@ -679,7 +682,7 @@ export default function PlanBuilderV2Page() {
   )
   const qualityBlocker = qualityBlocksAccept && qualityReview
     ? showPlanQualityDebug
-      ? `El plan necesita revisión antes de aceptarse (score ${qualityReview.score}/100). Regenera el plan o ajusta las semanas marcadas.`
+      ? `El plan necesita revisión antes de aceptarse (puntaje ${qualityReview.score}/100). Ajusta el plan o las semanas marcadas.`
       : 'El plan necesita un ajuste final antes de aceptarse.'
     : null
   const qualityRepairInstructions = useMemo(
@@ -719,12 +722,19 @@ export default function PlanBuilderV2Page() {
   // Consumer-facing readiness: the technical recovery controls are dev-only, so the
   // clean card must reflect reality instead of claiming success or implying endless progress.
   const isActivelyGenerating = status === 'generating' || plan?.generationState === 'generating'
+  const customerStatusMessage = (() => {
+    if (!lastError || showPlanQualityDebug) return null
+    if (isActivelyGenerating) return 'Seguimos preparando tu plan. Si tarda más de lo normal, puedes volver a intentarlo.'
+    if (isFailedState || status === 'error') return 'No pudimos completar este intento. Tus datos siguen guardados.'
+    if (plan?.generationState === 'partial') return 'Algunas semanas quedaron pendientes. Puedes intentar completar el plan.'
+    return null
+  })()
 
   if (!hasLoaded && !effectiveAthleteProfile) {
     return (
       <div className="px-4 pt-12 pb-8 max-w-md mx-auto">
         <Card className="p-4 space-y-3">
-          <h1 className="text-lg font-bold text-ink">Plan Builder</h1>
+          <h1 className="text-lg font-bold text-ink">{PLAN_BUILDER_CLIENT_LABEL}</h1>
           <p className="text-sm text-ink-muted">
             Preparando tu perfil antes de construir el plan.
           </p>
@@ -737,15 +747,15 @@ export default function PlanBuilderV2Page() {
     return (
       <div className="px-4 pt-12 pb-8 max-w-md mx-auto">
         <Card className="p-4 space-y-3">
-          <h1 className="text-lg font-bold text-ink">Plan Builder</h1>
+          <h1 className="text-lg font-bold text-ink">{PLAN_BUILDER_CLIENT_LABEL}</h1>
           <p className="text-sm text-ink-muted">
-            Necesitas completar el wizard de plan de competencia antes de generar un plan por evento.
+            Necesitas completar los datos del plan competitivo antes de crear un plan por evento.
           </p>
           <button
             onClick={() => navigate(ROUTES.COMPETITION_PLAN)}
             className="rounded-xl bg-brand px-4 py-2 text-sm font-semibold text-white"
           >
-            Abrir wizard
+            Completar datos del plan
           </button>
         </Card>
       </div>
@@ -764,8 +774,8 @@ export default function PlanBuilderV2Page() {
     weeks.every((week) => week.status === 'pending') &&
     currentPlanId !== initializedPlanId
   const launchInsight = goalEvent
-    ? `Basado en ${goalEvent.title} y en tu configuracion competitiva actual, conviene inicializar un macro-bloque limpio antes de expandir cada semana con el motor de generacion.`
-    : 'Hay un blueprint listo para generar. Conviene inicializar el protocolo desde una estructura estable y consistente.'
+    ? `Basado en ${goalEvent.title} y en tu configuración competitiva actual, conviene preparar un bloque limpio antes de armar cada semana.`
+    : 'Hay una estructura lista para usar. Conviene preparar el plan desde una base estable y consistente.'
 
   async function handleInitializeProtocol() {
     if (!effectiveAthleteProfile || !plan || isGenerating || status === 'committing') return
@@ -897,7 +907,7 @@ export default function PlanBuilderV2Page() {
           <div className="flex items-start justify-between gap-4 flex-wrap pr-16 sm:pr-24 md:pr-40">
             <div className="min-w-0">
               <p className="font-mono text-[9px] font-bold uppercase tracking-[0.36em] text-ink-faint">
-                Plan Builder
+                {PLAN_BUILDER_CLIENT_LABEL}
               </p>
               <h1 className="mt-1 font-display text-2xl font-bold tracking-tight text-ink md:text-3xl">
                 {plan?.title ?? `Plan para ${goalEvent.title}`}
@@ -907,8 +917,10 @@ export default function PlanBuilderV2Page() {
                   {plan.totalWeeks} semanas · Inicio {plan.startDate} · Evento {plan.macroSnapshot.goalEventDate}
                 </p>
               )}
-              {lastError && (
-                <p className="mt-1.5 text-xs text-red-400">{lastError}</p>
+              {(showPlanQualityDebug ? lastError : customerStatusMessage) && (
+                <p className="mt-1.5 text-xs text-red-400">
+                  {showPlanQualityDebug ? lastError : customerStatusMessage}
+                </p>
               )}
             </div>
 
@@ -932,7 +944,7 @@ export default function PlanBuilderV2Page() {
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-mono text-[10px] font-bold uppercase tracking-[0.28em] text-brand">
-                        Generando en segundo plano
+                        Preparando en segundo plano
                       </span>
                       <span className="font-mono text-[10px] text-ink-faint">
                         {completedWeeks}/{weeks.length} semanas
@@ -940,7 +952,7 @@ export default function PlanBuilderV2Page() {
                       </span>
                     </div>
                     <p className="mt-1 text-[12px] leading-5 text-ink-muted">
-                      Puedes navegar por la app mientras se genera tu plan. Vuelve cuando quieras para revisar el resultado.
+                      Puedes navegar por la app mientras preparamos tu plan. Vuelve cuando quieras para revisar el resultado.
                     </p>
                   </div>
                 </div>
@@ -981,18 +993,18 @@ export default function PlanBuilderV2Page() {
               <div>
                 <h2 className="font-display text-base font-bold text-ink">Preparando el plan</h2>
                 <p className="mt-1 text-sm text-ink-muted">
-                  Estamos armando el shell de semanas antes de iniciar la generación.
+                  Estamos armando la estructura inicial de semanas antes de crear las sesiones.
                 </p>
               </div>
             </div>
           </div>
         ) : shouldShowLaunchDeck ? (
           <PlanBuilderLaunchDeck
-            title="Plan Builder"
-            subtitle="Revisa el objetivo y genera un plan por semanas con control de carga, taper y sesiones clave."
+            title={PLAN_BUILDER_COMPETITIVE_LABEL}
+            subtitle="Revisa el objetivo y crea un plan por semanas con control de carga, taper y sesiones clave."
             insight={launchInsight}
-            weeksLabel={`${plan?.totalWeeks ?? weeks.length} semanas listas para inicializar.`}
-            goalLabel={goalEvent ? `Evento objetivo: ${goalEvent.title} · ${goalEvent.date}` : 'Macro-plan listo para generar.'}
+            weeksLabel={`${plan?.totalWeeks ?? weeks.length} semanas listas para preparar.`}
+            goalLabel={goalEvent ? `Evento objetivo: ${goalEvent.title} · ${goalEvent.date}` : 'Plan listo para preparar.'}
             isInitializing={isGenerating}
             isBackgroundGenerating={plan?.generationState === 'generating'}
             sport={getSportFromGoalEvent(goalEvent)}
@@ -1095,7 +1107,7 @@ export default function PlanBuilderV2Page() {
               <div className="flex items-start gap-3">
                 <AlertTriangle size={16} className="mt-0.5 flex-shrink-0 text-red-400" />
                 <div>
-                  <h2 className="font-display text-sm font-bold text-ink">La generación quedó incompleta</h2>
+                  <h2 className="font-display text-sm font-bold text-ink">La preparación quedó incompleta</h2>
                   <p className="mt-1 text-xs text-ink-muted">
                     Las semanas que ya están listas se conservaron. Puedes descartar este intento y volver a empezar en un momento.
                   </p>
@@ -1212,7 +1224,7 @@ export default function PlanBuilderV2Page() {
                       style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
                     >
                       <RefreshCw size={11} />
-                      {selectedWeekRepairInstruction ? 'Reparar semana' : 'Regenerar semana'}
+                      {selectedWeekRepairInstruction ? 'Ajustar semana' : 'Mejorar semana'}
                     </button>
                   )}
                 </div>
@@ -1337,7 +1349,7 @@ export default function PlanBuilderV2Page() {
                         )}
                       </div>
                     ) : (
-                      <p className="text-xs text-ink-faint">Sin sesiones todavía.</p>
+                    <p className="text-xs text-ink-faint">Esta semana todavía no tiene sesiones listas.</p>
                     )}
                   </div>
                 ) : (
@@ -1574,7 +1586,7 @@ export default function PlanBuilderV2Page() {
                     className="rounded-xl px-5 py-2.5 font-display text-sm font-bold uppercase tracking-[0.15em] text-ink-muted transition-all hover:text-ink disabled:opacity-40"
                     style={{ border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.04)' }}
                   >
-                    Regenerar fallidas
+                    Mejorar semanas pendientes
                   </button>
                 )}
                 {plan?.generationState === 'partial' && (
@@ -1596,7 +1608,7 @@ export default function PlanBuilderV2Page() {
                   className="rounded-xl px-5 py-2.5 font-display text-sm font-bold uppercase tracking-[0.15em] text-white transition-all active:scale-[0.98] disabled:opacity-40"
                   style={{ background: 'linear-gradient(135deg, #f59e0b, #ff4d00)' }}
                 >
-                  Reparar semanas marcadas
+                  Ajustar semanas marcadas
                 </button>
                 )}
                 {plan?.generationState === 'complete' && (
@@ -1607,7 +1619,7 @@ export default function PlanBuilderV2Page() {
                     className="rounded-xl px-5 py-2.5 font-display text-sm font-bold uppercase tracking-[0.15em] text-ink-muted transition-all hover:text-ink disabled:opacity-40"
                     style={{ border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.04)' }}
                   >
-                    Regenerar plan
+                    Crear plan de nuevo
                   </button>
                 )}
               </>
