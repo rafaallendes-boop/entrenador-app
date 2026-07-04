@@ -5,6 +5,7 @@ import {
   athleteProfileRowsEqual,
   athleteProfileToRow,
   classifyAthleteProfileSyncError,
+  classifySyncError,
   coalesceAthleteProfileRows,
   compactQueue,
   getOfflineOpEntityId,
@@ -28,6 +29,16 @@ describe('syncUtils', () => {
   it('classifies RLS and duplicate profile errors distinctly', () => {
     expect(classifyAthleteProfileSyncError(new Error('new row violates row-level security policy'))).toContain('RLS/permission error')
     expect(classifyAthleteProfileSyncError(new Error('duplicate key value violates unique constraint'))).toContain('Duplicate/conflict')
+  })
+
+  it('classifies missing managed athletes as non-retriable validation errors', () => {
+    const result = classifySyncError(
+      new Error('managed athlete ath_ghost not found locally; deferring child push'),
+      'day_logs',
+    )
+    expect(result.category).toBe('validation_error')
+    expect(result.retriable).toBe(false)
+    expect(result.autoRepairable).toBe(false)
   })
 
   it('round-trips athlete profile rows while keeping local id canonical', () => {

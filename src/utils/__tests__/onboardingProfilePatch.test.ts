@@ -13,6 +13,7 @@ describe('buildOnboardingAthleteProfilePatch', () => {
         { id: 'old-primary', title: 'Open viejo', date: '2026-07-01', sport: 'squash', priority: 'primary' },
         { id: 'secondary-1', title: 'Liga', date: '2026-09-01', sport: 'squash', priority: 'secondary' },
       ],
+      strengthProfile: { pullUpMaxReps: 12 },
     }
 
     const patch = buildOnboardingAthleteProfilePatch({
@@ -59,6 +60,7 @@ describe('buildOnboardingAthleteProfilePatch', () => {
         deadlift1RM: 150,
         benchPress1RM: 90,
         overheadPress1RM: 62.5,
+        pullUpMaxReps: 12,
         notes: 'barra y mancuernas',
       },
       recoveryProfile: {
@@ -110,6 +112,54 @@ describe('buildOnboardingAthleteProfilePatch', () => {
     expect(patch.scheduleProfile).toMatchObject({ availableDays: ['sáb'] })
     expect(patch.scheduleProfile?.doubleSessionDays).toBeUndefined()
     expect(patch.scheduleProfile?.constraints).toBeUndefined()
+  })
+
+  it('preserves existing strength and recovery fields when onboarding optional inputs are blank', () => {
+    const existingProfile: AthleteProfile = {
+      id: 'default',
+      updatedAt: 1,
+      strengthProfile: {
+        pullUpMaxReps: 14,
+        squat1RM: 120,
+        notes: 'barra disponible',
+      },
+      recoveryProfile: {
+        currentInjuries: 'molestia hombro',
+        restrictions: 'evitar overhead pesado',
+      },
+    }
+
+    const patch = buildOnboardingAthleteProfilePatch({
+      existingProfile,
+      name: 'Rafa',
+      selectedSports: ['strength'],
+      primarySport: 'strength',
+      priority: 'fitness',
+      availableDays: ['lun', 'mié'],
+      doubleSessionDays: [],
+      goalEventTitle: '',
+      goalEventDate: '',
+      goalEventNotes: '',
+      availabilityNotes: '',
+      currentInjuries: '',
+      previousInjuries: '',
+      restrictions: '',
+      strengthNotes: '',
+      squat1RM: '',
+      deadlift1RM: '',
+      benchPress1RM: '',
+      overheadPress1RM: '',
+    })
+
+    expect(patch.strengthProfile).toEqual({
+      pullUpMaxReps: 14,
+      squat1RM: 120,
+      notes: 'barra disponible',
+    })
+    expect(patch.recoveryProfile).toEqual({
+      currentInjuries: 'molestia hombro',
+      restrictions: 'evitar overhead pesado',
+    })
   })
 })
 

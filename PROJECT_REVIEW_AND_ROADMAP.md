@@ -362,7 +362,7 @@ Gates:
 - [x] API local de atletas gestionados implementada.
 - [x] Backup/import preserva roster `athletes` y eventos enriquecidos.
 - [x] `009` expand/contract listo; `009c` endurece `athlete_id not null`.
-- [ ] Aplicar `009a`/`009b`/`009c` en produccion con bundle nuevo confirmado.
+- [ ] Gate deploy Parte 2a: aplicar `009a`/`009b` antes de publicar bundle `6ba0cd0+`; confirmar bundle nuevo y recien aplicar `009c` (`onConflict: 'user_id,athlete_id'` falla para perfiles nuevos si falta `009b`).
 - [ ] Switcher y roster `/coach`.
 - [ ] Smoke con self + 1 gestionado.
 

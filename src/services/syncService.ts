@@ -2125,6 +2125,9 @@ async function wipeRemoteTableByUser(
     return
   }
   if (table === 'athletes') {
+    // Keep athletes out of partial remote wipes: deleting by owner here would
+    // remove the self athlete too. Today mapSelectionToRemoteTables never emits
+    // this table; full reset keeps the self row explicitly.
     const deleteQuery = getSupabase().from('athletes').delete().eq('owner_account_id', userId)
     const scopedDelete = options?.fullReset
       ? deleteQuery.neq('id', athleteIdForOwner(userId))

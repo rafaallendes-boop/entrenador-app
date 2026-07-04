@@ -64,6 +64,17 @@ export function classifySyncError(error: unknown, table?: SupabaseTable): SyncEr
   const normalized = message.toLowerCase()
   const statusCode = extractStatusCode(error)
 
+  if (isMissingManagedAthleteMessage(normalized)) {
+    return {
+      category: 'validation_error',
+      retriable: false,
+      autoRepairable: false,
+      userMessage: 'No se pudo sincronizar un dato asociado a un atleta gestionado que ya no existe localmente.',
+      technicalMessage: `Missing managed athlete on ${table ?? 'unknown'}: ${message}`,
+      originalError: error,
+    }
+  }
+
   // Network / offline errors
   if (isNetworkErrorMessage(normalized)) {
     return {
@@ -212,6 +223,13 @@ function isNetworkErrorMessage(normalized: string): boolean {
     normalized.includes('offline') ||
     normalized.includes('timed out') ||
     normalized.includes('timeout')
+  )
+}
+
+function isMissingManagedAthleteMessage(normalized: string): boolean {
+  return (
+    normalized.includes('managed athlete') &&
+    normalized.includes('not found locally')
   )
 }
 

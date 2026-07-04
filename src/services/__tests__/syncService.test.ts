@@ -861,8 +861,41 @@ describe('syncService', () => {
       const syncService = await import('../syncService')
       await syncService.pushDayLog({ id: 'dl-2', date: '2026-07-06', updatedAt: 10, athleteId: 'ath_ghost' } as never)
       expect(upsertCalls.find((call) => call.table === 'day_logs')).toBeUndefined()
+      expect(JSON.parse(localStorage.getItem('entrenador_sync_queue_v1') ?? '[]')).toEqual([])
     } finally {
       setActiveAthleteId(null)
+      setSelfAthleteId(null)
+    }
+  })
+
+  it('descarta una op encolada de un gestionado inexistente localmente', async () => {
+    const { setSelfAthleteId } = await import('../athlete/activeAthlete')
+    setSelfAthleteId('ath_user-1')
+    localStorageState.set('entrenador_sync_queue_v1', JSON.stringify([
+      {
+        table: 'day_logs',
+        action: 'upsert',
+        userId: 'user-1',
+        enqueuedAt: 1,
+        payload: {
+          id: 'dl-ghost',
+          user_id: 'user-1',
+          date: '2026-07-06',
+          updated_at: 10,
+          athlete_id: 'ath_ghost',
+        },
+      },
+    ]))
+
+    try {
+      const syncService = await import('../syncService')
+      const drained = await syncService.drainQueue()
+
+      expect(drained).toBe(true)
+      expect(upsertCalls.find((call) => call.table === 'athletes')).toBeUndefined()
+      expect(upsertCalls.find((call) => call.table === 'day_logs')).toBeUndefined()
+      expect(JSON.parse(localStorage.getItem('entrenador_sync_queue_v1') ?? '[]')).toEqual([])
+    } finally {
       setSelfAthleteId(null)
     }
   })

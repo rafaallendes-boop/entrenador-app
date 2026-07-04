@@ -1,4 +1,11 @@
-import type { AthleteProfile, GoalEventType, SupportedSport, TrainingPriority } from '../types'
+import type {
+  AthleteProfile,
+  GoalEventType,
+  RecoveryProfile,
+  StrengthProfile,
+  SupportedSport,
+  TrainingPriority,
+} from '../types'
 import type { OnboardingDayKey } from './schedule'
 import { v4 as uuid } from './uuid'
 
@@ -54,21 +61,27 @@ export function eventTypeForSport(sport: SupportedSport): GoalEventType {
   return 'other'
 }
 
+function omitUndefined<T extends object>(value: T): Partial<T> {
+  return Object.fromEntries(
+    Object.entries(value).filter(([, item]) => item !== undefined),
+  ) as Partial<T>
+}
+
 export function buildOnboardingAthleteProfilePatch(
   input: OnboardingAthleteProfilePatchInput,
 ): OnboardingAthleteProfilePatch {
-  const strengthProfile = {
+  const strengthProfilePatch = omitUndefined({
     squat1RM: parseOptionalKg(input.squat1RM),
     deadlift1RM: parseOptionalKg(input.deadlift1RM),
     benchPress1RM: parseOptionalKg(input.benchPress1RM),
     overheadPress1RM: parseOptionalKg(input.overheadPress1RM),
     notes: trimToUndefined(input.strengthNotes),
-  }
-  const recoveryProfile = {
+  } satisfies StrengthProfile)
+  const recoveryProfilePatch = omitUndefined({
     currentInjuries: trimToUndefined(input.currentInjuries),
     previousInjuries: trimToUndefined(input.previousInjuries),
     restrictions: trimToUndefined(input.restrictions),
-  }
+  } satisfies RecoveryProfile)
   const existingPrimaryEvent = input.existingProfile?.goalEvents?.find((event) => event.priority === 'primary')
   const otherEvents = (input.existingProfile?.goalEvents ?? []).filter((event) => event.priority !== 'primary')
   const eventTitle = input.goalEventTitle.trim()
@@ -87,8 +100,14 @@ export function buildOnboardingAthleteProfilePatch(
         ...otherEvents,
       ]
     : input.existingProfile?.goalEvents
-  const hasStrengthProfile = Object.values(strengthProfile).some((value) => value != null)
-  const hasRecoveryProfile = Object.values(recoveryProfile).some((value) => value != null)
+  const hasStrengthProfilePatch = Object.keys(strengthProfilePatch).length > 0
+  const hasRecoveryProfilePatch = Object.keys(recoveryProfilePatch).length > 0
+  const nextStrengthProfile = input.existingProfile?.strengthProfile || hasStrengthProfilePatch
+    ? { ...(input.existingProfile?.strengthProfile ?? {}), ...strengthProfilePatch }
+    : undefined
+  const nextRecoveryProfile = input.existingProfile?.recoveryProfile || hasRecoveryProfilePatch
+    ? { ...(input.existingProfile?.recoveryProfile ?? {}), ...recoveryProfilePatch }
+    : undefined
 
   return {
     name: input.name.trim() || undefined,
@@ -106,8 +125,8 @@ export function buildOnboardingAthleteProfilePatch(
       doubleSessionDays: input.doubleSessionDays.length > 0 ? input.doubleSessionDays : undefined,
       constraints: trimToUndefined(input.availabilityNotes),
     },
-    strengthProfile: hasStrengthProfile ? strengthProfile : undefined,
-    recoveryProfile: hasRecoveryProfile ? recoveryProfile : undefined,
+    strengthProfile: nextStrengthProfile,
+    recoveryProfile: nextRecoveryProfile,
     ...(goalEvents ? { goalEvents } : {}),
   }
 }
