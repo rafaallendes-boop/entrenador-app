@@ -158,6 +158,109 @@ describe('actionPostProcessor', () => {
     expect(new Set(addSessionActions.map((action) => `${action.targetDate}|${action.timeBlock}`)).size).toBe(3)
   })
 
+  it('repairs a text-only multi-day next-week request into one action per requested session', () => {
+    const response = postProcessCoachActions({
+      message: 'Entendido. Agregare fuerza el lunes y running Zona 2 el martes.',
+      provider: 'mock',
+      traceId: 'trace-1',
+      requestClass: 'chat_action',
+      timestamp: 1,
+    }, makeContext([], {
+      athleteProfile: {
+        id: 'athlete-1',
+        updatedAt: 1,
+        sportContext: { primarySport: 'squash' },
+        strengthProfile: {
+          deadlift1RM: 150,
+          squat1RM: 140,
+          benchPress1RM: 100,
+          overheadPress1RM: 60,
+        },
+      },
+    }), 'Para la próxima semana, agrega una sesión de pesas para el lunes, y el martes deja un running en zona 2')
+
+    const actions = response.actions ?? []
+    const strength = actions.find(action => action.type === 'add_session' && action.sessionType === 'strength')
+    const running = actions.find(action => action.type === 'add_session' && action.sessionType === 'running')
+
+    expect(actions).toHaveLength(2)
+    expect(strength).toMatchObject({
+      type: 'add_session',
+      targetDate: '2026-05-11',
+      sessionType: 'strength',
+      timeBlock: 'PM',
+    })
+    expect(strength?.exercises?.length).toBeGreaterThan(0)
+    expect(running).toMatchObject({
+      type: 'add_session',
+      targetDate: '2026-05-12',
+      sessionType: 'running',
+      runningType: 'z2',
+      title: 'Running Z2 suave',
+      rpe: 4,
+      targetHrMin: 62,
+      targetHrMax: 72,
+    })
+    expect(response.meta?.warnings).toContain('chat_action_without_actions_repaired')
+  })
+
+  it('adds the missing requested session when the model returns only one action from a multi-day request', () => {
+    const response = postProcessCoachActions(makeResponse([{
+      type: 'add_session',
+      reason: 'Fuerza pedida para la proxima semana.',
+      targetDate: '2026-05-04',
+      timeBlock: 'PM',
+      sessionType: 'strength',
+      title: 'Fuerza estructurada',
+      durationMin: 60,
+      rpe: 7,
+    }]), makeContext(), 'Para la próxima semana, agrega una sesión de pesas para el lunes, y el martes deja un running en zona 2')
+
+    const actions = response.actions ?? []
+    const strength = actions.find(action => action.type === 'add_session' && action.sessionType === 'strength')
+    const running = actions.find(action => action.type === 'add_session' && action.sessionType === 'running')
+
+    expect(actions).toHaveLength(2)
+    expect(strength).toMatchObject({
+      type: 'add_session',
+      targetDate: '2026-05-11',
+      sessionType: 'strength',
+    })
+    expect(running).toMatchObject({
+      type: 'add_session',
+      targetDate: '2026-05-12',
+      sessionType: 'running',
+      runningType: 'z2',
+    })
+    expect(response.meta?.warnings).toContain('chat_action_missing_requested_sessions_repaired')
+  })
+
+  it('inherits the recent next-week weekday when a short follow-up asks to add the running session', () => {
+    const response = postProcessCoachActions({
+      message: 'Te propongo este cambio:',
+      provider: 'mock',
+      traceId: 'trace-1',
+      requestClass: 'chat_action',
+      timestamp: 1,
+    }, makeContext([], {
+      recentMessages: [
+        { role: 'user', content: 'Para la próxima semana, agrega una sesión de pesas para el lunes, y el martes deja un running en zona 2' },
+        { role: 'coach', content: 'Entendido, preparo esos cambios.' },
+        { role: 'user', content: 'El running es para el martes de la próxima semana' },
+      ],
+    }), 'agrega la sesión de running')
+
+    expect(response.actions).toHaveLength(1)
+    expect(response.actions?.[0]).toMatchObject({
+      type: 'add_session',
+      targetDate: '2026-05-12',
+      sessionType: 'running',
+      runningType: 'z2',
+      title: 'Running Z2 suave',
+    })
+    expect(response.meta?.warnings).toContain('chat_action_without_actions_repaired')
+  })
+
   it('converts add_session drift into update_session when the user is adjusting an existing slot', () => {
     const session = makeSession()
     const response = postProcessCoachActions(makeResponse([{

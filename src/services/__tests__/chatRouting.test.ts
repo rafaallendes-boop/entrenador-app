@@ -11,6 +11,7 @@ describe('chatRouting', () => {
   it('routes day-scoped or session-scoped requests to chat_action', () => {
     expect(resolveChatRoute('Armame el lunes con running suave').kind).toBe('chat_action')
     expect(resolveChatRoute('Agrega squash el jueves PM').kind).toBe('chat_action')
+    expect(resolveChatRoute('Para la próxima semana, agrega una sesión de pesas para el lunes, y el martes deja un running en zona 2').kind).toBe('chat_action')
   })
 
   it('routes canonical deterministic bypass phrases to chat_action', () => {

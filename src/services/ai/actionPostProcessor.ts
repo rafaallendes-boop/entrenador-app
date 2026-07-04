@@ -17,6 +17,11 @@ const WEEKDAYS = [
 
 const NEXT_WEEK_PATTERN = /\b(proxima\s+semana|siguiente\s+semana)\b/
 const CURRENT_WEEK_PATTERN = /\b(esta\s+semana|semana\s+actual)\b/
+const WEEKDAY_REFERENCE_PATTERN = /\b(hoy|manana|lunes|martes|miercoles|jueves|viernes|sabado|domingo)\b/
+const SESSION_TARGET_PATTERN = /\b(sesion|sesiones|entreno|entrenamiento|fuerza|pesas|gym|gimnasio|strength|running|correr|corrida|trote|squash|cycling|ciclismo|bici|bicicleta|movilidad|mobility|recovery|recuperacion)\b/
+const CREATE_SESSION_INTENT_PATTERN = /\b(crea(?:r|me)?|crear|genera(?:r|me)?|generar|haz(?:me)?|hacer|arma(?:me)?|programa(?:me)?|agenda(?:me)?|agrega(?:me)?|agregar|pon(?:me)?|poner|dame|entrega(?:me)?|realiza(?:r)?|deja|incorpora)\b/
+const ACTION_VERB_PATTERN = /\b(ajusta(?:r|me)?|cambia(?:r|me)?|modifica(?:r|me)?|mueve|reordena(?:r|me)?|actualiza(?:r|me)?|quit(?:a|ar|ame)|borra(?:r|me)?|elimina(?:r|me)?|saca(?:r|me)?|pon(?:er|me)?|agrega(?:r|me)?|reemplaza(?:r|me)?|reduce|baja|sube|incorpora|programa(?:me)?|agenda(?:me)?)\b/
+const ZONE_2_PATTERN = /\b(z2|zona\s*2|zona\s+dos|aerobico|aerobica)\b/
 
 export function postProcessCoachActions(
   response: CoachNormalizedResponse,
@@ -26,16 +31,27 @@ export function postProcessCoachActions(
   if (response.requestClass !== 'chat_action') return response
 
   const normalizedMessage = normalizeText(userMessage)
-  const actionIntentText = isActionConfirmationFollowUp(normalizedMessage)
+  const inheritsRecentActionContext = shouldInheritRecentActionContext(normalizedMessage, context)
+  const actionIntentText = inheritsRecentActionContext
     ? buildRecentActionIntentText(normalizedMessage, context)
     : normalizedMessage
   const requestedWeekStart = resolveRequestedWeekStart(actionIntentText, context)
   const restOffsets = resolveRestWeekdayOffsets(actionIntentText)
-  const resolvedDate =
+  const contextualFollowUpDate = inheritsRecentActionContext
+    ? resolveRecentDateForRequestedSession(normalizedMessage, context, requestedWeekStart, restOffsets)
+    : undefined
+  const explicitSessionDayTargetCount =
+    contextualFollowUpDate && !WEEKDAY_REFERENCE_PATTERN.test(normalizedMessage)
+      ? 1
+      : countActionableWeekdayTargets(actionIntentText, restOffsets)
+  const candidateResolvedDate =
     resolveRelativeDate(normalizedMessage) ??
     resolveRelativeDate(actionIntentText) ??
     resolveWeekdayDate(normalizedMessage, context, requestedWeekStart, restOffsets) ??
+    contextualFollowUpDate ??
     resolveWeekdayDate(actionIntentText, context, requestedWeekStart, restOffsets)
+  const resolvedDate =
+    explicitSessionDayTargetCount > 1 ? undefined : candidateResolvedDate
   const affectedSession =
     findAffectedSession(context, normalizedMessage, resolvedDate) ??
     findAffectedSession(context, actionIntentText, resolvedDate)
@@ -46,17 +62,33 @@ export function postProcessCoachActions(
   const sessions = getContextSessions(context)
   const alignmentWeekStart = requestedWeekStart ?? (resolvedDate ? getWeekStartISO(resolvedDate) : undefined)
   const occupiedSlots = buildOccupiedSlotSet(sessions, alignmentWeekStart)
+  const requestedSessionActions =
+    buildFallbackRequestedSessionActions(normalizedMessage, context, requestedWeekStart, restOffsets) ??
+    (inheritsRecentActionContext
+      ? undefined
+      : buildFallbackRequestedSessionActions(actionIntentText, context, requestedWeekStart, restOffsets))
   const fallbackActions =
-    buildFallbackSingleSessionActions(normalizedMessage, context, resolvedDate) ??
-    buildFallbackSingleSessionActions(actionIntentText, context, resolvedDate)
+    requestedSessionActions ??
+    buildFallbackSingleSessionActions(normalizedMessage, context, resolvedDate, { allowResolvedDateOnly: inheritsRecentActionContext }) ??
+    (inheritsRecentActionContext
+      ? undefined
+      : buildFallbackSingleSessionActions(actionIntentText, context, resolvedDate))
   const runningReplacement = buildRunningZone2ReplacementAction(actionIntentText, affectedSession)
   const repairedReplacementAction = runningReplacement &&
     shouldForceRunningReplacement(response.actions ?? fallbackActions, affectedSession)
     ? runningReplacement
     : undefined
-  const sourceActions: CoachAction[] | undefined = repairedReplacementAction
+  const baseSourceActions: CoachAction[] | undefined = repairedReplacementAction
     ? [repairedReplacementAction]
     : (response.actions ?? fallbackActions)
+  const sourceActions = repairedReplacementAction
+    ? baseSourceActions
+    : mergeMissingRequestedSessionActions(baseSourceActions, requestedSessionActions)
+  const repairedMissingRequestedActions = Boolean(
+    baseSourceActions &&
+    sourceActions &&
+    sourceActions.length > baseSourceActions.length,
+  )
   if (!sourceActions?.length) return response
 
   const actions = sourceActions.map((action) => {
@@ -65,7 +97,8 @@ export function postProcessCoachActions(
       ? alignActionToRequestedWeek(dateAligned, alignmentWeekStart, restOffsets, occupiedSlots, { lockDate: Boolean(resolvedDate) })
       : dateAligned
     const requestAligned = alignSingleSessionSportToRequest(weekAligned, normalizedMessage, context)
-    const loadAligned = completeStrengthLoads(requestAligned, context)
+    const runningAligned = completeRunningZone2Details(requestAligned, actionIntentText)
+    const loadAligned = completeStrengthLoads(runningAligned, context)
 
     if (loadAligned.type === 'add_session' && adjustmentIntent && affectedSession) {
       return convertAddSessionToUpdateSession(loadAligned, affectedSession)
@@ -97,11 +130,11 @@ export function postProcessCoachActions(
     actions,
     message: repairedReplacementAction
       ? buildRunningReplacementMessage(repairedReplacementAction)
-      : response.actions?.length
+      : response.actions?.length && !repairedMissingRequestedActions
         ? response.message
         : buildFallbackActionMessage(actions, response.message),
-    fallbackUsed: response.fallbackUsed || !response.actions?.length || Boolean(repairedReplacementAction),
-    meta: response.actions?.length && !repairedReplacementAction
+    fallbackUsed: response.fallbackUsed || !response.actions?.length || Boolean(repairedReplacementAction) || repairedMissingRequestedActions,
+    meta: response.actions?.length && !repairedReplacementAction && !repairedMissingRequestedActions
       ? response.meta
       : {
           ...response.meta,
@@ -112,6 +145,8 @@ export function postProcessCoachActions(
             ...(response.meta?.warnings ?? []),
             repairedReplacementAction
               ? 'chat_action_delete_only_repaired_to_running_replacement'
+              : repairedMissingRequestedActions
+                ? 'chat_action_missing_requested_sessions_repaired'
               : 'chat_action_without_actions_repaired',
             ...(response.meta?.actionParseFailed || response.meta?.likelyTruncated
               ? ['chat_action_malformed_response_repaired']
@@ -135,6 +170,46 @@ function isActionConfirmationFollowUp(normalizedMessage: string): boolean {
     && !/\b(porque|pero|aunque|opino|creo|pregunta|duda)\b/.test(normalizedMessage)
 }
 
+function shouldInheritRecentActionContext(normalizedMessage: string, context: ChatContext): boolean {
+  if (isActionConfirmationFollowUp(normalizedMessage)) return true
+  if (normalizedMessage.length > 140) return false
+  if (!ACTION_VERB_PATTERN.test(normalizedMessage)) return false
+  if (!SESSION_TARGET_PATTERN.test(normalizedMessage)) return false
+  if (NEXT_WEEK_PATTERN.test(normalizedMessage) || CURRENT_WEEK_PATTERN.test(normalizedMessage)) return false
+  if (/\b(hoy|manana)\b/.test(normalizedMessage)) return false
+  return hasRecentTemporalActionDiscussion(context)
+}
+
+function hasRecentTemporalActionDiscussion(context: ChatContext): boolean {
+  const recent = context.recentMessages?.slice(-8) ?? []
+  if (recent.length === 0) return false
+  const text = normalizeText(recent.map(message => message.content).join('\n'))
+  return (
+    (NEXT_WEEK_PATTERN.test(text) || CURRENT_WEEK_PATTERN.test(text) || WEEKDAY_REFERENCE_PATTERN.test(text)) &&
+    (SESSION_TARGET_PATTERN.test(text) || ACTION_VERB_PATTERN.test(text))
+  )
+}
+
+function resolveRecentDateForRequestedSession(
+  normalizedMessage: string,
+  context: ChatContext,
+  requestedWeekStart: string | undefined,
+  restOffsets: Set<number>,
+): string | undefined {
+  const requestedSessionType = inferRequestedSessionType(normalizedMessage)
+  if (!requestedSessionType) return undefined
+
+  const recent = context.recentMessages?.slice(-8).reverse() ?? []
+  for (const message of recent) {
+    const text = normalizeText(message.content)
+    const clauses = extractActionableWeekdaySessionClauses(text, context, requestedWeekStart, restOffsets)
+    const matchingClause = clauses.find(clause => clause.sessionType === requestedSessionType)
+    if (matchingClause) return matchingClause.targetDate
+  }
+
+  return undefined
+}
+
 function buildRunningZone2ReplacementAction(
   intentText: string,
   affectedSession: Session | undefined,
@@ -156,13 +231,7 @@ function buildRunningZone2ReplacementAction(
     runningType: 'z2',
     targetHrMin: 62,
     targetHrMax: 72,
-    intervalStructure: {
-      blocks: [
-        { label: 'Calentamiento caminata', durationMin: 5, notes: 'Activar articulaciones antes de correr.' },
-        { label: 'Trote Z2 continuo', durationMin: Math.max(15, durationMin - 10), notes: 'Ritmo conversacional; mantener 62-72% FCmax.' },
-        { label: 'Vuelta a la calma caminata', durationMin: 5, notes: 'Cerrar suave.' },
-      ],
-    },
+    intervalStructure: buildRunningZone2IntervalStructure(durationMin),
   }
 }
 
@@ -194,31 +263,228 @@ function buildRunningReplacementMessage(action: CoachAction): string {
   return `Perfecto. Te dejo el cambio como reemplazo de la sesion existente por un Running Z2 suave${duration ? ` de ${duration}min` : ''}, para que puedas revisarlo y aplicarlo.`
 }
 
-function buildFallbackSingleSessionActions(
+interface RequestedSessionClause {
+  targetDate: string
+  sessionType: SessionType
+  clause: string
+  weekdayOffset: number
+}
+
+function buildFallbackRequestedSessionActions(
   normalizedMessage: string,
   context: ChatContext,
-  resolvedDate: string | undefined,
+  requestedWeekStart: string | undefined,
+  restOffsets: Set<number>,
 ): CoachAction[] | undefined {
-  if (!isClearSingleSessionCreationRequest(normalizedMessage)) return undefined
-  const sessionType = inferRequestedSessionType(normalizedMessage)
-  if (!sessionType || !resolvedDate) return undefined
+  if (!CREATE_SESSION_INTENT_PATTERN.test(normalizedMessage)) return undefined
 
-  const durationMin = inferRequestedDuration(normalizedMessage, sessionType)
-  const objective = buildFallbackObjective(sessionType, normalizedMessage)
+  const clauses = extractActionableWeekdaySessionClauses(normalizedMessage, context, requestedWeekStart, restOffsets)
+  if (clauses.length < 2) return undefined
+
+  return clauses.map((clause) => buildFallbackAddSessionAction({
+    sessionType: clause.sessionType,
+    normalizedMessage,
+    clauseText: clause.clause,
+    targetDate: clause.targetDate,
+    context,
+    reason: 'Se reparo una solicitud con multiples dias/deportes para crear una accion por cada sesion pedida.',
+  }))
+}
+
+function mergeMissingRequestedSessionActions(
+  sourceActions: CoachAction[] | undefined,
+  requestedActions: CoachAction[] | undefined,
+): CoachAction[] | undefined {
+  if (!requestedActions?.length) return sourceActions
+  if (!sourceActions?.length) return requestedActions
+
+  const requestedTypeCounts = requestedActions.reduce<Record<string, number>>((counts, action) => {
+    const key = action.sessionType ?? 'unknown'
+    counts[key] = (counts[key] ?? 0) + 1
+    return counts
+  }, {})
+  const merged = [...sourceActions]
+
+  for (const requested of requestedActions) {
+    if (!sourceActions.some(action => matchesRequestedSessionAction(action, requested, requestedTypeCounts))) {
+      merged.push(requested)
+    }
+  }
+
+  return merged
+}
+
+function matchesRequestedSessionAction(
+  action: CoachAction,
+  requested: CoachAction,
+  requestedTypeCounts: Record<string, number>,
+): boolean {
+  if (action.type !== 'add_session' || requested.type !== 'add_session') return false
+  if (!action.sessionType || action.sessionType !== requested.sessionType) return false
+
+  if (action.targetDate && requested.targetDate) {
+    return getWeekdayOffset(action.targetDate) === getWeekdayOffset(requested.targetDate)
+  }
+
+  const typeCount = requestedTypeCounts[requested.sessionType] ?? 0
+  if (typeCount === 1) return true
+
+  return false
+}
+
+function countActionableWeekdayTargets(
+  normalizedMessage: string,
+  restOffsets: Set<number>,
+): number {
+  return extractActionableWeekdaySessionClauses(
+    normalizedMessage,
+    { recentSessions: [], plannedSessions: [], historicalSessions: [] },
+    undefined,
+    restOffsets,
+  ).length
+}
+
+function extractActionableWeekdaySessionClauses(
+  normalizedMessage: string,
+  context: ChatContext,
+  requestedWeekStart: string | undefined,
+  restOffsets: Set<number>,
+): RequestedSessionClause[] {
+  const matches = collectWeekdayMatches(normalizedMessage)
+  if (matches.length === 0) return []
+
+  const weekStart = requestedWeekStart ?? context.currentWeekSummary?.weekStartDate ?? currentWeekStartISO()
+  const clauses: RequestedSessionClause[] = []
+  const seen = new Set<string>()
+
+  for (let index = 0; index < matches.length; index += 1) {
+    const match = matches[index]
+    if (restOffsets.has(match.offset)) continue
+
+    const previousEnd = index > 0 ? matches[index - 1].end : 0
+    const nextStart = index < matches.length - 1 ? matches[index + 1].index : normalizedMessage.length
+    const clauseStart = findClauseStart(normalizedMessage, match.index, previousEnd)
+    const clauseEnd = findClauseEnd(normalizedMessage, match.end, nextStart)
+    const clause = normalizedMessage.slice(clauseStart, clauseEnd).trim()
+    if (!clause || hasRestWeekdayReference(clause, match.label)) continue
+
+    const sessionType = inferRequestedSessionTypeFromClause(clause, match.index - clauseStart)
+    if (!sessionType) continue
+
+    const key = `${match.offset}|${sessionType}`
+    if (seen.has(key)) continue
+    seen.add(key)
+
+    clauses.push({
+      targetDate: addDaysToISO(weekStart, match.offset),
+      sessionType,
+      clause,
+      weekdayOffset: match.offset,
+    })
+  }
+
+  return clauses
+}
+
+function collectWeekdayMatches(normalizedMessage: string): Array<{ label: string; offset: number; index: number; end: number }> {
+  const matches: Array<{ label: string; offset: number; index: number; end: number }> = []
+  for (const day of WEEKDAYS) {
+    for (const label of day.labels) {
+      const pattern = new RegExp(`\\b${label}\\b`, 'g')
+      let match = pattern.exec(normalizedMessage)
+      while (match) {
+        matches.push({
+          label,
+          offset: day.offset,
+          index: match.index,
+          end: match.index + label.length,
+        })
+        match = pattern.exec(normalizedMessage)
+      }
+    }
+  }
+  return matches.sort((a, b) => a.index - b.index)
+}
+
+function findClauseStart(text: string, weekdayIndex: number, previousWeekdayEnd: number): number {
+  const boundary = Math.max(
+    text.lastIndexOf(',', weekdayIndex - 1),
+    text.lastIndexOf(';', weekdayIndex - 1),
+    text.lastIndexOf('.', weekdayIndex - 1),
+    text.lastIndexOf('\n', weekdayIndex - 1),
+  )
+  return Math.max(previousWeekdayEnd, boundary + 1)
+}
+
+function findClauseEnd(text: string, weekdayEnd: number, nextWeekdayStart: number): number {
+  const candidates = [nextWeekdayStart]
+  for (const delimiter of [',', ';', '.', '\n']) {
+    const index = text.indexOf(delimiter, weekdayEnd)
+    if (index !== -1) candidates.push(index)
+  }
+  return Math.min(...candidates)
+}
+
+function inferRequestedSessionTypeFromClause(clause: string, weekdayIndex: number): SessionType | undefined {
+  const candidates = collectSessionTypeMentions(clause)
+  if (candidates.length === 0) return undefined
+
+  candidates.sort((a, b) => {
+    const distance = Math.abs(a.index - weekdayIndex) - Math.abs(b.index - weekdayIndex)
+    if (distance !== 0) return distance
+    return a.index - b.index
+  })
+
+  return candidates[0].sessionType
+}
+
+function collectSessionTypeMentions(clause: string): Array<{ sessionType: SessionType; index: number }> {
+  const specs: Array<{ sessionType: SessionType; pattern: RegExp }> = [
+    { sessionType: 'strength', pattern: /\b(fuerza|pesas|gym|gimnasio|strength)\b/g },
+    { sessionType: 'running', pattern: /\b(running|correr|corrida|trote)\b/g },
+    { sessionType: 'squash', pattern: /\bsquash\b/g },
+    { sessionType: 'cycling', pattern: /\b(cycling|ciclismo|bici|bicicleta)\b/g },
+    { sessionType: 'mobility', pattern: /\b(movilidad|mobility)\b/g },
+    { sessionType: 'recovery', pattern: /\b(recovery|recuperacion)\b/g },
+  ]
+  const mentions: Array<{ sessionType: SessionType; index: number }> = []
+
+  for (const spec of specs) {
+    let match = spec.pattern.exec(clause)
+    while (match) {
+      mentions.push({ sessionType: spec.sessionType, index: match.index })
+      match = spec.pattern.exec(clause)
+    }
+  }
+
+  return mentions
+}
+
+function buildFallbackAddSessionAction(options: {
+  sessionType: SessionType
+  normalizedMessage: string
+  clauseText?: string
+  targetDate: string
+  context: ChatContext
+  reason: string
+}): CoachAction {
+  const intentText = `${options.clauseText ?? ''}\n${options.normalizedMessage}`.trim()
+  const durationMin = inferRequestedDuration(intentText, options.sessionType)
+  const objective = buildFallbackObjective(options.sessionType, intentText)
   const action: CoachAction = {
     type: 'add_session',
-    reason: 'El modelo respondió en texto; se creó una acción estructurada desde la solicitud puntual.',
-    targetDate: resolvedDate,
-    timeBlock: resolveTimeBlock(normalizedMessage) ?? 'PM',
-    sessionType,
-    title: buildFallbackTitle(sessionType),
+    reason: options.reason,
+    targetDate: options.targetDate,
+    timeBlock: resolveTimeBlock(options.clauseText ?? '') ?? resolveTimeBlock(options.normalizedMessage) ?? 'PM',
+    sessionType: options.sessionType,
+    title: buildFallbackTitle(options.sessionType),
     durationMin,
-    rpe: sessionType === 'strength' ? 7 : undefined,
+    rpe: options.sessionType === 'strength' ? 7 : undefined,
     objective,
   }
 
-  if (sessionType === 'strength') {
-    const selection = selectStrengthSession(buildStrengthSelectionContextForAction(context, durationMin, objective))
+  if (options.sessionType === 'strength') {
+    const selection = selectStrengthSession(buildStrengthSelectionContextForAction(options.context, durationMin, objective))
     action.exercises = selection.exercises.map((exercise) => ({
       name: exercise.name,
       sets: exercise.sets,
@@ -228,16 +494,44 @@ function buildFallbackSingleSessionActions(
     }))
   }
 
-  return [action]
+  return completeRunningZone2Details(action, intentText)
 }
 
-function isClearSingleSessionCreationRequest(normalizedMessage: string): boolean {
-  const hasCreateIntent = /\b(crea(?:r|me)?|crear|genera(?:r|me)?|generar|haz(?:me)?|hacer|arma(?:me)?|programa(?:me)?|agenda(?:me)?|agrega(?:me)?|pon(?:me)?|dame|entrega(?:me)?|realiza(?:r)?)\b/.test(normalizedMessage)
-  const hasSessionTarget = /\b(sesion|fuerza|pesas|gym|gimnasio|running|correr|corrida|trote|squash|cycling|ciclismo|bici|movilidad|recovery|recuperacion)\b/.test(normalizedMessage)
-  const hasDay = /\b(hoy|manana|lunes|martes|miercoles|jueves|viernes|sabado|domingo)\b/.test(normalizedMessage)
+function buildFallbackSingleSessionActions(
+  normalizedMessage: string,
+  context: ChatContext,
+  resolvedDate: string | undefined,
+  options: { allowResolvedDateOnly?: boolean } = {},
+): CoachAction[] | undefined {
+  if (!isClearSingleSessionCreationRequest(normalizedMessage, options)) return undefined
+  const sessionType = inferRequestedSessionType(normalizedMessage)
+  if (!sessionType || !resolvedDate) return undefined
+
+  return [buildFallbackAddSessionAction({
+    sessionType,
+    normalizedMessage,
+    targetDate: resolvedDate,
+    context,
+    reason: 'El modelo respondio en texto; se creo una accion estructurada desde la solicitud puntual.',
+  })]
+}
+
+function isClearSingleSessionCreationRequest(
+  normalizedMessage: string,
+  options: { allowResolvedDateOnly?: boolean } = {},
+): boolean {
+  const hasCreateIntent = CREATE_SESSION_INTENT_PATTERN.test(normalizedMessage)
+  const hasSessionTarget = SESSION_TARGET_PATTERN.test(normalizedMessage)
+  const hasDay = WEEKDAY_REFERENCE_PATTERN.test(normalizedMessage)
+  const hasRelativeDate = /\b(hoy|manana)\b/.test(normalizedMessage)
+  const actionableWeekdayCount = countActionableWeekdayTargets(normalizedMessage, resolveRestWeekdayOffsets(normalizedMessage))
   const broadWeekTarget = /\b(microciclo|plan completo|planificar semana)\b/.test(normalizedMessage)
   const explicitWeekCreation = /\b(crea(?:r|me)?|crear|genera(?:r|me)?|generar|haz(?:me)?|hacer|arma(?:me)?)\b.{0,24}\bsemana\b/.test(normalizedMessage)
-  return hasCreateIntent && hasSessionTarget && hasDay && !broadWeekTarget && !explicitWeekCreation
+  return hasCreateIntent
+    && hasSessionTarget
+    && (hasRelativeDate || actionableWeekdayCount === 1 || (Boolean(options.allowResolvedDateOnly) && !hasDay))
+    && !broadWeekTarget
+    && !explicitWeekCreation
 }
 
 function inferRequestedSessionType(normalizedMessage: string): SessionType | undefined {
@@ -286,10 +580,60 @@ function buildFallbackObjective(sessionType: SessionType, normalizedMessage: str
   return 'Favorecer recuperación y continuidad sin sumar fatiga relevante.'
 }
 
+function completeRunningZone2Details(action: CoachAction, intentText: string): CoachAction {
+  if (!ZONE_2_PATTERN.test(intentText)) return action
+
+  if (action.type === 'add_session' && action.sessionType === 'running') {
+    const durationMin = action.durationMin ?? inferRequestedDuration(intentText, 'running')
+    return {
+      ...action,
+      title: /z2|zona\s*2/i.test(action.title ?? '') ? action.title : 'Running Z2 suave',
+      objective: action.objective ?? 'Sumar base aerobica con esfuerzo conversacional y baja carga.',
+      durationMin,
+      rpe: action.rpe ?? 4,
+      runningType: 'z2',
+      targetHrMin: action.targetHrMin ?? 62,
+      targetHrMax: action.targetHrMax ?? 72,
+      intervalStructure: action.intervalStructure ?? buildRunningZone2IntervalStructure(durationMin),
+    }
+  }
+
+  if (action.type === 'update_session' && (action.newType === 'running' || action.runningType === 'z2')) {
+    const durationMin = action.newDurationMin ?? inferRequestedDuration(intentText, 'running')
+    return {
+      ...action,
+      newType: action.newType ?? 'running',
+      newTitle: action.newTitle ?? 'Running Z2 suave',
+      newObjective: action.newObjective ?? 'Sumar base aerobica con esfuerzo conversacional y baja carga.',
+      newDurationMin: durationMin,
+      newRpe: action.newRpe ?? 4,
+      runningType: 'z2',
+      targetHrMin: action.targetHrMin ?? 62,
+      targetHrMax: action.targetHrMax ?? 72,
+      intervalStructure: action.intervalStructure ?? buildRunningZone2IntervalStructure(durationMin),
+    }
+  }
+
+  return action
+}
+
+function buildRunningZone2IntervalStructure(durationMin: number): NonNullable<CoachAction['intervalStructure']> {
+  return {
+    blocks: [
+      { label: 'Calentamiento caminata', durationMin: 5, notes: 'Activar articulaciones antes de correr.' },
+      { label: 'Trote Z2 continuo', durationMin: Math.max(15, durationMin - 10), notes: 'Ritmo conversacional; mantener 62-72% FCmax.' },
+      { label: 'Vuelta a la calma caminata', durationMin: 5, notes: 'Cerrar suave.' },
+    ],
+  }
+}
+
 function buildFallbackActionMessage(actions: CoachAction[], originalMessage: string): string {
-  const first = actions[0]
-  if (first?.type === 'add_session') {
-    return `Te preparé la sesión como acción para que puedas revisarla y aplicarla.${originalMessage ? `\n\n${originalMessage}` : ''}`
+  const addSessionCount = actions.filter(action => action.type === 'add_session').length
+  if (addSessionCount > 1) {
+    return `Te prepare ${addSessionCount} sesiones como acciones para que puedas revisarlas y aplicarlas.${originalMessage ? `\n\n${originalMessage}` : ''}`
+  }
+  if (addSessionCount === 1) {
+    return `Te prepare la sesion como accion para que puedas revisarla y aplicarla.${originalMessage ? `\n\n${originalMessage}` : ''}`
   }
   return originalMessage || 'Te propongo este cambio:'
 }
