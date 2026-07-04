@@ -48,6 +48,20 @@ describe('chatRouting', () => {
     expect(resolveChatRoute('qué opinas de mi progreso').kind).toBe('chat_general')
   })
 
+  it('routes short confirmations to chat_action when the recent thread is an action discussion', () => {
+    const route = resolveChatRoute('si, realiza el cambio', {
+      recentSessions: [],
+      plannedSessions: [],
+      historicalSessions: [],
+      recentMessages: [
+        { role: 'user', content: 'Realiza un cambio en mi sesión de mañana, quiero realizar una corrida en zona 2' },
+        { role: 'coach', content: 'Confirmas que quieres reemplazar la sesión de squash por una corrida en Zona 2?' },
+      ],
+    })
+
+    expect(route.kind).toBe('chat_action')
+  })
+
   it('redirects explicit multi-week planning requests to Plan Builder', () => {
     expect(resolveChatRoute('Hazme el plan hasta el evento').kind).toBe('plan_builder_redirect')
     expect(resolveChatRoute('Quiero todas las semanas hasta el torneo').kind).toBe('plan_builder_redirect')

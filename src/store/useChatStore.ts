@@ -84,7 +84,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   sendMessage: async (content, context) => {
-    const route = resolveChatRoute(content, context)
+    const routeRecentMessages = get().messages.map(m => ({ role: m.role, content: m.content }))
+    const routeContext = context
+      ? { ...context, recentMessages: context.recentMessages ?? routeRecentMessages }
+      : { recentSessions: [], plannedSessions: [], historicalSessions: [], recentMessages: routeRecentMessages }
+    const route = resolveChatRoute(content, routeContext)
     if (route.kind === 'plan_builder_redirect') {
       return { route: route.kind }
     }

@@ -17,7 +17,7 @@
 - **Ids:** local gestionado = `athleteId` (PK de `athleteProfiles`); remoto gestionado = `` `profile:${userId}:${localId}` ``; self intacto (`'default'` local, `` `profile:${userId}` `` remoto).
 - **Reset lock / full reset siguen siendo account-level:** viven en el grupo self y, cuando disparan, limpian TODOS los perfiles locales (gestionados incluidos), como hoy.
 - **`onConflict` de perfiles pasa a `'user_id,athlete_id'`** — válido solo post-`009b` (expand). El deploy de este código requiere `009b` aplicada ANTES (Task 8).
-- **Invariante post-009: ningún write remoto de `athlete_profiles` sale con `athlete_id` null** — un unique compuesto nullable NO deduplica NULLs, y un upsert con `athlete_id` null nunca conflictúa (insertaría fila nueva). `athleteProfileToRow` estampa el fallback (self → `athleteIdForOwner(userId)`; gestionado → su `localId`) y `createAthleteProfileFullResetRow` estampa el self. El perfil local legacy (sin atleta activo) puede seguir sin `athleteId`; el payload remoto no.
+- **Invariante post-009: ningún write remoto de `athlete_profiles` sale con `athlete_id` null** — un unique compuesto nullable NO deduplica NULLs, y un upsert con `athlete_id` null nunca conflictúa (insertaría fila nueva). `athleteProfileToRow` **deriva** `athlete_id` del id local (sentinel → `athleteIdForOwner(userId)`; otro → `localId`) — el campo `athleteId` del objeto NUNCA decide el scope remoto (un perfil corrupto/importado `{ id: 'default', athleteId: 'ath_m_1' }` no puede re-scopear el self). `createAthleteProfileFullResetRow` estampa el self. El perfil local legacy (sin atleta activo) puede seguir sin `athleteId`; el payload remoto no.
 - **El scope de un perfil nunca viene del caller:** el patch de `upsertAthleteProfile` excluye `athleteId` (tipo + strip en runtime); el `athleteId` se deriva SIEMPRE del atleta activo.
 - **Crear el SEGUNDO perfil (primer gestionado) sigue chocando `23505` con el unique viejo hasta `009c` (contract).** No crear gestionados reales hasta cerrar Task 8.
 - **Managed nunca adopta legacy** (política Parte 1): un perfil gestionado inexistente NO cae al `'default'`; se crea vacío al guardar.
@@ -62,7 +62,7 @@ supabase/
   - `ATHLETE_PROFILE_SELF_GROUP = 'self'` (const exportada).
   - `athleteProfileGroupKey(athleteId: string | null | undefined, selfAthleteId: string | null): string` — grupo del gestionado o `'self'`.
   - `groupAthleteProfileRows(rows: AthleteProfileSyncRow[], selfAthleteId: string | null): Map<string, AthleteProfileSyncRow[]>`.
-  - `athleteProfileToRow(profile, userId)` — MISMA firma; el `id` remoto ahora depende de `profile.id` (sentinel → `profile:${userId}`; otro → `profile:${userId}:${profile.id}`) y **`athlete_id` sale SIEMPRE no-null**: `profile.athleteId ?? (sentinel → athleteIdForOwner(userId); gestionado → localId)` (invariante post-009, ver Global Constraints).
+  - `athleteProfileToRow(profile, userId)` — MISMA firma; el `id` remoto ahora depende de `profile.id` (sentinel → `profile:${userId}`; otro → `profile:${userId}:${profile.id}`) y **`athlete_id` se DERIVA del id local, siempre no-null**: sentinel → `athleteIdForOwner(userId)`; otro → `localId`. `profile.athleteId` no participa — el id local es la fuente de verdad del scope (invariante post-009, ver Global Constraints).
   - `createAthleteProfileFullResetRow(userId, resetAt)` — estampa `athlete_id: athleteIdForOwner(userId)` (hoy el technical_marker sale sin `athlete_id`; post-009c su upsert compuesto con NULL nunca conflictuaría e insertaría una SEGUNDA fila del self).
   - `rowToAthleteProfile(row, selfAthleteId: string | null)` — el `id` local resuelto por grupo: grupo self → `ATHLETE_PROFILE_LOCAL_ID`; gestionado → su `athlete_id`. **Param REQUERIDO, sin default**: con default `null`, un caller que lo omita convertiría la fila self (`athlete_id: 'ath_user-1'`) en un perfil local `id = 'ath_user-1'` en vez de `'default'`; TypeScript debe forzar la revisión de cada caller (producción hoy tiene UNO: `mergeAthleteProfile` en `syncService.ts:2571`, que la Task 4 reescribe pasándolo).
 - Consumes: `isScopedAthleteId` (importar desde `./athlete/effectiveAthleteKey`), `athleteIdForOwner` (importar desde `./athlete/athleteScopeMigration` — función pura; sin ciclo: ese módulo solo importa `db/db` y `effectiveAthleteKey`, y Dexie no abre la DB al construirse), `ATHLETE_PROFILE_LOCAL_ID` (ya importado).
@@ -137,6 +137,15 @@ describe('remote id + athlete_id por atleta', () => {
   })
   it('un gestionado sin athleteId explícito hereda su localId como athlete_id (nunca null)', () => {
     const row = athleteProfileToRow({ id: 'ath_m_1', updatedAt: 1 } as AthleteProfile, 'user-1')
+    expect(row.athlete_id).toBe('ath_m_1')
+  })
+  it('mismatch: el self corrupto con athleteId de gestionado SIGUE saliendo como self', () => {
+    const row = athleteProfileToRow({ id: ATHLETE_PROFILE_LOCAL_ID, updatedAt: 1, athleteId: 'ath_m_1' } as AthleteProfile, 'user-1')
+    expect(row.id).toBe('profile:user-1')
+    expect(row.athlete_id).toBe('ath_user-1')
+  })
+  it('mismatch: un gestionado con athleteId ajeno sale con SU localId', () => {
+    const row = athleteProfileToRow({ id: 'ath_m_1', updatedAt: 1, athleteId: 'ath_m_2' } as AthleteProfile, 'user-1')
     expect(row.athlete_id).toBe('ath_m_1')
   })
   it('el full-reset marker también estampa el self athlete_id', () => {
@@ -224,20 +233,23 @@ export function athleteProfileToRow(profile: AthleteProfile, userId: string): Re
   // ...cuerpo actual sin cambios...
   return {
     id: getAthleteProfileRemoteId(userId, localId),
-    // Post-009 invariant: remote profile rows NEVER carry athlete_id null —
-    // the composite unique (user_id, athlete_id) does not deduplicate NULLs,
-    // so a null upsert would insert instead of conflict.
-    athlete_id: profile.athleteId
-      ?? (localId === ATHLETE_PROFILE_LOCAL_ID ? athleteIdForOwner(userId) : localId),
+    // The local id is the source of truth for scope: profile.athleteId never
+    // decides it (a corrupt/imported { id: 'default', athleteId: 'ath_m_1' }
+    // must not re-scope the self row). Post-009 invariant: never null — the
+    // composite unique (user_id, athlete_id) does not deduplicate NULLs, so a
+    // null upsert would insert instead of conflict.
+    athlete_id: localId === ATHLETE_PROFILE_LOCAL_ID ? athleteIdForOwner(userId) : localId,
     // ...resto igual (reemplaza el `athlete_id: profile.athleteId ?? null` actual)...
   }
 }
 ```
 
-En `createAthleteProfileFullResetRow` (~`:394`), agregar la columna al payload — mismo invariante (el marker es del grupo self):
+(El blob `data` sigue llevando el `athleteId` del objeto vía `...rest`; es inofensivo — en `rowToAthleteProfile` la columna no-null siempre gana sobre `data.athleteId`.)
+
+En `createAthleteProfileFullResetRow` (~`:394`), agregar la columna al payload — mismo invariante (el marker es del grupo self) — y actualizar la llamada a la firma nueva:
 
 ```typescript
-    id: getAthleteProfileRemoteId(userId),  // pasa a (userId, ATHLETE_PROFILE_LOCAL_ID)
+    id: getAthleteProfileRemoteId(userId, ATHLETE_PROFILE_LOCAL_ID),
     user_id: userId,
     athlete_id: athleteIdForOwner(userId),
 ```
@@ -799,11 +811,11 @@ Expected: verdes (los `.sql` no afectan el bundle; aplicación manual en Task 8)
 ## Task 6: `ensureRemoteAthlete(userId, athleteId?)` — child rows de gestionados sin `23503`
 
 **Files:**
-- Modify: `src/services/syncService.ts` (`ensureRemoteAthleteOnce`/`ensureRemoteAthlete` ~`:1859-1891`, wiring en `upsertRow` ~`:1158`)
+- Modify: `src/services/syncService.ts` (`ensureRemoteAthleteOnce`/`ensureRemoteAthlete` ~`:1859-1891`, wiring en `upsertRow` ~`:1158` **y en el drain de la cola** ~`:938-948`)
 - Test: `src/services/__tests__/syncService.test.ts` (extend)
 
 **Interfaces:**
-- Produces: `ensureRemoteAthlete(userId: string, athleteId?: string): Promise<void>` — sin `athleteId`, o con el self, comportamiento actual; con un gestionado, upsertea SU fila de `athletes` (leída de `db.athletes`, validando owner) antes del child row; si no existe localmente, **lanza** (path retriable normal — jamás un child huérfano ni una fila inventada). Cacheado por `userId::athleteId` (mismo patrón de promesa dedupe actual).
+- Produces: `ensureRemoteAthlete(userId: string, athleteId?: string): Promise<void>` — sin `athleteId`, o con el self, comportamiento actual; con un gestionado, upsertea SU fila de `athletes` (leída de `db.athletes`, validando owner) antes del child row; si no existe localmente, **lanza** (path retriable normal — jamás un child huérfano ni una fila inventada). Cacheado por `userId::athleteId` (mismo patrón de promesa dedupe actual). Cableado en los TRES paths de escritura remota: `upsertRow` (directo), drain de cola (offline/retry) y `migrateLocalDataToCloud` (primera migración).
 - Consumes: `athleteIdForOwner` (importado en Task 3 desde `./athlete/athleteScopeMigration`), `athleteToRow`, `isScopedAthleteId`.
 
 - [ ] **Step 1: Write the failing test**
@@ -830,6 +842,31 @@ it('pushear un day log de un gestionado asegura SU fila de athletes primero (sin
     expect(childIdx).toBeGreaterThan(managedEnsureIdx)
   } finally {
     setActiveAthleteId(null)
+    setSelfAthleteId(null)
+  }
+})
+
+it('drenar una op encolada de un gestionado asegura SU fila de athletes antes del child', async () => {
+  const { setSelfAthleteId } = await import('../athlete/activeAthlete')
+  const { db: mockedDb } = await import('../../db/db')
+  setSelfAthleteId('ath_user-1')
+  try {
+    const now = Date.now()
+    await mockedDb.athletes.put({ id: 'ath_m_1', ownerAccountId: 'user-1', status: 'active', createdAt: now, updatedAt: now } as never)
+    // Op encolada (offline/retry) — mismo formato que los tests de cola existentes.
+    localStorageState.set('entrenador_sync_queue_v1', JSON.stringify([
+      { table: 'day_logs', action: 'upsert', userId: 'user-1', enqueuedAt: 1, attempts: 0,
+        payload: { id: 'dl-q1', user_id: 'user-1', date: '2026-07-06', updated_at: 10, athlete_id: 'ath_m_1' } },
+    ]))
+
+    const syncService = await import('../syncService')
+    await syncService.drainQueue()
+
+    const managedEnsureIdx = upsertCalls.findIndex((c) => c.table === 'athletes' && (c.payload as { id?: string }).id === 'ath_m_1')
+    const childIdx = upsertCalls.findIndex((c) => c.table === 'day_logs')
+    expect(managedEnsureIdx).toBeGreaterThanOrEqual(0)
+    expect(childIdx).toBeGreaterThan(managedEnsureIdx)
+  } finally {
     setSelfAthleteId(null)
   }
 })
@@ -904,6 +941,33 @@ Wiring en `upsertRow` (~`:1158`):
         )
       }
 ```
+
+Wiring en el **drain de la cola** (~`:938`, dentro del callback de `withSerializedEntityMutation`, ANTES del branch de `athlete_profiles` y del upsert genérico) — una op encolada offline/retry hace upsert directo sin pasar por `upsertRow`, y sin esto un child de gestionado drenado pegaría `23503`:
+
+```typescript
+        if (op.action === 'upsert' && op.table !== 'athletes' && op.payload.athlete_id != null) {
+          await withRequestTimeout(
+            ensureRemoteAthlete(op.userId, typeof op.payload.athlete_id === 'string' ? op.payload.athlete_id : undefined),
+            'athletes.ensure',
+          )
+        }
+```
+
+(Si el ensure lanza — gestionado sin fila local — la op cae al `catch` existente del drain y sigue el ciclo de retry/expiración normal de la cola; exactamente el mismo contrato que el path directo.)
+
+Wiring en `migrateLocalDataToCloud` (~`:3237`) — la migración hace batch upserts directos (no pasa por `upsertRow`) y hoy solo asegura el self; datos locales de gestionados previos a la primera migración subirían child rows sin padre remoto. Después del `await ensureRemoteAthlete(userId)` existente:
+
+```typescript
+    // Managed athletes must exist remotely before their child rows migrate.
+    const localAthletes = await db.athletes.toArray()
+    for (const athlete of localAthletes) {
+      if (athlete.ownerAccountId !== userId) continue
+      if (athlete.id === athleteIdForOwner(userId)) continue
+      await ensureRemoteAthlete(userId, athlete.id)
+    }
+```
+
+(Itera filas locales existentes, así que el throw de "not found locally" no aplica aquí; un child con `athleteId` scoped huérfano — sin fila en `db.athletes` — seguiría fallando su upsert con `23503`, que es el fail-loud correcto: jamás inventar el padre.)
 
 - [ ] **Step 4: Run tests + full suite + build**
 
@@ -1073,6 +1137,7 @@ Expected: verdes.
 - **Spec coverage (§3.2, §3.4):** pipeline de perfiles en 4 capas → Tasks 1 (mappers/ids), 2 (local), 3 (push por grupo + onConflict compuesto), 4 (merge + migrate por grupo); `009` mini expand/contract con preflight como gate duro → Tasks 5 y 8; `ensureRemoteAthlete(userId, athleteId?)` con fail-sin-child → Task 6; `createManagedAthlete`/`pushAthlete`/`listOwnedAthletes` con cola Tier A → Task 7 (`athletes` ya está en `SupabaseTable`/`ENTITY_TIER` — verificado, no hay que extender tipos). Fuera de 2a (van en 2b): allowlist §3.1, `switchActiveAthlete` + resets §3.5, roster/switcher UI §3.5/§3.7.
 - **Riesgo mayor cubierto:** el repair per-usuario que borra "perdedores" queda confinado por grupo en TODOS sus callers (`upsertAthleteProfileRow`, `persistAthleteProfileRow`, `mergeAthleteProfile`, `migrateLocalDataToCloud`) — Tasks 3–4, con tests que asertan cero deletes cross-grupo.
 - **Reset lock account-level:** decisión explícita (spec §3.2 "dentro de cada grupo" se interpreta para dedup/repair; el full reset sigue siendo nuclear por cuenta) — documentada en el código de Task 4.
-- **Type consistency:** `athleteProfileGroupKey(athleteId, selfAthleteId)`, `groupAthleteProfileRows(rows, selfAthleteId)`, `ATHLETE_PROFILE_SELF_GROUP`, `rowToAthleteProfile(row, selfAthleteId?)`, `fetchAthleteProfileRowsForGroup(userId, groupKey)`, `ensureRemoteAthlete(userId, athleteId?)`, `createManagedAthlete(ownerAccountId, displayName)`, `listOwnedAthletes(ownerAccountId)`, `pushAthlete(athlete)` — usados idéntico entre tasks.
+- **Type consistency:** `athleteProfileGroupKey(athleteId, selfAthleteId)`, `groupAthleteProfileRows(rows, selfAthleteId)`, `ATHLETE_PROFILE_SELF_GROUP`, `rowToAthleteProfile(row, selfAthleteId)` (requerido), `groupingSelfAthleteId(userId)`, `fetchAthleteProfileRowsForGroup(userId, groupKey)`, `ensureRemoteAthlete(userId, athleteId?)`, `createManagedAthlete(ownerAccountId, displayName)`, `listOwnedAthletes(ownerAccountId)`, `pushAthlete(athlete)` — usados idéntico entre tasks.
 - **Regresión single-athlete:** un solo grupo (`self`) hace de cada cambio la identidad del flujo actual; el remote id del self no cambia; `onConflict` compuesto matchea la fila única existente post-009b.
 - **Ajustes de review (2026-07-03):** (1) el patch de `upsertAthleteProfile` ya no puede re-scopear — `athleteId` fuera del tipo + strip runtime + test; (2) invariante remoto `athlete_id` no-null en `athleteProfileToRow` Y en `createAthleteProfileFullResetRow` (el marker con NULL insertaría una segunda fila self post-009c en vez de conflictuar); (3) `rowToAthleteProfile(row, selfAthleteId)` requerido, sin default — y el grouping en syncService usa `groupingSelfAthleteId(userId)` (`getSelfAthleteId() ?? athleteIdForOwner(userId)`) para no depender del timing de hidratación; (4) un gestionado local sin remoto respeta `allowDeletes`/`deleteBeforeTs` antes de pushearse (no resucita deletes); (5) snippet del test de Task 1 con `ATHLETE_PROFILE_LOCAL_ID` directo.
+- **Ajustes de review, ronda 2 (2026-07-03):** (1) el ensure de gestionados se cablea en los TRES paths de escritura remota — `upsertRow`, drain de cola (~`:938`; el drain hace upsert directo y sin ensure un child encolado pegaría `23503`) y `migrateLocalDataToCloud` (hoy solo asegura el self; se asegura cada atleta local del owner antes de los batch upserts) — con test de cola que aserta el orden ensure→child; (2) `athleteProfileToRow` deriva `athlete_id` SOLO del id local (sentinel → `athleteIdForOwner`; otro → `localId`) — `profile.athleteId` ya no participa, con tests de mismatch (`default`+`ath_m_1` sale self; `ath_m_1`+`ath_m_2` sale `ath_m_1`); (3) snippet del reset marker actualizado a la firma nueva `getAthleteProfileRemoteId(userId, ATHLETE_PROFILE_LOCAL_ID)`.

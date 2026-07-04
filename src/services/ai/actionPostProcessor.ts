@@ -26,17 +26,37 @@ export function postProcessCoachActions(
   if (response.requestClass !== 'chat_action') return response
 
   const normalizedMessage = normalizeText(userMessage)
-  const requestedWeekStart = resolveRequestedWeekStart(normalizedMessage, context)
-  const restOffsets = resolveRestWeekdayOffsets(normalizedMessage)
+  const actionIntentText = isActionConfirmationFollowUp(normalizedMessage)
+    ? buildRecentActionIntentText(normalizedMessage, context)
+    : normalizedMessage
+  const requestedWeekStart = resolveRequestedWeekStart(actionIntentText, context)
+  const restOffsets = resolveRestWeekdayOffsets(actionIntentText)
   const resolvedDate =
     resolveRelativeDate(normalizedMessage) ??
-    resolveWeekdayDate(normalizedMessage, context, requestedWeekStart, restOffsets)
-  const affectedSession = findAffectedSession(context, normalizedMessage, resolvedDate)
-  const adjustmentIntent = isExistingSessionAdjustment(normalizedMessage)
+    resolveRelativeDate(actionIntentText) ??
+    resolveWeekdayDate(normalizedMessage, context, requestedWeekStart, restOffsets) ??
+    resolveWeekdayDate(actionIntentText, context, requestedWeekStart, restOffsets)
+  const affectedSession =
+    findAffectedSession(context, normalizedMessage, resolvedDate) ??
+    findAffectedSession(context, actionIntentText, resolvedDate)
+  const adjustmentIntent =
+    isExistingSessionAdjustment(normalizedMessage) ||
+    isExistingSessionAdjustment(actionIntentText) ||
+    isActionConfirmationFollowUp(normalizedMessage)
   const sessions = getContextSessions(context)
   const alignmentWeekStart = requestedWeekStart ?? (resolvedDate ? getWeekStartISO(resolvedDate) : undefined)
   const occupiedSlots = buildOccupiedSlotSet(sessions, alignmentWeekStart)
-  const sourceActions = response.actions ?? buildFallbackSingleSessionActions(normalizedMessage, context, resolvedDate)
+  const fallbackActions =
+    buildFallbackSingleSessionActions(normalizedMessage, context, resolvedDate) ??
+    buildFallbackSingleSessionActions(actionIntentText, context, resolvedDate)
+  const runningReplacement = buildRunningZone2ReplacementAction(actionIntentText, affectedSession)
+  const repairedReplacementAction = runningReplacement &&
+    shouldForceRunningReplacement(response.actions ?? fallbackActions, affectedSession)
+    ? runningReplacement
+    : undefined
+  const sourceActions: CoachAction[] | undefined = repairedReplacementAction
+    ? [repairedReplacementAction]
+    : (response.actions ?? fallbackActions)
   if (!sourceActions?.length) return response
 
   const actions = sourceActions.map((action) => {
@@ -75,9 +95,13 @@ export function postProcessCoachActions(
   return {
     ...response,
     actions,
-    message: response.actions?.length ? response.message : buildFallbackActionMessage(actions, response.message),
-    fallbackUsed: response.fallbackUsed || !response.actions?.length,
-    meta: response.actions?.length
+    message: repairedReplacementAction
+      ? buildRunningReplacementMessage(repairedReplacementAction)
+      : response.actions?.length
+        ? response.message
+        : buildFallbackActionMessage(actions, response.message),
+    fallbackUsed: response.fallbackUsed || !response.actions?.length || Boolean(repairedReplacementAction),
+    meta: response.actions?.length && !repairedReplacementAction
       ? response.meta
       : {
           ...response.meta,
@@ -86,13 +110,88 @@ export function postProcessCoachActions(
           likelyTruncated: false,
           warnings: [
             ...(response.meta?.warnings ?? []),
-            'chat_action_without_actions_repaired',
+            repairedReplacementAction
+              ? 'chat_action_delete_only_repaired_to_running_replacement'
+              : 'chat_action_without_actions_repaired',
             ...(response.meta?.actionParseFailed || response.meta?.likelyTruncated
               ? ['chat_action_malformed_response_repaired']
               : []),
           ],
         },
   }
+}
+
+function buildRecentActionIntentText(normalizedMessage: string, context: ChatContext): string {
+  const recent = context.recentMessages
+    ?.slice(-8)
+    .map(message => normalizeText(message.content))
+    .join('\n') ?? ''
+  return `${recent}\n${normalizedMessage}`.trim()
+}
+
+function isActionConfirmationFollowUp(normalizedMessage: string): boolean {
+  return normalizedMessage.length <= 80
+    && /\b(si|sí|ok|okay|dale|confirmo|correcto|hazlo|hacelo|aplicalo|aplica|realiza(?:r)?(?:\s+el)?\s+cambio|procede|adelante)\b/.test(normalizedMessage)
+    && !/\b(porque|pero|aunque|opino|creo|pregunta|duda)\b/.test(normalizedMessage)
+}
+
+function buildRunningZone2ReplacementAction(
+  intentText: string,
+  affectedSession: Session | undefined,
+): CoachAction | undefined {
+  if (!affectedSession) return undefined
+  if (!/\b(running|correr|corrida|trote)\b/.test(intentText)) return undefined
+  if (!/\b(z2|zona\s*2|zona\s+dos|aerobico|aerobica|aerobica)\b/.test(intentText)) return undefined
+
+  const durationMin = inferRequestedDuration(intentText, 'running')
+  return {
+    type: 'update_session',
+    sessionId: affectedSession.id,
+    reason: 'Reemplazar la sesion existente por una corrida Z2 de baja carga, segun confirmacion del usuario.',
+    newType: 'running',
+    newTitle: 'Running Z2 suave',
+    newObjective: 'Mantener movimiento aerobico suave y favorecer recuperacion sin sumar fatiga alta.',
+    newDurationMin: durationMin,
+    newRpe: 4,
+    runningType: 'z2',
+    targetHrMin: 62,
+    targetHrMax: 72,
+    intervalStructure: {
+      blocks: [
+        { label: 'Calentamiento caminata', durationMin: 5, notes: 'Activar articulaciones antes de correr.' },
+        { label: 'Trote Z2 continuo', durationMin: Math.max(15, durationMin - 10), notes: 'Ritmo conversacional; mantener 62-72% FCmax.' },
+        { label: 'Vuelta a la calma caminata', durationMin: 5, notes: 'Cerrar suave.' },
+      ],
+    },
+  }
+}
+
+function shouldForceRunningReplacement(
+  actions: CoachAction[] | undefined,
+  affectedSession: Session | undefined,
+): boolean {
+  if (!affectedSession) return false
+  if (!actions || actions.length === 0) return true
+  if (actions.some(isRunningChangeAction)) return false
+  return actions.every(action => isDeleteOrSkipForSession(action, affectedSession))
+}
+
+function isRunningChangeAction(action: CoachAction): boolean {
+  if (action.type === 'add_session') return action.sessionType === 'running' || action.runningType === 'z2'
+  if (action.type === 'update_session') return action.newType === 'running' || action.runningType === 'z2'
+  if (action.type === 'replace_session_type') return action.newType === 'running'
+  return false
+}
+
+function isDeleteOrSkipForSession(action: CoachAction, session: Session): boolean {
+  if (action.type !== 'delete_session' && action.type !== 'skip_session') return false
+  if (!action.sessionId || action.sessionId === 'ID_DE_8_CHARS') return true
+  return action.sessionId === session.id || session.id.startsWith(action.sessionId)
+}
+
+function buildRunningReplacementMessage(action: CoachAction): string {
+  const duration = action.type === 'update_session' ? action.newDurationMin : undefined
+  return `Perfecto. Te dejo el cambio como reemplazo de la sesion existente por un Running Z2 suave${duration ? ` de ${duration}min` : ''}, para que puedas revisarlo y aplicarlo.`
 }
 
 function buildFallbackSingleSessionActions(
@@ -133,8 +232,8 @@ function buildFallbackSingleSessionActions(
 }
 
 function isClearSingleSessionCreationRequest(normalizedMessage: string): boolean {
-  const hasCreateIntent = /\b(crea(?:r|me)?|crear|genera(?:r|me)?|generar|haz(?:me)?|hacer|arma(?:me)?|programa(?:me)?|agenda(?:me)?|agrega(?:me)?|pon(?:me)?|dame|entrega(?:me)?)\b/.test(normalizedMessage)
-  const hasSessionTarget = /\b(sesion|fuerza|pesas|gym|gimnasio|running|correr|squash|cycling|ciclismo|bici|movilidad|recovery|recuperacion)\b/.test(normalizedMessage)
+  const hasCreateIntent = /\b(crea(?:r|me)?|crear|genera(?:r|me)?|generar|haz(?:me)?|hacer|arma(?:me)?|programa(?:me)?|agenda(?:me)?|agrega(?:me)?|pon(?:me)?|dame|entrega(?:me)?|realiza(?:r)?)\b/.test(normalizedMessage)
+  const hasSessionTarget = /\b(sesion|fuerza|pesas|gym|gimnasio|running|correr|corrida|trote|squash|cycling|ciclismo|bici|movilidad|recovery|recuperacion)\b/.test(normalizedMessage)
   const hasDay = /\b(hoy|manana|lunes|martes|miercoles|jueves|viernes|sabado|domingo)\b/.test(normalizedMessage)
   const broadWeekTarget = /\b(microciclo|plan completo|planificar semana)\b/.test(normalizedMessage)
   const explicitWeekCreation = /\b(crea(?:r|me)?|crear|genera(?:r|me)?|generar|haz(?:me)?|hacer|arma(?:me)?)\b.{0,24}\bsemana\b/.test(normalizedMessage)

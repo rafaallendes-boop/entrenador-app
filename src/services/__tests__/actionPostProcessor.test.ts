@@ -221,6 +221,41 @@ describe('actionPostProcessor', () => {
     })
   })
 
+  it('repairs a confirmed delete-only replacement into a running Z2 update', () => {
+    const session = makeSession({
+      id: 'squash-match-1',
+      type: 'squash',
+      timeBlock: 'AM',
+      title: 'Squash - Simulacion de partido',
+      durationMin: 60,
+      rpe: 9,
+    })
+
+    const response = postProcessCoachActions(makeResponse([{
+      type: 'delete_session',
+      sessionId: session.id,
+      reason: 'Eliminar la sesion de squash confirmada por el usuario',
+    }]), makeContext([session], {
+      recentMessages: [
+        { role: 'user', content: 'Realiza un cambio en mi sesion del viernes, quiero realizar una corrida en zona 2' },
+        { role: 'coach', content: 'Confirmas que quieres reemplazar la sesion de squash del viernes AM por una corrida en Zona 2?' },
+      ],
+    }), 'si, realiza el cambio')
+
+    expect(response.actions?.[0]).toMatchObject({
+      type: 'update_session',
+      sessionId: session.id,
+      newType: 'running',
+      runningType: 'z2',
+      newTitle: 'Running Z2 suave',
+      newRpe: 4,
+      targetHrMin: 62,
+      targetHrMax: 72,
+    })
+    expect(response.message).toContain('Running Z2')
+    expect(response.meta?.warnings).toContain('chat_action_delete_only_repaired_to_running_replacement')
+  })
+
   it('fills missing strength weight from targetPercent1RM when profile has a matching 1RM', () => {
     const response = postProcessCoachActions(makeResponse([{
       type: 'add_session',

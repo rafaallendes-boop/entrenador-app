@@ -570,6 +570,7 @@ function buildAdjustResponseInstructionsSection(
     '- Si el usuario pide agregar una sesión nueva, usa add_session.',
     '- Si pide cambiar una sesión existente, usa update_session con sessionId.',
     '- Si pide cambiar "una de las sesiones" repetidas o iguales y no da ID, elige la segunda/later session candidata y usa update_session; no respondas solo en texto.',
+    '- Si confirma un cambio ya discutido, ejecuta acciones sin repreguntar. Para reemplazar una sesion (ej. squash -> running Z2), usa update_session; solo delete_session si pide dejarla vacia.',
     '- Si no puedes identificar ninguna sesión candidata, pregunta una aclaración breve y no inventes sessionId.',
     '- Si pide moverla, usa move_session.',
     '- Si pide eliminarla, usa delete_session.',

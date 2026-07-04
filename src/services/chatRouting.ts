@@ -23,6 +23,8 @@ const ADJUSTMENT_VERB_PATTERN = /\b(ajusta(?:r|me)?|ajustame|cambia(?:r|me)?|cam
 const SESSION_TARGET_PATTERN = /\b(sesion(?:es)?|entreno|entrenamiento|descanso|libre|off|running|squash|fuerza|pesas|gym|gimnasio|strength|cycling|ciclismo|bici|movilidad|recovery|recuperacion|am|pm)\b/
 const NEXT_WEEK_PATTERN = /\b(proxima\s+semana|siguiente\s+semana)\b/
 const CURRENT_WEEK_PATTERN = /\b(esta\s+semana|semana\s+actual)\b/
+const ACTION_CONFIRMATION_PATTERN = /\b(si|sí|ok|okay|dale|confirmo|correcto|hazlo|hacelo|aplica(?:lo)?|aplicar|realiza(?:r)?(?:\s+el)?\s+cambio|procede|adelante)\b/
+const RECENT_ACTION_DISCUSSION_PATTERN = /\b(confirmas?|quieres?|quiero|cambio|cambiar|reemplaza(?:r)?|reemplazo|elimina(?:r)?|eliminar|borra(?:r)?|borrar|saca(?:r)?|sacar|ajusta(?:r)?|modifica(?:r)?|sesion|entreno|entrenamiento|running|corrida|trote|squash|zona\s*2|z2)\b/
 
 export function resolveChatRoute(
   message: string,
@@ -37,6 +39,10 @@ export function resolveChatRoute(
 
   if (FULL_PLAN_PATTERN.test(normalized) || MULTI_WEEK_PATTERN.test(normalized)) {
     return { kind: 'plan_builder_redirect', targetWeekStart }
+  }
+
+  if (isActionConfirmation(normalized) && hasRecentActionDiscussion(context)) {
+    return { kind: 'chat_action' }
   }
 
   const isSpecificDaySessionRequest =
@@ -91,6 +97,18 @@ export function resolveChatRoute(
   }
 
   return { kind: 'chat_general' }
+}
+
+function isActionConfirmation(normalized: string): boolean {
+  if (!ACTION_CONFIRMATION_PATTERN.test(normalized)) return false
+  return normalized.length <= 80 && !/\b(porque|pero|aunque|opino|creo|pregunta|duda)\b/.test(normalized)
+}
+
+function hasRecentActionDiscussion(context?: ChatContext): boolean {
+  const recent = context?.recentMessages?.slice(-8) ?? []
+  if (recent.length === 0) return false
+  const text = normalizeRoutingText(recent.map(message => message.content).join('\n'))
+  return RECENT_ACTION_DISCUSSION_PATTERN.test(text)
 }
 
 export function resolveRequestedWeekStart(message: string): string {
