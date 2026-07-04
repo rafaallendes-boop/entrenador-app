@@ -10,6 +10,7 @@ Base de contraste:
 - `008b` fue aplicado en produccion despues del deploy del write path; `008a` volvio a reportar 0 duplicados/null debt operativo.
 - Athlete-Aware Core esta implementado localmente: scoping de lecturas, seleccion activa, chat session por atleta y estampado local. Falta deploy + smoke.
 - Coach UI F2-lite tiene spec aprobado conceptualmente en `docs/superpowers/specs/2026-07-02-coach-ui-f2-mvp-design.md`; todavia no esta implementado.
+- Superficie publica actualizada para demo multideporte: Landing/Features/Pricing limpian residuos visibles de version/localidad, reducen sesgo squash-only y Pricing queda en 3 planes: Base gratis, Coach Semanal y Avanzado con Plan Builder.
 
 ## Resumen Ejecutivo
 
@@ -31,10 +32,10 @@ RallyIQ esta cerca de un piloto manual serio; el proximo paso no deberia ser abr
 
 Estimacion actual:
 
-- Demo acompanada: **91% listo / 9% pendiente**.
-- Piloto manual pagado 1-3 clientes: **80% listo / 20% pendiente**.
+- Demo acompanada: **93% listo / 7% pendiente**.
+- Piloto manual pagado 1-3 clientes: **82% listo / 18% pendiente**.
 - Coach UI F2-lite MVP: **50% listo / 50% pendiente**.
-- Monetizacion publica self-serve: **55% listo / 45% pendiente**.
+- Monetizacion publica self-serve: **58% listo / 42% pendiente**.
 
 Traduccion practica: el producto ya tiene sustancia; lo pendiente es reducir riesgo percibido y riesgo operacional.
 
@@ -81,24 +82,27 @@ Spec aprobado conceptualmente:
 
 Estado: **Parte 1 de datos core implementada**. Falta plan/implementacion Parte 2: perfiles multi-atleta + `009`, API gestionados y UI `/coach`.
 
-### 4. Superficie publica avanzo, pero aun tiene residuos
+### 4. Superficie publica paso a demo multideporte
 
-Se tocaron `FeaturesPage` y `PricingPage`, pero el grep todavia muestra:
+Cambios recientes:
 
-- `FeaturesPage`: `Funcionalidades · v2.4`, footer `v1.0`, `HECHO EN CHILE`, links `href="#"`.
-- `PricingPage`: CTA residual `Crear cuenta gratis`, varios `href="#"`, footer `v1.0`, `HECHO EN CHILE`.
-- `SharedPublicNav`: `Empezar gratis` y `RALLYIQ · BUENOS AIRES · 2026`.
-- Landing footer: links `href="#"` y `HECHO EN CHILE`.
+- `PricingPage`: nueva arquitectura de planes:
+  - **Base** gratis: hablar con RallyIQ Coach y registrar entrenamientos.
+  - **Coach Semanal**: coach con contexto + entrenamientos semanales + ajustes.
+  - **Avanzado**: todo lo anterior + Plan Builder por carrera, torneo o bloque.
+- `LandingPage`: copy principal menos squash-only y mas multideporte/objetivo semanal.
+- `FeaturesPage`: hero y CTA menos tecnicos, mas humanos y orientados a entrenamiento real.
+- `SharedPublicNav` y footers: eliminados residuos visibles de version/localidad y links muertos en superficie publica principal.
 
-Estado: **parcialmente mejorado**, no cerrado para conversion.
+Estado: **mejorado para demo acompanada**. Aun falta legal publico real, screenshots/mockups honestos finales y smoke visual de `/`, `/features`, `/pricing`.
 
 ## Avances Ya Implementados
 
 ### Producto Publico Y Marca
 
 - Marca publica operativa: `RallyIQ`.
-- Landing principal orientada a squash competitivo.
-- Pricing parcialmente orientado a piloto/fundador.
+- Landing principal reorientada a multideporte, manteniendo squash como caso de uso inicial.
+- Pricing reestructurado en 3 niveles comprensibles: Base gratis, Coach Semanal, Avanzado con Plan Builder.
 - Email centralizado: `hola@rallyiq.cl`.
 - Se elimino prueba social inventada de la landing.
 
@@ -166,9 +170,9 @@ El codigo esta listo, pero falta la parte operacional:
 
 Esto reemplaza a `008b` como gate inmediato antes de cualquier UI multi-atleta.
 
-### 2. Superficie publica aun no transmite confianza completa
+### 2. Superficie publica aun necesita cierre legal/visual
 
-Todavia hay residuos visibles de producto interno: versiones, localidad inconsistente, CTAs de cuenta gratis, links muertos y lenguaje tecnico. Para demo acompanada no bloquea. Para cobrar, si baja confianza.
+La superficie publica principal ya lee mas humana y multideporte, y Pricing ya explica mejor el camino comercial. Lo que falta para cobrar con mas confianza no es otro cambio grande de copy, sino rutas legales reales, consentimiento y screenshots/mockups finales verificados.
 
 ### 3. Legal existe como docs, no como experiencia
 
@@ -231,7 +235,7 @@ Si la prioridad es **monetizar pronto**, elegir Opcion A.
 
 Si la prioridad es **operar bien 3-5 atletas desde tu cuenta**, elegir Opcion B, pero mantener F2-lite estrictamente acotado.
 
-Mi recomendacion actual: **desplegar/smokear Athlete-Aware Core y luego hacer una semana corta de confianza publica/legal antes de F2-lite Parte 2**, salvo que la operacion de arquetipos se vuelva dolorosa ya.
+Mi recomendacion actual: **desplegar/smokear Athlete-Aware Core, hacer smoke visual de la nueva superficie publica y cerrar rutas legales/consentimiento antes de F2-lite Parte 2**, salvo que la operacion de arquetipos se vuelva dolorosa ya.
 
 ## Checklist Actualizado Para Mostrar Y Monetizar
 
@@ -267,11 +271,13 @@ drop index if exists public.week_summaries_athlete_week_unique;
 Objetivo: que una persona entienda en 10 segundos para quien es y por que pedir acceso.
 
 - [x] Marca publica operativa: `RallyIQ`.
-- [x] Nicho inicial: squash competitivo.
-- [x] Landing principal con foco squash/torneo/carga.
+- [x] Posicionamiento actualizado: coach AI multideporte con origen en deporte competitivo.
+- [x] Landing principal con foco en objetivo semanal/multideporte, no solo squash.
+- [x] Pricing de demo definido en 3 niveles: Base gratis, Coach Semanal, Avanzado + Plan Builder.
 - [ ] One-liner final para sitio, WhatsApp y demo.
+- [ ] Validar precios de Coach Semanal y Avanzado antes de cobro real.
 - [ ] Oferta piloto cerrada: duracion, cupos, precio fundador, soporte incluido.
-- [ ] CTA unico en toda la superficie publica: recomendado `Solicitar cupo piloto` o `Agendar evaluacion`.
+- [ ] CTA unico final en toda la superficie publica: mantener `Empezar gratis` si Base sera real, o cambiar a `Solicitar demo` si el piloto sera manual.
 - [ ] Mensaje corto para invitar a los primeros 3 jugadores.
 - [ ] Definir que no incluye el piloto: urgencias medicas, diagnostico, garantia de resultado, supervision presencial.
 
@@ -279,14 +285,14 @@ Objetivo: que una persona entienda en 10 segundos para quien es y por que pedir 
 
 Objetivo: confianza antes que explicacion tecnica.
 
-- [x] Landing reorientada a squash competitivo.
-- [x] Pricing parcialmente orientado a piloto/fundador.
+- [x] Landing reorientada a multideporte/objetivo semanal.
+- [x] Pricing reestructurado para demo en 3 planes claros.
 - [x] Email y marca centralizados.
-- [ ] Reescribir hero/KPIs de `FeaturesPage` para que lea como preparacion deportiva, no feature grid tecnico.
-- [ ] Remover versiones visibles: `v2.4`, `v1.0`.
-- [ ] Resolver localidad publica: elegir una senal unica o quitarla (`BUENOS AIRES`, `HECHO EN CHILE`).
-- [ ] Cambiar `Empezar gratis`, `Crear cuenta gratis` y trial copy si el flujo real sera piloto manual.
-- [ ] Eliminar `href="#"` en landing/features/pricing/nav/footer.
+- [x] Reescribir hero/KPIs de `FeaturesPage` para que lea como preparacion deportiva, no feature grid tecnico.
+- [x] Remover versiones visibles: `v2.4`, `v1.0`.
+- [x] Resolver localidad publica visible: quitar `BUENOS AIRES` / `HECHO EN CHILE` de la superficie publica principal.
+- [x] Cambiar trial/pro copy viejo por Base gratis + planes pagados.
+- [x] Eliminar `href="#"` en landing/features/pricing/nav/footer principales.
 - [ ] Conectar footer a rutas legales reales.
 - [ ] Agregar seccion corta "Para quien es".
 - [ ] Agregar seccion corta "Que no es".
@@ -418,10 +424,12 @@ Metricas de exito:
 
 ### Dia 1 - Cierre Publico
 
-- Reescribir `FeaturesPage`.
-- Limpiar `PricingPage`.
-- Limpiar `SharedPublicNav`.
-- Remover versiones visibles, CTAs inconsistentes y links muertos.
+- [x] Reescribir `FeaturesPage` hacia preparacion deportiva/multideporte.
+- [x] Limpiar `PricingPage` y dejar 3 planes: Base, Coach Semanal, Avanzado.
+- [x] Limpiar `SharedPublicNav`.
+- [x] Remover versiones visibles, localidad inconsistente y links muertos principales.
+- [ ] Smoke visual DEV de `/`, `/features`, `/pricing`.
+- [ ] Ajustar copy final segun captura/screenshot.
 
 ### Dia 2 - Legal En App
 
@@ -467,7 +475,7 @@ Estado: casi listo.
 Pendiente minimo:
 
 - Desplegar/smokear Athlete-Aware Core.
-- Limpiar superficie publica basica.
+- Smoke visual de superficie publica basica ya actualizada.
 - Agregar rutas legales.
 - Smoke deploy.
 - Pitch de 2 frases.
@@ -515,9 +523,9 @@ Pendiente minimo:
 Orden recomendado:
 
 1. Desplegar y smokear Athlete-Aware Core.
-2. Limpiar superficie publica critica: CTA, links muertos, versiones/localidad.
-3. Crear rutas legales publicas.
-4. Smoke DEV/PROD completo.
+2. Smoke visual DEV de superficie publica actualizada: `/`, `/features`, `/pricing`.
+3. Crear rutas legales publicas y linkear footers reales.
+4. Smoke PROD completo.
 5. Generar 3 planes arquetipo con revision manual.
 6. Elegir: primer piloto acompanado o F2-lite.
 

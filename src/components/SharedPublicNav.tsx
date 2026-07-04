@@ -167,7 +167,7 @@ export default function SharedPublicNav({ onSignup, onLogin, scrollAware }: Shar
               onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = BRAND_LIGHT; (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-1px)' }}
               onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = BRAND; (e.currentTarget as HTMLButtonElement).style.transform = '' }}
             >
-              Empezar <ArrowRight size={13} strokeWidth={2.5} />
+              Empezar gratis <ArrowRight size={13} strokeWidth={2.5} />
             </button>
 
             {/* Hamburger — mobile only */}
@@ -308,7 +308,7 @@ export default function SharedPublicNav({ onSignup, onLogin, scrollAware }: Shar
         {/* Bottom brand note */}
         <div style={{ marginTop: 'auto', padding: '20px 24px', borderTop: `1px solid ${SURFACE_BORDER}` }}>
           <p style={{ fontFamily: FONT_MONO, fontSize: 10, color: INK_FAINT, letterSpacing: '0.15em', margin: 0 }}>
-            RALLYIQ · BUENOS AIRES · 2026
+            RALLYIQ · BETA PRIVADA · 2026
           </p>
         </div>
       </div>

@@ -39,8 +39,8 @@ const HERO_STATS = [
 
 const TRUST_POINTS = [
   'Plan Builder por evento',
-  'Taper y activacion final',
-  'Carga de squash + fuerza + running',
+  'Taper y recuperacion final',
+  'Carga unificada multideporte',
   'Coach AI con contexto',
 ] as const
 
@@ -48,22 +48,22 @@ const SYSTEM_CARDS = [
   {
     icon: <CalendarDays size={18} strokeWidth={2.2} />,
     eyebrow: 'Plan Builder',
-    title: 'Microciclos para llegar fresco al partido',
-    body: 'Construye semanas desde el evento objetivo: base, build, peak, taper y activacion final. El match play fuerte queda lejos del ultimo dia.',
+    title: 'Microciclos para llegar fresco al objetivo',
+    body: 'Construye semanas desde una carrera, torneo o bloque de base: volumen, intensidad, fuerza, taper y activacion final.',
     accent: BRAND,
   },
   {
     icon: <Activity size={18} strokeWidth={2.2} />,
-    eyebrow: 'Carga competitiva',
+    eyebrow: 'Carga multideporte',
     title: 'Una sola lectura de fatiga real',
-    body: 'Une squash, fuerza, running y movilidad para entender strain, adherencia y riesgo antes de sumar intensidad.',
+    body: 'Une squash, running, fuerza, ciclismo y movilidad para entender strain, adherencia y riesgo antes de sumar intensidad.',
     accent: FORGE_CYAN,
   },
   {
     icon: <Dumbbell size={18} strokeWidth={2.2} />,
     eyebrow: 'Preparacion fisica',
-    title: 'Fuerza que transfiere a la cancha',
-    body: 'Piernas, core, potencia lateral y prevencion. La app evita mezclar sesiones pesadas justo antes de competir.',
+    title: 'Fuerza que acompaña tu deporte',
+    body: 'Piernas, core, potencia y prevencion ubicadas donde suman. La app evita mezclar sesiones pesadas justo antes de un objetivo.',
     accent: FORGE_EMBER,
   },
   {
@@ -77,8 +77,8 @@ const SYSTEM_CARDS = [
 
 const PHASES = [
   { label: 'Base', note: 'volumen y tecnica', load: 58, color: FORGE_CYAN },
-  { label: 'Build', note: 'presion + fuerza', load: 72, color: FORGE_EMBER },
-  { label: 'Peak', note: 'rally intenso', load: 84, color: BRAND_LIGHT },
+  { label: 'Build', note: 'intensidad + fuerza', load: 72, color: FORGE_EMBER },
+  { label: 'Peak', note: 'estimulo clave', load: 84, color: BRAND_LIGHT },
   { label: 'Taper', note: 'bajar fatiga', load: 46, color: FORGE_LIME },
   { label: 'Match', note: 'control + activacion', load: 26, color: BRAND },
 ] as const
@@ -92,12 +92,12 @@ const WORKFLOW = [
   {
     num: '02',
     title: 'Genera el bloque',
-    body: 'RallyIQ distribuye tecnica, match play, fisico, movilidad y descarga con coherencia entre semanas.',
+    body: 'RallyIQ distribuye deporte principal, fuerza, movilidad, cardio y descarga con coherencia entre semanas.',
   },
   {
     num: '03',
     title: 'Entrena y registra',
-    body: 'Cada sesion suma RPE, duracion, sensacion y notas. El registro esta pensado para hacerse al salir de cancha.',
+    body: 'Cada sesion suma RPE, duracion, sensacion y notas. El registro esta pensado para hacerse apenas terminas de entrenar.',
   },
   {
     num: '04',
@@ -177,9 +177,9 @@ function Hero({ onPrimary }: { onPrimary: () => void }) {
             className="mt-6 max-w-[600px] text-[17px] font-medium leading-8 md:text-lg"
             style={{ color: INK_MUTED }}
           >
-            RallyIQ une squash, fuerza, running, movilidad y ciclismo en una sola carga
-            semanal. Originado en la intensidad del squash, evolucionado para preparar
-            cualquier objetivo — con un coach AI que ajusta taper, fatiga y recuperacion.
+            RallyIQ une squash, running, fuerza, movilidad y ciclismo en una sola carga
+            semanal. Nació desde el deporte competitivo y ahora está pensado para preparar
+            objetivos multideporte — con un coach AI que ajusta taper, fatiga y recuperacion.
           </p>
 
           <div className="mt-8 flex flex-wrap items-center gap-3">
@@ -315,14 +315,14 @@ function PlanPhoneMockup({ compact = false }: { compact?: boolean }) {
 
         <div className="phone-card mb-3">
           <div className="mb-3 flex items-center justify-between">
-            <span className="mono-caption" style={{ color: BRAND_LIGHT }}>Hoy · cancha</span>
+            <span className="mono-caption" style={{ color: BRAND_LIGHT }}>Hoy · objetivo</span>
             <span className="mono-caption">55 min</span>
           </div>
           <h4 className="text-sm font-bold text-white" style={{ fontFamily: FONT_DISPLAY }}>
-            Control + patrones de salida
+            Z2 suave + movilidad
           </h4>
           <p className="mt-1 text-[11px] leading-5" style={{ color: INK_MUTED }}>
-            RPE 6. Nada de match largo. Ultimos 12 min de activacion y velocidad.
+            RPE 4. Ritmo conversacional. Ultimos 12 min de movilidad y respiracion.
           </p>
           <div className="mt-3 grid grid-cols-3 gap-1.5">
             <PhoneMetric label="T" value="55" />
@@ -361,7 +361,7 @@ function PlanPhoneMockup({ compact = false }: { compact?: boolean }) {
             <span className="mono-caption" style={{ color: FORGE_CYAN }}>RallyIQ recomienda</span>
           </div>
           <p className="text-[12px] leading-5 text-white">
-            Mueve el match fuerte a 4 dias antes. Mantiene activacion el ultimo dia.
+            Baja la carga intensa y deja activacion corta para el ultimo dia.
           </p>
           <button className="mt-3 w-full rounded-lg px-3 py-2 text-[11px] font-bold text-white" style={{ background: BRAND }}>
             Aplicar ajuste
@@ -412,7 +412,7 @@ function TaperPanel() {
   return (
     <div className="scene-panel w-[300px] p-4">
       <div className="mb-3 flex items-center justify-between">
-        <span className="mono-caption" style={{ color: FORGE_LIME }}>Semana de torneo</span>
+        <span className="mono-caption" style={{ color: FORGE_LIME }}>Semana objetivo</span>
         <Trophy size={15} style={{ color: FORGE_LIME }} />
       </div>
       <div className="grid grid-cols-5 gap-1.5">
@@ -546,8 +546,8 @@ function DisciplinesGrid() {
               <span style={{ color: BRAND }}>una sola carga.</span>
             </h2>
             <p className="mt-3 max-w-[400px] text-[15px] leading-[1.55]" style={{ color: INK_MUTED }}>
-              Originado en la intensidad del squash, evolucionado para dominar cualquier campo.
-              Cinco lenguajes distintos que RallyIQ lee como una sola semana.
+              Cinco lenguajes distintos que RallyIQ lee como una sola semana:
+              cardio, fuerza, movilidad, deporte principal y recuperacion.
             </p>
           </div>
           <Link
@@ -730,13 +730,13 @@ function CompetitionBlock() {
               border: '1px solid rgba(255,77,0,0.18)',
             }}
           >
-            <div className="label-mono brand">Plan por torneo</div>
+            <div className="label-mono brand">Plan por objetivo</div>
             <h2 className="mt-2 max-w-[620px] text-3xl font-black leading-tight text-white md:text-5xl" style={{ fontFamily: FONT_DISPLAY }}>
-              El match importante empieza varias semanas antes.
+              El objetivo importante empieza varias semanas antes.
             </h2>
             <p className="mt-5 max-w-[620px] text-[15px] leading-7" style={{ color: INK_MUTED }}>
               RallyIQ organiza cada fase alrededor del evento. El bloque no solo reparte sesiones:
-              protege el dia final, evita fuerza pesada tarde y programa el match play competitivo
+              protege el dia final, evita fuerza pesada tarde y ubica los estimulos clave
               con margen suficiente para recuperar.
             </p>
 
@@ -763,16 +763,16 @@ function CompetitionBlock() {
           <div className="grid grid-cols-1 gap-4">
             <TrainingStackCard
               icon={<Target size={18} />}
-              label="Squash"
-              title="Tecnica, tactica y match play"
-              body="Drills con objetivo, sesiones de control, partidos de practica y exposicion competitiva medida."
+              label="Deporte principal"
+              title="La sesión clave en el lugar correcto"
+              body="Running, squash, ciclismo o competencia: el estimulo fuerte aparece donde suma y no donde deja deuda."
               color={BRAND_LIGHT}
             />
             <TrainingStackCard
               icon={<Dumbbell size={18} />}
               label="Fisico"
               title="Fuerza y potencia sin matar piernas"
-              body="Sesiones compatibles con cancha: lateralidad, core, potencia y descarga antes del evento."
+              body="Sesiones compatibles con tu deporte: core, potencia, fuerza base y descarga antes del evento."
               color={FORGE_EMBER}
             />
             <TrainingStackCard
@@ -826,7 +826,7 @@ function CoachIntelligence() {
         <SectionHeader
           label="Coach AI con contexto"
           title={<>Cuando el cuerpo cambia, el plan tambien.</>}
-          body="El valor no esta en generar un bloque perfecto el dia uno. Esta en mantenerlo inteligente cuando aparecen mal sueno, dolor, calendario real o partidos extra."
+          body="El valor no esta en generar un bloque perfecto el dia uno. Esta en mantenerlo inteligente cuando aparecen mal sueno, dolor, agenda real o fatiga acumulada."
         />
 
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-[0.9fr_1.1fr]">
@@ -841,8 +841,8 @@ function CoachIntelligence() {
               </div>
             </div>
             <div className="space-y-2.5">
-              <ChatBubble type="user">Tengo partido el sabado y dormi mal dos noches.</ChatBubble>
-              <ChatBubble type="assistant">Veo fatiga acumulada y fuerza pesada programada manana. Conviene cambiarla por activacion y mover el match play intenso a hoy.</ChatBubble>
+              <ChatBubble type="user">Tengo las piernas pesadas y dormi mal dos noches.</ChatBubble>
+              <ChatBubble type="assistant">Veo fatiga acumulada y una sesion intensa programada manana. Conviene bajarla a Z2 suave o activacion, segun tu objetivo de la semana.</ChatBubble>
               <ProposalCard />
             </div>
           </div>
@@ -857,8 +857,8 @@ function CoachIntelligence() {
             <div className="mt-6 rounded-2xl border border-white/[0.06] bg-black/25 p-5">
               <div className="mono-caption mb-3" style={{ color: FORGE_LIME }}>Decision del sistema</div>
               <p className="text-sm leading-6 text-white">
-                Mantener tecnica y control. Evitar partido completo el ultimo dia. Priorizar sensacion
-                de piernas, movilidad de cadera y primeros desplazamientos.
+                Mantener control tecnico y sensacion de piernas. Evitar fatiga residual el ultimo dia.
+                Priorizar movilidad, respiracion y primeros minutos de activacion.
               </p>
             </div>
           </div>
@@ -893,10 +893,10 @@ function ProposalCard() {
         <span className="rounded-full bg-black/25 px-2 py-1 text-[10px] font-bold" style={{ color: FORGE_LIME }}>segura</span>
       </div>
       <h4 className="text-base font-bold text-white" style={{ fontFamily: FONT_DISPLAY }}>
-        Cambiar fuerza por activacion
+        Cambiar intensidad por Z2 suave
       </h4>
       <p className="mt-2 text-xs leading-5" style={{ color: INK_MUTED }}>
-        Fuerza 55 min pasa a movilidad + potencia ligera 32 min. Mantiene velocidad sin sumar fatiga residual.
+        Sesion intensa pasa a 40 min conversacionales. Mantiene movimiento, baja riesgo y cuida la semana.
       </p>
       <div className="mt-4 flex gap-2">
         <button className="rounded-lg px-3 py-2 text-xs font-bold text-white" style={{ background: BRAND }}>
@@ -950,14 +950,14 @@ function MethodProof() {
             </h2>
             <p className="mt-5 max-w-[560px] text-[15px] leading-7" style={{ color: INK_MUTED }}>
               RallyIQ muestra las reglas que usa para armar y ajustar tu semana: cuando meter
-              match play, cuando descargar, que hacer el ultimo dia y como equilibrar cancha con fisico.
+              el estimulo fuerte, cuando descargar, que hacer el ultimo dia y como equilibrar deporte principal con fisico.
             </p>
 
             <div className="mt-8 grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <MethodRule label="Match play" value="3-4 dias antes" body="La exposicion competitiva fuerte no queda pegada al torneo." color={BRAND_LIGHT} />
+              <MethodRule label="Estimulo clave" value="Con margen" body="La sesion fuerte no queda pegada al objetivo si necesitas frescura." color={BRAND_LIGHT} />
               <MethodRule label="Ultimo dia" value="Activacion" body="Control, movilidad y velocidad corta. Nada de fatiga residual." color={FORGE_LIME} />
-              <MethodRule label="Fuerza" value="Transferencia" body="Piernas, core y potencia lateral ubicadas donde no interfieren." color={FORGE_EMBER} />
-              <MethodRule label="Carga" value="Unificada" body="Squash, running y fuerza se leen como una sola demanda semanal." color={FORGE_CYAN} />
+              <MethodRule label="Fuerza" value="Transferencia" body="Piernas, core y potencia ubicadas donde ayudan al deporte principal." color={FORGE_EMBER} />
+              <MethodRule label="Carga" value="Unificada" body="Running, fuerza, squash y movilidad se leen como una sola demanda semanal." color={FORGE_CYAN} />
             </div>
           </div>
 
@@ -970,7 +970,7 @@ function MethodProof() {
           >
             <div className="mb-5 flex items-center justify-between gap-4">
               <div>
-                <div className="mono-caption" style={{ color: BRAND_LIGHT }}>Semana de torneo</div>
+                <div className="mono-caption" style={{ color: BRAND_LIGHT }}>Semana objetivo</div>
                 <h3 className="mt-1 text-xl font-black text-white" style={{ fontFamily: FONT_DISPLAY }}>
                   Decisiones visibles
                 </h3>
@@ -979,11 +979,11 @@ function MethodProof() {
             </div>
 
             <div className="space-y-3">
-              <MethodTimeline day="D-4" title="Match play competitivo" tag="estimulo alto" color={BRAND_LIGHT} />
+              <MethodTimeline day="D-4" title="Estimulo especifico alto" tag="carga clave" color={BRAND_LIGHT} />
               <MethodTimeline day="D-3" title="Fuerza ligera + movilidad" tag="bajar deuda" color={FORGE_EMBER} />
-              <MethodTimeline day="D-2" title="Control tactico en cancha" tag="precision" color={FORGE_CYAN} />
+              <MethodTimeline day="D-2" title="Control tecnico" tag="precision" color={FORGE_CYAN} />
               <MethodTimeline day="D-1" title="Activacion y velocidad corta" tag="fresco" color={FORGE_LIME} />
-              <MethodTimeline day="DIA" title="Partido objetivo" tag="competir" color={BRAND} />
+              <MethodTimeline day="DIA" title="Objetivo principal" tag="rendir" color={BRAND} />
             </div>
 
             <div className="mt-5 rounded-2xl border border-white/[0.06] bg-black/30 p-4">
@@ -1075,10 +1075,10 @@ function AccessCard({
               Acceso temprano
             </div>
             <h2 className="mx-auto mt-4 max-w-[760px] text-4xl font-black leading-tight text-white md:text-6xl" style={{ fontFamily: FONT_DISPLAY }}>
-              Prepara tu proximo torneo con estructura profesional.
+              Prepara tu proximo objetivo con estructura profesional.
             </h2>
             <p className="mx-auto mt-5 max-w-[560px] text-[16px] leading-7" style={{ color: INK_MUTED }}>
-              Entra a RallyIQ, crea tu evento objetivo y genera un plan competitivo que puedas entrenar,
+              Entra a RallyIQ, crea tu carrera, torneo o bloque objetivo y genera un plan que puedas entrenar,
               medir y ajustar sin salir de la app.
             </p>
 
@@ -1161,13 +1161,13 @@ function Footer() {
             </span>
           </div>
           <p className="mt-3 text-[13px] leading-relaxed" style={{ color: INK_MUTED }}>
-            Planificacion premium para squash competitivo, preparacion fisica y decisiones con datos.
+            Planificacion multideporte, coach AI y decisiones semanales con datos humanos.
           </p>
         </div>
 
         <div className="flex flex-wrap gap-12">
           <FooterCol title="Producto" links={['Funcionalidades', 'Precios', 'Plan Builder', 'RallyIQ AI']} />
-          <FooterCol title="Squash" links={['Torneos', 'Taper', 'Carga', 'Preparacion fisica']} />
+          <FooterCol title="Multideporte" links={['Running', 'Fuerza', 'Squash', 'Movilidad']} />
           <FooterCol title="Empresa" links={['Contacto', 'Privacidad', 'Terminos']} />
         </div>
       </div>
@@ -1178,13 +1178,18 @@ function Footer() {
         <span className="text-[11px] font-semibold" style={{ fontFamily: FONT_MONO, color: INK_FAINT }}>
           © 2026 · RALLYIQ LABS
         </span>
-        <span className="text-[11px]" style={{ fontFamily: FONT_MONO, color: INK_FAINT }}>HECHO EN CHILE</span>
+        <span className="text-[11px]" style={{ fontFamily: FONT_MONO, color: INK_FAINT }}>BETA PRIVADA · HECHO PARA ATLETAS MULTIDEPORTE</span>
       </div>
     </footer>
   )
 }
 
 function FooterCol({ title, links }: { title: string; links: string[] }) {
+  const routeByLabel: Record<string, string> = {
+    Funcionalidades: '/features',
+    Precios: '/pricing',
+  }
+
   return (
     <div>
       <h4 className="mb-4 text-[13px] font-bold text-white" style={{ fontFamily: FONT_DISPLAY }}>
@@ -1193,9 +1198,15 @@ function FooterCol({ title, links }: { title: string; links: string[] }) {
       <ul className="space-y-2.5">
         {links.map((link) => (
           <li key={link}>
-            <a href="#" className="text-[13px] transition-colors hover:text-white" style={{ color: INK_MUTED }}>
-              {link}
-            </a>
+            {routeByLabel[link] ? (
+              <Link to={routeByLabel[link]} className="text-[13px] transition-colors hover:text-white" style={{ color: INK_MUTED }}>
+                {link}
+              </Link>
+            ) : (
+              <a href="mailto:hola@rallyiq.cl" className="text-[13px] transition-colors hover:text-white" style={{ color: INK_MUTED }}>
+                {link}
+              </a>
+            )}
           </li>
         ))}
       </ul>

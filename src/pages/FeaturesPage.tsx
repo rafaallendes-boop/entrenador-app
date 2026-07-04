@@ -1,4 +1,5 @@
 import { ArrowRight } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { useAuthStore } from '../store/useAuthStore'
 import { isSupabaseConfigured } from '../services/auth'
 import SharedPublicNav from '../components/SharedPublicNav'
@@ -36,7 +37,7 @@ export default function FeaturesPage() {
         <FeatureRow2Semana />
         <FeatureRow3Multi />
         <FeatureRow4Checkin />
-        <FeaturesCTA onSignup={handleSignIn} />
+        <FeaturesCTA />
         <FeaturesFooter />
       </main>
 
@@ -55,7 +56,7 @@ function FeaturesHero() {
       <div className="relative z-10 mx-auto w-full max-w-7xl px-6 md:px-10">
         <div className="grid grid-cols-1 items-end gap-16 lg:grid-cols-[1.2fr_1fr]">
           <div>
-            <div className="label-mono brand mb-5">Funcionalidades · v2.4</div>
+            <div className="label-mono brand mb-5">Todo tu entrenamiento, una conversación</div>
             <h1 style={{ fontFamily: FONT_DISPLAY, fontSize: 'clamp(40px, 5vw, 64px)', fontWeight: 700, letterSpacing: '-0.025em', lineHeight: 1.05, margin: '0 0 24px', color: INK }}>
               Cada sesión,{' '}
               <span style={{ color: BRAND }}>analizada.</span>
@@ -64,9 +65,9 @@ function FeaturesHero() {
               <span style={{ color: FORGE_LIME }}>optimizada.</span>
             </h1>
             <p style={{ fontSize: 18, lineHeight: 1.55, color: INK_MUTED, maxWidth: '56ch' }}>
-              RallyIQ no es otro tracker. Es un sistema cerrado —
-              plan, registro, RallyIQ AI y analytics — diseñado para atletas que entrenan
-              en serio y no tienen tiempo para planillas.
+              RallyIQ une plan, registro, coach AI y carga semanal para que no tengas que
+              pensar en cinco apps distintas. Entrenas, registras cómo llegaste y el sistema
+              te ayuda a decidir qué conviene hacer después.
             </p>
           </div>
 
@@ -140,9 +141,9 @@ function FeatureRow1Coach() {
 
       <VisualCard accent={BRAND} tag="RALLYIQ · EN VIVO">
         <div className="flex flex-col gap-2.5">
-          <ChatBub type="u">Mañana tengo match pero dormí mal 3 días.</ChatBub>
+          <ChatBub type="u">Mañana tengo una sesión intensa, pero dormí mal 3 días.</ChatBub>
           <ChatBub type="a">
-            Bajemos la carga de fuerza hoy. Tu{' '}
+            Bajemos la carga y dejemos solo activación. Tu{' '}
             <b style={{ color: FORGE_LIME }}>RPE promedio</b>{' '}
             subió de 6.8 a 7.9 esta semana. Preparo propuesta.
           </ChatBub>
@@ -468,7 +469,7 @@ function FeatureList({
 
 /* ─── CTA ───────────────────────────────────────────────── */
 
-function FeaturesCTA({ onSignup }: { onSignup: () => void }) {
+function FeaturesCTA() {
   return (
     <section style={{ padding: '80px 0' }}>
       <div className="mx-auto w-full max-w-7xl px-6 md:px-10">
@@ -483,21 +484,22 @@ function FeaturesCTA({ onSignup }: { onSignup: () => void }) {
           <div style={{ position: 'relative' }}>
             <div className="label-mono brand" style={{ marginBottom: 24 }}>Listo para empezar</div>
             <h2 style={{ fontFamily: FONT_DISPLAY, fontSize: 'clamp(28px, 3.6vw, 44px)', fontWeight: 700, letterSpacing: '-0.025em', lineHeight: 1.08, marginBottom: 16, maxWidth: 700, color: INK }}>
-              Empieza <span style={{ color: BRAND }}>gratis.</span><br /> Sube a Pro cuando lo necesites.
+              Empieza <span style={{ color: BRAND }}>gratis.</span><br /> Sube cuando necesites estructura semanal.
             </h2>
             <p style={{ fontSize: 16, color: INK_MUTED, maxWidth: 500, marginBottom: 28, lineHeight: 1.5 }}>
-              5 días de Pro incluidos al registrarte. Sin tarjeta. Sin letra pequeña.
+              Puedes hablar con el coach y registrar entrenamientos sin pagar. Cuando quieras planificación semanal o Plan Builder, eliges el plan que calce contigo.
             </p>
             <div className="flex flex-wrap items-center gap-3">
-              <button
-                onClick={onSignup}
+              <Link
+                to="/pricing"
                 className="btn-primary-pill inline-flex items-center gap-2 rounded-xl px-7 py-4 text-[15px] font-bold text-white"
+                style={{ textDecoration: 'none' }}
               >
                 Ver precios <ArrowRight className="h-4 w-4" strokeWidth={2.5} />
-              </button>
-              <a href="/" style={{ color: INK, background: 'rgba(255,255,255,0.03)', border: `1px solid ${SURFACE_BORDER}`, borderRadius: 12, padding: '16px 28px', fontSize: 15, fontWeight: 700, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+              </Link>
+              <Link to="/" style={{ color: INK, background: 'rgba(255,255,255,0.03)', border: `1px solid ${SURFACE_BORDER}`, borderRadius: 12, padding: '16px 28px', fontSize: 15, fontWeight: 700, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 8 }}>
                 Volver al inicio
-              </a>
+              </Link>
             </div>
           </div>
         </div>
@@ -517,18 +519,24 @@ function FeaturesFooter() {
             <BoltIcon />
             <span style={{ fontFamily: FONT_DISPLAY, fontSize: 15, fontWeight: 900, letterSpacing: '-0.03em', color: '#fff' }}>RallyIQ</span>
           </div>
-          <p style={{ marginTop: 12, fontSize: 13, lineHeight: 1.6, color: INK_MUTED }}>RallyIQ AI para atletas de raqueta y endurance. Hecho por atletas, para atletas.</p>
+          <p style={{ marginTop: 12, fontSize: 13, lineHeight: 1.6, color: INK_MUTED }}>Un coach multideporte para planificar, ajustar y entender tu semana de entrenamiento.</p>
         </div>
         <div className="flex flex-wrap gap-12">
           {[
-            { title: 'Producto', links: ['Funcionalidades', 'Precios', 'Changelog', 'Roadmap'] },
-            { title: 'Comunidad', links: ['Atletas', 'Blog', 'Discord', 'Newsletter'] },
-            { title: 'Empresa', links: ['Nosotros', 'Contacto', 'Privacidad', 'Términos'] },
+            { title: 'Producto', links: [{ label: 'Funcionalidades', to: '/features' }, { label: 'Precios', to: '/pricing' }, { label: 'Inicio', to: '/' }] },
+            { title: 'Para atletas', links: [{ label: 'Piloto fundador', href: 'mailto:hola@rallyiq.cl' }, { label: 'Clubes', href: 'mailto:hola@rallyiq.cl' }, { label: 'Feedback', href: 'mailto:hola@rallyiq.cl' }] },
+            { title: 'Empresa', links: [{ label: 'Contacto', href: 'mailto:hola@rallyiq.cl' }, { label: 'Privacidad', href: 'mailto:hola@rallyiq.cl' }, { label: 'Términos', href: 'mailto:hola@rallyiq.cl' }] },
           ].map(col => (
             <div key={col.title}>
               <h4 style={{ fontFamily: FONT_DISPLAY, fontSize: 13, fontWeight: 700, color: '#fff', marginBottom: 16 }}>{col.title}</h4>
               <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {col.links.map(l => <li key={l}><a href="#" style={{ fontSize: 13, color: INK_MUTED, textDecoration: 'none' }}>{l}</a></li>)}
+                {col.links.map(l => (
+                  <li key={l.label}>
+                    {'to' in l
+                      ? <Link to={l.to} style={{ fontSize: 13, color: INK_MUTED, textDecoration: 'none' }}>{l.label}</Link>
+                      : <a href={l.href} style={{ fontSize: 13, color: INK_MUTED, textDecoration: 'none' }}>{l.label}</a>}
+                  </li>
+                ))}
               </ul>
             </div>
           ))}
@@ -537,8 +545,8 @@ function FeaturesFooter() {
       <div className="mx-auto flex w-full max-w-7xl items-center justify-between px-6 md:px-10" style={{ borderTop: `1px solid ${SURFACE_BORDER}`, marginTop: 48, paddingTop: 20 }}>
         <span style={{ fontFamily: FONT_MONO, fontSize: 11, color: INK_FAINT }}>© 2026 · RALLYIQ LABS</span>
         <div className="flex gap-4">
-          <span style={{ fontFamily: FONT_MONO, fontSize: 11, color: INK_FAINT }}>v1.0</span>
-          <span style={{ fontFamily: FONT_MONO, fontSize: 11, color: INK_FAINT }}>HECHO EN CHILE</span>
+          <span style={{ fontFamily: FONT_MONO, fontSize: 11, color: INK_FAINT }}>Beta privada</span>
+          <span style={{ fontFamily: FONT_MONO, fontSize: 11, color: INK_FAINT }}>Hecho para atletas multideporte</span>
         </div>
       </div>
     </footer>

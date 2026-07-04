@@ -376,12 +376,13 @@ interface TierCardProps {
   ribbon?: string
   ctaText: string
   ctaStyle?: 'primary' | 'ghost'
+  onCta: () => void
   featLabel: string
   features: TierFeature[]
   origMonthly?: number
 }
 
-function TierCard({ name, tagline, monthlyPrice, annualPrice, isAnnual, featured, ribbon, ctaText, ctaStyle = 'ghost', featLabel, features, origMonthly }: TierCardProps) {
+function TierCard({ name, tagline, monthlyPrice, annualPrice, isAnnual, featured, ribbon, ctaText, ctaStyle = 'ghost', onCta, featLabel, features, origMonthly }: TierCardProps) {
   const price = isAnnual ? annualPrice : monthlyPrice
   const unit = isAnnual ? 'CLP / mes · pago anual' : 'CLP / mes'
   const formatClp = (value: number) => `$${value.toLocaleString('es-CL')}`
@@ -404,9 +405,9 @@ function TierCard({ name, tagline, monthlyPrice, annualPrice, isAnnual, featured
           </>
         )}
       </div>
-      <a href="#" className={`p-btn p-btn-lg p-btn-block p-btn-${ctaStyle}`} style={{ marginBottom: '28px' }}>
+      <button type="button" onClick={onCta} className={`p-btn p-btn-lg p-btn-block p-btn-${ctaStyle}`} style={{ marginBottom: '28px' }}>
         {ctaText} {ctaStyle === 'primary' && <span>→</span>}
-      </a>
+      </button>
       <div className="tier-divider" />
       <div className="feat-label">{featLabel}</div>
       <ul>
@@ -451,29 +452,32 @@ export default function PricingPage() {
   }
 
   const starterFeatures: TierFeature[] = [
-    { text: 'Tu semana de entrenamiento clara' },
-    { text: 'Registro diario de cómo llegas' },
-    { text: '1 deporte', note: 'a elegir' },
-    { text: 'Funciona sin conexión' },
-    { text: 'Plan inteligente de torneo', dim: true },
-    { text: 'Ajustes automáticos', dim: true },
+    { text: 'Habla con RallyIQ Coach sobre tu entrenamiento' },
+    { text: 'Crea y registra entrenamientos multideporte' },
+    { text: 'Semana simple con estado de cada sesión' },
+    { text: 'Check-in diario de sueño, energía y molestias' },
+    { text: 'Funciona sin conexión y sincroniza después' },
+    { text: 'Plan semanal generado por el coach', dim: true },
+    { text: 'Plan Builder por objetivo', dim: true },
   ]
 
   const proFeatures: TierFeature[] = [
-    { text: 'Plan de torneo que se ajusta a cómo llegas' },
-    { text: 'Squash, fuerza, running y movilidad' },
-    { text: 'Ajustes según fatiga y molestias' },
-    { text: 'Fuerza con transferencia a la cancha' },
-    { text: 'Puesta a punto para tu evento' },
-    { text: 'Historial completo' },
+    { text: 'Coach AI con contexto completo de tu semana' },
+    { text: 'Entrenamientos semanales sugeridos y ajustables' },
+    { text: 'Squash, running, fuerza, movilidad y ciclismo' },
+    { text: 'Cambios por fatiga, alcohol, sueño o dolor' },
+    { text: 'Resúmenes semanales y notas accionables' },
+    { text: 'Historial y carga por deporte' },
+    { text: 'Plan Builder por objetivo', dim: true },
   ]
 
   const eliteFeatures: TierFeature[] = [
-    { text: 'Revisión mensual de un entrenador' },
-    { text: 'Tu plan revisado antes de entregártelo' },
-    { text: 'Periodización por competencia' },
+    { text: 'Todo lo del plan Coach Semanal' },
+    { text: 'Plan Builder por carrera, torneo o bloque' },
+    { text: 'Periodización por fases: base, build, peak y taper' },
+    { text: 'Reparación automática de semanas incoherentes' },
     { text: 'Exporta tus datos cuando quieras' },
-    { text: 'Soporte prioritario' },
+    { text: 'Soporte prioritario para preparar objetivos' },
   ]
 
   return (
@@ -487,11 +491,11 @@ export default function PricingPage() {
         <div className="pricing-wrap">
           <div className="p-hero-inner">
             <span className="p-label brand" style={{ justifyContent: 'center', display: 'inline-flex' }}>
-              Precios · sin permanencia
+              Precios simples · beta privada
             </span>
-            <h1>Preparación premium. Sin <span className="hl">letra pequeña.</span></h1>
+            <h1>Elige cuánto quieres que el coach <span className="hl">haga contigo.</span></h1>
             <p className="lede">
-              Estamos en piloto cerrado para jugadores de squash que compiten. Solicita tu cupo; cuando abramos el cobro, cancelas cuando quieras, sin preguntas.
+              RallyIQ parte gratis para conversar con el coach y registrar entrenamientos. Cuando necesitas estructura semanal o preparar un objetivo completo, subes de plan sin cambiar de app.
             </p>
             <div className="billing-toggle">
               <button className={!isAnnual ? 'on' : ''} onClick={() => setIsAnnual(false)}>Mensual</button>
@@ -508,39 +512,42 @@ export default function PricingPage() {
         <div className="pricing-wrap">
           <div className="pricing-grid">
             <TierCard
-              name="Piloto"
-              tagline="Acceso por invitación durante la beta cerrada. Sin costo."
+              name="Base"
+              tagline="Para empezar a conversar con tu coach y registrar lo que entrenas."
               monthlyPrice={0}
               annualPrice={0}
               isAnnual={isAnnual}
-              ctaText="Solicitar cupo piloto"
+              ctaText="Empezar gratis"
               ctaStyle="ghost"
+              onCta={handleSignIn}
               featLabel="Incluye"
               features={starterFeatures}
             />
             <TierCard
-              name="RallyIQ"
-              tagline="Tu plan de torneo de squash, con fuerza y recuperación que transfieren a la cancha."
-              monthlyPrice={9990}
-              annualPrice={7990}
+              name="Coach Semanal"
+              tagline="Para que RallyIQ te ayude a armar y ajustar la semana de entrenamiento."
+              monthlyPrice={12990}
+              annualPrice={9990}
               isAnnual={isAnnual}
               featured
-              ribbon="Recomendado"
-              ctaText="Solicitar cupo piloto"
+              ribbon="Más útil"
+              ctaText="Probar Coach Semanal"
               ctaStyle="primary"
-              featLabel="Todo del Piloto, más"
+              onCta={handleSignIn}
+              featLabel="Todo de Base, más"
               features={proFeatures}
-              origMonthly={12990}
+              origMonthly={15990}
             />
             <TierCard
-              name="RallyIQ + Coach"
-              tagline="Para competitivos que quieren la revisión de un entrenador cada mes."
-              monthlyPrice={34900}
-              annualPrice={27920}
+              name="Avanzado"
+              tagline="Para preparar carreras, torneos o bloques completos con Plan Builder."
+              monthlyPrice={24990}
+              annualPrice={19990}
               isAnnual={isAnnual}
-              ctaText="Solicitar cupo con coach"
+              ctaText="Preparar un objetivo"
               ctaStyle="ghost"
-              featLabel="Todo de RallyIQ, más"
+              onCta={handleSignIn}
+              featLabel="Todo de Coach Semanal, más"
               features={eliteFeatures}
             />
           </div>
@@ -558,7 +565,7 @@ export default function PricingPage() {
                 </svg>
               </div>
               <h4>Sin permanencia</h4>
-              <p>Cancela cuando quieras. Dos clics desde Ajustes, sin formularios ni llamadas.</p>
+              <p>Base es gratis. En planes pagados puedes bajar cuando quieras mientras la beta crece.</p>
             </div>
             <div className="g-item">
               <div className="g-ic">
@@ -575,8 +582,8 @@ export default function PricingPage() {
                   <circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" />
                 </svg>
               </div>
-              <h4>5 días de Pro gratis</h4>
-              <p>Prueba RallyIQ AI completo al registrarte. Sin tarjeta. Vuelve a Starter si no te convence.</p>
+              <h4>Demo acompañada</h4>
+              <p>Si estás evaluando RallyIQ para entrenar en serio, te ayudamos a configurar la primera semana.</p>
             </div>
             <div className="g-item">
               <div className="g-ic">
@@ -604,34 +611,33 @@ export default function PricingPage() {
               <thead>
                 <tr>
                   <th>Funcionalidad</th>
-                  <th>Starter</th>
-                  <th className="pro">Pro</th>
-                  <th>Elite</th>
+                  <th>Base</th>
+                  <th className="pro">Coach Semanal</th>
+                  <th>Avanzado</th>
                 </tr>
               </thead>
               <tbody>
                 <tr className="section-row"><td colSpan={4}>Planificación</td></tr>
-                <tr><td>Grilla semanal</td><td><span className="chk">✓</span></td><td className="pro"><span className="chk brand">✓</span></td><td><span className="chk">✓</span></td></tr>
-                <tr><td>Plantillas por bloque</td><td className="dash">—</td><td className="pro"><span className="chk brand">✓</span></td><td><span className="chk">✓</span></td></tr>
-                <tr><td>Periodización por competencia</td><td className="dash">—</td><td className="dash">—</td><td><span className="chk">✓</span></td></tr>
-                <tr><td>Deportes soportados</td><td>1</td><td className="pro">5</td><td>5</td></tr>
+                <tr><td>Crear y registrar entrenamientos</td><td><span className="chk">✓</span></td><td className="pro"><span className="chk brand">✓</span></td><td><span className="chk">✓</span></td></tr>
+                <tr><td>Entrenamientos semanales sugeridos</td><td className="dash">—</td><td className="pro"><span className="chk brand">✓</span></td><td><span className="chk">✓</span></td></tr>
+                <tr><td>Plan Builder por objetivo</td><td className="dash">—</td><td className="dash">—</td><td><span className="chk">✓</span></td></tr>
+                <tr><td>Deportes soportados</td><td>5</td><td className="pro">5</td><td>5</td></tr>
 
                 <tr className="section-row"><td colSpan={4}>RallyIQ AI</td></tr>
-                <tr><td>Chat con contexto</td><td className="dash">—</td><td className="pro"><span className="chk brand">Ilimitado</span></td><td><span className="chk">Ilimitado</span></td></tr>
-                <tr><td>Propuestas automáticas</td><td className="dash">—</td><td className="pro"><span className="chk brand">✓</span></td><td><span className="chk">✓</span></td></tr>
+                <tr><td>Chat con contexto</td><td><span className="chk">✓</span></td><td className="pro"><span className="chk brand">Completo</span></td><td><span className="chk">Completo</span></td></tr>
+                <tr><td>Propuestas automáticas aplicables</td><td className="dash">—</td><td className="pro"><span className="chk brand">✓</span></td><td><span className="chk">✓</span></td></tr>
+                <tr><td>Notas semanales del coach</td><td className="dash">—</td><td className="pro"><span className="chk brand">✓</span></td><td><span className="chk">✓</span></td></tr>
                 <tr><td>Razonamiento transparente</td><td className="dash">—</td><td className="pro"><span className="chk brand">✓</span></td><td><span className="chk">✓</span></td></tr>
-                <tr><td>Sesión mensual con entrenador humano</td><td className="dash">—</td><td className="dash">—</td><td><span className="chk">✓</span></td></tr>
 
                 <tr className="section-row"><td colSpan={4}>Analytics & datos</td></tr>
-                <tr><td>Historial</td><td>30 días</td><td className="pro">Ilimitado</td><td>Ilimitado</td></tr>
+                <tr><td>Historial</td><td>30 días</td><td className="pro">Completo</td><td>Completo</td></tr>
                 <tr><td>ACWR, strain, monotonía</td><td className="dash">—</td><td className="pro"><span className="chk brand">✓</span></td><td><span className="chk">✓</span></td></tr>
                 <tr><td>Export CSV / JSON</td><td className="dash">—</td><td className="dash">—</td><td><span className="chk">✓</span></td></tr>
-                <tr><td>API pública</td><td className="dash">—</td><td className="dash">—</td><td><span className="chk">✓</span></td></tr>
+                <tr><td>Plan exportable</td><td className="dash">—</td><td className="dash">—</td><td><span className="chk">✓</span></td></tr>
 
                 <tr className="section-row"><td colSpan={4}>Colaboración & soporte</td></tr>
-                <tr><td>Compartir con entrenador humano</td><td className="dash">—</td><td className="dash">—</td><td><span className="chk">✓</span></td></tr>
-                <tr><td>Vista TV / RallyIQ mode</td><td className="dash">—</td><td className="dash">—</td><td><span className="chk">✓</span></td></tr>
-                <tr><td>Soporte</td><td>Comunidad</td><td className="pro">Email &lt; 48h</td><td>Priority &lt; 12h</td></tr>
+                <tr><td>Configuración inicial acompañada</td><td className="dash">—</td><td className="pro">Beta</td><td>Beta</td></tr>
+                <tr><td>Soporte</td><td>Email</td><td className="pro">Email prioritario</td><td>Prioritario</td></tr>
               </tbody>
             </table>
           </div>
@@ -646,18 +652,18 @@ export default function PricingPage() {
               <span className="p-label" style={{ display: 'inline-flex' }}>Dudas frecuentes</span>
               <h2>Preguntas honestas, respuestas honestas.</h2>
               <p>
-                Si algo no está aquí, <a href="mailto:hola@rallyiq.com">escríbenos</a>. Responde una persona, no un bot.
+                Si algo no está aquí, <a href="mailto:hola@rallyiq.cl">escríbenos</a>. Responde una persona, no un bot.
               </p>
             </div>
             <div className="faq-list">
               <FaqItem
                 defaultOpen
                 question="¿Puedo cancelar cuando quiera?"
-                answer="Sí. Dos clics desde Ajustes → Suscripción. Sigues con acceso Pro hasta el final del mes pagado, después baja automáticamente a Starter. Sin llamadas, sin formularios."
+                answer="Sí. Base es gratis y los planes pagados no tienen permanencia. Durante beta cerrada también podemos ayudarte manualmente si algo no está automatizado todavía."
               />
               <FaqItem
                 question="¿Qué pasa con mis datos si me voy?"
-                answer="Tus datos son tuyos. Puedes exportar todo en CSV o JSON desde Ajustes en cualquier plan — no se borran si bajas de nivel. Si cierras la cuenta, tienes 30 días para descargar todo."
+                answer="Tus datos son tuyos. Puedes exportar sesiones, check-ins y planes desde Ajustes. Si bajas de plan, no perdemos tu historial."
               />
               <FaqItem
                 question="¿Funciona offline?"
@@ -665,19 +671,19 @@ export default function PricingPage() {
               />
               <FaqItem
                 question="¿Hay descuento por pago anual?"
-                answer="Sí — 20% de descuento en anual, tanto en Pro como en Elite. El selector de arriba lo calcula automáticamente. También tenemos descuentos para clubes y entrenadores con 5+ atletas: escríbenos."
+                answer="Sí — el selector de arriba muestra el precio anual con descuento. También estamos probando cupos fundador para atletas que quieran dar feedback temprano."
               />
               <FaqItem
                 question="¿Qué deportes soporta exactamente?"
-                answer="Squash, running, fuerza (gym), movilidad, ciclismo y recuperación. Si practicas otro deporte de raqueta o endurance, puedes registrarlo con métricas personalizadas."
+                answer="Squash, running, fuerza, movilidad, ciclismo y recuperación. La app nació desde squash competitivo, pero la dirección es multideporte: una semana, una carga, varios estímulos."
               />
               <FaqItem
                 question="¿Dónde se guardan mis datos?"
                 answer="Local en tu dispositivo (IndexedDB) y sincronizado con Supabase en servidores EU-West. Cifrado en tránsito y en reposo. No vendemos datos, no entrenamos modelos con tu información."
               />
               <FaqItem
-                question="¿Puedo probar Pro antes de pagar?"
-                answer="Sí — 14 días de Pro completo al registrarte, sin tarjeta. Al día 14 te avisamos y decides si seguir en Pro o bajar a Starter. Nunca cobramos sin tu confirmación explícita."
+                question="¿Cuál plan recomiendan para partir?"
+                answer="Base si quieres explorar y hablar con el coach. Coach Semanal si ya entrenas 3-6 veces por semana. Avanzado si estás preparando una carrera, torneo o bloque completo."
               />
             </div>
           </div>
@@ -689,11 +695,11 @@ export default function PricingPage() {
         <div className="pricing-wrap">
           <div className="cta-block">
             <div className="cta-grid-bg" />
-            <span className="p-label brand" style={{ display: 'inline-flex' }}>Empieza hoy</span>
-            <h2>14 días de <span className="hl">Pro,</span> sin tarjeta.</h2>
-            <p>Crea la cuenta, prueba RallyIQ AI, decide después.</p>
+            <span className="p-label brand" style={{ display: 'inline-flex' }}>Empieza simple</span>
+            <h2>Habla con el coach, registra tu semana y <span className="hl">sube cuando haga sentido.</span></h2>
+            <p>La demo tiene que sentirse útil desde el primer día, no como una promesa futura.</p>
             <div className="cta-act">
-              <a href="#" className="p-btn p-btn-primary p-btn-lg">Crear cuenta gratis <span>→</span></a>
+              <button type="button" onClick={handleSignIn} className="p-btn p-btn-primary p-btn-lg">Empezar gratis <span>→</span></button>
               <Link to="/features" className="p-btn p-btn-ghost p-btn-lg">Ver funcionalidades</Link>
             </div>
           </div>
@@ -711,39 +717,39 @@ export default function PricingPage() {
                 </span>
                 RallyIQ
               </Link>
-              <p>RallyIQ AI para atletas de raqueta y endurance. Hecho por atletas, para atletas.</p>
+              <p>Un coach multideporte para planificar, ajustar y entender tu entrenamiento semanal.</p>
             </div>
             <div className="footer-col">
               <h4>Producto</h4>
               <ul>
                 <li><Link to="/features">Funcionalidades</Link></li>
                 <li><Link to="/pricing">Precios</Link></li>
-                <li><a href="#">Changelog</a></li>
-                <li><a href="#">Roadmap</a></li>
+                <li><a href="mailto:hola@rallyiq.cl">Demo</a></li>
+                <li><a href="mailto:hola@rallyiq.cl">Roadmap</a></li>
               </ul>
             </div>
             <div className="footer-col">
-              <h4>Comunidad</h4>
+              <h4>Para atletas</h4>
               <ul>
-                <li><a href="#">Atletas</a></li>
-                <li><a href="#">Blog</a></li>
-                <li><a href="#">Discord</a></li>
-                <li><a href="#">Newsletter</a></li>
+                <li><a href="mailto:hola@rallyiq.cl">Piloto fundador</a></li>
+                <li><a href="mailto:hola@rallyiq.cl">Clubes</a></li>
+                <li><a href="mailto:hola@rallyiq.cl">Entrenadores</a></li>
+                <li><a href="mailto:hola@rallyiq.cl">Feedback</a></li>
               </ul>
             </div>
             <div className="footer-col">
               <h4>Empresa</h4>
               <ul>
-                <li><a href="#">Nosotros</a></li>
-                <li><a href="#">Contacto</a></li>
-                <li><a href="#">Privacidad</a></li>
-                <li><a href="#">Términos</a></li>
+                <li><a href="mailto:hola@rallyiq.cl">Contacto</a></li>
+                <li><a href="mailto:hola@rallyiq.cl">Soporte</a></li>
+                <li><a href="mailto:hola@rallyiq.cl">Privacidad</a></li>
+                <li><a href="mailto:hola@rallyiq.cl">Términos</a></li>
               </ul>
             </div>
           </div>
           <div className="footer-bottom">
             <div>© 2026 · RALLYIQ LABS</div>
-            <div className="r"><span>v1.0</span><span>HECHO EN CHILE</span></div>
+            <div className="r"><span>Beta privada</span><span>Hecho para atletas multideporte</span></div>
           </div>
         </div>
       </footer>
