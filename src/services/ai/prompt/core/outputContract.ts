@@ -226,7 +226,7 @@ export const CREATE_WEEK_ACTION_CONTRACT: ActionContract = {
       'Para sessionType="running":',
       '  runningType: "z2" | "tempo" | "intervals" | "long" (recomendado)',
       '  targetPaceMin / targetPaceMax: string "m:ss" (opcional)',
-      '  targetHrMin / targetHrMax: number (opcional)',
+      '  targetHrMin / targetHrMax: number (opcional). Usa bpm reales (ej. 130-150) o %FCmax (ej. 62-72); valores <=100 se muestran como %FCmax.',
       '  Si runningType="intervals" o "tempo", añade intervalStructure:',
       '    {"blocks": [{"label": string, "durationMin"?: number, "distanceKm"?: number, "repetitions"?: number, "targetPace"?: string, "notes"?: string}, ...]}',
       '',

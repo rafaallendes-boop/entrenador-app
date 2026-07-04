@@ -1,6 +1,7 @@
 import type { Session } from '../types'
 import { SESSION_TYPE_CONFIG, SQUASH_SUBTYPE_LABELS } from '../constants/sessionTypes'
 import { formatDuration } from './format'
+import { formatHeartRateTarget } from './heartRate'
 
 const pad = (n: number, len = 2) => String(n).padStart(len, '0')
 
@@ -40,7 +41,8 @@ function sessionToVEVENT(session: Session, uid: string): string {
     const rd = session.runningDetails
     descParts.push(`Tipo: ${rd.runningType.toUpperCase()}`)
     if (rd.targetPaceMin) descParts.push(`Ritmo: ${rd.targetPaceMin}–${rd.targetPaceMax} /km`)
-    if (rd.targetHrMin) descParts.push(`FC: ${rd.targetHrMin}–${rd.targetHrMax} bpm`)
+    const heartRateTarget = formatHeartRateTarget(rd.targetHrMin, rd.targetHrMax)
+    if (heartRateTarget) descParts.push(`FC: ${heartRateTarget}`)
   }
   if (session.exercises?.length) {
     descParts.push('Ejercicios: ' + session.exercises.map(e =>

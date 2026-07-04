@@ -27,6 +27,7 @@ import {
   getPrimarySportNormalized,
   getSecondarySportsNormalized,
 } from '../../utils/athlete'
+import { formatHeartRateTarget } from '../../utils/heartRate'
 import { getAllowedPlanningSports, getPlanningPrimarySport } from '../planningConstraints'
 import { classifyDayLoad, getDayNutrition, getLoadTypeLabel } from '../nutritionEngine'
 import { computeMacroPlan, getPrimaryGoalEvent, getPhaseLabel, formatWeeksRemaining } from '../macroPlan'
@@ -1499,7 +1500,8 @@ function buildSessionsSection(
       const pace = rd.targetPaceMin
         ? `${rd.targetPaceMin}${rd.targetPaceMax ? `–${rd.targetPaceMax}` : ''} /km`
         : null
-      const hr = rd.targetHrMin ? `FC ${rd.targetHrMin}–${rd.targetHrMax ?? '?'} bpm` : null
+      const heartRateTarget = formatHeartRateTarget(rd.targetHrMin, rd.targetHrMax)
+      const hr = heartRateTarget ? `FC ${heartRateTarget}` : null
       const details = [runType, pace, hr].filter(Boolean).join(' · ')
       if (details) lines.push(`   ↳ ${details}`)
     }

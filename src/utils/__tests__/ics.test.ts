@@ -38,4 +38,21 @@ describe('generateICS', () => {
     expect(ics).toContain('DESCRIPTION:Objetivo: Sostener ritmo\\nNotas: Cerrar fuerte\\nDuración: 45min')
     expect(ics).not.toContain('\\\\n')
   })
+
+  it('marks low running heart-rate targets as percent of FCmax', () => {
+    const ics = generateICS([
+      makeSession({
+        runningDetails: {
+          runningType: 'z2',
+          targetPaceMin: '5:30',
+          targetPaceMax: '6:15',
+          targetHrMin: 62,
+          targetHrMax: 72,
+        },
+      }),
+    ])
+
+    expect(ics).toContain('FC: 62–72% FCmax')
+    expect(ics).not.toContain('62–72 bpm')
+  })
 })

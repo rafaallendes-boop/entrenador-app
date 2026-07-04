@@ -3,6 +3,7 @@ import { useState } from 'react'
 import type { Session, SessionStatus } from '../../types'
 import { SESSION_TYPE_CONFIG, SQUASH_SUBTYPE_LABELS } from '../../constants/sessionTypes'
 import { formatDuration } from '../../utils/format'
+import { getHeartRateTargetDisplay } from '../../utils/heartRate'
 import { isCompetitionSquashMatch, isPracticeSquashMatch, resolveSquashSessionKind, resolveSquashSessionMode } from '../../utils/squash'
 import SessionTypeIcon from './SessionTypeIcon'
 import ExerciseChecklist from './ExerciseChecklist'
@@ -57,6 +58,10 @@ export default function SessionCard({ session, compact = false, onDelete }: Sess
   const updateSession = useTrainingStore((s) => s.updateSession)
   const config = SESSION_TYPE_CONFIG[session.type]
   const statusCfg = STATUS_CONFIG[session.status]
+  const heartRateTarget = getHeartRateTargetDisplay(
+    session.runningDetails?.targetHrMin,
+    session.runningDetails?.targetHrMax,
+  )
 
   const hasExercises =
     (session.type === 'strength' || session.type === 'mobility') &&
@@ -262,12 +267,12 @@ export default function SessionCard({ session, compact = false, onDelete }: Sess
                     </p>
                   </div>
                 )}
-                {session.runningDetails.targetHrMin && (
+                {heartRateTarget && (
                   <div className="rounded-lg bg-rose-500/10 p-2">
                     <p className="mb-0.5 font-display text-[10px] font-semibold uppercase tracking-wider text-rose-400/70">FC objetivo</p>
                     <p className="font-mono text-sm font-semibold tabular-nums text-rose-400">
-                      {session.runningDetails.targetHrMin}–{session.runningDetails.targetHrMax}
-                      <span className="ml-1 text-xs font-normal text-rose-400/60">bpm</span>
+                      {heartRateTarget.value}
+                      <span className="ml-1 text-xs font-normal text-rose-400/60">{heartRateTarget.unit}</span>
                     </p>
                   </div>
                 )}

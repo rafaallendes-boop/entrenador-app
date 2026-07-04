@@ -5,6 +5,7 @@ import { recordCoachFeedback } from '../../services/ai/aiTelemetry'
 import { isDevToolsEnabled } from '../../services/devTools'
 import { resolveStrengthExerciseBlock } from '../../services/training/strengthSessionStructure'
 import { formatMobilityFocusAreas, normalizeMobilityTargetStructure } from '../../services/training/mobilitySessionLibrary'
+import { formatHeartRateTarget } from '../../utils/heartRate'
 import { resolveSquashSessionMode } from '../../utils/squash'
 
 const ACTION_LABEL: Record<string, string> = {
@@ -354,6 +355,7 @@ function renderProposalDetails(
     item.targetPaceMax ||
     item.targetHrMin != null ||
     item.targetHrMax != null
+  const heartRateTarget = formatHeartRateTarget(item.targetHrMin, item.targetHrMax)
 
   return (
     <>
@@ -408,7 +410,7 @@ function renderProposalDetails(
           <p className="text-[10px] text-ink-faint">
             {item.runningType ?? 'running'}
             {item.targetPaceMin ? ` · ${item.targetPaceMin}${item.targetPaceMax ? `-${item.targetPaceMax}` : ''} /km` : ''}
-            {item.targetHrMin != null ? ` · FC ${item.targetHrMin}-${item.targetHrMax ?? '?'}` : ''}
+            {heartRateTarget ? ` · FC ${heartRateTarget}` : ''}
           </p>
         </div>
       )}
