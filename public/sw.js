@@ -1,4 +1,4 @@
-const CACHE_NAME = 'entrenador-app-v1'
+const CACHE_NAME = 'entrenador-app-v2'
 const APP_SHELL = [
   '/',
   '/manifest.json',
@@ -10,104 +10,127 @@ const NOTIFICATION_STATE_CACHE = 'entrenador-notifications-v1'
 const NOTIFICATION_STATE_URL = '/__notification_state__'
 const DEFAULT_NOTIFICATION_GRACE_MS = 90 * 60 * 1000
 const notifTimers = new Map()
+const LOCAL_HOSTNAMES = new Set(['localhost', '127.0.0.1', '::1'])
+const IS_LOCAL_HOST = LOCAL_HOSTNAMES.has(self.location.hostname)
 
-self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)),
-  )
-  self.skipWaiting()
-})
+if (IS_LOCAL_HOST) {
+  self.addEventListener('install', () => {
+    self.skipWaiting()
+  })
 
-self.addEventListener('activate', (event) => {
-  event.waitUntil((async () => {
-    const keys = await caches.keys()
-    await Promise.all(
-      keys
-        .filter((key) => key !== CACHE_NAME && key !== NOTIFICATION_STATE_CACHE)
-        .map((key) => caches.delete(key)),
+  self.addEventListener('activate', (event) => {
+    event.waitUntil((async () => {
+      const keys = await caches.keys()
+      await Promise.all(
+        keys
+          .filter((key) => key.startsWith('entrenador-'))
+          .map((key) => caches.delete(key)),
+      )
+      await self.registration.unregister()
+      await self.clients.claim()
+    })())
+  })
+}
+
+if (!IS_LOCAL_HOST) {
+  self.addEventListener('install', (event) => {
+    event.waitUntil(
+      caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)),
     )
-    await self.clients.claim()
-    const state = await readNotificationState()
-    await scheduleNotificationTimers(state)
-  })())
-})
+    self.skipWaiting()
+  })
 
-self.addEventListener('message', (event) => {
-  const type = event.data?.type
-  if (type === 'SCHEDULE_NOTIFICATIONS') {
-    event.waitUntil(handleScheduleNotifications(event.data).then(() => {
-      event.ports[0]?.postMessage({ ok: true })
-    }))
-    return
-  }
-  if (type === 'CLEAR_NOTIFICATIONS') {
-    event.waitUntil(handleClearNotifications(event.data).then(() => {
-      event.ports[0]?.postMessage({ ok: true })
-    }))
-    return
-  }
-  if (type === 'MARK_NOTIFICATION_SENT') {
-    event.waitUntil(markNotificationSent(event.data?.date, event.data?.tag).then(() => {
-      event.ports[0]?.postMessage({ ok: true })
-    }))
-  }
-})
+  self.addEventListener('activate', (event) => {
+    event.waitUntil((async () => {
+      const keys = await caches.keys()
+      await Promise.all(
+        keys
+          .filter((key) => key !== CACHE_NAME && key !== NOTIFICATION_STATE_CACHE)
+          .map((key) => caches.delete(key)),
+      )
+      await self.clients.claim()
+      const state = await readNotificationState()
+      await scheduleNotificationTimers(state)
+    })())
+  })
 
-self.addEventListener('notificationclick', (event) => {
-  event.notification.close()
-  event.waitUntil(
-    (async () => {
-      const data = event.notification.data || {}
-      const url = typeof data.url === 'string' && data.url.length > 0 ? data.url : '/'
-      const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
-      const existing = clients.find((client) => client.url.includes(self.location.origin))
-      if (existing) {
-        await existing.focus()
-        if (typeof existing.navigate === 'function') {
-          await existing.navigate(url)
-          return
+  self.addEventListener('message', (event) => {
+    const type = event.data?.type
+    if (type === 'SCHEDULE_NOTIFICATIONS') {
+      event.waitUntil(handleScheduleNotifications(event.data).then(() => {
+        event.ports[0]?.postMessage({ ok: true })
+      }))
+      return
+    }
+    if (type === 'CLEAR_NOTIFICATIONS') {
+      event.waitUntil(handleClearNotifications(event.data).then(() => {
+        event.ports[0]?.postMessage({ ok: true })
+      }))
+      return
+    }
+    if (type === 'MARK_NOTIFICATION_SENT') {
+      event.waitUntil(markNotificationSent(event.data?.date, event.data?.tag).then(() => {
+        event.ports[0]?.postMessage({ ok: true })
+      }))
+    }
+  })
+
+  self.addEventListener('notificationclick', (event) => {
+    event.notification.close()
+    event.waitUntil(
+      (async () => {
+        const data = event.notification.data || {}
+        const url = typeof data.url === 'string' && data.url.length > 0 ? data.url : '/'
+        const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+        const existing = clients.find((client) => client.url.includes(self.location.origin))
+        if (existing) {
+          await existing.focus()
+          if (typeof existing.navigate === 'function') {
+            await existing.navigate(url)
+            return
+          }
         }
-      }
-      await self.clients.openWindow(url)
-    })(),
-  )
-})
+        await self.clients.openWindow(url)
+      })(),
+    )
+  })
 
-self.addEventListener('fetch', (event) => {
-  if (event.request.method !== 'GET') return
+  self.addEventListener('fetch', (event) => {
+    if (event.request.method !== 'GET') return
 
-  const requestUrl = new URL(event.request.url)
-  if (requestUrl.origin !== self.location.origin) return
+    const requestUrl = new URL(event.request.url)
+    if (requestUrl.origin !== self.location.origin) return
 
-  if (event.request.mode === 'navigate') {
+    if (event.request.mode === 'navigate') {
+      event.respondWith(
+        fetch(event.request)
+          .then((response) => {
+            const copy = response.clone()
+            caches.open(CACHE_NAME).then((cache) => cache.put('/', copy))
+            return response
+          })
+          .catch(async () => {
+            const cached = await caches.match(event.request)
+            return cached || caches.match('/') || Response.error()
+          }),
+      )
+      return
+    }
+
     event.respondWith(
-      fetch(event.request)
-        .then((response) => {
+      caches.match(event.request).then((cached) => {
+        if (cached) return cached
+
+        return fetch(event.request).then((response) => {
+          if (!response.ok) return response
           const copy = response.clone()
-          caches.open(CACHE_NAME).then((cache) => cache.put('/', copy))
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy))
           return response
         })
-        .catch(async () => {
-          const cached = await caches.match(event.request)
-          return cached || caches.match('/') || Response.error()
-        }),
+      }),
     )
-    return
-  }
-
-  event.respondWith(
-    caches.match(event.request).then((cached) => {
-      if (cached) return cached
-
-      return fetch(event.request).then((response) => {
-        if (!response.ok) return response
-        const copy = response.clone()
-        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy))
-        return response
-      })
-    }),
-  )
-})
+  })
+}
 
 async function handleScheduleNotifications(payload) {
   const state = await readNotificationState()
