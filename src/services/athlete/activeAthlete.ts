@@ -34,3 +34,15 @@ export function setSelfAthleteId(id: string | null): void {
 export function isSelfScopeActive(): boolean {
   return activeAthleteId === null || activeAthleteId === selfAthleteId
 }
+
+// Guard shared by async flows that must discard late writes after an athlete switch.
+let switchEpoch = 0
+
+export function getSwitchEpoch(): number {
+  return switchEpoch
+}
+
+export function bumpSwitchEpoch(): number {
+  switchEpoch += 1
+  return switchEpoch
+}

@@ -11,7 +11,7 @@ import type {
 } from '../types'
 import type { LoadAnalytics } from './loadAnalytics'
 import { buildActionAlerts } from './actionAlerts'
-import { todayISO } from '../utils/date'
+import { todayISO, toISO, fromISO, getWeekStart } from '../utils/date'
 
 export interface WeeklyActionLoopInput {
   sessions: Session[]
@@ -65,7 +65,11 @@ export function buildWeeklyActionSummary(input: WeeklyActionLoopInput): WeeklyAc
     if (mapped) actions.push(mapped)
   }
 
-  if (shouldReviewCoachNote(input.currentWeekSummary, weekSessions)) {
+  // El coach note es solo de la semana en curso: no sugerir generarlo para una
+  // semana pasada/futura (generateCoachNote lo rechaza y mostraría un error).
+  const currentWeekStart = toISO(getWeekStart(fromISO(today)))
+  const summaryIsCurrentWeek = input.currentWeekSummary?.weekStartDate === currentWeekStart
+  if (summaryIsCurrentWeek && shouldReviewCoachNote(input.currentWeekSummary, weekSessions)) {
     actions.push({
       id: 'weekly-review-coach-note',
       kind: 'review_coach_note',

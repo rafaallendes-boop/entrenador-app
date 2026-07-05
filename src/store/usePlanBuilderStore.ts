@@ -39,7 +39,7 @@ import {
 import { pushTrainingPlan } from '../services/syncService'
 import { supabase } from '../services/auth'
 import { useAuthStore } from './useAuthStore'
-import { ATHLETE_PROFILE_LOCAL_ID, getActiveAthleteId } from '../services/athlete/activeAthlete'
+import { ATHLETE_PROFILE_LOCAL_ID, getActiveAthleteId, getSwitchEpoch } from '../services/athlete/activeAthlete'
 
 const EMPTY_DRAFT_WEEKS_MESSAGE = 'No encontramos semanas para este plan. Descártalo y vuelve a prepararlo desde el inicio.'
 
@@ -81,6 +81,7 @@ interface PlanBuilderState {
   acceptPlan: () => Promise<{ errors: string[]; warnings: string[] }>
   discard: () => Promise<void>
   loadDraft: (planId: string) => Promise<void>
+  resetForAthleteSwitch: () => void
 }
 
 type PlanBuilderSet = (
@@ -88,6 +89,23 @@ type PlanBuilderSet = (
 ) => void
 
 let generationPollingController: AbortController | null = null
+
+function isCurrentSwitchEpoch(epochAtStart: number): boolean {
+  return getSwitchEpoch() === epochAtStart
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
+function setErrorIfCurrentSwitchEpoch(
+  set: PlanBuilderSet,
+  epochAtStart: number,
+  error: unknown,
+) {
+  if (!isCurrentSwitchEpoch(epochAtStart)) return
+  set({ status: 'error', lastError: errorMessage(error) })
+}
 
 async function persistPlanState(plan: TrainingPlan, weeks: TrainingPlanWeek[]) {
   await db.trainingPlans.put(plan)
@@ -149,7 +167,9 @@ function startGenerationPolling(
   planId: string,
   set: PlanBuilderSet,
   get: () => PlanBuilderState,
+  epochAtStart = getSwitchEpoch(),
 ) {
+  if (!isCurrentSwitchEpoch(epochAtStart)) return
   generationPollingController?.abort()
   const controller = new AbortController()
   generationPollingController = controller
@@ -157,6 +177,7 @@ function startGenerationPolling(
     planId,
     signal: controller.signal,
     onSnapshot: (snapshot) => {
+      if (!isCurrentSwitchEpoch(epochAtStart)) return
       // Ignore stale 'shell' snapshots while local store already shows generation in progress.
       // This prevents the LaunchDeck from flashing back when pushTrainingPlan was queued
       // (offline / slow network) and Supabase still shows the pre-generation state.
@@ -172,8 +193,7 @@ function startGenerationPolling(
     },
   }).catch((error) => {
     if (controller.signal.aborted) return
-    const msg = error instanceof Error ? error.message : String(error)
-    set({ status: 'error', lastError: msg })
+    setErrorIfCurrentSwitchEpoch(set, epochAtStart, error)
   }).finally(() => {
     if (generationPollingController === controller) {
       generationPollingController = null
@@ -189,12 +209,14 @@ async function resumeUncertainRemoteGeneration(
   planId: string,
   set: PlanBuilderSet,
   get: () => PlanBuilderState,
+  epochAtStart = getSwitchEpoch(),
 ): Promise<boolean> {
   const remoteSnapshot = await fetchPlanGenerationSnapshot(planId).catch(() => null)
+  if (!isCurrentSwitchEpoch(epochAtStart)) return false
   if (remoteSnapshot) {
     applyGenerationSnapshot(remoteSnapshot, set)
     if (!remoteSnapshot.isTerminal && !remoteSnapshot.isStalled) {
-      startGenerationPolling(remoteSnapshot.plan.id, set, get)
+      startGenerationPolling(remoteSnapshot.plan.id, set, get, epochAtStart)
     }
     return true
   }
@@ -209,7 +231,7 @@ async function resumeUncertainRemoteGeneration(
     generationJob: null,
     lastError: null,
   })
-  startGenerationPolling(planId, set, get)
+  startGenerationPolling(planId, set, get, epochAtStart)
   return true
 }
 
@@ -260,6 +282,7 @@ async function markGenerationStartRejected(input: {
   set: PlanBuilderSet
   publishRemote?: boolean
   failedWeekIndexes?: number[]
+  epochAtStart?: number
 }) {
   generationPollingController?.abort()
   generationPollingController = null
@@ -295,6 +318,7 @@ async function markGenerationStartRejected(input: {
       console.warn('[plan-builder] failed to publish rejected generation state', error)
     })
   }
+  if (input.epochAtStart != null && !isCurrentSwitchEpoch(input.epochAtStart)) return
 
   input.set({
     plan: failedPlan,
@@ -313,12 +337,14 @@ async function markGenerationStartRejected(input: {
 async function guardRemotePlanBuilderRateLimit(
   weekIndexes: readonly number[],
   set: PlanBuilderSet,
+  epochAtStart = getSwitchEpoch(),
 ): Promise<boolean> {
   try {
     await assertPlanBuilderWeekRateLimit(weekIndexes)
-    return true
+    return isCurrentSwitchEpoch(epochAtStart)
   } catch (error) {
-    const msg = error instanceof Error ? error.message : String(error)
+    if (!isCurrentSwitchEpoch(epochAtStart)) return false
+    const msg = errorMessage(error)
     set({
       status: 'error',
       lastError: msg,
@@ -336,12 +362,19 @@ async function releaseReservedRemoteUsage(planId: string, weekIndexes: readonly 
   })
 }
 
-function buildRunnerCallbacks(
+export function buildRunnerCallbacks(
   set: PlanBuilderSet,
   get: () => PlanBuilderState,
+  epochAtBuild = getSwitchEpoch(),
 ) {
+  const guarded = <A extends unknown[]>(fn: (...args: A) => void) =>
+    (...args: A): void => {
+      if (getSwitchEpoch() !== epochAtBuild) return
+      fn(...args)
+    }
+
   return {
-    onJobUpdate: (job: PlanGenerationJob) => {
+    onJobUpdate: guarded((job: PlanGenerationJob) => {
       set((state) => {
         const status = job.status === 'running' || job.status === 'queued'
           ? 'generating'
@@ -357,8 +390,8 @@ function buildRunnerCallbacks(
           lastError: job.status === 'failed' ? job.lastError ?? state.lastError : state.lastError,
         }
       })
-    },
-    onPlanUpdate: (plan: TrainingPlan, weeks: TrainingPlanWeek[]) => {
+    }),
+    onPlanUpdate: guarded((plan: TrainingPlan, weeks: TrainingPlanWeek[]) => {
       const orderedWeeks = sortWeeks(weeks)
       const issues = validatePlan({ plan, weeks: orderedWeeks })
       const failedWeekIndexes = plan.generationSummary?.failedWeeks ?? orderedWeeks
@@ -378,8 +411,8 @@ function buildRunnerCallbacks(
           ? buildGenerationFailureMessage(failedWeekIndexes)
           : null,
       }))
-    },
-    onWeekUpdate: (next: TrainingPlanWeek) => {
+    }),
+    onWeekUpdate: guarded((next: TrainingPlanWeek) => {
       set((state) => ({
         weeks: sortWeeks(state.weeks.map((week) => (week.weekIndex === next.weekIndex ? next : week))),
         currentWeekIndex: next.status === 'generating'
@@ -400,11 +433,11 @@ function buildRunnerCallbacks(
           ? { ...state.streamingTextByWeekIndex, [next.weekIndex]: state.streamingTextByWeekIndex[next.weekIndex] ?? '' }
           : { ...state.streamingTextByWeekIndex, [next.weekIndex]: '' },
       }))
-    },
-    onError: (message: string) => {
+    }),
+    onError: guarded((message: string) => {
       const state = get()
       set({ status: state.plan ? toBuilderStatus(state.plan.generationState) : 'error', lastError: message })
-    },
+    }),
   }
 }
 
@@ -420,7 +453,25 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
   generationJob: null,
   lastError: null,
 
+  resetForAthleteSwitch: () => {
+    generationPollingController?.abort()
+    generationPollingController = null
+    set({
+      plan: null,
+      weeks: [],
+      issues: [],
+      status: 'idle',
+      currentWeekIndex: null,
+      completedWeeks: 0,
+      failedWeekIndexes: [],
+      streamingTextByWeekIndex: {},
+      generationJob: null,
+      lastError: null,
+    })
+  },
+
   createDraft: async ({ profile, wizardConfig }) => {
+    const switchEpochAtStart = getSwitchEpoch()
     set({ status: 'shelling', lastError: null, issues: [] })
     try {
       const previousPlan = get().plan
@@ -441,6 +492,7 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
         await db.trainingPlans.delete(previousPlan.id)
       }
       await persistPlanState(plan, weeks)
+      if (!isCurrentSwitchEpoch(switchEpochAtStart)) return
       set({
         plan,
         weeks,
@@ -453,27 +505,28 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
         lastError: null,
       })
     } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error)
-      set({ status: 'error', lastError: msg })
+      setErrorIfCurrentSwitchEpoch(set, switchEpochAtStart, error)
     }
   },
 
   runGeneration: async (profile, options) => {
+    const switchEpochAtStart = getSwitchEpoch()
     const { plan, weeks } = get()
     if (!plan) return
     if (plan.generationState === 'generating' || get().status === 'generating') {
-      startGenerationPolling(plan.id, set, get)
+      startGenerationPolling(plan.id, set, get, switchEpochAtStart)
       return
     }
     if (canUseRemoteGeneration()) {
       const remoteSnapshot = await fetchPlanGenerationSnapshot(plan.id).catch(() => null)
+      if (!isCurrentSwitchEpoch(switchEpochAtStart)) return
       if (remoteSnapshot && options?.forceNew) {
         // Incluso forzando una generación nueva, nunca pisar un worker remoto vivo:
         // reiniciarlo borraría su jobId y el dedupe del backend dejaría de verlo,
         // habilitando dos workers en paralelo (doble costo).
         if (isActivePlanGeneration(remoteSnapshot.plan, Date.now())) {
           applyGenerationSnapshot(remoteSnapshot, set)
-          startGenerationPolling(remoteSnapshot.plan.id, set, get)
+          startGenerationPolling(remoteSnapshot.plan.id, set, get, switchEpochAtStart)
           return
         }
       } else if (
@@ -482,7 +535,7 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
       ) {
         applyGenerationSnapshot(remoteSnapshot, set)
         if (!remoteSnapshot.isTerminal && !remoteSnapshot.isStalled) {
-          startGenerationPolling(remoteSnapshot.plan.id, set, get)
+          startGenerationPolling(remoteSnapshot.plan.id, set, get, switchEpochAtStart)
         }
         return
       }
@@ -491,7 +544,7 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
     const targetWeekIndexes = resetWeeks.map((week) => week.weekIndex)
     const useRemoteGeneration = canUseRemoteGeneration()
     if (useRemoteGeneration) {
-      const canStart = await guardRemotePlanBuilderRateLimit(targetWeekIndexes, set)
+      const canStart = await guardRemotePlanBuilderRateLimit(targetWeekIndexes, set, switchEpochAtStart)
       if (!canStart) return
     }
 
@@ -514,27 +567,31 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
     let reservedRemoteUsage = false
     try {
       await persistPlanState(nextPlan, resetWeeks)
-      set({
-        plan: nextPlan,
-        weeks: resetWeeks,
-        generationJob: null,
-        status: 'generating',
-        lastError: null,
-        issues: [],
-        completedWeeks: 0,
-        failedWeekIndexes: [],
-        streamingTextByWeekIndex: {},
-      })
+      if (isCurrentSwitchEpoch(switchEpochAtStart)) {
+        set({
+          plan: nextPlan,
+          weeks: resetWeeks,
+          generationJob: null,
+          status: 'generating',
+          lastError: null,
+          issues: [],
+          completedWeeks: 0,
+          failedWeekIndexes: [],
+          streamingTextByWeekIndex: {},
+        })
+      }
       if (!useRemoteGeneration) {
         const job = await createPlanGenerationJob({ plan: nextPlan, weeks: resetWeeks, strategy: 'single' })
-        set({ generationJob: job })
+        if (isCurrentSwitchEpoch(switchEpochAtStart)) {
+          set({ generationJob: job })
+        }
+        const callbacks = buildRunnerCallbacks(set, get, switchEpochAtStart)
         void runPlanGenerationJob({
           jobId: job.id,
           profile,
-          callbacks: buildRunnerCallbacks(set, get),
+          callbacks,
         }).catch((error) => {
-          const msg = error instanceof Error ? error.message : String(error)
-          set({ status: 'error', lastError: msg })
+          setErrorIfCurrentSwitchEpoch(set, switchEpochAtStart, error)
         })
         return
       }
@@ -550,7 +607,7 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
         wizardConfig: nextPlan.wizardConfig,
         recentContext,
       })
-      startGenerationPolling(nextPlan.id, set, get)
+      startGenerationPolling(nextPlan.id, set, get, switchEpochAtStart)
     } catch (error) {
       // A definitive start failure means the worker never started: surface it
       // instead of resuming into a poll that can only end in a stalled state.
@@ -565,16 +622,16 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
           message: msg,
           set,
           publishRemote: remotePlanPublished,
+          epochAtStart: switchEpochAtStart,
         })
         return
       }
       if (canUseRemoteGeneration() && remotePlanPublished) {
         console.warn('[plan-builder] remote generation confirmation lost; keeping plan in background mode', error)
-        const resumed = await resumeUncertainRemoteGeneration(nextPlan.id, set, get)
+        const resumed = await resumeUncertainRemoteGeneration(nextPlan.id, set, get, switchEpochAtStart)
         if (resumed) return
       }
-      const msg = error instanceof Error ? error.message : String(error)
-      set({ status: 'error', lastError: msg })
+      setErrorIfCurrentSwitchEpoch(set, switchEpochAtStart, error)
     }
   },
 
@@ -593,6 +650,7 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
   },
 
   regenerateWeeks: async (weekIndexes, profile, repairInstructions) => {
+    const switchEpochAtStart = getSwitchEpoch()
     const { plan, weeks } = get()
     if (!plan) return
     const targetSet = new Set(weekIndexes)
@@ -602,7 +660,7 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
     const targetWeekIndexes = targets.map((week) => week.weekIndex)
     const useRemoteGeneration = canUseRemoteGeneration()
     if (useRemoteGeneration) {
-      const canStart = await guardRemotePlanBuilderRateLimit(targetWeekIndexes, set)
+      const canStart = await guardRemotePlanBuilderRateLimit(targetWeekIndexes, set, switchEpochAtStart)
       if (!canStart) return
     }
 
@@ -648,18 +706,20 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
           strategy: 'single',
           repairInstructions,
         })
-        set({
-          generationJob: job,
-          completedWeeks: countReadyWeeks(nextWeeks),
-          failedWeekIndexes: nextWeeks.filter((week) => week.status === 'error').map((week) => week.weekIndex),
-        })
+        if (isCurrentSwitchEpoch(switchEpochAtStart)) {
+          set({
+            generationJob: job,
+            completedWeeks: countReadyWeeks(nextWeeks),
+            failedWeekIndexes: nextWeeks.filter((week) => week.status === 'error').map((week) => week.weekIndex),
+          })
+        }
+        const callbacks = buildRunnerCallbacks(set, get, switchEpochAtStart)
         void runPlanGenerationJob({
           jobId: job.id,
           profile,
-          callbacks: buildRunnerCallbacks(set, get),
+          callbacks,
         }).catch((error) => {
-          const msg = error instanceof Error ? error.message : String(error)
-          set({ status: 'error', lastError: msg })
+          setErrorIfCurrentSwitchEpoch(set, switchEpochAtStart, error)
         })
         return
       }
@@ -677,12 +737,14 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
         targetWeekIndexes,
         repairInstructions,
       })
-      set({
-        generationJob: null,
-        completedWeeks: countReadyWeeks(nextWeeks),
-        failedWeekIndexes: nextWeeks.filter((week) => week.status === 'error').map((week) => week.weekIndex),
-      })
-      startGenerationPolling(generatingPlan.id, set, get)
+      if (isCurrentSwitchEpoch(switchEpochAtStart)) {
+        set({
+          generationJob: null,
+          completedWeeks: countReadyWeeks(nextWeeks),
+          failedWeekIndexes: nextWeeks.filter((week) => week.status === 'error').map((week) => week.weekIndex),
+        })
+      }
+      startGenerationPolling(generatingPlan.id, set, get, switchEpochAtStart)
     } catch (error) {
       // A definitive start failure means the worker never started: surface it
       // instead of resuming into a poll that can only end in a stalled state.
@@ -698,25 +760,26 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
           set,
           publishRemote: remotePlanPublished,
           failedWeekIndexes: targetWeekIndexes,
+          epochAtStart: switchEpochAtStart,
         })
         return
       }
       if (canUseRemoteGeneration() && remotePlanPublished) {
         console.warn('[plan-builder] remote regeneration confirmation lost; keeping plan in background mode', error)
-        const resumed = await resumeUncertainRemoteGeneration(generatingPlan.id, set, get)
+        const resumed = await resumeUncertainRemoteGeneration(generatingPlan.id, set, get, switchEpochAtStart)
         if (resumed) return
       }
-      const msg = error instanceof Error ? error.message : String(error)
-      set({ status: 'error', lastError: msg })
+      setErrorIfCurrentSwitchEpoch(set, switchEpochAtStart, error)
     }
   },
 
   retryFailedWeeks: async (profile) => {
+    const switchEpochAtStart = getSwitchEpoch()
     const { plan, weeks, failedWeekIndexes } = get()
     if (!plan || failedWeekIndexes.length === 0) return
     const useRemoteGeneration = canUseRemoteGeneration()
     if (useRemoteGeneration) {
-      const canStart = await guardRemotePlanBuilderRateLimit(failedWeekIndexes, set)
+      const canStart = await guardRemotePlanBuilderRateLimit(failedWeekIndexes, set, switchEpochAtStart)
       if (!canStart) return
     }
 
@@ -744,24 +807,25 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
           targetWeekIndexes: failedWeekIndexes,
           strategy: 'single',
         })
-        set({
-          plan: generatingPlan,
-          weeks: nextWeeks,
-          generationJob: job,
-          status: 'generating',
-          currentWeekIndex: failedWeekIndexes[0] ?? null,
-          completedWeeks: countReadyWeeks(nextWeeks),
-          failedWeekIndexes: [],
-          streamingTextByWeekIndex: {},
-          lastError: null,
-        })
+        if (isCurrentSwitchEpoch(switchEpochAtStart)) {
+          set({
+            plan: generatingPlan,
+            weeks: nextWeeks,
+            generationJob: job,
+            status: 'generating',
+            currentWeekIndex: failedWeekIndexes[0] ?? null,
+            completedWeeks: countReadyWeeks(nextWeeks),
+            failedWeekIndexes: [],
+            streamingTextByWeekIndex: {},
+            lastError: null,
+          })
+        }
         void runPlanGenerationJob({
           jobId: job.id,
           profile,
-          callbacks: buildRunnerCallbacks(set, get),
+          callbacks: buildRunnerCallbacks(set, get, switchEpochAtStart),
         }).catch((error) => {
-          const msg = error instanceof Error ? error.message : String(error)
-          set({ status: 'error', lastError: msg })
+          setErrorIfCurrentSwitchEpoch(set, switchEpochAtStart, error)
         })
         return
       }
@@ -778,18 +842,20 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
         recentContext,
         targetWeekIndexes: failedWeekIndexes,
       })
-      set({
-        plan: generatingPlan,
-        weeks: nextWeeks,
-        generationJob: null,
-        status: 'generating',
-        currentWeekIndex: failedWeekIndexes[0] ?? null,
-        completedWeeks: countReadyWeeks(nextWeeks),
-        failedWeekIndexes: [],
-        streamingTextByWeekIndex: {},
-        lastError: null,
-      })
-      startGenerationPolling(generatingPlan.id, set, get)
+      if (isCurrentSwitchEpoch(switchEpochAtStart)) {
+        set({
+          plan: generatingPlan,
+          weeks: nextWeeks,
+          generationJob: null,
+          status: 'generating',
+          currentWeekIndex: failedWeekIndexes[0] ?? null,
+          completedWeeks: countReadyWeeks(nextWeeks),
+          failedWeekIndexes: [],
+          streamingTextByWeekIndex: {},
+          lastError: null,
+        })
+      }
+      startGenerationPolling(generatingPlan.id, set, get, switchEpochAtStart)
     } catch (error) {
       // A definitive start failure means the worker never started: surface it
       // instead of resuming into a poll that can only end in a stalled state.
@@ -805,16 +871,16 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
           set,
           publishRemote: remotePlanPublished,
           failedWeekIndexes,
+          epochAtStart: switchEpochAtStart,
         })
         return
       }
       if (canUseRemoteGeneration() && remotePlanPublished) {
         console.warn('[plan-builder] remote retry confirmation lost; keeping plan in background mode', error)
-        const resumed = await resumeUncertainRemoteGeneration(generatingPlan.id, set, get)
+        const resumed = await resumeUncertainRemoteGeneration(generatingPlan.id, set, get, switchEpochAtStart)
         if (resumed) return
       }
-      const msg = error instanceof Error ? error.message : String(error)
-      set({ status: 'error', lastError: msg })
+      setErrorIfCurrentSwitchEpoch(set, switchEpochAtStart, error)
     }
   },
 
@@ -829,13 +895,17 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
   },
 
   resumeGenerationJobs: async (profile) => {
+    const switchEpochAtStart = getSwitchEpoch()
     try {
       const jobs = await getRunnablePlanGenerationJobs(profile.id)
+      if (!isCurrentSwitchEpoch(switchEpochAtStart)) return
       if (jobs.length === 0) return
       for (const job of jobs) {
         const plan = await db.trainingPlans.get(job.planId)
+        if (!isCurrentSwitchEpoch(switchEpochAtStart)) return
         if (!plan || plan.status !== 'draft') continue
         const weeks = sortWeeks(await db.trainingPlanWeeks.where('planId').equals(plan.id).toArray())
+        if (!isCurrentSwitchEpoch(switchEpochAtStart)) return
         set({
           plan,
           weeks,
@@ -849,19 +919,18 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
         void runPlanGenerationJob({
           jobId: job.id,
           profile,
-          callbacks: buildRunnerCallbacks(set, get),
+          callbacks: buildRunnerCallbacks(set, get, switchEpochAtStart),
         }).catch((error) => {
-          const msg = error instanceof Error ? error.message : String(error)
-          set({ status: 'error', lastError: msg })
+          setErrorIfCurrentSwitchEpoch(set, switchEpochAtStart, error)
         })
       }
     } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error)
-      set({ status: 'error', lastError: msg })
+      setErrorIfCurrentSwitchEpoch(set, switchEpochAtStart, error)
     }
   },
 
   cancelGeneration: async () => {
+    const switchEpochAtStart = getSwitchEpoch()
     const { plan } = get()
     if (!plan || plan.generationState !== 'generating') return
 
@@ -889,18 +958,21 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
     try {
       await db.trainingPlans.put(nextPlan)
       await pushTrainingPlan(nextPlan)
+      if (!isCurrentSwitchEpoch(switchEpochAtStart)) return
       set({
         plan: nextPlan,
         status: 'cancelled',
         lastError: 'Preparación detenida. Las semanas ya listas se conservan.',
       })
     } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error)
-      set({ lastError: msg })
+      if (isCurrentSwitchEpoch(switchEpochAtStart)) {
+        set({ lastError: errorMessage(error) })
+      }
     }
   },
 
   acceptPlan: async () => {
+    const switchEpochAtStart = getSwitchEpoch()
     const { plan, weeks } = get()
     if (!plan) return { errors: ['No hay plan activo'], warnings: [] }
     if (plan.generationState !== 'complete') {
@@ -919,9 +991,12 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
         : undefined,
     }
     const result = await commitPlan(acceptedPlan, weeks)
+    if (!isCurrentSwitchEpoch(switchEpochAtStart)) return result
     if (result.errors.length === 0) {
       const fresh = await db.trainingPlans.get(plan.id)
+      if (!isCurrentSwitchEpoch(switchEpochAtStart)) return result
       const freshWeeks = await db.trainingPlanWeeks.where('planId').equals(plan.id).toArray()
+      if (!isCurrentSwitchEpoch(switchEpochAtStart)) return result
       set({ plan: fresh ?? plan, weeks: freshWeeks.sort((a, b) => a.weekIndex - b.weekIndex), generationJob: null, status: 'done' })
     } else {
       set({ status: toBuilderStatus(plan.generationState), lastError: result.errors.join(' · ') })
@@ -930,6 +1005,7 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
   },
 
   discard: async () => {
+    const switchEpochAtStart = getSwitchEpoch()
     const { plan } = get()
     generationPollingController?.abort()
     generationPollingController = null
@@ -945,6 +1021,7 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
       await db.trainingPlans.delete(plan.id)
       await db.planGenerationJobs.where('planId').equals(plan.id).delete()
     }
+    if (!isCurrentSwitchEpoch(switchEpochAtStart)) return
     set({
       plan: null,
       weeks: [],
@@ -960,18 +1037,22 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
   },
 
   loadDraft: async (planId) => {
+    const switchEpochAtStart = getSwitchEpoch()
     let plan = await db.trainingPlans.get(planId)
+    if (!isCurrentSwitchEpoch(switchEpochAtStart)) return
 
     if (supabase && (!plan || plan.generationState === 'shell' || plan.generationState === 'generating')) {
       const remoteSnapshot = await fetchPlanGenerationSnapshot(planId).catch(() => null)
+      if (!isCurrentSwitchEpoch(switchEpochAtStart)) return
       if (remoteSnapshot) {
         applyGenerationSnapshot(remoteSnapshot, set)
         if (remoteSnapshot.plan.generationState === 'generating') {
-          startGenerationPolling(remoteSnapshot.plan.id, set, get)
+          startGenerationPolling(remoteSnapshot.plan.id, set, get, switchEpochAtStart)
         }
         return
       }
       plan = await db.trainingPlans.get(planId)
+      if (!isCurrentSwitchEpoch(switchEpochAtStart)) return
     }
 
     if (!plan) {
@@ -979,6 +1060,7 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
       return
     }
     const weeks = await db.trainingPlanWeeks.where('planId').equals(planId).toArray()
+    if (!isCurrentSwitchEpoch(switchEpochAtStart)) return
     weeks.sort((a, b) => a.weekIndex - b.weekIndex)
     if (plan.status === 'draft' && plan.generationState === 'shell' && weeks.length === 0) {
       set({
@@ -997,8 +1079,10 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
     const normalizedPlan = normalizePlanGenerationState(plan, weeks)
     if (normalizedPlan.generationState !== plan.generationState) {
       await db.trainingPlans.put(normalizedPlan)
+      if (!isCurrentSwitchEpoch(switchEpochAtStart)) return
     }
     const generationJob = await getLatestPlanGenerationJob(planId)
+    if (!isCurrentSwitchEpoch(switchEpochAtStart)) return
     const jobIsActive = generationJob?.status === 'queued' || generationJob?.status === 'running'
     const issues = validatePlan({ plan: normalizedPlan, weeks })
     const failedWeekIndexes = weeks.filter((week) => week.status === 'error').map((week) => week.weekIndex)
@@ -1015,7 +1099,7 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
       lastError: jobIsActive ? null : buildGenerationFailureMessage(failedWeekIndexes),
     })
     if (normalizedPlan.generationState === 'generating') {
-      startGenerationPolling(normalizedPlan.id, set, get)
+      startGenerationPolling(normalizedPlan.id, set, get, switchEpochAtStart)
     }
   },
 }))

@@ -11,4 +11,5 @@ export const ROUTES = {
   SETTINGS:         '/settings',
   IMPORT:           '/import',
   ONBOARDING:       '/onboarding',
+  COACH:            '/coach',
 } as const

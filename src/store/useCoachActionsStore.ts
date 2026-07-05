@@ -1,22 +1,27 @@
 import { create } from 'zustand'
 import type { AthleteProfile, CoachAction, CoachProposal, CoachProposalSource, Session, WeekSummary } from '../types'
 import { db } from '../db/db'
-import { recalculateWeekSummary } from '../db/queries'
 import { buildPlanGenerationSummary } from '../services/planGenerationSummary'
 import { isSessionTypeAllowedForPlan, sanitizeCoachActionsForPlan } from '../services/planningConstraints'
 import { applyCreateWeek } from '../services/planning/applyCreateWeek'
 import { normalizeCoachProposal } from '../services/coachProposalMetadata'
+import { getActiveAthleteId, getSelfAthleteId, getSwitchEpoch } from '../services/athlete/activeAthlete'
 import { filterRowsToActiveScope, withActiveAthleteStamp } from '../services/athlete/activeScopeFilter'
+import { isScopedAthleteId } from '../services/athlete/effectiveAthleteKey'
 import * as syncService from '../services/syncService'
 import { ensureSessionProtocols, generateDefaultProtocols } from '../services/trainingProtocols'
 import { enhanceStrengthSessionExercises } from '../services/training/strengthSessionStructure'
 import { normalizeSport } from '../utils/athlete'
+import { fromISO, getWeekStart, toISO } from '../utils/date'
 import { v4 as uuid } from '../utils/uuid'
 import { useCoachMemoryStore } from './useCoachMemoryStore'
 import { useTrainingStore } from './useTrainingStore'
 
 // Promise cache: repeated accept calls for the same proposal share the same work.
 const activeAcceptProposalPromises = new Map<string, Promise<AcceptProposalResult>>()
+let latestProposalsLoadRequestId = 0
+const ATHLETE_SWITCH_ABORT_MESSAGE =
+  'Cambiaste de atleta mientras se aplicaba la propuesta. La propuesta quedó pendiente; revísala con el atleta correcto activo.'
 
 interface ApplyCoachActionResult {
   warnings: string[]
@@ -43,19 +48,28 @@ interface CoachActionsState {
   acceptProposal: (id: string) => Promise<AcceptProposalResult>
   rejectProposal: (id: string) => Promise<void>
   getPendingProposals: () => CoachProposal[]
+  resetForAthleteSwitch: () => void
 }
 
 export const useCoachActionsStore = create<CoachActionsState>((set, get) => ({
   proposals: [],
 
   loadProposals: async () => {
+    const requestId = ++latestProposalsLoadRequestId
     const athleteProfile = useCoachMemoryStore.getState().athleteProfile
     const proposals = filterRowsToActiveScope(await db.coachProposals.orderBy('createdAt').toArray())
       .map((proposal) => ({
         ...proposal,
         actions: prepareProposalActionsForDisplay(proposal.actions, athleteProfile),
       }))
+    if (requestId !== latestProposalsLoadRequestId) return
     set({ proposals })
+  },
+
+  resetForAthleteSwitch: () => {
+    latestProposalsLoadRequestId += 1
+    activeAcceptProposalPromises.clear()
+    set({ proposals: [] })
   },
 
   addProposal: async (message, actions, chatMessageId, options) => {
@@ -117,6 +131,9 @@ export const useCoachActionsStore = create<CoachActionsState>((set, get) => ({
     if (active) return active
 
     const promise = (async (): Promise<AcceptProposalResult> => {
+      const switchEpochAtStart = getSwitchEpoch()
+      const activeAthleteIdAtStart = getActiveAthleteId()
+      const hasAthleteSwitchChanged = () => getSwitchEpoch() !== switchEpochAtStart
       const proposal = await db.coachProposals.get(id) ?? get().proposals.find((item) => item.id === id)
       if (!proposal || proposal.status !== 'pending') {
         return { errors: [], warnings: [] }
@@ -126,6 +143,15 @@ export const useCoachActionsStore = create<CoachActionsState>((set, get) => ({
       const athleteProfile = useCoachMemoryStore.getState().athleteProfile
       const errors: string[] = []
       const warnings: string[] = []
+      const addSwitchAbortError = () => {
+        if (!errors.includes(ATHLETE_SWITCH_ABORT_MESSAGE)) {
+          errors.push(ATHLETE_SWITCH_ABORT_MESSAGE)
+        }
+      }
+      if (hasAthleteSwitchChanged()) {
+        addSwitchAbortError()
+        return { errors, warnings }
+      }
       const normalized = normalizeCoachProposal(proposal.actions, {
         source: proposal.metadata?.source ?? 'chat',
         relatedAlertId: proposal.metadata?.relatedAlertId,
@@ -162,8 +188,18 @@ export const useCoachActionsStore = create<CoachActionsState>((set, get) => ({
 
       const appliedResults: Array<{ index: number; createdSessionIds: string[]; restoredSessions: Session[]; restoredWeekSummaries: WeekSummary[]; deletedWeekSummaryIds: string[] }> = []
       for (let i = 0; i < workingProposal.actions.length; i++) {
+        if (hasAthleteSwitchChanged()) {
+          addSwitchAbortError()
+          break
+        }
         try {
+          const weekSummarySnapshots = await captureWeekSummaryRollbackSnapshots(
+            workingProposal.actions[i],
+            trainingStore,
+            activeAthleteIdAtStart,
+          )
           const result = await applyCoachAction(workingProposal.actions[i], trainingStore, workingProposal.createdAt)
+          await appendWeekSummaryRollbackEntries(result, weekSummarySnapshots, activeAthleteIdAtStart)
           warnings.push(...result.warnings)
           appliedResults.push({
             index: i,
@@ -172,14 +208,32 @@ export const useCoachActionsStore = create<CoachActionsState>((set, get) => ({
             restoredWeekSummaries: result.restoredWeekSummaries,
             deletedWeekSummaryIds: result.deletedWeekSummaryIds,
           })
+          if (hasAthleteSwitchChanged()) {
+            addSwitchAbortError()
+            break
+          }
         } catch (error) {
           errors.push(`Accion ${i + 1} (${workingProposal.actions[i].type}): ${error}`)
+          if (hasAthleteSwitchChanged()) {
+            addSwitchAbortError()
+            break
+          }
         }
       }
 
+      if (hasAthleteSwitchChanged()) {
+        addSwitchAbortError()
+      }
+
       if (errors.length > 0 && appliedResults.length > 0) {
-        await rollbackAppliedActions(workingProposal.actions, appliedResults, trainingStore)
+        await rollbackAppliedActions(workingProposal.actions, appliedResults, trainingStore, {
+          refreshStore: !hasAthleteSwitchChanged(),
+        })
         warnings.push(`Se revirtieron ${appliedResults.length} acciones aplicadas antes del fallo.`)
+      }
+
+      if (hasAthleteSwitchChanged()) {
+        return { errors, warnings }
       }
 
       const nextProposal: CoachProposal = {
@@ -411,9 +465,8 @@ async function rollbackAppliedActions(
   actions: CoachAction[],
   appliedResults: Array<{ index: number; createdSessionIds: string[]; restoredSessions: Session[]; restoredWeekSummaries: WeekSummary[]; deletedWeekSummaryIds: string[] }>,
   store: ReturnType<typeof useTrainingStore.getState>,
+  options: { refreshStore: boolean } = { refreshStore: true },
 ): Promise<void> {
-  const affectedDates = new Set<string>()
-
   for (const result of [...appliedResults].reverse()) {
     const action = actions[result.index]
     try {
@@ -421,7 +474,6 @@ async function rollbackAppliedActions(
         for (const sessionId of result.createdSessionIds) {
           const current = await db.sessions.get(sessionId)
           if (!current) continue
-          affectedDates.add(current.date)
           await db.sessions.delete(sessionId)
           void syncService.deleteSession(sessionId)
         }
@@ -429,11 +481,6 @@ async function rollbackAppliedActions(
 
       if (result.restoredSessions.length > 0) {
         for (const snapshot of result.restoredSessions) {
-          const current = await db.sessions.get(snapshot.id)
-          if (current) {
-            affectedDates.add(current.date)
-          }
-          affectedDates.add(snapshot.date)
           await db.sessions.put(snapshot)
           void syncService.pushSession(snapshot)
         }
@@ -448,6 +495,7 @@ async function rollbackAppliedActions(
 
       if (result.deletedWeekSummaryIds.length > 0) {
         await db.weekSummaries.bulkDelete(result.deletedWeekSummaryIds)
+        void syncService.deleteWeekSummaries(result.deletedWeekSummaryIds)
       }
 
       if (result.restoredSessions.length > 0 || result.restoredWeekSummaries.length > 0 || result.deletedWeekSummaryIds.length > 0) {
@@ -460,15 +508,129 @@ async function rollbackAppliedActions(
     }
   }
 
-  for (const date of affectedDates) {
-    await recalculateWeekSummary(date)
-  }
-
+  if (!options.refreshStore) return
   const activeWeekStart = useTrainingStore.getState().loadedWeekStart
   if (activeWeekStart) {
     await store.loadWeek(activeWeekStart)
   }
   await store.loadAllSummaries()
+}
+
+function getWeekStartDate(dateISO: string): string {
+  return toISO(getWeekStart(fromISO(dateISO)))
+}
+
+function pushUniqueDate(dates: string[], date: string | null | undefined): void {
+  if (date && !dates.includes(date)) dates.push(date)
+}
+
+function getActionAffectedDates(
+  action: CoachAction,
+  store: ReturnType<typeof useTrainingStore.getState>,
+): string[] {
+  const dates: string[] = []
+
+  switch (action.type) {
+    case 'insert_recovery':
+    case 'add_session':
+      pushUniqueDate(dates, action.targetDate)
+      break
+
+    case 'create_week':
+      action.sessions?.forEach((session) => pushUniqueDate(dates, session.date))
+      break
+
+    case 'move_session': {
+      if (action.sessionId) {
+        try {
+          const id = resolveSessionId(action.sessionId, store)
+          const current = store.sessions.find((session) => session.id === id)
+          pushUniqueDate(dates, current?.date)
+        } catch {
+          // Validation handles the actionable error; rollback snapshots stay best-effort.
+        }
+      }
+      pushUniqueDate(dates, action.targetDate)
+      break
+    }
+
+    case 'skip_session':
+    case 'change_rpe':
+    case 'shorten_session':
+    case 'lengthen_session':
+    case 'replace_session_type':
+    case 'delete_session':
+    case 'update_session':
+      if (action.sessionId) {
+        try {
+          const id = resolveSessionId(action.sessionId, store)
+          const current = store.sessions.find((session) => session.id === id)
+          pushUniqueDate(dates, current?.date)
+        } catch {
+          // Validation handles the actionable error; rollback snapshots stay best-effort.
+        }
+      }
+      break
+  }
+
+  return dates
+}
+
+async function getWeekSummaryForAthleteScope(
+  weekStartDate: string,
+  athleteId: string | null,
+): Promise<WeekSummary | undefined> {
+  if (athleteId) {
+    const scoped = await db.weekSummaries
+      .where('[athleteId+weekStartDate]')
+      .equals([athleteId, weekStartDate])
+      .first()
+    if (scoped) return scoped
+
+    if (athleteId !== getSelfAthleteId()) return undefined
+    const candidates = await db.weekSummaries.where('weekStartDate').equals(weekStartDate).toArray()
+    return candidates.find((summary) => !isScopedAthleteId(summary.athleteId))
+  }
+
+  const candidates = await db.weekSummaries.where('weekStartDate').equals(weekStartDate).toArray()
+  const legacy = candidates.find((summary) => !isScopedAthleteId(summary.athleteId))
+  return legacy ?? (candidates.length === 1 ? candidates[0] : undefined)
+}
+
+async function captureWeekSummaryRollbackSnapshots(
+  action: CoachAction,
+  store: ReturnType<typeof useTrainingStore.getState>,
+  athleteId: string | null,
+): Promise<Array<{ weekStartDate: string; before: WeekSummary | null }>> {
+  const weekStarts = [...new Set(getActionAffectedDates(action, store).map(getWeekStartDate))]
+  const snapshots: Array<{ weekStartDate: string; before: WeekSummary | null }> = []
+
+  for (const weekStartDate of weekStarts) {
+    const before = await getWeekSummaryForAthleteScope(weekStartDate, athleteId)
+    snapshots.push({ weekStartDate, before: before ? { ...before } : null })
+  }
+
+  return snapshots
+}
+
+async function appendWeekSummaryRollbackEntries(
+  result: ApplyCoachActionResult,
+  snapshots: Array<{ weekStartDate: string; before: WeekSummary | null }>,
+  athleteId: string | null,
+): Promise<void> {
+  for (const snapshot of snapshots) {
+    if (snapshot.before) {
+      if (!result.restoredWeekSummaries.some((summary) => summary.id === snapshot.before?.id)) {
+        result.restoredWeekSummaries.push(snapshot.before)
+      }
+      continue
+    }
+
+    const created = await getWeekSummaryForAthleteScope(snapshot.weekStartDate, athleteId)
+    if (created && !result.deletedWeekSummaryIds.includes(created.id)) {
+      result.deletedWeekSummaryIds.push(created.id)
+    }
+  }
 }
 
 async function applyCoachAction(

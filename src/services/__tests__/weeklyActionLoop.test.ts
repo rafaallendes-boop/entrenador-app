@@ -91,6 +91,18 @@ describe('buildWeeklyActionSummary', () => {
     expect(summary.secondaryActions.some((action) => action.kind === 'review_coach_note')).toBe(true)
   })
 
+  it('does not suggest generating a coach note for a week that is not the current one', () => {
+    const summary = buildWeeklyActionSummary({
+      sessions: [makeSession({ date: '2026-03-30' })],
+      // Semana anterior (2026-03-30) distinta de la semana de today (2026-04-06).
+      currentWeekSummary: makeSummary({ weekStartDate: '2026-03-30', coachNote: undefined }),
+      today: '2026-04-08',
+    })
+
+    expect(summary.secondaryActions.some((action) => action.kind === 'review_coach_note')).toBe(false)
+    expect(summary.primaryAction?.kind).not.toBe('review_coach_note')
+  })
+
   it('creates a close_checkin action when completed sessions or day context are missing closure', () => {
     const summary = buildWeeklyActionSummary({
       sessions: [makeSession({ status: 'completed' })],

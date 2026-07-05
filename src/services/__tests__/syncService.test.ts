@@ -405,6 +405,32 @@ describe('syncService', () => {
     vi.resetModules()
   })
 
+  it('deletes week summaries remotely by id', async () => {
+    const sync = await import('../syncService')
+
+    await sync.deleteWeekSummaries([])
+    expect(deleteCalls).toHaveLength(0)
+
+    await sync.deleteWeekSummaries(['week-1', 'week-2'])
+
+    expect(deleteCalls).toEqual([
+      {
+        table: 'week_summaries',
+        filters: [
+          { op: 'eq', column: 'id', value: 'week-1' },
+          { op: 'eq', column: 'user_id', value: 'user-1' },
+        ],
+      },
+      {
+        table: 'week_summaries',
+        filters: [
+          { op: 'eq', column: 'id', value: 'week-2' },
+          { op: 'eq', column: 'user_id', value: 'user-1' },
+        ],
+      },
+    ])
+  })
+
   it('does not mark migration as complete when any table upsert fails', async () => {
     sessionsRows = [{
       id: 'session-1',
@@ -465,7 +491,7 @@ describe('syncService', () => {
     const weekSummaryUpsert = upsertCalls.find((call) => call.table === 'week_summaries')
     expect(weekSummaryUpsert).toBeTruthy()
     expect((weekSummaryUpsert?.payload as Array<Record<string, unknown>>)[0]?.updated_at).toBe(777)
-    expect(weekSummaryUpsert?.options).toEqual({ onConflict: 'user_id,week_start_date' })
+    expect(weekSummaryUpsert?.options).toEqual({ onConflict: 'athlete_id,week_start_date' })
   })
 
   it('uses logical unique keys for migration upserts that can collide across devices', async () => {
@@ -501,8 +527,8 @@ describe('syncService', () => {
 
     await syncService.migrateLocalDataToCloud('user-1')
 
-    expect(upsertCalls.find((call) => call.table === 'day_logs')?.options).toEqual({ onConflict: 'user_id,date' })
-    expect(upsertCalls.find((call) => call.table === 'week_summaries')?.options).toEqual({ onConflict: 'user_id,week_start_date' })
+    expect(upsertCalls.find((call) => call.table === 'day_logs')?.options).toEqual({ onConflict: 'athlete_id,date' })
+    expect(upsertCalls.find((call) => call.table === 'week_summaries')?.options).toEqual({ onConflict: 'athlete_id,week_start_date' })
     expect(upsertCalls.find((call) => call.table === 'chat_messages')?.options).toBeUndefined()
   })
 

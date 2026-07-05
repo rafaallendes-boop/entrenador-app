@@ -7,13 +7,16 @@ import { SESSION_TYPE_CONFIG } from '../../constants/sessionTypes'
 interface WeekStripProps {
   showNav?: boolean
   onDayPress?: (iso: string) => void
+  /** Fija la semana mostrada; por defecto sigue la semana activa de useUIStore. */
+  weekStart?: string
 }
 
-export default function WeekStrip({ showNav = true, onDayPress }: WeekStripProps) {
+export default function WeekStrip({ showNav = true, onDayPress, weekStart }: WeekStripProps) {
   const { currentWeekStart, selectedDate, setSelectedDate, navigateWeek } = useUIStore()
   const sessions = useTrainingStore(s => s.sessions)
 
-  const weekDays = getWeekDays(fromISO(currentWeekStart))
+  const activeWeekStart = weekStart ?? currentWeekStart
+  const weekDays = getWeekDays(fromISO(activeWeekStart))
 
   const getSessionsForDate = (dateISO: string) =>
     sessions.filter(s => s.date === dateISO)
@@ -29,7 +32,7 @@ export default function WeekStrip({ showNav = true, onDayPress }: WeekStripProps
             <ChevronLeft size={15} />
           </button>
           <span className="font-display text-[11px] font-semibold uppercase tracking-[0.24em] text-ink-faint">
-            {fromISO(currentWeekStart).toLocaleString('es', { month: 'long', year: 'numeric' })}
+            {fromISO(activeWeekStart).toLocaleString('es', { month: 'long', year: 'numeric' })}
           </span>
           <button
             onClick={() => navigateWeek('next')}

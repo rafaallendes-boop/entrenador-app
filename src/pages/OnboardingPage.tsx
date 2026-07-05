@@ -1,9 +1,11 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import OnboardingChoiceButton from '../components/onboarding/OnboardingChoiceButton'
 import OnboardingStepFrame from '../components/onboarding/OnboardingStepFrame'
 import { ROUTES } from '../constants/routes'
 import { useOnboardingForm } from '../hooks/useOnboardingForm'
+import { db } from '../db/db'
+import { getActiveAthleteId, isSelfScopeActive } from '../services/athlete/activeAthlete'
 import { useAuthStore } from '../store/useAuthStore'
 import { useCoachMemoryStore } from '../store/useCoachMemoryStore'
 import type { SupportedSport, TrainingPriority } from '../types'
@@ -80,7 +82,26 @@ const TEXT_INPUT_CLASS = 'w-full rounded-xl px-4 py-3 text-sm text-ink placehold
 export default function OnboardingPage() {
   const navigate = useNavigate()
   const user = useAuthStore((state) => state.user)
+  const activeAthleteId = useAuthStore((state) => state.activeAthleteId)
   const { athleteProfile, hasLoaded, isSaving, loadMemory, saveAthleteProfile } = useCoachMemoryStore()
+
+  // /onboarding vive FUERA de AppShell → sin CoachContextBar ni remount por key:
+  // mostrar aquí un chip con el atleta gestionado activo (spec 2b §6).
+  const [managedAthleteName, setManagedAthleteName] = useState<string | null>(null)
+
+  useEffect(() => {
+    const active = getActiveAthleteId()
+    let cancelled = false
+    const resolveManagedName = async (): Promise<string | null> => {
+      if (!active || isSelfScopeActive()) return null
+      const row = await db.athletes.get(active)
+      return row?.displayName ?? null
+    }
+    void resolveManagedName().then((name) => {
+      if (!cancelled) setManagedAthleteName(name)
+    })
+    return () => { cancelled = true }
+  }, [activeAthleteId])
   const {
     step,
     name,
@@ -288,7 +309,7 @@ export default function OnboardingPage() {
       totalSteps={TOTAL_STEPS}
       title={
         step === 1
-          ? 'Cuéntame quién eres'
+          ? (managedAthleteName ? `Perfil de ${managedAthleteName}` : 'Cuéntame quién eres')
           : step === 2
             ? '¿Cuál es tu disciplina principal?'
           : step === 3
@@ -299,7 +320,9 @@ export default function OnboardingPage() {
       }
       description={
         step === 1
-          ? 'RallyIQ usará esta información para personalizar tus recomendaciones desde el primer día.'
+          ? (managedAthleteName
+              ? `Estás completando el perfil de ${managedAthleteName}. RallyIQ usará esta información para personalizar su plan.`
+              : 'RallyIQ usará esta información para personalizar tus recomendaciones desde el primer día.')
           : step === 2
             ? 'Esto ayuda a priorizar mejor la planificación cuando entrenas más de un deporte.'
           : step === 3

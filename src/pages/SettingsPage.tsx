@@ -39,7 +39,7 @@ import { useAIDebugStore } from '../store/useAIDebugStore'
 import { useTrainingStore } from '../store/useTrainingStore'
 import { currentWeekStartISO } from '../utils/date'
 import { getEnabledSports, getSportPrioritySummary } from '../utils/athlete'
-import { clearOnboardingSkipped } from '../utils/onboarding'
+import { clearAllOnboardingSkipped, clearOnboardingSkipped } from '../utils/onboarding'
 import type { AITechnicalResult, AthleteProfile, Session } from '../types'
 import { buildMacroWeekCoherenceSummary } from '../services/macroWeekCoherence'
 import { isDevToolsEnabled } from '../services/devTools'
@@ -422,7 +422,7 @@ export default function SettingsPage() {
     try {
       if (!currentUser) {
         await clearAllLocalAppData()
-        clearOnboardingSkipped(undefined)
+        clearAllOnboardingSkipped(undefined)
         await refreshCounts(setDataCounts)
         await loadMemory()
         await loadWeek(currentWeekStartISO())
@@ -441,7 +441,7 @@ export default function SettingsPage() {
         return
       }
 
-      clearOnboardingSkipped(currentUser.id)
+      clearAllOnboardingSkipped(currentUser.id)
       await refreshCounts(setDataCounts)
       await loadMemory()
       await loadWeek(currentWeekStartISO())

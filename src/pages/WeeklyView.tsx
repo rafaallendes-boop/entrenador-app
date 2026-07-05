@@ -6,7 +6,7 @@ import { useCoachActionsStore } from '../store/useCoachActionsStore'
 import { useCoachMemoryStore } from '../store/useCoachMemoryStore'
 import { useUIStore } from '../store/useUIStore'
 
-import { formatFullDate, fromISO, getWeekDays, getWeekStart, toISO, isDateToday, todayISO } from '../utils/date'
+import { formatFullDate, fromISO, getWeekDays, getWeekStart, toISO, isDateToday, todayISO, currentWeekStartISO } from '../utils/date'
 import WeekStrip from '../components/week/WeekStrip'
 import WeekSummaryCard from '../components/week/WeekSummaryCard'
 import MacroPhaseSummaryCard from '../components/week/MacroPhaseSummaryCard'
@@ -53,6 +53,8 @@ export default function WeeklyView() {
   const navigate = useNavigate()
   const weekDays = getWeekDays(fromISO(currentWeekStart))
   const today = todayISO()
+  // El resumen semanal solo se genera para la semana en curso (el store lo exige).
+  const isCurrentWeek = currentWeekStart === currentWeekStartISO()
 
   const getSessionsForDay = (dateISO: string, block?: TimeBlock) =>
     sessions
@@ -344,7 +346,7 @@ export default function WeeklyView() {
         <div className="min-w-0">
           <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
             <p className="font-display text-sm font-semibold uppercase tracking-wider text-ink-muted">Resumen semanal</p>
-            {currentWeekSummary && (
+            {currentWeekSummary && isCurrentWeek && (
               <button
                 type="button"
                 onClick={handleGenerateCoachNote}

@@ -16,7 +16,7 @@ import type { Session, DayLog, WeekSummary, SessionStatus } from '../types'
 import { CoachEngine } from '../services/ai/CoachEngine'
 import { optimizeChatContext } from '../services/ai/contextOptimizer'
 import * as syncService from '../services/syncService'
-import { toISO, fromISO, getWeekStart } from '../utils/date'
+import { toISO, fromISO, getWeekStart, currentWeekStartISO } from '../utils/date'
 import { v4 as uuid } from '../utils/uuid'
 import { withActiveAthleteStamp } from '../services/athlete/activeScopeFilter'
 
@@ -39,6 +39,7 @@ interface TrainingState {
   toggleExercise: (sessionId: string, exerciseId: string) => Promise<void>
   saveDayLog: (date: string, patch: Partial<Omit<DayLog, 'id' | 'date' | 'updatedAt'>>) => Promise<void>
   generateCoachNote: (weekStart: string) => Promise<string>
+  resetForAthleteSwitch: () => void
 }
 
 let latestWeekLoadRequestId = 0
@@ -77,6 +78,19 @@ export const useTrainingStore = create<TrainingState>((set, get) => ({
   allWeekSummaries: [],
   isLoading: false,
   loadedWeekStart: null,
+
+  resetForAthleteSwitch: () => {
+    latestWeekLoadRequestId += 1
+    latestAllSummariesLoadRequestId += 1
+    set({
+      sessions: [],
+      dayLogs: {},
+      currentWeekSummary: null,
+      allWeekSummaries: [],
+      isLoading: false,
+      loadedWeekStart: null,
+    })
+  },
 
   loadWeek: async (weekStart) => {
     const requestId = ++latestWeekLoadRequestId
@@ -235,6 +249,11 @@ export const useTrainingStore = create<TrainingState>((set, get) => ({
   },
 
   generateCoachNote: async (weekStart) => {
+    // El resumen semanal solo aplica a la semana en curso: generarlo en semanas
+    // pasadas/futuras lo filtraba al dashboard (que lee la semana activa).
+    if (toISO(getWeekStart(fromISO(weekStart))) !== currentWeekStartISO()) {
+      throw new Error('El resumen semanal solo se puede generar para la semana actual.')
+    }
     set({ isLoading: true })
     try {
       const [sessions, weekDayLogs, currentWeekSummary, athleteProfile] = await Promise.all([

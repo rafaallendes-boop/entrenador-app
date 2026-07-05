@@ -2040,6 +2040,11 @@ export async function pushWeekSummary(summary: WeekSummary): Promise<void> {
   await upsertRow('week_summaries', withAthleteId(weekSummaryToRow(summary, userId), summary.athleteId))
 }
 
+export async function deleteWeekSummaries(ids: string[]): Promise<void> {
+  if (ids.length === 0) return
+  await Promise.all(ids.map((id) => deleteRow('week_summaries', id)))
+}
+
 export async function pushChatMessage(msg: ChatMessage): Promise<void> {
   const userId = getUserId()
   if (!userId) return
@@ -3433,8 +3438,8 @@ export async function migrateLocalDataToCloud(userId: string): Promise<void> {
 
     const migrationResults = await Promise.all([
       upsertMigrationRows('sessions', sessionRows, { onConflict: 'id' }),
-      upsertMigrationRows('day_logs', dayLogRows, { onConflict: 'user_id,date' }),
-      upsertMigrationRows('week_summaries', weekRows, { onConflict: 'user_id,week_start_date' }),
+      upsertMigrationRows('day_logs', dayLogRows, { onConflict: 'athlete_id,date' }),
+      upsertMigrationRows('week_summaries', weekRows, { onConflict: 'athlete_id,week_start_date' }),
       upsertMigrationRows('chat_messages', chatRows),
       upsertMigrationRows('coach_proposals', proposalRows, { onConflict: 'id' }),
     ])

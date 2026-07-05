@@ -8,9 +8,14 @@ vi.mock('../../services/syncService', () => ({
   deleteSession: vi.fn(async () => {}),
 }))
 
+vi.mock('../../services/ai/CoachEngine', () => ({
+  CoachEngine: { send: vi.fn(async () => ({ message: 'nota generada' })) },
+}))
+
 import { db } from '../../db/db'
 import { resolveVisibleSessionsAfterUpdate, shouldKeepDayLogInVisibleWeek, useTrainingStore } from '../useTrainingStore'
 import { setActiveAthleteId, setSelfAthleteId } from '../../services/athlete/activeAthlete'
+import { currentWeekStartISO } from '../../utils/date'
 
 function makeSession(partial: Partial<Session> = {}): Session {
   return {
@@ -90,5 +95,32 @@ describe('addSession athlete stamping (Dexie real)', () => {
 
     expect(created.athleteId).toBe('ath_m_1')
     expect((await db.sessions.get(created.id))?.athleteId).toBe('ath_m_1')
+  })
+})
+
+describe('generateCoachNote — solo semana actual (Dexie real)', () => {
+  beforeEach(async () => {
+    db.close()
+    await db.delete()
+    await db.open()
+    setSelfAthleteId('ath_self')
+    setActiveAthleteId('ath_self')
+  })
+  afterEach(() => {
+    setActiveAthleteId(null)
+    setSelfAthleteId(null)
+    db.close()
+  })
+
+  it('rechaza generar la nota para una semana que no es la actual', async () => {
+    const pastWeek = '2020-01-06' // lunes histórico, nunca la semana en curso
+    await expect(useTrainingStore.getState().generateCoachNote(pastWeek)).rejects.toThrow(/semana actual/i)
+    const stored = await db.weekSummaries.where('weekStartDate').equals(pastWeek).first()
+    expect(stored?.coachNote).toBeUndefined()
+  })
+
+  it('genera la nota para la semana actual', async () => {
+    const note = await useTrainingStore.getState().generateCoachNote(currentWeekStartISO())
+    expect(note).toBe('nota generada')
   })
 })

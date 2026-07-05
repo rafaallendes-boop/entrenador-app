@@ -19,6 +19,7 @@ interface CoachMemoryState {
     patch: Partial<Omit<AthleteProfile, 'id' | 'updatedAt'>>,
     options?: AthleteProfileSaveOptions,
   ) => Promise<void>
+  resetForAthleteSwitch: () => void
 }
 
 let latestMemoryLoadRequestId = 0
@@ -30,6 +31,11 @@ export const useCoachMemoryStore = create<CoachMemoryState>((set) => ({
   hasLoaded: false,
   lastLoadedAt: null,
 
+  resetForAthleteSwitch: () => {
+    latestMemoryLoadRequestId += 1
+    set({ coachMemory: '', athleteProfile: null, isSaving: false, hasLoaded: false, lastLoadedAt: null })
+  },
+
   loadMemory: async () => {
     const requestId = ++latestMemoryLoadRequestId
     const profile = await getAthleteProfile()
@@ -38,7 +44,7 @@ export const useCoachMemoryStore = create<CoachMemoryState>((set) => ({
   },
 
   saveMemory: async (coachMemory) => {
-    latestMemoryLoadRequestId += 1
+    const requestId = ++latestMemoryLoadRequestId
     set({ isSaving: true })
     try {
       if (!syncService.canWriteAthleteProfileLocally('automatic')) {
@@ -47,15 +53,18 @@ export const useCoachMemoryStore = create<CoachMemoryState>((set) => ({
       }
       const profile = await upsertAthleteProfile({ coachMemory: coachMemory.trim() || undefined })
       void syncService.pushAthleteProfile(profile)
+      // Un switch de atleta (resetForAthleteSwitch) bumpea el token: descartar el
+      // write de estado para no re-contaminar con el perfil del atleta anterior.
+      if (requestId !== latestMemoryLoadRequestId) return
       set({ coachMemory: profile.coachMemory ?? '', athleteProfile: profile, isSaving: false, hasLoaded: true, lastLoadedAt: Date.now() })
     } catch (error) {
-      set({ isSaving: false })
+      if (requestId === latestMemoryLoadRequestId) set({ isSaving: false })
       throw error
     }
   },
 
   saveAthleteProfile: async (patch, options) => {
-    latestMemoryLoadRequestId += 1
+    const requestId = ++latestMemoryLoadRequestId
     set({ isSaving: true })
     try {
       const source = options?.source ?? 'automatic'
@@ -65,9 +74,12 @@ export const useCoachMemoryStore = create<CoachMemoryState>((set) => ({
       }
       const profile = await upsertAthleteProfile(patch)
       void syncService.pushAthleteProfile(profile, { source })
+      // Un switch de atleta (resetForAthleteSwitch) bumpea el token: descartar el
+      // write de estado para no re-contaminar con el perfil del atleta anterior.
+      if (requestId !== latestMemoryLoadRequestId) return
       set({ athleteProfile: profile, coachMemory: profile.coachMemory ?? '', isSaving: false, hasLoaded: true, lastLoadedAt: Date.now() })
     } catch (error) {
-      set({ isSaving: false })
+      if (requestId === latestMemoryLoadRequestId) set({ isSaving: false })
       throw error
     }
   },

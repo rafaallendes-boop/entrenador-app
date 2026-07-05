@@ -2,6 +2,7 @@ import { BrowserRouter, Navigate, Routes, Route, useNavigate, useLocation } from
 import { Component, lazy, Suspense, useEffect, type ErrorInfo, type ReactNode } from 'react'
 import AppShell from './components/layout/AppShell'
 import AuthGate from './components/auth/AuthGate'
+import CoachScopeGuard from './components/layout/CoachScopeGuard'
 import { ROUTES } from './constants/routes'
 import { useAuthStore } from './store/useAuthStore'
 import { runFullSync, migrateLocalDataToCloud, prepareLocalDataForUser, hasInitialRemotePullCompleted } from './services/syncService'
@@ -26,6 +27,7 @@ const PlanBuilderV2Page = lazy(() => import('./pages/PlanBuilderV2Page'))
 const ImportPDF = lazy(() => import('./pages/ImportPDF'))
 const SettingsPage = lazy(() => import('./pages/SettingsPage'))
 const OnboardingPage = lazy(() => import('./pages/OnboardingPage'))
+const CoachRosterPage = lazy(() => import('./pages/CoachRosterPage'))
 
 const AUTO_SYNC_RETRY_COOLDOWN_MS = 15_000
 
@@ -298,6 +300,7 @@ export default function App() {
     <BrowserRouter>
       <Suspense fallback={<RouteFallback />}>
         <AuthGate>
+          <CoachScopeGuard />
           <OnboardingGuard>
             <Routes>
               <Route path={ROUTES.ONBOARDING} element={<OnboardingPage />} />
@@ -310,7 +313,7 @@ export default function App() {
                 <Route path={ROUTES.COMPETITION_PLAN} element={<RouteBoundary><CompetitionPlanPage /></RouteBoundary>} />
                 <Route path={ROUTES.PLAN_BUILDER_V2} element={<RouteBoundary><PlanBuilderV2Page /></RouteBoundary>} />
                 <Route path="/history" element={<Navigate to={ROUTES.COMPETITION_PLAN} replace />} />
-                <Route path="/coach" element={<Navigate to={ROUTES.CHAT} replace />} />
+                <Route path={ROUTES.COACH} element={<RouteBoundary><CoachRosterPage /></RouteBoundary>} />
                 <Route path="/dashboard" element={<Navigate to={ROUTES.HOME} replace />} />
                 <Route path="/plan" element={<Navigate to={ROUTES.COMPETITION_PLAN} replace />} />
                 <Route path="/plan/dashboard" element={<Navigate to={ROUTES.COMPETITION_PLAN} replace />} />

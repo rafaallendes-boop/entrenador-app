@@ -4,8 +4,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { useTrainingStore } from '../store/useTrainingStore'
 import { useCoachActionsStore } from '../store/useCoachActionsStore'
 import { useCoachMemoryStore } from '../store/useCoachMemoryStore'
-import { useUIStore } from '../store/useUIStore'
-import { todayISO, formatFullDate } from '../utils/date'
+import { todayISO, formatFullDate, currentWeekStartISO } from '../utils/date'
 import { ROUTES } from '../constants/routes'
 import WeekStrip from '../components/week/WeekStrip'
 import LoadIndicator from '../components/dashboard/LoadIndicator'
@@ -34,7 +33,10 @@ export default function Dashboard() {
   const { sessions, dayLogs, currentWeekSummary, isLoading, loadWeek, allWeekSummaries } = useTrainingStore()
   const { addProposal, acceptProposal, rejectProposal } = useCoachActionsStore()
   const { athleteProfile, loadMemory, saveAthleteProfile } = useCoachMemoryStore()
-  const { currentWeekStart } = useUIStore()
+  // El dashboard siempre refleja la semana en curso, no la semana que el usuario
+  // esté navegando en WeeklyView (antes compartían currentWeekStart vía useUIStore
+  // y la nota/sesiones de otra semana se filtraban aquí).
+  const currentWeekStart = currentWeekStartISO()
   const location = useLocation()
   const navigate = useNavigate()
   const today = todayISO()
@@ -353,7 +355,7 @@ export default function Dashboard() {
           </Suspense>
 
           <div className="rounded-card border border-surface-soft/70 bg-surface-panel shadow-panel">
-            <WeekStrip showNav onDayPress={(iso) => navigate(ROUTES.DAY(iso))} />
+            <WeekStrip weekStart={currentWeekStart} showNav={false} onDayPress={(iso) => navigate(ROUTES.DAY(iso))} />
           </div>
 
           {upcomingSessions.length > 0 && (

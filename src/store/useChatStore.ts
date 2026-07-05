@@ -16,6 +16,7 @@ import { resolveChatRoute, type ChatRouteKind } from '../services/chatRouting'
 import { WeekCreatorEngine } from '../services/weekCreator/WeekCreatorEngine'
 
 let activeChatAbortController: AbortController | null = null
+let latestHistoryLoadRequestId = 0
 const orphanProposalRepairLocks = new Map<string, Promise<ChatMessage[]>>()
 
 interface ChatState {
@@ -31,6 +32,7 @@ interface ChatState {
   sendMessage: (content: string, context?: ChatContext) => Promise<{ route: ChatRouteKind }>
   newSession: () => Promise<void>
   deleteCurrentSession: () => Promise<void>
+  resetForAthleteSwitch: () => void
 }
 
 export const useChatStore = create<ChatState>((set, get) => ({
@@ -42,10 +44,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
   error: null,
 
   loadHistory: async () => {
+    const requestId = ++latestHistoryLoadRequestId
     // La key de sesión es athlete-scoped: re-resolverla en cada load para que un
     // cambio de atleta (remount) no arrastre el hilo del atleta anterior.
     const resolvedSessionId = getOrCreateChatSessionId()
     if (resolvedSessionId !== get().currentSessionId) {
+      if (requestId !== latestHistoryLoadRequestId) return
       set({ currentSessionId: resolvedSessionId, messages: [] })
     }
     let sessionId = resolvedSessionId
@@ -57,6 +61,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         .equals(sessionId)
         .sortBy('timestamp'),
     )
+    if (requestId !== latestHistoryLoadRequestId) return
 
     if (msgs.length === 0 && isLocalOnlyChatSessionId(sessionId)) {
       // Adopt only a thread within the ACTIVE athlete's scope — never another athlete's.
@@ -65,6 +70,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         .reverse()
         .filter((message) => isRowInActiveScope(message.athleteId))
         .first()
+      if (requestId !== latestHistoryLoadRequestId) return
       if (latest?.chatSessionId) {
         sessionId = latest.chatSessionId
         setStoredChatSessionId(sessionId)
@@ -74,12 +80,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
             .equals(sessionId)
             .sortBy('timestamp'),
         )
+        if (requestId !== latestHistoryLoadRequestId) return
         set({ currentSessionId: sessionId })
       }
     }
 
     const repairedMsgs = await repairOrphanProposalMessages(sessionId, msgs)
-    if (sessionId !== get().currentSessionId) return
+    if (requestId !== latestHistoryLoadRequestId || sessionId !== get().currentSessionId) return
     set({ messages: repairedMsgs })
   },
 
@@ -315,6 +322,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
     await syncService.deleteChatMessages(messageIds)
     // After deleting current session, start a new one
     await get().newSession()
+  },
+
+  resetForAthleteSwitch: () => {
+    activeChatAbortController?.abort()
+    activeChatAbortController = null
+    latestHistoryLoadRequestId += 1
+    set({ messages: [], isLoading: false, streamingText: '', responsePhase: 'idle', error: null })
   },
 }))
 
