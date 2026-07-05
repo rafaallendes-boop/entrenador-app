@@ -1,6 +1,6 @@
 # RallyIQ - Project Review and Roadmap
 
-Actualizado: 2026-07-03
+Actualizado: 2026-07-05
 
 Base de contraste:
 
@@ -8,8 +8,8 @@ Base de contraste:
 - `007` aplicado y F2 data prereqs en `6e33926`.
 - `008a` ya fue corrido en produccion con 0 nulls / 0 duplicados reportados.
 - `008b` fue aplicado en produccion despues del deploy del write path; `008a` volvio a reportar 0 duplicados/null debt operativo.
-- Athlete-Aware Core esta implementado localmente: scoping de lecturas, seleccion activa, chat session por atleta y estampado local. Falta deploy + smoke.
-- Coach UI F2-lite tiene spec aprobado conceptualmente en `docs/superpowers/specs/2026-07-02-coach-ui-f2-mvp-design.md`; todavia no esta implementado.
+- Athlete-Aware Core desplegado y smokeado en produccion: single-athlete no cambio.
+- **Coach UI F2-lite Parte 2b desplegada en produccion (2026-07-05):** switcher + roster `/coach` + onboarding athlete-aware, gated por `VITE_COACH_ACCOUNTS`. Migracion `010a/b/c` (day/week full unique expand->contract) aplicada; `008a`/`010a` post-deploy en 0. Smoke self + gestionado OK.
 - Superficie publica actualizada para demo multideporte: Landing/Features/Pricing limpian residuos visibles de version/localidad, reducen sesgo squash-only y Pricing queda en 3 planes: Base gratis, Coach Semanal y Avanzado con Plan Builder.
 
 ## Resumen Ejecutivo
@@ -26,7 +26,7 @@ Mi lectura como lider tecnico: ya se puede preparar demo y piloto acompanado. No
 
 ## Estado Actual En Una Frase
 
-RallyIQ esta cerca de un piloto manual serio; el proximo paso no deberia ser abrir beta, sino desplegar/smokear Athlete-Aware Core, limpiar confianza publica/legal y decidir si F2-lite Parte 2 entra antes o despues del primer piloto acompanado.
+RallyIQ ya opera multi-atleta en produccion (Coach F2-lite Parte 2b desplegada y smokeada); el proximo cuello de botella no es tecnico sino comercial/de confianza: rutas legales publicas + consentimiento, QA deportiva de 3 planes arquetipo (ahora posible como atletas gestionados) y arrancar el primer piloto acompanado.
 
 ## Porcentaje De Avance
 
@@ -248,16 +248,16 @@ Objetivo: confirmar en produccion que el core athlete-aware no altera la experie
 - [x] `008b` aplicado en produccion.
 - [x] `008a` post-008b en 0.
 - [x] Athlete-Aware Core implementado.
-- [ ] Confirmar deploy del commit actual.
-- [ ] Hard refresh / confirmar bundle nuevo en prod.
-- [ ] Smoke post-deploy:
-  - [ ] dashboard y semana cargan igual.
-  - [ ] crear/editar sesion.
-  - [ ] crear/editar day log.
-  - [ ] crear/editar week summary o coach note semanal.
-  - [ ] chat/proposal basico.
-  - [ ] hard refresh y confirmar persistencia.
-  - [ ] re-correr `008a` y confirmar duplicados en 0.
+- [x] Confirmar deploy del commit actual.
+- [x] Hard refresh / confirmar bundle nuevo en prod.
+- [x] Smoke post-deploy:
+  - [x] dashboard y semana cargan igual.
+  - [x] crear/editar sesion.
+  - [x] crear/editar day log.
+  - [x] crear/editar week summary o coach note semanal.
+  - [x] chat/proposal basico.
+  - [x] hard refresh y confirmar persistencia.
+  - [x] re-correr `008a` y confirmar duplicados en 0.
 
 Rollback de emergencia:
 
@@ -347,7 +347,7 @@ Arquetipos recomendados:
 
 Objetivo: operar varios atletas gestionados desde tu cuenta sin contaminar datos.
 
-Estado: spec aprobado. Parte 1 invisible (`Athlete-Aware Core`) implementada; Parte 2 visible pendiente.
+Estado: **desplegada en produccion (2026-07-05).** Parte 1 (`Athlete-Aware Core`) + Parte 2b (switcher/roster/onboarding) live y smokeadas.
 
 Gates:
 
@@ -356,15 +356,17 @@ Gates:
 - [x] Seleccion activa selection-aware.
 - [x] Chat session athlete-scoped.
 - [x] Escrituras locales estampan atleta activo.
-- [ ] Deploy + smoke de Athlete-Aware Core.
-- [ ] Crear plan de implementacion Parte 2 desde `2026-07-02-coach-ui-f2-mvp-design.md`.
+- [x] Deploy + smoke de Athlete-Aware Core.
+- [x] Plan de implementacion Parte 2b: `docs/superpowers/plans/2026-07-04-coach-f2-part2b-ui.md`.
 - [x] Perfiles por atleta + push/merge por grupo implementados localmente.
 - [x] API local de atletas gestionados implementada.
 - [x] Backup/import preserva roster `athletes` y eventos enriquecidos.
 - [x] `009` expand/contract listo; `009c` endurece `athlete_id not null`.
-- [ ] Gate deploy Parte 2a: aplicar `009a`/`009b` antes de publicar bundle `6ba0cd0+`; confirmar bundle nuevo y recien aplicar `009c` (`onConflict: 'user_id,athlete_id'` falla para perfiles nuevos si falta `009b`).
-- [ ] Switcher y roster `/coach`.
-- [ ] Smoke con self + 1 gestionado.
+- [x] `switchEpoch` + `resetForAthleteSwitch` + `switchActiveAthlete` (sin contaminacion por promesas tardias; guards de plan builder poller/accept).
+- [x] Allowlist `coachAccess` gated por `VITE_COACH_ACCOUNTS` + `CoachScopeGuard` global (defensa de rollback, cubre `/onboarding`).
+- [x] Migracion `010a/b/c` (day/week full unique compuesto) aplicada; migrate `onConflict` por atleta.
+- [x] Switcher (`CoachContextBar`) y roster `/coach` (`CoachRosterPage`).
+- [x] Smoke con self + 1 gestionado (check-in misma fecha sin `23505`).
 
 No entra todavia:
 
@@ -523,14 +525,13 @@ Pendiente minimo:
 
 ## Que Hacer Primero
 
-Orden recomendado:
+Orden recomendado (Athlete-Aware Core + Coach F2-lite Parte 2b ya en prod):
 
-1. Desplegar y smokear Athlete-Aware Core.
-2. Smoke visual DEV de superficie publica actualizada: `/`, `/features`, `/pricing`.
-3. Crear rutas legales publicas y linkear footers reales.
-4. Smoke PROD completo.
-5. Generar 3 planes arquetipo con revision manual.
-6. Elegir: primer piloto acompanado o F2-lite.
+1. QA deportiva: generar 3 planes arquetipo como atletas gestionados y revisarlos como coach (guardar export/backup).
+2. Rutas legales publicas `/terms` `/privacy` `/health-disclaimer` + linkear footers + consentimiento versionado en signup/onboarding.
+3. Smoke visual PROD de superficie publica: `/`, `/features`, `/pricing`, legales.
+4. Oferta piloto cerrada (precio fundador, cupos, soporte, mensaje de invitacion) + primer piloto acompanado.
+5. Endurecer confianza operacional del sync (mini-tab "Sincronizar entrenamientos" visible en Settings, recovery multi-dispositivo).
 
 ## Que No Hacer Ahora
 

@@ -5,6 +5,7 @@ import Card from '../components/ui/Card'
 import AthleteProfileEditor from '../components/settings/AthleteProfileEditor'
 import SyncStatusBadge from '../components/sync/SyncStatusBadge'
 import SyncDiagnosticsPanel from '../components/sync/SyncDiagnosticsPanel'
+import SyncNowCard from '../components/sync/SyncNowCard'
 import { ROUTES } from '../constants/routes'
 import {
   downloadAppDataExport,
@@ -539,6 +540,13 @@ export default function SettingsPage() {
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <div className="space-y-5 md:space-y-6">
+          <SyncNowCard
+            status={syncStatus}
+            lastSyncAt={syncDetails.lastSyncAt}
+            pendingOps={syncDetails.pendingOps}
+            syncing={syncDetails.syncAttemptInFlight}
+            onSync={() => void handleRetrySync()}
+          />
           <Card className="p-4">
             <div className="flex items-start gap-3 mb-3">
               <div className="w-8 h-8 rounded-full bg-brand/15 flex items-center justify-center flex-shrink-0">
