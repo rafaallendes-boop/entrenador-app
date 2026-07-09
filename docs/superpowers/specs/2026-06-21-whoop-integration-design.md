@@ -1,19 +1,18 @@
-# Integración Whoop — Diseño (piloto individual)
+# Integración Whoop — Diseño (athlete_id first)
 
 **Fecha:** 2026-06-21
 **Autor:** Rafael Allendes (con asistencia técnica)
-**Estado:** Aprobado, **DIFERIDO** (se trabaja primero Athlete Scope Foundation)
+**Estado:** Aprobado, **ACTUALIZADO 2026-07-06** (prioridad de producto antes de SP1)
 
-> ⚠️ **Coordinación de versión Dexie (decisión 2026-06-22):** este spec/plan asume
-> Dexie **v13** para el store `readinessDaily`. La fundación de Coach Mode (Athlete Scope
-> Foundation) se prioriza y toma **v13**. Por lo tanto, cuando se retome Whoop, el store
-> `readinessDaily` debe migrar como **v14** (no v13). Reemplazar mentalmente todas las
-> menciones de "v13"/`version(13)` de este documento por "v14"/`version(14)` al implementar.
+> ⚠️ **Coordinación Dexie (actualizada 2026-07-05):** Athlete Scope Foundation ya tomó
+> Dexie **v13** y F2 day/week tomó **v14**. Whoop debe implementarse como **v15**.
+> No usar `version(13)`/`version(14)` para `readinessDaily`.
 
 ## Decisiones tomadas
 
-1. **Modelo de datos:** piloto individual sobre el `user_id` actual. No se espera el
-   refactor `athlete_id` first-class (F1 de Coach Mode). Migración futura asumida.
+1. **Modelo de datos:** `athlete_id` first-class desde v1. La conexión OAuth pertenece a
+   la cuenta (`user_id`), pero los datos fisiológicos se escriben contra el atleta self
+   de esa cuenta (`athlete_id = ath_<user_id>` o el self resuelto desde `athletes`).
 2. **Whoop vs check-in manual:** prefill editable. Whoop precarga el `dayLog` del día;
    el usuario puede sobreescribir. `painLevel`/notas siguen siendo siempre manuales.
 3. **Ingesta:** poll diario (Netlify scheduled function, cron **UTC** + sync idempotente
@@ -21,15 +20,54 @@
    ahora" con throttle. Sin webhooks en v1.
 4. **Coach:** contexto pasivo. El readiness entra al prompt del coach y a alertas
    livianas, pero NO modifica el plan automáticamente.
+5. **Prioridad de producto:** Whoop se adelanta como siguiente track porque el owner usa
+   la app al 100% y necesita señal fisiológica real para validar el loop diario/semanal.
+   No es un adorno ni una promesa de marketing: es input objetivo para operar mejor el
+   propio entrenamiento y para que la futura oferta "Coach Semanal" tenga contexto real.
 
 **Base estratégica:** `docs/rfc/2026-06-16-coach-mode-architecture.md` §9 (Wearables, F4).
-Este spec adelanta Whoop como piloto individual sobre el modelo actual, antes de F1.
+Este spec adelanta Whoop para uso real personal sin crear deuda nueva: el acceso visible
+queda por atleta, aunque las credenciales sigan viviendo por cuenta.
+
+## API confirmada (2026-07-05, OpenAPI oficial `Api Whoop`)
+
+WHOOP **API v2**. Base `https://api.prod.whoop.com/developer`. OAuth authorize
+`https://api.prod.whoop.com/oauth/oauth2/auth`, token `.../oauth/oauth2/token`.
+Scopes: `read:recovery`, `read:sleep`, `read:cycles`, `read:profile`. Colecciones
+`GET /v2/recovery`, `GET /v2/activity/sleep`, `GET /v2/cycle` (params `limit,start,end,nextToken`;
+envelope `{records,next_token}`). Recovery **no** trae `id` → dedupe por `cycle_id`.
+Revocación: `DELETE /v2/user/access`. Los strings viven solo en el plan (Tasks 5-9).
+
+## Coordinación con SP1 (Coach dos-lados, va DESPUÉS)
+
+Orden de ejecución: **Whoop primero → SP1 después**. Puntos de acople y reservas:
+
+- **Números reservados:** Whoop = migración `011` + Dexie `v15`; SP1 = `012+` / `v16+`.
+- **Resolución de "self":** hoy Whoop resuelve el atleta self como `ath_<user_id>`
+  (server: `resolveSelfAthleteId`; cliente: `getSelfAthleteId`). SP1 cambia "self" a la
+  **membresía `role='self'`**. Sigue siendo correcto para la cuenta-coach (self = `ath_<uid>`);
+  SP1 debe reescribir ese único seam. No inlinear `ath_<uid>` fuera de él.
+- **RLS de `readiness_daily`/`biometric_readings`:** hoy por `owner_account_id`/`linked_account_id`;
+  SP1 la barre al predicado por `athlete_memberships` (`auth_athlete_ids()`) junto con las demás.
+- **Emergente sin trabajo extra:** post-SP1, si un atleta con login conecta su Whoop, el coach
+  ve su readiness por membresía (ya scoped por `athlete_id`); el CTA de conectar sigue gateado
+  al self. Compatible sin cambios de diseño.
+- **Contrato con la futura landing/oferta coach:** la superficie pública puede hablar de
+  "contexto objetivo de recuperación y sueño vía Whoop" solo como señal opcional y
+  consentida del atleta. No prometer ajuste automático, diagnóstico, prevención de lesiones
+  ni que el coach conecte el wearable por el atleta. El CTA de conexión vive en Settings
+  del self; el coach solo visualiza readiness de atletas que ya dieron acceso.
+- **SP2 dashboard coach:** cuando exista dashboard sin suplantación, `readiness_daily`
+  debe leerse como métrica del atleta seleccionado/listado, no como estado de la cuenta
+  del coach. Eso evita retrabajo entre `ReadinessCard` del atleta y tarjetas futuras del
+  roster.
 
 ## Contexto del código (verificado)
 
-- **Check-in diario hoy** = tabla Dexie `dayLogs` (clave `&date`), tipo `DayLog`
-  (`src/types/index.ts:342`): `sleepHours`, `sleepQuality` (1-5), `energyLevel` (1-10),
-  `painLevel` (0-10), `painNotes`, `rpeActual`, `bodyWeight`, etc.
+- **Check-in diario hoy** = tabla Dexie `dayLogs` con llave natural por atleta en v14
+  (`[athleteId+date]`) y tipo `DayLog` (`src/types/index.ts:342`): `sleepHours`,
+  `sleepQuality` (1-5), `energyLevel` (1-10), `painLevel` (0-10), `painNotes`,
+  `rpeActual`, `bodyWeight`, etc.
 - **`recoveryProfile`** (`src/types/index.ts:461`) es solo texto libre
   (lesiones/restricciones), NO métricas diarias. No se toca.
 - **El prompt del coach ya consume `dayLog`** (`src/services/ai/promptBuilder.ts:879`,
@@ -37,12 +75,14 @@ Este spec adelanta Whoop como piloto individual sobre el modelo actual, antes de
   automáticamente al coach; el readiness solo agrega una línea de contexto.
 - **Plataforma:** web PWA en Netlify. Whoop (OAuth + fetch server-side) es viable sin
   shell nativo (a diferencia de HealthKit).
-- **Sin `athlete_id`:** todo scopeado a `user_id` con singleton `'default'`.
-- **Dexie schema actual:** v12 (`src/db/db.ts:170`). Esta integración agrega v13.
+- **Athlete scope activo:** `athletes` existe en Supabase/Dexie; legacy local usa
+  `ATHLETE_PROFILE_LOCAL_ID = 'default'`, pero las nuevas tablas Whoop no deben usarlo.
+- **Dexie schema actual:** v14 (`src/db/db.ts`). Esta integración agrega v15.
 - **Netlify functions hoy:** `coach.ts`, `enqueue-plan-generation.ts`,
   `generate-plan-background.ts`. No hay scheduled functions todavía; se agrega la primera.
-- **Patrón de sync:** `src/services/syncService.ts` + `supabase/*.sql` (RLS por `user_id`,
-  text PK, `auth.uid()`). Las tablas nuevas siguen este patrón.
+- **Patrón de sync:** `src/services/syncService.ts` + `supabase/*.sql` ya combinan
+  `user_id` y `athlete_id`. Whoop usa functions server-side para escribir remoto y un
+  pull cliente de `readiness_daily` filtrado por `athlete_id` activo.
 
 ## Prerequisito (Track 0) — Whoop Developer App + verificación de API
 
@@ -72,14 +112,15 @@ cierran hasta que las env vars existan en un entorno de prueba.
 ## Arquitectura general
 
 ```
-Whoop OAuth (atleta) ──▶ tokens cifrados (server-side, whoop_connections)
+Whoop OAuth (cuenta) ──▶ tokens cifrados (server-side, whoop_connections)
                               │
+                              ▼ resuelve atleta self
    ┌──────────────────────────┴───────────────────────┐
    ▼ (cron diario AM)                    ▼ (botón "Sincronizar ahora")
   netlify/functions/whoop-sync ──▶ fetch recovery/sleep/cycles (Whoop API v2)
                               │
-                  normalize ──▶ biometric_readings (raw por métrica)
-                              └──▶ readiness_daily (resumen por día)
+                  normalize ──▶ biometric_readings (raw por métrica, athlete_id)
+                              └──▶ readiness_daily (resumen por día, athlete_id)
                                           │
                   ┌───────────────────────┼────────────────────────┐
                   ▼                        ▼                         ▼
@@ -89,13 +130,14 @@ Whoop OAuth (atleta) ──▶ tokens cifrados (server-side, whoop_connections)
 
 **Principio de aislamiento:** todo lo de Whoop (OAuth, fetch, normalización, tokens)
 vive server-side en `netlify/functions/`. El cliente nunca ve tokens ni secretos.
-El frontend solo lee `readiness_daily` (replicada a Dexie) y escribe el prefill al `dayLog`.
+El frontend solo lee `readiness_daily` del atleta activo (replicada a Dexie) y escribe el
+prefill al `dayLog` del mismo `athlete_id`.
 
 ## Modelo de datos
 
-### Supabase (nuevas tablas, RLS por `user_id`)
+### Supabase (nuevas tablas, RLS por `athlete_id`)
 
-**`whoop_connections`** — credenciales del atleta (server-only):
+**`whoop_connections`** — credenciales de la cuenta conectada (server-only):
 - `user_id` (uuid → auth.users, PK)
 - `access_token` (text, cifrado AES-256-GCM, formato iv.tag.ciphertext)
 - `refresh_token` (text, cifrado AES-256-GCM)
@@ -123,7 +165,8 @@ El frontend solo lee `readiness_daily` (replicada a Dexie) y escribe el prefill 
 
 **`biometric_readings`** — lecturas crudas por métrica (**server-only estricto**):
 - `id` (text, PK)
-- `user_id` (uuid → auth.users)
+- `user_id` (uuid → auth.users) — cuenta dueña de la conexión Whoop, para borrado completo
+- `athlete_id` (text → athletes.id) — atleta self al que pertenecen las métricas
 - `source` (text, 'whoop')
 - `metric` (text: 'recovery' | 'hrv' | 'rhr' | 'strain' | 'sleep_hours' | 'sleep_performance')
 - `value` (numeric)
@@ -135,7 +178,8 @@ El frontend solo lee `readiness_daily` (replicada a Dexie) y escribe el prefill 
   tabla existe para auditoría/normalización/futuro, no para consumo de la UI.
 
 **`readiness_daily`** — resumen por día (replicado a Dexie, lo que consume la UI):
-- `user_id` (uuid → auth.users)
+- `user_id` (uuid → auth.users) — cuenta dueña de la conexión Whoop
+- `athlete_id` (text → athletes.id)
 - `date` (text 'YYYY-MM-DD')
 - `recovery_score` (numeric, 0-100, nullable)
 - `hrv_ms` (numeric, nullable)
@@ -145,25 +189,24 @@ El frontend solo lee `readiness_daily` (replicada a Dexie) y escribe el prefill 
 - `sleep_performance` (numeric, 0-100, nullable)
 - `source` (text, 'whoop')
 - `updated_at` (bigint, epoch ms)
-- PK: `[user_id+date]`
-- RLS: por `auth.uid()`.
+- PK: `[athlete_id+date+source]`
+- RLS: **solo SELECT cliente** cuando `auth.uid()` tiene acceso al atleta vía
+  `athletes.owner_account_id`/`linked_account_id` en la etapa actual. Cuando SP1 aterrice,
+  este predicado debe migrar a `athlete_memberships`. Insert/update/delete remotos quedan
+  solo para service-role; el cliente no escribe `readiness_daily` remoto.
 
-### Dexie (migración v13)
+### Dexie (migración v15)
 
-- Agregar store `readinessDaily: 'id, &date, updatedAt'` (id sintético `whoop:<date>` o
-  similar; `&date` único). Solo `readiness_daily` se replica local.
-- **Deuda consciente (documentada, no bloqueante):** el índice `&date` único asume
-  single-user / single-source (Whoop). Cuando llegue `athlete_id` (F1) o una segunda
-  fuente de wearable, este índice fuerza una migración incómoda: habrá que re-clavar por
-  `[athlete_id+date+source]` (o similar) y rehidratar. Se acepta para el piloto; queda
-  anotado aquí y en Riesgos para que la migración F1 lo contemple.
+- Agregar store `readinessDaily: 'id, date, athleteId, source, updatedAt, &[athleteId+date+source]'`
+  (id sintético `whoop:<athleteId>:<date>`). Solo `readiness_daily` se replica local.
+- La llave natural queda preparada para multi-atleta y una futura segunda fuente wearable.
 - `biometric_readings`, `whoop_connections` y `whoop_oauth_states` son server-only — no
   entran a Dexie.
 - Tipo nuevo `ReadinessDaily` en `src/types/index.ts`.
 - Extender el tipo `DayLog` con metadata de procedencia del prefill (ver Prefill):
   `prefillSource?` indicando qué campos provienen de Whoop. Campo aditivo, no breaking
   (Dexie/Supabase aceptan el nuevo campo sin migración de datos).
-- Cualquier cambio de schema Dexie requiere migración (regla del proyecto): la v13 agrega
+- Cualquier cambio de schema Dexie requiere migración (regla del proyecto): la v15 agrega
   el store sin tocar los existentes.
 
 ## Backend — OAuth + ingesta
@@ -180,22 +223,25 @@ Archivos nuevos en `netlify/functions/`:
   token**. Por eso la identidad del usuario se recupera **exclusivamente del `state`**:
   busca la fila en `whoop_oauth_states`, valida que exista, no esté expirada y la borra
   (single-use); de ahí obtiene el `user_id`. Luego intercambia `code` → tokens, cifra y
-  hace upsert en `whoop_connections` para ese `user_id`. Redirige a Settings con estado
-  (éxito/error) en query param de una ruta de la allowlist.
+  hace upsert en `whoop_connections` para ese `user_id`. Los datos se escribirán más tarde
+  contra el atleta self resuelto en sync. Redirige a Settings con estado (éxito/error) en
+  query param de una ruta de la allowlist.
 - `whoop-status.ts` — el cliente lo invoca con `Bearer` (valida `getUser`); devuelve el
   estado de conexión (ver "Estado de conexión"). NO devuelve tokens.
 - `_shared/whoopClient.ts` — wrapper de Whoop API: `getRecovery`, `getSleep`,
   `getCycles`, con refresh automático de access token cuando expira. **Puro/testeable**
   (fetch inyectable). Endpoints/paginación confirmados contra docs en Track 0.
 - `_shared/whoopNormalize.ts` — **lógica pura**: mapea respuestas Whoop →
-  `biometric_readings[]` + `readiness_daily`. Maneja días sin dato (campos nullable).
+  `biometric_readings[]` + `readiness_daily` sin decidir `user_id`/`athlete_id`; el sync
+  inyecta esas claves. Maneja días sin dato (campos nullable).
 - `_shared/tokenCrypto.ts` — encrypt/decrypt **AES-256-GCM** con `WHOOP_TOKEN_ENC_KEY`.
   Testeable. Detalles abajo.
 - `whoop-sync.ts` — handler invocable por:
   - **cron diario** (vía `schedule` en `netlify.toml`, en **UTC**, madrugada);
   - **manual** (POST desde el botón "Sincronizar ahora", con throttle).
-  Recorre los últimos **7 días** (idempotente), normaliza, upsert por `raw_id` /
-  `[user_id+date]`, actualiza `last_sync_at`. Degrada con gracia si no hay conexión Whoop.
+  Recorre los últimos **7 días** (idempotente), resuelve el atleta self de la cuenta,
+  normaliza, upsert por `raw_id` / `[athlete_id+date+source]`, actualiza `last_sync_at`.
+  Degrada con gracia si no hay conexión Whoop o si falta atleta self local/remoto.
 
 ### OAuth state (anti-CSRF + binding)
 
@@ -243,7 +289,10 @@ en `VITE_*`. Respetar rate limits / cuotas de Whoop.
 Como `whoop_connections` no es legible por el cliente (RLS deniega SELECT), el frontend
 obtiene el estado vía el endpoint `whoop-status.ts`, que devuelve un objeto seguro:
 `{ connected: boolean, lastSyncAt: string|null, lastSyncStatus: 'ok'|'error'|null, scopes: string[] }`.
-Nunca expone tokens. La `ReadinessCard` y `WhoopConnection` consumen este endpoint.
+Nunca expone tokens. Este estado es **de la cuenta autenticada**, no del atleta abierto.
+La `ReadinessCard` solo muestra CTA de conectar cuando el atleta activo es el self; si el
+coach mira otro atleta, puede mostrar readiness existente o un estado "sin datos", pero no
+debe invitar al coach a conectar Whoop por ese atleta.
 
 ## Frontend — tarjeta resumen + prefill
 
@@ -257,6 +306,8 @@ Nunca expone tokens. La `ReadinessCard` y `WhoopConnection` consumen este endpoi
 - `src/components/settings/WhoopConnection.tsx` — sección en Settings:
   conectar (→ `whoop-oauth-start`) / desconectar (borra `whoop_connections` + datos
   Whoop) / botón "Sincronizar ahora" (→ `whoop-sync`) / muestra `last_sync_at`.
+  Esta sección solo se muestra/activa para el atleta self. En contexto coach/gestionado,
+  la UI puede mostrar el estado de readiness existente, pero no ofrece conectar.
 - **Prefill editable** en `DayDetail` / check-in:
   - `src/services/readiness/prefillDayLog.ts` — **reducer puro e idempotente**: dado
     `readiness_daily` del día y el `dayLog` existente, devuelve valores sugeridos SOLO
@@ -302,8 +353,8 @@ Whoop a usuarios reales hasta cumplir TODO lo siguiente:
 dato puede vivir, no solo la tabla principal:
 
 1. **Servidor (Supabase, vía function con service-role):** borra `whoop_connections`,
-   `whoop_oauth_states` (nonces colgados), `biometric_readings` y `readiness_daily` del
-   usuario.
+   `whoop_oauth_states` (nonces colgados), `biometric_readings` y `readiness_daily` de la
+   cuenta (`user_id`) y sus filas Whoop asociadas al atleta self.
 2. **Dexie local:** limpia el store `readinessDaily`. El `prefillSource` ya escrito en
    `dayLogs` históricos NO se borra (es dato del check-in, propiedad del usuario), pero se
    deja de prellenar; el valor numérico ya editado/aceptado queda como dato propio del log.
@@ -336,7 +387,7 @@ Foco en lógica pura y aislada:
 - `prefillDayLog` — "vacío" = `undefined`/`null` (no `0`/`''`); idempotencia vía
   `prefillSource`; escalados correctos; no re-sugiere campos editados a mano.
 - `ReadinessCard` / `whoop-status` — render por banda de color y por estado de conexión.
-- Migración Dexie v13 — store nuevo + campo `DayLog.prefillSource` sin romper existentes.
+- Migración Dexie v15 — store nuevo + campo `DayLog.prefillSource` sin romper existentes.
 
 Verificación de cierre por tarea: `npm run lint && npm test && npm run build`.
 Las migraciones SQL se prueban primero en un proyecto Supabase de staging, no en prod.
@@ -348,7 +399,7 @@ del siguiente: `npm run lint && npm test && npm run build`):
 
 1. **Track 0** — Whoop Developer App, env vars, scopes/endpoints confirmados contra docs
    oficiales, copy legal mínimo redactado.
-2. **Datos + seguridad server-side** — SQL (tablas + RLS) + migración Dexie v13 +
+2. **Datos + seguridad server-side** — SQL (tablas + RLS) + migración Dexie v15 +
    `tokenCrypto` (AES-256-GCM) + OAuth (start/callback con state binding) + `whoop-status`.
 3. **Normalización con tests, sin UI** — `whoopClient` (refresh) + `whoopNormalize`
    (puro, cubierto por tests). Verificable server-side antes de tocar el frontend.
@@ -366,9 +417,10 @@ los pasos 6-7 a usuarios reales.
 ## Fuera de alcance (v1, explícito)
 
 - HealthKit / Apple Health (requiere shell nativo / Capacitor).
-- Webhooks de Whoop (el poll diario alcanza para el piloto individual).
+- Webhooks de Whoop (el poll diario alcanza para v1).
 - Ajuste automático de carga (solo contexto pasivo en v1).
-- `athlete_id` multi-atleta (se migra en F1 de Coach Mode).
+- Escribir métricas Whoop de atletas gestionados sin cuenta propia. v1 solo conecta la
+  cuenta autenticada y escribe su atleta self.
 - Histórico/gráficos de tendencia de readiness (futuro; v1 muestra solo el día).
 
 ## Riesgos y mitigaciones
@@ -381,11 +433,11 @@ los pasos 6-7 a usuarios reales.
   `retry_after` + estado visible en UI.
 - **API de Whoop cambia** → Track 0 confirma scopes/endpoints/paginación/refresh contra
   docs oficiales antes de codear; `whoopClient`/`whoopNormalize` aislados para absorber cambios.
-- **Migración futura a `athlete_id`** → tablas ya tienen `user_id`; la migración F1 las
-  re-scopea junto al resto del modelo. Asumido y documentado.
-- **Índice Dexie `readinessDaily.&date` single-source** → deuda consciente: re-clavar por
-  `[athlete_id+date+source]` cuando llegue F1 o una segunda fuente. Documentado en
-  "Dexie (migración v13)" para que F1 lo contemple. No bloquea el piloto.
+- **RLS de membresías todavía no está en SP1** → v1 usa `athletes.owner_account_id` /
+  `linked_account_id` para lectura de `readiness_daily`. Cuando SP1 aterrice, reemplazar
+  ese predicado por `athlete_memberships`.
+- **Atleta self faltante en sync** → `whoop-sync` resuelve el atleta self antes de
+  escribir; si no existe, devuelve error amable y no crea métricas huérfanas.
 - **Datos biométricos crudos** → `biometric_readings` y `whoop_connections`/`whoop_oauth_states`
   son server-only estrictos (RLS sin políticas para cliente); la UI solo ve `readiness_daily`.
 - **Días sin dato Whoop** → todos los campos de readiness son nullable; el prefill no

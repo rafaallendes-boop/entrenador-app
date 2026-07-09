@@ -1,7 +1,9 @@
-import type { DayLog, MacroWeekCoherenceSummary, Session, WeekSummary } from '../types'
+import type { DayLog, MacroWeekCoherenceSummary, ReadinessDaily, Session, WeekSummary } from '../types'
 import type { DisciplineAcwr, LoadAnalytics } from './loadAnalytics'
 import { todayISO } from '../utils/date'
 import { getSportLabel } from '../utils/sport'
+import { recoveryBand } from './readiness/readinessBands'
+import { isWeeklyReviewWindowOpen } from './weeklyReviewWindow'
 
 export type ActionAlertSeverity = 'high' | 'medium' | 'low'
 export type ActionAlertTarget = 'chat' | 'week' | 'checkin'
@@ -20,6 +22,7 @@ export interface ActionAlertsInput {
   sessions: Session[]
   currentWeekSummary?: WeekSummary | null
   todayDayLog?: DayLog
+  readiness?: ReadinessDaily
   macroWeekCoherence?: MacroWeekCoherenceSummary | null
   loadAnalytics?: LoadAnalytics | null
   today?: string
@@ -39,6 +42,7 @@ const ALERT_PRIORITY: Record<string, number> = {
   'recovery-checkin-strain': 3,
   'recovery-checkin-missing': 4,
   'weekly-adherence-drop': 5,
+  'readiness-recovery-low': 6,
 }
 
 export function buildActionAlerts(input: ActionAlertsInput): ActionableAlert[] {
@@ -57,7 +61,25 @@ export function buildActionAlerts(input: ActionAlertsInput): ActionableAlert[] {
   const adherenceAlert = buildAdherenceAlert(input.currentWeekSummary, input.sessions, today)
   if (adherenceAlert) alerts.push(adherenceAlert)
 
+  const readinessAlert = buildReadinessAlert(input.readiness)
+  if (readinessAlert) alerts.push(readinessAlert)
+
   return dedupeAlerts(alerts).sort(compareAlerts)
+}
+
+export function buildReadinessAlert(readiness?: ReadinessDaily): ActionableAlert | null {
+  if (!readiness || recoveryBand(readiness.recoveryScore) !== 'red') return null
+
+  const pct = readiness.recoveryScore != null ? ` (${Math.round(readiness.recoveryScore)}%)` : ''
+  return {
+    id: `readiness-recovery-low-${readiness.date}`,
+    severity: 'low',
+    title: 'Recuperación baja hoy',
+    body: `Tu recovery de Whoop viene en zona baja${pct}.`,
+    recommendation: 'Considera bajar la intensidad o priorizar técnica/recuperación.',
+    ctaLabel: 'Ajustar el día',
+    target: 'checkin',
+  }
 }
 
 function buildCoherenceAlert(
@@ -179,6 +201,9 @@ function buildAdherenceAlert(
   const pastUncompletedSessions = sessions.filter((session) =>
     session.status !== 'skipped' && session.status !== 'completed' && session.date < today,
   )
+  if (!isWeeklyReviewWindowOpen(today) && pastUncompletedSessions.length === 0) {
+    return null
+  }
   if (pendingSessions.length > 0 && pastUncompletedSessions.length === 0) {
     return null
   }
@@ -220,11 +245,20 @@ function compareAlerts(a: ActionableAlert, b: ActionableAlert): number {
     return SEVERITY_WEIGHT[b.severity] - SEVERITY_WEIGHT[a.severity]
   }
 
-  const aPriority = ALERT_PRIORITY[a.id] ?? 99
-  const bPriority = ALERT_PRIORITY[b.id] ?? 99
+  const aPriority = getAlertPriority(a.id)
+  const bPriority = getAlertPriority(b.id)
   if (aPriority !== bPriority) {
     return aPriority - bPriority
   }
 
   return a.title.localeCompare(b.title)
+}
+
+function getAlertPriority(id: string): number {
+  return ALERT_PRIORITY[id] ?? ALERT_PRIORITY[getAlertPriorityPrefix(id)] ?? 99
+}
+
+function getAlertPriorityPrefix(id: string): string {
+  if (id.startsWith('readiness-recovery-low-')) return 'readiness-recovery-low'
+  return id
 }

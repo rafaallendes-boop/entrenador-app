@@ -122,6 +122,7 @@ const REMOTE_WIPE_ORDER: SupabaseTable[] = [
   'coach_proposals',
   'chat_messages',
   'week_summaries',
+  'readiness_daily',
   'day_logs',
   'sessions',
   'athlete_profiles',
@@ -2141,9 +2142,32 @@ async function wipeRemoteTableByUser(
     if (error) throw error
     return
   }
+  if (table === 'readiness_daily' && options?.fullReset) {
+    await deleteRemoteWhoopData(userId)
+    return
+  }
 
   const { error } = await getSupabase().from(table).delete().eq('user_id', userId)
   if (error) throw error
+}
+
+async function deleteRemoteWhoopData(userId: string): Promise<void> {
+  const { data } = await getSupabase().auth.getSession()
+  const token = data.session?.access_token
+  if (!token) {
+    throw Object.assign(new Error('No active Supabase session for WHOOP data deletion'), { status: 401 })
+  }
+
+  const response = await fetch('/.netlify/functions/whoop-sync', {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (response.status === 404) return
+  if (!response.ok) {
+    throw Object.assign(new Error(`WHOOP data deletion failed for ${userId}: ${response.status}`), {
+      status: response.status,
+    })
+  }
 }
 
 async function processPendingRemoteWipes(userId: string): Promise<RemoteWipeOutcome> {

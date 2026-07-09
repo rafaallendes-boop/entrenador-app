@@ -1,6 +1,7 @@
 import type {
   DayLog,
   MacroWeekCoherenceSummary,
+  ReadinessDaily,
   Session,
   WeekSummary,
   WeeklyActionAdherenceStatus,
@@ -12,11 +13,13 @@ import type {
 import type { LoadAnalytics } from './loadAnalytics'
 import { buildActionAlerts } from './actionAlerts'
 import { todayISO, toISO, fromISO, getWeekStart } from '../utils/date'
+import { isWeeklyReviewWindowOpen } from './weeklyReviewWindow'
 
 export interface WeeklyActionLoopInput {
   sessions: Session[]
   currentWeekSummary?: WeekSummary | null
   todayDayLog?: DayLog
+  readiness?: ReadinessDaily
   macroWeekCoherence?: MacroWeekCoherenceSummary | null
   loadAnalytics?: LoadAnalytics | null
   today?: string
@@ -69,7 +72,7 @@ export function buildWeeklyActionSummary(input: WeeklyActionLoopInput): WeeklyAc
   // semana pasada/futura (generateCoachNote lo rechaza y mostraría un error).
   const currentWeekStart = toISO(getWeekStart(fromISO(today)))
   const summaryIsCurrentWeek = input.currentWeekSummary?.weekStartDate === currentWeekStart
-  if (summaryIsCurrentWeek && shouldReviewCoachNote(input.currentWeekSummary, weekSessions)) {
+  if (summaryIsCurrentWeek && shouldReviewCoachNote(input.currentWeekSummary, weekSessions, today)) {
     actions.push({
       id: 'weekly-review-coach-note',
       kind: 'review_coach_note',
@@ -119,9 +122,11 @@ function shouldPlanWeek(
 function shouldReviewCoachNote(
   summary: WeekSummary | null | undefined,
   weekSessions: number,
+  today: string,
 ): boolean {
   if (!summary) return false
   if (weekSessions === 0) return false
+  if (!isWeeklyReviewWindowOpen(today)) return false
   return !summary.coachNote
 }
 
@@ -167,6 +172,19 @@ function mapAlertToWeeklyAction(
         status: 'recommended',
       }
     default:
+      if (alert.id.startsWith('readiness-recovery-low-')) {
+        return {
+          id: `weekly-${alert.id}`,
+          kind: 'close_checkin',
+          priority: PRIORITY.closeCheckIn,
+          title: alert.title,
+          body: alert.body,
+          reason: alert.recommendation,
+          ctaLabel: 'Abrir check-in',
+          ctaTarget: 'today_checkin',
+          status: 'recommended',
+        }
+      }
       if (!alert.id.startsWith('acwr-')) return null
       return {
         id: `weekly-${alert.id}`,

@@ -2,25 +2,28 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-> ⚠️ **DIFERIDO + coordinación Dexie (2026-06-22):** este plan está en pausa; se prioriza
-> Athlete Scope Foundation (Coach Mode), que toma Dexie **v13**. Cuando se retome Whoop,
-> el store `readinessDaily` debe implementarse como **v14** (todas las menciones de "v13"
-> en este plan = "v14" al ejecutar).
+> ⚠️ **ACTUALIZADO 2026-07-05 — coordinación Dexie/athlete scope:** Athlete Scope Foundation
+> ya tomó Dexie **v13** y F2 day/week tomó **v14**. Whoop debe implementarse como **v15**
+> y `athlete_id` first-class; no usar `version(13)`/`version(14)` para `readinessDaily`.
 
-**Goal:** Integrar Whoop como capa premium de contexto fisiológico (recovery, sueño, strain) para un piloto individual: tarjeta resumen en el dashboard, prefill editable del check-in diario y contexto pasivo para el coach — sin modificar planes automáticamente.
+> **DECISIÓN PRODUCTO 2026-07-06:** ejecutar Whoop antes de SP1/two-sided. El owner usa
+> la app al 100% y necesita readiness real para cerrar el loop diario/semanal. SP1 queda
+> diseñado para absorber este track después, sin migrar datos ni rehacer UI.
 
-**Architecture:** Todo lo sensible (OAuth, tokens cifrados, fetch a Whoop, datos crudos) vive server-side en Netlify Functions con service-role de Supabase y RLS que niega acceso del cliente a las tablas de credenciales/raw. El cliente solo lee el resumen diario `readiness_daily` (RLS por `auth.uid()`), lo replica a Dexie y lo usa para la tarjeta, el prefill y el contexto del coach. Ingesta por cron UTC idempotente (últimos 7 días) + botón "Sincronizar ahora" con cooldown.
+**Goal:** Integrar Whoop como capa premium de contexto fisiológico (recovery, sueño, strain) para el atleta self de la cuenta conectada: tarjeta resumen en el dashboard, prefill editable del check-in diario y contexto pasivo para el coach — sin modificar planes automáticamente.
 
-**Tech Stack:** TypeScript, Netlify Functions, Supabase (Postgres + RLS), Web Crypto (AES-256-GCM), Dexie v13, React, Vitest, Whoop API.
+**Architecture:** Todo lo sensible (OAuth, tokens cifrados, fetch a Whoop, datos crudos) vive server-side en Netlify Functions con service-role de Supabase y RLS que niega acceso del cliente a las tablas de credenciales/raw. La conexión OAuth vive por `user_id`, pero el sync resuelve el atleta self (`athlete_id`) y escribe `biometric_readings`/`readiness_daily` contra ese atleta. El cliente solo lee `readiness_daily` del atleta activo (RLS por acceso al atleta), lo replica a Dexie y lo usa para la tarjeta, el prefill y el contexto del coach. Ingesta por cron UTC idempotente (últimos 7 días) + botón "Sincronizar ahora" con cooldown.
+
+**Tech Stack:** TypeScript, Netlify Functions, Supabase (Postgres + RLS), Web Crypto (AES-256-GCM), Dexie v15, React, Vitest, Whoop API.
 
 **Spec:** `docs/superpowers/specs/2026-06-21-whoop-integration-design.md`
 
 ## Global Constraints
 
-- Piloto individual: todo scopeado a `user_id` (sin `athlete_id` todavía). Deuda de migración a `athlete_id` documentada, no se resuelve aquí.
+- Modelo `athlete_id` first: `whoop_connections`/`whoop_oauth_states` quedan por `user_id`; `biometric_readings`/`readiness_daily` llevan `user_id` (dueño de la conexión) y `athlete_id` (atleta self que consume la app).
 - Secretos SOLO server-side. Ninguna credencial Whoop en `VITE_*`.
 - `whoop_connections`, `whoop_oauth_states` y `biometric_readings` son **server-only estrictos**: RLS sin políticas para `authenticated`/`anon`. El cliente nunca los lee.
-- `readiness_daily` es la única tabla Whoop legible por el cliente (RLS por `auth.uid()`).
+- `readiness_daily` es la única tabla Whoop legible por el cliente (RLS por acceso al `athlete_id`: hoy `athletes.owner_account_id`/`linked_account_id`; cuando SP1 aterrice, `athlete_memberships`).
 - Cifrado de tokens: **AES-256-GCM**, clave `WHOOP_TOKEN_ENC_KEY` (base64, 32 bytes), IV (12 bytes) + auth tag por token, campo `key_version`.
 - OAuth `state`: nonce crypto-random, single-use, expiración ~10 min, bindeado al `user_id`, en tabla separada `whoop_oauth_states`.
 - Cron de sync en **UTC**; sync idempotente de **últimos 7 días** (no hay fuente de timezone del atleta).
@@ -29,8 +32,25 @@
 - Gate legal (consentimiento biométrico + privacidad + borrado completo) cerrado antes de exponer la UI (Tasks 13-17) a usuarios reales.
 - Verificación de cierre por tarea: `npm run lint && npm test && npm run build` verdes (más la migración SQL probada en staging para Task 1).
 - Reusar helpers existentes de `netlify/functions/_shared/planGenerationShared.ts`: `resolveAuthContext`, `getBearerToken`, `json`, `getSupabaseUrl`, `withTimeout`.
+- Contrato con la futura landing/oferta coach: Whoop se comunica como señal objetiva,
+  opcional y consentida de recuperación/sueño/strain. No prometer diagnóstico, prevención
+  de lesiones, ajuste automático ni conexión por parte del coach.
 
 **⚠️ Política de commits:** Igual que los planes previos del repo, el owner hace los commits. **NO ejecutar `git commit` ni `git add` dentro de las tasks.** Tratar los pasos "Commit" como no-op; dejar los cambios staged-pendientes para revisión consolidada del owner.
+
+## Coordinación con SP1 (Coach dos-lados — va DESPUÉS de Whoop)
+
+Whoop se ejecuta **antes** que SP1 (spec `docs/superpowers/specs/2026-07-05-coach-two-sided-foundation-sp1-design.md`). Reservas para evitar colisiones y deuda:
+
+- **Números:** Whoop toma migración SQL **`011`** y Dexie **v15**. SP1 arranca en `012+` y Dexie `v16+`.
+- **Seam de "self" (único punto que SP1 actualiza):** `resolveSelfAthleteId` (Task 4) resuelve `ath_<userId>` determinístico. Funciona hoy (cuenta-coach: self = `ath_<uid>`). **SP1 debe reescribirlo a la membresía `role='self'`** cuando aterrice. Mantener esta función como el ÚNICO lugar de resolución server-side (no inlinear `ath_<uid>` en otros tasks).
+- **RLS de `readiness_daily`/`biometric_readings`:** hoy por `athletes.owner_account_id`/`linked_account_id` (Task 1). **SP1 la barre junto con las demás tablas athlete-scoped** al predicado `athlete_id in (select public.auth_athlete_ids())`. Dejar el `select` de `readiness_daily` en la lista de tablas que SP1 migra.
+- **`promptBuilder`:** Whoop inyecta la línea de readiness vía helper aislado `readinessContext.ts` (Task 16), NO edita la lógica del builder. SP1 (que extrae `coachMemory`) no colisiona con ese helper.
+- **Emergente (sin trabajo extra):** post-SP1, un atleta con login propio que conecte su Whoop expone su `readiness_daily` (scoped por `athlete_id`); el coach lo lee por membresía. `ReadinessCard` ya gatea el CTA de conectar solo para el self (`canConnect`), así que el coach ve readiness ajeno sin invitación a conectar. Compatible sin cambios.
+- **Landing/coach dashboard futuro:** el dato público que se puede prometer es
+  "RallyIQ puede considerar señales objetivas de recuperación si el atleta conecta Whoop".
+  La implementación debe mantener `ReadinessCard`/`readinessContext` reusable para SP2:
+  dashboard de coach lee readiness por `athlete_id`, no por conexión del coach.
 
 ---
 
@@ -41,7 +61,7 @@ docs/legal/
   descargo-whoop.md                              [NEW: copy de consentimiento biométrico]
 
 supabase/
-  007_whoop_integration.sql                      [NEW: 4 tablas + RLS]
+  011_whoop_integration.sql                      [NEW: 4 tablas + RLS]
 
 netlify/functions/
   whoop-oauth-start.ts                           [NEW: inicia OAuth, devuelve URL]
@@ -66,7 +86,7 @@ src/types/
   index.ts                                       [MODIFY: +ReadinessDaily, +DayLog.prefillSource]
 
 src/db/
-  db.ts                                          [MODIFY: v13 store readinessDaily]
+  db.ts                                          [MODIFY: v15 store readinessDaily]
 
 src/services/readiness/
   prefillDayLog.ts                               [NEW: reducer puro]
@@ -113,6 +133,15 @@ Abrir https://developer.whoop.com/ y confirmar (anotar en el PR/notas del task):
 Si algún nombre difiere de lo asumido en el spec, ajustar las constantes correspondientes
 en Tasks 5, 8 (son la única fuente de esos strings).
 
+**✅ Confirmado 2026-07-05 contra el OpenAPI oficial (`Api Whoop` en la raíz del repo — WHOOP API v2):**
+- **API base:** `https://api.prod.whoop.com/developer`
+- **Authorize:** `https://api.prod.whoop.com/oauth/oauth2/auth` · **Token:** `https://api.prod.whoop.com/oauth/oauth2/token`
+- **Scopes:** `read:recovery`, `read:sleep`, `read:cycles`, `read:profile` (disponibles además `read:workout`, `read:body_measurement`).
+- **Endpoints (colecciones):** `GET /v2/recovery`, `GET /v2/activity/sleep`, `GET /v2/cycle`. Query params: `limit, start, end, nextToken`. Envelope: `{ records: [...], next_token }`.
+- **Shapes:** `recovery.score.{recovery_score, hrv_rmssd_milli, resting_heart_rate}` (⚠️ Recovery **no** trae `id`; identificar por `cycle_id`), `sleep.score.{stage_summary.total_in_bed_time_milli, sleep_performance_percentage}`, `cycle.score.strain`.
+- **Revocación:** `DELETE /v2/user/access` (`revokeUserOAuthAccess`) — usar al desconectar (Task 9) para revocar el grant en Whoop, no solo borrar tokens locales.
+- Refresh: comportamiento estándar OAuth2 (`grant_type=refresh_token`); confirmar si Whoop rota el refresh token al ejecutar el primer refresh real en staging.
+
 - [ ] **Step 2: Crear la Whoop Developer App**
 
 En el dashboard de Whoop:
@@ -135,9 +164,9 @@ node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 WHOOP_CLIENT_ID=...
 WHOOP_CLIENT_SECRET=...
 WHOOP_REDIRECT_URI=https://<dominio>/.netlify/functions/whoop-oauth-callback
-WHOOP_AUTHORIZE_URL=<de Step 1>
-WHOOP_TOKEN_URL=<de Step 1>
-WHOOP_API_BASE=<de Step 1>
+WHOOP_AUTHORIZE_URL=https://api.prod.whoop.com/oauth/oauth2/auth
+WHOOP_TOKEN_URL=https://api.prod.whoop.com/oauth/oauth2/token
+WHOOP_API_BASE=https://api.prod.whoop.com/developer
 WHOOP_TOKEN_ENC_KEY=<base64 de Step 3>
 ```
 
@@ -145,7 +174,7 @@ Confirmar que `SUPABASE_URL` y `SUPABASE_SERVICE_ROLE_KEY` ya existen (los usa e
 
 - [ ] **Step 5: Redactar el copy legal mínimo**
 
-Create `docs/legal/descargo-whoop.md` con: qué datos biométricos se recogen (recovery, HRV, RHR, strain, sueño), para qué se usan (contexto del coach + prefill del check-in, nunca diagnóstico médico), dónde se guardan (cifrados, server-side), cómo desconectar y cómo borrar. Enlazar este texto desde `docs/legal/politica-de-privacidad.md` (agregar sección "Datos de wearables (Whoop)").
+Create `docs/legal/descargo-whoop.md` con: qué datos biométricos se recogen (recovery, HRV, RHR, strain, sueño), para qué se usan (contexto del coach + prefill del check-in, nunca diagnóstico médico), dónde se guardan (cifrados, server-side), cómo desconectar y cómo borrar. Enlazar este texto desde `docs/legal/politica-de-privacidad.md` (agregar sección "Datos de wearables (Whoop)"). Además, dejar 2-3 frases aprobadas para landing/pricing: Whoop como contexto objetivo opcional, sin prometer diagnóstico, prevención de lesiones ni ajuste automático.
 
 - [ ] **Step 6: Commit** (no-op por política de commits del repo)
 
@@ -154,20 +183,22 @@ Create `docs/legal/descargo-whoop.md` con: qué datos biométricos se recogen (r
 ## Task 1: Migración SQL — tablas Whoop + RLS
 
 **Files:**
-- Create: `supabase/007_whoop_integration.sql`
+- Create: `supabase/011_whoop_integration.sql`
 
 **Interfaces:**
 - Produces: tablas `whoop_connections`, `whoop_oauth_states`, `biometric_readings`, `readiness_daily`. Solo `readiness_daily` tiene políticas RLS para el cliente.
 
 - [ ] **Step 1: Escribir la migración**
 
-Create `supabase/007_whoop_integration.sql`:
+Create `supabase/011_whoop_integration.sql`:
 
 ```sql
--- Whoop integration (piloto individual, scope por user_id).
+-- Whoop integration (athlete_id first).
+-- whoop_connections / oauth states pertenecen a la cuenta (user_id).
+-- biometric_readings / readiness_daily pertenecen al atleta self (athlete_id).
 -- whoop_connections, whoop_oauth_states y biometric_readings son SERVER-ONLY:
 -- RLS habilitado SIN políticas para authenticated/anon => solo service-role accede.
--- readiness_daily es legible/escribible por el dueño (auth.uid()).
+-- readiness_daily es solo legible por clientes con acceso al atleta; escribe service-role.
 
 create table if not exists public.whoop_connections (
   user_id uuid primary key references auth.users(id) on delete cascade,
@@ -193,6 +224,7 @@ create table if not exists public.whoop_oauth_states (
 create table if not exists public.biometric_readings (
   id text primary key,
   user_id uuid not null references auth.users(id) on delete cascade,
+  athlete_id text not null references public.athletes(id) on delete cascade,
   source text not null,
   metric text not null,
   value numeric null,
@@ -200,9 +232,11 @@ create table if not exists public.biometric_readings (
   raw_id text null
 );
 create index if not exists biometric_readings_user_idx on public.biometric_readings (user_id, recorded_at);
+create index if not exists biometric_readings_athlete_idx on public.biometric_readings (athlete_id, recorded_at);
 
 create table if not exists public.readiness_daily (
   user_id uuid not null references auth.users(id) on delete cascade,
+  athlete_id text not null references public.athletes(id) on delete cascade,
   date text not null,
   recovery_score numeric null,
   hrv_ms numeric null,
@@ -212,30 +246,34 @@ create table if not exists public.readiness_daily (
   sleep_performance numeric null,
   source text not null default 'whoop',
   updated_at bigint not null,
-  primary key (user_id, date)
+  primary key (athlete_id, date, source)
 );
+create index if not exists readiness_daily_user_idx on public.readiness_daily (user_id, date);
 
 -- RLS: server-only tables (enabled, no client policies)
 alter table public.whoop_connections enable row level security;
 alter table public.whoop_oauth_states enable row level security;
 alter table public.biometric_readings enable row level security;
 
--- RLS: readiness_daily readable/writable by owner
+-- RLS: readiness_daily client-readable by athlete access.
+-- SP1 migration note: replace this predicate with athlete_memberships once landed.
 alter table public.readiness_daily enable row level security;
 create policy readiness_daily_select on public.readiness_daily
-  for select using (auth.uid() = user_id);
-create policy readiness_daily_insert on public.readiness_daily
-  for insert with check (auth.uid() = user_id);
-create policy readiness_daily_update on public.readiness_daily
-  for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
-create policy readiness_daily_delete on public.readiness_daily
-  for delete using (auth.uid() = user_id);
+  for select using (
+    exists (
+      select 1
+      from public.athletes a
+      where a.id = readiness_daily.athlete_id
+        and (a.owner_account_id = auth.uid() or a.linked_account_id = auth.uid())
+    )
+  );
 ```
 
 - [ ] **Step 2: Aplicar en un proyecto Supabase de staging**
 
 Correr la migración en staging (no en prod del owner). Verificar manualmente:
 - Como usuario autenticado, `select * from readiness_daily` solo devuelve filas propias.
+- Como coach con acceso al atleta por `athletes.owner_account_id`/`linked_account_id`, `select * from readiness_daily` devuelve filas del atleta accesible.
 - Como usuario autenticado, `select * from whoop_connections` devuelve **0 filas / error de permiso** (sin política).
 
 Anotar el resultado del smoke en las notas del task.
@@ -362,16 +400,16 @@ Expected: PASS (4 tests).
 
 ---
 
-## Task 3: Dexie v13 + tipos `ReadinessDaily` y `DayLog.prefillSource`
+## Task 3: Dexie v15 + tipos `ReadinessDaily` y `DayLog.prefillSource`
 
 **Files:**
 - Modify: `src/types/index.ts` (DayLog ~342; nuevo tipo cerca)
-- Modify: `src/db/db.ts:170-184`
+- Modify: `src/db/db.ts` (agregar `version(15)` después de v14)
 - Test: `src/db/__tests__/readinessDailyStore.test.ts` (Create)
 
 **Interfaces:**
 - Produces:
-  - `interface ReadinessDaily { id: string; date: string; recoveryScore?: number; hrvMs?: number; rhrBpm?: number; strain?: number; sleepHours?: number; sleepPerformance?: number; source: string; updatedAt: number }`
+  - `interface ReadinessDaily { id: string; athleteId: string; date: string; recoveryScore?: number; hrvMs?: number; rhrBpm?: number; strain?: number; sleepHours?: number; sleepPerformance?: number; source: string; updatedAt: number }`
   - `DayLog.prefillSource?: Partial<Record<'sleepHours' | 'sleepQuality' | 'energyLevel', 'whoop'>>`
   - `db.readinessDaily` table.
 
@@ -383,14 +421,15 @@ Create `src/db/__tests__/readinessDailyStore.test.ts`:
 import { describe, it, expect, beforeEach } from 'vitest'
 import { db } from '../db'
 
-describe('readinessDaily store (v13)', () => {
+describe('readinessDaily store (v15)', () => {
   beforeEach(async () => {
     await db.readinessDaily.clear()
   })
 
-  it('stores and reads a readiness row by date', async () => {
+  it('stores and reads a readiness row by athlete and date', async () => {
     await db.readinessDaily.put({
-      id: 'whoop:2026-06-21',
+      id: 'whoop:ath_1:2026-06-21',
+      athleteId: 'ath_1',
       date: '2026-06-21',
       recoveryScore: 28,
       sleepHours: 5.2,
@@ -399,7 +438,18 @@ describe('readinessDaily store (v13)', () => {
       source: 'whoop',
       updatedAt: Date.now(),
     })
-    const row = await db.readinessDaily.where('date').equals('2026-06-21').first()
+    await db.readinessDaily.put({
+      id: 'whoop:ath_2:2026-06-21',
+      athleteId: 'ath_2',
+      date: '2026-06-21',
+      recoveryScore: 75,
+      source: 'whoop',
+      updatedAt: Date.now(),
+    })
+    const row = await db.readinessDaily
+      .where('[athleteId+date+source]')
+      .equals(['ath_1', '2026-06-21', 'whoop'])
+      .first()
     expect(row?.recoveryScore).toBe(28)
   })
 })
@@ -416,7 +466,8 @@ Add near `DayLog` (the `export interface DayLog` block):
 
 ```typescript
 export interface ReadinessDaily {
-  id: string               // synthetic, e.g. "whoop:YYYY-MM-DD"
+  id: string               // synthetic, e.g. "whoop:<athleteId>:YYYY-MM-DD"
+  athleteId: string        // scope key; maps to Supabase athlete_id
   date: string             // ISO "YYYY-MM-DD"
   recoveryScore?: number   // 0-100
   hrvMs?: number
@@ -436,13 +487,13 @@ And extend `DayLog` by adding this field inside the existing interface:
   prefillSource?: Partial<Record<'sleepHours' | 'sleepQuality' | 'energyLevel', 'whoop'>>
 ```
 
-- [ ] **Step 4: Add the Dexie v13 migration in `src/db/db.ts`**
+- [ ] **Step 4: Add the Dexie v15 migration in `src/db/db.ts`**
 
-After the `this.version(12).stores({...})` block (around line 184, before the closing of the constructor), add:
+After the existing `this.version(14).stores({...})` block, add:
 
 ```typescript
-    this.version(13).stores({
-      readinessDaily: 'id, &date, updatedAt',
+    this.version(15).stores({
+      readinessDaily: 'id, date, athleteId, source, updatedAt, &[athleteId+date+source]',
     })
 ```
 
@@ -482,11 +533,14 @@ Expected: both pass.
   - `consumeOAuthState(db, state): Promise<{ userId: string } | null>` (single-use: deletes after read; null if missing/expired)
   - `upsertConnection(db, conn: StoredConnection)`
   - `getConnection(db, userId): Promise<StoredConnection | null>` (decrypts tokens)
+  - `resolveSelfAthleteId(db, userId): Promise<string | null>` (resuelve el atleta self que recibirá los datos Whoop)
   - `setSyncResult(db, userId, { lastSyncAt, lastManualSyncAt?, status })`
   - `deleteAllWhoopData(db, userId)` (connection + states + readings + readiness)
-  - `upsertReadiness(db, userId, rows: ReadinessRow[])`
+  - `upsertReadiness(db, userId, athleteId, rows: ReadinessRow[])`
+  - `upsertBiometricReadings(db, userId, athleteId, rows: BiometricReadingRow[])`
   - `interface StoredConnection { userId; accessToken; refreshToken; keyVersion; expiresAt; whoopUserId?; scopes?; lastManualSyncAt? }`
   - `interface ReadinessRow { date; recoveryScore?; hrvMs?; rhrBpm?; strain?; sleepHours?; sleepPerformance? }`
+  - `interface BiometricReadingRow { source; metric; value?; recordedAt; rawId? }`
 
 - [ ] **Step 1: Write the failing test**
 
@@ -495,13 +549,20 @@ Create `netlify/functions/_shared/__tests__/whoopSupabase.test.ts`:
 ```typescript
 import { describe, it, expect, beforeEach } from 'vitest'
 import { randomBytes } from 'node:crypto'
-import { consumeOAuthState, upsertConnection, getConnection } from '../whoopSupabase'
+import { consumeOAuthState, upsertConnection, getConnection, resolveSelfAthleteId } from '../whoopSupabase'
 
 process.env.WHOOP_TOKEN_ENC_KEY = randomBytes(32).toString('base64')
 
 // Minimal in-memory fake of the subset of supabase-js we use.
 function makeFakeDb(initial: Record<string, any[]> = {}) {
-  const tables: Record<string, any[]> = { whoop_oauth_states: [], whoop_connections: [], ...initial }
+  const tables: Record<string, any[]> = {
+    athletes: [],
+    whoop_oauth_states: [],
+    whoop_connections: [],
+    readiness_daily: [],
+    biometric_readings: [],
+    ...initial,
+  }
   return {
     tables,
     from(table: string) {
@@ -512,7 +573,12 @@ function makeFakeDb(initial: Record<string, any[]> = {}) {
         eq(col: string, val: any) { api._filters.push((r: any) => r[col] === val); return api },
         async maybeSingle() { return { data: rows.find(r => api._filters.every(f => f(r))) ?? null, error: null } },
         async upsert(row: any) {
-          const idx = rows.findIndex(r => r.user_id === row.user_id && (r.date === undefined || r.date === row.date))
+          const idx = rows.findIndex(r =>
+            r.user_id === row.user_id &&
+            (r.athlete_id === undefined || r.athlete_id === row.athlete_id) &&
+            (r.date === undefined || r.date === row.date) &&
+            (r.source === undefined || r.source === row.source)
+          )
           if (idx >= 0) rows[idx] = { ...rows[idx], ...row }
           else rows.push(row)
           return { error: null }
@@ -563,6 +629,11 @@ describe('whoopSupabase', () => {
     ] })
     expect(await consumeOAuthState(db as any, 's2')).toBeNull()
   })
+
+  it('resolveSelfAthleteId returns the deterministic self athlete when present', async () => {
+    const db = makeFakeDb({ athletes: [{ id: 'ath_u1', owner_account_id: 'u1', status: 'active' }] })
+    await expect(resolveSelfAthleteId(db as any, 'u1')).resolves.toBe('ath_u1')
+  })
 })
 ```
 
@@ -602,6 +673,14 @@ export interface ReadinessRow {
   strain?: number | null
   sleepHours?: number | null
   sleepPerformance?: number | null
+}
+
+export interface BiometricReadingRow {
+  source: string
+  metric: string
+  value?: number | null
+  recordedAt: string
+  rawId?: string | null
 }
 
 export async function insertOAuthState(
@@ -653,6 +732,13 @@ export async function getConnection(db: WhoopDb, userId: string): Promise<Stored
   }
 }
 
+export async function resolveSelfAthleteId(db: WhoopDb, userId: string): Promise<string | null> {
+  // Mirrors athleteIdForOwner(userId) from the client. Do not create rows here:
+  // a missing athlete means the Athlete Scope bootstrap/sync has not completed.
+  const { data } = await db.from('athletes').select('id').eq('id', `ath_${userId}`).maybeSingle()
+  return data?.id ?? null
+}
+
 export async function setSyncResult(
   db: WhoopDb,
   userId: string,
@@ -668,10 +754,11 @@ export async function setSyncResult(
   if (error) throw new Error(`setSyncResult: ${error.message}`)
 }
 
-export async function upsertReadiness(db: WhoopDb, userId: string, rows: ReadinessRow[]): Promise<void> {
+export async function upsertReadiness(db: WhoopDb, userId: string, athleteId: string, rows: ReadinessRow[]): Promise<void> {
   for (const r of rows) {
     const { error } = await db.from('readiness_daily').upsert({
       user_id: userId,
+      athlete_id: athleteId,
       date: r.date,
       recovery_score: r.recoveryScore ?? null,
       hrv_ms: r.hrvMs ?? null,
@@ -681,8 +768,30 @@ export async function upsertReadiness(db: WhoopDb, userId: string, rows: Readine
       sleep_performance: r.sleepPerformance ?? null,
       source: 'whoop',
       updated_at: Date.now(),
-    })
+    }, { onConflict: 'athlete_id,date,source' })
     if (error) throw new Error(`upsertReadiness: ${error.message}`)
+  }
+}
+
+export async function upsertBiometricReadings(
+  db: WhoopDb,
+  userId: string,
+  athleteId: string,
+  rows: BiometricReadingRow[],
+): Promise<void> {
+  for (const r of rows) {
+    const id = `whoop:${athleteId}:${r.metric}:${r.rawId ?? r.recordedAt}`
+    const { error } = await db.from('biometric_readings').upsert({
+      id,
+      user_id: userId,
+      athlete_id: athleteId,
+      source: r.source,
+      metric: r.metric,
+      value: r.value ?? null,
+      recorded_at: r.recordedAt,
+      raw_id: r.rawId ?? null,
+    })
+    if (error) throw new Error(`upsertBiometricReadings: ${error.message}`)
   }
 }
 
@@ -697,7 +806,7 @@ export async function deleteAllWhoopData(db: WhoopDb, userId: string): Promise<v
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run netlify/functions/_shared/__tests__/whoopSupabase.test.ts`
-Expected: PASS (3 tests).
+Expected: PASS (4 tests).
 
 - [ ] **Step 5: Commit** (no-op)
 
@@ -728,7 +837,7 @@ import { buildAuthorizeUrl, generateOAuthState } from '../whoopOAuth'
 describe('whoopOAuth', () => {
   it('builds an authorize URL with required params', () => {
     const url = new URL(buildAuthorizeUrl({
-      authorizeUrl: 'https://api.whoop.com/oauth/oauth2/auth',
+      authorizeUrl: 'https://api.prod.whoop.com/oauth/oauth2/auth',
       clientId: 'cid',
       redirectUri: 'https://app/cb',
       scopes: ['read:recovery', 'read:sleep'],
@@ -874,7 +983,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { ensureFreshToken } from '../whoopClient'
 
 beforeEach(() => {
-  process.env.WHOOP_TOKEN_URL = 'https://api.whoop.com/oauth/oauth2/token'
+  process.env.WHOOP_TOKEN_URL = 'https://api.prod.whoop.com/oauth/oauth2/token'
   process.env.WHOOP_CLIENT_ID = 'cid'
   process.env.WHOOP_CLIENT_SECRET = 'sec'
 })
@@ -1004,10 +1113,12 @@ export async function fetchWhoopData(
   const days = opts.days ?? 7
   const start = new Date(Date.now() - days * 86_400_000).toISOString()
   const q = `?start=${encodeURIComponent(start)}&limit=25`
+  // WHOOP API v2 (confirmado contra el OpenAPI oficial 2026-07-05).
+  // base = https://api.prod.whoop.com/developer. Envelope: { records, next_token }.
   const [recovery, sleep, cycles] = await Promise.all([
-    getJson(`${base}/v1/recovery${q}`, accessToken, fetchImpl),
-    getJson(`${base}/v1/activity/sleep${q}`, accessToken, fetchImpl),
-    getJson(`${base}/v1/cycle${q}`, accessToken, fetchImpl),
+    getJson(`${base}/v2/recovery${q}`, accessToken, fetchImpl),
+    getJson(`${base}/v2/activity/sleep${q}`, accessToken, fetchImpl),
+    getJson(`${base}/v2/cycle${q}`, accessToken, fetchImpl),
   ])
   return { recovery, sleep, cycles }
 }
@@ -1029,10 +1140,9 @@ Expected: PASS (2 tests).
 - Test: `netlify/functions/_shared/__tests__/whoopNormalize.test.ts`
 
 **Interfaces:**
-- Consumes: `WhoopRaw` (Task 6), `ReadinessRow` (Task 4).
+- Consumes: `WhoopRaw` (Task 6), `ReadinessRow`/`BiometricReadingRow` (Task 4).
 - Produces:
-  - `normalizeWhoop(raw: WhoopRaw): { readiness: ReadinessRow[]; readings: BiometricReadingInput[] }`
-  - `interface BiometricReadingInput { source: 'whoop'; metric: string; value: number | null; recordedAt: string; rawId: string | null }`
+  - `normalizeWhoop(raw: WhoopRaw): { readiness: ReadinessRow[]; readings: BiometricReadingRow[] }`
 
 > The exact field paths below (`record.score.recovery_score`, etc.) must be reconciled with the real Whoop response shape captured in Task 0 Step 1. Update the accessors if they differ; the test fixtures define the contract this task implements.
 
@@ -1047,7 +1157,7 @@ import { normalizeWhoop } from '../whoopNormalize'
 describe('normalizeWhoop', () => {
   it('maps recovery, sleep and cycle into per-day readiness', () => {
     const raw = {
-      recovery: [{ id: 'r1', created_at: '2026-06-21T06:00:00Z', score: { recovery_score: 28, hrv_rmssd_milli: 41, resting_heart_rate: 52 } }],
+      recovery: [{ cycle_id: 101, sleep_id: 'sl-uuid', created_at: '2026-06-21T06:00:00Z', score: { recovery_score: 28, hrv_rmssd_milli: 41, resting_heart_rate: 52 } }],
       sleep: [{ id: 's1', start: '2026-06-21T00:00:00Z', score: { stage_summary: { total_in_bed_time_milli: 18720000 }, sleep_performance_percentage: 61 } }],
       cycles: [{ id: 'c1', start: '2026-06-21T04:00:00Z', score: { strain: 14.1 } }],
     }
@@ -1070,9 +1180,9 @@ describe('normalizeWhoop', () => {
   })
 
   it('produces raw biometric readings with rawId for dedupe', () => {
-    const raw = { recovery: [{ id: 'r1', created_at: '2026-06-21T06:00:00Z', score: { recovery_score: 28 } }], sleep: [], cycles: [] }
+    const raw = { recovery: [{ cycle_id: 101, sleep_id: 'sl-uuid', created_at: '2026-06-21T06:00:00Z', score: { recovery_score: 28 } }], sleep: [], cycles: [] }
     const { readings } = normalizeWhoop(raw as any)
-    expect(readings.some(r => r.metric === 'recovery' && r.rawId === 'r1' && r.value === 28)).toBe(true)
+    expect(readings.some(r => r.metric === 'recovery' && r.rawId === '101' && r.value === 28)).toBe(true)
   })
 })
 ```
@@ -1088,15 +1198,7 @@ Create `netlify/functions/_shared/whoopNormalize.ts`:
 
 ```typescript
 import type { WhoopRaw } from './whoopClient'
-import type { ReadinessRow } from './whoopSupabase'
-
-export interface BiometricReadingInput {
-  source: 'whoop'
-  metric: string
-  value: number | null
-  recordedAt: string
-  rawId: string | null
-}
+import type { ReadinessRow, BiometricReadingRow } from './whoopSupabase'
 
 function dayOf(iso: string): string {
   return new Date(iso).toISOString().slice(0, 10)
@@ -1106,9 +1208,9 @@ function num(v: unknown): number | null {
   return typeof v === 'number' && Number.isFinite(v) ? v : null
 }
 
-export function normalizeWhoop(raw: WhoopRaw): { readiness: ReadinessRow[]; readings: BiometricReadingInput[] } {
+export function normalizeWhoop(raw: WhoopRaw): { readiness: ReadinessRow[]; readings: BiometricReadingRow[] } {
   const byDay = new Map<string, ReadinessRow>()
-  const readings: BiometricReadingInput[] = []
+  const readings: BiometricReadingRow[] = []
   const get = (date: string): ReadinessRow => {
     let r = byDay.get(date)
     if (!r) { r = { date }; byDay.set(date, r) }
@@ -1116,15 +1218,18 @@ export function normalizeWhoop(raw: WhoopRaw): { readiness: ReadinessRow[]; read
   }
 
   for (const rec of raw.recovery as any[]) {
+    // WHOOP v2 Recovery NO tiene `id`; se identifica por su cycle_id (int64).
+    // Usar cycle_id como rawId para dedupe idempotente.
+    const rawId = rec.cycle_id != null ? String(rec.cycle_id) : (rec.sleep_id ?? null)
     const date = dayOf(rec.created_at ?? rec.updated_at)
     const score = rec.score ?? {}
     const r = get(date)
     r.recoveryScore = num(score.recovery_score)
     r.hrvMs = num(score.hrv_rmssd_milli)
     r.rhrBpm = num(score.resting_heart_rate)
-    readings.push({ source: 'whoop', metric: 'recovery', value: num(score.recovery_score), recordedAt: rec.created_at ?? date, rawId: rec.id ?? null })
-    if (score.hrv_rmssd_milli != null) readings.push({ source: 'whoop', metric: 'hrv', value: num(score.hrv_rmssd_milli), recordedAt: rec.created_at ?? date, rawId: rec.id ?? null })
-    if (score.resting_heart_rate != null) readings.push({ source: 'whoop', metric: 'rhr', value: num(score.resting_heart_rate), recordedAt: rec.created_at ?? date, rawId: rec.id ?? null })
+    readings.push({ source: 'whoop', metric: 'recovery', value: num(score.recovery_score), recordedAt: rec.created_at ?? date, rawId })
+    if (score.hrv_rmssd_milli != null) readings.push({ source: 'whoop', metric: 'hrv', value: num(score.hrv_rmssd_milli), recordedAt: rec.created_at ?? date, rawId })
+    if (score.resting_heart_rate != null) readings.push({ source: 'whoop', metric: 'rhr', value: num(score.resting_heart_rate), recordedAt: rec.created_at ?? date, rawId })
   }
 
   for (const s of raw.sleep as any[]) {
@@ -1166,11 +1271,11 @@ Expected: PASS (3 tests).
 - Test: `netlify/functions/_shared/__tests__/whoopSync.test.ts`
 
 **Interfaces:**
-- Consumes: `StoredConnection`, `getConnection`, `upsertConnection`, `setSyncResult`, `upsertReadiness` (Task 4); `ensureFreshToken`, `fetchWhoopData` (Task 6); `normalizeWhoop` (Task 7).
+- Consumes: `StoredConnection`, `getConnection`, `upsertConnection`, `resolveSelfAthleteId`, `setSyncResult`, `upsertReadiness`, `upsertBiometricReadings` (Task 4); `ensureFreshToken`, `fetchWhoopData` (Task 6); `normalizeWhoop` (Task 7).
 - Produces:
   - `MANUAL_COOLDOWN_MS = 300_000`
   - `runWhoopSync(deps, input): Promise<WhoopSyncResult>`
-  - `interface WhoopSyncResult { ok: boolean; reason?: 'no_connection' | 'cooldown' | 'rate_limited' | 'error'; retryAfterMs?: number; days?: number }`
+  - `interface WhoopSyncResult { ok: boolean; reason?: 'no_connection' | 'no_self_athlete' | 'cooldown' | 'rate_limited' | 'error'; retryAfterMs?: number; days?: number }`
   - deps inject `db`, `fetchImpl`, `now`.
 
 - [ ] **Step 1: Write the failing test**
@@ -1191,8 +1296,10 @@ function deps(over: Partial<any> = {}) {
     db: {} as any,
     getConnection: vi.fn(async () => baseConn),
     upsertConnection: vi.fn(async () => {}),
+    resolveSelfAthleteId: vi.fn(async () => 'ath_u1'),
     setSyncResult: vi.fn(async () => {}),
     upsertReadiness: vi.fn(async () => {}),
+    upsertBiometricReadings: vi.fn(async () => {}),
     ensureFreshToken: vi.fn(async () => ({ accessToken: 'acc' })),
     fetchWhoopData: vi.fn(async () => ({ recovery: [], sleep: [], cycles: [] })),
     normalizeWhoop: vi.fn(() => ({ readiness: [{ date: '2026-06-21', recoveryScore: 28 }], readings: [] })),
@@ -1206,6 +1313,12 @@ describe('runWhoopSync', () => {
     const d = deps({ getConnection: vi.fn(async () => null) })
     const res = await runWhoopSync(d, { userId: 'u1', trigger: 'manual' })
     expect(res).toEqual({ ok: false, reason: 'no_connection' })
+  })
+
+  it('returns no_self_athlete when the account has no self athlete yet', async () => {
+    const d = deps({ resolveSelfAthleteId: vi.fn(async () => null) })
+    const res = await runWhoopSync(d, { userId: 'u1', trigger: 'manual' })
+    expect(res).toEqual({ ok: false, reason: 'no_self_athlete' })
   })
 
   it('enforces manual cooldown', async () => {
@@ -1222,7 +1335,7 @@ describe('runWhoopSync', () => {
     const d = deps({ getConnection: vi.fn(async () => ({ ...baseConn, lastManualSyncAt: recent })) })
     const res = await runWhoopSync(d, { userId: 'u1', trigger: 'cron' })
     expect(res.ok).toBe(true)
-    expect(d.upsertReadiness).toHaveBeenCalled()
+    expect(d.upsertReadiness).toHaveBeenCalledWith(d.db, 'u1', 'ath_u1', expect.any(Array))
   })
 
   it('persists rotated tokens when refreshed', async () => {
@@ -1253,14 +1366,14 @@ Expected: FAIL — module not found.
 Create `netlify/functions/_shared/whoopSync.ts`:
 
 ```typescript
-import type { StoredConnection, ReadinessRow, WhoopDb } from './whoopSupabase'
+import type { StoredConnection, ReadinessRow, BiometricReadingRow, WhoopDb } from './whoopSupabase'
 import type { WhoopRaw, WhoopTokens } from './whoopClient'
 
 export const MANUAL_COOLDOWN_MS = 300_000 // 5 min
 
 export interface WhoopSyncResult {
   ok: boolean
-  reason?: 'no_connection' | 'cooldown' | 'rate_limited' | 'error'
+  reason?: 'no_connection' | 'no_self_athlete' | 'cooldown' | 'rate_limited' | 'error'
   retryAfterMs?: number
   days?: number
 }
@@ -1269,11 +1382,13 @@ export interface WhoopSyncDeps {
   db: WhoopDb
   getConnection: (db: WhoopDb, userId: string) => Promise<StoredConnection | null>
   upsertConnection: (db: WhoopDb, conn: StoredConnection) => Promise<void>
+  resolveSelfAthleteId: (db: WhoopDb, userId: string) => Promise<string | null>
   setSyncResult: (db: WhoopDb, userId: string, input: { lastSyncAt: string; lastManualSyncAt?: string; status: 'ok' | 'error' }) => Promise<void>
-  upsertReadiness: (db: WhoopDb, userId: string, rows: ReadinessRow[]) => Promise<void>
+  upsertReadiness: (db: WhoopDb, userId: string, athleteId: string, rows: ReadinessRow[]) => Promise<void>
+  upsertBiometricReadings: (db: WhoopDb, userId: string, athleteId: string, rows: BiometricReadingRow[]) => Promise<void>
   ensureFreshToken: (conn: WhoopTokens, deps?: { fetchImpl?: typeof fetch }) => Promise<{ accessToken: string; refreshed?: WhoopTokens }>
   fetchWhoopData: (accessToken: string, opts?: { fetchImpl?: typeof fetch; days?: number }) => Promise<WhoopRaw>
-  normalizeWhoop: (raw: WhoopRaw) => { readiness: ReadinessRow[]; readings: unknown[] }
+  normalizeWhoop: (raw: WhoopRaw) => { readiness: ReadinessRow[]; readings: BiometricReadingRow[] }
   fetchImpl?: typeof fetch
   now?: () => number
 }
@@ -1285,6 +1400,8 @@ export async function runWhoopSync(
   const now = deps.now ?? (() => Date.now())
   const conn = await deps.getConnection(deps.db, input.userId)
   if (!conn) return { ok: false, reason: 'no_connection' }
+  const athleteId = await deps.resolveSelfAthleteId(deps.db, input.userId)
+  if (!athleteId) return { ok: false, reason: 'no_self_athlete' }
 
   if (input.trigger === 'manual' && conn.lastManualSyncAt) {
     const elapsed = now() - new Date(conn.lastManualSyncAt).getTime()
@@ -1300,8 +1417,9 @@ export async function runWhoopSync(
     }
     const days = input.days ?? 7
     const raw = await deps.fetchWhoopData(accessToken, { fetchImpl: deps.fetchImpl, days })
-    const { readiness } = deps.normalizeWhoop(raw)
-    await deps.upsertReadiness(deps.db, input.userId, readiness)
+    const { readiness, readings } = deps.normalizeWhoop(raw)
+    await deps.upsertReadiness(deps.db, input.userId, athleteId, readiness)
+    await deps.upsertBiometricReadings(deps.db, input.userId, athleteId, readings)
     const nowIso = new Date(now()).toISOString()
     await deps.setSyncResult(deps.db, input.userId, {
       lastSyncAt: nowIso,
@@ -1320,7 +1438,7 @@ export async function runWhoopSync(
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run netlify/functions/_shared/__tests__/whoopSync.test.ts`
-Expected: PASS (6 tests).
+Expected: PASS (7 tests).
 
 - [ ] **Step 5: Commit** (no-op)
 
@@ -1417,14 +1535,16 @@ import type { Handler } from '@netlify/functions'
 import { json, resolveAuthContext } from './_shared/planGenerationShared'
 import { getServiceRoleDb } from './_shared/whoopOAuth'
 import {
-  getConnection, upsertConnection, setSyncResult, upsertReadiness, deleteAllWhoopData,
+  getConnection, upsertConnection, resolveSelfAthleteId, setSyncResult,
+  upsertReadiness, upsertBiometricReadings, deleteAllWhoopData,
 } from './_shared/whoopSupabase'
 import { ensureFreshToken, fetchWhoopData } from './_shared/whoopClient'
 import { normalizeWhoop } from './_shared/whoopNormalize'
 import { runWhoopSync } from './_shared/whoopSync'
 
 const baseDeps = (db: ReturnType<typeof getServiceRoleDb>) => ({
-  db, getConnection, upsertConnection, setSyncResult, upsertReadiness,
+  db, getConnection, upsertConnection, resolveSelfAthleteId, setSyncResult,
+  upsertReadiness, upsertBiometricReadings,
   ensureFreshToken, fetchWhoopData, normalizeWhoop,
 })
 
@@ -1434,6 +1554,7 @@ async function runCron() {
   const { data } = await db.from('whoop_connections').select()
   const rows = (data ?? []) as Array<{ user_id: string }>
   for (const row of rows) {
+    // runWhoopSync resolves each account's self athlete before writing readiness.
     await runWhoopSync(baseDeps(db), { userId: row.user_id, trigger: 'cron' }).catch(() => {})
   }
   // sweep expired oauth states opportunistically
@@ -1456,6 +1577,18 @@ export const handler: Handler = async (event) => {
   const db = getServiceRoleDb()
 
   if (event.httpMethod === 'DELETE') {
+    // Revocar el grant en Whoop (DELETE /v2/user/access) antes de borrar los
+    // tokens locales; best-effort (si falla, igual borramos para no dejar datos).
+    try {
+      const conn = await getConnection(db, auth.userId)
+      if (conn) {
+        const { accessToken } = await ensureFreshToken(conn)
+        await fetch(`${process.env.WHOOP_API_BASE}/v2/user/access`, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${accessToken}` },
+        }).catch(() => {})
+      }
+    } catch { /* revoke best-effort */ }
     await deleteAllWhoopData(db, auth.userId)
     return json(200, { ok: true })
   }
@@ -1476,7 +1609,7 @@ Expected: PASS.
 
 - [ ] **Step 5: Manual smoke (with `netlify dev` + staging Supabase, after Task 0)**
 
-Connect Whoop via the start→callback flow; confirm a `whoop_connections` row exists and `whoop-status` returns `connected: true`. POST `whoop-sync` and confirm `readiness_daily` rows appear. Hit it again immediately → `429 cooldown`.
+Connect Whoop via the start→callback flow; confirm a `whoop_connections` row exists and `whoop-status` returns `connected: true`. POST `whoop-sync` and confirm `readiness_daily` rows appear with `athlete_id = ath_<user_id>`. Hit it again immediately → `429 cooldown`.
 
 - [ ] **Step 6: Commit** (no-op)
 
@@ -1518,9 +1651,9 @@ Run: `npx netlify functions:invoke whoop-sync --querystring "" ` (or trigger via
 - Produces:
   - `whoopApi`: `startWhoopConnect(): Promise<string>` (returns authorize URL), `getWhoopStatus(): Promise<WhoopStatus>`, `syncWhoopNow(): Promise<WhoopSyncResponse>`, `disconnectWhoop(): Promise<void>`.
   - `interface WhoopStatus { connected: boolean; lastSyncAt: string | null; lastSyncStatus: 'ok' | 'error' | null; scopes: string[] }`
-  - `pullReadiness(): Promise<void>` — reads `readiness_daily` via supabase client, upserts into `db.readinessDaily`.
+  - `pullReadiness(): Promise<void>` — reads `readiness_daily` for the active athlete via supabase client, upserts into `db.readinessDaily`.
   - `recoveryBand(score?: number | null): 'red' | 'yellow' | 'green' | 'none'`.
-- Consumes: existing supabase client accessor (`getSupabase()` from `src/services/sync/syncSupabase.ts`), `db.readinessDaily`.
+- Consumes: existing supabase client accessor (`getSupabase()` from `src/services/sync/syncSupabase.ts`), `getActiveAthleteId()` from `src/services/athlete/activeAthlete.ts`, `db.readinessDaily`.
 
 - [ ] **Step 1: Write the failing test (bands)**
 
@@ -1577,7 +1710,7 @@ export interface WhoopStatus {
 
 export interface WhoopSyncResponse {
   ok: boolean
-  reason?: 'no_connection' | 'cooldown' | 'rate_limited' | 'error'
+  reason?: 'no_connection' | 'no_self_athlete' | 'cooldown' | 'rate_limited' | 'error'
   retryAfterMs?: number
 }
 
@@ -1622,20 +1755,25 @@ Create `src/services/readiness/pullReadiness.ts`:
 
 ```typescript
 import { getSupabase } from '../sync/syncSupabase'
+import { getActiveAthleteId } from '../athlete/activeAthlete'
 import { db } from '../../db/db'
 import type { ReadinessDaily } from '../../types'
 
 export async function pullReadiness(): Promise<void> {
   const supabase = getSupabase()
   if (!supabase) return
+  const athleteId = getActiveAthleteId()
+  if (!athleteId) return
   const since = new Date(Date.now() - 14 * 86_400_000).toISOString().slice(0, 10)
   const { data, error } = await supabase
     .from('readiness_daily')
-    .select('date,recovery_score,hrv_ms,rhr_bpm,strain,sleep_hours,sleep_performance,source,updated_at')
+    .select('athlete_id,date,recovery_score,hrv_ms,rhr_bpm,strain,sleep_hours,sleep_performance,source,updated_at')
+    .eq('athlete_id', athleteId)
     .gte('date', since)
   if (error || !data) return
   const rows: ReadinessDaily[] = data.map((r: any) => ({
-    id: `whoop:${r.date}`,
+    id: `whoop:${r.athlete_id}:${r.date}`,
+    athleteId: r.athlete_id,
     date: r.date,
     recoveryScore: r.recovery_score ?? undefined,
     hrvMs: r.hrv_ms ?? undefined,
@@ -1680,7 +1818,7 @@ import { describe, it, expect } from 'vitest'
 import { prefillDayLog } from '../prefillDayLog'
 
 const readiness = {
-  id: 'whoop:2026-06-21', date: '2026-06-21',
+  id: 'whoop:ath_u1:2026-06-21', athleteId: 'ath_u1', date: '2026-06-21',
   recoveryScore: 28, sleepHours: 5.2, sleepPerformance: 61, strain: 14.1,
   source: 'whoop', updatedAt: 1,
 }
@@ -1778,7 +1916,7 @@ Expected: PASS (4 tests).
 
 **Interfaces:**
 - Consumes: `ReadinessDaily`, `recoveryBand` (Task 11).
-- Produces: `ReadinessCard({ readiness, connected }: { readiness?: ReadinessDaily; connected: boolean })`.
+- Produces: `ReadinessCard({ readiness, connected, canConnect }: { readiness?: ReadinessDaily; connected: boolean; canConnect?: boolean })`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1790,7 +1928,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { ReadinessCard } from '../ReadinessCard'
 
 const readiness = {
-  id: 'whoop:2026-06-21', date: '2026-06-21',
+  id: 'whoop:ath_u1:2026-06-21', athleteId: 'ath_u1', date: '2026-06-21',
   recoveryScore: 28, sleepHours: 5.2, sleepPerformance: 61, strain: 14.1,
   source: 'whoop', updatedAt: 1,
 }
@@ -1804,9 +1942,15 @@ describe('ReadinessCard', () => {
   })
 
   it('shows a connect CTA when not connected', () => {
-    const html = renderToStaticMarkup(<ReadinessCard connected={false} />)
+    const html = renderToStaticMarkup(<ReadinessCard connected={false} canConnect />)
     expect(html.toLowerCase()).toContain('whoop')
     expect(html.toLowerCase()).toContain('conect')
+  })
+
+  it('does not show a connect CTA for a non-self athlete', () => {
+    const html = renderToStaticMarkup(<ReadinessCard connected={false} canConnect={false} />)
+    expect(html.toLowerCase()).toContain('sin datos')
+    expect(html.toLowerCase()).not.toContain('conectar whoop')
   })
 
   it('shows a no-data state when connected but no readiness today', () => {
@@ -1836,8 +1980,16 @@ const BAND_COLOR: Record<string, string> = {
   none: 'text-ink-muted',
 }
 
-export function ReadinessCard({ readiness, connected }: { readiness?: ReadinessDaily; connected: boolean }) {
-  if (!connected) {
+export function ReadinessCard({
+  readiness,
+  connected,
+  canConnect = true,
+}: {
+  readiness?: ReadinessDaily
+  connected: boolean
+  canConnect?: boolean
+}) {
+  if (!readiness && !connected && canConnect) {
     return (
       <div className="rounded-2xl bg-surface p-5">
         <p className="text-sm text-ink-muted">Conecta Whoop para ver tu recuperación, sueño y strain del día.</p>
@@ -1889,7 +2041,7 @@ export function ReadinessCard({ readiness, connected }: { readiness?: ReadinessD
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run src/components/readiness/__tests__/ReadinessCard.test.tsx`
-Expected: PASS (3 tests).
+Expected: PASS (4 tests).
 
 - [ ] **Step 5: Mount the card in the dashboard**
 
@@ -1899,14 +2051,23 @@ In the dashboard page, load today's readiness + status and render `<ReadinessCar
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db/db'
 import { ReadinessCard } from '../components/readiness/ReadinessCard'
-import { getWhoopStatus, pullReadiness } from '../services/readiness/whoopApi' // status
+import { getWhoopStatus } from '../services/readiness/whoopApi'
+import { pullReadiness } from '../services/readiness/pullReadiness'
+import { getActiveAthleteId, getSelfAthleteId } from '../services/athlete/activeAthlete'
 import { useEffect, useState } from 'react'
 // ...
 const today = new Date().toISOString().slice(0, 10)
-const readiness = useLiveQuery(() => db.readinessDaily.where('date').equals(today).first(), [today])
+const activeAthleteId = getActiveAthleteId()
+const canConnectWhoop = activeAthleteId != null && activeAthleteId === getSelfAthleteId()
+const readiness = useLiveQuery(
+  () => activeAthleteId
+    ? db.readinessDaily.where('[athleteId+date+source]').equals([activeAthleteId, today, 'whoop']).first()
+    : Promise.resolve(undefined),
+  [activeAthleteId, today],
+)
 const [connected, setConnected] = useState(false)
 useEffect(() => { getWhoopStatus().then(s => setConnected(s.connected)).catch(() => {}); pullReadiness().catch(() => {}) }, [])
-// render: <ReadinessCard readiness={readiness} connected={connected} />
+// render: <ReadinessCard readiness={readiness} connected={canConnectWhoop && connected} canConnect={canConnectWhoop} />
 ```
 
 (Import `pullReadiness` from `../services/readiness/pullReadiness`.)
@@ -1960,6 +2121,7 @@ export function WhoopConnection() {
       const res = await syncWhoopNow()
       if (res.ok) { await pullReadiness(); setMsg('Sincronizado.') }
       else if (res.reason === 'cooldown') setMsg(`Espera ${Math.ceil((res.retryAfterMs ?? 0) / 1000)}s para volver a sincronizar.`)
+      else if (res.reason === 'no_self_athlete') setMsg('Tu perfil de atleta todavía no está listo. Abre la app de nuevo y reintenta.')
       else if (res.reason === 'rate_limited') setMsg('Whoop limitó las consultas. Reintenta más tarde.')
       else setMsg('No se pudo sincronizar.')
       await refresh()
@@ -2023,8 +2185,15 @@ In `DayDetail.tsx`, fetch the readiness row for the page's date and compute pref
 ```tsx
 import { useLiveQuery } from 'dexie-react-hooks'
 import { prefillDayLog } from '../services/readiness/prefillDayLog'
+import { getActiveAthleteId } from '../services/athlete/activeAthlete'
 // date is the page's ISO date
-const readiness = useLiveQuery(() => db.readinessDaily.where('date').equals(date).first(), [date])
+const activeAthleteId = getActiveAthleteId()
+const readiness = useLiveQuery(
+  () => activeAthleteId
+    ? db.readinessDaily.where('[athleteId+date+source]').equals([activeAthleteId, date, 'whoop']).first()
+    : Promise.resolve(undefined),
+  [activeAthleteId, date],
+)
 const { patch, prefillSource } = prefillDayLog(dayLog ?? {}, readiness)
 
 // when initializing the sleepHours input, prefer existing, else prefilled:
@@ -2081,7 +2250,7 @@ import { formatReadinessLine } from '../readinessContext'
 describe('formatReadinessLine', () => {
   it('summarizes recovery/sleep/strain', () => {
     const line = formatReadinessLine({
-      id: 'whoop:2026-06-21', date: '2026-06-21', recoveryScore: 28, sleepHours: 5.2,
+      id: 'whoop:ath_u1:2026-06-21', athleteId: 'ath_u1', date: '2026-06-21', recoveryScore: 28, sleepHours: 5.2,
       sleepPerformance: 61, strain: 14.1, source: 'whoop', updatedAt: 1,
     })
     expect(line).toContain('28%')
@@ -2137,15 +2306,17 @@ import { describe, it, expect } from 'vitest'
 import { buildReadinessAlert } from '../actionAlerts'
 
 describe('buildReadinessAlert', () => {
-  it('emits a soft alert on red recovery', () => {
-    const alert = buildReadinessAlert({ id: 'whoop:x', date: 'x', recoveryScore: 28, source: 'whoop', updatedAt: 1 })
+  it('emits a soft (low) alert on red recovery, matching the ActionableAlert shape', () => {
+    const alert = buildReadinessAlert({ id: 'whoop:ath_u1:x', athleteId: 'ath_u1', date: 'x', recoveryScore: 28, source: 'whoop', updatedAt: 1 })
     expect(alert).not.toBeNull()
-    expect(alert?.severity).toBe('info')
-    expect(alert?.message.toLowerCase()).toContain('intensidad')
+    // ActionAlertSeverity is 'high' | 'medium' | 'low' — there is NO 'info'.
+    expect(alert?.severity).toBe('low')
+    expect(alert?.target).toBe('checkin')
+    expect(alert?.recommendation.toLowerCase()).toContain('intensidad')
   })
 
   it('emits nothing for green/none recovery', () => {
-    expect(buildReadinessAlert({ id: 'a', date: 'x', recoveryScore: 80, source: 'whoop', updatedAt: 1 })).toBeNull()
+    expect(buildReadinessAlert({ id: 'whoop:ath_u1:x', athleteId: 'ath_u1', date: 'x', recoveryScore: 80, source: 'whoop', updatedAt: 1 })).toBeNull()
     expect(buildReadinessAlert(undefined)).toBeNull()
   })
 })
@@ -2158,23 +2329,35 @@ Expected: FAIL — `buildReadinessAlert` not exported.
 
 - [ ] **Step 7: Implement `buildReadinessAlert` in `actionAlerts.ts`**
 
-Add to `src/services/actionAlerts.ts` (match the existing alert object shape used in that file; the snippet below assumes `{ id, severity, message }` — adapt field names to the real type):
+The real alert model in this file is `ActionableAlert` (`{ id, severity, title, body, recommendation, ctaLabel, target }`) and `ActionAlertSeverity = 'high' | 'medium' | 'low'` — **there is no `'info'` severity**. A red-recovery nudge is a *soft* alert, so use `severity: 'low'` and `target: 'checkin'`. Return the full `ActionableAlert` shape so it can be pushed into `buildActionAlerts()`'s `ActionableAlert[]` without a type error.
+
+Add to `src/services/actionAlerts.ts`:
 
 ```typescript
 import type { ReadinessDaily } from '../types'
 import { recoveryBand } from './readiness/readinessBands'
 
-export function buildReadinessAlert(readiness?: ReadinessDaily) {
+export function buildReadinessAlert(readiness?: ReadinessDaily): ActionableAlert | null {
   if (!readiness || recoveryBand(readiness.recoveryScore) !== 'red') return null
+  const pct = readiness.recoveryScore != null ? ` (${Math.round(readiness.recoveryScore)}%)` : ''
   return {
-    id: `readiness-${readiness.date}`,
-    severity: 'info' as const,
-    message: 'Tu recuperación viene baja hoy. Considera bajar la intensidad o priorizar técnica/recuperación.',
+    id: `readiness-recovery-low-${readiness.date}`,
+    severity: 'low',
+    title: 'Recuperación baja hoy',
+    body: `Tu recovery de Whoop viene en zona baja${pct}.`,
+    recommendation: 'Considera bajar la intensidad o priorizar técnica/recuperación.',
+    ctaLabel: 'Ajustar el día',
+    target: 'checkin',
   }
 }
 ```
 
-Wire `buildReadinessAlert` into wherever alerts are aggregated for display (search `grep -rn "severity" src/services/actionAlerts.ts` to find the collector), pushing the alert when non-null. It must NOT modify any session or plan — display only.
+Wire it into `buildActionAlerts` (display only — it must NOT modify any session or plan):
+- Add an optional field to `ActionAlertsInput`: `readiness?: ReadinessDaily`.
+- Inside `buildActionAlerts`, before the final sort, push the readiness alert when present:
+  `const readinessAlert = buildReadinessAlert(input.readiness); if (readinessAlert) alerts.push(readinessAlert)`.
+- Give it a priority in `ALERT_PRIORITY` (e.g. `'readiness-recovery-low': 6`); the id prefix used for priority lookup must match (`readiness-recovery-low`).
+- Populate `input.readiness` at the call site that builds `ActionAlertsInput` from `db.readinessDaily` for the active athlete + today (mirror how `todayDayLog` is sourced).
 
 - [ ] **Step 8: Run tests + lint + build**
 
@@ -2209,7 +2392,13 @@ import { clearAllLocalAppData } from '../appMaintenance'
 describe('whoop data lifecycle', () => {
   beforeEach(async () => {
     await db.readinessDaily.clear()
-    await db.readinessDaily.put({ id: 'whoop:2026-06-21', date: '2026-06-21', source: 'whoop', updatedAt: 1 })
+    await db.readinessDaily.put({
+      id: 'whoop:ath_u1:2026-06-21',
+      athleteId: 'ath_u1',
+      date: '2026-06-21',
+      source: 'whoop',
+      updatedAt: 1,
+    })
   })
 
   it('clearAllLocalAppData removes readinessDaily', async () => {
@@ -2235,7 +2424,10 @@ Expected: PASS.
 
 - [ ] **Step 5: Add `readiness_daily` to sync wipe + backup**
 
-- In `src/services/syncService.ts` (the table list at ~`:469` used for pull/`pending_remote_wipe`), add `'readiness_daily'` so the account-wipe convergence includes it (follow the exact pattern used for `'day_logs'`). Note: routine pull of readiness already happens via `pullReadiness` (Task 11); here the goal is only that account-level wipe converges and doesn't rehydrate.
+- Wire `readiness_daily` into the **account-wipe convergence only** — NOT into the normal upsert/pull pipeline (readiness has no row-mapper and is pulled by `pullReadiness`, Task 11; adding it to `mapSelectionToRemoteTables` would break every sync). Concretely:
+  - Add `| 'readiness_daily'` to the `SupabaseTable` union in `src/services/syncUtils.ts` (~`:6`). This is a prerequisite — without it the table name won't type-check anywhere else.
+  - Add `'readiness_daily'` to `REMOTE_WIPE_ORDER` in `src/services/syncService.ts` (~`:119`), near `'day_logs'`, so a remote wipe deletes it by `user_id`. Confirm the wipe delete path keys on `user_id` for this table (it carries `user_id`).
+  - Do **not** add it to `mapSelectionToRemoteTables` (~`:482`) nor to the natural-key `onConflict` maps; routine readiness replication stays in `pullReadiness`. Goal here is only that account-level wipe converges and doesn't rehydrate.
 - In `src/services/dataExport.ts`, add `readinessDaily` to the backup `tables` shape, the `Promise.all` reads, the counts, and the restore path — mirror exactly how `dayLogs` is handled (lines ~92, ~120, ~165, ~183, ~275, ~293).
 
 - [ ] **Step 6: Add biometric consent before connect**
@@ -2253,7 +2445,10 @@ Expected: all green.
 
 ## Self-Review Notes
 
-- **Spec coverage:** Track 0 → Task 0; SQL/RLS → Task 1; Dexie v13 + types → Task 3; tokenCrypto → Task 2; data-access + oauth states → Task 4; OAuth start/state → Task 5; whoopClient/refresh → Task 6; normalize → Task 7; sync core + throttle → Task 8; callback/status/sync handlers + disconnect → Task 9; cron → Task 10; client api/pull/bands → Task 11; prefill reducer → Task 12; ReadinessCard → Task 13; Settings connection → Task 14; DayDetail prefill → Task 15; coach passive context + soft alert → Task 16; deletion lifecycle + consent + export → Task 17. All spec sections mapped.
+- **Spec coverage:** Track 0 → Task 0; SQL/RLS → Task 1; Dexie v15 + types → Task 3; tokenCrypto → Task 2; data-access + oauth states → Task 4; OAuth start/state → Task 5; whoopClient/refresh → Task 6; normalize → Task 7; sync core + throttle → Task 8; callback/status/sync handlers + disconnect → Task 9; cron → Task 10; client api/pull/bands → Task 11; prefill reducer → Task 12; ReadinessCard → Task 13; Settings connection → Task 14; DayDetail prefill → Task 15; coach passive context + soft alert → Task 16; deletion lifecycle + consent + export → Task 17. All spec sections mapped.
 - **Verification reminders:** endpoint/scopes/field-paths in Tasks 5/6/7/9 are flagged to reconcile against Whoop's real API (Task 0 Step 1) — the tests define the contract each module implements.
 - **Server-only invariant:** the client never reads `whoop_connections`/`biometric_readings`; status comes only via `whoop-status` (Task 9). Confirmed across tasks.
 - **Coach safety:** Task 16 is display/context only — no plan/session mutation.
+- **SP1/landing alignment:** Whoop ships first as `011`/Dexie v15. SP1 owns the later
+  rewrite to memberships (`012+`/v16+) and the coach landing/offering must describe
+  readiness as optional consented context, not as autonomous coaching or medical claim.

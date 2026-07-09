@@ -3,6 +3,7 @@ import { CheckCircle2, ChevronDown, ChevronUp, Minus, X } from 'lucide-react'
 import { useTrainingStore } from '../../store/useTrainingStore'
 import type { DayLog, Session } from '../../types'
 import { todayISO } from '../../utils/date'
+import { buildDayLogSavePatch, type PrefillField } from '../../services/readiness/dayLogPrefillSave'
 
 const STATUS_OPTIONS = [
   { value: 'completed' as const, label: 'Realizada', icon: CheckCircle2, activeClass: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' },
@@ -128,7 +129,10 @@ export default function DailyCheckInCard({ todaySessions, autoExpandToken = 0 }:
     setManuallyExpanded(true)
   }
 
-  const save = (patch: Parameters<typeof saveDayLog>[1]) => saveDayLog(today, patch)
+  const save = (
+    patch: Parameters<typeof saveDayLog>[1],
+    editedPrefillFields: PrefillField[] = [],
+  ) => saveDayLog(today, buildDayLogSavePatch(patch, dayLog, editedPrefillFields))
 
   const activeSessions = todaySessions.filter(s => s.status !== 'skipped')
   const completedCount = todaySessions.filter(s => s.status === 'completed' || s.status === 'adjusted').length
@@ -208,7 +212,7 @@ export default function DailyCheckInCard({ todaySessions, autoExpandToken = 0 }:
             label="Energia"
             value={dayLog?.energyLevel}
             max={10}
-            onChange={v => save({ energyLevel: v })}
+            onChange={v => save({ energyLevel: v }, ['energyLevel'])}
             colorFn={energyColor}
           />
 
@@ -224,7 +228,7 @@ export default function DailyCheckInCard({ todaySessions, autoExpandToken = 0 }:
             label="Calidad sueno"
             value={dayLog?.sleepQuality}
             max={5}
-            onChange={v => save({ sleepQuality: v })}
+            onChange={v => save({ sleepQuality: v }, ['sleepQuality'])}
           />
 
           <DotScale

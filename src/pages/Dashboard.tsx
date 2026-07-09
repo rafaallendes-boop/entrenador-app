@@ -4,6 +4,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { useTrainingStore } from '../store/useTrainingStore'
 import { useCoachActionsStore } from '../store/useCoachActionsStore'
 import { useCoachMemoryStore } from '../store/useCoachMemoryStore'
+import { useAuthStore } from '../store/useAuthStore'
 import { todayISO, formatFullDate, currentWeekStartISO } from '../utils/date'
 import { ROUTES } from '../constants/routes'
 import WeekStrip from '../components/week/WeekStrip'
@@ -11,14 +12,26 @@ import LoadIndicator from '../components/dashboard/LoadIndicator'
 import LoadAnalyticsCard from '../components/dashboard/LoadAnalyticsCard'
 import Card from '../components/ui/Card'
 import ConfirmDialog from '../components/ui/ConfirmDialog'
+import { ReadinessCard } from '../components/readiness/ReadinessCard'
 import { getDayNutrition } from '../services/nutritionEngine'
 import { startNotificationSync } from '../services/notifications'
+import { getActiveAthleteId, getSelfAthleteId } from '../services/athlete/activeAthlete'
+import { getWhoopStatus } from '../services/readiness/whoopApi'
+import { pullReadiness } from '../services/readiness/pullReadiness'
+import { getLocalReadinessForDate } from '../services/readiness/localReadiness'
+import { prefillDayLog } from '../services/readiness/prefillDayLog'
+import {
+  buildWhoopPrefillSavePatch,
+  canAutoPersistWhoopPrefill,
+  hasDayLogPrefillPatch,
+} from '../services/readiness/dayLogPrefillSave'
 import { getAthleteFirstName, getProfileCompleteness } from '../utils/athlete'
 import { computeMacroPlan, getPrimaryGoalEvent } from '../services/macroPlan'
 import { useMacroWeekCoherence } from '../hooks/useMacroWeekCoherence'
 import { useWeeklyActionNavigator } from '../hooks/useWeeklyActionNavigator'
 import { useWeeklySnapshot } from '../hooks/useWeeklySnapshot'
-import type { CoachProposal } from '../types'
+import { isWeeklyReviewWindowOpen } from '../services/weeklyReviewWindow'
+import type { CoachProposal, ReadinessDaily } from '../types'
 
 const CoachMessageCard = lazy(() => import('../components/dashboard/CoachMessageCard'))
 const NextSessionCard = lazy(() => import('../components/dashboard/NextSessionCard'))
@@ -30,9 +43,10 @@ const ActionAlertsCard = lazy(() => import('../components/dashboard/ActionAlerts
 const ProposalDrawer = lazy(() => import('../components/chat/ProposalDrawer'))
 
 export default function Dashboard() {
-  const { sessions, dayLogs, currentWeekSummary, isLoading, loadWeek, allWeekSummaries } = useTrainingStore()
+  const { sessions, dayLogs, currentWeekSummary, isLoading, loadWeek, saveDayLog, allWeekSummaries } = useTrainingStore()
   const { addProposal, acceptProposal, rejectProposal } = useCoachActionsStore()
   const { athleteProfile, loadMemory, saveAthleteProfile } = useCoachMemoryStore()
+  const activeAthleteFromStore = useAuthStore((state) => state.activeAthleteId)
   // El dashboard siempre refleja la semana en curso, no la semana que el usuario
   // esté navegando en WeeklyView (antes compartían currentWeekStart vía useUIStore
   // y la nota/sesiones de otra semana se filtraban aquí).
@@ -40,6 +54,9 @@ export default function Dashboard() {
   const location = useLocation()
   const navigate = useNavigate()
   const today = todayISO()
+  const activeAthleteId = activeAthleteFromStore ?? getActiveAthleteId()
+  const selfAthleteId = getSelfAthleteId()
+  const canConnectWhoop = activeAthleteId != null && selfAthleteId != null && activeAthleteId === selfAthleteId
   const athleteFirstName = getAthleteFirstName(athleteProfile, 'atleta')
 
   const [isDeletingMacroPlan, setIsDeletingMacroPlan] = useState(false)
@@ -48,6 +65,10 @@ export default function Dashboard() {
   const [showDeleteMacroPlanConfirm, setShowDeleteMacroPlanConfirm] = useState(false)
   const [activeProposal, setActiveProposal] = useState<CoachProposal | null>(null)
   const [proposalError, setProposalError] = useState<string | null>(null)
+  const [readiness, setReadiness] = useState<ReadinessDaily | undefined>(undefined)
+  const [whoopConnected, setWhoopConnected] = useState(false)
+  const todayDayLog = dayLogs[today]
+  const todayWhoopPrefill = useMemo(() => prefillDayLog(todayDayLog ?? {}, readiness), [todayDayLog, readiness])
 
   // Macro plan — computed on-the-fly from profile, not persisted as source of truth
   const macroPlan = useMemo(() => computeMacroPlan(athleteProfile), [athleteProfile])
@@ -69,6 +90,51 @@ export default function Dashboard() {
     loadWeek(currentWeekStart)
   }, [loadWeek, currentWeekStart])
 
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadWhoopReadiness() {
+      if (!activeAthleteId) {
+        if (!cancelled) {
+          setReadiness(undefined)
+          setWhoopConnected(false)
+        }
+        return
+      }
+
+      await pullReadiness().catch(() => undefined)
+      const [nextReadiness, status] = await Promise.all([
+        getLocalReadinessForDate(activeAthleteId, today),
+        canConnectWhoop
+          ? getWhoopStatus().catch(() => ({ connected: false }))
+          : Promise.resolve({ connected: false }),
+      ])
+
+      if (cancelled) return
+      setReadiness(nextReadiness)
+      setWhoopConnected(status.connected)
+    }
+
+    void loadWhoopReadiness()
+
+    return () => {
+      cancelled = true
+    }
+  }, [activeAthleteId, canConnectWhoop, today])
+
+  useEffect(() => {
+    if (!hasDayLogPrefillPatch(todayWhoopPrefill)) return
+    if (!canAutoPersistWhoopPrefill({
+      date: today,
+      today,
+      activeAthleteId,
+      selfAthleteId,
+      readinessAthleteId: readiness?.athleteId,
+    })) return
+
+    void saveDayLog(today, buildWhoopPrefillSavePatch(todayWhoopPrefill, todayDayLog))
+  }, [activeAthleteId, readiness?.athleteId, saveDayLog, selfAthleteId, today, todayDayLog, todayWhoopPrefill])
+
   const {
     loadAnalytics,
     weeklyActionSummary,
@@ -76,7 +142,8 @@ export default function Dashboard() {
   } = useWeeklySnapshot(currentWeekStart, {
     sessions,
     currentWeekSummary,
-    todayDayLog: dayLogs[today],
+    todayDayLog,
+    readiness,
     macroWeekCoherence,
     athleteProfile,
     today,
@@ -87,13 +154,13 @@ export default function Dashboard() {
       sessions,
       currentWeekSummary,
       macroWeekCoherence,
-      todayDayLog: dayLogs[today],
+      todayDayLog,
       athleteProfile,
       loadAnalytics,
       weeklyActionSummary,
       autoAdjustmentDraft,
     }))
-  }, [sessions, currentWeekSummary, macroWeekCoherence, dayLogs, today, athleteProfile, loadAnalytics, weeklyActionSummary, autoAdjustmentDraft])
+  }, [sessions, currentWeekSummary, macroWeekCoherence, todayDayLog, athleteProfile, loadAnalytics, weeklyActionSummary, autoAdjustmentDraft])
 
   const todaySessions = sessions.filter(s => s.date === today)
   const completedToday = todaySessions.filter(s => s.status === 'completed').length
@@ -103,13 +170,15 @@ export default function Dashboard() {
     .sort((a, b) => a.date.localeCompare(b.date) || a.timeBlock.localeCompare(b.timeBlock))
     .slice(0, 4)
 
-  const todayNutrition = getDayNutrition(todaySessions, athleteProfile, dayLogs[today])
+  const todayNutrition = getDayNutrition(todaySessions, athleteProfile, todayDayLog)
 
   const hasTrainingHistory = allWeekSummaries.length > 0 || sessions.length > 0 || currentWeekSummary != null
   const defaultCoachNote = hasTrainingHistory
     ? `Hola ${athleteFirstName}, ¿cómo viene la semana? Revisa tu semana en curso o solicita a RallyIQ que actualice tu plan.`
     : `Bienvenido${athleteProfile?.name ? `, ${athleteFirstName}` : ''}. Carga tu primera semana de entrenamiento y empieza a registrar tu progreso.`
-  const coachNote = currentWeekSummary?.coachNote ?? defaultCoachNote
+  const coachNote = isWeeklyReviewWindowOpen(today) && currentWeekSummary?.coachNote
+    ? currentWeekSummary.coachNote
+    : defaultCoachNote
 
   const profileCompleteness = getProfileCompleteness(athleteProfile ?? null)
   const showProfileNudge = (
@@ -297,6 +366,12 @@ export default function Dashboard() {
       <Suspense fallback={<CardSkeleton className="h-28" />}>
         <CoachMessageCard message={coachNote} />
       </Suspense>
+
+      <ReadinessCard
+        readiness={readiness}
+        connected={canConnectWhoop && whoopConnected}
+        canConnect={canConnectWhoop}
+      />
 
       {proposalError && (
         <Card className="border-red-500/20 bg-red-500/10 p-3 text-xs text-red-300">

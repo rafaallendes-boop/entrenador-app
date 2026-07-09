@@ -107,6 +107,7 @@ describe('generateCoachNote — solo semana actual (Dexie real)', () => {
     setActiveAthleteId('ath_self')
   })
   afterEach(() => {
+    vi.useRealTimers()
     setActiveAthleteId(null)
     setSelfAthleteId(null)
     db.close()
@@ -119,8 +120,63 @@ describe('generateCoachNote — solo semana actual (Dexie real)', () => {
     expect(stored?.coachNote).toBeUndefined()
   })
 
-  it('genera la nota para la semana actual', async () => {
+  it('rechaza generar la nota semanal antes del viernes', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-07-06T12:00:00'))
+
+    await expect(useTrainingStore.getState().generateCoachNote(currentWeekStartISO())).rejects.toThrow(/viernes/i)
+  })
+
+  it('genera la nota para la semana actual desde viernes', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-07-10T12:00:00'))
+
     const note = await useTrainingStore.getState().generateCoachNote(currentWeekStartISO())
     expect(note).toBe('nota generada')
+  })
+})
+
+describe('toggleExercise completion (Dexie real)', () => {
+  beforeEach(async () => {
+    db.close()
+    await db.delete()
+    await db.open()
+    useTrainingStore.setState({
+      sessions: [],
+      dayLogs: {},
+      currentWeekSummary: null,
+      allWeekSummaries: [],
+      isLoading: false,
+      loadedWeekStart: null,
+    })
+  })
+
+  afterEach(() => {
+    db.close()
+  })
+
+  it('marca la sesión como completed cuando todos los ejercicios quedan realizados', async () => {
+    const session = makeSession({
+      id: 'strength-1',
+      type: 'strength',
+      status: 'planned',
+      exercises: [
+        { id: 'ex-1', name: 'Sentadilla', sets: 3, reps: 5, completed: true },
+        { id: 'ex-2', name: 'Peso muerto', sets: 3, reps: 5, completed: false },
+      ],
+    })
+    await db.sessions.put(session)
+    useTrainingStore.setState({
+      sessions: [session],
+      loadedWeekStart: '2026-04-06',
+    })
+
+    await useTrainingStore.getState().toggleExercise('strength-1', 'ex-2')
+
+    const stored = await db.sessions.get('strength-1')
+    expect(stored?.status).toBe('completed')
+    expect(stored?.completedAt).toEqual(expect.any(Number))
+    expect(stored?.exercises?.every((exercise) => exercise.completed)).toBe(true)
+    expect(useTrainingStore.getState().sessions.find((item) => item.id === 'strength-1')?.status).toBe('completed')
   })
 })

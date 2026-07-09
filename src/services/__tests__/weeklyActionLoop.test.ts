@@ -84,11 +84,22 @@ describe('buildWeeklyActionSummary', () => {
       sessions: [makeSession()],
       currentWeekSummary: makeSummary({ coachNote: undefined }),
       macroWeekCoherence: makeCoherenceSummary(),
-      today: '2026-04-08',
+      today: '2026-04-10',
     })
 
     expect(summary.primaryAction?.kind).toBe('fix_coherence')
     expect(summary.secondaryActions.some((action) => action.kind === 'review_coach_note')).toBe(true)
+  })
+
+  it('does not suggest weekly coach note review before friday', () => {
+    const summary = buildWeeklyActionSummary({
+      sessions: [makeSession()],
+      currentWeekSummary: makeSummary({ coachNote: undefined }),
+      today: '2026-04-08',
+    })
+
+    expect(summary.primaryAction?.kind).not.toBe('review_coach_note')
+    expect(summary.secondaryActions.some((action) => action.kind === 'review_coach_note')).toBe(false)
   })
 
   it('does not suggest generating a coach note for a week that is not the current one', () => {

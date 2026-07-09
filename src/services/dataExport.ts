@@ -15,6 +15,7 @@ import type {
   MacroPlanTimelineEntry,
   MacroWeekCoherenceSummary,
   PhaseSportTargetRole,
+  ReadinessDaily,
   Session,
   SupportedSport,
   TrainingPriority,
@@ -100,6 +101,7 @@ export interface AppDataExport {
   tables: {
     sessions: Session[]
     dayLogs: DayLog[]
+    readinessDaily: ReadinessDaily[]
     weekSummaries: WeekSummary[]
     trainingPlans: TrainingPlan[]
     trainingPlanWeeks: TrainingPlanWeek[]
@@ -129,6 +131,7 @@ export interface AppDataImportResult {
   counts: {
     sessions: number
     dayLogs: number
+    readinessDaily: number
     weekSummaries: number
     trainingPlans: number
     trainingPlanWeeks: number
@@ -173,9 +176,10 @@ function buildAthleteProfileFilename(exportedAt: Date): string {
 
 export async function exportAppData(): Promise<{ filename: string; json: string }> {
   const exportedAt = new Date()
-  const [sessions, dayLogs, weekSummaries, trainingPlans, trainingPlanWeeks, chatMessages, coachProposals, athleteProfiles, athletes] = await Promise.all([
+  const [sessions, dayLogs, readinessDaily, weekSummaries, trainingPlans, trainingPlanWeeks, chatMessages, coachProposals, athleteProfiles, athletes] = await Promise.all([
     db.sessions.toArray(),
     db.dayLogs.toArray(),
+    db.readinessDaily.toArray(),
     db.weekSummaries.toArray(),
     db.trainingPlans.toArray(),
     db.trainingPlanWeeks.toArray(),
@@ -193,6 +197,7 @@ export async function exportAppData(): Promise<{ filename: string; json: string 
     tables: {
       sessions,
       dayLogs,
+      readinessDaily,
       weekSummaries,
       trainingPlans,
       trainingPlanWeeks,
@@ -287,6 +292,7 @@ export async function previewAppDataImportFile(file: File): Promise<AppDataImpor
     counts: {
       sessions: backup.tables.sessions.length,
       dayLogs: backup.tables.dayLogs.length,
+      readinessDaily: backup.tables.readinessDaily.length,
       weekSummaries: backup.tables.weekSummaries.length,
       trainingPlans: backup.tables.trainingPlans.length,
       trainingPlanWeeks: backup.tables.trainingPlanWeeks.length,
@@ -301,10 +307,11 @@ export async function previewAppDataImportFile(file: File): Promise<AppDataImpor
 }
 
 async function computeMergeConflicts(backup: AppDataExport): Promise<MergeConflictSummary> {
-  const [localSessions, localDayLogs, localWeekSummaries, localChatMessages, localProposals, localProfiles, localAthletes] =
+  const [localSessions, localDayLogs, localReadinessDaily, localWeekSummaries, localChatMessages, localProposals, localProfiles, localAthletes] =
     await Promise.all([
       db.sessions.toArray(),
       db.dayLogs.toArray(),
+      db.readinessDaily.toArray(),
       db.weekSummaries.toArray(),
       db.chatMessages.toArray(),
       db.coachProposals.toArray(),
@@ -332,6 +339,15 @@ async function computeMergeConflicts(backup: AppDataExport): Promise<MergeConfli
     if (!local) newInBackupCount++
     else if (local.updatedAt > bd.updatedAt) localNewerCount++
     else if (bd.updatedAt > local.updatedAt) backupNewerCount++
+  }
+
+  // ReadinessDaily — have updatedAt
+  const localReadinessDailyById = new Map(localReadinessDaily.map(d => [d.id, d]))
+  for (const br of backup.tables.readinessDaily) {
+    const local = localReadinessDailyById.get(br.id)
+    if (!local) newInBackupCount++
+    else if (local.updatedAt > br.updatedAt) localNewerCount++
+    else if (br.updatedAt > local.updatedAt) backupNewerCount++
   }
 
   // WeekSummaries — no updatedAt, only track new
@@ -514,6 +530,21 @@ async function putImportedDayLogs(importedRows: DayLog[]): Promise<void> {
   if (rowsToWrite.length > 0) await db.dayLogs.bulkPut(rowsToWrite)
 }
 
+async function putImportedReadinessDaily(importedRows: ReadinessDaily[]): Promise<void> {
+  if (importedRows.length === 0) return
+  const activeAthleteId = getActiveAthleteId()
+  const localRows = await db.readinessDaily.toArray()
+  const { rowsToWrite, localIdsToDelete } = coalesceImportedRowsByNaturalKey(
+    importedRows,
+    localRows,
+    activeAthleteId,
+    (row, aid) => `${effectiveAthleteKey(row.athleteId, aid)}::${row.date}::${row.source}`,
+    (row) => row.updatedAt,
+  )
+  if (localIdsToDelete.length > 0) await db.readinessDaily.bulkDelete(localIdsToDelete)
+  if (rowsToWrite.length > 0) await db.readinessDaily.bulkPut(rowsToWrite)
+}
+
 async function putImportedWeekSummaries(importedRows: WeekSummary[]): Promise<void> {
   if (importedRows.length === 0) return
   const activeAthleteId = getActiveAthleteId()
@@ -539,10 +570,11 @@ export async function importAppDataFromFile(
   if (mode === 'replace') {
     await db.transaction(
       'rw',
-      [db.sessions, db.dayLogs, db.weekSummaries, db.trainingPlans, db.trainingPlanWeeks, db.chatMessages, db.coachProposals, db.athleteProfiles, db.athletes],
+      [db.sessions, db.dayLogs, db.readinessDaily, db.weekSummaries, db.trainingPlans, db.trainingPlanWeeks, db.chatMessages, db.coachProposals, db.athleteProfiles, db.athletes],
       async () => {
         await db.sessions.clear()
         await db.dayLogs.clear()
+        await db.readinessDaily.clear()
         await db.weekSummaries.clear()
         await db.trainingPlanWeeks.clear()
         await db.trainingPlans.clear()
@@ -553,6 +585,7 @@ export async function importAppDataFromFile(
 
         if (backup.tables.sessions.length > 0) await db.sessions.bulkPut(backup.tables.sessions)
         await putImportedDayLogs(backup.tables.dayLogs)
+        await putImportedReadinessDaily(backup.tables.readinessDaily)
         await putImportedWeekSummaries(backup.tables.weekSummaries)
         if (backup.tables.trainingPlans.length > 0) await db.trainingPlans.bulkPut(backup.tables.trainingPlans)
         if (backup.tables.trainingPlanWeeks.length > 0) await db.trainingPlanWeeks.bulkPut(backup.tables.trainingPlanWeeks)
@@ -568,7 +601,7 @@ export async function importAppDataFromFile(
     // WeekSummaries have no updatedAt — only add records missing locally.
     await db.transaction(
       'rw',
-      [db.sessions, db.dayLogs, db.weekSummaries, db.trainingPlans, db.trainingPlanWeeks, db.chatMessages, db.coachProposals, db.athleteProfiles, db.athletes],
+      [db.sessions, db.dayLogs, db.readinessDaily, db.weekSummaries, db.trainingPlans, db.trainingPlanWeeks, db.chatMessages, db.coachProposals, db.athleteProfiles, db.athletes],
       async () => {
         // Sessions
         const localSessions = await db.sessions.toArray()
@@ -581,6 +614,7 @@ export async function importAppDataFromFile(
 
         // DayLogs / WeekSummaries use athlete-scoped natural keys under Dexie v14.
         await putImportedDayLogs(backup.tables.dayLogs)
+        await putImportedReadinessDaily(backup.tables.readinessDaily)
         await putImportedWeekSummaries(backup.tables.weekSummaries)
 
         const localPlans = await db.trainingPlans.toArray()
@@ -645,6 +679,7 @@ export async function importAppDataFromFile(
     counts: {
       sessions: backup.tables.sessions.length,
       dayLogs: backup.tables.dayLogs.length,
+      readinessDaily: backup.tables.readinessDaily.length,
       weekSummaries: backup.tables.weekSummaries.length,
       trainingPlans: backup.tables.trainingPlans.length,
       trainingPlanWeeks: backup.tables.trainingPlanWeeks.length,
@@ -678,6 +713,7 @@ export function parseAppDataExport(value: unknown): AppDataExport {
 
   const sessions = parseSessionsTable(normalized.tables.sessions)
   const dayLogs = parseDayLogsTable(normalized.tables.dayLogs)
+  const readinessDaily = parseReadinessDailyTable(normalized.tables.readinessDaily ?? [])
   const weekSummaries = parseWeekSummariesTable(normalized.tables.weekSummaries)
   const trainingPlans = parseTrainingPlansTable(normalized.tables.trainingPlans ?? [])
   const trainingPlanWeeks = parseTrainingPlanWeeksTable(normalized.tables.trainingPlanWeeks ?? [])
@@ -701,6 +737,7 @@ export function parseAppDataExport(value: unknown): AppDataExport {
     tables: {
       sessions,
       dayLogs,
+      readinessDaily,
       weekSummaries,
       trainingPlans: trainingPlansWithGenerationState,
       trainingPlanWeeks,
@@ -724,6 +761,13 @@ function parseDayLogsTable(value: unknown): DayLog[] {
   const dayLogs = rows.map((row, index) => parseDayLog(row, index))
   ensureUniqueIds(dayLogs, 'dayLogs')
   return dayLogs
+}
+
+function parseReadinessDailyTable(value: unknown): ReadinessDaily[] {
+  const rows = ensureArray(value, 'readinessDaily')
+  const readinessRows = rows.map((row, index) => parseReadinessDaily(row, index))
+  ensureUniqueIds(readinessRows, 'readinessDaily')
+  return readinessRows
 }
 
 function parseWeekSummariesTable(value: unknown): WeekSummary[] {
@@ -830,6 +874,25 @@ function parseDayLog(value: unknown, index: number): DayLog {
     postSessionComment: optionalString(row.postSessionComment, `dayLogs[${index}].postSessionComment`),
     generalNotes: optionalString(row.generalNotes, `dayLogs[${index}].generalNotes`),
     bodyWeight: optionalFiniteNumber(row.bodyWeight, `dayLogs[${index}].bodyWeight`),
+    prefillSource: optionalPrefillSource(row.prefillSource, `dayLogs[${index}].prefillSource`),
+  }
+}
+
+function parseReadinessDaily(value: unknown, index: number): ReadinessDaily {
+  const row = ensureRecord(value, `readinessDaily[${index}]`)
+
+  return {
+    id: requireString(row.id, `readinessDaily[${index}].id`),
+    athleteId: requireString(row.athleteId, `readinessDaily[${index}].athleteId`),
+    date: requireISODate(row.date, `readinessDaily[${index}].date`),
+    recoveryScore: optionalFiniteNumber(row.recoveryScore, `readinessDaily[${index}].recoveryScore`),
+    hrvMs: optionalFiniteNumber(row.hrvMs, `readinessDaily[${index}].hrvMs`),
+    rhrBpm: optionalFiniteNumber(row.rhrBpm, `readinessDaily[${index}].rhrBpm`),
+    strain: optionalFiniteNumber(row.strain, `readinessDaily[${index}].strain`),
+    sleepHours: optionalFiniteNumber(row.sleepHours, `readinessDaily[${index}].sleepHours`),
+    sleepPerformance: optionalFiniteNumber(row.sleepPerformance, `readinessDaily[${index}].sleepPerformance`),
+    source: requireString(row.source, `readinessDaily[${index}].source`),
+    updatedAt: requireFiniteNumber(row.updatedAt, `readinessDaily[${index}].updatedAt`),
   }
 }
 
@@ -1391,6 +1454,7 @@ function optionalChatContext(value: unknown, path: string): ChatMessage['context
     historicalSessions: historicalSessions as Session[] | undefined,
     currentWeekSummary: row.currentWeekSummary == null ? undefined : parseWeekSummary(row.currentWeekSummary, 0),
     dayLog: row.dayLog == null ? undefined : parseDayLog(row.dayLog, 0),
+    readiness: row.readiness == null ? undefined : parseReadinessDaily(row.readiness, 0),
     weekDayLogs: row.weekDayLogs == null
       ? undefined
       : ensureArray(row.weekDayLogs, `${path}.weekDayLogs`).map((log, index) => parseDayLog(log, index)),
@@ -1673,6 +1737,17 @@ function optionalEnumArray<T extends string>(value: unknown, allowed: EnumCollec
   if (value == null) return undefined
   const items = ensureArray(value, path)
   return items.map((item, index) => requireEnum(item, allowed, `${path}[${index}]`))
+}
+
+function optionalPrefillSource(value: unknown, path: string): DayLog['prefillSource'] {
+  if (value == null) return undefined
+  const row = ensureRecord(value, path)
+  const result: NonNullable<DayLog['prefillSource']> = {}
+  for (const field of ['sleepHours', 'sleepQuality', 'energyLevel'] as const) {
+    if (row[field] == null) continue
+    result[field] = requireEnum(row[field], ['whoop'] as const, `${path}.${field}`)
+  }
+  return Object.keys(result).length > 0 ? result : undefined
 }
 
 function optionalRunningProfile(value: unknown, path: string): AthleteProfile['runningProfile'] {

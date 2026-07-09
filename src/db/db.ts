@@ -1,5 +1,5 @@
 import Dexie, { type Table } from 'dexie'
-import type { Session, DayLog, WeekSummary, ChatMessage, CoachProposal, AthleteProfile, Athlete, AITechnicalResult, CoachFeedback } from '../types'
+import type { Session, DayLog, WeekSummary, ChatMessage, CoachProposal, AthleteProfile, Athlete, AITechnicalResult, CoachFeedback, ReadinessDaily } from '../types'
 import type { PlanGenerationJob, TrainingPlan, TrainingPlanWeek } from '../types/planBuilder'
 import type { SyncDiagnosticEvent, SyncErrorLogEntry } from '../types/syncDiagnostics'
 import { getOrCreateChatSessionId } from '../utils/chatSession'
@@ -20,6 +20,7 @@ export class EntrenadorDB extends Dexie {
   aiRequestLogs!: Table<AITechnicalResult>
   coachFeedback!: Table<CoachFeedback>
   athletes!: Table<Athlete>
+  readinessDaily!: Table<ReadinessDaily, string>
 
   constructor() {
     super('EntrenadorDB')
@@ -211,6 +212,11 @@ export class EntrenadorDB extends Dexie {
     this.version(14).stores({
       dayLogs:       'id, date, athleteId, &[athleteId+date]',
       weekSummaries: 'id, weekStartDate, athleteId, &[athleteId+weekStartDate]',
+    })
+
+    // v15 — Whoop readiness summary, athlete-scoped and local-only.
+    this.version(15).stores({
+      readinessDaily: 'id, date, athleteId, source, updatedAt, &[athleteId+date+source]',
     })
   }
 }

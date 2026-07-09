@@ -16,9 +16,10 @@ import type { Session, DayLog, WeekSummary, SessionStatus } from '../types'
 import { CoachEngine } from '../services/ai/CoachEngine'
 import { optimizeChatContext } from '../services/ai/contextOptimizer'
 import * as syncService from '../services/syncService'
-import { toISO, fromISO, getWeekStart, currentWeekStartISO } from '../utils/date'
+import { toISO, fromISO, getWeekStart, currentWeekStartISO, todayISO } from '../utils/date'
 import { v4 as uuid } from '../utils/uuid'
 import { withActiveAthleteStamp } from '../services/athlete/activeScopeFilter'
+import { isWeeklyReviewWindowOpen } from '../services/weeklyReviewWindow'
 
 const STATUS_CYCLE: SessionStatus[] = ['planned', 'completed', 'adjusted', 'skipped']
 
@@ -228,7 +229,14 @@ export const useTrainingStore = create<TrainingState>((set, get) => ({
     const exercises = session.exercises.map(ex =>
       ex.id === exerciseId ? { ...ex, completed: !ex.completed } : ex,
     )
-    await get().updateSession(sessionId, { exercises })
+    const shouldCompleteSession = exercises.length > 0 &&
+      exercises.every((exercise) => exercise.completed) &&
+      session.status !== 'completed' &&
+      session.status !== 'adjusted'
+    await get().updateSession(sessionId, {
+      exercises,
+      ...(shouldCompleteSession ? { status: 'completed' as const } : {}),
+    })
   },
 
   saveDayLog: async (date, patch) => {
@@ -253,6 +261,9 @@ export const useTrainingStore = create<TrainingState>((set, get) => ({
     // pasadas/futuras lo filtraba al dashboard (que lee la semana activa).
     if (toISO(getWeekStart(fromISO(weekStart))) !== currentWeekStartISO()) {
       throw new Error('El resumen semanal solo se puede generar para la semana actual.')
+    }
+    if (!isWeeklyReviewWindowOpen(todayISO())) {
+      throw new Error('La nota semanal se activa desde el viernes, cuando ya hay suficiente señal de la semana.')
     }
     set({ isLoading: true })
     try {

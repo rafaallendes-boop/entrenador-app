@@ -6,6 +6,7 @@ import { athleteIdForOwner } from './athlete/athleteScopeMigration'
 export type SupabaseTable =
   | 'sessions'
   | 'day_logs'
+  | 'readiness_daily'
   | 'week_summaries'
   | 'chat_messages'
   | 'coach_proposals'

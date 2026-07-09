@@ -1,17 +1,29 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { useTrainingStore } from '../store/useTrainingStore'
 import { useUIStore } from '../store/useUIStore'
-import { formatFullDate, fromISO, isDateToday, isStrictISODate, toISO, getWeekStart } from '../utils/date'
+import { useAuthStore } from '../store/useAuthStore'
+import { formatFullDate, fromISO, isDateToday, isStrictISODate, toISO, getWeekStart, todayISO } from '../utils/date'
 import PageHeader from '../components/layout/PageHeader'
 import SessionCard from '../components/session/SessionCard'
 import Slider from '../components/ui/Slider'
 import Card from '../components/ui/Card'
 import { ROUTES } from '../constants/routes'
+import { getActiveAthleteId, getSelfAthleteId } from '../services/athlete/activeAthlete'
+import {
+  buildDayLogSavePatch,
+  buildWhoopPrefillSavePatch,
+  canAutoPersistWhoopPrefill,
+  hasDayLogPrefillPatch,
+  type PrefillField,
+} from '../services/readiness/dayLogPrefillSave'
+import { getLocalReadinessForDate } from '../services/readiness/localReadiness'
+import { prefillDayLog } from '../services/readiness/prefillDayLog'
+import { pullReadiness } from '../services/readiness/pullReadiness'
 import { getDayNutrition, getLoadTypeLabel, getLoadTypeColor } from '../services/nutritionEngine'
 import { resolveSessionProtocols } from '../services/trainingProtocols'
 import { useCoachMemoryStore } from '../store/useCoachMemoryStore'
-import type { AthleteProfile, DayLog, GeneratedProtocol, Session } from '../types'
+import type { AthleteProfile, DayLog, GeneratedProtocol, ReadinessDaily, Session } from '../types'
 
 function DayFeedbackFields({
   dayLog,
@@ -56,21 +68,26 @@ function DayFeedbackFields({
 
 function DayRecoveryNotes({
   dayLog,
+  sleepHoursValue,
+  sleepHoursFromWhoop,
   onSave,
 }: {
   dayLog?: DayLog
-  onSave: (patch: Partial<DayLog>) => void
+  sleepHoursValue?: number
+  sleepHoursFromWhoop?: boolean
+  onSave: (patch: Partial<DayLog>, editedPrefillFields?: PrefillField[]) => void
 }) {
   const [notes, setNotes] = useState(dayLog?.generalNotes ?? '')
-  const [sleepHours, setSleepHours] = useState(dayLog?.sleepHours?.toString() ?? '')
+  const [sleepHours, setSleepHours] = useState(sleepHoursValue?.toString() ?? '')
 
   const saveSleepHours = () => {
     const normalized = sleepHours.trim().replace(',', '.')
     const parsed = normalized === '' ? undefined : Number(normalized)
 
-    onSave({
-      sleepHours: parsed != null && Number.isFinite(parsed) ? parsed : undefined,
-    })
+    onSave(
+      { sleepHours: parsed != null && Number.isFinite(parsed) ? parsed : undefined },
+      ['sleepHours'],
+    )
 
     if (parsed != null && Number.isFinite(parsed)) {
       setSleepHours(String(parsed))
@@ -81,9 +98,12 @@ function DayRecoveryNotes({
     <>
       <div className="flex flex-col gap-1.5">
         <div className="flex justify-between items-center">
-          <label className="text-sm text-ink-muted">Horas de sueño</label>
+          <div className="flex items-center gap-2">
+            <label className="text-sm text-ink-muted">Horas de sueño</label>
+            {sleepHoursFromWhoop && <WhoopPrefillHint />}
+          </div>
           <span className="text-sm font-semibold text-ink">
-            {dayLog?.sleepHours != null ? `${dayLog.sleepHours}h` : '—'}
+            {sleepHoursValue != null ? `${sleepHoursValue}h` : '—'}
           </span>
         </div>
         <input
@@ -264,10 +284,19 @@ function ProtocolGuideCard({ label, protocol }: { label: string; protocol?: Gene
   )
 }
 
+function WhoopPrefillHint() {
+  return (
+    <span className="inline-flex w-fit rounded-full border border-cyan-400/20 bg-cyan-400/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-cyan-300">
+      desde Whoop
+    </span>
+  )
+}
+
 export default function DayDetail() {
   const { date } = useParams<{ date: string }>()
   const { sessions, dayLogs, loadWeek, saveDayLog, updateSession } = useTrainingStore()
   const { athleteProfile } = useCoachMemoryStore()
+  const activeAthleteFromStore = useAuthStore((state) => state.activeAthleteId)
   const { setCurrentWeekStart, setSelectedDate } = useUIStore()
   const hasValidDateParam = typeof date === 'string' && isStrictISODate(date)
 
@@ -287,10 +316,63 @@ export default function DayDetail() {
   const pmSessions = daySessions.filter(s => s.timeBlock === 'PM')
   const completedSessions = daySessions.filter(session => session.status === 'completed')
   const dayLog = dayLogs[dateISO]
+  const activeAthleteId = activeAthleteFromStore ?? getActiveAthleteId()
+  const selfAthleteId = getSelfAthleteId()
+  const [readiness, setReadiness] = useState<ReadinessDaily | undefined>(undefined)
+  const prefill = useMemo(() => prefillDayLog(dayLog ?? {}, readiness), [dayLog, readiness])
+  const activePrefillSource = useMemo(
+    () => ({
+      ...prefill.prefillSource,
+      ...(dayLog?.prefillSource ?? {}),
+    }),
+    [dayLog?.prefillSource, prefill.prefillSource],
+  )
+  const energyValue = dayLog?.energyLevel ?? prefill.patch.energyLevel
+  const sleepQualityValue = dayLog?.sleepQuality ?? prefill.patch.sleepQuality
+  const sleepHoursValue = dayLog?.sleepHours ?? prefill.patch.sleepHours
 
-  const save = async (patch: Parameters<typeof saveDayLog>[1]) => {
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadReadiness() {
+      if (!activeAthleteId || !dateISO) {
+        if (!cancelled) setReadiness(undefined)
+        return
+      }
+
+      await pullReadiness().catch(() => undefined)
+      const nextReadiness = await getLocalReadinessForDate(activeAthleteId, dateISO)
+      if (!cancelled) setReadiness(nextReadiness)
+    }
+
+    void loadReadiness()
+
+    return () => {
+      cancelled = true
+    }
+  }, [activeAthleteId, dateISO])
+
+  useEffect(() => {
+    if (!dateISO || !hasDayLogPrefillPatch(prefill)) return
+    if (!canAutoPersistWhoopPrefill({
+      date: dateISO,
+      today: todayISO(),
+      activeAthleteId,
+      selfAthleteId,
+      readinessAthleteId: readiness?.athleteId,
+    })) return
+
+    void saveDayLog(dateISO, buildWhoopPrefillSavePatch(prefill, dayLog))
+  }, [activeAthleteId, dateISO, dayLog, prefill, readiness?.athleteId, saveDayLog, selfAthleteId])
+
+  const save = async (
+    patch: Parameters<typeof saveDayLog>[1],
+    editedPrefillFields: PrefillField[] = [],
+  ) => {
     if (!dateISO) return
-    await saveDayLog(dateISO, patch)
+    const patchWithPrefill = buildDayLogSavePatch(patch, dayLog, editedPrefillFields)
+
+    await saveDayLog(dateISO, patchWithPrefill)
 
     if (completedSessions.length === 1 && 'postSessionComment' in patch) {
       await updateSession(completedSessions[0].id, { completionNotes: patch.postSessionComment })
@@ -451,14 +533,17 @@ export default function DayDetail() {
         <Card variant="hud" accent="ember" className="p-4 space-y-5">
           <h2 className="text-sm font-semibold text-ink">Feedback del día</h2>
 
-          <Slider
-            label="Energía general"
-            value={dayLog?.energyLevel}
-            min={1}
-            max={10}
-            onChange={v => save({ energyLevel: v })}
-            formatValue={v => `${v}/10`}
-          />
+          <div className="space-y-1">
+            <Slider
+              label="Energía general"
+              value={energyValue}
+              min={1}
+              max={10}
+              onChange={v => save({ energyLevel: v }, ['energyLevel'])}
+              formatValue={v => `${v}/10`}
+            />
+            {activePrefillSource.energyLevel && <WhoopPrefillHint />}
+          </div>
 
           <Slider
             label="Dolor / molestia"
@@ -486,20 +571,25 @@ export default function DayDetail() {
         <Card variant="hud" accent="cyan" className="p-4 space-y-5">
           <h2 className="text-sm font-semibold text-ink">Sueño y recuperación</h2>
 
-          <Slider
-            label="Calidad de sueño"
-            value={dayLog?.sleepQuality}
-            min={1}
-            max={5}
-            step={1}
-            onChange={v => save({ sleepQuality: v })}
-            formatValue={v => ['', 'Muy mal', 'Mal', 'Regular', 'Bien', 'Excelente'][v] ?? String(v)}
-          />
+          <div className="space-y-1">
+            <Slider
+              label="Calidad de sueño"
+              value={sleepQualityValue}
+              min={1}
+              max={5}
+              step={1}
+              onChange={v => save({ sleepQuality: v }, ['sleepQuality'])}
+              formatValue={v => ['', 'Muy mal', 'Mal', 'Regular', 'Bien', 'Excelente'][v] ?? String(v)}
+            />
+            {activePrefillSource.sleepQuality && <WhoopPrefillHint />}
+          </div>
 
           <DayRecoveryNotes
-            key={`${dateISO}-${dayLog?.updatedAt ?? 'empty'}-${dayLog?.generalNotes ?? ''}-${dayLog?.sleepHours ?? 'none'}`}
+            key={`${dateISO}-${dayLog?.updatedAt ?? 'empty'}-${dayLog?.generalNotes ?? ''}-${sleepHoursValue ?? 'none'}-${activePrefillSource.sleepHours ?? 'manual'}`}
             dayLog={dayLog}
-            onSave={patch => void save(patch)}
+            sleepHoursValue={sleepHoursValue}
+            sleepHoursFromWhoop={activePrefillSource.sleepHours === 'whoop'}
+            onSave={(patch, editedPrefillFields) => void save(patch, editedPrefillFields)}
           />
         </Card>
       </div>

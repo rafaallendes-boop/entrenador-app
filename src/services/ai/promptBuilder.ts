@@ -15,6 +15,7 @@ import type {
   AIRequestClass,
   ChatContext,
   CoachPromptRequestType,
+  DayLog,
   PromptTrace,
   Session,
   SupportedSport,
@@ -93,6 +94,7 @@ import { buildLiteCoachContract } from './prompt/core/coachContract'
 import { buildGeneralChatInstructionsSection } from './prompt/packs/quality/generalChat'
 import type { ActionKind } from './prompt/core/outputContract'
 import { renderActionCatalog } from './prompt/renderers/proseSchema'
+import { formatReadinessLine } from './readinessContext'
 
 const ADJUST_SESSION_ACTION_KINDS: readonly ActionKind[] = [
   'add_session',
@@ -1570,8 +1572,26 @@ function buildRecentProposalsSection(context: ChatContext): string {
   return lines.join('\n')
 }
 
+type WhoopPrefillField = keyof NonNullable<DayLog['prefillSource']>
+
+function isWhoopPrefilled(log: DayLog, field: WhoopPrefillField): boolean {
+  return log.prefillSource?.[field] === 'whoop'
+}
+
+function hasWeekDayLogSignal(log: DayLog): boolean {
+  return log.sleepHours != null ||
+    (log.sleepQuality != null && !isWhoopPrefilled(log, 'sleepQuality')) ||
+    (log.energyLevel != null && !isWhoopPrefilled(log, 'energyLevel')) ||
+    log.painLevel != null ||
+    log.rpeActual != null ||
+    Boolean(log.postSessionComment) ||
+    Boolean(log.generalNotes) ||
+    log.bodyWeight != null
+}
+
 function buildTodaySection(context: ChatContext): string {
   const { dayLog } = context
+  const readinessLine = formatReadinessLine(context.readiness)
   const today = todayISO()
 
   const todayDayName = getDayName(today)
@@ -1579,14 +1599,21 @@ function buildTodaySection(context: ChatContext): string {
 
   if (!dayLog) {
     lines.push('Sin registro diario todavía.')
+    if (readinessLine) lines.push(readinessLine)
     return lines.join('\n')
   }
 
-  if (dayLog.sleepHours != null) {
-    const qual = dayLog.sleepQuality != null ? ` · Calidad ${dayLog.sleepQuality}/5` : ''
-    lines.push(`Sueño: ${dayLog.sleepHours}h${qual}`)
+  if (dayLog.sleepHours != null || (dayLog.sleepQuality != null && !isWhoopPrefilled(dayLog, 'sleepQuality'))) {
+    const sleepParts: string[] = []
+    if (dayLog.sleepHours != null) sleepParts.push(`${dayLog.sleepHours}h`)
+    if (dayLog.sleepQuality != null && !isWhoopPrefilled(dayLog, 'sleepQuality')) {
+      sleepParts.push(`Calidad ${dayLog.sleepQuality}/5`)
+    }
+    lines.push(`Sueño: ${sleepParts.join(' · ')}`)
   }
-  if (dayLog.energyLevel != null) lines.push(`Energía: ${dayLog.energyLevel}/10`)
+  if (dayLog.energyLevel != null && !isWhoopPrefilled(dayLog, 'energyLevel')) {
+    lines.push(`Energía: ${dayLog.energyLevel}/10`)
+  }
   if (dayLog.painLevel != null) {
     const pain = dayLog.painLevel === 0 ? 'Sin dolor' : `${dayLog.painLevel}/10`
     const notes = dayLog.painNotes ? ` – ${sanitizeUserText(dayLog.painNotes, 160)}` : ''
@@ -1599,21 +1626,13 @@ function buildTodaySection(context: ChatContext): string {
   if (dayLog.generalNotes) {
     lines.push(`Notas día: "${sanitizeUserText(dayLog.generalNotes, 160)}"`)
   }
+  if (readinessLine) lines.push(readinessLine)
 
   return lines.join('\n')
 }
 
 function buildWeekDayLogsSection(context: ChatContext): string {
-  const logs = context.weekDayLogs
-    ?.filter(log =>
-      log.sleepHours != null ||
-      log.energyLevel != null ||
-      log.painLevel != null ||
-      log.rpeActual != null ||
-      log.postSessionComment ||
-      log.generalNotes ||
-      log.bodyWeight != null
-    )
+  const logs = context.weekDayLogs?.filter(hasWeekDayLogSignal)
 
   if (!logs || logs.length === 0) return ''
 
@@ -1621,7 +1640,8 @@ function buildWeekDayLogsSection(context: ChatContext): string {
   for (const log of logs) {
     const parts: string[] = []
     if (log.sleepHours != null) parts.push(`sueño ${log.sleepHours}h`)
-    if (log.energyLevel != null) parts.push(`energía ${log.energyLevel}/10`)
+    if (log.sleepQuality != null && !isWhoopPrefilled(log, 'sleepQuality')) parts.push(`calidad sueño ${log.sleepQuality}/5`)
+    if (log.energyLevel != null && !isWhoopPrefilled(log, 'energyLevel')) parts.push(`energía ${log.energyLevel}/10`)
     if (log.painLevel != null) parts.push(`dolor ${log.painLevel}/10`)
     if (log.rpeActual != null) parts.push(`RPE real ${log.rpeActual}/10`)
     if (log.bodyWeight != null) parts.push(`peso ${log.bodyWeight}kg`)

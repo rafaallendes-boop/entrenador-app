@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Bell, Brain, Download, LogOut, RotateCcw, ShieldAlert, Trash2, Upload, User } from 'lucide-react'
 import Card from '../components/ui/Card'
 import AthleteProfileEditor from '../components/settings/AthleteProfileEditor'
+import { WhoopConnection } from '../components/settings/WhoopConnection'
 import SyncStatusBadge from '../components/sync/SyncStatusBadge'
 import SyncDiagnosticsPanel from '../components/sync/SyncDiagnosticsPanel'
 import SyncNowCard from '../components/sync/SyncNowCard'
@@ -547,6 +548,7 @@ export default function SettingsPage() {
             syncing={syncDetails.syncAttemptInFlight}
             onSync={() => void handleRetrySync()}
           />
+          <WhoopConnection />
           <Card className="p-4">
             <div className="flex items-start gap-3 mb-3">
               <div className="w-8 h-8 rounded-full bg-brand/15 flex items-center justify-center flex-shrink-0">

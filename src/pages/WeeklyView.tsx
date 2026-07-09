@@ -25,6 +25,7 @@ import {
   buildWeeklyActionComposerDraft,
   serializeWeeklyActionLaunchIntent,
 } from '../services/weeklyLaunchIntent'
+import { isWeeklyReviewWindowOpen } from '../services/weeklyReviewWindow'
 
 const DailyCheckInCard = lazy(() => import('../components/dashboard/DailyCheckInCard'))
 const WeeklyActionCenterCard = lazy(() => import('../components/week/WeeklyActionCenterCard'))
@@ -55,6 +56,7 @@ export default function WeeklyView() {
   const today = todayISO()
   // El resumen semanal solo se genera para la semana en curso (el store lo exige).
   const isCurrentWeek = currentWeekStart === currentWeekStartISO()
+  const canReviewCurrentWeek = isCurrentWeek && isWeeklyReviewWindowOpen(today)
 
   const getSessionsForDay = (dateISO: string, block?: TimeBlock) =>
     sessions
@@ -346,7 +348,7 @@ export default function WeeklyView() {
         <div className="min-w-0">
           <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
             <p className="font-display text-sm font-semibold uppercase tracking-wider text-ink-muted">Resumen semanal</p>
-            {currentWeekSummary && isCurrentWeek && (
+            {currentWeekSummary && canReviewCurrentWeek && (
               <button
                 type="button"
                 onClick={handleGenerateCoachNote}

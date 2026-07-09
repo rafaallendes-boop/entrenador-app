@@ -353,7 +353,23 @@ export interface DayLog {
   postSessionComment?: string
   generalNotes?: string
   bodyWeight?: number
+  // Which check-in fields were prefilled from Whoop (cleared when edited by hand).
+  prefillSource?: Partial<Record<'sleepHours' | 'sleepQuality' | 'energyLevel', 'whoop'>>
   updatedAt: number
+}
+
+export interface ReadinessDaily {
+  id: string                // synthetic, e.g. "whoop:<athleteId>:YYYY-MM-DD"
+  athleteId: string         // scope key; maps to Supabase athlete_id
+  date: string              // ISO "YYYY-MM-DD"
+  recoveryScore?: number    // 0-100
+  hrvMs?: number
+  rhrBpm?: number
+  strain?: number
+  sleepHours?: number
+  sleepPerformance?: number // 0-100
+  source: string            // "whoop"
+  updatedAt: number         // epoch ms
 }
 
 export interface WeekSummary {
@@ -674,6 +690,7 @@ export interface ChatContext {
   historicalSessions?: Session[]
   currentWeekSummary?: WeekSummary
   dayLog?: DayLog
+  readiness?: ReadinessDaily
   weekDayLogs?: DayLog[]
   athleteMemory?: string
   athleteProfile?: AthleteProfile

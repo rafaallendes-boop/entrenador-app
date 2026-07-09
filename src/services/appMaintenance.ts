@@ -30,6 +30,7 @@ export interface LocalDataCounts {
   trainingData: {
     sessions: number
     dayLogs: number
+    readinessDaily: number
     weekSummaries: number
     trainingPlans: number
     trainingPlanWeeks: number
@@ -69,9 +70,10 @@ export async function deleteCoachSessionsByIds(ids: string[]): Promise<number> {
 }
 
 export async function getLocalDataCounts(): Promise<LocalDataCounts> {
-  const [sessions, dayLogs, weekSummaries, trainingPlans, trainingPlanWeeks, athletes, chatHistory, coachProposals, coachMemory] = await Promise.all([
+  const [sessions, dayLogs, readinessDaily, weekSummaries, trainingPlans, trainingPlanWeeks, athletes, chatHistory, coachProposals, coachMemory] = await Promise.all([
     db.sessions.count(),
     db.dayLogs.count(),
+    db.readinessDaily.count(),
     db.weekSummaries.count(),
     db.trainingPlans.count(),
     db.trainingPlanWeeks.count(),
@@ -85,6 +87,7 @@ export async function getLocalDataCounts(): Promise<LocalDataCounts> {
     trainingData: {
       sessions,
       dayLogs,
+      readinessDaily,
       weekSummaries,
       trainingPlans,
       trainingPlanWeeks,
@@ -105,11 +108,12 @@ export async function clearSelectedLocalAppData(selection: LocalDataSelection): 
 
   await db.transaction(
     'rw',
-    [db.sessions, db.dayLogs, db.weekSummaries, db.trainingPlans, db.trainingPlanWeeks, db.chatMessages, db.coachProposals, db.athleteProfiles, db.athletes],
+    [db.sessions, db.dayLogs, db.readinessDaily, db.weekSummaries, db.trainingPlans, db.trainingPlanWeeks, db.chatMessages, db.coachProposals, db.athleteProfiles, db.athletes],
     async () => {
       if (selection.trainingData) {
         await db.sessions.clear()
         await db.dayLogs.clear()
+        await db.readinessDaily?.clear()
         await db.weekSummaries.clear()
         await db.trainingPlanWeeks.clear()
         await db.trainingPlans.clear()

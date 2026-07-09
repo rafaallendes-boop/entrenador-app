@@ -72,6 +72,8 @@ const insertCalls: Array<{ table: string; payload: unknown }> = []
 const deleteCalls: Array<{ table: string; filters: Array<MockFilter> }> = []
 const updateCalls: Array<{ table: string; payload: unknown; filters: Array<MockFilter> }> = []
 const selectCalls: Array<{ table: string; filters: Array<MockFilter> }> = []
+const getSessionMock = vi.fn(async () => ({ data: { session: { access_token: 'supabase-token' } } }))
+const whoopDeleteFetchMock = vi.fn(async () => ({ ok: true, status: 200 }) as Response)
 
 function createQueryBuilder(
   table: string,
@@ -176,6 +178,9 @@ function matchesIndex(row: unknown, index: string, value: unknown): boolean {
 
 const supabaseMock = {
   from: createSupabaseFrom(),
+  auth: {
+    getSession: getSessionMock,
+  },
 }
 
 function requireMockSupabase(auth: Awaited<typeof import('../auth')>) {
@@ -376,8 +381,13 @@ describe('syncService', () => {
     localStorageState.clear()
     syncStatusMock.mockReset()
     syncDetailsMock.mockReset()
+    getSessionMock.mockReset()
+    getSessionMock.mockResolvedValue({ data: { session: { access_token: 'supabase-token' } } })
+    whoopDeleteFetchMock.mockReset()
+    whoopDeleteFetchMock.mockResolvedValue({ ok: true, status: 200 } as Response)
     clearAllLocalAppDataMock.mockReset()
     supabaseMock.from = createSupabaseFrom()
+    supabaseMock.auth.getSession = getSessionMock
     storeState.user = { id: 'user-1' }
     storeState.syncDetails = createSyncDetailsState()
 
@@ -397,6 +407,11 @@ describe('syncService', () => {
     Object.defineProperty(globalThis, 'navigator', {
       configurable: true,
       value: { onLine: true },
+    })
+
+    Object.defineProperty(globalThis, 'fetch', {
+      configurable: true,
+      value: whoopDeleteFetchMock,
     })
   })
 
@@ -1237,6 +1252,10 @@ describe('syncService', () => {
       'athlete_profiles',
       'athletes',
     ])
+    expect(whoopDeleteFetchMock).toHaveBeenCalledWith('/.netlify/functions/whoop-sync', {
+      method: 'DELETE',
+      headers: { Authorization: 'Bearer supabase-token' },
+    })
     expect(updateCalls.some((call) => call.table === 'athlete_profiles')).toBe(false)
     expect(upsertCalls.some((call) => call.table === 'athlete_profiles')).toBe(true)
     expect(insertCalls.some((call) => call.table === 'athlete_profiles')).toBe(false)
@@ -1248,6 +1267,18 @@ describe('syncService', () => {
     expect(localStorage.getItem('entrenador_profile_reset_lock_v1')).toContain('awaiting_bootstrap_ack')
     expect(outcome.completed).toBe(true)
     expect(outcome.pending).toEqual([])
+  })
+
+  it('does not block a full reset when the WHOOP delete function is not deployed yet', async () => {
+    whoopDeleteFetchMock.mockResolvedValue({ ok: false, status: 404 } as Response)
+
+    const syncService = await import('../syncService')
+    const outcome = await syncService.wipeRemoteAndLocalAppData('user-1')
+
+    expect(whoopDeleteFetchMock).toHaveBeenCalled()
+    expect(outcome.completed).toBe(true)
+    expect(outcome.pending).toEqual([])
+    expect(clearAllLocalAppDataMock).toHaveBeenCalled()
   })
 
   it('preserves the self athlete so the full reset marker is not cascade-deleted', async () => {

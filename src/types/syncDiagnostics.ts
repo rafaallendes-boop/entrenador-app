@@ -55,6 +55,7 @@ export const ENTITY_TIER: Record<SupabaseTable, SyncTier> = {
   training_plans: 'A',
   training_plan_weeks: 'A',
   day_logs: 'B',
+  readiness_daily: 'B',
   week_summaries: 'B',
   coach_proposals: 'B',
   chat_messages: 'C',

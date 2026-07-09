@@ -5,6 +5,7 @@ import { useChatStore } from '../store/useChatStore'
 import { useCoachActionsStore } from '../store/useCoachActionsStore'
 import { useCoachMemoryStore } from '../store/useCoachMemoryStore'
 import { useTrainingStore } from '../store/useTrainingStore'
+import { useAuthStore } from '../store/useAuthStore'
 import { detectChatIntent } from '../services/ai/contextOptimizer'
 import { currentWeekStartISO, todayISO } from '../utils/date'
 import { getAthleteFirstName, getEnabledSports, getProfileCompleteness } from '../utils/athlete'
@@ -12,12 +13,15 @@ import ChatBubble from '../components/chat/ChatBubble'
 import ChatInput from '../components/chat/ChatInput'
 import ChatMarkdown from '../components/chat/ChatMarkdown'
 import Spinner from '../components/ui/Spinner'
-import type { ChatContext, CoachProposal } from '../types'
+import type { ChatContext, CoachProposal, ReadinessDaily } from '../types'
 import { recordCoachFeedback } from '../services/ai/aiTelemetry'
 import { ROUTES } from '../constants/routes'
 import { useLoadAnalytics } from '../hooks/useWeeklySnapshot'
 import { useWeeklyLaunchIntent } from '../hooks/useWeeklyLaunchIntent'
 import { buildWeeklyActionComposerDraft } from '../services/weeklyLaunchIntent'
+import { getActiveAthleteId } from '../services/athlete/activeAthlete'
+import { getLocalReadinessForDate } from '../services/readiness/localReadiness'
+import { pullReadiness } from '../services/readiness/pullReadiness'
 
 const QuickActionChips = lazy(() => import('../components/chat/QuickActionChips'))
 const ProposalDrawer = lazy(() => import('../components/chat/ProposalDrawer'))
@@ -94,6 +98,7 @@ export default function ChatCoach() {
   const { proposals, loadProposals, acceptProposal, rejectProposal } = useCoachActionsStore()
   const { coachMemory, athleteProfile, loadMemory } = useCoachMemoryStore()
   const { sessions, currentWeekSummary, dayLogs, loadWeek } = useTrainingStore()
+  const activeAthleteFromStore = useAuthStore((state) => state.activeAthleteId)
   const bottomRef = useRef<HTMLDivElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   const autoSentRef = useRef(false)
@@ -107,6 +112,7 @@ export default function ChatCoach() {
   const [deleteConfirm, setDeleteConfirm] = useState(false)
   const [profileBannerDismissed, setProfileBannerDismissed] = useState(false)
   const [profileNudgeDismissed, setProfileNudgeDismissed] = useState(false)
+  const [readiness, setReadiness] = useState<ReadinessDaily | undefined>(undefined)
   const locationState = (location.state as { showProfileNudge?: boolean; composerDraft?: string; fromPlanBuilder?: boolean } | null)
   const loadAnalytics = useLoadAnalytics(currentWeekStartISO(), sessions)
   const composerDraft = locationState?.composerDraft ?? buildWeeklyActionComposerDraft(launchIntent)
@@ -125,6 +131,26 @@ export default function ChatCoach() {
     loadMemory()
     loadWeek(currentWeekStartISO())
   }, [loadHistory, loadProposals, loadMemory, loadWeek])
+
+  useEffect(() => {
+    let cancelled = false
+    const activeAthleteId = activeAthleteFromStore ?? getActiveAthleteId()
+
+    async function loadReadiness() {
+      if (!activeAthleteId) {
+        if (!cancelled) setReadiness(undefined)
+        return
+      }
+      await pullReadiness().catch(() => undefined)
+      const row = await getLocalReadinessForDate(activeAthleteId, todayISO())
+      if (!cancelled) setReadiness(row)
+    }
+
+    void loadReadiness()
+    return () => {
+      cancelled = true
+    }
+  }, [activeAthleteFromStore])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -174,6 +200,7 @@ export default function ChatCoach() {
       historicalSessions,
       currentWeekSummary: currentWeekSummary ?? undefined,
       dayLog: dayLogs[todayISO()],
+      readiness,
       weekDayLogs: Object.values(dayLogs),
       athleteMemory: coachMemory || undefined,
       athleteProfile: athleteProfile ?? undefined,
@@ -191,7 +218,7 @@ export default function ChatCoach() {
       intent: detectChatIntent(message),
       loadAnalytics: loadAnalytics ?? undefined,
     }
-  }, [sessions, currentWeekSummary, dayLogs, coachMemory, athleteProfile, proposals, loadAnalytics])
+  }, [sessions, currentWeekSummary, dayLogs, readiness, coachMemory, athleteProfile, proposals, loadAnalytics])
 
   const submitMessage = useCallback(async (message: string) => {
     const result = await sendMessage(message, buildContext(message))
