@@ -28,6 +28,17 @@ export function prefillDayLog(
     patch.energyLevel = clamp(Math.round(readiness.recoveryScore / 10), 1, 10)
     prefillSource.energyLevel = 'whoop'
   }
+  // "Esfuerzo" (final del día): Whoop strain (0-21) escalado a 1-10. Editable.
+  // Strain es acumulativo, así que se refresca en cada sync mientras siga siendo
+  // Whoop-sourced; nunca pisa un valor declarado a mano.
+  if (readiness.strain != null) {
+    const mapped = clamp(Math.round(readiness.strain / 2.1), 1, 10)
+    const isManual = !isEmpty(existing.rpeActual) && existing.prefillSource?.rpeActual !== 'whoop'
+    if (!isManual) {
+      prefillSource.rpeActual = 'whoop'
+      if (mapped !== existing.rpeActual) patch.rpeActual = mapped
+    }
+  }
 
   return { patch, prefillSource }
 }

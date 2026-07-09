@@ -40,6 +40,11 @@ describe('ReadinessCard', () => {
     expect(html.toLowerCase()).toContain('sin datos')
   })
 
+  it('shows a manual sync button when connected and sync is available', () => {
+    const html = renderToStaticMarkup(<ReadinessCard connected readiness={readiness} onSync={() => undefined} />)
+    expect(html.toLowerCase()).toContain('sincronizar')
+  })
+
   it('shows a no-data state for all-null readiness rows', () => {
     const html = renderToStaticMarkup(
       <ReadinessCard

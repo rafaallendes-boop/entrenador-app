@@ -10,6 +10,7 @@ import {
 import { buildWeekCreatorSystemPrompt } from '../week/prompts/weekPrompt'
 import { deriveWeekCreatorAthleteTier, type WeekCreatorAthleteTier, type WeekCreatorEffectiveConfig } from './WeekCreatorConfig'
 import { normalizeSport } from '../../utils/athlete'
+import { isWhoopPrefilled } from '../readiness/dayLogPrefillSave'
 
 export interface WeekCreatorPromptInput {
   userMessage: string
@@ -536,7 +537,7 @@ function formatDayLogLine(log: NonNullable<ChatContext['weekDayLogs']>[number]):
     log.energyLevel != null ? `energía ${log.energyLevel}/10` : '',
     log.painLevel != null ? `dolor ${log.painLevel}/10` : '',
     log.sleepHours != null ? `sueño ${log.sleepHours}h` : '',
-    log.rpeActual != null ? `RPE real ${log.rpeActual}/10` : '',
+    log.rpeActual != null && !isWhoopPrefilled(log, 'rpeActual') ? `esfuerzo ${log.rpeActual}/10` : '',
   ].filter(Boolean)
   return `- ${log.date}: ${parts.length > 0 ? parts.join(' · ') : 'sin métricas accionables'}`
 }

@@ -232,10 +232,10 @@ export default function DailyCheckInCard({ todaySessions, autoExpandToken = 0 }:
           />
 
           <DotScale
-            label="RPE real"
+            label="Esfuerzo"
             value={dayLog?.rpeActual}
             max={10}
-            onChange={v => save({ rpeActual: v })}
+            onChange={v => save({ rpeActual: v }, ['rpeActual'])}
           />
 
           <DailyCheckInNotes

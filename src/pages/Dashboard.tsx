@@ -1,5 +1,5 @@
 import { ChevronDown, Target } from 'lucide-react'
-import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useTrainingStore } from '../store/useTrainingStore'
 import { useCoachActionsStore } from '../store/useCoachActionsStore'
@@ -16,7 +16,6 @@ import { ReadinessCard } from '../components/readiness/ReadinessCard'
 import { getDayNutrition } from '../services/nutritionEngine'
 import { startNotificationSync } from '../services/notifications'
 import { getActiveAthleteId, getSelfAthleteId } from '../services/athlete/activeAthlete'
-import { getWhoopStatus } from '../services/readiness/whoopApi'
 import { pullReadiness } from '../services/readiness/pullReadiness'
 import { getLocalReadinessForDate } from '../services/readiness/localReadiness'
 import { prefillDayLog } from '../services/readiness/prefillDayLog'
@@ -30,6 +29,7 @@ import { computeMacroPlan, getPrimaryGoalEvent } from '../services/macroPlan'
 import { useMacroWeekCoherence } from '../hooks/useMacroWeekCoherence'
 import { useWeeklyActionNavigator } from '../hooks/useWeeklyActionNavigator'
 import { useWeeklySnapshot } from '../hooks/useWeeklySnapshot'
+import { useWhoopSync } from '../hooks/useWhoopSync'
 import { isWeeklyReviewWindowOpen } from '../services/weeklyReviewWindow'
 import type { CoachProposal, ReadinessDaily } from '../types'
 
@@ -66,9 +66,22 @@ export default function Dashboard() {
   const [activeProposal, setActiveProposal] = useState<CoachProposal | null>(null)
   const [proposalError, setProposalError] = useState<string | null>(null)
   const [readiness, setReadiness] = useState<ReadinessDaily | undefined>(undefined)
-  const [whoopConnected, setWhoopConnected] = useState(false)
   const todayDayLog = dayLogs[today]
   const todayWhoopPrefill = useMemo(() => prefillDayLog(todayDayLog ?? {}, readiness), [todayDayLog, readiness])
+  const loadLocalReadiness = useCallback(async () => {
+    if (!activeAthleteId) {
+      setReadiness(undefined)
+      return
+    }
+    setReadiness(await getLocalReadinessForDate(activeAthleteId, today))
+  }, [activeAthleteId, today])
+  const {
+    message: whoopSyncMessage,
+    refreshStatus: refreshWhoopStatus,
+    status: whoopStatus,
+    syncing: whoopSyncing,
+    syncNow: syncWhoopNow,
+  } = useWhoopSync({ onReadinessPulled: loadLocalReadiness })
 
   // Macro plan — computed on-the-fly from profile, not persisted as source of truth
   const macroPlan = useMemo(() => computeMacroPlan(athleteProfile), [athleteProfile])
@@ -95,24 +108,20 @@ export default function Dashboard() {
 
     async function loadWhoopReadiness() {
       if (!activeAthleteId) {
-        if (!cancelled) {
-          setReadiness(undefined)
-          setWhoopConnected(false)
-        }
+        if (!cancelled) setReadiness(undefined)
         return
       }
 
+      // On mount we only pull whatever the server cron already synced into
+      // readiness_daily; a fresh Whoop fetch stays behind the manual button.
       await pullReadiness().catch(() => undefined)
-      const [nextReadiness, status] = await Promise.all([
-        getLocalReadinessForDate(activeAthleteId, today),
-        canConnectWhoop
-          ? getWhoopStatus().catch(() => ({ connected: false }))
-          : Promise.resolve({ connected: false }),
-      ])
+      const nextReadiness = await getLocalReadinessForDate(activeAthleteId, today)
 
       if (cancelled) return
       setReadiness(nextReadiness)
-      setWhoopConnected(status.connected)
+      if (!canConnectWhoop) return
+
+      await refreshWhoopStatus()
     }
 
     void loadWhoopReadiness()
@@ -120,7 +129,7 @@ export default function Dashboard() {
     return () => {
       cancelled = true
     }
-  }, [activeAthleteId, canConnectWhoop, today])
+  }, [activeAthleteId, canConnectWhoop, refreshWhoopStatus, today])
 
   useEffect(() => {
     if (!hasDayLogPrefillPatch(todayWhoopPrefill)) return
@@ -369,8 +378,11 @@ export default function Dashboard() {
 
       <ReadinessCard
         readiness={readiness}
-        connected={canConnectWhoop && whoopConnected}
+        connected={canConnectWhoop && Boolean(whoopStatus?.connected)}
         canConnect={canConnectWhoop}
+        onSync={canConnectWhoop && whoopStatus?.connected ? () => { void syncWhoopNow() } : undefined}
+        syncMessage={whoopSyncMessage}
+        syncing={whoopSyncing}
       />
 
       {proposalError && (

@@ -93,6 +93,56 @@ describe('readiness prompt context', () => {
     expect(prompt).not.toContain('Energía: 3/10')
   })
 
+  it('does not present WHOOP-derived rpeActual (Esfuerzo) as declared effort', () => {
+    const today = todayISO()
+    const context: ChatContext = {
+      recentSessions: [],
+      plannedSessions: [],
+      historicalSessions: [],
+      readiness: {
+        id: `whoop:ath_u1:${today}`, athleteId: 'ath_u1', date: today,
+        recoveryScore: 28, strain: 14.1, source: 'whoop', updatedAt: 1,
+      },
+      dayLog: {
+        id: `day:${today}`, date: today, rpeActual: 7,
+        prefillSource: { rpeActual: 'whoop' }, updatedAt: 1,
+      },
+    }
+
+    const prompt = buildCoachSystemPrompt(context, { requestClass: 'chat_general' })
+
+    expect(prompt).not.toContain('RPE real hoy')
+    expect(prompt).not.toContain('Esfuerzo hoy')
+  })
+
+  it('shows a manually-set effort as "Esfuerzo" in the prompt', () => {
+    const today = todayISO()
+    const context: ChatContext = {
+      recentSessions: [],
+      plannedSessions: [],
+      historicalSessions: [],
+      dayLog: { id: `day:${today}`, date: today, rpeActual: 8, updatedAt: 1 },
+    }
+
+    const prompt = buildCoachSystemPrompt(context, { requestClass: 'chat_general' })
+
+    expect(prompt).toContain('Esfuerzo hoy: 8/10')
+  })
+
+  it('labels the weekly high-effort fatigue signal as "esfuerzo", not "RPE real"', () => {
+    const context: ChatContext = {
+      recentSessions: [],
+      plannedSessions: [],
+      historicalSessions: [],
+      weekDayLogs: [{ id: 'd1', date: '2026-07-01', rpeActual: 9, updatedAt: 1 }],
+    }
+
+    const prompt = buildCoachSystemPrompt(context, { requestClass: 'chat_general' })
+
+    expect(prompt).toContain('esfuerzo >= 8/10')
+    expect(prompt).not.toContain('RPE real >= 8/10')
+  })
+
   it('keeps manually edited subjective check-in fields in the prompt', () => {
     const today = todayISO()
     const context: ChatContext = {

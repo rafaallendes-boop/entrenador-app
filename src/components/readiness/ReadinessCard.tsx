@@ -1,4 +1,4 @@
-import { Activity, Link, Moon, TrendingUp } from 'lucide-react'
+import { Activity, Link, Moon, RefreshCcw, TrendingUp } from 'lucide-react'
 import type { ComponentType } from 'react'
 import type { ReadinessDaily } from '../../types'
 import { recoveryBand, type RecoveryBand } from '../../services/readiness/readinessBands'
@@ -37,12 +37,29 @@ export function ReadinessCard({
   readiness,
   connected,
   canConnect = true,
+  onSync,
+  syncMessage,
+  syncing = false,
 }: {
   readiness?: ReadinessDaily
   connected: boolean
   canConnect?: boolean
+  onSync?: () => void
+  syncMessage?: string | null
+  syncing?: boolean
 }) {
   const hasMetrics = hasReadinessMetrics(readiness)
+  const syncButton = connected && onSync ? (
+    <button
+      type="button"
+      disabled={syncing}
+      onClick={onSync}
+      className="inline-flex items-center gap-2 rounded-xl border border-surface-soft/70 bg-surface-raised px-3 py-2 text-xs font-semibold text-ink transition-colors hover:bg-surface-card disabled:cursor-not-allowed disabled:opacity-60"
+    >
+      <RefreshCcw size={13} className={syncing ? 'animate-spin' : ''} />
+      {syncing ? 'Sincronizando' : 'Sincronizar'}
+    </button>
+  ) : null
 
   if (!hasMetrics && !connected && canConnect) {
     return (
@@ -73,12 +90,16 @@ export function ReadinessCard({
   if (!hasMetrics) {
     return (
       <section className="rounded-card border border-surface-soft/70 bg-surface-panel p-4 shadow-panel">
-        <p className="font-display text-[10px] font-semibold uppercase tracking-[0.22em] text-ink-faint">
-          Readiness · Whoop
-        </p>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <p className="font-display text-[10px] font-semibold uppercase tracking-[0.22em] text-ink-faint">
+            Readiness · Whoop
+          </p>
+          {syncButton}
+        </div>
         <p className="mt-2 text-sm text-ink-muted">
           Sin datos de Whoop hoy todavia.
         </p>
+        {syncMessage && <p className="mt-3 text-xs text-ink-muted">{syncMessage}</p>}
       </section>
     )
   }
@@ -94,9 +115,12 @@ export function ReadinessCard({
           </p>
           <p className="mt-1 text-xs text-ink-muted">{readiness.date}</p>
         </div>
-        <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${BAND_BG[band]} ${BAND_TEXT[band]}`}>
-          {BAND_LABEL[band]}
-        </span>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {syncButton}
+          <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${BAND_BG[band]} ${BAND_TEXT[band]}`}>
+            {BAND_LABEL[band]}
+          </span>
+        </div>
       </div>
 
       <div className="mt-4 grid grid-cols-3 gap-2">
@@ -117,6 +141,7 @@ export function ReadinessCard({
           value={readiness.strain != null ? readiness.strain.toFixed(1) : '-'}
         />
       </div>
+      {syncMessage && <p className="mt-3 text-xs text-ink-muted">{syncMessage}</p>}
     </section>
   )
 }

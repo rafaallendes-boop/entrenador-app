@@ -1743,7 +1743,7 @@ function optionalPrefillSource(value: unknown, path: string): DayLog['prefillSou
   if (value == null) return undefined
   const row = ensureRecord(value, path)
   const result: NonNullable<DayLog['prefillSource']> = {}
-  for (const field of ['sleepHours', 'sleepQuality', 'energyLevel'] as const) {
+  for (const field of ['sleepHours', 'sleepQuality', 'energyLevel', 'rpeActual'] as const) {
     if (row[field] == null) continue
     result[field] = requireEnum(row[field], ['whoop'] as const, `${path}.${field}`)
   }

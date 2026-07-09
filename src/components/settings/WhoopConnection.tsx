@@ -1,40 +1,35 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, RefreshCcw, Trash2 } from 'lucide-react'
 import Card from '../ui/Card'
 import { getActiveAthleteId, getSelfAthleteId } from '../../services/athlete/activeAthlete'
 import { useAuthStore } from '../../store/useAuthStore'
 import {
   disconnectWhoop,
-  getWhoopStatus,
   startWhoopConnect,
-  syncWhoopNow,
-  type WhoopStatus,
 } from '../../services/readiness/whoopApi'
-import { pullReadiness } from '../../services/readiness/pullReadiness'
 import { clearLocalWhoopReadiness } from '../../services/readiness/localReadiness'
+import { useWhoopSync } from '../../hooks/useWhoopSync'
 
 export function WhoopConnection() {
   const activeAthleteFromStore = useAuthStore((state) => state.activeAthleteId)
-  const [status, setStatus] = useState<WhoopStatus | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [biometricConsent, setBiometricConsent] = useState(false)
-  const [apiAvailable, setApiAvailable] = useState(true)
+  const {
+    apiAvailable,
+    clearMessage: clearSyncMessage,
+    message: syncMessage,
+    refreshStatus: refresh,
+    status,
+    syncing,
+    syncNow,
+  } = useWhoopSync()
 
   const activeAthleteId = activeAthleteFromStore ?? getActiveAthleteId()
   const selfAthleteId = getSelfAthleteId()
   const canConnect = activeAthleteId != null && selfAthleteId != null && activeAthleteId === selfAthleteId
-
-  const refresh = useCallback(async () => {
-    try {
-      setStatus(await getWhoopStatus())
-      setApiAvailable(true)
-    } catch (error) {
-      console.warn('[whoop] status failed', error)
-      setApiAvailable(false)
-      setStatus(null)
-    }
-  }, [])
+  const actionBusy = busy || syncing
+  const displayMessage = message ?? syncMessage
 
   useEffect(() => {
     void refresh()
@@ -50,12 +45,12 @@ export function WhoopConnection() {
   const onConnect = async () => {
     if (!canConnect || !biometricConsent) return
     setMessage(null)
+    clearSyncMessage()
     setBusy(true)
     try {
       window.location.href = await startWhoopConnect()
     } catch (error) {
       console.error('[whoop] connect failed', error)
-      setApiAvailable(false)
       setMessage('No se pudo iniciar la conexion con Whoop.')
     } finally {
       setBusy(false)
@@ -63,37 +58,15 @@ export function WhoopConnection() {
   }
 
   const onSync = async () => {
-    setBusy(true)
     setMessage(null)
-    try {
-      const result = await syncWhoopNow()
-      if (result.ok) {
-        await pullReadiness().catch(() => undefined)
-        setMessage('Whoop sincronizado.')
-      } else if (result.reason === 'cooldown') {
-        const seconds = Math.max(1, Math.ceil((result.retryAfterMs ?? 0) / 1000))
-        setMessage(`Espera ${seconds}s para volver a sincronizar.`)
-      } else if (result.reason === 'no_self_athlete') {
-        setMessage('Tu perfil de atleta todavia no esta listo. Reabre la app y reintenta.')
-      } else if (result.reason === 'rate_limited') {
-        setMessage('Whoop limito las consultas. Reintenta mas tarde.')
-      } else {
-        setMessage('No se pudo sincronizar Whoop.')
-      }
-      await refresh()
-    } catch (error) {
-      console.error('[whoop] sync failed', error)
-      setApiAvailable(false)
-      setMessage('No se pudo sincronizar Whoop.')
-    } finally {
-      setBusy(false)
-    }
+    await syncNow()
   }
 
   const onDisconnect = async () => {
     if (!window.confirm('Desconectar Whoop y borrar tus datos de Whoop de RallyIQ?')) return
     setBusy(true)
     setMessage(null)
+    clearSyncMessage()
     try {
       await disconnectWhoop()
       await clearLocalWhoopReadiness(activeAthleteId)
@@ -101,7 +74,6 @@ export function WhoopConnection() {
       await refresh()
     } catch (error) {
       console.error('[whoop] disconnect failed', error)
-      setApiAvailable(false)
       setMessage('No se pudo desconectar Whoop.')
     } finally {
       setBusy(false)
@@ -140,16 +112,16 @@ export function WhoopConnection() {
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
-              disabled={busy}
+              disabled={actionBusy}
               onClick={() => void onSync()}
               className="inline-flex items-center gap-2 rounded-xl bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-light disabled:cursor-not-allowed disabled:opacity-60"
             >
-              <RefreshCcw size={14} />
-              {busy ? 'Sincronizando...' : 'Sincronizar ahora'}
+              <RefreshCcw size={14} className={syncing ? 'animate-spin' : ''} />
+              {syncing ? 'Sincronizando...' : 'Sincronizar ahora'}
             </button>
             <button
               type="button"
-              disabled={busy}
+              disabled={actionBusy}
               onClick={() => void onDisconnect()}
               className="inline-flex items-center gap-2 rounded-xl bg-red-500/10 px-3 py-2 text-sm font-semibold text-red-400 transition-colors hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-60"
             >
@@ -182,7 +154,7 @@ export function WhoopConnection() {
               </label>
               <button
                 type="button"
-                disabled={busy || !biometricConsent}
+                disabled={actionBusy || !biometricConsent}
                 onClick={() => void onConnect()}
                 className="inline-flex items-center gap-2 rounded-xl bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-light disabled:cursor-not-allowed disabled:opacity-60"
               >
@@ -194,8 +166,8 @@ export function WhoopConnection() {
         </div>
       )}
 
-      {message && (
-        <p className="mt-3 text-xs text-ink-muted">{message}</p>
+      {displayMessage && (
+        <p className="mt-3 text-xs text-ink-muted">{displayMessage}</p>
       )}
     </Card>
   )

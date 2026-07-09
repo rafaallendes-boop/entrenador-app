@@ -95,6 +95,7 @@ import { buildGeneralChatInstructionsSection } from './prompt/packs/quality/gene
 import type { ActionKind } from './prompt/core/outputContract'
 import { renderActionCatalog } from './prompt/renderers/proseSchema'
 import { formatReadinessLine } from './readinessContext'
+import { isWhoopPrefilled } from '../readiness/dayLogPrefillSave'
 
 const ADJUST_SESSION_ACTION_KINDS: readonly ActionKind[] = [
   'add_session',
@@ -1149,7 +1150,7 @@ function buildFatigueSection(context: ChatContext, options?: { compact?: boolean
   if (lowSleepDays > 0) indicators.push(`${lowSleepDays} dia(s) con sueño < 6.5h`)
   if (lowEnergyDays > 0) indicators.push(`${lowEnergyDays} dia(s) con energía <= 5/10`)
   if (highPainDays > 0) indicators.push(`${highPainDays} dia(s) con dolor >= 4/10`)
-  if (highRpeDays > 0) indicators.push(`${highRpeDays} dia(s) con RPE real >= 8/10`)
+  if (highRpeDays > 0) indicators.push(`${highRpeDays} dia(s) con esfuerzo >= 8/10`)
 
   if (indicators.length > 0) lines.push(`Señales observadas: ${indicators.join(' · ')}`)
   else lines.push('Sin señales semanales suficientes. Si falta data, usa un taper conservador cuando haya competencia cercana.')
@@ -1160,7 +1161,7 @@ function buildFatigueSection(context: ChatContext, options?: { compact?: boolean
   }
 
   lines.push('Interpretación obligatoria:')
-  lines.push('- Fatiga alta si coinciden 2 o más señales: sueño bajo, energía baja, dolor elevado, RPE real alto.')
+  lines.push('- Fatiga alta si coinciden 2 o más señales: sueño bajo, energía baja, dolor elevado, esfuerzo alto.')
   lines.push('- Si la fatiga es alta y hay competencia cercana, baja volumen antes que solo bajar RPE.')
   lines.push('- Si la fatiga es moderada, conserva solo 1 estímulo de calidad y limpia lo accesorio.')
   lines.push('- Si la recuperación es buena, puedes mantener calidad, pero sin romper las reglas de taper.')
@@ -1572,18 +1573,13 @@ function buildRecentProposalsSection(context: ChatContext): string {
   return lines.join('\n')
 }
 
-type WhoopPrefillField = keyof NonNullable<DayLog['prefillSource']>
-
-function isWhoopPrefilled(log: DayLog, field: WhoopPrefillField): boolean {
-  return log.prefillSource?.[field] === 'whoop'
-}
 
 function hasWeekDayLogSignal(log: DayLog): boolean {
   return log.sleepHours != null ||
     (log.sleepQuality != null && !isWhoopPrefilled(log, 'sleepQuality')) ||
     (log.energyLevel != null && !isWhoopPrefilled(log, 'energyLevel')) ||
     log.painLevel != null ||
-    log.rpeActual != null ||
+    (log.rpeActual != null && !isWhoopPrefilled(log, 'rpeActual')) ||
     Boolean(log.postSessionComment) ||
     Boolean(log.generalNotes) ||
     log.bodyWeight != null
@@ -1619,7 +1615,9 @@ function buildTodaySection(context: ChatContext): string {
     const notes = dayLog.painNotes ? ` – ${sanitizeUserText(dayLog.painNotes, 160)}` : ''
     lines.push(`Dolor: ${pain}${notes}`)
   }
-  if (dayLog.rpeActual != null) lines.push(`RPE real hoy: ${dayLog.rpeActual}/10`)
+  if (dayLog.rpeActual != null && !isWhoopPrefilled(dayLog, 'rpeActual')) {
+    lines.push(`Esfuerzo hoy: ${dayLog.rpeActual}/10`)
+  }
   if (dayLog.postSessionComment) {
     lines.push(`Comentario: "${sanitizeUserText(dayLog.postSessionComment, 160)}"`)
   }
@@ -1643,7 +1641,7 @@ function buildWeekDayLogsSection(context: ChatContext): string {
     if (log.sleepQuality != null && !isWhoopPrefilled(log, 'sleepQuality')) parts.push(`calidad sueño ${log.sleepQuality}/5`)
     if (log.energyLevel != null && !isWhoopPrefilled(log, 'energyLevel')) parts.push(`energía ${log.energyLevel}/10`)
     if (log.painLevel != null) parts.push(`dolor ${log.painLevel}/10`)
-    if (log.rpeActual != null) parts.push(`RPE real ${log.rpeActual}/10`)
+    if (log.rpeActual != null && !isWhoopPrefilled(log, 'rpeActual')) parts.push(`Esfuerzo ${log.rpeActual}/10`)
     if (log.bodyWeight != null) parts.push(`peso ${log.bodyWeight}kg`)
     if (log.postSessionComment) parts.push(`post: "${sanitizeUserText(log.postSessionComment, 120)}"`)
     if (log.generalNotes) parts.push(`nota: "${sanitizeUserText(log.generalNotes, 120)}"`)

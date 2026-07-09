@@ -19,7 +19,7 @@ describe('prefillDayLog', () => {
     expect(patch.sleepHours).toBe(5.2)
     expect(patch.sleepQuality).toBe(3)
     expect(patch.energyLevel).toBe(3)
-    expect(prefillSource).toEqual({ sleepHours: 'whoop', sleepQuality: 'whoop', energyLevel: 'whoop' })
+    expect(prefillSource).toEqual({ sleepHours: 'whoop', sleepQuality: 'whoop', energyLevel: 'whoop', rpeActual: 'whoop' })
   })
 
   it('does not overwrite a manually-set value (including 0)', () => {
@@ -27,7 +27,53 @@ describe('prefillDayLog', () => {
     expect(patch.sleepHours).toBeUndefined()
     expect(patch.energyLevel).toBeUndefined()
     expect(patch.sleepQuality).toBe(3)
-    expect(prefillSource).toEqual({ sleepQuality: 'whoop' })
+    expect(prefillSource).toEqual({ sleepQuality: 'whoop', rpeActual: 'whoop' })
+  })
+
+  it('maps strain to rpeActual (Esfuerzo) and records source', () => {
+    const { patch, prefillSource } = prefillDayLog({}, readiness)
+    expect(patch.rpeActual).toBe(7) // round(14.1 / 2.1) = 7
+    expect(prefillSource.rpeActual).toBe('whoop')
+  })
+
+  it('does not overwrite an existing rpeActual (including 0)', () => {
+    expect(prefillDayLog({ rpeActual: 9 }, readiness).patch.rpeActual).toBeUndefined()
+    expect(prefillDayLog({ rpeActual: 0 }, readiness).patch.rpeActual).toBeUndefined()
+  })
+
+  it('refreshes a previously Whoop-sourced rpeActual when strain grew (cumulative)', () => {
+    const { patch, prefillSource } = prefillDayLog(
+      { rpeActual: 4, prefillSource: { rpeActual: 'whoop' } },
+      readiness,
+    )
+    expect(patch.rpeActual).toBe(7) // round(14.1 / 2.1) = 7, refreshed from stale 4
+    expect(prefillSource.rpeActual).toBe('whoop')
+  })
+
+  it('does not churn the patch when the Whoop-sourced rpeActual already matches', () => {
+    const { patch, prefillSource } = prefillDayLog(
+      { rpeActual: 7, prefillSource: { rpeActual: 'whoop' } },
+      readiness,
+    )
+    expect('rpeActual' in patch).toBe(false)
+    expect(prefillSource.rpeActual).toBe('whoop')
+  })
+
+  it('never overwrites a manual rpeActual even if strain maps higher', () => {
+    const { patch, prefillSource } = prefillDayLog({ rpeActual: 3 }, readiness)
+    expect(patch.rpeActual).toBeUndefined()
+    expect(prefillSource.rpeActual).toBeUndefined()
+  })
+
+  it('clamps strain mapping into 1-10', () => {
+    expect(prefillDayLog({}, { ...readiness, strain: 21 }).patch.rpeActual).toBe(10)
+    expect(prefillDayLog({}, { ...readiness, strain: 0.5 }).patch.rpeActual).toBe(1)
+  })
+
+  it('does not set rpeActual when strain is absent', () => {
+    const { patch, prefillSource } = prefillDayLog({}, { ...readiness, strain: undefined })
+    expect('rpeActual' in patch).toBe(false)
+    expect(prefillSource.rpeActual).toBeUndefined()
   })
 
   it('returns empty patch when no readiness', () => {

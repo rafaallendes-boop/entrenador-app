@@ -15,6 +15,7 @@ import {
   buildWhoopPrefillSavePatch,
   canAutoPersistWhoopPrefill,
   hasDayLogPrefillPatch,
+  sessionRpeInitialValue,
   type PrefillField,
 } from '../services/readiness/dayLogPrefillSave'
 import { getLocalReadinessForDate } from '../services/readiness/localReadiness'
@@ -497,9 +498,7 @@ export default function DayDetail() {
           ) : (
             <div className="space-y-4">
               {completedSessions.map(session => {
-                const value = session.actualRpe ?? (
-                  completedSessions.length === 1 ? dayLog?.rpeActual : undefined
-                )
+                const value = sessionRpeInitialValue(session.actualRpe, dayLog, completedSessions.length)
 
                 return (
                   <div key={session.id} className="rounded-xl border border-surface-border bg-surface-raised/80 p-3">
@@ -555,9 +554,9 @@ export default function DayDetail() {
             accentClass="accent-rose-500"
           />
 
-          {completedSessions.length === 1 && dayLog?.rpeActual != null && (
+          {sessionRpeInitialValue(undefined, dayLog, completedSessions.length) != null && (
             <p className="text-xs text-ink-faint">
-              El RPE diario previo se usa como valor inicial de la sesión si solo hubo una sesión completada.
+              El esfuerzo del día se usa como valor inicial del RPE de la sesión si solo hubo una sesión completada.
             </p>
           )}
 

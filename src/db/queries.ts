@@ -7,6 +7,33 @@ import { addDays } from 'date-fns'
 import { v4 as uuid } from '../utils/uuid'
 import { ATHLETE_PROFILE_LOCAL_ID, getActiveAthleteId, isSelfScopeActive } from '../services/athlete/activeAthlete'
 import { isScopedAthleteId } from '../services/athlete/effectiveAthleteKey'
+import { isWhoopPrefilled } from '../services/readiness/dayLogPrefillSave'
+
+/**
+ * Collects "RPE real de sesión" values for the weekly average: session-level
+ * `actualRpe`, plus a per-day fallback to `dayLog.rpeActual` ONLY when a day has
+ * exactly one completed session without its own RPE. Whoop-prefilled effort is
+ * excluded — it is objective strain-derived load, not a declared session RPE.
+ */
+export function collectActualRpeValues(
+  realized: Array<{ date: string; actualRpe?: number | null }>,
+  dayLogs: Array<{ date: string; rpeActual?: number; prefillSource?: DayLog['prefillSource'] }>,
+): number[] {
+  const sessionActualRpeValues = realized
+    .map(s => s.actualRpe)
+    .filter((value): value is number => value != null)
+
+  const fallbackDayActualRpeValues = dayLogs
+    .filter(log => log.rpeActual != null && !isWhoopPrefilled(log, 'rpeActual'))
+    .filter(log => {
+      const completedSessionsForDay = realized.filter(session => session.date === log.date)
+      if (completedSessionsForDay.length !== 1) return false
+      return completedSessionsForDay[0].actualRpe == null
+    })
+    .map(log => log.rpeActual as number)
+
+  return [...sessionActualRpeValues, ...fallbackDayActualRpeValues]
+}
 import { filterRowsToActiveScope } from '../services/athlete/activeScopeFilter'
 
 function stripAthleteId<T extends object>(patch: T): Omit<T, 'athleteId'> {
@@ -208,23 +235,7 @@ export const recalculateWeekSummary = async (dateISO: string): Promise<void> => 
     ? completedRpeValues.reduce((a, b) => a + b, 0) / completedRpeValues.length
     : undefined
 
-  const sessionActualRpeValues = realized
-    .map(s => s.actualRpe)
-    .filter((value): value is number => value != null)
-
-  const fallbackDayActualRpeValues = dayLogs
-    .filter(log => log.rpeActual != null)
-    .filter(log => {
-      const completedSessionsForDay = realized.filter(session => session.date === log.date)
-      if (completedSessionsForDay.length !== 1) return false
-      return completedSessionsForDay[0].actualRpe == null
-    })
-    .map(log => log.rpeActual as number)
-
-  const actualRpeValues = [
-    ...sessionActualRpeValues,
-    ...fallbackDayActualRpeValues,
-  ]
+  const actualRpeValues = collectActualRpeValues(realized, dayLogs)
 
   const avgActualRpe = actualRpeValues.length
     ? actualRpeValues.reduce((a, b) => a + b, 0) / actualRpeValues.length

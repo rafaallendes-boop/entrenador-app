@@ -4,6 +4,7 @@ import {
   buildWhoopPrefillSavePatch,
   canAutoPersistWhoopPrefill,
   hasDayLogPrefillPatch,
+  sessionRpeInitialValue,
 } from '../../services/readiness/dayLogPrefillSave'
 import type { DayLog } from '../../types'
 
@@ -49,6 +50,23 @@ describe('buildDayLogSavePatch', () => {
       prefillSource: { sleepQuality: 'whoop' },
     })
   })
+
+  it('clears WHOOP source on rpeActual (Esfuerzo) when the athlete edits it', () => {
+    const dayLog: DayLog = {
+      id: 'day-1',
+      date: '2026-06-21',
+      rpeActual: 7,
+      prefillSource: { rpeActual: 'whoop', energyLevel: 'whoop' },
+      updatedAt: 1,
+    }
+
+    const patch = buildDayLogSavePatch({ rpeActual: 9 }, dayLog, ['rpeActual'])
+
+    expect(patch).toEqual({
+      rpeActual: 9,
+      prefillSource: { energyLevel: 'whoop' },
+    })
+  })
 })
 
 describe('buildWhoopPrefillSavePatch', () => {
@@ -77,6 +95,34 @@ describe('buildWhoopPrefillSavePatch', () => {
         energyLevel: 'whoop',
       },
     })
+  })
+})
+
+describe('sessionRpeInitialValue', () => {
+  it('seeds the session RPE from a manually-declared day effort (single completed session)', () => {
+    expect(sessionRpeInitialValue(undefined, { rpeActual: 6 }, 1)).toBe(6)
+  })
+
+  it('does NOT seed the session RPE from a Whoop-prefilled day effort', () => {
+    expect(
+      sessionRpeInitialValue(
+        undefined,
+        { rpeActual: 6, prefillSource: { rpeActual: 'whoop' } },
+        1,
+      ),
+    ).toBeUndefined()
+  })
+
+  it('prefers the session own RPE over the day effort', () => {
+    expect(sessionRpeInitialValue(8, { rpeActual: 6 }, 1)).toBe(8)
+  })
+
+  it('does not seed from day effort when more than one session was completed', () => {
+    expect(sessionRpeInitialValue(undefined, { rpeActual: 6 }, 2)).toBeUndefined()
+  })
+
+  it('returns undefined when there is no day effort', () => {
+    expect(sessionRpeInitialValue(undefined, undefined, 1)).toBeUndefined()
   })
 })
 

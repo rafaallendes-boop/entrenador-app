@@ -96,6 +96,27 @@ function buildPrompt(
   }).userPrompt
 }
 
+describe('buildWeekCreatorPrompt whoop effort', () => {
+  it('does not show WHOOP-prefilled rpeActual as declared effort', () => {
+    const prompt = buildPrompt({
+      weekDayLogs: [
+        { id: 'd1', date: '2026-06-10', rpeActual: 8, prefillSource: { rpeActual: 'whoop' }, updatedAt: 1 },
+      ],
+    })
+    expect(prompt).not.toContain('RPE real 8/10')
+    expect(prompt).not.toContain('esfuerzo 8/10')
+  })
+
+  it('shows a manually-set effort as "esfuerzo"', () => {
+    const prompt = buildPrompt({
+      weekDayLogs: [
+        { id: 'd2', date: '2026-06-10', rpeActual: 9, updatedAt: 1 },
+      ],
+    })
+    expect(prompt).toContain('esfuerzo 9/10')
+  })
+})
+
 describe('buildWeekCreatorPrompt quality blocks', () => {
   it('renders an enriched athlete profile, week objectives and squash phase guide', () => {
     const prompt = buildPrompt({}, { currentFatigue: 'fresh' }, [

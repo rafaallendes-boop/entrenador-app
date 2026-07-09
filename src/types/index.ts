@@ -349,12 +349,12 @@ export interface DayLog {
   energyLevel?: number     // 1-10
   painLevel?: number       // 0-10 (0 = sin dolor)
   painNotes?: string
-  rpeActual?: number       // 1-10 RPE real post sesión
+  rpeActual?: number       // 1-10 esfuerzo percibido/final del día (UI: "Esfuerzo"; autollenable desde Whoop strain)
   postSessionComment?: string
   generalNotes?: string
   bodyWeight?: number
   // Which check-in fields were prefilled from Whoop (cleared when edited by hand).
-  prefillSource?: Partial<Record<'sleepHours' | 'sleepQuality' | 'energyLevel', 'whoop'>>
+  prefillSource?: Partial<Record<'sleepHours' | 'sleepQuality' | 'energyLevel' | 'rpeActual', 'whoop'>>
   updatedAt: number
 }
 

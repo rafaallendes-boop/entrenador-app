@@ -1,6 +1,6 @@
 import type { DayLog } from '../../types'
 
-export type PrefillField = 'sleepHours' | 'sleepQuality' | 'energyLevel'
+export type PrefillField = 'sleepHours' | 'sleepQuality' | 'energyLevel' | 'rpeActual'
 
 export interface DayLogPrefillPatch {
   patch: Partial<DayLog>
@@ -30,6 +30,32 @@ export function buildDayLogSavePatch(
 
 export function hasDayLogPrefillPatch(prefill: DayLogPrefillPatch): boolean {
   return Object.keys(prefill.patch).length > 0
+}
+
+/** True when a check-in field was prefilled from Whoop (objective), not declared by the athlete. */
+export function isWhoopPrefilled(
+  log: { prefillSource?: DayLog['prefillSource'] },
+  field: PrefillField,
+): boolean {
+  return log.prefillSource?.[field] === 'whoop'
+}
+
+/**
+ * Initial value for a session's RPE slider. Falls back to the day's effort only when
+ * there is exactly one completed session AND that effort was declared by the athlete.
+ * A Whoop-prefilled effort (objective strain) must never seed Session.actualRpe, which
+ * feeds ACWR/load — mirrors the exclusion in `collectActualRpeValues`.
+ */
+export function sessionRpeInitialValue(
+  sessionActualRpe: number | null | undefined,
+  dayLog: { rpeActual?: number | null; prefillSource?: DayLog['prefillSource'] } | undefined,
+  completedSessionsCount: number,
+): number | undefined {
+  if (sessionActualRpe != null) return sessionActualRpe
+  if (completedSessionsCount !== 1) return undefined
+  if (dayLog?.rpeActual == null) return undefined
+  if (isWhoopPrefilled(dayLog, 'rpeActual')) return undefined
+  return dayLog.rpeActual
 }
 
 export function buildWhoopPrefillSavePatch(
