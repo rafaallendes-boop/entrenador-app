@@ -1,5 +1,16 @@
 # Whoop Integration Implementation Plan
 
+> ✅ **ESTADO FINAL (2026-07-08): IMPLEMENTADO Y REVISADO.** Tasks 0-17 completas en working tree
+> (uncommitted). Task 0 hecha por el owner (Whoop Developer App + env vars server-side + clave
+> de cifrado). Pasaron **6 rondas de `/code-review`**; todos los hallazgos resueltos —
+> destacan: scope `offline` faltante, rama cron pre-auth falsificable (→ `whoop-cron` scheduled
+> dedicado), gap de borrado biométrico en reset (→ service-role + tolerancia 404/tabla ausente),
+> mutación histórica + race de atleta en el prefill (→ gate hoy+self+atleta), y `score_state`
+> tri-estado SCORED/PENDING/UNSCORABLE. Verde: `npm run lint && npm test` (1160) `&& npm run build`
+> + typecheck. **Pendiente (no es código):** aplicar `011` en prod, commit/deploy del bundle, smoke
+> end-to-end (el owner probará directo en prod, no staging), y linkear el gate legal
+> (`descargo-whoop.md` + consentimiento biométrico) antes de exponer a terceros.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 > ⚠️ **ACTUALIZADO 2026-07-05 — coordinación Dexie/athlete scope:** Athlete Scope Foundation
@@ -116,6 +127,14 @@ netlify.toml                                     [MODIFY: schedule de whoop-sync
 ---
 
 ## Task 0: Track 0 — Setup Whoop App, env vars, verificación de API y copy legal
+
+> ✅ **COMPLETADA (owner, 2026-07-08):** Whoop Developer App creada, redirect URIs dev/prod,
+> env vars server-side (`WHOOP_*` + `WHOOP_TOKEN_ENC_KEY` base64 32 bytes, sin `VITE_*`),
+> `docs/legal/descargo-whoop.md` redactado. API v2 confirmada contra el OpenAPI `Api Whoop`
+> (base `https://api.prod.whoop.com/developer`; scopes `offline read:recovery read:sleep read:cycles read:profile`;
+> `score_state` SCORED/PENDING_SCORE/UNSCORABLE; sleep trae `cycle_id`; recovery sin `id`).
+> **Nota migración v1→v2:** no aplica — integración nativa v2; la guía de lookup de IDs v1→v2
+> es solo para integraciones v1 existentes.
 
 **Bloqueante. Sin código de runtime; el deliverable es documentación verificada + secrets configurados.** Los tasks de OAuth (5-7) y sync (8-11) no se cierran hasta que esto esté hecho.
 
