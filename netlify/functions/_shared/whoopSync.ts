@@ -76,6 +76,13 @@ export async function runWhoopSync(
     })
     return { ok: true, days }
   } catch (error) {
+    if (!isRateLimited(error)) {
+      console.error('[whoop] runWhoopSync failed', {
+        userId: input.userId,
+        trigger: input.trigger,
+        message: error instanceof Error ? error.message : String(error),
+      })
+    }
     await deps.setSyncResult(deps.db, input.userId, {
       lastSyncAt: new Date(now()).toISOString(),
       status: 'error',

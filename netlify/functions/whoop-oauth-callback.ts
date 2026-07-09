@@ -32,7 +32,11 @@ export const handler: Handler = async (event) => {
       scopes: tokens.scopes ?? null,
     })
     return redirect(SETTINGS_SUCCESS)
-  } catch {
+  } catch (error) {
+    console.error('[whoop] oauth callback failed', {
+      userId: consumed.userId,
+      message: error instanceof Error ? error.message : String(error),
+    })
     return redirect(SETTINGS_ERROR)
   }
 }
