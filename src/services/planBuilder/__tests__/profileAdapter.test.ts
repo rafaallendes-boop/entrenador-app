@@ -59,6 +59,24 @@ describe('buildAthleteParameters', () => {
     expect(params.requireExtraRecovery).toBe(true)
   })
 
+  it('calculates age from birth date using the supplied reference date', () => {
+    const beforeBirthday = buildAthleteParameters(
+      makeProfile({ age: undefined, birthDate: '1991-07-11' }),
+      makeWizard(),
+      new Date('2026-07-10T12:00:00.000Z'),
+    )
+    const afterBirthday = buildAthleteParameters(
+      makeProfile({ age: undefined, birthDate: '1991-07-11' }),
+      makeWizard(),
+      new Date('2026-07-12T12:00:00.000Z'),
+    )
+
+    expect(beforeBirthday.ageYears).toBe(34)
+    expect(beforeBirthday.requireExtraRecovery).toBe(false)
+    expect(afterBirthday.ageYears).toBe(35)
+    expect(afterBirthday.requireExtraRecovery).toBe(true)
+  })
+
   it('preserves primary and complementary sports', () => {
     const params = buildAthleteParameters(makeProfile(), makeWizard({ complementarySports: ['running'] }))
 

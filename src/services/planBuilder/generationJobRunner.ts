@@ -68,10 +68,11 @@ function buildPlanCheckpoint(
   weeks: TrainingPlanWeek[],
   job: PlanGenerationJob,
   completedAt?: number,
+  profile?: AthleteProfile,
 ): TrainingPlan {
   const terminalState = derivePlanGenerationState(weeks)
   const qualityReview = completedAt
-    ? reviewPlanQuality(plan, weeks)
+    ? reviewPlanQuality(plan, weeks, { profile })
     : plan.generationSummary?.qualityReview
   return {
     ...plan,
@@ -327,7 +328,7 @@ async function runPlanGenerationJobInternal({ jobId, profile, callbacks }: RunGe
 
   weeks = await loadPlanWeeks(plan.id)
   const completedAt = now()
-  const finalPlan = buildPlanCheckpoint(await db.trainingPlans.get(plan.id) ?? latestPlan, weeks, job, completedAt)
+  const finalPlan = buildPlanCheckpoint(await db.trainingPlans.get(plan.id) ?? latestPlan, weeks, job, completedAt, profile)
   const targetFailures = (job.targetWeekIndexes ?? weeks.map((week) => week.weekIndex))
     .filter((weekIndex) => {
       const week = weeks.find((candidate) => candidate.weekIndex === weekIndex)

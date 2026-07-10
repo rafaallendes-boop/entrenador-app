@@ -671,8 +671,8 @@ export default function PlanBuilderV2Page() {
   const hasReadyWeeks = weeks.some((week) => week.status === 'draft' && week.sessions.length > 0)
   const isFailedState = status === 'failed' || plan?.generationState === 'failed'
   const qualityReview = useMemo(
-    () => (plan ? reviewPlanQuality(plan, weeks) : null),
-    [plan, weeks],
+    () => (plan ? reviewPlanQuality(plan, weeks, { profile: effectiveAthleteProfile ?? undefined }) : null),
+    [effectiveAthleteProfile, plan, weeks],
   )
   const shouldShowQualityReview = Boolean(qualityReview && showPlanQualityDebug)
   const qualityBlocksAccept = Boolean(

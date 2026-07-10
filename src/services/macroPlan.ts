@@ -158,7 +158,7 @@ const SPORT_RULES: Record<'squash' | 'running' | 'strength' | 'cycling' | 'mobil
     },
     peak: {
       primary: {
-        phaseFocus: 'Afilar squash con calidad, pressure drills y sensacion real de partido.',
+        phaseFocus: 'Afinar el rendimiento en squash mediante sesiones de alta calidad y situaciones reales de partido.',
         weeklyIntent: 'Bajar volumen total y dejar solo las sesiones que eleven precision competitiva.',
         volumeBias: 'reduce',
         intensityBias: 'build',
@@ -174,7 +174,7 @@ const SPORT_RULES: Record<'squash' | 'running' | 'strength' | 'cycling' | 'mobil
     },
     taper: {
       primary: {
-        phaseFocus: 'Llegar fresco a squash con activaciones tecnicas cortas y sin desgaste acumulado.',
+        phaseFocus: 'Llegar fresco al torneo con activaciones técnicas cortas y sin fatiga acumulada.',
         weeklyIntent: 'Mantener timing, precision y pies vivos con fatiga residual minima.',
         volumeBias: 'reduce',
         intensityBias: 'hold',
@@ -190,8 +190,8 @@ const SPORT_RULES: Record<'squash' | 'running' | 'strength' | 'cycling' | 'mobil
     },
     race: {
       primary: {
-        phaseFocus: 'Semana de competir en squash con activacion y foco mental.',
-        weeklyIntent: 'Reservar energia para el partido o torneo y no llegar pesado.',
+        phaseFocus: 'Semana de competencia con activaciones, recuperación y foco mental.',
+        weeklyIntent: 'Reservar energía para el partido o torneo y no llegar pesado.',
         volumeBias: 'minimal',
         intensityBias: 'hold',
         notes: 'Todo se orienta al rendimiento del dia clave.',

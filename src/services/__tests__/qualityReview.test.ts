@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { CoachSessionProposal, PlanWizardConfig } from '../../types'
+import type { AthleteProfile, CoachSessionProposal, PlanWizardConfig } from '../../types'
 import type { TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
 import { getExpectedSessionsForPlanWeek } from '../planBuilder/dateRange'
 import { buildPlanQualityRepairInstructions, reviewPlanQuality } from '../planBuilder/qualityReview'
@@ -131,6 +131,132 @@ function running(date: string): CoachSessionProposal {
 }
 
 describe('reviewPlanQuality', () => {
+  const completeStrengthProfile: AthleteProfile = {
+    id: 'athlete-1',
+    updatedAt: 1,
+    strengthProfile: {
+      squat1RM: 120,
+      deadlift1RM: 140,
+      benchPress1RM: 90,
+      overheadPress1RM: 65,
+    },
+  }
+
+  it('flags underuse of a complete 1RM profile on multi-week plans', () => {
+    const plan = { ...makePlan(), totalWeeks: 4 }
+    const week = makeWeek([
+      squash('2026-05-04', 'Squash técnico'),
+      squash('2026-05-05', 'Squash control'),
+      squash('2026-05-06', 'Squash juego'),
+      running('2026-05-07'),
+      strength('2026-05-08', [
+        { name: 'Sentadilla', sets: 4, reps: 5, group: 'legs', targetPercent1RM: 75 },
+        { name: 'Dead bug', sets: 3, reps: 8, group: 'core' },
+        { name: 'Remo unilateral', sets: 3, reps: 8, group: 'pull' },
+        { name: 'Copenhagen', sets: 3, reps: '30s', group: 'core' },
+        { name: 'Salto lateral', sets: 3, reps: 6, group: 'other' },
+        { name: 'Farmer carry', sets: 3, reps: '30m', group: 'other' },
+      ]),
+    ])
+
+    const review = reviewPlanQuality(plan, [week], { profile: completeStrengthProfile })
+
+    expect(review.issues.some((item) => item.code === 'quality.strength.profile_1rm_underused')).toBe(true)
+    expect(review.issues.find((item) => item.code === 'quality.strength.profile_1rm_underused')?.message)
+      .toContain('peso muerto')
+  })
+
+  it('accepts complete 1RM coverage when all profile references are prescribed', () => {
+    const plan = { ...makePlan(), totalWeeks: 4 }
+    const week = makeWeek([
+      squash('2026-05-04', 'Squash técnico'),
+      squash('2026-05-05', 'Squash control'),
+      squash('2026-05-06', 'Squash juego'),
+      running('2026-05-07'),
+      strength('2026-05-08', [
+        { name: 'Sentadilla', sets: 4, reps: 5, group: 'legs', targetPercent1RM: 75 },
+        { name: 'Peso muerto', sets: 4, reps: 4, group: 'legs', targetPercent1RM: 80 },
+        { name: 'Press banca', sets: 4, reps: 5, group: 'push', targetPercent1RM: 75 },
+        { name: 'Press de hombros', sets: 3, reps: 5, group: 'push', targetPercent1RM: 70 },
+        { name: 'Dead bug', sets: 3, reps: 8, group: 'core' },
+        { name: 'Remo unilateral', sets: 3, reps: 8, group: 'pull' },
+      ]),
+    ])
+
+    const review = reviewPlanQuality(plan, [week], { profile: completeStrengthProfile })
+
+    expect(review.issues.some((item) => item.code === 'quality.strength.profile_1rm_underused')).toBe(false)
+  })
+
+  it('counts close variants of the base lift as covering the reference', () => {
+    const plan = { ...makePlan(), totalWeeks: 4 }
+    const week = makeWeek([
+      squash('2026-05-04', 'Squash técnico'),
+      squash('2026-05-05', 'Squash control'),
+      squash('2026-05-06', 'Squash juego'),
+      running('2026-05-07'),
+      strength('2026-05-08', [
+        // Variantes del mismo patrón (factor 0.8-0.95) sí demuestran uso del 1RM.
+        { name: 'Sentadilla frontal', sets: 4, reps: 5, group: 'legs', targetPercent1RM: 70 },
+        { name: 'Peso muerto sumo', sets: 4, reps: 4, group: 'legs', targetPercent1RM: 80 },
+        { name: 'Press inclinado', sets: 4, reps: 6, group: 'push', targetPercent1RM: 70 },
+        { name: 'Press de hombros', sets: 3, reps: 5, group: 'push', targetPercent1RM: 70 },
+      ]),
+    ])
+
+    const review = reviewPlanQuality(plan, [week], { profile: completeStrengthProfile })
+
+    expect(review.issues.some((item) => item.code === 'quality.strength.profile_1rm_underused')).toBe(false)
+  })
+
+  it('does not count lifts above the strict 1RM as covering the reference', () => {
+    const plan = { ...makePlan(), totalWeeks: 4 }
+    const week = makeWeek([
+      squash('2026-05-04', 'Squash técnico'),
+      squash('2026-05-05', 'Squash control'),
+      squash('2026-05-06', 'Squash juego'),
+      running('2026-05-07'),
+      strength('2026-05-08', [
+        { name: 'Sentadilla', sets: 4, reps: 5, group: 'legs', targetPercent1RM: 75 },
+        { name: 'Peso muerto', sets: 4, reps: 4, group: 'legs', targetPercent1RM: 80 },
+        { name: 'Press de hombros', sets: 3, reps: 5, group: 'push', targetPercent1RM: 70 },
+        // Hip thrust carga sobre el 1RM de sentadilla (factor 1.2) pero no es un
+        // patrón de sentadilla; no debe considerarse cobertura adicional.
+        { name: 'Hip thrust', sets: 4, reps: 8, group: 'legs', targetPercent1RM: 60 },
+      ]),
+    ])
+
+    const review = reviewPlanQuality(plan, [week], { profile: completeStrengthProfile })
+
+    const coverageIssue = review.issues.find((item) => item.code === 'quality.strength.profile_1rm_underused')
+    expect(coverageIssue).toBeDefined()
+    expect(coverageIssue?.message).toContain('press banca')
+  })
+
+  it('does not count accessory lifts loaded off a reference as covering it', () => {
+    const plan = { ...makePlan(), totalWeeks: 4 }
+    const week = makeWeek([
+      squash('2026-05-04', 'Squash técnico'),
+      squash('2026-05-05', 'Squash control'),
+      squash('2026-05-06', 'Squash juego'),
+      running('2026-05-07'),
+      strength('2026-05-08', [
+        { name: 'Sentadilla', sets: 4, reps: 5, group: 'legs', targetPercent1RM: 75 },
+        { name: 'Peso muerto', sets: 4, reps: 4, group: 'legs', targetPercent1RM: 80 },
+        { name: 'Press de hombros', sets: 3, reps: 5, group: 'push', targetPercent1RM: 70 },
+        // Remo con barra carga sobre el 1RM de banca (factor 0.75) pero no es
+        // el press de banca principal: no debe cubrir la referencia de banca.
+        { name: 'Remo con barra', sets: 4, reps: 6, group: 'pull', targetPercent1RM: 70 },
+      ]),
+    ])
+
+    const review = reviewPlanQuality(plan, [week], { profile: completeStrengthProfile })
+
+    const coverageIssue = review.issues.find((item) => item.code === 'quality.strength.profile_1rm_underused')
+    expect(coverageIssue).toBeDefined()
+    expect(coverageIssue?.message).toContain('press banca')
+  })
+
   it('scores a complete squash plan week as good or better', () => {
     const plan = makePlan()
     const week = makeWeek([
