@@ -111,18 +111,29 @@ async function processAuthDeepLinkOnce(rawUrl: string, client: AuthClient | null
       })
       if (error) throw error
     }
-
-    const pending = await readPendingAuthContext()
-    await clearPendingAuthContext()
+    // The session is now established. Mark the callback processed *before* the
+    // best-effort bookkeeping below so a failure there can never (a) flip a
+    // successful login into an error, nor (b) let a retry re-run
+    // exchangeCodeForSession with an already-consumed code.
     processedCallbacks.add(rawUrl)
-    await Browser.close().catch(() => undefined)
-    return { handled: true, navigateTo: pending?.returnPath ?? '/' }
   } catch (error) {
     return {
       handled: true,
       error: error instanceof Error ? error.message : 'No se pudo completar el login.',
     }
   }
+
+  // Best-effort post-login bookkeeping: none of this may downgrade the result.
+  let navigateTo = '/'
+  try {
+    const pending = await readPendingAuthContext()
+    navigateTo = pending?.returnPath ?? '/'
+    await clearPendingAuthContext()
+  } catch {
+    // Ignore: the session is already valid; fall back to the default route.
+  }
+  await Browser.close().catch(() => undefined)
+  return { handled: true, navigateTo }
 }
 
 function mergedAuthParams(url: URL): URLSearchParams {

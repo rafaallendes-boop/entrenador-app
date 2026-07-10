@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   createNativeNotificationService,
-  createWebNotificationService,
   stableNotificationId,
 } from '../notificationService'
 
@@ -34,18 +33,5 @@ describe('notification service abstraction', () => {
     const id = stableNotificationId(request.stableId)
     expect(plugin.cancel).toHaveBeenLastCalledWith({ notifications: [{ id }] })
     expect(plugin.schedule).toHaveBeenCalledTimes(2)
-  })
-
-  it('maps a denied web permission to false without scheduling', async () => {
-    const schedule = vi.fn(async () => undefined)
-    const service = createWebNotificationService({
-      getPermission: () => 'default',
-      requestPermission: async () => 'denied',
-      schedule,
-      cancel: async () => undefined,
-    })
-
-    expect(await service.requestPermission()).toBe(false)
-    expect(schedule).not.toHaveBeenCalled()
   })
 })

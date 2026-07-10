@@ -257,31 +257,25 @@ export default function App() {
       void syncSignedInUser('online')
     }
 
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        const { syncStatus, syncDetails } = useAuthStore.getState()
-        if (syncStatus === 'error' && syncDetails.lastErrorCategory === 'schema_mismatch' && syncDetails.retryScheduledAt == null) return
-        if (shouldAutoSyncOnFocus(syncStatus, syncDetails)) {
-          void syncSignedInUser('visible')
-        }
-      }
-    }
-
-    const handleFocus = () => {
+    // Shared foreground/resume auto-sync policy: skip while a schema_mismatch
+    // error is pending its own retry, otherwise sync if the focus heuristic says so.
+    const maybeAutoSyncOnForeground = (reason: 'focus' | 'visible') => {
       const { syncStatus, syncDetails } = useAuthStore.getState()
       if (syncStatus === 'error' && syncDetails.lastErrorCategory === 'schema_mismatch' && syncDetails.retryScheduledAt == null) return
       if (shouldAutoSyncOnFocus(syncStatus, syncDetails)) {
-        void syncSignedInUser('focus')
+        void syncSignedInUser(reason)
       }
     }
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') maybeAutoSyncOnForeground('visible')
+    }
+
+    const handleFocus = () => maybeAutoSyncOnForeground('focus')
 
     const handleNativeResume = () => {
       if (typeof navigator !== 'undefined' && !navigator.onLine) return
-      const { syncStatus, syncDetails } = useAuthStore.getState()
-      if (syncStatus === 'error' && syncDetails.lastErrorCategory === 'schema_mismatch' && syncDetails.retryScheduledAt == null) return
-      if (shouldAutoSyncOnFocus(syncStatus, syncDetails)) {
-        void syncSignedInUser('focus')
-      }
+      maybeAutoSyncOnForeground('focus')
     }
 
     window.addEventListener('online', handleOnline)

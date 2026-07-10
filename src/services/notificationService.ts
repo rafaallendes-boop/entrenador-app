@@ -2,8 +2,11 @@ import { LocalNotifications } from '@capacitor/local-notifications'
 
 export type AppNotificationPermission = NotificationPermission
 
-export const undecidedNotificationPermission = ['de', 'fault'].join('') as NotificationPermission
-const systemNotificationSound = ['de', 'fault'].join('')
+// 'default' is the Web Notification API's undecided permission value and iOS's
+// system-sound name — unrelated to the athlete-profile-id guard. The
+// noDirectDefault guard test exempts this file so the literal stays readable.
+export const undecidedNotificationPermission = 'default' as NotificationPermission
+const systemNotificationSound = 'default'
 
 export interface SessionReminderRequest {
   stableId: string
@@ -65,26 +68,6 @@ export function createNativeNotificationService(
     async cancelSessionReminder(stableId) {
       await plugin.cancel({ notifications: [{ id: stableNotificationId(stableId) }] })
     },
-  }
-}
-
-interface WebNotificationDependencies {
-  getPermission(): AppNotificationPermission
-  requestPermission(): Promise<AppNotificationPermission>
-  schedule(request: SessionReminderRequest): Promise<void>
-  cancel(stableId: string): Promise<void>
-}
-
-export function createWebNotificationService(dependencies: WebNotificationDependencies): NotificationService {
-  return {
-    async getPermission() {
-      return dependencies.getPermission()
-    },
-    async requestPermission() {
-      return (await dependencies.requestPermission()) === 'granted'
-    },
-    scheduleSessionReminder: dependencies.schedule,
-    cancelSessionReminder: dependencies.cancel,
   }
 }
 
