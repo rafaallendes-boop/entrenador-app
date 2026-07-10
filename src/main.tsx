@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
 import { registerServiceWorker } from './pwa/registerServiceWorker.ts'
+import { initializeNativeApp } from './services/nativeApp.ts'
 
 registerServiceWorker()
 
@@ -11,3 +12,7 @@ createRoot(document.getElementById('root')!).render(
     <App />
   </StrictMode>,
 )
+
+void initializeNativeApp().catch((error) => {
+  console.error('[native] initialization failed', error)
+})

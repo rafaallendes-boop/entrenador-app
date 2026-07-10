@@ -16,6 +16,8 @@ import { isSupabaseConfigured } from './services/auth'
 import { backfillLocalAthleteScope } from './services/athlete/athleteScopeMigration'
 import { hydrateActiveAthlete } from './services/athlete/hydrateActiveAthlete'
 import { getActiveAthleteId } from './services/athlete/activeAthlete'
+import NativeBridge from './components/native/NativeBridge'
+import { NATIVE_RESUME_EVENT } from './services/nativeApp'
 
 const Dashboard = lazy(() => import('./pages/Dashboard'))
 const WeeklyView = lazy(() => import('./pages/WeeklyView'))
@@ -273,8 +275,18 @@ export default function App() {
       }
     }
 
+    const handleNativeResume = () => {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) return
+      const { syncStatus, syncDetails } = useAuthStore.getState()
+      if (syncStatus === 'error' && syncDetails.lastErrorCategory === 'schema_mismatch' && syncDetails.retryScheduledAt == null) return
+      if (shouldAutoSyncOnFocus(syncStatus, syncDetails)) {
+        void syncSignedInUser('focus')
+      }
+    }
+
     window.addEventListener('online', handleOnline)
     window.addEventListener('focus', handleFocus)
+    window.addEventListener(NATIVE_RESUME_EVENT, handleNativeResume)
     document.addEventListener('visibilitychange', handleVisibilityChange)
     const intervalId = window.setInterval(() => {
       const { syncStatus, syncDetails } = useAuthStore.getState()
@@ -291,6 +303,7 @@ export default function App() {
       cancelled = true
       window.removeEventListener('online', handleOnline)
       window.removeEventListener('focus', handleFocus)
+      window.removeEventListener(NATIVE_RESUME_EVENT, handleNativeResume)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
       window.clearInterval(intervalId)
     }
@@ -298,6 +311,7 @@ export default function App() {
 
   return (
     <BrowserRouter>
+      <NativeBridge />
       <Suspense fallback={<RouteFallback />}>
         <AuthGate>
           <CoachScopeGuard />
