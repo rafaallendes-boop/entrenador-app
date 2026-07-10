@@ -1,8 +1,13 @@
 {
-  "name": "entrenador-app",
+  "name": "rallyiq",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
+  "description": "PWA local-first para planificación deportiva y coaching asistido por IA.",
   "type": "module",
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0",
+    "npm": ">=10"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
@@ -29,6 +34,7 @@
     "e2e:plan:generate": "node scripts/e2e-plan-builder-test.mjs --generate",
     "e2e:plan:generate:headed": "node scripts/e2e-plan-builder-test.mjs --generate --headed",
     "e2e:plan:generate:quality": "node scripts/e2e-plan-builder-test.mjs --generate --export-quality",
+    "e2e:plan:readiness": "E2E_BASE_URL=${E2E_BASE_URL:-http://localhost:8888} node scripts/e2e-plan-builder-test.mjs --evaluate-readiness --export-quality --headed",
     "e2e:plan:accept": "node scripts/e2e-plan-builder-test.mjs --accept --headed"
   },
   "dependencies": {

@@ -31,15 +31,16 @@ El chunk más pesado es `pdf.worker.min` — ya optimizado, no tocar sin razón.
 
 Bloques recientes relevantes:
 - **Athlete scope foundation** (`007`): tabla `athletes`, `athlete_id` backfilleado, hidratación de atleta activo, flag `VITE_ATHLETE_SCOPE` (off).
-- **F2 data prereqs**: Dexie **v14** con únicos compuestos `[athleteId+date]` / `[athleteId+weekStartDate]`; merges/import/export athlete-aware. (v15 reservada para Whoop.)
+- **F2 data prereqs**: Dexie **v14** con únicos compuestos `[athleteId+date]` / `[athleteId+weekStartDate]`; merges/import/export athlete-aware.
 - **008b write path**: handler reactivo de `23505` (`reconcileNaturalKeyConflict`) commiteado y aplicado en prod; mantener `008a` como preflight operativo antes de futuros cambios de contrato.
-- **Athlete-aware core (Coach F2-lite Parte 1)**: política legacy self-only, lecturas scoped (sessions/summaries/proposals/chat/contexto IA), estampado local, chat session por atleta, selección activa persistida. Plan: `docs/superpowers/plans/2026-07-02-athlete-aware-core.md`.
+- **Coach F2-lite completo**: política legacy self-only, lecturas scoped, perfiles multi-atleta, roster, switcher y atletas gestionados ya desplegados.
+- **Whoop v1** (`011`): Dexie **v15** `readinessDaily`, OAuth server-side, sync/cron, tarjeta de readiness y prefill editable de check-in.
 
 ## Prioridades abiertas (en orden)
-1. Deploy + smoke de Athlete-Aware Core en prod (single-athlete no debe cambiar).
+1. Aplicar `011`, deploy y smoke end-to-end de Whoop; enlazar consentimiento biométrico antes de terceros.
 2. Superficie pública + rutas legales + consentimiento + smoke (piloto premium, ver roadmap).
-3. Coach UI F2-lite **Parte 2**: perfiles multi-atleta + migración `009` + API de atletas gestionados + switcher/roster gated por allowlist. Spec: `docs/superpowers/specs/2026-07-02-coach-ui-f2-mvp-design.md`.
-4. QA deportiva: 3 planes arquetipo (como atletas gestionados, post Parte 2).
+3. Resolver la numeración `012/013` antes de iniciar Whoop Workout Auto-Complete o SP1a.
+4. QA deportiva: 3 planes arquetipo como atletas gestionados.
 5. Validación operativa real de sync (conflictos concurrentes, recovery multi-dispositivo).
 
 ## Reglas del proyecto
@@ -49,7 +50,7 @@ Bloques recientes relevantes:
   - Toda creación local de esas filas se estampa con `withActiveAthleteStamp`.
   - En sync, el fallback legacy se ancla a `getSelfAthleteId()`, nunca al atleta activo.
   - `isInAthleteScope` (effectiveAthleteKey) es para delete-scoping de sync; para lecturas usar `activeScopeFilter`.
-- El modelo local es Dexie (**v14**) — cualquier cambio de schema requiere migración + test de upgrade real (fake-indexeddb ya instalado; patrón: `db.close(); await db.delete(); await db.open()` por test).
+- El modelo local es Dexie (**v15**) — cualquier cambio de schema requiere migración + test de upgrade real (fake-indexeddb ya instalado; patrón: `db.close(); await db.delete(); await db.open()` por test).
 - `athlete_profiles` remoto tiene UNIQUE por `user_id` (`002`) — **no** crear un segundo perfil por cuenta hasta aplicar la migración `009` (mini expand/contract, ver spec F2-lite §3.2).
 - No modificar `promptBuilder.ts` sin revisar el contexto completo del coach.
 - Sync con Supabase ya está implementado — no duplicar lógica de sync.
