@@ -271,6 +271,15 @@ Preview del build:
 npm run preview
 ```
 
+### iOS con Capacitor
+
+El proyecto incluye un contenedor iOS Capacitor que empaqueta el mismo build React/Vite sin reemplazar la PWA ni migrar Dexie. Para requisitos de Xcode, deep links Supabase, notificaciones, comandos y checklist de TestFlight, consulta [docs/ios-capacitor.md](docs/ios-capacitor.md).
+
+```bash
+npm run ios:sync
+npm run ios:open
+```
+
 ## Variables de Entorno
 
 La app puede correr en modo mock/local, pero para IA real, auth y sync necesitas variables.
