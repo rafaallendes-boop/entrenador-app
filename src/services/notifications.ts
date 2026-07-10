@@ -11,6 +11,15 @@ import type { LoadAnalytics } from './loadAnalytics'
 import { buildWeeklyActionSummary } from './weeklyActionLoop'
 import { buildAutoAdjustmentDraft, type AutoAdjustmentDraft } from './alertAdjustmentEngine'
 import { buildWeeklyActionLaunchUrl, type WeeklyActionLaunchIntent } from './weeklyLaunchIntent'
+import { LocalNotifications } from '@capacitor/local-notifications'
+import { isNativePlatform } from './platform'
+import {
+  createNativeNotificationService,
+  stableNotificationId,
+  undecidedNotificationPermission,
+  type AppNotificationPermission,
+} from './notificationService'
+import { NATIVE_RESUME_EVENT } from './nativeApp'
 
 const NOTIFY_TIME: Record<string, { h: number; m: number }> = {
   AM: { h: 7, m: 30 },
@@ -44,7 +53,7 @@ export interface NotificationPreferences {
   loadAlerts: boolean
 }
 
-interface ScheduledAppNotification {
+export interface ScheduledAppNotification {
   id: string
   title: string
   body: string
@@ -112,17 +121,36 @@ const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences = {
   loadAlerts: true,
 }
 
+const nativeNotificationService = createNativeNotificationService()
+let nativePermissionCache: AppNotificationPermission = undecidedNotificationPermission
+
 export function notificationsSupported(): boolean {
+  if (isNativePlatform()) return true
   return 'Notification' in window && 'serviceWorker' in navigator
 }
 
 export function getNotificationPermission(): NotificationPermission | null {
   if (!notificationsSupported()) return null
+  if (isNativePlatform()) return nativePermissionCache
+  return Notification.permission
+}
+
+export async function refreshNotificationPermission(): Promise<NotificationPermission | null> {
+  if (!notificationsSupported()) return null
+  if (isNativePlatform()) {
+    nativePermissionCache = await nativeNotificationService.getPermission()
+    return nativePermissionCache
+  }
   return Notification.permission
 }
 
 export async function requestNotificationPermission(): Promise<NotificationPermission> {
   if (!notificationsSupported()) return 'denied'
+  if (isNativePlatform()) {
+    const granted = await nativeNotificationService.requestPermission()
+    nativePermissionCache = granted ? 'granted' : 'denied'
+    return nativePermissionCache
+  }
   return Notification.requestPermission()
 }
 
@@ -216,6 +244,11 @@ export function buildScheduledNotifications(
 export async function scheduleTodayNotifications(input: NotificationSyncContext | Session[]): Promise<void> {
   if (!notificationsSupported()) return
 
+  if (isNativePlatform()) {
+    await scheduleNativeTodayNotifications(input)
+    return
+  }
+
   const today = todayISODate()
   if (Notification.permission !== 'granted') {
     await clearTodayNotifications(today, 'permission-not-granted')
@@ -260,6 +293,10 @@ export function startNotificationSync(getContext: () => NotificationSyncContext 
   }
 
   sync()
+  if (isNativePlatform()) {
+    window.addEventListener(NATIVE_RESUME_EVENT, sync)
+    return () => window.removeEventListener(NATIVE_RESUME_EVENT, sync)
+  }
   window.addEventListener('focus', onFocus)
   document.addEventListener('visibilitychange', onVisibilityChange)
   const intervalId = window.setInterval(sync, SYNC_INTERVAL_MS)
@@ -273,6 +310,32 @@ export function startNotificationSync(getContext: () => NotificationSyncContext 
 
 export async function getNotificationDebugState(): Promise<NotificationDebugState | null> {
   if (!notificationsSupported()) return null
+
+  if (isNativePlatform()) {
+    const permission = await refreshNotificationPermission() ?? 'unsupported'
+    const { notifications } = await LocalNotifications.getPending()
+    const pending = notifications.filter((item) => item.extra?.rallyiqSource === 'local-notifications')
+    const categories: Partial<Record<NotificationCategory, number>> = {}
+    for (const item of pending) {
+      const category = item.extra?.category
+      if (typeof category !== 'string') continue
+      const typedCategory = category as NotificationCategory
+      categories[typedCategory] = (categories[typedCategory] ?? 0) + 1
+    }
+    return {
+      date: todayISODate(),
+      scheduledCount: pending.length,
+      pendingCount: pending.length,
+      sentCount: 0,
+      recoveredCount: 0,
+      categories,
+      enabledCategories: getNotificationPreferences(),
+      graceMinutes: Math.round(LATE_DELIVERY_GRACE_MS / 60_000),
+      permission,
+      lastSyncedAt: null,
+      lastClearReason: null,
+    }
+  }
 
   try {
     const cache = await caches.open('entrenador-notifications-v1')
@@ -317,6 +380,17 @@ export async function refreshTodayNotifications(input: NotificationSyncContext |
 export async function clearTodayNotifications(date = todayISODate(), reason = 'manual-clear'): Promise<void> {
   if (!notificationsSupported()) return
 
+  if (isNativePlatform()) {
+    const { notifications } = await LocalNotifications.getPending()
+    const pending = notifications.filter((item) => (
+      item.extra?.rallyiqSource === 'local-notifications' && item.extra?.date === date
+    ))
+    if (pending.length > 0) {
+      await LocalNotifications.cancel({ notifications: pending.map(({ id }) => ({ id })) })
+    }
+    return
+  }
+
   clearSentNotificationsState(date)
 
   try {
@@ -329,6 +403,42 @@ export async function clearTodayNotifications(date = todayISODate(), reason = 'm
     })
   } catch {
     return
+  }
+}
+
+async function scheduleNativeTodayNotifications(input: NotificationSyncContext | Session[]): Promise<void> {
+  const permission = await refreshNotificationPermission()
+  const today = todayISODate()
+  if (permission !== 'granted') {
+    await clearTodayNotifications(today, 'permission-not-granted')
+    return
+  }
+
+  const scheduled = buildScheduledNotifications(input, today, new Date(), getNotificationPreferences())
+    .filter((item) => item.notifyAt > Date.now() || isDueWithinGraceWindow(item.notifyAt))
+  const desiredIds = new Set(scheduled.map((item) => stableNotificationId(item.tag)))
+  const { notifications: pending } = await LocalNotifications.getPending()
+  const obsolete = pending.filter((item) => (
+    item.extra?.rallyiqSource === 'local-notifications' && !desiredIds.has(item.id)
+  ))
+  if (obsolete.length > 0) {
+    await LocalNotifications.cancel({ notifications: obsolete.map(({ id }) => ({ id })) })
+  }
+
+  for (const item of scheduled) {
+    await nativeNotificationService.scheduleSessionReminder({
+      stableId: item.tag,
+      title: item.title,
+      body: item.body,
+      at: new Date(Math.max(item.notifyAt, Date.now() + 1_000)),
+      extra: {
+        rallyiqSource: 'local-notifications',
+        category: item.category,
+        date: today,
+        tag: item.tag,
+        ...item.data,
+      },
+    })
   }
 }
 

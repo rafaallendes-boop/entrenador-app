@@ -9,6 +9,8 @@ import {
 } from '../../services/readiness/whoopApi'
 import { clearLocalWhoopReadiness } from '../../services/readiness/localReadiness'
 import { useWhoopSync } from '../../hooks/useWhoopSync'
+import { Browser } from '@capacitor/browser'
+import { isNativePlatform } from '../../services/platform'
 
 export function WhoopConnection() {
   const activeAthleteFromStore = useAuthStore((state) => state.activeAthleteId)
@@ -48,7 +50,12 @@ export function WhoopConnection() {
     clearSyncMessage()
     setBusy(true)
     try {
-      window.location.href = await startWhoopConnect()
+      const url = await startWhoopConnect()
+      if (isNativePlatform()) {
+        await Browser.open({ url, presentationStyle: 'popover' })
+      } else {
+        window.location.href = url
+      }
     } catch (error) {
       console.error('[whoop] connect failed', error)
       setMessage('No se pudo iniciar la conexion con Whoop.')
