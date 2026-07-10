@@ -143,7 +143,7 @@ function mapAlertToWeeklyAction(
         title: alert.title,
         body: alert.body,
         reason: alert.recommendation,
-        ctaLabel: 'Ajustar con coach',
+        ctaLabel: 'Hablar con el coach',
         ctaTarget: 'chat_adjust_week',
         status: 'recommended',
       }
@@ -168,7 +168,7 @@ function mapAlertToWeeklyAction(
         title: alert.title,
         body: alert.body,
         reason: alert.recommendation,
-        ctaLabel: 'Ajustar con coach',
+        ctaLabel: 'Hablar con el coach',
         ctaTarget: 'chat_adjust_week',
         status: 'recommended',
       }

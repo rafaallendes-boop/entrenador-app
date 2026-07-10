@@ -37,8 +37,8 @@ const T = {
 // ── Phase focus fallback (used for past phases not in timeline) ──
 const PHASE_FOCUS_FALLBACK: Record<MacroPlanPhase, string> = {
   base:       'Volumen y resistencia general',
-  build:      'Técnica específica + carga',
-  peak:       'Intensidad máxima y calidad',
+  build:      'Técnica específica y aumento de carga',
+  peak:       'Máxima intensidad y afinación del rendimiento.',
   taper:      'Reducción de carga, frescura',
   race:       'Semana del evento',
   transition: 'Recuperación post-evento',

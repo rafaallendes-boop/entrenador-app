@@ -289,7 +289,7 @@ export default function Dashboard() {
               </span>
             </h1>
             <p className="mt-2.5 max-w-xs text-[13px] leading-relaxed text-ink-faint">
-              Tu centro de control · carga, RallyIQ y decisiones en tiempo real.
+              Tu entrenamiento, tu progreso y las recomendaciones de RallyIQ en un solo lugar.
             </p>
           </div>
 

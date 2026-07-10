@@ -92,7 +92,7 @@ export default function ActionAlertsCard({ summary, onSelectAction, onOpenAutoAd
               onClick={onOpenAutoAdjustment}
               className="mt-3 inline-flex items-center gap-1 rounded-lg border border-brand/20 bg-brand/10 px-3 py-1.5 text-[11px] font-semibold text-brand-light transition-colors hover:bg-brand/15"
             >
-              Ver ajuste rapido
+              Ver ajustes sugeridos
               <ArrowRight size={12} />
             </button>
           )}
