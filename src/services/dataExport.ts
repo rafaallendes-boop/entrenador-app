@@ -927,6 +927,8 @@ function parseWeekSummary(value: unknown, index: number): WeekSummary {
     weekNotes: optionalString(row.weekNotes, `weekSummaries[${index}].weekNotes`),
     objectives: optionalStringArray(row.objectives, `weekSummaries[${index}].objectives`),
     coachNote: optionalString(row.coachNote, `weekSummaries[${index}].coachNote`),
+    coachNoteGeneratedAt: optionalFiniteNumber(row.coachNoteGeneratedAt, `weekSummaries[${index}].coachNoteGeneratedAt`),
+    coachNoteSnapshot: optionalString(row.coachNoteSnapshot, `weekSummaries[${index}].coachNoteSnapshot`),
   }
 }
 

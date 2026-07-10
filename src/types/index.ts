@@ -400,6 +400,8 @@ export interface WeekSummary {
   weekNotes?: string
   objectives?: string[]
   coachNote?: string
+  coachNoteGeneratedAt?: number
+  coachNoteSnapshot?: string
 }
 
 export type WeeklyActionKind =

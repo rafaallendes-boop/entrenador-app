@@ -20,6 +20,7 @@ import { toISO, fromISO, getWeekStart, currentWeekStartISO, todayISO } from '../
 import { v4 as uuid } from '../utils/uuid'
 import { withActiveAthleteStamp } from '../services/athlete/activeScopeFilter'
 import { isWeeklyReviewWindowOpen } from '../services/weeklyReviewWindow'
+import { buildWeeklyCoachNoteSnapshot } from '../services/weeklyCoachNote'
 
 const STATUS_CYCLE: SessionStatus[] = ['planned', 'completed', 'adjusted', 'skipped']
 
@@ -267,6 +268,7 @@ export const useTrainingStore = create<TrainingState>((set, get) => ({
     }
     set({ isLoading: true })
     try {
+      await recalculateWeekSummary(weekStart)
       const [sessions, weekDayLogs, currentWeekSummary, athleteProfile] = await Promise.all([
         getSessionsForWeek(weekStart),
         getDayLogsForWeek(weekStart),
@@ -295,7 +297,11 @@ export const useTrainingStore = create<TrainingState>((set, get) => ({
         throw new Error('El coach devolvio una nota vacia. Intenta nuevamente.')
       }
 
-      const summary = await upsertWeekSummary(weekStart, { coachNote })
+      const summary = await upsertWeekSummary(weekStart, {
+        coachNote,
+        coachNoteGeneratedAt: Date.now(),
+        ...(currentWeekSummary ? { coachNoteSnapshot: buildWeeklyCoachNoteSnapshot(currentWeekSummary) } : {}),
+      })
       const activeWeekStart = getActiveWeekStart(get())
       if (activeWeekStart === weekStart) {
         set({ currentWeekSummary: summary })

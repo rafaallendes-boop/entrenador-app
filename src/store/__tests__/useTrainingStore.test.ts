@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Session } from '../../types'
+import type { ChatContext, Session } from '../../types'
 
 vi.mock('../../services/syncService', () => ({
   pushSession: vi.fn(async () => {}),
@@ -16,6 +16,8 @@ import { db } from '../../db/db'
 import { resolveVisibleSessionsAfterUpdate, shouldKeepDayLogInVisibleWeek, useTrainingStore } from '../useTrainingStore'
 import { setActiveAthleteId, setSelfAthleteId } from '../../services/athlete/activeAthlete'
 import { currentWeekStartISO } from '../../utils/date'
+import { CoachEngine } from '../../services/ai/CoachEngine'
+import { buildWeeklyCoachNoteSnapshot } from '../../services/weeklyCoachNote'
 
 function makeSession(partial: Partial<Session> = {}): Session {
   return {
@@ -105,6 +107,14 @@ describe('generateCoachNote — solo semana actual (Dexie real)', () => {
     await db.open()
     setSelfAthleteId('ath_self')
     setActiveAthleteId('ath_self')
+    useTrainingStore.setState({
+      sessions: [],
+      dayLogs: {},
+      currentWeekSummary: null,
+      allWeekSummaries: [],
+      isLoading: false,
+      loadedWeekStart: null,
+    })
   })
   afterEach(() => {
     vi.useRealTimers()
@@ -133,6 +143,54 @@ describe('generateCoachNote — solo semana actual (Dexie real)', () => {
 
     const note = await useTrainingStore.getState().generateCoachNote(currentWeekStartISO())
     expect(note).toBe('nota generada')
+  })
+
+  it('recalcula el resumen antes de generar la nota y guarda su snapshot', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-07-10T12:00:00'))
+    vi.mocked(CoachEngine.send).mockResolvedValueOnce({ message: 'nota actualizada' })
+
+    const weekStart = currentWeekStartISO()
+    await db.weekSummaries.put({
+      id: 'week-stale',
+      athleteId: 'ath_self',
+      weekStartDate: weekStart,
+      totalSessions: 8,
+      totalMinutes: 360,
+      plannedSessions: 8,
+      completedSessions: 0,
+      plannedMinutes: 360,
+      completedMinutes: 0,
+      adherencePct: 0,
+      squashSessions: 0,
+      runningSessions: 0,
+      strengthSessions: 0,
+      coachNote: 'Esta semana no tienes sesiones completadas.',
+      updatedAt: 1,
+    })
+    await db.sessions.bulkPut([
+      makeSession({ id: 'sq-1', athleteId: 'ath_self', date: '2026-07-06', weekStartDate: weekStart, type: 'squash', status: 'completed', durationMin: 60 }),
+      makeSession({ id: 'sq-2', athleteId: 'ath_self', date: '2026-07-07', weekStartDate: weekStart, type: 'squash', status: 'completed', durationMin: 60 }),
+      makeSession({ id: 'sq-3', athleteId: 'ath_self', date: '2026-07-08', weekStartDate: weekStart, type: 'squash', status: 'completed', durationMin: 60 }),
+      makeSession({ id: 'run-1', athleteId: 'ath_self', date: '2026-07-08', weekStartDate: weekStart, type: 'running', status: 'completed', durationMin: 35 }),
+      makeSession({ id: 'str-1', athleteId: 'ath_self', date: '2026-07-09', weekStartDate: weekStart, type: 'strength', status: 'completed', durationMin: 40 }),
+      makeSession({ id: 'mob-1', athleteId: 'ath_self', date: '2026-07-09', weekStartDate: weekStart, type: 'mobility', status: 'adjusted', durationMin: 20 }),
+      makeSession({ id: 'run-2', athleteId: 'ath_self', date: '2026-07-11', weekStartDate: weekStart, type: 'running', status: 'planned', durationMin: 45 }),
+      makeSession({ id: 'str-2', athleteId: 'ath_self', date: '2026-07-12', weekStartDate: weekStart, type: 'strength', status: 'planned', durationMin: 40 }),
+    ])
+
+    await expect(useTrainingStore.getState().generateCoachNote(weekStart)).resolves.toBe('nota actualizada')
+
+    const context = vi.mocked(CoachEngine.send).mock.calls.at(-1)?.[1] as ChatContext
+    expect(context.currentWeekSummary?.plannedSessions).toBe(8)
+    expect(context.currentWeekSummary?.completedSessions).toBe(6)
+    expect(context.currentWeekSummary?.completedMinutes).toBe(275)
+    expect(context.currentWeekSummary?.adherencePct).toBe(75)
+
+    const stored = await db.weekSummaries.where('[athleteId+weekStartDate]').equals(['ath_self', weekStart]).first()
+    expect(stored?.coachNote).toBe('nota actualizada')
+    expect(stored?.coachNoteGeneratedAt).toEqual(expect.any(Number))
+    expect(stored?.coachNoteSnapshot).toBe(stored ? buildWeeklyCoachNoteSnapshot(stored) : undefined)
   })
 })
 

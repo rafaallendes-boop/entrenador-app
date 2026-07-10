@@ -14,6 +14,7 @@ import type { LoadAnalytics } from './loadAnalytics'
 import { buildActionAlerts } from './actionAlerts'
 import { todayISO, toISO, fromISO, getWeekStart } from '../utils/date'
 import { isWeeklyReviewWindowOpen } from './weeklyReviewWindow'
+import { hasFreshWeeklyCoachNote } from './weeklyCoachNote'
 
 export interface WeeklyActionLoopInput {
   sessions: Session[]
@@ -127,7 +128,7 @@ function shouldReviewCoachNote(
   if (!summary) return false
   if (weekSessions === 0) return false
   if (!isWeeklyReviewWindowOpen(today)) return false
-  return !summary.coachNote
+  return !hasFreshWeeklyCoachNote(summary)
 }
 
 function mapAlertToWeeklyAction(

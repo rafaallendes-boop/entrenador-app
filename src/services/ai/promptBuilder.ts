@@ -273,7 +273,7 @@ function buildAdjustActionPromptResult(context: ChatContext, userMessage?: strin
 // ─── Weekly Summary System Prompt ───────────────────────────────────────────
 
 function buildWeeklySummaryPromptResult(context: ChatContext, userMessage?: string): CoachPromptBuildResult {
-  const plannedSessions = getPlannedSessions(context)
+  const weekSessions = getAllContextSessions(context)
   const requestType: CoachPromptRequestType = 'weekly_summary'
   const relevantSports = detectRelevantSports(context, userMessage, requestType)
   const slimProfile = buildSlimAthleteProfileSection(context, relevantSports)
@@ -288,7 +288,15 @@ function buildWeeklySummaryPromptResult(context: ChatContext, userMessage?: stri
     { key: 'coach_memory', content: buildCoachMemorySection(context) },
     { key: 'fatigue', content: buildFatigueSection(context, { compact: true }), required: true },
     { key: 'week', content: buildWeekSection(context), required: true },
-    { key: 'sessions', content: buildSessionsSection(plannedSessions, { allowActions: false }), required: true },
+    {
+      key: 'sessions',
+      content: buildSessionsSection(weekSessions, {
+        allowActions: false,
+        includePast: true,
+        title: '═══ SESIONES DE LA SEMANA ═══',
+      }),
+      required: true,
+    },
     { key: 'week_logs', content: buildWeekDayLogsSection(context) },
     { key: 'today', content: buildTodaySection(context) },
     { key: 'load_analytics', content: buildLoadAnalyticsSection(context, relevantSports) },
@@ -1453,16 +1461,17 @@ function buildImplicitPrioritySection(context: ChatContext): string {
 
 function buildSessionsSection(
   sessions: Session[],
-  options?: { allowActions?: boolean },
+  options?: { allowActions?: boolean; includePast?: boolean; title?: string },
 ): string {
   const allowActions = options?.allowActions ?? true
+  const includePast = options?.includePast ?? false
   const today = todayISO()
-  const futureSessions = sessions.filter(s => s.date >= today)
+  const visibleSessions = includePast ? sessions : sessions.filter(s => s.date >= today)
 
-  const lines: string[] = ['═══ SESIONES DISPONIBLES (HOY Y FUTURO) ═══']
+  const lines: string[] = [options?.title ?? '═══ SESIONES DISPONIBLES (HOY Y FUTURO) ═══']
 
-  if (futureSessions.length === 0) {
-    lines.push('⚠ No hay sesiones planificadas para esta semana.')
+  if (visibleSessions.length === 0) {
+    lines.push(includePast ? '⚠ No hay sesiones registradas para esta semana.' : '⚠ No hay sesiones planificadas para esta semana.')
     if (allowActions) {
       lines.push('→ Para este canal, usa add_session sólo si el usuario pidió una sesión puntual.')
       lines.push('→ No generes semanas completas desde el prompt de ajuste.')
@@ -1473,9 +1482,11 @@ function buildSessionsSection(
   }
 
   lines.push(`Referencia temporal: HOY=${today}; MAÑANA=${addDaysToISO(today, 1)}; PASADO MAÑANA=${addDaysToISO(today, 2)}.`)
-  lines.push('(IDs internos incluidos solo para acciones JSON: úsalos en sessionId, pero no los muestres al usuario.)')
+  lines.push(allowActions
+    ? '(IDs internos incluidos solo para acciones JSON: úsalos en sessionId, pero no los muestres al usuario.)'
+    : '(IDs internos solo como referencia: no los muestres al usuario.)')
 
-  const sorted = [...futureSessions].sort(
+  const sorted = [...visibleSessions].sort(
     (a, b) => a.date.localeCompare(b.date) || a.timeBlock.localeCompare(b.timeBlock)
   )
 

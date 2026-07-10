@@ -31,6 +31,7 @@ import { useWeeklyActionNavigator } from '../hooks/useWeeklyActionNavigator'
 import { useWeeklySnapshot } from '../hooks/useWeeklySnapshot'
 import { useWhoopSync } from '../hooks/useWhoopSync'
 import { isWeeklyReviewWindowOpen } from '../services/weeklyReviewWindow'
+import { getFreshWeeklyCoachNote } from '../services/weeklyCoachNote'
 import type { CoachProposal, ReadinessDaily } from '../types'
 
 const CoachMessageCard = lazy(() => import('../components/dashboard/CoachMessageCard'))
@@ -185,8 +186,9 @@ export default function Dashboard() {
   const defaultCoachNote = hasTrainingHistory
     ? `Hola ${athleteFirstName}, ¿cómo viene la semana? Revisa tu semana en curso o solicita a RallyIQ que actualice tu plan.`
     : `Bienvenido${athleteProfile?.name ? `, ${athleteFirstName}` : ''}. Carga tu primera semana de entrenamiento y empieza a registrar tu progreso.`
-  const coachNote = isWeeklyReviewWindowOpen(today) && currentWeekSummary?.coachNote
-    ? currentWeekSummary.coachNote
+  const freshCoachNote = getFreshWeeklyCoachNote(currentWeekSummary)
+  const coachNote = isWeeklyReviewWindowOpen(today) && freshCoachNote
+    ? freshCoachNote
     : defaultCoachNote
 
   const profileCompleteness = getProfileCompleteness(athleteProfile ?? null)

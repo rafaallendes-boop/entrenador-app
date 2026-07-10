@@ -77,6 +77,63 @@ describe('promptBuilder request class branching', () => {
     expect(prompt).not.toContain('DEBES responder con create_week')
   })
 
+  it('includes completed sessions from earlier in the week in weekly summaries', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 6, 10, 12))
+
+    try {
+      const prompt = buildCoachSystemPrompt({
+        ...makeContext(),
+        currentWeekSummary: {
+          id: 'week-1',
+          weekStartDate: '2026-07-06',
+          totalSessions: 2,
+          totalMinutes: 105,
+          plannedSessions: 2,
+          completedSessions: 1,
+          plannedMinutes: 105,
+          completedMinutes: 60,
+          adherencePct: 50,
+          squashSessions: 1,
+          runningSessions: 0,
+          strengthSessions: 0,
+          updatedAt: 1,
+        },
+        historicalSessions: [
+          makeSession({
+            id: 'squash-tuesday',
+            date: '2026-07-07',
+            timeBlock: 'PM',
+            type: 'squash',
+            status: 'completed',
+            title: 'Match play',
+            durationMin: 60,
+          }),
+        ],
+        plannedSessions: [
+          makeSession({
+            id: 'run-saturday',
+            date: '2026-07-11',
+            timeBlock: 'AM',
+            type: 'running',
+            status: 'planned',
+            title: 'Z2 soporte',
+            durationMin: 45,
+          }),
+        ],
+      }, { requestClass: 'weekly_summary' })
+
+      expect(prompt).toContain('SESIONES DE LA SEMANA')
+      expect(prompt).toContain('2026-07-07 (7 jul 2026 · Mar 7) PM · squash "Match play"')
+      expect(prompt).toContain('completado')
+      expect(prompt).toContain('2026-07-11 (11 jul 2026 · Sáb 11)')
+      expect(prompt).toContain('MAÑANA AM · running "Z2 soporte"')
+      expect(prompt).not.toContain('No hay sesiones planificadas para esta semana')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('keeps chat_action on the reduced adjust branch even if the legacy intent says plan_week', () => {
     const prompt = buildCoachSystemPrompt({
       ...makeContext(),

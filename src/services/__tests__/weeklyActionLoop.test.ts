@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { DayLog, MacroWeekCoherenceSummary, Session, WeekSummary } from '../../types'
 import { buildWeeklyActionSummary } from '../weeklyActionLoop'
+import { buildWeeklyCoachNoteSnapshot } from '../weeklyCoachNote'
 
 function makeSession(partial: Partial<Session> = {}): Session {
   return {
@@ -100,6 +101,32 @@ describe('buildWeeklyActionSummary', () => {
 
     expect(summary.primaryAction?.kind).not.toBe('review_coach_note')
     expect(summary.secondaryActions.some((action) => action.kind === 'review_coach_note')).toBe(false)
+  })
+
+  it('suggests generating the coach note again when the stored note is stale', () => {
+    const summary = buildWeeklyActionSummary({
+      sessions: [makeSession()],
+      currentWeekSummary: makeSummary({ coachNote: 'Nota generada con datos viejos.' }),
+      today: '2026-04-10',
+    })
+    const actions = [summary.primaryAction, ...summary.secondaryActions]
+
+    expect(actions.some((action) => action?.kind === 'review_coach_note')).toBe(true)
+  })
+
+  it('does not suggest generating the coach note again when the stored note matches the weekly snapshot', () => {
+    const currentWeekSummary = makeSummary({ coachNote: 'Nota al dia.' })
+    const summary = buildWeeklyActionSummary({
+      sessions: [makeSession()],
+      currentWeekSummary: {
+        ...currentWeekSummary,
+        coachNoteSnapshot: buildWeeklyCoachNoteSnapshot(currentWeekSummary),
+      },
+      today: '2026-04-10',
+    })
+
+    expect(summary.secondaryActions.some((action) => action.kind === 'review_coach_note')).toBe(false)
+    expect(summary.primaryAction?.kind).not.toBe('review_coach_note')
   })
 
   it('does not suggest generating a coach note for a week that is not the current one', () => {

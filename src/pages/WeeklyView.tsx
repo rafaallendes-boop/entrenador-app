@@ -26,6 +26,7 @@ import {
   serializeWeeklyActionLaunchIntent,
 } from '../services/weeklyLaunchIntent'
 import { isWeeklyReviewWindowOpen } from '../services/weeklyReviewWindow'
+import { hasFreshWeeklyCoachNote } from '../services/weeklyCoachNote'
 
 const DailyCheckInCard = lazy(() => import('../components/dashboard/DailyCheckInCard'))
 const WeeklyActionCenterCard = lazy(() => import('../components/week/WeeklyActionCenterCard'))
@@ -57,6 +58,7 @@ export default function WeeklyView() {
   // El resumen semanal solo se genera para la semana en curso (el store lo exige).
   const isCurrentWeek = currentWeekStart === currentWeekStartISO()
   const canReviewCurrentWeek = isCurrentWeek && isWeeklyReviewWindowOpen(today)
+  const hasFreshCoachNote = hasFreshWeeklyCoachNote(currentWeekSummary)
 
   const getSessionsForDay = (dateISO: string, block?: TimeBlock) =>
     sessions
@@ -357,7 +359,7 @@ export default function WeeklyView() {
                 className="inline-flex items-center gap-1.5 rounded-lg bg-brand/10 px-3 py-1.5 text-[11px] font-medium text-brand-light transition-colors disabled:cursor-not-allowed disabled:opacity-60 hover:bg-brand/15"
               >
                 <MessageSquareText size={13} />
-                {isGeneratingNote ? 'Preparando nota...' : currentWeekSummary.coachNote ? 'Actualizar nota' : 'Generar nota'}
+                {isGeneratingNote ? 'Preparando nota...' : hasFreshCoachNote ? 'Actualizar nota' : 'Generar nota'}
               </button>
             )}
           </div>

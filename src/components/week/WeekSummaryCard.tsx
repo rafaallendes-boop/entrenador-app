@@ -2,6 +2,7 @@ import { Zap, Wind, Dumbbell, Clock, TrendingUp, Moon, Weight } from 'lucide-rea
 import type { WeekSummary } from '../../types'
 import Card from '../ui/Card'
 import { formatDuration } from '../../utils/format'
+import { getFreshWeeklyCoachNote } from '../../services/weeklyCoachNote'
 
 interface WeekSummaryCardProps {
   summary: WeekSummary
@@ -14,6 +15,7 @@ export default function WeekSummaryCard({
   compact = false,
   showDisciplineAdherence = false,
 }: WeekSummaryCardProps) {
+  const coachNote = getFreshWeeklyCoachNote(summary)
   const secondaryStats = [
     {
       key: 'strength',
@@ -124,10 +126,10 @@ export default function WeekSummaryCard({
             </div>
           )}
 
-          {summary.coachNote && (
+          {coachNote && (
             <div className="mt-3 pt-3 border-t border-surface-border">
               <p className="text-xs text-ink-muted italic leading-relaxed">
-                "{summary.coachNote}"
+                "{coachNote}"
               </p>
             </div>
           )}
