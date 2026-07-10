@@ -92,11 +92,11 @@ export function getSportPrioritySummary(profile: AthleteProfile | null | undefin
   const priority = profile?.sportContext?.trainingPriority
 
   const SPORT_ES: Record<SupportedSport, string> = {
-    squash: 'squash',
-    running: 'running',
-    strength: 'fuerza',
-    mobility: 'movilidad',
-    cycling: 'ciclismo',
+    squash: 'Squash',
+    running: 'Running',
+    strength: 'Fuerza',
+    mobility: 'Movilidad',
+    cycling: 'Ciclismo',
   }
 
   const sportLine = [
@@ -104,7 +104,7 @@ export function getSportPrioritySummary(profile: AthleteProfile | null | undefin
     ...secondary.map(s => SPORT_ES[s]),
   ]
     .filter(Boolean)
-    .join(' > ')
+    .join(' · ')
 
   if (!sportLine) return ''
 
@@ -115,7 +115,7 @@ export function getSportPrioritySummary(profile: AthleteProfile | null | undefin
       body_composition: 'composición corporal',
       return_to_play: 'vuelta al deporte',
     }
-    return `${sportLine} (objetivo: ${PRIORITY_ES[priority]})`
+    return `${sportLine}(Enfoque: ${PRIORITY_ES[priority]})`
   }
 
   return sportLine
@@ -147,11 +147,11 @@ export function includesSport(profile: AthleteProfile | null | undefined, sport:
 
 export function getAthleteSportsSummary(profile?: AthleteProfile | null): string {
   const SPORT_ES: Record<SupportedSport, string> = {
-    squash: 'squash',
-    running: 'running',
-    strength: 'fuerza',
-    mobility: 'movilidad',
-    cycling: 'ciclismo',
+    squash: 'Squash',
+    running: 'Running',
+    strength: 'Fuerza',
+    mobility: 'Movilidad',
+    cycling: 'Ciclismo',
   }
 
   const enabled = getEnabledSports(profile)

@@ -13,13 +13,13 @@ import { formatMobilityFocusAreas, normalizeMobilityTargetStructure } from '../.
 
 const STATUS_CONFIG: Record<SessionStatus, { label: string; badge: string; icon: string }> = {
   planned:   { label: 'Planificado', badge: 'bg-surface-raised text-ink-faint border border-surface-border',       icon: '○' },
-  completed: { label: 'Realizado',   badge: 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/25',    icon: '✓' },
-  adjusted:  { label: 'Ajustado',    badge: 'bg-amber-500/15 text-amber-400 border border-amber-500/25',          icon: '↺' },
-  skipped:   { label: 'Saltado',     badge: 'bg-red-500/15 text-red-400 border border-red-500/25',                icon: '×' },
+  completed: { label: 'Completado',   badge: 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/25',    icon: '✓' },
+  adjusted:  { label: 'Ajustado',    badge: 'bg-amber-500/15 text-amber-400 border border-amber-500/25',          icon: '↻' },
+  skipped:   { label: 'Omitido',     badge: 'bg-red-500/15 text-red-400 border border-red-500/25',                icon: '×' },
 }
 
 const RUNNING_TYPE_LABELS: Record<string, string> = {
-  z2: 'Z2 Aerobico', tempo: 'Tempo', intervals: 'Intervalos', long: 'Long Run',
+  z2: 'Z2 Aeróbico', tempo: 'Tempo', intervals: 'Intervalos', long: 'Long Run',
 }
 
 const MOBILITY_CONTEXT_LABELS: Record<string, string> = {
@@ -27,15 +27,15 @@ const MOBILITY_CONTEXT_LABELS: Record<string, string> = {
   post_cycling: 'Post-cycling',
   post_squash: 'Post-squash',
   post_strength: 'Post-fuerza',
-  pre_training_activation: 'Activacion',
+  pre_training_activation: 'Activación',
   recovery: 'Recovery',
   full_body: 'Full body',
-  sport_specific: 'Especifica',
+  sport_specific: 'Específica',
 }
 
-const MATCH_RESULT_LABELS = { win: 'Gano', loss: 'Perdio' } as const
+const MATCH_RESULT_LABELS = { win: 'Ganó', loss: 'Perdió' } as const
 const SQUASH_KIND_LABELS: Record<string, string> = {
-  technical: 'Tecnica',
+  technical: 'Técnica',
   control: 'Control',
   shadows: 'Sombras',
   match: 'Partido',

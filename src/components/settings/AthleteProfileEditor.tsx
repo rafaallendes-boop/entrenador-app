@@ -165,7 +165,7 @@ export default function AthleteProfileEditor({ profile, isSaving, onSave }: Prop
               type="number"
               value={age}
               onChange={(e) => setAge(e.target.value)}
-              placeholder="32"
+              placeholder="25"
               className={inputCls}
               min={10}
               max={99}
@@ -176,7 +176,7 @@ export default function AthleteProfileEditor({ profile, isSaving, onSave }: Prop
               type="number"
               value={weightKg}
               onChange={(e) => setWeightKg(e.target.value)}
-              placeholder="78"
+              placeholder="85,3"
               className={inputCls}
               min={30}
               max={200}
@@ -265,7 +265,7 @@ export default function AthleteProfileEditor({ profile, isSaving, onSave }: Prop
           <input
             value={mainGoal}
             onChange={(e) => setMainGoal(e.target.value)}
-            placeholder="ej: llegar al top 10 regional"
+            placeholder="Ej: llegar al top 10 nacional"
             className={inputCls}
           />
         </Field>
@@ -274,7 +274,7 @@ export default function AthleteProfileEditor({ profile, isSaving, onSave }: Prop
           <input
             value={secondaryGoal}
             onChange={(e) => setSecondaryGoal(e.target.value)}
-            placeholder="ej: preparar media maraton"
+            placeholder="Ej: Preparar media maratón"
             className={inputCls}
           />
         </Field>
@@ -291,7 +291,7 @@ export default function AthleteProfileEditor({ profile, isSaving, onSave }: Prop
             <input
               value={running.fiveKTime ?? ''}
               onChange={(e) => setRunning((r) => ({ ...r, fiveKTime: e.target.value || undefined }))}
-              placeholder="23:30"
+              placeholder="20:30"
               className={inputCls}
             />
           </Field>
@@ -299,7 +299,7 @@ export default function AthleteProfileEditor({ profile, isSaving, onSave }: Prop
             <input
               value={running.tenKTime ?? ''}
               onChange={(e) => setRunning((r) => ({ ...r, tenKTime: e.target.value || undefined }))}
-              placeholder="49:00"
+              placeholder="45:00"
               className={inputCls}
             />
           </Field>
@@ -424,7 +424,7 @@ export default function AthleteProfileEditor({ profile, isSaving, onSave }: Prop
         onToggle={() => toggle('recovery')}
         filled={!!(recovery.currentInjuries || recovery.restrictions)}
       >
-        <Field label="Lesion o molestia actual">
+        <Field label="Lesión o molestia actual">
           <input
             value={recovery.currentInjuries ?? ''}
             onChange={(e) => setRecovery((r) => ({ ...r, currentInjuries: e.target.value || undefined }))}
@@ -494,7 +494,7 @@ export default function AthleteProfileEditor({ profile, isSaving, onSave }: Prop
             <input
               value={scheduleConstraints}
               onChange={(e) => setScheduleConstraints(e.target.value)}
-              placeholder="solo AM los martes, no disponible sabados"
+              placeholder="Solo am los lunes, sin disponibilidad sábado"
               className={inputCls}
             />
           </Field>
@@ -502,7 +502,7 @@ export default function AthleteProfileEditor({ profile, isSaving, onSave }: Prop
       </SectionPanel>
 
       <SectionPanel
-        title="Nutricion y composicion corporal"
+        title="Nutrición y composición corporal"
         open={open === 'nutrition'}
         onToggle={() => toggle('nutrition')}
         filled={hasData(nutrition)}

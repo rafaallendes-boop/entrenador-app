@@ -86,7 +86,7 @@ function DailyCheckInNotes({
           value={bodyWeight}
           onChange={e => setBodyWeight(e.target.value)}
           onBlur={saveBodyWeight}
-          placeholder="ej: 78,4"
+          placeholder="Ej: 85,3"
           className="w-full bg-surface-raised border border-surface-border rounded-xl px-3 py-2 text-sm text-ink placeholder-ink-faint focus:outline-none focus:border-brand/50"
         />
       </div>

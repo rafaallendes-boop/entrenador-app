@@ -65,17 +65,17 @@ const CLEARABLE_GROUPS: Array<{
   {
     key: 'chatHistory',
     title: 'Chat de RallyIQ',
-    description: 'Conversaciones guardadas de RallyIQ actuales y anteriores.',
+    description: 'Conversaciones guardadas con RallyIQ.',
   },
   {
     key: 'coachProposals',
-    title: 'Proposals de RallyIQ',
-    description: 'Propuestas por revisar, aceptadas o rechazadas.',
+    title: 'Propuestas de RallyIQ',
+    description: 'Propuestas generadas por RallyIQ, pendientes o ya resueltas.',
   },
   {
     key: 'coachMemory',
     title: 'Memoria de RallyIQ',
-    description: 'Contexto persistente del atleta, lesiones y preferencias.',
+    description: 'Memoria utilizada por RallyIQ para recordar tu contexto, preferencias y objetivos.',
   },
 ]
 
@@ -916,7 +916,7 @@ export default function SettingsPage() {
             </div>
             <div className="mt-4 rounded-xl border border-surface-border bg-surface-raised px-3 py-3">
               <p className="text-xs text-ink-muted leading-relaxed">
-                Si quieres volver a la configuración guiada sin borrar toda la cuenta, puedes relanzar el onboarding.
+                Si quieres volver a la configuración guiada sin perder tus datos, puedes reiniciar el onboarding.
               </p>
               <button
                 onClick={handleRestartOnboarding}
@@ -930,9 +930,9 @@ export default function SettingsPage() {
           <Card className="p-4">
             <div className="flex items-start justify-between gap-4 flex-wrap">
               <div className="min-w-0 flex-1">
-                <h2 className="text-sm font-semibold text-ink">Backup JSON</h2>
+                <h2 className="text-sm font-semibold text-ink">Respaldo JSON</h2>
                 <p className="text-xs text-ink-muted mt-1 leading-relaxed">
-                  Exporta o restaura sesiones, check-ins, resumenes semanales, chat, proposals y memoria de RallyIQ.
+                  Guarda una copia de seguridad o restaura tu información de entrenamiento y RallyIQ desde un archivo JSON.
                 </p>
               </div>
               <div className="flex w-full flex-col sm:w-auto sm:flex-row gap-2">
@@ -949,7 +949,7 @@ export default function SettingsPage() {
                   className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-surface-raised text-ink text-sm font-semibold hover:bg-surface transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   <Upload size={14} />
-                  {isImporting ? 'Importando...' : 'Seleccionar backup'}
+                  {isImporting ? 'Importando...' : 'Importar Respaldo'}
                 </button>
                 <button
                   onClick={() => void handleExport()}
@@ -957,7 +957,7 @@ export default function SettingsPage() {
                   className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-brand text-white text-sm font-semibold hover:bg-brand-light disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
                 >
                   <Download size={14} />
-                  {isExporting ? 'Exportando...' : 'Exportar'}
+                  {isExporting ? 'Exportando...' : 'Exportar Respaldo'}
                 </button>
               </div>
             </div>
@@ -1093,7 +1093,7 @@ export default function SettingsPage() {
               <div>
                 <h2 className="text-sm font-semibold text-ink">Notificaciones y activacion</h2>
                 <p className="text-xs text-ink-muted mt-1 leading-relaxed">
-                  Recordatorios de sesion, cierre del dia y nudges semanales para no perder continuidad.
+                  Recordatorios de entrenamiento, cierre del día y recordatorios semanales para mantener la continuidad.
                 </p>
               </div>
             </div>
@@ -1277,11 +1277,11 @@ export default function SettingsPage() {
                 <ShieldAlert size={16} className="text-red-400" />
               </div>
               <div>
-                <h2 className="text-sm font-semibold text-ink">Limpiar datos</h2>
+                <h2 className="text-sm font-semibold text-ink">Eliminar datos</h2>
                 <p className="text-xs text-ink-muted mt-1 leading-relaxed">
                   {user
-                    ? 'Elige exactamente que quieres borrar. Si confirmas, se eliminara de este dispositivo y de tu cuenta para que tambien desaparezca del resto de tus dispositivos.'
-                    : 'Elige exactamente que quieres borrar en este dispositivo. Los bloques estan agrupados para evitar datos huerfanos.'}
+                    ? 'Selecciona la información que deseas eliminar. Los datos elegidos se eliminarán de este dispositivo y de tu cuenta, por lo que también dejarán de estar disponibles en tus demás dispositivos.'
+                    : 'Selecciona los datos que deseas eliminar. Algunas opciones se agrupan automáticamente para evitar dejar información incompleta.'}
                 </p>
               </div>
             </div>
@@ -1302,19 +1302,19 @@ export default function SettingsPage() {
                 onClick={() => applyClearPreset({ trainingData: true })}
                 className="px-3 py-2 rounded-xl text-xs font-semibold text-ink hover:bg-surface-raised transition-colors"
               >
-                Solo entrenamiento
+                Entrenamiento
               </button>
               <button
                 onClick={() => applyClearPreset({ chatHistory: true, coachProposals: true })}
                 className="px-3 py-2 rounded-xl text-xs font-semibold text-ink hover:bg-surface-raised transition-colors"
               >
-                Solo RallyIQ
+                RallyIQ
               </button>
               <button
                 onClick={() => applyClearPreset({})}
                 className="px-3 py-2 rounded-xl text-xs font-semibold text-ink-muted hover:bg-surface-raised transition-colors"
               >
-                Limpiar seleccion
+                Deseleccionar todo
               </button>
             </div>
 
@@ -1386,7 +1386,7 @@ export default function SettingsPage() {
             ) : (
               <div className="space-y-3 mt-4">
                 <p className="text-xs text-ink-muted leading-relaxed">
-                  Esta accion no se puede deshacer. Se borrara: <span className="text-ink">{formatGroupList(selectedGroups)}</span>.
+                  Esta accion no se puede deshacer. Se borrará: <span className="text-ink">{formatGroupList(selectedGroups)}</span>.
                   {user
                     ? ' Tambien se eliminara de tu cuenta para que se limpie en tus otros dispositivos.'
                     : ''}
@@ -1417,9 +1417,9 @@ export default function SettingsPage() {
                   <ShieldAlert size={16} className="text-red-400" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold text-ink">Reset total del usuario</p>
+                  <p className="text-sm font-semibold text-ink">Restablecimiento completo</p>
                   <p className="mt-1 text-xs leading-relaxed text-ink-muted">
-                    Usa esto solo si quieres dejar la app desde cero. Borra datos locales y también los datos remotos para que no vuelvan a aparecer al sincronizar en PC o celular.
+                    Vuelve la aplicación a su estado inicial. Se eliminarán todos los datos almacenados en este dispositivo y en la nube. Esta acción no se puede deshacer.
                   </p>
                   <button
                     onClick={() => void handleWipeAllData()}
@@ -1427,7 +1427,7 @@ export default function SettingsPage() {
                     className="mt-3 inline-flex items-center gap-2 rounded-xl bg-red-500/15 px-3 py-2 text-sm font-semibold text-red-300 transition-colors hover:bg-red-500/25 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <Trash2 size={14} />
-                    {isWipingAllData ? 'Borrando todo...' : 'Borrar local + nube'}
+                    {isWipingAllData ? 'Restableciendo cuenta...' : 'Restablecer cuenta'}
                   </button>
                 </div>
               </div>
