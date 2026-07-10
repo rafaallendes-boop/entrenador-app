@@ -1,5 +1,6 @@
-import type { CoachSessionProposal, SupportedSport } from '../../types'
+import type { AthleteProfile, CoachSessionProposal, SupportedSport } from '../../types'
 import type { PlanValidationIssue, TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
+import { mapExerciseTo1RMReference, type ReferenceLift } from '../training/strengthLoadPrescription'
 import { getExpectedSessionsForPlanWeek, getPlanWeekDateRange } from './dateRange'
 import { validatePlan, validatePlanWeek } from './validator'
 
@@ -25,6 +26,10 @@ export interface PlanQualityReview {
 }
 
 export type PlanQualityRepairInstructions = Record<number, string>
+
+export interface PlanQualityContext {
+  profile?: AthleteProfile
+}
 
 function clampScore(score: number): number {
   return Math.max(0, Math.min(100, Math.round(score)))
@@ -538,6 +543,68 @@ function getSquashDrillVarietyIssues(plan: TrainingPlan, weeks: TrainingPlanWeek
   return issues
 }
 
+const NUMERIC_REFERENCE_LABELS: Record<Exclude<ReferenceLift, 'pullUp'>, string> = {
+  squat: 'sentadilla',
+  deadlift: 'peso muerto',
+  bench: 'press banca',
+  overheadPress: 'press hombro',
+}
+
+// Un ejercicio cuenta como cobertura de su referencia solo si es el lift base o
+// una variante cercana del mismo patrón. `factor` (carga relativa al 1RM de
+// referencia) sirve de proxy: la banda [0.8, 1.0] admite variantes reales
+// (sentadilla frontal 0.85, peso muerto sumo 0.95, RDL 0.8, press inclinado
+// 0.85) y descarta accesorios de bajo factor (remos, zancadas) y movimientos
+// mecánicamente ventajosos sobre el 1RM estricto (hip thrust 1.2, push press
+// 1.15), que no demuestran uso del lift de referencia como movimiento base.
+const COVERAGE_MIN_FACTOR = 0.8
+
+function getAvailableNumericReferences(profile: AthleteProfile): Set<Exclude<ReferenceLift, 'pullUp'>> {
+  const strength = profile.strengthProfile
+  const available = new Set<Exclude<ReferenceLift, 'pullUp'>>()
+  if ((strength?.squat1RM ?? 0) > 0) available.add('squat')
+  if ((strength?.deadlift1RM ?? 0) > 0) available.add('deadlift')
+  if ((strength?.benchPress1RM ?? 0) > 0) available.add('bench')
+  if ((strength?.overheadPress1RM ?? 0) > 0) available.add('overheadPress')
+  return available
+}
+
+function getProfileStrengthCoverageIssues(
+  plan: TrainingPlan,
+  weeks: TrainingPlanWeek[],
+  profile: AthleteProfile | undefined,
+): PlanValidationIssue[] {
+  if (!profile || plan.totalWeeks < 4) return []
+  const available = getAvailableNumericReferences(profile)
+  if (available.size < 4) return []
+
+  const strengthWeeks = weeks.filter((week) => week.sessions.some((session) => session.sessionType === 'strength'))
+  if (strengthWeeks.length === 0) return []
+
+  const covered = new Set<Exclude<ReferenceLift, 'pullUp'>>()
+  for (const session of strengthWeeks.flatMap((week) => week.sessions.filter((item) => item.sessionType === 'strength'))) {
+    for (const exercise of session.exercises ?? []) {
+      if (exercise.targetPercent1RM == null) continue
+      const reference = mapExerciseTo1RMReference(exercise.name, profile.strengthProfile)
+      if (!reference || reference.lift === 'pullUp' || !available.has(reference.lift)) continue
+      if (reference.factor < COVERAGE_MIN_FACTOR || reference.factor > 1) continue
+      covered.add(reference.lift)
+    }
+  }
+
+  const missing = [...available].filter((reference) => !covered.has(reference))
+  if (missing.length === 0) return []
+
+  const targetWeek = strengthWeeks[strengthWeeks.length - 1]
+  const missingLabel = ` Faltan referencias de ${missing.map((reference) => NUMERIC_REFERENCE_LABELS[reference]).join(', ')}.`
+  return [issue({
+    severity: 'warning',
+    code: 'quality.strength.profile_1rm_underused',
+    message: `El perfil tiene ${available.size} referencias 1RM, pero el plan solo prescribe carga basada en ${covered.size} de ellas.${missingLabel}`,
+    weekIndex: targetWeek.weekIndex,
+  })]
+}
+
 function normalizeExerciseName(name: string): string {
   return name
     .toLowerCase()
@@ -581,13 +648,18 @@ function countRepairs(week: TrainingPlanWeek): number {
     + (meta.filteredSportCount ?? 0)
 }
 
-export function reviewPlanQuality(plan: TrainingPlan, weeks: TrainingPlanWeek[]): PlanQualityReview {
+export function reviewPlanQuality(
+  plan: TrainingPlan,
+  weeks: TrainingPlanWeek[],
+  context: PlanQualityContext = {},
+): PlanQualityReview {
   const sortedWeeks = [...weeks].sort((a, b) => a.weekIndex - b.weekIndex)
   const planValidationIssues = validatePlan({ plan, weeks: sortedWeeks })
   const planLevelQualityIssues = [
     ...getPlanLevelIssues(plan, sortedWeeks),
     ...getRepeatedStrengthTemplateIssues(plan, sortedWeeks),
     ...getSquashDrillVarietyIssues(plan, sortedWeeks),
+    ...getProfileStrengthCoverageIssues(plan, sortedWeeks, context.profile),
   ]
 
   const weekReviews = sortedWeeks.map((week) => {

@@ -187,6 +187,7 @@ describe('runAsyncPlanGeneration', () => {
     expect(callLLM.mock.calls[0]?.[0].maxTokens).toBe(5000)
     expect(result.plan.generationState).toBe('complete')
     expect(result.plan.generationSummary?.completedWeeks).toBe(2)
+    expect(result.plan.generationSummary?.qualityReview).toBeDefined()
     expect(writer.weeks.filter((week) => week.status === 'draft')).toHaveLength(2)
   })
 

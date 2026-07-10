@@ -129,7 +129,8 @@ export async function commitPlan(
     return { errors: validationErrors, warnings, acceptedWeeks }
   }
 
-  const preCommitQualityReview = reviewPlanQuality(plan, orderedWeeks)
+  const qualityContext = { profile: athleteProfile ?? undefined }
+  const preCommitQualityReview = reviewPlanQuality(plan, orderedWeeks, qualityContext)
   if (preCommitQualityReview.grade === 'poor' || preCommitQualityReview.criticalIssueCount > 0) {
     const headlineIssues = preCommitQualityReview.issues
       .slice(0, 4)
@@ -188,7 +189,7 @@ export async function commitPlan(
       status: acceptedWeeks.includes(w.weekIndex) ? 'accepted' as const : w.status,
       updatedAt: nowTs,
     }))
-    const qualityReview = reviewPlanQuality(plan, nextWeeks)
+    const qualityReview = reviewPlanQuality(plan, nextWeeks, qualityContext)
     const nextPlan: TrainingPlan = {
       ...plan,
       status: 'active',

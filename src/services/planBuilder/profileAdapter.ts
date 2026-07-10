@@ -13,11 +13,10 @@ export interface AthleteParameters {
   ageYears: number | undefined
 }
 
-const TODAY = '2026-05-28'
-
 export function buildAthleteParameters(
   profile: AthleteProfile,
   wizardConfig: PlanWizardConfig,
+  referenceDate = new Date(),
 ): AthleteParameters {
   const available1RM: Exercise1RMReference[] = []
   const strengthProfile = profile.strengthProfile
@@ -27,7 +26,7 @@ export function buildAthleteParameters(
   if (strengthProfile?.benchPress1RM != null) available1RM.push('benchPress')
   if (strengthProfile?.overheadPress1RM != null) available1RM.push('overheadPress')
 
-  const ageYears = resolveAgeYears(profile)
+  const ageYears = resolveAgeYears(profile, referenceDate)
 
   return {
     available1RM,
@@ -42,18 +41,17 @@ export function buildAthleteParameters(
   }
 }
 
-function resolveAgeYears(profile: AthleteProfile): number | undefined {
+function resolveAgeYears(profile: AthleteProfile, referenceDate: Date): number | undefined {
   if (profile.age != null) return profile.age
 
   const birthDate = (profile as { birthDate?: string }).birthDate
   if (!birthDate) return undefined
 
   const birth = new Date(`${birthDate}T00:00:00.000Z`)
-  const today = new Date(`${TODAY}T00:00:00.000Z`)
-  if (Number.isNaN(birth.getTime()) || Number.isNaN(today.getTime())) return undefined
+  if (Number.isNaN(birth.getTime()) || Number.isNaN(referenceDate.getTime())) return undefined
 
-  let age = today.getUTCFullYear() - birth.getUTCFullYear()
-  const birthdayThisYear = Date.UTC(today.getUTCFullYear(), birth.getUTCMonth(), birth.getUTCDate())
-  if (today.getTime() < birthdayThisYear) age -= 1
+  let age = referenceDate.getUTCFullYear() - birth.getUTCFullYear()
+  const birthdayThisYear = Date.UTC(referenceDate.getUTCFullYear(), birth.getUTCMonth(), birth.getUTCDate())
+  if (referenceDate.getTime() < birthdayThisYear) age -= 1
   return age
 }

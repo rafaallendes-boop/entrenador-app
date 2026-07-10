@@ -12,6 +12,7 @@
  *   npm run e2e:plan:generate
  *   npm run e2e:plan:generate:headed
  *   npm run e2e:plan:generate:quality
+ *   npm run e2e:plan:readiness
  *   npm run e2e:plan:accept
  */
 
@@ -26,12 +27,23 @@ const ARTIFACT_DIR = resolve(__dirname, 'e2e-artifacts')
 const BASE_URL = process.env.E2E_BASE_URL ?? 'http://localhost:5173'
 
 const args = new Set(process.argv.slice(2))
+const evaluateReadiness = args.has('--evaluate-readiness')
 const OPTIONS = {
-  generate: args.has('--generate') || args.has('--accept'),
+  generate: args.has('--generate') || args.has('--accept') || evaluateReadiness,
   accept: args.has('--accept'),
   headed: args.has('--headed'),
   debug: args.has('--debug'),
   exportQuality: args.has('--export-quality'),
+  evaluateReadiness,
+}
+
+const READINESS_THRESHOLDS = {
+  minWeeks: 8,
+  maxWeeks: 12,
+  minAiRatio: 0.8,
+  minQualityScore: 78,
+  maxDurationMs: 120_000,
+  minLoadedStrengthExercises: 4,
 }
 
 const TIMEOUTS = {
@@ -428,9 +440,26 @@ async function reportPlanBuilderAIMetric(page) {
         .filter((week) => week.planId === latestPlan.id)
         .sort((a, b) => a.weekIndex - b.weekIndex)
       return {
+        plan: {
+          id: latestPlan.id,
+          totalWeeks: latestPlan.totalWeeks,
+          generationState: latestPlan.generationState,
+          totalDurationMs: latestPlan.generationSummary?.totalDurationMs,
+          qualityReview: latestPlan.generationSummary?.qualityReview,
+        },
         weeks: planWeeks.map((week) => ({
           weekIndex: week.weekIndex,
+          status: week.status,
+          sessionCount: Array.isArray(week.sessions) ? week.sessions.length : 0,
           fallbackUsed: !!week.generationMeta?.fallbackUsed,
+          generationSource: week.generationMeta?.generationSource,
+          validSessionCount: week.generationMeta?.validSessionCount,
+          droppedSessionCount: week.generationMeta?.droppedSessionCount ?? 0,
+          loadedStrengthExercises: (week.sessions ?? [])
+            .filter((session) => session.sessionType === 'strength')
+            .flatMap((session) => session.exercises ?? [])
+            .filter((exercise) => Number.isFinite(exercise.targetPercent1RM))
+            .length,
           reason: (week.generationMeta?.repairWarnings ?? []).map((warning) => warning.code).join(',') || '-',
         })),
       }
@@ -445,7 +474,11 @@ async function reportPlanBuilderAIMetric(page) {
   }
 
   const totalWeeks = metric.weeks.length
-  const aiWeeks = metric.weeks.filter((week) => !week.fallbackUsed).length
+  const aiWeeks = metric.weeks.filter((week) => (
+    !week.fallbackUsed
+    && week.generationSource !== 'deterministic'
+    && week.generationSource !== 'fallback'
+  )).length
   const ratio = totalWeeks > 0 ? aiWeeks / totalWeeks : 0
   console.log(`\n=== Phase 1 metric ===\n${aiWeeks}/${totalWeeks} weeks from AI (${(ratio * 100).toFixed(1)}%)`)
   for (const week of metric.weeks) {
@@ -454,6 +487,87 @@ async function reportPlanBuilderAIMetric(page) {
 
   if (ratio >= 0.8) ok('Métrica IA real >=80%', `${aiWeeks}/${totalWeeks}`)
   else fail('Métrica IA real bajo 80%', `${aiWeeks}/${totalWeeks}`)
+
+  if (!OPTIONS.evaluateReadiness) return
+
+  step('7b. Gate de product readiness')
+  const quality = metric.plan.qualityReview
+  const durationMs = metric.plan.totalDurationMs
+  const loadedStrengthExercises = metric.weeks.reduce((sum, week) => sum + week.loadedStrengthExercises, 0)
+  const readyWeeks = metric.weeks.filter((week) => week.status === 'draft' && week.sessionCount > 0).length
+  const countConsistentWeeks = metric.weeks.filter((week) => {
+    if (week.droppedSessionCount !== 0) return false
+    // Las semanas IA deben exponer validSessionCount y calzar con las sesiones
+    // persistidas; las deterministas/fallback legítimamente no traen metadata.
+    const isAiWeek = week.generationSource !== 'deterministic' && week.generationSource !== 'fallback'
+    if (week.validSessionCount == null) return !isAiWeek
+    return week.validSessionCount === week.sessionCount
+  }).length
+  const repeatedTemplate = quality?.issues?.some((issue) => issue.code === 'quality.strength.repeated_template') ?? false
+  const checks = [
+    {
+      id: 'plan_length',
+      pass: totalWeeks >= READINESS_THRESHOLDS.minWeeks && totalWeeks <= READINESS_THRESHOLDS.maxWeeks,
+      detail: `${totalWeeks} semanas (objetivo ${READINESS_THRESHOLDS.minWeeks}-${READINESS_THRESHOLDS.maxWeeks})`,
+    },
+    {
+      id: 'weeks_complete',
+      pass: readyWeeks === totalWeeks && metric.plan.generationState === 'complete',
+      detail: `${readyWeeks}/${totalWeeks} semanas draft con sesiones; estado ${metric.plan.generationState}`,
+    },
+    {
+      id: 'ai_ratio',
+      pass: ratio >= READINESS_THRESHOLDS.minAiRatio,
+      detail: `${aiWeeks}/${totalWeeks} (${(ratio * 100).toFixed(1)}%)`,
+    },
+    {
+      id: 'quality',
+      pass: Boolean(quality && quality.score >= READINESS_THRESHOLDS.minQualityScore && quality.criticalIssueCount === 0),
+      detail: quality ? `${quality.score}/100 ${quality.grade}; ${quality.criticalIssueCount} críticas` : 'qualityReview ausente',
+    },
+    {
+      id: 'duration',
+      pass: typeof durationMs === 'number' && durationMs <= READINESS_THRESHOLDS.maxDurationMs,
+      detail: typeof durationMs === 'number' ? `${(durationMs / 1000).toFixed(1)}s` : 'duración ausente',
+    },
+    {
+      id: 'session_integrity',
+      pass: countConsistentWeeks === totalWeeks,
+      detail: `${countConsistentWeeks}/${totalWeeks} semanas sin sesiones descartadas ni desajuste de conteo`,
+    },
+    {
+      id: 'strength_profile_usage',
+      pass: loadedStrengthExercises >= READINESS_THRESHOLDS.minLoadedStrengthExercises,
+      detail: `${loadedStrengthExercises} ejercicios con targetPercent1RM`,
+    },
+    {
+      id: 'strength_rotation',
+      pass: !repeatedTemplate,
+      detail: repeatedTemplate ? 'quality.strength.repeated_template presente' : 'sin plantillas repetidas detectadas',
+    },
+  ]
+
+  for (const check of checks) {
+    if (check.pass) ok(`Readiness: ${check.id}`, check.detail)
+    else fail(`Readiness: ${check.id}`, check.detail)
+  }
+
+  const readinessReport = {
+    generatedAt: new Date().toISOString(),
+    baseUrl: BASE_URL,
+    thresholds: READINESS_THRESHOLDS,
+    ready: checks.every((check) => check.pass),
+    checks,
+    metric,
+  }
+  mkdirSync(ARTIFACT_DIR, { recursive: true })
+  const reportBody = `${JSON.stringify(readinessReport, null, 2)}\n`
+  const reportStamp = readinessReport.generatedAt.replace(/[:.]/g, '-')
+  const reportPath = resolve(ARTIFACT_DIR, `plan-builder-readiness-${reportStamp}.json`)
+  const latestPath = resolve(ARTIFACT_DIR, 'plan-builder-readiness-latest.json')
+  writeFileSync(reportPath, reportBody)
+  writeFileSync(latestPath, reportBody)
+  log(`Readiness report: ${reportPath}`)
 }
 
 async function acceptGeneratedPlan(page) {
@@ -515,7 +629,7 @@ function printSummary() {
   const total = passed + failed
   console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
   console.log(`  Resultado: ${passed}/${total} checks pasaron`)
-  console.log(`  Modo: ${OPTIONS.accept ? 'generate+accept' : OPTIONS.generate ? 'generate' : 'review-only'}`)
+  console.log(`  Modo: ${OPTIONS.evaluateReadiness ? 'product-readiness' : OPTIONS.accept ? 'generate+accept' : OPTIONS.generate ? 'generate' : 'review-only'}`)
   if (OPTIONS.exportQuality) {
     console.log(`  Quality artifact dir: ${ARTIFACT_DIR}`)
   }
@@ -569,7 +683,7 @@ async function main() {
     step('1. Carga de la app')
     await goto(page, '/')
     const title = await page.title()
-    if (/Entrenador/i.test(title)) ok('App cargó correctamente', title)
+    if (/RallyIQ|Entrenador/i.test(title)) ok('App cargó correctamente', title)
     else fail('Título inesperado', title)
 
     await verifyAuth(page, context, authInfo)

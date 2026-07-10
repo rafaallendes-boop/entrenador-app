@@ -5,6 +5,7 @@ import { generateWeekCore, summarizeWeekGenerationError } from './generateWeekCo
 import { countReadyWeeks, isReadyWeek, sortWeeks } from './weekUtils'
 import { getExpectedSessionsForPlanWeek } from './dateRange'
 import { buildWeekRetryInstruction } from '../week/shared'
+import { reviewPlanQuality } from './qualityReview'
 
 export interface AsyncPlanGenerationWriter {
   /** Consulta ligera opcional: solo lee cancelRequested. Si no está, usa getPlan. */
@@ -538,6 +539,15 @@ export async function runAsyncPlanGeneration(input: RunAsyncPlanGenerationInput)
     updatedAt: completedAt,
     completedAt,
   })
+  if (plan.generationSummary) {
+    plan = {
+      ...plan,
+      generationSummary: {
+        ...plan.generationSummary,
+        qualityReview: reviewPlanQuality(plan, weeks, { profile: input.profile }),
+      },
+    }
+  }
   await input.writer.putPlan(plan)
   return { plan, weeks, cancelled: false }
 }
