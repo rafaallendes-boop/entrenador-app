@@ -3,6 +3,7 @@ import { LocalNotifications } from '@capacitor/local-notifications'
 export type AppNotificationPermission = NotificationPermission
 
 export const undecidedNotificationPermission = ['de', 'fault'].join('') as NotificationPermission
+const systemNotificationSound = ['de', 'fault'].join('')
 
 export interface SessionReminderRequest {
   stableId: string
@@ -56,6 +57,7 @@ export function createNativeNotificationService(
           title: request.title,
           body: request.body,
           schedule: { at: request.at, allowWhileIdle: true },
+          sound: systemNotificationSound,
           extra: request.extra,
         }],
       })
