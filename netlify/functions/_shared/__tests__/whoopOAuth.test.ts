@@ -27,5 +27,6 @@ describe('whoopOAuth', () => {
 
   it('requests offline scope so WHOOP returns a refresh token', () => {
     expect(WHOOP_SCOPES).toContain('offline')
+    expect(WHOOP_SCOPES).toContain('read:workout')
   })
 })

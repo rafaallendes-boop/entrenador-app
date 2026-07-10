@@ -1,16 +1,18 @@
 import type { HandlerResponse } from '@netlify/functions'
 import { ensureFreshToken, fetchWhoopData } from './whoopClient'
 import { getServiceRoleDb } from './whoopOAuth'
-import { normalizeWhoop } from './whoopNormalize'
+import { normalizeWhoop, normalizeWorkouts } from './whoopNormalize'
 import { runWhoopSync } from './whoopSync'
 import {
   deleteExpiredOAuthStates,
   getConnection,
   resolveSelfAthleteId,
+  reconcileWorkouts,
   setSyncResult,
   upsertBiometricReadings,
   upsertConnection,
   upsertReadiness,
+  upsertWorkouts,
   type WhoopDb,
 } from './whoopSupabase'
 
@@ -29,9 +31,12 @@ const baseDeps = (db: WhoopDb) => ({
   setSyncResult,
   upsertReadiness,
   upsertBiometricReadings,
+  upsertWorkouts,
+  reconcileWorkouts,
   ensureFreshToken,
   fetchWhoopData,
   normalizeWhoop,
+  normalizeWorkouts,
 })
 
 function connectionTable(db: WhoopDb): SelectConnectionsQuery {

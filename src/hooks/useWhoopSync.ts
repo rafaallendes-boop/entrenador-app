@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { pullReadiness } from '../services/readiness/pullReadiness'
+import { pullWorkouts } from '../services/readiness/pullWorkouts'
+import { autoCompleteFromWorkouts } from '../services/readiness/autoCompleteFromWorkouts'
 import { getWhoopStatus, syncWhoopNow, type WhoopStatus, type WhoopSyncResponse } from '../services/readiness/whoopApi'
 
 export interface UseWhoopSyncOptions {
@@ -22,6 +24,20 @@ function messageForSyncResult(result: WhoopSyncResponse): string {
     return 'Whoop no esta conectado.'
   }
   return 'No se pudo sincronizar Whoop.'
+}
+
+export async function syncWhoopAndRefreshLocalData(
+  onReadinessPulled?: () => Promise<void> | void,
+): Promise<WhoopSyncResponse> {
+  const result = await syncWhoopNow()
+  if (result.ok) {
+    await pullReadiness().catch(() => undefined)
+    await pullWorkouts()
+      .then(() => autoCompleteFromWorkouts())
+      .catch(() => undefined)
+    await onReadinessPulled?.()
+  }
+  return result
 }
 
 export function useWhoopSync(options: UseWhoopSyncOptions = {}) {
@@ -56,11 +72,7 @@ export function useWhoopSync(options: UseWhoopSyncOptions = {}) {
     setSyncing(true)
     setMessage(null)
     try {
-      const result = await syncWhoopNow()
-      if (result.ok) {
-        await pullReadiness().catch(() => undefined)
-        await onReadinessPulled?.()
-      }
+      const result = await syncWhoopAndRefreshLocalData(onReadinessPulled)
 
       if (mountedRef.current) setMessage(messageForSyncResult(result))
       await refreshStatus()

@@ -2,16 +2,18 @@ import type { Handler } from '@netlify/functions'
 import { ensureFreshToken, fetchWhoopData, revokeWhoopAccess } from './_shared/whoopClient'
 import { getServiceRoleDb } from './_shared/whoopOAuth'
 import { json, resolveAuthContext } from './_shared/planGenerationShared'
-import { normalizeWhoop } from './_shared/whoopNormalize'
+import { normalizeWhoop, normalizeWorkouts } from './_shared/whoopNormalize'
 import { runWhoopSync } from './_shared/whoopSync'
 import {
   deleteAllWhoopData,
   getConnection,
+  reconcileWorkouts,
   resolveSelfAthleteId,
   setSyncResult,
   upsertBiometricReadings,
   upsertConnection,
   upsertReadiness,
+  upsertWorkouts,
   type WhoopDb,
 } from './_shared/whoopSupabase'
 
@@ -23,9 +25,12 @@ const baseDeps = (db: WhoopDb) => ({
   setSyncResult,
   upsertReadiness,
   upsertBiometricReadings,
+  upsertWorkouts,
+  reconcileWorkouts,
   ensureFreshToken,
   fetchWhoopData,
   normalizeWhoop,
+  normalizeWorkouts,
 })
 
 function parseDays(body: string | null): number | undefined {

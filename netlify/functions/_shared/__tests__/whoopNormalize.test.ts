@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { READINESS_METRIC_CLEAR } from '../whoopSupabase'
-import { normalizeWhoop } from '../whoopNormalize'
+import { normalizeWhoop, normalizeWorkouts } from '../whoopNormalize'
 
 describe('normalizeWhoop', () => {
   it('maps recovery, sleep and cycle into per-day readiness', () => {
     const raw = {
+      workouts: null,
       recovery: [{
         cycle_id: 101,
         sleep_id: 'sl-uuid',
@@ -39,6 +40,7 @@ describe('normalizeWhoop', () => {
 
   it('handles days with missing metrics', () => {
     const raw = {
+      workouts: null,
       recovery: [],
       sleep: [{
         id: 's2',
@@ -60,6 +62,7 @@ describe('normalizeWhoop', () => {
 
   it('produces raw biometric readings with rawId for dedupe', () => {
     const raw = {
+      workouts: null,
       recovery: [{
         cycle_id: 101,
         sleep_id: 'sl-uuid',
@@ -77,6 +80,7 @@ describe('normalizeWhoop', () => {
 
   it('does not emit empty recovery metrics while WHOOP recovery is pending', () => {
     const raw = {
+      workouts: null,
       recovery: [{
         cycle_id: 101,
         created_at: '2026-06-21T06:00:00Z',
@@ -95,6 +99,7 @@ describe('normalizeWhoop', () => {
 
   it('emits explicit clears when WHOOP marks recovery as unscorable', () => {
     const raw = {
+      workouts: null,
       recovery: [{
         cycle_id: 101,
         created_at: '2026-06-21T06:00:00Z',
@@ -116,6 +121,7 @@ describe('normalizeWhoop', () => {
 
   it('emits explicit clears for unscorable sleep and cycle scores', () => {
     const raw = {
+      workouts: null,
       recovery: [],
       sleep: [{
         id: 'main-sleep',
@@ -141,6 +147,7 @@ describe('normalizeWhoop', () => {
 
   it('keeps scored metrics when a later unscorable record maps to the same day', () => {
     const raw = {
+      workouts: null,
       recovery: [
         {
           cycle_id: 101,
@@ -203,6 +210,7 @@ describe('normalizeWhoop', () => {
 
   it('anchors recovery, sleep and strain to the same local cycle day', () => {
     const raw = {
+      workouts: null,
       recovery: [{
         cycle_id: 101,
         created_at: '2026-06-21T11:00:00Z',
@@ -248,6 +256,7 @@ describe('normalizeWhoop', () => {
 
   it('ignores naps and uses staged sleep duration when available', () => {
     const raw = {
+      workouts: null,
       recovery: [],
       sleep: [
         {
@@ -291,5 +300,91 @@ describe('normalizeWhoop', () => {
 
     expect(readiness[0]?.sleepHours).toBeCloseTo(6.3, 1)
     expect(readiness[0]?.sleepPerformance).toBe(82)
+  })
+})
+
+const emptyRaw = { recovery: [], sleep: [], cycles: [], workouts: [] }
+
+function makeRawWorkout(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'w-1',
+    sport_name: 'running',
+    start: '2026-07-09T14:00:00.000Z',
+    end: '2026-07-09T14:45:00.000Z',
+    timezone_offset: '-04:00',
+    score_state: 'SCORED',
+    score: { strain: 10.5, average_heart_rate: 140, max_heart_rate: 172, kilojoule: 1200 },
+    ...overrides,
+  }
+}
+
+describe('normalizeWorkouts', () => {
+  it('normalizes a scored workout with duration and local date', () => {
+    expect(normalizeWorkouts({ ...emptyRaw, workouts: [makeRawWorkout()] })).toEqual([{
+      workoutId: 'w-1',
+      date: '2026-07-09',
+      sportName: 'running',
+      startAt: '2026-07-09T14:00:00.000Z',
+      endAt: '2026-07-09T14:45:00.000Z',
+      durationMin: 45,
+      strain: 10.5,
+      avgHr: 140,
+      maxHr: 172,
+      distanceM: null,
+      scoreState: 'SCORED',
+    }])
+  })
+
+  it('anchors date to start plus timezone offset across midnight', () => {
+    const rows = normalizeWorkouts({
+      ...emptyRaw,
+      workouts: [makeRawWorkout({
+        start: '2026-07-10T02:00:00.000Z',
+        end: '2026-07-10T03:00:00.000Z',
+        timezone_offset: '-05:00',
+      })],
+    })
+    expect(rows[0]?.date).toBe('2026-07-09')
+  })
+
+  it('keeps pending workouts without score metrics', () => {
+    const rows = normalizeWorkouts({
+      ...emptyRaw,
+      workouts: [makeRawWorkout({ score_state: 'PENDING_SCORE', score: undefined })],
+    })
+    expect(rows[0]?.scoreState).toBe('PENDING_SCORE')
+    expect(rows[0]?.strain).toBeNull()
+  })
+
+  it('normalizes sport casing and separators', () => {
+    const rows = normalizeWorkouts({
+      ...emptyRaw,
+      workouts: [makeRawWorkout({ sport_name: '  Functional_Fitness ' })],
+    })
+    expect(rows[0]?.sportName).toBe('functional fitness')
+  })
+
+  it('drops malformed records', () => {
+    const rows = normalizeWorkouts({
+      ...emptyRaw,
+      workouts: [
+        makeRawWorkout({ id: undefined }),
+        makeRawWorkout({ start: 'not-a-date' }),
+        makeRawWorkout({ end: '2026-07-09T13:00:00.000Z' }),
+        'garbage',
+      ],
+    })
+    expect(rows).toEqual([])
+  })
+
+  it('sorts by startAt and then workoutId', () => {
+    const rows = normalizeWorkouts({
+      ...emptyRaw,
+      workouts: [
+        makeRawWorkout({ id: 'b', start: '2026-07-09T18:00:00.000Z', end: '2026-07-09T19:00:00.000Z' }),
+        makeRawWorkout({ id: 'a', start: '2026-07-09T14:00:00.000Z', end: '2026-07-09T15:00:00.000Z' }),
+      ],
+    })
+    expect(rows.map((row) => row.workoutId)).toEqual(['a', 'b'])
   })
 })

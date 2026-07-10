@@ -324,18 +324,11 @@ mensajería coach↔atleta, wearables, facturación, branding.
 
 ## 9. Integración futura con wearables (F4)
 
-> **Excepción táctica: piloto Whoop previo a F4 (decisión 2026-06-22).** Existe un plan
-> aprobado para adelantar Whoop como **piloto individual sobre `user_id`**, sin esperar a
-> F1/F4 y **sin webhooks** (poll diario UTC idempotente + "sincronizar ahora").
-> Ver `docs/superpowers/specs/2026-06-21-whoop-integration-design.md` y
-> `docs/superpowers/plans/2026-06-21-whoop-integration.md`. Es contexto pasivo (tarjeta
-> + prefill editable del check-in + línea de readiness para el coach), **no** ajuste
-> automático de carga. Difiere de la visión F4 a propósito: F4 asume `athlete_id`,
-> webhooks y feed al loop de ajuste. El piloto crea las tablas `whoop_connections`,
-> `biometric_readings` y `readiness_daily` scopeadas por `user_id`; cuando llegue F1, esas
-> tablas se re-scopean a `athlete_id` junto con el resto del modelo (deuda documentada en
-> el spec). En otras palabras: el piloto valida valor con un usuario antes de pagar el
-> costo de la arquitectura multi-atleta; F4 es la versión "de producto" de lo mismo.
+> **Excepción táctica: Whoop v1 previo a F4 (implementado en `011`, 2026-07-08).**
+> Whoop ya entrega contexto pasivo —tarjeta, prefill editable del check-in y línea de
+> readiness para el coach—, sin ajuste automático de carga ni webhooks. Las credenciales
+> y datos crudos permanecen server-side; `readiness_daily` se asocia a `athlete_id` para
+> que el modelo pueda evolucionar hacia membresías en SP1 sin mover los datos.
 
 ### 9.1 Modelo común
 

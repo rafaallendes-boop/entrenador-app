@@ -30,5 +30,13 @@ export async function switchActiveAthlete(ownerAccountId: string, athleteId: str
   setActiveAthleteId(athleteId)
   useAuthStore.getState().setActiveAthleteId(athleteId)
   await useCoachMemoryStore.getState().loadMemory()
+  if (isSelf) {
+    void (async () => {
+      const { pullWorkouts } = await import('../readiness/pullWorkouts')
+      const { autoCompleteFromWorkouts } = await import('../readiness/autoCompleteFromWorkouts')
+      await pullWorkouts()
+      await autoCompleteFromWorkouts()
+    })().catch(() => undefined)
+  }
   return true
 }

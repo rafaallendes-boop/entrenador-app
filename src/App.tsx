@@ -18,6 +18,8 @@ import { hydrateActiveAthlete } from './services/athlete/hydrateActiveAthlete'
 import { getActiveAthleteId } from './services/athlete/activeAthlete'
 import NativeBridge from './components/native/NativeBridge'
 import { NATIVE_RESUME_EVENT } from './services/nativeApp'
+import { pullWorkouts } from './services/readiness/pullWorkouts'
+import { autoCompleteFromWorkouts } from './services/readiness/autoCompleteFromWorkouts'
 
 const Dashboard = lazy(() => import('./pages/Dashboard'))
 const WeeklyView = lazy(() => import('./pages/WeeklyView'))
@@ -218,6 +220,11 @@ export default function App() {
         }
 
         await runFullSync(userId)
+        if (cancelled) return
+
+        await pullWorkouts()
+          .then(() => autoCompleteFromWorkouts())
+          .catch((error) => console.warn('[whoop:auto-complete] pull+run failed', error))
         if (cancelled) return
 
         const { loadMemory } = useCoachMemoryStore.getState()

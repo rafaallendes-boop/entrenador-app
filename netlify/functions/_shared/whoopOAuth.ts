@@ -4,7 +4,7 @@ import { getSupabaseUrl } from './planGenerationShared'
 import type { WhoopDb } from './whoopSupabase'
 
 export const OAUTH_STATE_TTL_MS = 600_000
-export const WHOOP_SCOPES = ['offline', 'read:recovery', 'read:sleep', 'read:cycles', 'read:profile']
+export const WHOOP_SCOPES = ['offline', 'read:recovery', 'read:sleep', 'read:cycles', 'read:profile', 'read:workout']
 
 export function generateOAuthState(): string {
   return randomBytes(32).toString('hex')

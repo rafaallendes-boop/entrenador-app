@@ -21,6 +21,7 @@ import type {
   TrainingPriority,
   WarmupSet,
   WeekSummary,
+  WhoopWorkout,
 } from '../types'
 import type { TrainingPlan, TrainingPlanWeek } from '../types/planBuilder'
 import { useChatStore } from '../store/useChatStore'
@@ -102,6 +103,7 @@ export interface AppDataExport {
     sessions: Session[]
     dayLogs: DayLog[]
     readinessDaily: ReadinessDaily[]
+    whoopWorkouts: WhoopWorkout[]
     weekSummaries: WeekSummary[]
     trainingPlans: TrainingPlan[]
     trainingPlanWeeks: TrainingPlanWeek[]
@@ -132,6 +134,7 @@ export interface AppDataImportResult {
     sessions: number
     dayLogs: number
     readinessDaily: number
+    whoopWorkouts: number
     weekSummaries: number
     trainingPlans: number
     trainingPlanWeeks: number
@@ -176,10 +179,11 @@ function buildAthleteProfileFilename(exportedAt: Date): string {
 
 export async function exportAppData(): Promise<{ filename: string; json: string }> {
   const exportedAt = new Date()
-  const [sessions, dayLogs, readinessDaily, weekSummaries, trainingPlans, trainingPlanWeeks, chatMessages, coachProposals, athleteProfiles, athletes] = await Promise.all([
+  const [sessions, dayLogs, readinessDaily, whoopWorkouts, weekSummaries, trainingPlans, trainingPlanWeeks, chatMessages, coachProposals, athleteProfiles, athletes] = await Promise.all([
     db.sessions.toArray(),
     db.dayLogs.toArray(),
     db.readinessDaily.toArray(),
+    db.whoopWorkouts.toArray(),
     db.weekSummaries.toArray(),
     db.trainingPlans.toArray(),
     db.trainingPlanWeeks.toArray(),
@@ -198,6 +202,7 @@ export async function exportAppData(): Promise<{ filename: string; json: string 
       sessions,
       dayLogs,
       readinessDaily,
+      whoopWorkouts,
       weekSummaries,
       trainingPlans,
       trainingPlanWeeks,
@@ -293,6 +298,7 @@ export async function previewAppDataImportFile(file: File): Promise<AppDataImpor
       sessions: backup.tables.sessions.length,
       dayLogs: backup.tables.dayLogs.length,
       readinessDaily: backup.tables.readinessDaily.length,
+      whoopWorkouts: backup.tables.whoopWorkouts.length,
       weekSummaries: backup.tables.weekSummaries.length,
       trainingPlans: backup.tables.trainingPlans.length,
       trainingPlanWeeks: backup.tables.trainingPlanWeeks.length,
@@ -307,11 +313,12 @@ export async function previewAppDataImportFile(file: File): Promise<AppDataImpor
 }
 
 async function computeMergeConflicts(backup: AppDataExport): Promise<MergeConflictSummary> {
-  const [localSessions, localDayLogs, localReadinessDaily, localWeekSummaries, localChatMessages, localProposals, localProfiles, localAthletes] =
+  const [localSessions, localDayLogs, localReadinessDaily, localWhoopWorkouts, localWeekSummaries, localChatMessages, localProposals, localProfiles, localAthletes] =
     await Promise.all([
       db.sessions.toArray(),
       db.dayLogs.toArray(),
       db.readinessDaily.toArray(),
+      db.whoopWorkouts.toArray(),
       db.weekSummaries.toArray(),
       db.chatMessages.toArray(),
       db.coachProposals.toArray(),
@@ -348,6 +355,14 @@ async function computeMergeConflicts(backup: AppDataExport): Promise<MergeConfli
     if (!local) newInBackupCount++
     else if (local.updatedAt > br.updatedAt) localNewerCount++
     else if (br.updatedAt > local.updatedAt) backupNewerCount++
+  }
+
+  const localWhoopWorkoutsById = new Map(localWhoopWorkouts.map((row) => [row.id, row]))
+  for (const workout of backup.tables.whoopWorkouts) {
+    const local = localWhoopWorkoutsById.get(workout.id)
+    if (!local) newInBackupCount++
+    else if (local.updatedAt > workout.updatedAt) localNewerCount++
+    else if (workout.updatedAt > local.updatedAt) backupNewerCount++
   }
 
   // WeekSummaries — no updatedAt, only track new
@@ -545,6 +560,19 @@ async function putImportedReadinessDaily(importedRows: ReadinessDaily[]): Promis
   if (rowsToWrite.length > 0) await db.readinessDaily.bulkPut(rowsToWrite)
 }
 
+async function putMergedWhoopWorkouts(importedRows: WhoopWorkout[]): Promise<void> {
+  if (importedRows.length === 0) return
+  const existing = await db.whoopWorkouts.bulkGet(importedRows.map((row) => row.id))
+  const rowsToWrite = importedRows.map((backupRow, index) => {
+    const local = existing[index]
+    if (!local) return backupRow
+    const freshest = backupRow.updatedAt > local.updatedAt ? backupRow : local
+    const autoComplete = local.autoComplete ?? backupRow.autoComplete
+    return autoComplete ? { ...freshest, autoComplete } : freshest
+  })
+  await db.whoopWorkouts.bulkPut(rowsToWrite)
+}
+
 async function putImportedWeekSummaries(importedRows: WeekSummary[]): Promise<void> {
   if (importedRows.length === 0) return
   const activeAthleteId = getActiveAthleteId()
@@ -570,11 +598,12 @@ export async function importAppDataFromFile(
   if (mode === 'replace') {
     await db.transaction(
       'rw',
-      [db.sessions, db.dayLogs, db.readinessDaily, db.weekSummaries, db.trainingPlans, db.trainingPlanWeeks, db.chatMessages, db.coachProposals, db.athleteProfiles, db.athletes],
+      [db.sessions, db.dayLogs, db.readinessDaily, db.whoopWorkouts, db.weekSummaries, db.trainingPlans, db.trainingPlanWeeks, db.chatMessages, db.coachProposals, db.athleteProfiles, db.athletes],
       async () => {
         await db.sessions.clear()
         await db.dayLogs.clear()
         await db.readinessDaily.clear()
+        await db.whoopWorkouts.clear()
         await db.weekSummaries.clear()
         await db.trainingPlanWeeks.clear()
         await db.trainingPlans.clear()
@@ -586,6 +615,7 @@ export async function importAppDataFromFile(
         if (backup.tables.sessions.length > 0) await db.sessions.bulkPut(backup.tables.sessions)
         await putImportedDayLogs(backup.tables.dayLogs)
         await putImportedReadinessDaily(backup.tables.readinessDaily)
+        if (backup.tables.whoopWorkouts.length > 0) await db.whoopWorkouts.bulkPut(backup.tables.whoopWorkouts)
         await putImportedWeekSummaries(backup.tables.weekSummaries)
         if (backup.tables.trainingPlans.length > 0) await db.trainingPlans.bulkPut(backup.tables.trainingPlans)
         if (backup.tables.trainingPlanWeeks.length > 0) await db.trainingPlanWeeks.bulkPut(backup.tables.trainingPlanWeeks)
@@ -601,7 +631,7 @@ export async function importAppDataFromFile(
     // WeekSummaries have no updatedAt — only add records missing locally.
     await db.transaction(
       'rw',
-      [db.sessions, db.dayLogs, db.readinessDaily, db.weekSummaries, db.trainingPlans, db.trainingPlanWeeks, db.chatMessages, db.coachProposals, db.athleteProfiles, db.athletes],
+      [db.sessions, db.dayLogs, db.readinessDaily, db.whoopWorkouts, db.weekSummaries, db.trainingPlans, db.trainingPlanWeeks, db.chatMessages, db.coachProposals, db.athleteProfiles, db.athletes],
       async () => {
         // Sessions
         const localSessions = await db.sessions.toArray()
@@ -615,6 +645,7 @@ export async function importAppDataFromFile(
         // DayLogs / WeekSummaries use athlete-scoped natural keys under Dexie v14.
         await putImportedDayLogs(backup.tables.dayLogs)
         await putImportedReadinessDaily(backup.tables.readinessDaily)
+        await putMergedWhoopWorkouts(backup.tables.whoopWorkouts)
         await putImportedWeekSummaries(backup.tables.weekSummaries)
 
         const localPlans = await db.trainingPlans.toArray()
@@ -680,6 +711,7 @@ export async function importAppDataFromFile(
       sessions: backup.tables.sessions.length,
       dayLogs: backup.tables.dayLogs.length,
       readinessDaily: backup.tables.readinessDaily.length,
+      whoopWorkouts: backup.tables.whoopWorkouts.length,
       weekSummaries: backup.tables.weekSummaries.length,
       trainingPlans: backup.tables.trainingPlans.length,
       trainingPlanWeeks: backup.tables.trainingPlanWeeks.length,
@@ -714,6 +746,7 @@ export function parseAppDataExport(value: unknown): AppDataExport {
   const sessions = parseSessionsTable(normalized.tables.sessions)
   const dayLogs = parseDayLogsTable(normalized.tables.dayLogs)
   const readinessDaily = parseReadinessDailyTable(normalized.tables.readinessDaily ?? [])
+  const whoopWorkouts = parseWhoopWorkoutsTable(normalized.tables.whoopWorkouts ?? [])
   const weekSummaries = parseWeekSummariesTable(normalized.tables.weekSummaries)
   const trainingPlans = parseTrainingPlansTable(normalized.tables.trainingPlans ?? [])
   const trainingPlanWeeks = parseTrainingPlanWeeksTable(normalized.tables.trainingPlanWeeks ?? [])
@@ -738,6 +771,7 @@ export function parseAppDataExport(value: unknown): AppDataExport {
       sessions,
       dayLogs,
       readinessDaily,
+      whoopWorkouts,
       weekSummaries,
       trainingPlans: trainingPlansWithGenerationState,
       trainingPlanWeeks,
@@ -768,6 +802,13 @@ function parseReadinessDailyTable(value: unknown): ReadinessDaily[] {
   const readinessRows = rows.map((row, index) => parseReadinessDaily(row, index))
   ensureUniqueIds(readinessRows, 'readinessDaily')
   return readinessRows
+}
+
+function parseWhoopWorkoutsTable(value: unknown): WhoopWorkout[] {
+  const rows = ensureArray(value, 'whoopWorkouts')
+  const workouts = rows.map((row, index) => parseWhoopWorkout(row, index))
+  ensureUniqueIds(workouts, 'whoopWorkouts')
+  return workouts
 }
 
 function parseWeekSummariesTable(value: unknown): WeekSummary[] {
@@ -854,6 +895,7 @@ function parseSession(value: unknown, index: number): Session {
     warmup: optionalGeneratedProtocol(row.warmup, `sessions[${index}].warmup`, 'warmup'),
     cooldown: optionalGeneratedProtocol(row.cooldown, `sessions[${index}].cooldown`, 'cooldown'),
     completedAt: optionalFiniteNumber(row.completedAt, `sessions[${index}].completedAt`),
+    autoCompletion: optionalSessionAutoCompletion(row.autoCompletion, `sessions[${index}].autoCompletion`),
   }
 }
 
@@ -893,6 +935,31 @@ function parseReadinessDaily(value: unknown, index: number): ReadinessDaily {
     sleepPerformance: optionalFiniteNumber(row.sleepPerformance, `readinessDaily[${index}].sleepPerformance`),
     source: requireString(row.source, `readinessDaily[${index}].source`),
     updatedAt: requireFiniteNumber(row.updatedAt, `readinessDaily[${index}].updatedAt`),
+  }
+}
+
+const WHOOP_SCORE_STATES = ['SCORED', 'PENDING_SCORE', 'UNSCORABLE'] as const
+const WHOOP_MATCH_STATUSES = ['completed', 'skipped_short', 'skipped_multiple', 'no_session', 'unmapped_sport'] as const
+
+function parseWhoopWorkout(value: unknown, index: number): WhoopWorkout {
+  const path = `whoopWorkouts[${index}]`
+  const row = ensureRecord(value, path)
+  return {
+    id: requireString(row.id, `${path}.id`),
+    workoutId: requireString(row.workoutId, `${path}.workoutId`),
+    athleteId: requireString(row.athleteId, `${path}.athleteId`),
+    date: requireISODate(row.date, `${path}.date`),
+    sportName: requireString(row.sportName, `${path}.sportName`),
+    startAt: requireString(row.startAt, `${path}.startAt`),
+    endAt: requireString(row.endAt, `${path}.endAt`),
+    durationMin: requireFiniteNumber(row.durationMin, `${path}.durationMin`),
+    strain: optionalFiniteNumber(row.strain, `${path}.strain`),
+    avgHr: optionalFiniteNumber(row.avgHr, `${path}.avgHr`),
+    maxHr: optionalFiniteNumber(row.maxHr, `${path}.maxHr`),
+    distanceM: optionalFiniteNumber(row.distanceM, `${path}.distanceM`),
+    scoreState: requireEnum(row.scoreState, WHOOP_SCORE_STATES, `${path}.scoreState`) as WhoopWorkout['scoreState'],
+    updatedAt: requireFiniteNumber(row.updatedAt, `${path}.updatedAt`),
+    autoComplete: optionalWhoopWorkoutAutoComplete(row.autoComplete, `${path}.autoComplete`),
   }
 }
 
@@ -1660,6 +1727,29 @@ function requireString(value: unknown, path: string): string {
 function optionalString(value: unknown, path: string): string | undefined {
   if (value == null) return undefined
   return requireString(value, path)
+}
+
+function optionalSessionAutoCompletion(value: unknown, path: string): Session['autoCompletion'] {
+  if (value == null) return undefined
+  const row = ensureRecord(value, path)
+  if (row.source !== 'whoop_workout') {
+    throw new Error(`${path}.source must be "whoop_workout"`)
+  }
+  return {
+    source: 'whoop_workout',
+    workoutId: requireString(row.workoutId, `${path}.workoutId`),
+    completedAt: requireString(row.completedAt, `${path}.completedAt`),
+  }
+}
+
+function optionalWhoopWorkoutAutoComplete(value: unknown, path: string): WhoopWorkout['autoComplete'] {
+  if (value == null) return undefined
+  const row = ensureRecord(value, path)
+  return {
+    status: requireEnum(row.status, WHOOP_MATCH_STATUSES, `${path}.status`) as NonNullable<WhoopWorkout['autoComplete']>['status'],
+    sessionId: optionalString(row.sessionId, `${path}.sessionId`),
+    processedAt: requireFiniteNumber(row.processedAt, `${path}.processedAt`),
+  }
 }
 
 function optionalNullableString(value: unknown, path: string): string | null | undefined {

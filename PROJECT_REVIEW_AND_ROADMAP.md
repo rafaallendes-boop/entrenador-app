@@ -1,10 +1,10 @@
 # RallyIQ - Project Review and Roadmap
 
-Actualizado: 2026-07-08
+Actualizado: 2026-07-10
 
 Base de contraste:
 
-- `main` hasta `8f3c721 Prepare athlete scope 008b rollout and coach F2 plan`, mas el commit actual de Athlete-Aware Core.
+- `main` hasta `167ef6e Plan whoop y entrenador`.
 - `007` aplicado y F2 data prereqs en `6e33926`.
 - `008a` ya fue corrido en produccion con 0 nulls / 0 duplicados reportados.
 - `008b` fue aplicado en produccion despues del deploy del write path; `008a` volvio a reportar 0 duplicados/null debt operativo.
@@ -12,35 +12,39 @@ Base de contraste:
 - **Coach UI F2-lite Parte 2b desplegada en produccion (2026-07-05):** switcher + roster `/coach` + onboarding athlete-aware, gated por `VITE_COACH_ACCOUNTS`. Migracion `010a/b/c` (day/week full unique expand->contract) aplicada; `008a`/`010a` post-deploy en 0. Smoke self + gestionado OK.
 - Superficie publica actualizada para demo multideporte: Landing/Features/Pricing limpian residuos visibles de version/localidad, reducen sesgo squash-only y Pricing queda en 3 planes: Base gratis, Coach Semanal y Avanzado con Plan Builder.
 - **Polish de uso real implementado (2026-07-06):** la nota/lectura semanal del coach queda disponible solo desde viernes-domingo y completar todos los ejercicios de una sesion marca automaticamente la sesion como realizada.
-- **Decision producto WHOOP (2026-07-06):** adelantar Whoop antes de SP1/two-sided. El plan y spec quedan reconciliados con `011`/Dexie v15, SP1 en `012+`/v16+, readiness `athlete_id` first y contrato de landing/coach sin promesas medicas ni ajuste automatico.
-- **WHOOP v1 implementado y revisado (2026-07-08):** integracion end-to-end construida en working tree (uncommitted): `011_whoop_integration.sql` (4 tablas, RLS server-only + `readiness_daily` client-read), Dexie v15 `readinessDaily`, OAuth start/callback/status con state single-use, `tokenCrypto` AES-256-GCM, `whoopClient` v2 (`offline` scope + refresh), `whoopNormalize` (anclaje por `cycle_id`, `timezone_offset`, filtro de siestas, sueño por etapas, tri-estado `score_state` SCORED/PENDING/UNSCORABLE), sync manual con cooldown, cron dedicado (`whoop-cron` scheduled, no publico), `ReadinessCard`, `WhoopConnection`, prefill de check-in gateado (hoy+self+atleta), contexto pasivo del coach sin doble conteo (procedencia `prefillSource:'whoop'`), borrado completo service-role + tolerancia a 404/tabla ausente, export/backup y wipe local. **Task 0 completada por el owner.** Pasaron 6 rondas de `/code-review`; todos los hallazgos (incl. scope `offline`, cron pre-auth, gap de borrado biometrico, race de atleta, mutacion historica) resueltos. Verde: lint + 1160 tests + build + typecheck. Pendiente: aplicar `011` y smoke directo en prod (el owner decidio probar en prod, no staging), + gate legal linkeado antes de exponer a terceros.
+- **WHOOP v1 implementado y commiteado (2026-07-08/10):** integracion end-to-end en `main` (`c8aa5f8`, `14b7056`, `5293e6c`): `011_whoop_integration.sql`, Dexie v15 `readinessDaily`, OAuth start/callback/status con state single-use, tokens AES-256-GCM, sync manual/on-demand con cooldown, cron dedicado, `ReadinessCard`, `WhoopConnection`, prefill de check-in gateado (hoy+self+atleta), contexto pasivo del coach, borrado completo service-role, export/backup y wipe local. Cierre de review previo: lint + 1160 tests + build + typecheck. Pendiente operacional: aplicar `011`, confirmar deploy y smoke directo en prod + gate legal antes de terceros.
+- **WHOOP Esfuerzo (2026-07-08) implementado:** `dayLog.rpeActual` se mantiene como storage pero la UI/copy lo relabela a "Esfuerzo"; Whoop strain lo prellena con `clamp(round(strain / 2.1), 1, 10)`, editable, y no se usa para sembrar `Session.actualRpe` ni inflar ACWR/carga.
+- **Resumen semanal/coach note corregido (2026-07-10):** snapshot de nota semanal, freshness check y tests evitan reusar notas obsoletas cuando cambia el resumen.
+- **SP1a dos-lados planificado (2026-07-09/10):** spec endurecido con D1-D6 y plan de implementacion creado (`docs/superpowers/plans/2026-07-09-sp1a-two-sided-foundation.md`), pero aun sin codigo/migraciones aplicadas.
+- **Whoop Workout Auto-Complete implementado (2026-07-10):** `012_whoop_workouts.sql`, Dexie v16, scope `read:workout`, reconciliacion autoritativa server/client, matcher self-only serializado con idempotencia durable, badge y lifecycle completo. SP1a queda reservado para `013+`/Dexie v17+. Pendiente operacional: aplicar `012`, deploy, reconectar Whoop y smoke.
 
 ## Resumen Ejecutivo
 
-RallyIQ esta en una etapa donde el core ya no es el cuello de botella principal. El motor de planificacion, Plan Builder async, calidad deportiva base, athlete scope foundation, claves naturales locales por atleta, write path remoto seguro para day/week, Athlete-Aware Core y Coach F2-lite Parte 2b ya estan construidos y smokeados.
+RallyIQ esta en una etapa donde el core ya no es el cuello de botella principal. El motor de planificacion, Plan Builder async, calidad deportiva base, athlete scope foundation, claves naturales locales por atleta, write path remoto seguro para day/week, Athlete-Aware Core, Coach F2-lite Parte 2b y Whoop v1 ya estan construidos.
 
-Lo que queda antes de mostrar/cobrar con confianza se divide en cuatro carriles:
+Lo que queda antes de mostrar/cobrar con confianza se divide en cinco carriles:
 
-1. **Whoop readiness:** implementado y revisado (Task 0 hecha); resta aplicar `011` en prod, commit/deploy del bundle y smoke end-to-end + linkear gate legal.
+1. **Whoop readiness operativo:** codigo en `main`; resta aplicar `011`, confirmar deploy/smoke prod y linkear consentimiento biometrico antes de terceros.
 2. **Cierre comercial/legal:** rutas legales publicas, consentimiento general + biometrico, soporte y oferta piloto.
 3. **QA deportiva:** planes arquetipo ahora operables como atletas gestionados.
-4. **SP1 dos-lados:** membresias/invitaciones/RLS v2 despues de Whoop, sin rework sobre readiness.
+4. **Whoop workout auto-complete:** codigo implementado; pendiente aplicar `012`, deploy, reconectar para `read:workout` y smoke con workout real.
+5. **SP1 dos-lados:** membresias/RLS v2 ya planificadas para `013+`/Dexie v17+, pero sigue siendo una migracion de acceso relevante.
 
-Mi lectura como lider tecnico: ya se puede preparar demo y piloto acompanado. No esta listo para self-serve publico. Para el uso real del owner y una futura oferta coach creible, Whoop es el siguiente incremento de producto con mas retorno, siempre cerrado con consentimiento biometrico y privacidad antes de exponerlo.
+Mi lectura como lider tecnico: ya se puede preparar demo y piloto acompanado. No esta listo para self-serve publico. El cuello actual no es falta de features, sino cerrar gates operacionales, legales y de QA manual con datos reales.
 
 ## Estado Actual En Una Frase
 
-RallyIQ ya opera multi-atleta en produccion (Coach F2-lite Parte 2b desplegada y smokeada) y Whoop readiness ya esta implementado y revisado (Task 0 hecha, 6 rondas de code review verdes); el siguiente paso es aplicar `011` en prod, desplegar el bundle y smokear el flujo Whoop end-to-end antes de exponerlo con su gate legal.
+RallyIQ ya opera multi-atleta en produccion y Whoop readiness esta codeado/commiteado; el siguiente paso real es aplicar `011`, confirmar deploy y smokear conectar -> sync -> ReadinessCard -> prefill -> desconectar/borrar en prod, con gate legal antes de terceros.
 
 ## Porcentaje De Avance
 
 Estimacion actual:
 
-- Demo acompanada: **93% listo / 7% pendiente**.
-- Piloto manual pagado 1-3 clientes: **84% listo / 16% pendiente**.
-- Coach UI F2-lite MVP interno: **70% listo / 30% pendiente**.
-- Coach dos-lados/SP1: **20% listo / 80% pendiente**.
-- Monetizacion publica self-serve: **58% listo / 42% pendiente**.
+- Demo acompanada: **94% listo / 6% pendiente**.
+- Piloto manual pagado 1-3 clientes: **85% listo / 15% pendiente**.
+- Coach UI F2-lite MVP interno: **72% listo / 28% pendiente**.
+- Coach dos-lados/SP1: **25% listo / 75% pendiente**.
+- Monetizacion publica self-serve: **59% listo / 41% pendiente**.
 
 Traduccion practica: el producto ya tiene sustancia; lo pendiente es reducir riesgo percibido y riesgo operacional.
 
@@ -74,29 +78,31 @@ Parte 1 del camino F2-lite:
 
 Estado: **desplegado y smokeado en produccion**. Single-athlete no cambio; self + gestionado OK.
 
-### 3. WHOOP queda priorizado y reconciliado con SP1
+### 3. WHOOP v1 paso de plan a codigo en `main`
 
-Decision de producto del 2026-07-06:
+Decision de producto del 2026-07-06, ejecutada entre 2026-07-08 y 2026-07-10:
 
-- Whoop se implementa antes que SP1/two-sided porque el owner usa la app al 100% y necesita recovery/sueno/strain reales.
-- Spec y plan WHOOP quedan `athlete_id` first, migracion SQL `011`, Dexie v15.
-- SP1 arranca despues (`012+`/Dexie v16+) y debe migrar `readiness_daily` al modelo `athlete_memberships`.
+- Whoop se implemento antes que SP1/two-sided porque el owner usa la app al 100% y necesita recovery/sueno/strain reales.
+- `011_whoop_integration.sql` define credenciales/raw server-only y `readiness_daily` client-readable por atleta.
+- OAuth, refresh, sync manual/on-demand, cron, readiness local, tarjeta de dashboard, settings, prefill y borrado completo ya estan implementados.
+- `rpeActual` se mantiene como storage pero el producto lo relabela a **Esfuerzo**; Whoop strain lo prellena como esfuerzo diario editable, sin contaminar `Session.actualRpe`.
 - La futura landing/oferta coach solo puede prometer contexto objetivo opcional y consentido; no diagnostico, prevencion de lesiones ni ajuste automatico.
 
-Estado: **diseño y plan alineados; implementacion pendiente**.
+Estado: **codigo committed; pendiente aplicar `011`, confirmar deploy y smoke prod + legal biometrico linkeado**.
 
-### 4. SP1 Coach dos-lados quedo especificado
+### 4. SP1 Coach dos-lados quedo especificado y planificado como SP1a/SP1b
 
-Spec aprobado conceptualmente:
+Spec aprobado y endurecido:
 
 - `athlete_memberships` reemplaza el modelo `owner_account_id`/`linked_account_id`.
 - Invites consentidos: `claim_self` para reclamar gestionados y `grant_coach` para dar acceso a un coach.
 - RLS v2 por helper `auth_athlete_ids()` / `auth_coach_athlete_ids()`.
 - `coachMemory` sale de `athlete_profiles` a `athlete_coach_notes`.
 - Self solo completa campos permitidos de sesiones coach-authored via RPC acotada.
-- Whoop queda fuera de SP1 como Track B previo, pero SP1 debe migrar su RLS.
+- Enmienda D1-D6 cierra autoría de sesiones, cola offline para completacion, PK de notes, lifecycle reset/export/borrado, lista explicita de RLS y claim-before-bootstrap.
+- Plan SP1a existe: `docs/superpowers/plans/2026-07-09-sp1a-two-sided-foundation.md`.
 
-Estado: **diseño aprobado** (`2026-07-05-coach-two-sided-foundation-sp1-design.md`). Falta plan de implementacion. Se ejecuta despues de Whoop para no reabrir el contrato de readiness.
+Estado: **diseño + plan listos; implementacion no iniciada**. Numeracion resuelta: Whoop Workout Auto-Complete usa `012` + Dexie v16; SP1a se mueve a `013a/b/c` + Dexie v17.
 
 ### 5. Superficie publica paso a demo multideporte
 
@@ -111,6 +117,19 @@ Cambios recientes:
 - `SharedPublicNav` y footers: eliminados residuos visibles de version/localidad y links muertos en superficie publica principal.
 
 Estado: **mejorado para demo acompanada**. Aun falta legal publico real, screenshots/mockups honestos finales y smoke visual de `/`, `/features`, `/pricing`.
+
+### 6. Whoop Workout Auto-Complete queda como proximo incremento posible
+
+Nuevo spec aprobado el 2026-07-10:
+
+- Lee workouts Whoop via scope `read:workout`.
+- Persiste `whoop_workouts` en Supabase y Dexie, `athlete_id` first y server-only para escrituras.
+- Auto-completa solo sesiones `planned` del atleta self si hay una unica sesion del mismo deporte/dia.
+- No crea sesiones nuevas, no toca atletas gestionados y no ajusta planes automaticamente.
+- No escribe `Session.actualRpe`; solo `actualDurationMin`, `completionNotes` generado si no existia, y `autoCompletion` idempotente por `workoutId`.
+- Requiere reconectar Whoop para otorgar `read:workout`.
+
+Estado: **implementado en codigo y tests**. Pendiente aplicar `012`, deploy, reconectar Whoop para otorgar `read:workout` y ejecutar el smoke operativo despues de cerrar `011`.
 
 ## Avances Ya Implementados
 
@@ -128,8 +147,9 @@ Estado: **mejorado para demo acompanada**. Aun falta legal publico real, screens
   - `terminos-y-condiciones.md`.
   - `politica-de-privacidad.md`.
   - `descargo-de-salud.md`.
+  - `descargo-whoop.md`.
 - Alineados a piloto Chile/persona natural y billing diferido.
-- Falta publicarlos como rutas reales y registrar consentimiento.
+- Falta publicarlos como rutas reales y registrar consentimiento general + biometrico.
 
 ### Plan Builder Y Calidad Deportiva
 
@@ -158,27 +178,46 @@ Estado: **mejorado para demo acompanada**. Aun falta legal publico real, screens
   - chat session storage es athlete-scoped, con limpieza global para import/reset.
   - sync estampa legacy bajo el self aunque un gestionado este activo.
 
+### WHOOP Readiness Y Esfuerzo
+
+- `011_whoop_integration.sql`: `whoop_connections`, `whoop_oauth_states`, `biometric_readings`, `readiness_daily`.
+- Credenciales/raw server-only; cliente solo lee `readiness_daily` por acceso al atleta.
+- OAuth v2, refresh, scopes base + `offline`, tokens cifrados AES-256-GCM.
+- Sync manual/on-demand con cooldown y cron dedicado.
+- Dexie v15 `readinessDaily`, pull local, backup/export y wipe local.
+- `ReadinessCard` en dashboard y `WhoopConnection` en settings.
+- Prefill de check-in: sueno, calidad, energia y **Esfuerzo** desde Whoop, editable y con procedencia `prefillSource`.
+- `Session.actualRpe` queda separado: el esfuerzo objetivo de Whoop no alimenta carga/ACWR por sesion.
+- Readiness entra al prompt del coach como contexto pasivo y a alerta suave por recovery rojo.
+- Desconexion/borrado remoto con service-role y tolerancia a 404/tabla ausente.
+
+### Resumen Semanal Y Coach Note
+
+- Nota semanal del coach visible solo viernes-domingo.
+- Completar todos los ejercicios marca automaticamente la sesion como realizada.
+- `coachNoteSnapshot` y freshness check evitan reutilizar notas semanales obsoletas cuando cambia el resumen.
+- Prompt del coach distingue nota fresca vs solicitud de generacion nueva.
+
 ### Verificacion Tecnica Reciente
 
-Cierre tecnico reciente del core athlete-aware / coach F2-lite:
+Cierres tecnicos recientes:
 
-- `npm run lint`: OK.
-- `git diff --check`: OK.
-- `npm test`: OK, 139 archivos / 990 tests.
-- `npm run build`: OK.
+- Core athlete-aware / Coach F2-lite: `npm run lint`, `git diff --check`, `npm test` (139 archivos / 990 tests) y `npm run build` OK.
+- Whoop v1 review: lint + 1160 tests + build + typecheck OK.
+- Commits posteriores agregaron tests focalizados para Esfuerzo, sync on-demand y weekly coach note.
 
 ## Riesgos Que Siguen Vivos
 
-### 1. WHOOP agrega dato sensible y superficie legal nueva
+### 1. WHOOP ya agrega dato sensible: falta cerrar operacion y consentimiento
 
 Whoop es el track de producto con mas retorno inmediato, pero introduce datos biometricos,
-OAuth externo, tokens cifrados y borrado completo. No debe salir a usuarios reales sin:
+OAuth externo, tokens cifrados y borrado completo. El codigo ya esta, pero no debe salir a usuarios reales sin:
 
 - consentimiento biometrico explicito;
 - politica de privacidad/terminos actualizados;
-- desconexion + borrado remoto/local;
-- RLS server-only en credenciales/raw;
-- smoke en staging de OAuth, sync manual, cooldown y borrado.
+- rutas o UI que expliquen desconexion + borrado remoto/local;
+- `011` aplicado y RLS confirmado en prod;
+- smoke de OAuth, sync manual/on-demand, cooldown, ReadinessCard, prefill y borrado.
 
 ### 2. Superficie publica aun necesita cierre legal/visual
 
@@ -196,34 +235,53 @@ El coach interno ya opera gestionados. Lo pendiente para atletas con login propi
 - RLS v2 por membresia;
 - extraccion de `coachMemory`;
 - RPC acotada para completacion de sesiones coach-authored;
-- migrar tambien `readiness_daily` de Whoop al helper `auth_athlete_ids()`.
+- migrar tambien `readiness_daily` y, si se implementa antes, `whoop_workouts` al helper `auth_athlete_ids()`.
 
 ### 5. Operacion comercial todavia no esta cerrada
 
 Faltan soporte, cancelacion/reembolso, precio fundador, mensaje de invitacion, protocolo de revision semanal y canal claro de feedback.
 
+### 6. Numeracion de migraciones resuelta
+
+Whoop Workout Auto-Complete usa `012_whoop_workouts.sql` + Dexie v16. SP1a queda reservado para `013a/b/c` + Dexie v17; los specs y reglas del proyecto reflejan ese orden.
+
 ## Decisiones Abiertas Para Desarrollo
 
-### Opcion A - WHOOP readiness primero
+### Opcion A - Cierre operativo de WHOOP readiness
 
-Objetivo: mejorar el uso real del owner y dar una base objetiva a la oferta coach antes de SP1.
+Objetivo: pasar de codigo committed a flujo real confiable en produccion.
 
 Orden:
 
-1. Track 0 Whoop: Developer App, env vars, copy legal biometrico.
-2. `011` Supabase + Dexie v15 + tipos.
-3. OAuth/status/sync manual + cooldown.
-4. ReadinessCard + prefill editable + contexto pasivo del coach.
-5. Borrado completo + export/backup + consentimiento.
-6. Ajuste de copy publico: "contexto objetivo opcional", sin promesas medicas.
+1. Aplicar `011` en prod.
+2. Confirmar deploy del bundle Whoop actual.
+3. Smoke conectar -> sync -> `readiness_daily` -> ReadinessCard -> prefill -> desconectar/borrar.
+4. Linkear descargo/privacidad y registrar consentimiento biometrico antes de terceros.
+5. Ajustar copy publico a "contexto objetivo opcional", sin promesas medicas.
 
-Ventaja: mejora inmediatamente el loop diario/semanal y reduce la dependencia de sensaciones manuales.
+Ventaja: convierte el avance tecnico en valor real usable.
 
-Riesgo: datos sensibles y OAuth externo; exige legal/seguridad bien cerrados.
+Riesgo: si se salta legal/smoke, el riesgo percibido sube justo donde el producto necesita confianza.
 
-### Opcion B - Piloto manual primero
+### Opcion B - Whoop Workout Auto-Complete
 
-Objetivo: mostrar y cobrar antes, sin esperar datos biometricos.
+Objetivo: que entrenamientos registrados por Whoop completen sesiones planificadas self-only sin intervencion manual.
+
+Orden:
+
+1. Cerrar `011` + smoke readiness.
+2. Aplicar `012_whoop_workouts.sql` despues de cerrar `011`.
+3. Desplegar el codigo implementado de `read:workout`, `pullWorkouts()` y matcher.
+4. No escribir `Session.actualRpe`; solo duracion, nota de sistema y `autoCompletion`.
+5. Aplicar `012`, reconectar Whoop y smoke auto-complete.
+
+Ventaja: mejora mucho el uso real diario y la adherencia sin sumar carga manual.
+
+Riesgo: consume la siguiente migracion/Dexie y desplaza SP1a; debe quedar self-only y sin promesas de ajuste automatico.
+
+### Opcion C - Piloto manual primero
+
+Objetivo: mostrar y cobrar antes, sin esperar mas integraciones.
 
 Orden:
 
@@ -235,22 +293,21 @@ Orden:
 
 Ventaja: aprende antes con cliente real.
 
-Riesgo: el coach sigue trabajando con menos contexto objetivo del dia a dia.
+Riesgo: el coach sigue trabajando con menos automatizacion de adherencia y sin experiencia dos-lados.
 
-### Opcion C - SP1 dos-lados primero
+### Opcion D - SP1a dos-lados primero
 
 Objetivo: atletas con login propio + coach compartiendo el mismo perfil.
 
-Estado: deliberadamente despues de Whoop. SP1 ya esta especificado para absorber `readiness_daily`
-sin migrar datos. Hacerlo antes no mejora el uso personal inmediato y puede abrir rework de RLS.
+Estado: planificado, pero deliberadamente despues de cerrar Whoop operativo si la prioridad sigue siendo uso real del owner. SP1a debe absorber `readiness_daily` y, si existe, `whoop_workouts` sin mover datos.
 
 ### Recomendacion
 
-Si la prioridad es **usar mejor la app ya mismo y preparar la oferta coach**, elegir Opcion A.
+Si la prioridad es **usar mejor la app ya mismo y preparar la oferta coach**, cerrar Opcion A y luego evaluar Opcion B.
 
-Si la prioridad es **conseguir senales comerciales ya**, elegir Opcion B.
+Si la prioridad es **conseguir senales comerciales ya**, cerrar Opcion A al minimo y ejecutar Opcion C.
 
-Mi recomendacion actual: **WHOOP primero**, con legal biometrico y borrado completo incluidos, y SP1 despues. Es la mejor relacion valor/riesgo porque aporta datos reales al owner y queda listo para la futura experiencia coach.
+Mi recomendacion actual: **cerrar WHOOP readiness en prod/legal primero**. Despues, si el foco sigue siendo uso real del owner, Whoop Workout Auto-Complete es el siguiente incremento con mejor retorno. SP1a queda preparado, pero no conviene ejecutarlo hasta resolver numeracion y prioridad.
 
 ## Checklist Actualizado Para Mostrar Y Monetizar
 
@@ -322,11 +379,14 @@ Objetivo: poder enviar links y cobrar sin zona gris innecesaria.
 - [x] Borrador de terminos.
 - [x] Borrador de politica de privacidad.
 - [x] Borrador de descargo de salud.
+- [x] Borrador de descargo Whoop / datos biometricos.
 - [ ] Crear ruta publica `/terms`.
 - [ ] Crear ruta publica `/privacy`.
 - [ ] Crear ruta publica `/health-disclaimer`.
+- [ ] Crear o linkear superficie de descargo/consentimiento Whoop.
 - [ ] Linkear rutas desde landing, pricing, features y signup/login.
 - [ ] Agregar consentimiento de terminos/privacidad/descargo/IA en signup u onboarding.
+- [ ] Agregar consentimiento biometrico antes de conectar Whoop para terceros.
 - [ ] Registrar version y fecha de consentimiento.
 - [ ] Agregar politica simple de cancelacion/reembolso para piloto manual.
 - [ ] Validar textos con abogado antes de pago publico o anuncios masivos.
@@ -372,7 +432,7 @@ Gates:
 - [x] Chat session athlete-scoped.
 - [x] Escrituras locales estampan atleta activo.
 - [x] Deploy + smoke de Athlete-Aware Core.
-- [x] Plan de implementacion Parte 2b: `docs/superpowers/plans/2026-07-04-coach-f2-part2b-ui.md`.
+- [x] Plan de implementacion Parte 2b ejecutado y archivado tras el despliegue.
 - [x] Perfiles por atleta + push/merge por grupo implementados localmente.
 - [x] API local de atletas gestionados implementada.
 - [x] Backup/import preserva roster `athletes` y eventos enriquecidos.
@@ -437,10 +497,10 @@ Metricas de exito:
 
 Objetivo: traer recovery, sueno y strain reales al loop diario/semanal sin crear deuda para SP1.
 
-Estado: **implementado y revisado (6 rondas de code review); pendiente aplicar `011` + smoke en prod y linkear gate legal**.
+Estado: **implementado, revisado y commiteado; pendiente aplicar `011`, confirmar deploy/smoke en prod y linkear gate legal**.
 
 - [x] API oficial WHOOP v2 revisada en el plan (`Api Whoop`): endpoints/scopes base documentados.
-- [x] Reservas cerradas: Supabase `011`, Dexie v15, SP1 `012+`/v16+.
+- [x] Reservas cerradas para v1: Supabase `011`, Dexie v15.
 - [x] Modelo `athlete_id` first definido para `readiness_daily` y `biometric_readings`.
 - [x] Contrato SP1 definido: migrar RLS a `athlete_memberships` sin mover datos.
 - [x] Contrato landing/coach definido: contexto objetivo opcional y consentido, sin diagnostico ni ajuste automatico.
@@ -452,51 +512,75 @@ Estado: **implementado y revisado (6 rondas de code review); pendiente aplicar `
 - [x] Implementar sync manual con cooldown + cron dedicado UTC (`whoop-cron` scheduled, no publico).
 - [x] Implementar Dexie v15 `readinessDaily`, pull cliente, `ReadinessCard`.
 - [x] Implementar prefill editable de check-in con procedencia `desde Whoop` (gateado hoy+self+atleta).
+- [x] Relabel de `rpeActual` a **Esfuerzo** y prefill desde strain (`strain / 2.1`), editable y sin sembrar `Session.actualRpe`.
+- [x] Sync on-demand reutilizable (`useWhoopSync`) desde Dashboard/Settings con mensajes de cooldown/error.
 - [x] Inyectar readiness como contexto pasivo del coach (sin doble conteo objetivo/declarado) + alerta suave en recovery rojo.
 - [x] Implementar desconexion/borrado completo service-role + export/backup + wipe local (tolera 404/tabla ausente).
 - [x] Normalizacion v2 endurecida: anclaje por `cycle_id`, `timezone_offset`, filtro de siestas, sueño por etapas, tri-estado `score_state` (SCORED/PENDING/UNSCORABLE).
 - [ ] Aplicar `011` en prod y smoke end-to-end (conectar → sync → ReadinessCard → prefill → desconectar/borrar). *(El owner probara directo en prod, no staging.)*
+- [ ] Confirmar deploy del bundle Whoop actual en produccion.
 - [ ] Linkear `descargo-whoop.md` + consentimiento biometrico antes de exponer a terceros.
-- [ ] Commit/deploy del bundle (hoy uncommitted en working tree).
+- [ ] Re-correr smoke despues del primer refresh real para confirmar refresh token/scopes.
 
-## Sprint Recomendado - 5 Dias Para WHOOP + Confianza
+### J. WHOOP Workout Auto-Complete
 
-### Dia 0 - Track 0 WHOOP
+Objetivo: usar workouts detectados por Whoop para completar sesiones planificadas del atleta self, sin crear sesiones nuevas ni tocar RPE de carga.
 
-- Crear/verificar Whoop Developer App.
-- Confirmar redirect URIs dev/prod, scopes y rate limits.
-- Configurar env vars server-side.
-- Redactar copy legal minimo de datos biometricos.
+Estado: **implementado; pendiente rollout operativo**.
 
-### Dia 1 - Datos Y Seguridad
+- [x] Decision de producto: self-only, sesiones `planned`, matching por deporte/dia, sin auto-ajuste de plan.
+- [x] Decision de datos: `actualDurationMin` si matchea; `Session.actualRpe` queda vacio.
+- [x] Decision de UX: badge "Sincronizado desde Whoop" y aviso de reconexion para `read:workout`.
+- [x] Decision de seguridad: `whoop_workouts` server-write/client-read, `athlete_id` first, borrado/export/wipe incluidos.
+- [x] Reconciliar numeracion: `012`/Dexie v16 para workouts; SP1a en `013+`/v17+.
+- [x] Agregar scope `read:workout` sin romper conexiones antiguas.
+- [x] Implementar `012_whoop_workouts.sql`, Dexie v16, `pullWorkouts()` y matcher serializado.
+- [x] Tests: normalizacion, matcher, idempotencia durable, re-evaluacion `no_session`, lifecycle, UI badge, refresh scopes.
+- [ ] Aplicar `012` en prod y reconectar Whoop para otorgar `read:workout`.
+- [ ] Smoke: workout Whoop -> session planned unica -> completed + duracion + nota, sin `actualRpe`.
 
-- `011_whoop_integration.sql` en staging.
-- Dexie v15 + tipos `ReadinessDaily`/`prefillSource`.
-- `tokenCrypto` + helpers Supabase server-only.
+## Sprint Recomendado - 5 Dias Para Cerrar WHOOP + Confianza
 
-### Dia 2 - OAuth Y Sync Manual
+### Dia 0 - Deploy Y Migracion
 
-- OAuth start/callback/status.
-- Sync manual con cooldown.
-- Smoke conectar -> sync -> `readiness_daily` -> cooldown.
+- Confirmar env vars server-side en prod (`WHOOP_*`, `WHOOP_TOKEN_ENC_KEY`, Supabase service-role).
+- Confirmar bundle actual desplegado.
+- Aplicar `supabase/011_whoop_integration.sql` en prod.
+- Verificar RLS: credenciales/raw sin acceso client; `readiness_daily` solo por atleta.
 
-### Dia 3 - UI Y Check-in
+### Dia 1 - Smoke Whoop End-To-End
 
-- ReadinessCard en Dashboard.
-- WhoopConnection en Settings.
-- Prefill editable en DayDetail con etiqueta "desde Whoop".
+- Conectar Whoop desde Settings.
+- Ejecutar sync manual/on-demand y validar cooldown.
+- Confirmar `readiness_daily`, pull local, ReadinessCard y prefill del check-in.
+- Confirmar que Esfuerzo viene desde strain y que `Session.actualRpe` no se autosiembra.
+- Desconectar y validar borrado remoto/local.
 
-### Dia 4 - Coach Pasivo Y Borrado
+### Dia 2 - Legal Y Consentimiento
 
-- Readiness al prompt del coach.
-- Alerta suave por recovery rojo.
-- Desconexion, borrado completo, wipe local, export/backup.
+- Crear/linkear rutas legales publicas minimas.
+- Linkear `descargo-whoop.md` o superficie equivalente.
+- Agregar gate de consentimiento biometrico antes de conectar Whoop para terceros.
+- Ajustar copy publico: contexto objetivo opcional, consentido y pasivo.
 
-### Dia 5 - Smoke Y Copy Publico
+### Dia 3 - Superficie Publica Y QA
 
-- Smoke DEV/PROD del flujo completo.
-- Ajustar copy landing/pricing a "contexto objetivo opcional".
-- Confirmar que no hay promesas medicas ni ajuste automatico.
+- Smoke visual DEV/PROD de `/`, `/features`, `/pricing` y legales.
+- Revisar que no haya promesas medicas, prevencion de lesiones ni ajuste automatico.
+- Generar al menos 1-2 planes arquetipo como atletas gestionados y revisar salida coach.
+
+### Dia 4 - Decision De Siguiente Track
+
+- Si el foco es uso real: implementar Whoop Workout Auto-Complete.
+- Si el foco es senal comercial: oferta piloto + primer cliente acompanado.
+- Si el foco es producto coach dos-lados: ejecutar SP1a desde la reserva `013+`/Dexie v17+.
+
+### Dia 5 - Paquete Piloto
+
+- One-liner final para demo/WhatsApp.
+- Precio fundador, cupos y soporte.
+- Checklist de revision semanal.
+- Export/backup del primer plan piloto.
 
 ## Camino A Monetizacion
 
@@ -513,7 +597,7 @@ Pendiente minimo:
 
 ### Nivel 2 - Piloto Manual Pagado
 
-Estado: viable despues del sprint de 5 dias si el smoke no muestra problemas.
+Estado: viable despues de cerrar smoke `011` + legal minimo si el flujo Whoop no muestra problemas.
 
 Pendiente minimo:
 
@@ -526,14 +610,16 @@ Pendiente minimo:
 
 ### Nivel 3 - Coach Premium Operado Por Rafael
 
-Estado: operable internamente con F2-lite 2b; gana mucho con Whoop.
+Estado: operable internamente con F2-lite 2b; gana mucho con Whoop readiness smokeado y, potencialmente, con Workout Auto-Complete.
 
 Pendiente minimo:
 
-- Whoop readiness para el owner/self.
+- Whoop readiness para el owner/self aplicado y smokeado en prod.
+- Consentimiento biometrico y privacidad linkeados si se entrega a terceros.
+- Decidir si Workout Auto-Complete entra antes del piloto o queda como mejora de uso personal.
 - QA de planes arquetipo como gestionados.
 - Protocolo de revision semanal.
-- Rutas legales y consentimiento si se entrega a terceros.
+- Rutas legales y consentimiento general si se entrega a terceros.
 
 ### Nivel 4 - Pago Publico Self-Serve
 
@@ -550,21 +636,24 @@ Pendiente minimo:
 
 ## Que Hacer Primero
 
-Orden recomendado (Athlete-Aware Core + Coach F2-lite Parte 2b ya en prod; Whoop v1 implementado y revisado, Task 0 hecha):
+Orden recomendado (Athlete-Aware Core + Coach F2-lite Parte 2b ya en prod; Whoop v1 codeado y commiteado):
 
-1. Aplicar `011_whoop_integration.sql` en prod, commit/deploy del bundle Whoop y smoke end-to-end (conectar → sync → ReadinessCard → prefill → desconectar/borrar). El owner probara directo en prod.
-2. Linkear `docs/legal/descargo-whoop.md` + consentimiento biometrico antes de exponer Whoop a terceros.
-3. Rutas legales publicas `/terms` `/privacy` `/health-disclaimer` + linkear footers + consentimiento versionado.
-4. QA deportiva: generar 3 planes arquetipo como atletas gestionados y revisarlos como coach (guardar export/backup).
-5. Smoke visual PROD de superficie publica: `/`, `/features`, `/pricing`, legales.
-6. Oferta piloto cerrada (precio fundador, cupos, soporte, mensaje de invitacion) + primer piloto acompanado.
+1. Aplicar `011_whoop_integration.sql` en prod, confirmar deploy del bundle actual y smoke end-to-end (conectar -> sync -> ReadinessCard -> prefill -> desconectar/borrar).
+2. Linkear `docs/legal/descargo-whoop.md` o superficie equivalente + consentimiento biometrico antes de exponer Whoop a terceros.
+3. Aplicar `012_whoop_workouts.sql`, desplegar y reconectar Whoop para otorgar `read:workout`.
+4. Smokear workout Whoop -> sesion planned unica -> completed + duracion + nota, sin `actualRpe`.
+5. Si el foco es venta acompanada: rutas legales publicas `/terms` `/privacy` `/health-disclaimer`, smoke visual PROD y oferta piloto.
+6. QA deportiva: generar 3 planes arquetipo como atletas gestionados, revisarlos como coach y guardar export/backup.
 
 ## Que No Hacer Ahora
 
 - No abrir beta publica.
 - No activar pagos automaticos todavia.
-- No construir SP1/two-sided antes de cerrar Whoop si la prioridad sigue siendo uso real del owner.
+- No construir SP1/two-sided antes de cerrar Whoop readiness en prod/legal si la prioridad sigue siendo uso real del owner.
+- No aplicar `012` antes de cerrar la aplicacion/smoke de `011` y confirmar el orden operativo.
 - No vender Whoop como diagnostico, prevencion de lesiones o ajuste automatico.
+- No usar strain/workout de Whoop para autollenar `Session.actualRpe`.
+- No auto-completar sesiones de atletas gestionados desde Whoop v1.
 - No prometer prevencion de lesiones ni mejoras porcentuales.
 - No vender "IA ilimitada" como valor central.
 - No invitar 10+ personas antes del primer piloto acompanado.
@@ -572,6 +661,6 @@ Orden recomendado (Athlete-Aware Core + Coach F2-lite Parte 2b ya en prod; Whoop
 
 ## Veredicto
 
-RallyIQ ya tiene producto suficiente para operar entrenamiento real y varios atletas gestionados desde la cuenta del owner. El siguiente incremento de mayor valor es traer datos fisiologicos objetivos con Whoop, porque mejora la experiencia diaria del usuario principal y prepara una promesa coach mas creible.
+RallyIQ ya tiene producto suficiente para operar entrenamiento real y varios atletas gestionados desde la cuenta del owner. Whoop v1 ya no es una idea pendiente: esta en codigo y necesita cierre operacional/legal para transformarse en confianza de producto.
 
-Mi recomendacion: implementar Whoop v1 con legal biometrico y borrado completo, mantener SP1 como siguiente capa de acceso dos-lados, y no prometer en landing mas de lo que el contrato soporta: contexto objetivo opcional, consentido y pasivo para el coach.
+Mi recomendacion: cerrar `011` + smoke prod + consentimiento biometrico, y recien despues decidir entre dos caminos cortos: Workout Auto-Complete si la prioridad es uso real/adherencia, o piloto manual si la prioridad es senal comercial. SP1a esta bien planificado, pero debe esperar a que la numeracion y la prioridad de producto queden limpias.

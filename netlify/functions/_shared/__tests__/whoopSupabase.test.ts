@@ -9,11 +9,20 @@ import {
   upsertBiometricReadings,
   upsertConnection,
   upsertReadiness,
+  upsertWorkouts,
+  reconcileWorkouts,
 } from '../whoopSupabase'
 
 type Row = Record<string, unknown>
 type Tables = Record<string, Row[]>
 type Predicate = (row: Row) => boolean
+type RecordedCall = {
+  tableName: string
+  op: 'upsert' | 'delete'
+  rows?: Row[]
+  options?: unknown
+  filters: unknown[][]
+}
 
 process.env['WHOOP_TOKEN_ENC_KEY'] = randomBytes(32).toString('base64')
 
@@ -24,27 +33,40 @@ function makeFakeDb(initial: Partial<Tables> = {}) {
     whoop_connections: [],
     readiness_daily: [],
     biometric_readings: [],
+    whoop_workouts: [],
     ...initial,
   }
   const upsertCalls: Array<{ tableName: string; rows: Row[] }> = []
+  const calls: RecordedCall[] = []
   return {
     tables,
     upsertCalls,
+    calls,
     from(tableName: string) {
       const api = {
         filters: [] as Predicate[],
+        filterCalls: [] as unknown[][],
         pendingUpdate: null as Row | null,
+        pendingDelete: false,
         select() {
           return api
         },
         eq(column: string, value: unknown) {
           api.filters.push((row: Row) => row[column] === value)
-          if (api.pendingUpdate) {
-            tables[tableName] = tables[tableName].map((row) => (
-              api.filters.every((filter) => filter(row)) ? { ...row, ...api.pendingUpdate } : row
-            ))
-            return Promise.resolve({ error: null })
-          }
+          api.filterCalls.push(['eq', column, value])
+          return api
+        },
+        gte(column: string, value: unknown) {
+          api.filters.push((row: Row) => String(row[column]) >= String(value))
+          api.filterCalls.push(['gte', column, value])
+          return api
+        },
+        not(column: string, operator: string, value: unknown) {
+          const ids = operator === 'in'
+            ? String(value).replace(/^\(|\)$/g, '').split(',').map((item) => item.replace(/^"|"$/g, ''))
+            : []
+          api.filters.push((row: Row) => !ids.includes(String(row[column])))
+          api.filterCalls.push(['not', column, operator, value])
           return api
         },
         in(column: string, values: unknown[]) {
@@ -52,6 +74,17 @@ function makeFakeDb(initial: Partial<Tables> = {}) {
           return api
         },
         then(onFulfilled: (value: { data: Row[]; error: null }) => unknown) {
+          if (api.pendingUpdate) {
+            tables[tableName] = tables[tableName].map((row) => (
+              api.filters.every((filter) => filter(row)) ? { ...row, ...api.pendingUpdate } : row
+            ))
+            return Promise.resolve(onFulfilled({ data: [], error: null }))
+          }
+          if (api.pendingDelete) {
+            calls.push({ tableName, op: 'delete', filters: [...api.filterCalls] })
+            tables[tableName] = tables[tableName].filter((row) => !api.filters.every((filter) => filter(row)))
+            return Promise.resolve(onFulfilled({ data: [], error: null }))
+          }
           return Promise.resolve(onFulfilled({
             data: tables[tableName].filter((row) => api.filters.every((filter) => filter(row))),
             error: null,
@@ -64,9 +97,10 @@ function makeFakeDb(initial: Partial<Tables> = {}) {
           tables[tableName].push(row)
           return { error: null }
         },
-        async upsert(rowOrRows: Row | Row[]) {
+        async upsert(rowOrRows: Row | Row[], options?: unknown) {
           const rows = Array.isArray(rowOrRows) ? rowOrRows : [rowOrRows]
           upsertCalls.push({ tableName, rows })
+          calls.push({ tableName, op: 'upsert', rows, options, filters: [] })
           for (const row of rows) {
             const idx = tables[tableName].findIndex((existing) => {
               if (tableName === 'whoop_connections') return existing.user_id === row.user_id
@@ -75,6 +109,7 @@ function makeFakeDb(initial: Partial<Tables> = {}) {
                   && existing.date === row.date
                   && existing.source === row.source
               }
+              if (tableName === 'whoop_workouts') return existing.workout_id === row.workout_id
               return existing.id === row.id
             })
             if (idx >= 0) {
@@ -90,12 +125,8 @@ function makeFakeDb(initial: Partial<Tables> = {}) {
           return api
         },
         delete() {
-          return {
-            eq(column: string, value: unknown) {
-              tables[tableName] = tables[tableName].filter((row) => row[column] !== value)
-              return Promise.resolve({ error: null })
-            },
-          }
+          api.pendingDelete = true
+          return api
         },
       }
       return api
@@ -254,6 +285,65 @@ describe('whoopSupabase', () => {
     expect(db.tables.biometric_readings[0].value).toBe(29)
   })
 
+  it('upserts snake_case workout rows keyed by workout_id', async () => {
+    const db = makeFakeDb()
+    await upsertWorkouts(db, 'u1', 'ath_u1', [{
+      workoutId: 'w-1',
+      date: '2026-07-09',
+      sportName: 'running',
+      startAt: '2026-07-09T14:00:00.000Z',
+      endAt: '2026-07-09T14:45:00.000Z',
+      durationMin: 45,
+      strain: 10.5,
+      avgHr: 140,
+      maxHr: 172,
+      distanceM: null,
+      scoreState: 'SCORED',
+    }])
+
+    const call = db.calls.find((entry) => entry.tableName === 'whoop_workouts' && entry.op === 'upsert')
+    expect(call?.options).toEqual({ onConflict: 'workout_id' })
+    expect(call?.rows?.[0]).toMatchObject({
+      workout_id: 'w-1',
+      user_id: 'u1',
+      athlete_id: 'ath_u1',
+      sport_name: 'running',
+      start_at: '2026-07-09T14:00:00.000Z',
+      duration_min: 45,
+      score_state: 'SCORED',
+      updated_at: expect.any(Number),
+    })
+  })
+
+  it('does not write workouts for an empty normalized collection', async () => {
+    const db = makeFakeDb()
+    await upsertWorkouts(db, 'u1', 'ath_u1', [])
+    expect(db.calls.some((entry) => entry.tableName === 'whoop_workouts')).toBe(false)
+  })
+
+  it('reconciles by exact start_at instant and excludes fetched ids', async () => {
+    const db = makeFakeDb()
+    const windowStart = '2026-06-25T12:00:00.000Z'
+    await reconcileWorkouts(db, 'u1', 'ath_u1', windowStart, ['w-1', 'w-2'])
+    const call = db.calls.find((entry) => entry.tableName === 'whoop_workouts' && entry.op === 'delete')
+    expect(call?.filters).toEqual(expect.arrayContaining([
+      ['eq', 'user_id', 'u1'],
+      ['eq', 'athlete_id', 'ath_u1'],
+      ['gte', 'start_at', windowStart],
+      ['not', 'workout_id', 'in', '("w-1","w-2")'],
+    ]))
+    expect(call?.filters.some((filter) => filter[1] === 'date')).toBe(false)
+  })
+
+  it('reconciles the whole window when fetched workouts are empty', async () => {
+    const db = makeFakeDb()
+    const windowStart = '2026-06-25T12:00:00.000Z'
+    await reconcileWorkouts(db, 'u1', 'ath_u1', windowStart, [])
+    const call = db.calls.find((entry) => entry.tableName === 'whoop_workouts' && entry.op === 'delete')
+    expect(call?.filters).toContainEqual(['gte', 'start_at', windowStart])
+    expect(call?.filters.some((filter) => filter[0] === 'not')).toBe(false)
+  })
+
   it('tolerates missing WHOOP tables during full data deletion', async () => {
     const db = {
       from() {
@@ -275,5 +365,26 @@ describe('whoopSupabase', () => {
     }
 
     await expect(deleteAllWhoopData(db, 'u1')).resolves.toBeUndefined()
+  })
+
+  it('includes workouts in full data deletion', async () => {
+    const deletedTables: string[] = []
+    const db = {
+      from(tableName: string) {
+        return {
+          delete() {
+            return {
+              async eq() {
+                deletedTables.push(tableName)
+                return { error: null }
+              },
+            }
+          },
+        }
+      },
+    }
+
+    await deleteAllWhoopData(db, 'u1')
+    expect(deletedTables).toContain('whoop_workouts')
   })
 })

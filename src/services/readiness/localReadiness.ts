@@ -20,3 +20,11 @@ export async function clearLocalWhoopReadiness(athleteId = getActiveAthleteId())
     .map((row) => row.id)
   if (ids.length > 0) await db.readinessDaily.bulkDelete(ids)
 }
+
+export async function clearLocalWhoopWorkouts(athleteId = getActiveAthleteId()): Promise<void> {
+  const rows = await db.whoopWorkouts.toArray()
+  const ids = rows
+    .filter((row) => athleteId == null || row.athleteId === athleteId)
+    .map((row) => row.id)
+  if (ids.length > 0) await db.whoopWorkouts.bulkDelete(ids)
+}

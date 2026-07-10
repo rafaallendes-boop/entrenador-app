@@ -262,6 +262,7 @@ export interface SessionBase {
   cooldown?: GeneratedProtocol
   metadata?: SessionMetadata
   sessionFeedback?: SessionFeedback
+  autoCompletion?: SessionAutoCompletion
   completedAt?: number
   createdAt: number
   updatedAt: number
@@ -340,6 +341,14 @@ export interface SessionFeedback {
   capturedAt: number
 }
 
+/** Procedencia durable del auto-complete Whoop. Sobrevive un revert manual a
+ * `planned`; el badge solo se muestra cuando la sesion esta completada. */
+export interface SessionAutoCompletion {
+  source: 'whoop_workout'
+  workoutId: string
+  completedAt: string
+}
+
 export interface DayLog {
   id: string
   athleteId?: string       // scope key (text); maps to Supabase athlete_id. Legacy rows: undefined.
@@ -370,6 +379,39 @@ export interface ReadinessDaily {
   sleepPerformance?: number // 0-100
   source: string            // "whoop"
   updatedAt: number         // epoch ms
+}
+
+export type WhoopWorkoutMatchStatus =
+  | 'completed'
+  | 'skipped_short'
+  | 'skipped_multiple'
+  | 'no_session'
+  | 'unmapped_sport'
+
+/** Estado local de matching; la fuente durable es
+ * `session.autoCompletion.workoutId`. `no_session` es re-evaluable. */
+export interface WhoopWorkoutAutoComplete {
+  status: WhoopWorkoutMatchStatus
+  sessionId?: string
+  processedAt: number
+}
+
+export interface WhoopWorkout {
+  id: string
+  workoutId: string
+  athleteId: string
+  date: string
+  sportName: string
+  startAt: string
+  endAt: string
+  durationMin: number
+  strain?: number
+  avgHr?: number
+  maxHr?: number
+  distanceM?: number
+  scoreState: 'SCORED' | 'PENDING_SCORE' | 'UNSCORABLE'
+  updatedAt: number
+  autoComplete?: WhoopWorkoutAutoComplete
 }
 
 export interface WeekSummary {

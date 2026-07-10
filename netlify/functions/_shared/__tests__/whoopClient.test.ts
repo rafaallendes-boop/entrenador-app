@@ -23,7 +23,7 @@ describe('ensureFreshToken', () => {
     expect(res.refreshed).toBeUndefined()
   })
 
-  it('refreshes when expired and returns rotated tokens', async () => {
+  it('refreshes with stored granted scopes and returns rotated tokens', async () => {
     const fetchImpl = vi.fn<FetchImpl>(async () => ({
       ok: true,
       status: 200,
@@ -31,13 +31,33 @@ describe('ensureFreshToken', () => {
     }))
 
     const res = await ensureFreshToken(
-      { accessToken: 'old', refreshToken: 'ref', expiresAt: new Date(Date.now() - 1000).toISOString() },
+      {
+        accessToken: 'old',
+        refreshToken: 'ref',
+        expiresAt: new Date(Date.now() - 1000).toISOString(),
+        scopes: 'offline read:recovery read:workout',
+      },
       { fetchImpl },
     )
 
     expect(res.accessToken).toBe('newacc')
     expect(res.refreshed?.refreshToken).toBe('newref')
-    expect(String(fetchImpl.mock.calls[0]?.[1]?.body)).toContain('scope=offline')
+    expect(String(fetchImpl.mock.calls[0]?.[1]?.body)).toContain('scope=offline+read%3Arecovery+read%3Aworkout')
+  })
+
+  it('omits scope when no stored scopes exist', async () => {
+    const fetchImpl = vi.fn<FetchImpl>(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ access_token: 'newacc', refresh_token: 'newref', expires_in: 3600 }),
+    }))
+
+    await ensureFreshToken(
+      { accessToken: 'old', refreshToken: 'ref', expiresAt: new Date(Date.now() - 1000).toISOString() },
+      { fetchImpl },
+    )
+
+    expect(String(fetchImpl.mock.calls[0]?.[1]?.body)).not.toContain('scope=')
   })
 })
 
@@ -61,6 +81,71 @@ describe('fetchWhoopData', () => {
     expect(raw.recovery).toHaveLength(2)
     expect(raw.sleep).toHaveLength(2)
     expect(raw.cycles).toHaveLength(2)
+    expect(raw.workouts).toBeNull()
     expect(fetchImpl).toHaveBeenCalledTimes(6)
+  })
+})
+
+function workoutCollectionResponse(records: unknown[]) {
+  return {
+    ok: true,
+    status: 200,
+    headers: { get: () => null },
+    json: async () => ({ records, next_token: null }),
+  }
+}
+
+describe('fetchWhoopData workouts', () => {
+  it('fetches workouts when requested', async () => {
+    const fetchImpl = vi.fn<FetchImpl>(async (input) => (
+      String(input).includes('/v2/activity/workout')
+        ? workoutCollectionResponse([{ id: 'w1' }])
+        : workoutCollectionResponse([])
+    ))
+    const raw = await fetchWhoopData('token', { fetchImpl, includeWorkouts: true })
+    expect(raw.workouts).toEqual([{ id: 'w1' }])
+  })
+
+  it('returns null and does not request workouts when omitted', async () => {
+    const fetchImpl = vi.fn<FetchImpl>(async () => workoutCollectionResponse([]))
+    const raw = await fetchWhoopData('token', { fetchImpl })
+    expect(raw.workouts).toBeNull()
+    expect(fetchImpl.mock.calls.some(([input]) => String(input).includes('/v2/activity/workout'))).toBe(false)
+  })
+
+  it('returns null on workout 403 without breaking readiness', async () => {
+    const fetchImpl = vi.fn<FetchImpl>(async (input) => {
+      if (String(input).includes('/v2/activity/workout')) {
+        return { ok: false, status: 403, headers: { get: () => null }, json: async () => ({}) }
+      }
+      return workoutCollectionResponse([{ id: 'r1' }])
+    })
+    const raw = await fetchWhoopData('token', { fetchImpl, includeWorkouts: true })
+    expect(raw.workouts).toBeNull()
+    expect(raw.recovery).toEqual([{ id: 'r1' }])
+  })
+
+  it('returns an empty array for a successfully fetched empty collection', async () => {
+    const fetchImpl = vi.fn<FetchImpl>(async () => workoutCollectionResponse([]))
+    const raw = await fetchWhoopData('token', { fetchImpl, includeWorkouts: true })
+    expect(raw.workouts).toEqual([])
+  })
+
+  it('uses the explicit workout window independently from readiness', async () => {
+    const urls: string[] = []
+    const fetchImpl = vi.fn<FetchImpl>(async (input) => {
+      urls.push(String(input))
+      return workoutCollectionResponse([])
+    })
+    await fetchWhoopData('token', {
+      fetchImpl,
+      includeWorkouts: true,
+      days: 7,
+      workoutWindowStartIso: '2026-06-24T00:00:00.000Z',
+    })
+    const workoutUrl = urls.find((url) => url.includes('/v2/activity/workout'))
+    const recoveryUrl = urls.find((url) => url.includes('/v2/recovery'))
+    expect(workoutUrl).toContain('2026-06-24')
+    expect(recoveryUrl).not.toContain('2026-06-24')
   })
 })

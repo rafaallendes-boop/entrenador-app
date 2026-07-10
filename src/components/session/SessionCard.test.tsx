@@ -159,3 +159,26 @@ describe('SessionCard squash match badges', () => {
     expect(html).not.toContain('14min')
   })
 })
+
+describe('SessionCard Whoop badge', () => {
+  it('shows the badge only while an auto-completed session remains completed', () => {
+    const autoCompletion = {
+      source: 'whoop_workout' as const,
+      workoutId: 'w-1',
+      completedAt: '2026-07-09T15:00:00.000Z',
+    }
+    const completed = renderToStaticMarkup(
+      <SessionCard session={makeSession({ status: 'completed', autoCompletion })} />,
+    )
+    const reverted = renderToStaticMarkup(
+      <SessionCard session={makeSession({ status: 'planned', autoCompletion })} />,
+    )
+    const manual = renderToStaticMarkup(
+      <SessionCard session={makeSession({ status: 'completed' })} />,
+    )
+
+    expect(completed).toContain('Sincronizado desde Whoop')
+    expect(reverted).not.toContain('Sincronizado desde Whoop')
+    expect(manual).not.toContain('Sincronizado desde Whoop')
+  })
+})
