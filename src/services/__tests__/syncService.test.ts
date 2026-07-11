@@ -745,7 +745,7 @@ describe('syncService', () => {
         id: 'profile:user-1:ath_m_1',
         athlete_id: 'ath_m_1',
       })
-      expect(profileUpsert?.options).toMatchObject({ onConflict: 'user_id,athlete_id' })
+      expect(profileUpsert?.options).toMatchObject({ onConflict: 'athlete_id' })
       expect(updateCalls.find((call) => call.table === 'athlete_profiles')).toBeUndefined()
       expect(deleteCalls.find((call) => call.table === 'athlete_profiles')).toBeUndefined()
     } finally {
@@ -1222,7 +1222,6 @@ describe('syncService', () => {
     expect(athleteProfileUpdate).toBeTruthy()
     expect(athleteProfileUpdate?.filters).toEqual([
       { op: 'eq', column: 'id', value: 'profile-1' },
-      { op: 'eq', column: 'user_id', value: 'user-1' },
     ])
     expect(outcome.completed).toBe(true)
     expect(outcome.pending).toEqual([])
@@ -1250,7 +1249,6 @@ describe('syncService', () => {
       'day_logs',
       'sessions',
       'athlete_profiles',
-      'athletes',
     ])
     expect(whoopDeleteFetchMock).toHaveBeenCalledWith('/.netlify/functions/whoop-sync', {
       method: 'DELETE',
@@ -1259,10 +1257,7 @@ describe('syncService', () => {
     expect(updateCalls.some((call) => call.table === 'athlete_profiles')).toBe(false)
     expect(upsertCalls.some((call) => call.table === 'athlete_profiles')).toBe(true)
     expect(insertCalls.some((call) => call.table === 'athlete_profiles')).toBe(false)
-    expect(deleteCalls.find((call) => call.table === 'athletes')?.filters).toEqual([
-      { op: 'eq', column: 'owner_account_id', value: 'user-1' },
-      { op: 'neq', column: 'id', value: 'ath_user-1' },
-    ])
+    expect(deleteCalls.find((call) => call.table === 'athletes')).toBeUndefined()
     expect(JSON.parse(localStorage.getItem('entrenador_sync_queue_v1') ?? '[]')).toEqual([])
     expect(localStorage.getItem('entrenador_profile_reset_lock_v1')).toContain('awaiting_bootstrap_ack')
     expect(outcome.completed).toBe(true)
@@ -1297,10 +1292,7 @@ describe('syncService', () => {
 
     expect(selfAthleteUpsertIndex).toBeGreaterThanOrEqual(0)
     expect(markerUpsertIndex).toBeGreaterThan(selfAthleteUpsertIndex)
-    expect(athleteDelete?.filters).toEqual([
-      { op: 'eq', column: 'owner_account_id', value: 'user-1' },
-      { op: 'neq', column: 'id', value: 'ath_user-1' },
-    ])
+    expect(athleteDelete).toBeUndefined()
   })
 
   it('tolerates missing optional plan sync tables during a full reset', async () => {

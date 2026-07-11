@@ -185,6 +185,16 @@ export async function getConnection(db: WhoopDb, userId: string): Promise<Stored
 }
 
 export async function resolveSelfAthleteId(db: WhoopDb, userId: string): Promise<string | null> {
+  try {
+    const membership = await table<{ athlete_id?: string }>(db, 'athlete_memberships')
+      .select('athlete_id')
+      .eq('account_id', userId)
+      .eq('role', 'self')
+      .maybeSingle()
+    if (!membership.error && membership.data?.athlete_id) return membership.data.athlete_id
+  } catch {
+    // Pre-SP1 environments fall back to the deterministic legacy athlete.
+  }
   const { data, error } = await table<{ id?: string }>(db, 'athletes')
     .select('id')
     .eq('id', `ath_${userId}`)

@@ -244,6 +244,7 @@ export interface ProtocolContext {
 export interface SessionBase {
   id: string
   athleteId?: string       // scope key (text); maps to Supabase athlete_id. Legacy rows: undefined.
+  authoredByRole?: MembershipRole
   date: string             // ISO "YYYY-MM-DD"
   weekStartDate?: string   // ISO "YYYY-MM-DD", Monday — indexed in Dexie for efficient week queries
   timeBlock: TimeBlock
@@ -659,6 +660,23 @@ export interface Athlete {
   displayName?: string | null
   status: string                  // 'active' | ...
   createdAt: number
+  updatedAt: number
+}
+
+export type MembershipRole = 'self' | 'coach'
+
+export interface AthleteMembership {
+  athleteId: string
+  accountId: string
+  role: MembershipRole
+  createdAt: number
+  updatedAt: number
+}
+
+export interface AthleteCoachNote {
+  athleteId: string
+  coachMemory?: string
+  updatedByAccountId?: string
   updatedAt: number
 }
 

@@ -51,6 +51,8 @@ export interface SyncTierHealthMap {
 export const ENTITY_TIER: Record<SupabaseTable, SyncTier> = {
   athletes: 'A',
   athlete_profiles: 'A',
+  athlete_memberships: 'A',
+  athlete_coach_notes: 'B',
   sessions: 'A',
   training_plans: 'A',
   training_plan_weeks: 'A',

@@ -1,5 +1,6 @@
 import { getActiveAthleteId, getSelfAthleteId } from './activeAthlete'
 import { isScopedAthleteId } from './effectiveAthleteKey'
+import type { MembershipRole } from '../../types'
 
 /**
  * Read-scope policy for F2-lite (spec §3.6): scoped rows must match the ACTIVE
@@ -32,4 +33,10 @@ export function withActiveAthleteStamp<T extends { athleteId?: string }>(row: T)
   if (isScopedAthleteId(row.athleteId)) return row
   const active = getActiveAthleteId()
   return active ? { ...row, athleteId: active } : row
+}
+
+export function resolveAuthoredByRole(athleteId: string | undefined): MembershipRole {
+  const self = getSelfAthleteId()
+  if (!athleteId || !self) return 'self'
+  return athleteId === self ? 'self' : 'coach'
 }

@@ -1,5 +1,5 @@
 import Dexie, { type Table } from 'dexie'
-import type { Session, DayLog, WeekSummary, ChatMessage, CoachProposal, AthleteProfile, Athlete, AITechnicalResult, CoachFeedback, ReadinessDaily, WhoopWorkout } from '../types'
+import type { Session, DayLog, WeekSummary, ChatMessage, CoachProposal, AthleteProfile, Athlete, AthleteMembership, AthleteCoachNote, AITechnicalResult, CoachFeedback, ReadinessDaily, WhoopWorkout } from '../types'
 import type { PlanGenerationJob, TrainingPlan, TrainingPlanWeek } from '../types/planBuilder'
 import type { SyncDiagnosticEvent, SyncErrorLogEntry } from '../types/syncDiagnostics'
 import { getOrCreateChatSessionId } from '../utils/chatSession'
@@ -22,6 +22,8 @@ export class EntrenadorDB extends Dexie {
   athletes!: Table<Athlete>
   readinessDaily!: Table<ReadinessDaily, string>
   whoopWorkouts!: Table<WhoopWorkout, string>
+  athleteMemberships!: Table<AthleteMembership, [string, string]>
+  athleteCoachNotes!: Table<AthleteCoachNote, string>
 
   constructor() {
     super('EntrenadorDB')
@@ -223,6 +225,12 @@ export class EntrenadorDB extends Dexie {
     // v16 — Whoop workouts used for athlete-scoped adherence auto-completion.
     this.version(16).stores({
       whoopWorkouts: 'id, date, athleteId, updatedAt, &workoutId',
+    })
+
+    // v17 — SP1a two-sided foundation.
+    this.version(17).stores({
+      athleteMemberships: '[athleteId+accountId], accountId, athleteId, role',
+      athleteCoachNotes: 'athleteId, updatedAt',
     })
   }
 }

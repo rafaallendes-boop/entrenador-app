@@ -20,6 +20,7 @@
 import {
   compactQueue,
   getOfflineOpEntityId,
+  getEntityIdFromPayload,
   type OfflineOp,
   type SupabaseTable,
 } from '../syncUtils'
@@ -122,9 +123,7 @@ export function clearQueuedOpsForEntityOlderThan(
   payload: Record<string, unknown>,
   cutoffEnqueuedAt: number,
 ): void {
-  const entityId = typeof payload.id === 'string' && payload.id.length > 0
-    ? payload.id
-    : null
+  const entityId = getEntityIdFromPayload(table, payload)
   if (!entityId) return
 
   const queue = loadQueue()

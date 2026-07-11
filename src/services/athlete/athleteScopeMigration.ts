@@ -1,5 +1,7 @@
 import { db } from '../../db/db'
 import { isScopedAthleteId } from './effectiveAthleteKey'
+import { isClaimPending } from './claimGate'
+import { getSelfMembership } from './membershipCache'
 
 const BACKFILL_MARKER_KEY_PREFIX = 'entrenador_athlete_scope_backfill_v2'
 const IMPORT_DIRTY_MARKER_KEY = 'entrenador_athlete_scope_import_dirty_v1'
@@ -103,7 +105,12 @@ async function patchScopableTables(athleteId: string): Promise<number> {
  * repairs partial beta backfills where the athlete row exists but legacy rows
  * are still unscoped, while keeping later startups O(1).
  */
-export async function backfillLocalAthleteScope(ownerAccountId: string): Promise<string> {
+export async function backfillLocalAthleteScope(ownerAccountId: string): Promise<string | null> {
+  if (isClaimPending()) return null
+  const selfMembership = await getSelfMembership(ownerAccountId)
+  if (selfMembership && selfMembership.athleteId !== athleteIdForOwner(ownerAccountId)) {
+    return selfMembership.athleteId
+  }
   const athleteId = athleteIdForOwner(ownerAccountId)
   const now = Date.now()
   const existing = await db.athletes.get(athleteId)

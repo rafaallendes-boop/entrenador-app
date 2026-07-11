@@ -18,6 +18,7 @@ import type {
   CoachProposal,
   AthleteProfile,
   Athlete,
+  AthleteCoachNote,
 } from '../types'
 import type { TrainingPlan, TrainingPlanWeek } from '../types/planBuilder'
 import {
@@ -58,8 +59,12 @@ import { ATHLETE_PROFILE_LOCAL_ID, getActiveAthleteId, getSelfAthleteId } from '
 import { effectiveAthleteKey, isInAthleteScope, isScopedAthleteId } from './athlete/effectiveAthleteKey'
 import { hydrateActiveAthlete } from './athlete/hydrateActiveAthlete'
 import { athleteIdForOwner, backfillLocalAthleteScope } from './athlete/athleteScopeMigration'
+import { getMembershipAthleteIds, getRoleForAthlete, membershipFromRemoteRow, replaceMembershipCache } from './athlete/membershipCache'
 import { athleteToRow, rowToAthlete, type AthleteRow } from './athleteRows'
 import { resolveReadScope, type ReadScope } from './athlete/readScope'
+import { resolveAuthoredByRole } from './athlete/activeScopeFilter'
+import { buildMarkSessionDoneParams, shouldRouteSessionCompletionViaRpc } from './sync/sessionCompletion'
+import { pruneCoachNotesMissingFromRemote } from './athlete/coachNotes'
 import {
   FETCH_PAGE_SIZE,
   fetchAll,
@@ -125,8 +130,8 @@ const REMOTE_WIPE_ORDER: SupabaseTable[] = [
   'readiness_daily',
   'day_logs',
   'sessions',
+  'athlete_coach_notes',
   'athlete_profiles',
-  'athletes',
 ]
 
 const remoteAthleteEnsurePromises = new Map<string, Promise<void>>()
@@ -489,7 +494,7 @@ function mapSelectionToRemoteTables(
     tables.push('chat_messages')
   }
   if (selection.coachMemory) {
-    tables.push('athlete_profiles')
+    tables.push('athlete_coach_notes', 'athlete_profiles')
   }
   return sortRemoteWipeTables(tables)
 }
@@ -921,7 +926,7 @@ async function drainQueue(): Promise<boolean> {
         lastErrorCategory: op.lastErrorCategory,
       }, 'warn')
       trackSyncEvent({
-        kind: op.action === 'upsert' ? 'push' : 'delete',
+        kind: op.action === 'delete' ? 'delete' : 'push',
         status: 'dropped',
         entity: op.table,
         userId: op.userId,
@@ -959,6 +964,17 @@ async function drainQueue(): Promise<boolean> {
             )
             if (error) throw error
           }
+        } else if (op.action === 'session_completion') {
+          const { data, error } = await withRequestTimeout(
+            getSupabase().rpc('mark_session_done', op.payload as never),
+            'sessions.mark_session_done',
+          )
+          if (error) throw error
+          if (data !== true) {
+            syncLog('sessions:mark_done_skipped', {
+              sessionId: op.payload.p_session_id ?? null,
+            }, 'warn')
+          }
         } else {
           const payload = op.payload as { id: string; userId?: string }
           const targetUserId = payload.userId ?? op.userId
@@ -975,7 +991,7 @@ async function drainQueue(): Promise<boolean> {
         }
       })
       trackSyncEvent({
-        kind: op.action === 'upsert' ? 'push' : 'delete',
+        kind: op.action === 'delete' ? 'delete' : 'push',
         status: 'ok',
         entity: op.table,
         userId: op.userId,
@@ -1310,7 +1326,7 @@ async function deleteRow(table: SupabaseTable, id: string): Promise<void> {
 }
 
 function sessionToRow(session: Session, userId: string): Record<string, unknown> {
-  const { id, date, timeBlock, type, status, createdAt, updatedAt, ...rest } = session
+  const { id, date, timeBlock, type, status, createdAt, updatedAt, authoredByRole, ...rest } = session
   return {
     id,
     user_id: userId,
@@ -1320,7 +1336,18 @@ function sessionToRow(session: Session, userId: string): Record<string, unknown>
     status,
     created_at: createdAt,
     updated_at: updatedAt,
+    authored_by_role: authoredByRole ?? resolveAuthoredByRole(session.athleteId),
+    updated_by_account_id: userId,
     data: rest,
+  }
+}
+
+function coachNoteToRow(note: AthleteCoachNote, userId: string): Record<string, unknown> {
+  return {
+    athlete_id: note.athleteId,
+    coach_memory: note.coachMemory ?? null,
+    updated_by_account_id: userId,
+    updated_at: note.updatedAt,
   }
 }
 
@@ -1495,6 +1522,7 @@ function rowToSession(row: Record<string, unknown>): Session {
     updatedAt: row.updated_at as number,
     ...data,
     athleteId: getRowAthleteId(row, data),
+    authoredByRole: (row.authored_by_role ?? data.authoredByRole ?? undefined) as Session['authoredByRole'],
   } as Session
 }
 
@@ -1505,6 +1533,7 @@ function dayLogToRow(log: DayLog, userId: string): Record<string, unknown> {
     user_id: userId,
     date,
     updated_at: updatedAt,
+    updated_by_account_id: userId,
     data: rest,
   }
 }
@@ -1527,6 +1556,7 @@ function weekSummaryToRow(summary: WeekSummary, userId: string): Record<string, 
     user_id: userId,
     week_start_date: weekStartDate,
     updated_at: updatedAt ?? 0,
+    updated_by_account_id: userId,
     data: rest,
   }
 }
@@ -1593,13 +1623,8 @@ function rowToCoachProposal(row: Record<string, unknown>): CoachProposal {
 }
 
 async function fetchAthleteProfileRows(userId: string): Promise<AthleteProfileSyncRow[]> {
-  const { data, error } = await getSupabase()
-    .from('athlete_profiles')
-    .select('id, user_id, athlete_id, coach_memory, updated_at, data')
-    .eq('user_id', userId)
-
-  if (error) throw error
-  return ((data ?? []) as Record<string, unknown>[]).map(toAthleteProfileSyncRow)
+  return (await fetchAll<Record<string, unknown>>('athlete_profiles', userId))
+    .map(toAthleteProfileSyncRow)
 }
 
 // Prefer the hydrated holder, but never group with a null self: before hydration,
@@ -1630,6 +1655,8 @@ async function fetchRemoteFullResetAt(userId: string): Promise<number | null> {
   let latest: number | null = null
 
   for (const row of rows) {
+    const isLegacySelf = row.athlete_id == null && row.user_id === userId
+    if (row.athlete_id !== groupingSelfAthleteId(userId) && !isLegacySelf) continue
     const resetAt = getAthleteProfileFullResetAt(row.data)
     if (resetAt == null) continue
     latest = latest == null ? resetAt : Math.max(latest, resetAt)
@@ -1671,7 +1698,7 @@ async function applyRemoteFullResetIfNeeded(userId: string): Promise<number | nu
   return remoteResetAt
 }
 
-async function deleteAthleteProfileRowsById(userId: string, ids: string[]): Promise<void> {
+async function deleteAthleteProfileRowsById(ids: string[]): Promise<void> {
   const normalizedIds = [...new Set(ids)].filter(Boolean)
   if (normalizedIds.length === 0) return
 
@@ -1679,15 +1706,17 @@ async function deleteAthleteProfileRowsById(userId: string, ids: string[]): Prom
     .from('athlete_profiles')
     .delete()
     .in('id', normalizedIds)
-    .eq('user_id', userId)
 
   if (error) throw error
 }
 
-function athleteProfilePersistencePayload(row: AthleteProfileSyncRow): Record<string, unknown> {
+function athleteProfilePersistencePayload(
+  row: AthleteProfileSyncRow,
+  updatedByAccountId: string,
+): Record<string, unknown> {
   return {
     athlete_id: (row as Record<string, unknown>).athlete_id ?? null,
-    coach_memory: row.coach_memory,
+    updated_by_account_id: updatedByAccountId,
     updated_at: row.updated_at,
     data: row.data,
   }
@@ -1704,7 +1733,7 @@ async function repairRemoteAthleteProfileRows(
   const canonical: AthleteProfileSyncRow = {
     ...winner,
     user_id: userId,
-    athlete_id: winnerGroupKey === ATHLETE_PROFILE_SELF_GROUP ? athleteIdForOwner(userId) : winnerGroupKey,
+    athlete_id: winnerGroupKey === ATHLETE_PROFILE_SELF_GROUP ? groupingSelfAthleteId(userId) : winnerGroupKey,
   }
   const keeper = rows.find((row) => row.id === winner.id) ?? rows[0]
   const nextRow: AthleteProfileSyncRow = {
@@ -1725,9 +1754,8 @@ async function repairRemoteAthleteProfileRows(
     const normalized = normalizeAthleteProfilePayload(nextRow)
     const { error: updateError } = await getSupabase()
       .from('athlete_profiles')
-      .update(athleteProfilePersistencePayload(normalized) as never)
+      .update(athleteProfilePersistencePayload(normalized, userId) as never)
       .eq('id', keeper.id)
-      .eq('user_id', userId)
 
     if (updateError) {
       throw new Error(classifyAthleteProfileSyncError(updateError))
@@ -1739,7 +1767,7 @@ async function repairRemoteAthleteProfileRows(
       .insert({
         id: normalized.id,
         user_id: userId,
-        ...athleteProfilePersistencePayload(normalized),
+        ...athleteProfilePersistencePayload(normalized, userId),
       } as never)
 
     if (insertError) {
@@ -1752,7 +1780,7 @@ async function repairRemoteAthleteProfileRows(
     .map((row) => row.id)
 
   if (loserIds.length > 0) {
-    await deleteAthleteProfileRowsById(userId, loserIds)
+    await deleteAthleteProfileRowsById(loserIds)
   }
 
   const repairedRows = await fetchAthleteProfileRows(userId)
@@ -1799,17 +1827,16 @@ async function persistAthleteProfileRow(
         .upsert({
           id: normalized.id,
           user_id: userId,
-          ...athleteProfilePersistencePayload(normalized),
-        } as never, { onConflict: 'user_id,athlete_id' })
+          ...athleteProfilePersistencePayload(normalized, userId),
+        } as never, { onConflict: 'athlete_id' })
       if (error) throw error
       return
     }
 
     const { error } = await getSupabase()
       .from('athlete_profiles')
-      .update(athleteProfilePersistencePayload(normalized) as never)
+      .update(athleteProfilePersistencePayload(normalized, userId) as never)
       .eq('id', keeper.id)
-      .eq('user_id', userId)
 
     if (error) throw error
 
@@ -1818,7 +1845,7 @@ async function persistAthleteProfileRow(
       .map((candidate) => candidate.id)
 
     if (loserIds.length > 0) {
-      await deleteAthleteProfileRowsById(userId, loserIds)
+      await deleteAthleteProfileRowsById(loserIds)
     }
     return
   }
@@ -1840,17 +1867,16 @@ async function persistAthleteProfileRow(
       .upsert({
         id: rowToPersist.id,
         user_id: userId,
-        ...athleteProfilePersistencePayload(rowToPersist),
-      } as never, { onConflict: 'user_id,athlete_id' })
+        ...athleteProfilePersistencePayload(rowToPersist, userId),
+      } as never, { onConflict: 'athlete_id' })
     if (error) throw error
     return
   }
 
   const { error } = await getSupabase()
     .from('athlete_profiles')
-    .update(athleteProfilePersistencePayload(rowToPersist) as never)
+    .update(athleteProfilePersistencePayload(rowToPersist, userId) as never)
     .eq('id', existingRow.id)
-    .eq('user_id', userId)
 
   if (error) throw error
 }
@@ -1914,7 +1940,10 @@ async function ensureRemoteAthleteOnce(userId: string): Promise<void> {
   if (!isEnabled()) return
 
   const athleteId = await backfillLocalAthleteScope(userId)
+  if (athleteId === null) return
   await hydrateActiveAthlete(userId)
+
+  if (athleteId !== athleteIdForOwner(userId)) return
 
   const now = Date.now()
   const localAthlete = await db.athletes.get(athleteId)
@@ -1948,9 +1977,10 @@ async function ensureRemoteManagedAthleteOnce(userId: string, athleteId: string)
 }
 
 async function ensureRemoteAthlete(userId: string, athleteId?: string): Promise<void> {
+  const selfAthleteId = getSelfAthleteId()
   const isManaged = typeof athleteId === 'string'
     && isScopedAthleteId(athleteId)
-    && athleteId !== athleteIdForOwner(userId)
+    && athleteId !== (selfAthleteId ?? athleteIdForOwner(userId))
   const cacheKey = isManaged ? `${userId}::${athleteId}` : userId
   const existing = remoteAthleteEnsurePromises.get(cacheKey)
   if (existing) return existing
@@ -1968,12 +1998,49 @@ async function ensureRemoteAthlete(userId: string, athleteId?: string): Promise<
 export async function pushSession(session: Session): Promise<void> {
   const userId = getUserId()
   if (!userId) return
+  if (session.authoredByRole === 'coach' && await shouldRouteSessionCompletionViaRpc(session, userId)) {
+    await pushSessionCompletion(session, userId)
+    return
+  }
   await upsertRow('sessions', withAthleteId(sessionToRow(session, userId), session.athleteId))
+}
+
+export async function pushCoachNote(note: AthleteCoachNote): Promise<void> {
+  const userId = getUserId()
+  if (!userId) return
+  await upsertRow('athlete_coach_notes', coachNoteToRow(note, userId))
+}
+
+async function pushSessionCompletion(session: Session, userId: string): Promise<void> {
+  if (!isEnabled()) return
+  const payload = buildMarkSessionDoneParams(session) as unknown as Record<string, unknown>
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    enqueue({ userId, table: 'sessions', action: 'session_completion', payload, enqueuedAt: Date.now() })
+    scheduleRetry(15000)
+    return
+  }
+  try {
+    const { data, error } = await withRequestTimeout(
+      getSupabase().rpc('mark_session_done', payload as never),
+      'sessions.mark_session_done',
+    )
+    if (error) throw error
+    if (data !== true) syncLog('sessions:mark_done_skipped', { sessionId: session.id }, 'warn')
+  } catch (error) {
+    const errorInfo = classifySyncError(error, 'sessions')
+    if (!errorInfo.retriable && !errorInfo.autoRepairable) {
+      applySyncFailure(error, errorInfo.userMessage, 'sessions')
+      return
+    }
+    enqueue({ userId, table: 'sessions', action: 'session_completion', payload, enqueuedAt: Date.now() })
+    applySyncFailure(error, 'No se pudo sincronizar la completación de la sesión.', 'sessions')
+  }
 }
 
 export async function pushAthlete(athlete: Athlete): Promise<void> {
   const userId = getUserId()
-  if (!userId || athlete.ownerAccountId !== userId) return
+  if (!userId) return
+  if (athlete.ownerAccountId !== userId && !(await getRoleForAthlete(userId, athlete.id))) return
   await upsertRow('athletes', athleteToRow(athlete) as unknown as Record<string, unknown>)
 }
 
@@ -1989,10 +2056,14 @@ export async function pullSessionsForDateRange(startDate: string, endDate: strin
   const tombstones = getSessionDeleteTombstones(userId)
   for (let from = 0; ; from += FETCH_PAGE_SIZE) {
     const to = from + FETCH_PAGE_SIZE - 1
-    const query = getSupabase()
-      .from('sessions')
-      .select('*')
-      .eq('user_id', userId)
+    const base = getSupabase().from('sessions').select('*')
+    const activeAthleteId = getActiveAthleteId()
+    const scoped = activeAthleteId
+      ? activeAthleteId === getSelfAthleteId()
+        ? base.or(`athlete_id.eq.${activeAthleteId},and(athlete_id.is.null,user_id.eq.${userId})`)
+        : base.eq('athlete_id', activeAthleteId)
+      : base.eq('user_id', userId)
+    const query = scoped
       .gte('date', startDate)
       .lte('date', endDate)
     const supportsRange = typeof (query as { range?: unknown }).range === 'function'
@@ -2130,16 +2201,26 @@ async function wipeRemoteTableByUser(
     }
     return
   }
-  if (table === 'athletes') {
-    // Keep athletes out of partial remote wipes: deleting by owner here would
-    // remove the self athlete too. Today mapSelectionToRemoteTables never emits
-    // this table; full reset keeps the self row explicitly.
-    const deleteQuery = getSupabase().from('athletes').delete().eq('owner_account_id', userId)
-    const scopedDelete = options?.fullReset
-      ? deleteQuery.neq('id', athleteIdForOwner(userId))
-      : deleteQuery
-    const { error } = await scopedDelete
+  if (table === 'athlete_coach_notes') {
+    const { data: memberships, error: membershipError } = await getSupabase()
+      .from('athlete_memberships')
+      .select('athlete_id')
+      .eq('account_id', userId)
+    if (membershipError) throw membershipError
+    const athleteIds = (memberships ?? [])
+      .map((row) => (row as { athlete_id?: unknown }).athlete_id)
+      .filter((id): id is string => typeof id === 'string' && id.length > 0)
+    if (athleteIds.length === 0) return
+    const { error } = await getSupabase()
+      .from('athlete_coach_notes')
+      .delete()
+      .in('athlete_id', athleteIds)
     if (error) throw error
+    return
+  }
+  if (table === 'athletes') {
+    // Athlete rows are access keystones. Deleting one can cascade a claimed
+    // self membership, so account reset never treats athlete deletion as wipe.
     return
   }
   if (table === 'readiness_daily' && options?.fullReset) {
@@ -2221,15 +2302,35 @@ async function processPendingRemoteWipes(userId: string): Promise<RemoteWipeOutc
  * Scoped by owner_account_id (athletes has no user_id). Degrades gracefully if the
  * table/migration is not present yet.
  */
+export async function pullMemberships(userId: string): Promise<void> {
+  if (!isEnabled()) return
+  try {
+    const { data, error } = await withRequestTimeout(
+      getSupabase().from('athlete_memberships').select('*').eq('account_id', userId),
+      'athlete_memberships.select',
+    )
+    if (error) throw error
+    await replaceMembershipCache(
+      userId,
+      (data ?? []).map((row) => membershipFromRemoteRow(row as Record<string, unknown>)),
+    )
+  } catch (error) {
+    syncLog('memberships:pull_failed', {
+      error: error instanceof Error ? error.message : String(error),
+    }, 'warn')
+  }
+}
+
 async function pullAthletes(userId: string): Promise<void> {
   // Fully defensive: athlete scope is additive, so a failure here (missing table,
   // pre-migration env, mocked db without the store) must NEVER break the sync.
   try {
     await ensureRemoteAthlete(userId)
-    const { data, error } = await getSupabase()
-      .from('athletes')
-      .select('*')
-      .eq('owner_account_id', userId)
+    const memberIds = await getMembershipAthleteIds(userId)
+    const base = getSupabase().from('athletes').select('*')
+    const { data, error } = await (memberIds.length > 0
+      ? base.or(`id.in.(${memberIds.join(',')}),owner_account_id.eq.${userId}`)
+      : base.eq('owner_account_id', userId))
     if (error) {
       syncLog('pullAthletes:error', { error: error.message }, 'warn')
     } else if (data && data.length) {
@@ -2247,6 +2348,7 @@ async function pullRemoteAndMerge(userId: string): Promise<void> {
   return pullRemoteDedup.run(userId, async () => {
     if (!isEnabled()) return
 
+    await pullMemberships(userId)
     await pullAthletes(userId)
 
     const queueDrained = await drainQueue()
@@ -2273,6 +2375,7 @@ async function pullRemoteAndMerge(userId: string): Promise<void> {
       mergeChatMessages(userId, mergeContext),
       mergeCoachProposals(userId, mergeContext),
       mergeAthleteProfile(userId, mergeContext),
+      mergeCoachNotes(userId, mergeContext),
     ])
     await mergeTrainingPlans(userId, mergeContext)
     await mergeTrainingPlanWeeks(userId, mergeContext)
@@ -2671,6 +2774,44 @@ async function mergeAthleteProfile(userId: string, context: MergeContext): Promi
       continue
     }
     context.pendingWrites.push(() => pushAthleteProfile(local))
+  }
+}
+
+async function mergeCoachNotes(userId: string, context: MergeContext): Promise<void> {
+  if (context.pendingRemoteWipeTables.has('athlete_coach_notes')) return
+  let remoteRows: Record<string, unknown>[]
+  try {
+    remoteRows = await fetchAll<Record<string, unknown>>('athlete_coach_notes', userId, context.readScope)
+  } catch (error) {
+    syncLog('coach_notes:pull_failed', {
+      error: error instanceof Error ? error.message : String(error),
+    }, 'warn')
+    return
+  }
+
+  const remoteAthleteIds: string[] = []
+  for (const row of remoteRows) {
+    const remote: AthleteCoachNote = {
+      athleteId: row.athlete_id as string,
+      coachMemory: (row.coach_memory as string | null) ?? undefined,
+      updatedByAccountId: (row.updated_by_account_id as string | null) ?? undefined,
+      updatedAt: (row.updated_at as number) ?? 0,
+    }
+    remoteAthleteIds.push(remote.athleteId)
+    const local = await db.athleteCoachNotes.get(remote.athleteId)
+    if (!local || remote.updatedAt > local.updatedAt) {
+      await db.athleteCoachNotes.put(remote)
+    } else if (local.updatedAt > remote.updatedAt) {
+      context.pendingWrites.push(() => pushCoachNote(local))
+    }
+  }
+
+  if (context.allowDeletes && context.deleteBeforeTs != null) {
+    await pruneCoachNotesMissingFromRemote(
+      await getMembershipAthleteIds(userId),
+      remoteAthleteIds,
+      context.deleteBeforeTs,
+    )
   }
 }
 

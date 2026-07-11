@@ -4,7 +4,7 @@
 
 **Goal:** Implementar SP1a del spec `docs/superpowers/specs/2026-07-05-coach-two-sided-foundation-sp1-design.md` (incl. enmiendas §2b D1–D6): `athlete_memberships` como fuente canónica de acceso, RLS v2 por membresía, self link-aware con gate de claim, pull por membresías, ruteo RPC de completación coach-authored, y extracción de `coachMemory` a `athlete_coach_notes`. **Sin** flujos de invitación ni UI (eso es SP1b).
 
-**Architecture:** Tres migraciones SQL manuales (`012a` preflight report-only, `012b` expand con backfill + RLS v2 aditiva + RPC, `012c` contract diferido) + Dexie v16 con dos stores nuevos (`athleteMemberships` cache pull-only, `athleteCoachNotes` bidireccional). El cliente resuelve "self" desde la membresía `role='self'` con fallback legacy `ath_<uid>`; el pull remoto pasa a `athlete_id ∈ membresías` con fallback al comportamiento actual cuando el cache está vacío. La completación de sesiones coach-authored por un self se rutea por op discriminada `session_completion` → RPC `mark_session_done` (nunca upsert de fila). Todo es testeable con membresías **sembradas**.
+**Architecture:** Tres migraciones SQL manuales (`013a` preflight report-only, `013b` expand con backfill + RLS v2 aditiva + RPC, `013c` contract diferido) + Dexie v17 con dos stores nuevos (`athleteMemberships` cache pull-only, `athleteCoachNotes` bidireccional). El cliente resuelve "self" desde la membresía `role='self'` con fallback legacy `ath_<uid>`; el pull remoto pasa a `athlete_id ∈ membresías` con fallback al comportamiento actual cuando el cache está vacío. La completación de sesiones coach-authored por un self se rutea por op discriminada `session_completion` → RPC `mark_session_done` (nunca upsert de fila). Todo es testeable con membresías **sembradas**.
 
 **Tech Stack:** React + TypeScript + Vite, Dexie (fake-indexeddb en tests), Supabase (PostgREST + RLS + plpgsql), Zustand, vitest.
 
@@ -14,8 +14,8 @@
 - Nunca el literal `'default'` fuera de `activeAthlete.ts` (hay guard test); usar `ATHLETE_PROFILE_LOCAL_ID`, `getActiveAthleteId()` o `getSelfAthleteId()`.
 - Lecturas de `sessions`/`dayLogs`/`weekSummaries`/`coachProposals`/`chatMessages` fuera de sync/export pasan por `filterRowsToActiveScope`/`isRowInActiveScope`; filas legacy/unscoped pertenecen SOLO al self.
 - Creación local de esas filas se estampa con `withActiveAthleteStamp`; en sync, el fallback legacy se ancla a `getSelfAthleteId()`.
-- Dexie está en **v15**; este plan agrega **v16**. Todo cambio de schema requiere test de upgrade real (patrón `db.close(); await db.delete(); await db.open()` por test).
-- Migraciones remotas son manuales y numeradas (`supabase/012*.sql`); el ejecutor las escribe pero **no** las aplica — las aplica el owner.
+- Dexie está en **v16**; este plan agrega **v17**. Todo cambio de schema requiere test de upgrade real (patrón `db.close(); await db.delete(); await db.open()` por test).
+- Migraciones remotas son manuales y numeradas (`supabase/013*.sql`); el ejecutor las escribe pero **no** las aplica — las aplica el owner.
 - No modificar `src/services/ai/promptBuilder.ts` (la extracción de coachMemory toca solo a sus CALLERS, que le pasan `athleteMemory` como string).
 - No duplicar lógica de sync existente; extender `syncService.ts` / `syncSupabase.ts` en sus seams actuales.
 - Antes de cada checkpoint: `npm run lint && npm test && npm run build` en verde.
@@ -24,19 +24,19 @@
 
 ---
 
-### Task 1: Migración `012a` — preflight report-only
+### Task 1: Migración `013a` — preflight report-only
 
 **Files:**
-- Create: `supabase/012a_two_sided_preflight.sql`
+- Create: `supabase/013a_two_sided_preflight.sql`
 
 **Interfaces:**
-- Produces: script SQL de solo lectura que el owner corre en prod ANTES de `012b`. Todos los checks marcados "must be 0" deben dar 0.
+- Produces: script SQL de solo lectura que el owner corre en prod ANTES de `013b`. Todos los checks marcados "must be 0" deben dar 0.
 
 - [ ] **Step 1: Escribir el preflight**
 
 ```sql
 -- SP1a two-sided -- PREFLIGHT (report only, mutates nothing).
--- Correr ANTES de 012b. Todos los checks "must be 0" deben dar 0.
+-- Correr ANTES de 013b. Todos los checks "must be 0" deben dar 0.
 
 -- 1. Cuentas con más de un atleta self-shaped (owner = linked).
 --    Violarían unique(account_id) where role='self'. MUST BE 0.
@@ -101,22 +101,22 @@ where a.linked_account_id is null;
 
 - [ ] **Step 2: Sanity check local del SQL**
 
-Run: `grep -cE "insert|update|delete|alter|create|drop" supabase/012a_two_sided_preflight.sql`
+Run: `grep -cE "insert|update|delete|alter|create|drop" supabase/013a_two_sided_preflight.sql`
 Expected: `0` (es report-only; las palabras solo pueden aparecer en comentarios `--`, verificar visualmente si el grep da >0).
 
 - [ ] **Step 3: Checkpoint de commit (owner)**
 
-Mensaje sugerido: `feat(sp1a): 012a preflight report-only para memberships`
+Mensaje sugerido: `feat(sp1a): 013a preflight report-only para memberships`
 
 ---
 
-### Task 2: Migración `012b` — expand (tablas + backfill + helpers + RLS v2 + trigger + RPC)
+### Task 2: Migración `013b` — expand (tablas + backfill + helpers + RLS v2 + trigger + RPC)
 
 **Files:**
-- Create: `supabase/012b_two_sided_expand.sql`
+- Create: `supabase/013b_two_sided_expand.sql`
 
 **Interfaces:**
-- Consumes: checks de `012a` en 0.
+- Consumes: checks de `013a` en 0.
 - Produces: tablas `athlete_memberships` / `athlete_invites` / `athlete_coach_notes`; columnas `authored_by_role`, `created_by_account_id`, `updated_by_account_id`; helpers `public.auth_athlete_ids()` / `public.auth_coach_athlete_ids()`; RPC `public.mark_session_done(...)`; policies membership aditivas (las legacy `user_id`/`owner` quedan intactas — rollback §11 del spec).
 
 - [ ] **Step 1: Escribir la migración completa**
@@ -124,7 +124,7 @@ Mensaje sugerido: `feat(sp1a): 012a preflight report-only para memberships`
 ```sql
 -- SP1a two-sided -- EXPAND (spec 2026-07-05 §3, §4 + enmienda §2b).
 -- Aditiva: crea tablas/columnas/policies nuevas SIN tocar las policies legacy
--- user_id/owner (rollback = drop de lo nuevo). Requiere 012a en 0.
+-- user_id/owner (rollback = drop de lo nuevo). Requiere 013a en 0.
 
 -- ── 0. Guard: aborta si el preflight fallaría ────────────────────────────────
 do $$
@@ -143,7 +143,7 @@ begin
     group by linked_account_id having count(distinct id) > 1
   ) b;
   if dup_self_account > 0 or dup_self_linked > 0 then
-    raise exception '012b aborted: self collisions (owner=%, linked=%). Resolver con 012a antes de expandir.',
+    raise exception '013b aborted: self collisions (owner=%, linked=%). Resolver con 013a antes de expandir.',
       dup_self_account, dup_self_linked;
   end if;
 end $$;
@@ -189,7 +189,7 @@ create table if not exists public.athlete_coach_notes (
 );
 
 -- ── 2. Columnas provenance (§3.4) ────────────────────────────────────────────
--- authored_by_role queda NULLABLE en expand; 012c la endurece tras el deploy
+-- authored_by_role queda NULLABLE en expand; 013c la endurece tras el deploy
 -- del bundle (patrón 009c/010c). created_by usa default auth.uid() para inserts
 -- PostgREST; el cliente NO envía created_by en upserts (no pisar autoría).
 alter table public.sessions
@@ -260,7 +260,7 @@ begin
     and not exists (select 1 from public.athlete_coach_notes n
                     where n.athlete_id = p.athlete_id and n.coach_memory is not null);
   if unmigrated > 0 then
-    raise exception '012b aborted: % coach_memory sin migrar a notes.', unmigrated;
+    raise exception '013b aborted: % coach_memory sin migrar a notes.', unmigrated;
   end if;
 end $$;
 
@@ -591,20 +591,20 @@ Verificar a mano contra el spec:
 
 - [ ] **Step 3: Checkpoint de commit (owner)**
 
-Mensaje sugerido: `feat(sp1a): 012b expand — memberships, coach notes, RLS v2, mark_session_done`
+Mensaje sugerido: `feat(sp1a): 013b expand — memberships, coach notes, RLS v2, mark_session_done`
 
 ---
 
-### Task 3: Migración `012c` — contract diferido + smoke SQL documentado
+### Task 3: Migración `013c` — contract diferido + smoke SQL documentado
 
 **Files:**
-- Create: `supabase/012c_two_sided_contract.sql`
+- Create: `supabase/013c_two_sided_contract.sql`
 - Create: `docs/superpowers/plans/2026-07-09-sp1a-smoke.md`
 
 **Interfaces:**
-- Produces: `012c` que el owner aplica SOLO después del deploy del bundle SP1a (los bundles viejos no envían `authored_by_role`); doc de smoke con membresías sembradas para validar RLS/RPC en prod o en un proyecto Supabase de prueba.
+- Produces: `013c` que el owner aplica SOLO después del deploy del bundle SP1a (los bundles viejos no envían `authored_by_role`); doc de smoke con membresías sembradas para validar RLS/RPC en prod o en un proyecto Supabase de prueba.
 
-- [ ] **Step 1: Escribir `012c`**
+- [ ] **Step 1: Escribir `013c`**
 
 ```sql
 -- SP1a two-sided -- CONTRACT (diferido; aplicar SOLO tras deploy del bundle SP1a).
@@ -616,14 +616,14 @@ declare pending int;
 begin
   select count(*) into pending from public.sessions where authored_by_role is null;
   if pending > 0 then
-    raise exception '012c aborted: % sessions sin authored_by_role. Backfill de seguridad primero.', pending;
+    raise exception '013c aborted: % sessions sin authored_by_role. Backfill de seguridad primero.', pending;
   end if;
 end $$;
 
 alter table public.sessions alter column authored_by_role set not null;
 
--- Re-limpieza defensiva: 012b ya nulificó coach_memory, pero bundles viejos
--- pudieron re-escribirlo en la ventana 012b -> deploy (el bundle nuevo ya no
+-- Re-limpieza defensiva: 013b ya nulificó coach_memory, pero bundles viejos
+-- pudieron re-escribirlo en la ventana 013b -> deploy (el bundle nuevo ya no
 -- envía coach_memory en athlete_profiles). Verificar antes que la memoria
 -- re-escrita esté en notes; si este count da >0, migrarla a mano primero:
 --   select count(*) from public.athlete_profiles p
@@ -643,7 +643,7 @@ Crear `docs/superpowers/plans/2026-07-09-sp1a-smoke.md`:
 ```markdown
 # SP1a — Smoke con membresías sembradas (RLS v2 + RPC)
 
-Correr en SQL editor de Supabase (o proyecto de prueba) DESPUÉS de 012b.
+Correr en SQL editor de Supabase (o proyecto de prueba) DESPUÉS de 013b.
 Necesita dos cuentas reales: COACH_UID y SELF_UID (crear el segundo login antes).
 
 ## 1. Sembrar un escenario two-sided sobre un atleta gestionado existente
@@ -654,7 +654,7 @@ values (':ATH', ':SELF_UID', 'self',
         (extract(epoch from now())*1000)::bigint);
 
 ## 2. Checks (correr logueado como cada cuenta vía la app o con JWT de prueba)
-- [ ] Self-solo (cuenta sin memberships extra): dashboard/semana idénticos a antes de 012b.
+- [ ] Self-solo (cuenta sin memberships extra): dashboard/semana idénticos a antes de 013b.
 - [ ] Coach ve las filas del atleta :ATH (sessions/day_logs/week_summaries/chat/proposals).
 - [ ] SELF_UID ve las filas de :ATH (select por membresía).
 - [ ] SELF_UID NO puede update de una sesión de :ATH con authored_by_role='coach'
@@ -667,7 +667,7 @@ values (':ATH', ':SELF_UID', 'self',
       coach externo → auth_coach_note_athlete_ids() lo excluye).
 - [ ] COACH_UID en su PROPIO atleta (solo membresía self, sin coach externo)
       SÍ lee y escribe su propia nota (regresión del owner actual).
-- [ ] SELF_UID no ve coach_memory vía athlete_profiles (columna en NULL post-012b).
+- [ ] SELF_UID no ve coach_memory vía athlete_profiles (columna en NULL post-013b).
 - [ ] Cross-tenant: una TERCERA cuenta sin membresía no ve ninguna fila de :ATH.
 - [ ] Reparent: update sessions set athlete_id='otro' where id='...' → exception.
 - [ ] readiness_daily de :ATH visible para ambos miembros (si hay data Whoop).
@@ -679,16 +679,16 @@ where athlete_id = ':ATH' and account_id = ':SELF_UID' and role = 'self';
 
 - [ ] **Step 3: Checkpoint de commit (owner)**
 
-Mensaje sugerido: `feat(sp1a): 012c contract diferido + smoke doc de membresías sembradas`
+Mensaje sugerido: `feat(sp1a): 013c contract diferido + smoke doc de membresías sembradas`
 
 ---
 
-### Task 4: Tipos + Dexie v16 + test de upgrade real
+### Task 4: Tipos + Dexie v17 + test de upgrade real
 
 **Files:**
 - Modify: `src/types/index.ts` (junto a `Athlete`, ~línea 611; y `SessionBase`, línea 244)
 - Modify: `src/db/db.ts` (después del bloque v15, línea ~218)
-- Test: `src/db/__tests__/dbV16Upgrade.test.ts`
+- Test: `src/db/__tests__/dbV17Upgrade.test.ts`
 
 **Interfaces:**
 - Produces (tipos exactos que consumen las Tasks 5–10):
@@ -716,27 +716,28 @@ export interface AthleteCoachNote {
 - [ ] **Step 1: Escribir el failing test de upgrade**
 
 ```ts
-// src/db/__tests__/dbV16Upgrade.test.ts
+// src/db/__tests__/dbV17Upgrade.test.ts
 import 'fake-indexeddb/auto'
 import { describe, it, expect, beforeEach } from 'vitest'
 import Dexie from 'dexie'
 import { db } from '../db'
 import type { AthleteMembership, AthleteCoachNote } from '../../types'
 
-describe('Dexie v16 upgrade (SP1a memberships + coach notes)', () => {
+describe('Dexie v17 upgrade (SP1a memberships + coach notes)', () => {
   beforeEach(async () => {
     db.close()
     await db.delete()
   })
 
-  it('preserves v15 data and adds the new stores', async () => {
-    // Sembrar una DB previa (v15-shaped) con datos reales antes de abrir la v16.
+  it('preserves v16 data and adds the new stores', async () => {
+    // Sembrar una DB previa (v16-shaped) con datos reales antes de abrir la v17.
     const legacy = new Dexie('EntrenadorDB')
-    legacy.version(15).stores({
+    legacy.version(16).stores({
       sessions:       'id, date, weekStartDate, type, status, completedAt, athleteId',
       dayLogs:        'id, date, athleteId, &[athleteId+date]',
       athletes:       'id, ownerAccountId, updatedAt',
       readinessDaily: 'id, date, athleteId, source, updatedAt, &[athleteId+date+source]',
+      whoopWorkouts:   'id, date, athleteId, updatedAt, &workoutId',
     })
     await legacy.open()
     await legacy.table('sessions').put({
@@ -767,10 +768,10 @@ describe('Dexie v16 upgrade (SP1a memberships + coach notes)', () => {
 
 - [ ] **Step 2: Correr el test y verificar que falla**
 
-Run: `npx vitest run src/db/__tests__/dbV16Upgrade.test.ts`
+Run: `npx vitest run src/db/__tests__/dbV17Upgrade.test.ts`
 Expected: FAIL — `db.athleteMemberships is undefined` (o error de tipo en compilación).
 
-- [ ] **Step 3: Agregar tipos y schema v16**
+- [ ] **Step 3: Agregar tipos y schema v17**
 
 En `src/types/index.ts`, junto a `Athlete` (~línea 611), agregar `MembershipRole`, `AthleteMembership`, `AthleteCoachNote` (bloque exacto de "Interfaces" arriba). En `SessionBase` (línea 244), después de `athleteId?`:
 
@@ -778,7 +779,7 @@ En `src/types/index.ts`, junto a `Athlete` (~línea 611), agregar `MembershipRol
   authoredByRole?: MembershipRole  // D1: estampado en creación; legacy/null = 'self'
 ```
 
-En `src/db/db.ts`: importar los tipos, declarar las tablas y el bloque v16:
+En `src/db/db.ts`: importar los tipos, declarar las tablas y el bloque v17:
 
 ```ts
   athleteMemberships!: Table<AthleteMembership, [string, string]>
@@ -786,10 +787,10 @@ En `src/db/db.ts`: importar los tipos, declarar las tablas y el bloque v16:
 ```
 
 ```ts
-    // v16 — SP1a two-sided foundation: cache pull-only de membresías (fuente
+    // v17 — SP1a two-sided foundation: cache pull-only de membresías (fuente
     // canónica remota: athlete_memberships) + notas de coach extraídas de
     // athleteProfiles.coachMemory (spec 2026-07-05 §3.1/§3.3).
-    this.version(16).stores({
+    this.version(17).stores({
       athleteMemberships: '[athleteId+accountId], accountId, athleteId, role',
       athleteCoachNotes:  'athleteId, updatedAt',
     })
@@ -797,13 +798,13 @@ En `src/db/db.ts`: importar los tipos, declarar las tablas y el bloque v16:
 
 - [ ] **Step 4: Correr el test y verificar que pasa**
 
-Run: `npx vitest run src/db/__tests__/dbV16Upgrade.test.ts`
-Expected: PASS (2 stores nuevos + data v15 intacta).
+Run: `npx vitest run src/db/__tests__/dbV17Upgrade.test.ts`
+Expected: PASS (2 stores nuevos + data v16 intacta).
 
 - [ ] **Step 5: Suite completa + checkpoint de commit (owner)**
 
 Run: `npm run lint && npm test && npm run build`
-Mensaje sugerido: `feat(sp1a): Dexie v16 — athleteMemberships (pull-only) + athleteCoachNotes`
+Mensaje sugerido: `feat(sp1a): Dexie v17 — athleteMemberships (pull-only) + athleteCoachNotes`
 
 ---
 
@@ -978,7 +979,7 @@ En `src/services/syncService.ts`, importar `membershipFromRemoteRow, replaceMemb
 ```ts
 /**
  * Pull-only del snapshot de membresías (SP1a). Tolerante a tabla ausente
- * (012b no aplicado aún): ante error deja el cache como está y el resto del
+ * (013b no aplicado aún): ante error deja el cache como está y el resto del
  * sync cae al modelo legacy owner/linked.
  */
 export async function pullMemberships(userId: string): Promise<void> {
@@ -1364,7 +1365,7 @@ El spec exige barrer también el punto server-side que Whoop dejó resolviendo `
     await expect(resolveSelfAthleteId(db, 'u1')).resolves.toBe('ath_claimed')
   })
 
-  it('resolveSelfAthleteId cae a ath_<uid> sin membresías (legacy/pre-012b)', async () => {
+  it('resolveSelfAthleteId cae a ath_<uid> sin membresías (legacy/pre-013b)', async () => {
     const db = makeFakeDb({
       athlete_memberships: [],
       athletes: [{ id: 'ath_u1', owner_account_id: 'u1', status: 'active' }],
@@ -1380,7 +1381,7 @@ Luego en `netlify/functions/_shared/whoopSupabase.ts:169` reemplazar la resoluci
 ```ts
 export async function resolveSelfAthleteId(db: WhoopDb, userId: string): Promise<string | null> {
   // SP1 §1b: la membresía role='self' es la fuente canónica; fallback legacy
-  // ath_<uid>. Tolerante a tabla ausente (012b no aplicado): cae al legacy.
+  // ath_<uid>. Tolerante a tabla ausente (013b no aplicado): cae al legacy.
   try {
     const { data, error } = await table<{ athlete_id?: string }>(db, 'athlete_memberships')
       .select('athlete_id')
@@ -1502,7 +1503,7 @@ import { getMembershipAthleteIds } from '../athlete/membershipCache'
 /**
  * SP1a (§6.3): el pull pasa de user_id a athlete_id ∈ mis membresías (un coach
  * pullea varios atletas) manteniendo las filas legacy (athlete_id null) del
- * user. Sin cache de membresías (012b no aplicado / offline) cae EXACTAMENTE
+ * user. Sin cache de membresías (013b no aplicado / offline) cae EXACTAMENTE
  * al comportamiento previo — single-athlete no cambia.
  */
 export function buildPullFilter(
@@ -1740,7 +1741,7 @@ import { getSelfAthleteId } from './activeAthlete'
 ```ts
 /**
  * D1: autoría estampada en creación, derivada de los holders (sin lookup async).
- * Mismo criterio que el backfill 012b: sesión de un atleta que NO es mi self
+ * Mismo criterio que el backfill 013b: sesión de un atleta que NO es mi self
  * (gestionado u operado como coach) nace 'coach'; todo lo demás 'self'.
  */
 export function resolveAuthoredByRole(athleteId: string | undefined): MembershipRole {
@@ -1788,7 +1789,7 @@ export function buildMarkSessionDoneParams(session: Session): MarkSessionDonePar
 
 /**
  * RPC solo cuando: la sesión es coach-authored, tengo membresía sobre su
- * atleta y mi rol NO es coach. Sin cache (legacy/012b no aplicado) → upsert
+ * atleta y mi rol NO es coach. Sin cache (legacy/013b no aplicado) → upsert
  * normal, igual que hoy.
  */
 export async function shouldRouteSessionCompletionViaRpc(
@@ -1878,7 +1879,7 @@ function dayLogToRow(log: DayLog, userId: string): Record<string, unknown> {
     authoredByRole: (row.authored_by_role ?? data.authoredByRole ?? undefined) as Session['authoredByRole'],
 ```
 
-**Contrato de deploy (SQL-first estricto):** este bundle ASUME `012b` aplicado en cualquier entorno contra el que sincronice (dev y prod) — mismo precedente que `010` (migración antes del deploy). Sin `012b`, el upsert de sessions con `authored_by_role`/`updated_by_account_id` cae en schema mismatch (`schemaMismatchBlockedTables`, `syncService.ts:468`) y el push de sessions queda bloqueado: NO es un modo soportado. Las tolerancias a tabla ausente (`pullMemberships`, `mergeCoachNotes`, `buildPullFilter` con cache vacío) son defensa en profundidad para ventanas de error operativo, no un modo de operación. El smoke "pre-012b" de Task 11 corre con sync deshabilitado o contra una DB dev YA migrada.
+**Contrato de deploy (SQL-first estricto):** este bundle ASUME `013b` aplicado en cualquier entorno contra el que sincronice (dev y prod) — mismo precedente que `010` (migración antes del deploy). Sin `013b`, el upsert de sessions con `authored_by_role`/`updated_by_account_id` cae en schema mismatch (`schemaMismatchBlockedTables`, `syncService.ts:468`) y el push de sessions queda bloqueado: NO es un modo soportado. Las tolerancias a tabla ausente (`pullMemberships`, `mergeCoachNotes`, `buildPullFilter` con cache vacío) son defensa en profundidad para ventanas de error operativo, no un modo de operación. El smoke "pre-013b" de Task 11 corre con sync deshabilitado o contra una DB dev YA migrada.
 
 - [ ] **Step 6: Ruteo en `pushSession` + rama `session_completion` en drainQueue**
 
@@ -2047,7 +2048,7 @@ export async function getActiveCoachNote(): Promise<AthleteCoachNote | undefined
 export async function upsertActiveCoachNote(coachMemory: string | undefined): Promise<AthleteCoachNote | null>
 export async function getCoachMemoryText(): Promise<string | undefined>
 ```
-- Contrato de transición: **lectura dual** (nota nueva primero, fallback `athleteProfile.coachMemory` legacy); **escritura solo** a la tabla nueva. `athlete_profiles.coach_memory` remoto queda como legado congelado hasta `012c`.
+- Contrato de transición: **lectura dual** (nota nueva primero, fallback `athleteProfile.coachMemory` legacy); **escritura solo** a la tabla nueva. `athlete_profiles.coach_memory` remoto queda como legado congelado hasta `013c`.
 
 - [ ] **Step 1: Failing tests**
 
@@ -2126,7 +2127,7 @@ Expected: FAIL — módulo no existe.
  * D3: la nota es POR ATLETA (compartida entre coaches), no por coach.
  * Transición: lectura dual (nota nueva → fallback athleteProfile.coachMemory
  * legacy); escritura SOLO acá. El coach_memory remoto de athlete_profiles
- * queda congelado hasta 012c.
+ * queda congelado hasta 013c.
  */
 import { db } from '../../db/db'
 import type { AthleteCoachNote } from '../../types'
@@ -2195,7 +2196,7 @@ export async function pushCoachNote(note: AthleteCoachNote): Promise<void> {
 
 /**
  * Merge LWW de athlete_coach_notes (bidireccional, §6.3). Tolerante a tabla
- * ausente pre-012b: fetchAll devuelve [] (skip) o el catch loguea y sigue.
+ * ausente pre-013b: fetchAll devuelve [] (skip) o el catch loguea y sigue.
  */
 async function mergeCoachNotes(userId: string, context: MergeContext): Promise<void> {
   let remoteRows: Record<string, unknown>[]
@@ -2490,12 +2491,12 @@ Expected: todo verde; anotar el conteo de tests (base previa: 139 archivos / 990
 
 - [ ] **Step 2: Verificación funcional single-athlete (regresión crítica)**
 
-SQL-first estricto (contrato de Task 8): el bundle no se smokea contra una DB sin `012b`. Dos modos válidos:
+SQL-first estricto (contrato de Task 8): el bundle no se smokea contra una DB sin `013b`. Dos modos válidos:
 
-**(a) DB dev con `012b` aplicado** — `npm run dev` contra el Supabase de dev migrado (012a → 012b):
+**(a) DB dev con `013b` aplicado** — `npm run dev` contra el Supabase de dev migrado (013a → 013b):
 - dashboard y semana cargan igual;
 - crear/editar sesión y day log funciona (sessions push con `authored_by_role` OK);
-- coach memory en Settings carga (nota migrada por 012b o dual-read local) y guarda (push a `athlete_coach_notes` OK — el owner es self-sin-coach-externo, la policy `auth_coach_note_athlete_ids()` lo permite);
+- coach memory en Settings carga (nota migrada por 013b o dual-read local) y guarda (push a `athlete_coach_notes` OK — el owner es self-sin-coach-externo, la policy `auth_coach_note_athlete_ids()` lo permite);
 - cache de membresías poblado tras el primer sync (verificar en DevTools → IndexedDB → athleteMemberships).
 
 **(b) Sin backend (sync deshabilitado / sin sesión)** — verificar que el modo local puro no rompe:
@@ -2509,15 +2510,15 @@ Agregar al final de `docs/superpowers/plans/2026-07-09-sp1a-smoke.md`:
 
 ```markdown
 ## Secuencia de rollout (orden estricto)
-1. `012a` en prod → todos los "must be 0" en 0.
-2. `012b` en prod → post-check report OK (memberships > 0, authored null = 0).
+1. `013a` en prod → todos los "must be 0" en 0.
+2. `013b` en prod → post-check report OK (memberships > 0, authored null = 0).
 3. Deploy del bundle SP1a + hard refresh.
 4. Smoke single-athlete (self): dashboard/semana/sesión/day log/chat/coach memory.
 5. Smoke coach: switcher a gestionado, check-in misma fecha sin 23505,
    coach memory por atleta NO se cruza entre atletas.
 6. Smoke two-sided sembrado (sección 1 y 2 de este doc) con segunda cuenta.
-7. `012c` en prod (endurece authored_by_role) — SOLO tras confirmar 3-6.
-8. Re-correr `008a` y el post-check de `012b`: todo en 0.
+7. `013c` en prod (endurece authored_by_role) — SOLO tras confirmar 3-6.
+8. Re-correr `008a` y el post-check de `013b`: todo en 0.
 
 ## Rollback de emergencia
 -- Las policies legacy user_id/owner siguen vigentes: basta remover lo aditivo.
@@ -2535,7 +2536,11 @@ Presentar al owner: diff completo, resultado de lint/test/build, y la secuencia 
 
 ## Revisión externa 2026-07-10 (aplicada)
 
-Ocho hallazgos incorporados: (1) fuga de `coach_memory` → limpieza en `012b` con guard + notas gated por `auth_coach_note_athlete_ids()` (coach ∪ self-sin-coach-externo — coach-only puro rompía lectura/escritura del owner sobre su propia memoria, que solo tiene membresía `self`); (2) `athletes` pull por `id in (membresías)` ∪ owner, en `buildPullFilter` y en `pullAthletes` directo; (3) fresh device: `pullMemberships` ANTES del backfill en `App.tsx` + guard en `ensureRemoteAthleteOnce` que no fabrica/upsertea `ath_<uid>` cuando el self real es otro atleta; (4) RPC con guard LWW `s.updated_at <= p_updated_at` y cliente tratando `data !== true` como op consumida sin retry; (5) identidad de cola `getEntityIdFromPayload` (id → p_session_id → athlete_id) usada por compactación y limpieza; (6) trigger de consistencia `training_plan_weeks.athlete_id = training_plans.athlete_id`; (7) provenance completo: backfill de `updated_by_account_id` + envío en day/week/profile row builders; (8) contrato SQL-first estricto (012b antes del bundle en todo entorno; tolerancias = defensa, no modo soportado).
+Ocho hallazgos incorporados: (1) fuga de `coach_memory` → limpieza en `013b` con guard + notas gated por `auth_coach_note_athlete_ids()` (coach ∪ self-sin-coach-externo — coach-only puro rompía lectura/escritura del owner sobre su propia memoria, que solo tiene membresía `self`); (2) `athletes` pull por `id in (membresías)` ∪ owner, en `buildPullFilter` y en `pullAthletes` directo; (3) fresh device: `pullMemberships` ANTES del backfill en `App.tsx` + guard en `ensureRemoteAthleteOnce` que no fabrica/upsertea `ath_<uid>` cuando el self real es otro atleta; (4) RPC con guard LWW `s.updated_at <= p_updated_at` y cliente tratando `data !== true` como op consumida sin retry; (5) identidad de cola `getEntityIdFromPayload` (id → p_session_id → athlete_id) usada por compactación y limpieza; (6) trigger de consistencia `training_plan_weeks.athlete_id = training_plans.athlete_id`; (7) provenance completo: backfill de `updated_by_account_id` + envío en day/week/profile row builders; (8) contrato SQL-first estricto (013b antes del bundle en todo entorno; tolerancias = defensa, no modo soportado).
+
+## Revisión independiente post-implementación 2026-07-10 (aplicada)
+
+La revisión final endureció once puntos adicionales: `athlete_profiles` canónico por `athlete_id` (preflight + unique + pull/write membership-aware), omisión total de `coach_memory` en writes del bundle, reconciliación LWW en `013c`, trigger de membresía para atletas nuevos, write de `athletes` por rol con owner/linked inmutables, autoría de sesión server-stamped e inmutable, wipe remoto de `athlete_coach_notes`, trigger plan/week `SECURITY DEFINER` fail-closed, RPC limitado a self sobre sesión coach-authored, pull por rango athlete-aware y export de notas fail-closed para un self reclamado.
 
 ## Self-Review (ya aplicado)
 

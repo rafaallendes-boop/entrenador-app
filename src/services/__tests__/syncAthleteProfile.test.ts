@@ -193,7 +193,7 @@ describe('Athlete Profile Sync - Hardening Fixes', () => {
     // always non-null), so filter to the athlete_profiles calls specifically.
     const profileUpserts = upsertCalls.filter((call) => call.table === 'athlete_profiles')
     expect(profileUpserts).toHaveLength(1)
-    expect(profileUpserts[0].options).toEqual({ onConflict: 'user_id,athlete_id' })
+    expect(profileUpserts[0].options).toEqual({ onConflict: 'athlete_id' })
     const payload = profileUpserts[0].payload as Record<string, unknown>
     expect(payload.id).toBe('profile:user-1')
     expect(payload.user_id).toBe('user-1')
@@ -375,7 +375,7 @@ describe('Athlete Profile Sync - Hardening Fixes', () => {
       updated_at: number
       data: Record<string, unknown>
     }
-    expect(payload.coach_memory).toBe('Prefiere doble sesion')
+    expect(payload.coach_memory).toBeUndefined()
     expect(payload.updated_at).toBe(300)
     expect(payload.data.name).toBe('Rafa')
     expect(payload.data.primarySport).toBe('squash')
@@ -410,7 +410,7 @@ describe('Athlete Profile Sync - Hardening Fixes', () => {
       coach_memory: string | null
       data: Record<string, unknown>
     }
-    expect(payload.coach_memory).toBeNull()
+    expect(payload.coach_memory).toBeUndefined()
     expect(payload.data.__clearCoachMemory).toBe(true)
     expect(payload.data.__deletedFields).toEqual(expect.arrayContaining(['name']))
     expect(payload.data.mainGoal).toBe('Competir mejor')
