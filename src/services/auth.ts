@@ -1,4 +1,8 @@
 import { createClient } from '@supabase/supabase-js'
+import { authStorage } from './authStorage'
+import { isNativePlatform, isWebPlatform } from './platform'
+
+export const NATIVE_AUTH_REDIRECT_URL = 'rallyiq://auth/callback'
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string
@@ -9,33 +13,48 @@ if (!isSupabaseConfigured) {
 }
 
 export const supabase = isSupabaseConfigured
-  ? createClient(supabaseUrl, supabaseAnonKey)
+  ? createClient(supabaseUrl, supabaseAnonKey, {
+      auth: {
+        autoRefreshToken: true,
+        detectSessionInUrl: isWebPlatform(),
+        flowType: 'pkce',
+        persistSession: true,
+        storage: authStorage,
+      },
+    })
   : null
 
 export function getAuthRedirectUrl(): string {
   const explicitRedirect = (import.meta.env.VITE_AUTH_REDIRECT_URL as string | undefined)?.trim()
-  if (explicitRedirect) {
-    if (typeof window !== 'undefined') {
-      try {
-        const configured = new URL(explicitRedirect)
-        const current = new URL(window.location.origin)
-        if (
-          import.meta.env.DEV &&
-          configured.hostname === current.hostname &&
-          configured.port !== current.port
-        ) {
-          return window.location.origin
-        }
-      } catch {
-        return explicitRedirect
-      }
+  return resolveAuthRedirectUrl({
+    native: isNativePlatform(),
+    explicitRedirect,
+    webOrigin: typeof window !== 'undefined' ? window.location.origin : '',
+    development: import.meta.env.DEV,
+  })
+}
+
+export function resolveAuthRedirectUrl(input: {
+  native: boolean
+  explicitRedirect?: string
+  webOrigin: string
+  development?: boolean
+}): string {
+  if (input.native) return NATIVE_AUTH_REDIRECT_URL
+  if (!input.explicitRedirect) return input.webOrigin
+
+  try {
+    const configured = new URL(input.explicitRedirect)
+    const current = new URL(input.webOrigin)
+    if (
+      input.development
+      && configured.hostname === current.hostname
+      && configured.port !== current.port
+    ) {
+      return input.webOrigin
     }
-    return explicitRedirect
+  } catch {
+    return input.explicitRedirect
   }
-
-  if (typeof window !== 'undefined') {
-    return window.location.origin
-  }
-
-  return ''
+  return input.explicitRedirect
 }

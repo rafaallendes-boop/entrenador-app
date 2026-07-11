@@ -29,6 +29,7 @@ import {
 import {
   getNotificationPreferences,
   getNotificationPermission,
+  refreshNotificationPermission,
   notificationsSupported,
   refreshTodayNotifications,
   requestNotificationPermission,
@@ -124,8 +125,9 @@ export default function SettingsPage() {
   const importInputRef = useRef<HTMLInputElement | null>(null)
   const showDevTools = isDevToolsEnabled()
 
-  const refreshNotificationStatus = () => {
-    setNotifPermission(getNotificationPermission())
+  const refreshNotificationStatus = async () => {
+    const permission = await refreshNotificationPermission()
+    setNotifPermission(permission ?? getNotificationPermission())
     setNotificationPreferences(getNotificationPreferences())
   }
 
@@ -355,7 +357,7 @@ export default function SettingsPage() {
   const handleRequestNotifications = async () => {
     const result = await requestNotificationPermission()
     setNotifPermission(result)
-    refreshNotificationStatus()
+    void refreshNotificationStatus()
   }
 
   const handleResyncNotifications = async () => {
@@ -367,7 +369,7 @@ export default function SettingsPage() {
       todayDayLog: dayLogs[todayIsoKey()],
       athleteProfile,
     })
-    refreshNotificationStatus()
+    void refreshNotificationStatus()
   }
 
   const handleToggleNotificationPreference = async (

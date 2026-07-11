@@ -1,6 +1,9 @@
 import { create } from 'zustand'
 import type { User } from '@supabase/supabase-js'
+import { Browser } from '@capacitor/browser'
 import { getAuthRedirectUrl, isSupabaseConfigured, supabase } from '../services/auth'
+import { rememberPendingAuthContext } from '../services/authDeepLinks'
+import { isNativePlatform } from '../services/platform'
 import type { SyncTierHealthMap } from '../types/syncDiagnostics'
 
 export type SyncStatus = 'idle' | 'syncing' | 'error' | 'offline' | 'degraded'
@@ -89,10 +92,20 @@ export const useAuthStore = create<AuthState>((set) => ({
         throw new Error('Supabase no está configurado. Define VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY.')
       }
 
-      await supabase.auth.signInWithOAuth({
+      if (typeof window !== 'undefined') await rememberPendingAuthContext()
+
+      const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
-        options: { redirectTo: getAuthRedirectUrl() },
+        options: {
+          redirectTo: getAuthRedirectUrl(),
+          skipBrowserRedirect: isNativePlatform(),
+        },
       })
+      if (error) throw error
+      if (isNativePlatform()) {
+        if (!data.url) throw new Error('Supabase no entregó una URL de autenticación.')
+        await Browser.open({ url: data.url, presentationStyle: 'popover' })
+      }
     },
 
     signOut: async () => {

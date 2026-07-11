@@ -1,12 +1,12 @@
-# Entrenador App
+# RallyIQ
 
-Entrenador es una PWA local-first para planificar, ajustar y registrar entrenamiento deportivo con apoyo de un coach AI. Nacio para uso personal en squash, running, fuerza, movilidad y recuperacion, y hoy esta evolucionando hacia una beta cerrada con foco en robustez real antes de abrirla a mas usuarios.
+RallyIQ es una PWA local-first para planificar, ajustar y registrar entrenamiento deportivo con apoyo de un coach AI. Nacio para uso personal en squash, running, fuerza, movilidad y recuperacion, y hoy esta evolucionando hacia un piloto cerrado con foco en robustez real antes de abrirla a mas usuarios.
 
 El producto no es solo un chat: el coach entiende contexto, propone cambios estructurados y puede convertirlos en acciones aplicables sobre la semana o sobre un plan de competencia.
 
 ## Estado Actual
 
-La app esta en una fase de **beta interna avanzada**:
+La app esta en una fase de **piloto interno avanzado**:
 
 - usable en dev con Gemini via proxy o provider local
 - con sync multi-dispositivo sobre Supabase
@@ -15,8 +15,10 @@ La app esta en una fase de **beta interna avanzada**:
 - con Plan Builder por evento competitivo
 - con telemetria local de calidad beta y export
 - con suites E2E para coach, week creator y Plan Builder
+- con soporte para atletas gestionados, roster y cambio de atleta activo
+- con integracion opcional de Whoop para readiness, sueno, strain y prefill editable del check-in
 
-No esta lista todavia para una beta abierta o pagada. Antes de eso hay que seguir endureciendo calidad del coach, observabilidad persistente, feedback de usuarios y pruebas multi-dispositivo reales.
+No esta lista todavia para una beta abierta o pagada. Antes de eso hay que cerrar el smoke operativo y el consentimiento biometrico de Whoop, seguir endureciendo la calidad del coach y realizar pruebas multi-dispositivo reales.
 
 ## Funcionalidades Principales
 
@@ -32,6 +34,8 @@ No esta lista todavia para una beta abierta o pagada. Antes de eso hay que segui
 - Import/export de backup JSON.
 - Importacion de planificaciones desde PDF.
 - Sync multi-dispositivo con Supabase.
+- Roster de atletas gestionados y selector de atleta activo para cuentas coach autorizadas.
+- Integracion opcional de Whoop: recovery, sueno y strain; prefill editable y contexto pasivo para el coach.
 - PWA instalable en desktop y mobile.
 - Notificaciones web para sesiones del dia.
 - Panel local de debug/quality para revisar requests AI, feedback y limites.
@@ -206,6 +210,14 @@ Entrega foco, accion clave, timing, hidratacion y nota de recuperacion cuando ap
 
 La app usa Supabase para sincronizar entidades del dominio entre dispositivos, manteniendo IndexedDB como fuente local operativa. El sync incluye diagnostico visible en Ajustes y herramientas manuales para reintentar o limpiar cola.
 
+### Coach y Multi-Atleta
+
+Las cuentas coach autorizadas pueden crear atletas gestionados, alternar el atleta activo y operar el mismo flujo de planificación sin mezclar datos. El alcance por atleta se aplica tanto a las lecturas locales como al sync remoto.
+
+### Whoop Readiness
+
+Whoop es opcional. La conexión OAuth y los datos crudos se procesan solo en servidor; el cliente consume un resumen diario de readiness. Recovery, sueño y strain pueden precargar el check-in de forma editable y aportar contexto pasivo al coach; no ajustan planes automáticamente ni sustituyen consejo médico.
+
 ### Backup y Restore
 
 El backup JSON cubre:
@@ -244,7 +256,7 @@ scripts/            E2E, load tests y audit de prompts
 
 Requisitos:
 
-- Node.js 18+
+- Node.js 20.19+ (o 22.12+)
 - npm
 
 Instalar dependencias:
@@ -271,6 +283,15 @@ Preview del build:
 npm run preview
 ```
 
+### iOS con Capacitor
+
+El proyecto incluye un contenedor iOS Capacitor que empaqueta el mismo build React/Vite sin reemplazar la PWA ni migrar Dexie. Para requisitos de Xcode, deep links Supabase, notificaciones, comandos y checklist de TestFlight, consulta [docs/ios-capacitor.md](docs/ios-capacitor.md).
+
+```bash
+npm run ios:sync
+npm run ios:open
+```
+
 ## Variables de Entorno
 
 La app puede correr en modo mock/local, pero para IA real, auth y sync necesitas variables.
@@ -284,6 +305,7 @@ VITE_AI_PROVIDER=proxy
 VITE_SUPABASE_URL=...
 VITE_SUPABASE_ANON_KEY=...
 VITE_AUTH_REDIRECT_URL=http://localhost:5173
+VITE_COACH_ACCOUNTS=correo-del-coach@ejemplo.com # opcional; habilita roster/switcher
 ```
 
 Providers directos en dev:
@@ -347,6 +369,13 @@ OPENAI_MODEL_WEEK_CREATOR=...
 CLAUDE_API_KEY=...
 CLAUDE_MODEL_PLAN_BUILDER_WEEK=claude-sonnet-4-6 # opcional; permite A/B por modelo sin cambiar el default
 PLAN_BUILDER_WEEK_CONCURRENCY=3 # opcional; semanas en paralelo en generate-plan-background
+
+# Whoop (opcional; solo servidor)
+WHOOP_CLIENT_ID=...
+WHOOP_CLIENT_SECRET=...
+WHOOP_REDIRECT_URI=...
+WHOOP_TOKEN_ENC_KEY=... # base64 de 32 bytes
+SUPABASE_SERVICE_ROLE_KEY=...
 ```
 
 Para load tests locales contra Netlify dev se puede usar:
@@ -401,6 +430,7 @@ npm run e2e:plan:headed
 npm run e2e:plan:generate
 npm run e2e:plan:generate:headed
 npm run e2e:plan:generate:quality
+npm run e2e:plan:readiness
 npm run e2e:plan:accept
 ```
 
@@ -410,6 +440,7 @@ Notas:
 - `e2e:plan:generate` genera un plan con Gemini en Playwright headless y modifica draft/perfil.
 - `e2e:plan:generate:headed` hace lo mismo con navegador visible, útil para login.
 - `e2e:plan:generate:quality` genera y guarda el export Beta Quality en `scripts/e2e-artifacts/`.
+- `e2e:plan:readiness` apunta por defecto a Netlify Dev (`http://localhost:8888`), genera un plan real y exige los gates del producto estrella: 8-12 semanas, ≥80% IA, calidad ≥78, menos de 2 minutos, integridad de sesiones, uso de 1RM y rotación de fuerza. Guarda un reporte timestamped y actualiza `scripts/e2e-artifacts/plan-builder-readiness-latest.json`.
 - `e2e:plan:accept` genera y acepta el plan; modifica datos dev/locales.
 
 ### Load Test
@@ -469,7 +500,13 @@ Para generar y exportar el reporte Beta Quality automáticamente:
 npm run e2e:plan:generate:quality
 ```
 
-6. Antes de cualquier deploy:
+6. Levantar Netlify Dev (`npx netlify dev`) y ejecutar el gate del producto estrella con un evento configurado a 8-12 semanas:
+
+```bash
+npm run e2e:plan:readiness
+```
+
+7. Antes de cualquier deploy:
 
 ```bash
 npm run lint
@@ -512,12 +549,15 @@ Localmente:
 - memoria del coach
 - athlete profile
 - planes y semanas del Plan Builder
+- roster local y alcance del atleta activo
+- resumen diario de readiness de Whoop, si el usuario lo conecta
 - logs locales de AI/quality
 
 Remotamente, si el usuario esta autenticado y el sync esta activo:
 
 - entidades principales del dominio asociadas al usuario
 - datos necesarios para continuidad multi-dispositivo
+- credenciales Whoop cifradas y datos biométricos crudos, solo en servidor; el cliente no los lee
 
 No se deberian persistir prompts completos ni respuestas completas del provider como telemetria operacional de beta.
 
@@ -539,8 +579,9 @@ Esto sirve para pruebas personales y beta interna. Para una beta externa, el sig
 
 - El proyecto todavia esta orientado a beta interna, no a beta abierta.
 - La calidad del coach debe seguir midiendose con E2E + uso real.
-- La telemetria persistente de beta todavia necesita endurecerse.
+- La telemetria persistente resumida sigue pendiente para una beta externa.
 - El sync requiere QA real multi-dispositivo antes de usuarios externos.
+- Whoop requiere aplicar la migracion `011`, smoke de produccion y consentimiento biometrico antes de exponerlo a terceros.
 - Los providers directos en browser son solo para dev; produccion debe usar proxy.
 - PDF import sigue siendo una parte pesada cuando se usa.
 - Notificaciones web tienen limites propios del navegador.
@@ -549,12 +590,12 @@ Esto sirve para pruebas personales y beta interna. Para una beta externa, el sig
 
 Prioridad actual:
 
-1. Consolidar pruebas personales con Gemini.
-2. Lograr que el coach genere semanas que el owner usaria realmente.
-3. Validar Plan Builder con generacion y aceptacion.
-4. Mejorar observabilidad persistente para beta.
-5. Probar sync real entre desktop y mobile.
-6. Recien despues invitar 3-5 usuarios cercanos.
+1. Aplicar y verificar la migracion `011` de Whoop en produccion.
+2. Completar el smoke de OAuth, sync, readiness, prefill y borrado de Whoop.
+3. Publicar consentimiento biometrico antes de exponer Whoop a terceros.
+4. Probar sync real entre desktop y mobile.
+5. Consolidar planes arquetipo y la calidad deportiva del coach.
+6. Recien despues invitar usuarios cercanos al piloto.
 
 ## Documentos Utiles
 
@@ -565,4 +606,4 @@ Prioridad actual:
 
 ## Estado en Una Frase
 
-Entrenador ya es una app deportiva real y usable, con una base tecnica seria; el foco ahora no es agregar mas features, sino comprobar estabilidad, calidad del coach, Plan Builder y sync hasta que sea confiable para usuarios externos.
+RallyIQ ya es una app deportiva real y usable, con soporte multi-atleta y readiness opcional de Whoop; el foco ahora es comprobar estabilidad, calidad del coach, Plan Builder, sync y los gates operativos antes de abrir el piloto.

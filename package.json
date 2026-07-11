@@ -1,11 +1,22 @@
 {
-  "name": "entrenador-app",
+  "name": "rallyiq",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
+  "description": "PWA local-first para planificación deportiva y coaching asistido por IA.",
   "type": "module",
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0",
+    "npm": ">=10"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "cap:sync": "cap sync",
+    "cap:copy": "cap copy",
+    "ios:add": "cap add ios",
+    "ios:open": "cap open ios",
+    "ios:sync": "npm run build && cap sync ios",
+    "build:ios": "npm run ios:sync",
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",
@@ -23,10 +34,20 @@
     "e2e:plan:generate": "node scripts/e2e-plan-builder-test.mjs --generate",
     "e2e:plan:generate:headed": "node scripts/e2e-plan-builder-test.mjs --generate --headed",
     "e2e:plan:generate:quality": "node scripts/e2e-plan-builder-test.mjs --generate --export-quality",
+    "e2e:plan:readiness": "E2E_BASE_URL=${E2E_BASE_URL:-http://localhost:8888} node scripts/e2e-plan-builder-test.mjs --evaluate-readiness --export-quality --headed",
     "e2e:plan:accept": "node scripts/e2e-plan-builder-test.mjs --accept --headed"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.88.0",
+    "@capacitor/app": "^8.1.0",
+    "@capacitor/browser": "^8.0.3",
+    "@capacitor/core": "^8.4.1",
+    "@capacitor/ios": "^8.4.1",
+    "@capacitor/keyboard": "^8.0.5",
+    "@capacitor/local-notifications": "^8.2.0",
+    "@capacitor/preferences": "^8.0.1",
+    "@capacitor/splash-screen": "^8.0.1",
+    "@capacitor/status-bar": "^8.0.2",
     "@netlify/functions": "^5.2.0",
     "@supabase/supabase-js": "^2.101.1",
     "date-fns": "^4.1.0",
@@ -39,6 +60,7 @@
     "zustand": "^5.0.12"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.4.1",
     "@eslint/js": "^9.39.4",
     "@types/node": "^24.12.0",
     "@types/react": "^19.2.14",

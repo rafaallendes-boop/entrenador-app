@@ -15,6 +15,13 @@ vi.mock('../syncService', () => ({
   canWriteAthleteProfileLocally: vi.fn(() => true),
 }))
 
+vi.mock('../readiness/pullWorkouts', () => ({
+  pullWorkouts: vi.fn(async () => {}),
+}))
+vi.mock('../readiness/autoCompleteFromWorkouts', () => ({
+  autoCompleteFromWorkouts: vi.fn(async () => {}),
+}))
+
 import { db } from '../../db/db'
 import {
   ATHLETE_PROFILE_LOCAL_ID,
@@ -27,6 +34,8 @@ import { getPersistedAthleteSelection } from '../athlete/athleteSelection'
 import { switchActiveAthlete } from '../athlete/switchActiveAthlete'
 import { useAuthStore } from '../../store/useAuthStore'
 import { useCoachMemoryStore } from '../../store/useCoachMemoryStore'
+import { pullWorkouts } from '../readiness/pullWorkouts'
+import { autoCompleteFromWorkouts } from '../readiness/autoCompleteFromWorkouts'
 
 const OWNER = 'user-1'
 const SELF = 'ath_user-1'
@@ -80,6 +89,7 @@ function seedAthletes() {
 
 describe('switchActiveAthlete', () => {
   beforeEach(async () => {
+    vi.clearAllMocks()
     installLocalStorage()
     db.close()
     await db.delete()
@@ -132,6 +142,25 @@ describe('switchActiveAthlete', () => {
     expect(ok).toBe(true)
     expect(getPersistedAthleteSelection(OWNER)).toBeNull()
     expect(getActiveAthleteId()).toBe(SELF)
+    await vi.waitFor(() => expect(pullWorkouts).toHaveBeenCalledOnce())
+    expect(autoCompleteFromWorkouts).toHaveBeenCalledOnce()
+  })
+
+  it('does not pull workouts when switching to a managed athlete', async () => {
+    await seedAthletes()
+    await switchActiveAthlete(OWNER, MANAGED)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(pullWorkouts).not.toHaveBeenCalled()
+    expect(autoCompleteFromWorkouts).not.toHaveBeenCalled()
+  })
+
+  it('does not match stale cache when the pull fails after switching to self', async () => {
+    await seedAthletes()
+    await switchActiveAthlete(OWNER, MANAGED)
+    vi.mocked(pullWorkouts).mockRejectedValueOnce(new Error('offline'))
+    await switchActiveAthlete(OWNER, SELF)
+    await vi.waitFor(() => expect(pullWorkouts).toHaveBeenCalledOnce())
+    expect(autoCompleteFromWorkouts).not.toHaveBeenCalled()
   })
 
   it('invalid, foreign-owner or inactive targets are no-ops', async () => {

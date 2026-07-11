@@ -27,6 +27,7 @@
       radial-gradient(circle at bottom right, rgba(255, 235, 156, 0.05), transparent 24%),
       linear-gradient(180deg, rgba(19, 19, 19, 0.96) 0%, rgba(8, 8, 8, 1) 100%);
     background-attachment: fixed;
+    overscroll-behavior-y: none;
   }
 
   #root {
@@ -72,6 +73,10 @@
 
   .safe-bottom {
     padding-bottom: max(env(safe-area-inset-bottom, 0px), 8px);
+  }
+
+  .top-safe {
+    top: max(env(safe-area-inset-top, 0px), 16px);
   }
 
   .scrollbar-none {

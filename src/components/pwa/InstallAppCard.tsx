@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Download, Smartphone } from 'lucide-react'
 import Card from '../ui/Card'
+import { isNativePlatform } from '../../services/platform'
 
 interface DeferredPromptEvent extends Event {
   prompt: () => Promise<void>
@@ -13,10 +14,13 @@ function isStandaloneMode(): boolean {
 }
 
 export default function InstallAppCard() {
+  const isNative = isNativePlatform()
   const [deferredPrompt, setDeferredPrompt] = useState<DeferredPromptEvent | null>(null)
   const [isInstalled, setIsInstalled] = useState(() => isStandaloneMode())
 
   useEffect(() => {
+    if (isNative) return
+
     const onBeforeInstallPrompt = (event: Event) => {
       event.preventDefault()
       setDeferredPrompt(event as DeferredPromptEvent)
@@ -34,14 +38,14 @@ export default function InstallAppCard() {
       window.removeEventListener('beforeinstallprompt', onBeforeInstallPrompt)
       window.removeEventListener('appinstalled', onInstalled)
     }
-  }, [])
+  }, [isNative])
 
   const isIos = useMemo(
     () => /iphone|ipad|ipod/i.test(window.navigator.userAgent),
     [],
   )
 
-  if (isInstalled) return null
+  if (isNative || isInstalled) return null
 
   const handleInstall = async () => {
     if (!deferredPrompt) return

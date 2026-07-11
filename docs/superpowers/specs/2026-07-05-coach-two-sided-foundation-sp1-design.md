@@ -3,7 +3,7 @@
 > **Estado:** diseño aprobado (brainstorm 2026-07-05) + **enmienda de endurecimiento pre-plan 2026-07-09** (§2b). Próximo paso: plan de implementación (writing-plans) que arranca **solo con SP1a**; SP1b se planifica después.
 > **Contexto de producto:** habilitar que una cuenta-atleta con login propio y una cuenta-coach compartan **el mismo perfil de atleta** (misma data), con acceso por membresía, sin fugas cross-cuenta y sin romper el flujo single-athlete actual.
 >
-> **Veredicto de revisión (2026-07-09):** dirección correcta (memberships canónica, transición owner/linked, split SP1a/SP1b, acople Whoop en `012+`/Dexie v16). Antes de codear se cerraron seis decisiones en §2b: autoría de sesiones, ruteo de completación en sync/offline, PK de `athlete_coach_notes`, lifecycle en reset/export/borrado, lista explícita de RLS tabla-por-tabla, y secuencia claim-antes-de-bootstrap. El plan parte **solo por SP1a** (migraciones `012a/012b/012c`, Dexie v16, memberships pull-only, self link-aware, RLS v2, smoke con membresías sembradas); SP1b (invitaciones/UI) va después.
+> **Veredicto de revisión (2026-07-09):** dirección correcta (memberships canónica, transición owner/linked, split SP1a/SP1b, acople Whoop en `013+`/Dexie v17). Antes de codear se cerraron seis decisiones en §2b: autoría de sesiones, ruteo de completación en sync/offline, PK de `athlete_coach_notes`, lifecycle en reset/export/borrado, lista explícita de RLS tabla-por-tabla, y secuencia claim-antes-de-bootstrap. El plan parte **solo por SP1a** (migraciones `013a/013b/013c`, Dexie v17, memberships pull-only, self link-aware, RLS v2, smoke con membresías sembradas); SP1b (invitaciones/UI) va después.
 
 Este spec es SP1 dentro de una descomposición mayor de la nueva UI de coach:
 
@@ -32,8 +32,8 @@ Este spec es SP1 dentro de una descomposición mayor de la nueva UI de coach:
 
 ## 1b. Coordinación con Whoop (Track B, se ejecuta ANTES que SP1)
 
-Whoop (`docs/superpowers/specs/2026-06-21-whoop-integration-design.md`) aterriza primero y toma
-migración SQL `011` + Dexie `v15`. SP1 arranca en `012+` / Dexie `v16+`. Cuando SP1 reescriba la
+Whoop v1 (`011_whoop_integration.sql`) aterriza primero y toma
+migración SQL `011` + `012_whoop_workouts.sql`, y Dexie `v16`. SP1 arranca en `013+` / Dexie `v17+`. Cuando SP1 reescriba la
 RLS athlete-scoped y la resolución de "self", **debe barrer también lo que Whoop dejó**:
 
 - **RLS:** incluir `readiness_daily` (y `biometric_readings`, aunque es server-only) en la migración
@@ -317,12 +317,12 @@ Post-reclamo, la UI puede distinguir dato propio vs editado por coach usando `up
 
 ## 9. Fase del plan
 
-> **El plan de implementación arranca solo con SP1a.** SP1b se planifica y ejecuta después, para no reabrir el contrato de datos/acceso mientras se estabiliza la fundación. Numeración reservada: migraciones **`012a` (preflight/expand), `012b` (backfill + trigger), `012c` (contract diferido)**, siguiendo el patrón `010a/b/c`; **Dexie v16** (v15 la tomó Whoop, §1b).
+> **El plan de implementación arranca solo con SP1a.** SP1b se planifica y ejecuta después, para no reabrir el contrato de datos/acceso mientras se estabiliza la fundación. Numeración reservada: migraciones **`013a` (preflight/expand), `013b` (backfill + trigger), `013c` (contract diferido)**, siguiendo el patrón `010a/b/c`; **Dexie v17** (v15/v16 las tomó Whoop, §1b).
 
 ### SP1a — Fundación de datos y acceso (sin flujos de invitación)
-- Migración `012a/012b/012c`: `athlete_memberships`, `athlete_invites`, `athlete_coach_notes`, columnas provenance (incl. `authored_by_role` en `sessions`, **D1**), backfill, trigger anti-reparenting, invariantes.
+- Migración `013a/013b/013c`: `athlete_memberships`, `athlete_invites`, `athlete_coach_notes`, columnas provenance (incl. `authored_by_role` en `sessions`, **D1**), backfill, trigger anti-reparenting, invariantes.
 - Helper `auth_athlete_ids()`/`auth_coach_athlete_ids()` + RLS v2 lectura + escritura por rol + `mark_session_done`. **La migración lista explícitamente las tablas de D5 (§2b)** y confirma las server-only.
-- Cliente: **Dexie v16**, `getSelfAthleteId` link-aware, hidratación por membresías **con gate `claim-pending` que bloquea el bootstrap `ath_<uid>` (D6)**, sync pull por membresías, ruteo de op `session_completion` vía RPC (**D2**), `athlete_coach_notes` en sync, `athlete_memberships` pull-only.
+- Cliente: **Dexie v17**, `getSelfAthleteId` link-aware, hidratación por membresías **con gate `claim-pending` que bloquea el bootstrap `ath_<uid>` (D6)**, sync pull por membresías, ruteo de op `session_completion` vía RPC (**D2**), `athlete_coach_notes` en sync, `athlete_memberships` pull-only.
 - Lifecycle: reset/export/borrado según **D4** (memberships/invites fuera del export; `coach_memory` fuera del export self-triggered).
 - Extracción de `coachMemory` → `athlete_coach_notes` (con revisión de `promptBuilder`).
 - Testeable con membresías **sembradas** (sin UI de invitación todavía).

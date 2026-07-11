@@ -1,5 +1,11 @@
-import type { FetchImpl, WhoopRaw, WhoopTokens } from './whoopClient'
-import type { BiometricReadingRow, ReadinessRow, StoredConnection, WhoopDb } from './whoopSupabase'
+import {
+  WHOOP_WORKOUT_RECONCILE_MARGIN_DAYS,
+  WHOOP_WORKOUT_WINDOW_DAYS,
+  type FetchImpl,
+  type WhoopRaw,
+  type WhoopTokens,
+} from './whoopClient'
+import type { BiometricReadingRow, ReadinessRow, StoredConnection, WhoopDb, WorkoutRow } from './whoopSupabase'
 
 export const MANUAL_COOLDOWN_MS = 300_000
 
@@ -22,11 +28,32 @@ export interface WhoopSyncDeps {
   ) => Promise<void>
   upsertReadiness: (db: WhoopDb, userId: string, athleteId: string, rows: ReadinessRow[]) => Promise<void>
   upsertBiometricReadings: (db: WhoopDb, userId: string, athleteId: string, rows: BiometricReadingRow[]) => Promise<void>
-  ensureFreshToken: (conn: WhoopTokens, deps?: { fetchImpl?: FetchImpl }) => Promise<{ accessToken: string; refreshed?: WhoopTokens }>
-  fetchWhoopData: (accessToken: string, opts?: { fetchImpl?: FetchImpl; days?: number }) => Promise<WhoopRaw>
+  upsertWorkouts: (db: WhoopDb, userId: string, athleteId: string, rows: WorkoutRow[]) => Promise<void>
+  reconcileWorkouts: (
+    db: WhoopDb,
+    userId: string,
+    athleteId: string,
+    windowStartIso: string,
+    keepWorkoutIds: string[],
+  ) => Promise<void>
+  ensureFreshToken: (conn: WhoopTokens, deps?: { fetchImpl?: FetchImpl }) => Promise<{
+    accessToken: string
+    refreshed?: WhoopTokens & { scopes?: string }
+  }>
+  fetchWhoopData: (accessToken: string, opts?: {
+    fetchImpl?: FetchImpl
+    days?: number
+    includeWorkouts?: boolean
+    workoutWindowStartIso?: string
+  }) => Promise<WhoopRaw>
   normalizeWhoop: (raw: WhoopRaw) => { readiness: ReadinessRow[]; readings: BiometricReadingRow[] }
+  normalizeWorkouts: (raw: WhoopRaw) => WorkoutRow[]
   fetchImpl?: FetchImpl
   now?: () => number
+}
+
+export function hasWorkoutScope(scopes: string | null | undefined): boolean {
+  return (scopes ?? '').split(/[\s,]+/).includes('read:workout')
 }
 
 function isRateLimited(error: unknown): boolean {
@@ -59,14 +86,40 @@ export async function runWhoopSync(
   try {
     const { accessToken, refreshed } = await deps.ensureFreshToken(conn, { fetchImpl: deps.fetchImpl })
     if (refreshed) {
-      await deps.upsertConnection(deps.db, { ...conn, ...refreshed })
+      await deps.upsertConnection(deps.db, {
+        ...conn,
+        ...refreshed,
+        scopes: refreshed.scopes ?? conn.scopes,
+      })
     }
 
     const days = input.days ?? 7
-    const raw = await deps.fetchWhoopData(accessToken, { fetchImpl: deps.fetchImpl, days })
+    const workoutWindowStartIso = new Date(
+      now() - (WHOOP_WORKOUT_WINDOW_DAYS + WHOOP_WORKOUT_RECONCILE_MARGIN_DAYS) * 86_400_000,
+    ).toISOString()
+    const raw = await deps.fetchWhoopData(accessToken, {
+      fetchImpl: deps.fetchImpl,
+      days,
+      includeWorkouts: hasWorkoutScope(conn.scopes),
+      workoutWindowStartIso,
+    })
     const normalized = deps.normalizeWhoop(raw)
     await deps.upsertReadiness(deps.db, input.userId, athleteId, normalized.readiness)
     await deps.upsertBiometricReadings(deps.db, input.userId, athleteId, normalized.readings)
+
+    // Only a successfully fetched collection is authoritative. null means
+    // omitted or unauthorized, and must never trigger deletion.
+    if (raw.workouts !== null) {
+      const workoutRows = deps.normalizeWorkouts(raw)
+      await deps.upsertWorkouts(deps.db, input.userId, athleteId, workoutRows)
+      await deps.reconcileWorkouts(
+        deps.db,
+        input.userId,
+        athleteId,
+        workoutWindowStartIso,
+        workoutRows.map((row) => row.workoutId),
+      )
+    }
 
     const nowIso = new Date(now()).toISOString()
     await deps.setSyncResult(deps.db, input.userId, {

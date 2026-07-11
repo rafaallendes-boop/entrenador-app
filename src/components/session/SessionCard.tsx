@@ -46,6 +46,20 @@ export const SQUASH_BLOCKS_DURATION_GUIDANCE =
 export const SQUASH_DRILLS_DURATION_GUIDANCE =
   'La duracion total de la sesion es la referencia principal. Los drills listados sirven como guia.'
 
+function WhoopSyncBadge() {
+  return (
+    <span
+      className="inline-flex items-center gap-1 rounded-full border border-sky-500/25 bg-sky-500/15 px-2 py-0.5 text-[10px] font-medium text-sky-400"
+      title="Sesion completada automaticamente desde Whoop"
+    >
+      <svg viewBox="0 0 16 16" width="10" height="10" aria-hidden="true" className="fill-current">
+        <path d="M1 3h2l2 7 2-6h2l2 6 2-7h2l-3 10H10L8 7l-2 6H4L1 3z" />
+      </svg>
+      Sincronizado desde Whoop
+    </span>
+  )
+}
+
 interface SessionCardProps {
   session: Session
   compact?: boolean
@@ -217,6 +231,9 @@ export default function SessionCard({ session, compact = false, onDelete }: Sess
           </div>
         </div>
         <div className="flex flex-shrink-0 items-center gap-2 self-start md:self-center">
+          {session.status === 'completed' && session.autoCompletion?.source === 'whoop_workout' && (
+            <WhoopSyncBadge />
+          )}
           {onDelete && !compact && (
             <button
               onClick={(e) => {

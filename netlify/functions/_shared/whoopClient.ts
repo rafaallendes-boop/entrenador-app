@@ -13,12 +13,15 @@ export interface WhoopTokens {
   accessToken: string
   refreshToken: string
   expiresAt: string
+  scopes?: string | null
 }
 
 export interface WhoopRaw {
   recovery: unknown[]
   sleep: unknown[]
   cycles: unknown[]
+  /** null means the collection was not obtained; [] means fetched and empty. */
+  workouts: unknown[] | null
 }
 
 interface TokenResponse {
@@ -93,20 +96,23 @@ export async function exchangeCode(input: { code: string; fetchImpl?: FetchImpl 
 export async function ensureFreshToken(
   conn: WhoopTokens,
   deps: { fetchImpl?: FetchImpl } = {},
-): Promise<{ accessToken: string; refreshed?: WhoopTokens }> {
+): Promise<{ accessToken: string; refreshed?: WhoopTokens & { scopes?: string } }> {
   const expiresMs = new Date(conn.expiresAt).getTime()
   if (Number.isFinite(expiresMs) && expiresMs - REFRESH_SKEW_MS > Date.now()) {
     return { accessToken: conn.accessToken }
   }
 
   const fetchImpl = deps.fetchImpl ?? fetch
-  const refreshed = await requestTokens({
+  const refreshBody: Record<string, string> = {
     grant_type: 'refresh_token',
     refresh_token: conn.refreshToken,
     client_id: env('WHOOP_CLIENT_ID'),
     client_secret: env('WHOOP_CLIENT_SECRET'),
-    scope: 'offline',
-  }, fetchImpl as FetchImpl)
+  }
+  // Re-send the granted scopes when known. For legacy rows, omitting scope
+  // preserves the original grant and avoids narrowing the token to offline.
+  if (conn.scopes) refreshBody.scope = conn.scopes
+  const refreshed = await requestTokens(refreshBody, fetchImpl as FetchImpl)
   return { accessToken: refreshed.accessToken, refreshed }
 }
 
@@ -140,7 +146,9 @@ async function getCollection(
           retryAfterMs: retryAfter ? Number(retryAfter) * 1000 : undefined,
         })
       }
-      throw new Error(`Whoop API ${path} failed: ${response.status}`)
+      throw Object.assign(new Error(`Whoop API ${path} failed: ${response.status}`), {
+        status: response.status,
+      })
     }
 
     const data = await response.json() as CollectionResponse
@@ -151,22 +159,44 @@ async function getCollection(
   return records
 }
 
+// Deliberately duplicated in src/services/readiness/pullWorkouts.ts. The
+// server fetches a wider window to cover at least one daily-cron interval.
+export const WHOOP_WORKOUT_WINDOW_DAYS = 14
+export const WHOOP_WORKOUT_RECONCILE_MARGIN_DAYS = 2
+
 export async function fetchWhoopData(
   accessToken: string,
-  opts: { fetchImpl?: FetchImpl; days?: number } = {},
+  opts: {
+    fetchImpl?: FetchImpl
+    days?: number
+    includeWorkouts?: boolean
+    workoutWindowStartIso?: string
+  } = {},
 ): Promise<WhoopRaw> {
   const fetchImpl = opts.fetchImpl ?? fetch
   const days = opts.days ?? 7
   const end = new Date().toISOString()
   const start = new Date(Date.now() - days * 86_400_000).toISOString()
+  const workoutStart = opts.workoutWindowStartIso
+    ?? new Date(Date.now() - (WHOOP_WORKOUT_WINDOW_DAYS + WHOOP_WORKOUT_RECONCILE_MARGIN_DAYS) * 86_400_000).toISOString()
   const base = env('WHOOP_API_BASE')
 
-  const [recovery, sleep, cycles] = await Promise.all([
+  const workoutsPromise: Promise<unknown[] | null> = opts.includeWorkouts
+    ? getCollection(base, '/v2/activity/workout', accessToken, workoutStart, end, fetchImpl as FetchImpl)
+        .catch((error: unknown) => {
+          const status = (error as { status?: number }).status
+          if (status === 401 || status === 403) return null
+          throw error
+        })
+    : Promise.resolve(null)
+
+  const [recovery, sleep, cycles, workouts] = await Promise.all([
     getCollection(base, '/v2/recovery', accessToken, start, end, fetchImpl as FetchImpl),
     getCollection(base, '/v2/activity/sleep', accessToken, start, end, fetchImpl as FetchImpl),
     getCollection(base, '/v2/cycle', accessToken, start, end, fetchImpl as FetchImpl),
+    workoutsPromise,
   ])
-  return { recovery, sleep, cycles }
+  return { recovery, sleep, cycles, workouts }
 }
 
 export async function revokeWhoopAccess(

@@ -7,8 +7,10 @@ import {
   disconnectWhoop,
   startWhoopConnect,
 } from '../../services/readiness/whoopApi'
-import { clearLocalWhoopReadiness } from '../../services/readiness/localReadiness'
+import { clearLocalWhoopReadiness, clearLocalWhoopWorkouts } from '../../services/readiness/localReadiness'
 import { useWhoopSync } from '../../hooks/useWhoopSync'
+import { Browser } from '@capacitor/browser'
+import { isNativePlatform } from '../../services/platform'
 
 export function WhoopConnection() {
   const activeAthleteFromStore = useAuthStore((state) => state.activeAthleteId)
@@ -28,6 +30,9 @@ export function WhoopConnection() {
   const activeAthleteId = activeAthleteFromStore ?? getActiveAthleteId()
   const selfAthleteId = getSelfAthleteId()
   const canConnect = activeAthleteId != null && selfAthleteId != null && activeAthleteId === selfAthleteId
+  const needsWorkoutScope = canConnect
+    && Boolean(status?.connected)
+    && !(status?.scopes ?? []).includes('read:workout')
   const actionBusy = busy || syncing
   const displayMessage = message ?? syncMessage
 
@@ -42,16 +47,49 @@ export function WhoopConnection() {
     return date.toLocaleString()
   }, [status?.lastSyncAt])
 
+  const launchWhoopOAuth = async () => {
+    const url = await startWhoopConnect()
+    if (isNativePlatform()) {
+      // The Whoop OAuth callback redirects to the web /settings page, which loads
+      // *inside* the in-app browser and cannot deep-link back to the native app
+      // (unlike the app's own rallyiq:// auth callback). The connection is stored
+      // server-side, so refresh the status once the user dismisses the sheet to
+      // reflect the result — otherwise the UI would stay "not connected".
+      const listener = await Browser.addListener('browserFinished', () => {
+        void listener.remove()
+        void refresh()
+      })
+      await Browser.open({ url, presentationStyle: 'popover' })
+    } else {
+      window.location.href = url
+    }
+  }
+
   const onConnect = async () => {
     if (!canConnect || !biometricConsent) return
     setMessage(null)
     clearSyncMessage()
     setBusy(true)
     try {
-      window.location.href = await startWhoopConnect()
+      await launchWhoopOAuth()
     } catch (error) {
       console.error('[whoop] connect failed', error)
       setMessage('No se pudo iniciar la conexion con Whoop.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const onReconnect = async () => {
+    if (!canConnect) return
+    setMessage(null)
+    clearSyncMessage()
+    setBusy(true)
+    try {
+      await launchWhoopOAuth()
+    } catch (error) {
+      console.error('[whoop] reconnect failed', error)
+      setMessage('No se pudo iniciar la reconexion con Whoop.')
     } finally {
       setBusy(false)
     }
@@ -69,7 +107,12 @@ export function WhoopConnection() {
     clearSyncMessage()
     try {
       await disconnectWhoop()
-      await clearLocalWhoopReadiness(activeAthleteId)
+      if (selfAthleteId) {
+        await clearLocalWhoopReadiness(selfAthleteId)
+        await clearLocalWhoopWorkouts(selfAthleteId)
+      } else {
+        console.warn('[whoop] disconnected before self athlete hydration; local cache retained')
+      }
       setMessage('Whoop desconectado.')
       await refresh()
     } catch (error) {
@@ -109,6 +152,22 @@ export function WhoopConnection() {
               {status.lastSyncStatus === 'error' ? ' · ultimo intento fallo' : ''}
             </p>
           </div>
+          {needsWorkoutScope && (
+            <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-3">
+              <p className="text-xs leading-relaxed text-amber-300">
+                Reconecta Whoop para sincronizar entrenamientos.
+              </p>
+              <button
+                type="button"
+                disabled={actionBusy}
+                onClick={() => void onReconnect()}
+                className="mt-2 inline-flex items-center gap-2 rounded-xl bg-brand px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-brand-light disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <Link size={12} />
+                Reconectar Whoop
+              </button>
+            </div>
+          )}
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
@@ -149,7 +208,7 @@ export function WhoopConnection() {
                   className="mt-0.5 h-4 w-4 rounded border-surface-border bg-surface"
                 />
                 <span className="text-xs leading-relaxed text-ink-muted">
-                  Acepto usar datos biometricos de Whoop para contexto de entrenamiento. No reemplaza consejo medico y puedo desconectar o borrar estos datos.
+                  Acepto usar datos biométricos de Whoop para contexto de entrenamiento. No reemplaza consejo médico y puedo desconectar o borrar estos datos.
                 </span>
               </label>
               <button

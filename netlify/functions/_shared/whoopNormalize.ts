@@ -3,6 +3,7 @@ import {
   READINESS_METRIC_CLEAR,
   type BiometricReadingRow,
   type ReadinessRow,
+  type WorkoutRow,
 } from './whoopSupabase'
 
 type JsonObject = Record<string, unknown>
@@ -201,4 +202,45 @@ export function normalizeWhoop(raw: WhoopRaw): { readiness: ReadinessRow[]; read
   }
 
   return { readiness: [...byDay.values()].sort((a, b) => a.date.localeCompare(b.date)), readings }
+}
+
+export function normalizeWhoopSportName(value: unknown): string | null {
+  const raw = stringValue(value)
+  if (!raw) return null
+  const cleaned = raw.toLowerCase().replace(/[\s_]+/g, ' ').trim()
+  return cleaned || null
+}
+
+export function normalizeWorkouts(raw: WhoopRaw): WorkoutRow[] {
+  const rows: WorkoutRow[] = []
+  for (const item of raw.workouts ?? []) {
+    const workout = asObject(item)
+    const workoutId = stringValue(workout.id)
+    const start = stringValue(workout.start)
+    const end = stringValue(workout.end)
+    const sportName = normalizeWhoopSportName(workout.sport_name)
+    const scoreState = scoreStateOf(workout)
+    const date = dayOf(workout.start, workout.timezone_offset)
+    if (!workoutId || !start || !end || !sportName || !scoreState || !date) continue
+
+    const startMs = new Date(start).getTime()
+    const endMs = new Date(end).getTime()
+    if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) continue
+
+    const score = scoreState === 'SCORED' ? asObject(workout.score) : {}
+    rows.push({
+      workoutId,
+      date,
+      sportName,
+      startAt: new Date(startMs).toISOString(),
+      endAt: new Date(endMs).toISOString(),
+      durationMin: Math.round((endMs - startMs) / 60_000),
+      strain: num(score.strain),
+      avgHr: num(score.average_heart_rate),
+      maxHr: num(score.max_heart_rate),
+      distanceM: num(score.distance_meter),
+      scoreState,
+    })
+  }
+  return rows.sort((a, b) => a.startAt.localeCompare(b.startAt) || a.workoutId.localeCompare(b.workoutId))
 }

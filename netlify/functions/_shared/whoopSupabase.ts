@@ -12,6 +12,8 @@ interface QueryResult<T = unknown> {
 interface QueryBuilder<T = unknown> extends PromiseLike<QueryResult<T>> {
   select(columns?: string): QueryBuilder<T>
   eq(column: string, value: unknown): QueryBuilder<T>
+  gte(column: string, value: unknown): QueryBuilder<T>
+  not(column: string, operator: string, value: unknown): QueryBuilder<T>
   in?(column: string, values: unknown[]): QueryBuilder<T>
   lt?(column: string, value: unknown): QueryBuilder<T>
   maybeSingle(): Promise<QueryResult<T>>
@@ -54,6 +56,22 @@ export interface BiometricReadingRow {
   value?: number | null
   recordedAt: string
   rawId?: string | null
+}
+
+export type WorkoutScoreState = 'SCORED' | 'PENDING_SCORE' | 'UNSCORABLE'
+
+export interface WorkoutRow {
+  workoutId: string
+  date: string
+  sportName: string
+  startAt: string
+  endAt: string
+  durationMin: number
+  strain: number | null
+  avgHr: number | null
+  maxHr: number | null
+  distanceM: number | null
+  scoreState: WorkoutScoreState
 }
 
 function table<T = unknown>(db: WhoopDb, name: string): QueryBuilder<T> {
@@ -261,8 +279,56 @@ export async function upsertBiometricReadings(
   if (error) throw new Error(`upsertBiometricReadings: ${message(error)}`)
 }
 
+export async function upsertWorkouts(
+  db: WhoopDb,
+  userId: string,
+  athleteId: string,
+  rows: WorkoutRow[],
+): Promise<void> {
+  if (rows.length === 0) return
+  const updatedAt = Date.now()
+  const payload = rows.map((row) => ({
+    workout_id: row.workoutId,
+    user_id: userId,
+    athlete_id: athleteId,
+    date: row.date,
+    sport_name: row.sportName,
+    start_at: row.startAt,
+    end_at: row.endAt,
+    duration_min: row.durationMin,
+    strain: row.strain,
+    avg_hr: row.avgHr,
+    max_hr: row.maxHr,
+    distance_m: row.distanceM,
+    score_state: row.scoreState,
+    updated_at: updatedAt,
+  }))
+  const { error } = await table(db, 'whoop_workouts').upsert(payload, { onConflict: 'workout_id' })
+  if (error) throw new Error(`upsertWorkouts: ${message(error)}`)
+}
+
+export async function reconcileWorkouts(
+  db: WhoopDb,
+  userId: string,
+  athleteId: string,
+  windowStartIso: string,
+  keepWorkoutIds: string[],
+): Promise<void> {
+  let query = table(db, 'whoop_workouts')
+    .delete()
+    .eq('user_id', userId)
+    .eq('athlete_id', athleteId)
+    .gte('start_at', windowStartIso)
+  if (keepWorkoutIds.length > 0) {
+    const list = keepWorkoutIds.map((id) => `"${id.replace(/"/g, '')}"`).join(',')
+    query = query.not('workout_id', 'in', `(${list})`)
+  }
+  const { error } = await query
+  if (error) throw new Error(`reconcileWorkouts: ${message(error)}`)
+}
+
 export async function deleteAllWhoopData(db: WhoopDb, userId: string): Promise<void> {
-  for (const name of ['whoop_oauth_states', 'biometric_readings', 'readiness_daily', 'whoop_connections']) {
+  for (const name of ['whoop_oauth_states', 'biometric_readings', 'readiness_daily', 'whoop_workouts', 'whoop_connections']) {
     const { error } = await table(db, name).delete().eq('user_id', userId)
     if (error && !isMissingRelationError(error)) {
       throw new Error(`deleteAllWhoopData ${name}: ${message(error)}`)
