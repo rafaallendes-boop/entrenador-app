@@ -31,6 +31,7 @@ export interface LocalDataCounts {
     sessions: number
     dayLogs: number
     readinessDaily: number
+    whoopWorkouts: number
     weekSummaries: number
     trainingPlans: number
     trainingPlanWeeks: number
@@ -70,10 +71,11 @@ export async function deleteCoachSessionsByIds(ids: string[]): Promise<number> {
 }
 
 export async function getLocalDataCounts(): Promise<LocalDataCounts> {
-  const [sessions, dayLogs, readinessDaily, weekSummaries, trainingPlans, trainingPlanWeeks, athletes, chatHistory, coachProposals, coachMemory] = await Promise.all([
+  const [sessions, dayLogs, readinessDaily, whoopWorkouts, weekSummaries, trainingPlans, trainingPlanWeeks, athletes, chatHistory, coachProposals, coachMemory] = await Promise.all([
     db.sessions.count(),
     db.dayLogs.count(),
     db.readinessDaily.count(),
+    db.whoopWorkouts?.count() ?? Promise.resolve(0),
     db.weekSummaries.count(),
     db.trainingPlans.count(),
     db.trainingPlanWeeks.count(),
@@ -88,6 +90,7 @@ export async function getLocalDataCounts(): Promise<LocalDataCounts> {
       sessions,
       dayLogs,
       readinessDaily,
+      whoopWorkouts,
       weekSummaries,
       trainingPlans,
       trainingPlanWeeks,
@@ -108,7 +111,7 @@ export async function clearSelectedLocalAppData(selection: LocalDataSelection): 
 
   await db.transaction(
     'rw',
-    [db.sessions, db.dayLogs, db.readinessDaily, db.whoopWorkouts, db.weekSummaries, db.trainingPlans, db.trainingPlanWeeks, db.chatMessages, db.coachProposals, db.athleteProfiles, db.athletes],
+    [db.sessions, db.dayLogs, db.readinessDaily, db.whoopWorkouts, db.weekSummaries, db.trainingPlans, db.trainingPlanWeeks, db.chatMessages, db.coachProposals, db.athleteProfiles, db.athletes, db.athleteMemberships, db.athleteCoachNotes],
     async () => {
       if (selection.trainingData) {
         await db.sessions.clear()
@@ -119,6 +122,7 @@ export async function clearSelectedLocalAppData(selection: LocalDataSelection): 
         await db.trainingPlanWeeks.clear()
         await db.trainingPlans.clear()
         await db.athletes.clear()
+        await db.athleteMemberships?.clear()
       }
       if (selection.chatHistory) {
         await db.chatMessages.clear()
@@ -128,6 +132,7 @@ export async function clearSelectedLocalAppData(selection: LocalDataSelection): 
       }
       if (selection.coachMemory) {
         await db.athleteProfiles.clear()
+        await db.athleteCoachNotes?.clear()
       }
     },
   )

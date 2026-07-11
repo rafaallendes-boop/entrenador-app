@@ -29,6 +29,7 @@ process.env['WHOOP_TOKEN_ENC_KEY'] = randomBytes(32).toString('base64')
 function makeFakeDb(initial: Partial<Tables> = {}) {
   const tables: Tables = {
     athletes: [],
+    athlete_memberships: [],
     whoop_oauth_states: [],
     whoop_connections: [],
     readiness_daily: [],
@@ -186,6 +187,15 @@ describe('whoopSupabase', () => {
     })
 
     await expect(resolveSelfAthleteId(db, 'u1')).resolves.toBe('ath_u1')
+  })
+
+  it('resolveSelfAthleteId prefers the canonical self membership', async () => {
+    const db = makeFakeDb({
+      athlete_memberships: [{ athlete_id: 'ath_claimed', account_id: 'u1', role: 'self' }],
+      athletes: [{ id: 'ath_u1', owner_account_id: 'u1', status: 'active' }],
+    })
+
+    await expect(resolveSelfAthleteId(db, 'u1')).resolves.toBe('ath_claimed')
   })
 
   it('batch upserts readiness rows', async () => {

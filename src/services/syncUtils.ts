@@ -1,5 +1,5 @@
 import type { AthleteProfile } from '../types'
-import { ATHLETE_PROFILE_LOCAL_ID } from './athlete/activeAthlete'
+import { ATHLETE_PROFILE_LOCAL_ID, getSelfAthleteId } from './athlete/activeAthlete'
 import { isScopedAthleteId } from './athlete/effectiveAthleteKey'
 import { athleteIdForOwner } from './athlete/athleteScopeMigration'
 
@@ -14,6 +14,8 @@ export type SupabaseTable =
   | 'athlete_profiles'
   | 'training_plans'
   | 'training_plan_weeks'
+  | 'athlete_memberships'
+  | 'athlete_coach_notes'
 
 // ─── Typed error classification ──────────────────────────────────────────────
 
@@ -307,7 +309,7 @@ export function classifyAthleteProfileSyncError(error: unknown): string {
 export interface OfflineOp {
   userId: string
   table: SupabaseTable
-  action: 'upsert' | 'delete'
+  action: 'upsert' | 'delete' | 'session_completion'
   payload: Record<string, unknown>
   enqueuedAt: number
   /** Number of times this op has been attempted and failed */
@@ -428,7 +430,9 @@ export function athleteProfileToRow(profile: AthleteProfile, userId: string): Re
     // must not re-scope the self row). Post-009 invariant: never null — the
     // composite unique (user_id, athlete_id) does not deduplicate NULLs, so a
     // null upsert would insert instead of conflict.
-    athlete_id: localId === ATHLETE_PROFILE_LOCAL_ID ? athleteIdForOwner(userId) : localId,
+    athlete_id: localId === ATHLETE_PROFILE_LOCAL_ID
+      ? (getSelfAthleteId() ?? athleteIdForOwner(userId))
+      : localId,
     coach_memory: coachMemory ?? null,
     updated_at: updatedAt,
     data: Object.keys(dataEntries).length > 0 ? dataEntries : null,
@@ -457,7 +461,7 @@ export function createAthleteProfileFullResetRow(userId: string, resetAt: number
   return normalizeAthleteProfilePayload({
     id: getAthleteProfileRemoteId(userId, ATHLETE_PROFILE_LOCAL_ID),
     user_id: userId,
-    athlete_id: athleteIdForOwner(userId),
+    athlete_id: getSelfAthleteId() ?? athleteIdForOwner(userId),
     coach_memory: null,
     updated_at: resetAt,
     data: {
@@ -835,10 +839,25 @@ export function shouldReplaceQueuedOp(existing: OfflineOp, incoming: OfflineOp):
     return true
   }
 
+  if (incoming.action === 'session_completion') {
+    return existing.action === 'session_completion' || existing.action === 'upsert'
+  }
+
   return existing.action === 'upsert'
 }
 
 export function getOfflineOpEntityId(op: OfflineOp): string | null {
-  const id = op.payload.id
-  return typeof id === 'string' && id.length > 0 ? id : null
+  return getEntityIdFromPayload(op.table, op.payload)
+}
+
+export function getEntityIdFromPayload(
+  table: SupabaseTable,
+  payload: Record<string, unknown>,
+): string | null {
+  if (typeof payload.id === 'string' && payload.id.length > 0) return payload.id
+  if (typeof payload.p_session_id === 'string' && payload.p_session_id.length > 0) return payload.p_session_id
+  if (table === 'athlete_coach_notes'
+    && typeof payload.athlete_id === 'string'
+    && payload.athlete_id.length > 0) return payload.athlete_id
+  return null
 }

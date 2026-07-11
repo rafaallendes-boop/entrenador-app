@@ -75,7 +75,7 @@ export function buildWeekCreatorPrompt(
     buildProgressionContext(config, recentHistory, recentLogs),
     buildCurrentWeekSessionsSummary(targetWeekSessions, input.targetWeekStart),
     buildRecentCoachAdviceSummary(context.recentMessages),
-    profile?.coachMemory?.trim() ? `## MEMORIA DEL COACH\n${profile.coachMemory.trim()}` : '',
+    context.athleteMemory?.trim() ? `## MEMORIA DEL COACH\n${context.athleteMemory.trim()}` : '',
     input.retryInstruction ? `## CORRECCIÓN DEL INTENTO ANTERIOR\n${input.retryInstruction}` : '',
     input.strictFormatting
       ? 'Modo estricto: si dudas, prioriza targetDate correcto, fechas válidas, número exacto de sesiones y detalles obligatorios por deporte antes que creatividad.'

@@ -2,6 +2,7 @@ import { db } from '../../db/db'
 import { setActiveAthleteId, setSelfAthleteId } from './activeAthlete'
 import { athleteIdForOwner } from './athleteScopeMigration'
 import { getPersistedAthleteSelection, persistAthleteSelection } from './athleteSelection'
+import { getMembershipAthleteIds, getSelfMembership } from './membershipCache'
 
 /**
  * Resolve the owner's athletes and publish them to the module holders.
@@ -18,14 +19,19 @@ import { getPersistedAthleteSelection, persistAthleteSelection } from './athlete
  * athlete id, or null pre-migration (legacy user_id scope).
  */
 export async function hydrateActiveAthlete(ownerAccountId: string): Promise<string | null> {
-  const selfRow = await db.athletes.get(athleteIdForOwner(ownerAccountId))
-  const selfId = selfRow?.id ?? null
+  const selfMembership = await getSelfMembership(ownerAccountId)
+  const legacySelfRow = selfMembership ? null : await db.athletes.get(athleteIdForOwner(ownerAccountId))
+  const selfId = selfMembership?.athleteId ?? legacySelfRow?.id ?? null
   setSelfAthleteId(selfId)
 
   const persisted = getPersistedAthleteSelection(ownerAccountId)
   if (persisted && persisted !== selfId) {
-    const row = await db.athletes.get(persisted)
-    const isValid = !!row && row.ownerAccountId === ownerAccountId && row.status === 'active'
+    const [row, memberIds] = await Promise.all([
+      db.athletes.get(persisted),
+      getMembershipAthleteIds(ownerAccountId),
+    ])
+    const isValid = memberIds.includes(persisted)
+      || (!!row && row.ownerAccountId === ownerAccountId && row.status === 'active')
     if (isValid) {
       setActiveAthleteId(persisted)
       return persisted

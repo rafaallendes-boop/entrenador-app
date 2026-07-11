@@ -2,6 +2,7 @@ import { db } from '../db/db'
 import { APP_INFO } from '../constants/appInfo'
 import type {
   Athlete,
+  AthleteCoachNote,
   AthleteProfile,
   ChatMessage,
   CoachAction,
@@ -36,6 +37,8 @@ import { getActiveAthleteId } from './athlete/activeAthlete'
 import { effectiveAthleteKey, isScopedAthleteId } from './athlete/effectiveAthleteKey'
 import { invalidateBackfillMarker, markBackfillDirtyAfterImport } from './athlete/athleteScopeMigration'
 import { v4 as uuid } from '../utils/uuid'
+import { canExportCoachNotesFor } from './athlete/coachNoteExportPolicy'
+import { getMembershipsForAccount } from './athlete/membershipCache'
 
 const BACKUP_APP_NAME = 'RallyIQ' as const
 const LEGACY_BACKUP_APP_NAME = 'Entrenador' as const
@@ -111,6 +114,7 @@ export interface AppDataExport {
     coachProposals: CoachProposal[]
     athleteProfiles: AthleteProfile[]
     athletes: Athlete[]
+    athleteCoachNotes: AthleteCoachNote[]
   }
 }
 
@@ -142,6 +146,7 @@ export interface AppDataImportResult {
     coachProposals: number
     athleteProfiles: number
     athletes: number
+    athleteCoachNotes: number
   }
 }
 
@@ -179,7 +184,8 @@ function buildAthleteProfileFilename(exportedAt: Date): string {
 
 export async function exportAppData(): Promise<{ filename: string; json: string }> {
   const exportedAt = new Date()
-  const [sessions, dayLogs, readinessDaily, whoopWorkouts, weekSummaries, trainingPlans, trainingPlanWeeks, chatMessages, coachProposals, athleteProfiles, athletes] = await Promise.all([
+  const accountId = useAuthStore.getState().user?.id
+  const [sessions, dayLogs, readinessDaily, whoopWorkouts, weekSummaries, trainingPlans, trainingPlanWeeks, chatMessages, coachProposals, athleteProfiles, athletes, allNotes, memberships] = await Promise.all([
     db.sessions.toArray(),
     db.dayLogs.toArray(),
     db.readinessDaily.toArray(),
@@ -191,7 +197,23 @@ export async function exportAppData(): Promise<{ filename: string; json: string 
     db.coachProposals.toArray(),
     db.athleteProfiles.toArray(),
     db.athletes.toArray(),
+    db.athleteCoachNotes.toArray(),
+    accountId ? getMembershipsForAccount(accountId) : Promise.resolve([]),
   ])
+  const athleteCoachNotes = allNotes.filter((note) => {
+    if (!accountId || !canExportCoachNotesFor(note.athleteId, accountId, memberships)) return !accountId
+    const ownMembership = memberships.find((membership) => (
+      membership.athleteId === note.athleteId && membership.accountId === accountId
+    ))
+    if (ownMembership?.role !== 'self') return true
+    const athlete = athletes.find((candidate) => candidate.id === note.athleteId)
+    // The membership SELECT cache intentionally contains only the current
+    // account, so use the transitional owner/linked columns to distinguish a
+    // legacy self-only athlete from a claimed athlete owned by an external coach.
+    return !!athlete && (
+      athlete.ownerAccountId === accountId && athlete.linkedAccountId === accountId
+    )
+  })
 
   const payload: AppDataExport = {
     app: BACKUP_APP_NAME,
@@ -210,6 +232,7 @@ export async function exportAppData(): Promise<{ filename: string; json: string 
       coachProposals,
       athleteProfiles,
       athletes,
+      athleteCoachNotes,
     },
   }
 
@@ -306,6 +329,7 @@ export async function previewAppDataImportFile(file: File): Promise<AppDataImpor
       coachProposals: backup.tables.coachProposals.length,
       athleteProfiles: backup.tables.athleteProfiles.length,
       athletes: backup.tables.athletes.length,
+      athleteCoachNotes: backup.tables.athleteCoachNotes.length,
     },
     sessionDateRange,
     mergeConflicts,
@@ -598,7 +622,7 @@ export async function importAppDataFromFile(
   if (mode === 'replace') {
     await db.transaction(
       'rw',
-      [db.sessions, db.dayLogs, db.readinessDaily, db.whoopWorkouts, db.weekSummaries, db.trainingPlans, db.trainingPlanWeeks, db.chatMessages, db.coachProposals, db.athleteProfiles, db.athletes],
+      [db.sessions, db.dayLogs, db.readinessDaily, db.whoopWorkouts, db.weekSummaries, db.trainingPlans, db.trainingPlanWeeks, db.chatMessages, db.coachProposals, db.athleteProfiles, db.athletes, db.athleteCoachNotes],
       async () => {
         await db.sessions.clear()
         await db.dayLogs.clear()
@@ -611,6 +635,7 @@ export async function importAppDataFromFile(
         await db.coachProposals.clear()
         await db.athleteProfiles.clear()
         await db.athletes.clear()
+        await db.athleteCoachNotes.clear()
 
         if (backup.tables.sessions.length > 0) await db.sessions.bulkPut(backup.tables.sessions)
         await putImportedDayLogs(backup.tables.dayLogs)
@@ -623,6 +648,7 @@ export async function importAppDataFromFile(
         if (backup.tables.coachProposals.length > 0) await db.coachProposals.bulkPut(backup.tables.coachProposals)
         if (backup.tables.athleteProfiles.length > 0) await db.athleteProfiles.bulkPut(backup.tables.athleteProfiles)
         if (backup.tables.athletes.length > 0) await db.athletes.bulkPut(backup.tables.athletes)
+        if (backup.tables.athleteCoachNotes.length > 0) await db.athleteCoachNotes.bulkPut(backup.tables.athleteCoachNotes)
       },
     )
   } else {
@@ -631,7 +657,7 @@ export async function importAppDataFromFile(
     // WeekSummaries have no updatedAt — only add records missing locally.
     await db.transaction(
       'rw',
-      [db.sessions, db.dayLogs, db.readinessDaily, db.whoopWorkouts, db.weekSummaries, db.trainingPlans, db.trainingPlanWeeks, db.chatMessages, db.coachProposals, db.athleteProfiles, db.athletes],
+      [db.sessions, db.dayLogs, db.readinessDaily, db.whoopWorkouts, db.weekSummaries, db.trainingPlans, db.trainingPlanWeeks, db.chatMessages, db.coachProposals, db.athleteProfiles, db.athletes, db.athleteCoachNotes],
       async () => {
         // Sessions
         const localSessions = await db.sessions.toArray()
@@ -693,6 +719,14 @@ export async function importAppDataFromFile(
           return !local || backupAthlete.updatedAt > local.updatedAt
         })
         if (athletesToWrite.length > 0) await db.athletes.bulkPut(athletesToWrite)
+
+        const localNotes = await db.athleteCoachNotes.toArray()
+        const localNotesById = new Map(localNotes.map((note) => [note.athleteId, note]))
+        const notesToWrite = backup.tables.athleteCoachNotes.filter((note) => {
+          const local = localNotesById.get(note.athleteId)
+          return !local || note.updatedAt > local.updatedAt
+        })
+        if (notesToWrite.length > 0) await db.athleteCoachNotes.bulkPut(notesToWrite)
       },
     )
   }
@@ -719,6 +753,7 @@ export async function importAppDataFromFile(
       coachProposals: backup.tables.coachProposals.length,
       athleteProfiles: backup.tables.athleteProfiles.length,
       athletes: backup.tables.athletes.length,
+      athleteCoachNotes: backup.tables.athleteCoachNotes.length,
     },
   }
 }
@@ -759,6 +794,7 @@ export function parseAppDataExport(value: unknown): AppDataExport {
   const coachProposals = parseCoachProposalsTable(normalized.tables.coachProposals)
   const athleteProfiles = parseAthleteProfilesTable(normalized.tables.athleteProfiles)
   const athletes = parseAthletesTable(normalized.tables.athletes ?? [])
+  const athleteCoachNotes = parseAthleteCoachNotesTable(normalized.tables.athleteCoachNotes ?? [])
 
   ensureChatProposalLinks(chatMessages, coachProposals)
 
@@ -779,6 +815,7 @@ export function parseAppDataExport(value: unknown): AppDataExport {
       coachProposals,
       athleteProfiles,
       athletes,
+      athleteCoachNotes,
     },
   }
 }
@@ -858,6 +895,25 @@ function parseAthletesTable(value: unknown): Athlete[] {
   const athletes = rows.map((row, index) => parseAthlete(row, index))
   ensureUniqueIds(athletes, 'athletes')
   return athletes
+}
+
+function parseAthleteCoachNotesTable(value: unknown): AthleteCoachNote[] {
+  const rows = ensureArray(value, 'athleteCoachNotes')
+  const notes = rows.map((value, index): AthleteCoachNote => {
+    const row = ensureRecord(value, `athleteCoachNotes[${index}]`)
+    return {
+      athleteId: requireString(row.athleteId, `athleteCoachNotes[${index}].athleteId`),
+      coachMemory: optionalString(row.coachMemory, `athleteCoachNotes[${index}].coachMemory`),
+      updatedByAccountId: optionalString(row.updatedByAccountId, `athleteCoachNotes[${index}].updatedByAccountId`),
+      updatedAt: requireFiniteNumber(row.updatedAt, `athleteCoachNotes[${index}].updatedAt`),
+    }
+  })
+  const ids = new Set<string>()
+  for (const note of notes) {
+    if (ids.has(note.athleteId)) throw new Error(`athleteCoachNotes contiene athleteId duplicado: ${note.athleteId}`)
+    ids.add(note.athleteId)
+  }
+  return notes
 }
 
 function parseSession(value: unknown, index: number): Session {

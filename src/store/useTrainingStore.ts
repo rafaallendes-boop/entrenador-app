@@ -18,9 +18,10 @@ import { optimizeChatContext } from '../services/ai/contextOptimizer'
 import * as syncService from '../services/syncService'
 import { toISO, fromISO, getWeekStart, currentWeekStartISO, todayISO } from '../utils/date'
 import { v4 as uuid } from '../utils/uuid'
-import { withActiveAthleteStamp } from '../services/athlete/activeScopeFilter'
+import { resolveAuthoredByRole, withActiveAthleteStamp } from '../services/athlete/activeScopeFilter'
 import { isWeeklyReviewWindowOpen } from '../services/weeklyReviewWindow'
 import { buildWeeklyCoachNoteSnapshot } from '../services/weeklyCoachNote'
+import { getCoachMemoryText } from '../services/athlete/coachNotes'
 
 const STATUS_CYCLE: SessionStatus[] = ['planned', 'completed', 'adjusted', 'skipped']
 
@@ -138,9 +139,13 @@ export const useTrainingStore = create<TrainingState>((set, get) => ({
   addSession: async (partial) => {
     const now = Date.now()
     const weekStartDate = getWeekStartDate(partial.date)
-    const session: Session = withActiveAthleteStamp<Session>({
+    const stamped = withActiveAthleteStamp<Session>({
       ...partial, weekStartDate, id: uuid(), createdAt: now, updatedAt: now,
     })
+    const session: Session = {
+      ...stamped,
+      authoredByRole: stamped.authoredByRole ?? resolveAuthoredByRole(stamped.athleteId),
+    }
     await db.sessions.add(session)
     void syncService.pushSession(session)
     await recalculateWeekSummary(session.date)
@@ -269,11 +274,12 @@ export const useTrainingStore = create<TrainingState>((set, get) => ({
     set({ isLoading: true })
     try {
       await recalculateWeekSummary(weekStart)
-      const [sessions, weekDayLogs, currentWeekSummary, athleteProfile] = await Promise.all([
+      const [sessions, weekDayLogs, currentWeekSummary, athleteProfile, coachMemoryText] = await Promise.all([
         getSessionsForWeek(weekStart),
         getDayLogsForWeek(weekStart),
         getWeekSummary(weekStart),
         getAthleteProfile(),
+        getCoachMemoryText(),
       ])
 
       const response = await CoachEngine.send(
@@ -285,7 +291,7 @@ export const useTrainingStore = create<TrainingState>((set, get) => ({
           historicalSessions: sessions.filter(session => session.status !== 'planned'),
           currentWeekSummary: currentWeekSummary ?? undefined,
           weekDayLogs,
-          athleteMemory: athleteProfile?.coachMemory,
+          athleteMemory: coachMemoryText,
           athleteProfile: athleteProfile ?? undefined,
           intent: 'weekly_summary',
         }, 'weekly_summary'),

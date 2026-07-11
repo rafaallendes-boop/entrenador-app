@@ -5,7 +5,7 @@ import AuthGate from './components/auth/AuthGate'
 import CoachScopeGuard from './components/layout/CoachScopeGuard'
 import { ROUTES } from './constants/routes'
 import { useAuthStore } from './store/useAuthStore'
-import { runFullSync, migrateLocalDataToCloud, prepareLocalDataForUser, hasInitialRemotePullCompleted } from './services/syncService'
+import { runFullSync, migrateLocalDataToCloud, prepareLocalDataForUser, hasInitialRemotePullCompleted, pullMemberships } from './services/syncService'
 import { useTrainingStore } from './store/useTrainingStore'
 import { useCoachMemoryStore } from './store/useCoachMemoryStore'
 import { usePlanBuilderStore } from './store/usePlanBuilderStore'
@@ -20,6 +20,7 @@ import NativeBridge from './components/native/NativeBridge'
 import { NATIVE_RESUME_EVENT } from './services/nativeApp'
 import { pullWorkouts } from './services/readiness/pullWorkouts'
 import { autoCompleteFromWorkouts } from './services/readiness/autoCompleteFromWorkouts'
+import { capturePendingClaimTokenFromUrl } from './services/athlete/claimGate'
 
 const Dashboard = lazy(() => import('./pages/Dashboard'))
 const WeeklyView = lazy(() => import('./pages/WeeklyView'))
@@ -151,6 +152,8 @@ export default function App() {
   const hasLoadedMemory = useCoachMemoryStore(s => s.hasLoaded)
 
   useEffect(() => {
+    // D6: capture before authentication so the token survives the OAuth redirect.
+    capturePendingClaimTokenFromUrl()
     void db.open().catch(console.error)
   }, [])
 
@@ -168,11 +171,16 @@ export default function App() {
     void (async () => {
       try {
         await db.open().catch(() => {})
-        await backfillLocalAthleteScope(userId)
+        capturePendingClaimTokenFromUrl()
+        await pullMemberships(userId)
         if (cancelled) return
-        await hydrateActiveAthlete(userId)
+        const backfilled = await backfillLocalAthleteScope(userId)
         if (cancelled) return
-        useAuthStore.getState().setActiveAthleteId(getActiveAthleteId())
+        if (backfilled !== null) {
+          await hydrateActiveAthlete(userId)
+          if (cancelled) return
+          useAuthStore.getState().setActiveAthleteId(getActiveAthleteId())
+        }
       } catch (error) {
         console.error('[athlete-scope] hydration failed', error)
       }
@@ -205,11 +213,16 @@ export default function App() {
 
       try {
         await db.open().catch(() => {})
-        await backfillLocalAthleteScope(userId)
+        capturePendingClaimTokenFromUrl()
+        await pullMemberships(userId)
         if (cancelled) return
-        await hydrateActiveAthlete(userId)
+        const backfilled = await backfillLocalAthleteScope(userId)
         if (cancelled) return
-        useAuthStore.getState().setActiveAthleteId(getActiveAthleteId())
+        if (backfilled !== null) {
+          await hydrateActiveAthlete(userId)
+          if (cancelled) return
+          useAuthStore.getState().setActiveAthleteId(getActiveAthleteId())
+        }
 
         const { shouldMigrate } = await prepareLocalDataForUser(userId)
         if (cancelled) return

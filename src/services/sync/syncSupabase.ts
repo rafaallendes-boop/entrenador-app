@@ -12,6 +12,7 @@
 import { supabase } from '../auth'
 import type { SupabaseTable, SyncErrorCategory } from '../syncUtils'
 import { resolveReadScope, type ReadScope } from '../athlete/readScope'
+import { getMembershipAthleteIds } from '../athlete/membershipCache'
 
 /** Page size for paginated remote fetches via `.range(from, to)`. */
 export const FETCH_PAGE_SIZE = 1000
@@ -60,12 +61,52 @@ export async function withRequestTimeout<T>(
  * Pagina la lectura de una tabla por user_id.
  * Si el cliente no expone `.range`, hace una sola pasada (compat con tests/mocks).
  */
+export function buildPullFilter(
+  table: SupabaseTable,
+  userId: string,
+  memberAthleteIds: string[],
+  scope: ReadScope,
+):
+  | { kind: 'or'; value: string }
+  | { kind: 'eq_user' }
+  | { kind: 'eq_owner' }
+  | { kind: 'in_athletes'; value: string[] }
+  | { kind: 'skip' } {
+  if (table === 'athletes') {
+    return memberAthleteIds.length > 0
+      ? { kind: 'or', value: `id.in.(${memberAthleteIds.join(',')}),owner_account_id.eq.${userId}` }
+      : { kind: 'eq_owner' }
+  }
+  if (table === 'athlete_memberships') return { kind: 'skip' }
+  if (table === 'athlete_coach_notes') {
+    if (memberAthleteIds.length > 0) return { kind: 'in_athletes', value: memberAthleteIds }
+    if (scope.mode === 'athlete') return { kind: 'in_athletes', value: [scope.athleteId] }
+    return { kind: 'skip' }
+  }
+  if (memberAthleteIds.length > 0) {
+    return {
+      kind: 'or',
+      value: `athlete_id.in.(${memberAthleteIds.join(',')}),and(athlete_id.is.null,user_id.eq.${userId})`,
+    }
+  }
+  if (scope.mode === 'athlete') {
+    return {
+      kind: 'or',
+      value: `athlete_id.eq.${scope.athleteId},and(athlete_id.is.null,user_id.eq.${userId})`,
+    }
+  }
+  return { kind: 'eq_user' }
+}
+
 export async function fetchAll<T>(
   table: SupabaseTable,
   userId: string,
   scope: ReadScope = resolveReadScope(),
 ): Promise<T[]> {
   const rows: T[] = []
+  const memberAthleteIds = await getMembershipAthleteIds(userId)
+  const filter = buildPullFilter(table, userId, memberAthleteIds, scope)
+  if (filter.kind === 'skip') return rows
   // Athlete Scope Foundation (Fase D): when the flag is on AND an athlete is
   // hydrated, scope by athlete_id but keep legacy rows (athlete_id IS NULL) so
   // flipping the flag never hides existing data. Flag off → identical to before.
@@ -75,10 +116,12 @@ export async function fetchAll<T>(
     const base = getSupabase()
       .from(table)
       .select('*')
-    const query = table === 'athletes'
+    const query = filter.kind === 'eq_owner'
       ? base.eq('owner_account_id', userId)
-      : scope.mode === 'athlete'
-      ? base.or(`athlete_id.eq.${scope.athleteId},and(athlete_id.is.null,user_id.eq.${userId})`)
+      : filter.kind === 'in_athletes'
+      ? base.in('athlete_id', filter.value)
+      : filter.kind === 'or'
+      ? base.or(filter.value)
       : base.eq('user_id', userId)
     const supportsRange = typeof (query as { range?: unknown }).range === 'function'
     const pagedQuery = supportsRange
