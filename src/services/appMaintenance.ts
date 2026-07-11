@@ -108,12 +108,13 @@ export async function clearSelectedLocalAppData(selection: LocalDataSelection): 
 
   await db.transaction(
     'rw',
-    [db.sessions, db.dayLogs, db.readinessDaily, db.weekSummaries, db.trainingPlans, db.trainingPlanWeeks, db.chatMessages, db.coachProposals, db.athleteProfiles, db.athletes],
+    [db.sessions, db.dayLogs, db.readinessDaily, db.whoopWorkouts, db.weekSummaries, db.trainingPlans, db.trainingPlanWeeks, db.chatMessages, db.coachProposals, db.athleteProfiles, db.athletes],
     async () => {
       if (selection.trainingData) {
         await db.sessions.clear()
         await db.dayLogs.clear()
         await db.readinessDaily?.clear()
+        await db.whoopWorkouts?.clear()
         await db.weekSummaries.clear()
         await db.trainingPlanWeeks.clear()
         await db.trainingPlans.clear()
