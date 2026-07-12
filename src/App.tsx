@@ -33,6 +33,7 @@ const ImportPDF = lazy(() => import('./pages/ImportPDF'))
 const SettingsPage = lazy(() => import('./pages/SettingsPage'))
 const OnboardingPage = lazy(() => import('./pages/OnboardingPage'))
 const CoachRosterPage = lazy(() => import('./pages/CoachRosterPage'))
+const NativeWelcomePreviewPage = lazy(() => import('./pages/NativeWelcomePreviewPage'))
 
 const AUTO_SYNC_RETRY_COOLDOWN_MS = 15_000
 
@@ -327,31 +328,36 @@ export default function App() {
     <BrowserRouter>
       <NativeBridge />
       <Suspense fallback={<RouteFallback />}>
-        <AuthGate>
-          <CoachScopeGuard />
-          <OnboardingGuard>
-            <Routes>
-              <Route path={ROUTES.ONBOARDING} element={<OnboardingPage />} />
-              <Route element={<AppShell />}>
-                <Route path={ROUTES.HOME} element={<RouteBoundary><Dashboard /></RouteBoundary>} />
-                <Route path={ROUTES.WEEK} element={<RouteBoundary><WeeklyView /></RouteBoundary>} />
-                <Route path="/day/:date" element={<RouteBoundary><DayDetail /></RouteBoundary>} />
-                <Route path={ROUTES.CHAT} element={<RouteBoundary><ChatCoach /></RouteBoundary>} />
-                <Route path={ROUTES.PLAN_BUILDER} element={<RouteBoundary><PlanBuilderPage /></RouteBoundary>} />
-                <Route path={ROUTES.COMPETITION_PLAN} element={<RouteBoundary><CompetitionPlanPage /></RouteBoundary>} />
-                <Route path={ROUTES.PLAN_BUILDER_V2} element={<RouteBoundary><PlanBuilderV2Page /></RouteBoundary>} />
-                <Route path="/history" element={<Navigate to={ROUTES.COMPETITION_PLAN} replace />} />
-                <Route path={ROUTES.COACH} element={<RouteBoundary><CoachRosterPage /></RouteBoundary>} />
-                <Route path="/dashboard" element={<Navigate to={ROUTES.HOME} replace />} />
-                <Route path="/plan" element={<Navigate to={ROUTES.COMPETITION_PLAN} replace />} />
-                <Route path="/plan/dashboard" element={<Navigate to={ROUTES.COMPETITION_PLAN} replace />} />
-                <Route path={ROUTES.SETTINGS} element={<RouteBoundary><SettingsPage /></RouteBoundary>} />
-                <Route path={ROUTES.IMPORT} element={<RouteBoundary><ImportPDF /></RouteBoundary>} />
-                <Route path="*" element={<Navigate to={ROUTES.HOME} replace />} />
-              </Route>
-            </Routes>
-          </OnboardingGuard>
-        </AuthGate>
+        <Routes>
+          <Route path={ROUTES.IOS_WELCOME_PREVIEW} element={<NativeWelcomePreviewPage />} />
+          <Route path="*" element={(
+            <AuthGate>
+              <CoachScopeGuard />
+              <OnboardingGuard>
+                <Routes>
+                  <Route path={ROUTES.ONBOARDING} element={<OnboardingPage />} />
+                  <Route element={<AppShell />}>
+                    <Route path={ROUTES.HOME} element={<RouteBoundary><Dashboard /></RouteBoundary>} />
+                    <Route path={ROUTES.WEEK} element={<RouteBoundary><WeeklyView /></RouteBoundary>} />
+                    <Route path="/day/:date" element={<RouteBoundary><DayDetail /></RouteBoundary>} />
+                    <Route path={ROUTES.CHAT} element={<RouteBoundary><ChatCoach /></RouteBoundary>} />
+                    <Route path={ROUTES.PLAN_BUILDER} element={<RouteBoundary><PlanBuilderPage /></RouteBoundary>} />
+                    <Route path={ROUTES.COMPETITION_PLAN} element={<RouteBoundary><CompetitionPlanPage /></RouteBoundary>} />
+                    <Route path={ROUTES.PLAN_BUILDER_V2} element={<RouteBoundary><PlanBuilderV2Page /></RouteBoundary>} />
+                    <Route path="/history" element={<Navigate to={ROUTES.COMPETITION_PLAN} replace />} />
+                    <Route path={ROUTES.COACH} element={<RouteBoundary><CoachRosterPage /></RouteBoundary>} />
+                    <Route path="/dashboard" element={<Navigate to={ROUTES.HOME} replace />} />
+                    <Route path="/plan" element={<Navigate to={ROUTES.COMPETITION_PLAN} replace />} />
+                    <Route path="/plan/dashboard" element={<Navigate to={ROUTES.COMPETITION_PLAN} replace />} />
+                    <Route path={ROUTES.SETTINGS} element={<RouteBoundary><SettingsPage /></RouteBoundary>} />
+                    <Route path={ROUTES.IMPORT} element={<RouteBoundary><ImportPDF /></RouteBoundary>} />
+                    <Route path="*" element={<Navigate to={ROUTES.HOME} replace />} />
+                  </Route>
+                </Routes>
+              </OnboardingGuard>
+            </AuthGate>
+          )} />
+        </Routes>
       </Suspense>
     </BrowserRouter>
   )
