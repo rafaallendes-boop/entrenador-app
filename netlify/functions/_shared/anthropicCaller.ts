@@ -97,6 +97,12 @@ export async function callAnthropicForWeek(request: AIRequest, options?: {
       content?: Array<{ type?: string; text?: string; input?: unknown }>
       model?: string
       stop_reason?: string
+      usage?: {
+        input_tokens?: number
+        output_tokens?: number
+        cache_creation_input_tokens?: number
+        cache_read_input_tokens?: number
+      }
     }
     const contentTypes = data.content?.map((b) => b.type) ?? []
     const toolBlock = data.content?.find((b) => b.type === 'tool_use')
@@ -118,6 +124,10 @@ export async function callAnthropicForWeek(request: AIRequest, options?: {
       requestClass: request.requestClass,
       retryUsed: false,
       fallbackUsed: false,
+      promptTokens: data.usage?.input_tokens,
+      completionTokens: data.usage?.output_tokens,
+      cacheCreationInputTokens: data.usage?.cache_creation_input_tokens,
+      cacheReadInputTokens: data.usage?.cache_read_input_tokens,
     }
   } finally {
     clearTimeout(timeout)
