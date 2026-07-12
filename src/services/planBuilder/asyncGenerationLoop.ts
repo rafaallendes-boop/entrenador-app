@@ -6,6 +6,39 @@ import { countReadyWeeks, isReadyWeek, sortWeeks } from './weekUtils'
 import { getExpectedSessionsForPlanWeek } from './dateRange'
 import { buildWeekRetryInstruction } from '../week/shared'
 import { reviewPlanQuality } from './qualityReview'
+import { buildLocalFallbackWeek } from './fallbackWeek'
+
+export interface PlanGenerationAttemptTelemetry {
+  athleteId: string
+  planId: string
+  jobId: string
+  weekIndex: number
+  attempt: number
+  traceId: string
+  provider: AIRawResponse['provider']
+  model?: string
+  promptTokens?: number
+  completionTokens?: number
+  cacheCreationInputTokens?: number
+  cacheReadInputTokens?: number
+  durationMs?: number
+  finishReason?: string
+  outcome: 'succeeded' | 'validation_failed' | 'truncated' | 'provider_failed'
+  errorClass?: string
+  retryUsed: boolean
+  maxTokens: number
+  workerConcurrency: number
+  rawSessionCount?: number
+  validSessionCount?: number
+  droppedSessionCount?: number
+  repairedSessionCount?: number
+  addedFallbackCount?: number
+  qualityScore?: number
+  qualityGrade?: 'excellent' | 'good' | 'needs_review' | 'poor'
+  qualityCriticalIssueCount?: number
+  qualityWarningCount?: number
+  createdAt: number
+}
 
 export interface AsyncPlanGenerationWriter {
   /** Consulta ligera opcional: solo lee cancelRequested. Si no está, usa getPlan. */
@@ -13,6 +46,8 @@ export interface AsyncPlanGenerationWriter {
   getPlan(planId: string): Promise<TrainingPlan | null>
   putPlan(plan: TrainingPlan): Promise<void>
   putWeek(week: TrainingPlanWeek): Promise<void>
+  /** Append-only, best-effort observability; failures never fail generation. */
+  putAttempt?(attempt: PlanGenerationAttemptTelemetry): Promise<void>
 }
 
 export interface RunAsyncPlanGenerationInput {
@@ -61,6 +96,21 @@ const MIN_RETRY_BUDGET_MS = 150_000
 const WORKER_BUDGET_EXHAUSTED_MESSAGE = 'Generación detenida: se agotó el presupuesto de tiempo del worker antes de llegar a esta semana. Reintenta para generar las semanas pendientes.'
 
 type GenerateWeekCoreResult = Awaited<ReturnType<typeof generateWeekCore>>
+
+function classifyAttemptOutcome(result: GenerateWeekCoreResult): PlanGenerationAttemptTelemetry['outcome'] {
+  if (result.meta.errorClass === 'truncated') return 'truncated'
+  if (result.sessions.length > 0 && result.meta.errorClass !== 'quality_gate') return 'succeeded'
+  if (result.meta.errorClass === 'validation' || result.meta.errorClass === 'quality_gate') return 'validation_failed'
+  return 'provider_failed'
+}
+
+export function getCriticalWeekQualityIssueMessages(
+  issues: Array<{ severity: 'error' | 'warning' | 'info'; code: string; message: string }>,
+): string[] {
+  return issues
+    .filter((issue) => issue.severity === 'error')
+    .map((issue) => `${issue.code}: ${issue.message}`)
+}
 
 function failedWeeks(weeks: TrainingPlanWeek[]): number[] {
   return weeks
@@ -176,6 +226,11 @@ function makeResolvedWeek(
       model: result.meta.model,
       requestClass: result.meta.requestClass,
       traceId: result.meta.traceId,
+      promptTokens: result.meta.promptTokens,
+      completionTokens: result.meta.completionTokens,
+      cacheCreationInputTokens: result.meta.cacheCreationInputTokens,
+      cacheReadInputTokens: result.meta.cacheReadInputTokens,
+      finishReason: result.meta.finishReason,
       lastError: result.meta.lastError,
       lastAttemptAt: timestamp,
       durationMs: result.meta.durationMs,
@@ -197,14 +252,69 @@ function makeResolvedWeek(
   }
 }
 
-function makeErroredWeek(week: TrainingPlanWeek, message: string, timestamp: number, errorClass?: string): TrainingPlanWeek {
+function makeFallbackResolvedWeek(
+  week: TrainingPlanWeek,
+  result: GenerateWeekCoreResult,
+  fallback: ReturnType<typeof buildLocalFallbackWeek>,
+  timestamp: number,
+): TrainingPlanWeek {
+  return {
+    ...week,
+    status: fallback.sessions.length > 0 ? 'draft' : 'error',
+    sessions: fallback.sessions,
+    generationMeta: {
+      ...week.generationMeta,
+      attempts: (week.generationMeta.attempts ?? 0) + result.meta.attempts,
+      provider: result.meta.provider,
+      model: result.meta.model ? `${result.meta.model}+local-plan-fallback` : 'local-plan-fallback',
+      requestClass: result.meta.requestClass,
+      traceId: result.meta.traceId,
+      promptTokens: result.meta.promptTokens,
+      completionTokens: result.meta.completionTokens,
+      cacheCreationInputTokens: result.meta.cacheCreationInputTokens,
+      cacheReadInputTokens: result.meta.cacheReadInputTokens,
+      finishReason: result.meta.finishReason,
+      lastError: result.meta.lastError,
+      lastAttemptAt: timestamp,
+      durationMs: result.meta.durationMs,
+      retryUsed: result.meta.retryUsed,
+      fallbackUsed: true,
+      strategy: 'single',
+      rawSessionCount: result.meta.rawSessionCount ?? 0,
+      validSessionCount: fallback.sessions.length,
+      droppedSessionCount: result.meta.droppedSessionCount ?? 0,
+      repairedSessionCount: fallback.meta.repairedSessionCount,
+      movedSessionCount: fallback.meta.movedSessionCount,
+      addedFallbackCount: fallback.meta.addedFallbackCount,
+      filteredSportCount: fallback.meta.filteredSportCount,
+      repairWarnings: [
+        {
+          code: 'local_plan_fallback',
+          message: `Se generó una semana base local después de ${result.meta.attempts} intento(s) fallidos o rechazados por calidad.`,
+        },
+        ...fallback.meta.warnings,
+      ],
+      errorClass: fallback.sessions.length > 0 ? 'local_plan_fallback' : result.meta.errorClass,
+      generationSource: 'fallback',
+    },
+    updatedAt: timestamp,
+  }
+}
+
+function makeErroredWeek(
+  week: TrainingPlanWeek,
+  message: string,
+  timestamp: number,
+  errorClass?: string,
+  attemptDelta = 1,
+): TrainingPlanWeek {
   return {
     ...week,
     status: 'error',
     sessions: [],
     generationMeta: {
       ...week.generationMeta,
-      attempts: Math.max(1, (week.generationMeta.attempts ?? 0) + 1),
+      attempts: Math.max(0, (week.generationMeta.attempts ?? 0) + attemptDelta),
       lastError: message,
       lastAttemptAt: timestamp,
       strategy: 'single',
@@ -212,6 +322,26 @@ function makeErroredWeek(week: TrainingPlanWeek, message: string, timestamp: num
       errorClass,
     },
     updatedAt: timestamp,
+  }
+}
+
+function makeErroredWeekFromResult(
+  week: TrainingPlanWeek,
+  result: GenerateWeekCoreResult,
+  message: string,
+  timestamp: number,
+  errorClass = 'post_generation_failed',
+): TrainingPlanWeek {
+  const resolved = makeResolvedWeek(week, result, timestamp)
+  return {
+    ...resolved,
+    status: 'error',
+    sessions: [],
+    generationMeta: {
+      ...resolved.generationMeta,
+      lastError: message,
+      errorClass,
+    },
   }
 }
 
@@ -276,9 +406,21 @@ async function generateWeekCoreWithRetry(input: {
   /** Hook para refrescar heartbeat antes de un reintento; los fallos se ignoran. */
   onBeforeRetry?: () => Promise<void>
   getRemainingBudgetMs?: () => number
+  /** Devuelve errores críticos de la semana. Warnings e info no fuerzan reintento. */
+  getCriticalQualityIssues?: (result: GenerateWeekCoreResult) => string[]
+  onAttemptCompleted?: (
+    attempt: number,
+    result: GenerateWeekCoreResult,
+    createdAt: number,
+    maxTokens: number,
+  ) => Promise<void>
 }): Promise<GenerateWeekCoreResult> {
   let attempts = 0
   let totalDurationMs = 0
+  let totalPromptTokens = 0
+  let totalCompletionTokens = 0
+  let totalCacheCreationInputTokens = 0
+  let totalCacheReadInputTokens = 0
   let lastResult: GenerateWeekCoreResult | undefined
   let lastError: string | undefined
 
@@ -327,22 +469,62 @@ async function generateWeekCoreWithRetry(input: {
 
     attempts += result.meta.attempts
     totalDurationMs += result.meta.durationMs ?? 0
-    lastResult = result
-    lastError = result.meta.lastError
-
+    totalPromptTokens += result.meta.promptTokens ?? 0
+    totalCompletionTokens += result.meta.completionTokens ?? 0
+    totalCacheCreationInputTokens += result.meta.cacheCreationInputTokens ?? 0
+    totalCacheReadInputTokens += result.meta.cacheReadInputTokens ?? 0
+    let accepted = false
+    let failedResult = result
     if (result.sessions.length > 0) {
+      const criticalIssues = input.getCriticalQualityIssues?.(result) ?? []
+      if (criticalIssues.length === 0) {
+        accepted = true
+      } else {
+        const qualityError = `Quality gate rechazó la semana: ${criticalIssues.join(' | ')}`
+        result = {
+          ...result,
+          meta: {
+            ...result.meta,
+            lastError: qualityError,
+            errorClass: 'quality_gate',
+          },
+        }
+        // Conserva las sesiones para medir el score del intento rechazado, pero
+        // no permite que el caller lo confunda con una semana aceptada.
+        failedResult = { ...result, sessions: [] }
+      }
+    }
+
+    try {
+      await input.onAttemptCompleted?.(attempt, result, Date.now(), maxTokens)
+    } catch (error) {
+      // Observabilidad best-effort: nunca gastar otro intento por una escritura.
+      const code = typeof (error as { code?: unknown })?.code === 'string'
+        ? (error as { code: string }).code
+        : 'unknown'
+      console.warn(`[plan-builder] attempt telemetry failed traceId=${attemptTraceId} week=${input.week.weekIndex} attempt=${attempt} code=${code}`)
+    }
+
+    if (accepted) {
       return {
         ...result,
         meta: {
           ...result.meta,
           attempts,
           durationMs: totalDurationMs || result.meta.durationMs,
+          promptTokens: totalPromptTokens || undefined,
+          completionTokens: totalCompletionTokens || undefined,
+          cacheCreationInputTokens: totalCacheCreationInputTokens || undefined,
+          cacheReadInputTokens: totalCacheReadInputTokens || undefined,
           retryUsed: attempts > 1 || result.meta.retryUsed,
         },
       }
     }
 
-    if (result.meta.errorClass === 'rate_limit') break
+    lastResult = failedResult
+    lastError = failedResult.meta.lastError
+
+    if (failedResult.meta.errorClass === 'rate_limit') break
   }
 
   if (!lastResult) {
@@ -355,6 +537,10 @@ async function generateWeekCoreWithRetry(input: {
       ...lastResult.meta,
       attempts,
       durationMs: totalDurationMs || lastResult.meta.durationMs,
+      promptTokens: totalPromptTokens || undefined,
+      completionTokens: totalCompletionTokens || undefined,
+      cacheCreationInputTokens: totalCacheCreationInputTokens || undefined,
+      cacheReadInputTokens: totalCacheReadInputTokens || undefined,
       retryUsed: attempts > 1 || lastResult.meta.retryUsed,
     },
   }
@@ -398,7 +584,7 @@ export async function runAsyncPlanGeneration(input: RunAsyncPlanGenerationInput)
       const remainingWeek = weeks.find((week) => week.weekIndex === remainingIndex)
       if (!remainingWeek) continue
       if (!input.targetWeekIndexes?.length && isReadyWeek(remainingWeek)) continue
-      const erroredWeek = makeErroredWeek(remainingWeek, WORKER_BUDGET_EXHAUSTED_MESSAGE, getNow(), 'timeout')
+      const erroredWeek = makeErroredWeek(remainingWeek, WORKER_BUDGET_EXHAUSTED_MESSAGE, getNow(), 'timeout', 0)
       weeks = replaceWeek(weeks, erroredWeek)
       await input.writer.putWeek(erroredWeek)
     }
@@ -451,6 +637,7 @@ export async function runAsyncPlanGeneration(input: RunAsyncPlanGenerationInput)
     })
     await input.writer.putPlan(plan)
 
+    let providerResult: GenerateWeekCoreResult | undefined
     try {
       // En generación paralela la semana previa puede no estar lista todavía.
       // Usamos la versión generada si existe (para evitar clonar sesiones), y si
@@ -471,6 +658,30 @@ export async function runAsyncPlanGeneration(input: RunAsyncPlanGenerationInput)
         maxTokens: input.maxTokens ?? DEFAULT_MAX_TOKENS,
         temperature: input.temperature ?? DEFAULT_TEMPERATURE,
         callLLM: input.callLLM,
+        getCriticalQualityIssues: (candidateResult) => {
+          const candidateWeek: TrainingPlanWeek = {
+            ...generatingWeek,
+            status: 'draft',
+            sessions: candidateResult.sessions,
+            generationMeta: {
+              ...generatingWeek.generationMeta,
+              attempts: candidateResult.meta.attempts,
+              fallbackUsed: candidateResult.meta.fallbackUsed,
+              repairedSessionCount: candidateResult.meta.repairedSessionCount,
+              movedSessionCount: candidateResult.meta.movedSessionCount,
+              addedFallbackCount: candidateResult.meta.addedFallbackCount,
+              filteredSportCount: candidateResult.meta.filteredSportCount,
+              droppedSessionCount: candidateResult.meta.droppedSessionCount,
+              generationSource: 'ai',
+            },
+          }
+          const weekReview = reviewPlanQuality(
+            plan,
+            replaceWeek(weeks, candidateWeek),
+            { profile: input.profile },
+          ).weeks.find((review) => review.weekIndex === weekIndex)
+          return getCriticalWeekQualityIssueMessages(weekReview?.issues ?? [])
+        },
         getRemainingBudgetMs: () => deadlineAt - getNow(),
         onBeforeRetry: async () => {
           plan = buildPlanCheckpoint(plan, weeks, {
@@ -481,8 +692,113 @@ export async function runAsyncPlanGeneration(input: RunAsyncPlanGenerationInput)
           })
           await input.writer.putPlan(plan)
         },
+        onAttemptCompleted: input.writer.putAttempt
+          ? async (attempt, attemptResult, createdAt, attemptMaxTokens) => {
+            const scoredWeek: TrainingPlanWeek = {
+              ...generatingWeek,
+              status: attemptResult.sessions.length > 0 ? 'draft' : 'error',
+              sessions: attemptResult.sessions,
+              generationMeta: {
+                ...generatingWeek.generationMeta,
+                attempts: 1,
+                repairedSessionCount: attemptResult.meta.repairedSessionCount,
+                movedSessionCount: attemptResult.meta.movedSessionCount,
+                addedFallbackCount: attemptResult.meta.addedFallbackCount,
+                filteredSportCount: attemptResult.meta.filteredSportCount,
+                droppedSessionCount: attemptResult.meta.droppedSessionCount,
+                errorClass: attemptResult.meta.errorClass,
+                generationSource: 'ai',
+              },
+            }
+            const qualityReview = attemptResult.sessions.length > 0
+              ? reviewPlanQuality(plan, replaceWeek(weeks, scoredWeek), { profile: input.profile })
+                .weeks.find((review) => review.weekIndex === weekIndex)
+              : undefined
+            await input.writer.putAttempt!({
+              athleteId: plan.athleteId,
+              planId: plan.id,
+              jobId: input.jobId,
+              weekIndex,
+              attempt,
+              traceId: attemptResult.meta.traceId,
+              provider: attemptResult.meta.provider,
+              model: attemptResult.meta.model,
+              promptTokens: attemptResult.meta.promptTokens,
+              completionTokens: attemptResult.meta.completionTokens,
+              cacheCreationInputTokens: attemptResult.meta.cacheCreationInputTokens,
+              cacheReadInputTokens: attemptResult.meta.cacheReadInputTokens,
+              durationMs: attemptResult.meta.durationMs,
+              finishReason: attemptResult.meta.finishReason,
+              outcome: classifyAttemptOutcome(attemptResult),
+              errorClass: attemptResult.meta.errorClass,
+              retryUsed: attempt > 1 || Boolean(attemptResult.meta.retryUsed),
+              maxTokens: attemptMaxTokens,
+              workerConcurrency: concurrency,
+              rawSessionCount: attemptResult.meta.rawSessionCount,
+              validSessionCount: attemptResult.meta.validSessionCount,
+              droppedSessionCount: attemptResult.meta.droppedSessionCount,
+              repairedSessionCount: attemptResult.meta.repairedSessionCount,
+              addedFallbackCount: attemptResult.meta.addedFallbackCount,
+              qualityScore: qualityReview?.score,
+              qualityGrade: qualityReview?.grade,
+              qualityCriticalIssueCount: qualityReview?.issues.filter((issue) => issue.severity === 'error').length,
+              qualityWarningCount: qualityReview?.issues.filter((issue) => issue.severity === 'warning').length,
+              createdAt,
+            })
+          }
+          : undefined,
       })
-      const resolvedWeek = makeResolvedWeek(generatingWeek, result, getNow())
+      providerResult = result
+      if (await checkCancelled()) {
+        cancelled = true
+        stopLaunching = true
+      }
+      let fallback: ReturnType<typeof buildLocalFallbackWeek> | undefined
+      if (result.sessions.length === 0) {
+        try {
+          fallback = buildLocalFallbackWeek({
+            plan,
+            week: generatingWeek,
+            previousWeek,
+            profile: input.profile,
+            wizardConfig: input.wizardConfig,
+          })
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          const erroredWeek = makeErroredWeekFromResult(
+            generatingWeek,
+            result,
+            message,
+            getNow(),
+            'local_plan_fallback_failed',
+          )
+          weeks = replaceWeek(weeks, erroredWeek)
+          await input.writer.putWeek(erroredWeek)
+          return
+        }
+      }
+      let resolvedWeek = fallback
+        ? makeFallbackResolvedWeek(generatingWeek, result, fallback, getNow())
+        : makeResolvedWeek(generatingWeek, result, getNow())
+      if (fallback && resolvedWeek.sessions.length > 0) {
+        const fallbackReview = reviewPlanQuality(
+          plan,
+          replaceWeek(weeks, resolvedWeek),
+          { profile: input.profile },
+        ).weeks.find((review) => review.weekIndex === weekIndex)
+        const fallbackCritical = getCriticalWeekQualityIssueMessages(fallbackReview?.issues ?? [])
+        if (fallbackCritical.length > 0) {
+          resolvedWeek = {
+            ...resolvedWeek,
+            status: 'error',
+            generationMeta: {
+              ...resolvedWeek.generationMeta,
+              lastError: `Fallback local rechazado por calidad: ${fallbackCritical.join(' | ')}`,
+              errorClass: 'local_plan_fallback_quality',
+            },
+          }
+        }
+      }
       weeks = replaceWeek(weeks, resolvedWeek)
       await input.writer.putWeek(resolvedWeek)
       plan = buildPlanCheckpoint(plan, weeks, {
@@ -490,11 +806,14 @@ export async function runAsyncPlanGeneration(input: RunAsyncPlanGenerationInput)
         jobId: input.jobId,
         startedAt,
         updatedAt: resolvedWeek.updatedAt,
+        cancelRequested: cancelled || undefined,
       })
       await input.writer.putPlan(plan)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
-      const erroredWeek = makeErroredWeek(generatingWeek, message, getNow())
+      const erroredWeek = providerResult
+        ? makeErroredWeekFromResult(generatingWeek, providerResult, message, getNow(), 'post_generation_failed')
+        : makeErroredWeek(generatingWeek, message, getNow())
       weeks = replaceWeek(weeks, erroredWeek)
       await input.writer.putWeek(erroredWeek)
       plan = buildPlanCheckpoint(plan, weeks, {
@@ -502,6 +821,7 @@ export async function runAsyncPlanGeneration(input: RunAsyncPlanGenerationInput)
         jobId: input.jobId,
         startedAt,
         updatedAt: erroredWeek.updatedAt,
+        cancelRequested: cancelled || undefined,
       })
       await input.writer.putPlan(plan)
     }
@@ -516,6 +836,10 @@ export async function runAsyncPlanGeneration(input: RunAsyncPlanGenerationInput)
   }
 
   await Promise.all(Array.from({ length: Math.min(concurrency, Math.max(1, targetWeekIndexes.length)) }, () => worker()))
+
+  if (!cancelled && await checkCancelled()) {
+    cancelled = true
+  }
 
   if (cancelled) {
     const timestamp = getNow()

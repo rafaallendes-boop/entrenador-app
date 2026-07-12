@@ -4,6 +4,7 @@ import type { AthleteProfile, PlanWizardConfig } from '../../../src/types'
 import type { TrainingPlan, TrainingPlanWeek } from '../../../src/types/planBuilder'
 import type { AsyncPlanGenerationWriter } from '../../../src/services/planBuilder/asyncGenerationLoop'
 import { rowToTrainingPlan, trainingPlanToRow, trainingPlanWeekToRow } from '../../../src/services/planBuilder/planRows'
+import { insertPlanGenerationAttempt } from './planGenerationTelemetry'
 
 export interface GeneratePlanPayload {
   plan: TrainingPlan
@@ -26,6 +27,7 @@ export const JSON_HEADERS = { 'Content-Type': 'application/json' }
 export const MAX_WEEKS = 40
 export const AUTH_TIMEOUT_MS = 10_000
 export const SUPABASE_OP_TIMEOUT_MS = 15_000
+export const TELEMETRY_OP_TIMEOUT_MS = 1_500
 
 export function withTimeout<T>(promise: PromiseLike<T>, ms: number, label: string): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -114,10 +116,18 @@ export function createJobId(planId: string): string {
 }
 
 export function createSupabaseWriter(userId: string, token: string): AsyncPlanGenerationWriter {
-  const supabase = createClient(getSupabaseUrl(), getSupabaseAnonKey(), {
+  const supabaseUrl = getSupabaseUrl()
+  const supabase = createClient(supabaseUrl, getSupabaseAnonKey(), {
     auth: { persistSession: false, autoRefreshToken: false },
     global: { headers: { Authorization: `Bearer ${token}` } },
   })
+  const serviceRoleKey = process.env['SUPABASE_SERVICE_ROLE_KEY']
+  const telemetrySupabase = serviceRoleKey
+    ? createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false, autoRefreshToken: false } })
+    : null
+  if (!telemetrySupabase) {
+    console.warn('[generate-plan] SUPABASE_SERVICE_ROLE_KEY missing; attempt telemetry disabled')
+  }
 
   return {
     async checkCancelled(planId) {
@@ -157,6 +167,17 @@ export function createSupabaseWriter(userId: string, token: string): AsyncPlanGe
       if (error) throw error
       console.log(`[generate-plan] week checkpoint planId=${week.planId} week=${week.weekIndex} status=${week.status} sessions=${week.sessions.length} attempts=${week.generationMeta.attempts ?? 0} errorClass=${week.generationMeta.errorClass ?? 'none'}`)
     },
+    ...(telemetrySupabase
+      ? {
+          async putAttempt(attempt) {
+            await withTimeout(
+              insertPlanGenerationAttempt(telemetrySupabase, attempt, userId),
+              TELEMETRY_OP_TIMEOUT_MS,
+              'putAttempt',
+            )
+          },
+        }
+      : {}),
   }
 }
 
