@@ -34,9 +34,13 @@ create table if not exists public.plan_generation_attempts (
   quality_warning_count smallint null check (quality_warning_count >= 0),
   created_at timestamptz not null default now(),
   constraint plan_generation_attempts_job_week_attempt_key
-    unique (job_id, week_index, attempt),
-  constraint plan_generation_attempts_trace_key unique (trace_id)
+    unique (job_id, week_index, attempt)
 );
+
+-- trace_id identifies a provider call for correlation, but callers may reuse it.
+-- Replay idempotency is scoped to the durable job/week/attempt identity above.
+alter table public.plan_generation_attempts
+  drop constraint if exists plan_generation_attempts_trace_key;
 
 create index if not exists plan_generation_attempts_user_created_idx
   on public.plan_generation_attempts (user_id, created_at desc);
@@ -59,17 +63,25 @@ create policy plan_generation_attempts_select_own
 -- Netlify writes and retention use the server-only service role. An attempt is
 -- immutable and cannot be fabricated or changed from the browser.
 
--- Cancellation is sticky for an active job. This closes the race where a
+-- Cancellation is sticky for the same job. This closes the race where a
 -- background checkpoint could overwrite cancelRequested=true written by the
--- client between the worker's last poll and its upsert. A later retrigger may
--- clear it because the previous plan is no longer in generation_state=generating.
+-- client between the worker's last poll and its upsert. A later retrigger has a
+-- different (or not-yet-assigned) jobId, so it can clear a stale request. When
+-- cancellation happens before enqueue assigns a jobId, the first assigned job
+-- adopts that request; a no-jobId -> no-jobId retrigger still clears it.
 create or replace function public.preserve_active_plan_cancel_requested()
 returns trigger
 language plpgsql
 as $$
 begin
-  if old.generation_state = 'generating'
-     and coalesce((old.generation_summary ->> 'cancelRequested')::boolean, false)
+  if coalesce((old.generation_summary ->> 'cancelRequested')::boolean, false)
+     and (
+       (
+         old.generation_summary ->> 'jobId' is null
+         and new.generation_summary ->> 'jobId' is not null
+       )
+       or old.generation_summary ->> 'jobId' = new.generation_summary ->> 'jobId'
+     )
      and not coalesce((new.generation_summary ->> 'cancelRequested')::boolean, false) then
     new.generation_summary = jsonb_set(
       coalesce(new.generation_summary, '{}'::jsonb),

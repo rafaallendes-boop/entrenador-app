@@ -48,6 +48,7 @@ export const PLAN_BUILDER_WEEK_RESPONSE_SCHEMA: Record<string, unknown> = {
  */
 export const PLAN_BUILDER_PAIR_RESPONSE_SCHEMA: Record<string, unknown> = {
   type: 'object',
+  additionalProperties: false,
   properties: {
     actions: {
       type: 'array',

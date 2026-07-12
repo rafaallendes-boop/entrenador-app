@@ -119,6 +119,14 @@ describe('weekPrompt batch compaction (Phase 1)', () => {
     expect(userPrompt).not.toMatch(/1RM/)
   })
 
+  it('gives the pair path the same compact session contract', () => {
+    const systemPrompt = buildWeekBatchStructuredSystemPromptMinimal()
+
+    expect(systemPrompt).toContain('rpe entero entre 1 y 10')
+    expect(systemPrompt).toContain('No incluyas exercises')
+    expect(systemPrompt).toContain('esqueletos semanales compactos')
+  })
+
   it('keeps sport-specific detail fields out of the Plan Builder tool schema', () => {
     const serialized = JSON.stringify(PLAN_BUILDER_WEEK_RESPONSE_SCHEMA)
     expect(serialized).not.toContain('exercises')

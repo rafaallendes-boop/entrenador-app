@@ -3,10 +3,36 @@ import type { AthleteProfile, PlanWizardConfig } from '../../../types'
 import type { AIRawResponse } from '../../ai/types'
 import type { TrainingPlan, TrainingPlanWeek } from '../../../types/planBuilder'
 import {
+  buildAttemptQualityReviewCacheKey,
   getCriticalWeekQualityIssueMessages,
   runAsyncPlanGeneration,
   type AsyncPlanGenerationWriter,
 } from '../asyncGenerationLoop'
+
+describe('buildAttemptQualityReviewCacheKey', () => {
+  it('ignores retry bookkeeping that reviewPlanQuality does not consume', () => {
+    const reviewed = buildAttemptQualityReviewCacheKey({
+      fallbackUsed: false,
+      repairedSessionCount: 2,
+      movedSessionCount: 1,
+      addedFallbackCount: 0,
+      filteredSportCount: 0,
+      droppedSessionCount: 1,
+    })
+    const rejected = buildAttemptQualityReviewCacheKey({
+      fallbackUsed: false,
+      repairedSessionCount: 2,
+      movedSessionCount: 1,
+      addedFallbackCount: 0,
+      filteredSportCount: 0,
+      droppedSessionCount: 1,
+    })
+
+    expect(rejected).toBe(reviewed)
+    expect(rejected).not.toContain('attempts')
+    expect(rejected).not.toContain('errorClass')
+  })
+})
 
 function addWeeksISO(startDate: string, weeks: number): string {
   const date = new Date(`${startDate}T00:00:00.000Z`)
@@ -554,6 +580,36 @@ describe('runAsyncPlanGeneration', () => {
     expect(result.cancelled).toBe(true)
     expect(result.plan.generationState).toBe('cancelled')
     expect(writer.weeks).toHaveLength(0)
+  })
+
+  it('clears a stale cancellation when a different job starts', async () => {
+    const plan = makePlan()
+    plan.generationState = 'cancelled'
+    plan.generationSummary = {
+      startedAt: 1,
+      jobId: 'job-old',
+      strategy: 'single',
+      completedWeeks: 0,
+      failedWeeks: [],
+      totalAttempts: 0,
+      cancelRequested: true,
+    }
+    const writer = makeWriter(plan)
+    const callLLM = vi.fn(async () => makeRaw('2026-06-01'))
+
+    const result = await runAsyncPlanGeneration({
+      plan,
+      weeks: [makeWeek(0, '2026-06-01')],
+      profile: makeProfile(),
+      wizardConfig: makeWizardConfig(),
+      jobId: 'job-new',
+      writer,
+      callLLM,
+    })
+
+    expect(callLLM).toHaveBeenCalledOnce()
+    expect(result.cancelled).toBe(false)
+    expect(result.plan.generationSummary?.cancelRequested).toBeUndefined()
   })
 
   it('honours cancellation requested while the only week is in flight', async () => {

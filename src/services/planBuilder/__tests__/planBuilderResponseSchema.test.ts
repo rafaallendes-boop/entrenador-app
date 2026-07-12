@@ -11,6 +11,15 @@ describe('PLAN_BUILDER_WEEK_RESPONSE_SCHEMA', () => {
     expect(serialized).toContain('sessions')
   })
 
+  it('keeps a strict shared JSON Schema for Claude and OpenAI', () => {
+    expect(PLAN_BUILDER_WEEK_RESPONSE_SCHEMA).toHaveProperty('type', 'object')
+    expect(PLAN_BUILDER_WEEK_RESPONSE_SCHEMA).toHaveProperty('additionalProperties', false)
+    const sessions = (PLAN_BUILDER_WEEK_RESPONSE_SCHEMA as {
+      properties: { sessions: { items: Record<string, unknown> } }
+    }).properties.sessions.items
+    expect(sessions).toHaveProperty('additionalProperties', false)
+  })
+
   it('constrains the compact session enums so the provider cannot invent values', () => {
     type SchemaNode = {
       enum?: string[]
@@ -43,6 +52,7 @@ describe('PLAN_BUILDER_PAIR_RESPONSE_SCHEMA', () => {
   it('wraps two create_week schemas inside an actions array', () => {
     expect(PLAN_BUILDER_PAIR_RESPONSE_SCHEMA).toMatchObject({
       type: 'object',
+      additionalProperties: false,
       properties: {
         actions: {
           type: 'array',

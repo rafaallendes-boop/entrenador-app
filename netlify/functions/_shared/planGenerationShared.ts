@@ -5,6 +5,9 @@ import type { TrainingPlan, TrainingPlanWeek } from '../../../src/types/planBuil
 import type { AsyncPlanGenerationWriter } from '../../../src/services/planBuilder/asyncGenerationLoop'
 import { rowToTrainingPlan, trainingPlanToRow, trainingPlanWeekToRow } from '../../../src/services/planBuilder/planRows'
 import { insertPlanGenerationAttempt } from './planGenerationTelemetry'
+import { withTimeout } from './promiseTimeout'
+
+export { withTimeout } from './promiseTimeout'
 
 export interface GeneratePlanPayload {
   plan: TrainingPlan
@@ -28,16 +31,6 @@ export const MAX_WEEKS = 40
 export const AUTH_TIMEOUT_MS = 10_000
 export const SUPABASE_OP_TIMEOUT_MS = 15_000
 export const TELEMETRY_OP_TIMEOUT_MS = 1_500
-
-export function withTimeout<T>(promise: PromiseLike<T>, ms: number, label: string): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const t = setTimeout(() => reject(new Error(`Timeout after ${ms}ms: ${label}`)), ms)
-    Promise.resolve(promise).then(
-      (v) => { clearTimeout(t); resolve(v) },
-      (e) => { clearTimeout(t); reject(e) },
-    )
-  })
-}
 
 export function json(statusCode: number, body: object) {
   return { statusCode, headers: JSON_HEADERS, body: JSON.stringify(body) }

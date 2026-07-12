@@ -97,6 +97,26 @@ const WORKER_BUDGET_EXHAUSTED_MESSAGE = 'Generación detenida: se agotó el pres
 
 type GenerateWeekCoreResult = Awaited<ReturnType<typeof generateWeekCore>>
 
+type QualityReviewMeta = Pick<GenerateWeekCoreResult['meta'],
+  | 'fallbackUsed'
+  | 'repairedSessionCount'
+  | 'movedSessionCount'
+  | 'addedFallbackCount'
+  | 'filteredSportCount'
+  | 'droppedSessionCount'
+>
+
+export function buildAttemptQualityReviewCacheKey(meta: QualityReviewMeta): string {
+  return JSON.stringify({
+    fallbackUsed: meta.fallbackUsed,
+    repairedSessionCount: meta.repairedSessionCount,
+    movedSessionCount: meta.movedSessionCount,
+    addedFallbackCount: meta.addedFallbackCount,
+    filteredSportCount: meta.filteredSportCount,
+    droppedSessionCount: meta.droppedSessionCount,
+  })
+}
+
 function classifyAttemptOutcome(result: GenerateWeekCoreResult): PlanGenerationAttemptTelemetry['outcome'] {
   if (result.meta.errorClass === 'truncated') return 'truncated'
   if (result.sessions.length > 0 && result.meta.errorClass !== 'quality_gate') return 'succeeded'
@@ -163,7 +183,10 @@ function buildSummary(
     failedWeeks: failedWeeks(weeks),
     totalAttempts: totalAttempts(weeks),
     heartbeatAt: input.heartbeatAt,
-    cancelRequested: input.cancelRequested ?? plan.generationSummary?.cancelRequested,
+    cancelRequested: input.cancelRequested
+      ?? (plan.generationSummary?.jobId === input.jobId
+        ? plan.generationSummary.cancelRequested
+        : undefined),
     acceptedAt: plan.generationSummary?.acceptedAt,
     discardedAt: plan.generationSummary?.discardedAt,
     qualityReview: plan.generationSummary?.qualityReview,
@@ -638,6 +661,45 @@ export async function runAsyncPlanGeneration(input: RunAsyncPlanGenerationInput)
     await input.writer.putPlan(plan)
 
     let providerResult: GenerateWeekCoreResult | undefined
+    type WeekQualityReview = ReturnType<typeof reviewPlanQuality>['weeks'][number]
+    const attemptQualityBySessions = new WeakMap<
+      GenerateWeekCoreResult['sessions'],
+      Map<string, WeekQualityReview | undefined>
+    >()
+    const reviewAttemptWeek = (
+      candidateResult: GenerateWeekCoreResult,
+    ): WeekQualityReview | undefined => {
+      if (candidateResult.sessions.length === 0) return undefined
+      const reviewKey = buildAttemptQualityReviewCacheKey(candidateResult.meta)
+      const cachedByMeta = attemptQualityBySessions.get(candidateResult.sessions)
+      if (cachedByMeta?.has(reviewKey)) {
+        return cachedByMeta.get(reviewKey)
+      }
+      const candidateWeek: TrainingPlanWeek = {
+        ...generatingWeek,
+        status: 'draft',
+        sessions: candidateResult.sessions,
+        generationMeta: {
+          ...generatingWeek.generationMeta,
+          fallbackUsed: candidateResult.meta.fallbackUsed,
+          repairedSessionCount: candidateResult.meta.repairedSessionCount,
+          movedSessionCount: candidateResult.meta.movedSessionCount,
+          addedFallbackCount: candidateResult.meta.addedFallbackCount,
+          filteredSportCount: candidateResult.meta.filteredSportCount,
+          droppedSessionCount: candidateResult.meta.droppedSessionCount,
+          generationSource: 'ai',
+        },
+      }
+      const review = reviewPlanQuality(
+        plan,
+        replaceWeek(weeks, candidateWeek),
+        { profile: input.profile },
+      ).weeks.find((weekReview) => weekReview.weekIndex === weekIndex)
+      const nextCache = cachedByMeta ?? new Map<string, WeekQualityReview | undefined>()
+      nextCache.set(reviewKey, review)
+      attemptQualityBySessions.set(candidateResult.sessions, nextCache)
+      return review
+    }
     try {
       // En generación paralela la semana previa puede no estar lista todavía.
       // Usamos la versión generada si existe (para evitar clonar sesiones), y si
@@ -659,27 +721,7 @@ export async function runAsyncPlanGeneration(input: RunAsyncPlanGenerationInput)
         temperature: input.temperature ?? DEFAULT_TEMPERATURE,
         callLLM: input.callLLM,
         getCriticalQualityIssues: (candidateResult) => {
-          const candidateWeek: TrainingPlanWeek = {
-            ...generatingWeek,
-            status: 'draft',
-            sessions: candidateResult.sessions,
-            generationMeta: {
-              ...generatingWeek.generationMeta,
-              attempts: candidateResult.meta.attempts,
-              fallbackUsed: candidateResult.meta.fallbackUsed,
-              repairedSessionCount: candidateResult.meta.repairedSessionCount,
-              movedSessionCount: candidateResult.meta.movedSessionCount,
-              addedFallbackCount: candidateResult.meta.addedFallbackCount,
-              filteredSportCount: candidateResult.meta.filteredSportCount,
-              droppedSessionCount: candidateResult.meta.droppedSessionCount,
-              generationSource: 'ai',
-            },
-          }
-          const weekReview = reviewPlanQuality(
-            plan,
-            replaceWeek(weeks, candidateWeek),
-            { profile: input.profile },
-          ).weeks.find((review) => review.weekIndex === weekIndex)
+          const weekReview = reviewAttemptWeek(candidateResult)
           return getCriticalWeekQualityIssueMessages(weekReview?.issues ?? [])
         },
         getRemainingBudgetMs: () => deadlineAt - getNow(),
@@ -694,26 +736,7 @@ export async function runAsyncPlanGeneration(input: RunAsyncPlanGenerationInput)
         },
         onAttemptCompleted: input.writer.putAttempt
           ? async (attempt, attemptResult, createdAt, attemptMaxTokens) => {
-            const scoredWeek: TrainingPlanWeek = {
-              ...generatingWeek,
-              status: attemptResult.sessions.length > 0 ? 'draft' : 'error',
-              sessions: attemptResult.sessions,
-              generationMeta: {
-                ...generatingWeek.generationMeta,
-                attempts: 1,
-                repairedSessionCount: attemptResult.meta.repairedSessionCount,
-                movedSessionCount: attemptResult.meta.movedSessionCount,
-                addedFallbackCount: attemptResult.meta.addedFallbackCount,
-                filteredSportCount: attemptResult.meta.filteredSportCount,
-                droppedSessionCount: attemptResult.meta.droppedSessionCount,
-                errorClass: attemptResult.meta.errorClass,
-                generationSource: 'ai',
-              },
-            }
-            const qualityReview = attemptResult.sessions.length > 0
-              ? reviewPlanQuality(plan, replaceWeek(weeks, scoredWeek), { profile: input.profile })
-                .weeks.find((review) => review.weekIndex === weekIndex)
-              : undefined
+            const qualityReview = reviewAttemptWeek(attemptResult)
             await input.writer.putAttempt!({
               athleteId: plan.athleteId,
               planId: plan.id,

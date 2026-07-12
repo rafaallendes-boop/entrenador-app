@@ -87,18 +87,22 @@ describe('planGenerationAttemptToRow', () => {
     expect(row.retry_used).toBe(true)
   })
 
-  it('treats a unique violation as an idempotent background replay', async () => {
-    const insert = vi.fn(async () => ({ error: { code: '23505' } }))
-    const client = { from: () => ({ insert }) }
+  it('scopes idempotent replays to job/week/attempt instead of traceId', async () => {
+    const upsert = vi.fn(async () => ({ error: null }))
+    const client = { from: () => ({ upsert }) }
     await expect(insertPlanGenerationAttempt(client, {
       athleteId: 'ath-1', planId: 'plan-1', jobId: 'job-1', weekIndex: 0,
       attempt: 1, traceId: 'trace-1', provider: 'claude', outcome: 'succeeded',
       retryUsed: false, maxTokens: 5000, workerConcurrency: 3, createdAt: 0,
     }, 'user-1')).resolves.toBeUndefined()
+    expect(upsert).toHaveBeenCalledWith(expect.objectContaining({ trace_id: 'trace-1' }), {
+      onConflict: 'job_id,week_index,attempt',
+      ignoreDuplicates: true,
+    })
   })
 
   it('rejects non-idempotent database errors without exposing their message', async () => {
-    const client = { from: () => ({ insert: async () => ({ error: { code: '42501' } }) }) }
+    const client = { from: () => ({ upsert: async () => ({ error: { code: '42501' } }) }) }
     await expect(insertPlanGenerationAttempt(client, {
       athleteId: 'ath-1', planId: 'plan-1', jobId: 'job-1', weekIndex: 0,
       attempt: 1, traceId: 'trace-1', provider: 'claude', outcome: 'provider_failed',

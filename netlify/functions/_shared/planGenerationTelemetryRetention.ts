@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { withTimeout } from './promiseTimeout'
 
 export const PLAN_GENERATION_TELEMETRY_RETENTION_DAYS = 90
 const RETENTION_TIMEOUT_MS = 15_000
@@ -8,20 +9,6 @@ interface RetentionClient {
     delete(options: { count: 'exact' }): {
       lt(column: string, value: string): PromiseLike<{ count: number | null; error: { message?: string } | null }>
     }
-  }
-}
-
-async function withRetentionTimeout<T>(promise: Promise<T>): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined
-  try {
-    return await Promise.race([
-      promise,
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error('retention timeout')), RETENTION_TIMEOUT_MS)
-      }),
-    ])
-  } finally {
-    if (timer) clearTimeout(timer)
   }
 }
 
@@ -56,7 +43,11 @@ export async function runPlanGenerationTelemetryRetention(): Promise<{
     const client = createClient(url, serviceRoleKey, {
       auth: { persistSession: false, autoRefreshToken: false },
     })
-    const deleted = await withRetentionTimeout(deleteExpiredPlanGenerationAttempts(client))
+    const deleted = await withTimeout(
+      deleteExpiredPlanGenerationAttempts(client),
+      RETENTION_TIMEOUT_MS,
+      'plan generation telemetry retention',
+    )
     return {
       statusCode: 200,
       body: JSON.stringify({ deleted, durationMs: Date.now() - startedAt }),

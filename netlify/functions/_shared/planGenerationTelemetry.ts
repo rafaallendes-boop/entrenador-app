@@ -2,7 +2,10 @@ import type { PlanGenerationAttemptTelemetry } from '../../../src/services/planB
 
 interface AttemptInsertClient {
   from(table: string): {
-    insert(row: Record<string, unknown>): PromiseLike<{ error: { code?: string } | null }>
+    upsert(
+      row: Record<string, unknown>,
+      options: { onConflict: string; ignoreDuplicates: boolean },
+    ): PromiseLike<{ error: { code?: string } | null }>
   }
 }
 
@@ -44,7 +47,7 @@ export function planGenerationAttemptToRow(
   }
 }
 
-/** Insert append-only telemetry; a duplicate means the background replay was already recorded. */
+/** Insert append-only telemetry, ignoring only the durable replay identity. */
 export async function insertPlanGenerationAttempt(
   client: AttemptInsertClient,
   attempt: PlanGenerationAttemptTelemetry,
@@ -52,7 +55,10 @@ export async function insertPlanGenerationAttempt(
 ): Promise<void> {
   const { error } = await client
     .from('plan_generation_attempts')
-    .insert(planGenerationAttemptToRow(attempt, userId))
-  if (!error || error.code === '23505') return
+    .upsert(planGenerationAttemptToRow(attempt, userId), {
+      onConflict: 'job_id,week_index,attempt',
+      ignoreDuplicates: true,
+    })
+  if (!error) return
   throw Object.assign(new Error('plan generation telemetry insert failed'), { code: error.code })
 }

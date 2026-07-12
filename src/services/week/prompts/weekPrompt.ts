@@ -211,6 +211,8 @@ export function buildWeekBatchStructuredSystemPromptMinimal(): string {
     'El objeto debe tener actions[] con EXACTAMENTE DOS create_week, una por cada lunes objetivo.',
     'Cada create_week debe incluir type="create_week", targetDate (lunes YYYY-MM-DD), reason, sessions[] y weekObjectives[].',
     'Respeta el targetDate, rango válido, días permitidos, deportes permitidos y cantidad de sesiones pedida para cada semana.',
+    'Cada sesión debe incluir date ISO, timeBlock AM/PM, sessionType, title, objective, durationMin>=5 y rpe entero entre 1 y 10.',
+    'Devuelve sólo esqueletos semanales compactos. No incluyas exercises, squashDetails, cyclingDetails, mobilityDetails, intervalStructure, warmup ni cooldown: la app hidrata esos detalles.',
     'Nunca mezcles sesiones de una semana dentro de la otra. Nunca devuelvas menos sesiones que las pedidas.',
   ].join('\n')
 }

@@ -91,4 +91,57 @@ describe('ProxyProvider streaming fallback', () => {
       message: 'Demasiadas solicitudes al coach.',
     })
   })
+
+  it('preserves Claude usage returned by the proxy', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(
+      JSON.stringify({
+        text: '{"ok":true}',
+        provider: 'claude',
+        promptTokens: 1200,
+        completionTokens: 340,
+        cacheCreationInputTokens: 900,
+        cacheReadInputTokens: 250,
+      }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } },
+    )))
+
+    const response = await new ProxyProvider().call(makeRequest({ onChunk: undefined }))
+
+    expect(response).toMatchObject({
+      provider: 'claude',
+      promptTokens: 1200,
+      completionTokens: 340,
+      cacheCreationInputTokens: 900,
+      cacheReadInputTokens: 250,
+    })
+  })
+
+  it('preserves Claude usage from the streaming done event', async () => {
+    const body = [
+      JSON.stringify({ type: 'chunk', chunk: '{"ok":true}' }),
+      JSON.stringify({
+        type: 'done',
+        provider: 'claude',
+        promptTokens: 1200,
+        completionTokens: 340,
+        cacheCreationInputTokens: 900,
+        cacheReadInputTokens: 250,
+      }),
+      '',
+    ].join('\n')
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(body, {
+      status: 200,
+      headers: { 'Content-Type': 'application/x-ndjson' },
+    })))
+
+    const response = await new ProxyProvider().call(makeRequest())
+
+    expect(response).toMatchObject({
+      provider: 'claude',
+      promptTokens: 1200,
+      completionTokens: 340,
+      cacheCreationInputTokens: 900,
+      cacheReadInputTokens: 250,
+    })
+  })
 })
