@@ -190,8 +190,8 @@ export function buildWeekStructuredSystemPromptMinimal(): string {
     'Responde SOLO con un objeto JSON que cumpla el responseSchema configurado por la app. Sin markdown, sin texto fuera, sin wrappers XML.',
     'El objeto debe ser una create_week: type="create_week", targetDate (lunes YYYY-MM-DD), reason, sessions[] y weekObjectives[].',
     'Respeta exactamente el targetDate, el rango válido de fechas, los días permitidos, deportes permitidos y cantidad de sesiones pedida.',
-    'Cada sesión debe ser válida: date ISO dentro de la semana, timeBlock AM/PM, sessionType permitido, title, objective y durationMin>=5.',
-    'Para sesiones de squash incluye squashDetails con trainingFocus, sessionMode y drills[] (cada drill con name y durationMin). Para strength incluye exercises[] con name, sets y reps.',
+    'Cada sesión debe ser válida: date ISO dentro de la semana, timeBlock AM/PM, sessionType permitido, title, objective, durationMin>=5 y rpe entero entre 1 y 10.',
+    'Devuelve sólo el esqueleto semanal compacto. No incluyas exercises, squashDetails, cyclingDetails, mobilityDetails, intervalStructure, warmup ni cooldown: la app hidrata los detalles deportivos y agrega protocolos base al aceptar el plan.',
     'No devuelvas menos sesiones que las pedidas. Si una sesión queda incompleta, corrígela antes de responder.',
   ].join('\n')
 }
@@ -282,8 +282,8 @@ export function buildWeekUserPrompt(input: WeekPromptInput): string {
     '',
     retryInstruction ? `Corrección del intento anterior:\n${retryInstruction}\n` : '',
     strictFormatting ? 'Modo estricto: si dudas, prioriza fechas válidas, targetDate correcto, sesiones completas y exactamente la cantidad pedida antes que creatividad.' : '',
-    strengthStructureSection,
-    strengthLoadSection,
+    outputFormat === 'json' ? '' : strengthStructureSection,
+    outputFormat === 'json' ? '' : strengthLoadSection,
     '',
     outputFormat === 'json'
       ? 'Devuelve sólo un objeto JSON create_week para esta semana. No uses wrappers XML, markdown ni texto explicativo.'
@@ -492,8 +492,8 @@ export function buildWeekBatchUserPrompt(input: WeekBatchPromptInput): string {
     '',
     retryInstruction ? `Corrección del intento anterior:\n${retryInstruction}\n` : '',
     strictFormatting ? 'Modo estricto: devuelve exactamente dos create_week, una por cada targetDate indicado, sin mezclar fechas entre semanas y con la cantidad exacta de sesiones válidas por semana.' : '',
-    anyStrength ? buildStrengthStructureSection() : '',
-    anyStrength ? buildStrengthLoadPack({ strengthProfile: profile.strengthProfile }) : '',
+    anyStrength && outputFormat !== 'json' ? buildStrengthStructureSection() : '',
+    anyStrength && outputFormat !== 'json' ? buildStrengthLoadPack({ strengthProfile: profile.strengthProfile }) : '',
     '',
     outputFormat === 'json'
       ? 'Devuelve sólo un objeto JSON con actions[] y exactamente dos create_week, una para cada semana pedida. No uses wrappers XML, markdown ni texto explicativo.'
