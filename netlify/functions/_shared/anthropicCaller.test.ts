@@ -50,4 +50,33 @@ describe('callAnthropicForWeek', () => {
     expect(body.model).toBe('claude-haiku-4-5')
     expect(result.model).toBe('claude-haiku-4-5')
   })
+
+  it('returns Anthropic token and prompt-cache usage without retaining content', async () => {
+    process.env['CLAUDE_API_KEY'] = 'test-key'
+    globalThis.fetch = vi.fn(async () => new Response(JSON.stringify({
+      content: [{ type: 'text', text: '{"type":"create_week","sessions":[]}' }],
+      model: 'claude-sonnet-4-6',
+      stop_reason: 'end_turn',
+      usage: {
+        input_tokens: 1200,
+        output_tokens: 340,
+        cache_creation_input_tokens: 900,
+        cache_read_input_tokens: 250,
+      },
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    })) as typeof fetch
+
+    const result = await callAnthropicForWeek(makeRequest())
+
+    expect(result).toMatchObject({
+      promptTokens: 1200,
+      completionTokens: 340,
+      cacheCreationInputTokens: 900,
+      cacheReadInputTokens: 250,
+      finishReason: 'end_turn',
+    })
+    expect(result.raw).toBeUndefined()
+  })
 })

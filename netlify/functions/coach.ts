@@ -7,6 +7,13 @@
  */
 
 import { stream, type HandlerEvent, type StreamingResponse } from '@netlify/functions'
+import {
+  normalizeJsonSchemaForGemini,
+  normalizeJsonSchemaForStandardProvider,
+} from '../../src/services/ai/jsonSchema'
+import { mapGeminiUsage, mapOpenAIUsage } from '../../src/services/ai/providerUsage'
+
+export { mapGeminiUsage, mapOpenAIUsage } from '../../src/services/ai/providerUsage'
 
 type ProviderName = 'gemini' | 'openai' | 'claude'
 type RequestClass =
@@ -53,6 +60,66 @@ interface ProviderExecutionResult {
   retryUsed: boolean
   fallbackUsed: boolean
   durationMs: number
+  promptTokens?: number
+  completionTokens?: number
+  cacheCreationInputTokens?: number
+  cacheReadInputTokens?: number
+}
+
+interface ProviderCallResult {
+  text: string
+  model: string
+  finishReason?: string
+  promptTokens?: number
+  completionTokens?: number
+  cacheCreationInputTokens?: number
+  cacheReadInputTokens?: number
+}
+
+interface ProviderUsage {
+  promptTokens?: number
+  completionTokens?: number
+  cacheCreationInputTokens?: number
+  cacheReadInputTokens?: number
+}
+
+export function parseClaudeStreamEvent(json: string): {
+  chunk: string
+  finishReason?: string
+  usage?: ProviderUsage
+} {
+  const data = JSON.parse(json) as {
+    type?: string
+    delta?: { type?: string; text?: string; partial_json?: string; stop_reason?: string }
+    message?: {
+      stop_reason?: string
+      usage?: {
+        input_tokens?: number
+        output_tokens?: number
+        cache_creation_input_tokens?: number
+        cache_read_input_tokens?: number
+      }
+    }
+    usage?: { output_tokens?: number }
+  }
+  const finishReason = data.delta?.stop_reason ?? data.message?.stop_reason
+  const usage: ProviderUsage | undefined = data.type === 'message_start'
+    ? {
+        promptTokens: data.message?.usage?.input_tokens,
+        cacheCreationInputTokens: data.message?.usage?.cache_creation_input_tokens,
+        cacheReadInputTokens: data.message?.usage?.cache_read_input_tokens,
+      }
+    : data.type === 'message_delta'
+      ? { completionTokens: data.usage?.output_tokens }
+      : undefined
+  const chunk = data.type === 'content_block_delta'
+    ? data.delta?.type === 'text_delta'
+      ? data.delta.text ?? ''
+      : data.delta?.type === 'input_json_delta'
+        ? data.delta.partial_json ?? ''
+        : ''
+    : ''
+  return { chunk, finishReason, usage }
 }
 
 interface RequestValidationResult {
@@ -602,24 +669,10 @@ function buildGeminiGenerationConfig(req: CoachRequest, model: string): Record<s
     }
   }
   if (req.responseMimeType) generationConfig.responseMimeType = req.responseMimeType
-  if (req.responseSchema) generationConfig.responseSchema = req.responseSchema
-  return generationConfig
-}
-
-function normalizeJsonSchemaForOpenAI(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(normalizeJsonSchemaForOpenAI)
-  if (!value || typeof value !== 'object') return value
-
-  const input = value as Record<string, unknown>
-  const output: Record<string, unknown> = {}
-  for (const [key, child] of Object.entries(input)) {
-    if (key === 'type' && typeof child === 'string') {
-      output[key] = child.toLowerCase()
-      continue
-    }
-    output[key] = normalizeJsonSchemaForOpenAI(child)
+  if (req.responseSchema) {
+    generationConfig.responseSchema = normalizeJsonSchemaForGemini(req.responseSchema)
   }
-  return output
+  return generationConfig
 }
 
 function buildOpenAIResponseFormat(req: CoachRequest): Record<string, unknown> | undefined {
@@ -630,7 +683,7 @@ function buildOpenAIResponseFormat(req: CoachRequest): Record<string, unknown> |
       json_schema: {
         name: requestClass,
         strict: false,
-        schema: normalizeJsonSchemaForOpenAI(req.responseSchema),
+        schema: normalizeJsonSchemaForStandardProvider(req.responseSchema),
       },
     }
   }
@@ -682,7 +735,10 @@ export function buildOpenAIBody(req: CoachRequest, model: string, streamOutput =
   }
   const responseFormat = buildOpenAIResponseFormat(req)
   if (responseFormat) body.response_format = responseFormat
-  if (streamOutput) body.stream = true
+  if (streamOutput) {
+    body.stream = true
+    body.stream_options = { include_usage: true }
+  }
   return body
 }
 
@@ -699,7 +755,7 @@ function buildClaudeToolConfig(req: CoachRequest): Record<string, unknown> | und
       {
         name: CLAUDE_STRUCTURED_TOOL_NAME,
         description: 'Devuelve el resultado estructurado solicitado siguiendo el schema exacto.',
-        input_schema: normalizeJsonSchemaForOpenAI(req.responseSchema),
+        input_schema: normalizeJsonSchemaForStandardProvider(req.responseSchema),
       },
     ],
     tool_choice: { type: 'tool', name: CLAUDE_STRUCTURED_TOOL_NAME },
@@ -738,7 +794,7 @@ async function callGemini(
   apiKey: string,
   model: string,
   signal: AbortSignal,
-): Promise<{ text: string; model: string; finishReason?: string }> {
+): Promise<ProviderCallResult> {
   const res = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
     {
@@ -760,10 +816,21 @@ async function callGemini(
   )
   const data = await fetchJsonOrThrow(res) as {
     candidates?: Array<{ content?: { parts?: Array<{ text?: string }> }; finishReason?: string }>
+    usageMetadata?: {
+      promptTokenCount?: number
+      candidatesTokenCount?: number
+      thoughtsTokenCount?: number
+      cachedContentTokenCount?: number
+    }
   }
   const text = data.candidates?.[0]?.content?.parts?.[0]?.text
   if (!text) throw makeError('Gemini devolvió una respuesta vacía.', 500, 'parse_error')
-  return { text, model, finishReason: data.candidates?.[0]?.finishReason }
+  return {
+    text,
+    model,
+    finishReason: data.candidates?.[0]?.finishReason,
+    ...mapGeminiUsage(data.usageMetadata),
+  }
 }
 
 async function callOpenAI(
@@ -771,7 +838,7 @@ async function callOpenAI(
   apiKey: string,
   model: string,
   signal: AbortSignal,
-): Promise<{ text: string; model: string; finishReason?: string }> {
+): Promise<ProviderCallResult> {
   const res = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -784,10 +851,20 @@ async function callOpenAI(
   const data = await fetchJsonOrThrow(res) as {
     choices?: Array<{ message?: { content?: string }; finish_reason?: string }>
     model?: string
+    usage?: {
+      prompt_tokens?: number
+      completion_tokens?: number
+      prompt_tokens_details?: { cached_tokens?: number }
+    }
   }
   const text = data.choices?.[0]?.message?.content
   if (!text) throw makeError('OpenAI devolvió una respuesta vacía.', 500, 'parse_error')
-  return { text, model: data.model ?? model, finishReason: data.choices?.[0]?.finish_reason }
+  return {
+    text,
+    model: data.model ?? model,
+    finishReason: data.choices?.[0]?.finish_reason,
+    ...mapOpenAIUsage(data.usage),
+  }
 }
 
 async function callClaude(
@@ -795,7 +872,7 @@ async function callClaude(
   apiKey: string,
   model: string,
   signal: AbortSignal,
-): Promise<{ text: string; model: string; finishReason?: string }> {
+): Promise<ProviderCallResult> {
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -810,10 +887,24 @@ async function callClaude(
     content?: Array<{ type?: string; text?: string; input?: unknown }>
     model?: string
     stop_reason?: string
+    usage?: {
+      input_tokens?: number
+      output_tokens?: number
+      cache_creation_input_tokens?: number
+      cache_read_input_tokens?: number
+    }
   }
   const text = extractClaudeText(data.content)
   if (!text) throw makeError('Claude devolvió una respuesta vacía.', 500, 'parse_error')
-  return { text, model: data.model ?? model, finishReason: data.stop_reason }
+  return {
+    text,
+    model: data.model ?? model,
+    finishReason: data.stop_reason,
+    promptTokens: data.usage?.input_tokens,
+    completionTokens: data.usage?.output_tokens,
+    cacheCreationInputTokens: data.usage?.cache_creation_input_tokens,
+    cacheReadInputTokens: data.usage?.cache_read_input_tokens,
+  }
 }
 
 async function streamGemini(
@@ -822,7 +913,7 @@ async function streamGemini(
   model: string,
   signal: AbortSignal,
   onChunk: (chunk: string) => void,
-): Promise<{ text: string; model: string; finishReason?: string }> {
+): Promise<ProviderCallResult> {
   const res = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${apiKey}`,
     {
@@ -847,11 +938,20 @@ async function streamGemini(
     throw makeError('Gemini streaming falló.', 500, 'server_error')
   }
   return readSseStream(res.body, model, (json) => {
-    const data = JSON.parse(json) as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> }; finishReason?: string }> }
+    const data = JSON.parse(json) as {
+      candidates?: Array<{ content?: { parts?: Array<{ text?: string }> }; finishReason?: string }>
+      usageMetadata?: {
+        promptTokenCount?: number
+        candidatesTokenCount?: number
+        thoughtsTokenCount?: number
+        cachedContentTokenCount?: number
+      }
+    }
     const candidate = data.candidates?.[0]
     return {
       chunk: candidate?.content?.parts?.[0]?.text ?? '',
       finishReason: candidate?.finishReason,
+      usage: mapGeminiUsage(data.usageMetadata),
     }
   }, onChunk)
 }
@@ -862,7 +962,7 @@ async function streamOpenAI(
   model: string,
   signal: AbortSignal,
   onChunk: (chunk: string) => void,
-): Promise<{ text: string; model: string; finishReason?: string }> {
+): Promise<ProviderCallResult> {
   const res = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -877,11 +977,19 @@ async function streamOpenAI(
     throw makeError('OpenAI streaming falló.', 500, 'server_error')
   }
   return readSseStream(res.body, model, (json) => {
-    const data = JSON.parse(json) as { choices?: Array<{ delta?: { content?: string }; finish_reason?: string }> }
+    const data = JSON.parse(json) as {
+      choices?: Array<{ delta?: { content?: string }; finish_reason?: string }>
+      usage?: {
+        prompt_tokens?: number
+        completion_tokens?: number
+        prompt_tokens_details?: { cached_tokens?: number }
+      }
+    }
     const choice = data.choices?.[0]
     return {
       chunk: choice?.delta?.content ?? '',
       finishReason: choice?.finish_reason,
+      usage: mapOpenAIUsage(data.usage),
     }
   }, onChunk)
 }
@@ -892,7 +1000,7 @@ async function streamClaude(
   model: string,
   signal: AbortSignal,
   onChunk: (chunk: string) => void,
-): Promise<{ text: string; model: string; finishReason?: string }> {
+): Promise<ProviderCallResult> {
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -907,34 +1015,21 @@ async function streamClaude(
     await fetchJsonOrThrow(res)
     throw makeError('Claude streaming falló.', 500, 'server_error')
   }
-  return readSseStream(res.body, model, (json) => {
-    const data = JSON.parse(json) as {
-      type?: string
-      delta?: { type?: string; text?: string; partial_json?: string }
-      message?: { stop_reason?: string }
-    }
-    const finishReason = data.message?.stop_reason
-    if (data.type === 'content_block_delta') {
-      // text_delta: respuesta de texto plano. input_json_delta: fragmentos del JSON
-      // de la tool estructurada — se acumulan igual que el texto y forman el JSON final.
-      if (data.delta?.type === 'text_delta') return { chunk: data.delta.text ?? '', finishReason }
-      if (data.delta?.type === 'input_json_delta') return { chunk: data.delta.partial_json ?? '', finishReason }
-    }
-    return { chunk: '', finishReason }
-  }, onChunk)
+  return readSseStream(res.body, model, parseClaudeStreamEvent, onChunk)
 }
 
 async function readSseStream(
   body: ReadableStream<Uint8Array>,
   model: string,
-  pickChunk: (json: string) => string | { chunk?: string; finishReason?: string },
+  pickChunk: (json: string) => string | { chunk?: string; finishReason?: string; usage?: ProviderUsage },
   onChunk: (chunk: string) => void,
-): Promise<{ text: string; model: string; finishReason?: string }> {
+): Promise<ProviderCallResult> {
   const reader = body.getReader()
   const decoder = new TextDecoder()
   let buffer = ''
   let fullText = ''
   let finishReason: string | undefined
+  let usage: ProviderUsage = {}
 
   while (true) {
     const { done, value } = await reader.read()
@@ -951,6 +1046,14 @@ async function readSseStream(
         const picked = pickChunk(json)
         const chunk = typeof picked === 'string' ? picked : picked.chunk ?? ''
         finishReason = typeof picked === 'string' ? finishReason : picked.finishReason ?? finishReason
+        if (typeof picked !== 'string' && picked.usage) {
+          usage = {
+            promptTokens: picked.usage.promptTokens ?? usage.promptTokens,
+            completionTokens: picked.usage.completionTokens ?? usage.completionTokens,
+            cacheCreationInputTokens: picked.usage.cacheCreationInputTokens ?? usage.cacheCreationInputTokens,
+            cacheReadInputTokens: picked.usage.cacheReadInputTokens ?? usage.cacheReadInputTokens,
+          }
+        }
         if (chunk) {
           fullText += chunk
           onChunk(chunk)
@@ -962,7 +1065,7 @@ async function readSseStream(
   }
 
   if (!fullText) throw makeError('El provider devolvió una respuesta vacía.', 500, 'parse_error')
-  return { text: fullText, model, finishReason }
+  return { text: fullText, model, finishReason, ...usage }
 }
 
 function modelEnvKey(provider: ProviderName, requestClass: RequestClass): string {
@@ -1000,7 +1103,7 @@ async function invokeProvider(
   req: CoachRequest,
   signal: AbortSignal,
   onChunk?: (chunk: string) => void,
-): Promise<{ text: string; provider: ProviderName; model: string; finishReason?: string }> {
+): Promise<ProviderCallResult & { provider: ProviderName }> {
   const model = resolveModel(provider, normalizeRequestClass(req.requestClass))
   const key = resolveApiKey(provider)
 

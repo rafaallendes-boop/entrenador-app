@@ -13,6 +13,9 @@ import { getAIRequestPolicy } from '../ai/requestPolicy'
 import {
   buildClaudeBody,
   buildOpenAIBody,
+  mapGeminiUsage,
+  mapOpenAIUsage,
+  parseClaudeStreamEvent,
   providerEnvKey,
   resolveFallbackProvider,
   resolveModel,
@@ -203,6 +206,13 @@ describe('OpenAI request body', () => {
     })
     expect(buildOpenAIBody(baseRequest, 'gpt-4.1-mini')).not.toHaveProperty('reasoning_effort')
   })
+
+  it('requests the final usage event when streaming', () => {
+    expect(buildOpenAIBody(baseRequest, 'gpt-5-mini', true)).toMatchObject({
+      stream: true,
+      stream_options: { include_usage: true },
+    })
+  })
 })
 
 describe('Claude request body', () => {
@@ -237,6 +247,67 @@ describe('Claude request body', () => {
 
   it('sets stream flag when streaming', () => {
     expect(buildClaudeBody(baseRequest, 'claude-sonnet-4-6', true)).toMatchObject({ stream: true })
+  })
+})
+
+describe('Claude stream usage', () => {
+  it('does not treat message_start output_tokens as completed output', () => {
+    const event = parseClaudeStreamEvent(JSON.stringify({
+      type: 'message_start',
+      message: {
+        usage: {
+          input_tokens: 1200,
+          output_tokens: 1,
+          cache_creation_input_tokens: 900,
+          cache_read_input_tokens: 250,
+        },
+      },
+    }))
+
+    expect(event.usage).toEqual({
+      promptTokens: 1200,
+      cacheCreationInputTokens: 900,
+      cacheReadInputTokens: 250,
+    })
+    expect(event.usage).not.toHaveProperty('completionTokens')
+  })
+
+  it('captures completion tokens only from message_delta', () => {
+    expect(parseClaudeStreamEvent(JSON.stringify({
+      type: 'message_delta',
+      delta: { stop_reason: 'end_turn' },
+      usage: { output_tokens: 340 },
+    }))).toMatchObject({
+      finishReason: 'end_turn',
+      usage: { completionTokens: 340 },
+    })
+  })
+})
+
+describe('proxy provider usage mapping', () => {
+  it('maps Gemini usage metadata into the shared telemetry fields', () => {
+    expect(mapGeminiUsage({
+      promptTokenCount: 1200,
+      candidatesTokenCount: 340,
+      thoughtsTokenCount: 160,
+      cachedContentTokenCount: 250,
+    })).toEqual({
+      promptTokens: 950,
+      completionTokens: 500,
+      cacheReadInputTokens: 250,
+    })
+  })
+
+  it('maps OpenAI usage and cached prompt tokens', () => {
+    expect(mapOpenAIUsage({
+      prompt_tokens: 1200,
+      completion_tokens: 340,
+      prompt_tokens_details: { cached_tokens: 250 },
+    })).toEqual({
+      promptTokens: 950,
+      completionTokens: 340,
+      cacheReadInputTokens: 250,
+    })
   })
 })
 

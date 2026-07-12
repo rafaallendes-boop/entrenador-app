@@ -1,5 +1,7 @@
 import type { AIProvider, AIRequest, AIRawResponse } from '../types'
 import { createProviderError } from '../types'
+import { normalizeJsonSchemaForGemini } from '../jsonSchema'
+import { mapGeminiUsage } from '../providerUsage'
 
 const DEFAULT_MODEL = 'gemini-2.5-flash'
 const BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/models/'
@@ -34,7 +36,9 @@ function buildGenerationConfig(request: AIRequest, model: string): Record<string
     }
   }
   if (request.responseMimeType) generationConfig.responseMimeType = request.responseMimeType
-  if (request.responseSchema) generationConfig.responseSchema = request.responseSchema
+  if (request.responseSchema) {
+    generationConfig.responseSchema = normalizeJsonSchemaForGemini(request.responseSchema)
+  }
   return generationConfig
 }
 
@@ -88,7 +92,15 @@ export class GeminiProvider implements AIProvider {
       throw createProviderError('gemini', 'unknown', detail)
     }
 
-    const data = await res.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> }; finishReason?: string }> }
+    const data = await res.json() as {
+      candidates?: Array<{ content?: { parts?: Array<{ text?: string }> }; finishReason?: string }>
+      usageMetadata?: {
+        promptTokenCount?: number
+      candidatesTokenCount?: number
+      thoughtsTokenCount?: number
+      cachedContentTokenCount?: number
+      }
+    }
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? ''
     if (!text) throw createProviderError('gemini', 'parse_error', 'La API de Gemini devolvió una respuesta vacía o inesperada.')
 
@@ -101,6 +113,7 @@ export class GeminiProvider implements AIProvider {
       traceId: request.traceId,
       requestClass: request.requestClass,
       finishReason: data.candidates?.[0]?.finishReason,
+      ...mapGeminiUsage(data.usageMetadata),
     }
   }
 
@@ -132,6 +145,9 @@ export class GeminiProvider implements AIProvider {
     let fullText = ''
     let buffer = ''
     let finishReason: string | undefined
+    let promptTokens: number | undefined
+    let completionTokens: number | undefined
+    let cacheReadInputTokens: number | undefined
 
     while (true) {
       const { done, value } = await reader.read()
@@ -146,10 +162,22 @@ export class GeminiProvider implements AIProvider {
         const jsonStr = line.slice(6).trim()
         if (!jsonStr || jsonStr === '[DONE]') continue
         try {
-          const data = JSON.parse(jsonStr) as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> }; finishReason?: string }> }
+          const data = JSON.parse(jsonStr) as {
+            candidates?: Array<{ content?: { parts?: Array<{ text?: string }> }; finishReason?: string }>
+            usageMetadata?: {
+              promptTokenCount?: number
+              candidatesTokenCount?: number
+              thoughtsTokenCount?: number
+              cachedContentTokenCount?: number
+            }
+          }
           const chunk = data.candidates?.[0]?.content?.parts?.[0]?.text ?? ''
           if (chunk) { fullText += chunk; request.onChunk?.(chunk) }
           finishReason = data.candidates?.[0]?.finishReason ?? finishReason
+          const usage = mapGeminiUsage(data.usageMetadata)
+          promptTokens = usage.promptTokens ?? promptTokens
+          completionTokens = usage.completionTokens ?? completionTokens
+          cacheReadInputTokens = usage.cacheReadInputTokens ?? cacheReadInputTokens
         } catch { /* skip malformed SSE line */ }
       }
     }
@@ -164,6 +192,9 @@ export class GeminiProvider implements AIProvider {
       traceId: request.traceId,
       requestClass: request.requestClass,
       finishReason,
+      promptTokens,
+      completionTokens,
+      cacheReadInputTokens,
     }
   }
 }

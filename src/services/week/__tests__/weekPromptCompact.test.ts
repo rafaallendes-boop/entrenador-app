@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
+  buildWeekStructuredSystemPromptMinimal,
   buildWeekBatchStructuredSystemPromptMinimal,
   buildWeekBatchUserPrompt,
+  buildWeekUserPrompt,
 } from '../prompts/weekPrompt'
+import { PLAN_BUILDER_WEEK_RESPONSE_SCHEMA } from '../../planBuilder/planBuilderResponseSchema'
 import type { TrainingPlan, TrainingPlanWeek } from '../../../types/planBuilder'
 import type { AthleteProfile, PlanWizardConfig } from '../../../types'
 
@@ -71,7 +74,7 @@ describe('weekPrompt batch compaction (Phase 1)', () => {
       makeWeek('2026-06-08', 1, true),
     ]
     const userPrompt = buildWeekBatchUserPrompt({
-      plan, weeks, profile: makeProfile(), wizardConfig: makeWizard(),
+      plan, weeks, profile: makeProfile(), wizardConfig: makeWizard(), outputFormat: 'json',
     })
     expect(estimateTokens(userPrompt)).toBeLessThan(2000)
   })
@@ -89,15 +92,45 @@ describe('weekPrompt batch compaction (Phase 1)', () => {
     expect(userPrompt).not.toMatch(/1RM/)
   })
 
-  it('strength pack is INCLUDED when at least one week uses strength', () => {
+  it('omits the strength detail pack from structured JSON requests', () => {
     const plan = makePlan()
     const weeks: [TrainingPlanWeek, TrainingPlanWeek] = [
       makeWeek('2026-06-01', 0, true),
       makeWeek('2026-06-08', 1, false),
     ]
     const userPrompt = buildWeekBatchUserPrompt({
-      plan, weeks, profile: makeProfile(), wizardConfig: makeWizard(),
+      plan, weeks, profile: makeProfile(), wizardConfig: makeWizard(), outputFormat: 'json',
     })
-    expect(userPrompt).toMatch(/1RM/)
+    expect(userPrompt).not.toMatch(/1RM/)
+  })
+
+  it('asks Claude for a compact skeleton that repairWeek can hydrate', () => {
+    const systemPrompt = buildWeekStructuredSystemPromptMinimal()
+    const userPrompt = buildWeekUserPrompt({
+      plan: makePlan(),
+      week: makeWeek('2026-06-01', 0, true),
+      profile: makeProfile(),
+      wizardConfig: makeWizard(),
+      outputFormat: 'json',
+    })
+
+    expect(systemPrompt).toContain('esqueleto semanal compacto')
+    expect(systemPrompt).toContain('No incluyas exercises')
+    expect(userPrompt).not.toMatch(/1RM/)
+  })
+
+  it('gives the pair path the same compact session contract', () => {
+    const systemPrompt = buildWeekBatchStructuredSystemPromptMinimal()
+
+    expect(systemPrompt).toContain('rpe entero entre 1 y 10')
+    expect(systemPrompt).toContain('No incluyas exercises')
+    expect(systemPrompt).toContain('esqueletos semanales compactos')
+  })
+
+  it('keeps sport-specific detail fields out of the Plan Builder tool schema', () => {
+    const serialized = JSON.stringify(PLAN_BUILDER_WEEK_RESPONSE_SCHEMA)
+    expect(serialized).not.toContain('exercises')
+    expect(serialized).not.toContain('squashDetails')
+    expect(serialized).not.toContain('warmupSets')
   })
 })

@@ -25,25 +25,11 @@
 
 import type { AIProvider, AIRequest, AIRawResponse } from '../types'
 import { createProviderError } from '../types'
+import { normalizeJsonSchemaForStandardProvider } from '../jsonSchema'
+import { mapOpenAIUsage } from '../providerUsage'
 
 const DEFAULT_MODEL = 'gpt-5-mini'
 const API_URL = 'https://api.openai.com/v1/chat/completions'
-
-function normalizeJsonSchemaForOpenAI(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(normalizeJsonSchemaForOpenAI)
-  if (!value || typeof value !== 'object') return value
-
-  const input = value as Record<string, unknown>
-  const output: Record<string, unknown> = {}
-  for (const [key, child] of Object.entries(input)) {
-    if (key === 'type' && typeof child === 'string') {
-      output[key] = child.toLowerCase()
-      continue
-    }
-    output[key] = normalizeJsonSchemaForOpenAI(child)
-  }
-  return output
-}
 
 function buildResponseFormat(request: AIRequest): Record<string, unknown> | undefined {
   if (request.responseSchema) {
@@ -52,7 +38,7 @@ function buildResponseFormat(request: AIRequest): Record<string, unknown> | unde
       json_schema: {
         name: request.requestClass,
         strict: false,
-        schema: normalizeJsonSchemaForOpenAI(request.responseSchema),
+        schema: normalizeJsonSchemaForStandardProvider(request.responseSchema),
       },
     }
   }
@@ -101,7 +87,10 @@ function buildRequestBody(
   }
   const responseFormat = buildResponseFormat(request)
   if (responseFormat) body.response_format = responseFormat
-  if (stream) body.stream = true
+  if (stream) {
+    body.stream = true
+    body.stream_options = { include_usage: true }
+  }
   return body
 }
 
@@ -152,7 +141,15 @@ export class OpenAIProvider implements AIProvider {
       throw createProviderError('openai', 'unknown', detail)
     }
 
-    const data = await res.json() as { choices: Array<{ message: { content: string }; finish_reason?: string }>; model: string }
+    const data = await res.json() as {
+      choices: Array<{ message: { content: string }; finish_reason?: string }>
+      model: string
+      usage?: {
+        prompt_tokens?: number
+        completion_tokens?: number
+        prompt_tokens_details?: { cached_tokens?: number }
+      }
+    }
     const text = data.choices[0]?.message?.content ?? ''
     if (!text) throw createProviderError('openai', 'parse_error', 'La API de OpenAI devolvio una respuesta vacia.')
 
@@ -165,6 +162,7 @@ export class OpenAIProvider implements AIProvider {
       traceId: request.traceId,
       requestClass: request.requestClass,
       finishReason: data.choices[0]?.finish_reason,
+      ...mapOpenAIUsage(data.usage),
     }
   }
 
@@ -200,6 +198,9 @@ export class OpenAIProvider implements AIProvider {
     let fullText = ''
     let buffer = ''
     let finishReason: string | undefined
+    let promptTokens: number | undefined
+    let completionTokens: number | undefined
+    let cacheReadInputTokens: number | undefined
 
     while (true) {
       const { done, value } = await reader.read()
@@ -214,10 +215,21 @@ export class OpenAIProvider implements AIProvider {
         const jsonStr = line.slice(6).trim()
         if (!jsonStr || jsonStr === '[DONE]') continue
         try {
-          const event = JSON.parse(jsonStr) as { choices?: Array<{ delta?: { content?: string }; finish_reason?: string }> }
+          const event = JSON.parse(jsonStr) as {
+            choices?: Array<{ delta?: { content?: string }; finish_reason?: string }>
+            usage?: {
+              prompt_tokens?: number
+              completion_tokens?: number
+              prompt_tokens_details?: { cached_tokens?: number }
+            }
+          }
           const chunk = event.choices?.[0]?.delta?.content ?? ''
           if (chunk) { fullText += chunk; onChunk(chunk) }
           finishReason = event.choices?.[0]?.finish_reason ?? finishReason
+          const usage = mapOpenAIUsage(event.usage)
+          promptTokens = usage.promptTokens ?? promptTokens
+          completionTokens = usage.completionTokens ?? completionTokens
+          cacheReadInputTokens = usage.cacheReadInputTokens ?? cacheReadInputTokens
         } catch { /* skip malformed SSE line */ }
       }
     }
@@ -232,6 +244,9 @@ export class OpenAIProvider implements AIProvider {
       traceId: request.traceId,
       requestClass: request.requestClass,
       finishReason,
+      promptTokens,
+      completionTokens,
+      cacheReadInputTokens,
     }
   }
 }

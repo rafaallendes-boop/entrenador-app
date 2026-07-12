@@ -39,6 +39,9 @@ export interface PlanGenerationMeta {
   traceId?: string
   promptTokens?: number
   completionTokens?: number
+  cacheCreationInputTokens?: number
+  cacheReadInputTokens?: number
+  finishReason?: string
   attempts: number
   lastError?: string
   lastAttemptAt?: number

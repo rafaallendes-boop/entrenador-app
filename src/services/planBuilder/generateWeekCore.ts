@@ -20,6 +20,9 @@ export interface GenerateWeekResult {
     lastError?: string
     promptTokens?: number
     completionTokens?: number
+    cacheCreationInputTokens?: number
+    cacheReadInputTokens?: number
+    finishReason?: string
     durationMs?: number
     chunkCount?: number
     retryUsed?: boolean
@@ -289,6 +292,11 @@ export async function generateWeekCore(input: GenerateWeekCoreInput): Promise<Ge
       traceId: raw.traceId ?? input.traceId,
       lastError,
       durationMs: raw.durationMs,
+      promptTokens: raw.promptTokens,
+      completionTokens: raw.completionTokens,
+      cacheCreationInputTokens: raw.cacheCreationInputTokens,
+      cacheReadInputTokens: raw.cacheReadInputTokens,
+      finishReason: raw.finishReason,
       retryUsed: raw.retryUsed,
       fallbackUsed: raw.fallbackUsed,
       rawSessionCount: evaluation.rawSessionCount,

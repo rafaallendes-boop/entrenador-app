@@ -2,7 +2,37 @@ import { describe, expect, it, vi } from 'vitest'
 import type { AthleteProfile, PlanWizardConfig } from '../../../types'
 import type { AIRawResponse } from '../../ai/types'
 import type { TrainingPlan, TrainingPlanWeek } from '../../../types/planBuilder'
-import { runAsyncPlanGeneration, type AsyncPlanGenerationWriter } from '../asyncGenerationLoop'
+import {
+  buildAttemptQualityReviewCacheKey,
+  getCriticalWeekQualityIssueMessages,
+  runAsyncPlanGeneration,
+  type AsyncPlanGenerationWriter,
+} from '../asyncGenerationLoop'
+
+describe('buildAttemptQualityReviewCacheKey', () => {
+  it('ignores retry bookkeeping that reviewPlanQuality does not consume', () => {
+    const reviewed = buildAttemptQualityReviewCacheKey({
+      fallbackUsed: false,
+      repairedSessionCount: 2,
+      movedSessionCount: 1,
+      addedFallbackCount: 0,
+      filteredSportCount: 0,
+      droppedSessionCount: 1,
+    })
+    const rejected = buildAttemptQualityReviewCacheKey({
+      fallbackUsed: false,
+      repairedSessionCount: 2,
+      movedSessionCount: 1,
+      addedFallbackCount: 0,
+      filteredSportCount: 0,
+      droppedSessionCount: 1,
+    })
+
+    expect(rejected).toBe(reviewed)
+    expect(rejected).not.toContain('attempts')
+    expect(rejected).not.toContain('errorClass')
+  })
+})
 
 function addWeeksISO(startDate: string, weeks: number): string {
   const date = new Date(`${startDate}T00:00:00.000Z`)
@@ -191,6 +221,93 @@ describe('runAsyncPlanGeneration', () => {
     expect(writer.weeks.filter((week) => week.status === 'draft')).toHaveLength(2)
   })
 
+  it('appends one best-effort telemetry record per provider attempt', async () => {
+    const plan = makePlan()
+    const weeks = [makeWeek(0, '2026-06-01')]
+    const writer = makeWriter(plan)
+    const putAttempt = vi.fn(async () => undefined)
+    writer.putAttempt = putAttempt
+
+    await runAsyncPlanGeneration({
+      plan,
+      weeks,
+      profile: makeProfile(),
+      wizardConfig: makeWizardConfig(),
+      jobId: 'job-observability',
+      writer,
+      callLLM: async () => makeRaw('2026-06-01', {
+        promptTokens: 101,
+        completionTokens: 42,
+        cacheCreationInputTokens: 80,
+        cacheReadInputTokens: 20,
+        finishReason: 'end_turn',
+      }),
+    })
+
+    expect(putAttempt).toHaveBeenCalledTimes(1)
+    expect(putAttempt).toHaveBeenCalledWith(expect.objectContaining({
+      athleteId: 'athlete-1',
+      planId: 'plan-1',
+      jobId: 'job-observability',
+      weekIndex: 0,
+      attempt: 1,
+      provider: 'claude',
+      promptTokens: 101,
+      completionTokens: 42,
+      cacheCreationInputTokens: 80,
+      cacheReadInputTokens: 20,
+      finishReason: 'end_turn',
+      outcome: 'succeeded',
+      retryUsed: false,
+      maxTokens: 5000,
+      workerConcurrency: 3,
+      rawSessionCount: 1,
+      validSessionCount: 1,
+    }))
+    expect(putAttempt.mock.calls[0]?.[0].qualityScore).toEqual(expect.any(Number))
+  })
+
+  it('does not fail or retry generation when telemetry persistence fails', async () => {
+    const plan = makePlan()
+    const weeks = [makeWeek(0, '2026-06-01')]
+    const writer = makeWriter(plan)
+    writer.putAttempt = vi.fn(async () => { throw new Error('telemetry unavailable') })
+    const callLLM = vi.fn(async () => makeRaw('2026-06-01'))
+
+    const result = await runAsyncPlanGeneration({
+      plan,
+      weeks,
+      profile: makeProfile(),
+      wizardConfig: makeWizardConfig(),
+      jobId: 'job-telemetry-failure',
+      writer,
+      callLLM,
+    })
+
+    expect(callLLM).toHaveBeenCalledTimes(1)
+    expect(result.plan.generationState).toBe('complete')
+  })
+
+  it('records a usable truncated response as truncated while keeping the week', async () => {
+    const plan = makePlan()
+    const writer = makeWriter(plan)
+    const putAttempt = vi.fn(async () => undefined)
+    writer.putAttempt = putAttempt
+
+    const result = await runAsyncPlanGeneration({
+      plan,
+      weeks: [makeWeek(0, '2026-06-01')],
+      profile: makeProfile(),
+      wizardConfig: makeWizardConfig(),
+      jobId: 'job-usable-truncated',
+      writer,
+      callLLM: async () => makeRaw('2026-06-01', { truncated: true, errorClass: 'truncated' }),
+    })
+
+    expect(result.weeks[0].status).toBe('draft')
+    expect(putAttempt).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'truncated' }))
+  })
+
   it('generates weeks concurrently without exceeding the configured limit', async () => {
     const plan = {
       ...makePlan(),
@@ -302,7 +419,7 @@ describe('runAsyncPlanGeneration', () => {
     expect(result.plan.generationState).toBe('complete')
   })
 
-  it('propaga truncamiento al error final si ambos intentos agotan max_tokens', async () => {
+  it('recupera con fallback local si ambos intentos agotan max_tokens', async () => {
     const plan = makePlan()
     const weeks = [makeWeek(0, '2026-06-01')]
     const writer = makeWriter(plan)
@@ -319,13 +436,16 @@ describe('runAsyncPlanGeneration', () => {
       maxTokens: 5000,
     })
 
-    const failedWeek = result.weeks[0]
+    const recoveredWeek = result.weeks[0]
     expect(callLLM).toHaveBeenCalledTimes(2)
-    expect(failedWeek.status).toBe('error')
-    expect(failedWeek.generationMeta.attempts).toBe(2)
-    expect(failedWeek.generationMeta.errorClass).toBe('truncated')
-    expect(failedWeek.generationMeta.lastError).toContain('truncada')
-    expect(result.plan.generationState).toBe('failed')
+    expect(recoveredWeek.status).toBe('draft')
+    expect(recoveredWeek.generationMeta.attempts).toBe(2)
+    expect(recoveredWeek.generationMeta.fallbackUsed).toBe(true)
+    expect(recoveredWeek.generationMeta.generationSource).toBe('fallback')
+    expect(recoveredWeek.generationMeta.errorClass).toBe('local_plan_fallback')
+    expect(recoveredWeek.generationMeta.lastError).toContain('truncada')
+    expect(recoveredWeek.generationMeta.repairWarnings?.[0]?.code).toBe('local_plan_fallback')
+    expect(result.plan.generationState).toBe('complete')
     expect(result.plan.generationSummary?.totalAttempts).toBe(2)
   })
 
@@ -361,7 +481,7 @@ describe('runAsyncPlanGeneration', () => {
     expect(plansBeforeResolution).toBeGreaterThanOrEqual(5)
   })
 
-  it('no reintenta tras un rate limit del proveedor', async () => {
+  it('no reintenta tras un rate limit y recupera la semana localmente', async () => {
     const plan = makePlan()
     const weeks = [makeWeek(0, '2026-06-01')]
     const writer = makeWriter(plan)
@@ -379,11 +499,33 @@ describe('runAsyncPlanGeneration', () => {
       callLLM,
     })
 
-    const failedWeek = result.weeks[0]
+    const recoveredWeek = result.weeks[0]
     expect(callLLM).toHaveBeenCalledTimes(1)
-    expect(failedWeek.status).toBe('error')
-    expect(failedWeek.generationMeta.errorClass).toBe('rate_limit')
-    expect(result.plan.generationState).toBe('failed')
+    expect(recoveredWeek.status).toBe('draft')
+    expect(recoveredWeek.generationMeta.fallbackUsed).toBe(true)
+    expect(recoveredWeek.generationMeta.generationSource).toBe('fallback')
+    expect(recoveredWeek.generationMeta.lastError).toContain('rate_limit')
+    expect(result.plan.generationState).toBe('complete')
+  })
+
+  it('acepta una semana válida sin gastar un reintento', async () => {
+    const plan = makePlan()
+    const writer = makeWriter(plan)
+    const callLLM = vi.fn(async () => makeRaw('2026-06-01'))
+
+    const result = await runAsyncPlanGeneration({
+      plan,
+      weeks: [makeWeek(0, '2026-06-01')],
+      profile: makeProfile(),
+      wizardConfig: makeWizardConfig(),
+      jobId: 'job-quality-warning',
+      writer,
+      callLLM,
+    })
+
+    expect(callLLM).toHaveBeenCalledTimes(1)
+    expect(result.weeks[0].generationMeta.retryUsed).toBeFalsy()
+    expect(result.weeks[0].generationMeta.generationSource).toBe('ai')
   })
 
   it('marca las semanas restantes en error cuando se agota el presupuesto del worker', async () => {
@@ -408,6 +550,7 @@ describe('runAsyncPlanGeneration', () => {
     expect(result.weeks[0].generationMeta.lastError).toContain('presupuesto')
     expect(result.weeks[0].generationMeta.errorClass).toBe('timeout')
     expect(result.plan.generationState).toBe('failed')
+    expect(result.plan.generationSummary?.totalAttempts).toBe(0)
   })
 
   it('marks the plan cancelled when cancelRequested is observed', async () => {
@@ -437,6 +580,60 @@ describe('runAsyncPlanGeneration', () => {
     expect(result.cancelled).toBe(true)
     expect(result.plan.generationState).toBe('cancelled')
     expect(writer.weeks).toHaveLength(0)
+  })
+
+  it('clears a stale cancellation when a different job starts', async () => {
+    const plan = makePlan()
+    plan.generationState = 'cancelled'
+    plan.generationSummary = {
+      startedAt: 1,
+      jobId: 'job-old',
+      strategy: 'single',
+      completedWeeks: 0,
+      failedWeeks: [],
+      totalAttempts: 0,
+      cancelRequested: true,
+    }
+    const writer = makeWriter(plan)
+    const callLLM = vi.fn(async () => makeRaw('2026-06-01'))
+
+    const result = await runAsyncPlanGeneration({
+      plan,
+      weeks: [makeWeek(0, '2026-06-01')],
+      profile: makeProfile(),
+      wizardConfig: makeWizardConfig(),
+      jobId: 'job-new',
+      writer,
+      callLLM,
+    })
+
+    expect(callLLM).toHaveBeenCalledOnce()
+    expect(result.cancelled).toBe(false)
+    expect(result.plan.generationSummary?.cancelRequested).toBeUndefined()
+  })
+
+  it('honours cancellation requested while the only week is in flight', async () => {
+    const plan = makePlan()
+    const writer = makeWriter(plan)
+    let cancelRequested = false
+    writer.checkCancelled = async () => cancelRequested
+
+    const result = await runAsyncPlanGeneration({
+      plan,
+      weeks: [makeWeek(0, '2026-06-01')],
+      profile: makeProfile(),
+      wizardConfig: makeWizardConfig(),
+      jobId: 'job-cancel-in-flight',
+      writer,
+      callLLM: async () => {
+        cancelRequested = true
+        return makeRaw('2026-06-01')
+      },
+    })
+
+    expect(result.cancelled).toBe(true)
+    expect(result.plan.generationState).toBe('cancelled')
+    expect(result.plan.generationSummary?.cancelRequested).toBe(true)
   })
 
   it('stops launching new weeks after cancellation while preserving in-flight weeks', async () => {
@@ -542,7 +739,17 @@ describe('runAsyncPlanGeneration', () => {
       callLLM: vi.fn(async () => makeRaw('2026-06-01')),
     })
 
-    expect(checkCancelledCalls).toBe(1)
+    expect(checkCancelledCalls).toBe(3)
     expect(getPlanCalls).toBe(0)
+  })
+})
+
+describe('getCriticalWeekQualityIssueMessages', () => {
+  it('ignora warnings e info, y sólo devuelve errores críticos para el reintento', () => {
+    expect(getCriticalWeekQualityIssueMessages([
+      { severity: 'warning', code: 'quality.warning', message: 'Mejora menor' },
+      { severity: 'info', code: 'quality.info', message: 'Dato informativo' },
+      { severity: 'error', code: 'week.sessions.collision', message: 'Hay una colisión' },
+    ])).toEqual(['week.sessions.collision: Hay una colisión'])
   })
 })

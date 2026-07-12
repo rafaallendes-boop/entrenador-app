@@ -66,6 +66,11 @@ export interface AIRawResponse {
   finishReason?: string
   /** Server-side error classification, if any (propagated from coach proxy). */
   errorClass?: AIErrorCode
+  /** Provider-reported usage. These counts never contain prompt/response text. */
+  promptTokens?: number
+  completionTokens?: number
+  cacheCreationInputTokens?: number
+  cacheReadInputTokens?: number
 }
 
 export interface CreateWeekNormalizationDiagnostic {

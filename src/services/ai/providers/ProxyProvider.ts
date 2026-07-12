@@ -115,6 +115,10 @@ export class ProxyProvider implements AIProvider {
         fallbackUsed?: boolean
         requestClass?: AIRequestClass
         durationMs?: number
+        promptTokens?: number
+        completionTokens?: number
+        cacheCreationInputTokens?: number
+        cacheReadInputTokens?: number
       }
 
       if (!res.ok) {
@@ -137,6 +141,10 @@ export class ProxyProvider implements AIProvider {
         requestClass: request.requestClass,
         retryUsed: data.retryUsed,
         fallbackUsed: data.fallbackUsed,
+        promptTokens: data.promptTokens,
+        completionTokens: data.completionTokens,
+        cacheCreationInputTokens: data.cacheCreationInputTokens,
+        cacheReadInputTokens: data.cacheReadInputTokens,
       }
     } catch (error) {
       if (error instanceof AIProviderError) throw error
@@ -174,6 +182,10 @@ export class ProxyProvider implements AIProvider {
     let truncated = false
     let truncatedErrorClass: AIErrorCode | undefined
     let finishReason: string | undefined
+    let promptTokens: number | undefined
+    let completionTokens: number | undefined
+    let cacheCreationInputTokens: number | undefined
+    let cacheReadInputTokens: number | undefined
 
     while (true) {
       const { done, value } = await reader.read()
@@ -199,6 +211,10 @@ export class ProxyProvider implements AIProvider {
             traceId?: string
             truncated?: boolean
             finishReason?: string
+            promptTokens?: number
+            completionTokens?: number
+            cacheCreationInputTokens?: number
+            cacheReadInputTokens?: number
           }
 
           if (event.type === 'chunk' && event.chunk) {
@@ -214,6 +230,10 @@ export class ProxyProvider implements AIProvider {
             fallbackUsed = event.fallbackUsed ?? fallbackUsed
             fullText = event.text ?? fullText
             finishReason = event.finishReason ?? finishReason
+            promptTokens = event.promptTokens ?? promptTokens
+            completionTokens = event.completionTokens ?? completionTokens
+            cacheCreationInputTokens = event.cacheCreationInputTokens ?? cacheCreationInputTokens
+            cacheReadInputTokens = event.cacheReadInputTokens ?? cacheReadInputTokens
             continue
           }
 
@@ -250,6 +270,10 @@ export class ProxyProvider implements AIProvider {
       truncated,
       finishReason,
       errorClass: truncatedErrorClass,
+      promptTokens,
+      completionTokens,
+      cacheCreationInputTokens,
+      cacheReadInputTokens,
     }
   }
 

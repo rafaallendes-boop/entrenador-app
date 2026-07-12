@@ -1,4 +1,5 @@
 import type { AIRawResponse, AIRequest } from '../../../src/services/ai/types'
+import { normalizeJsonSchemaForStandardProvider } from '../../../src/services/ai/jsonSchema'
 
 const CLAUDE_STRUCTURED_TOOL_NAME = 'emit_structured_result'
 const DEFAULT_MODEL = 'claude-sonnet-4-6'
@@ -10,20 +11,6 @@ function isMaxTokenStopReason(stopReason: string | undefined): boolean {
   return normalized === 'max_tokens' ||
     normalized === 'max_output_tokens' ||
     normalized.includes('max_token')
-}
-
-function normalizeJsonSchema(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(normalizeJsonSchema)
-  if (!value || typeof value !== 'object') return value
-
-  const input = value as Record<string, unknown>
-  const output: Record<string, unknown> = {}
-  for (const [key, child] of Object.entries(input)) {
-    output[key] = key === 'type' && typeof child === 'string'
-      ? child.toLowerCase()
-      : normalizeJsonSchema(child)
-  }
-  return output
 }
 
 function buildClaudeBody(request: AIRequest, model: string): Record<string, unknown> {
@@ -42,7 +29,7 @@ function buildClaudeBody(request: AIRequest, model: string): Record<string, unkn
     body.tools = [{
       name: CLAUDE_STRUCTURED_TOOL_NAME,
       description: 'Devuelve el resultado estructurado solicitado siguiendo el schema exacto.',
-      input_schema: normalizeJsonSchema(request.responseSchema),
+      input_schema: normalizeJsonSchemaForStandardProvider(request.responseSchema),
     }]
     body.tool_choice = { type: 'tool', name: CLAUDE_STRUCTURED_TOOL_NAME }
   }
@@ -97,6 +84,12 @@ export async function callAnthropicForWeek(request: AIRequest, options?: {
       content?: Array<{ type?: string; text?: string; input?: unknown }>
       model?: string
       stop_reason?: string
+      usage?: {
+        input_tokens?: number
+        output_tokens?: number
+        cache_creation_input_tokens?: number
+        cache_read_input_tokens?: number
+      }
     }
     const contentTypes = data.content?.map((b) => b.type) ?? []
     const toolBlock = data.content?.find((b) => b.type === 'tool_use')
@@ -118,6 +111,10 @@ export async function callAnthropicForWeek(request: AIRequest, options?: {
       requestClass: request.requestClass,
       retryUsed: false,
       fallbackUsed: false,
+      promptTokens: data.usage?.input_tokens,
+      completionTokens: data.usage?.output_tokens,
+      cacheCreationInputTokens: data.usage?.cache_creation_input_tokens,
+      cacheReadInputTokens: data.usage?.cache_read_input_tokens,
     }
   } finally {
     clearTimeout(timeout)
