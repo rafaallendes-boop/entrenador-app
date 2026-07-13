@@ -6,7 +6,11 @@ import tseslint from 'typescript-eslint'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist', 'coverage']),
+  // Bare patterns only match at the config root; '**/' is needed to also
+  // catch dist/coverage nested inside a git worktree (e.g. Claude Code's
+  // native worktree tool places worktrees under .claude/worktrees/, each
+  // with its own dist/coverage from local test/build runs).
+  globalIgnores(['dist', 'coverage', '**/dist/**', '**/coverage/**', '.claude/worktrees/**']),
   {
     files: ['**/*.{ts,tsx}'],
     extends: [

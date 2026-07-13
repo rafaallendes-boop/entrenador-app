@@ -14,6 +14,19 @@ export default defineConfig(({ mode }) => {
     plugins: [react(), devCoachProxyPlugin(env)],
     test: {
       setupFiles: ['./vitest.setup.ts'],
+      // Vitest's default include glob has no notion of git worktrees living
+      // inside the repo tree (e.g. Claude Code's native worktree tool places
+      // them under .claude/worktrees/); without this, running tests from a
+      // checkout that happens to have one nested inside doubles every test
+      // file and can produce spurious cross-copy module-resolution failures.
+      exclude: [
+        '**/node_modules/**',
+        '**/dist/**',
+        '.git/**',
+        '.claude/worktrees/**',
+        '.worktrees/**',
+        'worktrees/**',
+      ],
       coverage: {
         provider: 'v8',
         reporter: ['text', 'json-summary', 'html'],
