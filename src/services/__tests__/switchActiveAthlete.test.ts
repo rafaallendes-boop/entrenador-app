@@ -88,6 +88,8 @@ function seedAthletes() {
 }
 
 describe('switchActiveAthlete', () => {
+  const originalLoadMemory = useCoachMemoryStore.getState().loadMemory
+
   beforeEach(async () => {
     vi.clearAllMocks()
     installLocalStorage()
@@ -101,6 +103,8 @@ describe('switchActiveAthlete', () => {
   })
 
   afterEach(() => {
+    useCoachMemoryStore.setState({ loadMemory: originalLoadMemory })
+    vi.restoreAllMocks()
     db.close()
     setActiveAthleteId(null)
     setSelfAthleteId(null)
@@ -190,6 +194,32 @@ describe('switchActiveAthlete', () => {
     expect(await switchActiveAthlete(OWNER, 'ath_m_missing')).toBe(false)
     expect(await switchActiveAthlete(OWNER, 'ath_m_off')).toBe(false)
     expect(await switchActiveAthlete(OWNER, 'ath_other')).toBe(false)
+    expect(getSwitchEpoch()).toBe(epochBefore)
+    expect(getActiveAthleteId()).toBe(SELF)
+  })
+
+  it('loadMemory falla DESPUES del commit: el switch sigue siendo exitoso', async () => {
+    await seedAthletes()
+    useCoachMemoryStore.setState({
+      loadMemory: vi.fn(async () => { throw new Error('memoria caída') }),
+    })
+
+    await expect(switchActiveAthlete(OWNER, MANAGED)).resolves.toBe(true)
+
+    // El scope YA cambió antes de loadMemory(): devolver false seria mentirle a la UI.
+    expect(getActiveAthleteId()).toBe(MANAGED)
+    expect(useAuthStore.getState().activeAthleteId).toBe(MANAGED)
+    expect(getPersistedAthleteSelection(OWNER)).toBe(MANAGED)
+  })
+
+  it('Dexie falla ANTES del commit: propaga y no toca el scope', async () => {
+    await seedAthletes()
+    vi.spyOn(db.athletes, 'get').mockRejectedValueOnce(new Error('Dexie falló antes del commit'))
+    const epochBefore = getSwitchEpoch()
+
+    await expect(switchActiveAthlete(OWNER, MANAGED)).rejects.toThrow('Dexie falló antes del commit')
+
+    // Pre-commit: no se aplicó nada, asi que propagar es lo correcto.
     expect(getSwitchEpoch()).toBe(epochBefore)
     expect(getActiveAthleteId()).toBe(SELF)
   })
