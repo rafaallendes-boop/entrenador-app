@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
-import CoachWorkspaceNav, { coachTabId, coachTabPanelId } from './CoachWorkspaceNav'
+import CoachWorkspaceNav from './CoachWorkspaceNav'
+import { coachTabId, coachTabPanelId } from './coachWorkspaceTypes'
 
 describe('coachTabId / coachTabPanelId', () => {
   it('generan ids estables por tab', () => {

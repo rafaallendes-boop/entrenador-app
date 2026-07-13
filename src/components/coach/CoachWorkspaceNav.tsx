@@ -1,4 +1,5 @@
 import type { CoachWorkspaceTab } from './coachWorkspaceTypes'
+import { coachTabId, coachTabPanelId } from './coachWorkspaceTypes'
 
 interface CoachWorkspaceNavProps {
   activeTab: CoachWorkspaceTab
@@ -12,14 +13,6 @@ const TABS: { key: CoachWorkspaceTab; label: string; comingSoon: boolean }[] = [
   { key: 'biblioteca', label: 'Biblioteca', comingSoon: true },
   { key: 'asistente', label: 'Asistente IA', comingSoon: true },
 ]
-
-export function coachTabId(tab: CoachWorkspaceTab): string {
-  return `coach-tab-${tab}`
-}
-
-export function coachTabPanelId(tab: CoachWorkspaceTab): string {
-  return `coach-tabpanel-${tab}`
-}
 
 export default function CoachWorkspaceNav({ activeTab, onSelect }: CoachWorkspaceNavProps) {
   return (
