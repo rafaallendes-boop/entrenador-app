@@ -62,7 +62,7 @@ export default function CoachWorkspacePage({ allowlistOverride, initialAthletes,
 
   const handleAthleteAction = useCallback(async (
     athleteId: string,
-    kind: PendingAthleteAction['kind'],
+    kind: 'week' | 'plan' | 'trainAs',
     destination: string,
   ) => {
     if (!user?.id) return
