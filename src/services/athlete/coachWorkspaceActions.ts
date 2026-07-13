@@ -60,3 +60,33 @@ export async function createAndActivateAthlete(
     return { athlete, activated: false }
   }
 }
+
+/**
+ * Lock de modulo (no un `useRef`) para serializar acciones de atleta desde
+ * `CoachWorkspacePage`. Un switch exitoso cambia `activeAthleteId` en
+ * `switchActiveAthlete` ANTES de que su propio `loadMemory()` resuelva; eso
+ * dispara el `key={activeAthleteId}` de `AppShell`, que desmonta y remonta
+ * `CoachWorkspacePage` con una instancia nueva. Un `useRef` local se pierde
+ * ahi — la instancia nueva arranca con un lock "libre" aunque la promesa del
+ * switch original siga corriendo en background. Un `let` de modulo sobrevive
+ * a cualquier remount porque el modulo se evalua una sola vez por carga de
+ * pagina, sin importar cuantas veces React reemplace el componente.
+ */
+let athleteActionLocked = false
+
+/** true si ya hay un switch o una creacion de atleta en curso. */
+export function isAthleteActionLocked(): boolean {
+  return athleteActionLocked
+}
+
+/** Intenta tomar el lock. Devuelve false (sin tocar nada) si ya estaba tomado. */
+export function acquireAthleteActionLock(): boolean {
+  if (athleteActionLocked) return false
+  athleteActionLocked = true
+  return true
+}
+
+/** Libera el lock. Idempotente: liberar sin haberlo tomado no lanza. */
+export function releaseAthleteActionLock(): void {
+  athleteActionLocked = false
+}

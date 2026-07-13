@@ -1,5 +1,11 @@
-import { describe, expect, it, vi } from 'vitest'
-import { createAndActivateAthlete, selectAthleteAndNavigate } from './coachWorkspaceActions'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import {
+  acquireAthleteActionLock,
+  createAndActivateAthlete,
+  isAthleteActionLocked,
+  releaseAthleteActionLock,
+  selectAthleteAndNavigate,
+} from './coachWorkspaceActions'
 import type { Athlete } from '../../types'
 
 const ATHLETE: Athlete = {
@@ -72,5 +78,47 @@ describe('createAndActivateAthlete', () => {
       createAndActivateAthlete({ createManagedAthlete, switchActiveAthlete }, 'user-1', ''),
     ).rejects.toThrow('no puede estar vacío')
     expect(switchActiveAthlete).not.toHaveBeenCalled()
+  })
+})
+
+describe('athlete action lock (module-level singleton)', () => {
+  afterEach(() => {
+    releaseAthleteActionLock()
+  })
+
+  it('empieza liberado', () => {
+    expect(isAthleteActionLocked()).toBe(false)
+  })
+
+  it('acquire toma el lock y devuelve true la primera vez', () => {
+    expect(acquireAthleteActionLock()).toBe(true)
+    expect(isAthleteActionLocked()).toBe(true)
+  })
+
+  it('un segundo acquire mientras esta tomado devuelve false (no lo pisa)', () => {
+    expect(acquireAthleteActionLock()).toBe(true)
+    expect(acquireAthleteActionLock()).toBe(false)
+    expect(isAthleteActionLocked()).toBe(true)
+  })
+
+  it('release libera el lock y permite un acquire posterior', () => {
+    acquireAthleteActionLock()
+    releaseAthleteActionLock()
+    expect(isAthleteActionLocked()).toBe(false)
+    expect(acquireAthleteActionLock()).toBe(true)
+  })
+
+  it('release es idempotente: liberar sin haber tomado el lock no lanza', () => {
+    expect(() => releaseAthleteActionLock()).not.toThrow()
+    expect(isAthleteActionLocked()).toBe(false)
+  })
+
+  it('sobrevive conceptualmente a un remount: el estado no depende de ninguna instancia de componente', () => {
+    // Esto es exactamente lo que un useRef local NO puede garantizar: dos
+    // "instancias" (simuladas aca por dos lecturas separadas del modulo) ven
+    // el mismo estado, porque es un singleton de modulo, no un ref por componente.
+    acquireAthleteActionLock()
+    const readFromAnotherCallSite = isAthleteActionLocked()
+    expect(readFromAnotherCallSite).toBe(true)
   })
 })

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
 import { Users } from 'lucide-react'
 import { useAuthStore } from '../store/useAuthStore'
@@ -6,7 +6,12 @@ import { isCoachAccount } from '../services/athlete/coachAccess'
 import { getSelfAthleteId } from '../services/athlete/activeAthlete'
 import { createManagedAthlete, listOwnedAthletes } from '../services/athlete/managedAthletes'
 import { switchActiveAthlete } from '../services/athlete/switchActiveAthlete'
-import { createAndActivateAthlete, selectAthleteAndNavigate } from '../services/athlete/coachWorkspaceActions'
+import {
+  acquireAthleteActionLock,
+  createAndActivateAthlete,
+  releaseAthleteActionLock,
+  selectAthleteAndNavigate,
+} from '../services/athlete/coachWorkspaceActions'
 import { ROUTES } from '../constants/routes'
 import type { Athlete } from '../types'
 import type { CoachWorkspaceTab, PendingAthleteAction, RosterStatus } from '../components/coach/coachWorkspaceTypes'
@@ -34,10 +39,6 @@ export default function CoachWorkspacePage({ allowlistOverride, initialAthletes,
   const [reloadToken, setReloadToken] = useState(0)
   const [pendingAthleteAction, setPendingAthleteAction] = useState<PendingAthleteAction | null>(null)
   const [actionMessage, setActionMessage] = useState<string | null>(null)
-  // Mutex real: dos clicks en el mismo batch de React leerian el mismo
-  // pendingAthleteAction === null previo al rerender y arrancarian dos switches.
-  // El ref se marca de forma sincrona; el useState solo pinta disabled/labels.
-  const actionLock = useRef(false)
   const navigate = useNavigate()
 
   const isCoach = allowlistOverride !== undefined
@@ -67,10 +68,11 @@ export default function CoachWorkspacePage({ allowlistOverride, initialAthletes,
   ) => {
     if (!user?.id) return
     // Serializacion global: un switch (o una creacion, que tambien activa) en vuelo
-    // ya esta reseteando stores. Los paneles deshabilitan los CTAs, pero el container
-    // no confia en eso — y chequea el ref, no el state, para ser reentrante de verdad.
-    if (actionLock.current) return
-    actionLock.current = true
+    // ya esta reseteando stores. El lock vive en el modulo (coachWorkspaceActions),
+    // no en un ref de este componente: un switch exitoso remonta esta pagina
+    // (AppShell hace key={activeAthleteId}) ANTES de que este handler termine,
+    // y un ref local se perderia en ese remount — ver la nota en el propio lock.
+    if (!acquireAthleteActionLock()) return
     setActionMessage(null)
     setPendingAthleteAction({ athleteId, kind })
     try {
@@ -89,9 +91,10 @@ export default function CoachWorkspacePage({ allowlistOverride, initialAthletes,
       // (post-commit, Task 2b lo dejo best-effort). Ahi el scope no cambio.
       setActionMessage('No se pudo cambiar de atleta. Intenta de nuevo.')
     } finally {
-      // Sin este finally, un rechazo dejaria el boton en "Abriendo semana…" para siempre
-      // y el lock tomado, bloqueando todos los demas CTAs de atleta.
-      actionLock.current = false
+      // Este finally corre aunque la instancia que lo inicio ya se haya
+      // desmontado (la funcion async sigue hasta el final igual): por eso el
+      // lock de modulo se libera de forma confiable, remount mediante.
+      releaseAthleteActionLock()
       setPendingAthleteAction(null)
     }
   }, [user?.id, activeAthleteId, navigate])
@@ -102,9 +105,8 @@ export default function CoachWorkspacePage({ allowlistOverride, initialAthletes,
 
   async function handleCreateAthlete(name: string) {
     if (!user?.id) throw new Error('Sesión inválida.')
-    // Crear tambien activa: toma el MISMO lock que un switch, no uno propio.
-    if (actionLock.current) throw new Error('Espera a que termine la acción en curso.')
-    actionLock.current = true
+    // Crear tambien activa: toma el MISMO lock (de modulo) que un switch, no uno propio.
+    if (!acquireAthleteActionLock()) throw new Error('Espera a que termine la acción en curso.')
     setActionMessage(null)
     setPendingAthleteAction({ kind: 'create', athleteId: null })
 
@@ -134,7 +136,7 @@ export default function CoachWorkspacePage({ allowlistOverride, initialAthletes,
         'Usa "Entrenar como este atleta" en la lista para abrir su perfil.',
       )
     } finally {
-      actionLock.current = false
+      releaseAthleteActionLock()
       setPendingAthleteAction(null)
     }
   }
