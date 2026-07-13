@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, RefreshCcw, Trash2 } from 'lucide-react'
 import Card from '../ui/Card'
 import { getActiveAthleteId, getSelfAthleteId } from '../../services/athlete/activeAthlete'
+import { backfillLocalAthleteScope } from '../../services/athlete/athleteScopeMigration'
+import { hydrateActiveAthlete } from '../../services/athlete/hydrateActiveAthlete'
 import { useAuthStore } from '../../store/useAuthStore'
 import {
   disconnectWhoop,
@@ -14,6 +16,7 @@ import { isNativePlatform } from '../../services/platform'
 
 export function WhoopConnection() {
   const activeAthleteFromStore = useAuthStore((state) => state.activeAthleteId)
+  const userId = useAuthStore((state) => state.user?.id ?? null)
   const [message, setMessage] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [biometricConsent, setBiometricConsent] = useState(false)
@@ -29,7 +32,12 @@ export function WhoopConnection() {
 
   const activeAthleteId = activeAthleteFromStore ?? getActiveAthleteId()
   const selfAthleteId = getSelfAthleteId()
-  const canConnect = activeAthleteId != null && selfAthleteId != null && activeAthleteId === selfAthleteId
+  // A fresh native install can render Settings before the async athlete
+  // hydration finishes. With no selection yet, the signed-in owner is the only
+  // safe scope, so don't incorrectly disable the self-only Whoop action.
+  const canConnect = activeAthleteId == null
+    ? true
+    : selfAthleteId != null && activeAthleteId === selfAthleteId
   const needsWorkoutScope = canConnect
     && Boolean(status?.connected)
     && !(status?.scopes ?? []).includes('read:workout')
@@ -39,6 +47,24 @@ export function WhoopConnection() {
   useEffect(() => {
     void refresh()
   }, [refresh])
+
+  useEffect(() => {
+    if (!userId || (activeAthleteId != null && selfAthleteId != null)) return
+    let cancelled = false
+    void (async () => {
+      try {
+        const backfilled = await backfillLocalAthleteScope(userId)
+        if (cancelled || backfilled == null) return
+        const active = await hydrateActiveAthlete(userId)
+        if (!cancelled) useAuthStore.getState().setActiveAthleteId(active)
+      } catch (error) {
+        console.warn('[whoop] athlete context hydration failed', error)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [activeAthleteId, selfAthleteId, userId])
 
   const formattedLastSync = useMemo(() => {
     if (!status?.lastSyncAt) return null
