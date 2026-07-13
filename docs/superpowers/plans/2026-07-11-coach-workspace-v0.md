@@ -32,7 +32,7 @@
 New files (all under a new `src/components/coach/` directory, plus a services file and a page):
 
 - `src/components/coach/coachWorkspaceTypes.ts` — shared `CoachWorkspaceTab`, `RosterStatus`, `PendingAthleteAction` types. Type-only, no runtime logic, no test.
-- `src/components/coach/CoachWorkspaceNav.tsx` (+ test) — responsive `tablist`/`tab` nav for the five areas, exports `coachTabId`/`coachTabPanelId` helpers used by the container to wire `aria-controls`/`aria-labelledby`.
+- `src/components/coach/CoachWorkspaceNav.tsx` (+ test) — responsive `tablist`/`tab` nav for the five areas. **Post-implementation correction:** `coachTabId`/`coachTabPanelId` live in `coachWorkspaceTypes.ts`, not here — co-exporting a component and plain functions from the same file trips this project's `react-refresh/only-export-components` lint rule (caught during Task 3's implementation, fixed as a follow-up commit on Task 1). All `import ... from './CoachWorkspaceNav'` lines for these two functions below are corrected to import from `./coachWorkspaceTypes` instead.
 - `src/components/coach/CoachWorkspacePlaceholderPanel.tsx` (+ test) — generic "próximamente" panel, reused for Planificación/Biblioteca/Asistente IA.
 - `src/services/athlete/coachWorkspaceActions.ts` (+ test) — `selectAthleteAndNavigate` and `createAndActivateAthlete`, both with injected dependencies, unit-tested directly (no component rendering needed).
 - `src/components/coach/CoachSummaryPanel.tsx` (+ test) — Resumen tab: roster cards with "Ver semana"/"Ver plan" CTAs, self-only-aware empty state, pending/disabled button state.
@@ -75,7 +75,8 @@ Create `src/components/coach/CoachWorkspaceNav.test.tsx`:
 ```tsx
 import { describe, expect, it, vi } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
-import CoachWorkspaceNav, { coachTabId, coachTabPanelId } from './CoachWorkspaceNav'
+import CoachWorkspaceNav from './CoachWorkspaceNav'
+import { coachTabId, coachTabPanelId } from './coachWorkspaceTypes'
 
 describe('coachTabId / coachTabPanelId', () => {
   it('generan ids estables por tab', () => {
@@ -1040,65 +1041,83 @@ export default function CoachRosterPanel({
         })}
       </div>
 
-      {isCreating ? (
-        <form
-          onSubmit={(event) => { event.preventDefault(); void handleCreate() }}
-          className="mt-4 space-y-3 rounded-2xl border border-white/10 bg-white/5 p-4"
-        >
-          <label className="block">
-            <span className="mb-2 block text-sm font-medium text-ink-muted">Nombre del atleta</span>
-            <input
-              type="text"
-              value={newName}
-              onChange={(event) => setNewName(event.target.value)}
-              placeholder="Ej. Juan Pérez"
-              className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-ink outline-none"
-            />
-          </label>
-          {error && <p role="alert" className="text-xs text-red-400">{error}</p>}
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => { setIsCreating(false); setError(null) }}
-              className="flex-1 rounded-xl border border-white/10 bg-white/5 py-2.5 text-sm font-semibold text-ink-muted"
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              disabled={!newName.trim() || isLocked}
-              className="flex-1 rounded-xl bg-brand py-2.5 text-sm font-semibold text-white disabled:opacity-40"
-            >
-              {isSubmitting ? 'Creando…' : 'Crear y completar perfil'}
-            </button>
+      {/* Un solo <form> persistente envuelve los dos estados (colapsado y expandido).
+          Esto es deliberado, no cosmético: el test "con solo self" hace un render
+          inicial (sin clicks — renderToStaticMarkup no puede disparar eventos) y
+          espera encontrar tanto `<form` como el texto "Crear atleta" AL MISMO TIEMPO.
+          Si el <form> solo existiera dentro de la rama isCreating=true, ese render
+          inicial (isCreating=false) nunca lo montaria y el test fallaria siempre —
+          incompatibilidad real entre el test y una implementacion con dos ramas
+          <form>/<button> separadas. Con el <form> como wrapper de ambas ramas, el
+          submit-por-Enter (Task 5's ask) sigue funcionando exactamente igual una vez
+          expandido, porque el <input> y el <button type="submit"> quedan dentro del
+          mismo <form onSubmit>. */}
+      <form
+        onSubmit={(event) => { event.preventDefault(); void handleCreate() }}
+        className="mt-4"
+      >
+        {isCreating ? (
+          <div className="space-y-3 rounded-2xl border border-white/10 bg-white/5 p-4">
+            <label className="block">
+              <span className="mb-2 block text-sm font-medium text-ink-muted">Nombre del atleta</span>
+              <input
+                type="text"
+                value={newName}
+                onChange={(event) => setNewName(event.target.value)}
+                placeholder="Ej. Juan Pérez"
+                className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-ink outline-none"
+              />
+            </label>
+            {error && <p role="alert" className="text-xs text-red-400">{error}</p>}
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => { setIsCreating(false); setError(null) }}
+                className="flex-1 rounded-xl border border-white/10 bg-white/5 py-2.5 text-sm font-semibold text-ink-muted"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={!newName.trim() || isLocked}
+                className="flex-1 rounded-xl bg-brand py-2.5 text-sm font-semibold text-white disabled:opacity-40"
+              >
+                {isSubmitting ? 'Creando…' : 'Crear y completar perfil'}
+              </button>
+            </div>
           </div>
-        </form>
-      ) : (
-        <button
-          type="button"
-          disabled={isLocked}
-          onClick={() => setIsCreating(true)}
-          className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-white/20 py-3 text-sm font-semibold text-ink-muted transition-colors hover:text-ink disabled:opacity-50"
-        >
-          <Plus size={16} />
-          Crear atleta
-        </button>
-      )}
+        ) : (
+          <button
+            type="button"
+            disabled={isLocked}
+            onClick={() => setIsCreating(true)}
+            className="flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-white/20 py-3 text-sm font-semibold text-ink-muted transition-colors hover:text-ink disabled:opacity-50"
+          >
+            <Plus size={16} />
+            Crear atleta
+          </button>
+        )}
+      </form>
     </div>
   )
 }
 ```
 
-Note: `<button type="submit">` inside `<form onSubmit>` means pressing Enter in the name input now submits — this fixes the reviewer's finding that creation was click-only. Double-submit and create-racing-a-switch are both prevented by the **single** global lock: `handleCreate`'s `if (isLocked) return`, `disabled={... || isLocked}` on the submit button, and — the only guard that actually holds against two events in the same React batch — the container's `useRef` mutex (Task 6). The panel deliberately has no local `isSubmitting` flag: the "Creando…" label is derived from `pendingAction.kind === 'create'`, so the lock and the label can never disagree.
+Note: `<button type="submit">` inside the persistent `<form onSubmit>` means pressing Enter in the name input submits once expanded — this fixes the reviewer's finding that creation was click-only. Double-submit and create-racing-a-switch are both prevented by the **single** global lock: `handleCreate`'s `if (isLocked) return`, `disabled={... || isLocked}` on the submit button, and — the only guard that actually holds against two events in the same React batch — the container's `useRef` mutex (Task 6). The panel deliberately has no local `isSubmitting` flag: the "Creando…" label is derived from `pendingAction.kind === 'create'`, so the lock and the label can never disagree.
+
+**Post-review correction (caught while dispatching Task 5's implementer):** the plan's original draft wrapped ONLY the expanded (`isCreating === true`) branch in `<form>`, with the collapsed "Crear atleta" trigger as a bare `<button>` outside any form. That directly contradicted the "con solo self" test below, which asserts `toContain('<form')` on the very first render — before any click, i.e. while `isCreating` is still `false`. This is a genuine defect in the plan's own reference code (present since the original draft, missed across four rounds of concurrency-focused review), not a design choice — fixed by hoisting the `<form>` to wrap both branches, as shown above. Enter-to-submit behavior is unchanged; only the toggle button moved one level deeper into the same persistent form.
 
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run src/components/coach/CoachRosterPanel.test.tsx`
 Expected: PASS (8 tests)
 
-Nota: el `<form>` sólo se monta tras un click en "Crear atleta" (`isCreating` local), que
-`renderToStaticMarkup` no puede disparar — por eso el submit con Enter y el label "Creando…" se
-verifican en el Playwright de Task 8, no acá.
+Nota: la interacción "click en el `<form>` colapsado → se expande → se llena el nombre →
+Enter" requiere disparar eventos reales, que `renderToStaticMarkup` no puede hacer — por eso
+ese flujo end-to-end (y el label "Creando…" durante la creación real) se verifican en el
+Playwright de Task 8, no acá. Lo que SÍ verifica este archivo es que el marcado inicial ya
+contiene un `<form>` (est. arriba) y que el estado de bloqueo/relabelado reacciona correctamente
+a la prop `pendingAction` en ambos render estáticos (colapsado y, indirectamente, expandido).
 
 ---
 
@@ -1137,7 +1156,7 @@ import type { User } from '@supabase/supabase-js'
 
 import type { Athlete } from '../types'
 import type { CoachWorkspaceTab } from '../components/coach/coachWorkspaceTypes'
-import { coachTabId, coachTabPanelId } from '../components/coach/CoachWorkspaceNav'
+import { coachTabId, coachTabPanelId } from '../components/coach/coachWorkspaceTypes'
 
 // zustand v5 usa getInitialState() como server snapshot: renderToStaticMarkup
 // (SSR) ignora setState. Mock con estado mutable para inyectar user/activeAthleteId.
@@ -1254,7 +1273,8 @@ import { createAndActivateAthlete, selectAthleteAndNavigate } from '../services/
 import { ROUTES } from '../constants/routes'
 import type { Athlete } from '../types'
 import type { CoachWorkspaceTab, PendingAthleteAction, RosterStatus } from '../components/coach/coachWorkspaceTypes'
-import CoachWorkspaceNav, { coachTabId, coachTabPanelId } from '../components/coach/CoachWorkspaceNav'
+import CoachWorkspaceNav from '../components/coach/CoachWorkspaceNav'
+import { coachTabId, coachTabPanelId } from '../components/coach/coachWorkspaceTypes'
 import CoachSummaryPanel from '../components/coach/CoachSummaryPanel'
 import CoachRosterPanel from '../components/coach/CoachRosterPanel'
 import CoachWorkspacePlaceholderPanel from '../components/coach/CoachWorkspacePlaceholderPanel'
@@ -1305,7 +1325,7 @@ export default function CoachWorkspacePage({ allowlistOverride, initialAthletes,
 
   const handleAthleteAction = useCallback(async (
     athleteId: string,
-    kind: PendingAthleteAction['kind'],
+    kind: 'week' | 'plan' | 'trainAs',
     destination: string,
   ) => {
     if (!user?.id) return
@@ -1462,6 +1482,7 @@ Notes:
 - `handleCreateAthlete` splits its error surface deliberately: only the `createAndActivateAthlete` call may propagate to `CoachRosterPanel`'s `catch` (creation genuinely failed, e.g. empty name). Once creation succeeded, a failed roster reload degrades to `status: 'error'` (with its Reintentar button) instead of throwing — throwing there would tell the coach the creation failed while the athlete sits in Dexie. The `finally` still releases the lock in every case, including the throw.
 - Both handlers take the **same** `actionLock` ref, because creating an athlete activates it — a create running next to a switch is two concurrent `switchActiveAthlete` calls, which is exactly what the lock exists to prevent. The `useState` mirror (`pendingAthleteAction`) is what the panels render from; the ref is what actually decides.
 - Layout: `md:grid md:grid-cols-[200px_1fr]` puts `CoachWorkspaceNav` in a 200px sidebar column at `md` and above; below `md`, the grid collapses and `CoachWorkspaceNav`'s own responsive classes (Task 1) turn it into a horizontal scrollable tab bar.
+- **Post-review correction (caught during Task 7's `npm run build` gate):** `handleAthleteAction`'s `kind` parameter was originally typed `PendingAthleteAction['kind']`. Because `PendingAthleteAction` is a discriminated union (`{ kind: 'week'|'plan'|'trainAs'; athleteId: string } | { kind: 'create'; athleteId: null }`), indexing `['kind']` on the whole union distributes across both arms and widens to `'week' | 'plan' | 'trainAs' | 'create'` — losing the correlation between `kind` and `athleteId`'s type entirely. `setPendingAthleteAction({ athleteId, kind })` (with `athleteId: string`) then fails to satisfy the union, because if `kind` could be `'create'` the object would need `athleteId: null`. This is a real type error (`tsc -b` / `npm run build` reports `TS2345`), present in the plan's reference code since its first draft and missed across all four review rounds — none of which ran the project's actual build command (a bare `npx tsc --noEmit` from the repo root silently no-ops against this project's solution-style root `tsconfig.json`, which has `"files": []` and only `references` — only `tsc -b`, what `npm run build` actually runs, walks those references and type-checks). `handleAthleteAction` is only ever called with `'week'`, `'plan'`, or `'trainAs'` (creation goes through the separate `handleCreateAthlete`, which constructs `{ kind: 'create', athleteId: null }` directly) — so the fix is narrowing the parameter type to `'week' | 'plan' | 'trainAs'` (shown above), a pure type annotation with no behavior change.
 
 - [ ] **Step 4: Run test to verify it passes**
 
@@ -1784,3 +1805,33 @@ Report the results of Steps 3, 4 and 5 before considering this task done.
 - **Fourth review round (2026-07-12), editorial only:** Task 2b now **extends** the existing `src/services/__tests__/switchActiveAthlete.test.ts` (Dexie real vía `fake-indexeddb`, con sus helpers `seedAthletes`/`installLocalStorage`) en vez de crear una segunda suite para el mismo servicio. Y toda referencia a `loadMemory()` como fuente legítima de rechazo quedó reescrita: después de Task 2b, el único reject path real es el `db.athletes.get` **pre-commit** — el caso en que efectivamente no se activó nada, y por lo tanto el único en que `activated: false` es verdad.
 - **Out of scope, confirmed absent from this plan:** aggregate multi-athlete signal queries, `/coaches` public landing and legal routes, Biblioteca data model, session/exercise assignment, unifying the three AI modes, `account_type` gating change, reconciling `DESIGN.md` with the real Tailwind token set, arrow-key roving tabindex on the tab list (noted as accepted future polish, not required for v0's ARIA correctness — `tablist`/`tab`/`tabpanel`/`aria-selected`/`aria-controls` are implemented; keyboard arrow navigation between tabs is not).
 - **Type consistency:** `RosterStatus`, `CoachWorkspaceTab`, and `PendingAthleteAction` are defined once in Task 1 and imported (never redefined) by Tasks 4, 5, and 6. `Athlete` is always imported from `../../types` (or `../types` from the page). Prop names match exactly between producer and consumer (`onOpenWeek`/`onOpenPlan`/`pendingAction` in `CoachSummaryPanel` vs. `CoachWorkspacePage`'s call sites; `onCreateAthlete`/`onTrainAs`/`pendingAction` in `CoachRosterPanel` vs. its call sites; `selectAthleteAndNavigate`/`createAndActivateAthlete`'s injected-deps shape matches exactly how `CoachWorkspacePage` calls them in Task 6).
+
+## Post-merge-review fixes (2026-07-13, owner-driven manual QA)
+
+After the branch was handed to the owner for manual review (per `finishing-a-development-branch` Option 3), live testing in the browser surfaced two real defects the automated review chain hadn't caught, because both only manifest when a switch/create action actually runs against a live backend and a live remount — something no unit test or `renderToStaticMarkup` render can exercise.
+
+### Fix 1 — the lock didn't survive the page's own successful remount
+
+The original "Known Limitation" note (below, superseded) framed the concurrency gap as "`CoachContextBar` is a second, unlocked switch surface." That was true but incomplete: the lock didn't even survive **the workspace page's own successful switch**, independent of `CoachContextBar` entirely.
+
+Root cause: `switchActiveAthlete.ts:31` calls `useAuthStore.getState().setActiveAthleteId(athleteId)` **before** its own `await loadMemory()` (line 35) resolves. `AppShell.tsx:18` keys `<main>` (which wraps `CoachWorkspacePage` via `<Outlet/>`) on `activeAthleteId` — so the moment that state changes, React unmounts the old `CoachWorkspacePage` instance and mounts a fresh one, with a **brand-new `useRef(false)`**, completely decoupled from the original call's in-flight lock. The original call's own promise (with its `loadMemory()` continuation) keeps running to completion in the background, but nothing in the new instance knows a switch is still in flight — so a fast follow-up click on the new instance could start a second, truly concurrent `switchActiveAthlete` call.
+
+**Fix:** moved the lock out of the component entirely, into a module-level singleton in `coachWorkspaceActions.ts` (`acquireAthleteActionLock` / `releaseAthleteActionLock` / `isAthleteActionLocked`) — a JS module is evaluated once per page load, so this state survives any number of component remounts within the same session, unlike a `useRef`. `CoachWorkspacePage`'s two handlers (`handleAthleteAction`, `handleCreateAthlete`) now acquire/release this instead of a local ref; their existing `try/finally` structure (already correct) needed no other changes, since the async function itself keeps running to completion regardless of the component unmounting — only its own `setState` calls become no-ops post-unmount, and the lock release no longer depends on that.
+
+**Residual, accepted gap:** because the new instance's `pendingAthleteAction` state still initializes to `null` on mount (there's no cross-instance channel carrying "what was pending" forward), a button on the freshly-mounted instance can render as clickable while the module lock is still actually held from the previous instance's in-flight call — clicking it is a safe no-op (`acquireAthleteActionLock()` returns `false`, the handler returns immediately), just not visually disabled for that brief window. This is a UX polish gap, not a correctness one: the deliberately-minimal fix the owner chose (module variable, not a Zustand store shared with `CoachContextBar`) doesn't attempt to solve this cosmetic case, since doing so would mean building the cross-component state channel the owner explicitly declined for this slice.
+
+This does **not** fix the separate, still-standing `CoachContextBar` gap described below — that remains a real, documented, non-blocking limitation.
+
+### Fix 2 — the destructive Playwright smoke got stuck on onboarding
+
+`scripts/e2e-coach-test.mjs`'s `--apply` path creates a real athlete, confirms the resulting `/onboarding` redirect, then immediately does `goto(page, '/coach')` to check the roster. But a freshly-created athlete has no profile: `needsOnboarding()` (`src/utils/onboarding.ts:52`) returns `true` for it, and `hasSkippedOnboarding()` is scoped **per active athlete id** (`onboardingScopeSuffix()`, same file, line 17) — so it's `false` for an athlete that has never been through onboarding before, regardless of whether the *owner's own* account has. The global `OnboardingGuard` in `App.tsx` therefore redirects **every** subsequent navigation back to `/onboarding` while this athlete stays active — so the script's `goto('/coach')` immediately bounced back, and the roster/switch/restore checks that followed all failed in a chain, **never reaching the restore step** — leaving the freshly-created athlete active on a failed `--apply` run. Manual testing avoided this only because a human naturally clicks "Omitir" on the onboarding screen; the script never did.
+
+**Fix:** added an explicit `safeCheck` step right after confirming `/onboarding`, clicking the "Omitir" button (`OnboardingStepFrame.tsx`'s skip control) and waiting for the resulting navigation to `/` — mirroring exactly what `OnboardingPage.tsx`'s `handleSkip()` does (sets `onboardingDeferredAt` on the athlete's profile, which makes `needsOnboarding()` return `false` for it from then on) before the script resumes its roster/switch/restore checks.
+
+## Known Limitation (found at final whole-branch review, 2026-07-13; superseded in scope by Fix 1 above)
+
+The **concurrency lock is page-scoped, not truly app-global.** `CoachContextBar` — the switcher bar mounted globally in `AppShell`, above the `<Outlet/>` that renders `CoachWorkspacePage` on `/coach` — calls `switchActiveAthlete` independently, with no coordination with the module-level lock described in Fix 1. This means a coach could, in principle, start a switch/create from inside the workspace panel and *also* trigger a switch from the context bar before the first one resolves — two overlapping `switchActiveAthlete` calls, which is exactly the failure mode the lock exists to prevent within the workspace.
+
+**Why this isn't a merge blocker:** `switchActiveAthlete` itself already runs its scope-mutating work (epoch bump, five store resets, persisted-selection write, active-athlete-id write) as one synchronous, `await`-free block before its first `await` (`loadMemory()`), and `bumpSwitchEpoch()` invalidates any earlier, still-in-flight switch's late-arriving effects. So two overlapping calls can't interleave mid-mutation and corrupt store state the way a naïve implementation could — this is a pre-existing safety property of the service, not something this branch added or weakened. What this branch's "global lock" language overstates is *scope*: it correctly serializes actions *within* the workspace page (including across the page's own remounts, per Fix 1), but a second, independent switch surface (the context bar) sits outside that lock and always has, even before this branch existed.
+
+**Disposition:** left as a documented, known v0 limitation rather than fixed in this branch — extending the lock to `CoachContextBar` would mean sharing lock state with a component this slice doesn't otherwise touch, which is a real design decision the owner explicitly deferred (see the "Zustand store" option declined in favor of the minimal module-variable fix in Fix 1). Candidate for a future increment if cross-surface switch races turn out to matter in practice; not blocking this merge.

@@ -33,7 +33,7 @@ const PlanBuilderV2Page = lazy(() => import('./pages/PlanBuilderV2Page'))
 const ImportPDF = lazy(() => import('./pages/ImportPDF'))
 const SettingsPage = lazy(() => import('./pages/SettingsPage'))
 const OnboardingPage = lazy(() => import('./pages/OnboardingPage'))
-const CoachRosterPage = lazy(() => import('./pages/CoachRosterPage'))
+const CoachWorkspacePage = lazy(() => import('./pages/CoachWorkspacePage'))
 const NativeWelcomePreviewPage = lazy(() => import('./pages/NativeWelcomePreviewPage'))
 
 const AUTO_SYNC_RETRY_COOLDOWN_MS = 15_000
@@ -350,7 +350,7 @@ export default function App() {
                     <Route path={ROUTES.COMPETITION_PLAN} element={<RouteBoundary><CompetitionPlanPage /></RouteBoundary>} />
                     <Route path={ROUTES.PLAN_BUILDER_V2} element={<RouteBoundary><PlanBuilderV2Page /></RouteBoundary>} />
                     <Route path="/history" element={<Navigate to={ROUTES.COMPETITION_PLAN} replace />} />
-                    <Route path={ROUTES.COACH} element={<RouteBoundary><CoachRosterPage /></RouteBoundary>} />
+                    <Route path={ROUTES.COACH} element={<RouteBoundary><CoachWorkspacePage /></RouteBoundary>} />
                     <Route path="/dashboard" element={<Navigate to={ROUTES.HOME} replace />} />
                     <Route path="/plan" element={<Navigate to={ROUTES.COMPETITION_PLAN} replace />} />
                     <Route path="/plan/dashboard" element={<Navigate to={ROUTES.COMPETITION_PLAN} replace />} />

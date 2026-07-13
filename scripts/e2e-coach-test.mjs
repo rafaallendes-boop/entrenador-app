@@ -406,6 +406,136 @@ async function runWeeklyViewVerification(page) {
   }
 }
 
+async function runCoachWorkspaceSmoke(page) {
+  step('8. Coach workspace (/coach)')
+  await goto(page, '/coach')
+  const isCoachUi = await hasBodyTextAfterWait(page, /Workspace de coach/i, 5_000)
+  if (!isCoachUi) {
+    // Sin este gate, una regresion que rompa el render de /coach se reportaria
+    // como "cuenta no allowlisted" y el smoke pasaria en verde.
+    if (process.env.E2E_EXPECT_COACH_WORKSPACE === 'true') {
+      fail('Coach workspace no renderizó', 'E2E_EXPECT_COACH_WORKSPACE=true pero /coach no mostró el workspace')
+      return
+    }
+    ok('Coach workspace omitido', 'la cuenta autenticada no está en VITE_COACH_ACCOUNTS; corre con E2E_EXPECT_COACH_WORKSPACE=true para exigirlo')
+    return
+  }
+
+  await safeCheck('Tab Resumen es el default y muestra CTAs', async () => {
+    await waitForBodyText(page, /Ver semana/i)
+    ok('Tab Resumen es el default y muestra CTAs')
+  })
+
+  await safeCheck('Tab Alumnos muestra el roster y el CTA de crear', async () => {
+    await page.getByRole('tab', { name: /Alumnos/i }).click()
+    await waitForBodyText(page, /Crear atleta/i)
+    ok('Tab Alumnos muestra el roster y el CTA de crear')
+  })
+
+  await safeCheck('Tabs Planificación/Biblioteca/Asistente IA muestran "próximamente"', async () => {
+    await page.getByRole('tab', { name: /Planificación/i }).click()
+    await waitForBodyText(page, /Vas a poder crear y editar sesiones/i)
+    await page.getByRole('tab', { name: /Biblioteca/i }).click()
+    await waitForBodyText(page, /Vas a poder guardar tus ejercicios/i)
+    await page.getByRole('tab', { name: /Asistente IA/i }).click()
+    await waitForBodyText(page, /revisas y confirmas/i)
+    ok('Tabs "próximamente" muestran su copy')
+  })
+
+  await safeCheck('Ver semana del atleta ACTIVO no cambia el scope', async () => {
+    await page.getByRole('tab', { name: /^Resumen/i }).click()
+    // Anclar al atleta activo, nunca a .first(): self va primero en el roster
+    // aunque el activo sea un gestionado, y clickearlo persistiria un switch.
+    const activeCard = page.locator('[data-athlete-card][data-athlete-active="true"]')
+    await activeCard.waitFor({ timeout: 10_000 })
+    await activeCard.getByRole('button', { name: /Ver semana/i }).click()
+    // Esperar la URL, no el texto: el texto puede estar en la pantalla anterior.
+    await page.waitForURL((url) => url.pathname === '/week', { timeout: 15_000 })
+    await waitForBodyText(page, /Semana|Weekly planner|Sin sesiones planificadas|Día libre|Dia libre/i)
+    ok('CTA "Ver semana" del atleta activo navega a /week sin switch')
+  })
+
+  if (!OPTIONS.apply) {
+    ok('Crear atleta + switch omitidos', 'son destructivos; corre con --apply para ejercitarlos')
+    return
+  }
+
+  // --- Desde acá: destructivo. Crea un atleta real y cambia el scope. ---
+  const createdName = `E2E ${new Date().toISOString().slice(0, 19)}`
+  let activeBeforeSwitch = null
+
+  await safeCheck('Crear atleta desde el tab Alumnos (submit con Enter)', async () => {
+    await goto(page, '/coach')
+    await page.getByRole('tab', { name: /Alumnos/i }).click()
+    activeBeforeSwitch = await page.locator('[data-athlete-row][data-athlete-active="true"]')
+      .getAttribute('data-athlete-row')
+
+    await page.getByRole('button', { name: /^Crear atleta/i }).click()
+    await page.getByPlaceholder(/Juan Pérez/i).fill(createdName)
+    // Enter, no click: verifica el <form onSubmit> de Task 5.
+    await page.getByPlaceholder(/Juan Pérez/i).press('Enter')
+
+    // Esperar la URL, NUNCA texto: el propio boton dice "Crear y completar perfil",
+    // asi que un /Perfil/i matchearia sin que el redirect haya ocurrido y el check
+    // pasaria en verde con la creacion rota.
+    await page.waitForURL((url) => url.pathname === '/onboarding', { timeout: 20_000 })
+    ok('Crear atleta submitea con Enter y activa al nuevo atleta', createdName)
+  })
+
+  await safeCheck('Omitir onboarding del atleta recien creado', async () => {
+    // El atleta recien creado no tiene perfil: needsOnboarding() da true y
+    // hasSkippedOnboarding() (scopeado por atleta) da false, asi que el guard
+    // global redirige CUALQUIER navegacion de vuelta a /onboarding mientras
+    // esto no se resuelva. Sin este paso, el proximo goto('/coach') rebota,
+    // los checks de roster/switch/restore fallan en cadena, y el atleta E2E
+    // queda activo sin que el ultimo paso (restaurar) llegue a ejecutarse.
+    await page.getByRole('button', { name: /Omitir/i }).click()
+    await page.waitForURL((url) => url.pathname === '/', { timeout: 20_000 })
+    ok('Onboarding omitido: needsOnboarding() ya no bloquea la navegacion')
+  })
+
+  await safeCheck('El atleta creado aparece en el roster', async () => {
+    await goto(page, '/coach')
+    await page.getByRole('tab', { name: /Alumnos/i }).click()
+    await waitForBodyText(page, new RegExp(createdName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'))
+    ok('El atleta creado aparece en el roster')
+  })
+
+  await safeCheck('"Entrenar como este atleta" cambia el atleta activo', async () => {
+    const row = page.locator(`[data-athlete-row][data-athlete-active="false"]`).first()
+    const targetId = await row.getAttribute('data-athlete-row')
+    await row.getByRole('button', { name: /Entrenar como este atleta/i }).click()
+    // onTrainAs navega a ROUTES.HOME ('/') recien cuando el switch resolvio.
+    // Sin esperar esa navegacion, el goto() de abajo competiria con ella.
+    await page.waitForURL((url) => url.pathname === '/', { timeout: 20_000 })
+    await goto(page, '/coach')
+    await page.getByRole('tab', { name: /Alumnos/i }).click()
+    const nowActive = await page.locator('[data-athlete-row][data-athlete-active="true"]')
+      .getAttribute('data-athlete-row')
+    if (nowActive === targetId) ok('Switch de atleta aplicado', targetId)
+    else fail('Switch de atleta no se aplicó', `esperaba ${targetId}, quedó ${nowActive}`)
+  })
+
+  await safeCheck('Restaurar el atleta activo original', async () => {
+    if (!activeBeforeSwitch) {
+      fail('No se pudo restaurar el atleta activo', 'no se capturó el atleta activo inicial')
+      return
+    }
+    const original = page.locator(`[data-athlete-row="${activeBeforeSwitch}"]`)
+    const restoreButton = original.getByRole('button', { name: /Entrenar como este atleta/i })
+    if (await restoreButton.count() > 0) {
+      await restoreButton.click()
+      await page.waitForURL((url) => url.pathname === '/', { timeout: 20_000 })
+    }
+    await goto(page, '/coach')
+    await page.getByRole('tab', { name: /Alumnos/i }).click()
+    const nowActive = await page.locator('[data-athlete-row][data-athlete-active="true"]')
+      .getAttribute('data-athlete-row')
+    if (nowActive === activeBeforeSwitch) ok('Atleta activo original restaurado', activeBeforeSwitch)
+    else fail('El smoke dejó otro atleta activo', `esperaba ${activeBeforeSwitch}, quedó ${nowActive}`)
+  })
+}
+
 async function saveFailureArtifacts(page) {
   if (failed === 0) return
   mkdirSync(ARTIFACT_DIR, { recursive: true })
@@ -483,6 +613,7 @@ async function main() {
     await runActionProposal(page)
     await runWeekCreator(page)
     await runWeeklyViewVerification(page)
+    await runCoachWorkspaceSmoke(page)
     await verifySettingsQuality(page)
     await exportBetaQualityIfRequested(page)
   } finally {

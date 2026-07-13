@@ -33,9 +33,13 @@ export default function CoachContextBar({ allowlistOverride, initialAthletes }: 
   useEffect(() => {
     if (!isCoach || !user?.id) return
     let cancelled = false
-    void listOwnedAthletes(user.id).then((rows) => {
-      if (!cancelled) setAthletes(rows)
-    })
+    listOwnedAthletes(user.id)
+      .then((rows) => {
+        if (!cancelled) setAthletes(rows)
+      })
+      .catch((error) => {
+        console.error('[coach-context-bar] failed to load roster', error)
+      })
     return () => { cancelled = true }
   }, [isCoach, user?.id, activeAthleteId])
 

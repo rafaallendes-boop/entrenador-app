@@ -29,7 +29,13 @@ export async function switchActiveAthlete(ownerAccountId: string, athleteId: str
   persistAthleteSelection(ownerAccountId, isSelf ? null : athleteId)
   setActiveAthleteId(athleteId)
   useAuthStore.getState().setActiveAthleteId(athleteId)
-  await useCoachMemoryStore.getState().loadMemory()
+  // Post-commit: el scope ya cambió. Un fallo de memoria no puede convertir un
+  // switch aplicado en excepción — la memoria se recarga en el próximo intento.
+  try {
+    await useCoachMemoryStore.getState().loadMemory()
+  } catch (error) {
+    console.error('[switch-athlete] no se pudo cargar la memoria del coach', error)
+  }
   if (isSelf) {
     void (async () => {
       const { pullWorkouts } = await import('../readiness/pullWorkouts')
