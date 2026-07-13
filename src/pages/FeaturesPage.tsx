@@ -3,6 +3,9 @@ import { Link } from 'react-router-dom'
 import { useAuthStore } from '../store/useAuthStore'
 import { isSupabaseConfigured } from '../services/auth'
 import SharedPublicNav from '../components/SharedPublicNav'
+import { ROUTES } from '../constants/routes'
+import { getPublicRouteMetadata } from '../constants/publicRouteMetadata'
+import { usePageMetadata } from '../hooks/usePageMetadata'
 
 const BRAND = '#ff4d00'
 const BRAND_LIGHT = '#ff7a33'
@@ -17,7 +20,10 @@ const FONT_DISPLAY = "'Lexend', 'Inter', system-ui, sans-serif"
 const FONT_MONO = "'JetBrains Mono', 'Fira Mono', monospace"
 
 export default function FeaturesPage() {
+  usePageMetadata(getPublicRouteMetadata(ROUTES.FEATURES))
+
   const signInWithGoogle = useAuthStore(s => s.signInWithGoogle)
+  const user = useAuthStore(s => s.user)
   const authAvailable = isSupabaseConfigured
 
   const handleSignIn = async () => {
@@ -29,7 +35,7 @@ export default function FeaturesPage() {
     <div
       style={{ background: '#0a0a0a', color: INK, fontFamily: "'Inter', system-ui, sans-serif", minHeight: '100vh' }}
     >
-      <SharedPublicNav onSignup={handleSignIn} onLogin={handleSignIn} />
+      <SharedPublicNav onSignup={handleSignIn} onLogin={handleSignIn} isAuthenticated={Boolean(user)} />
 
       <main>
         <FeaturesHero />
@@ -511,6 +517,38 @@ function FeaturesCTA() {
 /* ─── FOOTER ────────────────────────────────────────────── */
 
 function FeaturesFooter() {
+  const columns: Array<{
+    title: string
+    links: Array<{ label: string; to: string } | { label: string; href: string }>
+  }> = [
+    {
+      title: 'Producto',
+      links: [
+        { label: 'Funcionalidades', to: ROUTES.FEATURES },
+        { label: 'Precios', to: ROUTES.PRICING },
+        { label: 'Inicio', to: ROUTES.HOME },
+      ],
+    },
+    {
+      title: 'Para atletas',
+      links: [
+        { label: 'Piloto fundador', href: 'mailto:hola@rallyiq.cl' },
+        { label: 'Clubes', href: 'mailto:hola@rallyiq.cl' },
+        { label: 'Feedback', href: 'mailto:hola@rallyiq.cl' },
+      ],
+    },
+    {
+      title: 'Empresa',
+      links: [
+        { label: 'Contacto', href: 'mailto:hola@rallyiq.cl' },
+        { label: 'Privacidad', to: ROUTES.PRIVACY },
+        { label: 'Términos', to: ROUTES.TERMS },
+        { label: 'Descargo de salud', to: ROUTES.HEALTH_DISCLAIMER },
+        { label: 'Descargo Whoop', to: ROUTES.WHOOP_DISCLAIMER },
+      ],
+    },
+  ]
+
   return (
     <footer style={{ borderTop: `1px solid ${SURFACE_BORDER}`, background: '#050505', padding: '56px 0' }}>
       <div className="mx-auto flex w-full max-w-7xl flex-col items-start justify-between gap-8 px-6 md:flex-row md:px-10">
@@ -522,11 +560,7 @@ function FeaturesFooter() {
           <p style={{ marginTop: 12, fontSize: 13, lineHeight: 1.6, color: INK_MUTED }}>Un coach multideporte para planificar, ajustar y entender tu semana de entrenamiento.</p>
         </div>
         <div className="flex flex-wrap gap-12">
-          {[
-            { title: 'Producto', links: [{ label: 'Funcionalidades', to: '/features' }, { label: 'Precios', to: '/pricing' }, { label: 'Inicio', to: '/' }] },
-            { title: 'Para atletas', links: [{ label: 'Piloto fundador', href: 'mailto:hola@rallyiq.cl' }, { label: 'Clubes', href: 'mailto:hola@rallyiq.cl' }, { label: 'Feedback', href: 'mailto:hola@rallyiq.cl' }] },
-            { title: 'Empresa', links: [{ label: 'Contacto', href: 'mailto:hola@rallyiq.cl' }, { label: 'Privacidad', href: 'mailto:hola@rallyiq.cl' }, { label: 'Términos', href: 'mailto:hola@rallyiq.cl' }] },
-          ].map(col => (
+          {columns.map(col => (
             <div key={col.title}>
               <h4 style={{ fontFamily: FONT_DISPLAY, fontSize: 13, fontWeight: 700, color: '#fff', marginBottom: 16 }}>{col.title}</h4>
               <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 10 }}>

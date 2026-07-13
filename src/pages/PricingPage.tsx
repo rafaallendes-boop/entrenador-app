@@ -1,8 +1,11 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../store/useAuthStore'
 import { isSupabaseConfigured } from '../services/auth'
 import SharedPublicNav from '../components/SharedPublicNav'
+import { ROUTES } from '../constants/routes'
+import { getPublicRouteMetadata } from '../constants/publicRouteMetadata'
+import { usePageMetadata } from '../hooks/usePageMetadata'
 
 // ── Design tokens ────────────────────────────────────────────────────────────
 const BRAND = '#ff4d00'
@@ -443,12 +446,23 @@ function FaqItem({ question, answer, defaultOpen }: FaqItemProps) {
 
 // ── Main page ────────────────────────────────────────────────────────────────
 export default function PricingPage() {
+  usePageMetadata(getPublicRouteMetadata(ROUTES.PRICING))
+
   const [isAnnual, setIsAnnual] = useState(false)
   const signInWithGoogle = useAuthStore(s => s.signInWithGoogle)
+  const user = useAuthStore(s => s.user)
+  const navigate = useNavigate()
   const authAvailable = isSupabaseConfigured
   const handleSignIn = async () => {
     if (!authAvailable) return
     try { await signInWithGoogle() } catch (e) { console.error(e) }
+  }
+  const handleAccess = () => {
+    if (user) {
+      navigate(ROUTES.HOME)
+      return
+    }
+    void handleSignIn()
   }
 
   const starterFeatures: TierFeature[] = [
@@ -483,7 +497,7 @@ export default function PricingPage() {
   return (
     <div style={{ background: SURFACE_DEEP, minHeight: '100vh', color: INK, fontFamily: FONT_DISPLAY }}>
       <style>{css}</style>
-      <SharedPublicNav onSignup={handleSignIn} onLogin={handleSignIn} />
+      <SharedPublicNav onSignup={handleSignIn} onLogin={handleSignIn} isAuthenticated={Boolean(user)} />
 
       {/* Hero */}
       <section className="p-hero">
@@ -517,9 +531,9 @@ export default function PricingPage() {
               monthlyPrice={0}
               annualPrice={0}
               isAnnual={isAnnual}
-              ctaText="Empezar gratis"
+              ctaText={user ? 'Ir a mi panel' : 'Empezar gratis'}
               ctaStyle="ghost"
-              onCta={handleSignIn}
+              onCta={handleAccess}
               featLabel="Incluye"
               features={starterFeatures}
             />
@@ -531,9 +545,9 @@ export default function PricingPage() {
               isAnnual={isAnnual}
               featured
               ribbon="Más útil"
-              ctaText="Probar Coach Semanal"
+              ctaText={user ? 'Ir a mi panel' : 'Probar Coach Semanal'}
               ctaStyle="primary"
-              onCta={handleSignIn}
+              onCta={handleAccess}
               featLabel="Todo de Base, más"
               features={proFeatures}
               origMonthly={15990}
@@ -544,9 +558,9 @@ export default function PricingPage() {
               monthlyPrice={24990}
               annualPrice={19990}
               isAnnual={isAnnual}
-              ctaText="Preparar un objetivo"
+              ctaText={user ? 'Ir a mi panel' : 'Preparar un objetivo'}
               ctaStyle="ghost"
-              onCta={handleSignIn}
+              onCta={handleAccess}
               featLabel="Todo de Coach Semanal, más"
               features={eliteFeatures}
             />
@@ -699,7 +713,9 @@ export default function PricingPage() {
             <h2>Habla con el coach, registra tu semana y <span className="hl">sube cuando haga sentido.</span></h2>
             <p>La demo tiene que sentirse útil desde el primer día, no como una promesa futura.</p>
             <div className="cta-act">
-              <button type="button" onClick={handleSignIn} className="p-btn p-btn-primary p-btn-lg">Empezar gratis <span>→</span></button>
+              <button type="button" onClick={handleAccess} className="p-btn p-btn-primary p-btn-lg">
+                {user ? 'Ir a mi panel' : 'Empezar gratis'} <span>→</span>
+              </button>
               <Link to="/features" className="p-btn p-btn-ghost p-btn-lg">Ver funcionalidades</Link>
             </div>
           </div>
@@ -722,8 +738,8 @@ export default function PricingPage() {
             <div className="footer-col">
               <h4>Producto</h4>
               <ul>
-                <li><Link to="/features">Funcionalidades</Link></li>
-                <li><Link to="/pricing">Precios</Link></li>
+                <li><Link to={ROUTES.FEATURES}>Funcionalidades</Link></li>
+                <li><Link to={ROUTES.PRICING}>Precios</Link></li>
                 <li><a href="mailto:hola@rallyiq.cl">Demo</a></li>
                 <li><a href="mailto:hola@rallyiq.cl">Roadmap</a></li>
               </ul>
@@ -742,8 +758,10 @@ export default function PricingPage() {
               <ul>
                 <li><a href="mailto:hola@rallyiq.cl">Contacto</a></li>
                 <li><a href="mailto:hola@rallyiq.cl">Soporte</a></li>
-                <li><a href="mailto:hola@rallyiq.cl">Privacidad</a></li>
-                <li><a href="mailto:hola@rallyiq.cl">Términos</a></li>
+                <li><Link to={ROUTES.PRIVACY}>Privacidad</Link></li>
+                <li><Link to={ROUTES.TERMS}>Términos</Link></li>
+                <li><Link to={ROUTES.HEALTH_DISCLAIMER}>Descargo de salud</Link></li>
+                <li><Link to={ROUTES.WHOOP_DISCLAIMER}>Descargo Whoop</Link></li>
               </ul>
             </div>
           </div>

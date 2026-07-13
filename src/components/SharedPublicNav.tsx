@@ -34,10 +34,11 @@ function BoltLogo() {
 interface SharedPublicNavProps {
   onSignup: () => void
   onLogin: () => void
+  isAuthenticated?: boolean
   scrollAware?: boolean
 }
 
-export default function SharedPublicNav({ onSignup, onLogin, scrollAware }: SharedPublicNavProps) {
+export default function SharedPublicNav({ onSignup, onLogin, isAuthenticated = false, scrollAware }: SharedPublicNavProps) {
   const [scrolled, setScrolled] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
   const { pathname } = useLocation()
@@ -140,35 +141,52 @@ export default function SharedPublicNav({ onSignup, onLogin, scrollAware }: Shar
 
           {/* Desktop actions */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <button
-              onClick={onLogin}
-              className="hidden md:inline-flex"
-              style={{
-                background: 'none', border: 'none', cursor: 'pointer',
-                fontFamily: FONT_DISPLAY, fontSize: 14, fontWeight: 500,
-                color: INK_MUTED, padding: '6px 12px', borderRadius: 8,
-                transition: 'color .15s',
-              }}
-              onMouseEnter={e => (e.currentTarget.style.color = INK)}
-              onMouseLeave={e => (e.currentTarget.style.color = INK_MUTED)}
-            >
-              Iniciar sesión
-            </button>
-            <button
-              onClick={onSignup}
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: 6,
-                background: BRAND, color: '#fff', border: 'none', cursor: 'pointer',
-                fontFamily: FONT_DISPLAY, fontSize: 13, fontWeight: 700,
-                padding: '9px 18px', borderRadius: 999,
-                boxShadow: '0 2px 14px rgba(255,77,0,0.35)',
-                transition: 'all .18s',
-              }}
-              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = BRAND_LIGHT; (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-1px)' }}
-              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = BRAND; (e.currentTarget as HTMLButtonElement).style.transform = '' }}
-            >
-              Empezar gratis <ArrowRight size={13} strokeWidth={2.5} />
-            </button>
+            {isAuthenticated ? (
+              <Link
+                to="/"
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 6,
+                  background: BRAND, color: '#fff',
+                  fontFamily: FONT_DISPLAY, fontSize: 13, fontWeight: 700,
+                  padding: '9px 18px', borderRadius: 999, textDecoration: 'none',
+                  boxShadow: '0 2px 14px rgba(255,77,0,0.35)',
+                }}
+              >
+                Ir a mi panel <ArrowRight size={13} strokeWidth={2.5} />
+              </Link>
+            ) : (
+              <>
+                <button
+                  onClick={onLogin}
+                  className="hidden md:inline-flex"
+                  style={{
+                    background: 'none', border: 'none', cursor: 'pointer',
+                    fontFamily: FONT_DISPLAY, fontSize: 14, fontWeight: 500,
+                    color: INK_MUTED, padding: '6px 12px', borderRadius: 8,
+                    transition: 'color .15s',
+                  }}
+                  onMouseEnter={e => (e.currentTarget.style.color = INK)}
+                  onMouseLeave={e => (e.currentTarget.style.color = INK_MUTED)}
+                >
+                  Iniciar sesión
+                </button>
+                <button
+                  onClick={onSignup}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 6,
+                    background: BRAND, color: '#fff', border: 'none', cursor: 'pointer',
+                    fontFamily: FONT_DISPLAY, fontSize: 13, fontWeight: 700,
+                    padding: '9px 18px', borderRadius: 999,
+                    boxShadow: '0 2px 14px rgba(255,77,0,0.35)',
+                    transition: 'all .18s',
+                  }}
+                  onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = BRAND_LIGHT; (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-1px)' }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = BRAND; (e.currentTarget as HTMLButtonElement).style.transform = '' }}
+                >
+                  Empezar gratis <ArrowRight size={13} strokeWidth={2.5} />
+                </button>
+              </>
+            )}
 
             {/* Hamburger — mobile only */}
             <button
@@ -278,31 +296,48 @@ export default function SharedPublicNav({ onSignup, onLogin, scrollAware }: Shar
 
         {/* Auth actions */}
         <div style={{ padding: '8px 24px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <button
-            onClick={() => { onSignup(); closeMobile() }}
-            style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-              background: BRAND, color: '#fff', border: 'none', cursor: 'pointer',
-              fontFamily: FONT_DISPLAY, fontSize: 14, fontWeight: 700,
-              padding: '13px 20px', borderRadius: 999,
-              boxShadow: '0 4px 20px rgba(255,77,0,0.3)',
-              width: '100%', transition: 'all .18s',
-            }}
-          >
-            Empezar gratis <ArrowRight size={14} strokeWidth={2.5} />
-          </button>
-          <button
-            onClick={() => { onLogin(); closeMobile() }}
-            style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              background: 'rgba(255,255,255,0.05)', color: INK_MUTED,
-              border: `1px solid ${SURFACE_BORDER}`, cursor: 'pointer',
-              fontFamily: FONT_DISPLAY, fontSize: 14, fontWeight: 500,
-              padding: '11px 20px', borderRadius: 999, width: '100%',
-            }}
-          >
-            Iniciar sesión
-          </button>
+          {isAuthenticated ? (
+            <Link
+              to="/"
+              onClick={closeMobile}
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                background: BRAND, color: '#fff', fontFamily: FONT_DISPLAY,
+                fontSize: 14, fontWeight: 700, padding: '13px 20px',
+                borderRadius: 999, width: '100%', textDecoration: 'none',
+              }}
+            >
+              Ir a mi panel <ArrowRight size={14} strokeWidth={2.5} />
+            </Link>
+          ) : (
+            <>
+              <button
+                onClick={() => { onSignup(); closeMobile() }}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                  background: BRAND, color: '#fff', border: 'none', cursor: 'pointer',
+                  fontFamily: FONT_DISPLAY, fontSize: 14, fontWeight: 700,
+                  padding: '13px 20px', borderRadius: 999,
+                  boxShadow: '0 4px 20px rgba(255,77,0,0.3)',
+                  width: '100%', transition: 'all .18s',
+                }}
+              >
+                Empezar gratis <ArrowRight size={14} strokeWidth={2.5} />
+              </button>
+              <button
+                onClick={() => { onLogin(); closeMobile() }}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  background: 'rgba(255,255,255,0.05)', color: INK_MUTED,
+                  border: `1px solid ${SURFACE_BORDER}`, cursor: 'pointer',
+                  fontFamily: FONT_DISPLAY, fontSize: 14, fontWeight: 500,
+                  padding: '11px 20px', borderRadius: 999, width: '100%',
+                }}
+              >
+                Iniciar sesión
+              </button>
+            </>
+          )}
         </div>
 
         {/* Bottom brand note */}
