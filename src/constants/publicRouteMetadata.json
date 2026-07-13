@@ -1,0 +1,46 @@
+{
+  "siteName": "RallyIQ",
+  "ogImagePath": "/og/rallyiq.png",
+  "routes": [
+    {
+      "path": "/",
+      "title": "RallyIQ | Coach AI multideporte",
+      "description": "Planifica, registra y ajusta tu entrenamiento de squash, running, fuerza y movilidad con un coach AI que entiende tu semana."
+    },
+    {
+      "path": "/features",
+      "title": "Funcionalidades de entrenamiento | RallyIQ",
+      "description": "Planificación multideporte, check-ins, seguimiento semanal y coach AI con contexto en RallyIQ."
+    },
+    {
+      "path": "/pricing",
+      "title": "Planes y precios | RallyIQ",
+      "description": "Compara los planes de RallyIQ para registrar, planificar y ajustar tu entrenamiento multideporte."
+    },
+    {
+      "path": "/coaches",
+      "title": "RallyIQ para coaches | Planifica y gestiona atletas",
+      "description": "Workspace multideporte para coaches que gestionan planificación y adherencia de sus atletas."
+    },
+    {
+      "path": "/terms",
+      "title": "Términos y Condiciones | RallyIQ",
+      "description": "Condiciones de uso, responsabilidades y alcance del servicio RallyIQ."
+    },
+    {
+      "path": "/privacy",
+      "title": "Política de Privacidad | RallyIQ",
+      "description": "Cómo RallyIQ trata, protege y permite gestionar tus datos personales y de entrenamiento."
+    },
+    {
+      "path": "/health-disclaimer",
+      "title": "Descargo de responsabilidad de salud | RallyIQ",
+      "description": "Alcance y límites de las sugerencias de entrenamiento y salud de RallyIQ."
+    },
+    {
+      "path": "/whoop-disclaimer",
+      "title": "Descargo y consentimiento para datos Whoop | RallyIQ",
+      "description": "Uso opcional y consentido de datos Whoop como contexto de entrenamiento en RallyIQ."
+    }
+  ]
+}

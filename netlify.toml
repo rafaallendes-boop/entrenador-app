@@ -21,6 +21,49 @@
   status = 301
   force = true
 
+# Serve route-specific metadata to crawlers before the SPA catch-all.
+[[redirects]]
+  from = "/features"
+  to = "/features/index.html"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/pricing"
+  to = "/pricing/index.html"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/coaches"
+  to = "/coaches/index.html"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/terms"
+  to = "/terms/index.html"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/privacy"
+  to = "/privacy/index.html"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/health-disclaimer"
+  to = "/health-disclaimer/index.html"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/whoop-disclaimer"
+  to = "/whoop-disclaimer/index.html"
+  status = 200
+  force = true
+
 [[redirects]]
   from = "/*"
   to = "/index.html"

@@ -1,4 +1,6 @@
-const CACHE_NAME = 'entrenador-app-v2'
+// v3: navigation responses are cached per-URL instead of all under '/', so any
+// existing cache holding a route's HTML as the '/' shell must be discarded.
+const CACHE_NAME = 'entrenador-app-v3'
 const APP_SHELL = [
   '/',
   '/manifest.json',
@@ -105,13 +107,22 @@ if (!IS_LOCAL_HOST) {
       event.respondWith(
         fetch(event.request)
           .then((response) => {
-            const copy = response.clone()
-            caches.open(CACHE_NAME).then((cache) => cache.put('/', copy))
+            // Cache under the requested URL, not under '/'. Public routes (/coaches,
+            // /terms, …) are prerendered with their own <title>/<meta>, so storing any
+            // navigation response as the '/' shell would serve one route's metadata for
+            // another when offline.
+            //
+            // Skip redirects (e.g. /legal/privacidad -> /privacy) so the destination's
+            // body is never cached under the source URL, and skip error pages.
+            if (response.ok && !response.redirected) {
+              const copy = response.clone()
+              caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy)).catch(() => {})
+            }
             return response
           })
           .catch(async () => {
             const cached = await caches.match(event.request)
-            return cached || caches.match('/') || Response.error()
+            return cached || (await caches.match('/')) || Response.error()
           }),
       )
       return
