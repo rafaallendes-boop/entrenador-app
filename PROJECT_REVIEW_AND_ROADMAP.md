@@ -1,9 +1,12 @@
 # RallyIQ - Project Review and Roadmap
 
-Actualizado: 2026-07-10
+Actualizado: 2026-07-13
 
 Base de contraste:
 
+- `main` hasta `ec31ccb` (merge de `coach-workspace-v0` + fix de tooling worktrees).
+- **`011_whoop_integration.sql` y `012_whoop_workouts.sql` aplicados en produccion.** Whoop readiness y Workout Auto-Complete quedan operativos de punta a punta (owner confirma cierre operacional); pendiente solo el linkeo de consentimiento biometrico/legal antes de exponer a terceros (ver Riesgo 1).
+- **Coach Workspace v0 implementado y deployado (2026-07-13):** `/coach` pasa de un roster unico (`CoachRosterPage`) a un workspace de 5 tabs (`CoachWorkspacePage`): Resumen (tarjetas de roster con Ver semana/Ver plan), Alumnos (roster + alta de atleta), y Planificacion/Biblioteca/Asistente IA como placeholders "proximamente". Incluye endurecimiento de `switchActiveAthlete` (post-commit `loadMemory()` best-effort) y un lock de concurrencia a nivel de modulo para serializar switch/creacion de atleta (sobrevive al remount que dispara un switch exitoso). Merge a `main` y push a produccion cerrados el mismo dia; ver seccion 7 mas abajo para detalle completo, incluida una limitacion conocida (lock no comparte estado con `CoachContextBar`) documentada en el plan.
 - `main` hasta `167ef6e Plan whoop y entrenador`.
 - `007` aplicado y F2 data prereqs en `6e33926`.
 - `008a` ya fue corrido en produccion con 0 nulls / 0 duplicados reportados.
@@ -12,7 +15,7 @@ Base de contraste:
 - **Coach UI F2-lite Parte 2b desplegada en produccion (2026-07-05):** switcher + roster `/coach` + onboarding athlete-aware, gated por `VITE_COACH_ACCOUNTS`. Migracion `010a/b/c` (day/week full unique expand->contract) aplicada; `008a`/`010a` post-deploy en 0. Smoke self + gestionado OK.
 - Superficie publica actualizada para demo multideporte: Landing/Features/Pricing limpian residuos visibles de version/localidad, reducen sesgo squash-only y Pricing queda en 3 planes: Base gratis, Coach Semanal y Avanzado con Plan Builder.
 - **Polish de uso real implementado (2026-07-06):** la nota/lectura semanal del coach queda disponible solo desde viernes-domingo y completar todos los ejercicios de una sesion marca automaticamente la sesion como realizada.
-- **WHOOP v1 implementado y commiteado (2026-07-08/10):** integracion end-to-end en `main` (`c8aa5f8`, `14b7056`, `5293e6c`): `011_whoop_integration.sql`, Dexie v15 `readinessDaily`, OAuth start/callback/status con state single-use, tokens AES-256-GCM, sync manual/on-demand con cooldown, cron dedicado, `ReadinessCard`, `WhoopConnection`, prefill de check-in gateado (hoy+self+atleta), contexto pasivo del coach, borrado completo service-role, export/backup y wipe local. Cierre de review previo: lint + 1160 tests + build + typecheck. Pendiente operacional: aplicar `011`, confirmar deploy y smoke directo en prod + gate legal antes de terceros.
+- **WHOOP v1 implementado, commiteado y aplicado en produccion (2026-07-08/10, `011` cerrado 2026-07-13):** integracion end-to-end en `main` (`c8aa5f8`, `14b7056`, `5293e6c`): `011_whoop_integration.sql`, Dexie v15 `readinessDaily`, OAuth start/callback/status con state single-use, tokens AES-256-GCM, sync manual/on-demand con cooldown, cron dedicado, `ReadinessCard`, `WhoopConnection`, prefill de check-in gateado (hoy+self+atleta), contexto pasivo del coach, borrado completo service-role, export/backup y wipe local. Cierre de review previo: lint + 1160 tests + build + typecheck. Pendiente unicamente el gate legal/consentimiento biometrico antes de terceros.
 - **WHOOP Esfuerzo (2026-07-08) implementado:** `dayLog.rpeActual` se mantiene como storage pero la UI/copy lo relabela a "Esfuerzo"; Whoop strain lo prellena con `clamp(round(strain / 2.1), 1, 10)`, editable, y no se usa para sembrar `Session.actualRpe` ni inflar ACWR/carga.
 - **Resumen semanal/coach note corregido (2026-07-10):** snapshot de nota semanal, freshness check y tests evitan reusar notas obsoletas cuando cambia el resumen.
 - **SP1a dos-lados planificado (2026-07-09/10):** spec endurecido con D1-D6 y plan de implementacion creado (`docs/superpowers/plans/2026-07-09-sp1a-two-sided-foundation.md`), pero aun sin codigo/migraciones aplicadas.
@@ -20,29 +23,32 @@ Base de contraste:
 
 ## Resumen Ejecutivo
 
-RallyIQ esta en una etapa donde el core ya no es el cuello de botella principal. El motor de planificacion, Plan Builder async, calidad deportiva base, athlete scope foundation, claves naturales locales por atleta, write path remoto seguro para day/week, Athlete-Aware Core, Coach F2-lite Parte 2b y Whoop v1 ya estan construidos.
+RallyIQ esta en una etapa donde el core ya no es el cuello de botella principal. El motor de planificacion, Plan Builder async, calidad deportiva base, athlete scope foundation, claves naturales locales por atleta, write path remoto seguro para day/week, Athlete-Aware Core, Coach F2-lite Parte 2b, Whoop v1 + Workout Auto-Complete (ambas migraciones aplicadas) y ahora Coach Workspace v0 ya estan construidos y en produccion.
 
-Lo que queda antes de mostrar/cobrar con confianza se divide en cinco carriles:
+Lo que queda antes de mostrar/cobrar con confianza se concentra en tres carriles:
 
-1. **Whoop readiness operativo:** codigo en `main`; resta aplicar `011`, confirmar deploy/smoke prod y linkear consentimiento biometrico antes de terceros.
-2. **Cierre comercial/legal:** rutas legales publicas, consentimiento general + biometrico, soporte y oferta piloto.
+1. **Cierre legal de Whoop:** migraciones y flujo ya operativos; resta linkear consentimiento biometrico explicito antes de exponer Whoop a terceros.
+2. **Cierre comercial/legal general:** rutas legales publicas, consentimiento general, soporte y oferta piloto.
 3. **QA deportiva:** planes arquetipo ahora operables como atletas gestionados.
-4. **Whoop workout auto-complete:** codigo implementado; pendiente aplicar `012`, deploy, reconectar para `read:workout` y smoke con workout real.
-5. **SP1 dos-lados:** membresias/RLS v2 ya planificadas para `013+`/Dexie v17+, pero sigue siendo una migracion de acceso relevante.
 
-Mi lectura como lider tecnico: ya se puede preparar demo y piloto acompanado. No esta listo para self-serve publico. El cuello actual no es falta de features, sino cerrar gates operacionales, legales y de QA manual con datos reales.
+Carriles de producto que siguen abiertos pero ya no bloquean el piloto:
+
+4. **Coach Workspace v0:** roster mejorado ya en produccion; Planificacion/Biblioteca/Asistente IA quedan como "proximamente" a propósito (ver seccion 7).
+5. **SP1 dos-lados:** membresias/RLS v2 ya planificadas para `013+`/Dexie v17+, pero sigue siendo una migracion de acceso relevante, no urgente.
+
+Mi lectura como lider tecnico: ya se puede preparar demo y piloto acompanado con mas confianza que antes — los dos gates operacionales de Whoop que bloqueaban el track tecnico ya cerraron. No esta listo para self-serve publico. El cuello actual no es falta de features, sino cerrar el consentimiento biometrico, legal general y QA manual con datos reales.
 
 ## Estado Actual En Una Frase
 
-RallyIQ ya opera multi-atleta en produccion y Whoop readiness esta codeado/commiteado; el siguiente paso real es aplicar `011`, confirmar deploy y smokear conectar -> sync -> ReadinessCard -> prefill -> desconectar/borrar en prod, con gate legal antes de terceros.
+RallyIQ ya opera multi-atleta en produccion, con Whoop readiness y Workout Auto-Complete operativos (`011`/`012` aplicados) y el nuevo Coach Workspace v0 (`/coach` de 5 tabs) deployado; el siguiente paso real es cerrar el consentimiento biometrico de Whoop y avanzar el cierre legal/comercial general antes del primer piloto pagado.
 
 ## Porcentaje De Avance
 
 Estimacion actual:
 
-- Demo acompanada: **94% listo / 6% pendiente**.
-- Piloto manual pagado 1-3 clientes: **85% listo / 15% pendiente**.
-- Coach UI F2-lite MVP interno: **72% listo / 28% pendiente**.
+- Demo acompanada: **97% listo / 3% pendiente**.
+- Piloto manual pagado 1-3 clientes: **90% listo / 10% pendiente**.
+- Coach UI F2-lite MVP interno: **80% listo / 20% pendiente** (Coach Workspace v0 suma roster mejorado; Planificacion/Biblioteca/Asistente IA siguen como placeholders a proposito).
 - Coach dos-lados/SP1: **25% listo / 75% pendiente**.
 - Monetizacion publica self-serve: **59% listo / 41% pendiente**.
 
@@ -88,7 +94,7 @@ Decision de producto del 2026-07-06, ejecutada entre 2026-07-08 y 2026-07-10:
 - `rpeActual` se mantiene como storage pero el producto lo relabela a **Esfuerzo**; Whoop strain lo prellena como esfuerzo diario editable, sin contaminar `Session.actualRpe`.
 - La futura landing/oferta coach solo puede prometer contexto objetivo opcional y consentido; no diagnostico, prevencion de lesiones ni ajuste automatico.
 
-Estado: **codigo committed; pendiente aplicar `011`, confirmar deploy y smoke prod + legal biometrico linkeado**.
+Estado: **`011` aplicado en produccion, deploy y smoke operativo confirmados por el owner.** Pendiente unicamente linkear el gate legal/consentimiento biometrico antes de exponer Whoop a terceros — no bloquea el uso del owner.
 
 ### 4. SP1 Coach dos-lados quedo especificado y planificado como SP1a/SP1b
 
@@ -129,7 +135,28 @@ Nuevo spec aprobado el 2026-07-10:
 - No escribe `Session.actualRpe`; solo `actualDurationMin`, `completionNotes` generado si no existia, y `autoCompletion` idempotente por `workoutId`.
 - Requiere reconectar Whoop para otorgar `read:workout`.
 
-Estado: **implementado en codigo y tests**. Pendiente aplicar `012`, deploy, reconectar Whoop para otorgar `read:workout` y ejecutar el smoke operativo despues de cerrar `011`.
+Estado: **`012` aplicado en produccion, Whoop reconectado con `read:workout` y smoke operativo confirmado por el owner.**
+
+### 7. Coach Workspace v0 implementado y deployado (2026-07-13)
+
+`/coach` pasa de un roster unico (`CoachRosterPage`) a un workspace de 5 areas (`CoachWorkspacePage`):
+
+- **Resumen:** tarjetas de roster (self + gestionados) con CTAs "Ver semana"/"Ver plan", sin señales computadas (eso requeriria una capa de lectura multi-atleta fuera de alcance para v0).
+- **Alumnos:** roster completo + alta de atleta (formulario con submit por Enter) + "Entrenar como este atleta".
+- **Planificacion / Biblioteca / Asistente IA:** placeholders honestos "proximamente", con copy en tuteo.
+- Nav responsive: sidebar en desktop, tabs horizontales scrolleables en mobile, con ARIA `tablist`/`tab`/`tabpanel` completo.
+
+Endurecimientos que viajaron con la misma pieza:
+
+- `switchActiveAthlete` corrige un bug real: `loadMemory()` corria post-commit del cambio de scope, y su fallo podia convertir un switch ya aplicado en un `false` falso. Ahora es best-effort tras el commit; el unico reject legitimo es el chequeo pre-commit en Dexie.
+- Lock de concurrencia para serializar switch/creacion de atleta (crear tambien activa, por lo que comparte el mismo lock). Encontrado durante QA manual en vivo: el lock original (`useRef` en el componente) no sobrevivia al remount que un switch exitoso dispara via `key={activeAthleteId}` en `AppShell` — se movio a un singleton de modulo que si sobrevive.
+- Smoke de Playwright (`scripts/e2e-coach-test.mjs`) extendido con un paso no-destructivo por defecto y uno destructivo detras de `--apply` (crea un atleta real, prueba el switch, restaura el atleta original), con gate `E2E_EXPECT_COACH_WORKSPACE` para que una regresion de renderizado falle en vez de reportarse como "cuenta no allowlisted".
+
+**Limitacion conocida, documentada, no bloqueante:** el lock de concurrencia no comparte estado con `CoachContextBar` (la barra de switch montada globalmente en `AppShell`) — dos superficies de switch podrian, en teoria, correr en paralelo. `switchActiveAthlete` ya es atomico en su bloque de mutacion de scope (sin `await` de por medio) y usa un guard de `switchEpoch`, asi que esto no corrompe datos; es un gap de cobertura de UX, no de integridad. Candidato a un incremento futuro si en la practica llega a importar.
+
+Tambien se detecto y corrigio, como efecto secundario de este trabajo, un gap de configuracion preexistente: ni `vitest` ni `eslint` excluian `.claude/worktrees/` de su glob, lo que duplicaba archivos de test y generaba fallos espurios al correr la suite desde un checkout con un worktree anidado adentro. Arreglado en `vite.config.ts` y `eslint.config.js`.
+
+Estado: **deployado en produccion.** Migracion/schema: ninguna (no toca Supabase ni Dexie). Plan completo: `docs/superpowers/plans/2026-07-11-coach-workspace-v0.md`.
 
 ## Avances Ya Implementados
 
@@ -208,16 +235,15 @@ Cierres tecnicos recientes:
 
 ## Riesgos Que Siguen Vivos
 
-### 1. WHOOP ya agrega dato sensible: falta cerrar operacion y consentimiento
+### 1. WHOOP ya agrega dato sensible: falta cerrar consentimiento (operacion ya cerrada)
 
-Whoop es el track de producto con mas retorno inmediato, pero introduce datos biometricos,
-OAuth externo, tokens cifrados y borrado completo. El codigo ya esta, pero no debe salir a usuarios reales sin:
+Whoop es el track de producto con mas retorno inmediato, e introduce datos biometricos,
+OAuth externo, tokens cifrados y borrado completo. La operacion tecnica ya cerro (`011`/`012`
+aplicados, deploy y smoke confirmados por el owner). Lo que falta antes de exponerlo a terceros:
 
 - consentimiento biometrico explicito;
 - politica de privacidad/terminos actualizados;
-- rutas o UI que expliquen desconexion + borrado remoto/local;
-- `011` aplicado y RLS confirmado en prod;
-- smoke de OAuth, sync manual/on-demand, cooldown, ReadinessCard, prefill y borrado.
+- rutas o UI que expliquen desconexion + borrado remoto/local.
 
 ### 2. Superficie publica aun necesita cierre legal/visual
 
@@ -247,37 +273,17 @@ Whoop Workout Auto-Complete usa `012_whoop_workouts.sql` + Dexie v16. SP1a queda
 
 ## Decisiones Abiertas Para Desarrollo
 
-### Opcion A - Cierre operativo de WHOOP readiness
+### Opcion A - Cierre operativo de WHOOP readiness — CERRADA
 
 Objetivo: pasar de codigo committed a flujo real confiable en produccion.
 
-Orden:
+Estado: **`011` aplicado, deploy confirmado, smoke conectar -> sync -> ReadinessCard -> prefill -> desconectar/borrar hecho por el owner.** Solo queda el paso 4 (linkear descargo/privacidad y consentimiento biometrico) antes de exponer a terceros.
 
-1. Aplicar `011` en prod.
-2. Confirmar deploy del bundle Whoop actual.
-3. Smoke conectar -> sync -> `readiness_daily` -> ReadinessCard -> prefill -> desconectar/borrar.
-4. Linkear descargo/privacidad y registrar consentimiento biometrico antes de terceros.
-5. Ajustar copy publico a "contexto objetivo opcional", sin promesas medicas.
-
-Ventaja: convierte el avance tecnico en valor real usable.
-
-Riesgo: si se salta legal/smoke, el riesgo percibido sube justo donde el producto necesita confianza.
-
-### Opcion B - Whoop Workout Auto-Complete
+### Opcion B - Whoop Workout Auto-Complete — CERRADA
 
 Objetivo: que entrenamientos registrados por Whoop completen sesiones planificadas self-only sin intervencion manual.
 
-Orden:
-
-1. Cerrar `011` + smoke readiness.
-2. Aplicar `012_whoop_workouts.sql` despues de cerrar `011`.
-3. Desplegar el codigo implementado de `read:workout`, `pullWorkouts()` y matcher.
-4. No escribir `Session.actualRpe`; solo duracion, nota de sistema y `autoCompletion`.
-5. Aplicar `012`, reconectar Whoop y smoke auto-complete.
-
-Ventaja: mejora mucho el uso real diario y la adherencia sin sumar carga manual.
-
-Riesgo: consume la siguiente migracion/Dexie y desplaza SP1a; debe quedar self-only y sin promesas de ajuste automatico.
+Estado: **`012` aplicado, Whoop reconectado con `read:workout`, smoke auto-complete confirmado por el owner.**
 
 ### Opcion C - Piloto manual primero
 
@@ -497,7 +503,7 @@ Metricas de exito:
 
 Objetivo: traer recovery, sueno y strain reales al loop diario/semanal sin crear deuda para SP1.
 
-Estado: **implementado, revisado y commiteado; pendiente aplicar `011`, confirmar deploy/smoke en prod y linkear gate legal**.
+Estado: **implementado, revisado, commiteado y `011` aplicado en produccion con deploy/smoke confirmados por el owner; pendiente unicamente linkear gate legal antes de terceros**.
 
 - [x] API oficial WHOOP v2 revisada en el plan (`Api Whoop`): endpoints/scopes base documentados.
 - [x] Reservas cerradas para v1: Supabase `011`, Dexie v15.
@@ -517,8 +523,8 @@ Estado: **implementado, revisado y commiteado; pendiente aplicar `011`, confirma
 - [x] Inyectar readiness como contexto pasivo del coach (sin doble conteo objetivo/declarado) + alerta suave en recovery rojo.
 - [x] Implementar desconexion/borrado completo service-role + export/backup + wipe local (tolera 404/tabla ausente).
 - [x] Normalizacion v2 endurecida: anclaje por `cycle_id`, `timezone_offset`, filtro de siestas, sueño por etapas, tri-estado `score_state` (SCORED/PENDING/UNSCORABLE).
-- [ ] Aplicar `011` en prod y smoke end-to-end (conectar → sync → ReadinessCard → prefill → desconectar/borrar). *(El owner probara directo en prod, no staging.)*
-- [ ] Confirmar deploy del bundle Whoop actual en produccion.
+- [x] Aplicar `011` en prod y smoke end-to-end (conectar → sync → ReadinessCard → prefill → desconectar/borrar).
+- [x] Confirmar deploy del bundle Whoop actual en produccion.
 - [ ] Linkear `descargo-whoop.md` + consentimiento biometrico antes de exponer a terceros.
 - [ ] Re-correr smoke despues del primer refresh real para confirmar refresh token/scopes.
 
@@ -526,7 +532,7 @@ Estado: **implementado, revisado y commiteado; pendiente aplicar `011`, confirma
 
 Objetivo: usar workouts detectados por Whoop para completar sesiones planificadas del atleta self, sin crear sesiones nuevas ni tocar RPE de carga.
 
-Estado: **implementado; pendiente rollout operativo**.
+Estado: **implementado y con rollout operativo cerrado**.
 
 - [x] Decision de producto: self-only, sesiones `planned`, matching por deporte/dia, sin auto-ajuste de plan.
 - [x] Decision de datos: `actualDurationMin` si matchea; `Session.actualRpe` queda vacio.
@@ -536,8 +542,33 @@ Estado: **implementado; pendiente rollout operativo**.
 - [x] Agregar scope `read:workout` sin romper conexiones antiguas.
 - [x] Implementar `012_whoop_workouts.sql`, Dexie v16, `pullWorkouts()` y matcher serializado.
 - [x] Tests: normalizacion, matcher, idempotencia durable, re-evaluacion `no_session`, lifecycle, UI badge, refresh scopes.
-- [ ] Aplicar `012` en prod y reconectar Whoop para otorgar `read:workout`.
-- [ ] Smoke: workout Whoop -> session planned unica -> completed + duracion + nota, sin `actualRpe`.
+- [x] Aplicar `012` en prod y reconectar Whoop para otorgar `read:workout`.
+- [x] Smoke: workout Whoop -> session planned unica -> completed + duracion + nota, sin `actualRpe`.
+
+### K. Coach Workspace v0
+
+Objetivo: reemplazar el roster unico de `/coach` por un workspace de 5 areas, sentando la base de navegacion para Planificacion/Biblioteca/Asistente IA sin construirlas todavia.
+
+Estado: **implementado y deployado en produccion (2026-07-13).**
+
+- [x] `CoachWorkspaceNav`: nav responsive (sidebar desktop, tabs horizontales mobile) con ARIA `tablist`/`tab`/`tabpanel`.
+- [x] Tab Resumen: tarjetas de roster con CTAs "Ver semana"/"Ver plan", sin señales computadas (fuera de alcance v0).
+- [x] Tab Alumnos: roster + alta de atleta (formulario, submit por Enter) + "Entrenar como este atleta".
+- [x] Tabs Planificacion/Biblioteca/Asistente IA: placeholders "proximamente" en tuteo.
+- [x] `switchActiveAthlete`: `loadMemory()` post-commit pasa a best-effort (bug real corregido, no solo refactor).
+- [x] Lock de concurrencia para switch/creacion de atleta, movido a singleton de modulo tras encontrar que un `useRef` no sobrevive al remount de un switch exitoso.
+- [x] Smoke de Playwright extendido (no-destructivo por defecto, destructivo detras de `--apply`, gate `E2E_EXPECT_COACH_WORKSPACE`).
+- [x] `CoachRosterPage` retirada; ruta `/coach` apunta a `CoachWorkspacePage`.
+- [x] Merge a `main` + push a produccion.
+- [x] Fix de tooling: `vitest`/`eslint` excluyen `.claude/worktrees/` (encontrado durante el cierre de esta pieza).
+- [ ] Linkear el gap conocido de `CoachContextBar` sin lock compartido, si en la practica llega a importar (no bloqueante, documentado en el plan).
+- [ ] Decidir cuando construir Planificacion/Biblioteca/Asistente IA (hoy son placeholders honestos, no falsas promesas).
+
+No entra todavia:
+
+- señales computadas cross-atleta (check-in gaps, readiness agregado, sesiones vencidas).
+- contenido real de Planificacion/Biblioteca/Asistente IA.
+- lock de concurrencia compartido con `CoachContextBar`.
 
 ## Sprint Recomendado - 5 Dias Para Cerrar WHOOP + Confianza
 
@@ -597,7 +628,7 @@ Pendiente minimo:
 
 ### Nivel 2 - Piloto Manual Pagado
 
-Estado: viable despues de cerrar smoke `011` + legal minimo si el flujo Whoop no muestra problemas.
+Estado: viable ahora que `011` esta cerrado con smoke confirmado; falta legal minimo antes de exponer Whoop a terceros.
 
 Pendiente minimo:
 
@@ -610,13 +641,11 @@ Pendiente minimo:
 
 ### Nivel 3 - Coach Premium Operado Por Rafael
 
-Estado: operable internamente con F2-lite 2b; gana mucho con Whoop readiness smokeado y, potencialmente, con Workout Auto-Complete.
+Estado: operable internamente con F2-lite 2b + Coach Workspace v0; Whoop readiness y Workout Auto-Complete ya aplicados y smokeados en prod.
 
 Pendiente minimo:
 
-- Whoop readiness para el owner/self aplicado y smokeado en prod.
 - Consentimiento biometrico y privacidad linkeados si se entrega a terceros.
-- Decidir si Workout Auto-Complete entra antes del piloto o queda como mejora de uso personal.
 - QA de planes arquetipo como gestionados.
 - Protocolo de revision semanal.
 - Rutas legales y consentimiento general si se entrega a terceros.
@@ -636,21 +665,18 @@ Pendiente minimo:
 
 ## Que Hacer Primero
 
-Orden recomendado (Athlete-Aware Core + Coach F2-lite Parte 2b ya en prod; Whoop v1 codeado y commiteado):
+Orden recomendado (Athlete-Aware Core + Coach F2-lite Parte 2b + Whoop v1/Workout Auto-Complete + Coach Workspace v0 ya en prod):
 
-1. Aplicar `011_whoop_integration.sql` en prod, confirmar deploy del bundle actual y smoke end-to-end (conectar -> sync -> ReadinessCard -> prefill -> desconectar/borrar).
-2. Linkear `docs/legal/descargo-whoop.md` o superficie equivalente + consentimiento biometrico antes de exponer Whoop a terceros.
-3. Aplicar `012_whoop_workouts.sql`, desplegar y reconectar Whoop para otorgar `read:workout`.
-4. Smokear workout Whoop -> sesion planned unica -> completed + duracion + nota, sin `actualRpe`.
-5. Si el foco es venta acompanada: rutas legales publicas `/terms` `/privacy` `/health-disclaimer`, smoke visual PROD y oferta piloto.
-6. QA deportiva: generar 3 planes arquetipo como atletas gestionados, revisarlos como coach y guardar export/backup.
+1. Linkear `docs/legal/descargo-whoop.md` o superficie equivalente + consentimiento biometrico antes de exponer Whoop a terceros.
+2. Si el foco es venta acompanada: rutas legales publicas `/terms` `/privacy` `/health-disclaimer`, smoke visual PROD y oferta piloto.
+3. QA deportiva: generar 3 planes arquetipo como atletas gestionados, revisarlos como coach y guardar export/backup.
+4. Landing/superficie publica del coach: ver propuesta de continuacion (seccion aparte, a pedido del owner 2026-07-13).
 
 ## Que No Hacer Ahora
 
 - No abrir beta publica.
 - No activar pagos automaticos todavia.
-- No construir SP1/two-sided antes de cerrar Whoop readiness en prod/legal si la prioridad sigue siendo uso real del owner.
-- No aplicar `012` antes de cerrar la aplicacion/smoke de `011` y confirmar el orden operativo.
+- No construir SP1/two-sided si la prioridad sigue siendo uso real del owner y cierre comercial/legal.
 - No vender Whoop como diagnostico, prevencion de lesiones o ajuste automatico.
 - No usar strain/workout de Whoop para autollenar `Session.actualRpe`.
 - No auto-completar sesiones de atletas gestionados desde Whoop v1.
@@ -658,9 +684,10 @@ Orden recomendado (Athlete-Aware Core + Coach F2-lite Parte 2b ya en prod; Whoop
 - No vender "IA ilimitada" como valor central.
 - No invitar 10+ personas antes del primer piloto acompanado.
 - No exponer datos biometricos sin consentimiento y borrado completo.
+- No construir contenido real de Planificacion/Biblioteca/Asistente IA en Coach Workspace todavia — quedan como placeholders honestos hasta decidir alcance.
 
 ## Veredicto
 
-RallyIQ ya tiene producto suficiente para operar entrenamiento real y varios atletas gestionados desde la cuenta del owner. Whoop v1 ya no es una idea pendiente: esta en codigo y necesita cierre operacional/legal para transformarse en confianza de producto.
+RallyIQ ya tiene producto suficiente para operar entrenamiento real y varios atletas gestionados desde la cuenta del owner. Whoop v1 y Workout Auto-Complete ya no son ideas pendientes: estan aplicados en produccion y operativos de punta a punta. Coach Workspace v0 suma un roster mejorado y navegacion honesta hacia lo que falta construir.
 
-Mi recomendacion: cerrar `011` + smoke prod + consentimiento biometrico, y recien despues decidir entre dos caminos cortos: Workout Auto-Complete si la prioridad es uso real/adherencia, o piloto manual si la prioridad es senal comercial. SP1a esta bien planificado, pero debe esperar a que la numeracion y la prioridad de producto queden limpias.
+Mi recomendacion: cerrar el consentimiento biometrico de Whoop (el unico pendiente real del track tecnico), avanzar el cierre legal/comercial general, y usar el impulso de Coach Workspace v0 para decidir si el siguiente incremento de producto es contenido real en Planificacion/Biblioteca/Asistente IA o SP1 dos-lados. SP1a esta bien planificado, pero sigue sin ser urgente frente al cierre comercial.

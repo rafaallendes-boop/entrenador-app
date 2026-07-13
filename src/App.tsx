@@ -35,6 +35,13 @@ const SettingsPage = lazy(() => import('./pages/SettingsPage'))
 const OnboardingPage = lazy(() => import('./pages/OnboardingPage'))
 const CoachWorkspacePage = lazy(() => import('./pages/CoachWorkspacePage'))
 const NativeWelcomePreviewPage = lazy(() => import('./pages/NativeWelcomePreviewPage'))
+const FeaturesPage = lazy(() => import('./pages/FeaturesPage'))
+const PricingPage = lazy(() => import('./pages/PricingPage'))
+const TermsPage = lazy(() => import('./pages/TermsPage'))
+const PrivacyPage = lazy(() => import('./pages/PrivacyPage'))
+const HealthDisclaimerPage = lazy(() => import('./pages/HealthDisclaimerPage'))
+const WhoopDisclaimerPage = lazy(() => import('./pages/WhoopDisclaimerPage'))
+const CoachesLandingPage = lazy(() => import('./pages/CoachesLandingPage'))
 
 const AUTO_SYNC_RETRY_COOLDOWN_MS = 15_000
 
@@ -335,6 +342,13 @@ export default function App() {
             <Route path={ROUTES.HOME} element={<NativeWelcomePreviewPage />} />
           )}
           <Route path={ROUTES.IOS_WELCOME_PREVIEW} element={<NativeWelcomePreviewPage />} />
+          <Route path={ROUTES.FEATURES} element={<RouteBoundary><FeaturesPage /></RouteBoundary>} />
+          <Route path={ROUTES.PRICING} element={<RouteBoundary><PricingPage /></RouteBoundary>} />
+          <Route path={ROUTES.TERMS} element={<RouteBoundary><TermsPage /></RouteBoundary>} />
+          <Route path={ROUTES.PRIVACY} element={<RouteBoundary><PrivacyPage /></RouteBoundary>} />
+          <Route path={ROUTES.HEALTH_DISCLAIMER} element={<RouteBoundary><HealthDisclaimerPage /></RouteBoundary>} />
+          <Route path={ROUTES.WHOOP_DISCLAIMER} element={<RouteBoundary><WhoopDisclaimerPage /></RouteBoundary>} />
+          <Route path={ROUTES.COACHES} element={<RouteBoundary><CoachesLandingPage /></RouteBoundary>} />
           <Route path="*" element={(
             <AuthGate>
               <CoachScopeGuard />

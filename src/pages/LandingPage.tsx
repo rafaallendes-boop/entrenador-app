@@ -17,6 +17,7 @@ import {
 import { isSupabaseConfigured } from '../services/auth'
 import { useAuthStore } from '../store/useAuthStore'
 import SharedPublicNav from '../components/SharedPublicNav'
+import { ROUTES } from '../constants/routes'
 
 const BRAND = '#ff4d00'
 const BRAND_LIGHT = '#ff7a33'
@@ -108,6 +109,7 @@ const WORKFLOW = [
 
 export default function LandingPage() {
   const signInWithGoogle = useAuthStore((s) => s.signInWithGoogle)
+  const user = useAuthStore((s) => s.user)
   const authAvailable = isSupabaseConfigured
   const [authError, setAuthError] = useState<string | null>(null)
 
@@ -134,7 +136,7 @@ export default function LandingPage() {
         fontFamily: "'Inter', system-ui, sans-serif",
       }}
     >
-      <SharedPublicNav onLogin={handleSignIn} onSignup={handleSignIn} scrollAware />
+      <SharedPublicNav onLogin={handleSignIn} onSignup={handleSignIn} isAuthenticated={Boolean(user)} scrollAware />
 
       <main>
         <Hero onPrimary={handleSignIn} />
@@ -1105,6 +1107,13 @@ function AccessCard({
               </Link>
             </div>
 
+            <p className="mx-auto mt-4 max-w-[620px] text-[11px] leading-5" style={{ color: INK_FAINT }}>
+              Al continuar aceptas nuestros <Link to={ROUTES.TERMS} style={{ color: BRAND_LIGHT }}>Términos</Link>{' '}
+              y revisas la <Link to={ROUTES.PRIVACY} style={{ color: BRAND_LIGHT }}>Política de Privacidad</Link>, el{' '}
+              <Link to={ROUTES.HEALTH_DISCLAIMER} style={{ color: BRAND_LIGHT }}>Descargo de salud</Link> y el{' '}
+              <Link to={ROUTES.WHOOP_DISCLAIMER} style={{ color: BRAND_LIGHT }}>Descargo Whoop</Link>.
+            </p>
+
             {authError && <p className="mt-4 text-xs font-medium text-red-300">{authError}</p>}
             {!authAvailable && (
               <div
@@ -1168,7 +1177,7 @@ function Footer() {
         <div className="flex flex-wrap gap-12">
           <FooterCol title="Producto" links={['Funcionalidades', 'Precios', 'Plan Builder', 'RallyIQ AI']} />
           <FooterCol title="Multideporte" links={['Running', 'Fuerza', 'Squash', 'Movilidad']} />
-          <FooterCol title="Empresa" links={['Contacto', 'Privacidad', 'Terminos']} />
+          <FooterCol title="Empresa" links={['Contacto', 'Privacidad', 'Terminos', 'Salud', 'Datos Whoop']} />
         </div>
       </div>
 
@@ -1186,8 +1195,12 @@ function Footer() {
 
 function FooterCol({ title, links }: { title: string; links: string[] }) {
   const routeByLabel: Record<string, string> = {
-    Funcionalidades: '/features',
-    Precios: '/pricing',
+    Funcionalidades: ROUTES.FEATURES,
+    Precios: ROUTES.PRICING,
+    Privacidad: ROUTES.PRIVACY,
+    Terminos: ROUTES.TERMS,
+    Salud: ROUTES.HEALTH_DISCLAIMER,
+    'Datos Whoop': ROUTES.WHOOP_DISCLAIMER,
   }
 
   return (

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { NATIVE_AUTH_ERROR_EVENT, NATIVE_NAVIGATE_EVENT } from '../../services/nativeApp'
+import { consumePendingNativeNavigation, NATIVE_AUTH_ERROR_EVENT, NATIVE_NAVIGATE_EVENT } from '../../services/nativeApp'
 import { isNativePlatform } from '../../services/platform'
 
 export default function NativeBridge() {
@@ -22,6 +22,8 @@ export default function NativeBridge() {
     }
     window.addEventListener(NATIVE_NAVIGATE_EVENT, onNavigate)
     window.addEventListener(NATIVE_AUTH_ERROR_EVENT, onAuthError)
+    const pendingPath = consumePendingNativeNavigation()
+    if (pendingPath) navigate(pendingPath, { replace: true })
     return () => {
       window.removeEventListener(NATIVE_NAVIGATE_EVENT, onNavigate)
       window.removeEventListener(NATIVE_AUTH_ERROR_EVENT, onAuthError)

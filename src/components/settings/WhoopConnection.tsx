@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useLocation } from 'react-router-dom'
 import { Link, RefreshCcw, Trash2 } from 'lucide-react'
 import Card from '../ui/Card'
 import { getActiveAthleteId, getSelfAthleteId } from '../../services/athlete/activeAthlete'
@@ -15,6 +16,7 @@ import { Browser } from '@capacitor/browser'
 import { isNativePlatform } from '../../services/platform'
 
 export function WhoopConnection() {
+  const location = useLocation()
   const activeAthleteFromStore = useAuthStore((state) => state.activeAthleteId)
   const userId = useAuthStore((state) => state.user?.id ?? null)
   const [message, setMessage] = useState<string | null>(null)
@@ -43,6 +45,17 @@ export function WhoopConnection() {
     && !(status?.scopes ?? []).includes('read:workout')
   const actionBusy = busy || syncing
   const displayMessage = message ?? syncMessage
+  const oauthResult = new URLSearchParams(location.search).get('whoop')
+  const oauthErrorReason = new URLSearchParams(location.search).get('reason')
+
+  const oauthMessage = useMemo(() => {
+    if (oauthResult === 'connected') return 'Whoop conectado.'
+    if (oauthResult !== 'error') return null
+    if (oauthErrorReason === 'authorization_denied') return 'No se autorizó la conexión con Whoop.'
+    if (oauthErrorReason === 'expired_state') return 'La autorización demoró demasiado. Intenta conectar Whoop nuevamente.'
+    if (oauthErrorReason === 'token_exchange') return 'Whoop no pudo completar la autorización. Intenta nuevamente.'
+    return 'No se pudo completar la conexión con Whoop.'
+  }, [oauthErrorReason, oauthResult])
 
   useEffect(() => {
     void refresh()
@@ -249,8 +262,8 @@ export function WhoopConnection() {
         </div>
       )}
 
-      {displayMessage && (
-        <p className="mt-3 text-xs text-ink-muted">{displayMessage}</p>
+      {(displayMessage ?? oauthMessage) && (
+        <p className="mt-3 text-xs text-ink-muted">{displayMessage ?? oauthMessage}</p>
       )}
     </Card>
   )
