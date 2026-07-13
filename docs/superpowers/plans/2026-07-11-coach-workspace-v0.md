@@ -1041,65 +1041,83 @@ export default function CoachRosterPanel({
         })}
       </div>
 
-      {isCreating ? (
-        <form
-          onSubmit={(event) => { event.preventDefault(); void handleCreate() }}
-          className="mt-4 space-y-3 rounded-2xl border border-white/10 bg-white/5 p-4"
-        >
-          <label className="block">
-            <span className="mb-2 block text-sm font-medium text-ink-muted">Nombre del atleta</span>
-            <input
-              type="text"
-              value={newName}
-              onChange={(event) => setNewName(event.target.value)}
-              placeholder="Ej. Juan Pérez"
-              className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-ink outline-none"
-            />
-          </label>
-          {error && <p role="alert" className="text-xs text-red-400">{error}</p>}
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => { setIsCreating(false); setError(null) }}
-              className="flex-1 rounded-xl border border-white/10 bg-white/5 py-2.5 text-sm font-semibold text-ink-muted"
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              disabled={!newName.trim() || isLocked}
-              className="flex-1 rounded-xl bg-brand py-2.5 text-sm font-semibold text-white disabled:opacity-40"
-            >
-              {isSubmitting ? 'Creando…' : 'Crear y completar perfil'}
-            </button>
+      {/* Un solo <form> persistente envuelve los dos estados (colapsado y expandido).
+          Esto es deliberado, no cosmético: el test "con solo self" hace un render
+          inicial (sin clicks — renderToStaticMarkup no puede disparar eventos) y
+          espera encontrar tanto `<form` como el texto "Crear atleta" AL MISMO TIEMPO.
+          Si el <form> solo existiera dentro de la rama isCreating=true, ese render
+          inicial (isCreating=false) nunca lo montaria y el test fallaria siempre —
+          incompatibilidad real entre el test y una implementacion con dos ramas
+          <form>/<button> separadas. Con el <form> como wrapper de ambas ramas, el
+          submit-por-Enter (Task 5's ask) sigue funcionando exactamente igual una vez
+          expandido, porque el <input> y el <button type="submit"> quedan dentro del
+          mismo <form onSubmit>. */}
+      <form
+        onSubmit={(event) => { event.preventDefault(); void handleCreate() }}
+        className="mt-4"
+      >
+        {isCreating ? (
+          <div className="space-y-3 rounded-2xl border border-white/10 bg-white/5 p-4">
+            <label className="block">
+              <span className="mb-2 block text-sm font-medium text-ink-muted">Nombre del atleta</span>
+              <input
+                type="text"
+                value={newName}
+                onChange={(event) => setNewName(event.target.value)}
+                placeholder="Ej. Juan Pérez"
+                className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-ink outline-none"
+              />
+            </label>
+            {error && <p role="alert" className="text-xs text-red-400">{error}</p>}
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => { setIsCreating(false); setError(null) }}
+                className="flex-1 rounded-xl border border-white/10 bg-white/5 py-2.5 text-sm font-semibold text-ink-muted"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={!newName.trim() || isLocked}
+                className="flex-1 rounded-xl bg-brand py-2.5 text-sm font-semibold text-white disabled:opacity-40"
+              >
+                {isSubmitting ? 'Creando…' : 'Crear y completar perfil'}
+              </button>
+            </div>
           </div>
-        </form>
-      ) : (
-        <button
-          type="button"
-          disabled={isLocked}
-          onClick={() => setIsCreating(true)}
-          className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-white/20 py-3 text-sm font-semibold text-ink-muted transition-colors hover:text-ink disabled:opacity-50"
-        >
-          <Plus size={16} />
-          Crear atleta
-        </button>
-      )}
+        ) : (
+          <button
+            type="button"
+            disabled={isLocked}
+            onClick={() => setIsCreating(true)}
+            className="flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-white/20 py-3 text-sm font-semibold text-ink-muted transition-colors hover:text-ink disabled:opacity-50"
+          >
+            <Plus size={16} />
+            Crear atleta
+          </button>
+        )}
+      </form>
     </div>
   )
 }
 ```
 
-Note: `<button type="submit">` inside `<form onSubmit>` means pressing Enter in the name input now submits — this fixes the reviewer's finding that creation was click-only. Double-submit and create-racing-a-switch are both prevented by the **single** global lock: `handleCreate`'s `if (isLocked) return`, `disabled={... || isLocked}` on the submit button, and — the only guard that actually holds against two events in the same React batch — the container's `useRef` mutex (Task 6). The panel deliberately has no local `isSubmitting` flag: the "Creando…" label is derived from `pendingAction.kind === 'create'`, so the lock and the label can never disagree.
+Note: `<button type="submit">` inside the persistent `<form onSubmit>` means pressing Enter in the name input submits once expanded — this fixes the reviewer's finding that creation was click-only. Double-submit and create-racing-a-switch are both prevented by the **single** global lock: `handleCreate`'s `if (isLocked) return`, `disabled={... || isLocked}` on the submit button, and — the only guard that actually holds against two events in the same React batch — the container's `useRef` mutex (Task 6). The panel deliberately has no local `isSubmitting` flag: the "Creando…" label is derived from `pendingAction.kind === 'create'`, so the lock and the label can never disagree.
+
+**Post-review correction (caught while dispatching Task 5's implementer):** the plan's original draft wrapped ONLY the expanded (`isCreating === true`) branch in `<form>`, with the collapsed "Crear atleta" trigger as a bare `<button>` outside any form. That directly contradicted the "con solo self" test below, which asserts `toContain('<form')` on the very first render — before any click, i.e. while `isCreating` is still `false`. This is a genuine defect in the plan's own reference code (present since the original draft, missed across four rounds of concurrency-focused review), not a design choice — fixed by hoisting the `<form>` to wrap both branches, as shown above. Enter-to-submit behavior is unchanged; only the toggle button moved one level deeper into the same persistent form.
 
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run src/components/coach/CoachRosterPanel.test.tsx`
 Expected: PASS (8 tests)
 
-Nota: el `<form>` sólo se monta tras un click en "Crear atleta" (`isCreating` local), que
-`renderToStaticMarkup` no puede disparar — por eso el submit con Enter y el label "Creando…" se
-verifican en el Playwright de Task 8, no acá.
+Nota: la interacción "click en el `<form>` colapsado → se expande → se llena el nombre →
+Enter" requiere disparar eventos reales, que `renderToStaticMarkup` no puede hacer — por eso
+ese flujo end-to-end (y el label "Creando…" durante la creación real) se verifican en el
+Playwright de Task 8, no acá. Lo que SÍ verifica este archivo es que el marcado inicial ya
+contiene un `<form>` (est. arriba) y que el estado de bloqueo/relabelado reacciona correctamente
+a la prop `pendingAction` en ambos render estáticos (colapsado y, indirectamente, expandido).
 
 ---
 
