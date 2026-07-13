@@ -1325,7 +1325,7 @@ export default function CoachWorkspacePage({ allowlistOverride, initialAthletes,
 
   const handleAthleteAction = useCallback(async (
     athleteId: string,
-    kind: PendingAthleteAction['kind'],
+    kind: 'week' | 'plan' | 'trainAs',
     destination: string,
   ) => {
     if (!user?.id) return
@@ -1482,6 +1482,7 @@ Notes:
 - `handleCreateAthlete` splits its error surface deliberately: only the `createAndActivateAthlete` call may propagate to `CoachRosterPanel`'s `catch` (creation genuinely failed, e.g. empty name). Once creation succeeded, a failed roster reload degrades to `status: 'error'` (with its Reintentar button) instead of throwing — throwing there would tell the coach the creation failed while the athlete sits in Dexie. The `finally` still releases the lock in every case, including the throw.
 - Both handlers take the **same** `actionLock` ref, because creating an athlete activates it — a create running next to a switch is two concurrent `switchActiveAthlete` calls, which is exactly what the lock exists to prevent. The `useState` mirror (`pendingAthleteAction`) is what the panels render from; the ref is what actually decides.
 - Layout: `md:grid md:grid-cols-[200px_1fr]` puts `CoachWorkspaceNav` in a 200px sidebar column at `md` and above; below `md`, the grid collapses and `CoachWorkspaceNav`'s own responsive classes (Task 1) turn it into a horizontal scrollable tab bar.
+- **Post-review correction (caught during Task 7's `npm run build` gate):** `handleAthleteAction`'s `kind` parameter was originally typed `PendingAthleteAction['kind']`. Because `PendingAthleteAction` is a discriminated union (`{ kind: 'week'|'plan'|'trainAs'; athleteId: string } | { kind: 'create'; athleteId: null }`), indexing `['kind']` on the whole union distributes across both arms and widens to `'week' | 'plan' | 'trainAs' | 'create'` — losing the correlation between `kind` and `athleteId`'s type entirely. `setPendingAthleteAction({ athleteId, kind })` (with `athleteId: string`) then fails to satisfy the union, because if `kind` could be `'create'` the object would need `athleteId: null`. This is a real type error (`tsc -b` / `npm run build` reports `TS2345`), present in the plan's reference code since its first draft and missed across all four review rounds — none of which ran the project's actual build command (a bare `npx tsc --noEmit` from the repo root silently no-ops against this project's solution-style root `tsconfig.json`, which has `"files": []` and only `references` — only `tsc -b`, what `npm run build` actually runs, walks those references and type-checks). `handleAthleteAction` is only ever called with `'week'`, `'plan'`, or `'trainAs'` (creation goes through the separate `handleCreateAthlete`, which constructs `{ kind: 'create', athleteId: null }` directly) — so the fix is narrowing the parameter type to `'week' | 'plan' | 'trainAs'` (shown above), a pure type annotation with no behavior change.
 
 - [ ] **Step 4: Run test to verify it passes**
 
