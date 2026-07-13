@@ -32,7 +32,7 @@
 New files (all under a new `src/components/coach/` directory, plus a services file and a page):
 
 - `src/components/coach/coachWorkspaceTypes.ts` — shared `CoachWorkspaceTab`, `RosterStatus`, `PendingAthleteAction` types. Type-only, no runtime logic, no test.
-- `src/components/coach/CoachWorkspaceNav.tsx` (+ test) — responsive `tablist`/`tab` nav for the five areas, exports `coachTabId`/`coachTabPanelId` helpers used by the container to wire `aria-controls`/`aria-labelledby`.
+- `src/components/coach/CoachWorkspaceNav.tsx` (+ test) — responsive `tablist`/`tab` nav for the five areas. **Post-implementation correction:** `coachTabId`/`coachTabPanelId` live in `coachWorkspaceTypes.ts`, not here — co-exporting a component and plain functions from the same file trips this project's `react-refresh/only-export-components` lint rule (caught during Task 3's implementation, fixed as a follow-up commit on Task 1). All `import ... from './CoachWorkspaceNav'` lines for these two functions below are corrected to import from `./coachWorkspaceTypes` instead.
 - `src/components/coach/CoachWorkspacePlaceholderPanel.tsx` (+ test) — generic "próximamente" panel, reused for Planificación/Biblioteca/Asistente IA.
 - `src/services/athlete/coachWorkspaceActions.ts` (+ test) — `selectAthleteAndNavigate` and `createAndActivateAthlete`, both with injected dependencies, unit-tested directly (no component rendering needed).
 - `src/components/coach/CoachSummaryPanel.tsx` (+ test) — Resumen tab: roster cards with "Ver semana"/"Ver plan" CTAs, self-only-aware empty state, pending/disabled button state.
@@ -75,7 +75,8 @@ Create `src/components/coach/CoachWorkspaceNav.test.tsx`:
 ```tsx
 import { describe, expect, it, vi } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
-import CoachWorkspaceNav, { coachTabId, coachTabPanelId } from './CoachWorkspaceNav'
+import CoachWorkspaceNav from './CoachWorkspaceNav'
+import { coachTabId, coachTabPanelId } from './coachWorkspaceTypes'
 
 describe('coachTabId / coachTabPanelId', () => {
   it('generan ids estables por tab', () => {
@@ -1137,7 +1138,7 @@ import type { User } from '@supabase/supabase-js'
 
 import type { Athlete } from '../types'
 import type { CoachWorkspaceTab } from '../components/coach/coachWorkspaceTypes'
-import { coachTabId, coachTabPanelId } from '../components/coach/CoachWorkspaceNav'
+import { coachTabId, coachTabPanelId } from '../components/coach/coachWorkspaceTypes'
 
 // zustand v5 usa getInitialState() como server snapshot: renderToStaticMarkup
 // (SSR) ignora setState. Mock con estado mutable para inyectar user/activeAthleteId.
@@ -1254,7 +1255,8 @@ import { createAndActivateAthlete, selectAthleteAndNavigate } from '../services/
 import { ROUTES } from '../constants/routes'
 import type { Athlete } from '../types'
 import type { CoachWorkspaceTab, PendingAthleteAction, RosterStatus } from '../components/coach/coachWorkspaceTypes'
-import CoachWorkspaceNav, { coachTabId, coachTabPanelId } from '../components/coach/CoachWorkspaceNav'
+import CoachWorkspaceNav from '../components/coach/CoachWorkspaceNav'
+import { coachTabId, coachTabPanelId } from '../components/coach/coachWorkspaceTypes'
 import CoachSummaryPanel from '../components/coach/CoachSummaryPanel'
 import CoachRosterPanel from '../components/coach/CoachRosterPanel'
 import CoachWorkspacePlaceholderPanel from '../components/coach/CoachWorkspacePlaceholderPanel'
