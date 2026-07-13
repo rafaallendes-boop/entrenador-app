@@ -1,27 +1,87 @@
-import { useEffect, useState } from 'react'
-import { Activity, Gauge, Layers3, Trophy } from 'lucide-react'
+import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react'
+import { Activity, Gauge, Layers3, Target, Timer, TrendingUp, Trophy, type LucideIcon } from 'lucide-react'
+import { isSupabaseConfigured } from '../services/auth'
+import { useAuthStore } from '../store/useAuthStore'
 import './NativeWelcomePreviewPage.css'
 
-const BENEFITS = [
+type WelcomeSlide = {
+  id: 'squash' | 'cycling' | 'running'
+  eyebrow: string
+  title: readonly [string, string]
+  accent: string
+  support: string
+  image: string
+  imageAlt: string
+  messages: readonly {
+    icon: LucideIcon
+    title: string
+    detail: string
+    tone: 'neutral' | 'cyan' | 'lime'
+  }[]
+}
+
+const WELCOME_SLIDES: readonly WelcomeSlide[] = [
   {
-    icon: Layers3,
-    title: 'Todos tus deportes',
-    detail: 'Una sola carga',
+    id: 'squash',
+    eyebrow: 'Tu entrenador multideporte',
+    title: ['Tu próximo objetivo', 'no se alcanza solo.'],
+    accent: 'Se entrena.',
+    support: 'RallyIQ organiza tu semana, entiende tu recuperación y te ayuda a rendir al máximo cuando importa.',
+    image: '/images/ios-welcome-squash.webp',
+    imageAlt: 'Pelota de squash en primer plano y un jugador preparándose en una cancha oscura',
+    messages: [
+      { icon: Target, title: 'Tu objetivo', detail: 'Preparación real', tone: 'neutral' },
+      { icon: Activity, title: 'Técnica', detail: 'Drills + match-play', tone: 'neutral' },
+      { icon: Trophy, title: 'Competición', detail: 'Taper sin improvisar', tone: 'lime' },
+    ],
   },
   {
-    icon: Gauge,
-    title: 'Tu recuperación',
-    detail: 'Ajustes inteligentes',
+    id: 'cycling',
+    eyebrow: 'Tu entrenador multideporte',
+    title: ['Cinco deportes.', 'Un solo sistema.'],
+    accent: 'Una sola carga.',
+    support: 'RallyIQ unifica squash, running, fuerza, movilidad y ciclismo. No sumas apps: sumas claridad.',
+    image: '/images/ios-welcome-cycling.webp',
+    imageAlt: 'Ciclista entrenando con intensidad en un entorno oscuro',
+    messages: [
+      { icon: Layers3, title: '5 deportes', detail: 'Una sola semana', tone: 'neutral' },
+      { icon: Gauge, title: 'Carga unificada', detail: 'ACWR + strain', tone: 'cyan' },
+      { icon: Activity, title: 'Cada disciplina', detail: 'Sus propias métricas', tone: 'neutral' },
+    ],
   },
   {
-    icon: Trophy,
-    title: 'Tus objetivos',
-    detail: 'Preparación real',
+    id: 'running',
+    eyebrow: 'Resistencia pura',
+    title: ['Cada kilómetro', 'tiene un propósito.'],
+    accent: 'Y una carga.',
+    support: 'Series, tempo y progresión aeróbica con métricas de running y una semana que protege tu recuperación.',
+    image: '/images/ios-welcome-running.webp',
+    imageAlt: 'Atleta preparado en el bloque de salida de una pista nocturna',
+    messages: [
+      { icon: Timer, title: 'Series + tempo', detail: 'Ritmo con intención', tone: 'neutral' },
+      { icon: TrendingUp, title: 'Progresión', detail: 'Aeróbica visible', tone: 'cyan' },
+      { icon: Gauge, title: 'Carga vigilada', detail: 'Sin deuda innecesaria', tone: 'neutral' },
+    ],
   },
 ] as const
 
+const SWIPE_THRESHOLD_PX = 42
+
 export default function NativeWelcomePreviewPage() {
+  const signInWithGoogle = useAuthStore((state) => state.signInWithGoogle)
+  const [activeIndex, setActiveIndex] = useState(0)
   const [notice, setNotice] = useState<string | null>(null)
+  const [authPending, setAuthPending] = useState(false)
+  const [authError, setAuthError] = useState<string | null>(null)
+  const pointerStartX = useRef<number | null>(null)
+  const activeSlide = WELCOME_SLIDES[activeIndex]
+
+  useEffect(() => {
+    WELCOME_SLIDES.forEach(({ image }) => {
+      const preload = new Image()
+      preload.src = image
+    })
+  }, [])
 
   useEffect(() => {
     if (!notice) return
@@ -29,53 +89,130 @@ export default function NativeWelcomePreviewPage() {
     return () => window.clearTimeout(timeoutId)
   }, [notice])
 
-  const showPreviewNotice = () => {
-    setNotice('Vista previa: el acceso se conectará en una siguiente iteración.')
+  const handleSignIn = async () => {
+    if (authPending) return
+    setAuthError(null)
+    if (!isSupabaseConfigured) {
+      setAuthError('El acceso no está disponible en este entorno.')
+      return
+    }
+
+    setAuthPending(true)
+    try {
+      await signInWithGoogle()
+    } catch (error) {
+      console.error('[native-welcome] sign-in failed', error)
+      setAuthError('No pudimos abrir el acceso con Google. Intenta nuevamente.')
+    } finally {
+      setAuthPending(false)
+    }
+  }
+
+  const showLegalPreviewNotice = () => {
+    setNotice('Los enlaces legales se conectarán antes de publicar esta pantalla.')
+  }
+
+  const showSlide = (index: number) => {
+    const normalizedIndex = (index + WELCOME_SLIDES.length) % WELCOME_SLIDES.length
+    setActiveIndex(normalizedIndex)
+  }
+
+  const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    pointerStartX.current = event.clientX
+  }
+
+  const handlePointerUp = (event: PointerEvent<HTMLDivElement>) => {
+    if (pointerStartX.current == null) return
+    const deltaX = event.clientX - pointerStartX.current
+    pointerStartX.current = null
+    if (Math.abs(deltaX) < SWIPE_THRESHOLD_PX) return
+    showSlide(activeIndex + (deltaX < 0 ? 1 : -1))
+  }
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === 'ArrowRight') {
+      event.preventDefault()
+      showSlide(activeIndex + 1)
+    }
+    if (event.key === 'ArrowLeft') {
+      event.preventDefault()
+      showSlide(activeIndex - 1)
+    }
   }
 
   return (
     <main className="native-welcome-shell">
       <div className="native-welcome-ambient" aria-hidden="true" />
 
-      <section className="native-welcome-content" aria-labelledby="welcome-title">
+      <section className="native-welcome-content" aria-labelledby={`welcome-title-${activeSlide.id}`}>
         <header className="native-welcome-logo" aria-label="RallyIQ">
           RallyIQ
         </header>
 
-        <div className="native-welcome-copy">
-          <p className="native-welcome-kicker">Tu entrenador multideporte</p>
-          <h1 id="welcome-title">
-            Tu próximo objetivo
-            <br />
-            no se alcanza solo.
-            <span>Se entrena.</span>
-          </h1>
-          <p className="native-welcome-support">
-            RallyIQ organiza tu semana, entiende tu recuperación y te ayuda a rendir al máximo cuando importa.
-          </p>
+        <div
+          className="native-onboarding-carousel"
+          role="region"
+          aria-roledescription="carrusel"
+          aria-label="Presentación de RallyIQ"
+          tabIndex={0}
+          onKeyDown={handleKeyDown}
+          onPointerDown={handlePointerDown}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={() => { pointerStartX.current = null }}
+        >
+          <div className="native-welcome-copy" key={`copy-${activeSlide.id}`} aria-live="polite">
+            <p className="native-welcome-kicker">{activeSlide.eyebrow}</p>
+            <h1 id={`welcome-title-${activeSlide.id}`}>
+              {activeSlide.title[0]}
+              <br />
+              {activeSlide.title[1]}
+              <span>{activeSlide.accent}</span>
+            </h1>
+            <p className="native-welcome-support">{activeSlide.support}</p>
+          </div>
+
+          <SportHeroVisual slide={activeSlide} key={`visual-${activeSlide.id}`} />
         </div>
 
-        <SquashHeroVisual />
-
-        <div className="native-welcome-progress" aria-label="Paso 1 de 3">
-          <span className="is-active" />
-          <span />
-          <span />
+        <div className="native-welcome-progress" aria-label={`Paso ${activeIndex + 1} de ${WELCOME_SLIDES.length}`}>
+          {WELCOME_SLIDES.map((slide, index) => (
+            <button
+              type="button"
+              className={index === activeIndex ? 'is-active' : ''}
+              key={slide.id}
+              aria-label={`Mostrar pantalla ${index + 1}: ${slide.messages[0].title}`}
+              aria-current={index === activeIndex ? 'step' : undefined}
+              onClick={() => showSlide(index)}
+            />
+          ))}
         </div>
 
         <div className="native-welcome-actions">
-          <button className="native-welcome-primary" type="button" onClick={showPreviewNotice}>
-            <GoogleIcon />
-            Comenzar con Google
+          <button
+            className="native-welcome-primary"
+            type="button"
+            disabled={authPending || !isSupabaseConfigured}
+            aria-busy={authPending}
+            onClick={() => void handleSignIn()}
+          >
+            {authPending ? <span className="native-auth-spinner" aria-hidden="true" /> : <GoogleIcon />}
+            {authPending ? 'Abriendo Google…' : 'Comenzar con Google'}
           </button>
-          <button className="native-welcome-secondary" type="button" onClick={showPreviewNotice}>
+          <button
+            className="native-welcome-secondary"
+            type="button"
+            disabled={authPending || !isSupabaseConfigured}
+            onClick={() => void handleSignIn()}
+          >
             Ya tengo una cuenta
           </button>
         </div>
 
+        {authError && <p className="native-welcome-auth-error" role="alert">{authError}</p>}
+
         <p className="native-welcome-legal">
-          Al continuar aceptas los <button type="button" onClick={showPreviewNotice}>Términos</button> y la{' '}
-          <button type="button" onClick={showPreviewNotice}>Política de privacidad</button>.
+          Al continuar aceptas los <button type="button" onClick={showLegalPreviewNotice}>Términos</button> y la{' '}
+          <button type="button" onClick={showLegalPreviewNotice}>Política de privacidad</button>.
         </p>
 
         <div className="native-welcome-home-indicator" aria-hidden="true" />
@@ -89,34 +226,33 @@ export default function NativeWelcomePreviewPage() {
   )
 }
 
-function SquashHeroVisual() {
+function SportHeroVisual({ slide }: { slide: WelcomeSlide }) {
   const [imageAvailable, setImageAvailable] = useState(true)
 
   return (
     <div
-      className={`squash-hero${imageAvailable ? '' : ' uses-fallback'}`}
+      className={`native-onboarding-hero sport-${slide.id}${imageAvailable ? '' : ' uses-fallback'}`}
       role="img"
-      aria-label="Escena cinematográfica de squash sobre una cancha oscura"
+      aria-label={slide.imageAlt}
     >
       {imageAvailable && (
         <img
-          className="squash-hero-image"
-          src="/images/ios-welcome-squash.webp"
+          className="native-onboarding-hero-image"
+          src={slide.image}
           alt=""
-          loading="eager"
+          loading={slide.id === 'squash' ? 'eager' : 'lazy'}
           onError={() => setImageAvailable(false)}
         />
       )}
-      <div className="squash-hero-fallback" aria-hidden="true">
-        <span className="squash-player-blur" />
-        <span className="squash-court-line" />
-      </div>
-      <div className="squash-hero-grade" aria-hidden="true" />
+      <div className="native-onboarding-hero-fallback" aria-hidden="true" />
+      <div className="native-onboarding-hero-grade" aria-hidden="true" />
 
-      <div className="squash-benefits">
-        {BENEFITS.map(({ icon: Icon, title, detail }, index) => (
-          <div className={`squash-benefit benefit-${index + 1}`} key={title}>
-            <span className="squash-benefit-icon"><Icon size={17} strokeWidth={1.9} /></span>
+      <div className="native-onboarding-messages">
+        {slide.messages.map(({ icon: MessageIcon, title, detail, tone }) => (
+          <div className={`native-onboarding-message tone-${tone}`} key={title}>
+            <span className="native-onboarding-message-icon">
+              <MessageIcon size={16} strokeWidth={1.85} />
+            </span>
             <span>
               <strong>{title}</strong>
               <small>{detail}</small>

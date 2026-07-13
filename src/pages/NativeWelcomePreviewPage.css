@@ -39,8 +39,19 @@
   color: theme('colors.ink.DEFAULT');
 }
 
+.native-onboarding-carousel {
+  outline: none;
+  touch-action: pan-y;
+}
+
+.native-onboarding-carousel:focus-visible {
+  border-radius: 8px;
+  box-shadow: 0 0 0 2px rgb(255 122 51 / 72%);
+}
+
 .native-welcome-copy {
   margin-top: clamp(17px, 2.7svh, 23px);
+  animation: native-slide-copy-in 320ms ease-out both;
 }
 
 .native-welcome-kicker {
@@ -75,31 +86,45 @@
   line-height: 1.45;
 }
 
-.squash-hero {
+.native-onboarding-hero {
   position: relative;
   height: clamp(300px, 39svh, 350px);
   min-height: 300px;
   margin: clamp(13px, 2svh, 18px) -20px 0;
   overflow: hidden;
   background: theme('colors.surface.deep');
+  animation: native-slide-visual-in 360ms ease-out both;
 }
 
-.squash-hero-image,
-.squash-hero-fallback,
-.squash-hero-grade {
+.native-onboarding-hero-image,
+.native-onboarding-hero-fallback,
+.native-onboarding-hero-grade {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
 }
 
-.squash-hero-image {
+.native-onboarding-hero-image {
   object-fit: cover;
+}
+
+.native-onboarding-hero.sport-squash .native-onboarding-hero-image {
   object-position: center 80%;
   filter: brightness(0.84) saturate(0.86) contrast(1.08);
 }
 
-.squash-hero-fallback {
+.native-onboarding-hero.sport-cycling .native-onboarding-hero-image {
+  object-position: center 48%;
+  filter: brightness(0.72) saturate(0.82) contrast(1.08);
+}
+
+.native-onboarding-hero.sport-running .native-onboarding-hero-image {
+  object-position: center 54%;
+  filter: brightness(0.74) saturate(0.78) contrast(1.1);
+}
+
+.native-onboarding-hero-fallback {
   overflow: hidden;
   background:
     linear-gradient(114deg, transparent 45%, rgb(255 173 112 / 8%) 67%, transparent 82%),
@@ -107,9 +132,9 @@
     linear-gradient(180deg, #11100f 0%, #0a0909 42%, #15120f 68%, #070707 100%);
 }
 
-.squash-hero:not(.uses-fallback) .squash-hero-fallback { display: none; }
+.native-onboarding-hero:not(.uses-fallback) .native-onboarding-hero-fallback { display: none; }
 
-.squash-hero-fallback::before {
+.native-onboarding-hero-fallback::before {
   content: '';
   position: absolute;
   inset: 49% -12% -28%;
@@ -120,7 +145,7 @@
   box-shadow: inset 0 1px rgb(255 255 255 / 3%);
 }
 
-.squash-hero-fallback::after {
+.native-onboarding-hero-fallback::after {
   content: '';
   position: absolute;
   inset: 0;
@@ -132,57 +157,7 @@
   mix-blend-mode: soft-light;
 }
 
-.squash-player-blur {
-  position: absolute;
-  z-index: 1;
-  top: 18%;
-  right: 18%;
-  width: 51px;
-  height: 126px;
-  border-radius: 48% 52% 35% 42%;
-  transform: rotate(-9deg) skewX(-5deg);
-  background: rgb(2 2 2 / 73%);
-  filter: blur(7px);
-  opacity: 0.62;
-}
-
-.squash-player-blur::before {
-  content: '';
-  position: absolute;
-  top: -22px;
-  left: 13px;
-  width: 29px;
-  height: 29px;
-  border-radius: 50%;
-  background: rgb(2 2 2 / 78%);
-}
-
-.squash-player-blur::after {
-  content: '';
-  position: absolute;
-  top: 34px;
-  left: -56px;
-  width: 72px;
-  height: 13px;
-  border-radius: 99px;
-  transform: rotate(-24deg);
-  background: rgb(2 2 2 / 66%);
-}
-
-.squash-court-line {
-  position: absolute;
-  z-index: 2;
-  left: -8%;
-  right: -12%;
-  bottom: 33%;
-  height: 2px;
-  transform: rotate(-6deg);
-  background: theme('colors.brand.DEFAULT');
-  box-shadow: 0 0 8px rgb(255 77 0 / 18%);
-  opacity: 0.7;
-}
-
-.squash-hero-grade {
+.native-onboarding-hero-grade {
   z-index: 3;
   pointer-events: none;
   background:
@@ -190,30 +165,43 @@
     linear-gradient(90deg, rgb(8 8 8 / 38%), transparent 30%, transparent 76%, rgb(8 8 8 / 18%));
 }
 
-.squash-benefits {
+.native-onboarding-hero.sport-cycling .native-onboarding-hero-grade {
+  background:
+    linear-gradient(180deg, theme('colors.surface.deep') 0%, rgb(8 8 8 / 32%) 12%, transparent 34%, transparent 64%, theme('colors.surface.deep') 100%),
+    linear-gradient(90deg, rgb(8 8 8 / 28%), transparent 34%, transparent 74%, rgb(8 8 8 / 22%));
+}
+
+.native-onboarding-hero.sport-running .native-onboarding-hero-grade {
+  background:
+    linear-gradient(180deg, theme('colors.surface.deep') 0%, rgb(8 8 8 / 34%) 12%, transparent 35%, transparent 61%, theme('colors.surface.deep') 100%),
+    radial-gradient(circle at 50% 20%, rgb(0 227 253 / 7%), transparent 36%),
+    linear-gradient(90deg, rgb(8 8 8 / 32%), transparent 38%, transparent 68%, rgb(8 8 8 / 25%));
+}
+
+.native-onboarding-messages {
   position: absolute;
   z-index: 5;
   right: 20px;
   bottom: 14px;
   left: 20px;
-  min-height: 58px;
+  min-height: 60px;
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  background: rgb(12 12 12 / 72%);
-  -webkit-backdrop-filter: blur(14px) saturate(115%);
-  backdrop-filter: blur(14px) saturate(115%);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  background: linear-gradient(90deg, rgb(10 10 10 / 78%), rgb(14 14 14 / 68%));
+  -webkit-backdrop-filter: blur(12px) saturate(112%);
+  backdrop-filter: blur(12px) saturate(112%);
 }
 
-.squash-benefit {
+.native-onboarding-message {
   position: relative;
+  min-width: 0;
   padding: 10px 8px 9px;
   display: flex;
   align-items: flex-start;
   gap: 6px;
-  color: theme('colors.ink.muted');
 }
 
-.squash-benefit + .squash-benefit::before {
+.native-onboarding-message + .native-onboarding-message::before {
   content: '';
   position: absolute;
   top: 12px;
@@ -223,33 +211,51 @@
   background: rgb(255 255 255 / 4.5%);
 }
 
-.squash-benefit-icon {
-  width: 17px;
-  height: 19px;
+.native-onboarding-message-icon {
+  width: 18px;
+  height: 18px;
   display: grid;
   flex: none;
   place-items: center;
   color: #b0b0b3;
 }
 
-.squash-benefit.benefit-2 .squash-benefit-icon { color: rgb(0 227 253 / 72%); }
-
-.squash-benefit strong,
-.squash-benefit small {
-  display: block;
-  font-size: 8.5px;
-  line-height: 1.26;
+.native-onboarding-message.tone-cyan .native-onboarding-message-icon {
+  color: rgb(0 227 253 / 76%);
 }
 
-.squash-benefit strong {
+.native-onboarding-message.tone-lime .native-onboarding-message-icon {
+  color: rgb(209 252 0 / 72%);
+}
+
+.native-onboarding-message strong,
+.native-onboarding-message small {
+  display: block;
+  overflow-wrap: anywhere;
+  line-height: 1.2;
+}
+
+.native-onboarding-message strong {
   color: theme('colors.ink.DEFAULT');
+  font-size: 8.2px;
   font-weight: 650;
 }
 
-.squash-benefit small {
+.native-onboarding-message small {
   margin-top: 2px;
   color: theme('colors.ink.faint');
+  font-size: 7.5px;
   font-weight: 500;
+}
+
+@keyframes native-slide-copy-in {
+  from { opacity: 0; transform: translateX(8px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes native-slide-visual-in {
+  from { opacity: 0.55; transform: translateX(12px); }
+  to { opacity: 1; transform: translateX(0); }
 }
 
 .native-welcome-progress {
@@ -259,15 +265,24 @@
   gap: 6px;
 }
 
-.native-welcome-progress span {
+.native-welcome-progress button {
+  appearance: none;
+  border: 0;
+  padding: 0;
   width: 4px;
   height: 4px;
   border-radius: 999px;
   background: theme('colors.surface.soft');
+  cursor: pointer;
   transition: width 180ms ease, background-color 180ms ease;
 }
 
-.native-welcome-progress .is-active {
+.native-welcome-progress button:focus-visible {
+  outline: 2px solid theme('colors.brand.light');
+  outline-offset: 4px;
+}
+
+.native-welcome-progress button.is-active {
   width: 15px;
   background: theme('colors.brand.DEFAULT');
 }
@@ -290,6 +305,12 @@
 }
 
 .native-welcome-actions button:active { transform: scale(0.985); }
+
+.native-welcome-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+  transform: none;
+}
 
 .native-welcome-actions button:focus-visible,
 .native-welcome-legal button:focus-visible {
@@ -317,6 +338,28 @@
 }
 
 .native-google-icon { width: 17px; height: 17px; flex: none; }
+
+.native-auth-spinner {
+  width: 17px;
+  height: 17px;
+  flex: none;
+  border: 2px solid rgb(255 255 255 / 42%);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: native-auth-spin 700ms linear infinite;
+}
+
+.native-welcome-auth-error {
+  margin: 8px 4px 0;
+  color: rgb(253 186 186 / 92%);
+  font-size: 9px;
+  line-height: 1.35;
+  text-align: center;
+}
+
+@keyframes native-auth-spin {
+  to { transform: rotate(360deg); }
+}
 
 .native-welcome-legal {
   margin: 8px auto 0;
@@ -380,7 +423,7 @@
   .native-welcome-copy { margin-top: 14px; }
   .native-welcome-copy h1 { font-size: 30px; }
   .native-welcome-support { margin-top: 7px; font-size: 11px; }
-  .squash-hero { height: 286px; min-height: 286px; margin-top: 11px; }
+  .native-onboarding-hero { height: 286px; min-height: 286px; margin-top: 11px; }
   .native-welcome-actions { margin-top: 10px; }
   .native-welcome-primary { min-height: 54px; }
   .native-welcome-secondary { min-height: 39px; }
@@ -388,9 +431,9 @@
 
 @media (max-width: 374px) {
   .native-welcome-content { padding-inline: 16px; }
-  .squash-hero { margin-inline: -16px; }
-  .squash-benefits { right: 16px; left: 16px; }
-  .squash-benefit { padding-inline: 6px; }
+  .native-onboarding-hero { margin-inline: -16px; }
+  .native-onboarding-messages { right: 16px; left: 16px; }
+  .native-onboarding-message { padding-inline: 6px; gap: 4px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

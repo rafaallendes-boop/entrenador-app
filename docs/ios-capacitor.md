@@ -54,12 +54,19 @@ Variables de cliente necesarias para auth/sync:
 VITE_SUPABASE_URL=https://PROJECT.supabase.co
 VITE_SUPABASE_ANON_KEY=...
 VITE_AUTH_REDIRECT_URL=https://app.rallyiq.cl/auth/callback
+VITE_API_BASE_URL=https://TU-SITIO-NETLIFY-O-DOMINIO-PRODUCCION
 VITE_AI_PROVIDER=proxy
 ```
 
 La anon/publishable key de Supabase puede estar en el cliente y queda limitada por RLS. Nunca usar `SUPABASE_SERVICE_ROLE_KEY`, secretos de Whoop ni API keys de proveedores AI como variables `VITE_*` en un build distribuible. Producción debe usar el proxy de IA; los secretos viven en Netlify/Supabase/server.
 
 `VITE_AUTH_REDIRECT_URL` solo gobierna web. En Capacitor, la aplicación selecciona `rallyiq://auth/callback` explícitamente.
+
+`VITE_API_BASE_URL` es obligatoria para el build nativo y debe ser el origen HTTPS
+que publica las Netlify Functions (sin `/.netlify/functions` al final). La web
+conserva rutas same-origin; iOS usa este origen porque su contenido local vive en
+`capacitor://localhost`. El backend admite el preflight CORS de Capacitor sin
+cookies: la sesión se autoriza con el bearer token de Supabase.
 
 ## Supabase Auth y deep links
 
@@ -168,7 +175,7 @@ Los siguientes casos requieren validación manual en simulador/dispositivo; marc
 - [ ] Permiso denegado de notificaciones no rompe Ajustes.
 - [ ] Recordatorio local se reemplaza, entrega en hora local, abre la ruta y puede cancelarse.
 - [ ] Apertura de deep link con app cerrada y abierta.
-- [ ] Whoop abre el browser y retorna correctamente, si el servidor ya soporta el redirect nativo.
+- [ ] Whoop abre el browser, retorna por `rallyiq://settings` y actualiza el estado conectado.
 - [ ] Claim pendiente, cuando exista el flujo de producto (actualmente no implementado).
 - [ ] Web/PWA: instalación, service worker, login, notificaciones y offline sin regresiones.
 
@@ -177,7 +184,7 @@ Los siguientes casos requieren validación manual en simulador/dispositivo; marc
 - La sesión iOS se persiste en Preferences, no Keychain.
 - Claim/invitaciones no tienen implementación ni rutas actuales; solo se preserva contexto futuro.
 - El callback OAuth web existente depende de la detección automática de Supabase; la ruta `/auth/callback` cae al router normal después de restaurar sesión.
-- Whoop necesita validación/ajuste de redirect de servidor para volver de Capacitor Browser.
+- Whoop requiere que `WHOOP_REDIRECT_URI` siga apuntando al callback HTTPS del backend; ese callback devuelve después a `rallyiq://settings` solo para flujos iniciados desde iOS.
 - Downloads mediante `<a download>` y file inputs funcionan a nivel WebView, pero PDF/backup deben validarse manualmente con Files en dispositivo. No se añadió Filesystem/Share en esta fase.
 - Splash nativo es placeholder.
 - No se pudo compilar/ejecutar con `xcodebuild` en un host que solo tenga Command Line Tools; requiere Xcode completo.

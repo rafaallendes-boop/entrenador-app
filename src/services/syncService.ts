@@ -65,6 +65,7 @@ import { resolveReadScope, type ReadScope } from './athlete/readScope'
 import { resolveAuthoredByRole } from './athlete/activeScopeFilter'
 import { buildMarkSessionDoneParams, shouldRouteSessionCompletionViaRpc } from './sync/sessionCompletion'
 import { pruneCoachNotesMissingFromRemote } from './athlete/coachNotes'
+import { resolveApiUrl } from './apiUrl'
 import {
   FETCH_PAGE_SIZE,
   fetchAll,
@@ -2239,7 +2240,7 @@ async function deleteRemoteWhoopData(userId: string): Promise<void> {
     throw Object.assign(new Error('No active Supabase session for WHOOP data deletion'), { status: 401 })
   }
 
-  const response = await fetch('/.netlify/functions/whoop-sync', {
+  const response = await fetch(resolveApiUrl('/.netlify/functions/whoop-sync'), {
     method: 'DELETE',
     headers: { Authorization: `Bearer ${token}` },
   })

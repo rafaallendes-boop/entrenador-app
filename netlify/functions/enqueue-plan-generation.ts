@@ -11,6 +11,7 @@ import {
   withTimeout,
   type GeneratePlanPayload,
 } from './_shared/planGenerationShared'
+import { corsPreflight } from './_shared/cors'
 
 const BACKGROUND_FUNCTION = '/.netlify/functions/generate-plan-background'
 const BACKGROUND_INVOKE_TIMEOUT_MS = 10_000
@@ -45,6 +46,7 @@ async function invokeBackground(event: HandlerEvent, payload: GeneratePlanPayloa
  * client can surface genuine failures instead of waiting for a stalled poll.
  */
 export const handler: Handler = async (event) => {
+  if (event.httpMethod === 'OPTIONS') return corsPreflight()
   if (event.httpMethod !== 'POST') {
     return json(405, { error: 'Method not allowed' })
   }

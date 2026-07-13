@@ -12,6 +12,7 @@ import {
   normalizeJsonSchemaForStandardProvider,
 } from '../../src/services/ai/jsonSchema'
 import { mapGeminiUsage, mapOpenAIUsage } from '../../src/services/ai/providerUsage'
+import { CORS_HEADERS, corsPreflight } from './_shared/cors'
 
 export { mapGeminiUsage, mapOpenAIUsage } from '../../src/services/ai/providerUsage'
 
@@ -178,11 +179,12 @@ const AUTH_REQUIRED = process.env['COACH_PROXY_REQUIRE_AUTH'] !== 'false'
 const RATE_LIMIT_WINDOW_MS = parsePositiveInteger(process.env['COACH_RATE_LIMIT_WINDOW_MS'], 60_000)
 const RATE_LIMIT_MAX = parsePositiveInteger(process.env['COACH_RATE_LIMIT_MAX'], 20)
 
-const JSON_HEADERS = { 'Content-Type': 'application/json' }
+const JSON_HEADERS = { 'Content-Type': 'application/json', ...CORS_HEADERS }
 const STREAM_HEADERS = {
   'Content-Type': 'application/x-ndjson; charset=utf-8',
   'Cache-Control': 'no-cache, no-transform',
   'Connection': 'keep-alive',
+  ...CORS_HEADERS,
 }
 const rateLimitBuckets = new Map<string, { windowStart: number; count: number }>()
 
@@ -1312,6 +1314,7 @@ function streamResponse(req: CoachRequest): StreamingResponse {
 }
 
 export const handler = stream(async (event: HandlerEvent): Promise<StreamingResponse> => {
+  if (event.httpMethod === 'OPTIONS') return corsPreflight()
   if (event.httpMethod !== 'POST') {
     return json(405, { error: 'Method not allowed', errorCode: 'unknown' })
   }

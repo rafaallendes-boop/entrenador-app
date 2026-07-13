@@ -21,6 +21,7 @@ import { NATIVE_RESUME_EVENT } from './services/nativeApp'
 import { pullWorkouts } from './services/readiness/pullWorkouts'
 import { autoCompleteFromWorkouts } from './services/readiness/autoCompleteFromWorkouts'
 import { capturePendingClaimTokenFromUrl } from './services/athlete/claimGate'
+import { isIOSPlatform } from './services/platform'
 
 const Dashboard = lazy(() => import('./pages/Dashboard'))
 const WeeklyView = lazy(() => import('./pages/WeeklyView'))
@@ -148,6 +149,7 @@ function OnboardingGuard({ children }: { children: ReactNode }) {
 
 export default function App() {
   const user = useAuthStore(s => s.user)
+  const isAuthLoading = useAuthStore(s => s.isLoading)
   const userId = user?.id ?? null
   const athleteProfile = useCoachMemoryStore(s => s.athleteProfile)
   const hasLoadedMemory = useCoachMemoryStore(s => s.hasLoaded)
@@ -329,6 +331,9 @@ export default function App() {
       <NativeBridge />
       <Suspense fallback={<RouteFallback />}>
         <Routes>
+          {isIOSPlatform() && !user && !isAuthLoading && (
+            <Route path={ROUTES.HOME} element={<NativeWelcomePreviewPage />} />
+          )}
           <Route path={ROUTES.IOS_WELCOME_PREVIEW} element={<NativeWelcomePreviewPage />} />
           <Route path="*" element={(
             <AuthGate>

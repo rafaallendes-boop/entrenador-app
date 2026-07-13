@@ -1,4 +1,9 @@
 import { getSupabase } from '../sync/syncSupabase'
+import { resolveApiUrl } from '../apiUrl'
+
+const WHOOP_OAUTH_START_PATH = '/.netlify/functions/whoop-oauth-start'
+const WHOOP_STATUS_PATH = '/.netlify/functions/whoop-status'
+const WHOOP_SYNC_PATH = '/.netlify/functions/whoop-sync'
 
 export interface WhoopStatus {
   connected: boolean
@@ -21,10 +26,11 @@ async function authHeader(): Promise<Record<string, string>> {
   return { Authorization: `Bearer ${token}` }
 }
 
-export async function startWhoopConnect(): Promise<string> {
-  const res = await fetch('/.netlify/functions/whoop-oauth-start', {
+export async function startWhoopConnect(options: { nativeReturn?: boolean } = {}): Promise<string> {
+  const res = await fetch(resolveApiUrl(WHOOP_OAUTH_START_PATH), {
     method: 'POST',
-    headers: await authHeader(),
+    headers: { 'Content-Type': 'application/json', ...await authHeader() },
+    body: JSON.stringify({ nativeReturn: options.nativeReturn === true }),
   })
   if (!res.ok) throw new Error('No se pudo iniciar la conexion con Whoop.')
   const data = await res.json() as { url?: string }
@@ -33,7 +39,7 @@ export async function startWhoopConnect(): Promise<string> {
 }
 
 export async function getWhoopStatus(): Promise<WhoopStatus> {
-  const res = await fetch('/.netlify/functions/whoop-status', {
+  const res = await fetch(resolveApiUrl(WHOOP_STATUS_PATH), {
     headers: await authHeader(),
   })
   if (!res.ok) return { connected: false, lastSyncAt: null, lastSyncStatus: null, scopes: [] }
@@ -41,7 +47,7 @@ export async function getWhoopStatus(): Promise<WhoopStatus> {
 }
 
 export async function syncWhoopNow(): Promise<WhoopSyncResponse> {
-  const res = await fetch('/.netlify/functions/whoop-sync', {
+  const res = await fetch(resolveApiUrl(WHOOP_SYNC_PATH), {
     method: 'POST',
     headers: await authHeader(),
   })
@@ -49,7 +55,7 @@ export async function syncWhoopNow(): Promise<WhoopSyncResponse> {
 }
 
 export async function disconnectWhoop(): Promise<void> {
-  const res = await fetch('/.netlify/functions/whoop-sync', {
+  const res = await fetch(resolveApiUrl(WHOOP_SYNC_PATH), {
     method: 'DELETE',
     headers: await authHeader(),
   })

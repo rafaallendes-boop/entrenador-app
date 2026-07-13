@@ -6,6 +6,8 @@ import { CURRENT_KEY_VERSION } from './_shared/tokenCrypto'
 
 const SETTINGS_SUCCESS = '/settings?whoop=connected'
 const SETTINGS_ERROR = '/settings?whoop=error'
+const NATIVE_SETTINGS_SUCCESS = 'rallyiq://settings?whoop=connected'
+const NATIVE_SETTINGS_ERROR = 'rallyiq://settings?whoop=error'
 
 function redirect(location: string) {
   return { statusCode: 302, headers: { Location: location }, body: '' }
@@ -14,11 +16,14 @@ function redirect(location: string) {
 export const handler: Handler = async (event) => {
   const code = event.queryStringParameters?.code
   const state = event.queryStringParameters?.state
-  if (!code || !state) return redirect(SETTINGS_ERROR)
+  const nativeReturn = state?.startsWith('ios.') === true
+  const successLocation = nativeReturn ? NATIVE_SETTINGS_SUCCESS : SETTINGS_SUCCESS
+  const errorLocation = nativeReturn ? NATIVE_SETTINGS_ERROR : SETTINGS_ERROR
+  if (!code || !state) return redirect(errorLocation)
 
   const db = getServiceRoleDb()
   const consumed = await consumeOAuthState(db, state).catch(() => null)
-  if (!consumed) return redirect(SETTINGS_ERROR)
+  if (!consumed) return redirect(errorLocation)
 
   try {
     const tokens = await exchangeCode({ code })
@@ -31,12 +36,12 @@ export const handler: Handler = async (event) => {
       whoopUserId: tokens.whoopUserId ?? null,
       scopes: tokens.scopes ?? null,
     })
-    return redirect(SETTINGS_SUCCESS)
+    return redirect(successLocation)
   } catch (error) {
     console.error('[whoop] oauth callback failed', {
       userId: consumed.userId,
       message: error instanceof Error ? error.message : String(error),
     })
-    return redirect(SETTINGS_ERROR)
+    return redirect(errorLocation)
   }
 }

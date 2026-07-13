@@ -17,6 +17,9 @@
 - No new routes are introduced. All five areas live inside the existing `ROUTES.COACH` (`/coach`) route as in-page tabs (local component state) with proper `role="tablist"`/`role="tab"`/`role="tabpanel"` ARIA wiring, sidestepping the routing-architecture decision that public routes (`/coaches`, legal pages) still need.
 - Nav is **responsive**: a compact horizontal scrollable tab bar below `md`, a vertical sidebar list at `md` and above — matching the spec's "navegación lateral mínima" on desktop while staying usable on a phone.
 - Voice: this codebase's existing coach UI uses tuteo ("Tú", "Entrenando ahora") — all new copy in this plan uses "tú/tus", not "vos". Do not introduce voseo.
+- **Athlete actions are globally serialized — including creation.** `switchActiveAthlete` bumps the switch epoch and resets five Zustand stores (`switchActiveAthlete.ts:21-31`); two concurrent switches would interleave those resets and the `loadMemory()` that follows. **Creating an athlete also activates it**, so it is a switch and must hold the same lock — it is not a separate, parallel-safe action. Therefore: while `pendingAthleteAction !== null`, **every** athlete CTA in both panels is disabled (not just the ones on the card being acted on) **and so is the create form**, and `CoachWorkspacePage` refuses any new action while one is pending. Only the button actually being acted on gets its label swapped ("Abriendo semana…" / "Cambiando atleta…" / "Creando…"); the rest stay labelled but disabled.
+- **The container's guard is a `useRef` mutex, not a state read.** Two clicks landing in the same React batch would both observe the pre-render `pendingAthleteAction === null` and both start a switch. The `useRef<boolean>` flips synchronously on entry, so the second call bails; the `useState` exists only to drive the disabled/label rendering.
+- **Design tokens: the running app wins, not `DESIGN.md`.** `DESIGN.md` describes electric green (`#00FF66`) and 4–8px radii; `tailwind.config.ts:18` defines `brand` as orange (`#ff4d00`) and the shipped UI uses `rounded-2xl`. This plan deliberately matches the **shipped** tokens (`bg-brand`, `text-brand`, `rounded-2xl`) so `/coach` does not become a visually isolated island. Reconciling `DESIGN.md` with the real token set is a separate cross-cutting task and is **out of scope here** — do not retheme only this surface.
 - `account_type` gating is explicitly out of scope — `VITE_COACH_ACCOUNTS` / `isCoachAccount` stays as-is.
 - No new dependencies. Component tests follow the existing project convention (`renderToStaticMarkup` + prop injection); the extracted action functions in `coachWorkspaceActions.ts` get plain Vitest async-function tests (no rendering, no mocking Dexie/react-router — dependencies are passed as plain injected objects); the end-to-end click/switch/create flow gets one Playwright smoke step added to the existing `scripts/e2e-coach-test.mjs`. Do not add `@testing-library/react` — it is not installed and is out of scope for this plan.
 - **Commits are made by the project owner only** (CLAUDE.md rule) — do **not** run `git add` / `git commit` at the end of a task. Each task ends with tests passing and the working tree left as-is for the owner to review and commit.
@@ -38,6 +41,8 @@ New files (all under a new `src/components/coach/` directory, plus a services fi
 
 Modified:
 
+- `src/services/athlete/switchActiveAthlete.ts` — `loadMemory()` runs **after** the scope change is committed, so its failure must not turn an applied switch into a rejection (Task 2b).
+- `src/services/__tests__/switchActiveAthlete.test.ts` — existing suite, extended with the two post-/pre-commit cases (Task 2b). No new test file: this service already has one.
 - `src/components/layout/CoachContextBar.tsx` — add `.catch` to its independent `listOwnedAthletes` read (currently an unhandled rejection on Dexie failure).
 - `src/App.tsx` — swap the `ROUTES.COACH` route from `CoachRosterPage` to `CoachWorkspacePage`.
 - `scripts/e2e-coach-test.mjs` — add a coach-workspace smoke step (skips gracefully if the authenticated test account isn't coach-allowlisted).
@@ -59,7 +64,7 @@ Deleted (superseded by `CoachWorkspacePage` + `CoachRosterPanel`):
 **Interfaces:**
 - Produces: `type CoachWorkspaceTab = 'resumen' | 'alumnos' | 'planificacion' | 'biblioteca' | 'asistente'` (from `coachWorkspaceTypes.ts`)
 - Produces: `type RosterStatus = 'loading' | 'ready' | 'error'` (from `coachWorkspaceTypes.ts`)
-- Produces: `interface PendingAthleteAction { athleteId: string; kind: 'week' | 'plan' | 'trainAs' }` (from `coachWorkspaceTypes.ts`)
+- Produces: `type PendingAthleteAction = { kind: 'week' | 'plan' | 'trainAs'; athleteId: string } | { kind: 'create'; athleteId: null }` (from `coachWorkspaceTypes.ts`) — `create` is part of the same lock because creating an athlete activates it (see Global Constraints); `athleteId: null` because the athlete doesn't exist yet.
 - Produces: `export default function CoachWorkspaceNav(props: { activeTab: CoachWorkspaceTab; onSelect: (tab: CoachWorkspaceTab) => void }): JSX.Element`
 - Produces: `export function coachTabId(tab: CoachWorkspaceTab): string` and `export function coachTabPanelId(tab: CoachWorkspaceTab): string` — used by `CoachWorkspacePage` (Task 6) to wire `aria-controls`/`aria-labelledby` on the tabpanel.
 
@@ -137,10 +142,13 @@ export type CoachWorkspaceTab = 'resumen' | 'alumnos' | 'planificacion' | 'bibli
 
 export type RosterStatus = 'loading' | 'ready' | 'error'
 
-export interface PendingAthleteAction {
-  athleteId: string
-  kind: 'week' | 'plan' | 'trainAs'
-}
+/**
+ * Toda accion de atleta comparte un unico lock: crear tambien activa, asi que
+ * es un switch mas y no puede correr en paralelo con otro.
+ */
+export type PendingAthleteAction =
+  | { kind: 'week' | 'plan' | 'trainAs'; athleteId: string }
+  | { kind: 'create'; athleteId: null }
 ```
 
 Create `src/components/coach/CoachWorkspaceNav.tsx`:
@@ -273,6 +281,131 @@ Expected: PASS (1 test)
 
 ---
 
+### Task 2b: `switchActiveAthlete` — un switch ya aplicado no puede reportarse como fallido
+
+`switchActiveAthlete` **commitea el cambio de scope antes** de cargar la memoria del coach
+(`switchActiveAthlete.ts:21-32`): bumpea el epoch, resetea los cinco stores, persiste la selección,
+setea el atleta activo en el holder y en `useAuthStore`, y **recién después** hace
+`await useCoachMemoryStore.getState().loadMemory()`.
+
+Si `loadMemory()` rechaza, la función lanza — pero el atleta **ya quedó activo**. Todo lo que
+consume su valor de retorno (Task 3, `CoachContextBar`, el `CoachRosterPage` actual) concluiría
+"no se pudo activar" mientras la app ya cambió de scope: el peor estado posible, porque la UI y el
+scope real quedan diciendo cosas distintas. El `try/catch` de Task 3 mitiga la pérdida del atleta,
+pero no puede arreglar esto — la mentira nace acá.
+
+La corrección va en la fuente: después del punto de commit, la carga de memoria es **best-effort**.
+El acceso a Dexie *previo* al commit (`db.athletes.get`) sigue lanzando como corresponde — ahí todavía
+no se cambió nada.
+
+**Files:**
+- Modify: `src/services/athlete/switchActiveAthlete.ts`
+- Modify: `src/services/__tests__/switchActiveAthlete.test.ts` — **la suite ya existe** (Dexie real vía `fake-indexeddb`, `syncService` y `readiness/*` mockeados, helpers `seedAthletes`/`installLocalStorage`). Extenderla; **no** crear una segunda suite para el mismo servicio.
+
+- [ ] **Step 1: Write the failing test**
+
+Agregar dos casos al `describe('switchActiveAthlete')` existente, reusando `seedAthletes()` y los
+imports que ya están en el archivo (`db`, `getActiveAthleteId`, `getSwitchEpoch`, `useAuthStore`,
+`useCoachMemoryStore`):
+
+```ts
+  it('loadMemory falla DESPUES del commit: el switch sigue siendo exitoso', async () => {
+    await seedAthletes()
+    useCoachMemoryStore.setState({
+      loadMemory: vi.fn(async () => { throw new Error('memoria caída') }),
+    })
+
+    await expect(switchActiveAthlete(OWNER, MANAGED)).resolves.toBe(true)
+
+    // El scope YA cambió antes de loadMemory(): devolver false seria mentirle a la UI.
+    expect(getActiveAthleteId()).toBe(MANAGED)
+    expect(useAuthStore.getState().activeAthleteId).toBe(MANAGED)
+    expect(getPersistedAthleteSelection(OWNER)).toBe(MANAGED)
+  })
+
+  it('Dexie falla ANTES del commit: propaga y no toca el scope', async () => {
+    await seedAthletes()
+    vi.spyOn(db.athletes, 'get').mockRejectedValueOnce(new Error('Dexie falló antes del commit'))
+    const epochBefore = getSwitchEpoch()
+
+    await expect(switchActiveAthlete(OWNER, MANAGED)).rejects.toThrow('Dexie falló antes del commit')
+
+    // Pre-commit: no se aplicó nada, asi que propagar es lo correcto.
+    expect(getSwitchEpoch()).toBe(epochBefore)
+    expect(getActiveAthleteId()).toBe(SELF)
+  })
+```
+
+**Aislamiento — obligatorio, no opcional.** Los dos casos nuevos ensucian estado que el `afterEach`
+existente **no** limpia:
+
+- `useCoachMemoryStore.setState({ loadMemory })` **reemplaza la acción del store**. `resetForAthleteSwitch()`
+  limpia datos (`athleteProfile`, `hasLoaded`), no restaura métodos: el `loadMemory` que rechaza quedaría
+  vivo para todos los tests posteriores de la suite — incluido el primero, que espera
+  `athleteProfile?.name === 'Cliente 1'`.
+- `vi.spyOn(db.athletes, 'get')` sobrevive a `vi.clearAllMocks()` (que limpia llamadas, no
+  implementaciones). Sólo `vi.restoreAllMocks()` devuelve el método original.
+
+Guardar la implementación original **al tope del `describe`** y restaurar siempre:
+
+```ts
+  const originalLoadMemory = useCoachMemoryStore.getState().loadMemory
+
+  afterEach(() => {
+    useCoachMemoryStore.setState({ loadMemory: originalLoadMemory })
+    vi.restoreAllMocks()
+    // ...limpieza existente (db.close(), setActiveAthleteId(null), resetForAthleteSwitch(), etc.)
+  })
+```
+
+Si `vi.restoreAllMocks()` rompiera los `vi.mock(...)` de módulo del tope del archivo (`syncService`,
+`readiness/*`), restaurar sólo el spy puntual guardándolo en una variable y llamando su
+`.mockRestore()` en el `afterEach`; el objetivo es el mismo, restauración incondicional.
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `npx vitest run src/services/__tests__/switchActiveAthlete.test.ts`
+Expected: FAIL — el caso de `loadMemory` rechazando falla (hoy la excepción escapa y `switchActiveAthlete` rechaza en vez de resolver `true`). El caso pre-commit ya pasa: es la red de seguridad de que la corrección **no** se pase de la raya y silencie también los fallos previos al commit.
+
+- [ ] **Step 3: Make `loadMemory` best-effort (post-commit)**
+
+En `src/services/athlete/switchActiveAthlete.ts`, cambiar:
+
+```ts
+  await useCoachMemoryStore.getState().loadMemory()
+```
+
+por:
+
+```ts
+  // Post-commit: el scope ya cambió. Un fallo de memoria no puede convertir un
+  // switch aplicado en excepción — la memoria se recarga en el próximo intento.
+  try {
+    await useCoachMemoryStore.getState().loadMemory()
+  } catch (error) {
+    console.error('[switch-athlete] no se pudo cargar la memoria del coach', error)
+  }
+```
+
+No tocar el `db.athletes.get` de arriba: ese es pre-commit y debe seguir propagando.
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `npx vitest run src/services/__tests__/switchActiveAthlete.test.ts`
+Expected: PASS — los 5 tests que ya existían más los 2 nuevos (7).
+
+- [ ] **Step 5: Confirm no existing consumer regressed**
+
+Run: `npm test`
+Expected: PASS — `CoachContextBar` y `CoachRosterPage` (todavía vivo hasta Task 7) consumen el mismo booleano.
+
+Nota sobre Task 3: este endurecimiento **no** vuelve redundante el `try/catch` de
+`createAndActivateAthlete`. `db.athletes.get` sigue pudiendo rechazar (pre-commit), y ese caso sí
+significa "no se activó". Con Task 2b aplicada, `activated: false` pasa a ser **verdadero** en todos
+los casos en que se reporta, que es justamente lo que el contenedor necesita para su mensaje.
+
+---
+
 ### Task 3: `coachWorkspaceActions` — extracted, unit-tested switch/create logic
 
 This is the fix for the plan's biggest gap: the switch-then-navigate and create-then-activate
@@ -293,7 +426,8 @@ injected dependencies means they get real unit tests with no rendering at all.
   - `interface CreateAndActivateAthleteDeps { createManagedAthlete: (ownerAccountId: string, displayName: string) => Promise<Athlete>; switchActiveAthlete: (ownerAccountId: string, athleteId: string) => Promise<boolean> }`
   - `interface CreateAndActivateAthleteResult { athlete: Athlete; activated: boolean }`
   - `function createAndActivateAthlete(deps: CreateAndActivateAthleteDeps, ownerAccountId: string, displayName: string): Promise<CreateAndActivateAthleteResult>`
-  - Contract: `createAndActivateAthlete` **always resolves with the created athlete** even if activation fails (`activated: false`) — it only rejects if `createManagedAthlete` itself rejects (e.g. empty name). This is what lets the container keep a partially-activated athlete visible instead of losing it.
+  - Contract: `createAndActivateAthlete` **always resolves with the created athlete** once creation succeeded — whether activation returns `false` **or throws** (both surface as `activated: false`). It only rejects if `createManagedAthlete` itself rejects (e.g. empty name). Activation genuinely can throw, not just return `false`: **with Task 2b applied**, the remaining reject path is the **pre-commit** `db.athletes.get` (`switchActiveAthlete.ts:17`) — which is exactly the case where nothing was activated, so `activated: false` is truthful. (Before Task 2b, a post-commit `loadMemory()` failure could also throw, which would have made `activated: false` a *lie*; that is why Task 2b comes first and this `try/catch` is not enough on its own.) If that exception escaped, the athlete would already exist in Dexie while the UI reported a failed creation and never reloaded the roster — invisible until a manual refresh. Hence the `try/catch` around activation only, never around creation.
+  - Same reasoning applies to `selectAthleteAndNavigate`: it does **not** swallow a `switchActiveAthlete` rejection (there is nothing to salvage), so the container must handle it — see Task 6.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -352,9 +486,17 @@ describe('createAndActivateAthlete', () => {
     expect(result).toEqual({ athlete: ATHLETE, activated: true })
   })
 
-  it('creacion exitosa pero activacion fallida: igual devuelve el atleta creado', async () => {
+  it('creacion exitosa pero activacion devuelve false: igual devuelve el atleta creado', async () => {
     const createManagedAthlete = vi.fn().mockResolvedValue(ATHLETE)
     const switchActiveAthlete = vi.fn().mockResolvedValue(false)
+    const result = await createAndActivateAthlete({ createManagedAthlete, switchActiveAthlete }, 'user-1', 'Cliente 1')
+    expect(result).toEqual({ athlete: ATHLETE, activated: false })
+  })
+
+  it('creacion exitosa pero activacion lanza: no pierde el atleta creado', async () => {
+    const createManagedAthlete = vi.fn().mockResolvedValue(ATHLETE)
+    // Post-Task 2b el rechazo legitimo viene del acceso a Dexie PREVIO al commit.
+    const switchActiveAthlete = vi.fn().mockRejectedValue(new Error('Dexie falló antes del commit'))
     const result = await createAndActivateAthlete({ createManagedAthlete, switchActiveAthlete }, 'user-1', 'Cliente 1')
     expect(result).toEqual({ athlete: ATHLETE, activated: false })
   })
@@ -424,9 +566,11 @@ export interface CreateAndActivateAthleteResult {
 }
 
 /**
- * Creates a managed athlete and tries to activate it. Always resolves with the
- * created athlete, even when activation fails, so the caller can keep it visible
- * in the roster instead of losing it — only rejects if creation itself fails.
+ * Creates a managed athlete and tries to activate it. Once creation succeeded this
+ * always resolves with the created athlete — a failed activation (false *or* thrown)
+ * only sets `activated: false`, so the caller keeps the athlete visible in the roster
+ * instead of reporting a creation that actually happened as an error.
+ * Only rejects if creation itself fails.
  */
 export async function createAndActivateAthlete(
   deps: CreateAndActivateAthleteDeps,
@@ -434,15 +578,18 @@ export async function createAndActivateAthlete(
   displayName: string,
 ): Promise<CreateAndActivateAthleteResult> {
   const athlete = await deps.createManagedAthlete(ownerAccountId, displayName)
-  const activated = await deps.switchActiveAthlete(ownerAccountId, athlete.id)
-  return { athlete, activated }
+  try {
+    return { athlete, activated: await deps.switchActiveAthlete(ownerAccountId, athlete.id) }
+  } catch {
+    return { athlete, activated: false }
+  }
 }
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run src/services/athlete/coachWorkspaceActions.test.ts`
-Expected: PASS (6 tests)
+Expected: PASS (7 tests)
 
 ---
 
@@ -456,6 +603,7 @@ Expected: PASS (6 tests)
 - Consumes: `RosterStatus`, `PendingAthleteAction` from `./coachWorkspaceTypes` (Task 1), `Athlete` from `../../types`.
 - Produces: `export default function CoachSummaryPanel(props: { athletes: Athlete[]; status: RosterStatus; selfId: string | null; activeAthleteId: string | null; pendingAction: PendingAthleteAction | null; onRetry: () => void; onOpenWeek: (athleteId: string) => void; onOpenPlan: (athleteId: string) => void; onGoToAlumnos: () => void }): JSX.Element`
 - Semantics: `athletes.length === 0` is the **defensive true-empty** case (should not normally happen — `listOwnedAthletes` always includes self). The **realistic** "coach with no students yet" case is `athletes.length > 0 && no athlete other than selfId` — these are two different UI states (see Step 1 tests).
+- Pending semantics (see Global Constraints): `pendingAction !== null` disables **every** athlete button in the panel, not only the acted-on card's. The label only changes on the exact button being acted on (matching `athleteId` **and** `kind`).
 
 - [ ] **Step 1: Write the failing test**
 
@@ -522,13 +670,19 @@ describe('CoachSummaryPanel', () => {
     expect((html.match(/Ver plan/g) ?? []).length).toBe(2)
   })
 
-  it('accion pendiente: deshabilita y relabela solo el boton correspondiente', () => {
+  it('accion pendiente: relabela solo el boton acted-on pero deshabilita todos', () => {
     const html = render('ready', [SELF, MANAGED], { athleteId: 'ath_m_abc', kind: 'week' })
     const managedCard = html.slice(html.indexOf('Cliente 1'))
     expect(managedCard).toContain('Abriendo semana…')
-    expect(managedCard).toContain('disabled')
+
+    // El label solo cambia en el boton exacto (mismo athleteId + kind).
+    expect(managedCard).toContain('Ver plan')
     const selfCard = html.slice(0, html.indexOf('Cliente 1'))
-    expect(selfCard).not.toContain('disabled')
+    expect(selfCard).toContain('Ver semana')
+    expect(selfCard).not.toContain('Abriendo semana…')
+
+    // Pero ningun boton de atleta queda clickeable: los switches se serializan.
+    expect((html.match(/disabled/g) ?? []).length).toBe(4)
   })
 })
 ```
@@ -600,6 +754,9 @@ export default function CoachSummaryPanel({
   }
 
   const hasManagedAthletes = athletes.some((athlete) => athlete.id !== selfId)
+  // Un switch en vuelo resetea stores globales: mientras haya uno pendiente,
+  // ningun CTA de atleta acepta clicks (ver Global Constraints).
+  const isLocked = pendingAction !== null
 
   return (
     <div className="space-y-3">
@@ -619,11 +776,19 @@ export default function CoachSummaryPanel({
       {athletes.map((athlete) => {
         const isSelf = athlete.id === selfId
         const isActive = athlete.id === activeAthleteId
-        const isBusy = pendingAction?.athleteId === athlete.id
-        const isWeekPending = isBusy && pendingAction?.kind === 'week'
-        const isPlanPending = isBusy && pendingAction?.kind === 'plan'
+        const isTarget = pendingAction?.athleteId === athlete.id
+        const isWeekPending = isTarget && pendingAction?.kind === 'week'
+        const isPlanPending = isTarget && pendingAction?.kind === 'plan'
         return (
-          <div key={athlete.id} className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+          // data-* : anclas estables para el smoke de Playwright (Task 8), que debe
+          // apuntar al atleta ACTIVO y no al primero de la lista (listOwnedAthletes
+          // siempre ordena self primero, que no siempre es el activo).
+          <div
+            key={athlete.id}
+            data-athlete-card={athlete.id}
+            data-athlete-active={isActive ? 'true' : 'false'}
+            className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3"
+          >
             <div className="flex items-center justify-between gap-3">
               <p className="truncate text-sm font-semibold text-ink">
                 {isSelf ? 'Tú' : (athlete.displayName ?? 'Atleta')}
@@ -633,7 +798,7 @@ export default function CoachSummaryPanel({
             <div className="mt-3 flex gap-2">
               <button
                 type="button"
-                disabled={isBusy}
+                disabled={isLocked}
                 onClick={() => onOpenWeek(athlete.id)}
                 className="flex-1 rounded-xl border border-white/15 bg-white/5 py-2 text-xs font-semibold text-ink transition-colors hover:bg-white/10 disabled:opacity-50"
               >
@@ -641,7 +806,7 @@ export default function CoachSummaryPanel({
               </button>
               <button
                 type="button"
-                disabled={isBusy}
+                disabled={isLocked}
                 onClick={() => onOpenPlan(athlete.id)}
                 className="flex-1 rounded-xl border border-white/15 bg-white/5 py-2 text-xs font-semibold text-ink transition-colors hover:bg-white/10 disabled:opacity-50"
               >
@@ -673,6 +838,7 @@ Expected: PASS (6 tests)
 - Consumes: `RosterStatus`, `PendingAthleteAction` from `./coachWorkspaceTypes` (Task 1), `Athlete` from `../../types`.
 - Produces: `export default function CoachRosterPanel(props: { athletes: Athlete[]; status: RosterStatus; selfId: string | null; activeAthleteId: string | null; pendingAction: PendingAthleteAction | null; onRetry: () => void; onCreateAthlete: (name: string) => Promise<void>; onTrainAs: (athleteId: string) => void }): JSX.Element`
 - `onCreateAthlete` resolves on success (including the "created but not activated" case — see Task 3), throws `Error` (with a user-facing message) only when the athlete was never created — the panel catches it and renders `error.message`.
+- Pending semantics (see Global Constraints): `pendingAction !== null` disables **every** "Entrenar como este atleta" button **and** the create/submit buttons — creating an athlete triggers a switch too, so it must not race one already in flight. Only the acted-on button gets the "Cambiando atleta…" label.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -737,10 +903,26 @@ describe('CoachRosterPanel', () => {
     expect(html).toContain('Aún no tienes atletas. Crea el primero.')
   })
 
-  it('accion trainAs pendiente: deshabilita y relabela el boton de switch', () => {
+  it('accion trainAs pendiente: relabela el boton acted-on y bloquea el CTA de crear', () => {
     const html = render('ready', ROSTER, { athleteId: 'ath_m_abc', kind: 'trainAs' })
     expect(html).toContain('Cambiando atleta…')
     expect(html).not.toContain('Entrenar como este atleta')
+    // El CTA de crear tambien dispara un switch: no puede correr en paralelo.
+    const createCta = html.match(/<button[^>]*>\s*<svg[^>]*>.*?<\/svg>\s*Crear atleta/s)?.[0] ?? html
+    expect(createCta).toContain('disabled')
+  })
+
+  it('accion pendiente en otro atleta: igual deshabilita este switch (serializacion global)', () => {
+    const html = render('ready', ROSTER, { athleteId: 'ath_user-1', kind: 'week' })
+    const managedRow = html.slice(html.indexOf('Cliente 1'))
+    expect(managedRow).toContain('Entrenar como este atleta')
+    expect(managedRow).toContain('disabled')
+  })
+
+  it('creacion pendiente: bloquea los switches (crear tambien activa)', () => {
+    const html = render('ready', ROSTER, { kind: 'create', athleteId: null })
+    const managedRow = html.slice(html.indexOf('Cliente 1'))
+    expect(managedRow).toContain('disabled')
   })
 })
 ```
@@ -784,20 +966,23 @@ export default function CoachRosterPanel({
   const [isCreating, setIsCreating] = useState(false)
   const [newName, setNewName] = useState('')
   const [error, setError] = useState<string | null>(null)
-  const [isSubmitting, setIsSubmitting] = useState(false)
+
+  // Una accion en vuelo resetea stores globales: mientras haya una pendiente,
+  // ni los switches ni la creacion (que tambien activa) aceptan clicks.
+  // El estado de "creando" viene del lock del container, no de un flag local:
+  // dos fuentes de verdad para lo mismo se desincronizan.
+  const isLocked = pendingAction !== null
+  const isSubmitting = pendingAction?.kind === 'create'
 
   async function handleCreate() {
-    if (isSubmitting) return
+    if (isLocked) return
     setError(null)
-    setIsSubmitting(true)
     try {
       await onCreateAthlete(newName)
       setNewName('')
       setIsCreating(false)
     } catch (createError) {
       setError(createError instanceof Error ? createError.message : 'No se pudo crear el atleta.')
-    } finally {
-      setIsSubmitting(false)
     }
   }
 
@@ -830,6 +1015,8 @@ export default function CoachRosterPanel({
           return (
             <div
               key={athlete.id}
+              data-athlete-row={athlete.id}
+              data-athlete-active={isActive ? 'true' : 'false'}
               className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3"
             >
               <div className="min-w-0">
@@ -841,7 +1028,7 @@ export default function CoachRosterPanel({
               {!isActive && (
                 <button
                   type="button"
-                  disabled={isPending}
+                  disabled={isLocked}
                   onClick={() => onTrainAs(athlete.id)}
                   className="flex-shrink-0 rounded-xl border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-semibold text-ink transition-colors hover:bg-white/10 disabled:opacity-50"
                 >
@@ -879,7 +1066,7 @@ export default function CoachRosterPanel({
             </button>
             <button
               type="submit"
-              disabled={!newName.trim() || isSubmitting}
+              disabled={!newName.trim() || isLocked}
               className="flex-1 rounded-xl bg-brand py-2.5 text-sm font-semibold text-white disabled:opacity-40"
             >
               {isSubmitting ? 'Creando…' : 'Crear y completar perfil'}
@@ -889,8 +1076,9 @@ export default function CoachRosterPanel({
       ) : (
         <button
           type="button"
+          disabled={isLocked}
           onClick={() => setIsCreating(true)}
-          className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-white/20 py-3 text-sm font-semibold text-ink-muted transition-colors hover:text-ink"
+          className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-white/20 py-3 text-sm font-semibold text-ink-muted transition-colors hover:text-ink disabled:opacity-50"
         >
           <Plus size={16} />
           Crear atleta
@@ -901,12 +1089,16 @@ export default function CoachRosterPanel({
 }
 ```
 
-Note: `<button type="submit">` inside `<form onSubmit>` means pressing Enter in the name input now submits — this fixes the reviewer's finding that creation was click-only. `handleCreate`'s `if (isSubmitting) return` guard plus the `disabled={... || isSubmitting}` on the submit button together prevent double-submit from a fast double Enter/click.
+Note: `<button type="submit">` inside `<form onSubmit>` means pressing Enter in the name input now submits — this fixes the reviewer's finding that creation was click-only. Double-submit and create-racing-a-switch are both prevented by the **single** global lock: `handleCreate`'s `if (isLocked) return`, `disabled={... || isLocked}` on the submit button, and — the only guard that actually holds against two events in the same React batch — the container's `useRef` mutex (Task 6). The panel deliberately has no local `isSubmitting` flag: the "Creando…" label is derived from `pendingAction.kind === 'create'`, so the lock and the label can never disagree.
 
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run src/components/coach/CoachRosterPanel.test.tsx`
-Expected: PASS (6 tests)
+Expected: PASS (8 tests)
+
+Nota: el `<form>` sólo se monta tras un click en "Crear atleta" (`isCreating` local), que
+`renderToStaticMarkup` no puede disparar — por eso el submit con Enter y el label "Creando…" se
+verifican en el Playwright de Task 8, no acá.
 
 ---
 
@@ -1050,7 +1242,7 @@ Expected: FAIL — module doesn't exist yet.
 Create `src/pages/CoachWorkspacePage.tsx`:
 
 ```tsx
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
 import { Users } from 'lucide-react'
 import { useAuthStore } from '../store/useAuthStore'
@@ -1085,6 +1277,10 @@ export default function CoachWorkspacePage({ allowlistOverride, initialAthletes,
   const [reloadToken, setReloadToken] = useState(0)
   const [pendingAthleteAction, setPendingAthleteAction] = useState<PendingAthleteAction | null>(null)
   const [actionMessage, setActionMessage] = useState<string | null>(null)
+  // Mutex real: dos clicks en el mismo batch de React leerian el mismo
+  // pendingAthleteAction === null previo al rerender y arrancarian dos switches.
+  // El ref se marca de forma sincrona; el useState solo pinta disabled/labels.
+  const actionLock = useRef(false)
   const navigate = useNavigate()
 
   const isCoach = allowlistOverride !== undefined
@@ -1113,18 +1309,33 @@ export default function CoachWorkspacePage({ allowlistOverride, initialAthletes,
     destination: string,
   ) => {
     if (!user?.id) return
+    // Serializacion global: un switch (o una creacion, que tambien activa) en vuelo
+    // ya esta reseteando stores. Los paneles deshabilitan los CTAs, pero el container
+    // no confia en eso — y chequea el ref, no el state, para ser reentrante de verdad.
+    if (actionLock.current) return
+    actionLock.current = true
     setActionMessage(null)
     setPendingAthleteAction({ athleteId, kind })
-    const result = await selectAthleteAndNavigate(
-      { switchActiveAthlete, navigate },
-      user.id,
-      athleteId,
-      activeAthleteId,
-      destination,
-    )
-    setPendingAthleteAction(null)
-    if (!result.navigated) {
+    try {
+      const result = await selectAthleteAndNavigate(
+        { switchActiveAthlete, navigate },
+        user.id,
+        athleteId,
+        activeAthleteId,
+        destination,
+      )
+      if (!result.navigated) {
+        setActionMessage('No se pudo cambiar de atleta. Intenta de nuevo.')
+      }
+    } catch {
+      // switchActiveAthlete todavia puede rechazar en su acceso a Dexie PRE-commit
+      // (post-commit, Task 2b lo dejo best-effort). Ahi el scope no cambio.
       setActionMessage('No se pudo cambiar de atleta. Intenta de nuevo.')
+    } finally {
+      // Sin este finally, un rechazo dejaria el boton en "Abriendo semana…" para siempre
+      // y el lock tomado, bloqueando todos los demas CTAs de atleta.
+      actionLock.current = false
+      setPendingAthleteAction(null)
     }
   }, [user?.id, activeAthleteId, navigate])
 
@@ -1134,23 +1345,41 @@ export default function CoachWorkspacePage({ allowlistOverride, initialAthletes,
 
   async function handleCreateAthlete(name: string) {
     if (!user?.id) throw new Error('Sesión inválida.')
+    // Crear tambien activa: toma el MISMO lock que un switch, no uno propio.
+    if (actionLock.current) throw new Error('Espera a que termine la acción en curso.')
+    actionLock.current = true
     setActionMessage(null)
-    const result = await createAndActivateAthlete(
-      { createManagedAthlete, switchActiveAthlete },
-      user.id,
-      name,
-    )
-    const rows = await listOwnedAthletes(user.id)
-    setAthletes(rows)
-    setStatus('ready')
-    if (result.activated) {
-      navigate(ROUTES.ONBOARDING)
-      return
+    setPendingAthleteAction({ kind: 'create', athleteId: null })
+
+    try {
+      // Solo esta linea puede lanzar hacia el panel: si lanza, el atleta no existe.
+      const result = await createAndActivateAthlete(
+        { createManagedAthlete, switchActiveAthlete },
+        user.id,
+        name,
+      )
+
+      // A partir de aca el atleta YA existe en Dexie. Nada de lo que sigue puede
+      // propagar: seria reportar como fallo una creacion que si ocurrio.
+      try {
+        setAthletes(await listOwnedAthletes(user.id))
+        setStatus('ready')
+      } catch {
+        setStatus('error') // el panel muestra "Reintentar"
+      }
+
+      if (result.activated) {
+        navigate(ROUTES.ONBOARDING)
+        return
+      }
+      setActionMessage(
+        `Se creó a "${result.athlete.displayName ?? name}", pero no se pudo activar automáticamente. ` +
+        'Usa "Entrenar como este atleta" en la lista para abrir su perfil.',
+      )
+    } finally {
+      actionLock.current = false
+      setPendingAthleteAction(null)
     }
-    setActionMessage(
-      `Se creó a "${result.athlete.displayName ?? name}", pero no se pudo activar automáticamente. ` +
-      'Usa "Entrenar como este atleta" en la lista para abrir su perfil.',
-    )
   }
 
   function handleRetry() {
@@ -1229,6 +1458,9 @@ export default function CoachWorkspacePage({ allowlistOverride, initialAthletes,
 Notes:
 - The coach/redirect check is placed **after** the hooks (`useState`, `useEffect`, `useCallback`) to keep hook call order stable across renders — same pattern already used in `CoachRosterPage.tsx` today.
 - `handleAthleteAction` (switch+navigate) and `handleCreateAthlete` (create+activate) delegate the actual decision logic to Task 3's `selectAthleteAndNavigate`/`createAndActivateAthlete` — this component only owns UI state (`pendingAthleteAction`, `actionMessage`) around those calls.
+- `handleAthleteAction`'s `finally` is load-bearing, not defensive boilerplate: `switchActiveAthlete` can still reject on its **pre-commit** `db.athletes.get` (Task 2b made only the post-commit `loadMemory()` best-effort). Without the `finally`, one rejection leaves the button stuck on "Abriendo semana…" forever **and** leaves both `pendingAthleteAction` and the `actionLock` ref set, which (per the serialization rule) would lock every other athlete CTA on the page too.
+- `handleCreateAthlete` splits its error surface deliberately: only the `createAndActivateAthlete` call may propagate to `CoachRosterPanel`'s `catch` (creation genuinely failed, e.g. empty name). Once creation succeeded, a failed roster reload degrades to `status: 'error'` (with its Reintentar button) instead of throwing — throwing there would tell the coach the creation failed while the athlete sits in Dexie. The `finally` still releases the lock in every case, including the throw.
+- Both handlers take the **same** `actionLock` ref, because creating an athlete activates it — a create running next to a switch is two concurrent `switchActiveAthlete` calls, which is exactly what the lock exists to prevent. The `useState` mirror (`pendingAthleteAction`) is what the panels render from; the ref is what actually decides.
 - Layout: `md:grid md:grid-cols-[200px_1fr]` puts `CoachWorkspaceNav` in a 200px sidebar column at `md` and above; below `md`, the grid collapses and `CoachWorkspaceNav`'s own responsive classes (Task 1) turn it into a horizontal scrollable tab bar.
 
 - [ ] **Step 4: Run test to verify it passes**
@@ -1348,11 +1580,28 @@ none of which the `renderToStaticMarkup` unit tests above can drive. It extends 
 e2e script (`scripts/e2e-coach-test.mjs`), reusing its auth-state/navigation helpers, rather than
 introducing a new test runner.
 
+Two properties this smoke must have, which the earlier draft did not:
+
+1. **The default run must not mutate the athlete scope.** Switching athletes persists the selection
+   (`persistAthleteSelection`, `switchActiveAthlete.ts:29`), so a smoke that clicks the *first*
+   "Ver semana" would silently leave the coach's active athlete changed after the run. `listOwnedAthletes`
+   always sorts **self first** (`managedAthletes.ts:39-43`), and self is not necessarily the active
+   athlete — so `.first()` is exactly the wrong anchor. The default run therefore targets the card
+   marked `data-athlete-active="true"` (Task 4), which is a no-op switch by construction.
+2. **Create + switch must actually be exercised somewhere.** They are the riskiest paths in this slice.
+   They live behind the script's existing `--apply` flag (already the convention for destructive steps,
+   `scripts/e2e-coach-test.mjs:29`), and the run restores self at the end.
+
+`--apply` **creates a real managed athlete** (persisted to Dexie and pushed to Supabase via
+`createManagedAthlete`), and there is no UI to delete it. Expect a `E2E <timestamp>` athlete to
+accumulate in the roster of whatever account you run it against. Do not run `--apply` against an
+account whose roster you care about.
+
 **Files:**
 - Modify: `scripts/e2e-coach-test.mjs`
 
 **Interfaces:**
-- Consumes: the running dev server's `/coach` route (Task 7), and this script's existing helpers (`goto`, `step`, `ok`, `fail`, `safeCheck`, `waitForBodyText`, `hasBodyTextAfterWait`).
+- Consumes: the running dev server's `/coach` route (Task 7), the `data-athlete-card` / `data-athlete-row` / `data-athlete-active` anchors (Tasks 4–5), and this script's existing helpers (`goto`, `step`, `ok`, `fail`, `safeCheck`, `waitForBodyText`, `hasBodyTextAfterWait`) and `OPTIONS.apply`.
 
 - [ ] **Step 1: Add `runCoachWorkspaceSmoke` to `scripts/e2e-coach-test.mjs`**
 
@@ -1364,7 +1613,13 @@ async function runCoachWorkspaceSmoke(page) {
   await goto(page, '/coach')
   const isCoachUi = await hasBodyTextAfterWait(page, /Workspace de coach/i, 5_000)
   if (!isCoachUi) {
-    ok('Coach workspace omitido', 'la cuenta autenticada no está en VITE_COACH_ACCOUNTS')
+    // Sin este gate, una regresion que rompa el render de /coach se reportaria
+    // como "cuenta no allowlisted" y el smoke pasaria en verde.
+    if (process.env.E2E_EXPECT_COACH_WORKSPACE === 'true') {
+      fail('Coach workspace no renderizó', 'E2E_EXPECT_COACH_WORKSPACE=true pero /coach no mostró el workspace')
+      return
+    }
+    ok('Coach workspace omitido', 'la cuenta autenticada no está en VITE_COACH_ACCOUNTS; corre con E2E_EXPECT_COACH_WORKSPACE=true para exigirlo')
     return
   }
 
@@ -1389,11 +1644,85 @@ async function runCoachWorkspaceSmoke(page) {
     ok('Tabs "próximamente" muestran su copy')
   })
 
-  await safeCheck('Volver a Resumen y abrir semana del atleta activo', async () => {
+  await safeCheck('Ver semana del atleta ACTIVO no cambia el scope', async () => {
     await page.getByRole('tab', { name: /^Resumen/i }).click()
-    await page.getByRole('button', { name: /Ver semana/i }).first().click()
+    // Anclar al atleta activo, nunca a .first(): self va primero en el roster
+    // aunque el activo sea un gestionado, y clickearlo persistiria un switch.
+    const activeCard = page.locator('[data-athlete-card][data-athlete-active="true"]')
+    await activeCard.waitFor({ timeout: 10_000 })
+    await activeCard.getByRole('button', { name: /Ver semana/i }).click()
+    // Esperar la URL, no el texto: el texto puede estar en la pantalla anterior.
+    await page.waitForURL((url) => url.pathname === '/week', { timeout: 15_000 })
     await waitForBodyText(page, /Semana|Weekly planner|Sin sesiones planificadas|Día libre|Dia libre/i)
-    ok('CTA "Ver semana" navega a /week')
+    ok('CTA "Ver semana" del atleta activo navega a /week sin switch')
+  })
+
+  if (!OPTIONS.apply) {
+    ok('Crear atleta + switch omitidos', 'son destructivos; corre con --apply para ejercitarlos')
+    return
+  }
+
+  // --- Desde acá: destructivo. Crea un atleta real y cambia el scope. ---
+  const createdName = `E2E ${new Date().toISOString().slice(0, 19)}`
+  let activeBeforeSwitch = null
+
+  await safeCheck('Crear atleta desde el tab Alumnos (submit con Enter)', async () => {
+    await goto(page, '/coach')
+    await page.getByRole('tab', { name: /Alumnos/i }).click()
+    activeBeforeSwitch = await page.locator('[data-athlete-row][data-athlete-active="true"]')
+      .getAttribute('data-athlete-row')
+
+    await page.getByRole('button', { name: /^Crear atleta/i }).click()
+    await page.getByPlaceholder(/Juan Pérez/i).fill(createdName)
+    // Enter, no click: verifica el <form onSubmit> de Task 5.
+    await page.getByPlaceholder(/Juan Pérez/i).press('Enter')
+
+    // Esperar la URL, NUNCA texto: el propio boton dice "Crear y completar perfil",
+    // asi que un /Perfil/i matchearia sin que el redirect haya ocurrido y el check
+    // pasaria en verde con la creacion rota.
+    await page.waitForURL((url) => url.pathname === '/onboarding', { timeout: 20_000 })
+    ok('Crear atleta submitea con Enter y activa al nuevo atleta', createdName)
+  })
+
+  await safeCheck('El atleta creado aparece en el roster', async () => {
+    await goto(page, '/coach')
+    await page.getByRole('tab', { name: /Alumnos/i }).click()
+    await waitForBodyText(page, new RegExp(createdName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'))
+    ok('El atleta creado aparece en el roster')
+  })
+
+  await safeCheck('"Entrenar como este atleta" cambia el atleta activo', async () => {
+    const row = page.locator(`[data-athlete-row][data-athlete-active="false"]`).first()
+    const targetId = await row.getAttribute('data-athlete-row')
+    await row.getByRole('button', { name: /Entrenar como este atleta/i }).click()
+    // onTrainAs navega a ROUTES.HOME ('/') recien cuando el switch resolvio.
+    // Sin esperar esa navegacion, el goto() de abajo competiria con ella.
+    await page.waitForURL((url) => url.pathname === '/', { timeout: 20_000 })
+    await goto(page, '/coach')
+    await page.getByRole('tab', { name: /Alumnos/i }).click()
+    const nowActive = await page.locator('[data-athlete-row][data-athlete-active="true"]')
+      .getAttribute('data-athlete-row')
+    if (nowActive === targetId) ok('Switch de atleta aplicado', targetId)
+    else fail('Switch de atleta no se aplicó', `esperaba ${targetId}, quedó ${nowActive}`)
+  })
+
+  await safeCheck('Restaurar el atleta activo original', async () => {
+    if (!activeBeforeSwitch) {
+      fail('No se pudo restaurar el atleta activo', 'no se capturó el atleta activo inicial')
+      return
+    }
+    const original = page.locator(`[data-athlete-row="${activeBeforeSwitch}"]`)
+    const restoreButton = original.getByRole('button', { name: /Entrenar como este atleta/i })
+    if (await restoreButton.count() > 0) {
+      await restoreButton.click()
+      await page.waitForURL((url) => url.pathname === '/', { timeout: 20_000 })
+    }
+    await goto(page, '/coach')
+    await page.getByRole('tab', { name: /Alumnos/i }).click()
+    const nowActive = await page.locator('[data-athlete-row][data-athlete-active="true"]')
+      .getAttribute('data-athlete-row')
+    if (nowActive === activeBeforeSwitch) ok('Atleta activo original restaurado', activeBeforeSwitch)
+    else fail('El smoke dejó otro atleta activo', `esperaba ${activeBeforeSwitch}, quedó ${nowActive}`)
   })
 }
 ```
@@ -1408,27 +1737,40 @@ In the `main()` function, add the call right after `await runWeeklyViewVerificat
     await verifySettingsQuality(page)
 ```
 
-- [ ] **Step 3: Run the extended e2e script**
+- [ ] **Step 3: Run the non-destructive smoke**
 
-Start the dev server first (`npm run dev` in a separate terminal), then run:
+Start the dev server first (`npm run dev` in a separate terminal), then run — with a coach-allowlisted
+account, and demanding that `/coach` actually renders:
 
 ```bash
-npm run e2e:dev:quick
+E2E_EXPECT_COACH_WORKSPACE=true npm run e2e:dev:quick
 ```
 
-Expected: all checks PASS, including the new "8. Coach workspace (/coach)" section. If the authenticated test account isn't in `VITE_COACH_ACCOUNTS`, the section reports `ok('Coach workspace omitido', ...)` instead of failing — that's expected, not a bug; re-run with a coach-allowlisted account to actually exercise `/coach`.
+Expected: all checks PASS, including "8. Coach workspace (/coach)", with create/switch reported as
+skipped. The active athlete must be unchanged after the run.
 
-- [ ] **Step 4: Manual visual check (viewport-dependent, not automated)**
+- [ ] **Step 4: Run the destructive create/switch smoke once**
+
+Only against an account whose roster you don't mind polluting (see the caveat above):
+
+```bash
+E2E_EXPECT_COACH_WORKSPACE=true npm run e2e:dev:apply
+```
+
+Expected: the create (via Enter), roster-appearance, switch, and restore-self checks all PASS, and the
+final "Atleta activo original restaurado" confirms the run left the scope where it found it.
+
+- [ ] **Step 5: Manual visual check (viewport-dependent, not automated)**
 
 The Playwright script above runs at a fixed 1280×900 viewport, so it never exercises the mobile
 layout. In the browser (same dev server), signed in as a coach account:
 
 1. Open `/coach` at a narrow width (resize the window below ~768px, or use devtools device mode). Confirm the five-area nav renders as a horizontal, scrollable tab bar at the top (not a sidebar).
 2. Widen the window back past ~768px. Confirm the nav switches to a vertical sidebar on the left, with the panel content to its right.
-3. Confirm no console errors appear on either layout (open devtools console).
-4. On the Alumnos tab, create an athlete by pressing **Enter** in the name field (not clicking the button) — confirm the form submits and the redirect to onboarding happens, verifying the `<form>` fix from Task 5.
+3. Confirm no console errors appear on either layout (open devtools console) — in particular, no unhandled rejection from `CoachContextBar`'s roster read (Task 7).
+4. Click "Ver semana" on one card and, while the switch is in flight, confirm that **every** athlete button on the page (including the other cards' and the create CTA on Alumnos) is disabled, and that only the clicked one is relabelled.
 
-Report both the Playwright run result and this manual check before considering this task done.
+Report the results of Steps 3, 4 and 5 before considering this task done.
 
 **Do not run `git add` or `git commit`** — per CLAUDE.md, commits are made by the project owner. Leave the working tree as-is for review.
 
@@ -1437,5 +1779,8 @@ Report both the Playwright run result and this manual check before considering t
 ## Self-Review Notes
 
 - **Spec coverage:** nav with 5 areas in order, responsive sidebar/tabs (Task 1), 3 "próximamente" placeholders with tuteo copy (Task 2, wired in Task 6), Resumen cards limited to `listOwnedAthletes` fields with no computed signals (Task 4), Alumnos roster+create with form submit (Task 5), single-step switch-then-navigate CTA behavior with pending/error feedback, extracted and unit-tested (Task 3, wired in Task 6), loading/error/empty/self-only states for both real tabs (Tasks 4–5), route wiring + old page retirement + full verification (Task 7), end-to-end click coverage via Playwright + a manual viewport check (Task 8). All bullets from the spec's "Alcance de `Coach Workspace v0`" and "Decisiones a cerrar" sections are covered, plus every finding from the 2026-07-12 review round: extracted/unit-tested switch and create logic (Task 3), fixed the `CoachContextBar` unhandled rejection and documented the two-reads decision instead of the wrong "single fetch" claim (Task 7, Architecture section), corrected the self-only empty-state semantics (Task 4), fixed the partially-successful-creation data loss (Task 3 + Task 6's `handleCreateAthlete`), added pending/disabled-button state and an `role="alert"` error banner for failed switches (Task 4/5/6), responsive sidebar nav with proper `tablist`/`tab`/`tabpanel` ARIA (Task 1 + Task 6), `<form onSubmit>` for the create flow (Task 5), and consistent tuteo copy (Task 6, verified in its test).
-- **Out of scope, confirmed absent from this plan:** aggregate multi-athlete signal queries, `/coaches` public landing and legal routes, Biblioteca data model, session/exercise assignment, unifying the three AI modes, `account_type` gating change, arrow-key roving tabindex on the tab list (noted as accepted future polish, not required for v0's ARIA correctness — `tablist`/`tab`/`tabpanel`/`aria-selected`/`aria-controls` are implemented; keyboard arrow navigation between tabs is not).
+- **Second review round (2026-07-12), all findings addressed:** (1) `createAndActivateAthlete` now catches a **thrown** activation, not just a `false` return — `switchActiveAthlete` can reject on its `db.athletes.get` (and, before Task 2b, on `loadMemory()` too), which would otherwise have left a created athlete invisible while the UI reported a failed creation (Task 3, new test). (2) `handleAthleteAction` wraps the call in `try/catch/finally` — without the `finally`, a rejected switch left the button stuck on "Abriendo semana…" and `pendingAthleteAction` set forever (Task 6). (3) Athlete actions are now **globally serialized**: any pending action disables every athlete CTA in both panels plus the create form, and the container re-checks before starting one — two concurrent `switchActiveAthlete` calls would interleave five store resets (Task 4/5/6 + Global Constraints). (4) The Playwright smoke now actually exercises create and switch behind the existing `--apply` flag, anchors the non-destructive path to `data-athlete-active="true"` instead of `.first()` (which is *self*, not necessarily the active athlete, so it could silently persist a scope change), restores the original active athlete, and gains `E2E_EXPECT_COACH_WORKSPACE=true` so a broken `/coach` fails instead of masquerading as "not allowlisted" (Task 8). (5) The `DESIGN.md`-vs-`tailwind.config.ts` contradiction is resolved explicitly in favour of the shipped tokens, with reconciliation called out as a separate cross-cutting task (Global Constraints).
+- **Third review round (2026-07-12), all findings addressed:** (1) **`switchActiveAthlete` commits the scope change before `loadMemory()`** (`switchActiveAthlete.ts:21-32`), so a memory failure was turning an *applied* switch into an exception — `activated: false` would have been a lie and the UI would contradict the real scope. Fixed at the source in the new **Task 2b**: post-commit memory load is best-effort, pre-commit Dexie access still throws. (2) **Creation now really holds the lock:** `PendingAthleteAction` gains a `{ kind: 'create'; athleteId: null }` member, `handleCreateAthlete` sets it and releases it in `finally`, and the panel's redundant local `isSubmitting` is gone (the "Creando…" label derives from the lock, so they cannot disagree). The container's guard is now a `useRef` mutex, since two clicks in one React batch both read the stale `pendingAthleteAction === null`. (3) **Playwright waits on URLs, not body text:** the post-Enter check matched `/Perfil/i`, which the "Crear y completar perfil" button itself contains — it could go green without any redirect. Now `waitForURL('/onboarding')`. The switch and restore steps also `waitForURL('/')` before their `goto`, instead of racing the handler's `navigate(ROUTES.HOME)`.
+- **Fourth review round (2026-07-12), editorial only:** Task 2b now **extends** the existing `src/services/__tests__/switchActiveAthlete.test.ts` (Dexie real vía `fake-indexeddb`, con sus helpers `seedAthletes`/`installLocalStorage`) en vez de crear una segunda suite para el mismo servicio. Y toda referencia a `loadMemory()` como fuente legítima de rechazo quedó reescrita: después de Task 2b, el único reject path real es el `db.athletes.get` **pre-commit** — el caso en que efectivamente no se activó nada, y por lo tanto el único en que `activated: false` es verdad.
+- **Out of scope, confirmed absent from this plan:** aggregate multi-athlete signal queries, `/coaches` public landing and legal routes, Biblioteca data model, session/exercise assignment, unifying the three AI modes, `account_type` gating change, reconciling `DESIGN.md` with the real Tailwind token set, arrow-key roving tabindex on the tab list (noted as accepted future polish, not required for v0's ARIA correctness — `tablist`/`tab`/`tabpanel`/`aria-selected`/`aria-controls` are implemented; keyboard arrow navigation between tabs is not).
 - **Type consistency:** `RosterStatus`, `CoachWorkspaceTab`, and `PendingAthleteAction` are defined once in Task 1 and imported (never redefined) by Tasks 4, 5, and 6. `Athlete` is always imported from `../../types` (or `../types` from the page). Prop names match exactly between producer and consumer (`onOpenWeek`/`onOpenPlan`/`pendingAction` in `CoachSummaryPanel` vs. `CoachWorkspacePage`'s call sites; `onCreateAthlete`/`onTrainAs`/`pendingAction` in `CoachRosterPanel` vs. its call sites; `selectAthleteAndNavigate`/`createAndActivateAthlete`'s injected-deps shape matches exactly how `CoachWorkspacePage` calls them in Task 6).

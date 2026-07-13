@@ -16,6 +16,7 @@ import {
   upsertWorkouts,
   type WhoopDb,
 } from './_shared/whoopSupabase'
+import { corsPreflight } from './_shared/cors'
 
 const baseDeps = (db: WhoopDb) => ({
   db,
@@ -45,6 +46,7 @@ function parseDays(body: string | null): number | undefined {
 }
 
 export const handler: Handler = async (event) => {
+  if (event.httpMethod === 'OPTIONS') return corsPreflight()
   if (event.httpMethod !== 'POST' && event.httpMethod !== 'DELETE') {
     return json(405, { error: 'Method not allowed' })
   }

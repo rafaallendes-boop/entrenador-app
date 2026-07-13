@@ -2,6 +2,7 @@ import type { Handler } from '@netlify/functions'
 import { json, resolveAuthContext } from './_shared/planGenerationShared'
 import { getServiceRoleDb } from './_shared/whoopOAuth'
 import type { WhoopDb } from './_shared/whoopSupabase'
+import { corsPreflight } from './_shared/cors'
 
 interface StatusRow {
   last_sync_at?: string | null
@@ -20,6 +21,9 @@ function statusTable(db: WhoopDb): StatusQuery {
 }
 
 export const handler: Handler = async (event) => {
+  if (event.httpMethod === 'OPTIONS') return corsPreflight()
+  if (event.httpMethod !== 'GET') return json(405, { error: 'Method not allowed' })
+
   let auth: Awaited<ReturnType<typeof resolveAuthContext>>
   try {
     auth = await resolveAuthContext(event)

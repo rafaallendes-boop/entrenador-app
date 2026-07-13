@@ -2,12 +2,13 @@ import type { AthleteProfile, PlanWizardConfig } from '../../types'
 import type { TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
 import { supabase } from '../auth'
 import { trimRecentContextForPayload, type PlanBuilderRecentContext } from './recentContext'
+import { resolveApiUrl } from '../apiUrl'
 
 // Synchronous enqueue/ack endpoint. Unlike the background function (which always
 // replies 202 with an empty body), this one validates auth/payload, writes a
 // durable jobId, kicks off the background worker and returns a real result, so
 // the client can surface genuine errors instead of waiting for a stalled poll.
-const ENQUEUE_URL = '/.netlify/functions/enqueue-plan-generation'
+const ENQUEUE_PATH = '/.netlify/functions/enqueue-plan-generation'
 
 // Netlify caps synchronous function request bodies around 256 KB. We keep a
 // safety margin and fail fast with a recoverable error instead of letting the
@@ -83,7 +84,7 @@ export async function triggerBackgroundGeneration(
     )
   }
 
-  const response = await fetch(ENQUEUE_URL, {
+  const response = await fetch(resolveApiUrl(ENQUEUE_PATH), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

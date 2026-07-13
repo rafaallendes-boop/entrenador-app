@@ -15,7 +15,7 @@
     "cap:copy": "cap copy",
     "ios:add": "cap add ios",
     "ios:open": "cap open ios",
-    "ios:sync": "npm run build && cap sync ios",
+    "ios:sync": "node scripts/verify-ios-env.mjs && npm run build && cap sync ios",
     "build:ios": "npm run ios:sync",
     "lint": "eslint .",
     "preview": "vite preview",

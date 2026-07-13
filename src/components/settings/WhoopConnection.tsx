@@ -48,13 +48,11 @@ export function WhoopConnection() {
   }, [status?.lastSyncAt])
 
   const launchWhoopOAuth = async () => {
-    const url = await startWhoopConnect()
-    if (isNativePlatform()) {
-      // The Whoop OAuth callback redirects to the web /settings page, which loads
-      // *inside* the in-app browser and cannot deep-link back to the native app
-      // (unlike the app's own rallyiq:// auth callback). The connection is stored
-      // server-side, so refresh the status once the user dismisses the sheet to
-      // reflect the result — otherwise the UI would stay "not connected".
+    const native = isNativePlatform()
+    const url = await startWhoopConnect({ nativeReturn: native })
+    if (native) {
+      // The server returns to rallyiq://settings after Whoop stores the
+      // connection. browserFinished remains as a cancellation/dismiss fallback.
       const listener = await Browser.addListener('browserFinished', () => {
         void listener.remove()
         void refresh()

@@ -2,8 +2,10 @@ import type { Handler } from '@netlify/functions'
 import { json, resolveAuthContext } from './_shared/planGenerationShared'
 import { buildAuthorizeUrl, generateOAuthState, getServiceRoleDb, OAUTH_STATE_TTL_MS, WHOOP_SCOPES } from './_shared/whoopOAuth'
 import { insertOAuthState } from './_shared/whoopSupabase'
+import { corsPreflight } from './_shared/cors'
 
 export const handler: Handler = async (event) => {
+  if (event.httpMethod === 'OPTIONS') return corsPreflight()
   if (event.httpMethod !== 'POST') return json(405, { error: 'Method not allowed' })
 
   let auth: Awaited<ReturnType<typeof resolveAuthContext>>
@@ -20,7 +22,14 @@ export const handler: Handler = async (event) => {
     return json(500, { error: 'Whoop no está configurado.' })
   }
 
-  const state = generateOAuthState()
+  let nativeReturn = false
+  try {
+    nativeReturn = (JSON.parse(event.body ?? '{}') as { nativeReturn?: unknown }).nativeReturn === true
+  } catch {
+    return json(400, { error: 'Invalid JSON body' })
+  }
+
+  const state = `${nativeReturn ? 'ios.' : 'web.'}${generateOAuthState()}`
   const expiresAt = new Date(Date.now() + OAUTH_STATE_TTL_MS).toISOString()
   try {
     await insertOAuthState(getServiceRoleDb(), { state, userId: auth.userId, expiresAt })

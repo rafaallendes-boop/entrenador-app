@@ -16,8 +16,9 @@ import { AIProviderError, createProviderError } from '../types'
 import type { AIProviderName, AIRequestClass } from '../../../types'
 import { getAIRequestPolicy } from '../requestPolicy'
 import { isSupabaseConfigured, supabase } from '../../auth'
+import { ApiUrlConfigurationError, resolveApiUrl } from '../../apiUrl'
 
-const FUNCTION_URL = '/.netlify/functions/coach'
+const FUNCTION_PATH = '/.netlify/functions/coach'
 type ProxyErrorPayload = {
   error?: string
   errorCode?: AIErrorCode
@@ -80,7 +81,7 @@ export class ProxyProvider implements AIProvider {
     }, policy.timeoutMs + 2000)
 
     try {
-      const res = await fetch(FUNCTION_URL, {
+      const res = await fetch(resolveApiUrl(FUNCTION_PATH), {
         method: 'POST',
         headers: await buildProxyHeaders(),
         signal: controller.signal,
@@ -322,6 +323,9 @@ export class ProxyProvider implements AIProvider {
     options?: { abortedByCaller?: boolean },
   ): AIProviderError {
     if (error instanceof AIProviderError) return error
+    if (error instanceof ApiUrlConfigurationError) {
+      return createProviderError('gemini', 'misconfigured', error.message)
+    }
     if (error instanceof Error && error.name === 'AbortError') {
       return createProviderError(
         'gemini',

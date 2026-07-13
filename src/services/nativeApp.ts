@@ -6,6 +6,7 @@ import { SplashScreen } from '@capacitor/splash-screen'
 import { StatusBar, Style } from '@capacitor/status-bar'
 import { processAuthDeepLink } from './authDeepLinks'
 import { isIOSPlatform, isNativePlatform } from './platform'
+import { getWhoopCallbackPath } from './nativeDeepLinks'
 
 export const NATIVE_NAVIGATE_EVENT = 'rallyiq:native-navigate'
 export const NATIVE_RESUME_EVENT = 'rallyiq:native-resume'
@@ -48,6 +49,13 @@ export async function initializeNativeApp(): Promise<void> {
 }
 
 async function handleNativeUrl(url: string): Promise<void> {
+  const whoopPath = getWhoopCallbackPath(url)
+  if (whoopPath) {
+    dispatchNativeNavigation(whoopPath)
+    await Browser.close().catch(() => undefined)
+    return
+  }
+
   const result = await processAuthDeepLink(url)
   if (result.error) {
     window.dispatchEvent(new CustomEvent(NATIVE_AUTH_ERROR_EVENT, { detail: result.error }))

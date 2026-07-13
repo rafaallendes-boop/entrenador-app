@@ -6,6 +6,7 @@ import type { AsyncPlanGenerationWriter } from '../../../src/services/planBuilde
 import { rowToTrainingPlan, trainingPlanToRow, trainingPlanWeekToRow } from '../../../src/services/planBuilder/planRows'
 import { insertPlanGenerationAttempt } from './planGenerationTelemetry'
 import { withTimeout } from './promiseTimeout'
+import { CORS_HEADERS } from './cors'
 
 export { withTimeout } from './promiseTimeout'
 
@@ -26,7 +27,7 @@ export interface AuthContext {
   token: string
 }
 
-export const JSON_HEADERS = { 'Content-Type': 'application/json' }
+export const JSON_HEADERS = { 'Content-Type': 'application/json', ...CORS_HEADERS }
 export const MAX_WEEKS = 40
 export const AUTH_TIMEOUT_MS = 10_000
 export const SUPABASE_OP_TIMEOUT_MS = 15_000
