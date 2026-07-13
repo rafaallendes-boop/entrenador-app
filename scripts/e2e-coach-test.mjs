@@ -482,6 +482,18 @@ async function runCoachWorkspaceSmoke(page) {
     ok('Crear atleta submitea con Enter y activa al nuevo atleta', createdName)
   })
 
+  await safeCheck('Omitir onboarding del atleta recien creado', async () => {
+    // El atleta recien creado no tiene perfil: needsOnboarding() da true y
+    // hasSkippedOnboarding() (scopeado por atleta) da false, asi que el guard
+    // global redirige CUALQUIER navegacion de vuelta a /onboarding mientras
+    // esto no se resuelva. Sin este paso, el proximo goto('/coach') rebota,
+    // los checks de roster/switch/restore fallan en cadena, y el atleta E2E
+    // queda activo sin que el ultimo paso (restaurar) llegue a ejecutarse.
+    await page.getByRole('button', { name: /Omitir/i }).click()
+    await page.waitForURL((url) => url.pathname === '/', { timeout: 20_000 })
+    ok('Onboarding omitido: needsOnboarding() ya no bloquea la navegacion')
+  })
+
   await safeCheck('El atleta creado aparece en el roster', async () => {
     await goto(page, '/coach')
     await page.getByRole('tab', { name: /Alumnos/i }).click()
