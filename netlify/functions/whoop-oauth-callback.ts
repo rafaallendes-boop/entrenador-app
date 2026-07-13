@@ -5,12 +5,23 @@ import { consumeOAuthState, upsertConnection } from './_shared/whoopSupabase'
 import { CURRENT_KEY_VERSION } from './_shared/tokenCrypto'
 
 const SETTINGS_SUCCESS = '/settings?whoop=connected'
-const SETTINGS_ERROR = '/settings?whoop=error'
 const NATIVE_SETTINGS_SUCCESS = 'rallyiq://settings?whoop=connected'
-const NATIVE_SETTINGS_ERROR = 'rallyiq://settings?whoop=error'
+
+type CallbackFailureReason =
+  | 'authorization_denied'
+  | 'invalid_callback'
+  | 'expired_state'
+  | 'state_error'
+  | 'token_exchange'
+  | 'connection_save'
 
 function redirect(location: string) {
   return { statusCode: 302, headers: { Location: location }, body: '' }
+}
+
+function errorLocation(nativeReturn: boolean, reason: CallbackFailureReason): string {
+  const location = nativeReturn ? 'rallyiq://settings' : '/settings'
+  return `${location}?whoop=error&reason=${reason}`
 }
 
 export const handler: Handler = async (event) => {
@@ -18,15 +29,36 @@ export const handler: Handler = async (event) => {
   const state = event.queryStringParameters?.state
   const nativeReturn = state?.startsWith('ios.') === true
   const successLocation = nativeReturn ? NATIVE_SETTINGS_SUCCESS : SETTINGS_SUCCESS
-  const errorLocation = nativeReturn ? NATIVE_SETTINGS_ERROR : SETTINGS_ERROR
-  if (!code || !state) return redirect(errorLocation)
+  const providerError = event.queryStringParameters?.error
+  if (!code || !state) {
+    return redirect(errorLocation(nativeReturn, providerError ? 'authorization_denied' : 'invalid_callback'))
+  }
 
-  const db = getServiceRoleDb()
-  const consumed = await consumeOAuthState(db, state).catch(() => null)
-  if (!consumed) return redirect(errorLocation)
+  let db: ReturnType<typeof getServiceRoleDb>
+  let consumed: { userId: string } | null
+  try {
+    db = getServiceRoleDb()
+    consumed = await consumeOAuthState(db, state)
+  } catch (error) {
+    console.error('[whoop] oauth state validation failed', {
+      message: error instanceof Error ? error.message : String(error),
+    })
+    return redirect(errorLocation(nativeReturn, 'state_error'))
+  }
+  if (!consumed) return redirect(errorLocation(nativeReturn, 'expired_state'))
+
+  let tokens: Awaited<ReturnType<typeof exchangeCode>>
+  try {
+    tokens = await exchangeCode({ code })
+  } catch (error) {
+    console.error('[whoop] oauth token exchange failed', {
+      userId: consumed.userId,
+      message: error instanceof Error ? error.message : String(error),
+    })
+    return redirect(errorLocation(nativeReturn, 'token_exchange'))
+  }
 
   try {
-    const tokens = await exchangeCode({ code })
     await upsertConnection(db, {
       userId: consumed.userId,
       accessToken: tokens.accessToken,
@@ -42,6 +74,6 @@ export const handler: Handler = async (event) => {
       userId: consumed.userId,
       message: error instanceof Error ? error.message : String(error),
     })
-    return redirect(errorLocation)
+    return redirect(errorLocation(nativeReturn, 'connection_save'))
   }
 }

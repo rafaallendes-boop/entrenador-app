@@ -14,6 +14,7 @@ export const NATIVE_BACKGROUND_EVENT = 'rallyiq:native-background'
 export const NATIVE_AUTH_ERROR_EVENT = 'rallyiq:native-auth-error'
 
 let initialized = false
+let pendingNavigation: string | null = null
 
 export async function initializeNativeApp(): Promise<void> {
   if (!isNativePlatform() || initialized) return
@@ -65,8 +66,17 @@ async function handleNativeUrl(url: string): Promise<void> {
   if (result.navigateTo) dispatchNativeNavigation(result.navigateTo)
 }
 
-function dispatchNativeNavigation(path: string): void {
+export function dispatchNativeNavigation(path: string): void {
+  // A cold launch can receive its URL before NativeBridge mounts. Keep the
+  // latest safe internal path so the bridge can consume it after React starts.
+  pendingNavigation = path
   window.dispatchEvent(new CustomEvent(NATIVE_NAVIGATE_EVENT, { detail: path }))
+}
+
+export function consumePendingNativeNavigation(): string | null {
+  const path = pendingNavigation
+  pendingNavigation = null
+  return path
 }
 
 function handleExternalAnchorClick(event: MouseEvent): void {

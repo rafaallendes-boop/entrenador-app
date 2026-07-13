@@ -12,6 +12,16 @@ describe('getWhoopCallbackPath', () => {
       .toBe('/settings?whoop=error')
   })
 
+  it('preserves a recognized OAuth failure reason for Settings to display', () => {
+    expect(getWhoopCallbackPath('rallyiq://settings?whoop=error&reason=token_exchange'))
+      .toBe('/settings?whoop=error&reason=token_exchange')
+  })
+
+  it('does not forward arbitrary callback query parameters into the app', () => {
+    expect(getWhoopCallbackPath('rallyiq://settings?whoop=error&reason=internal_database_message'))
+      .toBe('/settings?whoop=error')
+  })
+
   it('ignores unrelated or malformed deep links', () => {
     expect(getWhoopCallbackPath('rallyiq://auth/callback?code=abc')).toBeNull()
     expect(getWhoopCallbackPath('not a url')).toBeNull()
