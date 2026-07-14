@@ -5,6 +5,7 @@ import { LocalNotifications } from '@capacitor/local-notifications'
 import { SplashScreen } from '@capacitor/splash-screen'
 import { StatusBar, Style } from '@capacitor/status-bar'
 import { processAuthDeepLink } from './authDeepLinks'
+import { scrollFocusedControlIntoView } from './keyboardFocus'
 import { isIOSPlatform, isNativePlatform } from './platform'
 import { getWhoopCallbackPath } from './nativeDeepLinks'
 
@@ -34,6 +35,12 @@ export async function initializeNativeApp(): Promise<void> {
 
   await CapacitorApp.addListener('appStateChange', ({ isActive }) => {
     window.dispatchEvent(new Event(isActive ? NATIVE_RESUME_EVENT : NATIVE_BACKGROUND_EVENT))
+  })
+
+  // didShow, not willShow: the webview has already been resized by then, so the
+  // scroll lands against the final viewport instead of the pre-keyboard one.
+  await Keyboard.addListener('keyboardDidShow', () => {
+    scrollFocusedControlIntoView()
   })
 
   await LocalNotifications.addListener('localNotificationActionPerformed', ({ notification }) => {

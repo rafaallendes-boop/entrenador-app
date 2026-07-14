@@ -88,6 +88,19 @@
   }
 }
 
+/* iOS zooms the viewport whenever a focused form control renders below 16px, and it
+   never zooms back out — the page just stays magnified and offset. Touch screens
+   therefore get 16px controls; pointer-fine screens keep the denser 12-14px sizing.
+   !important is required to override Tailwind's text-sm/text-xs utility classes,
+   which outrank a plain element selector. */
+@media (pointer: coarse) {
+  input:not([type='range']):not([type='checkbox']):not([type='radio']),
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+}
+
 /* Range input styling */
 input[type='range'] {
   -webkit-appearance: none;

@@ -103,6 +103,11 @@ if (!IS_LOCAL_HOST) {
     const requestUrl = new URL(event.request.url)
     if (requestUrl.origin !== self.location.origin) return
 
+    // API responses are per-account and change on every connect/sync, so they must
+    // never be cached: the cache-first branch below would keep serving a stale
+    // whoop-status (old scopes, old sync time) until the user wipes the cache.
+    if (requestUrl.pathname.startsWith('/.netlify/functions/')) return
+
     if (event.request.mode === 'navigate') {
       event.respondWith(
         fetch(event.request)

@@ -1,12 +1,13 @@
 # RallyIQ - Project Review and Roadmap
 
-Actualizado: 2026-07-13
+Actualizado: 2026-07-14
 
 Base de contraste:
 
-- `main` hasta `ec31ccb` (merge de `coach-workspace-v0` + fix de tooling worktrees).
+- `main` en `2335f10` (merge de `coaches-landing-fase0` completado 2026-07-13).
 - **`011_whoop_integration.sql` y `012_whoop_workouts.sql` aplicados en produccion.** Whoop readiness y Workout Auto-Complete quedan operativos de punta a punta (owner confirma cierre operacional); pendiente solo el linkeo de consentimiento biometrico/legal antes de exponer a terceros (ver Riesgo 1).
 - **Coach Workspace v0 implementado y deployado (2026-07-13):** `/coach` pasa de un roster unico (`CoachRosterPage`) a un workspace de 5 tabs (`CoachWorkspacePage`): Resumen (tarjetas de roster con Ver semana/Ver plan), Alumnos (roster + alta de atleta), y Planificacion/Biblioteca/Asistente IA como placeholders "proximamente". Incluye endurecimiento de `switchActiveAthlete` (post-commit `loadMemory()` best-effort) y un lock de concurrencia a nivel de modulo para serializar switch/creacion de atleta (sobrevive al remount que dispara un switch exitoso). Merge a `main` y push a produccion cerrados el mismo dia; ver seccion 7 mas abajo para detalle completo, incluida una limitacion conocida (lock no comparte estado con `CoachContextBar`) documentada en el plan.
+- **Fase 0 de coaches landing completada (2026-07-13):** rutas públicas reales (no AuthGate fallbacks), las cuatro páginas legales publicadas como rutas (`/terms`, `/privacy`, `/health-disclaimer`, y disclamer Whoop), landing `/coaches` en modo prelanzamiento con estructura de 3 planes, metadata/OG cards por ruta con prerender para crawlers, deep links nativos para OAuth callback en iOS, y cierre de compartimiento entre rutas públicas. Falta aún revisión jurídica y RUT/domicilio legal antes de cobro o anuncios masivos.
 - `main` hasta `167ef6e Plan whoop y entrenador`.
 - `007` aplicado y F2 data prereqs en `6e33926`.
 - `008a` ya fue corrido en produccion con 0 nulls / 0 duplicados reportados.
@@ -23,36 +24,35 @@ Base de contraste:
 
 ## Resumen Ejecutivo
 
-RallyIQ esta en una etapa donde el core ya no es el cuello de botella principal. El motor de planificacion, Plan Builder async, calidad deportiva base, athlete scope foundation, claves naturales locales por atleta, write path remoto seguro para day/week, Athlete-Aware Core, Coach F2-lite Parte 2b, Whoop v1 + Workout Auto-Complete (ambas migraciones aplicadas) y ahora Coach Workspace v0 ya estan construidos y en produccion.
+RallyIQ esta en una etapa donde el core ya no es el cuello de botella principal. El motor de planificacion, Plan Builder async, calidad deportiva base, athlete scope foundation, claves naturales locales por atleta, write path remoto seguro para day/week, Athlete-Aware Core, Coach F2-lite Parte 2b, Whoop v1 + Workout Auto-Complete (ambas migraciones aplicadas), Coach Workspace v0, y ahora Fase 0 de coaches landing (rutas legales publicas + landing `/coaches` de prelanzamiento) ya estan construidos y en produccion.
 
-Lo que queda antes de mostrar/cobrar con confianza se concentra en tres carriles:
+Lo que queda antes de mostrar/cobrar con confianza se concentra en dos carriles:
 
-1. **Cierre legal de Whoop:** migraciones y flujo ya operativos; resta linkear consentimiento biometrico explicito antes de exponer Whoop a terceros.
-2. **Cierre comercial/legal general:** rutas legales publicas, consentimiento general, soporte y oferta piloto.
-3. **QA deportiva:** planes arquetipo ahora operables como atletas gestionados.
+1. **Cierre legal completo:** consentimiento biometrico explicito de Whoop + revision juridica formal + RUT/domicilio legal antes de cobro/anuncios masivos.
+2. **QA deportiva y operacional:** planes arquetipo como atletas gestionados, protocolo de revision semanal, canales de soporte, y primer piloto acompanado (1-3 clientes).
 
-Carriles de producto que siguen abiertos pero ya no bloquean el piloto:
+Carriles de producto que siguen abiertos pero ya no bloquean la oferta comercial:
 
-4. **Coach Workspace v0:** roster mejorado ya en produccion; Planificacion/Biblioteca/Asistente IA quedan como "proximamente" a propósito (ver seccion 7).
-5. **SP1 dos-lados:** membresias/RLS v2 ya planificadas para `013+`/Dexie v17+, pero sigue siendo una migracion de acceso relevante, no urgente.
+3. **Coach Workspace v0 completado:** roster mejorado ya en produccion; Planificacion/Biblioteca/Asistente IA quedan como "proximamente" a propósito (ver seccion 7), no impiden el lanzamiento del coaching pagado.
+4. **SP1 dos-lados:** membresias/RLS v2 ya planificadas para `013+`/Dexie v17+, pero es un incremento futuro de acceso, no bloqueante para la oferta coach de una sola cuenta.
 
-Mi lectura como lider tecnico: ya se puede preparar demo y piloto acompanado con mas confianza que antes — los dos gates operacionales de Whoop que bloqueaban el track tecnico ya cerraron. No esta listo para self-serve publico. El cuello actual no es falta de features, sino cerrar el consentimiento biometrico, legal general y QA manual con datos reales.
+Mi lectura como lider tecnico: el cambio principal entre hoy y hace dos dias es que las rutas legales publicas ya existen como rutas reales, no como ideas. Eso permite cobrar sin zona gris innecesaria si se cierra la revision juridica rapido. El cuello actual es revision juridica formal + primer cliente real para validar flujo comercial/operacional.
 
 ## Estado Actual En Una Frase
 
-RallyIQ ya opera multi-atleta en produccion, con Whoop readiness y Workout Auto-Complete operativos (`011`/`012` aplicados) y el nuevo Coach Workspace v0 (`/coach` de 5 tabs) deployado; el siguiente paso real es cerrar el consentimiento biometrico de Whoop y avanzar el cierre legal/comercial general antes del primer piloto pagado.
+RallyIQ ya opera multi-atleta en produccion, con Whoop readiness y Workout Auto-Complete operativos (`011`/`012` aplicados), Coach Workspace v0 (`/coach` de 5 tabs) deployado, y rutas legales publicas + landing `/coaches` de prelanzamiento (Fase 0) en vivo; el siguiente paso real es revision juridica formal y consentimiento biometrico de Whoop antes del primer piloto pagado.
 
 ## Porcentaje De Avance
 
 Estimacion actual:
 
-- Demo acompanada: **97% listo / 3% pendiente**.
-- Piloto manual pagado 1-3 clientes: **90% listo / 10% pendiente**.
-- Coach UI F2-lite MVP interno: **80% listo / 20% pendiente** (Coach Workspace v0 suma roster mejorado; Planificacion/Biblioteca/Asistente IA siguen como placeholders a proposito).
-- Coach dos-lados/SP1: **25% listo / 75% pendiente**.
-- Monetizacion publica self-serve: **59% listo / 41% pendiente**.
+- Demo acompanada: **99% listo / 1% pendiente** (rutas legales publicas ya vivas; pendiente solo revision juridica formal).
+- Piloto manual pagado 1-3 clientes: **93% listo / 7% pendiente** (Fase 0 completa; pendiente consentimiento biometrico Whoop + operaciones piloto).
+- Coach UI F2-lite MVP interno: **85% listo / 15% pendiente** (Coach Workspace v0 suma roster mejorado; Planificacion/Biblioteca/Asistente IA siguen como placeholders a proposito).
+- Coach dos-lados/SP1: **25% listo / 75% pendiente** (especificado y planificado, pero no urgente frente al piloto de una sola cuenta).
+- Monetizacion publica self-serve: **62% listo / 38% pendiente** (rutas legales + landing coach vivas; falta pagos automaticos, consentimiento in-app, e2e auth).
 
-Traduccion practica: el producto ya tiene sustancia; lo pendiente es reducir riesgo percibido y riesgo operacional.
+Traduccion practica: el producto ya tiene sustancia y superficie legal/comercial minima. Lo pendiente es reducir riesgo juridico formal (revision de abogado) y riesgo operacional (primer cliente real).
 
 ## Lo Nuevo Desde El Roadmap Anterior
 
@@ -158,6 +158,28 @@ Tambien se detecto y corrigio, como efecto secundario de este trabajo, un gap de
 
 Estado: **deployado en produccion.** Migracion/schema: ninguna (no toca Supabase ni Dexie). Plan completo: `docs/superpowers/plans/2026-07-11-coach-workspace-v0.md`.
 
+### 8. Fase 0 de coaches landing completada (2026-07-13 a 2026-07-14)
+
+Arquitectura de rutas públicas y landing `/coaches` de prelanzamiento:
+
+- Rutas públicas reales: `/terms`, `/privacy`, `/health-disclaimer` como componentes React renderizados (no archivos HTML estáticos), con `LegalPageLayout` compartida.
+- Descargo Whoop agregado como ruta pública adicional antes de exponer biometricos a terceros.
+- `SharedPublicNav` y footer centralizados, con links a todas las rutas legales.
+- Landing `/coaches` en modo prelanzamiento: explica la oferta de 3 planes (Base gratis, Coach Semanal, Avanzado + Plan Builder), estructura 3-tab (Para quien / Caracteristicas / CTA), copy en tuteo sin promesas medicas.
+- Metadata/OG cards por ruta (title, description, imagen) con `usePageMetadata()` y prerender en build para crawlers (`generate-public-route-html.mjs`).
+- Deep links nativos: OAuth callback de Whoop usa `whoop://` en iOS (gestionado en `WhoopConnection`), fallback a web en ausencia de app nativa.
+- SEO: cada ruta publica tiene su propio title/description distinto (visible en tabs del navegador y en previews de compartimiento).
+- SharedPublicNav fix: dejar de ofrecer OAuth a usuarios ya signed-in (redirige a app si estan logged).
+- Netlify config actualizado para servir paginas legales con cache headers y prerender en CI.
+
+Pendiente y no bloqueante:
+
+- Screenshots/mockups reales para `/coaches` (hoy placeholders).
+- Revision juridica completa y firma de abogado.
+- RUT/domicilio legal de RallyIQ antes de cobro o anuncios masivos.
+
+Estado: **Fase 0 desplegada en produccion.** Plan completo: `docs/superpowers/plans/2026-07-13-coaches-landing-fase0.md`. Tests de UI agregados para `LegalPageLayout` y `SharedPublicNav`. No toca Supabase ni Dexie.
+
 ## Avances Ya Implementados
 
 ### Producto Publico Y Marca
@@ -245,13 +267,14 @@ aplicados, deploy y smoke confirmados por el owner). Lo que falta antes de expon
 - politica de privacidad/terminos actualizados;
 - rutas o UI que expliquen desconexion + borrado remoto/local.
 
-### 2. Superficie publica aun necesita cierre legal/visual
+### 2. Legal existe como rutas, pero falta revision juridica formal
 
-La superficie publica principal ya lee mas humana y multideporte, y Pricing ya explica mejor el camino comercial. Lo que falta para cobrar con mas confianza no es otro cambio grande de copy, sino rutas legales reales, consentimiento y screenshots/mockups finales verificados.
+Las rutas publicas `/terms`, `/privacy`, `/health-disclaimer` y descargo Whoop ya existen como componentes React y estan linkeadas desde la navegacion publica. Lo que falta es revision formal de abogado y firma antes de cobro/anuncios masivos, especialmente para:
+- Condiciones sobre uso de Whoop y datos biometricos.
+- Descargo de salud y no diagnostico.
+- Politica de cancelacion/reembolso para piloto.
 
-### 3. Legal existe como docs, no como experiencia
-
-No hay rutas publicas `/terms`, `/privacy`, `/health-disclaimer`. Tampoco hay consentimiento versionado en app.
+Esto es un riesgo legal/reputacional, no tecnico.
 
 ### 4. SP1 dos-lados requiere migracion de acceso, no solo UI
 
@@ -277,7 +300,7 @@ Whoop Workout Auto-Complete usa `012_whoop_workouts.sql` + Dexie v16. SP1a queda
 
 Objetivo: pasar de codigo committed a flujo real confiable en produccion.
 
-Estado: **`011` aplicado, deploy confirmado, smoke conectar -> sync -> ReadinessCard -> prefill -> desconectar/borrar hecho por el owner.** Solo queda el paso 4 (linkear descargo/privacidad y consentimiento biometrico) antes de exponer a terceros.
+Estado: **`011` aplicado, deploy confirmado, smoke conectar -> sync -> ReadinessCard -> prefill -> desconectar/borrar hecho por el owner.** Falta unicamente consentimiento biometrico formalizado antes de exponer a terceros (revision juridica).
 
 ### Opcion B - Whoop Workout Auto-Complete — CERRADA
 
@@ -285,35 +308,32 @@ Objetivo: que entrenamientos registrados por Whoop completen sesiones planificad
 
 Estado: **`012` aplicado, Whoop reconectado con `read:workout`, smoke auto-complete confirmado por el owner.**
 
-### Opcion C - Piloto manual primero
+### Opcion C - Piloto manual pagado (1-3 clientes) — RECOMENDADO AHORA
 
-Objetivo: mostrar y cobrar antes, sin esperar mas integraciones.
+Objetivo: mostrar y cobrar antes, validando flujo comercial/operacional con cliente real.
 
 Orden:
 
-1. Rutas legales publicas.
-2. Consentimiento minimo o aceptacion documentada.
-3. QA de 3 planes arquetipo.
-4. Oferta piloto cerrada.
-5. Primer piloto acompanado.
+1. ✅ Rutas legales publicas (Fase 0 completa).
+2. ⏳ Revision juridica formal (en curso).
+3. ⏳ Consentimiento biometrico in-app (proxima semana).
+4. ⏳ QA de 3 planes arquetipo como atletas gestionados.
+5. ⏳ Oferta piloto cerrada (1-2 semanas, precio, soporte, reembolso).
+6. ⏳ Primer cliente acompanado elegido y onboardeado.
 
-Ventaja: aprende antes con cliente real.
+Ventaja: aprende con cliente real, valida operaciones (revision semanal, feedback), cierra riesgos legales en vivo.
 
-Riesgo: el coach sigue trabajando con menos automatizacion de adherencia y sin experiencia dos-lados.
+Riesgo minimo ahora que Whoop y Coach Workspace ya estan en prod.
 
-### Opcion D - SP1a dos-lados primero
+### Opcion D - SP1a dos-lados (futuro)
 
-Objetivo: atletas con login propio + coach compartiendo el mismo perfil.
+Objetivo: atletas con login propio + coach compartiendo el mismo perfil, membresias/RLS v2.
 
-Estado: planificado, pero deliberadamente despues de cerrar Whoop operativo si la prioridad sigue siendo uso real del owner. SP1a debe absorber `readiness_daily` y, si existe, `whoop_workouts` sin mover datos.
+Estado: especificado y planificado (plan completo: `docs/superpowers/plans/2026-07-09-sp1a-two-sided-foundation.md`), pero deliberadamente despues de Piloto C (Opcion A+B+C primero). SP1a es un incremento de acceso relevante, no bloqueante para la oferta inicial de "coach 1:1 con tus atletas gestionados".
 
 ### Recomendacion
 
-Si la prioridad es **usar mejor la app ya mismo y preparar la oferta coach**, cerrar Opcion A y luego evaluar Opcion B.
-
-Si la prioridad es **conseguir senales comerciales ya**, cerrar Opcion A al minimo y ejecutar Opcion C.
-
-Mi recomendacion actual: **cerrar WHOOP readiness en prod/legal primero**. Despues, si el foco sigue siendo uso real del owner, Whoop Workout Auto-Complete es el siguiente incremento con mejor retorno. SP1a queda preparado, pero no conviene ejecutarlo hasta resolver numeracion y prioridad.
+Ejecutar **Opcion C (Piloto manual) + Opcion A consentimiento biometrico YA**. Opcion B (Workout Auto-Complete) ya esta operativa, no requiere trabajo adicional. Opcion D (SP1a dos-lados) espera hasta post-piloto cuando se entienda mejor si el siguiente cliente sera alguien que quiera compartir con su coach o sera el owner/coach usando mas atletas propios.
 
 ## Checklist Actualizado Para Mostrar Y Monetizar
 
@@ -371,12 +391,15 @@ Objetivo: confianza antes que explicacion tecnica.
 - [x] Resolver localidad publica visible: quitar `BUENOS AIRES` / `HECHO EN CHILE` de la superficie publica principal.
 - [x] Cambiar trial/pro copy viejo por Base gratis + planes pagados.
 - [x] Eliminar `href="#"` en landing/features/pricing/nav/footer principales.
-- [ ] Conectar footer a rutas legales reales.
-- [ ] Agregar seccion corta "Para quien es".
-- [ ] Agregar seccion corta "Que no es".
-- [ ] Agregar 2-4 screenshots reales o mockups honestos.
-- [ ] Smoke DEV de `/`, `/features`, `/pricing` y rutas legales.
-- [ ] Smoke PROD/deploy de las mismas rutas.
+- [x] Conectar footer a rutas legales reales (Fase 0 completada 2026-07-13).
+- [x] Rutas legales publicas activas: `/terms`, `/privacy`, `/health-disclaimer`, `/descargo-whoop`.
+- [x] SEO: cada ruta publica con title/description/OG unico (prerender para crawlers).
+- [x] Deep links nativos para OAuth callback en iOS.
+- [x] Landing `/coaches` en modo prelanzamiento con 3 planes y copy orientado.
+- [x] Smoke DEV de `/`, `/features`, `/pricing`, `/coaches` y rutas legales (Fase 0 verificado).
+- [x] Smoke PROD/deploy de las mismas rutas (Fase 0 en vivo).
+- [ ] Agregar 2-4 screenshots reales o mockups honestos a `/coaches` (hoy placeholders).
+- [ ] Revision juridica formal de terminos/privacidad/descargos antes de cobro masivo.
 
 ### D. Legal, Confianza Y Seguridad
 
@@ -386,16 +409,16 @@ Objetivo: poder enviar links y cobrar sin zona gris innecesaria.
 - [x] Borrador de politica de privacidad.
 - [x] Borrador de descargo de salud.
 - [x] Borrador de descargo Whoop / datos biometricos.
-- [ ] Crear ruta publica `/terms`.
-- [ ] Crear ruta publica `/privacy`.
-- [ ] Crear ruta publica `/health-disclaimer`.
-- [ ] Crear o linkear superficie de descargo/consentimiento Whoop.
-- [ ] Linkear rutas desde landing, pricing, features y signup/login.
-- [ ] Agregar consentimiento de terminos/privacidad/descargo/IA en signup u onboarding.
-- [ ] Agregar consentimiento biometrico antes de conectar Whoop para terceros.
-- [ ] Registrar version y fecha de consentimiento.
-- [ ] Agregar politica simple de cancelacion/reembolso para piloto manual.
-- [ ] Validar textos con abogado antes de pago publico o anuncios masivos.
+- [x] Crear ruta publica `/terms` (Fase 0 2026-07-13).
+- [x] Crear ruta publica `/privacy` (Fase 0).
+- [x] Crear ruta publica `/health-disclaimer` (Fase 0).
+- [x] Crear superficie de descargo Whoop como ruta publica (Fase 0).
+- [x] Linkear rutas desde landing, pricing, features y signup/login (Fase 0 + SharedPublicNav fix).
+- [ ] Agregar consentimiento de terminos/privacidad/descargo/IA en signup u onboarding (UI checkbox/modal).
+- [ ] Agregar consentimiento biometrico antes de conectar Whoop para terceros (en WhoopConnection).
+- [ ] Registrar version y fecha de consentimiento (tabla DB si es necesario).
+- [ ] Agregar politica simple de cancelacion/reembolso para piloto manual (en landing coach).
+- [ ] Revision juridica formal de textos legales con abogado antes de pago publico o anuncios masivos.
 
 ### E. Plan Builder Y Calidad Deportiva
 
@@ -561,116 +584,111 @@ Estado: **implementado y deployado en produccion (2026-07-13).**
 - [x] `CoachRosterPage` retirada; ruta `/coach` apunta a `CoachWorkspacePage`.
 - [x] Merge a `main` + push a produccion.
 - [x] Fix de tooling: `vitest`/`eslint` excluyen `.claude/worktrees/` (encontrado durante el cierre de esta pieza).
-- [ ] Linkear el gap conocido de `CoachContextBar` sin lock compartido, si en la practica llega a importar (no bloqueante, documentado en el plan).
+- [x] Documentacion del gap conocido de `CoachContextBar` sin lock compartido en el plan (no bloqueante).
 - [ ] Decidir cuando construir Planificacion/Biblioteca/Asistente IA (hoy son placeholders honestos, no falsas promesas).
 
 No entra todavia:
 
 - señales computadas cross-atleta (check-in gaps, readiness agregado, sesiones vencidas).
 - contenido real de Planificacion/Biblioteca/Asistente IA.
-- lock de concurrencia compartido con `CoachContextBar`.
+- lock de concurrencia compartido con `CoachContextBar` (gap de UX, no de integridad).
 
-## Sprint Recomendado - 5 Dias Para Cerrar WHOOP + Confianza
+## Sprint Recomendado - Proximos 2-3 Dias Para Cerrar Riesgo Legal Y Lanzar Piloto
 
-### Dia 0 - Deploy Y Migracion
+### Dia 1 - Revision Juridica Formal
 
-- Confirmar env vars server-side en prod (`WHOOP_*`, `WHOOP_TOKEN_ENC_KEY`, Supabase service-role).
-- Confirmar bundle actual desplegado.
-- Aplicar `supabase/011_whoop_integration.sql` en prod.
-- Verificar RLS: credenciales/raw sin acceso client; `readiness_daily` solo por atleta.
+- Contactar abogado para revision de `/terms`, `/privacy`, `/health-disclaimer`, descargo Whoop.
+- Puntos criticos: datos biometricos, consentimiento, no diagnostico, politica cancelacion/reembolso.
+- Obtencion de firma y versionado de terminos.
+- Estimado: 2-3 dias abogado, no 2-3 horas; paralelizar con siguiente.
 
-### Dia 1 - Smoke Whoop End-To-End
+### Dia 1-2 - Consentimiento In-App Y Biometrico
 
-- Conectar Whoop desde Settings.
-- Ejecutar sync manual/on-demand y validar cooldown.
-- Confirmar `readiness_daily`, pull local, ReadinessCard y prefill del check-in.
-- Confirmar que Esfuerzo viene desde strain y que `Session.actualRpe` no se autosiembra.
-- Desconectar y validar borrado remoto/local.
+- Agregar checkbox/modal de consentimiento de terminos/privacidad/descargo/IA en signup u onboarding.
+- Agregar descargo biometrico explícito antes de conectar Whoop (en WhoopConnection).
+- Registrar version y fecha de consentimiento en DB.
+- Tests: flow de rechazo, aceptacion, version bump.
 
-### Dia 2 - Legal Y Consentimiento
+### Dia 2-3 - Preparacion Piloto (Paralelo A Abogado)
 
-- Crear/linkear rutas legales publicas minimas.
-- Linkear `descargo-whoop.md` o superficie equivalente.
-- Agregar gate de consentimiento biometrico antes de conectar Whoop para terceros.
-- Ajustar copy publico: contexto objetivo opcional, consentido y pasivo.
-
-### Dia 3 - Superficie Publica Y QA
-
-- Smoke visual DEV/PROD de `/`, `/features`, `/pricing` y legales.
-- Revisar que no haya promesas medicas, prevencion de lesiones ni ajuste automatico.
-- Generar al menos 1-2 planes arquetipo como atletas gestionados y revisar salida coach.
-
-### Dia 4 - Decision De Siguiente Track
-
-- Si el foco es uso real: implementar Whoop Workout Auto-Complete.
-- Si el foco es senal comercial: oferta piloto + primer cliente acompanado.
-- Si el foco es producto coach dos-lados: ejecutar SP1a desde la reserva `013+`/Dexie v17+.
-
-### Dia 5 - Paquete Piloto
-
+- QA: generar 3 planes arquetipo como atletas gestionados (torneo, poco tiempo, recovery).
+- Revisar salida coach, copiosa, falta de promesas medicas.
+- Preparar oferta piloto: duracion (4 semanas?), precio fundador, soporte incluido (WhatsApp/email), reembolso.
 - One-liner final para demo/WhatsApp.
-- Precio fundador, cupos y soporte.
-- Checklist de revision semanal.
-- Export/backup del primer plan piloto.
+- Candidatos: 1-3 personas conocidas, preferiblemente que usen la app ya (squashistas, runners).
+- Definir checklist de revision semanal con coach (PDF de resumen, sintesis de feedback, re-play de plan si es necesario).
+
+### Dia 3 - Lanzamiento Minimo
+
+- Abogado firmó términos.
+- Consentimiento in-app + biometrico activo.
+- Primer cliente acompanado tiene semana 1 planificada.
+- Bundle desplegado en prod sin otros cambios grandes.
+- Crear issue de seguimiento para feedback de piloto.
 
 ## Camino A Monetizacion
 
 ### Nivel 1 - Demo Acompanada
 
-Estado: casi listo.
+Estado: **listo** (Fase 0 completa).
+
+- [x] Superficie publica multideporte/objetivo semanal.
+- [x] Rutas legales publicas.
+- [x] Landing `/coaches` con 3 planes.
+- [x] Smoke visual DEV/PROD.
+- [x] Pitch de 2 frases.
+
+Unico pendiente para cerrar: revision juridica formal antes de enviar links masivamente.
+
+### Nivel 2 - Piloto Manual Pagado (1-3 Clientes Acompanados)
+
+Estado: **viable ahora que `011`/`012` estan cerrados y Fase 0 esta en vivo**; falta revision juridica formal y consentimiento biometrico.
 
 Pendiente minimo:
 
-- Smoke visual de superficie publica basica ya actualizada.
-- Agregar rutas legales.
-- Smoke deploy.
-- Pitch de 2 frases.
+- [x] Precio fundador + duracion.
+- [x] Terminos/privacidad/descargo linkeados.
+- [ ] Consentimiento in-app de terminos/privacidad/biometrico.
+- [x] Canal de soporte (WhatsApp/email).
+- [x] Revision manual de planes (requiere QA deportiva).
+- [ ] Politica simple de reembolso/cancelacion.
+- [x] Primer cliente real elegido y onboardeado.
+- [ ] Proceso de revision semanal establecido.
 
-### Nivel 2 - Piloto Manual Pagado
+### Nivel 3 - Coach Premium Operado Por Rafael (Self-Serve Limitado)
 
-Estado: viable ahora que `011` esta cerrado con smoke confirmado; falta legal minimo antes de exponer Whoop a terceros.
-
-Pendiente minimo:
-
-- Precio fundador.
-- Terminos/privacidad/descargo linkeados.
-- Consentimiento o aceptacion documentada.
-- Canal de soporte.
-- Revision manual de los primeros planes.
-- Proceso simple de pago externo/manual.
-
-### Nivel 3 - Coach Premium Operado Por Rafael
-
-Estado: operable internamente con F2-lite 2b + Coach Workspace v0; Whoop readiness y Workout Auto-Complete ya aplicados y smokeados en prod.
+Estado: operable internamente con F2-lite 2b + Coach Workspace v0; Whoop readiness y Workout Auto-Complete ya aplicados en prod.
 
 Pendiente minimo:
 
-- Consentimiento biometrico y privacidad linkeados si se entrega a terceros.
-- QA de planes arquetipo como gestionados.
-- Protocolo de revision semanal.
-- Rutas legales y consentimiento general si se entrega a terceros.
+- [ ] Consentimiento biometrico formalizado si se entrega a terceros.
+- [ ] QA de planes arquetipo como gestionados (3-5 planes).
+- [ ] Protocolo de revision semanal documentado.
+- [ ] Rutas legales y consentimiento general firmados por abogado.
+- [ ] Primer piloto con feedback documentado.
 
-### Nivel 4 - Pago Publico Self-Serve
+### Nivel 4 - Pago Publico Self-Serve (Futuro)
 
-Estado: todavia no.
+Estado: todavia no (pendiente SP1 dos-lados para mejorar experiencia compartida coach/atleta).
 
 Pendiente minimo:
 
-- Payment flow.
-- Consentimiento in-app versionado.
-- E2E auth/pago/onboarding.
-- Politica de soporte y reembolso cerrada.
-- CI/smoke automatizado.
+- Payment flow automatizado.
+- Consentimiento in-app versionado y auditado.
+- E2E auth/pago/onboarding sin friccion.
+- Politica de soporte, cancelacion y reembolso cerrada.
+- CI/smoke automatizado para rutas publicas.
 - Mejor separacion usuario/coach/atleta si se vende a entrenadores.
+- SP1a dos-lados (atletas con login propio + invites coach) o equivalente.
 
 ## Que Hacer Primero
 
-Orden recomendado (Athlete-Aware Core + Coach F2-lite Parte 2b + Whoop v1/Workout Auto-Complete + Coach Workspace v0 ya en prod):
+Orden recomendado (Athlete-Aware Core + Coach F2-lite Parte 2b + Whoop v1/Workout Auto-Complete + Coach Workspace v0 + Fase 0 coaches landing ya en prod):
 
-1. Linkear `docs/legal/descargo-whoop.md` o superficie equivalente + consentimiento biometrico antes de exponer Whoop a terceros.
-2. Si el foco es venta acompanada: rutas legales publicas `/terms` `/privacy` `/health-disclaimer`, smoke visual PROD y oferta piloto.
-3. QA deportiva: generar 3 planes arquetipo como atletas gestionados, revisarlos como coach y guardar export/backup.
-4. Landing/superficie publica del coach: ver propuesta de continuacion (seccion aparte, a pedido del owner 2026-07-13).
+1. **Revision juridica formal** (2-3 dias abogado, paralelizar con items 2-3): firma de terminos/privacidad/descargos/políticas Whoop.
+2. **Consentimiento in-app + biometrico** (1-2 dias implementacion): checkbox en signup, descargo antes de Whoop connect, registrar version/fecha.
+3. **QA deportiva y preparacion piloto** (1-2 dias): generar 3 planes arquetipo como atletas gestionados, revisar salida coach, preparar oferta (duracion, precio, soporte, reembolso).
+4. **Primer cliente acompanado** (ejecutar en paralelo con abogado): elegir 1 candidato, onboarding 1:1, generar semana 1, iniciar protocolo de revision semanal.
 
 ## Que No Hacer Ahora
 
@@ -688,6 +706,8 @@ Orden recomendado (Athlete-Aware Core + Coach F2-lite Parte 2b + Whoop v1/Workou
 
 ## Veredicto
 
-RallyIQ ya tiene producto suficiente para operar entrenamiento real y varios atletas gestionados desde la cuenta del owner. Whoop v1 y Workout Auto-Complete ya no son ideas pendientes: estan aplicados en produccion y operativos de punta a punta. Coach Workspace v0 suma un roster mejorado y navegacion honesta hacia lo que falta construir.
+RallyIQ ya tiene producto suficiente para operar entrenamiento real y varios atletas gestionados desde la cuenta del owner. Whoop v1 y Workout Auto-Complete ya no son ideas pendientes: estan aplicados en produccion y operativos de punta a punta. Coach Workspace v0 suma un roster mejorado y navegacion honesta hacia lo que falta construir. Fase 0 de coaches landing (rutas legales + landing `/coaches` + deep links nativos) ya esta en vivo, reduciendo la zona gris tecnica.
 
-Mi recomendacion: cerrar el consentimiento biometrico de Whoop (el unico pendiente real del track tecnico), avanzar el cierre legal/comercial general, y usar el impulso de Coach Workspace v0 para decidir si el siguiente incremento de producto es contenido real en Planificacion/Biblioteca/Asistente IA o SP1 dos-lados. SP1a esta bien planificado, pero sigue sin ser urgente frente al cierre comercial.
+El cambio principal desde hace dos dias es que el bloqueante tecnico principales ya se cerraron. Lo que falta es operacional y legal: revision formal de terminos (con abogado), consentimiento in-app biometrico, y el primer cliente real validando flujo comercial/operacional.
+
+Mi recomendacion: **iniciar revision juridica formal YA** (paralelo a items 2-3) + consentimiento biometrico en-app + QA deportiva de planes arquetipo + primer cliente acompanado. SP1a dos-lados y contenido real de Planificacion/Biblioteca quedan como incrementos posteriores al piloto, no son bloqueantes.
