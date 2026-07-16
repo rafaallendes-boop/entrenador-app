@@ -254,6 +254,131 @@ describe('normalizeWhoop', () => {
     })
   })
 
+  it('keeps a completed cycle on its waking day when the user fell asleep after midnight', () => {
+    // Real-world incident (2026-07-16): WHOOP cycles run from sleep onset to the
+    // next sleep onset, so when the user falls asleep past local midnight the
+    // completed cycle's `end` lands on the NEXT calendar day. Anchoring by `end`
+    // shifted the whole Jul-15 cycle onto Jul-16, overwriting today's real data.
+    // Records arrive newest-first, like the WHOOP API returns them.
+    const raw = {
+      workouts: null,
+      recovery: [
+        {
+          cycle_id: 1016,
+          sleep_id: 'sleep-16',
+          created_at: '2026-07-16T11:30:00Z',
+          timezone_offset: '-04:00',
+          score_state: 'SCORED',
+          score: { recovery_score: 55, hrv_rmssd_milli: 48, resting_heart_rate: 60 },
+        },
+        {
+          cycle_id: 1015,
+          sleep_id: 'sleep-15',
+          created_at: '2026-07-15T12:00:00Z',
+          timezone_offset: '-04:00',
+          score_state: 'SCORED',
+          score: { recovery_score: 78, hrv_rmssd_milli: 60.24, resting_heart_rate: 55 },
+        },
+      ],
+      sleep: [
+        {
+          id: 'sleep-16',
+          cycle_id: 1016,
+          start: '2026-07-16T04:30:00Z',
+          end: '2026-07-16T11:00:00Z',
+          timezone_offset: '-04:00',
+          nap: false,
+          score_state: 'SCORED',
+          score: {
+            stage_summary: {
+              total_light_sleep_time_milli: 13_000_000,
+              total_slow_wave_sleep_time_milli: 6_200_000,
+              total_rem_sleep_time_milli: 4_200_000,
+            },
+            sleep_performance_percentage: 70,
+          },
+        },
+        {
+          id: 'sleep-15',
+          cycle_id: 1015,
+          start: '2026-07-15T04:30:00Z',
+          end: '2026-07-15T11:30:00Z',
+          timezone_offset: '-04:00',
+          nap: false,
+          score_state: 'SCORED',
+          score: {
+            stage_summary: {
+              total_light_sleep_time_milli: 14_000_000,
+              total_slow_wave_sleep_time_milli: 6_000_000,
+              total_rem_sleep_time_milli: 4_840_000,
+            },
+            sleep_performance_percentage: 82,
+          },
+        },
+      ],
+      cycles: [
+        {
+          // Current cycle: started at last night's 00:30 local sleep onset, no end yet.
+          id: 1016,
+          start: '2026-07-16T04:30:00Z',
+          created_at: '2026-07-16T04:30:00Z',
+          timezone_offset: '-04:00',
+          score_state: 'SCORED',
+          score: { strain: 3.2 },
+        },
+        {
+          // Yesterday's cycle: ends at the next sleep onset, 00:30 local on Jul 16.
+          id: 1015,
+          start: '2026-07-15T04:30:00Z',
+          end: '2026-07-16T04:30:00Z',
+          created_at: '2026-07-15T04:30:00Z',
+          timezone_offset: '-04:00',
+          score_state: 'SCORED',
+          score: { strain: 4.5 },
+        },
+      ],
+    }
+
+    const { readiness } = normalizeWhoop(raw)
+
+    expect(readiness.map((row) => row.date)).toEqual(['2026-07-15', '2026-07-16'])
+    expect(readiness[0]).toMatchObject({
+      date: '2026-07-15',
+      recoveryScore: 78,
+      strain: 4.5,
+      sleepHours: 6.9,
+      sleepPerformance: 82,
+    })
+    expect(readiness[1]).toMatchObject({
+      date: '2026-07-16',
+      recoveryScore: 55,
+      strain: 3.2,
+      sleepHours: 6.5,
+      sleepPerformance: 70,
+    })
+  })
+
+  it('anchors a completed cycle without sleep records to the waking day, not the next bedtime day', () => {
+    const raw = {
+      workouts: null,
+      recovery: [],
+      sleep: [],
+      cycles: [{
+        id: 1015,
+        start: '2026-07-15T04:30:00Z',
+        end: '2026-07-16T04:30:00Z',
+        timezone_offset: '-04:00',
+        score_state: 'SCORED',
+        score: { strain: 4.5 },
+      }],
+    }
+
+    const { readiness } = normalizeWhoop(raw)
+
+    expect(readiness).toHaveLength(1)
+    expect(readiness[0]).toMatchObject({ date: '2026-07-15', strain: 4.5 })
+  })
+
   it('ignores naps and uses staged sleep duration when available', () => {
     const raw = {
       workouts: null,

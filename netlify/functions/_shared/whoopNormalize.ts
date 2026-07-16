@@ -42,20 +42,28 @@ function parseTimezoneOffsetMs(value: unknown): number {
   return sign * ((hours * 60) + minutes) * 60_000
 }
 
-function dayOf(value: unknown, timezoneOffset?: unknown): string | null {
+function dayOf(value: unknown, timezoneOffset?: unknown, shiftMs = 0): string | null {
   const raw = stringValue(value)
   if (!raw) return null
   const ms = new Date(raw).getTime()
   if (!Number.isFinite(ms)) return null
-  return new Date(ms + parseTimezoneOffsetMs(timezoneOffset)).toISOString().slice(0, 10)
+  return new Date(ms + shiftMs + parseTimezoneOffsetMs(timezoneOffset)).toISOString().slice(0, 10)
 }
 
 function cycleIdOf(value: JsonObject): string | null {
   return value.cycle_id != null ? String(value.cycle_id) : null
 }
 
-function bestCycleDay(cycle: JsonObject): string | null {
-  return dayOf(cycle.end ?? cycle.created_at ?? cycle.start, cycle.timezone_offset)
+// A WHOOP cycle runs from sleep onset to the next sleep onset, so neither
+// boundary lands on the cycle's waking day when the user falls asleep past
+// local midnight. The reliable anchor is the wake time: the end of the main
+// sleep that opens the cycle. Cycles without sleep data in the window shift
+// the boundary toward the waking afternoon instead.
+const WAKE_SHIFT_MS = 6 * 3_600_000
+
+function fallbackCycleDay(cycle: JsonObject): string | null {
+  if (stringValue(cycle.end)) return dayOf(cycle.end, cycle.timezone_offset, -WAKE_SHIFT_MS)
+  return dayOf(cycle.created_at ?? cycle.start, cycle.timezone_offset, WAKE_SHIFT_MS)
 }
 
 function sleepMillis(stageSummary: JsonObject): number | null {
@@ -94,19 +102,42 @@ export function normalizeWhoop(raw: WhoopRaw): { readiness: ReadinessRow[]; read
   const byDay = new Map<string, ReadinessRow>()
   const readings: BiometricReadingRow[] = []
   const cycleDayById = new Map<string, string>()
+  const sleepDayById = new Map<string, string>()
+  const earliestSleepEndByCycle = new Map<string, number>()
+
+  for (const item of raw.sleep) {
+    const sleep = asObject(item)
+    if (bool(sleep.nap) === true) continue
+    const end = stringValue(sleep.end)
+    const day = dayOf(sleep.end, sleep.timezone_offset)
+    if (!end || !day) continue
+    const sleepId = sleep.id != null ? String(sleep.id) : null
+    if (sleepId) sleepDayById.set(sleepId, day)
+    const cycleId = cycleIdOf(sleep)
+    if (!cycleId) continue
+    const endMs = new Date(end).getTime()
+    const previousEndMs = earliestSleepEndByCycle.get(cycleId)
+    if (previousEndMs == null || endMs < previousEndMs) {
+      earliestSleepEndByCycle.set(cycleId, endMs)
+      cycleDayById.set(cycleId, day)
+    }
+  }
 
   for (const item of raw.cycles) {
     const cycle = asObject(item)
     const rawId = cycle.id != null ? String(cycle.id) : null
-    const date = bestCycleDay(cycle)
-    if (rawId && date) cycleDayById.set(rawId, date)
+    if (!rawId || cycleDayById.has(rawId)) continue
+    const date = fallbackCycleDay(cycle)
+    if (date) cycleDayById.set(rawId, date)
   }
 
   for (const item of raw.recovery) {
     const rec = asObject(item)
     const score = asObject(rec.score)
     const cycleId = cycleIdOf(rec)
+    const recSleepId = rec.sleep_id != null ? String(rec.sleep_id) : null
     const date = (cycleId ? cycleDayById.get(cycleId) : null)
+      ?? (recSleepId ? sleepDayById.get(recSleepId) : null)
       ?? dayOf(rec.created_at ?? rec.updated_at ?? rec.start ?? rec.end, rec.timezone_offset)
     if (!date) continue
 
@@ -181,7 +212,7 @@ export function normalizeWhoop(raw: WhoopRaw): { readiness: ReadinessRow[]; read
     const cycle = asObject(item)
     const score = asObject(cycle.score)
     const rawId = cycle.id != null ? String(cycle.id) : null
-    const date = (rawId ? cycleDayById.get(rawId) : null) ?? bestCycleDay(cycle)
+    const date = (rawId ? cycleDayById.get(rawId) : null) ?? fallbackCycleDay(cycle)
     if (!date) continue
 
     const scoreState = scoreStateOf(cycle)
