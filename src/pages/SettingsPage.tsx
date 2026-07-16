@@ -797,13 +797,49 @@ export default function SettingsPage() {
                       )}
                     </div>
                     <p className="mt-1 font-mono text-[10px] text-ink-faint break-all">{request.traceId}</p>
+                    {request.generationId && (
+                      <p className="mt-0.5 font-mono text-[10px] text-ink-faint break-all">
+                        Generacion: {request.generationId}{request.attempt != null ? ` · intento ${request.attempt}` : ''}
+                      </p>
+                    )}
                     <div className="mt-1 grid gap-1 sm:grid-cols-2">
                       <p>Superficie: <span className="text-ink">{request.surface}</span></p>
                       <p>Duracion: <span className="text-ink">{request.durationMs != null ? `${request.durationMs}ms` : 'pendiente'}</span></p>
+                      {request.serverDurationMs != null && (
+                        <p>Servidor total: <span className="text-ink">{request.serverDurationMs}ms</span></p>
+                      )}
+                      {request.authDurationMs != null && (
+                        <p>Auth: <span className="text-ink">{request.authDurationMs}ms</span></p>
+                      )}
+                      {request.endToEndDurationMs != null && (
+                        <p>Propuesta lista: <span className="text-ink">{request.endToEndDurationMs}ms</span></p>
+                      )}
                       <p>Retry backend/logico: <span className="text-ink">{request.retryUsed ? 'si' : 'no'}</span></p>
                       <p>Fallback: <span className="text-ink">{request.fallbackUsed ? 'si' : 'no'}</span></p>
                       {request.responseCharCount != null && (
                         <p>Respuesta: <span className="text-ink">{request.responseCharCount} chars</span></p>
+                      )}
+                      {request.inputCharCount != null && (
+                        <p>Entrada + schema: <span className="text-ink">{request.inputCharCount} chars</span></p>
+                      )}
+                      {request.promptTokens != null && (
+                        <p>Tokens entrada no cache: <span className="text-ink">{request.promptTokens}</span></p>
+                      )}
+                      {request.cacheReadInputTokens != null && (
+                        <p>Tokens entrada cache: <span className="text-ink">{request.cacheReadInputTokens}</span></p>
+                      )}
+                      {request.completionTokens != null && (
+                        <p>Tokens salida: <span className="text-ink">{request.completionTokens}</span></p>
+                      )}
+                      {request.reasoningTokens != null && (
+                        <p>Tokens reasoning: <span className="text-ink">{request.reasoningTokens}</span></p>
+                      )}
+                      {request.repairStats && (
+                        <p>
+                          Repair: <span className="text-ink">
+                            {request.repairStats.repairedSessionCount} sesiones · {request.repairStats.codes.join(', ') || 'sin cambios'}
+                          </span>
+                        </p>
                       )}
                       {request.actionCount != null && (
                         <p>Acciones: <span className="text-ink">{request.actionCount}</span></p>

@@ -1,5 +1,6 @@
 import type {
   AITechnicalSurface,
+  AITechnicalResult,
   AthleteProfile,
   ChatContext,
   CoachAction,
@@ -16,8 +17,8 @@ import type {
   TimeBlock,
 } from '../../types'
 import type { TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
-import type { CoachNormalizedResponse } from '../ai/types'
-import { buildAITraceId, getAIRequestPolicy } from '../ai/requestPolicy'
+import type { AIProvider, AIRawResponse, CoachNormalizedResponse } from '../ai/types'
+import { buildAIGenerationId, buildAITraceId, getAIRequestPolicy } from '../ai/requestPolicy'
 import { normalizeResponse } from '../ai/responseNormalizer'
 import { getProviderForRequestClass } from '../ai/providerResolver'
 import { useAIDebugStore } from '../../store/useAIDebugStore'
@@ -26,12 +27,14 @@ import { buildWeekCreatorPrompt, summarizeWeekCreatorAction } from './WeekCreato
 import { validateWeekCreatorResponse } from './validateWeekCreatorResponse'
 import { resolveWeekCreatorConfig, type WeekCreatorEffectiveConfig, withRequestedSessionsPerWeek } from './WeekCreatorConfig'
 import { buildWeekRetryInstruction, isStrictISODate } from '../week/shared'
-import { repairGeneratedWeek } from '../planBuilder/repairWeek'
+import { repairGeneratedWeek, type RepairMeta } from '../planBuilder/repairWeek'
 import { WEEK_CREATOR_RESPONSE_SCHEMA } from './weekCreatorResponseSchema'
 import { enhanceStrengthSessionExercises } from '../training/strengthSessionStructure'
 import { todayISO } from '../../utils/date'
 import { applyWeekCreatorDateWindowToConfig, resolveWeekCreatorDateWindow } from './WeekCreatorDateWindow'
 import { db } from '../../db/db'
+
+const WEEK_CREATOR_RESPONSE_SCHEMA_CHAR_COUNT = JSON.stringify(WEEK_CREATOR_RESPONSE_SCHEMA).length
 
 /**
  * Objetivos de la semana objetivo cuando existe un plan activo que la cubre.
@@ -76,7 +79,21 @@ type WeekCreatorOptions = {
   signal?: AbortSignal
   /** Override de objetivos semanales; si falta, se resuelven desde el plan activo en Dexie. */
   weekObjectives?: string[]
+  /** Inyección interna para tests y load tests que deben ejecutar el engine completo. */
+  provider?: AIProvider
+  /** ID estable opcional para correlacionar una generación controlada. */
+  generationId?: string
 }
+
+type WeekCreatorCohort = Pick<
+  AITechnicalResult,
+  | 'expectedSessionCount'
+  | 'trainingDayCount'
+  | 'allowedSportCount'
+  | 'doubleSessionAllowed'
+  | 'partialWeek'
+  | 'activeRestrictionsPresent'
+>
 
 type WeekCreatorFallbackReason =
   | 'missing_create_week'
@@ -116,6 +133,7 @@ export const WeekCreatorEngine = {
     context: ChatContext,
     options: WeekCreatorOptions,
   ): Promise<CoachNormalizedResponse> {
+    const generationId = options.generationId ?? buildAIGenerationId('week_creator')
     const baseConfig = withRequestedSessionsPerWeek(
       resolveWeekCreatorConfig(context.athleteProfile),
       userMessage,
@@ -129,6 +147,7 @@ export const WeekCreatorEngine = {
         model: 'none',
         timestamp: Date.now(),
         traceId: buildAITraceId('week_creator'),
+        generationId,
         requestClass: 'week_creator',
         durationMs: 0,
         retryUsed: false,
@@ -145,6 +164,7 @@ export const WeekCreatorEngine = {
         model: 'none',
         timestamp: Date.now(),
         traceId: buildAITraceId('week_creator'),
+        generationId,
         requestClass: 'week_creator',
         durationMs: 0,
         retryUsed: false,
@@ -158,9 +178,10 @@ export const WeekCreatorEngine = {
     const weekObjectives = options.weekObjectives
       ?? await resolveActivePlanWeekObjectives(options.targetWeekStart, context.athleteProfile?.id)
 
-    const provider = getProviderForRequestClass('week_creator')
+    const provider = options.provider ?? getProviderForRequestClass('week_creator')
     const policy = getAIRequestPolicy('week_creator')
     const surface = options.surface ?? 'chat'
+    const cohort = buildWeekCreatorCohort(context, config, options.targetWeekStart, dateWindow.planningStartDate)
     let lastFailure: {
       provider?: CoachNormalizedResponse['provider']
       model?: string
@@ -179,11 +200,16 @@ export const WeekCreatorEngine = {
       const traceId = buildAITraceId('week_creator')
       const tracker = createStageTracker(traceId, 'week_creator')
       let outcome: CoachOutcome = 'error'
+      let raw: AIRawResponse | undefined
       useAIDebugStore.getState().startRequest({
         traceId,
+        generationId,
+        attempt,
         requestClass: 'week_creator',
         surface,
         startedAt: Date.now(),
+        maxTokens: policy.maxTokens,
+        ...cohort,
       })
 
       try {
@@ -200,21 +226,33 @@ export const WeekCreatorEngine = {
           weekObjectives,
         })
         promptStage.end({ ok: true })
+        useAIDebugStore.getState().updateRequest(traceId, {
+          systemPromptCharCount: prompt.systemPrompt.length,
+          userPromptCharCount: prompt.userPrompt.length,
+          responseSchemaCharCount: WEEK_CREATOR_RESPONSE_SCHEMA_CHAR_COUNT,
+          inputCharCount: prompt.systemPrompt.length + prompt.userPrompt.length + WEEK_CREATOR_RESPONSE_SCHEMA_CHAR_COUNT,
+        })
 
         const providerStage = tracker.stage('provider_call')
-        const raw = await provider.call({
-          systemPrompt: prompt.systemPrompt,
-          userMessage: prompt.userPrompt,
-          requestClass: 'week_creator',
-          traceId,
-          maxTokens: policy.maxTokens,
-          temperature: Math.min(policy.temperature, 0.15),
-          responseMimeType: 'application/json',
-          responseSchema: WEEK_CREATOR_RESPONSE_SCHEMA,
-          allowFallback: policy.allowFallback,
-          signal: options.signal,
-        })
-        providerStage.end({ ok: true })
+        try {
+          raw = await provider.call({
+            systemPrompt: prompt.systemPrompt,
+            userMessage: prompt.userPrompt,
+            requestClass: 'week_creator',
+            traceId,
+            generationId,
+            maxTokens: policy.maxTokens,
+            temperature: Math.min(policy.temperature, 0.15),
+            responseMimeType: 'application/json',
+            responseSchema: WEEK_CREATOR_RESPONSE_SCHEMA,
+            allowFallback: policy.allowFallback,
+            signal: options.signal,
+          })
+          providerStage.end({ ok: true })
+        } catch (error) {
+          providerStage.end({ ok: false, error: error instanceof Error ? error.message : String(error) })
+          throw error
+        }
 
         const normalizeStage = tracker.stage('normalize')
         const normalized = normalizeResponse(raw)
@@ -250,14 +288,12 @@ export const WeekCreatorEngine = {
             warnings: failure.warnings,
           }
           useAIDebugStore.getState().failRequest(traceId, {
-            provider: repaired.provider,
-            model: repaired.model,
-            durationMs: repaired.durationMs,
-            retryUsed: repaired.retryUsed,
-            fallbackUsed: repaired.fallbackUsed,
             errorCode: failure.reason,
             outcome: failure.outcome,
             warnings: failure.warnings,
+            ...buildRawTelemetry(raw),
+            stageTimings: tracker.timings(),
+            repairStats: buildRepairStats(repaired.repairMeta),
           })
           if (typeof console !== 'undefined' && typeof console.warn === 'function') {
             console.warn('[WeekCreatorEngine] validation failed', {
@@ -266,16 +302,14 @@ export const WeekCreatorEngine = {
               error: validation.error,
             })
           }
-          tracker.flush(outcome, { attempt, fallbackReason: failure.reason, validationError: failure.error })
+          tracker.flush(outcome, { generationId, attempt, fallbackReason: failure.reason, validationError: failure.error })
           continue
         }
 
         useAIDebugStore.getState().completeRequest(traceId, {
-          provider: repaired.provider,
-          model: repaired.model,
-          durationMs: repaired.durationMs,
-          retryUsed: repaired.retryUsed,
-          fallbackUsed: repaired.fallbackUsed,
+          ...buildRawTelemetry(raw),
+          stageTimings: tracker.timings(),
+          repairStats: buildRepairStats(repaired.repairMeta),
         })
 
         const action = validation.action
@@ -292,9 +326,10 @@ export const WeekCreatorEngine = {
           : message
 
         outcome = 'ok'
-        tracker.flush(outcome, { attempt })
+        tracker.flush(outcome, { generationId, attempt })
         return {
           ...repaired,
+          generationId,
           actions: [action],
           message: messageWithWarning,
           requestClass: 'week_creator',
@@ -312,8 +347,10 @@ export const WeekCreatorEngine = {
             provider: provider.name,
             errorCode: 'aborted',
             warnings: ['week_creator_aborted'],
+            ...buildRawTelemetry(raw),
+            stageTimings: tracker.timings(),
           })
-          tracker.flush(outcome, { attempt, aborted: true })
+          tracker.flush(outcome, { generationId, attempt, aborted: true })
           throw error instanceof Error ? error : new Error(String(error))
         }
         lastFailure = {
@@ -328,8 +365,10 @@ export const WeekCreatorEngine = {
           provider: provider.name,
           errorCode: 'provider_error',
           warnings: lastFailure.warnings,
+          ...buildRawTelemetry(raw),
+          stageTimings: tracker.timings(),
         })
-        tracker.flush(outcome, { attempt, error: lastFailure.error })
+        tracker.flush(outcome, { generationId, attempt, error: lastFailure.error })
       }
     }
 
@@ -346,6 +385,20 @@ export const WeekCreatorEngine = {
         error: lastFailure?.error,
       })
     }
+    const fallbackTraceId = buildAITraceId('week_creator')
+    const fallbackStartedAt = Date.now()
+    const fallbackTracker = createStageTracker(fallbackTraceId, 'week_creator')
+    useAIDebugStore.getState().startRequest({
+      traceId: fallbackTraceId,
+      generationId,
+      attempt: MAX_ATTEMPTS + 1,
+      requestClass: 'week_creator',
+      surface,
+      startedAt: fallbackStartedAt,
+      maxTokens: policy.maxTokens,
+      ...cohort,
+    })
+    const fallbackStage = fallbackTracker.stage('fallback')
     const fallback = buildDeterministicWeekCreatorResponse({
       config,
       targetWeekStart: options.targetWeekStart,
@@ -353,7 +406,10 @@ export const WeekCreatorEngine = {
       profile: context.athleteProfile ?? undefined,
       provider: lastFailure?.provider,
       error: failureMessage,
+      traceId: fallbackTraceId,
     })
+    fallbackStage.end({ ok: true })
+    const fallbackValidateStage = fallbackTracker.stage('validate')
     const fallbackValidation = validateWeekCreatorResponse({
       response: fallback,
       context,
@@ -361,19 +417,30 @@ export const WeekCreatorEngine = {
       targetWeekStart: options.targetWeekStart,
       planningStartDate: dateWindow.planningStartDate,
     })
+    fallbackValidateStage.end({
+      ok: fallbackValidation.ok && fallbackValidation.action != null,
+      error: fallbackValidation.ok ? undefined : fallbackValidation.error,
+    })
     if (!fallbackValidation.ok || !fallbackValidation.action) {
+      useAIDebugStore.getState().failRequest(fallbackTraceId, {
+        provider: fallback.provider,
+        model: fallback.model,
+        durationMs: Date.now() - fallbackStartedAt,
+        retryUsed: true,
+        fallbackUsed: true,
+        errorCode: 'fallback_invalid',
+        outcome: 'schema_invalid',
+        warnings: [buildWeekCreatorFallbackWarning(MAX_ATTEMPTS)],
+        stageTimings: fallbackTracker.timings(),
+      })
+      fallbackTracker.flush('invalid_schema', { generationId, attempt: MAX_ATTEMPTS + 1 })
       throw new Error(`${failureMessage} (trace ${failureTraceId})`)
     }
-    useAIDebugStore.getState().startRequest({
-      traceId: fallback.traceId,
-      requestClass: 'week_creator',
-      surface,
-      startedAt: Date.now(),
-    })
+    const fallbackDurationMs = Date.now() - fallbackStartedAt
     useAIDebugStore.getState().completeRequest(fallback.traceId, {
       provider: fallback.provider,
       model: fallback.model,
-      durationMs: 0,
+      durationMs: fallbackDurationMs,
       retryUsed: true,
       fallbackUsed: true,
       errorCode: lastFailure?.fallbackReason,
@@ -382,15 +449,38 @@ export const WeekCreatorEngine = {
         buildWeekCreatorFallbackWarning(MAX_ATTEMPTS),
         ...(lastFailure?.warnings ?? []),
       ],
+      stageTimings: fallbackTracker.timings(),
     })
+    fallbackTracker.flush('ok', { generationId, attempt: MAX_ATTEMPTS + 1, fallbackUsed: true })
     return {
       ...fallback,
+      durationMs: fallbackDurationMs,
+      generationId,
       actions: [fallbackValidation.action],
       retryUsed: true,
       fallbackUsed: true,
       message: buildWeekCreatorFallbackMessage(fallbackValidation.action),
     }
   },
+}
+
+function buildWeekCreatorCohort(
+  context: ChatContext,
+  config: WeekCreatorEffectiveConfig,
+  targetWeekStart: string,
+  planningStartDate: string,
+): WeekCreatorCohort {
+  return {
+    expectedSessionCount: config.sessionsPerWeek,
+    trainingDayCount: config.trainingDays.length,
+    allowedSportCount: config.allowedSports.length,
+    doubleSessionAllowed: config.allowDoubleSession,
+    partialWeek: planningStartDate > targetWeekStart,
+    activeRestrictionsPresent: Boolean(
+      context.athleteProfile?.recoveryProfile?.restrictions?.trim()
+      || config.injuryNotes?.trim(),
+    ),
+  }
 }
 
 function isAbortError(error: unknown, signal?: AbortSignal): boolean {
@@ -457,9 +547,10 @@ function buildWeekCreatorFallbackWarning(attempts: number): string {
 
 type RepairedWeekCreatorResponse = CoachNormalizedResponse & {
   repairWarnings: string[]
+  repairMeta?: RepairMeta
 }
 
-function repairWeekCreatorResponse(
+export function repairWeekCreatorResponse(
   response: CoachNormalizedResponse,
   context: ChatContext,
   config: WeekCreatorEffectiveConfig,
@@ -492,7 +583,7 @@ function repairWeekCreatorResponse(
     && repairResult.meta.filteredSportCount === 0
     && !finalizedChanged
   ) {
-    return { ...response, repairWarnings: [] }
+    return { ...response, repairWarnings: [], repairMeta: repairResult.meta }
   }
 
   const repairedAction: CoachAction = {
@@ -512,6 +603,39 @@ function repairWeekCreatorResponse(
     ...response,
     actions: repairedActions,
     repairWarnings,
+    repairMeta: repairResult.meta,
+  }
+}
+
+function buildRawTelemetry(raw: AIRawResponse | undefined): Partial<AITechnicalResult> {
+  if (!raw) return {}
+  return {
+    provider: raw.provider,
+    model: raw.model,
+    durationMs: raw.durationMs,
+    retryUsed: raw.retryUsed,
+    fallbackUsed: raw.fallbackUsed,
+    responseCharCount: raw.text.length,
+    finishReason: raw.finishReason,
+    promptTokens: raw.promptTokens,
+    completionTokens: raw.completionTokens,
+    reasoningTokens: raw.reasoningTokens,
+    cacheCreationInputTokens: raw.cacheCreationInputTokens,
+    cacheReadInputTokens: raw.cacheReadInputTokens,
+    serverDurationMs: raw.serverDurationMs,
+    authDurationMs: raw.authDurationMs,
+  }
+}
+
+function buildRepairStats(meta: RepairMeta | undefined): AITechnicalResult['repairStats'] {
+  if (!meta) return undefined
+  return {
+    repairedSessionCount: meta.repairedSessionCount,
+    movedSessionCount: meta.movedSessionCount,
+    addedFallbackCount: meta.addedFallbackCount,
+    droppedSessionCount: meta.droppedSessionCount,
+    filteredSportCount: meta.filteredSportCount,
+    codes: [...new Set(meta.warnings.map((warning) => warning.code))],
   }
 }
 
@@ -735,6 +859,7 @@ function buildDeterministicWeekCreatorResponse(input: {
   profile?: AthleteProfile
   provider?: CoachNormalizedResponse['provider']
   error?: string
+  traceId?: string
 }): CoachNormalizedResponse {
   const action: CoachAction = {
     type: 'create_week',
@@ -755,7 +880,7 @@ function buildDeterministicWeekCreatorResponse(input: {
     model: 'local-week-fallback',
     timestamp: Date.now(),
     durationMs: 0,
-    traceId: buildAITraceId('week_creator'),
+    traceId: input.traceId ?? buildAITraceId('week_creator'),
     requestClass: 'week_creator',
     retryUsed: true,
     fallbackUsed: true,

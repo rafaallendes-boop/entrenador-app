@@ -60,3 +60,7 @@ export function getAIRequestPolicy(requestClass: AIRequestClass): AIRequestPolic
 export function buildAITraceId(requestClass: AIRequestClass): string {
   return `${requestClass}-${uuid()}`
 }
+
+export function buildAIGenerationId(requestClass: AIRequestClass): string {
+  return `${requestClass}-generation-${uuid()}`
+}

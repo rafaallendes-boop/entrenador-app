@@ -148,6 +148,7 @@ export class OpenAIProvider implements AIProvider {
         prompt_tokens?: number
         completion_tokens?: number
         prompt_tokens_details?: { cached_tokens?: number }
+        completion_tokens_details?: { reasoning_tokens?: number }
       }
     }
     const text = data.choices[0]?.message?.content ?? ''
@@ -200,6 +201,7 @@ export class OpenAIProvider implements AIProvider {
     let finishReason: string | undefined
     let promptTokens: number | undefined
     let completionTokens: number | undefined
+    let reasoningTokens: number | undefined
     let cacheReadInputTokens: number | undefined
 
     while (true) {
@@ -221,6 +223,7 @@ export class OpenAIProvider implements AIProvider {
               prompt_tokens?: number
               completion_tokens?: number
               prompt_tokens_details?: { cached_tokens?: number }
+              completion_tokens_details?: { reasoning_tokens?: number }
             }
           }
           const chunk = event.choices?.[0]?.delta?.content ?? ''
@@ -229,6 +232,7 @@ export class OpenAIProvider implements AIProvider {
           const usage = mapOpenAIUsage(event.usage)
           promptTokens = usage.promptTokens ?? promptTokens
           completionTokens = usage.completionTokens ?? completionTokens
+          reasoningTokens = usage.reasoningTokens ?? reasoningTokens
           cacheReadInputTokens = usage.cacheReadInputTokens ?? cacheReadInputTokens
         } catch { /* skip malformed SSE line */ }
       }
@@ -246,6 +250,7 @@ export class OpenAIProvider implements AIProvider {
       finishReason,
       promptTokens,
       completionTokens,
+      reasoningTokens,
       cacheReadInputTokens,
     }
   }

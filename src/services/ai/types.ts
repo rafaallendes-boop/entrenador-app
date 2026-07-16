@@ -31,6 +31,7 @@ export interface AIRequest {
   conversation?: AIConversationMessage[]
   requestClass: AIRequestClass
   traceId: string
+  generationId?: string
   maxTokens?: number
   temperature?: number
   responseMimeType?: 'application/json'
@@ -57,6 +58,7 @@ export interface AIRawResponse {
   raw?: unknown        // full API response, available for debugging
   durationMs?: number
   traceId?: string
+  generationId?: string
   requestClass?: AIRequestClass
   retryUsed?: boolean
   fallbackUsed?: boolean
@@ -69,8 +71,12 @@ export interface AIRawResponse {
   /** Provider-reported usage. These counts never contain prompt/response text. */
   promptTokens?: number
   completionTokens?: number
+  reasoningTokens?: number
   cacheCreationInputTokens?: number
   cacheReadInputTokens?: number
+  /** Total server request time, including auth and proxy overhead. */
+  serverDurationMs?: number
+  authDurationMs?: number
 }
 
 export interface CreateWeekNormalizationDiagnostic {
@@ -98,9 +104,18 @@ export interface CoachNormalizedResponse {
   timestamp: number
   durationMs?: number
   traceId: string
+  generationId?: string
   requestClass: AIRequestClass
   retryUsed?: boolean
   fallbackUsed?: boolean
+  finishReason?: string
+  promptTokens?: number
+  completionTokens?: number
+  reasoningTokens?: number
+  cacheCreationInputTokens?: number
+  cacheReadInputTokens?: number
+  serverDurationMs?: number
+  authDurationMs?: number
   /** ID of the CoachProposal created from actions, if any */
   proposalId?: string
   meta?: {

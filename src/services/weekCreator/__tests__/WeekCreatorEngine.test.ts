@@ -657,7 +657,7 @@ describe('WeekCreatorEngine', () => {
   })
 
   it('generates a base week when profile has schedule context', async () => {
-    mockProviderCall.mockImplementation(async (request: { requestClass: string; traceId: string }) => ({
+    mockProviderCall.mockImplementation(async (request: { requestClass: string; traceId: string; generationId?: string }) => ({
       text: '<actions>' + JSON.stringify([
         {
           type: 'create_week',
@@ -709,7 +709,16 @@ describe('WeekCreatorEngine', () => {
       provider: 'mock',
       model: 'mock-week-creator',
       traceId: request.traceId,
+      generationId: request.generationId,
       requestClass: request.requestClass,
+      durationMs: 4200,
+      serverDurationMs: 4350,
+      authDurationMs: 90,
+      promptTokens: 2800,
+      completionTokens: 900,
+      reasoningTokens: 220,
+      cacheReadInputTokens: 120,
+      finishReason: 'stop',
     }))
 
     const context: ChatContext = {
@@ -736,6 +745,35 @@ describe('WeekCreatorEngine', () => {
     expect(response.message).toContain('3 sesiones')
     expect(response.message).not.toContain('deportes permitidos')
     expect(response.requestClass).toBe('week_creator')
+    expect(response.generationId).toMatch(/^week_creator-generation-/)
+    expect(mockProviderCall.mock.calls[0][0]).toMatchObject({
+      generationId: response.generationId,
+      responseMimeType: 'application/json',
+    })
+    const debugRequest = useAIDebugStore.getState().requests.find((request) => request.traceId === response.traceId)
+    expect(debugRequest).toMatchObject({
+      generationId: response.generationId,
+      attempt: 1,
+      status: 'completed',
+      durationMs: 4200,
+      serverDurationMs: 4350,
+      authDurationMs: 90,
+      promptTokens: 2800,
+      completionTokens: 900,
+      reasoningTokens: 220,
+      cacheReadInputTokens: 120,
+      finishReason: 'stop',
+      expectedSessionCount: 3,
+    })
+    expect(debugRequest?.inputCharCount).toBeGreaterThan(0)
+    expect(debugRequest?.responseSchemaCharCount).toBeGreaterThan(0)
+    expect(debugRequest?.stageTimings?.map((stage) => stage.stage)).toEqual([
+      'prompt_build',
+      'provider_call',
+      'normalize',
+      'repair',
+      'validate',
+    ])
   })
 
   it('accepts a schema-mode raw JSON create_week response without actions markup', async () => {
@@ -1331,6 +1369,9 @@ describe('WeekCreatorEngine', () => {
     )
 
     expect(mockProviderCall).toHaveBeenCalledTimes(2)
+    const providerGenerationIds = mockProviderCall.mock.calls.map(([request]) => request.generationId)
+    expect(new Set(providerGenerationIds).size).toBe(1)
+    expect(providerGenerationIds[0]).toMatch(/^week_creator-generation-/)
     expect(response.fallbackUsed).toBe(true)
     expect(response.actions?.[0]).toMatchObject({
       type: 'create_week',
@@ -1349,6 +1390,7 @@ describe('WeekCreatorEngine', () => {
     expect(response.actions?.[0].reason).not.toContain('provider')
 
     const requests = useAIDebugStore.getState().requests
+    expect(requests.filter((request) => request.generationId === providerGenerationIds[0])).toHaveLength(3)
     expect(requests.some((request) =>
       request.status === 'failed' &&
       request.errorCode === 'missing_create_week' &&
@@ -1366,7 +1408,18 @@ describe('WeekCreatorEngine', () => {
       fallbackUsed: true,
       errorCode: 'missing_create_week',
       outcome: 'schema_invalid',
+      expectedSessionCount: 5,
+      trainingDayCount: 5,
+      allowedSportCount: 3,
+      doubleSessionAllowed: false,
+      partialWeek: false,
+      activeRestrictionsPresent: false,
     })
+    expect(requests[0].stageTimings?.map((stage) => stage.stage)).toEqual([
+      'fallback',
+      'validate',
+    ])
+    expect(requests[0].responseCharCount).toBeUndefined()
   })
 
   it('does not stack duplicate squash sessions on the same day in six-session fallback weeks', async () => {

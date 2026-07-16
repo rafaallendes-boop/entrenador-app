@@ -13,6 +13,7 @@ import { getAIRequestPolicy } from '../ai/requestPolicy'
 import {
   buildClaudeBody,
   buildOpenAIBody,
+  handler,
   mapGeminiUsage,
   mapOpenAIUsage,
   parseClaudeStreamEvent,
@@ -25,6 +26,99 @@ import {
   tryDeterministicBypass,
   type ConversationMessage,
 } from '../../../netlify/functions/coach'
+
+describe('streaming coach telemetry', () => {
+  const managedKeys = [
+    'AI_PROVIDER_CHAT_GENERAL',
+    'OPENAI_API_KEY',
+    'OPENAI_MODEL_CHAT_GENERAL',
+    'SUPABASE_URL',
+    'SUPABASE_ANON_KEY',
+  ]
+  let snapshot: Record<string, string | undefined>
+
+  beforeEach(() => {
+    snapshot = {}
+    for (const key of managedKeys) snapshot[key] = process.env[key]
+    process.env.AI_PROVIDER_CHAT_GENERAL = 'openai'
+    process.env.OPENAI_API_KEY = 'test-key'
+    process.env.OPENAI_MODEL_CHAT_GENERAL = 'gpt-5-mini'
+    process.env.SUPABASE_URL = 'https://supabase.test'
+    process.env.SUPABASE_ANON_KEY = 'anon-key'
+  })
+
+  afterEach(() => {
+    for (const key of managedKeys) {
+      const value = snapshot[key]
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+  })
+
+  it('emits request completion telemetry and timing fields in the done event', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ id: 'user-1' }), { status: 200 }))
+      .mockResolvedValueOnce(new Response([
+        'data: {"choices":[{"delta":{"content":"Respuesta final"}}]}',
+        '',
+        'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":120,"completion_tokens":30,"completion_tokens_details":{"reasoning_tokens":10}}}',
+        '',
+        'data: [DONE]',
+        '',
+      ].join('\n'), { status: 200, headers: { 'Content-Type': 'text/event-stream' } }))
+    vi.stubGlobal('fetch', fetchMock)
+    const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => undefined)
+
+    const invoke = handler as unknown as (event: {
+      httpMethod: string
+      headers: Record<string, string>
+      body: string
+    }) => Promise<{ body: ReadableStream<Uint8Array> }>
+    const response = await invoke({
+      httpMethod: 'POST',
+      headers: { authorization: 'Bearer test-token' },
+      body: JSON.stringify({
+        systemPrompt: 'Sistema',
+        userMessage: 'Hola',
+        requestClass: 'chat_general',
+        traceId: 'trace-stream-1',
+        generationId: 'generation-stream-1',
+        maxTokens: 100,
+        stream: true,
+      }),
+    })
+    const body = await new Response(response.body).text()
+    const events = body.trim().split('\n').map((line) => JSON.parse(line) as Record<string, unknown>)
+    const done = events.find((event) => event.type === 'done')
+    const completedLogs = infoSpy.mock.calls
+      .map(([entry]) => typeof entry === 'string' ? JSON.parse(entry) as Record<string, unknown> : null)
+      .filter((entry) => entry?.event === 'coach.request.completed')
+
+    expect(done).toMatchObject({
+      type: 'done',
+      traceId: 'trace-stream-1',
+      generationId: 'generation-stream-1',
+      provider: 'openai',
+      model: 'gpt-5-mini',
+      promptTokens: 120,
+      completionTokens: 30,
+      reasoningTokens: 10,
+    })
+    expect(done?.authDurationMs).toEqual(expect.any(Number))
+    expect(done?.serverDurationMs).toEqual(expect.any(Number))
+    expect(completedLogs).toHaveLength(1)
+    expect(completedLogs[0]).toMatchObject({
+      traceId: 'trace-stream-1',
+      requestClass: 'chat_general',
+      outcome: 'ok',
+      provider: 'openai',
+      model: 'gpt-5-mini',
+      responseCharCount: 'Respuesta final'.length,
+    })
+  })
+})
 
 describe('trimConversationHistory', () => {
   it('returns empty array when conversation is undefined or empty', () => {
@@ -294,6 +388,7 @@ describe('proxy provider usage mapping', () => {
     })).toEqual({
       promptTokens: 950,
       completionTokens: 500,
+      reasoningTokens: 160,
       cacheReadInputTokens: 250,
     })
   })
@@ -303,9 +398,11 @@ describe('proxy provider usage mapping', () => {
       prompt_tokens: 1200,
       completion_tokens: 340,
       prompt_tokens_details: { cached_tokens: 250 },
+      completion_tokens_details: { reasoning_tokens: 120 },
     })).toEqual({
       promptTokens: 950,
       completionTokens: 340,
+      reasoningTokens: 120,
       cacheReadInputTokens: 250,
     })
   })

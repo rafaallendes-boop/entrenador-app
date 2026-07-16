@@ -9,24 +9,11 @@
  * `PlanGenerationMeta.stageTimings`.
  */
 
-import type { AIRequestClass } from '../../types'
+import type { AIRequestClass, CoachStage, StageTiming } from '../../types'
 
-export type CoachStage =
-  | 'prompt_build'
-  | 'provider_call'
-  | 'normalize'
-  | 'validate'
-  | 'repair'
-  | 'apply'
+export type { CoachStage, StageTiming } from '../../types'
 
 export type CoachOutcome = 'ok' | 'truncated' | 'parse_fail' | 'invalid_schema' | 'timeout' | 'rate_limit' | 'error'
-
-export interface StageTiming {
-  stage: CoachStage
-  durationMs: number
-  ok: boolean
-  error?: string
-}
 
 export interface StageTracker {
   readonly traceId: string

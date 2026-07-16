@@ -1,6 +1,6 @@
 import type { AIProvider } from '../ai/types'
 import { getProviderForRequestClass } from '../ai/providerResolver'
-import type { AthleteProfile, CoachAction, PlanWizardConfig } from '../../types'
+import type { AthleteProfile, CoachAction, PlanWizardConfig, StageTiming } from '../../types'
 import type { TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
 import { buildAITraceId, getAIRequestPolicy } from '../ai/requestPolicy'
 import { normalizeResponse } from '../ai/responseNormalizer'
@@ -146,7 +146,7 @@ function makeResolvedWeek(
     addedFallbackCount?: number
     filteredSportCount?: number
     repairWarnings?: Array<{ code: string; message: string }>
-    stageTimings?: Array<{ stage: string; durationMs: number; ok: boolean; error?: string }>
+    stageTimings?: StageTiming[]
     errorClass?: string
     generationSource?: 'ai' | 'deterministic' | 'fallback'
   },

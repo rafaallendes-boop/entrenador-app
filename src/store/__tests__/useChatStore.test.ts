@@ -10,6 +10,8 @@ const mocks = vi.hoisted(() => {
     deletedMessageIds: [] as string[],
     deletedProposalIds: [] as string[],
     addShouldFailForRole: undefined as ChatMessage['role'] | undefined,
+    userPersistDurationMs: 0,
+    optimizeContextDurationMs: 0,
     routeKind: 'chat_action' as 'chat_general' | 'chat_action' | 'weekly_summary' | 'week_creator' | 'plan_builder_redirect',
     idCounter: 0,
     sessionId: 'session-1',
@@ -23,6 +25,7 @@ const mocks = vi.hoisted(() => {
     pushCoachProposal: vi.fn(),
     deleteChatMessages: vi.fn(),
     deleteCoachProposals: vi.fn(),
+    optimizeContext: vi.fn((context: ChatContext) => context),
   }
 })
 
@@ -31,6 +34,9 @@ vi.mock('../../db/db', () => ({
     chatMessages: {
       add: vi.fn(async (message: ChatMessage) => {
         if (mocks.addShouldFailForRole === message.role) throw new Error('Dexie failed')
+        if (message.role === 'user' && mocks.userPersistDurationMs > 0) {
+          vi.setSystemTime(Date.now() + mocks.userPersistDurationMs)
+        }
         mocks.chatMessages.push({ ...message })
       }),
       put: vi.fn(async (message: ChatMessage) => {
@@ -136,6 +142,10 @@ vi.mock('../../services/ai/CoachEngine', () => ({
   },
 }))
 
+vi.mock('../../services/ai/contextOptimizer', () => ({
+  optimizeChatContext: mocks.optimizeContext,
+}))
+
 vi.mock('../../services/weekCreator/WeekCreatorEngine', () => ({
   WeekCreatorEngine: {
     sendWeekCreate: mocks.sendWeekCreate,
@@ -178,6 +188,7 @@ vi.mock('../../utils/uuid', () => ({
 }))
 
 import { useChatStore } from '../useChatStore'
+import { useAIDebugStore } from '../useAIDebugStore'
 
 function makeAction(): CoachAction {
   return {
@@ -223,6 +234,8 @@ beforeEach(() => {
   mocks.deletedMessageIds.splice(0, mocks.deletedMessageIds.length)
   mocks.deletedProposalIds.splice(0, mocks.deletedProposalIds.length)
   mocks.addShouldFailForRole = undefined
+  mocks.userPersistDurationMs = 0
+  mocks.optimizeContextDurationMs = 0
   mocks.routeKind = 'chat_action'
   mocks.idCounter = 0
   mocks.sessionId = 'session-1'
@@ -235,6 +248,13 @@ beforeEach(() => {
   mocks.pushChatMessage.mockReset()
   mocks.deleteChatMessages.mockReset()
   mocks.deleteCoachProposals.mockReset()
+  mocks.optimizeContext.mockReset()
+  mocks.optimizeContext.mockImplementation((context: ChatContext) => {
+    if (mocks.optimizeContextDurationMs > 0) {
+      vi.setSystemTime(Date.now() + mocks.optimizeContextDurationMs)
+    }
+    return context
+  })
   useChatStore.setState({
     messages: [],
     currentSessionId: 'session-1',
@@ -276,6 +296,30 @@ describe('useChatStore.sendMessage', () => {
       proposalId: 'proposal-1',
       contextMeta: { contextVersion: 1, traceId: 'trace-1' },
     })
+  })
+
+  it('measures proposal readiness from before user persistence and context optimization', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-07-16T12:00:00.000Z'))
+    mocks.userPersistDurationMs = 250
+    mocks.optimizeContextDurationMs = 300
+    mocks.sendAction.mockResolvedValue({
+      message: 'Listo, preparé la propuesta.',
+      actions: [makeAction()],
+      provider: 'openai',
+      traceId: 'trace-e2e',
+      requestClass: 'chat_action',
+    })
+    mocks.addProposal.mockResolvedValue({ id: 'proposal-e2e' })
+    const completeRequest = vi.spyOn(useAIDebugStore.getState(), 'completeRequest')
+
+    await useChatStore.getState().sendMessage('añade running hoy', makeContext())
+
+    expect(completeRequest).toHaveBeenCalledWith('trace-e2e', expect.objectContaining({
+      proposalCreated: true,
+      endToEndDurationMs: 550,
+    }))
+    completeRequest.mockRestore()
   })
 
   it('removes the optimistic user message when Dexie fails to persist it', async () => {

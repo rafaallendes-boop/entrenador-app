@@ -147,6 +147,7 @@ export class GeminiProvider implements AIProvider {
     let finishReason: string | undefined
     let promptTokens: number | undefined
     let completionTokens: number | undefined
+    let reasoningTokens: number | undefined
     let cacheReadInputTokens: number | undefined
 
     while (true) {
@@ -177,6 +178,7 @@ export class GeminiProvider implements AIProvider {
           const usage = mapGeminiUsage(data.usageMetadata)
           promptTokens = usage.promptTokens ?? promptTokens
           completionTokens = usage.completionTokens ?? completionTokens
+          reasoningTokens = usage.reasoningTokens ?? reasoningTokens
           cacheReadInputTokens = usage.cacheReadInputTokens ?? cacheReadInputTokens
         } catch { /* skip malformed SSE line */ }
       }
@@ -194,6 +196,7 @@ export class GeminiProvider implements AIProvider {
       finishReason,
       promptTokens,
       completionTokens,
+      reasoningTokens,
       cacheReadInputTokens,
     }
   }

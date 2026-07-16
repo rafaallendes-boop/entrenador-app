@@ -91,6 +91,7 @@ export class ProxyProvider implements AIProvider {
           conversation: request.conversation,
           requestClass: request.requestClass,
           traceId: request.traceId,
+          generationId: request.generationId,
           maxTokens: request.maxTokens,
           temperature: request.temperature,
           responseMimeType: request.responseMimeType,
@@ -112,14 +113,19 @@ export class ProxyProvider implements AIProvider {
         error?: string
         errorCode?: AIErrorCode
         traceId?: string
+        generationId?: string
+        finishReason?: string
         retryUsed?: boolean
         fallbackUsed?: boolean
         requestClass?: AIRequestClass
         durationMs?: number
         promptTokens?: number
         completionTokens?: number
+        reasoningTokens?: number
         cacheCreationInputTokens?: number
         cacheReadInputTokens?: number
+        serverDurationMs?: number
+        authDurationMs?: number
       }
 
       if (!res.ok) {
@@ -139,13 +145,18 @@ export class ProxyProvider implements AIProvider {
         raw: data,
         durationMs: data.durationMs ?? Date.now() - options.startedAt,
         traceId: data.traceId ?? request.traceId,
+        generationId: data.generationId ?? request.generationId,
+        finishReason: data.finishReason,
         requestClass: request.requestClass,
         retryUsed: data.retryUsed,
         fallbackUsed: data.fallbackUsed,
         promptTokens: data.promptTokens,
         completionTokens: data.completionTokens,
+        reasoningTokens: data.reasoningTokens,
         cacheCreationInputTokens: data.cacheCreationInputTokens,
         cacheReadInputTokens: data.cacheReadInputTokens,
+        serverDurationMs: data.serverDurationMs,
+        authDurationMs: data.authDurationMs,
       }
     } catch (error) {
       if (error instanceof AIProviderError) throw error
@@ -185,8 +196,11 @@ export class ProxyProvider implements AIProvider {
     let finishReason: string | undefined
     let promptTokens: number | undefined
     let completionTokens: number | undefined
+    let reasoningTokens: number | undefined
     let cacheCreationInputTokens: number | undefined
     let cacheReadInputTokens: number | undefined
+    let serverDurationMs: number | undefined
+    let authDurationMs: number | undefined
 
     while (true) {
       const { done, value } = await reader.read()
@@ -214,8 +228,11 @@ export class ProxyProvider implements AIProvider {
             finishReason?: string
             promptTokens?: number
             completionTokens?: number
+            reasoningTokens?: number
             cacheCreationInputTokens?: number
             cacheReadInputTokens?: number
+            serverDurationMs?: number
+            authDurationMs?: number
           }
 
           if (event.type === 'chunk' && event.chunk) {
@@ -233,12 +250,17 @@ export class ProxyProvider implements AIProvider {
             finishReason = event.finishReason ?? finishReason
             promptTokens = event.promptTokens ?? promptTokens
             completionTokens = event.completionTokens ?? completionTokens
+            reasoningTokens = event.reasoningTokens ?? reasoningTokens
             cacheCreationInputTokens = event.cacheCreationInputTokens ?? cacheCreationInputTokens
             cacheReadInputTokens = event.cacheReadInputTokens ?? cacheReadInputTokens
+            serverDurationMs = event.serverDurationMs ?? serverDurationMs
+            authDurationMs = event.authDurationMs ?? authDurationMs
             continue
           }
 
           if (event.type === 'error') {
+            serverDurationMs = event.serverDurationMs ?? serverDurationMs
+            authDurationMs = event.authDurationMs ?? authDurationMs
             if (event.truncated && fullText) {
               // Stream was cut after emitting partial content. Return what we got
               // and let responseNormalizer mark it as truncated — no proposal created.
@@ -265,6 +287,7 @@ export class ProxyProvider implements AIProvider {
       model,
       durationMs: Date.now() - t0,
       traceId: request.traceId,
+      generationId: request.generationId,
       requestClass: request.requestClass,
       retryUsed,
       fallbackUsed,
@@ -273,8 +296,11 @@ export class ProxyProvider implements AIProvider {
       errorClass: truncatedErrorClass,
       promptTokens,
       completionTokens,
+      reasoningTokens,
       cacheCreationInputTokens,
       cacheReadInputTokens,
+      serverDurationMs,
+      authDurationMs,
     }
   }
 

@@ -1,4 +1,4 @@
-import type { AthleteProfile, CoachAction, CoachSessionProposal, PlanWizardConfig } from '../../types'
+import type { AthleteProfile, CoachAction, CoachSessionProposal, PlanWizardConfig, StageTiming } from '../../types'
 import type { TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
 import type { AIRawResponse, AIRequest, CreateWeekNormalizationDiagnostic } from '../ai/types'
 import { normalizeResponse } from '../ai/responseNormalizer'
@@ -35,7 +35,7 @@ export interface GenerateWeekResult {
     addedFallbackCount?: number
     filteredSportCount?: number
     repairWarnings?: Array<{ code: string; message: string }>
-    stageTimings?: Array<{ stage: string; durationMs: number; ok: boolean; error?: string }>
+    stageTimings?: StageTiming[]
     errorClass?: string
   }
 }

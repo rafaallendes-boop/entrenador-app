@@ -1,9 +1,10 @@
-import type { AIRequestClass } from './index'
 import type {
+  AIRequestClass,
   CoachSessionProposal,
   MacroPlan,
   MacroPlanPhase,
   PlanWizardConfig,
+  StageTiming,
   SupportedSport,
 } from './index'
 import type { PlanQualityReview } from '../services/planBuilder/qualityReview'
@@ -60,7 +61,7 @@ export interface PlanGenerationMeta {
   addedFallbackCount?: number
   filteredSportCount?: number
   repairWarnings?: Array<{ code: string; message: string }>
-  stageTimings?: Array<{ stage: string; durationMs: number; ok: boolean; error?: string }>
+  stageTimings?: StageTiming[]
   errorClass?: string
   generationSource?: 'ai' | 'deterministic' | 'fallback'
 }

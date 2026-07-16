@@ -25,7 +25,7 @@ const REQUEST_CLASSES = [
 const TOKEN_BASELINES: Record<typeof REQUEST_CLASSES[number], { target: number; tolerancePct: number }> = {
   chat_general: { target: 504, tolerancePct: 10 },
   chat_action: { target: 3576, tolerancePct: 10 },
-  week_creator: { target: 3576, tolerancePct: 10 },
+  week_creator: { target: 2840, tolerancePct: 12 },
   plan_builder_week: { target: 3576, tolerancePct: 10 },
   weekly_summary: { target: 485, tolerancePct: 15 },
 }
@@ -88,10 +88,16 @@ function buildFixtureContext(): ChatContext {
 
 describe('prompt token audit', () => {
   let buildCoachSystemPrompt: typeof import('../src/services/ai/promptBuilder').buildCoachSystemPrompt
+  let buildWeekCreatorPrompt: typeof import('../src/services/weekCreator/WeekCreatorPromptBuilder').buildWeekCreatorPrompt
+  let resolveWeekCreatorConfig: typeof import('../src/services/weekCreator/WeekCreatorConfig').resolveWeekCreatorConfig
+  let weekCreatorResponseSchema: Record<string, unknown>
 
   beforeAll(async () => {
     installLocalStorageMock()
     ;({ buildCoachSystemPrompt } = await import('../src/services/ai/promptBuilder'))
+    ;({ buildWeekCreatorPrompt } = await import('../src/services/weekCreator/WeekCreatorPromptBuilder'))
+    ;({ resolveWeekCreatorConfig } = await import('../src/services/weekCreator/WeekCreatorConfig'))
+    ;({ WEEK_CREATOR_RESPONSE_SCHEMA: weekCreatorResponseSchema } = await import('../src/services/weekCreator/weekCreatorResponseSchema'))
   }, 120000)
 
   it('prints token cost per request class', () => {
@@ -99,11 +105,53 @@ describe('prompt token audit', () => {
     const rows: Array<Record<string, number | string>> = []
 
     for (const requestClass of REQUEST_CLASSES) {
+      if (requestClass === 'week_creator') {
+        const weekContext: ChatContext = {
+          ...ctx,
+          athleteProfile: ctx.athleteProfile ? {
+            ...ctx.athleteProfile,
+            scheduleProfile: {
+              availableDays: ['lun', 'mar', 'mié', 'jue', 'vie'],
+              sessionsPerWeek: 4,
+              constraints: 'martes solo AM',
+            },
+          } : ctx.athleteProfile,
+        }
+        const config = resolveWeekCreatorConfig(weekContext.athleteProfile)
+        const prompt = buildWeekCreatorPrompt(weekContext, {
+          userMessage: 'Créame una semana priorizando squash',
+          targetWeekStart: '2026-07-20',
+          config,
+          strictFormatting: true,
+          structuredOutput: true,
+          weekObjectives: ['Mantener continuidad de squash', 'Sostener fuerza sin interferencia'],
+        })
+        const responseSchemaChars = JSON.stringify(weekCreatorResponseSchema).length
+        const totalChars = prompt.systemPrompt.length + prompt.userPrompt.length + responseSchemaChars
+        rows.push({
+          requestClass,
+          totalChars,
+          approxTokens: approxTokens(prompt.systemPrompt + prompt.userPrompt + JSON.stringify(weekCreatorResponseSchema)),
+          systemPrompt: prompt.systemPrompt.length,
+          userPrompt: prompt.userPrompt.length,
+          responseSchema: responseSchemaChars,
+          athleteProfile: countSection(prompt.userPrompt, '## PERFIL DEL ATLETA'),
+          macroPlan: countSection(prompt.userPrompt, '## OBJETIVO COMPETITIVO'),
+          currentWeek: countSection(prompt.userPrompt, '## SEMANA ACTUAL'),
+          nutrition: 0,
+          recentHistory: countSection(prompt.userPrompt, '## PROGRESIÓN Y DIRECTIVA DE CARGA'),
+          rules: countSection(prompt.userPrompt, '## REGLAS POR NIVEL DEL ATLETA'),
+        })
+        continue
+      }
       const prompt = buildCoachSystemPrompt(ctx, { requestClass })
       rows.push({
         requestClass,
         totalChars: prompt.length,
         approxTokens: approxTokens(prompt),
+        systemPrompt: prompt.length,
+        userPrompt: 0,
+        responseSchema: 0,
         athleteProfile: countSection(prompt, 'PERFIL DEL ATLETA'),
         macroPlan: countSection(prompt, 'MACRO PLAN'),
         currentWeek: countSection(prompt, 'SEMANA ACTUAL'),

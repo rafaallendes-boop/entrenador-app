@@ -113,6 +113,8 @@ describe('aiTelemetry', () => {
     const now = new Date('2026-05-09T12:00:00').getTime()
     await upsertAIRequestLog({
       traceId: 'trace-1',
+      generationId: 'generation-1',
+      attempt: 1,
       requestClass: 'chat_action',
       surface: 'chat',
       status: 'completed',
@@ -242,12 +244,18 @@ describe('aiTelemetry', () => {
   it('builds a beta quality snapshot without storing prompts or full responses', async () => {
     await upsertAIRequestLog({
       traceId: 'trace-1',
+      generationId: 'generation-1',
+      attempt: 1,
       requestClass: 'chat_action',
       surface: 'chat',
       status: 'completed',
       provider: 'gemini',
       outcome: 'ok',
       responseCharCount: 120,
+      inputCharCount: 4200,
+      promptTokens: 1000,
+      completionTokens: 300,
+      reasoningTokens: 80,
       startedAt: Date.now(),
     })
     await recordCoachFeedback({
@@ -264,7 +272,12 @@ describe('aiTelemetry', () => {
     expect(snapshot.positiveFeedback).toBe(1)
     expect(snapshot.recentRequests[0]).toMatchObject({
       traceId: 'trace-1',
+      generationId: 'generation-1',
       responseCharCount: 120,
+      inputCharCount: 4200,
+      promptTokens: 1000,
+      completionTokens: 300,
+      reasoningTokens: 80,
     })
     expect(JSON.stringify(snapshot)).not.toContain('systemPrompt')
   })

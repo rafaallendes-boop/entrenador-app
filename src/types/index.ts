@@ -11,6 +11,22 @@ export type AIRequestClass =
   | 'plan_builder_pair'
   | 'import_extract'
 
+export type CoachStage =
+  | 'prompt_build'
+  | 'provider_call'
+  | 'normalize'
+  | 'validate'
+  | 'repair'
+  | 'fallback'
+  | 'apply'
+
+export interface StageTiming {
+  stage: CoachStage
+  durationMs: number
+  ok: boolean
+  error?: string
+}
+
 export type AITechnicalSurface =
   | 'chat'
   | 'weekly_summary'
@@ -33,12 +49,30 @@ export interface PromptTrace {
 
 export interface AITechnicalResult {
   traceId: string
+  /** Correlates all provider attempts and the local fallback for one user request. */
+  generationId?: string
+  /** Logical Week Creator attempt. Provider-internal retries remain server telemetry. */
+  attempt?: number
   surface: AITechnicalSurface
   requestClass: AIRequestClass
   promptTrace?: PromptTrace
   provider?: AIProviderName
   model?: string
+  systemPromptCharCount?: number
+  userPromptCharCount?: number
+  responseSchemaCharCount?: number
+  inputCharCount?: number
+  maxTokens?: number
+  promptTokens?: number
+  completionTokens?: number
+  reasoningTokens?: number
+  cacheCreationInputTokens?: number
+  cacheReadInputTokens?: number
   durationMs?: number
+  authDurationMs?: number
+  serverDurationMs?: number
+  endToEndDurationMs?: number
+  proposalReadyAt?: number
   status: 'started' | 'streaming' | 'completed' | 'failed'
   outcome?: 'ok' | 'truncated_mid' | 'truncated_early' | 'parse_invalid' | 'schema_invalid'
   errorCode?: string
@@ -50,6 +84,21 @@ export interface AITechnicalResult {
   finishReason?: string
   actionCount?: number
   warnings?: string[]
+  stageTimings?: StageTiming[]
+  repairStats?: {
+    repairedSessionCount: number
+    movedSessionCount: number
+    addedFallbackCount: number
+    droppedSessionCount: number
+    filteredSportCount: number
+    codes: string[]
+  }
+  expectedSessionCount?: number
+  trainingDayCount?: number
+  allowedSportCount?: number
+  doubleSessionAllowed?: boolean
+  partialWeek?: boolean
+  activeRestrictionsPresent?: boolean
   firstChunkAt?: number
   startedAt: number
   completedAt?: number

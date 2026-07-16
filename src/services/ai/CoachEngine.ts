@@ -112,6 +112,14 @@ export const CoachEngine = {
         retryUsed: raw.retryUsed,
         fallbackUsed: raw.fallbackUsed,
         responseCharCount: raw.text.length,
+        finishReason: raw.finishReason,
+        promptTokens: raw.promptTokens,
+        completionTokens: raw.completionTokens,
+        reasoningTokens: raw.reasoningTokens,
+        cacheCreationInputTokens: raw.cacheCreationInputTokens,
+        cacheReadInputTokens: raw.cacheReadInputTokens,
+        serverDurationMs: raw.serverDurationMs,
+        authDurationMs: raw.authDurationMs,
       })
       return raw.text
     } catch (error) {
@@ -218,7 +226,22 @@ async function sendTrackedCoachRequest(
   })
 }
 
-async function withTracing<T extends Pick<CoachNormalizedResponse, 'provider' | 'model' | 'durationMs' | 'retryUsed' | 'fallbackUsed'>>(
+async function withTracing<T extends Pick<
+  CoachNormalizedResponse,
+  | 'provider'
+  | 'model'
+  | 'durationMs'
+  | 'retryUsed'
+  | 'fallbackUsed'
+  | 'finishReason'
+  | 'promptTokens'
+  | 'completionTokens'
+  | 'reasoningTokens'
+  | 'cacheCreationInputTokens'
+  | 'cacheReadInputTokens'
+  | 'serverDurationMs'
+  | 'authDurationMs'
+>>(
   requestClass: AIRequestClass,
   surface: AITechnicalSurface,
   run: (traceId: string) => Promise<T>,
@@ -240,6 +263,14 @@ async function withTracing<T extends Pick<CoachNormalizedResponse, 'provider' | 
       durationMs: result.durationMs,
       retryUsed: result.retryUsed,
       fallbackUsed: result.fallbackUsed,
+      finishReason: result.finishReason,
+      promptTokens: result.promptTokens,
+      completionTokens: result.completionTokens,
+      reasoningTokens: result.reasoningTokens,
+      cacheCreationInputTokens: result.cacheCreationInputTokens,
+      cacheReadInputTokens: result.cacheReadInputTokens,
+      serverDurationMs: result.serverDurationMs,
+      authDurationMs: result.authDurationMs,
     })
     return result
   } catch (error) {

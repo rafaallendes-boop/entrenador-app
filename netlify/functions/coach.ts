@@ -37,6 +37,7 @@ interface CoachRequest {
   }>
   requestClass?: RequestClass
   traceId?: string
+  generationId?: string
   maxTokens?: number
   temperature?: number
   responseMimeType?: 'application/json'
@@ -57,12 +58,14 @@ interface ProviderExecutionResult {
   model: string
   finishReason?: string
   traceId: string
+  generationId?: string
   requestClass: RequestClass
   retryUsed: boolean
   fallbackUsed: boolean
   durationMs: number
   promptTokens?: number
   completionTokens?: number
+  reasoningTokens?: number
   cacheCreationInputTokens?: number
   cacheReadInputTokens?: number
 }
@@ -73,6 +76,7 @@ interface ProviderCallResult {
   finishReason?: string
   promptTokens?: number
   completionTokens?: number
+  reasoningTokens?: number
   cacheCreationInputTokens?: number
   cacheReadInputTokens?: number
 }
@@ -80,6 +84,7 @@ interface ProviderCallResult {
 interface ProviderUsage {
   promptTokens?: number
   completionTokens?: number
+  reasoningTokens?: number
   cacheCreationInputTokens?: number
   cacheReadInputTokens?: number
 }
@@ -171,6 +176,7 @@ const SYSTEM_PROMPT_MAX_CHARS: Record<RequestClass, number> = {
 const USER_MESSAGE_MAX_CHARS = 8000
 const CONVERSATION_MESSAGE_MAX_CHARS = 4000
 const TRACE_ID_MAX_CHARS = 160
+const GENERATION_ID_MAX_CHARS = 160
 const RESPONSE_SCHEMA_MAX_CHARS = 20000
 // Netlify Pro synchronous functions cut off at 26s; keep 2s for response finalization.
 const MAX_FUNCTION_WALLCLOCK_MS = 24000
@@ -421,6 +427,9 @@ function validateCoachRequest(input: unknown): RequestValidationResult {
   if (raw.traceId != null && (typeof raw.traceId !== 'string' || raw.traceId.length > TRACE_ID_MAX_CHARS)) {
     return { ok: false, error: 'traceId invalid' }
   }
+  if (raw.generationId != null && (typeof raw.generationId !== 'string' || raw.generationId.length > GENERATION_ID_MAX_CHARS)) {
+    return { ok: false, error: 'generationId invalid' }
+  }
 
   if (raw.allowFallback != null && typeof raw.allowFallback !== 'boolean') {
     return { ok: false, error: 'allowFallback must be boolean' }
@@ -437,6 +446,7 @@ function validateCoachRequest(input: unknown): RequestValidationResult {
       conversation: processedConversation,
       requestClass,
       traceId: raw.traceId,
+      generationId: raw.generationId,
       maxTokens: raw.maxTokens,
       temperature: raw.temperature,
       responseMimeType: raw.responseMimeType,
@@ -527,18 +537,60 @@ const RETRY_BACKOFF_MS = 600
 
 function logCoachAttempt(payload: {
   traceId: string
+  generationId?: string
   requestClass: RequestClass
   attempt: number
   outcome: 'ok' | 'error'
   provider: ProviderName
   attemptTimeoutMs: number
   durationMs: number
+  model?: string
+  finishReason?: string
+  promptTokens?: number
+  completionTokens?: number
+  reasoningTokens?: number
+  cacheCreationInputTokens?: number
+  cacheReadInputTokens?: number
+  responseCharCount?: number
+  systemPromptCharCount?: number
+  userPromptCharCount?: number
+  responseSchemaCharCount?: number
+  maxTokens?: number
   errorCode?: TechnicalErrorCode
   message?: string
 }): void {
   if (typeof console === 'undefined' || typeof console.info !== 'function') return
   try {
     console.info(JSON.stringify({ event: 'coach.attempt', ...payload }))
+  } catch {
+    /* noop */
+  }
+}
+
+function logCoachRequest(payload: {
+  traceId: string
+  generationId?: string
+  requestClass: RequestClass
+  outcome: 'ok' | 'error'
+  provider?: ProviderName
+  model?: string
+  authDurationMs: number
+  providerDurationMs?: number
+  serverDurationMs: number
+  retryUsed?: boolean
+  fallbackUsed?: boolean
+  promptTokens?: number
+  completionTokens?: number
+  reasoningTokens?: number
+  cacheCreationInputTokens?: number
+  cacheReadInputTokens?: number
+  responseCharCount?: number
+  finishReason?: string
+  errorCode?: TechnicalErrorCode
+}): void {
+  if (typeof console === 'undefined' || typeof console.info !== 'function') return
+  try {
+    console.info(JSON.stringify({ event: 'coach.request.completed', ...payload }))
   } catch {
     /* noop */
   }
@@ -857,6 +909,7 @@ async function callOpenAI(
       prompt_tokens?: number
       completion_tokens?: number
       prompt_tokens_details?: { cached_tokens?: number }
+      completion_tokens_details?: { reasoning_tokens?: number }
     }
   }
   const text = data.choices?.[0]?.message?.content
@@ -985,6 +1038,7 @@ async function streamOpenAI(
         prompt_tokens?: number
         completion_tokens?: number
         prompt_tokens_details?: { cached_tokens?: number }
+        completion_tokens_details?: { reasoning_tokens?: number }
       }
     }
     const choice = data.choices?.[0]
@@ -1052,6 +1106,7 @@ async function readSseStream(
           usage = {
             promptTokens: picked.usage.promptTokens ?? usage.promptTokens,
             completionTokens: picked.usage.completionTokens ?? usage.completionTokens,
+            reasoningTokens: picked.usage.reasoningTokens ?? usage.reasoningTokens,
             cacheCreationInputTokens: picked.usage.cacheCreationInputTokens ?? usage.cacheCreationInputTokens,
             cacheReadInputTokens: picked.usage.cacheReadInputTokens ?? usage.cacheReadInputTokens,
           }
@@ -1144,6 +1199,7 @@ async function executeWithPolicy(
   const totalBudgetMs = Math.min(timeoutMs, MAX_FUNCTION_WALLCLOCK_MS)
   const deadline = startedAt + totalBudgetMs
   const allowTechnicalRetry = shouldUseTechnicalRetry(requestClass)
+  const responseSchemaCharCount = req.responseSchema ? JSON.stringify(req.responseSchema).length : 0
   const maxAttempts = allowTechnicalRetry
     ? (req.allowFallback && fallback && fallback !== primary ? 3 : 2)
     : 1
@@ -1189,12 +1245,25 @@ async function executeWithPolicy(
       )
       logCoachAttempt({
         traceId,
+        generationId: req.generationId,
         requestClass,
         attempt: thisAttempt,
         outcome: 'ok',
         provider,
         attemptTimeoutMs,
         durationMs: Date.now() - attemptStartedAt,
+        model: result.model,
+        finishReason: result.finishReason,
+        promptTokens: result.promptTokens,
+        completionTokens: result.completionTokens,
+        reasoningTokens: result.reasoningTokens,
+        cacheCreationInputTokens: result.cacheCreationInputTokens,
+        cacheReadInputTokens: result.cacheReadInputTokens,
+        responseCharCount: result.text.length,
+        systemPromptCharCount: req.systemPrompt.length,
+        userPromptCharCount: req.userMessage.length,
+        responseSchemaCharCount,
+        maxTokens: req.maxTokens,
       })
       return result
     } catch (error) {
@@ -1203,6 +1272,7 @@ async function executeWithPolicy(
         : normalizeError(error)
       logCoachAttempt({
         traceId,
+        generationId: req.generationId,
         requestClass,
         attempt: thisAttempt,
         outcome: 'error',
@@ -1211,6 +1281,10 @@ async function executeWithPolicy(
         durationMs: Date.now() - attemptStartedAt,
         errorCode: normalized.errorCode,
         message: normalized.message,
+        systemPromptCharCount: req.systemPrompt.length,
+        userPromptCharCount: req.userMessage.length,
+        responseSchemaCharCount,
+        maxTokens: req.maxTokens,
       })
       throw normalized
     } finally {
@@ -1229,6 +1303,7 @@ async function executeWithPolicy(
     return {
       ...first,
       traceId,
+      generationId: req.generationId,
       requestClass,
       retryUsed,
       fallbackUsed,
@@ -1246,6 +1321,7 @@ async function executeWithPolicy(
     return {
       ...second,
       traceId,
+      generationId: req.generationId,
       requestClass,
       retryUsed,
       fallbackUsed,
@@ -1271,6 +1347,7 @@ async function executeWithPolicy(
   return {
     ...fallbackResult,
     traceId,
+    generationId: req.generationId,
     requestClass,
     retryUsed,
     fallbackUsed,
@@ -1278,7 +1355,10 @@ async function executeWithPolicy(
   }
 }
 
-function streamResponse(req: CoachRequest): StreamingResponse {
+function streamResponse(
+  req: CoachRequest,
+  timing: { requestReceivedAt: number; authDurationMs: number },
+): StreamingResponse {
   const traceId = req.traceId ?? `srv-${Date.now()}`
   const requestClass = normalizeRequestClass(req.requestClass)
   const encoder = new TextEncoder()
@@ -1292,16 +1372,55 @@ function streamResponse(req: CoachRequest): StreamingResponse {
             sentAnyChunk = true
             controller.enqueue(encoder.encode(`${JSON.stringify({ type: 'chunk', chunk, traceId })}\n`))
           })
-          controller.enqueue(encoder.encode(`${JSON.stringify({ type: 'done', ...result })}\n`))
+          const serverDurationMs = Date.now() - timing.requestReceivedAt
+          const response = {
+            ...result,
+            authDurationMs: timing.authDurationMs,
+            serverDurationMs,
+          }
+          logCoachRequest({
+            traceId: result.traceId,
+            generationId: req.generationId,
+            requestClass,
+            outcome: 'ok',
+            provider: result.provider,
+            model: result.model,
+            authDurationMs: timing.authDurationMs,
+            providerDurationMs: result.durationMs,
+            serverDurationMs,
+            retryUsed: result.retryUsed,
+            fallbackUsed: result.fallbackUsed,
+            promptTokens: result.promptTokens,
+            completionTokens: result.completionTokens,
+            reasoningTokens: result.reasoningTokens,
+            cacheCreationInputTokens: result.cacheCreationInputTokens,
+            cacheReadInputTokens: result.cacheReadInputTokens,
+            responseCharCount: result.text.length,
+            finishReason: result.finishReason,
+          })
+          controller.enqueue(encoder.encode(`${JSON.stringify({ type: 'done', ...response })}\n`))
         } catch (error) {
           const normalized = normalizeError(error)
+          const serverDurationMs = Date.now() - timing.requestReceivedAt
+          logCoachRequest({
+            traceId,
+            generationId: req.generationId,
+            requestClass,
+            outcome: 'error',
+            authDurationMs: timing.authDurationMs,
+            serverDurationMs,
+            errorCode: normalized.errorCode,
+          })
           controller.enqueue(encoder.encode(`${JSON.stringify({
             type: 'error',
             truncated: sentAnyChunk,
             traceId,
+            generationId: req.generationId,
             requestClass,
             error: normalized.message,
             errorCode: normalized.errorCode ?? 'unknown',
+            authDurationMs: timing.authDurationMs,
+            serverDurationMs,
           })}\n`))
         } finally {
           controller.close()
@@ -1314,6 +1433,7 @@ function streamResponse(req: CoachRequest): StreamingResponse {
 }
 
 export const handler = stream(async (event: HandlerEvent): Promise<StreamingResponse> => {
+  const requestReceivedAt = Date.now()
   if (event.httpMethod === 'OPTIONS') return corsPreflight()
   if (event.httpMethod !== 'POST') {
     return json(405, { error: 'Method not allowed', errorCode: 'unknown' })
@@ -1332,16 +1452,32 @@ export const handler = stream(async (event: HandlerEvent): Promise<StreamingResp
   }
   const req = validation.req
 
+  const authStartedAt = Date.now()
+  let authDurationMs = 0
   try {
     const auth = await resolveAuthContext(event)
     enforceRateLimit(auth)
+    authDurationMs = Date.now() - authStartedAt
   } catch (error) {
+    authDurationMs = Date.now() - authStartedAt
     const normalized = normalizeError(error)
+    logCoachRequest({
+      traceId: req.traceId ?? `srv-${requestReceivedAt}`,
+      generationId: req.generationId,
+      requestClass: normalizeRequestClass(req.requestClass),
+      outcome: 'error',
+      authDurationMs,
+      serverDurationMs: Date.now() - requestReceivedAt,
+      errorCode: normalized.errorCode,
+    })
     return json(normalized.statusCode ?? 500, {
       error: normalized.message,
       errorCode: normalized.errorCode ?? 'unknown',
       traceId: req.traceId,
       requestClass: normalizeRequestClass(req.requestClass),
+      generationId: req.generationId,
+      authDurationMs,
+      serverDurationMs: Date.now() - requestReceivedAt,
     })
   }
 
@@ -1357,11 +1493,30 @@ export const handler = stream(async (event: HandlerEvent): Promise<StreamingResp
       model: 'local_regex (deterministic_bypass)',
       finishReason: 'stop',
       traceId: req.traceId ?? `srv-direct-${Date.now()}`,
+      generationId: req.generationId,
       requestClass,
       retryUsed: false,
       fallbackUsed: false,
       durationMs: 1,
+      authDurationMs,
+      serverDurationMs: Date.now() - requestReceivedAt,
     }
+
+    logCoachRequest({
+      traceId: result.traceId,
+      generationId: req.generationId,
+      requestClass,
+      outcome: 'ok',
+      provider: result.provider,
+      model: result.model,
+      authDurationMs,
+      providerDurationMs: result.durationMs,
+      serverDurationMs: result.serverDurationMs,
+      retryUsed: false,
+      fallbackUsed: false,
+      responseCharCount: text.length,
+      finishReason: result.finishReason,
+    })
 
     if (req.stream) {
       const encoder = new TextEncoder()
@@ -1379,19 +1534,54 @@ export const handler = stream(async (event: HandlerEvent): Promise<StreamingResp
   }
 
   if (req.stream) {
-    return streamResponse(req)
+    return streamResponse(req, { requestReceivedAt, authDurationMs })
   }
 
   try {
     const result = await executeWithPolicy(req)
-    return json(200, result)
+    const serverDurationMs = Date.now() - requestReceivedAt
+    const response = { ...result, authDurationMs, serverDurationMs }
+    logCoachRequest({
+      traceId: result.traceId,
+      generationId: req.generationId,
+      requestClass,
+      outcome: 'ok',
+      provider: result.provider,
+      model: result.model,
+      authDurationMs,
+      providerDurationMs: result.durationMs,
+      serverDurationMs,
+      retryUsed: result.retryUsed,
+      fallbackUsed: result.fallbackUsed,
+      promptTokens: result.promptTokens,
+      completionTokens: result.completionTokens,
+      reasoningTokens: result.reasoningTokens,
+      cacheCreationInputTokens: result.cacheCreationInputTokens,
+      cacheReadInputTokens: result.cacheReadInputTokens,
+      responseCharCount: result.text.length,
+      finishReason: result.finishReason,
+    })
+    return json(200, response)
   } catch (error) {
     const normalized = normalizeError(error)
+    const serverDurationMs = Date.now() - requestReceivedAt
+    logCoachRequest({
+      traceId: req.traceId ?? `srv-${requestReceivedAt}`,
+      generationId: req.generationId,
+      requestClass,
+      outcome: 'error',
+      authDurationMs,
+      serverDurationMs,
+      errorCode: normalized.errorCode,
+    })
     return json(normalized.statusCode ?? 500, {
       error: normalized.message,
       errorCode: normalized.errorCode ?? 'unknown',
       traceId: req.traceId,
       requestClass: normalizeRequestClass(req.requestClass),
+      generationId: req.generationId,
+      authDurationMs,
+      serverDurationMs,
     })
   }
 })

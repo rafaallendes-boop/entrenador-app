@@ -9,6 +9,7 @@ function makeRequest(overrides: Partial<AIRequest> = {}): AIRequest {
     userMessage: 'Hola',
     requestClass: 'chat_general',
     traceId: 'trace-1',
+    generationId: 'generation-1',
     onChunk: vi.fn(),
     ...overrides,
   }
@@ -97,10 +98,15 @@ describe('ProxyProvider streaming fallback', () => {
       JSON.stringify({
         text: '{"ok":true}',
         provider: 'claude',
+        finishReason: 'stop',
         promptTokens: 1200,
         completionTokens: 340,
+        reasoningTokens: 120,
         cacheCreationInputTokens: 900,
         cacheReadInputTokens: 250,
+        generationId: 'generation-1',
+        serverDurationMs: 4400,
+        authDurationMs: 80,
       }),
       { status: 200, headers: { 'Content-Type': 'application/json' } },
     )))
@@ -109,10 +115,15 @@ describe('ProxyProvider streaming fallback', () => {
 
     expect(response).toMatchObject({
       provider: 'claude',
+      finishReason: 'stop',
       promptTokens: 1200,
       completionTokens: 340,
+      reasoningTokens: 120,
       cacheCreationInputTokens: 900,
       cacheReadInputTokens: 250,
+      generationId: 'generation-1',
+      serverDurationMs: 4400,
+      authDurationMs: 80,
     })
   })
 
@@ -124,8 +135,11 @@ describe('ProxyProvider streaming fallback', () => {
         provider: 'claude',
         promptTokens: 1200,
         completionTokens: 340,
+        reasoningTokens: 120,
         cacheCreationInputTokens: 900,
         cacheReadInputTokens: 250,
+        serverDurationMs: 4400,
+        authDurationMs: 80,
       }),
       '',
     ].join('\n')
@@ -140,8 +154,11 @@ describe('ProxyProvider streaming fallback', () => {
       provider: 'claude',
       promptTokens: 1200,
       completionTokens: 340,
+      reasoningTokens: 120,
       cacheCreationInputTokens: 900,
       cacheReadInputTokens: 250,
+      serverDurationMs: 4400,
+      authDurationMs: 80,
     })
   })
 })

@@ -91,6 +91,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   sendMessage: async (content, context) => {
+    const requestStartedAt = Date.now()
     const routeRecentMessages = get().messages.map(m => ({ role: m.role, content: m.content }))
     const routeContext = context
       ? { ...context, recentMessages: context.recentMessages ?? routeRecentMessages }
@@ -160,7 +161,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
     let persistedCoachMsg: ChatMessage | undefined
     let persistedProposalId: string | undefined
     let expectedProposal = false
-
     try {
       const handleChunk = (chunk: string) => {
         if (!isActiveChatRequest(get().currentSessionId, sessionId, abortController)) return
@@ -228,8 +228,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
         void syncService.pushChatMessage(coachMsg)
       }
 
+      const proposalReadyAt = Date.now()
       useAIDebugStore.getState().completeRequest(response.traceId, {
         proposalCreated: proposalId != null,
+        proposalReadyAt,
+        endToEndDurationMs: proposalReadyAt - requestStartedAt,
       })
 
       if (!isActiveChatRequest(get().currentSessionId, sessionId, abortController)) {
