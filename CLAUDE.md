@@ -36,6 +36,7 @@ Bloques recientes relevantes:
 - **Coach F2-lite completo**: política legacy self-only, lecturas scoped, perfiles multi-atleta, roster, switcher y atletas gestionados ya desplegados.
 - **Whoop v1** (`011`): Dexie **v15** `readinessDaily`, OAuth server-side, sync/cron, tarjeta de readiness y prefill editable de check-in.
 - **Whoop Workout Auto-Complete** (`012`): Dexie **v16** `whoopWorkouts`, reconciliacion server/client, matcher self-only con idempotencia durable y badge de sesion.
+- **Coach roster management + Planificacion read-only** (2026-07-14): archivar/restaurar/borrado duro de gestionados con tombstone durable, barrera single-tab, supresion de cola y purga transaccional; `coachScopedReads` hidrata y lee una semana por atleta explicito sin cambiar el scope activo.
 
 ## Prioridades abiertas (en orden)
 1. Aplicar `011`, deploy y smoke end-to-end de Whoop; enlazar consentimiento biométrico antes de terceros.
@@ -51,7 +52,7 @@ Bloques recientes relevantes:
   - Toda creación local de esas filas se estampa con `withActiveAthleteStamp`.
   - En sync, el fallback legacy se ancla a `getSelfAthleteId()`, nunca al atleta activo.
   - `isInAthleteScope` (effectiveAthleteKey) es para delete-scoping de sync; para lecturas usar `activeScopeFilter`.
-- El modelo local es Dexie (**v16**) — cualquier cambio de schema requiere migración + test de upgrade real (fake-indexeddb ya instalado; patrón: `db.close(); await db.delete(); await db.open()` por test).
+- El modelo local es Dexie (**v17**) — cualquier cambio de schema requiere migración + test de upgrade real (fake-indexeddb ya instalado; patrón: `db.close(); await db.delete(); await db.open()` por test).
 - `athlete_profiles` remoto tiene UNIQUE por `user_id` (`002`) — **no** crear un segundo perfil por cuenta hasta aplicar la migración `009` (mini expand/contract, ver spec F2-lite §3.2).
 - No modificar `promptBuilder.ts` sin revisar el contexto completo del coach.
 - Sync con Supabase ya está implementado — no duplicar lógica de sync.

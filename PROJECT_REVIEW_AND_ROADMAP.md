@@ -7,6 +7,7 @@ Base de contraste:
 - `main` en `2335f10` (merge de `coaches-landing-fase0` completado 2026-07-13).
 - **`011_whoop_integration.sql` y `012_whoop_workouts.sql` aplicados en produccion.** Whoop readiness y Workout Auto-Complete quedan operativos de punta a punta (owner confirma cierre operacional); pendiente solo el linkeo de consentimiento biometrico/legal antes de exponer a terceros (ver Riesgo 1).
 - **Coach Workspace v0 implementado y deployado (2026-07-13):** `/coach` pasa de un roster unico (`CoachRosterPage`) a un workspace de 5 tabs (`CoachWorkspacePage`): Resumen (tarjetas de roster con Ver semana/Ver plan), Alumnos (roster + alta de atleta), y Planificacion/Biblioteca/Asistente IA como placeholders "proximamente". Incluye endurecimiento de `switchActiveAthlete` (post-commit `loadMemory()` best-effort) y un lock de concurrencia a nivel de modulo para serializar switch/creacion de atleta (sobrevive al remount que dispara un switch exitoso). Merge a `main` y push a produccion cerrados el mismo dia; ver seccion 7 mas abajo para detalle completo, incluida una limitacion conocida (lock no comparte estado con `CoachContextBar`) documentada en el plan.
+- **Gestion de roster + Planificacion read-only implementadas localmente (2026-07-14):** Alumnos agrega archivar/restaurar y borrado duro confirmado por nombre. El borrado usa tombstones por intento, barrera y tracking single-tab, delete remoto durable, supresion de cola y purga Dexie transaccional para impedir resurrecciones. Planificacion deja de ser placeholder y muestra la semana de cualquier atleta del roster mediante lecturas/hidratacion por `athleteId` explicito, sin cambiar el scope activo. Pendiente commit/deploy/smoke de produccion; ver seccion 9.
 - **Fase 0 de coaches landing completada (2026-07-13):** rutas públicas reales (no AuthGate fallbacks), las cuatro páginas legales publicadas como rutas (`/terms`, `/privacy`, `/health-disclaimer`, y disclamer Whoop), landing `/coaches` en modo prelanzamiento con estructura de 3 planes, metadata/OG cards por ruta con prerender para crawlers, deep links nativos para OAuth callback en iOS, y cierre de compartimiento entre rutas públicas. Falta aún revisión jurídica y RUT/domicilio legal antes de cobro o anuncios masivos.
 - `main` hasta `167ef6e Plan whoop y entrenador`.
 - `007` aplicado y F2 data prereqs en `6e33926`.
@@ -33,7 +34,7 @@ Lo que queda antes de mostrar/cobrar con confianza se concentra en dos carriles:
 
 Carriles de producto que siguen abiertos pero ya no bloquean la oferta comercial:
 
-3. **Coach Workspace v0 completado:** roster mejorado ya en produccion; Planificacion/Biblioteca/Asistente IA quedan como "proximamente" a propósito (ver seccion 7), no impiden el lanzamiento del coaching pagado.
+3. **Coach Workspace ampliado:** gestion de roster y Planificacion semanal read-only ya estan implementadas localmente; Biblioteca/Asistente IA siguen como "proximamente" a propósito (ver secciones 7 y 9).
 4. **SP1 dos-lados:** membresias/RLS v2 ya planificadas para `013+`/Dexie v17+, pero es un incremento futuro de acceso, no bloqueante para la oferta coach de una sola cuenta.
 
 Mi lectura como lider tecnico: el cambio principal entre hoy y hace dos dias es que las rutas legales publicas ya existen como rutas reales, no como ideas. Eso permite cobrar sin zona gris innecesaria si se cierra la revision juridica rapido. El cuello actual es revision juridica formal + primer cliente real para validar flujo comercial/operacional.
@@ -48,7 +49,7 @@ Estimacion actual:
 
 - Demo acompanada: **99% listo / 1% pendiente** (rutas legales publicas ya vivas; pendiente solo revision juridica formal).
 - Piloto manual pagado 1-3 clientes: **93% listo / 7% pendiente** (Fase 0 completa; pendiente consentimiento biometrico Whoop + operaciones piloto).
-- Coach UI F2-lite MVP interno: **85% listo / 15% pendiente** (Coach Workspace v0 suma roster mejorado; Planificacion/Biblioteca/Asistente IA siguen como placeholders a proposito).
+- Coach UI F2-lite MVP interno: **92% listo / 8% pendiente** (gestion de roster + Planificacion read-only implementadas; Biblioteca/Asistente IA siguen como placeholders a proposito).
 - Coach dos-lados/SP1: **25% listo / 75% pendiente** (especificado y planificado, pero no urgente frente al piloto de una sola cuenta).
 - Monetizacion publica self-serve: **62% listo / 38% pendiente** (rutas legales + landing coach vivas; falta pagos automaticos, consentimiento in-app, e2e auth).
 
@@ -179,6 +180,18 @@ Pendiente y no bloqueante:
 - RUT/domicilio legal de RallyIQ antes de cobro o anuncios masivos.
 
 Estado: **Fase 0 desplegada en produccion.** Plan completo: `docs/superpowers/plans/2026-07-13-coaches-landing-fase0.md`. Tests de UI agregados para `LegalPageLayout` y `SharedPublicNav`. No toca Supabase ni Dexie.
+
+### 9. Gestion de roster + Planificacion read-only implementadas (2026-07-14)
+
+El Coach Workspace incorpora el ciclo de vida seguro de atletas gestionados y una primera superficie real de planificacion multi-atleta:
+
+- **Alumnos:** archivar y restaurar gestionados no reclamados; borrado definitivo solo desde Archivados, con confirmacion escribiendo el nombre. Self, atletas de otro owner y cuentas vinculadas quedan bloqueados en dominio y UI.
+- **Borrado sin resurreccion:** tombstone durable por intento, barrera exclusiva y tracking de operaciones en vuelo single-tab, abort acotado del generador, delete remoto inmediato o durablemente encolado, limpieza athlete-scoped de la cola y purga de todas las tablas Dexie en una transaccion.
+- **Sync endurecido:** pulls y merges filtran tombstones y adquieren leases antes de escribir; la cobertura incluye perfiles, notas, memberships, planes/semanas, polling de generacion, readiness y workouts. El contrato multi-tab no se amplia en este incremento.
+- **Planificacion:** selector de atleta, navegacion semanal, estados loading/error/cache stale y sesiones agrupadas por dia. `coachScopedReads` valida owner/roster y aplica legacy solo al self; la hidratacion remota por semana no cambia el atleta activo.
+- **Smoke:** el modo `--apply` identifica al atleta creado por id y prueba archivar/restaurar con recuperacion en `finally`; el borrado duro permanece cubierto solo por tests para no destruir datos reales.
+
+Estado: **implementado y verificado localmente; pendiente commit, deploy y smoke de produccion.** Lint, suite completa y build pasan. No agrega migraciones: usa el modelo Dexie v17 existente. Plan y spec: `docs/superpowers/plans/2026-07-14-coach-roster-management-y-planificacion.md` y `docs/superpowers/specs/2026-07-14-coach-roster-management-y-planificacion-design.md`.
 
 ## Avances Ya Implementados
 
@@ -577,7 +590,8 @@ Estado: **implementado y deployado en produccion (2026-07-13).**
 - [x] `CoachWorkspaceNav`: nav responsive (sidebar desktop, tabs horizontales mobile) con ARIA `tablist`/`tab`/`tabpanel`.
 - [x] Tab Resumen: tarjetas de roster con CTAs "Ver semana"/"Ver plan", sin señales computadas (fuera de alcance v0).
 - [x] Tab Alumnos: roster + alta de atleta (formulario, submit por Enter) + "Entrenar como este atleta".
-- [x] Tabs Planificacion/Biblioteca/Asistente IA: placeholders "proximamente" en tuteo.
+- [x] Tab Planificacion: vista semanal read-only multi-atleta con hidratacion explicita; Biblioteca/Asistente IA conservan placeholders "proximamente".
+- [x] Alumnos: archivar/restaurar gestionados y borrado duro con confirmacion, tombstone, barrera, cola y purga transaccional.
 - [x] `switchActiveAthlete`: `loadMemory()` post-commit pasa a best-effort (bug real corregido, no solo refactor).
 - [x] Lock de concurrencia para switch/creacion de atleta, movido a singleton de modulo tras encontrar que un `useRef` no sobrevive al remount de un switch exitoso.
 - [x] Smoke de Playwright extendido (no-destructivo por defecto, destructivo detras de `--apply`, gate `E2E_EXPECT_COACH_WORKSPACE`).
@@ -585,12 +599,12 @@ Estado: **implementado y deployado en produccion (2026-07-13).**
 - [x] Merge a `main` + push a produccion.
 - [x] Fix de tooling: `vitest`/`eslint` excluyen `.claude/worktrees/` (encontrado durante el cierre de esta pieza).
 - [x] Documentacion del gap conocido de `CoachContextBar` sin lock compartido en el plan (no bloqueante).
-- [ ] Decidir cuando construir Planificacion/Biblioteca/Asistente IA (hoy son placeholders honestos, no falsas promesas).
+- [ ] Decidir cuando construir edicion en Planificacion y contenido real de Biblioteca/Asistente IA.
 
 No entra todavia:
 
 - señales computadas cross-atleta (check-in gaps, readiness agregado, sesiones vencidas).
-- contenido real de Planificacion/Biblioteca/Asistente IA.
+- edicion de sesiones desde Planificacion y contenido real de Biblioteca/Asistente IA.
 - lock de concurrencia compartido con `CoachContextBar` (gap de UX, no de integridad).
 
 ## Sprint Recomendado - Proximos 2-3 Dias Para Cerrar Riesgo Legal Y Lanzar Piloto
@@ -702,7 +716,7 @@ Orden recomendado (Athlete-Aware Core + Coach F2-lite Parte 2b + Whoop v1/Workou
 - No vender "IA ilimitada" como valor central.
 - No invitar 10+ personas antes del primer piloto acompanado.
 - No exponer datos biometricos sin consentimiento y borrado completo.
-- No construir contenido real de Planificacion/Biblioteca/Asistente IA en Coach Workspace todavia — quedan como placeholders honestos hasta decidir alcance.
+- No ampliar Planificacion a edicion ni construir Biblioteca/Asistente IA todavia; esas superficies requieren una decision de alcance propia.
 
 ## Veredicto
 
