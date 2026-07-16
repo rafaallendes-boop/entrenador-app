@@ -9,10 +9,30 @@ const ROSTER: Athlete[] = [
   { id: 'ath_m_abc', ownerAccountId: 'user-1', linkedAccountId: null, displayName: 'Cliente 1', status: 'active', createdAt: 1, updatedAt: 1 },
 ]
 
-function render(status: RosterStatus, athletes: Athlete[] = [], pendingAction: PendingAthleteAction | null = null) {
+const CLAIMED: Athlete = {
+  id: 'ath_m_claimed', ownerAccountId: 'user-1', linkedAccountId: 'user-9',
+  displayName: 'Cliente vinculada', status: 'active', createdAt: 1, updatedAt: 1,
+}
+const ARCHIVED: Athlete = {
+  id: 'ath_m_archived', ownerAccountId: 'user-1', linkedAccountId: null,
+  displayName: 'Cliente archivada', status: 'archived', createdAt: 1, updatedAt: 1,
+}
+const ARCHIVED_CLAIMED: Athlete = {
+  id: 'ath_m_archived_claimed', ownerAccountId: 'user-1', linkedAccountId: 'user-8',
+  displayName: 'Archivada vinculada', status: 'archived', createdAt: 1, updatedAt: 1,
+}
+
+function render(
+  status: RosterStatus,
+  athletes: Athlete[] = [],
+  pendingAction: PendingAthleteAction | null = null,
+  archivedAthletes: Athlete[] = [],
+  initialDeleteTargetId?: string,
+) {
   return renderToStaticMarkup(
     <CoachRosterPanel
       athletes={athletes}
+      archivedAthletes={archivedAthletes}
       status={status}
       selfId="ath_user-1"
       activeAthleteId="ath_user-1"
@@ -20,6 +40,10 @@ function render(status: RosterStatus, athletes: Athlete[] = [], pendingAction: P
       onRetry={vi.fn()}
       onCreateAthlete={vi.fn()}
       onTrainAs={vi.fn()}
+      onArchive={vi.fn()}
+      onRestore={vi.fn()}
+      onDelete={vi.fn()}
+      initialDeleteTargetId={initialDeleteTargetId}
     />,
   )
 }
@@ -76,5 +100,45 @@ describe('CoachRosterPanel', () => {
     const html = render('ready', ROSTER, { kind: 'create', athleteId: null })
     const managedRow = html.slice(html.indexOf('Cliente 1'))
     expect(managedRow).toContain('disabled')
+  })
+
+  it('muestra Archivar solo en gestionados no reclamados', () => {
+    const html = render('ready', [...ROSTER, CLAIMED])
+    expect((html.match(/>Archivar</g) ?? [])).toHaveLength(1)
+    expect(html.slice(html.indexOf('Cliente vinculada'))).not.toMatch(/>Archivar</)
+  })
+
+  it('muestra Archivados con acciones solo para atletas no vinculados', () => {
+    const html = render('ready', ROSTER, null, [ARCHIVED, ARCHIVED_CLAIMED])
+    expect(html).toContain('Archivados (2)')
+    expect((html.match(/>Restaurar</g) ?? [])).toHaveLength(1)
+    expect((html.match(/>Eliminar definitivamente</g) ?? [])).toHaveLength(1)
+    expect(html).toContain('Cuenta vinculada')
+    expect(html).toContain('data-archived-row="ath_m_archived"')
+  })
+
+  it('renderiza el modal con input y confirmacion deshabilitada', () => {
+    const html = render('ready', ROSTER, null, [ARCHIVED], ARCHIVED.id)
+    expect(html).toContain('role="dialog"')
+    expect(html).toContain('Cliente archivada')
+    expect(html).toContain('<input')
+    const confirmButton = html.match(/<button[^>]*disabled[^>]*>Eliminar<\/button>/)?.[0]
+    expect(confirmButton).toBeDefined()
+  })
+
+  it('sin archivados no muestra la seccion', () => {
+    expect(render('ready', ROSTER)).not.toContain('Archivados (')
+  })
+
+  it('una accion de roster pendiente bloquea switches, archivo y restauracion', () => {
+    const html = render(
+      'ready',
+      ROSTER,
+      { athleteId: 'ath_m_abc', kind: 'archive' },
+      [ARCHIVED],
+    )
+    const actionButtons = html.match(/<button[^>]*>[^<]*(?:Entrenar como este atleta|Archivar|Restaurar)[^<]*<\/button>/g) ?? []
+    expect(actionButtons).not.toHaveLength(0)
+    expect(actionButtons.every((button) => button.includes('disabled'))).toBe(true)
   })
 })

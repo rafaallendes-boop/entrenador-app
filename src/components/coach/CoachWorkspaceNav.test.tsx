@@ -45,10 +45,10 @@ describe('CoachWorkspaceNav', () => {
     expect(html).toContain('aria-controls="coach-tabpanel-biblioteca"')
   })
 
-  it('marks Planificación, Biblioteca y Asistente IA as "pronto"', () => {
+  it('marca solo Biblioteca y Asistente IA como "pronto"', () => {
     const html = renderToStaticMarkup(
       <CoachWorkspaceNav activeTab="resumen" onSelect={vi.fn()} />,
     )
-    expect((html.match(/pronto/g) ?? []).length).toBe(3)
+    expect((html.match(/pronto/g) ?? []).length).toBe(2)
   })
 })

@@ -2,9 +2,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   acquireAthleteActionLock,
   createAndActivateAthlete,
+  getCoachRosterRevision,
   isAthleteActionLocked,
+  notifyCoachRosterChanged,
   releaseAthleteActionLock,
   selectAthleteAndNavigate,
+  subscribeCoachRosterRevision,
 } from './coachWorkspaceActions'
 import type { Athlete } from '../../types'
 
@@ -120,5 +123,21 @@ describe('athlete action lock (module-level singleton)', () => {
     acquireAthleteActionLock()
     const readFromAnotherCallSite = isAthleteActionLocked()
     expect(readFromAnotherCallSite).toBe(true)
+  })
+})
+
+describe('coach roster revision', () => {
+  it('persiste el cambio y notifica a instancias montadas despues de un switch', () => {
+    const listener = vi.fn()
+    const unsubscribe = subscribeCoachRosterRevision(listener)
+    const before = getCoachRosterRevision()
+
+    notifyCoachRosterChanged()
+
+    expect(getCoachRosterRevision()).toBe(before + 1)
+    expect(listener).toHaveBeenCalledTimes(1)
+    unsubscribe()
+    notifyCoachRosterChanged()
+    expect(listener).toHaveBeenCalledTimes(1)
   })
 })

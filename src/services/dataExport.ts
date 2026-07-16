@@ -1,4 +1,5 @@
 import { db } from '../db/db'
+import { getAllAthleteScopedTables } from '../db/athleteScopedTables'
 import { APP_INFO } from '../constants/appInfo'
 import type {
   Athlete,
@@ -622,7 +623,7 @@ export async function importAppDataFromFile(
   if (mode === 'replace') {
     await db.transaction(
       'rw',
-      [db.sessions, db.dayLogs, db.readinessDaily, db.whoopWorkouts, db.weekSummaries, db.trainingPlans, db.trainingPlanWeeks, db.chatMessages, db.coachProposals, db.athleteProfiles, db.athletes, db.athleteCoachNotes],
+      getAllAthleteScopedTables(),
       async () => {
         await db.sessions.clear()
         await db.dayLogs.clear()
@@ -631,10 +632,12 @@ export async function importAppDataFromFile(
         await db.weekSummaries.clear()
         await db.trainingPlanWeeks.clear()
         await db.trainingPlans.clear()
+        await db.planGenerationJobs.clear()
         await db.chatMessages.clear()
         await db.coachProposals.clear()
         await db.athleteProfiles.clear()
         await db.athletes.clear()
+        await db.athleteMemberships.clear()
         await db.athleteCoachNotes.clear()
 
         if (backup.tables.sessions.length > 0) await db.sessions.bulkPut(backup.tables.sessions)
@@ -657,7 +660,7 @@ export async function importAppDataFromFile(
     // WeekSummaries have no updatedAt — only add records missing locally.
     await db.transaction(
       'rw',
-      [db.sessions, db.dayLogs, db.readinessDaily, db.whoopWorkouts, db.weekSummaries, db.trainingPlans, db.trainingPlanWeeks, db.chatMessages, db.coachProposals, db.athleteProfiles, db.athletes, db.athleteCoachNotes],
+      getAllAthleteScopedTables(),
       async () => {
         // Sessions
         const localSessions = await db.sessions.toArray()

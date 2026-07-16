@@ -45,6 +45,17 @@ export function clearStoredChatSessionId(): void {
   storage?.removeItem(localOnlyKey())
 }
 
+/**
+ * Borra la sesión de un atleta gestionado por id explícito sin tocar las keys
+ * legacy del owner, aunque el atleta activo ya haya vuelto al self.
+ */
+export function clearStoredChatSessionIdForAthlete(athleteId: string): void {
+  const storage = getStorage()
+  if (!storage) return
+  storage.removeItem(`${CHAT_SESSION_KEY}:${athleteId}`)
+  storage.removeItem(`${CHAT_SESSION_LOCAL_ONLY_KEY}:${athleteId}`)
+}
+
 export function isLocalOnlyChatSessionId(id: string): boolean {
   const storage = getStorage()
   return storage?.getItem(sessionKey()) === id && storage?.getItem(localOnlyKey()) === '1'

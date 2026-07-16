@@ -1,4 +1,5 @@
 import { db } from '../db/db'
+import { getAllAthleteScopedTables } from '../db/athleteScopedTables'
 import { useChatStore } from '../store/useChatStore'
 import { useCoachActionsStore } from '../store/useCoachActionsStore'
 import { useCoachMemoryStore } from '../store/useCoachMemoryStore'
@@ -8,6 +9,10 @@ import { clearAllStoredChatSessionIds, getOrCreateChatSessionId } from '../utils
 import { currentWeekStartISO, fromISO, toISO } from '../utils/date'
 import { addDays } from 'date-fns'
 import type { Session } from '../types'
+import {
+  ATHLETE_DELETE_TOMBSTONE_PREFIX,
+  clearAllAthleteDeleteTombstones,
+} from './sync/athleteDeleteTombstones'
 
 const APP_LOCAL_STORAGE_PREFIXES = ['entrenador_', 'coach_', 'entrenador:']
 const APP_LOCAL_STORAGE_KEYS = [
@@ -111,7 +116,7 @@ export async function clearSelectedLocalAppData(selection: LocalDataSelection): 
 
   await db.transaction(
     'rw',
-    [db.sessions, db.dayLogs, db.readinessDaily, db.whoopWorkouts, db.weekSummaries, db.trainingPlans, db.trainingPlanWeeks, db.chatMessages, db.coachProposals, db.athleteProfiles, db.athletes, db.athleteMemberships, db.athleteCoachNotes],
+    getAllAthleteScopedTables(),
     async () => {
       if (selection.trainingData) {
         await db.sessions.clear()
@@ -121,6 +126,7 @@ export async function clearSelectedLocalAppData(selection: LocalDataSelection): 
         await db.weekSummaries.clear()
         await db.trainingPlanWeeks.clear()
         await db.trainingPlans.clear()
+        await db.planGenerationJobs.clear()
         await db.athletes.clear()
         await db.athleteMemberships?.clear()
       }
@@ -160,6 +166,9 @@ export function clearAllAppLocalStorage(userId?: string): void {
     return
   }
 
+  // La limpieza por prefijos no resetea el espejo en memoria del módulo.
+  clearAllAthleteDeleteTombstones()
+
   const keysToRemove = new Set(APP_LOCAL_STORAGE_KEYS)
   if (userId) {
     keysToRemove.add(`${REMOTE_FULL_RESET_ACK_KEY_PREFIX}:${userId}`)
@@ -167,7 +176,11 @@ export function clearAllAppLocalStorage(userId?: string): void {
 
   for (let index = 0; index < storage.length; index += 1) {
     const key = storage.key(index)
-    if (key && APP_LOCAL_STORAGE_PREFIXES.some((prefix) => key.startsWith(prefix))) {
+    if (
+      key
+      && !key.startsWith(`${ATHLETE_DELETE_TOMBSTONE_PREFIX}:`)
+      && APP_LOCAL_STORAGE_PREFIXES.some((prefix) => key.startsWith(prefix))
+    ) {
       keysToRemove.add(key)
     }
   }

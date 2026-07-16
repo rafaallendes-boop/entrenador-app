@@ -1,4 +1,5 @@
 import { db } from '../../db/db'
+import { getLegacyAthleteScopeBackfillTables } from '../../db/athleteScopedTables'
 import { isScopedAthleteId } from './effectiveAthleteKey'
 import { isClaimPending } from './claimGate'
 import { getSelfMembership } from './membershipCache'
@@ -79,17 +80,7 @@ export function markBackfillDirtyAfterImport(): void {
 }
 
 async function patchScopableTables(athleteId: string): Promise<number> {
-  const tables = [
-    db.sessions,
-    db.dayLogs,
-    db.weekSummaries,
-    db.chatMessages,
-    db.coachProposals,
-    db.athleteProfiles,
-    db.trainingPlans,
-    db.trainingPlanWeeks,
-    db.planGenerationJobs,
-  ] as unknown as ScopableTable[]
+  const tables = getLegacyAthleteScopeBackfillTables() as unknown as ScopableTable[]
   let patched = 0
   for (const table of tables) patched += await patchTable(table, athleteId)
   return patched

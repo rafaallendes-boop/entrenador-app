@@ -150,3 +150,37 @@ export function clearQueuedOpsForTables(userId: string, tables: Iterable<Supabas
     // Ignore storage failures.
   }
 }
+
+/**
+ * Suprime las operaciones pendientes de un atleta tras un borrado duro. El
+ * delete canónico de `athletes` se conserva porque materializa el borrado
+ * remoto. Deletes hijos sin scope quedan: no se pueden atribuir con seguridad.
+ */
+export function clearQueuedOpsForAthlete(
+  userId: string,
+  athleteId: string,
+  legacySessionIds: Iterable<string> = [],
+): void {
+  const scopedSessionIds = new Set(legacySessionIds)
+  const queue = loadQueue()
+  const remaining = queue.filter((op) => {
+    if (op.userId !== userId) return true
+
+    const isCanonicalDelete = op.table === 'athletes'
+      && op.action === 'delete'
+      && op.payload.id === athleteId
+    if (isCanonicalDelete) return true
+
+    if (op.payload.athlete_id === athleteId) return false
+    if (op.scopeAthleteId === athleteId) return false
+    if (
+      op.action === 'session_completion'
+      && typeof op.payload.p_session_id === 'string'
+      && scopedSessionIds.has(op.payload.p_session_id)
+    ) return false
+    if (op.table === 'athletes' && op.payload.id === athleteId) return false
+    return true
+  })
+
+  if (remaining.length !== queue.length) saveQueue(remaining)
+}

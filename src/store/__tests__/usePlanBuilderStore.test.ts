@@ -30,6 +30,10 @@ const mocks = vi.hoisted(() => {
     releasePlanBuilderWeekReservations: vi.fn(),
     syncPlanBuilderWeekUsageFromWeeks: vi.fn(),
     db: {
+      transaction: vi.fn(async (...args: unknown[]) => {
+        const callback = args.at(-1) as () => Promise<unknown>
+        return callback()
+      }),
       trainingPlans: {
         put: vi.fn(async (plan: TrainingPlan) => {
           plans.set(plan.id, plan)

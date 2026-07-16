@@ -7,7 +7,7 @@ export type RosterStatus = 'loading' | 'ready' | 'error'
  * es un switch mas y no puede correr en paralelo con otro.
  */
 export type PendingAthleteAction =
-  | { kind: 'week' | 'plan' | 'trainAs'; athleteId: string }
+  | { kind: 'week' | 'plan' | 'trainAs' | 'archive' | 'restore' | 'delete'; athleteId: string }
   | { kind: 'create'; athleteId: null }
 
 export function coachTabId(tab: CoachWorkspaceTab): string {

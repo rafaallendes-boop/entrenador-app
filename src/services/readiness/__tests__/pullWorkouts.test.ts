@@ -5,6 +5,16 @@ let supabaseError: { message: string } | null = null
 let queryGate: Promise<void> | null = null
 let activeQueries = 0
 let maxActiveQueries = 0
+const tombstonedAthletes = vi.hoisted(() => new Set<string>())
+
+vi.mock('../../sync/athleteDeleteTombstones', () => ({
+  hasAthleteDeleteTombstone: vi.fn((_userId: string, athleteId: string) => tombstonedAthletes.has(athleteId)),
+  hasAthleteDeleteTombstoneForAthlete: vi.fn((athleteId: string) => tombstonedAthletes.has(athleteId)),
+  rememberAthleteDeleteTombstone: vi.fn((_userId: string, athleteId: string) => {
+    tombstonedAthletes.add(athleteId)
+    return 'test-token'
+  }),
+}))
 
 vi.mock('../../sync/syncSupabase', () => ({
   getSupabase: () => ({
@@ -58,6 +68,7 @@ describe('pullWorkouts', () => {
     queryGate = null
     activeQueries = 0
     maxActiveQueries = 0
+    tombstonedAthletes.clear()
     setSelfAthleteId('ath_1')
     setActiveAthleteId('ath_1')
   })
@@ -125,6 +136,20 @@ describe('pullWorkouts', () => {
     setActiveAthleteId('ath_2')
     release()
     await expect(pulling).rejects.toThrow(/athlete switched/)
+    expect(await db.whoopWorkouts.count()).toBe(0)
+  })
+
+  it('no reintroduce workouts si el atleta queda tombstoned durante el fetch', async () => {
+    let release!: () => void
+    queryGate = new Promise<void>((resolve) => { release = resolve })
+    supabaseRows.push(remoteRow())
+
+    const pulling = pullWorkouts()
+    await vi.waitFor(() => expect(activeQueries).toBe(1))
+    tombstonedAthletes.add('ath_1')
+    release()
+    await pulling
+
     expect(await db.whoopWorkouts.count()).toBe(0)
   })
 

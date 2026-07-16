@@ -432,14 +432,14 @@ async function runCoachWorkspaceSmoke(page) {
     ok('Tab Alumnos muestra el roster y el CTA de crear')
   })
 
-  await safeCheck('Tabs Planificación/Biblioteca/Asistente IA muestran "próximamente"', async () => {
+  await safeCheck('Planificación carga la vista semanal y los otros tabs conservan su placeholder', async () => {
     await page.getByRole('tab', { name: /Planificación/i }).click()
-    await waitForBodyText(page, /Vas a poder crear y editar sesiones/i)
+    await page.locator('#planning-athlete').waitFor({ state: 'visible', timeout: 10_000 })
     await page.getByRole('tab', { name: /Biblioteca/i }).click()
     await waitForBodyText(page, /Vas a poder guardar tus ejercicios/i)
     await page.getByRole('tab', { name: /Asistente IA/i }).click()
     await waitForBodyText(page, /revisas y confirmas/i)
-    ok('Tabs "próximamente" muestran su copy')
+    ok('Planificación y placeholders restantes renderizan correctamente')
   })
 
   await safeCheck('Ver semana del atleta ACTIVO no cambia el scope', async () => {
@@ -463,6 +463,7 @@ async function runCoachWorkspaceSmoke(page) {
   // --- Desde acá: destructivo. Crea un atleta real y cambia el scope. ---
   const createdName = `E2E ${new Date().toISOString().slice(0, 19)}`
   let activeBeforeSwitch = null
+  let createdAthleteId = null
 
   await safeCheck('Crear atleta desde el tab Alumnos (submit con Enter)', async () => {
     await goto(page, '/coach')
@@ -498,12 +499,16 @@ async function runCoachWorkspaceSmoke(page) {
     await goto(page, '/coach')
     await page.getByRole('tab', { name: /Alumnos/i }).click()
     await waitForBodyText(page, new RegExp(createdName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'))
-    ok('El atleta creado aparece en el roster')
+    const createdRow = page.locator('[data-athlete-row]').filter({ hasText: createdName }).first()
+    createdAthleteId = await createdRow.getAttribute('data-athlete-row')
+    if (!createdAthleteId) throw new Error('La fila creada no expone data-athlete-row')
+    ok('El atleta creado aparece en el roster', createdAthleteId)
   })
 
   await safeCheck('"Entrenar como este atleta" cambia el atleta activo', async () => {
-    const row = page.locator(`[data-athlete-row][data-athlete-active="false"]`).first()
-    const targetId = await row.getAttribute('data-athlete-row')
+    if (!createdAthleteId) throw new Error('No se capturó el id del atleta creado')
+    const row = page.locator(`[data-athlete-row="${createdAthleteId}"]`)
+    const targetId = createdAthleteId
     await row.getByRole('button', { name: /Entrenar como este atleta/i }).click()
     // onTrainAs navega a ROUTES.HOME ('/') recien cuando el switch resolvio.
     // Sin esperar esa navegacion, el goto() de abajo competiria con ella.
@@ -533,6 +538,40 @@ async function runCoachWorkspaceSmoke(page) {
       .getAttribute('data-athlete-row')
     if (nowActive === activeBeforeSwitch) ok('Atleta activo original restaurado', activeBeforeSwitch)
     else fail('El smoke dejó otro atleta activo', `esperaba ${activeBeforeSwitch}, quedó ${nowActive}`)
+  })
+
+  await safeCheck('Archivar y restaurar el atleta creado por id', async () => {
+    if (!createdAthleteId) throw new Error('No se capturó el id del atleta creado')
+    const activeRow = page.locator(`[data-athlete-row="${createdAthleteId}"]`)
+    const archivedRow = page.locator(`[data-archived-row="${createdAthleteId}"]`)
+    let remainsArchived = false
+
+    const revealArchivedRows = async () => {
+      if (await archivedRow.isVisible().catch(() => false)) return
+      const summary = page.locator('summary').filter({ hasText: /Archivados/i }).first()
+      if (await summary.isVisible().catch(() => false)) await summary.click()
+    }
+
+    try {
+      await activeRow.getByRole('button', { name: /^Archivar$/i }).click()
+      await activeRow.waitFor({ state: 'detached', timeout: 10_000 })
+      remainsArchived = true
+      await revealArchivedRows()
+      await archivedRow.waitFor({ state: 'visible', timeout: 10_000 })
+
+      await archivedRow.getByRole('button', { name: /^Restaurar$/i }).click()
+      remainsArchived = false
+      await activeRow.waitFor({ state: 'visible', timeout: 10_000 })
+      ok('Atleta creado archivado y restaurado', createdAthleteId)
+    } finally {
+      if (remainsArchived) {
+        await revealArchivedRows().catch(() => undefined)
+        if (await archivedRow.isVisible().catch(() => false)) {
+          await archivedRow.getByRole('button', { name: /^Restaurar$/i }).click().catch(() => undefined)
+          await activeRow.waitFor({ state: 'visible', timeout: 10_000 }).catch(() => undefined)
+        }
+      }
+    }
   })
 }
 

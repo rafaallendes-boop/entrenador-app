@@ -3,6 +3,7 @@ import type { TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
 import { supabase } from '../auth'
 import { rowToTrainingPlan, rowToTrainingPlanWeek } from './planRows'
 import { countReadyWeeks, sortWeeks } from './weekUtils'
+import { runAthleteWrite } from '../sync/athleteWriteLease'
 
 export interface PlanGenerationSnapshot {
   plan: TrainingPlan
@@ -158,10 +159,12 @@ export async function fetchPlanGenerationSnapshot(
     )
     : derivePollingSnapshot(plan, weeks, now, options?.stalledAfterMs)
 
-  await db.transaction('rw', db.trainingPlans, db.trainingPlanWeeks, async () => {
-    await db.trainingPlans.put(snapshot.plan)
-    await db.trainingPlanWeeks.bulkPut(snapshot.weeks)
-  })
+  const wrote = await runAthleteWrite(snapshot.plan.athleteId, () =>
+    db.transaction('rw', db.trainingPlans, db.trainingPlanWeeks, async () => {
+      await db.trainingPlans.put(snapshot.plan)
+      await db.trainingPlanWeeks.bulkPut(snapshot.weeks)
+    }))
+  if (!wrote) return null
 
   return snapshot
 }

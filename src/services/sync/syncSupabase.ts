@@ -13,6 +13,8 @@ import { supabase } from '../auth'
 import type { SupabaseTable, SyncErrorCategory } from '../syncUtils'
 import { resolveReadScope, type ReadScope } from '../athlete/readScope'
 import { getMembershipAthleteIds } from '../athlete/membershipCache'
+import { getAthleteDeleteTombstoneSnapshot } from './athleteDeleteTombstones'
+import { getRemoteRowAthleteId } from './remoteRowAthleteId'
 
 /** Page size for paginated remote fetches via `.range(from, to)`. */
 export const FETCH_PAGE_SIZE = 1000
@@ -135,7 +137,15 @@ export async function fetchAll<T>(
     }
 
     const page = (data ?? []) as T[]
-    rows.push(...page)
+    // Un snapshot por página mantiene el costo O(keys + filas), y se refresca
+    // después de cada await de red para observar deletes iniciados entretanto.
+    const tombstones = getAthleteDeleteTombstoneSnapshot()
+    const alive = page.filter((row) => {
+      if (!row || typeof row !== 'object') return true
+      const athleteId = getRemoteRowAthleteId(row as Record<string, unknown>)
+      return !athleteId || !tombstones.has(userId, athleteId)
+    })
+    rows.push(...alive)
     if (!supportsRange || page.length < FETCH_PAGE_SIZE) break
   }
 

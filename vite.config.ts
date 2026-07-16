@@ -14,6 +14,10 @@ export default defineConfig(({ mode }) => {
     plugins: [react(), devCoachProxyPlugin(env)],
     test: {
       setupFiles: ['./vitest.setup.ts'],
+      // La suite completa transforma varios grafos pesados (sync/plan builder)
+      // en paralelo. El default de 5s puede expirar durante el import inicial
+      // aunque la misma prueba termine en milisegundos de forma aislada.
+      testTimeout: 10_000,
       // Vitest's default include glob has no notion of git worktrees living
       // inside the repo tree (e.g. Claude Code's native worktree tool places
       // them under .claude/worktrees/); without this, running tests from a

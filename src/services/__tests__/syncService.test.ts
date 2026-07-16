@@ -61,17 +61,21 @@ let trainingPlanWeekRows: unknown[] = []
 let chatMessageRows: unknown[] = []
 let coachProposalRows: unknown[] = []
 let athleteProfileRows: unknown[] = []
+let athleteCoachNoteRows: Array<{ athleteId: string; updatedAt: number; [key: string]: unknown }> = []
+let athleteMembershipRows: Array<{ athleteId: string; accountId: string; role: string; createdAt: number; updatedAt: number }> = []
 let athleteRows: Array<{ id: string; [key: string]: unknown }> = []
 let planGenerationJobRows: unknown[] = []
 let tableResults = new Map<string, SupabaseResultSource>()
 let actionResults = new Map<string, SupabaseResultSource>()
-type MockFilter = { op: 'eq' | 'neq' | 'in' | 'or' | 'lt' | 'lte'; column: string; value: unknown }
+type MockFilter = { op: 'eq' | 'neq' | 'in' | 'or' | 'lt' | 'lte' | 'gte'; column: string; value: unknown }
 
 const upsertCalls: Array<{ table: string; payload: unknown; options?: unknown }> = []
 const insertCalls: Array<{ table: string; payload: unknown }> = []
 const deleteCalls: Array<{ table: string; filters: Array<MockFilter> }> = []
 const updateCalls: Array<{ table: string; payload: unknown; filters: Array<MockFilter> }> = []
 const selectCalls: Array<{ table: string; filters: Array<MockFilter> }> = []
+const selectHooks = new Map<string, () => Promise<SupabaseResult>>()
+const upsertHooks = new Map<string, () => Promise<SupabaseResult>>()
 const getSessionMock = vi.fn(async () => ({ data: { session: { access_token: 'supabase-token' } } }))
 const whoopDeleteFetchMock = vi.fn(async () => ({ ok: true, status: 200 }) as Response)
 
@@ -102,6 +106,10 @@ function createQueryBuilder(
       filters.push({ op: 'lte', column, value })
       return this
     },
+    gte(column: string, value: unknown) {
+      filters.push({ op: 'gte', column, value })
+      return this
+    },
     lt(column: string, value: unknown) {
       filters.push({ op: 'lt', column, value })
       return this
@@ -119,6 +127,8 @@ function createQueryBuilder(
         updateCalls.push({ table, payload, filters: [...filters] })
       } else if (action === 'select') {
         selectCalls.push({ table, filters: [...filters] })
+        const hook = selectHooks.get(table)
+        if (hook) return hook().then(onFulfilled)
       }
       return Promise.resolve(onFulfilled(getSupabaseResult(table, action)))
     },
@@ -140,6 +150,8 @@ function createSupabaseFrom() {
   return (table: string) => ({
     upsert: vi.fn((payload: unknown, options?: unknown) => {
       upsertCalls.push({ table, payload, options })
+      const hook = upsertHooks.get(table)
+      if (hook) return hook()
       return Promise.resolve(getSupabaseResult(table, 'upsert'))
     }),
     insert: vi.fn((payload: unknown) => {
@@ -178,6 +190,7 @@ function matchesIndex(row: unknown, index: string, value: unknown): boolean {
 
 const supabaseMock = {
   from: createSupabaseFrom(),
+  rpc: vi.fn(async () => ({ data: true, error: null })),
   auth: {
     getSession: getSessionMock,
   },
@@ -329,6 +342,41 @@ vi.mock('../../db/db', () => ({
         athleteProfileRows = []
       }),
     },
+    athleteCoachNotes: {
+      toArray: vi.fn(async () => athleteCoachNoteRows),
+      get: vi.fn(async (athleteId: string) => athleteCoachNoteRows.find((row) => row.athleteId === athleteId)),
+      put: vi.fn(async (row: { athleteId: string; updatedAt: number; [key: string]: unknown }) => {
+        const index = athleteCoachNoteRows.findIndex((item) => item.athleteId === row.athleteId)
+        if (index >= 0) athleteCoachNoteRows[index] = row
+        else athleteCoachNoteRows.push(row)
+      }),
+      delete: vi.fn(async (athleteId: string) => {
+        athleteCoachNoteRows = athleteCoachNoteRows.filter((row) => row.athleteId !== athleteId)
+      }),
+    },
+    athleteMemberships: {
+      toArray: vi.fn(async () => athleteMembershipRows),
+      get: vi.fn(async ([athleteId, accountId]: [string, string]) =>
+        athleteMembershipRows.find((row) => row.athleteId === athleteId && row.accountId === accountId)),
+      bulkPut: vi.fn(async (rows: typeof athleteMembershipRows) => {
+        for (const row of rows) {
+          const index = athleteMembershipRows.findIndex((item) =>
+            item.athleteId === row.athleteId && item.accountId === row.accountId)
+          if (index >= 0) athleteMembershipRows[index] = row
+          else athleteMembershipRows.push(row)
+        }
+      }),
+      where: vi.fn((index: string) => ({
+        equals: vi.fn((value: string) => ({
+          toArray: vi.fn(async () => athleteMembershipRows.filter((row) =>
+            (row as unknown as Record<string, unknown>)[index] === value)),
+          delete: vi.fn(async () => {
+            athleteMembershipRows = athleteMembershipRows.filter((row) =>
+              (row as unknown as Record<string, unknown>)[index] !== value)
+          }),
+        })),
+      })),
+    },
     athletes: {
       toArray: vi.fn(async () => athleteRows),
       count: vi.fn(async () => athleteRows.length),
@@ -356,6 +404,10 @@ vi.mock('../../db/db', () => ({
         planGenerationJobRows = rows
       }),
     },
+    transaction: vi.fn(async (...args: unknown[]) => {
+      const run = args.at(-1) as () => Promise<unknown>
+      return run()
+    }),
   },
 }))
 
@@ -369,6 +421,8 @@ describe('syncService', () => {
     chatMessageRows = []
     coachProposalRows = []
     athleteProfileRows = []
+    athleteCoachNoteRows = []
+    athleteMembershipRows = []
     athleteRows = []
     planGenerationJobRows = []
     tableResults = new Map()
@@ -378,6 +432,8 @@ describe('syncService', () => {
     deleteCalls.length = 0
     updateCalls.length = 0
     selectCalls.length = 0
+    selectHooks.clear()
+    upsertHooks.clear()
     localStorageState.clear()
     syncStatusMock.mockReset()
     syncDetailsMock.mockReset()
@@ -387,6 +443,8 @@ describe('syncService', () => {
     whoopDeleteFetchMock.mockResolvedValue({ ok: true, status: 200 } as Response)
     clearAllLocalAppDataMock.mockReset()
     supabaseMock.from = createSupabaseFrom()
+    supabaseMock.rpc.mockReset()
+    supabaseMock.rpc.mockResolvedValue({ data: true, error: null })
     supabaseMock.auth.getSession = getSessionMock
     storeState.user = { id: 'user-1' }
     storeState.syncDetails = createSyncDetailsState()
@@ -394,6 +452,10 @@ describe('syncService', () => {
     Object.defineProperty(globalThis, 'localStorage', {
       configurable: true,
       value: {
+        get length() {
+          return localStorageState.size
+        },
+        key: (index: number) => [...localStorageState.keys()][index] ?? null,
         getItem: (key: string) => localStorageState.get(key) ?? null,
         setItem: (key: string, value: string) => {
           localStorageState.set(key, value)
@@ -418,6 +480,518 @@ describe('syncService', () => {
   afterEach(() => {
     vi.unstubAllEnvs()
     vi.resetModules()
+  })
+
+  describe('pullWeekSessionsForAthlete', () => {
+    const remoteSession = (
+      id: string,
+      athleteId: string | null,
+      updatedAt: number,
+      title = id,
+    ) => ({
+      id,
+      user_id: 'user-1',
+      athlete_id: athleteId,
+      date: '2026-07-14',
+      time_block: 'am',
+      type: 'squash',
+      status: 'planned',
+      created_at: 1,
+      updated_at: updatedAt,
+      data: { title, durationMin: 60 },
+    })
+
+    it('aplica scope y rango del atleta gestionado y conserva LWW local', async () => {
+      vi.stubEnv('VITE_SUPABASE_URL', 'https://example.test')
+      sessionsRows = [
+        {
+          id: 'local-newer',
+          athleteId: 'ath-managed',
+          date: '2026-07-14',
+          timeBlock: 'am',
+          type: 'squash',
+          status: 'planned',
+          title: 'Local más nueva',
+          durationMin: 60,
+          createdAt: 1,
+          updatedAt: 200,
+        },
+      ]
+      tableResults.set('sessions', {
+        data: [
+          remoteSession('remote-new', 'ath-managed', 300, 'Remota nueva'),
+          remoteSession('local-newer', 'ath-managed', 100, 'Remota vieja'),
+        ],
+        error: null,
+      })
+
+      const sync = await import('../syncService')
+      await sync.pullWeekSessionsForAthlete(
+        'user-1',
+        'ath-managed',
+        '2026-07-13',
+        '2026-07-19',
+        { includeLegacy: false },
+      )
+
+      expect(selectCalls.at(-1)).toEqual({
+        table: 'sessions',
+        filters: [
+          { op: 'eq', column: 'user_id', value: 'user-1' },
+          { op: 'gte', column: 'date', value: '2026-07-13' },
+          { op: 'lte', column: 'date', value: '2026-07-19' },
+          { op: 'eq', column: 'athlete_id', value: 'ath-managed' },
+        ],
+      })
+      expect(sessionsRows.find((row) => (row as { id: string }).id === 'remote-new')).toMatchObject({
+        athleteId: 'ath-managed',
+        title: 'Remota nueva',
+        updatedAt: 300,
+      })
+      expect(sessionsRows.find((row) => (row as { id: string }).id === 'local-newer')).toMatchObject({
+        title: 'Local más nueva',
+        updatedAt: 200,
+      })
+    })
+
+    it('self includeLegacy consulta athlete_id propio o null e hidrata legacy', async () => {
+      vi.stubEnv('VITE_SUPABASE_URL', 'https://example.test')
+      tableResults.set('sessions', {
+        data: [remoteSession('legacy', null, 100, 'Legacy')],
+        error: null,
+      })
+
+      const sync = await import('../syncService')
+      await sync.pullWeekSessionsForAthlete(
+        'user-1',
+        'ath_user-1',
+        '2026-07-13',
+        '2026-07-19',
+        { includeLegacy: true },
+      )
+
+      expect(selectCalls.at(-1)?.filters).toEqual([
+        { op: 'eq', column: 'user_id', value: 'user-1' },
+        { op: 'gte', column: 'date', value: '2026-07-13' },
+        { op: 'lte', column: 'date', value: '2026-07-19' },
+        { op: 'or', column: 'or', value: 'athlete_id.eq.ath_user-1,athlete_id.is.null' },
+      ])
+      expect(sessionsRows).toHaveLength(1)
+      expect(sessionsRows[0]).toMatchObject({ id: 'legacy', athleteId: undefined })
+    })
+
+    it('respeta tombstones de sesión: omite remoto viejo y acepta/limpia remoto nuevo', async () => {
+      vi.stubEnv('VITE_SUPABASE_URL', 'https://example.test')
+      const deletedAt = Date.now()
+      localStorageState.set('entrenador_sync_session_tombstones_v1', JSON.stringify({
+        'user-1': {
+          'remote-old': deletedAt,
+          'remote-new': deletedAt,
+        },
+      }))
+      tableResults.set('sessions', {
+        data: [
+          remoteSession('remote-old', 'ath-managed', deletedAt - 1),
+          remoteSession('remote-new', 'ath-managed', deletedAt + 1),
+        ],
+        error: null,
+      })
+
+      const sync = await import('../syncService')
+      await sync.pullWeekSessionsForAthlete(
+        'user-1',
+        'ath-managed',
+        '2026-07-13',
+        '2026-07-19',
+        { includeLegacy: false },
+      )
+
+      expect(sessionsRows.map((row) => (row as { id: string }).id)).toEqual(['remote-new'])
+      const stored = JSON.parse(localStorageState.get('entrenador_sync_session_tombstones_v1') ?? '{}')
+      expect(stored['user-1']).toEqual({ 'remote-old': deletedAt })
+    })
+
+    it('lee y parsea el mapa de tombstones de sesión una sola vez por pull', async () => {
+      vi.stubEnv('VITE_SUPABASE_URL', 'https://example.test')
+      tableResults.set('sessions', {
+        data: Array.from({ length: 50 }, (_, index) =>
+          remoteSession(`remote-${index}`, 'ath-managed', 100 + index)),
+        error: null,
+      })
+      const getItem = vi.spyOn(localStorage, 'getItem')
+      const sync = await import('../syncService')
+
+      await sync.pullWeekSessionsForAthlete(
+        'user-1',
+        'ath-managed',
+        '2026-07-13',
+        '2026-07-19',
+        { includeLegacy: false },
+      )
+
+      expect(getItem.mock.calls.filter(([key]) => key === 'entrenador_sync_session_tombstones_v1'))
+        .toHaveLength(1)
+    })
+
+    it('si aparece el tombstone del atleta durante el fetch no reintroduce sesiones', async () => {
+      vi.stubEnv('VITE_SUPABASE_URL', 'https://example.test')
+      let requested = false
+      let release!: (result: SupabaseResult) => void
+      selectHooks.set('sessions', () => {
+        requested = true
+        return new Promise<SupabaseResult>((resolve) => {
+          release = resolve
+        })
+      })
+
+      const sync = await import('../syncService')
+      const pulling = sync.pullWeekSessionsForAthlete(
+        'user-1',
+        'ath-managed',
+        '2026-07-13',
+        '2026-07-19',
+        { includeLegacy: false },
+      )
+      await vi.waitFor(() => expect(requested).toBe(true))
+
+      const { rememberAthleteDeleteTombstone } = await import('../sync/athleteDeleteTombstones')
+      rememberAthleteDeleteTombstone('user-1', 'ath-managed')
+      release({ data: [remoteSession('late', 'ath-managed', 100)], error: null })
+      await pulling
+
+      expect(sessionsRows).toEqual([])
+    })
+
+    it('sin backend configurado retorna sin consultar ni escribir', async () => {
+      vi.stubEnv('VITE_SUPABASE_URL', '')
+      tableResults.set('sessions', {
+        data: [remoteSession('should-not-load', 'ath-managed', 100)],
+        error: null,
+      })
+
+      const sync = await import('../syncService')
+      await sync.pullWeekSessionsForAthlete(
+        'user-1',
+        'ath-managed',
+        '2026-07-13',
+        '2026-07-19',
+        { includeLegacy: false },
+      )
+
+      expect(selectCalls).toEqual([])
+      expect(sessionsRows).toEqual([])
+    })
+  })
+
+  describe('athlete write leases', () => {
+    it('la barrera es exclusiva por atleta y su release es idempotente', async () => {
+      const sync = await import('../sync/athleteWriteLease')
+      const releaseA = sync.acquireAthleteDeletionBarrier('ath-a')
+      const releaseB = sync.acquireAthleteDeletionBarrier('ath-b')
+
+      expect(releaseA).not.toBeNull()
+      expect(releaseB).not.toBeNull()
+      expect(sync.acquireAthleteDeletionBarrier('ath-a')).toBeNull()
+
+      releaseA?.()
+      releaseA?.()
+      const releaseAgain = sync.acquireAthleteDeletionBarrier('ath-a')
+      expect(releaseAgain).not.toBeNull()
+      releaseAgain?.()
+      releaseB?.()
+    })
+
+    it('registra el lease antes de ejecutar y waitForInFlightAthleteOps espera su final', async () => {
+      let release!: () => void
+      const gate = new Promise<void>((resolve) => { release = resolve })
+      const run = vi.fn(async () => gate)
+      const sync = await import('../sync/athleteWriteLease')
+
+      const write = sync.withAthleteWriteLease('ath-managed', run)
+      expect(write).not.toBeNull()
+
+      let waitResolved = false
+      const waiting = sync.waitForInFlightAthleteOps('ath-managed').then(() => {
+        waitResolved = true
+      })
+      await Promise.resolve()
+      expect(run).toHaveBeenCalledOnce()
+      expect(waitResolved).toBe(false)
+
+      release()
+      await Promise.all([write, waiting])
+      expect(waitResolved).toBe(true)
+    })
+
+    it('un tombstone visible veta el lease antes de iniciar run', async () => {
+      const { rememberAthleteDeleteTombstone } = await import('../sync/athleteDeleteTombstones')
+      rememberAthleteDeleteTombstone('user-1', 'ath-managed')
+      const run = vi.fn(async () => undefined)
+      const sync = await import('../sync/athleteWriteLease')
+
+      expect(sync.withAthleteWriteLease('ath-managed', run)).toBeNull()
+      await Promise.resolve()
+      expect(run).not.toHaveBeenCalled()
+    })
+
+    it('el lease plural se registra para todos los atletas y cualquiera tombstoned veta el batch', async () => {
+      const sync = await import('../sync/athleteWriteLease')
+      let release!: () => void
+      const gate = new Promise<void>((resolve) => { release = resolve })
+      const write = sync.withAthleteWriteLeases(['ath-a', 'ath-a', 'ath-b'], async () => gate)
+      expect(write).not.toBeNull()
+
+      let waitedA = false
+      let waitedB = false
+      const waits = [
+        sync.waitForInFlightAthleteOps('ath-a').then(() => { waitedA = true }),
+        sync.waitForInFlightAthleteOps('ath-b').then(() => { waitedB = true }),
+      ]
+      await Promise.resolve()
+      expect([waitedA, waitedB]).toEqual([false, false])
+      release()
+      await Promise.all([write, ...waits])
+
+      const { rememberAthleteDeleteTombstone } = await import('../sync/athleteDeleteTombstones')
+      rememberAthleteDeleteTombstone('user-1', 'ath-b')
+      const vetoedRun = vi.fn(async () => undefined)
+      expect(sync.withAthleteWriteLeases(['ath-a', 'ath-b'], vetoedRun)).toBeNull()
+      expect(vetoedRun).not.toHaveBeenCalled()
+    })
+
+    it('el drain registra un upsert de athletes por payload.id aunque no tenga athlete_id', async () => {
+      vi.stubEnv('VITE_SUPABASE_URL', 'https://example.test')
+      localStorageState.set('entrenador_sync_queue_v1', JSON.stringify([{
+        userId: 'user-1',
+        table: 'athletes',
+        action: 'upsert',
+        payload: { id: 'ath-managed', owner_account_id: 'user-1', status: 'active' },
+        enqueuedAt: Date.now(),
+      }]))
+      let requested = false
+      let release!: (result: SupabaseResult) => void
+      upsertHooks.set('athletes', () => {
+        requested = true
+        return new Promise<SupabaseResult>((resolve) => { release = resolve })
+      })
+      const sync = await import('../syncService')
+
+      const draining = sync.drainQueue()
+      await vi.waitFor(() => expect(requested).toBe(true))
+      let waited = false
+      const waiting = sync.waitForInFlightAthleteOps('ath-managed').then(() => { waited = true })
+      await Promise.resolve()
+      expect(waited).toBe(false)
+
+      release({ data: null, error: null })
+      await Promise.all([draining, waiting])
+      expect(waited).toBe(true)
+      expect(JSON.parse(localStorageState.get('entrenador_sync_queue_v1') ?? '[]')).toEqual([])
+    })
+  })
+
+  describe('athlete delete drain and membership pull', () => {
+    it('drena el delete canónico por owner_account_id y deja un tombstone durable', async () => {
+      vi.stubEnv('VITE_SUPABASE_URL', 'https://example.test')
+      localStorageState.set('entrenador_sync_queue_v1', JSON.stringify([{
+        userId: 'user-1',
+        table: 'athletes',
+        action: 'delete',
+        payload: { id: 'ath-managed' },
+        enqueuedAt: Date.now(),
+      }]))
+      const sync = await import('../syncService')
+
+      await expect(sync.drainQueue()).resolves.toBe(true)
+
+      expect(deleteCalls).toContainEqual({
+        table: 'athletes',
+        filters: [
+          { op: 'eq', column: 'id', value: 'ath-managed' },
+          { op: 'eq', column: 'owner_account_id', value: 'user-1' },
+        ],
+      })
+      expect(deleteCalls.at(-1)?.filters.some((filter) => filter.column === 'user_id')).toBe(false)
+      const tombstones = await import('../sync/athleteDeleteTombstones')
+      expect(tombstones.hasAthleteDeleteTombstone('user-1', 'ath-managed')).toBe(true)
+      expect(JSON.parse(localStorageState.get('entrenador_sync_queue_v1') ?? '[]')).toEqual([])
+    })
+
+    it('filtra solo la membership tombstoned y refresca el resto del cache', async () => {
+      vi.stubEnv('VITE_SUPABASE_URL', 'https://example.test')
+      athleteMembershipRows = [{
+        athleteId: 'ath-existing',
+        accountId: 'user-1',
+        role: 'coach',
+        createdAt: 1,
+        updatedAt: 1,
+      }]
+      tableResults.set('athlete_memberships', {
+        data: [
+          { athlete_id: 'ath-a', account_id: 'user-1', role: 'coach', created_at: 2, updated_at: 2 },
+          { athlete_id: 'ath-b', account_id: 'user-1', role: 'coach', created_at: 2, updated_at: 2 },
+        ],
+        error: null,
+      })
+      const tombstones = await import('../sync/athleteDeleteTombstones')
+      tombstones.rememberAthleteDeleteTombstone('user-1', 'ath-b')
+      const sync = await import('../syncService')
+
+      await sync.pullMemberships('user-1')
+
+      expect(athleteMembershipRows).toEqual([expect.objectContaining({ athleteId: 'ath-a' })])
+    })
+
+    it('descarta una session_completion legacy al resolver su atleta desde la sesión local', async () => {
+      vi.stubEnv('VITE_SUPABASE_URL', 'https://example.test')
+      sessionsRows = [{ id: 's-legacy-completion', athleteId: 'ath-managed' }]
+      localStorageState.set('entrenador_sync_queue_v1', JSON.stringify([{
+        userId: 'user-1',
+        table: 'sessions',
+        action: 'session_completion',
+        payload: { p_session_id: 's-legacy-completion' },
+        enqueuedAt: Date.now(),
+      }]))
+      const tombstones = await import('../sync/athleteDeleteTombstones')
+      tombstones.rememberAthleteDeleteTombstone('user-1', 'ath-managed')
+      const sync = await import('../syncService')
+
+      await expect(sync.drainQueue()).resolves.toBe(true)
+
+      expect(JSON.parse(localStorageState.get('entrenador_sync_queue_v1') ?? '[]')).toEqual([])
+    })
+
+    it('no consulta Dexie para session_completion legacy cuando no hay tombstones de atleta', async () => {
+      vi.stubEnv('VITE_SUPABASE_URL', 'https://example.test')
+      sessionsRows = [{ id: 's-legacy-completion', athleteId: 'ath-managed' }]
+      localStorageState.set('entrenador_sync_queue_v1', JSON.stringify([{
+        userId: 'user-1',
+        table: 'sessions',
+        action: 'session_completion',
+        payload: { p_session_id: 's-legacy-completion' },
+        enqueuedAt: Date.now(),
+      }]))
+      const { db } = await import('../../db/db')
+      const getSession = vi.mocked(db.sessions.get)
+      getSession.mockClear()
+      const sync = await import('../syncService')
+
+      await expect(sync.drainQueue()).resolves.toBe(true)
+
+      expect(getSession).not.toHaveBeenCalled()
+      expect(supabaseMock.rpc).toHaveBeenCalledWith('mark_session_done', expect.any(Object))
+    })
+  })
+
+  describe('deleteManagedAthleteRemote', () => {
+    it('sin tombstone falla antes de tocar red o cola', async () => {
+      vi.stubEnv('VITE_SUPABASE_URL', 'https://example.test')
+      const sync = await import('../syncService')
+
+      await expect(sync.deleteManagedAthleteRemote('user-1', 'ath-managed')).resolves.toBe('failed')
+      expect(deleteCalls).toEqual([])
+      expect(JSON.parse(localStorageState.get('entrenador_sync_queue_v1') ?? '[]')).toEqual([])
+    })
+
+    it('online elimina por id+owner y no altera el tombstone del caller', async () => {
+      vi.stubEnv('VITE_SUPABASE_URL', 'https://example.test')
+      const tombstones = await import('../sync/athleteDeleteTombstones')
+      const token = tombstones.rememberAthleteDeleteTombstone('user-1', 'ath-managed')
+      const key = `entrenador_athlete_delete_tombstone_v1:user-1:ath-managed:${token}`
+      const sync = await import('../syncService')
+
+      await expect(sync.deleteManagedAthleteRemote('user-1', 'ath-managed')).resolves.toBe('deleted')
+      expect(deleteCalls).toContainEqual({
+        table: 'athletes',
+        filters: [
+          { op: 'eq', column: 'id', value: 'ath-managed' },
+          { op: 'eq', column: 'owner_account_id', value: 'user-1' },
+        ],
+      })
+      expect(localStorageState.get(key)).toBe('1')
+      expect(JSON.parse(localStorageState.get('entrenador_sync_queue_v1') ?? '[]')).toEqual([])
+    })
+
+    it('offline persiste el delete canónico y conserva el tombstone', async () => {
+      vi.stubEnv('VITE_SUPABASE_URL', 'https://example.test')
+      Object.defineProperty(globalThis, 'navigator', {
+        configurable: true,
+        value: { onLine: false },
+      })
+      const tombstones = await import('../sync/athleteDeleteTombstones')
+      const token = tombstones.rememberAthleteDeleteTombstone('user-1', 'ath-managed')
+      const key = `entrenador_athlete_delete_tombstone_v1:user-1:ath-managed:${token}`
+      const sync = await import('../syncService')
+
+      await expect(sync.deleteManagedAthleteRemote('user-1', 'ath-managed')).resolves.toBe('durably_queued')
+      expect(deleteCalls).toEqual([])
+      expect(JSON.parse(localStorageState.get('entrenador_sync_queue_v1') ?? '[]')).toEqual([
+        expect.objectContaining({
+          userId: 'user-1',
+          table: 'athletes',
+          action: 'delete',
+          payload: { id: 'ath-managed' },
+        }),
+      ])
+      expect(localStorageState.get(key)).toBe('1')
+    })
+
+    it('un error remoto no retriable falla sin encolar y conserva el tombstone', async () => {
+      vi.stubEnv('VITE_SUPABASE_URL', 'https://example.test')
+      actionResults.set('delete:athletes', {
+        data: null,
+        error: { message: 'invalid request', status: 400 },
+      })
+      const tombstones = await import('../sync/athleteDeleteTombstones')
+      const token = tombstones.rememberAthleteDeleteTombstone('user-1', 'ath-managed')
+      const key = `entrenador_athlete_delete_tombstone_v1:user-1:ath-managed:${token}`
+      const sync = await import('../syncService')
+
+      await expect(sync.deleteManagedAthleteRemote('user-1', 'ath-managed')).resolves.toBe('failed')
+      expect(JSON.parse(localStorageState.get('entrenador_sync_queue_v1') ?? '[]')).toEqual([])
+      expect(localStorageState.get(key)).toBe('1')
+    })
+
+    it('un error remoto retriable persiste el delete canónico verificado', async () => {
+      vi.stubEnv('VITE_SUPABASE_URL', 'https://example.test')
+      actionResults.set('delete:athletes', {
+        data: null,
+        error: { message: 'network down', status: 503 },
+      })
+      const tombstones = await import('../sync/athleteDeleteTombstones')
+      tombstones.rememberAthleteDeleteTombstone('user-1', 'ath-managed')
+      const sync = await import('../syncService')
+
+      await expect(sync.deleteManagedAthleteRemote('user-1', 'ath-managed')).resolves.toBe('durably_queued')
+      expect(JSON.parse(localStorageState.get('entrenador_sync_queue_v1') ?? '[]')).toEqual([
+        expect.objectContaining({
+          userId: 'user-1',
+          table: 'athletes',
+          action: 'delete',
+          payload: { id: 'ath-managed' },
+        }),
+      ])
+    })
+
+    it('si localStorage ignora silenciosamente la cola devuelve failed', async () => {
+      vi.stubEnv('VITE_SUPABASE_URL', 'https://example.test')
+      Object.defineProperty(globalThis, 'navigator', {
+        configurable: true,
+        value: { onLine: false },
+      })
+      const tombstones = await import('../sync/athleteDeleteTombstones')
+      tombstones.rememberAthleteDeleteTombstone('user-1', 'ath-managed')
+      const durableSetItem = localStorage.setItem.bind(localStorage)
+      vi.spyOn(localStorage, 'setItem').mockImplementation((key: string, value: string) => {
+        if (key === 'entrenador_sync_queue_v1') return
+        durableSetItem(key, value)
+      })
+      const sync = await import('../syncService')
+
+      await expect(sync.deleteManagedAthleteRemote('user-1', 'ath-managed')).resolves.toBe('failed')
+      expect(JSON.parse(localStorageState.get('entrenador_sync_queue_v1') ?? '[]')).toEqual([])
+      expect(tombstones.hasAthleteDeleteTombstone('user-1', 'ath-managed')).toBe(true)
+    })
   })
 
   it('deletes week summaries remotely by id', async () => {

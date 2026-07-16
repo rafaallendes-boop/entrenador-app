@@ -18,17 +18,22 @@ vi.mock('../store/useAuthStore', () => {
   useAuthStore.getState = () => authState
   return { useAuthStore }
 })
-
 import CoachWorkspacePage from './CoachWorkspacePage'
 import { useAuthStore } from '../store/useAuthStore'
 import { setActiveAthleteId, setSelfAthleteId } from '../services/athlete/activeAthlete'
 
 const SELF: Athlete = { id: 'ath_user-1', ownerAccountId: 'user-1', linkedAccountId: 'user-1', displayName: 'Rafa', status: 'active', createdAt: 1, updatedAt: 1 }
 const MANAGED: Athlete = { id: 'ath_m_abc', ownerAccountId: 'user-1', linkedAccountId: null, displayName: 'Cliente 1', status: 'active', createdAt: 1, updatedAt: 1 }
+const ARCHIVED: Athlete = { id: 'ath_m_old', ownerAccountId: 'user-1', linkedAccountId: null, displayName: 'Cliente antigua', status: 'archived', createdAt: 1, updatedAt: 1 }
 
 // renderToStaticMarkup no ejecuta efectos → initialAthletes inyecta el roster
 // que en runtime carga el useEffect (listOwnedAthletes).
-function render(allowlist: string, initialAthletes: Athlete[] = [], initialTab?: CoachWorkspaceTab) {
+function render(
+  allowlist: string,
+  initialAthletes: Athlete[] = [],
+  initialTab?: CoachWorkspaceTab,
+  initialArchivedAthletes: Athlete[] = [],
+) {
   return renderToStaticMarkup(
     <MemoryRouter initialEntries={['/coach']}>
       <Routes>
@@ -38,6 +43,7 @@ function render(allowlist: string, initialAthletes: Athlete[] = [], initialTab?:
             <CoachWorkspacePage
               allowlistOverride={allowlist}
               initialAthletes={initialAthletes}
+              initialArchivedAthletes={initialArchivedAthletes}
               initialTab={initialTab}
             />
           )}
@@ -84,8 +90,22 @@ describe('CoachWorkspacePage', () => {
     expect(html).toContain('Entrenar como este atleta')
   })
 
-  it('tab Planificación/Biblioteca/Asistente IA: muestran su placeholder con voz de tuteo', () => {
-    expect(render('rafa@x.cl', [SELF], 'planificacion')).toContain('Vas a poder crear y editar sesiones')
+  it('tab Alumnos recibe y muestra el roster archivado', () => {
+    const html = render('rafa@x.cl', [SELF, MANAGED], 'alumnos', [ARCHIVED])
+    expect(html).toContain('Archivados (1)')
+    expect(html).toContain('data-archived-row="ath_m_old"')
+    expect(html).toContain('Restaurar')
+    expect(html).toContain('Eliminar definitivamente')
+  })
+
+  it('tab Planificación muestra el panel semanal real', () => {
+    const html = render('rafa@x.cl', [SELF], 'planificacion')
+    expect(html).toContain('id="planning-athlete"')
+    expect(html).toContain('Semana anterior')
+    expect(html).not.toContain('Vas a poder crear y editar sesiones')
+  })
+
+  it('Biblioteca y Asistente IA conservan su placeholder con voz de tuteo', () => {
     expect(render('rafa@x.cl', [SELF], 'biblioteca')).toContain('Vas a poder guardar tus ejercicios')
     const asistente = render('rafa@x.cl', [SELF], 'asistente')
     expect(asistente).toContain('tú revisas y confirmas')

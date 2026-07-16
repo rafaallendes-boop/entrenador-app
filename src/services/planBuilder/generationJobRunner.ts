@@ -11,9 +11,16 @@ import {
   shouldUseDeterministicPrimary,
 } from './generationState'
 import { countReadyWeeks, isReadyWeek, sortWeeks } from './weekUtils'
+import { hasAthleteDeleteTombstoneForAthlete } from '../sync/athleteDeleteTombstones'
+import { runAthleteWrite } from '../sync/athleteWriteLease'
 
 const ACTIVE_JOB_STATUSES = new Set<PlanGenerationJob['status']>(['queued', 'running'])
 const runningJobs = new Map<string, Promise<void>>()
+
+/** No runner checkpoint may recreate local data once athlete deletion starts. */
+function canWriteForAthlete(athleteId: string): boolean {
+  return !hasAthleteDeleteTombstoneForAthlete(athleteId)
+}
 
 interface RunnerCallbacks {
   onJobUpdate?: (job: PlanGenerationJob) => void
@@ -111,19 +118,45 @@ function buildJobUpdate(
   }
 }
 
-async function putJob(job: PlanGenerationJob, callbacks?: RunnerCallbacks): Promise<void> {
-  await db.planGenerationJobs.put(job)
-  callbacks?.onJobUpdate?.(job)
+async function putJob(job: PlanGenerationJob, callbacks?: RunnerCallbacks): Promise<boolean> {
+  return runAthleteWrite(job.athleteId, async () => {
+    await db.planGenerationJobs.put(job)
+    callbacks?.onJobUpdate?.(job)
+  })
 }
 
 async function putPlanAndWeeks(
   plan: TrainingPlan,
   weeks: TrainingPlanWeek[],
   callbacks?: RunnerCallbacks,
-): Promise<void> {
-  await db.trainingPlans.put(plan)
-  await db.trainingPlanWeeks.bulkPut(weeks)
-  callbacks?.onPlanUpdate?.(plan, sortWeeks(weeks))
+): Promise<boolean> {
+  return runAthleteWrite(plan.athleteId, async () => {
+    await db.transaction('rw', db.trainingPlans, db.trainingPlanWeeks, async () => {
+      await db.trainingPlans.put(plan)
+      await db.trainingPlanWeeks.bulkPut(weeks)
+    })
+    // Los subscribers son UI, no parte del commit: un throw no debe revertir
+    // un checkpoint que Dexie ya confirmó.
+    callbacks?.onPlanUpdate?.(plan, sortWeeks(weeks))
+  })
+}
+
+async function putWeek(week: TrainingPlanWeek, callbacks?: RunnerCallbacks): Promise<boolean> {
+  return runAthleteWrite(week.athleteId, async () => {
+    await db.trainingPlanWeeks.put(week)
+    callbacks?.onWeekUpdate?.(week)
+  })
+}
+
+/** Mantiene el contrato de streaming: reveal inmediato y persistencia detrás. */
+function putStreamingWeek(
+  athleteId: string,
+  week: TrainingPlanWeek,
+  callbacks?: RunnerCallbacks,
+): Promise<boolean> {
+  if (!canWriteForAthlete(athleteId)) return Promise.resolve(false)
+  callbacks?.onWeekUpdate?.(week)
+  return runAthleteWrite(athleteId, () => db.trainingPlanWeeks.put(week))
 }
 
 async function loadPlanWeeks(planId: string): Promise<TrainingPlanWeek[]> {
@@ -135,7 +168,7 @@ async function cancelActiveJobsForPlan(planId: string): Promise<void> {
   const timestamp = now()
   await Promise.all(activeJobs
     .filter((job) => ACTIVE_JOB_STATUSES.has(job.status))
-    .map((job) => db.planGenerationJobs.put({
+    .map((job) => putJob({
       ...job,
       status: 'cancelled' as const,
       completedAt: timestamp,
@@ -163,7 +196,9 @@ export async function createPlanGenerationJob(input: CreateGenerationJobInput): 
     createdAt: timestamp,
     updatedAt: timestamp,
   }
-  await db.planGenerationJobs.put(job)
+  if (!(await putJob(job))) {
+    throw new Error('No se puede crear un job para un atleta que está siendo eliminado.')
+  }
   return job
 }
 
@@ -183,6 +218,41 @@ export function isPlanGenerationJobRunning(jobId: string): boolean {
   return runningJobs.has(jobId)
 }
 
+/**
+ * Cancels this athlete's durable active jobs and waits for their current runs,
+ * bounded because the LLM provider is not abortable yet. The cancellation puts
+ * intentionally bypass canWriteForAthlete: deletion creates its tombstone
+ * before calling this function and these are the only writes it still allows.
+ */
+export async function abortPlanGenerationForAthlete(
+  athleteId: string,
+  opts?: { waitMs?: number },
+): Promise<void> {
+  const waitMs = opts?.waitMs ?? 4000
+  const jobs = await db.planGenerationJobs.where('athleteId').equals(athleteId).toArray()
+  const timestamp = now()
+  await Promise.all(jobs
+    .filter((job) => ACTIVE_JOB_STATUSES.has(job.status))
+    .map((job) => db.planGenerationJobs.put({
+      ...job,
+      status: 'cancelled' as const,
+      completedAt: timestamp,
+      heartbeatAt: timestamp,
+      updatedAt: timestamp,
+      lastError: 'Cancelado: el atleta está siendo eliminado.',
+    })))
+
+  const inFlight = jobs
+    .map((job) => runningJobs.get(job.id))
+    .filter((run): run is Promise<void> => Boolean(run))
+  if (inFlight.length === 0) return
+
+  await Promise.race([
+    Promise.allSettled(inFlight),
+    new Promise<void>((resolve) => setTimeout(resolve, Math.max(0, waitMs))),
+  ])
+}
+
 export async function runPlanGenerationJob(input: RunGenerationJobInput): Promise<void> {
   const activeRun = runningJobs.get(input.jobId)
   if (activeRun) return activeRun
@@ -199,6 +269,7 @@ export async function runPlanGenerationJob(input: RunGenerationJobInput): Promis
 async function runPlanGenerationJobInternal({ jobId, profile, callbacks }: RunGenerationJobInput): Promise<void> {
   const initialJob = await db.planGenerationJobs.get(jobId)
   if (!initialJob || !ACTIVE_JOB_STATUSES.has(initialJob.status)) return
+  if (!canWriteForAthlete(initialJob.athleteId)) return
   let job: PlanGenerationJob = initialJob
 
   const plan = await db.trainingPlans.get(job.planId)
@@ -230,6 +301,7 @@ async function runPlanGenerationJobInternal({ jobId, profile, callbacks }: RunGe
   let latestPlan = plan
 
   for (const weekIndex of targetWeekIndexes) {
+    if (!canWriteForAthlete(job.athleteId)) return
     const freshJob = await db.planGenerationJobs.get(job.id)
     if (!freshJob || !ACTIVE_JOB_STATUSES.has(freshJob.status)) return
     job = freshJob
@@ -252,11 +324,11 @@ async function runPlanGenerationJobInternal({ jobId, profile, callbacks }: RunGe
       updatedAt: now(),
     }
     weeks = replaceWeek(weeks, generatingWeek)
-    await db.trainingPlanWeeks.put(generatingWeek)
-    callbacks?.onWeekUpdate?.(generatingWeek)
+    if (!(await putWeek(generatingWeek, callbacks))) return
     await putPlanAndWeeks(buildPlanCheckpoint(latestPlan, weeks, job), weeks, callbacks)
 
     try {
+      const incrementalWrites = new Set<Promise<unknown>>()
       const previousWeek = weeks.find((week) => week.weekIndex === weekIndex - 1 && isReadyWeek(week))
       const generatedWeeks = await generatePlanWeeks({
         plan: latestPlan,
@@ -269,11 +341,19 @@ async function runPlanGenerationJobInternal({ jobId, profile, callbacks }: RunGe
         recentContext,
         repairInstructionsByWeekIndex: job.repairInstructions,
         onWeekUpdate: (next) => {
+          if (!canWriteForAthlete(job.athleteId)) return
           weeks = replaceWeek(weeks, next)
-          callbacks?.onWeekUpdate?.(next)
-          void db.trainingPlanWeeks.put(next)
+          const write = putStreamingWeek(job.athleteId, next, callbacks)
+          incrementalWrites.add(write)
+          void write.then(
+            () => incrementalWrites.delete(write),
+            () => incrementalWrites.delete(write),
+          )
         },
       })
+      await Promise.allSettled([...incrementalWrites])
+
+      if (!canWriteForAthlete(job.athleteId)) return
 
       const generated = generatedWeeks[0] ?? {
         ...generatingWeek,
@@ -292,8 +372,7 @@ async function runPlanGenerationJobInternal({ jobId, profile, callbacks }: RunGe
       job = latestJob
 
       weeks = replaceWeek(await loadPlanWeeks(plan.id), generated)
-      await db.trainingPlanWeeks.put(generated)
-      callbacks?.onWeekUpdate?.(generated)
+      if (!(await putWeek(generated, callbacks))) return
 
       const checkpointPlan = buildPlanCheckpoint(latestPlan, weeks, job)
       latestPlan = checkpointPlan
@@ -301,6 +380,7 @@ async function runPlanGenerationJobInternal({ jobId, profile, callbacks }: RunGe
       await putPlanAndWeeks(checkpointPlan, weeks, callbacks)
       await putJob(job, callbacks)
     } catch (error) {
+      if (!canWriteForAthlete(job.athleteId)) return
       const message = error instanceof Error ? error.message : String(error)
       const errored: TrainingPlanWeek = {
         ...generatingWeek,
@@ -315,8 +395,7 @@ async function runPlanGenerationJobInternal({ jobId, profile, callbacks }: RunGe
         updatedAt: now(),
       }
       weeks = replaceWeek(weeks, errored)
-      await db.trainingPlanWeeks.put(errored)
-      callbacks?.onWeekUpdate?.(errored)
+      if (!(await putWeek(errored, callbacks))) return
       job = buildJobUpdate(job, weeks, {
         currentWeekIndex: null,
         lastError: message,
@@ -326,6 +405,7 @@ async function runPlanGenerationJobInternal({ jobId, profile, callbacks }: RunGe
     }
   }
 
+  if (!canWriteForAthlete(job.athleteId)) return
   weeks = await loadPlanWeeks(plan.id)
   const completedAt = now()
   const finalPlan = buildPlanCheckpoint(await db.trainingPlans.get(plan.id) ?? latestPlan, weeks, job, completedAt, profile)

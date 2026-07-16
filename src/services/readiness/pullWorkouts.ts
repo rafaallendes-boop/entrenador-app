@@ -2,6 +2,7 @@ import { db } from '../../db/db'
 import type { WhoopWorkout } from '../../types'
 import { getActiveAthleteId, getSwitchEpoch } from '../athlete/activeAthlete'
 import { getSupabase } from '../sync/syncSupabase'
+import { runAthleteWrite } from '../sync/athleteWriteLease'
 
 interface WhoopWorkoutRemoteRow {
   workout_id: string
@@ -97,26 +98,28 @@ async function pullWorkoutsOnce(context: {
     throw new Error('pullWorkouts: athlete switched mid-pull')
   }
 
-  const rows = (data as WhoopWorkoutRemoteRow[])
-    .map(toWhoopWorkout)
-    .filter((row): row is WhoopWorkout => row != null)
-  const remoteIds = new Set(rows.map((row) => row.id))
+  await runAthleteWrite(athleteId, async () => {
+    const rows = (data as WhoopWorkoutRemoteRow[])
+      .map(toWhoopWorkout)
+      .filter((row): row is WhoopWorkout => row != null)
+    const remoteIds = new Set(rows.map((row) => row.id))
 
-  const localInWindow = await db.whoopWorkouts
-    .where('athleteId')
-    .equals(athleteId)
-    .filter((row) => row.startAt >= sinceIso)
-    .toArray()
-  const staleIds = localInWindow
-    .filter((row) => !remoteIds.has(row.id))
-    .map((row) => row.id)
-  if (staleIds.length > 0) await db.whoopWorkouts.bulkDelete(staleIds)
+    const localInWindow = await db.whoopWorkouts
+      .where('athleteId')
+      .equals(athleteId)
+      .filter((row) => row.startAt >= sinceIso)
+      .toArray()
+    const staleIds = localInWindow
+      .filter((row) => !remoteIds.has(row.id))
+      .map((row) => row.id)
+    if (staleIds.length > 0) await db.whoopWorkouts.bulkDelete(staleIds)
 
-  if (rows.length === 0) return
-  const existing = await db.whoopWorkouts.bulkGet(rows.map((row) => row.id))
-  const merged = rows.map((row, index) => {
-    const prior = existing[index]
-    return prior?.autoComplete ? { ...row, autoComplete: prior.autoComplete } : row
+    if (rows.length === 0) return
+    const existing = await db.whoopWorkouts.bulkGet(rows.map((row) => row.id))
+    const merged = rows.map((row, index) => {
+      const prior = existing[index]
+      return prior?.autoComplete ? { ...row, autoComplete: prior.autoComplete } : row
+    })
+    await db.whoopWorkouts.bulkPut(merged)
   })
-  await db.whoopWorkouts.bulkPut(merged)
 }

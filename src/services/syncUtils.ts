@@ -316,6 +316,11 @@ export interface OfflineOp {
   retryCount?: number
   /** Error category from last failed attempt */
   lastErrorCategory?: SyncErrorCategory
+  /**
+   * Atleta dueño de la operación cuando el payload no lo incluye. Es metadata
+   * local de la cola y no se envía a Supabase.
+   */
+  scopeAthleteId?: string
 }
 
 /** Maximum retries per queued op before it's considered permanently failed */

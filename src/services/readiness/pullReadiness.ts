@@ -2,6 +2,7 @@ import { db } from '../../db/db'
 import type { ReadinessDaily } from '../../types'
 import { getActiveAthleteId } from '../athlete/activeAthlete'
 import { getSupabase } from '../sync/syncSupabase'
+import { runAthleteWrite } from '../sync/athleteWriteLease'
 
 interface ReadinessDailyRow {
   athlete_id: string
@@ -51,5 +52,7 @@ export async function pullReadiness(): Promise<void> {
   if (error || !data) return
 
   const rows = (data as ReadinessDailyRow[]).map(toReadinessDaily)
-  if (rows.length > 0) await db.readinessDaily.bulkPut(rows)
+  if (rows.length > 0) {
+    await runAthleteWrite(athleteId, () => db.readinessDaily.bulkPut(rows))
+  }
 }

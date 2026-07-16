@@ -1,16 +1,26 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
 import { Users } from 'lucide-react'
 import { useAuthStore } from '../store/useAuthStore'
 import { isCoachAccount } from '../services/athlete/coachAccess'
 import { getSelfAthleteId } from '../services/athlete/activeAthlete'
-import { createManagedAthlete, listOwnedAthletes } from '../services/athlete/managedAthletes'
+import {
+  archiveManagedAthlete,
+  createManagedAthlete,
+  deleteManagedAthletePermanently,
+  listArchivedAthletes,
+  listOwnedAthletes,
+  restoreManagedAthlete,
+} from '../services/athlete/managedAthletes'
 import { switchActiveAthlete } from '../services/athlete/switchActiveAthlete'
 import {
   acquireAthleteActionLock,
   createAndActivateAthlete,
+  getCoachRosterRevision,
+  notifyCoachRosterChanged,
   releaseAthleteActionLock,
   selectAthleteAndNavigate,
+  subscribeCoachRosterRevision,
 } from '../services/athlete/coachWorkspaceActions'
 import { ROUTES } from '../constants/routes'
 import type { Athlete } from '../types'
@@ -19,6 +29,7 @@ import CoachWorkspaceNav from '../components/coach/CoachWorkspaceNav'
 import { coachTabId, coachTabPanelId } from '../components/coach/coachWorkspaceTypes'
 import CoachSummaryPanel from '../components/coach/CoachSummaryPanel'
 import CoachRosterPanel from '../components/coach/CoachRosterPanel'
+import CoachPlanningPanel from '../components/coach/CoachPlanningPanel'
 import CoachWorkspacePlaceholderPanel from '../components/coach/CoachWorkspacePlaceholderPanel'
 
 interface CoachWorkspacePageProps {
@@ -26,20 +37,33 @@ interface CoachWorkspacePageProps {
   allowlistOverride?: string
   /** Solo tests: roster inicial (renderToStaticMarkup no ejecuta efectos). */
   initialAthletes?: Athlete[]
+  /** Solo tests: archivados iniciales (renderToStaticMarkup no ejecuta efectos). */
+  initialArchivedAthletes?: Athlete[]
   /** Solo tests: tab inicial (renderToStaticMarkup no ejecuta clicks). */
   initialTab?: CoachWorkspaceTab
 }
 
-export default function CoachWorkspacePage({ allowlistOverride, initialAthletes, initialTab }: CoachWorkspacePageProps) {
+export default function CoachWorkspacePage({
+  allowlistOverride,
+  initialAthletes,
+  initialArchivedAthletes,
+  initialTab,
+}: CoachWorkspacePageProps) {
   const user = useAuthStore((state) => state.user)
   const activeAthleteId = useAuthStore((state) => state.activeAthleteId)
   const [athletes, setAthletes] = useState<Athlete[]>(initialAthletes ?? [])
+  const [archivedAthletes, setArchivedAthletes] = useState<Athlete[]>(initialArchivedAthletes ?? [])
   const [status, setStatus] = useState<RosterStatus>(initialAthletes ? 'ready' : 'loading')
   const [activeTab, setActiveTab] = useState<CoachWorkspaceTab>(initialTab ?? 'resumen')
   const [reloadToken, setReloadToken] = useState(0)
   const [pendingAthleteAction, setPendingAthleteAction] = useState<PendingAthleteAction | null>(null)
   const [actionMessage, setActionMessage] = useState<string | null>(null)
   const navigate = useNavigate()
+  const rosterRevision = useSyncExternalStore(
+    subscribeCoachRosterRevision,
+    getCoachRosterRevision,
+    getCoachRosterRevision,
+  )
 
   const isCoach = allowlistOverride !== undefined
     ? isCoachAccount(user, allowlistOverride)
@@ -49,17 +73,18 @@ export default function CoachWorkspacePage({ allowlistOverride, initialAthletes,
     if (!isCoach || !user?.id) return
     let cancelled = false
     setStatus('loading')
-    listOwnedAthletes(user.id)
-      .then((rows) => {
+    Promise.all([listOwnedAthletes(user.id), listArchivedAthletes(user.id)])
+      .then(([activeRows, archivedRows]) => {
         if (cancelled) return
-        setAthletes(rows)
+        setAthletes(activeRows)
+        setArchivedAthletes(archivedRows)
         setStatus('ready')
       })
       .catch(() => {
         if (!cancelled) setStatus('error')
       })
     return () => { cancelled = true }
-  }, [isCoach, user?.id, activeAthleteId, reloadToken])
+  }, [isCoach, user?.id, activeAthleteId, reloadToken, rosterRevision])
 
   const handleAthleteAction = useCallback(async (
     athleteId: string,
@@ -141,6 +166,38 @@ export default function CoachWorkspacePage({ allowlistOverride, initialAthletes,
     }
   }
 
+  async function withRosterAction(
+    athleteId: string,
+    kind: 'archive' | 'restore' | 'delete',
+    run: () => Promise<unknown>,
+    failureMessage: string,
+  ) {
+    if (!user?.id) return
+    if (!acquireAthleteActionLock()) return
+
+    setActionMessage(null)
+    setPendingAthleteAction({ athleteId, kind })
+    try {
+      if ((kind === 'archive' || kind === 'delete') && athleteId === activeAthleteId) {
+        const ownAthleteId = getSelfAthleteId()
+        if (!ownAthleteId || !(await switchActiveAthlete(user.id, ownAthleteId))) {
+          setActionMessage('No se pudo volver a tu perfil antes de la acción. Intenta de nuevo.')
+          return
+        }
+      }
+
+      await run()
+      // La revisión externa es la única fuente de recarga. El efecto asociado
+      // hidrata ambos rosters una vez; no duplicamos el mismo fetch aquí.
+      notifyCoachRosterChanged()
+    } catch (error) {
+      setActionMessage(error instanceof Error ? error.message : failureMessage)
+    } finally {
+      releaseAthleteActionLock()
+      setPendingAthleteAction(null)
+    }
+  }
+
   function handleRetry() {
     setReloadToken((token) => token + 1)
   }
@@ -178,6 +235,7 @@ export default function CoachWorkspacePage({ allowlistOverride, initialAthletes,
         {activeTab === 'alumnos' && (
           <CoachRosterPanel
             athletes={athletes}
+            archivedAthletes={archivedAthletes}
             status={status}
             selfId={selfId}
             activeAthleteId={activeAthleteId}
@@ -185,13 +243,35 @@ export default function CoachWorkspacePage({ allowlistOverride, initialAthletes,
             onRetry={handleRetry}
             onCreateAthlete={handleCreateAthlete}
             onTrainAs={(athleteId) => void handleAthleteAction(athleteId, 'trainAs', ROUTES.HOME)}
+            onArchive={(athleteId) => void withRosterAction(
+              athleteId,
+              'archive',
+              () => archiveManagedAthlete(user.id, athleteId),
+              'No se pudo archivar.',
+            )}
+            onRestore={(athleteId) => void withRosterAction(
+              athleteId,
+              'restore',
+              () => restoreManagedAthlete(user.id, athleteId),
+              'No se pudo restaurar.',
+            )}
+            onDelete={(athleteId) => void withRosterAction(
+              athleteId,
+              'delete',
+              () => deleteManagedAthletePermanently(user.id, athleteId),
+              'No se pudo eliminar.',
+            )}
           />
         )}
 
         {activeTab === 'planificacion' && (
-          <CoachWorkspacePlaceholderPanel
-            title="Planificación"
-            description="Vas a poder crear y editar sesiones, semanas y planes completos para cualquier atleta desde acá."
+          <CoachPlanningPanel
+            athletes={athletes}
+            selfId={selfId}
+            activeAthleteId={activeAthleteId}
+            ownerAccountId={user.id}
+            pendingAction={pendingAthleteAction}
+            onTrainAs={(athleteId) => void handleAthleteAction(athleteId, 'trainAs', ROUTES.HOME)}
           />
         )}
 

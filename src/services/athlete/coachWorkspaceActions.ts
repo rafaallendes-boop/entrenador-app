@@ -73,6 +73,8 @@ export async function createAndActivateAthlete(
  * pagina, sin importar cuantas veces React reemplace el componente.
  */
 let athleteActionLocked = false
+let rosterRevision = 0
+const rosterRevisionListeners = new Set<() => void>()
 
 /** true si ya hay un switch o una creacion de atleta en curso. */
 export function isAthleteActionLocked(): boolean {
@@ -89,4 +91,23 @@ export function acquireAthleteActionLock(): boolean {
 /** Libera el lock. Idempotente: liberar sin haberlo tomado no lanza. */
 export function releaseAthleteActionLock(): void {
   athleteActionLocked = false
+}
+
+/**
+ * Snapshot persistente entre remounts del AppShell. Archivar al atleta activo
+ * primero cambia al self, lo que remonta el workspace antes de que termine la
+ * mutacion. Esta revision fuerza a la instancia nueva a recargar ambas listas.
+ */
+export function getCoachRosterRevision(): number {
+  return rosterRevision
+}
+
+export function subscribeCoachRosterRevision(listener: () => void): () => void {
+  rosterRevisionListeners.add(listener)
+  return () => rosterRevisionListeners.delete(listener)
+}
+
+export function notifyCoachRosterChanged(): void {
+  rosterRevision += 1
+  for (const listener of rosterRevisionListeners) listener()
 }

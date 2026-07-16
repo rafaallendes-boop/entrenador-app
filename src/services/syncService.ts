@@ -86,6 +86,18 @@ import {
   saveQueue,
   setQueueChangeListener,
 } from './sync/syncQueue'
+import {
+  getAthleteDeleteTombstoneSnapshot,
+  hasAthleteDeleteTombstone,
+  hasAthleteDeleteTombstoneForAthlete,
+  rememberAthleteDeleteTombstone,
+} from './sync/athleteDeleteTombstones'
+import { getRemoteRowAthleteId } from './sync/remoteRowAthleteId'
+import {
+  runAthleteWrite,
+  runAthleteWrites,
+  trackInFlightAthleteOp,
+} from './sync/athleteWriteLease'
 import { createScopedDedup } from './sync/syncDedup'
 import {
   ATHLETE_PROFILE_WRITE_MODE_KEY,
@@ -99,6 +111,16 @@ import {
   getMigrationKey,
   getRemoteFullResetAckKey,
 } from './sync/syncStorageKeys'
+
+export {
+  acquireAthleteDeletionBarrier,
+  runAthleteWrite,
+  runAthleteWrites,
+  waitForInFlightAthleteOps,
+  withAthleteWriteLease,
+  withAthleteWriteLeases,
+} from './sync/athleteWriteLease'
+
 const TOMBSTONE_TTL_MS = 180 * 24 * 60 * 60 * 1000 // 180 days (extended from 90d as part of sync hardening)
 
 export type AthleteProfileWriteSource = 'automatic' | 'post_reset_onboarding'
@@ -853,6 +875,31 @@ function logAthleteProfileSync(event: string, details: Record<string, unknown>):
   syncLog(`athlete_profiles:${event}`, details)
 }
 
+function queuedOpAthleteTarget(op: OfflineOp): string | null {
+  const scoped = (typeof op.payload.athlete_id === 'string' ? op.payload.athlete_id : null)
+    ?? op.scopeAthleteId
+    ?? null
+  return op.table === 'athletes' && typeof op.payload.id === 'string'
+    ? op.payload.id
+    : scoped
+}
+
+async function resolveLegacyQueuedSessionAthleteId(
+  op: OfflineOp,
+  cache: Map<string, string | null>,
+): Promise<string | null> {
+  // Compatibilidad con colas previas a scopeAthleteId: el RPC solo persistía
+  // p_session_id, pero la sesión local conserva el dueño hasta el purge.
+  if (op.action === 'session_completion' && typeof op.payload.p_session_id === 'string') {
+    const sessionId = op.payload.p_session_id
+    if (cache.has(sessionId)) return cache.get(sessionId) ?? null
+    const athleteId = (await db.sessions.get(sessionId))?.athleteId ?? null
+    cache.set(sessionId, athleteId)
+    return athleteId
+  }
+  return null
+}
+
 async function drainQueue(): Promise<boolean> {
   const userId = getUserId()
   if (!userId) {
@@ -865,6 +912,7 @@ async function drainQueue(): Promise<boolean> {
   const attemptId = ++syncAttemptCounter
   startSyncAttempt()
   const queue = loadQueue()
+  const athleteTombstones = getAthleteDeleteTombstoneSnapshot()
 
   const otherUsersQueue = queue.filter((op) => op.userId !== userId)
   // Drain por tier: A primero (perfil/sesiones/planes), luego B, luego C (chat/coach).
@@ -880,6 +928,7 @@ async function drainQueue(): Promise<boolean> {
   const remaining: OfflineOp[] = []
   const expiredOps: OfflineOp[] = []
   const silentlyDroppedOps: OfflineOp[] = []
+  const legacySessionAthleteIds = new Map<string, string | null>()
   const initialCount = currentUserQueue.length
   let lastFailureInfo: SyncErrorInfo | null = null
 
@@ -891,6 +940,18 @@ async function drainQueue(): Promise<boolean> {
 
     if (pendingRemoteWipeTables.has(op.table)) {
       remaining.push(op)
+      continue
+    }
+
+    let opTarget = queuedOpAthleteTarget(op)
+    // Las operaciones nuevas ya traen scopeAthleteId. Solo pagamos el read
+    // Dexie de compatibilidad cuando existe algún delete que pueda vetarlas.
+    if (!opTarget && athleteTombstones.hasAny()) {
+      opTarget = await resolveLegacyQueuedSessionAthleteId(op, legacySessionAthleteIds)
+    }
+    if (op.action !== 'delete' && opTarget && athleteTombstones.hasAthlete(opTarget)) {
+      syncLog('drain:athlete_tombstoned_drop', { table: op.table, action: op.action }, 'warn')
+      silentlyDroppedOps.push(op)
       continue
     }
 
@@ -945,7 +1006,7 @@ async function drainQueue(): Promise<boolean> {
 
     const opStartedAt = Date.now()
     try {
-      await withSerializedEntityMutation(op.userId, op.table, op.payload, async () => {
+      await trackInFlightAthleteOp(opTarget, withSerializedEntityMutation(op.userId, op.table, op.payload, async () => {
         if (op.action === 'upsert') {
           if (op.table !== 'athletes' && op.payload.athlete_id != null) {
             await withRequestTimeout(
@@ -979,18 +1040,17 @@ async function drainQueue(): Promise<boolean> {
         } else {
           const payload = op.payload as { id: string; userId?: string }
           const targetUserId = payload.userId ?? op.userId
+          const deleteQuery = op.table === 'athletes'
+            ? getSupabase().from(op.table).delete().eq('id', payload.id).eq('owner_account_id', targetUserId)
+            : getSupabase().from(op.table).delete().eq('id', payload.id).eq('user_id', targetUserId)
           const { error } = await withRequestTimeout(
-            getSupabase()
-              .from(op.table)
-              .delete()
-              .eq('id', payload.id)
-              .eq('user_id', targetUserId),
+            deleteQuery,
             `${op.table}.delete`,
           )
           if (error) throw error
           rememberDeleteTombstoneForTable(op.table, op.userId, payload.id)
         }
-      })
+      }))
       trackSyncEvent({
         kind: op.action === 'delete' ? 'delete' : 'push',
         status: 'ok',
@@ -1157,9 +1217,17 @@ async function upsertRow(
   const payload = table === 'athlete_profiles'
     ? withAthleteProfileWriteSource(stripAthleteProfileWriteSource(row), athleteProfileWriteSource)
     : row
+  const payloadAthleteId = typeof payload.athlete_id === 'string' ? payload.athlete_id : null
+  const guardTarget = table === 'athletes' && typeof payload.id === 'string'
+    ? payload.id
+    : payloadAthleteId
+  if (guardTarget && hasAthleteDeleteTombstoneForAthlete(guardTarget)) {
+    syncLog('upsertRow:athlete_tombstoned_skip', { table }, 'warn')
+    return
+  }
   const requestedAt = Date.now()
 
-  await withSerializedEntityMutation(userId, table, payload, async () => {
+  return trackInFlightAthleteOp(guardTarget, withSerializedEntityMutation(userId, table, payload, async () => {
     if (table === 'athlete_profiles' && !canWriteAthleteProfileLocally(athleteProfileWriteSource, userId)) {
       syncLog('athlete_profiles:write_suppressed', {
         reason: hasPendingRemoteWipeForTable(userId, 'athlete_profiles') ? 'pending_remote_wipe' : 'reset_lock',
@@ -1245,7 +1313,7 @@ async function upsertRow(
       enqueue({ userId, table, action: 'upsert', payload, enqueuedAt: Date.now() })
       applySyncFailure(error, errorInfo.userMessage, table)
     }
-  })
+  }))
 }
 
 async function deleteRow(table: SupabaseTable, id: string): Promise<void> {
@@ -1326,6 +1394,61 @@ async function deleteRow(table: SupabaseTable, id: string): Promise<void> {
   })
 }
 
+export type ManagedAthleteRemoteDeleteResult = 'deleted' | 'durably_queued' | 'failed'
+
+/**
+ * Deletes a managed athlete remotely without draining unrelated queued work.
+ * The caller owns a previously verified delete tombstone and is responsible
+ * for rolling that tombstone back when this function returns `failed`.
+ */
+export async function deleteManagedAthleteRemote(
+  ownerAccountId: string,
+  athleteId: string,
+): Promise<ManagedAthleteRemoteDeleteResult> {
+  if (!hasAthleteDeleteTombstone(ownerAccountId, athleteId)) {
+    syncLog('deleteManagedAthleteRemote:missing_tombstone_precondition', { athleteId }, 'warn')
+    return 'failed'
+  }
+
+  if (!isEnabled()) return 'deleted'
+
+  const queueCanonicalDelete = (): ManagedAthleteRemoteDeleteResult => {
+    enqueue({
+      userId: ownerAccountId,
+      table: 'athletes',
+      action: 'delete',
+      payload: { id: athleteId },
+      enqueuedAt: Date.now(),
+    })
+    const landed = loadQueue().some((op) =>
+      op.userId === ownerAccountId &&
+      op.table === 'athletes' &&
+      op.action === 'delete' &&
+      op.payload.id === athleteId)
+    if (!landed) {
+      syncLog('deleteManagedAthleteRemote:queue_not_durable', { athleteId }, 'warn')
+      return 'failed'
+    }
+    return 'durably_queued'
+  }
+
+  if (typeof navigator !== 'undefined' && !navigator.onLine) return queueCanonicalDelete()
+
+  try {
+    const { error } = await withRequestTimeout(
+      getSupabase().from('athletes').delete().eq('id', athleteId).eq('owner_account_id', ownerAccountId),
+      'athletes.delete',
+    )
+    if (error) throw error
+    return 'deleted'
+  } catch (error) {
+    const errorInfo = classifySyncError(error, 'athletes')
+    if (errorInfo.retriable || errorInfo.autoRepairable) return queueCanonicalDelete()
+    syncLog('deleteManagedAthleteRemote:failed', { category: errorInfo.category }, 'warn')
+    return 'failed'
+  }
+}
+
 function sessionToRow(session: Session, userId: string): Record<string, unknown> {
   const { id, date, timeBlock, type, status, createdAt, updatedAt, authoredByRole, ...rest } = session
   return {
@@ -1350,15 +1473,6 @@ function coachNoteToRow(note: AthleteCoachNote, userId: string): Record<string, 
     updated_by_account_id: userId,
     updated_at: note.updatedAt,
   }
-}
-
-function getRowAthleteId(row: Record<string, unknown>, data: Record<string, unknown>): string | undefined {
-  return ((row.athlete_id as string | null | undefined) ?? (data.athleteId as string | undefined)) || undefined
-}
-
-function getRemoteRowAthleteId(row: Record<string, unknown>): string | undefined {
-  const data = (row.data as Record<string, unknown>) ?? {}
-  return getRowAthleteId(row, data)
 }
 
 function stampAthleteIdIfLegacy<T extends { athleteId?: string }>(
@@ -1522,7 +1636,7 @@ function rowToSession(row: Record<string, unknown>): Session {
     createdAt: row.created_at as number,
     updatedAt: row.updated_at as number,
     ...data,
-    athleteId: getRowAthleteId(row, data),
+    athleteId: getRemoteRowAthleteId(row),
     authoredByRole: (row.authored_by_role ?? data.authoredByRole ?? undefined) as Session['authoredByRole'],
   } as Session
 }
@@ -1546,7 +1660,7 @@ function rowToDayLog(row: Record<string, unknown>): DayLog {
     date: row.date as string,
     updatedAt: row.updated_at as number,
     ...data,
-    athleteId: getRowAthleteId(row, data),
+    athleteId: getRemoteRowAthleteId(row),
   } as DayLog
 }
 
@@ -1569,7 +1683,7 @@ function rowToWeekSummary(row: Record<string, unknown>): WeekSummary {
     weekStartDate: (row.week_start_date ?? data.weekStartDate) as string,
     updatedAt: (row.updated_at as number | undefined) ?? undefined,
     ...data,
-    athleteId: getRowAthleteId(row, data),
+    athleteId: getRemoteRowAthleteId(row),
   } as WeekSummary
 }
 
@@ -1595,7 +1709,7 @@ function rowToChatMessage(row: Record<string, unknown>): ChatMessage {
     timestamp: row.timestamp as number,
     chatSessionId: (row.chat_session_id as string | undefined) ?? undefined,
     ...data,
-    athleteId: getRowAthleteId(row, data),
+    athleteId: getRemoteRowAthleteId(row),
   } as ChatMessage
 }
 
@@ -1619,7 +1733,7 @@ function rowToCoachProposal(row: Record<string, unknown>): CoachProposal {
     status: row.status as CoachProposal['status'],
     createdAt: row.created_at as number,
     ...data,
-    athleteId: getRowAthleteId(row, data),
+    athleteId: getRemoteRowAthleteId(row),
   } as CoachProposal
 }
 
@@ -1942,6 +2056,9 @@ async function ensureRemoteAthleteOnce(userId: string): Promise<void> {
 
   const athleteId = await backfillLocalAthleteScope(userId)
   if (athleteId === null) return
+  if (hasAthleteDeleteTombstoneForAthlete(athleteId)) {
+    throw new Error(`athlete ${athleteId} is being deleted; refusing to recreate`)
+  }
   await hydrateActiveAthlete(userId)
 
   if (athleteId !== athleteIdForOwner(userId)) return
@@ -1965,6 +2082,9 @@ async function ensureRemoteAthleteOnce(userId: string): Promise<void> {
 
 async function ensureRemoteManagedAthleteOnce(userId: string, athleteId: string): Promise<void> {
   if (!isEnabled()) return
+  if (hasAthleteDeleteTombstoneForAthlete(athleteId)) {
+    throw new Error(`athlete ${athleteId} is being deleted; refusing to recreate`)
+  }
 
   const local = await db.athletes.get(athleteId)
   if (!local || local.ownerAccountId !== userId) {
@@ -1978,6 +2098,9 @@ async function ensureRemoteManagedAthleteOnce(userId: string, athleteId: string)
 }
 
 async function ensureRemoteAthlete(userId: string, athleteId?: string): Promise<void> {
+  if (athleteId && hasAthleteDeleteTombstoneForAthlete(athleteId)) {
+    throw new Error(`athlete ${athleteId} is being deleted; refusing to recreate`)
+  }
   const selfAthleteId = getSelfAthleteId()
   const isManaged = typeof athleteId === 'string'
     && isScopedAthleteId(athleteId)
@@ -2014,9 +2137,20 @@ export async function pushCoachNote(note: AthleteCoachNote): Promise<void> {
 
 async function pushSessionCompletion(session: Session, userId: string): Promise<void> {
   if (!isEnabled()) return
+  if (session.athleteId && hasAthleteDeleteTombstoneForAthlete(session.athleteId)) {
+    syncLog('sessionCompletion:athlete_tombstoned_skip', { sessionId: session.id }, 'warn')
+    return
+  }
+  return trackInFlightAthleteOp(
+    session.athleteId ?? null,
+    pushSessionCompletionInner(session, userId),
+  )
+}
+
+async function pushSessionCompletionInner(session: Session, userId: string): Promise<void> {
   const payload = buildMarkSessionDoneParams(session) as unknown as Record<string, unknown>
   if (typeof navigator !== 'undefined' && !navigator.onLine) {
-    enqueue({ userId, table: 'sessions', action: 'session_completion', payload, enqueuedAt: Date.now() })
+    enqueue({ userId, table: 'sessions', action: 'session_completion', payload, scopeAthleteId: session.athleteId, enqueuedAt: Date.now() })
     scheduleRetry(15000)
     return
   }
@@ -2033,7 +2167,7 @@ async function pushSessionCompletion(session: Session, userId: string): Promise<
       applySyncFailure(error, errorInfo.userMessage, 'sessions')
       return
     }
-    enqueue({ userId, table: 'sessions', action: 'session_completion', payload, enqueuedAt: Date.now() })
+    enqueue({ userId, table: 'sessions', action: 'session_completion', payload, scopeAthleteId: session.athleteId, enqueuedAt: Date.now() })
     applySyncFailure(error, 'No se pudo sincronizar la completación de la sesión.', 'sessions')
   }
 }
@@ -2080,24 +2214,78 @@ export async function pullSessionsForDateRange(startDate: string, endDate: strin
     const page = data ?? []
     for (const row of page as Record<string, unknown>[]) {
       const remote = rowToSession(row)
-      const deletedAt = tombstones[remote.id]
-      if (typeof deletedAt === 'number') {
-        if (deletedAt >= remote.updatedAt) {
-          await deleteRow('sessions', remote.id)
-          continue
-        }
-        clearSessionDeleteTombstone(userId, remote.id)
+      if (resolveSessionAgainstTombstone(userId, remote, tombstones) === 'skip') {
+        await deleteRow('sessions', remote.id)
+        continue
       }
 
-      const local = await db.sessions.get(remote.id)
-      if (!local || remote.updatedAt > local.updatedAt) {
-        await db.sessions.put(remote)
-      } else if (local.updatedAt > remote.updatedAt) {
-        await pushSession(local)
-      }
+      await runAthleteWrite(remote.athleteId, async () => {
+        const local = await db.sessions.get(remote.id)
+        if (!local || remote.updatedAt > local.updatedAt) {
+          await db.sessions.put(remote)
+        } else if (local.updatedAt > remote.updatedAt) {
+          await pushSession(local)
+        }
+      })
     }
 
     if (!supportsRange || page.length < FETCH_PAGE_SIZE) break
+  }
+}
+
+function resolveSessionAgainstTombstone(
+  userId: string,
+  remote: Session,
+  tombstones: Record<string, number>,
+): 'skip' | 'accept' {
+  const deletedAt = tombstones[remote.id]
+  if (typeof deletedAt !== 'number') return 'accept'
+  if (deletedAt >= remote.updatedAt) return 'skip'
+  clearSessionDeleteTombstone(userId, remote.id)
+  delete tombstones[remote.id]
+  return 'accept'
+}
+
+/** Pulls one explicit athlete/week without changing the active-athlete scope. */
+export async function pullWeekSessionsForAthlete(
+  ownerAccountId: string,
+  athleteId: string,
+  weekStartDate: string,
+  weekEndDate: string,
+  opts: { includeLegacy: boolean },
+): Promise<void> {
+  if (!isEnabled()) return
+  if (hasAthleteDeleteTombstone(ownerAccountId, athleteId)) return
+
+  let query = getSupabase()
+    .from('sessions')
+    .select('*')
+    .eq('user_id', ownerAccountId)
+    .gte('date', weekStartDate)
+    .lte('date', weekEndDate)
+  query = opts.includeLegacy
+    ? query.or(`athlete_id.eq.${athleteId},athlete_id.is.null`)
+    : query.eq('athlete_id', athleteId)
+
+  const { data, error } = await withRequestTimeout(query, 'sessions.pull_week_for_athlete')
+  if (error) {
+    syncLog('pullWeekSessionsForAthlete:error', { error: error.message }, 'warn')
+    throw error
+  }
+
+  const sessionTombstones = getSessionDeleteTombstones(ownerAccountId)
+  for (const row of (data ?? []) as Record<string, unknown>[]) {
+    const remote = rowToSession(row)
+    const wrote = await runAthleteWrite(athleteId, async () => {
+      // Resolver dentro del lease evita limpiar un tombstone de sesion si el
+      // borrado del atleta veto la hidratacion despues del fetch.
+      if (resolveSessionAgainstTombstone(ownerAccountId, remote, sessionTombstones) === 'skip') return
+      const local = await db.sessions.get(remote.id)
+      if (!local || remote.updatedAt > (local.updatedAt ?? 0)) {
+        await db.sessions.put(remote)
+      }
+    })
+    if (!wrote) return
   }
 }
 
@@ -2311,10 +2499,13 @@ export async function pullMemberships(userId: string): Promise<void> {
       'athlete_memberships.select',
     )
     if (error) throw error
-    await replaceMembershipCache(
-      userId,
-      (data ?? []).map((row) => membershipFromRemoteRow(row as Record<string, unknown>)),
-    )
+    const memberships = (data ?? []).map((row) => membershipFromRemoteRow(row as Record<string, unknown>))
+    const tombstones = getAthleteDeleteTombstoneSnapshot()
+    const alive = memberships.filter((membership) => !tombstones.hasAthlete(membership.athleteId))
+    const athleteIds = [...new Set(alive.map((membership) => membership.athleteId))]
+    await runAthleteWrites(athleteIds, async () => {
+      await replaceMembershipCache(userId, alive)
+    })
   } catch (error) {
     syncLog('memberships:pull_failed', {
       error: error instanceof Error ? error.message : String(error),
@@ -2335,7 +2526,10 @@ async function pullAthletes(userId: string): Promise<void> {
     if (error) {
       syncLog('pullAthletes:error', { error: error.message }, 'warn')
     } else if (data && data.length) {
-      await db.athletes.bulkPut((data as AthleteRow[]).map(rowToAthlete))
+      for (const row of data as AthleteRow[]) {
+        if (hasAthleteDeleteTombstone(userId, row.id)) continue
+        await runAthleteWrite(row.id, () => db.athletes.put(rowToAthlete(row)))
+      }
     }
     await hydrateActiveAthlete(userId)
   } catch (error) {
@@ -2491,24 +2685,19 @@ async function mergeSessions(userId: string, context: MergeContext): Promise<voi
   if (context.pendingRemoteWipeTables.has('sessions')) return
   const remoteRows = await fetchAll<Record<string, unknown>>('sessions', userId, context.readScope)
   const remoteIds = new Set<string>()
-  const tombstones = getSessionDeleteTombstones(userId)
-
+  const sessionTombstones = getSessionDeleteTombstones(userId)
   for (const row of remoteRows) {
     const remote = rowToSession(row)
     remoteIds.add(remote.id)
 
-    const deletedAt = tombstones[remote.id]
-    if (typeof deletedAt === 'number') {
-      if (deletedAt >= remote.updatedAt) {
-        context.pendingWrites.push(() => deleteRow('sessions', remote.id))
-        continue
-      }
-      clearSessionDeleteTombstone(userId, remote.id)
+    if (resolveSessionAgainstTombstone(userId, remote, sessionTombstones) === 'skip') {
+      context.pendingWrites.push(() => deleteRow('sessions', remote.id))
+      continue
     }
 
     const local = await db.sessions.get(remote.id)
     if (!local || remote.updatedAt > local.updatedAt) {
-      await db.sessions.put(remote)
+      await runAthleteWrite(remote.athleteId, () => db.sessions.put(remote))
     } else if (local.updatedAt > remote.updatedAt) {
       context.pendingWrites.push(() => pushSession(local))
     }
@@ -2546,7 +2735,7 @@ async function mergeDayLogs(userId: string, context: MergeContext): Promise<void
     remoteIds.add(winner.id)
 
     if (!localByDate) {
-      await db.dayLogs.put(winner)
+      await runAthleteWrite(winner.athleteId, () => db.dayLogs.put(winner))
       if (stamped.changed) {
         context.pendingWrites.push(() => pushDayLog(winner))
       }
@@ -2555,7 +2744,7 @@ async function mergeDayLogs(userId: string, context: MergeContext): Promise<void
 
     if (winner.id !== localByDate.id) {
       await db.dayLogs.delete(localByDate.id)
-      await db.dayLogs.put(winner)
+      await runAthleteWrite(winner.athleteId, () => db.dayLogs.put(winner))
       if (remote.id !== localByDate.id) {
         context.pendingWrites.push(() => deleteRow('day_logs', localByDate.id))
       }
@@ -2567,13 +2756,13 @@ async function mergeDayLogs(userId: string, context: MergeContext): Promise<void
     }
 
     if (resolution.winner === remote) {
-      await db.dayLogs.put(winner)
+      await runAthleteWrite(winner.athleteId, () => db.dayLogs.put(winner))
       if (stamped.changed) {
         context.pendingWrites.push(() => pushDayLog(winner))
       }
     } else {
       if (stamped.changed) {
-        await db.dayLogs.put(winner)
+        await runAthleteWrite(winner.athleteId, () => db.dayLogs.put(winner))
       }
       if (stamped.changed || winner.updatedAt > remote.updatedAt) {
         context.pendingWrites.push(() => pushDayLog(winner))
@@ -2612,7 +2801,7 @@ async function mergeWeekSummaries(userId: string, context: MergeContext): Promis
     remoteIds.add(winner.id)
 
     if (!localByWeek) {
-      await db.weekSummaries.put(winner)
+      await runAthleteWrite(winner.athleteId, () => db.weekSummaries.put(winner))
       if (stamped.changed) {
         context.pendingWrites.push(() => pushWeekSummary(winner))
       }
@@ -2621,7 +2810,7 @@ async function mergeWeekSummaries(userId: string, context: MergeContext): Promis
 
     if (winner.id !== localByWeek.id) {
       await db.weekSummaries.delete(localByWeek.id)
-      await db.weekSummaries.put(winner)
+      await runAthleteWrite(winner.athleteId, () => db.weekSummaries.put(winner))
       if (remote.id !== localByWeek.id) {
         context.pendingWrites.push(() => deleteRow('week_summaries', localByWeek.id))
       }
@@ -2635,13 +2824,13 @@ async function mergeWeekSummaries(userId: string, context: MergeContext): Promis
     const winnerUpdatedAt = getWeekSummaryUpdatedAt(winner)
 
     if (resolution.winner === remote) {
-      await db.weekSummaries.put(winner)
+      await runAthleteWrite(winner.athleteId, () => db.weekSummaries.put(winner))
       if (stamped.changed) {
         context.pendingWrites.push(() => pushWeekSummary(winner))
       }
     } else {
       if (stamped.changed) {
-        await db.weekSummaries.put(winner)
+        await runAthleteWrite(winner.athleteId, () => db.weekSummaries.put(winner))
       }
       if (stamped.changed || winnerUpdatedAt > remoteUpdatedAt) {
         context.pendingWrites.push(() => pushWeekSummary(winner))
@@ -2671,9 +2860,9 @@ async function mergeChatMessages(userId: string, context: MergeContext): Promise
 
     const local = await db.chatMessages.get(remote.id)
     if (!local) {
-      await db.chatMessages.put(remote)
+      await runAthleteWrite(remote.athleteId, () => db.chatMessages.put(remote))
     } else if (remote.timestamp >= local.timestamp && JSON.stringify(remote) !== JSON.stringify(local)) {
-      await db.chatMessages.put(remote)
+      await runAthleteWrite(remote.athleteId, () => db.chatMessages.put(remote))
     } else if (local.timestamp > remote.timestamp) {
       context.pendingWrites.push(() => pushChatMessage(local))
     }
@@ -2714,7 +2903,7 @@ async function mergeCoachProposals(userId: string, context: MergeContext): Promi
     const localUpdatedAt = local?.resolvedAt ?? local?.createdAt ?? 0
 
     if (!local || remoteUpdatedAt > localUpdatedAt) {
-      await db.coachProposals.put(remote)
+      await runAthleteWrite(remote.athleteId, () => db.coachProposals.put(remote))
     } else if (localUpdatedAt > remoteUpdatedAt) {
       context.pendingWrites.push(() => pushCoachProposal(local))
     }
@@ -2801,7 +2990,7 @@ async function mergeCoachNotes(userId: string, context: MergeContext): Promise<v
     remoteAthleteIds.push(remote.athleteId)
     const local = await db.athleteCoachNotes.get(remote.athleteId)
     if (!local || remote.updatedAt > local.updatedAt) {
-      await db.athleteCoachNotes.put(remote)
+      await runAthleteWrite(remote.athleteId, () => db.athleteCoachNotes.put(remote))
     } else if (local.updatedAt > remote.updatedAt) {
       context.pendingWrites.push(() => pushCoachNote(local))
     }
@@ -2859,7 +3048,8 @@ async function mergeSelfProfileGroup(
   const mergedProfile = rowToAthleteProfile(mergedRow, groupingSelfAthleteId(userId))
 
   if (!localRow || !athleteProfileRowsEqual(localRow, mergedRow)) {
-    await db.athleteProfiles.put({ ...mergedProfile, id: ATHLETE_PROFILE_LOCAL_ID })
+    await runAthleteWrite(mergedProfile.athleteId, () =>
+      db.athleteProfiles.put({ ...mergedProfile, id: ATHLETE_PROFILE_LOCAL_ID }))
   }
 
   if (!athleteProfileRowsEqual(canonicalRow, mergedRow)) {
@@ -2892,7 +3082,8 @@ async function mergeManagedProfileGroup(
   const mergedProfile = rowToAthleteProfile(mergedRow, selfAthleteId)
 
   if (!localRow || !athleteProfileRowsEqual(localRow, mergedRow)) {
-    await db.athleteProfiles.put({ ...mergedProfile, id: groupKey })
+    await runAthleteWrite(mergedProfile.athleteId ?? groupKey, () =>
+      db.athleteProfiles.put({ ...mergedProfile, id: groupKey }))
   }
   if (!athleteProfileRowsEqual(canonicalRow, mergedRow)) {
     context.pendingWrites.push(() => pushAthleteProfile({ ...mergedProfile, id: groupKey }))
@@ -2937,12 +3128,12 @@ async function mergeTrainingPlans(userId: string, context: MergeContext): Promis
     }
 
     if (!localPlan) {
-      await db.trainingPlans.put(remotePlan)
+      await runAthleteWrite(remotePlan.athleteId, () => db.trainingPlans.put(remotePlan))
       continue
     }
 
     if (remotePlan.updatedAt > localPlan.updatedAt) {
-      await db.trainingPlans.put(remotePlan)
+      await runAthleteWrite(remotePlan.athleteId, () => db.trainingPlans.put(remotePlan))
     } else if (localPlan.updatedAt > remotePlan.updatedAt && isSyncablePlanStatus(localPlan.status)) {
       context.pendingWrites.push(() => pushTrainingPlan(localPlan))
     }
@@ -3006,12 +3197,12 @@ async function mergeTrainingPlanWeeks(userId: string, context: MergeContext): Pr
     }
 
     if (!localWeek) {
-      await db.trainingPlanWeeks.put(remoteWeek)
+      await runAthleteWrite(remoteWeek.athleteId, () => db.trainingPlanWeeks.put(remoteWeek))
       continue
     }
 
     if (remoteWeek.updatedAt > localWeek.updatedAt) {
-      await db.trainingPlanWeeks.put(remoteWeek)
+      await runAthleteWrite(remoteWeek.athleteId, () => db.trainingPlanWeeks.put(remoteWeek))
     } else if (localWeek.updatedAt > remoteWeek.updatedAt) {
       const localPlan = localPlans.find((plan) => plan.id === localWeek.planId)
       if (localPlan && isSyncablePlanStatus(localPlan.status)) {
@@ -3414,6 +3605,13 @@ function clearDeleteTombstoneGroup(storageKey: string, userId: string): void {
 function rememberDeleteTombstoneForTable(table: SupabaseTable, userId: string, id: string): void {
   if (table === 'sessions') rememberSessionDeleteTombstone(userId, id)
   if (table === 'coach_proposals') rememberCoachProposalDeleteTombstone(userId, id)
+  if (table === 'athletes') {
+    try {
+      rememberAthleteDeleteTombstone(userId, id)
+    } catch {
+      syncLog('rememberDeleteTombstoneForTable:athletes_tombstone_failed', { id }, 'warn')
+    }
+  }
 }
 
 function rememberSessionDeleteTombstone(userId: string, sessionId: string): void {

@@ -17,6 +17,7 @@ const dbMock = {
   weekSummaries: table(),
   trainingPlans: table(),
   trainingPlanWeeks: table(),
+  planGenerationJobs: table(),
   chatMessages: table(),
   coachProposals: table(),
   athleteProfiles: table(),
@@ -143,6 +144,21 @@ describe('appMaintenance', () => {
     expect(localStorage.getItem('third_party_cache')).toBe('keep')
   })
 
+  it('clears the durable athlete tombstone and its in-memory mirror', async () => {
+    const { clearAllAppLocalStorage } = await import('../appMaintenance')
+    const {
+      hasAthleteDeleteTombstone,
+      rememberAthleteDeleteTombstone,
+    } = await import('../sync/athleteDeleteTombstones')
+
+    rememberAthleteDeleteTombstone('user-1', 'ath_m_a')
+    expect(hasAthleteDeleteTombstone('user-1', 'ath_m_a')).toBe(true)
+
+    clearAllAppLocalStorage('user-1')
+
+    expect(hasAthleteDeleteTombstone('user-1', 'ath_m_a')).toBe(false)
+  })
+
   it('clears indexed app data and leaves no app-owned localStorage residue', async () => {
     const { clearAllLocalAppData } = await import('../appMaintenance')
     localStorage.setItem('coach_chat_session_id', 'session-1')
@@ -158,6 +174,7 @@ describe('appMaintenance', () => {
     expect(dbMock.weekSummaries.clear).toHaveBeenCalled()
     expect(dbMock.trainingPlanWeeks.clear).toHaveBeenCalled()
     expect(dbMock.trainingPlans.clear).toHaveBeenCalled()
+    expect(dbMock.planGenerationJobs.clear).toHaveBeenCalled()
     expect(dbMock.athletes.clear).toHaveBeenCalled()
     expect(dbMock.chatMessages.clear).toHaveBeenCalled()
     expect(dbMock.coachProposals.clear).toHaveBeenCalled()
