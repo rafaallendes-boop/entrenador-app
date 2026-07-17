@@ -13,6 +13,7 @@ import {
   ATHLETE_DELETE_TOMBSTONE_PREFIX,
   clearAllAthleteDeleteTombstones,
 } from './sync/athleteDeleteTombstones'
+import { clearCoachPlanningHydrationRegistry } from './athlete/coachPlanningHydrationRegistry'
 
 const APP_LOCAL_STORAGE_PREFIXES = ['entrenador_', 'coach_', 'entrenador:']
 const APP_LOCAL_STORAGE_KEYS = [
@@ -113,6 +114,8 @@ export async function clearSelectedLocalAppData(selection: LocalDataSelection): 
     .map(([group]) => group)
 
   if (groups.length === 0) return []
+
+  if (selection.trainingData) clearCoachPlanningHydrationRegistry()
 
   await db.transaction(
     'rw',

@@ -67,7 +67,7 @@ let athleteRows: Array<{ id: string; [key: string]: unknown }> = []
 let planGenerationJobRows: unknown[] = []
 let tableResults = new Map<string, SupabaseResultSource>()
 let actionResults = new Map<string, SupabaseResultSource>()
-type MockFilter = { op: 'eq' | 'neq' | 'in' | 'or' | 'lt' | 'lte' | 'gte'; column: string; value: unknown }
+type MockFilter = { op: 'eq' | 'neq' | 'in' | 'or' | 'is' | 'lt' | 'lte' | 'gte'; column: string; value: unknown }
 
 const upsertCalls: Array<{ table: string; payload: unknown; options?: unknown }> = []
 const insertCalls: Array<{ table: string; payload: unknown }> = []
@@ -100,6 +100,10 @@ function createQueryBuilder(
     },
     or(expression: string) {
       filters.push({ op: 'or', column: 'or', value: expression })
+      return this
+    },
+    is(column: string, value: unknown) {
+      filters.push({ op: 'is', column, value })
       return this
     },
     lte(column: string, value: unknown) {
@@ -185,6 +189,10 @@ function deleteRowsById(current: unknown[], ids: string[]): unknown[] {
 
 function matchesIndex(row: unknown, index: string, value: unknown): boolean {
   const record = row as Record<string, unknown>
+  if (index.startsWith('[') && index.endsWith(']') && Array.isArray(value)) {
+    const keys = index.slice(1, -1).split('+')
+    return keys.every((key, position) => record[key] === value[position])
+  }
   return record[index] === value
 }
 
@@ -225,6 +233,10 @@ vi.mock('../../db/db', () => ({
       get: vi.fn(async (id: string) => sessionsRows.find((row) => (row as { id?: string }).id === id)),
       put: vi.fn(async (row: unknown) => {
         sessionsRows = putRowById(sessionsRows, row)
+      }),
+      update: vi.fn(async (id: string, patch: Record<string, unknown>) => {
+        sessionsRows = sessionsRows.map((row) =>
+          (row as { id?: string }).id === id ? { ...(row as object), ...patch } : row)
       }),
       bulkPut: vi.fn(async (rows: unknown[]) => {
         sessionsRows = mergeRowsById(sessionsRows, rows)
@@ -526,7 +538,7 @@ describe('syncService', () => {
       })
 
       const sync = await import('../syncService')
-      await sync.pullWeekSessionsForAthlete(
+      const outcome = await sync.pullWeekSessionsForAthlete(
         'user-1',
         'ath-managed',
         '2026-07-13',
@@ -537,7 +549,6 @@ describe('syncService', () => {
       expect(selectCalls.at(-1)).toEqual({
         table: 'sessions',
         filters: [
-          { op: 'eq', column: 'user_id', value: 'user-1' },
           { op: 'gte', column: 'date', value: '2026-07-13' },
           { op: 'lte', column: 'date', value: '2026-07-19' },
           { op: 'eq', column: 'athlete_id', value: 'ath-managed' },
@@ -552,6 +563,7 @@ describe('syncService', () => {
         title: 'Local más nueva',
         updatedAt: 200,
       })
+      expect(outcome).toBe('completed')
     })
 
     it('self includeLegacy consulta athlete_id propio o null e hidrata legacy', async () => {
@@ -571,10 +583,12 @@ describe('syncService', () => {
       )
 
       expect(selectCalls.at(-1)?.filters).toEqual([
-        { op: 'eq', column: 'user_id', value: 'user-1' },
         { op: 'gte', column: 'date', value: '2026-07-13' },
         { op: 'lte', column: 'date', value: '2026-07-19' },
-        { op: 'or', column: 'or', value: 'athlete_id.eq.ath_user-1,athlete_id.is.null' },
+        {
+          op: 'or', column: 'or',
+          value: 'athlete_id.eq.ath_user-1,and(user_id.eq.user-1,athlete_id.is.null)',
+        },
       ])
       expect(sessionsRows).toHaveLength(1)
       expect(sessionsRows[0]).toMatchObject({ id: 'legacy', athleteId: undefined })
@@ -598,7 +612,7 @@ describe('syncService', () => {
       })
 
       const sync = await import('../syncService')
-      await sync.pullWeekSessionsForAthlete(
+      const outcome = await sync.pullWeekSessionsForAthlete(
         'user-1',
         'ath-managed',
         '2026-07-13',
@@ -609,6 +623,7 @@ describe('syncService', () => {
       expect(sessionsRows.map((row) => (row as { id: string }).id)).toEqual(['remote-new'])
       const stored = JSON.parse(localStorageState.get('entrenador_sync_session_tombstones_v1') ?? '{}')
       expect(stored['user-1']).toEqual({ 'remote-old': deletedAt })
+      expect(outcome).toBe('completed')
     })
 
     it('lee y parsea el mapa de tombstones de sesión una sola vez por pull', async () => {
@@ -657,7 +672,7 @@ describe('syncService', () => {
       const { rememberAthleteDeleteTombstone } = await import('../sync/athleteDeleteTombstones')
       rememberAthleteDeleteTombstone('user-1', 'ath-managed')
       release({ data: [remoteSession('late', 'ath-managed', 100)], error: null })
-      await pulling
+      await expect(pulling).resolves.toBe('vetoed')
 
       expect(sessionsRows).toEqual([])
     })
@@ -670,7 +685,7 @@ describe('syncService', () => {
       })
 
       const sync = await import('../syncService')
-      await sync.pullWeekSessionsForAthlete(
+      const outcome = await sync.pullWeekSessionsForAthlete(
         'user-1',
         'ath-managed',
         '2026-07-13',
@@ -680,6 +695,59 @@ describe('syncService', () => {
 
       expect(selectCalls).toEqual([])
       expect(sessionsRows).toEqual([])
+      expect(outcome).toBe('unavailable')
+    })
+
+    it('pull scoped acepta una fila vinculada con otro user_id', async () => {
+      vi.stubEnv('VITE_SUPABASE_URL', 'https://example.test')
+      tableResults.set('sessions', {
+        data: [{ ...remoteSession('linked', 'ath-linked', 100), user_id: 'linked-account' }],
+        error: null,
+      })
+      const sync = await import('../syncService')
+      await expect(sync.pullWeekSessionsForAthlete(
+        'owner-1', 'ath-linked', '2026-07-13', '2026-07-19', { includeLegacy: false },
+      )).resolves.toBe('completed')
+      expect(selectCalls.at(-1)?.filters).not.toContainEqual(
+        expect.objectContaining({ column: 'user_id' }),
+      )
+      expect(sessionsRows).toContainEqual(expect.objectContaining({ id: 'linked', athleteId: 'ath-linked' }))
+    })
+
+    it('day log y summary reconcilian por clave natural con ids distintos', async () => {
+      vi.stubEnv('VITE_SUPABASE_URL', 'https://example.test')
+      dayLogRows = [{
+        id: 'local-day', athleteId: 'ath-managed', date: '2026-07-14', updatedAt: 200, sleepHours: 8,
+      }]
+      weekSummaryRows = [{
+        id: 'local-week', athleteId: 'ath-managed', weekStartDate: '2026-07-13', updatedAt: 100,
+        totalSessions: 1,
+      }]
+      tableResults.set('day_logs', {
+        data: [{
+          id: 'remote-day', user_id: 'linked', athlete_id: 'ath-managed', date: '2026-07-14',
+          updated_at: 100, data: { sleepHours: 5 },
+        }],
+        error: null,
+      })
+      tableResults.set('week_summaries', {
+        data: [{
+          id: 'remote-week', user_id: 'linked', athlete_id: 'ath-managed',
+          week_start_date: '2026-07-13', updated_at: 300, data: { totalSessions: 3 },
+        }],
+        error: null,
+      })
+      const sync = await import('../syncService')
+      await expect(sync.pullWeekDayLogsForAthlete(
+        'owner-1', 'ath-managed', '2026-07-13', '2026-07-19', { includeLegacy: false },
+      )).resolves.toBe('completed')
+      await expect(sync.pullWeekSummaryRowForAthlete(
+        'owner-1', 'ath-managed', '2026-07-13', { includeLegacy: false },
+      )).resolves.toBe('completed')
+      expect(dayLogRows).toEqual([expect.objectContaining({ id: 'local-day', sleepHours: 8 })])
+      expect(weekSummaryRows).toEqual([
+        expect.objectContaining({ id: 'remote-week', athleteId: 'ath-managed', totalSessions: 3 }),
+      ])
     })
   })
 
@@ -787,6 +855,357 @@ describe('syncService', () => {
       await Promise.all([draining, waiting])
       expect(waited).toBe(true)
       expect(JSON.parse(localStorageState.get('entrenador_sync_queue_v1') ?? '[]')).toEqual([])
+    })
+  })
+
+  describe('session target sync', () => {
+    const targetSession = (athleteId?: string) => ({
+      id: 'session-target', athleteId, date: '2026-07-14', timeBlock: 'AM',
+      type: 'squash', status: 'planned', title: 'Target', durationMin: 60,
+      source: 'coach', authoredByRole: 'coach', createdAt: 1, updatedAt: 10,
+    }) as const
+
+    it('push scoped actualiza por id+athlete_id sin user_id', async () => {
+      vi.stubEnv('VITE_SUPABASE_URL', 'https://example.test')
+      actionResults.set('update:sessions', { data: [{ id: 'session-target' }], error: null })
+      const sync = await import('../syncService')
+      await sync.pushSessionForTarget(
+        targetSession('ath-managed') as never,
+        { kind: 'scoped', athleteId: 'ath-managed' },
+      )
+      expect(updateCalls.at(-1)?.filters).toEqual([
+        { op: 'eq', column: 'id', value: 'session-target' },
+        { op: 'eq', column: 'athlete_id', value: 'ath-managed' },
+      ])
+      expect(updateCalls.at(-1)?.payload).toMatchObject({
+        id: 'session-target', athlete_id: 'ath-managed', updated_by_account_id: 'user-1',
+      })
+      expect(updateCalls.at(-1)?.payload).not.toHaveProperty('user_id')
+    })
+
+    it('push legacy adopta localmente sin pisar edits concurrentes', async () => {
+      vi.stubEnv('VITE_SUPABASE_URL', 'https://example.test')
+      sessionsRows = [{ ...targetSession(), title: 'Edit local', updatedAt: 99 }]
+      actionResults.set('update:sessions', { data: [{ id: 'session-target' }], error: null })
+      const sync = await import('../syncService')
+      await sync.pushSessionForTarget(
+        targetSession() as never,
+        { kind: 'legacySelf', ownerAccountId: 'user-1', selfAthleteId: 'ath-self' },
+      )
+      expect(updateCalls.at(-1)?.filters).toEqual([
+        { op: 'eq', column: 'id', value: 'session-target' },
+        { op: 'eq', column: 'user_id', value: 'user-1' },
+        { op: 'is', column: 'athlete_id', value: null },
+      ])
+      expect(sessionsRows).toContainEqual(expect.objectContaining({
+        id: 'session-target', athleteId: 'ath-self', title: 'Edit local', updatedAt: 99,
+      }))
+    })
+
+    it('delete legacy prueba la fila adoptada cuando no encuentra legacy', async () => {
+      vi.stubEnv('VITE_SUPABASE_URL', 'https://example.test')
+      actionResults.set('delete:sessions', [
+        { data: [], error: null },
+        { data: null, error: null },
+      ])
+      const sync = await import('../syncService')
+      await sync.deleteSessionForTarget('session-target', {
+        kind: 'legacySelf', ownerAccountId: 'user-1', selfAthleteId: 'ath-self',
+      })
+      expect(deleteCalls).toHaveLength(2)
+      expect(deleteCalls[1].filters).toEqual([
+        { op: 'eq', column: 'id', value: 'session-target' },
+        { op: 'eq', column: 'athlete_id', value: 'ath-self' },
+      ])
+    })
+
+    it('offline encola target y clearQueuedOpsForAthlete lo suprime', async () => {
+      vi.stubEnv('VITE_SUPABASE_URL', 'https://example.test')
+      Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { onLine: false } })
+      const sync = await import('../syncService')
+      await sync.pushSessionForTarget(
+        targetSession('ath-managed') as never,
+        { kind: 'scoped', athleteId: 'ath-managed' },
+      )
+      const queued = JSON.parse(localStorageState.get('entrenador_sync_queue_v1') ?? '[]')
+      expect(queued).toEqual([expect.objectContaining({
+        table: 'sessions', action: 'upsert', scopeAthleteId: 'ath-managed',
+        sessionTarget: { kind: 'scoped', athleteId: 'ath-managed' },
+      })])
+      const queue = await import('../sync/syncQueue')
+      queue.clearQueuedOpsForAthlete('user-1', 'ath-managed')
+      expect(JSON.parse(localStorageState.get('entrenador_sync_queue_v1') ?? '[]')).toEqual([])
+    })
+
+    it('drain replays sessionTarget y consume la versión persistida', async () => {
+      vi.stubEnv('VITE_SUPABASE_URL', 'https://example.test')
+      actionResults.set('update:sessions', { data: [{ id: 'session-target' }], error: null })
+      localStorageState.set('entrenador_sync_queue_v1', JSON.stringify([{
+        userId: 'user-1', table: 'sessions', action: 'upsert', enqueuedAt: 10,
+        payload: {
+          id: 'session-target', date: '2026-07-14', time_block: 'AM', type: 'squash',
+          status: 'planned', created_at: 1, updated_at: 10, data: { title: 'Target', durationMin: 60 },
+        },
+        scopeAthleteId: 'ath-managed',
+        sessionTarget: { kind: 'scoped', athleteId: 'ath-managed' },
+      }]))
+      const sync = await import('../syncService')
+      await expect(sync.drainQueue()).resolves.toBe(true)
+      expect(updateCalls.at(-1)?.filters).toContainEqual(
+        { op: 'eq', column: 'athlete_id', value: 'ath-managed' },
+      )
+      expect(JSON.parse(localStorageState.get('entrenador_sync_queue_v1') ?? '[]')).toEqual([])
+    })
+  })
+
+  describe('drainQueue concurrent reconciliation', () => {
+    const queuedSession = (id: string, title: string, enqueuedAt = 100) => ({
+      userId: 'user-1',
+      table: 'sessions' as const,
+      action: 'upsert' as const,
+      payload: { id, data: { title }, updated_at: enqueuedAt },
+      enqueuedAt,
+    })
+
+    it('preserva una op encolada mientras el snapshot se está drenando', async () => {
+      vi.stubEnv('VITE_SUPABASE_URL', 'https://example.test')
+      const blocker = queuedSession('session-a', 'A')
+      localStorageState.set('entrenador_sync_queue_v1', JSON.stringify([blocker]))
+      let requested = false
+      let release!: (result: SupabaseResult) => void
+      upsertHooks.set('sessions', () => {
+        requested = true
+        return new Promise<SupabaseResult>((resolve) => { release = resolve })
+      })
+      const sync = await import('../syncService')
+      const queue = await import('../sync/syncQueue')
+
+      const draining = sync.drainQueue()
+      await vi.waitFor(() => expect(requested).toBe(true))
+      const concurrent = queuedSession('session-b', 'B', 101)
+      queue.enqueue(concurrent)
+      upsertHooks.delete('sessions')
+      release({ data: null, error: null })
+
+      await expect(draining).resolves.toBe(false)
+      expect(queue.loadQueue()).toEqual([concurrent])
+      expect(storeState.syncDetails.lastSuccessfulSyncAt).toBeNull()
+      expect(storeState.syncDetails.lastRecoveredSyncAt).toBeNull()
+      expect(storeState.syncDetails.syncAttemptInFlight).toBe(false)
+    })
+
+    it('misma identidad y enqueuedAt pero payload nuevo supersede al snapshot', async () => {
+      vi.stubEnv('VITE_SUPABASE_URL', 'https://example.test')
+      const blocker = queuedSession('session-a', 'A')
+      const oldVersion = queuedSession('session-b', 'Vieja')
+      localStorageState.set('entrenador_sync_queue_v1', JSON.stringify([blocker, oldVersion]))
+      let requested = false
+      let release!: (result: SupabaseResult) => void
+      upsertHooks.set('sessions', () => {
+        requested = true
+        return new Promise<SupabaseResult>((resolve) => { release = resolve })
+      })
+      const sync = await import('../syncService')
+      const queue = await import('../sync/syncQueue')
+
+      const draining = sync.drainQueue()
+      await vi.waitFor(() => expect(requested).toBe(true))
+      const newVersion = queuedSession('session-b', 'Nueva')
+      queue.saveQueue([blocker, newVersion])
+      upsertHooks.delete('sessions')
+      release({ data: null, error: null })
+
+      await expect(draining).resolves.toBe(false)
+      expect(queue.loadQueue()).toEqual([newVersion])
+      expect(upsertCalls).toHaveLength(1)
+      expect(upsertCalls[0]?.payload).toMatchObject({ id: 'session-a' })
+    })
+
+    it('un éxito seguido de retry usa madeProgress del snapshot', async () => {
+      vi.stubEnv('VITE_SUPABASE_URL', 'https://example.test')
+      localStorageState.set('entrenador_sync_queue_v1', JSON.stringify([
+        queuedSession('session-a', 'A'),
+        queuedSession('session-b', 'B', 101),
+      ]))
+      let call = 0
+      upsertHooks.set('sessions', async () => {
+        call += 1
+        return call === 1
+          ? { data: null, error: null }
+          : { data: null, error: { status: 401, message: 'JWT expired' } }
+      })
+      const sync = await import('../syncService')
+      const queue = await import('../sync/syncQueue')
+
+      await expect(sync.drainQueue()).resolves.toBe(false)
+      expect(queue.loadQueue()).toEqual([
+        expect.objectContaining({
+          payload: expect.objectContaining({ id: 'session-b' }),
+          retryCount: 1,
+          lastErrorCategory: 'auth_error',
+        }),
+      ])
+      expect(syncStatusMock).toHaveBeenLastCalledWith(
+        'degraded',
+        expect.stringContaining('sesión expiró'),
+      )
+      expect(storeState.syncDetails.syncAttemptInFlight).toBe(false)
+    })
+  })
+
+  describe('week summary athlete-scoped sync', () => {
+    const summary = (overrides: Record<string, unknown> = {}) => ({
+      id: 'week-local', athleteId: 'ath-managed', weekStartDate: '2026-07-13', updatedAt: 200,
+      totalSessions: 2, totalMinutes: 120, plannedSessions: 2, completedSessions: 1,
+      plannedMinutes: 120, completedMinutes: 60, squashSessions: 1,
+      runningSessions: 0, strengthSessions: 0, ...overrides,
+    })
+
+    beforeEach(() => {
+      athleteRows = [{
+        id: 'ath-managed', ownerAccountId: 'user-1', linkedAccountId: null,
+        status: 'active', createdAt: 1, updatedAt: 1,
+      }]
+    })
+
+    it('update-first usa id+athlete_id y no reparenta', async () => {
+      vi.stubEnv('VITE_SUPABASE_URL', 'https://example.test')
+      actionResults.set('update:week_summaries', { data: [{ id: 'week-local' }], error: null })
+      const sync = await import('../syncService')
+      await sync.pushWeekSummaryForAthlete(summary() as never)
+      expect(updateCalls.at(-1)?.filters).toEqual([
+        { op: 'eq', column: 'id', value: 'week-local' },
+        { op: 'eq', column: 'athlete_id', value: 'ath-managed' },
+      ])
+      expect(updateCalls.at(-1)?.payload).not.toHaveProperty('user_id')
+      expect(insertCalls).toEqual([])
+    })
+
+    it('si no encuentra update inserta con user_id solo en el insert', async () => {
+      vi.stubEnv('VITE_SUPABASE_URL', 'https://example.test')
+      actionResults.set('update:week_summaries', { data: [], error: null })
+      actionResults.set('insert:week_summaries', { data: null, error: null })
+      const sync = await import('../syncService')
+      await sync.pushWeekSummaryForAthlete(summary() as never)
+      expect(insertCalls.at(-1)?.payload).toMatchObject({
+        id: 'week-local', athlete_id: 'ath-managed', user_id: 'user-1',
+      })
+    })
+
+    it('un remoto más nuevo gana y se reconcilia inmediatamente en Dexie', async () => {
+      vi.stubEnv('VITE_SUPABASE_URL', 'https://example.test')
+      weekSummaryRows = [summary()]
+      actionResults.set('update:week_summaries', { data: [], error: null })
+      actionResults.set('insert:week_summaries', { data: null, error: { code: '23505' } })
+      actionResults.set('select:week_summaries', {
+        data: [{
+          id: 'week-remote', user_id: 'linked', athlete_id: 'ath-managed',
+          week_start_date: '2026-07-13', updated_at: 300,
+          data: { totalSessions: 5, totalMinutes: 250 },
+        }],
+        error: null,
+      })
+      const sync = await import('../syncService')
+      await sync.pushWeekSummaryForAthlete(summary() as never)
+      expect(weekSummaryRows).toEqual([
+        expect.objectContaining({ id: 'week-remote', athleteId: 'ath-managed', totalSessions: 5 }),
+      ])
+      expect(selectCalls.at(-1)?.filters).toEqual([
+        { op: 'eq', column: 'athlete_id', value: 'ath-managed' },
+        { op: 'eq', column: 'week_start_date', value: '2026-07-13' },
+      ])
+    })
+
+    it('un local más nuevo actualiza condicionalmente la fila del natural key', async () => {
+      vi.stubEnv('VITE_SUPABASE_URL', 'https://example.test')
+      weekSummaryRows = [summary()]
+      actionResults.set('update:week_summaries', [
+        { data: [], error: null },
+        { data: [{ id: 'week-remote' }], error: null },
+      ])
+      actionResults.set('insert:week_summaries', { data: null, error: { code: '23505' } })
+      actionResults.set('select:week_summaries', {
+        data: [{
+          id: 'week-remote', athlete_id: 'ath-managed', week_start_date: '2026-07-13',
+          updated_at: 100, data: { totalSessions: 1 },
+        }],
+        error: null,
+      })
+      const sync = await import('../syncService')
+      await sync.pushWeekSummaryForAthlete(summary() as never)
+      expect(updateCalls.at(-1)?.filters).toEqual([
+        { op: 'eq', column: 'id', value: 'week-remote' },
+        { op: 'eq', column: 'athlete_id', value: 'ath-managed' },
+        { op: 'eq', column: 'week_start_date', value: '2026-07-13' },
+        { op: 'lt', column: 'updated_at', value: 200 },
+      ])
+      expect(weekSummaryRows).toContainEqual(expect.objectContaining({ id: 'week-remote', updatedAt: 200 }))
+    })
+
+    it('offline encola el replay discriminado', async () => {
+      vi.stubEnv('VITE_SUPABASE_URL', 'https://example.test')
+      Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { onLine: false } })
+      const sync = await import('../syncService')
+      await sync.pushWeekSummaryForAthlete(summary() as never)
+      expect(JSON.parse(localStorageState.get('entrenador_sync_queue_v1') ?? '[]')).toEqual([
+        expect.objectContaining({
+          table: 'week_summaries', scopeAthleteId: 'ath-managed',
+          replayKind: 'weekSummaryForAthlete',
+        }),
+      ])
+    })
+
+    it('drain usa el executor especial y no el upsert genérico', async () => {
+      vi.stubEnv('VITE_SUPABASE_URL', 'https://example.test')
+      actionResults.set('update:week_summaries', { data: [{ id: 'week-local' }], error: null })
+      localStorageState.set('entrenador_sync_queue_v1', JSON.stringify([{
+        userId: 'user-1', table: 'week_summaries', action: 'upsert', enqueuedAt: 10,
+        payload: {
+          id: 'week-local', athlete_id: 'ath-managed', week_start_date: '2026-07-13',
+          updated_at: 200, data: { totalSessions: 2 },
+        },
+        scopeAthleteId: 'ath-managed', replayKind: 'weekSummaryForAthlete',
+      }]))
+      const sync = await import('../syncService')
+      await expect(sync.drainQueue()).resolves.toBe(true)
+      expect(updateCalls.at(-1)?.table).toBe('week_summaries')
+      expect(upsertCalls.some((call) => call.table === 'week_summaries')).toBe(false)
+    })
+
+    it('drain programa retry si el replay de summary sigue retenido', async () => {
+      vi.stubEnv('VITE_SUPABASE_URL', 'https://example.test')
+      actionResults.set('update:week_summaries', { data: [], error: null })
+      actionResults.set('insert:week_summaries', { data: null, error: { code: '23505' } })
+      actionResults.set('select:week_summaries', [
+        { data: [], error: null },
+        { data: [], error: null },
+        { data: [], error: null },
+      ])
+      localStorageState.set('entrenador_sync_queue_v1', JSON.stringify([{
+        userId: 'user-1', table: 'week_summaries', action: 'upsert', enqueuedAt: 10,
+        payload: {
+          id: 'week-local', athlete_id: 'ath-managed', week_start_date: '2026-07-13',
+          updated_at: 200, data: { totalSessions: 2 },
+        },
+        scopeAthleteId: 'ath-managed', replayKind: 'weekSummaryForAthlete',
+      }]))
+      const timeoutSpy = vi.spyOn(globalThis, 'setTimeout')
+      const sync = await import('../syncService')
+      const queue = await import('../sync/syncQueue')
+
+      await expect(sync.drainQueue()).resolves.toBe(false)
+
+      expect(queue.loadQueue()).toEqual([
+        expect.objectContaining({
+          replayKind: 'weekSummaryForAthlete',
+          retryCount: 1,
+        }),
+      ])
+      expect(storeState.syncDetails.retryScheduledAt).toEqual(expect.any(Number))
+      expect(timeoutSpy).toHaveBeenCalledWith(expect.any(Function), expect.any(Number))
+      const timer = timeoutSpy.mock.results.at(-1)?.value as ReturnType<typeof setTimeout> | undefined
+      if (timer !== undefined) clearTimeout(timer)
+      timeoutSpy.mockRestore()
     })
   })
 

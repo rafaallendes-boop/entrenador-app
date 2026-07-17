@@ -1,4 +1,5 @@
 import type { AthleteProfile } from '../types'
+import type { RemoteSessionTarget } from './sync/remoteSessionTarget'
 import { ATHLETE_PROFILE_LOCAL_ID, getSelfAthleteId } from './athlete/activeAthlete'
 import { isScopedAthleteId } from './athlete/effectiveAthleteKey'
 import { athleteIdForOwner } from './athlete/athleteScopeMigration'
@@ -321,6 +322,10 @@ export interface OfflineOp {
    * local de la cola y no se envía a Supabase.
    */
   scopeAthleteId?: string
+  /** Serializable remote ownership target for workspace session replays. */
+  sessionTarget?: RemoteSessionTarget
+  /** Athlete-scoped replay kinds not covered by the generic queue executor. */
+  replayKind?: 'weekSummaryForAthlete'
 }
 
 /** Maximum retries per queued op before it's considered permanently failed */

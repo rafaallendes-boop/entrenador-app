@@ -5,6 +5,11 @@ import { getAuthRedirectUrl, isSupabaseConfigured, supabase } from '../services/
 import { rememberPendingAuthContext } from '../services/authDeepLinks'
 import { isNativePlatform } from '../services/platform'
 import type { SyncTierHealthMap } from '../types/syncDiagnostics'
+import {
+  setActiveAthleteId as setActiveAthleteHolder,
+  setSelfAthleteId,
+} from '../services/athlete/activeAthlete'
+import { clearCoachPlanningHydrationRegistry } from '../services/athlete/coachPlanningHydrationRegistry'
 
 export type SyncStatus = 'idle' | 'syncing' | 'error' | 'offline' | 'degraded'
 
@@ -109,6 +114,9 @@ export const useAuthStore = create<AuthState>((set) => ({
     },
 
     signOut: async () => {
+      clearCoachPlanningHydrationRegistry()
+      setActiveAthleteHolder(null)
+      setSelfAthleteId(null)
       if (supabase) {
         await supabase.auth.signOut()
       }
@@ -177,6 +185,13 @@ if (isSupabaseConfigured && supabase) {
 
   supabase.auth.onAuthStateChange((_event, session) => {
     authBootstrapVersion += 1
-    useAuthStore.setState({ user: session?.user ?? null, isLoading: false })
+    const nextUser = session?.user ?? null
+    if (useAuthStore.getState().user?.id !== nextUser?.id) {
+      clearCoachPlanningHydrationRegistry()
+      setActiveAthleteHolder(null)
+      setSelfAthleteId(null)
+      useAuthStore.setState({ activeAthleteId: null })
+    }
+    useAuthStore.setState({ user: nextUser, isLoading: false })
   })
 }

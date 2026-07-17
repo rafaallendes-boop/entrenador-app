@@ -4,7 +4,6 @@ import type { Athlete, Session } from '../../../types'
 
 vi.mock('../../../services/athlete/coachScopedReads', () => ({
   getWeekSessionsForAthlete: vi.fn(),
-  hydrateWeekForAthlete: vi.fn(),
 }))
 
 import CoachPlanningPanel from '../CoachPlanningPanel'
@@ -92,9 +91,10 @@ describe('CoachPlanningPanel', () => {
     expect(html).not.toContain('no tiene sesiones')
   })
 
-  it('muestra un estado vacio honesto una vez hidratada la semana', () => {
+  it('una semana vacía hidratada muestra solo la grilla editable de siete días', () => {
     const html = render({ initialSessions: [], initialPhase: 'ready' })
-    expect(html).toContain('Esta semana no tiene sesiones planificadas')
+    expect(html).not.toContain('Esta semana no tiene sesiones planificadas')
+    expect(html.match(/\+ Agregar sesión/g)).toHaveLength(7)
   })
 
   it('conserva los datos locales y avisa discretamente si falla la hidratacion', () => {

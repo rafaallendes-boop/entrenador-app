@@ -40,6 +40,7 @@ import { invalidateBackfillMarker, markBackfillDirtyAfterImport } from './athlet
 import { v4 as uuid } from '../utils/uuid'
 import { canExportCoachNotesFor } from './athlete/coachNoteExportPolicy'
 import { getMembershipsForAccount } from './athlete/membershipCache'
+import { clearCoachPlanningHydrationRegistry } from './athlete/coachPlanningHydrationRegistry'
 
 const BACKUP_APP_NAME = 'RallyIQ' as const
 const LEGACY_BACKUP_APP_NAME = 'Entrenador' as const
@@ -619,6 +620,7 @@ export async function importAppDataFromFile(
 ): Promise<AppDataImportResult> {
   const backup = await readBackupFromFile(file)
   const preferredChatSessionId = pickPreferredChatSessionId(backup.tables.chatMessages)
+  clearCoachPlanningHydrationRegistry()
 
   if (mode === 'replace') {
     await db.transaction(

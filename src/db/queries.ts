@@ -5,9 +5,18 @@ import { toISO, getWeekStart, fromISO } from '../utils/date'
 import { isCompetitionSquashMatch, isPracticeSquashMatch } from '../utils/squash'
 import { addDays } from 'date-fns'
 import { v4 as uuid } from '../utils/uuid'
-import { ATHLETE_PROFILE_LOCAL_ID, getActiveAthleteId, isSelfScopeActive } from '../services/athlete/activeAthlete'
+import {
+  ATHLETE_PROFILE_LOCAL_ID,
+  getActiveAthleteId,
+  getSelfAthleteId,
+  isSelfScopeActive,
+} from '../services/athlete/activeAthlete'
 import { isScopedAthleteId } from '../services/athlete/effectiveAthleteKey'
 import { isWhoopPrefilled } from '../services/readiness/dayLogPrefillSave'
+import {
+  resolveAthleteWeekScope,
+  type AthleteWeekScope,
+} from '../services/athlete/athleteWeekScope'
 
 /**
  * Collects "RPE real de sesión" values for the weekly average: session-level
@@ -48,42 +57,64 @@ function pickLegacyOrOnlyRow<T extends { athleteId?: string }>(rows: T[]): T | u
   return rows.length === 1 ? rows[0] : undefined
 }
 
-export const getSessionsForWeek = async (
-  weekStartISO: string
+function captureActiveWeekScope(): AthleteWeekScope | null {
+  const athleteId = getActiveAthleteId()
+  if (!athleteId) return null
+  const selfId = getSelfAthleteId()
+  return { athleteId, includeLegacy: athleteId === selfId }
+}
+
+async function getSessionsForWeekLegacy(weekStartISO: string): Promise<Session[]> {
+  const end = toISO(addDays(fromISO(weekStartISO), 6))
+  return db.sessions.where('date').between(weekStartISO, end, true, true).toArray()
+}
+
+export const getSessionsForWeekCore = async (
+  scope: AthleteWeekScope,
+  weekStartISO: string,
 ): Promise<Session[]> => {
   const end = toISO(addDays(fromISO(weekStartISO), 6))
   const rows = await db.sessions.where('date').between(weekStartISO, end, true, true).toArray()
-  return filterRowsToActiveScope(rows)
+  return rows.filter((row) =>
+    row.athleteId === scope.athleteId
+      || (scope.includeLegacy && !isScopedAthleteId(row.athleteId)))
 }
 
-export const getDayLogsForWeek = async (weekStartISO: string): Promise<DayLog[]> => {
-  const end = toISO(addDays(fromISO(weekStartISO), 6))
-  const activeAthleteId = getActiveAthleteId()
-  if (!activeAthleteId) {
-    return db.dayLogs.where('date').between(weekStartISO, end, true, true).toArray()
-  }
+export const getSessionsForWeek = async (weekStartISO: string): Promise<Session[]> => {
+  const scope = captureActiveWeekScope()
+  return scope ? getSessionsForWeekCore(scope, weekStartISO) : getSessionsForWeekLegacy(weekStartISO)
+}
 
+async function getDayLogsForWeekLegacy(weekStartISO: string): Promise<DayLog[]> {
+  const end = toISO(addDays(fromISO(weekStartISO), 6))
+  return db.dayLogs.where('date').between(weekStartISO, end, true, true).toArray()
+}
+
+export const getDayLogsForWeekCore = async (
+  scope: AthleteWeekScope,
+  weekStartISO: string,
+): Promise<DayLog[]> => {
+  const end = toISO(addDays(fromISO(weekStartISO), 6))
   const scoped = await db.dayLogs
     .where('[athleteId+date]')
-    .between([activeAthleteId, weekStartISO], [activeAthleteId, end], true, true)
+    .between([scope.athleteId, weekStartISO], [scope.athleteId, end], true, true)
     .toArray()
-  // Legacy adoption is self-only (spec §3.6): a managed athlete never reads
-  // the owner's unscoped rows.
-  if (!isSelfScopeActive()) {
+  if (!scope.includeLegacy) {
     return scoped.sort((a, b) => a.date.localeCompare(b.date))
   }
   const byDate = new Map<string, DayLog>(scoped.map((row) => [row.date, row]))
   const inRange = await db.dayLogs.where('date').between(weekStartISO, end, true, true).toArray()
-  const adopted: DayLog[] = []
-
   for (const row of inRange) {
     if (byDate.has(row.date)) continue
     if (isScopedAthleteId(row.athleteId)) continue
     byDate.set(row.date, row)
-    adopted.push(row)
   }
+  return [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date))
+}
 
-  return [...scoped, ...adopted].sort((a, b) => a.date.localeCompare(b.date))
+export const getDayLogsForWeek = async (weekStartISO: string): Promise<DayLog[]> => {
+  const scope = captureActiveWeekScope()
+  return scope ? getDayLogsForWeekCore(scope, weekStartISO) : getDayLogsForWeekLegacy(weekStartISO)
 }
 
 export const getSessionsForDay = async (dateISO: string): Promise<Session[]> =>
@@ -138,23 +169,28 @@ export const upsertDayLog = async (
   return created
 }
 
-export const getWeekSummary = async (weekStartISO: string): Promise<WeekSummary | undefined> => {
-  const activeAthleteId = getActiveAthleteId()
-  if (!activeAthleteId) {
-    const candidates = await db.weekSummaries.where('weekStartDate').equals(weekStartISO).toArray()
-    return pickLegacyOrOnlyRow(candidates)
-  }
+async function getWeekSummaryLegacy(weekStartISO: string): Promise<WeekSummary | undefined> {
+  const candidates = await db.weekSummaries.where('weekStartDate').equals(weekStartISO).toArray()
+  return pickLegacyOrOnlyRow(candidates)
+}
 
+export const getWeekSummaryCore = async (
+  scope: AthleteWeekScope,
+  weekStartISO: string,
+): Promise<WeekSummary | undefined> => {
   const scoped = await db.weekSummaries
     .where('[athleteId+weekStartDate]')
-    .equals([activeAthleteId, weekStartISO])
+    .equals([scope.athleteId, weekStartISO])
     .first()
   if (scoped) return scoped
-
-  // Legacy adoption is self-only (spec §3.6).
-  if (!isSelfScopeActive()) return undefined
+  if (!scope.includeLegacy) return undefined
   const candidates = await db.weekSummaries.where('weekStartDate').equals(weekStartISO).toArray()
   return candidates.find((row) => !isScopedAthleteId(row.athleteId))
+}
+
+export const getWeekSummary = async (weekStartISO: string): Promise<WeekSummary | undefined> => {
+  const scope = captureActiveWeekScope()
+  return scope ? getWeekSummaryCore(scope, weekStartISO) : getWeekSummaryLegacy(weekStartISO)
 }
 
 export function hasWeekSummaryMeaningfulChanges(
@@ -170,34 +206,15 @@ export function hasWeekSummaryMeaningfulChanges(
   })
 }
 
-export const upsertWeekSummary = async (
-  weekStartISO: string,
-  patch: Partial<Omit<WeekSummary, 'id' | 'weekStartDate' | 'updatedAt' | 'athleteId'>>
-): Promise<WeekSummary> => {
-  const existing = await getWeekSummary(weekStartISO)
-  const updatedAt = Date.now()
-  const activeAthleteId = getActiveAthleteId()
-  const safePatch = stripAthleteId(patch)
-  if (existing) {
-    const resolvedAthleteId = isScopedAthleteId(existing.athleteId)
-      ? existing.athleteId
-      : activeAthleteId ?? undefined
-    const needsAthleteStamp = !!activeAthleteId && !isScopedAthleteId(existing.athleteId)
-    if (!needsAthleteStamp && !hasWeekSummaryMeaningfulChanges(existing, safePatch)) {
-      return existing
-    }
+type WeekSummaryPatch = Partial<Omit<WeekSummary, 'id' | 'weekStartDate' | 'updatedAt' | 'athleteId'>>
 
-    const updated: WeekSummary = {
-      ...existing,
-      ...safePatch,
-      updatedAt,
-      ...(resolvedAthleteId ? { athleteId: resolvedAthleteId } : {}),
-    }
-    await db.weekSummaries.put(updated)
-    void syncService.pushWeekSummary(updated)
-    return updated
-  }
-  const created: WeekSummary = {
+function createWeekSummary(
+  weekStartISO: string,
+  patch: WeekSummaryPatch,
+  updatedAt: number,
+  athleteId?: string,
+): WeekSummary {
+  return {
     id: uuid(),
     weekStartDate: weekStartISO,
     updatedAt,
@@ -210,18 +227,74 @@ export const upsertWeekSummary = async (
     squashSessions: 0,
     runningSessions: 0,
     strengthSessions: 0,
-    ...safePatch,
-    ...(activeAthleteId ? { athleteId: activeAthleteId } : {}),
+    ...patch,
+    ...(athleteId ? { athleteId } : {}),
   }
-  await db.weekSummaries.put(created)
-  void syncService.pushWeekSummary(created)
-  return created
 }
 
-export const recalculateWeekSummary = async (dateISO: string): Promise<void> => {
-  const weekStart = toISO(getWeekStart(fromISO(dateISO)))
-  const sessions = await getSessionsForWeek(weekStart)
-  const dayLogs = await getDayLogsForWeek(weekStart)
+export const upsertWeekSummaryCore = async (
+  scope: AthleteWeekScope,
+  weekStartISO: string,
+  patch: WeekSummaryPatch,
+): Promise<{ summary: WeekSummary; changed: boolean }> => {
+  const existing = await getWeekSummaryCore(scope, weekStartISO)
+  const safePatch = stripAthleteId(patch)
+  if (existing) {
+    const needsAthleteStamp = !isScopedAthleteId(existing.athleteId)
+    if (!needsAthleteStamp && !hasWeekSummaryMeaningfulChanges(existing, safePatch)) {
+      return { summary: existing, changed: false }
+    }
+    const updatedAt = Math.max(Date.now(), (existing.updatedAt ?? 0) + 1)
+    const updated: WeekSummary = {
+      ...existing,
+      ...safePatch,
+      updatedAt,
+      athleteId: scope.athleteId,
+    }
+    await db.weekSummaries.put(updated)
+    return { summary: updated, changed: true }
+  }
+  const created = createWeekSummary(weekStartISO, safePatch, Date.now(), scope.athleteId)
+  await db.weekSummaries.put(created)
+  return { summary: created, changed: true }
+}
+
+async function upsertWeekSummaryLegacy(
+  weekStartISO: string,
+  patch: WeekSummaryPatch,
+): Promise<{ summary: WeekSummary; changed: boolean }> {
+  const existing = await getWeekSummaryLegacy(weekStartISO)
+  const safePatch = stripAthleteId(patch)
+  if (existing) {
+    if (!hasWeekSummaryMeaningfulChanges(existing, safePatch)) {
+      return { summary: existing, changed: false }
+    }
+    const updated = {
+      ...existing,
+      ...safePatch,
+      updatedAt: Math.max(Date.now(), (existing.updatedAt ?? 0) + 1),
+    }
+    await db.weekSummaries.put(updated)
+    return { summary: updated, changed: true }
+  }
+  const created = createWeekSummary(weekStartISO, safePatch, Date.now())
+  await db.weekSummaries.put(created)
+  return { summary: created, changed: true }
+}
+
+export const upsertWeekSummary = async (
+  weekStartISO: string,
+  patch: WeekSummaryPatch,
+): Promise<WeekSummary> => {
+  const scope = captureActiveWeekScope()
+  const result = scope
+    ? await upsertWeekSummaryCore(scope, weekStartISO, patch)
+    : await upsertWeekSummaryLegacy(weekStartISO, patch)
+  if (result.changed) void syncService.pushWeekSummary(result.summary)
+  return result.summary
+}
+
+function calculateWeekSummaryPatch(sessions: Session[], dayLogs: DayLog[]): WeekSummaryPatch {
   const realized = sessions.filter(s => s.status === 'completed' || s.status === 'adjusted')
   const plannedMinutes = sessions
     .filter(s => s.status !== 'skipped')
@@ -268,7 +341,7 @@ export const recalculateWeekSummary = async (dateISO: string): Promise<void> => 
 
   const active = sessions.filter(s => s.status !== 'skipped')
 
-  await upsertWeekSummary(weekStart, {
+  return {
     totalSessions: plannedSessions,
     totalMinutes: plannedMinutes,
     plannedSessions,
@@ -291,7 +364,42 @@ export const recalculateWeekSummary = async (dateISO: string): Promise<void> => 
     avgEnergy,
     avgBodyWeight,
     weightEntries: bodyWeightValues.length,
-  })
+  }
+}
+
+export const recalculateWeekSummaryCore = async (
+  scope: AthleteWeekScope,
+  dateISO: string,
+): Promise<{ summary: WeekSummary; changed: boolean }> => {
+  const weekStart = toISO(getWeekStart(fromISO(dateISO)))
+  const sessions = await getSessionsForWeekCore(scope, weekStart)
+  const dayLogs = await getDayLogsForWeekCore(scope, weekStart)
+  return upsertWeekSummaryCore(scope, weekStart, calculateWeekSummaryPatch(sessions, dayLogs))
+}
+
+async function recalculateWeekSummaryLegacy(dateISO: string): Promise<{ summary: WeekSummary; changed: boolean }> {
+  const weekStart = toISO(getWeekStart(fromISO(dateISO)))
+  const sessions = await getSessionsForWeekLegacy(weekStart)
+  const dayLogs = await getDayLogsForWeekLegacy(weekStart)
+  return upsertWeekSummaryLegacy(weekStart, calculateWeekSummaryPatch(sessions, dayLogs))
+}
+
+export const recalculateWeekSummary = async (dateISO: string): Promise<void> => {
+  const scope = captureActiveWeekScope()
+  const result = scope
+    ? await recalculateWeekSummaryCore(scope, dateISO)
+    : await recalculateWeekSummaryLegacy(dateISO)
+  if (result.changed) void syncService.pushWeekSummary(result.summary)
+}
+
+export const recalculateWeekSummaryForAthlete = async (
+  ownerAccountId: string,
+  athleteId: string,
+  dateISO: string,
+): Promise<void> => {
+  const scope = await resolveAthleteWeekScope(ownerAccountId, athleteId)
+  const result = await recalculateWeekSummaryCore(scope, dateISO)
+  if (result.changed) void syncService.pushWeekSummaryForAthlete(result.summary)
 }
 
 export const getAllWeekSummaries = async (): Promise<WeekSummary[]> =>

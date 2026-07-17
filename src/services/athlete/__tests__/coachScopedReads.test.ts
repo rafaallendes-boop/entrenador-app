@@ -1,7 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { db } from '../../../db/db'
 import type { Session } from '../../../types'
-import { getWeekSessionsForAthlete } from '../coachScopedReads'
+import { ATHLETE_PROFILE_LOCAL_ID, setSelfAthleteId } from '../activeAthlete'
+import {
+  assertActiveRosterAthlete,
+  assertRosterAthlete,
+  getAthleteProfileForAthlete,
+  getWeekSessionsForAthlete,
+} from '../coachScopedReads'
 
 const now = Date.now()
 
@@ -42,6 +48,14 @@ describe('getWeekSessionsForAthlete', () => {
         createdAt: now,
         updatedAt: now,
       },
+      {
+        id: 'ath_archived',
+        ownerAccountId: 'user-1',
+        linkedAccountId: null,
+        status: 'archived',
+        createdAt: now,
+        updatedAt: now,
+      },
     ])
     await db.sessions.bulkPut([
       session({ id: 's-managed', athleteId: 'ath_m_a', date: '2026-07-14' }),
@@ -55,6 +69,7 @@ describe('getWeekSessionsForAthlete', () => {
   })
 
   afterEach(() => {
+    setSelfAthleteId(null)
     db.close()
   })
 
@@ -95,5 +110,95 @@ describe('getWeekSessionsForAthlete', () => {
     const before = await db.sessions.count()
     await getWeekSessionsForAthlete('user-1', 'ath_m_a', '2026-07-13')
     expect(await db.sessions.count()).toBe(before)
+  })
+
+  it('self reclamado por membresía adopta legacy', async () => {
+    setSelfAthleteId('ath_claimed')
+    await db.athletes.put({
+      id: 'ath_claimed', ownerAccountId: 'user-1', linkedAccountId: 'user-1',
+      status: 'active', createdAt: now, updatedAt: now,
+    })
+    await db.sessions.put(session({ id: 's-for-claimed', athleteId: 'ath_claimed', date: '2026-07-14' }))
+    const rows = await getWeekSessionsForAthlete('user-1', 'ath_claimed', '2026-07-13')
+    expect(rows.map((row) => row.id)).toContain('s-legacy')
+    expect(rows.map((row) => row.id)).toContain('s-for-claimed')
+  })
+})
+
+describe('assertActiveRosterAthlete', () => {
+  beforeEach(async () => {
+    db.close()
+    await db.delete()
+    await db.open()
+    await db.athletes.bulkPut([
+      {
+        id: 'ath_m_a', ownerAccountId: 'user-1', linkedAccountId: null,
+        status: 'active', createdAt: now, updatedAt: now,
+      },
+      {
+        id: 'ath_archived', ownerAccountId: 'user-1', linkedAccountId: null,
+        status: 'archived', createdAt: now, updatedAt: now,
+      },
+    ])
+  })
+
+  afterEach(() => db.close())
+
+  it('acepta un atleta activo', async () => {
+    await expect(assertActiveRosterAthlete('user-1', 'ath_m_a')).resolves.toMatchObject({ id: 'ath_m_a' })
+  })
+
+  it('rechaza un atleta archivado con copy propio', async () => {
+    await expect(assertActiveRosterAthlete('user-1', 'ath_archived'))
+      .rejects.toThrow('Este atleta está archivado; restauralo para editar su semana.')
+  })
+
+  it('rechaza atletas fuera del roster', async () => {
+    await expect(assertActiveRosterAthlete('user-1', 'ath_ajeno'))
+      .rejects.toThrow('El atleta no pertenece a tu roster.')
+  })
+
+  it('la aserción base sigue aceptando archivados', async () => {
+    await expect(assertRosterAthlete('user-1', 'ath_archived')).resolves.toMatchObject({ id: 'ath_archived' })
+  })
+})
+
+describe('getAthleteProfileForAthlete', () => {
+  beforeEach(async () => {
+    db.close()
+    await db.delete()
+    await db.open()
+    setSelfAthleteId(null)
+  })
+
+  afterEach(() => {
+    setSelfAthleteId(null)
+    db.close()
+  })
+
+  it('encuentra la fila singleton para el self resuelto', async () => {
+    setSelfAthleteId('ath_user-1')
+    await db.athleteProfiles.put({
+      id: ATHLETE_PROFILE_LOCAL_ID, updatedAt: now, primarySport: 'running',
+    } as never)
+    const profile = await getAthleteProfileForAthlete('user-1', 'ath_user-1')
+    expect(profile?.primarySport).toBe('running')
+  })
+
+  it('encuentra un gestionado por athleteId y nunca adopta el singleton', async () => {
+    await db.athleteProfiles.put({
+      id: ATHLETE_PROFILE_LOCAL_ID, updatedAt: now, primarySport: 'running',
+    } as never)
+    await db.athleteProfiles.put({
+      id: 'p-managed', athleteId: 'ath_m_a', updatedAt: now, primarySport: 'squash',
+    } as never)
+    expect((await getAthleteProfileForAthlete('user-1', 'ath_m_a'))?.primarySport).toBe('squash')
+    await db.athleteProfiles.delete('p-managed')
+    expect(await getAthleteProfileForAthlete('user-1', 'ath_m_a')).toBeUndefined()
+  })
+
+  it('usa la PK histórica del gestionado como fallback', async () => {
+    await db.athleteProfiles.put({ id: 'ath_m_a', updatedAt: now, primarySport: 'cycling' } as never)
+    expect((await getAthleteProfileForAthlete('user-1', 'ath_m_a'))?.primarySport).toBe('cycling')
   })
 })

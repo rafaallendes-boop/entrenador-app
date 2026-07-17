@@ -82,7 +82,9 @@ import {
   clearQueuedOpsForEntityOlderThan,
   clearQueuedOpsForTables,
   enqueue as enqueueOp,
+  isSameQueuedOpVersion,
   loadQueue,
+  offlineOpsShareIdentity,
   saveQueue,
   setQueueChangeListener,
 } from './sync/syncQueue'
@@ -98,6 +100,10 @@ import {
   runAthleteWrites,
   trackInFlightAthleteOp,
 } from './sync/athleteWriteLease'
+import {
+  isRemoteSessionTarget,
+  type RemoteSessionTarget,
+} from './sync/remoteSessionTarget'
 import { createScopedDedup } from './sync/syncDedup'
 import {
   ATHLETE_PROFILE_WRITE_MODE_KEY,
@@ -900,6 +906,29 @@ async function resolveLegacyQueuedSessionAthleteId(
   return null
 }
 
+async function executeSessionTargetReplay(op: OfflineOp): Promise<void> {
+  if (!op.sessionTarget || !isRemoteSessionTarget(op.sessionTarget)) {
+    throw new Error('Invalid queued session target')
+  }
+  const sessionId = op.payload.id
+  if (typeof sessionId !== 'string' || sessionId.length === 0) {
+    throw new Error('Invalid queued session id')
+  }
+  if (op.action === 'delete') {
+    await executeSessionTargetDelete(sessionId, op.sessionTarget)
+    rememberSessionDeleteTombstone(op.userId, sessionId)
+    return
+  }
+  if (op.action !== 'upsert') throw new Error('Invalid queued session target action')
+  await executeSessionTargetUpsertRow(op.payload, sessionId, op.sessionTarget, op.userId)
+}
+
+interface QueueRetryReplacement {
+  original: OfflineOp
+  replacement: OfflineOp
+  errorInfo: SyncErrorInfo | null
+}
+
 async function drainQueue(): Promise<boolean> {
   const userId = getUserId()
   if (!userId) {
@@ -925,12 +954,13 @@ async function drainQueue(): Promise<boolean> {
     return true
   }
 
-  const remaining: OfflineOp[] = []
   const expiredOps: OfflineOp[] = []
   const silentlyDroppedOps: OfflineOp[] = []
+  const consumedVersions: OfflineOp[] = []
+  const retryReplacements: QueueRetryReplacement[] = []
   const legacySessionAthleteIds = new Map<string, string | null>()
   const initialCount = currentUserQueue.length
-  let lastFailureInfo: SyncErrorInfo | null = null
+  let madeSnapshotProgress = false
 
   for (const op of currentUserQueue) {
     const opRetryCount = op.retryCount ?? 0
@@ -939,7 +969,6 @@ async function drainQueue(): Promise<boolean> {
       : 'automatic'
 
     if (pendingRemoteWipeTables.has(op.table)) {
-      remaining.push(op)
       continue
     }
 
@@ -952,6 +981,8 @@ async function drainQueue(): Promise<boolean> {
     if (op.action !== 'delete' && opTarget && athleteTombstones.hasAthlete(opTarget)) {
       syncLog('drain:athlete_tombstoned_drop', { table: op.table, action: op.action }, 'warn')
       silentlyDroppedOps.push(op)
+      consumedVersions.push(op)
+      madeSnapshotProgress = true
       continue
     }
 
@@ -960,7 +991,6 @@ async function drainQueue(): Promise<boolean> {
         athleteProfileWriteSource === 'post_reset_onboarding' &&
         hasPendingRemoteWipeForTable(op.userId, 'athlete_profiles')
       ) {
-        remaining.push(op)
         continue
       }
       syncLog('queue:op_suppressed', {
@@ -971,6 +1001,8 @@ async function drainQueue(): Promise<boolean> {
         reason: hasPendingRemoteWipeForTable(op.userId, 'athlete_profiles') ? 'pending_remote_wipe' : 'reset_lock',
       }, 'warn')
       silentlyDroppedOps.push(op)
+      consumedVersions.push(op)
+      madeSnapshotProgress = true
       continue
     }
 
@@ -1001,13 +1033,43 @@ async function drainQueue(): Promise<boolean> {
       } else {
         expiredOps.push(op)
       }
+      consumedVersions.push(op)
+      madeSnapshotProgress = true
+      continue
+    }
+
+    if (op.table === 'sessions' && op.sessionTarget && !isRemoteSessionTarget(op.sessionTarget)) {
+      syncLog('queue:invalid_session_target_drop', { attemptId }, 'warn')
+      silentlyDroppedOps.push(op)
+      consumedVersions.push(op)
+      madeSnapshotProgress = true
       continue
     }
 
     const opStartedAt = Date.now()
+    const execution = { superseded: false }
+    const replay = { outcome: { status: 'done' } as WeekSummaryExecutionOutcome }
     try {
       await trackInFlightAthleteOp(opTarget, withSerializedEntityMutation(op.userId, op.table, op.payload, async () => {
-        if (op.action === 'upsert') {
+        const persisted = loadQueue().find((queued) => offlineOpsShareIdentity(queued, op))
+        if (!persisted || !isSameQueuedOpVersion(persisted, op)) {
+          execution.superseded = true
+          return
+        }
+        if (
+          op.table === 'week_summaries'
+          && op.action === 'upsert'
+          && op.replayKind === 'weekSummaryForAthlete'
+          && op.scopeAthleteId
+        ) {
+          replay.outcome = await executeWeekSummaryForAthleteRow(
+            rowToWeekSummary(op.payload),
+            op.scopeAthleteId,
+            op.userId,
+          )
+        } else if (op.table === 'sessions' && op.sessionTarget) {
+          await executeSessionTargetReplay(op)
+        } else if (op.action === 'upsert') {
           if (op.table !== 'athletes' && op.payload.athlete_id != null) {
             await withRequestTimeout(
               ensureRemoteAthlete(
@@ -1051,6 +1113,22 @@ async function drainQueue(): Promise<boolean> {
           rememberDeleteTombstoneForTable(op.table, op.userId, payload.id)
         }
       }))
+      if (execution.superseded) {
+        madeSnapshotProgress = true
+        continue
+      }
+      if (replay.outcome.status === 'retry') {
+        retryReplacements.push({
+          original: op,
+          replacement: {
+            ...op,
+            payload: weekSummaryQueuePayload(replay.outcome.summary, op.userId),
+            retryCount: opRetryCount + 1,
+          },
+          errorInfo: null,
+        })
+        continue
+      }
       trackSyncEvent({
         kind: op.action === 'delete' ? 'delete' : 'push',
         status: 'ok',
@@ -1059,6 +1137,8 @@ async function drainQueue(): Promise<boolean> {
         durationMs: Date.now() - opStartedAt,
         detail: 'drain',
       })
+      consumedVersions.push(op)
+      madeSnapshotProgress = true
     } catch (error) {
       const errorInfo = classifySyncError(error, op.table)
 
@@ -1082,7 +1162,8 @@ async function drainQueue(): Promise<boolean> {
           reason: errorInfo.category,
           technicalMessage: errorInfo.technicalMessage,
         }, 'warn')
-        lastFailureInfo = errorInfo
+        consumedVersions.push(op)
+        madeSnapshotProgress = true
         continue
       }
 
@@ -1104,6 +1185,8 @@ async function drainQueue(): Promise<boolean> {
               autoRepairInProgress: false,
               lastAutoRepairAt: Date.now(),
             })
+            consumedVersions.push(op)
+            madeSnapshotProgress = true
             continue // repaired successfully, op consumed
           }
           syncStoreState().setSyncDetails({ autoRepairInProgress: false })
@@ -1118,17 +1201,33 @@ async function drainQueue(): Promise<boolean> {
       }
 
       // Retriable: keep in queue with incremented retry count
-      remaining.push({
+      retryReplacements.push({
+        original: op,
+        replacement: {
         ...op,
         retryCount: opRetryCount + 1,
         lastErrorCategory: errorInfo.category,
+        },
+        errorInfo,
       })
-      lastFailureInfo = errorInfo
       // IMPORTANT: continue processing other ops instead of breaking
     }
   }
 
-  saveQueue([...otherUsersQueue, ...remaining])
+  const currentQueue = loadQueue()
+  const finalQueue = currentQueue.flatMap((currentOp) => {
+    const retry = retryReplacements.find(({ original }) => isSameQueuedOpVersion(currentOp, original))
+    if (retry) return [retry.replacement]
+    if (consumedVersions.some((consumed) => isSameQueuedOpVersion(currentOp, consumed))) return []
+    return [currentOp]
+  })
+  saveQueue(finalQueue)
+  const finalUserOps = finalQueue.filter((op) => op.userId === userId)
+  const retainedFailure = retryReplacements.find(({ replacement, errorInfo }) =>
+    errorInfo && finalQueue.some((queued) => isSameQueuedOpVersion(queued, replacement)))
+  const retainedInternalRetry = retryReplacements.some(({ replacement, errorInfo }) =>
+    errorInfo === null
+    && finalQueue.some((queued) => isSameQueuedOpVersion(queued, replacement)))
 
   if (silentlyDroppedOps.length > 0) {
     syncLog('queue:silent_drop_summary', {
@@ -1143,22 +1242,25 @@ async function drainQueue(): Promise<boolean> {
     return false
   }
 
-  if (remaining.length === 0 && initialCount > 0) {
+  if (retainedInternalRetry && !retainedFailure) scheduleRetry(15000)
+
+  if (finalUserOps.length === 0 && initialCount > 0) {
     markSyncRecovered()
-  } else if (remaining.length === 0) {
+  } else if (finalUserOps.length === 0) {
     markSyncHealthy()
-  } else if (lastFailureInfo) {
-    // QW #3: si hubo progreso (algunas ops subieron pese a que otras fallaron),
-    // no incrementamos el contador de fallos consecutivos — el sync está avanzando.
-    const madeProgress = remaining.length < initialCount
+  } else if (retainedFailure?.errorInfo) {
     applySyncFailure(
-      lastFailureInfo.originalError,
-      lastFailureInfo.userMessage,
-      remaining[0]?.table ?? null,
-      { madeProgress },
+      retainedFailure.errorInfo.originalError,
+      retainedFailure.errorInfo.userMessage,
+      retainedFailure.original.table,
+      { madeProgress: madeSnapshotProgress },
+    )
+  } else {
+    finishSyncAttempt(
+      typeof navigator !== 'undefined' && !navigator.onLine ? 'offline' : 'idle',
     )
   }
-  return remaining.length === 0
+  return finalUserOps.length === 0
   })
 }
 
@@ -1464,6 +1566,21 @@ function sessionToRow(session: Session, userId: string): Record<string, unknown>
     updated_by_account_id: userId,
     data: rest,
   }
+}
+
+function sessionToRowWithoutUser(session: Session, actorId: string): Record<string, unknown> {
+  const row = sessionToRow(session, actorId)
+  delete row.user_id
+  return row
+}
+
+async function supabaseMutationCount(
+  query: PromiseLike<{ data: unknown; error: unknown }>,
+  label: string,
+): Promise<number> {
+  const { data, error } = await withRequestTimeout(query, label)
+  if (error) throw error
+  return Array.isArray(data) ? data.length : 0
 }
 
 function coachNoteToRow(note: AthleteCoachNote, userId: string): Record<string, unknown> {
@@ -2129,6 +2246,206 @@ export async function pushSession(session: Session): Promise<void> {
   await upsertRow('sessions', withAthleteId(sessionToRow(session, userId), session.athleteId))
 }
 
+function sessionTargetAthleteId(target: RemoteSessionTarget): string {
+  return target.kind === 'scoped' ? target.athleteId : target.selfAthleteId
+}
+
+function enqueueSessionTargetOp(
+  action: 'upsert' | 'delete',
+  session: Session,
+  target: RemoteSessionTarget,
+  userId: string,
+): void {
+  enqueue({
+    userId,
+    table: 'sessions',
+    action,
+    payload: action === 'delete'
+      ? { id: session.id, userId }
+      : sessionToRowWithoutUser(session, userId),
+    enqueuedAt: Date.now(),
+    scopeAthleteId: sessionTargetAthleteId(target),
+    sessionTarget: target,
+  })
+}
+
+async function stampLocalSessionAdopted(sessionId: string, selfAthleteId: string): Promise<void> {
+  await runAthleteWrite(selfAthleteId, async () => {
+    const current = await db.sessions.get(sessionId)
+    if (!current || isScopedAthleteId(current.athleteId)) return
+    await db.sessions.update(sessionId, { athleteId: selfAthleteId })
+  })
+}
+
+async function executeSessionTargetUpsertRow(
+  rowInput: Record<string, unknown>,
+  sessionId: string,
+  target: RemoteSessionTarget,
+  userId: string,
+): Promise<void> {
+  const scopeAthleteId = sessionTargetAthleteId(target)
+  const row: Record<string, unknown> = {
+    ...rowInput,
+    id: sessionId,
+    athlete_id: scopeAthleteId,
+    updated_by_account_id: userId,
+  }
+  delete row.user_id
+
+  if (target.kind === 'scoped') {
+    const updated = await supabaseMutationCount(
+      getSupabase().from('sessions').update(row as never)
+        .eq('id', sessionId).eq('athlete_id', target.athleteId).select('id'),
+      'sessions.update_scoped',
+    )
+    if (updated === 0) {
+      await ensureRemoteAthlete(userId, target.athleteId)
+      const { error } = await withRequestTimeout(
+        getSupabase().from('sessions').insert({
+          ...row,
+          user_id: userId,
+          athlete_id: target.athleteId,
+        } as never),
+        'sessions.insert_scoped',
+      )
+      if (error) throw error
+    }
+    return
+  }
+
+  const adopted = await supabaseMutationCount(
+    getSupabase().from('sessions').update(row as never)
+      .eq('id', sessionId)
+      .eq('user_id', target.ownerAccountId)
+      .is('athlete_id', null)
+      .select('id'),
+    'sessions.update_legacy',
+  )
+  let confirmed = adopted > 0
+  if (!confirmed) {
+    confirmed = (await supabaseMutationCount(
+      getSupabase().from('sessions').update(row as never)
+        .eq('id', sessionId).eq('athlete_id', target.selfAthleteId).select('id'),
+      'sessions.update_adopted',
+    )) > 0
+  }
+  if (!confirmed) {
+    await ensureRemoteAthlete(userId, target.selfAthleteId)
+    const { error } = await withRequestTimeout(
+      getSupabase().from('sessions').insert({ ...row, user_id: userId } as never),
+      'sessions.insert_after_legacy',
+    )
+    if (error) throw error
+  }
+  await stampLocalSessionAdopted(sessionId, target.selfAthleteId)
+}
+
+async function executeSessionTargetDelete(
+  sessionId: string,
+  target: RemoteSessionTarget,
+): Promise<void> {
+  if (target.kind === 'scoped') {
+    const { error } = await withRequestTimeout(
+      getSupabase().from('sessions').delete()
+        .eq('id', sessionId).eq('athlete_id', target.athleteId),
+      'sessions.delete_scoped',
+    )
+    if (error) throw error
+    return
+  }
+  const deleted = await supabaseMutationCount(
+    getSupabase().from('sessions').delete()
+      .eq('id', sessionId)
+      .eq('user_id', target.ownerAccountId)
+      .is('athlete_id', null)
+      .select('id'),
+    'sessions.delete_legacy',
+  )
+  if (deleted === 0) {
+    const { error } = await withRequestTimeout(
+      getSupabase().from('sessions').delete()
+        .eq('id', sessionId).eq('athlete_id', target.selfAthleteId),
+      'sessions.delete_adopted',
+    )
+    if (error) throw error
+  }
+}
+
+export async function pushSessionForTarget(
+  session: Session,
+  target: RemoteSessionTarget,
+): Promise<void> {
+  const userId = getUserId()
+  if (!userId || !isEnabled()) return
+  const scopeAthleteId = sessionTargetAthleteId(target)
+  if (hasAthleteDeleteTombstoneForAthlete(scopeAthleteId)) return
+  const requestedAt = Date.now()
+  const identity = { id: session.id }
+  await trackInFlightAthleteOp(scopeAthleteId, withSerializedEntityMutation(
+    userId,
+    'sessions',
+    identity,
+    async () => {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        enqueueSessionTargetOp('upsert', session, target, userId)
+        scheduleRetry(15000)
+        return
+      }
+      try {
+        await executeSessionTargetUpsertRow(
+          sessionToRowWithoutUser(session, userId), session.id, target, userId,
+        )
+        clearQueuedOpsForEntityOlderThan(userId, 'sessions', identity, requestedAt)
+      } catch (error) {
+        const info = classifySyncError(error, 'sessions')
+        if (info.retriable || info.autoRepairable) {
+          enqueueSessionTargetOp('upsert', session, target, userId)
+          applySyncFailure(error, info.userMessage, 'sessions')
+          return
+        }
+        applySyncFailure(error, info.userMessage, 'sessions')
+      }
+    },
+  ))
+}
+
+export async function deleteSessionForTarget(
+  sessionId: string,
+  target: RemoteSessionTarget,
+): Promise<void> {
+  const userId = getUserId()
+  if (!userId || !isEnabled()) return
+  const scopeAthleteId = sessionTargetAthleteId(target)
+  if (hasAthleteDeleteTombstoneForAthlete(scopeAthleteId)) return
+  const requestedAt = Date.now()
+  const identity = { id: sessionId }
+  await trackInFlightAthleteOp(scopeAthleteId, withSerializedEntityMutation(
+    userId,
+    'sessions',
+    identity,
+    async () => {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        enqueueSessionTargetOp('delete', { id: sessionId } as Session, target, userId)
+        scheduleRetry(15000)
+        return
+      }
+      try {
+        await executeSessionTargetDelete(sessionId, target)
+        rememberSessionDeleteTombstone(userId, sessionId)
+        clearQueuedOpsForEntityOlderThan(userId, 'sessions', identity, requestedAt)
+      } catch (error) {
+        const info = classifySyncError(error, 'sessions')
+        if (info.retriable || info.autoRepairable) {
+          enqueueSessionTargetOp('delete', { id: sessionId } as Session, target, userId)
+          applySyncFailure(error, info.userMessage, 'sessions')
+          return
+        }
+        applySyncFailure(error, info.userMessage, 'sessions')
+      }
+    },
+  ))
+}
+
 export async function pushCoachNote(note: AthleteCoachNote): Promise<void> {
   const userId = getUserId()
   if (!userId) return
@@ -2247,24 +2564,25 @@ function resolveSessionAgainstTombstone(
 }
 
 /** Pulls one explicit athlete/week without changing the active-athlete scope. */
+export type AthleteWeekPullOutcome = 'completed' | 'unavailable' | 'vetoed'
+
 export async function pullWeekSessionsForAthlete(
   ownerAccountId: string,
   athleteId: string,
   weekStartDate: string,
   weekEndDate: string,
   opts: { includeLegacy: boolean },
-): Promise<void> {
-  if (!isEnabled()) return
-  if (hasAthleteDeleteTombstone(ownerAccountId, athleteId)) return
+): Promise<AthleteWeekPullOutcome> {
+  if (!isEnabled() || (typeof navigator !== 'undefined' && !navigator.onLine)) return 'unavailable'
+  if (hasAthleteDeleteTombstone(ownerAccountId, athleteId)) return 'vetoed'
 
   let query = getSupabase()
     .from('sessions')
     .select('*')
-    .eq('user_id', ownerAccountId)
     .gte('date', weekStartDate)
     .lte('date', weekEndDate)
   query = opts.includeLegacy
-    ? query.or(`athlete_id.eq.${athleteId},athlete_id.is.null`)
+    ? query.or(`athlete_id.eq.${athleteId},and(user_id.eq.${ownerAccountId},athlete_id.is.null)`)
     : query.eq('athlete_id', athleteId)
 
   const { data, error } = await withRequestTimeout(query, 'sessions.pull_week_for_athlete')
@@ -2285,8 +2603,100 @@ export async function pullWeekSessionsForAthlete(
         await db.sessions.put(remote)
       }
     })
-    if (!wrote) return
+    if (!wrote) return 'vetoed'
   }
+  return 'completed'
+}
+
+async function mergePulledDayLogForScope(
+  remote: DayLog,
+  scope: { athleteId: string; includeLegacy: boolean },
+): Promise<void> {
+  await db.transaction('rw', db.dayLogs, async () => {
+    const localById = await db.dayLogs.get(remote.id)
+    const localByDate = localById ?? await findDayLogConflictByDate(
+      remote.date,
+      remote.athleteId,
+      scope.includeLegacy ? scope.athleteId : null,
+    )
+    const resolution = resolveDayLogConflict(localByDate, remote)
+    if (resolution.loserId) await db.dayLogs.delete(resolution.loserId)
+    await db.dayLogs.put(resolution.winner)
+  })
+}
+
+async function mergePulledWeekSummaryForScope(
+  remote: WeekSummary,
+  scope: { athleteId: string; includeLegacy: boolean },
+): Promise<void> {
+  await db.transaction('rw', db.weekSummaries, async () => {
+    const localById = await db.weekSummaries.get(remote.id)
+    const localByWeek = localById ?? await findWeekSummaryConflictByWeekStart(
+      remote.weekStartDate,
+      remote.athleteId,
+      scope.includeLegacy ? scope.athleteId : null,
+    )
+    const resolution = resolveWeekSummaryConflict(
+      localByWeek,
+      remote,
+      remote.updatedAt ?? 0,
+    )
+    if (resolution.loserId) await db.weekSummaries.delete(resolution.loserId)
+    await db.weekSummaries.put(resolution.winner)
+  })
+}
+
+export async function pullWeekDayLogsForAthlete(
+  ownerAccountId: string,
+  athleteId: string,
+  weekStartDate: string,
+  weekEndDate: string,
+  opts: { includeLegacy: boolean },
+): Promise<AthleteWeekPullOutcome> {
+  if (!isEnabled() || (typeof navigator !== 'undefined' && !navigator.onLine)) return 'unavailable'
+  if (hasAthleteDeleteTombstone(ownerAccountId, athleteId)) return 'vetoed'
+  let query = getSupabase().from('day_logs').select('*')
+    .gte('date', weekStartDate).lte('date', weekEndDate)
+  query = opts.includeLegacy
+    ? query.or(`athlete_id.eq.${athleteId},and(user_id.eq.${ownerAccountId},athlete_id.is.null)`)
+    : query.eq('athlete_id', athleteId)
+  const { data, error } = await withRequestTimeout(query, 'day_logs.pull_week_for_athlete')
+  if (error) throw error
+  for (const row of (data ?? []) as Record<string, unknown>[]) {
+    const remote = rowToDayLog(row)
+    const wrote = await runAthleteWrite(athleteId, () => mergePulledDayLogForScope(remote, {
+      athleteId,
+      includeLegacy: opts.includeLegacy,
+    }))
+    if (!wrote) return 'vetoed'
+  }
+  return 'completed'
+}
+
+export async function pullWeekSummaryRowForAthlete(
+  ownerAccountId: string,
+  athleteId: string,
+  weekStartDate: string,
+  opts: { includeLegacy: boolean },
+): Promise<AthleteWeekPullOutcome> {
+  if (!isEnabled() || (typeof navigator !== 'undefined' && !navigator.onLine)) return 'unavailable'
+  if (hasAthleteDeleteTombstone(ownerAccountId, athleteId)) return 'vetoed'
+  let query = getSupabase().from('week_summaries').select('*')
+    .eq('week_start_date', weekStartDate)
+  query = opts.includeLegacy
+    ? query.or(`athlete_id.eq.${athleteId},and(user_id.eq.${ownerAccountId},athlete_id.is.null)`)
+    : query.eq('athlete_id', athleteId)
+  const { data, error } = await withRequestTimeout(query, 'week_summaries.pull_week_for_athlete')
+  if (error) throw error
+  for (const row of (data ?? []) as Record<string, unknown>[]) {
+    const remote = rowToWeekSummary(row)
+    const wrote = await runAthleteWrite(athleteId, () => mergePulledWeekSummaryForScope(remote, {
+      athleteId,
+      includeLegacy: opts.includeLegacy,
+    }))
+    if (!wrote) return 'vetoed'
+  }
+  return 'completed'
 }
 
 export async function pushDayLog(log: DayLog): Promise<void> {
@@ -2299,6 +2709,192 @@ export async function pushWeekSummary(summary: WeekSummary): Promise<void> {
   const userId = getUserId()
   if (!userId) return
   await upsertRow('week_summaries', withAthleteId(weekSummaryToRow(summary, userId), summary.athleteId))
+}
+
+function weekSummaryQueuePayload(summary: WeekSummary, actorId: string): Record<string, unknown> {
+  const row = weekSummaryToRow(summary, actorId)
+  delete row.user_id
+  return { ...row, athlete_id: summary.athleteId }
+}
+
+function enqueueWeekSummaryForAthlete(summary: WeekSummary, userId: string): void {
+  if (!summary.athleteId) return
+  enqueue({
+    userId,
+    table: 'week_summaries',
+    action: 'upsert',
+    payload: weekSummaryQueuePayload(summary, userId),
+    enqueuedAt: Date.now(),
+    scopeAthleteId: summary.athleteId,
+    replayKind: 'weekSummaryForAthlete',
+  })
+}
+
+async function findLocalWeekSummaryForAthleteWeek(
+  athleteId: string,
+  weekStartDate: string,
+): Promise<WeekSummary | undefined> {
+  return db.weekSummaries
+    .where('[athleteId+weekStartDate]')
+    .equals([athleteId, weekStartDate])
+    .first()
+}
+
+type WeekSummaryExecutionOutcome =
+  | { status: 'done' }
+  | { status: 'retry'; summary: WeekSummary }
+
+async function reconcileWeekSummaryNaturalKeyAttempt(
+  summary: WeekSummary,
+  athleteId: string,
+  userId: string,
+): Promise<WeekSummaryExecutionOutcome> {
+  const { data, error } = await withRequestTimeout(
+    getSupabase().from('week_summaries').select('*')
+      .eq('athlete_id', athleteId)
+      .eq('week_start_date', summary.weekStartDate)
+      .limit(1),
+    'week_summaries.reconcile_select',
+  )
+  if (error) throw error
+  const remoteRow = (data as Record<string, unknown>[] | null)?.[0]
+  if (!remoteRow) return { status: 'retry', summary }
+  const remoteUpdatedAt = Number(remoteRow.updated_at ?? 0)
+  const localUpdatedAt = summary.updatedAt ?? 0
+
+  if (remoteUpdatedAt >= localUpdatedAt) {
+    const winner = rowToWeekSummary(remoteRow)
+    let retryCandidate: WeekSummary | undefined
+    const wrote = await runAthleteWrite(athleteId, async () => {
+      await db.transaction('rw', db.weekSummaries, async () => {
+        const current = await findLocalWeekSummaryForAthleteWeek(athleteId, summary.weekStartDate)
+        if ((current?.updatedAt ?? 0) > remoteUpdatedAt) {
+          retryCandidate = current
+          return
+        }
+        if (winner.id !== summary.id) await db.weekSummaries.delete(summary.id)
+        if (current && current.id !== winner.id) await db.weekSummaries.delete(current.id)
+        await db.weekSummaries.put(winner)
+      })
+    })
+    if (!wrote) return { status: 'done' }
+    return retryCandidate ? { status: 'retry', summary: retryCandidate } : { status: 'done' }
+  }
+
+  const row = weekSummaryQueuePayload({ ...summary, id: remoteRow.id as string }, userId)
+  const updated = await supabaseMutationCount(
+    getSupabase().from('week_summaries').update(row as never)
+      .eq('id', remoteRow.id as string)
+      .eq('athlete_id', athleteId)
+      .eq('week_start_date', summary.weekStartDate)
+      .lt('updated_at', localUpdatedAt)
+      .select('id'),
+    'week_summaries.reconcile_update',
+  )
+  if (updated === 0) return { status: 'retry', summary }
+
+  if ((remoteRow.id as string) !== summary.id) {
+    let retryCandidate: WeekSummary | undefined
+    const wrote = await runAthleteWrite(athleteId, async () => {
+      await db.transaction('rw', db.weekSummaries, async () => {
+        const current = await findLocalWeekSummaryForAthleteWeek(athleteId, summary.weekStartDate)
+        if ((current?.updatedAt ?? 0) > localUpdatedAt) {
+          retryCandidate = current
+          return
+        }
+        if (current && current.id !== remoteRow.id) await db.weekSummaries.delete(current.id)
+        await db.weekSummaries.put({ ...summary, id: remoteRow.id as string })
+      })
+    })
+    if (!wrote) return { status: 'done' }
+    if (retryCandidate) return { status: 'retry', summary: retryCandidate }
+  }
+  return { status: 'done' }
+}
+
+async function reconcileWeekSummaryNaturalKey(
+  summary: WeekSummary,
+  athleteId: string,
+  userId: string,
+): Promise<WeekSummaryExecutionOutcome> {
+  let candidate = summary
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const outcome = await reconcileWeekSummaryNaturalKeyAttempt(candidate, athleteId, userId)
+    if (outcome.status === 'done') return outcome
+    candidate = outcome.summary
+  }
+  return { status: 'retry', summary: candidate }
+}
+
+async function executeWeekSummaryForAthleteRow(
+  summary: WeekSummary,
+  athleteId: string,
+  userId: string,
+): Promise<WeekSummaryExecutionOutcome> {
+  const row = weekSummaryQueuePayload({ ...summary, athleteId }, userId)
+  const updated = await supabaseMutationCount(
+    getSupabase().from('week_summaries').update(row as never)
+      .eq('id', summary.id).eq('athlete_id', athleteId).select('id'),
+    'week_summaries.update_for_athlete',
+  )
+  if (updated > 0) return { status: 'done' }
+
+  await ensureRemoteAthlete(userId, athleteId)
+  const { error } = await withRequestTimeout(
+    getSupabase().from('week_summaries').insert({
+      ...row,
+      user_id: userId,
+      athlete_id: athleteId,
+    } as never),
+    'week_summaries.insert_for_athlete',
+  )
+  if (!error) return { status: 'done' }
+  if ((error as { code?: string }).code !== '23505') throw error
+  return reconcileWeekSummaryNaturalKey({ ...summary, athleteId }, athleteId, userId)
+}
+
+export async function pushWeekSummaryForAthlete(summary: WeekSummary): Promise<void> {
+  const userId = getUserId()
+  if (!userId || !isEnabled()) return
+  if (!summary.athleteId) {
+    syncLog('pushWeekSummaryForAthlete:unscoped_fallback', { id: summary.id }, 'warn')
+    await pushWeekSummary(summary)
+    return
+  }
+  const athleteId = summary.athleteId
+  if (hasAthleteDeleteTombstoneForAthlete(athleteId)) return
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    enqueueWeekSummaryForAthlete(summary, userId)
+    scheduleRetry(15000)
+    return
+  }
+  const requestedAt = Date.now()
+  const identity = { id: summary.id }
+  await trackInFlightAthleteOp(athleteId, withSerializedEntityMutation(
+    userId,
+    'week_summaries',
+    identity,
+    async () => {
+      try {
+        const outcome = await executeWeekSummaryForAthleteRow(summary, athleteId, userId)
+        if (outcome.status === 'retry') {
+          enqueueWeekSummaryForAthlete(outcome.summary, userId)
+          scheduleRetry(15000)
+          return
+        }
+        clearQueuedOpsForEntityOlderThan(userId, 'week_summaries', identity, requestedAt)
+      } catch (error) {
+        const info = classifySyncError(error, 'week_summaries')
+        if (info.retriable || info.autoRepairable) {
+          const latest = await findLocalWeekSummaryForAthleteWeek(athleteId, summary.weekStartDate)
+          enqueueWeekSummaryForAthlete(latest ?? summary, userId)
+          applySyncFailure(error, info.userMessage, 'week_summaries')
+          return
+        }
+        applySyncFailure(error, info.userMessage, 'week_summaries')
+      }
+    },
+  ))
 }
 
 export async function deleteWeekSummaries(ids: string[]): Promise<void> {
@@ -3614,7 +4210,7 @@ function rememberDeleteTombstoneForTable(table: SupabaseTable, userId: string, i
   }
 }
 
-function rememberSessionDeleteTombstone(userId: string, sessionId: string): void {
+export function rememberSessionDeleteTombstone(userId: string, sessionId: string): void {
   const tombstones = getSessionDeleteTombstones(userId)
   tombstones[sessionId] = Date.now()
   saveSessionDeleteTombstones(userId, tombstones)

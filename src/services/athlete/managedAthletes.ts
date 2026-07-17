@@ -12,6 +12,7 @@ import {
 } from '../sync/athleteDeleteTombstones'
 import { clearQueuedOpsForAthlete } from '../sync/syncQueue'
 import { athleteIdForOwner } from './athleteScopeMigration'
+import { clearCoachPlanningHydrationRegistry } from './coachPlanningHydrationRegistry'
 
 /**
  * Create a coach-managed athlete (no login: linkedAccountId stays null).
@@ -144,6 +145,7 @@ export async function deleteManagedAthletePermanently(
 
   try {
     const tombstoneToken = rememberAthleteDeleteTombstone(ownerAccountId, athleteId)
+    clearCoachPlanningHydrationRegistry(athleteId)
     const rollbackTombstone = () => {
       if (!clearAthleteDeleteTombstone(ownerAccountId, athleteId, tombstoneToken)) {
         throw new Error(

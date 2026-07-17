@@ -112,6 +112,33 @@ export function offlineOpsShareIdentity(a: OfflineOp, b: OfflineOp): boolean {
     && getOfflineOpEntityId(a) === getOfflineOpEntityId(b)
 }
 
+function serializableValuesEqual(a: unknown, b: unknown): boolean {
+  if (Object.is(a, b)) return true
+  if (Array.isArray(a) || Array.isArray(b)) {
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false
+    return a.every((value, index) => serializableValuesEqual(value, b[index]))
+  }
+  if (a == null || b == null || typeof a !== 'object' || typeof b !== 'object') return false
+  const aRecord = a as Record<string, unknown>
+  const bRecord = b as Record<string, unknown>
+  const aKeys = Object.keys(aRecord).sort()
+  const bKeys = Object.keys(bRecord).sort()
+  if (aKeys.length !== bKeys.length || aKeys.some((key, index) => key !== bKeys[index])) return false
+  return aKeys.every((key) => serializableValuesEqual(aRecord[key], bRecord[key]))
+}
+
+/**
+ * Queue operation version equality. Retry diagnostics are deliberately omitted:
+ * they mutate while the underlying logical operation remains the same version.
+ */
+export function isSameQueuedOpVersion(a: OfflineOp, b: OfflineOp): boolean {
+  return offlineOpsShareIdentity(a, b)
+    && serializableValuesEqual(a.payload, b.payload)
+    && a.scopeAthleteId === b.scopeAthleteId
+    && serializableValuesEqual(a.sessionTarget, b.sessionTarget)
+    && a.replayKind === b.replayKind
+}
+
 /**
  * Removes from the queue every op for `(userId, table, payload.id)` whose
  * enqueuedAt is at or before `cutoffEnqueuedAt`. Used after a successful
