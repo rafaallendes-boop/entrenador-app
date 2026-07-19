@@ -61,6 +61,7 @@ export const ENTITY_TIER: Record<SupabaseTable, SyncTier> = {
   week_summaries: 'B',
   coach_proposals: 'B',
   chat_messages: 'C',
+  session_templates: 'B',
 }
 
 export function getEntityTier(entity: SupabaseTable | null | undefined): SyncTier | null {

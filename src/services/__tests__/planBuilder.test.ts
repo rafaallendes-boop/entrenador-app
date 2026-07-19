@@ -49,8 +49,8 @@ function makeWizardConfig(): PlanWizardConfig {
   }
 }
 
-function eventNWeeksFromNow(weeks: number): string {
-  const d = new Date()
+function eventNWeeksFromNow(weeks: number, refDate = new Date()): string {
+  const d = new Date(refDate)
   d.setDate(d.getDate() + weeks * 7)
   return d.toISOString().slice(0, 10)
 }
@@ -78,13 +78,15 @@ describe('planBuilder', () => {
   })
 
   it('buildPlanShell creates one week per calendar week until event', () => {
-    const profile = makeProfile(eventNWeeksFromNow(8))
+    const now = new Date('2026-07-19T12:00:00')
+    const profile = makeProfile(eventNWeeksFromNow(8, now))
     const event = profile.goalEvents![0] as GoalEvent
     const { plan, weeks } = buildPlanShell({
       athleteId: profile.id,
       profile,
       wizardConfig: makeWizardConfig(),
       goalEvent: event,
+      now,
     })
     expect(plan.generationState).toBe('shell')
     expect(plan.totalWeeks).toBeGreaterThanOrEqual(8)
@@ -93,6 +95,47 @@ describe('planBuilder', () => {
     expect(weeks[0].weekIndex).toBe(0)
     expect(weeks[weeks.length - 1].weekIndex).toBe(plan.totalWeeks - 1)
     expect(plan.phases.length).toBeGreaterThan(0)
+  })
+
+  describe('conteo de semanas y horario de verano', () => {
+    const originalTz = process.env.TZ
+
+    afterEach(() => {
+      process.env.TZ = originalTz
+    })
+
+    function totalWeeksBetween(nowIso: string, eventIso: string): number {
+      const profile = makeProfile(eventIso)
+      return buildPlanShell({
+        athleteId: profile.id,
+        profile,
+        wizardConfig: makeWizardConfig(),
+        goalEvent: profile.goalEvents![0] as GoalEvent,
+        now: new Date(`${nowIso}T12:00:00`),
+      }).plan.totalWeeks
+    }
+
+    // Santiago adelanta el reloj el 2026-09-06, así que entre dos lunes de
+    // medianoche local hay 49 días menos una hora. Dividir por 7*24h y truncar
+    // perdía una semana entera del plan.
+    it('cuenta 8 semanas aunque el plan cruce el cambio de hora', () => {
+      process.env.TZ = 'America/Santiago'
+      expect(totalWeeksBetween('2026-07-19', '2026-09-13')).toBe(8)
+    })
+
+    it('da el mismo conteo sin cambio de hora en el medio', () => {
+      process.env.TZ = 'UTC'
+      expect(totalWeeksBetween('2026-07-19', '2026-09-13')).toBe(8)
+    })
+
+    it('no agrega una semana cruzando el atraso de reloj de abril', () => {
+      process.env.TZ = 'America/Santiago'
+      // Santiago atrasa el reloj el 2026-04-04, así que el tramo dura una hora
+      // de más. Mismo tramo de 49 días que el caso de septiembre: 8 semanas.
+      // Redondear hacia arriba para arreglar el caso de septiembre rompería
+      // este, así que ambos quedan fijados.
+      expect(totalWeeksBetween('2026-03-15', '2026-05-10')).toBe(8)
+    })
   })
 
   it('buildPlanShell starts training from the request date and skips past calendar days', () => {

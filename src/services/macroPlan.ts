@@ -16,6 +16,7 @@ import type {
   MacroPlanTimelineEntry,
   SupportedSport,
 } from '../types'
+import { differenceInCalendarDays } from 'date-fns'
 import { isStrictISODate } from '../utils/date'
 import { getAllowedPlanningSports, getPlanningPrimarySport } from './planningConstraints'
 import { normalizeSport } from '../utils/athlete'
@@ -618,8 +619,10 @@ export function computeWeeksRemaining(eventDateISO: string, refDate: Date): numb
   const eventDate = new Date(y, m - 1, d)
   const refNormalized = new Date(refDate.getFullYear(), refDate.getMonth(), refDate.getDate())
 
-  const diffMs = eventDate.getTime() - refNormalized.getTime()
-  const diffDays = diffMs / (24 * 60 * 60 * 1000)
+  // Calendar days, not elapsed milliseconds: both operands are local midnights,
+  // so a span crossing a DST change is off by an hour. Rounding that skewed
+  // value away from zero turned an exact multiple of 7 into an extra week.
+  const diffDays = differenceInCalendarDays(eventDate, refNormalized)
 
   return diffDays >= 0 ? Math.ceil(diffDays / 7) : Math.floor(diffDays / 7)
 }

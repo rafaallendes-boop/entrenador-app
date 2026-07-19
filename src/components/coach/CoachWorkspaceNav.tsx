@@ -10,7 +10,7 @@ const TABS: { key: CoachWorkspaceTab; label: string; comingSoon: boolean }[] = [
   { key: 'resumen', label: 'Resumen', comingSoon: false },
   { key: 'alumnos', label: 'Alumnos', comingSoon: false },
   { key: 'planificacion', label: 'Planificación', comingSoon: false },
-  { key: 'biblioteca', label: 'Biblioteca', comingSoon: true },
+  { key: 'biblioteca', label: 'Biblioteca', comingSoon: false },
   { key: 'asistente', label: 'Asistente IA', comingSoon: true },
 ]
 

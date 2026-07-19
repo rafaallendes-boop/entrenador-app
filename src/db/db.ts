@@ -2,6 +2,7 @@ import Dexie, { type Table } from 'dexie'
 import type { Session, DayLog, WeekSummary, ChatMessage, CoachProposal, AthleteProfile, Athlete, AthleteMembership, AthleteCoachNote, AITechnicalResult, CoachFeedback, ReadinessDaily, WhoopWorkout } from '../types'
 import type { PlanGenerationJob, TrainingPlan, TrainingPlanWeek } from '../types/planBuilder'
 import type { SyncDiagnosticEvent, SyncErrorLogEntry } from '../types/syncDiagnostics'
+import type { StoredSessionTemplate } from '../types/sessionTemplate'
 import { getOrCreateChatSessionId } from '../utils/chatSession'
 import { toISO, getWeekStart, fromISO } from '../utils/date'
 
@@ -24,6 +25,7 @@ export class EntrenadorDB extends Dexie {
   whoopWorkouts!: Table<WhoopWorkout, string>
   athleteMemberships!: Table<AthleteMembership, [string, string]>
   athleteCoachNotes!: Table<AthleteCoachNote, string>
+  sessionTemplates!: Table<StoredSessionTemplate, string>
 
   constructor() {
     super('EntrenadorDB')
@@ -231,6 +233,11 @@ export class EntrenadorDB extends Dexie {
     this.version(17).stores({
       athleteMemberships: '[athleteId+accountId], accountId, athleteId, role',
       athleteCoachNotes: 'athleteId, updatedAt',
+    })
+
+    // v18 — account-scoped Coach Library session templates.
+    this.version(18).stores({
+      sessionTemplates: 'id, kind, updatedAt, name',
     })
   }
 }

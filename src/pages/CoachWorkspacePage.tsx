@@ -30,6 +30,7 @@ import { coachTabId, coachTabPanelId } from '../components/coach/coachWorkspaceT
 import CoachSummaryPanel from '../components/coach/CoachSummaryPanel'
 import CoachRosterPanel from '../components/coach/CoachRosterPanel'
 import CoachPlanningPanel from '../components/coach/CoachPlanningPanel'
+import CoachLibraryPanel from '../components/coach/CoachLibraryPanel'
 import CoachWorkspacePlaceholderPanel from '../components/coach/CoachWorkspacePlaceholderPanel'
 
 interface CoachWorkspacePageProps {
@@ -276,10 +277,7 @@ export default function CoachWorkspacePage({
         )}
 
         {activeTab === 'biblioteca' && (
-          <CoachWorkspacePlaceholderPanel
-            title="Biblioteca"
-            description="Vas a poder guardar tus ejercicios y plantillas favoritas para reutilizarlos entre atletas."
-          />
+          <CoachLibraryPanel />
         )}
 
         {activeTab === 'asistente' && (

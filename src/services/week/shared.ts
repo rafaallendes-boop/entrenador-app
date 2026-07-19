@@ -1,3 +1,4 @@
+import { addDays } from 'date-fns'
 import type { CoachAction, CoachSessionProposal } from '../../types'
 import type { CoachNormalizedResponse, CreateWeekNormalizationDiagnostic } from '../ai/types'
 
@@ -12,13 +13,16 @@ export function filterSessionsToWeek(
   weekStartDate: string,
 ): CoachSessionProposal[] {
   const [y, m, d] = weekStartDate.split('-').map(Number)
-  const start = new Date(y, m - 1, d).getTime()
-  const end = start + 7 * 24 * 60 * 60 * 1000
+  const start = new Date(y, m - 1, d)
+  // Seven calendar days, not 7*24h: a week containing a DST change is an hour
+  // shorter or longer, and a fixed millisecond window pulled the next Monday in.
+  const end = addDays(start, 7).getTime()
+  const startTs = start.getTime()
   return sessions.filter((session) => {
     if (!isStrictISODate(session.date)) return false
     const [sy, sm, sd] = session.date.split('-').map(Number)
     const ts = new Date(sy, sm - 1, sd).getTime()
-    return ts >= start && ts < end
+    return ts >= startTs && ts < end
   })
 }
 

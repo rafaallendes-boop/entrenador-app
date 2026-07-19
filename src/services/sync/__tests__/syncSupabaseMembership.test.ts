@@ -15,4 +15,11 @@ describe('buildPullFilter', () => {
     expect(buildPullFilter('sessions', 'u1', [], { mode: 'legacy' })).toEqual({ kind: 'eq_user' })
     expect(buildPullFilter('athlete_coach_notes', 'u1', [], { mode: 'legacy' })).toEqual({ kind: 'skip' })
   })
+
+  it('always filters session templates by user_id, even with memberships', () => {
+    expect(buildPullFilter('session_templates', 'u1', ['a', 'b'], { mode: 'legacy' }))
+      .toEqual({ kind: 'eq_user' })
+    expect(buildPullFilter('session_templates', 'u1', [], { mode: 'athlete', athleteId: 'a' }))
+      .toEqual({ kind: 'eq_user' })
+  })
 })

@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { getAllAthleteScopedTables, getLegacyAthleteScopeBackfillTables } from '../athleteScopedTables'
+import {
+  getAccountScopedTables,
+  getAllAthleteScopedTables,
+  getAllLocalTables,
+  getLegacyAthleteScopeBackfillTables,
+} from '../athleteScopedTables'
 
 describe('athlete-scoped Dexie manifest', () => {
   it('incluye todos los stores sujetos a purge/import/reset exactamente una vez', () => {
@@ -35,5 +40,15 @@ describe('athlete-scoped Dexie manifest', () => {
       'trainingPlanWeeks',
       'planGenerationJobs',
     ])
+  })
+
+  it('separa stores account-scoped y expone su unión para resets completos', () => {
+    expect(getAccountScopedTables().map((table) => table.name)).toEqual(['sessionTemplates'])
+
+    const athleteNames = getAllAthleteScopedTables().map((table) => table.name)
+    const allLocalNames = getAllLocalTables().map((table) => table.name)
+    expect(athleteNames).not.toContain('sessionTemplates')
+    expect(allLocalNames).toEqual([...athleteNames, 'sessionTemplates'])
+    expect(new Set(allLocalNames).size).toBe(allLocalNames.length)
   })
 })

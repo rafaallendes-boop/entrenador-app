@@ -111,6 +111,15 @@ describe('deleteManagedAthletePermanently', () => {
     ] as never)
     await seedAthleteData('ath_m_a')
     await seedAthleteData('ath_m_b')
+    await db.sessionTemplates.put({
+      id: 'template-1',
+      name: 'Voleas',
+      kind: 'session',
+      payloadVersion: 1,
+      payload: { type: 'squash', timeBlock: 'AM', title: 'Voleas', durationMin: 60 },
+      createdAt: now,
+      updatedAt: now,
+    })
     localStorage.setItem(`${CHAT_SESSION_KEY}:ath_m_a`, 'chat-a')
 
     await deleteManagedAthletePermanently('user-1', 'ath_m_a')
@@ -137,6 +146,7 @@ describe('deleteManagedAthletePermanently', () => {
     expect(await db.athleteCoachNotes.get('ath_m_b')).toBeDefined()
     expect(await db.athletes.get('ath_m_a')).toBeUndefined()
     expect(await db.athletes.get('ath_m_b')).toBeDefined()
+    expect(await db.sessionTemplates.get('template-1')).toBeDefined()
     expect(localStorage.getItem(`${CHAT_SESSION_KEY}:ath_m_a`)).toBeNull()
   })
 

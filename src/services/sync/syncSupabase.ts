@@ -85,6 +85,9 @@ export function buildPullFilter(
     if (scope.mode === 'athlete') return { kind: 'in_athletes', value: [scope.athleteId] }
     return { kind: 'skip' }
   }
+  // Account-scoped: templates always belong to the authenticated account and
+  // must never inherit an athlete filter from memberships or the active scope.
+  if (table === 'session_templates') return { kind: 'eq_user' }
   if (memberAthleteIds.length > 0) {
     return {
       kind: 'or',

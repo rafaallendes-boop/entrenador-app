@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const hydrationMarks = vi.hoisted(() => new Set<string>())
+const leaseMock = vi.hoisted(() => ({ veto: false, run: vi.fn() }))
 const syncMocks = vi.hoisted(() => ({
   pushSessionForTarget: vi.fn(async () => {}),
   deleteSessionForTarget: vi.fn(async () => {}),
@@ -9,6 +10,15 @@ const syncMocks = vi.hoisted(() => ({
 }))
 
 vi.mock('../../syncService', () => syncMocks)
+vi.mock('../../sync/athleteWriteLease', () => ({
+  runAthleteWrite: leaseMock.run.mockImplementation(
+    async (_athleteId: string, operation: () => Promise<void>) => {
+      if (leaseMock.veto) return false
+      await operation()
+      return true
+    },
+  ),
+}))
 vi.mock('../coachPlanningHydration', () => ({
   ensureWeekHydrated: vi.fn(async (owner: string, scope: { athleteId: string }, week: string) => {
     hydrationMarks.add(`${owner}:${scope.athleteId}:${week}`)
@@ -25,6 +35,7 @@ import type { CoachSessionDraft } from '../coachSessionSerializer'
 import * as hydration from '../coachPlanningHydration'
 import {
   createSessionForAthlete,
+  createSessionFromTemplateForAthlete,
   deleteSessionForAthlete,
   updateSessionForAthlete,
 } from '../coachScopedWrites'
@@ -42,6 +53,27 @@ const draft: CoachSessionDraft = {
   objective: ' Base ',
   exercises: [{ id: 'ex-1', name: ' Sentadilla ', sets: 3, reps: ' 8 ' }],
 }
+const templatePayload = {
+  type: 'squash' as const,
+  timeBlock: 'AM' as const,
+  title: 'Drills',
+  durationMin: 70,
+  subtype: 'training' as const,
+  squashDetails: {
+    trainingFocus: 'technical' as const,
+    drills: [{ name: 'boast-drive' }],
+  },
+}
+const templateOverlay: CoachSessionDraft = {
+  date: '2026-07-15', timeBlock: 'AM', type: 'squash', title: 'Desde plantilla',
+  durationMin: 70, subtype: 'training',
+}
+
+function createFromTemplate(athleteId = managed) {
+  return createSessionFromTemplateForAthlete(owner, athleteId, templatePayload, {
+    date: '2026-07-15', overlayDraft: templateOverlay, originalsById: new Map(),
+  })
+}
 
 function session(partial: Partial<Session> = {}): Session {
   return {
@@ -57,6 +89,7 @@ describe('coach scoped writes', () => {
   beforeEach(async () => {
     vi.clearAllMocks()
     hydrationMarks.clear()
+    leaseMock.veto = false
     setSelfAthleteId(self)
     db.close()
     await db.delete()
@@ -104,8 +137,28 @@ describe('coach scoped writes', () => {
     expect(created.athleteId).toBe(self)
   })
 
+  it('create desde plantilla conserva contenido rico y garantías del core', async () => {
+    const created = await createFromTemplate()
+    expect(created).toMatchObject({
+      athleteId: managed,
+      authoredByRole: 'coach',
+      status: 'planned',
+      date: '2026-07-15',
+      title: 'Desde plantilla',
+    })
+    expect(created.squashDetails?.drills).toEqual([{ name: 'boast-drive' }])
+    expect(hydration.ensureWeekHydrated).toHaveBeenCalledWith(
+      owner,
+      { athleteId: managed, includeLegacy: false },
+      '2026-07-13',
+    )
+    const summary = await db.weekSummaries.where('athleteId').equals(managed).first()
+    expect(summary?.plannedSessions).toBe(1)
+  })
+
   it('rechaza archivado, ajeno y sessionId de otro atleta sin mutar', async () => {
     await expect(createSessionForAthlete(owner, 'ath_archived', draft)).rejects.toThrow('archivado')
+    await expect(createFromTemplate('ath_archived')).rejects.toThrow('archivado')
     await expect(createSessionForAthlete(owner, 'ath_missing', draft)).rejects.toThrow('roster')
     await db.sessions.put(session({ id: 'self-session', athleteId: self }))
     await expect(updateSessionForAthlete(owner, managed, 'self-session', { title: 'No' }))
@@ -149,12 +202,23 @@ describe('coach scoped writes', () => {
     )
   })
 
-  it('revalida roster dentro de la transacción después de hidratar', async () => {
+  it.each([
+    ['create normal', () => createSessionForAthlete(owner, managed, draft)],
+    ['create desde plantilla', () => createFromTemplate()],
+  ])('revalida roster dentro de la transacción después de hidratar: %s', async (_label, create) => {
     vi.mocked(hydration.ensureWeekHydrated).mockImplementationOnce(async (user, scope, week) => {
       hydrationMarks.add(`${user}:${scope.athleteId}:${week}`)
       await db.athletes.update(managed, { status: 'archived' })
     })
-    await expect(createSessionForAthlete(owner, managed, draft)).rejects.toThrow('archivado')
+    await expect(create()).rejects.toThrow('archivado')
+    expect(await db.sessions.count()).toBe(0)
+    expect(syncMocks.pushSessionForTarget).not.toHaveBeenCalled()
+  })
+
+  it('create desde plantilla respeta el veto del lease de borrado', async () => {
+    leaseMock.veto = true
+    await expect(createFromTemplate()).rejects.toThrow('siendo eliminado')
+    expect(leaseMock.run).toHaveBeenCalledWith(managed, expect.any(Function))
     expect(await db.sessions.count()).toBe(0)
     expect(syncMocks.pushSessionForTarget).not.toHaveBeenCalled()
   })

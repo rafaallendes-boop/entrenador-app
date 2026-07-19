@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Session, SessionType } from '../../types'
+import type { SupportedSessionTemplate } from '../../types/sessionTemplate'
 import {
   draftToPatch,
   sessionToDraft,
@@ -8,8 +9,10 @@ import {
 import { getAthleteProfileForAthlete } from '../../services/athlete/coachScopedReads'
 import {
   createSessionForAthlete,
+  createSessionFromTemplateForAthlete,
   updateSessionForAthlete,
 } from '../../services/athlete/coachScopedWrites'
+import { templateToDraft } from '../../services/athlete/sessionTemplateSerializer'
 import SessionForm from '../session/SessionForm'
 
 interface CoachSessionModalProps {
@@ -17,6 +20,7 @@ interface CoachSessionModalProps {
   athleteId: string
   defaultDate: string
   session?: Session
+  template?: { source: SupportedSessionTemplate }
   onClose: () => void
   onSaved: () => void
 }
@@ -26,14 +30,20 @@ export default function CoachSessionModal({
   athleteId,
   defaultDate,
   session,
+  template,
   onClose,
   onSaved,
 }: CoachSessionModalProps) {
-  const [defaultSport, setDefaultSport] = useState<SessionType | null>(session?.type ?? null)
+  const [templateDraftState] = useState(() => (
+    template ? templateToDraft(template.source.payload, defaultDate) : null
+  ))
+  const [defaultSport, setDefaultSport] = useState<SessionType | null>(
+    template?.source.payload.type ?? session?.type ?? null,
+  )
   const submittingRef = useRef(false)
 
   useEffect(() => {
-    if (session) return
+    if (session || template) return
     let cancelled = false
     void getAthleteProfileForAthlete(ownerAccountId, athleteId)
       .then((profile) => {
@@ -45,13 +55,24 @@ export default function CoachSessionModal({
         if (!cancelled) setDefaultSport('squash')
       })
     return () => { cancelled = true }
-  }, [athleteId, ownerAccountId, session])
+  }, [athleteId, ownerAccountId, session, template])
 
   const handleSubmit = async (draft: CoachSessionDraft) => {
     if (submittingRef.current) return
     submittingRef.current = true
     try {
-      if (session) {
+      if (template && templateDraftState) {
+        await createSessionFromTemplateForAthlete(
+          ownerAccountId,
+          athleteId,
+          template.source.payload,
+          {
+            date: draft.date,
+            overlayDraft: draft,
+            originalsById: templateDraftState.originalsById,
+          },
+        )
+      } else if (session) {
         await updateSessionForAthlete(
           ownerAccountId,
           athleteId,
@@ -83,7 +104,7 @@ export default function CoachSessionModal({
       />
       <div className="relative w-full max-h-[92vh] overflow-y-auto rounded-t-2xl border-t border-surface-border bg-surface-card md:max-w-3xl md:rounded-2xl md:border md:max-h-[88vh]">
         <SessionForm
-          initialValues={session ? sessionToDraft(session) : undefined}
+          initialValues={templateDraftState?.draft ?? (session ? sessionToDraft(session) : undefined)}
           defaultSport={defaultSport}
           defaultDate={defaultDate}
           heading={session ? 'Editar sesion' : 'Nueva sesion'}

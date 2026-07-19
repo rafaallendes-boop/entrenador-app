@@ -3,14 +3,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { Session } from '../../types'
+import type { SupportedSessionTemplate } from '../../types/sessionTemplate'
 
 const mocks = vi.hoisted(() => ({
   create: vi.fn(),
+  fromTemplate: vi.fn(),
   update: vi.fn(),
   profile: vi.fn(),
 }))
 vi.mock('../../services/athlete/coachScopedWrites', () => ({
   createSessionForAthlete: mocks.create,
+  createSessionFromTemplateForAthlete: mocks.fromTemplate,
   updateSessionForAthlete: mocks.update,
 }))
 vi.mock('../../services/athlete/coachScopedReads', () => ({
@@ -30,6 +33,7 @@ describe('CoachSessionModal', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.create.mockResolvedValue({})
+    mocks.fromTemplate.mockResolvedValue({})
     mocks.update.mockResolvedValue({})
     mocks.profile.mockResolvedValue({
       primarySport: 'running', sportContext: { primarySport: 'cycling' },
@@ -75,5 +79,35 @@ describe('CoachSessionModal', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }))
     expect(mocks.update).toHaveBeenCalledWith('user-1', 'ath_m', 's-1', { title: 'Táctica' })
     expect(onSaved).toHaveBeenCalledOnce()
+  })
+
+  it('aplica una plantilla sin consultar perfil y conserva el payload rico', async () => {
+    const template: SupportedSessionTemplate = {
+      id: 't-1', name: 'Volea', kind: 'session', payloadVersion: 1,
+      payload: {
+        type: 'squash', timeBlock: 'AM', title: 'Drills de volea', durationMin: 70,
+        squashDetails: { trainingFocus: 'technical', drills: [{ name: 'boast-drive' }] },
+      },
+      createdAt: 1, updatedAt: 1,
+    }
+    render(
+      <CoachSessionModal
+        ownerAccountId="user-1"
+        athleteId="ath_m"
+        defaultDate="2026-07-19"
+        template={{ source: template }}
+        onClose={vi.fn()}
+        onSaved={vi.fn()}
+      />,
+    )
+    expect((screen.getByLabelText('Titulo') as HTMLInputElement).value).toBe('Drills de volea')
+    await userEvent.click(screen.getByRole('button', { name: 'Agregar sesión' }))
+    expect(mocks.profile).not.toHaveBeenCalled()
+    expect(mocks.fromTemplate).toHaveBeenCalledWith(
+      'user-1',
+      'ath_m',
+      template.payload,
+      expect.objectContaining({ date: '2026-07-19', overlayDraft: expect.objectContaining({ title: 'Drills de volea' }) }),
+    )
   })
 })

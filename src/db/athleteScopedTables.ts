@@ -35,6 +35,22 @@ export function getAllAthleteScopedTables() {
   ]
 }
 
+/**
+ * Stores whose lifecycle belongs to the signed-in account rather than to one
+ * athlete. They must not participate in an athlete purge.
+ */
+export function getAccountScopedTables() {
+  return [db.sessionTemplates]
+}
+
+/** Complete manifest used by account switches, full resets and replace imports. */
+export function getAllLocalTables() {
+  return [
+    ...getAllAthleteScopedTables(),
+    ...getAccountScopedTables(),
+  ]
+}
+
 /** Stores históricos que participan en el backfill de athleteId. */
 export function getLegacyAthleteScopeBackfillTables() {
   return [

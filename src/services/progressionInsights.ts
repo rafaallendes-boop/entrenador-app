@@ -1,3 +1,4 @@
+import { differenceInCalendarDays } from 'date-fns'
 import { db } from '../db/db'
 import { getAthleteProfile } from '../db/queries'
 import { filterRowsToActiveScope } from './athlete/activeScopeFilter'
@@ -318,7 +319,9 @@ function deriveFatigueLevel(dayLogs: DayLog[], sessions: Session[]): number {
 function diffDays(fromISODate: string, toISODate: string): number {
   const from = new Date(`${fromISODate}T00:00:00`)
   const to = new Date(`${toISODate}T00:00:00`)
-  return Math.ceil((to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24))
+  // Calendar days: both operands are local midnights, so a span crossing a DST
+  // change is off by an hour and rounding up added a phantom day.
+  return differenceInCalendarDays(to, from)
 }
 
 function todayISO(): string {

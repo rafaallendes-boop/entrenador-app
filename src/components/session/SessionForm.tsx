@@ -18,7 +18,9 @@ export interface SessionFormProps {
   defaultDate?: string
   heading: string
   submitLabel: string
-  onSubmit: (values: CoachSessionDraft) => Promise<void>
+  mode?: 'session' | 'template'
+  initialName?: string
+  onSubmit: (values: CoachSessionDraft, meta?: { templateName: string }) => Promise<void>
   onCancel: () => void
 }
 
@@ -74,12 +76,19 @@ export default function SessionForm({
   defaultDate,
   heading,
   submitLabel,
+  mode = 'session',
+  initialName,
   onSubmit,
   onCancel,
 }: SessionFormProps) {
   const initialType = initialValues?.type ?? defaultSport
+  const isTemplate = mode === 'template'
   const [type, setType] = useState<SessionType>(initialType)
   const [title, setTitle] = useState(initialValues?.title ?? TYPE_LABELS[initialType])
+  const [templateName, setTemplateName] = useState(
+    initialName ?? initialValues?.title ?? TYPE_LABELS[initialType],
+  )
+  const [nameTouched, setNameTouched] = useState(initialName != null)
   const [date, setDate] = useState(initialValues?.date ?? defaultDate ?? todayISO())
   const [timeBlock, setTimeBlock] = useState<TimeBlock>(initialValues?.timeBlock ?? 'AM')
   const [duration, setDuration] = useState(initialValues?.durationMin ?? 60)
@@ -115,16 +124,16 @@ export default function SessionForm({
 
   const showExercises = type === 'strength' || type === 'mobility'
   const showRunningFields = type === 'running' || type === 'cycling'
-  const isSquashMatch = type === 'squash' && (squashSubtype === 'match' || squashSubtype === 'competitive')
+  const isSquashMatch = !isTemplate && type === 'squash' && (squashSubtype === 'match' || squashSubtype === 'competitive')
   const showLocation = type === 'squash' || type === 'running' || type === 'cycling'
   const config = SESSION_TYPE_CONFIG[type]
 
   const handleTypeChange = (nextType: SessionType) => {
     const previousDefaultTitle = TYPE_LABELS[type]
+    const nextTitle = title === previousDefaultTitle ? TYPE_LABELS[nextType] : title
     setType(nextType)
-    setTitle((current) => (
-      current === previousDefaultTitle ? TYPE_LABELS[nextType] : current
-    ))
+    setTitle(nextTitle)
+    if (isTemplate && !nameTouched) setTemplateName(nextTitle)
     if (nextType !== 'strength' && nextType !== 'mobility') setExercises([])
     if (nextType !== 'running' && nextType !== 'cycling') {
       setRunningType('z2')
@@ -141,6 +150,11 @@ export default function SessionForm({
       setGamesLost('')
     }
     if (!['squash', 'running', 'cycling'].includes(nextType)) setLocation('')
+  }
+
+  const handleTitleChange = (nextTitle: string) => {
+    setTitle(nextTitle)
+    if (isTemplate && !nameTouched) setTemplateName(nextTitle)
   }
 
   const handleSquashSubtypeChange = (nextSubtype: SquashSubtype) => {
@@ -204,9 +218,11 @@ export default function SessionForm({
     setIsSubmitting(true)
     setError(null)
     try {
-      await onSubmit(values)
+      await onSubmit(values, isTemplate ? { templateName: templateName.trim() } : undefined)
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : 'No se pudo guardar la sesión.')
+      setError(submitError instanceof Error
+        ? submitError.message
+        : isTemplate ? 'No se pudo guardar la plantilla.' : 'No se pudo guardar la sesión.')
     } finally {
       submittingRef.current = false
       setIsSubmitting(false)
@@ -297,23 +313,42 @@ export default function SessionForm({
             </div>
           )}
 
+          {isTemplate && (
+            <label className="block text-xs font-medium uppercase tracking-wider text-ink-muted">
+              Nombre de plantilla
+              <input
+                aria-label="Nombre de plantilla"
+                type="text"
+                value={templateName}
+                onChange={(event) => {
+                  setNameTouched(true)
+                  setTemplateName(event.target.value)
+                }}
+                placeholder="Nombre para la Biblioteca"
+                className="mt-2 w-full rounded-xl border border-surface-border bg-surface-raised px-3 py-2.5 text-sm normal-case text-ink"
+              />
+            </label>
+          )}
+
           <label className="block text-xs font-medium uppercase tracking-wider text-ink-muted">
             Titulo
             <input
               aria-label="Titulo"
               type="text"
               value={title}
-              onChange={(event) => setTitle(event.target.value)}
+              onChange={(event) => handleTitleChange(event.target.value)}
               placeholder="Nombre de la sesion"
               className="mt-2 w-full rounded-xl border border-surface-border bg-surface-raised px-3 py-2.5 text-sm normal-case text-ink"
             />
           </label>
 
           <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
-            <label className="block text-xs font-medium uppercase tracking-wider text-ink-muted">
-              Fecha
-              <input aria-label="Fecha" type="date" value={date} onChange={(event) => setDate(event.target.value)} className="mt-2 w-full rounded-xl border border-surface-border bg-surface-raised px-3 py-2.5 text-sm text-ink" />
-            </label>
+            {!isTemplate && (
+              <label className="block text-xs font-medium uppercase tracking-wider text-ink-muted">
+                Fecha
+                <input aria-label="Fecha" type="date" value={date} onChange={(event) => setDate(event.target.value)} className="mt-2 w-full rounded-xl border border-surface-border bg-surface-raised px-3 py-2.5 text-sm text-ink" />
+              </label>
+            )}
             <div>
               <span className="mb-2 block text-xs font-medium uppercase tracking-wider text-ink-muted">Bloque</span>
               <div className="flex overflow-hidden rounded-xl border border-surface-border">

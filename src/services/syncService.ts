@@ -21,6 +21,8 @@ import type {
   AthleteCoachNote,
 } from '../types'
 import type { TrainingPlan, TrainingPlanWeek } from '../types/planBuilder'
+import type { StoredSessionTemplate } from '../types/sessionTemplate'
+import { jsonStructurallyEqual } from '../utils/canonicalJson'
 import {
   rowToTrainingPlan,
   rowToTrainingPlanWeek,
@@ -161,6 +163,7 @@ const REMOTE_WIPE_ORDER: SupabaseTable[] = [
   'sessions',
   'athlete_coach_notes',
   'athlete_profiles',
+  'session_templates',
 ]
 
 const remoteAthleteEnsurePromises = new Map<string, Promise<void>>()
@@ -1592,6 +1595,38 @@ function coachNoteToRow(note: AthleteCoachNote, userId: string): Record<string, 
   }
 }
 
+export function sessionTemplateToRow(
+  template: StoredSessionTemplate,
+  userId: string,
+): Record<string, unknown> {
+  return {
+    id: template.id,
+    user_id: userId,
+    name: template.name,
+    kind: template.kind,
+    payload_version: template.payloadVersion,
+    data: template.payload,
+    created_at: template.createdAt,
+    updated_at: template.updatedAt,
+    deleted_at: template.deletedAt ?? null,
+  }
+}
+
+export function rowToStoredSessionTemplate(
+  row: Record<string, unknown>,
+): StoredSessionTemplate {
+  return {
+    id: String(row.id),
+    name: String(row.name ?? ''),
+    kind: String(row.kind ?? ''),
+    payloadVersion: Number(row.payload_version ?? 0),
+    payload: row.data,
+    createdAt: Number(row.created_at ?? 0),
+    updatedAt: Number(row.updated_at ?? 0),
+    ...(row.deleted_at != null ? { deletedAt: Number(row.deleted_at) } : {}),
+  }
+}
+
 function stampAthleteIdIfLegacy<T extends { athleteId?: string }>(
   row: T,
   activeAthleteId: string | null,
@@ -2244,6 +2279,13 @@ export async function pushSession(session: Session): Promise<void> {
     return
   }
   await upsertRow('sessions', withAthleteId(sessionToRow(session, userId), session.athleteId))
+}
+
+/** Session-template deletion is a tombstone upsert, never a remote DELETE. */
+export async function pushSessionTemplate(template: StoredSessionTemplate): Promise<void> {
+  const userId = getUserId()
+  if (!userId) return
+  await upsertRow('session_templates', sessionTemplateToRow(template, userId))
 }
 
 function sessionTargetAthleteId(target: RemoteSessionTarget): string {
@@ -3167,6 +3209,7 @@ async function pullRemoteAndMerge(userId: string): Promise<void> {
       mergeCoachProposals(userId, mergeContext),
       mergeAthleteProfile(userId, mergeContext),
       mergeCoachNotes(userId, mergeContext),
+      mergeSessionTemplates(userId, mergeContext),
     ])
     await mergeTrainingPlans(userId, mergeContext)
     await mergeTrainingPlanWeeks(userId, mergeContext)
@@ -3598,6 +3641,108 @@ async function mergeCoachNotes(userId: string, context: MergeContext): Promise<v
       remoteAthleteIds,
       context.deleteBeforeTs,
     )
+  }
+}
+
+export async function mergeSessionTemplates(userId: string, context: MergeContext): Promise<void> {
+  // A reset whose remote wipe has not completed must not rehydrate local rows
+  // from the data it is still trying to remove.
+  if (context.pendingRemoteWipeTables.has('session_templates')) return
+
+  let remoteRows: Record<string, unknown>[]
+  try {
+    remoteRows = await fetchAll<Record<string, unknown>>(
+      'session_templates',
+      userId,
+      context.readScope,
+    )
+  } catch (error) {
+    const info = classifySyncError(error, 'session_templates')
+    if (info.category === 'schema_mismatch') {
+      // Migration 015 may be deployed after this client. Templates are an
+      // optional sync surface and must not block the remaining pull.
+      syncLog('session_templates:pull_skipped_schema', {}, 'warn')
+      return
+    }
+    throw error
+  }
+
+  const remoteById = new Map<string, StoredSessionTemplate>()
+  for (const row of remoteRows) {
+    const remote = rowToStoredSessionTemplate(row)
+    remoteById.set(remote.id, remote)
+  }
+
+  const locals = await db.sessionTemplates.toArray()
+  const localById = new Map(locals.map((local) => [local.id, local]))
+
+  // Template deletes are durable rows rather than localStorage tombstones, so
+  // they need the same retention bound as every other delete marker. Expiry is
+  // only ever applied to rows both sides already agree are deleted; a live row
+  // never takes this path, so convergence semantics are unchanged.
+  const tombstoneCutoff = Date.now() - TOMBSTONE_TTL_MS
+  const isExpiredTombstone = (row: StoredSessionTemplate): boolean => (
+    row.deletedAt != null && row.deletedAt < tombstoneCutoff
+  )
+  const expiredLocalIds: string[] = []
+
+  for (const [id, remote] of remoteById) {
+    const local = localById.get(id)
+
+    if (isExpiredTombstone(remote) && (!local || isExpiredTombstone(local))) {
+      if (local) expiredLocalIds.push(id)
+      continue
+    }
+
+    if (!local || remote.updatedAt > local.updatedAt) {
+      await db.sessionTemplates.put(remote)
+      continue
+    }
+
+    if (remote.updatedAt < local.updatedAt) {
+      // Every local winner repairs the server, including live-over-tombstone.
+      // The SQL guard turns that latter case into a versioned tombstone.
+      context.pendingWrites.push(() => pushSessionTemplate(local))
+      continue
+    }
+
+    const remoteDeleted = remote.deletedAt != null
+    const localDeleted = local.deletedAt != null
+    if (remoteDeleted !== localDeleted) {
+      if (remoteDeleted) {
+        // Equal versions with different states converge on deletion.
+        await db.sessionTemplates.put(remote)
+      } else {
+        // Symmetric delete-wins: the local tombstone must repair remote live.
+        context.pendingWrites.push(() => pushSessionTemplate(local))
+      }
+      continue
+    }
+
+    // Same timestamp and state: the server row (OLD in the SQL trigger) is the
+    // canonical tiebreaker, but an already converged row needs no IndexedDB write.
+    if (!jsonStructurallyEqual(local, remote)) {
+      await db.sessionTemplates.put(remote)
+    }
+  }
+
+  // Remote absence is never interpreted as deletion. Once the queue is known
+  // to be drained, re-push every absent local row (live or tombstone).
+  if (context.allowDeletes && !context.pendingRemoteWipeTables.has('session_templates')) {
+    for (const local of locals) {
+      if (remoteById.has(local.id)) continue
+      if (isExpiredTombstone(local)) {
+        // Expired and already absent upstream: there is nothing left to converge.
+        expiredLocalIds.push(local.id)
+        continue
+      }
+      context.pendingWrites.push(() => pushSessionTemplate(local))
+    }
+  }
+
+  if (expiredLocalIds.length > 0) {
+    await db.sessionTemplates.bulkDelete(expiredLocalIds)
+    syncLog('session_templates:tombstones_pruned', { count: expiredLocalIds.length }, 'info')
   }
 }
 

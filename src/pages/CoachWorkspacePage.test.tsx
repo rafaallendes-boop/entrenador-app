@@ -10,7 +10,14 @@ import { coachTabId, coachTabPanelId } from '../components/coach/coachWorkspaceT
 // zustand v5 usa getInitialState() como server snapshot: renderToStaticMarkup
 // (SSR) ignora setState. Mock con estado mutable para inyectar user/activeAthleteId.
 const { authState } = vi.hoisted(() => ({
-  authState: { user: null as unknown, activeAthleteId: null as string | null },
+  authState: {
+    user: null as unknown,
+    activeAthleteId: null as string | null,
+    syncDetails: {
+      lastSuccessfulSyncAt: null as number | null,
+      lastErrorAt: null as number | null,
+    },
+  },
 }))
 vi.mock('../store/useAuthStore', () => {
   const useAuthStore = (selector: (state: typeof authState) => unknown) => selector(authState)
@@ -105,8 +112,10 @@ describe('CoachWorkspacePage', () => {
     expect(html).not.toContain('Vas a poder crear y editar sesiones')
   })
 
-  it('Biblioteca y Asistente IA conservan su placeholder con voz de tuteo', () => {
-    expect(render('rafa@x.cl', [SELF], 'biblioteca')).toContain('Vas a poder guardar tus ejercicios')
+  it('Biblioteca monta el panel real y Asistente IA conserva su placeholder', () => {
+    const biblioteca = render('rafa@x.cl', [SELF], 'biblioteca')
+    expect(biblioteca).toContain('Nueva plantilla')
+    expect(biblioteca).not.toContain('Vas a poder guardar tus ejercicios')
     const asistente = render('rafa@x.cl', [SELF], 'asistente')
     expect(asistente).toContain('tú revisas y confirmas')
     expect(asistente).not.toContain('vos')

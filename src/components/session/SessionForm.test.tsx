@@ -58,4 +58,55 @@ describe('SessionForm', () => {
     expect((screen.getByRole('button', { name: 'Guardar' }) as HTMLButtonElement).disabled).toBe(false)
     expect(onCancel).not.toHaveBeenCalled()
   })
+
+  it('modo plantilla oculta fecha y datos de partido', () => {
+    render(
+      <SessionForm
+        mode="template"
+        initialValues={{
+          date: '2026-07-14', timeBlock: 'AM', type: 'squash', title: 'Match',
+          durationMin: 60, subtype: 'match', opponent: 'Rival',
+        }}
+        defaultSport="squash"
+        heading="Plantilla"
+        submitLabel="Guardar"
+        onSubmit={vi.fn(async () => {})}
+        onCancel={vi.fn()}
+      />,
+    )
+    expect(screen.queryByLabelText('Fecha')).toBeNull()
+    expect(screen.queryByLabelText('Rival')).toBeNull()
+    expect(screen.getByLabelText('Nombre de plantilla')).toBeTruthy()
+  })
+
+  it('modo sesión conserva fecha y datos de partido', () => {
+    render(
+      <SessionForm
+        initialValues={{
+          date: '2026-07-14', timeBlock: 'AM', type: 'squash', title: 'Match',
+          durationMin: 60, subtype: 'match', opponent: 'Rival',
+        }}
+        defaultSport="squash"
+        heading="Sesión"
+        submitLabel="Guardar"
+        onSubmit={vi.fn(async () => {})}
+        onCancel={vi.fn()}
+      />,
+    )
+    expect(screen.getByLabelText('Fecha')).toBeTruthy()
+    expect((screen.getByLabelText('Rival') as HTMLInputElement).value).toBe('Rival')
+    expect(screen.queryByLabelText('Nombre de plantilla')).toBeNull()
+  })
+
+  it('el nombre sigue al título hasta que el usuario lo toca y se entrega con trim', async () => {
+    const onSubmit = vi.fn(async () => {})
+    render(<SessionForm mode="template" defaultSport="squash" heading="Plantilla" submitLabel="Guardar" onSubmit={onSubmit} onCancel={vi.fn()} />)
+    fireEvent.change(screen.getByLabelText('Titulo'), { target: { value: 'Técnica' } })
+    expect((screen.getByLabelText('Nombre de plantilla') as HTMLInputElement).value).toBe('Técnica')
+    fireEvent.change(screen.getByLabelText('Nombre de plantilla'), { target: { value: '  Favorita  ' } })
+    fireEvent.change(screen.getByLabelText('Titulo'), { target: { value: 'Título final' } })
+    expect((screen.getByLabelText('Nombre de plantilla') as HTMLInputElement).value).toBe('  Favorita  ')
+    await userEvent.click(screen.getByRole('button', { name: 'Guardar' }))
+    expect(onSubmit.mock.calls[0][1]).toEqual({ templateName: 'Favorita' })
+  })
 })

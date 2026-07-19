@@ -18,6 +18,7 @@ const clearAllLocalAppDataMock = vi.fn(async () => {
   athleteProfileRows = []
   athleteRows = []
   planGenerationJobRows = []
+  sessionTemplateRows = []
 })
 function createSyncDetailsState() {
   return {
@@ -65,6 +66,7 @@ let athleteCoachNoteRows: Array<{ athleteId: string; updatedAt: number; [key: st
 let athleteMembershipRows: Array<{ athleteId: string; accountId: string; role: string; createdAt: number; updatedAt: number }> = []
 let athleteRows: Array<{ id: string; [key: string]: unknown }> = []
 let planGenerationJobRows: unknown[] = []
+let sessionTemplateRows: unknown[] = []
 let tableResults = new Map<string, SupabaseResultSource>()
 let actionResults = new Map<string, SupabaseResultSource>()
 type MockFilter = { op: 'eq' | 'neq' | 'in' | 'or' | 'is' | 'lt' | 'lte' | 'gte'; column: string; value: unknown }
@@ -416,6 +418,20 @@ vi.mock('../../db/db', () => ({
         planGenerationJobRows = rows
       }),
     },
+    sessionTemplates: {
+      toArray: vi.fn(async () => sessionTemplateRows),
+      get: vi.fn(async (id: string) => sessionTemplateRows.find((row) =>
+        (row as { id?: string }).id === id)),
+      put: vi.fn(async (row: unknown) => {
+        sessionTemplateRows = putRowById(sessionTemplateRows, row)
+      }),
+      bulkPut: vi.fn(async (rows: unknown[]) => {
+        sessionTemplateRows = mergeRowsById(sessionTemplateRows, rows)
+      }),
+      clear: vi.fn(async () => {
+        sessionTemplateRows = []
+      }),
+    },
     transaction: vi.fn(async (...args: unknown[]) => {
       const run = args.at(-1) as () => Promise<unknown>
       return run()
@@ -437,6 +453,7 @@ describe('syncService', () => {
     athleteMembershipRows = []
     athleteRows = []
     planGenerationJobRows = []
+    sessionTemplateRows = []
     tableResults = new Map()
     actionResults = new Map()
     upsertCalls.length = 0
@@ -2242,6 +2259,7 @@ describe('syncService', () => {
       'day_logs',
       'sessions',
       'athlete_profiles',
+      'session_templates',
     ])
     expect(whoopDeleteFetchMock).toHaveBeenCalledWith('/.netlify/functions/whoop-sync', {
       method: 'DELETE',

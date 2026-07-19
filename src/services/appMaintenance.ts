@@ -1,5 +1,5 @@
 import { db } from '../db/db'
-import { getAllAthleteScopedTables } from '../db/athleteScopedTables'
+import { getAllAthleteScopedTables, getAllLocalTables } from '../db/athleteScopedTables'
 import { useChatStore } from '../store/useChatStore'
 import { useCoachActionsStore } from '../store/useCoachActionsStore'
 import { useCoachMemoryStore } from '../store/useCoachMemoryStore'
@@ -120,30 +120,7 @@ export async function clearSelectedLocalAppData(selection: LocalDataSelection): 
   await db.transaction(
     'rw',
     getAllAthleteScopedTables(),
-    async () => {
-      if (selection.trainingData) {
-        await db.sessions.clear()
-        await db.dayLogs.clear()
-        await db.readinessDaily?.clear()
-        await db.whoopWorkouts?.clear()
-        await db.weekSummaries.clear()
-        await db.trainingPlanWeeks.clear()
-        await db.trainingPlans.clear()
-        await db.planGenerationJobs.clear()
-        await db.athletes.clear()
-        await db.athleteMemberships?.clear()
-      }
-      if (selection.chatHistory) {
-        await db.chatMessages.clear()
-      }
-      if (selection.coachProposals) {
-        await db.coachProposals.clear()
-      }
-      if (selection.coachMemory) {
-        await db.athleteProfiles.clear()
-        await db.athleteCoachNotes?.clear()
-      }
-    },
+    () => clearSelectedTables(selection),
   )
 
   syncStoresAfterClear(selection)
@@ -151,13 +128,49 @@ export async function clearSelectedLocalAppData(selection: LocalDataSelection): 
 }
 
 export async function clearAllLocalAppData(userId?: string): Promise<void> {
-  await clearSelectedLocalAppData({
+  const selection: LocalDataSelection = {
     trainingData: true,
     chatHistory: true,
     coachProposals: true,
     coachMemory: true,
+  }
+  clearCoachPlanningHydrationRegistry()
+
+  // Keep all account and athlete stores in the same atomic reset. In
+  // particular, Dexie requires sessionTemplates to be declared before it can
+  // be touched by this transaction.
+  await db.transaction('rw', getAllLocalTables(), async () => {
+    await clearSelectedTables(selection)
+    await db.sessionTemplates.clear()
   })
+
+  syncStoresAfterClear(selection)
   clearAllAppLocalStorage(userId)
+}
+
+async function clearSelectedTables(selection: LocalDataSelection): Promise<void> {
+  if (selection.trainingData) {
+    await db.sessions.clear()
+    await db.dayLogs.clear()
+    await db.readinessDaily?.clear()
+    await db.whoopWorkouts?.clear()
+    await db.weekSummaries.clear()
+    await db.trainingPlanWeeks.clear()
+    await db.trainingPlans.clear()
+    await db.planGenerationJobs.clear()
+    await db.athletes.clear()
+    await db.athleteMemberships?.clear()
+  }
+  if (selection.chatHistory) {
+    await db.chatMessages.clear()
+  }
+  if (selection.coachProposals) {
+    await db.coachProposals.clear()
+  }
+  if (selection.coachMemory) {
+    await db.athleteProfiles.clear()
+    await db.athleteCoachNotes?.clear()
+  }
 }
 
 export function clearAllAppLocalStorage(userId?: string): void {

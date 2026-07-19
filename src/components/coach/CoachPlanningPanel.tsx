@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Athlete, Session } from '../../types'
+import type { SupportedSessionTemplate } from '../../types/sessionTemplate'
 import {
   currentWeekStartISO,
   formatDay,
@@ -17,6 +18,11 @@ import {
   isWeekHydrated,
 } from '../../services/athlete/coachPlanningHydration'
 import { deleteSessionForAthlete } from '../../services/athlete/coachScopedWrites'
+import {
+  createSessionTemplateFromSession,
+  listSessionTemplates,
+} from '../../services/athlete/sessionTemplates'
+import { isSupportedSessionTemplate } from '../../types/sessionTemplate'
 import { hasRecordedWork } from '../../utils/sessionRecordedWork'
 import ConfirmDialog from '../ui/ConfirmDialog'
 import CoachSessionModal from './CoachSessionModal'
@@ -45,6 +51,7 @@ interface CoachPlanningPanelProps {
 type SessionModalState =
   | { mode: 'create'; date: string }
   | { mode: 'edit'; session: Session }
+  | { mode: 'template'; date: string; template: SupportedSessionTemplate }
 
 export default function CoachPlanningPanel({
   athletes,
@@ -70,10 +77,19 @@ export default function CoachPlanningPanel({
   const [canMutate, setCanMutate] = useState(initialCanMutate ?? false)
   const [modal, setModal] = useState<SessionModalState | null>(null)
   const [confirmTarget, setConfirmTarget] = useState<Session | null>(null)
+  const [templatePicker, setTemplatePicker] = useState<{ date: string } | null>(null)
+  const [templateOptions, setTemplateOptions] = useState<SupportedSessionTemplate[]>([])
+  const [templatesLoading, setTemplatesLoading] = useState(false)
+  const [saveAsTemplate, setSaveAsTemplate] = useState<Session | null>(null)
+  const [templateName, setTemplateName] = useState('')
+  const [templateStatus, setTemplateStatus] = useState<string | null>(null)
+  const [templateDialogError, setTemplateDialogError] = useState<string | null>(null)
+  const [savingTemplate, setSavingTemplate] = useState(false)
   const [deleting, setDeleting] = useState(false)
-  const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
   const epochRef = useRef(0)
   const deletingRef = useRef(false)
+  const savingTemplateRef = useRef(false)
 
   const load = useCallback(async (athleteId: string, week: string, epoch: number) => {
     const isCurrent = () => epochRef.current === epoch
@@ -128,9 +144,19 @@ export default function CoachPlanningPanel({
     }
   }, [isTestMode, load, selectedId, weekStart])
 
+  useEffect(() => {
+    if (!templateStatus) return
+    const timeout = window.setTimeout(() => setTemplateStatus(null), 2500)
+    return () => window.clearTimeout(timeout)
+  }, [templateStatus])
+
   const selected = athletes.find((athlete) => athlete.id === selectedId) ?? null
   const grouped = groupSessionsByDay(sessions, weekStart)
-  const isLocked = pendingAction !== null || deleting || modal !== null
+  const isLocked = pendingAction !== null
+    || deleting
+    || modal !== null
+    || templatePicker !== null
+    || saveAsTemplate !== null
 
   const reload = useCallback(async () => {
     if (!selectedId) return
@@ -149,9 +175,11 @@ export default function CoachPlanningPanel({
     setPhase('loading')
     setStaleNotice(false)
     setCanMutate(false)
-    setDeleteError(null)
+    setActionError(null)
     setConfirmTarget(null)
     setModal(null)
+    setTemplatePicker(null)
+    setSaveAsTemplate(null)
     void load(selectedId, weekStart, epoch)
   }
 
@@ -160,9 +188,11 @@ export default function CoachPlanningPanel({
     setPhase('loading')
     setStaleNotice(false)
     setCanMutate(false)
-    setDeleteError(null)
+    setActionError(null)
     setConfirmTarget(null)
     setModal(null)
+    setTemplatePicker(null)
+    setSaveAsTemplate(null)
     setSelectedId(athleteId)
   }
 
@@ -171,23 +201,25 @@ export default function CoachPlanningPanel({
     setPhase('loading')
     setStaleNotice(false)
     setCanMutate(false)
-    setDeleteError(null)
+    setActionError(null)
     setConfirmTarget(null)
     setModal(null)
+    setTemplatePicker(null)
+    setSaveAsTemplate(null)
     setWeekStart(week)
   }
 
   async function performDelete(session: Session) {
     if (!selectedId || deletingRef.current) return
     deletingRef.current = true
-    setDeleteError(null)
+    setActionError(null)
     setDeleting(true)
     try {
       await deleteSessionForAthlete(ownerAccountId, selectedId, session.id)
       setConfirmTarget(null)
       await reload()
     } catch (error) {
-      setDeleteError(error instanceof Error ? error.message : 'No se pudo borrar la sesión.')
+      setActionError(error instanceof Error ? error.message : 'No se pudo borrar la sesión.')
     } finally {
       deletingRef.current = false
       setDeleting(false)
@@ -198,6 +230,49 @@ export default function CoachPlanningPanel({
     if (deletingRef.current) return
     if (hasRecordedWork(session)) setConfirmTarget(session)
     else void performDelete(session)
+  }
+
+  async function openTemplatePicker(date: string) {
+    setActionError(null)
+    setTemplateDialogError(null)
+    setTemplatesLoading(true)
+    setTemplateOptions([])
+    setTemplatePicker({ date })
+    try {
+      const rows = await listSessionTemplates()
+      setTemplateOptions(rows.filter((row): row is SupportedSessionTemplate => (
+        row.deletedAt == null && isSupportedSessionTemplate(row)
+      )))
+    } catch (error) {
+      setTemplateDialogError(error instanceof Error ? error.message : 'No se pudo cargar la Biblioteca.')
+    } finally {
+      setTemplatesLoading(false)
+    }
+  }
+
+  function openSaveAsTemplate(session: Session) {
+    setActionError(null)
+    setTemplateDialogError(null)
+    setTemplateStatus(null)
+    setTemplateName(session.title)
+    setSaveAsTemplate(session)
+  }
+
+  async function performSaveAsTemplate() {
+    if (!saveAsTemplate || savingTemplateRef.current) return
+    savingTemplateRef.current = true
+    setSavingTemplate(true)
+    setActionError(null)
+    try {
+      await createSessionTemplateFromSession(templateName, saveAsTemplate)
+      setSaveAsTemplate(null)
+      setTemplateStatus('Plantilla guardada.')
+    } catch (error) {
+      setTemplateDialogError(error instanceof Error ? error.message : 'No se pudo guardar la plantilla.')
+    } finally {
+      savingTemplateRef.current = false
+      setSavingTemplate(false)
+    }
   }
 
   return (
@@ -263,11 +338,13 @@ export default function CoachPlanningPanel({
         </p>
       )}
 
-      {deleteError && (
+      {actionError && (
         <div role="alert" className="mb-3 rounded-2xl border border-rose-500/25 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
-          {deleteError}
+          {actionError}
         </div>
       )}
+
+      {templateStatus && <p role="status" className="mb-3 text-sm text-emerald-300">{templateStatus}</p>}
 
       {phase === 'error' && (
         <div
@@ -320,6 +397,14 @@ export default function CoachPlanningPanel({
                       >
                         Borrar
                       </button>
+                      <button
+                        type="button"
+                        disabled={isLocked}
+                        onClick={() => openSaveAsTemplate(session)}
+                        className="text-xs font-semibold text-brand underline disabled:opacity-50"
+                      >
+                        Guardar como plantilla
+                      </button>
                     </div>
                   </article>
                 ))}
@@ -332,6 +417,14 @@ export default function CoachPlanningPanel({
               >
                 + Agregar sesión
               </button>
+              <button
+                type="button"
+                disabled={isLocked || !canMutate}
+                onClick={() => { void openTemplatePicker(date) }}
+                className="ml-3 mt-1 text-xs font-semibold text-brand underline disabled:opacity-50"
+              >
+                Desde plantilla
+              </button>
             </div>
           ))}
         </div>
@@ -341,11 +434,75 @@ export default function CoachPlanningPanel({
         <CoachSessionModal
           ownerAccountId={ownerAccountId}
           athleteId={selectedId}
-          defaultDate={modal.mode === 'create' ? modal.date : modal.session.date}
+          defaultDate={modal.mode === 'edit' ? modal.session.date : modal.date}
           session={modal.mode === 'edit' ? modal.session : undefined}
+          template={modal.mode === 'template' ? { source: modal.template } : undefined}
           onClose={() => setModal(null)}
           onSaved={() => { void reload() }}
         />
+      )}
+
+      {templatePicker && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl border border-surface-border bg-surface-card p-5">
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-ink">Desde plantilla</h3>
+              <button type="button" onClick={() => setTemplatePicker(null)} className="text-xs text-ink-muted">Cerrar</button>
+            </div>
+            {templateDialogError ? (
+              <p role="alert" className="rounded-xl border border-rose-500/25 bg-rose-500/10 px-3 py-2 text-sm text-rose-100">
+                {templateDialogError}
+              </p>
+            ) : templatesLoading ? (
+              <p role="status" className="text-sm text-ink-muted">Cargando plantillas…</p>
+            ) : templateOptions.length === 0 ? (
+              <p className="text-sm text-ink-muted">Todavía no tenés plantillas guardadas.</p>
+            ) : (
+              <div className="space-y-2">
+                {templateOptions.map((template) => (
+                  <button
+                    type="button"
+                    key={template.id}
+                    onClick={() => {
+                      setModal({ mode: 'template', date: templatePicker.date, template })
+                      setTemplatePicker(null)
+                    }}
+                    className="w-full rounded-xl border border-surface-border px-3 py-3 text-left"
+                  >
+                    <span className="block text-sm font-semibold text-ink">{template.name}</span>
+                    <span className="text-xs text-ink-muted">{template.payload.type} · {template.payload.durationMin} min</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {saveAsTemplate && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-sm rounded-2xl border border-surface-border bg-surface-card p-5">
+            <h3 className="mb-3 text-sm font-semibold text-ink">Guardar como plantilla</h3>
+            <label className="block text-xs font-medium uppercase text-ink-muted">
+              Nombre de plantilla
+              <input
+                aria-label="Nombre de plantilla"
+                value={templateName}
+                onChange={(event) => setTemplateName(event.target.value)}
+                className="mt-2 w-full rounded-xl border border-surface-border bg-surface-raised px-3 py-2.5 text-sm normal-case text-ink"
+              />
+            </label>
+            {templateDialogError && (
+              <p role="alert" className="mt-3 rounded-xl border border-rose-500/25 bg-rose-500/10 px-3 py-2 text-sm text-rose-100">
+                {templateDialogError}
+              </p>
+            )}
+            <div className="mt-4 flex justify-end gap-2">
+              <button type="button" disabled={savingTemplate} onClick={() => setSaveAsTemplate(null)} className="px-3 py-2 text-xs text-ink-muted disabled:opacity-50">Cancelar</button>
+              <button type="button" disabled={savingTemplate} onClick={() => { void performSaveAsTemplate() }} className="rounded-lg bg-brand px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">{savingTemplate ? 'Guardando…' : 'Guardar'}</button>
+            </div>
+          </div>
+        </div>
       )}
 
       <ConfirmDialog

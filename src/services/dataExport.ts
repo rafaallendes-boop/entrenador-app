@@ -1,5 +1,5 @@
 import { db } from '../db/db'
-import { getAllAthleteScopedTables } from '../db/athleteScopedTables'
+import { getAllLocalTables } from '../db/athleteScopedTables'
 import { APP_INFO } from '../constants/appInfo'
 import type {
   Athlete,
@@ -26,6 +26,7 @@ import type {
   WhoopWorkout,
 } from '../types'
 import type { TrainingPlan, TrainingPlanWeek } from '../types/planBuilder'
+import type { StoredSessionTemplate } from '../types/sessionTemplate'
 import { useChatStore } from '../store/useChatStore'
 import { useCoachActionsStore } from '../store/useCoachActionsStore'
 import { useCoachMemoryStore } from '../store/useCoachMemoryStore'
@@ -44,7 +45,7 @@ import { clearCoachPlanningHydrationRegistry } from './athlete/coachPlanningHydr
 
 const BACKUP_APP_NAME = 'RallyIQ' as const
 const LEGACY_BACKUP_APP_NAME = 'Entrenador' as const
-const CURRENT_BACKUP_VERSION = 3 as const
+const CURRENT_BACKUP_VERSION = 4 as const
 const MIN_SUPPORTED_BACKUP_VERSION = 1 as const
 
 const TIME_BLOCKS = new Set(['AM', 'PM'])
@@ -117,6 +118,7 @@ export interface AppDataExport {
     athleteProfiles: AthleteProfile[]
     athletes: Athlete[]
     athleteCoachNotes: AthleteCoachNote[]
+    sessionTemplates: StoredSessionTemplate[]
   }
 }
 
@@ -149,6 +151,7 @@ export interface AppDataImportResult {
     athleteProfiles: number
     athletes: number
     athleteCoachNotes: number
+    sessionTemplates: number
   }
 }
 
@@ -187,7 +190,7 @@ function buildAthleteProfileFilename(exportedAt: Date): string {
 export async function exportAppData(): Promise<{ filename: string; json: string }> {
   const exportedAt = new Date()
   const accountId = useAuthStore.getState().user?.id
-  const [sessions, dayLogs, readinessDaily, whoopWorkouts, weekSummaries, trainingPlans, trainingPlanWeeks, chatMessages, coachProposals, athleteProfiles, athletes, allNotes, memberships] = await Promise.all([
+  const [sessions, dayLogs, readinessDaily, whoopWorkouts, weekSummaries, trainingPlans, trainingPlanWeeks, chatMessages, coachProposals, athleteProfiles, athletes, allNotes, sessionTemplates, memberships] = await Promise.all([
     db.sessions.toArray(),
     db.dayLogs.toArray(),
     db.readinessDaily.toArray(),
@@ -200,6 +203,7 @@ export async function exportAppData(): Promise<{ filename: string; json: string 
     db.athleteProfiles.toArray(),
     db.athletes.toArray(),
     db.athleteCoachNotes.toArray(),
+    db.sessionTemplates.toArray(),
     accountId ? getMembershipsForAccount(accountId) : Promise.resolve([]),
   ])
   const athleteCoachNotes = allNotes.filter((note) => {
@@ -235,6 +239,7 @@ export async function exportAppData(): Promise<{ filename: string; json: string 
       athleteProfiles,
       athletes,
       athleteCoachNotes,
+      sessionTemplates,
     },
   }
 
@@ -332,6 +337,7 @@ export async function previewAppDataImportFile(file: File): Promise<AppDataImpor
       athleteProfiles: backup.tables.athleteProfiles.length,
       athletes: backup.tables.athletes.length,
       athleteCoachNotes: backup.tables.athleteCoachNotes.length,
+      sessionTemplates: countLiveSessionTemplates(backup.tables.sessionTemplates),
     },
     sessionDateRange,
     mergeConflicts,
@@ -339,7 +345,7 @@ export async function previewAppDataImportFile(file: File): Promise<AppDataImpor
 }
 
 async function computeMergeConflicts(backup: AppDataExport): Promise<MergeConflictSummary> {
-  const [localSessions, localDayLogs, localReadinessDaily, localWhoopWorkouts, localWeekSummaries, localChatMessages, localProposals, localProfiles, localAthletes] =
+  const [localSessions, localDayLogs, localReadinessDaily, localWhoopWorkouts, localWeekSummaries, localChatMessages, localProposals, localProfiles, localAthletes, localTemplates] =
     await Promise.all([
       db.sessions.toArray(),
       db.dayLogs.toArray(),
@@ -350,6 +356,7 @@ async function computeMergeConflicts(backup: AppDataExport): Promise<MergeConfli
       db.coachProposals.toArray(),
       db.athleteProfiles.toArray(),
       db.athletes.toArray(),
+      db.sessionTemplates.toArray(),
     ])
 
   let localNewerCount = 0
@@ -428,6 +435,18 @@ async function computeMergeConflicts(backup: AppDataExport): Promise<MergeConfli
     if (!local) newInBackupCount++
     else if (local.updatedAt > ba.updatedAt) localNewerCount++
     else if (ba.updatedAt > local.updatedAt) backupNewerCount++
+  }
+
+  const localTemplatesById = new Map(localTemplates.map((template) => [template.id, template]))
+  for (const incoming of backup.tables.sessionTemplates) {
+    const persisted = localTemplatesById.get(incoming.id)
+    if (!persisted) {
+      if (incoming.deletedAt == null) newInBackupCount++
+      continue
+    }
+    const winner = pickSessionTemplateWinner(persisted, incoming)
+    if (winner === persisted && persisted.updatedAt !== incoming.updatedAt) localNewerCount++
+    else if (winner === incoming) backupNewerCount++
   }
 
   return { localNewerCount, backupNewerCount, newInBackupCount }
@@ -614,6 +633,28 @@ async function putImportedWeekSummaries(importedRows: WeekSummary[]): Promise<vo
   if (rowsToWrite.length > 0) await db.weekSummaries.bulkPut(rowsToWrite)
 }
 
+/**
+ * LWW with delete-wins on equal timestamps. Keeping the persisted row when
+ * both records have the same lifecycle state makes equal-version merges stable.
+ */
+export function pickSessionTemplateWinner(
+  persisted: StoredSessionTemplate,
+  incoming: StoredSessionTemplate,
+): StoredSessionTemplate {
+  if (persisted.updatedAt !== incoming.updatedAt) {
+    return persisted.updatedAt > incoming.updatedAt ? persisted : incoming
+  }
+
+  const persistedDeleted = persisted.deletedAt != null
+  const incomingDeleted = incoming.deletedAt != null
+  if (persistedDeleted !== incomingDeleted) return persistedDeleted ? persisted : incoming
+  return persisted
+}
+
+function countLiveSessionTemplates(templates: StoredSessionTemplate[]): number {
+  return templates.filter((template) => template.deletedAt == null).length
+}
+
 export async function importAppDataFromFile(
   file: File,
   mode: 'replace' | 'merge' = 'replace',
@@ -625,7 +666,7 @@ export async function importAppDataFromFile(
   if (mode === 'replace') {
     await db.transaction(
       'rw',
-      getAllAthleteScopedTables(),
+      getAllLocalTables(),
       async () => {
         await db.sessions.clear()
         await db.dayLogs.clear()
@@ -641,6 +682,7 @@ export async function importAppDataFromFile(
         await db.athletes.clear()
         await db.athleteMemberships.clear()
         await db.athleteCoachNotes.clear()
+        await db.sessionTemplates.clear()
 
         if (backup.tables.sessions.length > 0) await db.sessions.bulkPut(backup.tables.sessions)
         await putImportedDayLogs(backup.tables.dayLogs)
@@ -654,6 +696,7 @@ export async function importAppDataFromFile(
         if (backup.tables.athleteProfiles.length > 0) await db.athleteProfiles.bulkPut(backup.tables.athleteProfiles)
         if (backup.tables.athletes.length > 0) await db.athletes.bulkPut(backup.tables.athletes)
         if (backup.tables.athleteCoachNotes.length > 0) await db.athleteCoachNotes.bulkPut(backup.tables.athleteCoachNotes)
+        if (backup.tables.sessionTemplates.length > 0) await db.sessionTemplates.bulkPut(backup.tables.sessionTemplates)
       },
     )
   } else {
@@ -662,7 +705,7 @@ export async function importAppDataFromFile(
     // WeekSummaries have no updatedAt — only add records missing locally.
     await db.transaction(
       'rw',
-      getAllAthleteScopedTables(),
+      getAllLocalTables(),
       async () => {
         // Sessions
         const localSessions = await db.sessions.toArray()
@@ -732,6 +775,14 @@ export async function importAppDataFromFile(
           return !local || note.updatedAt > local.updatedAt
         })
         if (notesToWrite.length > 0) await db.athleteCoachNotes.bulkPut(notesToWrite)
+
+        const localTemplates = await db.sessionTemplates.toArray()
+        const localTemplatesById = new Map(localTemplates.map((template) => [template.id, template]))
+        const templatesToWrite = backup.tables.sessionTemplates.filter((incoming) => {
+          const persisted = localTemplatesById.get(incoming.id)
+          return !persisted || pickSessionTemplateWinner(persisted, incoming) === incoming
+        })
+        if (templatesToWrite.length > 0) await db.sessionTemplates.bulkPut(templatesToWrite)
       },
     )
   }
@@ -759,6 +810,7 @@ export async function importAppDataFromFile(
       athleteProfiles: backup.tables.athleteProfiles.length,
       athletes: backup.tables.athletes.length,
       athleteCoachNotes: backup.tables.athleteCoachNotes.length,
+      sessionTemplates: countLiveSessionTemplates(backup.tables.sessionTemplates),
     },
   }
 }
@@ -800,6 +852,7 @@ export function parseAppDataExport(value: unknown): AppDataExport {
   const athleteProfiles = parseAthleteProfilesTable(normalized.tables.athleteProfiles)
   const athletes = parseAthletesTable(normalized.tables.athletes ?? [])
   const athleteCoachNotes = parseAthleteCoachNotesTable(normalized.tables.athleteCoachNotes ?? [])
+  const sessionTemplates = parseSessionTemplatesTable(normalized.tables.sessionTemplates ?? [])
 
   ensureChatProposalLinks(chatMessages, coachProposals)
 
@@ -821,8 +874,78 @@ export function parseAppDataExport(value: unknown): AppDataExport {
       athleteProfiles,
       athletes,
       athleteCoachNotes,
+      sessionTemplates,
     },
   }
+}
+
+/** `payload_version smallint` in migration 015. */
+const SMALLINT_MAX = 32767
+
+function isSmallintValue(value: unknown): value is number {
+  return typeof value === 'number'
+    && Number.isInteger(value)
+    && value > 0
+    && value <= SMALLINT_MAX
+}
+
+/**
+ * `created_at` / `updated_at` / `deleted_at` are `bigint` in migration 015.
+ * `Number.isSafeInteger` is the tighter bound and keeps the value round-trippable
+ * through JSON without precision loss.
+ */
+function isBigintTimestamp(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
+}
+
+/**
+ * Template rows are intentionally tolerant about their *contents*: unknown kinds
+ * and payload versions retain their raw payload for forward-compatible
+ * round-trips, and a malformed row is skipped rather than failing the whole
+ * import. Tolerance stops at the column contract of migration 015 — a row this
+ * parser admits must be one the server can accept, otherwise it is stored
+ * locally only to fail every subsequent push with a non-retriable 400.
+ */
+function parseSessionTemplatesTable(value: unknown): StoredSessionTemplate[] {
+  if (!Array.isArray(value)) return []
+
+  const parsed: StoredSessionTemplate[] = []
+  const seenIds = new Set<string>()
+  for (const valueRow of value) {
+    if (!isRecord(valueRow)) continue
+    const { id, name, kind, payloadVersion, createdAt, updatedAt, deletedAt } = valueRow
+    if (
+      typeof id !== 'string' || id.trim() === ''
+      || typeof name !== 'string' || name.trim() === ''
+      || typeof kind !== 'string' || kind.trim() === ''
+      || !isSmallintValue(payloadVersion)
+      || !isBigintTimestamp(createdAt)
+      || !isBigintTimestamp(updatedAt)
+      // `data` is `jsonb not null`: null or a missing key would be rejected by
+      // the server on every push and wedge sync behind a validation error.
+      || !Object.prototype.hasOwnProperty.call(valueRow, 'payload')
+      || valueRow.payload == null
+      || (deletedAt != null && !isBigintTimestamp(deletedAt))
+      || (deletedAt != null && deletedAt !== updatedAt)
+      || seenIds.has(id)
+    ) {
+      continue
+    }
+
+    seenIds.add(id)
+    parsed.push({
+      id,
+      name,
+      kind,
+      payloadVersion,
+      payload: valueRow.payload,
+      createdAt,
+      updatedAt,
+      ...(deletedAt == null ? {} : { deletedAt }),
+    } as StoredSessionTemplate)
+  }
+
+  return parsed
 }
 
 function parseSessionsTable(value: unknown): Session[] {

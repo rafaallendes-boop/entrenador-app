@@ -14,6 +14,8 @@ const table = () => ({
 const dbMock = {
   sessions: table(),
   dayLogs: table(),
+  readinessDaily: table(),
+  whoopWorkouts: table(),
   weekSummaries: table(),
   trainingPlans: table(),
   trainingPlanWeeks: table(),
@@ -22,6 +24,9 @@ const dbMock = {
   coachProposals: table(),
   athleteProfiles: table(),
   athletes: table(),
+  athleteMemberships: table(),
+  athleteCoachNotes: table(),
+  sessionTemplates: table(),
   transaction: vi.fn(async (_mode: string, _tables: unknown[], callback: () => Promise<void>) => {
     await callback()
   }),
@@ -179,6 +184,7 @@ describe('appMaintenance', () => {
     expect(dbMock.chatMessages.clear).toHaveBeenCalled()
     expect(dbMock.coachProposals.clear).toHaveBeenCalled()
     expect(dbMock.athleteProfiles.clear).toHaveBeenCalled()
+    expect(dbMock.sessionTemplates.clear).toHaveBeenCalled()
     expect(Array.from(localStorageState.keys()).filter((key) => (
       key.startsWith('entrenador_') || key.startsWith('coach_') || key.startsWith('entrenador:')
     ))).toEqual([])
@@ -200,5 +206,6 @@ describe('appMaintenance', () => {
     expect(dbMock.chatMessages.clear).not.toHaveBeenCalled()
     expect(dbMock.coachProposals.clear).not.toHaveBeenCalled()
     expect(dbMock.athleteProfiles.clear).not.toHaveBeenCalled()
+    expect(dbMock.sessionTemplates.clear).not.toHaveBeenCalled()
   })
 })

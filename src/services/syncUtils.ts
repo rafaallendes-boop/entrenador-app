@@ -17,6 +17,7 @@ export type SupabaseTable =
   | 'training_plan_weeks'
   | 'athlete_memberships'
   | 'athlete_coach_notes'
+  | 'session_templates'
 
 // ─── Typed error classification ──────────────────────────────────────────────
 

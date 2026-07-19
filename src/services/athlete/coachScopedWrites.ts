@@ -1,6 +1,7 @@
 import { db } from '../../db/db'
 import { recalculateWeekSummaryCore } from '../../db/queries'
 import type { Session, WeekSummary } from '../../types'
+import type { SessionTemplateExercise, SessionTemplatePayload } from '../../types/sessionTemplate'
 import { fromISO, getWeekStart, toISO } from '../../utils/date'
 import { v4 as uuid } from '../../utils/uuid'
 import {
@@ -22,6 +23,7 @@ import {
   type CoachSessionDraft,
   type CoachSessionPatch,
 } from './coachSessionSerializer'
+import { materializeTemplateSession } from './sessionTemplateSerializer'
 import { ensureWeekHydrated, isWeekHydrated } from './coachPlanningHydration'
 import { resolveAthleteWeekScope, type AthleteWeekScope } from './athleteWeekScope'
 
@@ -61,23 +63,25 @@ function pushChangedSummaries(summaries: WeekSummary[]): void {
   for (const summary of summaries) void pushWeekSummaryForAthlete(summary)
 }
 
-export async function createSessionForAthlete(
+type NewSessionFields = Omit<Session, 'id' | 'athleteId' | 'authoredByRole' | 'createdAt' | 'updatedAt'>
+
+async function createSessionCoreForAthlete(
   ownerAccountId: string,
   athleteId: string,
-  values: CoachSessionDraft,
+  fields: NewSessionFields,
 ): Promise<Session> {
   await assertActiveRosterAthlete(ownerAccountId, athleteId)
   const scope = await resolveAthleteWeekScope(ownerAccountId, athleteId)
   const now = Date.now()
   const session: Session = {
-    ...draftToNewSessionFields(values),
+    ...fields,
     id: uuid(),
     athleteId,
     authoredByRole: scope.includeLegacy ? 'self' : 'coach',
     createdAt: now,
     updatedAt: now,
   }
-  const week = weekOf(values.date)
+  const week = weekOf(fields.date)
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
     await ensureWeekHydrated(ownerAccountId, scope, week)
@@ -117,6 +121,31 @@ export async function createSessionForAthlete(
     }
   }
   throw new Error('La semana cambió mientras guardábamos. Actualizá e intentá de nuevo.')
+}
+
+export async function createSessionForAthlete(
+  ownerAccountId: string,
+  athleteId: string,
+  values: CoachSessionDraft,
+): Promise<Session> {
+  return createSessionCoreForAthlete(ownerAccountId, athleteId, draftToNewSessionFields(values))
+}
+
+export async function createSessionFromTemplateForAthlete(
+  ownerAccountId: string,
+  athleteId: string,
+  payload: SessionTemplatePayload,
+  overlay: {
+    date: string
+    overlayDraft: CoachSessionDraft
+    originalsById: Map<string, SessionTemplateExercise>
+  },
+): Promise<Session> {
+  return createSessionCoreForAthlete(
+    ownerAccountId,
+    athleteId,
+    materializeTemplateSession(payload, overlay),
+  )
 }
 
 export async function updateSessionForAthlete(

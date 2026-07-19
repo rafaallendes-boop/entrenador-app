@@ -1,4 +1,4 @@
-import { addDays, addWeeks } from 'date-fns'
+import { addDays, addWeeks, differenceInCalendarDays } from 'date-fns'
 import type {
   AthleteProfile,
   GoalEvent,
@@ -32,9 +32,6 @@ export interface BuildPlanShellResult {
 }
 
 export const MAX_COMPETITION_PLAN_WEEKS = 12
-
-const DAY_MS = 24 * 60 * 60 * 1000
-const WEEK_MS = 7 * DAY_MS
 
 const INTENT_BY_PHASE: Record<MacroPlanPhase, string> = {
   base: 'Construir base amplia con continuidad y dosis sostenible.',
@@ -124,7 +121,7 @@ function findFirstTrainingDateOnOrAfter(
   const allowedDays = new Set(wizardConfig.trainingDays)
   const start = startOfLocalDay(requestedDate)
   const end = startOfLocalDay(eventDate)
-  const maxLookaheadDays = Math.max(0, Math.ceil((end.getTime() - start.getTime()) / DAY_MS))
+  const maxLookaheadDays = Math.max(0, differenceInCalendarDays(end, start))
 
   for (let i = 0; i <= maxLookaheadDays; i++) {
     const candidate = addDays(start, i)
@@ -167,9 +164,13 @@ export function buildPlanShell(input: BuildPlanShellInput): BuildPlanShellResult
   const firstTrainingDate = findFirstTrainingDateOnOrAfter(requestedStartDate, goalEventDate, wizardConfig)
   const eventWeekStart = getWeekStart(fromISO(goalEvent.date))
   const uncappedFirstWeekStart = getWeekStart(firstTrainingDate)
+  // Calendar days, not elapsed milliseconds: both operands are local midnights,
+  // and a plan spanning a DST change is short (or long) by an hour. Dividing the
+  // raw span by 7*24h and truncating dropped a whole week from every plan that
+  // crossed a spring-forward transition.
   const uncappedTotalWeeks = Math.max(
     1,
-    Math.floor((eventWeekStart.getTime() - uncappedFirstWeekStart.getTime()) / WEEK_MS) + 1,
+    Math.floor(differenceInCalendarDays(eventWeekStart, uncappedFirstWeekStart) / 7) + 1,
   )
   const totalWeeks = Math.min(MAX_COMPETITION_PLAN_WEEKS, uncappedTotalWeeks)
   const firstWeekStart =

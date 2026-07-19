@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 
 import type { AthleteProfile, MacroPlanPhase } from '../../types'
 import {
@@ -67,6 +67,49 @@ describe('macroPlan', () => {
   it('computes weeks remaining by rounding partial weeks up', () => {
     const weeks = computeWeeksRemaining('2026-04-21', new Date('2026-04-08T10:00:00'))
     expect(weeks).toBe(2)
+  })
+
+  describe('conteo de semanas y horario de verano', () => {
+    const originalTz = process.env.TZ
+
+    afterEach(() => {
+      process.env.TZ = originalTz
+    })
+
+    function weeksFrom(refIso: string, eventIso: string): number {
+      const [y, m, d] = refIso.split('-').map(Number)
+      return computeWeeksRemaining(eventIso, new Date(y, m - 1, d, 10))
+    }
+
+    // Santiago atrasa el reloj el 2026-04-04: entre dos medianoches locales hay
+    // una hora de más, y redondear hacia arriba convertía un tramo exacto en una
+    // semana extra.
+    it('no infla el conteo cruzando el atraso de reloj de abril', () => {
+      process.env.TZ = 'America/Santiago'
+      expect(weeksFrom('2026-03-15', '2026-05-10')).toBe(8) // 56 días exactos
+      expect(weeksFrom('2026-03-15', '2026-05-03')).toBe(7) // 49 días exactos
+    })
+
+    it('no pierde una semana cruzando el adelanto de reloj de septiembre', () => {
+      process.env.TZ = 'America/Santiago'
+      expect(weeksFrom('2026-08-16', '2026-10-11')).toBe(8) // 56 días exactos
+    })
+
+    it('sigue redondeando semanas parciales hacia arriba a través del cambio', () => {
+      process.env.TZ = 'America/Santiago'
+      expect(weeksFrom('2026-03-15', '2026-05-12')).toBe(9) // 58 días
+    })
+
+    it('cuenta eventos pasados con el mismo criterio', () => {
+      process.env.TZ = 'America/Santiago'
+      expect(weeksFrom('2026-05-10', '2026-03-15')).toBe(-8)
+    })
+
+    it('da el mismo resultado en una zona sin cambio de hora', () => {
+      process.env.TZ = 'UTC'
+      expect(weeksFrom('2026-03-15', '2026-05-10')).toBe(8)
+      expect(weeksFrom('2026-05-10', '2026-03-15')).toBe(-8)
+    })
   })
 
   it('resolves phases at threshold boundaries', () => {

@@ -3,10 +3,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { Athlete, Session } from '../../../types'
+import { currentWeekStartISO } from '../../../utils/date'
 
 const mocks = vi.hoisted(() => ({
   getWeek: vi.fn(async () => []),
   remove: vi.fn(async () => {}),
+  listTemplates: vi.fn(async () => []),
+  saveTemplate: vi.fn(async () => {}),
+  modal: vi.fn(),
 }))
 vi.mock('../../../services/athlete/coachScopedReads', () => ({
   getWeekSessionsForAthlete: mocks.getWeek,
@@ -21,7 +25,16 @@ vi.mock('../../../services/athlete/coachPlanningHydration', () => ({
 vi.mock('../../../services/athlete/coachScopedWrites', () => ({
   deleteSessionForAthlete: mocks.remove,
 }))
-vi.mock('../CoachSessionModal', () => ({ default: () => <div>Modal sesión</div> }))
+vi.mock('../../../services/athlete/sessionTemplates', () => ({
+  listSessionTemplates: mocks.listTemplates,
+  createSessionTemplateFromSession: mocks.saveTemplate,
+}))
+vi.mock('../CoachSessionModal', () => ({
+  default: (props: unknown) => {
+    mocks.modal(props)
+    return <div>Modal sesión</div>
+  },
+}))
 
 import CoachPlanningPanel from '../CoachPlanningPanel'
 
@@ -68,6 +81,8 @@ describe('CoachPlanningPanel interactions', () => {
     vi.clearAllMocks()
     mocks.getWeek.mockResolvedValue([])
     mocks.remove.mockResolvedValue(undefined)
+    mocks.listTemplates.mockResolvedValue([])
+    mocks.saveTemplate.mockResolvedValue(undefined)
   })
   afterEach(cleanup)
 
@@ -83,6 +98,97 @@ describe('CoachPlanningPanel interactions', () => {
     for (const button of screen.getAllByRole('button', { name: '+ Agregar sesión' })) {
       expect((button as HTMLButtonElement).disabled).toBe(true)
     }
+    expect((screen.getByRole('button', { name: 'Guardar como plantilla' }) as HTMLButtonElement).disabled).toBe(false)
+    for (const button of screen.getAllByRole('button', { name: 'Desde plantilla' })) {
+      expect((button as HTMLButtonElement).disabled).toBe(true)
+    }
+  })
+
+  it('picker vacío informa que todavía no hay plantillas', async () => {
+    mount([], true)
+    await userEvent.click(screen.getAllByRole('button', { name: 'Desde plantilla' })[0])
+    expect(await screen.findByText('Todavía no tenés plantillas guardadas.')).toBeTruthy()
+  })
+
+  it('elegir una plantilla abre el modal con la fecha del día', async () => {
+    const source = {
+      id: 't-1', name: 'Volea', kind: 'session', payloadVersion: 1,
+      payload: { type: 'squash', timeBlock: 'AM', title: 'Volea', durationMin: 60 },
+      createdAt: 1, updatedAt: 1,
+    }
+    mocks.listTemplates.mockResolvedValue([source])
+    mount([], true)
+    await userEvent.click(screen.getAllByRole('button', { name: 'Desde plantilla' })[0])
+    await userEvent.click(await screen.findByRole('button', { name: /Volea/ }))
+    expect(mocks.modal).toHaveBeenCalledWith(expect.objectContaining({
+      defaultDate: currentWeekStartISO(),
+      template: { source },
+    }))
+  })
+
+  it('el picker nunca ofrece incompatibles ni tombstones', async () => {
+    mocks.listTemplates.mockResolvedValue([
+      {
+        id: 'deleted', name: 'Borrada', kind: 'session', payloadVersion: 1,
+        payload: { type: 'squash', timeBlock: 'AM', title: 'Borrada', durationMin: 60 },
+        createdAt: 1, updatedAt: 2, deletedAt: 2,
+      },
+      {
+        id: 'future', name: 'Futura', kind: 'week', payloadVersion: 2,
+        payload: { raw: true }, createdAt: 1, updatedAt: 2,
+      },
+    ])
+    mount([], true)
+    await userEvent.click(screen.getAllByRole('button', { name: 'Desde plantilla' })[0])
+
+    expect(await screen.findByText('Todavía no tenés plantillas guardadas.')).toBeTruthy()
+    expect(screen.queryByText('Borrada')).toBeNull()
+    expect(screen.queryByText('Futura')).toBeNull()
+  })
+
+  it('un fallo al cargar el picker queda visible dentro del diálogo', async () => {
+    mocks.listTemplates.mockRejectedValueOnce(new Error('Biblioteca sin conexión'))
+    mount([], true)
+    await userEvent.click(screen.getAllByRole('button', { name: 'Desde plantilla' })[0])
+    expect((await screen.findByRole('alert')).textContent).toContain('Biblioteca sin conexión')
+    expect(screen.queryByText('Todavía no tenés plantillas guardadas.')).toBeNull()
+  })
+
+  it('guarda una sesión como plantilla con el nombre confirmado', async () => {
+    mount([planned], false)
+    await userEvent.click(screen.getByRole('button', { name: 'Guardar como plantilla' }))
+    const name = screen.getByLabelText('Nombre de plantilla')
+    await userEvent.clear(name)
+    await userEvent.type(name, 'Volea favorita')
+    await userEvent.click(screen.getByRole('button', { name: 'Guardar' }))
+    expect(mocks.saveTemplate).toHaveBeenCalledWith('Volea favorita', planned)
+    expect((await screen.findByRole('status')).textContent).toContain('Plantilla guardada.')
+  })
+
+  it('un fallo al guardar queda visible dentro del diálogo de nombre', async () => {
+    mocks.saveTemplate.mockRejectedValueOnce(new Error('No se pudo persistir'))
+    mount([planned], false)
+    await userEvent.click(screen.getByRole('button', { name: 'Guardar como plantilla' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Guardar' }))
+    expect((await screen.findByRole('alert')).textContent).toContain('No se pudo persistir')
+    expect(screen.getByRole('heading', { name: 'Guardar como plantilla' })).toBeTruthy()
+  })
+
+  it('bloquea cancelar mientras guarda la plantilla', async () => {
+    let release!: () => void
+    mocks.saveTemplate.mockImplementation(() => new Promise<void>((resolve) => { release = resolve }))
+    mount([planned], false)
+    await userEvent.click(screen.getByRole('button', { name: 'Guardar como plantilla' }))
+    const save = screen.getByRole('button', { name: 'Guardar' })
+    fireEvent.click(save)
+    fireEvent.click(save)
+    expect(mocks.saveTemplate).toHaveBeenCalledOnce()
+    const cancel = screen.getByRole('button', { name: 'Cancelar' }) as HTMLButtonElement
+    expect(cancel.disabled).toBe(true)
+    fireEvent.click(cancel)
+    expect(screen.getByRole('heading', { name: 'Guardar como plantilla' })).toBeTruthy()
+    release()
+    await vi.waitFor(() => expect(screen.queryByRole('heading', { name: 'Guardar como plantilla' })).toBeNull())
   })
 
   it('trabajo registrado pide confirmación con el copy destructivo', async () => {
