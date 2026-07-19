@@ -217,6 +217,7 @@ export function buildWeekCreatorStructuredSystemPrompt(): string {
     'Devuelve exactamente una create_week con el targetDate y la cantidad de sesiones solicitados.',
     'Respeta el rango de fechas, días y bloques AM/PM disponibles, deportes permitidos, carga, fatiga y restricciones médicas activas.',
     'Cada sesión debe ser ejecutable y válida según el schema. Si falta o sobra una sesión, o algún campo es inválido, corrígelo antes de responder; no omitas sesiones.',
+    'Para cada sesión entrega sólo los campos base del schema y, si aporta, subtype o runningType. Omite exercises, squashDetails, cyclingDetails, mobilityDetails, intervalStructure, warmup y cooldown: la app los completa y valida localmente.',
     'Sé compacto: evita repetir reglas o narrar tu razonamiento dentro de reason, objective y weekObjectives.',
   ].join('\n')
 }

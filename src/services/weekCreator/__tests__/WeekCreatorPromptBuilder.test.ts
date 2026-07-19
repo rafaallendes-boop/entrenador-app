@@ -136,9 +136,11 @@ describe('buildWeekCreatorPrompt quality blocks', () => {
 
     expect(result.systemPrompt).toContain('responseSchema')
     expect(result.systemPrompt).toContain('restricciones médicas activas')
+    expect(result.systemPrompt).toContain('Omite exercises, squashDetails')
+    expect(result.systemPrompt).toContain('la app los completa y valida localmente')
     expect(result.systemPrompt).not.toContain('primer caracter debe ser "<"')
     expect(result.userPrompt.match(/Contrato de salida obligatorio/g)).toBeNull()
-    expect(result.systemPrompt.length).toBeLessThan(900)
+    expect(result.systemPrompt.length).toBeLessThan(1_100)
   })
 
   it('states the minimum number of double sessions required by the target', () => {

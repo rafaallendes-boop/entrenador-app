@@ -1,7 +1,7 @@
 # Plan de mejora de la generación semanal (`week_creator`)
 
 **Fecha:** 2026-07-16
-**Estado:** Fase 0 cerrada técnicamente con línea base provisional; Fase 1 implementada localmente, pendiente de despliegue y canary de bajo costo.
+**Estado:** Fase 0 cerrada técnicamente con línea base provisional; canary inicial de Fase 1 observado y ajuste de compactación implementado localmente, pendiente de despliegue.
 **Objetivo:** llevar el p95 de una generación semanal completa y accionable a menos de 10 segundos, manteniendo intactas las restricciones médicas, la disponibilidad y la coherencia de carga.
 
 ## Resumen ejecutivo
@@ -368,8 +368,9 @@ Con menos de 20 muestras se reporta smoke, no una conclusión de p95.
 - El system prompt estructurado deja de pedir el wrapper legacy `<actions>` mientras el
   request exige JSON Schema. El schema sigue intacto y pasa a ser la única definición de
   campos.
-- La fixture auditada baja de 11.355 a 9.040 caracteres totales (-20,4%): system prompt de
-  2.635 a 678 (-74,3%), user prompt de 5.232 a 4.874 (-6,8%) y schema sin cambios en 3.488.
+- Después del ajuste post-canary, la fixture auditada queda en 9.278 caracteres totales
+  (-18,3% frente a 11.355): system prompt de 2.635 a 916 (-65,2%), user prompt de 5.232 a
+  4.874 (-6,8%) y schema sin cambios en 3.488.
 - Se mantiene la temperatura, timeout, proveedor, modelo, validación, repair y fallback.
 - Como mejora de producto separada, el máximo configurable sube a ocho y se limita siempre
   a la capacidad real de días + dobles. El fallback determinístico tiene cobertura de ocho
@@ -402,6 +403,30 @@ Cobertura: `src/utils/__tests__/schedule.test.ts` y el nuevo
 La Fase 1 todavía requiere un canary de producción antes de considerarse cerrada. Los cambios
 de cap y prompt se despliegan juntos en esta primera variante local, pero no se mezclan con
 reasoning ni cambio de modelo.
+
+### Canary inicial de Fase 1 — 2026-07-19, 18:56 America/Santiago
+
+La generación terminó como `model_success` al primer intento, sin retry ni fallback y con
+`finishReason=stop`. El cap de 2.500 se propagó correctamente. La configuración efectiva fue
+de siete sesiones (`expectedSessionCount=7`) sobre seis días, lo que corresponde al modo Auto;
+no validó todavía un objetivo explícito de ocho.
+
+| Métrica | Resultado |
+|---|---:|
+| End-to-end | 19.309 ms |
+| Provider / server / auth | 17.878 / 18.497 / 617 ms |
+| Prompt tokens | 2.364 |
+| Completion tokens | 2.174 |
+| Response chars | 7.945 |
+| Repair | 8 cambios, 1 movimiento, 1 descarte |
+
+El resultado fue válido, pero la salida fue mucho más extensa que las muestras anteriores. La
+causa atribuible al cambio local fue que el nuevo system prompt compacto dejó de repetir la
+instrucción previa de omitir detalles anidados que repair hidrata localmente. Se restauró esa
+regla en una sola línea compacta: el proveedor debe omitir `exercises`, `squashDetails`,
+`cyclingDetails`, `mobilityDetails`, intervalos y protocolos. El schema y la validación final
+no cambian. Este ajuste debe observarse en la próxima generación normal; no justifica pagar una
+tanda artificial adicional.
 
 ### 1.1 Ajustar el cap de salida
 
