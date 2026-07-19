@@ -3,18 +3,18 @@ import type {
   SessionTemplateExercise,
   SessionTemplatePayload,
 } from '../../types/sessionTemplate'
+import { sanitizeExerciseLibraryRef } from '../../types/exerciseLibraryRef'
 import { jsonStructurallyEqual } from '../../utils/canonicalJson'
 import { fromISO, getWeekStart, toISO } from '../../utils/date'
 import { v4 as uuid } from '../../utils/uuid'
 import {
   buildCyclingDetailsDraft,
   draftToNewSessionFields,
+  EXERCISE_TYPES,
   resolveSquashTrainingFocus,
   type CoachSessionDraft,
   type CoachSessionPatch,
 } from './coachSessionSerializer'
-
-const EXERCISE_TYPES = ['strength', 'mobility'] as const
 
 function isExerciseType(type: string): boolean {
   return (EXERCISE_TYPES as readonly string[]).includes(type)
@@ -75,6 +75,7 @@ function exerciseToDraft(
     reps: String(exercise.reps),
     weight: exercise.weight,
     notes: exercise.notes,
+    libraryRef: sanitizeExerciseLibraryRef(exercise.libraryRef),
   }
 }
 
@@ -123,14 +124,20 @@ function mergeTemplateExercises(
   if (!drafts?.length) return undefined
   const merged = drafts
     .filter((draft) => draft.name.trim())
-    .map((draft) => structuredClone({
-      ...(originalsById.get(draft.id) ?? {}),
-      name: draft.name.trim(),
-      sets: draft.sets,
-      reps: draft.reps.trim() || '10',
-      weight: draft.weight,
-      notes: draft.notes?.trim() || undefined,
-    }) as SessionTemplateExercise)
+    .map((draft) => {
+      const mergedExercise = structuredClone({
+        ...(originalsById.get(draft.id) ?? {}),
+        name: draft.name.trim(),
+        sets: draft.sets,
+        reps: draft.reps.trim() || '10',
+        weight: draft.weight,
+        notes: draft.notes?.trim() || undefined,
+      }) as SessionTemplateExercise
+      const libraryRef = sanitizeExerciseLibraryRef(draft.libraryRef)
+      if (libraryRef) mergedExercise.libraryRef = libraryRef
+      else delete mergedExercise.libraryRef
+      return mergedExercise
+    })
   return merged.length > 0 ? merged : undefined
 }
 
@@ -216,7 +223,7 @@ export function applyTemplateDraft(
     }
   }
 
-  // SessionForm only edits exercises for strength/mobility. For every other
+  // SessionForm edits exercises for squash/strength/mobility. For every other
   // same-type template the array is opaque rich content and must survive.
   if (isExerciseType(existing.type)) {
     next.exercises = mergeTemplateExercises(draft.exercises, originalsById)
@@ -406,10 +413,16 @@ export function materializeTemplateSession(
     ...richFields,
     date,
     weekStartDate: toISO(getWeekStart(fromISO(date))),
-    exercises: mergedPayload.exercises?.map((exercise) => ({
-      ...structuredClone(exercise),
-      id: uuid(),
-      completed: false,
-    })),
+    exercises: mergedPayload.exercises?.map((exercise) => {
+      const copy = structuredClone(exercise) as Record<string, unknown>
+      delete copy.libraryRef
+      const libraryRef = sanitizeExerciseLibraryRef(exercise.libraryRef)
+      return {
+        ...copy,
+        id: uuid(),
+        completed: false,
+        ...(libraryRef ? { libraryRef } : {}),
+      }
+    }),
   } as Omit<Session, 'id' | 'athleteId' | 'authoredByRole' | 'createdAt' | 'updatedAt'>
 }

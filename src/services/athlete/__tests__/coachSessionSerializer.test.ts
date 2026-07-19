@@ -167,6 +167,21 @@ describe('applyCoachSessionPatch con cambio de tipo', () => {
     })
     expect(result.exercises?.[0].warmupSets).toHaveLength(1)
   })
+
+  it('conserva metadata de ejercicios al cambiar de strength a squash', () => {
+    const strength = {
+      ...planBuilderSession, type: 'strength', squashDetails: undefined, subtype: undefined,
+    } as unknown as Session
+    const result = applyCoachSessionPatch(strength, {
+      type: 'squash',
+      subtype: 'training',
+      exercises: [{ id: 'e1', name: 'Sentadilla', sets: 5, reps: '5' }],
+    })
+    expect(result.exercises?.[0]).toMatchObject({
+      completed: true, group: 'legs', targetPercent1RM: 80,
+    })
+    expect(result.squashDetails).toBeDefined()
+  })
 })
 
 describe('sessionToDraft y draftToPatch', () => {
@@ -195,6 +210,22 @@ describe('sessionToDraft y draftToPatch', () => {
     expect(patch.objective).toBeUndefined()
   })
 
+  it('trata exercises vacío y ausente como equivalentes al calcular un patch', () => {
+    const squashWithoutExercises = {
+      ...planBuilderSession,
+      exercises: undefined,
+    } as Session
+    const converted = sessionToDraft(squashWithoutExercises)
+    expect(draftToPatch({ ...converted, exercises: [] }, squashWithoutExercises)).toEqual({})
+  })
+
+  it('mantiene exercises vacío en el patch cuando elimina una lista existente', () => {
+    const converted = sessionToDraft(planBuilderSession)
+    expect(draftToPatch({ ...converted, exercises: [] }, planBuilderSession)).toEqual({
+      exercises: [],
+    })
+  })
+
   it('con cambio de tipo emite el draft completo y conserva metadata no editable al aplicar', () => {
     const strength = {
       ...planBuilderSession, type: 'strength', subtype: undefined, squashDetails: undefined,
@@ -208,5 +239,64 @@ describe('sessionToDraft y draftToPatch', () => {
       completed: true, group: 'legs', targetPercent1RM: 80,
     })
     expect(result.exercises?.[0].warmupSets).toEqual(strength.exercises?.[0].warmupSets)
+  })
+})
+
+describe('libraryRef en serializer de sesión', () => {
+  const ref = { source: 'squash_drill', id: 'boast_drive' } as const
+  const refSession = {
+    id: 's-ref', athleteId: 'ath_m', date: '2026-07-19', weekStartDate: '2026-07-13',
+    timeBlock: 'AM', type: 'strength', status: 'planned', title: 'Fuerza', durationMin: 60,
+    source: 'coach', authoredByRole: 'coach', createdAt: 1, updatedAt: 1,
+    exercises: [{
+      id: 'e1', name: 'Boast + drive', sets: 3, reps: '10', completed: true, libraryRef: ref,
+    }],
+  } as Session
+
+  it('sessionToDraft conserva libraryRef del ejercicio', () => {
+    expect(sessionToDraft(refSession).exercises?.[0].libraryRef).toEqual(ref)
+  })
+
+  it('draftToNewSessionFields materializa libraryRef y no lo inventa', () => {
+    const fields = draftToNewSessionFields({
+      ...draft,
+      type: 'strength',
+      subtype: undefined,
+      exercises: [
+        { id: 'e1', name: 'Boast + drive', sets: 3, reps: '10', libraryRef: ref },
+        { id: 'e2', name: 'Libre', sets: 3, reps: '10' },
+      ],
+    })
+    expect(fields.exercises?.[0].libraryRef).toEqual(ref)
+    expect(fields.exercises?.[1].libraryRef).toBeUndefined()
+  })
+
+  it('applyCoachSessionPatch borra libraryRef cuando el draft lo limpió y conserva prior fields', () => {
+    const patched = applyCoachSessionPatch(refSession, {
+      exercises: [{ id: 'e1', name: 'Renombrado a mano', sets: 3, reps: '10' }],
+    })
+    expect(patched.exercises?.[0].libraryRef).toBeUndefined()
+    expect(patched.exercises?.[0].completed).toBe(true)
+  })
+})
+
+describe('exercises en sesiones de squash', () => {
+  it('materializa exercises para squash y mantiene squashDetails', () => {
+    const fields = draftToNewSessionFields({
+      ...draft,
+      exercises: [{ id: 'e1', name: 'Boast + drive', sets: 3, reps: '10' }],
+    })
+    expect(fields.exercises).toHaveLength(1)
+    expect(fields.squashDetails).toBeDefined()
+  })
+
+  it('una edición same-type con exercises no toca drills/blocks ricos', () => {
+    const patched = applyCoachSessionPatch(planBuilderSession, {
+      exercises: [{ id: 'x1', name: 'Accesorio', sets: 3, reps: '10' }],
+    })
+    expect(patched.exercises).toEqual([expect.objectContaining({ name: 'Accesorio' })])
+    expect(patched.squashDetails?.drills).toEqual(planBuilderSession.squashDetails?.drills)
+    expect(patched.squashDetails?.blocks).toEqual(planBuilderSession.squashDetails?.blocks)
+    expect(patched.warmup).toEqual(planBuilderSession.warmup)
   })
 })

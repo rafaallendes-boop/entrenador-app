@@ -109,6 +109,7 @@ export default function CoachSessionModal({
           defaultDate={defaultDate}
           heading={session ? 'Editar sesion' : 'Nueva sesion'}
           submitLabel={session ? 'Guardar cambios' : 'Agregar sesión'}
+          allowMatchResult={false}
           onSubmit={handleSubmit}
           onCancel={requestClose}
         />

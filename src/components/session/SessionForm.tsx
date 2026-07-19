@@ -1,5 +1,5 @@
 import { useRef, useState, type FormEvent } from 'react'
-import { Plus, Trash2, X } from 'lucide-react'
+import { BookOpen, Plus, Trash2, X } from 'lucide-react'
 import { SESSION_TYPE_CONFIG } from '../../constants/sessionTypes'
 import type {
   MatchResult,
@@ -9,8 +9,17 @@ import type {
   TimeBlock,
 } from '../../types'
 import type { CoachSessionDraft } from '../../services/athlete/coachSessionSerializer'
+import { EXERCISE_TYPES } from '../../services/athlete/coachSessionSerializer'
+import {
+  getCatalogForSport,
+  toLibraryRef,
+  type CatalogEntry,
+} from '../../services/training/coachExerciseCatalog'
+import type { ExerciseLibraryRef } from '../../types/exerciseLibraryRef'
 import { todayISO } from '../../utils/date'
 import { v4 as uuid } from '../../utils/uuid'
+import ExerciseLibraryBrowser from './ExerciseLibraryBrowser'
+import ExerciseNameInput from './ExerciseNameInput'
 
 export interface SessionFormProps {
   initialValues?: CoachSessionDraft
@@ -20,6 +29,7 @@ export interface SessionFormProps {
   submitLabel: string
   mode?: 'session' | 'template'
   initialName?: string
+  allowMatchResult?: boolean
   onSubmit: (values: CoachSessionDraft, meta?: { templateName: string }) => Promise<void>
   onCancel: () => void
 }
@@ -31,7 +41,16 @@ interface ExerciseDraft {
   reps: string
   weight: string
   notes: string
+  libraryRef?: ExerciseLibraryRef
+  touched: {
+    sets: boolean
+    reps: boolean
+    weight: boolean
+    notes: boolean
+  }
 }
+
+type EditableExerciseField = 'name' | 'sets' | 'reps' | 'weight' | 'notes'
 
 const SESSION_TYPES: SessionType[] = ['squash', 'running', 'cycling', 'strength', 'mobility', 'recovery']
 const RUNNING_TYPES: Array<{ value: RunningType; label: string }> = [
@@ -62,7 +81,13 @@ const TYPE_LABELS: Record<SessionType, string> = {
 }
 
 const emptyExercise = (): ExerciseDraft => ({
-  id: uuid(), name: '', sets: '3', reps: '10', weight: '', notes: '',
+  id: uuid(),
+  name: '',
+  sets: '3',
+  reps: '10',
+  weight: '',
+  notes: '',
+  touched: { sets: false, reps: false, weight: false, notes: false },
 })
 const optionalNumber = (value: string): number | undefined => {
   if (!value.trim()) return undefined
@@ -78,6 +103,7 @@ export default function SessionForm({
   submitLabel,
   mode = 'session',
   initialName,
+  allowMatchResult = true,
   onSubmit,
   onCancel,
 }: SessionFormProps) {
@@ -116,13 +142,17 @@ export default function SessionForm({
       reps: exercise.reps,
       weight: String(exercise.weight ?? ''),
       notes: exercise.notes ?? '',
+      libraryRef: exercise.libraryRef,
+      touched: { sets: true, reps: true, weight: true, notes: true },
     })) ?? []
   ))
+  const [libraryOpen, setLibraryOpen] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const submittingRef = useRef(false)
 
-  const showExercises = type === 'strength' || type === 'mobility'
+  const showExercises = EXERCISE_TYPES.includes(type)
+  const catalogEnabled = getCatalogForSport(type).length > 0
   const showRunningFields = type === 'running' || type === 'cycling'
   const isSquashMatch = !isTemplate && type === 'squash' && (squashSubtype === 'match' || squashSubtype === 'competitive')
   const showLocation = type === 'squash' || type === 'running' || type === 'cycling'
@@ -134,7 +164,7 @@ export default function SessionForm({
     setType(nextType)
     setTitle(nextTitle)
     if (isTemplate && !nameTouched) setTemplateName(nextTitle)
-    if (nextType !== 'strength' && nextType !== 'mobility') setExercises([])
+    if (!EXERCISE_TYPES.includes(nextType)) setExercises([])
     if (nextType !== 'running' && nextType !== 'cycling') {
       setRunningType('z2')
       setPaceMin('')
@@ -167,10 +197,45 @@ export default function SessionForm({
     }
   }
 
-  const updateExercise = (id: string, field: keyof ExerciseDraft, value: string) => {
-    setExercises((current) => current.map((exercise) => (
-      exercise.id === id ? { ...exercise, [field]: value } : exercise
-    )))
+  const updateExercise = (id: string, field: EditableExerciseField, value: string) => {
+    setExercises((current) => current.map((exercise) => {
+      if (exercise.id !== id) return exercise
+      if (field === 'name') return { ...exercise, name: value, libraryRef: undefined }
+      return {
+        ...exercise,
+        [field]: value,
+        touched: { ...exercise.touched, [field]: true },
+      }
+    }))
+  }
+
+  const applyCatalogEntry = (id: string, entry: CatalogEntry) => {
+    setExercises((current) => current.map((exercise) => {
+      if (exercise.id !== id) return exercise
+      return {
+        ...exercise,
+        name: entry.name,
+        libraryRef: toLibraryRef(entry),
+        sets: exercise.touched.sets
+          ? exercise.sets
+          : entry.defaults.sets !== undefined ? String(entry.defaults.sets) : exercise.sets,
+        reps: exercise.touched.reps ? exercise.reps : entry.defaults.reps ?? exercise.reps,
+        notes: exercise.touched.notes ? exercise.notes : entry.defaults.notes ?? '',
+      }
+    }))
+  }
+
+  const addFromCatalog = (entry: CatalogEntry) => {
+    setExercises((current) => [...current, {
+      id: uuid(),
+      name: entry.name,
+      sets: entry.defaults.sets !== undefined ? String(entry.defaults.sets) : '3',
+      reps: entry.defaults.reps ?? '10',
+      weight: '',
+      notes: entry.defaults.notes ?? '',
+      libraryRef: toLibraryRef(entry),
+      touched: { sets: false, reps: false, weight: false, notes: false },
+    }])
   }
 
   const handleSubmit = async (event: FormEvent) => {
@@ -210,6 +275,7 @@ export default function SessionForm({
               reps: exercise.reps.trim() || '10',
               weight: optionalNumber(exercise.weight),
               notes: exercise.notes.trim() || undefined,
+              libraryRef: exercise.libraryRef,
             }))
         : undefined,
     }
@@ -230,7 +296,8 @@ export default function SessionForm({
   }
 
   return (
-    <form onSubmit={handleSubmit}>
+    <>
+      <form onSubmit={handleSubmit}>
       <div className="flex justify-center pb-1 pt-3 md:hidden">
         <div className="h-1 w-10 rounded-full bg-surface-border" />
       </div>
@@ -380,13 +447,17 @@ export default function SessionForm({
           {isSquashMatch && (
             <div className="space-y-3 rounded-2xl border border-surface-border bg-surface-raised/60 p-3">
               <label className="block text-xs font-medium uppercase tracking-wider text-ink-muted">Rival<input aria-label="Rival" type="text" value={opponent} onChange={(event) => setOpponent(event.target.value)} className="mt-2 w-full rounded-xl border border-surface-border bg-surface px-3 py-2.5 text-sm text-ink" /></label>
-              <div className="flex gap-2">
-                {MATCH_RESULTS.map((result) => <button type="button" key={result.value} aria-pressed={matchResult === result.value} onClick={() => setMatchResult((current) => current === result.value ? '' : result.value)} className="rounded-full border px-3 py-1.5 text-xs">{result.label}</button>)}
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <label className="text-xs uppercase text-ink-muted">Games ganados<input aria-label="Games ganados" type="number" min={0} max={5} value={gamesWon} onChange={(event) => setGamesWon(event.target.value)} className="mt-2 w-full rounded-xl border bg-surface px-3 py-2" /></label>
-                <label className="text-xs uppercase text-ink-muted">Games perdidos<input aria-label="Games perdidos" type="number" min={0} max={5} value={gamesLost} onChange={(event) => setGamesLost(event.target.value)} className="mt-2 w-full rounded-xl border bg-surface px-3 py-2" /></label>
-              </div>
+              {allowMatchResult && (
+                <>
+                  <div className="flex gap-2">
+                    {MATCH_RESULTS.map((result) => <button type="button" key={result.value} aria-pressed={matchResult === result.value} onClick={() => setMatchResult((current) => current === result.value ? '' : result.value)} className="rounded-full border px-3 py-1.5 text-xs">{result.label}</button>)}
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <label className="text-xs uppercase text-ink-muted">Games ganados<input aria-label="Games ganados" type="number" min={0} max={5} value={gamesWon} onChange={(event) => setGamesWon(event.target.value)} className="mt-2 w-full rounded-xl border bg-surface px-3 py-2" /></label>
+                    <label className="text-xs uppercase text-ink-muted">Games perdidos<input aria-label="Games perdidos" type="number" min={0} max={5} value={gamesLost} onChange={(event) => setGamesLost(event.target.value)} className="mt-2 w-full rounded-xl border bg-surface px-3 py-2" /></label>
+                  </div>
+                </>
+              )}
             </div>
           )}
 
@@ -403,13 +474,28 @@ export default function SessionForm({
             <div>
               <div className="mb-2 flex items-center justify-between">
                 <span className="text-xs font-medium uppercase text-ink-muted">{type === 'mobility' ? 'Ejercicios de movilidad' : 'Ejercicios'}</span>
-                <button type="button" onClick={() => setExercises((current) => [...current, emptyExercise()])} className="flex items-center gap-1 text-xs text-brand-light"><Plus size={12} /> Añadir</button>
+                <div className="flex flex-wrap items-center justify-end gap-3">
+                  {catalogEnabled && (
+                    <button type="button" onClick={() => setLibraryOpen(true)} className="flex items-center gap-1 text-xs text-brand-light"><BookOpen size={12} /> Agregar desde biblioteca</button>
+                  )}
+                  <button type="button" onClick={() => setExercises((current) => [...current, emptyExercise()])} className="flex items-center gap-1 text-xs text-brand-light"><Plus size={12} /> Añadir</button>
+                </div>
               </div>
               <div className="space-y-3">
                 {exercises.map((exercise, index) => (
                   <div key={exercise.id} className="space-y-2 rounded-xl bg-surface-raised p-3">
                     <div className="flex gap-2">
-                      <input aria-label={`Ejercicio ${index + 1}`} value={exercise.name} onChange={(event) => updateExercise(exercise.id, 'name', event.target.value)} className="flex-1 rounded-lg border bg-surface px-2.5 py-1.5" />
+                      {catalogEnabled ? (
+                        <ExerciseNameInput
+                          index={index}
+                          value={exercise.name}
+                          sessionType={type}
+                          onChangeText={(text) => updateExercise(exercise.id, 'name', text)}
+                          onSelectEntry={(entry) => applyCatalogEntry(exercise.id, entry)}
+                        />
+                      ) : (
+                        <input aria-label={`Ejercicio ${index + 1}`} value={exercise.name} onChange={(event) => updateExercise(exercise.id, 'name', event.target.value)} className="flex-1 rounded-lg border bg-surface px-2.5 py-1.5" />
+                      )}
                       <button type="button" aria-label={`Eliminar ejercicio ${index + 1}`} onClick={() => setExercises((current) => current.filter((item) => item.id !== exercise.id))}><Trash2 size={14} /></button>
                     </div>
                     <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
@@ -434,6 +520,14 @@ export default function SessionForm({
           {isSubmitting ? 'Guardando…' : submitLabel}
         </button>
       </div>
-    </form>
+      </form>
+      {libraryOpen && (
+        <ExerciseLibraryBrowser
+          sessionType={type}
+          onAdd={addFromCatalog}
+          onClose={() => setLibraryOpen(false)}
+        />
+      )}
+    </>
   )
 }

@@ -1,3 +1,5 @@
+import type { ExerciseLibraryRef } from './exerciseLibraryRef'
+
 // ─── AI provider ─────────────────────────────────────────────────────────────
 
 /** Which AI provider generated a coach response. */
@@ -164,6 +166,7 @@ export interface Exercise {
   targetPercent1RM?: number    // strength: target intensity as % of reference 1RM
   targetRpe?: number           // strength: fallback target effort when no 1RM available (1-10)
   warmupSets?: WarmupSet[]     // strength: approach sets before the working set
+  libraryRef?: ExerciseLibraryRef // optional origin in the curated exercise libraries
 }
 
 export interface WarmupSet {

@@ -4,7 +4,7 @@
 App web de entrenamiento para squash, running y fuerza. Marca pública: **RallyIQ**.
 Stack: React + TypeScript + Vite + Tailwind + Dexie (local-first) + Supabase (sync) + Google OAuth.
 Deploy en Netlify. Usuario principal: Rafael Allendes (squash competitivo, masters).
-Etapa: preparando piloto premium acompañado (1-3 clientes fundadores) + Coach Mode F2-lite.
+Etapa: preparando piloto premium acompañado (1-3 clientes fundadores). Coach Mode F2-lite y Coach Workspace ya operativos; los bloqueantes restantes son legales/operacionales, no de core.
 
 ## Comandos clave
 - Dev: `./start.sh` o `npm run dev`
@@ -17,6 +17,8 @@ Etapa: preparando piloto premium acompañado (1-3 clientes fundadores) + Coach M
 - `src/pages/` — vistas principales
 - `src/services/` — lógica de negocio (AI, sync, notificaciones, PDF, export)
 - `src/services/athlete/` — athlete scope: `activeAthlete.ts` (holders active/self), `activeScopeFilter.ts` (política de lectura + estampado), `athleteSelection.ts`, `hydrateActiveAthlete.ts`, `effectiveAthleteKey.ts`, `readScope.ts`
+- `src/services/athlete/` (coach): `coachScopedReads.ts` / `coachScopedWrites.ts` (lectura/escritura por atleta explícito sin cambiar scope activo), `coachPlanningHydration.ts`, `sessionTemplates.ts` + `sessionTemplateSerializer.ts` (Biblioteca), `managedAthletes.ts`, `switchActiveAthlete.ts`, `membershipCache.ts` / `claimGate.ts` (two-sided)
+- `src/services/training/` — librerías curadas de drills/ejercicios + `coachExerciseCatalog.ts` (catálogo unificado para el picker del coach)
 - `src/store/` — estado global con Zustand
 - `src/types/` — tipos compartidos
 - `src/utils/` — helpers
@@ -25,24 +27,29 @@ Etapa: preparando piloto premium acompañado (1-3 clientes fundadores) + Coach M
 - `supabase/00X_*.sql` — migraciones remotas numeradas, de aplicación manual
 
 ## Estado actual del producto
-Ver `PROJECT_REVIEW_AND_ROADMAP.md` para el estado completo. Actualizado: 2026-07-10.
-Suite: 184 archivos / 1292 tests. Lint OK, build OK.
+Ver `PROJECT_REVIEW_AND_ROADMAP.md` para el estado completo. Actualizado: 2026-07-19.
+Suite: 259 archivos / 1794 tests. Lint OK.
+Migraciones remotas hasta `015`. Dexie local en **v18**.
 El chunk más pesado es `pdf.worker.min` — ya optimizado, no tocar sin razón.
 
 Bloques recientes relevantes:
 - **Athlete scope foundation** (`007`): tabla `athletes`, `athlete_id` backfilleado, hidratación de atleta activo, flag `VITE_ATHLETE_SCOPE` (off).
-- **F2 data prereqs**: Dexie **v14** con únicos compuestos `[athleteId+date]` / `[athleteId+weekStartDate]`; merges/import/export athlete-aware.
-- **008b write path**: handler reactivo de `23505` (`reconcileNaturalKeyConflict`) commiteado y aplicado en prod; mantener `008a` como preflight operativo antes de futuros cambios de contrato.
-- **Coach F2-lite completo**: política legacy self-only, lecturas scoped, perfiles multi-atleta, roster, switcher y atletas gestionados ya desplegados.
-- **Whoop v1** (`011`): Dexie **v15** `readinessDaily`, OAuth server-side, sync/cron, tarjeta de readiness y prefill editable de check-in.
-- **Whoop Workout Auto-Complete** (`012`): Dexie **v16** `whoopWorkouts`, reconciliacion server/client, matcher self-only con idempotencia durable y badge de sesion.
-- **Coach roster management + Planificacion read-only** (2026-07-14): archivar/restaurar/borrado duro de gestionados con tombstone durable, barrera single-tab, supresion de cola y purga transaccional; `coachScopedReads` hidrata y lee una semana por atleta explicito sin cambiar el scope activo.
+- **F2 data prereqs**: Dexie v14 con únicos compuestos `[athleteId+date]` / `[athleteId+weekStartDate]`; merges/import/export athlete-aware.
+- **008b write path**: handler reactivo de `23505` (`reconcileNaturalKeyConflict`) aplicado en prod; mantener `008a` como preflight operativo antes de futuros cambios de contrato.
+- **Coach F2-lite completo** (`009`, `010`): política legacy self-only, lecturas scoped, perfiles multi-atleta, roster, switcher y atletas gestionados desplegados.
+- **Whoop v1** (`011`): Dexie v15 `readinessDaily`, OAuth server-side, sync/cron, tarjeta de readiness y prefill editable de check-in. Aplicado en prod.
+- **Whoop Workout Auto-Complete** (`012`): Dexie v16 `whoopWorkouts`, reconciliación server/client, matcher self-only con idempotencia durable y badge de sesión. Aplicado en prod.
+- **Two-sided foundation** (`013a/b/c`): `athlete_memberships`, invites y RLS v2 en código (`membershipCache.ts`, `claimGate.ts`).
+- **Plan generation attempts** (`014`): persistencia y endurecimiento de telemetría del plan builder async.
+- **Coach Workspace** (2026-07-13 a 2026-07-19): `/coach` con Resumen, Alumnos, Planificación y Biblioteca; Asistente IA sigue como placeholder. Incluye roster management (archivar/restaurar/borrado duro con tombstone durable, barrera single-tab, supresión de cola y purga transaccional) y edición de sesiones multi-atleta.
+- **Biblioteca de plantillas** (`015`, Dexie **v18**, backup v4): plantillas account-scoped con soft-delete por tombstone, payload allowlisted y sync Supabase por fila con LWW/delete-wins. `015` aplicado y bundle desplegado en producción; queda smoke autenticado.
+- **Coach exercise catalog picker** (2026-07-19): `coachExerciseCatalog.ts` unifica drills de squash y ejercicios de fuerza; typeahead + explorador en `SessionForm`; `libraryRef` como metadata opcional sanitizada en sesiones, plantillas y backup/import. Sin migraciones.
 
 ## Prioridades abiertas (en orden)
-1. Aplicar `011`, deploy y smoke end-to-end de Whoop; enlazar consentimiento biométrico antes de terceros.
-2. Superficie pública + rutas legales + consentimiento + smoke (piloto premium, ver roadmap).
-3. Aplicar `012`, reconectar Whoop para `read:workout` y smokear el auto-complete; SP1a queda reservado para `013+`/Dexie v17+.
-4. QA deportiva: 3 planes arquetipo como atletas gestionados.
+1. Smokear Biblioteca + Planificación autenticadas en producción (`015` y deploy ya aplicados) e incluir el catálogo/picker tras este push.
+2. Consentimiento in-app (términos/privacidad/IA) + consentimiento biométrico antes de conectar Whoop para terceros; revisión jurídica formal en paralelo.
+3. QA deportiva: 3 planes arquetipo como atletas gestionados y checklist manual de revisión.
+4. Operación del piloto premium: oferta cerrada, soporte, reembolso, primer cliente onboardeado.
 5. Validación operativa real de sync (conflictos concurrentes, recovery multi-dispositivo).
 
 ## Reglas del proyecto
@@ -52,8 +59,9 @@ Bloques recientes relevantes:
   - Toda creación local de esas filas se estampa con `withActiveAthleteStamp`.
   - En sync, el fallback legacy se ancla a `getSelfAthleteId()`, nunca al atleta activo.
   - `isInAthleteScope` (effectiveAthleteKey) es para delete-scoping de sync; para lecturas usar `activeScopeFilter`.
-- El modelo local es Dexie (**v17**) — cualquier cambio de schema requiere migración + test de upgrade real (fake-indexeddb ya instalado; patrón: `db.close(); await db.delete(); await db.open()` por test).
-- `athlete_profiles` remoto tiene UNIQUE por `user_id` (`002`) — **no** crear un segundo perfil por cuenta hasta aplicar la migración `009` (mini expand/contract, ver spec F2-lite §3.2).
+- El modelo local es Dexie (**v18**) — cualquier cambio de schema requiere migración + test de upgrade real (fake-indexeddb ya instalado; patrón: `db.close(); await db.delete(); await db.open()` por test).
+- Las migraciones remotas son de **aplicación manual**: escribir el `.sql` numerado no es aplicarlo. Antes de asumir que una tabla existe en prod, confirmar el rollout con el owner.
+- Coach: las lecturas/escrituras por atleta explícito van por `coachScopedReads`/`coachScopedWrites` — nunca cambiando el atleta activo para leer la semana de otro.
 - No modificar `promptBuilder.ts` sin revisar el contexto completo del coach.
 - Sync con Supabase ya está implementado — no duplicar lógica de sync.
 - No agregar dependencias pesadas sin revisar impacto en bundle.

@@ -29,6 +29,16 @@ const session = {
   subtype: 'training',
 } as Session
 
+const matchSession = {
+  ...session,
+  title: 'Partido',
+  subtype: 'match',
+  opponent: 'Juan',
+  matchResult: 'win',
+  gamesWon: 3,
+  gamesLost: 1,
+} as Session
+
 describe('CoachSessionModal', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -79,6 +89,21 @@ describe('CoachSessionModal', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }))
     expect(mocks.update).toHaveBeenCalledWith('user-1', 'ath_m', 's-1', { title: 'Táctica' })
     expect(onSaved).toHaveBeenCalledOnce()
+  })
+
+  it('el editor del coach no ofrece campos de resultado de partido', () => {
+    render(
+      <CoachSessionModal
+        ownerAccountId="user-1"
+        athleteId="ath_m"
+        defaultDate="2026-07-19"
+        session={matchSession}
+        onClose={vi.fn()}
+        onSaved={vi.fn()}
+      />,
+    )
+    expect(screen.queryByLabelText('Rival')).not.toBeNull()
+    expect(screen.queryByLabelText('Games ganados')).toBeNull()
   })
 
   it('aplica una plantilla sin consultar perfil y conserva el payload rico', async () => {

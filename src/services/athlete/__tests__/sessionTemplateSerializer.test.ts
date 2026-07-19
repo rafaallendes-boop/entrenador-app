@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Session } from '../../../types'
+import type { SessionTemplatePayload } from '../../../types/sessionTemplate'
 import {
   applyTemplateDraft,
   applyTemplatePatch,
@@ -328,5 +329,78 @@ describe('materializeTemplateSession', () => {
     })
     expect(fields.warmup).toBeDefined()
     expect(fields.cooldown).toBeDefined()
+  })
+})
+
+describe('libraryRef en plantillas', () => {
+  const ref = { source: 'strength_exercise', id: 'back_squat' } as const
+  const payload = {
+    type: 'strength', timeBlock: 'AM', title: 'Fuerza', durationMin: 60,
+    exercises: [
+      { name: 'Sentadilla', sets: 4, reps: '5', libraryRef: ref },
+      { name: 'Corrupto', sets: 3, reps: '10', libraryRef: { source: 'unknown', id: 'x' } },
+    ],
+  } as unknown as SessionTemplatePayload
+
+  it('templateToDraft sanitiza: válido pasa, corrupto se descarta sin perder el ejercicio', () => {
+    const { draft } = templateToDraft(payload, '2026-07-21')
+    expect(draft.exercises?.[0].libraryRef).toEqual(ref)
+    expect(draft.exercises?.[1].libraryRef).toBeUndefined()
+    expect(draft.exercises?.[1].name).toBe('Corrupto')
+  })
+
+  it('applyTemplateDraft respeta el ref del draft (borrado no resucita el original)', () => {
+    const { draft, originalsById } = templateToDraft(payload, '2026-07-21')
+    const edited = {
+      ...draft,
+      exercises: [
+        { ...draft.exercises![0], name: 'Renombrada', libraryRef: undefined },
+        draft.exercises![1],
+      ],
+    }
+    const next = applyTemplateDraft(payload, edited, originalsById)
+    expect(next.exercises?.[0].libraryRef).toBeUndefined()
+  })
+
+  it('materializeTemplateSession copia refs válidos, descarta corruptos y regenera ids', () => {
+    const { draft, originalsById } = templateToDraft(payload, '2026-07-21')
+    const fields = materializeTemplateSession(payload, {
+      date: '2026-07-21', overlayDraft: draft, originalsById,
+    })
+    expect(fields.exercises?.[0].libraryRef).toEqual(ref)
+    expect(fields.exercises?.[1].libraryRef).toBeUndefined()
+    expect(fields.exercises?.[0].id).toBeTruthy()
+  })
+
+  it('sessionToTemplatePayload conserva libraryRef mediante copia profunda', () => {
+    const session = {
+      id: 's1', date: '2026-07-19', weekStartDate: '2026-07-13', timeBlock: 'AM',
+      type: 'strength', status: 'planned', title: 'Fuerza', durationMin: 60,
+      createdAt: 1, updatedAt: 1,
+      exercises: [{
+        id: 'e1', name: 'Sentadilla', sets: 4, reps: '5', completed: false,
+        libraryRef: { ...ref },
+      }],
+    } as Session
+    const template = sessionToTemplatePayload(session)
+    session.exercises![0].libraryRef!.id = 'mutated'
+    expect(template.exercises?.[0].libraryRef).toEqual({
+      source: 'strength_exercise', id: 'back_squat',
+    })
+  })
+})
+
+describe('exercises de squash en plantillas', () => {
+  it('edita exercises de squash sin alterar drills y blocks ricos', () => {
+    const payload = sessionToTemplatePayload(richSession)
+    const { draft, originalsById } = templateToDraft(payload, '2026-07-21')
+    const next = applyTemplateDraft(payload, {
+      ...draft,
+      exercises: [{ ...draft.exercises![0], name: 'Accesorio editado' }],
+    }, originalsById)
+
+    expect(next.exercises?.[0].name).toBe('Accesorio editado')
+    expect(next.squashDetails?.drills).toEqual(payload.squashDetails?.drills)
+    expect(next.squashDetails?.blocks).toEqual(payload.squashDetails?.blocks)
   })
 })

@@ -11,6 +11,7 @@ import type {
   SquashTrainingFocus,
   TimeBlock,
 } from '../../types'
+import type { ExerciseLibraryRef } from '../../types/exerciseLibraryRef'
 import { fromISO, getWeekStart, toISO } from '../../utils/date'
 import { generateDefaultProtocols } from '../trainingProtocols'
 
@@ -43,6 +44,7 @@ export interface CoachSessionDraft {
     reps: string
     weight?: number
     notes?: string
+    libraryRef?: ExerciseLibraryRef
   }>
 }
 
@@ -80,6 +82,7 @@ export function sessionToDraft(session: Session): CoachSessionDraft {
       reps: String(exercise.reps),
       weight: exercise.weight,
       notes: exercise.notes,
+      libraryRef: exercise.libraryRef,
     })),
   }
 }
@@ -88,12 +91,22 @@ function structurallyEqual(a: unknown, b: unknown): boolean {
   return JSON.stringify(a) === JSON.stringify(b)
 }
 
+function exercisesForComparison(
+  exercises: CoachSessionDraft['exercises'],
+): CoachSessionDraft['exercises'] {
+  return exercises?.length ? exercises : undefined
+}
+
 export function draftToPatch(draft: CoachSessionDraft, original: Session): CoachSessionPatch {
   if (draft.type !== original.type) return { ...draft }
   const originalDraft = sessionToDraft(original)
   const patch: CoachSessionPatch = {}
   for (const key of Object.keys(draft) as Array<keyof CoachSessionDraft>) {
-    if (!structurallyEqual(draft[key], originalDraft[key])) {
+    const nextValue = key === 'exercises' ? exercisesForComparison(draft.exercises) : draft[key]
+    const originalValue = key === 'exercises'
+      ? exercisesForComparison(originalDraft.exercises)
+      : originalDraft[key]
+    if (!structurallyEqual(nextValue, originalValue)) {
       Object.assign(patch, { [key]: draft[key] })
     }
   }
@@ -175,7 +188,7 @@ export function buildSquashDetailsDraft(subtype: SquashSubtype, objective: strin
   }
 }
 
-const EXERCISE_TYPES: SessionType[] = ['strength', 'mobility']
+export const EXERCISE_TYPES: SessionType[] = ['squash', 'strength', 'mobility']
 
 function buildTypeDefaults(
   draft: Pick<CoachSessionDraft, 'type' | 'subtype' | 'rpe' | 'objective' | 'runningTargets'>,
@@ -223,7 +236,7 @@ function draftExercisesToExercises(
       const notes = draft.notes?.trim() || undefined
       const prior = byId.get(draft.id)
       if (prior) {
-        return {
+        const next: Exercise = {
           ...prior,
           name: draft.name.trim(),
           sets: draft.sets,
@@ -231,6 +244,9 @@ function draftExercisesToExercises(
           weight: draft.weight,
           notes,
         }
+        if (draft.libraryRef) next.libraryRef = draft.libraryRef
+        else delete next.libraryRef
+        return next
       }
       return {
         id: draft.id,
@@ -240,6 +256,7 @@ function draftExercisesToExercises(
         weight: draft.weight,
         notes,
         completed: false,
+        ...(draft.libraryRef ? { libraryRef: draft.libraryRef } : {}),
       }
     })
 }

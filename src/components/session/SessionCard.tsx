@@ -78,7 +78,7 @@ export default function SessionCard({ session, compact = false, onDelete }: Sess
   )
 
   const hasExercises =
-    (session.type === 'strength' || session.type === 'mobility') &&
+    (session.type === 'squash' || session.type === 'strength' || session.type === 'mobility') &&
     session.exercises &&
     session.exercises.length > 0
   const hasRunningDetails = (session.type === 'running' || session.type === 'cycling') && session.runningDetails

@@ -6,9 +6,9 @@ Base de contraste:
 
 - `main` con el commit de esta entrega (`feat: complete coach planning library and calendar hardening`).
 - **`011_whoop_integration.sql` y `012_whoop_workouts.sql` aplicados en produccion.** Whoop readiness y Workout Auto-Complete quedan operativos de punta a punta (owner confirma cierre operacional); pendiente solo el linkeo de consentimiento biometrico/legal antes de exponer a terceros (ver Riesgo 1).
-- **Coach Workspace v0 + ampliacion implementados (2026-07-13 a 2026-07-19):** `/coach` pasa de un roster unico (`CoachRosterPage`) a `CoachWorkspacePage` con Resumen, Alumnos, Planificacion y Biblioteca operativas; Asistente IA conserva el placeholder. Incluye endurecimiento de `switchActiveAthlete`, edicion multi-atleta, alta/aplicacion de plantillas y lock de concurrencia a nivel de modulo. La base v0 ya esta deployada; esta entrega agrega `015`/Dexie v18 y requiere rollout de produccion.
-- **Gestion de roster + Planificacion read-only implementadas (2026-07-14):** Alumnos agrega archivar/restaurar y borrado duro confirmado por nombre. El borrado usa tombstones por intento, barrera y tracking single-tab, delete remoto durable, supresion de cola y purga Dexie transaccional para impedir resurrecciones. Planificacion muestra la semana de cualquier atleta del roster mediante lecturas/hidratacion por `athleteId` explicito, sin cambiar el scope activo. Esta entrega queda commiteada y publicada en `main`; resta rollout y smoke de produccion de `015`/Biblioteca.
-- **Coach Biblioteca + Planificacion completa implementadas localmente (2026-07-18/19):** la rama incorpora edicion de sesiones, Biblioteca de plantillas account-scoped, aplicar/guardar plantillas para cualquier atleta/dia, Dexie v18, backup v4, sync Supabase por fila con LWW/delete-wins y tombstones versionados. La migracion `015_session_templates.sql` queda lista para aplicar manualmente; falta deploy + smoke autenticado en produccion.
+- **Coach Workspace v0 + ampliacion implementados (2026-07-13 a 2026-07-19):** `/coach` pasa de un roster unico (`CoachRosterPage`) a `CoachWorkspacePage` con Resumen, Alumnos, Planificacion y Biblioteca operativas; Asistente IA conserva el placeholder. Incluye endurecimiento de `switchActiveAthlete`, edicion multi-atleta, alta/aplicacion de plantillas y lock de concurrencia a nivel de modulo. `015` y el bundle de Biblioteca/Planificacion ya fueron aplicados en produccion; queda el smoke autenticado.
+- **Gestion de roster + Planificacion read-only implementadas (2026-07-14):** Alumnos agrega archivar/restaurar y borrado duro confirmado por nombre. El borrado usa tombstones por intento, barrera y tracking single-tab, delete remoto durable, supresion de cola y purga Dexie transaccional para impedir resurrecciones. Planificacion muestra la semana de cualquier atleta del roster mediante lecturas/hidratacion por `athleteId` explicito, sin cambiar el scope activo. `015` y el deploy de Biblioteca ya estan en produccion; resta el smoke autenticado.
+- **Coach Biblioteca + Planificacion completa desplegadas (2026-07-18/19):** edicion de sesiones, Biblioteca de plantillas account-scoped, aplicar/guardar plantillas para cualquier atleta/dia, Dexie v18, backup v4 y sync Supabase por fila con LWW/delete-wins y tombstones versionados. `015_session_templates.sql` fue aplicada y el bundle desplegado; falta el smoke autenticado en produccion.
 - **Hardening de fechas y semanas (2026-07-19):** conteos de semanas, ventanas de Plan Builder, insights de fatiga y filtros semanales usan dias calendario en vez de milisegundos para no fallar al cruzar DST. Se agrego serializacion JSON canonica para comparar estructuras sin reescrituras redundantes.
 - **Fase 0 de coaches landing completada (2026-07-13):** rutas públicas reales (no AuthGate fallbacks), las cuatro páginas legales publicadas como rutas (`/terms`, `/privacy`, `/health-disclaimer`, y disclamer Whoop), landing `/coaches` en modo prelanzamiento con estructura de 3 planes, metadata/OG cards por ruta con prerender para crawlers, deep links nativos para OAuth callback en iOS, y cierre de compartimiento entre rutas públicas. Falta aún revisión jurídica y RUT/domicilio legal antes de cobro o anuncios masivos.
 - `main` hasta `167ef6e Plan whoop y entrenador`.
@@ -27,7 +27,7 @@ Base de contraste:
 
 ## Resumen Ejecutivo
 
-RallyIQ esta en una etapa donde el core ya no es el cuello de botella principal. El motor de planificacion, Plan Builder async, calidad deportiva base, athlete scope foundation, claves naturales locales por atleta, write path remoto seguro para day/week, Athlete-Aware Core, Coach F2-lite Parte 2b, Whoop v1 + Workout Auto-Complete (ambas migraciones aplicadas), Coach Workspace con roster/Planificacion/Biblioteca, y Fase 0 de coaches landing (rutas legales publicas + landing `/coaches` de prelanzamiento) ya estan construidos. La Biblioteca y Planificacion estan listas en codigo y esperan rollout de `015`/deploy para quedar operativas en produccion.
+RallyIQ esta en una etapa donde el core ya no es el cuello de botella principal. El motor de planificacion, Plan Builder async, calidad deportiva base, athlete scope foundation, claves naturales locales por atleta, write path remoto seguro para day/week, Athlete-Aware Core, Coach F2-lite Parte 2b, Whoop v1 + Workout Auto-Complete (ambas migraciones aplicadas), Coach Workspace con roster/Planificacion/Biblioteca, y Fase 0 de coaches landing (rutas legales publicas + landing `/coaches` de prelanzamiento) ya estan construidos. Biblioteca y Planificacion tienen `015` y deploy aplicados; queda cerrar el smoke autenticado.
 
 Lo que queda antes de mostrar/cobrar con confianza se concentra en dos carriles:
 
@@ -36,14 +36,14 @@ Lo que queda antes de mostrar/cobrar con confianza se concentra en dos carriles:
 
 Carriles de producto que siguen abiertos pero ya no bloquean la oferta comercial:
 
-3. **Coach Workspace ampliado:** gestion de roster, edicion de Planificacion y Biblioteca de plantillas estan implementadas; falta aplicar `015`, desplegar y smokear. Asistente IA sigue como "proximamente".
+3. **Coach Workspace ampliado:** gestion de roster, edicion de Planificacion y Biblioteca de plantillas estan desplegadas con `015`; falta smokearlas de punta a punta. Asistente IA sigue como "proximamente".
 4. **SP1 dos-lados:** membresias/RLS v2 ya planificadas para `013+`/Dexie v17+, pero es un incremento futuro de acceso, no bloqueante para la oferta coach de una sola cuenta.
 
 Mi lectura como lider tecnico: el cambio principal entre hoy y hace dos dias es que las rutas legales publicas ya existen como rutas reales, no como ideas. Eso permite cobrar sin zona gris innecesaria si se cierra la revision juridica rapido. El cuello actual es revision juridica formal + primer cliente real para validar flujo comercial/operacional.
 
 ## Estado Actual En Una Frase
 
-RallyIQ ya opera multi-atleta en produccion, con Whoop readiness y Workout Auto-Complete operativos (`011`/`012` aplicados), Coach Workspace base (`/coach`) y rutas legales publicas + landing `/coaches` en vivo. El siguiente paso tecnico es aplicar `015_session_templates.sql`, desplegar Biblioteca/Planificacion y ejecutar el smoke autenticado; en paralelo siguen pendientes revision juridica formal y consentimiento biometrico de Whoop antes del primer piloto pagado.
+RallyIQ ya opera multi-atleta en produccion, con Whoop readiness y Workout Auto-Complete operativos (`011`/`012` aplicados), Coach Workspace base (`/coach`) y rutas legales publicas + landing `/coaches` en vivo. `015` y Biblioteca/Planificacion ya estan desplegadas; el siguiente paso tecnico es ejecutar el smoke autenticado, incluyendo el catalogo/picker tras este push. En paralelo siguen pendientes revision juridica formal y consentimiento biometrico de Whoop antes del primer piloto pagado.
 
 ## Porcentaje De Avance
 
@@ -51,7 +51,7 @@ Estimacion actual:
 
 - Demo acompanada: **99% listo / 1% pendiente** (rutas legales publicas ya vivas; pendiente solo revision juridica formal).
 - Piloto manual pagado 1-3 clientes: **93% listo / 7% pendiente** (Fase 0 completa; pendiente consentimiento biometrico Whoop + operaciones piloto).
-- Coach UI F2-lite MVP interno: **98% listo / 2% pendiente** (roster, edicion de Planificacion y Biblioteca implementados; pendiente rollout de `015`/deploy/smoke y Asistente IA futura).
+- Coach UI F2-lite MVP interno: **99% listo / 1% pendiente** (roster, edicion de Planificacion y Biblioteca desplegados con `015`; pendiente smoke autenticado y Asistente IA futura).
 - Coach dos-lados/SP1: **25% listo / 75% pendiente** (especificado y planificado, pero no urgente frente al piloto de una sola cuenta).
 - Monetizacion publica self-serve: **62% listo / 38% pendiente** (rutas legales + landing coach vivas; falta pagos automaticos, consentimiento in-app, e2e auth).
 
@@ -147,7 +147,7 @@ Estado: **`012` aplicado en produccion, Whoop reconectado con `read:workout` y s
 - **Resumen:** tarjetas de roster (self + gestionados) con CTAs "Ver semana"/"Ver plan", sin señales computadas (eso requeriria una capa de lectura multi-atleta fuera de alcance para v0).
 - **Alumnos:** roster completo + alta de atleta (formulario con submit por Enter) + "Entrenar como este atleta".
 - **Planificacion:** semana por atleta, edicion de sesiones, aplicar y guardar plantillas.
-- **Biblioteca:** plantillas account-scoped con persistencia local, backup y sync remoto; requiere aplicar `015` en produccion.
+- **Biblioteca:** plantillas account-scoped con persistencia local, backup y sync remoto; `015` aplicada en produccion.
 - **Asistente IA:** placeholder honesto "proximamente", con copy en tuteo.
 - Nav responsive: sidebar en desktop, tabs horizontales scrolleables en mobile, con ARIA `tablist`/`tab`/`tabpanel` completo.
 
@@ -198,7 +198,7 @@ El Coach Workspace incorpora el ciclo de vida seguro de atletas gestionados y un
 - **Persistencia y sync:** Dexie v18, backup v4 con tombstones, Supabase `015_session_templates.sql`, pull por `user_id`, LWW/delete-wins, tombstone versionado y re-push de filas ausentes. Las escrituras iguales convergidas no reescriben IndexedDB.
 - **Smoke:** el modo `--apply` identifica al atleta creado por id y prueba archivar/restaurar con recuperacion en `finally`; el borrado duro permanece cubierto solo por tests para no destruir datos reales.
 
-Estado: **implementado y verificado localmente; commit de esta entrega creado en `main`.** Falta push/deploy + smoke de produccion. Requiere aplicar manualmente `supabase/015_session_templates.sql`; Dexie migra v17 → v18 al abrir la app. Planes/spec: `docs/superpowers/plans/2026-07-14-coach-roster-management-y-planificacion.md`, `docs/superpowers/specs/2026-07-14-coach-roster-management-y-planificacion-design.md`, `docs/superpowers/plans/2026-07-17-coach-biblioteca-plantillas.md` y `docs/superpowers/specs/2026-07-17-coach-biblioteca-plantillas-design.md`.
+Estado: **desplegado en produccion con `015_session_templates.sql` aplicada.** Falta smoke autenticado; Dexie migra v17 → v18 al abrir la app. Planes/spec: `docs/superpowers/plans/2026-07-14-coach-roster-management-y-planificacion.md`, `docs/superpowers/specs/2026-07-14-coach-roster-management-y-planificacion-design.md`, `docs/superpowers/plans/2026-07-17-coach-biblioteca-plantillas.md` y `docs/superpowers/specs/2026-07-17-coach-biblioteca-plantillas-design.md`.
 
 ### 10. Hardening de calendario y latencia local (2026-07-19)
 
@@ -211,9 +211,19 @@ Estado: **implementado y verificado localmente.**
 
 ### 11. Estado de rollout de esta entrega
 
-- El commit de esta entrega contiene código, migración `015` y roadmap actualizado; push a `main` en curso.
+- El commit de Biblioteca/Planificacion, su deploy y la migracion `015` ya estan en produccion.
 - Lint, build y pruebas dirigidas de Biblioteca/sync/backup/serializer pasan.
-- Smoke local público de arranque pasa sin errores de consola; el smoke autenticado de Coach Workspace y el smoke multi-dispositivo requieren una sesión real y la migración aplicada en Supabase.
+- Smoke local público de arranque pasa sin errores de consola; el smoke autenticado de Coach Workspace y el smoke multi-dispositivo requieren una sesión real.
+
+### 12. Coach exercise catalog picker (2026-07-19)
+
+- Catálogo unificado de drills de squash y ejercicios de fuerza sobre las librerías curadas existentes, con búsqueda normalizada y defaults por tipo.
+- `SessionForm` incorpora typeahead y explorador filtrable para Planificación, plantillas y el modal del atleta, manteniendo texto libre y el input plano de movilidad.
+- Las sesiones de squash admiten ejercicios editables en `Session.exercises`; el contenido rico de `squashDetails` permanece opaco e intacto.
+- `libraryRef` queda como metadata opcional, sanitizada en sesiones, plantillas y backup/import, con invalidación al renombrar y sin resurrección durante merges.
+- El editor del coach oculta resultado y games del partido, conserva Rival y no borra resultados existentes solo por ocultar los controles.
+
+Estado: **implementado y verificado localmente, sin migraciones Dexie ni Supabase.** Pendiente commit, deploy y smoke autenticado del flujo completo en Coach Workspace.
 
 ## Avances Ya Implementados
 
@@ -610,7 +620,7 @@ Estado: **implementado y con rollout operativo cerrado**.
 
 Objetivo: reemplazar el roster unico de `/coach` por un workspace de 5 areas y llevar Planificacion/Biblioteca desde placeholder hasta flujo operativo multi-atleta.
 
-Estado: **base deployada en produccion (2026-07-13); edicion/Biblioteca listas en codigo y pendientes de aplicar `015`, deploy y smoke.**
+Estado: **edicion/Biblioteca desplegadas en produccion con `015` aplicada; pendiente smoke autenticado/multi-dispositivo.**
 
 - [x] `CoachWorkspaceNav`: nav responsive (sidebar desktop, tabs horizontales mobile) con ARIA `tablist`/`tab`/`tabpanel`.
 - [x] Tab Resumen: tarjetas de roster con CTAs "Ver semana"/"Ver plan", sin señales computadas (fuera de alcance v0).
@@ -622,7 +632,8 @@ Estado: **base deployada en produccion (2026-07-13); edicion/Biblioteca listas e
 - [x] Lock de concurrencia para switch/creacion de atleta, movido a singleton de modulo tras encontrar que un `useRef` no sobrevive al remount de un switch exitoso.
 - [x] Smoke de Playwright extendido (no-destructivo por defecto, destructivo detras de `--apply`, gate `E2E_EXPECT_COACH_WORKSPACE`).
 - [x] `CoachRosterPage` retirada; ruta `/coach` apunta a `CoachWorkspacePage`.
-- [ ] Aplicar `015_session_templates.sql`, hacer deploy y smoke autenticado/multi-dispositivo.
+- [x] Aplicar `015_session_templates.sql` y desplegar Biblioteca/Planificacion.
+- [ ] Ejecutar smoke autenticado/multi-dispositivo.
 - [x] Fix de tooling: `vitest`/`eslint` excluyen `.claude/worktrees/` (encontrado durante el cierre de esta pieza).
 - [x] Documentacion del gap conocido de `CoachContextBar` sin lock compartido en el plan (no bloqueante).
 - [ ] Decidir alcance del Asistente IA dentro del Workspace.

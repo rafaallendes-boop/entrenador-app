@@ -27,6 +27,7 @@ import type {
 } from '../types'
 import type { TrainingPlan, TrainingPlanWeek } from '../types/planBuilder'
 import type { StoredSessionTemplate } from '../types/sessionTemplate'
+import { sanitizeExerciseLibraryRef } from '../types/exerciseLibraryRef'
 import { useChatStore } from '../store/useChatStore'
 import { useCoachActionsStore } from '../store/useCoachActionsStore'
 import { useCoachMemoryStore } from '../store/useCoachMemoryStore'
@@ -1375,6 +1376,7 @@ function optionalExercises(value: unknown, path: string): Session['exercises'] {
       targetPercent1RM: optionalPercent1RM(row.targetPercent1RM, `${path}[${index}].targetPercent1RM`),
       targetRpe: optionalRpe(row.targetRpe, `${path}[${index}].targetRpe`),
       warmupSets: optionalWarmupSets(row.warmupSets, `${path}[${index}].warmupSets`),
+      libraryRef: sanitizeExerciseLibraryRef(row.libraryRef),
     }
   })
 }

@@ -1,7 +1,12 @@
-import { describe, expect, it, vi } from 'vitest'
+// @vitest-environment jsdom
+
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import type { Session } from '../../types'
 import SessionCard, { SQUASH_BLOCKS_DURATION_GUIDANCE } from './SessionCard'
+
+afterEach(cleanup)
 
 vi.mock('../../store/useTrainingStore', () => ({
   useTrainingStore: (selector: (state: { cycleSessionStatus: () => void; updateSession: () => Promise<void> }) => unknown) =>
@@ -29,6 +34,31 @@ function makeSession(overrides: Partial<Session> = {}): Session {
     ...overrides,
   } as Session
 }
+
+describe('SessionCard exercises', () => {
+  it('muestra ejercicios en una sesión de squash', () => {
+    render(
+      <SessionCard
+        session={makeSession({
+          type: 'squash',
+          exercises: [
+            {
+              id: 'e1',
+              name: 'Drill de pared',
+              sets: 3,
+              reps: '10',
+              completed: false,
+            },
+          ],
+        })}
+      />,
+    )
+
+    fireEvent.click(screen.getByText('Sesion squash'))
+
+    expect(screen.queryByText('Drill de pared')).not.toBeNull()
+  })
+})
 
 describe('SessionCard squash match badges', () => {
   it('renders a dedicated practice-match badge', () => {
