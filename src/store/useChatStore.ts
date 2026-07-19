@@ -136,7 +136,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     void syncService.pushChatMessage(userMsg)
 
     // Pasamos historial multi-turno real al provider (excluye el mensaje recién añadido)
-    const recentMessages = get().messages.slice(0, -1).map(m => ({ role: m.role, content: m.content }))
+    const recentMessages = get().messages.slice(0, -1).map(m => ({ role: m.role, content: m.content, timestamp: m.timestamp }))
     const enrichedContext = optimizeChatContext({
       ...(context ?? { recentSessions: [], plannedSessions: [], historicalSessions: [] }),
       recentMessages,

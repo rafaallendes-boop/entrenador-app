@@ -23,10 +23,10 @@ const REQUEST_CLASSES = [
 ] as const
 
 const TOKEN_BASELINES: Record<typeof REQUEST_CLASSES[number], { target: number; tolerancePct: number }> = {
-  chat_general: { target: 504, tolerancePct: 10 },
-  chat_action: { target: 3576, tolerancePct: 10 },
+  chat_general: { target: 562, tolerancePct: 10 },
+  chat_action: { target: 3988, tolerancePct: 10 },
   week_creator: { target: 2840, tolerancePct: 12 },
-  plan_builder_week: { target: 3576, tolerancePct: 10 },
+  plan_builder_week: { target: 3988, tolerancePct: 10 },
   weekly_summary: { target: 485, tolerancePct: 15 },
 }
 

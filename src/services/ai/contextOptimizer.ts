@@ -1,8 +1,12 @@
+import { differenceInCalendarDays } from 'date-fns'
 import type { AIRequestClass, ChatContext, DayLog, Session } from '../../types'
-import { todayISO } from '../../utils/date'
+import { todayISO, toISO } from '../../utils/date'
+import { getDayName } from './promptModules/shared'
 
 const DEFAULT_MAX_RECENT_MESSAGES = 8
 const DEFAULT_MAX_RECENT_MESSAGE_CHARS = 1400
+const MAX_RECENT_MESSAGE_AGE_DAYS = 7
+const MONTHS_SHORT_ES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic']
 const DEFAULT_MAX_SESSION_LINES = 12
 const DEFAULT_MAX_SESSION_CHARS = 3200
 const DEFAULT_MAX_WEEK_LOGS = 5
@@ -95,19 +99,33 @@ function trimRecentMessages(
 ): ChatContext['recentMessages'] {
   if (!messages || messages.length === 0) return messages
 
+  const now = new Date()
+  const todayIso = todayISO()
   const selected: NonNullable<ChatContext['recentMessages']> = []
   let usedChars = 0
 
   for (const message of [...messages].reverse()) {
-    const content = clipText(message.content, 260)
+    if (message.timestamp != null && differenceInCalendarDays(now, new Date(message.timestamp)) > MAX_RECENT_MESSAGE_AGE_DAYS) continue
+    const content = labelPreviousDayMessage(clipText(message.content, 260), message.timestamp, todayIso)
     const cost = content.length
     if (selected.length >= maxRecentMessages) break
     if (selected.length > 0 && usedChars + cost > maxRecentMessageChars) break
-    selected.push({ role: message.role, content })
+    selected.push(message.timestamp != null
+      ? { role: message.role, content, timestamp: message.timestamp }
+      : { role: message.role, content })
     usedChars += cost
   }
 
   return selected.reverse()
+}
+
+/** Messages replayed from previous days get a date label so the model never treats their "hoy" as current. */
+function labelPreviousDayMessage(content: string, timestamp: number | undefined, todayIso: string): string {
+  if (timestamp == null) return content
+  const messageDate = new Date(timestamp)
+  const messageIso = toISO(messageDate)
+  if (messageIso === todayIso) return content
+  return `[${getDayName(messageIso)} ${MONTHS_SHORT_ES[messageDate.getMonth()]}] ${content}`
 }
 
 function trimPlannedSessions(

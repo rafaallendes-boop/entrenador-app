@@ -1124,7 +1124,10 @@ function buildCoachMemorySection(context: ChatContext): string {
   const memory = sanitizeUserText(context.athleteMemory, 2000)
   if (!memory) return ''
 
+  const today = todayISO()
+
   return `═══ MEMORIA DEL ATLETA ═══
+(Memoria acumulada, puede haberse escrito días atrás. HOY es ${formatDateShort(today)} · ${getDayName(today)}; cualquier fecha anterior ya pasó — trátala como historial, no como evento próximo.)
 ${memory}
 
 Extrae y aplica activamente cualquiera de estos elementos si aparecen:
@@ -1603,6 +1606,7 @@ function buildTodaySection(context: ChatContext): string {
 
   const todayDayName = getDayName(today)
   const lines: string[] = [`═══ HOY (${formatDateShort(today)} · ${todayDayName}) ═══`]
+  lines.push('- El historial del chat puede incluir mensajes de días anteriores (marcados con su fecha). Si un mensaje previo menciona otra fecha como "hoy", esa referencia es antigua: la única fecha vigente es la de esta sección.')
 
   if (!dayLog) {
     lines.push('Sin registro diario todavía.')

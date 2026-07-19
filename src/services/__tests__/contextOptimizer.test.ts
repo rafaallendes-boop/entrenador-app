@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ChatContext, Session } from '../../types'
 import { detectChatIntent, inferRequestClassFromIntent, optimizeChatContext } from '../ai/contextOptimizer'
 
@@ -68,5 +68,65 @@ describe('contextOptimizer budgets by request class', () => {
     expect(inferRequestClassFromIntent('weekly_summary')).toBe('weekly_summary')
     expect(inferRequestClassFromIntent('plan_week')).toBe('chat_action')
     expect(inferRequestClassFromIntent('general_chat')).toBe('chat_general')
+  })
+})
+
+describe('contextOptimizer recent message dating', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-07-18T15:00:00'))
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  const baseContext = (): ChatContext => ({
+    recentSessions: [],
+    plannedSessions: [],
+    historicalSessions: [],
+  })
+
+  it('drops replayed messages older than 7 calendar days', () => {
+    const context: ChatContext = {
+      ...baseContext(),
+      recentMessages: [
+        { role: 'user', content: 'mensaje demasiado viejo', timestamp: new Date('2026-07-09T10:00:00').getTime() },
+        { role: 'user', content: 'mensaje de hoy', timestamp: new Date('2026-07-18T10:00:00').getTime() },
+      ],
+    }
+
+    const result = optimizeChatContext(context, 'chat_action')
+
+    expect((result.recentMessages ?? []).map(message => message.content)).toEqual(['mensaje de hoy'])
+  })
+
+  it('prefixes messages from previous days with their date and leaves today unlabeled', () => {
+    const context: ChatContext = {
+      ...baseContext(),
+      recentMessages: [
+        { role: 'coach', content: 'hoy miércoles no te recomiendo un partido', timestamp: new Date('2026-07-15T12:42:00').getTime() },
+        { role: 'user', content: 'quiero un partido hoy', timestamp: new Date('2026-07-18T12:40:00').getTime() },
+      ],
+    }
+
+    const result = optimizeChatContext(context, 'chat_action')
+    const [wednesday, today] = result.recentMessages ?? []
+
+    expect(wednesday?.content).toBe('[Mié 15 jul] hoy miércoles no te recomiendo un partido')
+    expect(today?.content).toBe('quiero un partido hoy')
+  })
+
+  it('keeps legacy messages without timestamp intact', () => {
+    const context: ChatContext = {
+      ...baseContext(),
+      recentMessages: [
+        { role: 'user', content: 'mensaje sin fecha' },
+      ],
+    }
+
+    const result = optimizeChatContext(context, 'chat_action')
+
+    expect(result.recentMessages).toEqual([{ role: 'user', content: 'mensaje sin fecha' }])
   })
 })

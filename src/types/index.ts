@@ -808,7 +808,7 @@ export interface ChatContext {
   weekDayLogs?: DayLog[]
   athleteMemory?: string
   athleteProfile?: AthleteProfile
-  recentMessages?: { role: MessageRole; content: string }[]
+  recentMessages?: { role: MessageRole; content: string; timestamp?: number }[]
   recentProposals?: Array<{
     id: string
     status: CoachProposal['status']

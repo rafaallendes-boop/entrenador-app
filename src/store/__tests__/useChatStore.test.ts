@@ -323,6 +323,30 @@ describe('useChatStore.sendMessage', () => {
     completeRequest.mockRestore()
   })
 
+  it('passes prior thread messages with their timestamps to context optimization', async () => {
+    const priorMessages: ChatMessage[] = [
+      { id: 'old-1', role: 'user', content: 'quiero un partido hoy', timestamp: 1752576120000, chatSessionId: 'session-1' },
+      { id: 'old-2', role: 'coach', content: 'hoy miércoles no es recomendable', timestamp: 1752576180000, chatSessionId: 'session-1' },
+    ]
+    useChatStore.setState({ messages: priorMessages })
+    mocks.sendAction.mockResolvedValue({
+      message: 'Listo, preparé la propuesta.',
+      actions: [makeAction()],
+      provider: 'gemini',
+      traceId: 'trace-ts',
+      requestClass: 'chat_action',
+    })
+    mocks.addProposal.mockResolvedValue({ id: 'proposal-ts' })
+
+    await useChatStore.getState().sendMessage('añade running hoy', makeContext())
+
+    const passedContext = mocks.optimizeContext.mock.calls[0]?.[0] as ChatContext
+    expect(passedContext.recentMessages).toEqual([
+      { role: 'user', content: 'quiero un partido hoy', timestamp: 1752576120000 },
+      { role: 'coach', content: 'hoy miércoles no es recomendable', timestamp: 1752576180000 },
+    ])
+  })
+
   it('removes the optimistic user message when Dexie fails to persist it', async () => {
     mocks.addShouldFailForRole = 'user'
 
