@@ -33,6 +33,7 @@ import { enhanceStrengthSessionExercises } from '../training/strengthSessionStru
 import { todayISO } from '../../utils/date'
 import { applyWeekCreatorDateWindowToConfig, resolveWeekCreatorDateWindow } from './WeekCreatorDateWindow'
 import { db } from '../../db/db'
+import { resolveDayScheduleConstraint, resolveScheduleCapacity } from './scheduleConstraints'
 
 const WEEK_CREATOR_RESPONSE_SCHEMA_CHAR_COUNT = JSON.stringify(WEEK_CREATOR_RESPONSE_SCHEMA).length
 
@@ -182,6 +183,21 @@ export const WeekCreatorEngine = {
     const policy = getAIRequestPolicy('week_creator')
     const surface = options.surface ?? 'chat'
     const cohort = buildWeekCreatorCohort(context, config, options.targetWeekStart, dateWindow.planningStartDate)
+    const scheduleCapacity = buildFallbackSlots(
+      config,
+      options.targetWeekStart,
+      config.sessionsPerWeek,
+      dateWindow.planningStartDate,
+    ).length
+    if (scheduleCapacity < config.sessionsPerWeek) {
+      return buildInsufficientScheduleCapacityResponse({
+        generationId,
+        surface,
+        config,
+        cohort,
+        availableSlots: scheduleCapacity,
+      })
+    }
     let lastFailure: {
       provider?: CoachNormalizedResponse['provider']
       model?: string
@@ -241,6 +257,7 @@ export const WeekCreatorEngine = {
             requestClass: 'week_creator',
             traceId,
             generationId,
+            logicalAttempt: attempt,
             maxTokens: policy.maxTokens,
             temperature: Math.min(policy.temperature, 0.15),
             responseMimeType: 'application/json',
@@ -374,9 +391,7 @@ export const WeekCreatorEngine = {
 
     // After exhausting retries, surface a real error to the chat store catch
     // block so the UI shows it instead of staying in an infinite loading state.
-    const failureMessage = lastFailure?.error
-      ? `No pude generar la semana después de ${MAX_ATTEMPTS} intentos: ${lastFailure.error}`
-      : `No pude generar una semana válida después de ${MAX_ATTEMPTS} intentos. Revisa tu perfil y vuelve a intentarlo.`
+    const failureMessage = buildWeekCreatorUserFailureMessage(lastFailure?.fallbackReason)
     const failureTraceId = lastFailure?.traceId ?? buildAITraceId('week_creator')
     if (typeof console !== 'undefined' && typeof console.warn === 'function') {
       console.warn('[WeekCreatorEngine] all attempts failed', {
@@ -434,7 +449,7 @@ export const WeekCreatorEngine = {
         stageTimings: fallbackTracker.timings(),
       })
       fallbackTracker.flush('invalid_schema', { generationId, attempt: MAX_ATTEMPTS + 1 })
-      throw new Error(`${failureMessage} (trace ${failureTraceId})`)
+      throw new Error(`${failureMessage} Código de soporte: ${failureTraceId}.`)
     }
     const fallbackDurationMs = Date.now() - fallbackStartedAt
     useAIDebugStore.getState().completeRequest(fallback.traceId, {
@@ -470,16 +485,85 @@ function buildWeekCreatorCohort(
   targetWeekStart: string,
   planningStartDate: string,
 ): WeekCreatorCohort {
+  const capacity = resolveScheduleCapacity(config)
   return {
     expectedSessionCount: config.sessionsPerWeek,
-    trainingDayCount: config.trainingDays.length,
+    trainingDayCount: capacity.trainingDays.length,
     allowedSportCount: config.allowedSports.length,
-    doubleSessionAllowed: config.allowDoubleSession,
+    doubleSessionAllowed: capacity.doubleSessionDays.length > 0,
     partialWeek: planningStartDate > targetWeekStart,
     activeRestrictionsPresent: Boolean(
       context.athleteProfile?.recoveryProfile?.restrictions?.trim()
       || config.injuryNotes?.trim(),
     ),
+  }
+}
+
+function buildInsufficientScheduleCapacityResponse(input: {
+  generationId: string
+  surface: AITechnicalSurface
+  config: WeekCreatorEffectiveConfig
+  cohort: WeekCreatorCohort
+  availableSlots: number
+}): CoachNormalizedResponse {
+  const traceId = buildAITraceId('week_creator')
+  const startedAt = Date.now()
+  const tracker = createStageTracker(traceId, 'week_creator')
+  useAIDebugStore.getState().startRequest({
+    traceId,
+    generationId: input.generationId,
+    attempt: 1,
+    requestClass: 'week_creator',
+    surface: input.surface,
+    startedAt,
+    provider: 'mock',
+    model: 'local-schedule-preflight',
+    ...input.cohort,
+  })
+  const validationStage = tracker.stage('validate')
+  const error = `La configuración solicita ${input.config.sessionsPerWeek} sesiones, pero sólo deja ${input.availableSlots} bloques AM/PM disponibles.`
+  validationStage.end({ ok: false, error })
+  const generationCompletedAt = Date.now()
+  useAIDebugStore.getState().failRequest(traceId, {
+    provider: 'mock',
+    model: 'local-schedule-preflight',
+    durationMs: generationCompletedAt - startedAt,
+    outcome: 'schema_invalid',
+    errorCode: 'insufficient_schedule_capacity',
+    retryUsed: false,
+    fallbackUsed: false,
+    proposalCreated: false,
+    generationOutcome: 'failed',
+    generationCompletedAt,
+    warnings: ['week_creator_failure:insufficient_schedule_capacity'],
+    stageTimings: tracker.timings(),
+  })
+  tracker.flush('invalid_schema', {
+    generationId: input.generationId,
+    attempt: 1,
+    fallbackReason: 'insufficient_schedule_capacity',
+  })
+
+  const sessionLabel = input.config.sessionsPerWeek === 1 ? 'sesión' : 'sesiones'
+  const slotLabel = input.availableSlots === 1 ? 'bloque disponible' : 'bloques disponibles'
+  return {
+    message: `No puedo ubicar ${input.config.sessionsPerWeek} ${sessionLabel} respetando tu disponibilidad actual: hay ${input.availableSlots} ${slotLabel}. Agrega días o bloques AM/PM, o reduce la cantidad de sesiones, y vuelve a intentarlo.`,
+    actions: [],
+    provider: 'mock',
+    model: 'local-schedule-preflight',
+    timestamp: generationCompletedAt,
+    durationMs: generationCompletedAt - startedAt,
+    traceId,
+    generationId: input.generationId,
+    requestClass: 'week_creator',
+    retryUsed: false,
+    fallbackUsed: false,
+    meta: {
+      hadActionsMarkup: false,
+      actionParseFailed: false,
+      likelyTruncated: false,
+      outcome: 'schema_invalid',
+    },
   }
 }
 
@@ -545,6 +629,13 @@ function buildWeekCreatorFallbackWarning(attempts: number): string {
   return `week_creator_fallback:local_after_provider_failure attempts=${attempts}`
 }
 
+function buildWeekCreatorUserFailureMessage(reason?: WeekCreatorFallbackReason): string {
+  if (reason === 'schedule_conflict') {
+    return 'No pude armar una semana que respete toda tu disponibilidad. Revisa los días y bloques AM/PM configurados, o reduce la cantidad de sesiones, y vuelve a intentarlo.'
+  }
+  return 'No pude armar una semana válida esta vez. Revisa tu configuración y vuelve a intentarlo.'
+}
+
 type RepairedWeekCreatorResponse = CoachNormalizedResponse & {
   repairWarnings: string[]
   repairMeta?: RepairMeta
@@ -569,13 +660,32 @@ export function repairWeekCreatorResponse(
   }
 
   const profile = buildRepairProfile(context)
-  const repairContext = buildRepairContext(profile, config, targetWeekStart, planningStartDate)
-  const repairResult = repairGeneratedWeek(action.sessions, repairContext)
+  const aligned = alignSessionsToScheduleConstraints(action.sessions, config)
+  const repairConfig = buildScheduleAwareRepairConfig(config)
+  const repairContext = buildRepairContext(profile, repairConfig, targetWeekStart, planningStartDate)
+  const repairResult = repairGeneratedWeek(aligned.sessions, repairContext)
+  if (aligned.adjustedCount > 0) {
+    repairResult.meta.repairedSessionCount += aligned.adjustedCount
+    repairResult.meta.warnings.push({
+      code: 'schedule_time_block_adjusted',
+      message: `Se ajustaron ${aligned.adjustedCount} sesión(es) a los bloques AM/PM configurados.`,
+    })
+  }
   const shouldFinalize = shouldFinalizeWeekCreatorSessions(repairResult.sessions, config)
   const finalizedSessions = shouldFinalize
     ? finalizeWeekCreatorSessions(repairResult.sessions, config, targetWeekStart, planningStartDate, profile)
     : repairResult.sessions
   const finalizedChanged = shouldFinalize && !areSessionListsEquivalent(repairResult.sessions, finalizedSessions)
+  // Repair relocates by date without reading `scheduleConstraints`, so re-check
+  // the AM/PM pinning it may have undone.
+  const realigned = alignSessionsToScheduleConstraints(finalizedSessions, config, { skipOccupied: true })
+  if (realigned.adjustedCount > 0) {
+    repairResult.meta.repairedSessionCount += realigned.adjustedCount
+    repairResult.meta.warnings.push({
+      code: 'schedule_time_block_adjusted',
+      message: `Se ajustaron ${realigned.adjustedCount} sesión(es) a los bloques AM/PM configurados.`,
+    })
+  }
   if (repairResult.meta.repairedSessionCount === 0
     && repairResult.meta.movedSessionCount === 0
     && repairResult.meta.addedFallbackCount === 0
@@ -589,7 +699,7 @@ export function repairWeekCreatorResponse(
   const repairedAction: CoachAction = {
     ...action,
     targetDate: action.targetDate ?? targetWeekStart,
-    sessions: finalizedSessions,
+    sessions: realigned.sessions,
   }
   const repairedActions = actions.map((item) => (item === action ? repairedAction : item))
   const repairWarnings = [
@@ -605,6 +715,47 @@ export function repairWeekCreatorResponse(
     repairWarnings,
     repairMeta: repairResult.meta,
   }
+}
+
+// A day pinned to a single block (only AM / only PM) cannot host a double, and
+// an unavailable day cannot host anything. Repair does not read
+// `scheduleConstraints`, so it would otherwise "resolve" a collision on such a
+// day by flipping the session to the forbidden block. Strip those days from the
+// config we hand to repair so it relocates to another date instead.
+function buildScheduleAwareRepairConfig(
+  config: WeekCreatorEffectiveConfig,
+): WeekCreatorEffectiveConfig {
+  const capacity = resolveScheduleCapacity(config)
+  return {
+    ...config,
+    trainingDays: capacity.trainingDays,
+    doubleSessionDays: capacity.doubleSessionDays,
+    allowDoubleSession: capacity.doubleSessionDays.length > 0,
+  }
+}
+
+function alignSessionsToScheduleConstraints(
+  sessions: CoachSessionProposal[],
+  config: WeekCreatorEffectiveConfig,
+  options: { skipOccupied?: boolean } = {},
+): { sessions: CoachSessionProposal[]; adjustedCount: number } {
+  let adjustedCount = 0
+  const occupied = new Set(sessions.map((session) => `${session.date}|${session.timeBlock}`))
+  const aligned = sessions.map((session) => {
+    const day = dayOfWeekFromTargetDate('', session.date)
+    if (!day) return session
+    const constraint = resolveDayScheduleConstraint(config.scheduleConstraints, day)
+    if (constraint !== 'AM' && constraint !== 'PM') return session
+    if (session.timeBlock === constraint) return session
+    // The post-repair pass must not manufacture a collision the repair pipeline
+    // has already run past; leave it for validation instead.
+    if (options.skipOccupied && occupied.has(`${session.date}|${constraint}`)) return session
+    occupied.delete(`${session.date}|${session.timeBlock}`)
+    occupied.add(`${session.date}|${constraint}`)
+    adjustedCount += 1
+    return { ...session, timeBlock: constraint }
+  })
+  return { sessions: aligned, adjustedCount }
 }
 
 function buildRawTelemetry(raw: AIRawResponse | undefined): Partial<AITechnicalResult> {
@@ -684,6 +835,7 @@ function finalizeWeekCreatorSessions(
   const targetSports = buildFallbackSportSequence(config).slice(0, expected)
   const slots = buildFallbackSlots(config, targetWeekStart, expected, planningStartDate)
   if (targetSports.length === 0 || slots.length < expected) return sessions
+  const scheduledSports = assignFallbackSportsToSlots(targetSports, slots)
 
   const allowedSports = new Set<SupportedSport>([...(config.allowedSports.length > 0 ? config.allowedSports : targetSports), 'mobility'])
   const remaining = sessions
@@ -691,7 +843,7 @@ function finalizeWeekCreatorSessions(
     .map((session) => ({ ...session }))
   const sportCounts = new Map<SupportedSport, number>()
 
-  const finalized = targetSports.map((sport, index) => {
+  const finalized = scheduledSports.map((sport, index) => {
     const existingIndex = remaining.findIndex((session) => session.sessionType === sport)
     const slot = slots[index]
     const sportIndex = sportCounts.get(sport) ?? 0
@@ -897,10 +1049,11 @@ function buildDeterministicSessions(
 ): CoachSessionProposal[] {
   const sportSequence = buildFallbackSportSequence(config)
   const plannedSlots = buildFallbackSlots(config, targetWeekStart, sportSequence.length, planningStartDate)
+  const scheduledSports = assignFallbackSportsToSlots(sportSequence, plannedSlots)
   const sportCounts = new Map<SupportedSport, number>()
 
-  return sportSequence.map((sport, index) => {
-    const slot = plannedSlots[index]
+  return plannedSlots.map((slot, index) => {
+    const sport = scheduledSports[index]
     const sportIndex = sportCounts.get(sport) ?? 0
     sportCounts.set(sport, sportIndex + 1)
     return buildFallbackSession(sport, slot.date, slot.timeBlock, config.sessionDurationMins, sportIndex, config, profile)
@@ -950,12 +1103,41 @@ function getFallbackPrimaryTarget(
   // If capacity comes from double sessions across only a few days, avoid
   // forcing the same primary sport twice on one date. A squash+strength day is
   // much more useful than squash+squash when we are in local fallback mode.
-  const perDayPrimaryCap = Math.max(1, config.trainingDays.length)
+  const perDayPrimaryCap = Math.max(1, resolveScheduleCapacity(config).trainingDays.length)
   return Math.min(majorityTarget, perDayPrimaryCap)
 }
 
 function uniqueSports(sports: SupportedSport[]): SupportedSport[] {
   return sports.filter((sport, index) => sports.indexOf(sport) === index)
+}
+
+function assignFallbackSportsToSlots(
+  sports: SupportedSport[],
+  slots: Array<{ date: string; timeBlock: TimeBlock }>,
+): SupportedSport[] {
+  const assigned = sports.slice(0, slots.length)
+  for (let index = 0; index < assigned.length; index++) {
+    if (assigned[index] !== 'squash') continue
+    const date = slots[index]?.date
+    const duplicatesSquash = assigned.some((sport, otherIndex) =>
+      otherIndex < index && sport === 'squash' && slots[otherIndex]?.date === date)
+    if (!duplicatesSquash) continue
+
+    const swapIndex = assigned.findIndex((sport, candidateIndex) => {
+      if (sport === 'squash' || candidateIndex === index) return false
+      const candidateDate = slots[candidateIndex]?.date
+      if (!candidateDate || candidateDate === date) return false
+      return !assigned.some((candidateSport, otherIndex) =>
+        otherIndex !== candidateIndex
+        && candidateSport === 'squash'
+        && slots[otherIndex]?.date === candidateDate)
+    })
+    if (swapIndex < 0) continue
+    const swapSport = assigned[swapIndex]
+    assigned[swapIndex] = assigned[index]
+    assigned[index] = swapSport
+  }
+  return assigned
 }
 
 function buildFallbackSlots(
@@ -965,28 +1147,27 @@ function buildFallbackSlots(
   planningStartDate = targetWeekStart,
 ): Array<{ date: string; timeBlock: TimeBlock }> {
   const fallbackDays: DayOfWeek[] = ['monday', 'wednesday', 'friday']
-  const allowedDays = config.trainingDays.length > 0 ? config.trainingDays : fallbackDays
-  const dates = allowedDays
+  const capacity = resolveScheduleCapacity({
+    ...config,
+    trainingDays: config.trainingDays.length > 0 ? config.trainingDays : fallbackDays,
+  })
+  const dates = capacity.trainingDays
     .map((day) => addDaysIso(targetWeekStart, dayOffset(day)))
     .filter((date) => date >= planningStartDate)
     .sort()
   const slots: Array<{ date: string; timeBlock: TimeBlock }> = []
 
   for (const date of dates) {
-    slots.push({ date, timeBlock: 'AM' })
+    const day = dayOfWeekFromTargetDate(targetWeekStart, date)
+    const constraint = day ? resolveDayScheduleConstraint(config.scheduleConstraints, day) : undefined
+    slots.push({ date, timeBlock: constraint === 'PM' ? 'PM' : 'AM' })
   }
 
-  if (config.allowDoubleSession) {
-    const configuredDoubleDays = config.doubleSessionDays ?? []
-    const doubleDays = configuredDoubleDays.length > 0
-      ? configuredDoubleDays
-      : allowedDays
-    const doubleDaySet = new Set(doubleDays)
-    for (const date of dates) {
-      const day = dayOfWeekFromTargetDate(targetWeekStart, date)
-      if (day && !doubleDaySet.has(day)) continue
-      slots.push({ date, timeBlock: 'PM' })
-    }
+  const doubleDaySet = new Set(capacity.doubleSessionDays)
+  for (const date of dates) {
+    const day = dayOfWeekFromTargetDate(targetWeekStart, date)
+    if (!day || !doubleDaySet.has(day)) continue
+    slots.push({ date, timeBlock: 'PM' })
   }
 
   return slots.slice(0, count)

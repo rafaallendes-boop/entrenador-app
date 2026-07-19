@@ -73,6 +73,9 @@ export interface AITechnicalResult {
   serverDurationMs?: number
   endToEndDurationMs?: number
   proposalReadyAt?: number
+  /** Terminal result for the complete logical generation, not an individual provider attempt. */
+  generationOutcome?: 'model_success' | 'local_fallback' | 'failed'
+  generationCompletedAt?: number
   status: 'started' | 'streaming' | 'completed' | 'failed'
   outcome?: 'ok' | 'truncated_mid' | 'truncated_early' | 'parse_invalid' | 'schema_invalid'
   errorCode?: string

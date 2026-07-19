@@ -1,7 +1,7 @@
 # Plan de mejora de la generación semanal (`week_creator`)
 
 **Fecha:** 2026-07-16
-**Estado:** Fase 0 implementada localmente; despliegue y línea base de producción pendientes.
+**Estado:** Fase 0 desplegada con smoke inicial de producción; hardening de trazabilidad y disponibilidad implementado localmente, pendiente de despliegue y ampliación de muestra.
 **Objetivo:** llevar el p95 de una generación semanal completa y accionable a menos de 10 segundos, manteniendo intactas las restricciones médicas, la disponibilidad y la coherencia de carga.
 
 ## Resumen ejecutivo
@@ -22,7 +22,7 @@ La hipótesis principal para la cola de latencia no es el trabajo local, sino la
 - un segundo request completo cuando la reparación local no logra superar la validación;
 - repetición de reglas entre prompt, esquema y validación.
 
-El orden recomendado es medir, reducir el presupuesto de salida/reasoning, evitar retries completos recuperables y finalmente pasar a un esqueleto semanal compacto hidratado localmente. Cambiar de modelo o proveedor antes de esas fases mezclaría demasiadas variables.
+Después del smoke, el orden recomendado es desplegar este hardening, completar la muestra, probar el cap como guardrail aislado y priorizar la eliminación de retries recuperables y la reducción de salida real. El experimento de reasoning se omite mientras el modelo efectivo sea GPT-4.1 mini. El esqueleto compacto queda como cambio posterior y versionado; implementar todas las fases juntas impediría atribuir mejoras o regresiones.
 
 ---
 
@@ -78,7 +78,7 @@ La salida real de OpenAI aún no debe fijarse desde fixtures. Después del despl
 
 ### Verificación local completada
 
-- Suite completa: 231 archivos y 1.529 tests aprobados.
+- Suite completa: 252 archivos y 1.732 tests aprobados.
 - Lint aprobado.
 - Build de producción aprobado.
 - Auditoría de prompt aprobada.
@@ -86,13 +86,83 @@ La salida real de OpenAI aún no debe fijarse desde fixtures. Después del despl
 
 ### Pendiente para cerrar Fase 0
 
-1. Desplegar los cambios.
-2. Confirmar en los eventos `coach.request.completed` el proveedor y modelo efectivos.
+1. Desplegar el hardening que agrega `logicalAttempt`, resultado terminal de generación y medición end-to-end de fallos.
+2. Exportar `Beta quality local` para incorporar tiempos de propuesta lista, etapas locales, repair, fallback y cohortes que no existen en los logs de Netlify.
 3. Reunir un mínimo de 20 generaciones para smoke y 30–50 para una línea base razonable.
 4. Revisar tamaños y resultados separados por primer intento, segundo intento y fallback, además de `modelGenerationRate`.
-5. Registrar la línea base en este documento antes de cambiar la política.
+5. Registrar la línea base estable en este documento antes de cambiar cap, prompt, reasoning o modelo.
 
 No se considera que el objetivo p95 esté logrado hasta medir propuestas finales válidas en producción.
+
+### Smoke de producción — 2026-07-19, 10:28–10:44 America/Santiago
+
+La muestra entregada contiene cinco `generationId` y siete requests a OpenAI. Dos generaciones ejecutaron un segundo request lógico. El reporte manual indica cuatro semanas coherentes y una generación fallida por una sesión AM en un martes configurado como sólo PM.
+
+| Métrica | Resultado smoke |
+|---|---:|
+| Generaciones lógicas | 5 |
+| Requests al proveedor | 7 |
+| Éxito total inferido | 80% (4/5) |
+| Éxito al primer intento inferido | 60% (3/5) |
+| Retry lógico | 40% (2/5) |
+| Provider p50 / p95 | 13.565 / 17.323 ms |
+| Server p50 / p95 | 13.878 / 17.618 ms |
+| Auth p50 / p95 | 338 / 597 ms |
+| Latencia lógica p95 mínima | 31.182 ms |
+| Completion tokens p50 / p95 | 1.170 / 1.339 |
+| Cache reads | 3/7 requests |
+| Modelo efectivo | `gpt-4.1-mini-2025-04-14` |
+
+La latencia lógica es un límite inferior obtenido sumando tiempos de servidor del mismo `generationId`; aún no incluye persistencia y creación de propuesta en el cliente. Con cinco muestras no es una conclusión estadística de p95, pero el proveedor por sí solo ya supera el SLO de 10 segundos.
+
+Todos los requests terminaron con `finishReason=stop`, sin truncamiento, y consumieron como máximo 1.339 tokens de salida. Por eso reducir el cap de 8.000 debe tratarse primero como guardrail contra colas anómalas, no como una mejora de latencia ya demostrada. El modelo observado reporta cero tokens de reasoning, por lo que el experimento `minimal` contra `low` no aplica mientras producción continúe en GPT-4.1 mini.
+
+El incidente AM/PM fue un fallo de adherencia y repair local, no un timeout del proveedor. El hardening local ahora:
+
+- distingue `logicalAttempt` del retry técnico del proxy;
+- registra resultado y duración terminal también cuando la generación falla;
+- alinea propuestas AM/PM cuando existe una única corrección inequívoca;
+- evita dobles en días restringidos a un solo bloque;
+- detecta capacidad horaria insuficiente antes de llamar al proveedor;
+- genera el fallback determinístico en los bloques permitidos;
+- reemplaza detalles técnicos de validación por mensajes accionables para el usuario.
+
+#### Corrección posterior al code review
+
+La primera versión del hardening alineaba AM/PM **antes** de `repairGeneratedWeek`, pero
+`repairWeek.ts` no lee `scheduleConstraints`. En un día fijado a un solo bloque con doble
+autorizada, `resolveCollisions` "resolvía" la colisión devolviendo la sesión al bloque
+prohibido, la validación volvía a fallar y la generación gastaba los dos intentos lógicos
+antes de caer al fallback determinístico — exactamente el costo de latencia que esta fase
+buscaba eliminar. Reproducido con un test de regresión (martes `solo PM`, doble autorizada,
+propuesta AM+PM): 2 requests a OpenAI y `fallbackUsed=true`.
+
+Corrección:
+
+- `buildScheduleAwareRepairConfig` quita del config entregado a repair los días no
+  disponibles y desautoriza dobles en días fijados a un solo bloque, materializando primero
+  la lista implícita `doubleSessionDays: []` para que el filtro no la ensanche a todos los días.
+  Repair reubica a otra fecha en vez de invertir el bloque.
+- Se agrega una re-alineación AM/PM **después** de repair/finalize, con guarda de colisión,
+  para cubrir las reubicaciones por `findNearestAvailableDate`.
+
+Resultado del mismo escenario: 1 request al proveedor, sin fallback.
+
+#### Unificación del cálculo de capacidad
+
+El cálculo de "cuántos bloques deja libre la configuración" estaba duplicado en cinco
+lugares con reglas ligeramente distintas: `buildFallbackSlots`, `buildWeekCreatorCohort`,
+`getFallbackPrimaryTarget`, `buildScheduleAwareRepairConfig` y
+`applyWeekCreatorDateWindowToConfig`. Este último ignoraba `scheduleConstraints`, así que
+una semana parcial conservaba un `sessionsPerWeek` que el calendario no podía sostener y el
+preflight la bloqueaba en vez de planificar menos sesiones.
+
+Ahora todos consumen `resolveScheduleCapacity` (`scheduleConstraints.ts`), que centraliza
+las tres reglas: un día no disponible no aporta bloques, un día fijado a un solo bloque
+aporta uno y nunca admite doble, y una lista `doubleSessionDays` vacía se materializa antes
+de filtrar (leerla como "cualquier día" después del filtro reabría los días restringidos).
+
+Cobertura en `__tests__/scheduleConstraints.test.ts`.
 
 ---
 
@@ -106,7 +176,7 @@ Solicitud del usuario
      -> ProxyProvider
         -> auth de Supabase
         -> Netlify coach
-        -> OpenAI (reasoning low, cap 8000)
+     -> OpenAI (cap 8000; reasoning low sólo para gpt-5*)
      -> normalizar
      -> reparar localmente
      -> validar contrato + calendario + deportes + carga

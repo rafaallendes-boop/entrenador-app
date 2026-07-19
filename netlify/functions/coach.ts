@@ -38,6 +38,7 @@ interface CoachRequest {
   requestClass?: RequestClass
   traceId?: string
   generationId?: string
+  logicalAttempt?: number
   maxTokens?: number
   temperature?: number
   responseMimeType?: 'application/json'
@@ -430,6 +431,9 @@ function validateCoachRequest(input: unknown): RequestValidationResult {
   if (raw.generationId != null && (typeof raw.generationId !== 'string' || raw.generationId.length > GENERATION_ID_MAX_CHARS)) {
     return { ok: false, error: 'generationId invalid' }
   }
+  if (raw.logicalAttempt != null && (!Number.isInteger(raw.logicalAttempt) || raw.logicalAttempt < 1 || raw.logicalAttempt > 10)) {
+    return { ok: false, error: 'logicalAttempt invalid' }
+  }
 
   if (raw.allowFallback != null && typeof raw.allowFallback !== 'boolean') {
     return { ok: false, error: 'allowFallback must be boolean' }
@@ -447,6 +451,7 @@ function validateCoachRequest(input: unknown): RequestValidationResult {
       requestClass,
       traceId: raw.traceId,
       generationId: raw.generationId,
+      logicalAttempt: raw.logicalAttempt,
       maxTokens: raw.maxTokens,
       temperature: raw.temperature,
       responseMimeType: raw.responseMimeType,
@@ -538,6 +543,7 @@ const RETRY_BACKOFF_MS = 600
 function logCoachAttempt(payload: {
   traceId: string
   generationId?: string
+  logicalAttempt?: number
   requestClass: RequestClass
   attempt: number
   outcome: 'ok' | 'error'
@@ -570,6 +576,7 @@ function logCoachAttempt(payload: {
 function logCoachRequest(payload: {
   traceId: string
   generationId?: string
+  logicalAttempt?: number
   requestClass: RequestClass
   outcome: 'ok' | 'error'
   provider?: ProviderName
@@ -1246,6 +1253,7 @@ async function executeWithPolicy(
       logCoachAttempt({
         traceId,
         generationId: req.generationId,
+        logicalAttempt: req.logicalAttempt,
         requestClass,
         attempt: thisAttempt,
         outcome: 'ok',
@@ -1273,6 +1281,7 @@ async function executeWithPolicy(
       logCoachAttempt({
         traceId,
         generationId: req.generationId,
+        logicalAttempt: req.logicalAttempt,
         requestClass,
         attempt: thisAttempt,
         outcome: 'error',
@@ -1381,6 +1390,7 @@ function streamResponse(
           logCoachRequest({
             traceId: result.traceId,
             generationId: req.generationId,
+            logicalAttempt: req.logicalAttempt,
             requestClass,
             outcome: 'ok',
             provider: result.provider,
@@ -1405,6 +1415,7 @@ function streamResponse(
           logCoachRequest({
             traceId,
             generationId: req.generationId,
+            logicalAttempt: req.logicalAttempt,
             requestClass,
             outcome: 'error',
             authDurationMs: timing.authDurationMs,
@@ -1464,6 +1475,7 @@ export const handler = stream(async (event: HandlerEvent): Promise<StreamingResp
     logCoachRequest({
       traceId: req.traceId ?? `srv-${requestReceivedAt}`,
       generationId: req.generationId,
+      logicalAttempt: req.logicalAttempt,
       requestClass: normalizeRequestClass(req.requestClass),
       outcome: 'error',
       authDurationMs,
@@ -1505,6 +1517,7 @@ export const handler = stream(async (event: HandlerEvent): Promise<StreamingResp
     logCoachRequest({
       traceId: result.traceId,
       generationId: req.generationId,
+      logicalAttempt: req.logicalAttempt,
       requestClass,
       outcome: 'ok',
       provider: result.provider,
@@ -1544,6 +1557,7 @@ export const handler = stream(async (event: HandlerEvent): Promise<StreamingResp
     logCoachRequest({
       traceId: result.traceId,
       generationId: req.generationId,
+      logicalAttempt: req.logicalAttempt,
       requestClass,
       outcome: 'ok',
       provider: result.provider,
@@ -1568,6 +1582,7 @@ export const handler = stream(async (event: HandlerEvent): Promise<StreamingResp
     logCoachRequest({
       traceId: req.traceId ?? `srv-${requestReceivedAt}`,
       generationId: req.generationId,
+      logicalAttempt: req.logicalAttempt,
       requestClass,
       outcome: 'error',
       authDurationMs,

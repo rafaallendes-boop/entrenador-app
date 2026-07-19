@@ -256,6 +256,9 @@ describe('aiTelemetry', () => {
       promptTokens: 1000,
       completionTokens: 300,
       reasoningTokens: 80,
+      endToEndDurationMs: 5400,
+      generationOutcome: 'model_success',
+      generationCompletedAt: Date.now(),
       startedAt: Date.now(),
     })
     await recordCoachFeedback({
@@ -278,6 +281,9 @@ describe('aiTelemetry', () => {
       promptTokens: 1000,
       completionTokens: 300,
       reasoningTokens: 80,
+      endToEndDurationMs: 5400,
+      generationOutcome: 'model_success',
+      generationCompletedAt: expect.any(Number),
     })
     expect(JSON.stringify(snapshot)).not.toContain('systemPrompt')
   })

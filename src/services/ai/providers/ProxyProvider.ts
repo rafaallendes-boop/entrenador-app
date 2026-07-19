@@ -92,6 +92,7 @@ export class ProxyProvider implements AIProvider {
           requestClass: request.requestClass,
           traceId: request.traceId,
           generationId: request.generationId,
+          logicalAttempt: request.logicalAttempt,
           maxTokens: request.maxTokens,
           temperature: request.temperature,
           responseMimeType: request.responseMimeType,

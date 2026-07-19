@@ -47,7 +47,7 @@ describe('ProxyProvider streaming fallback', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     const provider = new ProxyProvider()
-    const response = await provider.call(makeRequest())
+    const response = await provider.call(makeRequest({ logicalAttempt: 2 }))
 
     expect(fetchMock).toHaveBeenCalledTimes(2)
     expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
@@ -55,6 +55,8 @@ describe('ProxyProvider streaming fallback', () => {
     })
     expect(fetchMock.mock.calls[0]?.[1]?.body).toContain('"stream":true')
     expect(fetchMock.mock.calls[1]?.[1]?.body).toContain('"stream":false')
+    expect(fetchMock.mock.calls[0]?.[1]?.body).toContain('"logicalAttempt":2')
+    expect(fetchMock.mock.calls[1]?.[1]?.body).toContain('"logicalAttempt":2')
     expect(response.text).toBe('Hola de vuelta')
   })
 

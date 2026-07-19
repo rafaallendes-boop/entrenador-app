@@ -85,6 +85,7 @@ describe('streaming coach telemetry', () => {
         requestClass: 'chat_general',
         traceId: 'trace-stream-1',
         generationId: 'generation-stream-1',
+        logicalAttempt: 2,
         maxTokens: 100,
         stream: true,
       }),
@@ -95,6 +96,9 @@ describe('streaming coach telemetry', () => {
     const completedLogs = infoSpy.mock.calls
       .map(([entry]) => typeof entry === 'string' ? JSON.parse(entry) as Record<string, unknown> : null)
       .filter((entry) => entry?.event === 'coach.request.completed')
+    const attemptLogs = infoSpy.mock.calls
+      .map(([entry]) => typeof entry === 'string' ? JSON.parse(entry) as Record<string, unknown> : null)
+      .filter((entry) => entry?.event === 'coach.attempt')
 
     expect(done).toMatchObject({
       type: 'done',
@@ -111,12 +115,42 @@ describe('streaming coach telemetry', () => {
     expect(completedLogs).toHaveLength(1)
     expect(completedLogs[0]).toMatchObject({
       traceId: 'trace-stream-1',
+      generationId: 'generation-stream-1',
+      logicalAttempt: 2,
       requestClass: 'chat_general',
       outcome: 'ok',
       provider: 'openai',
       model: 'gpt-5-mini',
       responseCharCount: 'Respuesta final'.length,
     })
+    expect(attemptLogs).toHaveLength(1)
+    expect(attemptLogs[0]).toMatchObject({
+      traceId: 'trace-stream-1',
+      generationId: 'generation-stream-1',
+      logicalAttempt: 2,
+      attempt: 1,
+    })
+  })
+
+  it('rejects invalid logical attempt metadata before authentication', async () => {
+    const invoke = handler as unknown as (event: {
+      httpMethod: string
+      headers: Record<string, string>
+      body: string
+    }) => Promise<{ statusCode: number; body: string }>
+    const response = await invoke({
+      httpMethod: 'POST',
+      headers: { authorization: 'Bearer test-token' },
+      body: JSON.stringify({
+        systemPrompt: 'Sistema',
+        userMessage: 'Hola',
+        requestClass: 'week_creator',
+        logicalAttempt: 0,
+      }),
+    })
+
+    expect(response.statusCode).toBe(400)
+    expect(JSON.parse(response.body)).toMatchObject({ error: 'logicalAttempt invalid' })
   })
 })
 

@@ -255,6 +255,7 @@ beforeEach(() => {
     }
     return context
   })
+  useAIDebugStore.getState().clear()
   useChatStore.setState({
     messages: [],
     currentSessionId: 'session-1',
@@ -360,9 +361,125 @@ describe('useChatStore.sendMessage', () => {
 
     const state = useChatStore.getState()
     expect(state.messages.map(message => message.role)).toEqual(['user', 'coach'])
-    expect(state.messages[1].content).toContain('No pude procesar ese pedido.')
     expect(state.messages[1].content).toContain('create_week')
+    expect(state.messages[1].content).toContain('ajustar tu disponibilidad')
     expect(mocks.chatMessages.map(message => message.role)).toEqual(['user', 'coach'])
+  })
+
+  it('correlates a successful week creator generation through proposal readiness', async () => {
+    mocks.routeKind = 'week_creator'
+    mocks.sendWeekCreate.mockImplementation(async (
+      _content: string,
+      _context: ChatContext,
+      options: { generationId: string },
+    ) => {
+      useAIDebugStore.getState().startRequest({
+        traceId: 'trace-week-success',
+        generationId: options.generationId,
+        attempt: 1,
+        requestClass: 'week_creator',
+        surface: 'chat',
+        startedAt: Date.now(),
+      })
+      return {
+        message: 'Semana lista.',
+        actions: [makeAction()],
+        provider: 'openai' as const,
+        traceId: 'trace-week-success',
+        generationId: options.generationId,
+        requestClass: 'week_creator' as const,
+        fallbackUsed: false,
+      }
+    })
+    mocks.addProposal.mockResolvedValue({ id: 'proposal-week-success' })
+
+    await useChatStore.getState().sendMessage('Créame una semana', makeContext())
+
+    const passedOptions = mocks.sendWeekCreate.mock.calls[0]?.[2] as { generationId?: string }
+    expect(passedOptions.generationId).toMatch(/^week_creator-generation-/)
+    expect(useAIDebugStore.getState().requests[0]).toMatchObject({
+      generationId: passedOptions.generationId,
+      status: 'completed',
+      proposalCreated: true,
+      generationOutcome: 'model_success',
+      generationCompletedAt: expect.any(Number),
+    })
+  })
+
+  it('records end-to-end duration and terminal outcome for a failed week generation', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-07-19T15:00:00.000Z'))
+    mocks.routeKind = 'week_creator'
+    mocks.sendWeekCreate.mockImplementation((
+      _content: string,
+      _context: ChatContext,
+      options: { generationId: string },
+    ) => {
+      useAIDebugStore.getState().startRequest({
+        traceId: 'trace-week-failed',
+        generationId: options.generationId,
+        attempt: 2,
+        requestClass: 'week_creator',
+        surface: 'chat',
+        startedAt: Date.now(),
+      })
+      vi.setSystemTime(Date.now() + 2_400)
+      return Promise.reject(new Error('No pude armar una semana válida esta vez.'))
+    })
+
+    await useChatStore.getState().sendMessage('Créame una semana', makeContext())
+
+    expect(useAIDebugStore.getState().requests[0]).toMatchObject({
+      traceId: 'trace-week-failed',
+      status: 'failed',
+      proposalCreated: false,
+      endToEndDurationMs: 2_400,
+      generationOutcome: 'failed',
+      generationCompletedAt: expect.any(Number),
+    })
+  })
+
+  it('records a resolved local schedule rejection as a failed logical generation', async () => {
+    mocks.routeKind = 'week_creator'
+    mocks.sendWeekCreate.mockImplementation(async (
+      _content: string,
+      _context: ChatContext,
+      options: { generationId: string },
+    ) => {
+      useAIDebugStore.getState().startRequest({
+        traceId: 'trace-week-capacity',
+        generationId: options.generationId,
+        attempt: 1,
+        requestClass: 'week_creator',
+        surface: 'chat',
+        startedAt: Date.now(),
+        status: 'failed',
+        errorCode: 'insufficient_schedule_capacity',
+      })
+      return {
+        message: 'No puedo ubicar 6 sesiones: hay 5 bloques disponibles.',
+        actions: [],
+        provider: 'mock' as const,
+        traceId: 'trace-week-capacity',
+        generationId: options.generationId,
+        requestClass: 'week_creator' as const,
+        fallbackUsed: false,
+      }
+    })
+
+    await useChatStore.getState().sendMessage('Créame una semana', makeContext())
+
+    expect(mocks.addProposal).not.toHaveBeenCalled()
+    expect(useChatStore.getState().error).toBeNull()
+    expect(useChatStore.getState().messages.at(-1)?.content).toContain('5 bloques disponibles')
+    expect(useAIDebugStore.getState().requests[0]).toMatchObject({
+      traceId: 'trace-week-capacity',
+      status: 'failed',
+      proposalCreated: false,
+      generationOutcome: 'failed',
+      endToEndDurationMs: expect.any(Number),
+    })
+    expect(useAIDebugStore.getState().requests[0]?.proposalReadyAt).toBeUndefined()
   })
 
   it('clears loading without adding a coach message when the request is cancelled', async () => {

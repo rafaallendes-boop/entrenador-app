@@ -1,5 +1,6 @@
 import type { DayOfWeek } from '../../types'
 import type { WeekCreatorEffectiveConfig } from './WeekCreatorConfig'
+import { resolveScheduleCapacity } from './scheduleConstraints'
 
 const DAY_MAPPING: DayOfWeek[] = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
 
@@ -42,7 +43,15 @@ export function applyWeekCreatorDateWindowToConfig(
   const doubleSessionDays = config.allowDoubleSession
     ? configuredDoubleDays.length > 0 ? configuredDoubleDays : trainingDays
     : []
-  const remainingCapacity = trainingDays.length + (config.allowDoubleSession ? doubleSessionDays.length : 0)
+  // Capacity has to discount days the schedule constraints close off, otherwise
+  // a partial week keeps a `sessionsPerWeek` the calendar cannot hold and the
+  // engine preflight blocks the generation instead of planning fewer sessions.
+  const remainingCapacity = resolveScheduleCapacity({
+    trainingDays,
+    doubleSessionDays,
+    allowDoubleSession: config.allowDoubleSession,
+    scheduleConstraints: config.scheduleConstraints,
+  }).capacity
   const maxSessionsPerWeek = Math.max(1, Math.min(config.maxSessionsPerWeek, remainingCapacity || 1))
   const sessionsPerWeek = Math.max(1, Math.min(config.sessionsPerWeek, maxSessionsPerWeek))
   const partialNote = `Semana parcial: planificar solo desde ${window.planningStartDate} hasta ${window.weekEndDate}; no usar días pasados de esta semana.`

@@ -748,6 +748,7 @@ describe('WeekCreatorEngine', () => {
     expect(response.generationId).toMatch(/^week_creator-generation-/)
     expect(mockProviderCall.mock.calls[0][0]).toMatchObject({
       generationId: response.generationId,
+      logicalAttempt: 1,
       responseMimeType: 'application/json',
     })
     const debugRequest = useAIDebugStore.getState().requests.find((request) => request.traceId === response.traceId)
@@ -1370,8 +1371,10 @@ describe('WeekCreatorEngine', () => {
 
     expect(mockProviderCall).toHaveBeenCalledTimes(2)
     const providerGenerationIds = mockProviderCall.mock.calls.map(([request]) => request.generationId)
+    const logicalAttempts = mockProviderCall.mock.calls.map(([request]) => request.logicalAttempt)
     expect(new Set(providerGenerationIds).size).toBe(1)
     expect(providerGenerationIds[0]).toMatch(/^week_creator-generation-/)
+    expect(logicalAttempts).toEqual([1, 2])
     expect(response.fallbackUsed).toBe(true)
     expect(response.actions?.[0]).toMatchObject({
       type: 'create_week',
@@ -1519,6 +1522,214 @@ describe('WeekCreatorEngine', () => {
     expect(visibleText).not.toMatch(new RegExp('recuperaci' + '[oó]n a' + 'l T', 'i'))
     expect(visibleText).not.toContain('Drives paralelos con ' + 'recuperaci' + 'ón a' + 'l T')
     expect(visibleText).toContain('Tiros paralelos profundos')
+  })
+
+  it('repairs a Tuesday AM proposal to PM without a second provider request', async () => {
+    mockProviderCall.mockImplementation(async (request: { requestClass: string; traceId: string }) => ({
+      text: '<actions>' + JSON.stringify([{
+        type: 'create_week',
+        reason: 'Semana de una sesión',
+        targetDate: '2026-05-11',
+        sessions: [
+          squashSession('2026-05-12', 'AM', 'Squash martes', 'Tiros paralelos profundos'),
+        ],
+      }]) + '</actions>',
+      provider: 'mock',
+      model: 'mock-week-creator',
+      traceId: request.traceId,
+      requestClass: request.requestClass,
+    }))
+    const context: ChatContext = {
+      athleteProfile: makeProfile({
+        scheduleProfile: {
+          availableDays: ['mar'],
+          sessionsPerWeek: 1,
+          constraints: 'martes: solo PM',
+        },
+      }),
+      recentSessions: [],
+      plannedSessions: [],
+      historicalSessions: [],
+    }
+
+    const response = await WeekCreatorEngine.sendWeekCreate(
+      'Créame la semana',
+      context,
+      { surface: 'chat', targetWeekStart: '2026-05-11' },
+    )
+
+    expect(mockProviderCall).toHaveBeenCalledTimes(1)
+    expect(response.fallbackUsed).toBeFalsy()
+    expect(response.actions?.[0].sessions).toHaveLength(1)
+    expect(response.actions?.[0].sessions?.[0]).toMatchObject({
+      date: '2026-05-12',
+      timeBlock: 'PM',
+    })
+    expect(response.message).toContain('bloques AM/PM configurados')
+  })
+
+  it('builds the deterministic fallback in the configured PM block', async () => {
+    mockProviderCall.mockImplementation(async (request: { requestClass: string; traceId: string }) => ({
+      text: 'No incluyo acciones.',
+      provider: 'mock',
+      model: 'mock-week-creator',
+      traceId: request.traceId,
+      requestClass: request.requestClass,
+    }))
+    const context: ChatContext = {
+      athleteProfile: makeProfile({
+        scheduleProfile: {
+          availableDays: ['mar'],
+          sessionsPerWeek: 1,
+          constraints: 'solo PM los martes',
+        },
+      }),
+      recentSessions: [],
+      plannedSessions: [],
+      historicalSessions: [],
+    }
+
+    const response = await WeekCreatorEngine.sendWeekCreate(
+      'Créame la semana',
+      context,
+      { surface: 'chat', targetWeekStart: '2026-05-11' },
+    )
+
+    expect(mockProviderCall).toHaveBeenCalledTimes(2)
+    expect(response.fallbackUsed).toBe(true)
+    expect(response.actions?.[0].sessions?.[0]).toMatchObject({
+      date: '2026-05-12',
+      timeBlock: 'PM',
+    })
+  })
+
+  it('uses doubles on other configured days when Tuesday is PM-only', async () => {
+    mockProviderCall.mockImplementation(async (request: { requestClass: string; traceId: string }) => ({
+      text: 'No incluyo acciones.',
+      provider: 'mock',
+      model: 'mock-week-creator',
+      traceId: request.traceId,
+      requestClass: request.requestClass,
+    }))
+    const context: ChatContext = {
+      athleteProfile: makeProfile({
+        scheduleProfile: {
+          availableDays: ['lun', 'mar', 'mié', 'jue', 'vie'],
+          doubleSessionDays: ['lun', 'mar'],
+          sessionsPerWeek: 6,
+          constraints: 'martes solo PM',
+        },
+      }),
+      recentSessions: [],
+      plannedSessions: [],
+      historicalSessions: [],
+    }
+
+    const response = await WeekCreatorEngine.sendWeekCreate(
+      'Créame 6 sesiones',
+      context,
+      { surface: 'chat', targetWeekStart: '2026-05-11' },
+    )
+    const sessions = response.actions?.[0].sessions ?? []
+    const tuesdaySessions = sessions.filter((session) => session.date === '2026-05-12')
+    const mondaySessions = sessions.filter((session) => session.date === '2026-05-11')
+
+    expect(response.fallbackUsed).toBe(true)
+    expect(sessions).toHaveLength(6)
+    expect(tuesdaySessions).toHaveLength(1)
+    expect(tuesdaySessions[0]?.timeBlock).toBe('PM')
+    expect(mondaySessions.map((session) => session.timeBlock).sort()).toEqual(['AM', 'PM'])
+  })
+
+  it('rejects impossible schedule capacity locally without calling the provider', async () => {
+    const context: ChatContext = {
+      athleteProfile: makeProfile({
+        scheduleProfile: {
+          availableDays: ['mar', 'mié'],
+          doubleSessionDays: ['mar'],
+          sessionsPerWeek: 3,
+          constraints: 'martes solo PM; miércoles no disponible',
+        },
+      }),
+      recentSessions: [],
+      plannedSessions: [],
+      historicalSessions: [],
+    }
+
+    const response = await WeekCreatorEngine.sendWeekCreate(
+      'Créame 3 sesiones',
+      context,
+      { surface: 'chat', targetWeekStart: '2026-05-11' },
+    )
+
+    expect(mockProviderCall).not.toHaveBeenCalled()
+    expect(response.actions).toEqual([])
+    expect(response.message).toContain('3 sesiones')
+    expect(response.message).toContain('1 bloque disponible')
+    expect(useAIDebugStore.getState().requests[0]).toMatchObject({
+      generationId: response.generationId,
+      provider: 'mock',
+      model: 'local-schedule-preflight',
+      status: 'failed',
+      errorCode: 'insufficient_schedule_capacity',
+      generationOutcome: 'failed',
+      expectedSessionCount: 3,
+      trainingDayCount: 1,
+      doubleSessionAllowed: false,
+    })
+  })
+
+  it('keeps a PM-only day single-blocked when the model proposes a double there', async () => {
+    mockProviderCall.mockImplementation(async (request: { requestClass: string; traceId: string }) => ({
+      text: '<actions>' + JSON.stringify([{
+        type: 'create_week',
+        reason: 'Semana con doble el martes',
+        targetDate: '2026-05-11',
+        sessions: [
+          squashSession('2026-05-11', 'AM', 'Squash lunes', 'Tiros paralelos profundos'),
+          squashSession('2026-05-12', 'AM', 'Squash martes', 'Drops desde media cancha'),
+          {
+            date: '2026-05-12',
+            timeBlock: 'PM',
+            sessionType: 'strength',
+            title: 'Fuerza soporte',
+            durationMin: 60,
+            objective: 'Soporte sin repetir squash.',
+            exercises: [{ name: 'Sentadilla goblet', sets: 3, reps: 8 }],
+          },
+        ],
+      }]) + '</actions>',
+      provider: 'mock',
+      model: 'mock-week-creator',
+      traceId: request.traceId,
+      requestClass: request.requestClass,
+    }))
+    const context: ChatContext = {
+      athleteProfile: makeProfile({
+        scheduleProfile: {
+          availableDays: ['lun', 'mar', 'mié'],
+          doubleSessionDays: ['mar'],
+          sessionsPerWeek: 3,
+          constraints: 'martes solo PM',
+        },
+      }),
+      recentSessions: [],
+      plannedSessions: [],
+      historicalSessions: [],
+    }
+
+    const response = await WeekCreatorEngine.sendWeekCreate(
+      'Créame 3 sesiones',
+      context,
+      { surface: 'chat', targetWeekStart: '2026-05-11' },
+    )
+
+    const sessions = response.actions?.[0].sessions ?? []
+    expect(mockProviderCall).toHaveBeenCalledTimes(1)
+    expect(response.fallbackUsed).toBeFalsy()
+    expect(sessions).toHaveLength(3)
+    expect(sessions.filter((session) => session.date === '2026-05-12')).toHaveLength(1)
+    expect(sessions.every((session) => session.date !== '2026-05-12' || session.timeBlock === 'PM')).toBe(true)
   })
 
   it('returns a valid fallback week when wizard sessions exceed day capacity', async () => {

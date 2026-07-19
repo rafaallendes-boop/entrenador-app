@@ -32,6 +32,8 @@ export interface AIRequest {
   requestClass: AIRequestClass
   traceId: string
   generationId?: string
+  /** Logical engine attempt; distinct from retries performed inside the proxy. */
+  logicalAttempt?: number
   maxTokens?: number
   temperature?: number
   responseMimeType?: 'application/json'

@@ -14,6 +14,7 @@ import * as syncService from '../services/syncService'
 import { useAIDebugStore } from './useAIDebugStore'
 import { resolveChatRoute, type ChatRouteKind } from '../services/chatRouting'
 import { WeekCreatorEngine } from '../services/weekCreator/WeekCreatorEngine'
+import { buildAIGenerationId } from '../services/ai/requestPolicy'
 
 let activeChatAbortController: AbortController | null = null
 let latestHistoryLoadRequestId = 0
@@ -108,6 +109,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const abortController = new AbortController()
     activeChatAbortController = abortController
     const requestClass = mapChatRouteToRequestClass(route.kind)
+    const weekCreatorGenerationId = requestClass === 'week_creator'
+      ? buildAIGenerationId('week_creator')
+      : undefined
     const userMsg: ChatMessage = withActiveAthleteStamp<ChatMessage>({
       id: uuid(),
       role: 'user',
@@ -172,6 +176,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         ? WeekCreatorEngine.sendWeekCreate(content, enrichedContext, {
           surface: 'chat',
           targetWeekStart: route.targetWeekStart ?? enrichedContext.currentWeekSummary?.weekStartDate ?? '',
+          generationId: weekCreatorGenerationId,
           signal: abortController.signal,
         })
         : requestClass === 'chat_general'
@@ -229,11 +234,25 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
 
       const proposalReadyAt = Date.now()
-      useAIDebugStore.getState().completeRequest(response.traceId, {
+      const weekCreatorFailed = requestClass === 'week_creator' && proposalId == null
+      const terminalPatch = {
         proposalCreated: proposalId != null,
-        proposalReadyAt,
         endToEndDurationMs: proposalReadyAt - requestStartedAt,
-      })
+        ...(weekCreatorFailed ? {} : { proposalReadyAt }),
+        ...(requestClass === 'week_creator'
+          ? {
+              generationOutcome: weekCreatorFailed
+                ? 'failed' as const
+                : response.fallbackUsed ? 'local_fallback' as const : 'model_success' as const,
+              generationCompletedAt: proposalReadyAt,
+            }
+          : {}),
+      }
+      if (weekCreatorFailed) {
+        useAIDebugStore.getState().failRequest(response.traceId, terminalPatch)
+      } else {
+        useAIDebugStore.getState().completeRequest(response.traceId, terminalPatch)
+      }
 
       if (!isActiveChatRequest(get().currentSessionId, sessionId, abortController)) {
         await discardLateCoachArtifacts(coachMsg, proposalId)
@@ -254,6 +273,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
         ? persistedCoachMsg
         : undefined
       const errorMsg = abortedByWatchdog ? watchdogErrorMessage : formatError(e)
+      if (weekCreatorGenerationId) {
+        markWeekCreatorGenerationFailed(weekCreatorGenerationId, requestStartedAt)
+      }
       if (get().currentSessionId !== sessionId) return { route: route.kind }
       const coachErrorMsg = route.kind === 'week_creator'
         ? buildCoachErrorMessage(errorMsg, sessionId)
@@ -401,16 +423,30 @@ function buildCoachMessage(
 }
 
 function buildCoachErrorMessage(errorMessage: string, chatSessionId: string): ChatMessage {
+  const message = errorMessage.trim() || 'No pude crear la semana esta vez.'
   return withActiveAthleteStamp<ChatMessage>({
     id: uuid(),
     role: 'coach',
-    content: `No pude procesar ese pedido.\n\n${errorMessage}\n\nPuedes reintentarlo cuando quieras.`,
+    content: `${message}\n\nPuedes ajustar tu disponibilidad o reintentarlo cuando quieras.`,
     timestamp: Date.now(),
     chatSessionId,
     contextMeta: {
       contextVersion: 1,
       likelyTruncated: false,
     },
+  })
+}
+
+function markWeekCreatorGenerationFailed(generationId: string, requestStartedAt: number): void {
+  const terminalRequest = useAIDebugStore.getState().requests
+    .find((request) => request.generationId === generationId)
+  if (!terminalRequest) return
+  const generationCompletedAt = Date.now()
+  useAIDebugStore.getState().failRequest(terminalRequest.traceId, {
+    proposalCreated: false,
+    endToEndDurationMs: generationCompletedAt - requestStartedAt,
+    generationOutcome: 'failed',
+    generationCompletedAt,
   })
 }
 

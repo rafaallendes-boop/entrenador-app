@@ -5,6 +5,7 @@ import { validateAgainstContract } from '../ai/prompt/validators/validateAgainst
 import { findSquashDrillByName } from '../training/drillLibrary'
 import { filterSessionsToWeek, isStrictISODate, pickCreateWeekDiagnostic } from '../week/shared'
 import type { WeekCreatorEffectiveConfig } from './WeekCreatorConfig'
+import { resolveDayScheduleConstraint } from './scheduleConstraints'
 
 /**
  * Fields where structural recursion stops. Their internal validation is owned
@@ -315,61 +316,23 @@ function validateScheduleTimeConstraints(
   sessions: CoachSessionProposal[],
   config: WeekCreatorEffectiveConfig,
 ): string | undefined {
-  const constraints = normalizeConstraintText(config.scheduleConstraints)
-  if (!constraints) return undefined
-
   for (const session of sessions) {
     const day = isoDateToDayOfWeek(session.date)
     if (!day) continue
-    const labels = DAY_CONSTRAINT_LABELS[day]
+    const constraint = resolveDayScheduleConstraint(config.scheduleConstraints, day)
 
-    if (hasDayScopedConstraint(constraints, labels, ['no disponible', 'sin disponibilidad'])) {
+    if (constraint === 'unavailable') {
       return `La sesión ${session.title} cae en ${session.date}, pero las restricciones horarias indican que ese día no está disponible.`
     }
-    if (hasDayScopedConstraint(constraints, labels, ['solo am', 'solamente am', 'unicamente am']) && session.timeBlock !== 'AM') {
+    if (constraint === 'AM' && session.timeBlock !== 'AM') {
       return `La sesión ${session.title} cae en ${session.date} ${session.timeBlock}, pero las restricciones horarias indican solo AM para ese día.`
     }
-    if (hasDayScopedConstraint(constraints, labels, ['solo pm', 'solamente pm', 'unicamente pm']) && session.timeBlock !== 'PM') {
+    if (constraint === 'PM' && session.timeBlock !== 'PM') {
       return `La sesión ${session.title} cae en ${session.date} ${session.timeBlock}, pero las restricciones horarias indican solo PM para ese día.`
     }
   }
 
   return undefined
-}
-
-function hasDayScopedConstraint(
-  constraints: string,
-  dayLabels: string[],
-  phrases: string[],
-): boolean {
-  return dayLabels.some((label) =>
-    phrases.some((phrase) =>
-      constraints.includes(`${phrase} ${label}`) ||
-      constraints.includes(`${phrase} los ${label}`) ||
-      constraints.includes(`${phrase} el ${label}`) ||
-      constraints.includes(`${label} ${phrase}`) ||
-      constraints.includes(`los ${label} ${phrase}`),
-    ),
-  )
-}
-
-const DAY_CONSTRAINT_LABELS: Record<DayOfWeek, string[]> = {
-  monday: ['lunes', 'lun', 'monday'],
-  tuesday: ['martes', 'mar', 'tuesday'],
-  wednesday: ['miercoles', 'mie', 'wednesday'],
-  thursday: ['jueves', 'jue', 'thursday'],
-  friday: ['viernes', 'vie', 'friday'],
-  saturday: ['sabados', 'sabado', 'sab', 'saturday'],
-  sunday: ['domingos', 'domingo', 'dom', 'sunday'],
-}
-
-function normalizeConstraintText(value: string | undefined): string {
-  return (value ?? '')
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim()
 }
 
 function validateAllowedSports(

@@ -814,6 +814,9 @@ export default function SettingsPage() {
                       {request.endToEndDurationMs != null && (
                         <p>Propuesta lista: <span className="text-ink">{request.endToEndDurationMs}ms</span></p>
                       )}
+                      {request.generationOutcome && (
+                        <p>Resultado generacion: <span className="text-ink">{formatGenerationOutcome(request.generationOutcome)}</span></p>
+                      )}
                       <p>Retry backend/logico: <span className="text-ink">{request.retryUsed ? 'si' : 'no'}</span></p>
                       <p>Fallback: <span className="text-ink">{request.fallbackUsed ? 'si' : 'no'}</span></p>
                       {request.responseCharCount != null && (
@@ -1525,6 +1528,17 @@ function formatAIOutcome(outcome: NonNullable<AITechnicalResult['outcome']>): st
       return 'parse invalido'
     case 'schema_invalid':
       return 'schema invalido'
+  }
+}
+
+function formatGenerationOutcome(outcome: NonNullable<AITechnicalResult['generationOutcome']>): string {
+  switch (outcome) {
+    case 'model_success':
+      return 'modelo valido'
+    case 'local_fallback':
+      return 'fallback local'
+    case 'failed':
+      return 'fallida'
   }
 }
 
