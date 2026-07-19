@@ -704,16 +704,15 @@ export default function SettingsPage() {
             </div>
           </Card>
 
-          {showDevTools && (
           <Card className="p-4">
             <div className="flex items-start gap-3 mb-3">
               <div className="w-8 h-8 rounded-full bg-brand/15 flex items-center justify-center flex-shrink-0">
                 <Brain size={16} className="text-brand-light" />
               </div>
               <div className="min-w-0 flex-1">
-                <h2 className="text-sm font-semibold text-ink">Debug IA</h2>
+                <h2 className="text-sm font-semibold text-ink">Diagnóstico IA</h2>
                 <p className="text-xs text-ink-muted mt-1 leading-relaxed">
-                  Ultimas solicitudes de RallyIQ con trace, proveedor, duracion y resultado tecnico.
+                  Exporta métricas locales de estabilidad sin incluir prompts ni respuestas completas.
                 </p>
               </div>
               <button
@@ -732,14 +731,16 @@ export default function SettingsPage() {
                   </p>
                 </div>
                 <div className="flex shrink-0 flex-wrap justify-end gap-2">
-                  <button
-                    onClick={() => void handleResetPlanBuilderUsage()}
-                    disabled={isResettingPlanBuilderUsage}
-                    className="inline-flex items-center gap-2 rounded-xl bg-surface px-3 py-2 text-xs font-semibold text-brand-light transition-colors hover:bg-surface-border disabled:opacity-60"
-                  >
-                    <RotateCcw size={13} />
-                    {isResettingPlanBuilderUsage ? 'Reiniciando...' : 'Reset Plan Builder'}
-                  </button>
+                  {showDevTools && (
+                    <button
+                      onClick={() => void handleResetPlanBuilderUsage()}
+                      disabled={isResettingPlanBuilderUsage}
+                      className="inline-flex items-center gap-2 rounded-xl bg-surface px-3 py-2 text-xs font-semibold text-brand-light transition-colors hover:bg-surface-border disabled:opacity-60"
+                    >
+                      <RotateCcw size={13} />
+                      {isResettingPlanBuilderUsage ? 'Reiniciando...' : 'Reset Plan Builder'}
+                    </button>
+                  )}
                   <button
                     onClick={() => void handleExportBetaQuality()}
                     disabled={isExportingBetaQuality}
@@ -772,11 +773,12 @@ export default function SettingsPage() {
                 <p className="mt-3 text-xs text-emerald-400">{betaQualityStatus}</p>
               )}
             </div>
-            {aiDebugRequests.length === 0 ? (
-              <p className="text-xs text-ink-faint">Aun no hay trazas IA en esta sesion.</p>
-            ) : (
-              <div className="space-y-2">
-                {aiDebugRequests.slice(0, 20).map((request) => (
+            {showDevTools && (
+              aiDebugRequests.length === 0 ? (
+                <p className="text-xs text-ink-faint">Aun no hay trazas IA en esta sesion.</p>
+              ) : (
+                <div className="space-y-2">
+                  {aiDebugRequests.slice(0, 20).map((request) => (
                   <div
                     key={request.traceId}
                     className="rounded-xl border border-surface-border bg-surface-raised px-3 py-2.5 text-xs text-ink-muted"
@@ -861,11 +863,11 @@ export default function SettingsPage() {
                       )}
                     </div>
                   </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )
             )}
           </Card>
-          )}
 
           <Card className="p-4">
             <div className="flex items-start gap-3 mb-3">
