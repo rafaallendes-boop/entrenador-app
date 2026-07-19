@@ -3,7 +3,9 @@ import { describe, expect, it } from 'vitest'
 import {
   DAY_OF_WEEK_ORDER,
   ONBOARDING_DAY_ORDER,
+  MAX_WEEKLY_SESSIONS,
   clampSessionsPerWeekToAvailability,
+  getSessionCapacityFromAvailability,
   mapOnboardingDaysToTrainingDays,
   orderSelectedValues,
   replaceOrderedValues,
@@ -38,5 +40,26 @@ describe('schedule utils', () => {
     expect(clampSessionsPerWeekToAvailability(5, ['monday', 'wednesday', 'friday'], true)).toBe(5)
     expect(clampSessionsPerWeekToAvailability(6, ['monday', 'wednesday', 'friday'], true, ['monday'])).toBe(4)
     expect(clampSessionsPerWeekToAvailability(3, [], false)).toBeUndefined()
+  })
+
+  it('supports up to eight sessions only when double-session capacity exists', () => {
+    const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'] as const
+    expect(MAX_WEEKLY_SESSIONS).toBe(8)
+    expect(getSessionCapacityFromAvailability(days, false)).toBe(6)
+    expect(getSessionCapacityFromAvailability(days, true, ['monday'])).toBe(7)
+    expect(getSessionCapacityFromAvailability(days, true, ['monday', 'wednesday', 'friday'])).toBe(8)
+    expect(clampSessionsPerWeekToAvailability(8, days, true, ['monday', 'wednesday', 'friday'])).toBe(8)
+  })
+
+  it('honours schedule constraints so the UI cannot advertise blocks the engine will clamp', () => {
+    const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'] as const
+    const doubles = ['monday', 'tuesday'] as const
+
+    expect(getSessionCapacityFromAvailability(days, true, doubles)).toBe(8)
+    // Monday drops out entirely, and with it its double.
+    expect(getSessionCapacityFromAvailability(days, true, doubles, 'lunes no disponible')).toBe(6)
+    // A day pinned to one block still hosts a session but never a double.
+    expect(getSessionCapacityFromAvailability(days, true, doubles, 'martes solo PM')).toBe(7)
+    expect(clampSessionsPerWeekToAvailability(8, days, true, doubles, 'lunes no disponible')).toBe(6)
   })
 })

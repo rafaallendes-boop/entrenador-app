@@ -160,7 +160,7 @@ const REQUEST_MAX_TOKENS: Record<RequestClass, number> = {
   chat_general: 2400,
   chat_action: 4200,
   weekly_summary: 1600,
-  week_creator: 8000,
+  week_creator: 2500,
   plan_builder_week: 3500,
   plan_builder_pair: 4200,
   import_extract: 2000,

@@ -1,4 +1,7 @@
 import type { DayOfWeek } from '../types'
+import { resolveScheduleCapacity } from '../services/weekCreator/scheduleConstraints'
+
+export const MAX_WEEKLY_SESSIONS = 8
 
 export const ONBOARDING_DAY_ORDER = ['lun', 'mar', 'mié', 'jue', 'vie', 'sáb', 'dom'] as const
 export type OnboardingDayKey = typeof ONBOARDING_DAY_ORDER[number]
@@ -113,16 +116,39 @@ export function clampSessionsPerWeekToAvailability(
   trainingDays: readonly DayOfWeek[],
   allowDoubleSession: boolean,
   doubleSessionDays?: readonly DayOfWeek[],
+  scheduleConstraints?: string,
 ): number | undefined {
   if (sessionsPerWeek == null) return undefined
 
-  const doubleCapacity = allowDoubleSession
-    ? (doubleSessionDays && doubleSessionDays.length > 0
-      ? doubleSessionDays.filter((day) => trainingDays.includes(day)).length
-      : trainingDays.length)
-    : 0
-  const maxSessions = trainingDays.length + doubleCapacity
+  const maxSessions = getSessionCapacityFromAvailability(
+    trainingDays,
+    allowDoubleSession,
+    doubleSessionDays,
+    scheduleConstraints,
+  )
   if (maxSessions <= 0) return undefined
 
   return Math.min(sessionsPerWeek, maxSessions)
+}
+
+/**
+ * UI-facing wrapper over `resolveScheduleCapacity`, the single source of truth
+ * for how many blocks a schedule leaves open. Computing this by hand here is
+ * what let the editor advertise a target the engine would silently clamp, so
+ * the only thing this adds is the product ceiling.
+ */
+export function getSessionCapacityFromAvailability(
+  trainingDays: readonly DayOfWeek[],
+  allowDoubleSession: boolean,
+  doubleSessionDays?: readonly DayOfWeek[],
+  scheduleConstraints?: string,
+): number {
+  const { capacity } = resolveScheduleCapacity({
+    trainingDays: [...trainingDays],
+    doubleSessionDays: doubleSessionDays ? [...doubleSessionDays] : undefined,
+    allowDoubleSession,
+    scheduleConstraints,
+  })
+
+  return Math.min(capacity, MAX_WEEKLY_SESSIONS)
 }

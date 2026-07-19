@@ -9,6 +9,7 @@ import type {
 } from '../../types'
 import { getAllowedPlanningSports } from '../planningConstraints'
 import { getEnabledSports, getPrimarySportNormalized, normalizeSport } from '../../utils/athlete'
+import { MAX_WEEKLY_SESSIONS } from '../../utils/schedule'
 
 export interface WeekCreatorEffectiveConfig {
   trainingDays: DayOfWeek[]
@@ -64,7 +65,6 @@ const SPANISH_DAY_MAP: Record<string, DayOfWeek> = {
 const DEFAULT_ALLOWED_SPORTS: SupportedSport[] = ['squash']
 const DEFAULT_SESSIONS_PER_WEEK = 3
 const DEFAULT_SESSION_DURATION_MINS = 60
-const MAX_SESSIONS_PER_WEEK = 6
 const DEFAULT_FITNESS_LEVEL: WizardFitnessLevel = 'normal'
 const DEFAULT_FATIGUE_LEVEL: WizardFatigueLevel = 'normal'
 
@@ -86,12 +86,15 @@ function clampSessionsPerWeek(value: number, maxSessionsPerWeek: number): number
   return Math.min(Math.max(Math.round(value), DEFAULT_SESSIONS_PER_WEEK), maxSessionsPerWeek)
 }
 
-function resolveMaxSessionsPerWeek(trainingDays: DayOfWeek[], rawDoubleSessionDays?: string[]): number {
+function resolveMaxSessionsPerWeek(
+  trainingDays: DayOfWeek[],
+  rawDoubleSessionDays?: string[],
+): number {
   const trainingDaySet = new Set(trainingDays)
   const doubleDays = normalizeAvailableDays(rawDoubleSessionDays)
     .filter((day) => trainingDaySet.has(day))
   const capacity = trainingDays.length + new Set(doubleDays).size
-  return Math.max(1, Math.min(capacity, MAX_SESSIONS_PER_WEEK))
+  return Math.max(1, Math.min(capacity, MAX_WEEKLY_SESSIONS))
 }
 
 function deriveScheduleSessionsPerWeek(
@@ -142,8 +145,10 @@ export function extractRequestedSessionsPerWeek(userMessage: string): number | u
     cuatro: 4,
     cinco: 5,
     seis: 6,
+    siete: 7,
+    ocho: 8,
   }
-  const wordMatch = normalized.match(/\b(dos|tres|cuatro|cinco|seis)\s*(?:sesiones|entrenamientos|sesion(?:es)?|dias?\s+de\s+entreno)\b/)
+  const wordMatch = normalized.match(/\b(dos|tres|cuatro|cinco|seis|siete|ocho)\s*(?:sesiones|entrenamientos|sesion(?:es)?|dias?\s+de\s+entreno)\b/)
   return wordMatch ? wordToNumber[wordMatch[1]] : undefined
 }
 
@@ -201,7 +206,7 @@ export function resolveWeekCreatorConfig(profile: AthleteProfile | null | undefi
       trainingDays: [...DEFAULT_TRAINING_DAYS],
       doubleSessionDays: [],
       sessionsPerWeek: DEFAULT_SESSIONS_PER_WEEK,
-      maxSessionsPerWeek: MAX_SESSIONS_PER_WEEK,
+      maxSessionsPerWeek: DEFAULT_TRAINING_DAYS.length,
       sessionDurationMins: DEFAULT_SESSION_DURATION_MINS,
       allowDoubleSession: false,
       allowedSports: [...DEFAULT_ALLOWED_SPORTS],
@@ -233,9 +238,17 @@ export function resolveWeekCreatorConfig(profile: AthleteProfile | null | undefi
     const allowDoubleSession = hasCurrentScheduleDays
       ? doubleSessionDays.length > 0
       : doubleSessionDays.length > 0 || wizard.allowDoubleSession
+    const scheduleConstraints = profile.scheduleProfile?.constraints ?? wizard.scheduleConstraints
     const maxSessionsPerWeek = allowDoubleSession
-      ? Math.min(trainingDays.length + (hasCurrentScheduleDays ? doubleSessionDays.length : Math.max(doubleSessionDays.length, wizard.allowDoubleSession ? trainingDays.length : 0)), MAX_SESSIONS_PER_WEEK)
-      : Math.min(trainingDays.length, MAX_SESSIONS_PER_WEEK)
+      ? Math.min(
+          trainingDays.length + (
+            hasCurrentScheduleDays
+              ? doubleSessionDays.length
+              : Math.max(doubleSessionDays.length, wizard.allowDoubleSession ? trainingDays.length : 0)
+          ),
+          MAX_WEEKLY_SESSIONS,
+        )
+      : Math.min(trainingDays.length, MAX_WEEKLY_SESSIONS)
     const sessionsPerWeek = hasCurrentScheduleDays
       ? deriveScheduleSessionsPerWeek(trainingDays, doubleSessionDays, profile.scheduleProfile?.sessionsPerWeek, Math.max(1, maxSessionsPerWeek))
       // Cap the wizard target to the real day/double capacity. We only clamp the
@@ -255,7 +268,7 @@ export function resolveWeekCreatorConfig(profile: AthleteProfile | null | undefi
       competitiveLevel,
       trainingPriority,
       injuryNotes: profile.recoveryProfile?.restrictions ?? wizard.injuryNotes,
-      scheduleConstraints: profile.scheduleProfile?.constraints ?? wizard.scheduleConstraints,
+      scheduleConstraints,
       currentFitnessLevel: wizard.currentFitnessLevel,
       currentFatigue: wizard.currentFatigue,
       fromWizard: true,
@@ -268,7 +281,10 @@ export function resolveWeekCreatorConfig(profile: AthleteProfile | null | undefi
   const doubleSessionDays = normalizeAvailableDays(profile.scheduleProfile?.doubleSessionDays)
     .filter((day) => trainingDays.includes(day))
   const hasScheduleSignal = derivedDays.length > 0 || Boolean(profile.scheduleProfile)
-  const maxSessionsPerWeek = resolveMaxSessionsPerWeek(trainingDays, profile.scheduleProfile?.doubleSessionDays)
+  const maxSessionsPerWeek = resolveMaxSessionsPerWeek(
+    trainingDays,
+    profile.scheduleProfile?.doubleSessionDays,
+  )
   const sessionsPerWeek = hasScheduleSignal
     ? deriveScheduleSessionsPerWeek(trainingDays, doubleSessionDays, profile.scheduleProfile?.sessionsPerWeek, maxSessionsPerWeek)
     : DEFAULT_SESSIONS_PER_WEEK

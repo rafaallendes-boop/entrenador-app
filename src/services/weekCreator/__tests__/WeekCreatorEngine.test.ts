@@ -119,15 +119,15 @@ describe('resolveWeekCreatorConfig', () => {
     expect(config.configSource).toBe('schedule')
   })
 
-  it('derives six sessions from seven available days in auto mode', () => {
+  it('derives eight sessions from seven available days with double-session capacity in auto mode', () => {
     const config = resolveWeekCreatorConfig(makeProfile({
       scheduleProfile: {
         availableDays: ['lun', 'mar', 'mié', 'jue', 'vie', 'sáb', 'dom'],
         doubleSessionDays: ['lun', 'mar', 'mié', 'jue', 'vie'],
       },
     }))
-    expect(config.sessionsPerWeek).toBe(6)
-    expect(config.maxSessionsPerWeek).toBe(6)
+    expect(config.sessionsPerWeek).toBe(8)
+    expect(config.maxSessionsPerWeek).toBe(8)
   })
 
   it('derives four sessions from five available days in auto mode', () => {
@@ -137,7 +137,7 @@ describe('resolveWeekCreatorConfig', () => {
     expect(config.sessionsPerWeek).toBe(4)
   })
 
-  it('derives six sessions from six available days when auto mode has double-session days', () => {
+  it('derives seven sessions from six available days when auto mode has double-session days', () => {
     const config = resolveWeekCreatorConfig(makeProfile({
       scheduleProfile: {
         availableDays: ['lun', 'mar', 'mié', 'jue', 'vie', 'sáb'],
@@ -145,8 +145,8 @@ describe('resolveWeekCreatorConfig', () => {
       },
     }))
 
-    expect(config.sessionsPerWeek).toBe(6)
-    expect(config.maxSessionsPerWeek).toBe(6)
+    expect(config.sessionsPerWeek).toBe(7)
+    expect(config.maxSessionsPerWeek).toBe(8)
     expect(config.allowDoubleSession).toBe(true)
   })
 
@@ -199,6 +199,20 @@ describe('resolveWeekCreatorConfig', () => {
         sessionsPerWeek: 6,
       },
     })).sessionsPerWeek).toBe(3)
+  })
+
+  it('allows an explicit eight-session target when selected double days provide enough slots', () => {
+    const config = resolveWeekCreatorConfig(makeProfile({
+      scheduleProfile: {
+        availableDays: ['lun', 'mar', 'mié', 'jue', 'vie', 'sáb'],
+        doubleSessionDays: ['lun', 'mié', 'vie'],
+        sessionsPerWeek: 8,
+      },
+    }))
+
+    expect(config.sessionsPerWeek).toBe(8)
+    expect(config.maxSessionsPerWeek).toBe(8)
+    expect(config.doubleSessionDays).toEqual(['monday', 'wednesday', 'friday'])
   })
 
   it('uses inferred primary sport when enabled sports are missing', () => {
@@ -332,6 +346,7 @@ describe('resolveWeekCreatorConfig', () => {
   it('extracts explicit session counts from chat messages', () => {
     expect(extractRequestedSessionsPerWeek('Créame 6 sesiones priorizando squash')).toBe(6)
     expect(extractRequestedSessionsPerWeek('Quiero cinco entrenamientos esta semana')).toBe(5)
+    expect(extractRequestedSessionsPerWeek('Quiero ocho entrenamientos esta semana')).toBe(8)
     expect(extractRequestedSessionsPerWeek('Crear semana normal')).toBeUndefined()
   })
 })
@@ -1522,6 +1537,50 @@ describe('WeekCreatorEngine', () => {
     expect(visibleText).not.toMatch(new RegExp('recuperaci' + '[oó]n a' + 'l T', 'i'))
     expect(visibleText).not.toContain('Drives paralelos con ' + 'recuperaci' + 'ón a' + 'l T')
     expect(visibleText).toContain('Tiros paralelos profundos')
+  })
+
+  it('builds a valid eight-session fallback using only explicitly allowed double days', async () => {
+    mockProviderCall.mockImplementation(async (request: { requestClass: string; traceId: string }) => ({
+      text: 'Respuesta sin una create_week aplicable.',
+      provider: 'gemini',
+      model: 'gemini-flash',
+      traceId: request.traceId,
+      requestClass: request.requestClass,
+    }))
+
+    const context: ChatContext = {
+      athleteProfile: makeProfile({
+        scheduleProfile: {
+          availableDays: ['lun', 'mar', 'mié', 'jue', 'vie', 'sáb'],
+          doubleSessionDays: ['lun', 'mié', 'vie'],
+          sessionsPerWeek: 8,
+        },
+      }),
+      recentSessions: [],
+      plannedSessions: [],
+      historicalSessions: [],
+    }
+
+    const response = await WeekCreatorEngine.sendWeekCreate(
+      'Créame ocho entrenamientos priorizando squash',
+      context,
+      { surface: 'chat', targetWeekStart: '2026-05-11' },
+    )
+
+    const sessions = response.actions?.[0].sessions ?? []
+    const countsByDate = sessions.reduce<Record<string, number>>((counts, session) => {
+      counts[session.date] = (counts[session.date] ?? 0) + 1
+      return counts
+    }, {})
+    const doubleDates = Object.entries(countsByDate)
+      .filter(([, count]) => count === 2)
+      .map(([date]) => date)
+
+    expect(response.fallbackUsed).toBe(true)
+    expect(sessions).toHaveLength(8)
+    expect(new Set(sessions.map((session) => `${session.date}:${session.timeBlock}`)).size).toBe(8)
+    expect(doubleDates).toHaveLength(2)
+    expect(doubleDates.every((date) => ['2026-05-11', '2026-05-13', '2026-05-15'].includes(date))).toBe(true)
   })
 
   it('repairs a Tuesday AM proposal to PM without a second provider request', async () => {

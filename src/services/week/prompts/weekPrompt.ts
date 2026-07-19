@@ -204,6 +204,23 @@ export function buildWeekCreatorSystemPrompt(): string {
   return buildWeekSystemPromptBase({ mode: 'standalone', density: 'minimal' })
 }
 
+/**
+ * Week Creator always sends a JSON response schema in production. Keep this
+ * instruction compact and let the schema remain the single field definition;
+ * repeating the legacy <actions> contract here wastes input tokens and gives
+ * the model two incompatible output formats to follow.
+ */
+export function buildWeekCreatorStructuredSystemPrompt(): string {
+  return [
+    'Eres un generador de semanas de entrenamiento.',
+    'Responde SOLO con un objeto JSON que cumpla el responseSchema configurado por la app: sin markdown, texto adicional ni wrappers <actions>.',
+    'Devuelve exactamente una create_week con el targetDate y la cantidad de sesiones solicitados.',
+    'Respeta el rango de fechas, días y bloques AM/PM disponibles, deportes permitidos, carga, fatiga y restricciones médicas activas.',
+    'Cada sesión debe ser ejecutable y válida según el schema. Si falta o sobra una sesión, o algún campo es inválido, corrígelo antes de responder; no omitas sesiones.',
+    'Sé compacto: evita repetir reglas o narrar tu razonamiento dentro de reason, objective y weekObjectives.',
+  ].join('\n')
+}
+
 export function buildWeekBatchStructuredSystemPromptMinimal(): string {
   return [
     'Eres el generador de DOS semanas consecutivas dentro de un plan por evento ya estructurado.',

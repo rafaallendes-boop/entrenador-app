@@ -1,7 +1,7 @@
 # Plan de mejora de la generación semanal (`week_creator`)
 
 **Fecha:** 2026-07-16
-**Estado:** Fase 0 desplegada con smoke inicial de producción; hardening de trazabilidad y disponibilidad implementado localmente, pendiente de despliegue y ampliación de muestra.
+**Estado:** Fase 0 cerrada técnicamente con línea base provisional; Fase 1 implementada localmente, pendiente de despliegue y canary de bajo costo.
 **Objetivo:** llevar el p95 de una generación semanal completa y accionable a menos de 10 segundos, manteniendo intactas las restricciones médicas, la disponibilidad y la coherencia de carga.
 
 ## Resumen ejecutivo
@@ -84,13 +84,17 @@ La salida real de OpenAI aún no debe fijarse desde fixtures. Después del despl
 - Auditoría de prompt aprobada.
 - Load test aprobado en modo seco, sin consumir OpenAI.
 
-### Pendiente para cerrar Fase 0
+### Cierre técnico de Fase 0
 
-1. Desplegar el hardening que agrega `logicalAttempt`, resultado terminal de generación y medición end-to-end de fallos.
-2. Exportar `Beta quality local` para incorporar tiempos de propuesta lista, etapas locales, repair, fallback y cohortes que no existen en los logs de Netlify.
-3. Reunir un mínimo de 20 generaciones para smoke y 30–50 para una línea base razonable.
-4. Revisar tamaños y resultados separados por primer intento, segundo intento y fallback, además de `modelGenerationRate`.
-5. Registrar la línea base estable en este documento antes de cambiar cap, prompt, reasoning o modelo.
+La instrumentación, el hardening, el export local y la medición end-to-end ya están
+desplegados y observados en producción. La muestra acumulada identificable contiene diez
+generaciones lógicas, por lo que la línea base se conserva como **provisional**: no alcanza
+las 20 muestras definidas para un smoke ni las 30–50 necesarias para afirmar un p95 estable.
+
+El owner confirmó que cada generación real tiene costo de API. Para no convertir el cierre
+estadístico en gasto artificial, la recolección continuará pasivamente durante el uso normal.
+Esto no bloquea el desarrollo de la Fase 1, pero sí impide declarar cumplido el SLO final o
+atribuir una mejora de producción con una muestra pequeña.
 
 No se considera que el objetivo p95 esté logrado hasta medir propuestas finales válidas en producción.
 
@@ -164,6 +168,37 @@ de filtrar (leerla como "cualquier día" después del filtro reabría los días 
 
 Cobertura en `__tests__/scheduleConstraints.test.ts`.
 
+### Smoke posterior al hardening — 2026-07-19, 18:15–18:20 America/Santiago
+
+La segunda tanda contiene cinco generaciones lógicas y cinco requests al proveedor. Las
+cinco terminaron al primer intento, sin retry ni fallback; cuatro fueron semanas completas
+y una fue una semana parcial de dos sesiones.
+
+| Métrica | Resultado smoke |
+|---|---:|
+| Generaciones lógicas | 5 |
+| Éxito del modelo | 100% (5/5) |
+| Éxito al primer intento | 100% (5/5) |
+| Retry lógico / fallback local | 0 / 0 |
+| Provider p50 / p95 conservador | 13.464 / 15.852 ms |
+| End-to-end p50 / p95 conservador | 14.901 / 16.657 ms |
+| Completion tokens p50 / máximo | 1.058 / 1.345 |
+| Modelo efectivo | `gpt-4.1-mini-2025-04-14` |
+
+El hardening eliminó los retries en esta tanda, pero el proveedor todavía supera por sí solo
+el SLO de 10 segundos. La muestra sigue siendo insuficiente para afirmar una distribución
+estable.
+
+### Hallazgo posterior de producto — límite de sesiones
+
+La disponibilidad de dobles estaba correctamente propagada, pero Week Creator y las dos UI
+de configuración imponían un máximo global de seis sesiones. En dos respuestas el modelo
+entregó más sesiones y repair aplicó `trimmed_excess` para volver al objetivo de seis.
+
+Este hallazgo no reabre Fase 0: es una restricción funcional previa, no un defecto de la
+instrumentación. Se corrige junto al avance de Fase 1 permitiendo hasta ocho sesiones sólo
+cuando los días y dobles seleccionados aportan suficientes bloques AM/PM.
+
 ---
 
 ## Flujo actual y cuellos de botella
@@ -176,7 +211,7 @@ Solicitud del usuario
      -> ProxyProvider
         -> auth de Supabase
         -> Netlify coach
-     -> OpenAI (cap 8000; reasoning low sólo para gpt-5*)
+     -> OpenAI (cap 2500 en variante Fase 1; reasoning low sólo para gpt-5*)
      -> normalizar
      -> reparar localmente
      -> validar contrato + calendario + deportes + carga
@@ -193,14 +228,16 @@ El proxy no hace retry técnico para `week_creator`; `shouldUseTechnicalRetry` s
 
 ### 2. Presupuesto de salida y reasoning
 
-La política actual usa:
+La variante local de Fase 1 usa:
 
-- `maxTokens: 8000`;
+- `maxTokens: 2500` (producción conserva 8.000 hasta desplegar esta variante);
 - timeout cliente/servidor: 23.000 ms;
 - OpenAI `reasoning_effort: low` para `week_creator` cuando el modelo comienza con `gpt-5`;
 - JSON Schema con `strict: false`.
 
-El cap no obliga al modelo a completar los 8.000 tokens, pero permite colas largas y consumo de reasoning muy superior al necesario. Debe ajustarse con el p99 observado, no por intuición.
+El cap no obliga al modelo a consumirlo completo. La reducción a 2.500 funciona primero como
+guardrail: la muestra observada terminó como máximo en 1.345 tokens y el canary debe confirmar
+que ocho sesiones siguen terminando con `finishReason=stop`.
 
 ### 3. Contrato de salida demasiado detallado
 
@@ -321,17 +358,66 @@ Con menos de 20 muestras se reporta smoke, no una conclusión de p95.
 
 **Objetivo:** reducir la latencia remota sin cambiar el contrato funcional.
 
+### Estado implementado localmente — 2026-07-19
+
+- El cap de `week_creator` baja de 8.000 a 2.500 tokens tanto en el cliente como en el proxy.
+  El máximo observado fue 1.345 tokens; la fórmula con 30% daría 1.749. Se eligieron 2.500
+  como margen conservador por la muestra pequeña y por el nuevo máximo de ocho sesiones.
+- El experimento de reasoning se omite: el modelo efectivo es GPT-4.1 mini y reporta cero
+  tokens de reasoning.
+- El system prompt estructurado deja de pedir el wrapper legacy `<actions>` mientras el
+  request exige JSON Schema. El schema sigue intacto y pasa a ser la única definición de
+  campos.
+- La fixture auditada baja de 11.355 a 9.040 caracteres totales (-20,4%): system prompt de
+  2.635 a 678 (-74,3%), user prompt de 5.232 a 4.874 (-6,8%) y schema sin cambios en 3.488.
+- Se mantiene la temperatura, timeout, proveedor, modelo, validación, repair y fallback.
+- Como mejora de producto separada, el máximo configurable sube a ocho y se limita siempre
+  a la capacidad real de días + dobles. El fallback determinístico tiene cobertura de ocho
+  sesiones y usa dobles sólo en fechas autorizadas.
+
+#### Corrección posterior al code review — capacidad en las UI
+
+El review encontró dos defectos en la parte de producto (límite de ocho sesiones), no en el
+cap ni en la compactación del prompt:
+
+1. **`AthleteProfileEditor` borraba el objetivo guardado.** `availableDays` arranca en `[]`, así
+   que un perfil sin días marcados daba capacidad 0: los siete botones 2–8 quedaban
+   deshabilitados, el hint explicativo estaba condicionado a `length > 0` (o sea, oculto justo
+   donde hacía falta) y `clampSessionsPerWeekToAvailability` devolvía `undefined`. Como este
+   editor es el único escritor de `scheduleProfile.sessionsPerWeek`, y antes guardaba sin
+   clamp, los perfiles con objetivo y sin días existen en producción: guardar cualquier campo
+   no relacionado borraba el objetivo, sin forma de reponerlo desde la UI. Corrección: sin
+   señal de disponibilidad la capacidad cae al techo de producto en vez de a 0, el objetivo se
+   preserva tal cual y el hint pasa a mostrarse siempre.
+2. **Se había reintroducido una sexta regla de capacidad.** `getSessionCapacityFromAvailability`
+   nacía en `utils/schedule.ts` con su propio cálculo, ignorando `scheduleConstraints`, y
+   contradecía la unificación descrita más arriba. Con lun–sáb, dobles lun+mar y la restricción
+   "lunes no disponible", la UI anunciaba 8 y permitía guardar 8 mientras el motor resolvía 6 y
+   recortaba en silencio. Ahora el helper delega en `resolveScheduleCapacity` y sólo agrega el
+   techo de producto; ambas UI le pasan el texto de restricciones cuando existe.
+
+Cobertura: `src/utils/__tests__/schedule.test.ts` y el nuevo
+`src/components/settings/__tests__/AthleteProfileEditor.test.tsx`.
+
+La Fase 1 todavía requiere un canary de producción antes de considerarse cerrada. Los cambios
+de cap y prompt se despliegan juntos en esta primera variante local, pero no se mezclan con
+reasoning ni cambio de modelo.
+
 ### 1.1 Ajustar el cap de salida
 
-Después de 30–50 muestras, calcular:
+La regla de decisión para una muestra estable continúa siendo:
 
 ```text
 cap candidato = ceil(p99(completionTokens) * 1,30)
 ```
 
-Para modelos donde `completionTokens` incluye reasoning, comprobar también el p99 de `reasoningTokens`. El rango inicial esperado para probar es 2.500–3.500, pero no se fija hasta observar producción.
+Para modelos donde `completionTokens` incluye reasoning, comprobar también el p99 de
+`reasoningTokens`. Como producir 30–50 muestras artificiales tiene costo real, el canary usa
+2.500 sobre la evidencia existente y completa la muestra pasivamente.
 
-Ejecutar el cambio como experimento aislado. Revertir si aumenta `finishReason=length`, respuestas incompletas o retries.
+Revertir si aumenta `finishReason=length`, aparecen respuestas incompletas o retries. El canary
+de bajo costo evalúa el paquete de quick wins de Fase 1; no pretende atribuir por separado la
+mejora entre cap y compactación del prompt.
 
 ### 1.2 Probar reasoning mínimo
 
@@ -521,7 +607,8 @@ npm run audit:prompt
 LOADTEST_DRY_RUN=true npm run loadtest:week-creator
 ```
 
-Para la tanda autenticada, exportar previamente `COACH_AUTH_TOKEN` sin guardarlo en el repositorio:
+Sólo si el owner decide pagar una tanda autenticada, exportar previamente `COACH_AUTH_TOKEN`
+sin guardarlo en el repositorio:
 
 ```bash
 COACH_ENDPOINT=https://app.rallyiq.cl/.netlify/functions/coach \
@@ -530,6 +617,36 @@ npm run loadtest:week-creator
 ```
 
 El test es secuencial para medir experiencia individual y evitar que la concurrencia contamine la primera línea base. El presupuesto de fallback puede configurarse con `LOADTEST_FALLBACK_TARGET`, pero el valor del SLO y default es `0.02`.
+
+### Canary de bajo costo acordado para Fase 1
+
+No ejecutar `LOADTEST_N=30` contra OpenAI sólo para fabricar muestra. Antes del despliegue,
+usar exclusivamente verificaciones sin costo de API:
+
+```bash
+npm test
+npm run audit:prompt
+LOADTEST_DRY_RUN=true npm run loadtest:week-creator
+npm run lint
+npm run build
+```
+
+Después del despliegue, hacer una sola generación pagada controlada:
+
+1. Configurar seis días disponibles, al menos tres días aptos para doble sesión y objetivo de
+   ocho sesiones.
+2. Generar una semana completa y comprobar que contiene ocho sesiones, dos días dobles AM/PM
+   y ninguna doble fuera de los días autorizados.
+3. Exportar `Beta quality local` y comprobar `maxTokens=2500`, `finishReason=stop`,
+   `generationOutcome=model_success`, `retryUsed=false`, `fallbackUsed=false` y
+   `expectedSessionCount=8`.
+4. Revisar manualmente restricciones, distribución deportiva y coherencia de carga antes de
+   aceptar la propuesta.
+5. Si aparece `finishReason=length`, una sesión fuera de disponibilidad, retry o fallback,
+   volver temporalmente al cap anterior y conservar el export para diagnóstico.
+
+Las generaciones reales posteriores se incorporan pasivamente a la muestra. Con menos de 20
+se reporta sólo canary; no se declara mejora estable de p95.
 
 ---
 

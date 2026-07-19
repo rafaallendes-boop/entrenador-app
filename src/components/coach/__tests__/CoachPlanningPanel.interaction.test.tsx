@@ -107,7 +107,7 @@ describe('CoachPlanningPanel interactions', () => {
   it('picker vacío informa que todavía no hay plantillas', async () => {
     mount([], true)
     await userEvent.click(screen.getAllByRole('button', { name: 'Desde plantilla' })[0])
-    expect(await screen.findByText('Todavía no tenés plantillas guardadas.')).toBeTruthy()
+    expect(await screen.findByText('Todavía no tienes plantillas guardadas.')).toBeTruthy()
   })
 
   it('elegir una plantilla abre el modal con la fecha del día', async () => {
@@ -141,7 +141,7 @@ describe('CoachPlanningPanel interactions', () => {
     mount([], true)
     await userEvent.click(screen.getAllByRole('button', { name: 'Desde plantilla' })[0])
 
-    expect(await screen.findByText('Todavía no tenés plantillas guardadas.')).toBeTruthy()
+    expect(await screen.findByText('Todavía no tienes plantillas guardadas.')).toBeTruthy()
     expect(screen.queryByText('Borrada')).toBeNull()
     expect(screen.queryByText('Futura')).toBeNull()
   })
@@ -151,7 +151,7 @@ describe('CoachPlanningPanel interactions', () => {
     mount([], true)
     await userEvent.click(screen.getAllByRole('button', { name: 'Desde plantilla' })[0])
     expect((await screen.findByRole('alert')).textContent).toContain('Biblioteca sin conexión')
-    expect(screen.queryByText('Todavía no tenés plantillas guardadas.')).toBeNull()
+    expect(screen.queryByText('Todavía no tienes plantillas guardadas.')).toBeNull()
   })
 
   it('guarda una sesión como plantilla con el nombre confirmado', async () => {

@@ -456,7 +456,7 @@ export default function CoachPlanningPanel({
             ) : templatesLoading ? (
               <p role="status" className="text-sm text-ink-muted">Cargando plantillas…</p>
             ) : templateOptions.length === 0 ? (
-              <p className="text-sm text-ink-muted">Todavía no tenés plantillas guardadas.</p>
+              <p className="text-sm text-ink-muted">Todavía no tienes plantillas guardadas.</p>
             ) : (
               <div className="space-y-2">
                 {templateOptions.map((template) => (

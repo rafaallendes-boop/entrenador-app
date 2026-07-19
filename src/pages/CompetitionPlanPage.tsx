@@ -13,7 +13,9 @@ import { getEnabledSports } from '../utils/athlete'
 import { isStrictISODate } from '../utils/date'
 import {
   DAY_OF_WEEK_ORDER,
+  MAX_WEEKLY_SESSIONS,
   clampSessionsPerWeekToAvailability,
+  getSessionCapacityFromAvailability,
   mapOnboardingDaysToTrainingDays,
   orderSelectedValues,
   replaceOrderedValues,
@@ -102,7 +104,10 @@ const SESSION_DURATION_OPTIONS = [
   { value: 120, label: '2 horas' },
 ]
 
-const SESSIONS_PER_WEEK_OPTIONS = [2, 3, 4, 5, 6]
+const SESSIONS_PER_WEEK_OPTIONS = Array.from(
+  { length: MAX_WEEKLY_SESSIONS - 1 },
+  (_, index) => index + 2,
+)
 
 const FITNESS_OPTIONS: { value: WizardFitnessLevel; label: string; sub: string }[] = [
   { value: 'fit',       label: 'En buena forma', sub: 'Vengo entrenando bien' },
@@ -794,12 +799,11 @@ function Step4Schedule({
     })
   }
 
-  const doubleCapacity = state.allowDoubleSession
-    ? (state.doubleSessionDays.length > 0
-      ? state.doubleSessionDays.filter((day) => state.trainingDays.includes(day)).length
-      : state.trainingDays.length)
-    : 0
-  const maxSessions = state.trainingDays.length + doubleCapacity
+  const maxSessions = getSessionCapacityFromAvailability(
+    state.trainingDays,
+    state.allowDoubleSession,
+    state.doubleSessionDays,
+  )
 
   return (
     <div>

@@ -167,7 +167,7 @@ export default function CoachLibraryPanel() {
       ) : templates.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-ink/15 px-5 py-8 text-center">
           <p className="text-sm text-ink-muted">
-            Todavía no tenés plantillas. Creá la primera o guardá una sesión desde Planificación.
+            Todavía no tienes plantillas. Crea la primera o guarda una sesión desde Planificación.
           </p>
         </div>
       ) : (

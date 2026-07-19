@@ -118,6 +118,41 @@ describe('buildWeekCreatorPrompt whoop effort', () => {
 })
 
 describe('buildWeekCreatorPrompt quality blocks', () => {
+  it('uses one compact JSON contract when structured output is enabled', () => {
+    const context: ChatContext = {
+      athleteProfile: makeProfile(),
+      recentSessions: [],
+      plannedSessions: [],
+      historicalSessions: [],
+      weekDayLogs: [],
+    }
+    const result = buildWeekCreatorPrompt(context, {
+      userMessage: 'Créame la semana',
+      targetWeekStart: '2026-06-15',
+      config: makeConfig(),
+      strictFormatting: true,
+      structuredOutput: true,
+    })
+
+    expect(result.systemPrompt).toContain('responseSchema')
+    expect(result.systemPrompt).toContain('restricciones médicas activas')
+    expect(result.systemPrompt).not.toContain('primer caracter debe ser "<"')
+    expect(result.userPrompt.match(/Contrato de salida obligatorio/g)).toBeNull()
+    expect(result.systemPrompt.length).toBeLessThan(900)
+  })
+
+  it('states the minimum number of double sessions required by the target', () => {
+    const prompt = buildPrompt({}, {
+      trainingDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'],
+      doubleSessionDays: ['monday', 'wednesday', 'friday'],
+      sessionsPerWeek: 8,
+      maxSessionsPerWeek: 8,
+      allowDoubleSession: true,
+    })
+
+    expect(prompt).toContain('debes usar al menos 2 doble(s) AM/PM')
+  })
+
   it('renders an enriched athlete profile, week objectives and squash phase guide', () => {
     const prompt = buildPrompt({}, { currentFatigue: 'fresh' }, [
       'Consolidar presión a la T',

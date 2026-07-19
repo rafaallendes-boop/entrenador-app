@@ -50,7 +50,7 @@ describe('CoachLibraryPanel', () => {
 
   it('muestra el empty state y mantiene el CTA de creación', async () => {
     render(<CoachLibraryPanel />)
-    expect(await screen.findByText(/Todavía no tenés plantillas/)).toBeTruthy()
+    expect(await screen.findByText(/Todavía no tienes plantillas/)).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Nueva plantilla' })).toBeTruthy()
   })
 
@@ -117,7 +117,7 @@ describe('CoachLibraryPanel', () => {
   it('crea una plantilla desde el editor y recarga la lista', async () => {
     mocks.list.mockResolvedValueOnce([]).mockResolvedValueOnce([supported])
     render(<CoachLibraryPanel />)
-    await screen.findByText(/Todavía no tenés plantillas/)
+    await screen.findByText(/Todavía no tienes plantillas/)
     await userEvent.click(screen.getByRole('button', { name: 'Nueva plantilla' }))
     await userEvent.click(screen.getByRole('button', { name: 'Crear plantilla' }))
     expect(mocks.create).toHaveBeenCalledWith('Sesion de squash', expect.objectContaining({
@@ -161,7 +161,7 @@ describe('CoachLibraryPanel', () => {
     mocks.create.mockImplementation(() => new Promise<void>((resolve) => { release = resolve }))
     mocks.list.mockResolvedValueOnce([]).mockResolvedValueOnce([])
     render(<CoachLibraryPanel />)
-    await screen.findByText(/Todavía no tenés plantillas/)
+    await screen.findByText(/Todavía no tienes plantillas/)
     await userEvent.click(screen.getByRole('button', { name: 'Nueva plantilla' }))
     const submit = screen.getByRole('button', { name: 'Crear plantilla' })
     fireEvent.click(submit)

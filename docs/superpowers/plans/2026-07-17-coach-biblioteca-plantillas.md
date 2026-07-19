@@ -1479,7 +1479,7 @@ export default function SessionForm({ /* existentes */, mode = 'session', initia
 
 **Comportamiento (spec D6):**
 - Lista vivas por `updatedAt` desc: nombre + tipo/deporte + duración. `UnsupportedSessionTemplate`: nombre + "Formato no compatible"; Editar deshabilitado, **Eliminar disponible**.
-- Empty state: "Todavía no tenés plantillas. Creá la primera o guardá una sesión desde Planificación."
+- Empty state: "Todavía no tienes plantillas. Crea la primera o guarda una sesión desde Planificación."
 - Crear: botón "Nueva plantilla" → modal (overlay igual al de `CoachSessionModal`) con `SessionForm mode='template'` → `createSessionTemplate(meta.templateName, draft)`.
 - Editar: solo soportadas → `templateToDraft(payload, todayISO())` para prefill + mapa efímero; submit → `updateSessionTemplate(id, openedVersion, draft, originalsById, meta.templateName)`. `SessionTemplateGoneError` → banner con su mensaje y recarga de lista.
 - Eliminar: `ConfirmDialog` con copy "Eliminar plantilla" / "Las sesiones ya asignadas a tus atletas no se modifican."; confirm → `softDeleteSessionTemplate`; guard síncrono por ref contra doble submit (patrón `deletingRef` de `CoachPlanningPanel`).
@@ -1628,7 +1628,7 @@ export async function createSessionFromTemplateForAthlete(
   Con `template` presente (y sin `session`): `initialValues` = `templateToDraft(template.source.payload, defaultDate).draft`, `defaultSport` = `template.source.payload.type` (sin lookup de perfil), y el submit llama `createSessionFromTemplateForAthlete(ownerAccountId, athleteId, template.source.payload, { date: draft.date, overlayDraft: draft, originalsById })` — el mapa efímero se crea una vez con `useRef` al montar.
 - `CoachPlanningPanel` agrega:
   - Estado `templatePicker: { date: string } | null` y `saveAsTemplate: Session | null`.
-  - CTA **"Desde plantilla"** junto a "+ Agregar sesión" por día, `disabled={isLocked || !canMutate}` → abre picker (lista de `listSessionTemplates()` filtrando no soportadas para aplicar; empty state: "Todavía no tenés plantillas guardadas.") → elegir una abre `CoachSessionModal` con `template` y `defaultDate` del día.
+  - CTA **"Desde plantilla"** junto a "+ Agregar sesión" por día, `disabled={isLocked || !canMutate}` → abre picker (lista de `listSessionTemplates()` filtrando no soportadas para aplicar; empty state: "Todavía no tienes plantillas guardadas.") → elegir una abre `CoachSessionModal` con `template` y `defaultDate` del día.
   - Acción **"Guardar como plantilla"** en el `<article>` de cada sesión (junto a Editar/Borrar), `disabled={isLocked}` pero **NO** condicionada a `canMutate` ni a hidratación (no muta datos del atleta; funciona offline) → dialog de nombre (input con default `session.title`) → `createSessionTemplateFromSession(name, session)` (definida en Task 3; conserva el contenido rico porque NO pasa por draft).
   - Éxito muestra confirmación breve (texto "Plantilla guardada." con `role="status"`); error → banner del patrón existente.
 

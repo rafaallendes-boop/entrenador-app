@@ -7,7 +7,7 @@ import {
   renderWeekCreatorContractReminder,
   renderWeekCreatorTargetInstructions,
 } from '../ai/prompt/renderers/proseSchema'
-import { buildWeekCreatorSystemPrompt } from '../week/prompts/weekPrompt'
+import { buildWeekCreatorStructuredSystemPrompt, buildWeekCreatorSystemPrompt } from '../week/prompts/weekPrompt'
 import { deriveWeekCreatorAthleteTier, type WeekCreatorAthleteTier, type WeekCreatorEffectiveConfig } from './WeekCreatorConfig'
 import { normalizeSport } from '../../utils/athlete'
 import { isWhoopPrefilled } from '../readiness/dayLogPrefillSave'
@@ -54,7 +54,6 @@ export function buildWeekCreatorPrompt(
   const lines = [
     `Solicitud del usuario: ${input.userMessage}`,
     '',
-    `Genera una sola semana para el lunes objetivo ${input.targetWeekStart}.`,
     ...renderWeekCreatorTargetInstructions(createWeekContract, input.targetWeekStart, input.structuredOutput),
     isPartialCurrentWeek
       ? `La semana objetivo ya está en curso: programa sesiones solo desde ${planningStartDate} hasta ${weekEndDate}. No propongas sesiones en días pasados de esta semana.`
@@ -77,17 +76,19 @@ export function buildWeekCreatorPrompt(
     buildRecentCoachAdviceSummary(context.recentMessages),
     context.athleteMemory?.trim() ? `## MEMORIA DEL COACH\n${context.athleteMemory.trim()}` : '',
     input.retryInstruction ? `## CORRECCIÓN DEL INTENTO ANTERIOR\n${input.retryInstruction}` : '',
-    input.strictFormatting
+    input.strictFormatting && !input.structuredOutput
       ? 'Modo estricto: si dudas, prioriza targetDate correcto, fechas válidas, número exacto de sesiones y detalles obligatorios por deporte antes que creatividad.'
       : '',
     '',
     `Regla final: crea una semana cerrada, ejecutable y compacta para ${formatWeekRangeLabel(planningStartDate, weekEndDate)}${isPartialCurrentWeek ? ` (semana calendario ${formatWeekRangeLabel(input.targetWeekStart)})` : ''}.`,
     '',
-    renderWeekCreatorContractReminder(createWeekContract, input.structuredOutput),
+    input.structuredOutput ? '' : renderWeekCreatorContractReminder(createWeekContract, false),
   ].filter(Boolean)
 
   return {
-    systemPrompt: buildWeekCreatorSystemPrompt(),
+    systemPrompt: input.structuredOutput
+      ? buildWeekCreatorStructuredSystemPrompt()
+      : buildWeekCreatorSystemPrompt(),
     userPrompt: lines.join('\n'),
   }
 }
@@ -265,7 +266,7 @@ function buildConfigSummary(config: WeekCreatorEffectiveConfig): string {
     `- Duración por sesión: ${config.sessionDurationMins} min`,
     `- Doble sesión permitido: ${config.allowDoubleSession ? 'sí' : 'no'}`,
     config.allowDoubleSession && config.sessionsPerWeek > config.trainingDays.length
-      ? '- Como las sesiones superan los días disponibles, debes usar al menos una doble sesión en un día marcado como doble.'
+      ? `- Para ubicar ${config.sessionsPerWeek} sesiones en ${config.trainingDays.length} días, debes usar al menos ${config.sessionsPerWeek - config.trainingDays.length} doble(s) AM/PM en días autorizados.`
       : '',
     `- Deportes permitidos: ${config.allowedSports.join(', ')}`,
     config.primarySport ? `- Deporte principal a mantener presente: ${config.primarySport}` : '',

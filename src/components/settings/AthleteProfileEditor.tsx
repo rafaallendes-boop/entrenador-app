@@ -15,9 +15,18 @@ import {
   getPrimarySportNormalized,
   getSportPrioritySummary,
 } from '../../utils/athlete'
+import {
+  MAX_WEEKLY_SESSIONS,
+  clampSessionsPerWeekToAvailability,
+  getSessionCapacityFromAvailability,
+  mapOnboardingDaysToTrainingDays,
+} from '../../utils/schedule'
 
 const DAYS = ['lun', 'mar', 'mie', 'jue', 'vie', 'sab', 'dom']
-const SCHEDULE_SESSION_OPTIONS = [2, 3, 4, 5, 6]
+const SCHEDULE_SESSION_OPTIONS = Array.from(
+  { length: MAX_WEEKLY_SESSIONS - 1 },
+  (_, index) => index + 2,
+)
 
 const SPORT_OPTIONS: { value: SupportedSport; label: string }[] = [
   { value: 'squash', label: 'Squash' },
@@ -70,6 +79,21 @@ export default function AthleteProfileEditor({ profile, isSaving, onSave }: Prop
   )
   const [scheduleConstraints, setScheduleConstraints] = useState(profile?.scheduleProfile?.constraints ?? '')
   const [nutrition, setNutrition] = useState<NutritionProfile>(profile?.nutritionProfile ?? {})
+  const normalizedAvailableDays = mapOnboardingDaysToTrainingDays(availableDays)
+  const normalizedDoubleSessionDays = mapOnboardingDaysToTrainingDays(doubleSessionDays)
+    .filter((day) => normalizedAvailableDays.includes(day))
+  // Without selected days there is no availability signal to clamp against, so
+  // capacity falls back to the product ceiling instead of 0. Treating "no days"
+  // as "no capacity" would disable every option and wipe a saved target.
+  const hasAvailabilitySignal = normalizedAvailableDays.length > 0
+  const scheduleSessionCapacity = hasAvailabilitySignal
+    ? getSessionCapacityFromAvailability(
+      normalizedAvailableDays,
+      normalizedDoubleSessionDays.length > 0,
+      normalizedDoubleSessionDays,
+      scheduleConstraints,
+    )
+    : MAX_WEEKLY_SESSIONS
 
   const resolvedPrimarySport = primarySportCtx ?? (enabledSports.length === 1 ? enabledSports[0] : null)
   const secondarySportsCtx = resolvedPrimarySport
@@ -107,10 +131,19 @@ export default function AthleteProfileEditor({ profile, isSaving, onSave }: Prop
   }
 
   async function handleSave() {
+    const requestedSessionsPerWeek = numOrUndef(scheduleSessionsPerWeek)
     const scheduleProfile: ScheduleProfile = {
       availableDays: availableDays.length > 0 ? availableDays : undefined,
       doubleSessionDays: doubleSessionDays.length > 0 ? doubleSessionDays : undefined,
-      sessionsPerWeek: numOrUndef(scheduleSessionsPerWeek),
+      sessionsPerWeek: hasAvailabilitySignal
+        ? clampSessionsPerWeekToAvailability(
+          requestedSessionsPerWeek,
+          normalizedAvailableDays,
+          normalizedDoubleSessionDays.length > 0,
+          normalizedDoubleSessionDays,
+          scheduleConstraints,
+        )
+        : requestedSessionsPerWeek,
       constraints: scheduleConstraints.trim() || undefined,
     }
 
@@ -479,7 +512,8 @@ export default function AthleteProfileEditor({ profile, isSaving, onSave }: Prop
                   key={amount}
                   type="button"
                   onClick={() => setScheduleSessionsPerWeek(String(amount))}
-                  className={`rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors ${
+                  disabled={amount > scheduleSessionCapacity}
+                  className={`rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-30 ${
                     scheduleSessionsPerWeek === String(amount)
                       ? 'border-brand/30 bg-brand/20 text-brand-light'
                       : 'border-surface-border bg-surface-raised text-ink-muted'
@@ -489,6 +523,11 @@ export default function AthleteProfileEditor({ profile, isSaving, onSave }: Prop
                 </button>
               ))}
             </div>
+            <p className="mt-2 text-xs text-ink-faint">
+              {hasAvailabilitySignal
+                ? `Máximo configurable con tus días y dobles: ${scheduleSessionCapacity} sesión(es).`
+                : 'Elige tus días disponibles para ajustar este máximo a tu calendario real.'}
+            </p>
           </Field>
           <Field label="Restricciones horarias" className="mt-3">
             <input
