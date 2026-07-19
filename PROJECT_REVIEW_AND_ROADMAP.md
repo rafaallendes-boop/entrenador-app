@@ -7,7 +7,7 @@ Base de contraste:
 - `main` con el commit de esta entrega (`feat: complete coach planning library and calendar hardening`).
 - **`011_whoop_integration.sql` y `012_whoop_workouts.sql` aplicados en produccion.** Whoop readiness y Workout Auto-Complete quedan operativos de punta a punta (owner confirma cierre operacional); pendiente solo el linkeo de consentimiento biometrico/legal antes de exponer a terceros (ver Riesgo 1).
 - **Coach Workspace v0 + ampliacion implementados (2026-07-13 a 2026-07-19):** `/coach` pasa de un roster unico (`CoachRosterPage`) a `CoachWorkspacePage` con Resumen, Alumnos, Planificacion y Biblioteca operativas; Asistente IA conserva el placeholder. Incluye endurecimiento de `switchActiveAthlete`, edicion multi-atleta, alta/aplicacion de plantillas y lock de concurrencia a nivel de modulo. La base v0 ya esta deployada; esta entrega agrega `015`/Dexie v18 y requiere rollout de produccion.
-- **Gestion de roster + Planificacion read-only implementadas localmente (2026-07-14):** Alumnos agrega archivar/restaurar y borrado duro confirmado por nombre. El borrado usa tombstones por intento, barrera y tracking single-tab, delete remoto durable, supresion de cola y purga Dexie transaccional para impedir resurrecciones. Planificacion deja de ser placeholder y muestra la semana de cualquier atleta del roster mediante lecturas/hidratacion por `athleteId` explicito, sin cambiar el scope activo. Pendiente commit/deploy/smoke de produccion; ver seccion 9.
+- **Gestion de roster + Planificacion read-only implementadas (2026-07-14):** Alumnos agrega archivar/restaurar y borrado duro confirmado por nombre. El borrado usa tombstones por intento, barrera y tracking single-tab, delete remoto durable, supresion de cola y purga Dexie transaccional para impedir resurrecciones. Planificacion muestra la semana de cualquier atleta del roster mediante lecturas/hidratacion por `athleteId` explicito, sin cambiar el scope activo. Esta entrega queda commiteada y publicada en `main`; resta rollout y smoke de produccion de `015`/Biblioteca.
 - **Coach Biblioteca + Planificacion completa implementadas localmente (2026-07-18/19):** la rama incorpora edicion de sesiones, Biblioteca de plantillas account-scoped, aplicar/guardar plantillas para cualquier atleta/dia, Dexie v18, backup v4, sync Supabase por fila con LWW/delete-wins y tombstones versionados. La migracion `015_session_templates.sql` queda lista para aplicar manualmente; falta deploy + smoke autenticado en produccion.
 - **Hardening de fechas y semanas (2026-07-19):** conteos de semanas, ventanas de Plan Builder, insights de fatiga y filtros semanales usan dias calendario en vez de milisegundos para no fallar al cruzar DST. Se agrego serializacion JSON canonica para comparar estructuras sin reescrituras redundantes.
 - **Fase 0 de coaches landing completada (2026-07-13):** rutas públicas reales (no AuthGate fallbacks), las cuatro páginas legales publicadas como rutas (`/terms`, `/privacy`, `/health-disclaimer`, y disclamer Whoop), landing `/coaches` en modo prelanzamiento con estructura de 3 planes, metadata/OG cards por ruta con prerender para crawlers, deep links nativos para OAuth callback en iOS, y cierre de compartimiento entre rutas públicas. Falta aún revisión jurídica y RUT/domicilio legal antes de cobro o anuncios masivos.
@@ -146,7 +146,9 @@ Estado: **`012` aplicado en produccion, Whoop reconectado con `read:workout` y s
 
 - **Resumen:** tarjetas de roster (self + gestionados) con CTAs "Ver semana"/"Ver plan", sin señales computadas (eso requeriria una capa de lectura multi-atleta fuera de alcance para v0).
 - **Alumnos:** roster completo + alta de atleta (formulario con submit por Enter) + "Entrenar como este atleta".
-- **Planificacion / Biblioteca / Asistente IA:** placeholders honestos "proximamente", con copy en tuteo.
+- **Planificacion:** semana por atleta, edicion de sesiones, aplicar y guardar plantillas.
+- **Biblioteca:** plantillas account-scoped con persistencia local, backup y sync remoto; requiere aplicar `015` en produccion.
+- **Asistente IA:** placeholder honesto "proximamente", con copy en tuteo.
 - Nav responsive: sidebar en desktop, tabs horizontales scrolleables en mobile, con ARIA `tablist`/`tab`/`tabpanel` completo.
 
 Endurecimientos que viajaron con la misma pieza:
@@ -741,7 +743,7 @@ Orden recomendado (Athlete-Aware Core + Coach F2-lite Parte 2b + Whoop v1/Workou
 - No vender "IA ilimitada" como valor central.
 - No invitar 10+ personas antes del primer piloto acompanado.
 - No exponer datos biometricos sin consentimiento y borrado completo.
-- No ampliar Planificacion a edicion ni construir Biblioteca/Asistente IA todavia; esas superficies requieren una decision de alcance propia.
+- No construir todavía el Asistente IA ni semanas plantilla/edición rica de drills; Planificacion y Biblioteca ya tienen alcance v1 definido y deben validarse primero con el piloto.
 
 ## Veredicto
 
