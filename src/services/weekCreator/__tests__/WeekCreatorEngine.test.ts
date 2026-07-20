@@ -743,6 +743,8 @@ describe('WeekCreatorEngine', () => {
       completionTokens: 900,
       reasoningTokens: 220,
       cacheReadInputTokens: 120,
+      serviceTier: 'priority',
+      reasoningEffort: 'none',
       finishReason: 'stop',
     }))
 
@@ -788,6 +790,8 @@ describe('WeekCreatorEngine', () => {
       completionTokens: 900,
       reasoningTokens: 220,
       cacheReadInputTokens: 120,
+      serviceTier: 'priority',
+      reasoningEffort: 'none',
       finishReason: 'stop',
       expectedSessionCount: 3,
     })

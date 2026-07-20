@@ -125,6 +125,8 @@ export class ProxyProvider implements AIProvider {
         reasoningTokens?: number
         cacheCreationInputTokens?: number
         cacheReadInputTokens?: number
+        serviceTier?: string
+        reasoningEffort?: string
         serverDurationMs?: number
         authDurationMs?: number
       }
@@ -156,6 +158,8 @@ export class ProxyProvider implements AIProvider {
         reasoningTokens: data.reasoningTokens,
         cacheCreationInputTokens: data.cacheCreationInputTokens,
         cacheReadInputTokens: data.cacheReadInputTokens,
+        serviceTier: data.serviceTier,
+        reasoningEffort: data.reasoningEffort,
         serverDurationMs: data.serverDurationMs,
         authDurationMs: data.authDurationMs,
       }
@@ -200,6 +204,8 @@ export class ProxyProvider implements AIProvider {
     let reasoningTokens: number | undefined
     let cacheCreationInputTokens: number | undefined
     let cacheReadInputTokens: number | undefined
+    let serviceTier: string | undefined
+    let reasoningEffort: string | undefined
     let serverDurationMs: number | undefined
     let authDurationMs: number | undefined
 
@@ -232,6 +238,8 @@ export class ProxyProvider implements AIProvider {
             reasoningTokens?: number
             cacheCreationInputTokens?: number
             cacheReadInputTokens?: number
+            serviceTier?: string
+            reasoningEffort?: string
             serverDurationMs?: number
             authDurationMs?: number
           }
@@ -254,6 +262,8 @@ export class ProxyProvider implements AIProvider {
             reasoningTokens = event.reasoningTokens ?? reasoningTokens
             cacheCreationInputTokens = event.cacheCreationInputTokens ?? cacheCreationInputTokens
             cacheReadInputTokens = event.cacheReadInputTokens ?? cacheReadInputTokens
+            serviceTier = event.serviceTier ?? serviceTier
+            reasoningEffort = event.reasoningEffort ?? reasoningEffort
             serverDurationMs = event.serverDurationMs ?? serverDurationMs
             authDurationMs = event.authDurationMs ?? authDurationMs
             continue
@@ -300,6 +310,8 @@ export class ProxyProvider implements AIProvider {
       reasoningTokens,
       cacheCreationInputTokens,
       cacheReadInputTokens,
+      serviceTier,
+      reasoningEffort,
       serverDurationMs,
       authDurationMs,
     }

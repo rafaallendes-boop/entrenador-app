@@ -830,6 +830,12 @@ export default function SettingsPage() {
                       {request.weekCreatorContract && (
                         <p>Contrato semanal: <span className="text-ink">{request.weekCreatorContract}</span></p>
                       )}
+                      {request.serviceTier && (
+                        <p>Tier proveedor: <span className="text-ink">{request.serviceTier}</span></p>
+                      )}
+                      {request.reasoningEffort && (
+                        <p>Reasoning: <span className="text-ink">{request.reasoningEffort}</span></p>
+                      )}
                       {request.expectedSessionCount != null && (
                         <p>Sesiones objetivo: <span className="text-ink">{request.expectedSessionCount}</span></p>
                       )}

@@ -240,6 +240,8 @@ export function normalizeResponse(raw: AIRawResponse): CoachNormalizedResponse {
     reasoningTokens: raw.reasoningTokens,
     cacheCreationInputTokens: raw.cacheCreationInputTokens,
     cacheReadInputTokens: raw.cacheReadInputTokens,
+    serviceTier: raw.serviceTier,
+    reasoningEffort: raw.reasoningEffort,
     serverDurationMs: raw.serverDurationMs,
     authDurationMs: raw.authDurationMs,
     meta: {

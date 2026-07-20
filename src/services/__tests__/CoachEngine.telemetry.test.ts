@@ -35,6 +35,8 @@ describe('CoachEngine telemetry persistence', () => {
       completionTokens: 120,
       reasoningTokens: 40,
       cacheReadInputTokens: 200,
+      serviceTier: 'priority',
+      reasoningEffort: 'none',
       serverDurationMs: 4_250,
       authDurationMs: 75,
     }))
@@ -56,6 +58,8 @@ describe('CoachEngine telemetry persistence', () => {
       completionTokens: 120,
       reasoningTokens: 40,
       cacheReadInputTokens: 200,
+      serviceTier: 'priority',
+      reasoningEffort: 'none',
       serverDurationMs: 4_250,
       authDurationMs: 75,
     })

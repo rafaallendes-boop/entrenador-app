@@ -65,7 +65,7 @@ describe('double session utilization', () => {
     expect(result.meta.warnings.some((w) => w.code === 'double_session_day_repaired')).toBe(true)
   })
 
-  it('emits warning when double days are underutilized (no doubles in week)', () => {
+  it('does not emit an utilization warning just because double days are enabled', () => {
     const context = makeDoubleSessionContext()
     // All 5 training days have 1 session each — no doubles used
     const sessions = [
@@ -77,7 +77,7 @@ describe('double session utilization', () => {
     ] as never
 
     const result = repairGeneratedWeek(sessions, context)
-    expect(result.meta.warnings.some((w) => w.code === 'double_session_underutilized')).toBe(true)
+    expect(result.meta.warnings.some((w) => w.code === 'double_session_underutilized')).toBe(false)
   })
 
   it('does NOT emit warning when enough double days are utilized (≥50%)', () => {
@@ -89,6 +89,61 @@ describe('double session utilization', () => {
       { date: '2026-06-17', timeBlock: 'AM', sessionType: 'squash', title: 'S3', durationMin: 60, rpe: 6 },    // wednesday AM
       { date: '2026-06-17', timeBlock: 'PM', sessionType: 'running', title: 'S4', durationMin: 45, rpe: 4 },   // wednesday PM (double!)
       { date: '2026-06-18', timeBlock: 'AM', sessionType: 'strength', title: 'S5', durationMin: 60, rpe: 6 },  // thursday
+    ] as never
+
+    const result = repairGeneratedWeek(sessions, context)
+    expect(result.meta.warnings.some((w) => w.code === 'double_session_underutilized')).toBe(false)
+  })
+
+  it('does NOT emit warning when the actual double deficit is already covered (7 sessions / 6 days)', () => {
+    const context = makeDoubleSessionContext()
+    // 6 training days, all eligible for doubles, 7 sessions → only 1 double is needed.
+    context.wizardConfig = {
+      ...context.wizardConfig,
+      trainingDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'],
+      doubleSessionDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'],
+      sessionsPerWeek: 7,
+    } as never
+
+    const sessions = [
+      { date: '2026-06-15', timeBlock: 'AM', sessionType: 'squash', title: 'S1', durationMin: 60, rpe: 6 },   // monday AM
+      { date: '2026-06-15', timeBlock: 'PM', sessionType: 'strength', title: 'S2', durationMin: 60, rpe: 5 }, // monday PM (the only double needed)
+      { date: '2026-06-16', timeBlock: 'AM', sessionType: 'squash', title: 'S3', durationMin: 60, rpe: 6 },   // tuesday
+      { date: '2026-06-17', timeBlock: 'AM', sessionType: 'running', title: 'S4', durationMin: 45, rpe: 5 },  // wednesday
+      { date: '2026-06-18', timeBlock: 'AM', sessionType: 'squash', title: 'S5', durationMin: 60, rpe: 6 },   // thursday
+      { date: '2026-06-19', timeBlock: 'AM', sessionType: 'strength', title: 'S6', durationMin: 60, rpe: 6 }, // friday
+      { date: '2026-06-20', timeBlock: 'AM', sessionType: 'squash', title: 'S7', durationMin: 60, rpe: 6 },   // saturday
+    ] as never
+
+    const result = repairGeneratedWeek(sessions, context)
+
+    expect(result.meta.warnings.some((w) => w.code === 'double_session_underutilized')).toBe(false)
+    // Nothing should be relocated: the distribution is already correct.
+    const countsByDate = result.sessions.reduce<Record<string, number>>((acc, session) => {
+      acc[session.date] = (acc[session.date] ?? 0) + 1
+      return acc
+    }, {})
+    expect(countsByDate).toEqual({
+      '2026-06-15': 2,
+      '2026-06-16': 1,
+      '2026-06-17': 1,
+      '2026-06-18': 1,
+      '2026-06-19': 1,
+      '2026-06-20': 1,
+    })
+  })
+
+  it('does not require a double when sessions fit one-per-day', () => {
+    const context = makeDoubleSessionContext()
+    // Double-session days are available slots, not a requirement to stack load.
+    context.wizardConfig = { ...context.wizardConfig, sessionsPerWeek: 5 } as never
+
+    const sessions = [
+      { date: '2026-06-15', timeBlock: 'AM', sessionType: 'squash', title: 'S1', durationMin: 60, rpe: 6 },   // monday
+      { date: '2026-06-16', timeBlock: 'AM', sessionType: 'running', title: 'S2', durationMin: 45, rpe: 5 },  // tuesday
+      { date: '2026-06-17', timeBlock: 'AM', sessionType: 'squash', title: 'S3', durationMin: 60, rpe: 6 },   // wednesday
+      { date: '2026-06-18', timeBlock: 'AM', sessionType: 'strength', title: 'S4', durationMin: 60, rpe: 6 }, // thursday
+      { date: '2026-06-19', timeBlock: 'AM', sessionType: 'squash', title: 'S5', durationMin: 60, rpe: 6 },   // friday
     ] as never
 
     const result = repairGeneratedWeek(sessions, context)

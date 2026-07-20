@@ -118,6 +118,8 @@ export const CoachEngine = {
         reasoningTokens: raw.reasoningTokens,
         cacheCreationInputTokens: raw.cacheCreationInputTokens,
         cacheReadInputTokens: raw.cacheReadInputTokens,
+        serviceTier: raw.serviceTier,
+        reasoningEffort: raw.reasoningEffort,
         serverDurationMs: raw.serverDurationMs,
         authDurationMs: raw.authDurationMs,
       })
@@ -239,6 +241,8 @@ async function withTracing<T extends Pick<
   | 'reasoningTokens'
   | 'cacheCreationInputTokens'
   | 'cacheReadInputTokens'
+  | 'serviceTier'
+  | 'reasoningEffort'
   | 'serverDurationMs'
   | 'authDurationMs'
 >>(
@@ -269,6 +273,8 @@ async function withTracing<T extends Pick<
       reasoningTokens: result.reasoningTokens,
       cacheCreationInputTokens: result.cacheCreationInputTokens,
       cacheReadInputTokens: result.cacheReadInputTokens,
+      serviceTier: result.serviceTier,
+      reasoningEffort: result.reasoningEffort,
       serverDurationMs: result.serverDurationMs,
       authDurationMs: result.authDurationMs,
     })

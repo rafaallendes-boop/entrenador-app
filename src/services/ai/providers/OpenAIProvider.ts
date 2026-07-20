@@ -26,6 +26,7 @@
 import type { AIProvider, AIRequest, AIRawResponse } from '../types'
 import { createProviderError } from '../types'
 import { normalizeJsonSchemaForStandardProvider } from '../jsonSchema'
+import { getDefaultOpenAIReasoningEffort, supportsOpenAIReasoningEffort } from '../openAIReasoning'
 import { mapOpenAIUsage } from '../providerUsage'
 
 const DEFAULT_MODEL = 'gpt-5-mini'
@@ -52,22 +53,6 @@ function supportsOpenAITemperature(model: string): boolean {
   return !model.toLowerCase().startsWith('gpt-5')
 }
 
-function supportsOpenAIReasoningEffort(model: string): boolean {
-  return model.toLowerCase().startsWith('gpt-5')
-}
-
-// Espejo de getOpenAIReasoningEffort en netlify/functions/coach.ts: las clases
-// rápidas usan minimal y las que generan semanas/acciones usan low.
-const OPENAI_REASONING_EFFORT_BY_CLASS: Partial<Record<AIRequest['requestClass'], 'minimal' | 'low'>> = {
-  chat_general: 'minimal',
-  weekly_summary: 'minimal',
-  import_extract: 'minimal',
-}
-
-function getOpenAIReasoningEffort(requestClass: AIRequest['requestClass']): 'minimal' | 'low' {
-  return OPENAI_REASONING_EFFORT_BY_CLASS[requestClass] ?? 'low'
-}
-
 function buildRequestBody(
   request: AIRequest,
   model: string,
@@ -83,7 +68,7 @@ function buildRequestBody(
     body.temperature = request.temperature ?? 0.7
   }
   if (supportsOpenAIReasoningEffort(model)) {
-    body.reasoning_effort = getOpenAIReasoningEffort(request.requestClass)
+    body.reasoning_effort = getDefaultOpenAIReasoningEffort(model, request.requestClass)
   }
   const responseFormat = buildResponseFormat(request)
   if (responseFormat) body.response_format = responseFormat
@@ -109,6 +94,9 @@ export class OpenAIProvider implements AIProvider {
     }
 
     const model = import.meta.env.VITE_OPENAI_MODEL ?? DEFAULT_MODEL
+    const reasoningEffort = supportsOpenAIReasoningEffort(model)
+      ? getDefaultOpenAIReasoningEffort(model, request.requestClass)
+      : undefined
     const t0 = Date.now()
 
     const HEADERS = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` }
@@ -163,6 +151,7 @@ export class OpenAIProvider implements AIProvider {
       traceId: request.traceId,
       requestClass: request.requestClass,
       finishReason: data.choices[0]?.finish_reason,
+      reasoningEffort,
       ...mapOpenAIUsage(data.usage),
     }
   }
@@ -248,6 +237,9 @@ export class OpenAIProvider implements AIProvider {
       traceId: request.traceId,
       requestClass: request.requestClass,
       finishReason,
+      reasoningEffort: supportsOpenAIReasoningEffort(model)
+        ? getDefaultOpenAIReasoningEffort(model, request.requestClass)
+        : undefined,
       promptTokens,
       completionTokens,
       reasoningTokens,

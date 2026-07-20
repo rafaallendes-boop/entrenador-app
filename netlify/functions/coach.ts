@@ -11,6 +11,12 @@ import {
   normalizeJsonSchemaForGemini,
   normalizeJsonSchemaForStandardProvider,
 } from '../../src/services/ai/jsonSchema'
+import {
+  getDefaultOpenAIReasoningEffort,
+  getSupportedOpenAIReasoningEfforts,
+  supportsOpenAIReasoningEffort,
+  type OpenAIReasoningEffort,
+} from '../../src/services/ai/openAIReasoning'
 import { mapGeminiUsage, mapOpenAIUsage } from '../../src/services/ai/providerUsage'
 import { CORS_HEADERS, corsPreflight } from './_shared/cors'
 
@@ -69,6 +75,8 @@ interface ProviderExecutionResult {
   reasoningTokens?: number
   cacheCreationInputTokens?: number
   cacheReadInputTokens?: number
+  serviceTier?: string
+  reasoningEffort?: string
 }
 
 interface ProviderCallResult {
@@ -80,6 +88,8 @@ interface ProviderCallResult {
   reasoningTokens?: number
   cacheCreationInputTokens?: number
   cacheReadInputTokens?: number
+  serviceTier?: string
+  reasoningEffort?: string
 }
 
 interface ProviderUsage {
@@ -557,6 +567,8 @@ function logCoachAttempt(payload: {
   reasoningTokens?: number
   cacheCreationInputTokens?: number
   cacheReadInputTokens?: number
+  serviceTier?: string
+  reasoningEffort?: string
   responseCharCount?: number
   systemPromptCharCount?: number
   userPromptCharCount?: number
@@ -591,6 +603,8 @@ function logCoachRequest(payload: {
   reasoningTokens?: number
   cacheCreationInputTokens?: number
   cacheReadInputTokens?: number
+  serviceTier?: string
+  reasoningEffort?: string
   responseCharCount?: number
   finishReason?: string
   errorCode?: TechnicalErrorCode
@@ -758,24 +772,45 @@ function supportsOpenAITemperature(model: string): boolean {
   return !model.toLowerCase().startsWith('gpt-5')
 }
 
-function supportsOpenAIReasoningEffort(model: string): boolean {
-  return model.toLowerCase().startsWith('gpt-5')
+// Palancas de proveedor configurables por entorno (Fase 4 del plan de latencia
+// de week_creator). Ambas son no-ops sin variables: la resolución sigue el mismo
+// patrón que resolveModel/modelEnvKey — variable por clase, luego fallback
+// global, luego el default de hoy. Un valor no permitido se ignora en vez de
+// romper el request o propagar basura al proveedor.
+function resolveOpenAIEnvOverride<T extends string>(
+  envPrefix: string,
+  requestClass: RequestClass,
+  allowed: readonly T[],
+): T | undefined {
+  const candidates = [
+    process.env[`${envPrefix}_${requestClass.toUpperCase()}`],
+    process.env[envPrefix],
+  ]
+  for (const candidate of candidates) {
+    const value = candidate?.trim().toLowerCase()
+    if (!value) continue
+    if ((allowed as readonly string[]).includes(value)) return value as T
+    console.warn(`[coach] Valor no permitido para ${envPrefix} ("${candidate}"); se ignora.`)
+  }
+  return undefined
+}
+
+const OPENAI_SERVICE_TIERS = ['auto', 'default', 'flex', 'priority'] as const
+type OpenAIServiceTier = (typeof OPENAI_SERVICE_TIERS)[number]
+
+function resolveOpenAIServiceTier(requestClass: RequestClass): OpenAIServiceTier | undefined {
+  return resolveOpenAIEnvOverride('OPENAI_SERVICE_TIER', requestClass, OPENAI_SERVICE_TIERS)
 }
 
 // Análogo a getGeminiThinkingBudget: todas las clases corren bajo el techo
-// síncrono de 26s, así que el esfuerzo alto nunca aplica aquí.
-function getOpenAIReasoningEffort(requestClass: RequestClass): 'minimal' | 'low' {
-  switch (requestClass) {
-    case 'chat_action':
-    case 'week_creator':
-    case 'plan_builder_week':
-    case 'plan_builder_pair':
-      return 'low'
-    case 'chat_general':
-    case 'weekly_summary':
-    case 'import_extract':
-      return 'minimal'
-  }
+// síncrono de 26s. El override se valida contra el modelo efectivo: GPT-5
+// original acepta `minimal` pero no `none`; GPT-5.1+ invierte esa relación.
+function getOpenAIReasoningEffort(model: string, requestClass: RequestClass): OpenAIReasoningEffort {
+  const supported = getSupportedOpenAIReasoningEfforts(model)
+  return (
+    resolveOpenAIEnvOverride('OPENAI_REASONING_EFFORT', requestClass, supported)
+    ?? getDefaultOpenAIReasoningEffort(model, requestClass)
+  )
 }
 
 export function buildOpenAIBody(req: CoachRequest, model: string, streamOutput = false): Record<string, unknown> {
@@ -791,9 +826,12 @@ export function buildOpenAIBody(req: CoachRequest, model: string, streamOutput =
   if (supportsOpenAITemperature(model)) {
     body.temperature = req.temperature ?? 0.7
   }
+  const requestClass = normalizeRequestClass(req.requestClass)
   if (supportsOpenAIReasoningEffort(model)) {
-    body.reasoning_effort = getOpenAIReasoningEffort(normalizeRequestClass(req.requestClass))
+    body.reasoning_effort = getOpenAIReasoningEffort(model, requestClass)
   }
+  const serviceTier = resolveOpenAIServiceTier(requestClass)
+  if (serviceTier) body.service_tier = serviceTier
   const responseFormat = buildOpenAIResponseFormat(req)
   if (responseFormat) body.response_format = responseFormat
   if (streamOutput) {
@@ -900,6 +938,7 @@ async function callOpenAI(
   model: string,
   signal: AbortSignal,
 ): Promise<ProviderCallResult> {
+  const requestBody = buildOpenAIBody(req, model)
   const res = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -907,11 +946,12 @@ async function callOpenAI(
       'Authorization': `Bearer ${apiKey}`,
     },
     signal,
-    body: JSON.stringify(buildOpenAIBody(req, model)),
+    body: JSON.stringify(requestBody),
   })
   const data = await fetchJsonOrThrow(res) as {
     choices?: Array<{ message?: { content?: string }; finish_reason?: string }>
     model?: string
+    service_tier?: string
     usage?: {
       prompt_tokens?: number
       completion_tokens?: number
@@ -925,6 +965,8 @@ async function callOpenAI(
     text,
     model: data.model ?? model,
     finishReason: data.choices?.[0]?.finish_reason,
+    serviceTier: data.service_tier ?? readStringField(requestBody, 'service_tier'),
+    reasoningEffort: readStringField(requestBody, 'reasoning_effort'),
     ...mapOpenAIUsage(data.usage),
   }
 }
@@ -1025,6 +1067,7 @@ async function streamOpenAI(
   signal: AbortSignal,
   onChunk: (chunk: string) => void,
 ): Promise<ProviderCallResult> {
+  const requestBody = buildOpenAIBody(req, model, true)
   const res = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -1032,15 +1075,16 @@ async function streamOpenAI(
       'Authorization': `Bearer ${apiKey}`,
     },
     signal,
-    body: JSON.stringify(buildOpenAIBody(req, model, true)),
+    body: JSON.stringify(requestBody),
   })
   if (!res.ok || !res.body) {
     await fetchJsonOrThrow(res)
     throw makeError('OpenAI streaming falló.', 500, 'server_error')
   }
-  return readSseStream(res.body, model, (json) => {
+  const result = await readSseStream(res.body, model, (json) => {
     const data = JSON.parse(json) as {
       choices?: Array<{ delta?: { content?: string }; finish_reason?: string }>
+      service_tier?: string
       usage?: {
         prompt_tokens?: number
         completion_tokens?: number
@@ -1052,9 +1096,15 @@ async function streamOpenAI(
     return {
       chunk: choice?.delta?.content ?? '',
       finishReason: choice?.finish_reason,
+      serviceTier: data.service_tier,
       usage: mapOpenAIUsage(data.usage),
     }
   }, onChunk)
+  return {
+    ...result,
+    serviceTier: result.serviceTier ?? readStringField(requestBody, 'service_tier'),
+    reasoningEffort: readStringField(requestBody, 'reasoning_effort'),
+  }
 }
 
 async function streamClaude(
@@ -1084,7 +1134,12 @@ async function streamClaude(
 async function readSseStream(
   body: ReadableStream<Uint8Array>,
   model: string,
-  pickChunk: (json: string) => string | { chunk?: string; finishReason?: string; usage?: ProviderUsage },
+  pickChunk: (json: string) => string | {
+    chunk?: string
+    finishReason?: string
+    usage?: ProviderUsage
+    serviceTier?: string
+  },
   onChunk: (chunk: string) => void,
 ): Promise<ProviderCallResult> {
   const reader = body.getReader()
@@ -1092,6 +1147,7 @@ async function readSseStream(
   let buffer = ''
   let fullText = ''
   let finishReason: string | undefined
+  let serviceTier: string | undefined
   let usage: ProviderUsage = {}
 
   while (true) {
@@ -1109,6 +1165,7 @@ async function readSseStream(
         const picked = pickChunk(json)
         const chunk = typeof picked === 'string' ? picked : picked.chunk ?? ''
         finishReason = typeof picked === 'string' ? finishReason : picked.finishReason ?? finishReason
+        serviceTier = typeof picked === 'string' ? serviceTier : picked.serviceTier ?? serviceTier
         if (typeof picked !== 'string' && picked.usage) {
           usage = {
             promptTokens: picked.usage.promptTokens ?? usage.promptTokens,
@@ -1129,7 +1186,12 @@ async function readSseStream(
   }
 
   if (!fullText) throw makeError('El provider devolvió una respuesta vacía.', 500, 'parse_error')
-  return { text: fullText, model, finishReason, ...usage }
+  return { text: fullText, model, finishReason, serviceTier, ...usage }
+}
+
+function readStringField(body: Record<string, unknown>, key: string): string | undefined {
+  const value = body[key]
+  return typeof value === 'string' ? value : undefined
 }
 
 function modelEnvKey(provider: ProviderName, requestClass: RequestClass): string {
@@ -1267,6 +1329,8 @@ async function executeWithPolicy(
         reasoningTokens: result.reasoningTokens,
         cacheCreationInputTokens: result.cacheCreationInputTokens,
         cacheReadInputTokens: result.cacheReadInputTokens,
+        serviceTier: result.serviceTier,
+        reasoningEffort: result.reasoningEffort,
         responseCharCount: result.text.length,
         systemPromptCharCount: req.systemPrompt.length,
         userPromptCharCount: req.userMessage.length,
@@ -1405,6 +1469,8 @@ function streamResponse(
             reasoningTokens: result.reasoningTokens,
             cacheCreationInputTokens: result.cacheCreationInputTokens,
             cacheReadInputTokens: result.cacheReadInputTokens,
+            serviceTier: result.serviceTier,
+            reasoningEffort: result.reasoningEffort,
             responseCharCount: result.text.length,
             finishReason: result.finishReason,
           })
@@ -1572,6 +1638,8 @@ export const handler = stream(async (event: HandlerEvent): Promise<StreamingResp
       reasoningTokens: result.reasoningTokens,
       cacheCreationInputTokens: result.cacheCreationInputTokens,
       cacheReadInputTokens: result.cacheReadInputTokens,
+      serviceTier: result.serviceTier,
+      reasoningEffort: result.reasoningEffort,
       responseCharCount: result.text.length,
       finishReason: result.finishReason,
     })

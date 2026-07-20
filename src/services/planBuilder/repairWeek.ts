@@ -2489,9 +2489,15 @@ function checkDoubleSessionUtilization(
   }
 
   const actualDoubles = doubleDayDates.filter((d) => (sessionsByDate.get(d)?.length ?? 0) >= 2).length
-  const requiredDoubles = context.wizardConfig.sessionsPerWeek <= context.wizardConfig.trainingDays.length
-    ? 1
-    : Math.ceil(doubleDayDates.length * 0.5)
+  // Real need: only the sessions that do not fit one-per-day force a double.
+  // `allowedDates` (not `trainingDays`) is the right denominator — it accounts for
+  // partial weeks and is the same set `doubleDayDates` is derived from.
+  const expectedSessions = sessions.length
+  const deficit = expectedSessions - allowedDates.length
+  // Double days are permissions, not a target. Require them only when the final
+  // session count cannot fit one-per-day, and never beyond eligible capacity.
+  const requiredDoubles = Math.min(doubleDayDates.length, Math.max(0, deficit))
+  if (requiredDoubles === 0) return sessions
   if (actualDoubles >= requiredDoubles) return sessions
 
   // Underutilized: best-effort relocation

@@ -1,7 +1,7 @@
 # Plan de mejora de la generación semanal (`week_creator`)
 
 **Fecha:** 2026-07-16
-**Estado:** Fase 0 cerrada técnicamente con línea base provisional; Fase 1 observada con dos canaries; Fases 2 y 3 implementadas y verificadas localmente, pendientes de despliegue y canary pasivo.
+**Estado:** Fase 0 cerrada técnicamente con línea base provisional; Fase 1 observada con dos canaries; Fases 2 y 3 desplegadas y observadas; Fase 4 implementada y verificada localmente (2026-07-20), pendiente de rollout por variante y dos ventanas de medición.
 **Objetivo:** llevar el p95 de una generación semanal completa y accionable a menos de 10 segundos, manteniendo intactas las restricciones médicas, la disponibilidad y la coherencia de carga.
 
 ## Resumen ejecutivo
@@ -721,6 +721,85 @@ Una segunda llamada de IA para enriquecer narrativa sólo puede ejecutarse despu
 ## Fase 4 — Modelo, cache e infraestructura
 
 **Objetivo:** optimizar lo que siga siendo material después de reducir output y retries.
+
+### Estado implementado localmente — 2026-07-20
+
+- El modelo sigue siendo reversible por `OPENAI_MODEL_WEEK_CREATOR`, sin cambiar prompt,
+  schema ni cap.
+- `OPENAI_SERVICE_TIER_WEEK_CREATOR` permite probar `default` contra `priority`; el fallback
+  global `OPENAI_SERVICE_TIER` queda disponible para otras clases, pero no se necesita para
+  este canary.
+- `OPENAI_REASONING_EFFORT_WEEK_CREATOR` permite aislar el esfuerzo cuando el modelo lo
+  soporta. Los valores se validan contra la generación efectiva: GPT-5 original acepta
+  `minimal` pero no `none`; GPT-5.1+ acepta `none`; `xhigh` y `max` sólo se envían donde
+  corresponden.
+- La respuesta del proxy, los eventos `coach.attempt`/`coach.request.completed` y el export
+  `Beta quality local` conservan `serviceTier` y `reasoningEffort`. `serviceTier` usa el valor
+  reportado por OpenAI, de modo que una eventual degradación de Priority a Standard queda
+  visible y no se atribuye erróneamente a la variante.
+- La activación de dobles dejó de producir `double_session_underutilized` cuando las sesiones
+  caben una por día. Los días dobles son capacidad permitida y sólo se exigen cuando existe un
+  déficit real de días; así la señal de calidad del canary no queda contaminada por ese falso
+  positivo.
+- No se activa cache explícito: la muestra observada tuvo `cacheReadInputTokens=0` y todavía no
+  demuestra beneficio. Tampoco se cambia auth ni región: sus tiempos observados no explican
+  materialmente la cola frente al proveedor.
+
+### Verificación local de Fase 4 — 2026-07-20
+
+Sin requests al proveedor:
+
+- suite completa: 271 archivos, 1.864 tests aprobados;
+- lint aprobado;
+- build de producción aprobado;
+- `npm run audit:prompt` sin cambio: `week_creator` sigue en 4.306 caracteres / ~1.077 tokens
+  (system 907, user 2.404, schema 995), confirmando que las palancas de Fase 4 no tocan prompt
+  ni schema;
+- load test del engine aprobado en modo seco.
+
+Ambas palancas quedan verificadas como no-ops sin variables de entorno: `buildOpenAIBody` no
+emite `service_tier` y conserva el default por clase de `reasoning_effort`. `serviceTier` y
+`reasoningEffort` viajan por la respuesta JSON y por el evento `done` del stream, se propagan a
+través de `ProxyProvider` → `responseNormalizer` → `CoachEngine`/`WeekCreatorEngine` y se
+muestran en `Beta quality local`.
+
+#### Test dependiente del calendario corregido de paso
+
+`CoachPlanningPanel.interaction.test.tsx` fallaba en 8 de sus 13 casos, y **también en `HEAD`
+sin los cambios de Fase 4**, así que no era una regresión de esta pieza. La fixture `planned`
+fijaba `date: '2026-07-14'`, mientras el panel arranca en `currentWeekStartISO()` y
+`groupSessionsByDay` descarta lo que cae fuera de esa semana. Al pasar la semana del
+2026-07-13 a la del 2026-07-20 la sesión dejó de renderizarse, y con ella desaparecieron los
+botones "Guardar como plantilla" y "Borrar" y el texto "Técnica" que los tests buscaban.
+
+Es exactamente la clase de fallo que la sección "Hardening de calendario y latencia local"
+declaró cerrada ("se fijaron pruebas con reloj determinista para que la suite no dependa del
+día en que se ejecuta"); este archivo quedó fuera de esa pasada. Su hermano
+`CoachPlanningPanel.test.tsx` ya usaba `vi.setSystemTime` y por eso no falló.
+
+Corrección: las fechas se derivan de `currentWeekStartISO()` en vez de fijarse a un lunes
+concreto. La fecha del reload obsoleto pasa a ser el lunes siguiente, de modo que siga cayendo
+dentro de la semana visible tras "Semana siguiente" — lo único que impide renderizarla debe ser
+el guard de epoch, no un filtro de calendario.
+
+### Rollout y rollback de Fase 4
+
+Ejecutar una sola variante por ventana, manteniendo `skeleton_v1`, cap 2.500, prompt y schema:
+
+1. Control: `OPENAI_MODEL_WEEK_CREATOR=gpt-4.1-mini-2025-04-14` y
+   `OPENAI_SERVICE_TIER_WEEK_CREATOR=default`, sin override de reasoning.
+2. Primera variante: conservar el mismo modelo y cambiar únicamente
+   `OPENAI_SERVICE_TIER_WEEK_CREATOR=priority`.
+3. Reunir al menos 20 muestras antes de descartar una regresión y 30–50 antes de aceptar una
+   mejora de p95. Separar las ventanas por `model`, `serviceTier` y `reasoningEffort`.
+4. Sólo después, si Priority no alcanza el SLO o la calidad pide otro modelo, ejecutar un A/B
+   independiente de modelo. No mezclarlo con el cambio de tier.
+
+Rollback operativo: restaurar el modelo control, fijar el tier en `default`, eliminar
+`OPENAI_REASONING_EFFORT_WEEK_CREATOR`, desplegar y comprobar en una generación que el export
+muestre `model=gpt-4.1-mini-2025-04-14`, `serviceTier=default`, sin `reasoningEffort`, sin retry
+ni fallback. La precedencia por clase, los defaults sin variables y los valores inválidos están
+cubiertos por tests unitarios.
 
 ### Experimentos permitidos
 

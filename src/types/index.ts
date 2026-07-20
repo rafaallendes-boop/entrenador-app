@@ -71,6 +71,10 @@ export interface AITechnicalResult {
   reasoningTokens?: number
   cacheCreationInputTokens?: number
   cacheReadInputTokens?: number
+  /** Provider tier reported by the API; used to attribute Phase 4 canaries. */
+  serviceTier?: string
+  /** Effective reasoning effort sent for this request, when applicable. */
+  reasoningEffort?: string
   durationMs?: number
   authDurationMs?: number
   serverDurationMs?: number

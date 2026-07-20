@@ -63,7 +63,7 @@ describe('streaming coach telemetry', () => {
       .mockResolvedValueOnce(new Response([
         'data: {"choices":[{"delta":{"content":"Respuesta final"}}]}',
         '',
-        'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":120,"completion_tokens":30,"completion_tokens_details":{"reasoning_tokens":10}}}',
+        'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"service_tier":"priority","usage":{"prompt_tokens":120,"completion_tokens":30,"completion_tokens_details":{"reasoning_tokens":10}}}',
         '',
         'data: [DONE]',
         '',
@@ -109,6 +109,8 @@ describe('streaming coach telemetry', () => {
       promptTokens: 120,
       completionTokens: 30,
       reasoningTokens: 10,
+      serviceTier: 'priority',
+      reasoningEffort: 'minimal',
     })
     expect(done?.authDurationMs).toEqual(expect.any(Number))
     expect(done?.serverDurationMs).toEqual(expect.any(Number))
@@ -121,6 +123,8 @@ describe('streaming coach telemetry', () => {
       outcome: 'ok',
       provider: 'openai',
       model: 'gpt-5-mini',
+      serviceTier: 'priority',
+      reasoningEffort: 'minimal',
       responseCharCount: 'Respuesta final'.length,
     })
     expect(attemptLogs).toHaveLength(1)
@@ -339,6 +343,126 @@ describe('OpenAI request body', () => {
     expect(buildOpenAIBody(baseRequest, 'gpt-5-mini', true)).toMatchObject({
       stream: true,
       stream_options: { include_usage: true },
+    })
+  })
+})
+
+// Fase 4 del plan de latencia de week_creator: ambas palancas son no-ops por
+// defecto y se activan sólo por variable de entorno, para poder atribuir y
+// revertir cada efecto de forma independiente.
+describe('OpenAI request body — palancas de proveedor por entorno', () => {
+  const baseRequest = {
+    systemPrompt: 'Sistema',
+    userMessage: 'Usuario',
+    requestClass: 'week_creator' as const,
+    maxTokens: 1200,
+    temperature: 0.15,
+  }
+
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
+  describe('service_tier', () => {
+    it('no envía service_tier cuando no hay variables de entorno', () => {
+      expect(buildOpenAIBody(baseRequest, 'gpt-5-mini')).not.toHaveProperty('service_tier')
+      expect(buildOpenAIBody(baseRequest, 'gpt-4.1-mini')).not.toHaveProperty('service_tier')
+    })
+
+    it('aplica la variable por clase sólo a esa clase', () => {
+      vi.stubEnv('OPENAI_SERVICE_TIER_WEEK_CREATOR', 'priority')
+
+      expect(buildOpenAIBody(baseRequest, 'gpt-5-mini')).toMatchObject({ service_tier: 'priority' })
+      expect(
+        buildOpenAIBody({ ...baseRequest, requestClass: 'chat_general' as const }, 'gpt-5-mini'),
+      ).not.toHaveProperty('service_tier')
+    })
+
+    it('cae al fallback global OPENAI_SERVICE_TIER para cualquier clase', () => {
+      vi.stubEnv('OPENAI_SERVICE_TIER', 'flex')
+
+      expect(buildOpenAIBody(baseRequest, 'gpt-5-mini')).toMatchObject({ service_tier: 'flex' })
+      expect(
+        buildOpenAIBody({ ...baseRequest, requestClass: 'chat_general' as const }, 'gpt-5-mini'),
+      ).toMatchObject({ service_tier: 'flex' })
+    })
+
+    it('prioriza la variable por clase sobre el fallback global', () => {
+      vi.stubEnv('OPENAI_SERVICE_TIER', 'flex')
+      vi.stubEnv('OPENAI_SERVICE_TIER_WEEK_CREATOR', 'priority')
+
+      expect(buildOpenAIBody(baseRequest, 'gpt-5-mini')).toMatchObject({ service_tier: 'priority' })
+      expect(
+        buildOpenAIBody({ ...baseRequest, requestClass: 'chat_general' as const }, 'gpt-5-mini'),
+      ).toMatchObject({ service_tier: 'flex' })
+    })
+
+    it('ignora valores no permitidos en vez de propagarlos al proveedor', () => {
+      vi.stubEnv('OPENAI_SERVICE_TIER_WEEK_CREATOR', 'turbo')
+      expect(buildOpenAIBody(baseRequest, 'gpt-5-mini')).not.toHaveProperty('service_tier')
+
+      vi.stubEnv('OPENAI_SERVICE_TIER_WEEK_CREATOR', '   ')
+      expect(buildOpenAIBody(baseRequest, 'gpt-5-mini')).not.toHaveProperty('service_tier')
+    })
+
+    it('no deja que un valor por clase inválido tape el fallback global válido', () => {
+      vi.stubEnv('OPENAI_SERVICE_TIER', 'flex')
+      vi.stubEnv('OPENAI_SERVICE_TIER_WEEK_CREATOR', 'turbo')
+
+      expect(buildOpenAIBody(baseRequest, 'gpt-5-mini')).toMatchObject({ service_tier: 'flex' })
+    })
+  })
+
+  describe('reasoning_effort', () => {
+    it('mantiene el default por clase cuando no hay variables de entorno', () => {
+      expect(buildOpenAIBody(baseRequest, 'gpt-5-mini')).toMatchObject({ reasoning_effort: 'low' })
+      expect(
+        buildOpenAIBody({ ...baseRequest, requestClass: 'chat_general' as const }, 'gpt-5-mini'),
+      ).toMatchObject({ reasoning_effort: 'minimal' })
+    })
+
+    it('permite desactivar el razonamiento con none en GPT-5.6', () => {
+      vi.stubEnv('OPENAI_REASONING_EFFORT_WEEK_CREATOR', 'none')
+
+      expect(buildOpenAIBody(baseRequest, 'gpt-5.6-terra')).toMatchObject({ reasoning_effort: 'none' })
+      expect(
+        buildOpenAIBody({ ...baseRequest, requestClass: 'chat_general' as const }, 'gpt-5.6-terra'),
+      ).toMatchObject({ reasoning_effort: 'none' })
+    })
+
+    it('ignora none en GPT-5 mini, que sólo acepta minimal/low/medium/high', () => {
+      vi.stubEnv('OPENAI_REASONING_EFFORT_WEEK_CREATOR', 'none')
+
+      expect(buildOpenAIBody(baseRequest, 'gpt-5-mini')).toMatchObject({ reasoning_effort: 'low' })
+    })
+
+    it('cae al fallback global y respeta la precedencia por clase', () => {
+      vi.stubEnv('OPENAI_REASONING_EFFORT', 'medium')
+      expect(buildOpenAIBody(baseRequest, 'gpt-5-mini')).toMatchObject({ reasoning_effort: 'medium' })
+
+      vi.stubEnv('OPENAI_REASONING_EFFORT_WEEK_CREATOR', 'none')
+      expect(buildOpenAIBody(baseRequest, 'gpt-5.6-terra')).toMatchObject({ reasoning_effort: 'none' })
+    })
+
+    it('usa el default por clase ante un valor inválido', () => {
+      vi.stubEnv('OPENAI_REASONING_EFFORT_WEEK_CREATOR', 'extreme')
+      expect(buildOpenAIBody(baseRequest, 'gpt-5-mini')).toMatchObject({ reasoning_effort: 'low' })
+    })
+
+    it('acepta xhigh en GPT-5.2+ y max sólo en GPT-5.6', () => {
+      vi.stubEnv('OPENAI_REASONING_EFFORT_WEEK_CREATOR', 'xhigh')
+      expect(buildOpenAIBody(baseRequest, 'gpt-5.2')).toMatchObject({ reasoning_effort: 'xhigh' })
+
+      vi.stubEnv('OPENAI_REASONING_EFFORT_WEEK_CREATOR', 'max')
+      expect(buildOpenAIBody(baseRequest, 'gpt-5.6-terra')).toMatchObject({ reasoning_effort: 'max' })
+      expect(buildOpenAIBody(baseRequest, 'gpt-5.2')).toMatchObject({ reasoning_effort: 'low' })
+    })
+
+    it('no envía reasoning_effort en modelos no GPT-5 aunque la variable esté puesta', () => {
+      vi.stubEnv('OPENAI_REASONING_EFFORT_WEEK_CREATOR', 'none')
+      vi.stubEnv('OPENAI_REASONING_EFFORT', 'high')
+
+      expect(buildOpenAIBody(baseRequest, 'gpt-4.1-mini-2025-04-14')).not.toHaveProperty('reasoning_effort')
     })
   })
 })

@@ -76,6 +76,10 @@ export interface AIRawResponse {
   reasoningTokens?: number
   cacheCreationInputTokens?: number
   cacheReadInputTokens?: number
+  /** Provider tier actually used (for example OpenAI default or priority). */
+  serviceTier?: string
+  /** Reasoning effort requested from the effective provider model. */
+  reasoningEffort?: string
   /** Total server request time, including auth and proxy overhead. */
   serverDurationMs?: number
   authDurationMs?: number
@@ -116,6 +120,8 @@ export interface CoachNormalizedResponse {
   reasoningTokens?: number
   cacheCreationInputTokens?: number
   cacheReadInputTokens?: number
+  serviceTier?: string
+  reasoningEffort?: string
   serverDurationMs?: number
   authDurationMs?: number
   /** ID of the CoachProposal created from actions, if any */

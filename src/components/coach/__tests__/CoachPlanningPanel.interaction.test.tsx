@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { Athlete, Session } from '../../../types'
-import { currentWeekStartISO } from '../../../utils/date'
+import { currentWeekStartISO, fromISO, nextWeek, toISO } from '../../../utils/date'
 
 const mocks = vi.hoisted(() => ({
   getWeek: vi.fn(async () => []),
@@ -42,8 +42,16 @@ const athlete: Athlete = {
   id: 'ath_user-1', ownerAccountId: 'user-1', linkedAccountId: 'user-1',
   displayName: 'Rafa', status: 'active', createdAt: 1, updatedAt: 1,
 }
+// El panel arranca en `currentWeekStartISO()` y `groupSessionsByDay` descarta lo
+// que cae fuera de esa semana. Las fechas se derivan del reloj real en vez de
+// fijarse a un lunes concreto: una fixture hardcodeada deja de renderizarse en
+// cuanto la semana cambia, y con ella desaparecen los botones que estos tests
+// buscan.
+const WEEK_START = currentWeekStartISO()
+const NEXT_WEEK_START = toISO(nextWeek(fromISO(WEEK_START)))
+
 const planned = {
-  id: 's-1', athleteId: athlete.id, date: '2026-07-14', timeBlock: 'AM', type: 'squash',
+  id: 's-1', athleteId: athlete.id, date: WEEK_START, timeBlock: 'AM', type: 'squash',
   status: 'planned', title: 'Técnica', durationMin: 60, createdAt: 1, updatedAt: 1,
 } as Session
 
@@ -230,10 +238,13 @@ describe('CoachPlanningPanel interactions', () => {
       if (call <= 2) return [planned] as never
       if (call === 3) {
         return new Promise((resolve) => {
+          // La fecha cae dentro de la semana que quedará visible tras
+          // "Semana siguiente": lo único que impide renderizarla es el guard
+          // de epoch, no un filtro de calendario.
           releaseOldReload = () => resolve([{
             ...planned,
             id: 'stale',
-            date: '2026-07-21',
+            date: NEXT_WEEK_START,
             title: 'Respuesta vieja',
           }])
         }) as never
