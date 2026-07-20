@@ -638,7 +638,7 @@ Estado: **edicion/Biblioteca desplegadas en produccion con `015` aplicada; pendi
 - [x] Documentacion del gap conocido de `CoachContextBar` sin lock compartido en el plan (no bloqueante).
 - [ ] Decidir alcance del Asistente IA dentro del Workspace.
 
-No entra todavia:
+No entra todavía:
 
 - señales computadas cross-atleta (check-in gaps, readiness agregado, sesiones vencidas).
 - contenido real del Asistente IA.
