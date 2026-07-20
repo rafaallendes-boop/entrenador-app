@@ -25,9 +25,9 @@ const REQUEST_CLASSES = [
 const TOKEN_BASELINES: Record<typeof REQUEST_CLASSES[number], { target: number; tolerancePct: number }> = {
   chat_general: { target: 562, tolerancePct: 10 },
   chat_action: { target: 3988, tolerancePct: 10 },
-  // Phase 1: structured JSON instructions replaced the duplicated legacy
-  // <actions> contract. Keep the compact prompt stable around this new baseline.
-  week_creator: { target: 2260, tolerancePct: 10 },
+  // Phase 3: the provider coordinates a compact weekly skeleton and local
+  // selectors hydrate the executable sport details.
+  week_creator: { target: 1077, tolerancePct: 10 },
   plan_builder_week: { target: 3988, tolerancePct: 10 },
   weekly_summary: { target: 485, tolerancePct: 15 },
 }
@@ -91,6 +91,7 @@ function buildFixtureContext(): ChatContext {
 describe('prompt token audit', () => {
   let buildCoachSystemPrompt: typeof import('../src/services/ai/promptBuilder').buildCoachSystemPrompt
   let buildWeekCreatorPrompt: typeof import('../src/services/weekCreator/WeekCreatorPromptBuilder').buildWeekCreatorPrompt
+  let buildWeekCreatorSkeletonPrompt: typeof import('../src/services/weekCreator/WeekCreatorSkeletonPromptBuilder').buildWeekCreatorSkeletonPrompt
   let resolveWeekCreatorConfig: typeof import('../src/services/weekCreator/WeekCreatorConfig').resolveWeekCreatorConfig
   let weekCreatorResponseSchema: Record<string, unknown>
 
@@ -98,8 +99,9 @@ describe('prompt token audit', () => {
     installLocalStorageMock()
     ;({ buildCoachSystemPrompt } = await import('../src/services/ai/promptBuilder'))
     ;({ buildWeekCreatorPrompt } = await import('../src/services/weekCreator/WeekCreatorPromptBuilder'))
+    ;({ buildWeekCreatorSkeletonPrompt } = await import('../src/services/weekCreator/WeekCreatorSkeletonPromptBuilder'))
     ;({ resolveWeekCreatorConfig } = await import('../src/services/weekCreator/WeekCreatorConfig'))
-    ;({ WEEK_CREATOR_RESPONSE_SCHEMA: weekCreatorResponseSchema } = await import('../src/services/weekCreator/weekCreatorResponseSchema'))
+    ;({ WEEK_CREATOR_SKELETON_RESPONSE_SCHEMA: weekCreatorResponseSchema } = await import('../src/services/weekCreator/weekCreatorSkeletonSchema'))
   }, 120000)
 
   it('prints token cost per request class', () => {
@@ -120,14 +122,16 @@ describe('prompt token audit', () => {
           } : ctx.athleteProfile,
         }
         const config = resolveWeekCreatorConfig(weekContext.athleteProfile)
-        const prompt = buildWeekCreatorPrompt(weekContext, {
+        const basePrompt = buildWeekCreatorPrompt(weekContext, {
           userMessage: 'Créame una semana priorizando squash',
           targetWeekStart: '2026-07-20',
           config,
           strictFormatting: true,
           structuredOutput: true,
+          skeletonOutput: true,
           weekObjectives: ['Mantener continuidad de squash', 'Sostener fuerza sin interferencia'],
         })
+        const prompt = buildWeekCreatorSkeletonPrompt({ userPrompt: basePrompt.userPrompt })
         const responseSchemaChars = JSON.stringify(weekCreatorResponseSchema).length
         const totalChars = prompt.systemPrompt.length + prompt.userPrompt.length + responseSchemaChars
         rows.push({

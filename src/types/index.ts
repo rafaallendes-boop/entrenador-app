@@ -17,6 +17,7 @@ export type CoachStage =
   | 'prompt_build'
   | 'provider_call'
   | 'normalize'
+  | 'hydrate'
   | 'validate'
   | 'repair'
   | 'fallback'
@@ -97,6 +98,18 @@ export interface AITechnicalResult {
     droppedSessionCount: number
     filteredSportCount: number
     codes: string[]
+    /**
+     * Week Creator skeleton contract only: the local hydration pass, kept apart
+     * from the final repair so the two passes over the same sessions are not
+     * summed into a double-counted total.
+     */
+    hydration?: {
+      repairedSessionCount: number
+      movedSessionCount: number
+      addedFallbackCount: number
+      droppedSessionCount: number
+      filteredSportCount: number
+    }
   }
   expectedSessionCount?: number
   trainingDayCount?: number
@@ -104,6 +117,8 @@ export interface AITechnicalResult {
   doubleSessionAllowed?: boolean
   partialWeek?: boolean
   activeRestrictionsPresent?: boolean
+  /** Versioned provider boundary used by Week Creator. */
+  weekCreatorContract?: 'skeleton_v1' | 'detailed'
   firstChunkAt?: number
   startedAt: number
   completedAt?: number

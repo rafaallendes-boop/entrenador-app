@@ -7,8 +7,6 @@ import type {
   CoachExerciseProposal,
   CoachSessionProposal,
   DayOfWeek,
-  MacroPlan,
-  PlanWizardConfig,
   SquashDrill,
   SquashSessionBlock,
   SquashSessionMode,
@@ -16,7 +14,7 @@ import type {
   SupportedSport,
   TimeBlock,
 } from '../../types'
-import type { TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
+import type { TrainingPlanWeek } from '../../types/planBuilder'
 import type { AIProvider, AIRawResponse, CoachNormalizedResponse } from '../ai/types'
 import { buildAIGenerationId, buildAITraceId, getAIRequestPolicy } from '../ai/requestPolicy'
 import { normalizeResponse } from '../ai/responseNormalizer'
@@ -26,16 +24,42 @@ import { createStageTracker, type CoachOutcome } from '../ai/stageLogger'
 import { buildWeekCreatorPrompt, summarizeWeekCreatorAction } from './WeekCreatorPromptBuilder'
 import { validateWeekCreatorResponse } from './validateWeekCreatorResponse'
 import { resolveWeekCreatorConfig, type WeekCreatorEffectiveConfig, withRequestedSessionsPerWeek } from './WeekCreatorConfig'
-import { buildWeekRetryInstruction, isStrictISODate } from '../week/shared'
+import { filterSessionsToWeek, isStrictISODate } from '../week/shared'
 import { repairGeneratedWeek, type RepairMeta } from '../planBuilder/repairWeek'
 import { WEEK_CREATOR_RESPONSE_SCHEMA } from './weekCreatorResponseSchema'
 import { enhanceStrengthSessionExercises } from '../training/strengthSessionStructure'
 import { todayISO } from '../../utils/date'
 import { applyWeekCreatorDateWindowToConfig, resolveWeekCreatorDateWindow } from './WeekCreatorDateWindow'
 import { db } from '../../db/db'
-import { resolveDayScheduleConstraint, resolveScheduleCapacity } from './scheduleConstraints'
+import {
+  alignSessionsToScheduleConstraints,
+  buildScheduleAwareConfig,
+  resolveDayScheduleConstraint,
+  resolveScheduleCapacity,
+} from './scheduleConstraints'
+import {
+  classifyWeekCreatorProviderFailure,
+  classifyWeekCreatorValidationFailure,
+  type WeekCreatorFailure,
+  type WeekCreatorFailureCategory,
+  type WeekCreatorFailureCode,
+} from './WeekCreatorFailurePolicy'
+import { buildWeekCreatorTargetedRepairPrompt } from './WeekCreatorRepairPromptBuilder'
+import { buildWeekCreatorSkeletonPrompt } from './WeekCreatorSkeletonPromptBuilder'
+import { WEEK_CREATOR_SKELETON_RESPONSE_SCHEMA } from './weekCreatorSkeletonSchema'
+import { parseWeekCreatorSkeletonResponse } from './parseWeekCreatorSkeletonResponse'
+import type { WeekCreatorSkeleton } from './weekCreatorSkeleton'
+import { resolveWeekCreatorContractStrategy } from './weekCreatorContractStrategy'
+import {
+  hasActiveMedicalRestrictions,
+  buildWeekCreatorHydrationRepairContext,
+  hydrateWeekCreatorResponse,
+  hydrateWeekCreatorSkeleton,
+  type WeekCreatorHydrationResult,
+} from './WeekCreatorLocalHydrator'
 
 const WEEK_CREATOR_RESPONSE_SCHEMA_CHAR_COUNT = JSON.stringify(WEEK_CREATOR_RESPONSE_SCHEMA).length
+const WEEK_CREATOR_SKELETON_SCHEMA_CHAR_COUNT = JSON.stringify(WEEK_CREATOR_SKELETON_RESPONSE_SCHEMA).length
 
 /**
  * Objetivos de la semana objetivo cuando existe un plan activo que la cubre.
@@ -95,29 +119,6 @@ type WeekCreatorCohort = Pick<
   | 'partialWeek'
   | 'activeRestrictionsPresent'
 >
-
-type WeekCreatorFallbackReason =
-  | 'missing_create_week'
-  | 'actions_parse_failed'
-  | 'multiple_create_week'
-  | 'extra_actions'
-  | 'wrong_target_date'
-  | 'missing_sessions'
-  | 'session_count_mismatch'
-  | 'invalid_week_dates'
-  | 'schedule_conflict'
-  | 'unsupported_sport'
-  | 'missing_sport_details'
-  | 'missing_primary_sport'
-  | 'provider_error'
-  | 'schema_invalid'
-
-type WeekCreatorFailure = {
-  reason: WeekCreatorFallbackReason
-  error: string
-  outcome: 'parse_invalid' | 'schema_invalid'
-  warnings: string[]
-}
 
 type SquashFallbackVariant = {
   title: string
@@ -183,6 +184,17 @@ export const WeekCreatorEngine = {
     const policy = getAIRequestPolicy('week_creator')
     const surface = options.surface ?? 'chat'
     const cohort = buildWeekCreatorCohort(context, config, options.targetWeekStart, dateWindow.planningStartDate)
+    // Free-text medical restrictions still use the detailed provider contract.
+    // Local selectors cannot safely infer exercise adaptations from arbitrary diagnoses.
+    const useSkeletonContract = resolveWeekCreatorContractStrategy() === 'skeleton_v1'
+      && !hasActiveMedicalRestrictions(context, config)
+    const weekCreatorContract = useSkeletonContract ? 'skeleton_v1' as const : 'detailed' as const
+    const responseSchema = useSkeletonContract
+      ? WEEK_CREATOR_SKELETON_RESPONSE_SCHEMA
+      : WEEK_CREATOR_RESPONSE_SCHEMA
+    const responseSchemaCharCount = useSkeletonContract
+      ? WEEK_CREATOR_SKELETON_SCHEMA_CHAR_COUNT
+      : WEEK_CREATOR_RESPONSE_SCHEMA_CHAR_COUNT
     const scheduleCapacity = buildFallbackSlots(
       config,
       options.targetWeekStart,
@@ -198,21 +210,21 @@ export const WeekCreatorEngine = {
         availableSlots: scheduleCapacity,
       })
     }
-    let lastFailure: {
+    let lastFailure: (WeekCreatorFailure & {
       provider?: CoachNormalizedResponse['provider']
       model?: string
       traceId?: string
       durationMs?: number
       fallbackUsed?: boolean
       retryUsed?: boolean
-      fallbackReason?: WeekCreatorFallbackReason
-      outcome?: WeekCreatorFailure['outcome']
-      error?: string
-      warnings?: string[]
-    } | null = null
+      failedResponse?: CoachNormalizedResponse
+      failedSkeleton?: WeekCreatorSkeleton
+    }) | null = null
 
     const MAX_ATTEMPTS = 2
+    let providerAttempts = 0
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      providerAttempts = attempt
       const traceId = buildAITraceId('week_creator')
       const tracker = createStageTracker(traceId, 'week_creator')
       let outcome: CoachOutcome = 'error'
@@ -225,28 +237,52 @@ export const WeekCreatorEngine = {
         surface,
         startedAt: Date.now(),
         maxTokens: policy.maxTokens,
+        weekCreatorContract,
         ...cohort,
       })
 
       try {
         const promptStage = tracker.stage('prompt_build')
-        const prompt = buildWeekCreatorPrompt(context, {
-          userMessage,
-          targetWeekStart: options.targetWeekStart,
-          planningStartDate: dateWindow.planningStartDate,
-          weekEndDate: dateWindow.weekEndDate,
-          config,
-          retryInstruction: buildWeekRetryInstruction(lastFailure?.error, options.targetWeekStart, config.sessionsPerWeek, attempt),
-          strictFormatting: true,
-          structuredOutput: true,
-          weekObjectives,
-        })
+        let prompt
+        if (lastFailure?.decision === 'targeted_model_repair' && lastFailure.failedResponse) {
+          prompt = buildWeekCreatorTargetedRepairPrompt(context, {
+              userMessage,
+              targetWeekStart: options.targetWeekStart,
+              planningStartDate: dateWindow.planningStartDate,
+              weekEndDate: dateWindow.weekEndDate,
+              config,
+              failure: lastFailure,
+              failedResponse: lastFailure.failedResponse,
+              failedSkeleton: lastFailure.failedSkeleton,
+              skeletonOutput: useSkeletonContract,
+            })
+        } else {
+          // The only way to reach a second attempt on this branch is a provider
+          // failure, which retries the identical prompt. Every validation
+          // failure either ends locally or takes the targeted-repair branch
+          // above, so there is no generic "you got it wrong, try again" retry
+          // instruction to build anymore.
+          const basePrompt = buildWeekCreatorPrompt(context, {
+              userMessage,
+              targetWeekStart: options.targetWeekStart,
+              planningStartDate: dateWindow.planningStartDate,
+              weekEndDate: dateWindow.weekEndDate,
+              config,
+              strictFormatting: true,
+              structuredOutput: true,
+              skeletonOutput: useSkeletonContract,
+              weekObjectives,
+            })
+          prompt = useSkeletonContract
+            ? buildWeekCreatorSkeletonPrompt({ userPrompt: basePrompt.userPrompt })
+            : basePrompt
+        }
         promptStage.end({ ok: true })
         useAIDebugStore.getState().updateRequest(traceId, {
           systemPromptCharCount: prompt.systemPrompt.length,
           userPromptCharCount: prompt.userPrompt.length,
-          responseSchemaCharCount: WEEK_CREATOR_RESPONSE_SCHEMA_CHAR_COUNT,
-          inputCharCount: prompt.systemPrompt.length + prompt.userPrompt.length + WEEK_CREATOR_RESPONSE_SCHEMA_CHAR_COUNT,
+          responseSchemaCharCount,
+          inputCharCount: prompt.systemPrompt.length + prompt.userPrompt.length + responseSchemaCharCount,
         })
 
         const providerStage = tracker.stage('provider_call')
@@ -261,7 +297,7 @@ export const WeekCreatorEngine = {
             maxTokens: policy.maxTokens,
             temperature: Math.min(policy.temperature, 0.15),
             responseMimeType: 'application/json',
-            responseSchema: WEEK_CREATOR_RESPONSE_SCHEMA,
+            responseSchema,
             allowFallback: policy.allowFallback,
             signal: options.signal,
           })
@@ -272,11 +308,54 @@ export const WeekCreatorEngine = {
         }
 
         const normalizeStage = tracker.stage('normalize')
+        const skeletonParse = useSkeletonContract
+          ? parseWeekCreatorSkeletonResponse(raw.text)
+          : undefined
+        const providerSkeleton = skeletonParse?.ok ? skeletonParse.skeleton : undefined
         const normalized = normalizeResponse(raw)
-        normalizeStage.end({ ok: true })
+        normalizeStage.end({
+          ok: !useSkeletonContract || providerSkeleton != null || (normalized.actions?.length ?? 0) > 0,
+          error: useSkeletonContract && !providerSkeleton && (normalized.actions?.length ?? 0) === 0
+            ? 'El proveedor no devolvió un esqueleto semanal recuperable.'
+            : undefined,
+        })
+
+        let hydration: WeekCreatorHydrationResult | undefined
+        if (useSkeletonContract) {
+          const hydrateStage = tracker.stage('hydrate')
+          hydration = providerSkeleton
+            ? hydrateWeekCreatorSkeleton({
+                skeleton: providerSkeleton,
+                response: normalized,
+                context,
+                config,
+                targetWeekStart: options.targetWeekStart,
+                planningStartDate: dateWindow.planningStartDate,
+              })
+            : hydrateWeekCreatorResponse({
+                response: normalized,
+                context,
+                config,
+                targetWeekStart: options.targetWeekStart,
+                planningStartDate: dateWindow.planningStartDate,
+              })
+          hydrateStage.end({
+            ok: hydration.status === 'hydrated' || hydration.status === 'unchanged',
+            error: hydration.status === 'skipped_invalid_shape'
+              ? hydration.warnings[0]
+              : undefined,
+          })
+        }
 
         const repairStage = tracker.stage('repair')
-        const repaired = repairWeekCreatorResponse(normalized, context, config, options.targetWeekStart, dateWindow.planningStartDate)
+        const locallyCompleted = repairWeekCreatorResponse(
+          hydration?.response ?? normalized,
+          context,
+          config,
+          options.targetWeekStart,
+          dateWindow.planningStartDate,
+        )
+        const repaired = mergeWeekCreatorHydration(locallyCompleted, hydration)
         repairStage.end({ ok: true })
 
         const validateStage = tracker.stage('validate')
@@ -290,27 +369,31 @@ export const WeekCreatorEngine = {
         validateStage.end({ ok: validation.ok, error: validation.ok ? undefined : validation.error })
 
         if (!validation.ok) {
-          const failure = classifyWeekCreatorFailure(validation.error, repaired)
+          const failure = classifyWeekCreatorValidationFailure({
+            validationCode: validation.code,
+            error: validation.error,
+            response: repaired,
+            activeRestrictionsPresent: cohort.activeRestrictionsPresent === true,
+          })
           outcome = 'invalid_schema'
           lastFailure = {
+            ...failure,
             provider: repaired.provider,
             model: repaired.model,
             traceId: repaired.traceId,
             durationMs: repaired.durationMs,
             fallbackUsed: repaired.fallbackUsed,
             retryUsed: attempt > 1 || repaired.retryUsed,
-            fallbackReason: failure.reason,
-            outcome: failure.outcome,
-            error: failure.error,
-            warnings: failure.warnings,
+            failedResponse: repaired,
+            failedSkeleton: providerSkeleton,
           }
           useAIDebugStore.getState().failRequest(traceId, {
-            errorCode: failure.reason,
+            errorCode: failure.code,
             outcome: failure.outcome,
             warnings: failure.warnings,
             ...buildRawTelemetry(raw),
             stageTimings: tracker.timings(),
-            repairStats: buildRepairStats(repaired.repairMeta),
+            repairStats: buildRepairStats(repaired.repairMeta, repaired.hydrationRepairMeta),
           })
           if (typeof console !== 'undefined' && typeof console.warn === 'function') {
             console.warn('[WeekCreatorEngine] validation failed', {
@@ -319,14 +402,21 @@ export const WeekCreatorEngine = {
               error: validation.error,
             })
           }
-          tracker.flush(outcome, { generationId, attempt, fallbackReason: failure.reason, validationError: failure.error })
-          continue
+          tracker.flush(outcome, {
+            generationId,
+            attempt,
+            failureCode: failure.code,
+            failureCategory: failure.category,
+            validationError: failure.error,
+          })
+          if (failure.decision !== 'local_fallback' && attempt < MAX_ATTEMPTS) continue
+          break
         }
 
         useAIDebugStore.getState().completeRequest(traceId, {
           ...buildRawTelemetry(raw),
           stageTimings: tracker.timings(),
-          repairStats: buildRepairStats(repaired.repairMeta),
+          repairStats: buildRepairStats(repaired.repairMeta, repaired.hydrationRepairMeta),
         })
 
         const action = validation.action
@@ -370,13 +460,12 @@ export const WeekCreatorEngine = {
           tracker.flush(outcome, { generationId, attempt, aborted: true })
           throw error instanceof Error ? error : new Error(String(error))
         }
+        const failure = classifyWeekCreatorProviderFailure(error)
         lastFailure = {
+          ...failure,
           provider: provider.name,
           traceId,
           retryUsed: attempt > 1,
-          fallbackReason: 'provider_error',
-          error: error instanceof Error ? error.message : String(error),
-          warnings: [`week_creator_failure:provider_error`, error instanceof Error ? error.message : String(error)],
         }
         useAIDebugStore.getState().failRequest(traceId, {
           provider: provider.name,
@@ -385,16 +474,23 @@ export const WeekCreatorEngine = {
           ...buildRawTelemetry(raw),
           stageTimings: tracker.timings(),
         })
-        tracker.flush(outcome, { generationId, attempt, error: lastFailure.error })
+        tracker.flush(outcome, {
+          generationId,
+          attempt,
+          failureCode: failure.code,
+          failureCategory: failure.category,
+          error: lastFailure.error,
+        })
+        if (attempt >= MAX_ATTEMPTS) break
       }
     }
 
-    // After exhausting retries, surface a real error to the chat store catch
-    // block so the UI shows it instead of staying in an infinite loading state.
-    const failureMessage = buildWeekCreatorUserFailureMessage(lastFailure?.fallbackReason)
+    // Build the conservative local result after the typed policy stops model
+    // attempts (immediately for ambiguous/local cases, after retry otherwise).
+    const failureMessage = buildWeekCreatorUserFailureMessage(lastFailure?.code)
     const failureTraceId = lastFailure?.traceId ?? buildAITraceId('week_creator')
     if (typeof console !== 'undefined' && typeof console.warn === 'function') {
-      console.warn('[WeekCreatorEngine] all attempts failed', {
+      console.warn('[WeekCreatorEngine] using deterministic fallback', {
         traceId: failureTraceId,
         provider: lastFailure?.provider,
         error: lastFailure?.error,
@@ -406,11 +502,12 @@ export const WeekCreatorEngine = {
     useAIDebugStore.getState().startRequest({
       traceId: fallbackTraceId,
       generationId,
-      attempt: MAX_ATTEMPTS + 1,
+      attempt: providerAttempts + 1,
       requestClass: 'week_creator',
       surface,
       startedAt: fallbackStartedAt,
       maxTokens: policy.maxTokens,
+      weekCreatorContract,
       ...cohort,
     })
     const fallbackStage = fallbackTracker.stage('fallback')
@@ -441,14 +538,14 @@ export const WeekCreatorEngine = {
         provider: fallback.provider,
         model: fallback.model,
         durationMs: Date.now() - fallbackStartedAt,
-        retryUsed: true,
+        retryUsed: providerAttempts > 1,
         fallbackUsed: true,
         errorCode: 'fallback_invalid',
         outcome: 'schema_invalid',
-        warnings: [buildWeekCreatorFallbackWarning(MAX_ATTEMPTS)],
+        warnings: [buildWeekCreatorFallbackWarning(providerAttempts, lastFailure?.category)],
         stageTimings: fallbackTracker.timings(),
       })
-      fallbackTracker.flush('invalid_schema', { generationId, attempt: MAX_ATTEMPTS + 1 })
+      fallbackTracker.flush('invalid_schema', { generationId, attempt: providerAttempts + 1 })
       throw new Error(`${failureMessage} Código de soporte: ${failureTraceId}.`)
     }
     const fallbackDurationMs = Date.now() - fallbackStartedAt
@@ -456,23 +553,23 @@ export const WeekCreatorEngine = {
       provider: fallback.provider,
       model: fallback.model,
       durationMs: fallbackDurationMs,
-      retryUsed: true,
+      retryUsed: providerAttempts > 1,
       fallbackUsed: true,
-      errorCode: lastFailure?.fallbackReason,
+      errorCode: lastFailure?.code,
       outcome: lastFailure?.outcome ?? 'schema_invalid',
       warnings: [
-        buildWeekCreatorFallbackWarning(MAX_ATTEMPTS),
+        buildWeekCreatorFallbackWarning(providerAttempts, lastFailure?.category),
         ...(lastFailure?.warnings ?? []),
       ],
       stageTimings: fallbackTracker.timings(),
     })
-    fallbackTracker.flush('ok', { generationId, attempt: MAX_ATTEMPTS + 1, fallbackUsed: true })
+    fallbackTracker.flush('ok', { generationId, attempt: providerAttempts + 1, fallbackUsed: true })
     return {
       ...fallback,
       durationMs: fallbackDurationMs,
       generationId,
       actions: [fallbackValidation.action],
-      retryUsed: true,
+      retryUsed: providerAttempts > 1,
       fallbackUsed: true,
       message: buildWeekCreatorFallbackMessage(fallbackValidation.action),
     }
@@ -492,10 +589,7 @@ function buildWeekCreatorCohort(
     allowedSportCount: config.allowedSports.length,
     doubleSessionAllowed: capacity.doubleSessionDays.length > 0,
     partialWeek: planningStartDate > targetWeekStart,
-    activeRestrictionsPresent: Boolean(
-      context.athleteProfile?.recoveryProfile?.restrictions?.trim()
-      || config.injuryNotes?.trim(),
-    ),
+    activeRestrictionsPresent: hasActiveMedicalRestrictions(context, config),
   }
 }
 
@@ -574,63 +668,18 @@ function isAbortError(error: unknown, signal?: AbortSignal): boolean {
 }
 
 function buildWeekCreatorFallbackMessage(action: CoachAction): string {
-  return `Generé una semana base automática porque la IA no devolvió una semana válida tras 2 intentos. Revísala antes de aplicarla.\n\n${summarizeWeekCreatorAction(action)}`
+  return `Generé una semana base automática porque la IA no devolvió una semana válida. Revísala antes de aplicarla.\n\n${summarizeWeekCreatorAction(action)}`
 }
 
-function classifyWeekCreatorFailure(
-  error: string | undefined,
-  response: CoachNormalizedResponse,
-): WeekCreatorFailure {
-  const message = error?.trim() || 'La respuesta del modelo no pasó la validación del Week Creator.'
-  const meta = response.meta
-  let reason: WeekCreatorFallbackReason = 'schema_invalid'
-  let outcome: WeekCreatorFailure['outcome'] = 'schema_invalid'
-
-  if (meta?.actionParseFailed || meta?.outcome === 'parse_invalid') {
-    reason = 'actions_parse_failed'
-    outcome = 'parse_invalid'
-  } else if (/ninguna acción create_week/i.test(message)) {
-    reason = 'missing_create_week'
-  } else if (/más de una acción create_week/i.test(message)) {
-    reason = 'multiple_create_week'
-  } else if (/solo admite una acción create_week/i.test(message)) {
-    reason = 'extra_actions'
-  } else if (/targetDate=/i.test(message)) {
-    reason = 'wrong_target_date'
-  } else if (/no trae sesiones válidas/i.test(message)) {
-    reason = 'missing_sessions'
-  } else if (/exactamente \d+ sesiones válidas/i.test(message)) {
-    reason = 'session_count_mismatch'
-  } else if (/entre .* y los 6 días siguientes|fecha inválida/i.test(message)) {
-    reason = 'invalid_week_dates'
-  } else if (/colisiones|doble jornada|doble sesión|día no permitido|restricciones horarias|dos sesiones de squash el mismo día|duplicar squash/i.test(message)) {
-    reason = 'schedule_conflict'
-  } else if (/deportes permitidos|no está dentro de los deportes permitidos/i.test(message)) {
-    reason = 'unsupported_sport'
-  } else if (/requiere .*Details|drill fuera de catálogo|ejercicios|cyclingDetails|mobilityDetails/i.test(message)) {
-    reason = 'missing_sport_details'
-  } else if (/deporte principal/i.test(message)) {
-    reason = 'missing_primary_sport'
-  }
-
-  return {
-    reason,
-    error: message,
-    outcome,
-    warnings: [
-      `week_creator_failure:${reason}`,
-      message,
-      ...(meta?.warnings ?? []),
-    ],
-  }
+function buildWeekCreatorFallbackWarning(
+  attempts: number,
+  category?: WeekCreatorFailureCategory,
+): string {
+  return `week_creator_fallback:local attempts=${attempts} category=${category ?? 'unsafe_or_ambiguous'}`
 }
 
-function buildWeekCreatorFallbackWarning(attempts: number): string {
-  return `week_creator_fallback:local_after_provider_failure attempts=${attempts}`
-}
-
-function buildWeekCreatorUserFailureMessage(reason?: WeekCreatorFallbackReason): string {
-  if (reason === 'schedule_conflict') {
+function buildWeekCreatorUserFailureMessage(reason?: WeekCreatorFailureCode): string {
+  if (reason === 'invalid_double_session' || reason === 'schedule_constraint' || reason === 'unavailable_day') {
     return 'No pude armar una semana que respete toda tu disponibilidad. Revisa los días y bloques AM/PM configurados, o reduce la cantidad de sesiones, y vuelve a intentarlo.'
   }
   return 'No pude armar una semana válida esta vez. Revisa tu configuración y vuelve a intentarlo.'
@@ -639,6 +688,49 @@ function buildWeekCreatorUserFailureMessage(reason?: WeekCreatorFallbackReason):
 type RepairedWeekCreatorResponse = CoachNormalizedResponse & {
   repairWarnings: string[]
   repairMeta?: RepairMeta
+  /** Skeleton-contract only: the hydration pass that ran before the final repair. */
+  hydrationRepairMeta?: RepairMeta
+}
+
+/**
+ * In the skeleton contract `repairGeneratedWeek` runs twice over the same
+ * sessions — once to hydrate sport details, once as the final Week Creator
+ * repair. Summing both passes would double-count every counter and inflate the
+ * very telemetry Fase 3's exit criteria are read from, so the two passes stay
+ * separate: `repairMeta` describes the week as delivered, `hydrationRepairMeta`
+ * describes what hydration had to do to get there. Only warnings are unioned.
+ */
+function mergeWeekCreatorHydration(
+  repaired: RepairedWeekCreatorResponse,
+  hydration: WeekCreatorHydrationResult | undefined,
+): RepairedWeekCreatorResponse {
+  if (!hydration) return repaired
+
+  const repairWarnings = [...new Set([
+    ...hydration.warnings,
+    ...repaired.repairWarnings,
+  ])]
+  const repairMeta = repaired.repairMeta && hydration.repairMeta
+    ? { ...repaired.repairMeta, warnings: unionRepairWarnings(hydration.repairMeta, repaired.repairMeta) }
+    : repaired.repairMeta ?? hydration.repairMeta
+
+  return {
+    ...repaired,
+    repairWarnings,
+    repairMeta,
+    hydrationRepairMeta: hydration.repairMeta,
+  }
+}
+
+function unionRepairWarnings(
+  hydration: RepairMeta,
+  finalRepair: RepairMeta,
+): RepairMeta['warnings'] {
+  return [...hydration.warnings, ...finalRepair.warnings]
+    .filter((warning, index, all) => all.findIndex((candidate) =>
+      candidate.code === warning.code
+      && candidate.message === warning.message
+      && candidate.sessionDate === warning.sessionDate) === index)
 }
 
 export function repairWeekCreatorResponse(
@@ -658,11 +750,35 @@ export function repairWeekCreatorResponse(
   if (!Array.isArray(action.sessions) || action.sessions.length === 0) {
     return { ...response, repairWarnings: [] }
   }
+  const targetDateNeedsRepair = action.targetDate !== targetWeekStart
+  const targetDateRepairIsSafe = filterSessionsToWeek(action.sessions, targetWeekStart).length === action.sessions.length
+    && action.sessions.every((session) => session.date >= planningStartDate)
+  if (targetDateNeedsRepair && !targetDateRepairIsSafe) {
+    return { ...response, repairWarnings: [] }
+  }
+  const actionRepairWarnings: RepairMeta['warnings'] = []
+  if (actions.length > 1) {
+    actionRepairWarnings.push({
+      code: 'extra_actions_ignored',
+      message: `Se ignoraron ${actions.length - 1} acción(es) accesoria(s) y se conservó la única semana completa.`,
+    })
+  }
+  if (targetDateNeedsRepair) {
+    actionRepairWarnings.push({
+      code: 'target_date_repaired',
+      message: `Se corrigió targetDate a la semana solicitada (${targetWeekStart}).`,
+    })
+  }
 
   const profile = buildRepairProfile(context)
-  const aligned = alignSessionsToScheduleConstraints(action.sessions, config)
-  const repairConfig = buildScheduleAwareRepairConfig(config)
-  const repairContext = buildRepairContext(profile, repairConfig, targetWeekStart, planningStartDate)
+  const aligned = alignSessionsToScheduleConstraints(action.sessions, config.scheduleConstraints)
+  const repairConfig = buildScheduleAwareConfig(config)
+  const repairContext = buildWeekCreatorHydrationRepairContext({
+    context: { ...context, athleteProfile: profile },
+    config: repairConfig,
+    targetWeekStart,
+    planningStartDate,
+  })
   const repairResult = repairGeneratedWeek(aligned.sessions, repairContext)
   if (aligned.adjustedCount > 0) {
     repairResult.meta.repairedSessionCount += aligned.adjustedCount
@@ -678,7 +794,7 @@ export function repairWeekCreatorResponse(
   const finalizedChanged = shouldFinalize && !areSessionListsEquivalent(repairResult.sessions, finalizedSessions)
   // Repair relocates by date without reading `scheduleConstraints`, so re-check
   // the AM/PM pinning it may have undone.
-  const realigned = alignSessionsToScheduleConstraints(finalizedSessions, config, { skipOccupied: true })
+  const realigned = alignSessionsToScheduleConstraints(finalizedSessions, config.scheduleConstraints, { skipOccupied: true })
   if (realigned.adjustedCount > 0) {
     repairResult.meta.repairedSessionCount += realigned.adjustedCount
     repairResult.meta.warnings.push({
@@ -686,22 +802,23 @@ export function repairWeekCreatorResponse(
       message: `Se ajustaron ${realigned.adjustedCount} sesión(es) a los bloques AM/PM configurados.`,
     })
   }
+  repairResult.meta.warnings.push(...actionRepairWarnings)
   if (repairResult.meta.repairedSessionCount === 0
     && repairResult.meta.movedSessionCount === 0
     && repairResult.meta.addedFallbackCount === 0
     && repairResult.meta.droppedSessionCount === 0
     && repairResult.meta.filteredSportCount === 0
     && !finalizedChanged
+    && actionRepairWarnings.length === 0
   ) {
     return { ...response, repairWarnings: [], repairMeta: repairResult.meta }
   }
 
   const repairedAction: CoachAction = {
     ...action,
-    targetDate: action.targetDate ?? targetWeekStart,
+    targetDate: targetWeekStart,
     sessions: realigned.sessions,
   }
-  const repairedActions = actions.map((item) => (item === action ? repairedAction : item))
   const repairWarnings = [
     ...repairResult.meta.warnings.map((warning) => warning.message),
     ...(finalizedChanged
@@ -711,51 +828,10 @@ export function repairWeekCreatorResponse(
 
   return {
     ...response,
-    actions: repairedActions,
+    actions: [repairedAction],
     repairWarnings,
     repairMeta: repairResult.meta,
   }
-}
-
-// A day pinned to a single block (only AM / only PM) cannot host a double, and
-// an unavailable day cannot host anything. Repair does not read
-// `scheduleConstraints`, so it would otherwise "resolve" a collision on such a
-// day by flipping the session to the forbidden block. Strip those days from the
-// config we hand to repair so it relocates to another date instead.
-function buildScheduleAwareRepairConfig(
-  config: WeekCreatorEffectiveConfig,
-): WeekCreatorEffectiveConfig {
-  const capacity = resolveScheduleCapacity(config)
-  return {
-    ...config,
-    trainingDays: capacity.trainingDays,
-    doubleSessionDays: capacity.doubleSessionDays,
-    allowDoubleSession: capacity.doubleSessionDays.length > 0,
-  }
-}
-
-function alignSessionsToScheduleConstraints(
-  sessions: CoachSessionProposal[],
-  config: WeekCreatorEffectiveConfig,
-  options: { skipOccupied?: boolean } = {},
-): { sessions: CoachSessionProposal[]; adjustedCount: number } {
-  let adjustedCount = 0
-  const occupied = new Set(sessions.map((session) => `${session.date}|${session.timeBlock}`))
-  const aligned = sessions.map((session) => {
-    const day = dayOfWeekFromTargetDate('', session.date)
-    if (!day) return session
-    const constraint = resolveDayScheduleConstraint(config.scheduleConstraints, day)
-    if (constraint !== 'AM' && constraint !== 'PM') return session
-    if (session.timeBlock === constraint) return session
-    // The post-repair pass must not manufacture a collision the repair pipeline
-    // has already run past; leave it for validation instead.
-    if (options.skipOccupied && occupied.has(`${session.date}|${constraint}`)) return session
-    occupied.delete(`${session.date}|${session.timeBlock}`)
-    occupied.add(`${session.date}|${constraint}`)
-    adjustedCount += 1
-    return { ...session, timeBlock: constraint }
-  })
-  return { sessions: aligned, adjustedCount }
 }
 
 function buildRawTelemetry(raw: AIRawResponse | undefined): Partial<AITechnicalResult> {
@@ -778,7 +854,10 @@ function buildRawTelemetry(raw: AIRawResponse | undefined): Partial<AITechnicalR
   }
 }
 
-function buildRepairStats(meta: RepairMeta | undefined): AITechnicalResult['repairStats'] {
+function buildRepairStats(
+  meta: RepairMeta | undefined,
+  hydrationMeta?: RepairMeta,
+): AITechnicalResult['repairStats'] {
   if (!meta) return undefined
   return {
     repairedSessionCount: meta.repairedSessionCount,
@@ -787,6 +866,17 @@ function buildRepairStats(meta: RepairMeta | undefined): AITechnicalResult['repa
     droppedSessionCount: meta.droppedSessionCount,
     filteredSportCount: meta.filteredSportCount,
     codes: [...new Set(meta.warnings.map((warning) => warning.code))],
+    ...(hydrationMeta
+      ? {
+          hydration: {
+            repairedSessionCount: hydrationMeta.repairedSessionCount,
+            movedSessionCount: hydrationMeta.movedSessionCount,
+            addedFallbackCount: hydrationMeta.addedFallbackCount,
+            droppedSessionCount: hydrationMeta.droppedSessionCount,
+            filteredSportCount: hydrationMeta.filteredSportCount,
+          },
+        }
+      : {}),
   }
 }
 
@@ -914,90 +1004,6 @@ function buildRepairProfile(context: ChatContext): AthleteProfile {
   }
 }
 
-function buildRepairContext(
-  profile: ReturnType<typeof buildRepairProfile>,
-  config: WeekCreatorEffectiveConfig,
-  targetWeekStart: string,
-  planningStartDate = targetWeekStart,
-) {
-  const now = Date.now()
-  const primarySport = config.primarySport ?? config.allowedSports[0] ?? 'squash'
-  const sportDetails = buildSportDetails(config.allowedSports, primarySport)
-  const macroSnapshot: MacroPlan = {
-    goalEventId: profile.planWizardConfig?.goalEventId ?? 'week-creator',
-    goalEventDate: addDaysIso(targetWeekStart, 6),
-    currentPhase: profile.macroPlan?.currentPhase ?? 'base',
-    weeksRemaining: profile.macroPlan?.weeksRemaining ?? 0,
-    blockFocus: profile.macroPlan?.blockFocus ?? `Semana base de ${primarySport}`,
-    headline: profile.macroPlan?.headline ?? `Semana de ${primarySport}`,
-    timeline: [],
-    sportDetails,
-    secondaryEvents: [],
-    computedAt: now,
-  }
-  const wizardConfig: PlanWizardConfig = {
-    goalEventId: profile.planWizardConfig?.goalEventId ?? 'week-creator',
-    trainingDays: config.trainingDays,
-    sessionsPerWeek: config.sessionsPerWeek,
-    sessionDurationMins: config.sessionDurationMins,
-    allowDoubleSession: config.allowDoubleSession,
-    doubleSessionDays: config.doubleSessionDays,
-    scheduleConstraints: config.scheduleConstraints,
-    complementarySports: config.allowedSports.filter((sport) => sport !== primarySport),
-    currentFitnessLevel: config.currentFitnessLevel,
-    currentFatigue: config.currentFatigue,
-    injuryNotes: config.injuryNotes,
-    createdAt: new Date(now).toISOString(),
-    updatedAt: new Date(now).toISOString(),
-  }
-  const plan: TrainingPlan = {
-    id: 'week-creator-plan',
-    athleteId: profile.id,
-    goalEventId: wizardConfig.goalEventId,
-    status: 'draft',
-    generationState: 'shell',
-    title: 'Week Creator',
-    startDate: planningStartDate,
-    endDate: addDaysIso(targetWeekStart, 6),
-    totalWeeks: 1,
-    phases: [],
-    wizardConfig,
-    macroSnapshot,
-    createdAt: now,
-    updatedAt: now,
-  }
-  const week: TrainingPlanWeek = {
-    id: 'week-creator-week',
-    planId: plan.id,
-    weekIndex: 0,
-    weekStartDate: targetWeekStart,
-    phase: macroSnapshot.currentPhase,
-    status: 'draft',
-    sessions: [],
-    weekObjectives: [],
-    targetLoadBySport: {},
-    validationIssues: [],
-    generationMeta: { attempts: 1 },
-    createdAt: now,
-    updatedAt: now,
-  }
-
-  return { plan, week, profile, wizardConfig }
-}
-
-function buildSportDetails(allowedSports: SupportedSport[], primarySport: SupportedSport) {
-  const sports = allowedSports.length > 0 ? allowedSports : [primarySport]
-  return [...new Set(sports)].map((sport) => ({
-    sport,
-    role: sport === primarySport ? 'primary' as const : 'support' as const,
-    phaseFocus: sport === primarySport ? 'mantener continuidad del deporte principal' : 'soporte de baja interferencia',
-    weeklyIntent: sport === primarySport ? 'progress' : 'support',
-    volumeBias: sport === primarySport ? 'build' as const : 'hold' as const,
-    intensityBias: 'hold' as const,
-    notes: sport === primarySport ? 'Deporte principal declarado en el perfil.' : 'Deporte complementario habilitado.',
-  }))
-}
-
 function addDaysIso(date: string, days: number): string {
   const start = new Date(`${date}T00:00:00.000Z`)
   start.setUTCDate(start.getUTCDate() + days)
@@ -1034,7 +1040,7 @@ function buildDeterministicWeekCreatorResponse(input: {
     durationMs: 0,
     traceId: input.traceId ?? buildAITraceId('week_creator'),
     requestClass: 'week_creator',
-    retryUsed: true,
+    retryUsed: false,
     fallbackUsed: true,
     raw: input.error ? { fallbackReason: input.error } : undefined,
     meta: { hadActionsMarkup: true, actionParseFailed: false, likelyTruncated: false, outcome: 'ok' },

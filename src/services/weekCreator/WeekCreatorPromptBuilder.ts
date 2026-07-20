@@ -21,6 +21,8 @@ export interface WeekCreatorPromptInput {
   retryInstruction?: string
   strictFormatting?: boolean
   structuredOutput?: boolean
+  /** Provider returns only the weekly architecture; sport details are hydrated locally. */
+  skeletonOutput?: boolean
   /** Objetivos de la semana del plan activo (TrainingPlanWeek.weekObjectives), si existe. */
   weekObjectives?: string[]
 }
@@ -65,12 +67,12 @@ export function buildWeekCreatorPrompt(
     buildConfigSummary(config),
     buildAthleteLevelRules(config),
     buildPrioritySportSummary(prioritySport, config),
-    buildWeekCreatorSquashRules(config),
-    buildStrengthStructureRules(config),
-    config.allowedSports.includes('strength')
+    input.skeletonOutput ? '' : buildWeekCreatorSquashRules(config),
+    input.skeletonOutput ? '' : buildStrengthStructureRules(config),
+    !input.skeletonOutput && config.allowedSports.includes('strength')
       ? 'Si hay dos o más sesiones de fuerza, deben tener focos y ejercicios distintos; no repitas exactamente el mismo array exercises en más de una sesión.'
       : '',
-    buildSquashPhaseContentGuide(config, profile, goalEvent),
+    input.skeletonOutput ? '' : buildSquashPhaseContentGuide(config, profile, goalEvent),
     buildProgressionContext(config, recentHistory, recentLogs),
     buildCurrentWeekSessionsSummary(targetWeekSessions, input.targetWeekStart),
     buildRecentCoachAdviceSummary(context.recentMessages),

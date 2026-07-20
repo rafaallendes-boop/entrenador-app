@@ -1,6 +1,16 @@
-import type { DayOfWeek, TimeBlock } from '../../types'
+import type { CoachSessionProposal, DayOfWeek, TimeBlock } from '../../types'
 
 export type DayScheduleConstraint = TimeBlock | 'unavailable' | undefined
+
+const WEEKDAY_BY_INDEX: DayOfWeek[] = [
+  'sunday',
+  'monday',
+  'tuesday',
+  'wednesday',
+  'thursday',
+  'friday',
+  'saturday',
+]
 
 const DAY_CONSTRAINT_LABELS: Record<DayOfWeek, string[]> = {
   monday: ['lunes', 'lun', 'monday'],
@@ -104,4 +114,55 @@ function normalizeConstraintText(value: string | undefined): string {
     .replace(/[:()-]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
+}
+
+export function dayOfWeekFromIsoDate(date: string): DayOfWeek | undefined {
+  const parsed = new Date(`${date}T00:00:00.000Z`)
+  if (Number.isNaN(parsed.getTime())) return undefined
+  return WEEKDAY_BY_INDEX[parsed.getUTCDay()]
+}
+
+/**
+ * Narrows a config to what the schedule constraints actually leave open, so
+ * the repair pipeline reubicates to another date instead of flipping a session
+ * back into a forbidden block. Shared by the Week Creator repair pass and the
+ * Phase 3 local hydrator; keeping two copies let them drift apart.
+ */
+export function buildScheduleAwareConfig<T extends ScheduleCapacityInput>(config: T): T {
+  const capacity = resolveScheduleCapacity(config)
+  return {
+    ...config,
+    trainingDays: capacity.trainingDays,
+    doubleSessionDays: capacity.doubleSessionDays,
+    allowDoubleSession: capacity.doubleSessionDays.length > 0,
+  }
+}
+
+/**
+ * Moves sessions onto the block a day is pinned to (only AM / only PM).
+ *
+ * `skipOccupied` is for the post-repair pass: it must not manufacture a
+ * collision the repair pipeline has already run past \u2014 leave that for
+ * validation instead.
+ */
+export function alignSessionsToScheduleConstraints(
+  sessions: CoachSessionProposal[],
+  scheduleConstraints: string | undefined,
+  options: { skipOccupied?: boolean } = {},
+): { sessions: CoachSessionProposal[]; adjustedCount: number } {
+  let adjustedCount = 0
+  const occupied = new Set(sessions.map((session) => `${session.date}|${session.timeBlock}`))
+  const aligned = sessions.map((session) => {
+    const day = dayOfWeekFromIsoDate(session.date)
+    if (!day) return session
+    const constraint = resolveDayScheduleConstraint(scheduleConstraints, day)
+    if (constraint !== 'AM' && constraint !== 'PM') return session
+    if (session.timeBlock === constraint) return session
+    if (options.skipOccupied && occupied.has(`${session.date}|${constraint}`)) return session
+    occupied.delete(`${session.date}|${session.timeBlock}`)
+    occupied.add(`${session.date}|${constraint}`)
+    adjustedCount += 1
+    return { ...session, timeBlock: constraint }
+  })
+  return { sessions: aligned, adjustedCount }
 }

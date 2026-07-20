@@ -121,9 +121,13 @@ export function withRequestedSessionsPerWeek(
   config: WeekCreatorEffectiveConfig,
   userMessage: string,
 ): WeekCreatorEffectiveConfig {
-  if (config.configSource === 'wizard') return config
   const requested = extractRequestedSessionsPerWeek(userMessage)
   if (requested == null) return config
+  // Deliberately clamped to `maxSessionsPerWeek` (days + doubles) and not to
+  // the constraint-aware `resolveScheduleCapacity`. An explicit request that
+  // the calendar cannot hold must reach the engine preflight so the athlete
+  // gets told which day/block is missing, instead of silently receiving fewer
+  // sessions than they asked for.
   return {
     ...config,
     sessionsPerWeek: clampSessionsPerWeek(requested, config.maxSessionsPerWeek),

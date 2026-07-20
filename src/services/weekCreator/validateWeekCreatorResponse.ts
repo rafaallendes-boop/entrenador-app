@@ -5,6 +5,7 @@ import { validateAgainstContract } from '../ai/prompt/validators/validateAgainst
 import { findSquashDrillByName } from '../training/drillLibrary'
 import { filterSessionsToWeek, isStrictISODate, pickCreateWeekDiagnostic } from '../week/shared'
 import type { WeekCreatorEffectiveConfig } from './WeekCreatorConfig'
+import type { WeekCreatorValidationCode } from './WeekCreatorFailurePolicy'
 import { resolveDayScheduleConstraint } from './scheduleConstraints'
 
 /**
@@ -29,6 +30,7 @@ export interface WeekCreatorValidationInput {
 export interface WeekCreatorValidationResult {
   ok: boolean
   action?: CoachAction
+  code?: WeekCreatorValidationCode
   error?: string
   warning?: string
   rawSessionCount?: number
@@ -44,13 +46,14 @@ export function validateWeekCreatorResponse(
   if (createWeekActions.length !== 1) {
     return {
       ok: false,
+      code: createWeekActions.length === 0 ? 'missing_create_week' : 'multiple_create_week',
       error: createWeekActions.length === 0
         ? 'El modelo no devolvió ninguna acción create_week.'
         : 'El modelo devolvió más de una acción create_week y este flujo solo admite una semana.',
     }
   }
   if (responseActions.length !== createWeekActions.length) {
-    return fail('Week Creator solo admite una acción create_week sin acciones adicionales.')
+    return fail('extra_actions', 'Week Creator solo admite una acción create_week sin acciones adicionales.')
   }
 
   const action = createWeekActions[0]
@@ -66,61 +69,63 @@ export function validateWeekCreatorResponse(
   })
   if (!shapeCheck.ok) {
     return fail(
+      'invalid_action_contract',
       `La acción create_week no cumple el contrato estructural — ${shapeCheck.error}.`,
       rawSessionCount, validSessionCount, droppedSessionCount,
     )
   }
 
   if (action.targetDate !== input.targetWeekStart) {
-    return fail(`La acción create_week debe usar targetDate=${input.targetWeekStart}.`, rawSessionCount, validSessionCount, droppedSessionCount)
+    return fail('wrong_target_date', `La acción create_week debe usar targetDate=${input.targetWeekStart}.`, rawSessionCount, validSessionCount, droppedSessionCount)
   }
 
   const sessions = action.sessions as CoachSessionProposal[]
   const weekCheck = validateSessionWeekBoundaries(sessions, input.targetWeekStart, input.planningStartDate)
-  if (weekCheck) return fail(weekCheck, rawSessionCount, validSessionCount, droppedSessionCount)
+  if (weekCheck) return fail('invalid_week_dates', weekCheck, rawSessionCount, validSessionCount, droppedSessionCount)
 
   if (sessions.length !== input.config.sessionsPerWeek) {
     const droppedInfo = droppedSessionCount && droppedSessionCount > 0
       ? ` Se descartaron ${droppedSessionCount} sesión(es) inválidas durante la normalización.`
       : ''
     return fail(
+      'session_count_mismatch',
       `La semana debe traer exactamente ${input.config.sessionsPerWeek} sesiones válidas y llegó con ${sessions.length}.${droppedInfo}`,
       rawSessionCount, validSessionCount, droppedSessionCount,
     )
   }
 
   const collisionError = validateCollisions(sessions)
-  if (collisionError) return fail(collisionError, rawSessionCount, validSessionCount, droppedSessionCount)
+  if (collisionError) return fail('slot_collision', collisionError, rawSessionCount, validSessionCount, droppedSessionCount)
 
   const doubleSessionError = validateDoubleSessions(sessions, input.config)
-  if (doubleSessionError) return fail(doubleSessionError, rawSessionCount, validSessionCount, droppedSessionCount)
+  if (doubleSessionError) return fail('invalid_double_session', doubleSessionError, rawSessionCount, validSessionCount, droppedSessionCount)
 
   const sameDaySquashError = validateSameDaySquashSessions(sessions, input.config)
-  if (sameDaySquashError) return fail(sameDaySquashError, rawSessionCount, validSessionCount, droppedSessionCount)
+  if (sameDaySquashError) return fail('duplicate_primary_same_day', sameDaySquashError, rawSessionCount, validSessionCount, droppedSessionCount)
 
   const duplicateSquashError = validateDuplicateSquashSessions(sessions)
-  if (duplicateSquashError) return fail(duplicateSquashError, rawSessionCount, validSessionCount, droppedSessionCount)
+  if (duplicateSquashError) return fail('duplicate_squash_content', duplicateSquashError, rawSessionCount, validSessionCount, droppedSessionCount)
 
   const duplicateStrengthError = validateDuplicateStrengthSessions(sessions)
-  if (duplicateStrengthError) return fail(duplicateStrengthError, rawSessionCount, validSessionCount, droppedSessionCount)
+  if (duplicateStrengthError) return fail('duplicate_strength_content', duplicateStrengthError, rawSessionCount, validSessionCount, droppedSessionCount)
 
   const dayError = validateAllowedDays(sessions, input.config)
-  if (dayError) return fail(dayError, rawSessionCount, validSessionCount, droppedSessionCount)
+  if (dayError) return fail('unavailable_day', dayError, rawSessionCount, validSessionCount, droppedSessionCount)
 
   const timeConstraintError = validateScheduleTimeConstraints(sessions, input.config)
-  if (timeConstraintError) return fail(timeConstraintError, rawSessionCount, validSessionCount, droppedSessionCount)
+  if (timeConstraintError) return fail('schedule_constraint', timeConstraintError, rawSessionCount, validSessionCount, droppedSessionCount)
 
   const sportError = validateAllowedSports(sessions, input.config)
-  if (sportError) return fail(sportError, rawSessionCount, validSessionCount, droppedSessionCount)
+  if (sportError) return fail('unsupported_sport', sportError, rawSessionCount, validSessionCount, droppedSessionCount)
 
   const detailsError = validateRequiredDetails(sessions)
-  if (detailsError) return fail(detailsError, rawSessionCount, validSessionCount, droppedSessionCount)
+  if (detailsError) return fail('missing_sport_details', detailsError, rawSessionCount, validSessionCount, droppedSessionCount)
 
   const primarySportError = validatePrimarySportPresence(sessions, input.config)
-  if (primarySportError) return fail(primarySportError, rawSessionCount, validSessionCount, droppedSessionCount)
+  if (primarySportError) return fail('missing_primary_sport', primarySportError, rawSessionCount, validSessionCount, droppedSessionCount)
 
   const supportSportError = validateSupportSportPresence(sessions, input.config)
-  if (supportSportError) return fail(supportSportError, rawSessionCount, validSessionCount, droppedSessionCount)
+  if (supportSportError) return fail('missing_support_sport', supportSportError, rawSessionCount, validSessionCount, droppedSessionCount)
 
   const sportWarnings = collectSportDetailWarnings(sessions)
 
@@ -490,10 +495,11 @@ function normalizeSessionSport(session: CoachSessionProposal): SupportedSport | 
 }
 
 function fail(
+  code: WeekCreatorValidationCode,
   error: string,
   rawSessionCount?: number,
   validSessionCount?: number,
   droppedSessionCount?: number,
 ): WeekCreatorValidationResult {
-  return { ok: false, error, rawSessionCount, validSessionCount, droppedSessionCount }
+  return { ok: false, code, error, rawSessionCount, validSessionCount, droppedSessionCount }
 }

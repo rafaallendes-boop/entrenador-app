@@ -321,14 +321,15 @@ describe('resolveWeekCreatorConfig', () => {
     expect(prompt.userPrompt).toContain('Prioridad explícita del usuario: running')
   })
 
-  it('does not let chat text override plan wizard sessions', () => {
+  it('lets an explicit chat count override the wizard target within real capacity', () => {
     const config = resolveWeekCreatorConfig(makeProfile({
       planWizardConfig: {
         goalEventId: 'g1',
-        trainingDays: ['monday', 'tuesday', 'thursday', 'saturday'],
-        sessionsPerWeek: 4,
+        trainingDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'],
+        doubleSessionDays: ['monday', 'wednesday', 'friday'],
+        sessionsPerWeek: 7,
         sessionDurationMins: 60,
-        allowDoubleSession: false,
+        allowDoubleSession: true,
         complementarySports: ['running', 'strength'],
         currentFitnessLevel: 'normal',
         currentFatigue: 'normal',
@@ -337,9 +338,13 @@ describe('resolveWeekCreatorConfig', () => {
       },
     }))
 
-    expect(withRequestedSessionsPerWeek(config, 'Créame 6 sesiones')).toMatchObject({
+    expect(withRequestedSessionsPerWeek(config, 'Créame 8 entrenamientos')).toMatchObject({
       configSource: 'wizard',
-      sessionsPerWeek: 4,
+      sessionsPerWeek: 8,
+    })
+    expect(withRequestedSessionsPerWeek(config, 'Créame 5 sesiones')).toMatchObject({
+      configSource: 'wizard',
+      sessionsPerWeek: 5,
     })
   })
 
@@ -520,6 +525,7 @@ describe('WeekCreatorEngine', () => {
     })
 
     expect(validation.ok).toBe(false)
+    expect(validation.code).toBe('invalid_week_dates')
     expect(validation.error).toContain('entre 2026-05-06 y 2026-05-10')
   })
 
@@ -787,6 +793,7 @@ describe('WeekCreatorEngine', () => {
       'prompt_build',
       'provider_call',
       'normalize',
+      'hydrate',
       'repair',
       'validate',
     ])
@@ -1349,7 +1356,7 @@ describe('WeekCreatorEngine', () => {
     expect(new Set(strengthSignatures).size).toBe(strengthSignatures.length)
   })
 
-  it('returns a local fallback week when both provider attempts miss create_week', async () => {
+  it('returns a local fallback week without paying a second request when create_week is missing', async () => {
     mockProviderCall.mockImplementation(async (request: { requestClass: string; traceId: string }) => ({
       text: 'Puedo armar una semana con squash, fuerza y running, pero no incluyo acciones.',
       provider: 'gemini',
@@ -1384,12 +1391,12 @@ describe('WeekCreatorEngine', () => {
       { surface: 'chat', targetWeekStart: '2026-05-04' },
     )
 
-    expect(mockProviderCall).toHaveBeenCalledTimes(2)
+    expect(mockProviderCall).toHaveBeenCalledTimes(1)
     const providerGenerationIds = mockProviderCall.mock.calls.map(([request]) => request.generationId)
     const logicalAttempts = mockProviderCall.mock.calls.map(([request]) => request.logicalAttempt)
     expect(new Set(providerGenerationIds).size).toBe(1)
     expect(providerGenerationIds[0]).toMatch(/^week_creator-generation-/)
-    expect(logicalAttempts).toEqual([1, 2])
+    expect(logicalAttempts).toEqual([1])
     expect(response.fallbackUsed).toBe(true)
     expect(response.actions?.[0]).toMatchObject({
       type: 'create_week',
@@ -1408,7 +1415,7 @@ describe('WeekCreatorEngine', () => {
     expect(response.actions?.[0].reason).not.toContain('provider')
 
     const requests = useAIDebugStore.getState().requests
-    expect(requests.filter((request) => request.generationId === providerGenerationIds[0])).toHaveLength(3)
+    expect(requests.filter((request) => request.generationId === providerGenerationIds[0])).toHaveLength(2)
     expect(requests.some((request) =>
       request.status === 'failed' &&
       request.errorCode === 'missing_create_week' &&
@@ -1416,7 +1423,7 @@ describe('WeekCreatorEngine', () => {
       request.warnings?.some((warning) => warning.includes('week_creator_failure:missing_create_week')),
     )).toBe(true)
     expect(requests.some((request) =>
-      request.warnings?.some((warning) => warning.includes('week_creator_fallback:local_after_provider_failure')),
+      request.warnings?.some((warning) => warning.includes('week_creator_fallback:local attempts=1 category=unsafe_or_ambiguous')),
     )).toBe(true)
     expect(requests.some((request) =>
       request.warnings?.some((warning) => warning.includes('provider=')),
@@ -1424,6 +1431,7 @@ describe('WeekCreatorEngine', () => {
     expect(requests[0]).toMatchObject({
       status: 'completed',
       fallbackUsed: true,
+      retryUsed: false,
       errorCode: 'missing_create_week',
       outcome: 'schema_invalid',
       expectedSessionCount: 5,
@@ -1539,7 +1547,7 @@ describe('WeekCreatorEngine', () => {
     expect(visibleText).toContain('Tiros paralelos profundos')
   })
 
-  it('builds a valid eight-session fallback using only explicitly allowed double days', async () => {
+  it('honors the exact eight-session chat request with an active wizard and uses only allowed double days', async () => {
     mockProviderCall.mockImplementation(async (request: { requestClass: string; traceId: string }) => ({
       text: 'Respuesta sin una create_week aplicable.',
       provider: 'gemini',
@@ -1553,7 +1561,19 @@ describe('WeekCreatorEngine', () => {
         scheduleProfile: {
           availableDays: ['lun', 'mar', 'mié', 'jue', 'vie', 'sáb'],
           doubleSessionDays: ['lun', 'mié', 'vie'],
-          sessionsPerWeek: 8,
+        },
+        planWizardConfig: {
+          goalEventId: 'goal-1',
+          trainingDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'],
+          doubleSessionDays: ['monday', 'wednesday', 'friday'],
+          sessionsPerWeek: 7,
+          sessionDurationMins: 60,
+          allowDoubleSession: true,
+          complementarySports: ['running', 'strength'],
+          currentFitnessLevel: 'normal',
+          currentFatigue: 'normal',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
         },
       }),
       recentSessions: [],
@@ -1562,7 +1582,7 @@ describe('WeekCreatorEngine', () => {
     }
 
     const response = await WeekCreatorEngine.sendWeekCreate(
-      'Créame ocho entrenamientos priorizando squash',
+      'Creame una semana de entrenamiento para la próxima semana con 8 entrenamientos y respetando mis horarios disponibles',
       context,
       { surface: 'chat', targetWeekStart: '2026-05-11' },
     )
@@ -1578,6 +1598,8 @@ describe('WeekCreatorEngine', () => {
 
     expect(response.fallbackUsed).toBe(true)
     expect(sessions).toHaveLength(8)
+    expect(mockProviderCall.mock.calls[0]?.[0].userMessage).toContain('- Sesiones por semana: 8')
+    expect(mockProviderCall.mock.calls[0]?.[0].userMessage).toContain('debes usar al menos 2 doble(s) AM/PM')
     expect(new Set(sessions.map((session) => `${session.date}:${session.timeBlock}`)).size).toBe(8)
     expect(doubleDates).toHaveLength(2)
     expect(doubleDates.every((date) => ['2026-05-11', '2026-05-13', '2026-05-15'].includes(date))).toBe(true)
@@ -1654,7 +1676,7 @@ describe('WeekCreatorEngine', () => {
       { surface: 'chat', targetWeekStart: '2026-05-11' },
     )
 
-    expect(mockProviderCall).toHaveBeenCalledTimes(2)
+    expect(mockProviderCall).toHaveBeenCalledTimes(1)
     expect(response.fallbackUsed).toBe(true)
     expect(response.actions?.[0].sessions?.[0]).toMatchObject({
       date: '2026-05-12',

@@ -827,6 +827,20 @@ export default function SettingsPage() {
                       {request.inputCharCount != null && (
                         <p>Entrada + schema: <span className="text-ink">{request.inputCharCount} chars</span></p>
                       )}
+                      {request.weekCreatorContract && (
+                        <p>Contrato semanal: <span className="text-ink">{request.weekCreatorContract}</span></p>
+                      )}
+                      {request.expectedSessionCount != null && (
+                        <p>Sesiones objetivo: <span className="text-ink">{request.expectedSessionCount}</span></p>
+                      )}
+                      {request.responseSchemaCharCount != null && (
+                        <p>Schema: <span className="text-ink">{request.responseSchemaCharCount} chars</span></p>
+                      )}
+                      {request.stageTimings?.find((stage) => stage.stage === 'hydrate') && (
+                        <p>Hidratacion local: <span className="text-ink">
+                          {request.stageTimings.find((stage) => stage.stage === 'hydrate')?.durationMs}ms
+                        </span></p>
+                      )}
                       {request.promptTokens != null && (
                         <p>Tokens entrada no cache: <span className="text-ink">{request.promptTokens}</span></p>
                       )}
@@ -843,6 +857,15 @@ export default function SettingsPage() {
                         <p>
                           Repair: <span className="text-ink">
                             {request.repairStats.repairedSessionCount} sesiones · {request.repairStats.codes.join(', ') || 'sin cambios'}
+                          </span>
+                        </p>
+                      )}
+                      {request.repairStats?.hydration && (
+                        <p>
+                          Repair de hidratacion: <span className="text-ink">
+                            {request.repairStats.hydration.repairedSessionCount} sesiones ·
+                            {' '}{request.repairStats.hydration.movedSessionCount} movidas ·
+                            {' '}{request.repairStats.hydration.addedFallbackCount} agregadas
                           </span>
                         </p>
                       )}

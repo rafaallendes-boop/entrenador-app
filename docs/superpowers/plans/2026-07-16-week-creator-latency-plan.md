@@ -1,7 +1,7 @@
 # Plan de mejora de la generación semanal (`week_creator`)
 
 **Fecha:** 2026-07-16
-**Estado:** Fase 0 cerrada técnicamente con línea base provisional; canary inicial de Fase 1 observado y ajuste de compactación implementado localmente, pendiente de despliegue.
+**Estado:** Fase 0 cerrada técnicamente con línea base provisional; Fase 1 observada con dos canaries; Fases 2 y 3 implementadas y verificadas localmente, pendientes de despliegue y canary pasivo.
 **Objetivo:** llevar el p95 de una generación semanal completa y accionable a menos de 10 segundos, manteniendo intactas las restricciones médicas, la disponibilidad y la coherencia de carga.
 
 ## Resumen ejecutivo
@@ -211,26 +211,30 @@ Solicitud del usuario
      -> ProxyProvider
         -> auth de Supabase
         -> Netlify coach
-     -> OpenAI (cap 2500 en variante Fase 1; reasoning low sólo para gpt-5*)
-     -> normalizar
-     -> reparar localmente
+     -> OpenAI (cap 2500; esqueleto v1 salvo restricciones médicas activas)
+     -> parsear esqueleto antes del normalizador general
+     -> hidratar detalles con selectores locales
+     -> repair final
      -> validar contrato + calendario + deportes + carga
-     -> si falla: repetir el request completo una vez
-     -> si vuelve a fallar: semana determinística local
+     -> si falla: fallback local o corrección dirigida según código tipado
+     -> sólo fallos del proveedor conservan el retry del request original
      -> crear propuesta accionable
 ```
 
-### 1. Retry lógico completo
+### 1. Retry lógico completo (resuelto localmente en Fase 2)
 
-`WeekCreatorEngine` permite dos intentos. Una validación fallida después de recibir y procesar una respuesta ejecuta nuevamente el prompt completo, añadiendo una instrucción de corrección. Este patrón puede casi duplicar la latencia de cola.
+Antes de Fase 2, `WeekCreatorEngine` repetía el prompt completo ante cualquier validación
+fallida. Ahora las respuestas ausentes/ambiguas terminan en fallback local, las recuperables
+se reparan localmente y sólo `invalid_action_contract` puede solicitar una corrección dirigida.
+Los fallos reales del proveedor conservan el segundo intento.
 
 El proxy no hace retry técnico para `week_creator`; `shouldUseTechnicalRetry` sólo lo permite para `chat_general`, `weekly_summary` e `import_extract`. Por lo tanto, el retry relevante para este plan es principalmente el retry lógico del engine.
 
 ### 2. Presupuesto de salida y reasoning
 
-La variante local de Fase 1 usa:
+La política implementada desde Fase 1 usa:
 
-- `maxTokens: 2500` (producción conserva 8.000 hasta desplegar esta variante);
+- `maxTokens: 2500`;
 - timeout cliente/servidor: 23.000 ms;
 - OpenAI `reasoning_effort: low` para `week_creator` cuando el modelo comienza con `gpt-5`;
 - JSON Schema con `strict: false`.
@@ -239,9 +243,11 @@ El cap no obliga al modelo a consumirlo completo. La reducción a 2.500 funciona
 guardrail: la muestra observada terminó como máximo en 1.345 tokens y el canary debe confirmar
 que ocho sesiones siguen terminando con `finishReason=stop`.
 
-### 3. Contrato de salida demasiado detallado
+### 3. Contrato de salida demasiado detallado (resuelto localmente en Fase 3)
 
-OpenAI genera una semana con detalles de cada deporte, ejercicios y bloques. Parte de ese contenido ya puede construirse de forma determinística con las bibliotecas y selectores locales de squash, fuerza, running, cycling y movilidad.
+El contrato anterior pedía a OpenAI detalles de cada deporte, ejercicios y bloques. La ruta
+`skeleton_v1` delega ese contenido a las bibliotecas y selectores locales de squash, fuerza,
+running, cycling y movilidad; el contrato detallado se conserva para cohortes médicas.
 
 La asignación semanal —día, bloque horario, deporte, duración e intención de carga— necesita razonamiento global. La expansión completa de drills, ejercicios y protocolos no necesariamente lo necesita.
 
@@ -428,6 +434,34 @@ regla en una sola línea compacta: el proveedor debe omitir `exercises`, `squash
 no cambian. Este ajuste debe observarse en la próxima generación normal; no justifica pagar una
 tanda artificial adicional.
 
+### Segundo canary de Fase 1 — 2026-07-19, 19:18 America/Santiago
+
+El ajuste compacto llegó a producción (`systemPromptCharCount=916`). La generación volvió a
+terminar como `model_success` al primer intento, sin retry, fallback ni truncamiento.
+
+| Métrica | Resultado | Cambio vs canary anterior |
+|---|---:|---:|
+| End-to-end | 12.801 ms | -33,7% |
+| Provider | 11.570 ms | -35,3% |
+| Completion tokens | 1.522 | -30,0% |
+| Response chars | 5.632 | -29,1% |
+
+La compactación corrigió la regresión de verbosidad. Sin embargo, el mensaje pedía
+explícitamente ocho entrenamientos y la cohorte volvió a registrar
+`expectedSessionCount=7`. El modelo produjo una sesión excedente y repair la recortó.
+
+Causa: `withRequestedSessionsPerWeek` ignoraba por diseño cualquier cantidad escrita en el
+chat cuando `configSource="wizard"`. Esa precedencia era incorrecta para Week Creator: un
+pedido explícito debe poder subir o bajar el objetivo semanal sin superar la capacidad real.
+
+Corrección local:
+
+- la cantidad explícita ahora también sobreescribe el target del wizard;
+- se mantiene el clamp por capacidad de días + dobles y el máximo de ocho;
+- una semana parcial todavía reduce el target a los bloques futuros disponibles;
+- el mensaje exacto del canary tiene regresión end-to-end: el prompt pide ocho sesiones y al
+  menos dos dobles, y el fallback produce ocho slots únicos sólo en días dobles autorizados.
+
 ### 1.1 Ajustar el cap de salida
 
 La regla de decisión para una muestra estable continúa siendo:
@@ -471,6 +505,34 @@ Gate adicional: misma tasa de primer intento válido y cero regresiones en los c
 ## Fase 2 — Evitar retries completos recuperables
 
 **Objetivo:** reservar el segundo request para errores semánticos que realmente requieren al modelo.
+
+### Estado implementado localmente — 2026-07-19
+
+- `validateWeekCreatorResponse` devuelve códigos tipados; el engine ya no usa expresiones
+  regulares sobre mensajes humanos para decidir retries o fallback.
+- La política separa `locally_repairable`, `targeted_model_repair`,
+  `unsafe_or_ambiguous` y `provider_failure`, y registra código + categoría sin contenido
+  sensible en telemetría.
+- Si existe exactamente un `create_week` completo, las acciones accesorias se descartan
+  localmente y quedan auditadas como `extra_actions_ignored`.
+- Un `targetDate` incorrecto se corrige sólo cuando todas las sesiones ya pertenecen de
+  forma inequívoca a la semana y ventana solicitadas; una semana ambigua no se reubica
+  creativamente y usa el fallback conservador.
+- Ausencia de `create_week` o JSON no parseable termina después del primer request y usa
+  fallback local. Ya no se paga una segunda regeneración completa que carece de objeto
+  recuperable.
+- `invalid_action_contract` sin restricciones activas puede usar una segunda llamada
+  dirigida: recibe sólo el objeto fallido, el código concreto y un envelope compacto de
+  fechas, cantidad, disponibilidad, deportes y carga. Con restricciones médicas activas
+  se mantiene la ruta conservadora.
+- Los fallos reales del proveedor conservan hasta un retry; aborts del usuario siguen sin
+  retry ni fallback.
+- La cantidad real de intentos se refleja en `retryUsed`, en el índice del fallback y en
+  sus warnings; un fallback después de un solo resultado inválido ya no figura como retry.
+
+Cobertura local: clasificación tipada, reparación de acción accesoria + `targetDate` en un
+request, parse inválido sin segundo request, provider failure con retry y validación completa
+de la semana resultante.
 
 ### 2.1 Clasificar fallos de validación
 
@@ -522,6 +584,86 @@ Si el primer resultado no contiene un `create_week` recuperable o es médicament
 ## Fase 3 — Semana resumida + hidratación local
 
 **Objetivo:** hacer que OpenAI decida la arquitectura semanal, no que redacte todos los detalles ejecutables.
+
+### Estado implementado localmente — 2026-07-19
+
+- Se agregó el contrato versionado `skeleton_v1`. Cada sesión remota contiene sólo fecha,
+  bloque, deporte, duración, RPE, `focusKey`, título/objetivo breves y los hints opcionales
+  `subtype`/`runningType`.
+- El parser dedicado se ejecuta antes del normalizador general para preservar `focusKey`.
+  Tolera temporalmente el wrapper legacy de una sola acción durante el rollout, pero el
+  schema del proveedor exige el objeto compacto canónico.
+- `focusKey` se traduce mediante una whitelist a intención deportiva, subtype de squash o
+  tipo de running; después `repairGeneratedWeek` usa los selectores locales de squash,
+  fuerza, running, cycling y movilidad para producir detalles ejecutables.
+- La salida hidratada pasa por el repair final de Week Creator y por el mismo validador
+  completo de contrato, calendario, cantidad, deportes y carga. La propuesta nunca se
+  expone antes de ese gate.
+- La hidratación tiene una etapa de telemetría propia (`hydrate`) separada de `repair`.
+- Como resguardo médico, perfiles con `injuryNotes`, lesiones actuales, restricciones libres
+  o prioridad `return_to_play` conservan el contrato detallado anterior; no se sintetizan
+  ejercicios o drills locales desde texto clínico ambiguo.
+- Rollback de despliegue: `VITE_WEEK_CREATOR_CONTRACT=detailed` restaura el contrato anterior
+  sin cambiar validación, repair ni fallback.
+
+Auditoría estática de la fixture productiva sin restricciones:
+
+| Componente | Fase 1 | Fase 3 | Cambio |
+|---|---:|---:|---:|
+| System prompt | 916 | 907 | -1,0% |
+| User prompt | 4.874 | 2.404 | -50,7% |
+| Response schema | 3.488 | 995 | -71,5% |
+| Total | 9.278 | 4.306 | -53,6% |
+| Aproximación de entrada | ~2.320 tokens | ~1.077 tokens | -53,6% |
+
+La reducción de tokens **de salida** y el p95 remoto todavía requieren observación de
+producción. No se hará una tanda pagada artificial: el criterio de 40% y los SLO de 8/10 s
+quedan pendientes hasta reunir uso real comparable.
+
+#### Corrección posterior al code review — Fases 2 y 3
+
+El review encontró cuatro defectos reales y un falso positivo. Ninguno cambia el contrato
+`skeleton_v1` ni la política de fallos; los cuatro son de higiene de la pieza:
+
+1. **Duplicación de reglas de horario.** La Fase 3 reintrodujo en `WeekCreatorLocalHydrator`
+   una copia literal de `alignSessionsToScheduleConstraints` (como `alignPinnedTimeBlocks`) y
+   de `buildScheduleAwareRepairConfig` (inline), más un `isoDateToDayOfWeek` propio — el mismo
+   patrón de drift que la sección "Unificación del cálculo de capacidad" había cerrado, con
+   las dos copias corriendo en secuencia sobre las mismas sesiones. Ahora ambos consumen
+   `alignSessionsToScheduleConstraints`, `buildScheduleAwareConfig` y `dayOfWeekFromIsoDate`
+   desde `scheduleConstraints.ts`, la única casa de estas reglas.
+2. **`Foco local:` filtraba jerga de pipeline a la copy del atleta.** El append a `objective`
+   es funcional —`repairWeek` lee `objective` y `title` para elegir drills, bloques y
+   protocolos—, pero el texto se persiste y se muestra. Pasa a leerse como copy de coach
+   (`Foco: …`), con puntuación correcta cuando el objetivo del modelo no la trae.
+3. **Doble conteo de `repairStats`.** En la ruta esqueleto `repairGeneratedWeek` corre dos
+   veces sobre las mismas sesiones (hidratación + repair final) y `mergeRepairMeta` sumaba
+   ambos pases, inflando justo la telemetría desde la que se leen los criterios de salida de
+   Fase 3. Ahora `repairMeta` describe la semana entregada y `repairStats.hydration` reporta
+   el pase de hidratación por separado; sólo los warnings se unen.
+4. **Rama muerta de retry.** `buildWeekRetryInstruction` ya no era alcanzable: bajo la política
+   tipada el segundo intento sólo existe por `provider_failure` (mismo prompt) o por
+   `targeted_model_repair` (otra rama). Eliminada, con el motivo documentado en el código.
+
+**Falso positivo descartado:** se propuso clampear `withRequestedSessionsPerWeek` contra
+`resolveScheduleCapacity` en vez de `maxSessionsPerWeek`. Es incorrecto y lo detectó el test
+`rejects impossible schedule capacity locally without calling the provider`: un pedido explícito
+que el calendario no puede sostener debe llegar al preflight y devolver qué día/bloque falta, no
+planificar en silencio menos sesiones de las pedidas. Se dejó el comportamiento y se documentó
+la intención en el código para que no vuelva a proponerse.
+
+Cobertura agregada: fraseo del foco en `__tests__/WeekCreatorLocalHydrator.test.ts` y los
+helpers compartidos en `__tests__/scheduleConstraints.test.ts`.
+
+Verificación local final, sin requests al proveedor:
+
+- suite completa: 268 archivos y 1.841 tests aprobados;
+- corpus cubierto por tests de semana estándar, restricción médica, bloques AM/PM estrechos,
+  semana parcial, multideporte con dobles concretas, fuerza duplicada y squash/taper;
+- caso exacto de ocho sesiones: ocho slots únicos y dos dobles sólo en lunes/martes;
+- auditoría de prompt aprobada;
+- load test del engine aprobado en modo seco;
+- lint y build de producción aprobados.
 
 ### Contrato resumido propuesto
 
@@ -673,6 +815,41 @@ Después del despliegue, hacer una sola generación pagada controlada:
 Las generaciones reales posteriores se incorporan pasivamente a la muestra. Con menos de 20
 se reporta sólo canary; no se declara mejora estable de p95.
 
+### Verificación y canary de bajo costo para Fases 2–3
+
+Antes de desplegar, no se llama a OpenAI:
+
+```bash
+npm test
+npm run audit:prompt
+LOADTEST_DRY_RUN=true npm run loadtest:week-creator
+npm run lint
+npm run build
+```
+
+Después del despliegue no se fabrica una tanda. En la próxima generación que el owner vaya a
+usar de todas formas:
+
+1. Pedir ocho entrenamientos con seis días y dobles habilitadas al menos lunes y martes.
+2. Verificar ocho slots únicos, exactamente dos fechas dobles y ninguna sesión fuera de los
+   bloques configurados.
+3. En `Beta quality local`, comprobar `expectedSessionCount=8`,
+   `weekCreatorContract=skeleton_v1`, `responseSchemaCharCount=995`, etapa `hydrate`, `retryUsed=false`,
+   `fallbackUsed=false`, `finishReason=stop` y detalles ejecutables por deporte.
+4. Registrar `completionTokens` y `endToEndDurationMs`. Como referencia de una muestra, una
+   reducción de 40% contra los 1.522 tokens del segundo canary equivale a <=913 tokens; no se
+   declara el criterio cumplido hasta contar con una ventana comparable.
+5. Revisar manualmente coherencia de carga, variedad de fuerza/squash y uso de deportes de
+   soporte antes de aplicar.
+
+Cuando exista una generación real con restricción médica activa, comprobar que
+`activeRestrictionsPresent=true`, que no aparezca etapa `hydrate` y que la propuesta siga
+usando detalles explícitamente adaptados. No crear una lesión ficticia sólo para probar.
+
+Rollback: configurar `VITE_WEEK_CREATOR_CONTRACT=detailed`, reconstruir y desplegar. Usarlo de
+inmediato ante una violación médica, de disponibilidad, de cantidad o de deportes, o si el
+schema compacto aumenta retries/fallbacks.
+
 ---
 
 ## Archivos afectados
@@ -703,7 +880,7 @@ se reporta sólo canary; no se declara mejora estable de p95.
 - `scripts/loadtest-week-creator.mjs`
 - `scripts/loadtest-week-creator.test.js`
 
-### Probables en Fases 1–2
+### Modificados en Fases 1–2
 
 - `src/services/ai/requestPolicy.ts`
 - `netlify/functions/coach.ts`
@@ -711,15 +888,23 @@ se reporta sólo canary; no se declara mejora estable de p95.
 - `src/services/weekCreator/WeekCreatorEngine.ts`
 - `src/services/weekCreator/validateWeekCreatorResponse.ts`
 - `src/services/planBuilder/repairWeek.ts`
-- nuevos módulos de clasificación y reparación dirigida bajo `src/services/weekCreator/`.
+- `src/services/weekCreator/WeekCreatorFailurePolicy.ts`
+- `src/services/weekCreator/WeekCreatorRepairPromptBuilder.ts`
 
-### Probables en Fase 3
+### Agregados/modificados en Fase 3
 
-- `src/services/weekCreator/weekCreatorResponseSchema.ts`
-- nuevo `weekCreatorSkeletonSchema.ts` o reemplazo versionado equivalente;
-- nuevo `hydrateWeekCreatorSkeleton.ts`;
-- selectores/bibliotecas bajo `src/services/training/`;
-- tests de contrato, hidratación, repair y carga.
+- `src/services/weekCreator/weekCreatorSkeleton.ts`
+- `src/services/weekCreator/weekCreatorSkeletonSchema.ts`
+- `src/services/weekCreator/parseWeekCreatorSkeletonResponse.ts`
+- `src/services/weekCreator/WeekCreatorSkeletonPromptBuilder.ts`
+- `src/services/weekCreator/WeekCreatorLocalHydrator.ts`
+- `src/services/weekCreator/weekCreatorContractStrategy.ts`
+- `src/services/weekCreator/WeekCreatorEngine.ts`
+- `src/services/weekCreator/WeekCreatorPromptBuilder.ts`
+- `scripts/audit-prompt-tokens.test.ts`
+- selectores/bibliotecas existentes bajo `src/services/training/` (reutilizados sin
+  duplicar catálogos);
+- tests de contrato, parser, hidratación, repair, rollback y carga.
 
 ---
 
