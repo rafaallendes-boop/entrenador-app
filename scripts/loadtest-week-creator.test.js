@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest'
 
-import { evaluateAcceptance, pXX, summarizeResults } from './loadtest-week-creator.mjs'
+import {
+  SCENARIOS,
+  buildScenarioSequence,
+  defaultReportPath,
+  evaluateAcceptance,
+  pXX,
+  summarizeByScenario,
+  summarizeResults,
+} from './loadtest-week-creator.mjs'
 
 function result(overrides = {}) {
   return {
@@ -136,5 +144,67 @@ describe('week creator loadtest metrics', () => {
       1: { count: 1, inputCharsP50: 11_200, inputCharsP95: 11_200 },
       2: { count: 1, inputCharsP50: 11_800, inputCharsP95: 11_800 },
     })
+  })
+})
+
+describe('week creator loadtest scenarios', () => {
+  it('exposes the four validation cohorts with the fields the runner needs', () => {
+    for (const key of ['standard', 'eight-doubles', 'partial-week', 'medical']) {
+      const scenario = SCENARIOS[key]
+      expect(scenario, `scenario ${key} must exist`).toBeTruthy()
+      expect(typeof scenario.label).toBe('string')
+      expect(typeof scenario.message).toBe('string')
+      expect(typeof scenario.buildContext).toBe('function')
+      expect(typeof scenario.buildOptions).toBe('function')
+    }
+  })
+
+  it('distributes N runs across scenarios by weight, totalling exactly N', () => {
+    const weights = { standard: 10, 'eight-doubles': 10, 'partial-week': 5, medical: 5 }
+    const sequence = buildScenarioSequence(30, weights)
+
+    expect(sequence).toHaveLength(30)
+    const counts = sequence.reduce((acc, key) => {
+      acc[key] = (acc[key] ?? 0) + 1
+      return acc
+    }, {})
+    expect(counts).toEqual({ standard: 10, 'eight-doubles': 10, 'partial-week': 5, medical: 5 })
+  })
+
+  it('uses the largest-remainder method so small N still covers every weighted scenario', () => {
+    const sequence = buildScenarioSequence(4, {
+      standard: 10,
+      'eight-doubles': 10,
+      'partial-week': 5,
+      medical: 5,
+    })
+
+    expect(sequence).toHaveLength(4)
+    expect(new Set(sequence).size).toBe(4)
+  })
+
+  it('runs a single scenario for every sample when only one has weight', () => {
+    expect(buildScenarioSequence(3, { medical: 1 })).toEqual(['medical', 'medical', 'medical'])
+  })
+
+  it('segments the summary by scenario and keeps an overall roll-up', () => {
+    const byScenario = summarizeByScenario([
+      result({ scenario: 'standard', durationMs: 5_000 }),
+      result({ scenario: 'standard', durationMs: 7_000 }),
+      result({ scenario: 'eight-doubles', durationMs: 9_000, fallbackUsed: true }),
+    ])
+
+    expect(byScenario.overall.n).toBe(3)
+    expect(byScenario.byScenario.standard.n).toBe(2)
+    expect(byScenario.byScenario.standard.p95ms).toBe(7_000)
+    expect(byScenario.byScenario['eight-doubles'].n).toBe(1)
+    expect(byScenario.byScenario['eight-doubles'].fallbacksUsed).toBe(1)
+  })
+
+  it('writes reports under a gitignored dir with a timestamped json name', () => {
+    const path = defaultReportPath(new Date('2026-07-20T18:30:05.000Z'))
+
+    expect(path).toMatch(/^loadtest-results\/week-creator-.*\.json$/)
+    expect(path).toContain('2026-07-20')
   })
 })

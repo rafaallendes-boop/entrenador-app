@@ -10,6 +10,8 @@
  * the deterministic fallback. Provider responses are never printed.
  */
 
+import { mkdir, writeFile } from 'node:fs/promises'
+import { dirname } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { createServer } from 'vite'
 
@@ -20,49 +22,164 @@ const P95_TARGET_MS = Number(process.env.LOADTEST_P95_TARGET_MS ?? 10_000)
 const SUCCESS_TARGET = Number(process.env.LOADTEST_SUCCESS_TARGET ?? 0.95)
 const FALLBACK_TARGET = Number(process.env.LOADTEST_FALLBACK_TARGET ?? 0.02)
 const DRY_RUN = process.env.LOADTEST_DRY_RUN === 'true'
+const SCENARIO = process.env.LOADTEST_SCENARIO ?? 'standard'
+const OUT_PATH = process.env.LOADTEST_OUT
 
-const TARGET = nextMonday()
-
-const PROFILE = {
-  id: 'week-creator-loadtest',
-  updatedAt: 0,
-  name: 'Atleta de prueba',
-  sportContext: {
-    enabledSports: ['squash', 'running', 'strength', 'mobility'],
-    primarySport: 'squash',
-    secondarySports: ['running', 'strength', 'mobility'],
-    trainingPriority: 'performance',
-  },
-  planWizardConfig: {
-    goalEventId: 'loadtest-goal',
-    trainingDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
-    sessionsPerWeek: 5,
-    sessionDurationMins: 60,
-    allowDoubleSession: false,
-    complementarySports: ['running', 'strength', 'mobility'],
-    currentFitnessLevel: 'fit',
-    currentFatigue: 'normal',
-    injuryNotes: 'Sin restricciones activas para este escenario sintético.',
-    createdAt: '2026-01-01T00:00:00.000Z',
-    updatedAt: '2026-01-01T00:00:00.000Z',
-  },
-  goalEvents: [{
-    id: 'loadtest-goal',
-    title: 'Evento de prueba',
-    date: '2026-12-01',
-    sport: 'squash',
-    priority: 'primary',
-    competitiveLevel: 'competitive',
-  }],
+/**
+ * Builds a synthetic athlete profile. Overrides are shallow-merged into
+ * `planWizardConfig`/`sportContext` so each scenario only states what differs
+ * from the standard five-session cohort.
+ */
+function buildProfile({ wizard = {}, sport = {} } = {}) {
+  return {
+    id: 'week-creator-loadtest',
+    updatedAt: 0,
+    name: 'Atleta de prueba',
+    sportContext: {
+      enabledSports: ['squash', 'running', 'strength', 'mobility'],
+      primarySport: 'squash',
+      secondarySports: ['running', 'strength', 'mobility'],
+      trainingPriority: 'performance',
+      ...sport,
+    },
+    planWizardConfig: {
+      goalEventId: 'loadtest-goal',
+      trainingDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
+      sessionsPerWeek: 5,
+      sessionDurationMins: 60,
+      allowDoubleSession: false,
+      complementarySports: ['running', 'strength', 'mobility'],
+      currentFitnessLevel: 'fit',
+      currentFatigue: 'normal',
+      injuryNotes: 'Sin restricciones activas para este escenario sintético.',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+      ...wizard,
+    },
+    goalEvents: [{
+      id: 'loadtest-goal',
+      title: 'Evento de prueba',
+      date: '2026-12-01',
+      sport: 'squash',
+      priority: 'primary',
+      competitiveLevel: 'competitive',
+    }],
+  }
 }
 
-const CONTEXT = {
-  athleteProfile: PROFILE,
-  recentSessions: [],
-  plannedSessions: [],
-  historicalSessions: [],
-  weekDayLogs: [],
-  recentMessages: [],
+function buildContext(profile) {
+  return {
+    athleteProfile: profile,
+    recentSessions: [],
+    plannedSessions: [],
+    historicalSessions: [],
+    weekDayLogs: [],
+    recentMessages: [],
+  }
+}
+
+const SIX_DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
+
+/**
+ * The mandatory validation cohorts from the week_creator latency plan. Each
+ * scenario stays self-contained: it decides its own message, athlete context
+ * and target week so the runner can mix them into one segmented sample.
+ */
+export const SCENARIOS = {
+  standard: {
+    label: 'Semana estándar de 5 sesiones, sin dobles',
+    message: 'Créame una semana priorizando squash',
+    buildContext: () => buildContext(buildProfile()),
+    buildOptions: () => ({
+      targetWeekStart: nextMonday(),
+      weekObjectives: ['Priorizar squash', 'Mantener fuerza y movilidad de soporte'],
+    }),
+  },
+  'eight-doubles': {
+    label: 'Ocho sesiones con dobles en días autorizados',
+    message: 'Créame una semana de 8 entrenamientos con al menos dos días de doble sesión, priorizando squash',
+    buildContext: () => buildContext(buildProfile({
+      wizard: { trainingDays: SIX_DAYS, sessionsPerWeek: 8, allowDoubleSession: true },
+    })),
+    buildOptions: () => ({
+      targetWeekStart: nextMonday(),
+      weekObjectives: ['Priorizar squash', 'Usar dobles sólo en días autorizados'],
+    }),
+  },
+  'partial-week': {
+    label: 'Semana parcial que no puede programar días pasados',
+    message: 'Créame lo que queda de esta semana priorizando squash',
+    buildContext: () => buildContext(buildProfile()),
+    buildOptions: () => ({
+      targetWeekStart: thisMonday(),
+      weekObjectives: ['Aprovechar los días restantes de la semana'],
+    }),
+  },
+  medical: {
+    label: 'Restricción médica activa y retorno progresivo',
+    message: 'Créame una semana cuidando una molestia de rodilla en retorno progresivo',
+    buildContext: () => buildContext(buildProfile({
+      wizard: {
+        injuryNotes: 'Molestia activa de rodilla derecha; evitar impacto alto y saltos, retorno progresivo.',
+        currentFatigue: 'high',
+      },
+      sport: { trainingPriority: 'return_to_play' },
+    })),
+    buildOptions: () => ({
+      targetWeekStart: nextMonday(),
+      weekObjectives: ['Retorno progresivo', 'Proteger la rodilla derecha'],
+    }),
+  },
+}
+
+const DEFAULT_WEIGHTS = { standard: 10, 'eight-doubles': 10, 'partial-week': 5, medical: 5 }
+
+/**
+ * Distributes `n` runs across weighted scenarios using the largest-remainder
+ * method, so even a small N still touches every weighted cohort at least once
+ * when possible. Returns a flat array of scenario keys grouped by weight.
+ */
+export function buildScenarioSequence(n, weights = DEFAULT_WEIGHTS) {
+  const entries = Object.entries(weights).filter(([, weight]) => weight > 0)
+  const totalWeight = entries.reduce((sum, [, weight]) => sum + weight, 0)
+  if (entries.length === 0 || totalWeight <= 0 || n <= 0) return []
+
+  const quotas = entries.map(([key, weight]) => {
+    const exact = (n * weight) / totalWeight
+    const base = Math.floor(exact)
+    return { key, base, remainder: exact - base }
+  })
+  let assigned = quotas.reduce((sum, quota) => sum + quota.base, 0)
+  quotas
+    .slice()
+    .sort((a, b) => b.remainder - a.remainder)
+    .forEach((quota) => {
+      if (assigned < n) {
+        quota.base += 1
+        assigned += 1
+      }
+    })
+
+  return quotas.flatMap((quota) => Array.from({ length: quota.base }, () => quota.key))
+}
+
+/** Groups results by their `scenario` tag and summarizes each cohort plus the overall roll-up. */
+export function summarizeByScenario(results) {
+  const groups = results.reduce((acc, result) => {
+    const key = result.scenario ?? 'unknown'
+    ;(acc[key] ??= []).push(result)
+    return acc
+  }, {})
+  const byScenario = Object.fromEntries(
+    Object.entries(groups).map(([key, rows]) => [key, summarizeResults(rows)]),
+  )
+  return { overall: summarizeResults(results), byScenario }
+}
+
+/** Default artifact path under a gitignored dir, timestamped so runs never overwrite each other. */
+export function defaultReportPath(now = new Date()) {
+  const stamp = now.toISOString().replace(/[:.]/g, '-')
+  return `loadtest-results/week-creator-${stamp}.json`
 }
 
 async function loadRuntime() {
@@ -88,6 +205,14 @@ function nextMonday() {
   const d = new Date()
   const offset = (8 - d.getDay()) % 7 || 7
   d.setDate(d.getDate() + offset)
+  return d.toISOString().slice(0, 10)
+}
+
+/** Monday of the current calendar week, used to force a partial-week generation. */
+function thisMonday() {
+  const d = new Date()
+  const offset = (d.getDay() + 6) % 7
+  d.setDate(d.getDate() - offset)
   return d.toISOString().slice(0, 10)
 }
 
@@ -250,20 +375,22 @@ function createHttpProvider(runtime, providerAttempts) {
   }
 }
 
-async function runOne(i, runtime) {
+async function runOne(i, runtime, scenarioKey) {
   const startedAt = Date.now()
+  const scenario = SCENARIOS[scenarioKey]
   const generationId = `loadtest-generation-${Date.now()}-${i}`
   const providerAttempts = []
   runtime.debugStore.getState().clear()
 
   try {
+    const { targetWeekStart, weekObjectives } = scenario.buildOptions()
     const response = await runtime.engine.sendWeekCreate(
-      'Créame una semana priorizando squash',
-      CONTEXT,
+      scenario.message,
+      scenario.buildContext(),
       {
-        targetWeekStart: TARGET,
+        targetWeekStart,
         surface: 'chat',
-        weekObjectives: ['Priorizar squash', 'Mantener fuerza y movilidad de soporte'],
+        weekObjectives,
         generationId,
         provider: createHttpProvider(runtime, providerAttempts),
       },
@@ -282,6 +409,7 @@ async function runOne(i, runtime) {
       ok: Boolean(action && Array.isArray(action.sessions) && action.sessions.length > 0),
       durationMs,
       generationId,
+      scenario: scenarioKey,
       providerAttempts,
       logicalAttemptCount: providerAttempts.length,
       retryUsed: providerAttempts.length > 1,
@@ -312,6 +440,7 @@ async function runOne(i, runtime) {
       ok: false,
       durationMs: Date.now() - startedAt,
       generationId,
+      scenario: scenarioKey,
       providerAttempts,
       logicalAttemptCount: providerAttempts.length,
       retryUsed: providerAttempts.length > 1,
@@ -440,9 +569,16 @@ async function main() {
   if (!Number.isFinite(P95_TARGET_MS) || P95_TARGET_MS <= 0) {
     throw new Error('LOADTEST_P95_TARGET_MS must be a positive number.')
   }
+  if (SCENARIO !== 'all' && !SCENARIOS[SCENARIO]) {
+    throw new Error(`Unknown LOADTEST_SCENARIO "${SCENARIO}". Valid: all, ${Object.keys(SCENARIOS).join(', ')}.`)
+  }
+  const sequence = SCENARIO === 'all'
+    ? buildScenarioSequence(N, DEFAULT_WEIGHTS)
+    : Array.from({ length: N }, () => SCENARIO)
+
   const runtime = await loadRuntime()
   console.log(`Loadtest: ${N} sequential logical generations against ${ENDPOINT}`)
-  console.log(`Target week start: ${TARGET}`)
+  console.log(`Scenario mode: ${SCENARIO}`)
   console.log(`Acceptance target: success >= ${(SUCCESS_TARGET * 100).toFixed(1)}%, all-sample p95 < ${P95_TARGET_MS}ms, fallback <= ${(FALLBACK_TARGET * 100).toFixed(1)}%`)
   if (N < 20) {
     console.log('Warning: fewer than 20 samples is useful for smoke testing, not for a stable p95 baseline.')
@@ -458,9 +594,10 @@ async function main() {
     }
 
     const results = []
-    for (let i = 0; i < N; i++) {
-      process.stdout.write(`[${i + 1}/${N}] `)
-      const result = await runOne(i, runtime)
+    for (let i = 0; i < sequence.length; i++) {
+      const scenarioKey = sequence[i]
+      process.stdout.write(`[${i + 1}/${sequence.length}] ${scenarioKey} `)
+      const result = await runOne(i, runtime, scenarioKey)
       results.push(result)
       process.stdout.write(
         `${result.ok ? 'ok' : 'fail'} ${result.durationMs}ms attempts=${result.logicalAttemptCount}`
@@ -469,10 +606,28 @@ async function main() {
       )
     }
 
-    const summary = summarizeResults(results)
-    const acceptance = evaluateAcceptance(summary)
-    console.log('\n=== Summary ===')
-    console.log(JSON.stringify({ ...summary, acceptance }, null, 2))
+    const { overall, byScenario } = summarizeByScenario(results)
+    const acceptance = evaluateAcceptance(overall)
+    console.log('\n=== Summary (overall) ===')
+    console.log(JSON.stringify({ ...overall, acceptance }, null, 2))
+    console.log('\n=== By scenario ===')
+    for (const [key, scenarioSummary] of Object.entries(byScenario)) {
+      console.log(`- ${key}: n=${scenarioSummary.n} success=${scenarioSummary.successRate} p95=${scenarioSummary.p95ms}ms fallback=${scenarioSummary.fallbackRate}`)
+    }
+
+    const reportPath = OUT_PATH ?? defaultReportPath(new Date())
+    await mkdir(dirname(reportPath), { recursive: true })
+    await writeFile(reportPath, JSON.stringify({
+      generatedAt: new Date().toISOString(),
+      endpoint: ENDPOINT,
+      scenarioMode: SCENARIO,
+      n: results.length,
+      acceptance,
+      overall,
+      byScenario,
+      results,
+    }, null, 2))
+    console.log(`\nReport written to ${reportPath}`)
 
     process.exitCode = acceptance.passed ? 0 : 1
   } finally {
