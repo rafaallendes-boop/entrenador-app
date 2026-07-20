@@ -135,6 +135,42 @@ describe('aiTelemetry', () => {
     })
   })
 
+  // Regression: a Week Creator canary run burned two quota units for one user
+  // request -- one row for the provider attempt and one for the local fallback
+  // that the same failed generation produced. Quota is per logical generation,
+  // not per telemetry row.
+  it('counts one unit per logical generation, not per telemetry row', async () => {
+    const now = new Date('2026-05-09T12:00:00').getTime()
+    for (const [index, traceId] of ['trace-a', 'trace-b', 'trace-fallback'].entries()) {
+      mocks.logs.push({
+        traceId,
+        generationId: 'week_creator-generation-1',
+        attempt: index + 1,
+        requestClass: 'week_creator',
+        surface: 'chat',
+        status: 'completed',
+        startedAt: now,
+      })
+    }
+
+    expect(await getDailyAIUsage(now)).toMatchObject({ week_creator: 1 })
+  })
+
+  it('still counts rows without a generationId individually', async () => {
+    const now = new Date('2026-05-09T12:00:00').getTime()
+    for (const traceId of ['trace-a', 'trace-b']) {
+      mocks.logs.push({
+        traceId,
+        requestClass: 'chat_general',
+        surface: 'chat',
+        status: 'completed',
+        startedAt: now,
+      })
+    }
+
+    expect(await getDailyAIUsage(now)).toMatchObject({ chat_general: 2 })
+  })
+
   it('throws a rate_limit error when a requestClass reaches its beta daily cap', async () => {
     const now = new Date('2026-05-09T12:00:00').getTime()
     for (let i = 0; i < DEFAULT_DAILY_AI_LIMITS.plan_builder_pair; i++) {

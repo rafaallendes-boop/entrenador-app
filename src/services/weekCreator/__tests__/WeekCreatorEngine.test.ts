@@ -6,6 +6,7 @@ import { extractRequestedSessionsPerWeek, resolveWeekCreatorConfig, withRequeste
 import { areSessionListsEquivalent, WeekCreatorEngine } from '../WeekCreatorEngine'
 import { buildWeekCreatorPrompt } from '../WeekCreatorPromptBuilder'
 import { useAIDebugStore } from '../../../store/useAIDebugStore'
+import { db } from '../../../db/db'
 import { findSquashDrillByName } from '../../training/drillLibrary'
 
 const mockProviderCall = vi.hoisted(() => vi.fn())
@@ -33,9 +34,12 @@ function makeProfile(overrides: Partial<AthleteProfile> = {}): AthleteProfile {
   }
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   mockProviderCall.mockReset()
   useAIDebugStore.getState().clear()
+  // The engine now enforces the daily `week_creator` cap, so telemetry left
+  // behind by earlier cases in this file would rate-limit later ones.
+  await db.aiRequestLogs.clear()
 })
 
 describe('resolveWeekCreatorConfig', () => {

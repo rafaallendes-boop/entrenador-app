@@ -153,6 +153,10 @@ export function repairGeneratedWeek(
   normalizeSquashSemanticMetadata(sessions, meta, context)
   normalizeLateTaperSquashMatchPlay(sessions, context, meta)
   sessions = ensureSquashCompetitionMatchExposure(sessions, context, meta)
+
+  // 13b. Nothing after step 13 may leave two squash sessions sharing drills:
+  // the Week Creator validator rejects the whole week for it.
+  enforceSquashSignatureUniqueness(sessions, context, meta)
   normalizeSquashDurationConsistency(sessions, meta)
 
   // 14. Diversify repeated strength exercises from previous week
@@ -718,6 +722,7 @@ function normalizeSquashSemanticMetadata(
   meta: RepairMeta,
   context?: RepairContext,
 ): void {
+  const squashSessions = sessions.filter((candidate) => candidate.sessionType === 'squash')
   for (const [sessionIdx, session] of sessions.entries()) {
     if (session.sessionType !== 'squash' || !session.squashDetails) continue
 
@@ -735,7 +740,14 @@ function normalizeSquashSemanticMetadata(
     const dedicatedMatchContent = contentSaysMatch || (hasBlocks ? blockKinds.length === 1 && hasMatchBlock : inferredKind === 'match')
 
     if (contentSaysMatch && !hasMatchBlock) {
-      applySquashMatchDetails(session, contextlessSquashMatchMode(session), context?.week.weekIndex ?? sessionIdx)
+      // Offsetting by the session's position among the week's squash sessions
+      // keeps two match sessions in the same week on different drill variants;
+      // keying on `weekIndex` alone gave both the identical pair.
+      applySquashMatchDetails(
+        session,
+        contextlessSquashMatchMode(session),
+        (context?.week.weekIndex ?? sessionIdx) + Math.max(0, squashSessions.indexOf(session)),
+      )
       meta.repairedSessionCount++
       meta.warnings.push({
         code: 'squash_match_mode_repaired',
@@ -830,7 +842,11 @@ function ensureSquashCompetitionMatchExposure(
 
   if (!candidate) return sessions
 
-  applySquashMatchDetails(candidate, 'competition_match', context.week.weekIndex)
+  applySquashMatchDetails(
+    candidate,
+    'competition_match',
+    context.week.weekIndex + Math.max(0, squashSessions.indexOf(candidate)),
+  )
   meta.repairedSessionCount++
   meta.warnings.push({
     code: 'squash_competition_match_added',
@@ -1149,6 +1165,8 @@ function normalizeText(value: string): string {
     .toLowerCase()
 }
 
+const SQUASH_MATCH_TEXT_PATTERN = /\b(partido|match|match play|match-play|simulacion|marcador|mejor de [35]|puntos? de partido)\b/
+
 function isSquashMatchIntent(session: CoachSessionProposal): boolean {
   if (session.sessionType !== 'squash') return false
   const details = session.squashDetails
@@ -1156,7 +1174,7 @@ function isSquashMatchIntent(session: CoachSessionProposal): boolean {
   if (blockKinds.length > 0) {
     if (blockKinds.every((kind) => kind === 'match')) return true
     const titleObjective = normalizeText([session.title, session.objective].filter(Boolean).join(' '))
-    return /\b(partido|match|match play|match-play|simulacion|marcador|mejor de [35]|puntos? de partido)\b/.test(titleObjective)
+    return SQUASH_MATCH_TEXT_PATTERN.test(titleObjective)
   }
 
   if (session.subtype === 'match' || session.subtype === 'competitive') return true
@@ -1169,7 +1187,7 @@ function isSquashMatchIntent(session: CoachSessionProposal): boolean {
     ...((details?.blocks ?? []).flatMap((block) => block.drills.map((drill) => drill.name))),
   ].filter(Boolean).join(' '))
 
-  return /\b(partido|match|match play|match-play|simulacion|marcador|mejor de [35]|puntos? de partido)\b/.test(text)
+  return SQUASH_MATCH_TEXT_PATTERN.test(text)
 }
 
 function inferSquashKindFromProposalDetails(session: CoachSessionProposal): SquashSessionKind {
@@ -1388,12 +1406,102 @@ function rebuildSquashDetailsAvoidingDuplicates(
       desiredKind,
     })
     applySquashSelection(session, result)
+    realignSquashSessionIdentity(session, result.sessionKind)
     const signature = buildSquashDrillSignature(session)
     if (signature && !seenSignatures.has(signature)) return true
     usedDrills.push(...extractSquashDrillNames(session))
   }
 
   return false
+}
+
+// `diversifyDuplicateSquashSessions` rewrites a session's drills but leaves its
+// title/objective describing whatever it used to be. The
+// `normalizeSquashSemanticMetadata` pass that runs right after re-reads that
+// stale text via `isSquashMatchIntent`, so a diversified match session gets
+// rebuilt as a match again and the diversification is silently undone. Keeping
+// the identity in sync with the new content is what makes the two passes agree.
+function realignSquashSessionIdentity(session: CoachSessionProposal, kind: SquashSessionKind): void {
+  if (kind === 'match') return
+  const blockKinds = [...new Set((session.squashDetails?.blocks ?? []).map((block) => block.kind))]
+  session.subtype = resolveSquashSubtypeFromKind(kind, session.subtype)
+  session.title = buildSquashTitleFromKind(kind, blockKinds)
+  if (session.objective && SQUASH_MATCH_TEXT_PATTERN.test(normalizeText(session.objective))) {
+    session.objective = buildSquashObjectiveFromKind(kind)
+  }
+}
+
+function buildSquashObjectiveFromKind(kind: SquashSessionKind): string {
+  if (kind === 'control') return 'Sostener precisión y profundidad en patrones de control.'
+  if (kind === 'shadows') return 'Mejorar salidas, primer paso y desplazamiento sin pelota.'
+  if (kind === 'technical') return 'Afinar ejecución técnica en situaciones controladas.'
+  return 'Combinar movimiento y precisión en cancha sin marcador.'
+}
+
+// Postcondition, not another best-effort pass: the Week Creator validator fails
+// the entire week when two squash sessions share a drill signature, so this runs
+// after every pass that can rewrite squash content and guarantees the invariant
+// the validator checks. Match sessions rotate through their remaining drill
+// variants first, so the phase keeps the competitive exposure it requires.
+function enforceSquashSignatureUniqueness(
+  sessions: CoachSessionProposal[],
+  context: RepairContext,
+  meta: RepairMeta,
+): void {
+  const squashSessions = sessions.filter((session) => session.sessionType === 'squash')
+  if (squashSessions.length < 2) return
+
+  const seen = new Set<string>()
+  const usedDrills = extractRecentSquashDrills(context.previousWeek)
+  let repairedCount = 0
+
+  for (const session of squashSessions) {
+    const signature = buildSquashDrillSignature(session)
+    if (!signature) continue
+    if (!seen.has(signature)) {
+      seen.add(signature)
+      usedDrills.push(...extractSquashDrillNames(session))
+      continue
+    }
+
+    const mode = session.squashDetails?.sessionMode
+    if (mode === 'competition_match' || mode === 'practice_match') {
+      const variantCount = mode === 'competition_match'
+        ? COMPETITION_MATCH_VARIANTS.length
+        : PRACTICE_MATCH_VARIANTS.length
+      let rotated = false
+      for (let offset = 1; offset < variantCount; offset++) {
+        applySquashMatchDetails(session, mode, context.week.weekIndex + offset)
+        const rotatedSignature = buildSquashDrillSignature(session)
+        if (rotatedSignature && !seen.has(rotatedSignature)) {
+          seen.add(rotatedSignature)
+          usedDrills.push(...extractSquashDrillNames(session))
+          rotated = true
+          break
+        }
+      }
+      if (rotated) {
+        repairedCount++
+        continue
+      }
+    }
+
+    // Every match variant is taken: fall back to rebuilding this session as
+    // non-match content, which realigns its title/objective too.
+    const rebuilt = rebuildSquashDetailsAvoidingDuplicates(session, context, usedDrills, seen)
+    const nextSignature = buildSquashDrillSignature(session)
+    if (nextSignature) seen.add(nextSignature)
+    usedDrills.push(...extractSquashDrillNames(session))
+    if (rebuilt) repairedCount++
+  }
+
+  if (repairedCount > 0) {
+    meta.repairedSessionCount += repairedCount
+    meta.warnings.push({
+      code: 'squash_duplicate_signature_enforced',
+      message: `Se diferenciaron ${repairedCount} sesiones de squash que habían quedado con los mismos drills.`,
+    })
+  }
 }
 
 function buildSquashDrillSignature(session: CoachSessionProposal): string | undefined {

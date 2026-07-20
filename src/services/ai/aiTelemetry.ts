@@ -62,7 +62,16 @@ export async function getDailyAIUsage(
     .aboveOrEqual(start)
     .toArray()
 
+  // Quota is spent per logical generation, not per telemetry row. One Week
+  // Creator request can log several rows -- a provider attempt, a retry, and the
+  // local fallback that costs no provider call -- and charging each of them let
+  // usage run past the declared daily cap. Rows without a `generationId` (chat,
+  // Plan Builder reservations) keep counting individually.
+  const counted = new Set<string>()
   return logs.reduce<Partial<Record<AIRequestClass, number>>>((acc, log) => {
+    const generationKey = `${log.requestClass}:${log.generationId ?? log.traceId}`
+    if (counted.has(generationKey)) return acc
+    counted.add(generationKey)
     acc[log.requestClass] = (acc[log.requestClass] ?? 0) + 1
     return acc
   }, {})

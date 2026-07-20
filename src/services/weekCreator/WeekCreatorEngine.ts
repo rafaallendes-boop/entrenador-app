@@ -17,6 +17,7 @@ import type {
 import type { TrainingPlanWeek } from '../../types/planBuilder'
 import type { AIProvider, AIRawResponse, CoachNormalizedResponse } from '../ai/types'
 import { buildAIGenerationId, buildAITraceId, getAIRequestPolicy } from '../ai/requestPolicy'
+import { assertDailyAIRequestLimit } from '../ai/aiTelemetry'
 import { normalizeResponse } from '../ai/responseNormalizer'
 import { getProviderForRequestClass } from '../ai/providerResolver'
 import { useAIDebugStore } from '../../store/useAIDebugStore'
@@ -210,6 +211,12 @@ export const WeekCreatorEngine = {
         availableSlots: scheduleCapacity,
       })
     }
+    // Declaring a daily cap for `week_creator` is not enforcing it: this engine
+    // never checked it, so a canary run drove usage past the limit. Guard here,
+    // after the cheap config/capacity preflights, so a misconfigured week is not
+    // reported to the user as a rate limit.
+    await assertDailyAIRequestLimit('week_creator')
+
     let lastFailure: (WeekCreatorFailure & {
       provider?: CoachNormalizedResponse['provider']
       model?: string
@@ -571,7 +578,7 @@ export const WeekCreatorEngine = {
       actions: [fallbackValidation.action],
       retryUsed: providerAttempts > 1,
       fallbackUsed: true,
-      message: buildWeekCreatorFallbackMessage(fallbackValidation.action),
+      message: buildWeekCreatorFallbackMessage(fallbackValidation.action, lastFailure?.category),
     }
   },
 }
@@ -667,8 +674,18 @@ function isAbortError(error: unknown, signal?: AbortSignal): boolean {
   return false
 }
 
-function buildWeekCreatorFallbackMessage(action: CoachAction): string {
-  return `Generé una semana base automática porque la IA no devolvió una semana válida. Revísala antes de aplicarla.\n\n${summarizeWeekCreatorAction(action)}`
+// The old copy blamed the model for every fallback, including the common case
+// where the provider answered fine and the week was rejected by local
+// validation/hydration. Misattributing the cause sends the user to debug the
+// wrong layer, so the message follows the failure category.
+function buildWeekCreatorFallbackMessage(
+  action: CoachAction,
+  category?: WeekCreatorFailureCategory,
+): string {
+  const cause = category === 'provider_failure'
+    ? 'no pude conectar con la IA'
+    : 'la semana propuesta no pasó las validaciones de tu configuración'
+  return `Generé una semana base automática porque ${cause}. Revísala antes de aplicarla.\n\n${summarizeWeekCreatorAction(action)}`
 }
 
 function buildWeekCreatorFallbackWarning(
