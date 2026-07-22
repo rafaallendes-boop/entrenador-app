@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   SCENARIOS,
   buildScenarioSequence,
+  collectVariant,
   defaultReportPath,
   evaluateAcceptance,
   pXX,
@@ -206,5 +207,25 @@ describe('week creator loadtest scenarios', () => {
 
     expect(path).toMatch(/^loadtest-results\/week-creator-.*\.json$/)
     expect(path).toContain('2026-07-20')
+  })
+
+  it('collects the variant tags so a paid window self-documents its model and tier', () => {
+    const variant = collectVariant([
+      result({ providerAttempts: [{ ok: true, model: 'gpt-4.1-mini', serviceTier: 'priority' }] }),
+      result({ providerAttempts: [{ ok: true, model: 'gpt-4.1-mini', serviceTier: 'priority', reasoningEffort: 'low' }] }),
+    ])
+
+    expect(variant.models).toEqual(['gpt-4.1-mini'])
+    expect(variant.serviceTiers).toEqual(['priority'])
+    expect(variant.reasoningEfforts).toEqual(['low'])
+  })
+
+  it('surfaces every distinct tier so a Priority to Standard degradation stays visible', () => {
+    const variant = collectVariant([
+      result({ providerAttempts: [{ ok: true, model: 'gpt-4.1-mini', serviceTier: 'priority' }] }),
+      result({ providerAttempts: [{ ok: true, model: 'gpt-4.1-mini', serviceTier: 'default' }] }),
+    ])
+
+    expect(variant.serviceTiers).toEqual(['default', 'priority'])
   })
 })

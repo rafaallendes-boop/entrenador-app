@@ -182,6 +182,25 @@ export function defaultReportPath(now = new Date()) {
   return `loadtest-results/week-creator-${stamp}.json`
 }
 
+/**
+ * Extracts the distinct model/serviceTier/reasoningEffort seen across all provider
+ * attempts. Surfacing every distinct value keeps a paid window self-documenting and
+ * makes a silent Priority->Standard degradation visible instead of misattributed.
+ */
+export function collectVariant(results) {
+  const distinct = (key) => [...new Set(
+    results
+      .flatMap((result) => result.providerAttempts ?? [])
+      .map((attempt) => attempt[key])
+      .filter((value) => value != null),
+  )].sort()
+  return {
+    models: distinct('model'),
+    serviceTiers: distinct('serviceTier'),
+    reasoningEfforts: distinct('reasoningEffort'),
+  }
+}
+
 async function loadRuntime() {
   const vite = await createServer({
     server: { middlewareMode: true },
@@ -249,6 +268,8 @@ function makeProviderAttempt(input, data, roundTripMs, requestMetrics) {
     reasoningTokens: data.reasoningTokens,
     cacheReadInputTokens: data.cacheReadInputTokens,
     finishReason: data.finishReason,
+    serviceTier: data.serviceTier,
+    reasoningEffort: data.reasoningEffort,
   }
 }
 
@@ -608,6 +629,9 @@ async function main() {
 
     const { overall, byScenario } = summarizeByScenario(results)
     const acceptance = evaluateAcceptance(overall)
+    const variant = collectVariant(results)
+    console.log('\n=== Variant ===')
+    console.log(`model=${variant.models.join(',') || 'none'} serviceTier=${variant.serviceTiers.join(',') || 'none'} reasoningEffort=${variant.reasoningEfforts.join(',') || 'none'}`)
     console.log('\n=== Summary (overall) ===')
     console.log(JSON.stringify({ ...overall, acceptance }, null, 2))
     console.log('\n=== By scenario ===')
@@ -622,6 +646,7 @@ async function main() {
       endpoint: ENDPOINT,
       scenarioMode: SCENARIO,
       n: results.length,
+      variant,
       acceptance,
       overall,
       byScenario,

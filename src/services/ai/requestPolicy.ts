@@ -57,6 +57,23 @@ export function getAIRequestPolicy(requestClass: AIRequestClass): AIRequestPolic
   return AI_REQUEST_POLICIES[requestClass]
 }
 
+/**
+ * Output cap for the detailed (medical) week_creator contract. The 2500 cap in
+ * the policy above was sized from skeleton-contract output only; the detailed
+ * contract carries full per-sport exercises/drills/protocols and was observed
+ * truncating (`finishReason=length`) at exactly 2500. This ceiling gives it
+ * headroom without restoring the old 8000 guardrail-free budget. It doubles as
+ * the proxy ceiling for week_creator, so keep the two in sync.
+ */
+export const WEEK_CREATOR_DETAILED_MAX_TOKENS = 4000
+
+/** Skeleton contract keeps the validated 2500 cap; the detailed contract gets headroom. */
+export function resolveWeekCreatorMaxTokens(useSkeletonContract: boolean): number {
+  return useSkeletonContract
+    ? AI_REQUEST_POLICIES.week_creator.maxTokens
+    : WEEK_CREATOR_DETAILED_MAX_TOKENS
+}
+
 export function buildAITraceId(requestClass: AIRequestClass): string {
   return `${requestClass}-${uuid()}`
 }

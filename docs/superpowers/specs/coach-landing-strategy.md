@@ -224,11 +224,11 @@ Dependencias reales (no todo lo posterior al paso 1 es independiente de él):
 
 ## Coach Workspace v0 — Resumen + roster (cerrado y desplegado)
 
-El plan `docs/superpowers/plans/2026-07-11-coach-workspace-v0.md` ejecutó el antiguo paso de
-workspace y ya está desplegado. Se mantiene esta sección como registro de las decisiones de
-alcance que guiaron v0;
-la landing pública `/coaches` y su arquitectura de rutas se ejecutan en el plan separado
-`docs/superpowers/plans/2026-07-13-coaches-landing-fase0.md`.
+El plan de Coach Workspace v0 ejecutó el antiguo paso de
+workspace y ya está desplegado (plan retirado tras el despliegue; historial en git). Se mantiene
+esta sección como registro de las decisiones de alcance que guiaron v0;
+la landing pública `/coaches` y su arquitectura de rutas se ejecutaron en el plan separado de
+Fase 0, también retirado tras su despliegue.
 
 **Resolución de la contradicción de alcance:** `Coach Workspace v0` es **roster mejorado, no
 dashboard agregado**. Se descarta la opción de meter señales/umbrales por atleta en v0 porque
@@ -397,7 +397,7 @@ Landing pública `/coaches`:
 - [x] Redactar copy inicial de "Para quién es" / "Qué no es" en el plan ejecutable.
 - [x] Reconciliar `docs/legal/politica-de-privacidad.md` con el HTML aislado en `public/legal/privacidad/`; queda revisión legal externa antes de lanzamiento.
 - [ ] Confirmar publicación de rutas legales antes de exponer la landing.
-- [x] Implementar la arquitectura de rutas públicas explícitas de `2026-07-13-coaches-landing-fase0.md`; `/` queda condicional (landing si no hay sesión, Dashboard si la hay).
+- [x] Implementar la arquitectura de rutas públicas explícitas de Fase 0; `/` queda condicional (landing si no hay sesión, Dashboard si la hay).
 - [ ] Capturar, anonimizar y optimizar las tres imágenes reales; recién entonces habilitar la sección de prueba visual.
 
 Workspace `/coach` — `Coach Workspace v0` (roster mejorado; ver sección dedicada arriba):

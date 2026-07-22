@@ -170,7 +170,10 @@ const REQUEST_MAX_TOKENS: Record<RequestClass, number> = {
   chat_general: 2400,
   chat_action: 4200,
   weekly_summary: 1600,
-  week_creator: 2500,
+  // Ceiling, not the default. Skeleton requests send 2500; the detailed (medical)
+  // contract sends up to 4000 to avoid the observed truncation. Keep in sync with
+  // WEEK_CREATOR_DETAILED_MAX_TOKENS in requestPolicy.ts.
+  week_creator: 4000,
   plan_builder_week: 3500,
   plan_builder_pair: 4200,
   import_extract: 2000,

@@ -22,7 +22,7 @@ Base de contraste:
 - **WHOOP v1 implementado, commiteado y aplicado en produccion (2026-07-08/10, `011` cerrado 2026-07-13):** integracion end-to-end en `main` (`c8aa5f8`, `14b7056`, `5293e6c`): `011_whoop_integration.sql`, Dexie v15 `readinessDaily`, OAuth start/callback/status con state single-use, tokens AES-256-GCM, sync manual/on-demand con cooldown, cron dedicado, `ReadinessCard`, `WhoopConnection`, prefill de check-in gateado (hoy+self+atleta), contexto pasivo del coach, borrado completo service-role, export/backup y wipe local. Cierre de review previo: lint + 1160 tests + build + typecheck. Pendiente unicamente el gate legal/consentimiento biometrico antes de terceros.
 - **WHOOP Esfuerzo (2026-07-08) implementado:** `dayLog.rpeActual` se mantiene como storage pero la UI/copy lo relabela a "Esfuerzo"; Whoop strain lo prellena con `clamp(round(strain / 2.1), 1, 10)`, editable, y no se usa para sembrar `Session.actualRpe` ni inflar ACWR/carga.
 - **Resumen semanal/coach note corregido (2026-07-10):** snapshot de nota semanal, freshness check y tests evitan reusar notas obsoletas cuando cambia el resumen.
-- **SP1a dos-lados planificado (2026-07-09/10):** spec endurecido con D1-D6 y plan de implementacion creado (`docs/superpowers/plans/2026-07-09-sp1a-two-sided-foundation.md`), pero aun sin codigo/migraciones aplicadas.
+- **SP1a dos-lados implementado en codigo (2026-07-09/10):** spec endurecido con D1-D6 y plan `docs/superpowers/plans/2026-07-09-sp1a-two-sided-foundation.md` ejecutado en el cliente (Dexie v17 con `athleteMemberships`/`athleteCoachNotes`, `membershipCache`, `claimGate`, ruteo `session_completion` via RPC `mark_session_done`) y `013a/b/c` escritas en `supabase/`. **Rollout remoto de `013a/b/c` sin confirmar** — el plan se conserva por su guia de aplicacion. SP1b (invites + UI) sigue sin implementar.
 - **Whoop Workout Auto-Complete implementado (2026-07-10):** `012_whoop_workouts.sql`, Dexie v16, scope `read:workout`, reconciliacion autoritativa server/client, matcher self-only serializado con idempotencia durable, badge y lifecycle completo. SP1a queda reservado para `013+`/Dexie v17+. Pendiente operacional: aplicar `012`, deploy, reconectar Whoop y smoke.
 
 ## Resumen Ejecutivo
@@ -161,7 +161,7 @@ Endurecimientos que viajaron con la misma pieza:
 
 Tambien se detecto y corrigio, como efecto secundario de este trabajo, un gap de configuracion preexistente: ni `vitest` ni `eslint` excluian `.claude/worktrees/` de su glob, lo que duplicaba archivos de test y generaba fallos espurios al correr la suite desde un checkout con un worktree anidado adentro. Arreglado en `vite.config.ts` y `eslint.config.js`.
 
-Estado: **deployado en produccion.** Migracion/schema: ninguna (no toca Supabase ni Dexie). Plan completo: `docs/superpowers/plans/2026-07-11-coach-workspace-v0.md`.
+Estado: **deployado en produccion.** Migracion/schema: ninguna (no toca Supabase ni Dexie). Plan de implementacion retirado tras el despliegue (historial en git).
 
 ### 8. Fase 0 de coaches landing completada (2026-07-13 a 2026-07-14)
 
@@ -183,7 +183,7 @@ Pendiente y no bloqueante:
 - Revision juridica completa y firma de abogado.
 - RUT/domicilio legal de RallyIQ antes de cobro o anuncios masivos.
 
-Estado: **Fase 0 desplegada en produccion.** Plan completo: `docs/superpowers/plans/2026-07-13-coaches-landing-fase0.md`. Tests de UI agregados para `LegalPageLayout` y `SharedPublicNav`. No toca Supabase ni Dexie.
+Estado: **Fase 0 desplegada en produccion.** Plan de implementacion retirado tras el despliegue (historial en git); queda pendiente solo capturar los screenshots reales de `/coaches`. Tests de UI agregados para `LegalPageLayout` y `SharedPublicNav`. No toca Supabase ni Dexie.
 
 ### 9. Gestion de roster + Planificacion y Biblioteca implementadas (2026-07-14 a 2026-07-19)
 
@@ -198,7 +198,7 @@ El Coach Workspace incorpora el ciclo de vida seguro de atletas gestionados y un
 - **Persistencia y sync:** Dexie v18, backup v4 con tombstones, Supabase `015_session_templates.sql`, pull por `user_id`, LWW/delete-wins, tombstone versionado y re-push de filas ausentes. Las escrituras iguales convergidas no reescriben IndexedDB.
 - **Smoke:** el modo `--apply` identifica al atleta creado por id y prueba archivar/restaurar con recuperacion en `finally`; el borrado duro permanece cubierto solo por tests para no destruir datos reales.
 
-Estado: **desplegado en produccion con `015_session_templates.sql` aplicada.** Falta smoke autenticado; Dexie migra v17 → v18 al abrir la app. Planes/spec: `docs/superpowers/plans/2026-07-14-coach-roster-management-y-planificacion.md`, `docs/superpowers/specs/2026-07-14-coach-roster-management-y-planificacion-design.md`, `docs/superpowers/plans/2026-07-17-coach-biblioteca-plantillas.md` y `docs/superpowers/specs/2026-07-17-coach-biblioteca-plantillas-design.md`.
+Estado: **desplegado en produccion con `015_session_templates.sql` aplicada.** Falta smoke autenticado; Dexie migra v17 → v18 al abrir la app. Planes/specs de roster, Planificacion y Biblioteca retirados tras el despliegue (historial en git).
 
 ### 10. Hardening de calendario y latencia local (2026-07-19)
 

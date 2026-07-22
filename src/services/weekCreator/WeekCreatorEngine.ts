@@ -16,7 +16,7 @@ import type {
 } from '../../types'
 import type { TrainingPlanWeek } from '../../types/planBuilder'
 import type { AIProvider, AIRawResponse, CoachNormalizedResponse } from '../ai/types'
-import { buildAIGenerationId, buildAITraceId, getAIRequestPolicy } from '../ai/requestPolicy'
+import { buildAIGenerationId, buildAITraceId, getAIRequestPolicy, resolveWeekCreatorMaxTokens } from '../ai/requestPolicy'
 import { assertDailyAIRequestLimit } from '../ai/aiTelemetry'
 import { normalizeResponse } from '../ai/responseNormalizer'
 import { getProviderForRequestClass } from '../ai/providerResolver'
@@ -190,6 +190,9 @@ export const WeekCreatorEngine = {
     const useSkeletonContract = resolveWeekCreatorContractStrategy() === 'skeleton_v1'
       && !hasActiveMedicalRestrictions(context, config)
     const weekCreatorContract = useSkeletonContract ? 'skeleton_v1' as const : 'detailed' as const
+    // The detailed (medical) contract carries full per-sport detail and was
+    // observed truncating at the skeleton-sized 2500 cap; give it headroom.
+    const effectiveMaxTokens = resolveWeekCreatorMaxTokens(useSkeletonContract)
     const responseSchema = useSkeletonContract
       ? WEEK_CREATOR_SKELETON_RESPONSE_SCHEMA
       : WEEK_CREATOR_RESPONSE_SCHEMA
@@ -243,7 +246,7 @@ export const WeekCreatorEngine = {
         requestClass: 'week_creator',
         surface,
         startedAt: Date.now(),
-        maxTokens: policy.maxTokens,
+        maxTokens: effectiveMaxTokens,
         weekCreatorContract,
         ...cohort,
       })
@@ -301,7 +304,7 @@ export const WeekCreatorEngine = {
             traceId,
             generationId,
             logicalAttempt: attempt,
-            maxTokens: policy.maxTokens,
+            maxTokens: effectiveMaxTokens,
             temperature: Math.min(policy.temperature, 0.15),
             responseMimeType: 'application/json',
             responseSchema,
@@ -513,7 +516,7 @@ export const WeekCreatorEngine = {
       requestClass: 'week_creator',
       surface,
       startedAt: fallbackStartedAt,
-      maxTokens: policy.maxTokens,
+      maxTokens: effectiveMaxTokens,
       weekCreatorContract,
       ...cohort,
     })
