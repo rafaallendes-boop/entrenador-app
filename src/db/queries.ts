@@ -427,10 +427,16 @@ export const getMatchSessions = async (): Promise<Session[]> => {
 // The profile row key follows the athlete scope: the owner's own profile keeps
 // the historic singleton row; a managed athlete gets its own row keyed by its
 // athleteId and never adopts the owner's profile.
+function resolveProfileLocalIdForScope(
+  activeAthleteId: string | null,
+  selfAthleteId: string | null,
+): string {
+  if (!activeAthleteId || activeAthleteId === selfAthleteId) return ATHLETE_PROFILE_LOCAL_ID
+  return activeAthleteId
+}
+
 function resolveProfileLocalId(): string {
-  const active = getActiveAthleteId()
-  if (!active || isSelfScopeActive()) return ATHLETE_PROFILE_LOCAL_ID
-  return active
+  return resolveProfileLocalIdForScope(getActiveAthleteId(), getSelfAthleteId())
 }
 
 export const getAthleteProfile = async (): Promise<AthleteProfile | undefined> =>
@@ -439,12 +445,14 @@ export const getAthleteProfile = async (): Promise<AthleteProfile | undefined> =
 export const upsertAthleteProfile = async (
   patch: Partial<Omit<AthleteProfile, 'id' | 'updatedAt' | 'athleteId'>>
 ): Promise<AthleteProfile> => {
-  const localId = resolveProfileLocalId()
+  // Capture the complete scope before the first await. A managed-athlete switch
+  // while IndexedDB is resolving must not re-stamp the old row for the new scope.
+  const activeAthleteId = getActiveAthleteId()
+  const localId = resolveProfileLocalIdForScope(activeAthleteId, getSelfAthleteId())
   const { athleteId: _callerScope, ...safePatch } = patch as Partial<AthleteProfile>
   void _callerScope
   const existing = await db.athleteProfiles.get(localId)
   const updatedAt = Date.now()
-  const activeAthleteId = getActiveAthleteId()
 
   if (existing) {
     const updated: AthleteProfile = {

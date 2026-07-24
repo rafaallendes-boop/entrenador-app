@@ -14,6 +14,13 @@ import {
 import { ROUTES } from '../constants/routes'
 import { resolveGeneratedWeeksRoute } from './planDashboardNavigation'
 import { PlanQualityBadge } from '../components/planBuilder/PlanQualityBadge'
+import { CycleHistory } from '../components/planBuilder/CycleHistory'
+import { filterRowsToActiveScope } from '../services/athlete/activeScopeFilter'
+import {
+  comparePlanCanonicalRecency,
+  resolvePlanCycleState,
+  summarizeCycle,
+} from '../services/planBuilder/planCycle'
 import type { MacroPlanPhase } from '../types'
 import type { TrainingPlan } from '../types/planBuilder'
 
@@ -253,6 +260,72 @@ function KPIPill({ label, value, color = T.brand }: {
   )
 }
 
+function EventCompleted({ title, dateISO, summary }: {
+  title: string
+  dateISO: string
+  summary: { weeksTrained: number; avgAdherence: number | null } | null
+}) {
+  return (
+    <div style={{
+      position: 'relative',
+      overflow: 'hidden',
+      borderRadius: 22,
+      border: '1px solid rgba(209,252,0,0.2)',
+      background: 'linear-gradient(150deg, rgba(16,22,8,0.99), rgba(8,10,8,1))',
+      padding: '18px 20px',
+      boxShadow: '0 20px 60px -30px rgba(0,0,0,0.9)',
+    }}>
+      <div style={{
+        position: 'absolute',
+        inset: '0 0 auto',
+        height: 1,
+        background: 'linear-gradient(90deg, transparent, rgba(209,252,0,0.55), transparent)',
+      }} />
+      <div style={{ position: 'relative' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 10 }}>
+          <Flag size={13} color={T.lime} />
+          <Micro color={T.lime}>Evento completado</Micro>
+        </div>
+        <div style={{
+          fontFamily: T.fontDisp,
+          fontSize: 21,
+          fontWeight: 800,
+          color: T.ink,
+          lineHeight: 1.2,
+          marginBottom: 4,
+        }}>
+          {title}
+        </div>
+        <div style={{ fontFamily: T.fontMono, fontSize: 11, color: T.faint }}>
+          {formatEventDate(dateISO)}
+        </div>
+        <div style={{ marginTop: 14 }}>
+          <ProgressBar value={1} total={1} color={T.lime} height={5} />
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 5 }}>
+            <Micro>Inicio</Micro>
+            <Micro color={T.lime}>100% completado</Micro>
+            <Micro>Evento</Micro>
+          </div>
+        </div>
+        {summary && (
+          <div data-testid="cycle-metrics" style={{ display: 'flex', gap: 8, marginTop: 14 }}>
+            <KPIPill
+              label="Semanas entrenadas"
+              value={String(summary.weeksTrained)}
+              color={T.lime}
+            />
+            <KPIPill
+              label="Adherencia"
+              value={summary.avgAdherence == null ? '—' : `${summary.avgAdherence}%`}
+              color={T.brand}
+            />
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ── Phase card ───────────────────────────────────────────────
 function PhaseCard({ phase, label, focus, status, weeks, primarySport, complementarySports }: {
   phase: MacroPlanPhase
@@ -275,11 +348,14 @@ function PhaseCard({ phase, label, focus, status, weeks, primarySport, complemen
   ].slice(0, 3)
 
   return (
-    <div style={{
-      position: 'relative',
-      borderRadius: 14, padding: '13px 14px',
-      background: statusConf.bg, border: `1px solid ${statusConf.border}`,
-    }}>
+    <div
+      data-testid="phase-card"
+      style={{
+        position: 'relative',
+        borderRadius: 14, padding: '13px 14px',
+        background: statusConf.bg, border: `1px solid ${statusConf.border}`,
+      }}
+    >
       {status === 'current' && (
         <div style={{
           position: 'absolute', inset: '0 auto 0 0', width: 3,
@@ -393,32 +469,49 @@ function SectionTitle({ children, right }: { children: React.ReactNode; right?: 
 // Main PlanDashboard component
 // ═══════════════════════════════════════════════════════════════
 
-export default function PlanDashboard({ onEdit }: { onEdit: () => void }) {
+export default function PlanDashboard({ onEdit, onNewCycle }: {
+  onEdit: () => void
+  onNewCycle: (goalEventId: string) => void
+}) {
   const navigate = useNavigate()
   const { athleteProfile, loadMemory } = useCoachMemoryStore()
   const { allWeekSummaries, loadAllSummaries } = useTrainingStore()
-  const [activeGeneratedPlan, setActiveGeneratedPlan] = useState<TrainingPlan | null>(null)
+  const [loadedActivePlan, setLoadedActivePlan] = useState<TrainingPlan | null>(null)
+  const [activePlanWeekStarts, setActivePlanWeekStarts] = useState<string[]>([])
   const today = todayISO()
+  const profileMacroPlan = useMemo(() => computeMacroPlan(athleteProfile), [athleteProfile])
+  const profilePrimaryEvent = useMemo(() => getPrimaryGoalEvent(athleteProfile), [athleteProfile])
+  const activeGeneratedPlan = profilePrimaryEvent
+    && loadedActivePlan?.goalEventId !== profilePrimaryEvent.id
+    ? null
+    : loadedActivePlan
 
   useEffect(() => { void loadMemory() }, [loadMemory])
   useEffect(() => { void loadAllSummaries() }, [loadAllSummaries])
   useEffect(() => {
     let cancelled = false
-    void db.trainingPlans
-      .where('status')
-      .equals('active')
-      .toArray()
-      .then((plans) => {
-        if (cancelled) return
-        setActiveGeneratedPlan(plans.sort((a, b) => b.updatedAt - a.updatedAt)[0] ?? null)
-      })
+    void (async () => {
+      const all = await db.trainingPlans.toArray()
+      if (cancelled) return
+      const active = filterRowsToActiveScope(all)
+        .filter((plan) => plan.status === 'active')
+        .sort(comparePlanCanonicalRecency)
+      const plan = profilePrimaryEvent
+        ? (active.find((candidate) => candidate.goalEventId === profilePrimaryEvent.id) ?? null)
+        : (active[0] ?? null)
+      setLoadedActivePlan(plan)
+      if (!plan) {
+        setActivePlanWeekStarts([])
+        return
+      }
+      const weeks = await db.trainingPlanWeeks.where('planId').equals(plan.id).toArray()
+      if (!cancelled) setActivePlanWeekStarts(weeks.map((week) => week.weekStartDate))
+    })()
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [profilePrimaryEvent])
 
-  const profileMacroPlan = useMemo(() => computeMacroPlan(athleteProfile), [athleteProfile])
-  const profilePrimaryEvent = useMemo(() => getPrimaryGoalEvent(athleteProfile), [athleteProfile])
   const macroPlan = profileMacroPlan ?? activeGeneratedPlan?.macroSnapshot ?? null
   const generatedPrimaryEvent = useMemo(() => activeGeneratedPlan
     ? {
@@ -462,11 +555,25 @@ export default function PlanDashboard({ onEdit }: { onEdit: () => void }) {
     return recent.length ? avg(recent.map(w => w.adherencePct!)) : null
   }, [allWeekSummaries, today])
 
-  // Phase computation — all standard phases + current status
-  const currentPhase = macroPlan?.currentPhase ?? 'base'
-  const currentPhaseIdx = PHASE_ORDER.indexOf(currentPhase)
+  const cycleState = primaryEvent
+    ? resolvePlanCycleState({ eventDateISO: primaryEvent.date, todayISO: today })
+    : 'upcoming'
+  const currentPhase: MacroPlanPhase = cycleState === 'post_event'
+    ? 'transition'
+    : (macroPlan?.currentPhase ?? 'base')
+  const cycleSummary = useMemo(
+    () => summarizeCycle({
+      weekStartDates: activePlanWeekStarts,
+      weekSummaries: allWeekSummaries,
+    }),
+    [activePlanWeekStarts, allWeekSummaries],
+  )
+  const phasesToRender: MacroPlanPhase[] = cycleState === 'post_event'
+    ? [...PHASE_ORDER, 'transition']
+    : PHASE_ORDER
+  const currentPhaseIdx = phasesToRender.indexOf(currentPhase)
 
-  const allPhases = PHASE_ORDER.map((phase, idx) => {
+  const allPhases = phasesToRender.map((phase, idx) => {
     const status: 'past' | 'current' | 'future' =
       phase === currentPhase ? 'current'
       : idx < currentPhaseIdx ? 'past'
@@ -557,27 +664,36 @@ export default function PlanDashboard({ onEdit }: { onEdit: () => void }) {
       {/* Content */}
       <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 14 }}>
 
-        {/* Countdown */}
-        <EventCountdown
-          title={primaryEvent.title}
-          dateISO={primaryEvent.date}
-          planStartISO={planStartISO}
-        />
+        {cycleState === 'post_event' ? (
+          <EventCompleted
+            title={primaryEvent.title}
+            dateISO={primaryEvent.date}
+            summary={activeGeneratedPlan ? cycleSummary : null}
+          />
+        ) : (
+          <EventCountdown
+            title={primaryEvent.title}
+            dateISO={primaryEvent.date}
+            planStartISO={planStartISO}
+          />
+        )}
 
         {/* KPI row */}
-        <div style={{ display: 'flex', gap: 8 }}>
-          <KPIPill label="Semanas" value={String(totalWeeks)} color={T.brand} />
-          <KPIPill
-            label="Adherencia"
-            value={avgAdherence != null ? `${avgAdherence}%` : '—'}
-            color={T.lime}
-          />
-          <KPIPill
-            label="Semana"
-            value={`${currentWeekNum}/${totalWeeks}`}
-            color={T.cyan}
-          />
-        </div>
+        {cycleState === 'upcoming' && (
+          <div data-testid="dashboard-kpis" style={{ display: 'flex', gap: 8 }}>
+            <KPIPill label="Semanas" value={String(totalWeeks)} color={T.brand} />
+            <KPIPill
+              label="Adherencia"
+              value={avgAdherence != null ? `${avgAdherence}%` : '—'}
+              color={T.lime}
+            />
+            <KPIPill
+              label="Semana"
+              value={`${currentWeekNum}/${totalWeeks}`}
+              color={T.cyan}
+            />
+          </div>
+        )}
 
         {activeGeneratedPlan?.generationSummary?.qualityReview && (
           <PlanQualityBadge review={activeGeneratedPlan.generationSummary.qualityReview} />
@@ -617,8 +733,8 @@ export default function PlanDashboard({ onEdit }: { onEdit: () => void }) {
         </div>
 
         {/* Recent weeks */}
-        {recentWeeks.length > 0 && (
-          <div style={{
+        {cycleState === 'upcoming' && recentWeeks.length > 0 && (
+          <div data-testid="recent-weeks" style={{
             background: T.card,
             border: `1px solid ${T.border}`,
             borderRadius: 18, padding: '16px 16px 14px',
@@ -640,24 +756,68 @@ export default function PlanDashboard({ onEdit }: { onEdit: () => void }) {
 
         {/* Actions */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {cycleState === 'post_event' ? (
+            <>
+              <button
+                type="button"
+                onClick={() => onNewCycle(primaryEvent.id)}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                  width: '100%', padding: '15px 20px', borderRadius: 14,
+                  background: T.brand,
+                  border: 'none', cursor: 'pointer',
+                  fontFamily: T.fontDisp, fontSize: 14, fontWeight: 700,
+                  color: '#1a0800',
+                  boxShadow: `0 8px 28px -10px ${T.brand}70`,
+                  transition: 'all .18s',
+                }}
+              >
+                <Zap size={15} />
+                Planificar próximo evento
+                <ChevronRight size={14} />
+              </button>
+              {activeGeneratedPlan && (
+                <button
+                  type="button"
+                  onClick={() => navigate(resolveGeneratedWeeksRoute(activeGeneratedPlan))}
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                    width: '100%', padding: '13px 20px', borderRadius: 14,
+                    background: 'rgba(255,255,255,0.04)',
+                    border: `1px solid ${T.border}`,
+                    cursor: 'pointer',
+                    fontFamily: T.fontDisp, fontSize: 13, fontWeight: 600,
+                    color: T.muted,
+                    transition: 'all .18s',
+                  }}
+                >
+                  Ver semanas generadas
+                  <ChevronRight size={14} />
+                </button>
+              )}
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={() => navigate(resolveGeneratedWeeksRoute(activeGeneratedPlan))}
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                width: '100%', padding: '15px 20px', borderRadius: 14,
+                background: T.brand,
+                border: 'none', cursor: 'pointer',
+                fontFamily: T.fontDisp, fontSize: 14, fontWeight: 700,
+                color: '#1a0800',
+                boxShadow: `0 8px 28px -10px ${T.brand}70`,
+                transition: 'all .18s',
+              }}
+            >
+              <Zap size={15} />
+              Ver semanas generadas
+              <ChevronRight size={14} />
+            </button>
+          )}
           <button
-            onClick={() => navigate(resolveGeneratedWeeksRoute(activeGeneratedPlan))}
-            style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-              width: '100%', padding: '15px 20px', borderRadius: 14,
-              background: T.brand,
-              border: 'none', cursor: 'pointer',
-              fontFamily: T.fontDisp, fontSize: 14, fontWeight: 700,
-              color: '#1a0800',
-              boxShadow: `0 8px 28px -10px ${T.brand}70`,
-              transition: 'all .18s',
-            }}
-          >
-            <Zap size={15} />
-            Ver semanas generadas
-            <ChevronRight size={14} />
-          </button>
-          <button
+            type="button"
             onClick={() => navigate(ROUTES.CHAT, { state: { prefill: 'Quiero revisar mi plan de competencia' } })}
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
@@ -674,6 +834,8 @@ export default function PlanDashboard({ onEdit }: { onEdit: () => void }) {
             Consultar a RallyIQ
           </button>
         </div>
+
+        <CycleHistory weekSummaries={allWeekSummaries} />
 
       </div>
     </div>

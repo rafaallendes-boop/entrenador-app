@@ -81,6 +81,7 @@ interface PlanBuilderState {
   acceptPlan: () => Promise<{ errors: string[]; warnings: string[] }>
   discard: () => Promise<void>
   loadDraft: (planId: string) => Promise<void>
+  resetBuilderState: () => void
   resetForAthleteSwitch: () => void
 }
 
@@ -367,9 +368,11 @@ export function buildRunnerCallbacks(
   get: () => PlanBuilderState,
   epochAtBuild = getSwitchEpoch(),
 ) {
+  const planIdAtBuild = get().plan?.id ?? null
   const guarded = <A extends unknown[]>(fn: (...args: A) => void) =>
     (...args: A): void => {
       if (getSwitchEpoch() !== epochAtBuild) return
+      if (planIdAtBuild && get().plan?.id !== planIdAtBuild) return
       fn(...args)
     }
 
@@ -453,7 +456,7 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
   generationJob: null,
   lastError: null,
 
-  resetForAthleteSwitch: () => {
+  resetBuilderState: () => {
     generationPollingController?.abort()
     generationPollingController = null
     set({
@@ -468,6 +471,10 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
       generationJob: null,
       lastError: null,
     })
+  },
+
+  resetForAthleteSwitch: () => {
+    get().resetBuilderState()
   },
 
   createDraft: async ({ profile, wizardConfig }) => {

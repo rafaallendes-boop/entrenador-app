@@ -132,6 +132,7 @@ export {
 const TOMBSTONE_TTL_MS = 180 * 24 * 60 * 60 * 1000 // 180 days (extended from 90d as part of sync hardening)
 
 export type AthleteProfileWriteSource = 'automatic' | 'post_reset_onboarding'
+export type SyncPushOutcome = 'pushed' | 'queued' | 'no_remote' | 'failed'
 
 type AthleteProfilePersistMode = 'normal' | 'technical_marker' | 'post_reset_onboarding'
 type ProfileResetLockStatus = 'pending_remote_wipe' | 'awaiting_bootstrap_ack' | 'awaiting_onboarding_recreation' | 'released'
@@ -1309,12 +1310,12 @@ async function upsertRow(
   table: SupabaseTable,
   row: Record<string, unknown>,
   options?: { athleteProfileWriteSource?: AthleteProfileWriteSource },
-): Promise<void> {
-  if (!isEnabled()) return
-  if (isSchemaMismatchBlocked(table)) return
+): Promise<SyncPushOutcome> {
+  if (!isEnabled()) return 'no_remote'
+  if (isSchemaMismatchBlocked(table)) return 'failed'
 
   const userId = getUserId()
-  if (!userId) return
+  if (!userId) return 'failed'
 
   const athleteProfileWriteSource = table === 'athlete_profiles'
     ? (options?.athleteProfileWriteSource ?? getAthleteProfileWriteSource(row))
@@ -1328,7 +1329,7 @@ async function upsertRow(
     : payloadAthleteId
   if (guardTarget && hasAthleteDeleteTombstoneForAthlete(guardTarget)) {
     syncLog('upsertRow:athlete_tombstoned_skip', { table }, 'warn')
-    return
+    return 'failed'
   }
   const requestedAt = Date.now()
 
@@ -1339,13 +1340,13 @@ async function upsertRow(
         source: athleteProfileWriteSource,
         userId,
       }, 'warn')
-      return
+      return 'failed'
     }
 
     if (hasPendingRemoteWipeForTable(userId, table)) {
       enqueue({ userId, table, action: 'upsert', payload, enqueuedAt: Date.now() })
       scheduleRetry(15000)
-      return
+      return 'queued'
     }
 
     if (!navigator.onLine) {
@@ -1353,7 +1354,7 @@ async function upsertRow(
       syncStoreState().setSyncStatus('offline')
       enqueue({ userId, table, action: 'upsert', payload, enqueuedAt: Date.now() })
       scheduleRetry(15000)
-      return
+      return 'queued'
     }
 
     startSyncAttempt()
@@ -1403,20 +1404,22 @@ async function upsertRow(
         })
         finishSyncAttempt('idle')
       }
+      return 'pushed'
     } catch (error) {
       const errorInfo = classifySyncError(error, table)
       if (isOptionalPlanSchemaMismatch(errorInfo, table)) {
         trackOptionalPlanSyncSkip(table, errorInfo, 'upsert')
         finishSyncAttempt('idle')
-        return
+        return 'failed'
       }
       if (!errorInfo.retriable && !errorInfo.autoRepairable) {
         syncLog('upsertRow:non_retriable', { table, category: errorInfo.category }, 'warn')
         applySyncFailure(error, errorInfo.userMessage, table)
-        return
+        return 'failed'
       }
       enqueue({ userId, table, action: 'upsert', payload, enqueuedAt: Date.now() })
       applySyncFailure(error, errorInfo.userMessage, table)
+      return 'queued'
     }
   }))
 }
@@ -2997,22 +3000,62 @@ export async function archiveTrainingPlan(plan: TrainingPlan, weeks: TrainingPla
   const archivedPlan: TrainingPlan = {
     ...plan,
     status: 'archived',
-    updatedAt: Date.now(),
+    // `closePlanCycle` already computes a timestamp newer than every candidate.
+    // Never replace that logical clock with a smaller wall-clock value.
+    updatedAt: Math.max(Date.now(), plan.updatedAt),
   }
   await pushTrainingPlan(archivedPlan)
   await pushTrainingPlanWeeks(archivedPlan, weeks)
 }
 
-export async function softDeleteTrainingPlan(plan: TrainingPlan, weeks: TrainingPlanWeek[]): Promise<void> {
+function resolveRemotePlanAthleteId(plan: TrainingPlan, userId: string): string {
+  if (isScopedAthleteId(plan.athleteId)) return plan.athleteId
+  // Legacy/unscoped plan rows belong exclusively to the self athlete. Prefer
+  // the hydrated id, with the deterministic owner id as a startup-safe fallback.
+  return getSelfAthleteId() ?? athleteIdForOwner(userId)
+}
+
+function nextPlanDeleteTimestamp(plan: TrainingPlan, weeks: TrainingPlanWeek[]): number {
+  return [plan, ...weeks].reduce((timestamp, row) => {
+    if (!Number.isFinite(row.updatedAt)) return timestamp
+    return Math.max(timestamp, row.updatedAt + 1)
+  }, Date.now())
+}
+
+/**
+ * The parent tombstone is the authoritative commit for deleting a cycle.
+ * It is written first and sequentially: if it did not reach the remote (or its
+ * durable queue), no child tombstone is attempted. Once the parent is pushed,
+ * child tombstones are only remote cleanup and cannot downgrade the committed
+ * result; mergeTrainingPlans suppresses/removes all local children by parent.
+ */
+export async function softDeleteTrainingPlan(
+  plan: TrainingPlan,
+  weeks: TrainingPlanWeek[],
+): Promise<SyncPushOutcome> {
   const userId = getUserId()
-  if (!userId) return
-  const deletedAt = Date.now()
-  await Promise.all([
-    upsertRow('training_plans', trainingPlanToRow({ ...plan, updatedAt: deletedAt }, userId, deletedAt)),
-    ...weeks.map((week) =>
-      upsertRow('training_plan_weeks', trainingPlanWeekToRow({ ...week, updatedAt: deletedAt }, userId, deletedAt)),
-    ),
-  ])
+  if (!userId) return isEnabled() ? 'failed' : 'no_remote'
+
+  const deletedAt = nextPlanDeleteTimestamp(plan, weeks)
+  const athleteId = resolveRemotePlanAthleteId(plan, userId)
+  const scopedPlan = { ...plan, athleteId, updatedAt: deletedAt }
+  const parentOutcome = await upsertRow(
+    'training_plans',
+    trainingPlanToRow(scopedPlan, userId, deletedAt),
+  )
+
+  if (parentOutcome !== 'pushed') return parentOutcome
+
+  // Cleanup starts only after the parent commit. Every child inherits the
+  // exact same remote athlete id, including legacy local rows.
+  await Promise.all(weeks.map((week) =>
+    upsertRow(
+      'training_plan_weeks',
+      trainingPlanWeekToRow({ ...week, athleteId, updatedAt: deletedAt }, userId, deletedAt),
+    ).catch(() => 'failed' as const),
+  ))
+
+  return 'pushed'
 }
 
 async function wipeRemoteTableByUser(
@@ -3832,8 +3875,17 @@ async function mergeManagedProfileGroup(
 }
 
 async function deleteLocalTrainingPlan(planId: string): Promise<void> {
-  await db.trainingPlanWeeks.where('planId').equals(planId).delete()
-  await db.trainingPlans.delete(planId)
+  await db.transaction(
+    'rw',
+    db.trainingPlans,
+    db.trainingPlanWeeks,
+    db.planGenerationJobs,
+    async () => {
+      await db.trainingPlanWeeks.where('planId').equals(planId).delete()
+      await db.planGenerationJobs.where('planId').equals(planId).delete()
+      await db.trainingPlans.delete(planId)
+    },
+  )
 }
 
 async function mergeTrainingPlans(userId: string, context: MergeContext): Promise<void> {

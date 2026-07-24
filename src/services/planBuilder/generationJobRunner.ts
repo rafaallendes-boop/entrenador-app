@@ -119,10 +119,18 @@ function buildJobUpdate(
 }
 
 async function putJob(job: PlanGenerationJob, callbacks?: RunnerCallbacks): Promise<boolean> {
-  return runAthleteWrite(job.athleteId, async () => {
-    await db.planGenerationJobs.put(job)
+  let wrote = false
+  const leaseAcquired = await runAthleteWrite(job.athleteId, async () => {
+    wrote = await db.transaction('rw', db.trainingPlans, db.planGenerationJobs, async () => {
+      const parent = await db.trainingPlans.get(job.planId)
+      if (!parent || parent.status === 'archived' || parent.status === 'superseded') return false
+      await db.planGenerationJobs.put(job)
+      return true
+    })
+    if (!wrote) return
     callbacks?.onJobUpdate?.(job)
   })
+  return leaseAcquired && wrote
 }
 
 async function putPlanAndWeeks(
@@ -130,22 +138,52 @@ async function putPlanAndWeeks(
   weeks: TrainingPlanWeek[],
   callbacks?: RunnerCallbacks,
 ): Promise<boolean> {
-  return runAthleteWrite(plan.athleteId, async () => {
-    await db.transaction('rw', db.trainingPlans, db.trainingPlanWeeks, async () => {
+  let wrote = false
+  const leaseAcquired = await runAthleteWrite(plan.athleteId, async () => {
+    wrote = await db.transaction('rw', db.trainingPlans, db.trainingPlanWeeks, async () => {
+      // The plan may have been deleted while generation was awaiting the
+      // provider. Checking inside the same transaction prevents this checkpoint
+      // from recreating the parent and all of its weeks.
+      const persistedPlan = await db.trainingPlans.get(plan.id)
+      if (!persistedPlan) return false
+      // Closing a cycle is also terminal for an in-flight checkpoint. A runner
+      // that captured `active`/`draft` before the close must never restore that
+      // stale status over archived/superseded.
+      if (
+        (persistedPlan.status === 'archived' || persistedPlan.status === 'superseded')
+        && plan.status !== persistedPlan.status
+      ) {
+        return false
+      }
       await db.trainingPlans.put(plan)
       await db.trainingPlanWeeks.bulkPut(weeks)
+      return true
     })
+    if (!wrote) return
     // Los subscribers son UI, no parte del commit: un throw no debe revertir
     // un checkpoint que Dexie ya confirmó.
     callbacks?.onPlanUpdate?.(plan, sortWeeks(weeks))
   })
+  return leaseAcquired && wrote
 }
 
-async function putWeek(week: TrainingPlanWeek, callbacks?: RunnerCallbacks): Promise<boolean> {
-  return runAthleteWrite(week.athleteId, async () => {
-    await db.trainingPlanWeeks.put(week)
+async function putWeek(
+  week: TrainingPlanWeek,
+  callbacks?: RunnerCallbacks,
+  leaseAthleteId = week.athleteId,
+): Promise<boolean> {
+  let wrote = false
+  const leaseAcquired = await runAthleteWrite(leaseAthleteId, async () => {
+    wrote = await db.transaction('rw', db.trainingPlans, db.trainingPlanWeeks, async () => {
+      const parent = await db.trainingPlans.get(week.planId)
+      if (!parent || parent.status === 'archived' || parent.status === 'superseded') return false
+      await db.trainingPlanWeeks.put(week)
+      return true
+    })
+    if (!wrote) return
     callbacks?.onWeekUpdate?.(week)
   })
+  return leaseAcquired && wrote
 }
 
 /** Mantiene el contrato de streaming: reveal inmediato y persistencia detrás. */
@@ -156,7 +194,7 @@ function putStreamingWeek(
 ): Promise<boolean> {
   if (!canWriteForAthlete(athleteId)) return Promise.resolve(false)
   callbacks?.onWeekUpdate?.(week)
-  return runAthleteWrite(athleteId, () => db.trainingPlanWeeks.put(week))
+  return putWeek(week, undefined, athleteId)
 }
 
 async function loadPlanWeeks(planId: string): Promise<TrainingPlanWeek[]> {
@@ -274,13 +312,10 @@ async function runPlanGenerationJobInternal({ jobId, profile, callbacks }: RunGe
 
   const plan = await db.trainingPlans.get(job.planId)
   if (!plan) {
-    const failedJob = buildJobUpdate(job, [], {
-      status: 'failed',
-      completedAt: now(),
-      lastError: 'No se encontró el plan asociado al job.',
-    })
-    await putJob(failedJob, callbacks)
-    callbacks?.onError?.(failedJob.lastError ?? 'Job fallido')
+    // A job without its parent is not actionable. Do not retain or recreate an
+    // orphan that getRunnablePlanGenerationJobs would pick up forever.
+    await db.planGenerationJobs.delete(job.id)
+    callbacks?.onError?.('No se encontró el plan asociado al job.')
     return
   }
 
@@ -294,8 +329,8 @@ async function runPlanGenerationJobInternal({ jobId, profile, callbacks }: RunGe
     completedAt: undefined,
     lastError: undefined,
   })
-  await putJob(job, callbacks)
-  await putPlanAndWeeks(buildPlanCheckpoint(plan, weeks, job), weeks, callbacks)
+  if (!(await putJob(job, callbacks))) return
+  if (!(await putPlanAndWeeks(buildPlanCheckpoint(plan, weeks, job), weeks, callbacks))) return
 
   const targetWeekIndexes = job.targetWeekIndexes ?? weeks.map((week) => week.weekIndex)
   let latestPlan = plan
@@ -306,14 +341,16 @@ async function runPlanGenerationJobInternal({ jobId, profile, callbacks }: RunGe
     if (!freshJob || !ACTIVE_JOB_STATUSES.has(freshJob.status)) return
     job = freshJob
 
-    latestPlan = await db.trainingPlans.get(plan.id) ?? latestPlan
+    const persistedPlan = await db.trainingPlans.get(plan.id)
+    if (!persistedPlan) return
+    latestPlan = persistedPlan
     weeks = await loadPlanWeeks(plan.id)
     const target = weeks.find((week) => week.weekIndex === weekIndex)
     if (!target) continue
     if (!job.targetWeekIndexes && isReadyWeek(target)) continue
 
     job = buildJobUpdate(job, weeks, { currentWeekIndex: weekIndex, status: 'running' })
-    await putJob(job, callbacks)
+    if (!(await putJob(job, callbacks))) return
 
     const generatingWeek: TrainingPlanWeek = {
       ...target,
@@ -325,7 +362,7 @@ async function runPlanGenerationJobInternal({ jobId, profile, callbacks }: RunGe
     }
     weeks = replaceWeek(weeks, generatingWeek)
     if (!(await putWeek(generatingWeek, callbacks))) return
-    await putPlanAndWeeks(buildPlanCheckpoint(latestPlan, weeks, job), weeks, callbacks)
+    if (!(await putPlanAndWeeks(buildPlanCheckpoint(latestPlan, weeks, job), weeks, callbacks))) return
 
     try {
       const incrementalWrites = new Set<Promise<unknown>>()
@@ -377,8 +414,8 @@ async function runPlanGenerationJobInternal({ jobId, profile, callbacks }: RunGe
       const checkpointPlan = buildPlanCheckpoint(latestPlan, weeks, job)
       latestPlan = checkpointPlan
       job = buildJobUpdate(job, weeks, { currentWeekIndex: null })
-      await putPlanAndWeeks(checkpointPlan, weeks, callbacks)
-      await putJob(job, callbacks)
+      if (!(await putPlanAndWeeks(checkpointPlan, weeks, callbacks))) return
+      if (!(await putJob(job, callbacks))) return
     } catch (error) {
       if (!canWriteForAthlete(job.athleteId)) return
       const message = error instanceof Error ? error.message : String(error)
@@ -400,15 +437,17 @@ async function runPlanGenerationJobInternal({ jobId, profile, callbacks }: RunGe
         currentWeekIndex: null,
         lastError: message,
       })
-      await putPlanAndWeeks(buildPlanCheckpoint(latestPlan, weeks, job), weeks, callbacks)
-      await putJob(job, callbacks)
+      if (!(await putPlanAndWeeks(buildPlanCheckpoint(latestPlan, weeks, job), weeks, callbacks))) return
+      if (!(await putJob(job, callbacks))) return
     }
   }
 
   if (!canWriteForAthlete(job.athleteId)) return
   weeks = await loadPlanWeeks(plan.id)
+  const persistedPlan = await db.trainingPlans.get(plan.id)
+  if (!persistedPlan) return
   const completedAt = now()
-  const finalPlan = buildPlanCheckpoint(await db.trainingPlans.get(plan.id) ?? latestPlan, weeks, job, completedAt, profile)
+  const finalPlan = buildPlanCheckpoint(persistedPlan, weeks, job, completedAt, profile)
   const targetFailures = (job.targetWeekIndexes ?? weeks.map((week) => week.weekIndex))
     .filter((weekIndex) => {
       const week = weeks.find((candidate) => candidate.weekIndex === weekIndex)
@@ -423,8 +462,8 @@ async function runPlanGenerationJobInternal({ jobId, profile, callbacks }: RunGe
       : undefined,
   })
 
-  await putPlanAndWeeks(finalPlan, weeks, callbacks)
-  await putJob(finalJob, callbacks)
+  if (!(await putPlanAndWeeks(finalPlan, weeks, callbacks))) return
+  if (!(await putJob(finalJob, callbacks))) return
   if (finalJob.status === 'failed' && finalJob.lastError) {
     callbacks?.onError?.(finalJob.lastError)
   }

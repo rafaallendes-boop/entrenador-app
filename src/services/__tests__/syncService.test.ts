@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ATHLETE_PROFILE_LOCAL_ID } from '../athlete/activeAthlete'
+import type { TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
 
 type SupabaseResult = { data: unknown; error: unknown }
 type SupabaseResultSource = SupabaseResult | SupabaseResult[]
@@ -299,25 +300,48 @@ vi.mock('../../db/db', () => ({
     trainingPlans: {
       toArray: vi.fn(async () => trainingPlanRows),
       count: vi.fn(async () => trainingPlanRows.length),
-      get: vi.fn(async () => undefined),
-      put: vi.fn(async () => {}),
+      get: vi.fn(async (id: string) =>
+        trainingPlanRows.find((row) => (row as { id?: string }).id === id)),
+      put: vi.fn(async (row: unknown) => {
+        trainingPlanRows = putRowById(trainingPlanRows, row)
+      }),
       bulkPut: vi.fn(async (rows: unknown[]) => {
         trainingPlanRows = mergeRowsById(trainingPlanRows, rows)
       }),
-      delete: vi.fn(async () => {}),
-      bulkDelete: vi.fn(async () => {}),
+      delete: vi.fn(async (id: string) => {
+        trainingPlanRows = deleteRowsById(trainingPlanRows, [id])
+      }),
+      bulkDelete: vi.fn(async (ids: string[]) => {
+        trainingPlanRows = deleteRowsById(trainingPlanRows, ids)
+      }),
     },
     trainingPlanWeeks: {
       toArray: vi.fn(async () => trainingPlanWeekRows),
       count: vi.fn(async () => trainingPlanWeekRows.length),
-      get: vi.fn(async () => undefined),
-      put: vi.fn(async () => {}),
+      get: vi.fn(async (id: string) =>
+        trainingPlanWeekRows.find((row) => (row as { id?: string }).id === id)),
+      put: vi.fn(async (row: unknown) => {
+        trainingPlanWeekRows = putRowById(trainingPlanWeekRows, row)
+      }),
       bulkPut: vi.fn(async (rows: unknown[]) => {
         trainingPlanWeekRows = mergeRowsById(trainingPlanWeekRows, rows)
       }),
-      delete: vi.fn(async () => {}),
-      bulkDelete: vi.fn(async () => {}),
-      where: vi.fn(() => ({ equals: vi.fn(() => ({ delete: vi.fn(async () => {}), toArray: vi.fn(async () => []) })) })),
+      delete: vi.fn(async (id: string) => {
+        trainingPlanWeekRows = deleteRowsById(trainingPlanWeekRows, [id])
+      }),
+      bulkDelete: vi.fn(async (ids: string[]) => {
+        trainingPlanWeekRows = deleteRowsById(trainingPlanWeekRows, ids)
+      }),
+      where: vi.fn((index: string) => ({
+        equals: vi.fn((value: unknown) => ({
+          delete: vi.fn(async () => {
+            trainingPlanWeekRows = trainingPlanWeekRows
+              .filter((row) => !matchesIndex(row, index, value))
+          }),
+          toArray: vi.fn(async () =>
+            trainingPlanWeekRows.filter((row) => matchesIndex(row, index, value))),
+        })),
+      })),
     },
     chatMessages: {
       toArray: vi.fn(async () => chatMessageRows),
@@ -414,9 +438,27 @@ vi.mock('../../db/db', () => ({
     planGenerationJobs: {
       toArray: vi.fn(async () => planGenerationJobRows),
       count: vi.fn(async () => planGenerationJobRows.length),
-      bulkPut: vi.fn(async (rows: unknown[]) => {
-        planGenerationJobRows = rows
+      get: vi.fn(async (id: string) =>
+        planGenerationJobRows.find((row) => (row as { id?: string }).id === id)),
+      put: vi.fn(async (row: unknown) => {
+        planGenerationJobRows = putRowById(planGenerationJobRows, row)
       }),
+      bulkPut: vi.fn(async (rows: unknown[]) => {
+        planGenerationJobRows = mergeRowsById(planGenerationJobRows, rows)
+      }),
+      delete: vi.fn(async (id: string) => {
+        planGenerationJobRows = deleteRowsById(planGenerationJobRows, [id])
+      }),
+      where: vi.fn((index: string) => ({
+        equals: vi.fn((value: unknown) => ({
+          delete: vi.fn(async () => {
+            planGenerationJobRows = planGenerationJobRows
+              .filter((row) => !matchesIndex(row, index, value))
+          }),
+          toArray: vi.fn(async () =>
+            planGenerationJobRows.filter((row) => matchesIndex(row, index, value))),
+        })),
+      })),
     },
     sessionTemplates: {
       toArray: vi.fn(async () => sessionTemplateRows),
@@ -2691,6 +2733,236 @@ describe('syncService', () => {
 
     expect(resolved).toBe(true)
     expect(upsertCalls.some((call) => call.table === 'training_plans')).toBe(true)
+  })
+
+  describe('softDeleteTrainingPlan: parent tombstone commit', () => {
+    const planFixture = (overrides: Partial<TrainingPlan> = {}): TrainingPlan => ({
+      id: 'plan-delete',
+      athleteId: 'ath_user-1',
+      goalEventId: 'event-1',
+      status: 'archived',
+      generationState: 'complete',
+      title: 'Plan Nacional',
+      startDate: '2026-06-01',
+      endDate: '2026-08-15',
+      totalWeeks: 2,
+      phases: [],
+      wizardConfig: {} as TrainingPlan['wizardConfig'],
+      macroSnapshot: {} as TrainingPlan['macroSnapshot'],
+      createdAt: 1,
+      updatedAt: 2,
+      ...overrides,
+    })
+
+    const weekFixture = (
+      weekIndex: number,
+      overrides: Partial<TrainingPlanWeek> = {},
+    ): TrainingPlanWeek => ({
+      id: `plan-delete-week-${weekIndex}`,
+      athleteId: 'ath_user-1',
+      planId: 'plan-delete',
+      weekIndex,
+      weekStartDate: weekIndex === 0 ? '2026-06-01' : '2026-06-08',
+      phase: 'base',
+      status: 'accepted',
+      sessions: [],
+      weekObjectives: [],
+      targetLoadBySport: {},
+      validationIssues: [],
+      generationMeta: { attempts: 1 },
+      createdAt: 1,
+      updatedAt: 2,
+      ...overrides,
+    })
+
+    it('pushed confirma el padre y luego limpia todas las semanas', async () => {
+      vi.stubEnv('VITE_SUPABASE_URL', 'https://example.test')
+      const { softDeleteTrainingPlan } = await import('../syncService')
+
+      await expect(softDeleteTrainingPlan(
+        planFixture(),
+        [weekFixture(0), weekFixture(1)],
+      )).resolves.toBe('pushed')
+
+      expect(upsertCalls
+        .filter((call) => call.table.startsWith('training_'))
+        .map((call) => call.table)).toEqual([
+        'training_plans',
+        'training_plan_weeks',
+        'training_plan_weeks',
+      ])
+    })
+
+    it('si falla el tombstone padre no intenta ninguna semana', async () => {
+      vi.stubEnv('VITE_SUPABASE_URL', 'https://example.test')
+      actionResults.set('upsert:training_plans', {
+        data: null,
+        error: {
+          code: 'PGRST205',
+          message: "Could not find the table 'public.training_plans' in the schema cache",
+        },
+      })
+      const { softDeleteTrainingPlan } = await import('../syncService')
+
+      await expect(softDeleteTrainingPlan(planFixture(), [weekFixture(0)]))
+        .resolves.toBe('failed')
+      expect(upsertCalls
+        .filter((call) => call.table.startsWith('training_'))
+        .map((call) => call.table)).toEqual(['training_plans'])
+    })
+
+    it('si el padre queda queued no intenta semanas y conserva el commit pendiente', async () => {
+      vi.stubEnv('VITE_SUPABASE_URL', 'https://example.test')
+      actionResults.set('upsert:training_plans', {
+        data: null,
+        error: { message: 'network down', status: 503 },
+      })
+      const { softDeleteTrainingPlan } = await import('../syncService')
+
+      await expect(softDeleteTrainingPlan(planFixture(), [weekFixture(0)]))
+        .resolves.toBe('queued')
+      expect(upsertCalls
+        .filter((call) => call.table.startsWith('training_'))
+        .map((call) => call.table)).toEqual(['training_plans'])
+      expect(JSON.parse(localStorageState.get('entrenador_sync_queue_v1') ?? '[]'))
+        .toEqual([expect.objectContaining({ table: 'training_plans', action: 'upsert' })])
+    })
+
+    it('una limpieza child failed/queued no degrada un padre ya pushed', async () => {
+      vi.stubEnv('VITE_SUPABASE_URL', 'https://example.test')
+      actionResults.set('upsert:training_plan_weeks', {
+        data: null,
+        error: { message: 'network down', status: 503 },
+      })
+      const { softDeleteTrainingPlan } = await import('../syncService')
+
+      await expect(softDeleteTrainingPlan(planFixture(), [weekFixture(0)]))
+        .resolves.toBe('pushed')
+      expect(upsertCalls
+        .filter((call) => call.table.startsWith('training_'))
+        .map((call) => call.table)).toEqual([
+        'training_plans',
+        'training_plan_weeks',
+      ])
+      expect(JSON.parse(localStorageState.get('entrenador_sync_queue_v1') ?? '[]'))
+        .toEqual([expect.objectContaining({ table: 'training_plan_weeks', action: 'upsert' })])
+    })
+
+    it('usa un timestamp mayor que plan y semanas aunque estén en el futuro', async () => {
+      vi.stubEnv('VITE_SUPABASE_URL', 'https://example.test')
+      const futurePlan = Date.now() + 50_000
+      const futureWeek = futurePlan + 50_000
+      const { softDeleteTrainingPlan } = await import('../syncService')
+
+      await softDeleteTrainingPlan(
+        planFixture({ updatedAt: futurePlan }),
+        [weekFixture(0, { updatedAt: futureWeek })],
+      )
+
+      const payloads = upsertCalls
+        .filter((call) => call.table.startsWith('training_'))
+        .map((call) => call.payload as Record<string, unknown>)
+      expect(payloads).toHaveLength(2)
+      expect(payloads[0]).toMatchObject({
+        updated_at: futureWeek + 1,
+        deleted_at: futureWeek + 1,
+      })
+      expect(payloads[1]).toMatchObject({
+        updated_at: futureWeek + 1,
+        deleted_at: futureWeek + 1,
+      })
+    })
+
+    it('plan y weeks legacy heredan el mismo athlete_id self remoto', async () => {
+      vi.stubEnv('VITE_SUPABASE_URL', 'https://example.test')
+      const { softDeleteTrainingPlan } = await import('../syncService')
+
+      await softDeleteTrainingPlan(
+        planFixture({ athleteId: undefined as never }),
+        [weekFixture(0, { athleteId: undefined })],
+      )
+
+      expect(upsertCalls
+        .filter((call) => call.table.startsWith('training_'))
+        .map((call) => call.payload)).toEqual([
+        expect.objectContaining({ athlete_id: 'ath_user-1' }),
+        expect.objectContaining({ athlete_id: 'ath_user-1' }),
+      ])
+    })
+
+    it('no_remote permite borrado local sin intentar children; sin sesión remota falla', async () => {
+      vi.stubEnv('VITE_SUPABASE_URL', '')
+      let sync = await import('../syncService')
+      await expect(sync.softDeleteTrainingPlan(planFixture(), [weekFixture(0)]))
+        .resolves.toBe('no_remote')
+      expect(upsertCalls).toEqual([])
+
+      vi.resetModules()
+      vi.stubEnv('VITE_SUPABASE_URL', 'https://example.test')
+      ;(storeState as { user: { id: string } | null }).user = null
+      sync = await import('../syncService')
+      await expect(sync.softDeleteTrainingPlan(planFixture(), [weekFixture(0)]))
+        .resolves.toBe('failed')
+      expect(upsertCalls).toEqual([])
+    })
+
+    it('archiveTrainingPlan nunca degrada un timestamp futuro recibido', async () => {
+      vi.stubEnv('VITE_SUPABASE_URL', 'https://example.test')
+      const future = Date.now() + 100_000
+      const { archiveTrainingPlan } = await import('../syncService')
+
+      await archiveTrainingPlan(planFixture({ status: 'active', updatedAt: future }), [])
+
+      const planPushes = upsertCalls.filter((call) => call.table === 'training_plans')
+      expect(planPushes).toHaveLength(1)
+      expect(planPushes[0]?.payload).toMatchObject({
+        status: 'archived',
+        updated_at: future,
+      })
+    })
+
+    it('el merge del tombstone padre purga weeks y planGenerationJobs locales', async () => {
+      vi.stubEnv('VITE_SUPABASE_URL', 'https://example.test')
+      const localPlan = planFixture({ status: 'active', updatedAt: 10 })
+      trainingPlanRows = [localPlan]
+      trainingPlanWeekRows = [weekFixture(0, { updatedAt: 10 })]
+      planGenerationJobRows = [{
+        id: 'job-plan-delete',
+        planId: localPlan.id,
+        athleteId: localPlan.athleteId,
+        status: 'succeeded',
+        updatedAt: 10,
+      }]
+      tableResults.set('training_plans', {
+        data: [{
+          id: localPlan.id,
+          user_id: 'user-1',
+          athlete_id: localPlan.athleteId,
+          goal_event_id: localPlan.goalEventId,
+          status: 'active',
+          generation_state: 'complete',
+          title: localPlan.title,
+          start_date: localPlan.startDate,
+          end_date: localPlan.endDate,
+          total_weeks: localPlan.totalWeeks,
+          phases: [],
+          wizard_config: {},
+          macro_snapshot: {},
+          created_at: 1,
+          updated_at: 20,
+          deleted_at: 20,
+        }],
+        error: null,
+      })
+      tableResults.set('training_plan_weeks', { data: [], error: null })
+      const { runFullSync } = await import('../syncService')
+
+      await runFullSync('user-1')
+
+      expect(trainingPlanRows).toEqual([])
+      expect(trainingPlanWeekRows).toEqual([])
+      expect(planGenerationJobRows).toEqual([])
+    })
   })
 
   describe('reconcileNaturalKeyConflict', () => {

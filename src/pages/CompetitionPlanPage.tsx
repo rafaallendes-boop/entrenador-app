@@ -4,10 +4,17 @@ import PlanDashboard from './PlanDashboard'
 import { ChevronLeft, ChevronRight, Target, Sparkles, SkipForward, Trash2 } from 'lucide-react'
 import { ROUTES } from '../constants/routes'
 import ConfirmDialog from '../components/ui/ConfirmDialog'
+import { CycleHistory } from '../components/planBuilder/CycleHistory'
 import { db } from '../db/db'
 import { useCoachMemoryStore } from '../store/useCoachMemoryStore'
+import { usePlanBuilderStore } from '../store/usePlanBuilderStore'
+import { useTrainingStore } from '../store/useTrainingStore'
 import { computeMacroPlan, getPrimaryGoalEvent, getPhaseLabel } from '../services/macroPlan'
+import { filterRowsToActiveScope } from '../services/athlete/activeScopeFilter'
+import { getActiveAthleteId, getSwitchEpoch } from '../services/athlete/activeAthlete'
 import { MAX_COMPETITION_PLAN_WEEKS } from '../services/planBuilder/buildPlanShell'
+import { closePlanCycle } from '../services/planBuilder/closePlanCycle'
+import { deletePlanCycle } from '../services/planBuilder/deletePlanCycle'
 import { getPlanWizardDefaultComplementarySports } from '../services/planningConstraints'
 import { getEnabledSports } from '../utils/athlete'
 import { isStrictISODate } from '../utils/date'
@@ -35,6 +42,12 @@ import type {
 // ─── Step definitions ──────────────────────────────────────────────────────────
 
 const TOTAL_STEPS = 7
+
+type WizardMode = 'edit' | 'new_cycle' | null
+
+function isStableAthleteOperation(athleteId: string, switchEpoch: number): boolean {
+  return getActiveAthleteId() === athleteId && getSwitchEpoch() === switchEpoch
+}
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
 
@@ -66,10 +79,10 @@ const LEVEL_OPTIONS_BY_SPORT: Record<'squash' | 'running' | 'cycling' | 'other',
     { value: 'elite',        label: 'Elite / Sub-élite' },
   ],
   cycling: [
-    { value: 'recreational', label: 'Recreativo' },
-    { value: 'competitive',  label: 'Aficionado (categoría 3-4)' },
-    { value: 'masters',      label: 'Competitivo (categoría 1-2)' },
-    { value: 'elite',        label: 'Elite / Profesional' },
+    { value: 'recreational', label: 'Novicio' },
+    { value: 'competitive',  label: 'Principiante' },
+    { value: 'masters',      label: 'Avanzado' },
+    { value: 'elite',        label: 'Elite' },
   ],
   other: [
     { value: 'recreational', label: 'Recreativo' },
@@ -204,6 +217,22 @@ function initWizardState(
   }
 }
 
+function initWizardStateForNewCycle(
+  athleteProfile: ReturnType<typeof useCoachMemoryStore.getState>['athleteProfile'],
+  previousEvent: ReturnType<typeof getPrimaryGoalEvent>,
+  previousConfig: import('../types').PlanWizardConfig | undefined,
+): WizardState {
+  const inherited = initWizardState(athleteProfile, previousEvent, previousConfig)
+  return {
+    ...inherited,
+    eventTitle: '',
+    eventDate: '',
+    objective: undefined,
+    fitnessLevel: undefined,
+    fatigue: undefined,
+  }
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function weeksUntil(dateStr: string, now: Date = new Date()): number {
@@ -298,33 +327,41 @@ function dayChipCls(active: boolean) {
 export default function CompetitionPlanPage() {
   const navigate = useNavigate()
   const { athleteProfile, saveAthleteProfile } = useCoachMemoryStore()
+  const { allWeekSummaries, loadAllSummaries } = useTrainingStore()
   const now = useMemo(() => new Date(), [])
   const enabledSports = getEnabledSports(athleteProfile)
   const existingEvent = getPrimaryGoalEvent(athleteProfile)
   const existingConfig = athleteProfile?.planWizardConfig
 
   const [step, setStep] = useState(1)
-  const [editMode, setEditMode] = useState(false)
+  const [wizardMode, setWizardMode] = useState<WizardMode>(null)
+  const [cycleToCloseGoalEventId, setCycleToCloseGoalEventId] = useState<string | null>(null)
+  const [isUsingPreviousConfig, setIsUsingPreviousConfig] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [showDeletePlanConfirm, setShowDeletePlanConfirm] = useState(false)
   const [hasActiveGeneratedPlan, setHasActiveGeneratedPlan] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
   const [state, setState] = useState<WizardState>(() =>
     initWizardState(athleteProfile, existingEvent, existingConfig)
   )
 
   useEffect(() => {
     let cancelled = false
-    void db.trainingPlans
-      .where('status')
-      .equals('active')
-      .count()
-      .then((count) => {
-        if (!cancelled) setHasActiveGeneratedPlan(count > 0)
-      })
+    void db.trainingPlans.toArray().then((all) => {
+      const active = filterRowsToActiveScope(all)
+        .filter((plan) => plan.status === 'active')
+      if (!cancelled) {
+        setHasActiveGeneratedPlan(active.length > 0)
+      }
+    })
     return () => {
       cancelled = true
     }
   }, [])
+
+  useEffect(() => {
+    void loadAllSummaries()
+  }, [loadAllSummaries])
 
   const update = (patch: Partial<WizardState>) =>
     setState(prev => ({ ...prev, ...patch }))
@@ -375,21 +412,69 @@ export default function CompetitionPlanPage() {
   function openEditPlan() {
     setState(initWizardState(athleteProfile, existingEvent, existingConfig))
     setStep(1)
-    setEditMode(true)
+    setDeleteError(null)
+    setCycleToCloseGoalEventId(null)
+    setIsUsingPreviousConfig(false)
+    setWizardMode('edit')
+  }
+
+  function openNewCycle(goalEventId: string) {
+    usePlanBuilderStore.getState().resetBuilderState()
+    setState(initWizardStateForNewCycle(athleteProfile, existingEvent, existingConfig))
+    setStep(1)
+    setDeleteError(null)
+    setCycleToCloseGoalEventId(goalEventId)
+    setIsUsingPreviousConfig(Boolean(existingEvent || existingConfig))
+    setWizardMode('new_cycle')
+  }
+
+  function startNewCycleFromScratch() {
+    setState(initWizardState(athleteProfile, undefined, undefined))
+    setIsUsingPreviousConfig(false)
   }
 
   async function handleDeletePlan() {
     if (isSaving || !hasSavedPlan) return
+    const athleteIdAtStart = getActiveAthleteId()
+    const switchEpochAtStart = getSwitchEpoch()
+    if (!athleteIdAtStart) {
+      setDeleteError('No se pudo identificar al atleta activo. Reintentá en unos segundos.')
+      return
+    }
 
     setIsSaving(true)
     try {
+      const all = await db.trainingPlans.toArray()
+      if (!isStableAthleteOperation(athleteIdAtStart, switchEpochAtStart)) return
+      const active = filterRowsToActiveScope(all)
+        .filter((plan) => plan.status === 'active')
+      const results = await Promise.all(active.map((plan) => deletePlanCycle(plan.id)))
+      if (!isStableAthleteOperation(athleteIdAtStart, switchEpochAtStart)) return
+
+      if (results.some((result) => result !== 'deleted')) {
+        setDeleteError(results.includes('failed')
+          ? 'No se pudo eliminar el plan. Revisá tu conexión y reintentá.'
+          : 'El borrado quedó pendiente de sincronización. Conservamos tu configuración; reintentá cuando vuelva la conexión.')
+        return
+      }
+
+      usePlanBuilderStore.getState().resetBuilderState()
+      setHasActiveGeneratedPlan(false)
+      if (!isStableAthleteOperation(athleteIdAtStart, switchEpochAtStart)) return
       await saveAthleteProfile({
         goalEvents: [],
         planWizardConfig: undefined,
         macroPlan: undefined,
       })
+      if (!isStableAthleteOperation(athleteIdAtStart, switchEpochAtStart)) return
       setState(initWizardState(athleteProfile, undefined, undefined))
       setStep(1)
+      setWizardMode(null)
+      setCycleToCloseGoalEventId(null)
+      setIsUsingPreviousConfig(false)
+      setDeleteError(null)
+    } catch {
+      setDeleteError('No se pudo eliminar el plan. Revisá tu conexión y reintentá.')
     } finally {
       setIsSaving(false)
       setShowDeletePlanConfirm(false)
@@ -398,10 +483,14 @@ export default function CompetitionPlanPage() {
 
   async function handleGenerate() {
     if (isSaving || !planWindow.isValidDate || !planWindow.isFuture || planWindow.exceedsMax) return
+    const athleteIdAtStart = getActiveAthleteId()
+    const switchEpochAtStart = getSwitchEpoch()
+    if (!athleteIdAtStart) return
     setIsSaving(true)
     try {
       const now = new Date().toISOString()
-      const eventId = existingEvent?.id ?? uuid()
+      const isNewCycle = wizardMode === 'new_cycle'
+      const eventId = isNewCycle ? uuid() : (existingEvent?.id ?? uuid())
 
       const newEvent = {
         id: eventId,
@@ -409,7 +498,7 @@ export default function CompetitionPlanPage() {
         date: state.eventDate,
         sport: primarySportForEvent ?? athleteProfile?.sportContext?.primarySport ?? 'squash',
         priority: 'primary' as const,
-        notes: existingEvent?.notes,
+        notes: isNewCycle ? undefined : existingEvent?.notes,
         eventType: state.eventType,
         objective: state.objective,
         competitiveLevel: state.competitiveLevel,
@@ -428,14 +517,21 @@ export default function CompetitionPlanPage() {
         currentFitnessLevel: state.fitnessLevel!,
         currentFatigue: state.fatigue!,
         injuryNotes: state.injuryNotes.trim() || undefined,
-        createdAt: existingConfig?.createdAt ?? now,
+        createdAt: isNewCycle ? now : (existingConfig?.createdAt ?? now),
         updatedAt: now,
       }
 
-      await saveAthleteProfile({
-        goalEvents: [newEvent],
-        planWizardConfig: newConfig,
-      })
+      if (isNewCycle) {
+        if (!cycleToCloseGoalEventId) {
+          throw new Error('No se pudo identificar el ciclo anterior.')
+        }
+        await closePlanCycle({ goalEventId: cycleToCloseGoalEventId })
+        if (!isStableAthleteOperation(athleteIdAtStart, switchEpochAtStart)) return
+      }
+
+      if (!isStableAthleteOperation(athleteIdAtStart, switchEpochAtStart)) return
+      await saveAthleteProfile({ goalEvents: [newEvent], planWizardConfig: newConfig })
+      if (!isStableAthleteOperation(athleteIdAtStart, switchEpochAtStart)) return
 
       navigate(ROUTES.PLAN_BUILDER_V2, {
         state: {
@@ -449,8 +545,8 @@ export default function CompetitionPlanPage() {
     }
   }
 
-  if (hasSavedPlan && !editMode) {
-    return <PlanDashboard onEdit={openEditPlan} />
+  if (hasSavedPlan && wizardMode == null) {
+    return <PlanDashboard onEdit={openEditPlan} onNewCycle={openNewCycle} />
   }
 
   return (
@@ -477,6 +573,27 @@ export default function CompetitionPlanPage() {
 
       {/* Step content */}
       <div className="flex-1">
+        {step === 1 && wizardMode === 'new_cycle' && isUsingPreviousConfig && (
+          <div
+            role="status"
+            className="mb-5 rounded-xl border border-brand/20 bg-brand/5 px-4 py-3"
+          >
+            <p className="text-sm text-ink-muted">
+              {existingEvent ? (
+                <>Usamos la configuración de <em className="text-ink">{existingEvent.title}</em>.</>
+              ) : (
+                <>Usamos la configuración guardada de tu ciclo anterior.</>
+              )}
+            </p>
+            <button
+              type="button"
+              onClick={startNewCycleFromScratch}
+              className="mt-2 text-xs font-semibold text-brand-light hover:text-brand"
+            >
+              Empezar de cero
+            </button>
+          </div>
+        )}
         {step === 1 && <Step1EventType state={state} update={update} />}
         {step === 2 && <Step2EventDate state={state} update={update} planWindow={planWindow} />}
         {step === 3 && <Step3Objective state={state} update={update} primarySport={primarySportForEvent} />}
@@ -498,6 +615,12 @@ export default function CompetitionPlanPage() {
             primarySport={primarySportForEvent}
           />
         )}
+
+        {step === 1 && (
+          <div className="mt-6">
+            <CycleHistory weekSummaries={allWeekSummaries} />
+          </div>
+        )}
       </div>
 
       {/* Footer CTA */}
@@ -505,13 +628,21 @@ export default function CompetitionPlanPage() {
         {hasSavedPlan && step === 1 && (
           <button
             type="button"
-            onClick={() => setShowDeletePlanConfirm(true)}
+            onClick={() => {
+              setDeleteError(null)
+              setShowDeletePlanConfirm(true)
+            }}
             disabled={isSaving}
             className="w-full flex items-center justify-center gap-2 rounded-2xl border border-rose-500/25 bg-rose-500/5 px-4 py-3 text-sm font-medium text-rose-300 transition-colors hover:bg-rose-500/10 disabled:opacity-50"
           >
             <Trash2 size={15} />
             {isSaving ? 'Eliminando...' : 'Eliminar plan generado'}
           </button>
+        )}
+        {deleteError && (
+          <p role="status" className="text-xs text-rose-300">
+            {deleteError}
+          </p>
         )}
         {step < TOTAL_STEPS ? (
           <>

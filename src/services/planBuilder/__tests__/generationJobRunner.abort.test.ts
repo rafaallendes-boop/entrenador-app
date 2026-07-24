@@ -200,6 +200,38 @@ describe('abortPlanGenerationForAthlete', () => {
     expect((await db.planGenerationJobs.get('job-ath_m_a'))?.lastError).toBeUndefined()
   })
 
+  it('no recrea plan, weeks ni job si el ciclo se borra durante la generación', async () => {
+    await seedRunnable()
+    const generation = deferred<TrainingPlanWeek[]>()
+    let emitWeek: ((next: TrainingPlanWeek) => void) | undefined
+    vi.mocked(generatePlanWeeks).mockImplementation((input) => {
+      emitWeek = input.onWeekUpdate
+      return generation.promise
+    })
+    const run = runPlanGenerationJob({ jobId: 'job-ath_m_a', profile })
+    await vi.waitFor(() => expect(generatePlanWeeks).toHaveBeenCalledOnce())
+
+    await db.transaction(
+      'rw',
+      db.trainingPlans,
+      db.trainingPlanWeeks,
+      db.planGenerationJobs,
+      async () => {
+        await db.trainingPlanWeeks.where('planId').equals('plan-ath_m_a').delete()
+        await db.planGenerationJobs.where('planId').equals('plan-ath_m_a').delete()
+        await db.trainingPlans.delete('plan-ath_m_a')
+      },
+    )
+
+    emitWeek?.({ ...week(), status: 'draft', updatedAt: 100 })
+    generation.resolve([{ ...week(), status: 'draft', updatedAt: 100 }])
+    await run
+
+    expect(await db.trainingPlans.get('plan-ath_m_a')).toBeUndefined()
+    expect(await db.trainingPlanWeeks.where('planId').equals('plan-ath_m_a').count()).toBe(0)
+    expect(await db.planGenerationJobs.where('planId').equals('plan-ath_m_a').count()).toBe(0)
+  })
+
   it('confirma el checkpoint antes de notificar onPlanUpdate', async () => {
     await seedRunnable()
     const run = runPlanGenerationJob({

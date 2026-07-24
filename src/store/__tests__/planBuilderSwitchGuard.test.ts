@@ -296,6 +296,35 @@ describe('plan generation callbacks - switch guard', () => {
     expect(usePlanBuilderStore.getState().lastError).toBe('fallo real')
   })
 
+  it('ignores late runner callbacks after the builder state was reset', () => {
+    const plan = makePlan()
+    const week = makeWeek()
+    usePlanBuilderStore.setState({
+      plan,
+      weeks: [week],
+      status: 'generating',
+    })
+    const callbacks = buildRunnerCallbacks(
+      usePlanBuilderStore.setState,
+      usePlanBuilderStore.getState,
+    )
+
+    usePlanBuilderStore.getState().resetBuilderState()
+    callbacks.onWeekUpdate?.({ ...week, status: 'draft' })
+    callbacks.onPlanUpdate?.({ ...plan, generationState: 'complete' }, [week])
+    callbacks.onJobUpdate?.(makeJob())
+    callbacks.onError?.('fallo tardío')
+
+    expect(usePlanBuilderStore.getState()).toMatchObject({
+      plan: null,
+      weeks: [],
+      generationJob: null,
+      status: 'idle',
+      completedWeeks: 0,
+      lastError: null,
+    })
+  })
+
   it('does not write status or lastError from a late runPlanGenerationJob rejection after an athlete switch', async () => {
     const run = deferred<void>()
     mocks.createPlanGenerationJob.mockResolvedValue(makeJob())
