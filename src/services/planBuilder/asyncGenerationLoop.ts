@@ -38,6 +38,21 @@ export interface PlanGenerationAttemptTelemetry {
   qualityGrade?: 'excellent' | 'good' | 'needs_review' | 'poor'
   qualityCriticalIssueCount?: number
   qualityWarningCount?: number
+  variantId?: string
+  effort?: string | null
+  thinkingMode?: string | null
+  promptVersion?: string
+  schemaVersion?: string
+  qualityVersion?: 1 | 2
+  repairTaxonomyVersion?: 2
+  correctiveActionCount?: number
+  structuralActionCount?: number
+  hydrationActionCount?: number
+  movedSessionCount?: number
+  filteredSportCount?: number
+  hydratedSessionsAffected?: number
+  correctedSessionsAffected?: number
+  structurallyRepairedSessionsAffected?: number
   createdAt: number
 }
 
