@@ -10,6 +10,7 @@ import type {
 import type { TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
 import type { CoachNormalizedResponse } from '../ai/types'
 import { repairGeneratedWeek, type RepairContext, type RepairMeta } from '../planBuilder/repairWeek'
+import { recordRepairAction } from '../planBuilder/repairTaxonomy'
 import type { WeekCreatorEffectiveConfig } from './WeekCreatorConfig'
 import { alignSessionsToScheduleConstraints, buildScheduleAwareConfig } from './scheduleConstraints'
 import type { WeekCreatorSkeleton, WeekCreatorSkeletonSession } from './weekCreatorSkeleton'
@@ -153,6 +154,12 @@ export function hydrateWeekCreatorResponse(
   const scheduleAdjustments = initiallyAligned.adjustedCount + finallyAligned.adjustedCount
   if (scheduleAdjustments > 0) {
     repairResult.meta.repairedSessionCount += scheduleAdjustments
+    for (const sessionKey of [
+      ...initiallyAligned.adjustedSessionKeys,
+      ...finallyAligned.adjustedSessionKeys,
+    ]) {
+      recordRepairAction(repairResult.meta.taxonomy, 'corrective', sessionKey)
+    }
     repairResult.meta.warnings.push({
       code: 'schedule_time_block_adjusted',
       message: `Se ajustaron ${scheduleAdjustments} sesión(es) a los bloques AM/PM configurados.`,

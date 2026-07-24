@@ -1623,7 +1623,7 @@ function buildRepairStats(
 
 Extender `AITechnicalResult['repairStats']` en `src/types/index.ts` con `repairTaxonomyVersion?: 2` y los seis campos opcionales de `RepairTaxonomySummary`, tanto en el nivel superior como dentro de `hydration`. La versión es necesaria para distinguir un summary completo en cero de una fila histórica sin instrumentación. La hidratación del skeleton ocurre en el primer paso; omitir el summary anidado perdería la señal central de esta fase.
 
-Los ajustes de horario que `WeekCreatorEngine.ts` y `WeekCreatorLocalHydrator.ts` suman directamente a `repairedSessionCount` siguen siendo legacy-only en este plan. No inventarles categoría dentro de `buildRepairStats`: la taxonomía describe las acciones observadas por `repairGeneratedWeek`, y ampliar su frontera requeriría instrumentar esos loops por sesión en un cambio conductualmente separado.
+Los ajustes de horario que `WeekCreatorEngine.ts` y `WeekCreatorLocalHydrator.ts` suman directamente a `repairedSessionCount` quedan fuera del inventario de 30 sitios de `repairWeek.ts`. Un follow-up aditivo los registra como acciones `corrective`, una por sesión ajustada, usando las claves que devuelve `alignSessionsToScheduleConstraints`. El total legacy no cambia; la ampliación solo evita que `repairStats` emita una taxonomía versionada incompleta.
 
 - [ ] **Step 4: Propagar el summary por todas las capas del Plan Builder**
 

@@ -27,7 +27,7 @@ import { validateWeekCreatorResponse } from './validateWeekCreatorResponse'
 import { resolveWeekCreatorConfig, type WeekCreatorEffectiveConfig, withRequestedSessionsPerWeek } from './WeekCreatorConfig'
 import { filterSessionsToWeek, isStrictISODate } from '../week/shared'
 import { repairGeneratedWeek, type RepairMeta } from '../planBuilder/repairWeek'
-import { summarizeTaxonomy } from '../planBuilder/repairTaxonomy'
+import { recordRepairAction, summarizeTaxonomy } from '../planBuilder/repairTaxonomy'
 import { WEEK_CREATOR_RESPONSE_SCHEMA } from './weekCreatorResponseSchema'
 import { enhanceStrengthSessionExercises } from '../training/strengthSessionStructure'
 import { todayISO } from '../../utils/date'
@@ -803,6 +803,9 @@ export function repairWeekCreatorResponse(
   const repairResult = repairGeneratedWeek(aligned.sessions, repairContext)
   if (aligned.adjustedCount > 0) {
     repairResult.meta.repairedSessionCount += aligned.adjustedCount
+    for (const sessionKey of aligned.adjustedSessionKeys) {
+      recordRepairAction(repairResult.meta.taxonomy, 'corrective', sessionKey)
+    }
     repairResult.meta.warnings.push({
       code: 'schedule_time_block_adjusted',
       message: `Se ajustaron ${aligned.adjustedCount} sesión(es) a los bloques AM/PM configurados.`,
@@ -818,6 +821,9 @@ export function repairWeekCreatorResponse(
   const realigned = alignSessionsToScheduleConstraints(finalizedSessions, config.scheduleConstraints, { skipOccupied: true })
   if (realigned.adjustedCount > 0) {
     repairResult.meta.repairedSessionCount += realigned.adjustedCount
+    for (const sessionKey of realigned.adjustedSessionKeys) {
+      recordRepairAction(repairResult.meta.taxonomy, 'corrective', sessionKey)
+    }
     repairResult.meta.warnings.push({
       code: 'schedule_time_block_adjusted',
       message: `Se ajustaron ${realigned.adjustedCount} sesión(es) a los bloques AM/PM configurados.`,

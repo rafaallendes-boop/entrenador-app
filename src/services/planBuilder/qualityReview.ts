@@ -679,7 +679,10 @@ export const LATEST_QUALITY_VERSION = 2 as const
 
 /**
  * v2 excludes deterministic hydration and prevents overlapping observational
- * counters from penalising the same repair twice.
+ * counters from penalising the same repair twice:
+ * - filteredSportCount is a strict subset of droppedSessionCount.
+ * - addedFallbackCount is represented by structuralActionCount.
+ * These diagnostic counters remain serialized, but do not enter this sum.
  */
 export function countRepairsV2(week: TrainingPlanWeek): number {
   const meta = week.generationMeta

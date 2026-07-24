@@ -214,6 +214,7 @@ Con eso Fase 4 es medible comparando estrategias de concurrencia. Un contador ca
 Derivada de §2.4:
 
 - **`repairedSessionCount` conserva su semántica exacta actual** y sigue siendo la suma de los 30 sitios. Los contadores de §3.2 son **puramente aditivos**.
+- Los ajustes AM/PM posteriores de Week Creator, que incrementan el legacy fuera de `repairWeek.ts`, registran además una acción `corrective` por sesión ajustada. No forman parte de `countRepairs_v2` del Plan Builder, pero mantienen reconciliable la taxonomía versionada de `repairStats`.
 - La rama de `WeekCreatorEngine.ts:826` no cambia de comportamiento.
 - `buildRepairStats` (`WeekCreatorEngine.ts:882`) mantiene su forma de salida; los campos nuevos se agregan sin quitar los existentes.
 - El doble paso de `repairGeneratedWeek` en el contrato esqueleto (`WeekCreatorEngine.ts:716`) se documenta y se respeta: los contadores nuevos heredan ese comportamiento en v2 en vez de "arreglarlo" en esta fase.

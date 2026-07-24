@@ -146,6 +146,8 @@ describe('WeekCreatorLocalHydrator', () => {
 
     expect(sessions.find((candidate) => candidate.date === '2026-07-21')?.timeBlock).toBe('PM')
     expect(sessions.some((candidate) => candidate.date === '2026-07-23')).toBe(false)
+    expect(result.repairMeta?.taxonomy.correctiveActionCount).toBeGreaterThan(0)
+    expect(result.repairMeta?.taxonomy.correctedSessions.has('2026-07-21|PM')).toBe(true)
 
     const validation = validateWeekCreatorResponse({
       response: result.response,
