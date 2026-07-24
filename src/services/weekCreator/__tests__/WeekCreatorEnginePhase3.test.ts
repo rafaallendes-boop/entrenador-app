@@ -9,6 +9,11 @@ import { WEEK_CREATOR_SKELETON_RESPONSE_SCHEMA } from '../weekCreatorSkeletonSch
 
 const TARGET_WEEK = '2026-07-20'
 
+vi.mock('../../../utils/date', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../../../utils/date')>(),
+  todayISO: () => '2026-07-19',
+}))
+
 beforeEach(() => {
   useAIDebugStore.getState().clear()
 })
@@ -59,6 +64,34 @@ describe('WeekCreatorEngine phase 3 compact contract', () => {
     ])
     expect(debugRequest?.responseSchemaCharCount).toBe(JSON.stringify(WEEK_CREATOR_SKELETON_RESPONSE_SCHEMA).length)
     expect(debugRequest?.weekCreatorContract).toBe('skeleton_v1')
+    expect(debugRequest?.repairStats).toMatchObject({
+      repairedSessionCount: 0,
+      movedSessionCount: 0,
+      addedFallbackCount: 0,
+      droppedSessionCount: 0,
+      filteredSportCount: 0,
+      repairTaxonomyVersion: 2,
+      hydrationActionCount: 0,
+      correctiveActionCount: 0,
+      structuralActionCount: 0,
+      hydratedSessionsAffected: 0,
+      correctedSessionsAffected: 0,
+      structurallyRepairedSessionsAffected: 0,
+      hydration: {
+        repairedSessionCount: 8,
+        movedSessionCount: 0,
+        addedFallbackCount: 0,
+        droppedSessionCount: 0,
+        filteredSportCount: 0,
+        repairTaxonomyVersion: 2,
+        hydrationActionCount: 5,
+        correctiveActionCount: 2,
+        structuralActionCount: 1,
+        hydratedSessionsAffected: 5,
+        correctedSessionsAffected: 2,
+        structurallyRepairedSessionsAffected: 1,
+      },
+    })
   })
 
   it('keeps the detailed contract for active medical restrictions', async () => {

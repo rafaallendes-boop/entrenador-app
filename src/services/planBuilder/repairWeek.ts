@@ -35,6 +35,12 @@ import { selectCyclingSession, type CyclingPhase, type CyclingSportProfile } fro
 import { normalizeMobilityDetails, type MobilitySportContext } from '../training/mobilitySessionLibrary'
 import type { CyclingRole } from '../training/cyclingSessionLibrary'
 import { buildAthleteParameters } from './profileAdapter'
+import {
+  createRepairTaxonomyMeta,
+  recordRepairAction,
+  type RepairActionCategory,
+  type RepairTaxonomyMeta,
+} from './repairTaxonomy'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -59,6 +65,11 @@ export interface RepairMeta {
   addedFallbackCount: number
   droppedSessionCount: number
   filteredSportCount: number
+  /**
+   * Aditivo. `repairedSessionCount` conserva su semántica exacta porque
+   * WeekCreatorEngine ramifica sobre él.
+   */
+  taxonomy: RepairTaxonomyMeta
   warnings: RepairWarning[]
 }
 
@@ -67,21 +78,53 @@ export interface RepairResult {
   meta: RepairMeta
 }
 
+export function createRepairMeta(rawSessionCount: number): RepairMeta {
+  return {
+    rawSessionCount,
+    repairedSessionCount: 0,
+    movedSessionCount: 0,
+    addedFallbackCount: 0,
+    droppedSessionCount: 0,
+    filteredSportCount: 0,
+    taxonomy: createRepairTaxonomyMeta(),
+    warnings: [],
+  }
+}
+
+function sessionKeyOf(session: { date?: string; timeBlock?: string }): string {
+  return `${session.date ?? '?'}|${session.timeBlock ?? '?'}`
+}
+
+/** Incrementa el contador legacy Y la taxonomía. Usar donde hoy se incrementa `repairedSessionCount`. */
+function recordRepair(
+  meta: RepairMeta,
+  category: RepairActionCategory,
+  sessionKey?: string,
+): void {
+  meta.repairedSessionCount++
+  recordRepairAction(meta.taxonomy, category, sessionKey)
+}
+
+/**
+ * Incrementa SOLO la taxonomía. Para sitios que hoy no tocan
+ * `repairedSessionCount`: promoverlos a `recordRepair` cambiaría la semántica
+ * y la telemetría legacy, incluso si otro contador ya bloquea el early return.
+ */
+function recordTaxonomyOnly(
+  meta: RepairMeta,
+  category: RepairActionCategory,
+  sessionKey?: string,
+): void {
+  recordRepairAction(meta.taxonomy, category, sessionKey)
+}
+
 // ─── Main ────────────────────────────────────────────────────────────────────
 
 export function repairGeneratedWeek(
   rawSessions: CoachSessionProposal[],
   context: RepairContext,
 ): RepairResult {
-  const meta: RepairMeta = {
-    rawSessionCount: rawSessions.length,
-    repairedSessionCount: 0,
-    movedSessionCount: 0,
-    addedFallbackCount: 0,
-    droppedSessionCount: 0,
-    filteredSportCount: 0,
-    warnings: [],
-  }
+  const meta = createRepairMeta(rawSessions.length)
 
   if (rawSessions.length === 0) {
     return { sessions: [], meta }
@@ -401,45 +444,47 @@ function completeSportDetails(
         case 'squash':
           if (!hasValidSquashDetails(session)) {
             completeSquashDetails(session, context, currentWeekSquashDrills)
-            meta.repairedSessionCount++
+            recordRepair(meta, 'hydration', sessionKeyOf(session))
           } else if (hasUnresolvedSquashDrills(session)) {
             repairUnresolvedSquashDrills(session, context, currentWeekSquashDrills)
-            meta.repairedSessionCount++
+            recordRepair(meta, 'corrective', sessionKeyOf(session))
             meta.warnings.push({ code: 'squash_unknown_drills_mapped', message: `Sesión "${session.title}" conservada: se mapearon/completaron drills fuera de catálogo.`, sessionDate: session.date })
           } else if (densifySparseSquashDetails(session, context, currentWeekSquashDrills)) {
-            meta.repairedSessionCount++
+            recordRepair(meta, 'corrective', sessionKeyOf(session))
             meta.warnings.push({ code: 'squash_sparse_drills_repaired', message: `Sesión "${session.title}" densificada: tenía pocos drills para su duración.`, sessionDate: session.date })
           }
           currentWeekSquashDrills.push(...extractSquashDrillNames(session))
           break
         case 'running':
           if (completeRunningDetails(session, context)) {
-            meta.repairedSessionCount++
+            recordRepair(meta, 'hydration', sessionKeyOf(session))
           }
           break
         case 'strength':
           if (!session.exercises || session.exercises.length === 0) {
             completeStrengthExercises(session, context, currentWeekStrengthExercises)
-            meta.repairedSessionCount++
+            recordRepair(meta, 'hydration', sessionKeyOf(session))
           } else if (enhanceStrengthSessionDetails(session, context, currentWeekStrengthExercises)) {
-            meta.repairedSessionCount++
+            recordRepair(meta, 'corrective', sessionKeyOf(session))
           }
           currentWeekStrengthExercises.push(...(session.exercises ?? []).map((exercise) => exercise.name))
           break
         case 'mobility':
           if (!session.mobilityDetails) {
             completeMobilityDetails(session, context)
-            meta.repairedSessionCount++
+            recordRepair(meta, 'hydration', sessionKeyOf(session))
           } else {
             const before = JSON.stringify(session.mobilityDetails)
             session.mobilityDetails = normalizeMobilityDetails(session.mobilityDetails)
-            if (before !== JSON.stringify(session.mobilityDetails)) meta.repairedSessionCount++
+            if (before !== JSON.stringify(session.mobilityDetails)) {
+              recordRepair(meta, 'corrective', sessionKeyOf(session))
+            }
           }
           break
         case 'cycling':
           if (!session.cyclingDetails) {
             completeCyclingDetails(session, context)
-            meta.repairedSessionCount++
+            recordRepair(meta, 'hydration', sessionKeyOf(session))
           }
           break
       }
@@ -655,7 +700,7 @@ function sanitizeSquashDrillSets(
     details.blocks = buildSquashBlocksFromDrills(completedDrills)
     details.trainingFocus = inferTrainingFocusFromSquashDrills(completedDrills, details.trainingFocus)
     details.sessionKind = inferSquashKindFromProposalDetails(session)
-    meta.repairedSessionCount++
+    recordRepair(meta, 'corrective', sessionKeyOf(session))
 
     if (removedDuplicates) {
       meta.warnings.push({
@@ -748,7 +793,7 @@ function normalizeSquashSemanticMetadata(
         contextlessSquashMatchMode(session),
         (context?.week.weekIndex ?? sessionIdx) + Math.max(0, squashSessions.indexOf(session)),
       )
-      meta.repairedSessionCount++
+      recordRepair(meta, 'structural', sessionKeyOf(session))
       meta.warnings.push({
         code: 'squash_match_mode_repaired',
         message: `Se alineó "${session.title}" como sesión real de partido por su título/objetivo.`,
@@ -758,7 +803,7 @@ function normalizeSquashSemanticMetadata(
 
     if (inferredKind && details.sessionKind !== inferredKind) {
       details.sessionKind = inferredKind
-      meta.repairedSessionCount++
+      recordRepair(meta, 'corrective', sessionKeyOf(session))
       meta.warnings.push({
         code: 'squash_kind_aligned',
         message: `Se alineó el tipo de sesión squash con sus bloques reales (${inferredKind}).`,
@@ -768,7 +813,7 @@ function normalizeSquashSemanticMetadata(
 
     if (details.sessionMode === 'practice_match' && !dedicatedMatchContent) {
       details.sessionMode = 'drill_session'
-      meta.repairedSessionCount++
+      recordRepair(meta, 'corrective', sessionKeyOf(session))
       meta.warnings.push({
         code: 'squash_mode_aligned',
         message: 'Se cambió match-play por sesión de drills porque los bloques eran técnicos/control/sombras.',
@@ -779,7 +824,7 @@ function normalizeSquashSemanticMetadata(
     const alignedSubtype = resolveSquashSubtypeFromKind(inferredKind, session.subtype)
     if (alignedSubtype && session.subtype !== alignedSubtype && shouldAlignSquashSubtype(session.subtype)) {
       session.subtype = alignedSubtype
-      meta.repairedSessionCount++
+      recordRepair(meta, 'corrective', sessionKeyOf(session))
       meta.warnings.push({
         code: 'squash_subtype_aligned',
         message: `Se alineó el subtipo squash con el contenido real (${alignedSubtype}).`,
@@ -790,7 +835,7 @@ function normalizeSquashSemanticMetadata(
     const alignedTitle = buildSquashTitleFromKind(inferredKind, blockKinds)
     if (alignedTitle && shouldAlignSquashTitle(session.title, inferredKind, blockKinds)) {
       session.title = alignedTitle
-      meta.repairedSessionCount++
+      recordRepair(meta, 'corrective', sessionKeyOf(session))
       meta.warnings.push({
         code: 'squash_title_aligned',
         message: `Se alineó el título squash con sus bloques reales (${alignedTitle}).`,
@@ -824,7 +869,7 @@ function ensureSquashCompetitionMatchExposure(
       const added = buildSquashCompetitionMatchSession(available.date, available.timeBlock, context)
       next.push(added)
       meta.addedFallbackCount++
-      meta.repairedSessionCount++
+      recordRepair(meta, 'structural', sessionKeyOf(added))
       meta.warnings.push({
         code: 'squash_competition_match_added',
         message: `Se agregó exposición competitiva real de squash en fase ${context.week.phase}.`,
@@ -847,7 +892,7 @@ function ensureSquashCompetitionMatchExposure(
     'competition_match',
     context.week.weekIndex + Math.max(0, squashSessions.indexOf(candidate)),
   )
-  meta.repairedSessionCount++
+  recordRepair(meta, 'structural', sessionKeyOf(candidate))
   meta.warnings.push({
     code: 'squash_competition_match_added',
     message: `Se aseguró exposición competitiva real de squash en fase ${context.week.phase}.`,
@@ -918,7 +963,7 @@ function normalizeLateTaperSquashMatchPlay(
 
     const previousTitle = session.title
     applyPreEventSquashActivationDetails(session, context)
-    meta.repairedSessionCount++
+    recordRepair(meta, 'corrective', sessionKeyOf(session))
     meta.warnings.push({
       code: 'late_taper_match_controlled',
       message: `Se cambió "${previousTitle}" a activación/control: está demasiado cerca del evento para match-play.`,
@@ -1057,7 +1102,7 @@ function normalizeSquashDurationConsistency(sessions: CoachSessionProposal[], me
 
     details.drills = scaledDrills
     details.blocks = fitBlockDurationsToTarget(scaledBlocks, session.durationMin)
-    meta.repairedSessionCount++
+    recordRepair(meta, 'corrective', sessionKeyOf(session))
     meta.warnings.push({
       code: 'squash_duration_aligned',
       message: `Se ajustaron los bloques de "${session.title}" para calzar con ${session.durationMin}min.`,
@@ -1246,6 +1291,7 @@ function diversifyDuplicateSquashSessions(
     if (repaired && nextSignature && !seen.has(nextSignature)) {
       seen.add(nextSignature)
       usedDrills.push(...extractSquashDrillNames(session))
+      recordRepair(meta, 'corrective', sessionKeyOf(session))
       repairedCount++
       continue
     }
@@ -1255,7 +1301,6 @@ function diversifyDuplicateSquashSessions(
   }
 
   if (repairedCount > 0) {
-    meta.repairedSessionCount += repairedCount
     meta.warnings.push({
       code: 'squash_duplicate_drills_repaired',
       message: `Se regeneraron ${repairedCount} sesiones de squash para evitar repetir los mismos drills.`,
@@ -1364,11 +1409,11 @@ function repairDuplicateStrengthExercises(
     // sticky main lifts that the selector keeps across the block.
     completeStrengthExercises(session, context, recentForSelector)
     rotateRepeatedStrengthExercises(session, recentKeys, context.week.phase)
+    recordRepair(meta, 'corrective', sessionKeyOf(session))
     repairedCount++
   }
 
   if (repairedCount > 0) {
-    meta.repairedSessionCount += repairedCount
     meta.warnings.push({
       code: 'strength_duplicate_exercises_repaired',
       message: `Se regeneraron ${repairedCount} sesión(es) de fuerza para evitar repetir los mismos ejercicios de la semana anterior.`,
@@ -1481,6 +1526,7 @@ function enforceSquashSignatureUniqueness(
         }
       }
       if (rotated) {
+        recordRepair(meta, 'corrective', sessionKeyOf(session))
         repairedCount++
         continue
       }
@@ -1492,11 +1538,13 @@ function enforceSquashSignatureUniqueness(
     const nextSignature = buildSquashDrillSignature(session)
     if (nextSignature) seen.add(nextSignature)
     usedDrills.push(...extractSquashDrillNames(session))
-    if (rebuilt) repairedCount++
+    if (rebuilt) {
+      recordRepair(meta, 'corrective', sessionKeyOf(session))
+      repairedCount++
+    }
   }
 
   if (repairedCount > 0) {
-    meta.repairedSessionCount += repairedCount
     meta.warnings.push({
       code: 'squash_duplicate_signature_enforced',
       message: `Se diferenciaron ${repairedCount} sesiones de squash que habían quedado con los mismos drills.`,
@@ -1909,7 +1957,7 @@ function normalizeCompetitionTaperLoad(
 
     if (durationMin === session.durationMin && rpe === session.rpe && !loadCapped) return session
 
-    meta.repairedSessionCount++
+    recordRepair(meta, 'corrective', sessionKeyOf(session))
 
     if (durationMin !== session.durationMin || rpe !== session.rpe) {
       meta.warnings.push({
@@ -1940,7 +1988,7 @@ function normalizeCompetitionTaperLoad(
   if (previousLoad <= 0 || currentLoad <= weeklyCap) return cappedSessions
 
   const factor = weeklyCap / currentLoad
-  meta.repairedSessionCount++
+  recordRepair(meta, 'corrective')
   meta.warnings.push({
     code: 'taper_week_load_reduced',
     message: `Se redujo carga semanal taper para quedar bajo 85% de la semana previa.`,
@@ -2033,7 +2081,7 @@ function normalizeSquashSupportAerobicLoad(
         || session.intervalStructure == null
       if (!needsRepair) return session
 
-      meta.repairedSessionCount++
+      recordRepair(meta, 'corrective', sessionKeyOf(session))
       meta.warnings.push({
         code: 'squash_support_running_softened',
         message: isTaper
@@ -2077,7 +2125,7 @@ function normalizeSquashSupportAerobicLoad(
 
     if (session.durationMin === durationMin && session.rpe === rpe) return session
 
-    meta.repairedSessionCount++
+    recordRepair(meta, 'corrective', sessionKeyOf(session))
     meta.warnings.push({
       code: 'squash_support_cycling_softened',
       message: `Se redujo "${session.title}" para que el ciclismo sea soporte y no carga principal.`,
@@ -2121,7 +2169,7 @@ function ensureTargetRunningSupportSession(
     const running = buildSupportRunningSession(available.date, available.timeBlock, context)
     next.push(running)
     meta.addedFallbackCount++
-    meta.repairedSessionCount++
+    recordRepair(meta, 'structural', sessionKeyOf(running))
     meta.warnings.push({
       code: 'running_support_materialized',
       message: `Se agregó running real porque la semana tenía carga objetivo running=${runningLoad}.`,
@@ -2135,7 +2183,7 @@ function ensureTargetRunningSupportSession(
 
   const replaced = next[replacementIndex]!
   next[replacementIndex] = buildSupportRunningSession(replaced.date, replaced.timeBlock, context, replaced.durationMin)
-  meta.repairedSessionCount++
+  recordRepair(meta, 'structural', sessionKeyOf(next[replacementIndex]))
   meta.warnings.push({
     code: 'running_support_materialized',
     message: `Se reemplazó "${replaced.title}" por running real porque la semana tenía carga objetivo running=${runningLoad}.`,
@@ -2275,6 +2323,9 @@ function balanceSessionCount(
 
       result.push(fallback)
       meta.addedFallbackCount++
+      // Taxonomía solamente: este sitio nunca incrementó repairedSessionCount,
+      // y hacerlo ahora cambiaría la semántica y telemetría legacy.
+      recordTaxonomyOnly(meta, 'structural', sessionKeyOf(fallback))
     }
 
     if (meta.addedFallbackCount > 0) {
@@ -2398,7 +2449,7 @@ function ensurePrimarySportMinimum(
         durationMin: Math.max(30, Math.min(next[i].durationMin, replacement.durationMin)),
       }
       primaryCount++
-      meta.repairedSessionCount++
+      recordRepair(meta, 'structural', sessionKeyOf(next[i]))
     }
   }
 
@@ -2448,13 +2499,13 @@ function ensurePrimarySportDominance(
         ...replacement,
         durationMin: Math.max(30, Math.min(next[i].durationMin, replacement.durationMin)),
       }
+      recordRepair(meta, 'structural', sessionKeyOf(next[i]))
       converted++
     }
     if (primaryCount() > supportCount()) break
   }
 
   if (converted > 0) {
-    meta.repairedSessionCount += converted
     meta.warnings.push({
       code: 'primary_sport_dominance_repaired',
       message: `Se reconvirtieron ${converted} sesión(es) accesoria(s) en ${primarySport} para que domine la fase ${context.week.phase}.`,

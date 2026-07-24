@@ -46,7 +46,7 @@ it('generateWeek passes responseSchema and responseMimeType=application/json to 
   } as never))
   const provider = { name: 'gemini', call: callSpy } as unknown as AIProvider
 
-  await generateWeek({
+  const result = await generateWeek({
     provider,
     plan: makeMinimalPlan(),
     week: makeMinimalWeek(),
@@ -71,4 +71,13 @@ it('generateWeek passes responseSchema and responseMimeType=application/json to 
   expect(callArgs.userMessage).toContain('objeto JSON create_week')
   expect(callArgs.userMessage).toContain('running/cycling son soporte')
   expect(callArgs.userMessage).toContain('No uses tempo, intervalos, long run')
+  expect(result.meta).toMatchObject({
+    repairTaxonomyVersion: 2,
+    hydrationActionCount: 0,
+    correctiveActionCount: 0,
+    structuralActionCount: 0,
+    hydratedSessionsAffected: 0,
+    correctedSessionsAffected: 0,
+    structurallyRepairedSessionsAffected: 0,
+  })
 })

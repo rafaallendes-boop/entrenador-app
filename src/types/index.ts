@@ -101,6 +101,13 @@ export interface AITechnicalResult {
     addedFallbackCount: number
     droppedSessionCount: number
     filteredSportCount: number
+    repairTaxonomyVersion?: 2
+    hydrationActionCount?: number
+    correctiveActionCount?: number
+    structuralActionCount?: number
+    hydratedSessionsAffected?: number
+    correctedSessionsAffected?: number
+    structurallyRepairedSessionsAffected?: number
     codes: string[]
     /**
      * Week Creator skeleton contract only: the local hydration pass, kept apart
@@ -113,6 +120,13 @@ export interface AITechnicalResult {
       addedFallbackCount: number
       droppedSessionCount: number
       filteredSportCount: number
+      repairTaxonomyVersion?: 2
+      hydrationActionCount?: number
+      correctiveActionCount?: number
+      structuralActionCount?: number
+      hydratedSessionsAffected?: number
+      correctedSessionsAffected?: number
+      structurallyRepairedSessionsAffected?: number
     }
   }
   expectedSessionCount?: number

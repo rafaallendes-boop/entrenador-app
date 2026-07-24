@@ -139,6 +139,16 @@ describe('deterministic primary squash plan generation', () => {
     expect(result).toHaveLength(3)
     expect(result.every((generatedWeek) => generatedWeek.generationMeta.generationSource === 'deterministic')).toBe(true)
     expect(result.every((generatedWeek) => generatedWeek.generationMeta.fallbackUsed !== true)).toBe(true)
+    expect(result.every((generatedWeek) =>
+      generatedWeek.generationMeta.repairTaxonomyVersion === 2
+      && generatedWeek.generationMeta.qualityVersion == null
+      && typeof generatedWeek.generationMeta.hydrationActionCount === 'number'
+      && typeof generatedWeek.generationMeta.correctiveActionCount === 'number'
+      && typeof generatedWeek.generationMeta.structuralActionCount === 'number'
+      && typeof generatedWeek.generationMeta.hydratedSessionsAffected === 'number'
+      && typeof generatedWeek.generationMeta.correctedSessionsAffected === 'number'
+      && typeof generatedWeek.generationMeta.structurallyRepairedSessionsAffected === 'number'
+    )).toBe(true)
 
     const peak = result[0]!
     expect(peak.sessions).toHaveLength(6)

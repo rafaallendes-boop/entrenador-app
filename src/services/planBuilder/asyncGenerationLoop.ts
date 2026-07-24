@@ -7,6 +7,7 @@ import { getExpectedSessionsForPlanWeek } from './dateRange'
 import { buildWeekRetryInstruction } from '../week/shared'
 import { reviewPlanQuality } from './qualityReview'
 import { buildLocalFallbackWeek } from './fallbackWeek'
+import { summarizeTaxonomy } from './repairTaxonomy'
 
 export interface PlanGenerationAttemptTelemetry {
   athleteId: string
@@ -104,6 +105,13 @@ type QualityReviewMeta = Pick<GenerateWeekCoreResult['meta'],
   | 'addedFallbackCount'
   | 'filteredSportCount'
   | 'droppedSessionCount'
+  | 'repairTaxonomyVersion'
+  | 'hydrationActionCount'
+  | 'correctiveActionCount'
+  | 'structuralActionCount'
+  | 'hydratedSessionsAffected'
+  | 'correctedSessionsAffected'
+  | 'structurallyRepairedSessionsAffected'
 >
 
 export function buildAttemptQualityReviewCacheKey(meta: QualityReviewMeta): string {
@@ -114,6 +122,13 @@ export function buildAttemptQualityReviewCacheKey(meta: QualityReviewMeta): stri
     addedFallbackCount: meta.addedFallbackCount,
     filteredSportCount: meta.filteredSportCount,
     droppedSessionCount: meta.droppedSessionCount,
+    repairTaxonomyVersion: meta.repairTaxonomyVersion,
+    hydrationActionCount: meta.hydrationActionCount,
+    correctiveActionCount: meta.correctiveActionCount,
+    structuralActionCount: meta.structuralActionCount,
+    hydratedSessionsAffected: meta.hydratedSessionsAffected,
+    correctedSessionsAffected: meta.correctedSessionsAffected,
+    structurallyRepairedSessionsAffected: meta.structurallyRepairedSessionsAffected,
   })
 }
 
@@ -267,6 +282,13 @@ function makeResolvedWeek(
       movedSessionCount: result.meta.movedSessionCount,
       addedFallbackCount: result.meta.addedFallbackCount,
       filteredSportCount: result.meta.filteredSportCount,
+      repairTaxonomyVersion: result.meta.repairTaxonomyVersion,
+      hydrationActionCount: result.meta.hydrationActionCount,
+      correctiveActionCount: result.meta.correctiveActionCount,
+      structuralActionCount: result.meta.structuralActionCount,
+      hydratedSessionsAffected: result.meta.hydratedSessionsAffected,
+      correctedSessionsAffected: result.meta.correctedSessionsAffected,
+      structurallyRepairedSessionsAffected: result.meta.structurallyRepairedSessionsAffected,
       repairWarnings: result.meta.repairWarnings,
       errorClass: result.meta.errorClass,
       generationSource: 'ai',
@@ -281,6 +303,7 @@ function makeFallbackResolvedWeek(
   fallback: ReturnType<typeof buildLocalFallbackWeek>,
   timestamp: number,
 ): TrainingPlanWeek {
+  const taxonomySummary = summarizeTaxonomy(fallback.meta.taxonomy)
   return {
     ...week,
     status: fallback.sessions.length > 0 ? 'draft' : 'error',
@@ -310,6 +333,8 @@ function makeFallbackResolvedWeek(
       movedSessionCount: fallback.meta.movedSessionCount,
       addedFallbackCount: fallback.meta.addedFallbackCount,
       filteredSportCount: fallback.meta.filteredSportCount,
+      repairTaxonomyVersion: 2,
+      ...taxonomySummary,
       repairWarnings: [
         {
           code: 'local_plan_fallback',
@@ -387,6 +412,13 @@ function makeThrownAttemptResult(
   return {
     sessions: [],
     meta: {
+      hydrationActionCount: 0,
+      correctiveActionCount: 0,
+      structuralActionCount: 0,
+      hydratedSessionsAffected: 0,
+      correctedSessionsAffected: 0,
+      structurallyRepairedSessionsAffected: 0,
+      repairTaxonomyVersion: 2,
       attempts: 1,
       provider,
       requestClass: 'plan_builder_week',
@@ -687,6 +719,13 @@ export async function runAsyncPlanGeneration(input: RunAsyncPlanGenerationInput)
           addedFallbackCount: candidateResult.meta.addedFallbackCount,
           filteredSportCount: candidateResult.meta.filteredSportCount,
           droppedSessionCount: candidateResult.meta.droppedSessionCount,
+          repairTaxonomyVersion: candidateResult.meta.repairTaxonomyVersion,
+          hydrationActionCount: candidateResult.meta.hydrationActionCount,
+          correctiveActionCount: candidateResult.meta.correctiveActionCount,
+          structuralActionCount: candidateResult.meta.structuralActionCount,
+          hydratedSessionsAffected: candidateResult.meta.hydratedSessionsAffected,
+          correctedSessionsAffected: candidateResult.meta.correctedSessionsAffected,
+          structurallyRepairedSessionsAffected: candidateResult.meta.structurallyRepairedSessionsAffected,
           generationSource: 'ai',
         },
       }

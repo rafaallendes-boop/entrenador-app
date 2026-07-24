@@ -27,6 +27,7 @@ import { validateWeekCreatorResponse } from './validateWeekCreatorResponse'
 import { resolveWeekCreatorConfig, type WeekCreatorEffectiveConfig, withRequestedSessionsPerWeek } from './WeekCreatorConfig'
 import { filterSessionsToWeek, isStrictISODate } from '../week/shared'
 import { repairGeneratedWeek, type RepairMeta } from '../planBuilder/repairWeek'
+import { summarizeTaxonomy } from '../planBuilder/repairTaxonomy'
 import { WEEK_CREATOR_RESPONSE_SCHEMA } from './weekCreatorResponseSchema'
 import { enhanceStrengthSessionExercises } from '../training/strengthSessionStructure'
 import { todayISO } from '../../utils/date'
@@ -887,6 +888,8 @@ function buildRepairStats(
     addedFallbackCount: meta.addedFallbackCount,
     droppedSessionCount: meta.droppedSessionCount,
     filteredSportCount: meta.filteredSportCount,
+    repairTaxonomyVersion: 2,
+    ...summarizeTaxonomy(meta.taxonomy),
     codes: [...new Set(meta.warnings.map((warning) => warning.code))],
     ...(hydrationMeta
       ? {
@@ -896,6 +899,8 @@ function buildRepairStats(
             addedFallbackCount: hydrationMeta.addedFallbackCount,
             droppedSessionCount: hydrationMeta.droppedSessionCount,
             filteredSportCount: hydrationMeta.filteredSportCount,
+            repairTaxonomyVersion: 2,
+            ...summarizeTaxonomy(hydrationMeta.taxonomy),
           },
         }
       : {}),

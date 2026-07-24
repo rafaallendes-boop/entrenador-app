@@ -10,8 +10,19 @@ import {
 } from '../asyncGenerationLoop'
 
 describe('buildAttemptQualityReviewCacheKey', () => {
+  const taxonomy = {
+    repairTaxonomyVersion: 2 as const,
+    hydrationActionCount: 3,
+    correctiveActionCount: 1,
+    structuralActionCount: 0,
+    hydratedSessionsAffected: 1,
+    correctedSessionsAffected: 1,
+    structurallyRepairedSessionsAffected: 0,
+  }
+
   it('ignores retry bookkeeping that reviewPlanQuality does not consume', () => {
     const reviewed = buildAttemptQualityReviewCacheKey({
+      ...taxonomy,
       fallbackUsed: false,
       repairedSessionCount: 2,
       movedSessionCount: 1,
@@ -20,6 +31,7 @@ describe('buildAttemptQualityReviewCacheKey', () => {
       droppedSessionCount: 1,
     })
     const rejected = buildAttemptQualityReviewCacheKey({
+      ...taxonomy,
       fallbackUsed: false,
       repairedSessionCount: 2,
       movedSessionCount: 1,
@@ -31,6 +43,30 @@ describe('buildAttemptQualityReviewCacheKey', () => {
     expect(rejected).toBe(reviewed)
     expect(rejected).not.toContain('attempts')
     expect(rejected).not.toContain('errorClass')
+  })
+
+  it('does not reuse a quality review when the serialized taxonomy changes', () => {
+    const baseline = buildAttemptQualityReviewCacheKey({
+      ...taxonomy,
+      fallbackUsed: false,
+      repairedSessionCount: 2,
+      movedSessionCount: 1,
+      addedFallbackCount: 0,
+      filteredSportCount: 0,
+      droppedSessionCount: 1,
+    })
+    const corrected = buildAttemptQualityReviewCacheKey({
+      ...taxonomy,
+      correctiveActionCount: taxonomy.correctiveActionCount + 1,
+      fallbackUsed: false,
+      repairedSessionCount: 2,
+      movedSessionCount: 1,
+      addedFallbackCount: 0,
+      filteredSportCount: 0,
+      droppedSessionCount: 1,
+    })
+
+    expect(corrected).not.toBe(baseline)
   })
 })
 
@@ -218,7 +254,23 @@ describe('runAsyncPlanGeneration', () => {
     expect(result.plan.generationState).toBe('complete')
     expect(result.plan.generationSummary?.completedWeeks).toBe(2)
     expect(result.plan.generationSummary?.qualityReview).toBeDefined()
-    expect(writer.weeks.filter((week) => week.status === 'draft')).toHaveLength(2)
+    expect(result.plan.generationSummary?.qualityReview?.qualityVersion).toBe(1)
+    const resolvedWeeks = writer.weeks.filter((week) => week.status === 'draft')
+    expect(resolvedWeeks).toHaveLength(2)
+    expect(resolvedWeeks).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        generationMeta: expect.objectContaining({
+          repairTaxonomyVersion: 2,
+          hydrationActionCount: expect.any(Number),
+          correctiveActionCount: expect.any(Number),
+          structuralActionCount: expect.any(Number),
+          hydratedSessionsAffected: expect.any(Number),
+          correctedSessionsAffected: expect.any(Number),
+          structurallyRepairedSessionsAffected: expect.any(Number),
+        }),
+      }),
+    ]))
+    expect(resolvedWeeks.every((week) => week.generationMeta.qualityVersion == null)).toBe(true)
   })
 
   it('appends one best-effort telemetry record per provider attempt', async () => {
@@ -445,6 +497,9 @@ describe('runAsyncPlanGeneration', () => {
     expect(recoveredWeek.generationMeta.errorClass).toBe('local_plan_fallback')
     expect(recoveredWeek.generationMeta.lastError).toContain('truncada')
     expect(recoveredWeek.generationMeta.repairWarnings?.[0]?.code).toBe('local_plan_fallback')
+    expect(recoveredWeek.generationMeta.repairTaxonomyVersion).toBe(2)
+    expect(recoveredWeek.generationMeta.hydrationActionCount).toBeGreaterThan(0)
+    expect(recoveredWeek.generationMeta.qualityVersion).toBeUndefined()
     expect(result.plan.generationState).toBe('complete')
     expect(result.plan.generationSummary?.totalAttempts).toBe(2)
   })

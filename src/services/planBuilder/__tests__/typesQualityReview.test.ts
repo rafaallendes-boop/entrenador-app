@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import type { PlanGenerationSummary, PlanWeekStatus, TrainingPlanWeek } from '../../../types/planBuilder'
-import type { PlanQualityReview } from '../qualityReview'
+import {
+  resolvePersistedQualityVersion,
+  type PlanQualityReview,
+} from '../qualityReview'
 
 describe('Phase 3 plan builder type extensions', () => {
   it('PlanWeekStatus includes regenerating', () => {
@@ -10,6 +13,7 @@ describe('Phase 3 plan builder type extensions', () => {
 
   it('PlanGenerationSummary accepts qualityReview', () => {
     const review = {
+      qualityVersion: 1,
       score: 80,
       grade: 'good',
       issues: [],
@@ -29,6 +33,27 @@ describe('Phase 3 plan builder type extensions', () => {
     }
 
     expect(summary.qualityReview?.grade).toBe('good')
+  })
+
+  it('PlanGenerationSummary accepts a historical review without qualityVersion', () => {
+    const summary: PlanGenerationSummary = {
+      startedAt: 1,
+      strategy: 'single',
+      completedWeeks: 1,
+      failedWeeks: [],
+      totalAttempts: 1,
+      qualityReview: {
+        score: 80,
+        grade: 'good',
+        issues: [],
+        weeks: [],
+        repairCount: 0,
+        criticalIssueCount: 0,
+        warningCount: 0,
+      },
+    }
+
+    expect(resolvePersistedQualityVersion(summary.qualityReview!)).toBe(1)
   })
 
   it('TrainingPlanWeek accepts regenerationMeta with attempt history', () => {

@@ -1,8 +1,12 @@
 import { shouldShowPlanQuality } from '../../services/ai/showPlanQualityFlag'
-import type { PlanQualityGrade, PlanQualityReview } from '../../services/planBuilder/qualityReview'
+import {
+  resolvePersistedQualityVersion,
+  type PersistedPlanQualityReview,
+  type PlanQualityGrade,
+} from '../../services/planBuilder/qualityReview'
 
 interface PlanQualityBadgeProps {
-  review: PlanQualityReview
+  review: PersistedPlanQualityReview
 }
 
 const GRADE_LABELS: Record<PlanQualityGrade, string> = {
@@ -23,10 +27,12 @@ export function PlanQualityBadge({ review }: PlanQualityBadgeProps) {
   if (!shouldShowPlanQuality()) return null
 
   const tone = GRADE_TONE[review.grade]
+  const qualityVersion = resolvePersistedQualityVersion(review)
 
   return (
     <section
       data-testid="plan-quality-badge"
+      data-quality-version={qualityVersion}
       style={{
         borderRadius: 14,
         border: '1px dashed rgba(255,255,255,0.16)',
