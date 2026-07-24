@@ -5,6 +5,7 @@ import type { TrainingPlan, TrainingPlanWeek } from '../../../src/types/planBuil
 import type { AsyncPlanGenerationWriter } from '../../../src/services/planBuilder/asyncGenerationLoop'
 import { rowToTrainingPlan, trainingPlanToRow, trainingPlanWeekToRow } from '../../../src/services/planBuilder/planRows'
 import { insertPlanGenerationAttempt } from './planGenerationTelemetry'
+import { upsertPlanGenerationJob } from './planGenerationJobTelemetry'
 import { withTimeout } from './promiseTimeout'
 import { CORS_HEADERS } from './cors'
 
@@ -168,6 +169,13 @@ export function createSupabaseWriter(userId: string, token: string): AsyncPlanGe
               insertPlanGenerationAttempt(telemetrySupabase, attempt, userId),
               TELEMETRY_OP_TIMEOUT_MS,
               'putAttempt',
+            )
+          },
+          async putJob(job) {
+            await withTimeout(
+              upsertPlanGenerationJob(telemetrySupabase, job, userId),
+              TELEMETRY_OP_TIMEOUT_MS,
+              'putJob',
             )
           },
         }

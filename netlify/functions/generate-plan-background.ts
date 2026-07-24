@@ -1,8 +1,11 @@
 import type { Handler } from '@netlify/functions'
 import type { TrainingPlan } from '../../src/types/planBuilder'
 import { shouldDedupeActiveGeneration } from '../../src/services/planBuilder/activeGeneration'
+import type { PlanGenerationJobVariant } from '../../src/services/planBuilder/asyncGenerationLoop'
 import { runAsyncPlanGeneration } from '../../src/services/planBuilder/asyncGenerationLoop'
+import { buildVariantId } from '../../src/services/planBuilder/telemetryVersions'
 import { callAnthropicForWeek } from './_shared/anthropicCaller'
+import { resolveEffectivePlanBuilderConfig } from './_shared/planBuilderRunConfig'
 import {
   createJobId,
   createSupabaseWriter,
@@ -10,13 +13,6 @@ import {
   json,
   resolveAuthContext,
 } from './_shared/planGenerationShared'
-
-function resolvePlanBuilderConcurrency(): number | undefined {
-  const raw = process.env['PLAN_BUILDER_WEEK_CONCURRENCY']
-  if (!raw) return undefined
-  const value = Number(raw)
-  return Number.isFinite(value) ? value : undefined
-}
 
 export const handler: Handler = async (event) => {
   if (event.httpMethod !== 'POST') {
@@ -44,6 +40,16 @@ export const handler: Handler = async (event) => {
     // when invoked directly (e.g. legacy path / local tooling).
     const jobId = typeof body.jobId === 'string' && body.jobId ? body.jobId : createJobId(planId)
     const existingPlan = await writer.getPlan(planId)
+    const effectiveConfig = resolveEffectivePlanBuilderConfig(process.env)
+    const variant: PlanGenerationJobVariant = {
+      ...effectiveConfig,
+      variantId: buildVariantId(effectiveConfig),
+    }
+    // Solo adoptar el startedAt previo si pertenece a ESTE job; si no, es otra
+    // corrida (o un plan ya completado) y usamos el worker start.
+    const enqueuedAt = existingPlan?.generationSummary?.jobId === jobId
+      ? existingPlan.generationSummary.startedAt
+      : startedAt
     if (shouldDedupeActiveGeneration(existingPlan, jobId, startedAt)) {
       const existingJobId = existingPlan?.generationSummary?.jobId
       console.log(`[generate-plan] dedupe active planId=${planId} jobId=${existingJobId ?? 'unknown'}`)
@@ -83,7 +89,9 @@ export const handler: Handler = async (event) => {
       jobId,
       writer,
       callLLM: callAnthropicForWeek,
-      concurrency: resolvePlanBuilderConcurrency(),
+      concurrency: effectiveConfig.concurrency,
+      enqueuedAt,
+      variant,
     })
 
     const finalState = result.plan.generationState
