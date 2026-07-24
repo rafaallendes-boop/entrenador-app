@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Edit2, Flag, ChevronRight, BarChart2, Zap } from 'lucide-react'
+import { Edit2, Flag, ChevronRight, BarChart2, Zap, CircleCheck } from 'lucide-react'
 import { useCoachMemoryStore } from '../store/useCoachMemoryStore'
 import { useTrainingStore } from '../store/useTrainingStore'
 import { db } from '../db/db'
@@ -267,32 +267,45 @@ function EventCompleted({ title, dateISO, summary }: {
 }) {
   return (
     <div style={{
-      position: 'relative',
-      overflow: 'hidden',
+      position: 'relative', overflow: 'hidden',
       borderRadius: 22,
-      border: '1px solid rgba(209,252,0,0.2)',
+      border: '1px solid rgba(209,252,0,0.22)',
       background: 'linear-gradient(150deg, rgba(16,22,8,0.99), rgba(8,10,8,1))',
       padding: '18px 20px',
       boxShadow: '0 20px 60px -30px rgba(0,0,0,0.9)',
     }}>
+      {/* Top stripe */}
       <div style={{
-        position: 'absolute',
-        inset: '0 0 auto',
+        position: 'absolute', inset: '0 0 auto',
         height: 1,
         background: 'linear-gradient(90deg, transparent, rgba(209,252,0,0.55), transparent)',
       }} />
+      {/* Ambient glow — calm register, no grid, to read as "closed" next to the countdown */}
+      <div style={{
+        position: 'absolute', top: -20, right: -20,
+        width: 120, height: 120, borderRadius: '50%',
+        background: 'rgba(209,252,0,0.09)', filter: 'blur(44px)',
+        pointerEvents: 'none',
+      }} />
+      {/* Watermark completion seal */}
+      <div style={{
+        position: 'absolute', right: 14, top: '50%', transform: 'translateY(-50%)',
+        opacity: 0.05, pointerEvents: 'none',
+      }}>
+        <svg width={110} height={110} viewBox="0 0 24 24" fill="none" stroke={T.lime} strokeWidth="1.5">
+          <circle cx="12" cy="12" r="10" />
+          <path d="M8 12.3l2.6 2.6L16.2 9.2" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </div>
+
       <div style={{ position: 'relative' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 10 }}>
-          <Flag size={13} color={T.lime} />
+          <CircleCheck size={13} color={T.lime} />
           <Micro color={T.lime}>Evento completado</Micro>
         </div>
         <div style={{
-          fontFamily: T.fontDisp,
-          fontSize: 21,
-          fontWeight: 800,
-          color: T.ink,
-          lineHeight: 1.2,
-          marginBottom: 4,
+          fontFamily: T.fontDisp, fontSize: 21, fontWeight: 800,
+          color: T.ink, lineHeight: 1.2, marginBottom: 4,
         }}>
           {title}
         </div>
@@ -303,7 +316,7 @@ function EventCompleted({ title, dateISO, summary }: {
           <ProgressBar value={1} total={1} color={T.lime} height={5} />
           <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 5 }}>
             <Micro>Inicio</Micro>
-            <Micro color={T.lime}>100% completado</Micro>
+            <Micro color={T.lime}>Ciclo cerrado</Micro>
             <Micro>Evento</Micro>
           </div>
         </div>

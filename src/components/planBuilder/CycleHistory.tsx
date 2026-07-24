@@ -63,6 +63,7 @@ export function CycleHistory({ weekSummaries, onChanged }: {
   const syncAttemptInFlight = useAuthStore((state) => state.syncDetails.syncAttemptInFlight)
   const [rows, setRows] = useState<CycleRow[] | null>(null)
   const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [hoveredId, setHoveredId] = useState<string | null>(null)
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const loadRequestId = useRef(0)
@@ -151,14 +152,18 @@ export function CycleHistory({ weekSummaries, onChanged }: {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         {rows.map(({ plan, weeks, weeksTrained, avgAdherence }) => {
           const expanded = expandedId === plan.id
+          const active = expanded || hoveredId === plan.id
           return (
             <div
               key={plan.id}
+              onMouseEnter={() => setHoveredId(plan.id)}
+              onMouseLeave={() => setHoveredId((current) => current === plan.id ? null : current)}
               style={{
-                background: T.raised,
-                border: `1px solid ${T.border}`,
+                background: active ? 'rgba(209,252,0,0.03)' : T.raised,
+                border: `1px solid ${active ? 'rgba(209,252,0,0.18)' : T.border}`,
                 borderRadius: 14,
                 overflow: 'hidden',
+                transition: 'background .15s ease, border-color .15s ease',
               }}
             >
               <div style={{ display: 'flex', alignItems: 'stretch' }}>
