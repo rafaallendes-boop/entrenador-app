@@ -28,8 +28,8 @@ Etapa: preparando piloto premium acompañado (1-3 clientes fundadores). Coach Mo
 
 ## Estado actual del producto
 Ver `PROJECT_REVIEW_AND_ROADMAP.md` para el estado completo. Actualizado: 2026-07-19.
-Suite: 259 archivos / 1794 tests. Lint OK.
-Migraciones remotas hasta `015`. Dexie local en **v18**.
+Suite: 290 archivos / 2012 tests. Lint OK.
+Migraciones versionadas hasta `016`; aplicadas en producción hasta `015` (`016` pendiente de aplicación manual). Dexie local en **v18**.
 El chunk más pesado es `pdf.worker.min` — ya optimizado, no tocar sin razón.
 
 Bloques recientes relevantes:
@@ -44,6 +44,7 @@ Bloques recientes relevantes:
 - **Coach Workspace** (2026-07-13 a 2026-07-19): `/coach` con Resumen, Alumnos, Planificación y Biblioteca; Asistente IA sigue como placeholder. Incluye roster management (archivar/restaurar/borrado duro con tombstone durable, barrera single-tab, supresión de cola y purga transaccional) y edición de sesiones multi-atleta.
 - **Biblioteca de plantillas** (`015`, Dexie **v18**, backup v4): plantillas account-scoped con soft-delete por tombstone, payload allowlisted y sync Supabase por fila con LWW/delete-wins. `015` aplicado y bundle desplegado en producción; queda smoke autenticado.
 - **Coach exercise catalog picker** (2026-07-19): `coachExerciseCatalog.ts` unifica drills de squash y ejercicios de fuerza; typeahead + explorador en `SessionForm`; `libraryRef` como metadata opcional sanitizada en sesiones, plantillas y backup/import. Sin migraciones.
+- **Plan Builder measurement foundation — Plan 2** (`016`, 2026-07-24): telemetría a nivel job/corrida. Nueva tabla `plan_generation_jobs` (una fila por corrida, agrupa `plan_generation_attempts` por `job_id`) con timings (`first_week_ready_ms`, `..._e2e_ms`, `plan_complete_ms`, `terminal_ms`), descriptor de variante fiel a la request (`resolveEffectivePlanBuilderConfig` + `buildVariantId`), tokens/costo fechado (`pricing.ts`) y outcome (`cancelled→budget_exhausted→succeeded→partial→failed`). `runAsyncPlanGeneration` emite vía `finalizeJob` idempotente en todo camino terminal. Attempts ganan columnas de variante + taxonomía (incl. 3 contadores de sesiones afectadas). **`016` NO aplicada — rollout manual del owner: aplicar `016` ANTES de desplegar el código (el mapper de attempts escribe columnas nuevas; sin la migración PostgREST rechaza la fila completa).** Sin cambio de comportamiento de generación; v2 sigue opt-in.
 
 ## Prioridades abiertas (en orden)
 1. Smokear Biblioteca + Planificación autenticadas en producción (`015` y deploy ya aplicados) e incluir el catálogo/picker tras este push.
