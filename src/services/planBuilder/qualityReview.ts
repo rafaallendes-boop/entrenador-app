@@ -2,6 +2,7 @@ import type { AthleteProfile, CoachSessionProposal, SupportedSport } from '../..
 import type { PlanValidationIssue, TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
 import { mapExerciseTo1RMReference, type ReferenceLift } from '../training/strengthLoadPrescription'
 import { getExpectedSessionsForPlanWeek, getPlanWeekDateRange } from './dateRange'
+import { summarizeTaxonomy, type RepairTaxonomyMeta } from './repairTaxonomy'
 import { validatePlan, validatePlanWeek } from './validator'
 
 export type PlanQualityGrade = 'excellent' | 'good' | 'needs_review' | 'poor'
@@ -16,6 +17,7 @@ export interface PlanQualityWeekReview {
 }
 
 export interface PlanQualityReview {
+  qualityVersion: 1 | 2
   score: number
   grade: PlanQualityGrade
   issues: PlanValidationIssue[]
@@ -25,10 +27,21 @@ export interface PlanQualityReview {
   warningCount: number
 }
 
+export type PersistedPlanQualityReview =
+  Omit<PlanQualityReview, 'qualityVersion'>
+  & { qualityVersion?: 1 | 2 }
+
+export function resolvePersistedQualityVersion(
+  review: Pick<PersistedPlanQualityReview, 'qualityVersion'>,
+): 1 | 2 {
+  return review.qualityVersion ?? 1
+}
+
 export type PlanQualityRepairInstructions = Record<number, string>
 
 export interface PlanQualityContext {
   profile?: AthleteProfile
+  qualityVersion?: 1 | 2
 }
 
 function clampScore(score: number): number {
@@ -402,11 +415,17 @@ function getPlanLevelIssues(plan: TrainingPlan, weeks: TrainingPlanWeek[]): Plan
   return issues
 }
 
-function getGenerationReliabilityIssues(week: TrainingPlanWeek): PlanValidationIssue[] {
+function getGenerationReliabilityIssues(
+  week: TrainingPlanWeek,
+  qualityVersion: 1 | 2,
+): PlanValidationIssue[] {
   const issues: PlanValidationIssue[] = []
   const dropped = week.generationMeta.droppedSessionCount ?? 0
   const fallbackAdded = week.generationMeta.addedFallbackCount ?? 0
-  const repaired = week.generationMeta.repairedSessionCount ?? 0
+  const repaired = qualityVersion === 1
+    ? (week.generationMeta.repairedSessionCount ?? 0)
+    : (week.generationMeta.correctiveActionCount ?? 0)
+      + (week.generationMeta.structuralActionCount ?? 0)
 
   if (dropped > 0) {
     issues.push(issue({
@@ -426,7 +445,9 @@ function getGenerationReliabilityIssues(week: TrainingPlanWeek): PlanValidationI
     }))
   }
 
-  if (repaired >= 8) {
+  // v2: threshold disabled until calibrated against the control distribution.
+  const repairWarningEnabled = qualityVersion === 1
+  if (repairWarningEnabled && repaired >= 8) {
     issues.push(issue({
       severity: 'warning',
       code: 'quality.generation.high_repair_count',
@@ -614,25 +635,39 @@ function normalizeExerciseName(name: string): string {
     .trim()
 }
 
-function scoreWeek(issues: PlanValidationIssue[], repairCount: number): number {
+function scoreWeek(
+  issues: PlanValidationIssue[],
+  repairCount: number,
+  qualityVersion: 1 | 2,
+): number {
   const penalty = issues.reduce((total, item) => {
     if (isGenerationReliabilitySignal(item)) return total
     if (item.severity === 'error') return total + 22
     if (item.severity === 'warning') return total + 7
     return total + 3
   }, 0)
-  const repairPenalty = Math.min(10, Math.floor(repairCount / 2))
+  // v2 remains opt-in until its repair penalty is calibrated from control data.
+  const repairPenalty = qualityVersion === 1
+    ? Math.min(10, Math.floor(repairCount / 2))
+    : 0
   return clampScore(100 - penalty - repairPenalty)
 }
 
-function scorePlan(weeks: PlanQualityWeekReview[], planIssues: PlanValidationIssue[], repairCount: number): number {
+function scorePlan(
+  weeks: PlanQualityWeekReview[],
+  planIssues: PlanValidationIssue[],
+  repairCount: number,
+  qualityVersion: 1 | 2,
+): number {
   if (weeks.length === 0) return 0
   const average = weeks.reduce((total, week) => total + week.score, 0) / weeks.length
   const planPenalty = planIssues.reduce((total, item) => {
     if (isGenerationReliabilitySignal(item)) return total
     return total + (item.severity === 'error' ? 14 : item.severity === 'warning' ? 5 : 2)
   }, 0)
-  const repairPenalty = Math.min(8, Math.floor(repairCount / 8))
+  const repairPenalty = qualityVersion === 1
+    ? Math.min(8, Math.floor(repairCount / 8))
+    : 0
   return clampScore(average - planPenalty - repairPenalty)
 }
 
@@ -640,12 +675,59 @@ function isGenerationReliabilitySignal(issue: PlanValidationIssue): boolean {
   return issue.code.startsWith('quality.generation.')
 }
 
-function countRepairs(week: TrainingPlanWeek): number {
+export const LATEST_QUALITY_VERSION = 2 as const
+
+/**
+ * v2 excludes deterministic hydration and prevents overlapping observational
+ * counters from penalising the same repair twice.
+ */
+export function countRepairsV2(week: TrainingPlanWeek): number {
+  const meta = week.generationMeta
+  return (meta.correctiveActionCount ?? 0)
+    + (meta.structuralActionCount ?? 0)
+    + (meta.movedSessionCount ?? 0)
+    + (meta.droppedSessionCount ?? 0)
+}
+
+/** Same formula as countRepairsV2, applied to live repair metadata. */
+export function countRepairsV2FromRepairMeta(meta: {
+  movedSessionCount: number
+  droppedSessionCount: number
+  taxonomy: RepairTaxonomyMeta
+}): number {
+  const summary = summarizeTaxonomy(meta.taxonomy)
+  return summary.correctiveActionCount
+    + summary.structuralActionCount
+    + meta.movedSessionCount
+    + meta.droppedSessionCount
+}
+
+function countRepairs(week: TrainingPlanWeek, qualityVersion: 1 | 2): number {
+  if (qualityVersion === 2) return countRepairsV2(week)
+
   const meta = week.generationMeta
   return (meta.repairedSessionCount ?? 0)
     + (meta.movedSessionCount ?? 0)
     + (meta.addedFallbackCount ?? 0)
     + (meta.filteredSportCount ?? 0)
+}
+
+function resolveQualityVersion(
+  weeks: TrainingPlanWeek[],
+  requested?: 1 | 2,
+): 1 | 2 {
+  const hasV2Taxonomy = weeks.length > 0
+    && weeks.every((week) => week.generationMeta.repairTaxonomyVersion === 2)
+
+  if (requested === 2 && !hasV2Taxonomy) {
+    throw new Error('quality_version 2 requires repairTaxonomyVersion 2')
+  }
+  if (requested != null) return requested
+
+  return hasV2Taxonomy
+    && weeks.every((week) => week.generationMeta.qualityVersion === 2)
+    ? 2
+    : 1
 }
 
 export function reviewPlanQuality(
@@ -654,6 +736,7 @@ export function reviewPlanQuality(
   context: PlanQualityContext = {},
 ): PlanQualityReview {
   const sortedWeeks = [...weeks].sort((a, b) => a.weekIndex - b.weekIndex)
+  const qualityVersion = resolveQualityVersion(sortedWeeks, context.qualityVersion)
   const planValidationIssues = validatePlan({ plan, weeks: sortedWeeks })
   const planLevelQualityIssues = [
     ...getPlanLevelIssues(plan, sortedWeeks),
@@ -668,11 +751,11 @@ export function reviewPlanQuality(
       ...getSportCompletenessIssues(week),
       ...getDistributionIssues(plan, week),
       ...getHardSessionClusterIssues(week),
-      ...getGenerationReliabilityIssues(week),
+      ...getGenerationReliabilityIssues(week, qualityVersion),
       ...planLevelQualityIssues.filter((item) => item.weekIndex === week.weekIndex),
     ]
-    const repairCount = countRepairs(week)
-    const score = scoreWeek(issues, repairCount)
+    const repairCount = countRepairs(week, qualityVersion)
+    const score = scoreWeek(issues, repairCount, qualityVersion)
     return {
       weekIndex: week.weekIndex,
       weekStartDate: week.weekStartDate,
@@ -695,10 +778,14 @@ export function reviewPlanQuality(
       && candidate.message === item.message,
     ) === index,
   )
-  const repairCount = sortedWeeks.reduce((total, week) => total + countRepairs(week), 0)
-  const score = scorePlan(weekReviews, planLevelQualityIssues, repairCount)
+  const repairCount = sortedWeeks.reduce(
+    (total, week) => total + countRepairs(week, qualityVersion),
+    0,
+  )
+  const score = scorePlan(weekReviews, planLevelQualityIssues, repairCount, qualityVersion)
 
   return {
+    qualityVersion,
     score,
     grade: gradeFromScore(score),
     issues: uniqueIssues,

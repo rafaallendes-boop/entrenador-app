@@ -1,9 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { PlanQualityBadge } from './PlanQualityBadge'
-import type { PlanQualityReview } from '../../services/planBuilder/qualityReview'
+import type {
+  PersistedPlanQualityReview,
+  PlanQualityReview,
+} from '../../services/planBuilder/qualityReview'
 
 const review: PlanQualityReview = {
+  qualityVersion: 1,
   score: 81,
   grade: 'good',
   issues: [],
@@ -56,5 +60,21 @@ describe('PlanQualityBadge', () => {
     expect(html).toContain('Semana 2')
     expect(html).toContain('Requiere revisión del coach')
     expect(html).not.toContain('needs_review')
+  })
+
+  it('treats a persisted review without a version as historical v1', () => {
+    const legacyReview: PersistedPlanQualityReview = {
+      score: 81,
+      grade: 'good',
+      issues: [],
+      weeks: [],
+      repairCount: 0,
+      criticalIssueCount: 0,
+      warningCount: 0,
+    }
+
+    const html = renderToStaticMarkup(<PlanQualityBadge review={legacyReview} />)
+
+    expect(html).toContain('data-quality-version="1"')
   })
 })

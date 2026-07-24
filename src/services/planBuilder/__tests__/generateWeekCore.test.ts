@@ -141,6 +141,71 @@ describe('generateWeekCore', () => {
     expect(result.meta.model).toBe('claude-sonnet-4-6')
     expect(result.meta.lastError).toContain('no devolvió sesiones válidas')
     expect(result.meta.errorClass).toBe('validation')
+    expect(result.meta).toMatchObject({
+      repairTaxonomyVersion: 2,
+      hydrationActionCount: 0,
+      correctiveActionCount: 0,
+      structuralActionCount: 0,
+      hydratedSessionsAffected: 0,
+      correctedSessionsAffected: 0,
+      structurallyRepairedSessionsAffected: 0,
+    })
+  })
+
+  it('returns the complete serialized repair taxonomy after hydration', async () => {
+    const callLLM = vi.fn(async () => makeRaw(JSON.stringify({
+      type: 'create_week',
+      targetDate: '2026-06-01',
+      reason: 'Semana válida para probar hidratación',
+      weekObjectives: [{ sport: 'squash', goal: 'Base técnica' }],
+      sessions: [
+        {
+          date: '2026-06-01',
+          timeBlock: 'AM',
+          sessionType: 'squash',
+          title: 'Squash base',
+          durationMin: 60,
+          rpe: 6,
+          squashDetails: {
+            trainingFocus: 'technical',
+            sessionMode: 'drill_session',
+            sessionKind: 'technical',
+            drills: [{ name: 'Drive', durationMin: 15 }],
+          },
+        },
+        {
+          date: '2026-06-02',
+          timeBlock: 'AM',
+          sessionType: 'running',
+          title: 'Rodaje base',
+          durationMin: 45,
+          rpe: 5,
+          runningType: 'z2',
+        },
+      ],
+    })))
+
+    const result = await generateWeekCore({
+      plan: makePlan(),
+      week: makeWeek(),
+      profile: makeProfile(),
+      wizardConfig: makeWizardConfig(),
+      traceId: 'trace-taxonomy',
+      callLLM,
+    })
+
+    expect(result.meta.lastError).toBeUndefined()
+    expect(result.sessions).toHaveLength(2)
+    expect(result.meta.repairTaxonomyVersion).toBe(2)
+    expect(result.meta.hydrationActionCount).toBeGreaterThan(0)
+    expect(result.meta.repairedSessionCount).toBeGreaterThan(0)
+    expect(result.meta).toEqual(expect.objectContaining({
+      correctiveActionCount: expect.any(Number),
+      structuralActionCount: expect.any(Number),
+      hydratedSessionsAffected: expect.any(Number),
+      correctedSessionsAffected: expect.any(Number),
+      structurallyRepairedSessionsAffected: expect.any(Number),
+    }))
   })
 })
 

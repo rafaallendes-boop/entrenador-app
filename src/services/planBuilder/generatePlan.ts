@@ -23,8 +23,48 @@ import { getExpectedSessionsForPlanWeek } from './dateRange'
 import { buildDeterministicWeek, buildLocalFallbackWeek } from './fallbackWeek'
 import { PLAN_BUILDER_PAIR_RESPONSE_SCHEMA } from './planBuilderResponseSchema'
 import type { PlanBuilderRecentContext } from './recentContext'
+import {
+  summarizeTaxonomy,
+  type RepairTaxonomyMeta,
+  type RepairTaxonomySummary,
+} from './repairTaxonomy'
 
 const MAX_SINGLE_WEEK_PROVIDER_ATTEMPTS = 2
+
+interface SerializedRepairTaxonomy extends RepairTaxonomySummary {
+  repairTaxonomyVersion: 2
+}
+
+const EMPTY_REPAIR_TAXONOMY: SerializedRepairTaxonomy = {
+  repairTaxonomyVersion: 2,
+  hydrationActionCount: 0,
+  correctiveActionCount: 0,
+  structuralActionCount: 0,
+  hydratedSessionsAffected: 0,
+  correctedSessionsAffected: 0,
+  structurallyRepairedSessionsAffected: 0,
+}
+
+function serializeRepairTaxonomy(taxonomy: RepairTaxonomyMeta): SerializedRepairTaxonomy {
+  return {
+    repairTaxonomyVersion: 2,
+    ...summarizeTaxonomy(taxonomy),
+  }
+}
+
+function copySerializedRepairTaxonomy(
+  summary: SerializedRepairTaxonomy,
+): SerializedRepairTaxonomy {
+  return {
+    repairTaxonomyVersion: summary.repairTaxonomyVersion,
+    hydrationActionCount: summary.hydrationActionCount,
+    correctiveActionCount: summary.correctiveActionCount,
+    structuralActionCount: summary.structuralActionCount,
+    hydratedSessionsAffected: summary.hydratedSessionsAffected,
+    correctedSessionsAffected: summary.correctedSessionsAffected,
+    structurallyRepairedSessionsAffected: summary.structurallyRepairedSessionsAffected,
+  }
+}
 
 export interface GeneratePlanWeeksInput {
   plan: TrainingPlan
@@ -49,7 +89,7 @@ export interface GeneratePlanWeeksInput {
   repairInstructionsByWeekIndex?: Record<number, string>
 }
 
-interface BatchWeekExtraction {
+interface BatchWeekExtraction extends SerializedRepairTaxonomy {
   week: TrainingPlanWeek
   sessions: TrainingPlanWeek['sessions']
   error?: string
@@ -61,6 +101,33 @@ interface BatchWeekExtraction {
   addedFallbackCount?: number
   filteredSportCount?: number
   repairWarnings?: Array<{ code: string; message: string }>
+}
+
+interface ResolvedWeekInput extends SerializedRepairTaxonomy {
+  attempts: number
+  provider: string
+  model?: string
+  requestClass?: 'plan_builder_week' | 'plan_builder_pair'
+  traceId?: string
+  lastError?: string
+  durationMs?: number
+  chunkCount?: number
+  retryUsed?: boolean
+  fallbackUsed?: boolean
+  strategy: 'single' | 'pairs'
+  batchId?: string
+  rawSessionCount?: number
+  validSessionCount?: number
+  droppedSessionCount?: number
+  degradedFromPairs?: boolean
+  repairedSessionCount?: number
+  movedSessionCount?: number
+  addedFallbackCount?: number
+  filteredSportCount?: number
+  repairWarnings?: Array<{ code: string; message: string }>
+  stageTimings?: StageTiming[]
+  errorClass?: string
+  generationSource?: 'ai' | 'deterministic' | 'fallback'
 }
 
 interface WeekBatchChunkRouter {
@@ -124,32 +191,7 @@ function makeGeneratingWeek(
 function makeResolvedWeek(
   week: TrainingPlanWeek,
   sessions: TrainingPlanWeek['sessions'],
-  input: {
-    attempts: number
-    provider: string
-    model?: string
-    requestClass?: 'plan_builder_week' | 'plan_builder_pair'
-    traceId?: string
-    lastError?: string
-    durationMs?: number
-    chunkCount?: number
-    retryUsed?: boolean
-    fallbackUsed?: boolean
-    strategy: 'single' | 'pairs'
-    batchId?: string
-    rawSessionCount?: number
-    validSessionCount?: number
-    droppedSessionCount?: number
-    degradedFromPairs?: boolean
-    repairedSessionCount?: number
-    movedSessionCount?: number
-    addedFallbackCount?: number
-    filteredSportCount?: number
-    repairWarnings?: Array<{ code: string; message: string }>
-    stageTimings?: StageTiming[]
-    errorClass?: string
-    generationSource?: 'ai' | 'deterministic' | 'fallback'
-  },
+  input: ResolvedWeekInput,
 ): TrainingPlanWeek {
   const nowTs = Date.now()
   return {
@@ -179,6 +221,7 @@ function makeResolvedWeek(
       movedSessionCount: input.movedSessionCount,
       addedFallbackCount: input.addedFallbackCount,
       filteredSportCount: input.filteredSportCount,
+      ...copySerializedRepairTaxonomy(input),
       repairWarnings: input.repairWarnings,
       stageTimings: input.stageTimings,
       errorClass: input.errorClass,
@@ -207,6 +250,7 @@ function makeDeterministicResolvedWeek(input: {
   })
 
   return makeResolvedWeek(input.week, result.sessions, {
+    ...serializeRepairTaxonomy(result.meta.taxonomy),
     attempts: 1,
     provider: 'local',
     model: 'deterministic-plan-builder',
@@ -257,6 +301,7 @@ function makeLocalFallbackResolvedWeek(input: {
 
   if (fallback.sessions.length === 0) {
     return makeResolvedWeek(input.week, [], {
+      ...serializeRepairTaxonomy(fallback.meta.taxonomy),
       attempts: input.attempts,
       provider: input.provider,
       model: input.model,
@@ -274,6 +319,7 @@ function makeLocalFallbackResolvedWeek(input: {
   }
 
   return makeResolvedWeek(input.week, fallback.sessions, {
+    ...serializeRepairTaxonomy(fallback.meta.taxonomy),
     attempts: input.attempts,
     provider: input.provider,
     model: input.model ? `${input.model}+local-plan-fallback` : 'local-plan-fallback',
@@ -362,6 +408,13 @@ export async function generateSingleWeekWithRetry(
 
     if (result.sessions.length > 0) {
       return makeResolvedWeek(week, result.sessions, {
+        repairTaxonomyVersion: result.meta.repairTaxonomyVersion,
+        hydrationActionCount: result.meta.hydrationActionCount,
+        correctiveActionCount: result.meta.correctiveActionCount,
+        structuralActionCount: result.meta.structuralActionCount,
+        hydratedSessionsAffected: result.meta.hydratedSessionsAffected,
+        correctedSessionsAffected: result.meta.correctedSessionsAffected,
+        structurallyRepairedSessionsAffected: result.meta.structurallyRepairedSessionsAffected,
         attempts,
         provider: providerName,
         model,
@@ -497,6 +550,7 @@ async function generateWeekPair(
 
     for (const week of weeks) {
       weekResults.set(week.weekStartDate, {
+        ...EMPTY_REPAIR_TAXONOMY,
         week,
         sessions: [],
         error: 'El batch no devolvió una create_week válida para esta semana.',
@@ -512,6 +566,13 @@ async function generateWeekPair(
       const diagnostic = pickCreateWeekDiagnostic(normalized, targetWeekStart, action)
       const evaluation = validateGeneratedWeekAction(plan, targetWeek, profile, action, diagnostic, previousWeek)
       weekResults.set(targetWeekStart, {
+        repairTaxonomyVersion: evaluation.repairTaxonomyVersion,
+        hydrationActionCount: evaluation.hydrationActionCount,
+        correctiveActionCount: evaluation.correctiveActionCount,
+        structuralActionCount: evaluation.structuralActionCount,
+        hydratedSessionsAffected: evaluation.hydratedSessionsAffected,
+        correctedSessionsAffected: evaluation.correctedSessionsAffected,
+        structurallyRepairedSessionsAffected: evaluation.structurallyRepairedSessionsAffected,
         week: targetWeek,
         sessions: evaluation.error ? [] : evaluation.sessions,
         error: evaluation.error,
@@ -547,7 +608,12 @@ async function generateWeekPair(
     })
 
     return {
-      results: weeks.map((week) => weekResults.get(week.weekStartDate) ?? { week, sessions: [], error: 'Semana no encontrada en batch.' }),
+      results: weeks.map((week) => weekResults.get(week.weekStartDate) ?? {
+        ...EMPTY_REPAIR_TAXONOMY,
+        week,
+        sessions: [],
+        error: 'Semana no encontrada en batch.',
+      }),
       meta: {
         provider: provider.name,
         model: raw.model,
@@ -567,6 +633,7 @@ async function generateWeekPair(
     })
     return {
       results: weeks.map((week) => ({
+        ...EMPTY_REPAIR_TAXONOMY,
         week,
         sessions: [],
         error: `Falló el batch para la semana ${week.weekIndex + 1}: ${message}`,
@@ -652,6 +719,7 @@ export async function generatePlanWeeks(input: GeneratePlanWeeksInput): Promise<
       for (const batchWeekResult of batchResult.results) {
         if (batchWeekResult.sessions.length > 0) {
           const resolved = makeResolvedWeek(batchWeekResult.week, batchWeekResult.sessions, {
+            ...copySerializedRepairTaxonomy(batchWeekResult),
             attempts: 1,
             provider: batchResult.meta.provider,
             model: batchResult.meta.model,

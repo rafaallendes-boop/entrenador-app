@@ -7,7 +7,7 @@ import type {
   StageTiming,
   SupportedSport,
 } from './index'
-import type { PlanQualityReview } from '../services/planBuilder/qualityReview'
+import type { PersistedPlanQualityReview } from '../services/planBuilder/qualityReview'
 
 export type PlanStatus = 'draft' | 'active' | 'archived' | 'superseded'
 
@@ -60,6 +60,14 @@ export interface PlanGenerationMeta {
   movedSessionCount?: number
   addedFallbackCount?: number
   filteredSportCount?: number
+  hydrationActionCount?: number
+  correctiveActionCount?: number
+  structuralActionCount?: number
+  hydratedSessionsAffected?: number
+  correctedSessionsAffected?: number
+  structurallyRepairedSessionsAffected?: number
+  repairTaxonomyVersion?: 2
+  qualityVersion?: 1 | 2
   repairWarnings?: Array<{ code: string; message: string }>
   stageTimings?: StageTiming[]
   errorClass?: string
@@ -79,7 +87,7 @@ export interface PlanGenerationSummary {
   cancelRequested?: boolean
   acceptedAt?: number
   discardedAt?: number
-  qualityReview?: PlanQualityReview
+  qualityReview?: PersistedPlanQualityReview
 }
 
 export interface RegenerationMeta {

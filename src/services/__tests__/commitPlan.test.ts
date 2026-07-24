@@ -546,6 +546,7 @@ describe('commitPlan', () => {
         failedWeeks: [],
         totalAttempts: 1,
         qualityReview: {
+          qualityVersion: 1 as const,
           score: 42,
           grade: 'poor' as const,
           issues: [],

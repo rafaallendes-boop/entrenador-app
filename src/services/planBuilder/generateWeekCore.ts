@@ -7,7 +7,17 @@ import { pickCreateWeekDiagnostic } from '../week/shared'
 import { getExpectedSessionsForPlanWeek, getPlanWeekDateRange } from './dateRange'
 import { PLAN_BUILDER_WEEK_RESPONSE_SCHEMA } from './planBuilderResponseSchema'
 import { repairGeneratedWeek, type RepairContext } from './repairWeek'
+import { summarizeTaxonomy, type RepairTaxonomySummary } from './repairTaxonomy'
 import { validatePlanWeek } from './validator'
+
+const EMPTY_REPAIR_TAXONOMY: RepairTaxonomySummary = {
+  hydrationActionCount: 0,
+  correctiveActionCount: 0,
+  structuralActionCount: 0,
+  hydratedSessionsAffected: 0,
+  correctedSessionsAffected: 0,
+  structurallyRepairedSessionsAffected: 0,
+}
 
 export interface GenerateWeekResult {
   sessions: CoachSessionProposal[]
@@ -34,13 +44,20 @@ export interface GenerateWeekResult {
     movedSessionCount?: number
     addedFallbackCount?: number
     filteredSportCount?: number
+    repairTaxonomyVersion: 2
+    hydrationActionCount: number
+    correctiveActionCount: number
+    structuralActionCount: number
+    hydratedSessionsAffected: number
+    correctedSessionsAffected: number
+    structurallyRepairedSessionsAffected: number
     repairWarnings?: Array<{ code: string; message: string }>
     stageTimings?: StageTiming[]
     errorClass?: string
   }
 }
 
-export interface WeekActionEvaluation {
+export interface WeekActionEvaluation extends RepairTaxonomySummary {
   sessions: CoachSessionProposal[]
   error?: string
   rawSessionCount?: number
@@ -50,6 +67,7 @@ export interface WeekActionEvaluation {
   movedSessionCount?: number
   addedFallbackCount?: number
   filteredSportCount?: number
+  repairTaxonomyVersion: 2
   repairWarnings?: Array<{ code: string; message: string }>
 }
 
@@ -173,6 +191,8 @@ export function validateGeneratedWeekAction(
   if (!action || !Array.isArray(action.sessions) || action.sessions.length === 0) {
     return {
       sessions: [],
+      ...EMPTY_REPAIR_TAXONOMY,
+      repairTaxonomyVersion: 2,
       error: 'El modelo no devolvió sesiones válidas para la semana.',
       rawSessionCount,
       validSessionCount: normalizedSessionCount,
@@ -183,6 +203,8 @@ export function validateGeneratedWeekAction(
   if (action.targetDate !== week.weekStartDate) {
     return {
       sessions: [],
+      ...EMPTY_REPAIR_TAXONOMY,
+      repairTaxonomyVersion: 2,
       error: `El modelo devolvió create_week para ${action.targetDate ?? 'sin targetDate'}, no para ${week.weekStartDate}.`,
       rawSessionCount,
       validSessionCount: normalizedSessionCount,
@@ -199,6 +221,7 @@ export function validateGeneratedWeekAction(
   }
 
   const repairResult = repairGeneratedWeek(action.sessions, context)
+  const taxonomySummary = summarizeTaxonomy(repairResult.meta.taxonomy)
   normalizedSessionCount = repairResult.sessions.length
 
   const retryableIssues = getRetryableWeekIssues(plan, {
@@ -210,6 +233,8 @@ export function validateGeneratedWeekAction(
     const hasCountMismatch = retryableIssues.some((issue) => issue.code === 'week.sessions.count_mismatch')
     return {
       sessions: [],
+      ...taxonomySummary,
+      repairTaxonomyVersion: 2,
       error: hasCountMismatch
         ? formatCountMismatchError(plan, week, diagnostic, normalizedSessionCount, repairResult.meta.droppedSessionCount)
         : retryableIssues.slice(0, 2).map((issue) => issue.message).join(' '),
@@ -226,6 +251,8 @@ export function validateGeneratedWeekAction(
 
   return {
     sessions: repairResult.sessions,
+    ...taxonomySummary,
+    repairTaxonomyVersion: 2,
     rawSessionCount,
     validSessionCount: normalizedSessionCount,
     droppedSessionCount: droppedSessionCount + repairResult.meta.droppedSessionCount,
@@ -306,6 +333,13 @@ export async function generateWeekCore(input: GenerateWeekCoreInput): Promise<Ge
       movedSessionCount: evaluation.movedSessionCount,
       addedFallbackCount: evaluation.addedFallbackCount,
       filteredSportCount: evaluation.filteredSportCount,
+      repairTaxonomyVersion: evaluation.repairTaxonomyVersion,
+      hydrationActionCount: evaluation.hydrationActionCount,
+      correctiveActionCount: evaluation.correctiveActionCount,
+      structuralActionCount: evaluation.structuralActionCount,
+      hydratedSessionsAffected: evaluation.hydratedSessionsAffected,
+      correctedSessionsAffected: evaluation.correctedSessionsAffected,
+      structurallyRepairedSessionsAffected: evaluation.structurallyRepairedSessionsAffected,
       repairWarnings: evaluation.repairWarnings,
       errorClass: evaluation.error
         ? (wasTruncated ? 'truncated' : 'validation')

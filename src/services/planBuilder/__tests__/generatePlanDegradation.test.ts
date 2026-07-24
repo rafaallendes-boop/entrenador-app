@@ -111,6 +111,48 @@ describe('generatePlanWeeks pair → single degradation', () => {
     expect(updates[0]?.[0]).toBe(updates[1]?.[0])
   })
 
+  it('propagates the complete taxonomy through the pair result path', async () => {
+    const weeks = [makeWeek('2026-06-01', 0), makeWeek('2026-06-08', 1)]
+    const provider = {
+      name: 'gemini',
+      call: vi.fn(async () => ({
+        text: JSON.stringify({
+          actions: [
+            JSON.parse(createWeekActionText(weeks[0]!.weekStartDate, 'pair-a')),
+            JSON.parse(createWeekActionText(weeks[1]!.weekStartDate, 'pair-b')),
+          ],
+        }),
+        provider: 'gemini',
+        model: 'gemini-2.5-flash',
+        durationMs: 1000,
+        traceId: 'pair-taxonomy',
+      })),
+    } as unknown as AIProvider
+
+    const results = await generatePlanWeeks({
+      plan: makePlan(),
+      weeks,
+      profile: makeProfile(),
+      wizardConfig: makeWizard(),
+      provider,
+      deterministicPrimary: false,
+      strategy: 'pairs',
+    })
+
+    for (const week of results) {
+      expect(week.generationMeta).toEqual(expect.objectContaining({
+        repairTaxonomyVersion: 2,
+        hydrationActionCount: expect.any(Number),
+        correctiveActionCount: expect.any(Number),
+        structuralActionCount: expect.any(Number),
+        hydratedSessionsAffected: expect.any(Number),
+        correctedSessionsAffected: expect.any(Number),
+        structurallyRepairedSessionsAffected: expect.any(Number),
+      }))
+      expect(week.generationMeta.qualityVersion).toBeUndefined()
+    }
+  })
+
   it('when pair returns only week A, retries week B as single before fallback', async () => {
     let callIndex = 0
     const callSpy = vi.fn(async (request: { requestClass: string }) => {
@@ -263,5 +305,41 @@ describe('generatePlanWeeks pair → single degradation', () => {
     })
 
     expect(results.every((week) => week.generationMeta.fallbackUsed === true)).toBe(true)
+  })
+
+  it('keeps a complete zero taxonomy when the local fallback is empty', async () => {
+    const wizard = { ...makeWizard(), trainingDays: [] }
+    const plan = { ...makePlan(), wizardConfig: wizard }
+    const provider = {
+      name: 'gemini',
+      call: vi.fn(async () => ({
+        text: '<actions>[]</actions>',
+        provider: 'gemini',
+        model: 'gemini-2.5-flash',
+        durationMs: 1000,
+        traceId: 'empty-fallback',
+      })),
+    } as unknown as AIProvider
+
+    const [result] = await generatePlanWeeks({
+      plan,
+      weeks: [makeWeek('2026-06-01', 0)],
+      profile: makeProfile(),
+      wizardConfig: wizard,
+      provider,
+      deterministicPrimary: false,
+      strategy: 'single',
+    })
+
+    expect(result?.sessions).toHaveLength(0)
+    expect(result?.generationMeta).toMatchObject({
+      repairTaxonomyVersion: 2,
+      hydrationActionCount: 0,
+      correctiveActionCount: 0,
+      structuralActionCount: 0,
+      hydratedSessionsAffected: 0,
+      correctedSessionsAffected: 0,
+      structurallyRepairedSessionsAffected: 0,
+    })
   })
 })
