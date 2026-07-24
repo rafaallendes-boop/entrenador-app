@@ -27,6 +27,21 @@ export async function deleteExpiredPlanGenerationAttempts(
   return count ?? 0
 }
 
+export async function deleteExpiredPlanGenerationJobs(
+  client: RetentionClient,
+  now = Date.now(),
+): Promise<number> {
+  const cutoff = new Date(
+    now - PLAN_GENERATION_TELEMETRY_RETENTION_DAYS * 24 * 60 * 60 * 1000,
+  ).toISOString()
+  const { count, error } = await client
+    .from('plan_generation_jobs')
+    .delete({ count: 'exact' })
+    .lt('created_at', cutoff)
+  if (error) throw new Error(error.message ?? 'telemetry retention failed')
+  return count ?? 0
+}
+
 export async function runPlanGenerationTelemetryRetention(): Promise<{
   statusCode: number
   body: string
@@ -43,14 +58,21 @@ export async function runPlanGenerationTelemetryRetention(): Promise<{
     const client = createClient(url, serviceRoleKey, {
       auth: { persistSession: false, autoRefreshToken: false },
     })
-    const deleted = await withTimeout(
-      deleteExpiredPlanGenerationAttempts(client),
-      RETENTION_TIMEOUT_MS,
-      'plan generation telemetry retention',
-    )
+    const [deleted, deletedJobs] = await Promise.all([
+      withTimeout(
+        deleteExpiredPlanGenerationAttempts(client),
+        RETENTION_TIMEOUT_MS,
+        'plan generation attempt retention',
+      ),
+      withTimeout(
+        deleteExpiredPlanGenerationJobs(client),
+        RETENTION_TIMEOUT_MS,
+        'plan generation job retention',
+      ),
+    ])
     return {
       statusCode: 200,
-      body: JSON.stringify({ deleted, durationMs: Date.now() - startedAt }),
+      body: JSON.stringify({ deleted, deletedJobs, durationMs: Date.now() - startedAt }),
     }
   } catch {
     console.error('[plan-generation-telemetry-retention] cleanup failed')
