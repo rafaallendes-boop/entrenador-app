@@ -1655,6 +1655,19 @@ describe('WeekCreatorEngine', () => {
       timeBlock: 'PM',
     })
     expect(response.message).toContain('bloques AM/PM configurados')
+    const debugRequest = useAIDebugStore.getState().requests.find(
+      (request) => request.traceId === response.traceId,
+    )
+    expect(debugRequest?.repairStats).toMatchObject({
+      repairedSessionCount: 0,
+      correctiveActionCount: 0,
+      correctedSessionsAffected: 0,
+      hydration: {
+        repairedSessionCount: 4,
+        correctiveActionCount: 4,
+        correctedSessionsAffected: 1,
+      },
+    })
   })
 
   it('builds the deterministic fallback in the configured PM block', async () => {

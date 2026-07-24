@@ -149,8 +149,13 @@ export function alignSessionsToScheduleConstraints(
   sessions: CoachSessionProposal[],
   scheduleConstraints: string | undefined,
   options: { skipOccupied?: boolean } = {},
-): { sessions: CoachSessionProposal[]; adjustedCount: number } {
+): {
+  sessions: CoachSessionProposal[]
+  adjustedCount: number
+  adjustedSessionKeys: string[]
+} {
   let adjustedCount = 0
+  const adjustedSessionKeys: string[] = []
   const occupied = new Set(sessions.map((session) => `${session.date}|${session.timeBlock}`))
   const aligned = sessions.map((session) => {
     const day = dayOfWeekFromIsoDate(session.date)
@@ -162,7 +167,9 @@ export function alignSessionsToScheduleConstraints(
     occupied.delete(`${session.date}|${session.timeBlock}`)
     occupied.add(`${session.date}|${constraint}`)
     adjustedCount += 1
-    return { ...session, timeBlock: constraint }
+    const adjusted = { ...session, timeBlock: constraint }
+    adjustedSessionKeys.push(`${adjusted.date}|${adjusted.timeBlock}`)
+    return adjusted
   })
-  return { sessions: aligned, adjustedCount }
+  return { sessions: aligned, adjustedCount, adjustedSessionKeys }
 }

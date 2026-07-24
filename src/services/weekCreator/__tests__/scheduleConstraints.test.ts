@@ -122,6 +122,7 @@ describe('shared schedule helpers', () => {
   it('moves a session onto the block its day is pinned to', () => {
     const result = alignSessionsToScheduleConstraints(sessions, 'martes solo PM')
     expect(result.adjustedCount).toBe(1)
+    expect(result.adjustedSessionKeys).toEqual(['2026-07-21|PM'])
     expect(result.sessions[1].timeBlock).toBe('PM')
     expect(result.sessions[0].timeBlock).toBe('AM')
   })
@@ -133,6 +134,7 @@ describe('shared schedule helpers', () => {
     ]
     const result = alignSessionsToScheduleConstraints(crowded, 'martes solo PM', { skipOccupied: true })
     expect(result.adjustedCount).toBe(0)
+    expect(result.adjustedSessionKeys).toEqual([])
     expect(result.sessions[1].timeBlock).toBe('AM')
   })
 
