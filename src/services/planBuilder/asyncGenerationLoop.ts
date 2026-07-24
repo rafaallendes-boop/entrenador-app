@@ -8,6 +8,8 @@ import { buildWeekRetryInstruction } from '../week/shared'
 import { reviewPlanQuality } from './qualityReview'
 import { buildLocalFallbackWeek } from './fallbackWeek'
 import { summarizeTaxonomy } from './repairTaxonomy'
+import { estimateCostUsd } from './pricing'
+import type { PlanBuilderVariantDescriptor } from './telemetryVersions'
 
 export interface PlanGenerationAttemptTelemetry {
   athleteId: string
@@ -56,6 +58,38 @@ export interface PlanGenerationAttemptTelemetry {
   createdAt: number
 }
 
+export type PlanGenerationJobVariant = PlanBuilderVariantDescriptor & { variantId: string }
+
+export interface PlanGenerationJobTelemetry {
+  jobId: string
+  athleteId: string
+  planId: string
+  enqueuedAt: number
+  workerStartedAt: number
+  weekCountRequested: number
+  weekCountSucceeded: number
+  weekCountFailed: number
+  workerConcurrency: number
+  /** Desde worker start hasta el primer putWeek con semana lista. Null si ninguna quedó lista. */
+  firstWeekReadyMs: number | null
+  /** Desde enqueue; incluye cola de arranque del worker. */
+  firstWeekReadyE2eMs: number | null
+  /** Desde worker start hasta que la ÚLTIMA semana target quedó terminal (último putWeek). Null si quedan pendientes. */
+  planCompleteMs: number | null
+  /** Desde worker start hasta el cierre de la corrida (siempre presente). */
+  terminalMs: number
+  previousWeekContextSource: 'none' | 'shell' | 'ready'
+  totalInputTokens: number
+  totalOutputTokens: number
+  totalCacheReadTokens: number
+  totalCacheCreationTokens: number
+  /** Null si algún intento facturable no reportó usage, o el modelo no tiene precio. */
+  estimatedCostUsd: number | null
+  outcome: 'succeeded' | 'partial' | 'failed' | 'cancelled' | 'budget_exhausted'
+  variant: PlanGenerationJobVariant
+  createdAt: number
+}
+
 export interface AsyncPlanGenerationWriter {
   /** Consulta ligera opcional: solo lee cancelRequested. Si no está, usa getPlan. */
   checkCancelled?: (planId: string) => Promise<boolean>
@@ -64,6 +98,8 @@ export interface AsyncPlanGenerationWriter {
   putWeek(week: TrainingPlanWeek): Promise<void>
   /** Append-only, best-effort observability; failures never fail generation. */
   putAttempt?(attempt: PlanGenerationAttemptTelemetry): Promise<void>
+  /** Append-only, best-effort job-level observability; failures never fail generation. */
+  putJob?(job: PlanGenerationJobTelemetry): Promise<void>
 }
 
 export interface RunAsyncPlanGenerationInput {
@@ -84,6 +120,9 @@ export interface RunAsyncPlanGenerationInput {
   concurrency?: number
   /** Presupuesto total del worker; las semanas que no alcancen a generarse quedan en error explícito. */
   budgetMs?: number
+  /** Cuando el cliente/enqueue encoló (identity-checked por el caller). Default: worker start. */
+  enqueuedAt?: number
+  variant?: PlanGenerationJobVariant
 }
 
 export interface AsyncPlanGenerationResult {
@@ -626,8 +665,11 @@ export async function runAsyncPlanGeneration(input: RunAsyncPlanGenerationInput)
     updatedAt: startedAt,
   })
   let weeks = sortWeeks(input.weeks)
-  await input.writer.putPlan(plan)
 
+  // Ordering es load-bearing: todo lo que lee `finalizeJob` debe existir ANTES
+  // del primer await (el `putPlan` inicial), para que aun un fallo de ese
+  // checkpoint emita el job. Este bloque solo depende de `weeks`, `input` y
+  // `getNow`, todos disponibles aquí.
   const targetWeekIndexes = input.targetWeekIndexes?.length
     ? [...input.targetWeekIndexes].sort((a, b) => a - b)
     : weeks.map((week) => week.weekIndex)
@@ -638,317 +680,448 @@ export async function runAsyncPlanGeneration(input: RunAsyncPlanGenerationInput)
   let stopLaunching = false
   let cancelled = false
 
-  const checkCancelled = async (): Promise<boolean> => {
-    try {
-      return input.writer.checkCancelled
-        ? await input.writer.checkCancelled(plan.id)
-        : Boolean((await input.writer.getPlan(plan.id))?.generationSummary?.cancelRequested)
-    } catch {
-      // No se pudo leer el estado de cancelación — continuar generando
-      return false
-    }
-  }
+  // Acumuladores del job (medición pura; no cambian la generación).
+  let budgetExhausted = false
+  let firstReadyAt: number | null = null
+  let allTargetsTerminalAt: number | null = null
+  const terminalTargets = new Set<number>()
+  let previousWeekContextSource: PlanGenerationJobTelemetry['previousWeekContextSource'] = 'none'
+  const tokenTotals = { input: 0, output: 0, cacheRead: 0, cacheCreation: 0 }
+  let anyBillableAttempt = false
+  let costUsd: number | null = 0
 
-  const markRemainingBudgetErrors = async (fromPosition: number): Promise<void> => {
-    for (const remainingIndex of targetWeekIndexes.slice(fromPosition)) {
-      const remainingWeek = weeks.find((week) => week.weekIndex === remainingIndex)
-      if (!remainingWeek) continue
-      if (!input.targetWeekIndexes?.length && isReadyWeek(remainingWeek)) continue
-      const erroredWeek = makeErroredWeek(remainingWeek, WORKER_BUDGET_EXHAUSTED_MESSAGE, getNow(), 'timeout', 0)
-      weeks = replaceWeek(weeks, erroredWeek)
-      await input.writer.putWeek(erroredWeek)
-    }
-  }
-
-  let takeNextQueue = Promise.resolve()
-  const takeNextWeekIndex = (): Promise<number | undefined> => {
-    const run = takeNextQueue.then(async (): Promise<number | undefined> => {
-      while (!stopLaunching && targetPosition < targetWeekIndexes.length) {
-        if (deadlineAt - getNow() < MIN_WEEK_START_BUDGET_MS) {
-          await markRemainingBudgetErrors(targetPosition)
-          targetPosition = targetWeekIndexes.length
-          stopLaunching = true
-          return undefined
-        }
-
-        if (await checkCancelled()) {
-          cancelled = true
-          stopLaunching = true
-          return undefined
-        }
-
-        const weekIndex = targetWeekIndexes[targetPosition]
-        targetPosition++
-        const target = weeks.find((week) => week.weekIndex === weekIndex)
-        if (!target) continue
-        if (!input.targetWeekIndexes?.length && isReadyWeek(target)) continue
-        return weekIndex
+  const observeWeekWrite = (week: TrainingPlanWeek): void => {
+    if (firstReadyAt === null && isReadyWeek(week)) firstReadyAt = getNow()
+    if (!targetWeekIndexes.includes(week.weekIndex)) return
+    if (!terminalTargets.has(week.weekIndex) && (isReadyWeek(week) || week.status === 'error')) {
+      terminalTargets.add(week.weekIndex)
+      if (terminalTargets.size === targetWeekIndexes.length && allTargetsTerminalAt === null) {
+        allTargetsTerminalAt = getNow()
       }
-
-      return undefined
-    })
-    takeNextQueue = run.then(() => undefined, () => undefined)
-    return run
+    }
   }
 
-  const generateTargetWeek = async (weekIndex: number): Promise<void> => {
-    const target = weeks.find((week) => week.weekIndex === weekIndex)
-    if (!target) return
-    if (!input.targetWeekIndexes?.length && isReadyWeek(target)) return
+  let jobFinalized = false
+  const finalizeJob = async (threwDuringRun: boolean): Promise<void> => {
+    if (jobFinalized) return
+    jobFinalized = true
+    if (!input.writer.putJob || !input.variant) return
 
-    const generatingWeek = makeGeneratingWeek(target, getNow())
-    weeks = replaceWeek(weeks, generatingWeek)
-    await input.writer.putWeek(generatingWeek)
-    plan = buildPlanCheckpoint(plan, weeks, {
-      generationState: 'generating',
+    const terminalAt = getNow()
+    const enqueuedAt = input.enqueuedAt ?? startedAt
+    const succeeded = weeks.filter((week) => targetWeekIndexes.includes(week.weekIndex) && isReadyWeek(week)).length
+    const failed = weeks.filter((week) => targetWeekIndexes.includes(week.weekIndex) && week.status === 'error').length
+
+    const outcome: PlanGenerationJobTelemetry['outcome'] =
+      cancelled ? 'cancelled'
+        : budgetExhausted ? 'budget_exhausted'
+          : succeeded === targetWeekIndexes.length && !threwDuringRun ? 'succeeded'
+            : succeeded > 0 && !threwDuringRun ? 'partial'
+              : 'failed'
+
+    const job: PlanGenerationJobTelemetry = {
       jobId: input.jobId,
-      startedAt,
-      updatedAt: generatingWeek.updatedAt,
-    })
+      athleteId: plan.athleteId,
+      planId: plan.id,
+      enqueuedAt,
+      workerStartedAt: startedAt,
+      weekCountRequested: targetWeekIndexes.length,
+      weekCountSucceeded: succeeded,
+      weekCountFailed: failed,
+      workerConcurrency: concurrency,
+      firstWeekReadyMs: firstReadyAt === null ? null : firstReadyAt - startedAt,
+      firstWeekReadyE2eMs: firstReadyAt === null ? null : firstReadyAt - enqueuedAt,
+      planCompleteMs: allTargetsTerminalAt === null ? null : allTargetsTerminalAt - startedAt,
+      terminalMs: terminalAt - startedAt,
+      previousWeekContextSource,
+      totalInputTokens: tokenTotals.input,
+      totalOutputTokens: tokenTotals.output,
+      totalCacheReadTokens: tokenTotals.cacheRead,
+      totalCacheCreationTokens: tokenTotals.cacheCreation,
+      estimatedCostUsd: anyBillableAttempt ? costUsd : null,
+      outcome,
+      variant: input.variant,
+      createdAt: terminalAt,
+    }
+    try {
+      await input.writer.putJob(job)
+    } catch (error) {
+      console.warn(`[plan-builder] putJob failed jobId=${input.jobId}: ${error instanceof Error ? error.message : 'unknown'}`)
+    }
+  }
+
+  let threw = false
+  try {
     await input.writer.putPlan(plan)
 
-    let providerResult: GenerateWeekCoreResult | undefined
-    type WeekQualityReview = ReturnType<typeof reviewPlanQuality>['weeks'][number]
-    const attemptQualityBySessions = new WeakMap<
-      GenerateWeekCoreResult['sessions'],
-      Map<string, WeekQualityReview | undefined>
-    >()
-    const reviewAttemptWeek = (
-      candidateResult: GenerateWeekCoreResult,
-    ): WeekQualityReview | undefined => {
-      if (candidateResult.sessions.length === 0) return undefined
-      const reviewKey = buildAttemptQualityReviewCacheKey(candidateResult.meta)
-      const cachedByMeta = attemptQualityBySessions.get(candidateResult.sessions)
-      if (cachedByMeta?.has(reviewKey)) {
-        return cachedByMeta.get(reviewKey)
+    const checkCancelled = async (): Promise<boolean> => {
+      try {
+        return input.writer.checkCancelled
+          ? await input.writer.checkCancelled(plan.id)
+          : Boolean((await input.writer.getPlan(plan.id))?.generationSummary?.cancelRequested)
+      } catch {
+        // No se pudo leer el estado de cancelación — continuar generando
+        return false
       }
-      const candidateWeek: TrainingPlanWeek = {
-        ...generatingWeek,
-        status: 'draft',
-        sessions: candidateResult.sessions,
-        generationMeta: {
-          ...generatingWeek.generationMeta,
-          fallbackUsed: candidateResult.meta.fallbackUsed,
-          repairedSessionCount: candidateResult.meta.repairedSessionCount,
-          movedSessionCount: candidateResult.meta.movedSessionCount,
-          addedFallbackCount: candidateResult.meta.addedFallbackCount,
-          filteredSportCount: candidateResult.meta.filteredSportCount,
-          droppedSessionCount: candidateResult.meta.droppedSessionCount,
-          repairTaxonomyVersion: candidateResult.meta.repairTaxonomyVersion,
-          hydrationActionCount: candidateResult.meta.hydrationActionCount,
-          correctiveActionCount: candidateResult.meta.correctiveActionCount,
-          structuralActionCount: candidateResult.meta.structuralActionCount,
-          hydratedSessionsAffected: candidateResult.meta.hydratedSessionsAffected,
-          correctedSessionsAffected: candidateResult.meta.correctedSessionsAffected,
-          structurallyRepairedSessionsAffected: candidateResult.meta.structurallyRepairedSessionsAffected,
-          generationSource: 'ai',
-        },
-      }
-      const review = reviewPlanQuality(
-        plan,
-        replaceWeek(weeks, candidateWeek),
-        { profile: input.profile },
-      ).weeks.find((weekReview) => weekReview.weekIndex === weekIndex)
-      const nextCache = cachedByMeta ?? new Map<string, WeekQualityReview | undefined>()
-      nextCache.set(reviewKey, review)
-      attemptQualityBySessions.set(candidateResult.sessions, nextCache)
-      return review
     }
-    try {
-      // En generación paralela la semana previa puede no estar lista todavía.
-      // Usamos la versión generada si existe (para evitar clonar sesiones), y si
-      // no, caemos al shell de la semana previa: conserva fase y carga objetivo
-      // para que la directiva de progresión sea correcta y no trate una semana
-      // intermedia como "primera semana del plan".
-      const previousWeek = weeks.find((week) => week.weekIndex === weekIndex - 1 && isReadyWeek(week))
-        ?? weeks.find((week) => week.weekIndex === weekIndex - 1)
-      const result = await generateWeekCoreWithRetry({
-        plan,
-        week: generatingWeek,
-        previousWeek,
-        profile: input.profile,
-        wizardConfig: input.wizardConfig,
-        recentContext: input.recentContext as never,
-        initialRepairInstruction: input.repairInstructions?.[weekIndex],
-        traceId: `${input.jobId}-week-${weekIndex}`,
-        maxTokens: input.maxTokens ?? DEFAULT_MAX_TOKENS,
-        temperature: input.temperature ?? DEFAULT_TEMPERATURE,
-        callLLM: input.callLLM,
-        getCriticalQualityIssues: (candidateResult) => {
-          const weekReview = reviewAttemptWeek(candidateResult)
-          return getCriticalWeekQualityIssueMessages(weekReview?.issues ?? [])
-        },
-        getRemainingBudgetMs: () => deadlineAt - getNow(),
-        onBeforeRetry: async () => {
-          plan = buildPlanCheckpoint(plan, weeks, {
-            generationState: 'generating',
-            jobId: input.jobId,
-            startedAt,
-            updatedAt: getNow(),
-          })
-          await input.writer.putPlan(plan)
-        },
-        onAttemptCompleted: input.writer.putAttempt
-          ? async (attempt, attemptResult, createdAt, attemptMaxTokens) => {
+
+    const markRemainingBudgetErrors = async (fromPosition: number): Promise<void> => {
+      for (const remainingIndex of targetWeekIndexes.slice(fromPosition)) {
+        const remainingWeek = weeks.find((week) => week.weekIndex === remainingIndex)
+        if (!remainingWeek) continue
+        if (!input.targetWeekIndexes?.length && isReadyWeek(remainingWeek)) continue
+        const erroredWeek = makeErroredWeek(remainingWeek, WORKER_BUDGET_EXHAUSTED_MESSAGE, getNow(), 'timeout', 0)
+        weeks = replaceWeek(weeks, erroredWeek)
+        await input.writer.putWeek(erroredWeek)
+        observeWeekWrite(erroredWeek)
+        budgetExhausted = true
+      }
+    }
+
+    let takeNextQueue = Promise.resolve()
+    const takeNextWeekIndex = (): Promise<number | undefined> => {
+      const run = takeNextQueue.then(async (): Promise<number | undefined> => {
+        while (!stopLaunching && targetPosition < targetWeekIndexes.length) {
+          if (deadlineAt - getNow() < MIN_WEEK_START_BUDGET_MS) {
+            await markRemainingBudgetErrors(targetPosition)
+            targetPosition = targetWeekIndexes.length
+            stopLaunching = true
+            return undefined
+          }
+
+          if (await checkCancelled()) {
+            cancelled = true
+            stopLaunching = true
+            return undefined
+          }
+
+          const weekIndex = targetWeekIndexes[targetPosition]
+          targetPosition++
+          const target = weeks.find((week) => week.weekIndex === weekIndex)
+          if (!target) continue
+          if (!input.targetWeekIndexes?.length && isReadyWeek(target)) continue
+          return weekIndex
+        }
+
+        return undefined
+      })
+      takeNextQueue = run.then(() => undefined, () => undefined)
+      return run
+    }
+
+    const generateTargetWeek = async (weekIndex: number): Promise<void> => {
+      const target = weeks.find((week) => week.weekIndex === weekIndex)
+      if (!target) return
+      if (!input.targetWeekIndexes?.length && isReadyWeek(target)) return
+
+      const generatingWeek = makeGeneratingWeek(target, getNow())
+      weeks = replaceWeek(weeks, generatingWeek)
+      await input.writer.putWeek(generatingWeek)
+      observeWeekWrite(generatingWeek)
+      plan = buildPlanCheckpoint(plan, weeks, {
+        generationState: 'generating',
+        jobId: input.jobId,
+        startedAt,
+        updatedAt: generatingWeek.updatedAt,
+      })
+      await input.writer.putPlan(plan)
+
+      let providerResult: GenerateWeekCoreResult | undefined
+      type WeekQualityReview = ReturnType<typeof reviewPlanQuality>['weeks'][number]
+      const attemptQualityBySessions = new WeakMap<
+        GenerateWeekCoreResult['sessions'],
+        Map<string, WeekQualityReview | undefined>
+      >()
+      const reviewAttemptWeek = (
+        candidateResult: GenerateWeekCoreResult,
+      ): WeekQualityReview | undefined => {
+        if (candidateResult.sessions.length === 0) return undefined
+        const reviewKey = buildAttemptQualityReviewCacheKey(candidateResult.meta)
+        const cachedByMeta = attemptQualityBySessions.get(candidateResult.sessions)
+        if (cachedByMeta?.has(reviewKey)) {
+          return cachedByMeta.get(reviewKey)
+        }
+        const candidateWeek: TrainingPlanWeek = {
+          ...generatingWeek,
+          status: 'draft',
+          sessions: candidateResult.sessions,
+          generationMeta: {
+            ...generatingWeek.generationMeta,
+            fallbackUsed: candidateResult.meta.fallbackUsed,
+            repairedSessionCount: candidateResult.meta.repairedSessionCount,
+            movedSessionCount: candidateResult.meta.movedSessionCount,
+            addedFallbackCount: candidateResult.meta.addedFallbackCount,
+            filteredSportCount: candidateResult.meta.filteredSportCount,
+            droppedSessionCount: candidateResult.meta.droppedSessionCount,
+            repairTaxonomyVersion: candidateResult.meta.repairTaxonomyVersion,
+            hydrationActionCount: candidateResult.meta.hydrationActionCount,
+            correctiveActionCount: candidateResult.meta.correctiveActionCount,
+            structuralActionCount: candidateResult.meta.structuralActionCount,
+            hydratedSessionsAffected: candidateResult.meta.hydratedSessionsAffected,
+            correctedSessionsAffected: candidateResult.meta.correctedSessionsAffected,
+            structurallyRepairedSessionsAffected: candidateResult.meta.structurallyRepairedSessionsAffected,
+            generationSource: 'ai',
+          },
+        }
+        const review = reviewPlanQuality(
+          plan,
+          replaceWeek(weeks, candidateWeek),
+          { profile: input.profile },
+        ).weeks.find((weekReview) => weekReview.weekIndex === weekIndex)
+        const nextCache = cachedByMeta ?? new Map<string, WeekQualityReview | undefined>()
+        nextCache.set(reviewKey, review)
+        attemptQualityBySessions.set(candidateResult.sessions, nextCache)
+        return review
+      }
+      try {
+        // En generación paralela la semana previa puede no estar lista todavía.
+        // Usamos la versión generada si existe (para evitar clonar sesiones), y si
+        // no, caemos al shell de la semana previa: conserva fase y carga objetivo
+        // para que la directiva de progresión sea correcta y no trate una semana
+        // intermedia como "primera semana del plan".
+        const previousWeek = weeks.find((week) => week.weekIndex === weekIndex - 1 && isReadyWeek(week))
+          ?? weeks.find((week) => week.weekIndex === weekIndex - 1)
+        // Clasifica el objeto exacto entregado al prompt (no una re-consulta de
+        // `weeks`, que podría observar otra semana completándose entre lecturas).
+        if (weekIndex > 0) {
+          const source: PlanGenerationJobTelemetry['previousWeekContextSource'] =
+            previousWeek == null ? 'none' : isReadyWeek(previousWeek) ? 'ready' : 'shell'
+          if (source === 'shell') previousWeekContextSource = 'shell'
+          else if (source === 'ready' && previousWeekContextSource === 'none') previousWeekContextSource = 'ready'
+        }
+        const result = await generateWeekCoreWithRetry({
+          plan,
+          week: generatingWeek,
+          previousWeek,
+          profile: input.profile,
+          wizardConfig: input.wizardConfig,
+          recentContext: input.recentContext as never,
+          initialRepairInstruction: input.repairInstructions?.[weekIndex],
+          traceId: `${input.jobId}-week-${weekIndex}`,
+          maxTokens: input.maxTokens ?? DEFAULT_MAX_TOKENS,
+          temperature: input.temperature ?? DEFAULT_TEMPERATURE,
+          callLLM: input.callLLM,
+          getCriticalQualityIssues: (candidateResult) => {
+            const weekReview = reviewAttemptWeek(candidateResult)
+            return getCriticalWeekQualityIssueMessages(weekReview?.issues ?? [])
+          },
+          getRemainingBudgetMs: () => deadlineAt - getNow(),
+          onBeforeRetry: async () => {
+            plan = buildPlanCheckpoint(plan, weeks, {
+              generationState: 'generating',
+              jobId: input.jobId,
+              startedAt,
+              updatedAt: getNow(),
+            })
+            await input.writer.putPlan(plan)
+          },
+          onAttemptCompleted: async (attempt, attemptResult, createdAt, attemptMaxTokens) => {
+            // La acumulación de tokens/costo corre en CADA intento, independiente
+            // de `putAttempt` (que es opcional).
+            const meta = attemptResult.meta
+            anyBillableAttempt = true
+            const hasUsage = meta.promptTokens != null && meta.completionTokens != null
+            tokenTotals.input += meta.promptTokens ?? 0
+            tokenTotals.output += meta.completionTokens ?? 0
+            tokenTotals.cacheRead += meta.cacheReadInputTokens ?? 0
+            tokenTotals.cacheCreation += meta.cacheCreationInputTokens ?? 0
+            if (costUsd !== null) {
+              const model = meta.model ?? input.variant?.model ?? null
+              const attemptCost = hasUsage && model
+                ? estimateCostUsd({
+                    model,
+                    at: createdAt,
+                    inputTokens: meta.promptTokens ?? 0,
+                    outputTokens: meta.completionTokens ?? 0,
+                    cacheReadTokens: meta.cacheReadInputTokens ?? 0,
+                    cacheCreationTokens: meta.cacheCreationInputTokens ?? 0,
+                  })
+                : null
+              costUsd = attemptCost === null ? null : costUsd + attemptCost
+            }
+            if (!input.writer.putAttempt) return
             const qualityReview = reviewAttemptWeek(attemptResult)
-            await input.writer.putAttempt!({
+            await input.writer.putAttempt({
               athleteId: plan.athleteId,
               planId: plan.id,
               jobId: input.jobId,
               weekIndex,
               attempt,
-              traceId: attemptResult.meta.traceId,
-              provider: attemptResult.meta.provider,
-              model: attemptResult.meta.model,
-              promptTokens: attemptResult.meta.promptTokens,
-              completionTokens: attemptResult.meta.completionTokens,
-              cacheCreationInputTokens: attemptResult.meta.cacheCreationInputTokens,
-              cacheReadInputTokens: attemptResult.meta.cacheReadInputTokens,
-              durationMs: attemptResult.meta.durationMs,
-              finishReason: attemptResult.meta.finishReason,
+              traceId: meta.traceId,
+              provider: meta.provider,
+              model: meta.model,
+              promptTokens: meta.promptTokens,
+              completionTokens: meta.completionTokens,
+              cacheCreationInputTokens: meta.cacheCreationInputTokens,
+              cacheReadInputTokens: meta.cacheReadInputTokens,
+              durationMs: meta.durationMs,
+              finishReason: meta.finishReason,
               outcome: classifyAttemptOutcome(attemptResult),
-              errorClass: attemptResult.meta.errorClass,
-              retryUsed: attempt > 1 || Boolean(attemptResult.meta.retryUsed),
+              errorClass: meta.errorClass,
+              retryUsed: attempt > 1 || Boolean(meta.retryUsed),
               maxTokens: attemptMaxTokens,
               workerConcurrency: concurrency,
-              rawSessionCount: attemptResult.meta.rawSessionCount,
-              validSessionCount: attemptResult.meta.validSessionCount,
-              droppedSessionCount: attemptResult.meta.droppedSessionCount,
-              repairedSessionCount: attemptResult.meta.repairedSessionCount,
-              addedFallbackCount: attemptResult.meta.addedFallbackCount,
+              rawSessionCount: meta.rawSessionCount,
+              validSessionCount: meta.validSessionCount,
+              droppedSessionCount: meta.droppedSessionCount,
+              repairedSessionCount: meta.repairedSessionCount,
+              addedFallbackCount: meta.addedFallbackCount,
               qualityScore: qualityReview?.score,
               qualityGrade: qualityReview?.grade,
               qualityCriticalIssueCount: qualityReview?.issues.filter((issue) => issue.severity === 'error').length,
               qualityWarningCount: qualityReview?.issues.filter((issue) => issue.severity === 'warning').length,
+              variantId: input.variant?.variantId,
+              effort: input.variant?.effort,
+              thinkingMode: input.variant?.thinkingMode,
+              promptVersion: input.variant?.promptVersion,
+              schemaVersion: input.variant?.schemaVersion,
+              qualityVersion: input.variant?.qualityVersion,
+              repairTaxonomyVersion: meta.repairTaxonomyVersion,
+              correctiveActionCount: meta.correctiveActionCount,
+              structuralActionCount: meta.structuralActionCount,
+              hydrationActionCount: meta.hydrationActionCount,
+              movedSessionCount: meta.movedSessionCount,
+              filteredSportCount: meta.filteredSportCount,
+              hydratedSessionsAffected: meta.hydratedSessionsAffected,
+              correctedSessionsAffected: meta.correctedSessionsAffected,
+              structurallyRepairedSessionsAffected: meta.structurallyRepairedSessionsAffected,
               createdAt,
             })
+          },
+        })
+        providerResult = result
+        if (await checkCancelled()) {
+          cancelled = true
+          stopLaunching = true
+        }
+        let fallback: ReturnType<typeof buildLocalFallbackWeek> | undefined
+        if (result.sessions.length === 0) {
+          try {
+            fallback = buildLocalFallbackWeek({
+              plan,
+              week: generatingWeek,
+              previousWeek,
+              profile: input.profile,
+              wizardConfig: input.wizardConfig,
+            })
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error)
+            const erroredWeek = makeErroredWeekFromResult(
+              generatingWeek,
+              result,
+              message,
+              getNow(),
+              'local_plan_fallback_failed',
+            )
+            weeks = replaceWeek(weeks, erroredWeek)
+            await input.writer.putWeek(erroredWeek)
+            observeWeekWrite(erroredWeek)
+            return
           }
-          : undefined,
-      })
-      providerResult = result
-      if (await checkCancelled()) {
-        cancelled = true
-        stopLaunching = true
-      }
-      let fallback: ReturnType<typeof buildLocalFallbackWeek> | undefined
-      if (result.sessions.length === 0) {
-        try {
-          fallback = buildLocalFallbackWeek({
+        }
+        let resolvedWeek = fallback
+          ? makeFallbackResolvedWeek(generatingWeek, result, fallback, getNow())
+          : makeResolvedWeek(generatingWeek, result, getNow())
+        if (fallback && resolvedWeek.sessions.length > 0) {
+          const fallbackReview = reviewPlanQuality(
             plan,
-            week: generatingWeek,
-            previousWeek,
-            profile: input.profile,
-            wizardConfig: input.wizardConfig,
-          })
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error)
-          const erroredWeek = makeErroredWeekFromResult(
-            generatingWeek,
-            result,
-            message,
-            getNow(),
-            'local_plan_fallback_failed',
-          )
-          weeks = replaceWeek(weeks, erroredWeek)
-          await input.writer.putWeek(erroredWeek)
-          return
-        }
-      }
-      let resolvedWeek = fallback
-        ? makeFallbackResolvedWeek(generatingWeek, result, fallback, getNow())
-        : makeResolvedWeek(generatingWeek, result, getNow())
-      if (fallback && resolvedWeek.sessions.length > 0) {
-        const fallbackReview = reviewPlanQuality(
-          plan,
-          replaceWeek(weeks, resolvedWeek),
-          { profile: input.profile },
-        ).weeks.find((review) => review.weekIndex === weekIndex)
-        const fallbackCritical = getCriticalWeekQualityIssueMessages(fallbackReview?.issues ?? [])
-        if (fallbackCritical.length > 0) {
-          resolvedWeek = {
-            ...resolvedWeek,
-            status: 'error',
-            generationMeta: {
-              ...resolvedWeek.generationMeta,
-              lastError: `Fallback local rechazado por calidad: ${fallbackCritical.join(' | ')}`,
-              errorClass: 'local_plan_fallback_quality',
-            },
+            replaceWeek(weeks, resolvedWeek),
+            { profile: input.profile },
+          ).weeks.find((review) => review.weekIndex === weekIndex)
+          const fallbackCritical = getCriticalWeekQualityIssueMessages(fallbackReview?.issues ?? [])
+          if (fallbackCritical.length > 0) {
+            resolvedWeek = {
+              ...resolvedWeek,
+              status: 'error',
+              generationMeta: {
+                ...resolvedWeek.generationMeta,
+                lastError: `Fallback local rechazado por calidad: ${fallbackCritical.join(' | ')}`,
+                errorClass: 'local_plan_fallback_quality',
+              },
+            }
           }
         }
+        weeks = replaceWeek(weeks, resolvedWeek)
+        await input.writer.putWeek(resolvedWeek)
+        observeWeekWrite(resolvedWeek)
+        plan = buildPlanCheckpoint(plan, weeks, {
+          generationState: 'generating',
+          jobId: input.jobId,
+          startedAt,
+          updatedAt: resolvedWeek.updatedAt,
+          cancelRequested: cancelled || undefined,
+        })
+        await input.writer.putPlan(plan)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        const erroredWeek = providerResult
+          ? makeErroredWeekFromResult(generatingWeek, providerResult, message, getNow(), 'post_generation_failed')
+          : makeErroredWeek(generatingWeek, message, getNow())
+        weeks = replaceWeek(weeks, erroredWeek)
+        await input.writer.putWeek(erroredWeek)
+        observeWeekWrite(erroredWeek)
+        plan = buildPlanCheckpoint(plan, weeks, {
+          generationState: 'generating',
+          jobId: input.jobId,
+          startedAt,
+          updatedAt: erroredWeek.updatedAt,
+          cancelRequested: cancelled || undefined,
+        })
+        await input.writer.putPlan(plan)
       }
-      weeks = replaceWeek(weeks, resolvedWeek)
-      await input.writer.putWeek(resolvedWeek)
+    }
+
+    const worker = async (): Promise<void> => {
+      while (true) {
+        const weekIndex = await takeNextWeekIndex()
+        if (weekIndex == null) return
+        await generateTargetWeek(weekIndex)
+      }
+    }
+
+    await Promise.all(Array.from({ length: Math.min(concurrency, Math.max(1, targetWeekIndexes.length)) }, () => worker()))
+
+    if (!cancelled && await checkCancelled()) {
+      cancelled = true
+    }
+
+    if (cancelled) {
+      const timestamp = getNow()
       plan = buildPlanCheckpoint(plan, weeks, {
-        generationState: 'generating',
+        generationState: 'cancelled',
         jobId: input.jobId,
         startedAt,
-        updatedAt: resolvedWeek.updatedAt,
-        cancelRequested: cancelled || undefined,
+        updatedAt: timestamp,
+        completedAt: timestamp,
+        cancelRequested: true,
       })
       await input.writer.putPlan(plan)
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      const erroredWeek = providerResult
-        ? makeErroredWeekFromResult(generatingWeek, providerResult, message, getNow(), 'post_generation_failed')
-        : makeErroredWeek(generatingWeek, message, getNow())
-      weeks = replaceWeek(weeks, erroredWeek)
-      await input.writer.putWeek(erroredWeek)
-      plan = buildPlanCheckpoint(plan, weeks, {
-        generationState: 'generating',
-        jobId: input.jobId,
-        startedAt,
-        updatedAt: erroredWeek.updatedAt,
-        cancelRequested: cancelled || undefined,
-      })
-      await input.writer.putPlan(plan)
+      return { plan, weeks, cancelled: true }
     }
-  }
 
-  const worker = async (): Promise<void> => {
-    while (true) {
-      const weekIndex = await takeNextWeekIndex()
-      if (weekIndex == null) return
-      await generateTargetWeek(weekIndex)
-    }
-  }
-
-  await Promise.all(Array.from({ length: Math.min(concurrency, Math.max(1, targetWeekIndexes.length)) }, () => worker()))
-
-  if (!cancelled && await checkCancelled()) {
-    cancelled = true
-  }
-
-  if (cancelled) {
-    const timestamp = getNow()
+    const completedAt = getNow()
     plan = buildPlanCheckpoint(plan, weeks, {
-      generationState: 'cancelled',
+      generationState: deriveAsyncGenerationState(weeks),
       jobId: input.jobId,
       startedAt,
-      updatedAt: timestamp,
-      completedAt: timestamp,
-      cancelRequested: true,
+      updatedAt: completedAt,
+      completedAt,
     })
-    await input.writer.putPlan(plan)
-    return { plan, weeks, cancelled: true }
-  }
-
-  const completedAt = getNow()
-  plan = buildPlanCheckpoint(plan, weeks, {
-    generationState: deriveAsyncGenerationState(weeks),
-    jobId: input.jobId,
-    startedAt,
-    updatedAt: completedAt,
-    completedAt,
-  })
-  if (plan.generationSummary) {
-    plan = {
-      ...plan,
-      generationSummary: {
-        ...plan.generationSummary,
-        qualityReview: reviewPlanQuality(plan, weeks, { profile: input.profile }),
-      },
+    if (plan.generationSummary) {
+      plan = {
+        ...plan,
+        generationSummary: {
+          ...plan.generationSummary,
+          qualityReview: reviewPlanQuality(plan, weeks, { profile: input.profile }),
+        },
+      }
     }
+    await input.writer.putPlan(plan)
+    return { plan, weeks, cancelled: false }
+  } catch (error) {
+    threw = true
+    throw error
+  } finally {
+    await finalizeJob(threw)
   }
-  await input.writer.putPlan(plan)
-  return { plan, weeks, cancelled: false }
 }
