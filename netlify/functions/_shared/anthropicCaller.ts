@@ -1,8 +1,8 @@
 import type { AIRawResponse, AIRequest } from '../../../src/services/ai/types'
 import { normalizeJsonSchemaForStandardProvider } from '../../../src/services/ai/jsonSchema'
+import { resolvePlanBuilderModel } from './planBuilderRunConfig'
 
 const CLAUDE_STRUCTURED_TOOL_NAME = 'emit_structured_result'
-const DEFAULT_MODEL = 'claude-sonnet-4-6'
 const DEFAULT_TIMEOUT_MS = 120_000
 
 function isMaxTokenStopReason(stopReason: string | undefined): boolean {
@@ -64,7 +64,7 @@ export async function callAnthropicForWeek(request: AIRequest, options?: {
   const apiKey = options?.apiKey ?? process.env['CLAUDE_API_KEY']
   if (!apiKey) throw new Error('CLAUDE_API_KEY no configurada.')
 
-  const model = options?.model ?? process.env['CLAUDE_MODEL_PLAN_BUILDER_WEEK'] ?? process.env['CLAUDE_MODEL'] ?? DEFAULT_MODEL
+  const model = options?.model ?? resolvePlanBuilderModel(process.env)
   const startedAt = Date.now()
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), options?.timeoutMs ?? DEFAULT_TIMEOUT_MS)

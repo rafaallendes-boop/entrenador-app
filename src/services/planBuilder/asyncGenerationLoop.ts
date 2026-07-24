@@ -83,9 +83,9 @@ export interface AsyncPlanGenerationResult {
 // las semanas que truncan reintentan con el cap amplio. No subir el default a
 // 12000 sin datos de tasa de truncado real (Beta Quality), o se pierde la
 // ganancia de latencia para todas las semanas.
-const DEFAULT_MAX_TOKENS = 5000
+export const DEFAULT_MAX_TOKENS = 5000
 const TRUNCATED_RETRY_MAX_TOKENS = 12000
-const DEFAULT_TEMPERATURE = 0.25
+export const DEFAULT_TEMPERATURE = 0.25
 const MAX_WEEK_ATTEMPTS = 2
 const DEFAULT_CONCURRENCY = 3
 const MAX_CONCURRENCY = 6
@@ -172,7 +172,7 @@ function replaceWeek(weeks: TrainingPlanWeek[], next: TrainingPlanWeek): Trainin
   return sortWeeks(weeks.map((week) => (week.weekIndex === next.weekIndex ? next : week)))
 }
 
-function normalizeConcurrency(value: number | undefined): number {
+export function normalizePlanBuilderConcurrency(value: number | undefined): number {
   if (value == null || !Number.isFinite(value)) return DEFAULT_CONCURRENCY
   return Math.min(MAX_CONCURRENCY, Math.max(1, Math.round(value)))
 }
@@ -618,7 +618,7 @@ export async function runAsyncPlanGeneration(input: RunAsyncPlanGenerationInput)
     : weeks.map((week) => week.weekIndex)
 
   const deadlineAt = getNow() + (input.budgetMs ?? DEFAULT_WORKER_BUDGET_MS)
-  const concurrency = normalizeConcurrency(input.concurrency)
+  const concurrency = normalizePlanBuilderConcurrency(input.concurrency)
   let targetPosition = 0
   let stopLaunching = false
   let cancelled = false
