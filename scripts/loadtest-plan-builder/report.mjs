@@ -1,4 +1,4 @@
-import { ARTIFACT_SCHEMA_VERSION } from './artifact.mjs'
+import { ARTIFACT_SCHEMA_VERSION, isCompletePlan } from './artifact.mjs'
 import { summarizeDistribution, summarizeLatency } from './stats.mjs'
 
 const LATENCY_METRICS = [
@@ -39,7 +39,10 @@ export function buildReport(artifact) {
     throw new Error(`artifactSchemaVersion ${artifact.artifactSchemaVersion} incompatible; este reporte lee ${ARTIFACT_SCHEMA_VERSION}.`)
   }
 
-  const completePlans = artifact.plans.filter((plan) => plan.outcome === 'succeeded')
+  // MISMA cohorte que usan el artefacto y la aceptación (`isCompletePlan`). Un
+  // `outcome === 'succeeded'` suelto dejaría entrar a la calibración planes con
+  // conteos o semanas incoherentes que la aceptación ya rechazó.
+  const completePlans = artifact.plans.filter(isCompletePlan)
   // Todas las semanas escritas, no solo las de planes completos: una semana de
   // un plan que después falló igual tiene latencia real que medir.
   const allWeeks = artifact.plans.flatMap((plan) => plan.weeks)

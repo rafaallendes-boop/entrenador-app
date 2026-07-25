@@ -50,7 +50,14 @@ function isReadyWeekRow(week) {
     && week.sessionCount > 0
 }
 
-function isCompletePlan(plan) {
+/**
+ * Cohorte de calibración. Se exporta a propósito: el reporte DEBE usar esta
+ * misma definición. Si el reporte reimplementa "plan completo" con el `outcome`
+ * suelto, las distribuciones que alimentan la elección del umbral incluyen
+ * planes que la aceptación descartó por incoherentes, y el mismo artefacto
+ * imprime dos caveats con distinto n.
+ */
+export function isCompletePlan(plan) {
   if (plan.outcome !== 'succeeded') return false
   return plan.weekCountSucceeded === plan.weekCount
     && plan.weekCountFailed === 0

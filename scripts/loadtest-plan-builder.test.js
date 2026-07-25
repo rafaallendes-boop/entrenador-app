@@ -20,6 +20,7 @@ import {
   ARTIFACT_SCHEMA_VERSION,
   buildArtifact,
   evaluateAcceptance,
+  isCompletePlan,
   toPlanRow,
   toWeekRow,
 } from './loadtest-plan-builder/artifact.mjs'
@@ -660,25 +661,32 @@ describe('loadtest artifact', () => {
 })
 
 function reportArtifactStub() {
+  // Las tres semanas están listas (el plan es completo); la última no es
+  // puntuable porque le falta la taxonomía v2.
   const weeks = [
-    { weekIndex: 0, scorable: true, countRepairsV2: 2, correctiveActionCount: 1, structuralActionCount: 1, durationMs: 3000, wallClockMs: 5000 },
-    { weekIndex: 1, scorable: true, countRepairsV2: 4, correctiveActionCount: 2, structuralActionCount: 1, durationMs: 7000, wallClockMs: 9000 },
-    { weekIndex: 2, scorable: false, countRepairsV2: null, correctiveActionCount: 0, structuralActionCount: 0, durationMs: null, wallClockMs: null },
+    { weekIndex: 0, status: 'draft', sessionCount: 3, repairTaxonomyVersion: 2, scorable: true, countRepairsV2: 2, correctiveActionCount: 1, structuralActionCount: 1, durationMs: 3000, wallClockMs: 5000 },
+    { weekIndex: 1, status: 'draft', sessionCount: 3, repairTaxonomyVersion: 2, scorable: true, countRepairsV2: 4, correctiveActionCount: 2, structuralActionCount: 1, durationMs: 7000, wallClockMs: 9000 },
+    { weekIndex: 2, status: 'draft', sessionCount: 3, repairTaxonomyVersion: null, scorable: false, countRepairsV2: null, correctiveActionCount: 0, structuralActionCount: 0, durationMs: null, wallClockMs: null },
   ]
   return {
     artifactSchemaVersion: 1,
     plans: [
       {
         caseId: 'a#1', scenarioKey: 'squash_build', outcome: 'succeeded',
+        weekCount: 3, weekCountSucceeded: 3, weekCountFailed: 0,
         firstWeekReadyMs: 1000, firstWeekDetectedMs: 4000, planCompleteMs: 8000, terminalMs: 9000,
         weeks,
       },
       {
         caseId: 'a#2', scenarioKey: 'squash_build', outcome: 'failed',
+        weekCount: 3, weekCountSucceeded: 1, weekCountFailed: 2,
         firstWeekReadyMs: 2000, firstWeekDetectedMs: 5000, planCompleteMs: null, terminalMs: 11000,
         weeks: [
           {
             weekIndex: 0,
+            status: 'draft',
+            sessionCount: 3,
+            repairTaxonomyVersion: 2,
             scorable: true,
             countRepairsV2: 99,
             correctiveActionCount: 99,
@@ -691,6 +699,56 @@ function reportArtifactStub() {
     ],
   }
 }
+
+describe('loadtest report cohort', () => {
+  /** Plan que dice `succeeded` pero miente en sus conteos. */
+  function incoherentSucceededArtifact() {
+    const plans = buildManifest().map((manifestCase, index) => ({
+      caseId: manifestCase.caseId,
+      scenarioKey: manifestCase.scenarioKey,
+      weekCount: manifestCase.weekCount,
+      outcome: 'succeeded',
+      weekCountSucceeded: index === 0 ? 1 : manifestCase.weekCount,
+      weekCountFailed: 0,
+      terminalMs: index === 0 ? 999_000 : 9_000,
+      weeks: Array.from({ length: manifestCase.weekCount }, (_, weekIndex) => ({
+        weekIndex,
+        scenarioKey: manifestCase.scenarioKey,
+        status: 'draft',
+        sessionCount: 3,
+        repairTaxonomyVersion: 2,
+        countRepairsV2: index === 0 ? 99 : 2,
+        correctiveActionCount: 1,
+        structuralActionCount: 1,
+      })),
+    }))
+    return buildArtifact({ plans, variant: {}, git: { sha: 'x', dirty: false } })
+  }
+
+  it('uses the same complete-plan cohort as the artifact and the acceptance', () => {
+    const artifact = incoherentSucceededArtifact()
+    const report = buildReport(artifact)
+    const expected = artifact.plans.filter(isCompletePlan).length
+
+    expect(expected).toBe(11)
+    expect(report.latency.completePlans.terminalMs.n).toBe(expected)
+    expect(artifact.latencySummary.completePlans.terminalMs.n).toBe(expected)
+  })
+
+  it('keeps the artifact and report caveats reporting the same n', () => {
+    const artifact = incoherentSucceededArtifact()
+    const report = buildReport(artifact)
+    expect(report.caveat).toContain('n=11')
+    expect(artifact.caveat).toContain('n=11')
+  })
+
+  it('excludes an incoherent plan from the calibration distributions', () => {
+    // La semana con countRepairsV2=99 pertenece al plan incoherente: si entrara
+    // a la distribución, contaminaría el umbral que el owner elige mirándola.
+    const report = buildReport(incoherentSucceededArtifact())
+    expect(report.repair.weekCountRepairsV2.max).toBe(2)
+  })
+})
 
 describe('loadtest report', () => {
   it('splits latency into all-attempts and complete-plans cohorts', () => {
@@ -734,12 +792,18 @@ describe('loadtest report', () => {
       caseId: 'b#1',
       scenarioKey: 'running',
       outcome: 'succeeded',
+      weekCount: 1,
+      weekCountSucceeded: 1,
+      weekCountFailed: 0,
       firstWeekReadyMs: 3000,
       firstWeekDetectedMs: 6000,
       planCompleteMs: 12000,
       terminalMs: 13000,
       weeks: [{
         weekIndex: 0,
+        status: 'draft',
+        sessionCount: 3,
+        repairTaxonomyVersion: 2,
         scorable: true,
         countRepairsV2: 10,
         correctiveActionCount: 7,
