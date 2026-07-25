@@ -287,6 +287,28 @@ describe('loadtest manifest', () => {
     }
   })
 
+  it('keeps every scenario reproducible from the wizard UI', () => {
+    // La UI ofrece complementarios = enabledSports menos el primario, y el
+    // motor deriva los permitidos de sportDetails ∪ complementarySports. Si
+    // divergen, el control mide una configuración que ningún usuario puede
+    // producir.
+    for (const scenario of Object.values(SCENARIOS)) {
+      const enabled = new Set(scenario.buildProfile().sportContext.enabledSports)
+      const wizardConfig = scenario.buildWizardConfig()
+      expect(enabled.has(scenario.primarySport)).toBe(true)
+      for (const sport of wizardConfig.complementarySports) {
+        expect(enabled.has(sport)).toBe(true)
+        expect(sport).not.toBe(scenario.primarySport)
+      }
+      for (const detail of scenario.sportDetails) {
+        expect(enabled.has(detail.sport)).toBe(true)
+      }
+      for (const sport of Object.keys(scenario.targetLoadBySport)) {
+        expect(enabled.has(sport)).toBe(true)
+      }
+    }
+  })
+
   it('gives the taper scenario real taper and race phases', () => {
     const taper = buildManifest().find((item) => item.scenarioKey === 'squash_taper_medico')
     const { plan, weeks } = buildPlanFixture(taper)
@@ -350,7 +372,11 @@ function baseWizardConfig(overrides) {
     sessionsPerWeek: 3,
     sessionDurationMins: 60,
     allowDoubleSession: false,
-    complementarySports: ['running', 'strength'],
+    // La UI solo ofrece complementarios dentro de `enabledSports` menos el
+    // primario (`CompetitionPlanPage.tsx:381`). Declarar running acá con un
+    // perfil que no lo habilita produce una config irreproducible desde la app,
+    // y encima lo cuela en getAllowedSports sin carga objetivo ni sportDetails.
+    complementarySports: ['strength'],
     currentFitnessLevel: 'normal',
     currentFatigue: 'fresh',
     createdAt: '2026-06-01T00:00:00.000Z',
@@ -566,19 +592,34 @@ export function buildPlanFixture(manifestCase) {
   return { plan, weeks, profile: scenario.buildProfile(), wizardConfig }
 }
 
-/** Snapshot serializable del manifest, para embeber en el artefacto. */
+/**
+ * Snapshot serializable y AUTOCONTENIDO del manifest. Es lo único que Entrega 2
+ * puede leer de un artefacto histórico: si algo no está acá, esa corrida deja de
+ * ser reconstruible en cuanto este archivo cambie.
+ */
 export function describeManifest() {
   return {
     manifestVersion: MANIFEST_VERSION,
     attemptedPlanTotal: ATTEMPTED_PLAN_TOTAL,
     targetWeekTotal: TARGET_WEEK_TOTAL,
     cases: buildManifest().map((manifestCase) => {
-      const { plan, profile, wizardConfig } = buildPlanFixture(manifestCase)
+      const scenario = SCENARIOS[manifestCase.scenarioKey]
+      const { plan, weeks, profile, wizardConfig } = buildPlanFixture(manifestCase)
       return {
         ...manifestCase,
-        primarySport: SCENARIOS[manifestCase.scenarioKey].primarySport,
-        phases: plan.phases.map((phase) => phase.phase),
-        targetLoadBySport: SCENARIOS[manifestCase.scenarioKey].targetLoadBySport,
+        primarySport: scenario.primarySport,
+        sportDetails: scenario.sportDetails,
+        targetLoadBySport: scenario.targetLoadBySport,
+        planStartDate: plan.startDate,
+        planEndDate: plan.endDate,
+        // Descriptor efectivo por semana: sin esto no se puede saber qué se
+        // pidió realmente en cada una.
+        weeks: weeks.map((week) => ({
+          weekIndex: week.weekIndex,
+          weekStartDate: week.weekStartDate,
+          phase: week.phase,
+          targetLoadBySport: week.targetLoadBySport,
+        })),
         profile,
         wizardConfig,
       }
@@ -590,7 +631,7 @@ export function describeManifest() {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run scripts/loadtest-plan-builder.test.js`
-Expected: PASS, 11 tests.
+Expected: PASS, 12 tests.
 
 - [ ] **Step 5: Commit (owner)**
 
@@ -721,7 +762,7 @@ export function summarizeDistribution(values) {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run scripts/loadtest-plan-builder.test.js`
-Expected: PASS, 16 tests.
+Expected: PASS, 17 tests.
 
 - [ ] **Step 5: Commit (owner)**
 
@@ -902,6 +943,29 @@ describe('loadtest artifact', () => {
     expect(JSON.stringify(artifact)).not.toContain('secreto')
   })
 
+  it('re-applies the allowlist inside weeks, not only at the plan root', () => {
+    const [first] = planRowsFromManifest()
+    const artifact = artifactFrom([{
+      ...first,
+      weeks: [{ ...first.weeks[0], promptText: 'secreto-semanal', sessions: [{ title: 'x' }] }],
+    }])
+    expect(artifact.plans[0].weeks[0].promptText).toBeUndefined()
+    expect(artifact.plans[0].weeks[0].sessions).toBeUndefined()
+    expect(JSON.stringify(artifact)).not.toContain('secreto-semanal')
+  })
+
+  it('evaluates a historical artifact against its own embedded manifest', () => {
+    const artifact = artifactFrom(planRowsFromManifest())
+    // Un manifest embebido más chico define un control distinto y válido.
+    artifact.manifest = {
+      ...artifact.manifest,
+      cases: artifact.manifest.cases.slice(0, 11),
+    }
+    const verdict = evaluateAcceptance(artifact)
+    expect(verdict.accepted).toBe(false)
+    expect(verdict.reasons.join(' ')).toContain('12/11')
+  })
+
   it('keeps an error class instead of raw provider text', () => {
     const row = toPlanRow({ caseId: 'a#1', errorClass: 'timeout', error: 'Anthropic dijo cualquier cosa' })
     expect(row.errorClass).toBe('timeout')
@@ -959,15 +1023,35 @@ export function toWeekRow(week, context) {
     addedFallbackCount: meta.addedFallbackCount ?? 0,
     filteredSportCount: meta.filteredSportCount ?? 0,
     sessionCount: Array.isArray(week.sessions) ? week.sessions.length : 0,
-    // Tamaños, no contenido (spec §3.5).
+    // Tamaños, no contenido (spec §3.5). `*Chars` se instrumenta alrededor de
+    // `callLLM`; `durationMs` acumula todos los intentos de la semana y
+    // `wallClockMs` sale de las marcas de tiempo del writer.
     promptChars: context.promptChars ?? null,
     responseChars: context.responseChars ?? null,
     promptTokens: context.promptTokens ?? null,
     completionTokens: context.completionTokens ?? null,
     durationMs: context.durationMs ?? null,
+    wallClockMs: context.wallClockMs ?? null,
     score: context.score ?? null,
     grade: context.grade ?? null,
   }
+}
+
+/** Claves permitidas en una fila de semana ya construida. */
+const WEEK_ROW_KEYS = Object.keys(toWeekRow(
+  { weekIndex: 0, status: 'pending', sessions: [], generationMeta: {} },
+  { scenarioKey: '' },
+))
+
+/**
+ * Segunda pasada de allowlist sobre semanas ya materializadas. `toPlanRow`
+ * recibe `weeks` de un caller: sin este pick, un `weeks[0].promptText` entraría
+ * intacto al artefacto aunque la raíz del plan esté saneada.
+ */
+function pickWeekRow(week) {
+  const picked = {}
+  for (const key of WEEK_ROW_KEYS) picked[key] = week[key] ?? null
+  return picked
 }
 
 /** Allowlist explícita por plan. Mismo criterio que `toWeekRow`. */
@@ -1001,7 +1085,7 @@ export function toPlanRow(runResult) {
     errorClass: runResult.errorClass ?? null,
     promptChars: runResult.promptChars ?? null,
     responseChars: runResult.responseChars ?? null,
-    weeks: runResult.weeks ?? [],
+    weeks: (runResult.weeks ?? []).map(pickWeekRow),
   }
 }
 
@@ -1055,16 +1139,31 @@ export function evaluateAcceptance(artifact) {
   // Derivado de las filas, nunca de un total declarado por el caller.
   const observedTargetWeeks = artifact.plans.reduce((sum, plan) => sum + (plan.weekCount ?? 0), 0)
 
-  const expectedCases = new Map(buildManifest().map((item) => [item.caseId, item.weekCount]))
+  // SIEMPRE del manifest embebido en el artefacto, nunca del checkout actual:
+  // un control histórico debe evaluarse contra el manifest con el que corrió.
+  const embeddedCases = artifact.manifest?.cases
+  if (!Array.isArray(embeddedCases)) {
+    return {
+      accepted: false,
+      reasons: ['el artefacto no embebe su manifest; no es evaluable'],
+      attemptedPlans,
+      observedTargetWeeks,
+      completePlans,
+      scorableWeeks,
+    }
+  }
+  const expectedCases = new Map(embeddedCases.map((item) => [item.caseId, item.weekCount]))
   const observedCases = new Set(artifact.plans.map((plan) => plan.caseId))
   const missing = [...expectedCases.keys()].filter((caseId) => !observedCases.has(caseId))
   const unexpected = [...observedCases].filter((caseId) => !expectedCases.has(caseId))
   const wrongWeekCount = artifact.plans.filter((plan) =>
     expectedCases.has(plan.caseId) && expectedCases.get(plan.caseId) !== plan.weekCount)
 
+  const expectedTargetWeeks = embeddedCases.reduce((sum, item) => sum + item.weekCount, 0)
+
   const reasons = []
-  if (attemptedPlans !== ATTEMPTED_PLAN_TOTAL) {
-    reasons.push(`manifest incompleto: se intentaron ${attemptedPlans}/${ATTEMPTED_PLAN_TOTAL} planes`)
+  if (attemptedPlans !== embeddedCases.length) {
+    reasons.push(`manifest incompleto: se intentaron ${attemptedPlans}/${embeddedCases.length} planes`)
   }
   if (missing.length > 0 || unexpected.length > 0 || observedCases.size !== expectedCases.size) {
     reasons.push(`casos del manifest no cubiertos exactamente (faltan ${missing.length}, sobran ${unexpected.length}, únicos ${observedCases.size}/${expectedCases.size})`)
@@ -1072,8 +1171,8 @@ export function evaluateAcceptance(artifact) {
   if (wrongWeekCount.length > 0) {
     reasons.push(`casos con weekCount distinto al manifest: ${wrongWeekCount.map((plan) => plan.caseId).join(', ')}`)
   }
-  if (observedTargetWeeks !== TARGET_WEEK_TOTAL) {
-    reasons.push(`semanas objetivo observadas ${observedTargetWeeks}/${TARGET_WEEK_TOTAL}`)
+  if (observedTargetWeeks !== expectedTargetWeeks) {
+    reasons.push(`semanas objetivo observadas ${observedTargetWeeks}/${expectedTargetWeeks}`)
   }
   if (completePlans < MIN_COMPLETE_PLANS) {
     reasons.push(`planes completos ${completePlans} < ${MIN_COMPLETE_PLANS}`)
@@ -1096,7 +1195,7 @@ export function evaluateAcceptance(artifact) {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run scripts/loadtest-plan-builder.test.js`
-Expected: PASS, 27 tests.
+Expected: PASS, 30 tests.
 
 - [ ] **Step 5: Commit (owner)**
 
@@ -1126,9 +1225,9 @@ import { buildReport, renderReport } from './loadtest-plan-builder/report.mjs'
 
 function artifactStub() {
   const weeks = [
-    { weekIndex: 0, scorable: true, countRepairsV2: 2, correctiveActionCount: 1, structuralActionCount: 1 },
-    { weekIndex: 1, scorable: true, countRepairsV2: 4, correctiveActionCount: 2, structuralActionCount: 1 },
-    { weekIndex: 2, scorable: false, countRepairsV2: null, correctiveActionCount: 0, structuralActionCount: 0 },
+    { weekIndex: 0, scorable: true, countRepairsV2: 2, correctiveActionCount: 1, structuralActionCount: 1, durationMs: 3000, wallClockMs: 5000 },
+    { weekIndex: 1, scorable: true, countRepairsV2: 4, correctiveActionCount: 2, structuralActionCount: 1, durationMs: 7000, wallClockMs: 9000 },
+    { weekIndex: 2, scorable: false, countRepairsV2: null, correctiveActionCount: 0, structuralActionCount: 0, durationMs: null, wallClockMs: null },
   ]
   return {
     artifactSchemaVersion: 1,
@@ -1183,9 +1282,13 @@ describe('loadtest report', () => {
     expect(scenario.weekWarningInput.n).toBe(2)
   })
 
-  it('emits the secondary weekly latency breakdown', () => {
+  it('emits the secondary weekly latency breakdown with real values', () => {
     const report = buildReport(artifactStub())
-    expect(report.weeklyLatency.durationMs).toBeDefined()
+    // Dos semanas con duración, una en null; el null se excluye y se cuenta.
+    expect(report.weeklyLatency.durationMs.n).toBe(2)
+    expect(report.weeklyLatency.durationMs.nullCount).toBe(1)
+    expect(report.weeklyLatency.durationMs.p50).toBe(3000)
+    expect(report.weeklyLatency.wallClockMs.p95).toBe(9000)
   })
 
   it('refuses an artifact written by a different schema version', () => {
@@ -1253,7 +1356,9 @@ export function buildReport(artifact) {
   }
 
   const completePlans = artifact.plans.filter((plan) => plan.outcome === 'succeeded')
-  const allWeeks = completePlans.flatMap((plan) => plan.weeks)
+  // Todas las semanas escritas, no solo las de planes completos: una semana de
+  // un plan que después falló igual tiene latencia real que medir.
+  const allWeeks = artifact.plans.flatMap((plan) => plan.weeks)
 
   return {
     latency: {
@@ -1263,6 +1368,7 @@ export function buildReport(artifact) {
     /** Desglose secundario: latencia por semana, no por plan. */
     weeklyLatency: {
       durationMs: summarizeLatency(allWeeks.map((week) => week.durationMs)),
+      wallClockMs: summarizeLatency(allWeeks.map((week) => week.wallClockMs)),
     },
     repair: repairBlock(completePlans),
     byScenario: Object.fromEntries(
@@ -1299,7 +1405,8 @@ export function renderReport(report) {
   lines.push(formatDistribution('corrective+structural por semana (warning)', report.repair.weekWarningInput))
 
   lines.push('', '  Latencia por semana (secundario):')
-  lines.push(formatLatency('durationMs', report.weeklyLatency.durationMs))
+  lines.push(formatLatency('durationMs (proveedor, todos los intentos)', report.weeklyLatency.durationMs))
+  lines.push(formatLatency('wallClockMs (escritura a escritura)', report.weeklyLatency.wallClockMs))
 
   lines.push('', '  Por escenario:')
   for (const [scenarioKey, block] of Object.entries(report.byScenario)) {
@@ -1317,7 +1424,7 @@ export function renderReport(report) {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run scripts/loadtest-plan-builder.test.js`
-Expected: PASS, 35 tests.
+Expected: PASS, 38 tests.
 
 - [ ] **Step 5: Commit (owner)**
 
@@ -1337,7 +1444,8 @@ git commit -m "test(loadtest): report latency cohorts and repair distributions"
 **Interfaces:**
 - Consumes: nada de tasks previas.
 - Produces:
-  - `createMemoryWriter(): { writer, snapshot() }` — `writer` implementa `AsyncPlanGenerationWriter`; `snapshot()` devuelve `{ plan, weeks, attempts, job }`.
+  - `createMemoryWriter(now?): { writer, snapshot() }` — `writer` implementa `AsyncPlanGenerationWriter`; `snapshot()` devuelve `{ plan, weeks, attempts, job, weekWrites }`, con una marca de tiempo por escritura de semana.
+  - `instrumentCallLLM(callLLM): { wrapped, sizesFor(weekIndex) }` — mide tamaños de entrada/salida por semana sin retener contenido.
   - `createDetectionPoller({ snapshot, isReadyWeek, workerStartedAt, intervalMs, now }): { start(), stop(), result() }`.
   - `loadRuntime(): Promise<{ vite, runAsyncPlanGeneration, callAnthropicForWeek, resolveEffectivePlanBuilderConfig, buildVariantId, countRepairsV2, reviewPlanQuality, isReadyWeek, pollIntervalMs, close() }>`.
 
@@ -1372,6 +1480,37 @@ describe('loadtest memory writer', () => {
     await writer.putWeek({ weekIndex: 0, status: 'draft', sessions: [{}] })
     expect(snapshot().weeks).toHaveLength(1)
     expect(snapshot().weeks[0].status).toBe('draft')
+  })
+
+  it('timestamps every week write so weekly latency is measurable', async () => {
+    let clock = 1_000
+    const { writer, snapshot } = createMemoryWriter(() => clock)
+    await writer.putWeek({ weekIndex: 0, status: 'generating', sessions: [] })
+    clock = 7_500
+    await writer.putWeek({ weekIndex: 0, status: 'draft', sessions: [{}] })
+
+    const writes = snapshot().weekWrites
+    expect(writes).toHaveLength(2)
+    expect(writes[1].at - writes[0].at).toBe(6_500)
+  })
+})
+
+describe('loadtest callLLM instrumentation', () => {
+  it('records sizes per week without keeping any content', async () => {
+    const { wrapped, sizesFor } = instrumentCallLLM(async () => ({ text: '12345' }))
+    await wrapped({ traceId: 'job-week-2', messages: [{ role: 'user', content: 'hola' }] })
+
+    const sizes = sizesFor(2)
+    expect(sizes.responseChars).toBe(5)
+    expect(sizes.promptChars).toBeGreaterThan(0)
+    expect(JSON.stringify(sizes)).not.toContain('hola')
+  })
+
+  it('accumulates retries of the same week', async () => {
+    const { wrapped, sizesFor } = instrumentCallLLM(async () => ({ text: 'ab' }))
+    await wrapped({ traceId: 'job-week-1', messages: [] })
+    await wrapped({ traceId: 'job-week-1-attempt-2', messages: [] })
+    expect(sizesFor(1).responseChars).toBe(4)
   })
 })
 
@@ -1452,8 +1591,8 @@ import { createServer } from 'vite'
  * corridas no contaminan `plan_generation_jobs` de producción, que es la tabla
  * contra la que después se miran los datos reales.
  */
-export function createMemoryWriter() {
-  const state = { plan: null, weeks: [], attempts: [], job: null }
+export function createMemoryWriter(now = Date.now) {
+  const state = { plan: null, weeks: [], attempts: [], job: null, weekWrites: [] }
 
   const writer = {
     async getPlan() {
@@ -1463,6 +1602,10 @@ export function createMemoryWriter() {
       state.plan = plan
     },
     async putWeek(week) {
+      // Marca de tiempo por escritura (spec §3.2): es lo que permite medir la
+      // latencia real de una semana, incluidos sus reintentos, sin depender de
+      // la duración de un único intento.
+      state.weekWrites.push({ weekIndex: week.weekIndex, status: week.status, at: now() })
       const index = state.weeks.findIndex((candidate) => candidate.weekIndex === week.weekIndex)
       if (index >= 0) state.weeks[index] = week
       else state.weeks.push(week)
@@ -1482,8 +1625,32 @@ export function createMemoryWriter() {
       weeks: [...state.weeks],
       attempts: [...state.attempts],
       job: state.job,
+      weekWrites: [...state.weekWrites],
     }),
   }
+}
+
+/**
+ * Envuelve `callLLM` para medir TAMAÑOS de entrada y salida por semana sin
+ * guardar contenido. La clave es el índice de semana del traceId, que el loop
+ * construye como `${jobId}-week-${weekIndex}` (`asyncGenerationLoop.ts:986`),
+ * con sufijo `-attempt-N` en los reintentos.
+ */
+export function instrumentCallLLM(callLLM) {
+  const sizesByWeek = new Map()
+
+  const wrapped = async (request) => {
+    const weekIndex = Number(/week-(\d+)/.exec(request.traceId)?.[1] ?? -1)
+    const promptChars = JSON.stringify(request.messages ?? request).length
+    const response = await callLLM(request)
+    const entry = sizesByWeek.get(weekIndex) ?? { promptChars: 0, responseChars: 0 }
+    entry.promptChars += promptChars
+    entry.responseChars += (response?.text ?? '').length
+    sizesByWeek.set(weekIndex, entry)
+    return response
+  }
+
+  return { wrapped, sizesFor: (weekIndex) => sizesByWeek.get(weekIndex) ?? null }
 }
 
 /**
@@ -1584,7 +1751,7 @@ export async function loadRuntime() {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run scripts/loadtest-plan-builder.test.js`
-Expected: PASS, 40 tests.
+Expected: PASS, 46 tests.
 
 - [ ] **Step 5: Commit (owner)**
 
@@ -1673,7 +1840,7 @@ import { dirname } from 'node:path'
 import { buildManifest, buildPlanFixture } from './loadtest-plan-builder/manifest.mjs'
 import { buildArtifact, evaluateAcceptance, toPlanRow, toWeekRow } from './loadtest-plan-builder/artifact.mjs'
 import { buildReport, renderReport } from './loadtest-plan-builder/report.mjs'
-import { createDetectionPoller, createMemoryWriter, loadRuntime } from './loadtest-plan-builder/runtime.mjs'
+import { createDetectionPoller, createMemoryWriter, instrumentCallLLM, loadRuntime } from './loadtest-plan-builder/runtime.mjs'
 
 export function parseArgs(argv) {
   const reportIndex = argv.indexOf('--report')
@@ -1705,6 +1872,7 @@ function readGit() {
 async function runCase(runtime, manifestCase, variant) {
   const { plan, weeks, profile, wizardConfig } = buildPlanFixture(manifestCase)
   const { writer, snapshot } = createMemoryWriter()
+  const { wrapped: callLLM, sizesFor } = instrumentCallLLM(runtime.callAnthropicForWeek)
   const workerStartedAt = Date.now()
   const jobId = `loadtest-job-${manifestCase.caseId}`
 
@@ -1741,7 +1909,7 @@ async function runCase(runtime, manifestCase, variant) {
       wizardConfig,
       jobId,
       writer,
-      callLLM: runtime.callAnthropicForWeek,
+      callLLM,
       concurrency: variant.concurrency,
       enqueuedAt: workerStartedAt,
       variant,
@@ -1763,14 +1931,22 @@ async function runCase(runtime, manifestCase, variant) {
 
   const weekRows = state.weeks.map((week) => {
     const attempts = state.attempts.filter((attempt) => attempt.weekIndex === week.weekIndex)
-    const lastAttempt = attempts[attempts.length - 1]
+    const writes = state.weekWrites.filter((entry) => entry.weekIndex === week.weekIndex)
+    const sizes = sizesFor(week.weekIndex)
     return toWeekRow(week, {
       scenarioKey: manifestCase.scenarioKey,
       countRepairsV2: runtime.countRepairsV2(week),
       // Tamaños, no contenido.
+      promptChars: sizes?.promptChars ?? null,
+      responseChars: sizes?.responseChars ?? null,
       promptTokens: attempts.reduce((sum, attempt) => sum + (attempt.promptTokens ?? 0), 0) || null,
       completionTokens: attempts.reduce((sum, attempt) => sum + (attempt.completionTokens ?? 0), 0) || null,
-      durationMs: lastAttempt?.durationMs ?? null,
+      // Suma de TODOS los intentos: con retry, la duración del último subestima
+      // lo que costó la semana.
+      durationMs: attempts.reduce((sum, attempt) => sum + (attempt.durationMs ?? 0), 0) || null,
+      // De marca de escritura a marca de escritura: incluye reintentos y la
+      // espera real, que es lo que un atleta percibe.
+      wallClockMs: writes.length > 1 ? writes[writes.length - 1].at - writes[0].at : null,
       score: review?.weeks.find((entry) => entry.weekIndex === week.weekIndex)?.score ?? null,
       grade: review?.weeks.find((entry) => entry.weekIndex === week.weekIndex)?.grade ?? null,
     })
@@ -1804,6 +1980,8 @@ async function runCase(runtime, manifestCase, variant) {
     planGrade: review?.grade ?? null,
     issueCodes: review ? [...new Set(review.issues.map((issue) => issue.code))] : [],
     errorClass,
+    promptChars: weekRows.reduce((sum, week) => sum + (week.promptChars ?? 0), 0) || null,
+    responseChars: weekRows.reduce((sum, week) => sum + (week.responseChars ?? 0), 0) || null,
     weeks: weekRows,
   })
 }
@@ -1878,7 +2056,7 @@ En `package.json`, junto a `loadtest:week-creator`:
 - [ ] **Step 5: Run test to verify it passes**
 
 Run: `npx vitest run scripts/loadtest-plan-builder.test.js`
-Expected: PASS, 46 tests.
+Expected: PASS, 52 tests.
 
 - [ ] **Step 6: Verify the guards without spending a token**
 
@@ -1974,7 +2152,9 @@ Con el artefacto aceptado, se planifica la Entrega 2: copia sanitizada a `docs/s
 | §3.4 nearest-rank congelado | 3 |
 | §3.5 artefacto allowlisted, `artifactSchemaVersion`, `weeks[]` | 4 |
 | §3.5 allowlist re-aplicada en la frontera final; `errorClass`, no texto crudo | 4, 7 |
-| §3.5 tamaños de entrada/salida por semana y por plan | 4, 7 |
+| §3.5 tamaños de entrada/salida por semana y por plan (instrumentados, no null) | 4, 6, 7 |
+| §3.2 marca de tiempo por escritura en el writer | 6 |
+| §3.5 procedencia autocontenida: el manifest embebido incluye sportDetails y descriptor por semana | 2, 4 |
 | §3.5 artefacto escrito aunque falle; exit code | 7 |
 | §3.6 reporte puro `--report`, describe y no propone | 5, 7 |
 | §3.6 tres distribuciones también por escenario; latencia semanal secundaria | 5 |
