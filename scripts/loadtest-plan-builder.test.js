@@ -44,7 +44,9 @@ function planRowsFromManifest(overrides = () => ({})) {
     terminalMs: 9000,
     weeks: Array.from({ length: manifestCase.weekCount }, (_, weekIndex) => ({
       weekIndex,
+      status: 'draft',
       scorable: true,
+      repairTaxonomyVersion: 2,
       countRepairsV2: 2,
       correctiveActionCount: 1,
       structuralActionCount: 1,
@@ -291,11 +293,41 @@ describe('loadtest artifact', () => {
     expect(row.scorable).toBe(false)
   })
 
+  it('marks a week without a finite non-negative v2 repair count as not scorable', () => {
+    for (const countRepairsV2 of [undefined, null, Number.NaN, Number.POSITIVE_INFINITY, -1, '2']) {
+      const row = toWeekRow(
+        {
+          weekIndex: 0,
+          status: 'draft',
+          sessions: [],
+          generationMeta: { attempts: 1, repairTaxonomyVersion: 2 },
+        },
+        { scenarioKey: 'running', countRepairsV2 },
+      )
+      expect(row.scorable).toBe(false)
+    }
+  })
+
   it('marks an errored week as not scorable', () => {
     const row = toWeekRow(
       { weekIndex: 0, status: 'error', sessions: [], generationMeta: { attempts: 2, repairTaxonomyVersion: 2 } },
       { scenarioKey: 'running', countRepairsV2: 0 },
     )
+    expect(row.scorable).toBe(false)
+  })
+
+  it('recalculates scorable when allowlisting an already materialized week', () => {
+    const row = toPlanRow({
+      weeks: [{
+        weekIndex: 0,
+        scenarioKey: 'running',
+        status: 'draft',
+        repairTaxonomyVersion: 2,
+        countRepairsV2: null,
+        scorable: true,
+      }],
+    }).weeks[0]
+
     expect(row.scorable).toBe(false)
   })
 
@@ -420,6 +452,20 @@ describe('loadtest artifact', () => {
     const verdict = evaluateAcceptance(artifact)
     expect(verdict.accepted).toBe(false)
     expect(verdict.reasons.join(' ')).toContain('12/11')
+  })
+
+  it('rejects an embedded manifest whose declared totals disagree with its cases', () => {
+    const plans = planRowsFromManifest().slice(0, 11)
+    const artifact = artifactFrom(plans)
+    artifact.manifest = {
+      ...artifact.manifest,
+      cases: artifact.manifest.cases.slice(0, 11),
+    }
+
+    const verdict = evaluateAcceptance(artifact)
+    expect(verdict.accepted).toBe(false)
+    expect(verdict.reasons.join(' ')).toMatch(/cases\.length 11.*attemptedPlanTotal 12/)
+    expect(verdict.reasons.join(' ')).toMatch(/weekCount 39.*targetWeekTotal 42/)
   })
 
   it('keeps an error class instead of raw provider text', () => {

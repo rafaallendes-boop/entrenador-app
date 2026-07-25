@@ -14,6 +14,16 @@ const MIN_COMPLETE_PLANS = 10
 const MIN_SCORABLE_WEEKS = 30
 const MAX_SCORABLE_WEEKS = 50
 
+function isScorableWeek(week) {
+  const ready = week.status === 'draft' || week.status === 'accepted'
+  const countRepairsV2 = week.countRepairsV2
+  return ready
+    && week.repairTaxonomyVersion === 2
+    && typeof countRepairsV2 === 'number'
+    && Number.isFinite(countRepairsV2)
+    && countRepairsV2 >= 0
+}
+
 /**
  * Allowlist EXPLÍCITA por semana. Nunca copiar la semana entera ni excluir por
  * lista negra: un campo nuevo del dominio no debe poder filtrarse al artefacto
@@ -21,9 +31,12 @@ const MAX_SCORABLE_WEEKS = 50
  */
 export function toWeekRow(week, context) {
   const meta = week.generationMeta ?? {}
-  const scorable = week.status === 'draft' || week.status === 'accepted'
-    ? meta.repairTaxonomyVersion === 2
-    : false
+  const countRepairsV2 = context.countRepairsV2 ?? null
+  const scorable = isScorableWeek({
+    status: week.status,
+    repairTaxonomyVersion: meta.repairTaxonomyVersion,
+    countRepairsV2,
+  })
   return {
     weekIndex: week.weekIndex,
     scenarioKey: context.scenarioKey,
@@ -33,7 +46,7 @@ export function toWeekRow(week, context) {
     errorClass: meta.errorClass ?? null,
     repairTaxonomyVersion: meta.repairTaxonomyVersion ?? null,
     qualityVersion: meta.qualityVersion ?? context.qualityVersion ?? null,
-    countRepairsV2: context.countRepairsV2 ?? null,
+    countRepairsV2,
     correctiveActionCount: meta.correctiveActionCount ?? 0,
     structuralActionCount: meta.structuralActionCount ?? 0,
     movedSessionCount: meta.movedSessionCount ?? 0,
@@ -70,6 +83,9 @@ const WEEK_ROW_KEYS = Object.keys(toWeekRow(
 function pickWeekRow(week) {
   const picked = {}
   for (const key of WEEK_ROW_KEYS) picked[key] = week[key] ?? null
+  // Nunca confiar en el booleano del caller: se deriva nuevamente de los tres
+  // campos allowlisteados que hacen que la semana sea realmente puntuable.
+  picked.scorable = isScorableWeek(picked)
   return picked
 }
 
@@ -204,6 +220,12 @@ export function evaluateAcceptance(artifact) {
   const expectedTargetWeeks = embeddedCases.reduce((sum, item) => sum + item.weekCount, 0)
 
   const reasons = []
+  if (embeddedCases.length !== artifact.manifest.attemptedPlanTotal) {
+    reasons.push(`manifest inconsistente: cases.length ${embeddedCases.length} != attemptedPlanTotal ${artifact.manifest.attemptedPlanTotal}`)
+  }
+  if (expectedTargetWeeks !== artifact.manifest.targetWeekTotal) {
+    reasons.push(`manifest inconsistente: suma weekCount ${expectedTargetWeeks} != targetWeekTotal ${artifact.manifest.targetWeekTotal}`)
+  }
   if (attemptedPlans !== embeddedCases.length) {
     reasons.push(`manifest incompleto: se intentaron ${attemptedPlans}/${embeddedCases.length} planes`)
   }
