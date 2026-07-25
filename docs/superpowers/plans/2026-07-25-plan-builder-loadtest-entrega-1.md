@@ -161,11 +161,21 @@ git commit -m "refactor(plan-builder): share the poll interval as a pure module"
 **Interfaces:**
 - Consumes: nada.
 - Produces:
-  - `SCENARIOS`: objeto con 6 claves; cada valor `{ key, weekCount, startDate, sports, buildProfile(), buildWizardConfig() }`.
+  - `SCENARIOS`: objeto con 6 claves; cada valor `{ key, weekCount, startDate, primarySport, sportDetails, targetLoadBySport, phaseForWeek(index, weekCount), buildProfile(), buildWizardConfig() }`.
   - `MANIFEST_VERSION: 1`.
   - `buildManifest(): Array<{ caseId, scenarioKey, planIndex, weekCount, startDate }>` — 12 entradas en orden congelado.
   - `buildPlanFixture(manifestCase): { plan, weeks, profile, wizardConfig }` — objetos listos para `runAsyncPlanGeneration`.
+  - `mondayOf(isoDate): string` — lunes de la semana que contiene esa fecha.
+  - `describeManifest(): object` — snapshot serializable (casos + perfil + wizard config) para embeber en el artefacto.
   - `TARGET_WEEK_TOTAL: 42`, `ATTEMPTED_PLAN_TOTAL: 12`.
+
+**Contratos del dominio que este manifest debe respetar** (verificados en código; violarlos produce un control no calibrable):
+
+- `injuryNotes` vive en `PlanWizardConfig`, **no** en `AthleteProfile` (`types/index.ts:678`).
+- `currentFitnessLevel ∈ {'fit','normal','returning','low'}`; `currentFatigue ∈ {'fresh','normal','loaded','overloaded'}` (`types/index.ts:661-662`). Cualquier otro valor es un escenario inválido silencioso.
+- `getAllowedSports` = `macroSnapshot.sportDetails` ∪ `wizardConfig.complementarySports` ∪ `{mobility, recovery, nutrition}` (`repairWeek.ts:2660`). Un escenario de running cuyo `sportDetails` diga squash hace que `filterDisallowedSports` **descarte todas las sesiones de running**.
+- `weekStartDate` es **lunes** (`planBuilder.ts:132`). `plan.startDate` puede caer a mitad de semana; la semana parcial se construye con esa combinación, no metiendo un miércoles en `weekStartDate`.
+- `MacroPlanPhase ∈ {'base','build','peak','taper','race','transition'}` (`types/index.ts:689`). Un escenario de taper necesita fases de taper/race reales, o mide lo mismo que build.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -230,6 +240,61 @@ describe('loadtest manifest', () => {
   it('exposes the manifest version so artifacts stay comparable', () => {
     expect(MANIFEST_VERSION).toBe(1)
   })
+
+  it('starts every week on a Monday even when the plan starts mid-week', () => {
+    for (const manifestCase of buildManifest()) {
+      const { weeks } = buildPlanFixture(manifestCase)
+      for (const week of weeks) {
+        expect(new Date(`${week.weekStartDate}T00:00:00.000Z`).getUTCDay()).toBe(1)
+      }
+    }
+  })
+
+  it('keeps the partial-week scenario starting mid-week on a Monday-anchored week', () => {
+    const partial = buildManifest().find((item) => item.scenarioKey === 'semana_parcial')
+    const { plan, weeks } = buildPlanFixture(partial)
+    // startDate es miércoles: la primera semana es parcial de verdad.
+    expect(new Date(`${plan.startDate}T00:00:00.000Z`).getUTCDay()).toBe(3)
+    expect(weeks[0].weekStartDate).toBe('2026-09-07')
+  })
+
+  it('only uses wizard enum values the engine understands', () => {
+    const fitness = new Set(['fit', 'normal', 'returning', 'low'])
+    const fatigue = new Set(['fresh', 'normal', 'loaded', 'overloaded'])
+    for (const scenario of Object.values(SCENARIOS)) {
+      const wizardConfig = scenario.buildWizardConfig()
+      expect(fitness.has(wizardConfig.currentFitnessLevel)).toBe(true)
+      expect(fatigue.has(wizardConfig.currentFatigue)).toBe(true)
+    }
+  })
+
+  it('puts injury notes where the engine reads them', () => {
+    const taper = SCENARIOS.squash_taper_medico
+    expect(taper.buildWizardConfig().injuryNotes).toMatch(/rodilla/)
+    expect(taper.buildProfile().injuryNotes).toBeUndefined()
+  })
+
+  it('allows each scenario primary sport through getAllowedSports', () => {
+    // allowed = macroSnapshot.sportDetails ∪ complementarySports ∪ {mobility, recovery, nutrition}
+    for (const manifestCase of buildManifest()) {
+      const { plan, wizardConfig } = buildPlanFixture(manifestCase)
+      const allowed = new Set([
+        ...plan.macroSnapshot.sportDetails.map((detail) => detail.sport),
+        ...wizardConfig.complementarySports,
+        'mobility', 'recovery', 'nutrition',
+      ])
+      expect(allowed.has(SCENARIOS[manifestCase.scenarioKey].primarySport)).toBe(true)
+    }
+  })
+
+  it('gives the taper scenario real taper and race phases', () => {
+    const taper = buildManifest().find((item) => item.scenarioKey === 'squash_taper_medico')
+    const { plan, weeks } = buildPlanFixture(taper)
+    const phases = weeks.map((week) => week.phase)
+    expect(phases).toContain('taper')
+    expect(phases[phases.length - 1]).toBe('race')
+    expect(plan.phases.map((phase) => phase.phase)).toEqual(phases)
+  })
 })
 ```
 
@@ -261,11 +326,19 @@ function addDaysISO(startDate, days) {
   return date.toISOString().slice(0, 10)
 }
 
+/** Lunes de la semana que contiene `isoDate`. `weekStartDate` es lunes por contrato. */
+export function mondayOf(isoDate) {
+  const date = new Date(`${isoDate}T00:00:00.000Z`)
+  const weekday = date.getUTCDay()
+  const offset = weekday === 0 ? -6 : 1 - weekday
+  return addDaysISO(isoDate, offset)
+}
+
 function baseProfile(overrides) {
   return {
     id: 'loadtest-athlete',
     updatedAt: 1,
-    sportContext: { enabledSports: ['squash'], primarySport: 'squash' },
+    sportContext: { enabledSports: ['squash', 'strength'], primarySport: 'squash' },
     ...overrides,
   }
 }
@@ -286,11 +359,30 @@ function baseWizardConfig(overrides) {
   }
 }
 
+function sportDetail(sport, role) {
+  return {
+    sport,
+    role,
+    phaseFocus: '',
+    weeklyIntent: '',
+    volumeBias: 'hold',
+    intensityBias: 'hold',
+    notes: '',
+  }
+}
+
+/** Todas las semanas en `build` salvo que el escenario diga otra cosa. */
+const buildEveryWeek = () => 'build'
+
 export const SCENARIOS = {
   squash_build: {
     key: 'squash_build',
     weekCount: 4,
     startDate: '2026-08-03',
+    primarySport: 'squash',
+    sportDetails: [sportDetail('squash', 'primary'), sportDetail('strength', 'support')],
+    targetLoadBySport: { squash: 50, strength: 25 },
+    phaseForWeek: buildEveryWeek,
     buildProfile: () => baseProfile({}),
     buildWizardConfig: () => baseWizardConfig({}),
   },
@@ -298,21 +390,36 @@ export const SCENARIOS = {
     key: 'squash_taper_medico',
     weekCount: 3,
     startDate: '2026-08-10',
-    buildProfile: () => baseProfile({
-      injuryNotes: 'Molestia de rodilla derecha en control, sin dolor agudo.',
-    }),
+    primarySport: 'squash',
+    sportDetails: [sportDetail('squash', 'primary'), sportDetail('strength', 'support')],
+    targetLoadBySport: { squash: 40, strength: 15 },
+    // Escenario de taper de verdad: sin fases taper/race mediría lo mismo que build.
+    phaseForWeek: (index, weekCount) => {
+      if (index === weekCount - 1) return 'race'
+      if (index === weekCount - 2) return 'taper'
+      return 'peak'
+    },
+    buildProfile: () => baseProfile({}),
     buildWizardConfig: () => baseWizardConfig({
-      currentFitnessLevel: 'high',
-      currentFatigue: 'tired',
-      sessionsPerWeek: 3,
+      // `injuryNotes` vive en el wizard config, que es lo que lee el motor.
+      injuryNotes: 'Molestia de rodilla derecha en control, sin dolor agudo.',
+      currentFitnessLevel: 'fit',
+      currentFatigue: 'loaded',
+      complementarySports: ['strength'],
     }),
   },
   running: {
     key: 'running',
     weekCount: 4,
     startDate: '2026-08-17',
+    primarySport: 'running',
+    // El primary DEBE estar en sportDetails o filterDisallowedSports descarta
+    // todas las sesiones del deporte del escenario.
+    sportDetails: [sportDetail('running', 'primary'), sportDetail('strength', 'support')],
+    targetLoadBySport: { running: 60, strength: 20 },
+    phaseForWeek: buildEveryWeek,
     buildProfile: () => baseProfile({
-      sportContext: { enabledSports: ['running'], primarySport: 'running' },
+      sportContext: { enabledSports: ['running', 'strength'], primarySport: 'running' },
     }),
     buildWizardConfig: () => baseWizardConfig({
       complementarySports: ['strength'],
@@ -324,18 +431,27 @@ export const SCENARIOS = {
     key: 'ciclismo',
     weekCount: 3,
     startDate: '2026-08-24',
+    primarySport: 'cycling',
+    sportDetails: [sportDetail('cycling', 'primary'), sportDetail('strength', 'support')],
+    targetLoadBySport: { cycling: 60, strength: 20 },
+    phaseForWeek: buildEveryWeek,
     buildProfile: () => baseProfile({
-      sportContext: { enabledSports: ['cycling'], primarySport: 'cycling' },
+      sportContext: { enabledSports: ['cycling', 'strength'], primarySport: 'cycling' },
     }),
     buildWizardConfig: () => baseWizardConfig({
       complementarySports: ['strength'],
       sessionDurationMins: 90,
+      trainingDays: ['tuesday', 'thursday', 'sunday'],
     }),
   },
   dobles: {
     key: 'dobles',
     weekCount: 4,
     startDate: '2026-08-31',
+    primarySport: 'squash',
+    sportDetails: [sportDetail('squash', 'primary'), sportDetail('strength', 'support')],
+    targetLoadBySport: { squash: 70, strength: 30 },
+    phaseForWeek: buildEveryWeek,
     buildProfile: () => baseProfile({}),
     buildWizardConfig: () => baseWizardConfig({
       allowDoubleSession: true,
@@ -346,9 +462,15 @@ export const SCENARIOS = {
   semana_parcial: {
     key: 'semana_parcial',
     weekCount: 3,
-    // Fecha de referencia congelada: arranca a mitad de semana para ejercitar
-    // el recorte de la primera semana.
+    // Fecha congelada: MIÉRCOLES. `plan.startDate` cae a mitad de semana y la
+    // primera `weekStartDate` es el lunes anterior (2026-09-07). Así la semana
+    // parcial es real; meter el miércoles en `weekStartDate` produciría una
+    // semana miércoles-martes que el prompt describiría como lunes.
     startDate: '2026-09-09',
+    primarySport: 'squash',
+    sportDetails: [sportDetail('squash', 'primary'), sportDetail('strength', 'support')],
+    targetLoadBySport: { squash: 40, strength: 20 },
+    phaseForWeek: buildEveryWeek,
     buildProfile: () => baseProfile({}),
     buildWizardConfig: () => baseWizardConfig({ sessionsPerWeek: 3 }),
   },
@@ -384,7 +506,12 @@ export function buildPlanFixture(manifestCase) {
   const scenario = SCENARIOS[manifestCase.scenarioKey]
   const wizardConfig = scenario.buildWizardConfig()
   const planId = `loadtest-${manifestCase.caseId.replace('#', '-')}`
-  const endDate = addDaysISO(manifestCase.startDate, manifestCase.weekCount * 7 - 1)
+  // La primera semana se ancla al lunes de la semana que contiene startDate.
+  // Cuando startDate cae a mitad de semana, esa primera semana es parcial.
+  const firstMonday = mondayOf(manifestCase.startDate)
+  const endDate = addDaysISO(firstMonday, manifestCase.weekCount * 7 - 1)
+  const phases = Array.from({ length: manifestCase.weekCount }, (_, index) =>
+    scenario.phaseForWeek(index, manifestCase.weekCount))
 
   const plan = {
     id: planId,
@@ -396,31 +523,23 @@ export function buildPlanFixture(manifestCase) {
     startDate: manifestCase.startDate,
     endDate,
     totalWeeks: manifestCase.weekCount,
-    phases: [{
-      phase: 'build',
-      startWeekIndex: 0,
-      endWeekIndex: manifestCase.weekCount - 1,
+    phases: phases.map((phase, index) => ({
+      phase,
+      startWeekIndex: index,
+      endWeekIndex: index,
       blockFocus: '',
       intentBySport: {},
-    }],
+    })),
     wizardConfig,
     macroSnapshot: {
       goalEventId: 'loadtest-event',
       goalEventDate: endDate,
-      currentPhase: 'build',
+      currentPhase: phases[0],
       weeksRemaining: manifestCase.weekCount,
       blockFocus: '',
       headline: '',
       timeline: [],
-      sportDetails: [{
-        sport: 'squash',
-        role: 'primary',
-        phaseFocus: '',
-        weeklyIntent: '',
-        volumeBias: 'hold',
-        intensityBias: 'hold',
-        notes: '',
-      }],
+      sportDetails: scenario.sportDetails,
       secondaryEvents: [],
       computedAt: 0,
     },
@@ -432,12 +551,12 @@ export function buildPlanFixture(manifestCase) {
     id: `${planId}-week-${index}`,
     planId,
     weekIndex: index,
-    weekStartDate: addDaysISO(manifestCase.startDate, index * 7),
-    phase: 'build',
+    weekStartDate: addDaysISO(firstMonday, index * 7),
+    phase: phases[index],
     status: 'pending',
     sessions: [],
     weekObjectives: [],
-    targetLoadBySport: { squash: 50 },
+    targetLoadBySport: scenario.targetLoadBySport,
     validationIssues: [],
     generationMeta: { attempts: 0 },
     createdAt: 1,
@@ -446,12 +565,32 @@ export function buildPlanFixture(manifestCase) {
 
   return { plan, weeks, profile: scenario.buildProfile(), wizardConfig }
 }
+
+/** Snapshot serializable del manifest, para embeber en el artefacto. */
+export function describeManifest() {
+  return {
+    manifestVersion: MANIFEST_VERSION,
+    attemptedPlanTotal: ATTEMPTED_PLAN_TOTAL,
+    targetWeekTotal: TARGET_WEEK_TOTAL,
+    cases: buildManifest().map((manifestCase) => {
+      const { plan, profile, wizardConfig } = buildPlanFixture(manifestCase)
+      return {
+        ...manifestCase,
+        primarySport: SCENARIOS[manifestCase.scenarioKey].primarySport,
+        phases: plan.phases.map((phase) => phase.phase),
+        targetLoadBySport: SCENARIOS[manifestCase.scenarioKey].targetLoadBySport,
+        profile,
+        wizardConfig,
+      }
+    }),
+  }
+}
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run scripts/loadtest-plan-builder.test.js`
-Expected: PASS, 5 tests.
+Expected: PASS, 11 tests.
 
 - [ ] **Step 5: Commit (owner)**
 
@@ -582,7 +721,7 @@ export function summarizeDistribution(values) {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run scripts/loadtest-plan-builder.test.js`
-Expected: PASS, 10 tests.
+Expected: PASS, 16 tests.
 
 - [ ] **Step 5: Commit (owner)**
 
@@ -600,13 +739,15 @@ git commit -m "test(loadtest): add nearest-rank stats for the plan builder loadt
 - Modify: `scripts/loadtest-plan-builder.test.js`
 
 **Interfaces:**
-- Consumes: `MANIFEST_VERSION`, `ATTEMPTED_PLAN_TOTAL`, `TARGET_WEEK_TOTAL` (Task 2).
+- Consumes: `MANIFEST_VERSION`, `ATTEMPTED_PLAN_TOTAL`, `TARGET_WEEK_TOTAL`, `buildManifest`, `describeManifest` (Task 2).
 - Produces:
   - `ARTIFACT_SCHEMA_VERSION: 1`.
   - `toWeekRow(week, context): object` — allowlist por semana.
   - `toPlanRow(runResult): object` — allowlist por plan.
   - `evaluateAcceptance(artifact): { accepted, reasons, attemptedPlans, observedTargetWeeks, completePlans, scorableWeeks }`.
-  - `buildArtifact(input): object`.
+  - `buildArtifact(input): object` — embebe el manifest descrito, el caveat y los resúmenes de latencia.
+
+**Contrato clave:** `evaluateAcceptance` **deriva** lo esperado del manifest embebido en el artefacto y lo compara contra los casos realmente observados. No cuenta filas: doce copias del mismo `caseId`, o un `observedTargetWeeks` declarado a mano, deben ser rechazados.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -621,13 +762,14 @@ import {
   toWeekRow,
 } from './loadtest-plan-builder/artifact.mjs'
 
-function planRowStub(overrides = {}) {
-  return {
-    caseId: 'squash_build#1',
-    scenarioKey: 'squash_build',
-    weekCount: 4,
+/** Construye filas que corresponden 1:1 con el manifest congelado. */
+function planRowsFromManifest(overrides = () => ({})) {
+  return buildManifest().map((manifestCase, index) => ({
+    caseId: manifestCase.caseId,
+    scenarioKey: manifestCase.scenarioKey,
+    weekCount: manifestCase.weekCount,
     outcome: 'succeeded',
-    weekCountSucceeded: 4,
+    weekCountSucceeded: manifestCase.weekCount,
     weekCountFailed: 0,
     firstWeekReadyMs: 1000,
     firstWeekReadyE2eMs: 1200,
@@ -635,9 +777,23 @@ function planRowStub(overrides = {}) {
     firstWeekDetectionLagMs: 3000,
     planCompleteMs: 8000,
     terminalMs: 9000,
-    weeks: [],
-    ...overrides,
-  }
+    weeks: Array.from({ length: manifestCase.weekCount }, (_, weekIndex) => ({
+      weekIndex,
+      scorable: true,
+      countRepairsV2: 2,
+      correctiveActionCount: 1,
+      structuralActionCount: 1,
+    })),
+    ...overrides(manifestCase, index),
+  }))
+}
+
+function artifactFrom(plans) {
+  return buildArtifact({
+    plans,
+    variant: { provider: 'claude', model: 'm', qualityVersion: 1, variantId: 'v' },
+    git: { sha: 'abc', dirty: false },
+  })
 }
 
 describe('loadtest artifact', () => {
@@ -685,59 +841,71 @@ describe('loadtest artifact', () => {
     expect(row.scorable).toBe(false)
   })
 
-  it('accepts only when the four conditions hold together', () => {
-    const weeks = Array.from({ length: 4 }, (_, index) => ({ weekIndex: index, scorable: true }))
-    const plans = Array.from({ length: 12 }, () => planRowStub({ weeks }))
-    // 12 planes x 4 semanas = 48 observadas; recortamos a la matriz congelada.
-    const artifact = buildArtifact({
-      plans,
-      variant: { variantId: 'v', qualityVersion: 1 },
-      git: { sha: 'abc', dirty: false },
-      observedTargetWeeks: 42,
-    })
-    const verdict = evaluateAcceptance(artifact)
+  it('accepts a run that covers the frozen manifest', () => {
+    const verdict = evaluateAcceptance(artifactFrom(planRowsFromManifest()))
     expect(verdict.accepted).toBe(true)
     expect(verdict.attemptedPlans).toBe(12)
+    expect(verdict.observedTargetWeeks).toBe(42)
+    expect(verdict.scorableWeeks).toBe(42)
+  })
+
+  it('rejects twelve copies of the same case even if the counts add up', () => {
+    const [first] = planRowsFromManifest()
+    // Doce filas, doce "planes", pero un solo caso del manifest cubierto.
+    const plans = Array.from({ length: 12 }, () => ({ ...first }))
+    const verdict = evaluateAcceptance(artifactFrom(plans))
+    expect(verdict.accepted).toBe(false)
+    expect(verdict.reasons.join(' ')).toMatch(/casos del manifest/)
+  })
+
+  it('derives observed target weeks from the rows instead of trusting a declared total', () => {
+    const plans = planRowsFromManifest((manifestCase) =>
+      manifestCase.caseId === 'running#1' ? { weekCount: 2, weeks: [] } : {})
+    const verdict = evaluateAcceptance(artifactFrom(plans))
+    expect(verdict.observedTargetWeeks).toBe(40)
+    expect(verdict.accepted).toBe(false)
+    expect(verdict.reasons.join(' ')).toMatch(/semanas objetivo/)
   })
 
   it('rejects a run that stopped after ten successful plans', () => {
-    const weeks = Array.from({ length: 3 }, (_, index) => ({ weekIndex: index, scorable: true }))
-    const plans = Array.from({ length: 10 }, () => planRowStub({ weeks }))
-    const artifact = buildArtifact({
-      plans,
-      variant: { variantId: 'v', qualityVersion: 1 },
-      git: { sha: 'abc', dirty: false },
-      observedTargetWeeks: 30,
-    })
-    const verdict = evaluateAcceptance(artifact)
+    const plans = planRowsFromManifest().slice(0, 10)
+    const verdict = evaluateAcceptance(artifactFrom(plans))
     expect(verdict.accepted).toBe(false)
-    expect(verdict.reasons.join(' ')).toContain('manifest')
+    expect(verdict.reasons.join(' ')).toMatch(/casos del manifest/)
   })
 
   it('rejects when too few plans completed even with the full manifest attempted', () => {
-    const weeks = Array.from({ length: 4 }, (_, index) => ({ weekIndex: index, scorable: true }))
-    const plans = [
-      ...Array.from({ length: 9 }, () => planRowStub({ weeks })),
-      ...Array.from({ length: 3 }, () => planRowStub({ outcome: 'failed', weeks: [] })),
-    ]
-    const artifact = buildArtifact({
-      plans,
-      variant: { variantId: 'v', qualityVersion: 1 },
-      git: { sha: 'abc', dirty: false },
-      observedTargetWeeks: 42,
-    })
-    expect(evaluateAcceptance(artifact).accepted).toBe(false)
+    const plans = planRowsFromManifest((_, index) =>
+      index >= 9 ? { outcome: 'failed', weekCountSucceeded: 0, weeks: [] } : {})
+    const verdict = evaluateAcceptance(artifactFrom(plans))
+    expect(verdict.attemptedPlans).toBe(12)
+    expect(verdict.completePlans).toBe(9)
+    expect(verdict.accepted).toBe(false)
   })
 
-  it('stamps the schema version and the git provenance', () => {
-    const artifact = buildArtifact({
-      plans: [],
-      variant: { variantId: 'v', qualityVersion: 1 },
-      git: { sha: 'abc', dirty: true },
-      observedTargetWeeks: 0,
-    })
+  it('embeds the manifest, the caveat and the latency summaries for Entrega 2', () => {
+    const artifact = artifactFrom(planRowsFromManifest())
     expect(artifact.artifactSchemaVersion).toBe(ARTIFACT_SCHEMA_VERSION)
-    expect(artifact.git).toEqual({ sha: 'abc', dirty: true })
+    expect(artifact.git).toEqual({ sha: 'abc', dirty: false })
+    expect(artifact.manifest.cases).toHaveLength(12)
+    // Sin perfil y wizard config no se puede reconstruir qué produjo la muestra.
+    expect(artifact.manifest.cases[0].wizardConfig.sessionsPerWeek).toBeGreaterThan(0)
+    expect(artifact.manifest.cases[0].profile.id).toBe('loadtest-athlete')
+    expect(artifact.caveat).toContain('n=12')
+    expect(artifact.latencySummary.completePlans.terminalMs.p95).toBe(9000)
+  })
+
+  it('re-applies the plan allowlist at the artifact boundary', () => {
+    const [first] = planRowsFromManifest()
+    const artifact = artifactFrom([{ ...first, apiKey: 'secreto', promptText: 'no' }])
+    expect(artifact.plans[0].apiKey).toBeUndefined()
+    expect(JSON.stringify(artifact)).not.toContain('secreto')
+  })
+
+  it('keeps an error class instead of raw provider text', () => {
+    const row = toPlanRow({ caseId: 'a#1', errorClass: 'timeout', error: 'Anthropic dijo cualquier cosa' })
+    expect(row.errorClass).toBe('timeout')
+    expect(JSON.stringify(row)).not.toContain('cualquier cosa')
   })
 })
 ```
@@ -752,9 +920,12 @@ Expected: FAIL — no se resuelve `./loadtest-plan-builder/artifact.mjs`.
 Crear `scripts/loadtest-plan-builder/artifact.mjs`:
 
 ```js
-import { ATTEMPTED_PLAN_TOTAL, MANIFEST_VERSION, TARGET_WEEK_TOTAL } from './manifest.mjs'
+import { ATTEMPTED_PLAN_TOTAL, MANIFEST_VERSION, TARGET_WEEK_TOTAL, buildManifest, describeManifest } from './manifest.mjs'
+import { summarizeLatency } from './stats.mjs'
 
 export const ARTIFACT_SCHEMA_VERSION = 1
+
+const LATENCY_METRICS = ['firstWeekReadyMs', 'firstWeekDetectedMs', 'planCompleteMs', 'terminalMs']
 
 const MIN_COMPLETE_PLANS = 10
 const MIN_SCORABLE_WEEKS = 30
@@ -788,6 +959,12 @@ export function toWeekRow(week, context) {
     addedFallbackCount: meta.addedFallbackCount ?? 0,
     filteredSportCount: meta.filteredSportCount ?? 0,
     sessionCount: Array.isArray(week.sessions) ? week.sessions.length : 0,
+    // Tamaños, no contenido (spec §3.5).
+    promptChars: context.promptChars ?? null,
+    responseChars: context.responseChars ?? null,
+    promptTokens: context.promptTokens ?? null,
+    completionTokens: context.completionTokens ?? null,
+    durationMs: context.durationMs ?? null,
     score: context.score ?? null,
     grade: context.grade ?? null,
   }
@@ -820,13 +997,28 @@ export function toPlanRow(runResult) {
     planScore: runResult.planScore ?? null,
     planGrade: runResult.planGrade ?? null,
     issueCodes: runResult.issueCodes ?? [],
-    error: runResult.error ?? null,
+    // Código, no texto: el mensaje crudo del proveedor puede citar contenido.
+    errorClass: runResult.errorClass ?? null,
+    promptChars: runResult.promptChars ?? null,
+    responseChars: runResult.responseChars ?? null,
     weeks: runResult.weeks ?? [],
   }
 }
 
+function latencyCohortSummary(plans) {
+  const cohort = {}
+  for (const metric of LATENCY_METRICS) {
+    cohort[metric] = summarizeLatency(plans.map((plan) => plan[metric]))
+  }
+  return cohort
+}
+
 export function buildArtifact(input) {
-  const plans = input.plans.map((plan) => (plan.weeks ? plan : toPlanRow(plan)))
+  // La allowlist se re-aplica SIEMPRE en la frontera final: un caller no puede
+  // colar campos por traer un objeto que ya parezca una fila.
+  const plans = input.plans.map((plan) => toPlanRow(plan))
+  const completePlans = plans.filter((plan) => plan.outcome === 'succeeded')
+
   return {
     artifactSchemaVersion: ARTIFACT_SCHEMA_VERSION,
     manifestVersion: MANIFEST_VERSION,
@@ -835,7 +1027,15 @@ export function buildArtifact(input) {
     variant: input.variant,
     attemptedPlanTarget: ATTEMPTED_PLAN_TOTAL,
     targetWeekTarget: TARGET_WEEK_TOTAL,
-    observedTargetWeeks: input.observedTargetWeeks,
+    // El manifest embebido —con perfil y wizard config— es lo que permite a
+    // Entrega 2 reconstruir qué configuración produjo la muestra. Una versión
+    // numérica sola no alcanza.
+    manifest: describeManifest(),
+    latencySummary: {
+      allAttempts: latencyCohortSummary(plans),
+      completePlans: latencyCohortSummary(completePlans),
+    },
+    caveat: `Caveat estadístico: con n=${completePlans.length} planes completos, p95 y p99 de plan son prácticamente el máximo observado. Baseline inicial conservadora, no un p95 estable.`,
     plans,
   }
 }
@@ -852,11 +1052,25 @@ export function evaluateAcceptance(artifact) {
   const scorableWeeks = artifact.plans
     .filter((plan) => plan.outcome === 'succeeded')
     .reduce((sum, plan) => sum + plan.weeks.filter((week) => week.scorable).length, 0)
-  const observedTargetWeeks = artifact.observedTargetWeeks
+  // Derivado de las filas, nunca de un total declarado por el caller.
+  const observedTargetWeeks = artifact.plans.reduce((sum, plan) => sum + (plan.weekCount ?? 0), 0)
+
+  const expectedCases = new Map(buildManifest().map((item) => [item.caseId, item.weekCount]))
+  const observedCases = new Set(artifact.plans.map((plan) => plan.caseId))
+  const missing = [...expectedCases.keys()].filter((caseId) => !observedCases.has(caseId))
+  const unexpected = [...observedCases].filter((caseId) => !expectedCases.has(caseId))
+  const wrongWeekCount = artifact.plans.filter((plan) =>
+    expectedCases.has(plan.caseId) && expectedCases.get(plan.caseId) !== plan.weekCount)
 
   const reasons = []
   if (attemptedPlans !== ATTEMPTED_PLAN_TOTAL) {
     reasons.push(`manifest incompleto: se intentaron ${attemptedPlans}/${ATTEMPTED_PLAN_TOTAL} planes`)
+  }
+  if (missing.length > 0 || unexpected.length > 0 || observedCases.size !== expectedCases.size) {
+    reasons.push(`casos del manifest no cubiertos exactamente (faltan ${missing.length}, sobran ${unexpected.length}, únicos ${observedCases.size}/${expectedCases.size})`)
+  }
+  if (wrongWeekCount.length > 0) {
+    reasons.push(`casos con weekCount distinto al manifest: ${wrongWeekCount.map((plan) => plan.caseId).join(', ')}`)
   }
   if (observedTargetWeeks !== TARGET_WEEK_TOTAL) {
     reasons.push(`semanas objetivo observadas ${observedTargetWeeks}/${TARGET_WEEK_TOTAL}`)
@@ -882,7 +1096,7 @@ export function evaluateAcceptance(artifact) {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run scripts/loadtest-plan-builder.test.js`
-Expected: PASS, 17 tests.
+Expected: PASS, 27 tests.
 
 - [ ] **Step 5: Commit (owner)**
 
@@ -961,6 +1175,24 @@ describe('loadtest report', () => {
     expect(report.caveat).not.toContain('n=12')
   })
 
+  it('breaks every repair distribution down by scenario, not just the weekly one', () => {
+    const report = buildReport(artifactStub())
+    const scenario = report.byScenario.squash_build
+    expect(scenario.weekCountRepairsV2.n).toBe(2)
+    expect(scenario.planCountRepairsV2.n).toBe(1)
+    expect(scenario.weekWarningInput.n).toBe(2)
+  })
+
+  it('emits the secondary weekly latency breakdown', () => {
+    const report = buildReport(artifactStub())
+    expect(report.weeklyLatency.durationMs).toBeDefined()
+  })
+
+  it('refuses an artifact written by a different schema version', () => {
+    const artifact = { ...artifactStub(), artifactSchemaVersion: 2 }
+    expect(() => buildReport(artifact)).toThrow(/artifactSchemaVersion/)
+  })
+
   it('renders both blocks as text', () => {
     const text = renderReport(buildReport(artifactStub()))
     expect(text).toContain('Latencia por plan')
@@ -979,6 +1211,7 @@ Expected: FAIL — no se resuelve `./loadtest-plan-builder/report.mjs`.
 Crear `scripts/loadtest-plan-builder/report.mjs`:
 
 ```js
+import { ARTIFACT_SCHEMA_VERSION } from './artifact.mjs'
 import { summarizeDistribution, summarizeLatency } from './stats.mjs'
 
 const LATENCY_METRICS = [
@@ -996,35 +1229,46 @@ function latencyCohort(plans) {
   return cohort
 }
 
+function repairBlock(completePlans) {
+  const scorableWeeks = completePlans.flatMap((plan) => plan.weeks.filter((week) => week.scorable))
+  return {
+    weekCountRepairsV2: summarizeDistribution(scorableWeeks.map((week) => week.countRepairsV2)),
+    planCountRepairsV2: summarizeDistribution(completePlans.map((plan) => plan.weeks
+      .filter((week) => week.scorable)
+      .reduce((sum, week) => sum + (week.countRepairsV2 ?? 0), 0))),
+    weekWarningInput: summarizeDistribution(scorableWeeks.map((week) =>
+      (week.correctiveActionCount ?? 0) + (week.structuralActionCount ?? 0))),
+  }
+}
+
 /**
  * El reporte DESCRIBE, no propone: no emite divisor ni umbral calculado. §5.3
  * prohíbe recalibrar por variante y una derivación automática invita a eso.
  */
 export function buildReport(artifact) {
+  // Interpretar un artefacto de otro schema en silencio produciría números que
+  // parecen comparables y no lo son.
+  if (artifact.artifactSchemaVersion !== ARTIFACT_SCHEMA_VERSION) {
+    throw new Error(`artifactSchemaVersion ${artifact.artifactSchemaVersion} incompatible; este reporte lee ${ARTIFACT_SCHEMA_VERSION}.`)
+  }
+
   const completePlans = artifact.plans.filter((plan) => plan.outcome === 'succeeded')
-  const scorableWeeks = completePlans.flatMap((plan) => plan.weeks.filter((week) => week.scorable))
+  const allWeeks = completePlans.flatMap((plan) => plan.weeks)
 
   return {
     latency: {
       allAttempts: latencyCohort(artifact.plans),
       completePlans: latencyCohort(completePlans),
     },
-    repair: {
-      weekCountRepairsV2: summarizeDistribution(scorableWeeks.map((week) => week.countRepairsV2)),
-      planCountRepairsV2: summarizeDistribution(completePlans.map((plan) => plan.weeks
-        .filter((week) => week.scorable)
-        .reduce((sum, week) => sum + (week.countRepairsV2 ?? 0), 0))),
-      weekWarningInput: summarizeDistribution(scorableWeeks.map((week) =>
-        (week.correctiveActionCount ?? 0) + (week.structuralActionCount ?? 0))),
+    /** Desglose secundario: latencia por semana, no por plan. */
+    weeklyLatency: {
+      durationMs: summarizeLatency(allWeeks.map((week) => week.durationMs)),
     },
+    repair: repairBlock(completePlans),
     byScenario: Object.fromEntries(
       [...new Set(artifact.plans.map((plan) => plan.scenarioKey))].map((scenarioKey) => [
         scenarioKey,
-        summarizeDistribution(
-          completePlans
-            .filter((plan) => plan.scenarioKey === scenarioKey)
-            .flatMap((plan) => plan.weeks.filter((week) => week.scorable).map((week) => week.countRepairsV2)),
-        ),
+        repairBlock(completePlans.filter((plan) => plan.scenarioKey === scenarioKey)),
       ]),
     ),
     caveat: `Caveat estadístico: con n=${completePlans.length} planes completos, p95 y p99 de plan son prácticamente el máximo observado. Baseline inicial conservadora, no un p95 estable. Comparar variantes exige repetir el mismo manifest congelado.`,
@@ -1054,9 +1298,15 @@ export function renderReport(report) {
   lines.push(formatDistribution('countRepairsV2 por plan completo', report.repair.planCountRepairsV2))
   lines.push(formatDistribution('corrective+structural por semana (warning)', report.repair.weekWarningInput))
 
-  lines.push('', '  Por escenario (countRepairsV2 por semana):')
-  for (const [scenarioKey, summary] of Object.entries(report.byScenario)) {
-    lines.push(formatDistribution(scenarioKey, summary))
+  lines.push('', '  Latencia por semana (secundario):')
+  lines.push(formatLatency('durationMs', report.weeklyLatency.durationMs))
+
+  lines.push('', '  Por escenario:')
+  for (const [scenarioKey, block] of Object.entries(report.byScenario)) {
+    lines.push(`    ${scenarioKey}:`)
+    lines.push(formatDistribution('  semana countRepairsV2', block.weekCountRepairsV2))
+    lines.push(formatDistribution('  plan countRepairsV2', block.planCountRepairsV2))
+    lines.push(formatDistribution('  semana corrective+structural', block.weekWarningInput))
   }
 
   lines.push('', report.caveat)
@@ -1067,7 +1317,7 @@ export function renderReport(report) {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run scripts/loadtest-plan-builder.test.js`
-Expected: PASS, 22 tests.
+Expected: PASS, 35 tests.
 
 - [ ] **Step 5: Commit (owner)**
 
@@ -1149,7 +1399,7 @@ describe('loadtest detection poller', () => {
     expect(poller.result().firstWeekDetectedMs).toBe(4_000)
   })
 
-  it('reports a null lag when no week ever became ready', () => {
+  it('reports a null lag when no week ever became ready', async () => {
     const poller = createDetectionPoller({
       snapshot: () => ({ weeks: [] }),
       isReadyWeek: readyWeek,
@@ -1157,7 +1407,30 @@ describe('loadtest detection poller', () => {
       intervalMs: 0,
       now: () => 10,
     })
+    poller.start()
+    await poller.settle()
     expect(poller.result().firstWeekDetectedMs).toBeNull()
+  })
+
+  it('still detects a week that became ready during the last sleep', async () => {
+    // Flujo real: el plan termina mientras el poller duerme. Si `settle()` solo
+    // marcara stopped, un plan exitoso registraría firstWeekDetectedMs null.
+    let clock = 1_000
+    const state = { weeks: [] }
+    const poller = createDetectionPoller({
+      snapshot: () => state,
+      isReadyWeek: readyWeek,
+      workerStartedAt: 1_000,
+      intervalMs: 50,
+      now: () => clock,
+    })
+
+    poller.start()
+    state.weeks = [{ weekIndex: 0, status: 'draft', sessions: [{}] }]
+    clock = 3_000
+    await poller.settle()
+
+    expect(poller.result().firstWeekDetectedMs).not.toBeNull()
   })
 })
 ```
@@ -1251,9 +1524,16 @@ export function createDetectionPoller(input) {
       await new Promise((resolve) => setTimeout(resolve, input.intervalMs))
       check()
     },
+    /**
+     * Cierra el poller SIN perder una detección de último momento: la semana
+     * puede haber quedado lista mientras el ciclo dormía, y el plan terminar
+     * antes del siguiente tick. Sin esta consulta final, un plan exitoso
+     * registraría `firstWeekDetectedMs: null`.
+     */
     async settle() {
       stopped = true
       await pending
+      check()
     },
     result() {
       return {
@@ -1304,7 +1584,7 @@ export async function loadRuntime() {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run scripts/loadtest-plan-builder.test.js`
-Expected: PASS, 26 tests.
+Expected: PASS, 40 tests.
 
 - [ ] **Step 5: Commit (owner)**
 
@@ -1452,7 +1732,7 @@ async function runCase(runtime, manifestCase, variant) {
   })
   poller.start()
 
-  let error = null
+  let errorClass = null
   try {
     await runtime.runAsyncPlanGeneration({
       plan: seededPlan,
@@ -1467,7 +1747,9 @@ async function runCase(runtime, manifestCase, variant) {
       variant,
     })
   } catch (caught) {
-    error = caught instanceof Error ? caught.message : String(caught)
+    // Solo la clase, nunca el mensaje: el texto del proveedor puede citar
+    // contenido generado y el artefacto no lleva contenido.
+    errorClass = caught?.code ?? caught?.name ?? 'run_threw'
   } finally {
     await poller.settle()
   }
@@ -1479,12 +1761,20 @@ async function runCase(runtime, manifestCase, variant) {
     ? runtime.reviewPlanQuality(state.plan, state.weeks, { profile })
     : null
 
-  const weekRows = state.weeks.map((week) => toWeekRow(week, {
-    scenarioKey: manifestCase.scenarioKey,
-    countRepairsV2: runtime.countRepairsV2(week),
-    score: review?.weeks.find((entry) => entry.weekIndex === week.weekIndex)?.score ?? null,
-    grade: review?.weeks.find((entry) => entry.weekIndex === week.weekIndex)?.grade ?? null,
-  }))
+  const weekRows = state.weeks.map((week) => {
+    const attempts = state.attempts.filter((attempt) => attempt.weekIndex === week.weekIndex)
+    const lastAttempt = attempts[attempts.length - 1]
+    return toWeekRow(week, {
+      scenarioKey: manifestCase.scenarioKey,
+      countRepairsV2: runtime.countRepairsV2(week),
+      // Tamaños, no contenido.
+      promptTokens: attempts.reduce((sum, attempt) => sum + (attempt.promptTokens ?? 0), 0) || null,
+      completionTokens: attempts.reduce((sum, attempt) => sum + (attempt.completionTokens ?? 0), 0) || null,
+      durationMs: lastAttempt?.durationMs ?? null,
+      score: review?.weeks.find((entry) => entry.weekIndex === week.weekIndex)?.score ?? null,
+      grade: review?.weeks.find((entry) => entry.weekIndex === week.weekIndex)?.grade ?? null,
+    })
+  })
 
   return toPlanRow({
     caseId: manifestCase.caseId,
@@ -1513,7 +1803,7 @@ async function runCase(runtime, manifestCase, variant) {
     planScore: review?.score ?? null,
     planGrade: review?.grade ?? null,
     issueCodes: review ? [...new Set(review.issues.map((issue) => issue.code))] : [],
-    error,
+    errorClass,
     weeks: weekRows,
   })
 }
@@ -1536,7 +1826,6 @@ async function main() {
   const manifest = buildManifest()
   const artifactPath = defaultArtifactPath(new Date())
   const plans = []
-  let observedTargetWeeks = 0
 
   try {
     // Planes SECUENCIALES: paralelizarlos convertiría capacidad y rate limits
@@ -1545,13 +1834,13 @@ async function main() {
       process.stdout.write(`[${index + 1}/${manifest.length}] ${manifestCase.caseId} `)
       const planRow = await runCase(runtime, manifestCase, variant)
       plans.push(planRow)
-      observedTargetWeeks += manifestCase.weekCount
       console.log(`${planRow.outcome} terminalMs=${planRow.terminalMs ?? '—'}`)
     }
   } finally {
     // El artefacto se escribe AUNQUE la corrida falle a mitad: conserva toda la
-    // evidencia parcial de una corrida pagada.
-    const artifact = buildArtifact({ plans, variant, git: readGit(), observedTargetWeeks })
+    // evidencia parcial de una corrida pagada. `observedTargetWeeks` lo deriva
+    // `evaluateAcceptance` de las filas, no se declara acá.
+    const artifact = buildArtifact({ plans, variant, git: readGit() })
     await mkdir(dirname(artifactPath), { recursive: true })
     await writeFile(artifactPath, JSON.stringify(artifact, null, 2))
     console.log(`\nArtefacto: ${artifactPath}`)
@@ -1589,15 +1878,20 @@ En `package.json`, junto a `loadtest:week-creator`:
 - [ ] **Step 5: Run test to verify it passes**
 
 Run: `npx vitest run scripts/loadtest-plan-builder.test.js`
-Expected: PASS, 32 tests.
+Expected: PASS, 46 tests.
 
 - [ ] **Step 6: Verify the guards without spending a token**
 
-Run: `npm run loadtest:plan-builder`
+Run: `env -u LOADTEST_PLAN_BUILDER npm run loadtest:plan-builder`
 Expected: sale con error `Corrida pagada bloqueada: exporta LOADTEST_PLAN_BUILDER=1 para confirmar.` y exit code 1. No debe abrir Vite ni llamar al proveedor.
 
-Run: `LOADTEST_PLAN_BUILDER=1 npm run loadtest:plan-builder`
-Expected: `CLAUDE_API_KEY no configurada; el loadtest usa el proveedor real.`
+**Cuidado:** la segunda verificación arranca la corrida pagada si `CLAUDE_API_KEY` ya está exportada en el shell. Removerla explícitamente:
+
+Run: `env -u CLAUDE_API_KEY LOADTEST_PLAN_BUILDER=1 npm run loadtest:plan-builder`
+Expected: `CLAUDE_API_KEY no configurada; el loadtest usa el proveedor real.` y exit code 1.
+
+Run: `npm run loadtest:plan-builder -- --report loadtest-results/no-existe.json`
+Expected: falla por archivo inexistente, **sin** pedir credenciales — confirma que el modo reporte no pasa por los guards.
 
 - [ ] **Step 7: Commit (owner)**
 
@@ -1655,7 +1949,7 @@ LOADTEST_PLAN_BUILDER=1 CLAUDE_API_KEY=... npm run loadtest:plan-builder
 
 Costo esperado ≈ US$1,95; techo ≈ US$3,90. Dura del orden de 20–40 minutos (12 planes secuenciales).
 
-El árbol debe estar **limpio** al correrlo: el artefacto registra `gitDirty`, y la Entrega 2 rechaza un control con `gitDirty: true` porque un SHA por sí solo no identifica el código que produjo la muestra.
+El árbol debe estar **limpio** al correrlo: el artefacto registra `git.dirty`, y la Entrega 2 rechaza un control con `git.dirty === true` porque un SHA por sí solo no identifica el código que produjo la muestra. El nombre contractual es `git: { sha, dirty }` en el artefacto; el registro de calibración de Entrega 2 lo aplana a `gitSha` / `gitDirty`.
 
 Con el artefacto aceptado, se planifica la Entrega 2: copia sanitizada a `docs/superpowers/calibrations/`, `qualityCalibrationV2.ts` con los tres contratos congelados, guard de procedencia y activación efectiva de v2.
 
@@ -1669,13 +1963,20 @@ Con el artefacto aceptado, se planifica la Entrega 2: copia sanitizada a `docs/s
 | §3.1 `npm test` sin llamadas reales ni archivos omitidos | 8 |
 | §3.2 writer en memoria, sin Dexie ni Supabase | 6 |
 | §3.3 manifest congelado 6×2 / 42 semanas | 2 |
-| §3.3 cuatro condiciones de aceptación | 4 |
-| §3.3 caveat con n real | 5 |
+| §3.3 escenarios fieles al motor (sports permitidos, fases, enums, injuryNotes) | 2 |
+| §3.3 semana parcial real (startDate a mitad de semana, `weekStartDate` lunes) | 2 |
+| §3.3 cuatro condiciones de aceptación, derivadas del manifest embebido | 4 |
+| §3.3 caveat con n real | 4, 5 |
+| §3.5 manifest embebido con perfil y wizard config (procedencia de Entrega 2) | 4 |
 | §3.4 intervalo compartido, no duplicado | 1 |
 | §3.4 tres timings desde el mismo `workerStartedAt`, lag null | 6, 7 |
 | §3.4 p50/p95 por plan en dos cohortes, nulls excluidos | 3, 5 |
 | §3.4 nearest-rank congelado | 3 |
 | §3.5 artefacto allowlisted, `artifactSchemaVersion`, `weeks[]` | 4 |
+| §3.5 allowlist re-aplicada en la frontera final; `errorClass`, no texto crudo | 4, 7 |
+| §3.5 tamaños de entrada/salida por semana y por plan | 4, 7 |
 | §3.5 artefacto escrito aunque falle; exit code | 7 |
 | §3.6 reporte puro `--report`, describe y no propone | 5, 7 |
+| §3.6 tres distribuciones también por escenario; latencia semanal secundaria | 5 |
+| §3.6 el reporte valida `artifactSchemaVersion` | 5 |
 | §3.7–§3.10 (Entrega 2) | fuera de este plan |
