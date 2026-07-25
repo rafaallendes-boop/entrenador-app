@@ -98,6 +98,41 @@ describe('runAsyncPlanGeneration job telemetry', () => {
     expect(jobs[0].outcome).toBe('failed')
   })
 
+  it('fills plan_complete_ms on a mixed run (one week already ready, one generated)', async () => {
+    const { input, base } = makeRunInputForTest({ weekCount: 2, preReadyWeekIndexes: [0] })
+    const { writer, jobs } = collecting(base)
+    await runAsyncPlanGeneration({ ...input, writer, variant: VARIANT })
+
+    expect(jobs[0].outcome).toBe('succeeded')
+    expect(jobs[0].weekCountSucceeded).toBe(2)
+    // La semana ya lista nunca recibe un putWeek: sin preload de targets
+    // terminales, esta corrida exitosa reportaría plan_complete_ms null.
+    expect(jobs[0].planCompleteMs).not.toBeNull()
+    expect(jobs[0].planCompleteMs).toBeLessThanOrEqual(jobs[0].terminalMs)
+  })
+
+  it('fills plan_complete_ms when every target was already ready (no work to do)', async () => {
+    const { input, base } = makeRunInputForTest({ weekCount: 2, preReadyWeekIndexes: [0, 1] })
+    const { writer, jobs } = collecting(base)
+    await runAsyncPlanGeneration({ ...input, writer, variant: VARIANT })
+
+    expect(jobs[0].outcome).toBe('succeeded')
+    expect(jobs[0].planCompleteMs).not.toBeNull()
+    expect(jobs[0].totalInputTokens).toBe(0)
+  })
+
+  it('keeps plan_complete_ms null while a target is regenerated explicitly', async () => {
+    // Con targets explícitos nada se omite: la semana lista se regenera, así que
+    // el preload no debe marcarla terminal de entrada.
+    const { input, base } = makeRunInputForTest({ weekCount: 2, preReadyWeekIndexes: [0, 1] })
+    const { writer, jobs } = collecting(base)
+    await runAsyncPlanGeneration({ ...input, writer, variant: VARIANT, targetWeekIndexes: [0] })
+
+    expect(jobs[0].weekCountRequested).toBe(1)
+    expect(jobs[0].totalInputTokens).toBeGreaterThan(0)
+    expect(jobs[0].planCompleteMs).not.toBeNull()
+  })
+
   it('marks cancelled and leaves plan_complete_ms null (weeks pending)', async () => {
     const { input, base } = makeRunInputForTest({ weekCount: 2, cancelAfterFirstWeek: true })
     const { writer, jobs } = collecting(base)

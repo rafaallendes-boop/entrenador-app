@@ -76,7 +76,7 @@ Plan 3 — loadtest + calibración + activación de v2
 
 `estimateCostUsd` devuelve `null` cuando no hay precio vigente para ese `model` en `at`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `src/services/planBuilder/__tests__/pricing.test.ts`:
 
@@ -122,12 +122,12 @@ describe('estimateCostUsd', () => {
 })
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run src/services/planBuilder/__tests__/pricing.test.ts`
 Expected: FAIL — `Failed to resolve import "../pricing"`.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 Create `src/services/planBuilder/pricing.ts`:
 
@@ -194,12 +194,12 @@ export function estimateCostUsd(input: {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run src/services/planBuilder/__tests__/pricing.test.ts`
 Expected: PASS — 4 tests.
 
-- [ ] **Step 5: Commit (owner)**
+- [x] **Step 5: Commit (owner)**
 
 ```bash
 git add src/services/planBuilder/pricing.ts src/services/planBuilder/__tests__/pricing.test.ts
@@ -220,7 +220,7 @@ git commit -m "feat(plan-builder): add dated model pricing table for cost estima
 
 `buildVariantId` produce `<modelShort>-q<n>-<hash8>`, con hash determinístico de **todas** las dimensiones. Prefijo legible; el hash de 32 bits hace **altamente improbable** una colisión a este volumen (no la garantiza en el sentido criptográfico).
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `src/services/planBuilder/__tests__/telemetryVersions.test.ts`:
 
@@ -276,12 +276,12 @@ describe('buildVariantId', () => {
 })
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run src/services/planBuilder/__tests__/telemetryVersions.test.ts`
 Expected: FAIL — `Failed to resolve import "../telemetryVersions"`.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 Create `src/services/planBuilder/telemetryVersions.ts`:
 
@@ -345,12 +345,12 @@ export function buildVariantId(descriptor: PlanBuilderVariantDescriptor): string
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run src/services/planBuilder/__tests__/telemetryVersions.test.ts`
 Expected: PASS — 4 tests.
 
-- [ ] **Step 5: Commit (owner)**
+- [x] **Step 5: Commit (owner)**
 
 ```bash
 git add src/services/planBuilder/telemetryVersions.ts src/services/planBuilder/__tests__/telemetryVersions.test.ts
@@ -379,7 +379,7 @@ git commit -m "feat(plan-builder): add variant descriptor and full-dimension var
 
 `effort`/`thinkingMode` valen `'omitted'` porque el caller **no** los envía hoy (`anthropicCaller.buildClaudeBody` solo manda model/max_tokens/temperature/system/messages/tools). Cuando alguien cablee effort a la request, lo cambia **en un solo lugar** (este resolver) y la telemetría lo refleja automáticamente.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `netlify/functions/_shared/__tests__/planBuilderRunConfig.test.ts`:
 
@@ -438,12 +438,12 @@ describe('PRODUCTIVE_QUALITY_VERSION contract', () => {
 })
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run netlify/functions/_shared/__tests__/planBuilderRunConfig.test.ts`
 Expected: FAIL — módulo inexistente.
 
-- [ ] **Step 3: Export the shared primitives**
+- [x] **Step 3: Export the shared primitives**
 
 In `src/services/planBuilder/asyncGenerationLoop.ts`, export the two constants (add `export` at lines 86, 88):
 
@@ -487,7 +487,7 @@ import { resolvePlanBuilderModel } from './planBuilderRunConfig'
 
 Keep `DEFAULT_MODEL` in `anthropicCaller.ts` **only if** nothing else uses it after this change; otherwise move the default into `planBuilderRunConfig.ts`. Put the canonical default in the resolver (next step) and delete the now-unused `DEFAULT_MODEL` from the caller if grep shows no other reference.
 
-- [ ] **Step 4: Write the resolver**
+- [x] **Step 4: Write the resolver**
 
 Create `netlify/functions/_shared/planBuilderRunConfig.ts`:
 
@@ -538,12 +538,12 @@ export function resolveEffectivePlanBuilderConfig(env: NodeJS.ProcessEnv): PlanB
 }
 ```
 
-- [ ] **Step 5: Run tests**
+- [x] **Step 5: Run tests**
 
 Run: `npx vitest run netlify/functions/_shared/__tests__/planBuilderRunConfig.test.ts src/services/planBuilder/__tests__/productiveQualityVersion.test.ts src/services/planBuilder/__tests__/asyncGenerationLoop.test.ts`
 Expected: PASS — resolver correcto, contrato de versión de calidad verde, y el rename de concurrencia no rompió el loop.
 
-- [ ] **Step 6: Commit (owner)**
+- [x] **Step 6: Commit (owner)**
 
 ```bash
 git add netlify/functions/_shared/planBuilderRunConfig.ts netlify/functions/_shared/anthropicCaller.ts src/services/planBuilder/asyncGenerationLoop.ts src/services/planBuilder/qualityReview.ts netlify/functions/_shared/__tests__/planBuilderRunConfig.test.ts src/services/planBuilder/__tests__/productiveQualityVersion.test.ts
@@ -565,7 +565,7 @@ git commit -m "feat(plan-builder): share effective run config between caller and
 
 Este task va **antes** de la asamblea del job (Task 5) para que el wrapper de attempts compile sin errores de tipo. Vitest no sustituye al typecheck.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Extend `netlify/functions/_shared/planGenerationTelemetry.test.ts` (append a `describe`):
 
@@ -626,12 +626,12 @@ describe('planGenerationAttemptToRow variant + taxonomy', () => {
 })
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run netlify/functions/_shared/planGenerationTelemetry.test.ts`
 Expected: FAIL — los campos no existen en el tipo ni en el mapper.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 Extend `PlanGenerationAttemptTelemetry` in `asyncGenerationLoop.ts` (after `qualityWarningCount?`, line 40):
 
@@ -673,12 +673,12 @@ Extend `planGenerationAttemptToRow` in `planGenerationTelemetry.ts`, before `cre
     structurally_repaired_sessions_affected: attempt.structurallyRepairedSessionsAffected ?? null,
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run netlify/functions/_shared/planGenerationTelemetry.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Commit (owner)**
+- [x] **Step 5: Commit (owner)**
 
 ```bash
 git add src/services/planBuilder/asyncGenerationLoop.ts netlify/functions/_shared/planGenerationTelemetry.ts netlify/functions/_shared/planGenerationTelemetry.test.ts
@@ -702,7 +702,7 @@ git commit -m "feat(plan-builder): record variant and full repair taxonomy on at
   - `RunAsyncPlanGenerationInput` gana `enqueuedAt?: number` y `variant?: PlanGenerationJobVariant`.
   - `AsyncPlanGenerationWriter` gana `putJob?(job: PlanGenerationJobTelemetry): Promise<void>`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `src/services/planBuilder/__tests__/asyncLoopTestFixtures.ts` helper (bajo `__tests__/helpers/`). Leer primero `asyncGenerationLoop.test.ts` y **levantar** su writer/LLM fakes en lugar de inventarlos. Debe exponer un reloj determinista (avanza un paso fijo por llamada LLM) y permitir forzar retries y usage incompleto:
 
@@ -845,12 +845,12 @@ describe('runAsyncPlanGeneration job telemetry', () => {
 })
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run src/services/planBuilder/__tests__/asyncGenerationLoopJobTelemetry.test.ts`
 Expected: FAIL — tipos/`putJob`/`variant` inexistentes.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 Add near the top imports:
 
@@ -1102,17 +1102,17 @@ Wrap the body of `runAsyncPlanGeneration` — from the first `await input.writer
 
 > **Hard-kill sigue siendo no observable:** si el proceso del worker se termina abruptamente (OOM, timeout de plataforma) no corre `finally`. Documentado aquí y en Riesgos; una alternativa (insert al enqueue + update terminal) queda fuera de alcance de Plan 2.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run src/services/planBuilder/__tests__/asyncGenerationLoopJobTelemetry.test.ts`
 Expected: PASS — 10 casos (timings, tokens multi-intento, cost null por usage, partial, budget_exhausted, failed, cancelled, throw→failed, putJob reject, sin putJob).
 
-- [ ] **Step 5: Verify the existing loop suite still passes**
+- [x] **Step 5: Verify the existing loop suite still passes**
 
 Run: `npx vitest run src/services/planBuilder/__tests__/asyncGenerationLoop.test.ts`
 Expected: PASS — el wrapper es behavior-preserving para `putAttempt`.
 
-- [ ] **Step 6: Commit (owner)**
+- [x] **Step 6: Commit (owner)**
 
 ```bash
 git add src/services/planBuilder/asyncGenerationLoop.ts src/services/planBuilder/__tests__/asyncGenerationLoopJobTelemetry.test.ts src/services/planBuilder/__tests__/helpers/asyncLoopTestFixtures.ts
@@ -1133,7 +1133,7 @@ git commit -m "feat(plan-builder): finalize and emit job telemetry on every term
 - Consumes: `PlanGenerationJobTelemetry` (Task 5), `resolveEffectivePlanBuilderConfig` + `buildVariantId` (Tasks 2–3).
 - Produces: `planGenerationJobToRow(job, userId)`, `upsertPlanGenerationJob(client, job, userId)`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `netlify/functions/_shared/__tests__/planGenerationJobTelemetry.test.ts`:
 
@@ -1190,12 +1190,12 @@ describe('planGenerationJobToRow', () => {
 })
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run netlify/functions/_shared/__tests__/planGenerationJobTelemetry.test.ts`
 Expected: FAIL — módulo inexistente.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 Create `netlify/functions/_shared/planGenerationJobTelemetry.ts`:
 
@@ -1281,7 +1281,7 @@ import { upsertPlanGenerationJob } from './planGenerationJobTelemetry'
           },
 ```
 
-- [ ] **Step 4: Pass `enqueuedAt` (identity-checked) and `variant`**
+- [x] **Step 4: Pass `enqueuedAt` (identity-checked) and `variant`**
 
 In `generate-plan-background.ts`, delete the local `resolvePlanBuilderConcurrency` (lines 14-19) and import the shared resolver + builder:
 
@@ -1314,12 +1314,12 @@ Pass `concurrency: effectiveConfig.concurrency`, `enqueuedAt` and `variant` into
       variant,
 ```
 
-- [ ] **Step 5: Run tests**
+- [x] **Step 5: Run tests**
 
 Run: `npx vitest run netlify/functions/_shared/__tests__/planGenerationJobTelemetry.test.ts`
 Expected: PASS — 2 tests.
 
-- [ ] **Step 6: Commit (owner)**
+- [x] **Step 6: Commit (owner)**
 
 ```bash
 git add netlify/functions/_shared/planGenerationJobTelemetry.ts netlify/functions/_shared/planGenerationShared.ts netlify/functions/generate-plan-background.ts netlify/functions/_shared/__tests__/planGenerationJobTelemetry.test.ts
@@ -1337,7 +1337,7 @@ git commit -m "feat(plan-builder): persist job telemetry with identity-checked e
 **Interfaces:**
 - Produces: `deleteExpiredPlanGenerationJobs(client, now?): Promise<number>`; `runPlanGenerationTelemetryRetention` purga ambas tablas.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Add to `planGenerationTelemetryRetention.test.ts`:
 
@@ -1360,12 +1360,12 @@ describe('deleteExpiredPlanGenerationJobs', () => {
 })
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run netlify/functions/_shared/planGenerationTelemetryRetention.test.ts`
 Expected: FAIL — `deleteExpiredPlanGenerationJobs` no exportado.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 Add the job deleter mirroring the attempts one, and run both in `runPlanGenerationTelemetryRetention`:
 
@@ -1395,12 +1395,12 @@ export async function deleteExpiredPlanGenerationJobs(
     }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run netlify/functions/_shared/planGenerationTelemetryRetention.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Commit (owner)**
+- [x] **Step 5: Commit (owner)**
 
 ```bash
 git add netlify/functions/_shared/planGenerationTelemetryRetention.ts netlify/functions/_shared/planGenerationTelemetryRetention.test.ts
@@ -1417,7 +1417,7 @@ git commit -m "feat(plan-builder): extend telemetry retention to job rows"
 
 **Migración manual.** Este task deja el `.sql` y un guard de drift **en ambos sentidos**; la aplicación en prod la confirma el owner (criterio de salida).
 
-- [ ] **Step 1: Write the bidirectional drift guard**
+- [x] **Step 1: Write the bidirectional drift guard**
 
 Create `netlify/functions/_shared/__tests__/planGenerationJobSchema.test.ts`. Compara **conjuntos** de columnas (mapper ↔ CREATE) y verifica que cada campo nuevo del attempt esté en el `ALTER`:
 
@@ -1489,12 +1489,12 @@ describe('plan_generation_jobs schema drift guard', () => {
 })
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run netlify/functions/_shared/__tests__/planGenerationJobSchema.test.ts`
 Expected: FAIL — el `.sql` no existe.
 
-- [ ] **Step 3: Write the migration**
+- [x] **Step 3: Write the migration**
 
 Create `supabase/016_plan_generation_jobs.sql`:
 
@@ -1581,14 +1581,14 @@ create index if not exists plan_generation_attempts_variant_created_idx
   on public.plan_generation_attempts (variant_id, created_at desc);
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run netlify/functions/_shared/__tests__/planGenerationJobSchema.test.ts`
 Expected: PASS — conjuntos de columnas iguales en ambos sentidos, columna derivada comentada, ALTER completo.
 
 > Si el guard falla por identificar como columna alguna palabra reservada dentro del `CREATE` (p. ej. `constraint`), ajusta la lista de filtrado del regex — **no** relajes la comparación de conjuntos.
 
-- [ ] **Step 5: Commit (owner)**
+- [x] **Step 5: Commit (owner)**
 
 ```bash
 git add supabase/016_plan_generation_jobs.sql netlify/functions/_shared/__tests__/planGenerationJobSchema.test.ts
@@ -1606,6 +1606,8 @@ git commit -m "feat(supabase): add 016 plan_generation_jobs and attempt variant/
 
 No marcar el criterio de salida hasta que el owner confirme los 4 pasos.
 
+**Estado (2026-07-25):** el owner aplicó `016` en producción (pasos 1-2). Con la migración ya aplicada, el orden obligatorio queda satisfecho y el merge a `main` es seguro. Pendientes: paso 3 (desplegar el bundle) y paso 4 (smoke de una corrida real que escriba una fila en `plan_generation_jobs`).
+
 ---
 
 ### Task 9: Verificación completa y documentación
@@ -1613,12 +1615,12 @@ No marcar el criterio de salida hasta que el owner confirme los 4 pasos.
 **Files:**
 - Modify: `CLAUDE.md`, `PROJECT_REVIEW_AND_ROADMAP.md`
 
-- [ ] **Step 1: Full verification**
+- [x] **Step 1: Full verification**
 
 Run: `npm run lint && npm test && npm run build`
 Expected: los tres en verde. Registrar el conteo final de archivos/tests.
 
-- [ ] **Step 2: Update docs — estado condicional al rollout**
+- [x] **Step 2: Update docs — estado condicional al rollout**
 
 La línea de migraciones de `CLAUDE.md` debe reflejar el estado **real** al momento del commit, no uno fijo:
 
@@ -1627,7 +1629,7 @@ La línea de migraciones de `CLAUDE.md` debe reflejar el estado **real** al mome
 
 Actualizar el conteo de suite. En `PROJECT_REVIEW_AND_ROADMAP.md`, agregar la línea de fundación de medición (job telemetry + `016`), marcando aplicada o pendiente según el mismo estado. No commitear "aplicadas hasta 016" antes de la confirmación.
 
-- [ ] **Step 3: Commit (owner)**
+- [x] **Step 3: Commit (owner)**
 
 ```bash
 git add CLAUDE.md PROJECT_REVIEW_AND_ROADMAP.md
@@ -1658,13 +1660,19 @@ git commit -m "docs: record plan builder job telemetry and migration 016 status"
 
 **Fuera de este plan (→ Plan 3):** cross-week detallado (§3.4), loadtest (§3.6), calibración/umbral y activación de v2 (§5.3).
 
+### Endurecimientos posteriores a la code review (2026-07-25)
+
+- **Corrida sin fila cuando el worker falla antes del loop.** `finalizeJob` solo cubre desde el primer await de `runAsyncPlanGeneration`; una excepción en `getPlan`/`putPlan`/el lote inicial de `putWeek` de `generate-plan-background` dejaba un job ya encolado sin ninguna fila. Se agregó `emitUnstartedJobTelemetry`, cableado en el handler como fallback hasta que el loop toma la propiedad de la fila (el camino de dedupe no emite, porque no hubo corrida propia). Cubierto por `netlify/functions/__tests__/generatePlanBackground.test.ts`.
+- **Handoff explícito del emisor (segunda pasada de review).** Soltar el fallback justo antes de llamar al loop dejaba una ventana: el preámbulo **síncrono** de `runAsyncPlanGeneration` (checkpoint inicial vía `buildSummary → totalAttempts`) corre fuera de su `try/finally` y puede lanzar con una semana mal formada, porque `isGeneratePlanPayload` solo valida `planId`. El loop ahora invoca `onJobFinalizerArmed` como **primera sentencia dentro del try** —con el `finally` ya armado— y recién ahí el handler suelta su fallback. La transferencia no tiene ventana en ninguna dirección.
+- **`plan_complete_ms` null en corridas mixtas.** Las semanas que entran ya listas nunca reciben `putWeek`, así que `terminalTargets` no llegaba a completarse y una corrida `succeeded` reportaba `plan_complete_ms` null. `runAsyncPlanGeneration` precarga los targets ya terminales espejando exactamente el skip del loop (solo cuando no hay `targetWeekIndexes` explícito, y solo semanas `ready`: las `error` se reintentan).
+
 ---
 
 ## Riesgos
 
 1. **La migración es manual y el orden importa.** Aplicar `016` **antes** de desplegar; si no, el mapper de attempts rompe la fila completa vía PostgREST y apaga telemetría existente. El criterio de salida exige confirmación de los 4 pasos del rollout.
 2. **Precios sin verificar.** `MODEL_PRICES` usa valores Sonnet-class estándar; el owner debe verificarlos antes de confiar en `estimated_cost_usd`. Un precio errado no rompe nada pero contamina Fase 3.
-3. **Hard-kill del worker no es observable.** `finalizeJob` cubre normal/cancelación/excepción vía `finally`, pero un OOM/timeout de plataforma no corre `finally`. Documentado; insert-al-enqueue + update-terminal queda para un incremento futuro si la pérdida de muestras importa.
+3. **Hard-kill del worker no es observable.** `finalizeJob` cubre normal/cancelación/excepción vía `finally`, y las fallas *previas* al loop quedan cubiertas por `emitUnstartedJobTelemetry`, pero un OOM/timeout de plataforma no corre ninguno de los dos. Documentado; insert-al-enqueue + update-terminal queda para un incremento futuro si la pérdida de muestras importa.
 4. **`quality_version` sigue el gate, no `LATEST_QUALITY_VERSION`.** Lee `PRODUCTIVE_QUALITY_VERSION` (=1). Plan 3 debe mover ambos juntos al activar v2; si divergen, la telemetría mentiría sobre qué versión puntuó.
 5. **Sumar tokens/costo fuera de `putAttempt`.** El wrapper acumula aunque no haya service role. Si se rompe, el job reportaría 0 tokens; los tests de tokens multi-intento y de usage incompleto lo anclan.
-6. **`observeWeekWrite` debe llamarse en cada `putWeek`.** Si un sitio de escritura terminal queda sin la llamada, `plan_complete_ms`/`firstWeekReadyMs` se subestiman. El test de timings y el de cancelación (pending → null) lo cubren, pero revisar el grep de `putWeek(` al integrar.
+6. **`observeWeekWrite` debe llamarse en cada `putWeek`.** Si un sitio de escritura terminal queda sin la llamada, `plan_complete_ms`/`firstWeekReadyMs` se subestiman. El test de timings, el de cancelación (pending → null) y los de corrida mixta lo cubren, pero revisar el grep de `putWeek(` al integrar. El preload de targets ya terminales tiene la misma condición de espejo: si cambia el skip de `takeNextWeekIndex`/`generateTargetWeek`, hay que cambiar el preload con él.

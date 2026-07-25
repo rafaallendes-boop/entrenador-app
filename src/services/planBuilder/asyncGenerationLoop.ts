@@ -123,6 +123,15 @@ export interface RunAsyncPlanGenerationInput {
   /** Cuando el cliente/enqueue encoló (identity-checked por el caller). Default: worker start. */
   enqueuedAt?: number
   variant?: PlanGenerationJobVariant
+  /**
+   * Handoff de la telemetría de job: se invoca una sola vez, ya dentro del
+   * `try/finally` que arma `finalizeJob`. Desde ese punto —y no antes— el loop
+   * garantiza emitir la fila del job en cualquier salida. El caller lo usa para
+   * soltar su propio fallback (`emitUnstartedJobTelemetry`) sin dejar ventana:
+   * el preámbulo síncrono de esta función (checkpoint inicial del plan) puede
+   * lanzar, y ahí la fila todavía es responsabilidad del caller.
+   */
+  onJobFinalizerArmed?: () => void
 }
 
 export interface AsyncPlanGenerationResult {
@@ -655,6 +664,63 @@ async function generateWeekCoreWithRetry(input: {
   }
 }
 
+export interface UnstartedJobTelemetryInput {
+  jobId: string
+  athleteId: string
+  planId: string
+  enqueuedAt: number
+  workerStartedAt: number
+  weekCountRequested: number
+  workerConcurrency: number
+  variant: PlanGenerationJobVariant
+  writer: Pick<AsyncPlanGenerationWriter, 'putJob'>
+  now?: () => number
+}
+
+/**
+ * Emite la fila de job de una corrida que nunca llegó al loop. `finalizeJob`
+ * solo cubre desde el primer await de `runAsyncPlanGeneration`, así que un
+ * checkpoint previo del worker que falle (getPlan/putPlan/putWeek inicial)
+ * dejaría un job ya encolado sin ninguna fila: la corrida desaparecería de la
+ * medición en vez de contarse como fallida. Best-effort, igual que `putJob`.
+ *
+ * `weekCountFailed` queda en 0 a propósito: ninguna semana llegó a escribirse en
+ * `error`; el `outcome: 'failed'` es lo que marca la corrida perdida.
+ */
+export async function emitUnstartedJobTelemetry(input: UnstartedJobTelemetryInput): Promise<void> {
+  if (!input.writer.putJob) return
+  const terminalAt = (input.now ?? Date.now)()
+  const job: PlanGenerationJobTelemetry = {
+    jobId: input.jobId,
+    athleteId: input.athleteId,
+    planId: input.planId,
+    enqueuedAt: input.enqueuedAt,
+    workerStartedAt: input.workerStartedAt,
+    weekCountRequested: input.weekCountRequested,
+    weekCountSucceeded: 0,
+    weekCountFailed: 0,
+    workerConcurrency: normalizePlanBuilderConcurrency(input.workerConcurrency),
+    firstWeekReadyMs: null,
+    firstWeekReadyE2eMs: null,
+    planCompleteMs: null,
+    terminalMs: terminalAt - input.workerStartedAt,
+    previousWeekContextSource: 'none',
+    totalInputTokens: 0,
+    totalOutputTokens: 0,
+    totalCacheReadTokens: 0,
+    totalCacheCreationTokens: 0,
+    estimatedCostUsd: null,
+    outcome: 'failed',
+    variant: input.variant,
+    createdAt: terminalAt,
+  }
+  try {
+    await input.writer.putJob(job)
+  } catch (error) {
+    console.warn(`[plan-builder] putJob (unstarted) failed jobId=${input.jobId}: ${error instanceof Error ? error.message : 'unknown'}`)
+  }
+}
+
 export async function runAsyncPlanGeneration(input: RunAsyncPlanGenerationInput): Promise<AsyncPlanGenerationResult> {
   const getNow = input.now ?? Date.now
   const startedAt = input.plan.generationSummary?.startedAt ?? getNow()
@@ -698,6 +764,22 @@ export async function runAsyncPlanGeneration(input: RunAsyncPlanGenerationInput)
       if (terminalTargets.size === targetWeekIndexes.length && allTargetsTerminalAt === null) {
         allTargetsTerminalAt = getNow()
       }
+    }
+  }
+
+  // Sin `targetWeekIndexes` explícito el loop omite las semanas ya listas, así
+  // que nunca reciben un putWeek y `observeWeekWrite` jamás las cuenta. Sin este
+  // preload, una corrida mixta (una semana lista + una pendiente) termina
+  // `succeeded` con `plan_complete_ms` en null. La condición espeja exactamente
+  // el skip de `takeNextWeekIndex`/`generateTargetWeek`: con targets explícitos
+  // todas se regeneran, y una semana en `error` también se reintenta, así que
+  // ninguna de esas dos es terminal de entrada.
+  if (!input.targetWeekIndexes?.length) {
+    for (const week of weeks) {
+      if (targetWeekIndexes.includes(week.weekIndex) && isReadyWeek(week)) terminalTargets.add(week.weekIndex)
+    }
+    if (targetWeekIndexes.length > 0 && terminalTargets.size === targetWeekIndexes.length) {
+      allTargetsTerminalAt = getNow()
     }
   }
 
@@ -752,6 +834,10 @@ export async function runAsyncPlanGeneration(input: RunAsyncPlanGenerationInput)
 
   let threw = false
   try {
+    // Primera sentencia del try: el `finally` ya está armado, así que a partir
+    // de acá toda salida pasa por `finalizeJob`. Notificarlo antes del try
+    // dejaría sin emisor a una excepción del preámbulo síncrono.
+    input.onJobFinalizerArmed?.()
     await input.writer.putPlan(plan)
 
     const checkCancelled = async (): Promise<boolean> => {

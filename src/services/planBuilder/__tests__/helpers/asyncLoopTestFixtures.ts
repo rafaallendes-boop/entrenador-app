@@ -90,6 +90,23 @@ function makeWeek(index: number, startDate: string): TrainingPlanWeek {
   }
 }
 
+/** Semana ya generada por una corrida previa: `draft` con al menos una sesión. */
+function makeReadyWeek(week: TrainingPlanWeek): TrainingPlanWeek {
+  return {
+    ...week,
+    status: 'draft',
+    sessions: [{
+      date: week.weekStartDate,
+      timeBlock: 'AM',
+      sessionType: 'squash',
+      title: 'Semana previa',
+      durationMin: 60,
+      rpe: 6,
+    }],
+    generationMeta: { ...week.generationMeta, attempts: 1 },
+  }
+}
+
 function makeProfile(): AthleteProfile {
   return {
     id: 'athlete-1',
@@ -172,6 +189,8 @@ export interface MakeRunInputOptions {
   someWeekFails?: boolean
   budgetExhaust?: boolean
   cancelAfterFirstWeek?: boolean
+  /** Semanas que entran a la corrida ya listas (el loop las omite si no hay targets explícitos). */
+  preReadyWeekIndexes?: number[]
 }
 
 export function makeRunInputForTest(options: MakeRunInputOptions): {
@@ -180,9 +199,11 @@ export function makeRunInputForTest(options: MakeRunInputOptions): {
 } {
   const wizardConfig = makeWizardConfig()
   const plan = makePlan(options.weekCount, wizardConfig)
-  const weeks = Array.from({ length: options.weekCount }, (_, index) =>
-    makeWeek(index, addWeeksISO(PLAN_START_DATE, index)),
-  )
+  const preReady = new Set(options.preReadyWeekIndexes ?? [])
+  const weeks = Array.from({ length: options.weekCount }, (_, index) => {
+    const week = makeWeek(index, addWeeksISO(PLAN_START_DATE, index))
+    return preReady.has(index) ? makeReadyWeek(week) : week
+  })
 
   // Reloj determinista: avanza un paso fijo por llamada. El primer tick es el
   // worker start. El paso grande de `budgetExhaust` deja que la primera semana

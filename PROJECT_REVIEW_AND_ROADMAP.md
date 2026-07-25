@@ -234,8 +234,9 @@ Segundo eslabón de la Fase 0 de medición del Plan Builder (Plan 1 —taxonomí
 - Descriptor de variante fiel a la request real vía `resolveEffectivePlanBuilderConfig` (única fuente compartida por caller y telemetría) + `buildVariantId` (hash de todas las dimensiones); `estimated_cost_usd` con tabla de precios fechada (`pricing.ts`) y modelo real por intento; costo `null` si falta usage.
 - `plan_generation_attempts` gana columnas de variante + taxonomía de reparación (incl. los 3 contadores de sesiones únicas afectadas de §3.2).
 - Guard de drift bidireccional row-mapper ↔ migración; retención extendida a la tabla de jobs.
+- Cierre de code review (2026-07-25): `emitUnstartedJobTelemetry` cubre las excepciones del worker **previas** al loop (`getPlan`/`putPlan`/lote inicial de `putWeek`, y el preámbulo síncrono del propio loop), con handoff explícito vía `onJobFinalizerArmed` para que no exista ventana sin emisor; y `runAsyncPlanGeneration` precarga los targets ya terminales para que una corrida mixta (semana lista + semana pendiente) no reporte `plan_complete_ms` null siendo `succeeded`.
 
-Estado: **implementado en rama `plan-builder-job-telemetry-016`, verificado localmente (lint + 2012 tests + build en verde). Sin cambio de comportamiento de generación; quality v2 sigue opt-in.** Pendiente merge y **rollout manual de `016`: aplicar la migración ANTES de desplegar el bundle** (el mapper de attempts escribe columnas nuevas; sin `016` PostgREST rechaza la fila completa y apagaría la telemetría de attempts existente). Siguiente eslabón: Plan 3 (loadtest + calibración + activación de v2).
+Estado: **implementado en rama `plan-builder-job-telemetry-016`, verificado localmente (lint + 2020 tests + build en verde). Sin cambio de comportamiento de generación; quality v2 sigue opt-in.** **`016` aplicada en producción el 2026-07-25**, por lo que el orden obligatorio migración→deploy ya está satisfecho; pendiente desplegar el bundle y smokear una corrida real (una fila en `plan_generation_jobs` agrupable por `job_id` con sus attempts). Siguiente eslabón: Plan 3 (loadtest + calibración + activación de v2).
 
 ## Avances Ya Implementados
 
