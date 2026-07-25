@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import type { PlanGenerationAttemptTelemetry } from '../../../src/services/planBuilder/asyncGenerationLoop'
 import { insertPlanGenerationAttempt, planGenerationAttemptToRow } from './planGenerationTelemetry'
 
 describe('planGenerationAttemptToRow', () => {
@@ -108,5 +109,57 @@ describe('planGenerationAttemptToRow', () => {
       attempt: 1, traceId: 'trace-1', provider: 'claude', outcome: 'provider_failed',
       retryUsed: false, maxTokens: 5000, workerConcurrency: 3, createdAt: 0,
     }, 'user-1')).rejects.toMatchObject({ code: '42501' })
+  })
+})
+
+const RICH: PlanGenerationAttemptTelemetry = {
+  athleteId: 'a', planId: 'p', jobId: 'j', weekIndex: 0, attempt: 1,
+  traceId: 't', provider: 'claude', outcome: 'succeeded',
+  retryUsed: false, maxTokens: 5000, workerConcurrency: 3, createdAt: 1,
+  variantId: 's46-q1-abcd1234',
+  effort: 'omitted',
+  thinkingMode: 'omitted',
+  promptVersion: '2026-07-week-v1',
+  schemaVersion: '2026-07-week-v1',
+  qualityVersion: 1,
+  repairTaxonomyVersion: 2,
+  correctiveActionCount: 2,
+  structuralActionCount: 1,
+  hydrationActionCount: 9,
+  movedSessionCount: 0,
+  filteredSportCount: 0,
+  hydratedSessionsAffected: 7,
+  correctedSessionsAffected: 2,
+  structurallyRepairedSessionsAffected: 1,
+}
+
+describe('planGenerationAttemptToRow variant + taxonomy', () => {
+  it('maps variant and full taxonomy (incl. affected-session counters)', () => {
+    const row = planGenerationAttemptToRow(RICH, 'user-1')
+    expect(row['variant_id']).toBe('s46-q1-abcd1234')
+    expect(row['effort']).toBe('omitted')
+    expect(row['prompt_version']).toBe('2026-07-week-v1')
+    expect(row['quality_version']).toBe(1)
+    expect(row['repair_taxonomy_version']).toBe(2)
+    expect(row['corrective_action_count']).toBe(2)
+    expect(row['structural_action_count']).toBe(1)
+    expect(row['hydration_action_count']).toBe(9)
+    expect(row['moved_session_count']).toBe(0)
+    expect(row['filtered_sport_count']).toBe(0)
+    expect(row['hydrated_sessions_affected']).toBe(7)
+    expect(row['corrected_sessions_affected']).toBe(2)
+    expect(row['structurally_repaired_sessions_affected']).toBe(1)
+  })
+
+  it('nulls the new fields for a legacy attempt', () => {
+    const legacy: PlanGenerationAttemptTelemetry = {
+      athleteId: 'a', planId: 'p', jobId: 'j', weekIndex: 0, attempt: 1,
+      traceId: 't', provider: 'claude', outcome: 'succeeded',
+      retryUsed: false, maxTokens: 5000, workerConcurrency: 3, createdAt: 1,
+    }
+    const row = planGenerationAttemptToRow(legacy, 'user-1')
+    expect(row['variant_id']).toBeNull()
+    expect(row['repair_taxonomy_version']).toBeNull()
+    expect(row['hydrated_sessions_affected']).toBeNull()
   })
 })

@@ -678,6 +678,15 @@ function isGenerationReliabilitySignal(issue: PlanValidationIssue): boolean {
 export const LATEST_QUALITY_VERSION = 2 as const
 
 /**
+ * Versión de calidad **productiva configurada**. Es la que la variante etiqueta
+ * (job, attempts y `variant_id`) antes de ejecutar. Hoy vale 1 y coincide con lo
+ * que `resolveQualityVersion` computa por su cuenta para semanas sin marca; esa
+ * coincidencia NO está cableada — la fija el test contractual de calidad (Step 1),
+ * para que Plan 3 falle si mueve solo un lado al activar v2.
+ */
+export const PRODUCTIVE_QUALITY_VERSION: 1 | 2 = 1
+
+/**
  * v2 excludes deterministic hydration and prevents overlapping observational
  * counters from penalising the same repair twice:
  * - filteredSportCount is a strict subset of droppedSessionCount.

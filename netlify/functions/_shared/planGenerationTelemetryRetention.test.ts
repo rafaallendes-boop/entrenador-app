@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   deleteExpiredPlanGenerationAttempts,
+  deleteExpiredPlanGenerationJobs,
   PLAN_GENERATION_TELEMETRY_RETENTION_DAYS,
 } from './planGenerationTelemetryRetention'
 
@@ -27,5 +28,20 @@ describe('deleteExpiredPlanGenerationAttempts', () => {
       }),
     })
     await expect(deleteExpiredPlanGenerationAttempts({ from })).rejects.toThrow('denied')
+  })
+})
+
+describe('deleteExpiredPlanGenerationJobs', () => {
+  it('deletes job rows older than the retention window', async () => {
+    const tables: string[] = []
+    const client = {
+      from(table: string) {
+        tables.push(table)
+        return { delete() { return { lt: async () => ({ count: 4, error: null }) } } }
+      },
+    }
+    const deleted = await deleteExpiredPlanGenerationJobs(client as never, Date.UTC(2026, 6, 24))
+    expect(deleted).toBe(4)
+    expect(tables).toContain('plan_generation_jobs')
   })
 })

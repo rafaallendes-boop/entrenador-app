@@ -225,6 +225,19 @@ Estado: **implementado y verificado localmente.**
 
 Estado: **implementado y verificado localmente, sin migraciones Dexie ni Supabase.** Pendiente commit, deploy y smoke autenticado del flujo completo en Coach Workspace.
 
+### 13. Plan Builder measurement foundation — Plan 2 (`016`, 2026-07-24)
+
+Segundo eslabón de la Fase 0 de medición del Plan Builder (Plan 1 —taxonomía de reparación + quality v2 opt-in— ya estaba en `main`). Agrega la unidad de medición a nivel plan/corrida que faltaba:
+
+- Nueva tabla `plan_generation_jobs` (una fila por corrida, `job_id` único) que agrupa los `plan_generation_attempts` existentes, con timings por corrida (`first_week_ready_ms`, `first_week_ready_e2e_ms`, `plan_complete_ms`, `terminal_ms`), forma de la corrida, descriptor de variante experimental, tokens/costo fechado y outcome.
+- `runAsyncPlanGeneration` ensambla y emite la telemetría de job vía `finalizeJob` idempotente en **todo** camino terminal (normal, cancelación, excepción), best-effort.
+- Descriptor de variante fiel a la request real vía `resolveEffectivePlanBuilderConfig` (única fuente compartida por caller y telemetría) + `buildVariantId` (hash de todas las dimensiones); `estimated_cost_usd` con tabla de precios fechada (`pricing.ts`) y modelo real por intento; costo `null` si falta usage.
+- `plan_generation_attempts` gana columnas de variante + taxonomía de reparación (incl. los 3 contadores de sesiones únicas afectadas de §3.2).
+- Guard de drift bidireccional row-mapper ↔ migración; retención extendida a la tabla de jobs.
+- Cierre de code review (2026-07-25): `emitUnstartedJobTelemetry` cubre las excepciones del worker **previas** al loop (`getPlan`/`putPlan`/lote inicial de `putWeek`, y el preámbulo síncrono del propio loop), con handoff explícito vía `onJobFinalizerArmed` para que no exista ventana sin emisor; y `runAsyncPlanGeneration` precarga los targets ya terminales para que una corrida mixta (semana lista + semana pendiente) no reporte `plan_complete_ms` null siendo `succeeded`.
+
+Estado: **implementado en rama `plan-builder-job-telemetry-016`, verificado localmente (lint + 2020 tests + build en verde). Sin cambio de comportamiento de generación; quality v2 sigue opt-in.** **`016` aplicada en producción el 2026-07-25**, por lo que el orden obligatorio migración→deploy ya está satisfecho; pendiente desplegar el bundle y smokear una corrida real (una fila en `plan_generation_jobs` agrupable por `job_id` con sus attempts). Siguiente eslabón: Plan 3 (loadtest + calibración + activación de v2).
+
 ## Avances Ya Implementados
 
 ### Producto Publico Y Marca
