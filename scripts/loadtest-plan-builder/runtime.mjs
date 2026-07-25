@@ -55,7 +55,16 @@ export function instrumentCallLLM(callLLM) {
   const sizesByWeek = new Map()
 
   const wrapped = async (request) => {
-    const weekIndex = Number(/week-(\d+)/.exec(request.traceId)?.[1] ?? -1)
+    const traceMatch = typeof request.traceId === 'string'
+      ? /-week-(\d+)(?:-attempt-\d+)?$/.exec(request.traceId)
+      : null
+    if (!traceMatch) {
+      throw new Error('traceId inválido: se esperaba el sufijo -week-(N)[-attempt-(N)].')
+    }
+    const weekIndex = Number(traceMatch[1])
+    if (!Number.isSafeInteger(weekIndex)) {
+      throw new Error('traceId inválido: el índice de semana no es un entero seguro.')
+    }
     const promptChars = JSON.stringify(request).length
     const entry = sizesByWeek.get(weekIndex) ?? {
       promptChars: 0,
@@ -132,8 +141,8 @@ export function createDetectionPoller(input) {
  * Carga el TypeScript de `src/` y `netlify/` mediante Vite en middleware mode,
  * igual que los otros drivers standalone del repositorio.
  */
-export async function loadRuntime() {
-  const vite = await createServer({
+export async function loadRuntime(createServerFactory = createServer) {
+  const vite = await createServerFactory({
     server: { middlewareMode: true },
     appType: 'custom',
     logLevel: 'silent',
@@ -172,7 +181,11 @@ export async function loadRuntime() {
       close: () => vite.close(),
     }
   } catch (error) {
-    await vite.close()
+    try {
+      await vite.close()
+    } catch {
+      // El fallo de cierre es secundario: conservar la causa de carga.
+    }
     throw error
   }
 }

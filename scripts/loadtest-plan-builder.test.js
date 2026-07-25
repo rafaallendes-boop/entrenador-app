@@ -25,6 +25,7 @@ import {
   createDetectionPoller,
   createMemoryWriter,
   instrumentCallLLM,
+  loadRuntime,
 } from './loadtest-plan-builder/runtime.mjs'
 import {
   assertRunGuards,
@@ -248,6 +249,8 @@ describe('loadtest stats', () => {
     expect(summary.n).toBe(5)
     expect(summary.max).toBe(5)
     expect(summary.p50).toBe(1)
+    expect(summary.p90).toBe(5)
+    expect(summary.p99).toBe(5)
     expect(summary.histogram).toEqual({ 0: 2, 1: 1, 2: 1, 5: 1 })
   })
 })
@@ -554,6 +557,36 @@ describe('loadtest report', () => {
     expect(scenario.weekWarningInput.n).toBe(2)
   })
 
+  it('keeps repair distributions isolated between scenarios', () => {
+    const artifact = reportArtifactStub()
+    artifact.plans.push({
+      caseId: 'b#1',
+      scenarioKey: 'running',
+      outcome: 'succeeded',
+      firstWeekReadyMs: 3000,
+      firstWeekDetectedMs: 6000,
+      planCompleteMs: 12000,
+      terminalMs: 13000,
+      weeks: [{
+        weekIndex: 0,
+        scorable: true,
+        countRepairsV2: 10,
+        correctiveActionCount: 7,
+        structuralActionCount: 2,
+        durationMs: 4000,
+        wallClockMs: 4500,
+      }],
+    })
+
+    const report = buildReport(artifact)
+    expect(report.byScenario.squash_build.weekCountRepairsV2.max).toBe(4)
+    expect(report.byScenario.squash_build.planCountRepairsV2.max).toBe(6)
+    expect(report.byScenario.squash_build.weekWarningInput.max).toBe(3)
+    expect(report.byScenario.running.weekCountRepairsV2.max).toBe(10)
+    expect(report.byScenario.running.planCountRepairsV2.max).toBe(10)
+    expect(report.byScenario.running.weekWarningInput.max).toBe(9)
+  })
+
   it('emits weekly latency over weeks from every plan with real values', () => {
     const report = buildReport(reportArtifactStub())
     // Incluye la semana del plan fallido: tres duraciones, más una en null.
@@ -647,6 +680,14 @@ describe('loadtest callLLM instrumentation', () => {
     expect(sizesFor(1).responseChars).toBe(4)
   })
 
+  it('reads the terminal week segment even when the job id contains week-like text', async () => {
+    const { wrapped, sizesFor } = instrumentCallLLM(async () => ({ text: 'ok' }))
+    await wrapped(aiRequest('job-week-99-prefix-week-2-attempt-3'))
+
+    expect(sizesFor(2).responseChars).toBe(2)
+    expect(sizesFor(99)).toBeNull()
+  })
+
   it('keeps the input size when the provider attempt throws', async () => {
     const { wrapped, sizesFor } = instrumentCallLLM(async () => {
       throw new Error('provider unavailable')
@@ -661,6 +702,33 @@ describe('loadtest callLLM instrumentation', () => {
     expect(sizes.promptChars).toBeGreaterThan(0)
     expect(sizes.responseChars).toBe(0)
     expect(JSON.stringify(sizes)).not.toContain('contenido sensible')
+  })
+
+  it('rejects a malformed traceId before calling the provider', async () => {
+    const caller = vi.fn().mockResolvedValue({ text: 'should-not-run' })
+    const { wrapped, sizesFor } = instrumentCallLLM(caller)
+
+    await expect(wrapped(aiRequest('job-without-week-index')))
+      .rejects.toThrow(/traceId/)
+
+    expect(caller).not.toHaveBeenCalled()
+    expect(sizesFor(-1)).toBeNull()
+  })
+})
+
+describe('loadtest Vite runtime', () => {
+  it('preserves the module-load error when closing Vite also fails', async () => {
+    const loadError = new Error('module load failed')
+    const vite = {
+      ssrLoadModule: vi.fn().mockRejectedValue(loadError),
+      close: vi.fn().mockRejectedValue(new Error('close failed')),
+    }
+    const createServerFactory = vi.fn().mockResolvedValue(vite)
+
+    await expect(loadRuntime(createServerFactory)).rejects.toBe(loadError)
+
+    expect(createServerFactory).toHaveBeenCalledOnce()
+    expect(vite.close).toHaveBeenCalledOnce()
   })
 })
 
