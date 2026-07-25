@@ -131,15 +131,27 @@ variable.
 | dobles | 4 | 2 |
 | semana parcial | 3 | 2 |
 
-Total: **12 planes / 42 semanas**, dentro del objetivo de ≥10 planes y 30–50 semanas.
+Eso da `attemptedPlans = 12` y `targetWeeks = 42`. **Intento y muestra aceptada no son lo
+mismo**: un plan que falla o queda parcial no entra a la calibración.
+
+- **Cohorte de calibración** = planes completos y sus semanas puntuables (con contadores de
+  taxonomía reales; ni pending ni error).
+- **Criterio de aceptación**: `completePlans >= 10` y `scorableWeeks ∈ [30, 50]`.
+- Percentiles, caveat y registro de procedencia usan el **n real** de la corrida. Ningún 12 ni
+  42 hardcodeado en el reporte, el artefacto ni la constante de calibración.
+
+Los planes fallidos no se descartan: siguen en el artefacto y en las distribuciones de latencia
+de "todos los intentos" (§3.4), porque un fallo es dato de latencia aunque no sea dato de
+calidad.
 
 Se congelan en un manifest versionado: orden de escenarios, fechas de inicio, fecha de
 referencia de la semana parcial, número de semanas, perfil, restricciones y wizard config. El
 artefacto embebe el manifest y el git SHA.
 
-**Caveat obligatorio en el artefacto y en el reporte:** con n=12 planes, p95 y p99 de plan son
-prácticamente el máximo observado. Sirve como baseline inicial conservadora, no como p95
-estable. Comparar variantes exige repetir exactamente el mismo manifest.
+**Caveat obligatorio en el artefacto y en el reporte:** con n del orden de 10–12 planes, p95 y
+p99 de plan son prácticamente el máximo observado. Sirve como baseline inicial conservadora, no
+como p95 estable. Comparar variantes exige repetir exactamente el mismo manifest. El caveat se
+emite con el n real, no con un número fijo.
 
 Costo estimado: 42 semanas × (8k in / 1,5k out) ≈ **US$1,95**; techo ≈ **US$3,90** si todas las
 semanas gastaran dos intentos.
@@ -151,14 +163,31 @@ El poller en memoria consulta el writer imitando la secuencia real (consulta inm
 duplica: `DEFAULT_INTERVAL_MS` se extrae a un módulo puro
 (`PLAN_GENERATION_POLL_INTERVAL_MS`) consumido por el cliente y por el driver.
 
-Se guardan tres valores, no uno:
+Se guardan tres valores, no uno, **los tres medidos desde el mismo `workerStartedAt`**:
 
 - `first_week_ready_ms` — desde worker start hasta la escritura de la primera semana lista.
-- `first_week_detected_ms` — cuándo el poller la descubre.
-- `first_week_detection_lag_ms` = detected − ready.
+- `first_week_detected_ms` — desde worker start hasta que el poller la descubre.
+- `first_week_detection_lag_ms` = detected − ready, o `null` si nunca hubo semana lista.
 
 Eso separa generación de la cuantización que introduce el polling. `first_week_visible_ms`
 sigue reservado para una medición con UI real.
+
+**Percentiles por plan (§3.6 del spec padre).** El plan es la unidad experimental, así que el
+artefacto, la salida por consola y los criterios de salida incluyen p50 y p95 de cuatro
+métricas: `first_week_ready_ms`, `first_week_detected_ms`, `plan_complete_ms` y `terminal_ms`.
+
+Se reportan en **dos cohortes separadas**, nunca mezcladas:
+
+- **Todos los intentos** (n = `attemptedPlans`) — incluye fallidos y parciales.
+- **Planes completos** (n = `completePlans`) — la cohorte de calibración.
+
+Los `null` (por ejemplo `plan_complete_ms` de una corrida que no completó) se excluyen del
+cálculo y su cantidad se reporta junto al percentil; no se tratan como cero. El desglose por
+semana es secundario y se emite aparte.
+
+**Método de percentil congelado: nearest-rank** (`ceil(p × n)` sobre la muestra ordenada, sin
+interpolación). Queda fijado en el spec porque comparar variantes con métodos distintos
+produciría diferencias que no existen.
 
 #### 3.5 Artefacto
 
@@ -166,18 +195,34 @@ sigue reservado para una medición con UI real.
 (no solo `variant_id`) y los modelos realmente devueltos por los attempts: el alias solicitado
 y el modelo observado pueden divergir.
 
+Lleva `artifactSchemaVersion` en la raíz: el reporte y la constante de calibración lo leen, y
+cambiar la forma sin versionarla rompería silenciosamente comparaciones entre corridas.
+
 Por plan, como mínimo:
 
 - escenario y número de semanas;
 - outcome y conteos succeeded / failed;
-- los cuatro timings de job más el detection lag;
+- los cuatro timings de job (`first_week_ready_ms`, `first_week_ready_e2e_ms`,
+  `plan_complete_ms`, `terminal_ms`) más `first_week_detected_ms` y el detection lag;
 - tokens, costo estimado, retries y uso de fallback;
 - quality version, score, grade y códigos de issues;
 - contadores de taxonomía;
 - modelos observados;
 - tamaños de entrada y salida.
 
-**Sin prompts ni respuestas.** Solo tamaños, duraciones, tokens, booleanos y códigos.
+Y un `weeks[]` **con allowlist explícita** por semana, porque las distribuciones de §3.6 son
+observaciones por semana y no se pueden derivar de los agregados por plan:
+
+- `weekIndex`, escenario y estado final;
+- `countRepairsV2` y los contadores que lo componen;
+- `correctiveActionCount` y `structuralActionCount` por separado (el warning usa solo esos dos);
+- `repairTaxonomyVersion`, `qualityVersion`, score y grade;
+- intentos y `errorClass` si terminó en error;
+- si la semana es puntuable (entra o no a la cohorte de calibración).
+
+**Sin prompts ni respuestas.** Solo tamaños, duraciones, tokens, booleanos y códigos. La
+allowlist es explícita, no una exclusión por lista negra: un campo nuevo del dominio no debe
+poder filtrarse al artefacto por olvido.
 
 El artefacto se escribe **aunque la corrida falle a mitad**. Al final el proceso sale con
 código distinto de cero si no alcanza ≥10 planes completos o 30–50 semanas, pero conserva toda
@@ -189,12 +234,19 @@ la evidencia parcial.
 `.mjs` como camino puro: no llama al proveedor, no exige `CLAUDE_API_KEY` ni
 `LOADTEST_PLAN_BUILDER=1`, y sus funciones quedan cubiertas por el `.test.js`.
 
-Imprime tres distribuciones separadas — n, p50, p90, p99, máximo e histograma, con desglose por
-escenario:
+Imprime dos bloques.
 
-1. `countRepairsV2` **por semana** (n=42) → calibra la penalización semanal.
-2. Suma de `countRepairsV2` **por plan** (n=12) → calibra la penalización de plan.
-3. `correctiveActionCount + structuralActionCount` **por semana** (n=42) → calibra el warning.
+**Bloque de latencia** — p50/p95 por plan de las cuatro métricas de §3.4, en las dos cohortes
+(todos los intentos / planes completos), con el conteo de `null` excluidos y el desglose
+semanal como secundario.
+
+**Bloque de reparación** — tres distribuciones separadas, cada una con n, p50, p90, p99, máximo
+e histograma, y desglose por escenario:
+
+1. `countRepairsV2` **por semana puntuable** → calibra la penalización semanal.
+2. Suma de `countRepairsV2` **por plan completo** → calibra la penalización de plan.
+3. `correctiveActionCount + structuralActionCount` **por semana puntuable** → calibra el
+   warning, que usa solo esas dos dimensiones y no `moved` ni `dropped`.
 
 El comando **describe, no propone**. No emite un divisor calculado: §5.3 prohíbe recalibrar por
 variante, y una derivación automática invita exactamente a eso.
@@ -226,47 +278,84 @@ Junto al registro de procedencia:
 {
   calibratedQualityVersion: 2,
   controlGenerationVariantId: '…-q1-…',
-  controlRequestFingerprint: '…', // modelo, effort, thinking, temperature, maxTokens,
-                                  // promptVersion, schemaVersion, concurrency
+  controlRequestFingerprint: '…', // provider, modelo, effort, thinking, temperature,
+                                  // maxTokens, promptVersion, schemaVersion, concurrency
   artifactPath: 'docs/superpowers/calibrations/…',
   artifactSha256: '…',
-  completePlans: 12,
-  weeks: 42,
+  artifactSchemaVersion: 1,
+  completePlans: <n real>,
+  scorableWeeks: <n real>,
+  gitSha: '…',
+  gitDirty: false,
 }
 ```
 
-`controlRequestFingerprint` excluye deliberadamente `qualityVersion`: el control se genera con
-`q1` y producción pasa a `q2`, así que el fingerprint es lo único que puede seguir
-representando "el mismo control" a través del flip.
+`controlRequestFingerprint` cubre **todas** las dimensiones del descriptor —incluido
+`provider`— salvo `qualityVersion`: el control se genera con `q1` y producción pasa a `q2`, así
+que el fingerprint es lo único que puede seguir representando "el mismo control" a través del
+flip.
+
+`completePlans` y `scorableWeeks` son los valores reales de la corrida aceptada, no la meta de
+la matriz.
 
 #### 3.9 Guard contra recalibrar por variante
 
-Una constante sola no impide recalibrar. Dos guardas:
+Una constante sola no impide recalibrar. El guard se ancla **al artefacto de control
+versionado**, no a la configuración productiva del momento: comparar contra producción rompería
+legítimamente en cuanto se pruebe otra variante, que es justamente el escenario para el que
+existe el umbral congelado.
 
-- Un test falla si `PRODUCTIVE_QUALITY_VERSION === 2` mientras el registro de calibración está
-  vacío.
-- El guard compara el **request fingerprint**, no el `variant_id`: exige que el fingerprint
-  siga representando el control congelado. Exigir igualdad de `variant_id` sería insatisfacible
-  (§2.4).
+El test falla si:
+
+- `PRODUCTIVE_QUALITY_VERSION === 2` y el registro de calibración está vacío;
+- `artifactPath` no existe, o su SHA-256 no coincide exactamente;
+- `controlGenerationVariantId` no se reconstruye desde el descriptor del artefacto;
+- el fingerprint del registro no coincide con el del artefacto en todas las dimensiones salvo
+  `qualityVersion`, incluido `provider`;
+- `completePlans` / `scorableWeeks` declarados difieren de los del artefacto;
+- `gitDirty !== false`. Un SHA por sí solo no identifica el código que produjo la muestra si la
+  corrida se hizo sobre un árbol con cambios locales.
 
 Mover el umbral obliga a tocar el registro, que es visible en el diff.
 
 #### 3.10 Cómo v2 se vuelve efectivo
 
-El flip de `PRODUCTIVE_QUALITY_VERSION` no basta (§2.3). Se fija:
+El flip de `PRODUCTIVE_QUALITY_VERSION` no basta (§2.3), y el camino no es solo declarativo: hoy
+el review de attempt llama `reviewPlanQuality` **sin** `qualityVersion`
+(`asyncGenerationLoop.ts:952`), así que inferiría v1 en toda corrida —las semanas target aún no
+generadas nunca tienen taxonomía— mientras el job se etiquetaría `q2`. Se fija lo siguiente.
 
-- **Cuándo se marca la semana.** El loop escribe `generationMeta.qualityVersion` con la versión
-  efectiva de la corrida al persistir cada semana generada, en el mismo sitio donde ya escribe
-  `repairTaxonomyVersion`.
-- **Plan nuevo o regeneración completa:** todas las semanas del run quedan marcadas v2 desde el
-  inicio y todo el gate (attempts, fallback y revisión final del plan) usa v2.
-- **Regeneración parcial de un plan con semanas históricas:** la corrida permanece
-  efectivamente en v1. Interpretar contadores legacy ausentes como cero produciría un score
-  falsamente bueno para semanas que nunca fueron medidas con la taxonomía nueva.
-- **Reviews de attempts con semanas todavía pending:** usan la versión efectiva de la corrida,
-  no la inferencia sobre el estado parcial del plan.
-- **El descriptor del job y de los attempts reporta la versión efectiva de esa corrida**, no la
-  constante global. Si no, un plan mixto se etiquetaría `q2` mientras se puntuó con v1.
+**`resolveEffectiveRunQualityVersion(weeks, targetWeekIndexes, productiveVersion)`**, ejecutada
+**una sola vez y antes** de construir el descriptor de variante y el `variant_id`, para que la
+etiqueta y el scoring no puedan divergir:
+
+- Si `productiveVersion === 1` → la corrida es v1.
+- Si `productiveVersion === 2` → la corrida es v2 **si y solo si** toda semana **fuera** de
+  `targetWeekIndexes` ya tiene `repairTaxonomyVersion === 2` y `qualityVersion === 2`. Las
+  semanas target las promueve esta corrida.
+- Si queda alguna semana histórica legacy fuera de los targets → la corrida es v1. Interpretar
+  contadores ausentes como cero produciría un score falsamente bueno para semanas que nunca
+  fueron medidas con la taxonomía nueva.
+
+**Semana puntuable y precondición de taxonomía.** `resolveQualityVersion` hoy exige taxonomía
+v2 en *todas* las semanas cuando se pide v2 explícitamente. Se acota a las **semanas
+puntuables** —las que llevan contenido generado, propio de esta corrida o ya listo de antes—;
+un shell pending o generating no tiene metadata de reparación que interpretar y es neutral. Sin
+ese acotamiento, pasar `qualityVersion: 2` durante la corrida lanzaría.
+
+**Escritura de la marca.** El loop escribe `generationMeta.qualityVersion` con la versión
+efectiva de la corrida al persistir cada semana generada, en el mismo sitio donde ya escribe
+`repairTaxonomyVersion`.
+
+**Consumo.** Los reviews de attempt, el fallback y la revisión final del plan reciben la versión
+efectiva de la corrida de forma explícita, no por inferencia sobre un estado parcial.
+
+**Telemetría.** El descriptor del job y de los attempts reporta la versión efectiva de esa
+corrida, no la constante global.
+
+**Tests obligatorios:** plan nuevo con generación concurrente; regeneración completa explícita
+de un plan legacy; regeneración parcial mixta (queda legacy fuera de targets → v1); y
+regeneración parcial cuyas semanas no-target ya son v2 (→ v2).
 
 ---
 
@@ -274,14 +363,18 @@ El flip de `PRODUCTIVE_QUALITY_VERSION` no basta (§2.3). Se fija:
 
 - [ ] `npm test` no ejecuta ninguna llamada real y no gana archivos omitidos por el loadtest.
 - [ ] `npm run loadtest:plan-builder` sin `LOADTEST_PLAN_BUILDER=1` falla antes de gastar tokens.
-- [ ] El driver produce artefacto con manifest, git SHA, descriptor completo y modelos observados.
-- [ ] El artefacto se escribe aunque la corrida falle; el exit code refleja si se alcanzó la muestra.
-- [ ] El reporte imprime las **tres** distribuciones separadas con su caveat de n.
+- [ ] El driver produce artefacto con `artifactSchemaVersion`, manifest, git SHA, `gitDirty`, descriptor completo, modelos observados y `weeks[]` allowlisted.
+- [ ] El artefacto se escribe aunque la corrida falle; el exit code refleja si se alcanzó la muestra (`completePlans >= 10` y `scorableWeeks ∈ [30,50]`).
+- [ ] El reporte imprime p50/p95 por plan de las cuatro métricas, en las dos cohortes y con el conteo de `null` excluidos.
+- [ ] El reporte imprime las **tres** distribuciones de reparación con su caveat, todas con el n real.
+- [ ] Ningún n hardcodeado: reporte, artefacto y registro usan los conteos reales de la corrida.
 - [ ] Control corrido por el owner y artefacto sanitizado versionado en `docs/superpowers/calibrations/`.
 - [ ] `qualityCalibrationV2.ts` congela los tres contratos con registro de procedencia completo.
-- [ ] El guard falla si v2 está activa sin registro, o si el fingerprint del control no coincide.
-- [ ] `generationMeta.qualityVersion` se escribe en el loop y un plan nuevo puntúa con v2 de punta a punta.
+- [ ] El guard falla ante registro vacío, SHA-256 distinto, fingerprint distinto (incluido `provider`), conteos distintos o `gitDirty !== false`.
+- [ ] `resolveEffectiveRunQualityVersion` corre antes de construir el descriptor, y descriptor y scoring no pueden divergir.
+- [ ] `generationMeta.qualityVersion` se escribe en el loop y un plan nuevo puntúa con v2 de punta a punta, attempts incluidos.
 - [ ] Un plan mixto con semanas históricas sigue puntuando v1, y su job lo reporta así.
+- [ ] Una regeneración parcial cuyas semanas no-target ya son v2 puntúa v2.
 - [ ] Tests de borde: `threshold−1` / `threshold`, divisor, saturación del tope, y v1 intacto.
 - [ ] Contrato de semana solo-hidratada sigue en `countRepairsV2 == 0` y cero penalización.
 - [ ] `npm run lint && npm test && npm run build` en verde.
@@ -315,8 +408,15 @@ ausentes es peor que un score viejo bien entendido.
 
 - §3.4 instrumentación cross-week → Fase 4.
 - Cualquier cambio de `effort`, `thinking`, modelo, `temperature` o concurrencia. El control
-  corre con la config productiva actual (`effort: 'omitted'`); calibrar contra una config que
-  producción no usa invalidaría el umbral.
+  corre con la config productiva actual; calibrar contra una config que producción no usa
+  invalidaría el umbral.
+
+  **Reconciliación con el spec padre.** §4 y §5.3 del spec de measurement foundation hablan del
+  "control Sonnet 4.6 `high`". La request real no manda `effort`, y `resolveEffectivePlanBuilderConfig`
+  lo registra como `'omitted'`. Aunque el default del proveedor equivalga a `high`, **lo que se
+  registra es `'omitted'`**: el descriptor debe describir la request que se envió, no una
+  inferencia sobre el comportamiento del proveedor. Si algún día se manda `effort` explícito,
+  eso es una variante nueva y exige su propio control.
 - Prompt caching.
 - Recalcular o migrar las filas históricas en `quality_version = 1`.
 - Reporte de latencia desde el cliente (telemetría UX separada, no la tabla de jobs).
