@@ -12,6 +12,29 @@ Spec: `docs/superpowers/specs/2026-07-25-plan-builder-loadtest-and-quality-v2-ac
 
 **Entrega 2 (calibración congelada + activación de v2) NO entra en este plan.** Sus constantes dependen de la distribución que produce esta entrega; escribirlas ahora sería inventar números. Se planifica por separado cuando exista el artefacto de control.
 
+## Resultado de implementación y revisión
+
+Implementado el 2026-07-25. Los bloques TDD de cada task se conservaron como
+trazabilidad del diseño original; la suite focal final creció a **94 tests** por
+los hardenings encontrados durante las revisiones cruzadas:
+
+- Los escenarios se declaran explícitamente como estímulos sintéticos
+  congelados, con GoalEvent coherente, bloques de fase contiguos y procedencia
+  suficiente para reconstruir fases, cargas, perfil y wizard config.
+- La aceptación rechaza duplicados, escenarios mal atribuidos, semanas fuera de
+  rango y planes `succeeded` contradictorios; un fallo del harness nunca puede
+  aprovechar la tolerancia reservada a fallos normales del proveedor.
+- Las allowlists cubren semanas, planes, Git y variante. La instrumentación
+  contabiliza inputs fallidos, valida el `traceId` real y no retiene contenido.
+- La corrida guarda checkpoints atómicos por caso y uno final, relee Git para
+  volver `dirty` monotónico, cierra Vite preservando el error primario y atiende
+  la primera `SIGINT`/`SIGTERM` entre casos.
+- `runPaid` vuelve a comprobar los guards contra `process.env`; ni la API
+  inyectable de tests ni argumentos desconocidos permiten eludir el opt-in.
+
+Validación final: lint, **293 archivos / 2116 tests**, build y smoke del loader
+en verde. No se ejecutó la corrida pagada.
+
 ## Global Constraints
 
 - El driver **no** puede ser un `.test.ts`: vitest lo descubriría en `npm test` y heredaría el `testTimeout` global de 10s (`vite.config.ts:20`).
@@ -631,7 +654,7 @@ export function describeManifest() {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run scripts/loadtest-plan-builder.test.js`
-Expected: PASS, 12 tests.
+Expected: PASS, 13 tests.
 
 - [ ] **Step 5: Commit (owner)**
 
@@ -762,7 +785,7 @@ export function summarizeDistribution(values) {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run scripts/loadtest-plan-builder.test.js`
-Expected: PASS, 17 tests.
+Expected: PASS, 18 tests.
 
 - [ ] **Step 5: Commit (owner)**
 
@@ -1195,7 +1218,7 @@ export function evaluateAcceptance(artifact) {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run scripts/loadtest-plan-builder.test.js`
-Expected: PASS, 30 tests.
+Expected: PASS, 33 tests.
 
 - [ ] **Step 5: Commit (owner)**
 
@@ -1424,7 +1447,7 @@ export function renderReport(report) {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run scripts/loadtest-plan-builder.test.js`
-Expected: PASS, 38 tests.
+Expected: PASS, 41 tests.
 
 - [ ] **Step 5: Commit (owner)**
 
@@ -1774,7 +1797,7 @@ export async function loadRuntime() {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run scripts/loadtest-plan-builder.test.js`
-Expected: PASS, 47 tests.
+Expected: PASS, 50 tests.
 
 - [ ] **Step 5: Commit (owner)**
 
@@ -2079,7 +2102,7 @@ En `package.json`, junto a `loadtest:week-creator`:
 - [ ] **Step 5: Run test to verify it passes**
 
 Run: `npx vitest run scripts/loadtest-plan-builder.test.js`
-Expected: PASS, 53 tests.
+Expected: PASS, 94 tests.
 
 - [ ] **Step 6: Verify the guards without spending a token**
 
