@@ -1,4 +1,6 @@
-import { describe, expect, it, vi } from 'vitest'
+import { EventEmitter } from 'node:events'
+
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
   ATTEMPTED_PLAN_TOTAL,
@@ -34,7 +36,10 @@ import {
   classifyError,
   defaultArtifactPath,
   hasFallbackUsed,
+  installGracefulSignalHandlers,
+  mergeGitState,
   parseArgs,
+  runCase,
   runPaid,
   writeArtifactAtomic,
 } from './loadtest-plan-builder.mjs'
@@ -459,6 +464,25 @@ describe('loadtest artifact', () => {
     expect(verdict.attemptedPlans).toBe(12)
     expect(verdict.completePlans).toBe(9)
     expect(verdict.accepted).toBe(false)
+  })
+
+  it('always rejects a harness failure even when eleven plans completed', () => {
+    const plans = planRowsFromManifest((_, index) => index === 0
+      ? {
+          outcome: 'failed',
+          weekCountSucceeded: null,
+          weekCountFailed: null,
+          errorClass: 'harness_failure',
+          weeks: [],
+        }
+      : {})
+
+    const verdict = evaluateAcceptance(artifactFrom(plans))
+
+    expect(verdict.completePlans).toBe(11)
+    expect(verdict.scorableWeeks).toBe(38)
+    expect(verdict.accepted).toBe(false)
+    expect(verdict.reasons.join(' ')).toMatch(/fallos del harness: .*#1/)
   })
 
   it('does not count contradictory succeeded plans as complete or score their weeks', () => {
@@ -984,13 +1008,49 @@ describe('loadtest CLI arguments and guards', () => {
 })
 
 describe('loadtest CLI pure row helpers', () => {
-  it('keeps only a safe error taxonomy identifier', () => {
+  it('keeps only a closed error taxonomy identifier', () => {
     expect(classifyError({ code: 'ETIMEDOUT', message: 'secret' })).toBe('ETIMEDOUT')
+    expect(classifyError({ code: 'rate_limit', message: 'secret' })).toBe('rate_limit')
     expect(classifyError({ code: 'raw provider message with spaces', name: 'Error' }))
       .toBe('run_threw')
     expect(classifyError({ code: 'x'.repeat(100), name: '<script>' }))
       .toBe('run_threw')
+    expect(classifyError({ code: 'sk-ant-secret-token-123456' })).toBe('run_threw')
+    expect(classifyError({ name: 'BearerSecretCredential123' })).toBe('run_threw')
     expect(classifyError('provider said secret')).toBe('run_threw')
+  })
+
+  it('keeps the initial git SHA and marks every dirty or changed state', () => {
+    expect(mergeGitState(
+      { sha: 'abc', dirty: false },
+      { sha: 'abc', dirty: false },
+    )).toEqual({ sha: 'abc', dirty: false })
+    expect(mergeGitState(
+      { sha: 'abc', dirty: false },
+      { sha: 'abc', dirty: true },
+    )).toEqual({ sha: 'abc', dirty: true })
+    expect(mergeGitState(
+      { sha: 'abc', dirty: false },
+      { sha: 'def', dirty: false },
+    )).toEqual({ sha: 'abc', dirty: true })
+    expect(mergeGitState(
+      { sha: 'abc', dirty: true },
+      { sha: 'abc', dirty: false },
+    )).toEqual({ sha: 'abc', dirty: true })
+  })
+
+  it('uses once signal handlers without emitting a real process signal', () => {
+    const target = new EventEmitter()
+    const signals = installGracefulSignalHandlers(target)
+
+    expect(signals.shouldStop()).toBe(false)
+    expect(target.listenerCount('SIGINT')).toBe(1)
+    target.emit('SIGINT')
+    expect(signals.shouldStop()).toBe(true)
+    expect(target.listenerCount('SIGINT')).toBe(0)
+
+    signals.cleanup()
+    expect(target.listenerCount('SIGTERM')).toBe(0)
   })
 
   it('sorts weeks and aggregates every attempt and the full write interval', () => {
@@ -1078,10 +1138,40 @@ describe('loadtest CLI pure row helpers', () => {
       { generationMeta: { fallbackUsed: false, addedFallbackCount: 0 } },
     ])).toBe(false)
   })
+
+  it('marks a throw escaping the productive loop as a harness failure', async () => {
+    const [manifestCase] = buildManifest()
+    const runtime = {
+      callAnthropicForWeek: vi.fn(),
+      runAsyncPlanGeneration: vi.fn().mockRejectedValue(
+        Object.assign(new Error('provider content must not escape'), {
+          code: 'rate_limit',
+        }),
+      ),
+      isReadyWeek: () => false,
+      reviewPlanQuality: vi.fn(),
+      countRepairsV2: () => 0,
+      pollIntervalMs: 0,
+    }
+
+    const row = await runCase(runtime, manifestCase, {
+      concurrency: 1,
+      qualityVersion: 1,
+    })
+
+    expect(row.errorClass).toBe('harness_failure')
+    expect(JSON.stringify(row)).not.toContain('provider content must not escape')
+  })
 })
 
 describe('loadtest paid-run persistence and lifecycle', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
   function paidDeps(overrides = {}) {
+    vi.stubEnv('LOADTEST_PLAN_BUILDER', '1')
+    vi.stubEnv('CLAUDE_API_KEY', 'test-only-key')
     const close = vi.fn().mockResolvedValue(undefined)
     const runtime = {
       resolveEffectivePlanBuilderConfig: vi.fn(() => ({
@@ -1098,14 +1188,10 @@ describe('loadtest paid-run persistence and lifecycle', () => {
       { caseId: 'two#1', scenarioKey: 'two', weekCount: 1 },
     ]
     return {
-      env: {
-        LOADTEST_PLAN_BUILDER: '1',
-        CLAUDE_API_KEY: 'test-only-key',
-      },
       artifactPath: 'loadtest-results/test.json',
       loadRuntime: vi.fn().mockResolvedValue(runtime),
       buildManifest: () => manifest,
-      readGit: () => ({ sha: 'abc', dirty: false }),
+      readGit: vi.fn(() => ({ sha: 'abc', dirty: false })),
       runCase: vi.fn(async (_runtime, manifestCase) => toPlanRow({
         ...manifestCase,
         outcome: 'succeeded',
@@ -1113,8 +1199,9 @@ describe('loadtest paid-run persistence and lifecycle', () => {
         weekCountFailed: 0,
         weeks: [],
       })),
-      buildArtifact: ({ plans }) => ({
+      buildArtifact: ({ plans, git }) => ({
         artifactSchemaVersion: 1,
+        git: { ...git },
         plans: plans.map((plan) => ({ ...plan })),
       }),
       writeArtifactAtomic: vi.fn().mockResolvedValue(undefined),
@@ -1131,7 +1218,14 @@ describe('loadtest paid-run persistence and lifecycle', () => {
   }
 
   it('enforces paid guards before loading the runtime', async () => {
-    const base = paidDeps({ env: {} })
+    const base = paidDeps({
+      env: {
+        LOADTEST_PLAN_BUILDER: '1',
+        CLAUDE_API_KEY: 'injected-key-must-be-ignored',
+      },
+    })
+    vi.stubEnv('LOADTEST_PLAN_BUILDER', '')
+    vi.stubEnv('CLAUDE_API_KEY', '')
 
     await expect(runPaid(base)).rejects.toThrow(/LOADTEST_PLAN_BUILDER/)
     expect(base.loadRuntime).not.toHaveBeenCalled()
@@ -1156,15 +1250,91 @@ describe('loadtest paid-run persistence and lifecycle', () => {
     const result = await runPaid(base)
 
     expect(base.runCase).toHaveBeenCalledTimes(2)
-    expect(base.writeArtifactAtomic).toHaveBeenCalledTimes(2)
+    expect(base.writeArtifactAtomic).toHaveBeenCalledTimes(3)
     expect(base.writeArtifactAtomic.mock.calls[0][1].plans).toHaveLength(1)
     expect(base.writeArtifactAtomic.mock.calls[1][1].plans).toHaveLength(2)
+    expect(base.writeArtifactAtomic.mock.calls[2][1].plans).toHaveLength(2)
+    expect(base.readGit).toHaveBeenCalledTimes(4)
     expect(result.artifact.plans[0]).toMatchObject({
       caseId: 'one#1',
       outcome: 'failed',
-      errorClass: 'run_threw',
+      errorClass: 'harness_failure',
+      weekCountSucceeded: null,
+      weekCountFailed: null,
     })
+    expect(result.verdict.accepted).toBe(false)
     expect(JSON.stringify(result.artifact)).not.toContain('provider leaked content')
+    expect(base.close).toHaveBeenCalledTimes(1)
+  })
+
+  it('rejects one harness failure plus eleven complete cases even with an optimistic evaluator', async () => {
+    const manifest = buildManifest()
+    const successfulRows = planRowsFromManifest()
+    const optimisticEvaluator = vi.fn(() => ({ accepted: true, reasons: [] }))
+    const base = paidDeps({
+      buildManifest: () => manifest,
+      buildArtifact,
+      evaluateAcceptance: optimisticEvaluator,
+    })
+    base.runCase.mockImplementation(async (_runtime, manifestCase) => {
+      if (manifestCase.caseId === manifest[0].caseId) {
+        throw new Error('harness escaped')
+      }
+      return successfulRows.find((plan) => plan.caseId === manifestCase.caseId)
+    })
+
+    const result = await runPaid(base)
+
+    expect(base.runCase).toHaveBeenCalledTimes(12)
+    expect(base.writeArtifactAtomic).toHaveBeenCalledTimes(13)
+    expect(result.artifact.plans[0]).toMatchObject({
+      errorClass: 'harness_failure',
+      weekCountSucceeded: null,
+      weekCountFailed: null,
+    })
+    expect(optimisticEvaluator).toHaveBeenCalledTimes(1)
+    expect(result.verdict.accepted).toBe(false)
+    expect(result.verdict.reasons.join(' ')).toMatch(/fallos del harness/)
+  })
+
+  it('keeps the initial SHA and detects a Git change before the final checkpoint', async () => {
+    const base = paidDeps()
+    base.readGit
+      .mockReturnValueOnce({ sha: 'abc', dirty: false })
+      .mockReturnValueOnce({ sha: 'abc', dirty: false })
+      .mockReturnValueOnce({ sha: 'def', dirty: false })
+      .mockReturnValueOnce({ sha: 'def', dirty: false })
+
+    const result = await runPaid(base)
+
+    expect(result.artifact.git).toEqual({ sha: 'abc', dirty: true })
+    expect(base.readGit).toHaveBeenCalledTimes(4)
+    expect(base.writeArtifactAtomic).toHaveBeenCalledTimes(3)
+  })
+
+  it('stops between cases after a first injected signal and persists a final checkpoint', async () => {
+    const target = new EventEmitter()
+    const signals = installGracefulSignalHandlers(target)
+    const base = paidDeps({ shouldStop: signals.shouldStop })
+    base.runCase.mockImplementationOnce(async (_runtime, manifestCase) => {
+      target.emit('SIGTERM')
+      return toPlanRow({
+        ...manifestCase,
+        outcome: 'succeeded',
+        weekCountSucceeded: 1,
+        weekCountFailed: 0,
+        weeks: [],
+      })
+    })
+
+    const result = await runPaid(base)
+    signals.cleanup()
+
+    expect(base.runCase).toHaveBeenCalledTimes(1)
+    expect(base.writeArtifactAtomic).toHaveBeenCalledTimes(2)
+    expect(result.artifact.plans).toHaveLength(1)
+    expect(result.verdict.accepted).toBe(false)
+    expect(result.verdict.reasons.join(' ')).toMatch(/detenida por señal/)
     expect(base.close).toHaveBeenCalledTimes(1)
   })
 

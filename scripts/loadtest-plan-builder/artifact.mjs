@@ -276,6 +276,8 @@ export function evaluateAcceptance(artifact) {
   })
   const contradictorySucceeded = artifact.plans.filter((plan) =>
     plan.outcome === 'succeeded' && !isCompletePlan(plan))
+  const harnessFailures = artifact.plans.filter((plan) =>
+    plan.errorClass === 'harness_failure')
 
   const expectedTargetWeeks = embeddedCases.reduce((sum, item) => sum + item.weekCount, 0)
 
@@ -312,6 +314,9 @@ export function evaluateAcceptance(artifact) {
   }
   if (contradictorySucceeded.length > 0) {
     reasons.push(`planes succeeded incoherentes con conteos/semanas: ${contradictorySucceeded.map((plan) => plan.caseId).join(', ')}`)
+  }
+  if (harnessFailures.length > 0) {
+    reasons.push(`fallos del harness: ${harnessFailures.map((plan) => plan.caseId).join(', ')}`)
   }
   if (observedTargetWeeks !== expectedTargetWeeks) {
     reasons.push(`semanas objetivo observadas ${observedTargetWeeks}/${expectedTargetWeeks}`)

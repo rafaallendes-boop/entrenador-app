@@ -41,7 +41,30 @@ import {
 } from './loadtest-plan-builder/runtime.mjs'
 
 const USAGE = 'Uso: loadtest-plan-builder.mjs | loadtest-plan-builder.mjs --report <ruta-al-artefacto>'
-const SAFE_ERROR_CLASS = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/
+const KNOWN_ERROR_CLASSES = new Set([
+  'AbortError',
+  'EAI_AGAIN',
+  'ECONNABORTED',
+  'ECONNREFUSED',
+  'ECONNRESET',
+  'ENOTFOUND',
+  'ETIMEDOUT',
+  'TimeoutError',
+  'local_plan_fallback',
+  'local_plan_fallback_quality',
+  'misconfigured',
+  'network_error',
+  'parse_error',
+  'post_generation_failed',
+  'quality_gate',
+  'rate_limit',
+  'server_error',
+  'timeout',
+  'truncated',
+  'unauthorized',
+  'unknown',
+  'validation',
+])
 
 export function parseArgs(argv) {
   if (Array.isArray(argv) && argv.length === 0) {
@@ -79,11 +102,7 @@ export function defaultArtifactPath(now) {
 export function classifyError(error) {
   if (!error || typeof error !== 'object') return 'run_threw'
   for (const candidate of [error.code, error.name]) {
-    if (
-      typeof candidate === 'string'
-      && candidate !== 'Error'
-      && SAFE_ERROR_CLASS.test(candidate)
-    ) {
+    if (typeof candidate === 'string' && KNOWN_ERROR_CLASSES.has(candidate)) {
       return candidate
     }
   }
@@ -160,6 +179,43 @@ function readGit() {
 }
 
 /**
+ * Conserva el SHA inicial que identifica la corrida y vuelve la suciedad
+ * monotónica. Cambiar de commit durante el control también invalida el árbol.
+ */
+export function mergeGitState(initial, current) {
+  const initialSha = initial?.sha ?? null
+  const currentSha = current?.sha ?? null
+  return {
+    sha: initialSha,
+    dirty: initial?.dirty === true
+      || current?.dirty === true
+      || (initialSha !== null && currentSha !== null && initialSha !== currentSha),
+  }
+}
+
+/**
+ * Instala listeners `once`: la primera señal pide detenerse entre casos; una
+ * segunda señal del mismo tipo ya no tiene listener y conserva el default del
+ * proceso. `target` es inyectable para no emitir señales reales en tests.
+ */
+export function installGracefulSignalHandlers(target = process) {
+  let stopped = false
+  const requestStop = () => {
+    stopped = true
+  }
+  target.once('SIGINT', requestStop)
+  target.once('SIGTERM', requestStop)
+
+  return {
+    shouldStop: () => stopped,
+    cleanup: () => {
+      target.removeListener('SIGINT', requestStop)
+      target.removeListener('SIGTERM', requestStop)
+    },
+  }
+}
+
+/**
  * Escribe un sibling temporal y solo después reemplaza el checkpoint visible.
  * Un crash durante `writeFile` nunca deja JSON truncado en `artifactPath`.
  */
@@ -233,8 +289,10 @@ export async function runCase(runtime, manifestCase, variant) {
       enqueuedAt: workerStartedAt,
       variant,
     })
-  } catch (error) {
-    errorClass = classifyError(error)
+  } catch {
+    // El loop productivo normaliza fallos del proveedor en su estado. Si
+    // escapa un throw, falló el harness y el control completo no es aceptable.
+    errorClass = 'harness_failure'
   } finally {
     await poller.settle()
   }
@@ -295,21 +353,22 @@ export async function runCase(runtime, manifestCase, variant) {
   })
 }
 
-function failedPlanRow(manifestCase, error) {
+function failedPlanRow(manifestCase) {
   return toPlanRow({
     caseId: manifestCase.caseId,
     scenarioKey: manifestCase.scenarioKey,
     weekCount: manifestCase.weekCount,
     outcome: 'failed',
-    weekCountSucceeded: 0,
-    weekCountFailed: manifestCase.weekCount,
-    errorClass: classifyError(error),
+    // El throw puede ocurrir antes o después de progreso parcial. No inventar
+    // conteos que el harness no alcanzó a observar.
+    weekCountSucceeded: null,
+    weekCountFailed: null,
+    errorClass: 'harness_failure',
     weeks: [],
   })
 }
 
 const PAID_DEFAULTS = {
-  env: process.env,
   loadRuntime,
   buildManifest,
   readGit,
@@ -322,6 +381,29 @@ const PAID_DEFAULTS = {
   now: () => new Date(),
   log: (...args) => console.log(...args),
   error: (...args) => console.error(...args),
+  shouldStop: () => false,
+}
+
+function enforceOperationalFailureVerdict(verdict, artifact, interrupted) {
+  const harnessCases = artifact.plans
+    .filter((plan) => plan.errorClass === 'harness_failure')
+    .map((plan) => plan.caseId)
+  const reasons = Array.isArray(verdict?.reasons) ? [...verdict.reasons] : []
+  if (harnessCases.length > 0) {
+    const reason = `fallos del harness: ${harnessCases.join(', ')}`
+    if (!reasons.includes(reason)) reasons.push(reason)
+  }
+  if (interrupted) {
+    const reason = 'corrida detenida por señal antes de completar el manifest'
+    if (!reasons.includes(reason)) reasons.push(reason)
+  }
+  if (harnessCases.length === 0 && !interrupted) return verdict
+
+  return {
+    ...verdict,
+    accepted: false,
+    reasons,
+  }
 }
 
 /**
@@ -330,54 +412,66 @@ const PAID_DEFAULTS = {
  */
 export async function runPaid(overrides = {}) {
   const deps = { ...PAID_DEFAULTS, ...overrides }
-  assertRunGuards(deps.env)
+  // El camino productivo siempre se protege con el entorno real del proceso.
+  // No debe existir una inyección capaz de desacoplar el guard del caller real.
+  assertRunGuards(process.env)
   const artifactPath = deps.artifactPath ?? defaultArtifactPath(deps.now())
   const plans = []
   let runtime = null
   let primaryError = null
+  let interrupted = false
 
   try {
     runtime = await deps.loadRuntime()
-    const effectiveConfig = runtime.resolveEffectivePlanBuilderConfig(deps.env)
+    const effectiveConfig = runtime.resolveEffectivePlanBuilderConfig(process.env)
     const variant = {
       ...effectiveConfig,
       variantId: runtime.buildVariantId(effectiveConfig),
     }
     const manifest = deps.buildManifest()
-    const git = deps.readGit()
+    let git = deps.readGit()
     let artifact = null
 
     // Los planes son secuenciales; la concurrencia interna queda productiva.
     for (const [index, manifestCase] of manifest.entries()) {
+      if (deps.shouldStop()) {
+        interrupted = true
+        break
+      }
       deps.log(`[${index + 1}/${manifest.length}] ${manifestCase.caseId}`)
       let planRow
       try {
         planRow = await deps.runCase(runtime, manifestCase, variant)
-      } catch (error) {
-        planRow = failedPlanRow(manifestCase, error)
+      } catch {
+        planRow = failedPlanRow(manifestCase)
         deps.error(`${manifestCase.caseId}: ${planRow.errorClass}`)
       }
       plans.push(planRow)
 
       // Checkpoint pagado después de CADA caso, mediante reemplazo atómico.
+      git = mergeGitState(git, deps.readGit())
       artifact = deps.buildArtifact({ plans, variant, git })
       await deps.writeArtifactAtomic(artifactPath, artifact)
       deps.log(`${planRow.outcome} terminalMs=${planRow.terminalMs ?? '—'}`)
     }
 
-    // El manifest productivo nunca está vacío; mantener la función total ayuda
-    // a los tests y evita devolver `null` ante una configuración inválida.
-    if (artifact === null) {
-      artifact = deps.buildArtifact({ plans, variant, git })
-      await deps.writeArtifactAtomic(artifactPath, artifact)
-    }
+    // Relee Git y persiste siempre un checkpoint final, incluso si una señal
+    // detuvo la corrida antes del siguiente caso o el manifest está vacío.
+    git = mergeGitState(git, deps.readGit())
+    artifact = deps.buildArtifact({ plans, variant, git })
+    await deps.writeArtifactAtomic(artifactPath, artifact)
 
     const report = deps.buildReport(artifact)
     const renderedReport = deps.renderReport(report)
     deps.log(`Artefacto: ${artifactPath}`)
     deps.log(renderedReport)
 
-    const verdict = deps.evaluateAcceptance(artifact)
+    interrupted = interrupted || deps.shouldStop()
+    const verdict = enforceOperationalFailureVerdict(
+      deps.evaluateAcceptance(artifact),
+      artifact,
+      interrupted,
+    )
     if (verdict.accepted) {
       deps.log('Control aceptable para calibración.')
     } else {
@@ -418,8 +512,13 @@ async function main() {
 
   // Los guards ocurren antes de `runPaid`, cuyo primer efecto es loadRuntime.
   assertRunGuards(process.env)
-  const result = await runPaid()
-  return result.verdict.accepted ? 0 : 1
+  const signals = installGracefulSignalHandlers()
+  try {
+    const result = await runPaid({ shouldStop: signals.shouldStop })
+    return result.verdict.accepted ? 0 : 1
+  } finally {
+    signals.cleanup()
+  }
 }
 
 const invokedDirectly = Boolean(process.argv[1])
