@@ -136,7 +136,16 @@ mismo**: un plan que falla o queda parcial no entra a la calibración.
 
 - **Cohorte de calibración** = planes completos y sus semanas puntuables (con contadores de
   taxonomía reales; ni pending ni error).
-- **Criterio de aceptación**: `completePlans >= 10` y `scorableWeeks ∈ [30, 50]`.
+- **Criterio de aceptación**, las cuatro condiciones juntas:
+  - `attemptedPlans === manifest.length === 12`;
+  - `observedTargetWeeks === targetWeeks === 42`;
+  - `completePlans >= 10`;
+  - `scorableWeeks ∈ [30, 50]`.
+
+Las dos primeras existen para que una interrupción no pueda aprobar un control que jamás
+ejecutó los doce casos del manifest (6 escenarios × 2 planes): diez planes exitosos seguidos de
+un corte pasarían el umbral de calidad sin haber cubierto la matriz. Tolerar fallos del proveedor no es lo mismo que
+tolerar una muestra sesgada por escenarios nunca intentados.
 - Percentiles, caveat y registro de procedencia usan el **n real** de la corrida. Ningún 12 ni
   42 hardcodeado en el reporte, el artefacto ni la constante de calibración.
 
@@ -225,8 +234,9 @@ allowlist es explícita, no una exclusión por lista negra: un campo nuevo del d
 poder filtrarse al artefacto por olvido.
 
 El artefacto se escribe **aunque la corrida falle a mitad**. Al final el proceso sale con
-código distinto de cero si no alcanza ≥10 planes completos o 30–50 semanas, pero conserva toda
-la evidencia parcial.
+código distinto de cero si no se cumplen las cuatro condiciones de aceptación de §3.3 —manifest
+completo intentado, semanas objetivo observadas, `completePlans >= 10` y
+`scorableWeeks ∈ [30, 50]`—, pero conserva toda la evidencia parcial.
 
 #### 3.6 Reporte de distribuciones
 
@@ -258,9 +268,10 @@ Ocurre después de que el owner corra el control y elija los números mirando el
 #### 3.7 El artefacto aceptado se versiona
 
 Los resultados pagados crudos siguen ignorados. Al aceptar un control, se copia una versión
-sanitizada a `docs/superpowers/calibrations/plan-builder-v2-control-<fecha>.json`, con las 12
-observaciones de plan y 42 de semana, sin prompts ni respuestas. Ese archivo versionado es el
-que la constante referencia, junto con su SHA-256.
+sanitizada a `docs/superpowers/calibrations/plan-builder-v2-control-<fecha>.json`, con **todas**
+las observaciones de la corrida —los 12 planes intentados y las 42 semanas objetivo, marcando
+cuáles entran a la cohorte de calibración— sin prompts ni respuestas. Ese archivo versionado es
+el que la constante referencia, junto con su SHA-256.
 
 #### 3.8 `qualityCalibrationV2.ts`
 
@@ -329,19 +340,42 @@ generadas nunca tienen taxonomía— mientras el job se etiquetaría `q2`. Se fi
 **una sola vez y antes** de construir el descriptor de variante y el `variant_id`, para que la
 etiqueta y el scoring no puedan divergir:
 
+**Targets efectivos.** `targetWeekIndexes` ausente **no** significa "ninguna semana" ni "todas":
+el loop lista todas pero omite las ya listas (`asyncGenerationLoop.ts:739` y `:888`). La regla
+espeja ese skip, o una semana legacy lista quedaría "fuera de targets" vacío y activaría v2 por
+verdad vacua:
+
+```ts
+effectiveTargets = targetWeekIndexes?.length
+  ? targetWeekIndexes
+  : weeks.filter((week) => !isReadyWeek(week)).map((week) => week.weekIndex)
+```
+
+Con eso:
+
 - Si `productiveVersion === 1` → la corrida es v1.
 - Si `productiveVersion === 2` → la corrida es v2 **si y solo si** toda semana **fuera** de
-  `targetWeekIndexes` ya tiene `repairTaxonomyVersion === 2` y `qualityVersion === 2`. Las
-  semanas target las promueve esta corrida.
-- Si queda alguna semana histórica legacy fuera de los targets → la corrida es v1. Interpretar
-  contadores ausentes como cero produciría un score falsamente bueno para semanas que nunca
-  fueron medidas con la taxonomía nueva.
+  `effectiveTargets` ya tiene `repairTaxonomyVersion === 2` y `qualityVersion === 2`. Las
+  semanas de `effectiveTargets` las promueve esta corrida.
+- Si queda alguna semana histórica legacy fuera de los targets efectivos → la corrida es v1.
+  Interpretar contadores ausentes como cero produciría un score falsamente bueno para semanas
+  que nunca fueron medidas con la taxonomía nueva.
 
 **Semana puntuable y precondición de taxonomía.** `resolveQualityVersion` hoy exige taxonomía
 v2 en *todas* las semanas cuando se pide v2 explícitamente. Se acota a las **semanas
-puntuables** —las que llevan contenido generado, propio de esta corrida o ya listo de antes—;
-un shell pending o generating no tiene metadata de reparación que interpretar y es neutral. Sin
-ese acotamiento, pasar `qualityVersion: 2` durante la corrida lanzaría.
+puntuables**, definidas como las que llevan contenido generado **y no están pendientes de ser
+reemplazadas por esta corrida**. Dos exclusiones, no una:
+
+- Shells `pending`/`generating`: no tienen metadata de reparación que interpretar.
+- **Semanas target todavía no procesadas por esta corrida.** En una regeneración completa
+  explícita de un plan legacy, esas semanas conservan contenido viejo y por estado *parecen*
+  listas; incluirlas haría fallar la precondición contra su propia taxonomía legacy justo en la
+  corrida que viene a reemplazarlas.
+
+Contrato congelado: el contexto del review recibe `pendingTargetWeekIndexes` —los targets aún no
+escritos por esta corrida— y la precondición los ignora. Su score sigue calculándose como hoy;
+lo único que cambia es que no pueden vetar la versión de la corrida. Sin estas dos exclusiones,
+pasar `qualityVersion: 2` durante la corrida lanzaría.
 
 **Escritura de la marca.** El loop escribe `generationMeta.qualityVersion` con la versión
 efectiva de la corrida al persistir cada semana generada, en el mismo sitio donde ya escribe
@@ -364,7 +398,8 @@ regeneración parcial cuyas semanas no-target ya son v2 (→ v2).
 - [ ] `npm test` no ejecuta ninguna llamada real y no gana archivos omitidos por el loadtest.
 - [ ] `npm run loadtest:plan-builder` sin `LOADTEST_PLAN_BUILDER=1` falla antes de gastar tokens.
 - [ ] El driver produce artefacto con `artifactSchemaVersion`, manifest, git SHA, `gitDirty`, descriptor completo, modelos observados y `weeks[]` allowlisted.
-- [ ] El artefacto se escribe aunque la corrida falle; el exit code refleja si se alcanzó la muestra (`completePlans >= 10` y `scorableWeeks ∈ [30,50]`).
+- [ ] El artefacto se escribe aunque la corrida falle; el exit code refleja las cuatro condiciones de aceptación (manifest completo intentado, semanas objetivo observadas, `completePlans >= 10`, `scorableWeeks ∈ [30,50]`).
+- [ ] Una corrida interrumpida tras 10 planes exitosos **no** aprueba: no intentó los doce casos del manifest.
 - [ ] El reporte imprime p50/p95 por plan de las cuatro métricas, en las dos cohortes y con el conteo de `null` excluidos.
 - [ ] El reporte imprime las **tres** distribuciones de reparación con su caveat, todas con el n real.
 - [ ] Ningún n hardcodeado: reporte, artefacto y registro usan los conteos reales de la corrida.
@@ -416,7 +451,8 @@ ausentes es peor que un score viejo bien entendido.
   lo registra como `'omitted'`. Aunque el default del proveedor equivalga a `high`, **lo que se
   registra es `'omitted'`**: el descriptor debe describir la request que se envió, no una
   inferencia sobre el comportamiento del proveedor. Si algún día se manda `effort` explícito,
-  eso es una variante nueva y exige su propio control.
+  eso es una variante nueva y exige una corrida comparativa propia con el mismo manifest
+  congelado, **sin recalibrar el umbral** (§5.5).
 - Prompt caching.
 - Recalcular o migrar las filas históricas en `quality_version = 1`.
 - Reporte de latencia desde el cliente (telemetría UX separada, no la tabla de jobs).
