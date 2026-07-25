@@ -20,6 +20,7 @@ import {
   toPlanRow,
   toWeekRow,
 } from './loadtest-plan-builder/artifact.mjs'
+import { buildReport, renderReport } from './loadtest-plan-builder/report.mjs'
 
 /** Construye filas que corresponden 1:1 con el manifest congelado. */
 function planRowsFromManifest(overrides = () => ({})) {
@@ -420,5 +421,95 @@ describe('loadtest artifact', () => {
     const row = toPlanRow({ caseId: 'a#1', errorClass: 'timeout', error: 'Anthropic dijo cualquier cosa' })
     expect(row.errorClass).toBe('timeout')
     expect(JSON.stringify(row)).not.toContain('cualquier cosa')
+  })
+})
+
+function reportArtifactStub() {
+  const weeks = [
+    { weekIndex: 0, scorable: true, countRepairsV2: 2, correctiveActionCount: 1, structuralActionCount: 1, durationMs: 3000, wallClockMs: 5000 },
+    { weekIndex: 1, scorable: true, countRepairsV2: 4, correctiveActionCount: 2, structuralActionCount: 1, durationMs: 7000, wallClockMs: 9000 },
+    { weekIndex: 2, scorable: false, countRepairsV2: null, correctiveActionCount: 0, structuralActionCount: 0, durationMs: null, wallClockMs: null },
+  ]
+  return {
+    artifactSchemaVersion: 1,
+    plans: [
+      {
+        caseId: 'a#1', scenarioKey: 'squash_build', outcome: 'succeeded',
+        firstWeekReadyMs: 1000, firstWeekDetectedMs: 4000, planCompleteMs: 8000, terminalMs: 9000,
+        weeks,
+      },
+      {
+        caseId: 'a#2', scenarioKey: 'squash_build', outcome: 'failed',
+        firstWeekReadyMs: 2000, firstWeekDetectedMs: 5000, planCompleteMs: null, terminalMs: 11000,
+        weeks: [
+          {
+            weekIndex: 0,
+            scorable: true,
+            countRepairsV2: 99,
+            correctiveActionCount: 99,
+            structuralActionCount: 99,
+            durationMs: 5000,
+            wallClockMs: 6000,
+          },
+        ],
+      },
+    ],
+  }
+}
+
+describe('loadtest report', () => {
+  it('splits latency into all-attempts and complete-plans cohorts', () => {
+    const report = buildReport(reportArtifactStub())
+    expect(report.latency.allAttempts.terminalMs.n).toBe(2)
+    expect(report.latency.completePlans.terminalMs.n).toBe(1)
+  })
+
+  it('counts excluded nulls instead of scoring them as zero', () => {
+    const report = buildReport(reportArtifactStub())
+    expect(report.latency.allAttempts.planCompleteMs.nullCount).toBe(1)
+    expect(report.latency.allAttempts.planCompleteMs.p50).toBe(8000)
+  })
+
+  it('reports the three repair distributions over scorable weeks only', () => {
+    const report = buildReport(reportArtifactStub())
+    expect(report.repair.weekCountRepairsV2.n).toBe(2)
+    expect(report.repair.planCountRepairsV2.n).toBe(1)
+    expect(report.repair.weekWarningInput.n).toBe(2)
+    // El warning suma solo corrective + structural: 1+1 y 2+1.
+    expect(report.repair.weekWarningInput.max).toBe(3)
+  })
+
+  it('emits the caveat with the real n, never a hardcoded one', () => {
+    const report = buildReport(reportArtifactStub())
+    expect(report.caveat).toContain('n=1')
+    expect(report.caveat).not.toContain('n=12')
+  })
+
+  it('breaks every repair distribution down by scenario, not just the weekly one', () => {
+    const report = buildReport(reportArtifactStub())
+    const scenario = report.byScenario.squash_build
+    expect(scenario.weekCountRepairsV2.n).toBe(2)
+    expect(scenario.planCountRepairsV2.n).toBe(1)
+    expect(scenario.weekWarningInput.n).toBe(2)
+  })
+
+  it('emits weekly latency over weeks from every plan with real values', () => {
+    const report = buildReport(reportArtifactStub())
+    // Incluye la semana del plan fallido: tres duraciones, más una en null.
+    expect(report.weeklyLatency.durationMs.n).toBe(3)
+    expect(report.weeklyLatency.durationMs.nullCount).toBe(1)
+    expect(report.weeklyLatency.durationMs.p50).toBe(5000)
+    expect(report.weeklyLatency.wallClockMs.p95).toBe(9000)
+  })
+
+  it('refuses an artifact written by a different schema version', () => {
+    const artifact = { ...reportArtifactStub(), artifactSchemaVersion: 2 }
+    expect(() => buildReport(artifact)).toThrow(/artifactSchemaVersion/)
+  })
+
+  it('renders both blocks as text', () => {
+    const text = renderReport(buildReport(reportArtifactStub()))
+    expect(text).toContain('Latencia por plan')
+    expect(text).toContain('Distribuciones de reparación')
   })
 })
