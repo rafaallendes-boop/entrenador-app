@@ -8,6 +8,11 @@ import {
   buildManifest,
   buildPlanFixture,
 } from './loadtest-plan-builder/manifest.mjs'
+import {
+  percentile,
+  summarizeDistribution,
+  summarizeLatency,
+} from './loadtest-plan-builder/stats.mjs'
 
 describe('loadtest manifest', () => {
   it('freezes six scenarios and twelve cases', () => {
@@ -152,5 +157,38 @@ describe('loadtest manifest', () => {
     expect(phases).toContain('taper')
     expect(phases[phases.length - 1]).toBe('race')
     expect(plan.phases.map((phase) => phase.phase)).toEqual(phases)
+  })
+})
+
+describe('loadtest stats', () => {
+  it('uses nearest-rank without interpolation', () => {
+    const values = [10, 20, 30, 40]
+    // ceil(0.5 * 4) = 2 → segundo valor ordenado.
+    expect(percentile(values, 0.5)).toBe(20)
+    // ceil(0.95 * 4) = 4 → cuarto valor.
+    expect(percentile(values, 0.95)).toBe(40)
+  })
+
+  it('returns null for an empty sample instead of zero', () => {
+    expect(percentile([], 0.5)).toBeNull()
+  })
+
+  it('excludes nulls from latency and reports how many there were', () => {
+    const summary = summarizeLatency([100, null, 300, undefined, 200])
+    expect(summary.n).toBe(3)
+    expect(summary.nullCount).toBe(2)
+    expect(summary.p50).toBe(200)
+  })
+
+  it('never treats a null latency as zero', () => {
+    expect(summarizeLatency([500, null]).p50).toBe(500)
+  })
+
+  it('summarizes a repair distribution with a histogram', () => {
+    const summary = summarizeDistribution([0, 0, 1, 2, 5])
+    expect(summary.n).toBe(5)
+    expect(summary.max).toBe(5)
+    expect(summary.p50).toBe(1)
+    expect(summary.histogram).toEqual({ 0: 2, 1: 1, 2: 1, 5: 1 })
   })
 })
