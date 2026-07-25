@@ -13,6 +13,47 @@ import {
   summarizeDistribution,
   summarizeLatency,
 } from './loadtest-plan-builder/stats.mjs'
+import {
+  ARTIFACT_SCHEMA_VERSION,
+  buildArtifact,
+  evaluateAcceptance,
+  toPlanRow,
+  toWeekRow,
+} from './loadtest-plan-builder/artifact.mjs'
+
+/** Construye filas que corresponden 1:1 con el manifest congelado. */
+function planRowsFromManifest(overrides = () => ({})) {
+  return buildManifest().map((manifestCase, index) => ({
+    caseId: manifestCase.caseId,
+    scenarioKey: manifestCase.scenarioKey,
+    weekCount: manifestCase.weekCount,
+    outcome: 'succeeded',
+    weekCountSucceeded: manifestCase.weekCount,
+    weekCountFailed: 0,
+    firstWeekReadyMs: 1000,
+    firstWeekReadyE2eMs: 1200,
+    firstWeekDetectedMs: 4000,
+    firstWeekDetectionLagMs: 3000,
+    planCompleteMs: 8000,
+    terminalMs: 9000,
+    weeks: Array.from({ length: manifestCase.weekCount }, (_, weekIndex) => ({
+      weekIndex,
+      scorable: true,
+      countRepairsV2: 2,
+      correctiveActionCount: 1,
+      structuralActionCount: 1,
+    })),
+    ...overrides(manifestCase, index),
+  }))
+}
+
+function artifactFrom(plans) {
+  return buildArtifact({
+    plans,
+    variant: { provider: 'claude', model: 'm', qualityVersion: 1, variantId: 'v' },
+    git: { sha: 'abc', dirty: false },
+  })
+}
 
 describe('loadtest manifest', () => {
   it('freezes six scenarios and twelve cases', () => {
@@ -190,5 +231,194 @@ describe('loadtest stats', () => {
     expect(summary.max).toBe(5)
     expect(summary.p50).toBe(1)
     expect(summary.histogram).toEqual({ 0: 2, 1: 1, 2: 1, 5: 1 })
+  })
+})
+
+describe('loadtest artifact', () => {
+  it('allowlists week rows and never carries sessions or prompts', () => {
+    const row = toWeekRow({
+      weekIndex: 2,
+      status: 'draft',
+      sessions: [{ title: 'secreto' }],
+      generationMeta: {
+        attempts: 1,
+        repairTaxonomyVersion: 2,
+        qualityVersion: 1,
+        correctiveActionCount: 3,
+        structuralActionCount: 2,
+        movedSessionCount: 1,
+        droppedSessionCount: 0,
+      },
+    }, { scenarioKey: 'squash_build', countRepairsV2: 6, score: 88, grade: 'good' })
+
+    expect(row.sessions).toBeUndefined()
+    expect(JSON.stringify(row)).not.toContain('secreto')
+    expect(row).toMatchObject({
+      weekIndex: 2,
+      status: 'draft',
+      countRepairsV2: 6,
+      correctiveActionCount: 3,
+      structuralActionCount: 2,
+      scorable: true,
+    })
+  })
+
+  it('resolves the quality version from context when generation metadata omits it', () => {
+    const row = toWeekRow(
+      {
+        weekIndex: 0,
+        status: 'draft',
+        sessions: [],
+        generationMeta: { attempts: 1, repairTaxonomyVersion: 2 },
+      },
+      { scenarioKey: 'running', countRepairsV2: 0, qualityVersion: 2 },
+    )
+
+    expect(row.qualityVersion).toBe(2)
+  })
+
+  it('marks a week without v2 taxonomy as not scorable', () => {
+    const row = toWeekRow(
+      { weekIndex: 0, status: 'draft', sessions: [], generationMeta: { attempts: 1 } },
+      { scenarioKey: 'running', countRepairsV2: 0 },
+    )
+    expect(row.scorable).toBe(false)
+  })
+
+  it('marks an errored week as not scorable', () => {
+    const row = toWeekRow(
+      { weekIndex: 0, status: 'error', sessions: [], generationMeta: { attempts: 2, repairTaxonomyVersion: 2 } },
+      { scenarioKey: 'running', countRepairsV2: 0 },
+    )
+    expect(row.scorable).toBe(false)
+  })
+
+  it('accepts a run that covers the frozen manifest', () => {
+    const verdict = evaluateAcceptance(artifactFrom(planRowsFromManifest()))
+    expect(verdict.accepted).toBe(true)
+    expect(verdict.attemptedPlans).toBe(12)
+    expect(verdict.observedTargetWeeks).toBe(42)
+    expect(verdict.scorableWeeks).toBe(42)
+  })
+
+  it('rejects twelve copies of the same case even if the counts add up', () => {
+    const [first] = planRowsFromManifest()
+    // Doce filas, doce "planes", pero un solo caso del manifest cubierto.
+    const plans = Array.from({ length: 12 }, () => ({ ...first }))
+    const verdict = evaluateAcceptance(artifactFrom(plans))
+    expect(verdict.accepted).toBe(false)
+    expect(verdict.reasons.join(' ')).toMatch(/casos del manifest/)
+  })
+
+  it('derives observed target weeks from the rows instead of trusting a declared total', () => {
+    const plans = planRowsFromManifest((manifestCase) =>
+      manifestCase.caseId === 'running#1' ? { weekCount: 2, weeks: [] } : {})
+    const verdict = evaluateAcceptance(artifactFrom(plans))
+    expect(verdict.observedTargetWeeks).toBe(40)
+    expect(verdict.accepted).toBe(false)
+    expect(verdict.reasons.join(' ')).toMatch(/semanas objetivo/)
+  })
+
+  it('rejects a run that stopped after ten successful plans', () => {
+    const plans = planRowsFromManifest().slice(0, 10)
+    const verdict = evaluateAcceptance(artifactFrom(plans))
+    expect(verdict.accepted).toBe(false)
+    expect(verdict.reasons.join(' ')).toMatch(/casos del manifest/)
+  })
+
+  it('rejects when too few plans completed even with the full manifest attempted', () => {
+    const plans = planRowsFromManifest((_, index) =>
+      index >= 9 ? { outcome: 'failed', weekCountSucceeded: 0, weeks: [] } : {})
+    const verdict = evaluateAcceptance(artifactFrom(plans))
+    expect(verdict.attemptedPlans).toBe(12)
+    expect(verdict.completePlans).toBe(9)
+    expect(verdict.accepted).toBe(false)
+  })
+
+  it('embeds the manifest, the caveat and the latency summaries for Entrega 2', () => {
+    const artifact = artifactFrom(planRowsFromManifest())
+    expect(artifact.artifactSchemaVersion).toBe(ARTIFACT_SCHEMA_VERSION)
+    expect(artifact.git).toEqual({ sha: 'abc', dirty: false })
+    expect(artifact.manifest.cases).toHaveLength(12)
+    // Sin perfil y wizard config no se puede reconstruir qué produjo la muestra.
+    expect(artifact.manifest.cases[0].wizardConfig.sessionsPerWeek).toBeGreaterThan(0)
+    expect(artifact.manifest.cases[0].profile.id).toBe('loadtest-athlete')
+    expect(artifact.caveat).toContain('n=12')
+    expect(artifact.latencySummary.completePlans.terminalMs.p95).toBe(9000)
+  })
+
+  it('allowlists git and variant metadata at the artifact boundary', () => {
+    const variant = {
+      provider: 'claude',
+      model: 'm',
+      effort: 'high',
+      thinkingMode: 'enabled',
+      temperature: 0,
+      maxTokens: 4096,
+      promptVersion: 3,
+      schemaVersion: 2,
+      qualityVersion: 1,
+      concurrency: 2,
+      variantId: 'v',
+      apiKey: 'variant-secret',
+      systemPrompt: 'sensitive-prompt',
+    }
+    const artifact = buildArtifact({
+      plans: [],
+      git: { sha: 'abc', dirty: false, accessToken: 'git-secret' },
+      variant,
+    })
+
+    expect(artifact.git).toEqual({ sha: 'abc', dirty: false })
+    expect(artifact.variant).toEqual({
+      provider: 'claude',
+      model: 'm',
+      effort: 'high',
+      thinkingMode: 'enabled',
+      temperature: 0,
+      maxTokens: 4096,
+      promptVersion: 3,
+      schemaVersion: 2,
+      qualityVersion: 1,
+      concurrency: 2,
+      variantId: 'v',
+    })
+    expect(JSON.stringify(artifact)).not.toMatch(/variant-secret|sensitive-prompt|git-secret/)
+  })
+
+  it('re-applies the plan allowlist at the artifact boundary', () => {
+    const [first] = planRowsFromManifest()
+    const artifact = artifactFrom([{ ...first, apiKey: 'secreto', promptText: 'no' }])
+    expect(artifact.plans[0].apiKey).toBeUndefined()
+    expect(JSON.stringify(artifact)).not.toContain('secreto')
+  })
+
+  it('re-applies the allowlist inside weeks, not only at the plan root', () => {
+    const [first] = planRowsFromManifest()
+    const artifact = artifactFrom([{
+      ...first,
+      weeks: [{ ...first.weeks[0], promptText: 'secreto-semanal', sessions: [{ title: 'x' }] }],
+    }])
+    expect(artifact.plans[0].weeks[0].promptText).toBeUndefined()
+    expect(artifact.plans[0].weeks[0].sessions).toBeUndefined()
+    expect(JSON.stringify(artifact)).not.toContain('secreto-semanal')
+  })
+
+  it('evaluates a historical artifact against its own embedded manifest', () => {
+    const artifact = artifactFrom(planRowsFromManifest())
+    // Un manifest embebido más chico define un control distinto y válido.
+    artifact.manifest = {
+      ...artifact.manifest,
+      cases: artifact.manifest.cases.slice(0, 11),
+    }
+    const verdict = evaluateAcceptance(artifact)
+    expect(verdict.accepted).toBe(false)
+    expect(verdict.reasons.join(' ')).toContain('12/11')
+  })
+
+  it('keeps an error class instead of raw provider text', () => {
+    const row = toPlanRow({ caseId: 'a#1', errorClass: 'timeout', error: 'Anthropic dijo cualquier cosa' })
+    expect(row.errorClass).toBe('timeout')
+    expect(JSON.stringify(row)).not.toContain('cualquier cosa')
   })
 })
