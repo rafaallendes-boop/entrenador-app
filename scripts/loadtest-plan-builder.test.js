@@ -21,6 +21,11 @@ import {
   toWeekRow,
 } from './loadtest-plan-builder/artifact.mjs'
 import { buildReport, renderReport } from './loadtest-plan-builder/report.mjs'
+import {
+  createDetectionPoller,
+  createMemoryWriter,
+  instrumentCallLLM,
+} from './loadtest-plan-builder/runtime.mjs'
 
 /** Construye filas que corresponden 1:1 con el manifest congelado. */
 function planRowsFromManifest(overrides = () => ({})) {
@@ -511,5 +516,151 @@ describe('loadtest report', () => {
     const text = renderReport(buildReport(reportArtifactStub()))
     expect(text).toContain('Latencia por plan')
     expect(text).toContain('Distribuciones de reparación')
+  })
+})
+
+const readyWeek = (week) => week.status === 'draft' && week.sessions.length > 0
+
+function aiRequest(traceId, userMessage = 'hola') {
+  return {
+    systemPrompt: 'Responde solo con JSON.',
+    userMessage,
+    conversation: [{ role: 'assistant', content: 'contexto previo' }],
+    responseSchema: {
+      type: 'object',
+      properties: { sessions: { type: 'array' } },
+      required: ['sessions'],
+    },
+    requestClass: 'plan_builder_week',
+    traceId,
+  }
+}
+
+describe('loadtest memory writer', () => {
+  it('keeps plan, weeks, attempts and job in memory', async () => {
+    const { writer, snapshot } = createMemoryWriter()
+    await writer.putPlan({ id: 'p1', generationState: 'generating' })
+    await writer.putWeek({ weekIndex: 0, status: 'draft', sessions: [{}] })
+    await writer.putAttempt({ weekIndex: 0, attempt: 1 })
+    await writer.putJob({ jobId: 'j1', terminalMs: 10 })
+
+    const state = snapshot()
+    expect(state.plan.id).toBe('p1')
+    expect(state.weeks).toHaveLength(1)
+    expect(state.attempts).toHaveLength(1)
+    expect(state.job.jobId).toBe('j1')
+    expect(await writer.getPlan('p1')).toEqual(state.plan)
+  })
+
+  it('replaces a week in place instead of appending duplicates', async () => {
+    const { writer, snapshot } = createMemoryWriter()
+    await writer.putWeek({ weekIndex: 0, status: 'generating', sessions: [] })
+    await writer.putWeek({ weekIndex: 0, status: 'draft', sessions: [{}] })
+    expect(snapshot().weeks).toHaveLength(1)
+    expect(snapshot().weeks[0].status).toBe('draft')
+  })
+
+  it('timestamps every week write so weekly latency is measurable', async () => {
+    let clock = 1_000
+    const { writer, snapshot } = createMemoryWriter(() => clock)
+    await writer.putWeek({ weekIndex: 0, status: 'generating', sessions: [] })
+    clock = 7_500
+    await writer.putWeek({ weekIndex: 0, status: 'draft', sessions: [{}] })
+
+    const writes = snapshot().weekWrites
+    expect(writes).toHaveLength(2)
+    expect(writes[1].at - writes[0].at).toBe(6_500)
+  })
+})
+
+describe('loadtest callLLM instrumentation', () => {
+  it('records sizes per week without keeping any content', async () => {
+    const { wrapped, sizesFor } = instrumentCallLLM(async () => ({ text: '12345' }))
+    await wrapped(aiRequest('job-week-2'))
+
+    const sizes = sizesFor(2)
+    expect(sizes.responseChars).toBe(5)
+    expect(sizes.promptChars).toBeGreaterThan(0)
+    expect(JSON.stringify(sizes)).not.toMatch(/hola|contexto previo|Responde solo/)
+  })
+
+  it('accumulates retries of the same week', async () => {
+    const { wrapped, sizesFor } = instrumentCallLLM(async () => ({ text: 'ab' }))
+    await wrapped(aiRequest('job-week-1'))
+    await wrapped(aiRequest('job-week-1-attempt-2'))
+    expect(sizesFor(1).responseChars).toBe(4)
+  })
+
+  it('keeps the input size when the provider attempt throws', async () => {
+    const { wrapped, sizesFor } = instrumentCallLLM(async () => {
+      throw new Error('provider unavailable')
+    })
+
+    await expect(wrapped(aiRequest(
+      'job-week-3',
+      'contenido sensible',
+    ))).rejects.toThrow('provider unavailable')
+
+    const sizes = sizesFor(3)
+    expect(sizes.promptChars).toBeGreaterThan(0)
+    expect(sizes.responseChars).toBe(0)
+    expect(JSON.stringify(sizes)).not.toContain('contenido sensible')
+  })
+})
+
+describe('loadtest detection poller', () => {
+  it('checks immediately and measures detection from workerStartedAt', async () => {
+    let clock = 1_000
+    const state = { weeks: [] }
+    const poller = createDetectionPoller({
+      snapshot: () => state,
+      isReadyWeek: readyWeek,
+      workerStartedAt: 1_000,
+      intervalMs: 0,
+      now: () => clock,
+    })
+
+    poller.start()
+    await Promise.resolve()
+    expect(poller.result().firstWeekDetectedMs).toBeNull()
+
+    clock = 5_000
+    state.weeks = [{ weekIndex: 0, status: 'draft', sessions: [{}] }]
+    await poller.waitForNextCheck()
+    poller.stop()
+
+    expect(poller.result().firstWeekDetectedMs).toBe(4_000)
+  })
+
+  it('reports a null lag when no week ever became ready', async () => {
+    const poller = createDetectionPoller({
+      snapshot: () => ({ weeks: [] }),
+      isReadyWeek: readyWeek,
+      workerStartedAt: 0,
+      intervalMs: 0,
+      now: () => 10,
+    })
+    poller.start()
+    await poller.settle()
+    expect(poller.result().firstWeekDetectedMs).toBeNull()
+  })
+
+  it('still detects a week that became ready during the last sleep', async () => {
+    let clock = 1_000
+    const state = { weeks: [] }
+    const poller = createDetectionPoller({
+      snapshot: () => state,
+      isReadyWeek: readyWeek,
+      workerStartedAt: 1_000,
+      intervalMs: 50,
+      now: () => clock,
+    })
+
+    poller.start()
+    state.weeks = [{ weekIndex: 0, status: 'draft', sessions: [{}] }]
+    clock = 3_000
+    await poller.settle()
+
+    expect(poller.result().firstWeekDetectedMs).not.toBeNull()
   })
 })
