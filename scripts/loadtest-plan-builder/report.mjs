@@ -1,9 +1,21 @@
 import { ARTIFACT_SCHEMA_VERSION, isCompletePlan } from './artifact.mjs'
 import { summarizeDistribution, summarizeLatency } from './stats.mjs'
 
+/**
+ * Incluye `firstWeekDetectionLagMs` como métrica de primera clase: es la
+ * diferencia PAREADA por plan entre descubrimiento y semana lista. Restar la
+ * mediana de `firstWeekDetectedMs` menos la de `firstWeekReadyMs` NO da eso —
+ * la diferencia de medianas no es la mediana de las diferencias— y en el primer
+ * control esa resta daba justo el máximo de la distribución, no su centro.
+ *
+ * Se agrega solo acá, no a `latencySummary` del artefacto: el reporte lo deriva
+ * de `plans[]`, que ya lo trae en todo artefacto v1, así que el control ya
+ * pagado gana el resumen sin reescribir su archivo ni mover el schema.
+ */
 const LATENCY_METRICS = [
   'firstWeekReadyMs',
   'firstWeekDetectedMs',
+  'firstWeekDetectionLagMs',
   'planCompleteMs',
   'terminalMs',
 ]

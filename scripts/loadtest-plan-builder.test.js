@@ -451,6 +451,44 @@ describe('loadtest artifact', () => {
     expect(verdict.reasons.join(' ')).toMatch(/semanas objetivo/)
   })
 
+  it('rejects a control that lost an entire scenario, even with ten complete plans', () => {
+    // Perder los dos planes de un escenario deja 10 completos y 34 semanas
+    // puntuables: pasa por conteo, pero sin cobertura del escenario.
+    const plans = planRowsFromManifest((manifestCase) =>
+      manifestCase.scenarioKey === 'running'
+        ? { outcome: 'failed', weekCountSucceeded: 0, weekCountFailed: manifestCase.weekCount, weeks: [] }
+        : {})
+    const verdict = evaluateAcceptance(artifactFrom(plans))
+
+    expect(verdict.completePlans).toBe(10)
+    expect(verdict.scorableWeeks).toBe(34)
+    expect(verdict.accepted).toBe(false)
+    expect(verdict.reasons.join(' ')).toContain('escenarios sin ningún plan completo: running')
+  })
+
+  it('derives scenario coverage from the embedded manifest, not from observed rows', () => {
+    // Las filas del escenario perdido no existen: si la cobertura se derivara
+    // de lo observado, el chequeo pasaría por verdad vacua.
+    const plans = planRowsFromManifest().filter((plan) => plan.scenarioKey !== 'ciclismo')
+    const verdict = evaluateAcceptance(artifactFrom(plans))
+
+    expect(verdict.reasons.join(' ')).toContain('escenarios sin ningún plan completo: ciclismo')
+  })
+
+  it('accepts when every scenario keeps at least one complete plan', () => {
+    // Un plan caído por escenario en dos escenarios distintos: 10 completos,
+    // pero los seis escenarios siguen representados.
+    const dropped = new Set(['squash_build#2', 'dobles#2'])
+    const plans = planRowsFromManifest((manifestCase) =>
+      dropped.has(manifestCase.caseId)
+        ? { outcome: 'failed', weekCountSucceeded: 0, weekCountFailed: manifestCase.weekCount, weeks: [] }
+        : {})
+    const verdict = evaluateAcceptance(artifactFrom(plans))
+
+    expect(verdict.completePlans).toBe(10)
+    expect(verdict.accepted).toBe(true)
+  })
+
   it('rejects a run that stopped after ten successful plans', () => {
     const plans = planRowsFromManifest().slice(0, 10)
     const verdict = evaluateAcceptance(artifactFrom(plans))
@@ -755,6 +793,21 @@ describe('loadtest report', () => {
     const report = buildReport(reportArtifactStub())
     expect(report.latency.allAttempts.terminalMs.n).toBe(2)
     expect(report.latency.completePlans.terminalMs.n).toBe(1)
+  })
+
+  it('summarizes the paired detection lag instead of leaving it to be eyeballed', () => {
+    const artifact = reportArtifactStub()
+    // Lags pareados por plan: 3000 y 3000; la resta de medianas de detected y
+    // ready daría lo mismo acá solo por casualidad, así que se fija el campo.
+    artifact.plans[0].firstWeekDetectionLagMs = 3000
+    artifact.plans[1].firstWeekDetectionLagMs = 124
+
+    const report = buildReport(artifact)
+    const lag = report.latency.allAttempts.firstWeekDetectionLagMs
+    expect(lag.n).toBe(2)
+    // nearest-rank con n=2: ceil(0.5*2)=1 → el menor de la muestra.
+    expect(lag.p50).toBe(124)
+    expect(lag.p95).toBe(3000)
   })
 
   it('counts excluded nulls instead of scoring them as zero', () => {

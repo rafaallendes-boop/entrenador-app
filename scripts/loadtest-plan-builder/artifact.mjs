@@ -286,6 +286,15 @@ export function evaluateAcceptance(artifact) {
   const harnessFailures = artifact.plans.filter((plan) =>
     plan.errorClass === 'harness_failure')
 
+  // Los escenarios se derivan del MANIFEST EMBEBIDO, no de las filas
+  // observadas. Derivarlos de las filas haría que un escenario perdido por
+  // completo —que no aporta ninguna fila— pase por verdad vacua, que es
+  // exactamente el agujero que este chequeo viene a cerrar.
+  const manifestScenarios = [...new Set(embeddedCases.map((item) => item.scenarioKey))]
+  const completeScenarios = new Set(completePlanRows.map((plan) => plan.scenarioKey))
+  const unrepresentedScenarios = manifestScenarios.filter(
+    (scenarioKey) => !completeScenarios.has(scenarioKey))
+
   const expectedTargetWeeks = embeddedCases.reduce((sum, item) => sum + item.weekCount, 0)
 
   const reasons = []
@@ -330,6 +339,13 @@ export function evaluateAcceptance(artifact) {
   }
   if (completePlans < MIN_COMPLETE_PLANS) {
     reasons.push(`planes completos ${completePlans} < ${MIN_COMPLETE_PLANS}`)
+  }
+  if (unrepresentedScenarios.length > 0) {
+    // Sin esta condición, perder los dos planes de cualquier escenario dejaba
+    // 10 completos y 34-36 semanas puntuables: aceptable por conteo, pero con
+    // un escenario entero sin representar. La cobertura es la razón de ser de
+    // la matriz de seis.
+    reasons.push(`escenarios sin ningún plan completo: ${unrepresentedScenarios.join(', ')}`)
   }
   if (scorableWeeks < MIN_SCORABLE_WEEKS || scorableWeeks > MAX_SCORABLE_WEEKS) {
     reasons.push(`semanas puntuables ${scorableWeeks} fuera de [${MIN_SCORABLE_WEEKS}, ${MAX_SCORABLE_WEEKS}]`)
