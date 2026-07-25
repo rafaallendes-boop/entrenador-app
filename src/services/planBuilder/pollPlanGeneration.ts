@@ -2,6 +2,7 @@ import { db } from '../../db/db'
 import type { TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
 import { supabase } from '../auth'
 import { rowToTrainingPlan, rowToTrainingPlanWeek } from './planRows'
+import { PLAN_GENERATION_POLL_INTERVAL_MS } from './pollingConfig'
 import { countReadyWeeks, sortWeeks } from './weekUtils'
 import { runAthleteWrite } from '../sync/athleteWriteLease'
 
@@ -22,7 +23,6 @@ export interface PollPlanGenerationInput {
   _fetchFn?: (planId: string, options?: { stalledAfterMs?: number }) => Promise<PlanGenerationSnapshot | null>
 }
 
-const DEFAULT_INTERVAL_MS = 4_000
 // El worker puede pasar hasta ~2 intentos de 120s en una semana antes de
 // refrescar heartbeat entre intentos; 5 min evita marcar "stalled" en falso.
 const DEFAULT_STALLED_AFTER_MS = 5 * 60_000
@@ -184,7 +184,7 @@ export function shouldKeepLocalGenerationSnapshot(
 
 export async function pollPlanGeneration(input: PollPlanGenerationInput): Promise<PlanGenerationSnapshot | null> {
   let latest: PlanGenerationSnapshot | null = null
-  const intervalMs = input.intervalMs ?? DEFAULT_INTERVAL_MS
+  const intervalMs = input.intervalMs ?? PLAN_GENERATION_POLL_INTERVAL_MS
   const doFetch = input._fetchFn ?? fetchPlanGenerationSnapshot
 
   while (!input.signal?.aborted) {
