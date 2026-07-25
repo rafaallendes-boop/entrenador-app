@@ -1451,10 +1451,14 @@ git commit -m "test(loadtest): report latency cohorts and repair distributions"
 
 - [ ] **Step 1: Write the failing test**
 
-Agregar a `scripts/loadtest-plan-builder.test.js`. **Solo se testean el writer y el poller** — `loadRuntime` levanta Vite y se ejercita en la corrida real:
+Agregar a `scripts/loadtest-plan-builder.test.js`. **Solo se testean las piezas puras del runtime** — `loadRuntime` levanta Vite y se ejercita en la corrida real:
 
 ```js
-import { createDetectionPoller, createMemoryWriter } from './loadtest-plan-builder/runtime.mjs'
+import {
+  createDetectionPoller,
+  createMemoryWriter,
+  instrumentCallLLM,
+} from './loadtest-plan-builder/runtime.mjs'
 
 const readyWeek = (week) => week.status === 'draft' && week.sessions.length > 0
 
@@ -1511,6 +1515,22 @@ describe('loadtest callLLM instrumentation', () => {
     await wrapped({ traceId: 'job-week-1', messages: [] })
     await wrapped({ traceId: 'job-week-1-attempt-2', messages: [] })
     expect(sizesFor(1).responseChars).toBe(4)
+  })
+
+  it('keeps the input size when the provider attempt throws', async () => {
+    const { wrapped, sizesFor } = instrumentCallLLM(async () => {
+      throw new Error('provider unavailable')
+    })
+
+    await expect(wrapped({
+      traceId: 'job-week-3',
+      messages: [{ role: 'user', content: 'contenido sensible' }],
+    })).rejects.toThrow('provider unavailable')
+
+    const sizes = sizesFor(3)
+    expect(sizes.promptChars).toBeGreaterThan(0)
+    expect(sizes.responseChars).toBe(0)
+    expect(JSON.stringify(sizes)).not.toContain('contenido sensible')
   })
 })
 
@@ -1642,11 +1662,14 @@ export function instrumentCallLLM(callLLM) {
   const wrapped = async (request) => {
     const weekIndex = Number(/week-(\d+)/.exec(request.traceId)?.[1] ?? -1)
     const promptChars = JSON.stringify(request.messages ?? request).length
-    const response = await callLLM(request)
     const entry = sizesByWeek.get(weekIndex) ?? { promptChars: 0, responseChars: 0 }
+    // Registrar la entrada ANTES de esperar al proveedor: timeouts, 429, 5xx y
+    // errores de red también son intentos reales y pueden provocar reintentos.
     entry.promptChars += promptChars
-    entry.responseChars += (response?.text ?? '').length
     sizesByWeek.set(weekIndex, entry)
+
+    const response = await callLLM(request)
+    entry.responseChars += (response?.text ?? '').length
     return response
   }
 
@@ -1751,7 +1774,7 @@ export async function loadRuntime() {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run scripts/loadtest-plan-builder.test.js`
-Expected: PASS, 46 tests.
+Expected: PASS, 47 tests.
 
 - [ ] **Step 5: Commit (owner)**
 
@@ -2056,7 +2079,7 @@ En `package.json`, junto a `loadtest:week-creator`:
 - [ ] **Step 5: Run test to verify it passes**
 
 Run: `npx vitest run scripts/loadtest-plan-builder.test.js`
-Expected: PASS, 52 tests.
+Expected: PASS, 53 tests.
 
 - [ ] **Step 6: Verify the guards without spending a token**
 
