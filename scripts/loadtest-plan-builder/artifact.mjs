@@ -24,6 +24,50 @@ function isScorableWeek(week) {
     && countRepairsV2 >= 0
 }
 
+function inspectWeekIndexes(plan) {
+  const weekCountIsValid = Number.isInteger(plan.weekCount) && plan.weekCount >= 0
+  const indexes = plan.weeks.map((week) => week.weekIndex)
+  const uniqueIndexes = new Set(indexes)
+  const hasDuplicates = uniqueIndexes.size !== indexes.length
+  const hasOutOfRange = !weekCountIsValid || indexes.some((weekIndex) =>
+    !Number.isInteger(weekIndex)
+    || weekIndex < 0
+    || weekIndex >= plan.weekCount)
+  const isExact = weekCountIsValid
+    && !hasDuplicates
+    && !hasOutOfRange
+    && indexes.length === plan.weekCount
+    && Array.from({ length: plan.weekCount }, (_, weekIndex) =>
+      uniqueIndexes.has(weekIndex)).every(Boolean)
+
+  return { hasDuplicates, hasOutOfRange, isExact }
+}
+
+function isReadyWeekRow(week) {
+  return (week.status === 'draft' || week.status === 'accepted')
+    && typeof week.sessionCount === 'number'
+    && Number.isFinite(week.sessionCount)
+    && week.sessionCount > 0
+}
+
+function isCompletePlan(plan) {
+  if (plan.outcome !== 'succeeded') return false
+  return plan.weekCountSucceeded === plan.weekCount
+    && plan.weekCountFailed === 0
+    && inspectWeekIndexes(plan).isExact
+    && plan.weeks.every(isReadyWeekRow)
+}
+
+function duplicatesOf(values) {
+  const seen = new Set()
+  const duplicates = new Set()
+  for (const value of values) {
+    if (seen.has(value)) duplicates.add(value)
+    else seen.add(value)
+  }
+  return [...duplicates]
+}
+
 /**
  * Allowlist EXPLÍCITA por semana. Nunca copiar la semana entera ni excluir por
  * lista negra: un campo nuevo del dominio no debe poder filtrarse al artefacto
@@ -159,7 +203,7 @@ export function buildArtifact(input) {
   // Las allowlists se re-aplican SIEMPRE en la frontera final: un caller no
   // puede colar campos por traer objetos que ya parezcan filas o metadatos.
   const plans = input.plans.map((plan) => toPlanRow(plan))
-  const completePlans = plans.filter((plan) => plan.outcome === 'succeeded')
+  const completePlans = plans.filter(isCompletePlan)
 
   return {
     artifactSchemaVersion: ARTIFACT_SCHEMA_VERSION,
@@ -190,9 +234,9 @@ export function buildArtifact(input) {
  */
 export function evaluateAcceptance(artifact) {
   const attemptedPlans = artifact.plans.length
-  const completePlans = artifact.plans.filter((plan) => plan.outcome === 'succeeded').length
-  const scorableWeeks = artifact.plans
-    .filter((plan) => plan.outcome === 'succeeded')
+  const completePlanRows = artifact.plans.filter(isCompletePlan)
+  const completePlans = completePlanRows.length
+  const scorableWeeks = completePlanRows
     .reduce((sum, plan) => sum + plan.weeks.filter((week) => week.scorable).length, 0)
   // Derivado de las filas, nunca de un total declarado por el caller.
   const observedTargetWeeks = artifact.plans.reduce((sum, plan) => sum + (plan.weekCount ?? 0), 0)
@@ -210,16 +254,38 @@ export function evaluateAcceptance(artifact) {
       scorableWeeks,
     }
   }
-  const expectedCases = new Map(embeddedCases.map((item) => [item.caseId, item.weekCount]))
-  const observedCases = new Set(artifact.plans.map((plan) => plan.caseId))
+  const manifestCaseIds = embeddedCases.map((item) => item.caseId)
+  const planCaseIds = artifact.plans.map((plan) => plan.caseId)
+  const duplicateManifestCaseIds = duplicatesOf(manifestCaseIds)
+  const duplicatePlanCaseIds = duplicatesOf(planCaseIds)
+  const expectedCases = new Map(embeddedCases.map((item) => [item.caseId, item]))
+  const observedCases = new Set(planCaseIds)
   const missing = [...expectedCases.keys()].filter((caseId) => !observedCases.has(caseId))
   const unexpected = [...observedCases].filter((caseId) => !expectedCases.has(caseId))
   const wrongWeekCount = artifact.plans.filter((plan) =>
-    expectedCases.has(plan.caseId) && expectedCases.get(plan.caseId) !== plan.weekCount)
+    expectedCases.has(plan.caseId) && expectedCases.get(plan.caseId).weekCount !== plan.weekCount)
+  const wrongPlanScenario = artifact.plans.filter((plan) =>
+    expectedCases.has(plan.caseId) && expectedCases.get(plan.caseId).scenarioKey !== plan.scenarioKey)
+  const wrongWeekScenario = artifact.plans.flatMap((plan) =>
+    plan.weeks
+      .filter((week) => week.scenarioKey !== plan.scenarioKey)
+      .map((week) => `${plan.caseId}[${week.weekIndex}]`))
+  const invalidWeekIndexes = artifact.plans.filter((plan) => {
+    const inspection = inspectWeekIndexes(plan)
+    return inspection.hasDuplicates || inspection.hasOutOfRange
+  })
+  const contradictorySucceeded = artifact.plans.filter((plan) =>
+    plan.outcome === 'succeeded' && !isCompletePlan(plan))
 
   const expectedTargetWeeks = embeddedCases.reduce((sum, item) => sum + item.weekCount, 0)
 
   const reasons = []
+  if (duplicateManifestCaseIds.length > 0) {
+    reasons.push(`caseIds duplicados en manifest: ${duplicateManifestCaseIds.join(', ')}`)
+  }
+  if (duplicatePlanCaseIds.length > 0) {
+    reasons.push(`caseIds duplicados en planes: ${duplicatePlanCaseIds.join(', ')}`)
+  }
   if (embeddedCases.length !== artifact.manifest.attemptedPlanTotal) {
     reasons.push(`manifest inconsistente: cases.length ${embeddedCases.length} != attemptedPlanTotal ${artifact.manifest.attemptedPlanTotal}`)
   }
@@ -234,6 +300,18 @@ export function evaluateAcceptance(artifact) {
   }
   if (wrongWeekCount.length > 0) {
     reasons.push(`casos con weekCount distinto al manifest: ${wrongWeekCount.map((plan) => plan.caseId).join(', ')}`)
+  }
+  if (wrongPlanScenario.length > 0) {
+    reasons.push(`scenarioKey de plan distinto al manifest: ${wrongPlanScenario.map((plan) => plan.caseId).join(', ')}`)
+  }
+  if (wrongWeekScenario.length > 0) {
+    reasons.push(`scenarioKey de semana distinto al plan: ${wrongWeekScenario.join(', ')}`)
+  }
+  if (invalidWeekIndexes.length > 0) {
+    reasons.push(`índices de semana inválidos (duplicados o fuera de rango): ${invalidWeekIndexes.map((plan) => plan.caseId).join(', ')}`)
+  }
+  if (contradictorySucceeded.length > 0) {
+    reasons.push(`planes succeeded incoherentes con conteos/semanas: ${contradictorySucceeded.map((plan) => plan.caseId).join(', ')}`)
   }
   if (observedTargetWeeks !== expectedTargetWeeks) {
     reasons.push(`semanas objetivo observadas ${observedTargetWeeks}/${expectedTargetWeeks}`)

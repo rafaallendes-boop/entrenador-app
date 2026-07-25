@@ -2,6 +2,10 @@
  * Matriz experimental CONGELADA del control (spec §3.3). Cambiar cualquier
  * valor de este archivo invalida la comparabilidad con controles anteriores:
  * comparar variantes exige repetir exactamente el mismo manifest.
+ *
+ * Las fases y cargas son estímulos SINTÉTICOS elegidos para cubrir contratos
+ * concretos del motor. No son la salida de `buildPlanShell` ni deben
+ * reinterpretarse como una simulación de lo que resolvería hoy el wizard.
  */
 
 export const MANIFEST_VERSION = 1
@@ -67,6 +71,24 @@ function sportDetail(sport, role) {
 
 /** Todas las semanas en `build` salvo que el escenario diga otra cosa. */
 const buildEveryWeek = () => 'build'
+
+function groupPhaseBlocks(phases) {
+  const blocks = []
+  let startWeekIndex = 0
+  for (let index = 1; index <= phases.length; index++) {
+    if (index === phases.length || phases[index] !== phases[startWeekIndex]) {
+      blocks.push({
+        phase: phases[startWeekIndex],
+        startWeekIndex,
+        endWeekIndex: index - 1,
+        blockFocus: '',
+        intentBySport: {},
+      })
+      startWeekIndex = index
+    }
+  }
+  return blocks
+}
 
 export const SCENARIOS = {
   squash_build: {
@@ -228,13 +250,9 @@ export function buildPlanFixture(manifestCase) {
     startDate: manifestCase.startDate,
     endDate,
     totalWeeks: manifestCase.weekCount,
-    phases: phases.map((phase, index) => ({
-      phase,
-      startWeekIndex: index,
-      endWeekIndex: index,
-      blockFocus: '',
-      intentBySport: {},
-    })),
+    // Mantener la semántica real de PlanPhaseBlock: fases contiguas pertenecen
+    // al mismo bloque aunque sus valores hayan sido elegidos sintéticamente.
+    phases: groupPhaseBlocks(phases),
     wizardConfig,
     macroSnapshot: {
       goalEventId,
@@ -291,6 +309,9 @@ export function describeManifest() {
         targetLoadBySport: scenario.targetLoadBySport,
         planStartDate: plan.startDate,
         planEndDate: plan.endDate,
+        // Los límites de bloque son input efectivo para reparación y quality
+        // review; las fases semanales por sí solas no bastan para reconstruirlo.
+        planPhases: plan.phases,
         // Descriptor efectivo por semana: sin esto no se puede saber qué se
         // pidió realmente en cada una.
         weeks: weeks.map((week) => ({

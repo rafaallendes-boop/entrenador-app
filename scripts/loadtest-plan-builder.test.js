@@ -7,6 +7,7 @@ import {
   TARGET_WEEK_TOTAL,
   buildManifest,
   buildPlanFixture,
+  describeManifest,
 } from './loadtest-plan-builder/manifest.mjs'
 import {
   percentile,
@@ -55,9 +56,11 @@ function planRowsFromManifest(overrides = () => ({})) {
     terminalMs: 9000,
     weeks: Array.from({ length: manifestCase.weekCount }, (_, weekIndex) => ({
       weekIndex,
+      scenarioKey: manifestCase.scenarioKey,
       status: 'draft',
       scorable: true,
       repairTaxonomyVersion: 2,
+      sessionCount: 1,
       countRepairsV2: 2,
       correctiveActionCount: 1,
       structuralActionCount: 1,
@@ -218,6 +221,39 @@ describe('loadtest manifest', () => {
     expect(phases[phases.length - 1]).toBe('race')
     expect(plan.phases.map((phase) => phase.phase)).toEqual(phases)
   })
+
+  it('groups the four synthetic build weeks into one real phase block', () => {
+    const manifestCase = buildManifest().find((item) => item.scenarioKey === 'squash_build')
+    const { plan } = buildPlanFixture(manifestCase)
+    expect(plan.phases).toEqual([{
+      phase: 'build',
+      startWeekIndex: 0,
+      endWeekIndex: 3,
+      blockFocus: '',
+      intentBySport: {},
+    }])
+
+    const described = describeManifest().cases.find(
+      (item) => item.caseId === manifestCase.caseId,
+    )
+    expect(described.planPhases).toEqual(plan.phases)
+  })
+
+  it('keeps peak, taper and race as three contiguous phase blocks', () => {
+    const manifestCase = buildManifest().find(
+      (item) => item.scenarioKey === 'squash_taper_medico',
+    )
+    const { plan } = buildPlanFixture(manifestCase)
+    expect(plan.phases).toEqual([
+      { phase: 'peak', startWeekIndex: 0, endWeekIndex: 0, blockFocus: '', intentBySport: {} },
+      { phase: 'taper', startWeekIndex: 1, endWeekIndex: 1, blockFocus: '', intentBySport: {} },
+      { phase: 'race', startWeekIndex: 2, endWeekIndex: 2, blockFocus: '', intentBySport: {} },
+    ])
+    const described = describeManifest().cases.find(
+      (item) => item.caseId === manifestCase.caseId,
+    )
+    expect(described.planPhases).toEqual(plan.phases)
+  })
 })
 
 describe('loadtest stats', () => {
@@ -358,7 +394,46 @@ describe('loadtest artifact', () => {
     const plans = Array.from({ length: 12 }, () => ({ ...first }))
     const verdict = evaluateAcceptance(artifactFrom(plans))
     expect(verdict.accepted).toBe(false)
-    expect(verdict.reasons.join(' ')).toMatch(/casos del manifest/)
+    expect(verdict.reasons.join(' ')).toMatch(/caseIds duplicados en planes/)
+  })
+
+  it('rejects matching duplicate caseIds in the embedded manifest and plans', () => {
+    const artifact = artifactFrom(planRowsFromManifest())
+    artifact.manifest.cases[1] = structuredClone(artifact.manifest.cases[0])
+    artifact.plans[1] = structuredClone(artifact.plans[0])
+
+    const verdict = evaluateAcceptance(artifact)
+    expect(verdict.accepted).toBe(false)
+    expect(verdict.reasons.join(' ')).toMatch(/caseIds duplicados en manifest/)
+    expect(verdict.reasons.join(' ')).toMatch(/caseIds duplicados en planes/)
+  })
+
+  it('rejects a plan whose scenarioKey disagrees with its embedded case', () => {
+    const plans = planRowsFromManifest((manifestCase) =>
+      manifestCase.caseId === 'running#1' ? { scenarioKey: 'squash_build' } : {})
+    const verdict = evaluateAcceptance(artifactFrom(plans))
+    expect(verdict.accepted).toBe(false)
+    expect(verdict.reasons.join(' ')).toMatch(/scenarioKey de plan/)
+  })
+
+  it('rejects a week whose scenarioKey disagrees with its plan', () => {
+    const plans = planRowsFromManifest((manifestCase) =>
+      manifestCase.caseId === 'running#1'
+        ? {
+            weeks: Array.from({ length: manifestCase.weekCount }, (_, weekIndex) => ({
+              weekIndex,
+              scenarioKey: weekIndex === 0 ? 'squash_build' : manifestCase.scenarioKey,
+              status: 'draft',
+              repairTaxonomyVersion: 2,
+              sessionCount: 1,
+              countRepairsV2: 0,
+              scorable: true,
+            })),
+          }
+        : {})
+    const verdict = evaluateAcceptance(artifactFrom(plans))
+    expect(verdict.accepted).toBe(false)
+    expect(verdict.reasons.join(' ')).toMatch(/scenarioKey de semana/)
   })
 
   it('derives observed target weeks from the rows instead of trusting a declared total', () => {
@@ -384,6 +459,78 @@ describe('loadtest artifact', () => {
     expect(verdict.attemptedPlans).toBe(12)
     expect(verdict.completePlans).toBe(9)
     expect(verdict.accepted).toBe(false)
+  })
+
+  it('does not count contradictory succeeded plans as complete or score their weeks', () => {
+    const contradictions = [
+      (plan) => ({ ...plan, weekCountSucceeded: 0, weekCountFailed: plan.weekCount }),
+      (plan) => ({ ...plan, weeks: plan.weeks.slice(0, -1) }),
+      (plan) => ({
+        ...plan,
+        weeks: plan.weeks.map((week, index) =>
+          index === 0 ? { ...week, status: 'pending' } : week),
+      }),
+      (plan) => ({
+        ...plan,
+        weeks: plan.weeks.map((week, index) =>
+          index === 0 ? { ...week, sessionCount: 0 } : week),
+      }),
+    ]
+
+    for (const contradict of contradictions) {
+      const plans = planRowsFromManifest()
+      plans[0] = contradict(plans[0])
+      const verdict = evaluateAcceptance(artifactFrom(plans))
+      expect(verdict.accepted).toBe(false)
+      expect(verdict.completePlans).toBe(11)
+      expect(verdict.reasons.join(' ')).toMatch(/succeeded incoherentes/)
+    }
+  })
+
+  it('rejects duplicate and out-of-range week indexes even on failed plans', () => {
+    const invalidWeekSets = [
+      [
+        {
+          weekIndex: 0,
+          scenarioKey: 'semana_parcial',
+          status: 'error',
+          repairTaxonomyVersion: 2,
+          sessionCount: 0,
+          countRepairsV2: 0,
+        },
+        {
+          weekIndex: 0,
+          scenarioKey: 'semana_parcial',
+          status: 'error',
+          repairTaxonomyVersion: 2,
+          sessionCount: 0,
+          countRepairsV2: 0,
+        },
+      ],
+      [{
+        weekIndex: 3,
+        scenarioKey: 'semana_parcial',
+        status: 'error',
+        repairTaxonomyVersion: 2,
+        sessionCount: 0,
+        countRepairsV2: 0,
+      }],
+    ]
+
+    for (const weeks of invalidWeekSets) {
+      const plans = planRowsFromManifest((manifestCase) =>
+        manifestCase.caseId === 'semana_parcial#2'
+          ? {
+              outcome: 'failed',
+              weekCountSucceeded: 0,
+              weekCountFailed: manifestCase.weekCount,
+              weeks,
+            }
+          : {})
+      const verdict = evaluateAcceptance(artifactFrom(plans))
+      expect(verdict.accepted).toBe(false)
+      expect(verdict.reasons.join(' ')).toMatch(/índices de semana inválidos/)
+    }
   })
 
   it('embeds the manifest, the caveat and the latency summaries for Entrega 2', () => {
