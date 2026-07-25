@@ -1,6 +1,6 @@
 # RallyIQ - Project Review and Roadmap
 
-Actualizado: 2026-07-19
+Actualizado: 2026-07-25
 
 Base de contraste:
 
@@ -236,7 +236,19 @@ Segundo eslabón de la Fase 0 de medición del Plan Builder (Plan 1 —taxonomí
 - Guard de drift bidireccional row-mapper ↔ migración; retención extendida a la tabla de jobs.
 - Cierre de code review (2026-07-25): `emitUnstartedJobTelemetry` cubre las excepciones del worker **previas** al loop (`getPlan`/`putPlan`/lote inicial de `putWeek`, y el preámbulo síncrono del propio loop), con handoff explícito vía `onJobFinalizerArmed` para que no exista ventana sin emisor; y `runAsyncPlanGeneration` precarga los targets ya terminales para que una corrida mixta (semana lista + semana pendiente) no reporte `plan_complete_ms` null siendo `succeeded`.
 
-Estado: **implementado en rama `plan-builder-job-telemetry-016`, verificado localmente (lint + 2020 tests + build en verde). Sin cambio de comportamiento de generación; quality v2 sigue opt-in.** **`016` aplicada en producción el 2026-07-25**, por lo que el orden obligatorio migración→deploy ya está satisfecho; pendiente desplegar el bundle y smokear una corrida real (una fila en `plan_generation_jobs` agrupable por `job_id` con sus attempts). Siguiente eslabón: Plan 3 (loadtest + calibración + activación de v2).
+Estado: **implementado en rama `plan-builder-job-telemetry-016`, verificado localmente (lint + 2020 tests + build en verde). Sin cambio de comportamiento de generación; quality v2 sigue opt-in.** **`016` aplicada en producción el 2026-07-25**, por lo que el orden obligatorio migración→deploy ya está satisfecho; pendiente desplegar el bundle y smokear una corrida real (una fila en `plan_generation_jobs` agrupable por `job_id` con sus attempts). Plan 3 Entrega 1 queda implementado en la sección siguiente; siguen pendientes su corrida de control y la Entrega 2 (calibración + activación de v2).
+
+### 14. Plan Builder loadtest — Plan 3 Entrega 1 (2026-07-25)
+
+Tercer eslabón de la Fase 0 de medición: deja listo el control reproducible que alimentará la calibración de quality v2, sin activar todavía cambios de comportamiento.
+
+- Driver real sobre `runAsyncPlanGeneration`, ejecutado secuencialmente sobre un manifest sintético congelado de 6 escenarios × 2 planes / 42 semanas.
+- Writer y polling completamente en memoria, sin Dexie ni Supabase; artefacto allowlisted y autocontenido con procedencia de manifest, git y variante.
+- Checkpoints atómicos después de cada caso y al cierre; cambios de SHA/dirty, errores del harness o interrupciones vuelven el control no aceptable.
+- Reporte puro con latencias por plan en cohortes all-attempts/complete-plans, latencia semanal secundaria y tres distribuciones de reparación globales y por escenario.
+- Doble guard para la corrida pagada (`LOADTEST_PLAN_BUILDER=1` + `CLAUDE_API_KEY`); `--report` no requiere credenciales ni llama al proveedor.
+
+Estado: **implementado y verificado localmente (lint + 293 archivos / 2116 tests + build en verde).** No se ejecutó la corrida pagada durante la implementación. Pendientes: corrida de control del owner con árbol limpio y Entrega 2 (calibración de divisor/tope/umbral + activación de v2).
 
 ## Avances Ya Implementados
 

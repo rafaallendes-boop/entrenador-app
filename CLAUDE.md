@@ -27,8 +27,8 @@ Etapa: preparando piloto premium acompañado (1-3 clientes fundadores). Coach Mo
 - `supabase/00X_*.sql` — migraciones remotas numeradas, de aplicación manual
 
 ## Estado actual del producto
-Ver `PROJECT_REVIEW_AND_ROADMAP.md` para el estado completo. Actualizado: 2026-07-19.
-Suite: 291 archivos / 2020 tests. Lint OK.
+Ver `PROJECT_REVIEW_AND_ROADMAP.md` para el estado completo. Actualizado: 2026-07-25.
+Suite: 293 archivos / 2116 tests. Lint OK.
 Migraciones remotas aplicadas hasta `016`. Dexie local en **v18**.
 El chunk más pesado es `pdf.worker.min` — ya optimizado, no tocar sin razón.
 
@@ -45,6 +45,7 @@ Bloques recientes relevantes:
 - **Biblioteca de plantillas** (`015`, Dexie **v18**, backup v4): plantillas account-scoped con soft-delete por tombstone, payload allowlisted y sync Supabase por fila con LWW/delete-wins. `015` aplicado y bundle desplegado en producción; queda smoke autenticado.
 - **Coach exercise catalog picker** (2026-07-19): `coachExerciseCatalog.ts` unifica drills de squash y ejercicios de fuerza; typeahead + explorador en `SessionForm`; `libraryRef` como metadata opcional sanitizada en sesiones, plantillas y backup/import. Sin migraciones.
 - **Plan Builder measurement foundation — Plan 2** (`016`, 2026-07-24): telemetría a nivel job/corrida. Nueva tabla `plan_generation_jobs` (una fila por corrida, agrupa `plan_generation_attempts` por `job_id`) con timings (`first_week_ready_ms`, `..._e2e_ms`, `plan_complete_ms`, `terminal_ms`), descriptor de variante fiel a la request (`resolveEffectivePlanBuilderConfig` + `buildVariantId`), tokens/costo fechado (`pricing.ts`) y outcome (`cancelled→budget_exhausted→succeeded→partial→failed`). `runAsyncPlanGeneration` emite vía `finalizeJob` idempotente en todo camino terminal, y las fallas previas al loop las cubre `emitUnstartedJobTelemetry` (handoff explícito vía `onJobFinalizerArmed`, sin ventana). Attempts ganan columnas de variante + taxonomía (incl. 3 contadores de sesiones afectadas). **`016` aplicada en producción (2026-07-25); pendiente desplegar el bundle y smokear una corrida real.** Sin cambio de comportamiento de generación; v2 sigue opt-in.
+- **Plan Builder loadtest — Plan 3 Entrega 1** (2026-07-25): `scripts/loadtest-plan-builder.mjs` corre `runAsyncPlanGeneration` contra el proveedor real con writer en memoria (sin Dexie ni Supabase), sobre un manifest sintético congelado de 6 escenarios × 2 planes / 42 semanas. Emite checkpoints atómicos de un artefacto allowlisted y autocontenido en `loadtest-results/`, y un reporte de latencia por plan y semana más tres distribuciones de reparación, también desglosadas por escenario. `npm run loadtest:plan-builder` exige `LOADTEST_PLAN_BUILDER=1` y `CLAUDE_API_KEY`; `-- --report <ruta>` es puro. Pendientes: corrida de control del owner y Entrega 2 (calibración + activación de v2).
 
 ## Prioridades abiertas (en orden)
 1. Smokear Biblioteca + Planificación autenticadas en producción (`015` y deploy ya aplicados) e incluir el catálogo/picker tras este push.
