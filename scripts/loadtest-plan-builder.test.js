@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import {
   ATTEMPTED_PLAN_TOTAL,
@@ -26,6 +26,16 @@ import {
   createMemoryWriter,
   instrumentCallLLM,
 } from './loadtest-plan-builder/runtime.mjs'
+import {
+  assertRunGuards,
+  buildWeekRows,
+  classifyError,
+  defaultArtifactPath,
+  hasFallbackUsed,
+  parseArgs,
+  runPaid,
+  writeArtifactAtomic,
+} from './loadtest-plan-builder.mjs'
 
 /** Construye filas que corresponden 1:1 con el manifest congelado. */
 function planRowsFromManifest(overrides = () => ({})) {
@@ -708,5 +718,287 @@ describe('loadtest detection poller', () => {
     await poller.settle()
 
     expect(poller.result().firstWeekDetectedMs).not.toBeNull()
+  })
+})
+
+describe('loadtest CLI arguments and guards', () => {
+  it('routes --report to the pure path', () => {
+    expect(parseArgs(['--report', 'loadtest-results/x.json'])).toEqual({
+      mode: 'report',
+      artifactPath: 'loadtest-results/x.json',
+    })
+  })
+
+  it('defaults to the paid run mode only for an empty argv', () => {
+    expect(parseArgs([])).toEqual({ mode: 'run', artifactPath: null })
+  })
+
+  it.each([
+    [['--reprot'], 'typo'],
+    [['--report'], 'missing path'],
+    [['--report', ''], 'empty path'],
+    [['--report', '   '], 'whitespace path'],
+    [['--report', 'x.json', 'extra'], 'extra argument'],
+    [['unexpected'], 'unknown argument'],
+  ])('fails closed for %s (%s)', (argv) => {
+    expect(() => parseArgs(argv)).toThrow(/Uso/)
+  })
+
+  it('fails the run mode without the enabling env', () => {
+    expect(() => assertRunGuards({ CLAUDE_API_KEY: 'k' })).toThrow(/LOADTEST_PLAN_BUILDER/)
+  })
+
+  it('fails the run mode without a non-blank API key', () => {
+    expect(() => assertRunGuards({
+      LOADTEST_PLAN_BUILDER: '1',
+      CLAUDE_API_KEY: ' \t ',
+    })).toThrow(/CLAUDE_API_KEY/)
+  })
+
+  it('passes when both guards are set', () => {
+    expect(() => assertRunGuards({
+      LOADTEST_PLAN_BUILDER: '1',
+      CLAUDE_API_KEY: 'k',
+    })).not.toThrow()
+  })
+
+  it('names artifacts by timestamp under loadtest-results', () => {
+    expect(defaultArtifactPath(new Date('2026-09-01T10:20:30.000Z')))
+      .toBe('loadtest-results/plan-builder-2026-09-01T10-20-30-000Z.json')
+  })
+})
+
+describe('loadtest CLI pure row helpers', () => {
+  it('keeps only a safe error taxonomy identifier', () => {
+    expect(classifyError({ code: 'ETIMEDOUT', message: 'secret' })).toBe('ETIMEDOUT')
+    expect(classifyError({ code: 'raw provider message with spaces', name: 'Error' }))
+      .toBe('run_threw')
+    expect(classifyError({ code: 'x'.repeat(100), name: '<script>' }))
+      .toBe('run_threw')
+    expect(classifyError('provider said secret')).toBe('run_threw')
+  })
+
+  it('sorts weeks and aggregates every attempt and the full write interval', () => {
+    const weeks = [
+      {
+        weekIndex: 2,
+        status: 'draft',
+        sessions: [{}],
+        generationMeta: { repairTaxonomyVersion: 2 },
+      },
+      {
+        weekIndex: 0,
+        status: 'draft',
+        sessions: [{}],
+        generationMeta: { repairTaxonomyVersion: 2 },
+      },
+    ]
+    const rows = buildWeekRows({
+      weeks,
+      attempts: [
+        { weekIndex: 0, durationMs: 10, promptTokens: 2, completionTokens: 3 },
+        { weekIndex: 2, durationMs: 7, promptTokens: 1, completionTokens: 1 },
+        { weekIndex: 0, durationMs: 20, promptTokens: 4, completionTokens: 5 },
+      ],
+      weekWrites: [
+        { weekIndex: 0, at: 300 },
+        { weekIndex: 2, at: 500 },
+        { weekIndex: 0, at: 100 },
+        { weekIndex: 0, at: 220 },
+      ],
+      sizesFor: (weekIndex) => weekIndex === 0
+        ? { promptChars: 11, responseChars: 12 }
+        : null,
+      scenarioKey: 'running',
+      countRepairsV2: () => 4,
+      review: {
+        qualityVersion: 2,
+        weeks: [{ weekIndex: 0, score: 90, grade: 'good' }],
+      },
+      variant: { qualityVersion: 1 },
+    })
+
+    expect(rows.map((row) => row.weekIndex)).toEqual([0, 2])
+    expect(rows[0]).toMatchObject({
+      durationMs: 30,
+      wallClockMs: 200,
+      promptTokens: 6,
+      completionTokens: 8,
+      qualityVersion: 2,
+      promptChars: 11,
+      responseChars: 12,
+      score: 90,
+      grade: 'good',
+    })
+    expect(rows[1].durationMs).toBe(7)
+  })
+
+  it('falls back to the variant quality version when review is absent', () => {
+    const [row] = buildWeekRows({
+      weeks: [{
+        weekIndex: 0,
+        status: 'draft',
+        sessions: [],
+        generationMeta: { repairTaxonomyVersion: 2 },
+      }],
+      attempts: [],
+      weekWrites: [],
+      sizesFor: () => null,
+      scenarioKey: 'running',
+      countRepairsV2: () => 0,
+      review: null,
+      variant: { qualityVersion: 1 },
+    })
+    expect(row.qualityVersion).toBe(1)
+  })
+
+  it('detects both explicit and counted fallback use', () => {
+    expect(hasFallbackUsed([
+      { generationMeta: { fallbackUsed: true, addedFallbackCount: 0 } },
+    ])).toBe(true)
+    expect(hasFallbackUsed([
+      { generationMeta: { fallbackUsed: false, addedFallbackCount: 1 } },
+    ])).toBe(true)
+    expect(hasFallbackUsed([
+      { generationMeta: { fallbackUsed: false, addedFallbackCount: 0 } },
+    ])).toBe(false)
+  })
+})
+
+describe('loadtest paid-run persistence and lifecycle', () => {
+  function paidDeps(overrides = {}) {
+    const close = vi.fn().mockResolvedValue(undefined)
+    const runtime = {
+      resolveEffectivePlanBuilderConfig: vi.fn(() => ({
+        provider: 'claude',
+        model: 'm',
+        qualityVersion: 1,
+        concurrency: 1,
+      })),
+      buildVariantId: vi.fn(() => 'variant-1'),
+      close,
+    }
+    const manifest = [
+      { caseId: 'one#1', scenarioKey: 'one', weekCount: 1 },
+      { caseId: 'two#1', scenarioKey: 'two', weekCount: 1 },
+    ]
+    return {
+      env: {
+        LOADTEST_PLAN_BUILDER: '1',
+        CLAUDE_API_KEY: 'test-only-key',
+      },
+      artifactPath: 'loadtest-results/test.json',
+      loadRuntime: vi.fn().mockResolvedValue(runtime),
+      buildManifest: () => manifest,
+      readGit: () => ({ sha: 'abc', dirty: false }),
+      runCase: vi.fn(async (_runtime, manifestCase) => toPlanRow({
+        ...manifestCase,
+        outcome: 'succeeded',
+        weekCountSucceeded: 1,
+        weekCountFailed: 0,
+        weeks: [],
+      })),
+      buildArtifact: ({ plans }) => ({
+        artifactSchemaVersion: 1,
+        plans: plans.map((plan) => ({ ...plan })),
+      }),
+      writeArtifactAtomic: vi.fn().mockResolvedValue(undefined),
+      buildReport: vi.fn(() => ({ ok: true })),
+      renderReport: vi.fn(() => 'report'),
+      evaluateAcceptance: vi.fn(() => ({ accepted: true, reasons: [] })),
+      log: vi.fn(),
+      error: vi.fn(),
+      runtime,
+      manifest,
+      close,
+      ...overrides,
+    }
+  }
+
+  it('enforces paid guards before loading the runtime', async () => {
+    const base = paidDeps({ env: {} })
+
+    await expect(runPaid(base)).rejects.toThrow(/LOADTEST_PLAN_BUILDER/)
+    expect(base.loadRuntime).not.toHaveBeenCalled()
+    expect(base.close).not.toHaveBeenCalled()
+  })
+
+  it('checkpoints atomically after every case and continues after a case failure', async () => {
+    const secretFailure = Object.assign(new Error('provider leaked content'), {
+      code: 'raw provider response',
+    })
+    const base = paidDeps()
+    base.runCase
+      .mockRejectedValueOnce(secretFailure)
+      .mockImplementationOnce(async (_runtime, manifestCase) => toPlanRow({
+        ...manifestCase,
+        outcome: 'succeeded',
+        weekCountSucceeded: 1,
+        weekCountFailed: 0,
+        weeks: [],
+      }))
+
+    const result = await runPaid(base)
+
+    expect(base.runCase).toHaveBeenCalledTimes(2)
+    expect(base.writeArtifactAtomic).toHaveBeenCalledTimes(2)
+    expect(base.writeArtifactAtomic.mock.calls[0][1].plans).toHaveLength(1)
+    expect(base.writeArtifactAtomic.mock.calls[1][1].plans).toHaveLength(2)
+    expect(result.artifact.plans[0]).toMatchObject({
+      caseId: 'one#1',
+      outcome: 'failed',
+      errorClass: 'run_threw',
+    })
+    expect(JSON.stringify(result.artifact)).not.toContain('provider leaked content')
+    expect(base.close).toHaveBeenCalledTimes(1)
+  })
+
+  it('writes through a temporary sibling before the atomic rename', async () => {
+    const calls = []
+    const ops = {
+      mkdir: async (...args) => calls.push(['mkdir', ...args]),
+      writeFile: async (...args) => calls.push(['writeFile', ...args]),
+      rename: async (...args) => calls.push(['rename', ...args]),
+      unlink: async (...args) => calls.push(['unlink', ...args]),
+    }
+
+    await writeArtifactAtomic('/tmp/loadtest/result.json', { ok: true }, ops)
+
+    expect(calls.map(([name]) => name)).toEqual(['mkdir', 'writeFile', 'rename'])
+    const temporaryPath = calls[1][1]
+    expect(temporaryPath).toMatch(/^\/tmp\/loadtest\/result\.json\.tmp-/)
+    expect(calls[2].slice(1)).toEqual([temporaryPath, '/tmp/loadtest/result.json'])
+  })
+
+  it.each(['config', 'persist', 'report'])(
+    'closes the runtime exactly once when %s fails',
+    async (failurePoint) => {
+      const primary = new Error(`${failurePoint} failed`)
+      const base = paidDeps()
+      if (failurePoint === 'config') {
+        base.runtime.resolveEffectivePlanBuilderConfig.mockImplementation(() => {
+          throw primary
+        })
+      } else if (failurePoint === 'persist') {
+        base.writeArtifactAtomic.mockRejectedValue(primary)
+      } else {
+        base.buildReport.mockImplementation(() => {
+          throw primary
+        })
+      }
+
+      await expect(runPaid(base)).rejects.toBe(primary)
+      expect(base.close).toHaveBeenCalledTimes(1)
+    },
+  )
+
+  it('does not let a close failure mask the primary error', async () => {
+    const primary = new Error('persist failed')
+    const base = paidDeps()
+    base.writeArtifactAtomic.mockRejectedValue(primary)
+    base.close.mockRejectedValue(new Error('close failed'))
+
+    await expect(runPaid(base)).rejects.toBe(primary)
+    expect(base.close).toHaveBeenCalledTimes(1)
   })
 })
