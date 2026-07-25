@@ -54,3 +54,32 @@ Advertencias que deben viajar con cualquier lectura de este control:
 Reproducir o comparar exige repetir **el mismo manifest congelado**, que viaja
 embebido en el propio artefacto (`manifest.cases`, con perfil y wizard config
 por caso).
+
+### Valores congelados (owner, 2026-07-25)
+
+| Contrato | Valor | Efecto sobre este control |
+|---|---|---|
+| Penalización semanal | divisor `1`, tope `10` | media 2,1 pts · max 6 |
+| Penalización de plan | divisor `4`, tope `8` | media 1,5 pts · max 4 |
+| `highRepairWarningThreshold` | `5` | dispara en 3 de 42 semanas (7%) |
+
+Razones que deben sobrevivir al commit:
+
+- **Divisor 1 en semana, no el `/2` heredado de v1.** Con `/2` la reparación
+  quedaba en media 0,86 puntos y máximo 3 sobre 100: una semana con 5
+  reparaciones y otra con 0 se separaban por 2 puntos. Una métrica que no mueve
+  el score no cambia ninguna decisión.
+- **Los topes quedan POR ENCIMA del máximo observado.** Con tope 6 —el máximo
+  del control— una variante degradada que reparase 15 veces por semana
+  puntuaría igual que la peor semana del control: el tope saturaría justo donde
+  empieza lo que la fase existe para detectar. Tope 10 deja 4 puntos de cabecera.
+- **El plan penaliza más suave que la semana.** La reparación ya entra en cada
+  score semanal y `scorePlan` promedia esos scores antes de restar su propia
+  penalización; un divisor agresivo a nivel plan cobraría dos veces el mismo
+  hecho.
+- **Umbral 5 y no 4.** Con 5 dispara en el 7% de las semanas, raro y por lo
+  tanto accionable; con 4 saltaba al 21%, que es ruido.
+
+**Nunca recalibrar por variante** (§5.3). Comparar contra otra variante exige
+repetir este mismo manifest y contrastar contra estos valores, no derivar
+valores nuevos: hacerlo normalizaría una degradación real.
