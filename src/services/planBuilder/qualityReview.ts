@@ -2,8 +2,10 @@ import type { AthleteProfile, CoachSessionProposal, SupportedSport } from '../..
 import type { PlanValidationIssue, TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
 import { mapExerciseTo1RMReference, type ReferenceLift } from '../training/strengthLoadPrescription'
 import { getExpectedSessionsForPlanWeek, getPlanWeekDateRange } from './dateRange'
+import { QUALITY_V2_CALIBRATION } from './qualityCalibrationV2'
 import { summarizeTaxonomy, type RepairTaxonomyMeta } from './repairTaxonomy'
 import { validatePlan, validatePlanWeek } from './validator'
+import { isReadyWeek } from './weekUtils'
 
 export type PlanQualityGrade = 'excellent' | 'good' | 'needs_review' | 'poor'
 
@@ -42,6 +44,8 @@ export type PlanQualityRepairInstructions = Record<number, string>
 export interface PlanQualityContext {
   profile?: AthleteProfile
   qualityVersion?: 1 | 2
+  /** Targets que esta corrida todavía no reemplazó; no vetan la versión pedida. */
+  pendingTargetWeekIndexes?: number[]
 }
 
 function clampScore(score: number): number {
@@ -445,9 +449,10 @@ function getGenerationReliabilityIssues(
     }))
   }
 
-  // v2: threshold disabled until calibrated against the control distribution.
-  const repairWarningEnabled = qualityVersion === 1
-  if (repairWarningEnabled && repaired >= 8) {
+  const threshold = qualityVersion === 1
+    ? 8
+    : QUALITY_V2_CALIBRATION.highRepairWarningThreshold
+  if (repaired >= threshold) {
     issues.push(issue({
       severity: 'warning',
       code: 'quality.generation.high_repair_count',
@@ -646,10 +651,12 @@ function scoreWeek(
     if (item.severity === 'warning') return total + 7
     return total + 3
   }, 0)
-  // v2 remains opt-in until its repair penalty is calibrated from control data.
   const repairPenalty = qualityVersion === 1
     ? Math.min(10, Math.floor(repairCount / 2))
-    : 0
+    : Math.min(
+        QUALITY_V2_CALIBRATION.weekRepairPenaltyCap,
+        Math.floor(repairCount / QUALITY_V2_CALIBRATION.weekRepairDivisor),
+      )
   return clampScore(100 - penalty - repairPenalty)
 }
 
@@ -667,7 +674,10 @@ function scorePlan(
   }, 0)
   const repairPenalty = qualityVersion === 1
     ? Math.min(8, Math.floor(repairCount / 8))
-    : 0
+    : Math.min(
+        QUALITY_V2_CALIBRATION.planRepairPenaltyCap,
+        Math.floor(repairCount / QUALITY_V2_CALIBRATION.planRepairDivisor),
+      )
   return clampScore(average - planPenalty - repairPenalty)
 }
 
@@ -678,13 +688,57 @@ function isGenerationReliabilitySignal(issue: PlanValidationIssue): boolean {
 export const LATEST_QUALITY_VERSION = 2 as const
 
 /**
- * Versión de calidad **productiva configurada**. Es la que la variante etiqueta
- * (job, attempts y `variant_id`) antes de ejecutar. Hoy vale 1 y coincide con lo
- * que `resolveQualityVersion` computa por su cuenta para semanas sin marca; esa
- * coincidencia NO está cableada — la fija el test contractual de calidad (Step 1),
- * para que Plan 3 falle si mueve solo un lado al activar v2.
+ * Versión productiva respaldada por el control y la calibración congelados en
+ * `qualityCalibrationV2.ts`. Las corridas legacy o mixtas aún resuelven a v1.
  */
-export const PRODUCTIVE_QUALITY_VERSION: 1 | 2 = 1
+export const PRODUCTIVE_QUALITY_VERSION: 1 | 2 = 2
+
+/**
+ * Versión de calidad EFECTIVA de una corrida, resuelta una sola vez y antes de
+ * construir el descriptor de variante, para que la etiqueta de la telemetría y
+ * el score no puedan divergir.
+ *
+ * Sin targets explícitos, los targets efectivos espejan el skip del loop: solo
+ * se generan las semanas que todavía no están listas. Una semana lista queda
+ * fuera de targets y por lo tanto debe ser v2 para que la corrida adopte v2.
+ */
+export function resolveEffectiveRunQualityVersion(input: {
+  weeks: TrainingPlanWeek[]
+  targetWeekIndexes?: number[]
+  productiveVersion: 1 | 2
+}): 1 | 2 {
+  if (input.productiveVersion === 1) return 1
+
+  // `isGeneratePlanPayload` solo garantiza la pertenencia de la semana al plan.
+  // Este resolver también corre en el handler antes de instalar la telemetría
+  // de jobs no iniciados, por lo que un shape incompleto nunca debe lanzar.
+  // Sesiones, metadata o targets malformados se consideran evidencia legacy.
+  const hasMalformedTargets = input.targetWeekIndexes != null
+    && (
+      !Array.isArray(input.targetWeekIndexes)
+      || input.targetWeekIndexes.some((index) => !Number.isInteger(index))
+    )
+  if (input.weeks.some((week) =>
+    !Array.isArray(week.sessions)
+    || !week.generationMeta
+    || typeof week.generationMeta !== 'object')
+    || hasMalformedTargets) {
+    return 1
+  }
+
+  const effectiveTargets = new Set(
+    input.targetWeekIndexes?.length
+      ? input.targetWeekIndexes
+      : input.weeks.filter((week) => !isReadyWeek(week)).map((week) => week.weekIndex),
+  )
+
+  const outsideTargets = input.weeks.filter((week) => !effectiveTargets.has(week.weekIndex))
+  const allOutsideAreV2 = outsideTargets.every((week) =>
+    week.generationMeta?.repairTaxonomyVersion === 2
+    && week.generationMeta?.qualityVersion === 2)
+
+  return allOutsideAreV2 ? 2 : 1
+}
 
 /**
  * v2 excludes deterministic hydration and prevents overlapping observational
@@ -727,17 +781,24 @@ function countRepairs(week: TrainingPlanWeek, qualityVersion: 1 | 2): number {
 function resolveQualityVersion(
   weeks: TrainingPlanWeek[],
   requested?: 1 | 2,
+  pendingTargetWeekIndexes?: number[],
 ): 1 | 2 {
-  const hasV2Taxonomy = weeks.length > 0
-    && weeks.every((week) => week.generationMeta.repairTaxonomyVersion === 2)
+  const pending = new Set(pendingTargetWeekIndexes ?? [])
+  // Solo las semanas con contenido generado y que no esperan ser reemplazadas
+  // participan de la precondición. Los shells no tienen taxonomía, y un target
+  // pendiente todavía puede conservar metadata legacy de la corrida anterior.
+  const scorable = weeks.filter((week) =>
+    !pending.has(week.weekIndex) && isReadyWeek(week))
+  const hasV2Taxonomy = scorable.length > 0
+    && scorable.every((week) => week.generationMeta.repairTaxonomyVersion === 2)
 
-  if (requested === 2 && !hasV2Taxonomy) {
+  if (requested === 2 && scorable.length > 0 && !hasV2Taxonomy) {
     throw new Error('quality_version 2 requires repairTaxonomyVersion 2')
   }
   if (requested != null) return requested
 
   return hasV2Taxonomy
-    && weeks.every((week) => week.generationMeta.qualityVersion === 2)
+    && scorable.every((week) => week.generationMeta.qualityVersion === 2)
     ? 2
     : 1
 }
@@ -748,7 +809,11 @@ export function reviewPlanQuality(
   context: PlanQualityContext = {},
 ): PlanQualityReview {
   const sortedWeeks = [...weeks].sort((a, b) => a.weekIndex - b.weekIndex)
-  const qualityVersion = resolveQualityVersion(sortedWeeks, context.qualityVersion)
+  const qualityVersion = resolveQualityVersion(
+    sortedWeeks,
+    context.qualityVersion,
+    context.pendingTargetWeekIndexes,
+  )
   const planValidationIssues = validatePlan({ plan, weeks: sortedWeeks })
   const planLevelQualityIssues = [
     ...getPlanLevelIssues(plan, sortedWeeks),

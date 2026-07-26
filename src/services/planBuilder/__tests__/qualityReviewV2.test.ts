@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
+import { QUALITY_V2_CALIBRATION } from '../qualityCalibrationV2'
 import { createRepairMeta } from '../repairWeek'
-import { recordRepairAction } from '../repairTaxonomy'
+import { recordRepairAction, summarizeTaxonomy } from '../repairTaxonomy'
 import {
   countRepairsV2,
   countRepairsV2FromRepairMeta,
@@ -53,16 +54,24 @@ describe('quality_version = 2', () => {
   })
 
   it('still preserves the observational hydration counters', () => {
+    const meta = createRepairMeta(0)
+    for (let index = 0; index < 12; index++) {
+      recordRepairAction(meta.taxonomy, 'hydration', `hydration-${index}`)
+    }
+    const summary = summarizeTaxonomy(meta.taxonomy)
     const week = buildWeekForTest({
       generationMeta: {
         attempts: 1,
         repairTaxonomyVersion: 2,
-        hydrationActionCount: 12,
+        ...summary,
         repairedSessionCount: 12,
       },
     })
 
-    expect(week.generationMeta.hydrationActionCount).toBe(12)
+    const review = reviewPlanQuality(buildPlanForTest(), [week], { qualityVersion: 2 })
+
+    expect(summary.hydrationActionCount).toBe(12)
+    expect(review.weeks[0].repairCount).toBe(0)
   })
 
   it('counts a filtered sport once, not twice', () => {
@@ -95,7 +104,7 @@ describe('quality_version = 2', () => {
     expect(countRepairsV2(week)).toBe(1)
   })
 
-  it('keeps the high-repair warning and penalty disabled in opt-in v2', () => {
+  it('applies the frozen calibration instead of leaving v2 unpenalised', () => {
     const baselineWeek = buildWeekForTest({
       generationMeta: {
         attempts: 1,
@@ -111,22 +120,12 @@ describe('quality_version = 2', () => {
       },
     })
 
-    const baseline = reviewPlanQuality(
-      buildPlanForTest(),
-      [baselineWeek],
-      { qualityVersion: 2 },
-    )
-    const review = reviewPlanQuality(
-      buildPlanForTest(),
-      [repairedWeek],
-      { qualityVersion: 2 },
-    )
+    const baseline = reviewPlanQuality(buildPlanForTest(), [baselineWeek], { qualityVersion: 2 })
+    const repaired = reviewPlanQuality(buildPlanForTest(), [repairedWeek], { qualityVersion: 2 })
 
-    expect(review.weeks[0].repairCount).toBe(12)
-    expect(review.weeks[0].score).toBe(baseline.weeks[0].score)
-    expect(review.weeks[0].issues.map((item) => item.code)).not.toContain(
-      'quality.generation.high_repair_count',
-    )
+    expect(baseline.weeks[0].score).toBeGreaterThan(repaired.weeks[0].score)
+    expect(baseline.weeks[0].score - repaired.weeks[0].score)
+      .toBe(QUALITY_V2_CALIBRATION.weekRepairPenaltyCap)
   })
 
   it('leaves v1 scoring untouched for historical rows', () => {
