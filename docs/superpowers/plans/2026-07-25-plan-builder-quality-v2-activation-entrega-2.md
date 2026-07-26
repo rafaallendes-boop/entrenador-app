@@ -55,7 +55,7 @@ Control: `docs/superpowers/calibrations/plan-builder-v2-control-2026-07-25.json`
 Agregar a `src/services/planBuilder/__tests__/telemetryVersions.test.ts`:
 
 ```ts
-import { buildRequestFingerprint } from '../telemetryVersions'
+import { buildRequestFingerprint, buildVariantId } from '../telemetryVersions'
 
 const BASE = {
   provider: 'claude', model: 'claude-sonnet-4-6', effort: 'omitted', thinkingMode: 'omitted',
@@ -64,6 +64,14 @@ const BASE = {
 }
 
 describe('buildRequestFingerprint', () => {
+  it('preserves the historical canonical order of buildVariantId', () => {
+    expect(buildVariantId({
+      ...BASE,
+      promptVersion: '2026-07-week-v1',
+      schemaVersion: '2026-07-week-v1',
+    })).toBe('s46-q1-01bxcrr9')
+  })
+
   it('ignores qualityVersion so a control survives the v1 to v2 flip', () => {
     expect(buildRequestFingerprint({ ...BASE, qualityVersion: 1 }))
       .toBe(buildRequestFingerprint({ ...BASE, qualityVersion: 2 }))
@@ -98,16 +106,25 @@ veces —aunque sea en el mismo archivo— hace que la próxima dimensión que s
 entre en un lado y no en el otro, y ahí el fingerprint deja de representar la
 request.
 
-Reemplazar el cuerpo de `buildVariantId` y agregar el fingerprint:
+Reemplazar el cuerpo de `buildVariantId` y agregar el fingerprint. La versión de
+calidad es opcional en el helper, pero cuando está presente se inserta **antes**
+de `concurrency`: ese es el orden histórico que produjo
+`s46-q1-01bxcrr9`.
 
 ```ts
 /** Dimensiones de la request, sin `qualityVersion`. Única fuente de la canonicalización. */
-function requestDimensions(descriptor: PlanBuilderVariantDescriptor): unknown[] {
-  return [
+function requestDimensions(
+  descriptor: PlanBuilderVariantDescriptor,
+  qualityVersion?: 1 | 2,
+): unknown[] {
+  const dimensions: unknown[] = [
     descriptor.provider, descriptor.model, descriptor.effort, descriptor.thinkingMode,
     descriptor.temperature, descriptor.maxTokens, descriptor.promptVersion,
-    descriptor.schemaVersion, descriptor.concurrency,
+    descriptor.schemaVersion,
   ]
+  if (qualityVersion !== undefined) dimensions.push(qualityVersion)
+  dimensions.push(descriptor.concurrency)
+  return dimensions
 }
 
 export function buildVariantId(descriptor: PlanBuilderVariantDescriptor): string {
@@ -115,8 +132,9 @@ export function buildVariantId(descriptor: PlanBuilderVariantDescriptor): string
     ? KNOWN_MODEL_SHORT[descriptor.model] ?? slugify(descriptor.model)
     : 'unknown'
   // El variant id SÍ incluye qualityVersion; el fingerprint no. Esa es la única
-  // diferencia entre ambos y queda expresada acá, no duplicando la lista.
-  const canonical = JSON.stringify([...requestDimensions(descriptor), descriptor.qualityVersion])
+  // diferencia entre ambos y queda expresada acá, no duplicando la lista. El
+  // helper conserva el orden histórico: schemaVersion, qualityVersion, concurrency.
+  const canonical = JSON.stringify(requestDimensions(descriptor, descriptor.qualityVersion))
   return `${modelToken}-q${descriptor.qualityVersion}-${fnv1a(canonical)}`
 }
 
@@ -131,16 +149,17 @@ export function buildRequestFingerprint(descriptor: PlanBuilderVariantDescriptor
 }
 ```
 
-**Ojo con el orden:** `buildVariantId` cambia su canonical de la lista literal a
-`[...requestDimensions, qualityVersion]`. El orden de las dimensiones es el mismo
-que hoy, así que el hash de un descriptor existente no cambia. Verificarlo en el
-Step 4 antes de seguir: si cambiara, el `variant_id` del control versionado
-dejaría de reconstruirse y el guard de la Task 2 fallaría con razón.
+**Ojo con el orden:** no usar `[...requestDimensions(descriptor),
+descriptor.qualityVersion]`: eso produciría `schemaVersion, concurrency,
+qualityVersion`, movería el control a `s46-q1-01kio0md` y rompería su
+comparabilidad. El helper opcional expresa la diferencia sin reordenar
+dimensiones.
 
 - [ ] **Step 4: Verify the existing variant ids did not move**
 
 Run: `npx vitest run src/services/planBuilder/__tests__/telemetryVersions.test.ts`
-Expected: PASS, incluidos los tests previos de `buildVariantId`.
+Expected: PASS, incluido el guard explícito que reconstruye
+`s46-q1-01bxcrr9`.
 
 Run:
 ```bash
@@ -150,9 +169,9 @@ const a = JSON.parse(await readFile('docs/superpowers/calibrations/plan-builder-
 console.log('esperado:', a.variant.variantId)
 "
 ```
-Reconstruir ese `variantId` con el `buildVariantId` nuevo y confirmar que da
-`s46-q1-01bxcrr9`. Si no coincide, la refactorización movió el hash y hay que
-revertirla: el guard de la Task 2 depende de poder reconstruirlo.
+El test de este task reconstruye ese descriptor con `buildVariantId` y confirma
+que da `s46-q1-01bxcrr9`. Si no coincide, la refactorización movió el hash y hay
+que revertirla: el guard de la Task 2 depende de poder reconstruirlo.
 
 - [ ] **Step 5: Commit (owner)**
 
@@ -664,6 +683,23 @@ describe('resolveEffectiveRunQualityVersion', () => {
       weeks: [week(0, 'legacy'), week(1, 'pending')], productiveVersion: 2,
     })).toBe(1)
   })
+
+  it('treats a minimally validated malformed week as legacy instead of throwing', () => {
+    // El handler recibe payloads cuya validación solo garantiza `planId`.
+    // Resolver la versión antes de armar el fallback de telemetría no puede
+    // dereferenciar `sessions` ni `generationMeta` a ciegas.
+    const malformed = {
+      ...week(0, 'legacy'),
+      status: 'draft',
+      sessions: undefined,
+      generationMeta: undefined,
+    } as unknown as TrainingPlanWeek
+
+    expect(resolveEffectiveRunQualityVersion({
+      weeks: [malformed],
+      productiveVersion: 2,
+    })).toBe(1)
+  })
 })
 ```
 
@@ -695,6 +731,17 @@ export function resolveEffectiveRunQualityVersion(input: {
 }): 1 | 2 {
   if (input.productiveVersion === 1) return 1
 
+  // `isGeneratePlanPayload` es deliberadamente mínimo. Este resolver corre en
+  // el handler antes de instalar `emitUnstartedJob`; un shape incompleto nunca
+  // debe lanzar en esa ventana. Metadata o sesiones ausentes se consideran
+  // evidencia legacy y fuerzan v1 de manera conservadora.
+  if (input.weeks.some((week) =>
+    !Array.isArray(week.sessions)
+    || !week.generationMeta
+    || typeof week.generationMeta !== 'object')) {
+    return 1
+  }
+
   const effectiveTargets = new Set(
     input.targetWeekIndexes?.length
       ? input.targetWeekIndexes
@@ -703,7 +750,8 @@ export function resolveEffectiveRunQualityVersion(input: {
 
   const outsideTargets = input.weeks.filter((week) => !effectiveTargets.has(week.weekIndex))
   const allOutsideAreV2 = outsideTargets.every((week) =>
-    week.generationMeta.repairTaxonomyVersion === 2 && week.generationMeta.qualityVersion === 2)
+    week.generationMeta?.repairTaxonomyVersion === 2
+    && week.generationMeta?.qualityVersion === 2)
 
   return allOutsideAreV2 ? 2 : 1
 }
@@ -714,7 +762,8 @@ export function resolveEffectiveRunQualityVersion(input: {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run src/services/planBuilder/__tests__/effectiveRunQualityVersion.test.ts`
-Expected: PASS, 6 tests.
+Expected: PASS, 7 tests. En particular, un payload mínimamente validado sin
+`sessions`/`generationMeta` devuelve v1 y no lanza.
 
 - [ ] **Step 5: Commit (owner)**
 
@@ -1064,12 +1113,22 @@ corridas que nunca arrancan.
 
 - [ ] **Step 1: Write the failing test**
 
-Agregar a `netlify/functions/__tests__/generatePlanBackground.test.ts`:
+Agregar a `netlify/functions/__tests__/generatePlanBackground.test.ts`. Como
+Task 8 se implementa antes del flip, el test fija la constante productiva en 2:
+de otro modo global y versión efectiva valdrían 1 y el test pasaría sin ejercer
+la rama que debe corregirse.
 
 ```ts
+import { buildVariantId } from '../../../src/services/planBuilder/telemetryVersions'
+
+vi.mock('../../../src/services/planBuilder/qualityReview', async (importActual) => {
+  const actual = await importActual<typeof import('../../../src/services/planBuilder/qualityReview')>()
+  return { ...actual, PRODUCTIVE_QUALITY_VERSION: 2 as const }
+})
+
   it('labels the variant with the run quality version, not the global constant', async () => {
     // Semana legacy ya lista fuera de los targets: la corrida es v1 aunque la
-    // constante productiva sea 2.
+    // constante productiva mockeada sea 2.
     writerBehavior.putPlan = async () => { throw new Error('supabase down') }
 
     await invoke([
@@ -1079,14 +1138,46 @@ Agregar a `netlify/functions/__tests__/generatePlanBackground.test.ts`:
 
     expect(jobs).toHaveLength(1)
     expect(jobs[0].variant.qualityVersion).toBe(1)
-    expect(jobs[0].variant.variantId).toContain('-q1-')
+    expect(jobs[0].variant.variantId).toBe(buildVariantId(jobs[0].variant))
+  })
+
+  it('installs unstarted-job telemetry before a malformed ready week can fail', async () => {
+    // El validator acepta esta fila por `planId`, pero falta metadata. El
+    // resolver defensivo la trata como legacy/v1; el fallo posterior del
+    // checkpoint del loop todavía debe producir una fila de job.
+    const malformedReadyWeek: Partial<TrainingPlanWeek> = {
+      ...makeWeek(),
+      status: 'draft',
+      sessions: [{}] as TrainingPlanWeek['sessions'],
+    }
+    delete malformedReadyWeek.generationMeta
+
+    const response = await invoke([malformedReadyWeek])
+
+    expect(response.statusCode).toBe(500)
+    expect(jobs).toHaveLength(1)
+    expect(jobs[0]).toMatchObject({
+      jobId: 'plan-bg-job-1',
+      outcome: 'failed',
+      variant: { qualityVersion: 1 },
+    })
+    expect(jobs[0].variant.variantId).toBe(buildVariantId(jobs[0].variant))
   })
 ```
+
+Reemplazar el test previo
+`emits a failed job when the loop preamble throws (week shape passes the payload
+validator)` por el segundo caso de arriba; ambos cubren la misma ventana, pero
+la versión nueva usa una semana que por `status`/`sessions` parece lista y
+demuestra además que metadata ausente se etiqueta como legacy.
 
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run netlify/functions/__tests__/generatePlanBackground.test.ts`
-Expected: FAIL tras el flip — el descriptor sale con `q2` porque lee la constante global.
+Expected: FAIL aun antes del flip real — el mock productivo en 2 hace que el
+descriptor actual salga `q2`. Una implementación ingenua del Step 3 que
+dereferencie la semana malformada antes de instalar `emitUnstartedJob` también
+deja fallar el segundo caso con cero jobs.
 
 - [ ] **Step 3: Resolve before building the descriptor**
 
@@ -1110,10 +1201,17 @@ En `generate-plan-background.ts`, reemplazar el bloque que arma `effectiveConfig
 
 Agregar los imports de `resolveEffectiveRunQualityVersion` y `PRODUCTIVE_QUALITY_VERSION` desde `../../src/services/planBuilder/qualityReview`.
 
+El handler puede llamar el resolver antes de instalar `emitUnstartedJob` porque
+Task 5 lo hizo total sobre el shape mínimo aceptado por
+`isGeneratePlanPayload`: `sessions` o `generationMeta` ausentes fuerzan v1 en vez
+de lanzar. No volver a acceder a esos campos directamente en este bloque.
+
 - [ ] **Step 4: Run tests**
 
 Run: `npx vitest run netlify/functions/__tests__/generatePlanBackground.test.ts`
-Expected: PASS. Los tests de fallback de telemetría existentes siguen verdes: el descriptor cambia de valor, no de forma.
+Expected: PASS. El caso mixto prueba red/green con productiva mockeada en 2, el
+`variantId` se reconstruye exactamente desde el descriptor y la semana
+malformada conserva su job no iniciado.
 
 - [ ] **Step 5: Commit (owner)**
 
@@ -1138,40 +1236,60 @@ coincidencia; con la constante en 2 deja de cumplirse **y debe dejar de
 cumplirse**: una semana sin taxonomía v2 es exactamente el caso legacy que tiene
 que seguir puntuando v1.
 
-Lo que hay que anclar después del flip es otra cosa: que la versión que estampa
-una corrida nueva coincida con la que el gate resuelve **para esa corrida**.
+Lo que hay que anclar después del flip es otra cosa: la productiva debe ser la
+versión calibrada 2, y una corrida nueva real debe persistir esa versión. No
+construir manualmente una semana ya marcada con la propia constante: esa prueba
+sería tautológica y no ejercería el estampado.
+
 Reemplazar el test por:
 
 ```ts
+import type { TrainingPlanWeek } from '../../../types/planBuilder'
+import { describe, expect, it } from 'vitest'
+
+import { runAsyncPlanGeneration } from '../asyncGenerationLoop'
+import { QUALITY_V2_CONTROL } from '../qualityCalibrationV2'
+import { PRODUCTIVE_QUALITY_VERSION, reviewPlanQuality } from '../qualityReview'
+import { makeRunInputForTest } from './helpers/asyncLoopTestFixtures'
+import { buildPlanForTest, buildWeekForTest } from './helpers/qualityTestFixtures'
+
 describe('PRODUCTIVE_QUALITY_VERSION contract', () => {
   it('keeps an unmarked legacy week on v1 regardless of the productive constant', () => {
     const week = buildWeekForTest({ generationMeta: { attempts: 1 } })
     expect(reviewPlanQuality(buildPlanForTest(), [week]).qualityVersion).toBe(1)
   })
 
-  it('matches the version a fresh run resolves and stamps', () => {
-    // Plan nuevo: todas las semanas son targets, así que la corrida adopta la
-    // constante productiva y estampa esa misma versión.
-    const pending = buildWeekForTest({ status: 'pending', sessions: [], generationMeta: { attempts: 0 } })
-    expect(resolveEffectiveRunQualityVersion({
-      weeks: [pending],
-      productiveVersion: PRODUCTIVE_QUALITY_VERSION,
-    })).toBe(PRODUCTIVE_QUALITY_VERSION)
+  it('activates the exact quality version backed by the frozen calibration', () => {
+    expect(QUALITY_V2_CONTROL.calibratedQualityVersion).toBe(2)
+    expect(PRODUCTIVE_QUALITY_VERSION).toBe(2)
   })
 
-  it('scores a fully v2-marked plan with the productive version', () => {
-    const week = buildWeekForTest({
-      generationMeta: { attempts: 1, repairTaxonomyVersion: 2, qualityVersion: PRODUCTIVE_QUALITY_VERSION },
-    })
-    expect(reviewPlanQuality(buildPlanForTest(), [week]).qualityVersion)
-      .toBe(PRODUCTIVE_QUALITY_VERSION)
+  it('persists calibrated v2 on a week generated by the real loop', async () => {
+    const { input, base } = makeRunInputForTest({ weekCount: 1 })
+    const written: { status: string, qualityVersion?: 1 | 2 }[] = []
+    const writer = {
+      ...base,
+      async putWeek(week: TrainingPlanWeek) {
+        written.push({
+          status: week.status,
+          qualityVersion: week.generationMeta.qualityVersion,
+        })
+      },
+    }
+
+    await runAsyncPlanGeneration({ ...input, writer })
+
+    const generated = written.find((week) => week.status === 'draft')
+    expect(generated?.qualityVersion).toBe(2)
   })
 })
 ```
 
-Este cierre es el que impide que Plan 3 mueva un solo lado: si la constante sube
-y el estampado no, el segundo test falla; si el estampado sube y la constante no,
-falla el tercero.
+Con la constante todavía en 1, el segundo y el tercer test fallan: esto da un
+red/green real al flip. El tercero atraviesa `runAsyncPlanGeneration` sin
+descriptor manual y observa el `generationMeta.qualityVersion` realmente
+persistido por `putWeek`; por lo tanto falla también si se cambia la constante
+pero se rompe o se omite el estampado.
 
 - [ ] **Step 2: Flip the constant**
 

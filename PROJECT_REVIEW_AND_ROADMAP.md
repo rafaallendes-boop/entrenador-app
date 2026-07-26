@@ -10,6 +10,7 @@ Base de contraste:
 - **Gestion de roster + Planificacion read-only implementadas (2026-07-14):** Alumnos agrega archivar/restaurar y borrado duro confirmado por nombre. El borrado usa tombstones por intento, barrera y tracking single-tab, delete remoto durable, supresion de cola y purga Dexie transaccional para impedir resurrecciones. Planificacion muestra la semana de cualquier atleta del roster mediante lecturas/hidratacion por `athleteId` explicito, sin cambiar el scope activo. `015` y el deploy de Biblioteca ya estan en produccion; resta el smoke autenticado.
 - **Coach Biblioteca + Planificacion completa desplegadas (2026-07-18/19):** edicion de sesiones, Biblioteca de plantillas account-scoped, aplicar/guardar plantillas para cualquier atleta/dia, Dexie v18, backup v4 y sync Supabase por fila con LWW/delete-wins y tombstones versionados. `015_session_templates.sql` fue aplicada y el bundle desplegado; falta el smoke autenticado en produccion.
 - **Hardening de fechas y semanas (2026-07-19):** conteos de semanas, ventanas de Plan Builder, insights de fatiga y filtros semanales usan dias calendario en vez de milisegundos para no fallar al cruzar DST. Se agrego serializacion JSON canonica para comparar estructuras sin reescrituras redundantes.
+- **Fase 0 de medicion del Plan Builder cerrada (2026-07-25):** control aceptado y versionado con SHA-256 `6c45885a870cf7e019906a0b4d786e828b2653fe1643f95d436be3aa0ee94d7a`; calibracion congelada y `quality_version = 2` productiva en el bundle. Pendientes operativos: desplegar ese bundle y hacer un smoke real de `plan_generation_jobs`.
 - **Fase 0 de coaches landing completada (2026-07-13):** rutas públicas reales (no AuthGate fallbacks), las cuatro páginas legales publicadas como rutas (`/terms`, `/privacy`, `/health-disclaimer`, y disclamer Whoop), landing `/coaches` en modo prelanzamiento con estructura de 3 planes, metadata/OG cards por ruta con prerender para crawlers, deep links nativos para OAuth callback en iOS, y cierre de compartimiento entre rutas públicas. Falta aún revisión jurídica y RUT/domicilio legal antes de cobro o anuncios masivos.
 - `main` hasta `167ef6e Plan whoop y entrenador`.
 - `007` aplicado y F2 data prereqs en `6e33926`.
@@ -27,7 +28,7 @@ Base de contraste:
 
 ## Resumen Ejecutivo
 
-RallyIQ esta en una etapa donde el core ya no es el cuello de botella principal. El motor de planificacion, Plan Builder async, calidad deportiva base, athlete scope foundation, claves naturales locales por atleta, write path remoto seguro para day/week, Athlete-Aware Core, Coach F2-lite Parte 2b, Whoop v1 + Workout Auto-Complete (ambas migraciones aplicadas), Coach Workspace con roster/Planificacion/Biblioteca, y Fase 0 de coaches landing (rutas legales publicas + landing `/coaches` de prelanzamiento) ya estan construidos. Biblioteca y Planificacion tienen `015` y deploy aplicados; queda cerrar el smoke autenticado.
+RallyIQ esta en una etapa donde el core ya no es el cuello de botella principal. El motor de planificacion, Plan Builder async, calidad deportiva base, athlete scope foundation, claves naturales locales por atleta, write path remoto seguro para day/week, Athlete-Aware Core, Coach F2-lite Parte 2b, Whoop v1 + Workout Auto-Complete (ambas migraciones aplicadas), Coach Workspace con roster/Planificacion/Biblioteca, y Fase 0 de coaches landing (rutas legales publicas + landing `/coaches` de prelanzamiento) ya estan construidos. La Fase 0 de medicion del Plan Builder tambien esta cerrada y `quality_version = 2` queda productiva en el bundle; faltan desplegarlo y verificar una fila real de `plan_generation_jobs`. Biblioteca y Planificacion tienen `015` y deploy aplicados; queda cerrar el smoke autenticado.
 
 Lo que queda antes de mostrar/cobrar con confianza se concentra en dos carriles:
 
@@ -43,7 +44,7 @@ Mi lectura como lider tecnico: el cambio principal entre hoy y hace dos dias es 
 
 ## Estado Actual En Una Frase
 
-RallyIQ ya opera multi-atleta en produccion, con Whoop readiness y Workout Auto-Complete operativos (`011`/`012` aplicados), Coach Workspace base (`/coach`) y rutas legales publicas + landing `/coaches` en vivo. `015` y Biblioteca/Planificacion ya estan desplegadas; el siguiente paso tecnico es ejecutar el smoke autenticado, incluyendo el catalogo/picker tras este push. En paralelo siguen pendientes revision juridica formal y consentimiento biometrico de Whoop antes del primer piloto pagado.
+RallyIQ ya opera multi-atleta en produccion, con Whoop readiness y Workout Auto-Complete operativos (`011`/`012` aplicados), Coach Workspace base (`/coach`) y rutas legales publicas + landing `/coaches` en vivo. `015` y Biblioteca/Planificacion ya estan desplegadas; el siguiente paso tecnico es desplegar el bundle que activa `quality_version = 2` y smokear `plan_generation_jobs`, junto con el smoke autenticado de Biblioteca/Planificacion y el catalogo/picker. En paralelo siguen pendientes revision juridica formal y consentimiento biometrico de Whoop antes del primer piloto pagado.
 
 ## Porcentaje De Avance
 
@@ -236,11 +237,11 @@ Segundo eslabón de la Fase 0 de medición del Plan Builder (Plan 1 —taxonomí
 - Guard de drift bidireccional row-mapper ↔ migración; retención extendida a la tabla de jobs.
 - Cierre de code review (2026-07-25): `emitUnstartedJobTelemetry` cubre las excepciones del worker **previas** al loop (`getPlan`/`putPlan`/lote inicial de `putWeek`, y el preámbulo síncrono del propio loop), con handoff explícito vía `onJobFinalizerArmed` para que no exista ventana sin emisor; y `runAsyncPlanGeneration` precarga los targets ya terminales para que una corrida mixta (semana lista + semana pendiente) no reporte `plan_complete_ms` null siendo `succeeded`.
 
-Estado: **implementado en rama `plan-builder-job-telemetry-016`, verificado localmente (lint + 2020 tests + build en verde). Sin cambio de comportamiento de generación; quality v2 sigue opt-in.** **`016` aplicada en producción el 2026-07-25**, por lo que el orden obligatorio migración→deploy ya está satisfecho; pendiente desplegar el bundle y smokear una corrida real (una fila en `plan_generation_jobs` agrupable por `job_id` con sus attempts). Plan 3 Entrega 1 queda implementado en la sección siguiente; siguen pendientes su corrida de control y la Entrega 2 (calibración + activación de v2).
+Estado: **`016` aplicada en produccion el 2026-07-25.** La telemetria ya tiene su contrato remoto y la Fase 0 de medicion se completo con las Entregas 1 y 2 descritas abajo. El bundle local ahora activa `quality_version = 2`; faltan desplegarlo y smokear una corrida real (una fila en `plan_generation_jobs` agrupable por `job_id` con sus attempts).
 
 ### 14. Plan Builder loadtest — Plan 3 Entrega 1 (2026-07-25)
 
-Tercer eslabón de la Fase 0 de medición: deja listo el control reproducible que alimentará la calibración de quality v2, sin activar todavía cambios de comportamiento.
+Tercer eslabon de la Fase 0 de medicion: construyo el control reproducible que alimento la calibracion de quality v2.
 
 - Driver real sobre `runAsyncPlanGeneration`, ejecutado secuencialmente sobre un manifest sintético congelado de 6 escenarios × 2 planes / 42 semanas.
 - Writer y polling completamente en memoria, sin Dexie ni Supabase; artefacto allowlisted y autocontenido con procedencia de manifest, git y variante.
@@ -248,7 +249,18 @@ Tercer eslabón de la Fase 0 de medición: deja listo el control reproducible qu
 - Reporte puro con latencias por plan en cohortes all-attempts/complete-plans, latencia semanal secundaria y tres distribuciones de reparación globales y por escenario.
 - Doble guard para la corrida pagada (`LOADTEST_PLAN_BUILDER=1` + `CLAUDE_API_KEY`); `--report` no requiere credenciales ni llama al proveedor.
 
-Estado: **implementado y verificado localmente (lint + 293 archivos / 2116 tests + build en verde).** No se ejecutó la corrida pagada durante la implementación. Pendientes: corrida de control del owner con árbol limpio y Entrega 2 (calibración de divisor/tope/umbral + activación de v2).
+Estado: **cerrado.** El owner ejecuto y acepto el control con 12/12 planes completos y 42/42 semanas puntuables. El artefacto sanitizado se versiono byte a byte en `docs/superpowers/calibrations/plan-builder-v2-control-2026-07-25.json`, SHA-256 `6c45885a870cf7e019906a0b4d786e828b2653fe1643f95d436be3aa0ee94d7a`; el gate posterior exige representacion de los seis escenarios y el reporte incluye el lag pareado de deteccion.
+
+### 15. Plan Builder quality v2 — Plan 3 Entrega 2 (2026-07-25)
+
+Cierra la Fase 0 de medicion y activa el contrato calibrado:
+
+- Penalizacion semanal: divisor `1`, tope `10`; penalizacion de plan: divisor `4`, tope `8`; warning de reparacion alta: `5`.
+- La procedencia se ancla al artefacto versionado y a su SHA-256; el fingerprint de request excluye solo `qualityVersion` y conserva el `variant_id` historico del control.
+- La version efectiva se resuelve antes de construir el descriptor, de modo que `variant_id`, telemetria y scoring no puedan divergir.
+- Cada semana generada se estampa con su version efectiva; attempts, fallback y review final la consumen explicitamente. Una corrida con semanas legacy fuera de targets permanece en v1.
+
+Estado: **implementado y verificado con `npm test` verde: 298 archivos / 2162 tests. `quality_version = 2` es productiva en el bundle, tanto en el worker remoto como en el runner local. Fase 0 de medicion cerrada.** Pendientes operativos: desplegar el bundle y ejecutar un smoke real de `plan_generation_jobs`.
 
 ## Avances Ya Implementados
 
@@ -323,6 +335,7 @@ Estado: **implementado y verificado localmente (lint + 293 archivos / 2116 tests
 
 Cierres tecnicos recientes:
 
+- Plan Builder quality v2: `npm test` verde (298 archivos / 2162 tests); Fase 0 de medicion cerrada contra el control `6c45885a`.
 - Core athlete-aware / Coach F2-lite: `npm run lint`, `git diff --check`, `npm test` (139 archivos / 990 tests) y `npm run build` OK.
 - Whoop v1 review: lint + 1160 tests + build + typecheck OK.
 - Commits posteriores agregaron tests focalizados para Esfuerzo, sync on-demand y weekly coach note.
