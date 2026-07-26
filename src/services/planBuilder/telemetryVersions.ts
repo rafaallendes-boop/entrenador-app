@@ -39,6 +39,29 @@ function fnv1a(input: string): string {
 }
 
 /**
+ * Dimensiones de la request, sin `qualityVersion`. Es la única fuente de la
+ * canonicalización que comparten el variant id y el fingerprint.
+ */
+function requestDimensions(
+  descriptor: PlanBuilderVariantDescriptor,
+  qualityVersion?: 1 | 2,
+): unknown[] {
+  const dimensions: unknown[] = [
+    descriptor.provider,
+    descriptor.model,
+    descriptor.effort,
+    descriptor.thinkingMode,
+    descriptor.temperature,
+    descriptor.maxTokens,
+    descriptor.promptVersion,
+    descriptor.schemaVersion,
+  ]
+  if (qualityVersion !== undefined) dimensions.push(qualityVersion)
+  dimensions.push(descriptor.concurrency)
+  return dimensions
+}
+
+/**
  * Identidad de una ventana experimental sin depender de `created_at`
  * (spec §3.1). Prefijo legible + hash de TODAS las dimensiones: cambiar
  * cualquiera cambia el id salvo colisión de hash, altamente improbable a
@@ -48,10 +71,17 @@ export function buildVariantId(descriptor: PlanBuilderVariantDescriptor): string
   const modelToken = descriptor.model
     ? KNOWN_MODEL_SHORT[descriptor.model] ?? slugify(descriptor.model)
     : 'unknown'
-  const canonical = JSON.stringify([
-    descriptor.provider, descriptor.model, descriptor.effort, descriptor.thinkingMode,
-    descriptor.temperature, descriptor.maxTokens, descriptor.promptVersion,
-    descriptor.schemaVersion, descriptor.qualityVersion, descriptor.concurrency,
-  ])
+  // qualityVersion se inserta antes de concurrency para preservar el orden
+  // histórico que produjo el variant id del control versionado.
+  const canonical = JSON.stringify(requestDimensions(descriptor, descriptor.qualityVersion))
   return `${modelToken}-q${descriptor.qualityVersion}-${fnv1a(canonical)}`
+}
+
+/**
+ * Identidad de la request, deliberadamente sin `qualityVersion`. El control se
+ * generó con q1 antes de activar q2; este fingerprint permite verificar que las
+ * demás dimensiones siguen siendo idénticas a través del flip.
+ */
+export function buildRequestFingerprint(descriptor: PlanBuilderVariantDescriptor): string {
+  return fnv1a(JSON.stringify(requestDimensions(descriptor)))
 }
