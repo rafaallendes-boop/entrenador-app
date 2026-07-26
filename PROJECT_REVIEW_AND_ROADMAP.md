@@ -786,22 +786,19 @@ un solo bloque de trabajo. Corren en paralelo al piloto y ninguno lo bloquea.
 El orden de abajo es de valor percibido en el uso diario del owner, no de
 dificultad.
 
-1. **Chat — gestion de conversaciones.** *(spec aprobado 2026-07-26:
-   `docs/superpowers/specs/2026-07-26-chat-conversations-design.md`; siguiente paso
-   es el plan de implementacion.)* Ver las conversaciones anteriores, retomarlas,
-   buscarlas y rotar por dia. **Los hilos ya existen en los datos**: los mensajes
-   se guardan con `chatSessionId`, ya sincronizan a `chat_messages` y ya entran al
-   backup; el boton "Nuevo" tambien existe. Lo que falta es la puerta de vuelta —
-   hoy cada "Nuevo" deja la conversacion anterior inalcanzable. Por eso el
-   incremento **no lleva migracion Dexie ni Supabase ni bump de backup**: el
-   indice se deriva de los mensajes existentes. Usabilidad pura, sin riesgo
-   deportivo.
+1. **Chat — gestion de conversaciones. Implementado 2026-07-26.** Drawer para
+   ver, retomar, buscar y borrar conversaciones; títulos derivados, scroll al
+   mensaje encontrado y rotacion por dia calendario. El indice se deriva de los
+   mensajes existentes con scope estricto por atleta. **Sin migracion Dexie ni
+   Supabase ni bump de backup.** Spec:
+   `docs/superpowers/specs/2026-07-26-chat-conversations-design.md`.
 2. **Plan Builder — velocidad.** Fases 2-4 que la Fase 0 habilito: `effort` /
    `thinking`, modelo, concurrencia y prompt caching (esto ultimo solo despues de
    medir el prefijo real con Token Counting). Es el trabajo **mejor preparado**
    del backlog: instrumento desplegado, metodo escrito y control congelado
    (`6c45885a`) contra el cual comparar. Linea base de produccion: 24.2 s hasta
-   la primera semana, 43.9 s un plan de 4 semanas, concurrencia 3.
+   la primera semana, 43.9 s un plan de 4 semanas, concurrencia 3. **Siguiente
+   foco de este backlog.**
 3. **Plan Builder — calidad deportiva.** La Fase 1, "correcciones de producto",
    declarada paralelizable y de archivos disjuntos respecto de la velocidad.
    Incluye la calidad de las sesiones de squash.

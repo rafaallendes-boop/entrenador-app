@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { db } from '../db/db'
-import type { ChatMessage, ChatContext, ChatContextMetadata, AIRequestClass, CoachProposal } from '../types'
+import type { ChatMessage, ChatContext, ChatContextMetadata, AIRequestClass } from '../types'
 import { CoachEngine } from '../services/ai/CoachEngine'
 import { optimizeChatContext } from '../services/ai/contextOptimizer'
 import { useCoachActionsStore } from './useCoachActionsStore'
@@ -9,16 +9,30 @@ import { AIProviderError } from '../services/ai/types'
 import type { CoachNormalizedResponse } from '../services/ai/types'
 import { getOrCreateChatSessionId, isLocalOnlyChatSessionId, setStoredChatSessionId } from '../utils/chatSession'
 import { isRowInActiveScope, filterRowsToActiveScope, withActiveAthleteStamp } from '../services/athlete/activeScopeFilter'
-import { isScopedAthleteId } from '../services/athlete/effectiveAthleteKey'
 import * as syncService from '../services/syncService'
 import { useAIDebugStore } from './useAIDebugStore'
 import { resolveChatRoute, type ChatRouteKind } from '../services/chatRouting'
 import { WeekCreatorEngine } from '../services/weekCreator/WeekCreatorEngine'
 import { buildAIGenerationId } from '../services/ai/requestPolicy'
+import { shouldRotateConversation } from '../services/chat/dailyRotation'
+import { listConversations, type ConversationSummary } from '../services/chat/conversationIndex'
+import { repairOrphanProposalMessages } from '../services/chat/orphanProposalRepair'
+import {
+  getActiveAthleteId,
+  getSelfAthleteId,
+  getSwitchEpoch,
+} from '../services/athlete/activeAthlete'
 
 let activeChatAbortController: AbortController | null = null
 let latestHistoryLoadRequestId = 0
-const orphanProposalRepairLocks = new Map<string, Promise<ChatMessage[]>>()
+let latestConversationsLoadRequestId = 0
+const conversationMutationEpochs = new Map<string, number>()
+const activeConversationDeleteCounts = new Map<string, number>()
+
+interface ChatAthleteScopeSnapshot {
+  activeAthleteId: string | null
+  selfAthleteId: string | null
+}
 
 interface ChatState {
   messages: ChatMessage[]
@@ -28,10 +42,17 @@ interface ChatState {
   streamingText: string
   responsePhase: 'idle' | 'connecting' | 'processing' | 'responding'
   error: string | null
+  conversations: ConversationSummary[]
+  conversationsStatus: 'idle' | 'loading' | 'ready' | 'error'
+  conversationsDirty: boolean
+  rotationSuspended: boolean
 
   loadHistory: () => Promise<void>
+  loadConversations: () => Promise<void>
+  openConversation: (sessionId: string) => Promise<void>
   sendMessage: (content: string, context?: ChatContext) => Promise<{ route: ChatRouteKind }>
   newSession: () => Promise<void>
+  deleteConversation: (sessionId: string) => Promise<void>
   deleteCurrentSession: () => Promise<void>
   resetForAthleteSwitch: () => void
 }
@@ -43,55 +64,191 @@ export const useChatStore = create<ChatState>((set, get) => ({
   streamingText: '',
   responsePhase: 'idle',
   error: null,
+  conversations: [],
+  conversationsStatus: 'idle',
+  conversationsDirty: true,
+  rotationSuspended: false,
 
   loadHistory: async () => {
     const requestId = ++latestHistoryLoadRequestId
+    // El store vive entre remounts. Entrar de nuevo al chat reactiva la regla
+    // diaria aunque antes se haya abierto explícitamente un hilo antiguo.
+    set({ rotationSuspended: false })
+
     // La key de sesión es athlete-scoped: re-resolverla en cada load para que un
     // cambio de atleta (remount) no arrastre el hilo del atleta anterior.
     const resolvedSessionId = getOrCreateChatSessionId()
-    if (resolvedSessionId !== get().currentSessionId) {
-      if (requestId !== latestHistoryLoadRequestId) return
-      set({ currentSessionId: resolvedSessionId, messages: [] })
-    }
-    let sessionId = resolvedSessionId
-    // Filtrar SIEMPRE por scope: una key scoped puede apuntar a un thread con
-    // filas de otro atleta (import, estado viejo, colisión de session id).
-    let msgs = filterRowsToActiveScope(
-      await db.chatMessages
-        .where('chatSessionId')
-        .equals(sessionId)
-        .sortBy('timestamp'),
+    const resolvedMutationKey = buildConversationMutationKey(
+      resolvedSessionId,
+      captureChatAthleteScope(),
     )
-    if (requestId !== latestHistoryLoadRequestId) return
 
-    if (msgs.length === 0 && isLocalOnlyChatSessionId(sessionId)) {
-      // Adopt only a thread within the ACTIVE athlete's scope — never another athlete's.
+    // No persistir acá: setStoredChatSessionId borra el marcador local-only que
+    // habilita la adopción de un hilo ya existente.
+    let loaded = false
+    try {
+      loaded = await loadSession(resolvedSessionId, {
+        requestId,
+        mutationKey: resolvedMutationKey,
+        sessionEpoch: getConversationMutationEpoch(resolvedMutationKey),
+        persistId: false,
+        suspendRotation: false,
+      })
+    } catch {
+      if (requestId === latestHistoryLoadRequestId) {
+        set({
+          isLoading: false,
+          streamingText: '',
+          responsePhase: 'idle',
+          error: 'No se pudo cargar la conversación.',
+        })
+      }
+    }
+    if (!loaded) return
+
+    if (get().messages.length === 0 && isLocalOnlyChatSessionId(resolvedSessionId)) {
+      // Una fila huérfana sin chatSessionId no debe bloquear un hilo válido.
       const latest = await db.chatMessages
         .orderBy('timestamp')
         .reverse()
-        .filter((message) => isRowInActiveScope(message.athleteId))
+        .filter((message) =>
+          isRowInActiveScope(message.athleteId) && Boolean(message.chatSessionId)
+        )
         .first()
       if (requestId !== latestHistoryLoadRequestId) return
-      if (latest?.chatSessionId) {
-        sessionId = latest.chatSessionId
-        setStoredChatSessionId(sessionId)
-        msgs = filterRowsToActiveScope(
-          await db.chatMessages
-            .where('chatSessionId')
-            .equals(sessionId)
-            .sortBy('timestamp'),
+      if (
+        latest?.chatSessionId &&
+        !shouldRotateConversation(latest.timestamp, Date.now())
+      ) {
+        const adoptedMutationKey = buildConversationMutationKey(
+          latest.chatSessionId,
+          captureChatAthleteScope(),
         )
-        if (requestId !== latestHistoryLoadRequestId) return
-        set({ currentSessionId: sessionId })
+        const adoptedSessionEpoch = getConversationMutationEpoch(adoptedMutationKey)
+        await loadSession(latest.chatSessionId, {
+          requestId,
+          mutationKey: adoptedMutationKey,
+          sessionEpoch: adoptedSessionEpoch,
+          persistId: true,
+          suspendRotation: false,
+        })
+        return
       }
     }
 
-    const repairedMsgs = await repairOrphanProposalMessages(sessionId, msgs)
-    if (requestId !== latestHistoryLoadRequestId || sessionId !== get().currentSessionId) return
-    set({ messages: repairedMsgs })
+    const messages = get().messages
+    const lastAt = messages.length > 0
+      ? messages[messages.length - 1].timestamp
+      : null
+    if (shouldRotateConversation(lastAt, Date.now())) startFreshSessionSync()
+  },
+
+  openConversation: async (sessionId) => {
+    const mutationKey = buildConversationMutationKey(
+      sessionId,
+      captureChatAthleteScope(),
+    )
+    // Un hilo en borrado no participa de la carrera de aperturas: rechazarlo
+    // antes de tomar el token evita cancelar una apertura válida de otro hilo.
+    if (isConversationDeleteActive(mutationKey)) {
+      set({ error: 'Esa conversación se está eliminando.' })
+      return
+    }
+    // Adquirir la propiedad antes de validar evita que una apertura lenta gane a
+    // un segundo toque que ya terminó.
+    const requestId = ++latestHistoryLoadRequestId
+    const sessionEpoch = getConversationMutationEpoch(mutationKey)
+    let rows: ChatMessage[]
+    try {
+      rows = filterRowsToActiveScope(
+        await db.chatMessages.where('chatSessionId').equals(sessionId).toArray(),
+      )
+    } catch {
+      if (requestId === latestHistoryLoadRequestId) {
+        set(state => ({
+          error: 'No se pudo cargar la conversación.',
+          ...(state.isLoading && activeChatAbortController == null
+            ? {
+                isLoading: false,
+                streamingText: '',
+                responsePhase: 'idle' as const,
+              }
+            : {}),
+        }))
+      }
+      return
+    }
+    if (requestId !== latestHistoryLoadRequestId) return
+    if (!isConversationEpochCurrent(mutationKey, sessionEpoch)) {
+      clearOrphanedLoadingForHistoryOwner(requestId)
+      return
+    }
+    if (rows.length === 0) {
+      // Una validación inválida no debe abortar una request que sigue viva.
+      // Pero si otra apertura ya la abortó/liberó y luego perdió el token,
+      // isLoading quedó huérfano y este dueño vigente tiene que limpiarlo.
+      set(state => ({
+        error: 'No encontramos esa conversación.',
+        ...(state.isLoading && activeChatAbortController == null
+          ? {
+              isLoading: false,
+              streamingText: '',
+              responsePhase: 'idle' as const,
+            }
+          : {}),
+      }))
+      return
+    }
+
+    try {
+      const loaded = await loadSession(sessionId, {
+        requestId,
+        mutationKey,
+        sessionEpoch,
+        persistId: true,
+        suspendRotation: true,
+      })
+      if (!loaded) clearOrphanedLoadingForHistoryOwner(requestId)
+    } catch {
+      if (requestId === latestHistoryLoadRequestId) {
+        set({
+          isLoading: false,
+          streamingText: '',
+          responsePhase: 'idle',
+          error: 'No se pudo cargar la conversación.',
+        })
+      }
+    }
+  },
+
+  loadConversations: async () => {
+    const requestId = ++latestConversationsLoadRequestId
+    set({ conversationsStatus: 'loading' })
+    try {
+      const conversations = await listConversations()
+      if (requestId !== latestConversationsLoadRequestId) return
+      set({
+        conversations,
+        conversationsStatus: 'ready',
+        conversationsDirty: false,
+      })
+    } catch {
+      if (requestId !== latestConversationsLoadRequestId) return
+      // Conservar el último índice válido; el próximo drawer debe reintentar.
+      set({ conversationsStatus: 'error', conversationsDirty: true })
+    }
   },
 
   sendMessage: async (content, context) => {
+    // Debe suceder antes de las DOS derivaciones de historial (routing y
+    // proveedor). No hay await antes de adquirir el lock de isLoading.
+    if (!get().isLoading && !get().rotationSuspended) {
+      const current = get().messages
+      const lastAt = current.length > 0
+        ? current[current.length - 1].timestamp
+        : null
+      if (shouldRotateConversation(lastAt, Date.now())) startFreshSessionSync()
+    }
     const requestStartedAt = Date.now()
     const routeRecentMessages = get().messages.map(m => ({ role: m.role, content: m.content }))
     const routeContext = context
@@ -123,6 +280,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set(state => ({ messages: [...state.messages, userMsg], isLoading: true, streamingText: '', responsePhase: 'connecting', error: null }))
     try {
       await db.chatMessages.add(userMsg)
+      set({ conversationsDirty: true })
     } catch {
       set(state => ({
         messages: state.messages.filter(message => message.id !== userMsg.id),
@@ -205,6 +363,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
       const coachMsg = buildCoachMessage(response, sessionId)
       await db.chatMessages.add(coachMsg)
+      set({ conversationsDirty: true })
       persistedCoachMsg = coachMsg
       if (!isActiveChatRequest(get().currentSessionId, sessionId, abortController)) {
         await discardLateCoachArtifacts(coachMsg)
@@ -281,8 +440,20 @@ export const useChatStore = create<ChatState>((set, get) => ({
         ? buildCoachErrorMessage(errorMsg, sessionId)
         : undefined
       if (coachErrorMsg) {
-        await db.chatMessages.add(coachErrorMsg).catch(() => undefined)
-        void syncService.pushChatMessage(coachErrorMsg)
+        const persisted = await db.chatMessages.add(coachErrorMsg)
+          .then(() => true)
+          .catch(() => false)
+        // Cambiar de conversación aborta y libera el controller. Si ocurrió
+        // mientras Dexie persistía el error, no se lo puede anexar al hilo
+        // recién abierto.
+        if (!isCurrentChatRequestOwner(get().currentSessionId, sessionId, abortController)) {
+          if (persisted) await discardLateCoachArtifacts(coachErrorMsg)
+          return { route: route.kind }
+        }
+        if (persisted) {
+          void syncService.pushChatMessage(coachErrorMsg)
+          set({ conversationsDirty: true })
+        }
       }
       set(state => ({
         messages: coachErrorMsg
@@ -307,55 +478,253 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   newSession: async () => {
-    activeChatAbortController?.abort()
-    activeChatAbortController = null
-    const newId = uuid()
-    setStoredChatSessionId(newId)
-    set({ currentSessionId: newId, messages: [], isLoading: false, streamingText: '', responsePhase: 'idle', error: null })
+    startFreshSessionSync()
+  },
+
+  deleteConversation: async (sessionId) => {
+    const switchEpochAtStart = getSwitchEpoch()
+    const athleteScopeIsCurrent = () => getSwitchEpoch() === switchEpochAtStart
+    const mutationKey = buildConversationMutationKey(
+      sessionId,
+      captureChatAthleteScope(),
+    )
+    // El epoch invalida hidrataciones previas del MISMO hilo sin cancelar una
+    // apertura legítima de otro. El contador mantiene el guard correcto aunque
+    // dos borrados del mismo id se solapen.
+    beginConversationDelete(mutationKey)
+    try {
+      if (sessionId === get().currentSessionId) {
+        activeChatAbortController?.abort()
+        activeChatAbortController = null
+      }
+      // Borrar SOLO mensajes del scope activo: un thread puede contener filas de
+      // otro atleta (import, estado viejo, colisión de session id). Se derivan los
+      // ids desde la lista filtrada y se borra por ids, nunca por chatSessionId.
+      const sessionMessages = filterRowsToActiveScope(
+        await db.chatMessages
+          .where('chatSessionId')
+          .equals(sessionId)
+          .toArray(),
+      )
+      // El filtro consulta el scope global: si cambió mientras Dexie leía, no
+      // se puede confiar en esos rows ni derivar ids destructivos desde ellos.
+      if (!athleteScopeIsCurrent()) return
+      const messageIds = sessionMessages.map((message) => message.id)
+
+      // Delete proposals linked to any in-scope message in this session
+      const linkedProposals = messageIds.length > 0
+        ? await db.coachProposals
+            .where('chatMessageId')
+            .anyOf(messageIds)
+            .toArray()
+        : []
+      // Hasta acá no empezó ningún delete. Un switch permite abortar con cero
+      // efectos locales o remotos.
+      if (!athleteScopeIsCurrent()) return
+      const proposalIds = linkedProposals.map(p => p.id)
+      if (proposalIds.length > 0) {
+        await db.coachProposals.bulkDelete(proposalIds)
+        await syncService.deleteCoachProposals(proposalIds)
+      }
+
+      // Desde el primer bulkDelete los ids ya quedaron scope-filtrados bajo A.
+      // Aunque cambie el atleta, completar SOLO esos ids explícitos evita dejar
+      // el borrado a medias; ninguna lectura o mutación de stores usa el scope B.
+      await db.chatMessages.bulkDelete(messageIds)
+      await syncService.deleteChatMessages(messageIds)
+      if (!athleteScopeIsCurrent()) return
+
+      if (proposalIds.length > 0) {
+        await useCoachActionsStore.getState().loadProposals()
+        if (!athleteScopeIsCurrent()) return
+      }
+      set({ conversationsDirty: true })
+
+      // Re-chequear tras los await: el usuario pudo abrir otro hilo mientras se
+      // eliminaba el que antes era actual.
+      if (get().currentSessionId === sessionId) {
+        await get().newSession()
+        if (!athleteScopeIsCurrent()) return
+      }
+      if (!athleteScopeIsCurrent()) return
+      await get().loadConversations()
+    } finally {
+      endConversationDelete(mutationKey)
+    }
   },
 
   deleteCurrentSession: async () => {
-    activeChatAbortController?.abort()
-    activeChatAbortController = null
-    const sessionId = get().currentSessionId
-    // Borrar SOLO mensajes del scope activo: un thread puede contener filas de
-    // otro atleta (import, estado viejo, colisión de session id). Se derivan los
-    // ids desde la lista filtrada y se borra por ids, nunca por chatSessionId.
-    const sessionMessages = filterRowsToActiveScope(
-      await db.chatMessages
-        .where('chatSessionId')
-        .equals(sessionId)
-        .toArray(),
-    )
-    const messageIds = sessionMessages.map((message) => message.id)
-
-    // Delete proposals linked to any in-scope message in this session
-    const linkedProposals = messageIds.length > 0
-      ? await db.coachProposals
-          .where('chatMessageId')
-          .anyOf(messageIds)
-          .toArray()
-      : []
-    const proposalIds = linkedProposals.map(p => p.id)
-    if (proposalIds.length > 0) {
-      await db.coachProposals.bulkDelete(proposalIds)
-      await syncService.deleteCoachProposals(proposalIds)
-      await useCoachActionsStore.getState().loadProposals()
-    }
-
-    await db.chatMessages.bulkDelete(messageIds)
-    await syncService.deleteChatMessages(messageIds)
-    // After deleting current session, start a new one
-    await get().newSession()
+    await get().deleteConversation(get().currentSessionId)
   },
 
   resetForAthleteSwitch: () => {
     activeChatAbortController?.abort()
     activeChatAbortController = null
     latestHistoryLoadRequestId += 1
-    set({ messages: [], isLoading: false, streamingText: '', responsePhase: 'idle', error: null })
+    latestConversationsLoadRequestId += 1
+    set({
+      messages: [],
+      isLoading: false,
+      streamingText: '',
+      responsePhase: 'idle',
+      error: null,
+      conversations: [],
+      conversationsStatus: 'idle',
+      conversationsDirty: true,
+      rotationSuspended: false,
+    })
   },
 }))
+
+function captureChatAthleteScope(): ChatAthleteScopeSnapshot {
+  return {
+    activeAthleteId: getActiveAthleteId(),
+    selfAthleteId: getSelfAthleteId(),
+  }
+}
+
+function buildConversationMutationKey(
+  sessionId: string,
+  scope: ChatAthleteScopeSnapshot,
+): string {
+  return JSON.stringify([
+    sessionId,
+    scope.activeAthleteId,
+    scope.selfAthleteId,
+  ])
+}
+
+function getConversationMutationEpoch(mutationKey: string): number {
+  return conversationMutationEpochs.get(mutationKey) ?? 0
+}
+
+function isConversationDeleteActive(mutationKey: string): boolean {
+  return (activeConversationDeleteCounts.get(mutationKey) ?? 0) > 0
+}
+
+function isConversationEpochCurrent(mutationKey: string, expectedEpoch: number): boolean {
+  return !isConversationDeleteActive(mutationKey)
+    && getConversationMutationEpoch(mutationKey) === expectedEpoch
+}
+
+function beginConversationDelete(mutationKey: string): void {
+  conversationMutationEpochs.set(
+    mutationKey,
+    getConversationMutationEpoch(mutationKey) + 1,
+  )
+  activeConversationDeleteCounts.set(
+    mutationKey,
+    (activeConversationDeleteCounts.get(mutationKey) ?? 0) + 1,
+  )
+}
+
+function endConversationDelete(mutationKey: string): void {
+  const remaining = (activeConversationDeleteCounts.get(mutationKey) ?? 1) - 1
+  if (remaining <= 0) {
+    activeConversationDeleteCounts.delete(mutationKey)
+    return
+  }
+  activeConversationDeleteCounts.set(mutationKey, remaining)
+}
+
+function clearOrphanedLoadingForHistoryOwner(requestId: number): void {
+  if (
+    requestId !== latestHistoryLoadRequestId ||
+    activeChatAbortController != null
+  ) {
+    return
+  }
+  const state = useChatStore.getState()
+  if (!state.isLoading) return
+  useChatStore.setState({
+    isLoading: false,
+    streamingText: '',
+    responsePhase: 'idle',
+  })
+}
+
+async function loadSession(
+  sessionId: string,
+  options: {
+    requestId: number
+    mutationKey: string
+    sessionEpoch: number
+    persistId: boolean
+    suspendRotation: boolean
+  },
+): Promise<boolean> {
+  const {
+    requestId,
+    mutationKey,
+    sessionEpoch,
+    persistId,
+    suspendRotation,
+  } = options
+  if (!isConversationEpochCurrent(mutationKey, sessionEpoch)) return false
+
+  activeChatAbortController?.abort()
+  activeChatAbortController = null
+
+  const rows = filterRowsToActiveScope(
+    await db.chatMessages
+      .where('chatSessionId')
+      .equals(sessionId)
+      .sortBy('timestamp'),
+  )
+  if (requestId !== latestHistoryLoadRequestId) return false
+  if (!isConversationEpochCurrent(mutationKey, sessionEpoch)) return false
+
+  const repaired = await repairOrphanProposalMessages(sessionId, rows)
+  if (requestId !== latestHistoryLoadRequestId) return false
+  if (!isConversationEpochCurrent(mutationKey, sessionEpoch)) return false
+  // Esta carga anuló el controller al empezar y `sendMessage` es el único que
+  // asigna uno nuevo: encontrarlo no nulo significa que un envío arrancó durante
+  // nuestros await. El snapshot ya es viejo —no contiene el mensaje optimista— y
+  // commitearlo borraría el turno del usuario y apagaría su spinner con la
+  // request todavía viva. El envío es dueño de la UI: esta carga se descarta.
+  // Reproducible desde el mount: el efecto de loadHistory y el de auto-submit de
+  // Plan Builder corren en el mismo commit de React (ChatCoach.tsx:143 y :271).
+  if (activeChatAbortController != null) return false
+
+  // Commit final único: desde la persistencia no vuelve a haber ningún await.
+  if (persistId) setStoredChatSessionId(sessionId)
+  useChatStore.setState({
+    currentSessionId: sessionId,
+    messages: repaired,
+    isLoading: false,
+    streamingText: '',
+    responsePhase: 'idle',
+    error: null,
+    ...(suspendRotation ? { rotationSuspended: true } : {}),
+    ...(repaired.length > rows.length ? { conversationsDirty: true } : {}),
+  })
+  return true
+}
+
+/**
+ * El cambio usado por sendMessage tiene que ser síncrono. Esperar a
+ * newSession() cedería el turno antes de que sendMessage adquiera isLoading.
+ */
+function startFreshSessionSync(): string {
+  activeChatAbortController?.abort()
+  activeChatAbortController = null
+  // Una hidratación anterior no puede reinstalar su hilo después de que el
+  // usuario (o la rotación diaria) decidió empezar uno nuevo.
+  latestHistoryLoadRequestId += 1
+  const newId = uuid()
+  setStoredChatSessionId(newId)
+  useChatStore.setState({
+    currentSessionId: newId,
+    messages: [],
+    isLoading: false,
+    streamingText: '',
+    responsePhase: 'idle',
+    error: null,
+    rotationSuspended: false,
+    conversationsDirty: true,
+  })
+  return newId
+}
 
 function mapChatRouteToRequestClass(route: ChatRouteKind): AIRequestClass {
   switch (route) {
@@ -472,114 +841,6 @@ async function discardLateCoachArtifacts(coachMsg: ChatMessage, proposalId?: str
   }
   await db.chatMessages.delete(coachMsg.id)
   void syncService.deleteChatMessages([coachMsg.id])
-}
-
-async function repairOrphanProposalMessages(
-  chatSessionId: string,
-  messages: ChatMessage[],
-): Promise<ChatMessage[]> {
-  const existing = orphanProposalRepairLocks.get(chatSessionId)
-  if (existing) return existing
-
-  const repairPromise = repairOrphanProposalMessagesUnlocked(chatSessionId, messages)
-    .finally(() => {
-      orphanProposalRepairLocks.delete(chatSessionId)
-    })
-  orphanProposalRepairLocks.set(chatSessionId, repairPromise)
-  return repairPromise
-}
-
-async function repairOrphanProposalMessagesUnlocked(
-  chatSessionId: string,
-  messages: ChatMessage[],
-): Promise<ChatMessage[]> {
-  const repairedForSync: Array<{ message: ChatMessage; proposal: CoachProposal }> = []
-  const repairedMessages = await db.transaction('rw', db.chatMessages, db.coachProposals, async () => {
-    // Scope the repair pool: a proposal from another athlete must never be
-    // re-attached to the current thread just because the timing matches.
-    const proposals = filterRowsToActiveScope(await db.coachProposals.orderBy('createdAt').toArray())
-    if (proposals.length === 0 || messages.length === 0) return messages
-
-    const nextMessages = [...messages]
-    const messageIds = new Set(nextMessages.map((message) => message.id))
-    const linkedProposalIds = new Set(
-      nextMessages
-        .map((message) => message.proposalId)
-        .filter((proposalId): proposalId is string => typeof proposalId === 'string' && proposalId.length > 0),
-    )
-    const userMessages = nextMessages
-      .filter((message) => message.role === 'user')
-      .sort((a, b) => a.timestamp - b.timestamp)
-
-    for (const proposal of proposals.sort((a, b) => a.createdAt - b.createdAt)) {
-      if (linkedProposalIds.has(proposal.id)) continue
-      if (proposal.chatMessageId && messageIds.has(proposal.chatMessageId)) continue
-
-      const anchor = findProposalAnchorMessage(proposal, userMessages)
-      if (!anchor) continue
-      const hasNearbyCoachReply = nextMessages.some((message) =>
-        message.role === 'coach' &&
-        message.timestamp >= anchor.timestamp &&
-        message.timestamp <= proposal.createdAt + 5 * 60 * 1000
-      )
-      if (hasNearbyCoachReply) continue
-
-      // El mensaje recuperado hereda el scope de su propuesta (ya filtrada al
-      // scope activo); si la propuesta es legacy, cae al estampado genérico.
-      const recovered = buildProposalRecoveredMessage(proposal, chatSessionId, anchor.timestamp)
-      const repairedMessage = isScopedAthleteId(proposal.athleteId)
-        ? { ...recovered, athleteId: proposal.athleteId }
-        : withActiveAthleteStamp(recovered)
-      const repairedProposal = { ...proposal, chatMessageId: repairedMessage.id }
-      await db.chatMessages.put(repairedMessage)
-      await db.coachProposals.put(repairedProposal)
-
-      repairedForSync.push({ message: repairedMessage, proposal: repairedProposal })
-      nextMessages.push(repairedMessage)
-      messageIds.add(repairedMessage.id)
-      linkedProposalIds.add(proposal.id)
-    }
-
-    return nextMessages.sort((a, b) => a.timestamp - b.timestamp)
-  })
-
-  for (const repaired of repairedForSync) {
-    void syncService.pushChatMessage(repaired.message)
-    void syncService.pushCoachProposal(repaired.proposal)
-  }
-
-  return repairedMessages
-}
-
-function findProposalAnchorMessage(
-  proposal: CoachProposal,
-  userMessages: ChatMessage[],
-): ChatMessage | undefined {
-  const ORPHAN_REPAIR_WINDOW_MS = 30 * 60 * 1000
-  return [...userMessages]
-    .reverse()
-    .find((message) =>
-      message.timestamp <= proposal.createdAt &&
-      proposal.createdAt - message.timestamp <= ORPHAN_REPAIR_WINDOW_MS
-    )
-}
-
-function buildProposalRecoveredMessage(
-  proposal: CoachProposal,
-  chatSessionId: string,
-  anchorTimestamp: number,
-): ChatMessage {
-  return {
-    id: `recovered-proposal-${proposal.id}`,
-    role: 'coach',
-    content: proposal.message || 'Tengo una propuesta lista para revisar.',
-    timestamp: Math.max(anchorTimestamp + 1, proposal.createdAt),
-    chatSessionId,
-    proposalId: proposal.id,
-    contextMeta: {
-      contextVersion: 1,
-    },
-  }
 }
 
 // ─── Normalization warnings ────────────────────────────────────────────────────

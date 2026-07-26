@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ChatContext, ChatMessage, CoachAction, CoachProposal } from '../../types'
 
 const mocks = vi.hoisted(() => {
@@ -263,6 +263,10 @@ beforeEach(() => {
     streamingText: '',
     responsePhase: 'idle',
     error: null,
+    conversations: [],
+    conversationsStatus: 'idle',
+    conversationsDirty: true,
+    rotationSuspended: false,
   })
 })
 
@@ -324,9 +328,10 @@ describe('useChatStore.sendMessage', () => {
   })
 
   it('passes prior thread messages with their timestamps to context optimization', async () => {
+    const now = Date.now()
     const priorMessages: ChatMessage[] = [
-      { id: 'old-1', role: 'user', content: 'quiero un partido hoy', timestamp: 1752576120000, chatSessionId: 'session-1' },
-      { id: 'old-2', role: 'coach', content: 'hoy miércoles no es recomendable', timestamp: 1752576180000, chatSessionId: 'session-1' },
+      { id: 'old-1', role: 'user', content: 'quiero un partido hoy', timestamp: now - 120_000, chatSessionId: 'session-1' },
+      { id: 'old-2', role: 'coach', content: 'hoy miércoles no es recomendable', timestamp: now - 60_000, chatSessionId: 'session-1' },
     ]
     useChatStore.setState({ messages: priorMessages })
     mocks.sendAction.mockResolvedValue({
@@ -342,8 +347,8 @@ describe('useChatStore.sendMessage', () => {
 
     const passedContext = mocks.optimizeContext.mock.calls[0]?.[0] as ChatContext
     expect(passedContext.recentMessages).toEqual([
-      { role: 'user', content: 'quiero un partido hoy', timestamp: 1752576120000 },
-      { role: 'coach', content: 'hoy miércoles no es recomendable', timestamp: 1752576180000 },
+      { role: 'user', content: 'quiero un partido hoy', timestamp: now - 120_000 },
+      { role: 'coach', content: 'hoy miércoles no es recomendable', timestamp: now - 60_000 },
     ])
   })
 
@@ -380,6 +385,7 @@ describe('useChatStore.sendMessage', () => {
   it('persists an inline coach error when week creator fails after the user message is saved', async () => {
     mocks.routeKind = 'week_creator'
     mocks.sendWeekCreate.mockRejectedValue(new Error('El modelo no devolvió ninguna acción create_week.'))
+    useChatStore.setState({ conversationsDirty: false })
 
     await useChatStore.getState().sendMessage('Créame una semana', makeContext())
 
@@ -388,6 +394,7 @@ describe('useChatStore.sendMessage', () => {
     expect(state.messages[1].content).toContain('create_week')
     expect(state.messages[1].content).toContain('ajustar tu disponibilidad')
     expect(mocks.chatMessages.map(message => message.role)).toEqual(['user', 'coach'])
+    expect(state.conversationsDirty).toBe(true)
   })
 
   it('correlates a successful week creator generation through proposal readiness', async () => {
@@ -525,17 +532,149 @@ describe('useChatStore.sendMessage', () => {
     expect(state.streamingText).toBe('')
     expect(state.messages).toEqual([])
   })
+
+  it('keeps an active request loading when an invalid conversation is opened', async () => {
+    mocks.routeKind = 'chat_general'
+    mocks.sendChat.mockImplementation((
+      _content: string,
+      _context: ChatContext,
+      options: { signal: AbortSignal },
+    ) => (
+      new Promise((_resolve, reject) => {
+        options.signal.addEventListener(
+          'abort',
+          () => reject(new DOMException('Aborted', 'AbortError')),
+          { once: true },
+        )
+      })
+    ))
+
+    const pending = useChatStore.getState().sendMessage('hola coach', makeContext())
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(mocks.sendChat).toHaveBeenCalledTimes(1)
+
+    await useChatStore.getState().openConversation('missing-session')
+    expect(useChatStore.getState().isLoading).toBe(true)
+    expect(useChatStore.getState().responsePhase).toBe('connecting')
+
+    await useChatStore.getState().newSession()
+    await pending
+  })
+})
+
+describe('daily rotation on send', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 6, 26, 8, 0))
+    mocks.routeKind = 'chat_general'
+    mocks.sendChat.mockResolvedValue({
+      message: 'Entendido.',
+      actions: [],
+      provider: 'openai',
+      traceId: 'trace-daily-rotation',
+      requestClass: 'chat_general',
+    })
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('rotates before building the provider history when the thread is from yesterday', async () => {
+    useChatStore.setState({
+      isLoading: false,
+      rotationSuspended: false,
+      currentSessionId: 'yesterday-session',
+      messages: [{
+        id: 'old',
+        role: 'user',
+        content: 'lo de ayer',
+        timestamp: new Date(2026, 6, 25, 20, 0).getTime(),
+        chatSessionId: 'yesterday-session',
+      } as ChatMessage],
+    })
+
+    await useChatStore.getState().sendMessage('hoy quiero entrenar')
+
+    const state = useChatStore.getState()
+    expect(state.currentSessionId).not.toBe('yesterday-session')
+    expect(state.messages.some(message => message.id === 'old')).toBe(false)
+    const passedContext = mocks.sendChat.mock.calls[0]?.[1] as ChatContext
+    expect(passedContext.recentMessages).toEqual([])
+  })
+
+  it('does not rotate when the user explicitly opened an old conversation', async () => {
+    useChatStore.setState({
+      isLoading: false,
+      rotationSuspended: true,
+      currentSessionId: 'yesterday-session',
+      messages: [{
+        id: 'old',
+        role: 'user',
+        content: 'lo de ayer',
+        timestamp: new Date(2026, 6, 25, 20, 0).getTime(),
+        chatSessionId: 'yesterday-session',
+      } as ChatMessage],
+    })
+
+    await useChatStore.getState().sendMessage('sigo con esto')
+
+    expect(useChatStore.getState().currentSessionId).toBe('yesterday-session')
+  })
+
+  it('does not rotate while a request is in flight', async () => {
+    useChatStore.setState({
+      isLoading: true,
+      rotationSuspended: false,
+      currentSessionId: 'yesterday-session',
+      messages: [{
+        id: 'old',
+        role: 'user',
+        content: 'x',
+        timestamp: new Date(2026, 6, 25, 20, 0).getTime(),
+        chatSessionId: 'yesterday-session',
+      } as ChatMessage],
+    })
+
+    await useChatStore.getState().sendMessage('nuevo')
+
+    expect(useChatStore.getState().currentSessionId).toBe('yesterday-session')
+    expect(mocks.sendChat).not.toHaveBeenCalled()
+  })
+
+  it('produces one rotation and one provider request for two sends in the same tick', async () => {
+    useChatStore.setState({
+      isLoading: false,
+      rotationSuspended: false,
+      currentSessionId: 'yesterday-session',
+      messages: [{
+        id: 'old',
+        role: 'user',
+        content: 'lo de ayer',
+        timestamp: new Date(2026, 6, 25, 20, 0).getTime(),
+        chatSessionId: 'yesterday-session',
+      } as ChatMessage],
+    })
+
+    const first = useChatStore.getState().sendMessage('uno')
+    const second = useChatStore.getState().sendMessage('dos')
+    await Promise.all([first, second])
+
+    expect(mocks.sendChat).toHaveBeenCalledTimes(1)
+  })
 })
 
 describe('scoping por atleta del thread de chat', () => {
   const seedMixedThread = () => {
+    const now = Date.now()
     mocks.chatMessages.push(
       {
-        id: 'msg-self', role: 'user', content: 'hola (self/legacy)', timestamp: 1,
+        id: 'msg-self', role: 'user', content: 'hola (self/legacy)', timestamp: now - 1,
         chatSessionId: 'session-1',
       } as ChatMessage,
       {
-        id: 'msg-managed', role: 'user', content: 'hola (managed)', timestamp: 2,
+        id: 'msg-managed', role: 'user', content: 'hola (managed)', timestamp: now,
         chatSessionId: 'session-1', athleteId: 'ath_m_1',
       } as ChatMessage,
     )

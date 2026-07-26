@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { AlertTriangle, CheckCircle2, MoreHorizontal, Plus, Trash2, X } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Menu, MoreHorizontal, Plus, Trash2, X } from 'lucide-react'
 import { useChatStore } from '../store/useChatStore'
 import { useCoachActionsStore } from '../store/useCoachActionsStore'
 import { useCoachMemoryStore } from '../store/useCoachMemoryStore'
@@ -25,6 +25,7 @@ import { pullReadiness } from '../services/readiness/pullReadiness'
 
 const QuickActionChips = lazy(() => import('../components/chat/QuickActionChips'))
 const ProposalDrawer = lazy(() => import('../components/chat/ProposalDrawer'))
+const ConversationDrawer = lazy(() => import('../components/chat/ConversationDrawer'))
 function markAutoSubmitConsumed(key: string) { sessionStorage.setItem(`plan-builder-consumed-${key}`, '1') }
 function wasAutoSubmitConsumed(key: string) { return sessionStorage.getItem(`plan-builder-consumed-${key}`) === '1' }
 
@@ -93,8 +94,18 @@ function AcceptedBanner({ message, onDismiss }: { message: string; onDismiss: ()
 export default function ChatCoach() {
   const navigate = useNavigate()
   const location = useLocation()
-  const { messages, isLoading, streamingText, responsePhase, error, loadHistory, sendMessage, newSession, deleteCurrentSession } =
-    useChatStore()
+  const {
+    messages,
+    isLoading,
+    streamingText,
+    responsePhase,
+    error,
+    loadHistory,
+    sendMessage,
+    newSession,
+    deleteCurrentSession,
+    openConversation,
+  } = useChatStore()
   const { proposals, loadProposals, acceptProposal, rejectProposal } = useCoachActionsStore()
   const { coachMemory, athleteProfile, loadMemory } = useCoachMemoryStore()
   const { sessions, currentWeekSummary, dayLogs, loadWeek } = useTrainingStore()
@@ -102,6 +113,8 @@ export default function ChatCoach() {
   const bottomRef = useRef<HTMLDivElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   const autoSentRef = useRef(false)
+  const pendingScrollTargetRef = useRef<string | null>(null)
+  const conversationSelectionTokenRef = useRef(0)
   const { launchIntent, launchId } = useWeeklyLaunchIntent()
 
   const [activeProposal, setActiveProposal] = useState<CoachProposal | null>(null)
@@ -109,6 +122,8 @@ export default function ChatCoach() {
   const [isAccepting, setIsAccepting] = useState(false)
   const [proposalError, setProposalError] = useState<string | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  const [scrollTargetId, setScrollTargetId] = useState<string | null>(null)
   const [deleteConfirm, setDeleteConfirm] = useState(false)
   const [profileBannerDismissed, setProfileBannerDismissed] = useState(false)
   const [profileNudgeDismissed, setProfileNudgeDismissed] = useState(false)
@@ -153,8 +168,20 @@ export default function ChatCoach() {
   }, [activeAthleteFromStore])
 
   useEffect(() => {
+    if (pendingScrollTargetRef.current) return
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages.length, isLoading])
+  }, [messages, isLoading])
+
+  useEffect(() => {
+    if (!scrollTargetId) return
+    const node = Array.from(
+      document.querySelectorAll<HTMLElement>('[data-message-id]'),
+    ).find((candidate) => candidate.dataset.messageId === scrollTargetId)
+    if (!node) return
+    node.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    pendingScrollTargetRef.current = null
+    queueMicrotask(() => setScrollTargetId(null))
+  }, [scrollTargetId, messages])
 
   useEffect(() => {
     if (streamingText) {
@@ -345,6 +372,15 @@ export default function ChatCoach() {
       <div className="fixed inset-x-0 top-0 z-40 border-b border-surface-soft/70 bg-[rgba(14,14,14,0.9)] px-4 pb-3 pt-12 backdrop-blur-xl md:px-6">
         <div className="mx-auto flex w-full max-w-3xl items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setDrawerOpen(true)}
+              aria-label="Conversaciones"
+              title="Ver tus conversaciones"
+              className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-pill border border-surface-border/70 bg-surface-raised/40 text-ink-faint transition-colors hover:border-surface-soft hover:text-ink focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-brand"
+            >
+              <Menu size={16} />
+            </button>
             <div className="min-w-0">
               <p className="font-display text-[10px] font-semibold uppercase tracking-[0.22em] text-ink-faint">RallyIQ chat</p>
               <h1 className="text-xl font-bold text-ink">RallyIQ</h1>
@@ -487,15 +523,16 @@ export default function ChatCoach() {
             const isPending = proposal?.status === 'pending'
 
             return (
-              <ChatBubble
-                key={message.id}
-                message={message}
-                hasProposal={isPending}
-                onViewProposal={
-                  isPending && message.proposalId ? () => handleViewProposal(message.proposalId as string) : undefined
-                }
-                onRate={message.role === 'coach' ? (rating) => handleRateCoachMessage(message.id, rating) : undefined}
-              />
+              <div key={message.id} data-message-id={message.id}>
+                <ChatBubble
+                  message={message}
+                  hasProposal={isPending}
+                  onViewProposal={
+                    isPending && message.proposalId ? () => handleViewProposal(message.proposalId as string) : undefined
+                  }
+                  onRate={message.role === 'coach' ? (rating) => handleRateCoachMessage(message.id, rating) : undefined}
+                />
+              </div>
             )
           })}
 
@@ -526,7 +563,7 @@ export default function ChatCoach() {
             </div>
           )}
 
-          <div ref={bottomRef} />
+          <div ref={bottomRef} data-chat-bottom />
         </div>
       </div>
 
@@ -600,6 +637,39 @@ export default function ChatCoach() {
             onReject={handleReject}
             onClose={() => setActiveProposal(null)}
             isAccepting={isAccepting}
+          />
+        </Suspense>
+      )}
+
+      {drawerOpen && (
+        <Suspense fallback={null}>
+          <ConversationDrawer
+            isOpen
+            onClose={() => setDrawerOpen(false)}
+            onSelect={(sessionId, matchedMessageId) => {
+              const selectionToken = ++conversationSelectionTokenRef.current
+              pendingScrollTargetRef.current = matchedMessageId
+              setScrollTargetId(matchedMessageId)
+              setDrawerOpen(false)
+              void openConversation(sessionId)
+                .then(() => {
+                  if (selectionToken !== conversationSelectionTokenRef.current) return
+                  const state = useChatStore.getState()
+                  const opened = state.currentSessionId === sessionId && state.error == null
+                  const targetExists = (
+                    matchedMessageId == null
+                    || state.messages.some((message) => message.id === matchedMessageId)
+                  )
+                  if (opened && targetExists) return
+                  pendingScrollTargetRef.current = null
+                  setScrollTargetId(null)
+                })
+                .catch(() => {
+                  if (selectionToken !== conversationSelectionTokenRef.current) return
+                  pendingScrollTargetRef.current = null
+                  setScrollTargetId(null)
+                })
+            }}
           />
         </Suspense>
       )}
