@@ -28,7 +28,10 @@ function resolveRawConcurrency(env: NodeJS.ProcessEnv): number | undefined {
  * son `'omitted'` porque hoy la request no los incluye; cambiarlos aquí (y en el
  * caller) mantiene la telemetría fiel sin tocar dos lugares.
  */
-export function resolveEffectivePlanBuilderConfig(env: NodeJS.ProcessEnv): PlanBuilderVariantDescriptor {
+export function resolveEffectivePlanBuilderConfig(
+  env: NodeJS.ProcessEnv,
+  qualityVersion: 1 | 2 = PRODUCTIVE_QUALITY_VERSION,
+): PlanBuilderVariantDescriptor {
   return {
     provider: 'claude',
     model: resolvePlanBuilderModel(env),
@@ -38,7 +41,7 @@ export function resolveEffectivePlanBuilderConfig(env: NodeJS.ProcessEnv): PlanB
     maxTokens: DEFAULT_MAX_TOKENS,
     promptVersion: PLAN_BUILDER_PROMPT_VERSION,
     schemaVersion: PLAN_BUILDER_SCHEMA_VERSION,
-    qualityVersion: PRODUCTIVE_QUALITY_VERSION,
+    qualityVersion,
     concurrency: normalizePlanBuilderConcurrency(resolveRawConcurrency(env)),
   }
 }

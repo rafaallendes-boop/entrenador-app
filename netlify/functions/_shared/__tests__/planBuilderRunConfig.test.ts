@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
+import { PRODUCTIVE_QUALITY_VERSION } from '../../../../src/services/planBuilder/qualityReview'
 import { resolveEffectivePlanBuilderConfig, resolvePlanBuilderModel } from '../planBuilderRunConfig'
 
 describe('resolvePlanBuilderModel', () => {
@@ -19,7 +20,7 @@ describe('resolveEffectivePlanBuilderConfig', () => {
     expect(config.thinkingMode).toBe('omitted')
     expect(config.temperature).toBe(0.25)
     expect(config.maxTokens).toBe(5000)
-    expect(config.qualityVersion).toBe(1)
+    expect(config.qualityVersion).toBe(PRODUCTIVE_QUALITY_VERSION)
     expect(config.concurrency).toBe(3) // default normalizado
   })
 

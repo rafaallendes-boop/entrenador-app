@@ -254,7 +254,7 @@ describe('runAsyncPlanGeneration', () => {
     expect(result.plan.generationState).toBe('complete')
     expect(result.plan.generationSummary?.completedWeeks).toBe(2)
     expect(result.plan.generationSummary?.qualityReview).toBeDefined()
-    expect(result.plan.generationSummary?.qualityReview?.qualityVersion).toBe(1)
+    expect(result.plan.generationSummary?.qualityReview?.qualityVersion).toBe(2)
     const resolvedWeeks = writer.weeks.filter((week) => week.status === 'draft')
     expect(resolvedWeeks).toHaveLength(2)
     expect(resolvedWeeks).toEqual(expect.arrayContaining([
@@ -270,7 +270,7 @@ describe('runAsyncPlanGeneration', () => {
         }),
       }),
     ]))
-    expect(resolvedWeeks.every((week) => week.generationMeta.qualityVersion == null)).toBe(true)
+    expect(resolvedWeeks.every((week) => week.generationMeta.qualityVersion === 2)).toBe(true)
   })
 
   it('appends one best-effort telemetry record per provider attempt', async () => {
@@ -499,7 +499,7 @@ describe('runAsyncPlanGeneration', () => {
     expect(recoveredWeek.generationMeta.repairWarnings?.[0]?.code).toBe('local_plan_fallback')
     expect(recoveredWeek.generationMeta.repairTaxonomyVersion).toBe(2)
     expect(recoveredWeek.generationMeta.hydrationActionCount).toBeGreaterThan(0)
-    expect(recoveredWeek.generationMeta.qualityVersion).toBeUndefined()
+    expect(recoveredWeek.generationMeta.qualityVersion).toBe(2)
     expect(result.plan.generationState).toBe('complete')
     expect(result.plan.generationSummary?.totalAttempts).toBe(2)
   })

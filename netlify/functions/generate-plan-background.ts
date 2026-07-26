@@ -3,6 +3,10 @@ import type { TrainingPlan } from '../../src/types/planBuilder'
 import { shouldDedupeActiveGeneration } from '../../src/services/planBuilder/activeGeneration'
 import type { PlanGenerationJobVariant } from '../../src/services/planBuilder/asyncGenerationLoop'
 import { emitUnstartedJobTelemetry, runAsyncPlanGeneration } from '../../src/services/planBuilder/asyncGenerationLoop'
+import {
+  PRODUCTIVE_QUALITY_VERSION,
+  resolveEffectiveRunQualityVersion,
+} from '../../src/services/planBuilder/qualityReview'
 import { buildVariantId } from '../../src/services/planBuilder/telemetryVersions'
 import { callAnthropicForWeek } from './_shared/anthropicCaller'
 import { resolveEffectivePlanBuilderConfig } from './_shared/planBuilderRunConfig'
@@ -43,7 +47,18 @@ export const handler: Handler = async (event) => {
     // Adopt the durable jobId written by the enqueue endpoint; only mint a new one
     // when invoked directly (e.g. legacy path / local tooling).
     const jobId = typeof body.jobId === 'string' && body.jobId ? body.jobId : createJobId(planId)
-    const effectiveConfig = resolveEffectivePlanBuilderConfig(process.env)
+    // La versión efectiva se resuelve ANTES del descriptor: `buildVariantId`
+    // embebe `qualityVersion`, así que resolverla después dejaría un variantId
+    // q2 sobre una corrida puntuada con v1.
+    const effectiveQualityVersion = resolveEffectiveRunQualityVersion({
+      weeks: body.weeks,
+      targetWeekIndexes: body.targetWeekIndexes,
+      productiveVersion: PRODUCTIVE_QUALITY_VERSION,
+    })
+    const effectiveConfig = resolveEffectivePlanBuilderConfig(
+      process.env,
+      effectiveQualityVersion,
+    )
     const variant: PlanGenerationJobVariant = {
       ...effectiveConfig,
       variantId: buildVariantId(effectiveConfig),

@@ -5,11 +5,15 @@ import { generateWeekCore, summarizeWeekGenerationError } from './generateWeekCo
 import { countReadyWeeks, isReadyWeek, sortWeeks } from './weekUtils'
 import { getExpectedSessionsForPlanWeek } from './dateRange'
 import { buildWeekRetryInstruction } from '../week/shared'
-import { reviewPlanQuality } from './qualityReview'
+import {
+  PRODUCTIVE_QUALITY_VERSION,
+  resolveEffectiveRunQualityVersion,
+  reviewPlanQuality,
+} from './qualityReview'
 import { buildLocalFallbackWeek } from './fallbackWeek'
 import { summarizeTaxonomy } from './repairTaxonomy'
 import { estimateCostUsd } from './pricing'
-import type { PlanBuilderVariantDescriptor } from './telemetryVersions'
+import { buildVariantId, type PlanBuilderVariantDescriptor } from './telemetryVersions'
 
 export interface PlanGenerationAttemptTelemetry {
   athleteId: string
@@ -315,6 +319,7 @@ function makeResolvedWeek(
   week: TrainingPlanWeek,
   result: Awaited<ReturnType<typeof generateWeekCore>>,
   timestamp: number,
+  qualityVersion: 1 | 2,
 ): TrainingPlanWeek {
   return {
     ...week,
@@ -346,6 +351,7 @@ function makeResolvedWeek(
       addedFallbackCount: result.meta.addedFallbackCount,
       filteredSportCount: result.meta.filteredSportCount,
       repairTaxonomyVersion: result.meta.repairTaxonomyVersion,
+      qualityVersion,
       hydrationActionCount: result.meta.hydrationActionCount,
       correctiveActionCount: result.meta.correctiveActionCount,
       structuralActionCount: result.meta.structuralActionCount,
@@ -365,6 +371,7 @@ function makeFallbackResolvedWeek(
   result: GenerateWeekCoreResult,
   fallback: ReturnType<typeof buildLocalFallbackWeek>,
   timestamp: number,
+  qualityVersion: 1 | 2,
 ): TrainingPlanWeek {
   const taxonomySummary = summarizeTaxonomy(fallback.meta.taxonomy)
   return {
@@ -397,6 +404,7 @@ function makeFallbackResolvedWeek(
       addedFallbackCount: fallback.meta.addedFallbackCount,
       filteredSportCount: fallback.meta.filteredSportCount,
       repairTaxonomyVersion: 2,
+      qualityVersion,
       ...taxonomySummary,
       repairWarnings: [
         {
@@ -441,9 +449,10 @@ function makeErroredWeekFromResult(
   result: GenerateWeekCoreResult,
   message: string,
   timestamp: number,
+  qualityVersion: 1 | 2,
   errorClass = 'post_generation_failed',
 ): TrainingPlanWeek {
-  const resolved = makeResolvedWeek(week, result, timestamp)
+  const resolved = makeResolvedWeek(week, result, timestamp, qualityVersion)
   return {
     ...resolved,
     status: 'error',
@@ -739,6 +748,18 @@ export async function runAsyncPlanGeneration(input: RunAsyncPlanGenerationInput)
   const targetWeekIndexes = input.targetWeekIndexes?.length
     ? [...input.targetWeekIndexes].sort((a, b) => a - b)
     : weeks.map((week) => week.weekIndex)
+  // Las dimensiones provistas son autoridad, pero el id siempre se recompone
+  // desde ellas para que ningún caller directo pueda persistir una combinación
+  // imposible entre `variantId` y `qualityVersion`.
+  const variant = input.variant
+    ? { ...input.variant, variantId: buildVariantId(input.variant) }
+    : undefined
+  const effectiveQualityVersion = variant?.qualityVersion
+    ?? resolveEffectiveRunQualityVersion({
+      weeks,
+      targetWeekIndexes: input.targetWeekIndexes,
+      productiveVersion: PRODUCTIVE_QUALITY_VERSION,
+    })
 
   const deadlineAt = getNow() + (input.budgetMs ?? DEFAULT_WORKER_BUDGET_MS)
   const concurrency = normalizePlanBuilderConcurrency(input.concurrency)
@@ -787,7 +808,7 @@ export async function runAsyncPlanGeneration(input: RunAsyncPlanGenerationInput)
   const finalizeJob = async (threwDuringRun: boolean): Promise<void> => {
     if (jobFinalized) return
     jobFinalized = true
-    if (!input.writer.putJob || !input.variant) return
+    if (!input.writer.putJob || !variant) return
 
     const terminalAt = getNow()
     const enqueuedAt = input.enqueuedAt ?? startedAt
@@ -822,7 +843,7 @@ export async function runAsyncPlanGeneration(input: RunAsyncPlanGenerationInput)
       totalCacheCreationTokens: tokenTotals.cacheCreation,
       estimatedCostUsd: anyBillableAttempt ? costUsd : null,
       outcome,
-      variant: input.variant,
+      variant: { ...variant, qualityVersion: effectiveQualityVersion },
       createdAt: terminalAt,
     }
     try {
@@ -940,6 +961,7 @@ export async function runAsyncPlanGeneration(input: RunAsyncPlanGenerationInput)
             filteredSportCount: candidateResult.meta.filteredSportCount,
             droppedSessionCount: candidateResult.meta.droppedSessionCount,
             repairTaxonomyVersion: candidateResult.meta.repairTaxonomyVersion,
+            qualityVersion: effectiveQualityVersion,
             hydrationActionCount: candidateResult.meta.hydrationActionCount,
             correctiveActionCount: candidateResult.meta.correctiveActionCount,
             structuralActionCount: candidateResult.meta.structuralActionCount,
@@ -952,7 +974,13 @@ export async function runAsyncPlanGeneration(input: RunAsyncPlanGenerationInput)
         const review = reviewPlanQuality(
           plan,
           replaceWeek(weeks, candidateWeek),
-          { profile: input.profile },
+          {
+            profile: input.profile,
+            qualityVersion: effectiveQualityVersion,
+            pendingTargetWeekIndexes: targetWeekIndexes.filter(
+              (index) => index !== weekIndex && !terminalTargets.has(index),
+            ),
+          },
         ).weeks.find((weekReview) => weekReview.weekIndex === weekIndex)
         const nextCache = cachedByMeta ?? new Map<string, WeekQualityReview | undefined>()
         nextCache.set(reviewKey, review)
@@ -1012,7 +1040,7 @@ export async function runAsyncPlanGeneration(input: RunAsyncPlanGenerationInput)
             tokenTotals.cacheRead += meta.cacheReadInputTokens ?? 0
             tokenTotals.cacheCreation += meta.cacheCreationInputTokens ?? 0
             if (costUsd !== null) {
-              const model = meta.model ?? input.variant?.model ?? null
+              const model = meta.model ?? variant?.model ?? null
               const attemptCost = hasUsage && model
                 ? estimateCostUsd({
                     model,
@@ -1056,12 +1084,12 @@ export async function runAsyncPlanGeneration(input: RunAsyncPlanGenerationInput)
               qualityGrade: qualityReview?.grade,
               qualityCriticalIssueCount: qualityReview?.issues.filter((issue) => issue.severity === 'error').length,
               qualityWarningCount: qualityReview?.issues.filter((issue) => issue.severity === 'warning').length,
-              variantId: input.variant?.variantId,
-              effort: input.variant?.effort,
-              thinkingMode: input.variant?.thinkingMode,
-              promptVersion: input.variant?.promptVersion,
-              schemaVersion: input.variant?.schemaVersion,
-              qualityVersion: input.variant?.qualityVersion,
+              variantId: variant?.variantId,
+              effort: variant?.effort,
+              thinkingMode: variant?.thinkingMode,
+              promptVersion: variant?.promptVersion,
+              schemaVersion: variant?.schemaVersion,
+              qualityVersion: effectiveQualityVersion,
               repairTaxonomyVersion: meta.repairTaxonomyVersion,
               correctiveActionCount: meta.correctiveActionCount,
               structuralActionCount: meta.structuralActionCount,
@@ -1097,6 +1125,7 @@ export async function runAsyncPlanGeneration(input: RunAsyncPlanGenerationInput)
               result,
               message,
               getNow(),
+              effectiveQualityVersion,
               'local_plan_fallback_failed',
             )
             weeks = replaceWeek(weeks, erroredWeek)
@@ -1106,13 +1135,25 @@ export async function runAsyncPlanGeneration(input: RunAsyncPlanGenerationInput)
           }
         }
         let resolvedWeek = fallback
-          ? makeFallbackResolvedWeek(generatingWeek, result, fallback, getNow())
-          : makeResolvedWeek(generatingWeek, result, getNow())
+          ? makeFallbackResolvedWeek(
+              generatingWeek,
+              result,
+              fallback,
+              getNow(),
+              effectiveQualityVersion,
+            )
+          : makeResolvedWeek(generatingWeek, result, getNow(), effectiveQualityVersion)
         if (fallback && resolvedWeek.sessions.length > 0) {
           const fallbackReview = reviewPlanQuality(
             plan,
             replaceWeek(weeks, resolvedWeek),
-            { profile: input.profile },
+            {
+              profile: input.profile,
+              qualityVersion: effectiveQualityVersion,
+              pendingTargetWeekIndexes: targetWeekIndexes.filter(
+                (index) => index !== weekIndex && !terminalTargets.has(index),
+              ),
+            },
           ).weeks.find((review) => review.weekIndex === weekIndex)
           const fallbackCritical = getCriticalWeekQualityIssueMessages(fallbackReview?.issues ?? [])
           if (fallbackCritical.length > 0) {
@@ -1141,7 +1182,14 @@ export async function runAsyncPlanGeneration(input: RunAsyncPlanGenerationInput)
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
         const erroredWeek = providerResult
-          ? makeErroredWeekFromResult(generatingWeek, providerResult, message, getNow(), 'post_generation_failed')
+          ? makeErroredWeekFromResult(
+              generatingWeek,
+              providerResult,
+              message,
+              getNow(),
+              effectiveQualityVersion,
+              'post_generation_failed',
+            )
           : makeErroredWeek(generatingWeek, message, getNow())
         weeks = replaceWeek(weeks, erroredWeek)
         await input.writer.putWeek(erroredWeek)
@@ -1198,7 +1246,10 @@ export async function runAsyncPlanGeneration(input: RunAsyncPlanGenerationInput)
         ...plan,
         generationSummary: {
           ...plan.generationSummary,
-          qualityReview: reviewPlanQuality(plan, weeks, { profile: input.profile }),
+          qualityReview: reviewPlanQuality(plan, weeks, {
+            profile: input.profile,
+            qualityVersion: effectiveQualityVersion,
+          }),
         },
       }
     }

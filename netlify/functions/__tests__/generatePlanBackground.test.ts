@@ -2,6 +2,7 @@ import type { HandlerEvent } from '@netlify/functions'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { AsyncPlanGenerationWriter, PlanGenerationJobTelemetry } from '../../../src/services/planBuilder/asyncGenerationLoop'
+import { buildVariantId } from '../../../src/services/planBuilder/telemetryVersions'
 import type { TrainingPlan, TrainingPlanWeek } from '../../../src/types/planBuilder'
 
 const jobs: PlanGenerationJobTelemetry[] = []
@@ -20,6 +21,11 @@ vi.mock('../_shared/anthropicCaller', () => ({
     throw new Error('el worker no debería llamar al proveedor en estos tests')
   },
 }))
+
+vi.mock('../../../src/services/planBuilder/qualityReview', async (importActual) => {
+  const actual = await importActual<typeof import('../../../src/services/planBuilder/qualityReview')>()
+  return { ...actual, PRODUCTIVE_QUALITY_VERSION: 2 as const }
+})
 
 vi.mock('../_shared/planGenerationShared', async (importActual) => {
   const actual = await importActual<typeof import('../_shared/planGenerationShared')>()
@@ -129,18 +135,50 @@ describe('generate-plan-background job telemetry fallback', () => {
     expect(jobs[0].enqueuedAt).toBe(jobs[0].workerStartedAt)
   })
 
-  it('emits a failed job when the loop preamble throws (week shape passes the payload validator)', async () => {
-    // `isGeneratePlanPayload` solo exige `planId`; una semana sin
-    // `generationMeta` supera el validator y hace explotar el checkpoint
-    // síncrono del loop (`buildSummary → totalAttempts`) antes de su try/finally.
-    const malformedWeek: Partial<TrainingPlanWeek> = { ...makeWeek() }
-    delete malformedWeek.generationMeta
+  it('labels the variant with the run quality version, not the global constant', async () => {
+    // Semana legacy ya lista fuera de los targets: la corrida es v1 aunque la
+    // constante productiva mockeada sea 2.
+    writerBehavior.putPlan = async () => {
+      throw new Error('supabase down')
+    }
 
-    const response = await invoke([malformedWeek])
+    await invoke([
+      {
+        ...makeWeek(),
+        weekIndex: 0,
+        status: 'draft',
+        sessions: [{}],
+        generationMeta: { attempts: 1 },
+      },
+      { ...makeWeek(), id: 'week-1', weekIndex: 1 },
+    ])
+
+    expect(jobs).toHaveLength(1)
+    expect(jobs[0].variant.qualityVersion).toBe(1)
+    expect(jobs[0].variant.variantId).toBe(buildVariantId(jobs[0].variant))
+  })
+
+  it('installs unstarted-job telemetry before a malformed ready week can fail', async () => {
+    // El validator acepta esta fila por `planId`, pero falta metadata. El
+    // resolver defensivo la trata como legacy/v1; el fallo posterior del
+    // checkpoint del loop todavía debe producir una fila de job.
+    const malformedReadyWeek: Partial<TrainingPlanWeek> = {
+      ...makeWeek(),
+      status: 'draft',
+      sessions: [{}] as TrainingPlanWeek['sessions'],
+    }
+    delete malformedReadyWeek.generationMeta
+
+    const response = await invoke([malformedReadyWeek])
 
     expect(response.statusCode).toBe(500)
     expect(jobs).toHaveLength(1)
-    expect(jobs[0]).toMatchObject({ jobId: 'plan-bg-job-1', outcome: 'failed' })
+    expect(jobs[0]).toMatchObject({
+      jobId: 'plan-bg-job-1',
+      outcome: 'failed',
+      variant: { qualityVersion: 1 },
+    })
+    expect(jobs[0].variant.variantId).toBe(buildVariantId(jobs[0].variant))
   })
 
   it('does not emit a fallback job when the run is deduped', async () => {
