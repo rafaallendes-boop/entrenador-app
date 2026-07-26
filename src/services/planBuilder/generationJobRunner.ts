@@ -3,7 +3,11 @@ import type { AthleteProfile } from '../../types'
 import type { PlanGenerationJob, TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
 import { generatePlanWeeks } from './generatePlan'
 import { buildPlanBuilderRecentContext } from './recentContext'
-import { reviewPlanQuality } from './qualityReview'
+import {
+  PRODUCTIVE_QUALITY_VERSION,
+  resolveEffectiveRunQualityVersion,
+  reviewPlanQuality,
+} from './qualityReview'
 import {
   derivePlanGenerationState,
   resolveConfiguredGenerationMode,
@@ -70,6 +74,25 @@ function replaceWeek(weeks: TrainingPlanWeek[], next: TrainingPlanWeek): Trainin
   return sortWeeks(weeks.map((week) => (week.weekIndex === next.weekIndex ? next : week)))
 }
 
+/**
+ * Marca la semana con la versión de calidad de la corrida. El worker remoto lo
+ * hace en `makeResolvedWeek`; acá se aplica al salir del motor local para que
+ * ambas rutas dejen la misma evidencia y un plan no cambie de metodología por
+ * haberse regenerado sin conexión.
+ *
+ * Solo marca v2 cuando la semana realmente trae taxonomía v2. El motor local
+ * tiene caminos que no la producen, y marcar v2 sobre una semana sin taxonomía
+ * rompería el invariante `qualityVersion 2 ⟹ repairTaxonomyVersion 2` del que
+ * depende `resolveQualityVersion`.
+ */
+function withQualityVersion(week: TrainingPlanWeek, qualityVersion: 1 | 2): TrainingPlanWeek {
+  if (qualityVersion === 2 && week.generationMeta.repairTaxonomyVersion !== 2) return week
+  return {
+    ...week,
+    generationMeta: { ...week.generationMeta, qualityVersion },
+  }
+}
+
 function buildPlanCheckpoint(
   plan: TrainingPlan,
   weeks: TrainingPlanWeek[],
@@ -78,6 +101,11 @@ function buildPlanCheckpoint(
   profile?: AthleteProfile,
 ): TrainingPlan {
   const terminalState = derivePlanGenerationState(weeks)
+  // A diferencia del worker remoto, acá el único review ocurre con todas las
+  // semanas ya asentadas, así que la inferencia es exacta: el estampado
+  // condicional garantiza que solo hay marca v2 donde hay taxonomía v2. Pedir
+  // la versión explícita haría lanzar a la corrida cuando el motor local
+  // devuelve una semana sin taxonomía, matando una generación que iba bien.
   const qualityReview = completedAt
     ? reviewPlanQuality(plan, weeks, { profile })
     : plan.generationSummary?.qualityReview
@@ -320,6 +348,14 @@ async function runPlanGenerationJobInternal({ jobId, profile, callbacks }: RunGe
   }
 
   let weeks = await loadPlanWeeks(plan.id)
+  // Se resuelve UNA sola vez y antes de generar, igual que en el worker remoto.
+  // Sin esto la ruta local dejaba sus semanas sin marca, y una regeneración
+  // offline degradaba a v1 —de forma permanente— un plan que ya era v2.
+  const effectiveQualityVersion = resolveEffectiveRunQualityVersion({
+    weeks,
+    targetWeekIndexes: job.targetWeekIndexes,
+    productiveVersion: PRODUCTIVE_QUALITY_VERSION,
+  })
   const startedAt = job.startedAt ?? now()
   const generationMode = resolveConfiguredGenerationMode()
   const recentContext = await buildPlanBuilderRecentContext(plan).catch(() => undefined)
@@ -377,8 +413,9 @@ async function runPlanGenerationJobInternal({ jobId, profile, callbacks }: RunGe
         deterministicPrimary: shouldUseDeterministicPrimary(generationMode),
         recentContext,
         repairInstructionsByWeekIndex: job.repairInstructions,
-        onWeekUpdate: (next) => {
+        onWeekUpdate: (streamed) => {
           if (!canWriteForAthlete(job.athleteId)) return
+          const next = withQualityVersion(streamed, effectiveQualityVersion)
           weeks = replaceWeek(weeks, next)
           const write = putStreamingWeek(job.athleteId, next, callbacks)
           incrementalWrites.add(write)
@@ -392,17 +429,19 @@ async function runPlanGenerationJobInternal({ jobId, profile, callbacks }: RunGe
 
       if (!canWriteForAthlete(job.athleteId)) return
 
-      const generated = generatedWeeks[0] ?? {
-        ...generatingWeek,
-        status: 'error' as const,
-        sessions: [],
-        generationMeta: {
-          ...generatingWeek.generationMeta,
-          attempts: Math.max(1, generatingWeek.generationMeta.attempts ?? 0),
-          lastError: 'La generación no devolvió una semana.',
-        },
-        updatedAt: now(),
-      }
+      const generated = generatedWeeks[0]
+        ? withQualityVersion(generatedWeeks[0], effectiveQualityVersion)
+        : {
+            ...generatingWeek,
+            status: 'error' as const,
+            sessions: [],
+            generationMeta: {
+              ...generatingWeek.generationMeta,
+              attempts: Math.max(1, generatingWeek.generationMeta.attempts ?? 0),
+              lastError: 'La generación no devolvió una semana.',
+            },
+            updatedAt: now(),
+          }
 
       const latestJob = await db.planGenerationJobs.get(job.id)
       if (!latestJob || !ACTIVE_JOB_STATUSES.has(latestJob.status)) return
