@@ -1,6 +1,6 @@
 # RallyIQ - Project Review and Roadmap
 
-Actualizado: 2026-07-25
+Actualizado: 2026-07-26
 
 Base de contraste:
 
@@ -10,7 +10,7 @@ Base de contraste:
 - **Gestion de roster + Planificacion read-only implementadas (2026-07-14):** Alumnos agrega archivar/restaurar y borrado duro confirmado por nombre. El borrado usa tombstones por intento, barrera y tracking single-tab, delete remoto durable, supresion de cola y purga Dexie transaccional para impedir resurrecciones. Planificacion muestra la semana de cualquier atleta del roster mediante lecturas/hidratacion por `athleteId` explicito, sin cambiar el scope activo. `015` y el deploy de Biblioteca ya estan en produccion; resta el smoke autenticado.
 - **Coach Biblioteca + Planificacion completa desplegadas (2026-07-18/19):** edicion de sesiones, Biblioteca de plantillas account-scoped, aplicar/guardar plantillas para cualquier atleta/dia, Dexie v18, backup v4 y sync Supabase por fila con LWW/delete-wins y tombstones versionados. `015_session_templates.sql` fue aplicada y el bundle desplegado; falta el smoke autenticado en produccion.
 - **Hardening de fechas y semanas (2026-07-19):** conteos de semanas, ventanas de Plan Builder, insights de fatiga y filtros semanales usan dias calendario en vez de milisegundos para no fallar al cruzar DST. Se agrego serializacion JSON canonica para comparar estructuras sin reescrituras redundantes.
-- **Fase 0 de medicion del Plan Builder cerrada (2026-07-25):** control aceptado y versionado con SHA-256 `6c45885a870cf7e019906a0b4d786e828b2653fe1643f95d436be3aa0ee94d7a`; calibracion congelada y `quality_version = 2` productiva en el bundle. Pendientes operativos: desplegar ese bundle y hacer un smoke real de `plan_generation_jobs`.
+- **Fase 0 de medicion del Plan Builder cerrada, incluidos sus pendientes operativos (2026-07-25/26):** control aceptado y versionado con SHA-256 `6c45885a870cf7e019906a0b4d786e828b2653fe1643f95d436be3aa0ee94d7a`; calibracion congelada, `quality_version = 2` productiva, bundle desplegado y smoke de produccion ejecutado el 2026-07-26 con una corrida real verificada en `plan_generation_jobs`.
 - **Fase 0 de coaches landing completada (2026-07-13):** rutas públicas reales (no AuthGate fallbacks), las cuatro páginas legales publicadas como rutas (`/terms`, `/privacy`, `/health-disclaimer`, y disclamer Whoop), landing `/coaches` en modo prelanzamiento con estructura de 3 planes, metadata/OG cards por ruta con prerender para crawlers, deep links nativos para OAuth callback en iOS, y cierre de compartimiento entre rutas públicas. Falta aún revisión jurídica y RUT/domicilio legal antes de cobro o anuncios masivos.
 - `main` hasta `167ef6e Plan whoop y entrenador`.
 - `007` aplicado y F2 data prereqs en `6e33926`.
@@ -28,7 +28,7 @@ Base de contraste:
 
 ## Resumen Ejecutivo
 
-RallyIQ esta en una etapa donde el core ya no es el cuello de botella principal. El motor de planificacion, Plan Builder async, calidad deportiva base, athlete scope foundation, claves naturales locales por atleta, write path remoto seguro para day/week, Athlete-Aware Core, Coach F2-lite Parte 2b, Whoop v1 + Workout Auto-Complete (ambas migraciones aplicadas), Coach Workspace con roster/Planificacion/Biblioteca, y Fase 0 de coaches landing (rutas legales publicas + landing `/coaches` de prelanzamiento) ya estan construidos. La Fase 0 de medicion del Plan Builder tambien esta cerrada y `quality_version = 2` queda productiva en el bundle; faltan desplegarlo y verificar una fila real de `plan_generation_jobs`. Biblioteca y Planificacion tienen `015` y deploy aplicados; queda cerrar el smoke autenticado.
+RallyIQ esta en una etapa donde el core ya no es el cuello de botella principal. El motor de planificacion, Plan Builder async, calidad deportiva base, athlete scope foundation, claves naturales locales por atleta, write path remoto seguro para day/week, Athlete-Aware Core, Coach F2-lite Parte 2b, Whoop v1 + Workout Auto-Complete (ambas migraciones aplicadas), Coach Workspace con roster/Planificacion/Biblioteca, y Fase 0 de coaches landing (rutas legales publicas + landing `/coaches` de prelanzamiento) ya estan construidos. La Fase 0 de medicion del Plan Builder tambien esta cerrada: `quality_version = 2` es productiva, el bundle esta desplegado y una corrida real quedo verificada en `plan_generation_jobs` el 2026-07-26. Biblioteca y Planificacion tienen `015` y deploy aplicados; queda cerrar el smoke autenticado, que pasa a ser el unico pendiente tecnico de esta tanda.
 
 Lo que queda antes de mostrar/cobrar con confianza se concentra en dos carriles:
 
@@ -44,7 +44,7 @@ Mi lectura como lider tecnico: el cambio principal entre hoy y hace dos dias es 
 
 ## Estado Actual En Una Frase
 
-RallyIQ ya opera multi-atleta en produccion, con Whoop readiness y Workout Auto-Complete operativos (`011`/`012` aplicados), Coach Workspace base (`/coach`) y rutas legales publicas + landing `/coaches` en vivo. `015` y Biblioteca/Planificacion ya estan desplegadas; el siguiente paso tecnico es desplegar el bundle que activa `quality_version = 2` y smokear `plan_generation_jobs`, junto con el smoke autenticado de Biblioteca/Planificacion y el catalogo/picker. En paralelo siguen pendientes revision juridica formal y consentimiento biometrico de Whoop antes del primer piloto pagado.
+RallyIQ ya opera multi-atleta en produccion, con Whoop readiness y Workout Auto-Complete operativos (`011`/`012` aplicados), Coach Workspace base (`/coach`) y rutas legales publicas + landing `/coaches` en vivo. `015` y Biblioteca/Planificacion ya estan desplegadas, y `quality_version = 2` quedo desplegada y verificada en `plan_generation_jobs` el 2026-07-26; el siguiente paso tecnico es el smoke autenticado de Biblioteca/Planificacion y el catalogo/picker. En paralelo siguen pendientes revision juridica formal y consentimiento biometrico de Whoop antes del primer piloto pagado.
 
 ## Porcentaje De Avance
 
@@ -237,7 +237,7 @@ Segundo eslabón de la Fase 0 de medición del Plan Builder (Plan 1 —taxonomí
 - Guard de drift bidireccional row-mapper ↔ migración; retención extendida a la tabla de jobs.
 - Cierre de code review (2026-07-25): `emitUnstartedJobTelemetry` cubre las excepciones del worker **previas** al loop (`getPlan`/`putPlan`/lote inicial de `putWeek`, y el preámbulo síncrono del propio loop), con handoff explícito vía `onJobFinalizerArmed` para que no exista ventana sin emisor; y `runAsyncPlanGeneration` precarga los targets ya terminales para que una corrida mixta (semana lista + semana pendiente) no reporte `plan_complete_ms` null siendo `succeeded`.
 
-Estado: **`016` aplicada en produccion el 2026-07-25.** La telemetria ya tiene su contrato remoto y la Fase 0 de medicion se completo con las Entregas 1 y 2 descritas abajo. El bundle local ahora activa `quality_version = 2`; faltan desplegarlo y smokear una corrida real (una fila en `plan_generation_jobs` agrupable por `job_id` con sus attempts).
+Estado: **`016` aplicada en produccion el 2026-07-25; bundle desplegado y corrida real verificada el 2026-07-26.** La telemetria ya tiene su contrato remoto y la Fase 0 de medicion se completo con las Entregas 1 y 2 descritas abajo. El smoke produjo una fila de job agrupable por `job_id` con sus 4 attempts, todos con variante y taxonomia coherentes.
 
 ### 14. Plan Builder loadtest — Plan 3 Entrega 1 (2026-07-25)
 
@@ -260,7 +260,13 @@ Cierra la Fase 0 de medicion y activa el contrato calibrado:
 - La version efectiva se resuelve antes de construir el descriptor, de modo que `variant_id`, telemetria y scoring no puedan divergir.
 - Cada semana generada se estampa con su version efectiva; attempts, fallback y review final la consumen explicitamente. Una corrida con semanas legacy fuera de targets permanece en v1.
 
-Estado: **implementado y verificado con `npm test` verde: 298 archivos / 2162 tests. `quality_version = 2` es productiva en el bundle, tanto en el worker remoto como en el runner local. Fase 0 de medicion cerrada.** Pendientes operativos: desplegar el bundle y ejecutar un smoke real de `plan_generation_jobs`.
+Estado: **cerrado end-to-end. `npm test` verde (298 archivos / 2162 tests), `quality_version = 2` productiva en worker remoto y runner local, bundle desplegado y smoke de produccion ejecutado el 2026-07-26** (`docs/superpowers/smokes/2026-07-25-quality-v2-production-smoke.md`).
+
+Resultado del smoke: un plan nuevo dio `quality_version = 2`, `variant_id s46-q2-00ftsagu`, `outcome succeeded`, 4/4 semanas, `plan_complete_ms` 43 947 y `estimated_cost_usd` 0.115128 (~**$0.029 por semana generada**); sus 4 attempts traen `repair_taxonomy_version = 2` y coinciden en variante y version con el job.
+
+Alcance parcial, deliberado y documentado: las **regeneraciones parciales** (Caso 2, plan legacy que debe bajar a q1; Caso 3, trinquete q2 que no debe degradarse) **no son reproducibles en produccion**, porque el boton de regenerar una semana vive detras de `isDevToolsEnabled()`, que devuelve `false` sin condiciones cuando `import.meta.env.PROD` (`src/services/devTools.ts:6-11`). Quedan cubiertas por `effectiveRunQualityVersion.test.ts` y `generationJobRunnerQualityVersion.test.ts` en los dos escenarios exactos, y vigiladas en produccion por el monitoreo **M4** (proporcion de corridas `q1`, que deberia caer con el tiempo). Reproducirlas requiere `netlify dev` contra la Supabase de produccion; el procedimiento quedo escrito en el smoke.
+
+Deuda menor detectada: `OPTIMIZATION_AND_COSTS.md` proyecta costos de la era Gemini y subestima el costo real del Plan Builder en aproximadamente un orden de magnitud. Corregirlo antes de fijar el precio del piloto.
 
 ## Avances Ya Implementados
 
@@ -770,6 +776,61 @@ Pendiente minimo:
 - CI/smoke automatizado para rutas publicas.
 - Mejor separacion usuario/coach/atleta si se vende a entrenadores.
 - SP1a dos-lados (atletas con login propio + invites coach) o equivalente.
+
+## Backlog De Mejoras De Producto (abierto 2026-07-26)
+
+Surgido de una conversacion de brainstorming con el owner. Son **proyectos
+independientes**, cada uno con su propio ciclo spec → plan → implementacion; no
+un solo bloque de trabajo. Corren en paralelo al piloto y ninguno lo bloquea.
+
+El orden de abajo es de valor percibido en el uso diario del owner, no de
+dificultad.
+
+1. **Chat — gestion de conversaciones.** *(spec aprobado 2026-07-26:
+   `docs/superpowers/specs/2026-07-26-chat-conversations-design.md`; siguiente paso
+   es el plan de implementacion.)* Ver las conversaciones anteriores, retomarlas,
+   buscarlas y rotar por dia. **Los hilos ya existen en los datos**: los mensajes
+   se guardan con `chatSessionId`, ya sincronizan a `chat_messages` y ya entran al
+   backup; el boton "Nuevo" tambien existe. Lo que falta es la puerta de vuelta —
+   hoy cada "Nuevo" deja la conversacion anterior inalcanzable. Por eso el
+   incremento **no lleva migracion Dexie ni Supabase ni bump de backup**: el
+   indice se deriva de los mensajes existentes. Usabilidad pura, sin riesgo
+   deportivo.
+2. **Plan Builder — velocidad.** Fases 2-4 que la Fase 0 habilito: `effort` /
+   `thinking`, modelo, concurrencia y prompt caching (esto ultimo solo despues de
+   medir el prefijo real con Token Counting). Es el trabajo **mejor preparado**
+   del backlog: instrumento desplegado, metodo escrito y control congelado
+   (`6c45885a`) contra el cual comparar. Linea base de produccion: 24.2 s hasta
+   la primera semana, 43.9 s un plan de 4 semanas, concurrencia 3.
+3. **Plan Builder — calidad deportiva.** La Fase 1, "correcciones de producto",
+   declarada paralelizable y de archivos disjuntos respecto de la velocidad.
+   Incluye la calidad de las sesiones de squash.
+4. **Librerias de squash y fisico entendibles de cara al usuario.** Nombres,
+   descripciones y agrupacion de drills y ejercicios. Se solapa con el punto 3 en
+   lo deportivo, pero es sobre todo contenido y UX. Es lo que mas se nota al
+   mostrarle la app a un cliente.
+5. **Analisis de entrenamientos con Whoop.** Superficie nueva sobre datos que ya
+   estan locales (readiness + workouts). Mantener el contrato vigente: contexto
+   objetivo y consentido, sin diagnostico ni ajuste automatico.
+6. **Chat — latencia de respuesta.** Deliberadamente **despues** de tener
+   medicion: hoy no existe instrumentacion de latencia del chat general (el plan
+   de `2026-07-16` midio `week_creator`, que es otro camino). Optimizar antes de
+   medir es exactamente lo que la Fase 0 del Plan Builder existio para evitar.
+7. **Flags por plan** (Base / Coach Semanal / Avanzado). Necesarios en cuanto el
+   piloto tenga mas de un tier conviviendo.
+8. **Pasarela de pago.** Deliberadamente al final. Para 1-3 clientes acompanados,
+   cobrar por transferencia y conciliar a mano cuesta menos que integrar y
+   mantener un gateway; el piloto ya estaba disenado como cobro manual. Retomar
+   cuando exista self-serve real (Nivel 4).
+
+Deuda menor asociada: `OPTIMIZATION_AND_COSTS.md` proyecta costos de la era
+Gemini y subestima el Plan Builder en cerca de un orden de magnitud (medido:
+~$0.029 por semana generada). Corregirlo antes de fijar el precio del piloto.
+
+Estado ambiguo a verificar: `docs/superpowers/plans/2026-07-23-plan-cycle-closure.md`
+tiene 53 checkboxes sin marcar, pero el codigo existe con tests
+(`closePlanCycle.ts`, `deletePlanCycle.ts`, `CycleHistory.tsx`). Confirmar si
+quedo terminado o a medias antes de construir encima.
 
 ## Que Hacer Primero
 

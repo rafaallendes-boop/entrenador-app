@@ -303,7 +303,7 @@ export function CycleHistory({ weekSummaries, onChanged }: {
         open={pendingPlan != null}
         title="Eliminar ciclo"
         message={pendingPlan
-          ? `Se eliminará ${pendingPlan.title} y sus semanas. Esta acción no se puede deshacer.`
+          ? `Se eliminará el plan ${pendingPlan.title}. Las semanas generadas se conservarán.`
           : ''}
         confirmLabel="Eliminar"
         destructive

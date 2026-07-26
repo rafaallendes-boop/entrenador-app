@@ -3,6 +3,11 @@
 Fecha objetivo: primer deploy después de `003ed9d`.
 Migración: `016` **ya aplicada** en producción el 2026-07-25. No hay migración pendiente.
 
+> **Ejecutado el 2026-07-26 — aprobado con alcance parcial.** Ver
+> [Resultado](#resultado) al final: Caso 1 verificado en producción; Casos 2 y 3
+> quedaron no reproducibles porque la superficie que piden es dev-only, y se
+> apoyan en cobertura unitaria + el monitoreo M4.
+
 ## Qué se está verificando y por qué
 
 Este deploy no es solo telemetría: activa la penalización de reparación de v2, que
@@ -204,10 +209,12 @@ que es justo lo que ese emisor viene a evitar. Anotarlo aunque no corte el smoke
 ```sql
 select job_id, variant_id, quality_version
 from public.plan_generation_jobs
-where (variant_id like '%-q2-%' and quality_version <> 2)
-   or (variant_id like '%-q1-%' and quality_version <> 1);
+where (variant_id like '%-q2-%' and quality_version is distinct from 2)
+   or (variant_id like '%-q1-%' and quality_version is distinct from 1);
 ```
 Esperado: **0 filas**. Cualquier fila acá es un fallo bloqueante.
+(`is distinct from` y no `<>`: con `<>`, un `quality_version` nulo no matchea y
+la divergencia pasaría inadvertida.)
 
 - [ ] **V2.** Ningún attempt en desacuerdo con su job:
 
@@ -270,6 +277,89 @@ existentes son válidas para ambas versiones.
 
 ## Resultado
 
-- [ ] Smoke **aprobado** — anotar fecha, `job_id` de los tres casos y el grade del Caso 1.6.
-- [ ] Actualizar `CLAUDE.md` y `PROJECT_REVIEW_AND_ROADMAP.md`: los pendientes
+Ejecutado el **2026-07-26**.
+
+- [x] Smoke **aprobado con alcance parcial**, detallado abajo.
+- [x] `CLAUDE.md` y `PROJECT_REVIEW_AND_ROADMAP.md` actualizados: los pendientes
   operativos de la Fase 0 de medición pasan a cerrados.
+
+### Caso 1 — aprobado
+
+`job_id = plan-bg-9c7c0f58-03d0-4a85-99b3-63a5f3bcb98e`, plan
+`3578d0cf-f1f4-44a0-b707-a882ab74ea9c`.
+
+| Campo | Valor |
+|---|---|
+| `variant_id` | `s46-q2-00ftsagu` |
+| `quality_version` | `2` |
+| `outcome` | `succeeded` |
+| semanas | 4 pedidas / 4 exitosas / 0 fallidas |
+| `first_week_ready_ms` | 24 216 |
+| `plan_complete_ms` | 43 947 |
+| `terminal_ms` | 44 449 |
+| tokens | 13 056 in / 5 064 out |
+| `estimated_cost_usd` | 0.115128 (≈ **$0.029 por semana generada**) |
+
+Los 4 attempts traen `repair_taxonomy_version = 2` y coinciden en `variant_id` y
+`quality_version` con el job. Grade del punto 1.6: **no anotado**.
+
+### Casos 2 y 3 — no reproducibles en producción
+
+**No se ejecutaron, y no por olvido: la superficie que piden no existe en el
+build de producción.** El botón "Mejorar semana" / "Ajustar semana"
+(`PlanBuilderV2Page.tsx:1218`) está detrás de `showPlanQualityDebug`, que es
+`isDevToolsEnabled()`, y esa función corta en seco antes de mirar cualquier env
+var:
+
+```ts
+// src/services/devTools.ts:6-11
+if (import.meta.env.PROD === true) return false
+```
+
+Los otros caminos de regeneración parcial que sí viven en producción
+("Ajustar semanas marcadas" y la recuperación del consumidor) solo aparecen
+cuando la revisión de calidad marcó semanas, condición que no se puede provocar
+a voluntad; y "Crear plan de nuevo" regenera el plan completo, así que no
+ejercita el camino de targets parciales que es lo que había que probar.
+
+**Cobertura sustitutiva.** La regla de versión efectiva está cubierta por tests
+unitarios en los dos escenarios exactos:
+
+- `effectiveRunQualityVersion.test.ts` — *"falls back to v1 when a legacy week
+  stays outside the targets"* y *"is v2 when every non-target week is already v2"*.
+- `generationJobRunnerQualityVersion.test.ts` — *"stays on v1 when a legacy week
+  survives outside the targets"*.
+
+Lo que los tests **no** cubren es que la fila remota refleje esa decisión. Ese
+eslabón queda vigilado por **M4** (proporción de corridas `q1` sobre el total):
+si no baja con el tiempo, hay una ruta que no está estampando.
+
+**Cómo ejecutarlos si alguna vez hace falta.** Correr el mismo código con
+`import.meta.env.PROD === false` contra la Supabase de producción:
+
+```bash
+netlify dev   # no `npm run dev`
+```
+
+Tiene que ser `netlify dev`: la app encola contra
+`/.netlify/functions/enqueue-plan-generation`
+(`triggerBackgroundGeneration.ts:11`) y el server de Vite solo no sirve esas
+funciones — sin ellas el generador cae al runner local, que no escribe
+`plan_generation_jobs`. Requiere env de producción y sesión real. El Caso 2
+además necesita un plan legacy todavía presente en Dexie (semanas sin
+`generationMeta.qualityVersion`), cosa que un plan nuevo puede haber reemplazado.
+
+### Correcciones a este checklist
+
+Detectadas al ejecutarlo; aplican a cualquier repetición futura.
+
+- **Ventana de V1/V3.** La `<hora de inicio>` tiene que ser posterior al deploy,
+  no solo a la migración. `variant_id`, `quality_version` y
+  `repair_taxonomy_version` son columnas que `016` agregó a
+  `plan_generation_attempts`, y el bundle anterior no las enviaba: las corridas
+  previas aparecen con `con_taxonomia = 0` y sin fila en `plan_generation_jobs`.
+  En esta corrida se colaron tres jobs del 2026-07-24 por ese motivo. Es ruido de
+  ventana, no un fallo de estampado.
+- **V1 tiene un hueco con nulos.** `quality_version <> 2` no matchea cuando el
+  valor es `NULL`, así que un job con `variant_id` q2 y versión nula pasaría como
+  0 filas. Usar `is distinct from` en las dos ramas.

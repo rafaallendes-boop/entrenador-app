@@ -13,11 +13,13 @@ import {
 import { deletePlanCycle } from '../deletePlanCycle'
 
 const mocks = vi.hoisted(() => ({
-  softDeleteTrainingPlan: vi.fn(),
+  pushTrainingPlan: vi.fn(),
+  pushTrainingPlanWeeks: vi.fn(),
 }))
 
 vi.mock('../../syncService', () => ({
-  softDeleteTrainingPlan: mocks.softDeleteTrainingPlan,
+  pushTrainingPlan: mocks.pushTrainingPlan,
+  pushTrainingPlanWeeks: mocks.pushTrainingPlanWeeks,
 }))
 
 const plan = (fields: Partial<TrainingPlan> = {}): TrainingPlan => ({
@@ -81,7 +83,8 @@ describe('deletePlanCycle', () => {
     await db.trainingPlans.put(plan())
     await db.trainingPlanWeeks.bulkPut([week(0), week(1)])
     await db.planGenerationJobs.put(job())
-    mocks.softDeleteTrainingPlan.mockReset().mockResolvedValue('pushed')
+    mocks.pushTrainingPlan.mockReset().mockResolvedValue(undefined)
+    mocks.pushTrainingPlanWeeks.mockReset().mockResolvedValue(undefined)
   })
 
   afterEach(() => {
@@ -90,43 +93,34 @@ describe('deletePlanCycle', () => {
     db.close()
   })
 
-  it('pushed purga plan, weeks y jobs después del remoto', async () => {
-    let wasLocalDuringPush = false
-    mocks.softDeleteTrainingPlan.mockImplementation(async () => {
-      wasLocalDuringPush = (await db.trainingPlans.get('p1')) != null
-      return 'pushed'
-    })
-
+  it('retiene el plan como contenedor y conserva semanas y elimina jobs', async () => {
     expect(await deletePlanCycle('p1')).toBe('deleted')
 
-    expect(wasLocalDuringPush).toBe(true)
-    expect(await db.trainingPlans.get('p1')).toBeUndefined()
-    expect(await db.trainingPlanWeeks.where('planId').equals('p1').count()).toBe(0)
+    expect(await db.trainingPlans.get('p1')).toMatchObject({ status: 'superseded' })
+    expect(await db.trainingPlanWeeks.where('planId').equals('p1').count()).toBe(2)
+    expect(await db.planGenerationJobs.where('planId').equals('p1').count()).toBe(0)
+    expect(mocks.pushTrainingPlan).toHaveBeenCalledWith(expect.objectContaining({ status: 'superseded' }))
+    expect(mocks.pushTrainingPlanWeeks).toHaveBeenCalledWith(expect.objectContaining({ status: 'superseded' }), expect.any(Array))
+  })
+
+  it('conserva semanas también sin remoto', async () => {
+    expect(await deletePlanCycle('p1')).toBe('deleted')
+    expect(await db.trainingPlans.get('p1')).toMatchObject({ status: 'superseded' })
+    expect(await db.trainingPlanWeeks.where('planId').equals('p1').count()).toBe(2)
+  })
+
+  it('las semanas se conservan para converger por sync', async () => {
+    expect(await deletePlanCycle('p1')).toBe('deleted')
+    expect(await db.trainingPlans.get('p1')).toBeDefined()
+    expect(await db.trainingPlanWeeks.where('planId').equals('p1').count()).toBe(2)
     expect(await db.planGenerationJobs.where('planId').equals('p1').count()).toBe(0)
   })
 
-  it('no_remote también permite la purga local', async () => {
-    mocks.softDeleteTrainingPlan.mockResolvedValue('no_remote')
+  it('si falla el push, conserva el estado local y las semanas', async () => {
+    mocks.pushTrainingPlan.mockRejectedValueOnce(new Error('boom'))
     expect(await deletePlanCycle('p1')).toBe('deleted')
-    expect(await db.trainingPlans.get('p1')).toBeUndefined()
-  })
-
-  it('queued conserva todo para converger por sync', async () => {
-    mocks.softDeleteTrainingPlan.mockResolvedValue('queued')
-    expect(await deletePlanCycle('p1')).toBe('pending_sync')
     expect(await db.trainingPlans.get('p1')).toBeDefined()
     expect(await db.trainingPlanWeeks.where('planId').equals('p1').count()).toBe(2)
-    expect(await db.planGenerationJobs.where('planId').equals('p1').count()).toBe(1)
-  })
-
-  it('failed o throw conservan todo', async () => {
-    mocks.softDeleteTrainingPlan.mockResolvedValueOnce('failed')
-    expect(await deletePlanCycle('p1')).toBe('failed')
-    expect(await db.trainingPlans.get('p1')).toBeDefined()
-
-    mocks.softDeleteTrainingPlan.mockRejectedValueOnce(new Error('boom'))
-    expect(await deletePlanCycle('p1')).toBe('failed')
-    expect(await db.trainingPlans.get('p1')).toBeDefined()
   })
 
   it.each(['queued', 'running'] as const)(
@@ -135,39 +129,37 @@ describe('deletePlanCycle', () => {
       await db.planGenerationJobs.put(job({ status }))
 
       expect(await deletePlanCycle('p1')).toBe('failed')
-      expect(mocks.softDeleteTrainingPlan).not.toHaveBeenCalled()
+      expect(mocks.pushTrainingPlan).not.toHaveBeenCalled()
       expect(await db.trainingPlans.get('p1')).toBeDefined()
     },
   )
 
-  it('si aparece un job después del commit remoto, la purga lo retira con el padre', async () => {
-    mocks.softDeleteTrainingPlan.mockImplementation(async () => {
+  it('si aparece un job después de la lectura, la purga lo retira', async () => {
+    mocks.pushTrainingPlan.mockImplementation(async () => {
       await db.planGenerationJobs.put(job({ id: 'late-job', status: 'queued' }))
-      return 'pushed'
     })
-
     expect(await deletePlanCycle('p1')).toBe('deleted')
-    expect(await db.trainingPlans.get('p1')).toBeUndefined()
+    expect(await db.trainingPlans.get('p1')).toMatchObject({ status: 'superseded' })
     expect(await db.planGenerationJobs.where('planId').equals('p1').count()).toBe(0)
   })
 
   it('no actúa sin atleta activo', async () => {
     setActiveAthleteId(null)
     expect(await deletePlanCycle('p1')).toBe('failed')
-    expect(mocks.softDeleteTrainingPlan).not.toHaveBeenCalled()
+    expect(mocks.pushTrainingPlan).not.toHaveBeenCalled()
   })
 
   it('no actúa sobre un plan de otro atleta', async () => {
     await db.trainingPlans.put(plan({ athleteId: 'ath_other' }))
     expect(await deletePlanCycle('p1')).toBe('failed')
-    expect(mocks.softDeleteTrainingPlan).not.toHaveBeenCalled()
+    expect(mocks.pushTrainingPlan).not.toHaveBeenCalled()
   })
 
   it('un managed no puede borrar un plan legacy', async () => {
     setActiveAthleteId('ath_managed')
     await db.trainingPlans.put(plan({ athleteId: undefined as never }))
     expect(await deletePlanCycle('p1')).toBe('failed')
-    expect(mocks.softDeleteTrainingPlan).not.toHaveBeenCalled()
+    expect(mocks.pushTrainingPlan).not.toHaveBeenCalled()
   })
 
   it('el self normaliza plan y weeks legacy al mismo scope remoto', async () => {
@@ -179,7 +171,7 @@ describe('deletePlanCycle', () => {
 
     expect(await deletePlanCycle('p1')).toBe('deleted')
 
-    const [remotePlan, remoteWeeks] = mocks.softDeleteTrainingPlan.mock.calls[0]
+    const [remotePlan, remoteWeeks] = mocks.pushTrainingPlanWeeks.mock.calls[0]
     expect(remotePlan.athleteId).toBe('ath_self')
     expect(remoteWeeks.map((row: TrainingPlanWeek) => row.athleteId))
       .toEqual(['ath_self', 'ath_self'])
@@ -191,12 +183,12 @@ describe('deletePlanCycle', () => {
     bumpSwitchEpoch()
 
     expect(await deleting).toBe('failed')
-    expect(mocks.softDeleteTrainingPlan).not.toHaveBeenCalled()
+    expect(mocks.pushTrainingPlan).not.toHaveBeenCalled()
     expect(await db.trainingPlans.get('p1')).toBeDefined()
   })
 
   it('un plan inexistente ya está deleted', async () => {
     expect(await deletePlanCycle('missing')).toBe('deleted')
-    expect(mocks.softDeleteTrainingPlan).not.toHaveBeenCalled()
+    expect(mocks.pushTrainingPlan).not.toHaveBeenCalled()
   })
 })

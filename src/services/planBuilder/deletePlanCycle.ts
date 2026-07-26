@@ -10,7 +10,10 @@ import {
 } from '../athlete/activeAthlete'
 import { filterRowsToActiveScope } from '../athlete/activeScopeFilter'
 import { isScopedAthleteId } from '../athlete/effectiveAthleteKey'
-import { softDeleteTrainingPlan } from '../syncService'
+import {
+  pushTrainingPlan,
+  pushTrainingPlanWeeks,
+} from '../syncService'
 
 export type DeleteCycleResult = 'deleted' | 'pending_sync' | 'failed'
 
@@ -35,9 +38,10 @@ function normalizeRemoteScope(
 }
 
 /**
- * Deletes a cycle remote-first. The parent tombstone is the authoritative
- * remote commit; local rows are purged only after it was pushed (or when this
- * build has no remote at all).
+ * Removes a cycle from the plan-builder history while keeping its generated
+ * weeks. Weeks are children of a plan in the remote schema, so deleting the
+ * parent would cascade and lose them. A superseded parent is therefore kept
+ * as an invisible container for those weeks.
  */
 export async function deletePlanCycle(planId: string): Promise<DeleteCycleResult> {
   const athleteId = getActiveAthleteId()
@@ -59,10 +63,15 @@ export async function deletePlanCycle(planId: string): Promise<DeleteCycleResult
   const remote = normalizeRemoteScope(plan, weeks, athleteId)
   if (!scopeIsStable(athleteId, switchEpoch)) return 'failed'
 
-  const outcome = await softDeleteTrainingPlan(remote.plan, remote.weeks)
-    .catch(() => 'failed' as const)
-  if (outcome === 'queued') return 'pending_sync'
-  if (outcome === 'failed') return 'failed'
+  const retainedPlan: TrainingPlan = {
+    ...remote.plan,
+    status: 'superseded',
+    updatedAt: Math.max(Date.now(), remote.plan.updatedAt + 1),
+  }
+
+  // Commit the parent first so the remote foreign-key container exists before
+  // its weeks are uploaded. Offline writes are queued by the sync layer.
+  await pushTrainingPlan(retainedPlan).catch(() => undefined)
 
   await db.transaction(
     'rw',
@@ -70,11 +79,14 @@ export async function deletePlanCycle(planId: string): Promise<DeleteCycleResult
     db.trainingPlanWeeks,
     db.planGenerationJobs,
     async () => {
-      await db.trainingPlanWeeks.where('planId').equals(planId).delete()
       await db.planGenerationJobs.where('planId').equals(planId).delete()
-      await db.trainingPlans.delete(planId)
+      await db.trainingPlans.put(retainedPlan)
     },
   )
+
+  // Keep the parent remote row alive because training_plan_weeks has a
+  // foreign key to it.
+  await pushTrainingPlanWeeks(retainedPlan, remote.weeks).catch(() => undefined)
 
   return 'deleted'
 }
