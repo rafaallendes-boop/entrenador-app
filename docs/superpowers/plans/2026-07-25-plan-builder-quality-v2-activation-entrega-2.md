@@ -36,6 +36,7 @@ Control: `docs/superpowers/calibrations/plan-builder-v2-control-2026-07-25.json`
 | `src/services/planBuilder/__tests__/qualityCalibrationV2.test.ts` | **Crear.** Guard de procedencia contra el artefacto versionado. |
 | `src/services/planBuilder/__tests__/qualityReviewV2Calibrated.test.ts` | **Crear.** Bordes de divisor, tope, umbral y v1 intacto. |
 | `src/services/planBuilder/__tests__/effectiveRunQualityVersion.test.ts` | **Crear.** Las cuatro formas de corrida de §3.10. |
+| `netlify/functions/generate-plan-background.ts` | **Modificar.** Resolver la versión efectiva antes de construir el descriptor. |
 
 ---
 
@@ -92,7 +93,33 @@ Expected: FAIL — `buildRequestFingerprint` no existe.
 
 En `telemetryVersions.ts`, después de `buildVariantId`:
 
+La canonicalización se **comparte**, no se reescribe: enumerar las dimensiones dos
+veces —aunque sea en el mismo archivo— hace que la próxima dimensión que se agregue
+entre en un lado y no en el otro, y ahí el fingerprint deja de representar la
+request.
+
+Reemplazar el cuerpo de `buildVariantId` y agregar el fingerprint:
+
 ```ts
+/** Dimensiones de la request, sin `qualityVersion`. Única fuente de la canonicalización. */
+function requestDimensions(descriptor: PlanBuilderVariantDescriptor): unknown[] {
+  return [
+    descriptor.provider, descriptor.model, descriptor.effort, descriptor.thinkingMode,
+    descriptor.temperature, descriptor.maxTokens, descriptor.promptVersion,
+    descriptor.schemaVersion, descriptor.concurrency,
+  ]
+}
+
+export function buildVariantId(descriptor: PlanBuilderVariantDescriptor): string {
+  const modelToken = descriptor.model
+    ? KNOWN_MODEL_SHORT[descriptor.model] ?? slugify(descriptor.model)
+    : 'unknown'
+  // El variant id SÍ incluye qualityVersion; el fingerprint no. Esa es la única
+  // diferencia entre ambos y queda expresada acá, no duplicando la lista.
+  const canonical = JSON.stringify([...requestDimensions(descriptor), descriptor.qualityVersion])
+  return `${modelToken}-q${descriptor.qualityVersion}-${fnv1a(canonical)}`
+}
+
 /**
  * Identidad de la REQUEST, deliberadamente sin `qualityVersion`. Un control se
  * corre con `q1` y producción pasa a `q2`, así que el `variant_id` cambia por
@@ -100,19 +127,32 @@ En `telemetryVersions.ts`, después de `buildVariantId`:
  * mismo control" a través del flip.
  */
 export function buildRequestFingerprint(descriptor: PlanBuilderVariantDescriptor): string {
-  const canonical = JSON.stringify([
-    descriptor.provider, descriptor.model, descriptor.effort, descriptor.thinkingMode,
-    descriptor.temperature, descriptor.maxTokens, descriptor.promptVersion,
-    descriptor.schemaVersion, descriptor.concurrency,
-  ])
-  return fnv1a(canonical)
+  return fnv1a(JSON.stringify(requestDimensions(descriptor)))
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+**Ojo con el orden:** `buildVariantId` cambia su canonical de la lista literal a
+`[...requestDimensions, qualityVersion]`. El orden de las dimensiones es el mismo
+que hoy, así que el hash de un descriptor existente no cambia. Verificarlo en el
+Step 4 antes de seguir: si cambiara, el `variant_id` del control versionado
+dejaría de reconstruirse y el guard de la Task 2 fallaría con razón.
+
+- [ ] **Step 4: Verify the existing variant ids did not move**
 
 Run: `npx vitest run src/services/planBuilder/__tests__/telemetryVersions.test.ts`
-Expected: PASS.
+Expected: PASS, incluidos los tests previos de `buildVariantId`.
+
+Run:
+```bash
+node --input-type=module -e "
+import { readFile } from 'node:fs/promises'
+const a = JSON.parse(await readFile('docs/superpowers/calibrations/plan-builder-v2-control-2026-07-25.json','utf8'))
+console.log('esperado:', a.variant.variantId)
+"
+```
+Reconstruir ese `variantId` con el `buildVariantId` nuevo y confirmar que da
+`s46-q1-01bxcrr9`. Si no coincide, la refactorización movió el hash y hay que
+revertirla: el guard de la Task 2 depende de poder reconstruirlo.
 
 - [ ] **Step 5: Commit (owner)**
 
@@ -314,30 +354,34 @@ git commit -m "feat(plan-builder): freeze the quality v2 calibration with contro
 
 - [ ] **Step 1: Write the failing test**
 
-Crear `src/services/planBuilder/__tests__/qualityReviewV2Calibrated.test.ts`. Usar los helpers de fixtures ya existentes en `qualityReviewV2.test.ts` para construir semanas con taxonomía v2; el patrón es una semana `draft` con `generationMeta.repairTaxonomyVersion = 2` y los contadores puestos a mano.
+Crear `src/services/planBuilder/__tests__/qualityReviewV2Calibrated.test.ts`. Los
+helpers existentes son `buildPlanForTest` y `buildWeekForTest`, en
+`./helpers/qualityTestFixtures` — los mismos que usa `qualityReviewV2.test.ts`.
 
 ```ts
 import { describe, expect, it } from 'vitest'
 
 import { QUALITY_V2_CALIBRATION } from '../qualityCalibrationV2'
 import { reviewPlanQuality } from '../qualityReview'
-import { makePlanWithWeeks } from './helpers/qualityFixtures'
+import { buildPlanForTest, buildWeekForTest } from './helpers/qualityTestFixtures'
 
 /** countRepairsV2 = corrective + structural + moved + dropped. */
 function weekWithRepairs(weekIndex: number, corrective: number, structural: number) {
-  return {
+  return buildWeekForTest({
     weekIndex,
-    repairTaxonomyVersion: 2 as const,
-    correctiveActionCount: corrective,
-    structuralActionCount: structural,
-    movedSessionCount: 0,
-    droppedSessionCount: 0,
-  }
+    generationMeta: {
+      attempts: 1,
+      repairTaxonomyVersion: 2,
+      correctiveActionCount: corrective,
+      structuralActionCount: structural,
+      movedSessionCount: 0,
+      droppedSessionCount: 0,
+    },
+  })
 }
 
 function scoreOf(weeks: ReturnType<typeof weekWithRepairs>[]) {
-  const { plan, planWeeks } = makePlanWithWeeks(weeks)
-  return reviewPlanQuality(plan, planWeeks, { qualityVersion: 2 })
+  return reviewPlanQuality(buildPlanForTest(), weeks, { qualityVersion: 2 })
 }
 
 describe('quality v2 calibrated repair penalty', () => {
@@ -369,16 +413,19 @@ describe('quality v2 calibrated repair penalty', () => {
   })
 
   it('leaves a hydration-only week at zero penalty', () => {
-    const { plan, planWeeks } = makePlanWithWeeks([{
-      weekIndex: 0,
-      repairTaxonomyVersion: 2 as const,
-      correctiveActionCount: 0,
-      structuralActionCount: 0,
-      movedSessionCount: 0,
-      droppedSessionCount: 0,
-      hydrationActionCount: 7,
-    }])
-    expect(reviewPlanQuality(plan, planWeeks, { qualityVersion: 2 }).weeks[0].score).toBe(100)
+    const week = buildWeekForTest({
+      generationMeta: {
+        attempts: 1,
+        repairTaxonomyVersion: 2,
+        correctiveActionCount: 0,
+        structuralActionCount: 0,
+        movedSessionCount: 0,
+        droppedSessionCount: 0,
+        hydrationActionCount: 7,
+      },
+    })
+    expect(reviewPlanQuality(buildPlanForTest(), [week], { qualityVersion: 2 }).weeks[0].score)
+      .toBe(100)
   })
 })
 ```
@@ -418,15 +465,44 @@ En `scorePlan`, lo mismo con los valores de plan:
       )
 ```
 
-- [ ] **Step 4: Run tests, including the v1 regression**
+- [ ] **Step 4: Retire the test that pinned the disabled state**
+
+`qualityReviewV2.test.ts` tiene un test llamado *"keeps the high-repair warning and
+penalty disabled in opt-in v2"* que fija exactamente el comportamiento que esta
+task viene a cambiar. **Ese test tiene que reescribirse, no borrarse**: pasa a
+fijar que la penalización ahora existe y sale de la calibración congelada.
+
+Reemplazar su cuerpo por:
+
+```ts
+  it('applies the frozen calibration instead of leaving v2 unpenalised', () => {
+    const baselineWeek = buildWeekForTest({
+      generationMeta: { attempts: 1, repairTaxonomyVersion: 2, correctiveActionCount: 0 },
+    })
+    const repairedWeek = buildWeekForTest({
+      generationMeta: { attempts: 1, repairTaxonomyVersion: 2, correctiveActionCount: 12 },
+    })
+
+    const baseline = reviewPlanQuality(buildPlanForTest(), [baselineWeek], { qualityVersion: 2 })
+    const repaired = reviewPlanQuality(buildPlanForTest(), [repairedWeek], { qualityVersion: 2 })
+
+    expect(baseline.weeks[0].score).toBeGreaterThan(repaired.weeks[0].score)
+    expect(baseline.weeks[0].score - repaired.weeks[0].score)
+      .toBe(QUALITY_V2_CALIBRATION.weekRepairPenaltyCap)
+  })
+```
+
+Agregar el import de `QUALITY_V2_CALIBRATION` en ese archivo.
+
+- [ ] **Step 5: Run tests, including the v1 regression**
 
 Run: `npx vitest run src/services/planBuilder/__tests__/qualityReviewV2Calibrated.test.ts src/services/planBuilder/__tests__/qualityReviewV2.test.ts src/services/planBuilder/__tests__/typesQualityReview.test.ts`
-Expected: PASS. **Cualquier score v1 que cambie es un fallo de este plan**, no un test que haya que actualizar.
+Expected: PASS. **Cualquier score v1 que cambie es un fallo de este plan**, no un test que haya que actualizar. Los únicos tests v2 que cambian son los que fijaban explícitamente el estado desactivado.
 
-- [ ] **Step 5: Commit (owner)**
+- [ ] **Step 6: Commit (owner)**
 
 ```bash
-git add src/services/planBuilder/qualityReview.ts src/services/planBuilder/__tests__/qualityReviewV2Calibrated.test.ts
+git add src/services/planBuilder/qualityReview.ts src/services/planBuilder/__tests__/qualityReviewV2Calibrated.test.ts src/services/planBuilder/__tests__/qualityReviewV2.test.ts
 git commit -m "feat(plan-builder): apply the frozen v2 repair penalty"
 ```
 
@@ -883,6 +959,24 @@ El review de attempt pasa a ser explícito, con los targets todavía no escritos
         ).weeks.find((weekReview) => weekReview.weekIndex === weekIndex)
 ```
 
+El review del **fallback local** (`asyncGenerationLoop.ts:1112`) hoy también
+infiere. Sin esto, una regeneración completa de un plan legacy revisaría su
+fallback como v1 mientras el resto de la corrida es v2 — y el fallback es
+justamente el camino donde la reparación es más alta:
+
+```ts
+          const fallbackReview = reviewPlanQuality(
+            plan,
+            replaceWeek(weeks, resolvedWeek),
+            {
+              profile: input.profile,
+              qualityVersion: effectiveQualityVersion,
+              pendingTargetWeekIndexes: targetWeekIndexes.filter(
+                (index) => index !== weekIndex && !terminalTargets.has(index)),
+            },
+          ).weeks.find((review) => review.weekIndex === weekIndex)
+```
+
 Y la revisión final del plan:
 
 ```ts
@@ -891,6 +985,10 @@ Y la revisión final del plan:
             qualityVersion: effectiveQualityVersion,
           }),
 ```
+
+**Grep de cierre:** `grep -n "reviewPlanQuality(" src/services/planBuilder/asyncGenerationLoop.ts`
+debe devolver exactamente tres sitios, y los tres pasan `qualityVersion`. Si
+aparece un cuarto sin versión explícita, está infiriendo.
 
 La telemetría de attempt y el descriptor del job reportan `effectiveQualityVersion` en vez de `input.variant?.qualityVersion`:
 
@@ -915,7 +1013,24 @@ export function resolveEffectivePlanBuilderConfig(
 ): PlanBuilderVariantDescriptor {
 ```
 
-y usar `qualityVersion` en el objeto devuelto. El caller de `generate-plan-background.ts` no cambia: el default preserva el comportamiento, y el loop corrige la etiqueta del job con la versión efectiva.
+y usar `qualityVersion` en el objeto devuelto. **El default no alcanza**: el
+handler tiene que pasar la versión efectiva explícitamente (Task 8), porque
+construye `variantId` antes de invocar el loop.
+
+Cuando el caller ya provee `input.variant`, el loop **usa esa versión** en lugar
+de re-resolverla, y así no puede contradecir al `variantId` que la acompaña:
+
+```ts
+  const effectiveQualityVersion = input.variant?.qualityVersion
+    ?? resolveEffectiveRunQualityVersion({
+      weeks,
+      targetWeekIndexes: input.targetWeekIndexes,
+      productiveVersion: PRODUCTIVE_QUALITY_VERSION,
+    })
+```
+
+El fallback a la resolución propia cubre a los callers directos y a los tests,
+que no arman descriptor.
 
 - [ ] **Step 6: Run tests**
 
@@ -931,16 +1046,132 @@ git commit -m "feat(plan-builder): stamp and consume the effective quality versi
 
 ---
 
-### Task 8: Flip a v2
+### Task 8: El handler resuelve la versión antes del descriptor
+
+Sin esta task el flip produce filas incoherentes: `generate-plan-background.ts:43-47`
+construye `effectiveConfig` y `variantId` **antes** de invocar el loop, así que un
+plan mixto terminaría con `variantId` `…-q2-…` y `qualityVersion: 1`. La telemetría
+mentiría exactamente en la dimensión que esta fase existe para medir. El mismo
+descriptor alimenta `emitUnstartedJobTelemetry`, así que también afecta a las
+corridas que nunca arrancan.
+
+**Files:**
+- Modify: `netlify/functions/generate-plan-background.ts:43-47`
+- Test: `netlify/functions/__tests__/generatePlanBackground.test.ts`
+
+**Interfaces:**
+- Consumes: `resolveEffectiveRunQualityVersion` (Task 5), `resolveEffectivePlanBuilderConfig(env, qualityVersion)` (Task 7).
+
+- [ ] **Step 1: Write the failing test**
+
+Agregar a `netlify/functions/__tests__/generatePlanBackground.test.ts`:
+
+```ts
+  it('labels the variant with the run quality version, not the global constant', async () => {
+    // Semana legacy ya lista fuera de los targets: la corrida es v1 aunque la
+    // constante productiva sea 2.
+    writerBehavior.putPlan = async () => { throw new Error('supabase down') }
+
+    await invoke([
+      { ...makeWeek(), weekIndex: 0, status: 'draft', sessions: [{}], generationMeta: { attempts: 1 } },
+      { ...makeWeek(), id: 'week-1', weekIndex: 1 },
+    ])
+
+    expect(jobs).toHaveLength(1)
+    expect(jobs[0].variant.qualityVersion).toBe(1)
+    expect(jobs[0].variant.variantId).toContain('-q1-')
+  })
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `npx vitest run netlify/functions/__tests__/generatePlanBackground.test.ts`
+Expected: FAIL tras el flip — el descriptor sale con `q2` porque lee la constante global.
+
+- [ ] **Step 3: Resolve before building the descriptor**
+
+En `generate-plan-background.ts`, reemplazar el bloque que arma `effectiveConfig`:
+
+```ts
+    // La versión efectiva se resuelve ANTES del descriptor: `buildVariantId`
+    // embebe `qualityVersion`, así que resolverla después dejaría un variantId
+    // q2 sobre una corrida puntuada con v1.
+    const effectiveQualityVersion = resolveEffectiveRunQualityVersion({
+      weeks: body.weeks,
+      targetWeekIndexes: body.targetWeekIndexes,
+      productiveVersion: PRODUCTIVE_QUALITY_VERSION,
+    })
+    const effectiveConfig = resolveEffectivePlanBuilderConfig(process.env, effectiveQualityVersion)
+    const variant: PlanGenerationJobVariant = {
+      ...effectiveConfig,
+      variantId: buildVariantId(effectiveConfig),
+    }
+```
+
+Agregar los imports de `resolveEffectiveRunQualityVersion` y `PRODUCTIVE_QUALITY_VERSION` desde `../../src/services/planBuilder/qualityReview`.
+
+- [ ] **Step 4: Run tests**
+
+Run: `npx vitest run netlify/functions/__tests__/generatePlanBackground.test.ts`
+Expected: PASS. Los tests de fallback de telemetría existentes siguen verdes: el descriptor cambia de valor, no de forma.
+
+- [ ] **Step 5: Commit (owner)**
+
+```bash
+git add netlify/functions/generate-plan-background.ts netlify/functions/__tests__/generatePlanBackground.test.ts
+git commit -m "fix(plan-builder): build variant id and quality version together"
+```
+
+---
+
+### Task 9: Flip a v2
 
 **Files:**
 - Modify: `src/services/planBuilder/qualityReview.ts:687`
 - Test: `src/services/planBuilder/__tests__/productiveQualityVersion.test.ts` (ya existe)
 
-- [ ] **Step 1: Confirm the contract test guards the flip**
+- [ ] **Step 1: Rewrite the contract test, whose premise the flip changes**
 
-Run: `npx vitest run src/services/planBuilder/__tests__/productiveQualityVersion.test.ts`
-Expected: PASS con la constante todavía en 1. Leer el archivo y confirmar qué ancla exactamente antes de moverla.
+`productiveQualityVersion.test.ts` ancla hoy que una semana **sin marca** resuelva
+a `PRODUCTIVE_QUALITY_VERSION`. Con la constante en 1 eso se cumple por
+coincidencia; con la constante en 2 deja de cumplirse **y debe dejar de
+cumplirse**: una semana sin taxonomía v2 es exactamente el caso legacy que tiene
+que seguir puntuando v1.
+
+Lo que hay que anclar después del flip es otra cosa: que la versión que estampa
+una corrida nueva coincida con la que el gate resuelve **para esa corrida**.
+Reemplazar el test por:
+
+```ts
+describe('PRODUCTIVE_QUALITY_VERSION contract', () => {
+  it('keeps an unmarked legacy week on v1 regardless of the productive constant', () => {
+    const week = buildWeekForTest({ generationMeta: { attempts: 1 } })
+    expect(reviewPlanQuality(buildPlanForTest(), [week]).qualityVersion).toBe(1)
+  })
+
+  it('matches the version a fresh run resolves and stamps', () => {
+    // Plan nuevo: todas las semanas son targets, así que la corrida adopta la
+    // constante productiva y estampa esa misma versión.
+    const pending = buildWeekForTest({ status: 'pending', sessions: [], generationMeta: { attempts: 0 } })
+    expect(resolveEffectiveRunQualityVersion({
+      weeks: [pending],
+      productiveVersion: PRODUCTIVE_QUALITY_VERSION,
+    })).toBe(PRODUCTIVE_QUALITY_VERSION)
+  })
+
+  it('scores a fully v2-marked plan with the productive version', () => {
+    const week = buildWeekForTest({
+      generationMeta: { attempts: 1, repairTaxonomyVersion: 2, qualityVersion: PRODUCTIVE_QUALITY_VERSION },
+    })
+    expect(reviewPlanQuality(buildPlanForTest(), [week]).qualityVersion)
+      .toBe(PRODUCTIVE_QUALITY_VERSION)
+  })
+})
+```
+
+Este cierre es el que impide que Plan 3 mueva un solo lado: si la constante sube
+y el estampado no, el segundo test falla; si el estampado sube y la constante no,
+falla el tercero.
 
 - [ ] **Step 2: Flip the constant**
 
@@ -958,13 +1189,13 @@ Expected: verde. Un plan nuevo ahora puntúa v2 de punta a punta; un plan mixto 
 - [ ] **Step 4: Commit (owner)**
 
 ```bash
-git add src/services/planBuilder/qualityReview.ts
+git add src/services/planBuilder/qualityReview.ts src/services/planBuilder/__tests__/productiveQualityVersion.test.ts
 git commit -m "feat(plan-builder): activate quality v2 with the frozen calibration"
 ```
 
 ---
 
-### Task 9: Verificación completa y documentación
+### Task 10: Verificación completa y documentación
 
 **Files:**
 - Modify: `CLAUDE.md`, `PROJECT_REVIEW_AND_ROADMAP.md`
@@ -1002,15 +1233,15 @@ git commit -m "docs: record quality v2 activation"
 | §3.8 registro de procedencia con fingerprint sin `qualityVersion` | 1, 2 |
 | §3.9 guard: ruta, SHA-256, fingerprint con `provider`, conteos, `gitDirty` | 2 |
 | §3.9 falla si v2 está activa sin registro | 2 |
-| §3.10 `resolveEffectiveRunQualityVersion` antes del descriptor | 5, 7 |
+| §3.10 `resolveEffectiveRunQualityVersion` antes del descriptor | 5, 8 |
 | §3.10 targets efectivos espejan el skip del loop | 5 |
 | §3.10 precondición acotada a semanas puntuables y targets pendientes | 6 |
 | §3.10 escritura de `generationMeta.qualityVersion` | 7 |
-| §3.10 attempts/fallback/plan final consumen la versión efectiva | 7 |
-| §3.10 telemetría reporta la versión efectiva, no la constante | 7 |
+| §3.10 attempts, **fallback** y plan final consumen la versión efectiva | 7 |
+| §3.10 telemetría reporta la versión efectiva, no la constante | 7, 8 |
 | §3.3 contrato de semana solo-hidratada | 3 |
-| v1 intacto | 3, 9 |
-| flip | 8 |
+| v1 intacto | 3, 10 |
+| flip, con el contrato reescrito | 9 |
 
 ## Riesgos
 

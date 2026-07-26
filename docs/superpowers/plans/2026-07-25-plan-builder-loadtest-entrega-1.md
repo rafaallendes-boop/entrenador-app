@@ -45,7 +45,7 @@ en verde. No se ejecutó la corrida pagada.
 - Los tres timings de primera semana se miden desde el **mismo** `workerStartedAt`.
 - Ningún `n` hardcodeado en reporte, artefacto ni salida: siempre el conteo real de la corrida.
 - Matriz congelada: 6 escenarios × 2 planes = 12 casos; semanas por escenario 4/3/4/3/4/3 → 42 semanas objetivo.
-- Aceptación = las cuatro condiciones juntas: `attemptedPlans === 12`, `observedTargetWeeks === 42`, `completePlans >= 10`, `scorableWeeks ∈ [30, 50]`.
+- Aceptación = las cinco condiciones juntas: `attemptedPlans === 12`, `observedTargetWeeks === 42`, `completePlans >= 10`, `scorableWeeks ∈ [30, 50]`, y al menos un plan completo por escenario (escenarios derivados del manifest embebido).
 - Planes secuenciales. La concurrencia interna de semanas queda en el valor productivo.
 - ESLint solo cubre `**/*.{ts,tsx}` (`eslint.config.js:15`): los `.mjs` y el `.test.js` de este plan **no** se lintean. Solo el módulo `.ts` de la Task 1 pasa por `npm run lint`.
 - Los commits los hace el owner. Los pasos de commit se dejan listos pero no se ejecutan sin pedido explícito.
@@ -1148,7 +1148,7 @@ export function buildArtifact(input) {
 }
 
 /**
- * Las cuatro condiciones van juntas (spec §3.3). Las dos primeras existen para
+ * Las cinco condiciones van juntas (spec §3.3). Las dos primeras existen para
  * que una interrupción tras 10 planes exitosos no apruebe un control que jamás
  * intentó los doce casos del manifest: tolerar fallos del proveedor no es lo
  * mismo que tolerar una muestra sesgada por casos nunca intentados.
@@ -2189,7 +2189,7 @@ Con el artefacto aceptado, se planifica la Entrega 2: copia sanitizada a `docs/s
 | §3.3 manifest congelado 6×2 / 42 semanas | 2 |
 | §3.3 escenarios fieles al motor (sports permitidos, fases, enums, injuryNotes) | 2 |
 | §3.3 semana parcial real (startDate a mitad de semana, `weekStartDate` lunes) | 2 |
-| §3.3 cuatro condiciones de aceptación, derivadas del manifest embebido | 4 |
+| §3.3 cinco condiciones de aceptación, derivadas del manifest embebido | 4 |
 | §3.3 caveat con n real | 4, 5 |
 | §3.5 manifest embebido con perfil y wizard config (procedencia de Entrega 2) | 4 |
 | §3.4 intervalo compartido, no duplicado | 1 |

@@ -234,7 +234,7 @@ export function buildArtifact(input) {
 }
 
 /**
- * Las cuatro condiciones van juntas (spec §3.3). Las dos primeras existen para
+ * Las cinco condiciones van juntas (spec §3.3). Las dos primeras existen para
  * que una interrupción tras 10 planes exitosos no apruebe un control que jamás
  * intentó los doce casos del manifest: tolerar fallos del proveedor no es lo
  * mismo que tolerar una muestra sesgada por casos nunca intentados.

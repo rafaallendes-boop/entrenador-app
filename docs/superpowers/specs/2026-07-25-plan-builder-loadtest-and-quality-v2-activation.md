@@ -136,16 +136,23 @@ mismo**: un plan que falla o queda parcial no entra a la calibración.
 
 - **Cohorte de calibración** = planes completos y sus semanas puntuables (con contadores de
   taxonomía reales; ni pending ni error).
-- **Criterio de aceptación**, las cuatro condiciones juntas:
+- **Criterio de aceptación**, las cinco condiciones juntas:
   - `attemptedPlans === manifest.length === 12`;
   - `observedTargetWeeks === targetWeeks === 42`;
   - `completePlans >= 10`;
-  - `scorableWeeks ∈ [30, 50]`.
+  - `scorableWeeks ∈ [30, 50]`;
+  - **al menos un plan completo por escenario**, con los escenarios derivados del
+    manifest embebido y no de las filas observadas.
 
 Las dos primeras existen para que una interrupción no pueda aprobar un control que jamás
 ejecutó los doce casos del manifest (6 escenarios × 2 planes): diez planes exitosos seguidos de
-un corte pasarían el umbral de calidad sin haber cubierto la matriz. Tolerar fallos del proveedor no es lo mismo que
-tolerar una muestra sesgada por escenarios nunca intentados.
+un corte pasarían el umbral de calidad sin haber cubierto la matriz. La quinta cierra el hueco
+complementario: intentar los doce casos y perder los dos planes de un mismo escenario dejaba
+10 completos y 34-36 semanas puntuables —todo dentro de rango— con un escenario entero sin
+representar, que es justamente lo que la matriz de seis viene a evitar. Tolerar fallos del
+proveedor no es lo mismo que tolerar una muestra sesgada, ni por casos nunca intentados ni por
+escenarios que se perdieron enteros.
+
 - Percentiles, caveat y registro de procedencia usan el **n real** de la corrida. Ningún 12 ni
   42 hardcodeado en el reporte, el artefacto ni la constante de calibración.
 
@@ -234,9 +241,9 @@ allowlist es explícita, no una exclusión por lista negra: un campo nuevo del d
 poder filtrarse al artefacto por olvido.
 
 El artefacto se escribe **aunque la corrida falle a mitad**. Al final el proceso sale con
-código distinto de cero si no se cumplen las cuatro condiciones de aceptación de §3.3 —manifest
-completo intentado, semanas objetivo observadas, `completePlans >= 10` y
-`scorableWeeks ∈ [30, 50]`—, pero conserva toda la evidencia parcial.
+código distinto de cero si no se cumplen las cinco condiciones de aceptación de §3.3 —manifest
+completo intentado, semanas objetivo observadas, `completePlans >= 10`,
+`scorableWeeks ∈ [30, 50]` y cobertura por escenario—, pero conserva toda la evidencia parcial.
 
 #### 3.6 Reporte de distribuciones
 
@@ -398,7 +405,7 @@ regeneración parcial cuyas semanas no-target ya son v2 (→ v2).
 - [ ] `npm test` no ejecuta ninguna llamada real y no gana archivos omitidos por el loadtest.
 - [ ] `npm run loadtest:plan-builder` sin `LOADTEST_PLAN_BUILDER=1` falla antes de gastar tokens.
 - [ ] El driver produce artefacto con `artifactSchemaVersion`, manifest, git SHA, `gitDirty`, descriptor completo, modelos observados y `weeks[]` allowlisted.
-- [ ] El artefacto se escribe aunque la corrida falle; el exit code refleja las cuatro condiciones de aceptación (manifest completo intentado, semanas objetivo observadas, `completePlans >= 10`, `scorableWeeks ∈ [30,50]`).
+- [ ] El artefacto se escribe aunque la corrida falle; el exit code refleja las cinco condiciones de aceptación (manifest completo intentado, semanas objetivo observadas, `completePlans >= 10`, `scorableWeeks ∈ [30,50]`, al menos un plan completo por escenario).
 - [ ] Una corrida interrumpida tras 10 planes exitosos **no** aprueba: no intentó los doce casos del manifest.
 - [ ] El reporte imprime p50/p95 por plan de las cuatro métricas, en las dos cohortes y con el conteo de `null` excluidos.
 - [ ] El reporte imprime las **tres** distribuciones de reparación con su caveat, todas con el n real.
