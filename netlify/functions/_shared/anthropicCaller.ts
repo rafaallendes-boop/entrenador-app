@@ -1,6 +1,10 @@
 import type { AIRawResponse, AIRequest } from '../../../src/services/ai/types'
 import { normalizeJsonSchemaForStandardProvider } from '../../../src/services/ai/jsonSchema'
-import { resolvePlanBuilderModel } from './planBuilderRunConfig'
+import {
+  resolvePlanBuilderModel,
+  resolvePlanBuilderRequestDirectives,
+  type PlanBuilderRequestDirectives,
+} from './planBuilderRunConfig'
 
 const CLAUDE_STRUCTURED_TOOL_NAME = 'emit_structured_result'
 const DEFAULT_TIMEOUT_MS = 120_000
@@ -13,7 +17,11 @@ function isMaxTokenStopReason(stopReason: string | undefined): boolean {
     normalized.includes('max_token')
 }
 
-function buildClaudeBody(request: AIRequest, model: string): Record<string, unknown> {
+export function buildClaudeBody(
+  request: AIRequest,
+  model: string,
+  directives: PlanBuilderRequestDirectives,
+): Record<string, unknown> {
   const body: Record<string, unknown> = {
     model,
     max_tokens: request.maxTokens ?? 3500,
@@ -23,6 +31,14 @@ function buildClaudeBody(request: AIRequest, model: string): Record<string, unkn
       ...(request.conversation ?? []).map((message) => ({ role: message.role, content: message.content })),
       { role: 'user', content: request.userMessage },
     ],
+  }
+
+  // `effort` va DENTRO de output_config, no en la raíz.
+  if (directives.effort !== null) {
+    body.output_config = { effort: directives.effort }
+  }
+  if (directives.thinking !== null) {
+    body.thinking = { type: directives.thinking }
   }
 
   if (request.responseSchema) {
@@ -65,6 +81,9 @@ export async function callAnthropicForWeek(request: AIRequest, options?: {
   if (!apiKey) throw new Error('CLAUDE_API_KEY no configurada.')
 
   const model = options?.model ?? resolvePlanBuilderModel(process.env)
+  // Se resuelve una sola vez por llamada: si la config es inválida, esto lanza
+  // antes de abrir el fetch, sin gastar un request pagado.
+  const directives = resolvePlanBuilderRequestDirectives(process.env, model)
   const startedAt = Date.now()
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), options?.timeoutMs ?? DEFAULT_TIMEOUT_MS)
@@ -78,7 +97,7 @@ export async function callAnthropicForWeek(request: AIRequest, options?: {
         'anthropic-version': '2023-06-01',
       },
       signal: controller.signal,
-      body: JSON.stringify(buildClaudeBody(request, model)),
+      body: JSON.stringify(buildClaudeBody(request, model, directives)),
     })
     const data = await fetchJsonOrThrow(response) as {
       content?: Array<{ type?: string; text?: string; input?: unknown }>

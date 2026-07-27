@@ -1,118 +1,208 @@
-# Optimización de Timeouts y Estimado de Costos
+# Costos y latencia de la IA
 
-**Fecha**: 24 de abril de 2026
+**Actualizado**: 26 de julio de 2026
+**Reemplaza** la versión del 24 de abril de 2026, que proyectaba costos de la era
+Gemini y subestimaba el Plan Builder en cerca de un orden de magnitud.
 
-## Cambios realizados
-
-### 1. **Timeouts reajustados a límites reales de Netlify**
-
-Antes (irrealista):
-```
-chat_general: 15s
-chat_action: 25s
-weekly_summary: 20s
-plan_builder_week: 30s ❌ (>26s máx)
-plan_builder_pair: 45s ❌ (>26s máx)
-```
-
-Después (realista, respetando 26s máx):
-```
-chat_general: 15s
-chat_action: 18s
-weekly_summary: 18s
-week_creator: 18s
-plan_builder_week: 18s ✅
-plan_builder_pair: 23s ✅
-import_extract: 18s
-MAX_FUNCTION_WALLCLOCK: 24s (2s buffer antes del corte real 26s de Netlify Pro)
-MIN_PROVIDER_ATTEMPT: 4s
-```
-
-**Ventajas:**
-- ✅ Plan builder ahora tiene timeouts realistas
-- ✅ Más tiempo para reintentos técnicos
-- ✅ Menos "gateway timeouts" en producción
-
-### 2. **Limitar output tokens por tipo de solicitud**
-
-- Chat/resúmenes/import: caps bajos para respuestas concisas
-- Plan Builder week/pair: caps controlados en 3500/4200 tokens
-- Razón: Tokens grandes → respuestas más lentas → timeouts
-- Impacto: Respuestas más concisas (~1200 tokens típicos) = más rápidas
-
-### 3. **Gemini thinking budget explícito**
-
-- Plan Builder: `thinkingBudget: 1024`
-- Chat action / Week Creator: `thinkingBudget: 256`
-- Chat general / weekly summary / import: `thinkingBudget: 0`
-
-Esto evita que Gemini 2.5 Flash use razonamiento dinámico sin límite explícito en beta privada.
-
-**Revisión 2026-05-28:** Netlify Pro corta funciones síncronas a 26s. El proxy baja su wallclock a 24s para dejar margen de serialización, y los timeouts cliente/proxy quedan por debajo de ese techo para que el recovery de Plan Builder ocurra en app y no como 504 de plataforma.
-
-**Nota:** Esto es suficiente para:
-- Ajustes de sesión
-- Propuestas de entrenamientos
-- Análisis de carga
+> **Regla de este documento:** solo entra lo **medido** o lo **verificado en el
+> código**. Las estimaciones van marcadas como tales y con su aritmética a la
+> vista. Si una cifra no se puede sostener, se dice que no se midió.
 
 ---
 
-## Estimado de Costos Mensuales - Gemini Flash
+## 1. Qué está medido y qué no
 
-### Precios Gemini 2.5 Flash (modelo actual)
-- **Input**: $0.075 por 1M tokens
-- **Output**: $0.3 por 1M tokens
-- [Pricing: https://ai.google.dev/pricing](https://ai.google.dev/pricing)
+| Camino | Instrumentación | Estado |
+|---|---|---|
+| **Plan Builder async** | `plan_generation_jobs` + `plan_generation_attempts` (`016`), con tokens y `estimated_cost_usd` fechado (`pricing.ts`) | **Medido en producción** (2026-07-26) |
+| **Week Creator** | Loadtest propio (`scripts/loadtest-week-creator.mjs`) | Medido en su momento; no hay telemetría continua |
+| **Chat general / chat action** | Ninguna instrumentación de latencia ni costo | **Sin medir** — es el punto 6 del backlog, y su orden es deliberado: medir antes de optimizar |
+| **Resumen semanal / import** | Ninguna | Sin medir |
 
-### Uso estimado (usuario típico como Rafael)
+No se proyecta un costo mensual total de la app mientras el chat siga sin
+instrumentar. Es la parte de mayor volumen (80 requests/día de tope) y cualquier
+número saldría de una suposición, no de una medición.
 
-| Tipo de solicitud | Frecuencia/mes | Entrada (tokens) | Salida (tokens) | Costo |
+---
+
+## 2. Plan Builder — configuración real
+
+Verificado en código (2026-07-26):
+
+| Parámetro | Valor | Fuente |
+|---|---|---|
+| Proveedor | Anthropic (directo, no vía `coach.ts`) | `netlify/functions/_shared/anthropicCaller.ts` |
+| Modelo | `claude-sonnet-4-6` | `planBuilderRunConfig.ts` (`CLAUDE_MODEL_PLAN_BUILDER_WEEK` lo puede sobrescribir) |
+| `temperature` | `0.25` | `DEFAULT_TEMPERATURE` (`asyncGenerationLoop.ts:155`) |
+| `max_tokens` | `5000`; reintento por truncamiento a `12000` | `DEFAULT_MAX_TOKENS`, `TRUNCATED_RETRY_MAX_TOKENS` |
+| `output_config.effort` | **no se envía** → Sonnet 4.6 lo toma como `high` | `buildClaudeBody()` |
+| `thinking` | **no se envía** → en Sonnet 4.6 eso significa apagado | `buildClaudeBody()` |
+| `cache_control` | **no se envía** → cero prompt caching (`cache_reads = 0`) | `buildClaudeBody()` |
+| Concurrencia | 3 workers sobre cola compartida | `DEFAULT_CONCURRENCY` |
+| Intentos por semana | 2 | `MAX_WEEK_ATTEMPTS` |
+| Presupuesto del worker | 13 min | `DEFAULT_WORKER_BUDGET_MS` |
+| Límite diario cliente | 12 semanas/día | `DEFAULT_DAILY_AI_LIMITS.plan_builder_week` |
+
+Que `effort` no se envíe **no es neutro**: Anthropic documenta el default `high`
+como trampa de migración precisamente por su costo en latencia y tokens. Es la
+primera palanca de la fase de velocidad.
+
+## 3. Precios vigentes (por 1M de tokens)
+
+De la tabla oficial de Anthropic, contrastada con `src/services/planBuilder/pricing.ts`:
+
+| Modelo | Input | Output | Cache read | Cache write |
 |---|---|---|---|---|
-| Chat general (día) | 240 (10/día × 24 días) | 800 | 300 | $0.027 |
-| Chat action (día) | 60 (2-3/día × 24 días) | 3000 | 800 | $0.030 |
-| Weekly summary | 5 | 4000 | 1000 | $0.002 |
-| Plan builder (2x/mes) | 2 | 8000 | 1500 | $0.0015 |
-| Import PDF | 2 | 6000 | 2000 | $0.002 |
-| **TOTAL** | | | | **$0.062/mes** |
+| **Sonnet 4.6** (actual) | $3,00 | $15,00 | $0,30 | $3,75 |
+| Sonnet 5 | $3,00 (intro **$2,00** hasta 2026-08-31) | $15,00 (intro **$10,00**) | — | — |
 
-### Proyección conservadora (uso moderado)
-- **Bajo**: $0.05/mes (usuario ocasional)
-- **Medio**: $0.15/mes (usuario diario, como Rafael)
-- **Alto**: $0.40/mes (power user con muchos imports)
+Dos advertencias sobre Sonnet 5, ya registradas en el handoff de latencia:
 
-### Comparativa con otros modelos
+1. El precio de lista es **idéntico** al de 4.6. El intro vence el **31-08-2026**.
+2. Sonnet 5 usa un tokenizer nuevo que produce **~30% más tokens** para el mismo
+   texto. Después del intro, el mismo trabajo cuesta **~30% más** que en 4.6.
+   Migrar por ahorro no se sostiene; migrar por calidad o por la frontera
+   calidad/latencia, sí.
 
-| Modelo | Velocidad | Costo/1M tokens entrada | Costo estimado/mes |
+`pricing.ts` está fechado a propósito: sin fecha, cualquier costo calculado
+después del 31-08-2026 quedaría mal.
+
+## 4. Costo medido del Plan Builder
+
+Smoke de producción del 2026-07-26
+(`docs/superpowers/smokes/2026-07-25-quality-v2-production-smoke.md`), una
+corrida real verificada en `plan_generation_jobs`:
+
+| Métrica | Valor |
+|---|---|
+| Semanas generadas | 4 / 4 |
+| `estimated_cost_usd` | **0,115128** |
+| Costo por semana | **≈ $0,029** |
+| `variant_id` | `s46-q2-00ftsagu` |
+| `quality_version` | 2 |
+
+**Proyección** (aritmética explícita, no medición):
+
+| Escenario | Semanas/mes | Costo/mes |
+|---|---|---|
+| Un plan de 4 semanas | 4 | ≈ $0,12 |
+| Dos planes de 8 semanas | 16 | ≈ $0,46 |
+| Tope del rate limit sostenido (12/día × 30) | 360 | ≈ **$10,44** |
+
+El tope importa para fijar el precio del piloto: un usuario que use el límite
+completo todos los días cuesta ~$10/mes **solo en Plan Builder**, sin contar
+chat. La versión anterior de este documento proyectaba **$0,15/mes para toda la
+app** — de ahí el orden de magnitud de diferencia.
+
+Para una corrida completa del loadtest (12 planes / 42 semanas) **la telemetría
+estimó US$0,92** a partir del uso observado — no extrapolado desde producción:
+es el `estimated_cost_usd` del propio artefacto de control. Como todo en esta
+sección, es una estimación derivada de tokens y tabla de precios, **no
+facturación observada**. Eso da **≈$0,022 por semana**, por debajo de los $0,029
+de producción. La brecha no está explicada; las hipótesis razonables son que los
+planes sintéticos del manifest son más baratos que el caso real, o que la
+corrida de producción incluyó reintentos. **No mezclar las dos cifras**: para
+presupuestar una ventana experimental vale $0,92 por corrida; para proyectar
+costo por usuario vale $0,029 por semana.
+
+Que una ventana experimental completa cueste menos de un dólar es lo que hace
+que medir variantes en el loadtest salga barato frente a quemar el rate limit
+del owner.
+
+## 5. Latencia medida del Plan Builder
+
+Línea base de producción (misma corrida del 2026-07-26):
+
+| Métrica | Valor |
+|---|---|
+| Hasta la primera semana visible | **24,2 s** |
+| Plan completo (4 semanas) | **43,9 s** |
+| Concurrencia | 3 |
+
+El control congelado del loadtest —12 planes / 42 semanas, SHA-256
+`6c45885a870cf7e019906a0b4d786e828b2653fe1643f95d436be3aa0ee94d7a`— **permanece
+como procedencia de la calibración de `quality_version = 2`**, y no como
+comparator de variantes: se generó con `quality_version = 1`, y las
+penalizaciones de reparación de v1 y v2 no ponen `planScore` en la misma escala.
+La Fase 2 de velocidad corre su **propio control q2 contemporáneo**
+(`docs/superpowers/specs/2026-07-26-plan-builder-speed-phase-2-design.md`).
+
+**`max_tokens` no es un driver de latencia** en Anthropic: es un techo, no un
+objetivo. Bajar el cap de 5.000 (máximo observado ~1.506) es higiene de
+guardrail, no una optimización de velocidad.
+
+## 6. Prompt caching: por qué todavía no aplica
+
+`buildClaudeBody()` no manda `cache_control`, y `cache_reads = 0` lo confirma. El
+orden de render es `tools` → `system` → `messages`, así que el prefijo estable
+entre las N semanas de un plan es `tools` + `system`. El problema es el tamaño:
+
+- Mínimo cacheable en Sonnet 4.6 **y** en Sonnet 5: **1.024 tokens**.
+- El prefijo reutilizable real (tool schema + system prompt) mide ~1.923
+  caracteres ≈ **~480 tokens**: aproximadamente **2× por debajo del umbral**. Hoy
+  no cachearía aunque se marcara.
+- Con concurrencia 3, las tres primeras solicitudes salen en paralelo y una
+  entrada de caché solo queda legible cuando la primera respuesta **empieza a
+  emitirse**. Sin prewarming, esas tres semanas pagarían precio completo igual.
+
+Conclusión: caching es una optimización de **costo posterior**, condicionada a
+(a) medir el prefijo real con Token Counting contra el modelo destino —no por
+caracteres/4—, (b) separar contexto estable del contenido variable de la semana,
+(c) resolver prewarming vs concurrencia, y (d) confirmar
+`cache_read_input_tokens > 0`. No es una ventana automática.
+
+## 7. Timeouts (verificado en código)
+
+Netlify Pro corta funciones síncronas a 26 s. El proxy baja su wallclock a 24 s
+para dejar margen de serialización.
+
+| Constante | Valor | Fuente |
+|---|---|---|
+| `MAX_FUNCTION_WALLCLOCK_MS` | 24.000 | `netlify/functions/coach.ts:196` |
+| `MIN_PROVIDER_ATTEMPT_MS` | 4.000 | `netlify/functions/coach.ts:197` |
+
+Timeouts y caps por clase de request (`src/services/ai/requestPolicy.ts`):
+
+| Clase | `timeoutMs` | `maxTokens` | `temperature` |
 |---|---|---|---|
-| **Gemini 2.5 Flash** ← actual | Rápido | $0.075 | **$0.15** |
-| Gemini 2.0 | Más rápido | $0.10 | $0.20 |
-| OpenAI GPT-4o mini | Similar | $0.15 | $0.25 |
-| Claude 3.5 Sonnet | Lento | $3/1M | $3.00+ |
+| `chat_general` | 15.000 | 2.400 | 0,55 |
+| `chat_action` | 18.000 | 4.200 | 0,45 |
+| `weekly_summary` | 18.000 | 1.600 | 0,25 |
+| `week_creator` | 23.000 | 2.500 (4.000 en contrato `detailed`) | 0,40 |
+| `plan_builder_week` | 22.000 | 3.500 | 0,35 |
+| `plan_builder_pair` | 23.000 | 4.200 | 0,35 |
+| `import_extract` | 18.000 | 2.000 | 0,10 |
 
----
+> **Ojo con la doble fuente.** El Plan Builder **async** no pasa por
+> `requestPolicy.ts`: llama a `callAnthropicForWeek` directamente con
+> `DEFAULT_MAX_TOKENS = 5000` y `temperature 0.25`. Las filas
+> `plan_builder_week` / `plan_builder_pair` de arriba aplican al camino síncrono
+> vía `coach.ts`. No unificar las dos sin revisar ambos consumidores.
 
-## Recomendación
+El cap de `week_creator` en contrato `detailed` (4.000) existe porque el cap
+original de 2.500 se dimensionó midiendo solo el contrato esqueleto y truncaba
+(`finishReason=length`) en las cohortes médicas.
 
-**Mantén Gemini Flash por ahora.** Razones:
+## 8. Proveedores por clase de request
 
-1. ✅ **Gratuito hasta cierto punto** (~1M tokens/mes gratis con programa)
-2. ✅ **Costo real: ~$0-0.20/mes**
-3. ✅ **Velocidad adecuada** con timeouts reajustados
-4. ✅ **Ya está probado** en producción
+`resolvePrimaryProvider()` (`netlify/functions/coach.ts:527`) resuelve el
+proveedor por env var, con fallback en cascada:
+`AI_PROVIDER_<CLASE>` → `AI_PROVIDER` → `'gemini'` como default del código.
 
-**Próximos pasos si sigues viendo timeouts:**
-1. Revisa logs de Firebase (ver qué requests duran más)
-2. Considera caché client-side de propuestas
-3. Si persisten: prueba Gemini 2.0 (gratis, más rápido)
-4. Last resort: GPT-4o mini (~$0.25/mes, muy estable)
+**El default del código no es lo que corre en producción.** Los valores
+efectivos viven en las env vars de Netlify y hay que confirmarlos con el owner
+antes de calcular cualquier costo de chat. Lo único verificado es que el **Plan
+Builder async no usa este camino**: va directo a Anthropic.
 
----
+Pendiente operativo: documentar acá los `AI_PROVIDER_*` reales de producción.
+Sin eso, el costo del chat no es calculable.
 
-## Monitoreo
+## 9. Qué hacer con este documento
 
-Para ver los timeouts reales:
-1. Abre browser DevTools (F12)
-2. Mira Network → Coach endpoint
-3. Busca requests con status 504 o duration > 20s
-
-Crea un issue si ves un patrón consistente.
+- Actualizarlo cuando cambie `pricing.ts`, cuando venza el intro de Sonnet 5
+  (31-08-2026), o cuando una fase de velocidad mueva `effort`, `thinking`,
+  modelo o concurrencia.
+- **Antes de fijar el precio del piloto**, mirar la sección 4: el tope de
+  ~$10/mes por usuario en Plan Builder es el número que importa, no el promedio.
+- Cuando el chat se instrumente (backlog 6), agregar su sección medida acá y
+  recién entonces proyectar un costo mensual de la app completa.

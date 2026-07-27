@@ -4,8 +4,11 @@
  *
  *   npm run loadtest:plan-builder                       # corrida pagada
  *   npm run loadtest:plan-builder -- --report <ruta>    # solo lee un artefacto
+ *   npm run loadtest:plan-builder -- --phase2-check <ruta> <effort>
+ *   npm run loadtest:plan-builder -- --compare <control> <variante>
  *
- * El modo `--report` es puro: no llama al proveedor ni exige credenciales.
+ * Los tres modos de lectura son puros: no llaman al proveedor ni exigen
+ * credenciales.
  */
 import { execFileSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
@@ -34,13 +37,25 @@ import {
   renderReport,
 } from './loadtest-plan-builder/report.mjs'
 import {
+  buildComparison,
+  renderComparison,
+} from './loadtest-plan-builder/compare.mjs'
+import {
+  PHASE2_EXPECTED,
+  evaluatePhase2ComparisonEligibility,
+  evaluatePhase2Decision,
+  evaluatePhase2Variant,
+  renderPhase2Eligibility,
+} from './loadtest-plan-builder/phase2Gate.mjs'
+import {
   createDetectionPoller,
   createMemoryWriter,
   instrumentCallLLM,
   loadRuntime,
 } from './loadtest-plan-builder/runtime.mjs'
 
-const USAGE = 'Uso: loadtest-plan-builder.mjs | loadtest-plan-builder.mjs --report <ruta-al-artefacto>'
+const USAGE = 'Uso: loadtest-plan-builder.mjs | loadtest-plan-builder.mjs --report <ruta-al-artefacto> | loadtest-plan-builder.mjs --phase2-check <artefacto> <high|medium|low> | loadtest-plan-builder.mjs --compare <control> <variante>'
+const PHASE2_EFFORTS = new Set(['high', 'medium', 'low'])
 const KNOWN_ERROR_CLASSES = new Set([
   'AbortError',
   'EAI_AGAIN',
@@ -78,6 +93,35 @@ export function parseArgs(argv) {
     && argv[1].trim().length > 0
   ) {
     return { mode: 'report', artifactPath: argv[1] }
+  }
+  if (
+    Array.isArray(argv)
+    && argv.length === 3
+    && argv[0] === '--compare'
+    && typeof argv[1] === 'string'
+    && argv[1].trim().length > 0
+    && typeof argv[2] === 'string'
+    && argv[2].trim().length > 0
+  ) {
+    return {
+      mode: 'compare',
+      controlPath: argv[1],
+      variantPath: argv[2],
+    }
+  }
+  if (
+    Array.isArray(argv)
+    && argv.length === 3
+    && argv[0] === '--phase2-check'
+    && typeof argv[1] === 'string'
+    && argv[1].trim().length > 0
+    && PHASE2_EFFORTS.has(argv[2])
+  ) {
+    return {
+      mode: 'phase2-check',
+      artifactPath: argv[1],
+      expectedEffort: argv[2],
+    }
   }
   throw new Error(USAGE)
 }
@@ -507,6 +551,41 @@ async function main() {
   if (args.mode === 'report') {
     const artifact = JSON.parse(await readFile(args.artifactPath, 'utf8'))
     console.log(renderReport(buildReport(artifact)))
+    return 0
+  }
+
+  if (args.mode === 'phase2-check') {
+    const artifact = JSON.parse(await readFile(args.artifactPath, 'utf8'))
+    const eligibility = evaluatePhase2Variant(artifact, {
+      ...PHASE2_EXPECTED,
+      efforts: [args.expectedEffort],
+    })
+    console.log(renderPhase2Eligibility(artifact, eligibility, args.expectedEffort))
+    return eligibility.eligible ? 0 : 1
+  }
+
+  // Igual que --report, esta rama es pura y ocurre antes de cualquier guard o
+  // carga del runtime pagado.
+  if (args.mode === 'compare') {
+    const [controlArtifact, variantArtifact] = await Promise.all([
+      readFile(args.controlPath, 'utf8').then((raw) => JSON.parse(raw)),
+      readFile(args.variantPath, 'utf8').then((raw) => JSON.parse(raw)),
+    ])
+    const comparison = buildComparison(controlArtifact, variantArtifact)
+    const eligibility = evaluatePhase2ComparisonEligibility(
+      controlArtifact,
+      variantArtifact,
+      comparison,
+    )
+    const decision = evaluatePhase2Decision(comparison)
+    console.log(renderComparison(
+      controlArtifact,
+      variantArtifact,
+      comparison,
+      eligibility,
+      decision,
+    ))
+    // Un rechazo experimental es un resultado evaluable, no un fallo del CLI.
     return 0
   }
 

@@ -1,8 +1,13 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AIRequest } from '../../../src/services/ai/types'
 import { callAnthropicForWeek } from './anthropicCaller'
 
 const originalFetch = globalThis.fetch
+
+beforeEach(() => {
+  delete process.env['PLAN_BUILDER_EFFORT']
+  delete process.env['PLAN_BUILDER_THINKING']
+})
 
 function makeRequest(): AIRequest {
   return {
@@ -20,6 +25,8 @@ afterEach(() => {
   delete process.env['CLAUDE_API_KEY']
   delete process.env['CLAUDE_MODEL']
   delete process.env['CLAUDE_MODEL_PLAN_BUILDER_WEEK']
+  delete process.env['PLAN_BUILDER_EFFORT']
+  delete process.env['PLAN_BUILDER_THINKING']
   vi.restoreAllMocks()
 })
 
@@ -78,5 +85,43 @@ describe('callAnthropicForWeek', () => {
       finishReason: 'end_turn',
     })
     expect(result.raw).toBeUndefined()
+  })
+
+  it('validates and sends directives against options.model, not the env model', async () => {
+    process.env['CLAUDE_API_KEY'] = 'test-key'
+    process.env['CLAUDE_MODEL_PLAN_BUILDER_WEEK'] = 'claude-haiku-4-5'
+    process.env['PLAN_BUILDER_EFFORT'] = 'medium'
+    const fetchMock = vi.fn(async (_input: string | URL, _init?: RequestInit) => {
+      void _input
+      void _init
+      return new Response(JSON.stringify({
+        content: [{ type: 'text', text: '{"type":"create_week","sessions":[]}' }],
+        model: 'claude-sonnet-4-6',
+        stop_reason: 'end_turn',
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    })
+    globalThis.fetch = fetchMock as typeof fetch
+
+    await callAnthropicForWeek(makeRequest(), { model: 'claude-sonnet-4-6' })
+
+    const init = fetchMock.mock.calls[0]?.[1]
+    if (!init?.body) throw new Error('Expected Anthropic fetch body')
+    expect(JSON.parse(init.body as string)).toMatchObject({
+      model: 'claude-sonnet-4-6',
+      output_config: { effort: 'medium' },
+    })
+  })
+
+  it('rejects invalid directives before opening a paid request', async () => {
+    process.env['CLAUDE_API_KEY'] = 'test-key'
+    process.env['PLAN_BUILDER_EFFORT'] = 'mediun'
+    const fetchMock = vi.fn()
+    globalThis.fetch = fetchMock as typeof fetch
+
+    await expect(callAnthropicForWeek(makeRequest())).rejects.toThrow(/PLAN_BUILDER_EFFORT/)
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 })

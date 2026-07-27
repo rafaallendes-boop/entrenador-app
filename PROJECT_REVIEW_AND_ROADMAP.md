@@ -11,6 +11,7 @@ Base de contraste:
 - **Coach Biblioteca + Planificacion completa desplegadas (2026-07-18/19):** edicion de sesiones, Biblioteca de plantillas account-scoped, aplicar/guardar plantillas para cualquier atleta/dia, Dexie v18, backup v4 y sync Supabase por fila con LWW/delete-wins y tombstones versionados. `015_session_templates.sql` fue aplicada y el bundle desplegado; falta el smoke autenticado en produccion.
 - **Hardening de fechas y semanas (2026-07-19):** conteos de semanas, ventanas de Plan Builder, insights de fatiga y filtros semanales usan dias calendario en vez de milisegundos para no fallar al cruzar DST. Se agrego serializacion JSON canonica para comparar estructuras sin reescrituras redundantes.
 - **Fase 0 de medicion del Plan Builder cerrada, incluidos sus pendientes operativos (2026-07-25/26):** control aceptado y versionado con SHA-256 `6c45885a870cf7e019906a0b4d786e828b2653fe1643f95d436be3aa0ee94d7a`; calibracion congelada, `quality_version = 2` productiva, bundle desplegado y smoke de produccion ejecutado el 2026-07-26 con una corrida real verificada en `plan_generation_jobs`.
+- **Conversaciones del chat implementadas (2026-07-26):** drawer para ver, retomar, buscar y borrar conversaciones, con rotacion por dia calendario y continuidad explicita al retomar un hilo viejo. El indice se deriva de `chatMessages` con scope estricto por atleta, **sin migracion Dexie ni Supabase ni bump de backup**. Verificado localmente (lint + 305 archivos / 2252 tests + build); **pendiente smoke en dev, commit y deploy** (`docs/superpowers/smokes/2026-07-26-chat-conversations-dev-smoke.md`).
 - **Fase 0 de coaches landing completada (2026-07-13):** rutas públicas reales (no AuthGate fallbacks), las cuatro páginas legales publicadas como rutas (`/terms`, `/privacy`, `/health-disclaimer`, y disclamer Whoop), landing `/coaches` en modo prelanzamiento con estructura de 3 planes, metadata/OG cards por ruta con prerender para crawlers, deep links nativos para OAuth callback en iOS, y cierre de compartimiento entre rutas públicas. Falta aún revisión jurídica y RUT/domicilio legal antes de cobro o anuncios masivos.
 - `main` hasta `167ef6e Plan whoop y entrenador`.
 - `007` aplicado y F2 data prereqs en `6e33926`.
@@ -268,6 +269,31 @@ Alcance parcial, deliberado y documentado: las **regeneraciones parciales** (Cas
 
 Deuda menor detectada: `OPTIMIZATION_AND_COSTS.md` proyecta costos de la era Gemini y subestima el costo real del Plan Builder en aproximadamente un orden de magnitud. Corregirlo antes de fijar el precio del piloto.
 
+### 16. Conversaciones del chat (2026-07-26)
+
+Primer item del backlog de producto abierto el 2026-07-26, cerrado el mismo dia.
+Cierra el agujero de usabilidad mas visible del chat: hasta ahora cada "Nuevo"
+dejaba la conversacion anterior inalcanzable, aunque los datos ya estuvieran ahi.
+
+- **Sin migraciones.** Dexie sigue en **v18**, no hay SQL nuevo y el backup no sube de version: el indice de conversaciones se **deriva** de `chatMessages`, que ya guardaba `chatSessionId`, ya sincroniza y ya entra al backup.
+- **Drawer** (`ConversationDrawer.tsx`): lista agrupada por dia (Hoy / Ayer / fecha), titulo derivado del primer mensaje significativo del usuario —recortando saludos aislados—, busqueda con debounce insensible a mayusculas y tildes, snippet resaltado, y borrado en dos toques.
+- **Rotacion por dia calendario** (`dailyRotation.ts`, `isSameDay`, no ventanas de 24 h), aplicada en los dos puntos de integracion: al entrar al chat (`loadHistory`) y antes de enviar (`sendMessage`). Continua el precedente del hardening de fechas del 2026-07-19: una ventana fija de milisegundos se equivoca al cruzar DST.
+- **Continuidad explicita** (`rotationSuspended`): retomar un hilo viejo es una decision del usuario y gana sobre la rotacion; entrar al chat de cero la resetea.
+- **Scope estricto por atleta:** toda lectura pasa por `isRowInActiveScope`, el borrado se hace por ids derivados y scope-filtrados —nunca por `chatSessionId`, que no es frontera de seguridad—, y `resetForAthleteSwitch` limpia el indice. Prohibido agrupar con `orderBy('chatSessionId').uniqueKeys()`: devolveria ids de todos los atletas.
+- **Un solo camino de hidratacion** (`loadSession` con propiedad de token y commit sincrono) para `loadHistory`, `openConversation` y la adopcion de hilo del mismo dia; la reparacion de propuestas huerfanas salio del store a `orphanProposalRepair.ts`.
+- **Scroll al match:** abrir un resultado de busqueda lleva al mensaje que coincidio, no al final del hilo.
+
+Complejidad conocida y aceptada: la derivacion recorre **todos** los mensajes de
+la cuenta porque Dexie v18 no tiene indice compuesto `[athleteId+timestamp]`. Es
+O(mensajes totales) en tiempo y O(1) de memoria por conversacion via `each()`.
+Se mantiene asi hasta que el volumen real justifique medir y recien despues
+migrar.
+
+Estado: **implementado y verificado localmente — `npm run lint`, `npm test`
+(305 archivos / 2252 tests) y `npm run build` verdes.** Pendiente: smoke en dev
+(checklist en `docs/superpowers/smokes/2026-07-26-chat-conversations-dev-smoke.md`),
+commit y deploy.
+
 ## Avances Ya Implementados
 
 ### Producto Publico Y Marca
@@ -341,6 +367,7 @@ Deuda menor detectada: `OPTIMIZATION_AND_COSTS.md` proyecta costos de la era Gem
 
 Cierres tecnicos recientes:
 
+- Conversaciones del chat (2026-07-26): `npm run lint`, `npm test` (305 archivos / 2252 tests) y `npm run build` verdes. Sin migraciones. Falta el smoke en dev.
 - Plan Builder quality v2: `npm test` verde (298 archivos / 2162 tests); Fase 0 de medicion cerrada contra el control `6c45885a`.
 - Core athlete-aware / Coach F2-lite: `npm run lint`, `git diff --check`, `npm test` (139 archivos / 990 tests) y `npm run build` OK.
 - Whoop v1 review: lint + 1160 tests + build + typecheck OK.
@@ -791,7 +818,8 @@ dificultad.
    mensaje encontrado y rotacion por dia calendario. El indice se deriva de los
    mensajes existentes con scope estricto por atleta. **Sin migracion Dexie ni
    Supabase ni bump de backup.** Spec:
-   `docs/superpowers/specs/2026-07-26-chat-conversations-design.md`.
+   `docs/superpowers/specs/2026-07-26-chat-conversations-design.md`. Detalle en
+   §16. **Pendiente: smoke en dev, commit y deploy.**
 2. **Plan Builder — velocidad.** Fases 2-4 que la Fase 0 habilito: `effort` /
    `thinking`, modelo, concurrencia y prompt caching (esto ultimo solo despues de
    medir el prefijo real con Token Counting). Es el trabajo **mejor preparado**

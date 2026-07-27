@@ -17,6 +17,12 @@ import {
   summarizeLatency,
 } from './loadtest-plan-builder/stats.mjs'
 import {
+  buildComparison,
+  pairPlans,
+  pairWeeks,
+  renderComparison,
+} from './loadtest-plan-builder/compare.mjs'
+import {
   ARTIFACT_SCHEMA_VERSION,
   buildArtifact,
   evaluateAcceptance,
@@ -81,6 +87,54 @@ function artifactFrom(plans) {
     variant: { provider: 'claude', model: 'm', qualityVersion: 1, variantId: 'v' },
     git: { sha: 'abc', dirty: false },
   })
+}
+
+function artifactWith(plans) {
+  return { artifactSchemaVersion: 1, plans }
+}
+
+function planWith(caseId, scenarioKey, weeks) {
+  return { caseId, scenarioKey, weeks }
+}
+
+// `isCompletePlan` exige, vía `isReadyWeekRow`, que `sessionCount` sea un
+// número finito > 0, y vía `inspectWeekIndexes` que los índices sean
+// exactamente 0..weekCount-1. Sin `sessionCount` el plan no cuenta como
+// completo y los tests fallarían por la razón equivocada.
+function completePlan(caseId, scenarioKey, over = {}) {
+  const weeks = (over.weeks ?? [0, 1]).map((weekIndex) => ({
+    weekIndex,
+    status: 'draft',
+    scorable: true,
+    sessionCount: 4,
+    repairTaxonomyVersion: 2,
+    countRepairsV2: 0,
+    correctiveActionCount: 0,
+    structuralActionCount: 0,
+    ...(over.weekOverrides ?? {}),
+  }))
+  return {
+    caseId,
+    scenarioKey,
+    outcome: 'succeeded',
+    weekCount: weeks.length,
+    weekCountSucceeded: weeks.length,
+    weekCountFailed: 0,
+    firstWeekReadyMs: over.firstWeekReadyMs ?? 1000,
+    firstWeekReadyE2eMs: over.firstWeekReadyE2eMs ?? 1200,
+    planCompleteMs: over.planCompleteMs ?? 2000,
+    planScore: over.planScore ?? 90,
+    planGrade: over.planGrade ?? 'good',
+    issueCodes: over.issueCodes ?? [],
+    totalInputTokens: over.totalInputTokens ?? 1000,
+    totalOutputTokens: over.totalOutputTokens ?? 500,
+    estimatedCostUsd: over.estimatedCostUsd ?? 0.05,
+    retryCount: over.retryCount ?? 0,
+    observedModels: over.observedModels ?? ['claude-sonnet-4-6'],
+    fallbackUsed: over.fallbackUsed ?? false,
+    errorClass: over.errorClass ?? null,
+    weeks,
+  }
 }
 
 describe('loadtest manifest', () => {
@@ -294,6 +348,231 @@ describe('loadtest stats', () => {
     expect(summary.p90).toBe(5)
     expect(summary.p99).toBe(5)
     expect(summary.histogram).toEqual({ 0: 2, 1: 1, 2: 1, 5: 1 })
+  })
+})
+
+describe('pairPlans', () => {
+  it('pairs by caseId regardless of array order', () => {
+    const control = artifactWith([planWith('c2', 's2', []), planWith('c1', 's1', [])])
+    const variant = artifactWith([planWith('c1', 's1', []), planWith('c2', 's2', [])])
+
+    const { pairs, onlyControl, onlyVariant } = pairPlans(control, variant)
+
+    expect(pairs.map((pair) => pair.caseId)).toEqual(['c1', 'c2'])
+    expect(onlyControl).toEqual([])
+    expect(onlyVariant).toEqual([])
+  })
+
+  it('reports caseIds present on only one side instead of dropping them', () => {
+    const control = artifactWith([planWith('c1', 's1', []), planWith('c2', 's2', [])])
+    const variant = artifactWith([planWith('c1', 's1', []), planWith('c3', 's3', [])])
+
+    const { pairs, onlyControl, onlyVariant } = pairPlans(control, variant)
+
+    expect(pairs.map((pair) => pair.caseId)).toEqual(['c1'])
+    expect(onlyControl).toEqual(['c2'])
+    expect(onlyVariant).toEqual(['c3'])
+  })
+
+  it('reports duplicate caseIds instead of silently overwriting one plan', () => {
+    const control = artifactWith([
+      planWith('c1', 's1', []),
+      planWith('c1', 's1', []),
+    ])
+    const variant = artifactWith([planWith('c1', 's1', [])])
+
+    const result = pairPlans(control, variant)
+
+    expect(result.pairs).toEqual([])
+    expect(result.duplicateControl).toEqual(['c1'])
+    expect(result.duplicateVariant).toEqual([])
+  })
+})
+
+describe('pairWeeks', () => {
+  it('pairs by (caseId, weekIndex), never by position', () => {
+    const control = artifactWith([planWith('c1', 's1', [
+      { weekIndex: 1, countRepairsV2: 3 },
+      { weekIndex: 0, countRepairsV2: 1 },
+    ])])
+    const variant = artifactWith([planWith('c1', 's1', [
+      { weekIndex: 0, countRepairsV2: 2 },
+      { weekIndex: 1, countRepairsV2: 4 },
+    ])])
+
+    const { pairs } = pairWeeks(control, variant)
+
+    expect(pairs).toHaveLength(2)
+    const first = pairs.find((pair) => pair.weekIndex === 0)
+    expect(first.control.countRepairsV2).toBe(1)
+    expect(first.variant.countRepairsV2).toBe(2)
+  })
+
+  // Aparear una semana contra su vecina inventaría un delta que no existe.
+  it('reports a week with no counterpart instead of pairing it with a neighbour', () => {
+    const control = artifactWith([planWith('c1', 's1', [{ weekIndex: 0 }, { weekIndex: 1 }])])
+    const variant = artifactWith([planWith('c1', 's1', [{ weekIndex: 0 }])])
+
+    const { pairs, unmatched } = pairWeeks(control, variant)
+
+    expect(pairs).toHaveLength(1)
+    expect(unmatched).toEqual([{ caseId: 'c1', weekIndex: 1, side: 'control' }])
+  })
+
+  it('reports duplicate week keys instead of choosing one occurrence', () => {
+    const control = artifactWith([planWith('c1', 's1', [
+      { weekIndex: 0, countRepairsV2: 1 },
+      { weekIndex: 0, countRepairsV2: 9 },
+    ])])
+    const variant = artifactWith([planWith('c1', 's1', [
+      { weekIndex: 0, countRepairsV2: 2 },
+    ])])
+
+    const result = pairWeeks(control, variant)
+
+    expect(result.pairs).toEqual([])
+    expect(result.duplicates).toEqual([{ caseId: 'c1', weekIndex: 0, side: 'control' }])
+  })
+})
+
+describe('buildComparison', () => {
+  it('computes the median of paired ratios, not the ratio of medians', () => {
+    // Ratios pareados: 0,5 y 1,0 → mediana nearest-rank (ceil(0,5*2)=1) = 0,5.
+    // El ratio de medianas daría 1500/2000 = 0,75.
+    const control = { artifactSchemaVersion: 1, plans: [
+      completePlan('c1', 's1', { firstWeekReadyMs: 1000 }),
+      completePlan('c2', 's2', { firstWeekReadyMs: 2000 }),
+    ] }
+    const variant = { artifactSchemaVersion: 1, plans: [
+      completePlan('c1', 's1', { firstWeekReadyMs: 500 }),
+      completePlan('c2', 's2', { firstWeekReadyMs: 2000 }),
+    ] }
+
+    const comparison = buildComparison(control, variant)
+
+    expect(comparison.firstWeekReady.ratios).toEqual([0.5, 1])
+    expect(comparison.firstWeekReady.p50).toBe(0.5)
+    expect(comparison.firstWeekReady.improvedCases).toBe(1)
+  })
+
+  it('counts a scenario as improved by the AVERAGE of its two ratios', () => {
+    // 0,4 y 1,4 → promedio 0,9 < 1 → mejora, aunque un caso empeore.
+    const control = { artifactSchemaVersion: 1, plans: [
+      completePlan('c1', 'dobles', { firstWeekReadyMs: 1000 }),
+      completePlan('c2', 'dobles', { firstWeekReadyMs: 1000 }),
+    ] }
+    const variant = { artifactSchemaVersion: 1, plans: [
+      completePlan('c1', 'dobles', { firstWeekReadyMs: 400 }),
+      completePlan('c2', 'dobles', { firstWeekReadyMs: 1400 }),
+    ] }
+
+    const comparison = buildComparison(control, variant)
+
+    expect(comparison.firstWeekReady.byScenario.dobles.meanRatio).toBeCloseTo(0.9, 10)
+    expect(comparison.firstWeekReady.improvedScenarios).toBe(1)
+  })
+
+  it('summarises score as paired deltas, keeping the minimum', () => {
+    const control = { artifactSchemaVersion: 1, plans: [
+      completePlan('c1', 's1', { planScore: 90 }),
+      completePlan('c2', 's2', { planScore: 90 }),
+    ] }
+    const variant = { artifactSchemaVersion: 1, plans: [
+      completePlan('c1', 's1', { planScore: 89 }),
+      completePlan('c2', 's2', { planScore: 84 }),
+    ] }
+
+    const comparison = buildComparison(control, variant)
+
+    expect(comparison.score.deltas).toEqual([-6, -1])
+    expect(comparison.score.min).toBe(-6)
+    expect(comparison.score.p50).toBe(-6) // nearest-rank con n=2 toma el menor
+  })
+
+  it('summarises weekly repairs as paired deltas per (caseId, weekIndex)', () => {
+    const control = { artifactSchemaVersion: 1, plans: [
+      completePlan('c1', 's1', { weekOverrides: { countRepairsV2: 2 } }),
+    ] }
+    const variant = { artifactSchemaVersion: 1, plans: [
+      completePlan('c1', 's1', { weekOverrides: { countRepairsV2: 3 } }),
+    ] }
+
+    const comparison = buildComparison(control, variant)
+
+    expect(comparison.repairs.weekCountRepairsV2.deltas).toEqual([1, 1])
+    expect(comparison.repairs.weekCountRepairsV2.p90).toBe(1)
+  })
+
+  it('keeps paired telemetry, per-plan details and scenario summaries', () => {
+    const control = artifactWith([
+      completePlan('c1', 'running', {
+        firstWeekReadyE2eMs: 2000,
+        totalInputTokens: 100,
+        totalOutputTokens: 50,
+        retryCount: 1,
+        planGrade: 'excellent',
+        issueCodes: ['control-issue'],
+      }),
+    ])
+    const variant = artifactWith([
+      completePlan('c1', 'running', {
+        firstWeekReadyE2eMs: 1000,
+        totalInputTokens: 80,
+        totalOutputTokens: 60,
+        retryCount: 3,
+        planGrade: 'good',
+        issueCodes: ['variant-issue'],
+        fallbackUsed: true,
+        observedModels: ['claude-sonnet-4-6', 'fallback-model'],
+      }),
+    ])
+
+    const comparison = buildComparison(control, variant)
+
+    expect(comparison.scorableWeekPairs).toBe(2)
+    expect(comparison.firstWeekReadyE2E.ratios).toEqual([0.5])
+    expect(comparison.totalInputTokens).toMatchObject({
+      control: 100,
+      variant: 80,
+      delta: -20,
+      deltas: [-20],
+    })
+    expect(comparison.totalOutputTokens.delta).toBe(10)
+    expect(comparison.retryCount.delta).toBe(2)
+    expect(comparison.planDetails[0]).toMatchObject({
+      caseId: 'c1',
+      planGrade: { control: 'excellent', variant: 'good' },
+      issueCodes: { control: ['control-issue'], variant: ['variant-issue'] },
+      fallbackUsed: { control: false, variant: true },
+      observedModels: {
+        control: ['claude-sonnet-4-6'],
+        variant: ['claude-sonnet-4-6', 'fallback-model'],
+      },
+    })
+    expect(comparison.byScenario.running.firstWeekReadyE2E.p50).toBe(0.5)
+    expect(comparison.byScenario.running.totalInputTokens.delta).toBe(-20)
+  })
+
+  it('does not present partial telemetry totals as a cheaper complete run', () => {
+    const controlPlans = [
+      completePlan('c1', 'running'),
+      completePlan('c2', 'running'),
+    ]
+    const variantPlans = [
+      completePlan('c1', 'running', { estimatedCostUsd: 0.04 }),
+      completePlan('c2', 'running'),
+    ]
+    variantPlans[1].estimatedCostUsd = null
+
+    const comparison = buildComparison(
+      artifactWith(controlPlans),
+      artifactWith(variantPlans),
+    )
+
+    expect(comparison.cost.n).toBe(1)
+    expect(comparison.cost.control).toBeNull()
+    expect(comparison.cost.variant).toBeNull()
+    expect(comparison.cost.delta).toBeNull()
   })
 })
 
@@ -1085,6 +1364,22 @@ describe('loadtest CLI arguments and guards', () => {
     })
   })
 
+  it('routes --compare to the pure paired-comparison path', () => {
+    expect(parseArgs(['--compare', 'control.json', 'variant.json'])).toEqual({
+      mode: 'compare',
+      controlPath: 'control.json',
+      variantPath: 'variant.json',
+    })
+  })
+
+  it('routes a strict phase 2 artifact check with its expected effort', () => {
+    expect(parseArgs(['--phase2-check', 'phase2-C.json', 'high'])).toEqual({
+      mode: 'phase2-check',
+      artifactPath: 'phase2-C.json',
+      expectedEffort: 'high',
+    })
+  })
+
   it('defaults to the paid run mode only for an empty argv', () => {
     expect(parseArgs([])).toEqual({ mode: 'run', artifactPath: null })
   })
@@ -1095,6 +1390,11 @@ describe('loadtest CLI arguments and guards', () => {
     [['--report', ''], 'empty path'],
     [['--report', '   '], 'whitespace path'],
     [['--report', 'x.json', 'extra'], 'extra argument'],
+    [['--compare'], 'missing compare paths'],
+    [['--compare', 'control.json', ''], 'empty variant path'],
+    [['--compare', 'control.json', 'variant.json', 'extra'], 'extra compare argument'],
+    [['--phase2-check', 'phase2-C.json'], 'missing expected effort'],
+    [['--phase2-check', 'phase2-C.json', 'max'], 'invalid phase 2 effort'],
     [['unexpected'], 'unknown argument'],
   ])('fails closed for %s (%s)', (argv) => {
     expect(() => parseArgs(argv)).toThrow(/Uso/)
@@ -1121,6 +1421,74 @@ describe('loadtest CLI arguments and guards', () => {
   it('names artifacts by timestamp under loadtest-results', () => {
     expect(defaultArtifactPath(new Date('2026-09-01T10:20:30.000Z')))
       .toBe('loadtest-results/plan-builder-2026-09-01T10-20-30-000Z.json')
+  })
+})
+
+describe('renderComparison', () => {
+  it('renders the gate, audit fields, scenario detail and final verdict', () => {
+    const comparison = {
+      planPairs: 12,
+      completePairs: 12,
+      weekPairs: 42,
+      scorableWeekPairs: 42,
+      onlyControl: [],
+      onlyVariant: [],
+      duplicateControlCases: [],
+      duplicateVariantCases: [],
+      unmatchedWeeks: [],
+      duplicateWeeks: [],
+      firstWeekReady: { n: 12, p50: 0.95, improvedCases: 9, improvedScenarios: 5 },
+      firstWeekReadyE2E: { n: 12, p50: 0.8 },
+      planComplete: { n: 12, p50: 1 },
+      score: { n: 12, p50: 0, min: -1 },
+      repairs: {
+        weekCountRepairsV2: { n: 42, p50: 0, p90: 0 },
+        weekWarningInput: { n: 42, p50: 0, p90: 0 },
+        planCountRepairsV2: { n: 12, p50: 0, p90: 0 },
+      },
+      cost: { control: 0.92, variant: 0.8, delta: -0.12 },
+      totalInputTokens: { control: 100, variant: 80, delta: -20 },
+      totalOutputTokens: { control: 50, variant: 40, delta: -10 },
+      retryCount: { control: 1, variant: 0, delta: -1 },
+      byScenario: { running: { planPairs: 2, weekPairs: 8 } },
+      planDetails: [{
+        caseId: 'running#1',
+        scenarioKey: 'running',
+        planGrade: { control: 'excellent', variant: 'good' },
+        issueCodes: { control: [], variant: ['x'] },
+        fallbackUsed: { control: false, variant: false },
+        observedModels: { control: ['m'], variant: ['m'] },
+        outcome: { control: 'succeeded', variant: 'succeeded' },
+        errorClass: { control: null, variant: null },
+      }],
+    }
+    const decision = {
+      accepted: false,
+      checks: [{
+        id: 'firstWeekReady.p50',
+        actual: 0.95,
+        operator: '<=',
+        threshold: 0.8,
+        passed: false,
+      }],
+    }
+    const text = renderComparison(
+      { git: { sha: 'abc' }, variant: { variantId: 'ctrl' } },
+      { git: { sha: 'abc' }, variant: { variantId: 'var' } },
+      comparison,
+      { eligible: true, reasons: [] },
+      decision,
+    )
+
+    expect(text).toMatch(/RECHAZADA/)
+    expect(text).toMatch(/firstWeekReady\.p50/)
+    expect(text).toMatch(/firstWeekReadyE2E/)
+    expect(text).toMatch(/totalInputTokens/)
+    expect(text).toMatch(/firstWeekE2E/)
+    expect(text).toMatch(/repairWeekP90/)
+    expect(text).toMatch(/retryDelta/)
+    expect(text).toMatch(/running#1/)
+    expect(text).toMatch(/por escenario/)
   })
 })
 
