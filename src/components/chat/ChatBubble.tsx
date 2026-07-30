@@ -55,9 +55,12 @@ export default function ChatBubble({ message, hasProposal, onViewProposal, onRat
             </button>
           )}
           {likelyTruncated && (
-            <span className="flex items-center gap-1 text-[11px] font-medium text-amber-300">
+            <span
+              className="flex items-center gap-1 text-[11px] font-medium text-amber-300"
+              title="La respuesta llegó incompleta incluso después del reintento automático."
+            >
               <AlertTriangle size={10} />
-              Respuesta truncada
+              Respuesta incompleta
             </span>
           )}
           {isCoach && onRate && (

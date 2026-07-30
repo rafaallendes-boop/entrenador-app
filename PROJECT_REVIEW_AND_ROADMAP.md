@@ -294,6 +294,52 @@ Estado: **implementado y verificado localmente — `npm run lint`, `npm test`
 (checklist en `docs/superpowers/smokes/2026-07-26-chat-conversations-dev-smoke.md`),
 commit y deploy.
 
+### 17. Plan Builder velocidad — Fase 2 (`effort`) ejecutada y cerrada (2026-07-27)
+
+Primera campaña experimental de la era post-medicion: tres corridas del loadtest
+sobre el mismo SHA limpio (`f349ae4`), 12 planes / 42 semanas cada una, con la
+regla de aceptacion congelada **antes** de gastar.
+
+- **Veredicto: ninguna variante aceptada. `high` se queda.** No hay cambio
+  productivo y no hay deploy; `PLAN_BUILDER_EFFORT` y `PLAN_BUILDER_THINKING`
+  quedan sin definir en produccion, que es el estado "omitido" con el que ya
+  venia corriendo. El plan preveia explicitamente este desenlace como resultado
+  valido de la fase.
+- **A (`medium`) descartada con evidencia:** solo −4,9% mediano pareado a la
+  primera semana, gana en 7 de 12 casos —indistinguible de una moneda— y degrada
+  calidad de forma visible (`score.min = −7`; `dobles#2` cae de `needs_review` a
+  `poor`). Poca velocidad a cambio de un plan peor.
+- **B (`low`) rechazada, pero es la unica palanca cuya señal fue consistente
+  entre casos y escenarios:** −10,2% a la primera semana (9/12 casos, 5/6
+  escenarios), −13,6% al plan completo, −8,5% de costo y −12,3% de tokens de
+  salida, con score aproximadamente neutro (`p50 = 0`, `min = −4`, dentro de la
+  tolerancia). No alcanza la barra congelada del −20%. Consistente no es
+  demostrada: sin piso de ruido, ninguna de esas cifras puede afirmarse por
+  encima del ruido.
+- **Hallazgo sobre el metodo, no sobre las variantes:** los tres checks
+  `*.p90 ≤ 0` de reparaciones fallaron en ambas variantes. El delta pareado de
+  reparaciones de B es casi simetrico (13 semanas mejores contra 16 peores), lo
+  que es **compatible con ruido** y tambien con una degradacion muy pequeña; sin
+  piso de ruido medido las dos lecturas siguen abiertas. Lo que si es aritmetica
+  y no interpretacion: `p90 ≤ 0` con n=42 exige que 38 de 42 semanas no empeoren
+  ni en una reparacion, y con generacion estocastica es **plausible** que
+  ninguna configuracion despeje esa barra, ni siquiera el control contra si
+  mismo — **pero eso no se midio. La campaña nunca corrio un
+  control-contra-control**, asi que no existe estimacion del piso de ruido y
+  cualquier umbral de "no empeorar" por semana esta fijado a ciegas. Corregirlo
+  es prerrequisito de la proxima fase de velocidad.
+- **Instrumento validado:** las tres corridas fueron elegibles (12/12 planes,
+  42/42 semanas, mismo SHA, cero fallbacks, cero fallos de harness) y el pareo
+  no dejo huecos ni duplicados. Una campaña completa cuesta **US$2,5941** y toma
+  ~30 min, frente a dias de ventanas de produccion quemando el rate limit del
+  owner.
+
+Artefactos versionados con sus SHA-256 y veredicto completo en
+`docs/superpowers/experiments/plan-builder-speed-phase-2/`. Los dos `--compare`
+se reproducen sin costo ni credenciales desde las copias versionadas.
+
+Estado: **cerrada.** Sin migraciones, sin cambios de configuracion productiva.
+
 ## Avances Ya Implementados
 
 ### Producto Publico Y Marca
@@ -820,13 +866,16 @@ dificultad.
    Supabase ni bump de backup.** Spec:
    `docs/superpowers/specs/2026-07-26-chat-conversations-design.md`. Detalle en
    §16. **Pendiente: smoke en dev, commit y deploy.**
-2. **Plan Builder — velocidad.** Fases 2-4 que la Fase 0 habilito: `effort` /
-   `thinking`, modelo, concurrencia y prompt caching (esto ultimo solo despues de
-   medir el prefijo real con Token Counting). Es el trabajo **mejor preparado**
-   del backlog: instrumento desplegado, metodo escrito y control congelado
-   (`6c45885a`) contra el cual comparar. Linea base de produccion: 24.2 s hasta
-   la primera semana, 43.9 s un plan de 4 semanas, concurrencia 3. **Siguiente
-   foco de este backlog.**
+2. **Plan Builder — velocidad. Fase 2 (`effort`) ejecutada y cerrada el
+   2026-07-27: ninguna variante aceptada, `high` se queda.** Sin cambio
+   productivo y sin deploy. `medium` quedo descartado con evidencia (poca
+   velocidad y un plan que cae de grado); `low` mostro señal consistente
+   —−10,2% a la primera semana, −13,6% al plan completo, −8,5% de costo,
+   −12,3% de tokens de salida— pero no alcanzo la barra congelada del −20%.
+   Detalle en §17. Quedan abiertas las fases de modelo, concurrencia y prompt
+   caching (esto ultimo solo despues de medir el prefijo real con Token
+   Counting). Linea base de produccion: 24.2 s hasta la primera semana, 43.9 s
+   un plan de 4 semanas, concurrencia 3.
 3. **Plan Builder — calidad deportiva.** La Fase 1, "correcciones de producto",
    declarada paralelizable y de archivos disjuntos respecto de la velocidad.
    Incluye la calidad de las sesiones de squash.

@@ -1206,6 +1206,53 @@ describe('responseNormalizer', () => {
     ])
   })
 
+  it('normalizes dedicated match-play to one best-of-five match', () => {
+    const response = normalizeResponse({
+      text: [
+        '<actions>',
+        JSON.stringify([{
+          type: 'add_session',
+          reason: 'Día de match play',
+          targetDate: '2026-04-11',
+          sessionType: 'squash',
+          title: 'Squash match play',
+          durationMin: 60,
+          timeBlock: 'PM',
+          subtype: 'match',
+          squashDetails: {
+            trainingFocus: 'conditioned_games',
+            sessionMode: 'practice_match',
+            sessionKind: 'match',
+            blocks: [{
+              kind: 'match',
+              drills: [
+                { name: 'Partido de entrenamiento al mejor de 3 juegos' },
+                { name: 'Partido con ataque temprano' },
+              ],
+            }],
+            drills: [
+              { name: 'Partido de entrenamiento al mejor de 3 juegos' },
+              { name: 'Partido con ataque temprano' },
+            ],
+          },
+        }]),
+        '</actions>',
+      ].join('\n'),
+      provider: 'mock',
+      requestClass: 'chat_action',
+    })
+
+    expect(response.actions?.[0].squashDetails).toMatchObject({
+      sessionMode: 'practice_match',
+      sessionKind: 'match',
+      drills: [{ name: 'Partido de entrenamiento al mejor de 5 juegos' }],
+      blocks: [{
+        kind: 'match',
+        drills: [{ name: 'Partido de entrenamiento al mejor de 5 juegos' }],
+      }],
+    })
+  })
+
   describe('outcome classification', () => {
     it('classifies a clean response as ok', () => {
       const response = normalizeResponse({

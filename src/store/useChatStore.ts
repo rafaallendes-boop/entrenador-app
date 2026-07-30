@@ -301,6 +301,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }, requestClass)
 
     let receivedFirstChunk = false
+    let rawStreamingText = ''
     const processingTimeout = window.setTimeout(() => {
       if (get().currentSessionId !== sessionId) return
       if (!get().isLoading || receivedFirstChunk) return
@@ -327,7 +328,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const handleChunk = (chunk: string) => {
         if (!isActiveChatRequest(get().currentSessionId, sessionId, abortController)) return
         receivedFirstChunk = true
-        set(state => ({ streamingText: state.streamingText + chunk, responsePhase: 'responding' }))
+        rawStreamingText += chunk
+        set({
+          streamingText: getVisibleCoachStreamText(rawStreamingText, requestClass),
+          responsePhase: 'responding',
+        })
       }
 
       const enginePromise: Promise<CoachNormalizedResponse> = route.kind === 'week_creator'
@@ -575,6 +580,37 @@ export const useChatStore = create<ChatState>((set, get) => ({
     })
   },
 }))
+
+export function getVisibleCoachStreamText(
+  rawText: string,
+  requestClass: AIRequestClass,
+): string {
+  if (requestClass !== 'chat_action') return rawText
+
+  const trimmedStart = rawText.trimStart()
+  if (trimmedStart.startsWith('{') || trimmedStart.startsWith('[')) return ''
+
+  const actionsTagIndex = rawText.toLowerCase().indexOf('<actions')
+  if (actionsTagIndex >= 0) return rawText.slice(0, actionsTagIndex).trimEnd()
+
+  const inlineActions = rawText.match(
+    /(?:^|\n)\s*(?:```json\s*)?(?:\{\s*"actions"\s*:|\[\s*\{\s*"type"\s*:)/i,
+  )
+  if (inlineActions?.index != null) {
+    return rawText.slice(0, inlineActions.index).trimEnd()
+  }
+
+  // Hold a marker fragment split across network chunks so "<act" never flashes
+  // as user-visible content before the next chunk completes "<actions>".
+  const marker = '<actions'
+  const lower = rawText.toLowerCase()
+  for (let length = marker.length - 1; length > 0; length -= 1) {
+    if (lower.endsWith(marker.slice(0, length))) {
+      return rawText.slice(0, -length).trimEnd()
+    }
+  }
+  return rawText
+}
 
 function captureChatAthleteScope(): ChatAthleteScopeSnapshot {
   return {

@@ -434,7 +434,9 @@ export const WeekCreatorEngine = {
         if (!action) {
           throw new Error('WeekCreator devolvió una validación exitosa sin acción create_week.')
         }
-        const message = repaired.message.trim() || summarizeWeekCreatorAction(action)
+        const message = repaired.meta?.likelyTruncated
+          ? summarizeWeekCreatorAction(action)
+          : repaired.message.trim() || summarizeWeekCreatorAction(action)
         const warnings = [
           validation.warning,
           ...repaired.repairWarnings,
@@ -452,8 +454,12 @@ export const WeekCreatorEngine = {
           message: messageWithWarning,
           requestClass: 'week_creator',
           retryUsed: attempt > 1 || repaired.retryUsed,
-          meta: warnings.length > 0 && repaired.meta
-            ? { ...repaired.meta, likelyTruncated: false }
+          // A fully validated create_week action is complete and safe even when
+          // the provider reported a token stop after closing the JSON payload.
+          // Keep the raw finishReason in telemetry, but do not surface a false
+          // "Respuesta truncada" warning to the athlete.
+          meta: repaired.meta
+            ? { ...repaired.meta, likelyTruncated: false, outcome: 'ok' }
             : repaired.meta,
         }
       } catch (error) {

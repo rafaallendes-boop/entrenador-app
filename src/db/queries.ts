@@ -85,6 +85,21 @@ export const getSessionsForWeek = async (weekStartISO: string): Promise<Session[
   return scope ? getSessionsForWeekCore(scope, weekStartISO) : getSessionsForWeekLegacy(weekStartISO)
 }
 
+export const getSessionsForDateRange = async (
+  startDateISO: string,
+  endDateISO: string,
+): Promise<Session[]> => {
+  const rows = await db.sessions
+    .where('date')
+    .between(startDateISO, endDateISO, true, true)
+    .toArray()
+  const scope = captureActiveWeekScope()
+  if (!scope) return rows
+  return rows.filter((row) =>
+    row.athleteId === scope.athleteId
+      || (scope.includeLegacy && !isScopedAthleteId(row.athleteId)))
+}
+
 async function getDayLogsForWeekLegacy(weekStartISO: string): Promise<DayLog[]> {
   const end = toISO(addDays(fromISO(weekStartISO), 6))
   return db.dayLogs.where('date').between(weekStartISO, end, true, true).toArray()

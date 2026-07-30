@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
 import { inferCoachActionIntent } from '../ai/CoachEngine'
-import { sendWithRecovery, shouldRetryAction as shouldRetry } from '../ai/coachRecovery'
+import {
+  sendGeneralWithRecovery,
+  sendWithRecovery,
+  shouldRetryAction as shouldRetry,
+} from '../ai/coachRecovery'
 import type { AIProvider, CoachNormalizedResponse } from '../ai/types'
 
 function makeResponse(overrides: Partial<CoachNormalizedResponse> = {}): CoachNormalizedResponse {
@@ -121,5 +125,42 @@ describe('CoachEngine recovery heuristics', () => {
     expect(response.message).toContain('Te preparo una sesion de fuerza')
     expect(response.actions).toBeUndefined()
     expect(response.meta?.actionParseFailed).toBe(true)
+  })
+
+  it('retries a truncated general answer with a concise complete response', async () => {
+    let callCount = 0
+    const provider: AIProvider = {
+      name: 'mock',
+      call: async (request) => {
+        callCount += 1
+        return callCount === 1
+          ? {
+              text: 'Respuesta demasiado larga y cortada',
+              provider: 'mock',
+              traceId: request.traceId,
+              requestClass: request.requestClass,
+              finishReason: 'MAX_TOKENS',
+            }
+          : {
+              text: 'Respuesta completa y concisa.',
+              provider: 'mock',
+              traceId: request.traceId,
+              requestClass: request.requestClass,
+              finishReason: 'STOP',
+            }
+      },
+    }
+
+    const response = await sendGeneralWithRecovery(provider, {
+      systemPrompt: 'Responde como coach.',
+      userMessage: 'Analiza mi semana',
+      requestClass: 'chat_general',
+      traceId: 'trace-general-recovery',
+    })
+
+    expect(callCount).toBe(2)
+    expect(response.message).toBe('Respuesta completa y concisa.')
+    expect(response.retryUsed).toBe(true)
+    expect(response.meta?.likelyTruncated).toBe(false)
   })
 })

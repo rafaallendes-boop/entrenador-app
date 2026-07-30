@@ -1,0 +1,3064 @@
+{
+  "artifactSchemaVersion": 1,
+  "manifestVersion": 1,
+  "createdAt": "2026-07-27T16:24:38.877Z",
+  "git": {
+    "sha": "f349ae4d4330a51a6d20a0cf5bdabd4614cb3130",
+    "dirty": false
+  },
+  "variant": {
+    "provider": "claude",
+    "model": "claude-sonnet-4-6",
+    "effort": "high",
+    "thinkingMode": "disabled",
+    "temperature": 0.25,
+    "maxTokens": 5000,
+    "promptVersion": "2026-07-week-v1",
+    "schemaVersion": "2026-07-week-v1",
+    "qualityVersion": 2,
+    "concurrency": 3,
+    "variantId": "s46-q2-00qwoc9q"
+  },
+  "attemptedPlanTarget": 12,
+  "targetWeekTarget": 42,
+  "manifest": {
+    "manifestVersion": 1,
+    "attemptedPlanTotal": 12,
+    "targetWeekTotal": 42,
+    "cases": [
+      {
+        "caseId": "squash_build#1",
+        "scenarioKey": "squash_build",
+        "planIndex": 1,
+        "weekCount": 4,
+        "startDate": "2026-08-03",
+        "primarySport": "squash",
+        "sportDetails": [
+          {
+            "sport": "squash",
+            "role": "primary",
+            "phaseFocus": "",
+            "weeklyIntent": "",
+            "volumeBias": "hold",
+            "intensityBias": "hold",
+            "notes": ""
+          },
+          {
+            "sport": "strength",
+            "role": "support",
+            "phaseFocus": "",
+            "weeklyIntent": "",
+            "volumeBias": "hold",
+            "intensityBias": "hold",
+            "notes": ""
+          }
+        ],
+        "targetLoadBySport": {
+          "squash": 50,
+          "strength": 25
+        },
+        "planStartDate": "2026-08-03",
+        "planEndDate": "2026-08-30",
+        "planPhases": [
+          {
+            "phase": "build",
+            "startWeekIndex": 0,
+            "endWeekIndex": 3,
+            "blockFocus": "",
+            "intentBySport": {}
+          }
+        ],
+        "weeks": [
+          {
+            "weekIndex": 0,
+            "weekStartDate": "2026-08-03",
+            "phase": "build",
+            "targetLoadBySport": {
+              "squash": 50,
+              "strength": 25
+            }
+          },
+          {
+            "weekIndex": 1,
+            "weekStartDate": "2026-08-10",
+            "phase": "build",
+            "targetLoadBySport": {
+              "squash": 50,
+              "strength": 25
+            }
+          },
+          {
+            "weekIndex": 2,
+            "weekStartDate": "2026-08-17",
+            "phase": "build",
+            "targetLoadBySport": {
+              "squash": 50,
+              "strength": 25
+            }
+          },
+          {
+            "weekIndex": 3,
+            "weekStartDate": "2026-08-24",
+            "phase": "build",
+            "targetLoadBySport": {
+              "squash": 50,
+              "strength": 25
+            }
+          }
+        ],
+        "profile": {
+          "id": "loadtest-athlete",
+          "updatedAt": 1,
+          "sportContext": {
+            "enabledSports": [
+              "squash",
+              "strength"
+            ],
+            "primarySport": "squash"
+          },
+          "goalEvents": [
+            {
+              "id": "loadtest-event",
+              "title": "Loadtest squash_build",
+              "date": "2026-08-30",
+              "sport": "squash",
+              "priority": "primary"
+            }
+          ]
+        },
+        "wizardConfig": {
+          "goalEventId": "loadtest-event",
+          "trainingDays": [
+            "monday",
+            "wednesday",
+            "friday"
+          ],
+          "sessionsPerWeek": 3,
+          "sessionDurationMins": 60,
+          "allowDoubleSession": false,
+          "complementarySports": [
+            "strength"
+          ],
+          "currentFitnessLevel": "normal",
+          "currentFatigue": "fresh",
+          "createdAt": "2026-06-01T00:00:00.000Z",
+          "updatedAt": "2026-06-01T00:00:00.000Z"
+        }
+      },
+      {
+        "caseId": "squash_build#2",
+        "scenarioKey": "squash_build",
+        "planIndex": 2,
+        "weekCount": 4,
+        "startDate": "2026-08-03",
+        "primarySport": "squash",
+        "sportDetails": [
+          {
+            "sport": "squash",
+            "role": "primary",
+            "phaseFocus": "",
+            "weeklyIntent": "",
+            "volumeBias": "hold",
+            "intensityBias": "hold",
+            "notes": ""
+          },
+          {
+            "sport": "strength",
+            "role": "support",
+            "phaseFocus": "",
+            "weeklyIntent": "",
+            "volumeBias": "hold",
+            "intensityBias": "hold",
+            "notes": ""
+          }
+        ],
+        "targetLoadBySport": {
+          "squash": 50,
+          "strength": 25
+        },
+        "planStartDate": "2026-08-03",
+        "planEndDate": "2026-08-30",
+        "planPhases": [
+          {
+            "phase": "build",
+            "startWeekIndex": 0,
+            "endWeekIndex": 3,
+            "blockFocus": "",
+            "intentBySport": {}
+          }
+        ],
+        "weeks": [
+          {
+            "weekIndex": 0,
+            "weekStartDate": "2026-08-03",
+            "phase": "build",
+            "targetLoadBySport": {
+              "squash": 50,
+              "strength": 25
+            }
+          },
+          {
+            "weekIndex": 1,
+            "weekStartDate": "2026-08-10",
+            "phase": "build",
+            "targetLoadBySport": {
+              "squash": 50,
+              "strength": 25
+            }
+          },
+          {
+            "weekIndex": 2,
+            "weekStartDate": "2026-08-17",
+            "phase": "build",
+            "targetLoadBySport": {
+              "squash": 50,
+              "strength": 25
+            }
+          },
+          {
+            "weekIndex": 3,
+            "weekStartDate": "2026-08-24",
+            "phase": "build",
+            "targetLoadBySport": {
+              "squash": 50,
+              "strength": 25
+            }
+          }
+        ],
+        "profile": {
+          "id": "loadtest-athlete",
+          "updatedAt": 1,
+          "sportContext": {
+            "enabledSports": [
+              "squash",
+              "strength"
+            ],
+            "primarySport": "squash"
+          },
+          "goalEvents": [
+            {
+              "id": "loadtest-event",
+              "title": "Loadtest squash_build",
+              "date": "2026-08-30",
+              "sport": "squash",
+              "priority": "primary"
+            }
+          ]
+        },
+        "wizardConfig": {
+          "goalEventId": "loadtest-event",
+          "trainingDays": [
+            "monday",
+            "wednesday",
+            "friday"
+          ],
+          "sessionsPerWeek": 3,
+          "sessionDurationMins": 60,
+          "allowDoubleSession": false,
+          "complementarySports": [
+            "strength"
+          ],
+          "currentFitnessLevel": "normal",
+          "currentFatigue": "fresh",
+          "createdAt": "2026-06-01T00:00:00.000Z",
+          "updatedAt": "2026-06-01T00:00:00.000Z"
+        }
+      },
+      {
+        "caseId": "squash_taper_medico#1",
+        "scenarioKey": "squash_taper_medico",
+        "planIndex": 1,
+        "weekCount": 3,
+        "startDate": "2026-08-10",
+        "primarySport": "squash",
+        "sportDetails": [
+          {
+            "sport": "squash",
+            "role": "primary",
+            "phaseFocus": "",
+            "weeklyIntent": "",
+            "volumeBias": "hold",
+            "intensityBias": "hold",
+            "notes": ""
+          },
+          {
+            "sport": "strength",
+            "role": "support",
+            "phaseFocus": "",
+            "weeklyIntent": "",
+            "volumeBias": "hold",
+            "intensityBias": "hold",
+            "notes": ""
+          }
+        ],
+        "targetLoadBySport": {
+          "squash": 40,
+          "strength": 15
+        },
+        "planStartDate": "2026-08-10",
+        "planEndDate": "2026-08-30",
+        "planPhases": [
+          {
+            "phase": "peak",
+            "startWeekIndex": 0,
+            "endWeekIndex": 0,
+            "blockFocus": "",
+            "intentBySport": {}
+          },
+          {
+            "phase": "taper",
+            "startWeekIndex": 1,
+            "endWeekIndex": 1,
+            "blockFocus": "",
+            "intentBySport": {}
+          },
+          {
+            "phase": "race",
+            "startWeekIndex": 2,
+            "endWeekIndex": 2,
+            "blockFocus": "",
+            "intentBySport": {}
+          }
+        ],
+        "weeks": [
+          {
+            "weekIndex": 0,
+            "weekStartDate": "2026-08-10",
+            "phase": "peak",
+            "targetLoadBySport": {
+              "squash": 40,
+              "strength": 15
+            }
+          },
+          {
+            "weekIndex": 1,
+            "weekStartDate": "2026-08-17",
+            "phase": "taper",
+            "targetLoadBySport": {
+              "squash": 40,
+              "strength": 15
+            }
+          },
+          {
+            "weekIndex": 2,
+            "weekStartDate": "2026-08-24",
+            "phase": "race",
+            "targetLoadBySport": {
+              "squash": 40,
+              "strength": 15
+            }
+          }
+        ],
+        "profile": {
+          "id": "loadtest-athlete",
+          "updatedAt": 1,
+          "sportContext": {
+            "enabledSports": [
+              "squash",
+              "strength"
+            ],
+            "primarySport": "squash"
+          },
+          "goalEvents": [
+            {
+              "id": "loadtest-event",
+              "title": "Loadtest squash_taper_medico",
+              "date": "2026-08-30",
+              "sport": "squash",
+              "priority": "primary"
+            }
+          ]
+        },
+        "wizardConfig": {
+          "goalEventId": "loadtest-event",
+          "trainingDays": [
+            "monday",
+            "wednesday",
+            "friday"
+          ],
+          "sessionsPerWeek": 3,
+          "sessionDurationMins": 60,
+          "allowDoubleSession": false,
+          "complementarySports": [
+            "strength"
+          ],
+          "currentFitnessLevel": "fit",
+          "currentFatigue": "loaded",
+          "createdAt": "2026-06-01T00:00:00.000Z",
+          "updatedAt": "2026-06-01T00:00:00.000Z",
+          "injuryNotes": "Molestia de rodilla derecha en control, sin dolor agudo."
+        }
+      },
+      {
+        "caseId": "squash_taper_medico#2",
+        "scenarioKey": "squash_taper_medico",
+        "planIndex": 2,
+        "weekCount": 3,
+        "startDate": "2026-08-10",
+        "primarySport": "squash",
+        "sportDetails": [
+          {
+            "sport": "squash",
+            "role": "primary",
+            "phaseFocus": "",
+            "weeklyIntent": "",
+            "volumeBias": "hold",
+            "intensityBias": "hold",
+            "notes": ""
+          },
+          {
+            "sport": "strength",
+            "role": "support",
+            "phaseFocus": "",
+            "weeklyIntent": "",
+            "volumeBias": "hold",
+            "intensityBias": "hold",
+            "notes": ""
+          }
+        ],
+        "targetLoadBySport": {
+          "squash": 40,
+          "strength": 15
+        },
+        "planStartDate": "2026-08-10",
+        "planEndDate": "2026-08-30",
+        "planPhases": [
+          {
+            "phase": "peak",
+            "startWeekIndex": 0,
+            "endWeekIndex": 0,
+            "blockFocus": "",
+            "intentBySport": {}
+          },
+          {
+            "phase": "taper",
+            "startWeekIndex": 1,
+            "endWeekIndex": 1,
+            "blockFocus": "",
+            "intentBySport": {}
+          },
+          {
+            "phase": "race",
+            "startWeekIndex": 2,
+            "endWeekIndex": 2,
+            "blockFocus": "",
+            "intentBySport": {}
+          }
+        ],
+        "weeks": [
+          {
+            "weekIndex": 0,
+            "weekStartDate": "2026-08-10",
+            "phase": "peak",
+            "targetLoadBySport": {
+              "squash": 40,
+              "strength": 15
+            }
+          },
+          {
+            "weekIndex": 1,
+            "weekStartDate": "2026-08-17",
+            "phase": "taper",
+            "targetLoadBySport": {
+              "squash": 40,
+              "strength": 15
+            }
+          },
+          {
+            "weekIndex": 2,
+            "weekStartDate": "2026-08-24",
+            "phase": "race",
+            "targetLoadBySport": {
+              "squash": 40,
+              "strength": 15
+            }
+          }
+        ],
+        "profile": {
+          "id": "loadtest-athlete",
+          "updatedAt": 1,
+          "sportContext": {
+            "enabledSports": [
+              "squash",
+              "strength"
+            ],
+            "primarySport": "squash"
+          },
+          "goalEvents": [
+            {
+              "id": "loadtest-event",
+              "title": "Loadtest squash_taper_medico",
+              "date": "2026-08-30",
+              "sport": "squash",
+              "priority": "primary"
+            }
+          ]
+        },
+        "wizardConfig": {
+          "goalEventId": "loadtest-event",
+          "trainingDays": [
+            "monday",
+            "wednesday",
+            "friday"
+          ],
+          "sessionsPerWeek": 3,
+          "sessionDurationMins": 60,
+          "allowDoubleSession": false,
+          "complementarySports": [
+            "strength"
+          ],
+          "currentFitnessLevel": "fit",
+          "currentFatigue": "loaded",
+          "createdAt": "2026-06-01T00:00:00.000Z",
+          "updatedAt": "2026-06-01T00:00:00.000Z",
+          "injuryNotes": "Molestia de rodilla derecha en control, sin dolor agudo."
+        }
+      },
+      {
+        "caseId": "running#1",
+        "scenarioKey": "running",
+        "planIndex": 1,
+        "weekCount": 4,
+        "startDate": "2026-08-17",
+        "primarySport": "running",
+        "sportDetails": [
+          {
+            "sport": "running",
+            "role": "primary",
+            "phaseFocus": "",
+            "weeklyIntent": "",
+            "volumeBias": "hold",
+            "intensityBias": "hold",
+            "notes": ""
+          },
+          {
+            "sport": "strength",
+            "role": "support",
+            "phaseFocus": "",
+            "weeklyIntent": "",
+            "volumeBias": "hold",
+            "intensityBias": "hold",
+            "notes": ""
+          }
+        ],
+        "targetLoadBySport": {
+          "running": 60,
+          "strength": 20
+        },
+        "planStartDate": "2026-08-17",
+        "planEndDate": "2026-09-13",
+        "planPhases": [
+          {
+            "phase": "build",
+            "startWeekIndex": 0,
+            "endWeekIndex": 3,
+            "blockFocus": "",
+            "intentBySport": {}
+          }
+        ],
+        "weeks": [
+          {
+            "weekIndex": 0,
+            "weekStartDate": "2026-08-17",
+            "phase": "build",
+            "targetLoadBySport": {
+              "running": 60,
+              "strength": 20
+            }
+          },
+          {
+            "weekIndex": 1,
+            "weekStartDate": "2026-08-24",
+            "phase": "build",
+            "targetLoadBySport": {
+              "running": 60,
+              "strength": 20
+            }
+          },
+          {
+            "weekIndex": 2,
+            "weekStartDate": "2026-08-31",
+            "phase": "build",
+            "targetLoadBySport": {
+              "running": 60,
+              "strength": 20
+            }
+          },
+          {
+            "weekIndex": 3,
+            "weekStartDate": "2026-09-07",
+            "phase": "build",
+            "targetLoadBySport": {
+              "running": 60,
+              "strength": 20
+            }
+          }
+        ],
+        "profile": {
+          "id": "loadtest-athlete",
+          "updatedAt": 1,
+          "sportContext": {
+            "enabledSports": [
+              "running",
+              "strength"
+            ],
+            "primarySport": "running"
+          },
+          "goalEvents": [
+            {
+              "id": "loadtest-event",
+              "title": "Loadtest running",
+              "date": "2026-09-13",
+              "sport": "running",
+              "priority": "primary"
+            }
+          ]
+        },
+        "wizardConfig": {
+          "goalEventId": "loadtest-event",
+          "trainingDays": [
+            "monday",
+            "tuesday",
+            "thursday",
+            "saturday"
+          ],
+          "sessionsPerWeek": 4,
+          "sessionDurationMins": 60,
+          "allowDoubleSession": false,
+          "complementarySports": [
+            "strength"
+          ],
+          "currentFitnessLevel": "normal",
+          "currentFatigue": "fresh",
+          "createdAt": "2026-06-01T00:00:00.000Z",
+          "updatedAt": "2026-06-01T00:00:00.000Z"
+        }
+      },
+      {
+        "caseId": "running#2",
+        "scenarioKey": "running",
+        "planIndex": 2,
+        "weekCount": 4,
+        "startDate": "2026-08-17",
+        "primarySport": "running",
+        "sportDetails": [
+          {
+            "sport": "running",
+            "role": "primary",
+            "phaseFocus": "",
+            "weeklyIntent": "",
+            "volumeBias": "hold",
+            "intensityBias": "hold",
+            "notes": ""
+          },
+          {
+            "sport": "strength",
+            "role": "support",
+            "phaseFocus": "",
+            "weeklyIntent": "",
+            "volumeBias": "hold",
+            "intensityBias": "hold",
+            "notes": ""
+          }
+        ],
+        "targetLoadBySport": {
+          "running": 60,
+          "strength": 20
+        },
+        "planStartDate": "2026-08-17",
+        "planEndDate": "2026-09-13",
+        "planPhases": [
+          {
+            "phase": "build",
+            "startWeekIndex": 0,
+            "endWeekIndex": 3,
+            "blockFocus": "",
+            "intentBySport": {}
+          }
+        ],
+        "weeks": [
+          {
+            "weekIndex": 0,
+            "weekStartDate": "2026-08-17",
+            "phase": "build",
+            "targetLoadBySport": {
+              "running": 60,
+              "strength": 20
+            }
+          },
+          {
+            "weekIndex": 1,
+            "weekStartDate": "2026-08-24",
+            "phase": "build",
+            "targetLoadBySport": {
+              "running": 60,
+              "strength": 20
+            }
+          },
+          {
+            "weekIndex": 2,
+            "weekStartDate": "2026-08-31",
+            "phase": "build",
+            "targetLoadBySport": {
+              "running": 60,
+              "strength": 20
+            }
+          },
+          {
+            "weekIndex": 3,
+            "weekStartDate": "2026-09-07",
+            "phase": "build",
+            "targetLoadBySport": {
+              "running": 60,
+              "strength": 20
+            }
+          }
+        ],
+        "profile": {
+          "id": "loadtest-athlete",
+          "updatedAt": 1,
+          "sportContext": {
+            "enabledSports": [
+              "running",
+              "strength"
+            ],
+            "primarySport": "running"
+          },
+          "goalEvents": [
+            {
+              "id": "loadtest-event",
+              "title": "Loadtest running",
+              "date": "2026-09-13",
+              "sport": "running",
+              "priority": "primary"
+            }
+          ]
+        },
+        "wizardConfig": {
+          "goalEventId": "loadtest-event",
+          "trainingDays": [
+            "monday",
+            "tuesday",
+            "thursday",
+            "saturday"
+          ],
+          "sessionsPerWeek": 4,
+          "sessionDurationMins": 60,
+          "allowDoubleSession": false,
+          "complementarySports": [
+            "strength"
+          ],
+          "currentFitnessLevel": "normal",
+          "currentFatigue": "fresh",
+          "createdAt": "2026-06-01T00:00:00.000Z",
+          "updatedAt": "2026-06-01T00:00:00.000Z"
+        }
+      },
+      {
+        "caseId": "ciclismo#1",
+        "scenarioKey": "ciclismo",
+        "planIndex": 1,
+        "weekCount": 3,
+        "startDate": "2026-08-24",
+        "primarySport": "cycling",
+        "sportDetails": [
+          {
+            "sport": "cycling",
+            "role": "primary",
+            "phaseFocus": "",
+            "weeklyIntent": "",
+            "volumeBias": "hold",
+            "intensityBias": "hold",
+            "notes": ""
+          },
+          {
+            "sport": "strength",
+            "role": "support",
+            "phaseFocus": "",
+            "weeklyIntent": "",
+            "volumeBias": "hold",
+            "intensityBias": "hold",
+            "notes": ""
+          }
+        ],
+        "targetLoadBySport": {
+          "cycling": 60,
+          "strength": 20
+        },
+        "planStartDate": "2026-08-24",
+        "planEndDate": "2026-09-13",
+        "planPhases": [
+          {
+            "phase": "build",
+            "startWeekIndex": 0,
+            "endWeekIndex": 2,
+            "blockFocus": "",
+            "intentBySport": {}
+          }
+        ],
+        "weeks": [
+          {
+            "weekIndex": 0,
+            "weekStartDate": "2026-08-24",
+            "phase": "build",
+            "targetLoadBySport": {
+              "cycling": 60,
+              "strength": 20
+            }
+          },
+          {
+            "weekIndex": 1,
+            "weekStartDate": "2026-08-31",
+            "phase": "build",
+            "targetLoadBySport": {
+              "cycling": 60,
+              "strength": 20
+            }
+          },
+          {
+            "weekIndex": 2,
+            "weekStartDate": "2026-09-07",
+            "phase": "build",
+            "targetLoadBySport": {
+              "cycling": 60,
+              "strength": 20
+            }
+          }
+        ],
+        "profile": {
+          "id": "loadtest-athlete",
+          "updatedAt": 1,
+          "sportContext": {
+            "enabledSports": [
+              "cycling",
+              "strength"
+            ],
+            "primarySport": "cycling"
+          },
+          "goalEvents": [
+            {
+              "id": "loadtest-event",
+              "title": "Loadtest ciclismo",
+              "date": "2026-09-13",
+              "sport": "cycling",
+              "priority": "primary"
+            }
+          ]
+        },
+        "wizardConfig": {
+          "goalEventId": "loadtest-event",
+          "trainingDays": [
+            "tuesday",
+            "thursday",
+            "sunday"
+          ],
+          "sessionsPerWeek": 3,
+          "sessionDurationMins": 90,
+          "allowDoubleSession": false,
+          "complementarySports": [
+            "strength"
+          ],
+          "currentFitnessLevel": "normal",
+          "currentFatigue": "fresh",
+          "createdAt": "2026-06-01T00:00:00.000Z",
+          "updatedAt": "2026-06-01T00:00:00.000Z"
+        }
+      },
+      {
+        "caseId": "ciclismo#2",
+        "scenarioKey": "ciclismo",
+        "planIndex": 2,
+        "weekCount": 3,
+        "startDate": "2026-08-24",
+        "primarySport": "cycling",
+        "sportDetails": [
+          {
+            "sport": "cycling",
+            "role": "primary",
+            "phaseFocus": "",
+            "weeklyIntent": "",
+            "volumeBias": "hold",
+            "intensityBias": "hold",
+            "notes": ""
+          },
+          {
+            "sport": "strength",
+            "role": "support",
+            "phaseFocus": "",
+            "weeklyIntent": "",
+            "volumeBias": "hold",
+            "intensityBias": "hold",
+            "notes": ""
+          }
+        ],
+        "targetLoadBySport": {
+          "cycling": 60,
+          "strength": 20
+        },
+        "planStartDate": "2026-08-24",
+        "planEndDate": "2026-09-13",
+        "planPhases": [
+          {
+            "phase": "build",
+            "startWeekIndex": 0,
+            "endWeekIndex": 2,
+            "blockFocus": "",
+            "intentBySport": {}
+          }
+        ],
+        "weeks": [
+          {
+            "weekIndex": 0,
+            "weekStartDate": "2026-08-24",
+            "phase": "build",
+            "targetLoadBySport": {
+              "cycling": 60,
+              "strength": 20
+            }
+          },
+          {
+            "weekIndex": 1,
+            "weekStartDate": "2026-08-31",
+            "phase": "build",
+            "targetLoadBySport": {
+              "cycling": 60,
+              "strength": 20
+            }
+          },
+          {
+            "weekIndex": 2,
+            "weekStartDate": "2026-09-07",
+            "phase": "build",
+            "targetLoadBySport": {
+              "cycling": 60,
+              "strength": 20
+            }
+          }
+        ],
+        "profile": {
+          "id": "loadtest-athlete",
+          "updatedAt": 1,
+          "sportContext": {
+            "enabledSports": [
+              "cycling",
+              "strength"
+            ],
+            "primarySport": "cycling"
+          },
+          "goalEvents": [
+            {
+              "id": "loadtest-event",
+              "title": "Loadtest ciclismo",
+              "date": "2026-09-13",
+              "sport": "cycling",
+              "priority": "primary"
+            }
+          ]
+        },
+        "wizardConfig": {
+          "goalEventId": "loadtest-event",
+          "trainingDays": [
+            "tuesday",
+            "thursday",
+            "sunday"
+          ],
+          "sessionsPerWeek": 3,
+          "sessionDurationMins": 90,
+          "allowDoubleSession": false,
+          "complementarySports": [
+            "strength"
+          ],
+          "currentFitnessLevel": "normal",
+          "currentFatigue": "fresh",
+          "createdAt": "2026-06-01T00:00:00.000Z",
+          "updatedAt": "2026-06-01T00:00:00.000Z"
+        }
+      },
+      {
+        "caseId": "dobles#1",
+        "scenarioKey": "dobles",
+        "planIndex": 1,
+        "weekCount": 4,
+        "startDate": "2026-08-31",
+        "primarySport": "squash",
+        "sportDetails": [
+          {
+            "sport": "squash",
+            "role": "primary",
+            "phaseFocus": "",
+            "weeklyIntent": "",
+            "volumeBias": "hold",
+            "intensityBias": "hold",
+            "notes": ""
+          },
+          {
+            "sport": "strength",
+            "role": "support",
+            "phaseFocus": "",
+            "weeklyIntent": "",
+            "volumeBias": "hold",
+            "intensityBias": "hold",
+            "notes": ""
+          }
+        ],
+        "targetLoadBySport": {
+          "squash": 70,
+          "strength": 30
+        },
+        "planStartDate": "2026-08-31",
+        "planEndDate": "2026-09-27",
+        "planPhases": [
+          {
+            "phase": "build",
+            "startWeekIndex": 0,
+            "endWeekIndex": 3,
+            "blockFocus": "",
+            "intentBySport": {}
+          }
+        ],
+        "weeks": [
+          {
+            "weekIndex": 0,
+            "weekStartDate": "2026-08-31",
+            "phase": "build",
+            "targetLoadBySport": {
+              "squash": 70,
+              "strength": 30
+            }
+          },
+          {
+            "weekIndex": 1,
+            "weekStartDate": "2026-09-07",
+            "phase": "build",
+            "targetLoadBySport": {
+              "squash": 70,
+              "strength": 30
+            }
+          },
+          {
+            "weekIndex": 2,
+            "weekStartDate": "2026-09-14",
+            "phase": "build",
+            "targetLoadBySport": {
+              "squash": 70,
+              "strength": 30
+            }
+          },
+          {
+            "weekIndex": 3,
+            "weekStartDate": "2026-09-21",
+            "phase": "build",
+            "targetLoadBySport": {
+              "squash": 70,
+              "strength": 30
+            }
+          }
+        ],
+        "profile": {
+          "id": "loadtest-athlete",
+          "updatedAt": 1,
+          "sportContext": {
+            "enabledSports": [
+              "squash",
+              "strength"
+            ],
+            "primarySport": "squash"
+          },
+          "goalEvents": [
+            {
+              "id": "loadtest-event",
+              "title": "Loadtest dobles",
+              "date": "2026-09-27",
+              "sport": "squash",
+              "priority": "primary"
+            }
+          ]
+        },
+        "wizardConfig": {
+          "goalEventId": "loadtest-event",
+          "trainingDays": [
+            "monday",
+            "tuesday",
+            "wednesday",
+            "friday",
+            "saturday"
+          ],
+          "sessionsPerWeek": 5,
+          "sessionDurationMins": 60,
+          "allowDoubleSession": true,
+          "complementarySports": [
+            "strength"
+          ],
+          "currentFitnessLevel": "normal",
+          "currentFatigue": "fresh",
+          "createdAt": "2026-06-01T00:00:00.000Z",
+          "updatedAt": "2026-06-01T00:00:00.000Z"
+        }
+      },
+      {
+        "caseId": "dobles#2",
+        "scenarioKey": "dobles",
+        "planIndex": 2,
+        "weekCount": 4,
+        "startDate": "2026-08-31",
+        "primarySport": "squash",
+        "sportDetails": [
+          {
+            "sport": "squash",
+            "role": "primary",
+            "phaseFocus": "",
+            "weeklyIntent": "",
+            "volumeBias": "hold",
+            "intensityBias": "hold",
+            "notes": ""
+          },
+          {
+            "sport": "strength",
+            "role": "support",
+            "phaseFocus": "",
+            "weeklyIntent": "",
+            "volumeBias": "hold",
+            "intensityBias": "hold",
+            "notes": ""
+          }
+        ],
+        "targetLoadBySport": {
+          "squash": 70,
+          "strength": 30
+        },
+        "planStartDate": "2026-08-31",
+        "planEndDate": "2026-09-27",
+        "planPhases": [
+          {
+            "phase": "build",
+            "startWeekIndex": 0,
+            "endWeekIndex": 3,
+            "blockFocus": "",
+            "intentBySport": {}
+          }
+        ],
+        "weeks": [
+          {
+            "weekIndex": 0,
+            "weekStartDate": "2026-08-31",
+            "phase": "build",
+            "targetLoadBySport": {
+              "squash": 70,
+              "strength": 30
+            }
+          },
+          {
+            "weekIndex": 1,
+            "weekStartDate": "2026-09-07",
+            "phase": "build",
+            "targetLoadBySport": {
+              "squash": 70,
+              "strength": 30
+            }
+          },
+          {
+            "weekIndex": 2,
+            "weekStartDate": "2026-09-14",
+            "phase": "build",
+            "targetLoadBySport": {
+              "squash": 70,
+              "strength": 30
+            }
+          },
+          {
+            "weekIndex": 3,
+            "weekStartDate": "2026-09-21",
+            "phase": "build",
+            "targetLoadBySport": {
+              "squash": 70,
+              "strength": 30
+            }
+          }
+        ],
+        "profile": {
+          "id": "loadtest-athlete",
+          "updatedAt": 1,
+          "sportContext": {
+            "enabledSports": [
+              "squash",
+              "strength"
+            ],
+            "primarySport": "squash"
+          },
+          "goalEvents": [
+            {
+              "id": "loadtest-event",
+              "title": "Loadtest dobles",
+              "date": "2026-09-27",
+              "sport": "squash",
+              "priority": "primary"
+            }
+          ]
+        },
+        "wizardConfig": {
+          "goalEventId": "loadtest-event",
+          "trainingDays": [
+            "monday",
+            "tuesday",
+            "wednesday",
+            "friday",
+            "saturday"
+          ],
+          "sessionsPerWeek": 5,
+          "sessionDurationMins": 60,
+          "allowDoubleSession": true,
+          "complementarySports": [
+            "strength"
+          ],
+          "currentFitnessLevel": "normal",
+          "currentFatigue": "fresh",
+          "createdAt": "2026-06-01T00:00:00.000Z",
+          "updatedAt": "2026-06-01T00:00:00.000Z"
+        }
+      },
+      {
+        "caseId": "semana_parcial#1",
+        "scenarioKey": "semana_parcial",
+        "planIndex": 1,
+        "weekCount": 3,
+        "startDate": "2026-09-09",
+        "primarySport": "squash",
+        "sportDetails": [
+          {
+            "sport": "squash",
+            "role": "primary",
+            "phaseFocus": "",
+            "weeklyIntent": "",
+            "volumeBias": "hold",
+            "intensityBias": "hold",
+            "notes": ""
+          },
+          {
+            "sport": "strength",
+            "role": "support",
+            "phaseFocus": "",
+            "weeklyIntent": "",
+            "volumeBias": "hold",
+            "intensityBias": "hold",
+            "notes": ""
+          }
+        ],
+        "targetLoadBySport": {
+          "squash": 40,
+          "strength": 20
+        },
+        "planStartDate": "2026-09-09",
+        "planEndDate": "2026-09-27",
+        "planPhases": [
+          {
+            "phase": "build",
+            "startWeekIndex": 0,
+            "endWeekIndex": 2,
+            "blockFocus": "",
+            "intentBySport": {}
+          }
+        ],
+        "weeks": [
+          {
+            "weekIndex": 0,
+            "weekStartDate": "2026-09-07",
+            "phase": "build",
+            "targetLoadBySport": {
+              "squash": 40,
+              "strength": 20
+            }
+          },
+          {
+            "weekIndex": 1,
+            "weekStartDate": "2026-09-14",
+            "phase": "build",
+            "targetLoadBySport": {
+              "squash": 40,
+              "strength": 20
+            }
+          },
+          {
+            "weekIndex": 2,
+            "weekStartDate": "2026-09-21",
+            "phase": "build",
+            "targetLoadBySport": {
+              "squash": 40,
+              "strength": 20
+            }
+          }
+        ],
+        "profile": {
+          "id": "loadtest-athlete",
+          "updatedAt": 1,
+          "sportContext": {
+            "enabledSports": [
+              "squash",
+              "strength"
+            ],
+            "primarySport": "squash"
+          },
+          "goalEvents": [
+            {
+              "id": "loadtest-event",
+              "title": "Loadtest semana_parcial",
+              "date": "2026-09-27",
+              "sport": "squash",
+              "priority": "primary"
+            }
+          ]
+        },
+        "wizardConfig": {
+          "goalEventId": "loadtest-event",
+          "trainingDays": [
+            "monday",
+            "wednesday",
+            "friday"
+          ],
+          "sessionsPerWeek": 3,
+          "sessionDurationMins": 60,
+          "allowDoubleSession": false,
+          "complementarySports": [
+            "strength"
+          ],
+          "currentFitnessLevel": "normal",
+          "currentFatigue": "fresh",
+          "createdAt": "2026-06-01T00:00:00.000Z",
+          "updatedAt": "2026-06-01T00:00:00.000Z"
+        }
+      },
+      {
+        "caseId": "semana_parcial#2",
+        "scenarioKey": "semana_parcial",
+        "planIndex": 2,
+        "weekCount": 3,
+        "startDate": "2026-09-09",
+        "primarySport": "squash",
+        "sportDetails": [
+          {
+            "sport": "squash",
+            "role": "primary",
+            "phaseFocus": "",
+            "weeklyIntent": "",
+            "volumeBias": "hold",
+            "intensityBias": "hold",
+            "notes": ""
+          },
+          {
+            "sport": "strength",
+            "role": "support",
+            "phaseFocus": "",
+            "weeklyIntent": "",
+            "volumeBias": "hold",
+            "intensityBias": "hold",
+            "notes": ""
+          }
+        ],
+        "targetLoadBySport": {
+          "squash": 40,
+          "strength": 20
+        },
+        "planStartDate": "2026-09-09",
+        "planEndDate": "2026-09-27",
+        "planPhases": [
+          {
+            "phase": "build",
+            "startWeekIndex": 0,
+            "endWeekIndex": 2,
+            "blockFocus": "",
+            "intentBySport": {}
+          }
+        ],
+        "weeks": [
+          {
+            "weekIndex": 0,
+            "weekStartDate": "2026-09-07",
+            "phase": "build",
+            "targetLoadBySport": {
+              "squash": 40,
+              "strength": 20
+            }
+          },
+          {
+            "weekIndex": 1,
+            "weekStartDate": "2026-09-14",
+            "phase": "build",
+            "targetLoadBySport": {
+              "squash": 40,
+              "strength": 20
+            }
+          },
+          {
+            "weekIndex": 2,
+            "weekStartDate": "2026-09-21",
+            "phase": "build",
+            "targetLoadBySport": {
+              "squash": 40,
+              "strength": 20
+            }
+          }
+        ],
+        "profile": {
+          "id": "loadtest-athlete",
+          "updatedAt": 1,
+          "sportContext": {
+            "enabledSports": [
+              "squash",
+              "strength"
+            ],
+            "primarySport": "squash"
+          },
+          "goalEvents": [
+            {
+              "id": "loadtest-event",
+              "title": "Loadtest semana_parcial",
+              "date": "2026-09-27",
+              "sport": "squash",
+              "priority": "primary"
+            }
+          ]
+        },
+        "wizardConfig": {
+          "goalEventId": "loadtest-event",
+          "trainingDays": [
+            "monday",
+            "wednesday",
+            "friday"
+          ],
+          "sessionsPerWeek": 3,
+          "sessionDurationMins": 60,
+          "allowDoubleSession": false,
+          "complementarySports": [
+            "strength"
+          ],
+          "currentFitnessLevel": "normal",
+          "currentFatigue": "fresh",
+          "createdAt": "2026-06-01T00:00:00.000Z",
+          "updatedAt": "2026-06-01T00:00:00.000Z"
+        }
+      }
+    ]
+  },
+  "latencySummary": {
+    "allAttempts": {
+      "firstWeekReadyMs": {
+        "n": 12,
+        "nullCount": 0,
+        "p50": 14399,
+        "p95": 21809
+      },
+      "firstWeekDetectedMs": {
+        "n": 12,
+        "nullCount": 0,
+        "p50": 16004,
+        "p95": 24007
+      },
+      "planCompleteMs": {
+        "n": 12,
+        "nullCount": 0,
+        "p50": 23458,
+        "p95": 47062
+      },
+      "terminalMs": {
+        "n": 12,
+        "nullCount": 0,
+        "p50": 23459,
+        "p95": 47063
+      }
+    },
+    "completePlans": {
+      "firstWeekReadyMs": {
+        "n": 12,
+        "nullCount": 0,
+        "p50": 14399,
+        "p95": 21809
+      },
+      "firstWeekDetectedMs": {
+        "n": 12,
+        "nullCount": 0,
+        "p50": 16004,
+        "p95": 24007
+      },
+      "planCompleteMs": {
+        "n": 12,
+        "nullCount": 0,
+        "p50": 23458,
+        "p95": 47062
+      },
+      "terminalMs": {
+        "n": 12,
+        "nullCount": 0,
+        "p50": 23459,
+        "p95": 47063
+      }
+    }
+  },
+  "caveat": "Caveat estadístico: con n=12 planes completos, p95 y p99 de plan son prácticamente el máximo observado. Baseline inicial conservadora, no un p95 estable.",
+  "plans": [
+    {
+      "caseId": "squash_build#1",
+      "scenarioKey": "squash_build",
+      "weekCount": 4,
+      "outcome": "succeeded",
+      "weekCountSucceeded": 4,
+      "weekCountFailed": 0,
+      "firstWeekReadyMs": 16057,
+      "firstWeekReadyE2eMs": 16057,
+      "firstWeekDetectedMs": 20005,
+      "firstWeekDetectionLagMs": 3948,
+      "planCompleteMs": 31191,
+      "terminalMs": 31192,
+      "totalInputTokens": 9326,
+      "totalOutputTokens": 3753,
+      "totalCacheReadTokens": 0,
+      "totalCacheCreationTokens": 0,
+      "estimatedCostUsd": 0.084273,
+      "retryCount": 0,
+      "fallbackUsed": false,
+      "observedModels": [
+        "claude-sonnet-4-6"
+      ],
+      "qualityVersion": 2,
+      "planScore": 69,
+      "planGrade": "needs_review",
+      "issueCodes": [
+        "quality.strength.repeated_template",
+        "quality.squash.low_drill_variety"
+      ],
+      "errorClass": null,
+      "promptChars": 22244,
+      "responseChars": 9788,
+      "weeks": [
+        {
+          "weekIndex": 0,
+          "scenarioKey": "squash_build",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 1,
+          "correctiveActionCount": 1,
+          "structuralActionCount": 0,
+          "movedSessionCount": 0,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 3,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "sessionCount": 3,
+          "promptChars": 5480,
+          "responseChars": 2918,
+          "promptTokens": 2309,
+          "completionTokens": 1102,
+          "durationMs": 20886,
+          "wallClockMs": 20892,
+          "score": 99,
+          "grade": "excellent"
+        },
+        {
+          "weekIndex": 1,
+          "scenarioKey": "squash_build",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 2,
+          "correctiveActionCount": 1,
+          "structuralActionCount": 1,
+          "movedSessionCount": 0,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 3,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "sessionCount": 3,
+          "promptChars": 5588,
+          "responseChars": 2345,
+          "promptTokens": 2339,
+          "completionTokens": 897,
+          "durationMs": 16032,
+          "wallClockMs": 16049,
+          "score": 91,
+          "grade": "excellent"
+        },
+        {
+          "weekIndex": 2,
+          "scenarioKey": "squash_build",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 1,
+          "correctiveActionCount": 0,
+          "structuralActionCount": 1,
+          "movedSessionCount": 0,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 3,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "sessionCount": 3,
+          "promptChars": 5588,
+          "responseChars": 2421,
+          "promptTokens": 2339,
+          "completionTokens": 920,
+          "durationMs": 16664,
+          "wallClockMs": 16670,
+          "score": 92,
+          "grade": "excellent"
+        },
+        {
+          "weekIndex": 3,
+          "scenarioKey": "squash_build",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 4,
+          "correctiveActionCount": 3,
+          "structuralActionCount": 1,
+          "movedSessionCount": 0,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 3,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "sessionCount": 3,
+          "promptChars": 5588,
+          "responseChars": 2104,
+          "promptTokens": 2339,
+          "completionTokens": 834,
+          "durationMs": 15126,
+          "wallClockMs": 15134,
+          "score": 82,
+          "grade": "good"
+        }
+      ]
+    },
+    {
+      "caseId": "squash_build#2",
+      "scenarioKey": "squash_build",
+      "weekCount": 4,
+      "outcome": "succeeded",
+      "weekCountSucceeded": 4,
+      "weekCountFailed": 0,
+      "firstWeekReadyMs": 16523,
+      "firstWeekReadyE2eMs": 16523,
+      "firstWeekDetectedMs": 20004,
+      "firstWeekDetectionLagMs": 3481,
+      "planCompleteMs": 33975,
+      "terminalMs": 33976,
+      "totalInputTokens": 9326,
+      "totalOutputTokens": 3724,
+      "totalCacheReadTokens": 0,
+      "totalCacheCreationTokens": 0,
+      "estimatedCostUsd": 0.083838,
+      "retryCount": 0,
+      "fallbackUsed": false,
+      "observedModels": [
+        "claude-sonnet-4-6"
+      ],
+      "qualityVersion": 2,
+      "planScore": 70,
+      "planGrade": "needs_review",
+      "issueCodes": [
+        "quality.strength.repeated_template",
+        "quality.squash.low_drill_variety"
+      ],
+      "errorClass": null,
+      "promptChars": 22244,
+      "responseChars": 9510,
+      "weeks": [
+        {
+          "weekIndex": 0,
+          "scenarioKey": "squash_build",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 2,
+          "correctiveActionCount": 1,
+          "structuralActionCount": 1,
+          "movedSessionCount": 0,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 3,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "sessionCount": 3,
+          "promptChars": 5480,
+          "responseChars": 2260,
+          "promptTokens": 2309,
+          "completionTokens": 919,
+          "durationMs": 16842,
+          "wallClockMs": 16847,
+          "score": 98,
+          "grade": "excellent"
+        },
+        {
+          "weekIndex": 1,
+          "scenarioKey": "squash_build",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 1,
+          "correctiveActionCount": 0,
+          "structuralActionCount": 1,
+          "movedSessionCount": 0,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 3,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "sessionCount": 3,
+          "promptChars": 5588,
+          "responseChars": 2254,
+          "promptTokens": 2339,
+          "completionTokens": 892,
+          "durationMs": 16515,
+          "wallClockMs": 16522,
+          "score": 92,
+          "grade": "excellent"
+        },
+        {
+          "weekIndex": 2,
+          "scenarioKey": "squash_build",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 2,
+          "correctiveActionCount": 1,
+          "structuralActionCount": 1,
+          "movedSessionCount": 0,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 3,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "sessionCount": 3,
+          "promptChars": 5588,
+          "responseChars": 2459,
+          "promptTokens": 2339,
+          "completionTokens": 945,
+          "durationMs": 16845,
+          "wallClockMs": 16849,
+          "score": 91,
+          "grade": "excellent"
+        },
+        {
+          "weekIndex": 3,
+          "scenarioKey": "squash_build",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 2,
+          "correctiveActionCount": 1,
+          "structuralActionCount": 1,
+          "movedSessionCount": 0,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 3,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "sessionCount": 3,
+          "promptChars": 5588,
+          "responseChars": 2537,
+          "promptTokens": 2339,
+          "completionTokens": 968,
+          "durationMs": 17446,
+          "wallClockMs": 17452,
+          "score": 84,
+          "grade": "good"
+        }
+      ]
+    },
+    {
+      "caseId": "squash_taper_medico#1",
+      "scenarioKey": "squash_taper_medico",
+      "weekCount": 3,
+      "outcome": "succeeded",
+      "weekCountSucceeded": 3,
+      "weekCountFailed": 0,
+      "firstWeekReadyMs": 15734,
+      "firstWeekReadyE2eMs": 15734,
+      "firstWeekDetectedMs": 16005,
+      "firstWeekDetectionLagMs": 271,
+      "planCompleteMs": 20885,
+      "terminalMs": 20886,
+      "totalInputTokens": 7096,
+      "totalOutputTokens": 2861,
+      "totalCacheReadTokens": 0,
+      "totalCacheCreationTokens": 0,
+      "estimatedCostUsd": 0.06420300000000001,
+      "retryCount": 0,
+      "fallbackUsed": false,
+      "observedModels": [
+        "claude-sonnet-4-6"
+      ],
+      "qualityVersion": 2,
+      "planScore": 92,
+      "planGrade": "excellent",
+      "issueCodes": [
+        "squash.race_day.missing_event"
+      ],
+      "errorClass": null,
+      "promptChars": 16856,
+      "responseChars": 7497,
+      "weeks": [
+        {
+          "weekIndex": 0,
+          "scenarioKey": "squash_taper_medico",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 2,
+          "correctiveActionCount": 0,
+          "structuralActionCount": 2,
+          "movedSessionCount": 0,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 3,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "sessionCount": 3,
+          "promptChars": 5701,
+          "responseChars": 2774,
+          "promptTokens": 2376,
+          "completionTokens": 1033,
+          "durationMs": 19900,
+          "wallClockMs": 19910,
+          "score": 98,
+          "grade": "excellent"
+        },
+        {
+          "weekIndex": 1,
+          "scenarioKey": "squash_taper_medico",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 2,
+          "correctiveActionCount": 1,
+          "structuralActionCount": 1,
+          "movedSessionCount": 0,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 3,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "sessionCount": 3,
+          "promptChars": 5739,
+          "responseChars": 2649,
+          "promptTokens": 2435,
+          "completionTokens": 1042,
+          "durationMs": 20878,
+          "wallClockMs": 20883,
+          "score": 98,
+          "grade": "excellent"
+        },
+        {
+          "weekIndex": 2,
+          "scenarioKey": "squash_taper_medico",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 6,
+          "correctiveActionCount": 3,
+          "structuralActionCount": 1,
+          "movedSessionCount": 2,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 2,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "sessionCount": 2,
+          "promptChars": 5416,
+          "responseChars": 2074,
+          "promptTokens": 2285,
+          "completionTokens": 786,
+          "durationMs": 15727,
+          "wallClockMs": 15732,
+          "score": 87,
+          "grade": "good"
+        }
+      ]
+    },
+    {
+      "caseId": "squash_taper_medico#2",
+      "scenarioKey": "squash_taper_medico",
+      "weekCount": 3,
+      "outcome": "succeeded",
+      "weekCountSucceeded": 3,
+      "weekCountFailed": 0,
+      "firstWeekReadyMs": 14454,
+      "firstWeekReadyE2eMs": 14454,
+      "firstWeekDetectedMs": 16005,
+      "firstWeekDetectionLagMs": 1551,
+      "planCompleteMs": 21872,
+      "terminalMs": 21873,
+      "totalInputTokens": 7096,
+      "totalOutputTokens": 2874,
+      "totalCacheReadTokens": 0,
+      "totalCacheCreationTokens": 0,
+      "estimatedCostUsd": 0.06439800000000001,
+      "retryCount": 0,
+      "fallbackUsed": false,
+      "observedModels": [
+        "claude-sonnet-4-6"
+      ],
+      "qualityVersion": 2,
+      "planScore": 94,
+      "planGrade": "excellent",
+      "issueCodes": [
+        "squash.race_day.missing_event"
+      ],
+      "errorClass": null,
+      "promptChars": 16856,
+      "responseChars": 7466,
+      "weeks": [
+        {
+          "weekIndex": 0,
+          "scenarioKey": "squash_taper_medico",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 2,
+          "correctiveActionCount": 0,
+          "structuralActionCount": 2,
+          "movedSessionCount": 0,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 3,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "sessionCount": 3,
+          "promptChars": 5701,
+          "responseChars": 2681,
+          "promptTokens": 2376,
+          "completionTokens": 1023,
+          "durationMs": 19053,
+          "wallClockMs": 19060,
+          "score": 98,
+          "grade": "excellent"
+        },
+        {
+          "weekIndex": 1,
+          "scenarioKey": "squash_taper_medico",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 3,
+          "correctiveActionCount": 1,
+          "structuralActionCount": 1,
+          "movedSessionCount": 1,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 3,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "sessionCount": 3,
+          "promptChars": 5739,
+          "responseChars": 2909,
+          "promptTokens": 2435,
+          "completionTokens": 1114,
+          "durationMs": 21868,
+          "wallClockMs": 21871,
+          "score": 97,
+          "grade": "excellent"
+        },
+        {
+          "weekIndex": 2,
+          "scenarioKey": "squash_taper_medico",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 2,
+          "correctiveActionCount": 1,
+          "structuralActionCount": 0,
+          "movedSessionCount": 1,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 2,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "sessionCount": 2,
+          "promptChars": 5416,
+          "responseChars": 1876,
+          "promptTokens": 2285,
+          "completionTokens": 737,
+          "durationMs": 14450,
+          "wallClockMs": 14453,
+          "score": 91,
+          "grade": "excellent"
+        }
+      ]
+    },
+    {
+      "caseId": "running#1",
+      "scenarioKey": "running",
+      "weekCount": 4,
+      "outcome": "succeeded",
+      "weekCountSucceeded": 4,
+      "weekCountFailed": 0,
+      "firstWeekReadyMs": 14361,
+      "firstWeekReadyE2eMs": 14361,
+      "firstWeekDetectedMs": 16004,
+      "firstWeekDetectionLagMs": 1643,
+      "planCompleteMs": 31560,
+      "terminalMs": 31561,
+      "totalInputTokens": 7450,
+      "totalOutputTokens": 3871,
+      "totalCacheReadTokens": 0,
+      "totalCacheCreationTokens": 0,
+      "estimatedCostUsd": 0.080415,
+      "retryCount": 0,
+      "fallbackUsed": false,
+      "observedModels": [
+        "claude-sonnet-4-6"
+      ],
+      "qualityVersion": 2,
+      "planScore": 80,
+      "planGrade": "good",
+      "issueCodes": [
+        "quality.strength.repeated_template"
+      ],
+      "errorClass": null,
+      "promptChars": 16088,
+      "responseChars": 9573,
+      "weeks": [
+        {
+          "weekIndex": 0,
+          "scenarioKey": "running",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 0,
+          "correctiveActionCount": 0,
+          "structuralActionCount": 0,
+          "movedSessionCount": 0,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 4,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "sessionCount": 4,
+          "promptChars": 3941,
+          "responseChars": 2367,
+          "promptTokens": 1840,
+          "completionTokens": 966,
+          "durationMs": 15239,
+          "wallClockMs": 15243,
+          "score": 100,
+          "grade": "excellent"
+        },
+        {
+          "weekIndex": 1,
+          "scenarioKey": "running",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 0,
+          "correctiveActionCount": 0,
+          "structuralActionCount": 0,
+          "movedSessionCount": 0,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 4,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "sessionCount": 4,
+          "promptChars": 4049,
+          "responseChars": 2263,
+          "promptTokens": 1870,
+          "completionTokens": 937,
+          "durationMs": 14354,
+          "wallClockMs": 14361,
+          "score": 93,
+          "grade": "excellent"
+        },
+        {
+          "weekIndex": 2,
+          "scenarioKey": "running",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 0,
+          "correctiveActionCount": 0,
+          "structuralActionCount": 0,
+          "movedSessionCount": 0,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 4,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "sessionCount": 4,
+          "promptChars": 4049,
+          "responseChars": 2446,
+          "promptTokens": 1870,
+          "completionTokens": 985,
+          "durationMs": 17012,
+          "wallClockMs": 17017,
+          "score": 93,
+          "grade": "excellent"
+        },
+        {
+          "weekIndex": 3,
+          "scenarioKey": "running",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 0,
+          "correctiveActionCount": 0,
+          "structuralActionCount": 0,
+          "movedSessionCount": 0,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 4,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "sessionCount": 4,
+          "promptChars": 4049,
+          "responseChars": 2497,
+          "promptTokens": 1870,
+          "completionTokens": 983,
+          "durationMs": 17195,
+          "wallClockMs": 17199,
+          "score": 93,
+          "grade": "excellent"
+        }
+      ]
+    },
+    {
+      "caseId": "running#2",
+      "scenarioKey": "running",
+      "weekCount": 4,
+      "outcome": "succeeded",
+      "weekCountSucceeded": 4,
+      "weekCountFailed": 0,
+      "firstWeekReadyMs": 14057,
+      "firstWeekReadyE2eMs": 14057,
+      "firstWeekDetectedMs": 16004,
+      "firstWeekDetectionLagMs": 1947,
+      "planCompleteMs": 34272,
+      "terminalMs": 34273,
+      "totalInputTokens": 7450,
+      "totalOutputTokens": 3940,
+      "totalCacheReadTokens": 0,
+      "totalCacheCreationTokens": 0,
+      "estimatedCostUsd": 0.08145,
+      "retryCount": 0,
+      "fallbackUsed": false,
+      "observedModels": [
+        "claude-sonnet-4-6"
+      ],
+      "qualityVersion": 2,
+      "planScore": 80,
+      "planGrade": "good",
+      "issueCodes": [
+        "quality.strength.repeated_template"
+      ],
+      "errorClass": null,
+      "promptChars": 16088,
+      "responseChars": 9857,
+      "weeks": [
+        {
+          "weekIndex": 0,
+          "scenarioKey": "running",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 0,
+          "correctiveActionCount": 0,
+          "structuralActionCount": 0,
+          "movedSessionCount": 0,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 4,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "sessionCount": 4,
+          "promptChars": 3941,
+          "responseChars": 2351,
+          "promptTokens": 1840,
+          "completionTokens": 949,
+          "durationMs": 18857,
+          "wallClockMs": 18861,
+          "score": 100,
+          "grade": "excellent"
+        },
+        {
+          "weekIndex": 1,
+          "scenarioKey": "running",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 0,
+          "correctiveActionCount": 0,
+          "structuralActionCount": 0,
+          "movedSessionCount": 0,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 4,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "sessionCount": 4,
+          "promptChars": 4049,
+          "responseChars": 2106,
+          "promptTokens": 1870,
+          "completionTokens": 878,
+          "durationMs": 14050,
+          "wallClockMs": 14056,
+          "score": 93,
+          "grade": "excellent"
+        },
+        {
+          "weekIndex": 2,
+          "scenarioKey": "running",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 0,
+          "correctiveActionCount": 0,
+          "structuralActionCount": 0,
+          "movedSessionCount": 0,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 4,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "sessionCount": 4,
+          "promptChars": 4049,
+          "responseChars": 2487,
+          "promptTokens": 1870,
+          "completionTokens": 1009,
+          "durationMs": 16704,
+          "wallClockMs": 16710,
+          "score": 93,
+          "grade": "excellent"
+        },
+        {
+          "weekIndex": 3,
+          "scenarioKey": "running",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 1,
+          "correctiveActionCount": 0,
+          "structuralActionCount": 0,
+          "movedSessionCount": 1,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 4,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "sessionCount": 4,
+          "promptChars": 4049,
+          "responseChars": 2913,
+          "promptTokens": 1870,
+          "completionTokens": 1104,
+          "durationMs": 20210,
+          "wallClockMs": 20215,
+          "score": 92,
+          "grade": "excellent"
+        }
+      ]
+    },
+    {
+      "caseId": "ciclismo#1",
+      "scenarioKey": "ciclismo",
+      "weekCount": 3,
+      "outcome": "succeeded",
+      "weekCountSucceeded": 3,
+      "weekCountFailed": 0,
+      "firstWeekReadyMs": 14094,
+      "firstWeekReadyE2eMs": 14094,
+      "firstWeekDetectedMs": 16004,
+      "firstWeekDetectionLagMs": 1910,
+      "planCompleteMs": 15252,
+      "terminalMs": 15252,
+      "totalInputTokens": 5523,
+      "totalOutputTokens": 2494,
+      "totalCacheReadTokens": 0,
+      "totalCacheCreationTokens": 0,
+      "estimatedCostUsd": 0.053979,
+      "retryCount": 0,
+      "fallbackUsed": false,
+      "observedModels": [
+        "claude-sonnet-4-6"
+      ],
+      "qualityVersion": 2,
+      "planScore": 85,
+      "planGrade": "good",
+      "issueCodes": [
+        "quality.strength.repeated_template"
+      ],
+      "errorClass": null,
+      "promptChars": 11838,
+      "responseChars": 6146,
+      "weeks": [
+        {
+          "weekIndex": 0,
+          "scenarioKey": "ciclismo",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 0,
+          "correctiveActionCount": 0,
+          "structuralActionCount": 0,
+          "movedSessionCount": 0,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 3,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "sessionCount": 3,
+          "promptChars": 3874,
+          "responseChars": 1952,
+          "promptTokens": 1821,
+          "completionTokens": 801,
+          "durationMs": 14479,
+          "wallClockMs": 14483,
+          "score": 100,
+          "grade": "excellent"
+        },
+        {
+          "weekIndex": 1,
+          "scenarioKey": "ciclismo",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 0,
+          "correctiveActionCount": 0,
+          "structuralActionCount": 0,
+          "movedSessionCount": 0,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 3,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "sessionCount": 3,
+          "promptChars": 3982,
+          "responseChars": 2006,
+          "promptTokens": 1851,
+          "completionTokens": 816,
+          "durationMs": 14087,
+          "wallClockMs": 14093,
+          "score": 93,
+          "grade": "excellent"
+        },
+        {
+          "weekIndex": 2,
+          "scenarioKey": "ciclismo",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 0,
+          "correctiveActionCount": 0,
+          "structuralActionCount": 0,
+          "movedSessionCount": 0,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 3,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "sessionCount": 3,
+          "promptChars": 3982,
+          "responseChars": 2188,
+          "promptTokens": 1851,
+          "completionTokens": 877,
+          "durationMs": 15245,
+          "wallClockMs": 15250,
+          "score": 93,
+          "grade": "excellent"
+        }
+      ]
+    },
+    {
+      "caseId": "ciclismo#2",
+      "scenarioKey": "ciclismo",
+      "weekCount": 3,
+      "outcome": "succeeded",
+      "weekCountSucceeded": 3,
+      "weekCountFailed": 0,
+      "firstWeekReadyMs": 13564,
+      "firstWeekReadyE2eMs": 13564,
+      "firstWeekDetectedMs": 16001,
+      "firstWeekDetectionLagMs": 2437,
+      "planCompleteMs": 23458,
+      "terminalMs": 23459,
+      "totalInputTokens": 5523,
+      "totalOutputTokens": 2588,
+      "totalCacheReadTokens": 0,
+      "totalCacheCreationTokens": 0,
+      "estimatedCostUsd": 0.055389,
+      "retryCount": 0,
+      "fallbackUsed": false,
+      "observedModels": [
+        "claude-sonnet-4-6"
+      ],
+      "qualityVersion": 2,
+      "planScore": 85,
+      "planGrade": "good",
+      "issueCodes": [
+        "quality.strength.repeated_template"
+      ],
+      "errorClass": null,
+      "promptChars": 11838,
+      "responseChars": 6393,
+      "weeks": [
+        {
+          "weekIndex": 0,
+          "scenarioKey": "ciclismo",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 0,
+          "correctiveActionCount": 0,
+          "structuralActionCount": 0,
+          "movedSessionCount": 0,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 3,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "sessionCount": 3,
+          "promptChars": 3874,
+          "responseChars": 2013,
+          "promptTokens": 1821,
+          "completionTokens": 832,
+          "durationMs": 14433,
+          "wallClockMs": 14436,
+          "score": 100,
+          "grade": "excellent"
+        },
+        {
+          "weekIndex": 1,
+          "scenarioKey": "ciclismo",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 0,
+          "correctiveActionCount": 0,
+          "structuralActionCount": 0,
+          "movedSessionCount": 0,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 3,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "sessionCount": 3,
+          "promptChars": 3982,
+          "responseChars": 1976,
+          "promptTokens": 1851,
+          "completionTokens": 813,
+          "durationMs": 13560,
+          "wallClockMs": 13564,
+          "score": 93,
+          "grade": "excellent"
+        },
+        {
+          "weekIndex": 2,
+          "scenarioKey": "ciclismo",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 0,
+          "correctiveActionCount": 0,
+          "structuralActionCount": 0,
+          "movedSessionCount": 0,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 3,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "sessionCount": 3,
+          "promptChars": 3982,
+          "responseChars": 2404,
+          "promptTokens": 1851,
+          "completionTokens": 943,
+          "durationMs": 23453,
+          "wallClockMs": 23458,
+          "score": 93,
+          "grade": "excellent"
+        }
+      ]
+    },
+    {
+      "caseId": "dobles#1",
+      "scenarioKey": "dobles",
+      "weekCount": 4,
+      "outcome": "succeeded",
+      "weekCountSucceeded": 4,
+      "weekCountFailed": 0,
+      "firstWeekReadyMs": 21809,
+      "firstWeekReadyE2eMs": 21809,
+      "firstWeekDetectedMs": 24007,
+      "firstWeekDetectionLagMs": 2198,
+      "planCompleteMs": 47062,
+      "terminalMs": 47063,
+      "totalInputTokens": 9678,
+      "totalOutputTokens": 5133,
+      "totalCacheReadTokens": 0,
+      "totalCacheCreationTokens": 0,
+      "estimatedCostUsd": 0.106029,
+      "retryCount": 0,
+      "fallbackUsed": false,
+      "observedModels": [
+        "claude-sonnet-4-6"
+      ],
+      "qualityVersion": 2,
+      "planScore": 65,
+      "planGrade": "needs_review",
+      "issueCodes": [
+        "quality.strength.repeated_template",
+        "quality.squash.low_drill_variety",
+        "quality.generation.high_repair_count"
+      ],
+      "errorClass": null,
+      "promptChars": 23144,
+      "responseChars": 13050,
+      "weeks": [
+        {
+          "weekIndex": 0,
+          "scenarioKey": "dobles",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 3,
+          "correctiveActionCount": 2,
+          "structuralActionCount": 1,
+          "movedSessionCount": 0,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 5,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "sessionCount": 5,
+          "promptChars": 5705,
+          "responseChars": 3166,
+          "promptTokens": 2397,
+          "completionTokens": 1265,
+          "durationMs": 21800,
+          "wallClockMs": 21809,
+          "score": 97,
+          "grade": "excellent"
+        },
+        {
+          "weekIndex": 1,
+          "scenarioKey": "dobles",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 6,
+          "correctiveActionCount": 6,
+          "structuralActionCount": 0,
+          "movedSessionCount": 0,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 5,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "sessionCount": 5,
+          "promptChars": 5813,
+          "responseChars": 3029,
+          "promptTokens": 2427,
+          "completionTokens": 1227,
+          "durationMs": 23593,
+          "wallClockMs": 23601,
+          "score": 87,
+          "grade": "good"
+        },
+        {
+          "weekIndex": 2,
+          "scenarioKey": "dobles",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 3,
+          "correctiveActionCount": 2,
+          "structuralActionCount": 1,
+          "movedSessionCount": 0,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 5,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "sessionCount": 5,
+          "promptChars": 5813,
+          "responseChars": 3169,
+          "promptTokens": 2427,
+          "completionTokens": 1253,
+          "durationMs": 23227,
+          "wallClockMs": 23235,
+          "score": 90,
+          "grade": "excellent"
+        },
+        {
+          "weekIndex": 3,
+          "scenarioKey": "dobles",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 5,
+          "correctiveActionCount": 2,
+          "structuralActionCount": 0,
+          "movedSessionCount": 3,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 5,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "sessionCount": 5,
+          "promptChars": 5813,
+          "responseChars": 3686,
+          "promptTokens": 2427,
+          "completionTokens": 1388,
+          "durationMs": 25243,
+          "wallClockMs": 25253,
+          "score": 81,
+          "grade": "good"
+        }
+      ]
+    },
+    {
+      "caseId": "dobles#2",
+      "scenarioKey": "dobles",
+      "weekCount": 4,
+      "outcome": "succeeded",
+      "weekCountSucceeded": 4,
+      "weekCountFailed": 0,
+      "firstWeekReadyMs": 18943,
+      "firstWeekReadyE2eMs": 18943,
+      "firstWeekDetectedMs": 20005,
+      "firstWeekDetectionLagMs": 1062,
+      "planCompleteMs": 43608,
+      "terminalMs": 43609,
+      "totalInputTokens": 9843,
+      "totalOutputTokens": 4967,
+      "totalCacheReadTokens": 0,
+      "totalCacheCreationTokens": 0,
+      "estimatedCostUsd": 0.10403399999999999,
+      "retryCount": 0,
+      "fallbackUsed": false,
+      "observedModels": [
+        "claude-sonnet-4-6"
+      ],
+      "qualityVersion": 2,
+      "planScore": 67,
+      "planGrade": "needs_review",
+      "issueCodes": [
+        "quality.strength.repeated_template",
+        "quality.squash.low_drill_variety",
+        "quality.generation.high_repair_count"
+      ],
+      "errorClass": null,
+      "promptChars": 23465,
+      "responseChars": 12444,
+      "weeks": [
+        {
+          "weekIndex": 0,
+          "scenarioKey": "dobles",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 1,
+          "correctiveActionCount": 0,
+          "structuralActionCount": 1,
+          "movedSessionCount": 0,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 5,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "sessionCount": 5,
+          "promptChars": 5705,
+          "responseChars": 3028,
+          "promptTokens": 2397,
+          "completionTokens": 1235,
+          "durationMs": 23019,
+          "wallClockMs": 23027,
+          "score": 99,
+          "grade": "excellent"
+        },
+        {
+          "weekIndex": 1,
+          "scenarioKey": "dobles",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 3,
+          "correctiveActionCount": 3,
+          "structuralActionCount": 0,
+          "movedSessionCount": 0,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 5,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "sessionCount": 5,
+          "promptChars": 5813,
+          "responseChars": 3170,
+          "promptTokens": 2427,
+          "completionTokens": 1259,
+          "durationMs": 30158,
+          "wallClockMs": 30167,
+          "score": 90,
+          "grade": "excellent"
+        },
+        {
+          "weekIndex": 2,
+          "scenarioKey": "dobles",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 6,
+          "correctiveActionCount": 5,
+          "structuralActionCount": 1,
+          "movedSessionCount": 0,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 5,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "sessionCount": 5,
+          "promptChars": 5813,
+          "responseChars": 2754,
+          "promptTokens": 2427,
+          "completionTokens": 1114,
+          "durationMs": 18935,
+          "wallClockMs": 18942,
+          "score": 87,
+          "grade": "good"
+        },
+        {
+          "weekIndex": 3,
+          "scenarioKey": "dobles",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 4,
+          "correctiveActionCount": 4,
+          "structuralActionCount": 0,
+          "movedSessionCount": 0,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 5,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "sessionCount": 5,
+          "promptChars": 6134,
+          "responseChars": 3492,
+          "promptTokens": 2592,
+          "completionTokens": 1359,
+          "durationMs": 24656,
+          "wallClockMs": 24665,
+          "score": 82,
+          "grade": "good"
+        }
+      ]
+    },
+    {
+      "caseId": "semana_parcial#1",
+      "scenarioKey": "semana_parcial",
+      "weekCount": 3,
+      "outcome": "succeeded",
+      "weekCountSucceeded": 3,
+      "weekCountFailed": 0,
+      "firstWeekReadyMs": 14399,
+      "firstWeekReadyE2eMs": 14399,
+      "firstWeekDetectedMs": 16001,
+      "firstWeekDetectionLagMs": 1602,
+      "planCompleteMs": 19485,
+      "terminalMs": 19486,
+      "totalInputTokens": 7001,
+      "totalOutputTokens": 2731,
+      "totalCacheReadTokens": 0,
+      "totalCacheCreationTokens": 0,
+      "estimatedCostUsd": 0.061967999999999995,
+      "retryCount": 0,
+      "fallbackUsed": false,
+      "observedModels": [
+        "claude-sonnet-4-6"
+      ],
+      "qualityVersion": 2,
+      "planScore": 73,
+      "planGrade": "needs_review",
+      "issueCodes": [
+        "plan.load.jump",
+        "quality.load.progression_jump",
+        "quality.strength.repeated_template",
+        "quality.squash.low_drill_variety"
+      ],
+      "errorClass": null,
+      "promptChars": 16698,
+      "responseChars": 6889,
+      "weeks": [
+        {
+          "weekIndex": 0,
+          "scenarioKey": "semana_parcial",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 3,
+          "correctiveActionCount": 2,
+          "structuralActionCount": 1,
+          "movedSessionCount": 0,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 2,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "sessionCount": 2,
+          "promptChars": 5514,
+          "responseChars": 1955,
+          "promptTokens": 2321,
+          "completionTokens": 794,
+          "durationMs": 14394,
+          "wallClockMs": 14399,
+          "score": 97,
+          "grade": "excellent"
+        },
+        {
+          "weekIndex": 1,
+          "scenarioKey": "semana_parcial",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 1,
+          "correctiveActionCount": 1,
+          "structuralActionCount": 0,
+          "movedSessionCount": 0,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 3,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "sessionCount": 3,
+          "promptChars": 5592,
+          "responseChars": 2313,
+          "promptTokens": 2340,
+          "completionTokens": 902,
+          "durationMs": 19475,
+          "wallClockMs": 19479,
+          "score": 92,
+          "grade": "excellent"
+        },
+        {
+          "weekIndex": 2,
+          "scenarioKey": "semana_parcial",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 4,
+          "correctiveActionCount": 3,
+          "structuralActionCount": 1,
+          "movedSessionCount": 0,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 3,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "sessionCount": 3,
+          "promptChars": 5592,
+          "responseChars": 2621,
+          "promptTokens": 2340,
+          "completionTokens": 1035,
+          "durationMs": 19479,
+          "wallClockMs": 19484,
+          "score": 82,
+          "grade": "good"
+        }
+      ]
+    },
+    {
+      "caseId": "semana_parcial#2",
+      "scenarioKey": "semana_parcial",
+      "weekCount": 3,
+      "outcome": "succeeded",
+      "weekCountSucceeded": 3,
+      "weekCountFailed": 0,
+      "firstWeekReadyMs": 12021,
+      "firstWeekReadyE2eMs": 12021,
+      "firstWeekDetectedMs": 16003,
+      "firstWeekDetectionLagMs": 3982,
+      "planCompleteMs": 15805,
+      "terminalMs": 15805,
+      "totalInputTokens": 7001,
+      "totalOutputTokens": 2438,
+      "totalCacheReadTokens": 0,
+      "totalCacheCreationTokens": 0,
+      "estimatedCostUsd": 0.057573,
+      "retryCount": 0,
+      "fallbackUsed": false,
+      "observedModels": [
+        "claude-sonnet-4-6"
+      ],
+      "qualityVersion": 2,
+      "planScore": 73,
+      "planGrade": "needs_review",
+      "issueCodes": [
+        "plan.load.jump",
+        "quality.load.progression_jump",
+        "quality.strength.repeated_template",
+        "quality.squash.low_drill_variety"
+      ],
+      "errorClass": null,
+      "promptChars": 16698,
+      "responseChars": 6084,
+      "weeks": [
+        {
+          "weekIndex": 0,
+          "scenarioKey": "semana_parcial",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 5,
+          "correctiveActionCount": 2,
+          "structuralActionCount": 1,
+          "movedSessionCount": 2,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 2,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "sessionCount": 2,
+          "promptChars": 5514,
+          "responseChars": 1607,
+          "promptTokens": 2321,
+          "completionTokens": 677,
+          "durationMs": 12014,
+          "wallClockMs": 12021,
+          "score": 95,
+          "grade": "excellent"
+        },
+        {
+          "weekIndex": 1,
+          "scenarioKey": "semana_parcial",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 4,
+          "correctiveActionCount": 3,
+          "structuralActionCount": 1,
+          "movedSessionCount": 0,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 3,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "sessionCount": 3,
+          "promptChars": 5592,
+          "responseChars": 2192,
+          "promptTokens": 2340,
+          "completionTokens": 872,
+          "durationMs": 15225,
+          "wallClockMs": 15231,
+          "score": 89,
+          "grade": "good"
+        },
+        {
+          "weekIndex": 2,
+          "scenarioKey": "semana_parcial",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 1,
+          "correctiveActionCount": 1,
+          "structuralActionCount": 0,
+          "movedSessionCount": 0,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 3,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "sessionCount": 3,
+          "promptChars": 5592,
+          "responseChars": 2285,
+          "promptTokens": 2340,
+          "completionTokens": 889,
+          "durationMs": 15797,
+          "wallClockMs": 15804,
+          "score": 85,
+          "grade": "good"
+        }
+      ]
+    }
+  ]
+}

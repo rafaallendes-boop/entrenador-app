@@ -140,6 +140,20 @@ export const useCoachActionsStore = create<CoachActionsState>((set, get) => ({
       }
 
       const trainingStore = useTrainingStore.getState()
+      const persistedSessions = filterRowsToActiveScope(await db.sessions.toArray())
+      if (hasAthleteSwitchChanged()) {
+        return { errors: [ATHLETE_SWITCH_ABORT_MESSAGE], warnings: [] }
+      }
+      const sessionsById = new Map(
+        [...trainingStore.sessions, ...persistedSessions].map((session) => [session.id, session]),
+      )
+      // The calendar store intentionally exposes only its loaded week. Proposal
+      // actions may target an adjacent week, so ID resolution must use the
+      // athlete's persisted sessions while retaining the live store methods.
+      const actionResolutionStore = {
+        ...trainingStore,
+        sessions: [...sessionsById.values()],
+      }
       const athleteProfile = useCoachMemoryStore.getState().athleteProfile
       const errors: string[] = []
       const warnings: string[] = []
@@ -155,7 +169,7 @@ export const useCoachActionsStore = create<CoachActionsState>((set, get) => ({
       const normalized = normalizeCoachProposal(proposal.actions, {
         source: proposal.metadata?.source ?? 'chat',
         relatedAlertId: proposal.metadata?.relatedAlertId,
-        existingSessions: trainingStore.sessions,
+        existingSessions: actionResolutionStore.sessions,
         proposalMessage: proposal.message,
       })
       const workingProposal: CoachProposal = {
@@ -168,7 +182,7 @@ export const useCoachActionsStore = create<CoachActionsState>((set, get) => ({
         },
       }
 
-      const validationErrors = preValidateActions(workingProposal.actions, trainingStore, athleteProfile)
+      const validationErrors = preValidateActions(workingProposal.actions, actionResolutionStore, athleteProfile)
       if (validationErrors.length > 0) {
         const nextProposal: CoachProposal = {
           ...workingProposal,
@@ -195,10 +209,10 @@ export const useCoachActionsStore = create<CoachActionsState>((set, get) => ({
         try {
           const weekSummarySnapshots = await captureWeekSummaryRollbackSnapshots(
             workingProposal.actions[i],
-            trainingStore,
+            actionResolutionStore,
             activeAthleteIdAtStart,
           )
-          const result = await applyCoachAction(workingProposal.actions[i], trainingStore, workingProposal.createdAt)
+          const result = await applyCoachAction(workingProposal.actions[i], actionResolutionStore, workingProposal.createdAt)
           await appendWeekSummaryRollbackEntries(result, weekSummarySnapshots, activeAthleteIdAtStart)
           warnings.push(...result.warnings)
           appliedResults.push({
@@ -226,7 +240,7 @@ export const useCoachActionsStore = create<CoachActionsState>((set, get) => ({
       }
 
       if (errors.length > 0 && appliedResults.length > 0) {
-        await rollbackAppliedActions(workingProposal.actions, appliedResults, trainingStore, {
+        await rollbackAppliedActions(workingProposal.actions, appliedResults, actionResolutionStore, {
           refreshStore: !hasAthleteSwitchChanged(),
         })
         warnings.push(`Se revirtieron ${appliedResults.length} acciones aplicadas antes del fallo.`)

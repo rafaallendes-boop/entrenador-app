@@ -140,6 +140,7 @@ export function buildSquashRulesSection(): string {
     '· sessionKind="control": volumen solo o sin rival, repeticiones por cuenta fija, precisión y timing sin presión. Ejemplos válidos: 100 drops, 100 paralelas, 100 al box, voleas solo.',
     '· sessionKind="shadows": ghosting, footwork, split step, vuelta a la T, movement work específico.',
     '· sessionKind="match": practice_match o competition_match.',
+    '· un match-play dedicado contiene un único partido al mejor de 5 juegos; no lo dividas en games sueltos, un mejor de 3 y otro partido condicionado.',
     '· sessionKind="mixed": SOLO cuando combinas 2 bloques compatibles dentro de la misma sesión.',
     '',
     'Mixtos válidos:',
@@ -242,6 +243,7 @@ export function buildDynamicSquashSelectionSection(
     lines.push('Modalidad partner: puedes usar drills con rival/alimentador y match al final; no priorices drills puramente solo salvo calentamiento/sombras.')
   }
   lines.push('Devuelve siempre squashDetails.blocks. Si hay partido o match-play, debe ser el ultimo bloque.')
+  lines.push('Si toda la sesion es match-play, devuelve un solo bloque match con un unico drill: "Partido de entrenamiento al mejor de 5 juegos". No agregues "Game a 11", mejor de 3 ni "Partido con ataque temprano".')
   lines.push('Usa esta seleccion como base prioritaria para las sesiones squash nuevas o actualizadas.')
   lines.push('Si ajustas una sesion squash, intenta mantener este foco y variar solo por restricciones del dia, equipamiento o feedback reciente.')
   lines.push('Si el contexto es build/peak competitivo sin competencia inmediata, puedes convertir la sesion squash principal en subtype "match" con squashDetails.sessionMode "practice_match" y sessionKind "match".')
@@ -320,8 +322,6 @@ export function buildSquashCreateWeekExample(opts: {
     squashMixedSelection,
     squashMixedDrillsJson,
     squashMixedBlocksJson,
-    squashControlSelection,
-    squashControlDrillsJson,
     strengthSupportSelection,
     strengthSupportExercisesJson,
     z2min,
@@ -345,7 +345,7 @@ export function buildSquashCreateWeekExample(opts: {
     hasStrength
       ? `{"date":"${addDaysToISO(weekStart, 2)}","timeBlock":"PM","sessionType":"strength","title":"Fuerza estructurada","durationMin":60,"rpe":6,"objective":"${strengthSupportSelection.focus}","exercises":[${strengthSupportExercisesJson}]}`
       : `{"date":"${addDaysToISO(weekStart, 2)}","timeBlock":"PM","sessionType":"mobility","title":"Movilidad","durationMin":30,"rpe":4,"objective":"cadera, tobillo y columna"}`,
-    `{"date":"${addDaysToISO(weekStart, 3)}","timeBlock":"PM","sessionType":"squash","title":"Partido de entrenamiento con foco tactico","durationMin":60,"rpe":7,"objective":"Aplicar decision tactica y gestion de ritmo en partido de entrenamiento sin llegar a carga competitiva real.","subtype":"match","squashDetails":{"trainingFocus":"${squashControlSelection.trainingFocus}","sessionMode":"practice_match","sessionKind":"match","drills":[${squashControlDrillsJson}]}}`,
+    `{"date":"${addDaysToISO(weekStart, 3)}","timeBlock":"PM","sessionType":"squash","title":"Partido de entrenamiento","durationMin":60,"rpe":7,"objective":"Jugar un partido completo y aplicar decisiones tácticas con marcador normal.","subtype":"match","squashDetails":{"trainingFocus":"conditioned_games","sessionMode":"practice_match","sessionKind":"match","blocks":[{"kind":"match","drills":[{"name":"Partido de entrenamiento al mejor de 5 juegos"}]}],"drills":[{"name":"Partido de entrenamiento al mejor de 5 juegos"}]}}`,
     hasRunning
       ? `{"date":"${addDaysToISO(weekStart, 4)}","timeBlock":"PM","sessionType":"running","title":"Running tempo","durationMin":45,"rpe":7,"objective":"umbral aeróbico — mantener ritmo sostenido","runningType":"tempo","targetPaceMin":"${tempoMin}","targetPaceMax":"${tempoMax}"}`
       : null,

@@ -20,7 +20,8 @@ const CURRENT_WEEK_PATTERN = /\b(esta\s+semana|semana\s+actual)\b/
 const WEEKDAY_REFERENCE_PATTERN = /\b(hoy|manana|lunes|martes|miercoles|jueves|viernes|sabado|domingo)\b/
 const SESSION_TARGET_PATTERN = /\b(sesion|sesiones|entreno|entrenamiento|fuerza|pesas|gym|gimnasio|strength|running|correr|corrida|trote|squash|cycling|ciclismo|bici|bicicleta|movilidad|mobility|recovery|recuperacion)\b/
 const CREATE_SESSION_INTENT_PATTERN = /\b(crea(?:r|me)?|crear|genera(?:r|me)?|generar|haz(?:me)?|hacer|arma(?:me)?|programa(?:me)?|agenda(?:me)?|agrega(?:me)?|agregar|pon(?:me)?|poner|dame|entrega(?:me)?|realiza(?:r)?|deja|incorpora)\b/
-const ACTION_VERB_PATTERN = /\b(ajusta(?:r|me)?|cambia(?:r|me)?|modifica(?:r|me)?|mueve|reordena(?:r|me)?|actualiza(?:r|me)?|quit(?:a|ar|ame)|borra(?:r|me)?|elimina(?:r|me)?|saca(?:r|me)?|pon(?:er|me)?|agrega(?:r|me)?|reemplaza(?:r|me)?|reduce|baja|sube|incorpora|programa(?:me)?|agenda(?:me)?)\b/
+const ACTION_VERB_PATTERN = /\b(ajusta(?:r|me)?|cambia(?:r|me)?|modifica(?:r|me)?|mueve(?:me)?|mover|pasa(?:r|me)?|reprograma(?:r|me)?|reordena(?:r|me)?|actualiza(?:r|me)?|quit(?:a|ar|ame)|borra(?:r|me)?|elimina(?:r|me)?|saca(?:r|me)?|pon(?:er|me)?|agrega(?:r|me)?|reemplaza(?:r|me)?|reduce|baja|sube|incorpora|programa(?:me)?|agenda(?:me)?)\b/
+const MOVE_SESSION_INTENT_PATTERN = /\b(mueve(?:me)?|mover|pasa(?:r|me)?|reprograma(?:r|me)?|reordena(?:r|me)?)\b/
 const ZONE_2_PATTERN = /\b(z2|zona\s*2|zona\s+dos|aerobico|aerobica)\b/
 
 export function postProcessCoachActions(
@@ -67,6 +68,11 @@ export function postProcessCoachActions(
     (inheritsRecentActionContext
       ? undefined
       : buildFallbackRequestedSessionActions(actionIntentText, context, requestedWeekStart, restOffsets))
+  const requestedMoveActions =
+    buildRequestedMoveSessionActions(normalizedMessage, context, requestedWeekStart) ??
+    (inheritsRecentActionContext
+      ? undefined
+      : buildRequestedMoveSessionActions(actionIntentText, context, requestedWeekStart))
   const fallbackActions =
     requestedSessionActions ??
     buildFallbackSingleSessionActions(normalizedMessage, context, resolvedDate, { allowResolvedDateOnly: inheritsRecentActionContext }) ??
@@ -81,9 +87,16 @@ export function postProcessCoachActions(
   const baseSourceActions: CoachAction[] | undefined = repairedReplacementAction
     ? [repairedReplacementAction]
     : (response.actions ?? fallbackActions)
-  const sourceActions = repairedReplacementAction
+  const moveReconciledActions = repairedReplacementAction
     ? baseSourceActions
-    : mergeMissingRequestedSessionActions(baseSourceActions, requestedSessionActions)
+    : reconcileRequestedMoveActions(baseSourceActions, requestedMoveActions)
+  const sourceActions = repairedReplacementAction
+    ? moveReconciledActions
+    : mergeMissingRequestedSessionActions(moveReconciledActions, requestedSessionActions)
+  const repairedRequestedMoves = Boolean(
+    requestedMoveActions?.length &&
+    !moveActionsMatch(baseSourceActions, requestedMoveActions),
+  )
   const repairedMissingRequestedActions = Boolean(
     baseSourceActions &&
     sourceActions &&
@@ -131,10 +144,11 @@ export function postProcessCoachActions(
     message: repairedReplacementAction
       ? buildRunningReplacementMessage(repairedReplacementAction)
       : response.actions?.length && !repairedMissingRequestedActions
+        && !repairedRequestedMoves
         ? response.message
         : buildFallbackActionMessage(actions, response.message),
-    fallbackUsed: response.fallbackUsed || !response.actions?.length || Boolean(repairedReplacementAction) || repairedMissingRequestedActions,
-    meta: response.actions?.length && !repairedReplacementAction && !repairedMissingRequestedActions
+    fallbackUsed: response.fallbackUsed || !response.actions?.length || Boolean(repairedReplacementAction) || repairedMissingRequestedActions || repairedRequestedMoves,
+    meta: response.actions?.length && !repairedReplacementAction && !repairedMissingRequestedActions && !repairedRequestedMoves
       ? response.meta
       : {
           ...response.meta,
@@ -145,6 +159,8 @@ export function postProcessCoachActions(
             ...(response.meta?.warnings ?? []),
             repairedReplacementAction
               ? 'chat_action_delete_only_repaired_to_running_replacement'
+              : repairedRequestedMoves
+                ? 'chat_action_move_sessions_reconciled'
               : repairedMissingRequestedActions
                 ? 'chat_action_missing_requested_sessions_repaired'
               : 'chat_action_without_actions_repaired',
@@ -270,6 +286,100 @@ interface RequestedSessionClause {
   weekdayOffset: number
 }
 
+interface RequestedMoveClause {
+  sessionType: SessionType
+  sourceDate: string
+  targetDate: string
+}
+
+function buildRequestedMoveSessionActions(
+  normalizedMessage: string,
+  context: ChatContext,
+  requestedWeekStart: string | undefined,
+): CoachAction[] | undefined {
+  if (!MOVE_SESSION_INTENT_PATTERN.test(normalizedMessage)) return undefined
+
+  const clauses = extractRequestedMoveClauses(normalizedMessage, context, requestedWeekStart)
+  if (clauses.length === 0) return undefined
+  const sessions = getContextSessions(context)
+  const actions: CoachAction[] = []
+
+  for (const clause of clauses) {
+    const candidates = sessions.filter((session) =>
+      session.date === clause.sourceDate &&
+      session.type === clause.sessionType &&
+      session.status !== 'skipped',
+    )
+    if (candidates.length !== 1) return undefined
+    actions.push({
+      type: 'move_session',
+      sessionId: candidates[0].id,
+      targetDate: clause.targetDate,
+      reason: `Mover la sesión de ${clause.sessionType} al día solicitado por el usuario.`,
+    })
+  }
+
+  return actions
+}
+
+function extractRequestedMoveClauses(
+  normalizedMessage: string,
+  context: ChatContext,
+  requestedWeekStart: string | undefined,
+): RequestedMoveClause[] {
+  const sport =
+    '(fuerza|pesas|gym|gimnasio|strength|running|correr|corrida|trote|squash|cycling|ciclismo|bici|bicicleta|movilidad|mobility|recovery|recuperacion)'
+  const weekday = '(lunes|martes|miercoles|jueves|viernes|sabado|domingo)'
+  const pattern = new RegExp(
+    `\\b${sport}\\b\\s+(?:del?|desde)\\s+(?:el\\s+)?${weekday}\\b\\s+(?:para|al|a|hacia)\\s+(?:el\\s+)?${weekday}\\b`,
+    'g',
+  )
+  const clauses: RequestedMoveClause[] = []
+  let match = pattern.exec(normalizedMessage)
+
+  while (match) {
+    const sessionType = inferRequestedSessionType(match[1])
+    const sourceOffset = getWeekdayOffsetForLabel(match[2])
+    const targetOffset = getWeekdayOffsetForLabel(match[3])
+    if (sessionType && sourceOffset != null && targetOffset != null) {
+      clauses.push({
+        sessionType,
+        sourceDate: resolveWeekdayOffsetDate(sourceOffset, context, requestedWeekStart),
+        targetDate: resolveWeekdayOffsetDate(targetOffset, context, requestedWeekStart),
+      })
+    }
+    match = pattern.exec(normalizedMessage)
+  }
+
+  return clauses
+}
+
+function reconcileRequestedMoveActions(
+  sourceActions: CoachAction[] | undefined,
+  requestedMoveActions: CoachAction[] | undefined,
+): CoachAction[] | undefined {
+  if (!requestedMoveActions?.length) return sourceActions
+  if (!sourceActions?.length) return requestedMoveActions
+  return [
+    ...sourceActions.filter((action) => action.type !== 'move_session'),
+    ...requestedMoveActions,
+  ]
+}
+
+function moveActionsMatch(
+  sourceActions: CoachAction[] | undefined,
+  requestedMoveActions: CoachAction[],
+): boolean {
+  const sourceMoves = sourceActions?.filter((action) => action.type === 'move_session') ?? []
+  if (sourceMoves.length !== requestedMoveActions.length) return false
+  return requestedMoveActions.every((requested) =>
+    sourceMoves.some((source) =>
+      source.sessionId === requested.sessionId &&
+      source.targetDate === requested.targetDate,
+    ),
+  )
+}
+
 function buildFallbackRequestedSessionActions(
   normalizedMessage: string,
   context: ChatContext,
@@ -353,7 +463,6 @@ function extractActionableWeekdaySessionClauses(
   const matches = collectWeekdayMatches(normalizedMessage)
   if (matches.length === 0) return []
 
-  const weekStart = requestedWeekStart ?? context.currentWeekSummary?.weekStartDate ?? currentWeekStartISO()
   const clauses: RequestedSessionClause[] = []
   const seen = new Set<string>()
 
@@ -376,7 +485,7 @@ function extractActionableWeekdaySessionClauses(
     seen.add(key)
 
     clauses.push({
-      targetDate: addDaysToISO(weekStart, match.offset),
+      targetDate: resolveWeekdayOffsetDate(match.offset, context, requestedWeekStart),
       sessionType,
       clause,
       weekdayOffset: match.offset,
@@ -932,7 +1041,29 @@ function resolveWeekdayDate(
     day.labels.some((label) => normalizedMessage.includes(label)),
   )
   if (!match) return undefined
-  return addDaysToISO(requestedWeekStart ?? context.currentWeekSummary?.weekStartDate ?? currentWeekStartISO(), match.offset)
+  return resolveWeekdayOffsetDate(match.offset, context, requestedWeekStart)
+}
+
+function resolveWeekdayOffsetDate(
+  weekdayOffset: number,
+  context: ChatContext,
+  requestedWeekStart: string | undefined,
+): string {
+  const weekStart = requestedWeekStart ?? context.currentWeekSummary?.weekStartDate ?? currentWeekStartISO()
+  const candidate = addDaysToISO(weekStart, weekdayOffset)
+  if (requestedWeekStart) return candidate
+
+  const today = todayISO()
+  // An unqualified weekday always means its next occurrence. This matters most
+  // on weekends: on Sunday, "el martes" is two days ahead, not five days ago.
+  if (isDateInWeek(today, weekStart) && candidate < today) {
+    return addDaysToISO(candidate, 7)
+  }
+  return candidate
+}
+
+function getWeekdayOffsetForLabel(label: string): number | undefined {
+  return WEEKDAYS.find((weekday) => weekday.labels.some((item) => item === label))?.offset
 }
 
 function resolveRelativeDate(normalizedMessage: string): string | undefined {

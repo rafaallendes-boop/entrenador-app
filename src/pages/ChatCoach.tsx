@@ -1,13 +1,14 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { AlertTriangle, CheckCircle2, Menu, MoreHorizontal, Plus, Trash2, X } from 'lucide-react'
+import { addDays } from 'date-fns'
 import { useChatStore } from '../store/useChatStore'
 import { useCoachActionsStore } from '../store/useCoachActionsStore'
 import { useCoachMemoryStore } from '../store/useCoachMemoryStore'
 import { useTrainingStore } from '../store/useTrainingStore'
 import { useAuthStore } from '../store/useAuthStore'
 import { detectChatIntent } from '../services/ai/contextOptimizer'
-import { currentWeekStartISO, todayISO } from '../utils/date'
+import { currentWeekStartISO, fromISO, todayISO, toISO } from '../utils/date'
 import { getAthleteFirstName, getEnabledSports, getProfileCompleteness } from '../utils/athlete'
 import ChatBubble from '../components/chat/ChatBubble'
 import ChatInput from '../components/chat/ChatInput'
@@ -22,6 +23,7 @@ import { buildWeeklyActionComposerDraft } from '../services/weeklyLaunchIntent'
 import { getActiveAthleteId } from '../services/athlete/activeAthlete'
 import { getLocalReadinessForDate } from '../services/readiness/localReadiness'
 import { pullReadiness } from '../services/readiness/pullReadiness'
+import { getSessionsForDateRange } from '../db/queries'
 
 const QuickActionChips = lazy(() => import('../components/chat/QuickActionChips'))
 const ProposalDrawer = lazy(() => import('../components/chat/ProposalDrawer'))
@@ -213,8 +215,11 @@ export default function ChatCoach() {
     }
   }, [menuOpen])
 
-  const buildContext = useCallback((message: string): ChatContext => {
-    const sortedSessions = [...sessions]
+  const buildContext = useCallback((message: string, planningSessions = sessions): ChatContext => {
+    const uniqueSessions = new Map(
+      [...sessions, ...planningSessions].map((session) => [session.id, session]),
+    )
+    const sortedSessions = [...uniqueSessions.values()]
       .sort((a, b) => a.date.localeCompare(b.date) || a.timeBlock.localeCompare(b.timeBlock))
     const plannedSessions = sortedSessions.filter(session => session.date >= todayISO())
     const historicalSessions = sortedSessions.filter(
@@ -248,7 +253,11 @@ export default function ChatCoach() {
   }, [sessions, currentWeekSummary, dayLogs, readiness, coachMemory, athleteProfile, proposals, loadAnalytics])
 
   const submitMessage = useCallback(async (message: string) => {
-    const result = await sendMessage(message, buildContext(message))
+    const today = todayISO()
+    const planningHorizonEnd = toISO(addDays(fromISO(today), 20))
+    const planningSessions = await getSessionsForDateRange(today, planningHorizonEnd)
+      .catch(() => sessions)
+    const result = await sendMessage(message, buildContext(message, planningSessions))
     if (result.route === 'plan_builder_redirect') {
       // Navigate straight to the V2 Plan Builder. Going through the legacy
       // /plan-builder route forwards location.state through <Navigate replace>,
@@ -260,7 +269,7 @@ export default function ChatCoach() {
         },
       })
     }
-  }, [buildContext, navigate, sendMessage])
+  }, [buildContext, navigate, sendMessage, sessions])
 
   const handleSend = useCallback(async (message: string) => {
     setMenuOpen(false)

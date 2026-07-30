@@ -18,6 +18,14 @@ IMPORTANTE DE FORMATO:
 - No incluyas warmup/cooldown salvo que aporte valor claro: el sistema completa protocolos base automaticamente si faltan.
 - Si tu respuesta anterior fue solo texto, ahora corrige eso y devuelve acciones reales.`
 
+const GENERAL_CONCISE_RETRY_INSTRUCTION = `
+
+IMPORTANTE:
+- La respuesta anterior excedió el límite disponible.
+- Responde nuevamente de forma completa y concisa, con un máximo de 450 palabras.
+- Prioriza la recomendación y los datos esenciales; no incluyas JSON, esquemas internos ni bloques <actions>.
+- Termina todas las frases y listas antes de responder.`
+
 const RETRY_BACKOFF_MS = [300, 800] as const
 
 /** Returns true only when the model produced genuinely malformed output. */
@@ -92,6 +100,33 @@ export async function sendWithRecovery(
       outcome: retryNormalized.meta?.outcome,
       errorClass: retryNormalized.meta?.errorClass,
     },
+  }
+}
+
+/** Retries a truncated conversational answer once with a strict concise format. */
+export async function sendGeneralWithRecovery(
+  provider: AIProvider,
+  request: AIRequest,
+): Promise<CoachNormalizedResponse> {
+  const firstRaw = await provider.call(request)
+  const firstNormalized = normalizeResponse(firstRaw)
+  if (!firstNormalized.meta?.likelyTruncated) return firstNormalized
+
+  try {
+    const retryRaw = await provider.call({
+      ...request,
+      systemPrompt: `${request.systemPrompt}${GENERAL_CONCISE_RETRY_INSTRUCTION}`,
+      temperature: Math.min(request.temperature ?? 0.7, 0.3),
+      onChunk: undefined,
+    })
+    const retryNormalized = normalizeResponse(retryRaw)
+    return {
+      ...retryNormalized,
+      retryUsed: true,
+      fallbackUsed: retryNormalized.fallbackUsed || firstNormalized.fallbackUsed,
+    }
+  } catch {
+    return firstNormalized
   }
 }
 

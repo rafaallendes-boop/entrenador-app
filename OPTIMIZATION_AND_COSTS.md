@@ -131,6 +131,28 @@ La Fase 2 de velocidad corre su **propio control q2 contemporáneo**
 objetivo. Bajar el cap de 5.000 (máximo observado ~1.506) es higiene de
 guardrail, no una optimización de velocidad.
 
+### `effort` — medido y descartado (2026-07-27)
+
+La Fase 2 corrió su control q2 contemporáneo más dos variantes sobre el mismo
+SHA limpio (`f349ae4`), 12 planes / 42 semanas cada una. Resultado:
+**ninguna variante aceptada; `high` se queda**. `PLAN_BUILDER_EFFORT` y
+`PLAN_BUILDER_THINKING` quedan sin definir en producción.
+
+| Variante | Primera semana (mediana pareada) | Plan completo | Costo | Tokens salida | Veredicto |
+|---|---|---|---|---|---|
+| C `high` (control) | — | — | US$0,8975 | 41.374 | referencia |
+| A `medium` | −4,9% (7/12 casos) | −2,0% | −2,5% | −3,6% | rechazada (además `score.min = −7`) |
+| B `low` | **−10,2%** (9/12 casos, 5/6 escenarios) | **−13,6%** | **−8,5%** | **−12,3%** | rechazada (barra pedía −20%) |
+
+Campaña completa: **US$2,5941** y ~30 min. Detalle, artefactos y SHA-256 en
+`docs/superpowers/experiments/plan-builder-speed-phase-2/`.
+
+Lo aprovechable para la fase siguiente: `low` es la única palanca que mostró
+señal consistente, y su mecanismo es visible —12,3% menos tokens de salida—, no
+una coincidencia de latencia. Lo que falta para poder afirmar que ese efecto
+supera el ruido es un **control contra control** (C₂ vs C₁), que esta campaña
+no corrió.
+
 ## 6. Prompt caching: por qué todavía no aplica
 
 `buildClaudeBody()` no manda `cache_control`, y `cache_reads = 0` lo confirma. El

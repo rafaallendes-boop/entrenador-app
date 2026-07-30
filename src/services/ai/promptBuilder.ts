@@ -587,7 +587,7 @@ function buildAdjustResponseInstructionsSection(
     '- Si pide eliminarla, usa delete_session.',
     '- Si pide saltarla, usa skip_session.',
     '- No uses create_week para ajustes puntuales.',
-    '- Para referencias como lunes/martes/viernes/sábado, usa la fecha correspondiente dentro de la semana solicitada. Si el usuario dice "próxima semana", usa la semana siguiente, no la semana actual.',
+    '- Para referencias como lunes/martes/viernes/sábado, usa la fecha correspondiente dentro de la semana solicitada. Si no especifica semana y ese día ya pasó, usa su próxima ocurrencia (la semana siguiente); nunca programes una sesión nueva en el pasado. Si dice "próxima semana", usa la semana siguiente, no la semana actual.',
     '- Para referencias como hoy/mañana/pasado mañana, compara contra la etiqueta relativa y la fecha absoluta de cada sesión. No llames "mañana" a una sesión marcada HOY.',
     '- Si el usuario marca un día como descanso/libre/off, no programes add_session ni move_session en ese día aunque lo haya nombrado.',
     ...requestedWeekInstruction,

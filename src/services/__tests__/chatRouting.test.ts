@@ -49,6 +49,12 @@ describe('chatRouting', () => {
     expect(resolveChatRoute('qué opinas de mi progreso').kind).toBe('chat_general')
   })
 
+  it('routes infinitive move requests to the action flow', () => {
+    expect(resolveChatRoute(
+      'Quiero mover la fuerza del martes al lunes y el running del miércoles al martes',
+    ).kind).toBe('chat_action')
+  })
+
   it('routes short confirmations to chat_action when the recent thread is an action discussion', () => {
     const route = resolveChatRoute('si, realiza el cambio', {
       recentSessions: [],

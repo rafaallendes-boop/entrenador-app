@@ -340,6 +340,7 @@ function buildSquashPhaseContentGuide(
     build: [
       '- Squash: pressure drills, puntos condicionados y trabajo a la T.',
       '- Incluye al menos 1 match-play controlado en la semana si la fatiga lo permite. RPE 7-8.',
+      '- Ese match-play debe ser un único partido al mejor de 5 juegos, sin games o partidos condicionados adicionales.',
     ],
     peak: [
       '- Squash: presión bajo fatiga, simulación de partido y control emocional.',

@@ -117,4 +117,44 @@ describe('acceptProposal - switch guard', () => {
       setActiveAthleteId('ath_user-1')
     }
   })
+
+  it('moves a persisted next-week session even when that week is not loaded in the calendar store', async () => {
+    await db.sessions.put({
+      id: 'future-running',
+      athleteId: 'ath_user-1',
+      date: '2026-07-29',
+      weekStartDate: '2026-07-27',
+      timeBlock: 'PM',
+      type: 'running',
+      status: 'planned',
+      title: 'Running Z2',
+      durationMin: 45,
+      createdAt: 1,
+      updatedAt: 1,
+    })
+    await db.coachProposals.put({
+      id: 'future-move',
+      athleteId: 'ath_user-1',
+      createdAt: Date.now(),
+      status: 'pending',
+      message: 'Mover running',
+      actions: [{
+        type: 'move_session',
+        sessionId: 'future-running',
+        targetDate: '2026-07-28',
+        reason: 'Mover al martes',
+      }],
+    })
+    useTrainingStore.setState({
+      sessions: [],
+      loadedWeekStart: '2026-07-20',
+    })
+    await useCoachActionsStore.getState().loadProposals()
+
+    const result = await useCoachActionsStore.getState().acceptProposal('future-move')
+
+    expect(result.errors).toEqual([])
+    expect((await db.sessions.get('future-running'))?.date).toBe('2026-07-28')
+    expect((await db.coachProposals.get('future-move'))?.status).toBe('accepted')
+  })
 })

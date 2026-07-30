@@ -573,6 +573,7 @@ function buildSquashCompetitionRules(plan: TrainingPlan, week: TrainingPlanWeek)
       '- Regla squash competitivo: running/cycling son soporte, no estímulo principal. Si incluyes running, debe ser Z2 corto <=45min, RPE <=5. No uses tempo, intervalos, long run ni test de carrera.',
       '- En peak de squash, la intensidad alta debe venir de squash específico: pressure drills, control bajo fatiga, patrones a la T, puntos condicionados o match-play controlado.',
       '- Match/simulación => sessionMode practice_match/competition_match + sessionKind match; no drill_session.',
+      '- Un match-play dedicado es un único partido al mejor de 5 juegos. No agregues Game a 11, mejor de 3 ni otro partido condicionado.',
       '- No repitas drills; rota familias.',
       '- Usa nombres exactos de drills de squash del catálogo/sugerencias del prompt. No inventes nombres nuevos para conceptos similares; si quieres presión de marcador usa un drill existente de puntos condicionados o match-play.',
     ]

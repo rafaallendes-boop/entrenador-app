@@ -75,6 +75,104 @@ describe('actionPostProcessor', () => {
     })
   })
 
+  it('uses the next weekday occurrence when the named day already passed', () => {
+    vi.setSystemTime(new Date('2026-07-26T12:00:00'))
+    const context = makeContext([], {
+      currentWeekSummary: {
+        id: 'week-2026-07-20',
+        weekStartDate: '2026-07-20',
+        totalSessions: 0,
+        totalMinutes: 0,
+        plannedSessions: 0,
+        completedSessions: 0,
+        plannedMinutes: 0,
+        completedMinutes: 0,
+        squashSessions: 0,
+        runningSessions: 0,
+        strengthSessions: 0,
+        updatedAt: 1,
+      },
+    })
+
+    const response = postProcessCoachActions(makeResponse([{
+      type: 'add_session',
+      reason: 'Running pedido para el martes',
+      targetDate: '2026-07-21',
+      timeBlock: 'PM',
+      sessionType: 'running',
+      title: 'Running Z2',
+      durationMin: 45,
+    }]), context, 'Agregame una sesión de running para el martes')
+
+    expect(response.actions?.[0]).toMatchObject({
+      type: 'add_session',
+      targetDate: '2026-07-28',
+    })
+  })
+
+  it('reconciles multiple moves with real future-session ids and requested dates', () => {
+    vi.setSystemTime(new Date('2026-07-26T12:00:00'))
+    const strength = makeSession({
+      id: 'real-strength-id',
+      date: '2026-07-28',
+      weekStartDate: '2026-07-27',
+      type: 'strength',
+      title: 'Fuerza',
+    })
+    const running = makeSession({
+      id: 'real-running-id',
+      date: '2026-07-29',
+      weekStartDate: '2026-07-27',
+      type: 'running',
+      title: 'Running',
+    })
+    const context = makeContext([strength, running], {
+      currentWeekSummary: {
+        id: 'week-2026-07-20',
+        weekStartDate: '2026-07-20',
+        totalSessions: 0,
+        totalMinutes: 0,
+        plannedSessions: 0,
+        completedSessions: 0,
+        plannedMinutes: 0,
+        completedMinutes: 0,
+        squashSessions: 0,
+        runningSessions: 0,
+        strengthSessions: 0,
+        updatedAt: 1,
+      },
+    })
+
+    const response = postProcessCoachActions(makeResponse([
+      {
+        type: 'move_session',
+        sessionId: 'invented-1',
+        targetDate: '2026-07-20',
+        reason: 'Mover fuerza',
+      },
+      {
+        type: 'move_session',
+        sessionId: 'invented-2',
+        targetDate: '2026-07-21',
+        reason: 'Mover running',
+      },
+    ]), context, 'Mover la fuerza del martes para el lunes y el running del miércoles al martes')
+
+    expect(response.actions).toEqual([
+      expect.objectContaining({
+        type: 'move_session',
+        sessionId: strength.id,
+        targetDate: '2026-07-27',
+      }),
+      expect.objectContaining({
+        type: 'move_session',
+        sessionId: running.id,
+        targetDate: '2026-07-28',
+      }),
+    ])
+    expect(response.meta?.warnings).toContain('chat_action_move_sessions_reconciled')
+  })
+
   it('does not treat a weekday marked as rest as the target date', () => {
     const response = postProcessCoachActions(makeResponse([{
       type: 'add_session',

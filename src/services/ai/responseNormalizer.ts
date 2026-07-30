@@ -1,6 +1,12 @@
 import type { CoachAction, CoachActionType, CoachExerciseProposal, CoachSessionProposal, CyclingDetails, GeneratedProtocol, MobilityDetails, RunningIntervalStructure, RunningType, SessionType, SquashDetails, SquashDrill, SquashDrillExecutionMode, SquashSessionBlock, SquashSessionBlockKind, SquashSessionKind, SquashSessionMode, SquashSubtype, SquashTrainingFocus, TimeBlock, WarmupSet } from '../../types'
 import type { AIRawResponse, CoachNormalizedResponse, CreateWeekNormalizationDiagnostic } from './types'
-import { orderSquashBlocksForSession, orderSquashDrillsForSession } from '../training/drillLibrary'
+import {
+  findSquashDrillByName,
+  isSquashMatchDrill,
+  orderSquashBlocksForSession,
+  orderSquashDrillsForSession,
+  toSquashDrill,
+} from '../training/drillLibrary'
 import { normalizeStrengthSessionExercises } from '../training/strengthSessionStructure'
 import { normalizeMobilityDetails } from '../training/mobilitySessionLibrary'
 
@@ -869,13 +875,36 @@ function normalizeSquashDetailsDraft(value: unknown): { details: SquashDetails; 
   if (!finalDrills || finalDrills.length === 0) return null
   if (!drills && blocks) repairs.push('squashDetails.drills')
 
+  const dedicatedMatchContent = blocks?.length
+    ? blocks.every((block) => block.kind === 'match')
+    : finalDrills.every((drill) => {
+        const definition = findSquashDrillByName(drill.name)
+        return definition ? isSquashMatchDrill(definition) : /\b(match|partido)\b/i.test(drill.name)
+      })
+  const canonicalMatch = mode !== 'drill_session' && dedicatedMatchContent
+    ? findSquashDrillByName('Partido de entrenamiento al mejor de 5 juegos')
+    : undefined
+  const normalizedDrills = canonicalMatch
+    ? [toSquashDrill(canonicalMatch)]
+    : orderSquashDrillsForSession(finalDrills)
+  const normalizedBlocks = canonicalMatch
+    ? [{ kind: 'match' as const, drills: normalizedDrills }]
+    : blocks
+  if (
+    canonicalMatch &&
+    (finalDrills.length !== 1 || findSquashDrillByName(finalDrills[0].name)?.id !== canonicalMatch.id)
+  ) {
+    repairs.push('squashDetails.matchFormat')
+  }
+
   const details: SquashDetails = {
     trainingFocus: focus,
-    drills: orderSquashDrillsForSession(finalDrills),
+    drills: normalizedDrills,
   }
   if (mode) details.sessionMode = mode
-  if (sessionKind) details.sessionKind = sessionKind
-  if (blocks) details.blocks = blocks
+  if (canonicalMatch) details.sessionKind = 'match'
+  else if (sessionKind) details.sessionKind = sessionKind
+  if (normalizedBlocks) details.blocks = normalizedBlocks
   return { details, repairs }
 }
 

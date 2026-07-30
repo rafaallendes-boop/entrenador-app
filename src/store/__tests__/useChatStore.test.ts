@@ -187,8 +187,26 @@ vi.mock('../../utils/uuid', () => ({
   },
 }))
 
-import { useChatStore } from '../useChatStore'
+import { getVisibleCoachStreamText, useChatStore } from '../useChatStore'
 import { useAIDebugStore } from '../useAIDebugStore'
+
+describe('chat streaming visibility', () => {
+  it('hides internal action JSON while preserving the visible explanation', () => {
+    expect(getVisibleCoachStreamText(
+      'Voy a mover ambas sesiones.\n\n<actions>[{"type":"move_session"',
+      'chat_action',
+    )).toBe('Voy a mover ambas sesiones.')
+    expect(getVisibleCoachStreamText(
+      '{"actions":[{"type":"add_session","exercises":[{"name":"Sentadilla"}]}]}',
+      'chat_action',
+    )).toBe('')
+  })
+
+  it('keeps normal conversational streaming unchanged', () => {
+    const text = 'Tu recuperación va bien esta semana.'
+    expect(getVisibleCoachStreamText(text, 'chat_general')).toBe(text)
+  })
+})
 
 function makeAction(): CoachAction {
   return {

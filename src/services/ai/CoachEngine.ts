@@ -10,7 +10,7 @@ import { AIProviderError } from './types'
 import { buildAITraceId, getAIRequestPolicy } from './requestPolicy'
 import { getActiveProvider, getProviderForRequestClass, isRealProviderConfigured } from './providerResolver'
 import { useAIDebugStore } from '../../store/useAIDebugStore'
-import { sendWithRecovery } from './coachRecovery'
+import { sendGeneralWithRecovery, sendWithRecovery } from './coachRecovery'
 import { resolveChatRoute } from '../chatRouting'
 import { createStageTracker, type CoachOutcome } from './stageLogger'
 import { postProcessCoachActions } from './actionPostProcessor'
@@ -193,7 +193,9 @@ async function sendTrackedCoachRequest(
       const providerStage = tracker.stage('provider_call')
       const result = requestClass === 'chat_action'
         ? await sendWithRecovery(provider, request)
-        : await sendDirect(provider, request)
+        : requestClass === 'chat_general'
+          ? await sendGeneralWithRecovery(provider, request)
+          : await sendDirect(provider, request)
       providerStage.end({ ok: true })
 
       const finalResult = requestClass === 'chat_action'
