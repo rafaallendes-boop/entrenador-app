@@ -213,6 +213,7 @@ async function sendTrackedCoachRequest(
           : normalizedOutcome === 'truncated_early' ? 'truncated'
           : normalizedOutcome === 'parse_invalid' ? 'parse_fail'
           : normalizedOutcome === 'schema_invalid' ? 'invalid_schema'
+          : normalizedOutcome === 'quality_rejected' ? 'quality_rejected'
           : 'ok'
       return finalResult
     } catch (error) {

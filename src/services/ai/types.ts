@@ -139,8 +139,10 @@ export interface CoachNormalizedResponse {
      * - `truncated_early`: response was cut before any usable content
      * - `parse_invalid`: JSON syntax could not be recovered
      * - `schema_invalid`: JSON parsed but no valid action shapes
+     * - `quality_rejected`: shape was fine; a fail-closed quality postcondition
+     *   rejected the candidate. Never produced by the normalizer.
      */
-    outcome?: 'ok' | 'truncated_mid' | 'truncated_early' | 'parse_invalid' | 'schema_invalid'
+    outcome?: 'ok' | 'truncated_mid' | 'truncated_early' | 'parse_invalid' | 'schema_invalid' | 'quality_rejected'
     /** Non-blocking normalization observations that should not trigger retry by themselves. */
     warnings?: string[]
     /** Server-side errorCode propagated through (e.g. timeout, rate_limit). */

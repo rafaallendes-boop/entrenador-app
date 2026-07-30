@@ -28,6 +28,7 @@ import {
   type RepairTaxonomyMeta,
   type RepairTaxonomySummary,
 } from './repairTaxonomy'
+import { isLocalFallbackEligible } from './fallbackEligibility'
 
 const MAX_SINGLE_WEEK_PROVIDER_ATTEMPTS = 2
 
@@ -145,10 +146,6 @@ interface ResolvedWeekInput extends SerializedRepairTaxonomy {
 interface WeekBatchChunkRouter {
   push: (chunk: string) => void
 }
-
-const NON_FALLBACK_ELIGIBLE_ERROR_CLASSES = new Set([
-  'quality.squash.signature_uniqueness_unresolved',
-])
 
 function createBatchId(firstWeekIndex: number): string {
   return `batch-${firstWeekIndex}-${Date.now()}`
@@ -479,7 +476,7 @@ export async function generateSingleWeekWithRetry(
       })
     }
 
-    if (NON_FALLBACK_ELIGIBLE_ERROR_CLASSES.has(result.meta.errorClass ?? '')) {
+    if (!isLocalFallbackEligible(result.meta.errorClass)) {
       return makeResolvedWeek(week, [], {
         repairTaxonomyVersion: result.meta.repairTaxonomyVersion,
         hydrationActionCount: result.meta.hydrationActionCount,
@@ -871,30 +868,60 @@ export async function generatePlanWeeks(input: GeneratePlanWeeksInput): Promise<
           }
         }
 
-        const localFallback = recovered ?? makeLocalFallbackResolvedWeek({
-          plan: input.plan,
-          week: batchWeekResult.week,
-          previousWeek,
-          planWeekDescriptors: input.weeks.map((candidate) => ({
-            weekIndex: candidate.weekIndex,
-            phase: candidate.phase,
-          })),
-          profile: input.profile,
-          wizardConfig: input.wizardConfig,
-          attempts: 1,
-          provider: batchResult.meta.provider,
-          model: batchResult.meta.model,
-          requestClass: 'plan_builder_pair',
-          traceId: batchResult.meta.traceId,
-          lastError: batchWeekResult.error,
-          durationMs: batchResult.meta.durationMs,
-          chunkCount: batchResult.meta.chunkCount,
-          strategy: 'pairs',
-          batchId: batchResult.meta.batchId,
-          rawSessionCount: batchWeekResult.rawSessionCount,
-          droppedSessionCount: batchWeekResult.droppedSessionCount,
-          degradedFromPairs: true,
-        })
+        const localFallback = recovered ?? (isLocalFallbackEligible(batchWeekResult.errorClass)
+          ? makeLocalFallbackResolvedWeek({
+              plan: input.plan,
+              week: batchWeekResult.week,
+              previousWeek,
+              planWeekDescriptors: input.weeks.map((candidate) => ({
+                weekIndex: candidate.weekIndex,
+                phase: candidate.phase,
+              })),
+              profile: input.profile,
+              wizardConfig: input.wizardConfig,
+              attempts: 1,
+              provider: batchResult.meta.provider,
+              model: batchResult.meta.model,
+              requestClass: 'plan_builder_pair',
+              traceId: batchResult.meta.traceId,
+              lastError: batchWeekResult.error,
+              durationMs: batchResult.meta.durationMs,
+              chunkCount: batchResult.meta.chunkCount,
+              strategy: 'pairs',
+              batchId: batchResult.meta.batchId,
+              rawSessionCount: batchWeekResult.rawSessionCount,
+              droppedSessionCount: batchWeekResult.droppedSessionCount,
+              degradedFromPairs: true,
+            })
+          : makeResolvedWeek(batchWeekResult.week, [], {
+              ...copySerializedRepairTaxonomy(batchWeekResult),
+              attempts: 1,
+              provider: batchResult.meta.provider,
+              model: batchResult.meta.model,
+              requestClass: 'plan_builder_pair',
+              traceId: batchResult.meta.traceId,
+              lastError: batchWeekResult.error,
+              durationMs: batchResult.meta.durationMs,
+              chunkCount: batchResult.meta.chunkCount,
+              strategy: 'pairs',
+              batchId: batchResult.meta.batchId,
+              rawSessionCount: batchWeekResult.rawSessionCount,
+              validSessionCount: batchWeekResult.validSessionCount,
+              droppedSessionCount: batchWeekResult.droppedSessionCount,
+              degradedFromPairs: true,
+              repairedSessionCount: batchWeekResult.repairedSessionCount,
+              movedSessionCount: batchWeekResult.movedSessionCount,
+              addedFallbackCount: batchWeekResult.addedFallbackCount,
+              filteredSportCount: batchWeekResult.filteredSportCount,
+              strengthAccessoryRotationActionCount: batchWeekResult.strengthAccessoryRotationActionCount,
+              strengthAccessoryRotationSessionsAffected: batchWeekResult.strengthAccessoryRotationSessionsAffected,
+              squashDrillRotationActionCount: batchWeekResult.squashDrillRotationActionCount,
+              squashDrillRotationSessionsAffected: batchWeekResult.squashDrillRotationSessionsAffected,
+              squashDrillRotationOmittedCount: batchWeekResult.squashDrillRotationOmittedCount,
+              repairWarnings: batchWeekResult.repairWarnings,
+              errorClass: batchWeekResult.errorClass,
+              generationSource: 'ai',
+            }))
         input.onWeekUpdate?.(localFallback)
         results.push(localFallback)
         if (localFallback.status === 'draft') {

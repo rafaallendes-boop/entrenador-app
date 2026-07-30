@@ -1,4 +1,5 @@
 import type { CoachNormalizedResponse } from '../ai/types'
+import type { RepairFailure } from '../planBuilder/repairWeek'
 
 export type WeekCreatorFailureCategory =
   | 'locally_repairable'
@@ -31,6 +32,7 @@ export type WeekCreatorFailureCode =
   | 'actions_parse_failed'
   | 'schema_invalid'
   | 'provider_error'
+  | RepairFailure['errorClass']
 
 export type WeekCreatorFailureDecision =
   | 'local_fallback'
@@ -42,7 +44,7 @@ export type WeekCreatorFailure = {
   category: WeekCreatorFailureCategory
   decision: WeekCreatorFailureDecision
   error: string
-  outcome: 'parse_invalid' | 'schema_invalid'
+  outcome: 'parse_invalid' | 'schema_invalid' | 'quality_rejected'
   warnings: string[]
 }
 
@@ -108,6 +110,21 @@ export function classifyWeekCreatorProviderFailure(error: unknown): WeekCreatorF
     'provider_retry',
     message,
     'schema_invalid',
+  )
+}
+
+/**
+ * A fail-closed repair rejection is not a repaired empty week. Retry the
+ * provider with a fresh candidate and retain its stable quality error class in
+ * telemetry if both attempts fail.
+ */
+export function classifyWeekCreatorRepairFailure(failure: RepairFailure): WeekCreatorFailure {
+  return buildFailure(
+    failure.errorClass,
+    'unsafe_or_ambiguous',
+    'provider_retry',
+    failure.message,
+    'quality_rejected',
   )
 }
 

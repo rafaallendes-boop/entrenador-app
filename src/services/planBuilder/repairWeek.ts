@@ -1339,13 +1339,11 @@ function normalizeStrengthSessions(
   const strengthSessions = sessions.filter((session) => session.sessionType === 'strength')
   if (strengthSessions.length === 0) return
 
-  // Fija la coordenada de cada slot antes de asignar. El hidratador normaliza
-  // grupos, pero no define un desempate total dentro de un grupo; sin este
-  // orden, una segunda pasada puede intercambiar dos ejes equivalentes y volver
-  // a contar una rotación aunque el contenido final sea el mismo.
-  for (const session of strengthSessions) {
-    if (session.exercises) session.exercises = [...session.exercises].sort(compareCanonicalStrengthExercises)
-  }
+  // El contrato de roles es posicional: el primer lift reconocido que no es
+  // core/power es el main lift. La normalización estructural posterior conserva
+  // el orden relativo dentro de cada grupo; imponer aquí un desempate
+  // alfabético convertiría un accesorio en main lift y rotaría el lift
+  // programado.
 
   const weekIndexInBlock = getWeekIndexInBlock(context)
   const currentBlockId = resolveBlockPositions(getPlanPhaseDescriptors(context), getPlanWeekDescriptors(context))
@@ -1415,17 +1413,13 @@ function normalizeStrengthSessions(
   }
 
   for (const key of correctiveSessions) recordRepair(meta, 'corrective', key)
-  // El orden estructural es parte de la proyección canónica. Sin este cierre,
-  // una base de core insertada por el hidratador desplaza las coordenadas y la
-  // segunda ejecución vuelve a rotar accesorios ya resueltos.
+  // El hidratador preserva el orden relativo dentro de cada bloque. Esto mantiene
+  // el main lift programado en su posición semántica aun al insertar core.
   for (const session of strengthSessions) {
-    const enhanced = enhanceStrengthSessionExercises(session.exercises, {
+    session.exercises = enhanceStrengthSessionExercises(session.exercises, {
       durationMin: session.durationMin,
       strengthProfile: context.profile.strengthProfile,
     })
-    session.exercises = enhanced == null
-      ? enhanced
-      : [...enhanced].sort(compareCanonicalStrengthExercises)
     if (currentBlockId != null && (applyPolicy || correctiveSessions.has(sessionKeyOf(session)))) {
       session.metadata = {
         ...(session.metadata ?? {}),
@@ -1443,16 +1437,6 @@ function normalizeStrengthSessions(
   }
 }
 
-function compareCanonicalStrengthExercises(
-  left: CoachExerciseProposal,
-  right: CoachExerciseProposal,
-): number {
-  const groupDelta = strengthBlockOrder(resolveStrengthExerciseBlock(left)) -
-    strengthBlockOrder(resolveStrengthExerciseBlock(right))
-  if (groupDelta !== 0) return groupDelta
-  return normalizeStrengthExerciseKey(left.name).localeCompare(normalizeStrengthExerciseKey(right.name))
-}
-
 function canonicalStrengthSignature(session: CoachSessionProposal): string {
   return (session.exercises ?? [])
     .map((exercise) => normalizeStrengthExerciseKey(exercise.name))
@@ -1463,12 +1447,6 @@ function canonicalStrengthSignature(session: CoachSessionProposal): string {
 function hasCanonicalStrengthRotation(session: CoachSessionProposal, blockId: string): boolean {
   const marker = session.metadata?.planBuilderStrengthRotation
   return marker?.blockId === blockId && marker.signature === canonicalStrengthSignature(session)
-}
-
-function strengthBlockOrder(group: ReturnType<typeof resolveStrengthExerciseBlock>): number {
-  const order = ['core', 'olympic', 'legs', 'push', 'pull', 'other', 'cardio', 'mobility']
-  const index = order.indexOf(group)
-  return index === -1 ? order.indexOf('other') : index
 }
 
 function isPreviousWeekInSameBlock(context: RepairContext): boolean {

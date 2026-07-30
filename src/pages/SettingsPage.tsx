@@ -1559,6 +1559,8 @@ function formatAIOutcome(outcome: NonNullable<AITechnicalResult['outcome']>): st
       return 'parse invalido'
     case 'schema_invalid':
       return 'schema invalido'
+    case 'quality_rejected':
+      return 'rechazada por calidad'
   }
 }
 

@@ -78,6 +78,21 @@ function readyPrevious(names = NAMES, weekIndex = 0, phase: TrainingPlanWeek['ph
 }
 
 describe('normalización única de fuerza', () => {
+  it('conserva el main lift programado cuando otro lift del mismo bloque ordena antes alfabéticamente', () => {
+    const programmedMainLift = 'Sentadilla trasera con barra'
+    const result = repairGeneratedWeek([
+      strengthSession('2026-08-03', [
+        programmedMainLift,
+        'Empuje de cadera',
+        'Remo inclinado',
+      ]),
+    ], contextFor({ weekIndex: 1 }))
+    const exercises = result.sessions[0]?.exercises ?? []
+    const mainLiftIndex = resolveSessionStrengthRoles(exercises).indexOf('main_lift')
+
+    expect(exercises[mainLiftIndex]?.name).toBe(programmedMainLift)
+  })
+
   it('no toca el main lift ni con una colisión corrective', () => {
     const baseline = repairGeneratedWeek([strengthSession()], contextFor({ weekIndex: 0 }))
     const result = repairGeneratedWeek([strengthSession()], contextFor({ weekIndex: 0, previous: readyPrevious() }))

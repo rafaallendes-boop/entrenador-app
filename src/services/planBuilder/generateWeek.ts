@@ -12,6 +12,7 @@ import { generateWeekCore } from './generateWeekCore'
 import type { PlanBuilderRecentContext } from './recentContext'
 import { summarizeTaxonomy, type RepairTaxonomySummary } from './repairTaxonomy'
 import type { PlanWeekDescriptor } from './blockIdentity'
+import { isQualityFailClosedRejection } from './fallbackEligibility'
 
 const EMPTY_REPAIR_TAXONOMY: RepairTaxonomySummary = {
   hydrationActionCount: 0,
@@ -326,13 +327,14 @@ export async function generateWeek(input: GenerateWeekInput): Promise<GenerateWe
     const repairStage = tracker.stage('repair')
     repairStage.end({ ok: !result.meta.lastError, error: result.meta.lastError })
     if (result.meta.lastError) {
-      outcome = 'invalid_schema'
+      const qualityRejected = isQualityFailClosedRejection(result.meta.errorClass)
+      outcome = qualityRejected ? 'quality_rejected' : 'invalid_schema'
       const raw = debugRef.raw
       useAIDebugStore.getState().failRequest(traceId, {
         provider: raw?.provider ?? result.meta.provider,
         model: raw?.model ?? result.meta.model,
         durationMs: raw?.durationMs ?? result.meta.durationMs,
-        errorCode: 'validation_error',
+        errorCode: qualityRejected ? result.meta.errorClass : 'validation_error',
         retryUsed: raw?.retryUsed ?? result.meta.retryUsed,
         fallbackUsed: raw?.fallbackUsed ?? result.meta.fallbackUsed,
         responseCharCount: raw?.text.length,

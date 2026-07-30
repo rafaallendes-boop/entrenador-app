@@ -26,8 +26,9 @@ import { buildWeekCreatorPrompt, summarizeWeekCreatorAction } from './WeekCreato
 import { validateWeekCreatorResponse } from './validateWeekCreatorResponse'
 import { resolveWeekCreatorConfig, type WeekCreatorEffectiveConfig, withRequestedSessionsPerWeek } from './WeekCreatorConfig'
 import { filterSessionsToWeek, isStrictISODate } from '../week/shared'
-import { repairGeneratedWeek, type RepairMeta } from '../planBuilder/repairWeek'
+import { repairGeneratedWeek, type RepairFailure, type RepairMeta } from '../planBuilder/repairWeek'
 import { recordRepairAction, summarizeTaxonomy } from '../planBuilder/repairTaxonomy'
+import { isLocalFallbackEligible } from '../planBuilder/fallbackEligibility'
 import { WEEK_CREATOR_RESPONSE_SCHEMA } from './weekCreatorResponseSchema'
 import { enhanceStrengthSessionExercises } from '../training/strengthSessionStructure'
 import { todayISO } from '../../utils/date'
@@ -41,6 +42,7 @@ import {
 } from './scheduleConstraints'
 import {
   classifyWeekCreatorProviderFailure,
+  classifyWeekCreatorRepairFailure,
   classifyWeekCreatorValidationFailure,
   type WeekCreatorFailure,
   type WeekCreatorFailureCategory,
@@ -352,21 +354,56 @@ export const WeekCreatorEngine = {
               })
           hydrateStage.end({
             ok: hydration.status === 'hydrated' || hydration.status === 'unchanged',
-            error: hydration.status === 'skipped_invalid_shape'
+            error: hydration.status === 'skipped_invalid_shape' || hydration.status === 'repair_failed'
               ? hydration.warnings[0]
               : undefined,
           })
         }
 
         const repairStage = tracker.stage('repair')
-        const locallyCompleted = repairWeekCreatorResponse(
-          hydration?.response ?? normalized,
-          context,
-          config,
-          options.targetWeekStart,
-          dateWindow.planningStartDate,
-        )
+        const locallyCompleted = hydration?.repairFailure
+          ? toRepairFailedWeekCreatorResponse(hydration.response, hydration.repairFailure)
+          : repairWeekCreatorResponse(
+              hydration?.response ?? normalized,
+              context,
+              config,
+              options.targetWeekStart,
+              dateWindow.planningStartDate,
+            )
         const repaired = mergeWeekCreatorHydration(locallyCompleted, hydration)
+        if (repaired.repairFailure) {
+          const failure = classifyWeekCreatorRepairFailure(repaired.repairFailure)
+          outcome = 'quality_rejected'
+          lastFailure = {
+            ...failure,
+            provider: repaired.provider,
+            model: repaired.model,
+            traceId: repaired.traceId,
+            durationMs: repaired.durationMs,
+            fallbackUsed: repaired.fallbackUsed,
+            retryUsed: attempt > 1 || repaired.retryUsed,
+            failedResponse: repaired,
+            failedSkeleton: providerSkeleton,
+          }
+          repairStage.end({ ok: false, error: failure.error })
+          useAIDebugStore.getState().failRequest(traceId, {
+            errorCode: repaired.repairFailure.errorClass,
+            outcome: failure.outcome,
+            warnings: failure.warnings,
+            ...buildRawTelemetry(raw),
+            stageTimings: tracker.timings(),
+            repairStats: buildRepairStats(repaired.repairMeta, repaired.hydrationRepairMeta),
+          })
+          tracker.flush(outcome, {
+            generationId,
+            attempt,
+            failureCode: failure.code,
+            failureCategory: failure.category,
+            repairErrorClass: repaired.repairFailure.errorClass,
+          })
+          if (attempt < MAX_ATTEMPTS) continue
+          break
+        }
         repairStage.end({ ok: true })
 
         const validateStage = tracker.stage('validate')
@@ -500,6 +537,19 @@ export const WeekCreatorEngine = {
         })
         if (attempt >= MAX_ATTEMPTS) break
       }
+    }
+
+    // A quality fail-closed rejection must not be turned into a deterministic
+    // fallback week. The candidate remains rejected after its retries.
+    if (lastFailure && !isLocalFallbackEligible(lastFailure.code)) {
+      return buildWeekCreatorRepairFailureResponse({
+        generationId,
+        provider: lastFailure.provider ?? provider.name,
+        model: lastFailure.model,
+        traceId: lastFailure.traceId ?? buildAITraceId('week_creator'),
+        durationMs: lastFailure.durationMs,
+        retryUsed: providerAttempts > 1,
+      })
     }
 
     // Build the conservative local result after the typed policy stops model
@@ -706,15 +756,48 @@ function buildWeekCreatorFallbackWarning(
 }
 
 function buildWeekCreatorUserFailureMessage(reason?: WeekCreatorFailureCode): string {
+  if (reason === 'quality.squash.signature_uniqueness_unresolved') {
+    return 'No pude garantizar que las sesiones de squash fueran distintas entre sí. Vuelve a intentarlo para generar otra candidata.'
+  }
   if (reason === 'invalid_double_session' || reason === 'schedule_constraint' || reason === 'unavailable_day') {
     return 'No pude armar una semana que respete toda tu disponibilidad. Revisa los días y bloques AM/PM configurados, o reduce la cantidad de sesiones, y vuelve a intentarlo.'
   }
   return 'No pude armar una semana válida esta vez. Revisa tu configuración y vuelve a intentarlo.'
 }
 
+function buildWeekCreatorRepairFailureResponse(input: {
+  generationId: string
+  provider: CoachNormalizedResponse['provider']
+  model?: string
+  traceId: string
+  durationMs?: number
+  retryUsed: boolean
+}): CoachNormalizedResponse {
+  return {
+    message: buildWeekCreatorUserFailureMessage('quality.squash.signature_uniqueness_unresolved'),
+    actions: [],
+    provider: input.provider,
+    model: input.model,
+    timestamp: Date.now(),
+    durationMs: input.durationMs,
+    traceId: input.traceId,
+    generationId: input.generationId,
+    requestClass: 'week_creator',
+    retryUsed: input.retryUsed,
+    fallbackUsed: false,
+    meta: {
+      hadActionsMarkup: true,
+      actionParseFailed: false,
+      likelyTruncated: false,
+      outcome: 'quality_rejected',
+    },
+  }
+}
+
 type RepairedWeekCreatorResponse = CoachNormalizedResponse & {
   repairWarnings: string[]
   repairMeta?: RepairMeta
+  repairFailure?: RepairFailure
   /** Skeleton-contract only: the hydration pass that ran before the final repair. */
   hydrationRepairMeta?: RepairMeta
 }
@@ -745,7 +828,19 @@ function mergeWeekCreatorHydration(
     ...repaired,
     repairWarnings,
     repairMeta,
+    repairFailure: repaired.repairFailure ?? hydration.repairFailure,
     hydrationRepairMeta: hydration.repairMeta,
+  }
+}
+
+function toRepairFailedWeekCreatorResponse(
+  response: CoachNormalizedResponse,
+  repairFailure: RepairFailure,
+): RepairedWeekCreatorResponse {
+  return {
+    ...response,
+    repairWarnings: [repairFailure.message],
+    repairFailure,
   }
 }
 
@@ -807,6 +902,14 @@ export function repairWeekCreatorResponse(
     planningStartDate,
   })
   const repairResult = repairGeneratedWeek(aligned.sessions, repairContext)
+  if (repairResult.failure) {
+    return {
+      ...response,
+      repairWarnings: [repairResult.failure.message],
+      repairMeta: repairResult.meta,
+      repairFailure: repairResult.failure,
+    }
+  }
   if (aligned.adjustedCount > 0) {
     repairResult.meta.repairedSessionCount += aligned.adjustedCount
     for (const sessionKey of aligned.adjustedSessionKeys) {

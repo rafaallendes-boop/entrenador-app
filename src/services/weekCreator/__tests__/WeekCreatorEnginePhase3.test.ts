@@ -65,17 +65,17 @@ describe('WeekCreatorEngine phase 3 compact contract', () => {
     expect(debugRequest?.responseSchemaCharCount).toBe(JSON.stringify(WEEK_CREATOR_SKELETON_RESPONSE_SCHEMA).length)
     expect(debugRequest?.weekCreatorContract).toBe('skeleton_v1')
     expect(debugRequest?.repairStats).toMatchObject({
-      repairedSessionCount: 3,
+      repairedSessionCount: 2,
       movedSessionCount: 0,
       addedFallbackCount: 0,
       droppedSessionCount: 0,
       filteredSportCount: 0,
       repairTaxonomyVersion: 2,
       hydrationActionCount: 0,
-      correctiveActionCount: 3,
+      correctiveActionCount: 2,
       structuralActionCount: 0,
       hydratedSessionsAffected: 0,
-      correctedSessionsAffected: 2,
+      correctedSessionsAffected: 1,
       structurallyRepairedSessionsAffected: 0,
       hydration: {
         repairedSessionCount: 8,

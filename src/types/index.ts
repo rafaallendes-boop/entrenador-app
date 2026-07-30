@@ -84,7 +84,7 @@ export interface AITechnicalResult {
   generationOutcome?: 'model_success' | 'local_fallback' | 'failed'
   generationCompletedAt?: number
   status: 'started' | 'streaming' | 'completed' | 'failed'
-  outcome?: 'ok' | 'truncated_mid' | 'truncated_early' | 'parse_invalid' | 'schema_invalid'
+  outcome?: 'ok' | 'truncated_mid' | 'truncated_early' | 'parse_invalid' | 'schema_invalid' | 'quality_rejected'
   errorCode?: string
   retryUsed?: boolean
   fallbackUsed?: boolean

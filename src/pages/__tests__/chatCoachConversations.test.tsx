@@ -82,10 +82,22 @@ vi.mock('../../store/useTrainingStore', () => ({
   }),
 }))
 
-vi.mock('../../store/useAuthStore', () => ({
-  useAuthStore: (selector: (state: { activeAthleteId: null }) => unknown) =>
-    selector({ activeAthleteId: null }),
-}))
+vi.mock('../../store/useAuthStore', () => {
+  const authState = {
+    activeAthleteId: null,
+    user: null,
+    syncDetails: {
+      lastErrorEntity: null,
+      pendingTables: [],
+      consecutiveFailures: 0,
+    },
+    setSyncDetails: vi.fn(),
+    setSyncStatus: vi.fn(),
+  }
+  const useAuthStore = (selector: (state: typeof authState) => unknown) => selector(authState)
+  useAuthStore.getState = () => authState
+  return { useAuthStore }
+})
 
 vi.mock('../../hooks/useWeeklySnapshot', () => ({
   useLoadAnalytics: () => null,

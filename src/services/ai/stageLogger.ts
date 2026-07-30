@@ -13,7 +13,13 @@ import type { AIRequestClass, CoachStage, StageTiming } from '../../types'
 
 export type { CoachStage, StageTiming } from '../../types'
 
-export type CoachOutcome = 'ok' | 'truncated' | 'parse_fail' | 'invalid_schema' | 'timeout' | 'rate_limit' | 'error'
+/**
+ * `quality_rejected` is deliberately separate from `invalid_schema`: the
+ * response parsed and validated, and a fail-closed quality postcondition
+ * rejected it. Collapsing both into one bucket makes schema regressions and
+ * quality rejections indistinguishable in aggregate monitoring.
+ */
+export type CoachOutcome = 'ok' | 'truncated' | 'parse_fail' | 'invalid_schema' | 'quality_rejected' | 'timeout' | 'rate_limit' | 'error'
 
 export interface StageTracker {
   readonly traceId: string

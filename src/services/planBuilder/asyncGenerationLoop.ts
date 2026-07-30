@@ -11,6 +11,7 @@ import {
   reviewPlanQuality,
 } from './qualityReview'
 import { buildLocalFallbackWeek } from './fallbackWeek'
+import { isLocalFallbackEligible } from './fallbackEligibility'
 import { summarizeTaxonomy } from './repairTaxonomy'
 import { estimateCostUsd } from './pricing'
 import { buildVariantId, type PlanBuilderVariantDescriptor } from './telemetryVersions'
@@ -154,9 +155,6 @@ export const DEFAULT_MAX_TOKENS = 5000
 const TRUNCATED_RETRY_MAX_TOKENS = 12000
 export const DEFAULT_TEMPERATURE = 0.25
 const MAX_WEEK_ATTEMPTS = 2
-const NON_FALLBACK_ELIGIBLE_ERROR_CLASSES = new Set([
-  'quality.squash.signature_uniqueness_unresolved',
-])
 const DEFAULT_CONCURRENCY = 3
 const MAX_CONCURRENCY = 6
 // Netlify background functions se cortan a los 15 min; reservamos margen para
@@ -1132,7 +1130,7 @@ export async function runAsyncPlanGeneration(input: RunAsyncPlanGenerationInput)
           stopLaunching = true
         }
         let fallback: ReturnType<typeof buildLocalFallbackWeek> | undefined
-        const fallbackEligible = !NON_FALLBACK_ELIGIBLE_ERROR_CLASSES.has(result.meta.errorClass ?? '')
+        const fallbackEligible = isLocalFallbackEligible(result.meta.errorClass)
         if (result.sessions.length === 0 && fallbackEligible) {
           try {
             fallback = buildLocalFallbackWeek({

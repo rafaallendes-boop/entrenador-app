@@ -9,7 +9,12 @@ import type {
 } from '../../types'
 import type { TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
 import type { CoachNormalizedResponse } from '../ai/types'
-import { repairGeneratedWeek, type RepairContext, type RepairMeta } from '../planBuilder/repairWeek'
+import {
+  repairGeneratedWeek,
+  type RepairContext,
+  type RepairFailure,
+  type RepairMeta,
+} from '../planBuilder/repairWeek'
 import { recordRepairAction } from '../planBuilder/repairTaxonomy'
 import type { WeekCreatorEffectiveConfig } from './WeekCreatorConfig'
 import { alignSessionsToScheduleConstraints, buildScheduleAwareConfig } from './scheduleConstraints'
@@ -20,12 +25,15 @@ export type WeekCreatorHydrationStatus =
   | 'unchanged'
   | 'blocked_medical_restrictions'
   | 'skipped_invalid_shape'
+  | 'repair_failed'
 
 export interface WeekCreatorHydrationResult {
   response: CoachNormalizedResponse
   status: WeekCreatorHydrationStatus
   warnings: string[]
   repairMeta?: RepairMeta
+  /** El repair fail-closed rechazó la candidata; nunca equivale a una semana vacía válida. */
+  repairFailure?: RepairFailure
   focusOverlayCount: number
 }
 
@@ -145,6 +153,16 @@ export function hydrateWeekCreatorResponse(
     planningStartDate: input.planningStartDate,
   })
   const repairResult = repairGeneratedWeek(initiallyAligned.sessions, repairContext)
+  if (repairResult.failure) {
+    return {
+      response: input.response,
+      status: 'repair_failed',
+      warnings: [repairResult.failure.message],
+      repairMeta: repairResult.meta,
+      repairFailure: repairResult.failure,
+      focusOverlayCount: overlay.appliedCount,
+    }
+  }
   const finallyAligned = alignSessionsToScheduleConstraints(
     repairResult.sessions,
     scheduleAwareConfig.scheduleConstraints,
