@@ -161,7 +161,7 @@ function getSportCompletenessIssues(week: TrainingPlanWeek): PlanValidationIssue
 
     if (session.sessionType === 'squash') {
       const drills = session.squashDetails?.drills ?? []
-      if (drills.length < 2 && session.durationMin >= 45) {
+      if (drills.length < 2 && session.durationMin >= 45 && !isSquashMatchSession(session)) {
         issues.push(issue({
           severity: 'warning',
           code: 'quality.squash.low_drill_depth',
@@ -218,6 +218,22 @@ function getSquashDrillKeys(session: CoachSessionProposal): string[] {
   return names
     .map(normalizeExerciseName)
     .filter(Boolean)
+}
+
+/**
+ * Jugar un partido es UNA actividad: `buildSquashMatchDrills` devuelve una sola
+ * entrada por construcción, así que ninguna sesión de partido bien formada puede
+ * satisfacer el umbral de profundidad. Exigírselo obligaría a rellenarla con
+ * drills técnicos, que es contenido equivocado para un partido.
+ *
+ * Se leen ambos campos porque el repair los deja alineados, pero una sesión
+ * recién normalizada del modelo puede traer solo uno.
+ */
+function isSquashMatchSession(session: CoachSessionProposal): boolean {
+  const details = session.squashDetails
+  return details?.sessionKind === 'match'
+    || details?.sessionMode === 'practice_match'
+    || details?.sessionMode === 'competition_match'
 }
 
 function getDuplicateSquashDrillNames(session: CoachSessionProposal): string[] {

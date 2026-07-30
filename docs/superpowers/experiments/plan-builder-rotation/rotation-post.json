@@ -1,0 +1,3649 @@
+{
+  "artifactSchemaVersion": 1,
+  "manifestVersion": 1,
+  "createdAt": "2026-07-30T18:44:24.745Z",
+  "git": {
+    "sha": "2ea9b5327d031ff58b9a13bf3c02f28d5f32ceaf",
+    "dirty": false
+  },
+  "variant": {
+    "provider": "claude",
+    "model": "claude-sonnet-4-6",
+    "effort": "high",
+    "thinkingMode": "disabled",
+    "temperature": 0.25,
+    "maxTokens": 5000,
+    "promptVersion": "2026-07-week-v1",
+    "schemaVersion": "2026-07-week-v1",
+    "qualityVersion": 2,
+    "concurrency": 3,
+    "variantId": "s46-q2-00qwoc9q"
+  },
+  "attemptedPlanTarget": 12,
+  "targetWeekTarget": 42,
+  "manifest": {
+    "manifestVersion": 1,
+    "attemptedPlanTotal": 12,
+    "targetWeekTotal": 42,
+    "cases": [
+      {
+        "caseId": "squash_build#1",
+        "scenarioKey": "squash_build",
+        "planIndex": 1,
+        "weekCount": 4,
+        "startDate": "2026-08-03",
+        "primarySport": "squash",
+        "sportDetails": [
+          {
+            "sport": "squash",
+            "role": "primary",
+            "phaseFocus": "",
+            "weeklyIntent": "",
+            "volumeBias": "hold",
+            "intensityBias": "hold",
+            "notes": ""
+          },
+          {
+            "sport": "strength",
+            "role": "support",
+            "phaseFocus": "",
+            "weeklyIntent": "",
+            "volumeBias": "hold",
+            "intensityBias": "hold",
+            "notes": ""
+          }
+        ],
+        "targetLoadBySport": {
+          "squash": 50,
+          "strength": 25
+        },
+        "planStartDate": "2026-08-03",
+        "planEndDate": "2026-08-30",
+        "planPhases": [
+          {
+            "phase": "build",
+            "startWeekIndex": 0,
+            "endWeekIndex": 3,
+            "blockFocus": "",
+            "intentBySport": {}
+          }
+        ],
+        "weeks": [
+          {
+            "weekIndex": 0,
+            "weekStartDate": "2026-08-03",
+            "phase": "build",
+            "targetLoadBySport": {
+              "squash": 50,
+              "strength": 25
+            }
+          },
+          {
+            "weekIndex": 1,
+            "weekStartDate": "2026-08-10",
+            "phase": "build",
+            "targetLoadBySport": {
+              "squash": 50,
+              "strength": 25
+            }
+          },
+          {
+            "weekIndex": 2,
+            "weekStartDate": "2026-08-17",
+            "phase": "build",
+            "targetLoadBySport": {
+              "squash": 50,
+              "strength": 25
+            }
+          },
+          {
+            "weekIndex": 3,
+            "weekStartDate": "2026-08-24",
+            "phase": "build",
+            "targetLoadBySport": {
+              "squash": 50,
+              "strength": 25
+            }
+          }
+        ],
+        "profile": {
+          "id": "loadtest-athlete",
+          "updatedAt": 1,
+          "sportContext": {
+            "enabledSports": [
+              "squash",
+              "strength"
+            ],
+            "primarySport": "squash"
+          },
+          "goalEvents": [
+            {
+              "id": "loadtest-event",
+              "title": "Loadtest squash_build",
+              "date": "2026-08-30",
+              "sport": "squash",
+              "priority": "primary"
+            }
+          ]
+        },
+        "wizardConfig": {
+          "goalEventId": "loadtest-event",
+          "trainingDays": [
+            "monday",
+            "wednesday",
+            "friday"
+          ],
+          "sessionsPerWeek": 3,
+          "sessionDurationMins": 60,
+          "allowDoubleSession": false,
+          "complementarySports": [
+            "strength"
+          ],
+          "currentFitnessLevel": "normal",
+          "currentFatigue": "fresh",
+          "createdAt": "2026-06-01T00:00:00.000Z",
+          "updatedAt": "2026-06-01T00:00:00.000Z"
+        }
+      },
+      {
+        "caseId": "squash_build#2",
+        "scenarioKey": "squash_build",
+        "planIndex": 2,
+        "weekCount": 4,
+        "startDate": "2026-08-03",
+        "primarySport": "squash",
+        "sportDetails": [
+          {
+            "sport": "squash",
+            "role": "primary",
+            "phaseFocus": "",
+            "weeklyIntent": "",
+            "volumeBias": "hold",
+            "intensityBias": "hold",
+            "notes": ""
+          },
+          {
+            "sport": "strength",
+            "role": "support",
+            "phaseFocus": "",
+            "weeklyIntent": "",
+            "volumeBias": "hold",
+            "intensityBias": "hold",
+            "notes": ""
+          }
+        ],
+        "targetLoadBySport": {
+          "squash": 50,
+          "strength": 25
+        },
+        "planStartDate": "2026-08-03",
+        "planEndDate": "2026-08-30",
+        "planPhases": [
+          {
+            "phase": "build",
+            "startWeekIndex": 0,
+            "endWeekIndex": 3,
+            "blockFocus": "",
+            "intentBySport": {}
+          }
+        ],
+        "weeks": [
+          {
+            "weekIndex": 0,
+            "weekStartDate": "2026-08-03",
+            "phase": "build",
+            "targetLoadBySport": {
+              "squash": 50,
+              "strength": 25
+            }
+          },
+          {
+            "weekIndex": 1,
+            "weekStartDate": "2026-08-10",
+            "phase": "build",
+            "targetLoadBySport": {
+              "squash": 50,
+              "strength": 25
+            }
+          },
+          {
+            "weekIndex": 2,
+            "weekStartDate": "2026-08-17",
+            "phase": "build",
+            "targetLoadBySport": {
+              "squash": 50,
+              "strength": 25
+            }
+          },
+          {
+            "weekIndex": 3,
+            "weekStartDate": "2026-08-24",
+            "phase": "build",
+            "targetLoadBySport": {
+              "squash": 50,
+              "strength": 25
+            }
+          }
+        ],
+        "profile": {
+          "id": "loadtest-athlete",
+          "updatedAt": 1,
+          "sportContext": {
+            "enabledSports": [
+              "squash",
+              "strength"
+            ],
+            "primarySport": "squash"
+          },
+          "goalEvents": [
+            {
+              "id": "loadtest-event",
+              "title": "Loadtest squash_build",
+              "date": "2026-08-30",
+              "sport": "squash",
+              "priority": "primary"
+            }
+          ]
+        },
+        "wizardConfig": {
+          "goalEventId": "loadtest-event",
+          "trainingDays": [
+            "monday",
+            "wednesday",
+            "friday"
+          ],
+          "sessionsPerWeek": 3,
+          "sessionDurationMins": 60,
+          "allowDoubleSession": false,
+          "complementarySports": [
+            "strength"
+          ],
+          "currentFitnessLevel": "normal",
+          "currentFatigue": "fresh",
+          "createdAt": "2026-06-01T00:00:00.000Z",
+          "updatedAt": "2026-06-01T00:00:00.000Z"
+        }
+      },
+      {
+        "caseId": "squash_taper_medico#1",
+        "scenarioKey": "squash_taper_medico",
+        "planIndex": 1,
+        "weekCount": 3,
+        "startDate": "2026-08-10",
+        "primarySport": "squash",
+        "sportDetails": [
+          {
+            "sport": "squash",
+            "role": "primary",
+            "phaseFocus": "",
+            "weeklyIntent": "",
+            "volumeBias": "hold",
+            "intensityBias": "hold",
+            "notes": ""
+          },
+          {
+            "sport": "strength",
+            "role": "support",
+            "phaseFocus": "",
+            "weeklyIntent": "",
+            "volumeBias": "hold",
+            "intensityBias": "hold",
+            "notes": ""
+          }
+        ],
+        "targetLoadBySport": {
+          "squash": 40,
+          "strength": 15
+        },
+        "planStartDate": "2026-08-10",
+        "planEndDate": "2026-08-30",
+        "planPhases": [
+          {
+            "phase": "peak",
+            "startWeekIndex": 0,
+            "endWeekIndex": 0,
+            "blockFocus": "",
+            "intentBySport": {}
+          },
+          {
+            "phase": "taper",
+            "startWeekIndex": 1,
+            "endWeekIndex": 1,
+            "blockFocus": "",
+            "intentBySport": {}
+          },
+          {
+            "phase": "race",
+            "startWeekIndex": 2,
+            "endWeekIndex": 2,
+            "blockFocus": "",
+            "intentBySport": {}
+          }
+        ],
+        "weeks": [
+          {
+            "weekIndex": 0,
+            "weekStartDate": "2026-08-10",
+            "phase": "peak",
+            "targetLoadBySport": {
+              "squash": 40,
+              "strength": 15
+            }
+          },
+          {
+            "weekIndex": 1,
+            "weekStartDate": "2026-08-17",
+            "phase": "taper",
+            "targetLoadBySport": {
+              "squash": 40,
+              "strength": 15
+            }
+          },
+          {
+            "weekIndex": 2,
+            "weekStartDate": "2026-08-24",
+            "phase": "race",
+            "targetLoadBySport": {
+              "squash": 40,
+              "strength": 15
+            }
+          }
+        ],
+        "profile": {
+          "id": "loadtest-athlete",
+          "updatedAt": 1,
+          "sportContext": {
+            "enabledSports": [
+              "squash",
+              "strength"
+            ],
+            "primarySport": "squash"
+          },
+          "goalEvents": [
+            {
+              "id": "loadtest-event",
+              "title": "Loadtest squash_taper_medico",
+              "date": "2026-08-30",
+              "sport": "squash",
+              "priority": "primary"
+            }
+          ]
+        },
+        "wizardConfig": {
+          "goalEventId": "loadtest-event",
+          "trainingDays": [
+            "monday",
+            "wednesday",
+            "friday"
+          ],
+          "sessionsPerWeek": 3,
+          "sessionDurationMins": 60,
+          "allowDoubleSession": false,
+          "complementarySports": [
+            "strength"
+          ],
+          "currentFitnessLevel": "fit",
+          "currentFatigue": "loaded",
+          "createdAt": "2026-06-01T00:00:00.000Z",
+          "updatedAt": "2026-06-01T00:00:00.000Z",
+          "injuryNotes": "Molestia de rodilla derecha en control, sin dolor agudo."
+        }
+      },
+      {
+        "caseId": "squash_taper_medico#2",
+        "scenarioKey": "squash_taper_medico",
+        "planIndex": 2,
+        "weekCount": 3,
+        "startDate": "2026-08-10",
+        "primarySport": "squash",
+        "sportDetails": [
+          {
+            "sport": "squash",
+            "role": "primary",
+            "phaseFocus": "",
+            "weeklyIntent": "",
+            "volumeBias": "hold",
+            "intensityBias": "hold",
+            "notes": ""
+          },
+          {
+            "sport": "strength",
+            "role": "support",
+            "phaseFocus": "",
+            "weeklyIntent": "",
+            "volumeBias": "hold",
+            "intensityBias": "hold",
+            "notes": ""
+          }
+        ],
+        "targetLoadBySport": {
+          "squash": 40,
+          "strength": 15
+        },
+        "planStartDate": "2026-08-10",
+        "planEndDate": "2026-08-30",
+        "planPhases": [
+          {
+            "phase": "peak",
+            "startWeekIndex": 0,
+            "endWeekIndex": 0,
+            "blockFocus": "",
+            "intentBySport": {}
+          },
+          {
+            "phase": "taper",
+            "startWeekIndex": 1,
+            "endWeekIndex": 1,
+            "blockFocus": "",
+            "intentBySport": {}
+          },
+          {
+            "phase": "race",
+            "startWeekIndex": 2,
+            "endWeekIndex": 2,
+            "blockFocus": "",
+            "intentBySport": {}
+          }
+        ],
+        "weeks": [
+          {
+            "weekIndex": 0,
+            "weekStartDate": "2026-08-10",
+            "phase": "peak",
+            "targetLoadBySport": {
+              "squash": 40,
+              "strength": 15
+            }
+          },
+          {
+            "weekIndex": 1,
+            "weekStartDate": "2026-08-17",
+            "phase": "taper",
+            "targetLoadBySport": {
+              "squash": 40,
+              "strength": 15
+            }
+          },
+          {
+            "weekIndex": 2,
+            "weekStartDate": "2026-08-24",
+            "phase": "race",
+            "targetLoadBySport": {
+              "squash": 40,
+              "strength": 15
+            }
+          }
+        ],
+        "profile": {
+          "id": "loadtest-athlete",
+          "updatedAt": 1,
+          "sportContext": {
+            "enabledSports": [
+              "squash",
+              "strength"
+            ],
+            "primarySport": "squash"
+          },
+          "goalEvents": [
+            {
+              "id": "loadtest-event",
+              "title": "Loadtest squash_taper_medico",
+              "date": "2026-08-30",
+              "sport": "squash",
+              "priority": "primary"
+            }
+          ]
+        },
+        "wizardConfig": {
+          "goalEventId": "loadtest-event",
+          "trainingDays": [
+            "monday",
+            "wednesday",
+            "friday"
+          ],
+          "sessionsPerWeek": 3,
+          "sessionDurationMins": 60,
+          "allowDoubleSession": false,
+          "complementarySports": [
+            "strength"
+          ],
+          "currentFitnessLevel": "fit",
+          "currentFatigue": "loaded",
+          "createdAt": "2026-06-01T00:00:00.000Z",
+          "updatedAt": "2026-06-01T00:00:00.000Z",
+          "injuryNotes": "Molestia de rodilla derecha en control, sin dolor agudo."
+        }
+      },
+      {
+        "caseId": "running#1",
+        "scenarioKey": "running",
+        "planIndex": 1,
+        "weekCount": 4,
+        "startDate": "2026-08-17",
+        "primarySport": "running",
+        "sportDetails": [
+          {
+            "sport": "running",
+            "role": "primary",
+            "phaseFocus": "",
+            "weeklyIntent": "",
+            "volumeBias": "hold",
+            "intensityBias": "hold",
+            "notes": ""
+          },
+          {
+            "sport": "strength",
+            "role": "support",
+            "phaseFocus": "",
+            "weeklyIntent": "",
+            "volumeBias": "hold",
+            "intensityBias": "hold",
+            "notes": ""
+          }
+        ],
+        "targetLoadBySport": {
+          "running": 60,
+          "strength": 20
+        },
+        "planStartDate": "2026-08-17",
+        "planEndDate": "2026-09-13",
+        "planPhases": [
+          {
+            "phase": "build",
+            "startWeekIndex": 0,
+            "endWeekIndex": 3,
+            "blockFocus": "",
+            "intentBySport": {}
+          }
+        ],
+        "weeks": [
+          {
+            "weekIndex": 0,
+            "weekStartDate": "2026-08-17",
+            "phase": "build",
+            "targetLoadBySport": {
+              "running": 60,
+              "strength": 20
+            }
+          },
+          {
+            "weekIndex": 1,
+            "weekStartDate": "2026-08-24",
+            "phase": "build",
+            "targetLoadBySport": {
+              "running": 60,
+              "strength": 20
+            }
+          },
+          {
+            "weekIndex": 2,
+            "weekStartDate": "2026-08-31",
+            "phase": "build",
+            "targetLoadBySport": {
+              "running": 60,
+              "strength": 20
+            }
+          },
+          {
+            "weekIndex": 3,
+            "weekStartDate": "2026-09-07",
+            "phase": "build",
+            "targetLoadBySport": {
+              "running": 60,
+              "strength": 20
+            }
+          }
+        ],
+        "profile": {
+          "id": "loadtest-athlete",
+          "updatedAt": 1,
+          "sportContext": {
+            "enabledSports": [
+              "running",
+              "strength"
+            ],
+            "primarySport": "running"
+          },
+          "goalEvents": [
+            {
+              "id": "loadtest-event",
+              "title": "Loadtest running",
+              "date": "2026-09-13",
+              "sport": "running",
+              "priority": "primary"
+            }
+          ]
+        },
+        "wizardConfig": {
+          "goalEventId": "loadtest-event",
+          "trainingDays": [
+            "monday",
+            "tuesday",
+            "thursday",
+            "saturday"
+          ],
+          "sessionsPerWeek": 4,
+          "sessionDurationMins": 60,
+          "allowDoubleSession": false,
+          "complementarySports": [
+            "strength"
+          ],
+          "currentFitnessLevel": "normal",
+          "currentFatigue": "fresh",
+          "createdAt": "2026-06-01T00:00:00.000Z",
+          "updatedAt": "2026-06-01T00:00:00.000Z"
+        }
+      },
+      {
+        "caseId": "running#2",
+        "scenarioKey": "running",
+        "planIndex": 2,
+        "weekCount": 4,
+        "startDate": "2026-08-17",
+        "primarySport": "running",
+        "sportDetails": [
+          {
+            "sport": "running",
+            "role": "primary",
+            "phaseFocus": "",
+            "weeklyIntent": "",
+            "volumeBias": "hold",
+            "intensityBias": "hold",
+            "notes": ""
+          },
+          {
+            "sport": "strength",
+            "role": "support",
+            "phaseFocus": "",
+            "weeklyIntent": "",
+            "volumeBias": "hold",
+            "intensityBias": "hold",
+            "notes": ""
+          }
+        ],
+        "targetLoadBySport": {
+          "running": 60,
+          "strength": 20
+        },
+        "planStartDate": "2026-08-17",
+        "planEndDate": "2026-09-13",
+        "planPhases": [
+          {
+            "phase": "build",
+            "startWeekIndex": 0,
+            "endWeekIndex": 3,
+            "blockFocus": "",
+            "intentBySport": {}
+          }
+        ],
+        "weeks": [
+          {
+            "weekIndex": 0,
+            "weekStartDate": "2026-08-17",
+            "phase": "build",
+            "targetLoadBySport": {
+              "running": 60,
+              "strength": 20
+            }
+          },
+          {
+            "weekIndex": 1,
+            "weekStartDate": "2026-08-24",
+            "phase": "build",
+            "targetLoadBySport": {
+              "running": 60,
+              "strength": 20
+            }
+          },
+          {
+            "weekIndex": 2,
+            "weekStartDate": "2026-08-31",
+            "phase": "build",
+            "targetLoadBySport": {
+              "running": 60,
+              "strength": 20
+            }
+          },
+          {
+            "weekIndex": 3,
+            "weekStartDate": "2026-09-07",
+            "phase": "build",
+            "targetLoadBySport": {
+              "running": 60,
+              "strength": 20
+            }
+          }
+        ],
+        "profile": {
+          "id": "loadtest-athlete",
+          "updatedAt": 1,
+          "sportContext": {
+            "enabledSports": [
+              "running",
+              "strength"
+            ],
+            "primarySport": "running"
+          },
+          "goalEvents": [
+            {
+              "id": "loadtest-event",
+              "title": "Loadtest running",
+              "date": "2026-09-13",
+              "sport": "running",
+              "priority": "primary"
+            }
+          ]
+        },
+        "wizardConfig": {
+          "goalEventId": "loadtest-event",
+          "trainingDays": [
+            "monday",
+            "tuesday",
+            "thursday",
+            "saturday"
+          ],
+          "sessionsPerWeek": 4,
+          "sessionDurationMins": 60,
+          "allowDoubleSession": false,
+          "complementarySports": [
+            "strength"
+          ],
+          "currentFitnessLevel": "normal",
+          "currentFatigue": "fresh",
+          "createdAt": "2026-06-01T00:00:00.000Z",
+          "updatedAt": "2026-06-01T00:00:00.000Z"
+        }
+      },
+      {
+        "caseId": "ciclismo#1",
+        "scenarioKey": "ciclismo",
+        "planIndex": 1,
+        "weekCount": 3,
+        "startDate": "2026-08-24",
+        "primarySport": "cycling",
+        "sportDetails": [
+          {
+            "sport": "cycling",
+            "role": "primary",
+            "phaseFocus": "",
+            "weeklyIntent": "",
+            "volumeBias": "hold",
+            "intensityBias": "hold",
+            "notes": ""
+          },
+          {
+            "sport": "strength",
+            "role": "support",
+            "phaseFocus": "",
+            "weeklyIntent": "",
+            "volumeBias": "hold",
+            "intensityBias": "hold",
+            "notes": ""
+          }
+        ],
+        "targetLoadBySport": {
+          "cycling": 60,
+          "strength": 20
+        },
+        "planStartDate": "2026-08-24",
+        "planEndDate": "2026-09-13",
+        "planPhases": [
+          {
+            "phase": "build",
+            "startWeekIndex": 0,
+            "endWeekIndex": 2,
+            "blockFocus": "",
+            "intentBySport": {}
+          }
+        ],
+        "weeks": [
+          {
+            "weekIndex": 0,
+            "weekStartDate": "2026-08-24",
+            "phase": "build",
+            "targetLoadBySport": {
+              "cycling": 60,
+              "strength": 20
+            }
+          },
+          {
+            "weekIndex": 1,
+            "weekStartDate": "2026-08-31",
+            "phase": "build",
+            "targetLoadBySport": {
+              "cycling": 60,
+              "strength": 20
+            }
+          },
+          {
+            "weekIndex": 2,
+            "weekStartDate": "2026-09-07",
+            "phase": "build",
+            "targetLoadBySport": {
+              "cycling": 60,
+              "strength": 20
+            }
+          }
+        ],
+        "profile": {
+          "id": "loadtest-athlete",
+          "updatedAt": 1,
+          "sportContext": {
+            "enabledSports": [
+              "cycling",
+              "strength"
+            ],
+            "primarySport": "cycling"
+          },
+          "goalEvents": [
+            {
+              "id": "loadtest-event",
+              "title": "Loadtest ciclismo",
+              "date": "2026-09-13",
+              "sport": "cycling",
+              "priority": "primary"
+            }
+          ]
+        },
+        "wizardConfig": {
+          "goalEventId": "loadtest-event",
+          "trainingDays": [
+            "tuesday",
+            "thursday",
+            "sunday"
+          ],
+          "sessionsPerWeek": 3,
+          "sessionDurationMins": 90,
+          "allowDoubleSession": false,
+          "complementarySports": [
+            "strength"
+          ],
+          "currentFitnessLevel": "normal",
+          "currentFatigue": "fresh",
+          "createdAt": "2026-06-01T00:00:00.000Z",
+          "updatedAt": "2026-06-01T00:00:00.000Z"
+        }
+      },
+      {
+        "caseId": "ciclismo#2",
+        "scenarioKey": "ciclismo",
+        "planIndex": 2,
+        "weekCount": 3,
+        "startDate": "2026-08-24",
+        "primarySport": "cycling",
+        "sportDetails": [
+          {
+            "sport": "cycling",
+            "role": "primary",
+            "phaseFocus": "",
+            "weeklyIntent": "",
+            "volumeBias": "hold",
+            "intensityBias": "hold",
+            "notes": ""
+          },
+          {
+            "sport": "strength",
+            "role": "support",
+            "phaseFocus": "",
+            "weeklyIntent": "",
+            "volumeBias": "hold",
+            "intensityBias": "hold",
+            "notes": ""
+          }
+        ],
+        "targetLoadBySport": {
+          "cycling": 60,
+          "strength": 20
+        },
+        "planStartDate": "2026-08-24",
+        "planEndDate": "2026-09-13",
+        "planPhases": [
+          {
+            "phase": "build",
+            "startWeekIndex": 0,
+            "endWeekIndex": 2,
+            "blockFocus": "",
+            "intentBySport": {}
+          }
+        ],
+        "weeks": [
+          {
+            "weekIndex": 0,
+            "weekStartDate": "2026-08-24",
+            "phase": "build",
+            "targetLoadBySport": {
+              "cycling": 60,
+              "strength": 20
+            }
+          },
+          {
+            "weekIndex": 1,
+            "weekStartDate": "2026-08-31",
+            "phase": "build",
+            "targetLoadBySport": {
+              "cycling": 60,
+              "strength": 20
+            }
+          },
+          {
+            "weekIndex": 2,
+            "weekStartDate": "2026-09-07",
+            "phase": "build",
+            "targetLoadBySport": {
+              "cycling": 60,
+              "strength": 20
+            }
+          }
+        ],
+        "profile": {
+          "id": "loadtest-athlete",
+          "updatedAt": 1,
+          "sportContext": {
+            "enabledSports": [
+              "cycling",
+              "strength"
+            ],
+            "primarySport": "cycling"
+          },
+          "goalEvents": [
+            {
+              "id": "loadtest-event",
+              "title": "Loadtest ciclismo",
+              "date": "2026-09-13",
+              "sport": "cycling",
+              "priority": "primary"
+            }
+          ]
+        },
+        "wizardConfig": {
+          "goalEventId": "loadtest-event",
+          "trainingDays": [
+            "tuesday",
+            "thursday",
+            "sunday"
+          ],
+          "sessionsPerWeek": 3,
+          "sessionDurationMins": 90,
+          "allowDoubleSession": false,
+          "complementarySports": [
+            "strength"
+          ],
+          "currentFitnessLevel": "normal",
+          "currentFatigue": "fresh",
+          "createdAt": "2026-06-01T00:00:00.000Z",
+          "updatedAt": "2026-06-01T00:00:00.000Z"
+        }
+      },
+      {
+        "caseId": "dobles#1",
+        "scenarioKey": "dobles",
+        "planIndex": 1,
+        "weekCount": 4,
+        "startDate": "2026-08-31",
+        "primarySport": "squash",
+        "sportDetails": [
+          {
+            "sport": "squash",
+            "role": "primary",
+            "phaseFocus": "",
+            "weeklyIntent": "",
+            "volumeBias": "hold",
+            "intensityBias": "hold",
+            "notes": ""
+          },
+          {
+            "sport": "strength",
+            "role": "support",
+            "phaseFocus": "",
+            "weeklyIntent": "",
+            "volumeBias": "hold",
+            "intensityBias": "hold",
+            "notes": ""
+          }
+        ],
+        "targetLoadBySport": {
+          "squash": 70,
+          "strength": 30
+        },
+        "planStartDate": "2026-08-31",
+        "planEndDate": "2026-09-27",
+        "planPhases": [
+          {
+            "phase": "build",
+            "startWeekIndex": 0,
+            "endWeekIndex": 3,
+            "blockFocus": "",
+            "intentBySport": {}
+          }
+        ],
+        "weeks": [
+          {
+            "weekIndex": 0,
+            "weekStartDate": "2026-08-31",
+            "phase": "build",
+            "targetLoadBySport": {
+              "squash": 70,
+              "strength": 30
+            }
+          },
+          {
+            "weekIndex": 1,
+            "weekStartDate": "2026-09-07",
+            "phase": "build",
+            "targetLoadBySport": {
+              "squash": 70,
+              "strength": 30
+            }
+          },
+          {
+            "weekIndex": 2,
+            "weekStartDate": "2026-09-14",
+            "phase": "build",
+            "targetLoadBySport": {
+              "squash": 70,
+              "strength": 30
+            }
+          },
+          {
+            "weekIndex": 3,
+            "weekStartDate": "2026-09-21",
+            "phase": "build",
+            "targetLoadBySport": {
+              "squash": 70,
+              "strength": 30
+            }
+          }
+        ],
+        "profile": {
+          "id": "loadtest-athlete",
+          "updatedAt": 1,
+          "sportContext": {
+            "enabledSports": [
+              "squash",
+              "strength"
+            ],
+            "primarySport": "squash"
+          },
+          "goalEvents": [
+            {
+              "id": "loadtest-event",
+              "title": "Loadtest dobles",
+              "date": "2026-09-27",
+              "sport": "squash",
+              "priority": "primary"
+            }
+          ]
+        },
+        "wizardConfig": {
+          "goalEventId": "loadtest-event",
+          "trainingDays": [
+            "monday",
+            "tuesday",
+            "wednesday",
+            "friday",
+            "saturday"
+          ],
+          "sessionsPerWeek": 5,
+          "sessionDurationMins": 60,
+          "allowDoubleSession": true,
+          "complementarySports": [
+            "strength"
+          ],
+          "currentFitnessLevel": "normal",
+          "currentFatigue": "fresh",
+          "createdAt": "2026-06-01T00:00:00.000Z",
+          "updatedAt": "2026-06-01T00:00:00.000Z"
+        }
+      },
+      {
+        "caseId": "dobles#2",
+        "scenarioKey": "dobles",
+        "planIndex": 2,
+        "weekCount": 4,
+        "startDate": "2026-08-31",
+        "primarySport": "squash",
+        "sportDetails": [
+          {
+            "sport": "squash",
+            "role": "primary",
+            "phaseFocus": "",
+            "weeklyIntent": "",
+            "volumeBias": "hold",
+            "intensityBias": "hold",
+            "notes": ""
+          },
+          {
+            "sport": "strength",
+            "role": "support",
+            "phaseFocus": "",
+            "weeklyIntent": "",
+            "volumeBias": "hold",
+            "intensityBias": "hold",
+            "notes": ""
+          }
+        ],
+        "targetLoadBySport": {
+          "squash": 70,
+          "strength": 30
+        },
+        "planStartDate": "2026-08-31",
+        "planEndDate": "2026-09-27",
+        "planPhases": [
+          {
+            "phase": "build",
+            "startWeekIndex": 0,
+            "endWeekIndex": 3,
+            "blockFocus": "",
+            "intentBySport": {}
+          }
+        ],
+        "weeks": [
+          {
+            "weekIndex": 0,
+            "weekStartDate": "2026-08-31",
+            "phase": "build",
+            "targetLoadBySport": {
+              "squash": 70,
+              "strength": 30
+            }
+          },
+          {
+            "weekIndex": 1,
+            "weekStartDate": "2026-09-07",
+            "phase": "build",
+            "targetLoadBySport": {
+              "squash": 70,
+              "strength": 30
+            }
+          },
+          {
+            "weekIndex": 2,
+            "weekStartDate": "2026-09-14",
+            "phase": "build",
+            "targetLoadBySport": {
+              "squash": 70,
+              "strength": 30
+            }
+          },
+          {
+            "weekIndex": 3,
+            "weekStartDate": "2026-09-21",
+            "phase": "build",
+            "targetLoadBySport": {
+              "squash": 70,
+              "strength": 30
+            }
+          }
+        ],
+        "profile": {
+          "id": "loadtest-athlete",
+          "updatedAt": 1,
+          "sportContext": {
+            "enabledSports": [
+              "squash",
+              "strength"
+            ],
+            "primarySport": "squash"
+          },
+          "goalEvents": [
+            {
+              "id": "loadtest-event",
+              "title": "Loadtest dobles",
+              "date": "2026-09-27",
+              "sport": "squash",
+              "priority": "primary"
+            }
+          ]
+        },
+        "wizardConfig": {
+          "goalEventId": "loadtest-event",
+          "trainingDays": [
+            "monday",
+            "tuesday",
+            "wednesday",
+            "friday",
+            "saturday"
+          ],
+          "sessionsPerWeek": 5,
+          "sessionDurationMins": 60,
+          "allowDoubleSession": true,
+          "complementarySports": [
+            "strength"
+          ],
+          "currentFitnessLevel": "normal",
+          "currentFatigue": "fresh",
+          "createdAt": "2026-06-01T00:00:00.000Z",
+          "updatedAt": "2026-06-01T00:00:00.000Z"
+        }
+      },
+      {
+        "caseId": "semana_parcial#1",
+        "scenarioKey": "semana_parcial",
+        "planIndex": 1,
+        "weekCount": 3,
+        "startDate": "2026-09-09",
+        "primarySport": "squash",
+        "sportDetails": [
+          {
+            "sport": "squash",
+            "role": "primary",
+            "phaseFocus": "",
+            "weeklyIntent": "",
+            "volumeBias": "hold",
+            "intensityBias": "hold",
+            "notes": ""
+          },
+          {
+            "sport": "strength",
+            "role": "support",
+            "phaseFocus": "",
+            "weeklyIntent": "",
+            "volumeBias": "hold",
+            "intensityBias": "hold",
+            "notes": ""
+          }
+        ],
+        "targetLoadBySport": {
+          "squash": 40,
+          "strength": 20
+        },
+        "planStartDate": "2026-09-09",
+        "planEndDate": "2026-09-27",
+        "planPhases": [
+          {
+            "phase": "build",
+            "startWeekIndex": 0,
+            "endWeekIndex": 2,
+            "blockFocus": "",
+            "intentBySport": {}
+          }
+        ],
+        "weeks": [
+          {
+            "weekIndex": 0,
+            "weekStartDate": "2026-09-07",
+            "phase": "build",
+            "targetLoadBySport": {
+              "squash": 40,
+              "strength": 20
+            }
+          },
+          {
+            "weekIndex": 1,
+            "weekStartDate": "2026-09-14",
+            "phase": "build",
+            "targetLoadBySport": {
+              "squash": 40,
+              "strength": 20
+            }
+          },
+          {
+            "weekIndex": 2,
+            "weekStartDate": "2026-09-21",
+            "phase": "build",
+            "targetLoadBySport": {
+              "squash": 40,
+              "strength": 20
+            }
+          }
+        ],
+        "profile": {
+          "id": "loadtest-athlete",
+          "updatedAt": 1,
+          "sportContext": {
+            "enabledSports": [
+              "squash",
+              "strength"
+            ],
+            "primarySport": "squash"
+          },
+          "goalEvents": [
+            {
+              "id": "loadtest-event",
+              "title": "Loadtest semana_parcial",
+              "date": "2026-09-27",
+              "sport": "squash",
+              "priority": "primary"
+            }
+          ]
+        },
+        "wizardConfig": {
+          "goalEventId": "loadtest-event",
+          "trainingDays": [
+            "monday",
+            "wednesday",
+            "friday"
+          ],
+          "sessionsPerWeek": 3,
+          "sessionDurationMins": 60,
+          "allowDoubleSession": false,
+          "complementarySports": [
+            "strength"
+          ],
+          "currentFitnessLevel": "normal",
+          "currentFatigue": "fresh",
+          "createdAt": "2026-06-01T00:00:00.000Z",
+          "updatedAt": "2026-06-01T00:00:00.000Z"
+        }
+      },
+      {
+        "caseId": "semana_parcial#2",
+        "scenarioKey": "semana_parcial",
+        "planIndex": 2,
+        "weekCount": 3,
+        "startDate": "2026-09-09",
+        "primarySport": "squash",
+        "sportDetails": [
+          {
+            "sport": "squash",
+            "role": "primary",
+            "phaseFocus": "",
+            "weeklyIntent": "",
+            "volumeBias": "hold",
+            "intensityBias": "hold",
+            "notes": ""
+          },
+          {
+            "sport": "strength",
+            "role": "support",
+            "phaseFocus": "",
+            "weeklyIntent": "",
+            "volumeBias": "hold",
+            "intensityBias": "hold",
+            "notes": ""
+          }
+        ],
+        "targetLoadBySport": {
+          "squash": 40,
+          "strength": 20
+        },
+        "planStartDate": "2026-09-09",
+        "planEndDate": "2026-09-27",
+        "planPhases": [
+          {
+            "phase": "build",
+            "startWeekIndex": 0,
+            "endWeekIndex": 2,
+            "blockFocus": "",
+            "intentBySport": {}
+          }
+        ],
+        "weeks": [
+          {
+            "weekIndex": 0,
+            "weekStartDate": "2026-09-07",
+            "phase": "build",
+            "targetLoadBySport": {
+              "squash": 40,
+              "strength": 20
+            }
+          },
+          {
+            "weekIndex": 1,
+            "weekStartDate": "2026-09-14",
+            "phase": "build",
+            "targetLoadBySport": {
+              "squash": 40,
+              "strength": 20
+            }
+          },
+          {
+            "weekIndex": 2,
+            "weekStartDate": "2026-09-21",
+            "phase": "build",
+            "targetLoadBySport": {
+              "squash": 40,
+              "strength": 20
+            }
+          }
+        ],
+        "profile": {
+          "id": "loadtest-athlete",
+          "updatedAt": 1,
+          "sportContext": {
+            "enabledSports": [
+              "squash",
+              "strength"
+            ],
+            "primarySport": "squash"
+          },
+          "goalEvents": [
+            {
+              "id": "loadtest-event",
+              "title": "Loadtest semana_parcial",
+              "date": "2026-09-27",
+              "sport": "squash",
+              "priority": "primary"
+            }
+          ]
+        },
+        "wizardConfig": {
+          "goalEventId": "loadtest-event",
+          "trainingDays": [
+            "monday",
+            "wednesday",
+            "friday"
+          ],
+          "sessionsPerWeek": 3,
+          "sessionDurationMins": 60,
+          "allowDoubleSession": false,
+          "complementarySports": [
+            "strength"
+          ],
+          "currentFitnessLevel": "normal",
+          "currentFatigue": "fresh",
+          "createdAt": "2026-06-01T00:00:00.000Z",
+          "updatedAt": "2026-06-01T00:00:00.000Z"
+        }
+      }
+    ]
+  },
+  "latencySummary": {
+    "allAttempts": {
+      "firstWeekReadyMs": {
+        "n": 12,
+        "nullCount": 0,
+        "p50": 15458,
+        "p95": 20200
+      },
+      "firstWeekDetectedMs": {
+        "n": 12,
+        "nullCount": 0,
+        "p50": 16005,
+        "p95": 24007
+      },
+      "planCompleteMs": {
+        "n": 12,
+        "nullCount": 0,
+        "p50": 28488,
+        "p95": 43631
+      },
+      "terminalMs": {
+        "n": 12,
+        "nullCount": 0,
+        "p50": 28489,
+        "p95": 43634
+      }
+    },
+    "completePlans": {
+      "firstWeekReadyMs": {
+        "n": 12,
+        "nullCount": 0,
+        "p50": 15458,
+        "p95": 20200
+      },
+      "firstWeekDetectedMs": {
+        "n": 12,
+        "nullCount": 0,
+        "p50": 16005,
+        "p95": 24007
+      },
+      "planCompleteMs": {
+        "n": 12,
+        "nullCount": 0,
+        "p50": 28488,
+        "p95": 43631
+      },
+      "terminalMs": {
+        "n": 12,
+        "nullCount": 0,
+        "p50": 28489,
+        "p95": 43634
+      }
+    }
+  },
+  "caveat": "Caveat estadístico: con n=12 planes completos, p95 y p99 de plan son prácticamente el máximo observado. Baseline inicial conservadora, no un p95 estable.",
+  "plans": [
+    {
+      "caseId": "squash_build#1",
+      "scenarioKey": "squash_build",
+      "weekCount": 4,
+      "outcome": "succeeded",
+      "weekCountSucceeded": 4,
+      "weekCountFailed": 0,
+      "firstWeekReadyMs": 15906,
+      "firstWeekReadyE2eMs": 15906,
+      "firstWeekDetectedMs": 16006,
+      "firstWeekDetectionLagMs": 100,
+      "planCompleteMs": 35169,
+      "terminalMs": 35171,
+      "totalInputTokens": 9490,
+      "totalOutputTokens": 3748,
+      "totalCacheReadTokens": 0,
+      "totalCacheCreationTokens": 0,
+      "estimatedCostUsd": 0.08468999999999999,
+      "retryCount": 0,
+      "fallbackUsed": false,
+      "observedModels": [
+        "claude-sonnet-4-6"
+      ],
+      "qualityVersion": 2,
+      "planScore": 89,
+      "planGrade": "good",
+      "issueCodes": [
+        "quality.squash.low_drill_depth"
+      ],
+      "errorClass": null,
+      "promptChars": 22772,
+      "responseChars": 9685,
+      "weeks": [
+        {
+          "weekIndex": 0,
+          "scenarioKey": "squash_build",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 2,
+          "correctiveActionCount": 2,
+          "structuralActionCount": 0,
+          "movedSessionCount": 0,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 3,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "previousWeekContextSource": "none",
+          "strengthAccessoryRotationActionCount": null,
+          "strengthAccessoryRotationSessionsAffected": null,
+          "strengthCountableOverlapMax": 0,
+          "squashDrillRotationActionCount": null,
+          "squashDrillRotationSessionsAffected": null,
+          "squashDrillRotationOmittedCount": null,
+          "squashSignatureUniquenessFailureAttemptCount": 0,
+          "squashSessionCount": null,
+          "squashDrillUseCount": null,
+          "squashUniqueDrillCount": null,
+          "squashDrillVarietyRatio": null,
+          "squashTopDrillUseCount": null,
+          "squashTopSessionRatio": null,
+          "sessionCount": 3,
+          "promptChars": 5612,
+          "responseChars": 2272,
+          "promptTokens": 2350,
+          "completionTokens": 897,
+          "durationMs": 15885,
+          "wallClockMs": 15905,
+          "score": 91,
+          "grade": "excellent"
+        },
+        {
+          "weekIndex": 1,
+          "scenarioKey": "squash_build",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 1,
+          "correctiveActionCount": 0,
+          "structuralActionCount": 1,
+          "movedSessionCount": 0,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 3,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "previousWeekContextSource": "shell",
+          "strengthAccessoryRotationActionCount": 7,
+          "strengthAccessoryRotationSessionsAffected": 1,
+          "strengthCountableOverlapMax": 1,
+          "squashDrillRotationActionCount": 2,
+          "squashDrillRotationSessionsAffected": 1,
+          "squashDrillRotationOmittedCount": 0,
+          "squashSignatureUniquenessFailureAttemptCount": 0,
+          "squashSessionCount": null,
+          "squashDrillUseCount": null,
+          "squashUniqueDrillCount": null,
+          "squashDrillVarietyRatio": null,
+          "squashTopDrillUseCount": null,
+          "squashTopSessionRatio": null,
+          "sessionCount": 3,
+          "promptChars": 5720,
+          "responseChars": 2506,
+          "promptTokens": 2380,
+          "completionTokens": 952,
+          "durationMs": 18019,
+          "wallClockMs": 18028,
+          "score": 92,
+          "grade": "excellent"
+        },
+        {
+          "weekIndex": 2,
+          "scenarioKey": "squash_build",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 2,
+          "correctiveActionCount": 2,
+          "structuralActionCount": 0,
+          "movedSessionCount": 0,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 3,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "previousWeekContextSource": "shell",
+          "strengthAccessoryRotationActionCount": 5,
+          "strengthAccessoryRotationSessionsAffected": 1,
+          "strengthCountableOverlapMax": 2,
+          "squashDrillRotationActionCount": 4,
+          "squashDrillRotationSessionsAffected": 2,
+          "squashDrillRotationOmittedCount": 0,
+          "squashSignatureUniquenessFailureAttemptCount": 0,
+          "squashSessionCount": null,
+          "squashDrillUseCount": null,
+          "squashUniqueDrillCount": null,
+          "squashDrillVarietyRatio": null,
+          "squashTopDrillUseCount": null,
+          "squashTopSessionRatio": null,
+          "sessionCount": 3,
+          "promptChars": 5720,
+          "responseChars": 2392,
+          "promptTokens": 2380,
+          "completionTokens": 923,
+          "durationMs": 17344,
+          "wallClockMs": 17357,
+          "score": 91,
+          "grade": "excellent"
+        },
+        {
+          "weekIndex": 3,
+          "scenarioKey": "squash_build",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 4,
+          "correctiveActionCount": 4,
+          "structuralActionCount": 0,
+          "movedSessionCount": 0,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 3,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "previousWeekContextSource": "shell",
+          "strengthAccessoryRotationActionCount": 7,
+          "strengthAccessoryRotationSessionsAffected": 1,
+          "strengthCountableOverlapMax": 2,
+          "squashDrillRotationActionCount": 3,
+          "squashDrillRotationSessionsAffected": 2,
+          "squashDrillRotationOmittedCount": 0,
+          "squashSignatureUniquenessFailureAttemptCount": 0,
+          "squashSessionCount": 8,
+          "squashDrillUseCount": 17,
+          "squashUniqueDrillCount": 9,
+          "squashDrillVarietyRatio": 0.5294117647058824,
+          "squashTopDrillUseCount": 4,
+          "squashTopSessionRatio": 0.5,
+          "sessionCount": 3,
+          "promptChars": 5720,
+          "responseChars": 2515,
+          "promptTokens": 2380,
+          "completionTokens": 976,
+          "durationMs": 19252,
+          "wallClockMs": 19263,
+          "score": 89,
+          "grade": "good"
+        }
+      ]
+    },
+    {
+      "caseId": "squash_build#2",
+      "scenarioKey": "squash_build",
+      "weekCount": 4,
+      "outcome": "succeeded",
+      "weekCountSucceeded": 4,
+      "weekCountFailed": 0,
+      "firstWeekReadyMs": 17719,
+      "firstWeekReadyE2eMs": 17719,
+      "firstWeekDetectedMs": 20006,
+      "firstWeekDetectionLagMs": 2287,
+      "planCompleteMs": 37826,
+      "terminalMs": 37827,
+      "totalInputTokens": 9490,
+      "totalOutputTokens": 3741,
+      "totalCacheReadTokens": 0,
+      "totalCacheCreationTokens": 0,
+      "estimatedCostUsd": 0.084585,
+      "retryCount": 0,
+      "fallbackUsed": false,
+      "observedModels": [
+        "claude-sonnet-4-6"
+      ],
+      "qualityVersion": 2,
+      "planScore": 89,
+      "planGrade": "good",
+      "issueCodes": [
+        "quality.squash.low_drill_depth"
+      ],
+      "errorClass": null,
+      "promptChars": 22772,
+      "responseChars": 9658,
+      "weeks": [
+        {
+          "weekIndex": 0,
+          "scenarioKey": "squash_build",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 3,
+          "correctiveActionCount": 3,
+          "structuralActionCount": 0,
+          "movedSessionCount": 0,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 3,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "previousWeekContextSource": "none",
+          "strengthAccessoryRotationActionCount": null,
+          "strengthAccessoryRotationSessionsAffected": null,
+          "strengthCountableOverlapMax": 0,
+          "squashDrillRotationActionCount": null,
+          "squashDrillRotationSessionsAffected": null,
+          "squashDrillRotationOmittedCount": null,
+          "squashSignatureUniquenessFailureAttemptCount": 0,
+          "squashSessionCount": null,
+          "squashDrillUseCount": null,
+          "squashUniqueDrillCount": null,
+          "squashDrillVarietyRatio": null,
+          "squashTopDrillUseCount": null,
+          "squashTopSessionRatio": null,
+          "sessionCount": 3,
+          "promptChars": 5612,
+          "responseChars": 2345,
+          "promptTokens": 2350,
+          "completionTokens": 927,
+          "durationMs": 19545,
+          "wallClockMs": 19556,
+          "score": 90,
+          "grade": "excellent"
+        },
+        {
+          "weekIndex": 1,
+          "scenarioKey": "squash_build",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 2,
+          "correctiveActionCount": 2,
+          "structuralActionCount": 0,
+          "movedSessionCount": 0,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 3,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "previousWeekContextSource": "shell",
+          "strengthAccessoryRotationActionCount": 7,
+          "strengthAccessoryRotationSessionsAffected": 1,
+          "strengthCountableOverlapMax": 1,
+          "squashDrillRotationActionCount": 2,
+          "squashDrillRotationSessionsAffected": 1,
+          "squashDrillRotationOmittedCount": 0,
+          "squashSignatureUniquenessFailureAttemptCount": 0,
+          "squashSessionCount": null,
+          "squashDrillUseCount": null,
+          "squashUniqueDrillCount": null,
+          "squashDrillVarietyRatio": null,
+          "squashTopDrillUseCount": null,
+          "squashTopSessionRatio": null,
+          "sessionCount": 3,
+          "promptChars": 5720,
+          "responseChars": 2327,
+          "promptTokens": 2380,
+          "completionTokens": 906,
+          "durationMs": 17711,
+          "wallClockMs": 17718,
+          "score": 91,
+          "grade": "excellent"
+        },
+        {
+          "weekIndex": 2,
+          "scenarioKey": "squash_build",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 2,
+          "correctiveActionCount": 2,
+          "structuralActionCount": 0,
+          "movedSessionCount": 0,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 3,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "previousWeekContextSource": "shell",
+          "strengthAccessoryRotationActionCount": 5,
+          "strengthAccessoryRotationSessionsAffected": 1,
+          "strengthCountableOverlapMax": 2,
+          "squashDrillRotationActionCount": 3,
+          "squashDrillRotationSessionsAffected": 2,
+          "squashDrillRotationOmittedCount": 0,
+          "squashSignatureUniquenessFailureAttemptCount": 0,
+          "squashSessionCount": null,
+          "squashDrillUseCount": null,
+          "squashUniqueDrillCount": null,
+          "squashDrillVarietyRatio": null,
+          "squashTopDrillUseCount": null,
+          "squashTopSessionRatio": null,
+          "sessionCount": 3,
+          "promptChars": 5720,
+          "responseChars": 2240,
+          "promptTokens": 2380,
+          "completionTokens": 879,
+          "durationMs": 20424,
+          "wallClockMs": 20434,
+          "score": 91,
+          "grade": "excellent"
+        },
+        {
+          "weekIndex": 3,
+          "scenarioKey": "squash_build",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 2,
+          "correctiveActionCount": 2,
+          "structuralActionCount": 0,
+          "movedSessionCount": 0,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 3,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "previousWeekContextSource": "shell",
+          "strengthAccessoryRotationActionCount": 7,
+          "strengthAccessoryRotationSessionsAffected": 1,
+          "strengthCountableOverlapMax": 2,
+          "squashDrillRotationActionCount": 4,
+          "squashDrillRotationSessionsAffected": 2,
+          "squashDrillRotationOmittedCount": 0,
+          "squashSignatureUniquenessFailureAttemptCount": 0,
+          "squashSessionCount": 8,
+          "squashDrillUseCount": 16,
+          "squashUniqueDrillCount": 9,
+          "squashDrillVarietyRatio": 0.5625,
+          "squashTopDrillUseCount": 4,
+          "squashTopSessionRatio": 0.5,
+          "sessionCount": 3,
+          "promptChars": 5720,
+          "responseChars": 2746,
+          "promptTokens": 2380,
+          "completionTokens": 1029,
+          "durationMs": 20097,
+          "wallClockMs": 20107,
+          "score": 91,
+          "grade": "excellent"
+        }
+      ]
+    },
+    {
+      "caseId": "squash_taper_medico#1",
+      "scenarioKey": "squash_taper_medico",
+      "weekCount": 3,
+      "outcome": "succeeded",
+      "weekCountSucceeded": 3,
+      "weekCountFailed": 0,
+      "firstWeekReadyMs": 16952,
+      "firstWeekReadyE2eMs": 16952,
+      "firstWeekDetectedMs": 20006,
+      "firstWeekDetectionLagMs": 3054,
+      "planCompleteMs": 20198,
+      "terminalMs": 20199,
+      "totalInputTokens": 7137,
+      "totalOutputTokens": 2838,
+      "totalCacheReadTokens": 0,
+      "totalCacheCreationTokens": 0,
+      "estimatedCostUsd": 0.06398100000000001,
+      "retryCount": 0,
+      "fallbackUsed": false,
+      "observedModels": [
+        "claude-sonnet-4-6"
+      ],
+      "qualityVersion": 2,
+      "planScore": 85,
+      "planGrade": "good",
+      "issueCodes": [
+        "squash.race_day.missing_event",
+        "quality.squash.low_drill_depth",
+        "quality.generation.high_repair_count"
+      ],
+      "errorClass": null,
+      "promptChars": 16988,
+      "responseChars": 7507,
+      "weeks": [
+        {
+          "weekIndex": 0,
+          "scenarioKey": "squash_taper_medico",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 2,
+          "correctiveActionCount": 0,
+          "structuralActionCount": 2,
+          "movedSessionCount": 0,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 3,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "previousWeekContextSource": "none",
+          "strengthAccessoryRotationActionCount": null,
+          "strengthAccessoryRotationSessionsAffected": null,
+          "strengthCountableOverlapMax": 0,
+          "squashDrillRotationActionCount": null,
+          "squashDrillRotationSessionsAffected": null,
+          "squashDrillRotationOmittedCount": null,
+          "squashSignatureUniquenessFailureAttemptCount": 0,
+          "squashSessionCount": 2,
+          "squashDrillUseCount": 4,
+          "squashUniqueDrillCount": 4,
+          "squashDrillVarietyRatio": 1,
+          "squashTopDrillUseCount": 1,
+          "squashTopSessionRatio": 0.5,
+          "sessionCount": 3,
+          "promptChars": 5833,
+          "responseChars": 2563,
+          "promptTokens": 2417,
+          "completionTokens": 958,
+          "durationMs": 16941,
+          "wallClockMs": 16952,
+          "score": 91,
+          "grade": "excellent"
+        },
+        {
+          "weekIndex": 1,
+          "scenarioKey": "squash_taper_medico",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 5,
+          "correctiveActionCount": 4,
+          "structuralActionCount": 1,
+          "movedSessionCount": 0,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 3,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "previousWeekContextSource": "shell",
+          "strengthAccessoryRotationActionCount": null,
+          "strengthAccessoryRotationSessionsAffected": null,
+          "strengthCountableOverlapMax": 0,
+          "squashDrillRotationActionCount": null,
+          "squashDrillRotationSessionsAffected": null,
+          "squashDrillRotationOmittedCount": null,
+          "squashSignatureUniquenessFailureAttemptCount": 0,
+          "squashSessionCount": 2,
+          "squashDrillUseCount": 4,
+          "squashUniqueDrillCount": 4,
+          "squashDrillVarietyRatio": 1,
+          "squashTopDrillUseCount": 1,
+          "squashTopSessionRatio": 0.5,
+          "sessionCount": 3,
+          "promptChars": 5739,
+          "responseChars": 2817,
+          "promptTokens": 2435,
+          "completionTokens": 1066,
+          "durationMs": 20189,
+          "wallClockMs": 20196,
+          "score": 88,
+          "grade": "good"
+        },
+        {
+          "weekIndex": 2,
+          "scenarioKey": "squash_taper_medico",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 8,
+          "correctiveActionCount": 5,
+          "structuralActionCount": 1,
+          "movedSessionCount": 2,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 2,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "previousWeekContextSource": "shell",
+          "strengthAccessoryRotationActionCount": null,
+          "strengthAccessoryRotationSessionsAffected": null,
+          "strengthCountableOverlapMax": null,
+          "squashDrillRotationActionCount": null,
+          "squashDrillRotationSessionsAffected": null,
+          "squashDrillRotationOmittedCount": null,
+          "squashSignatureUniquenessFailureAttemptCount": 0,
+          "squashSessionCount": 2,
+          "squashDrillUseCount": 5,
+          "squashUniqueDrillCount": 5,
+          "squashDrillVarietyRatio": 1,
+          "squashTopDrillUseCount": 1,
+          "squashTopSessionRatio": 0.5,
+          "sessionCount": 2,
+          "promptChars": 5416,
+          "responseChars": 2127,
+          "promptTokens": 2285,
+          "completionTokens": 814,
+          "durationMs": 19081,
+          "wallClockMs": 19087,
+          "score": 85,
+          "grade": "good"
+        }
+      ]
+    },
+    {
+      "caseId": "squash_taper_medico#2",
+      "scenarioKey": "squash_taper_medico",
+      "weekCount": 3,
+      "outcome": "succeeded",
+      "weekCountSucceeded": 3,
+      "weekCountFailed": 0,
+      "firstWeekReadyMs": 15458,
+      "firstWeekReadyE2eMs": 15458,
+      "firstWeekDetectedMs": 16004,
+      "firstWeekDetectionLagMs": 546,
+      "planCompleteMs": 28488,
+      "terminalMs": 28489,
+      "totalInputTokens": 7137,
+      "totalOutputTokens": 3017,
+      "totalCacheReadTokens": 0,
+      "totalCacheCreationTokens": 0,
+      "estimatedCostUsd": 0.066666,
+      "retryCount": 0,
+      "fallbackUsed": false,
+      "observedModels": [
+        "claude-sonnet-4-6"
+      ],
+      "qualityVersion": 2,
+      "planScore": 86,
+      "planGrade": "good",
+      "issueCodes": [
+        "squash.race_day.missing_event",
+        "quality.squash.low_drill_depth"
+      ],
+      "errorClass": null,
+      "promptChars": 16988,
+      "responseChars": 7935,
+      "weeks": [
+        {
+          "weekIndex": 0,
+          "scenarioKey": "squash_taper_medico",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 3,
+          "correctiveActionCount": 1,
+          "structuralActionCount": 2,
+          "movedSessionCount": 0,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 3,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "previousWeekContextSource": "none",
+          "strengthAccessoryRotationActionCount": null,
+          "strengthAccessoryRotationSessionsAffected": null,
+          "strengthCountableOverlapMax": 0,
+          "squashDrillRotationActionCount": null,
+          "squashDrillRotationSessionsAffected": null,
+          "squashDrillRotationOmittedCount": null,
+          "squashSignatureUniquenessFailureAttemptCount": 0,
+          "squashSessionCount": 2,
+          "squashDrillUseCount": 4,
+          "squashUniqueDrillCount": 4,
+          "squashDrillVarietyRatio": 1,
+          "squashTopDrillUseCount": 1,
+          "squashTopSessionRatio": 0.5,
+          "sessionCount": 3,
+          "promptChars": 5833,
+          "responseChars": 3110,
+          "promptTokens": 2417,
+          "completionTokens": 1155,
+          "durationMs": 28478,
+          "wallClockMs": 28488,
+          "score": 90,
+          "grade": "excellent"
+        },
+        {
+          "weekIndex": 1,
+          "scenarioKey": "squash_taper_medico",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 4,
+          "correctiveActionCount": 3,
+          "structuralActionCount": 1,
+          "movedSessionCount": 0,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 3,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "previousWeekContextSource": "shell",
+          "strengthAccessoryRotationActionCount": null,
+          "strengthAccessoryRotationSessionsAffected": null,
+          "strengthCountableOverlapMax": 0,
+          "squashDrillRotationActionCount": null,
+          "squashDrillRotationSessionsAffected": null,
+          "squashDrillRotationOmittedCount": null,
+          "squashSignatureUniquenessFailureAttemptCount": 0,
+          "squashSessionCount": 2,
+          "squashDrillUseCount": 4,
+          "squashUniqueDrillCount": 4,
+          "squashDrillVarietyRatio": 1,
+          "squashTopDrillUseCount": 1,
+          "squashTopSessionRatio": 0.5,
+          "sessionCount": 3,
+          "promptChars": 5739,
+          "responseChars": 2963,
+          "promptTokens": 2435,
+          "completionTokens": 1129,
+          "durationMs": 21080,
+          "wallClockMs": 21087,
+          "score": 89,
+          "grade": "good"
+        },
+        {
+          "weekIndex": 2,
+          "scenarioKey": "squash_taper_medico",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 5,
+          "correctiveActionCount": 3,
+          "structuralActionCount": 1,
+          "movedSessionCount": 1,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 2,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "previousWeekContextSource": "shell",
+          "strengthAccessoryRotationActionCount": null,
+          "strengthAccessoryRotationSessionsAffected": null,
+          "strengthCountableOverlapMax": null,
+          "squashDrillRotationActionCount": null,
+          "squashDrillRotationSessionsAffected": null,
+          "squashDrillRotationOmittedCount": null,
+          "squashSignatureUniquenessFailureAttemptCount": 0,
+          "squashSessionCount": 2,
+          "squashDrillUseCount": 5,
+          "squashUniqueDrillCount": 5,
+          "squashDrillVarietyRatio": 1,
+          "squashTopDrillUseCount": 1,
+          "squashTopSessionRatio": 0.5,
+          "sessionCount": 2,
+          "promptChars": 5416,
+          "responseChars": 1862,
+          "promptTokens": 2285,
+          "completionTokens": 733,
+          "durationMs": 15453,
+          "wallClockMs": 15457,
+          "score": 88,
+          "grade": "good"
+        }
+      ]
+    },
+    {
+      "caseId": "running#1",
+      "scenarioKey": "running",
+      "weekCount": 4,
+      "outcome": "succeeded",
+      "weekCountSucceeded": 4,
+      "weekCountFailed": 0,
+      "firstWeekReadyMs": 15100,
+      "firstWeekReadyE2eMs": 15100,
+      "firstWeekDetectedMs": 16005,
+      "firstWeekDetectionLagMs": 905,
+      "planCompleteMs": 33211,
+      "terminalMs": 33213,
+      "totalInputTokens": 7450,
+      "totalOutputTokens": 3964,
+      "totalCacheReadTokens": 0,
+      "totalCacheCreationTokens": 0,
+      "estimatedCostUsd": 0.08181000000000001,
+      "retryCount": 0,
+      "fallbackUsed": false,
+      "observedModels": [
+        "claude-sonnet-4-6"
+      ],
+      "qualityVersion": 2,
+      "planScore": 99,
+      "planGrade": "excellent",
+      "issueCodes": [],
+      "errorClass": null,
+      "promptChars": 16088,
+      "responseChars": 9851,
+      "weeks": [
+        {
+          "weekIndex": 0,
+          "scenarioKey": "running",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 0,
+          "correctiveActionCount": 0,
+          "structuralActionCount": 0,
+          "movedSessionCount": 0,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 4,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "previousWeekContextSource": "none",
+          "strengthAccessoryRotationActionCount": null,
+          "strengthAccessoryRotationSessionsAffected": null,
+          "strengthCountableOverlapMax": 0,
+          "squashDrillRotationActionCount": null,
+          "squashDrillRotationSessionsAffected": null,
+          "squashDrillRotationOmittedCount": null,
+          "squashSignatureUniquenessFailureAttemptCount": 0,
+          "squashSessionCount": null,
+          "squashDrillUseCount": null,
+          "squashUniqueDrillCount": null,
+          "squashDrillVarietyRatio": null,
+          "squashTopDrillUseCount": null,
+          "squashTopSessionRatio": null,
+          "sessionCount": 4,
+          "promptChars": 3941,
+          "responseChars": 2256,
+          "promptTokens": 1840,
+          "completionTokens": 920,
+          "durationMs": 15602,
+          "wallClockMs": 15610,
+          "score": 100,
+          "grade": "excellent"
+        },
+        {
+          "weekIndex": 1,
+          "scenarioKey": "running",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 0,
+          "correctiveActionCount": 0,
+          "structuralActionCount": 0,
+          "movedSessionCount": 0,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 4,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "previousWeekContextSource": "shell",
+          "strengthAccessoryRotationActionCount": 7,
+          "strengthAccessoryRotationSessionsAffected": 1,
+          "strengthCountableOverlapMax": 1,
+          "squashDrillRotationActionCount": null,
+          "squashDrillRotationSessionsAffected": null,
+          "squashDrillRotationOmittedCount": null,
+          "squashSignatureUniquenessFailureAttemptCount": 0,
+          "squashSessionCount": null,
+          "squashDrillUseCount": null,
+          "squashUniqueDrillCount": null,
+          "squashDrillVarietyRatio": null,
+          "squashTopDrillUseCount": null,
+          "squashTopSessionRatio": null,
+          "sessionCount": 4,
+          "promptChars": 4049,
+          "responseChars": 2223,
+          "promptTokens": 1870,
+          "completionTokens": 931,
+          "durationMs": 15089,
+          "wallClockMs": 15100,
+          "score": 100,
+          "grade": "excellent"
+        },
+        {
+          "weekIndex": 2,
+          "scenarioKey": "running",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 0,
+          "correctiveActionCount": 0,
+          "structuralActionCount": 0,
+          "movedSessionCount": 0,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 4,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "previousWeekContextSource": "shell",
+          "strengthAccessoryRotationActionCount": 5,
+          "strengthAccessoryRotationSessionsAffected": 1,
+          "strengthCountableOverlapMax": 2,
+          "squashDrillRotationActionCount": null,
+          "squashDrillRotationSessionsAffected": null,
+          "squashDrillRotationOmittedCount": null,
+          "squashSignatureUniquenessFailureAttemptCount": 0,
+          "squashSessionCount": null,
+          "squashDrillUseCount": null,
+          "squashUniqueDrillCount": null,
+          "squashDrillVarietyRatio": null,
+          "squashTopDrillUseCount": null,
+          "squashTopSessionRatio": null,
+          "sessionCount": 4,
+          "promptChars": 4049,
+          "responseChars": 2639,
+          "promptTokens": 1870,
+          "completionTokens": 1067,
+          "durationMs": 20642,
+          "wallClockMs": 20651,
+          "score": 100,
+          "grade": "excellent"
+        },
+        {
+          "weekIndex": 3,
+          "scenarioKey": "running",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 3,
+          "correctiveActionCount": 0,
+          "structuralActionCount": 0,
+          "movedSessionCount": 3,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 4,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "previousWeekContextSource": "shell",
+          "strengthAccessoryRotationActionCount": 7,
+          "strengthAccessoryRotationSessionsAffected": 1,
+          "strengthCountableOverlapMax": 2,
+          "squashDrillRotationActionCount": null,
+          "squashDrillRotationSessionsAffected": null,
+          "squashDrillRotationOmittedCount": null,
+          "squashSignatureUniquenessFailureAttemptCount": 0,
+          "squashSessionCount": null,
+          "squashDrillUseCount": null,
+          "squashUniqueDrillCount": null,
+          "squashDrillVarietyRatio": null,
+          "squashTopDrillUseCount": null,
+          "squashTopSessionRatio": null,
+          "sessionCount": 4,
+          "promptChars": 4049,
+          "responseChars": 2733,
+          "promptTokens": 1870,
+          "completionTokens": 1046,
+          "durationMs": 18102,
+          "wallClockMs": 18111,
+          "score": 97,
+          "grade": "excellent"
+        }
+      ]
+    },
+    {
+      "caseId": "running#2",
+      "scenarioKey": "running",
+      "weekCount": 4,
+      "outcome": "succeeded",
+      "weekCountSucceeded": 4,
+      "weekCountFailed": 0,
+      "firstWeekReadyMs": 15839,
+      "firstWeekReadyE2eMs": 15839,
+      "firstWeekDetectedMs": 16004,
+      "firstWeekDetectionLagMs": 165,
+      "planCompleteMs": 43545,
+      "terminalMs": 43546,
+      "totalInputTokens": 7450,
+      "totalOutputTokens": 3916,
+      "totalCacheReadTokens": 0,
+      "totalCacheCreationTokens": 0,
+      "estimatedCostUsd": 0.08109000000000001,
+      "retryCount": 0,
+      "fallbackUsed": false,
+      "observedModels": [
+        "claude-sonnet-4-6"
+      ],
+      "qualityVersion": 2,
+      "planScore": 100,
+      "planGrade": "excellent",
+      "issueCodes": [],
+      "errorClass": null,
+      "promptChars": 16088,
+      "responseChars": 9650,
+      "weeks": [
+        {
+          "weekIndex": 0,
+          "scenarioKey": "running",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 0,
+          "correctiveActionCount": 0,
+          "structuralActionCount": 0,
+          "movedSessionCount": 0,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 4,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "previousWeekContextSource": "none",
+          "strengthAccessoryRotationActionCount": null,
+          "strengthAccessoryRotationSessionsAffected": null,
+          "strengthCountableOverlapMax": 0,
+          "squashDrillRotationActionCount": null,
+          "squashDrillRotationSessionsAffected": null,
+          "squashDrillRotationOmittedCount": null,
+          "squashSignatureUniquenessFailureAttemptCount": 0,
+          "squashSessionCount": null,
+          "squashDrillUseCount": null,
+          "squashUniqueDrillCount": null,
+          "squashDrillVarietyRatio": null,
+          "squashTopDrillUseCount": null,
+          "squashTopSessionRatio": null,
+          "sessionCount": 4,
+          "promptChars": 3941,
+          "responseChars": 2387,
+          "promptTokens": 1840,
+          "completionTokens": 978,
+          "durationMs": 15831,
+          "wallClockMs": 15839,
+          "score": 100,
+          "grade": "excellent"
+        },
+        {
+          "weekIndex": 1,
+          "scenarioKey": "running",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 0,
+          "correctiveActionCount": 0,
+          "structuralActionCount": 0,
+          "movedSessionCount": 0,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 4,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "previousWeekContextSource": "shell",
+          "strengthAccessoryRotationActionCount": 7,
+          "strengthAccessoryRotationSessionsAffected": 1,
+          "strengthCountableOverlapMax": 1,
+          "squashDrillRotationActionCount": null,
+          "squashDrillRotationSessionsAffected": null,
+          "squashDrillRotationOmittedCount": null,
+          "squashSignatureUniquenessFailureAttemptCount": 0,
+          "squashSessionCount": null,
+          "squashDrillUseCount": null,
+          "squashUniqueDrillCount": null,
+          "squashDrillVarietyRatio": null,
+          "squashTopDrillUseCount": null,
+          "squashTopSessionRatio": null,
+          "sessionCount": 4,
+          "promptChars": 4049,
+          "responseChars": 2331,
+          "promptTokens": 1870,
+          "completionTokens": 963,
+          "durationMs": 15929,
+          "wallClockMs": 15937,
+          "score": 100,
+          "grade": "excellent"
+        },
+        {
+          "weekIndex": 2,
+          "scenarioKey": "running",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 0,
+          "correctiveActionCount": 0,
+          "structuralActionCount": 0,
+          "movedSessionCount": 0,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 4,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "previousWeekContextSource": "shell",
+          "strengthAccessoryRotationActionCount": 5,
+          "strengthAccessoryRotationSessionsAffected": 1,
+          "strengthCountableOverlapMax": 2,
+          "squashDrillRotationActionCount": null,
+          "squashDrillRotationSessionsAffected": null,
+          "squashDrillRotationOmittedCount": null,
+          "squashSignatureUniquenessFailureAttemptCount": 0,
+          "squashSessionCount": null,
+          "squashDrillUseCount": null,
+          "squashUniqueDrillCount": null,
+          "squashDrillVarietyRatio": null,
+          "squashTopDrillUseCount": null,
+          "squashTopSessionRatio": null,
+          "sessionCount": 4,
+          "promptChars": 4049,
+          "responseChars": 2342,
+          "promptTokens": 1870,
+          "completionTokens": 964,
+          "durationMs": 15980,
+          "wallClockMs": 15988,
+          "score": 100,
+          "grade": "excellent"
+        },
+        {
+          "weekIndex": 3,
+          "scenarioKey": "running",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 1,
+          "correctiveActionCount": 0,
+          "structuralActionCount": 0,
+          "movedSessionCount": 1,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 4,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "previousWeekContextSource": "shell",
+          "strengthAccessoryRotationActionCount": 7,
+          "strengthAccessoryRotationSessionsAffected": 1,
+          "strengthCountableOverlapMax": 2,
+          "squashDrillRotationActionCount": null,
+          "squashDrillRotationSessionsAffected": null,
+          "squashDrillRotationOmittedCount": null,
+          "squashSignatureUniquenessFailureAttemptCount": 0,
+          "squashSessionCount": null,
+          "squashDrillUseCount": null,
+          "squashUniqueDrillCount": null,
+          "squashDrillVarietyRatio": null,
+          "squashTopDrillUseCount": null,
+          "squashTopSessionRatio": null,
+          "sessionCount": 4,
+          "promptChars": 4049,
+          "responseChars": 2590,
+          "promptTokens": 1870,
+          "completionTokens": 1011,
+          "durationMs": 27696,
+          "wallClockMs": 27706,
+          "score": 99,
+          "grade": "excellent"
+        }
+      ]
+    },
+    {
+      "caseId": "ciclismo#1",
+      "scenarioKey": "ciclismo",
+      "weekCount": 3,
+      "outcome": "succeeded",
+      "weekCountSucceeded": 3,
+      "weekCountFailed": 0,
+      "firstWeekReadyMs": 12400,
+      "firstWeekReadyE2eMs": 12400,
+      "firstWeekDetectedMs": 16005,
+      "firstWeekDetectionLagMs": 3605,
+      "planCompleteMs": 17015,
+      "terminalMs": 17016,
+      "totalInputTokens": 5523,
+      "totalOutputTokens": 2507,
+      "totalCacheReadTokens": 0,
+      "totalCacheCreationTokens": 0,
+      "estimatedCostUsd": 0.054174,
+      "retryCount": 0,
+      "fallbackUsed": false,
+      "observedModels": [
+        "claude-sonnet-4-6"
+      ],
+      "qualityVersion": 2,
+      "planScore": 93,
+      "planGrade": "excellent",
+      "issueCodes": [
+        "quality.strength.repeated_template"
+      ],
+      "errorClass": null,
+      "promptChars": 11838,
+      "responseChars": 6214,
+      "weeks": [
+        {
+          "weekIndex": 0,
+          "scenarioKey": "ciclismo",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 0,
+          "correctiveActionCount": 0,
+          "structuralActionCount": 0,
+          "movedSessionCount": 0,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 3,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "previousWeekContextSource": "none",
+          "strengthAccessoryRotationActionCount": null,
+          "strengthAccessoryRotationSessionsAffected": null,
+          "strengthCountableOverlapMax": 0,
+          "squashDrillRotationActionCount": null,
+          "squashDrillRotationSessionsAffected": null,
+          "squashDrillRotationOmittedCount": null,
+          "squashSignatureUniquenessFailureAttemptCount": 0,
+          "squashSessionCount": null,
+          "squashDrillUseCount": null,
+          "squashUniqueDrillCount": null,
+          "squashDrillVarietyRatio": null,
+          "squashTopDrillUseCount": null,
+          "squashTopSessionRatio": null,
+          "sessionCount": 3,
+          "promptChars": 3874,
+          "responseChars": 1992,
+          "promptTokens": 1821,
+          "completionTokens": 837,
+          "durationMs": 14335,
+          "wallClockMs": 14343,
+          "score": 100,
+          "grade": "excellent"
+        },
+        {
+          "weekIndex": 1,
+          "scenarioKey": "ciclismo",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 0,
+          "correctiveActionCount": 0,
+          "structuralActionCount": 0,
+          "movedSessionCount": 0,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 3,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "previousWeekContextSource": "shell",
+          "strengthAccessoryRotationActionCount": 7,
+          "strengthAccessoryRotationSessionsAffected": 1,
+          "strengthCountableOverlapMax": 2,
+          "squashDrillRotationActionCount": null,
+          "squashDrillRotationSessionsAffected": null,
+          "squashDrillRotationOmittedCount": null,
+          "squashSignatureUniquenessFailureAttemptCount": 0,
+          "squashSessionCount": null,
+          "squashDrillUseCount": null,
+          "squashUniqueDrillCount": null,
+          "squashDrillVarietyRatio": null,
+          "squashTopDrillUseCount": null,
+          "squashTopSessionRatio": null,
+          "sessionCount": 3,
+          "promptChars": 3982,
+          "responseChars": 1806,
+          "promptTokens": 1851,
+          "completionTokens": 757,
+          "durationMs": 12390,
+          "wallClockMs": 12399,
+          "score": 100,
+          "grade": "excellent"
+        },
+        {
+          "weekIndex": 2,
+          "scenarioKey": "ciclismo",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 0,
+          "correctiveActionCount": 0,
+          "structuralActionCount": 0,
+          "movedSessionCount": 0,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 3,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "previousWeekContextSource": "shell",
+          "strengthAccessoryRotationActionCount": 7,
+          "strengthAccessoryRotationSessionsAffected": 1,
+          "strengthCountableOverlapMax": 4,
+          "squashDrillRotationActionCount": null,
+          "squashDrillRotationSessionsAffected": null,
+          "squashDrillRotationOmittedCount": null,
+          "squashSignatureUniquenessFailureAttemptCount": 0,
+          "squashSessionCount": null,
+          "squashDrillUseCount": null,
+          "squashUniqueDrillCount": null,
+          "squashDrillVarietyRatio": null,
+          "squashTopDrillUseCount": null,
+          "squashTopSessionRatio": null,
+          "sessionCount": 3,
+          "promptChars": 3982,
+          "responseChars": 2416,
+          "promptTokens": 1851,
+          "completionTokens": 913,
+          "durationMs": 17005,
+          "wallClockMs": 17014,
+          "score": 93,
+          "grade": "excellent"
+        }
+      ]
+    },
+    {
+      "caseId": "ciclismo#2",
+      "scenarioKey": "ciclismo",
+      "weekCount": 3,
+      "outcome": "succeeded",
+      "weekCountSucceeded": 3,
+      "weekCountFailed": 0,
+      "firstWeekReadyMs": 13633,
+      "firstWeekReadyE2eMs": 13633,
+      "firstWeekDetectedMs": 16005,
+      "firstWeekDetectionLagMs": 2372,
+      "planCompleteMs": 23167,
+      "terminalMs": 23168,
+      "totalInputTokens": 5523,
+      "totalOutputTokens": 2611,
+      "totalCacheReadTokens": 0,
+      "totalCacheCreationTokens": 0,
+      "estimatedCostUsd": 0.055734000000000006,
+      "retryCount": 0,
+      "fallbackUsed": false,
+      "observedModels": [
+        "claude-sonnet-4-6"
+      ],
+      "qualityVersion": 2,
+      "planScore": 92,
+      "planGrade": "excellent",
+      "issueCodes": [
+        "quality.strength.repeated_template"
+      ],
+      "errorClass": null,
+      "promptChars": 11838,
+      "responseChars": 6556,
+      "weeks": [
+        {
+          "weekIndex": 0,
+          "scenarioKey": "ciclismo",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 1,
+          "correctiveActionCount": 0,
+          "structuralActionCount": 0,
+          "movedSessionCount": 1,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 3,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "previousWeekContextSource": "none",
+          "strengthAccessoryRotationActionCount": null,
+          "strengthAccessoryRotationSessionsAffected": null,
+          "strengthCountableOverlapMax": 0,
+          "squashDrillRotationActionCount": null,
+          "squashDrillRotationSessionsAffected": null,
+          "squashDrillRotationOmittedCount": null,
+          "squashSignatureUniquenessFailureAttemptCount": 0,
+          "squashSessionCount": null,
+          "squashDrillUseCount": null,
+          "squashUniqueDrillCount": null,
+          "squashDrillVarietyRatio": null,
+          "squashTopDrillUseCount": null,
+          "squashTopSessionRatio": null,
+          "sessionCount": 3,
+          "promptChars": 3874,
+          "responseChars": 2124,
+          "promptTokens": 1821,
+          "completionTokens": 867,
+          "durationMs": 23159,
+          "wallClockMs": 23167,
+          "score": 99,
+          "grade": "excellent"
+        },
+        {
+          "weekIndex": 1,
+          "scenarioKey": "ciclismo",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 0,
+          "correctiveActionCount": 0,
+          "structuralActionCount": 0,
+          "movedSessionCount": 0,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 3,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "previousWeekContextSource": "shell",
+          "strengthAccessoryRotationActionCount": 7,
+          "strengthAccessoryRotationSessionsAffected": 1,
+          "strengthCountableOverlapMax": 2,
+          "squashDrillRotationActionCount": null,
+          "squashDrillRotationSessionsAffected": null,
+          "squashDrillRotationOmittedCount": null,
+          "squashSignatureUniquenessFailureAttemptCount": 0,
+          "squashSessionCount": null,
+          "squashDrillUseCount": null,
+          "squashUniqueDrillCount": null,
+          "squashDrillVarietyRatio": null,
+          "squashTopDrillUseCount": null,
+          "squashTopSessionRatio": null,
+          "sessionCount": 3,
+          "promptChars": 3982,
+          "responseChars": 2001,
+          "promptTokens": 1851,
+          "completionTokens": 806,
+          "durationMs": 13624,
+          "wallClockMs": 13632,
+          "score": 100,
+          "grade": "excellent"
+        },
+        {
+          "weekIndex": 2,
+          "scenarioKey": "ciclismo",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 1,
+          "correctiveActionCount": 0,
+          "structuralActionCount": 0,
+          "movedSessionCount": 1,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 3,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "previousWeekContextSource": "shell",
+          "strengthAccessoryRotationActionCount": 7,
+          "strengthAccessoryRotationSessionsAffected": 1,
+          "strengthCountableOverlapMax": 4,
+          "squashDrillRotationActionCount": null,
+          "squashDrillRotationSessionsAffected": null,
+          "squashDrillRotationOmittedCount": null,
+          "squashSignatureUniquenessFailureAttemptCount": 0,
+          "squashSessionCount": null,
+          "squashDrillUseCount": null,
+          "squashUniqueDrillCount": null,
+          "squashDrillVarietyRatio": null,
+          "squashTopDrillUseCount": null,
+          "squashTopSessionRatio": null,
+          "sessionCount": 3,
+          "promptChars": 3982,
+          "responseChars": 2431,
+          "promptTokens": 1851,
+          "completionTokens": 938,
+          "durationMs": 18483,
+          "wallClockMs": 18490,
+          "score": 92,
+          "grade": "excellent"
+        }
+      ]
+    },
+    {
+      "caseId": "dobles#1",
+      "scenarioKey": "dobles",
+      "weekCount": 4,
+      "outcome": "succeeded",
+      "weekCountSucceeded": 4,
+      "weekCountFailed": 0,
+      "firstWeekReadyMs": 20200,
+      "firstWeekReadyE2eMs": 20200,
+      "firstWeekDetectedMs": 24007,
+      "firstWeekDetectionLagMs": 3807,
+      "planCompleteMs": 43631,
+      "terminalMs": 43634,
+      "totalInputTokens": 9842,
+      "totalOutputTokens": 4902,
+      "totalCacheReadTokens": 0,
+      "totalCacheCreationTokens": 0,
+      "estimatedCostUsd": 0.10305600000000001,
+      "retryCount": 0,
+      "fallbackUsed": false,
+      "observedModels": [
+        "claude-sonnet-4-6"
+      ],
+      "qualityVersion": 2,
+      "planScore": 54,
+      "planGrade": "poor",
+      "issueCodes": [
+        "quality.strength.repeated_template",
+        "quality.squash.low_drill_variety",
+        "quality.squash.low_drill_depth",
+        "quality.generation.high_repair_count"
+      ],
+      "errorClass": null,
+      "promptChars": 23672,
+      "responseChars": 12356,
+      "weeks": [
+        {
+          "weekIndex": 0,
+          "scenarioKey": "dobles",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 7,
+          "correctiveActionCount": 7,
+          "structuralActionCount": 0,
+          "movedSessionCount": 0,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 5,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "previousWeekContextSource": "none",
+          "strengthAccessoryRotationActionCount": null,
+          "strengthAccessoryRotationSessionsAffected": null,
+          "strengthCountableOverlapMax": 0,
+          "squashDrillRotationActionCount": null,
+          "squashDrillRotationSessionsAffected": null,
+          "squashDrillRotationOmittedCount": null,
+          "squashSignatureUniquenessFailureAttemptCount": 0,
+          "squashSessionCount": null,
+          "squashDrillUseCount": null,
+          "squashUniqueDrillCount": null,
+          "squashDrillVarietyRatio": null,
+          "squashTopDrillUseCount": null,
+          "squashTopSessionRatio": null,
+          "sessionCount": 5,
+          "promptChars": 5837,
+          "responseChars": 2933,
+          "promptTokens": 2438,
+          "completionTokens": 1198,
+          "durationMs": 28110,
+          "wallClockMs": 28135,
+          "score": 86,
+          "grade": "good"
+        },
+        {
+          "weekIndex": 1,
+          "scenarioKey": "dobles",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 5,
+          "correctiveActionCount": 5,
+          "structuralActionCount": 0,
+          "movedSessionCount": 0,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 5,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "previousWeekContextSource": "shell",
+          "strengthAccessoryRotationActionCount": 14,
+          "strengthAccessoryRotationSessionsAffected": 2,
+          "strengthCountableOverlapMax": 3,
+          "squashDrillRotationActionCount": 6,
+          "squashDrillRotationSessionsAffected": 3,
+          "squashDrillRotationOmittedCount": 0,
+          "squashSignatureUniquenessFailureAttemptCount": 0,
+          "squashSessionCount": null,
+          "squashDrillUseCount": null,
+          "squashUniqueDrillCount": null,
+          "squashDrillVarietyRatio": null,
+          "squashTopDrillUseCount": null,
+          "squashTopSessionRatio": null,
+          "sessionCount": 5,
+          "promptChars": 5945,
+          "responseChars": 2945,
+          "promptTokens": 2468,
+          "completionTokens": 1174,
+          "durationMs": 20183,
+          "wallClockMs": 20199,
+          "score": 81,
+          "grade": "good"
+        },
+        {
+          "weekIndex": 2,
+          "scenarioKey": "dobles",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 5,
+          "correctiveActionCount": 4,
+          "structuralActionCount": 1,
+          "movedSessionCount": 0,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 5,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "previousWeekContextSource": "shell",
+          "strengthAccessoryRotationActionCount": 12,
+          "strengthAccessoryRotationSessionsAffected": 2,
+          "strengthCountableOverlapMax": 5,
+          "squashDrillRotationActionCount": 4,
+          "squashDrillRotationSessionsAffected": 2,
+          "squashDrillRotationOmittedCount": 0,
+          "squashSignatureUniquenessFailureAttemptCount": 0,
+          "squashSessionCount": null,
+          "squashDrillUseCount": null,
+          "squashUniqueDrillCount": null,
+          "squashDrillVarietyRatio": null,
+          "squashTopDrillUseCount": null,
+          "squashTopSessionRatio": null,
+          "sessionCount": 5,
+          "promptChars": 5945,
+          "responseChars": 3112,
+          "promptTokens": 2468,
+          "completionTokens": 1211,
+          "durationMs": 21613,
+          "wallClockMs": 21636,
+          "score": 74,
+          "grade": "needs_review"
+        },
+        {
+          "weekIndex": 3,
+          "scenarioKey": "dobles",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 4,
+          "correctiveActionCount": 3,
+          "structuralActionCount": 0,
+          "movedSessionCount": 1,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 5,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "previousWeekContextSource": "shell",
+          "strengthAccessoryRotationActionCount": 14,
+          "strengthAccessoryRotationSessionsAffected": 2,
+          "strengthCountableOverlapMax": 6,
+          "squashDrillRotationActionCount": 6,
+          "squashDrillRotationSessionsAffected": 3,
+          "squashDrillRotationOmittedCount": 1,
+          "squashSignatureUniquenessFailureAttemptCount": 0,
+          "squashSessionCount": 12,
+          "squashDrillUseCount": 30,
+          "squashUniqueDrillCount": 13,
+          "squashDrillVarietyRatio": 0.43333333333333335,
+          "squashTopDrillUseCount": 5,
+          "squashTopSessionRatio": 0.4166666666666667,
+          "sessionCount": 5,
+          "promptChars": 5945,
+          "responseChars": 3366,
+          "promptTokens": 2468,
+          "completionTokens": 1319,
+          "durationMs": 23414,
+          "wallClockMs": 23431,
+          "score": 75,
+          "grade": "needs_review"
+        }
+      ]
+    },
+    {
+      "caseId": "dobles#2",
+      "scenarioKey": "dobles",
+      "weekCount": 4,
+      "outcome": "succeeded",
+      "weekCountSucceeded": 4,
+      "weekCountFailed": 0,
+      "firstWeekReadyMs": 18593,
+      "firstWeekReadyE2eMs": 18593,
+      "firstWeekDetectedMs": 20005,
+      "firstWeekDetectionLagMs": 1412,
+      "planCompleteMs": 39606,
+      "terminalMs": 39607,
+      "totalInputTokens": 9842,
+      "totalOutputTokens": 4642,
+      "totalCacheReadTokens": 0,
+      "totalCacheCreationTokens": 0,
+      "estimatedCostUsd": 0.09915600000000001,
+      "retryCount": 0,
+      "fallbackUsed": false,
+      "observedModels": [
+        "claude-sonnet-4-6"
+      ],
+      "qualityVersion": 2,
+      "planScore": 69,
+      "planGrade": "needs_review",
+      "issueCodes": [
+        "quality.strength.repeated_template",
+        "quality.squash.low_drill_depth",
+        "quality.generation.high_repair_count",
+        "quality.load.hard_days_clustered"
+      ],
+      "errorClass": null,
+      "promptChars": 23672,
+      "responseChars": 11358,
+      "weeks": [
+        {
+          "weekIndex": 0,
+          "scenarioKey": "dobles",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 7,
+          "correctiveActionCount": 5,
+          "structuralActionCount": 2,
+          "movedSessionCount": 0,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 5,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "previousWeekContextSource": "none",
+          "strengthAccessoryRotationActionCount": null,
+          "strengthAccessoryRotationSessionsAffected": null,
+          "strengthCountableOverlapMax": 0,
+          "squashDrillRotationActionCount": null,
+          "squashDrillRotationSessionsAffected": null,
+          "squashDrillRotationOmittedCount": null,
+          "squashSignatureUniquenessFailureAttemptCount": 0,
+          "squashSessionCount": null,
+          "squashDrillUseCount": null,
+          "squashUniqueDrillCount": null,
+          "squashDrillVarietyRatio": null,
+          "squashTopDrillUseCount": null,
+          "squashTopSessionRatio": null,
+          "sessionCount": 5,
+          "promptChars": 5837,
+          "responseChars": 2828,
+          "promptTokens": 2438,
+          "completionTokens": 1172,
+          "durationMs": 19295,
+          "wallClockMs": 19310,
+          "score": 79,
+          "grade": "good"
+        },
+        {
+          "weekIndex": 1,
+          "scenarioKey": "dobles",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 6,
+          "correctiveActionCount": 5,
+          "structuralActionCount": 0,
+          "movedSessionCount": 1,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 5,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "previousWeekContextSource": "shell",
+          "strengthAccessoryRotationActionCount": 14,
+          "strengthAccessoryRotationSessionsAffected": 2,
+          "strengthCountableOverlapMax": 2,
+          "squashDrillRotationActionCount": 6,
+          "squashDrillRotationSessionsAffected": 3,
+          "squashDrillRotationOmittedCount": 0,
+          "squashSignatureUniquenessFailureAttemptCount": 0,
+          "squashSessionCount": null,
+          "squashDrillUseCount": null,
+          "squashUniqueDrillCount": null,
+          "squashDrillVarietyRatio": null,
+          "squashTopDrillUseCount": null,
+          "squashTopSessionRatio": null,
+          "sessionCount": 5,
+          "promptChars": 5945,
+          "responseChars": 2728,
+          "promptTokens": 2468,
+          "completionTokens": 1124,
+          "durationMs": 18577,
+          "wallClockMs": 18592,
+          "score": 87,
+          "grade": "good"
+        },
+        {
+          "weekIndex": 2,
+          "scenarioKey": "dobles",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 5,
+          "correctiveActionCount": 4,
+          "structuralActionCount": 1,
+          "movedSessionCount": 0,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 5,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "previousWeekContextSource": "shell",
+          "strengthAccessoryRotationActionCount": 12,
+          "strengthAccessoryRotationSessionsAffected": 2,
+          "strengthCountableOverlapMax": 5,
+          "squashDrillRotationActionCount": 4,
+          "squashDrillRotationSessionsAffected": 2,
+          "squashDrillRotationOmittedCount": 0,
+          "squashSignatureUniquenessFailureAttemptCount": 0,
+          "squashSessionCount": null,
+          "squashDrillUseCount": null,
+          "squashUniqueDrillCount": null,
+          "squashDrillVarietyRatio": null,
+          "squashTopDrillUseCount": null,
+          "squashTopSessionRatio": null,
+          "sessionCount": 5,
+          "promptChars": 5945,
+          "responseChars": 2814,
+          "promptTokens": 2468,
+          "completionTokens": 1143,
+          "durationMs": 19351,
+          "wallClockMs": 19372,
+          "score": 67,
+          "grade": "needs_review"
+        },
+        {
+          "weekIndex": 3,
+          "scenarioKey": "dobles",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 6,
+          "correctiveActionCount": 6,
+          "structuralActionCount": 0,
+          "movedSessionCount": 0,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 5,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "previousWeekContextSource": "shell",
+          "strengthAccessoryRotationActionCount": 7,
+          "strengthAccessoryRotationSessionsAffected": 1,
+          "strengthCountableOverlapMax": 2,
+          "squashDrillRotationActionCount": 4,
+          "squashDrillRotationSessionsAffected": 1,
+          "squashDrillRotationOmittedCount": 3,
+          "squashSignatureUniquenessFailureAttemptCount": 0,
+          "squashSessionCount": 14,
+          "squashDrillUseCount": 34,
+          "squashUniqueDrillCount": 16,
+          "squashDrillVarietyRatio": 0.47058823529411764,
+          "squashTopDrillUseCount": 5,
+          "squashTopSessionRatio": 0.35714285714285715,
+          "sessionCount": 5,
+          "promptChars": 5945,
+          "responseChars": 2988,
+          "promptTokens": 2468,
+          "completionTokens": 1203,
+          "durationMs": 20977,
+          "wallClockMs": 21013,
+          "score": 87,
+          "grade": "good"
+        }
+      ]
+    },
+    {
+      "caseId": "semana_parcial#1",
+      "scenarioKey": "semana_parcial",
+      "weekCount": 3,
+      "outcome": "succeeded",
+      "weekCountSucceeded": 3,
+      "weekCountFailed": 0,
+      "firstWeekReadyMs": 13484,
+      "firstWeekReadyE2eMs": 13484,
+      "firstWeekDetectedMs": 16006,
+      "firstWeekDetectionLagMs": 2522,
+      "planCompleteMs": 24511,
+      "terminalMs": 24512,
+      "totalInputTokens": 7124,
+      "totalOutputTokens": 2565,
+      "totalCacheReadTokens": 0,
+      "totalCacheCreationTokens": 0,
+      "estimatedCostUsd": 0.059847,
+      "retryCount": 0,
+      "fallbackUsed": false,
+      "observedModels": [
+        "claude-sonnet-4-6"
+      ],
+      "qualityVersion": 2,
+      "planScore": 83,
+      "planGrade": "good",
+      "issueCodes": [
+        "plan.load.jump",
+        "quality.load.progression_jump",
+        "quality.squash.low_drill_depth"
+      ],
+      "errorClass": null,
+      "promptChars": 17094,
+      "responseChars": 6527,
+      "weeks": [
+        {
+          "weekIndex": 0,
+          "scenarioKey": "semana_parcial",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 4,
+          "correctiveActionCount": 3,
+          "structuralActionCount": 1,
+          "movedSessionCount": 0,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 2,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "previousWeekContextSource": "none",
+          "strengthAccessoryRotationActionCount": null,
+          "strengthAccessoryRotationSessionsAffected": null,
+          "strengthCountableOverlapMax": null,
+          "squashDrillRotationActionCount": null,
+          "squashDrillRotationSessionsAffected": null,
+          "squashDrillRotationOmittedCount": null,
+          "squashSignatureUniquenessFailureAttemptCount": 0,
+          "squashSessionCount": null,
+          "squashDrillUseCount": null,
+          "squashUniqueDrillCount": null,
+          "squashDrillVarietyRatio": null,
+          "squashTopDrillUseCount": null,
+          "squashTopSessionRatio": null,
+          "sessionCount": 2,
+          "promptChars": 5646,
+          "responseChars": 1822,
+          "promptTokens": 2362,
+          "completionTokens": 744,
+          "durationMs": 13478,
+          "wallClockMs": 13484,
+          "score": 96,
+          "grade": "excellent"
+        },
+        {
+          "weekIndex": 1,
+          "scenarioKey": "semana_parcial",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 3,
+          "correctiveActionCount": 2,
+          "structuralActionCount": 0,
+          "movedSessionCount": 1,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 3,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "previousWeekContextSource": "shell",
+          "strengthAccessoryRotationActionCount": 7,
+          "strengthAccessoryRotationSessionsAffected": 1,
+          "strengthCountableOverlapMax": 0,
+          "squashDrillRotationActionCount": 2,
+          "squashDrillRotationSessionsAffected": 1,
+          "squashDrillRotationOmittedCount": 0,
+          "squashSignatureUniquenessFailureAttemptCount": 0,
+          "squashSessionCount": null,
+          "squashDrillUseCount": null,
+          "squashUniqueDrillCount": null,
+          "squashDrillVarietyRatio": null,
+          "squashTopDrillUseCount": null,
+          "squashTopSessionRatio": null,
+          "sessionCount": 3,
+          "promptChars": 5724,
+          "responseChars": 2158,
+          "promptTokens": 2381,
+          "completionTokens": 860,
+          "durationMs": 15637,
+          "wallClockMs": 15648,
+          "score": 83,
+          "grade": "good"
+        },
+        {
+          "weekIndex": 2,
+          "scenarioKey": "semana_parcial",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 2,
+          "correctiveActionCount": 2,
+          "structuralActionCount": 0,
+          "movedSessionCount": 0,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 3,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "previousWeekContextSource": "shell",
+          "strengthAccessoryRotationActionCount": 5,
+          "strengthAccessoryRotationSessionsAffected": 1,
+          "strengthCountableOverlapMax": 2,
+          "squashDrillRotationActionCount": 4,
+          "squashDrillRotationSessionsAffected": 2,
+          "squashDrillRotationOmittedCount": 0,
+          "squashSignatureUniquenessFailureAttemptCount": 0,
+          "squashSessionCount": 6,
+          "squashDrillUseCount": 15,
+          "squashUniqueDrillCount": 8,
+          "squashDrillVarietyRatio": 0.5333333333333333,
+          "squashTopDrillUseCount": 4,
+          "squashTopSessionRatio": 0.6666666666666666,
+          "sessionCount": 3,
+          "promptChars": 5724,
+          "responseChars": 2547,
+          "promptTokens": 2381,
+          "completionTokens": 961,
+          "durationMs": 24500,
+          "wallClockMs": 24510,
+          "score": 91,
+          "grade": "excellent"
+        }
+      ]
+    },
+    {
+      "caseId": "semana_parcial#2",
+      "scenarioKey": "semana_parcial",
+      "weekCount": 3,
+      "outcome": "succeeded",
+      "weekCountSucceeded": 3,
+      "weekCountFailed": 0,
+      "firstWeekReadyMs": 12649,
+      "firstWeekReadyE2eMs": 12649,
+      "firstWeekDetectedMs": 16004,
+      "firstWeekDetectionLagMs": 3355,
+      "planCompleteMs": 18307,
+      "terminalMs": 18308,
+      "totalInputTokens": 7124,
+      "totalOutputTokens": 2532,
+      "totalCacheReadTokens": 0,
+      "totalCacheCreationTokens": 0,
+      "estimatedCostUsd": 0.059352,
+      "retryCount": 0,
+      "fallbackUsed": false,
+      "observedModels": [
+        "claude-sonnet-4-6"
+      ],
+      "qualityVersion": 2,
+      "planScore": 83,
+      "planGrade": "good",
+      "issueCodes": [
+        "plan.load.jump",
+        "quality.load.progression_jump",
+        "quality.squash.low_drill_depth"
+      ],
+      "errorClass": null,
+      "promptChars": 17094,
+      "responseChars": 6520,
+      "weeks": [
+        {
+          "weekIndex": 0,
+          "scenarioKey": "semana_parcial",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 3,
+          "correctiveActionCount": 2,
+          "structuralActionCount": 1,
+          "movedSessionCount": 0,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 2,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "previousWeekContextSource": "none",
+          "strengthAccessoryRotationActionCount": null,
+          "strengthAccessoryRotationSessionsAffected": null,
+          "strengthCountableOverlapMax": null,
+          "squashDrillRotationActionCount": null,
+          "squashDrillRotationSessionsAffected": null,
+          "squashDrillRotationOmittedCount": null,
+          "squashSignatureUniquenessFailureAttemptCount": 0,
+          "squashSessionCount": null,
+          "squashDrillUseCount": null,
+          "squashUniqueDrillCount": null,
+          "squashDrillVarietyRatio": null,
+          "squashTopDrillUseCount": null,
+          "squashTopSessionRatio": null,
+          "sessionCount": 2,
+          "promptChars": 5646,
+          "responseChars": 1775,
+          "promptTokens": 2362,
+          "completionTokens": 716,
+          "durationMs": 12642,
+          "wallClockMs": 12649,
+          "score": 97,
+          "grade": "excellent"
+        },
+        {
+          "weekIndex": 1,
+          "scenarioKey": "semana_parcial",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 2,
+          "correctiveActionCount": 2,
+          "structuralActionCount": 0,
+          "movedSessionCount": 0,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 3,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "previousWeekContextSource": "shell",
+          "strengthAccessoryRotationActionCount": 7,
+          "strengthAccessoryRotationSessionsAffected": 1,
+          "strengthCountableOverlapMax": 0,
+          "squashDrillRotationActionCount": 2,
+          "squashDrillRotationSessionsAffected": 1,
+          "squashDrillRotationOmittedCount": 0,
+          "squashSignatureUniquenessFailureAttemptCount": 0,
+          "squashSessionCount": null,
+          "squashDrillUseCount": null,
+          "squashUniqueDrillCount": null,
+          "squashDrillVarietyRatio": null,
+          "squashTopDrillUseCount": null,
+          "squashTopSessionRatio": null,
+          "sessionCount": 3,
+          "promptChars": 5724,
+          "responseChars": 2584,
+          "promptTokens": 2381,
+          "completionTokens": 974,
+          "durationMs": 18296,
+          "wallClockMs": 18306,
+          "score": 84,
+          "grade": "good"
+        },
+        {
+          "weekIndex": 2,
+          "scenarioKey": "semana_parcial",
+          "status": "draft",
+          "scorable": true,
+          "attempts": 1,
+          "errorClass": null,
+          "repairTaxonomyVersion": 2,
+          "qualityVersion": 2,
+          "countRepairsV2": 4,
+          "correctiveActionCount": 2,
+          "structuralActionCount": 0,
+          "movedSessionCount": 2,
+          "droppedSessionCount": 0,
+          "hydrationActionCount": 3,
+          "addedFallbackCount": 0,
+          "filteredSportCount": 0,
+          "previousWeekContextSource": "shell",
+          "strengthAccessoryRotationActionCount": 5,
+          "strengthAccessoryRotationSessionsAffected": 1,
+          "strengthCountableOverlapMax": 2,
+          "squashDrillRotationActionCount": 4,
+          "squashDrillRotationSessionsAffected": 2,
+          "squashDrillRotationOmittedCount": 0,
+          "squashSignatureUniquenessFailureAttemptCount": 0,
+          "squashSessionCount": 6,
+          "squashDrillUseCount": 15,
+          "squashUniqueDrillCount": 8,
+          "squashDrillVarietyRatio": 0.5333333333333333,
+          "squashTopDrillUseCount": 4,
+          "squashTopSessionRatio": 0.6666666666666666,
+          "sessionCount": 3,
+          "promptChars": 5724,
+          "responseChars": 2161,
+          "promptTokens": 2381,
+          "completionTokens": 842,
+          "durationMs": 15022,
+          "wallClockMs": 15030,
+          "score": 89,
+          "grade": "good"
+        }
+      ]
+    }
+  ]
+}

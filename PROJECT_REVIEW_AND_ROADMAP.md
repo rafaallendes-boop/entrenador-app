@@ -287,12 +287,59 @@ lista, por lo que conserva el comportamiento bajo concurrencia 3.
   fallos de firma llegan al artefacto allowlisted y al reporte de loadtest.
 - No cambia prompts, concurrencia, Dexie, Supabase ni backup.
 
-Estado: **implementado y verificado localmente** (`lint`, pruebas del Plan
-Builder y build). No se ejecuta aun `npm run loadtest:plan-builder` porque es
-una corrida pagada y el preflight exige arbol limpio; tampoco hay deploy
-autorizado. La suite total conserva un bloqueo ajeno en
-`chatCoachConversations.test.tsx`: su mock de `useAuthStore` no expone
-`getState` al cargar `syncService`.
+**Code review (2026-07-30):** tres hallazgos confirmados y corregidos antes del
+smoke. (1) El sort canonico alfabetico de `normalizeStrengthSessions` hacia que
+el rol `main_lift` —que es posicional— cayera en el ejercicio alfabeticamente
+primero, dejando el lift programado como accesorio rotable; se elimino el sort.
+(2) Los dos call sites de Week Creator ignoraban `RepairResult.failure` y
+entregaban una semana vacia como reparacion exitosa; ahora propagan el fallo,
+reintentan y devuelven una respuesta sin accion ni fallback local. (3) La rama
+de pares de `generatePlanWeeks` se saltaba el guard de no-fallback; la politica
+quedo centralizada en `fallbackEligibility.ts`. Ademas el rechazo de calidad
+dejo de contabilizarse como falla de schema: `quality_rejected` es ahora un
+outcome propio en `CoachOutcome`, `AITechnicalResult` y `meta.outcome`, cableado
+en Week Creator y en `generateWeek`.
+
+**Smoke ejecutado (Task 12, 2026-07-30):** corrida pagada sobre `2ea9b53`, arbol
+limpio, `variant_id s46-q2-00qwoc9q` (identico al control `phase2-C`), 12 planes
+/ 42 semanas, `--phase2-check high` **ELEGIBLE**, **US$0,8941**. Artefacto y
+veredicto en `docs/superpowers/experiments/plan-builder-rotation/`, SHA-256
+`7582401f444d7b89c49c83094265b966eff7c241073d72127e29f868eee2e666`.
+
+Resultado contra `phase2-C` (pre-rotacion, mismo manifest y variante):
+
+| Metrica | C | POST | Lectura |
+|---|---|---|---|
+| `signature_uniqueness_unresolved` | — | **0** en 42 semanas | La invariante nueva no dispara |
+| `low_drill_variety` | 6 planes | **1** | Definicion sin cambios: comparable |
+| `repeated_template` | 10 planes | 4 | Definicion cambiada: solo descriptivo |
+| `high_repair_count` | 2 planes | 3 | Sin inflacion atribuible a la politica |
+| planScore p50 / min | 80 / 65 | 89 / 54 | Mediana sube, cola baja |
+| 1a semana / plan completo p50 | 14,5 s / 31,2 s | 15,8 s / 33,2 s | Plano en el ruido de n=12 |
+| Costo | US$0,8975 | US$0,8941 | Plano |
+
+Las 4 omisiones de squash son bajas: **no se abre** el follow-up de ampliar
+`category` que el plan dejaba condicionado a ese numero.
+
+**Hallazgo del smoke:** `quality.squash.low_drill_depth` paso de 0 a 8 planes.
+Reproducido A/B en worktrees (`ac01830` vs `2ea9b53`) con dos sesiones
+`practice_match` de 60 min y firma duplicada: el codigo viejo agotaba las
+variantes de partido —`COMPETITION_MATCH_VARIANTS` y `PRACTICE_MATCH_VARIANTS`
+tienen **una sola** entrada cada uno— y caia a `rebuildSquashDetailsAvoidingDuplicates`,
+que regeneraba la sesion como contenido multi-drill no-partido; el nuevo la
+diferencia cambiandola por otro drill de partido y deja dos sesiones de 1 drill.
+El contenido nuevo es mejor: conserva los dos partidos. El punto ciego es la
+regla, porque `buildSquashMatchDrills` devuelve una sola entrada por construccion
+y ninguna sesion de partido bien formada puede cumplir el umbral. Corregido en
+`qualityReview.ts` eximiendo a las sesiones de partido, con test que fija que una
+sesion de drills con un solo drill se sigue penalizando. El artefacto es
+**anterior** a ese arreglo. No se pudo verificar que las 8 ocurrencias sean todas
+de partido: el artefacto guarda metricas allowlisted, no contenido de sesion.
+
+Estado: **veredicto positivo, pendiente deploy.** Suite 320 archivos / 2386
+tests, lint y build OK. El bloqueo previo en `chatCoachConversations.test.tsx`
+quedo resuelto. No se re-mide el arreglo de `low_drill_depth` con el loadtest:
+seria otra corrida pagada para confirmar un cambio de regla de scoring.
 
 ## Avances Ya Implementados
 
@@ -833,11 +880,18 @@ dificultad.
    del backlog: instrumento desplegado, metodo escrito y control congelado
    (`6c45885a`) contra el cual comparar. Linea base de produccion: 24.2 s hasta
    la primera semana, 43.9 s un plan de 4 semanas, concurrencia 3.
-3. **Plan Builder — calidad deportiva.** La primera correccion coordinada
-   (rotacion de fuerza/squash y fail-closed) esta implementada localmente; falta
-   medirla con el control `high`, revisar omisiones/fallos de firma y desplegar
-   solo si conserva calidad y costo. Quedan luego ajustes de biblioteca de drills
-   guiados por esos datos.
+   **Bloqueado por presupuesto, no por metodo:** la Fase 2 dejo pedido un
+   control-contra-control (C₂ vs C₁) antes de la proxima fase de velocidad, y
+   eso son dos corridas (~US$1,80 a US$0,90 cada una). Saldo de API al
+   2026-07-30: **~US$0,60**. Recargar antes de retomar.
+3. **Plan Builder — calidad deportiva.** *(en curso, siguiente)* La primera
+   correccion coordinada (rotacion de fuerza/squash y fail-closed) esta medida y
+   con veredicto positivo (§16); queda desplegarla. Lo siguiente sale de datos de
+   esa misma corrida, y es trabajo de contenido verificable con tests locales,
+   sin gasto de API: ampliar `COMPETITION_MATCH_VARIANTS` /
+   `PRACTICE_MATCH_VARIANTS`, que hoy tienen **una sola** entrada cada uno y por
+   eso vuelven firma duplicada a cualquier semana con dos partidos; y atacar
+   `low_drill_depth` legitimo en sesiones de drills (ya no en las de partido).
 4. **Librerias de squash y fisico entendibles de cara al usuario.** Nombres,
    descripciones y agrupacion de drills y ejercicios. Se solapa con el punto 3 en
    lo deportivo, pero es sobre todo contenido y UX. Es lo que mas se nota al
