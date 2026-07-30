@@ -157,6 +157,8 @@ export async function loadRuntime(createServerFactory = createServer) {
       qualityModule,
       weekUtilsModule,
       pollingModule,
+      blockIdentityModule,
+      strengthRoleModule,
     ] = await Promise.all([
       vite.ssrLoadModule('/src/services/planBuilder/asyncGenerationLoop.ts'),
       vite.ssrLoadModule('/netlify/functions/_shared/anthropicCaller.ts'),
@@ -165,6 +167,8 @@ export async function loadRuntime(createServerFactory = createServer) {
       vite.ssrLoadModule('/src/services/planBuilder/qualityReview.ts'),
       vite.ssrLoadModule('/src/services/planBuilder/weekUtils.ts'),
       vite.ssrLoadModule('/src/services/planBuilder/pollingConfig.ts'),
+      vite.ssrLoadModule('/src/services/planBuilder/blockIdentity.ts'),
+      vite.ssrLoadModule('/src/services/planBuilder/strengthRoleContract.ts'),
     ])
 
     return {
@@ -177,6 +181,9 @@ export async function loadRuntime(createServerFactory = createServer) {
       countRepairsV2: qualityModule.countRepairsV2,
       reviewPlanQuality: qualityModule.reviewPlanQuality,
       isReadyWeek: weekUtilsModule.isReadyWeek,
+      resolveBlockPositions: blockIdentityModule.resolveBlockPositions,
+      collectCountableKeys: strengthRoleModule.collectCountableKeys,
+      collectAllStrengthKeys: strengthRoleModule.collectAllStrengthKeys,
       pollIntervalMs: pollingModule.PLAN_GENERATION_POLL_INTERVAL_MS,
       close: () => vite.close(),
     }

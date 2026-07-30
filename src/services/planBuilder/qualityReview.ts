@@ -4,6 +4,8 @@ import { mapExerciseTo1RMReference, type ReferenceLift } from '../training/stren
 import { getExpectedSessionsForPlanWeek, getPlanWeekDateRange } from './dateRange'
 import { QUALITY_V2_CALIBRATION } from './qualityCalibrationV2'
 import { summarizeTaxonomy, type RepairTaxonomyMeta } from './repairTaxonomy'
+import { resolveBlockPositions, type PlanWeekDescriptor } from './blockIdentity'
+import { collectAllStrengthKeys, collectCountableKeys } from './strengthRoleContract'
 import { validatePlan, validatePlanWeek } from './validator'
 import { isReadyWeek } from './weekUtils'
 
@@ -464,41 +466,39 @@ function getGenerationReliabilityIssues(
   return issues
 }
 
-function getPlanPhaseForWeek(plan: TrainingPlan, week: TrainingPlanWeek): string {
-  if (plan.phases.length === 0) return `${week.phase}:legacy`
-  const phase = plan.phases.find((candidate) =>
-    week.weekIndex >= candidate.startWeekIndex && week.weekIndex <= candidate.endWeekIndex,
-  )
-  return `${phase?.phase ?? week.phase}:${phase?.startWeekIndex ?? week.weekIndex}:${phase?.endWeekIndex ?? week.weekIndex}`
-}
-
-function getStrengthExerciseKeys(week: TrainingPlanWeek): Set<string> {
-  return new Set(
-    week.sessions
-      .filter((session) => session.sessionType === 'strength')
-      .flatMap((session) => session.exercises ?? [])
-      .map((exercise) => normalizeExerciseName(exercise.name))
-      .filter(Boolean),
-  )
+/** Solo para tests de equivalencia: no consumir en producción. */
+export function getPlanPhaseForWeekForTest(
+  plan: { phases: TrainingPlan['phases'] },
+  week: PlanWeekDescriptor,
+): string {
+  const positions = resolveBlockPositions(plan.phases, [week])
+  return positions.get(week.weekIndex)?.blockId ?? `${week.phase}:legacy`
 }
 
 function getRepeatedStrengthTemplateIssues(plan: TrainingPlan, weeks: TrainingPlanWeek[]): PlanValidationIssue[] {
   const issues: PlanValidationIssue[] = []
   const generated = weeks.filter((week) => week.sessions.length > 0).sort((a, b) => a.weekIndex - b.weekIndex)
+  const positions = resolveBlockPositions(
+    plan.phases,
+    generated.map((week) => ({ weekIndex: week.weekIndex, phase: week.phase })),
+  )
   const byBlock = new Map<string, TrainingPlanWeek[]>()
 
   for (const week of generated) {
-    const key = getPlanPhaseForWeek(plan, week)
+    const key = positions.get(week.weekIndex)?.blockId ?? `${week.phase}:legacy`
     byBlock.set(key, [...(byBlock.get(key) ?? []), week])
   }
 
   for (const blockWeeks of byBlock.values()) {
-    // Precompute each week's strength key set once instead of recomputing per pair.
-    const keysByWeek = blockWeeks.map((week) => ({ week, keys: getStrengthExerciseKeys(week) }))
+    const keysByWeek = blockWeeks.map((week) => ({
+      week,
+      countable: collectCountableKeys(week.sessions),
+      all: collectAllStrengthKeys(week.sessions),
+    }))
 
     for (let j = 1; j < keysByWeek.length; j++) {
       const current = keysByWeek[j]
-      if (current.keys.size === 0) continue
+      if (current.countable.size === 0) continue
 
       // Flag each week at most once: against the earlier week in the same block
       // with the largest exercise overlap. Avoids quadratic warning blow-up that
@@ -507,8 +507,8 @@ function getRepeatedStrengthTemplateIssues(plan: TrainingPlan, weeks: TrainingPl
       let worstWeek: TrainingPlanWeek | undefined
       for (let i = 0; i < j; i++) {
         const earlier = keysByWeek[i]
-        if (earlier.keys.size === 0) continue
-        const overlap = [...current.keys].filter((key) => earlier.keys.has(key)).length
+        if (earlier.all.size === 0) continue
+        const overlap = [...current.countable].filter((key) => earlier.all.has(key)).length
         if (overlap > worstOverlap) {
           worstOverlap = overlap
           worstWeek = earlier.week
@@ -520,7 +520,7 @@ function getRepeatedStrengthTemplateIssues(plan: TrainingPlan, weeks: TrainingPl
       issues.push(issue({
         severity: 'warning',
         code: 'quality.strength.repeated_template',
-        message: `Semanas ${worstWeek.weekIndex + 1} y ${current.week.weekIndex + 1} del bloque ${current.week.phase} comparten ${worstOverlap} ejercicios de fuerza.`,
+        message: `Semanas ${worstWeek.weekIndex + 1} y ${current.week.weekIndex + 1} del bloque ${current.week.phase} comparten ${worstOverlap} accesorios de fuerza.`,
         weekIndex: current.week.weekIndex,
       }))
     }
@@ -533,10 +533,14 @@ function getSquashDrillVarietyIssues(plan: TrainingPlan, weeks: TrainingPlanWeek
   if (getPrimarySport(plan) !== 'squash') return []
 
   const generated = weeks.filter((week) => week.sessions.length > 0).sort((a, b) => a.weekIndex - b.weekIndex)
+  const positions = resolveBlockPositions(
+    plan.phases,
+    generated.map((week) => ({ weekIndex: week.weekIndex, phase: week.phase })),
+  )
   const byBlock = new Map<string, TrainingPlanWeek[]>()
 
   for (const week of generated) {
-    const key = getPlanPhaseForWeek(plan, week)
+    const key = positions.get(week.weekIndex)?.blockId ?? `${week.phase}:legacy`
     byBlock.set(key, [...(byBlock.get(key) ?? []), week])
   }
 

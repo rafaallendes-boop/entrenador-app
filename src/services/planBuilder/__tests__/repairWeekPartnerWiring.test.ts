@@ -40,7 +40,13 @@ function context(partnerAvailability?: PlanWizardConfig['partnerAvailability']):
     validationIssues: [], generationMeta: { attempts: 0 }, createdAt: 0, updatedAt: 0,
   } as TrainingPlanWeek
   const profile = { id: 'a1', updatedAt: 0, sportContext: { primarySport: 'squash' }, mainGoal: 'Squash competitivo' } as AthleteProfile
-  return { plan, week, profile, wizardConfig }
+  return {
+    plan,
+    week,
+    profile,
+    wizardConfig,
+    planWeekDescriptors: [{ weekIndex: week.weekIndex, phase: week.phase }],
+  }
 }
 
 describe('repairWeek partnerAvailability wiring', () => {

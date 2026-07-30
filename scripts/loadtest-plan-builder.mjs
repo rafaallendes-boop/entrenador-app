@@ -161,6 +161,97 @@ function sumNumeric(rows, key) {
   return values.reduce((sum, value) => sum + value, 0)
 }
 
+function normalizeMetricKey(value) {
+  return String(value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+}
+
+function fallbackBlockPositions(phases, weeks) {
+  const positions = new Map()
+  const ordered = [...weeks].sort((a, b) => a.weekIndex - b.weekIndex)
+  if (!phases?.length) {
+    const ordinals = new Map()
+    for (const week of ordered) {
+      const blockId = `${week.phase}:legacy`
+      const indexInBlock = ordinals.get(blockId) ?? 0
+      ordinals.set(blockId, indexInBlock + 1)
+      positions.set(week.weekIndex, { blockId, indexInBlock })
+    }
+    return positions
+  }
+  for (const week of ordered) {
+    const phase = phases.find((candidate) => week.weekIndex >= candidate.startWeekIndex && week.weekIndex <= candidate.endWeekIndex)
+    positions.set(week.weekIndex, phase
+      ? { blockId: `${phase.phase}:${phase.startWeekIndex}:${phase.endWeekIndex}`, indexInBlock: week.weekIndex - phase.startWeekIndex }
+      : { blockId: `${week.phase}:${week.weekIndex}:${week.weekIndex}`, indexInBlock: 0 })
+  }
+  return positions
+}
+
+function deriveRotationMetrics(input, orderedWeeks) {
+  if (!input.plan) return new Map()
+  const positions = (input.resolveBlockPositions ?? fallbackBlockPositions)(
+    input.plan.phases ?? [],
+    orderedWeeks.map((week) => ({ weekIndex: week.weekIndex, phase: week.phase })),
+  )
+  const byBlock = new Map()
+  for (const week of orderedWeeks) {
+    const blockId = positions.get(week.weekIndex)?.blockId ?? `${week.phase}:legacy`
+    const blockWeeks = byBlock.get(blockId) ?? []
+    blockWeeks.push(week)
+    byBlock.set(blockId, blockWeeks)
+  }
+  const metrics = new Map()
+  const collectCountable = input.collectCountableKeys ?? ((sessions) => new Set(
+    sessions.filter((session) => session.sessionType === 'strength')
+      .flatMap((session) => session.exercises ?? [])
+      .map((exercise) => normalizeMetricKey(exercise.name)).filter(Boolean),
+  ))
+  const collectAll = input.collectAllStrengthKeys ?? collectCountable
+  const primarySport = input.plan.macroSnapshot?.sportDetails?.find((detail) => detail.role === 'primary')?.sport
+
+  for (const blockWeeks of byBlock.values()) {
+    for (let index = 0; index < blockWeeks.length; index++) {
+      const week = blockWeeks[index]
+      const countable = collectCountable(week.sessions ?? [])
+      const strengthCountableOverlapMax = countable.size === 0
+        ? null
+        : blockWeeks.slice(0, index).reduce((worst, earlier) => {
+            const all = collectAll(earlier.sessions ?? [])
+            const overlap = [...countable].filter((key) => all.has(key)).length
+            return Math.max(worst, overlap)
+          }, 0)
+      metrics.set(week.weekIndex, { strengthCountableOverlapMax })
+    }
+
+    if (primarySport !== 'squash') continue
+    const squashSessions = blockWeeks.flatMap((week) => (week.sessions ?? []).filter((session) => session.sessionType === 'squash'))
+    const drillKeys = squashSessions.flatMap((session) => (session.squashDetails?.drills ?? [])
+      .map((drill) => normalizeMetricKey(drill.name)).filter(Boolean))
+    const counts = new Map()
+    for (const key of drillKeys) counts.set(key, (counts.get(key) ?? 0) + 1)
+    const squashSessionCount = squashSessions.length
+    const squashDrillUseCount = drillKeys.length
+    const squashUniqueDrillCount = counts.size
+    const squashTopDrillUseCount = counts.size === 0 ? 0 : Math.max(...counts.values())
+    const last = blockWeeks[blockWeeks.length - 1]
+    metrics.set(last.weekIndex, {
+      ...(metrics.get(last.weekIndex) ?? {}),
+      squashSessionCount,
+      squashDrillUseCount,
+      squashUniqueDrillCount,
+      squashDrillVarietyRatio: squashDrillUseCount === 0 ? null : squashUniqueDrillCount / squashDrillUseCount,
+      squashTopDrillUseCount,
+      squashTopSessionRatio: squashSessionCount === 0 ? null : squashTopDrillUseCount / squashSessionCount,
+    })
+  }
+  return metrics
+}
+
 /**
  * Proyección pura de las semanas finales. Ordena por índice y agrega todos los
  * intentos de cada semana; no depende del orden en que el writer entregó filas.
@@ -173,8 +264,10 @@ export function buildWeekRows(input) {
     ?? input.variant?.qualityVersion
     ?? null
 
-  return [...input.weeks]
-    .sort((a, b) => a.weekIndex - b.weekIndex)
+  const orderedWeeks = [...input.weeks].sort((a, b) => a.weekIndex - b.weekIndex)
+  const rotationMetricsByWeek = deriveRotationMetrics(input, orderedWeeks)
+
+  return orderedWeeks
     .map((week) => {
       const attempts = input.attempts.filter(
         (attempt) => attempt.weekIndex === week.weekIndex,
@@ -186,6 +279,10 @@ export function buildWeekRows(input) {
         .sort((a, b) => a - b)
       const sizes = input.sizesFor(week.weekIndex)
       const reviewedWeek = reviewByWeek.get(week.weekIndex)
+      const rotationMetrics = rotationMetricsByWeek.get(week.weekIndex) ?? {}
+      const squashFailureAttempts = attempts.filter(
+        (attempt) => attempt.errorClass === 'quality.squash.signature_uniqueness_unresolved',
+      )
 
       return toWeekRow(week, {
         scenarioKey: input.scenarioKey,
@@ -201,6 +298,10 @@ export function buildWeekRows(input) {
           : null,
         score: reviewedWeek?.score ?? null,
         grade: reviewedWeek?.grade ?? null,
+        ...rotationMetrics,
+        squashSignatureUniquenessFailureAttemptCount: attempts.length === 0
+          ? null
+          : squashFailureAttempts.length,
       })
     })
 }
@@ -348,6 +449,7 @@ export async function runCase(runtime, manifestCase, variant) {
     ? runtime.reviewPlanQuality(state.plan, state.weeks, { profile })
     : null
   const weekRows = buildWeekRows({
+    plan: state.plan,
     weeks: state.weeks,
     attempts: state.attempts,
     weekWrites: state.weekWrites,
@@ -356,6 +458,9 @@ export async function runCase(runtime, manifestCase, variant) {
     countRepairsV2: runtime.countRepairsV2,
     review,
     variant,
+    resolveBlockPositions: runtime.resolveBlockPositions,
+    collectCountableKeys: runtime.collectCountableKeys,
+    collectAllStrengthKeys: runtime.collectAllStrengthKeys,
   })
 
   return toPlanRow({

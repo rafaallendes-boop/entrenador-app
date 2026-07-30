@@ -1612,6 +1612,84 @@ describe('loadtest CLI pure row helpers', () => {
     expect(row.qualityVersion).toBe(1)
   })
 
+  it('derives the maximum countable strength overlap inside the same block', () => {
+    const rows = buildWeekRows({
+      plan: {
+        phases: [{ phase: 'build', startWeekIndex: 0, endWeekIndex: 1 }],
+        macroSnapshot: { sportDetails: [{ sport: 'strength', role: 'primary' }] },
+      },
+      weeks: [
+        { weekIndex: 0, phase: 'build', sessions: [{ sessionType: 'strength', exercises: [{ name: 'A' }, { name: 'B' }, { name: 'C' }] }], generationMeta: {} },
+        { weekIndex: 1, phase: 'build', sessions: [{ sessionType: 'strength', exercises: [{ name: 'B' }, { name: 'C' }, { name: 'D' }] }], generationMeta: {} },
+      ],
+      attempts: [], weekWrites: [], sizesFor: () => null, scenarioKey: 'strength', countRepairsV2: () => 0,
+    })
+    expect(rows[0].strengthCountableOverlapMax).toBe(0)
+    expect(rows[1].strengthCountableOverlapMax).toBe(2)
+  })
+
+  it('uses null, 0 and ratios consistently for block squash metrics', () => {
+    const plan = {
+      phases: [{ phase: 'build', startWeekIndex: 0, endWeekIndex: 1 }],
+      macroSnapshot: { sportDetails: [{ sport: 'squash', role: 'primary' }] },
+    }
+    const base = {
+      plan,
+      attempts: [], weekWrites: [], sizesFor: () => null, scenarioKey: 'squash_build', countRepairsV2: () => 0,
+    }
+    const withDrills = buildWeekRows({
+      ...base,
+      weeks: [
+        { weekIndex: 0, phase: 'build', sessions: [{ sessionType: 'squash', squashDetails: { drills: [{ name: 'A' }, { name: 'B' }] } }], generationMeta: {} },
+        { weekIndex: 1, phase: 'build', sessions: [{ sessionType: 'squash', squashDetails: { drills: [{ name: 'A' }, { name: 'C' }] } }], generationMeta: {} },
+      ],
+    })
+    expect(withDrills[0].squashSessionCount).toBeNull()
+    expect(withDrills[1]).toMatchObject({ squashSessionCount: 2, squashDrillUseCount: 4, squashUniqueDrillCount: 3, squashTopDrillUseCount: 2 })
+    expect(withDrills[1].squashDrillVarietyRatio).toBe(0.75)
+    expect(withDrills[1].squashTopSessionRatio).toBe(1)
+
+    const withoutSessions = buildWeekRows({
+      ...base,
+      weeks: [
+        { weekIndex: 0, phase: 'build', sessions: [], generationMeta: {} },
+        { weekIndex: 1, phase: 'build', sessions: [], generationMeta: {} },
+      ],
+    })
+    expect(withoutSessions[1]).toMatchObject({ squashSessionCount: 0, squashDrillUseCount: 0, squashUniqueDrillCount: 0, squashTopDrillUseCount: 0 })
+    expect(withoutSessions[1].squashDrillVarietyRatio).toBeNull()
+    expect(withoutSessions[1].squashTopSessionRatio).toBeNull()
+  })
+
+  it('leaves squash metrics null when squash is not the primary sport', () => {
+    const [row] = buildWeekRows({
+      plan: { phases: [], macroSnapshot: { sportDetails: [{ sport: 'running', role: 'primary' }] } },
+      weeks: [{ weekIndex: 0, phase: 'base', sessions: [], generationMeta: {} }],
+      attempts: [], weekWrites: [], sizesFor: () => null, scenarioKey: 'running', countRepairsV2: () => 0,
+    })
+    expect(row.squashSessionCount).toBeNull()
+    expect(row.squashSignatureUniquenessFailureAttemptCount).toBeNull()
+  })
+
+  it('counts recovered signature failures by attempt and preserves measured zero', () => {
+    const input = {
+      plan: { phases: [], macroSnapshot: { sportDetails: [{ sport: 'squash', role: 'primary' }] } },
+      weeks: [
+        { weekIndex: 0, phase: 'base', sessions: [], generationMeta: {} },
+        { weekIndex: 1, phase: 'base', sessions: [], generationMeta: {} },
+      ],
+      attempts: [
+        { weekIndex: 0, errorClass: 'quality.squash.signature_uniqueness_unresolved' },
+        { weekIndex: 0, errorClass: undefined },
+        { weekIndex: 1, errorClass: undefined },
+      ],
+      weekWrites: [], sizesFor: () => null, scenarioKey: 'squash_build', countRepairsV2: () => 0,
+    }
+    const rows = buildWeekRows(input)
+    expect(rows[0].squashSignatureUniquenessFailureAttemptCount).toBe(1)
+    expect(rows[1].squashSignatureUniquenessFailureAttemptCount).toBe(0)
+  })
+
   it('detects both explicit and counted fallback use', () => {
     expect(hasFallbackUsed([
       { generationMeta: { fallbackUsed: true, addedFallbackCount: 0 } },

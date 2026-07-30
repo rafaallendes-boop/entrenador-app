@@ -66,6 +66,14 @@ export interface PlanGenerationMeta {
   hydratedSessionsAffected?: number
   correctedSessionsAffected?: number
   structurallyRepairedSessionsAffected?: number
+  /** Fuente real del contexto previo que recibió esta semana. */
+  previousWeekContextSource?: 'none' | 'shell' | 'ready'
+  /** Política de rotación (no entra en countRepairsV2). */
+  strengthAccessoryRotationActionCount?: number
+  strengthAccessoryRotationSessionsAffected?: number
+  squashDrillRotationActionCount?: number
+  squashDrillRotationSessionsAffected?: number
+  squashDrillRotationOmittedCount?: number
   repairTaxonomyVersion?: 2
   qualityVersion?: 1 | 2
   repairWarnings?: Array<{ code: string; message: string }>

@@ -4,11 +4,12 @@ import type { CoachSessionProposal, AthleteProfile, PlanWizardConfig } from '../
 import type { TrainingPlanWeek, TrainingPlan } from '../../types/planBuilder'
 
 // Mock the selectors to avoid complex logic in the repair tests
-vi.mock('../training/drillSelector', () => ({
+vi.mock('../training/drillSelector', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../training/drillSelector')>()),
   selectSquashDrills: vi.fn(() => ({
     trainingFocus: 'technical',
     sessionKind: 'technical',
-    drills: [{ name: 'Drive mock', durationMin: 15 }],
+    drills: [{ name: 'Tiros paralelos profundos', durationMin: 15 }],
     blocks: [],
   })),
 }))
@@ -18,7 +19,8 @@ vi.mock('../training/runningSelector', () => ({
     session: { runningType: 'z2' },
   })),
 }))
-vi.mock('../training/strengthSelector', () => ({
+vi.mock('../training/strengthSelector', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../training/strengthSelector')>()),
   selectStrengthSession: vi.fn(() => ({
     exercises: [
       { name: 'Sentadilla goblet', sets: 3, reps: 8, group: 'legs' },

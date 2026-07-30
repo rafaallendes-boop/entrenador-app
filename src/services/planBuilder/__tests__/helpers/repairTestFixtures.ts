@@ -13,6 +13,7 @@ interface RepairContextFixtureOptions {
   phase?: MacroPlanPhase
   sessionsPerWeek?: number
   targetLoadBySport?: Partial<Record<SupportedSport, number>>
+  planWeekDescriptors?: RepairContext['planWeekDescriptors']
 }
 
 export function buildRepairContextForTest(
@@ -112,7 +113,13 @@ export function buildRepairContextForTest(
     }],
   }
 
-  return { plan, week, profile, wizardConfig }
+  return {
+    plan,
+    week,
+    profile,
+    wizardConfig,
+    planWeekDescriptors: options.planWeekDescriptors ?? [{ weekIndex: week.weekIndex, phase: week.phase }],
+  }
 }
 
 type SkeletonSessionFixtureInput = Partial<CoachSessionProposal> & {

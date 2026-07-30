@@ -309,6 +309,16 @@ export interface SessionStarLiftMetadata {
 
 export interface SessionMetadata {
   starLift?: SessionStarLiftMetadata
+  /** Proyección de fuerza ya resuelta: evita que un segundo repair recicle slots equivalentes. */
+  planBuilderStrengthRotation?: {
+    blockId: string
+    signature: string
+  }
+  /** Proyección de squash ya resuelta: evita volver a permutar slots equivalentes. */
+  planBuilderSquashRotation?: {
+    blockId: string
+    signature: string
+  }
 }
 
 export interface ProtocolContext {

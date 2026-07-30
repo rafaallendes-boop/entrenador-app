@@ -9,6 +9,7 @@ import { PLAN_BUILDER_WEEK_RESPONSE_SCHEMA } from './planBuilderResponseSchema'
 import { repairGeneratedWeek, type RepairContext } from './repairWeek'
 import { summarizeTaxonomy, type RepairTaxonomySummary } from './repairTaxonomy'
 import { validatePlanWeek } from './validator'
+import type { PlanWeekDescriptor } from './blockIdentity'
 
 const EMPTY_REPAIR_TAXONOMY: RepairTaxonomySummary = {
   hydrationActionCount: 0,
@@ -51,6 +52,11 @@ export interface GenerateWeekResult {
     hydratedSessionsAffected: number
     correctedSessionsAffected: number
     structurallyRepairedSessionsAffected: number
+    strengthAccessoryRotationActionCount?: number
+    strengthAccessoryRotationSessionsAffected?: number
+    squashDrillRotationActionCount?: number
+    squashDrillRotationSessionsAffected?: number
+    squashDrillRotationOmittedCount?: number
     repairWarnings?: Array<{ code: string; message: string }>
     stageTimings?: StageTiming[]
     errorClass?: string
@@ -60,6 +66,7 @@ export interface GenerateWeekResult {
 export interface WeekActionEvaluation extends RepairTaxonomySummary {
   sessions: CoachSessionProposal[]
   error?: string
+  errorClass?: string
   rawSessionCount?: number
   validSessionCount?: number
   droppedSessionCount?: number
@@ -68,6 +75,11 @@ export interface WeekActionEvaluation extends RepairTaxonomySummary {
   addedFallbackCount?: number
   filteredSportCount?: number
   repairTaxonomyVersion: 2
+  strengthAccessoryRotationActionCount?: number
+  strengthAccessoryRotationSessionsAffected?: number
+  squashDrillRotationActionCount?: number
+  squashDrillRotationSessionsAffected?: number
+  squashDrillRotationOmittedCount?: number
   repairWarnings?: Array<{ code: string; message: string }>
 }
 
@@ -77,6 +89,7 @@ export interface GenerateWeekCoreInput {
   plan: TrainingPlan
   week: TrainingPlanWeek
   previousWeek?: TrainingPlanWeek
+  planWeekDescriptors: readonly PlanWeekDescriptor[]
   profile: AthleteProfile
   wizardConfig: PlanWizardConfig
   recentContext?: unknown
@@ -183,6 +196,7 @@ export function validateGeneratedWeekAction(
   action: CoachAction | undefined,
   diagnostic?: CreateWeekNormalizationDiagnostic,
   previousWeek?: TrainingPlanWeek,
+  planWeekDescriptors: readonly PlanWeekDescriptor[] = [{ weekIndex: week.weekIndex, phase: week.phase }],
 ): WeekActionEvaluation {
   const rawSessionCount = diagnostic?.rawSessions ?? (Array.isArray(action?.sessions) ? action.sessions.length : undefined)
   let normalizedSessionCount = diagnostic?.validSessions ?? (Array.isArray(action?.sessions) ? action.sessions.length : undefined)
@@ -218,9 +232,22 @@ export function validateGeneratedWeekAction(
     profile,
     wizardConfig: plan.wizardConfig,
     previousWeek,
+    planWeekDescriptors,
   }
 
   const repairResult = repairGeneratedWeek(action.sessions, context)
+  if (repairResult.failure) {
+    return {
+      sessions: [],
+      ...EMPTY_REPAIR_TAXONOMY,
+      repairTaxonomyVersion: 2,
+      error: repairResult.failure.message,
+      errorClass: repairResult.failure.errorClass,
+      rawSessionCount,
+      validSessionCount: 0,
+      droppedSessionCount,
+    }
+  }
   const taxonomySummary = summarizeTaxonomy(repairResult.meta.taxonomy)
   normalizedSessionCount = repairResult.sessions.length
 
@@ -245,6 +272,11 @@ export function validateGeneratedWeekAction(
       movedSessionCount: repairResult.meta.movedSessionCount,
       addedFallbackCount: repairResult.meta.addedFallbackCount,
       filteredSportCount: repairResult.meta.filteredSportCount,
+      strengthAccessoryRotationActionCount: repairResult.meta.strengthAccessoryRotationActionCount,
+      strengthAccessoryRotationSessionsAffected: repairResult.meta.strengthAccessoryRotationSessionsAffected,
+      squashDrillRotationActionCount: repairResult.meta.squashDrillRotationActionCount,
+      squashDrillRotationSessionsAffected: repairResult.meta.squashDrillRotationSessionsAffected,
+      squashDrillRotationOmittedCount: repairResult.meta.squashDrillRotationOmittedCount,
       repairWarnings: repairResult.meta.warnings,
     }
   }
@@ -260,6 +292,11 @@ export function validateGeneratedWeekAction(
     movedSessionCount: repairResult.meta.movedSessionCount,
     addedFallbackCount: repairResult.meta.addedFallbackCount,
     filteredSportCount: repairResult.meta.filteredSportCount,
+    strengthAccessoryRotationActionCount: repairResult.meta.strengthAccessoryRotationActionCount,
+    strengthAccessoryRotationSessionsAffected: repairResult.meta.strengthAccessoryRotationSessionsAffected,
+    squashDrillRotationActionCount: repairResult.meta.squashDrillRotationActionCount,
+    squashDrillRotationSessionsAffected: repairResult.meta.squashDrillRotationSessionsAffected,
+    squashDrillRotationOmittedCount: repairResult.meta.squashDrillRotationOmittedCount,
     repairWarnings: repairResult.meta.warnings,
   }
 }
@@ -303,7 +340,15 @@ export async function generateWeekCore(input: GenerateWeekCoreInput): Promise<Ge
   const normalized = normalizeResponse(raw)
   const action = pickCreateWeekAction(normalized.actions, input.week.weekStartDate)
   const diagnostic = pickCreateWeekDiagnostic(normalized, input.week.weekStartDate, action)
-  const evaluation = validateGeneratedWeekAction(input.plan, input.week, input.profile, action, diagnostic, input.previousWeek)
+  const evaluation = validateGeneratedWeekAction(
+    input.plan,
+    input.week,
+    input.profile,
+    action,
+    diagnostic,
+    input.previousWeek,
+    input.planWeekDescriptors,
+  )
   const wasTruncated = isProviderTruncated(raw)
   const lastError = evaluation.error && wasTruncated
     ? `La respuesta del modelo fue truncada por presupuesto de tokens antes de devolver sesiones válidas para la semana ${input.week.weekIndex + 1}.`
@@ -340,10 +385,16 @@ export async function generateWeekCore(input: GenerateWeekCoreInput): Promise<Ge
       hydratedSessionsAffected: evaluation.hydratedSessionsAffected,
       correctedSessionsAffected: evaluation.correctedSessionsAffected,
       structurallyRepairedSessionsAffected: evaluation.structurallyRepairedSessionsAffected,
+      strengthAccessoryRotationActionCount: evaluation.strengthAccessoryRotationActionCount,
+      strengthAccessoryRotationSessionsAffected: evaluation.strengthAccessoryRotationSessionsAffected,
+      squashDrillRotationActionCount: evaluation.squashDrillRotationActionCount,
+      squashDrillRotationSessionsAffected: evaluation.squashDrillRotationSessionsAffected,
+      squashDrillRotationOmittedCount: evaluation.squashDrillRotationOmittedCount,
       repairWarnings: evaluation.repairWarnings,
-      errorClass: evaluation.error
-        ? (wasTruncated ? 'truncated' : 'validation')
-        : normalized.meta?.errorClass,
+      errorClass: evaluation.errorClass
+        ?? (evaluation.error
+          ? (wasTruncated ? 'truncated' : 'validation')
+          : normalized.meta?.errorClass),
     },
   }
 }

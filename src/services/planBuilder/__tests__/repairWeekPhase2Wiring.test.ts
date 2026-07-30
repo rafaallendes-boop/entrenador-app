@@ -67,6 +67,7 @@ function makeContext(weekIndex: number): RepairContext {
       createdAt: '',
       updatedAt: '',
     } as never,
+    planWeekDescriptors: [{ weekIndex, phase: 'build' }],
   }
 }
 

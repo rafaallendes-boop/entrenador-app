@@ -49,8 +49,8 @@ function makeBuildContext(previousWeekExercises: string[]): RepairContext {
   }
 }
 
-describe('repairDuplicateStrengthExercises', () => {
-  it('regenerates strength session when 4+ exercises match previous week', () => {
+describe('normalización de fuerza heredada', () => {
+  it('reemplaza el warning legacy por la taxonomía de normalización', () => {
     const clonedExercises = ['Sentadilla', 'Hip Thrust', 'Peso Muerto', 'Press de Banca', 'Dominadas']
     const context = makeBuildContext(clonedExercises)
 
@@ -62,7 +62,7 @@ describe('repairDuplicateStrengthExercises', () => {
       },
     ] as never, context)
 
-    expect(result.meta.warnings.some((w) => w.code === 'strength_duplicate_exercises_repaired')).toBe(true)
+    expect(result.meta.warnings.some((w) => w.code === 'strength_duplicate_exercises_repaired')).toBe(false)
   })
 
   it('does not regenerate when session has 3 or fewer matches with previous week', () => {

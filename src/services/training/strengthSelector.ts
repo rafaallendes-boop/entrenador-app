@@ -57,6 +57,21 @@ export interface StrengthSelectionExercise {
   targetRpe?: number
 }
 
+/**
+ * Reemplazo enfocado para la rotación de accesorios. Construye el ejercicio
+ * completo con los filtros y la prescripción normales del selector: no parchea
+ * `name` sobre la prescripción anterior, que dejaría notas de otro movimiento o
+ * un `targetPercent1RM` sin referencia de 1RM.
+ */
+export interface StrengthReplacementRequest {
+  originalName: string
+  context: StrengthContext
+  excludedKeys: ReadonlySet<string>
+  rotationIndex: number
+  /** La prescripción depende de la posición dentro de la sesión. */
+  exerciseIndex: number
+}
+
 export interface StarLiftInfo {
   name: string
   targetPercent1RM?: number
@@ -182,7 +197,7 @@ function selectBlockStrengthSession(
 
   const finalSelection = selectedDefinitions.slice(0, density.max)
   const builtExercises = finalSelection.map((exercise, index) =>
-    buildBlockSelectionExercise(exercise, context, index, exercise.id === starDefinition?.id),
+    buildPrescribedExercise(exercise, context, index, exercise.id === starDefinition?.id),
   )
   const ordered = orderStrengthExercisesForSession(builtExercises, context)
   const starLift = starDefinition ? selectStarLift(starDefinition, context, weekIndexInBlock) : undefined
@@ -303,11 +318,11 @@ function matchesBlockSlotPattern(exercise: ExerciseDefinition, pattern: Strength
   return exercise.movement === pattern
 }
 
-function buildBlockSelectionExercise(
+function buildPrescribedExercise(
   exercise: ExerciseDefinition,
   context: StrengthContext,
   index: number,
-  isStarLift: boolean,
+  isStarLift = false,
 ): StrengthSelectionExercise {
   const base = buildSelectionExercise(exercise, context, index)
   const targetRpe = clamp(resolveTargetRpe(base.intensity) + (context.rpeAdjustment ?? 0), 4, 9)
@@ -320,6 +335,38 @@ function buildBlockSelectionExercise(
     targetRpe,
     targetPercent1RM,
   }
+}
+
+function isCandidateAllowedInContext(
+  candidate: ExerciseDefinition,
+  context: StrengthContext,
+): boolean {
+  const phase = toExercisePhase(context.phase)
+  if (!(candidate.appropriateForPhases?.includes(phase) ?? true)) return false
+
+  const eligible = buildStrengthCandidatePool([candidate], context)
+  return filterByEquipment(eligible, normalizeEquipment(context.availableEquipment)).length > 0
+}
+
+/**
+ * Determinista: el orden del pool es total y estable, con `id` como desempate.
+ */
+export function selectStrengthReplacement(
+  request: StrengthReplacementRequest,
+): StrengthSelectionExercise | undefined {
+  const original = findStrengthExerciseByName(request.originalName)
+  if (!original) return undefined
+
+  const candidates = STRENGTH_EXERCISE_LIBRARY
+    .filter((candidate) => candidate.movement === original.movement)
+    .filter((candidate) => !request.excludedKeys.has(normalizeStrengthExerciseKey(candidate.name)))
+    .filter((candidate) => isCandidateAllowedInContext(candidate, request.context))
+    .sort((a, b) => a.id.localeCompare(b.id))
+
+  if (candidates.length === 0) return undefined
+
+  const picked = candidates[request.rotationIndex % candidates.length]!
+  return buildPrescribedExercise(picked, request.context, request.exerciseIndex)
 }
 
 export function selectStarLift(

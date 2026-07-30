@@ -154,6 +154,9 @@ export const DEFAULT_MAX_TOKENS = 5000
 const TRUNCATED_RETRY_MAX_TOKENS = 12000
 export const DEFAULT_TEMPERATURE = 0.25
 const MAX_WEEK_ATTEMPTS = 2
+const NON_FALLBACK_ELIGIBLE_ERROR_CLASSES = new Set([
+  'quality.squash.signature_uniqueness_unresolved',
+])
 const DEFAULT_CONCURRENCY = 3
 const MAX_CONCURRENCY = 6
 // Netlify background functions se cortan a los 15 min; reservamos margen para
@@ -358,6 +361,11 @@ function makeResolvedWeek(
       hydratedSessionsAffected: result.meta.hydratedSessionsAffected,
       correctedSessionsAffected: result.meta.correctedSessionsAffected,
       structurallyRepairedSessionsAffected: result.meta.structurallyRepairedSessionsAffected,
+      strengthAccessoryRotationActionCount: result.meta.strengthAccessoryRotationActionCount,
+      strengthAccessoryRotationSessionsAffected: result.meta.strengthAccessoryRotationSessionsAffected,
+      squashDrillRotationActionCount: result.meta.squashDrillRotationActionCount,
+      squashDrillRotationSessionsAffected: result.meta.squashDrillRotationSessionsAffected,
+      squashDrillRotationOmittedCount: result.meta.squashDrillRotationOmittedCount,
       repairWarnings: result.meta.repairWarnings,
       errorClass: result.meta.errorClass,
       generationSource: 'ai',
@@ -406,6 +414,11 @@ function makeFallbackResolvedWeek(
       repairTaxonomyVersion: 2,
       qualityVersion,
       ...taxonomySummary,
+      strengthAccessoryRotationActionCount: fallback.meta.strengthAccessoryRotationActionCount,
+      strengthAccessoryRotationSessionsAffected: fallback.meta.strengthAccessoryRotationSessionsAffected,
+      squashDrillRotationActionCount: fallback.meta.squashDrillRotationActionCount,
+      squashDrillRotationSessionsAffected: fallback.meta.squashDrillRotationSessionsAffected,
+      squashDrillRotationOmittedCount: fallback.meta.squashDrillRotationOmittedCount,
       repairWarnings: [
         {
           code: 'local_plan_fallback',
@@ -522,6 +535,7 @@ async function generateWeekCoreWithRetry(input: {
   plan: TrainingPlan
   week: TrainingPlanWeek
   previousWeek?: TrainingPlanWeek
+  planWeekDescriptors: readonly { weekIndex: number; phase: string }[]
   profile: AthleteProfile
   wizardConfig: PlanWizardConfig
   recentContext?: unknown
@@ -576,6 +590,7 @@ async function generateWeekCoreWithRetry(input: {
         plan: input.plan,
         week: input.week,
         previousWeek: input.previousWeek,
+        planWeekDescriptors: input.planWeekDescriptors,
         profile: input.profile,
         wizardConfig: input.wizardConfig,
         recentContext: input.recentContext as never,
@@ -997,9 +1012,13 @@ export async function runAsyncPlanGeneration(input: RunAsyncPlanGenerationInput)
           ?? weeks.find((week) => week.weekIndex === weekIndex - 1)
         // Clasifica el objeto exacto entregado al prompt (no una re-consulta de
         // `weeks`, que podría observar otra semana completándose entre lecturas).
+        const source: PlanGenerationJobTelemetry['previousWeekContextSource'] =
+          weekIndex === 0 ? 'none' : previousWeek == null ? 'none' : isReadyWeek(previousWeek) ? 'ready' : 'shell'
+        generatingWeek.generationMeta = {
+          ...generatingWeek.generationMeta,
+          previousWeekContextSource: source,
+        }
         if (weekIndex > 0) {
-          const source: PlanGenerationJobTelemetry['previousWeekContextSource'] =
-            previousWeek == null ? 'none' : isReadyWeek(previousWeek) ? 'ready' : 'shell'
           if (source === 'shell') previousWeekContextSource = 'shell'
           else if (source === 'ready' && previousWeekContextSource === 'none') previousWeekContextSource = 'ready'
         }
@@ -1007,6 +1026,10 @@ export async function runAsyncPlanGeneration(input: RunAsyncPlanGenerationInput)
           plan,
           week: generatingWeek,
           previousWeek,
+          planWeekDescriptors: weeks.map((candidate) => ({
+            weekIndex: candidate.weekIndex,
+            phase: candidate.phase,
+          })),
           profile: input.profile,
           wizardConfig: input.wizardConfig,
           recentContext: input.recentContext as never,
@@ -1109,12 +1132,17 @@ export async function runAsyncPlanGeneration(input: RunAsyncPlanGenerationInput)
           stopLaunching = true
         }
         let fallback: ReturnType<typeof buildLocalFallbackWeek> | undefined
-        if (result.sessions.length === 0) {
+        const fallbackEligible = !NON_FALLBACK_ELIGIBLE_ERROR_CLASSES.has(result.meta.errorClass ?? '')
+        if (result.sessions.length === 0 && fallbackEligible) {
           try {
             fallback = buildLocalFallbackWeek({
               plan,
               week: generatingWeek,
               previousWeek,
+              planWeekDescriptors: weeks.map((candidate) => ({
+                weekIndex: candidate.weekIndex,
+                phase: candidate.phase,
+              })),
               profile: input.profile,
               wizardConfig: input.wizardConfig,
             })

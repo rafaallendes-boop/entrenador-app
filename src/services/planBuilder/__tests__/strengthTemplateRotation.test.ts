@@ -70,6 +70,10 @@ function makePeakContext(previousExercises: string[]): RepairContext {
       validationIssues: [], generationMeta: { attempts: 1, provider: 'gemini', model: 'flash' },
       createdAt: 0, updatedAt: 0,
     } as never,
+    planWeekDescriptors: [
+      { weekIndex: 3, phase: 'peak' },
+      { weekIndex: 4, phase: 'peak' },
+    ],
   }
 }
 

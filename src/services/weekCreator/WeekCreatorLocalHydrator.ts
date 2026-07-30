@@ -457,7 +457,13 @@ export function buildWeekCreatorHydrationRepairContext(
     updatedAt: now,
   }
 
-  return { plan, week, profile, wizardConfig }
+  return {
+    plan,
+    week,
+    profile,
+    wizardConfig,
+    planWeekDescriptors: [{ weekIndex: week.weekIndex, phase: week.phase }],
+  }
 }
 
 function cloneCoachAction(action: CoachAction): CoachAction {

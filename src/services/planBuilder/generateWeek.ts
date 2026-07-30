@@ -11,6 +11,7 @@ import { getExpectedSessionsForPlanWeek, getPlanWeekDateRange } from './dateRang
 import { generateWeekCore } from './generateWeekCore'
 import type { PlanBuilderRecentContext } from './recentContext'
 import { summarizeTaxonomy, type RepairTaxonomySummary } from './repairTaxonomy'
+import type { PlanWeekDescriptor } from './blockIdentity'
 
 const EMPTY_REPAIR_TAXONOMY: RepairTaxonomySummary = {
   hydrationActionCount: 0,
@@ -26,6 +27,7 @@ export interface GenerateWeekInput {
   plan: TrainingPlan
   week: TrainingPlanWeek
   previousWeek?: TrainingPlanWeek
+  planWeekDescriptors: readonly PlanWeekDescriptor[]
   profile: AthleteProfile
   wizardConfig: PlanWizardConfig
   temperature?: number
@@ -64,6 +66,11 @@ export interface GenerateWeekResult {
     hydratedSessionsAffected: number
     correctedSessionsAffected: number
     structurallyRepairedSessionsAffected: number
+    strengthAccessoryRotationActionCount?: number
+    strengthAccessoryRotationSessionsAffected?: number
+    squashDrillRotationActionCount?: number
+    squashDrillRotationSessionsAffected?: number
+    squashDrillRotationOmittedCount?: number
     repairWarnings?: Array<{ code: string; message: string }>
     stageTimings?: StageTiming[]
     errorClass?: string
@@ -73,6 +80,7 @@ export interface GenerateWeekResult {
 export interface WeekActionEvaluation extends RepairTaxonomySummary {
   sessions: CoachSessionProposal[]
   error?: string
+  errorClass?: string
   rawSessionCount?: number
   validSessionCount?: number
   droppedSessionCount?: number
@@ -81,6 +89,11 @@ export interface WeekActionEvaluation extends RepairTaxonomySummary {
   addedFallbackCount?: number
   filteredSportCount?: number
   repairTaxonomyVersion: 2
+  strengthAccessoryRotationActionCount?: number
+  strengthAccessoryRotationSessionsAffected?: number
+  squashDrillRotationActionCount?: number
+  squashDrillRotationSessionsAffected?: number
+  squashDrillRotationOmittedCount?: number
   repairWarnings?: Array<{ code: string; message: string }>
 }
 
@@ -148,6 +161,7 @@ export function validateGeneratedWeekAction(
   action: CoachAction | undefined,
   diagnostic?: CreateWeekNormalizationDiagnostic,
   previousWeek?: TrainingPlanWeek,
+  planWeekDescriptors: readonly PlanWeekDescriptor[] = [{ weekIndex: week.weekIndex, phase: week.phase }],
 ): WeekActionEvaluation {
   const rawSessionCount = diagnostic?.rawSessions ?? (Array.isArray(action?.sessions) ? action.sessions.length : undefined)
   let normalizedSessionCount = diagnostic?.validSessions ?? (Array.isArray(action?.sessions) ? action.sessions.length : undefined)
@@ -183,9 +197,22 @@ export function validateGeneratedWeekAction(
     profile,
     wizardConfig: plan.wizardConfig,
     previousWeek,
+    planWeekDescriptors,
   }
 
   const repairResult = repairGeneratedWeek(action.sessions, context)
+  if (repairResult.failure) {
+    return {
+      sessions: [],
+      ...EMPTY_REPAIR_TAXONOMY,
+      repairTaxonomyVersion: 2,
+      error: repairResult.failure.message,
+      errorClass: repairResult.failure.errorClass,
+      rawSessionCount,
+      validSessionCount: 0,
+      droppedSessionCount,
+    }
+  }
   const taxonomySummary = summarizeTaxonomy(repairResult.meta.taxonomy)
   normalizedSessionCount = repairResult.sessions.length
 
@@ -210,6 +237,11 @@ export function validateGeneratedWeekAction(
       movedSessionCount: repairResult.meta.movedSessionCount,
       addedFallbackCount: repairResult.meta.addedFallbackCount,
       filteredSportCount: repairResult.meta.filteredSportCount,
+      strengthAccessoryRotationActionCount: repairResult.meta.strengthAccessoryRotationActionCount,
+      strengthAccessoryRotationSessionsAffected: repairResult.meta.strengthAccessoryRotationSessionsAffected,
+      squashDrillRotationActionCount: repairResult.meta.squashDrillRotationActionCount,
+      squashDrillRotationSessionsAffected: repairResult.meta.squashDrillRotationSessionsAffected,
+      squashDrillRotationOmittedCount: repairResult.meta.squashDrillRotationOmittedCount,
       repairWarnings: repairResult.meta.warnings,
     }
   }
@@ -225,12 +257,17 @@ export function validateGeneratedWeekAction(
     movedSessionCount: repairResult.meta.movedSessionCount,
     addedFallbackCount: repairResult.meta.addedFallbackCount,
     filteredSportCount: repairResult.meta.filteredSportCount,
+    strengthAccessoryRotationActionCount: repairResult.meta.strengthAccessoryRotationActionCount,
+    strengthAccessoryRotationSessionsAffected: repairResult.meta.strengthAccessoryRotationSessionsAffected,
+    squashDrillRotationActionCount: repairResult.meta.squashDrillRotationActionCount,
+    squashDrillRotationSessionsAffected: repairResult.meta.squashDrillRotationSessionsAffected,
+    squashDrillRotationOmittedCount: repairResult.meta.squashDrillRotationOmittedCount,
     repairWarnings: repairResult.meta.warnings,
   }
 }
 
 export async function generateWeek(input: GenerateWeekInput): Promise<GenerateWeekResult> {
-  const { provider, plan, week, previousWeek, profile, wizardConfig } = input
+  const { provider, plan, week, previousWeek, planWeekDescriptors, profile, wizardConfig } = input
   const requestClass = 'plan_builder_week' as const
   const traceId = buildAITraceId(requestClass)
   const policy = getAIRequestPolicy(requestClass)
@@ -259,6 +296,7 @@ export async function generateWeek(input: GenerateWeekInput): Promise<GenerateWe
       plan,
       week,
       previousWeek,
+      planWeekDescriptors,
       profile,
       wizardConfig,
       retryInstruction: input.retryInstruction,

@@ -81,10 +81,10 @@ function squashWeek(weekIndex: number, sessions: CoachSessionProposal[]): Traini
 }
 
 describe('qualityReview repeated strength templates', () => {
-  it('warns when two weeks of the same block share at least 3 exercises', () => {
+  it('warns when two weeks of the same block share at least 3 ejercicios contables', () => {
     const review = reviewPlanQuality(plan(), [
       week(0, ['Dead bug', 'Back squat', 'Bench press', 'Pull up']),
-      week(1, ['Dead bug', 'Back squat', 'Bench press', 'Farmer carry']),
+      week(1, ['Dead bug', 'Back squat', 'Bench press', 'Pull up', 'Farmer carry']),
     ])
 
     expect(review.issues.some((issue) => issue.code === 'quality.strength.repeated_template')).toBe(true)

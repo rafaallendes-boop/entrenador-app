@@ -2,6 +2,7 @@ import type { AthleteProfile, CoachSessionProposal, DayOfWeek, PlanWizardConfig,
 import type { TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
 import { getExpectedSessionsForPlanWeek, getPlanWeekTrainingDates } from './dateRange'
 import { repairGeneratedWeek, type RepairResult } from './repairWeek'
+import type { PlanWeekDescriptor } from './blockIdentity'
 import { selectStrengthBlockTemplate } from '../training/strengthBlocks'
 
 type Slot = { date: string; timeBlock: 'AM' | 'PM' }
@@ -355,6 +356,7 @@ export function buildDeterministicWeek(input: {
   plan: TrainingPlan
   week: TrainingPlanWeek
   previousWeek?: TrainingPlanWeek
+  planWeekDescriptors: readonly PlanWeekDescriptor[]
   profile: AthleteProfile
   wizardConfig: PlanWizardConfig
 }): RepairResult {
@@ -373,6 +375,7 @@ export function buildDeterministicWeek(input: {
     plan: input.plan,
     week: input.week,
     previousWeek: input.previousWeek,
+    planWeekDescriptors: input.planWeekDescriptors,
     profile: input.profile,
     wizardConfig: input.wizardConfig,
   })

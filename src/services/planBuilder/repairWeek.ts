@@ -17,11 +17,17 @@ import type {
 } from '../../types'
 import type { TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
 import { getExpectedSessionsForPlanWeek, getPlanWeekDateRange, isDateInsidePlanWeekRange } from './dateRange'
-import { selectSquashDrills, type SquashSelectionDesiredKind, type SquashSelectionPhase } from '../training/drillSelector'
-import { findSquashDrillByName, isControlDrill, isShadowsDrill, isSquashMatchDrill, normalizeSquashDrillKey, orderSquashBlocksForSession, resolveSquashDrillKind, toSquashDrill } from '../training/drillLibrary'
+import {
+  selectSquashDrillReplacement,
+  selectSquashDrills,
+  type SquashRelaxationLevel,
+  type SquashSelectionPhase,
+} from '../training/drillSelector'
+import { findSquashDrillByName, isControlDrill, isShadowsDrill, isSquashMatchDrill, normalizeSquashDrillKey, orderSquashBlocksForSession, resolveDrillExecutionMode, resolveSquashDrillKind, toSquashDrill } from '../training/drillLibrary'
 import { selectRunningSession, type RunningPhase, type RunningSportProfile } from '../training/runningSelector'
 import {
   getTargetExerciseDensity,
+  selectStrengthReplacement,
   selectStrengthSession,
   type StrengthContext,
   type StrengthPhase,
@@ -29,12 +35,20 @@ import {
   type StrengthSportProfile,
 } from '../training/strengthSelector'
 import { enhanceStrengthSessionExercises, resolveStrengthExerciseBlock } from '../training/strengthSessionStructure'
-import { findStrengthExerciseByName, normalizeStrengthExerciseKey, STRENGTH_EXERCISE_LIBRARY, type ExerciseDefinition, type ExperienceLevel } from '../training/exerciseLibrary'
+import { findStrengthExerciseByName, normalizeStrengthExerciseKey, type ExperienceLevel } from '../training/exerciseLibrary'
 import { selectMobilitySession, type MobilityPhase } from '../training/mobilitySelector'
 import { selectCyclingSession, type CyclingPhase, type CyclingSportProfile } from '../training/cyclingSelector'
 import { normalizeMobilityDetails, type MobilitySportContext } from '../training/mobilitySessionLibrary'
 import type { CyclingRole } from '../training/cyclingSessionLibrary'
 import { buildAthleteParameters } from './profileAdapter'
+import { resolveBlockPositions, type PlanWeekDescriptor } from './blockIdentity'
+import {
+  collectAllStrengthKeys,
+  collectCountableKeys,
+  isCountableRole,
+  resolveSessionStrengthRoles,
+} from './strengthRoleContract'
+import { isReadyWeek } from './weekUtils'
 import {
   createRepairTaxonomyMeta,
   recordRepairAction,
@@ -50,6 +64,8 @@ export interface RepairContext {
   profile: AthleteProfile
   wizardConfig: PlanWizardConfig
   previousWeek?: TrainingPlanWeek
+  /** Descriptores ordenados de todas las semanas. El fallback unitario conserva compatibilidad de repair aislado. */
+  planWeekDescriptors?: readonly PlanWeekDescriptor[]
 }
 
 export interface RepairWarning {
@@ -65,6 +81,12 @@ export interface RepairMeta {
   addedFallbackCount: number
   droppedSessionCount: number
   filteredSportCount: number
+  /** Política determinista de accesorios; undefined significa no aplicable. */
+  strengthAccessoryRotationActionCount?: number
+  strengthAccessoryRotationSessionsAffected?: number
+  squashDrillRotationActionCount?: number
+  squashDrillRotationSessionsAffected?: number
+  squashDrillRotationOmittedCount?: number
   /**
    * Aditivo. `repairedSessionCount` conserva su semántica exacta porque
    * WeekCreatorEngine ramifica sobre él.
@@ -76,6 +98,12 @@ export interface RepairMeta {
 export interface RepairResult {
   sessions: CoachSessionProposal[]
   meta: RepairMeta
+  failure?: RepairFailure
+}
+
+export interface RepairFailure {
+  errorClass: 'quality.squash.signature_uniqueness_unresolved'
+  message: string
 }
 
 export function createRepairMeta(rawSessionCount: number): RepairMeta {
@@ -191,19 +219,21 @@ export function repairGeneratedWeek(
   // 12b. In build/peak the primary sport must outweigh accessory work
   sessions = ensurePrimarySportDominance(sessions, context, meta)
 
-  // 13. Diversify duplicated sport content after fallbacks are added
-  diversifyDuplicateSquashSessions(sessions, context, meta)
+  // 13. Alinear metadatos antes de proyectar una única asignación canónica.
   normalizeSquashSemanticMetadata(sessions, meta, context)
   normalizeLateTaperSquashMatchPlay(sessions, context, meta)
   sessions = ensureSquashCompetitionMatchExposure(sessions, context, meta)
 
-  // 13b. Nothing after step 13 may leave two squash sessions sharing drills:
-  // the Week Creator validator rejects the whole week for it.
-  enforceSquashSignatureUniqueness(sessions, context, meta)
+  // 13b. Política de rotación y corrección de firmas comparten una sola pasada.
+  const squashNormalization = normalizeSquashSessionContent(sessions, context, meta)
+  if (squashNormalization.failure) {
+    return { sessions: [], meta, failure: squashNormalization.failure }
+  }
   normalizeSquashDurationConsistency(sessions, meta)
 
-  // 14. Diversify repeated strength exercises from previous week
-  repairDuplicateStrengthExercises(sessions, context, meta)
+  // 14. Una única proyección canónica de fuerza evita que dos mutadores se
+  // deshagan entre sí y mantiene la segunda pasada como punto fijo.
+  normalizeStrengthSessions(sessions, context, meta)
 
   // 15. Check double session utilization
   sessions = enforceDoubleSessionDayConstraints(sessions, context, meta)
@@ -1286,198 +1316,472 @@ function inferSquashKindFromProposalDetails(session: CoachSessionProposal): Squa
   return topKind
 }
 
-function diversifyDuplicateSquashSessions(
+type StrengthSubstitutionReason = 'policy' | 'corrective'
+
+interface StrengthRotationSlot {
+  session: CoachSessionProposal
+  sessionOrdinal: number
+  position: number
+  currentName: string
+  reason?: StrengthSubstitutionReason
+}
+
+/**
+ * Una sola asignación canónica por semana para fuerza. La decisión de razón se
+ * toma sobre la entrada original: corrective gana el desempate y policy nunca
+ * vuelve a tocar el mismo slot.
+ */
+function normalizeStrengthSessions(
   sessions: CoachSessionProposal[],
   context: RepairContext,
   meta: RepairMeta,
 ): void {
-  const squashSessions = sessions.filter((session) => session.sessionType === 'squash')
-  if (squashSessions.length < 2) return
-
-  const seen = new Set<string>()
-  const usedDrills = extractRecentSquashDrills(context.previousWeek)
-  let repairedCount = 0
-
-  for (const session of squashSessions) {
-    const signature = buildSquashDrillSignature(session)
-    if (signature && !seen.has(signature)) {
-      seen.add(signature)
-      usedDrills.push(...extractSquashDrillNames(session))
-      continue
-    }
-
-    const repaired = rebuildSquashDetailsAvoidingDuplicates(session, context, usedDrills, seen)
-    const nextSignature = buildSquashDrillSignature(session)
-    if (repaired && nextSignature && !seen.has(nextSignature)) {
-      seen.add(nextSignature)
-      usedDrills.push(...extractSquashDrillNames(session))
-      recordRepair(meta, 'corrective', sessionKeyOf(session))
-      repairedCount++
-      continue
-    }
-
-    if (nextSignature) seen.add(nextSignature)
-    usedDrills.push(...extractSquashDrillNames(session))
-  }
-
-  if (repairedCount > 0) {
-    meta.warnings.push({
-      code: 'squash_duplicate_drills_repaired',
-      message: `Se regeneraron ${repairedCount} sesiones de squash para evitar repetir los mismos drills.`,
-    })
-  }
-}
-
-// Matches qualityReview.normalizeExerciseName so the prevention here clears the
-// same `quality.strength.repeated_template` overlap the review detects.
-function normalizeStrengthOverlapKey(name: string): string {
-  return name
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim()
-}
-
-function exerciseRiskRank(exercise: ExerciseDefinition): number {
-  return exercise.riskLevel === 'low' ? 0 : exercise.riskLevel === 'high' ? 2 : 1
-}
-
-// Finds a catalog exercise of the same movement pattern that is neither in the
-// previous week nor already in the current session. In peak/taper we prefer the
-// lowest-risk option (masters: less technical residue near competition).
-function findRotationReplacement(
-  name: string,
-  recentKeys: Set<string>,
-  currentKeys: Set<string>,
-  preferLowRisk: boolean,
-): ExerciseDefinition | undefined {
-  const def = findStrengthExerciseByName(name)
-  const candidates = STRENGTH_EXERCISE_LIBRARY.filter((candidate) => {
-    const key = normalizeStrengthOverlapKey(candidate.name)
-    if (recentKeys.has(key) || currentKeys.has(key)) return false
-    if (def && candidate.movement !== def.movement) return false
-    return true
-  })
-  if (candidates.length === 0) return undefined
-  if (!preferLowRisk) return candidates[0]
-  return [...candidates].sort((a, b) => exerciseRiskRank(a) - exerciseRiskRank(b))[0]
-}
-
-// Force consecutive strength weeks under 3 shared exercises by swapping the
-// repeated ones for same-pattern alternatives. Returns true if anything changed.
-function rotateRepeatedStrengthExercises(
-  session: CoachSessionProposal,
-  recentKeys: Set<string>,
-  phase: string,
-): boolean {
-  const exercises = session.exercises ?? []
-  if (exercises.length === 0) return false
-
-  const currentKeys = new Set(exercises.map((e) => normalizeStrengthOverlapKey(e.name)))
-  const overlapping = () => exercises.filter((e) => recentKeys.has(normalizeStrengthOverlapKey(e.name)))
-  if (overlapping().length < 3) return false
-
-  const preferLowRisk = phase === 'peak' || phase === 'taper' || phase === 'race'
-  let changed = false
-
-  // Replace from the end first so sticky main lifts at the top survive when possible.
-  for (const exercise of [...exercises].reverse()) {
-    if (overlapping().length < 3) break
-    if (!recentKeys.has(normalizeStrengthOverlapKey(exercise.name))) continue
-    const replacement = findRotationReplacement(exercise.name, recentKeys, currentKeys, preferLowRisk)
-    if (!replacement) continue
-    currentKeys.delete(normalizeStrengthOverlapKey(exercise.name))
-    exercise.name = replacement.name
-    currentKeys.add(normalizeStrengthOverlapKey(replacement.name))
-    changed = true
-  }
-
-  return changed
-}
-
-function repairDuplicateStrengthExercises(
-  sessions: CoachSessionProposal[],
-  context: RepairContext,
-  meta: RepairMeta,
-): void {
-  if (!context.previousWeek) return
-
-  const recentNames = context.previousWeek.sessions
-    .filter((s) => s.sessionType === 'strength')
-    .flatMap((s) => s.exercises ?? [])
-    .map((e) => e.name)
-  const recentKeys = new Set(recentNames.map(normalizeStrengthOverlapKey).filter(Boolean))
-  if (recentKeys.size === 0) return
-
-  const strengthSessions = sessions.filter((s) => s.sessionType === 'strength')
+  const strengthSessions = sessions.filter((session) => session.sessionType === 'strength')
   if (strengthSessions.length === 0) return
 
-  const recentForSelector = Array.from(new Set(extractRecentStrengthExercises(context.previousWeek)))
-  let repairedCount = 0
-
+  // Fija la coordenada de cada slot antes de asignar. El hidratador normaliza
+  // grupos, pero no define un desempate total dentro de un grupo; sin este
+  // orden, una segunda pasada puede intercambiar dos ejes equivalentes y volver
+  // a contar una rotación aunque el contenido final sea el mismo.
   for (const session of strengthSessions) {
-    const allExercises = session.exercises ?? []
-    if (allExercises.length === 0) continue
-
-    const overlapCount = allExercises.filter((e) => recentKeys.has(normalizeStrengthOverlapKey(e.name))).length
-    // Mirror the repeated_template threshold (>=3 shared) instead of waiting for a
-    // near-clone so 3-of-N overlaps are prevented, not just flagged.
-    if (overlapCount < 3) continue
-
-    // First regenerate while penalizing recent exercises; then force-rotate any
-    // sticky main lifts that the selector keeps across the block.
-    completeStrengthExercises(session, context, recentForSelector)
-    rotateRepeatedStrengthExercises(session, recentKeys, context.week.phase)
-    recordRepair(meta, 'corrective', sessionKeyOf(session))
-    repairedCount++
+    if (session.exercises) session.exercises = [...session.exercises].sort(compareCanonicalStrengthExercises)
   }
 
-  if (repairedCount > 0) {
-    meta.warnings.push({
-      code: 'strength_duplicate_exercises_repaired',
-      message: `Se regeneraron ${repairedCount} sesión(es) de fuerza para evitar repetir los mismos ejercicios de la semana anterior.`,
+  const weekIndexInBlock = getWeekIndexInBlock(context)
+  const currentBlockId = resolveBlockPositions(getPlanPhaseDescriptors(context), getPlanWeekDescriptors(context))
+    .get(context.week.weekIndex)?.blockId
+  const previous = context.previousWeek
+  const previousUsable = previous != null && isReadyWeek(previous) && isPreviousWeekInSameBlock(context)
+  const previousKeys = previousUsable ? collectAllStrengthKeys(previous.sessions) : new Set<string>()
+  const originalCountable = collectCountableKeys(sessions)
+  const hasObservedCollision = [...originalCountable]
+    .filter((key) => previousKeys.has(key))
+    .length >= 3
+  const applyPolicy = weekIndexInBlock > 0
+
+  const slots: StrengthRotationSlot[] = []
+  const assignedKeys = new Set<string>()
+  strengthSessions.forEach((session, sessionOrdinal) => {
+    const exercises = session.exercises ?? []
+    const roles = resolveSessionStrengthRoles(exercises)
+    const alreadyCanonical = currentBlockId != null && hasCanonicalStrengthRotation(session, currentBlockId)
+    exercises.forEach((exercise, position) => {
+      const key = normalizeStrengthExerciseKey(exercise.name)
+      if (!key) return
+      if (!isCountableRole(roles[position]!) || alreadyCanonical) {
+        assignedKeys.add(key)
+        return
+      }
+      const reason: StrengthSubstitutionReason | undefined = hasObservedCollision && previousKeys.has(key)
+        ? 'corrective'
+        : applyPolicy
+          ? 'policy'
+          : undefined
+      if (!reason) assignedKeys.add(key)
+      slots.push({ session, sessionOrdinal, position, currentName: exercise.name, reason })
     })
+  })
+
+  // Reserva previa completa: los slot inmutables, main lifts y los slots que
+  // quedan sin candidato no pueden volver a aparecer en otro ejercicio.
+  const assignments = new Map<StrengthRotationSlot, StrengthSelectionExercise | undefined>()
+  for (const slot of slots) {
+    if (!slot.reason) continue
+    const replacement = selectStrengthReplacement({
+      originalName: slot.currentName,
+      context: buildStrengthSelectionContext(slot.session, context, []),
+      excludedKeys: new Set([...assignedKeys, ...previousKeys]),
+      rotationIndex: weekIndexInBlock * 31 + slot.sessionOrdinal * 7 + slot.position,
+      exerciseIndex: slot.position,
+    })
+    assignments.set(slot, replacement)
+    assignedKeys.add(normalizeStrengthExerciseKey(replacement?.name ?? slot.currentName))
+  }
+
+  let policyActions = 0
+  const policySessions = new Set<string>()
+  const correctiveSessions = new Set<string>()
+  for (const slot of slots) {
+    const replacement = assignments.get(slot)
+    if (!replacement || normalizeStrengthExerciseKey(replacement.name) === normalizeStrengthExerciseKey(slot.currentName)) continue
+    const exercises = slot.session.exercises
+    if (!exercises) continue
+    exercises[slot.position] = toCoachExerciseProposal(replacement)
+    if (slot.reason === 'corrective') correctiveSessions.add(sessionKeyOf(slot.session))
+    else if (slot.reason === 'policy') {
+      policyActions++
+      policySessions.add(sessionKeyOf(slot.session))
+    }
+  }
+
+  for (const key of correctiveSessions) recordRepair(meta, 'corrective', key)
+  // El orden estructural es parte de la proyección canónica. Sin este cierre,
+  // una base de core insertada por el hidratador desplaza las coordenadas y la
+  // segunda ejecución vuelve a rotar accesorios ya resueltos.
+  for (const session of strengthSessions) {
+    const enhanced = enhanceStrengthSessionExercises(session.exercises, {
+      durationMin: session.durationMin,
+      strengthProfile: context.profile.strengthProfile,
+    })
+    session.exercises = enhanced == null
+      ? enhanced
+      : [...enhanced].sort(compareCanonicalStrengthExercises)
+    if (currentBlockId != null && (applyPolicy || correctiveSessions.has(sessionKeyOf(session)))) {
+      session.metadata = {
+        ...(session.metadata ?? {}),
+        planBuilderStrengthRotation: {
+          blockId: currentBlockId,
+          signature: canonicalStrengthSignature(session),
+        },
+      }
+    }
+  }
+  if (applyPolicy) {
+    meta.strengthAccessoryRotationActionCount = (meta.strengthAccessoryRotationActionCount ?? 0) + policyActions
+    meta.strengthAccessoryRotationSessionsAffected =
+      (meta.strengthAccessoryRotationSessionsAffected ?? 0) + policySessions.size
   }
 }
 
-function rebuildSquashDetailsAvoidingDuplicates(
-  session: CoachSessionProposal,
-  context: RepairContext,
-  usedDrills: string[],
-  seenSignatures: Set<string>,
-): boolean {
-  const preferred = inferSquashDesiredKind(session, usedDrills)
-  const candidatePool: SquashSelectionDesiredKind[] = [
-    ...(preferred ? [preferred] : []),
-    'mixed-shadows-control',
-    'control',
-    'technical',
-    'mixed-control-technical',
-    'mixed-shadows-technical',
-    'match',
-  ]
-  const candidates = candidatePool.filter((kind, index, all) => all.indexOf(kind) === index)
+function compareCanonicalStrengthExercises(
+  left: CoachExerciseProposal,
+  right: CoachExerciseProposal,
+): number {
+  const groupDelta = strengthBlockOrder(resolveStrengthExerciseBlock(left)) -
+    strengthBlockOrder(resolveStrengthExerciseBlock(right))
+  if (groupDelta !== 0) return groupDelta
+  return normalizeStrengthExerciseKey(left.name).localeCompare(normalizeStrengthExerciseKey(right.name))
+}
 
-  for (const desiredKind of candidates) {
-    const result = selectSquashDrills({
-      fatigueLevel: fatigueToNumber(context.wizardConfig.currentFatigue),
-      phase: mapPhase(context.week.phase) as SquashSelectionPhase,
-      recentDrills: usedDrills,
-      goal: buildLevelAwareGoal(context, session.objective ?? context.profile.mainGoal ?? ''),
-      competitionSoon: false,
-      competitiveLevel: deriveCompetitiveLevel(context),
-      partnerAvailability: context.wizardConfig.partnerAvailability ?? 'either',
-      desiredKind,
-    })
-    applySquashSelection(session, result)
-    realignSquashSessionIdentity(session, result.sessionKind)
-    const signature = buildSquashDrillSignature(session)
-    if (signature && !seenSignatures.has(signature)) return true
-    usedDrills.push(...extractSquashDrillNames(session))
+function canonicalStrengthSignature(session: CoachSessionProposal): string {
+  return (session.exercises ?? [])
+    .map((exercise) => normalizeStrengthExerciseKey(exercise.name))
+    .sort((left, right) => left.localeCompare(right))
+    .join('|')
+}
+
+function hasCanonicalStrengthRotation(session: CoachSessionProposal, blockId: string): boolean {
+  const marker = session.metadata?.planBuilderStrengthRotation
+  return marker?.blockId === blockId && marker.signature === canonicalStrengthSignature(session)
+}
+
+function strengthBlockOrder(group: ReturnType<typeof resolveStrengthExerciseBlock>): number {
+  const order = ['core', 'olympic', 'legs', 'push', 'pull', 'other', 'cardio', 'mobility']
+  const index = order.indexOf(group)
+  return index === -1 ? order.indexOf('other') : index
+}
+
+function isPreviousWeekInSameBlock(context: RepairContext): boolean {
+  const previous = context.previousWeek
+  if (!previous) return false
+  const positions = resolveBlockPositions(getPlanPhaseDescriptors(context), getPlanWeekDescriptors(context))
+  return positions.get(context.week.weekIndex)?.blockId === positions.get(previous.weekIndex)?.blockId
+}
+
+const MAX_CORRECTIVE_ASSIGNMENTS = 512
+
+interface SquashNormalizationResult {
+  failure?: RepairFailure
+}
+
+/**
+ * Rotación de contenido de squash con una sola dueña del estado final. La
+ * política es una proyección estricta; las firmas duplicadas se corrigen por
+ * sesión y fallan cerradamente si no hay una asignación segura.
+ */
+function normalizeSquashSessionContent(
+  sessions: CoachSessionProposal[],
+  context: RepairContext,
+  meta: RepairMeta,
+): SquashNormalizationResult {
+  const squashSessions = sessions.filter((session) => session.sessionType === 'squash')
+  if (squashSessions.length === 0) return {}
+
+  const weekIndexInBlock = getWeekIndexInBlock(context)
+  const currentBlockId = resolveBlockPositions(getPlanPhaseDescriptors(context), getPlanWeekDescriptors(context))
+    .get(context.week.weekIndex)?.blockId
+  const signatures = squashSessions.map(buildSquashDrillSignature)
+  const seenOriginal = new Set<string>()
+  const correctiveSessions = new Set<CoachSessionProposal>()
+  squashSessions.forEach((session, index) => {
+    const signature = signatures[index]
+    if (!signature || !seenOriginal.has(signature)) {
+      if (signature) seenOriginal.add(signature)
+      return
+    }
+    correctiveSessions.add(session)
+  })
+  const policySessions = weekIndexInBlock > 0
+    ? squashSessions.filter((session) =>
+      !correctiveSessions.has(session)
+      && !(currentBlockId != null && hasCanonicalSquashRotation(session, currentBlockId)),
+    )
+    : []
+
+  const previous = context.previousWeek
+  const previousKeys = previous && isReadyWeek(previous) && isPreviousWeekInSameBlock(context)
+    ? collectSquashDrillKeys(previous.sessions)
+    : new Set<string>()
+  const assignedKeys = new Set<string>()
+  for (const session of squashSessions) {
+    if (policySessions.includes(session)) continue
+    for (const key of getSquashSessionDrillKeys(session)) assignedKeys.add(key)
   }
 
-  return false
+  let policyActions = 0
+  const policyTouched = new Set<string>()
+  let omitted = 0
+  let correctiveSessionsResolved = 0
+  for (const [sessionOrdinal, session] of squashSessions.entries()) {
+    if (!policySessions.includes(session)) continue
+    const drills = session.squashDetails?.drills ?? []
+    for (const [drillOrdinal, drill] of drills.entries()) {
+      const replacement = selectSquashDrillReplacement({
+        originalName: drill.name,
+        context: buildSquashRotationSelectionContext(session, context),
+        excludedKeys: new Set([...assignedKeys, ...previousKeys]),
+        rotationIndex: weekIndexInBlock * 131 + sessionOrdinal * 17 + drillOrdinal,
+        relaxation: 'strict',
+      })
+      if (!replacement) {
+        omitted++
+        assignedKeys.add(squashDrillKey(drill.name))
+        continue
+      }
+      assignedKeys.add(squashDrillKey(replacement.id))
+      if (squashDrillKey(replacement.id) === squashDrillKey(drill.name)) continue
+      replaceSquashDrill(session, drillOrdinal, replacement)
+      policyActions++
+      policyTouched.add(sessionKeyOf(session))
+    }
+  }
+
+  const seen = new Set<string>()
+  for (const session of squashSessions) {
+    if (correctiveSessions.has(session)) continue
+    const signature = buildSquashDrillSignature(session)
+    if (signature) seen.add(signature)
+  }
+
+  for (const [sessionOrdinal, session] of squashSessions.entries()) {
+    if (!correctiveSessions.has(session)) continue
+    const candidate = findUniqueSquashSessionCandidate(
+      sessions,
+      session,
+      sessionOrdinal,
+      context,
+      new Set([...assignedKeys, ...previousKeys]),
+      seen,
+    )
+    if (!candidate) {
+      return {
+        failure: {
+          errorClass: 'quality.squash.signature_uniqueness_unresolved',
+          message: `No se pudo diferenciar la firma de la sesión de squash del ${session.date}.`,
+        },
+      }
+    }
+    Object.assign(session, candidate)
+    const signature = buildSquashDrillSignature(session)
+    if (signature) seen.add(signature)
+    for (const key of getSquashSessionDrillKeys(session)) assignedKeys.add(key)
+    recordRepair(meta, 'corrective', sessionKeyOf(session))
+    correctiveSessionsResolved++
+  }
+
+  if (weekIndexInBlock > 0) {
+    meta.squashDrillRotationActionCount = (meta.squashDrillRotationActionCount ?? 0) + policyActions
+    meta.squashDrillRotationSessionsAffected = (meta.squashDrillRotationSessionsAffected ?? 0) + policyTouched.size
+    meta.squashDrillRotationOmittedCount = (meta.squashDrillRotationOmittedCount ?? 0) + omitted
+  }
+  if (correctiveSessionsResolved > 0) {
+    meta.warnings.push({
+      code: 'squash_duplicate_drills_repaired',
+      message: `Se regeneraron ${correctiveSessionsResolved} sesiones de squash para evitar repetir los mismos drills.`,
+    })
+  }
+  if (currentBlockId != null && (weekIndexInBlock > 0 || correctiveSessions.size > 0)) {
+    for (const session of squashSessions) {
+      session.metadata = {
+        ...(session.metadata ?? {}),
+        planBuilderSquashRotation: {
+          blockId: currentBlockId,
+          signature: canonicalSquashSignature(session),
+        },
+      }
+    }
+  }
+  return {}
+}
+
+function findUniqueSquashSessionCandidate(
+  sessions: CoachSessionProposal[],
+  original: CoachSessionProposal,
+  sessionOrdinal: number,
+  context: RepairContext,
+  excludedKeys: ReadonlySet<string>,
+  seenSignatures: ReadonlySet<string>,
+): CoachSessionProposal | undefined {
+  const slots = (original.squashDetails?.drills ?? []).map((drill, drillOrdinal) => ({ drill, drillOrdinal }))
+  if (slots.length === 0) return undefined
+  const levels: SquashRelaxationLevel[] = ['strict', 'same_kind', 'same_category', 'any']
+  for (const relaxation of levels) {
+    const candidateLists = slots.map(({ drill, drillOrdinal }) => getSquashCandidatesForSlot({
+      drill,
+      session: original,
+      context,
+      sessionOrdinal,
+      drillOrdinal,
+      excludedKeys,
+      relaxation,
+    }))
+    if (candidateLists.some((list) => list.length === 0)) continue
+    const tuple = new Array(candidateLists.length).fill(0)
+    for (let attempts = 0; attempts < MAX_CORRECTIVE_ASSIGNMENTS; attempts++) {
+      const replacementDefinitions = tuple.map((index, slotIndex) => candidateLists[slotIndex]![index]!)
+      const keys = replacementDefinitions.map((candidate) => squashDrillKey(candidate.id))
+      if (new Set(keys).size === keys.length) {
+        const candidate = cloneSquashSessionWithReplacements(original, replacementDefinitions)
+        const signature = buildSquashDrillSignature(candidate)
+        if (signature && !seenSignatures.has(signature) && preservesCompetitiveExposure(sessions, original, candidate, context)) {
+          return candidate
+        }
+      }
+      let carry = true
+      for (let index = tuple.length - 1; index >= 0 && carry; index--) {
+        tuple[index]!++
+        if (tuple[index]! < candidateLists[index]!.length) carry = false
+        else tuple[index] = 0
+      }
+      if (carry) break
+    }
+  }
+  return undefined
+}
+
+function getSquashCandidatesForSlot(input: {
+  drill: SquashDrill
+  session: CoachSessionProposal
+  context: RepairContext
+  sessionOrdinal: number
+  drillOrdinal: number
+  excludedKeys: ReadonlySet<string>
+  relaxation: SquashRelaxationLevel
+}): ReturnType<typeof findSquashDrillByName>[] {
+  const values: NonNullable<ReturnType<typeof findSquashDrillByName>>[] = []
+  const seen = new Set<string>()
+  const rotationIndex = getWeekIndexInBlock(input.context) * 131 + input.sessionOrdinal * 17 + input.drillOrdinal
+  const selectionContext = buildSquashRotationSelectionContext(input.session, input.context)
+  for (let offset = 0; offset < 128; offset++) {
+    const candidate = selectSquashDrillReplacement({
+      originalName: input.drill.name,
+      context: selectionContext,
+      excludedKeys: input.excludedKeys,
+      rotationIndex: rotationIndex + offset,
+      relaxation: input.relaxation,
+    })
+    if (!candidate || seen.has(candidate.id)) continue
+    seen.add(candidate.id)
+    values.push(candidate)
+  }
+  return values
+}
+
+function cloneSquashSessionWithReplacements(
+  original: CoachSessionProposal,
+  replacements: NonNullable<ReturnType<typeof findSquashDrillByName>>[],
+): CoachSessionProposal {
+  const candidate: CoachSessionProposal = {
+    ...original,
+    squashDetails: original.squashDetails
+      ? {
+          ...original.squashDetails,
+          drills: original.squashDetails.drills.map((drill, index) => toReplacementSquashDrill(drill, replacements[index]!)),
+        }
+      : undefined,
+  }
+  if (!candidate.squashDetails) return candidate
+  candidate.squashDetails.blocks = buildSquashBlocksFromDrills(candidate.squashDetails.drills)
+  const kind = inferSquashKindFromProposalDetails(candidate)
+  candidate.squashDetails.sessionKind = kind
+  candidate.squashDetails.sessionMode = kind === 'match'
+    ? candidate.subtype === 'competitive' ? 'competition_match' : 'practice_match'
+    : 'drill_session'
+  realignSquashSessionIdentity(candidate, kind)
+  return candidate
+}
+
+function replaceSquashDrill(
+  session: CoachSessionProposal,
+  drillOrdinal: number,
+  replacement: NonNullable<ReturnType<typeof findSquashDrillByName>>,
+): void {
+  const details = session.squashDetails
+  if (!details?.drills[drillOrdinal]) return
+  details.drills[drillOrdinal] = toReplacementSquashDrill(details.drills[drillOrdinal]!, replacement)
+  details.blocks = buildSquashBlocksFromDrills(details.drills)
+}
+
+function toReplacementSquashDrill(
+  original: SquashDrill,
+  replacement: NonNullable<ReturnType<typeof findSquashDrillByName>>,
+): SquashDrill {
+  return {
+    name: replacement.name,
+    durationMin: original.durationMin,
+    executionMode: resolveDrillExecutionMode(replacement),
+  }
+}
+
+function buildSquashRotationSelectionContext(session: CoachSessionProposal, context: RepairContext) {
+  return {
+    fatigueLevel: fatigueToNumber(context.wizardConfig.currentFatigue),
+    phase: mapPhase(context.week.phase) as SquashSelectionPhase,
+    recentDrills: [],
+    goal: buildLevelAwareGoal(context, `${session.objective ?? context.profile.mainGoal ?? ''} ${session.title}`),
+    competitionSoon: context.week.phase === 'taper' || context.week.phase === 'race',
+    competitiveLevel: deriveCompetitiveLevel(context),
+    partnerAvailability: context.wizardConfig.partnerAvailability ?? 'either',
+    desiredKind: mapSubtypeToDesiredKind(session.subtype) ?? inferSquashDesiredKind(session, []),
+  }
+}
+
+function preservesCompetitiveExposure(
+  sessions: CoachSessionProposal[],
+  original: CoachSessionProposal,
+  candidate: CoachSessionProposal,
+  context: RepairContext,
+): boolean {
+  if (!shouldEnsureSquashCompetitionMatch(context)) return true
+  return sessions.some((session) => {
+    const evaluated = session === original ? candidate : session
+    return evaluated.sessionType === 'squash'
+      && evaluated.squashDetails?.sessionMode === 'competition_match'
+      && isSafeSquashCompetitionExposureDate(evaluated.date, context)
+  })
+}
+
+function squashDrillKey(value: string): string {
+  return findSquashDrillByName(value)?.id ?? normalizeSquashDrillKey(value)
+}
+
+function canonicalSquashSignature(session: CoachSessionProposal): string {
+  return getSquashSessionDrillKeys(session)
+    .sort((left, right) => left.localeCompare(right))
+    .join('|')
+}
+
+function hasCanonicalSquashRotation(session: CoachSessionProposal, blockId: string): boolean {
+  const marker = session.metadata?.planBuilderSquashRotation
+  return marker?.blockId === blockId && marker.signature === canonicalSquashSignature(session)
+}
+
+function getSquashSessionDrillKeys(session: CoachSessionProposal): string[] {
+  return extractSquashDrillNames(session).map(squashDrillKey).filter(Boolean)
+}
+
+function collectSquashDrillKeys(sessions: CoachSessionProposal[]): Set<string> {
+  return new Set(sessions.flatMap(getSquashSessionDrillKeys))
 }
 
 // `diversifyDuplicateSquashSessions` rewrites a session's drills but leaves its
@@ -1501,75 +1805,6 @@ function buildSquashObjectiveFromKind(kind: SquashSessionKind): string {
   if (kind === 'shadows') return 'Mejorar salidas, primer paso y desplazamiento sin pelota.'
   if (kind === 'technical') return 'Afinar ejecución técnica en situaciones controladas.'
   return 'Combinar movimiento y precisión en cancha sin marcador.'
-}
-
-// Postcondition, not another best-effort pass: the Week Creator validator fails
-// the entire week when two squash sessions share a drill signature, so this runs
-// after every pass that can rewrite squash content and guarantees the invariant
-// the validator checks. Match sessions rotate through their remaining drill
-// variants first, so the phase keeps the competitive exposure it requires.
-function enforceSquashSignatureUniqueness(
-  sessions: CoachSessionProposal[],
-  context: RepairContext,
-  meta: RepairMeta,
-): void {
-  const squashSessions = sessions.filter((session) => session.sessionType === 'squash')
-  if (squashSessions.length < 2) return
-
-  const seen = new Set<string>()
-  const usedDrills = extractRecentSquashDrills(context.previousWeek)
-  let repairedCount = 0
-
-  for (const session of squashSessions) {
-    const signature = buildSquashDrillSignature(session)
-    if (!signature) continue
-    if (!seen.has(signature)) {
-      seen.add(signature)
-      usedDrills.push(...extractSquashDrillNames(session))
-      continue
-    }
-
-    const mode = session.squashDetails?.sessionMode
-    if (mode === 'competition_match' || mode === 'practice_match') {
-      const variantCount = mode === 'competition_match'
-        ? COMPETITION_MATCH_VARIANTS.length
-        : PRACTICE_MATCH_VARIANTS.length
-      let rotated = false
-      for (let offset = 1; offset < variantCount; offset++) {
-        applySquashMatchDetails(session, mode, context.week.weekIndex + offset)
-        const rotatedSignature = buildSquashDrillSignature(session)
-        if (rotatedSignature && !seen.has(rotatedSignature)) {
-          seen.add(rotatedSignature)
-          usedDrills.push(...extractSquashDrillNames(session))
-          rotated = true
-          break
-        }
-      }
-      if (rotated) {
-        recordRepair(meta, 'corrective', sessionKeyOf(session))
-        repairedCount++
-        continue
-      }
-    }
-
-    // Every match variant is taken: fall back to rebuilding this session as
-    // non-match content, which realigns its title/objective too.
-    const rebuilt = rebuildSquashDetailsAvoidingDuplicates(session, context, usedDrills, seen)
-    const nextSignature = buildSquashDrillSignature(session)
-    if (nextSignature) seen.add(nextSignature)
-    usedDrills.push(...extractSquashDrillNames(session))
-    if (rebuilt) {
-      recordRepair(meta, 'corrective', sessionKeyOf(session))
-      repairedCount++
-    }
-  }
-
-  if (repairedCount > 0) {
-    meta.warnings.push({
-      code: 'squash_duplicate_signature_enforced',
-      message: `Se diferenciaron ${repairedCount} sesiones de squash que habían quedado con los mismos drills.`,
-    })
-  }
 }
 
 function buildSquashDrillSignature(session: CoachSessionProposal): string | undefined {
@@ -2704,6 +2939,7 @@ function mapStrengthPhase(phase: string): string {
   return phase
 }
 
+/** @deprecated Usar `getWeekIndexInBlock` con los descriptores completos del plan. */
 export function computeWeekIndexInBlock(input: {
   planPhases?: Array<{ startWeekIndex: number; endWeekIndex: number }>
   weekIndex: number
@@ -2717,13 +2953,23 @@ export function computeWeekIndexInBlock(input: {
 }
 
 function getWeekIndexInBlock(context: RepairContext): number {
-  return computeWeekIndexInBlock({
-    planPhases: context.plan.phases?.map((phase) => ({
-      startWeekIndex: phase.startWeekIndex,
-      endWeekIndex: phase.endWeekIndex,
-    })),
-    weekIndex: context.week.weekIndex,
-  })
+  const positions = resolveBlockPositions(getPlanPhaseDescriptors(context), getPlanWeekDescriptors(context))
+  return positions.get(context.week.weekIndex)?.indexInBlock ?? 0
+}
+
+function getPlanWeekDescriptors(context: RepairContext): readonly PlanWeekDescriptor[] {
+  return context.planWeekDescriptors?.length
+    ? context.planWeekDescriptors
+    : [
+        { weekIndex: context.week.weekIndex, phase: context.week.phase },
+        ...(context.previousWeek && context.previousWeek.weekIndex !== context.week.weekIndex
+          ? [{ weekIndex: context.previousWeek.weekIndex, phase: context.previousWeek.phase }]
+          : []),
+      ]
+}
+
+function getPlanPhaseDescriptors(context: RepairContext): TrainingPlan['phases'] {
+  return context.plan.phases ?? []
 }
 
 function mapSubtypeToDesiredKind(subtype?: string) {

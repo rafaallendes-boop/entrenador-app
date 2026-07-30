@@ -40,6 +40,18 @@ function repairBlock(completePlans) {
   }
 }
 
+function squashSignatureFailureBlock(plans) {
+  const weeks = plans.flatMap((plan) => plan.weeks)
+  const affectedWeeks = weeks.filter((week) => (week.squashSignatureUniquenessFailureAttemptCount ?? 0) > 0)
+  return {
+    attempts: weeks.reduce((sum, week) => sum + (week.squashSignatureUniquenessFailureAttemptCount ?? 0), 0),
+    weeks: affectedWeeks.length,
+    plans: plans.filter((plan) => plan.weeks.some(
+      (week) => (week.squashSignatureUniquenessFailureAttemptCount ?? 0) > 0,
+    )).length,
+  }
+}
+
 /**
  * El reporte DESCRIBE, no propone: no emite divisor ni umbral calculado. §5.3
  * prohíbe recalibrar por variante y una derivación automática invita a eso.
@@ -70,6 +82,7 @@ export function buildReport(artifact) {
       wallClockMs: summarizeLatency(allWeeks.map((week) => week.wallClockMs)),
     },
     repair: repairBlock(completePlans),
+    squashSignatureFailures: squashSignatureFailureBlock(artifact.plans),
     byScenario: Object.fromEntries(
       [...new Set(artifact.plans.map((plan) => plan.scenarioKey))].map((scenarioKey) => [
         scenarioKey,
@@ -102,6 +115,7 @@ export function renderReport(report) {
   lines.push(formatDistribution('countRepairsV2 por semana puntuable', report.repair.weekCountRepairsV2))
   lines.push(formatDistribution('countRepairsV2 por plan completo', report.repair.planCountRepairsV2))
   lines.push(formatDistribution('corrective+structural por semana (warning)', report.repair.weekWarningInput))
+  lines.push(`  signature_uniqueness_unresolved: intentos=${report.squashSignatureFailures.attempts} semanas=${report.squashSignatureFailures.weeks} planes=${report.squashSignatureFailures.plans}`)
 
   lines.push('', '  Latencia por semana (secundario):')
   lines.push(formatLatency('durationMs (proveedor, todos los intentos)', report.weeklyLatency.durationMs))

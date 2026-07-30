@@ -227,9 +227,9 @@ que es la **única dueña del estado final de los drills**:
 - **Absorbe** `diversifyDuplicateSquashSessions` y
   `enforceSquashSignatureUniqueness`: son los dos mutadores de **contenido**, y
   pasan a ser aspectos de la normalización única.
-- La **unicidad de firmas es una postcondición** de esa misma normalización, no un
-  paso posterior que pueda deshacerla. Su carácter **absoluto o condicional**
-  depende de cómo se trate el fallo correctivo de §6.1.
+- La **unicidad de firmas es una postcondición absoluta** de esa misma
+  normalización, no un paso posterior que pueda deshacerla. Se sostiene
+  fail-closed: si no se alcanza, la candidata se rechaza (§6.3).
 
 **Dos razones**, con la misma semántica que §4.5 del spec de fuerza:
 
@@ -318,7 +318,7 @@ No es hipotético. `COMPETITION_MATCH_VARIANTS` y `PRACTICE_MATCH_VARIANTS`
 (`repairWeek.ts:1069-1074`) contienen **una sola variante cada uno**, así que dos
 sesiones de match en la misma semana comparten firma **por construcción** y no
 existe alternativa dentro de `category: 'match'`. El comportamiento actual resuelve
-eso reconstruyendo la segunda sesión como **no-match** (`repairWeek.ts:1070`).
+eso reconstruyendo la segunda sesión como **no-match** (`repairWeek.ts:1555`).
 
 Por eso las dos razones tienen **reglas de agotamiento distintas**:
 
@@ -328,21 +328,63 @@ Por eso las dos razones tienen **reglas de agotamiento distintas**:
 | Si no hay candidato | **omite**, deja el original, suma `squashDrillRotationOmittedCount` | **relaja** según jerarquía explícita |
 | Postcondición estructural §3.1 | obligatoria | no exigible |
 
-**Jerarquía de relajación de la correctiva.** Debe definirse explícitamente y ser
-**compatible con el comportamiento actual** —incluida la reconstrucción de la
-segunda sesión de match como no-match—, relajando primero el eje menos costoso
-deportivamente y **nunca** los hard constraints de seguridad, partner y exposición
-competitiva.
+### 6.2 Jerarquía de relajación de la correctiva (congelada)
 
-**Fallo correctivo explícito.** Si aun relajando no consigue firma única, produce
-un **fallo correctivo**, que **no** puede contarse como omisión de política:
-contaminaría exactamente la decisión que §6 quiere dejar medible.
+Se aplica en orden y se detiene en el primer nivel que produzca firma única:
 
-**Consecuencia sobre §3.3.** La unicidad de firmas solo puede declararse
-postcondición **absoluta** si ese fallo **impide aceptar la semana**. Si el fallo
-es tolerado, la unicidad es una postcondición **condicional** —"se cumple salvo
-fallo correctivo reportado"— y así debe escribirse en el plan. Esta es una
-decisión de producto que el plan debe resolver antes de implementar, no durante.
+1. Misma `category` **y** mismo kind.
+2. Mismo kind, **relajando `category`**.
+3. Misma `category`, **relajando kind**.
+4. Cualquier `category`/kind permitido por los hard constraints, **reconstruyendo
+   la identidad semántica** de la sesión (título, objetivo, `subtype`,
+   `sessionKind`). Es el nivel donde hoy cae la segunda sesión de match
+   (`repairWeek.ts:1555`).
+5. Si tampoco hay resultado único → **fallo correctivo fail-closed** (§6.3).
+
+**Nunca se relajan:** seguridad, fase/fatiga, disponibilidad de partner y
+exposición competitiva.
+
+**La exposición competitiva se evalúa sobre la semana final**, no sobre la sesión
+aislada: convertir la segunda sesión de match en no-match es válido **solo si la
+exposición requerida permanece** en la semana resultante.
+
+### 6.3 Fallo correctivo: fail-closed (congelado)
+
+Si la jerarquía se agota sin firma única, la normalización **no acepta** la
+semana:
+
+- Rechaza la candidata **antes** de persistirla como lista, y entra al **flujo de
+  retry existente**.
+- Si se agotan los intentos, la semana **termina en error**.
+- **Nunca** se acepta silenciosamente una firma duplicada.
+
+Código estable para el fallo: **`quality.squash.signature_uniqueness_unresolved`**.
+
+Reglas duras sobre ese código:
+
+- **No** incrementa `squashDrillRotationOmittedCount` — contaminaría la decisión de
+  ampliar `category` que §6 existe para dejar medible.
+- Es **distinguible** en la telemetría de retry/error, no se mezcla con otras
+  clases de fallo.
+- No es un warning de calidad tolerado: es un rechazo de la candidata.
+
+**Fail-closed no ocurre solo: hay que apagar el fallback.** El loop ejecuta
+`buildLocalFallbackWeek` cuando el resultado no tiene sesiones
+(`asyncGenerationLoop.ts:1112`, `if (result.sessions.length === 0)`). Sin tocar
+eso, "se agotan los intentos → semana en error" **no sucede**: se produciría una
+semana de fallback en silencio, que es exactamente el resultado que §6.3 quiere
+impedir. Por lo tanto se congela que este código:
+
+1. **Conserva su `errorClass` específico** y **no** se colapsa a `validation`.
+2. Es **no-fallback-eligible**.
+3. Tras agotar los reintentos, **salta el fallback local** y persiste la semana
+   como **error**.
+
+Tests obligatorios: propaga el código exacto sin colapsarlo; **consume** los
+reintentos; **no** invoca `buildLocalFallbackWeek`; y la semana termina en error.
+
+Con esto, la unicidad de firmas de §3.3 es postcondición **absoluta**, sin
+condicionales, y §9 y §11 pueden exigirla sin matices.
 
 ## 7. Taxonomía
 
@@ -366,7 +408,7 @@ funciones—: cuando corrige un duplicado exacto realmente observado sigue siend
 `corrective` y sigue entrando en `countRepairsV2`. No se esconden reparaciones
 genuinas detrás de los contadores nuevos.
 
-El **fallo correctivo** de §6.1 se reporta aparte y **nunca** como omisión de
+El **fallo correctivo** de §6.3 se reporta aparte y **nunca** como omisión de
 política.
 
 **No se agrega una cuarta categoría a `RepairTaxonomyV2`.**
@@ -390,15 +432,44 @@ Agrega, estampados en `generationMeta` durante la generación:
 Misma regla de nulos que el spec hermano: `null` es **"no aplica"** (semana sin
 sesiones de squash, semana 0 del bloque); `0` es **"se midió y dio cero"**.
 
+### 8.1 Derivada al cerrar el plan: incidencia del fallo fail-closed
+
+Sin esto, **la corrida no puede medir §6.3**. Los intentos guardan `errorClass`,
+pero el artefacto **no conserva errores por intento**: si el primer intento falla
+por unicidad y el segundo funciona, el evento **desaparece del reporte** y el
+riesgo operativo de §11 queda invisible justo cuando más importa observarlo.
+
+Campo derivado en `buildWeekRows()` (`scripts/loadtest-plan-builder.mjs:168`), que
+ya agrega todos los intentos de cada semana:
+
+| Campo | Tipo | Cálculo |
+|---|---|---|
+| `squashSignatureUniquenessFailureAttemptCount` | número \| `null` | intentos de esa semana cuyo `errorClass` sea `quality.squash.signature_uniqueness_unresolved` |
+
+Semántica en el artefacto:
+
+- **`0`** — telemetría de intentos disponible y **ningún** intento afectado.
+- **`null`** — telemetría de intentos **no disponible**. No es lo mismo que cero.
+
+Entra en la **allowlist de `toWeekRow`** (`artifact.mjs:83`), como todo lo demás:
+es un número, no contenido.
+
+El **reporte** agrega por **intentos**, **semanas** y **planes** afectados. Los
+tres, no uno: sin esa separación no se distingue un retry repetido sobre una misma
+semana de una incidencia extendida sobre varios planes, que son problemas de
+tamaño muy distinto.
+
 ## 9. Tests
 
 Fixtures **deterministas, sin LLM**. La aceptación funcional vive acá.
 
 **Eje preservado (§3.1):** el sustituto conserva `category` **y**
 `resolveSquashDrillKind()` del original; `focus` influye en el orden pero **no**
-excluye candidatos. Postcondición: tras reconstruir `blocks`, el **multiconjunto de
-tipos de bloque** y el **`sessionKind` efectivo** no cambian. Caso testigo
-obligatorio: sesión `mixed` cuyas partes deben seguir todas presentes.
+excluye candidatos. Postcondición **de la razón de política**: se conserva el
+**multiconjunto de `resolveSquashDrillKind()` por drill/slot**, y en consecuencia
+el **conjunto** de kinds de `blocks` y el **`sessionKind` efectivo** (un solo kind
+→ ese kind; más de uno → `mixed`). Caso testigo obligatorio: sesión `mixed` cuyas
+partes deben seguir todas presentes.
 
 **Semana 0 (§3):** dos casos, no uno.
 
@@ -415,12 +486,33 @@ restricciones de contexto, así que van sus propios tests.
 - Taper, fatiga y exposición competitiva **nunca** reintroducen un candidato que
   los filtros actuales habían excluido.
 
-**Agotamiento y fallo (§6.1):** con pool estricto vacío, la política **omite** y
-suma `squashDrillRotationOmittedCount`; la correctiva **relaja** según su
-jerarquía. Caso testigo obligatorio: **dos sesiones de match en la misma semana**,
-donde la única variante disponible hace la firma única imposible dentro de
-`category: 'match'`. El fallo correctivo **no** incrementa el contador de
-omisiones.
+**Agotamiento y fallo (§6.1-6.3):** con pool estricto vacío, la política **omite** y
+suma `squashDrillRotationOmittedCount`; la correctiva **relaja** siguiendo los
+cinco niveles de §6.2 en orden. Caso testigo obligatorio: **dos sesiones de match
+en la misma semana**, donde la única variante disponible hace la firma única
+imposible dentro de `category: 'match'` y el nivel 4 reconstruye la segunda como
+no-match.
+
+**Fail-closed (§6.3):** cuando la jerarquía se agota, la candidata se **rechaza**
+—no se persiste como lista— con
+`quality.squash.signature_uniqueness_unresolved`, y **no** incrementa
+`squashDrillRotationOmittedCount`. Test explícito de que una firma duplicada
+**nunca** sobrevive a la normalización, que es precisamente lo que hoy sí puede
+pasar.
+
+**No-fallback-eligible (§6.3):** el código se propaga **exacto**, sin colapsar a
+`validation`; **consume** reintentos; **no** invoca `buildLocalFallbackWeek`; y la
+semana termina en **error**. Sin este test, fail-closed degrada a "semana de
+fallback silenciosa".
+
+**Contador de incidencia (§8.1):** un fallo **recuperado por retry** —primer
+intento falla, segundo funciona— **sí** incrementa
+`squashSignatureUniquenessFailureAttemptCount`. Y `0` (medido, sin incidencia) se
+distingue de `null` (telemetría de intentos ausente).
+
+**Exposición competitiva sobre la semana final (§6.2):** el nivel 4 no puede
+eliminar la exposición requerida; test con una semana donde convertir la segunda
+sesión de match dejaría la semana sin la exposición mínima.
 
 **Coordenada y exclusión (§3.2):** dos sesiones de squash de la misma semana, y
 dos drills de la misma `category` dentro de una misma sesión, producen
@@ -486,6 +578,10 @@ La corrida reporta:
   condiciones** ataba (§1.2).
 - Rotaciones aplicadas y **omitidas** (§6), que deciden si hace falta el
   follow-up de ampliar `category`.
+- **Incidencia de `quality.squash.signature_uniqueness_unresolved`** (§8.1),
+  agregada por intentos, semanas y planes. **Un fallo recuperado por retry debe
+  aparecer igual en el contador**: es el caso que hoy se perdería, y el que decide
+  si tolerar vs rechazar vuelve a estar sobre la mesa (§11).
 - `countRepairsV2` y `high_repair_count` **sin inflación atribuible a la
   política**.
 - **Deltas descriptivos** de score y latencia.
@@ -499,8 +595,17 @@ violaciones, sin contenido; este spec no lo incluye.
 ## 11. Riesgos y límites
 
 - **Reduce colisiones, no las elimina.** La condición B es una propiedad **global
-  del bloque** y la semana 0 queda preservada: el mecanismo no puede garantizar
-  que ningún drill alcance el 75%.
+  del bloque** y la semana 0 queda **preservada de la razón de política** —la
+  correctiva sí opera ahí—: el mecanismo no puede garantizar que ningún drill
+  alcance el 75%.
+- **Fail-closed crea una invariante que hoy no existe.** El código actual hace
+  `if (nextSignature) seen.add(nextSignature)` **sin comprobar** que la firma no
+  estuviera ya en `seen` (`repairWeek.ts:1557-1559`), así que hoy una firma
+  duplicada **puede sobrevivir en silencio**. Adoptar §6.3 no formaliza una
+  invariante vigente: la establece por primera vez, y puede hacer fallar semanas
+  que hoy se entregan con firmas duplicadas. Es el riesgo de mayor impacto
+  operativo del spec, y la corrida compartida debe reportar la incidencia de
+  `quality.squash.signature_uniqueness_unresolved`.
 - **Ataca dos condiciones a ciegas.** Hasta la corrida no sabremos cuál ataba
   (§1.2). Es posible que una de las dos ya estuviera holgada y el esfuerzo se
   concentre donde no hacía falta.

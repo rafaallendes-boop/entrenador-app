@@ -100,7 +100,13 @@ interface BatchWeekExtraction extends SerializedRepairTaxonomy {
   movedSessionCount?: number
   addedFallbackCount?: number
   filteredSportCount?: number
+  strengthAccessoryRotationActionCount?: number
+  strengthAccessoryRotationSessionsAffected?: number
+  squashDrillRotationActionCount?: number
+  squashDrillRotationSessionsAffected?: number
+  squashDrillRotationOmittedCount?: number
   repairWarnings?: Array<{ code: string; message: string }>
+  errorClass?: string
 }
 
 interface ResolvedWeekInput extends SerializedRepairTaxonomy {
@@ -124,6 +130,12 @@ interface ResolvedWeekInput extends SerializedRepairTaxonomy {
   movedSessionCount?: number
   addedFallbackCount?: number
   filteredSportCount?: number
+  previousWeekContextSource?: 'none' | 'shell' | 'ready'
+  strengthAccessoryRotationActionCount?: number
+  strengthAccessoryRotationSessionsAffected?: number
+  squashDrillRotationActionCount?: number
+  squashDrillRotationSessionsAffected?: number
+  squashDrillRotationOmittedCount?: number
   repairWarnings?: Array<{ code: string; message: string }>
   stageTimings?: StageTiming[]
   errorClass?: string
@@ -133,6 +145,10 @@ interface ResolvedWeekInput extends SerializedRepairTaxonomy {
 interface WeekBatchChunkRouter {
   push: (chunk: string) => void
 }
+
+const NON_FALLBACK_ELIGIBLE_ERROR_CLASSES = new Set([
+  'quality.squash.signature_uniqueness_unresolved',
+])
 
 function createBatchId(firstWeekIndex: number): string {
   return `batch-${firstWeekIndex}-${Date.now()}`
@@ -221,6 +237,12 @@ function makeResolvedWeek(
       movedSessionCount: input.movedSessionCount,
       addedFallbackCount: input.addedFallbackCount,
       filteredSportCount: input.filteredSportCount,
+      previousWeekContextSource: input.previousWeekContextSource,
+      strengthAccessoryRotationActionCount: input.strengthAccessoryRotationActionCount,
+      strengthAccessoryRotationSessionsAffected: input.strengthAccessoryRotationSessionsAffected,
+      squashDrillRotationActionCount: input.squashDrillRotationActionCount,
+      squashDrillRotationSessionsAffected: input.squashDrillRotationSessionsAffected,
+      squashDrillRotationOmittedCount: input.squashDrillRotationOmittedCount,
       ...copySerializedRepairTaxonomy(input),
       repairWarnings: input.repairWarnings,
       stageTimings: input.stageTimings,
@@ -235,6 +257,7 @@ function makeDeterministicResolvedWeek(input: {
   plan: TrainingPlan
   week: TrainingPlanWeek
   previousWeek?: TrainingPlanWeek
+  planWeekDescriptors: readonly { weekIndex: number; phase: string }[]
   profile: AthleteProfile
   wizardConfig: PlanWizardConfig
   strategy: 'single' | 'pairs'
@@ -245,6 +268,7 @@ function makeDeterministicResolvedWeek(input: {
     plan: input.plan,
     week: input.week,
     previousWeek: input.previousWeek,
+    planWeekDescriptors: input.planWeekDescriptors,
     profile: input.profile,
     wizardConfig: input.wizardConfig,
   })
@@ -266,6 +290,11 @@ function makeDeterministicResolvedWeek(input: {
     movedSessionCount: result.meta.movedSessionCount,
     addedFallbackCount: result.meta.addedFallbackCount,
     filteredSportCount: result.meta.filteredSportCount,
+    strengthAccessoryRotationActionCount: result.meta.strengthAccessoryRotationActionCount,
+    strengthAccessoryRotationSessionsAffected: result.meta.strengthAccessoryRotationSessionsAffected,
+    squashDrillRotationActionCount: result.meta.squashDrillRotationActionCount,
+    squashDrillRotationSessionsAffected: result.meta.squashDrillRotationSessionsAffected,
+    squashDrillRotationOmittedCount: result.meta.squashDrillRotationOmittedCount,
     repairWarnings: result.meta.warnings,
     generationSource: 'deterministic',
   })
@@ -275,6 +304,7 @@ function makeLocalFallbackResolvedWeek(input: {
   plan: TrainingPlan
   week: TrainingPlanWeek
   previousWeek?: TrainingPlanWeek
+  planWeekDescriptors: readonly { weekIndex: number; phase: string }[]
   profile: AthleteProfile
   wizardConfig: PlanWizardConfig
   attempts: number
@@ -295,6 +325,7 @@ function makeLocalFallbackResolvedWeek(input: {
     plan: input.plan,
     week: input.week,
     previousWeek: input.previousWeek,
+    planWeekDescriptors: input.planWeekDescriptors,
     profile: input.profile,
     wizardConfig: input.wizardConfig,
   })
@@ -339,6 +370,11 @@ function makeLocalFallbackResolvedWeek(input: {
     movedSessionCount: fallback.meta.movedSessionCount,
     addedFallbackCount: fallback.meta.addedFallbackCount,
     filteredSportCount: fallback.meta.filteredSportCount,
+    strengthAccessoryRotationActionCount: fallback.meta.strengthAccessoryRotationActionCount,
+    strengthAccessoryRotationSessionsAffected: fallback.meta.strengthAccessoryRotationSessionsAffected,
+    squashDrillRotationActionCount: fallback.meta.squashDrillRotationActionCount,
+    squashDrillRotationSessionsAffected: fallback.meta.squashDrillRotationSessionsAffected,
+    squashDrillRotationOmittedCount: fallback.meta.squashDrillRotationOmittedCount,
     repairWarnings: [
       { code: 'local_plan_fallback', message: `Se generó una semana base local después de ${input.attempts} intento(s) fallidos del proveedor.` },
       ...fallback.meta.warnings,
@@ -366,6 +402,7 @@ export async function generateSingleWeekWithRetry(
   plan: TrainingPlan,
   week: TrainingPlanWeek,
   previousWeek: TrainingPlanWeek | undefined,
+  planWeekDescriptors: readonly { weekIndex: number; phase: string }[],
   profile: AthleteProfile,
   wizardConfig: PlanWizardConfig,
   onChunk: ((weekIndex: number, chunk: string) => void) | undefined,
@@ -387,6 +424,7 @@ export async function generateSingleWeekWithRetry(
       plan,
       week,
       previousWeek,
+      planWeekDescriptors,
       profile,
       wizardConfig,
       temperature: attempt === 1 ? 0.4 : 0.25,
@@ -429,8 +467,43 @@ export async function generateSingleWeekWithRetry(
         movedSessionCount: result.meta.movedSessionCount,
         addedFallbackCount: result.meta.addedFallbackCount,
         filteredSportCount: result.meta.filteredSportCount,
+        strengthAccessoryRotationActionCount: result.meta.strengthAccessoryRotationActionCount,
+        strengthAccessoryRotationSessionsAffected: result.meta.strengthAccessoryRotationSessionsAffected,
+        squashDrillRotationActionCount: result.meta.squashDrillRotationActionCount,
+        squashDrillRotationSessionsAffected: result.meta.squashDrillRotationSessionsAffected,
+        squashDrillRotationOmittedCount: result.meta.squashDrillRotationOmittedCount,
         repairWarnings: result.meta.repairWarnings,
         stageTimings: result.meta.stageTimings,
+        errorClass: result.meta.errorClass,
+        generationSource: 'ai',
+      })
+    }
+
+    if (NON_FALLBACK_ELIGIBLE_ERROR_CLASSES.has(result.meta.errorClass ?? '')) {
+      return makeResolvedWeek(week, [], {
+        repairTaxonomyVersion: result.meta.repairTaxonomyVersion,
+        hydrationActionCount: result.meta.hydrationActionCount,
+        correctiveActionCount: result.meta.correctiveActionCount,
+        structuralActionCount: result.meta.structuralActionCount,
+        hydratedSessionsAffected: result.meta.hydratedSessionsAffected,
+        correctedSessionsAffected: result.meta.correctedSessionsAffected,
+        structurallyRepairedSessionsAffected: result.meta.structurallyRepairedSessionsAffected,
+        attempts,
+        provider: providerName,
+        model,
+        requestClass: 'plan_builder_week',
+        lastError,
+        durationMs,
+        chunkCount,
+        strategy: 'single',
+        rawSessionCount,
+        droppedSessionCount,
+        strengthAccessoryRotationActionCount: result.meta.strengthAccessoryRotationActionCount,
+        strengthAccessoryRotationSessionsAffected: result.meta.strengthAccessoryRotationSessionsAffected,
+        squashDrillRotationActionCount: result.meta.squashDrillRotationActionCount,
+        squashDrillRotationSessionsAffected: result.meta.squashDrillRotationSessionsAffected,
+        squashDrillRotationOmittedCount: result.meta.squashDrillRotationOmittedCount,
+        repairWarnings: result.meta.repairWarnings,
         errorClass: result.meta.errorClass,
         generationSource: 'ai',
       })
@@ -445,6 +518,7 @@ export async function generateSingleWeekWithRetry(
     plan,
     week,
     previousWeek,
+    planWeekDescriptors,
     profile,
     wizardConfig,
     attempts,
@@ -478,6 +552,7 @@ async function generateWeekPair(
   plan: TrainingPlan,
   weeks: [TrainingPlanWeek, TrainingPlanWeek],
   previousWeek: TrainingPlanWeek | undefined,
+  planWeekDescriptors: readonly { weekIndex: number; phase: string }[],
   profile: AthleteProfile,
   wizardConfig: PlanWizardConfig,
   onChunk: ((weekIndex: number, chunk: string) => void) | undefined,
@@ -564,7 +639,15 @@ async function generateWeekPair(
       const targetWeek = weeks.find((week) => week.weekStartDate === targetWeekStart)
       if (!targetWeek) continue
       const diagnostic = pickCreateWeekDiagnostic(normalized, targetWeekStart, action)
-      const evaluation = validateGeneratedWeekAction(plan, targetWeek, profile, action, diagnostic, previousWeek)
+      const evaluation = validateGeneratedWeekAction(
+        plan,
+        targetWeek,
+        profile,
+        action,
+        diagnostic,
+        previousWeek,
+        planWeekDescriptors,
+      )
       weekResults.set(targetWeekStart, {
         repairTaxonomyVersion: evaluation.repairTaxonomyVersion,
         hydrationActionCount: evaluation.hydrationActionCount,
@@ -583,7 +666,13 @@ async function generateWeekPair(
         movedSessionCount: evaluation.movedSessionCount,
         addedFallbackCount: evaluation.addedFallbackCount,
         filteredSportCount: evaluation.filteredSportCount,
+        strengthAccessoryRotationActionCount: evaluation.strengthAccessoryRotationActionCount,
+        strengthAccessoryRotationSessionsAffected: evaluation.strengthAccessoryRotationSessionsAffected,
+        squashDrillRotationActionCount: evaluation.squashDrillRotationActionCount,
+        squashDrillRotationSessionsAffected: evaluation.squashDrillRotationSessionsAffected,
+        squashDrillRotationOmittedCount: evaluation.squashDrillRotationOmittedCount,
         repairWarnings: evaluation.repairWarnings,
+        errorClass: evaluation.errorClass,
       })
     }
 
@@ -682,6 +771,10 @@ export async function generatePlanWeeks(input: GeneratePlanWeeksInput): Promise<
         plan: input.plan,
         week,
         previousWeek,
+        planWeekDescriptors: input.weeks.map((candidate) => ({
+          weekIndex: candidate.weekIndex,
+          phase: candidate.phase,
+        })),
         profile: input.profile,
         wizardConfig: input.wizardConfig,
         strategy: 'single',
@@ -706,6 +799,7 @@ export async function generatePlanWeeks(input: GeneratePlanWeeksInput): Promise<
         input.plan,
         batchWeeks,
         previousWeek,
+        input.weeks.map((candidate) => ({ weekIndex: candidate.weekIndex, phase: candidate.phase })),
         input.profile,
         input.wizardConfig,
         input.onChunk,
@@ -738,7 +832,13 @@ export async function generatePlanWeeks(input: GeneratePlanWeeksInput): Promise<
             movedSessionCount: batchWeekResult.movedSessionCount,
             addedFallbackCount: batchWeekResult.addedFallbackCount,
             filteredSportCount: batchWeekResult.filteredSportCount,
+            strengthAccessoryRotationActionCount: batchWeekResult.strengthAccessoryRotationActionCount,
+            strengthAccessoryRotationSessionsAffected: batchWeekResult.strengthAccessoryRotationSessionsAffected,
+            squashDrillRotationActionCount: batchWeekResult.squashDrillRotationActionCount,
+            squashDrillRotationSessionsAffected: batchWeekResult.squashDrillRotationSessionsAffected,
+            squashDrillRotationOmittedCount: batchWeekResult.squashDrillRotationOmittedCount,
             repairWarnings: batchWeekResult.repairWarnings,
+            errorClass: batchWeekResult.errorClass,
             generationSource: 'ai',
           })
           input.onWeekUpdate?.(resolved)
@@ -756,6 +856,7 @@ export async function generatePlanWeeks(input: GeneratePlanWeeksInput): Promise<
             input.plan,
             batchWeekResult.week,
             previousWeek,
+            input.weeks.map((candidate) => ({ weekIndex: candidate.weekIndex, phase: candidate.phase })),
             input.profile,
             input.wizardConfig,
             input.onChunk,
@@ -774,6 +875,10 @@ export async function generatePlanWeeks(input: GeneratePlanWeeksInput): Promise<
           plan: input.plan,
           week: batchWeekResult.week,
           previousWeek,
+          planWeekDescriptors: input.weeks.map((candidate) => ({
+            weekIndex: candidate.weekIndex,
+            phase: candidate.phase,
+          })),
           profile: input.profile,
           wizardConfig: input.wizardConfig,
           attempts: 1,
@@ -807,6 +912,7 @@ export async function generatePlanWeeks(input: GeneratePlanWeeksInput): Promise<
       input.plan,
       week,
       previousWeek,
+      input.weeks.map((candidate) => ({ weekIndex: candidate.weekIndex, phase: candidate.phase })),
       input.profile,
       input.wizardConfig,
       input.onChunk,

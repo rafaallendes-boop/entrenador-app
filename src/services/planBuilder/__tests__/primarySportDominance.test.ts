@@ -39,6 +39,7 @@ function makePeakSquashContext(): RepairContext {
     profile: { id: 'default', updatedAt: 0, mainGoal: 'Nacional de squash' } as never,
     wizardConfig: (plan as { wizardConfig: unknown }).wizardConfig as never,
     previousWeek: undefined,
+    planWeekDescriptors: [{ weekIndex: 4, phase: 'peak' }],
   }
 }
 

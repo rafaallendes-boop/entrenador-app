@@ -1,6 +1,6 @@
 # RallyIQ - Project Review and Roadmap
 
-Actualizado: 2026-07-26
+Actualizado: 2026-07-30
 
 Base de contraste:
 
@@ -11,7 +11,7 @@ Base de contraste:
 - **Coach Biblioteca + Planificacion completa desplegadas (2026-07-18/19):** edicion de sesiones, Biblioteca de plantillas account-scoped, aplicar/guardar plantillas para cualquier atleta/dia, Dexie v18, backup v4 y sync Supabase por fila con LWW/delete-wins y tombstones versionados. `015_session_templates.sql` fue aplicada y el bundle desplegado; falta el smoke autenticado en produccion.
 - **Hardening de fechas y semanas (2026-07-19):** conteos de semanas, ventanas de Plan Builder, insights de fatiga y filtros semanales usan dias calendario en vez de milisegundos para no fallar al cruzar DST. Se agrego serializacion JSON canonica para comparar estructuras sin reescrituras redundantes.
 - **Fase 0 de medicion del Plan Builder cerrada, incluidos sus pendientes operativos (2026-07-25/26):** control aceptado y versionado con SHA-256 `6c45885a870cf7e019906a0b4d786e828b2653fe1643f95d436be3aa0ee94d7a`; calibracion congelada, `quality_version = 2` productiva, bundle desplegado y smoke de produccion ejecutado el 2026-07-26 con una corrida real verificada en `plan_generation_jobs`.
-- **Conversaciones del chat implementadas (2026-07-26):** drawer para ver, retomar, buscar y borrar conversaciones, con rotacion por dia calendario y continuidad explicita al retomar un hilo viejo. El indice se deriva de `chatMessages` con scope estricto por atleta, **sin migracion Dexie ni Supabase ni bump de backup**. Verificado localmente (lint + 305 archivos / 2252 tests + build); **pendiente smoke en dev, commit y deploy** (`docs/superpowers/smokes/2026-07-26-chat-conversations-dev-smoke.md`).
+- **Rotacion coordinada del Plan Builder implementada localmente (2026-07-30):** identidad de bloque unica, rotacion determinista de fuerza y squash, fail-closed para firmas de squash y telemetria allowlisted estan en codigo y cubiertos por pruebas. Aun no se corrio el smoke `high` pagado ni se desplego esta tanda: el preflight exige un arbol limpio y la autorizacion del owner.
 - **Fase 0 de coaches landing completada (2026-07-13):** rutas públicas reales (no AuthGate fallbacks), las cuatro páginas legales publicadas como rutas (`/terms`, `/privacy`, `/health-disclaimer`, y disclamer Whoop), landing `/coaches` en modo prelanzamiento con estructura de 3 planes, metadata/OG cards por ruta con prerender para crawlers, deep links nativos para OAuth callback en iOS, y cierre de compartimiento entre rutas públicas. Falta aún revisión jurídica y RUT/domicilio legal antes de cobro o anuncios masivos.
 - `main` hasta `167ef6e Plan whoop y entrenador`.
 - `007` aplicado y F2 data prereqs en `6e33926`.
@@ -29,7 +29,7 @@ Base de contraste:
 
 ## Resumen Ejecutivo
 
-RallyIQ esta en una etapa donde el core ya no es el cuello de botella principal. El motor de planificacion, Plan Builder async, calidad deportiva base, athlete scope foundation, claves naturales locales por atleta, write path remoto seguro para day/week, Athlete-Aware Core, Coach F2-lite Parte 2b, Whoop v1 + Workout Auto-Complete (ambas migraciones aplicadas), Coach Workspace con roster/Planificacion/Biblioteca, y Fase 0 de coaches landing (rutas legales publicas + landing `/coaches` de prelanzamiento) ya estan construidos. La Fase 0 de medicion del Plan Builder tambien esta cerrada: `quality_version = 2` es productiva, el bundle esta desplegado y una corrida real quedo verificada en `plan_generation_jobs` el 2026-07-26. Biblioteca y Planificacion tienen `015` y deploy aplicados; queda cerrar el smoke autenticado, que pasa a ser el unico pendiente tecnico de esta tanda.
+RallyIQ esta en una etapa donde el core ya no es el cuello de botella principal. El motor de planificacion, Plan Builder async, calidad deportiva base, athlete scope foundation, claves naturales locales por atleta, write path remoto seguro para day/week, Athlete-Aware Core, Coach F2-lite Parte 2b, Whoop v1 + Workout Auto-Complete (ambas migraciones aplicadas), Coach Workspace con roster/Planificacion/Biblioteca, y Fase 0 de coaches landing (rutas legales publicas + landing `/coaches` de prelanzamiento) ya estan construidos. La Fase 0 de medicion del Plan Builder tambien esta cerrada: `quality_version = 2` es productiva, el bundle esta desplegado y una corrida real quedo verificada en `plan_generation_jobs` el 2026-07-26. La rotacion coordinada de fuerza y squash ya esta implementada localmente; falta su control `high` pagado y el deploy autorizado. Biblioteca y Planificacion tienen `015` y deploy aplicados; queda cerrar el smoke autenticado.
 
 Lo que queda antes de mostrar/cobrar con confianza se concentra en dos carriles:
 
@@ -45,7 +45,7 @@ Mi lectura como lider tecnico: el cambio principal entre hoy y hace dos dias es 
 
 ## Estado Actual En Una Frase
 
-RallyIQ ya opera multi-atleta en produccion, con Whoop readiness y Workout Auto-Complete operativos (`011`/`012` aplicados), Coach Workspace base (`/coach`) y rutas legales publicas + landing `/coaches` en vivo. `015` y Biblioteca/Planificacion ya estan desplegadas, y `quality_version = 2` quedo desplegada y verificada en `plan_generation_jobs` el 2026-07-26; el siguiente paso tecnico es el smoke autenticado de Biblioteca/Planificacion y el catalogo/picker. En paralelo siguen pendientes revision juridica formal y consentimiento biometrico de Whoop antes del primer piloto pagado.
+RallyIQ ya opera multi-atleta en produccion, con Whoop readiness y Workout Auto-Complete operativos (`011`/`012` aplicados), Coach Workspace base (`/coach`) y rutas legales publicas + landing `/coaches` en vivo. `015` y Biblioteca/Planificacion ya estan desplegadas, `quality_version = 2` quedo verificada en `plan_generation_jobs`, y la rotacion coordinada del Plan Builder queda lista para control `high`; el siguiente paso tecnico es revisar/commitear esta tanda, ejecutar ese smoke y autorizar el deploy. En paralelo siguen pendientes revision juridica formal y consentimiento biometrico de Whoop antes del primer piloto pagado.
 
 ## Porcentaje De Avance
 
@@ -269,76 +269,30 @@ Alcance parcial, deliberado y documentado: las **regeneraciones parciales** (Cas
 
 Deuda menor detectada: `OPTIMIZATION_AND_COSTS.md` proyecta costos de la era Gemini y subestima el costo real del Plan Builder en aproximadamente un orden de magnitud. Corregirlo antes de fijar el precio del piloto.
 
-### 16. Conversaciones del chat (2026-07-26)
+### 16. Plan Builder — rotacion coordinada de fuerza y squash (2026-07-30)
 
-Primer item del backlog de producto abierto el 2026-07-26, cerrado el mismo dia.
-Cierra el agujero de usabilidad mas visible del chat: hasta ahora cada "Nuevo"
-dejaba la conversacion anterior inalcanzable, aunque los datos ya estuvieran ahi.
+La correccion de repeticion dejo de depender de que la semana anterior ya este
+lista, por lo que conserva el comportamiento bajo concurrencia 3.
 
-- **Sin migraciones.** Dexie sigue en **v18**, no hay SQL nuevo y el backup no sube de version: el indice de conversaciones se **deriva** de `chatMessages`, que ya guardaba `chatSessionId`, ya sincroniza y ya entra al backup.
-- **Drawer** (`ConversationDrawer.tsx`): lista agrupada por dia (Hoy / Ayer / fecha), titulo derivado del primer mensaje significativo del usuario —recortando saludos aislados—, busqueda con debounce insensible a mayusculas y tildes, snippet resaltado, y borrado en dos toques.
-- **Rotacion por dia calendario** (`dailyRotation.ts`, `isSameDay`, no ventanas de 24 h), aplicada en los dos puntos de integracion: al entrar al chat (`loadHistory`) y antes de enviar (`sendMessage`). Continua el precedente del hardening de fechas del 2026-07-19: una ventana fija de milisegundos se equivoca al cruzar DST.
-- **Continuidad explicita** (`rotationSuspended`): retomar un hilo viejo es una decision del usuario y gana sobre la rotacion; entrar al chat de cero la resetea.
-- **Scope estricto por atleta:** toda lectura pasa por `isRowInActiveScope`, el borrado se hace por ids derivados y scope-filtrados —nunca por `chatSessionId`, que no es frontera de seguridad—, y `resetForAthleteSwitch` limpia el indice. Prohibido agrupar con `orderBy('chatSessionId').uniqueKeys()`: devolveria ids de todos los atletas.
-- **Un solo camino de hidratacion** (`loadSession` con propiedad de token y commit sincrono) para `loadHistory`, `openConversation` y la adopcion de hilo del mismo dia; la reparacion de propuestas huerfanas salio del store a `orphanProposalRepair.ts`.
-- **Scroll al match:** abrir un resultado de busqueda lleva al mensaje que coincidio, no al final del hilo.
+- `blockIdentity` unifica el bloque e indice de semana para quality review y
+  repair, incluidos planes legacy y rangos fuera de fase.
+- Fuerza usa roles explicitos: el main lift queda fuera de alcance; la politica
+  y la correccion observada se cuentan por separado y la politica no infla
+  `countRepairsV2`.
+- Squash rota drills por eje, reconstruye bloques y, si no puede resolver una
+  firma duplicada de forma segura, devuelve
+  `quality.squash.signature_uniqueness_unresolved`: consume reintentos pero no
+  puede degradar silenciosamente al fallback local.
+- Las metricas de rotacion, omisiones, solape de fuerza, variedad de squash y
+  fallos de firma llegan al artefacto allowlisted y al reporte de loadtest.
+- No cambia prompts, concurrencia, Dexie, Supabase ni backup.
 
-Complejidad conocida y aceptada: la derivacion recorre **todos** los mensajes de
-la cuenta porque Dexie v18 no tiene indice compuesto `[athleteId+timestamp]`. Es
-O(mensajes totales) en tiempo y O(1) de memoria por conversacion via `each()`.
-Se mantiene asi hasta que el volumen real justifique medir y recien despues
-migrar.
-
-Estado: **implementado y verificado localmente — `npm run lint`, `npm test`
-(305 archivos / 2252 tests) y `npm run build` verdes.** Pendiente: smoke en dev
-(checklist en `docs/superpowers/smokes/2026-07-26-chat-conversations-dev-smoke.md`),
-commit y deploy.
-
-### 17. Plan Builder velocidad — Fase 2 (`effort`) ejecutada y cerrada (2026-07-27)
-
-Primera campaña experimental de la era post-medicion: tres corridas del loadtest
-sobre el mismo SHA limpio (`f349ae4`), 12 planes / 42 semanas cada una, con la
-regla de aceptacion congelada **antes** de gastar.
-
-- **Veredicto: ninguna variante aceptada. `high` se queda.** No hay cambio
-  productivo y no hay deploy; `PLAN_BUILDER_EFFORT` y `PLAN_BUILDER_THINKING`
-  quedan sin definir en produccion, que es el estado "omitido" con el que ya
-  venia corriendo. El plan preveia explicitamente este desenlace como resultado
-  valido de la fase.
-- **A (`medium`) descartada con evidencia:** solo −4,9% mediano pareado a la
-  primera semana, gana en 7 de 12 casos —indistinguible de una moneda— y degrada
-  calidad de forma visible (`score.min = −7`; `dobles#2` cae de `needs_review` a
-  `poor`). Poca velocidad a cambio de un plan peor.
-- **B (`low`) rechazada, pero es la unica palanca cuya señal fue consistente
-  entre casos y escenarios:** −10,2% a la primera semana (9/12 casos, 5/6
-  escenarios), −13,6% al plan completo, −8,5% de costo y −12,3% de tokens de
-  salida, con score aproximadamente neutro (`p50 = 0`, `min = −4`, dentro de la
-  tolerancia). No alcanza la barra congelada del −20%. Consistente no es
-  demostrada: sin piso de ruido, ninguna de esas cifras puede afirmarse por
-  encima del ruido.
-- **Hallazgo sobre el metodo, no sobre las variantes:** los tres checks
-  `*.p90 ≤ 0` de reparaciones fallaron en ambas variantes. El delta pareado de
-  reparaciones de B es casi simetrico (13 semanas mejores contra 16 peores), lo
-  que es **compatible con ruido** y tambien con una degradacion muy pequeña; sin
-  piso de ruido medido las dos lecturas siguen abiertas. Lo que si es aritmetica
-  y no interpretacion: `p90 ≤ 0` con n=42 exige que 38 de 42 semanas no empeoren
-  ni en una reparacion, y con generacion estocastica es **plausible** que
-  ninguna configuracion despeje esa barra, ni siquiera el control contra si
-  mismo — **pero eso no se midio. La campaña nunca corrio un
-  control-contra-control**, asi que no existe estimacion del piso de ruido y
-  cualquier umbral de "no empeorar" por semana esta fijado a ciegas. Corregirlo
-  es prerrequisito de la proxima fase de velocidad.
-- **Instrumento validado:** las tres corridas fueron elegibles (12/12 planes,
-  42/42 semanas, mismo SHA, cero fallbacks, cero fallos de harness) y el pareo
-  no dejo huecos ni duplicados. Una campaña completa cuesta **US$2,5941** y toma
-  ~30 min, frente a dias de ventanas de produccion quemando el rate limit del
-  owner.
-
-Artefactos versionados con sus SHA-256 y veredicto completo en
-`docs/superpowers/experiments/plan-builder-speed-phase-2/`. Los dos `--compare`
-se reproducen sin costo ni credenciales desde las copias versionadas.
-
-Estado: **cerrada.** Sin migraciones, sin cambios de configuracion productiva.
+Estado: **implementado y verificado localmente** (`lint`, pruebas del Plan
+Builder y build). No se ejecuta aun `npm run loadtest:plan-builder` porque es
+una corrida pagada y el preflight exige arbol limpio; tampoco hay deploy
+autorizado. La suite total conserva un bloqueo ajeno en
+`chatCoachConversations.test.tsx`: su mock de `useAuthStore` no expone
+`getState` al cargar `syncService`.
 
 ## Avances Ya Implementados
 
@@ -413,7 +367,6 @@ Estado: **cerrada.** Sin migraciones, sin cambios de configuracion productiva.
 
 Cierres tecnicos recientes:
 
-- Conversaciones del chat (2026-07-26): `npm run lint`, `npm test` (305 archivos / 2252 tests) y `npm run build` verdes. Sin migraciones. Falta el smoke en dev.
 - Plan Builder quality v2: `npm test` verde (298 archivos / 2162 tests); Fase 0 de medicion cerrada contra el control `6c45885a`.
 - Core athlete-aware / Coach F2-lite: `npm run lint`, `git diff --check`, `npm test` (139 archivos / 990 tests) y `npm run build` OK.
 - Whoop v1 review: lint + 1160 tests + build + typecheck OK.
@@ -720,7 +673,17 @@ Estado: **implementado, revisado, commiteado y `011` aplicado en produccion con 
 
 Objetivo: usar workouts detectados por Whoop para completar sesiones planificadas del atleta self, sin crear sesiones nuevas ni tocar RPE de carga.
 
-Estado: **implementado y con rollout operativo cerrado**.
+Estado: **implementado y con rollout operativo cerrado**.Spec escrito en docs/superpowers/specs/2026-07-26-chat-conversations-design.md.
+
+En la auto-revisión encontré tres inconsistencias propias, y dos habrían causado bugs reales si el plan se implementaba tal como lo había redactado:
+
+1. loadSession() no puede validar existencia de mensajes. Lo había puesto como paso 3 del camino compartido, pero loadHistory() también pasa por ahí y una sesión actual recién creada legítimamente no tiene mensajes — el arranque normal habría fallado. La validación se movió a openConversation(), que es quien de verdad necesita defenderse de un id ajeno o inexistente.
+2. setStoredChatSessionId() en el camino compartido habría matado la adopción local-only. Esa función borra el marcador local-only (chatSession.ts:36-40), y la adopción de useChatStore.ts:67-87 depende justamente de ese marcador. Llamarla en cada loadHistory() lo habría apagado antes del chequeo, desactivando la adopción de forma permanente y silenciosa. Ahora el id se persiste solo cuando de verdad se cambia de conversación, con un flag persistId, y agregué un test de regresión que fija ese comportamiento.
+3. conversationsDirty era estado muerto, porque en paralelo decía "recargar siempre al abrir". Quedó una regla única: recargar si el índice no está ready o está sucio; si no, reusar.
+
+No commiteé el spec — la regla del proyecto dice que los commits los hacés vos. Tenés pendientes de commit: los tres .md de estado del smoke, el backlog en el roadmap, este spec nuevo, y el commit 3a598ed sin pushear.
+
+Revisalo cuando puedas y decime si querés cambios antes de que escriba el plan de implementación. Dos cosas que quizás quieras reconsiderar ahora que están por escrito: la decisión 5.2 (buscás algo, abrís el resultado y caés al final de la conversación, no en el match) y el título derivado del primer mensaje tuyo — que en la práctica va a producir cosas como "hola, quiero ajustar la semana porque me duele el…", útil pero no elegante.
 
 - [x] Decision de producto: self-only, sesiones `planned`, matching por deporte/dia, sin auto-ajuste de plan.
 - [x] Decision de datos: `actualDurationMin` si matchea; `Session.actualRpe` queda vacio.
@@ -859,26 +822,22 @@ un solo bloque de trabajo. Corren en paralelo al piloto y ninguno lo bloquea.
 El orden de abajo es de valor percibido en el uso diario del owner, no de
 dificultad.
 
-1. **Chat — gestion de conversaciones. Implementado 2026-07-26.** Drawer para
-   ver, retomar, buscar y borrar conversaciones; títulos derivados, scroll al
-   mensaje encontrado y rotacion por dia calendario. El indice se deriva de los
-   mensajes existentes con scope estricto por atleta. **Sin migracion Dexie ni
-   Supabase ni bump de backup.** Spec:
-   `docs/superpowers/specs/2026-07-26-chat-conversations-design.md`. Detalle en
-   §16. **Pendiente: smoke en dev, commit y deploy.**
-2. **Plan Builder — velocidad. Fase 2 (`effort`) ejecutada y cerrada el
-   2026-07-27: ninguna variante aceptada, `high` se queda.** Sin cambio
-   productivo y sin deploy. `medium` quedo descartado con evidencia (poca
-   velocidad y un plan que cae de grado); `low` mostro señal consistente
-   —−10,2% a la primera semana, −13,6% al plan completo, −8,5% de costo,
-   −12,3% de tokens de salida— pero no alcanzo la barra congelada del −20%.
-   Detalle en §17. Quedan abiertas las fases de modelo, concurrencia y prompt
-   caching (esto ultimo solo despues de medir el prefijo real con Token
-   Counting). Linea base de produccion: 24.2 s hasta la primera semana, 43.9 s
-   un plan de 4 semanas, concurrencia 3.
-3. **Plan Builder — calidad deportiva.** La Fase 1, "correcciones de producto",
-   declarada paralelizable y de archivos disjuntos respecto de la velocidad.
-   Incluye la calidad de las sesiones de squash.
+1. **Chat — gestion de conversaciones.** *(en brainstorming, 2026-07-26)* Abrir
+   el chat y empezar una conversacion nueva, ver las anteriores y retomarlas.
+   Hoy no existe como concepto: hay una sola sesion de chat por atleta guardada
+   como un id. Implica modelo de hilos, migracion Dexie, sync y UI. Usabilidad
+   pura, sin riesgo deportivo.
+2. **Plan Builder — velocidad.** Fases 2-4 que la Fase 0 habilito: `effort` /
+   `thinking`, modelo, concurrencia y prompt caching (esto ultimo solo despues de
+   medir el prefijo real con Token Counting). Es el trabajo **mejor preparado**
+   del backlog: instrumento desplegado, metodo escrito y control congelado
+   (`6c45885a`) contra el cual comparar. Linea base de produccion: 24.2 s hasta
+   la primera semana, 43.9 s un plan de 4 semanas, concurrencia 3.
+3. **Plan Builder — calidad deportiva.** La primera correccion coordinada
+   (rotacion de fuerza/squash y fail-closed) esta implementada localmente; falta
+   medirla con el control `high`, revisar omisiones/fallos de firma y desplegar
+   solo si conserva calidad y costo. Quedan luego ajustes de biblioteca de drills
+   guiados por esos datos.
 4. **Librerias de squash y fisico entendibles de cara al usuario.** Nombres,
    descripciones y agrupacion de drills y ejercicios. Se solapa con el punto 3 en
    lo deportivo, pero es sobre todo contenido y UX. Es lo que mas se nota al
@@ -910,10 +869,12 @@ quedo terminado o a medias antes de construir encima.
 
 Orden recomendado (Athlete-Aware Core + Coach F2-lite Parte 2b + Whoop v1/Workout Auto-Complete + Coach Workspace v0 + Fase 0 coaches landing ya en prod):
 
-1. **Revision juridica formal** (2-3 dias abogado, paralelizar con items 2-3): firma de terminos/privacidad/descargos/políticas Whoop.
-2. **Consentimiento in-app + biometrico** (1-2 dias implementacion): checkbox en signup, descargo antes de Whoop connect, registrar version/fecha.
-3. **QA deportiva y preparacion piloto** (1-2 dias): generar 3 planes arquetipo como atletas gestionados, revisar salida coach, preparar oferta (duracion, precio, soporte, reembolso).
-4. **Primer cliente acompanado** (ejecutar en paralelo con abogado): elegir 1 candidato, onboarding 1:1, generar semana 1, iniciar protocolo de revision semanal.
+1. **Cerrar la tanda de rotacion del Plan Builder:** revisar el diff, commitear con el owner y, ya con arbol limpio, ejecutar el smoke `high` pagado. Inspeccionar variedad, omisiones y `quality.squash.signature_uniqueness_unresolved` antes de desplegar.
+2. **Deploy y verificacion operativa:** autorizar deploy solo si el smoke conserva los gates; revisar la fila de job/attempts y versionar el artefacto/veredicto de la corrida.
+3. **Revision juridica formal** (2-3 dias abogado, paralelizar con items 4-5): firma de terminos/privacidad/descargos/políticas Whoop.
+4. **Consentimiento in-app + biometrico** (1-2 dias implementacion): checkbox en signup, descargo antes de Whoop connect, registrar version/fecha.
+5. **QA deportiva y preparacion piloto** (1-2 dias): generar 3 planes arquetipo como atletas gestionados, revisar salida coach, preparar oferta (duracion, precio, soporte, reembolso).
+6. **Primer cliente acompanado** (ejecutar en paralelo con abogado): elegir 1 candidato, onboarding 1:1, generar semana 1, iniciar protocolo de revision semanal.
 
 ## Que No Hacer Ahora
 

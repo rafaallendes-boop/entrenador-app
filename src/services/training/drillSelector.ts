@@ -57,6 +57,25 @@ export interface SquashSelectionResult {
   selectionNote?: string
 }
 
+/**
+ * Reemplazo enfocado para la rotación de drills. A diferencia de
+ * `selectSquashDrills`, NO tiene válvula de escape: si no hay candidato válido
+ * devuelve `undefined` en vez de readmitir un drill reciente. Reusar la ruta con
+ * válvula haría que la telemetría reportara "roté" habiendo devuelto un repetido.
+ *
+ * Los hard constraints (fatiga, fase, partner) NUNCA se relajan: los niveles de
+ * relajación solo aflojan `category` y kind.
+ */
+export type SquashRelaxationLevel = 'strict' | 'same_kind' | 'same_category' | 'any'
+
+export interface SquashDrillReplacementRequest {
+  originalName: string
+  context: SquashSelectionContext
+  excludedKeys: ReadonlySet<string>
+  rotationIndex: number
+  relaxation: SquashRelaxationLevel
+}
+
 // Fase 2: 4-state model. 'progress' = continuar familia con más exigencia,
 // 'hold' = mantener sin agregar estímulo nuevo, 'rotate' = cambiar familia,
 // 'deload' = bajar carga/volumen (fatiga, taper, competencia).
@@ -128,6 +147,49 @@ export function selectSquashDrills(
     : pickDiverseDrills(fallbackByExecutionMode, context, recentSet, progressionState)
 
   return buildSelectionResult(fallbackSelected.slice(0, 5), context, progressionState)
+}
+
+export function selectSquashDrillReplacement(
+  request: SquashDrillReplacementRequest,
+): SquashDrillDefinition | undefined {
+  const original = findSquashDrillByName(request.originalName)
+  if (!original) return undefined
+
+  const originalKind = resolveSquashDrillKind(original)
+
+  // Hard constraints: siempre, en todos los niveles.
+  const byFatigue = filterByFatigue(SQUASH_DRILL_LIBRARY, request.context)
+  const byPhase = filterByPhase(byFatigue, request.context)
+  const allowed = filterByExecutionMode(byPhase, request.context.partnerAvailability)
+
+  const matchesAxis = (candidate: SquashDrillDefinition): boolean => {
+    const sameCategory = candidate.category === original.category
+    const sameKind = resolveSquashDrillKind(candidate) === originalKind
+    switch (request.relaxation) {
+      case 'strict': return sameCategory && sameKind
+      case 'same_kind': return sameKind
+      case 'same_category': return sameCategory
+      case 'any': return true
+    }
+  }
+
+  const candidates = allowed
+    .filter(matchesAxis)
+    .filter((candidate) => !request.excludedKeys.has(normalizeSquashDrillKey(candidate.id)))
+    // Orden total y estable: sin esto el índice no es determinista.
+    .sort((a, b) => scoreByFocusOverlap(b, original) - scoreByFocusOverlap(a, original)
+      || a.id.localeCompare(b.id))
+
+  if (candidates.length === 0) return undefined
+  return candidates[request.rotationIndex % candidates.length]
+}
+
+/** `focus` es preferencia de scoring, NO filtro: filtrarlo colapsa el pool. */
+function scoreByFocusOverlap(
+  candidate: SquashDrillDefinition,
+  original: SquashDrillDefinition,
+): number {
+  return candidate.focus.filter((value) => original.focus.includes(value)).length
 }
 
 function selectSquashDrillsByDesiredKind(
