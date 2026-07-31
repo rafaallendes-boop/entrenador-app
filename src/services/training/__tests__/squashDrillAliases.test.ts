@@ -13,7 +13,7 @@ const RENAMES: Array<[string, string, string]> = [
   ['solo_100_mid_court_shots', '100 drives desde media cancha', 'Drives desde media cancha — 100'],
   ['solo_100_service_box', '100 drives al cuadro de saque', 'Drives al cuadro de saque — 100'],
   ['solo_100_parallels_back', '100 drives paralelos desde el fondo', 'Drives paralelos desde el fondo — 100'],
-  ['pressure_three_quarters_court', 'Ataque desde tres cuartos de cancha', 'Ataque temprano antes del fondo'],
+  ['pressure_three_quarters_court', 'Ataque desde tres cuartos de cancha', 'Ataque anticipado antes del fondo'],
   ['conditioned_boast_start', 'Punto que inicia con pared lateral', 'Juego condicionado: el punto abre con boast'],
   ['rsa_short_bursts', 'RSA – sprints repetidos de 10-15 segundos', 'Series cortas de velocidad en cancha (10-15 s)'],
   ['continuous_squash_movement_base', 'Movimiento continuo de base aeróbica', 'Movimiento continuo en cancha a ritmo sostenido'],

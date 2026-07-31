@@ -305,7 +305,7 @@ const RAW_SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
   },
   {
     id: 'pressure_three_quarters_court',
-    name: 'Ataque temprano antes del fondo',
+    name: 'Ataque anticipado antes del fondo',
     aliases: ['Ataque desde tres cuartos de cancha'],
     category: 'tactical',
     focus: ['transition', 'pressure', 'mid_court'],
@@ -708,6 +708,32 @@ const DRILL_NAME_ALIASES: Record<string, string> = {
   partido_de_entrenamiento_al_mejor_de_3_games: 'practice_match_best_of_3',
 }
 
+/**
+ * Palabras función del español. No distinguen un drill de otro, y contarlas
+ * hacía que una consulta libre resolviera por preposiciones compartidas:
+ * "Drives paralelos de recuperación al fondo" caía en el drill de boast por
+ * coincidir en `de`, aunque no describe ese drill.
+ */
+const DRILL_STOPWORD_TOKENS: ReadonlySet<string> = new Set([
+  'a', 'al', 'con', 'de', 'del', 'desde', 'e', 'el', 'en', 'entre', 'hacia',
+  'hasta', 'la', 'las', 'lo', 'los', 'o', 'para', 'por', 'sin', 'sobre',
+  'su', 'sus', 'tras', 'u', 'un', 'una', 'unas', 'unos', 'y',
+])
+
+/**
+ * Tokens que sí distinguen. Si una cadena fuera solo palabras función se
+ * devuelven sus tokens crudos: quedarse sin ninguno la volvería inmatcheable
+ * por una razón distinta de la que esta función expresa.
+ */
+function contentDrillTokens(value: string): string[] {
+  const tokens = normalizeDrillTokens(value)
+  const content = tokens.filter((token) => !DRILL_STOPWORD_TOKENS.has(token))
+  return content.length > 0 ? content : tokens
+}
+
+/** Piso de solape para considerar siquiera una coincidencia difusa. */
+const MIN_FUZZY_DRILL_SCORE = 0.5
+
 function normalizeDrillTokens(value: string): string[] {
   return normalizeSquashDrillKey(value)
     .split('_')
@@ -734,17 +760,16 @@ export function findSquashDrillByName(name: string): SquashDrillDefinition | und
   )
   if (aliasMatch) return aliasMatch
 
-  // Las preposiciones no distinguen drills. Contarlas hacía que una consulta
-  // libre como "Drives paralelos con recuperación al T" empatara por `con`,
-  // `drive` y `parallel` con el drill de boast, aunque no describe ese drill.
-  const tokens = new Set(normalizeDrillTokens(name).filter((token) => token !== 'con'))
-  let bestMatch: { drill: SquashDrillDefinition; score: number } | null = null
+  const tokens = new Set(contentDrillTokens(name))
+  const scored: Array<{ drill: SquashDrillDefinition; score: number }> = []
 
   for (const drill of SQUASH_DRILL_LIBRARY) {
     // Los nombres canónicos ya tuvieron prioridad en el matching exacto. En
     // los niveles flexibles, los aliases se comportan como nombres anteriores:
     // sirven tanto para fragmentos como para coincidencias por tokens.
-    for (const candidateName of [drill.name, ...(drill.aliases ?? [])]) {
+    const candidateNames = [drill.name, ...(drill.aliases ?? [])]
+    let bestForDrill = 0
+    for (const candidateName of candidateNames) {
       const candidateKey = normalizeSquashDrillKey(candidateName)
       if (
         normalizedName.length >= 4 &&
@@ -753,18 +778,27 @@ export function findSquashDrillByName(name: string): SquashDrillDefinition | und
         return drill
       }
 
-      const candidateTokens = normalizeDrillTokens(candidateName).filter((token) => token !== 'con')
+      const candidateTokens = contentDrillTokens(candidateName)
       const overlap = candidateTokens.filter((token) => tokens.has(token)).length
       if (overlap === 0) continue
 
-      const score = overlap / Math.max(candidateTokens.length, tokens.size || 1)
-      if (score >= 0.5 && (!bestMatch || score > bestMatch.score)) {
-        bestMatch = { drill, score }
-      }
+      bestForDrill = Math.max(bestForDrill, overlap / Math.max(candidateTokens.length, tokens.size || 1))
     }
+    if (bestForDrill >= MIN_FUZZY_DRILL_SCORE) scored.push({ drill, score: bestForDrill })
   }
 
-  return bestMatch?.drill
+  if (scored.length === 0) return undefined
+
+  const topScore = Math.max(...scored.map((entry) => entry.score))
+  const leaders = scored.filter((entry) => entry.score === topScore)
+
+  // Si varios drills distintos quedan igual de plausibles, los tokens que
+  // comparten no discriminan y la coincidencia no es confiable. Se prefiere no
+  // resolver: un drill sin resolver lo reemplaza el repair por uno del
+  // catálogo, mientras que adivinar mal prescribe contenido equivocado en
+  // silencio. Esto también hace el resultado independiente del orden de
+  // declaración del catálogo.
+  return leaders.length === 1 ? leaders[0]!.drill : undefined
 }
 
 export function getSuggestedTrainingFocus(category: DrillCategory, tags: string[]): SquashTrainingFocus {
