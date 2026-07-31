@@ -734,25 +734,33 @@ export function findSquashDrillByName(name: string): SquashDrillDefinition | und
   )
   if (aliasMatch) return aliasMatch
 
-  const tokens = new Set(normalizeDrillTokens(name))
+  // Las preposiciones no distinguen drills. Contarlas hacía que una consulta
+  // libre como "Drives paralelos con recuperación al T" empatara por `con`,
+  // `drive` y `parallel` con el drill de boast, aunque no describe ese drill.
+  const tokens = new Set(normalizeDrillTokens(name).filter((token) => token !== 'con'))
   let bestMatch: { drill: SquashDrillDefinition; score: number } | null = null
 
   for (const drill of SQUASH_DRILL_LIBRARY) {
-    const drillKey = normalizeSquashDrillKey(drill.name)
-    if (
-      normalizedName.length >= 4 &&
-      (drillKey.includes(normalizedName) || normalizedName.includes(drillKey))
-    ) {
-      return drill
-    }
+    // Los nombres canónicos ya tuvieron prioridad en el matching exacto. En
+    // los niveles flexibles, los aliases se comportan como nombres anteriores:
+    // sirven tanto para fragmentos como para coincidencias por tokens.
+    for (const candidateName of [drill.name, ...(drill.aliases ?? [])]) {
+      const candidateKey = normalizeSquashDrillKey(candidateName)
+      if (
+        normalizedName.length >= 4 &&
+        (candidateKey.includes(normalizedName) || normalizedName.includes(candidateKey))
+      ) {
+        return drill
+      }
 
-    const drillTokens = normalizeDrillTokens(drill.name)
-    const overlap = drillTokens.filter((token) => tokens.has(token)).length
-    if (overlap === 0) continue
+      const candidateTokens = normalizeDrillTokens(candidateName).filter((token) => token !== 'con')
+      const overlap = candidateTokens.filter((token) => tokens.has(token)).length
+      if (overlap === 0) continue
 
-    const score = overlap / Math.max(drillTokens.length, tokens.size || 1)
-    if (score >= 0.5 && (!bestMatch || score > bestMatch.score)) {
-      bestMatch = { drill, score }
+      const score = overlap / Math.max(candidateTokens.length, tokens.size || 1)
+      if (score >= 0.5 && (!bestMatch || score > bestMatch.score)) {
+        bestMatch = { drill, score }
+      }
     }
   }
 

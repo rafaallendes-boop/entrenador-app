@@ -454,7 +454,7 @@ export function filterByFatigue(
     .sort((a, b) => {
       const aScore = Number(a.tags.includes('pressure')) + Number(a.tags.includes('match_play')) + Number(a.tags.includes('peak'))
       const bScore = Number(b.tags.includes('pressure')) + Number(b.tags.includes('match_play')) + Number(b.tags.includes('peak'))
-      return bScore - aScore || a.name.localeCompare(b.name)
+      return bScore - aScore || a.id.localeCompare(b.id)
     })
 
   return [...nonHigh, ...high.slice(0, 2)]
@@ -637,6 +637,7 @@ function scoreDrills(
       if (goal.includes('control') && drill.tags.includes('length_control')) score += 4
       if (goal.includes('recuper') && drill.tags.includes('recovery_technical')) score += 5
       if (goal.includes('presion') && drill.tags.includes('pressure')) score += 4
+      if (context.desiredKind === 'control' && drill.tags.includes('volume_reps')) score += 1
 
       if (context.competitiveLevel === 'elite' || context.competitiveLevel === 'masters') {
         if (drill.category === 'tactical') score += 3
@@ -665,7 +666,7 @@ function scoreDrills(
 
       return { drill, score }
     })
-    .sort((a, b) => b.score - a.score || a.drill.name.localeCompare(b.drill.name))
+    .sort((a, b) => b.score - a.score || a.drill.id.localeCompare(b.drill.id))
 }
 
 export function deriveSquashProgressionState(context: SquashSelectionContext): SquashProgressionState {
@@ -826,7 +827,7 @@ export function scoreDrillsWithProgression(
 
       return { drill, score }
     })
-    .sort((a, b) => b.score - a.score || a.drill.name.localeCompare(b.drill.name))
+    .sort((a, b) => b.score - a.score || a.drill.id.localeCompare(b.drill.id))
 }
 
 function deriveTrainingFocus(

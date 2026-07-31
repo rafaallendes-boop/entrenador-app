@@ -41,6 +41,19 @@ describe('renombres y aliases de squash', () => {
     expect(findSquashDrillByName(previous)?.id).toBe(id)
   })
 
+  it('resuelve un fragmento del nombre anterior por alias', () => {
+    expect(findSquashDrillByName('Tiros paralelos')?.id).toBe('drive_parallel_depth')
+  })
+
+  it('resuelve los tokens desordenados de un alias', () => {
+    expect(findSquashDrillByName('cancha ataque tres cuartos')?.id)
+      .toBe('pressure_three_quarters_court')
+  })
+
+  it('no acepta una coincidencia vaga con palabras no discriminantes', () => {
+    expect(findSquashDrillByName('Drives paralelos con recuperación al T')).toBeUndefined()
+  })
+
   it.each(RENAMES)('%s aparece en el buscador por su nombre anterior', (id, previous) => {
     expect(searchCatalog('squash', previous).map((entry) => entry.libraryId)).toContain(id)
   })

@@ -230,12 +230,10 @@ describe('drillSelector progression', () => {
     })
 
     expect(selection.sessionKind).toBe('control')
-    expect([
-      'Drops en solitario — 100 (50 por lado)',
-      'Drives desde media cancha — 100',
-      'Drives al cuadro de saque — 100',
-      'Drives paralelos desde el fondo — 100',
-    ]).toContain(selection.drills.find((drill) => drill.notes?.includes('100 reps'))?.name)
+    const selectedIds = new Set(selection.drills.map((drill) => findSquashDrillByName(drill.name)?.id))
+    expect(
+      ['solo_100_drops', 'solo_100_parallels_back'].some((id) => selectedIds.has(id)),
+    ).toBe(true)
     expect(selection.drills.some((drill) => drill.notes?.includes('100 reps'))).toBe(true)
   })
 

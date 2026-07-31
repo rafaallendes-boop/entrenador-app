@@ -7,7 +7,7 @@ import { areSessionListsEquivalent, WeekCreatorEngine } from '../WeekCreatorEngi
 import { buildWeekCreatorPrompt } from '../WeekCreatorPromptBuilder'
 import { useAIDebugStore } from '../../../store/useAIDebugStore'
 import { db } from '../../../db/db'
-import { findSquashDrillByName } from '../../training/drillLibrary'
+import { findSquashDrillByName, SQUASH_DRILL_LIBRARY } from '../../training/drillLibrary'
 
 const mockProviderCall = vi.hoisted(() => vi.fn())
 
@@ -1456,6 +1456,70 @@ describe('WeekCreatorEngine', () => {
     expect(requests[0].responseCharCount).toBeUndefined()
   })
 
+  it('emite nombres canónicos de squash, nunca aliases, en las variantes de fallback', async () => {
+    mockProviderCall.mockImplementation(async (request: { requestClass: string; traceId: string }) => ({
+      text: 'Puedo armar la semana, pero no incluyo acciones.',
+      provider: 'gemini',
+      model: 'gemini-flash',
+      traceId: request.traceId,
+      requestClass: request.requestClass,
+    }))
+
+    const context: ChatContext = {
+      athleteProfile: makeProfile({
+        sportContext: {
+          enabledSports: ['squash'],
+          primarySport: 'squash',
+        },
+        planWizardConfig: {
+          goalEventId: 'goal-1',
+          trainingDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'],
+          sessionsPerWeek: 6,
+          sessionDurationMins: 60,
+          allowDoubleSession: false,
+          complementarySports: [],
+          currentFitnessLevel: 'normal',
+          currentFatigue: 'normal',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      }),
+      recentSessions: [],
+      plannedSessions: [],
+      historicalSessions: [],
+    }
+
+    const response = await WeekCreatorEngine.sendWeekCreate(
+      'Créame seis sesiones de squash',
+      context,
+      { surface: 'chat', targetWeekStart: '2026-05-04' },
+    )
+
+    const drillNames = (response.actions?.[0].sessions ?? [])
+      .filter((session) => session.sessionType === 'squash')
+      .flatMap((session) => session.squashDetails?.drills ?? [])
+      .map((drill) => drill.name)
+    const renamedAliases = SQUASH_DRILL_LIBRARY.flatMap((drill) => drill.aliases ?? [])
+
+    // Seis sesiones recorren las seis variantes y las 14 entradas con aliases
+    // son exactamente los renombres de copy de la librería.
+    expect(response.fallbackUsed).toBe(true)
+    expect(response.actions?.[0].sessions).toHaveLength(6)
+    expect(renamedAliases).toHaveLength(14)
+    expect(drillNames).toEqual(expect.arrayContaining([
+      'Drives paralelos profundos',
+      'Drives cruzados profundos',
+      'Alternar drive paralelo y cruzado',
+      'Peloteo profundo suave de recuperación',
+      'Drives desde media cancha — 100',
+      'Drives al cuadro de saque — 100',
+      'Drops en solitario — 100 (50 por lado)',
+      'Boast y salida con drive paralelo',
+      'Ataque temprano antes del fondo',
+    ]))
+    expect(drillNames.filter((name) => renamedAliases.includes(name))).toEqual([])
+  })
+
   it('does not stack duplicate squash sessions on the same day in six-session fallback weeks', async () => {
     mockProviderCall.mockImplementation(async (request: { requestClass: string; traceId: string }) => ({
       text: 'Puedo armar una semana, pero no incluyo acciones.',
@@ -1552,7 +1616,7 @@ describe('WeekCreatorEngine', () => {
     )).toBe(true)
     expect(visibleText).not.toMatch(new RegExp('recuperaci' + '[oó]n a' + 'l T', 'i'))
     expect(visibleText).not.toContain('Drives paralelos con ' + 'recuperaci' + 'ón a' + 'l T')
-    expect(visibleText).toContain('Tiros paralelos profundos')
+    expect(visibleText).toContain('Drives paralelos profundos')
   })
 
   it('honors the exact eight-session chat request with an active wizard and uses only allowed double days', async () => {
@@ -2347,7 +2411,7 @@ describe('validateWeekCreatorResponse sport details', () => {
           reason: 'Semana con drill libre',
           targetDate: '2026-05-11',
           sessions: [
-            squashSession('2026-05-11', 'AM', 'Squash técnico', 'Secuencia libre de rebotes a la pared trasera'),
+            squashSession('2026-05-11', 'AM', 'Squash técnico', 'Drives paralelos con ' + 'recuperaci' + 'ón a' + 'l T'),
           ],
         }],
       },

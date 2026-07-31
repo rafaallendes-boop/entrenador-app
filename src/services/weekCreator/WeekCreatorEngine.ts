@@ -1458,10 +1458,10 @@ function buildFallbackSession(
       blocks: [{
         kind: 'technical',
         drills: [
-          drill('Tiros paralelos profundos', 12),
-          drill('Tiros cruzados profundos', 12),
-          drill('Cambio de paralelo a cruzado', 12),
-          drill('Largo controlado de baja carga', 10),
+          drill('Drives paralelos profundos', 12),
+          drill('Drives cruzados profundos', 12),
+          drill('Alternar drive paralelo y cruzado', 12),
+          drill('Peloteo profundo suave de recuperación', 10),
         ],
         durationMin: 46,
       }],
@@ -1484,9 +1484,9 @@ function buildFallbackSession(
         {
           kind: 'control',
           drills: [
-            drill('100 drives desde media cancha', 10),
-            drill('100 drives al cuadro de saque', 10),
-            drill('100 drops en solitario (50 por lado)', 8),
+            drill('Drives desde media cancha — 100', 10),
+            drill('Drives al cuadro de saque — 100', 10),
+            drill('Drops en solitario — 100 (50 por lado)', 8),
           ],
           durationMin: 28,
         },
@@ -1502,8 +1502,8 @@ function buildFallbackSession(
         {
           kind: 'technical',
           drills: [
-            drill('Tiros paralelos profundos', 10),
-            drill('Cambio de paralelo a cruzado', 10),
+            drill('Drives paralelos profundos', 10),
+            drill('Alternar drive paralelo y cruzado', 10),
           ],
           durationMin: 20,
         },
@@ -1536,7 +1536,7 @@ function buildFallbackSession(
           drill('Drops desde media cancha', 12),
           drill('Drop y contra-drop por ambos lados', 10),
           drill('Volea de control desde media cancha', 12),
-          drill('Boast y drive paralelo de salida', 12),
+          drill('Boast y salida con drive paralelo', 12),
         ],
         durationMin: 46,
       }],
@@ -1552,7 +1552,7 @@ function buildFallbackSession(
           kind: 'technical',
           drills: [
             drill('Presión a esquinas de fondo', 10),
-            drill('Ataque desde tres cuartos de cancha', 10),
+            drill('Ataque temprano antes del fondo', 10),
           ],
           durationMin: 20,
         },
