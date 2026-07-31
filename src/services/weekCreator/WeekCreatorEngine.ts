@@ -1552,7 +1552,7 @@ function buildFallbackSession(
           kind: 'technical',
           drills: [
             drill('Presión a esquinas de fondo', 10),
-            drill('Ataque anticipado antes del fondo', 10),
+            drill('Ataque antes del fondo', 10),
           ],
           durationMin: 20,
         },

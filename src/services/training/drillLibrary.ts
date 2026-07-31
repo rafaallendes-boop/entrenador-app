@@ -305,7 +305,7 @@ const RAW_SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
   },
   {
     id: 'pressure_three_quarters_court',
-    name: 'Ataque anticipado antes del fondo',
+    name: 'Ataque antes del fondo',
     aliases: ['Ataque desde tres cuartos de cancha'],
     category: 'tactical',
     focus: ['transition', 'pressure', 'mid_court'],
@@ -775,7 +775,11 @@ export function findSquashDrillByName(name: string): SquashDrillDefinition | und
         normalizedName.length >= 4 &&
         (candidateKey.includes(normalizedName) || normalizedName.includes(candidateKey))
       ) {
-        return drill
+        // Un fragmento es una señal máxima, pero no un permiso para devolver
+        // el primer drill declarado: otro nombre puede contener el mismo
+        // fragmento. La resolución final exige un ganador único.
+        bestForDrill = 1
+        continue
       }
 
       const candidateTokens = contentDrillTokens(candidateName)

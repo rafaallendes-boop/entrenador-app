@@ -1515,7 +1515,7 @@ describe('WeekCreatorEngine', () => {
       'Drives al cuadro de saque — 100',
       'Drops en solitario — 100 (50 por lado)',
       'Boast y salida con drive paralelo',
-      'Ataque anticipado antes del fondo',
+      'Ataque antes del fondo',
     ]))
     expect(drillNames.filter((name) => renamedAliases.includes(name))).toEqual([])
   })

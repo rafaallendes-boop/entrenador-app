@@ -101,7 +101,7 @@ Dos reglas que la acotan:
 1. **Un nombre no es una instrucción.** La explicación larga vive en
    `description`. "Ataque tomando la pelota antes de que se meta al fondo" es
    difícil de escanear y se trunca en las superficies angostas; el nombre correcto
-   es "Ataque anticipado antes del fondo".
+   es "Ataque antes del fondo".
 2. **El volumen entra en el nombre solo cuando define el protocolo.** El modelo
    no tiene repeticiones estructuradas —`SquashDrill` es `name`, `durationMin`,
    `notes`, `executionMode`—, así que la familia de 100 repeticiones en solitario
@@ -119,7 +119,7 @@ Dos reglas que la acotan:
 | `solo_100_mid_court_shots` | 100 drives desde media cancha | Drives desde media cancha — 100 |
 | `solo_100_service_box` | 100 drives al cuadro de saque | Drives al cuadro de saque — 100 |
 | `solo_100_parallels_back` | 100 drives paralelos desde el fondo | Drives paralelos desde el fondo — 100 |
-| `pressure_three_quarters_court` | Ataque desde tres cuartos de cancha | Ataque anticipado antes del fondo |
+| `pressure_three_quarters_court` | Ataque desde tres cuartos de cancha | Ataque antes del fondo |
 | `conditioned_boast_start` | Punto que inicia con pared lateral | Juego condicionado: el punto abre con boast |
 | `rsa_short_bursts` | RSA – sprints repetidos de 10-15 segundos | Series cortas de velocidad en cancha (10-15 s) |
 | `continuous_squash_movement_base` | Movimiento continuo de base aeróbica | Movimiento continuo en cancha a ritmo sostenido |

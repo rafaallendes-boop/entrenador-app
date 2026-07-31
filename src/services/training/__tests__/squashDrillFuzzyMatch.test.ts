@@ -39,6 +39,10 @@ describe('matcher difuso de drills de squash', () => {
     expect(findSquashDrillByName('Ataque en tres cuartos')?.id).toBe('pressure_three_quarters_court')
   })
 
+  it('un fragmento compartido no depende del orden del catálogo', () => {
+    expect(findSquashDrillByName('drive')).toBeUndefined()
+  })
+
   it('un texto sin relación con el catálogo no resuelve', () => {
     expect(findSquashDrillByName('Circuito experimental alfa')).toBeUndefined()
     expect(findSquashDrillByName('Secuencia libre de rebotes a la pared trasera')).toBeUndefined()
