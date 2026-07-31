@@ -130,8 +130,8 @@ describe('repairGeneratedWeek: two competitive squash matches in one week', () =
       sessionMode: 'practice_match',
       sessionKind: 'technical',
       drills: [
-        { name: 'Drives largos cruzados', durationMin: 20 },
-        { name: 'Boast-drive-cruzado', durationMin: 20 },
+        { name: 'Circuito experimental alfa', durationMin: 20 },
+        { name: 'Circuito experimental beta', durationMin: 20 },
       ],
     },
   } as never)

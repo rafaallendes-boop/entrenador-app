@@ -1,0 +1,1410 @@
+[
+  {
+    "id": "attack_from_t_first_ball",
+    "category": "tactical",
+    "focus": [
+      "t_control",
+      "attack",
+      "initiative"
+    ],
+    "tags": [
+      "t_control",
+      "attack",
+      "peak",
+      "initiative"
+    ],
+    "intensity": "high",
+    "intent": null,
+    "constraints": null,
+    "progressionLevel": 3,
+    "phaseAppropriate": [
+      "build",
+      "peak"
+    ],
+    "partnerRequired": false,
+    "executionMode": "either",
+    "family": "t_control_patterns",
+    "blockKind": "technical",
+    "stableName": "Atacar la primera pelota cómoda desde la T",
+    "stableDescription": null
+  },
+  {
+    "id": "attacking_boast_from_back_court",
+    "category": "technical",
+    "focus": [
+      "boast",
+      "attack",
+      "back_court"
+    ],
+    "tags": [
+      "boast",
+      "attack",
+      "back_court",
+      "build",
+      "peak",
+      "pressure"
+    ],
+    "intensity": "high",
+    "intent": "pressure",
+    "constraints": [
+      "La pelota debe salir cerca de la pared lateral",
+      "Prepararse para cortar temprano la siguiente pelota"
+    ],
+    "progressionLevel": 3,
+    "phaseAppropriate": [
+      "build",
+      "peak"
+    ],
+    "partnerRequired": false,
+    "executionMode": "either",
+    "family": "pressure_back_court",
+    "blockKind": "technical",
+    "stableName": "Boast ofensivo desde el fondo",
+    "stableDescription": null
+  },
+  {
+    "id": "attacking_boast_from_mid_court",
+    "category": "technical",
+    "focus": [
+      "boast",
+      "attack",
+      "mid_court"
+    ],
+    "tags": [
+      "boast",
+      "attack",
+      "mid_court",
+      "build",
+      "peak",
+      "pressure"
+    ],
+    "intensity": "moderate",
+    "intent": "pressure",
+    "constraints": [
+      "Después del golpe, recuperar hacia adelante",
+      "Intentar cerrar el punto dentro de los 3 golpes siguientes"
+    ],
+    "progressionLevel": 2,
+    "phaseAppropriate": [
+      "build",
+      "peak"
+    ],
+    "partnerRequired": false,
+    "executionMode": "either",
+    "family": "pressure_back_court",
+    "blockKind": "technical",
+    "stableName": "Boast ofensivo desde media cancha",
+    "stableDescription": null
+  },
+  {
+    "id": "attacking_lob_change_of_pace",
+    "category": "technical",
+    "focus": [
+      "lob",
+      "attack",
+      "variation"
+    ],
+    "tags": [
+      "lob",
+      "attack",
+      "build",
+      "peak",
+      "variation"
+    ],
+    "intensity": "moderate",
+    "intent": "control",
+    "constraints": [
+      "Usar la misma preparación que para una pelota corta",
+      "Jugar la siguiente pelota hacia la zona que quede libre"
+    ],
+    "progressionLevel": 2,
+    "phaseAppropriate": [
+      "base",
+      "build",
+      "peak",
+      "taper"
+    ],
+    "partnerRequired": false,
+    "executionMode": "either",
+    "family": "technical_general",
+    "blockKind": "technical",
+    "stableName": "Lob ofensivo como cambio de ritmo",
+    "stableDescription": null
+  },
+  {
+    "id": "boast_to_straight_drive",
+    "category": "technical",
+    "focus": [
+      "boast",
+      "drive",
+      "recovery"
+    ],
+    "tags": [
+      "boast",
+      "drive",
+      "build",
+      "recovery_technical"
+    ],
+    "intensity": "moderate",
+    "intent": null,
+    "constraints": null,
+    "progressionLevel": 2,
+    "phaseAppropriate": [
+      "base",
+      "taper",
+      "transition",
+      "race"
+    ],
+    "partnerRequired": false,
+    "executionMode": "either",
+    "family": "drive_patterns",
+    "blockKind": "technical",
+    "stableName": null,
+    "stableDescription": null
+  },
+  {
+    "id": "conditioned_boast_start",
+    "category": "tactical",
+    "focus": [
+      "conditioned_game",
+      "boast",
+      "transition"
+    ],
+    "tags": [
+      "conditioned_game",
+      "boast",
+      "transition",
+      "build"
+    ],
+    "intensity": "moderate",
+    "intent": null,
+    "constraints": null,
+    "progressionLevel": 2,
+    "phaseAppropriate": [
+      "build",
+      "peak"
+    ],
+    "partnerRequired": true,
+    "executionMode": "partner",
+    "family": "conditioned_boast",
+    "blockKind": "technical",
+    "stableName": null,
+    "stableDescription": null
+  },
+  {
+    "id": "conditioned_forbidden_zone",
+    "category": "tactical",
+    "focus": [
+      "conditioned_game",
+      "targets",
+      "decision_making"
+    ],
+    "tags": [
+      "conditioned_game",
+      "targets",
+      "build",
+      "peak"
+    ],
+    "intensity": "moderate",
+    "intent": null,
+    "constraints": [
+      "La pelota que cae en la zona prohibida pierde el punto"
+    ],
+    "progressionLevel": 2,
+    "phaseAppropriate": [
+      "build",
+      "peak"
+    ],
+    "partnerRequired": true,
+    "executionMode": "partner",
+    "family": "conditioned_targets",
+    "blockKind": "technical",
+    "stableName": "Juego condicionado con zona prohibida",
+    "stableDescription": "Marca una zona prohibida y juega puntos sin enviar la pelota ahí. Objetivo: obligarte a decidir mejor cuando tu opción favorita no está disponible. Clave: antes de golpear, mira qué espacio queda libre y juega con intención, no por reflejo."
+  },
+  {
+    "id": "conditioned_long_only",
+    "category": "tactical",
+    "focus": [
+      "conditioned_game",
+      "length",
+      "pressure"
+    ],
+    "tags": [
+      "conditioned_game",
+      "length",
+      "length_control",
+      "pressure",
+      "base",
+      "build"
+    ],
+    "intensity": "moderate",
+    "intent": "control",
+    "constraints": [
+      "Lograr 6 golpes profundos seguidos antes de cambiar el ritmo"
+    ],
+    "progressionLevel": 1,
+    "phaseAppropriate": [
+      "build",
+      "peak"
+    ],
+    "partnerRequired": true,
+    "executionMode": "partner",
+    "family": "conditioned_length",
+    "blockKind": "technical",
+    "stableName": "Juego condicionado solo al fondo",
+    "stableDescription": "Juega puntos sin pelotas cortas: cada golpe debe buscar una zona profunda. Objetivo: entrenar paciencia, largo y selección de ataque. Clave: gana el punto construyendo, no inventando; espera una pelota claramente atacable antes de cambiar ritmo."
+  },
+  {
+    "id": "conditioned_no_two_bounces",
+    "category": "tactical",
+    "focus": [
+      "conditioned_game",
+      "intensity",
+      "speed"
+    ],
+    "tags": [
+      "conditioned_game",
+      "speed",
+      "peak",
+      "pressure"
+    ],
+    "intensity": "high",
+    "intent": null,
+    "constraints": [
+      "La pelota que pasa detrás del cuadro de saque pierde el punto"
+    ],
+    "progressionLevel": 3,
+    "phaseAppropriate": [
+      "build",
+      "peak"
+    ],
+    "partnerRequired": true,
+    "executionMode": "partner",
+    "family": "conditioned_general",
+    "blockKind": "technical",
+    "stableName": "Juego condicionado en media cancha",
+    "stableDescription": "Juega puntos donde la pelota no puede pasar detrás del cuadro de saque. Objetivo: mejorar reacción, volea y toma temprana en media cancha. Clave: mantén postura baja y golpes compactos; si preparas grande, llegarás tarde."
+  },
+  {
+    "id": "conditioned_parallel_only",
+    "category": "tactical",
+    "focus": [
+      "conditioned_game",
+      "parallel",
+      "order"
+    ],
+    "tags": [
+      "conditioned_game",
+      "parallel",
+      "build",
+      "peak"
+    ],
+    "intensity": "moderate",
+    "intent": null,
+    "constraints": null,
+    "progressionLevel": 1,
+    "phaseAppropriate": [
+      "build",
+      "peak"
+    ],
+    "partnerRequired": true,
+    "executionMode": "partner",
+    "family": "conditioned_parallel",
+    "blockKind": "technical",
+    "stableName": "Juego condicionado solo paralelo",
+    "stableDescription": "Juega puntos donde solo valen los tiros paralelos por la pared lateral del mismo lado. Objetivo: ordenar el punto y mejorar precisión bajo presión. Clave: la pelota no debe despegarse hacia el centro; si se abre demasiado, el rival entra cómodo."
+  },
+  {
+    "id": "continuous_squash_movement_base",
+    "category": "physical",
+    "focus": [
+      "movement",
+      "aerobic_base",
+      "conditioning"
+    ],
+    "tags": [
+      "movement",
+      "conditioning",
+      "aerobic_base",
+      "base",
+      "build"
+    ],
+    "intensity": "low",
+    "intent": "consistency",
+    "constraints": [
+      "Mantener el mismo ritmo durante todo el intervalo",
+      "Volver a la T después de cada movimiento"
+    ],
+    "progressionLevel": 1,
+    "phaseAppropriate": [
+      "base",
+      "build",
+      "peak"
+    ],
+    "partnerRequired": false,
+    "executionMode": "either",
+    "family": "physical_general",
+    "blockKind": "technical",
+    "stableName": null,
+    "stableDescription": null
+  },
+  {
+    "id": "defensive_high_lob_recovery",
+    "category": "technical",
+    "focus": [
+      "lob",
+      "recovery",
+      "back_court"
+    ],
+    "tags": [
+      "lob",
+      "recovery_technical",
+      "base",
+      "build",
+      "taper",
+      "back_court"
+    ],
+    "intensity": "low",
+    "intent": "recovery",
+    "constraints": [
+      "La pelota debe pasar alta y llegar al fondo",
+      "Recuperación a la T antes del siguiente golpe"
+    ],
+    "progressionLevel": 1,
+    "phaseAppropriate": [
+      "base",
+      "taper",
+      "transition",
+      "race"
+    ],
+    "partnerRequired": false,
+    "executionMode": "either",
+    "family": "recovery_length",
+    "blockKind": "technical",
+    "stableName": "Lob defensivo alto y recuperación",
+    "stableDescription": null
+  },
+  {
+    "id": "drive_crosscourt_length",
+    "category": "technical",
+    "focus": [
+      "drive",
+      "crosscourt",
+      "length"
+    ],
+    "tags": [
+      "crosscourt",
+      "drive",
+      "base",
+      "build",
+      "length",
+      "length_control"
+    ],
+    "intensity": "moderate",
+    "intent": "control",
+    "constraints": null,
+    "progressionLevel": 1,
+    "phaseAppropriate": [
+      "base",
+      "build",
+      "peak",
+      "taper"
+    ],
+    "partnerRequired": false,
+    "executionMode": "either",
+    "family": "drive_patterns",
+    "blockKind": "technical",
+    "stableName": null,
+    "stableDescription": null
+  },
+  {
+    "id": "drive_parallel_depth",
+    "category": "technical",
+    "focus": [
+      "drive",
+      "length",
+      "control"
+    ],
+    "tags": [
+      "parallel",
+      "drive",
+      "base",
+      "build",
+      "length",
+      "length_control"
+    ],
+    "intensity": "moderate",
+    "intent": "consistency",
+    "constraints": [
+      "La pelota debe pasar alta por la pared frontal y llegar detrás del cuadro de saque"
+    ],
+    "progressionLevel": 1,
+    "phaseAppropriate": [
+      "base",
+      "build",
+      "peak",
+      "taper"
+    ],
+    "partnerRequired": false,
+    "executionMode": "either",
+    "family": "drive_patterns",
+    "blockKind": "technical",
+    "stableName": null,
+    "stableDescription": null
+  },
+  {
+    "id": "drive_switch_parallel_cross",
+    "category": "technical",
+    "focus": [
+      "drive",
+      "transition",
+      "precision"
+    ],
+    "tags": [
+      "parallel",
+      "crosscourt",
+      "drive",
+      "build",
+      "variation"
+    ],
+    "intensity": "moderate",
+    "intent": null,
+    "constraints": null,
+    "progressionLevel": 2,
+    "phaseAppropriate": [
+      "base",
+      "build",
+      "peak",
+      "taper"
+    ],
+    "partnerRequired": false,
+    "executionMode": "either",
+    "family": "drive_patterns",
+    "blockKind": "technical",
+    "stableName": null,
+    "stableDescription": null
+  },
+  {
+    "id": "drop_and_counter_drop",
+    "category": "technical",
+    "focus": [
+      "drop",
+      "touch",
+      "front_court"
+    ],
+    "tags": [
+      "drop",
+      "front_court",
+      "taper",
+      "recovery_technical",
+      "control_session"
+    ],
+    "intensity": "low",
+    "intent": null,
+    "constraints": null,
+    "progressionLevel": 1,
+    "phaseAppropriate": [
+      "base",
+      "taper",
+      "transition",
+      "race"
+    ],
+    "partnerRequired": false,
+    "executionMode": "either",
+    "family": "front_court_touch",
+    "blockKind": "control",
+    "stableName": "Drop y contra-drop por ambos lados",
+    "stableDescription": null
+  },
+  {
+    "id": "extensive_aerobic_movement_intervals",
+    "category": "physical",
+    "focus": [
+      "movement",
+      "aerobic_base",
+      "tempo"
+    ],
+    "tags": [
+      "movement",
+      "conditioning",
+      "aerobic_base",
+      "base",
+      "build"
+    ],
+    "intensity": "moderate",
+    "intent": "control",
+    "constraints": [
+      "Mantener el mismo ritmo del primer al último intervalo",
+      "Terminar cada bloque con postura limpia en la T"
+    ],
+    "progressionLevel": 2,
+    "phaseAppropriate": [
+      "base",
+      "build",
+      "peak"
+    ],
+    "partnerRequired": false,
+    "executionMode": "either",
+    "family": "physical_general",
+    "blockKind": "technical",
+    "stableName": null,
+    "stableDescription": "Haz intervalos largos moviéndote entre la T, el frente y el fondo a ritmo controlado. Objetivo: sostener movimiento específico durante más tiempo sin perder técnica. Clave: termina cada bloque con la misma calidad de pasos con la que empezaste."
+  },
+  {
+    "id": "front_back_transition",
+    "category": "tactical",
+    "focus": [
+      "transition",
+      "recovery",
+      "court_coverage"
+    ],
+    "tags": [
+      "transition",
+      "court_coverage",
+      "build",
+      "peak"
+    ],
+    "intensity": "moderate",
+    "intent": null,
+    "constraints": null,
+    "progressionLevel": 2,
+    "phaseAppropriate": [
+      "build",
+      "peak"
+    ],
+    "partnerRequired": false,
+    "executionMode": "either",
+    "family": "transition_patterns",
+    "blockKind": "technical",
+    "stableName": "Transición frente-fondo con vuelta a la T",
+    "stableDescription": "Alterna una pelota corta al frente y una pelota profunda al fondo, volviendo a la T después de cada golpe. Objetivo: cubrir toda la cancha con ritmo y control. Clave: llega estable a cada esquina y vuelve al centro antes de acelerar otra vez."
+  },
+  {
+    "id": "front_court_angle_finish",
+    "category": "technical",
+    "focus": [
+      "angle",
+      "front_court",
+      "finish"
+    ],
+    "tags": [
+      "angle",
+      "front_court",
+      "finish",
+      "build",
+      "peak"
+    ],
+    "intensity": "moderate",
+    "intent": "finishing",
+    "constraints": [
+      "Mantener la preparación hasta el último momento",
+      "Intentar cerrar el punto dentro de 3 golpes"
+    ],
+    "progressionLevel": 2,
+    "phaseAppropriate": [
+      "base",
+      "build",
+      "peak",
+      "taper"
+    ],
+    "partnerRequired": false,
+    "executionMode": "either",
+    "family": "finishing",
+    "blockKind": "technical",
+    "stableName": "Definición con ángulo en zona delantera",
+    "stableDescription": "Desde la zona delantera, juega una pelota con ángulo hacia la pared lateral o la esquina baja. Objetivo: cerrar el punto cuando el rival llega tarde o queda lejos. Clave: mantén preparación tranquila y busca que la pelota se aleje, no que salga fuerte."
+  },
+  {
+    "id": "ghosting_4_corners",
+    "category": "physical",
+    "focus": [
+      "ghosting",
+      "movement",
+      "conditioning"
+    ],
+    "tags": [
+      "ghosting",
+      "movement",
+      "base",
+      "build"
+    ],
+    "intensity": "moderate",
+    "intent": "consistency",
+    "constraints": [
+      "Llegar equilibrado a cada esquina",
+      "Volver a la T después de cada desplazamiento"
+    ],
+    "progressionLevel": 1,
+    "phaseAppropriate": [
+      "base",
+      "build",
+      "peak"
+    ],
+    "partnerRequired": false,
+    "executionMode": "solo",
+    "family": "ghosting",
+    "blockKind": "shadows",
+    "stableName": "Ghosting a cuatro esquinas",
+    "stableDescription": null
+  },
+  {
+    "id": "ghosting_6_points",
+    "category": "physical",
+    "focus": [
+      "ghosting",
+      "movement",
+      "speed"
+    ],
+    "tags": [
+      "ghosting",
+      "movement",
+      "speed",
+      "build",
+      "peak"
+    ],
+    "intensity": "high",
+    "intent": null,
+    "constraints": null,
+    "progressionLevel": 2,
+    "phaseAppropriate": [
+      "base",
+      "build",
+      "peak"
+    ],
+    "partnerRequired": false,
+    "executionMode": "solo",
+    "family": "ghosting",
+    "blockKind": "shadows",
+    "stableName": "Ghosting a seis puntos",
+    "stableDescription": null
+  },
+  {
+    "id": "match_sim_points_short_sets",
+    "category": "match",
+    "focus": [
+      "match_play",
+      "decision_making",
+      "pressure"
+    ],
+    "tags": [
+      "match_play",
+      "peak",
+      "pressure",
+      "competitive"
+    ],
+    "intensity": "high",
+    "intent": null,
+    "constraints": null,
+    "progressionLevel": 3,
+    "phaseAppropriate": [
+      "build",
+      "peak",
+      "race"
+    ],
+    "partnerRequired": true,
+    "executionMode": "match",
+    "family": "match_play_practice",
+    "blockKind": "match",
+    "stableName": "Game a 11 con marcador real",
+    "stableDescription": null
+  },
+  {
+    "id": "mid_court_drops",
+    "category": "technical",
+    "focus": [
+      "drop",
+      "transition",
+      "touch"
+    ],
+    "tags": [
+      "drop",
+      "transition",
+      "touch",
+      "control_session",
+      "base",
+      "build",
+      "taper",
+      "recovery_technical"
+    ],
+    "intensity": "low",
+    "intent": "control",
+    "constraints": [
+      "No acelerar el brazo para fabricar el drop",
+      "La pelota debe botar antes del cuadro de saque"
+    ],
+    "progressionLevel": 1,
+    "phaseAppropriate": [
+      "base",
+      "taper",
+      "transition",
+      "race"
+    ],
+    "partnerRequired": false,
+    "executionMode": "either",
+    "family": "front_court_touch",
+    "blockKind": "control",
+    "stableName": "Drops desde media cancha",
+    "stableDescription": null
+  },
+  {
+    "id": "multiball_pressure_finishes",
+    "category": "physical",
+    "focus": [
+      "multiball",
+      "pressure",
+      "finish"
+    ],
+    "tags": [
+      "multiball",
+      "pressure",
+      "peak",
+      "attack"
+    ],
+    "intensity": "high",
+    "intent": "pressure",
+    "constraints": null,
+    "progressionLevel": 3,
+    "phaseAppropriate": [
+      "base",
+      "build",
+      "peak"
+    ],
+    "partnerRequired": true,
+    "executionMode": "partner",
+    "family": "multiball_pressure",
+    "blockKind": "technical",
+    "stableName": "Multibola para presionar y cerrar",
+    "stableDescription": "El alimentador entrega varias pelotas seguidas y tú juegas profundo hasta recibir una pelota atacable. Objetivo: sostener presión y elegir bien el momento de cerrar. Clave: no mates la primera pelota difícil; construye hasta que el cierre sea claro."
+  },
+  {
+    "id": "nick_pressure_closure",
+    "category": "technical",
+    "focus": [
+      "nick",
+      "finish",
+      "precision"
+    ],
+    "tags": [
+      "nick",
+      "angle",
+      "finish",
+      "build",
+      "peak",
+      "pressure"
+    ],
+    "intensity": "moderate",
+    "intent": "finishing",
+    "constraints": [
+      "Atacar solo cuando llegues equilibrado",
+      "Usar una marca visual cerca de la esquina baja"
+    ],
+    "progressionLevel": 3,
+    "phaseAppropriate": [
+      "build",
+      "peak"
+    ],
+    "partnerRequired": false,
+    "executionMode": "either",
+    "family": "finishing",
+    "blockKind": "technical",
+    "stableName": "Nick: cierre a la unión baja",
+    "stableDescription": "Después de mover al rival, ataca el nick: la unión baja entre pared lateral y frontal. Objetivo: cerrar con una pelota que salga baja o muera cerca de la esquina. Clave: intenta el nick solo equilibrado; si llegas forzado, juega una pelota segura."
+  },
+  {
+    "id": "practice_match_best_of_3",
+    "category": "match",
+    "focus": [
+      "match_play",
+      "pressure",
+      "competitive_rhythm"
+    ],
+    "tags": [
+      "match_play",
+      "practice",
+      "build",
+      "peak",
+      "pressure"
+    ],
+    "intensity": "moderate",
+    "intent": null,
+    "constraints": null,
+    "progressionLevel": 2,
+    "phaseAppropriate": [
+      "build",
+      "peak",
+      "race"
+    ],
+    "partnerRequired": true,
+    "executionMode": "match",
+    "family": "match_play_practice",
+    "blockKind": "match",
+    "stableName": "Partido de entrenamiento al mejor de 3 juegos",
+    "stableDescription": null
+  },
+  {
+    "id": "practice_match_five_games",
+    "category": "match",
+    "focus": [
+      "match_play",
+      "decision_making",
+      "tactical_application"
+    ],
+    "tags": [
+      "match_play",
+      "practice",
+      "build",
+      "peak"
+    ],
+    "intensity": "high",
+    "intent": null,
+    "constraints": null,
+    "progressionLevel": 2,
+    "phaseAppropriate": [
+      "build",
+      "peak",
+      "race"
+    ],
+    "partnerRequired": true,
+    "executionMode": "match",
+    "family": "match_play_practice",
+    "blockKind": "match",
+    "stableName": "Partido de entrenamiento al mejor de 5 juegos",
+    "stableDescription": "Juega un partido de entrenamiento al mejor de 5 juegos con marcador normal. Objetivo: sostener tu plan de juego durante un formato largo. Clave: después de cada juego, define una corrección simple antes de volver a entrar."
+  },
+  {
+    "id": "pre_match_activation_timing",
+    "category": "match",
+    "focus": [
+      "activation",
+      "timing",
+      "confidence"
+    ],
+    "tags": [
+      "pre_match",
+      "taper",
+      "timing",
+      "activation"
+    ],
+    "intensity": "low",
+    "intent": null,
+    "constraints": null,
+    "progressionLevel": 1,
+    "phaseAppropriate": [
+      "taper",
+      "race"
+    ],
+    "partnerRequired": true,
+    "executionMode": "match",
+    "family": "pre_match_activation",
+    "blockKind": "match",
+    "stableName": "Activación pre-partido de manos y pies",
+    "stableDescription": "Antes de competir, combina voleas suaves, paralelas profundas y salidas cortas desde la T. Objetivo: llegar con manos finas y piernas despiertas, no cansado. Clave: termina con ganas de jugar más; si quedas pesado, fue demasiado."
+  },
+  {
+    "id": "pressure_back_corners",
+    "category": "tactical",
+    "focus": [
+      "pressure",
+      "back_court",
+      "length"
+    ],
+    "tags": [
+      "pressure",
+      "back_court",
+      "build",
+      "peak"
+    ],
+    "intensity": "moderate",
+    "intent": null,
+    "constraints": null,
+    "progressionLevel": 2,
+    "phaseAppropriate": [
+      "build",
+      "peak"
+    ],
+    "partnerRequired": false,
+    "executionMode": "either",
+    "family": "pressure_back_court",
+    "blockKind": "technical",
+    "stableName": "Presión a esquinas de fondo",
+    "stableDescription": "Juega profundo alternando las dos esquinas del fondo. Objetivo: mantener al rival detrás del cuadro de saque y negarle la T. Clave: no cambies corto demasiado pronto; primero consigue que golpee incómodo desde atrás."
+  },
+  {
+    "id": "pressure_back_court",
+    "category": "tactical",
+    "focus": [
+      "conditioned_game",
+      "pressure",
+      "back_court"
+    ],
+    "tags": [
+      "conditioned_game",
+      "pressure",
+      "back_court",
+      "build",
+      "peak"
+    ],
+    "intensity": "high",
+    "intent": "pressure",
+    "constraints": [
+      "La pelota debe llegar detrás del cuadro de saque antes de atacar corto",
+      "Buscar que el rival golpee desde el fondo"
+    ],
+    "progressionLevel": 3,
+    "phaseAppropriate": [
+      "build",
+      "peak"
+    ],
+    "partnerRequired": true,
+    "executionMode": "partner",
+    "family": "conditioned_general",
+    "blockKind": "technical",
+    "stableName": "Juego condicionado solo al fondo (intenso)",
+    "stableDescription": "Juega puntos donde ambos deben mandar la mayoría de las pelotas al fondo. Objetivo: sostener presión con largo antes de buscar el ganador. Clave: ataca corto solo cuando la pelota rival queda claramente corta o alta; no fuerces el cierre desde mala posición."
+  },
+  {
+    "id": "pressure_three_quarters_court",
+    "category": "tactical",
+    "focus": [
+      "transition",
+      "pressure",
+      "mid_court"
+    ],
+    "tags": [
+      "transition",
+      "pressure",
+      "mid_court",
+      "conditioned_game",
+      "build",
+      "peak"
+    ],
+    "intensity": "high",
+    "intent": "pressure",
+    "constraints": [
+      "Tomar la pelota antes de que llegue a la esquina del fondo",
+      "Volver a la T después de cada golpe"
+    ],
+    "progressionLevel": 3,
+    "phaseAppropriate": [
+      "build",
+      "peak"
+    ],
+    "partnerRequired": true,
+    "executionMode": "partner",
+    "family": "conditioned_general",
+    "blockKind": "technical",
+    "stableName": null,
+    "stableDescription": "Juega desde la zona entre media cancha y el fondo, tomando la pelota antes de que se meta atrás. Objetivo: avanzar hacia la T y convertir una pelota neutral en presión. Clave: contacta temprano, recupera hacia adelante y prepara el ataque siguiente."
+  },
+  {
+    "id": "rsa_short_bursts",
+    "category": "physical",
+    "focus": [
+      "rsa",
+      "conditioning",
+      "repeat_sprint"
+    ],
+    "tags": [
+      "rsa",
+      "conditioning",
+      "peak",
+      "speed"
+    ],
+    "intensity": "high",
+    "intent": null,
+    "constraints": null,
+    "progressionLevel": 3,
+    "phaseAppropriate": [
+      "base",
+      "build",
+      "peak"
+    ],
+    "partnerRequired": false,
+    "executionMode": "either",
+    "family": "rsa",
+    "blockKind": "technical",
+    "stableName": null,
+    "stableDescription": null
+  },
+  {
+    "id": "solo_100_drops",
+    "category": "technical",
+    "focus": [
+      "drop",
+      "touch",
+      "front_court"
+    ],
+    "tags": [
+      "drop",
+      "front_court",
+      "solo",
+      "volume_reps",
+      "control_session",
+      "base",
+      "build",
+      "taper",
+      "recovery_technical"
+    ],
+    "intensity": "low",
+    "intent": "control",
+    "constraints": [
+      "50 repeticiones por lado",
+      "La segunda bote debe quedar antes del cuadro de saque"
+    ],
+    "progressionLevel": 1,
+    "phaseAppropriate": [
+      "base",
+      "taper",
+      "transition",
+      "race"
+    ],
+    "partnerRequired": false,
+    "executionMode": "solo",
+    "family": "solo_control_volume",
+    "blockKind": "control",
+    "stableName": null,
+    "stableDescription": null
+  },
+  {
+    "id": "solo_100_mid_court_shots",
+    "category": "technical",
+    "focus": [
+      "midcourt",
+      "length",
+      "precision"
+    ],
+    "tags": [
+      "midcourt",
+      "length",
+      "precision",
+      "solo",
+      "volume_reps",
+      "control_session",
+      "base",
+      "build",
+      "taper"
+    ],
+    "intensity": "low",
+    "intent": "control",
+    "constraints": [
+      "Alternar paralelo y cruzado cada 10 golpes",
+      "Contactar la pelota delante del pie delantero"
+    ],
+    "progressionLevel": 1,
+    "phaseAppropriate": [
+      "base",
+      "build",
+      "peak",
+      "taper"
+    ],
+    "partnerRequired": false,
+    "executionMode": "solo",
+    "family": "solo_control_volume",
+    "blockKind": "control",
+    "stableName": null,
+    "stableDescription": "Desde media cancha, golpea 100 drives alternando paralelo y cruzado. Objetivo: aprender a transformar una pelota cómoda en largo profundo. Clave: contacta delante del pie delantero y no sigas si la pelota empieza a quedar en el centro."
+  },
+  {
+    "id": "solo_100_parallels_back",
+    "category": "technical",
+    "focus": [
+      "drive",
+      "parallel",
+      "length"
+    ],
+    "tags": [
+      "drive",
+      "parallel",
+      "length",
+      "solo",
+      "volume_reps",
+      "control_session",
+      "base",
+      "build",
+      "taper"
+    ],
+    "intensity": "moderate",
+    "intent": "control",
+    "constraints": [
+      "Mantener la pelota a menos de una raqueta de la pared lateral",
+      "50 repeticiones por lado"
+    ],
+    "progressionLevel": 1,
+    "phaseAppropriate": [
+      "base",
+      "build",
+      "peak",
+      "taper"
+    ],
+    "partnerRequired": false,
+    "executionMode": "solo",
+    "family": "solo_control_volume",
+    "blockKind": "control",
+    "stableName": null,
+    "stableDescription": "Desde el fondo, juega 100 drives paralelos pegados a la pared lateral. Objetivo: que tu paralela sea una pelota segura, profunda y difícil de atacar. Clave: cuenta como buena solo la pelota que llega atrás y se mantiene a menos de una raqueta de la pared lateral."
+  },
+  {
+    "id": "solo_100_service_box",
+    "category": "technical",
+    "focus": [
+      "target",
+      "length",
+      "precision"
+    ],
+    "tags": [
+      "target",
+      "length",
+      "precision",
+      "solo",
+      "volume_reps",
+      "control_session",
+      "base",
+      "build",
+      "taper"
+    ],
+    "intensity": "low",
+    "intent": "control",
+    "constraints": [
+      "Marcar un objetivo visible dentro del cuadro de saque",
+      "50 repeticiones por lado"
+    ],
+    "progressionLevel": 1,
+    "phaseAppropriate": [
+      "base",
+      "build",
+      "peak",
+      "taper"
+    ],
+    "partnerRequired": false,
+    "executionMode": "solo",
+    "family": "solo_control_volume",
+    "blockKind": "control",
+    "stableName": null,
+    "stableDescription": "Juega 100 drives hacia un objetivo visible dentro del cuadro de saque. Objetivo: darle una referencia concreta a tu profundidad. Clave: marca una zona con cono/cinta y cuenta como buena solo la pelota que cae o pasa por ahí; 50 repeticiones por lado."
+  },
+  {
+    "id": "solo_volleys_only",
+    "category": "technical",
+    "focus": [
+      "volley",
+      "control",
+      "timing"
+    ],
+    "tags": [
+      "volley",
+      "control",
+      "timing",
+      "solo",
+      "control_session",
+      "base",
+      "build",
+      "taper"
+    ],
+    "intensity": "low",
+    "intent": "control",
+    "constraints": [
+      "Contactar la pelota delante del cuerpo",
+      "Completar series de 20 contactos sin perder control"
+    ],
+    "progressionLevel": 1,
+    "phaseAppropriate": [
+      "base",
+      "build",
+      "peak",
+      "taper"
+    ],
+    "partnerRequired": false,
+    "executionMode": "solo",
+    "family": "solo_control_volume",
+    "blockKind": "control",
+    "stableName": "Voleas en solitario",
+    "stableDescription": null
+  },
+  {
+    "id": "split_step_t_recovery",
+    "category": "physical",
+    "focus": [
+      "footwork",
+      "t_control",
+      "reaction"
+    ],
+    "tags": [
+      "footwork",
+      "t_control",
+      "build",
+      "taper"
+    ],
+    "intensity": "moderate",
+    "intent": "recovery",
+    "constraints": null,
+    "progressionLevel": 1,
+    "phaseAppropriate": [
+      "base",
+      "build",
+      "peak"
+    ],
+    "partnerRequired": false,
+    "executionMode": "solo",
+    "family": "footwork",
+    "blockKind": "shadows",
+    "stableName": "Split-step y vuelta a la T",
+    "stableDescription": null
+  },
+  {
+    "id": "t_control_long_short",
+    "category": "tactical",
+    "focus": [
+      "t_control",
+      "long_short",
+      "pressure"
+    ],
+    "tags": [
+      "t_control",
+      "long_short",
+      "conditioned_game",
+      "build",
+      "peak"
+    ],
+    "intensity": "moderate",
+    "intent": null,
+    "constraints": null,
+    "progressionLevel": 2,
+    "phaseAppropriate": [
+      "build",
+      "peak"
+    ],
+    "partnerRequired": true,
+    "executionMode": "partner",
+    "family": "conditioned_general",
+    "blockKind": "technical",
+    "stableName": "Patrón largo-corto desde la T",
+    "stableDescription": "Desde la T, alterna una pelota profunda al fondo y una pelota corta al frente. Objetivo: mover al rival largo-corto sin abandonar tu posición central. Clave: después de cada golpe vuelve a la T; si persigues tu propia pelota, perdiste el control del patrón."
+  },
+  {
+    "id": "technical_recovery_length",
+    "category": "technical",
+    "focus": [
+      "recovery_technical",
+      "length",
+      "rhythm"
+    ],
+    "tags": [
+      "recovery_technical",
+      "length",
+      "length_control",
+      "control_session",
+      "taper",
+      "base"
+    ],
+    "intensity": "low",
+    "intent": null,
+    "constraints": null,
+    "progressionLevel": 1,
+    "phaseAppropriate": [
+      "base",
+      "taper",
+      "transition",
+      "race"
+    ],
+    "partnerRequired": false,
+    "executionMode": "either",
+    "family": "recovery_length",
+    "blockKind": "control",
+    "stableName": null,
+    "stableDescription": "Pelotea profundo a ritmo suave, priorizando altura, largo y contacto limpio. Objetivo: recuperar sensaciones y soltar el cuerpo sin sumar fatiga. Clave: si sube la intensidad o empiezas a competir el punto, vuelve a bajar el ritmo."
+  },
+  {
+    "id": "volley_control_midcourt",
+    "category": "technical",
+    "focus": [
+      "volley",
+      "control",
+      "midcourt"
+    ],
+    "tags": [
+      "volley",
+      "control",
+      "midcourt",
+      "base",
+      "build"
+    ],
+    "intensity": "moderate",
+    "intent": null,
+    "constraints": null,
+    "progressionLevel": 1,
+    "phaseAppropriate": [
+      "base",
+      "build",
+      "peak",
+      "taper"
+    ],
+    "partnerRequired": false,
+    "executionMode": "either",
+    "family": "volley_patterns",
+    "blockKind": "technical",
+    "stableName": "Volea de control desde media cancha",
+    "stableDescription": "Desde media cancha, volea hacia una zona profunda sin dejar que la pelota bote. Objetivo: quitarle tiempo al rival sin perder estabilidad. Clave: golpe corto, contacto delante del cuerpo y recuperación inmediata a una base equilibrada."
+  },
+  {
+    "id": "volley_pressure_front_wall",
+    "category": "technical",
+    "focus": [
+      "volley",
+      "pressure",
+      "attack"
+    ],
+    "tags": [
+      "volley",
+      "pressure",
+      "attack",
+      "build",
+      "peak"
+    ],
+    "intensity": "moderate",
+    "intent": null,
+    "constraints": null,
+    "progressionLevel": 2,
+    "phaseAppropriate": [
+      "build",
+      "peak"
+    ],
+    "partnerRequired": false,
+    "executionMode": "either",
+    "family": "volley_patterns",
+    "blockKind": "technical",
+    "stableName": "Volea ofensiva desde media cancha",
+    "stableDescription": "Desde media cancha o cerca de la T, volea temprano hacia una esquina profunda o una pelota corta clara. Objetivo: usar la volea como presión, no solo como devolución. Clave: decide antes del contacto y juega a una zona, no al medio de la cancha."
+  },
+  {
+    "id": "volley_t_recover",
+    "category": "tactical",
+    "focus": [
+      "volley",
+      "t_control",
+      "recovery"
+    ],
+    "tags": [
+      "volley",
+      "t_control",
+      "build",
+      "peak"
+    ],
+    "intensity": "moderate",
+    "intent": "recovery",
+    "constraints": [
+      "Recuperación a la T antes del siguiente golpe"
+    ],
+    "progressionLevel": 2,
+    "phaseAppropriate": [
+      "build",
+      "peak"
+    ],
+    "partnerRequired": false,
+    "executionMode": "either",
+    "family": "volley_patterns",
+    "blockKind": "technical",
+    "stableName": "Volea y vuelta a la T",
+    "stableDescription": "Volea desde media cancha y vuelve a la T apenas termina el golpe. Objetivo: unir ataque temprano con recuperación real. Clave: la repetición cuenta si llegas al centro antes de la siguiente pelota, no solo si la volea entra."
+  }
+]

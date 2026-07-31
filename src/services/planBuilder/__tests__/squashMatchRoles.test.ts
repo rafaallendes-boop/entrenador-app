@@ -36,7 +36,7 @@ describe('drill eliminado: ataque temprano', () => {
     )
     expect(result.failure).toBeUndefined()
     const names = (result.sessions[0]?.squashDetails?.drills ?? []).map((drill) => drill.name)
-    expect(names).toContain(SQUASH_NAMES.TECHNICAL)
+    expect(names.some((name) => findSquashDrillByName(name)?.id === findSquashDrillByName(SQUASH_NAMES.TECHNICAL)?.id)).toBe(true)
     for (const name of names) expect(findSquashDrillByName(name)).toBeDefined()
   })
 })
@@ -101,7 +101,7 @@ describe('semántica role-aware', () => {
     const names = result.sessions[0]?.squashDetails?.drills.map((drill) => drill.name) ?? []
 
     expect(result.failure).toBeUndefined()
-    expect(names).toContain(SQUASH_NAMES.TECHNICAL)
+    expect(names.some((name) => findSquashDrillByName(name)?.id === findSquashDrillByName(SQUASH_NAMES.TECHNICAL)?.id)).toBe(true)
     expect(names).not.toContain(SQUASH_NAMES.FIVE_GAMES)
     expect(names).not.toContain(SQUASH_NAMES.BEST_OF_3)
   })
@@ -152,7 +152,7 @@ describe('exposición competitiva en el repair', () => {
     const result = repairGeneratedWeek([finisherSessionFixture(dayBefore)], context)
     const names = result.sessions[0]?.squashDetails?.drills.map((drill) => drill.name) ?? []
 
-    expect(names).toContain(SQUASH_NAMES.TECHNICAL)
+    expect(names.some((name) => findSquashDrillByName(name)?.id === findSquashDrillByName(SQUASH_NAMES.TECHNICAL)?.id)).toBe(true)
     expect(names).not.toContain(SQUASH_NAMES.BEST_OF_3)
   })
 })

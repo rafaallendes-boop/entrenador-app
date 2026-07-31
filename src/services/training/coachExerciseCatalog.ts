@@ -69,7 +69,7 @@ const SQUASH_ENTRIES: CatalogEntry[] = SQUASH_DRILL_LIBRARY.map((drill) => ({
   category: SQUASH_CATEGORY_LABELS[drill.category],
   intensity: drill.intensity,
   description: drill.description,
-  searchText: buildSearchText([drill.name, ...drill.tags, ...drill.focus]),
+  searchText: buildSearchText([drill.name, ...(drill.aliases ?? []), ...drill.tags, ...drill.focus]),
   defaults: { sets: 3, reps: '10', notes: drill.description },
 }))
 

@@ -230,7 +230,12 @@ describe('drillSelector progression', () => {
     })
 
     expect(selection.sessionKind).toBe('control')
-    expect(selection.drills.some((drill) => drill.name === '100 drops en solitario (50 por lado)' || drill.name === '100 drives paralelos desde el fondo')).toBe(true)
+    expect([
+      'Drops en solitario — 100 (50 por lado)',
+      'Drives desde media cancha — 100',
+      'Drives al cuadro de saque — 100',
+      'Drives paralelos desde el fondo — 100',
+    ]).toContain(selection.drills.find((drill) => drill.notes?.includes('100 reps'))?.name)
     expect(selection.drills.some((drill) => drill.notes?.includes('100 reps'))).toBe(true)
   })
 
@@ -452,8 +457,8 @@ describe('drillSelector progression', () => {
 
     expect(
       selection.drills.some((drill) =>
-        drill.name === 'Intervalos aeróbicos en cancha' ||
-        drill.name === 'Movimiento continuo de base aeróbica',
+        drill.name === 'Intervalos largos de movimiento en cancha' ||
+        drill.name === 'Movimiento continuo en cancha a ritmo sostenido',
       ),
     ).toBe(true)
   })
@@ -474,8 +479,8 @@ describe('drillSelector progression', () => {
       recentDrills: [],
     })
     const aerobicBaseNames = new Set([
-      'Movimiento continuo de base aeróbica',
-      'Intervalos aeróbicos en cancha',
+      'Movimiento continuo en cancha a ritmo sostenido',
+      'Intervalos largos de movimiento en cancha',
     ])
 
     expect(peakSelection.drills.some((drill) => aerobicBaseNames.has(drill.name))).toBe(false)

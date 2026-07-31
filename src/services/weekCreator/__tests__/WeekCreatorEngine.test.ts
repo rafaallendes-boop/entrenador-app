@@ -2347,7 +2347,7 @@ describe('validateWeekCreatorResponse sport details', () => {
           reason: 'Semana con drill libre',
           targetDate: '2026-05-11',
           sessions: [
-            squashSession('2026-05-11', 'AM', 'Squash técnico', 'Drives paralelos con ' + 'recuperaci' + 'ón a' + 'l T'),
+            squashSession('2026-05-11', 'AM', 'Squash técnico', 'Secuencia libre de rebotes a la pared trasera'),
           ],
         }],
       },
