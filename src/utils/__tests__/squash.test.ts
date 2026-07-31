@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import type { Session } from '../../types'
 import {
   getRecentSquashCompetitiveExposure,
+  hasSquashCompetitiveExposure,
   isCompetitionSquashMatch,
   isPracticeSquashMatch,
   resolveSquashSessionKind,
@@ -71,7 +72,52 @@ describe('squash session mode compatibility', () => {
 
     expect(exposure.practiceMatchCount).toBe(1)
     expect(exposure.competitionMatchCount).toBe(2)
+    expect(exposure.finisherCount).toBe(0)
     expect(exposure.totalMatchCount).toBe(3)
+    expect(exposure.exposureScore).toBe(3)
+  })
+
+  it('counts canonical finishers as competitive exposure without reclassifying them as matches', () => {
+    const standalone = makeSquashSession({
+      subtype: 'match',
+      squashDetails: {
+        trainingFocus: 'tactical',
+        sessionMode: 'practice_match',
+        sessionKind: 'match',
+        drills: [{ name: 'Partido de entrenamiento al mejor de 5 juegos' }],
+      },
+    })
+    const finisher = makeSquashSession({
+      id: 'finisher',
+      date: '2026-04-10',
+      subtype: 'training',
+      squashDetails: {
+        trainingFocus: 'technical',
+        sessionMode: 'drill_session',
+        sessionKind: 'mixed',
+        drills: [
+          { name: 'Tiros paralelos profundos' },
+          { name: 'Partido de entrenamiento al mejor de 3 juegos' },
+        ],
+        blocks: [
+          { kind: 'technical', drills: [{ name: 'Tiros paralelos profundos' }] },
+          { kind: 'match', drills: [{ name: 'Partido de entrenamiento al mejor de 3 juegos' }] },
+        ],
+      },
+    })
+
+    expect(hasSquashCompetitiveExposure(standalone)).toBe(true)
+    expect(hasSquashCompetitiveExposure(finisher)).toBe(true)
+    expect(isCompetitionSquashMatch(finisher)).toBe(false)
+
+    const exposure = getRecentSquashCompetitiveExposure([standalone, finisher], 6)
+    expect(exposure).toMatchObject({
+      practiceMatchCount: 1,
+      competitionMatchCount: 0,
+      finisherCount: 1,
+      totalMatchCount: 2,
+      exposureScore: 2,
+    })
   })
 
   it('uses the most recent matches when applying the exposure limit', () => {
@@ -108,6 +154,7 @@ describe('squash session mode compatibility', () => {
 
     expect(exposure.practiceMatchCount).toBe(1)
     expect(exposure.competitionMatchCount).toBe(1)
+    expect(exposure.finisherCount).toBe(0)
     expect(exposure.totalMatchCount).toBe(2)
   })
 
@@ -181,11 +228,11 @@ describe('squash session mode compatibility', () => {
         sessionKind: 'mixed',
         blocks: [
           { kind: 'technical', drills: [{ name: 'Ataque desde tres cuartos de cancha' }] },
-          { kind: 'match', drills: [{ name: 'Partido con ataque temprano' }] },
+          { kind: 'match', drills: [{ name: 'Partido de entrenamiento al mejor de 3 juegos' }] },
         ],
         drills: [
           { name: 'Ataque desde tres cuartos de cancha' },
-          { name: 'Partido con ataque temprano' },
+          { name: 'Partido de entrenamiento al mejor de 3 juegos' },
         ],
       },
     })

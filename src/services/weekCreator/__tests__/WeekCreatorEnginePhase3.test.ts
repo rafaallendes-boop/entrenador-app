@@ -78,7 +78,7 @@ describe('WeekCreatorEngine phase 3 compact contract', () => {
       correctedSessionsAffected: 1,
       structurallyRepairedSessionsAffected: 0,
       hydration: {
-        repairedSessionCount: 8,
+        repairedSessionCount: 7,
         movedSessionCount: 0,
         addedFallbackCount: 0,
         droppedSessionCount: 0,
@@ -86,10 +86,10 @@ describe('WeekCreatorEngine phase 3 compact contract', () => {
         repairTaxonomyVersion: 2,
         hydrationActionCount: 5,
         correctiveActionCount: 2,
-        structuralActionCount: 1,
+        structuralActionCount: 0,
         hydratedSessionsAffected: 5,
         correctedSessionsAffected: 2,
-        structurallyRepairedSessionsAffected: 1,
+        structurallyRepairedSessionsAffected: 0,
       },
     })
   })

@@ -129,6 +129,39 @@ describe('selectSquashDrillReplacement', () => {
     expect(replacement).toBeUndefined()
   })
 
+  it('restringe el pool con allowedIds sin relajar fase, fatiga ni modalidad', () => {
+    const context = buildContext()
+    const original = findOriginal(
+      context,
+      (candidate, other) => candidate.category === other.category
+        && resolveSquashDrillKind(candidate) === resolveSquashDrillKind(other),
+    )
+    const allowedCandidate = getAllowed(context).find((candidate) =>
+      candidate.id !== original.id
+      && candidate.category === original.category
+      && resolveSquashDrillKind(candidate) === resolveSquashDrillKind(original),
+    )
+
+    expect(allowedCandidate).toBeDefined()
+    expect(selectSquashDrillReplacement({
+      originalName: original.name,
+      context,
+      excludedKeys: new Set(),
+      rotationIndex: 0,
+      relaxation: 'strict',
+      allowedIds: new Set([allowedCandidate!.id]),
+    })?.id).toBe(allowedCandidate!.id)
+
+    expect(selectSquashDrillReplacement({
+      originalName: 'Partido de entrenamiento al mejor de 5 juegos',
+      context: buildContext({ phase: 'taper' }),
+      excludedKeys: new Set(),
+      rotationIndex: 0,
+      relaxation: 'strict',
+      allowedIds: new Set(['practice_match_best_of_3']),
+    })).toBeUndefined()
+  })
+
   it('same_kind relaja category y same_category relaja kind', () => {
     const context = buildContext()
     const sameKindOriginal = findOriginal(

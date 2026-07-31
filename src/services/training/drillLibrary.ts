@@ -569,16 +569,6 @@ const RAW_SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
     description: 'Juega un partido al mejor de 3 juegos con marcador normal. Objetivo: competir con intensidad sin acumular la carga de un mejor de 5. Clave: trata cada inicio de game como competencia real y revisa si mantienes tu plan bajo presión.',
     progressionLevel: 2,
   },
-  {
-    id: 'practice_match_short_points_attack',
-    name: 'Partido con ataque temprano',
-    category: 'match',
-    focus: ['match_play', 'attack', 'first_ball'],
-    intensity: 'high',
-    tags: ['match_play', 'practice', 'peak', 'attack', 'pressure'],
-    description: 'Juega un partido buscando atacar la primera pelota cómoda que quede en media cancha o adelante. Objetivo: cerrar rallies cortos con buena selección. Clave: ataca la pelota cómoda, no la pelota desesperada; si estás mal parado, reconstruye profundo.',
-    progressionLevel: 3,
-  },
 ]
 
 function inferDrillPhaseAppropriate(drill: SquashDrillDefinition): DrillPhase[] {
@@ -700,7 +690,6 @@ const DRILL_NAME_ALIASES: Record<string, string> = {
   game_a_11_con_marcador_real: 'match_sim_points_short_sets',
   partido_de_entrenamiento_libre_a_5_games: 'practice_match_five_games',
   partido_de_entrenamiento_al_mejor_de_3_games: 'practice_match_best_of_3',
-  partido_con_foco_de_ataque_en_puntos_cortos: 'practice_match_short_points_attack',
 }
 
 function normalizeDrillTokens(value: string): string[] {

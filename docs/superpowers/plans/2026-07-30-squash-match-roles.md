@@ -4,29 +4,53 @@
 
 **Goal:** Separar la categoría `match` de squash en dos roles derivados del contenido —`standalone` y `finisher`— para que el repair deje de destruir los finishers propuestos por el modelo.
 
-**Architecture:** Un módulo puro nuevo (`squashMatchRole.ts`) resuelve el rol desde `SquashDetails` por IDs estables. Todo el resto del cambio consume ese módulo: el predicado de exposición, la idempotencia de la normalización, la rotación, la unicidad de firmas y tres contadores observacionales. Sin migraciones, sin cambios en las reglas de autoría del prompt.
+**Architecture:** Un módulo puro nuevo (`squashMatchRole.ts`) resuelve el rol desde `SquashDetails` por IDs estables y expone el único predicado de exposición. El rol interviene **al calcular** la semántica y la densificación, no como parche posterior. Sin migraciones, sin cambios en las reglas de autoría del prompt.
 
-**Tech Stack:** TypeScript, Vitest, Dexie (sin tocar), Vite.
+**Tech Stack:** TypeScript, Vitest, Vite.
 
 **Spec:** `docs/superpowers/specs/2026-07-30-squash-match-roles-design.md`
 
 ## Global Constraints
 
 - **IDs de contenido competitivo, exactamente estos tres:** `practice_match_five_games` (standalone), `practice_match_best_of_3` y `match_sim_points_short_sets` (finisher). `pre_match_activation_timing` **NO** es contenido competitivo.
-- **`isCompetitionSquashMatch` (`src/utils/squash.ts:94`) no se modifica.** Tiene 31 call sites en 13 archivos (nutrición, protocolos, carga, prompts).
+- **`isCompetitionSquashMatch` (`src/utils/squash.ts:94`) no se modifica.** 31 call sites en 13 archivos (nutrición, protocolos, carga, prompts).
 - **`isSquashMatchDrill` no decide rol.** Devuelve `true` para todo `category === 'match'`, incluida la activación.
+- **Un solo predicado de exposición**, definido sobre `SquashDetails` en `squashMatchRole.ts`. `utils/squash.ts` y `repairWeek.ts` lo envuelven, no lo reimplementan.
+- **Invariante duro del rol:** `drills[]` debe ser **exactamente** el flatten de `blocks` por ID y orden. Cualquier paso que toque drills o bloques debe dejarlos coherentes o el rol colapsa a `none`.
 - El repair **no compone** finishers: solo los habilita y preserva.
 - Los tres contadores nuevos son **observacionales**: no incrementan `repairedSessionCount` ni la taxonomía, y no entran en `countRepairsV2`.
+- **Valores de contrato reales para fixtures — nunca castear:**
+  - `SquashTrainingFocus = 'technical' | 'tactical' | 'physical' | 'conditioned_games'` (**no existe `'match'`**)
+  - `SquashSubtype = 'control' | 'training' | 'match' | 'competitive' | 'light'` (**no existe `'technical'`**)
+  - Finisher → `trainingFocus: 'technical'`, `subtype: 'training'`. Standalone → `trainingFocus: 'tactical'`, `subtype: 'match'`.
 - Comandos de verificación: `npm run lint`, `npm test`, `npm run build`.
-- **Ya aplicado, no rehacer:** la exención de sesiones de partido en
-  `quality.squash.low_drill_depth` (`src/services/planBuilder/qualityReview.ts`,
-  helper `isSquashMatchSession`) y su test
-  `__tests__/qualityReviewMatchDrillDepth.test.ts` están en el árbol sin
-  commitear desde el smoke de rotación. Spec §7 los da por hechos. Si el árbol
-  está limpio y no existen, escribirlos antes de la Task 5.
-- **No ejecutar `git commit` ni `git add`.** Regla del proyecto: los commits los hace el owner. Donde este plan dice "Commit", **detenerse y avisar** al owner qué archivos están listos.
-- **No correr `npm run loadtest:plan-builder`.** Es una corrida pagada (~US$0,90) y el saldo es ~US$0,60.
+- **Ya aplicado, no rehacer:** la exención de sesiones de partido en `quality.squash.low_drill_depth` (`qualityReview.ts`, helper `isSquashMatchSession`) y su test `__tests__/qualityReviewMatchDrillDepth.test.ts` están en el árbol sin commitear. Spec §7 los da por hechos.
+- **No ejecutar `git commit` ni `git add`.** Donde el plan dice "Avisar al owner", detenerse y reportar qué archivos quedaron listos.
+- **No correr `npm run loadtest:plan-builder`.** Corrida pagada (~US$0,90), saldo ~US$0,60.
 - Terminología: en textos de squash, "la T" (femenino).
+
+---
+
+## Orden y por qué
+
+El repair aplica sus pasos en orden fijo. La **densificación** (paso 6,
+`completeSportDetails`) corre **antes** de la **normalización semántica** (paso 13).
+Por eso Task 3 va antes que Task 4: sin densificación role-aware, ningún finisher
+llega vivo al paso 13 y los tests de Task 4 fallarían por una causa que no es la
+que están probando.
+
+| # | Tarea | Cierra |
+|---|---|---|
+| 1 | Módulo de rol + predicado compartido | spec §2, §2.0, §3 |
+| 2 | Eliminar ataque temprano | §7, §8 |
+| 3 | Densificación role-aware | invariante `drills[]`/`blocks` |
+| 4 | Semántica role-aware + limpieza de `none` | §2.1, idempotencia §7 |
+| 5 | Mínimo de drills standalone | §7 |
+| 6 | Exposición y taper tardío | §3, §3.1 |
+| 7 | Standalone fuera de unicidad | §5.1 |
+| 8 | Rotación y corrección role-aware | §5 |
+| 9 | Contadores observacionales | §6 |
+| 10 | Punto fijo y verificación | §9, §11 |
 
 ---
 
@@ -34,33 +58,36 @@
 
 | Archivo | Responsabilidad |
 |---|---|
-| `src/services/training/squashMatchRole.ts` | **Nuevo.** Resuelve `SquashMatchRole` desde `SquashDetails`. Única fuente de los IDs de rol. Puro, sin dependencias del plan builder. |
+| `src/services/training/squashMatchRole.ts` | **Nuevo.** Rol, IDs, predicado de exposición sobre `SquashDetails`. Puro. |
 | `src/services/training/__tests__/squashMatchRole.test.ts` | **Nuevo.** Contrato del módulo. |
 | `src/services/training/drillLibrary.ts` | Eliminar `practice_match_short_points_attack` y su alias. |
-| `src/utils/squash.ts` | `hasSquashCompetitiveExposure` + `finisherCount` en el resumen. |
-| `src/services/ai/promptModules/squashPrompt.ts` | Línea factual de exposición incluye finishers. |
-| `src/services/planBuilder/repairWeek.ts` | Idempotencia, exposición, taper tardío, mínimo de drills, rotación, unicidad, contadores. |
+| `src/services/training/drillSelector.ts` | `selectSquashDrillReplacement` acepta allowlist de IDs. |
+| `src/utils/squash.ts` | `hasSquashCompetitiveExposure` (envoltorio) + `finisherCount`. |
+| `src/services/ai/promptModules/squashPrompt.ts` | Línea factual de exposición. |
+| `src/services/planBuilder/repairWeek.ts` | Densificación, semántica, exposición, unicidad, rotación, contadores. |
 | `src/services/weekCreator/validateWeekCreatorResponse.ts` | Standalone fuera de `duplicate_squash_content`. |
-| `src/types/planBuilder.ts` | Tres campos opcionales en `PlanGenerationMeta`. |
-| `scripts/loadtest-plan-builder/artifact.mjs` | Allowlist de los tres contadores. |
-| `src/services/planBuilder/__tests__/squashMatchRoles.test.ts` | **Nuevo.** Tests 1-8 del spec §9. |
+| `src/types/planBuilder.ts` | Tres campos opcionales. |
+| `scripts/loadtest-plan-builder/artifact.mjs` | Allowlist. |
+| `src/services/planBuilder/__tests__/squashMatchRoles.test.ts` | **Nuevo.** Tests §9 del spec. |
+| `src/services/planBuilder/__tests__/helpers/squashRoleFixtures.ts` | **Nuevo.** Fixtures compartidos con valores de contrato reales. |
 
 ---
 
-## Task 1: Módulo de rol
+## Task 1: Módulo de rol y predicado de exposición
 
 **Files:**
 - Create: `src/services/training/squashMatchRole.ts`
 - Test: `src/services/training/__tests__/squashMatchRole.test.ts`
 
 **Interfaces:**
-- Consumes: `findSquashDrillByName` de `./drillLibrary`; tipos `SquashDetails`, `SquashDrill`, `SquashSessionBlock` de `../../types`.
+- Consumes: `findSquashDrillByName` de `./drillLibrary`; `SquashDetails`, `SquashDrill` de `../../types`.
 - Produces:
   - `type SquashMatchRole = 'standalone' | 'finisher' | 'none'`
   - `const SQUASH_STANDALONE_MATCH_ID: 'practice_match_five_games'`
   - `const SQUASH_FINISHER_MATCH_IDS: readonly ['practice_match_best_of_3', 'match_sim_points_short_sets']`
   - `function isCompetitiveMatchDrill(drill: Pick<SquashDrill, 'name'>): boolean`
   - `function resolveSquashMatchRole(details: SquashDetails | undefined): SquashMatchRole`
+  - `function hasSquashCompetitiveExposureContent(details: SquashDetails | undefined): boolean`
 
 - [ ] **Step 1: Escribir el test que falla**
 
@@ -70,6 +97,7 @@ Crear `src/services/training/__tests__/squashMatchRole.test.ts`:
 import { describe, expect, it } from 'vitest'
 import type { SquashDetails } from '../../../types'
 import {
+  hasSquashCompetitiveExposureContent,
   isCompetitiveMatchDrill,
   resolveSquashMatchRole,
   SQUASH_FINISHER_MATCH_IDS,
@@ -107,7 +135,7 @@ describe('resolveSquashMatchRole', () => {
     }
   })
 
-  it('no es finisher sin bloques, porque no se puede demostrar que sea el último', () => {
+  it('no es finisher sin bloques: no se puede demostrar que sea el último', () => {
     expect(resolveSquashMatchRole(details({
       drills: [{ name: TECHNICAL }, { name: BEST_OF_3 }],
     }))).toBe('none')
@@ -130,21 +158,23 @@ describe('resolveSquashMatchRole', () => {
     }))).toBe('none')
   })
 
-  it('no es finisher si hay otro drill competitivo en la sesión', () => {
+  it('no es finisher si hay otro drill competitivo', () => {
     expect(resolveSquashMatchRole(details({
       drills: [{ name: TECHNICAL }, { name: FIVE_GAMES }, { name: BEST_OF_3 }],
       blocks: [
         { kind: 'technical', drills: [{ name: TECHNICAL }] },
-        { kind: 'match', drills: [{ name: FIVE_GAMES }] },
-        { kind: 'match', drills: [{ name: BEST_OF_3 }] },
+        { kind: 'match', drills: [{ name: FIVE_GAMES }, { name: BEST_OF_3 }] },
       ],
     }))).toBe('none')
   })
 
-  it('no es canónico si blocks y drills divergen', () => {
+  it('no es canónico si blocks y drills divergen en orden', () => {
     expect(resolveSquashMatchRole(details({
       drills: [{ name: TECHNICAL }, { name: BEST_OF_3 }],
-      blocks: [{ kind: 'match', drills: [{ name: BEST_OF_3 }] }],
+      blocks: [
+        { kind: 'match', drills: [{ name: BEST_OF_3 }] },
+        { kind: 'technical', drills: [{ name: TECHNICAL }] },
+      ],
     }))).toBe('none')
   })
 
@@ -166,6 +196,16 @@ describe('resolveSquashMatchRole', () => {
 
   it('devuelve none sin details', () => {
     expect(resolveSquashMatchRole(undefined)).toBe('none')
+  })
+})
+
+describe('hasSquashCompetitiveExposureContent', () => {
+  it('es true para standalone y finisher, false para el resto', () => {
+    expect(hasSquashCompetitiveExposureContent(details({ drills: [{ name: FIVE_GAMES }] }))).toBe(true)
+    expect(hasSquashCompetitiveExposureContent(finisherDetails(BEST_OF_3))).toBe(true)
+    expect(hasSquashCompetitiveExposureContent(details({ drills: [{ name: TECHNICAL }] }))).toBe(false)
+    expect(hasSquashCompetitiveExposureContent(details({ drills: [{ name: ACTIVATION }] }))).toBe(false)
+    expect(hasSquashCompetitiveExposureContent(undefined)).toBe(false)
   })
 })
 ```
@@ -202,31 +242,33 @@ export const SQUASH_FINISHER_MATCH_IDS = [
   'match_sim_points_short_sets',
 ] as const
 
+export type SquashFinisherMatchId = typeof SQUASH_FINISHER_MATCH_IDS[number]
+
 const COMPETITIVE_MATCH_IDS: ReadonlySet<string> = new Set([
   SQUASH_STANDALONE_MATCH_ID,
   ...SQUASH_FINISHER_MATCH_IDS,
 ])
 
-function resolveDrillId(drill: Pick<SquashDrill, 'name'>): string | undefined {
-  return findSquashDrillByName(drill.name)?.id
+export function resolveSquashDrillIdentity(drill: Pick<SquashDrill, 'name'>): string {
+  return findSquashDrillByName(drill.name)?.id ?? drill.name.trim().toLowerCase()
 }
 
 export function isCompetitiveMatchDrill(drill: Pick<SquashDrill, 'name'>): boolean {
-  const id = resolveDrillId(drill)
-  return id != null && COMPETITIVE_MATCH_IDS.has(id)
+  return COMPETITIVE_MATCH_IDS.has(findSquashDrillByName(drill.name)?.id ?? '')
 }
 
-/** Si hay bloques, su flatten por ID y orden debe coincidir exactamente con `drills[]`. */
-function blocksMatchDrills(details: SquashDetails): boolean {
-  const blocks = details.blocks ?? []
-  const flattened = blocks.flatMap((block) => block.drills ?? [])
+export function isFinisherMatchDrill(drill: Pick<SquashDrill, 'name'>): boolean {
+  const id = findSquashDrillByName(drill.name)?.id
+  return id != null && (SQUASH_FINISHER_MATCH_IDS as readonly string[]).includes(id)
+}
+
+/** Invariante duro: `drills[]` es exactamente el flatten de `blocks` por ID y orden. */
+export function blocksMatchDrills(details: SquashDetails): boolean {
+  const flattened = (details.blocks ?? []).flatMap((block) => block.drills ?? [])
   const drills = details.drills ?? []
   if (flattened.length !== drills.length) return false
-  return flattened.every((drill, index) => {
-    const left = resolveDrillId(drill) ?? drill.name.trim().toLowerCase()
-    const right = resolveDrillId(drills[index]!) ?? drills[index]!.name.trim().toLowerCase()
-    return left === right
-  })
+  return flattened.every((drill, index) =>
+    resolveSquashDrillIdentity(drill) === resolveSquashDrillIdentity(drills[index]!))
 }
 
 export function resolveSquashMatchRole(details: SquashDetails | undefined): SquashMatchRole {
@@ -239,81 +281,102 @@ export function resolveSquashMatchRole(details: SquashDetails | undefined): Squa
   const competitive = drills.filter(isCompetitiveMatchDrill)
   if (competitive.length === 0) return 'none'
 
-  if (drills.length === 1 && resolveDrillId(drills[0]!) === SQUASH_STANDALONE_MATCH_ID) {
+  if (
+    drills.length === 1
+    && findSquashDrillByName(drills[0]!.name)?.id === SQUASH_STANDALONE_MATCH_ID
+  ) {
     return 'standalone'
   }
 
-  // Un finisher no puede ser canónico sin bloques: sin ellos no hay forma de
-  // demostrar que el partido es el último ni que existe un bloque previo no-match.
+  // Sin bloques no hay forma de demostrar que el partido es el último ni que
+  // existe un bloque previo no-match.
   if (blocks.length < 2) return 'none'
   if (competitive.length !== 1) return 'none'
 
   const lastBlock = blocks[blocks.length - 1]!
   if (lastBlock.kind !== 'match') return 'none'
   if ((lastBlock.drills ?? []).length !== 1) return 'none'
-
-  const finisherId = resolveDrillId(lastBlock.drills[0]!)
-  if (finisherId == null) return 'none'
-  if (!SQUASH_FINISHER_MATCH_IDS.includes(finisherId as typeof SQUASH_FINISHER_MATCH_IDS[number])) return 'none'
-
-  const hasNonMatchBefore = blocks
-    .slice(0, -1)
-    .some((block) => block.kind !== 'match')
-  if (!hasNonMatchBefore) return 'none'
+  if (!isFinisherMatchDrill(lastBlock.drills[0]!)) return 'none'
+  if (!blocks.slice(0, -1).some((block) => block.kind !== 'match')) return 'none'
 
   return 'finisher'
+}
+
+/**
+ * Único predicado de exposición competitiva del proyecto, definido sobre
+ * contenido. `utils/squash.ts` y `repairWeek.ts` lo envuelven; no lo
+ * reimplementan.
+ */
+export function hasSquashCompetitiveExposureContent(
+  details: SquashDetails | undefined,
+): boolean {
+  return resolveSquashMatchRole(details) !== 'none'
 }
 ```
 
 - [ ] **Step 4: Correr el test y verificar que pasa**
 
 Run: `npx vitest run src/services/training/__tests__/squashMatchRole.test.ts`
-Expected: PASS — 10 tests.
+Expected: PASS — 11 tests.
 
-- [ ] **Step 5: Avisar al owner**
-
-Archivos listos: `src/services/training/squashMatchRole.ts`, `src/services/training/__tests__/squashMatchRole.test.ts`.
-Mensaje sugerido: `feat: add squash match role module`.
+- [ ] **Step 5: Avisar al owner** — `feat: add squash match role module`
 
 ---
 
 ## Task 2: Eliminar `practice_match_short_points_attack`
 
 **Files:**
-- Modify: `src/services/training/drillLibrary.ts:573` (definición), `:703` (alias)
-- Test: `src/services/planBuilder/__tests__/squashMatchRoles.test.ts` (nuevo, test 7 del spec)
+- Modify: `src/services/training/drillLibrary.ts` (definición ~573, alias ~703)
+- Create: `src/services/planBuilder/__tests__/helpers/squashRoleFixtures.ts`
+- Test: `src/services/planBuilder/__tests__/squashMatchRoles.test.ts`
 
 **Interfaces:**
-- Consumes: nada de Task 1.
-- Produces: la ausencia del ID. Ninguna tarea posterior puede referenciarlo.
+- Produces (fixtures, consumidos por Tasks 3-10):
+  - `const SQUASH_NAMES: { FIVE_GAMES; BEST_OF_3; GAME_TO_11; ACTIVATION; TECHNICAL; CONTROL }`
+  - `function drillSessionFixture(date: string, names: string[], durationMin?: number): CoachSessionProposal`
+  - `function standaloneSessionFixture(date: string, durationMin?: number): CoachSessionProposal`
+  - `function finisherSessionFixture(date: string, finisherName: string, leadNames?: string[], durationMin?: number): CoachSessionProposal`
 
-- [ ] **Step 1: Confirmar el alcance real de las referencias**
+- [ ] **Step 1: Confirmar el alcance real**
 
 Run: `grep -rn "practice_match_short_points_attack\|Partido con ataque temprano" src scripts docs`
-Expected: exactamente 2 líneas en `src/services/training/drillLibrary.ts` (definición ~573, alias ~703). Si aparece alguna más, eliminarla también en el Step 3.
+Expected: 2 líneas en `drillLibrary.ts`, más las apariciones en `docs/superpowers/specs/` y `plans/` (registro histórico, se conservan).
 
-- [ ] **Step 2: Escribir el test que falla**
+- [ ] **Step 2: Crear los fixtures compartidos con valores de contrato reales**
 
-Crear `src/services/planBuilder/__tests__/squashMatchRoles.test.ts`:
+Crear `src/services/planBuilder/__tests__/helpers/squashRoleFixtures.ts`:
 
 ```ts
-import { describe, expect, it } from 'vitest'
-import type { CoachSessionProposal, SquashDrill } from '../../../types'
-import { findSquashDrillByName } from '../../training/drillLibrary'
-import { repairGeneratedWeek } from '../repairWeek'
-import { buildRepairContextForTest, buildSkeletonSessionForTest } from './helpers/repairTestFixtures'
+import type { CoachSessionProposal, SquashDrill } from '../../../../types'
+import { buildSkeletonSessionForTest } from './repairTestFixtures'
 
-const ATTACK = 'Partido con ataque temprano'
-const TECHNICAL = 'Tiros paralelos profundos'
+export const SQUASH_NAMES = {
+  FIVE_GAMES: 'Partido de entrenamiento al mejor de 5 juegos',
+  BEST_OF_3: 'Partido de entrenamiento al mejor de 3 juegos',
+  GAME_TO_11: 'Game a 11 con marcador real',
+  ACTIVATION: 'Activación pre-partido de manos y pies',
+  TECHNICAL: 'Tiros paralelos profundos',
+  CONTROL: 'Tiros cruzados profundos',
+} as const
 
-function squashSession(date: string, drills: SquashDrill[]): CoachSessionProposal {
+/** Cuatro drills: ya densa para 60-75 min, así los tests no dependen del paso 6. */
+export function drillSessionFixture(
+  date: string,
+  names: string[] = [SQUASH_NAMES.TECHNICAL, SQUASH_NAMES.CONTROL],
+  durationMin = 60,
+): CoachSessionProposal {
+  const drills: SquashDrill[] = names.map((name) => ({
+    name,
+    durationMin: Math.round(durationMin / names.length),
+  }))
   return buildSkeletonSessionForTest({
     date,
     timeBlock: 'AM',
     sessionType: 'squash',
-    title: 'Squash',
-    objective: 'Trabajo de cancha.',
-    durationMin: 60,
+    subtype: 'training',
+    title: 'Squash técnico',
+    objective: 'Construir largo y control con ejecución limpia.',
+    durationMin,
     rpe: 6,
     squashDetails: {
       trainingFocus: 'technical',
@@ -324,6 +387,79 @@ function squashSession(date: string, drills: SquashDrill[]): CoachSessionProposa
   })
 }
 
+export function standaloneSessionFixture(date: string, durationMin = 60): CoachSessionProposal {
+  return buildSkeletonSessionForTest({
+    date,
+    timeBlock: 'AM',
+    sessionType: 'squash',
+    subtype: 'match',
+    title: 'Partido de entrenamiento',
+    objective: 'Competir puntos con estructura de partido.',
+    durationMin,
+    rpe: 8,
+    squashDetails: {
+      trainingFocus: 'tactical',
+      sessionMode: 'practice_match',
+      sessionKind: 'match',
+      drills: [{ name: SQUASH_NAMES.FIVE_GAMES, durationMin }],
+      blocks: [{ kind: 'match', drills: [{ name: SQUASH_NAMES.FIVE_GAMES, durationMin }] }],
+    },
+  })
+}
+
+/**
+ * Sesión ya densa (3 lead + 1 finisher) para que el test no dependa de la
+ * densificación del paso 6. `drills[]` es exactamente el flatten de `blocks`.
+ */
+export function finisherSessionFixture(
+  date: string,
+  finisherName: string = SQUASH_NAMES.BEST_OF_3,
+  leadNames: string[] = [SQUASH_NAMES.TECHNICAL, SQUASH_NAMES.CONTROL, '100 drops en solitario (50 por lado)'],
+  durationMin = 75,
+): CoachSessionProposal {
+  const lead: SquashDrill[] = leadNames.map((name) => ({ name, durationMin: 15 }))
+  const finisher: SquashDrill = { name: finisherName, durationMin: 30 }
+  return buildSkeletonSessionForTest({
+    date,
+    timeBlock: 'AM',
+    sessionType: 'squash',
+    subtype: 'training',
+    title: 'Squash con cierre competitivo',
+    objective: 'Trabajo de largo y cierre con marcador.',
+    durationMin,
+    rpe: 7,
+    squashDetails: {
+      trainingFocus: 'technical',
+      sessionMode: 'drill_session',
+      sessionKind: 'mixed',
+      drills: [...lead, finisher],
+      blocks: [
+        { kind: 'technical', drills: lead },
+        { kind: 'match', drills: [finisher] },
+      ],
+    },
+  })
+}
+```
+
+> Si `resolveSquashDrillKind` clasifica alguno de los `leadNames` fuera de
+> `technical`, el bloque `technical` del fixture no coincidirá con lo que
+> `buildSquashBlocksFromDrills` produciría. Verificarlo en el Step 4 y ajustar
+> `leadNames` a drills que sí compartan kind.
+
+- [ ] **Step 3: Escribir el test que falla**
+
+Crear `src/services/planBuilder/__tests__/squashMatchRoles.test.ts`:
+
+```ts
+import { describe, expect, it } from 'vitest'
+import { findSquashDrillByName } from '../../training/drillLibrary'
+import { repairGeneratedWeek } from '../repairWeek'
+import { buildRepairContextForTest } from './helpers/repairTestFixtures'
+import { drillSessionFixture, SQUASH_NAMES } from './helpers/squashRoleFixtures'
+
+const ATTACK = 'Partido con ataque temprano'
+
 describe('drill eliminado: ataque temprano', () => {
   it('ya no existe en el catálogo', () => {
     expect(findSquashDrillByName(ATTACK)?.id).not.toBe('practice_match_short_points_attack')
@@ -331,307 +467,187 @@ describe('drill eliminado: ataque temprano', () => {
 
   it('un plan legado que lo referencia solo termina resuelto y sin failure', () => {
     const result = repairGeneratedWeek(
-      [squashSession('2026-08-03', [{ name: ATTACK, durationMin: 60 }])],
+      [drillSessionFixture('2026-08-03', [ATTACK])],
       buildRepairContextForTest({ primarySport: 'squash', sessionsPerWeek: 1 }),
     )
     expect(result.failure).toBeUndefined()
     const drills = result.sessions[0]?.squashDetails?.drills ?? []
     expect(drills.length).toBeGreaterThan(0)
-    for (const drill of drills) {
-      expect(findSquashDrillByName(drill.name)).toBeDefined()
-    }
+    for (const drill of drills) expect(findSquashDrillByName(drill.name)).toBeDefined()
   })
 
-  it('un plan legado que lo referencia dentro de una sesión mixta conserva el resto', () => {
+  it('dentro de una sesión mixta conserva el resto', () => {
     const result = repairGeneratedWeek(
-      [squashSession('2026-08-03', [{ name: TECHNICAL, durationMin: 30 }, { name: ATTACK, durationMin: 30 }])],
+      [drillSessionFixture('2026-08-03', [SQUASH_NAMES.TECHNICAL, ATTACK])],
       buildRepairContextForTest({ primarySport: 'squash', sessionsPerWeek: 1 }),
     )
     expect(result.failure).toBeUndefined()
-    const names = (result.sessions[0]?.squashDetails?.drills ?? []).map((drill) => drill.name)
-    expect(names).toContain(TECHNICAL)
-    for (const name of names) {
-      expect(findSquashDrillByName(name)).toBeDefined()
-    }
+    const names = (result.sessions[0]?.squashDetails?.drills ?? []).map((d) => d.name)
+    expect(names).toContain(SQUASH_NAMES.TECHNICAL)
+    for (const name of names) expect(findSquashDrillByName(name)).toBeDefined()
   })
 })
 ```
 
-- [ ] **Step 3: Correr el test y verificar que el primer caso falla**
+- [ ] **Step 4: Correr y verificar que el primer caso falla**
 
 Run: `npx vitest run src/services/planBuilder/__tests__/squashMatchRoles.test.ts`
-Expected: FAIL en "ya no existe en el catálogo" — el ID todavía resuelve.
+Expected: FAIL en "ya no existe en el catálogo".
 
-- [ ] **Step 4: Eliminar la definición y el alias**
+- [ ] **Step 5: Eliminar definición y alias**
 
-En `src/services/training/drillLibrary.ts`, borrar el objeto completo cuyo `id` es `'practice_match_short_points_attack'` (empieza en `{` antes de `id: 'practice_match_short_points_attack',` y termina en la `},` que cierra ese objeto), y borrar la línea del alias:
+En `src/services/training/drillLibrary.ts`, borrar el objeto completo cuyo `id` es `'practice_match_short_points_attack'` y la línea:
 
 ```ts
   partido_con_foco_de_ataque_en_puntos_cortos: 'practice_match_short_points_attack',
 ```
 
-- [ ] **Step 5: Correr el test y verificar que pasa**
+- [ ] **Step 6: Correr y verificar que pasa**
 
-Run: `npx vitest run src/services/planBuilder/__tests__/squashMatchRoles.test.ts`
-Expected: PASS — 3 tests.
+Run: `npx vitest run src/services/planBuilder src/services/training`
+Expected: PASS. Actualizar cualquier test que fijara ese drill.
 
-- [ ] **Step 6: Correr la suite de training y plan builder**
-
-Run: `npx vitest run src/services/training src/services/planBuilder`
-Expected: PASS. Si algún test fijaba ese drill por nombre o ID, actualizarlo — el drill se eliminó a propósito.
-
-- [ ] **Step 7: Avisar al owner**
-
-Mensaje sugerido: `feat: remove early-attack conditioned match drill`.
+- [ ] **Step 7: Avisar al owner** — `feat: remove early-attack conditioned match drill`
 
 ---
 
-## Task 3: Predicado de exposición y resumen histórico
+## Task 3: Densificación role-aware
 
 **Files:**
-- Modify: `src/utils/squash.ts:9-14` (`SquashCompetitiveExposureSummary`), `:101-129` (`getRecentSquashCompetitiveExposure`)
-- Modify: `src/services/ai/promptModules/squashPrompt.ts:273`
-- Test: `src/utils/__tests__/squashExposure.test.ts` (nuevo)
-
-**Interfaces:**
-- Consumes: `resolveSquashMatchRole` de Task 1.
-- Produces:
-  - `function hasSquashCompetitiveExposure(session: Pick<Session, 'type' | 'subtype' | 'squashDetails'>): boolean`
-  - `SquashCompetitiveExposureSummary` gana `finisherCount: number`
-
-- [ ] **Step 1: Escribir el test que falla**
-
-Crear `src/utils/__tests__/squashExposure.test.ts`:
-
-```ts
-import { describe, expect, it } from 'vitest'
-import type { Session } from '../../types'
-import { getRecentSquashCompetitiveExposure, hasSquashCompetitiveExposure } from '../squash'
-
-const FIVE_GAMES = 'Partido de entrenamiento al mejor de 5 juegos'
-const BEST_OF_3 = 'Partido de entrenamiento al mejor de 3 juegos'
-const TECHNICAL = 'Tiros paralelos profundos'
-
-function standalone(date: string): Session {
-  return {
-    id: `s-${date}`, date, timeBlock: 'AM', type: 'squash', subtype: 'match',
-    title: 'Partido', durationMin: 60, status: 'completed',
-    squashDetails: {
-      trainingFocus: 'match', sessionMode: 'practice_match', sessionKind: 'match',
-      drills: [{ name: FIVE_GAMES }],
-    },
-  } as unknown as Session
-}
-
-function finisher(date: string): Session {
-  return {
-    id: `f-${date}`, date, timeBlock: 'AM', type: 'squash', subtype: 'technical',
-    title: 'Drills + partido', durationMin: 75, status: 'completed',
-    squashDetails: {
-      trainingFocus: 'technical', sessionMode: 'drill_session', sessionKind: 'mixed',
-      drills: [{ name: TECHNICAL }, { name: BEST_OF_3 }],
-      blocks: [
-        { kind: 'technical', drills: [{ name: TECHNICAL }] },
-        { kind: 'match', drills: [{ name: BEST_OF_3 }] },
-      ],
-    },
-  } as unknown as Session
-}
-
-describe('hasSquashCompetitiveExposure', () => {
-  it('cuenta un standalone canónico', () => {
-    expect(hasSquashCompetitiveExposure(standalone('2026-08-03'))).toBe(true)
-  })
-
-  it('cuenta un finisher canónico', () => {
-    expect(hasSquashCompetitiveExposure(finisher('2026-08-04'))).toBe(true)
-  })
-
-  it('no cuenta una sesión de drills sin partido', () => {
-    const session = finisher('2026-08-05')
-    session.squashDetails = {
-      trainingFocus: 'technical', sessionMode: 'drill_session', sessionKind: 'technical',
-      drills: [{ name: TECHNICAL }],
-      blocks: [{ kind: 'technical', drills: [{ name: TECHNICAL }] }],
-    }
-    expect(hasSquashCompetitiveExposure(session)).toBe(false)
-  })
-})
-
-describe('getRecentSquashCompetitiveExposure', () => {
-  it('suma finishers en finisherCount, totalMatchCount y exposureScore', () => {
-    const summary = getRecentSquashCompetitiveExposure([standalone('2026-08-03'), finisher('2026-08-04')], 6)
-    expect(summary.finisherCount).toBe(1)
-    expect(summary.totalMatchCount).toBe(
-      summary.practiceMatchCount + summary.competitionMatchCount + summary.finisherCount,
-    )
-    expect(summary.exposureScore).toBe(summary.totalMatchCount)
-  })
-})
-```
-
-- [ ] **Step 2: Correr el test y verificar que falla**
-
-Run: `npx vitest run src/utils/__tests__/squashExposure.test.ts`
-Expected: FAIL — `hasSquashCompetitiveExposure is not a function`.
-
-- [ ] **Step 3: Implementar en `src/utils/squash.ts`**
-
-Agregar el import al bloque existente:
-
-```ts
-import { resolveSquashMatchRole } from '../services/training/squashMatchRole'
-```
-
-Ampliar la interfaz (línea 9):
-
-```ts
-export interface SquashCompetitiveExposureSummary {
-  practiceMatchCount: number
-  competitionMatchCount: number
-  /** Sesiones de drills cerradas con un partido corto. Cuentan como exposición. */
-  finisherCount: number
-  totalMatchCount: number
-  exposureScore: number
-}
-```
-
-Agregar el predicado, después de `isCompetitionSquashMatch`:
-
-```ts
-/**
- * Exposición competitiva por CONTENIDO: un partido standalone canónico o una
- * sesión de drills cerrada con un finisher canónico.
- *
- * Deliberadamente separado de `isCompetitionSquashMatch`, que tiene 31 call
- * sites que lo interpretan como "la sesión entera es un partido real" y
- * alimentan nutrición, protocolos y carga. Ampliar aquel cambiaría todo eso en
- * silencio.
- */
-export function hasSquashCompetitiveExposure(
-  session: Pick<Session, 'type' | 'subtype' | 'squashDetails'>,
-): boolean {
-  if (session.type !== 'squash') return false
-  return resolveSquashMatchRole(session.squashDetails) !== 'none'
-}
-```
-
-Reemplazar el cuerpo del bucle de `getRecentSquashCompetitiveExposure` (líneas 105-128) por:
-
-```ts
-  let practiceMatchCount = 0
-  let competitionMatchCount = 0
-  let finisherCount = 0
-
-  const recentSessions = [...sessions]
-    .sort((a, b) => b.date.localeCompare(a.date) || b.timeBlock.localeCompare(a.timeBlock))
-    .slice(0, limit)
-
-  for (const session of recentSessions) {
-    if (isPracticeSquashMatch(session)) {
-      practiceMatchCount += 1
-      continue
-    }
-
-    if (isCompetitionSquashMatch(session)) {
-      competitionMatchCount += 1
-      continue
-    }
-
-    if (resolveSquashMatchRole(session.squashDetails) === 'finisher') {
-      finisherCount += 1
-    }
-  }
-
-  const total = practiceMatchCount + competitionMatchCount + finisherCount
-  return {
-    practiceMatchCount,
-    competitionMatchCount,
-    finisherCount,
-    totalMatchCount: total,
-    exposureScore: total,
-  }
-```
-
-- [ ] **Step 4: Correr el test y verificar que pasa**
-
-Run: `npx vitest run src/utils/__tests__/squashExposure.test.ts`
-Expected: PASS — 4 tests.
-
-- [ ] **Step 5: Actualizar la línea factual del prompt**
-
-En `src/services/ai/promptModules/squashPrompt.ts`, reemplazar la línea 273:
-
-```ts
-  lines.push(`Exposicion reciente: ${recentExposure.practiceMatchCount} practice match / ${recentExposure.competitionMatchCount} competencia real / ${recentExposure.finisherCount} cierre competitivo en sesion de drills.`)
-```
-
-Esto es una actualización **factual** del resumen, no una regla de autoría nueva: sin ella el modelo recibe una historia incompleta y vuelve a pedir exposición que el atleta ya tuvo.
-
-- [ ] **Step 6: Correr la suite de utils y prompts**
-
-Run: `npx vitest run src/utils src/services/ai`
-Expected: PASS. Si un test fijaba el texto exacto de la línea de exposición, actualizarlo.
-
-- [ ] **Step 7: Avisar al owner**
-
-Mensaje sugerido: `feat: count squash finishers as competitive exposure`.
-
----
-
-## Task 4: Idempotencia de la normalización
-
-**Files:**
-- Modify: `src/services/planBuilder/repairWeek.ts:1126` (`hasCanonicalFiveGameMatch`), `:834-847` (guarda de reescritura)
-- Test: `src/services/planBuilder/__tests__/squashMatchRoles.test.ts` (agregar)
+- Modify: `src/services/planBuilder/repairWeek.ts:614-635` (`densifySparseSquashDetails`), `:661-678` (`completeSquashDrillSet`)
+- Test: `src/services/planBuilder/__tests__/squashMatchRoles.test.ts`
 
 **Interfaces:**
 - Consumes: `resolveSquashMatchRole`, `isCompetitiveMatchDrill` de Task 1.
-- Produces: `function isCanonicalMatchContent(session: CoachSessionProposal): boolean` (privada del módulo).
+- Produces: ningún símbolo público nuevo.
 
-- [ ] **Step 1: Escribir los tests que fallan (tests 1 y 8 del spec)**
+**Por qué:** `completeSquashDrillSet` hace `next.push(candidate)`, así que los
+drills nuevos quedan **después** del finisher. `buildSquashBlocksFromDrills`
+reagrupa por kind y `orderSquashBlocksForSession` manda el bloque `match` al
+final, de modo que el flatten queda `[lead…, nuevos…, finisher]` mientras
+`drills[]` quedó `[lead…, finisher, nuevos…]`. Divergen, y el rol colapsa a
+`none` **antes** de que la normalización del paso 13 llegue a verlo.
 
-Agregar a `src/services/planBuilder/__tests__/squashMatchRoles.test.ts`:
+- [ ] **Step 1: Escribir el test que falla**
 
 ```ts
-const BEST_OF_3 = 'Partido de entrenamiento al mejor de 3 juegos'
-const GAME_TO_11 = 'Game a 11 con marcador real'
-const ACTIVATION = 'Activación pre-partido de manos y pies'
+import { finisherSessionFixture } from './helpers/squashRoleFixtures'
+import { resolveSquashMatchRole } from '../../training/squashMatchRole'
 
-function finisherSession(date: string, finisherName: string): CoachSessionProposal {
-  return buildSkeletonSessionForTest({
-    date,
-    timeBlock: 'AM',
-    sessionType: 'squash',
-    title: 'Squash técnico con cierre competitivo',
-    objective: 'Trabajo de largo y cierre con marcador.',
-    durationMin: 75,
-    rpe: 7,
-    squashDetails: {
-      trainingFocus: 'technical',
-      sessionMode: 'drill_session',
-      sessionKind: 'mixed',
-      drills: [{ name: TECHNICAL, durationMin: 45 }, { name: finisherName, durationMin: 30 }],
-      blocks: [
-        { kind: 'technical', drills: [{ name: TECHNICAL, durationMin: 45 }] },
-        { kind: 'match', drills: [{ name: finisherName, durationMin: 30 }] },
-      ],
-    },
+describe('densificación role-aware', () => {
+  it('un finisher escaso se densifica sin perder el rol', () => {
+    const context = buildRepairContextForTest({ primarySport: 'squash', sessionsPerWeek: 1 })
+    // Solo 2 drills a 75 min: el mínimo es 4, así que el paso 6 densifica.
+    const sparse = finisherSessionFixture('2026-08-03', SQUASH_NAMES.BEST_OF_3, [SQUASH_NAMES.TECHNICAL], 75)
+
+    const result = repairGeneratedWeek([sparse], context)
+    const details = result.sessions[0]?.squashDetails
+
+    expect(resolveSquashMatchRole(details)).toBe('finisher')
+    // El finisher sigue siendo el último drill y el único competitivo.
+    expect(details?.drills[details.drills.length - 1]?.name).toBe(SQUASH_NAMES.BEST_OF_3)
+    expect(details?.drills.filter((d) => d.name === SQUASH_NAMES.BEST_OF_3)).toHaveLength(1)
   })
+})
+```
+
+- [ ] **Step 2: Correr y verificar que falla**
+
+Run: `npx vitest run src/services/planBuilder/__tests__/squashMatchRoles.test.ts -t "densificación"`
+Expected: FAIL — el rol resuelve `none` porque `drills[]` y `blocks` divergen.
+
+- [ ] **Step 3: Implementar densificación role-aware**
+
+Reemplazar `densifySparseSquashDetails` (línea 614):
+
+```ts
+function densifySparseSquashDetails(
+  session: CoachSessionProposal,
+  context: RepairContext,
+  recentDrills: string[],
+): boolean {
+  const details = session.squashDetails
+  if (!details?.drills) return false
+
+  const targetCount = getMinimumSquashDrillCount(session)
+  if (details.drills.length >= targetCount) return false
+
+  const role = resolveSquashMatchRole(details)
+  const selection = selectContextualSquashCompletion(session, context, [
+    ...recentDrills,
+    ...details.drills.map((drill) => drill.name),
+  ])
+
+  // Nunca agregar contenido competitivo al densificar: convertiría un finisher
+  // en no canónico (condición 4 del rol) o crearía un partido que nadie pidió.
+  const candidates = selection.drills.filter((drill) => !isCompetitiveMatchDrill(drill))
+
+  if (role === 'finisher') {
+    const finisher = details.drills[details.drills.length - 1]!
+    const lead = details.drills.slice(0, -1)
+    const nextLead = completeSquashDrillSet(lead, candidates, targetCount - 1)
+    if (nextLead.length === lead.length) return false
+    // El finisher siempre queda último para conservar el rol.
+    const nextDrills = [...nextLead, finisher]
+    details.drills = nextDrills
+    details.blocks = buildSquashBlocksFromDrills(nextDrills)
+    // `buildSquashBlocksFromDrills` reagrupa por kind: realinear `drills[]` con
+    // el flatten resultante es lo que mantiene vivo el invariante del rol.
+    details.drills = details.blocks.flatMap((block) => block.drills)
+    return true
+  }
+
+  const nextDrills = completeSquashDrillSet(details.drills, candidates, targetCount)
+  if (nextDrills.length === details.drills.length) return false
+  details.blocks = buildSquashBlocksFromDrills(nextDrills)
+  details.drills = details.blocks.flatMap((block) => block.drills)
+  return true
 }
+```
 
-describe('finisher sobrevive la normalización', () => {
-  // Semana 0 de bloque: la política de rotación no corre, así que el invariante
-  // exigible es el ID exacto. Con política activa el invariante es el rol (Task 8).
-  it('conserva ID y bloques a través de dos pasadas de repair', () => {
-    for (const name of [BEST_OF_3, GAME_TO_11]) {
+- [ ] **Step 4: Correr y verificar que pasa**
+
+Run: `npx vitest run src/services/planBuilder/__tests__/squashMatchRoles.test.ts -t "densificación"`
+Expected: PASS.
+
+- [ ] **Step 5: Correr la suite del plan builder**
+
+Run: `npx vitest run src/services/planBuilder src/services/weekCreator`
+Expected: PASS. Si un test fijaba el orden previo de `drills[]` tras densificar, actualizarlo: el orden ahora sigue a `blocks`.
+
+- [ ] **Step 6: Avisar al owner** — `fix: role-aware squash densification keeps blocks and drills aligned`
+
+---
+
+## Task 4: Semántica role-aware y limpieza de `none`
+
+**Files:**
+- Modify: `src/services/planBuilder/repairWeek.ts:805-870` (`normalizeSquashSemanticMetadata`), `:1126` (`hasCanonicalFiveGameMatch`)
+- Test: `src/services/planBuilder/__tests__/squashMatchRoles.test.ts`
+
+**Interfaces:**
+- Consumes: Task 1 completo.
+- Produces: `function isCanonicalMatchContent(session: CoachSessionProposal): boolean` (privada).
+
+**Por qué el rol interviene al calcular, no después:** la línea 852 hace
+`details.sessionKind = inferredKind` con un `inferredKind` calculado en la línea
+~810. Parchear el kind después de esa asignación se deshace solo en la siguiente
+pasada, porque `SQUASH_MATCH_TEXT_PATTERN` puede dar `match` por palabras del
+título como "partido" o "marcador".
+
+- [ ] **Step 1: Escribir los tests que fallan (spec §9 tests 1, 8 y §2.1)**
+
+```ts
+describe('semántica role-aware', () => {
+  it('un finisher conserva ID, bloques y metadata a través de dos pasadas', () => {
+    for (const name of [SQUASH_NAMES.BEST_OF_3, SQUASH_NAMES.GAME_TO_11]) {
       const context = buildRepairContextForTest({ primarySport: 'squash', sessionsPerWeek: 1 })
-      const first = repairGeneratedWeek([finisherSession('2026-08-03', name)], context)
+      const first = repairGeneratedWeek([finisherSessionFixture('2026-08-03', name)], context)
       const second = repairGeneratedWeek(first.sessions, context)
-
       const details = second.sessions[0]?.squashDetails
-      expect(details?.drills.map((drill) => drill.name)).toEqual([TECHNICAL, name])
-      expect(details?.blocks?.map((block) => block.kind)).toEqual(['technical', 'match'])
+
+      expect(resolveSquashMatchRole(details)).toBe('finisher')
+      expect(details?.drills[details.drills.length - 1]?.name).toBe(name)
       expect(details?.sessionMode).toBe('drill_session')
       expect(details?.sessionKind).toBe('mixed')
     }
@@ -639,40 +655,102 @@ describe('finisher sobrevive la normalización', () => {
 
   it('una activación aislada no se proyecta a standalone', () => {
     const context = buildRepairContextForTest({ primarySport: 'squash', phase: 'taper', sessionsPerWeek: 1 })
-    const result = repairGeneratedWeek([squashSession('2026-08-03', [{ name: ACTIVATION, durationMin: 40 }])], context)
-    const names = (result.sessions[0]?.squashDetails?.drills ?? []).map((drill) => drill.name)
-    expect(names).not.toContain('Partido de entrenamiento al mejor de 5 juegos')
+    const result = repairGeneratedWeek(
+      [drillSessionFixture('2026-08-03', [SQUASH_NAMES.ACTIVATION], 40)],
+      context,
+    )
+    const names = (result.sessions[0]?.squashDetails?.drills ?? []).map((d) => d.name)
+    expect(names).not.toContain(SQUASH_NAMES.FIVE_GAMES)
+  })
+
+  it('una sesión mixta no canónica pierde el contenido competitivo y conserva el resto', () => {
+    const context = buildRepairContextForTest({ primarySport: 'squash', sessionsPerWeek: 1 })
+    // Dos drills competitivos: no es finisher canónico (condición 4).
+    const session = drillSessionFixture('2026-08-03', [
+      SQUASH_NAMES.TECHNICAL,
+      SQUASH_NAMES.FIVE_GAMES,
+      SQUASH_NAMES.BEST_OF_3,
+    ])
+    const result = repairGeneratedWeek([session], context)
+    const names = (result.sessions[0]?.squashDetails?.drills ?? []).map((d) => d.name)
+
+    expect(result.failure).toBeUndefined()
+    expect(names).toContain(SQUASH_NAMES.TECHNICAL)
+    expect(names).not.toContain(SQUASH_NAMES.FIVE_GAMES)
+    expect(names).not.toContain(SQUASH_NAMES.BEST_OF_3)
   })
 })
 ```
 
-- [ ] **Step 2: Correr los tests y verificar que fallan**
+- [ ] **Step 2: Correr y verificar que fallan**
 
-Run: `npx vitest run src/services/planBuilder/__tests__/squashMatchRoles.test.ts -t "finisher sobrevive"`
-Expected: FAIL — el finisher fue reescrito a `[Partido de entrenamiento al mejor de 5 juegos]`.
+Run: `npx vitest run src/services/planBuilder/__tests__/squashMatchRoles.test.ts -t "semántica"`
+Expected: FAIL — el finisher fue reescrito a `[FIVE_GAMES]`; la sesión mixta conserva contenido competitivo.
 
-- [ ] **Step 3: Reemplazar `hasCanonicalFiveGameMatch` por `isCanonicalMatchContent`**
+- [ ] **Step 3: Agregar el import y reemplazar `hasCanonicalFiveGameMatch`**
 
-En `src/services/planBuilder/repairWeek.ts`, agregar al bloque de imports:
+En `src/services/planBuilder/repairWeek.ts`:
 
 ```ts
-import { isCompetitiveMatchDrill, resolveSquashMatchRole } from '../training/squashMatchRole'
+import {
+  hasSquashCompetitiveExposureContent,
+  isCompetitiveMatchDrill,
+  isFinisherMatchDrill,
+  resolveSquashMatchRole,
+  SQUASH_FINISHER_MATCH_IDS,
+} from '../training/squashMatchRole'
 ```
 
-Reemplazar la función completa en la línea 1126:
+Reemplazar la función de la línea 1126:
 
 ```ts
 /**
- * Chequeo de idempotencia de la normalización semántica. Generaliza al rol: sin
- * esto una sesión con finisher se reescribiría a standalone y, como el repair
- * corre DOS veces en el contrato skeleton, las dos pasadas se pelearían.
+ * Chequeo de idempotencia de la normalización semántica, generalizado al rol.
+ * Sin esto una sesión con finisher se reescribiría a standalone y, como el
+ * repair corre DOS veces en el contrato skeleton, las pasadas se pelearían.
  */
 function isCanonicalMatchContent(session: CoachSessionProposal): boolean {
   return resolveSquashMatchRole(session.squashDetails) !== 'none'
 }
 ```
 
-Reemplazar su uso en la guarda de la línea ~837:
+- [ ] **Step 4: Hacer que el rol gobierne la semántica**
+
+Dentro de `normalizeSquashSemanticMetadata`, **antes** de calcular `contentSaysMatch` (línea ~808), insertar:
+
+```ts
+    const role = resolveSquashMatchRole(details)
+```
+
+Reemplazar el cálculo de `inferredKind` y `dedicatedMatchContent` (líneas ~808-816):
+
+```ts
+    const hasCompetitiveContent = (details.drills ?? []).some(isCompetitiveMatchDrill)
+    const contentSaysMatch = role === 'standalone'
+      || (role !== 'finisher'
+        && hasCompetitiveContent
+        && isSquashMatchIntent(session)
+        && !(context?.wizardConfig.partnerAvailability === 'solo' && !hasMatchBlock))
+
+    const inferredKind = role === 'finisher'
+      ? 'mixed'
+      : contentSaysMatch
+        ? 'match'
+        : hasBlocks
+          ? blockKinds.length > 1 ? 'mixed' : blockKinds[0]
+          : inferSquashKindFromProposalDetails(session)
+
+    // Un finisher NUNCA es contenido dedicado de partido, y una sesión mixta no
+    // canónica tampoco puede volverse dedicada solo por su título u objetivo.
+    const dedicatedMatchContent = role === 'finisher'
+      ? false
+      : role === 'standalone'
+        ? true
+        : hasCompetitiveContent
+          && (contentSaysMatch || (hasBlocks ? blockKinds.length === 1 && hasMatchBlock : inferredKind === 'match'))
+```
+
+Reemplazar la guarda de reescritura (línea ~837):
 
 ```ts
     if (
@@ -682,117 +760,93 @@ Reemplazar su uso en la guarda de la línea ~837:
     ) {
 ```
 
-- [ ] **Step 4: Excluir la activación del disparo de proyección**
-
-En la misma función, la variable `dedicatedMatchContent` (línea ~815) debe mirar **contenido competitivo**, no `kind === 'match'`. Reemplazarla por:
+Y ajustar el alineado de modo (línea ~862) para que un finisher quede en `drill_session`:
 
 ```ts
-    const hasCompetitiveContent = (details.drills ?? []).some(isCompetitiveMatchDrill)
-    const dedicatedMatchContent = hasCompetitiveContent
-      && (contentSaysMatch || (hasBlocks ? blockKinds.length === 1 && hasMatchBlock : inferredKind === 'match'))
-```
-
-Sin esto, una sesión con solo `pre_match_activation_timing` —que es `category: 'match'`— se proyectaría a un best-of-5 completo a 48 h del evento.
-
-- [ ] **Step 5: Normalizar la sesión finisher a `drill_session` / `mixed`**
-
-Inmediatamente después del bloque `if (dedicatedMatchContent && ...)` de la línea ~837, agregar:
-
-```ts
-    // El carácter competitivo de un finisher pertenece al contenido, no al modo
-    // global de la sesión.
-    if (resolveSquashMatchRole(session.squashDetails) === 'finisher') {
+    if (details.sessionMode !== 'drill_session' && !dedicatedMatchContent) {
       details.sessionMode = 'drill_session'
-      details.sessionKind = 'mixed'
+      recordRepair(meta, 'corrective', sessionKeyOf(session))
+      meta.warnings.push({
+        code: 'squash_mode_aligned',
+        message: 'Se cambió match-play por sesión de drills porque los bloques no son un partido dedicado.',
+        sessionDate: session.date,
+      })
     }
 ```
 
-- [ ] **Step 6: Fijar que una sesión mixta no canónica conserva su parte no-match**
+Como `inferredKind` ya vale `'mixed'` para un finisher, la asignación existente de
+la línea 852 (`details.sessionKind = inferredKind`) deja el kind correcto sin
+parche posterior.
 
-Spec §2.1: una sesión mixta con contenido competitivo **no canónico** conserva la
-parte no-match. No hay código nuevo — lo garantiza la guarda de
-`dedicatedMatchContent`, que exige `blockKinds.length === 1 && hasMatchBlock` en el
-camino con bloques. Este test lo fija para que un cambio futuro no lo rompa en
-silencio:
+- [ ] **Step 5: Limpiar el contenido competitivo de una sesión mixta `none`**
+
+Inmediatamente después del bloque de reescritura de la línea ~837, agregar:
 
 ```ts
-it('una sesión mixta con contenido competitivo no canónico conserva su parte no-match', () => {
-  const context = buildRepairContextForTest({ primarySport: 'squash', sessionsPerWeek: 1 })
-  // Dos drills competitivos: no es finisher canónico (§2 condición 4).
-  const session = squashSession('2026-08-03', [
-    { name: TECHNICAL, durationMin: 25 },
-    { name: FIVE_GAMES, durationMin: 25 },
-    { name: BEST_OF_3, durationMin: 25 },
-  ])
-  const result = repairGeneratedWeek([session], context)
-
-  expect(result.failure).toBeUndefined()
-  const names = (result.sessions[0]?.squashDetails?.drills ?? []).map((drill) => drill.name)
-  expect(names).toContain(TECHNICAL)
-  // No se proyectó al standalone canónico, que borraría el trabajo técnico.
-  expect(names).not.toEqual([FIVE_GAMES])
-})
+    // Spec §2.1: una sesión mixta con contenido competitivo NO canónico conserva
+    // su parte no-match y pierde el competitivo. Dejarlo produciría sobrecarga:
+    // no cuenta como exposición, así que `ensureSquashCompetitionMatchExposure`
+    // agregaría además otro partido.
+    if (role === 'none' && !dedicatedMatchContent && hasCompetitiveContent) {
+      const kept = (details.drills ?? []).filter((drill) => !isCompetitiveMatchDrill(drill))
+      if (kept.length > 0) {
+        details.drills = kept
+        details.blocks = buildSquashBlocksFromDrills(kept)
+        details.drills = details.blocks.flatMap((block) => block.drills)
+        recordRepair(meta, 'corrective', sessionKeyOf(session))
+        meta.warnings.push({
+          code: 'squash_non_canonical_match_removed',
+          message: `Se retiró contenido de partido no canónico de "${session.title}"; la sesión queda como trabajo de drills.`,
+          sessionDate: session.date,
+        })
+      }
+    }
 ```
 
-La mitad "se elimina o reemplaza" de §2.1 ya la cubre la reparación contextual
-existente (`repairUnresolvedSquashDrills`) cuando el drill no resuelve en
-catálogo. Un drill competitivo que **sí** resuelve pero deja la sesión no canónica
-simplemente queda como está: rol `none`, sin trato especial, sin contar como
-exposición. Es benigno y deliberado.
+La densificación del paso 6 ya corrió, así que la sesión puede quedar por debajo
+del mínimo de drills. Es aceptable: `low_drill_depth` lo reporta como warning y
+la alternativa —redensificar acá— duplicaría la lógica del paso 6.
 
-- [ ] **Step 7: Correr los tests y verificar que pasan**
+- [ ] **Step 6: Correr y verificar que pasan**
 
 Run: `npx vitest run src/services/planBuilder/__tests__/squashMatchRoles.test.ts`
 Expected: PASS.
 
-- [ ] **Step 8: Correr la suite del plan builder**
+- [ ] **Step 7: Correr la suite completa de plan builder y week creator**
 
 Run: `npx vitest run src/services/planBuilder src/services/weekCreator`
-Expected: PASS. Los tests que fijaban "todo partido se colapsa a best-of-5" ahora fijan comportamiento obsoleto: actualizarlos al contrato de rol.
+Expected: PASS. Los tests que fijaban "todo partido se colapsa a best-of-5" fijan comportamiento obsoleto: actualizarlos al contrato de rol.
 
-- [ ] **Step 9: Avisar al owner**
-
-Mensaje sugerido: `feat: preserve canonical squash finishers through normalization`.
+- [ ] **Step 8: Avisar al owner** — `feat: role-aware squash semantic normalization`
 
 ---
 
 ## Task 5: Mínimo de drills por contenido standalone
 
 **Files:**
-- Modify: `src/services/planBuilder/repairWeek.ts:637-642` (`getMinimumSquashDrillCount`)
-- Test: `src/services/planBuilder/__tests__/squashMatchRoles.test.ts` (agregar)
-
-**Interfaces:**
-- Consumes: `resolveSquashMatchRole` de Task 1.
-- Produces: ningún símbolo nuevo.
+- Modify: `src/services/planBuilder/repairWeek.ts:637-642`
+- Test: `src/services/planBuilder/__tests__/squashMatchRoles.test.ts`
 
 - [ ] **Step 1: Escribir el test que falla**
 
 ```ts
 describe('mínimo de drills', () => {
   it('un standalone de 60 min no se densifica', () => {
-    const context = buildRepairContextForTest({ primarySport: 'squash', sessionsPerWeek: 1 })
-    const session = squashSession('2026-08-03', [{ name: FIVE_GAMES, durationMin: 60 }])
-    session.subtype = 'match'
-    session.squashDetails!.sessionMode = 'practice_match'
-    session.squashDetails!.sessionKind = 'match'
-
-    const result = repairGeneratedWeek([session], context)
+    const result = repairGeneratedWeek(
+      [standaloneSessionFixture('2026-08-03', 60)],
+      buildRepairContextForTest({ primarySport: 'squash', sessionsPerWeek: 1 }),
+    )
     expect(result.sessions[0]?.squashDetails?.drills).toHaveLength(1)
   })
 })
 ```
 
-Agregar `const FIVE_GAMES = 'Partido de entrenamiento al mejor de 5 juegos'` al encabezado del archivo si no está.
-
-- [ ] **Step 2: Correr el test y verificar que falla**
+- [ ] **Step 2: Correr y verificar que falla**
 
 Run: `npx vitest run src/services/planBuilder/__tests__/squashMatchRoles.test.ts -t "no se densifica"`
 Expected: FAIL — recibe 4 drills.
 
 - [ ] **Step 3: Implementar**
-
-Reemplazar `getMinimumSquashDrillCount` (línea 637):
 
 ```ts
 function getMinimumSquashDrillCount(session: CoachSessionProposal): number {
@@ -806,45 +860,175 @@ function getMinimumSquashDrillCount(session: CoachSessionProposal): number {
 }
 ```
 
-- [ ] **Step 4: Correr el test y verificar que pasa**
+- [ ] **Step 4: Correr y verificar que pasa**
 
 Run: `npx vitest run src/services/planBuilder/__tests__/squashMatchRoles.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Avisar al owner**
-
-Mensaje sugerido: `fix: stop densifying standalone squash matches`.
+- [ ] **Step 5: Avisar al owner** — `fix: stop densifying standalone squash matches`
 
 ---
 
-## Task 6: Exposición competitiva en el repair
+## Task 6: Exposición competitiva y taper tardío
 
 **Files:**
-- Modify: `src/services/planBuilder/repairWeek.ts:896-951` (`ensureSquashCompetitionMatchExposure`), `:996-1021` (`normalizeLateTaperSquashMatchPlay`), `:1727` (`preservesCompetitiveExposure`)
-- Test: `src/services/planBuilder/__tests__/squashMatchRoles.test.ts` (agregar)
+- Modify: `src/utils/squash.ts` (envoltorio + `finisherCount`), `src/services/ai/promptModules/squashPrompt.ts:273`
+- Modify: `src/services/planBuilder/repairWeek.ts:896-951`, `:996-1021`, `:1727`
+- Test: `src/utils/__tests__/squashExposure.test.ts` (nuevo), `squashMatchRoles.test.ts`
 
 **Interfaces:**
-- Consumes: `resolveSquashMatchRole` de Task 1.
-- Produces: `function hasCompetitiveExposureContent(session: CoachSessionProposal): boolean` (privada).
+- Consumes: `hasSquashCompetitiveExposureContent`, `resolveSquashMatchRole` de Task 1.
+- Produces: `function hasSquashCompetitiveExposure(session: Pick<Session, 'type' | 'squashDetails'>): boolean` en `utils/squash.ts`.
 
-- [ ] **Step 1: Escribir los tests que fallan (tests 2 y 3 del spec)**
+- [ ] **Step 1: Escribir el test de utils que falla**
+
+Crear `src/utils/__tests__/squashExposure.test.ts`:
 
 ```ts
-describe('exposición competitiva', () => {
+import { describe, expect, it } from 'vitest'
+import type { Session } from '../../types'
+import { getRecentSquashCompetitiveExposure, hasSquashCompetitiveExposure } from '../squash'
+
+const FIVE_GAMES = 'Partido de entrenamiento al mejor de 5 juegos'
+const BEST_OF_3 = 'Partido de entrenamiento al mejor de 3 juegos'
+const TECHNICAL = 'Tiros paralelos profundos'
+
+function session(over: Partial<Session>): Session {
+  return {
+    id: 'x', date: '2026-08-03', timeBlock: 'AM', type: 'squash',
+    title: 'Squash', durationMin: 60, status: 'completed', ...over,
+  } as Session
+}
+
+const standalone = session({
+  subtype: 'match',
+  squashDetails: {
+    trainingFocus: 'tactical', sessionMode: 'practice_match', sessionKind: 'match',
+    drills: [{ name: FIVE_GAMES }],
+  },
+})
+
+const finisher = session({
+  date: '2026-08-04', subtype: 'training',
+  squashDetails: {
+    trainingFocus: 'technical', sessionMode: 'drill_session', sessionKind: 'mixed',
+    drills: [{ name: TECHNICAL }, { name: BEST_OF_3 }],
+    blocks: [
+      { kind: 'technical', drills: [{ name: TECHNICAL }] },
+      { kind: 'match', drills: [{ name: BEST_OF_3 }] },
+    ],
+  },
+})
+
+describe('hasSquashCompetitiveExposure', () => {
+  it('cuenta standalone y finisher, no una sesión de drills', () => {
+    expect(hasSquashCompetitiveExposure(standalone)).toBe(true)
+    expect(hasSquashCompetitiveExposure(finisher)).toBe(true)
+    expect(hasSquashCompetitiveExposure(session({
+      subtype: 'training',
+      squashDetails: {
+        trainingFocus: 'technical', sessionMode: 'drill_session', sessionKind: 'technical',
+        drills: [{ name: TECHNICAL }],
+      },
+    }))).toBe(false)
+  })
+})
+
+describe('getRecentSquashCompetitiveExposure', () => {
+  it('suma finishers en finisherCount, totalMatchCount y exposureScore', () => {
+    const summary = getRecentSquashCompetitiveExposure([standalone, finisher], 6)
+    expect(summary.finisherCount).toBe(1)
+    expect(summary.totalMatchCount).toBe(
+      summary.practiceMatchCount + summary.competitionMatchCount + summary.finisherCount,
+    )
+    expect(summary.exposureScore).toBe(summary.totalMatchCount)
+  })
+})
+```
+
+- [ ] **Step 2: Correr y verificar que falla**
+
+Run: `npx vitest run src/utils/__tests__/squashExposure.test.ts`
+Expected: FAIL — `hasSquashCompetitiveExposure is not a function`.
+
+- [ ] **Step 3: Implementar en `src/utils/squash.ts`**
+
+Agregar import:
+
+```ts
+import { hasSquashCompetitiveExposureContent, resolveSquashMatchRole } from '../services/training/squashMatchRole'
+```
+
+Ampliar la interfaz (línea 9) agregando `finisherCount: number` después de `competitionMatchCount`.
+
+Agregar el envoltorio después de `isCompetitionSquashMatch`:
+
+```ts
+/**
+ * Envoltorio del único predicado de exposición, que vive en `squashMatchRole`.
+ * Deliberadamente separado de `isCompetitionSquashMatch`, cuyos 31 call sites lo
+ * interpretan como "la sesión entera es un partido real" y alimentan nutrición,
+ * protocolos y carga.
+ */
+export function hasSquashCompetitiveExposure(
+  session: Pick<Session, 'type' | 'squashDetails'>,
+): boolean {
+  return session.type === 'squash' && hasSquashCompetitiveExposureContent(session.squashDetails)
+}
+```
+
+Reemplazar el cuerpo de `getRecentSquashCompetitiveExposure` desde `let practiceMatchCount` hasta el `return` final:
+
+```ts
+  let practiceMatchCount = 0
+  let competitionMatchCount = 0
+  let finisherCount = 0
+
+  const recentSessions = [...sessions]
+    .sort((a, b) => b.date.localeCompare(a.date) || b.timeBlock.localeCompare(a.timeBlock))
+    .slice(0, limit)
+
+  for (const session of recentSessions) {
+    if (isPracticeSquashMatch(session)) { practiceMatchCount += 1; continue }
+    if (isCompetitionSquashMatch(session)) { competitionMatchCount += 1; continue }
+    if (resolveSquashMatchRole(session.squashDetails) === 'finisher') finisherCount += 1
+  }
+
+  const total = practiceMatchCount + competitionMatchCount + finisherCount
+  return {
+    practiceMatchCount,
+    competitionMatchCount,
+    finisherCount,
+    totalMatchCount: total,
+    exposureScore: total,
+  }
+```
+
+- [ ] **Step 4: Actualizar la línea factual del prompt**
+
+`src/services/ai/promptModules/squashPrompt.ts`, línea 273:
+
+```ts
+  lines.push(`Exposicion reciente: ${recentExposure.practiceMatchCount} practice match / ${recentExposure.competitionMatchCount} competencia real / ${recentExposure.finisherCount} cierre competitivo en sesion de drills.`)
+```
+
+- [ ] **Step 5: Escribir los tests de repair (spec §9 tests 2 y 3)**
+
+```ts
+describe('exposición competitiva en el repair', () => {
   it('no agrega ni convierte otra sesión si ya hay un finisher en fecha segura', () => {
     const context = buildRepairContextForTest({ primarySport: 'squash', phase: 'peak', sessionsPerWeek: 3 })
     const result = repairGeneratedWeek([
-      finisherSession('2026-08-03', BEST_OF_3),
-      squashSession('2026-08-05', [{ name: TECHNICAL, durationMin: 60 }]),
-      squashSession('2026-08-07', [{ name: TECHNICAL, durationMin: 60 }]),
+      finisherSessionFixture('2026-08-03'),
+      drillSessionFixture('2026-08-05'),
+      drillSessionFixture('2026-08-07'),
     ], context)
 
     const modes = result.sessions
-      .filter((session) => session.sessionType === 'squash')
-      .map((session) => session.squashDetails?.sessionMode)
+      .filter((s) => s.sessionType === 'squash')
+      .map((s) => s.squashDetails?.sessionMode)
     expect(modes).not.toContain('competition_match')
-    expect(result.meta.warnings.map((warning) => warning.code))
-      .not.toContain('squash_competition_match_added')
+    expect(result.meta.warnings.map((w) => w.code)).not.toContain('squash_competition_match_added')
   })
 
   it('retira solo el bloque final de un finisher a menos de 48 h del evento', () => {
@@ -852,38 +1036,29 @@ describe('exposición competitiva', () => {
     const eventDate = context.plan.macroSnapshot.goalEventDate
     const dayBefore = new Date(new Date(`${eventDate}T00:00:00Z`).getTime() - 86_400_000)
       .toISOString().slice(0, 10)
+    context.week = { ...context.week, weekStartDate: dayBefore }
 
-    const result = repairGeneratedWeek([finisherSession(dayBefore, BEST_OF_3)], context)
-    const details = result.sessions[0]?.squashDetails
-    const names = (details?.drills ?? []).map((drill) => drill.name)
-    expect(names).toContain(TECHNICAL)
-    expect(names).not.toContain(BEST_OF_3)
+    const result = repairGeneratedWeek([finisherSessionFixture(dayBefore)], context)
+    const names = (result.sessions[0]?.squashDetails?.drills ?? []).map((d) => d.name)
+    expect(names).toContain(SQUASH_NAMES.TECHNICAL)
+    expect(names).not.toContain(SQUASH_NAMES.BEST_OF_3)
   })
 })
 ```
 
-Si `goalEventDate` del fixture no cae dentro de la semana del test, ajustar `context.plan.macroSnapshot.goalEventDate` y `context.week.weekStartDate` para que `dayBefore` quede dentro de la semana.
+- [ ] **Step 6: Implementar el envoltorio local y sus tres consumidores**
 
-- [ ] **Step 2: Correr los tests y verificar que fallan**
-
-Run: `npx vitest run src/services/planBuilder/__tests__/squashMatchRoles.test.ts -t "exposición competitiva"`
-Expected: FAIL — el primero agrega un `competition_match`; el segundo destruye la sesión entera.
-
-- [ ] **Step 3: Agregar el predicado local**
-
-En `src/services/planBuilder/repairWeek.ts`, junto a las otras helpers de squash:
+En `repairWeek.ts`, junto a las helpers de squash:
 
 ```ts
-/** Predicado único de exposición para todo el repair. Ver spec §3. */
+/** Envoltorio del predicado único (Task 1) para proposals del repair. */
 function hasCompetitiveExposureContent(session: CoachSessionProposal): boolean {
   return session.sessionType === 'squash'
-    && resolveSquashMatchRole(session.squashDetails) !== 'none'
+    && hasSquashCompetitiveExposureContent(session.squashDetails)
 }
 ```
 
-- [ ] **Step 4: Usarlo en `ensureSquashCompetitionMatchExposure`**
-
-Reemplazar la guarda de la línea 904:
+`ensureSquashCompetitionMatchExposure`, línea 904:
 
 ```ts
   if (squashSessions.some((session) =>
@@ -891,9 +1066,7 @@ Reemplazar la guarda de la línea 904:
   )) return sessions
 ```
 
-- [ ] **Step 5: Usarlo en `preservesCompetitiveExposure`**
-
-Reemplazar el cuerpo del `sessions.some(...)` (línea ~1731):
+`preservesCompetitiveExposure`, línea ~1731:
 
 ```ts
   return sessions.some((session) => {
@@ -903,9 +1076,7 @@ Reemplazar el cuerpo del `sessions.some(...)` (línea ~1731):
   })
 ```
 
-- [ ] **Step 6: Diferenciar por rol en `normalizeLateTaperSquashMatchPlay`**
-
-Reemplazar el cuerpo del bucle (líneas ~1005-1020):
+`normalizeLateTaperSquashMatchPlay`, reemplazar el cuerpo del bucle (líneas ~1005-1020):
 
 ```ts
   for (const session of sessions) {
@@ -914,9 +1085,10 @@ Reemplazar el cuerpo del bucle (líneas ~1005-1020):
     if (daysBetween(session.date, eventDate) > 2) continue
 
     const role = resolveSquashMatchRole(session.squashDetails)
+
     if (role === 'finisher') {
-      // Se retira SOLO el bloque final: destruir la sesión entera para sacarle
-      // el cierre competitivo perdería una sesión mixta válida.
+      // Se retira SOLO el bloque final: destruir la sesión entera perdería una
+      // sesión mixta válida.
       const details = session.squashDetails!
       const blocks = (details.blocks ?? []).slice(0, -1)
       const drills = blocks.flatMap((block) => block.drills ?? [])
@@ -950,112 +1122,135 @@ Reemplazar el cuerpo del bucle (líneas ~1005-1020):
   }
 ```
 
-- [ ] **Step 7: Correr los tests y verificar que pasan**
+- [ ] **Step 7: Correr las suites**
 
-Run: `npx vitest run src/services/planBuilder/__tests__/squashMatchRoles.test.ts`
-Expected: PASS.
+Run: `npx vitest run src/utils src/services/ai src/services/planBuilder`
+Expected: PASS. Si un test fijaba el texto exacto de la línea de exposición, actualizarlo.
 
-- [ ] **Step 8: Avisar al owner**
-
-Mensaje sugerido: `feat: single competitive exposure predicate across repair`.
+- [ ] **Step 8: Avisar al owner** — `feat: single competitive exposure predicate across repair and prompt`
 
 ---
 
 ## Task 7: Standalone fuera de la unicidad de firmas
 
 **Files:**
-- Modify: `src/services/planBuilder/repairWeek.ts:1470+` (`normalizeSquashSessionContent`)
-- Modify: `src/services/weekCreator/validateWeekCreatorResponse.ts:253-268`
-- Test: `src/services/planBuilder/__tests__/squashMatchRoles.test.ts` (agregar)
+- Modify: `src/services/planBuilder/repairWeek.ts` (`normalizeSquashSessionContent`), `src/services/weekCreator/validateWeekCreatorResponse.ts:253`
+- Test: `squashMatchRoles.test.ts`
 
-**Interfaces:**
-- Consumes: `resolveSquashMatchRole` de Task 1.
-- Produces: ningún símbolo nuevo.
+- [ ] **Step 1: Escribir el test que falla (spec §9 test 5)**
 
-- [ ] **Step 1: Escribir el test que falla (test 5 del spec)**
+El test cubre **las dos** exenciones prometidas, no solo la del repair:
 
 ```ts
-describe('dos standalone conviven', () => {
-  it('ni el repair falla ni se los trata como duplicados', () => {
-    const context = buildRepairContextForTest({ primarySport: 'squash', sessionsPerWeek: 2 })
-    const first = squashSession('2026-08-03', [{ name: FIVE_GAMES, durationMin: 60 }])
-    const second = squashSession('2026-08-05', [{ name: FIVE_GAMES, durationMin: 60 }])
-    for (const session of [first, second]) {
-      session.subtype = 'match'
-      session.squashDetails!.sessionMode = 'practice_match'
-      session.squashDetails!.sessionKind = 'match'
-    }
+import { validateWeekCreatorResponse } from '../../weekCreator/validateWeekCreatorResponse'
 
-    const result = repairGeneratedWeek([first, second], context)
+describe('dos standalone conviven', () => {
+  it('el repair no falla', () => {
+    const result = repairGeneratedWeek(
+      [standaloneSessionFixture('2026-08-03'), standaloneSessionFixture('2026-08-05')],
+      buildRepairContextForTest({ primarySport: 'squash', sessionsPerWeek: 2 }),
+    )
     expect(result.failure).toBeUndefined()
-    const squash = result.sessions.filter((session) => session.sessionType === 'squash')
+    const squash = result.sessions.filter((s) => s.sessionType === 'squash')
     expect(squash).toHaveLength(2)
     for (const session of squash) {
-      expect(session.squashDetails?.drills.map((drill) => drill.name)).toEqual([FIVE_GAMES])
+      expect(session.squashDetails?.drills.map((d) => d.name)).toEqual([SQUASH_NAMES.FIVE_GAMES])
     }
+  })
+
+  it('el validador del Week Creator no los marca como duplicados', () => {
+    const sessions = [standaloneSessionFixture('2026-08-03'), standaloneSessionFixture('2026-08-05')]
+    const outcome = validateWeekCreatorResponse({
+      action: { type: 'create_week', reason: 'semana', targetDate: '2026-08-03', sessions },
+      config: {
+        trainingDays: ['monday', 'tuesday', 'wednesday'],
+        doubleSessionDays: [],
+        sessionsPerWeek: 2,
+        maxSessionsPerWeek: 2,
+        sessionDurationMins: 60,
+        allowDoubleSession: false,
+        allowedSports: ['squash'],
+        primarySport: 'squash',
+        currentFitnessLevel: 'fit',
+        currentFatigue: 'normal',
+        fromWizard: true,
+        configSource: 'wizard',
+      },
+      targetWeekStart: '2026-08-03',
+    } as never)
+
+    expect(outcome.code).not.toBe('duplicate_squash_content')
   })
 })
 ```
 
-- [ ] **Step 2: Correr el test y verificar que falla**
+> La firma exacta de `validateWeekCreatorResponse` está en
+> `src/services/weekCreator/validateWeekCreatorResponse.ts`. Ajustar el objeto de
+> entrada a esa firma; lo que el test debe afirmar es que **no** falla con
+> `duplicate_squash_content`.
+
+- [ ] **Step 2: Correr y verificar que fallan**
 
 Run: `npx vitest run src/services/planBuilder/__tests__/squashMatchRoles.test.ts -t "dos standalone"`
-Expected: FAIL — `result.failure` con `quality.squash.signature_uniqueness_unresolved`.
+Expected: FAIL — `signature_uniqueness_unresolved` y `duplicate_squash_content`.
 
 - [ ] **Step 3: Excluir standalone en `normalizeSquashSessionContent`**
 
-En `src/services/planBuilder/repairWeek.ts`, dentro de `normalizeSquashSessionContent`, reemplazar la línea que arma `squashSessions`:
+Reemplazar la línea que arma `squashSessions`:
 
 ```ts
   const allSquashSessions = sessions.filter((session) => session.sessionType === 'squash')
   // Dos partidos comparten formato, y eso no es repetir una prescripción de
   // drills. Con un solo standalone canónico, incluirlos haría irresoluble
-  // cualquier semana con dos partidos. Ver spec §5.1 y §10.1.
+  // cualquier semana con dos partidos. Spec §5.1.
   const squashSessions = allSquashSessions.filter(
     (session) => resolveSquashMatchRole(session.squashDetails) !== 'standalone',
   )
   if (squashSessions.length === 0) return {}
 ```
 
-El resto de la función no cambia: `squashSessions` ya es la lista sobre la que se calculan firmas, política y corrección.
+- [ ] **Step 4: Excluir standalone en el validador**
 
-- [ ] **Step 4: Excluir standalone en el validador del Week Creator**
-
-En `src/services/weekCreator/validateWeekCreatorResponse.ts`, agregar el import:
+En `validateWeekCreatorResponse.ts`, agregar el import:
 
 ```ts
 import { resolveSquashMatchRole } from '../training/squashMatchRole'
 ```
 
-Y en `validateDuplicateSquashSessions` (línea 253), después de `if (session.sessionType !== 'squash') continue`:
+Y en `validateDuplicateSquashSessions`, después de `if (session.sessionType !== 'squash') continue`:
 
 ```ts
     // Dos partidos al mejor de 5 no son una prescripción de drills repetida.
     if (resolveSquashMatchRole(session.squashDetails) === 'standalone') continue
 ```
 
-- [ ] **Step 5: Correr los tests y verificar que pasan**
+- [ ] **Step 5: Correr y verificar que pasan**
 
 Run: `npx vitest run src/services/planBuilder src/services/weekCreator`
 Expected: PASS.
 
-- [ ] **Step 6: Avisar al owner**
-
-Mensaje sugerido: `feat: exclude standalone matches from squash signature uniqueness`.
+- [ ] **Step 6: Avisar al owner** — `feat: exclude standalone matches from squash signature uniqueness`
 
 ---
 
-## Task 8: Rotación que respeta el rol
+## Task 8: Rotación y corrección role-aware
 
 **Files:**
-- Modify: `src/services/planBuilder/repairWeek.ts` (loop de política dentro de `normalizeSquashSessionContent`)
-- Test: `src/services/planBuilder/__tests__/squashMatchRoles.test.ts` (agregar)
+- Modify: `src/services/training/drillSelector.ts` (`SquashDrillReplacementRequest`, `selectSquashDrillReplacement`)
+- Modify: `src/services/planBuilder/repairWeek.ts` (loop de política, `findUniqueSquashSessionCandidate`)
+- Test: `squashMatchRoles.test.ts`
 
 **Interfaces:**
-- Consumes: `resolveSquashMatchRole`, `SQUASH_FINISHER_MATCH_IDS` de Task 1; `findSquashDrillByName` de `drillLibrary`.
-- Produces: ningún símbolo nuevo.
+- Consumes: `SQUASH_FINISHER_MATCH_IDS`, `resolveSquashMatchRole`, `isFinisherMatchDrill` de Task 1.
+- Produces: `SquashDrillReplacementRequest` gana `allowedIds?: ReadonlySet<string>`.
 
-- [ ] **Step 1: Escribir el test que falla (test 4 del spec)**
+**Por qué por el selector y no a mano:** elegir el finisher manualmente saltearía
+`filterByFatigue`, `filterByPhase` y `filterByExecutionMode`. El contrato del spec
+§5 dice que sin candidato elegible **por fase, fatiga o partner** se conserva el
+original y se suma omisión — eso solo se cumple si los hard constraints siguen
+aplicándose.
+
+- [ ] **Step 1: Escribir los tests que fallan (spec §9 test 4)**
 
 ```ts
 describe('rotación respeta el rol', () => {
@@ -1075,146 +1270,200 @@ describe('rotación respeta el rol', () => {
   }
 
   it('con política activa, un finisher sigue siendo finisher', () => {
-    const result = repairGeneratedWeek([finisherSession('2026-08-10', BEST_OF_3)], blockContext(1))
-    const details = result.sessions[0]?.squashDetails
-    const last = details?.drills[details.drills.length - 1]
-    const lastId = findSquashDrillByName(last?.name ?? '')?.id ?? ''
-    expect(['practice_match_best_of_3', 'match_sim_points_short_sets']).toContain(lastId)
+    const result = repairGeneratedWeek([finisherSessionFixture('2026-08-10')], blockContext(1))
+    expect(resolveSquashMatchRole(result.sessions[0]?.squashDetails)).toBe('finisher')
   })
 
   it('con política activa, un standalone no rota', () => {
-    const session = squashSession('2026-08-10', [{ name: FIVE_GAMES, durationMin: 60 }])
-    session.subtype = 'match'
-    session.squashDetails!.sessionMode = 'practice_match'
-    session.squashDetails!.sessionKind = 'match'
+    const result = repairGeneratedWeek([standaloneSessionFixture('2026-08-10')], blockContext(1))
+    expect(result.sessions[0]?.squashDetails?.drills.map((d) => d.name)).toEqual([SQUASH_NAMES.FIVE_GAMES])
+  })
 
-    const result = repairGeneratedWeek([session], blockContext(1))
-    expect(result.sessions[0]?.squashDetails?.drills.map((drill) => drill.name)).toEqual([FIVE_GAMES])
+  it('dos finishers duplicados se diferencian conservando el rol', () => {
+    const context = blockContext(0)
+    const result = repairGeneratedWeek([
+      finisherSessionFixture('2026-08-10', SQUASH_NAMES.BEST_OF_3),
+      finisherSessionFixture('2026-08-12', SQUASH_NAMES.BEST_OF_3),
+    ], context)
+
+    expect(result.failure).toBeUndefined()
+    for (const session of result.sessions.filter((s) => s.sessionType === 'squash')) {
+      expect(resolveSquashMatchRole(session.squashDetails)).toBe('finisher')
+    }
   })
 })
 ```
 
-- [ ] **Step 2: Correr los tests y verificar que fallan**
+- [ ] **Step 2: Correr y verificar que fallan**
 
 Run: `npx vitest run src/services/planBuilder/__tests__/squashMatchRoles.test.ts -t "rotación respeta"`
-Expected: FAIL — el finisher rotó a un drill técnico o a best-of-5.
+Expected: FAIL — el finisher rotó a un drill técnico, o el candidato correctivo destruyó el rol.
 
-- [ ] **Step 3: Restringir los candidatos del slot finisher**
+- [ ] **Step 3: Agregar la allowlist al selector**
 
-Dentro del loop de política de `normalizeSquashSessionContent`, reemplazar el cuerpo del `for (const [drillOrdinal, drill] of drills.entries())` por:
+En `src/services/training/drillSelector.ts`, ampliar la interfaz:
+
+```ts
+export interface SquashDrillReplacementRequest {
+  originalName: string
+  context: SquashSelectionContext
+  excludedKeys: ReadonlySet<string>
+  rotationIndex: number
+  relaxation: SquashRelaxationLevel
+  /**
+   * Restringe el pool a estos IDs SIN saltear los hard constraints. Un finisher
+   * solo puede rotar entre finishers, pero sigue sujeto a fatiga, fase y partner.
+   */
+  allowedIds?: ReadonlySet<string>
+}
+```
+
+Y en `selectSquashDrillReplacement`, agregar el filtro después de `.filter(matchesAxis)`:
+
+```ts
+  const candidates = allowed
+    .filter(matchesAxis)
+    .filter((candidate) => request.allowedIds == null || request.allowedIds.has(candidate.id))
+    .filter((candidate) => !request.excludedKeys.has(normalizeSquashDrillKey(candidate.id)))
+    .sort((a, b) => scoreByFocusOverlap(b, original) - scoreByFocusOverlap(a, original)
+      || a.id.localeCompare(b.id))
+```
+
+- [ ] **Step 4: Usar la allowlist en el loop de política**
+
+Dentro del loop de política de `normalizeSquashSessionContent`, antes del `for (const [drillOrdinal, drill] ...)`:
 
 ```ts
     const sessionRole = resolveSquashMatchRole(session.squashDetails)
-    for (const [drillOrdinal, drill] of drills.entries()) {
-      const drillId = findSquashDrillByName(drill.name)?.id
-      const isFinisherSlot = sessionRole === 'finisher'
-        && drillId != null
-        && SQUASH_FINISHER_MATCH_IDS.includes(drillId as typeof SQUASH_FINISHER_MATCH_IDS[number])
+```
 
-      if (isFinisherSlot) {
-        // Un finisher solo puede rotar entre los dos IDs de finisher. Nunca se
-        // relaja hacia best-of-5 ni hacia otro drill match.
-        const alternatives = SQUASH_FINISHER_MATCH_IDS
-          .filter((id) => id !== drillId)
-          .map((id) => findSquashDrillByName(id))
-          .filter((definition): definition is NonNullable<typeof definition> => definition != null)
-          .filter((definition) => !assignedKeys.has(squashDrillKey(definition.id))
-            && !previousKeys.has(squashDrillKey(definition.id)))
+Y reemplazar la construcción del `replacement`:
 
-        const picked = alternatives[
-          (weekIndexInBlock * 131 + sessionOrdinal * 17 + drillOrdinal) % Math.max(1, alternatives.length)
-        ]
-        if (!picked || alternatives.length === 0) {
-          omitted++
-          assignedKeys.add(squashDrillKey(drill.name))
-          continue
-        }
-        assignedKeys.add(squashDrillKey(picked.id))
-        replaceSquashDrill(session, drillOrdinal, picked)
-        policyActions++
-        policyTouched.add(sessionKeyOf(session))
-        continue
-      }
-
+```ts
+      const isFinisherSlot = sessionRole === 'finisher' && isFinisherMatchDrill(drill)
       const replacement = selectSquashDrillReplacement({
         originalName: drill.name,
         context: buildSquashRotationSelectionContext(session, context),
         excludedKeys: new Set([...assignedKeys, ...previousKeys]),
         rotationIndex: weekIndexInBlock * 131 + sessionOrdinal * 17 + drillOrdinal,
         relaxation: 'strict',
+        // Un finisher solo rota entre finishers. Sin candidato elegible por
+        // fase/fatiga/partner, el `if (!replacement)` de abajo conserva el
+        // original y suma omisión, que es exactamente el contrato del spec §5.
+        allowedIds: isFinisherSlot
+          ? new Set<string>(SQUASH_FINISHER_MATCH_IDS)
+          : undefined,
       })
-      if (!replacement) {
-        omitted++
-        assignedKeys.add(squashDrillKey(drill.name))
-        continue
-      }
-      assignedKeys.add(squashDrillKey(replacement.id))
-      if (squashDrillKey(replacement.id) === squashDrillKey(drill.name)) continue
-      replaceSquashDrill(session, drillOrdinal, replacement)
-      policyActions++
-      policyTouched.add(sessionKeyOf(session))
-    }
 ```
 
-Los standalone ya no llegan a este loop: Task 7 los sacó de `squashSessions`.
+El resto del cuerpo del loop (`if (!replacement) { omitted++; … }`) no cambia. Los
+standalone ya no llegan acá: Task 7 los sacó de `squashSessions`.
 
-Agregar `SQUASH_FINISHER_MATCH_IDS` al import de `squashMatchRole` que Task 4 creó.
+- [ ] **Step 5: Exigir conservación de rol en la rama correctiva**
 
-- [ ] **Step 4: Correr los tests y verificar que pasan**
+En `findUniqueSquashSessionCandidate`, dentro del bucle del odómetro, reemplazar la condición de aceptación:
 
-Run: `npx vitest run src/services/planBuilder/__tests__/squashMatchRoles.test.ts`
+```ts
+      if (new Set(keys).size === keys.length) {
+        const candidate = cloneSquashSessionWithReplacements(original, replacementDefinitions)
+        const signature = buildSquashDrillSignature(candidate)
+        const rolePreserved = resolveSquashMatchRole(candidate.squashDetails)
+          === resolveSquashMatchRole(original.squashDetails)
+        if (
+          rolePreserved
+          && signature
+          && !seenSignatures.has(signature)
+          && preservesCompetitiveExposure(sessions, original, candidate, context)
+        ) {
+          return candidate
+        }
+      }
+```
+
+`preservesCompetitiveExposure` mira la exposición **global** de la semana, así que
+por sí solo permitiría destruir el rol de esta sesión mientras otra conserve
+exposición. `rolePreserved` es el invariante por sesión que faltaba.
+
+- [ ] **Step 6: Restringir también los candidatos por slot en la rama correctiva**
+
+En `getSquashCandidatesForSlot`, agregar el parámetro y pasarlo:
+
+```ts
+function getSquashCandidatesForSlot(input: {
+  drill: SquashDrill
+  session: CoachSessionProposal
+  context: RepairContext
+  sessionOrdinal: number
+  drillOrdinal: number
+  excludedKeys: ReadonlySet<string>
+  relaxation: SquashRelaxationLevel
+}): NonNullable<ReturnType<typeof findSquashDrillByName>>[] {
+  const values: NonNullable<ReturnType<typeof findSquashDrillByName>>[] = []
+  const seen = new Set<string>()
+  const rotationIndex = getWeekIndexInBlock(input.context) * 131 + input.sessionOrdinal * 17 + input.drillOrdinal
+  const selectionContext = buildSquashRotationSelectionContext(input.session, input.context)
+  const finisherSlot = resolveSquashMatchRole(input.session.squashDetails) === 'finisher'
+    && isFinisherMatchDrill(input.drill)
+
+  for (let offset = 0; offset < 128; offset++) {
+    const candidate = selectSquashDrillReplacement({
+      originalName: input.drill.name,
+      context: selectionContext,
+      excludedKeys: input.excludedKeys,
+      rotationIndex: rotationIndex + offset,
+      relaxation: input.relaxation,
+      allowedIds: finisherSlot ? new Set<string>(SQUASH_FINISHER_MATCH_IDS) : undefined,
+    })
+    if (!candidate || seen.has(candidate.id)) continue
+    seen.add(candidate.id)
+    values.push(candidate)
+  }
+  return values
+}
+```
+
+- [ ] **Step 7: Correr y verificar que pasan**
+
+Run: `npx vitest run src/services/planBuilder src/services/training`
 Expected: PASS.
 
-- [ ] **Step 5: Avisar al owner**
-
-Mensaje sugerido: `feat: role-aware squash drill rotation`.
+- [ ] **Step 8: Avisar al owner** — `feat: role-aware squash rotation and duplicate correction`
 
 ---
 
 ## Task 9: Contadores observacionales
 
 **Files:**
-- Modify: `src/services/planBuilder/repairWeek.ts` (`RepairMeta`, `normalizeSquashSessionContent`)
-- Modify: `src/types/planBuilder.ts` (`PlanGenerationMeta`)
-- Modify: `src/services/planBuilder/generateWeek.ts`, `generateWeekCore.ts`, `generatePlan.ts`, `asyncGenerationLoop.ts` (propagación)
-- Modify: `scripts/loadtest-plan-builder/artifact.mjs` (allowlist)
-- Test: `src/services/planBuilder/__tests__/squashMatchRoles.test.ts` (agregar)
+- Modify: `repairWeek.ts` (`RepairMeta`, `repairGeneratedWeek`), `src/types/planBuilder.ts`, `generateWeek.ts`, `generateWeekCore.ts`, `generatePlan.ts`, `asyncGenerationLoop.ts`, `scripts/loadtest-plan-builder/artifact.mjs`
+- Test: `squashMatchRoles.test.ts`
 
 **Interfaces:**
-- Consumes: `resolveSquashMatchRole` de Task 1.
-- Produces: en `RepairMeta` y `PlanGenerationMeta`, tres campos opcionales:
-  `squashFinisherProposedCount?: number`, `squashFinisherPreservedCount?: number`, `squashStandaloneMatchCount?: number`.
+- Produces en `RepairMeta` y `PlanGenerationMeta`: `squashFinisherProposedCount?: number`, `squashFinisherPreservedCount?: number`, `squashStandaloneMatchCount?: number`.
 
 - [ ] **Step 1: Escribir el test que falla**
 
 ```ts
 describe('contadores observacionales', () => {
   it('cuenta finishers propuestos, preservados y standalone finales', () => {
-    const context = buildRepairContextForTest({ primarySport: 'squash', sessionsPerWeek: 2 })
-    const standaloneA = squashSession('2026-08-03', [{ name: FIVE_GAMES, durationMin: 60 }])
-    standaloneA.subtype = 'match'
-    standaloneA.squashDetails!.sessionMode = 'practice_match'
-    standaloneA.squashDetails!.sessionKind = 'match'
-
-    const result = repairGeneratedWeek([standaloneA, finisherSession('2026-08-05', BEST_OF_3)], context)
+    const result = repairGeneratedWeek(
+      [standaloneSessionFixture('2026-08-03'), finisherSessionFixture('2026-08-05')],
+      buildRepairContextForTest({ primarySport: 'squash', sessionsPerWeek: 2 }),
+    )
 
     expect(result.meta.squashFinisherProposedCount).toBe(1)
     expect(result.meta.squashFinisherPreservedCount).toBe(1)
     expect(result.meta.squashStandaloneMatchCount).toBe(1)
-    // Observacionales: no inflan la taxonomía.
     expect(result.meta.repairedSessionCount).toBe(0)
   })
 })
 ```
 
-- [ ] **Step 2: Correr el test y verificar que falla**
+- [ ] **Step 2: Correr y verificar que falla**
 
 Run: `npx vitest run src/services/planBuilder/__tests__/squashMatchRoles.test.ts -t "contadores"`
 Expected: FAIL — `expected undefined to be 1`.
 
 - [ ] **Step 3: Agregar los campos a `RepairMeta`**
-
-En `src/services/planBuilder/repairWeek.ts`, dentro de `interface RepairMeta`, junto a los campos de rotación:
 
 ```ts
   /** Observacionales: NO entran en countRepairsV2 ni en la taxonomía. */
@@ -1223,22 +1472,24 @@ En `src/services/planBuilder/repairWeek.ts`, dentro de `interface RepairMeta`, j
   squashStandaloneMatchCount?: number
 ```
 
-- [ ] **Step 4: Medir en `repairGeneratedWeek`**
+- [ ] **Step 4: Medir en la entrada y en la salida**
 
-En `repairGeneratedWeek`, **antes** del paso 6 (`completeSportDetails`), medir la entrada:
+En `repairGeneratedWeek`, la medición de entrada va **como primera instrucción
+después de crear `meta`**, antes de cualquier paso de reparación: el punto de
+observación es la entrada del repair, después del `responseNormalizer`.
 
 ```ts
-  // Punto de observación: la entrada del repair, después del responseNormalizer.
-  // La respuesta cruda del modelo no la ve este módulo.
   meta.squashFinisherProposedCount = sessions.filter(
     (session) => session.sessionType === 'squash'
       && resolveSquashMatchRole(session.squashDetails) === 'finisher',
   ).length
 ```
 
-E inmediatamente **antes** del `return` final, medir la salida:
+E inmediatamente antes del `return` final:
 
 ```ts
+  // Cuenta ROL, no ID: la política puede rotar best-of-3 ↔ Game a 11 y eso no
+  // es una pérdida.
   meta.squashFinisherPreservedCount = sessions.filter(
     (session) => session.sessionType === 'squash'
       && resolveSquashMatchRole(session.squashDetails) === 'finisher',
@@ -1249,9 +1500,7 @@ E inmediatamente **antes** del `return` final, medir la salida:
   ).length
 ```
 
-`PreservedCount` cuenta **rol**, no ID: la rotación de Task 8 puede cambiar best-of-3 por Game a 11 y eso no es una pérdida.
-
-- [ ] **Step 5: Correr el test y verificar que pasa**
+- [ ] **Step 5: Correr y verificar que pasa**
 
 Run: `npx vitest run src/services/planBuilder/__tests__/squashMatchRoles.test.ts -t "contadores"`
 Expected: PASS.
@@ -1269,14 +1518,7 @@ En `src/types/planBuilder.ts`, junto a los campos de rotación de squash:
 
 - [ ] **Step 7: Propagar por la cadena**
 
-En cada uno de estos archivos, copiar los tres campos **exactamente donde ya se copian** `squashDrillRotationOmittedCount`:
-
-- `src/services/planBuilder/generateWeek.ts` — `GenerateWeekResult['meta']`, `WeekActionEvaluation`, y los dos `return` de `validateGeneratedWeekAction`.
-- `src/services/planBuilder/generateWeekCore.ts` — las mismas cuatro ubicaciones, más el `return` de `generateWeekCore`.
-- `src/services/planBuilder/generatePlan.ts` — `BatchWeekExtraction`, `ResolvedWeekInput`, `makeResolvedWeek`, `makeDeterministicResolvedWeek`, `makeLocalFallbackResolvedWeek`, `generateSingleWeekWithRetry`, `generateWeekPair` y la rama de pares de `generatePlanWeeks`.
-- `src/services/planBuilder/asyncGenerationLoop.ts` — `makeResolvedWeek` y `makeFallbackResolvedWeek`.
-
-Patrón, idéntico en todos:
+Copiar los tres campos **exactamente donde ya se copia `squashDrillRotationOmittedCount`**, con este patrón:
 
 ```ts
       squashFinisherProposedCount: <fuente>.squashFinisherProposedCount,
@@ -1284,11 +1526,17 @@ Patrón, idéntico en todos:
       squashStandaloneMatchCount: <fuente>.squashStandaloneMatchCount,
 ```
 
-Verificación: `grep -c "squashDrillRotationOmittedCount" <archivo>` y `grep -c "squashStandaloneMatchCount" <archivo>` deben dar el mismo número en cada archivo.
+Ubicaciones:
+- `generateWeek.ts` — `GenerateWeekResult['meta']`, `WeekActionEvaluation`, los dos `return` de `validateGeneratedWeekAction`.
+- `generateWeekCore.ts` — las mismas cuatro, más el `return` de `generateWeekCore`.
+- `generatePlan.ts` — `BatchWeekExtraction`, `ResolvedWeekInput`, `makeResolvedWeek`, `makeDeterministicResolvedWeek`, `makeLocalFallbackResolvedWeek`, `generateSingleWeekWithRetry`, `generateWeekPair`, y las dos ramas de `generatePlanWeeks`.
+- `asyncGenerationLoop.ts` — `makeResolvedWeek` y `makeFallbackResolvedWeek`.
+
+Verificación por archivo: `grep -c "squashDrillRotationOmittedCount" <archivo>` y `grep -c "squashStandaloneMatchCount" <archivo>` deben coincidir.
 
 - [ ] **Step 8: Allowlist del loadtest**
 
-En `scripts/loadtest-plan-builder/artifact.mjs`, dentro de `toWeekRow`, después de `squashDrillRotationOmittedCount`:
+En `scripts/loadtest-plan-builder/artifact.mjs`, en `toWeekRow`, después de `squashDrillRotationOmittedCount`:
 
 ```js
     squashFinisherProposedCount: meta.squashFinisherProposedCount ?? null,
@@ -1296,38 +1544,30 @@ En `scripts/loadtest-plan-builder/artifact.mjs`, dentro de `toWeekRow`, después
     squashStandaloneMatchCount: meta.squashStandaloneMatchCount ?? null,
 ```
 
-El guard de drift del artefacto exige que la allowlist y el row-mapper no diverjan: si `scripts/loadtest-plan-builder.test.js` falla, actualizar su lista esperada de claves.
-
-- [ ] **Step 9: Correr las suites afectadas**
+- [ ] **Step 9: Correr las suites**
 
 Run: `npx vitest run src/services/planBuilder scripts/loadtest-plan-builder.test.js`
-Expected: PASS.
+Expected: PASS. Si el guard de drift falla, actualizar la lista de claves esperadas del test.
 
-- [ ] **Step 10: Avisar al owner**
-
-Mensaje sugerido: `feat: observational squash match role counters`.
+- [ ] **Step 10: Avisar al owner** — `feat: observational squash match role counters`
 
 ---
 
 ## Task 10: Punto fijo y verificación final
 
 **Files:**
-- Test: `src/services/planBuilder/__tests__/squashMatchRoles.test.ts` (agregar)
+- Test: `squashMatchRoles.test.ts`
 
-**Interfaces:**
-- Consumes: todo lo anterior.
-- Produces: nada.
-
-- [ ] **Step 1: Escribir el test de punto fijo (test 6 del spec)**
+- [ ] **Step 1: Escribir el test de punto fijo (spec §9 test 6)**
 
 ```ts
 describe('punto fijo', () => {
   it('la segunda ejecución completa es igualdad exacta', () => {
     const context = buildRepairContextForTest({ primarySport: 'squash', phase: 'peak', sessionsPerWeek: 3 })
     const first = repairGeneratedWeek([
-      finisherSession('2026-08-03', BEST_OF_3),
-      squashSession('2026-08-05', [{ name: TECHNICAL, durationMin: 60 }]),
-      squashSession('2026-08-07', [{ name: TECHNICAL, durationMin: 60 }]),
+      finisherSessionFixture('2026-08-03'),
+      drillSessionFixture('2026-08-05'),
+      standaloneSessionFixture('2026-08-07'),
     ], context)
 
     const second = repairGeneratedWeek(
@@ -1344,27 +1584,22 @@ describe('punto fijo', () => {
 - [ ] **Step 2: Correr el test**
 
 Run: `npx vitest run src/services/planBuilder/__tests__/squashMatchRoles.test.ts -t "punto fijo"`
-Expected: PASS. Si falla, la diferencia entre `first` y `second` señala qué paso no es idempotente — arreglarlo antes de seguir, no relajar el test.
+Expected: PASS. Si falla, la diferencia entre `first` y `second` señala el paso no idempotente — arreglarlo, no relajar el test.
 
 - [ ] **Step 3: Verificación completa**
 
-Run: `npm run lint`
-Expected: sin salida.
-
-Run: `npm test`
-Expected: todos los archivos pasan. Base de comparación: 320 archivos / 2386 tests antes de este plan; el número sube con los tests nuevos.
-
-Run: `npm run build`
-Expected: `✓ built in …`.
+Run: `npm run lint` → sin salida.
+Run: `npm test` → todos pasan. Base: 320 archivos / 2386 tests antes de este plan.
+Run: `npm run build` → `✓ built in …`.
 
 - [ ] **Step 4: Confirmar el barrido del drill eliminado**
 
 Run: `grep -rn "practice_match_short_points_attack\|Partido con ataque temprano" src scripts docs`
-Expected: sin resultados fuera de `docs/superpowers/specs/` y `docs/superpowers/plans/`, donde figura como registro histórico de la decisión.
+Expected: solo `docs/superpowers/specs/` y `docs/superpowers/plans/`, como registro histórico.
 
 - [ ] **Step 5: Avisar al owner**
 
-Resumen para el owner: qué tareas quedaron, resultado de lint/test/build, y el recordatorio de que la medición de §6 del spec queda pendiente de la próxima corrida pagada del loadtest.
+Reportar: tareas completadas, resultado de lint/test/build, y que la medición de §6 del spec queda pendiente de la próxima corrida pagada del loadtest.
 
 ---
 
@@ -1372,8 +1607,9 @@ Resumen para el owner: qué tareas quedaron, resultado de lint/test/build, y el 
 
 **Lo que este plan NO hace, a propósito:**
 
-- No compone finishers. Si tras la próxima corrida `squashFinisherProposedCount` sale cerca de cero, la respuesta es prompt o selector, no autoría en el repair (spec §4).
-- No impone tope de partidos por semana. Riesgo residual aceptado y documentado en spec §10.1; `squashStandaloneMatchCount` lo hace medible.
+- No compone finishers. Si `squashFinisherProposedCount` sale cerca de cero en la próxima corrida, la respuesta es prompt o selector, no autoría en el repair (spec §4).
+- No impone tope de partidos por semana. Riesgo residual aceptado en spec §10.1; `squashStandaloneMatchCount` lo hace medible.
+- No redensifica una sesión que quedó corta tras retirarle contenido competitivo no canónico (Task 4, Step 5). `low_drill_depth` lo reporta como warning.
 - No corre el loadtest. Saldo insuficiente (spec §11).
 
-**Actualizar después del merge:** `PROJECT_REVIEW_AND_ROADMAP.md` (nueva sección de calidad deportiva) y `CLAUDE.md` (bloque reciente + conteo de la suite).
+**Actualizar después del merge:** `PROJECT_REVIEW_AND_ROADMAP.md` (sección de calidad deportiva) y `CLAUDE.md` (bloque reciente + conteo de la suite).

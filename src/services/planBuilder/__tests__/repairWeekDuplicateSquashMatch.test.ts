@@ -4,6 +4,7 @@ import type { CoachSessionProposal } from '../../../types'
 import type { RepairContext } from '../repairWeek'
 import { repairGeneratedWeek } from '../repairWeek'
 import { findSquashDrillByName } from '../../training/drillLibrary'
+import { resolveSquashMatchRole } from '../../training/squashMatchRole'
 
 // Mirrors validateWeekCreatorResponse.buildSquashDrillSignature so this test
 // fails for exactly the same reason the Week Creator validator rejected the
@@ -24,6 +25,9 @@ function findDuplicateSquashSignature(sessions: CoachSessionProposal[]): string 
   const seen = new Set<string>()
   for (const session of sessions) {
     if (session.sessionType !== 'squash') continue
+    // Un standalone canónico comparte formato, no una prescripción repetida de
+    // drills; por contrato no entra en la unicidad de firmas.
+    if (resolveSquashMatchRole(session.squashDetails) === 'standalone') continue
     const signature = squashSignature(session)
     if (!signature) continue
     if (seen.has(signature)) return signature

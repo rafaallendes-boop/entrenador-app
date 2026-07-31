@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { SQUASH_DRILL_LIBRARY, toSquashDrill } from '../drillLibrary'
+import { findSquashDrillByName, SQUASH_DRILL_LIBRARY, toSquashDrill } from '../drillLibrary'
 
 describe('SquashDrillDefinition schema Fase 2', () => {
   it('every drill declares phaseAppropriate as a non-empty valid subset', () => {
@@ -19,6 +19,12 @@ describe('SquashDrillDefinition schema Fase 2', () => {
     for (const drill of SQUASH_DRILL_LIBRARY) {
       expect(typeof drill.partnerRequired).toBe('boolean')
     }
+  })
+
+  it('does not retain the removed early-attack match drill or its alias', () => {
+    expect(SQUASH_DRILL_LIBRARY.some((drill) => drill.id === 'practice_match_short_points_attack')).toBe(false)
+    expect(findSquashDrillByName('Partido con ataque temprano')).toBeUndefined()
+    expect(findSquashDrillByName('Partido con foco de ataque en puntos cortos')).toBeUndefined()
   })
 
   it('match drills are not phaseAppropriate for base phase', () => {

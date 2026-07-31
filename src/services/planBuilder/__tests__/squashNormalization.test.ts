@@ -164,8 +164,8 @@ describe('normalización única de squash', () => {
     expect(result.meta.squashDrillRotationOmittedCount).toBeGreaterThan(0)
   })
 
-  it('resuelve dos matches duplicados manteniendo exposición competitiva', () => {
-    const match = (date: string) => squashSession(date, [{ name: 'Game a 11 con marcador real', durationMin: 30 }], {
+  it('conserva dos matches standalone manteniendo exposición competitiva', () => {
+    const match = (date: string) => squashSession(date, [{ name: 'Partido de entrenamiento al mejor de 5 juegos', durationMin: 30 }], {
       subtype: 'competitive',
       title: 'Match competitivo de squash',
       objective: 'Competir con marcador real y presión de cierre.',
@@ -173,7 +173,7 @@ describe('normalización única de squash', () => {
         trainingFocus: 'conditioned_games',
         sessionMode: 'competition_match',
         sessionKind: 'match',
-        drills: [{ name: 'Game a 11 con marcador real', durationMin: 30 }],
+        drills: [{ name: 'Partido de entrenamiento al mejor de 5 juegos', durationMin: 30 }],
       },
     })
     const result = repairGeneratedWeek([match('2026-08-03'), match('2026-08-05')], contextFor(0))
@@ -183,10 +183,10 @@ describe('normalización única de squash', () => {
 
   it('valida la exposición competitiva sobre la semana final', () => {
     const result = repairGeneratedWeek([
-      squashSession('2026-08-03', [{ name: 'Game a 11 con marcador real', durationMin: 30 }], {
+      squashSession('2026-08-03', [{ name: 'Partido de entrenamiento al mejor de 5 juegos', durationMin: 30 }], {
         subtype: 'competitive', title: 'Match competitivo', objective: 'Competir con marcador real.',
       }),
-      squashSession('2026-08-05', [{ name: 'Game a 11 con marcador real', durationMin: 30 }], {
+      squashSession('2026-08-05', [{ name: 'Partido de entrenamiento al mejor de 5 juegos', durationMin: 30 }], {
         subtype: 'competitive', title: 'Match competitivo', objective: 'Competir con marcador real.',
       }),
     ], contextFor(0))

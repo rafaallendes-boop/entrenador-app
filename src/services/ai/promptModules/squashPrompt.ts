@@ -243,7 +243,7 @@ export function buildDynamicSquashSelectionSection(
     lines.push('Modalidad partner: puedes usar drills con rival/alimentador y match al final; no priorices drills puramente solo salvo calentamiento/sombras.')
   }
   lines.push('Devuelve siempre squashDetails.blocks. Si hay partido o match-play, debe ser el ultimo bloque.')
-  lines.push('Si toda la sesion es match-play, devuelve un solo bloque match con un unico drill: "Partido de entrenamiento al mejor de 5 juegos". No agregues "Game a 11", mejor de 3 ni "Partido con ataque temprano".')
+  lines.push('Si toda la sesion es match-play, devuelve un solo bloque match con un unico drill: "Partido de entrenamiento al mejor de 5 juegos". No agregues "Game a 11" ni mejor de 3.')
   lines.push('Usa esta seleccion como base prioritaria para las sesiones squash nuevas o actualizadas.')
   lines.push('Si ajustas una sesion squash, intenta mantener este foco y variar solo por restricciones del dia, equipamiento o feedback reciente.')
   lines.push('Si el contexto es build/peak competitivo sin competencia inmediata, puedes convertir la sesion squash principal en subtype "match" con squashDetails.sessionMode "practice_match" y sessionKind "match".')
@@ -267,10 +267,12 @@ export function buildSquashMatchHistorySection(context: ChatContext): string {
   const completedMatches = getSquashMatchHistory(historicalSessions, 6)
   const recentExposure = getRecentSquashCompetitiveExposure(historicalSessions, 6)
 
-  if (completedMatches.length === 0) return ''
+  // Un finisher no aparece como partido completo en `getSquashMatchHistory`,
+  // pero sí es exposición competitiva que el modelo debe conocer.
+  if (completedMatches.length === 0 && recentExposure.finisherCount === 0) return ''
 
   const lines: string[] = ['HISTORIAL DE PARTIDOS RECIENTES (squash)']
-  lines.push(`Exposicion reciente: ${recentExposure.practiceMatchCount} practice match / ${recentExposure.competitionMatchCount} competencia real.`)
+  lines.push(`Exposicion reciente: ${recentExposure.practiceMatchCount} practice match / ${recentExposure.competitionMatchCount} competencia real / ${recentExposure.finisherCount} cierre competitivo en sesion de drills.`)
 
   for (const match of completedMatches) {
     const parts: string[] = [match.date]

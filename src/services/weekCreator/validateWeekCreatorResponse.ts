@@ -3,6 +3,7 @@ import type { CoachNormalizedResponse } from '../ai/types'
 import { ACTION_CONTRACTS } from '../ai/prompt/core/outputContract'
 import { validateAgainstContract } from '../ai/prompt/validators/validateAgainstContract'
 import { findSquashDrillByName } from '../training/drillLibrary'
+import { resolveSquashMatchRole } from '../training/squashMatchRole'
 import { filterSessionsToWeek, isStrictISODate, pickCreateWeekDiagnostic } from '../week/shared'
 import type { WeekCreatorEffectiveConfig } from './WeekCreatorConfig'
 import type { WeekCreatorValidationCode } from './WeekCreatorFailurePolicy'
@@ -254,6 +255,9 @@ function validateDuplicateSquashSessions(sessions: CoachSessionProposal[]): stri
   const seen = new Map<string, CoachSessionProposal>()
   for (const session of sessions) {
     if (session.sessionType !== 'squash') continue
+    // Dos partidos al mejor de 5 comparten formato, pero no son una
+    // prescripción de drills repetida.
+    if (resolveSquashMatchRole(session.squashDetails) === 'standalone') continue
     const signature = buildSquashDrillSignature(session)
     if (!signature) continue
 

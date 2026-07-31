@@ -72,6 +72,9 @@ export interface GenerateWeekResult {
     squashDrillRotationActionCount?: number
     squashDrillRotationSessionsAffected?: number
     squashDrillRotationOmittedCount?: number
+    squashFinisherProposedCount?: number
+    squashFinisherPreservedCount?: number
+    squashStandaloneMatchCount?: number
     repairWarnings?: Array<{ code: string; message: string }>
     stageTimings?: StageTiming[]
     errorClass?: string
@@ -95,6 +98,9 @@ export interface WeekActionEvaluation extends RepairTaxonomySummary {
   squashDrillRotationActionCount?: number
   squashDrillRotationSessionsAffected?: number
   squashDrillRotationOmittedCount?: number
+  squashFinisherProposedCount?: number
+  squashFinisherPreservedCount?: number
+  squashStandaloneMatchCount?: number
   repairWarnings?: Array<{ code: string; message: string }>
 }
 
@@ -243,6 +249,9 @@ export function validateGeneratedWeekAction(
       squashDrillRotationActionCount: repairResult.meta.squashDrillRotationActionCount,
       squashDrillRotationSessionsAffected: repairResult.meta.squashDrillRotationSessionsAffected,
       squashDrillRotationOmittedCount: repairResult.meta.squashDrillRotationOmittedCount,
+      squashFinisherProposedCount: repairResult.meta.squashFinisherProposedCount,
+      squashFinisherPreservedCount: repairResult.meta.squashFinisherPreservedCount,
+      squashStandaloneMatchCount: repairResult.meta.squashStandaloneMatchCount,
       repairWarnings: repairResult.meta.warnings,
     }
   }
@@ -263,6 +272,9 @@ export function validateGeneratedWeekAction(
     squashDrillRotationActionCount: repairResult.meta.squashDrillRotationActionCount,
     squashDrillRotationSessionsAffected: repairResult.meta.squashDrillRotationSessionsAffected,
     squashDrillRotationOmittedCount: repairResult.meta.squashDrillRotationOmittedCount,
+    squashFinisherProposedCount: repairResult.meta.squashFinisherProposedCount,
+    squashFinisherPreservedCount: repairResult.meta.squashFinisherPreservedCount,
+    squashStandaloneMatchCount: repairResult.meta.squashStandaloneMatchCount,
     repairWarnings: repairResult.meta.warnings,
   }
 }

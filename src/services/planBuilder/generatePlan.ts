@@ -106,6 +106,9 @@ interface BatchWeekExtraction extends SerializedRepairTaxonomy {
   squashDrillRotationActionCount?: number
   squashDrillRotationSessionsAffected?: number
   squashDrillRotationOmittedCount?: number
+  squashFinisherProposedCount?: number
+  squashFinisherPreservedCount?: number
+  squashStandaloneMatchCount?: number
   repairWarnings?: Array<{ code: string; message: string }>
   errorClass?: string
 }
@@ -137,6 +140,9 @@ interface ResolvedWeekInput extends SerializedRepairTaxonomy {
   squashDrillRotationActionCount?: number
   squashDrillRotationSessionsAffected?: number
   squashDrillRotationOmittedCount?: number
+  squashFinisherProposedCount?: number
+  squashFinisherPreservedCount?: number
+  squashStandaloneMatchCount?: number
   repairWarnings?: Array<{ code: string; message: string }>
   stageTimings?: StageTiming[]
   errorClass?: string
@@ -240,6 +246,9 @@ function makeResolvedWeek(
       squashDrillRotationActionCount: input.squashDrillRotationActionCount,
       squashDrillRotationSessionsAffected: input.squashDrillRotationSessionsAffected,
       squashDrillRotationOmittedCount: input.squashDrillRotationOmittedCount,
+      squashFinisherProposedCount: input.squashFinisherProposedCount,
+      squashFinisherPreservedCount: input.squashFinisherPreservedCount,
+      squashStandaloneMatchCount: input.squashStandaloneMatchCount,
       ...copySerializedRepairTaxonomy(input),
       repairWarnings: input.repairWarnings,
       stageTimings: input.stageTimings,
@@ -292,6 +301,9 @@ function makeDeterministicResolvedWeek(input: {
     squashDrillRotationActionCount: result.meta.squashDrillRotationActionCount,
     squashDrillRotationSessionsAffected: result.meta.squashDrillRotationSessionsAffected,
     squashDrillRotationOmittedCount: result.meta.squashDrillRotationOmittedCount,
+    squashFinisherProposedCount: result.meta.squashFinisherProposedCount,
+    squashFinisherPreservedCount: result.meta.squashFinisherPreservedCount,
+    squashStandaloneMatchCount: result.meta.squashStandaloneMatchCount,
     repairWarnings: result.meta.warnings,
     generationSource: 'deterministic',
   })
@@ -372,6 +384,9 @@ function makeLocalFallbackResolvedWeek(input: {
     squashDrillRotationActionCount: fallback.meta.squashDrillRotationActionCount,
     squashDrillRotationSessionsAffected: fallback.meta.squashDrillRotationSessionsAffected,
     squashDrillRotationOmittedCount: fallback.meta.squashDrillRotationOmittedCount,
+    squashFinisherProposedCount: fallback.meta.squashFinisherProposedCount,
+    squashFinisherPreservedCount: fallback.meta.squashFinisherPreservedCount,
+    squashStandaloneMatchCount: fallback.meta.squashStandaloneMatchCount,
     repairWarnings: [
       { code: 'local_plan_fallback', message: `Se generó una semana base local después de ${input.attempts} intento(s) fallidos del proveedor.` },
       ...fallback.meta.warnings,
@@ -469,6 +484,9 @@ export async function generateSingleWeekWithRetry(
         squashDrillRotationActionCount: result.meta.squashDrillRotationActionCount,
         squashDrillRotationSessionsAffected: result.meta.squashDrillRotationSessionsAffected,
         squashDrillRotationOmittedCount: result.meta.squashDrillRotationOmittedCount,
+        squashFinisherProposedCount: result.meta.squashFinisherProposedCount,
+        squashFinisherPreservedCount: result.meta.squashFinisherPreservedCount,
+        squashStandaloneMatchCount: result.meta.squashStandaloneMatchCount,
         repairWarnings: result.meta.repairWarnings,
         stageTimings: result.meta.stageTimings,
         errorClass: result.meta.errorClass,
@@ -500,6 +518,9 @@ export async function generateSingleWeekWithRetry(
         squashDrillRotationActionCount: result.meta.squashDrillRotationActionCount,
         squashDrillRotationSessionsAffected: result.meta.squashDrillRotationSessionsAffected,
         squashDrillRotationOmittedCount: result.meta.squashDrillRotationOmittedCount,
+        squashFinisherProposedCount: result.meta.squashFinisherProposedCount,
+        squashFinisherPreservedCount: result.meta.squashFinisherPreservedCount,
+        squashStandaloneMatchCount: result.meta.squashStandaloneMatchCount,
         repairWarnings: result.meta.repairWarnings,
         errorClass: result.meta.errorClass,
         generationSource: 'ai',
@@ -668,6 +689,9 @@ async function generateWeekPair(
         squashDrillRotationActionCount: evaluation.squashDrillRotationActionCount,
         squashDrillRotationSessionsAffected: evaluation.squashDrillRotationSessionsAffected,
         squashDrillRotationOmittedCount: evaluation.squashDrillRotationOmittedCount,
+        squashFinisherProposedCount: evaluation.squashFinisherProposedCount,
+        squashFinisherPreservedCount: evaluation.squashFinisherPreservedCount,
+        squashStandaloneMatchCount: evaluation.squashStandaloneMatchCount,
         repairWarnings: evaluation.repairWarnings,
         errorClass: evaluation.errorClass,
       })
@@ -834,6 +858,9 @@ export async function generatePlanWeeks(input: GeneratePlanWeeksInput): Promise<
             squashDrillRotationActionCount: batchWeekResult.squashDrillRotationActionCount,
             squashDrillRotationSessionsAffected: batchWeekResult.squashDrillRotationSessionsAffected,
             squashDrillRotationOmittedCount: batchWeekResult.squashDrillRotationOmittedCount,
+            squashFinisherProposedCount: batchWeekResult.squashFinisherProposedCount,
+            squashFinisherPreservedCount: batchWeekResult.squashFinisherPreservedCount,
+            squashStandaloneMatchCount: batchWeekResult.squashStandaloneMatchCount,
             repairWarnings: batchWeekResult.repairWarnings,
             errorClass: batchWeekResult.errorClass,
             generationSource: 'ai',
@@ -918,6 +945,9 @@ export async function generatePlanWeeks(input: GeneratePlanWeeksInput): Promise<
               squashDrillRotationActionCount: batchWeekResult.squashDrillRotationActionCount,
               squashDrillRotationSessionsAffected: batchWeekResult.squashDrillRotationSessionsAffected,
               squashDrillRotationOmittedCount: batchWeekResult.squashDrillRotationOmittedCount,
+              squashFinisherProposedCount: batchWeekResult.squashFinisherProposedCount,
+              squashFinisherPreservedCount: batchWeekResult.squashFinisherPreservedCount,
+              squashStandaloneMatchCount: batchWeekResult.squashStandaloneMatchCount,
               repairWarnings: batchWeekResult.repairWarnings,
               errorClass: batchWeekResult.errorClass,
               generationSource: 'ai',

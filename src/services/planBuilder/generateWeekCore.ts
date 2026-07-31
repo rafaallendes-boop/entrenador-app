@@ -57,6 +57,9 @@ export interface GenerateWeekResult {
     squashDrillRotationActionCount?: number
     squashDrillRotationSessionsAffected?: number
     squashDrillRotationOmittedCount?: number
+    squashFinisherProposedCount?: number
+    squashFinisherPreservedCount?: number
+    squashStandaloneMatchCount?: number
     repairWarnings?: Array<{ code: string; message: string }>
     stageTimings?: StageTiming[]
     errorClass?: string
@@ -80,6 +83,9 @@ export interface WeekActionEvaluation extends RepairTaxonomySummary {
   squashDrillRotationActionCount?: number
   squashDrillRotationSessionsAffected?: number
   squashDrillRotationOmittedCount?: number
+  squashFinisherProposedCount?: number
+  squashFinisherPreservedCount?: number
+  squashStandaloneMatchCount?: number
   repairWarnings?: Array<{ code: string; message: string }>
 }
 
@@ -277,6 +283,9 @@ export function validateGeneratedWeekAction(
       squashDrillRotationActionCount: repairResult.meta.squashDrillRotationActionCount,
       squashDrillRotationSessionsAffected: repairResult.meta.squashDrillRotationSessionsAffected,
       squashDrillRotationOmittedCount: repairResult.meta.squashDrillRotationOmittedCount,
+      squashFinisherProposedCount: repairResult.meta.squashFinisherProposedCount,
+      squashFinisherPreservedCount: repairResult.meta.squashFinisherPreservedCount,
+      squashStandaloneMatchCount: repairResult.meta.squashStandaloneMatchCount,
       repairWarnings: repairResult.meta.warnings,
     }
   }
@@ -297,6 +306,9 @@ export function validateGeneratedWeekAction(
     squashDrillRotationActionCount: repairResult.meta.squashDrillRotationActionCount,
     squashDrillRotationSessionsAffected: repairResult.meta.squashDrillRotationSessionsAffected,
     squashDrillRotationOmittedCount: repairResult.meta.squashDrillRotationOmittedCount,
+    squashFinisherProposedCount: repairResult.meta.squashFinisherProposedCount,
+    squashFinisherPreservedCount: repairResult.meta.squashFinisherPreservedCount,
+    squashStandaloneMatchCount: repairResult.meta.squashStandaloneMatchCount,
     repairWarnings: repairResult.meta.warnings,
   }
 }
@@ -390,6 +402,9 @@ export async function generateWeekCore(input: GenerateWeekCoreInput): Promise<Ge
       squashDrillRotationActionCount: evaluation.squashDrillRotationActionCount,
       squashDrillRotationSessionsAffected: evaluation.squashDrillRotationSessionsAffected,
       squashDrillRotationOmittedCount: evaluation.squashDrillRotationOmittedCount,
+      squashFinisherProposedCount: evaluation.squashFinisherProposedCount,
+      squashFinisherPreservedCount: evaluation.squashFinisherPreservedCount,
+      squashStandaloneMatchCount: evaluation.squashStandaloneMatchCount,
       repairWarnings: evaluation.repairWarnings,
       errorClass: evaluation.errorClass
         ?? (evaluation.error

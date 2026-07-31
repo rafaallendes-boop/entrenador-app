@@ -74,6 +74,12 @@ export interface SquashDrillReplacementRequest {
   excludedKeys: ReadonlySet<string>
   rotationIndex: number
   relaxation: SquashRelaxationLevel
+  /**
+   * Restringe el pool a estos IDs sin saltear los hard constraints. Un
+   * finisher solo puede rotar entre finishers, pero sigue sujeto a fatiga,
+   * fase y partner.
+   */
+  allowedIds?: ReadonlySet<string>
 }
 
 // Fase 2: 4-state model. 'progress' = continuar familia con más exigencia,
@@ -175,6 +181,7 @@ export function selectSquashDrillReplacement(
 
   const candidates = allowed
     .filter(matchesAxis)
+    .filter((candidate) => request.allowedIds == null || request.allowedIds.has(candidate.id))
     .filter((candidate) => !request.excludedKeys.has(normalizeSquashDrillKey(candidate.id)))
     // Orden total y estable: sin esto el índice no es determinista.
     .sort((a, b) => scoreByFocusOverlap(b, original) - scoreByFocusOverlap(a, original)

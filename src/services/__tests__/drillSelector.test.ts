@@ -314,7 +314,7 @@ describe('drillSelector progression', () => {
         [
           'Partido de entrenamiento al mejor de 5 juegos',
           'Partido de entrenamiento al mejor de 3 juegos',
-          'Partido con ataque temprano',
+          'Game a 11 con marcador real',
         ].includes(drill.name),
       ),
     ).toBe(true)
@@ -325,7 +325,7 @@ describe('drillSelector progression', () => {
         [
           'Partido de entrenamiento al mejor de 5 juegos',
           'Partido de entrenamiento al mejor de 3 juegos',
-          'Partido con ataque temprano',
+          'Game a 11 con marcador real',
         ].includes(drill.name),
       ),
     ).toBe(true)
@@ -351,7 +351,7 @@ describe('drillSelector progression', () => {
     const practiceMatchNames = new Set([
       'Partido de entrenamiento al mejor de 5 juegos',
       'Partido de entrenamiento al mejor de 3 juegos',
-      'Partido con ataque temprano',
+      'Game a 11 con marcador real',
     ])
 
     expect(taperSelection.drills.some((drill) => practiceMatchNames.has(drill.name))).toBe(false)
@@ -377,7 +377,7 @@ describe('drillSelector progression', () => {
         [
           'Partido de entrenamiento al mejor de 5 juegos',
           'Partido de entrenamiento al mejor de 3 juegos',
-          'Partido con ataque temprano',
+          'Game a 11 con marcador real',
         ].includes(drill.name),
       ),
     ).toBe(false)

@@ -24,6 +24,13 @@ import {
   type SquashSelectionPhase,
 } from '../training/drillSelector'
 import { findSquashDrillByName, isControlDrill, isShadowsDrill, isSquashMatchDrill, normalizeSquashDrillKey, orderSquashBlocksForSession, resolveDrillExecutionMode, resolveSquashDrillKind, toSquashDrill } from '../training/drillLibrary'
+import {
+  hasSquashCompetitiveExposureContent,
+  isCompetitiveMatchDrill,
+  isFinisherMatchDrill,
+  resolveSquashMatchRole,
+  SQUASH_FINISHER_MATCH_IDS,
+} from '../training/squashMatchRole'
 import { selectRunningSession, type RunningPhase, type RunningSportProfile } from '../training/runningSelector'
 import {
   getTargetExerciseDensity,
@@ -87,6 +94,10 @@ export interface RepairMeta {
   squashDrillRotationActionCount?: number
   squashDrillRotationSessionsAffected?: number
   squashDrillRotationOmittedCount?: number
+  /** Observacionales: no entran en `countRepairsV2` ni en la taxonomía. */
+  squashFinisherProposedCount?: number
+  squashFinisherPreservedCount?: number
+  squashStandaloneMatchCount?: number
   /**
    * Aditivo. `repairedSessionCount` conserva su semántica exacta porque
    * WeekCreatorEngine ramifica sobre él.
@@ -153,8 +164,13 @@ export function repairGeneratedWeek(
   context: RepairContext,
 ): RepairResult {
   const meta = createRepairMeta(rawSessions.length)
+  meta.squashFinisherProposedCount = rawSessions.filter(
+    (session) => session.sessionType === 'squash'
+      && resolveSquashMatchRole(session.squashDetails) === 'finisher',
+  ).length
 
   if (rawSessions.length === 0) {
+    measureSquashMatchRoles([], meta)
     return { sessions: [], meta }
   }
 
@@ -227,6 +243,7 @@ export function repairGeneratedWeek(
   // 13b. Política de rotación y corrección de firmas comparten una sola pasada.
   const squashNormalization = normalizeSquashSessionContent(sessions, context, meta)
   if (squashNormalization.failure) {
+    measureSquashMatchRoles(sessions, meta)
     return { sessions: [], meta, failure: squashNormalization.failure }
   }
   normalizeSquashDurationConsistency(sessions, meta)
@@ -239,7 +256,19 @@ export function repairGeneratedWeek(
   sessions = enforceDoubleSessionDayConstraints(sessions, context, meta)
   sessions = checkDoubleSessionUtilization(sessions, context, meta)
 
+  measureSquashMatchRoles(sessions, meta)
   return { sessions, meta }
+}
+
+function measureSquashMatchRoles(sessions: CoachSessionProposal[], meta: RepairMeta): void {
+  meta.squashFinisherPreservedCount = sessions.filter(
+    (session) => session.sessionType === 'squash'
+      && resolveSquashMatchRole(session.squashDetails) === 'finisher',
+  ).length
+  meta.squashStandaloneMatchCount = sessions.filter(
+    (session) => session.sessionType === 'squash'
+      && resolveSquashMatchRole(session.squashDetails) === 'standalone',
+  ).length
 }
 
 // ─── 1. Date validation ──────────────────────────────────────────────────────
@@ -541,8 +570,18 @@ function completeSquashDetails(
   context: RepairContext,
   recentDrills = extractRecentSquashDrills(context.previousWeek),
 ): void {
+  // Una sesión que explícitamente es partido conserva la proyección standalone
+  // histórica. El repair no crea finishers a partir de un esqueleto incompleto.
+  if (
+    (session.subtype === 'match' || session.subtype === 'competitive')
+    && context.wizardConfig.partnerAvailability !== 'solo'
+  ) {
+    applySquashMatchDetails(session, contextlessSquashMatchMode(session))
+    return
+  }
+
   const phase = mapPhase(context.week.phase) as SquashSelectionPhase
-  const result = selectSquashDrills({
+  const selectionContext = {
     fatigueLevel: fatigueToNumber(context.wizardConfig.currentFatigue),
     phase,
     recentDrills,
@@ -551,15 +590,44 @@ function completeSquashDetails(
     competitiveLevel: deriveCompetitiveLevel(context),
     partnerAvailability: context.wizardConfig.partnerAvailability ?? 'either',
     desiredKind: mapSubtypeToDesiredKind(session.subtype) ?? inferSquashDesiredKind(session, recentDrills),
-  })
-  applySquashSelection(session, result)
+  }
+  const selection = withoutCompetitiveMatchContent(selectSquashDrills(selectionContext))
+  if (selection.drills.length > 0) {
+    applySquashSelection(session, selection)
+    return
+  }
+
+  // Si el selector solo devolvió match drills para una sesión no dedicada,
+  // completar con técnica antes que inventar un finisher.
+  applySquashSelection(session, withoutCompetitiveMatchContent(selectSquashDrills({
+    ...selectionContext,
+    desiredKind: 'technical',
+  })))
+}
+
+/** El repair habilita y preserva finishers propuestos; no los compone. */
+function withoutCompetitiveMatchContent(
+  result: ReturnType<typeof selectSquashDrills>,
+): ReturnType<typeof selectSquashDrills> {
+  const drills = result.drills.filter((drill) => !isCompetitiveMatchDrill(drill))
+  if (drills.length === result.drills.length) return result
+
+  const blocks = buildSquashBlocksFromDrills(drills)
+  return {
+    ...result,
+    drills: blocks.flatMap((block) => block.drills ?? []),
+    blocks,
+    sessionKind: blocks.length === 0
+      ? 'technical'
+      : blocks.length === 1 ? blocks[0]!.kind : 'mixed',
+  }
 }
 
 function applySquashSelection(
   session: CoachSessionProposal,
   result: ReturnType<typeof selectSquashDrills>,
 ): void {
-  session.squashDetails = {
+  const details: NonNullable<CoachSessionProposal['squashDetails']> = {
     trainingFocus: result.trainingFocus,
     drills: result.drills,
     sessionMode: session.subtype === 'competitive'
@@ -570,6 +638,10 @@ function applySquashSelection(
     sessionKind: result.sessionKind,
     blocks: result.blocks,
   }
+  // Aunque el selector normalmente ya entrega este orden, el repair es quien
+  // fija el contrato definitivo entre ambos campos.
+  setSquashDrillsAndBlocks(details, result.drills)
+  session.squashDetails = details
 }
 
 function repairUnresolvedSquashDrills(
@@ -605,10 +677,14 @@ function repairUnresolvedSquashDrills(
     getMinimumSquashDrillCount(session),
     Math.min(details.drills?.length ?? 0, 5),
   )
-  details.drills = completeSquashDrillSet(mappedDrills, selection.drills, targetCount)
+  const completedDrills = completeSquashDrillSet(
+    mappedDrills,
+    selection.drills.filter((drill) => !isCompetitiveMatchDrill(drill)),
+    targetCount,
+  )
   details.trainingFocus = details.trainingFocus ?? selection.trainingFocus
   details.sessionKind = details.sessionKind ?? selection.sessionKind
-  details.blocks = buildSquashBlocksFromDrills(details.drills)
+  setSquashDrillsAndBlocks(details, completedDrills)
 }
 
 function densifySparseSquashDetails(
@@ -622,19 +698,36 @@ function densifySparseSquashDetails(
   const targetCount = getMinimumSquashDrillCount(session)
   if (details.drills.length >= targetCount) return false
 
+  const role = resolveSquashMatchRole(details)
   const selection = selectContextualSquashCompletion(session, context, [
     ...recentDrills,
     ...details.drills.map((drill) => drill.name),
   ])
-  const nextDrills = completeSquashDrillSet(details.drills, selection.drills, targetCount)
+  // Nunca agregar contenido competitivo al densificar: convertiría un finisher
+  // en no canónico o crearía un partido que nadie pidió.
+  const candidates = selection.drills.filter((drill) => !isCompetitiveMatchDrill(drill))
+
+  if (role === 'finisher') {
+    const finisher = details.drills[details.drills.length - 1]!
+    const lead = details.drills.slice(0, -1)
+    const nextLead = completeSquashDrillSet(lead, candidates, targetCount - 1)
+    if (nextLead.length === lead.length) return false
+
+    setSquashDrillsAndBlocks(details, [...nextLead, finisher])
+    return true
+  }
+
+  const nextDrills = completeSquashDrillSet(details.drills, candidates, targetCount)
   if (nextDrills.length === details.drills.length) return false
 
-  details.drills = nextDrills
-  details.blocks = buildSquashBlocksFromDrills(nextDrills)
+  setSquashDrillsAndBlocks(details, nextDrills)
   return true
 }
 
 function getMinimumSquashDrillCount(session: CoachSessionProposal): number {
+  // Un partido standalone es una sola actividad; entrada en calor y peloteo
+  // pertenecen al protocolo, no a una densificación artificial del contenido.
+  if (resolveSquashMatchRole(session.squashDetails) === 'standalone') return 1
   if (session.durationMin >= 60) return 4
   if (session.durationMin >= 45) return session.squashDetails?.sessionKind === 'match' ? 2 : 3
   if (session.durationMin >= 30) return 2
@@ -646,7 +739,7 @@ function selectContextualSquashCompletion(
   context: RepairContext,
   recentDrills: string[],
 ): ReturnType<typeof selectSquashDrills> {
-  return selectSquashDrills({
+  const selectionContext = {
     fatigueLevel: fatigueToNumber(context.wizardConfig.currentFatigue),
     phase: mapPhase(context.week.phase) as SquashSelectionPhase,
     recentDrills,
@@ -655,7 +748,12 @@ function selectContextualSquashCompletion(
     competitiveLevel: deriveCompetitiveLevel(context),
     partnerAvailability: context.wizardConfig.partnerAvailability ?? 'either',
     desiredKind: mapSubtypeToDesiredKind(session.subtype) ?? inferSquashDesiredKind(session, recentDrills),
-  })
+  }
+  const selection = selectSquashDrills(selectionContext)
+  if (selection.drills.some((drill) => !isCompetitiveMatchDrill(drill))) return selection
+
+  // Completar o sanear una sesión no es la vía para componer un finisher.
+  return selectSquashDrills({ ...selectionContext, desiredKind: 'technical' })
 }
 
 function completeSquashDrillSet(
@@ -697,6 +795,15 @@ function buildSquashBlocksFromDrills(drills: SquashDrill[]): SquashSessionBlock[
   )
 }
 
+/** Mantiene el invariante de rol: `drills` es el flatten exacto de `blocks`. */
+function setSquashDrillsAndBlocks(
+  details: NonNullable<CoachSessionProposal['squashDetails']>,
+  drills: SquashDrill[],
+): void {
+  details.blocks = buildSquashBlocksFromDrills(drills)
+  details.drills = details.blocks.flatMap((block) => block.drills ?? [])
+}
+
 function sanitizeSquashDrillSets(
   sessions: CoachSessionProposal[],
   context: RepairContext,
@@ -724,10 +831,13 @@ function sanitizeSquashDrillSets(
       ...dedupedDrills.map((drill) => drill.name),
     ])
     const targetCount = Math.max(getMinimumSquashDrillCount(session), dedupedDrills.length)
-    const completedDrills = completeSquashDrillSet(dedupedDrills, selection.drills, targetCount)
+    const completedDrills = completeSquashDrillSet(
+      dedupedDrills,
+      selection.drills.filter((drill) => !isCompetitiveMatchDrill(drill)),
+      targetCount,
+    )
 
-    details.drills = completedDrills
-    details.blocks = buildSquashBlocksFromDrills(completedDrills)
+    setSquashDrillsAndBlocks(details, completedDrills)
     details.trainingFocus = inferTrainingFocusFromSquashDrills(completedDrills, details.trainingFocus)
     details.sessionKind = inferSquashKindFromProposalDetails(session)
     recordRepair(meta, 'corrective', sessionKeyOf(session))
@@ -805,14 +915,70 @@ function normalizeSquashSemanticMetadata(
     const blockKinds = [...new Set((details.blocks ?? []).map((block) => block.kind))]
     const hasBlocks = blockKinds.length > 0
     const hasMatchBlock = blockKinds.includes('match')
-    const contentSaysMatch = isSquashMatchIntent(session)
-      && !(context?.wizardConfig.partnerAvailability === 'solo' && !hasMatchBlock)
-    const inferredKind = contentSaysMatch
-      ? 'match'
-      : hasBlocks
-      ? blockKinds.length > 1 ? 'mixed' : blockKinds[0]
-      : inferSquashKindFromProposalDetails(session)
-    const dedicatedMatchContent = contentSaysMatch || (hasBlocks ? blockKinds.length === 1 && hasMatchBlock : inferredKind === 'match')
+    const role = resolveSquashMatchRole(details)
+    const hasCompetitiveContent = (details.drills ?? []).some(isCompetitiveMatchDrill)
+    const contentSaysMatch = role === 'standalone'
+      || (role !== 'finisher'
+        && hasCompetitiveContent
+        && isSquashMatchIntent(session)
+        && !(context?.wizardConfig.partnerAvailability === 'solo' && !hasMatchBlock))
+    const inferredKind = role === 'finisher'
+      ? 'mixed'
+      : contentSaysMatch
+        ? 'match'
+        : hasBlocks
+          ? blockKinds.length > 1 ? 'mixed' : blockKinds[0]
+          : inferSquashKindFromProposalDetails(session)
+    // Un finisher nunca es un partido dedicado; una sesión mixta no canónica
+    // tampoco puede convertirse en match por palabras del título u objetivo.
+    const dedicatedMatchContent = role === 'finisher'
+      ? false
+      : role === 'standalone'
+        ? true
+        : hasCompetitiveContent
+          && (contentSaysMatch || (hasBlocks ? blockKinds.length === 1 && hasMatchBlock : inferredKind === 'match'))
+    const onlyCompetitiveContent = hasCompetitiveContent
+      && (details.drills ?? []).every(isCompetitiveMatchDrill)
+
+    // Spec §2.1: el contenido enteramente competitivo pero no canónico se
+    // proyecta al único standalone. Las activaciones no llegan aquí porque no
+    // son contenido competitivo por enumeración.
+    if (role === 'none' && onlyCompetitiveContent) {
+      applySquashMatchDetails(
+        session,
+        contextlessSquashMatchMode(session),
+        (context?.week.weekIndex ?? sessionIdx) + Math.max(0, squashSessions.indexOf(session)),
+      )
+      recordRepair(meta, 'corrective', sessionKeyOf(session))
+      meta.warnings.push({
+        code: 'squash_match_format_aligned',
+        message: `Se dejó "${session.title}" como un único partido al mejor de 5 juegos.`,
+        sessionDate: session.date,
+      })
+      continue
+    }
+
+    // Spec §2.1: una mezcla no canónica nunca se proyecta a un partido entero
+    // por el texto del título. Conserva los drills no competitivos y pierde la
+    // carga competitiva que no puede contar como exposición.
+    if (role === 'none' && hasCompetitiveContent) {
+      const kept = (details.drills ?? []).filter((drill) => !isCompetitiveMatchDrill(drill))
+      if (kept.length > 0) {
+        setSquashDrillsAndBlocks(details, kept)
+        const keptKinds = [...new Set((details.blocks ?? []).map((block) => block.kind))]
+        const keptKind = keptKinds.length > 1 ? 'mixed' : keptKinds[0] ?? 'technical'
+        details.sessionKind = keptKind
+        details.sessionMode = 'drill_session'
+        realignSquashSessionIdentity(session, keptKind)
+        recordRepair(meta, 'corrective', sessionKeyOf(session))
+        meta.warnings.push({
+          code: 'squash_non_canonical_match_removed',
+          message: `Se retiró contenido de partido no canónico de "${session.title}"; la sesión queda como trabajo de drills.`,
+          sessionDate: session.date,
+        })
+        continue
+      }
+    }
 
     if (contentSaysMatch && !hasMatchBlock) {
       // Offsetting by the session's position among the week's squash sessions
@@ -834,7 +1000,7 @@ function normalizeSquashSemanticMetadata(
     if (
       dedicatedMatchContent &&
       (details.sessionMode === 'practice_match' || details.sessionMode === 'competition_match') &&
-      !hasCanonicalFiveGameMatch(details.drills)
+      !isCanonicalMatchContent(session)
     ) {
       applySquashMatchDetails(
         session,
@@ -859,14 +1025,21 @@ function normalizeSquashSemanticMetadata(
       })
     }
 
-    if (details.sessionMode === 'practice_match' && !dedicatedMatchContent) {
+    if (details.sessionMode !== 'drill_session' && !dedicatedMatchContent) {
+      // `sessionMode` es opcional en el contrato, así que ausente no es
+      // match-play mal declarado: completarlo es default, no corrección.
+      // Contarlo inflaría `repairedSessionCount` y `countRepairsV2` en toda
+      // sesión de drills que el modelo devuelva sin el campo.
+      const declaredMatchMode = details.sessionMode != null
       details.sessionMode = 'drill_session'
-      recordRepair(meta, 'corrective', sessionKeyOf(session))
-      meta.warnings.push({
-        code: 'squash_mode_aligned',
-        message: 'Se cambió match-play por sesión de drills porque los bloques eran técnicos/control/sombras.',
-        sessionDate: session.date,
-      })
+      if (declaredMatchMode) {
+        recordRepair(meta, 'corrective', sessionKeyOf(session))
+        meta.warnings.push({
+          code: 'squash_mode_aligned',
+          message: 'Se cambió match-play por sesión de drills porque los bloques no son un partido dedicado.',
+          sessionDate: session.date,
+        })
+      }
     }
 
     const alignedSubtype = resolveSquashSubtypeFromKind(inferredKind, session.subtype)
@@ -881,7 +1054,7 @@ function normalizeSquashSemanticMetadata(
     }
 
     const alignedTitle = buildSquashTitleFromKind(inferredKind, blockKinds)
-    if (alignedTitle && shouldAlignSquashTitle(session.title, inferredKind, blockKinds)) {
+    if (role !== 'finisher' && alignedTitle && shouldAlignSquashTitle(session.title, inferredKind, blockKinds)) {
       session.title = alignedTitle
       recordRepair(meta, 'corrective', sessionKeyOf(session))
       meta.warnings.push({
@@ -901,7 +1074,9 @@ function ensureSquashCompetitionMatchExposure(
   if (!shouldEnsureSquashCompetitionMatch(context)) return sessions
   const squashSessions = sessions.filter((session) => session.sessionType === 'squash')
   if (squashSessions.length === 0) return sessions
-  if (squashSessions.some((session) => session.squashDetails?.sessionMode === 'competition_match' && isSafeSquashCompetitionExposureDate(session.date, context))) return sessions
+  if (squashSessions.some((session) =>
+    hasCompetitiveExposureContent(session) && isSafeSquashCompetitionExposureDate(session.date, context)
+  )) return sessions
 
   const safeSquashSessions = squashSessions.filter((session) => isSafeSquashCompetitionExposureDate(session.date, context))
   if (context.week.phase === 'taper' && safeSquashSessions.length === 0) return sessions
@@ -947,6 +1122,12 @@ function ensureSquashCompetitionMatchExposure(
     sessionDate: candidate.date,
   })
   return sessions
+}
+
+/** Envoltorio local del predicado único de exposición para proposals del repair. */
+function hasCompetitiveExposureContent(session: CoachSessionProposal): boolean {
+  return session.sessionType === 'squash'
+    && hasSquashCompetitiveExposureContent(session.squashDetails)
 }
 
 function buildSquashCompetitionMatchSession(
@@ -1007,7 +1188,35 @@ function normalizeLateTaperSquashMatchPlay(
     // activation/control; the validator (squash.race_day) expects a match there.
     if (session.date === eventDate) continue
     if (daysBetween(session.date, eventDate) > 2) continue
-    if (!isSquashMatchIntent(session) && session.squashDetails?.sessionMode !== 'competition_match') continue
+    const role = resolveSquashMatchRole(session.squashDetails)
+
+    if (role === 'finisher') {
+      // Retirar solo el bloque competitivo final conserva el trabajo mixto.
+      const details = session.squashDetails!
+      const blocks = (details.blocks ?? []).slice(0, -1)
+      const drills = blocks.flatMap((block) => block.drills ?? [])
+      if (drills.length === 0) continue
+
+      details.blocks = blocks
+      details.drills = drills
+      details.sessionKind = blocks.length > 1 ? 'mixed' : blocks[0]!.kind
+      // La segunda pasada de taper no debe releer el antiguo título de partido y
+      // convertir el trabajo previo (ya seguro) en una activación distinta.
+      realignSquashSessionIdentity(session, details.sessionKind)
+      session.durationMin = Math.min(session.durationMin, 35)
+      session.rpe = Math.min(session.rpe ?? 4, 4)
+      recordRepair(meta, 'corrective', sessionKeyOf(session))
+      meta.warnings.push({
+        code: 'late_taper_match_controlled',
+        message: `Se retiró el cierre competitivo de "${session.title}": está demasiado cerca del evento.`,
+        sessionDate: session.date,
+      })
+      continue
+    }
+
+    if (role !== 'standalone'
+      && !isSquashMatchIntent(session)
+      && session.squashDetails?.sessionMode !== 'competition_match') continue
 
     const previousTitle = session.title
     applyPreEventSquashActivationDetails(session, context)
@@ -1045,13 +1254,15 @@ function applyPreEventSquashActivationDetails(
   session.objective = 'Último toque de cancha: timing, longitud, precisión y confianza sin puntos largos ni fatiga residual.'
   session.durationMin = Math.min(session.durationMin, 35)
   session.rpe = Math.min(session.rpe ?? 4, 4)
-  session.squashDetails = {
+  const details: NonNullable<CoachSessionProposal['squashDetails']> = {
     trainingFocus: selection.trainingFocus,
     sessionMode: 'drill_session',
     sessionKind: selection.sessionKind === 'match' ? 'control' : selection.sessionKind,
     drills,
-    blocks: buildSquashBlocksFromDrills(drills),
+    blocks: [],
   }
+  setSquashDrillsAndBlocks(details, drills)
+  session.squashDetails = details
 }
 
 function contextlessSquashMatchMode(session: CoachSessionProposal): 'practice_match' | 'competition_match' {
@@ -1123,9 +1334,9 @@ export function buildSquashMatchDrills(
   return [{ name: names[0], durationMin: Math.min(session.durationMin, 40) }]
 }
 
-function hasCanonicalFiveGameMatch(drills: SquashDrill[] | undefined): boolean {
-  if (drills?.length !== 1) return false
-  return findSquashDrillByName(drills[0].name)?.id === 'practice_match_five_games'
+/** Chequeo de idempotencia de la normalización semántica, generalizado al rol. */
+function isCanonicalMatchContent(session: CoachSessionProposal): boolean {
+  return resolveSquashMatchRole(session.squashDetails) !== 'none'
 }
 
 function normalizeSquashDurationConsistency(sessions: CoachSessionProposal[], meta: RepairMeta): void {
@@ -1472,7 +1683,12 @@ function normalizeSquashSessionContent(
   context: RepairContext,
   meta: RepairMeta,
 ): SquashNormalizationResult {
-  const squashSessions = sessions.filter((session) => session.sessionType === 'squash')
+  const allSquashSessions = sessions.filter((session) => session.sessionType === 'squash')
+  // Dos partidos standalone comparten formato, no una prescripción repetida de
+  // drills. Incluirlos haría irresoluble cualquier semana con dos partidos.
+  const squashSessions = allSquashSessions.filter(
+    (session) => resolveSquashMatchRole(session.squashDetails) !== 'standalone',
+  )
   if (squashSessions.length === 0) return {}
 
   const weekIndexInBlock = getWeekIndexInBlock(context)
@@ -1513,13 +1729,18 @@ function normalizeSquashSessionContent(
   for (const [sessionOrdinal, session] of squashSessions.entries()) {
     if (!policySessions.includes(session)) continue
     const drills = session.squashDetails?.drills ?? []
+    const sessionRole = resolveSquashMatchRole(session.squashDetails)
     for (const [drillOrdinal, drill] of drills.entries()) {
+      const isFinisherSlot = sessionRole === 'finisher' && isFinisherMatchDrill(drill)
       const replacement = selectSquashDrillReplacement({
         originalName: drill.name,
         context: buildSquashRotationSelectionContext(session, context),
         excludedKeys: new Set([...assignedKeys, ...previousKeys]),
         rotationIndex: weekIndexInBlock * 131 + sessionOrdinal * 17 + drillOrdinal,
         relaxation: 'strict',
+        allowedIds: isFinisherSlot
+          ? new Set<string>(SQUASH_FINISHER_MATCH_IDS)
+          : undefined,
       })
       if (!replacement) {
         omitted++
@@ -1604,15 +1825,23 @@ function findUniqueSquashSessionCandidate(
   if (slots.length === 0) return undefined
   const levels: SquashRelaxationLevel[] = ['strict', 'same_kind', 'same_category', 'any']
   for (const relaxation of levels) {
-    const candidateLists = slots.map(({ drill, drillOrdinal }) => getSquashCandidatesForSlot({
-      drill,
-      session: original,
-      context,
-      sessionOrdinal,
-      drillOrdinal,
-      excludedKeys,
-      relaxation,
-    }))
+    const candidateLists = slots.map(({ drill, drillOrdinal }) => {
+      const candidates = getSquashCandidatesForSlot({
+        drill,
+        session: original,
+        context,
+        sessionOrdinal,
+        drillOrdinal,
+        excludedKeys,
+        relaxation,
+      })
+      if (candidates.length > 0) return candidates
+      // Un slot sin recambio no puede anular el nivel entero: el finisher de
+      // base/taper no tiene par (ningún partido lleva esos tags de fase, y el
+      // rol debe preservarse), pero la firma se diferencia con los demás slots.
+      const pinned = findSquashDrillByName(drill.name)
+      return pinned ? [pinned] : []
+    })
     if (candidateLists.some((list) => list.length === 0)) continue
     const tuple = new Array(candidateLists.length).fill(0)
     for (let attempts = 0; attempts < MAX_CORRECTIVE_ASSIGNMENTS; attempts++) {
@@ -1621,7 +1850,14 @@ function findUniqueSquashSessionCandidate(
       if (new Set(keys).size === keys.length) {
         const candidate = cloneSquashSessionWithReplacements(original, replacementDefinitions)
         const signature = buildSquashDrillSignature(candidate)
-        if (signature && !seenSignatures.has(signature) && preservesCompetitiveExposure(sessions, original, candidate, context)) {
+        const rolePreserved = resolveSquashMatchRole(candidate.squashDetails)
+          === resolveSquashMatchRole(original.squashDetails)
+        if (
+          rolePreserved
+          && signature
+          && !seenSignatures.has(signature)
+          && preservesCompetitiveExposure(sessions, original, candidate, context)
+        ) {
           return candidate
         }
       }
@@ -1650,6 +1886,8 @@ function getSquashCandidatesForSlot(input: {
   const seen = new Set<string>()
   const rotationIndex = getWeekIndexInBlock(input.context) * 131 + input.sessionOrdinal * 17 + input.drillOrdinal
   const selectionContext = buildSquashRotationSelectionContext(input.session, input.context)
+  const finisherSlot = resolveSquashMatchRole(input.session.squashDetails) === 'finisher'
+    && isFinisherMatchDrill(input.drill)
   for (let offset = 0; offset < 128; offset++) {
     const candidate = selectSquashDrillReplacement({
       originalName: input.drill.name,
@@ -1657,6 +1895,7 @@ function getSquashCandidatesForSlot(input: {
       excludedKeys: input.excludedKeys,
       rotationIndex: rotationIndex + offset,
       relaxation: input.relaxation,
+      allowedIds: finisherSlot ? new Set<string>(SQUASH_FINISHER_MATCH_IDS) : undefined,
     })
     if (!candidate || seen.has(candidate.id)) continue
     seen.add(candidate.id)
@@ -1679,7 +1918,7 @@ function cloneSquashSessionWithReplacements(
       : undefined,
   }
   if (!candidate.squashDetails) return candidate
-  candidate.squashDetails.blocks = buildSquashBlocksFromDrills(candidate.squashDetails.drills)
+  setSquashDrillsAndBlocks(candidate.squashDetails, candidate.squashDetails.drills)
   const kind = inferSquashKindFromProposalDetails(candidate)
   candidate.squashDetails.sessionKind = kind
   candidate.squashDetails.sessionMode = kind === 'match'
@@ -1697,7 +1936,7 @@ function replaceSquashDrill(
   const details = session.squashDetails
   if (!details?.drills[drillOrdinal]) return
   details.drills[drillOrdinal] = toReplacementSquashDrill(details.drills[drillOrdinal]!, replacement)
-  details.blocks = buildSquashBlocksFromDrills(details.drills)
+  setSquashDrillsAndBlocks(details, details.drills)
 }
 
 function toReplacementSquashDrill(

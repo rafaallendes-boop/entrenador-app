@@ -364,6 +364,9 @@ function makeResolvedWeek(
       squashDrillRotationActionCount: result.meta.squashDrillRotationActionCount,
       squashDrillRotationSessionsAffected: result.meta.squashDrillRotationSessionsAffected,
       squashDrillRotationOmittedCount: result.meta.squashDrillRotationOmittedCount,
+      squashFinisherProposedCount: result.meta.squashFinisherProposedCount,
+      squashFinisherPreservedCount: result.meta.squashFinisherPreservedCount,
+      squashStandaloneMatchCount: result.meta.squashStandaloneMatchCount,
       repairWarnings: result.meta.repairWarnings,
       errorClass: result.meta.errorClass,
       generationSource: 'ai',
@@ -417,6 +420,9 @@ function makeFallbackResolvedWeek(
       squashDrillRotationActionCount: fallback.meta.squashDrillRotationActionCount,
       squashDrillRotationSessionsAffected: fallback.meta.squashDrillRotationSessionsAffected,
       squashDrillRotationOmittedCount: fallback.meta.squashDrillRotationOmittedCount,
+      squashFinisherProposedCount: fallback.meta.squashFinisherProposedCount,
+      squashFinisherPreservedCount: fallback.meta.squashFinisherPreservedCount,
+      squashStandaloneMatchCount: fallback.meta.squashStandaloneMatchCount,
       repairWarnings: [
         {
           code: 'local_plan_fallback',

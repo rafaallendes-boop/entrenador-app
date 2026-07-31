@@ -386,11 +386,11 @@ describe('repairGeneratedWeek', () => {
           sessionKind: 'match',
           blocks: [
             { kind: 'technical', drills: [{ name: 'Ataque desde tres cuartos de cancha' }] },
-            { kind: 'match', drills: [{ name: 'Partido con ataque temprano' }] },
+            { kind: 'match', drills: [{ name: 'Partido de entrenamiento al mejor de 3 juegos' }] },
           ],
           drills: [
             { name: 'Ataque desde tres cuartos de cancha' },
-            { name: 'Partido con ataque temprano' },
+            { name: 'Partido de entrenamiento al mejor de 3 juegos' },
           ],
         },
       },
@@ -405,7 +405,7 @@ describe('repairGeneratedWeek', () => {
     expect(squash?.squashDetails?.sessionMode).toBe('drill_session')
     expect(squash?.squashDetails?.sessionKind).toBe('mixed')
     expect(squash?.subtype).toBe('training')
-    expect(squash?.title).toBe('Squash - Técnica y Juego Condicionado')
+    expect(squash?.title).toBe('Squash - Técnica Aplicada')
     expect(meta.warnings).toEqual(expect.arrayContaining([expect.objectContaining({ code: 'squash_mode_aligned' })]))
   })
 
@@ -449,7 +449,7 @@ describe('repairGeneratedWeek', () => {
     expect(match?.squashDetails?.sessionMode).toBe('competition_match')
     expect(match?.squashDetails?.sessionKind).toBe('match')
     expect(match?.squashDetails?.blocks?.every((block) => block.kind === 'match')).toBe(true)
-    expect(meta.warnings).toEqual(expect.arrayContaining([expect.objectContaining({ code: 'squash_match_mode_repaired' })]))
+    expect(meta.warnings).toEqual(expect.arrayContaining([expect.objectContaining({ code: 'squash_competition_match_added' })]))
   })
 
   it('3. moves sessions on disallowed days to allowed days', () => {

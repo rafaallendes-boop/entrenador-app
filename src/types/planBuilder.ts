@@ -74,6 +74,10 @@ export interface PlanGenerationMeta {
   squashDrillRotationActionCount?: number
   squashDrillRotationSessionsAffected?: number
   squashDrillRotationOmittedCount?: number
+  /** Observacionales de rol de partido (no entran en countRepairsV2). */
+  squashFinisherProposedCount?: number
+  squashFinisherPreservedCount?: number
+  squashStandaloneMatchCount?: number
   repairTaxonomyVersion?: 2
   qualityVersion?: 1 | 2
   repairWarnings?: Array<{ code: string; message: string }>

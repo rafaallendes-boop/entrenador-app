@@ -590,6 +590,9 @@ describe('loadtest artifact', () => {
         structuralActionCount: 2,
         movedSessionCount: 1,
         droppedSessionCount: 0,
+        squashFinisherProposedCount: 1,
+        squashFinisherPreservedCount: 1,
+        squashStandaloneMatchCount: 2,
       },
     }, { scenarioKey: 'squash_build', countRepairsV2: 6, score: 88, grade: 'good' })
 
@@ -601,6 +604,9 @@ describe('loadtest artifact', () => {
       countRepairsV2: 6,
       correctiveActionCount: 3,
       structuralActionCount: 2,
+      squashFinisherProposedCount: 1,
+      squashFinisherPreservedCount: 1,
+      squashStandaloneMatchCount: 2,
       scorable: true,
     })
   })

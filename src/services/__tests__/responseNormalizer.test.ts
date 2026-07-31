@@ -1227,12 +1227,12 @@ describe('responseNormalizer', () => {
               kind: 'match',
               drills: [
                 { name: 'Partido de entrenamiento al mejor de 3 juegos' },
-                { name: 'Partido con ataque temprano' },
+                { name: 'Game a 11 con marcador real' },
               ],
             }],
             drills: [
               { name: 'Partido de entrenamiento al mejor de 3 juegos' },
-              { name: 'Partido con ataque temprano' },
+              { name: 'Game a 11 con marcador real' },
             ],
           },
         }]),

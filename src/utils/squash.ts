@@ -5,10 +5,15 @@ import {
   isShadowsDrill,
   isSquashMatchDrill,
 } from '../services/training/drillLibrary'
+import {
+  hasSquashCompetitiveExposureContent,
+  resolveSquashMatchRole,
+} from '../services/training/squashMatchRole'
 
 export interface SquashCompetitiveExposureSummary {
   practiceMatchCount: number
   competitionMatchCount: number
+  finisherCount: number
   totalMatchCount: number
   exposureScore: number
 }
@@ -98,12 +103,24 @@ export function isCompetitionSquashMatch(session: Pick<Session, 'type' | 'subtyp
   return resolveSquashSessionMode(session.squashDetails) === 'competition_match'
 }
 
+/**
+ * Envoltorio del único predicado de exposición, que vive en `squashMatchRole`.
+ * Se mantiene separado de `isCompetitionSquashMatch`: sus consumidores
+ * interpretan ese predicado como una sesión completa de partido real.
+ */
+export function hasSquashCompetitiveExposure(
+  session: Pick<Session, 'type' | 'squashDetails'>,
+): boolean {
+  return session.type === 'squash' && hasSquashCompetitiveExposureContent(session.squashDetails)
+}
+
 export function getRecentSquashCompetitiveExposure(
   sessions: Array<Pick<Session, 'date' | 'timeBlock' | 'type' | 'subtype' | 'squashDetails'>>,
   limit = 4,
 ): SquashCompetitiveExposureSummary {
   let practiceMatchCount = 0
   let competitionMatchCount = 0
+  let finisherCount = 0
 
   const recentSessions = [...sessions]
     .sort((a, b) => b.date.localeCompare(a.date) || b.timeBlock.localeCompare(a.timeBlock))
@@ -117,13 +134,18 @@ export function getRecentSquashCompetitiveExposure(
 
     if (isCompetitionSquashMatch(session)) {
       competitionMatchCount += 1
+      continue
     }
+
+    if (resolveSquashMatchRole(session.squashDetails) === 'finisher') finisherCount += 1
   }
 
+  const total = practiceMatchCount + competitionMatchCount + finisherCount
   return {
     practiceMatchCount,
     competitionMatchCount,
-    totalMatchCount: practiceMatchCount + competitionMatchCount,
-    exposureScore: practiceMatchCount + competitionMatchCount,
+    finisherCount,
+    totalMatchCount: total,
+    exposureScore: total,
   }
 }
