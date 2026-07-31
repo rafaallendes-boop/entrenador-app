@@ -1,6 +1,6 @@
 # RallyIQ - Project Review and Roadmap
 
-Actualizado: 2026-07-30
+Actualizado: 2026-07-31
 
 Base de contraste:
 
@@ -11,7 +11,8 @@ Base de contraste:
 - **Coach Biblioteca + Planificacion completa desplegadas (2026-07-18/19):** edicion de sesiones, Biblioteca de plantillas account-scoped, aplicar/guardar plantillas para cualquier atleta/dia, Dexie v18, backup v4 y sync Supabase por fila con LWW/delete-wins y tombstones versionados. `015_session_templates.sql` fue aplicada y el bundle desplegado; falta el smoke autenticado en produccion.
 - **Hardening de fechas y semanas (2026-07-19):** conteos de semanas, ventanas de Plan Builder, insights de fatiga y filtros semanales usan dias calendario en vez de milisegundos para no fallar al cruzar DST. Se agrego serializacion JSON canonica para comparar estructuras sin reescrituras redundantes.
 - **Fase 0 de medicion del Plan Builder cerrada, incluidos sus pendientes operativos (2026-07-25/26):** control aceptado y versionado con SHA-256 `6c45885a870cf7e019906a0b4d786e828b2653fe1643f95d436be3aa0ee94d7a`; calibracion congelada, `quality_version = 2` productiva, bundle desplegado y smoke de produccion ejecutado el 2026-07-26 con una corrida real verificada en `plan_generation_jobs`.
-- **Rotacion coordinada del Plan Builder implementada localmente (2026-07-30):** identidad de bloque unica, rotacion determinista de fuerza y squash, fail-closed para firmas de squash y telemetria allowlisted estan en codigo y cubiertos por pruebas. Aun no se corrio el smoke `high` pagado ni se desplego esta tanda: el preflight exige un arbol limpio y la autorizacion del owner.
+- **Rotacion coordinada del Plan Builder, con smoke aceptado (2026-07-30):** identidad de bloque unica, rotacion determinista de fuerza y squash, fail-closed para firmas de squash y telemetria allowlisted. Smoke pagado ejecutado sobre `2ea9b53` y aceptado (US$0,8941, `ELEGIBLE`). **Pendiente deploy.**
+- **Roles de partido de squash (2026-07-30, `9754f78`):** el rol de una sesion de squash se deriva de su contenido (`standalone` / `finisher` / `none`), no de `sessionMode`. Commiteado y pusheado, con dos hallazgos de code review corregidos antes del commit (ver §17). **Es posterior al smoke de la rotacion, asi que su efecto no esta medido**; queda cubierto por tests locales.
 - **Fase 0 de coaches landing completada (2026-07-13):** rutas públicas reales (no AuthGate fallbacks), las cuatro páginas legales publicadas como rutas (`/terms`, `/privacy`, `/health-disclaimer`, y disclamer Whoop), landing `/coaches` en modo prelanzamiento con estructura de 3 planes, metadata/OG cards por ruta con prerender para crawlers, deep links nativos para OAuth callback en iOS, y cierre de compartimiento entre rutas públicas. Falta aún revisión jurídica y RUT/domicilio legal antes de cobro o anuncios masivos.
 - `main` hasta `167ef6e Plan whoop y entrenador`.
 - `007` aplicado y F2 data prereqs en `6e33926`.
@@ -29,7 +30,7 @@ Base de contraste:
 
 ## Resumen Ejecutivo
 
-RallyIQ esta en una etapa donde el core ya no es el cuello de botella principal. El motor de planificacion, Plan Builder async, calidad deportiva base, athlete scope foundation, claves naturales locales por atleta, write path remoto seguro para day/week, Athlete-Aware Core, Coach F2-lite Parte 2b, Whoop v1 + Workout Auto-Complete (ambas migraciones aplicadas), Coach Workspace con roster/Planificacion/Biblioteca, y Fase 0 de coaches landing (rutas legales publicas + landing `/coaches` de prelanzamiento) ya estan construidos. La Fase 0 de medicion del Plan Builder tambien esta cerrada: `quality_version = 2` es productiva, el bundle esta desplegado y una corrida real quedo verificada en `plan_generation_jobs` el 2026-07-26. La rotacion coordinada de fuerza y squash ya esta implementada localmente; falta su control `high` pagado y el deploy autorizado. Biblioteca y Planificacion tienen `015` y deploy aplicados; queda cerrar el smoke autenticado.
+RallyIQ esta en una etapa donde el core ya no es el cuello de botella principal. El motor de planificacion, Plan Builder async, calidad deportiva base, athlete scope foundation, claves naturales locales por atleta, write path remoto seguro para day/week, Athlete-Aware Core, Coach F2-lite Parte 2b, Whoop v1 + Workout Auto-Complete (ambas migraciones aplicadas), Coach Workspace con roster/Planificacion/Biblioteca, y Fase 0 de coaches landing (rutas legales publicas + landing `/coaches` de prelanzamiento) ya estan construidos. La Fase 0 de medicion del Plan Builder tambien esta cerrada: `quality_version = 2` es productiva, el bundle esta desplegado y una corrida real quedo verificada en `plan_generation_jobs` el 2026-07-26. La rotacion coordinada de fuerza y squash ya tiene su smoke `high` pagado y aceptado, y encima de ella viajan los roles de partido de squash; ambas tandas estan commiteadas y pusheadas, y solo falta el deploy autorizado. Biblioteca y Planificacion tienen `015` y deploy aplicados; queda cerrar el smoke autenticado.
 
 Lo que queda antes de mostrar/cobrar con confianza se concentra en dos carriles:
 
@@ -45,7 +46,7 @@ Mi lectura como lider tecnico: el cambio principal entre hoy y hace dos dias es 
 
 ## Estado Actual En Una Frase
 
-RallyIQ ya opera multi-atleta en produccion, con Whoop readiness y Workout Auto-Complete operativos (`011`/`012` aplicados), Coach Workspace base (`/coach`) y rutas legales publicas + landing `/coaches` en vivo. `015` y Biblioteca/Planificacion ya estan desplegadas, `quality_version = 2` quedo verificada en `plan_generation_jobs`, y la rotacion coordinada del Plan Builder queda lista para control `high`; el siguiente paso tecnico es revisar/commitear esta tanda, ejecutar ese smoke y autorizar el deploy. En paralelo siguen pendientes revision juridica formal y consentimiento biometrico de Whoop antes del primer piloto pagado.
+RallyIQ ya opera multi-atleta en produccion, con Whoop readiness y Workout Auto-Complete operativos (`011`/`012` aplicados), Coach Workspace base (`/coach`) y rutas legales publicas + landing `/coaches` en vivo. `015` y Biblioteca/Planificacion ya estan desplegadas, `quality_version = 2` quedo verificada en `plan_generation_jobs`, y la rotacion coordinada del Plan Builder ya paso su control `high` pagado; el siguiente paso tecnico es autorizar el deploy de esa tanda junto con los roles de partido de squash que viajan encima (`9754f78`, sin medir). En paralelo siguen pendientes revision juridica formal y consentimiento biometrico de Whoop antes del primer piloto pagado.
 
 ## Porcentaje De Avance
 
@@ -336,10 +337,64 @@ sesion de drills con un solo drill se sigue penalizando. El artefacto es
 **anterior** a ese arreglo. No se pudo verificar que las 8 ocurrencias sean todas
 de partido: el artefacto guarda metricas allowlisted, no contenido de sesion.
 
-Estado: **veredicto positivo, pendiente deploy.** Suite 320 archivos / 2386
-tests, lint y build OK. El bloqueo previo en `chatCoachConversations.test.tsx`
-quedo resuelto. No se re-mide el arreglo de `low_drill_depth` con el loadtest:
-seria otra corrida pagada para confirmar un cambio de regla de scoring.
+Estado: **veredicto positivo, commiteado y pusheado (`9754f78`), pendiente
+deploy.** Suite 320 archivos / 2386 tests, lint y build OK al cierre de esta
+pieza. El bloqueo previo en `chatCoachConversations.test.tsx` quedo resuelto. No
+se re-mide el arreglo de `low_drill_depth` con el loadtest: seria otra corrida
+pagada para confirmar un cambio de regla de scoring.
+
+### 17. Plan Builder — roles de partido de squash (2026-07-30, `9754f78`)
+
+Segunda tanda del mismo dia, encima de la rotacion coordinada. El rol de una
+sesion de squash pasa a derivarse de su **contenido**, no de `sessionMode`.
+
+- `squashMatchRole.ts`: `standalone` / `finisher` / `none` por enumeracion de
+  IDs competitivos, con invariante duro `drills[] = flatten(blocks)`. Es el
+  **unico** predicado de exposicion competitiva del proyecto; `utils/squash.ts`
+  y `repairWeek.ts` lo envuelven, no lo reimplementan.
+- `repairWeek`: la densificacion y el taper conservan el finisher (en taper se
+  retira solo el bloque competitivo final, no la sesion); el standalone queda
+  fuera de la unicidad de firmas —dos partidos comparten formato, no una
+  prescripcion repetida—; el repair habilita y preserva finishers pero no los
+  compone desde un esqueleto incompleto.
+- Se elimina `practice_match_short_points_attack` del catalogo y su alias.
+- Contadores observacionales de rol (`squashFinisherProposedCount`,
+  `...PreservedCount`, `squashStandaloneMatchCount`) propagados hasta el
+  artefacto del loadtest. **No entran en `countRepairsV2`.**
+
+**Code review (2026-07-30):** dos hallazgos confirmados con reproduccion contra
+`HEAD` y corregidos antes del commit.
+
+1. Un slot sin recambio anulaba el **nivel de relajacion completo** en
+   `findUniqueSquashSessionCandidate`. El finisher no tiene par rotable en
+   `base` ni en `taper`: los tres drills competitivos declaran
+   `phaseAppropriate = ['build','peak','race']`, y `isPhaseAllowed`
+   (`drillSelector.ts:118`) es hard constraint previo al eje. Que no haya
+   partido en base es **deliberado y esta fijado por test**
+   (`drillLibrarySchema.test.ts:24`), no un hueco de contenido. El efecto si era
+   un bug: dos finishers con firma duplicada hacian fallar la semana entera con
+   `quality.squash.signature_uniqueness_unresolved`, que por politica **no**
+   puede degradar al fallback local y quema los reintentos. Listas de candidatos
+   observadas: `[10,10,7,0]` / `[26,26,7,0]` / `[17,17,17,0]` / `[36,36,36,0]`.
+   Ahora un slot sin recambio conserva su drill original y la firma se
+   diferencia con los demas.
+2. `sessionMode !== 'drill_session'` tambien capturaba `undefined`. El campo es
+   opcional (`src/types/index.ts:281`), asi que toda sesion de drills que el
+   modelo devolviera sin el campo reservaba una reparacion `corrective` y un
+   warning `squash_mode_aligned` que antes no existian, inflando
+   `repairedSessionCount` y `countRepairsV2` —justo la metrica que
+   `quality_version = 2` penaliza—. Ahora el default se completa en silencio y
+   el warning queda solo para un match-play realmente mal declarado.
+
+**Desfase de medicion, deliberado y documentado:** el smoke pagado de §16 se
+corrio sobre `2ea9b53`. Esta tanda es **posterior** y cambia que cuenta como
+exposicion competitiva, que sesiones entran a la unicidad de firmas y como se
+proyecta el contenido competitivo no canonico. Esta cubierta por tests locales,
+**no** por el artefacto. Con ~US$0,60 de saldo no alcanza para re-medir
+(~US$0,90 por corrida).
+
+Estado: **commiteado y pusheado, pendiente deploy.** Suite 324 archivos / 2425
+tests, lint y build OK. Sin migraciones Dexie ni Supabase.
 
 ## Avances Ya Implementados
 
@@ -884,14 +939,36 @@ dificultad.
    control-contra-control (C₂ vs C₁) antes de la proxima fase de velocidad, y
    eso son dos corridas (~US$1,80 a US$0,90 cada una). Saldo de API al
    2026-07-30: **~US$0,60**. Recargar antes de retomar.
-3. **Plan Builder — calidad deportiva.** *(en curso, siguiente)* La primera
-   correccion coordinada (rotacion de fuerza/squash y fail-closed) esta medida y
-   con veredicto positivo (§16); queda desplegarla. Lo siguiente sale de datos de
-   esa misma corrida, y es trabajo de contenido verificable con tests locales,
-   sin gasto de API: ampliar `COMPETITION_MATCH_VARIANTS` /
-   `PRACTICE_MATCH_VARIANTS`, que hoy tienen **una sola** entrada cada uno y por
-   eso vuelven firma duplicada a cualquier semana con dos partidos; y atacar
-   `low_drill_depth` legitimo en sesiones de drills (ya no en las de partido).
+3. **Plan Builder — calidad deportiva.** *(pausado 2026-07-31; la premisa no
+   sobrevivio a la revision)* La rotacion coordinada (§16) esta medida y
+   aceptada y los roles de partido (§17) estan commiteados; queda desplegar
+   ambas.
+
+   El follow-up que este backlog daba por siguiente —ampliar
+   `COMPETITION_MATCH_VARIANTS` / `PRACTICE_MATCH_VARIANTS`— **se cierra sin
+   implementar**. Se descarto al verificar tres cosas:
+   - `repeated_template` es `quality.strength.repeated_template`
+     (`qualityReview.ts:538`): mide **accesorios de fuerza** compartidos entre
+     semanas de un bloque. Nunca midio squash. La entrada anterior de este
+     backlog se lo atribuia a las variantes de partido; era incorrecto.
+   - La regla de squash equivalente es `quality.squash.low_drill_variety`
+     (`qualityReview.ts:583`), y el smoke de §16 **ya la bajo de 6 planes a 1**.
+     El problema que justificaba el proyecto esta mayormente resuelto.
+   - Con el partido dedicado pinneado al mejor de 5 (decision del owner,
+     2026-07-31), ampliar `PRACTICE_MATCH_VARIANTS` es **incompatible** con
+     `resolveSquashMatchRole`: cualquier otro formato deja de ser `standalone`,
+     cae en la rama de match no canonico y pierde el partido. Las arrays quedan
+     estructuralmente congeladas en una entrada, y el `variantIndex` de
+     `applySquashMatchDetails` es maquinaria muerta.
+
+   Si el tema se retoma, el trabajo real no es "mas variantes" sino: borrar esa
+   maquinaria muerta, eximir a los drills de partido de `low_drill_variety`
+   —mismo razonamiento que ya los eximio de `low_drill_depth`,
+   `qualityReview.ts:164`— y, si se busca variedad de verdad, moverla al foco
+   tactico de la sesion, no a la identidad del drill. Nada de eso es urgente.
+
+   Sigue abierto y sin revisar: `low_drill_depth` legitimo en sesiones de
+   drills (ya no en las de partido, que quedaron eximidas).
 4. **Librerias de squash y fisico entendibles de cara al usuario.** Nombres,
    descripciones y agrupacion de drills y ejercicios. Se solapa con el punto 3 en
    lo deportivo, pero es sobre todo contenido y UX. Es lo que mas se nota al
@@ -923,8 +1000,8 @@ quedo terminado o a medias antes de construir encima.
 
 Orden recomendado (Athlete-Aware Core + Coach F2-lite Parte 2b + Whoop v1/Workout Auto-Complete + Coach Workspace v0 + Fase 0 coaches landing ya en prod):
 
-1. **Cerrar la tanda de rotacion del Plan Builder:** revisar el diff, commitear con el owner y, ya con arbol limpio, ejecutar el smoke `high` pagado. Inspeccionar variedad, omisiones y `quality.squash.signature_uniqueness_unresolved` antes de desplegar.
-2. **Deploy y verificacion operativa:** autorizar deploy solo si el smoke conserva los gates; revisar la fila de job/attempts y versionar el artefacto/veredicto de la corrida.
+1. **Desplegar rotacion + roles de partido (`9754f78`).** El smoke pagado de la rotacion esta aceptado; los roles de squash viajan encima y **no** estan medidos, solo cubiertos por tests. Con ~US$0,60 de saldo no alcanza para re-medir (~US$0,90 por corrida), asi que la decision es desplegar asumiendo la cobertura de la suite o recargar y correr un smoke sobre `9754f78` antes.
+2. **Verificacion operativa post-deploy:** revisar la fila de job/attempts de la primera corrida real y mirar `squashFinisherPreservedCount` / `squashStandaloneMatchCount` contra lo esperado.
 3. **Revision juridica formal** (2-3 dias abogado, paralelizar con items 4-5): firma de terminos/privacidad/descargos/políticas Whoop.
 4. **Consentimiento in-app + biometrico** (1-2 dias implementacion): checkbox en signup, descargo antes de Whoop connect, registrar version/fecha.
 5. **QA deportiva y preparacion piloto** (1-2 dias): generar 3 planes arquetipo como atletas gestionados, revisar salida coach, preparar oferta (duracion, precio, soporte, reembolso).
