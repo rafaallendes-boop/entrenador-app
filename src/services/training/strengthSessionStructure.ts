@@ -1,9 +1,15 @@
 import type { CoachExerciseProposal, Exercise, ExerciseGroup, StrengthProfile } from '../../types'
-import { findStrengthExerciseByName, getExerciseGroupForDefinition, type ExerciseDefinition } from './exerciseLibrary'
+import {
+  findStrengthExerciseByName,
+  getExerciseGroupForDefinition,
+  resolveStrengthExerciseName,
+  type ExerciseDefinition,
+  type StrengthExerciseNameResolution,
+} from './exerciseLibrary'
 import {
   buildWarmupRamp,
   computeWeightFromPercent,
-  mapExerciseTo1RMReference,
+  getStrengthReferenceKg,
 } from './strengthLoadPrescription'
 
 type StrengthExerciseLike = CoachExerciseProposal | Exercise
@@ -32,9 +38,18 @@ export function normalizeStrengthSessionExercises<T extends StrengthExerciseLike
 }
 
 function removeProtocolExercisesWhenStrengthWorkExists<T extends StrengthExerciseLike>(exercises: T[]): T[] {
-  const hasStrengthWork = exercises.some((exercise) => !isProtocolExercise(exercise) && inferExerciseGroup(exercise) !== 'mobility')
+  const resolved = exercises.map((exercise) => ({
+    exercise,
+    resolution: resolveStrengthExerciseName(exercise.name),
+  }))
+  const hasStrengthWork = resolved.some(({ exercise, resolution }) =>
+    !isProtocolExercise(exercise, resolution) &&
+    resolveBlockFromResolution(exercise, resolution) !== 'mobility',
+  )
   if (!hasStrengthWork) return exercises
-  return exercises.filter((exercise) => !isProtocolExercise(exercise))
+  return resolved
+    .filter(({ exercise, resolution }) => !isProtocolExercise(exercise, resolution))
+    .map(({ exercise }) => exercise)
 }
 
 export function enhanceStrengthSessionExercises<T extends StrengthExerciseLike>(
@@ -44,7 +59,7 @@ export function enhanceStrengthSessionExercises<T extends StrengthExerciseLike>(
   const normalized = normalizeStrengthSessionExercises(exercises, options)
   if (!normalized || normalized.length === 0) return normalized
 
-  const firstLoadBearingIndex = normalized.findIndex(isLoadBearingStrengthExercise)
+  const firstLoadBearingIndex = normalized.findIndex((exercise) => isLoadBearingStrengthExercise(exercise))
 
   return normalized.map((exercise, index) => completeStrengthLoadAndEffort(
     exercise,
@@ -54,14 +69,27 @@ export function enhanceStrengthSessionExercises<T extends StrengthExerciseLike>(
 }
 
 export function resolveStrengthExerciseBlock(exercise: Pick<StrengthExerciseLike, 'name' | 'group'>): ExerciseGroup {
-  const definition = findStrengthExerciseByName(exercise.name)
+  return resolveBlockFromResolution(exercise, resolveStrengthExerciseName(exercise.name))
+}
+
+/**
+ * Clasificar no es fail-closed (spec §2): mandar todo nombre libre a `other`
+ * degrada la estructura de la sesión sin ganar seguridad. Por eso un fragmento
+ * ambiguo se clasifica igual, con el primer candidato por `id` —determinista,
+ * no dependiente del orden de declaración—, aunque no reciba carga.
+ */
+function resolveBlockFromResolution(
+  exercise: Pick<StrengthExerciseLike, 'name' | 'group'>,
+  resolution: StrengthExerciseNameResolution | undefined,
+): ExerciseGroup {
+  const definition = resolution?.definition ?? resolution?.candidates[0]
   return definition ? getStrengthBlockForDefinition(definition) : inferExerciseGroup(exercise)
 }
 
 function normalizeStrengthExerciseGroup<T extends StrengthExerciseLike>(exercise: T): T {
-  const definition = findStrengthExerciseByName(exercise.name)
-  const group = definition ? getStrengthBlockForDefinition(definition) : inferExerciseGroup(exercise)
-  const reps = normalizePlankReps(exercise.name, exercise.reps)
+  const resolution = resolveStrengthExerciseName(exercise.name)
+  const group = resolveBlockFromResolution(exercise, resolution)
+  const reps = normalizePlankReps(exercise.name, exercise.reps, resolution)
   return { ...exercise, group, reps }
 }
 
@@ -120,8 +148,15 @@ function appendExerciseNote(original: string | undefined, addition: string): str
   return original?.trim() ? `${addition} ${original.trim()}` : addition
 }
 
-function normalizePlankReps(name: string, reps: number | string): number | string {
+function normalizePlankReps(
+  name: string,
+  reps: number | string,
+  resolution: StrengthExerciseNameResolution | undefined,
+): number | string {
   if (typeof reps !== 'number') return reps
+  if (isAuthoritativeResolution(resolution)) {
+    return resolution.definition.prescriptionUnit === 'seconds' ? `${reps}s` : reps
+  }
   if (/plancha|plank/i.test(normalizeText(name))) return `${reps}s`
   return reps
 }
@@ -170,26 +205,29 @@ function completeStrengthLoadAndEffort<T extends StrengthExerciseLike>(
   profile: StrengthProfile | undefined,
   isMainLift: boolean,
 ): T {
-  if (!isLoadBearingStrengthExercise(exercise)) return exercise
+  const resolution = resolveStrengthExerciseName(exercise.name)
+  const definition = resolution?.definition
+  if (!isLoadBearingStrengthExercise(exercise, resolution)) return exercise
 
-  const definition = findStrengthExerciseByName(exercise.name)
-  const exposePercent1RM = shouldExposePercent1RM(exercise, definition)
+  const exposePercent1RM = shouldExposePercent1RM(exercise, resolution)
   const targetRpe = exercise.targetRpe ?? (isMainLift ? 7 : 6)
-  const targetPercent1RM = exercise.targetPercent1RM ?? inferTargetPercent1RM(exercise, isMainLift)
+  const targetPercent1RM = exercise.targetPercent1RM ?? inferTargetPercent1RM(exercise, resolution, isMainLift)
   const withEffort = sanitizePercentLoadMetadata({ ...exercise, targetRpe }, exposePercent1RM, targetPercent1RM)
 
   if (exercise.weight != null) {
-    const weight = limitImplementableWeight(exercise, definition, exercise.weight)
+    const weight = limitImplementableWeight(exercise, resolution, exercise.weight)
     return sanitizeWarmupSets({ ...withEffort, weight }, exposePercent1RM, weight, targetPercent1RM)
   }
 
-  const reference = mapExerciseTo1RMReference(exercise.name, profile)
-  if (!reference || reference.lift === 'pullUp') return withEffort
+  const reference = definition?.loadReference
+  if (!reference || reference.factor == null) return withEffort
+  const referenceKg = getStrengthReferenceKg(reference.lift, profile)
+  if (referenceKg == null) return withEffort
 
-  const weight = computeWeightFromPercent(reference.referenceKg, targetPercent1RM, {
+  const weight = computeWeightFromPercent(referenceKg, targetPercent1RM, {
     factor: reference.factor,
   })
-  const implementableWeight = limitImplementableWeight(exercise, definition, weight)
+  const implementableWeight = limitImplementableWeight(exercise, resolution, weight)
 
   return sanitizeWarmupSets({
     ...withEffort,
@@ -197,19 +235,40 @@ function completeStrengthLoadAndEffort<T extends StrengthExerciseLike>(
   }, exposePercent1RM, implementableWeight, targetPercent1RM)
 }
 
-function isLoadBearingStrengthExercise(exercise: StrengthExerciseLike): boolean {
-  if (isProtocolExercise(exercise)) return false
+function isLoadBearingStrengthExercise(
+  exercise: StrengthExerciseLike,
+  resolution = resolveStrengthExerciseName(exercise.name),
+): boolean {
+  if (isProtocolExercise(exercise, resolution)) return false
 
-  const group = resolveStrengthExerciseBlock(exercise)
+  const group = resolveBlockFromResolution(exercise, resolution)
   if (group === 'core' || group === 'cardio' || group === 'mobility') return false
 
-  const definition = findStrengthExerciseByName(exercise.name)
-  if (definition?.intensityType === 'power' && exercise.weight == null && exercise.targetPercent1RM == null) return false
+  // Un fragmento ambiguo cuenta como potencia solo si todas sus lecturas lo
+  // son. Un salto sin carga declarada no debe recibir porcentaje.
+  const candidates = resolution?.candidates ?? []
+  const isPower = candidates.length > 0 && candidates.every((candidate) => candidate.intensityType === 'power')
+  if (isPower && exercise.weight == null && exercise.targetPercent1RM == null) return false
 
   return true
 }
 
-function isProtocolExercise(exercise: Pick<StrengthExerciseLike, 'name'>): boolean {
+/**
+ * Solo un id, un nombre canónico o un alias declarado identifican al ejercicio
+ * con certeza. `substring` y `ambiguous` son coincidencias de texto: conservan
+ * los regex estructurales, que fueron escritos justamente para nombres libres.
+ */
+function isAuthoritativeResolution(
+  resolution: StrengthExerciseNameResolution | undefined,
+): resolution is StrengthExerciseNameResolution & { definition: ExerciseDefinition; matchKind: 'exact' | 'alias' } {
+  return resolution?.matchKind === 'exact' || resolution?.matchKind === 'alias'
+}
+
+function isProtocolExercise(
+  exercise: Pick<StrengthExerciseLike, 'name'>,
+  resolution: StrengthExerciseNameResolution | undefined,
+): boolean {
+  if (isAuthoritativeResolution(resolution)) return false
   const name = normalizeText(exercise.name ?? '')
   return (
     /\b(warm.?up|cool.?down|calentamiento|enfriamiento|estiramiento|estiramientos|stretch|static\s+stretch|foam\s+roller|liberacion\s+miofascial)\b/.test(name) ||
@@ -218,13 +277,19 @@ function isProtocolExercise(exercise: Pick<StrengthExerciseLike, 'name'>): boole
   )
 }
 
-function inferTargetPercent1RM(exercise: StrengthExerciseLike, isMainLift: boolean): number {
+function inferTargetPercent1RM(
+  exercise: StrengthExerciseLike,
+  resolution: StrengthExerciseNameResolution | undefined,
+  isMainLift: boolean,
+): number {
   const reps = extractRepresentativeReps(exercise.reps)
-  const name = normalizeText(exercise.name)
 
   let percent = 67.5
   if (reps != null) {
-    if (reps <= 3) percent = /\b(salto|jump|power|potencia)\b/.test(name) ? 60 : 82.5
+    const isPower = isAuthoritativeResolution(resolution)
+      ? resolution.definition.intensityType === 'power'
+      : /\b(salto|jump|power|potencia)\b/.test(normalizeText(exercise.name))
+    if (reps <= 3) percent = isPower ? 60 : 82.5
     else if (reps <= 5) percent = 80
     else if (reps <= 6) percent = 77.5
     else if (reps <= 8) percent = 72.5
@@ -238,13 +303,26 @@ function inferTargetPercent1RM(exercise: StrengthExerciseLike, isMainLift: boole
 
 function shouldExposePercent1RM(
   exercise: StrengthExerciseLike,
-  definition: ExerciseDefinition | undefined,
+  resolution: StrengthExerciseNameResolution | undefined,
 ): boolean {
+  if (isAuthoritativeResolution(resolution)) return definitionExposesPercent1RM(resolution.definition)
+
   const name = normalizeText(exercise.name)
-  if (/\bmancuerna(s)?\b|\bdumbbell(s)?\b|\bkettlebell(s)?\b|\bpesa(s)?\s+rusa(s)?\b/.test(name) && !/\bbarra\b|\bbarbell\b/.test(name)) {
-    return false
-  }
-  if (!definition) return true
+  const isNameLimitedImplement = (
+    /\bmancuerna(s)?\b|\bdumbbell(s)?\b|\bkettlebell(s)?\b|\bpesa(s)?\s+rusa(s)?\b/.test(name) &&
+    !/\bbarra\b|\bbarbell\b/.test(name)
+  )
+  if (isNameLimitedImplement) return false
+
+  // Un nombre del que no sabemos nada mantiene el default histórico. Uno
+  // ambiguo sí sabe algo: basta un candidato que no exponga para no arriesgar
+  // un %1RM sobre lo que puede ser una dominada a peso corporal.
+  const candidates = resolution?.candidates ?? []
+  if (candidates.length === 0) return true
+  return candidates.every(definitionExposesPercent1RM)
+}
+
+function definitionExposesPercent1RM(definition: ExerciseDefinition): boolean {
   if (definition.id === 'goblet_squat') return false
   const hasBarbellReference = definition.equipment.includes('barbell') || definition.equipment.includes('trap_bar') || definition.equipment.includes('machine')
   return hasBarbellReference && !definition.unilateral
@@ -252,28 +330,44 @@ function shouldExposePercent1RM(
 
 function limitImplementableWeight(
   exercise: StrengthExerciseLike,
-  definition: ExerciseDefinition | undefined,
+  resolution: StrengthExerciseNameResolution | undefined,
   weight: number,
 ): number {
   if (!Number.isFinite(weight) || weight <= 0) return weight
-  const maxWeight = getImplementableMaxWeight(exercise, definition)
+  const maxWeight = getImplementableMaxWeight(exercise, resolution)
   if (maxWeight == null) return weight
   return Math.min(weight, maxWeight)
 }
 
 function getImplementableMaxWeight(
   exercise: StrengthExerciseLike,
-  definition: ExerciseDefinition | undefined,
+  resolution: StrengthExerciseNameResolution | undefined,
 ): number | undefined {
+  if (isAuthoritativeResolution(resolution)) return definitionMaxWeight(resolution.definition)
+
   const name = normalizeText(exercise.name)
-  if (definition?.id === 'goblet_squat' || /\bgoblet\b/.test(name)) return 40
-  if (definition?.unilateral || /\b(bulgar|zancada|lunge|split\s*squat|step\s*up|subida)\b/.test(name)) return 50
+  if (/\bgoblet\b/.test(name)) return 40
+  if (/\b(bulgar|zancada|lunge|split\s*squat|step\s*up|subida)\b/.test(name)) return 50
   if (/\bremo\b.*\bmancuerna\b|\bdumbbell\s*row\b/.test(name)) return 45
   if (/\bpress\b.*\bmancuerna(s)?\b|\bdumbbell\s*press\b/.test(name)) return 50
-  if (definition?.equipment.includes('kettlebell') && !definition.equipment.includes('barbell')) return 40
-  if (definition?.equipment.includes('dumbbell') && !definition.equipment.includes('barbell')) return 50
-  if (definition?.equipment.includes('medball')) return 15
-  if (definition?.equipment.includes('plate')) return 25
+
+  // Un tope es una cota de seguridad, no una prescripción: nunca sube un peso.
+  // Por eso, entre lecturas posibles del nombre, gana la más estricta. Que un
+  // candidato no declare tope significa que la tabla no tiene regla para su
+  // implemento, no que aguante cualquier carga.
+  const caps = (resolution?.candidates ?? [])
+    .map(definitionMaxWeight)
+    .filter((cap): cap is number => cap != null)
+  return caps.length > 0 ? Math.min(...caps) : undefined
+}
+
+function definitionMaxWeight(definition: ExerciseDefinition): number | undefined {
+  if (definition.id === 'goblet_squat') return 40
+  if (definition.unilateral) return 50
+  if (definition.equipment.includes('kettlebell') && !definition.equipment.includes('barbell')) return 40
+  if (definition.equipment.includes('dumbbell') && !definition.equipment.includes('barbell')) return 50
+  if (definition.equipment.includes('medball')) return 15
+  if (definition.equipment.includes('plate')) return 25
   return undefined
 }
 

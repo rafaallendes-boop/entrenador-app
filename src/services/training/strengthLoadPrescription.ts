@@ -1,85 +1,26 @@
 import type { StrengthProfile, WarmupSet } from '../../types'
+import type { Exercise1RMReference } from './exerciseLibrary'
 
-export type ReferenceLift = 'bench' | 'squat' | 'deadlift' | 'overheadPress' | 'pullUp'
-
-export interface LoadReference {
-  lift: ReferenceLift
-  referenceKg: number
-  factor: number
-}
-
-interface ReferenceEntry {
-  pattern: RegExp
-  lift: Exclude<ReferenceLift, 'pullUp'>
-  factor: number
-}
-
-// Order matters: more specific patterns first. Spanish + English variants.
-const REFERENCE_TABLE: ReferenceEntry[] = [
-  // Bench-based variants
-  { pattern: /(press[\s-]+inclinad|incline[\s-]+press|incline[\s-]+bench)/i, lift: 'bench', factor: 0.85 },
-  { pattern: /(press[\s-]+declin|decline[\s-]+press|decline[\s-]+bench)/i, lift: 'bench', factor: 0.9 },
-  { pattern: /(close[\s-]?grip|agarre[\s-]+cerrado)/i, lift: 'bench', factor: 0.9 },
-  { pattern: /(press(\s+de)?\s+banca|bench[\s-]+press|\bbench\b)/i, lift: 'bench', factor: 1.0 },
-  { pattern: /(fondo|\bdip(s)?\b)/i, lift: 'bench', factor: 0.7 },
-  // Overhead variants
-  { pattern: /(push[\s-]+press)/i, lift: 'overheadPress', factor: 1.15 },
-  { pattern: /(\bz[\s-]+press\b|press[\s-]+z\b)/i, lift: 'overheadPress', factor: 0.65 },
-  { pattern: /(press[\s-]+(de[\s-]+)?hombro|press[\s-]+sobre[\s-]+cabeza|press[\s-]+militar|overhead[\s-]+press|\bohp\b|strict[\s-]+press)/i, lift: 'overheadPress', factor: 1.0 },
-  // Squat variants (front before generic so "front squat" wins over "squat")
-  { pattern: /(sentadilla[\s-]+frontal|front[\s-]+squat)/i, lift: 'squat', factor: 0.85 },
-  { pattern: /(goblet|sentadilla[\s-]+goblet)/i, lift: 'squat', factor: 0.3 },
-  { pattern: /(b[uú]lgar|split[\s-]+squat)/i, lift: 'squat', factor: 0.35 },
-  { pattern: /(zancad|\blunge(s)?\b)/i, lift: 'squat', factor: 0.4 },
-  { pattern: /(hip[\s-]+thrust|empuje[\s-]+de[\s-]+cadera|glute[\s-]+bridge)/i, lift: 'squat', factor: 1.2 },
-  { pattern: /(sentadilla|back[\s-]+squat|\bsquat\b)/i, lift: 'squat', factor: 1.0 },
-  // Deadlift variants (specific before generic)
-  { pattern: /(peso[\s-]+muerto[\s-]+rumano|romanian[\s-]+deadlift|\brdl\b)/i, lift: 'deadlift', factor: 0.8 },
-  { pattern: /(peso[\s-]+muerto[\s-]+sumo|sumo[\s-]+deadlift)/i, lift: 'deadlift', factor: 0.95 },
-  { pattern: /(trap[\s-]?bar|hex[\s-]?bar)/i, lift: 'deadlift', factor: 0.95 },
-  { pattern: /(peso[\s-]+muerto|\bdeadlift\b)/i, lift: 'deadlift', factor: 1.0 },
-  // Rows (bench-referenced for upper body pulling)
-  { pattern: /(pendlay[\s-]+row|remo[\s-]+pendlay)/i, lift: 'bench', factor: 0.7 },
-  { pattern: /(barbell[\s-]+row|remo[\s-]+(con[\s-]+)?barra)/i, lift: 'bench', factor: 0.75 },
-  { pattern: /(1:2[\s-]+kneeling[\s-]+row|half[\s-]+kneeling[\s-]+row|remo[\s-]+medio[\s-]+arrodillado|remo[\s-]+.*arrodill)/i, lift: 'bench', factor: 0.35 },
-]
-
-const PULLUP_PATTERN = /(dominad|pull[\s-]?up(s)?|chin[\s-]?up(s)?)/i
-
-export function mapExerciseTo1RMReference(
-  exerciseName: string,
-  profile: StrengthProfile | undefined,
-): LoadReference | undefined {
-  if (!profile) return undefined
-  const name = exerciseName.trim()
-  if (!name) return undefined
-
-  if (PULLUP_PATTERN.test(name)) {
-    const reps = profile.pullUpMaxReps
-    if (reps == null || reps <= 0) return undefined
-    // pullUpMaxReps is reps, not kg — used only to signal availability.
-    return { lift: 'pullUp', referenceKg: reps, factor: 1.0 }
-  }
-
-  for (const entry of REFERENCE_TABLE) {
-    if (!entry.pattern.test(name)) continue
-    const refKg = profile[liftToProfileKey(entry.lift)]
-    if (refKg == null || refKg <= 0) return undefined
-    return { lift: entry.lift, referenceKg: refKg, factor: entry.factor }
-  }
-
-  return undefined
-}
+export type ReferenceLift = Exercise1RMReference
 
 type NumericLiftKey = 'benchPress1RM' | 'squat1RM' | 'deadlift1RM' | 'overheadPress1RM'
 
-function liftToProfileKey(lift: Exclude<ReferenceLift, 'pullUp'>): NumericLiftKey {
+function liftToProfileKey(lift: ReferenceLift): NumericLiftKey {
   switch (lift) {
-    case 'bench': return 'benchPress1RM'
+    case 'benchPress': return 'benchPress1RM'
     case 'squat': return 'squat1RM'
     case 'deadlift': return 'deadlift1RM'
     case 'overheadPress': return 'overheadPress1RM'
   }
+}
+
+export function getStrengthReferenceKg(
+  lift: ReferenceLift,
+  profile: StrengthProfile | undefined,
+): number | undefined {
+  if (!profile) return undefined
+  const value = profile[liftToProfileKey(lift)]
+  return value != null && value > 0 ? value : undefined
 }
 
 export function computeWeightFromPercent(

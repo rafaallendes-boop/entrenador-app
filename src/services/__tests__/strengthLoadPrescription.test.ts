@@ -4,9 +4,9 @@ import type { StrengthProfile } from '../../types'
 import {
   buildWarmupRamp,
   computeWeightFromPercent,
+  getStrengthReferenceKg,
   hasAnyStrengthReference,
   listAvailableStrengthReferences,
-  mapExerciseTo1RMReference,
 } from '../training/strengthLoadPrescription'
 
 const fullProfile: StrengthProfile = {
@@ -17,84 +17,18 @@ const fullProfile: StrengthProfile = {
   pullUpMaxReps: 14,
 }
 
-describe('mapExerciseTo1RMReference', () => {
-  it('matches the exact bench press lift to bench profile', () => {
-    const ref = mapExerciseTo1RMReference('Press de banca', fullProfile)
-    expect(ref).toEqual({ lift: 'bench', referenceKg: 100, factor: 1.0 })
+describe('getStrengthReferenceKg', () => {
+  it('reads each numeric reference from the profile vocabulary', () => {
+    expect(getStrengthReferenceKg('benchPress', fullProfile)).toBe(100)
+    expect(getStrengthReferenceKg('squat', fullProfile)).toBe(140)
+    expect(getStrengthReferenceKg('deadlift', fullProfile)).toBe(180)
+    expect(getStrengthReferenceKg('overheadPress', fullProfile)).toBe(65)
   })
 
-  it('matches incline press with 0.85 factor (not generic bench)', () => {
-    const ref = mapExerciseTo1RMReference('Press inclinado con mancuernas', fullProfile)
-    expect(ref?.lift).toBe('bench')
-    expect(ref?.factor).toBe(0.85)
-  })
-
-  it('matches front squat before generic squat (specificity)', () => {
-    const ref = mapExerciseTo1RMReference('Front squat', fullProfile)
-    expect(ref?.lift).toBe('squat')
-    expect(ref?.factor).toBe(0.85)
-  })
-
-  it('matches goblet squat as an implement-limited squat variant', () => {
-    const ref = mapExerciseTo1RMReference('Sentadilla Goblet', fullProfile)
-    expect(ref).toMatchObject({ lift: 'squat', factor: 0.3 })
-  })
-
-  it('matches hip thrust as squat-referenced with 1.2 factor', () => {
-    const ref = mapExerciseTo1RMReference('Hip thrust con barra', fullProfile)
-    expect(ref).toMatchObject({ lift: 'squat', factor: 1.2 })
-  })
-
-  it('matches romanian deadlift with 0.8 factor (not generic deadlift)', () => {
-    const ref = mapExerciseTo1RMReference('Peso muerto rumano', fullProfile)
-    expect(ref?.lift).toBe('deadlift')
-    expect(ref?.factor).toBe(0.8)
-  })
-
-  it('matches push press as overhead-referenced with 1.15 factor', () => {
-    const ref = mapExerciseTo1RMReference('Push press', fullProfile)
-    expect(ref).toMatchObject({ lift: 'overheadPress', factor: 1.15 })
-  })
-
-  it('matches Z press as overhead-referenced with 0.65 factor', () => {
-    const ref = mapExerciseTo1RMReference('Press Z', fullProfile)
-    expect(ref).toMatchObject({ lift: 'overheadPress', factor: 0.65 })
-  })
-
-  it('matches pull-ups as pullUp reference', () => {
-    const ref = mapExerciseTo1RMReference('Dominadas pronadas', fullProfile)
-    expect(ref?.lift).toBe('pullUp')
-    expect(ref?.referenceKg).toBe(14)
-  })
-
-  it('returns undefined when the relevant lift is missing from the profile', () => {
-    const partial: StrengthProfile = { squat1RM: 140 }
-    const ref = mapExerciseTo1RMReference('Press de banca', partial)
-    expect(ref).toBeUndefined()
-  })
-
-  it('returns undefined for unknown exercises', () => {
-    const ref = mapExerciseTo1RMReference('Cable curl', fullProfile)
-    expect(ref).toBeUndefined()
-  })
-
-  it('returns undefined when profile is missing entirely', () => {
-    expect(mapExerciseTo1RMReference('Sentadilla', undefined)).toBeUndefined()
-  })
-
-  it('matches barbell row as bench-referenced with 0.75 factor', () => {
-    const ref = mapExerciseTo1RMReference('Remo con barra', fullProfile)
-    expect(ref).toMatchObject({ lift: 'bench', factor: 0.75 })
-  })
-
-  it('matches half-kneeling rows as bench-referenced with 0.35 factor', () => {
-    const ref = mapExerciseTo1RMReference('Remo medio arrodillado', fullProfile)
-    expect(ref).toMatchObject({ lift: 'bench', factor: 0.35 })
-  })
-
-  it('matches bulgarian split squat as unilateral with 0.35 factor', () => {
-    const ref = mapExerciseTo1RMReference('Búlgaras con mancuernas', fullProfile)
-    expect(ref).toMatchObject({ lift: 'squat', factor: 0.35 })
+  it('returns undefined for missing, zero or absent profile values', () => {
+    expect(getStrengthReferenceKg('benchPress', { squat1RM: 140 })).toBeUndefined()
+    expect(getStrengthReferenceKg('benchPress', { benchPress1RM: 0 })).toBeUndefined()
+    expect(getStrengthReferenceKg('benchPress', undefined)).toBeUndefined()
   })
 })
 

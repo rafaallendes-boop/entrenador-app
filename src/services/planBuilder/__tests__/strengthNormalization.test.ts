@@ -188,7 +188,7 @@ describe('normalización única de fuerza', () => {
     const result = repairGeneratedWeek([original], contextFor())
     const replacement = result.sessions[0]?.exercises?.[1]
     if (replacement?.name !== NAMES[1]) {
-      expect(findStrengthExerciseByName(replacement?.name ?? '')?.has1RMReference).toBeUndefined()
+      expect(findStrengthExerciseByName(replacement?.name ?? '')?.loadReference?.selectorEligible).not.toBe(true)
       expect(replacement?.targetPercent1RM).toBeUndefined()
     }
   })

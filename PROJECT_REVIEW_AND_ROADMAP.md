@@ -1,9 +1,11 @@
 # RallyIQ - Project Review and Roadmap
 
-Actualizado: 2026-07-31
+Actualizado: 2026-08-01
 
 Base de contraste:
 
+- **Fuerza — desacople del nombre, Entregas 1–3 (2026-08-01): implementadas y revisadas, sin commitear.** Ver §18 — los cuatro hallazgos del code review quedaron corregidos y la suite, lint y build estan verdes; pendiente solo el commit antes del siguiente bloque.
+- **Siguiente mejora tecnica propuesta: identidad estable de ejercicios (`libraryRef`-first).** Ver §19 — aprovechar el `id` de catalogo que ya existe en sesiones, plantillas y backup/import para que el Plan Builder no vuelva a inferir identidad desde el nombre. Sin migraciones.
 - `main` con el commit de esta entrega (`feat: complete coach planning library and calendar hardening`).
 - **`011_whoop_integration.sql` y `012_whoop_workouts.sql` aplicados en produccion.** Whoop readiness y Workout Auto-Complete quedan operativos de punta a punta (owner confirma cierre operacional); pendiente solo el linkeo de consentimiento biometrico/legal antes de exponer a terceros (ver Riesgo 1).
 - **Coach Workspace v0 + ampliacion implementados (2026-07-13 a 2026-07-19):** `/coach` pasa de un roster unico (`CoachRosterPage`) a `CoachWorkspacePage` con Resumen, Alumnos, Planificacion y Biblioteca operativas; Asistente IA conserva el placeholder. Incluye endurecimiento de `switchActiveAthlete`, edicion multi-atleta, alta/aplicacion de plantillas y lock de concurrencia a nivel de modulo. `015` y el bundle de Biblioteca/Planificacion ya fueron aplicados en produccion; queda el smoke autenticado.
@@ -395,6 +397,90 @@ proyecta el contenido competitivo no canonico. Esta cubierta por tests locales,
 
 Estado: **commiteado y pusheado, pendiente deploy.** Suite 324 archivos / 2425
 tests, lint y build OK. Sin migraciones Dexie ni Supabase.
+
+### 18. Fuerza — desacople del nombre, Entregas 1–3 (2026-08-01, implementadas sin commitear)
+
+Mismo espiritu que la rotacion de squash (§16): que el nombre visible del
+ejercicio deje de decidir seleccion o carga. Sin migraciones Dexie ni Supabase.
+
+- **Inventario** (`docs/superpowers/specs/2026-07-31-strength-name-coupling-inventory.md`):
+  tres rutas de resolucion (resuelto por campos / resuelto pero el nombre gana
+  igual / no resuelto) y dos hallazgos — dos fuentes de verdad para el 1RM sin
+  factor comun, y desempate por nombre en `strengthSelector.ts:1006`, el mismo
+  bug ya corregido en squash.
+- **Entrega 1 — determinismo.** Desempate por `id`, ganador unico en la rama de
+  substring y fixtures por `id`. La auditoria detecto que el snapshot de
+  seleccion se genero despues del cambio; la diferencia historica queda
+  aislada en un test: en `build`, `back_squat` reemplaza a
+  `trap_bar_deadlift` por el nuevo desempate.
+- **Entrega 2 — rutas separadas.** Para ejercicios resueltos, protocolo,
+  potencia, implementos y topes se leen de metadata; los regex estructurales
+  sobreviven como fallback de nombres libres. Tras el code review, la
+  resolución expone `exact`/`alias`/`substring`: solo las dos primeras son
+  identidad estable y un match parcial conserva las redes por nombre.
+- **Entrega 3 — metadata explicita.** `loadReference` reemplaza las dos fuentes
+  de verdad anteriores con **25 declaraciones**: 15 elegibles para selector y
+  10 solo para calculo de carga. `landmine_press` conserva elegibilidad sin
+  factor; `bodyweight_squat` y las cuatro dominadas quedan fuera. Cinco
+  planchas declaran `prescriptionUnit: 'seconds'`. `REFERENCE_TABLE` y
+  `mapExerciseTo1RMReference` se retiraron deliberadamente.
+- **Matriz de nombres libres.** Conserva variantes legitimas mediante aliases
+  exactos y documenta la perdida de carga fail-closed para nombres que no
+  identifican una referencia segura. Vive en
+  `strengthFreeNameLoadMatrix.test.ts` y en el spec de diseno.
+- **Correcciones de review (4/4).** Se restauró el filtrado de protocolos y los
+  guardas de porcentaje/entrada en calor y peso maximo para nombres largos que
+  resolvían por substring. El supuesto basal se renombró a contrato
+  post-migración; el cruce de los 25 factores vive ahora en un ledger literal
+  independiente de `loadReference`.
+
+Estado: **implementado sin commitear, sin migraciones.** Verificado con
+**2577/2577 tests**, lint y build OK. Code review cerrado; pendiente solo el
+commit separado. El copy de fuerza sigue fuera de este bloque.
+
+### 19. Propuesta — identidad estable de ejercicios de fuerza (`libraryRef`-first)
+
+La Entrega 3 quitó del nombre las decisiones declarativas, pero el Plan Builder
+todavía pierde el `id` al convertir un `StrengthSelectionExercise` en
+`CoachExerciseProposal`. Desde ahi, estructura, carga, roles, reparación y
+calidad vuelven a llamar al resolvedor por `name`. El sistema ya tiene la pieza
+que falta: `Exercise.libraryRef`, preservada en sesiones, plantillas y
+backup/import e invalidada cuando el usuario edita el nombre.
+
+Mejora recomendada para el siguiente bloque de desarrollo:
+
+1. **Transportar la identidad.** Agregar `libraryRef` a
+   `CoachExerciseProposal` y estampar
+   `{ source: 'strength_exercise', id }` en todas las conversiones locales desde
+   el selector y las reparaciones deterministas. El normalizador no debe confiar
+   en referencias emitidas por la IA: el postproceso solo las adjunta desde una
+   seleccion local o una resolucion `exact`/`alias` validada contra el catalogo.
+2. **Resolver una sola vez, por precedencia explicita.** Un helper central debe
+   usar primero un `libraryRef` de fuerza cuyo `id` exista en el catalogo;
+   despues `exact`/`alias`; luego `substring` solo como compatibilidad legacy;
+   y finalmente nombre libre con las salvaguardas actuales.
+3. **Consumir la identidad estable.** Estructura de sesión, prescripción de
+   carga, contrato de rol, calidad y reparación deben recibir el resultado del
+   helper en vez de volver a resolver cada uno por nombre.
+4. **Endurecer el contrato.** Una referencia desconocida cae de forma segura al
+   flujo legacy; editar el nombre sigue borrando `libraryRef`; no se hace
+   backfill masivo de sesiones existentes ni migración Dexie/Supabase.
+
+Criterios de aceptación:
+
+- cambiar el copy visible de una definición, conservando su `id`, no altera su
+  bloque, rol, carga, implemento, unidad ni participación en calidad;
+- ejercicios nuevos generados localmente llegan persistidos con `libraryRef`;
+- sesiones antiguas sin referencia mantienen exactamente el contrato
+  `exact`/`alias`/`substring` de §18;
+- referencias corruptas o ids retirados no confieren autoridad: caen al
+  resolvedor legacy y conservan sus guardas;
+- texto libre y la invalidación por rename continúan cubiertos por tests.
+
+Estado: **propuesta, no implementada.** Es una evolución compatible y sin
+migraciones. Recomendada inmediatamente después de commitear §18 y antes del
+copy de fuerza, porque convierte los aliases y el substring en compatibilidad
+legacy en vez de mantenerlos como camino normal del Plan Builder.
 
 ## Avances Ya Implementados
 
@@ -924,11 +1010,12 @@ un solo bloque de trabajo. Corren en paralelo al piloto y ninguno lo bloquea.
 El orden de abajo es de valor percibido en el uso diario del owner, no de
 dificultad.
 
-1. **Chat — gestion de conversaciones.** *(en brainstorming, 2026-07-26)* Abrir
-   el chat y empezar una conversacion nueva, ver las anteriores y retomarlas.
-   Hoy no existe como concepto: hay una sola sesion de chat por atleta guardada
-   como un id. Implica modelo de hilos, migracion Dexie, sync y UI. Usabilidad
-   pura, sin riesgo deportivo.
+1. **Chat — gestion de conversaciones.** *(implementado y commiteado, 2026-07-26 —
+   `0ec9b31`; esta entrada quedo desactualizada)* Abrir el chat y empezar una
+   conversacion nueva, ver las anteriores y retomarlas, via `ConversationDrawer`
+   e indice derivado de `chatMessages` sin migracion Dexie. Sigue pendiente el
+   smoke autenticado en dev (`docs/superpowers/smokes/2026-07-26-chat-conversations-dev-smoke.md`)
+   y el deploy. Ya no es un item de backlog sin empezar.
 2. **Plan Builder — velocidad.** Fases 2-4 que la Fase 0 habilito: `effort` /
    `thinking`, modelo, concurrencia y prompt caching (esto ultimo solo despues de
    medir el prefijo real con Token Counting). Es el trabajo **mejor preparado**
@@ -973,6 +1060,31 @@ dificultad.
    descripciones y agrupacion de drills y ejercicios. Se solapa con el punto 3 en
    lo deportivo, pero es sobre todo contenido y UX. Es lo que mas se nota al
    mostrarle la app a un cliente.
+
+   **Mitad de squash: implementada y commiteada (2026-07-31, `21af7f8`…`b9e3f31`
+   — esta entrada quedo desactualizada).** Spec y plan en
+   `docs/superpowers/specs/2026-07-31-squash-drill-copy-design.md` y
+   `docs/superpowers/plans/2026-07-31-squash-drill-copy.md`: 14 nombres y 21
+   descripciones de los 43 drills reescritos a lenguaje de jugador (terminologia
+   tecnica consistente — `boast`, `drop`, `lob`, `nick`, `tin`, glosada en su
+   primer uso; se retiran `RSA`, "chapa" y "game"), sin tocar `category`,
+   `focus`, `tags` ni metadata de fase — 15 invariantes congeladas por `id` lo
+   garantizan. `aliases` pasa a campo de la definicion para que nombres viejos
+   sigan resolviendo en Dexie/plantillas/backups y en el buscador del picker.
+   Verificado ahora mismo: `drillLibrary.ts` sin diffs pendientes y las 6 suites
+   de test relacionadas (112 tests) en verde. Deuda documentada y explicitamente
+   fuera de esta entrega: vocabulario de `focus` partido (`mid_court` vs
+   `midcourt`), `category` mal asignada en 6 drills tacticos marcados
+   `technical`, y los 3 nombres de partido con literales hardcodeados en 5
+   consumidores en vez de centralizados por `id`.
+
+   **Mitad de fisico/fuerza: desacople implementado sin commitear — ver §18.**
+   No es todavia el proyecto de copy: primero deja deterministas la seleccion y
+   la carga, con metadata explicita y suite verde. El code review esta cerrado;
+   falta el commit separado. Antes de editar nombres visibles se recomienda la
+   Entrega 4 `libraryRef`-first de §19, que transporta el `id` ya existente a
+   traves del Plan Builder y deja la resolucion por nombre como compatibilidad
+   legacy.
 5. **Analisis de entrenamientos con Whoop.** Superficie nueva sobre datos que ya
    estan locales (readiness + workouts). Mantener el contrato vigente: contexto
    objetivo y consentido, sin diagnostico ni ajuste automatico.
@@ -1000,12 +1112,18 @@ quedo terminado o a medias antes de construir encima.
 
 Orden recomendado (Athlete-Aware Core + Coach F2-lite Parte 2b + Whoop v1/Workout Auto-Complete + Coach Workspace v0 + Fase 0 coaches landing ya en prod):
 
+0. **Commitear Fuerza — desacople del nombre, Entregas 1–3 (§18).** El code review y sus seis correcciones ya estan cerrados, con 2577/2577 tests, lint y build verdes. Mantener este bloque separado de la Entrega 4 propuesta y del copy posterior.
 1. **Desplegar rotacion + roles de partido (`9754f78`).** El smoke pagado de la rotacion esta aceptado; los roles de squash viajan encima y **no** estan medidos, solo cubiertos por tests. Con ~US$0,60 de saldo no alcanza para re-medir (~US$0,90 por corrida), asi que la decision es desplegar asumiendo la cobertura de la suite o recargar y correr un smoke sobre `9754f78` antes.
 2. **Verificacion operativa post-deploy:** revisar la fila de job/attempts de la primera corrida real y mirar `squashFinisherPreservedCount` / `squashStandaloneMatchCount` contra lo esperado.
 3. **Revision juridica formal** (2-3 dias abogado, paralelizar con items 4-5): firma de terminos/privacidad/descargos/políticas Whoop.
 4. **Consentimiento in-app + biometrico** (1-2 dias implementacion): checkbox en signup, descargo antes de Whoop connect, registrar version/fecha.
 5. **QA deportiva y preparacion piloto** (1-2 dias): generar 3 planes arquetipo como atletas gestionados, revisar salida coach, preparar oferta (duracion, precio, soporte, reembolso).
 6. **Primer cliente acompanado** (ejecutar en paralelo con abogado): elegir 1 candidato, onboarding 1:1, generar semana 1, iniciar protocolo de revision semanal.
+
+**Siguiente bloque de desarrollo recomendado:** §19, identidad estable de
+ejercicios de fuerza con `libraryRef`-first. No desplaza los pendientes
+operativos 1–6: debe arrancar en una rama/commit nuevo despues de cerrar §18 y
+antes del proyecto de copy de fuerza.
 
 ## Que No Hacer Ahora
 
@@ -1028,3 +1146,8 @@ RallyIQ ya tiene producto suficiente para operar entrenamiento real y varios atl
 El cambio principal desde hace dos dias es que el bloqueante tecnico principales ya se cerraron. Lo que falta es operacional y legal: revision formal de terminos (con abogado), consentimiento in-app biometrico, y el primer cliente real validando flujo comercial/operacional.
 
 Mi recomendacion: **iniciar revision juridica formal YA** (paralelo a items 2-3) + consentimiento biometrico en-app + QA deportiva de planes arquetipo + primer cliente acompanado. SP1a dos-lados y contenido real de Planificacion/Biblioteca quedan como incrementos posteriores al piloto, no son bloqueantes.
+
+Nota tactica que no cambia esta recomendacion pero la precede: hay un bloque
+amplio de fuerza sin commitear (§18), ya revisado y verde. Conviene cerrarlo en
+un commit separado y continuar con la identidad `libraryRef`-first de §19 antes
+de empezar el copy de ejercicios.

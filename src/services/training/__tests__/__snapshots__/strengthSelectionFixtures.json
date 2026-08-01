@@ -1,0 +1,100 @@
+[
+  {
+    "path": "scored",
+    "scenario": "base",
+    "focus": "squash lateral strength + trunk stability",
+    "starLift": null,
+    "signature": "side_plank_plate_press | half_kneeling_diagonal_plate_chop | z_press | half_kneeling_row | bb_side_lunge | landmine_press"
+  },
+  {
+    "path": "scored",
+    "scenario": "build",
+    "focus": "squash power + lateral strength",
+    "starLift": null,
+    "signature": "side_plank_plate_press | half_kneeling_diagonal_plate_chop | z_press | half_kneeling_lateral_jump | back_squat | lateral_skater_jumps"
+  },
+  {
+    "path": "scored",
+    "scenario": "peak",
+    "focus": "squash power + lateral strength",
+    "starLift": null,
+    "signature": "side_plank_plate_press | half_kneeling_diagonal_plate_chop | z_press | half_kneeling_lateral_jump | back_squat | lateral_skater_jumps"
+  },
+  {
+    "path": "scored",
+    "scenario": "taper",
+    "focus": "activation + trunk stability",
+    "starLift": null,
+    "signature": "z_press | romanian_deadlift | lateral_band_walk"
+  },
+  {
+    "path": "scored",
+    "scenario": "fatiga alta",
+    "focus": "squash lateral strength + trunk stability",
+    "starLift": null,
+    "signature": "side_plank_plate_press | lateral_band_walk | bb_side_lunge | half_kneeling_row"
+  },
+  {
+    "path": "scored",
+    "scenario": "fatiga baja",
+    "focus": "squash power + lateral strength",
+    "starLift": null,
+    "signature": "side_plank_plate_press | half_kneeling_diagonal_plate_chop | z_press | half_kneeling_lateral_jump | back_squat | lateral_skater_jumps"
+  },
+  {
+    "path": "scored",
+    "scenario": "solo peso corporal",
+    "focus": "squash power + lateral strength",
+    "starLift": null,
+    "signature": "side_plank_plate_press | copenhagen_side_plank | mixed_grip_pull_up | half_kneeling_lateral_jump | bulgarian_split_squat | lateral_skater_jumps"
+  },
+  {
+    "path": "scored",
+    "scenario": "gimnasio completo",
+    "focus": "squash power + lateral strength",
+    "starLift": null,
+    "signature": "side_plank_plate_press | pallof_press | z_press | half_kneeling_lateral_jump | back_squat | lateral_skater_jumps"
+  },
+  {
+    "path": "scored",
+    "scenario": "competencia cercana",
+    "focus": "activation + trunk stability",
+    "starLift": null,
+    "signature": "half_kneeling_row | barbell_single_leg_inverted_row | trx_inverted_row"
+  },
+  {
+    "path": "scored",
+    "scenario": "principiante",
+    "focus": "squash power + lateral strength",
+    "starLift": null,
+    "signature": "side_plank_plate_press | half_kneeling_diagonal_plate_chop | z_press | half_kneeling_lateral_jump | front_squat | lateral_skater_jumps"
+  },
+  {
+    "path": "template",
+    "scenario": "plantilla semana 0",
+    "focus": "squash lateral strength + trunk stability",
+    "starLift": "back_squat",
+    "signature": "cable_chop | farmer_carry | back_squat | pull_up | bulgarian_split_squat | incline_bench_press"
+  },
+  {
+    "path": "template",
+    "scenario": "plantilla semana 1",
+    "focus": "squash power + trunk stability",
+    "starLift": "single_leg_hip_thrust",
+    "signature": "cable_chop | farmer_carry | half_kneeling_diagonal_plate_chop | med_ball_rotational_throw | single_leg_hip_thrust | overhead_press"
+  },
+  {
+    "path": "template",
+    "scenario": "plantilla con 1RM completo",
+    "focus": "squash lateral strength + trunk stability",
+    "starLift": "back_squat",
+    "signature": "cable_chop | back_squat | pull_up | bulgarian_split_squat | incline_bench_press | front_squat"
+  },
+  {
+    "path": "template",
+    "scenario": "plantilla con 1RM solo squat",
+    "focus": "squash lateral strength + trunk stability",
+    "starLift": "back_squat",
+    "signature": "cable_chop | back_squat | pull_up | bulgarian_split_squat | incline_bench_press | front_squat"
+  }
+]

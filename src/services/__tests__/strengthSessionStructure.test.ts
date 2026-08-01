@@ -126,4 +126,130 @@ describe('normalizeStrengthSessionExercises', () => {
     expect(dumbbellPress.weight).toBe(50)
     expect(dumbbellPress.targetPercent1RM).toBeUndefined()
   })
+
+  it('keeps protocol regexes for names that do not resolve to the catalog', () => {
+    const result = normalizeStrengthSessionExercises([
+      { name: 'Sentadilla', sets: 4, reps: 5 },
+      { name: 'Activación experimental de hombros', sets: 2, reps: 8 },
+    ], { durationMin: 30 })!
+
+    expect(result.map((exercise) => exercise.name)).toEqual(['Sentadilla'])
+  })
+
+  it('keeps protocol safeguards for a long name resolved only by substring', () => {
+    const result = enhanceStrengthSessionExercises([
+      { name: 'Press banca', sets: 3, reps: 5 },
+      { name: 'Estiramiento de sentadilla profunda', sets: 1, reps: 30 },
+    ], {
+      durationMin: 50,
+      strengthProfile: { benchPress1RM: 100, squat1RM: 100 },
+    })!
+
+    expect(result.map((exercise) => exercise.name)).toEqual([
+      'Control de tronco dead bug',
+      'Press banca',
+    ])
+    expect(result[1]).toMatchObject({ weight: 80, targetPercent1RM: 80 })
+  })
+
+  it.each([
+    ['Press sobre cabeza con mancuernas', { overheadPress1RM: 90 }],
+    ['Peso muerto con mancuernas', { deadlift1RM: 100 }],
+    ['Sentadilla con mancuernas', { squat1RM: 100 }],
+  ] as const)('keeps percent and warmup hidden for substring implement variant %s', (name, strengthProfile) => {
+    const result = enhanceStrengthSessionExercises([
+      { name, sets: 3, reps: 8 },
+    ], { durationMin: 30, strengthProfile })!
+
+    expect(result[0]?.targetPercent1RM).toBeUndefined()
+    expect(result[0]?.warmupSets).toBeUndefined()
+  })
+
+  it('keeps the dumbbell press cap for a definition reached by substring', () => {
+    const result = enhanceStrengthSessionExercises([
+      { name: 'Press sobre cabeza con mancuernas', sets: 3, reps: 8 },
+    ], {
+      durationMin: 30,
+      strengthProfile: { overheadPress1RM: 90 },
+    })!
+
+    expect(result[0]?.weight).toBe(50)
+  })
+
+  it('keeps the power-percent fallback for a definition reached by substring', () => {
+    const result = enhanceStrengthSessionExercises([
+      { name: 'Salto sentadilla', sets: 3, reps: 3 },
+    ], {
+      durationMin: 30,
+      strengthProfile: { squat1RM: 100 },
+    })!
+
+    expect(result[0]).toMatchObject({ targetPercent1RM: 60, weight: 60 })
+  })
+
+  // La ambigüedad es fail-closed para la carga, no para la clasificación: sin
+  // los candidatos, estos nombres caían a `other` y `shouldExposePercent1RM`
+  // devolvía su default `true`, mostrando un %1RM sobre ejercicios que nunca
+  // tuvieron uno.
+  it.each([
+    ['Dominada lastrada progresiva', 'pull'],
+    ['Dominada asistida con banda', 'pull'],
+    ['Remo invertido en TRX lento', 'pull'],
+    ['Tiron alto de cargada ligero', 'olympic'],
+  ] as const)('classifies %s as %s without inventing a percent', (name, group) => {
+    const result = enhanceStrengthSessionExercises([
+      { name, sets: 3, reps: 5 },
+    ], {
+      durationMin: 30,
+      strengthProfile: { squat1RM: 140, deadlift1RM: 180, benchPress1RM: 110, overheadPress1RM: 80 },
+    })!
+
+    expect(result[0]?.group).toBe(group)
+    expect(result[0]?.targetPercent1RM).toBeUndefined()
+    expect(result[0]?.weight).toBeUndefined()
+  })
+
+  it('hides the percent when only some ambiguous candidates would expose it', () => {
+    // `pull_up` no expone (peso corporal) y `assisted_pull_up` sí (`machine`).
+    // Basta un candidato que no exponga para no arriesgar un %1RM inventado.
+    const result = enhanceStrengthSessionExercises([
+      { name: 'Dominada asistida con banda', sets: 3, reps: 5 },
+    ], { durationMin: 30, strengthProfile: { benchPress1RM: 110 } })!
+
+    expect(result[0]?.targetPercent1RM).toBeUndefined()
+  })
+
+  // Un tope es una cota de seguridad, no una prescripción: si alguna lectura
+  // del nombre dice que el implemento no aguanta más, se honra la más estricta.
+  // Que `inverted_row` no declare tope es un hueco de la tabla, no un permiso
+  // para 200 kg.
+  it.each([
+    ['Remo invertido con barra a una pierna pesado', 50],
+    ['Dominada lastrada progresiva', 50],
+    ['Sentadilla bulgara con mancuernas', 50],
+  ] as const)('caps an explicit weight on the ambiguous name %s', (name, expected) => {
+    const result = enhanceStrengthSessionExercises([
+      { name, sets: 3, reps: 8, weight: 200 },
+    ], { durationMin: 30, strengthProfile: { squat1RM: 140 } })!
+
+    expect(result[0]?.weight).toBe(expected)
+  })
+
+  it('leaves an explicit barbell weight alone when no candidate declares a cap', () => {
+    // `deadlift` y `romanian_deadlift` son ambos de barra: ninguno acota.
+    const result = enhanceStrengthSessionExercises([
+      { name: 'Peso muerto rumano con mancuernas', sets: 3, reps: 8, weight: 200 },
+    ], { durationMin: 30, strengthProfile: { deadlift1RM: 180 } })!
+
+    expect(result[0]?.weight).toBe(200)
+  })
+
+  it('still refuses to derive load from an ambiguous fragment', () => {
+    const result = enhanceStrengthSessionExercises([
+      { name: 'Sentadilla bulgara con mancuernas', sets: 3, reps: 8 },
+    ], { durationMin: 30, strengthProfile: { squat1RM: 140 } })!
+
+    expect(result[0]?.weight).toBeUndefined()
+    expect(result[0]?.group).toBe('legs')
+  })
 })

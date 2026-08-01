@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import { getExerciseById } from '../training/exerciseLibrary'
 import { normalizeStrengthSessionExercises } from '../training/strengthSessionStructure'
 
 // durationMin: 40 keeps the test isolated to reps normalization only,
@@ -35,5 +36,45 @@ describe('plancha/plank reps normalization', () => {
       { durationMin: 40 },
     )
     expect(result![0].reps).toBe(6)
+  })
+
+  it('declares seconds only on the five catalog plank definitions', () => {
+    const timedIds = [
+      'plank',
+      'side_plank',
+      'copenhagen_side_plank',
+      'side_plank_plate_press',
+      'stability_ball_front_plank',
+    ]
+
+    for (const id of timedIds) {
+      expect(getExerciseById(id)?.prescriptionUnit, id).toBe('seconds')
+    }
+    expect(getExerciseById('pallof_press')?.prescriptionUnit).toBeUndefined()
+    expect(getExerciseById('dead_bug')?.prescriptionUnit).toBeUndefined()
+  })
+
+  it('does not infer seconds from shared core metadata on a resolved non-plank', () => {
+    const result = normalizeStrengthSessionExercises(
+      [{ name: 'Press Pallof', sets: 3, reps: 30, group: 'core' }],
+      { durationMin: 40 },
+    )
+    expect(result![0].reps).toBe(30)
+  })
+
+  it('keeps the name fallback when a non-plank resolves only by substring', () => {
+    const result = normalizeStrengthSessionExercises(
+      [{ name: 'Plancha Press Pallof', sets: 3, reps: 30, group: 'core' }],
+      { durationMin: 40 },
+    )
+    expect(result![0].reps).toBe('30s')
+  })
+
+  it('does not apply definition units to a partial substring without a plank word', () => {
+    const result = normalizeStrengthSessionExercises(
+      [{ name: 'Fitball', sets: 3, reps: 30, group: 'core' }],
+      { durationMin: 40 },
+    )
+    expect(result![0].reps).toBe(30)
   })
 })

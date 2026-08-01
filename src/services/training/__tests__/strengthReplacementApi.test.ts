@@ -92,12 +92,12 @@ describe('selectStrengthReplacement', () => {
 
   it('no hereda targetPercent1RM de un original con referencia de 1RM', () => {
     const original = STRENGTH_EXERCISE_LIBRARY.find((exercise) =>
-      exercise.has1RMReference && STRENGTH_EXERCISE_LIBRARY.some(
-        (candidate) => candidate.movement === exercise.movement && !candidate.has1RMReference,
+      exercise.loadReference?.selectorEligible && STRENGTH_EXERCISE_LIBRARY.some(
+        (candidate) => candidate.movement === exercise.movement && !candidate.loadReference?.selectorEligible,
       ),
     )!
     const replacementDefinition = STRENGTH_EXERCISE_LIBRARY.find(
-      (candidate) => candidate.movement === original.movement && !candidate.has1RMReference,
+      (candidate) => candidate.movement === original.movement && !candidate.loadReference?.selectorEligible,
     )!
     const excludedKeys = new Set(
       candidatesForMovement(original.name)

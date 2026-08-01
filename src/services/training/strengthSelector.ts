@@ -291,7 +291,8 @@ function scoreBlockCandidates(
     .map((exercise) => {
       let score = 0
       if (slot?.preferredRotationGroup && exercise.blockRotationGroup === slot.preferredRotationGroup) score += 30
-      if (exercise.has1RMReference && available1RM.has(exercise.has1RMReference)) score += 35
+      const reference = exercise.loadReference
+      if (reference?.selectorEligible && available1RM.has(reference.lift)) score += 35
       if (exercise.tags.includes('athletic_transfer')) score += 6
       if (context.primarySport === 'squash' && exercise.sportsTransfer?.includes('squash')) score += 5
       if (exercise.unilateral) score += slot?.pattern === 'lunge' ? 10 : 2
@@ -326,7 +327,8 @@ function buildPrescribedExercise(
 ): StrengthSelectionExercise {
   const base = buildSelectionExercise(exercise, context, index)
   const targetRpe = clamp(resolveTargetRpe(base.intensity) + (context.rpeAdjustment ?? 0), 4, 9)
-  const targetPercent1RM = exercise.has1RMReference && context.available1RM?.includes(exercise.has1RMReference)
+  const reference = exercise.loadReference
+  const targetPercent1RM = reference?.selectorEligible && context.available1RM?.includes(reference.lift)
     ? resolveTargetPercent1RM(context, isStarLift)
     : undefined
 
@@ -374,7 +376,8 @@ export function selectStarLift(
   context: StrengthContext,
   weekIndexInBlock = context.weekIndexInBlock ?? 0,
 ): StarLiftInfo {
-  const targetPercent1RM = exercise.has1RMReference && context.available1RM?.includes(exercise.has1RMReference)
+  const reference = exercise.loadReference
+  const targetPercent1RM = reference?.selectorEligible && context.available1RM?.includes(reference.lift)
     ? resolveTargetPercent1RM(context, true)
     : undefined
 
@@ -1003,7 +1006,9 @@ function scoreExercises(
 
       return { exercise, score }
     })
-    .sort((a, b) => b.score - a.score || a.exercise.name.localeCompare(b.exercise.name))
+    // El desempate va por `id`, que es estable y nunca es texto de usuario. Con
+    // `name` un renombre cambiaba qué ejercicio se prescribe.
+    .sort((a, b) => b.score - a.score || a.exercise.id.localeCompare(b.exercise.id))
 }
 
 export function deriveStrengthProgressionState(context: StrengthContext): StrengthProgressionState {

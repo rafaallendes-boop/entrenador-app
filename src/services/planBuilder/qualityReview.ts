@@ -1,6 +1,7 @@
 import type { AthleteProfile, CoachSessionProposal, SupportedSport } from '../../types'
 import type { PlanValidationIssue, TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
-import { mapExerciseTo1RMReference, type ReferenceLift } from '../training/strengthLoadPrescription'
+import { findStrengthExerciseByName } from '../training/exerciseLibrary'
+import type { ReferenceLift } from '../training/strengthLoadPrescription'
 import { getExpectedSessionsForPlanWeek, getPlanWeekDateRange } from './dateRange'
 import { QUALITY_V2_CALIBRATION } from './qualityCalibrationV2'
 import { summarizeTaxonomy, type RepairTaxonomyMeta } from './repairTaxonomy'
@@ -589,10 +590,10 @@ function getSquashDrillVarietyIssues(plan: TrainingPlan, weeks: TrainingPlanWeek
   return issues
 }
 
-const NUMERIC_REFERENCE_LABELS: Record<Exclude<ReferenceLift, 'pullUp'>, string> = {
+const NUMERIC_REFERENCE_LABELS: Record<ReferenceLift, string> = {
   squat: 'sentadilla',
   deadlift: 'peso muerto',
-  bench: 'press banca',
+  benchPress: 'press banca',
   overheadPress: 'press hombro',
 }
 
@@ -605,12 +606,12 @@ const NUMERIC_REFERENCE_LABELS: Record<Exclude<ReferenceLift, 'pullUp'>, string>
 // 1.15), que no demuestran uso del lift de referencia como movimiento base.
 const COVERAGE_MIN_FACTOR = 0.8
 
-function getAvailableNumericReferences(profile: AthleteProfile): Set<Exclude<ReferenceLift, 'pullUp'>> {
+function getAvailableNumericReferences(profile: AthleteProfile): Set<ReferenceLift> {
   const strength = profile.strengthProfile
-  const available = new Set<Exclude<ReferenceLift, 'pullUp'>>()
+  const available = new Set<ReferenceLift>()
   if ((strength?.squat1RM ?? 0) > 0) available.add('squat')
   if ((strength?.deadlift1RM ?? 0) > 0) available.add('deadlift')
-  if ((strength?.benchPress1RM ?? 0) > 0) available.add('bench')
+  if ((strength?.benchPress1RM ?? 0) > 0) available.add('benchPress')
   if ((strength?.overheadPress1RM ?? 0) > 0) available.add('overheadPress')
   return available
 }
@@ -627,13 +628,13 @@ function getProfileStrengthCoverageIssues(
   const strengthWeeks = weeks.filter((week) => week.sessions.some((session) => session.sessionType === 'strength'))
   if (strengthWeeks.length === 0) return []
 
-  const covered = new Set<Exclude<ReferenceLift, 'pullUp'>>()
+  const covered = new Set<ReferenceLift>()
   for (const session of strengthWeeks.flatMap((week) => week.sessions.filter((item) => item.sessionType === 'strength'))) {
     for (const exercise of session.exercises ?? []) {
       if (exercise.targetPercent1RM == null) continue
-      const reference = mapExerciseTo1RMReference(exercise.name, profile.strengthProfile)
-      if (!reference || reference.lift === 'pullUp' || !available.has(reference.lift)) continue
-      if (reference.factor < COVERAGE_MIN_FACTOR || reference.factor > 1) continue
+      const reference = findStrengthExerciseByName(exercise.name)?.loadReference
+      if (!reference || !available.has(reference.lift)) continue
+      if (reference.factor == null || reference.factor < COVERAGE_MIN_FACTOR || reference.factor > 1) continue
       covered.add(reference.lift)
     }
   }

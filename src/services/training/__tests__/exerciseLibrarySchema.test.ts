@@ -4,10 +4,10 @@ import { STRENGTH_EXERCISE_LIBRARY } from '../exerciseLibrary'
 
 describe('ExerciseDefinition schema Fase 2', () => {
   it('declares 1RM references for main barbell lifts', () => {
-    expect(STRENGTH_EXERCISE_LIBRARY.find((e) => e.id === 'back_squat')?.has1RMReference).toBe('squat')
-    expect(STRENGTH_EXERCISE_LIBRARY.find((e) => e.id === 'deadlift')?.has1RMReference).toBe('deadlift')
-    expect(STRENGTH_EXERCISE_LIBRARY.find((e) => e.id === 'bench_press')?.has1RMReference).toBe('benchPress')
-    expect(STRENGTH_EXERCISE_LIBRARY.find((e) => e.id === 'overhead_press')?.has1RMReference).toBe('overheadPress')
+    expect(STRENGTH_EXERCISE_LIBRARY.find((e) => e.id === 'back_squat')?.loadReference?.lift).toBe('squat')
+    expect(STRENGTH_EXERCISE_LIBRARY.find((e) => e.id === 'deadlift')?.loadReference?.lift).toBe('deadlift')
+    expect(STRENGTH_EXERCISE_LIBRARY.find((e) => e.id === 'bench_press')?.loadReference?.lift).toBe('benchPress')
+    expect(STRENGTH_EXERCISE_LIBRARY.find((e) => e.id === 'overhead_press')?.loadReference?.lift).toBe('overheadPress')
   })
 
   it('every exercise declares appropriateForPhases as a non-empty valid subset', () => {

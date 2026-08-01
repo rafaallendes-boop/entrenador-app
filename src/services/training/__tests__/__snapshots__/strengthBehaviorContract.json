@@ -1,0 +1,871 @@
+[
+  {
+    "id": "air_treadmill_20_20",
+    "resolvedBlock": "cardio",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": null,
+    "group": "cardio",
+    "loadReference": null
+  },
+  {
+    "id": "alternating_step_up_jump",
+    "resolvedBlock": "legs",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": null,
+    "group": "legs",
+    "loadReference": null
+  },
+  {
+    "id": "assault_bike_30_30",
+    "resolvedBlock": "cardio",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": null,
+    "group": "cardio",
+    "loadReference": null
+  },
+  {
+    "id": "assisted_pull_up",
+    "resolvedBlock": "pull",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": 82.5,
+    "targetRpe": 7,
+    "group": "pull",
+    "loadReference": null
+  },
+  {
+    "id": "back_squat",
+    "resolvedBlock": "legs",
+    "reps": 3,
+    "weight": 82.5,
+    "targetPercent1RM": 82.5,
+    "targetRpe": 7,
+    "group": "legs",
+    "loadReference": {
+      "lift": "squat",
+      "factor": 1,
+      "selectorEligible": true
+    }
+  },
+  {
+    "id": "band_row",
+    "resolvedBlock": "pull",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": 7,
+    "group": "pull",
+    "loadReference": null
+  },
+  {
+    "id": "barbell_jump_squat",
+    "resolvedBlock": "legs",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": null,
+    "group": "legs",
+    "loadReference": {
+      "lift": "squat",
+      "factor": 1,
+      "selectorEligible": false
+    }
+  },
+  {
+    "id": "barbell_single_leg_inverted_row",
+    "resolvedBlock": "pull",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": 7,
+    "group": "pull",
+    "loadReference": null
+  },
+  {
+    "id": "bb_reverse_lunge",
+    "resolvedBlock": "legs",
+    "reps": 3,
+    "weight": 32.5,
+    "targetPercent1RM": null,
+    "targetRpe": 7,
+    "group": "legs",
+    "loadReference": {
+      "lift": "squat",
+      "factor": 0.4,
+      "selectorEligible": false
+    }
+  },
+  {
+    "id": "bb_side_lunge",
+    "resolvedBlock": "legs",
+    "reps": 3,
+    "weight": 32.5,
+    "targetPercent1RM": null,
+    "targetRpe": 7,
+    "group": "legs",
+    "loadReference": {
+      "lift": "squat",
+      "factor": 0.4,
+      "selectorEligible": false
+    }
+  },
+  {
+    "id": "bench_press",
+    "resolvedBlock": "push",
+    "reps": 3,
+    "weight": 65,
+    "targetPercent1RM": 82.5,
+    "targetRpe": 7,
+    "group": "push",
+    "loadReference": {
+      "lift": "benchPress",
+      "factor": 1,
+      "selectorEligible": true
+    }
+  },
+  {
+    "id": "bent_over_row",
+    "resolvedBlock": "pull",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": 82.5,
+    "targetRpe": 7,
+    "group": "pull",
+    "loadReference": null
+  },
+  {
+    "id": "bird_dog_renegade_row",
+    "resolvedBlock": "core",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": null,
+    "group": "core",
+    "loadReference": null
+  },
+  {
+    "id": "bodyweight_squat",
+    "resolvedBlock": "legs",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": 7,
+    "group": "legs",
+    "loadReference": null
+  },
+  {
+    "id": "box_jump",
+    "resolvedBlock": "legs",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": null,
+    "group": "legs",
+    "loadReference": null
+  },
+  {
+    "id": "broad_jump",
+    "resolvedBlock": "legs",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": null,
+    "group": "legs",
+    "loadReference": null
+  },
+  {
+    "id": "bulgarian_split_squat",
+    "resolvedBlock": "legs",
+    "reps": 3,
+    "weight": 30,
+    "targetPercent1RM": null,
+    "targetRpe": 7,
+    "group": "legs",
+    "loadReference": {
+      "lift": "squat",
+      "factor": 0.35,
+      "selectorEligible": false
+    }
+  },
+  {
+    "id": "cable_chop",
+    "resolvedBlock": "core",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": null,
+    "group": "core",
+    "loadReference": null
+  },
+  {
+    "id": "chest_supported_row",
+    "resolvedBlock": "pull",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": 82.5,
+    "targetRpe": 7,
+    "group": "pull",
+    "loadReference": null
+  },
+  {
+    "id": "clean",
+    "resolvedBlock": "olympic",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": null,
+    "group": "olympic",
+    "loadReference": null
+  },
+  {
+    "id": "clean_high_pull",
+    "resolvedBlock": "olympic",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": null,
+    "group": "olympic",
+    "loadReference": null
+  },
+  {
+    "id": "close_grip_bench_press",
+    "resolvedBlock": "push",
+    "reps": 3,
+    "weight": 60,
+    "targetPercent1RM": 82.5,
+    "targetRpe": 7,
+    "group": "push",
+    "loadReference": {
+      "lift": "benchPress",
+      "factor": 0.9,
+      "selectorEligible": true
+    }
+  },
+  {
+    "id": "copenhagen_side_plank",
+    "resolvedBlock": "core",
+    "reps": "3s",
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": null,
+    "group": "core",
+    "loadReference": null
+  },
+  {
+    "id": "dead_bug",
+    "resolvedBlock": "core",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": null,
+    "group": "core",
+    "loadReference": null
+  },
+  {
+    "id": "deadlift",
+    "resolvedBlock": "legs",
+    "reps": 3,
+    "weight": 100,
+    "targetPercent1RM": 82.5,
+    "targetRpe": 7,
+    "group": "legs",
+    "loadReference": {
+      "lift": "deadlift",
+      "factor": 1,
+      "selectorEligible": true
+    }
+  },
+  {
+    "id": "depth_jump",
+    "resolvedBlock": "legs",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": null,
+    "group": "legs",
+    "loadReference": null
+  },
+  {
+    "id": "drop_jump",
+    "resolvedBlock": "legs",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": null,
+    "group": "legs",
+    "loadReference": null
+  },
+  {
+    "id": "farmer_carry",
+    "resolvedBlock": "core",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": null,
+    "group": "core",
+    "loadReference": null
+  },
+  {
+    "id": "front_squat",
+    "resolvedBlock": "legs",
+    "reps": 3,
+    "weight": 70,
+    "targetPercent1RM": 82.5,
+    "targetRpe": 7,
+    "group": "legs",
+    "loadReference": {
+      "lift": "squat",
+      "factor": 0.85,
+      "selectorEligible": true
+    }
+  },
+  {
+    "id": "glute_bridge",
+    "resolvedBlock": "legs",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": 7,
+    "group": "legs",
+    "loadReference": null
+  },
+  {
+    "id": "goblet_squat",
+    "resolvedBlock": "legs",
+    "reps": 3,
+    "weight": 25,
+    "targetPercent1RM": null,
+    "targetRpe": 7,
+    "group": "legs",
+    "loadReference": {
+      "lift": "squat",
+      "factor": 0.3,
+      "selectorEligible": true
+    }
+  },
+  {
+    "id": "half_kneeling_diagonal_plate_chop",
+    "resolvedBlock": "core",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": null,
+    "group": "core",
+    "loadReference": null
+  },
+  {
+    "id": "half_kneeling_lateral_jump",
+    "resolvedBlock": "legs",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": null,
+    "group": "legs",
+    "loadReference": null
+  },
+  {
+    "id": "half_kneeling_row",
+    "resolvedBlock": "pull",
+    "reps": 3,
+    "weight": 22.5,
+    "targetPercent1RM": null,
+    "targetRpe": 7,
+    "group": "pull",
+    "loadReference": {
+      "lift": "benchPress",
+      "factor": 0.35,
+      "selectorEligible": false
+    }
+  },
+  {
+    "id": "hip_thrust",
+    "resolvedBlock": "legs",
+    "reps": 3,
+    "weight": 100,
+    "targetPercent1RM": 82.5,
+    "targetRpe": 7,
+    "group": "legs",
+    "loadReference": {
+      "lift": "squat",
+      "factor": 1.2,
+      "selectorEligible": false
+    }
+  },
+  {
+    "id": "incline_bench_press",
+    "resolvedBlock": "push",
+    "reps": 3,
+    "weight": 55,
+    "targetPercent1RM": 82.5,
+    "targetRpe": 7,
+    "group": "push",
+    "loadReference": {
+      "lift": "benchPress",
+      "factor": 0.85,
+      "selectorEligible": true
+    }
+  },
+  {
+    "id": "incline_dumbbell_press",
+    "resolvedBlock": "push",
+    "reps": 3,
+    "weight": 50,
+    "targetPercent1RM": null,
+    "targetRpe": 7,
+    "group": "push",
+    "loadReference": {
+      "lift": "benchPress",
+      "factor": 0.85,
+      "selectorEligible": true
+    }
+  },
+  {
+    "id": "inverted_row",
+    "resolvedBlock": "pull",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": 7,
+    "group": "pull",
+    "loadReference": null
+  },
+  {
+    "id": "jump_squat",
+    "resolvedBlock": "legs",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": null,
+    "group": "legs",
+    "loadReference": {
+      "lift": "squat",
+      "factor": 1,
+      "selectorEligible": false
+    }
+  },
+  {
+    "id": "kettlebell_swing",
+    "resolvedBlock": "legs",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": null,
+    "group": "legs",
+    "loadReference": null
+  },
+  {
+    "id": "ladder_bipodal_front_1",
+    "resolvedBlock": "cardio",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": null,
+    "group": "cardio",
+    "loadReference": null
+  },
+  {
+    "id": "ladder_bipodal_front_2",
+    "resolvedBlock": "cardio",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": null,
+    "group": "cardio",
+    "loadReference": null
+  },
+  {
+    "id": "ladder_bipodal_front_3",
+    "resolvedBlock": "cardio",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": null,
+    "group": "cardio",
+    "loadReference": null
+  },
+  {
+    "id": "ladder_bipodal_lateral_1",
+    "resolvedBlock": "cardio",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": null,
+    "group": "cardio",
+    "loadReference": null
+  },
+  {
+    "id": "ladder_bipodal_lateral_3",
+    "resolvedBlock": "cardio",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": null,
+    "group": "cardio",
+    "loadReference": null
+  },
+  {
+    "id": "ladder_coordinativo_front_2",
+    "resolvedBlock": "cardio",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": null,
+    "group": "cardio",
+    "loadReference": null
+  },
+  {
+    "id": "ladder_coordinativo_front_4",
+    "resolvedBlock": "cardio",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": null,
+    "group": "cardio",
+    "loadReference": null
+  },
+  {
+    "id": "landmine_press",
+    "resolvedBlock": "push",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": 82.5,
+    "targetRpe": 7,
+    "group": "push",
+    "loadReference": {
+      "lift": "overheadPress",
+      "selectorEligible": true
+    }
+  },
+  {
+    "id": "lat_pulldown",
+    "resolvedBlock": "pull",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": 82.5,
+    "targetRpe": 7,
+    "group": "pull",
+    "loadReference": null
+  },
+  {
+    "id": "lateral_band_walk",
+    "resolvedBlock": "legs",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": 7,
+    "group": "legs",
+    "loadReference": null
+  },
+  {
+    "id": "lateral_skater_jumps",
+    "resolvedBlock": "legs",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": null,
+    "group": "legs",
+    "loadReference": null
+  },
+  {
+    "id": "med_ball_rotational_throw",
+    "resolvedBlock": "core",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": null,
+    "group": "core",
+    "loadReference": null
+  },
+  {
+    "id": "med_ball_slam",
+    "resolvedBlock": "legs",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": null,
+    "group": "legs",
+    "loadReference": null
+  },
+  {
+    "id": "mixed_grip_pull_up",
+    "resolvedBlock": "pull",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": 7,
+    "group": "pull",
+    "loadReference": null
+  },
+  {
+    "id": "overhead_press",
+    "resolvedBlock": "push",
+    "reps": 3,
+    "weight": 42.5,
+    "targetPercent1RM": 82.5,
+    "targetRpe": 7,
+    "group": "push",
+    "loadReference": {
+      "lift": "overheadPress",
+      "factor": 1,
+      "selectorEligible": true
+    }
+  },
+  {
+    "id": "pallof_press",
+    "resolvedBlock": "core",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": null,
+    "group": "core",
+    "loadReference": null
+  },
+  {
+    "id": "plank",
+    "resolvedBlock": "core",
+    "reps": "3s",
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": null,
+    "group": "core",
+    "loadReference": null
+  },
+  {
+    "id": "pogo_jumps",
+    "resolvedBlock": "legs",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": null,
+    "group": "legs",
+    "loadReference": null
+  },
+  {
+    "id": "pull_up",
+    "resolvedBlock": "pull",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": 7,
+    "group": "pull",
+    "loadReference": null
+  },
+  {
+    "id": "push_press",
+    "resolvedBlock": "push",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": null,
+    "group": "push",
+    "loadReference": {
+      "lift": "overheadPress",
+      "factor": 1.15,
+      "selectorEligible": true
+    }
+  },
+  {
+    "id": "push_up",
+    "resolvedBlock": "push",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": 7,
+    "group": "push",
+    "loadReference": null
+  },
+  {
+    "id": "romanian_deadlift",
+    "resolvedBlock": "legs",
+    "reps": 3,
+    "weight": 80,
+    "targetPercent1RM": 82.5,
+    "targetRpe": 7,
+    "group": "legs",
+    "loadReference": {
+      "lift": "deadlift",
+      "factor": 0.8,
+      "selectorEligible": true
+    }
+  },
+  {
+    "id": "rotational_med_ball_throw",
+    "resolvedBlock": "legs",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": null,
+    "group": "legs",
+    "loadReference": null
+  },
+  {
+    "id": "side_plank",
+    "resolvedBlock": "core",
+    "reps": "3s",
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": null,
+    "group": "core",
+    "loadReference": null
+  },
+  {
+    "id": "side_plank_plate_press",
+    "resolvedBlock": "core",
+    "reps": "3s",
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": null,
+    "group": "core",
+    "loadReference": null
+  },
+  {
+    "id": "single_leg_broad_jump",
+    "resolvedBlock": "legs",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": null,
+    "group": "legs",
+    "loadReference": null
+  },
+  {
+    "id": "single_leg_hip_thrust",
+    "resolvedBlock": "legs",
+    "reps": 3,
+    "weight": 50,
+    "targetPercent1RM": null,
+    "targetRpe": 7,
+    "group": "legs",
+    "loadReference": {
+      "lift": "squat",
+      "factor": 1.2,
+      "selectorEligible": false
+    }
+  },
+  {
+    "id": "split_jerk",
+    "resolvedBlock": "olympic",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": null,
+    "group": "olympic",
+    "loadReference": null
+  },
+  {
+    "id": "split_squat",
+    "resolvedBlock": "legs",
+    "reps": 3,
+    "weight": 32.5,
+    "targetPercent1RM": null,
+    "targetRpe": 7,
+    "group": "legs",
+    "loadReference": {
+      "lift": "squat",
+      "factor": 0.4,
+      "selectorEligible": false
+    }
+  },
+  {
+    "id": "stability_ball_front_plank",
+    "resolvedBlock": "core",
+    "reps": "3s",
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": null,
+    "group": "core",
+    "loadReference": null
+  },
+  {
+    "id": "step_up",
+    "resolvedBlock": "legs",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": 7,
+    "group": "legs",
+    "loadReference": null
+  },
+  {
+    "id": "sumo_deadlift",
+    "resolvedBlock": "legs",
+    "reps": 3,
+    "weight": 95,
+    "targetPercent1RM": 82.5,
+    "targetRpe": 7,
+    "group": "legs",
+    "loadReference": {
+      "lift": "deadlift",
+      "factor": 0.95,
+      "selectorEligible": true
+    }
+  },
+  {
+    "id": "trap_bar_deadlift",
+    "resolvedBlock": "legs",
+    "reps": 3,
+    "weight": 95,
+    "targetPercent1RM": 82.5,
+    "targetRpe": 7,
+    "group": "legs",
+    "loadReference": {
+      "lift": "deadlift",
+      "factor": 0.95,
+      "selectorEligible": true
+    }
+  },
+  {
+    "id": "trx_inverted_row",
+    "resolvedBlock": "pull",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": 7,
+    "group": "pull",
+    "loadReference": null
+  },
+  {
+    "id": "walking_lunge",
+    "resolvedBlock": "legs",
+    "reps": 3,
+    "weight": 32.5,
+    "targetPercent1RM": null,
+    "targetRpe": 7,
+    "group": "legs",
+    "loadReference": {
+      "lift": "squat",
+      "factor": 0.4,
+      "selectorEligible": false
+    }
+  },
+  {
+    "id": "weighted_pull_up",
+    "resolvedBlock": "pull",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": 7,
+    "group": "pull",
+    "loadReference": null
+  },
+  {
+    "id": "z_press",
+    "resolvedBlock": "push",
+    "reps": 3,
+    "weight": 27.5,
+    "targetPercent1RM": 82.5,
+    "targetRpe": 7,
+    "group": "push",
+    "loadReference": {
+      "lift": "overheadPress",
+      "factor": 0.65,
+      "selectorEligible": true
+    }
+  }
+]

@@ -27,6 +27,37 @@ export type ExercisePhase = 'base' | 'build' | 'peak' | 'taper' | 'transition' |
 export type ExerciseRotationGroup = 'A' | 'B' | 'C'
 export type Exercise1RMReference = 'squat' | 'deadlift' | 'benchPress' | 'overheadPress'
 
+export interface StrengthLoadReference {
+  /** Levantamiento del perfil contra el que se calcula la carga. */
+  lift: Exercise1RMReference
+  /** Multiplicador de la carga derivada. Ausente significa sin peso derivado. */
+  factor?: number
+  /** Permite que el selector puntúe y asigne porcentaje usando esta referencia. */
+  selectorEligible: boolean
+}
+
+export type StrengthExerciseNameMatchKind = 'exact' | 'alias' | 'substring' | 'ambiguous'
+
+/**
+ * Procedencia de una resolución de nombre.
+ *
+ * `ambiguous` no entrega `definition`: prescribir carga sobre un fragmento que
+ * empata entre varios ejercicios es adivinar. Sí entrega `candidates`, porque
+ * clasificar el bloque de la sesión no es fail-closed (spec §2) y descartarlos
+ * mandaba nombres perfectamente reconocibles a `other`.
+ */
+export type StrengthExerciseNameResolution =
+  | {
+    definition: ExerciseDefinition
+    matchKind: Exclude<StrengthExerciseNameMatchKind, 'ambiguous'>
+    candidates: ExerciseDefinition[]
+  }
+  | {
+    definition?: undefined
+    matchKind: 'ambiguous'
+    candidates: ExerciseDefinition[]
+  }
+
 export interface ExerciseDefinition {
   id: string
   name: string
@@ -43,7 +74,9 @@ export interface ExerciseDefinition {
   squashTransfer?: string[]
   riskLevel?: ExerciseRiskLevel
   fatigueCost?: ExerciseFatigueCost
-  has1RMReference?: Exercise1RMReference
+  loadReference?: StrengthLoadReference
+  /** Cómo se prescribe el volumen. Ausente equivale a repeticiones. */
+  prescriptionUnit?: 'reps' | 'seconds'
   appropriateForPhases?: ExercisePhase[]
   blockRotationGroup?: ExerciseRotationGroup
 }
@@ -106,7 +139,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
     unilateral: true,
     tags: ['lower_strength', 'unilateral', 'athletic_transfer', 'gym', 'home_gym', 'squash_specific', 'lateral_strength'],
     description: 'Sentadilla a una pierna con el pie de atrás elevado. Fuerza unilateral, equilibrio y control de tronco.',
-    aliases: ['Bulgarian split squat', 'Sentadilla bulgara'],
+    aliases: ['Bulgarian split squat', 'Sentadilla bulgara', 'Búlgaras con mancuernas'],
     difficulty: 'intermediate',
     sportsTransfer: ['strength', 'squash', 'running'],
     squashTransfer: ['single_leg_strength', 'deceleration'],
@@ -249,7 +282,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
     equipment: ['barbell'],
     tags: ['upper_strength', 'gym', 'compound'],
     description: 'Press inclinado con barra a 30-45 grados. Variante pesada de empuje con sesgo en pectoral superior y hombro anterior.',
-    aliases: ['Incline bench press', 'Press banca inclinado'],
+    aliases: ['Incline bench press', 'Press banca inclinado', 'Press inclinado'],
     difficulty: 'intermediate',
     sportsTransfer: ['strength', 'squash'],
     squashTransfer: ['upper_body_resilience'],
@@ -1234,22 +1267,40 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
 ]
 
-const EXERCISE_1RM_REFERENCES: Partial<Record<string, Exercise1RMReference>> = {
-  back_squat: 'squat',
-  front_squat: 'squat',
-  goblet_squat: 'squat',
-  deadlift: 'deadlift',
-  sumo_deadlift: 'deadlift',
-  romanian_deadlift: 'deadlift',
-  trap_bar_deadlift: 'deadlift',
-  bench_press: 'benchPress',
-  incline_bench_press: 'benchPress',
-  close_grip_bench_press: 'benchPress',
-  incline_dumbbell_press: 'benchPress',
-  overhead_press: 'overheadPress',
-  landmine_press: 'overheadPress',
-  push_press: 'overheadPress',
-  z_press: 'overheadPress',
+const EXERCISE_LOAD_REFERENCES: Partial<Record<string, StrengthLoadReference>> = {
+  back_squat: { lift: 'squat', factor: 1, selectorEligible: true },
+  front_squat: { lift: 'squat', factor: 0.85, selectorEligible: true },
+  goblet_squat: { lift: 'squat', factor: 0.3, selectorEligible: true },
+  bulgarian_split_squat: { lift: 'squat', factor: 0.35, selectorEligible: false },
+  walking_lunge: { lift: 'squat', factor: 0.4, selectorEligible: false },
+  hip_thrust: { lift: 'squat', factor: 1.2, selectorEligible: false },
+  deadlift: { lift: 'deadlift', factor: 1, selectorEligible: true },
+  sumo_deadlift: { lift: 'deadlift', factor: 0.95, selectorEligible: true },
+  romanian_deadlift: { lift: 'deadlift', factor: 0.8, selectorEligible: true },
+  trap_bar_deadlift: { lift: 'deadlift', factor: 0.95, selectorEligible: true },
+  bench_press: { lift: 'benchPress', factor: 1, selectorEligible: true },
+  incline_bench_press: { lift: 'benchPress', factor: 0.85, selectorEligible: true },
+  close_grip_bench_press: { lift: 'benchPress', factor: 0.9, selectorEligible: true },
+  incline_dumbbell_press: { lift: 'benchPress', factor: 0.85, selectorEligible: true },
+  overhead_press: { lift: 'overheadPress', factor: 1, selectorEligible: true },
+  landmine_press: { lift: 'overheadPress', selectorEligible: true },
+  push_press: { lift: 'overheadPress', factor: 1.15, selectorEligible: true },
+  barbell_jump_squat: { lift: 'squat', factor: 1, selectorEligible: false },
+  bb_reverse_lunge: { lift: 'squat', factor: 0.4, selectorEligible: false },
+  bb_side_lunge: { lift: 'squat', factor: 0.4, selectorEligible: false },
+  single_leg_hip_thrust: { lift: 'squat', factor: 1.2, selectorEligible: false },
+  z_press: { lift: 'overheadPress', factor: 0.65, selectorEligible: true },
+  half_kneeling_row: { lift: 'benchPress', factor: 0.35, selectorEligible: false },
+  jump_squat: { lift: 'squat', factor: 1, selectorEligible: false },
+  split_squat: { lift: 'squat', factor: 0.4, selectorEligible: false },
+}
+
+const EXERCISE_PRESCRIPTION_UNITS: Partial<Record<string, 'reps' | 'seconds'>> = {
+  plank: 'seconds',
+  side_plank: 'seconds',
+  copenhagen_side_plank: 'seconds',
+  side_plank_plate_press: 'seconds',
+  stability_ball_front_plank: 'seconds',
 }
 
 const EXERCISE_ROTATION_GROUPS: Partial<Record<string, ExerciseRotationGroup>> = {
@@ -1286,7 +1337,8 @@ function inferAppropriateForPhases(exercise: ExerciseDefinition): ExercisePhase[
 function withExercisePhase2Metadata(exercise: ExerciseDefinition): ExerciseDefinition {
   return {
     ...exercise,
-    has1RMReference: exercise.has1RMReference ?? EXERCISE_1RM_REFERENCES[exercise.id],
+    loadReference: exercise.loadReference ?? EXERCISE_LOAD_REFERENCES[exercise.id],
+    prescriptionUnit: exercise.prescriptionUnit ?? EXERCISE_PRESCRIPTION_UNITS[exercise.id],
     appropriateForPhases: exercise.appropriateForPhases ?? inferAppropriateForPhases(exercise),
     blockRotationGroup: exercise.blockRotationGroup ?? EXERCISE_ROTATION_GROUPS[exercise.id],
   }
@@ -1314,26 +1366,28 @@ export function normalizeStrengthExerciseKey(value: string): string {
     .replace(/^_+|_+$/g, '')
 }
 
-export function findStrengthExerciseByName(name: string): ExerciseDefinition | undefined {
+export function resolveStrengthExerciseName(name: string): StrengthExerciseNameResolution | undefined {
   const normalized = normalizeStrengthExerciseKey(name)
 
   const exact = STRENGTH_EXERCISE_LIBRARY.find((exercise) =>
     normalizeStrengthExerciseKey(exercise.name) === normalized ||
     normalizeStrengthExerciseKey(exercise.id) === normalized,
   )
-  if (exact) return exact
+  if (exact) return { definition: exact, matchKind: 'exact', candidates: [exact] }
 
   const aliasExact = STRENGTH_EXERCISE_LIBRARY.find((exercise) =>
     exercise.aliases?.some((alias) => normalizeStrengthExerciseKey(alias) === normalized),
   )
-  if (aliasExact) return aliasExact
+  if (aliasExact) return { definition: aliasExact, matchKind: 'alias', candidates: [aliasExact] }
 
   const aliasMap: Record<string, string> = {
     sentadilla: 'back_squat',
     sentadilla_frontal: 'front_squat',
     press_banca: 'bench_press',
+    press_de_banca: 'bench_press',
     press_z: 'z_press',
     press_hombro: 'overhead_press',
+    press_de_hombros: 'overhead_press',
     press_militar: 'overhead_press',
     remo_con_barra: 'bent_over_row',
     dominadas: 'pull_up',
@@ -1359,10 +1413,11 @@ export function findStrengthExerciseByName(name: string): ExerciseDefinition | u
 
   const aliasId = aliasMap[normalized]
   if (aliasId) {
-    return STRENGTH_EXERCISE_LIBRARY.find((exercise) => exercise.id === aliasId)
+    const definition = STRENGTH_EXERCISE_LIBRARY.find((exercise) => exercise.id === aliasId)
+    return definition ? { definition, matchKind: 'alias', candidates: [definition] } : undefined
   }
 
-  return STRENGTH_EXERCISE_LIBRARY.find((exercise) =>
+  const substringCandidates = STRENGTH_EXERCISE_LIBRARY.filter((exercise) =>
     normalized.includes(normalizeStrengthExerciseKey(exercise.name)) ||
     normalizeStrengthExerciseKey(exercise.name).includes(normalized) ||
     exercise.aliases?.some((alias) =>
@@ -1370,6 +1425,23 @@ export function findStrengthExerciseByName(name: string): ExerciseDefinition | u
       normalizeStrengthExerciseKey(alias).includes(normalized),
     ),
   )
+
+  // Varios ejercicios igual de plausibles significa que el fragmento no
+  // discrimina. Se prefiere no resolver: adivinar mal prescribe carga sobre el
+  // ejercicio equivocado, y además el resultado dependía del orden de
+  // declaración del catálogo.
+  //
+  // Los candidatos viajan igual, ordenados por `id` para no reintroducir esa
+  // dependencia de orden. Quien clasifica puede usarlos; quien prescribe carga
+  // solo mira `definition`, que acá queda ausente a propósito.
+  const candidates = [...substringCandidates].sort((left, right) => left.id.localeCompare(right.id))
+  if (candidates.length === 0) return undefined
+  if (candidates.length === 1) return { definition: candidates[0]!, matchKind: 'substring', candidates }
+  return { matchKind: 'ambiguous', candidates }
+}
+
+export function findStrengthExerciseByName(name: string): ExerciseDefinition | undefined {
+  return resolveStrengthExerciseName(name)?.definition
 }
 
 export function getExerciseGroupForDefinition(exercise: ExerciseDefinition): ExerciseGroup {

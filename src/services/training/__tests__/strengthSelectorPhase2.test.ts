@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
-import { findStrengthExerciseByName } from '../exerciseLibrary'
-import { selectStrengthSession, type StrengthContext } from '../strengthSelector'
+import { findStrengthExerciseByName, getExerciseById } from '../exerciseLibrary'
+import { selectStarLift, selectStrengthSession, type StrengthContext } from '../strengthSelector'
 
 function context(overrides: Partial<StrengthContext> = {}): StrengthContext {
   return {
@@ -67,6 +67,14 @@ describe('selectStrengthSession Fase 2', () => {
 
     expect(week0.starLift?.targetPercent1RM).toBe(75)
     expect(week1.starLift?.targetPercent1RM).toBe(80)
+  })
+
+  it('requires selectorEligible in addition to an available 1RM', () => {
+    const eligibleWithoutFactor = getExerciseById('landmine_press')!
+    const loadOnly = getExerciseById('half_kneeling_row')!
+
+    expect(selectStarLift(eligibleWithoutFactor, context()).targetPercent1RM).toBe(75)
+    expect(selectStarLift(loadOnly, context()).targetPercent1RM).toBeUndefined()
   })
 
   it('reduces target density when requireExtraRecovery is true', () => {

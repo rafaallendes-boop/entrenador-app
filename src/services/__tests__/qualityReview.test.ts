@@ -257,6 +257,30 @@ describe('reviewPlanQuality', () => {
     expect(coverageIssue?.message).toContain('press banca')
   })
 
+  it('does not count selector-only references without a load factor', () => {
+    const plan = { ...makePlan(), totalWeeks: 4 }
+    const week = makeWeek([
+      squash('2026-05-04', 'Squash técnico'),
+      squash('2026-05-05', 'Squash control'),
+      squash('2026-05-06', 'Squash juego'),
+      running('2026-05-07'),
+      strength('2026-05-08', [
+        { name: 'Sentadilla', sets: 4, reps: 5, group: 'legs', targetPercent1RM: 75 },
+        { name: 'Peso muerto', sets: 4, reps: 4, group: 'legs', targetPercent1RM: 80 },
+        { name: 'Press banca', sets: 4, reps: 5, group: 'push', targetPercent1RM: 75 },
+        // Landmine conserva elegibilidad de selector, pero factor ausente
+        // significa que no prescribe ni demuestra cobertura numérica.
+        { name: 'Landmine press', sets: 3, reps: 6, group: 'push', targetPercent1RM: 70 },
+      ]),
+    ])
+
+    const review = reviewPlanQuality(plan, [week], { profile: completeStrengthProfile })
+
+    const coverageIssue = review.issues.find((item) => item.code === 'quality.strength.profile_1rm_underused')
+    expect(coverageIssue).toBeDefined()
+    expect(coverageIssue?.message).toContain('press hombro')
+  })
+
   it('scores a complete squash plan week as good or better', () => {
     const plan = makePlan()
     const week = makeWeek([
