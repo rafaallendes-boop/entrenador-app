@@ -30,7 +30,7 @@ describe('estampado de libraryRef en los productores deterministas', () => {
       { name: 'Press banca', sets: 3, reps: 5 } as CoachExerciseProposal,
     ], { durationMin: 50 })!
 
-    const core = result.find((exercise) => exercise.name === 'Control de tronco dead bug')
+    const core = result.find((exercise) => exercise.name === 'Dead bug — control de tronco')
     expect(core?.libraryRef).toEqual({ source: 'strength_exercise', id: 'dead_bug' })
   })
 

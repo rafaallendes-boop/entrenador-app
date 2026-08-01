@@ -613,7 +613,7 @@ describe('repairGeneratedWeek', () => {
     expect(meta.repairedSessionCount).toBeGreaterThanOrEqual(1)
     expect(strength.exercises?.length).toBeGreaterThanOrEqual(8)
     expect(strength.exercises?.slice(0, 2).map((exercise) => exercise.group)).toEqual(['core', 'core'])
-    expect(strength.exercises?.[0].name).toBe('Control de tronco dead bug')
+    expect(strength.exercises?.[0].name).toBe('Dead bug — control de tronco')
     expect(strength.exercises?.filter((exercise) => !['core', 'cardio', 'mobility'].includes(exercise.group ?? '')).length).toBeGreaterThanOrEqual(4)
     expect(strength.exercises?.find((exercise) => exercise.name === 'Peso muerto con trap bar')).toMatchObject({
       weight: 110,

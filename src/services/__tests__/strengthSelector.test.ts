@@ -339,7 +339,7 @@ describe('strengthSelector progression', () => {
 
     const names = selection.exercises.map((exercise) => exercise.name)
     expect(names).not.toContain('Press Z')
-    expect(names).not.toContain('Press sobre cabeza')
+    expect(names).not.toContain('Press vertical')
   })
 
   it('uses duration as the main driver for strength density', () => {

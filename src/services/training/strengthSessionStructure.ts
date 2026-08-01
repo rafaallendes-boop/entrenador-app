@@ -3,6 +3,7 @@ import type { ExerciseLibraryRef } from '../../types/exerciseLibraryRef'
 import {
   findStrengthExerciseByName,
   getExerciseGroupForDefinition,
+  getStrengthExerciseIdentityById,
   resolveStrengthExercise,
   type ExerciseDefinition,
   type StrengthExerciseResolution,
@@ -126,24 +127,21 @@ function buildFootworkSeriesFromGenericBlock<T extends StrengthExerciseLike>(exe
   return [
     {
       ...base,
-      name: 'Escalera lateral – dos pies por cuadro',
-      libraryRef: { source: 'strength_exercise' as const, id: 'ladder_bipodal_lateral_1' },
+      ...getStrengthExerciseIdentityById('ladder_bipodal_lateral_1'),
       sets: 2,
       reps: '2 pasadas por lado',
       notes: appendExerciseNote(exercise.notes, 'E1 coordinación lateral: calidad de apoyo, cadera baja y regreso caminando.'),
     },
     {
       ...base,
-      name: 'Escalera frontal – in-in-out-out',
-      libraryRef: { source: 'strength_exercise' as const, id: 'ladder_bipodal_front_2' },
+      ...getStrengthExerciseIdentityById('ladder_bipodal_front_2'),
       sets: 2,
       reps: '2 pasadas',
       notes: appendExerciseNote(exercise.notes, 'E2 ritmo de pies: precisión antes que velocidad.'),
     },
     {
       ...base,
-      name: 'Escalera frontal – Icky shuffle',
-      libraryRef: { source: 'strength_exercise' as const, id: 'ladder_coordinativo_front_4' },
+      ...getStrengthExerciseIdentityById('ladder_coordinativo_front_4'),
       sets: 2,
       reps: '2 pasadas',
       notes: appendExerciseNote(exercise.notes, 'E3 coordinación diagonal: pies activos sin convertirlo en cardio duro.'),
@@ -184,14 +182,14 @@ function ensureCoreBlock<T extends StrengthExerciseLike>(exercises: T[]): T[] {
   const core = exercises.filter((exercise) => exercise.group === 'core')
   if (core.length === 0) {
     return [
-      makeCoreExercise<T>('Control de tronco dead bug', 'Zona media: controla pelvis y costillas antes de la fuerza principal.', 'dead_bug'),
+      makeCoreExercise<T>('dead_bug', 'Zona media: controla pelvis y costillas antes de la fuerza principal.'),
       ...exercises,
     ]
   }
 
   if (core.length === 1) {
     return [
-      makeCoreExercise<T>('Control de tronco dead bug', 'Zona media: anti-extensión y control lumbo-pélvico.', 'dead_bug'),
+      makeCoreExercise<T>('dead_bug', 'Zona media: anti-extensión y control lumbo-pélvico.'),
       ...exercises,
     ]
   }
@@ -203,7 +201,7 @@ function ensureCoreBlock<T extends StrengthExerciseLike>(exercises: T[]): T[] {
   return exercises.map((exercise) => {
     if (replaced || exercise.group !== 'core') return exercise
     replaced = true
-    return makeCoreExercise<T>('Control de tronco dead bug', 'Zona media: anti-extensión y control lumbo-pélvico.', 'dead_bug')
+    return makeCoreExercise<T>('dead_bug', 'Zona media: anti-extensión y control lumbo-pélvico.')
   })
 }
 
@@ -417,14 +415,13 @@ function extractRepresentativeReps(reps: number | string): number | undefined {
   return Number(match[0])
 }
 
-function makeCoreExercise<T extends StrengthExerciseLike>(name: string, notes: string, id: string): T {
+function makeCoreExercise<T extends StrengthExerciseLike>(id: string, notes: string): T {
   return {
-    name,
+    ...getStrengthExerciseIdentityById(id),
     sets: 3,
     reps: '8/lado',
     group: 'core',
     notes,
-    libraryRef: { source: 'strength_exercise', id },
   } as T
 }
 

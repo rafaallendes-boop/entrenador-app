@@ -6,6 +6,7 @@ Base de contraste:
 
 - **Fuerza — desacople del nombre, Entregas 1–3 (2026-08-01): commiteadas en `3d480b3`.** Ver §18 — los hallazgos del code review quedaron corregidos y el bloque se cerró sin migraciones.
 - **Fuerza — identidad estable (`libraryRef`-first): implementada y commiteada.** Ver §19 — Plan Builder, coach y calidad consumen el `id` del catálogo sin volver a inferir identidad desde el nombre. Sin migraciones; 2613/2613 tests, lint y build verdes.
+- **Fuerza — copy de la librería por `id`: implementado y commiteado en este bloque.** Ver §20 — 12 renombres, 31 descripciones y aliases legacy sin cambios de prescripción; 2666/2666 tests, lint y build verdes.
 - `main` con el commit de esta entrega (`feat: complete coach planning library and calendar hardening`).
 - **`011_whoop_integration.sql` y `012_whoop_workouts.sql` aplicados en produccion.** Whoop readiness y Workout Auto-Complete quedan operativos de punta a punta (owner confirma cierre operacional); pendiente solo el linkeo de consentimiento biometrico/legal antes de exponer a terceros (ver Riesgo 1).
 - **Coach Workspace v0 + ampliacion implementados (2026-07-13 a 2026-07-19):** `/coach` pasa de un roster unico (`CoachRosterPage`) a `CoachWorkspacePage` con Resumen, Alumnos, Planificacion y Biblioteca operativas; Asistente IA conserva el placeholder. Incluye endurecimiento de `switchActiveAthlete`, edicion multi-atleta, alta/aplicacion de plantillas y lock de concurrencia a nivel de modulo. `015` y el bundle de Biblioteca/Planificacion ya fueron aplicados en produccion; queda el smoke autenticado.
@@ -471,6 +472,52 @@ siguen sin ref. El siguiente proyecto de copy debe conservar cada nombre legacy
 en `aliases`; no hay backfill automático.
 
 ## Avances Ya Implementados
+
+### 20. Fuerza — copy de la librería por `id` (2026-08-01)
+
+Los 77 ejercicios de fuerza pasan a lenguaje de gimnasio sin que el texto
+vuelva a decidir nada. Sin migraciones.
+
+- **12 renombres**, cada nombre anterior agregado a `aliases` del mismo `id`
+  (`Press sobre cabeza` → `Press vertical`, `Sentadilla en zancada` →
+  `Zancada estática`, `Control de tronco dead bug` → `Dead bug — control de
+  tronco`, entre otros).
+- **31 descripciones** reescritas a español neutro: primero qué hacer, después
+  el objetivo. Se retiran `stance`, `setup`, `tracking`, `bracing`, `snap`,
+  `cachado`, `repeat sprint`, `reps`, `overhead`, `lunge`, `footwork` y
+  `step-up`; se conservan los términos que sí se usan en una sala de pesas
+  (`dead bug`, `goblet`, `Pallof`, `trap bar`, `Icky shuffle`, `kettlebell`,
+  `landmine`, `Copenhagen`, `fitball`, `push press`, `split-step`, `TRX`).
+- **Un cuarto productor determinista** apareció durante el diseño:
+  `buildFallbackSession` (`WeekCreatorEngine.ts`) tenía 14 filas literales con
+  13 ids únicos y sin `libraryRef`. Ahora construye por `id` mediante
+  `getStrengthExerciseIdentityById`, igual que `makeCoreExercise` y la
+  expansión de footwork. Ningún productor repite copy.
+
+**Gate de comportamiento.** Barrido pareado contra `afaac17` con clave por `id`
+—porque los nombres cambian—: **231 filas, cero diferencias** de `weight`,
+`targetPercent1RM`, `targetRpe`, `reps`, `group` y `warmupSets`. Cubre copy y
+migración de productores juntos. Además, para los 12 ids renombrados, resolver
+por nombre anterior, por nombre nuevo y por `libraryRef` da prescripción
+idéntica (12/12). Cero colisiones de nombre o alias entre ids, y los 77 nombres
+canónicos y todos los aliases resuelven a su propio `id`.
+
+El snapshot de invariantes congela la metadata deportiva de los 77 y el texto
+fuera de alcance: 65 nombres y 46 descripciones intactos, verificado sin
+regenerarlo.
+
+Estado: **implementado y commiteado en este bloque.** Spec y plan en
+`docs/superpowers/specs/2026-08-01-strength-exercise-copy-design.md` y
+`docs/superpowers/plans/2026-08-01-strength-exercise-copy.md`.
+
+**Riesgo latente documentado.** `getStrengthExerciseIdentityById` lanza si el
+`id` no existe, y `buildDeterministicWeekCreatorResponse` se invoca **fuera**
+del `try/catch` del loop de reintentos (`WeekCreatorEngine.ts:582`). Si un `id`
+del fallback desapareciera del catálogo, la ruta de último recurso pasaría de
+entregar una semana degradada a fallar entera. Hoy es inalcanzable: el gate de
+permanencia (`strengthCatalogIdPermanence.test.ts`) congela los 77 ids y rompe
+en CI antes de que eso llegue a producción. Es CI lo que lo previene, no el
+runtime.
 
 ### Producto Publico Y Marca
 
@@ -1066,10 +1113,11 @@ dificultad.
    `technical`, y los 3 nombres de partido con literales hardcodeados en 5
    consumidores en vez de centralizados por `id`.
 
-   **Mitad de fisico/fuerza: desacople commiteado e identidad estable
-   implementada — ver §18–19.** El siguiente bloque ya puede abordar copy
-   visible por `id`, conservando cada nombre anterior en `aliases` para el
-   contenido legacy que no tiene ref.
+   **Mitad de fisico/fuerza: completa — ver §18, §19 y §20.** Desacople del
+   nombre commiteado (`3d480b3`), identidad estable `libraryRef`-first
+   commiteada (`afaac17`) y copy de la libreria commiteado en este bloque.
+   Los cuatro productores deterministas construyen por `id` y cada nombre
+   anterior vive en `aliases` para el contenido legacy sin ref.
 5. **Analisis de entrenamientos con Whoop.** Superficie nueva sobre datos que ya
    estan locales (readiness + workouts). Mantener el contrato vigente: contexto
    objetivo y consentido, sin diagnostico ni ajuste automatico.
@@ -1097,20 +1145,24 @@ quedo terminado o a medias antes de construir encima.
 
 Orden recomendado (Athlete-Aware Core + Coach F2-lite Parte 2b + Whoop v1/Workout Auto-Complete + Coach Workspace v0 + Fase 0 coaches landing ya en prod):
 
-0. **Commitear Fuerza — identidad `libraryRef`-first (§19).** Está implementada
-   con barridos en cero y 2613/2613 tests; mantenerla separada del copy visible
-   posterior.
-1. **Desplegar rotacion + roles de partido (`9754f78`).** El smoke pagado de la rotacion esta aceptado; los roles de squash viajan encima y **no** estan medidos, solo cubiertos por tests. Con ~US$0,60 de saldo no alcanza para re-medir (~US$0,90 por corrida), asi que la decision es desplegar asumiendo la cobertura de la suite o recargar y correr un smoke sobre `9754f78` antes.
-2. **Verificacion operativa post-deploy:** revisar la fila de job/attempts de la primera corrida real y mirar `squashFinisherPreservedCount` / `squashStandaloneMatchCount` contra lo esperado.
-3. **Revision juridica formal** (2-3 dias abogado, paralelizar con items 4-5): firma de terminos/privacidad/descargos/políticas Whoop.
-4. **Consentimiento in-app + biometrico** (1-2 dias implementacion): checkbox en signup, descargo antes de Whoop connect, registrar version/fecha.
-5. **QA deportiva y preparacion piloto** (1-2 dias): generar 3 planes arquetipo como atletas gestionados, revisar salida coach, preparar oferta (duracion, precio, soporte, reembolso).
-6. **Primer cliente acompanado** (ejecutar en paralelo con abogado): elegir 1 candidato, onboarding 1:1, generar semana 1, iniciar protocolo de revision semanal.
+0. **Desplegar las tandas pendientes.** Rotacion coordinada + roles de partido
+   (`9754f78`), identidad de fuerza (`afaac17`) y copy de la libreria (§20). El
+   smoke pagado de la rotacion esta aceptado; los roles de squash viajan encima
+   y **no** estan medidos, solo cubiertos por tests. Con ~US$0,60 de saldo no
+   alcanza para re-medir (~US$0,90 por corrida), asi que la decision es desplegar
+   asumiendo la cobertura de la suite o recargar y correr un smoke antes.
+1. **Verificacion operativa post-deploy:** revisar la fila de job/attempts de la primera corrida real y mirar `squashFinisherPreservedCount` / `squashStandaloneMatchCount` contra lo esperado.
+2. **Revision juridica formal** (2-3 dias abogado, paralelizar con items 3-4): firma de terminos/privacidad/descargos/políticas Whoop.
+3. **Consentimiento in-app + biometrico** (1-2 dias implementacion): checkbox en signup, descargo antes de Whoop connect, registrar version/fecha.
+4. **QA deportiva y preparacion piloto** (1-2 dias): generar 3 planes arquetipo como atletas gestionados, revisar salida coach, preparar oferta (duracion, precio, soporte, reembolso).
+5. **Primer cliente acompanado** (ejecutar en paralelo con abogado): elegir 1 candidato, onboarding 1:1, generar semana 1, iniciar protocolo de revision semanal.
 
-**Siguiente bloque de desarrollo recomendado:** copy de ejercicios de fuerza
-por `id`, con ledger de renombres y `aliases` legacy. Congelar por test que
-`loadReference`, `prescriptionUnit`, tags, equipamiento y rol no cambian junto
-con el texto. No desplaza los pendientes operativos 1–6.
+**Siguiente bloque de desarrollo recomendado:** ninguno de motor. Squash y
+fuerza quedaron cerrados de punta a punta —seleccion, carga, identidad y copy—,
+asi que lo que separa el producto de cobrarle a alguien es legal y operacional,
+no codigo. Si aparece tiempo de desarrollo libre, el candidato con mejor
+relacion valor/riesgo es el **smoke autenticado de Biblioteca y Planificacion**
+(pendiente §11), no una mejora nueva.
 
 ## Que No Hacer Ahora
 
@@ -1136,4 +1188,4 @@ Mi recomendacion: **iniciar revision juridica formal YA** (paralelo a items 2-3)
 
 Nota tactica que no cambia esta recomendacion: la Entrega 4 de fuerza (§19)
 quedo commiteada por separado, revisada y verde. El copy visible de los
-ejercicios de fuerza es la entrega siguiente y viaja en su propio commit.
+ejercicios de fuerza quedo revisado y commiteado por separado en este bloque.

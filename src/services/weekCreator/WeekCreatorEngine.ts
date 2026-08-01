@@ -31,6 +31,7 @@ import { recordRepairAction, summarizeTaxonomy } from '../planBuilder/repairTaxo
 import { isLocalFallbackEligible } from '../planBuilder/fallbackEligibility'
 import { WEEK_CREATOR_RESPONSE_SCHEMA } from './weekCreatorResponseSchema'
 import { enhanceStrengthSessionExercises } from '../training/strengthSessionStructure'
+import { getStrengthExerciseIdentityById } from '../training/exerciseLibrary'
 import { todayISO } from '../../utils/date'
 import { applyWeekCreatorDateWindowToConfig, resolveWeekCreatorDateWindow } from './WeekCreatorDateWindow'
 import { db } from '../../db/db'
@@ -1345,6 +1346,19 @@ function dayOffset(day: DayOfWeek): number {
   return offsets[day]
 }
 
+/**
+ * Identidad por `id` para los fallbacks locales de fuerza del Week Creator:
+ * evita repetir nombre visible y `libraryRef` a mano en cada fila, así un
+ * renombre futuro del catálogo no vuelve a desincronizar productor y
+ * definición (spec 2026-08-01 §3).
+ */
+function fallbackStrengthExercise(
+  id: string,
+  prescription: Omit<CoachExerciseProposal, 'name' | 'libraryRef'>,
+): CoachExerciseProposal {
+  return { ...getStrengthExerciseIdentityById(id), ...prescription }
+}
+
 function buildFallbackSession(
   sport: SupportedSport,
   date: string,
@@ -1381,25 +1395,25 @@ function buildFallbackSession(
       config.currentFatigue !== 'overloaded'
     const variants: CoachExerciseProposal[][] = [
       [
-        { name: 'Control de tronco dead bug', sets: 3, reps: '8/lado', group: 'core' as const },
-        { name: 'Plancha lateral', sets: 3, reps: '30s/lado', group: 'core' as const },
-        { name: 'Sentadilla goblet', sets: 3, reps: 8, group: 'legs' as const },
-        { name: 'Remo con pecho apoyado', sets: 3, reps: 10, group: 'pull' as const },
-        { name: 'Press sobre cabeza', sets: 3, reps: '8/lado', group: 'push' as const },
-        { name: 'Zancada lateral con barra', sets: 3, reps: '8/lado', group: 'legs' as const },
+        fallbackStrengthExercise('dead_bug', { sets: 3, reps: '8/lado', group: 'core' }),
+        fallbackStrengthExercise('side_plank', { sets: 3, reps: '30s/lado', group: 'core' }),
+        fallbackStrengthExercise('goblet_squat', { sets: 3, reps: 8, group: 'legs' }),
+        fallbackStrengthExercise('chest_supported_row', { sets: 3, reps: 10, group: 'pull' }),
+        fallbackStrengthExercise('overhead_press', { sets: 3, reps: '8/lado', group: 'push' }),
+        fallbackStrengthExercise('bb_side_lunge', { sets: 3, reps: '8/lado', group: 'legs' }),
         ...(includeSpecificCardio
-          ? [{ name: 'Bici de asalto 30/30', sets: 1, reps: '4 min: 30s fuerte / 30s suave', group: 'cardio' as const }]
+          ? [fallbackStrengthExercise('assault_bike_30_30', { sets: 1, reps: '4 min: 30s fuerte / 30s suave', group: 'cardio' })]
           : []),
       ],
       [
-        { name: 'Control de tronco dead bug', sets: 3, reps: '8/lado', group: 'core' as const },
-        { name: 'Press Pallof', sets: 3, reps: '10/lado', group: 'core' as const },
-        { name: 'Peso muerto rumano', sets: 3, reps: 8, group: 'legs' as const },
-        { name: 'Press inclinado con mancuernas', sets: 3, reps: 8, group: 'push' as const },
-        { name: 'Remo invertido', sets: 3, reps: 10, group: 'pull' as const },
-        { name: 'Sentadilla en zancada', sets: 3, reps: '8/lado', group: 'legs' as const },
+        fallbackStrengthExercise('dead_bug', { sets: 3, reps: '8/lado', group: 'core' }),
+        fallbackStrengthExercise('pallof_press', { sets: 3, reps: '10/lado', group: 'core' }),
+        fallbackStrengthExercise('romanian_deadlift', { sets: 3, reps: 8, group: 'legs' }),
+        fallbackStrengthExercise('incline_dumbbell_press', { sets: 3, reps: 8, group: 'push' }),
+        fallbackStrengthExercise('inverted_row', { sets: 3, reps: 10, group: 'pull' }),
+        fallbackStrengthExercise('split_squat', { sets: 3, reps: '8/lado', group: 'legs' }),
         ...(includeSpecificCardio
-          ? [{ name: 'Trotadora de aire 20/20', sets: 1, reps: '4 min: 20s fuerte / 20s suave', group: 'cardio' as const }]
+          ? [fallbackStrengthExercise('air_treadmill_20_20', { sets: 1, reps: '4 min: 20s fuerte / 20s suave', group: 'cardio' })]
           : []),
       ],
     ]

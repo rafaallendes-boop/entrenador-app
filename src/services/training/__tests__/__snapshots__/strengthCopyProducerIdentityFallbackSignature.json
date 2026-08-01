@@ -1,0 +1,152 @@
+[
+  {
+    "variantIndex": 0,
+    "exercises": [
+      {
+        "id": "dead_bug",
+        "sets": 3,
+        "reps": "8/lado",
+        "group": "core",
+        "weight": null,
+        "targetPercent1RM": null,
+        "targetRpe": null,
+        "warmupSetsCount": 0
+      },
+      {
+        "id": "side_plank",
+        "sets": 3,
+        "reps": "30s/lado",
+        "group": "core",
+        "weight": null,
+        "targetPercent1RM": null,
+        "targetRpe": null,
+        "warmupSetsCount": 0
+      },
+      {
+        "id": "goblet_squat",
+        "sets": 3,
+        "reps": 8,
+        "group": "legs",
+        "weight": null,
+        "targetPercent1RM": null,
+        "targetRpe": 7,
+        "warmupSetsCount": 0
+      },
+      {
+        "id": "bb_side_lunge",
+        "sets": 3,
+        "reps": "8/lado",
+        "group": "legs",
+        "weight": null,
+        "targetPercent1RM": null,
+        "targetRpe": 6,
+        "warmupSetsCount": 0
+      },
+      {
+        "id": "overhead_press",
+        "sets": 3,
+        "reps": "8/lado",
+        "group": "push",
+        "weight": null,
+        "targetPercent1RM": 67.5,
+        "targetRpe": 6,
+        "warmupSetsCount": 0
+      },
+      {
+        "id": "chest_supported_row",
+        "sets": 3,
+        "reps": 10,
+        "group": "pull",
+        "weight": null,
+        "targetPercent1RM": 62.5,
+        "targetRpe": 6,
+        "warmupSetsCount": 0
+      },
+      {
+        "id": "assault_bike_30_30",
+        "sets": 1,
+        "reps": "4 min: 30s fuerte / 30s suave",
+        "group": "cardio",
+        "weight": null,
+        "targetPercent1RM": null,
+        "targetRpe": null,
+        "warmupSetsCount": 0
+      }
+    ]
+  },
+  {
+    "variantIndex": 1,
+    "exercises": [
+      {
+        "id": "dead_bug",
+        "sets": 3,
+        "reps": "8/lado",
+        "group": "core",
+        "weight": null,
+        "targetPercent1RM": null,
+        "targetRpe": null,
+        "warmupSetsCount": 0
+      },
+      {
+        "id": "pallof_press",
+        "sets": 3,
+        "reps": "10/lado",
+        "group": "core",
+        "weight": null,
+        "targetPercent1RM": null,
+        "targetRpe": null,
+        "warmupSetsCount": 0
+      },
+      {
+        "id": "romanian_deadlift",
+        "sets": 3,
+        "reps": 8,
+        "group": "legs",
+        "weight": null,
+        "targetPercent1RM": 72.5,
+        "targetRpe": 7,
+        "warmupSetsCount": 0
+      },
+      {
+        "id": "split_squat",
+        "sets": 3,
+        "reps": "8/lado",
+        "group": "legs",
+        "weight": null,
+        "targetPercent1RM": null,
+        "targetRpe": 6,
+        "warmupSetsCount": 0
+      },
+      {
+        "id": "incline_dumbbell_press",
+        "sets": 3,
+        "reps": 8,
+        "group": "push",
+        "weight": null,
+        "targetPercent1RM": null,
+        "targetRpe": 6,
+        "warmupSetsCount": 0
+      },
+      {
+        "id": "inverted_row",
+        "sets": 3,
+        "reps": 10,
+        "group": "pull",
+        "weight": null,
+        "targetPercent1RM": null,
+        "targetRpe": 6,
+        "warmupSetsCount": 0
+      },
+      {
+        "id": "air_treadmill_20_20",
+        "sets": 1,
+        "reps": "4 min: 20s fuerte / 20s suave",
+        "group": "cardio",
+        "weight": null,
+        "targetPercent1RM": null,
+        "targetRpe": null,
+        "warmupSetsCount": 0
+      }
+    ]
+  }
+]

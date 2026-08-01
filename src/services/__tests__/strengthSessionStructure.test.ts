@@ -28,7 +28,7 @@ describe('normalizeStrengthSessionExercises', () => {
       'pull',
       'cardio',
     ])
-    expect(result[0].name).toBe('Control de tronco dead bug')
+    expect(result[0].name).toBe('Dead bug — control de tronco')
     expect(result.at(-1)?.name).toBe('Escalera lateral – dos pies por cuadro')
   })
 
@@ -39,7 +39,7 @@ describe('normalizeStrengthSessionExercises', () => {
     ], { durationMin: 50 })!
 
     expect(result[0]).toMatchObject({
-      name: 'Control de tronco dead bug',
+      name: 'Dead bug — control de tronco',
       group: 'core',
     })
   })
@@ -70,7 +70,7 @@ describe('normalizeStrengthSessionExercises', () => {
     expect(footwork).toHaveLength(3)
     expect(footwork.map((exercise) => exercise.name)).toEqual([
       'Escalera lateral – dos pies por cuadro',
-      'Escalera frontal – in-in-out-out',
+      'Escalera frontal – dentro-dentro-fuera-fuera',
       'Escalera frontal – Icky shuffle',
     ])
     expect(footwork.every((exercise) => exercise.group === 'cardio')).toBe(true)
@@ -150,7 +150,7 @@ describe('normalizeStrengthSessionExercises', () => {
     })!
 
     expect(result.map((exercise) => exercise.name)).toEqual([
-      'Control de tronco dead bug',
+      'Dead bug — control de tronco',
       'Press banca',
     ])
     expect(result[1]).toMatchObject({ weight: 80, targetPercent1RM: 80 })

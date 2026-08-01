@@ -1,0 +1,2698 @@
+[
+  {
+    "id": "air_treadmill_20_20",
+    "category": "full_body",
+    "movement": "locomotion",
+    "intensityType": "power",
+    "equipment": [
+      "air_treadmill",
+      "machine"
+    ],
+    "tags": [
+      "cardio_specific",
+      "court_conditioning",
+      "repeat_sprint",
+      "squash_specific"
+    ],
+    "difficulty": "intermediate",
+    "sportsTransfer": [
+      "strength",
+      "squash",
+      "running"
+    ],
+    "squashTransfer": [
+      "repeat_sprint_capacity",
+      "short_point_recovery",
+      "acceleration"
+    ],
+    "riskLevel": "medium",
+    "fatigueCost": "high",
+    "appropriateForPhases": [
+      "build",
+      "peak"
+    ],
+    "stableName": null,
+    "stableDescription": null
+  },
+  {
+    "id": "alternating_step_up_jump",
+    "category": "full_body",
+    "movement": "locomotion",
+    "intensityType": "power",
+    "equipment": [
+      "box",
+      "bodyweight"
+    ],
+    "unilateral": true,
+    "tags": [
+      "power",
+      "jump_power",
+      "athletic_transfer",
+      "squash_specific"
+    ],
+    "difficulty": "intermediate",
+    "sportsTransfer": [
+      "strength",
+      "squash",
+      "running"
+    ],
+    "squashTransfer": [
+      "single_leg_power",
+      "court_reacceleration"
+    ],
+    "riskLevel": "medium",
+    "fatigueCost": "medium",
+    "appropriateForPhases": [
+      "build",
+      "peak"
+    ],
+    "stableName": "Subida al cajón con salto alternado",
+    "stableDescription": null
+  },
+  {
+    "id": "assault_bike_30_30",
+    "category": "full_body",
+    "movement": "locomotion",
+    "intensityType": "power",
+    "equipment": [
+      "assault_bike",
+      "machine"
+    ],
+    "tags": [
+      "cardio_specific",
+      "court_conditioning",
+      "repeat_sprint",
+      "squash_specific"
+    ],
+    "difficulty": "intermediate",
+    "sportsTransfer": [
+      "strength",
+      "squash"
+    ],
+    "squashTransfer": [
+      "repeat_sprint_capacity",
+      "short_point_recovery"
+    ],
+    "riskLevel": "low",
+    "fatigueCost": "high",
+    "appropriateForPhases": [
+      "build",
+      "peak"
+    ],
+    "stableName": "Bici de asalto 30/30",
+    "stableDescription": null
+  },
+  {
+    "id": "assisted_pull_up",
+    "category": "upper",
+    "movement": "pull",
+    "intensityType": "hypertrophy",
+    "equipment": [
+      "machine",
+      "bands"
+    ],
+    "tags": [
+      "upper_strength",
+      "beginner_friendly",
+      "gym",
+      "home_gym"
+    ],
+    "difficulty": "beginner",
+    "sportsTransfer": [
+      "strength",
+      "general_fitness"
+    ],
+    "appropriateForPhases": [
+      "base",
+      "build"
+    ],
+    "stableName": "Dominada asistida",
+    "stableDescription": "Dominada con asistencia de máquina o banda. Permite construir volumen de tirón cuando aún no salen libres."
+  },
+  {
+    "id": "back_squat",
+    "category": "lower",
+    "movement": "squat",
+    "intensityType": "strength",
+    "equipment": [
+      "barbell"
+    ],
+    "tags": [
+      "lower_strength",
+      "gym",
+      "compound",
+      "advanced",
+      "athletic_transfer",
+      "squash_specific"
+    ],
+    "difficulty": "intermediate",
+    "sportsTransfer": [
+      "strength",
+      "squash",
+      "running",
+      "cycling"
+    ],
+    "squashTransfer": [
+      "force_production",
+      "deceleration"
+    ],
+    "riskLevel": "medium",
+    "fatigueCost": "high",
+    "loadReference": {
+      "lift": "squat",
+      "factor": 1,
+      "selectorEligible": true
+    },
+    "appropriateForPhases": [
+      "base",
+      "build",
+      "peak"
+    ],
+    "blockRotationGroup": "A",
+    "stableName": "Sentadilla trasera con barra",
+    "stableDescription": "Sentadilla bilateral con barra en la espalda. Patrón principal de fuerza de tren inferior y producción de fuerza."
+  },
+  {
+    "id": "band_row",
+    "category": "upper",
+    "movement": "pull",
+    "intensityType": "recovery",
+    "equipment": [
+      "bands"
+    ],
+    "tags": [
+      "upper_strength",
+      "beginner_friendly",
+      "home_gym",
+      "recovery"
+    ],
+    "difficulty": "beginner",
+    "sportsTransfer": [
+      "strength",
+      "general_fitness"
+    ],
+    "appropriateForPhases": [
+      "base",
+      "taper",
+      "transition",
+      "race"
+    ],
+    "stableName": "Remo con banda",
+    "stableDescription": "Remo horizontal con banda elástica. Opción simple de tirón para recuperación o casa."
+  },
+  {
+    "id": "barbell_jump_squat",
+    "category": "full_body",
+    "movement": "squat",
+    "intensityType": "power",
+    "equipment": [
+      "barbell"
+    ],
+    "tags": [
+      "power",
+      "jump_power",
+      "advanced",
+      "athletic_transfer",
+      "squash_specific"
+    ],
+    "difficulty": "advanced",
+    "sportsTransfer": [
+      "strength",
+      "squash"
+    ],
+    "squashTransfer": [
+      "vertical_power",
+      "rate_of_force_development"
+    ],
+    "riskLevel": "high",
+    "fatigueCost": "high",
+    "loadReference": {
+      "lift": "squat",
+      "factor": 1,
+      "selectorEligible": false
+    },
+    "appropriateForPhases": [
+      "build",
+      "peak"
+    ],
+    "stableName": "Sentadilla con salto y barra",
+    "stableDescription": null
+  },
+  {
+    "id": "barbell_single_leg_inverted_row",
+    "category": "upper",
+    "movement": "pull",
+    "intensityType": "hypertrophy",
+    "equipment": [
+      "barbell",
+      "bodyweight"
+    ],
+    "unilateral": true,
+    "tags": [
+      "upper_strength",
+      "core",
+      "athletic_transfer",
+      "squash_specific"
+    ],
+    "difficulty": "intermediate",
+    "sportsTransfer": [
+      "strength",
+      "squash"
+    ],
+    "squashTransfer": [
+      "upper_back_strength",
+      "trunk_stiffness"
+    ],
+    "riskLevel": "medium",
+    "fatigueCost": "medium",
+    "appropriateForPhases": [
+      "base",
+      "build"
+    ],
+    "stableName": "Remo invertido con barra a una pierna",
+    "stableDescription": "Remo invertido bajo una barra apoyando solo un pie. Suma demanda de cadena posterior y control de tronco."
+  },
+  {
+    "id": "bb_reverse_lunge",
+    "category": "lower",
+    "movement": "locomotion",
+    "intensityType": "hypertrophy",
+    "equipment": [
+      "barbell"
+    ],
+    "unilateral": true,
+    "tags": [
+      "lower_strength",
+      "unilateral",
+      "athletic_transfer",
+      "squash_specific",
+      "court_lunge"
+    ],
+    "difficulty": "intermediate",
+    "sportsTransfer": [
+      "strength",
+      "squash",
+      "running"
+    ],
+    "squashTransfer": [
+      "court_lunge_capacity",
+      "deceleration",
+      "single_leg_strength"
+    ],
+    "riskLevel": "medium",
+    "fatigueCost": "medium",
+    "loadReference": {
+      "lift": "squat",
+      "factor": 0.4,
+      "selectorEligible": false
+    },
+    "appropriateForPhases": [
+      "base",
+      "build"
+    ],
+    "stableName": "Zancada inversa con barra",
+    "stableDescription": null
+  },
+  {
+    "id": "bb_side_lunge",
+    "category": "lower",
+    "movement": "locomotion",
+    "intensityType": "hypertrophy",
+    "equipment": [
+      "barbell"
+    ],
+    "unilateral": true,
+    "tags": [
+      "lower_strength",
+      "unilateral",
+      "athletic_transfer",
+      "squash_specific",
+      "lateral_strength",
+      "court_lunge"
+    ],
+    "difficulty": "intermediate",
+    "sportsTransfer": [
+      "strength",
+      "squash"
+    ],
+    "squashTransfer": [
+      "lateral_strength",
+      "court_lunge_capacity",
+      "deceleration"
+    ],
+    "riskLevel": "medium",
+    "fatigueCost": "medium",
+    "loadReference": {
+      "lift": "squat",
+      "factor": 0.4,
+      "selectorEligible": false
+    },
+    "appropriateForPhases": [
+      "base",
+      "build"
+    ],
+    "stableName": "Zancada lateral con barra",
+    "stableDescription": "Zancada lateral con barra. Fuerza en plano frontal y posiciones de pelota ancha en cancha de squash."
+  },
+  {
+    "id": "bench_press",
+    "category": "upper",
+    "movement": "push",
+    "intensityType": "strength",
+    "equipment": [
+      "barbell"
+    ],
+    "tags": [
+      "upper_strength",
+      "gym",
+      "compound"
+    ],
+    "difficulty": "intermediate",
+    "sportsTransfer": [
+      "strength",
+      "squash"
+    ],
+    "squashTransfer": [
+      "upper_body_resilience"
+    ],
+    "riskLevel": "medium",
+    "fatigueCost": "medium",
+    "loadReference": {
+      "lift": "benchPress",
+      "factor": 1,
+      "selectorEligible": true
+    },
+    "appropriateForPhases": [
+      "base",
+      "build",
+      "peak"
+    ],
+    "blockRotationGroup": "A",
+    "stableName": "Press banca",
+    "stableDescription": "Press horizontal con barra. Patrón principal de empuje superior."
+  },
+  {
+    "id": "bent_over_row",
+    "category": "upper",
+    "movement": "pull",
+    "intensityType": "strength",
+    "equipment": [
+      "barbell",
+      "dumbbell"
+    ],
+    "tags": [
+      "upper_strength",
+      "gym",
+      "compound"
+    ],
+    "difficulty": "intermediate",
+    "sportsTransfer": [
+      "strength",
+      "squash"
+    ],
+    "appropriateForPhases": [
+      "base",
+      "build",
+      "peak"
+    ],
+    "blockRotationGroup": "B",
+    "stableName": "Remo inclinado",
+    "stableDescription": "Remo horizontal con barra y tronco inclinado. Demanda fuerza de espalda alta y de tronco."
+  },
+  {
+    "id": "bird_dog_renegade_row",
+    "category": "core",
+    "movement": "pull",
+    "intensityType": "stability",
+    "equipment": [
+      "dumbbell"
+    ],
+    "unilateral": true,
+    "tags": [
+      "core",
+      "upper_strength",
+      "anti_rotation",
+      "squash_specific"
+    ],
+    "difficulty": "intermediate",
+    "sportsTransfer": [
+      "strength",
+      "squash"
+    ],
+    "squashTransfer": [
+      "anti_rotation",
+      "shoulder_resilience"
+    ],
+    "riskLevel": "medium",
+    "fatigueCost": "low",
+    "appropriateForPhases": [
+      "base",
+      "build",
+      "peak",
+      "taper",
+      "race"
+    ],
+    "stableName": "Remo renegado bird dog",
+    "stableDescription": "Remo en posición de plancha con mancuernas elevando la mancuerna y la pierna contralateral. Anti-rotación y control de hombro. La cadera no rota al tirar."
+  },
+  {
+    "id": "bodyweight_squat",
+    "category": "lower",
+    "movement": "squat",
+    "intensityType": "recovery",
+    "equipment": [
+      "bodyweight"
+    ],
+    "tags": [
+      "beginner_friendly",
+      "home_gym",
+      "general_fitness",
+      "recovery"
+    ],
+    "difficulty": "beginner",
+    "sportsTransfer": [
+      "general_fitness"
+    ],
+    "appropriateForPhases": [
+      "base",
+      "taper",
+      "transition",
+      "race"
+    ],
+    "stableName": "Sentadilla con peso corporal",
+    "stableDescription": "Sentadilla sin carga externa. Buena opción para preparación de tejidos, recuperación o nivel inicial."
+  },
+  {
+    "id": "box_jump",
+    "category": "full_body",
+    "movement": "locomotion",
+    "intensityType": "power",
+    "equipment": [
+      "bodyweight",
+      "box"
+    ],
+    "tags": [
+      "power",
+      "athletic_transfer",
+      "gym",
+      "squash_specific",
+      "jump_power"
+    ],
+    "difficulty": "intermediate",
+    "sportsTransfer": [
+      "strength",
+      "running",
+      "squash"
+    ],
+    "squashTransfer": [
+      "vertical_power",
+      "landing_quality"
+    ],
+    "riskLevel": "medium",
+    "fatigueCost": "medium",
+    "appropriateForPhases": [
+      "build",
+      "peak"
+    ],
+    "stableName": "Salto al cajón",
+    "stableDescription": "Salto vertical sobre un cajón con intención explosiva. Aterriza suave en cuclillas; bajar caminando, no saltando."
+  },
+  {
+    "id": "broad_jump",
+    "category": "full_body",
+    "movement": "locomotion",
+    "intensityType": "power",
+    "equipment": [
+      "bodyweight"
+    ],
+    "tags": [
+      "power",
+      "jump_power",
+      "athletic_transfer",
+      "squash_specific"
+    ],
+    "difficulty": "intermediate",
+    "sportsTransfer": [
+      "strength",
+      "squash",
+      "running"
+    ],
+    "squashTransfer": [
+      "horizontal_power",
+      "landing_quality"
+    ],
+    "riskLevel": "medium",
+    "fatigueCost": "medium",
+    "appropriateForPhases": [
+      "build",
+      "peak"
+    ],
+    "stableName": "Salto horizontal",
+    "stableDescription": "Salto horizontal a máxima distancia con dos pies. Intención de aceleración y calidad de aterrizaje. Aterriza suave en cuclillas."
+  },
+  {
+    "id": "bulgarian_split_squat",
+    "category": "lower",
+    "movement": "squat",
+    "intensityType": "hypertrophy",
+    "equipment": [
+      "dumbbell",
+      "barbell",
+      "bodyweight"
+    ],
+    "unilateral": true,
+    "tags": [
+      "lower_strength",
+      "unilateral",
+      "athletic_transfer",
+      "gym",
+      "home_gym",
+      "squash_specific",
+      "lateral_strength"
+    ],
+    "difficulty": "intermediate",
+    "sportsTransfer": [
+      "strength",
+      "squash",
+      "running"
+    ],
+    "squashTransfer": [
+      "single_leg_strength",
+      "deceleration"
+    ],
+    "riskLevel": "medium",
+    "fatigueCost": "medium",
+    "loadReference": {
+      "lift": "squat",
+      "factor": 0.35,
+      "selectorEligible": false
+    },
+    "appropriateForPhases": [
+      "base",
+      "build"
+    ],
+    "blockRotationGroup": "C",
+    "stableName": "Sentadilla búlgara",
+    "stableDescription": "Sentadilla a una pierna con el pie de atrás elevado. Fuerza unilateral, equilibrio y control de tronco."
+  },
+  {
+    "id": "cable_chop",
+    "category": "core",
+    "movement": "rotation",
+    "intensityType": "stability",
+    "equipment": [
+      "cable",
+      "bands"
+    ],
+    "tags": [
+      "core",
+      "rotation",
+      "athletic_transfer",
+      "gym",
+      "home_gym"
+    ],
+    "difficulty": "beginner",
+    "sportsTransfer": [
+      "strength",
+      "squash",
+      "running"
+    ],
+    "appropriateForPhases": [
+      "base",
+      "build",
+      "peak",
+      "taper",
+      "race"
+    ],
+    "stableName": "Corte diagonal en polea",
+    "stableDescription": "Corte diagonal en polea de arriba hacia abajo. Transferencia rotacional controlada entre caderas y hombros."
+  },
+  {
+    "id": "chest_supported_row",
+    "category": "upper",
+    "movement": "pull",
+    "intensityType": "hypertrophy",
+    "equipment": [
+      "dumbbell",
+      "machine"
+    ],
+    "tags": [
+      "upper_strength",
+      "hypertrophy",
+      "gym",
+      "beginner_friendly"
+    ],
+    "difficulty": "beginner",
+    "sportsTransfer": [
+      "strength",
+      "general_fitness"
+    ],
+    "appropriateForPhases": [
+      "base",
+      "build"
+    ],
+    "stableName": "Remo con pecho apoyado",
+    "stableDescription": "Remo con pecho apoyado en banco inclinado. Reduce la fatiga lumbar y aísla la espalda alta."
+  },
+  {
+    "id": "clean",
+    "category": "full_body",
+    "movement": "hinge",
+    "intensityType": "power",
+    "equipment": [
+      "barbell"
+    ],
+    "tags": [
+      "power",
+      "olympic_power",
+      "advanced",
+      "high_skill",
+      "athletic_transfer",
+      "squash_specific"
+    ],
+    "difficulty": "advanced",
+    "sportsTransfer": [
+      "strength",
+      "squash"
+    ],
+    "squashTransfer": [
+      "rate_of_force_development",
+      "explosive_start"
+    ],
+    "riskLevel": "high",
+    "fatigueCost": "high",
+    "appropriateForPhases": [
+      "build",
+      "peak"
+    ],
+    "stableName": "Cargada",
+    "stableDescription": null
+  },
+  {
+    "id": "clean_high_pull",
+    "category": "full_body",
+    "movement": "hinge",
+    "intensityType": "power",
+    "equipment": [
+      "barbell"
+    ],
+    "tags": [
+      "power",
+      "olympic_power",
+      "advanced",
+      "high_skill",
+      "athletic_transfer",
+      "squash_specific"
+    ],
+    "difficulty": "advanced",
+    "sportsTransfer": [
+      "strength",
+      "squash"
+    ],
+    "squashTransfer": [
+      "rate_of_force_development",
+      "posterior_chain_power"
+    ],
+    "riskLevel": "high",
+    "fatigueCost": "medium",
+    "appropriateForPhases": [
+      "build",
+      "peak"
+    ],
+    "stableName": "Tirón alto de cargada",
+    "stableDescription": null
+  },
+  {
+    "id": "close_grip_bench_press",
+    "category": "upper",
+    "movement": "push",
+    "intensityType": "strength",
+    "equipment": [
+      "barbell"
+    ],
+    "tags": [
+      "upper_strength",
+      "gym",
+      "compound",
+      "triceps"
+    ],
+    "difficulty": "intermediate",
+    "sportsTransfer": [
+      "strength",
+      "squash"
+    ],
+    "squashTransfer": [
+      "upper_body_resilience"
+    ],
+    "riskLevel": "medium",
+    "fatigueCost": "medium",
+    "loadReference": {
+      "lift": "benchPress",
+      "factor": 0.9,
+      "selectorEligible": true
+    },
+    "appropriateForPhases": [
+      "base",
+      "build",
+      "peak"
+    ],
+    "blockRotationGroup": "C",
+    "stableName": "Press banca agarre cerrado",
+    "stableDescription": null
+  },
+  {
+    "id": "copenhagen_side_plank",
+    "category": "core",
+    "movement": "carry",
+    "intensityType": "stability",
+    "equipment": [
+      "bodyweight",
+      "box"
+    ],
+    "unilateral": true,
+    "tags": [
+      "core",
+      "stability",
+      "lateral_stability",
+      "adductor_strength",
+      "squash_specific"
+    ],
+    "difficulty": "intermediate",
+    "sportsTransfer": [
+      "strength",
+      "squash",
+      "running"
+    ],
+    "squashTransfer": [
+      "adductor_strength",
+      "lateral_stability"
+    ],
+    "riskLevel": "medium",
+    "fatigueCost": "low",
+    "prescriptionUnit": "seconds",
+    "appropriateForPhases": [
+      "base",
+      "build",
+      "peak",
+      "taper",
+      "race"
+    ],
+    "stableName": null,
+    "stableDescription": null
+  },
+  {
+    "id": "dead_bug",
+    "category": "core",
+    "movement": "rotation",
+    "intensityType": "stability",
+    "equipment": [
+      "bodyweight"
+    ],
+    "tags": [
+      "core",
+      "stability",
+      "beginner_friendly",
+      "home_gym",
+      "anti_extension"
+    ],
+    "difficulty": "beginner",
+    "sportsTransfer": [
+      "strength",
+      "general_fitness",
+      "squash"
+    ],
+    "squashTransfer": [
+      "pelvic_control",
+      "trunk_stiffness"
+    ],
+    "riskLevel": "low",
+    "fatigueCost": "low",
+    "appropriateForPhases": [
+      "base",
+      "build",
+      "peak",
+      "taper",
+      "race"
+    ],
+    "stableName": null,
+    "stableDescription": null
+  },
+  {
+    "id": "deadlift",
+    "category": "lower",
+    "movement": "hinge",
+    "intensityType": "strength",
+    "equipment": [
+      "barbell"
+    ],
+    "tags": [
+      "lower_strength",
+      "gym",
+      "compound",
+      "advanced"
+    ],
+    "difficulty": "advanced",
+    "sportsTransfer": [
+      "strength"
+    ],
+    "loadReference": {
+      "lift": "deadlift",
+      "factor": 1,
+      "selectorEligible": true
+    },
+    "appropriateForPhases": [
+      "base",
+      "build",
+      "peak"
+    ],
+    "blockRotationGroup": "A",
+    "stableName": "Peso muerto",
+    "stableDescription": "Bisagra bilateral pesada con barra desde el piso. Fuerza máxima y fuerza global."
+  },
+  {
+    "id": "depth_jump",
+    "category": "full_body",
+    "movement": "locomotion",
+    "intensityType": "power",
+    "equipment": [
+      "box",
+      "bodyweight"
+    ],
+    "tags": [
+      "power",
+      "reactive_stiffness",
+      "advanced",
+      "high_impact",
+      "squash_specific"
+    ],
+    "difficulty": "advanced",
+    "sportsTransfer": [
+      "strength",
+      "squash"
+    ],
+    "squashTransfer": [
+      "reactive_stiffness",
+      "explosive_reacceleration"
+    ],
+    "riskLevel": "high",
+    "fatigueCost": "high",
+    "appropriateForPhases": [
+      "build",
+      "peak"
+    ],
+    "stableName": "Salto profundo",
+    "stableDescription": null
+  },
+  {
+    "id": "drop_jump",
+    "category": "full_body",
+    "movement": "locomotion",
+    "intensityType": "power",
+    "equipment": [
+      "box",
+      "bodyweight"
+    ],
+    "tags": [
+      "power",
+      "reactive_stiffness",
+      "advanced",
+      "high_impact",
+      "squash_specific"
+    ],
+    "difficulty": "advanced",
+    "sportsTransfer": [
+      "strength",
+      "squash"
+    ],
+    "squashTransfer": [
+      "reactive_stiffness",
+      "split_step_quality"
+    ],
+    "riskLevel": "high",
+    "fatigueCost": "medium",
+    "appropriateForPhases": [
+      "build",
+      "peak"
+    ],
+    "stableName": "Salto reactivo desde cajón",
+    "stableDescription": "Caer desde un cajón bajo y rebotar inmediatamente hacia arriba. Énfasis en rigidez reactiva y contacto con el piso menor a 0.25 s. Cajón bajo (20-30 cm)."
+  },
+  {
+    "id": "farmer_carry",
+    "category": "core",
+    "movement": "carry",
+    "intensityType": "stability",
+    "equipment": [
+      "dumbbell",
+      "kettlebell"
+    ],
+    "tags": [
+      "core",
+      "carry",
+      "athletic_transfer",
+      "gym",
+      "home_gym"
+    ],
+    "difficulty": "beginner",
+    "sportsTransfer": [
+      "strength",
+      "running",
+      "squash",
+      "cycling"
+    ],
+    "appropriateForPhases": [
+      "base",
+      "build",
+      "peak",
+      "taper",
+      "race"
+    ],
+    "stableName": "Caminata del granjero",
+    "stableDescription": null
+  },
+  {
+    "id": "front_squat",
+    "category": "lower",
+    "movement": "squat",
+    "intensityType": "strength",
+    "equipment": [
+      "barbell"
+    ],
+    "tags": [
+      "lower_strength",
+      "gym",
+      "compound",
+      "athletic_transfer",
+      "squash_specific"
+    ],
+    "difficulty": "intermediate",
+    "sportsTransfer": [
+      "strength",
+      "squash",
+      "running"
+    ],
+    "squashTransfer": [
+      "force_production",
+      "trunk_stiffness"
+    ],
+    "riskLevel": "medium",
+    "fatigueCost": "high",
+    "loadReference": {
+      "lift": "squat",
+      "factor": 0.85,
+      "selectorEligible": true
+    },
+    "appropriateForPhases": [
+      "base",
+      "build",
+      "peak"
+    ],
+    "blockRotationGroup": "B",
+    "stableName": "Sentadilla frontal",
+    "stableDescription": "Sentadilla con barra apoyada en los hombros delante del cuello. Más demanda de tronco y énfasis en cuádriceps."
+  },
+  {
+    "id": "glute_bridge",
+    "category": "lower",
+    "movement": "hinge",
+    "intensityType": "recovery",
+    "equipment": [
+      "bodyweight",
+      "bands",
+      "dumbbell"
+    ],
+    "tags": [
+      "beginner_friendly",
+      "home_gym",
+      "recovery",
+      "athletic_transfer"
+    ],
+    "difficulty": "beginner",
+    "sportsTransfer": [
+      "strength",
+      "running",
+      "squash"
+    ],
+    "appropriateForPhases": [
+      "base",
+      "taper",
+      "transition",
+      "race"
+    ],
+    "stableName": "Puente de glúteo",
+    "stableDescription": "Puente de glúteo en suelo con peso corporal, banda o mancuerna. Activación y recuperación. Termina con cadera bien extendida sin sobreextender la lumbar."
+  },
+  {
+    "id": "goblet_squat",
+    "category": "lower",
+    "movement": "squat",
+    "intensityType": "hypertrophy",
+    "equipment": [
+      "dumbbell",
+      "kettlebell"
+    ],
+    "tags": [
+      "lower_strength",
+      "beginner_friendly",
+      "home_gym",
+      "general_fitness"
+    ],
+    "difficulty": "beginner",
+    "sportsTransfer": [
+      "strength",
+      "general_fitness"
+    ],
+    "loadReference": {
+      "lift": "squat",
+      "factor": 0.3,
+      "selectorEligible": true
+    },
+    "appropriateForPhases": [
+      "base",
+      "build"
+    ],
+    "stableName": "Sentadilla goblet",
+    "stableDescription": null
+  },
+  {
+    "id": "half_kneeling_diagonal_plate_chop",
+    "category": "core",
+    "movement": "rotation",
+    "intensityType": "stability",
+    "equipment": [
+      "plate"
+    ],
+    "tags": [
+      "core",
+      "rotation",
+      "anti_rotation",
+      "athletic_transfer",
+      "squash_specific"
+    ],
+    "difficulty": "beginner",
+    "sportsTransfer": [
+      "strength",
+      "squash"
+    ],
+    "squashTransfer": [
+      "anti_rotation",
+      "controlled_rotation"
+    ],
+    "riskLevel": "low",
+    "fatigueCost": "low",
+    "appropriateForPhases": [
+      "base",
+      "build",
+      "peak",
+      "taper",
+      "race"
+    ],
+    "stableName": null,
+    "stableDescription": null
+  },
+  {
+    "id": "half_kneeling_lateral_jump",
+    "category": "full_body",
+    "movement": "locomotion",
+    "intensityType": "power",
+    "equipment": [
+      "bodyweight"
+    ],
+    "unilateral": true,
+    "tags": [
+      "power",
+      "lateral_power",
+      "athletic_transfer",
+      "squash_specific"
+    ],
+    "difficulty": "intermediate",
+    "sportsTransfer": [
+      "strength",
+      "squash"
+    ],
+    "squashTransfer": [
+      "lateral_power",
+      "court_reacceleration"
+    ],
+    "riskLevel": "medium",
+    "fatigueCost": "medium",
+    "appropriateForPhases": [
+      "build",
+      "peak"
+    ],
+    "stableName": null,
+    "stableDescription": null
+  },
+  {
+    "id": "half_kneeling_row",
+    "category": "upper",
+    "movement": "pull",
+    "intensityType": "hypertrophy",
+    "equipment": [
+      "cable",
+      "bands",
+      "dumbbell"
+    ],
+    "tags": [
+      "upper_strength",
+      "anti_rotation",
+      "athletic_transfer",
+      "squash_specific"
+    ],
+    "difficulty": "beginner",
+    "sportsTransfer": [
+      "strength",
+      "squash"
+    ],
+    "squashTransfer": [
+      "anti_rotation",
+      "upper_back_strength"
+    ],
+    "riskLevel": "low",
+    "fatigueCost": "low",
+    "loadReference": {
+      "lift": "benchPress",
+      "factor": 0.35,
+      "selectorEligible": false
+    },
+    "appropriateForPhases": [
+      "base",
+      "build"
+    ],
+    "stableName": null,
+    "stableDescription": null
+  },
+  {
+    "id": "hip_thrust",
+    "category": "lower",
+    "movement": "hinge",
+    "intensityType": "hypertrophy",
+    "equipment": [
+      "barbell",
+      "dumbbell",
+      "bodyweight"
+    ],
+    "tags": [
+      "lower_strength",
+      "glute_focus",
+      "gym",
+      "home_gym",
+      "athletic_transfer",
+      "squash_specific"
+    ],
+    "difficulty": "beginner",
+    "sportsTransfer": [
+      "strength",
+      "squash",
+      "running",
+      "cycling"
+    ],
+    "squashTransfer": [
+      "hip_extension",
+      "acceleration"
+    ],
+    "riskLevel": "low",
+    "fatigueCost": "medium",
+    "loadReference": {
+      "lift": "squat",
+      "factor": 1.2,
+      "selectorEligible": false
+    },
+    "appropriateForPhases": [
+      "base",
+      "build"
+    ],
+    "blockRotationGroup": "C",
+    "stableName": "Empuje de cadera",
+    "stableDescription": null
+  },
+  {
+    "id": "incline_bench_press",
+    "category": "upper",
+    "movement": "push",
+    "intensityType": "strength",
+    "equipment": [
+      "barbell"
+    ],
+    "tags": [
+      "upper_strength",
+      "gym",
+      "compound"
+    ],
+    "difficulty": "intermediate",
+    "sportsTransfer": [
+      "strength",
+      "squash"
+    ],
+    "squashTransfer": [
+      "upper_body_resilience"
+    ],
+    "riskLevel": "medium",
+    "fatigueCost": "medium",
+    "loadReference": {
+      "lift": "benchPress",
+      "factor": 0.85,
+      "selectorEligible": true
+    },
+    "appropriateForPhases": [
+      "base",
+      "build",
+      "peak"
+    ],
+    "blockRotationGroup": "B",
+    "stableName": "Press inclinado con barra",
+    "stableDescription": "Press inclinado con barra a 30-45 grados. Variante pesada de empuje con sesgo en pectoral superior y hombro anterior."
+  },
+  {
+    "id": "incline_dumbbell_press",
+    "category": "upper",
+    "movement": "push",
+    "intensityType": "hypertrophy",
+    "equipment": [
+      "dumbbell"
+    ],
+    "tags": [
+      "upper_strength",
+      "hypertrophy",
+      "gym",
+      "home_gym"
+    ],
+    "difficulty": "beginner",
+    "sportsTransfer": [
+      "strength",
+      "general_fitness"
+    ],
+    "loadReference": {
+      "lift": "benchPress",
+      "factor": 0.85,
+      "selectorEligible": true
+    },
+    "appropriateForPhases": [
+      "base",
+      "build"
+    ],
+    "blockRotationGroup": "B",
+    "stableName": "Press inclinado con mancuernas",
+    "stableDescription": "Press inclinado a 30-45° con mancuernas. Más amigable con el hombro y sesgo de hipertrofia moderado."
+  },
+  {
+    "id": "inverted_row",
+    "category": "upper",
+    "movement": "pull",
+    "intensityType": "hypertrophy",
+    "equipment": [
+      "bodyweight"
+    ],
+    "tags": [
+      "upper_strength",
+      "beginner_friendly",
+      "home_gym",
+      "general_fitness"
+    ],
+    "difficulty": "beginner",
+    "sportsTransfer": [
+      "strength",
+      "general_fitness"
+    ],
+    "appropriateForPhases": [
+      "base",
+      "build"
+    ],
+    "stableName": "Remo invertido",
+    "stableDescription": "Tirón horizontal con peso corporal bajo una barra. Dificultad escalable según ángulo del cuerpo."
+  },
+  {
+    "id": "jump_squat",
+    "category": "full_body",
+    "movement": "squat",
+    "intensityType": "power",
+    "equipment": [
+      "bodyweight",
+      "dumbbell"
+    ],
+    "tags": [
+      "power",
+      "athletic_transfer",
+      "gym",
+      "home_gym"
+    ],
+    "difficulty": "intermediate",
+    "sportsTransfer": [
+      "strength",
+      "running",
+      "squash"
+    ],
+    "loadReference": {
+      "lift": "squat",
+      "factor": 1,
+      "selectorEligible": false
+    },
+    "appropriateForPhases": [
+      "build",
+      "peak"
+    ],
+    "stableName": "Sentadilla con salto",
+    "stableDescription": "Sentadilla explosiva terminando en salto. Énfasis en velocidad de producción de fuerza."
+  },
+  {
+    "id": "kettlebell_swing",
+    "category": "full_body",
+    "movement": "hinge",
+    "intensityType": "power",
+    "equipment": [
+      "kettlebell"
+    ],
+    "tags": [
+      "power",
+      "athletic_transfer",
+      "home_gym",
+      "gym"
+    ],
+    "difficulty": "intermediate",
+    "sportsTransfer": [
+      "strength",
+      "running",
+      "squash"
+    ],
+    "appropriateForPhases": [
+      "build",
+      "peak"
+    ],
+    "stableName": "Swing con kettlebell",
+    "stableDescription": null
+  },
+  {
+    "id": "ladder_bipodal_front_1",
+    "category": "full_body",
+    "movement": "locomotion",
+    "intensityType": "stability",
+    "equipment": [
+      "ladder",
+      "bodyweight"
+    ],
+    "tags": [
+      "court_footwork",
+      "coordination",
+      "squash_specific",
+      "beginner_friendly"
+    ],
+    "difficulty": "beginner",
+    "sportsTransfer": [
+      "strength",
+      "squash"
+    ],
+    "squashTransfer": [
+      "footwork_rhythm",
+      "split_step_quality"
+    ],
+    "riskLevel": "low",
+    "fatigueCost": "low",
+    "appropriateForPhases": [
+      "base",
+      "build",
+      "peak",
+      "taper",
+      "race"
+    ],
+    "stableName": "Escalera frontal – dos pies por cuadro",
+    "stableDescription": "Avanza por la escalera entrando ambos pies dentro de cada cuadro antes de pasar al siguiente. Mantén ritmo constante y postura erguida."
+  },
+  {
+    "id": "ladder_bipodal_front_2",
+    "category": "full_body",
+    "movement": "locomotion",
+    "intensityType": "stability",
+    "equipment": [
+      "ladder",
+      "bodyweight"
+    ],
+    "tags": [
+      "court_footwork",
+      "coordination",
+      "squash_specific",
+      "beginner_friendly"
+    ],
+    "difficulty": "beginner",
+    "sportsTransfer": [
+      "strength",
+      "squash"
+    ],
+    "squashTransfer": [
+      "footwork_rhythm",
+      "split_step_quality"
+    ],
+    "riskLevel": "low",
+    "fatigueCost": "low",
+    "appropriateForPhases": [
+      "base",
+      "build",
+      "peak",
+      "taper",
+      "race"
+    ],
+    "stableName": null,
+    "stableDescription": null
+  },
+  {
+    "id": "ladder_bipodal_front_3",
+    "category": "full_body",
+    "movement": "locomotion",
+    "intensityType": "stability",
+    "equipment": [
+      "ladder",
+      "bodyweight"
+    ],
+    "tags": [
+      "court_footwork",
+      "coordination",
+      "squash_specific",
+      "beginner_friendly"
+    ],
+    "difficulty": "beginner",
+    "sportsTransfer": [
+      "strength",
+      "squash"
+    ],
+    "squashTransfer": [
+      "footwork_rhythm",
+      "split_step_quality"
+    ],
+    "riskLevel": "low",
+    "fatigueCost": "low",
+    "appropriateForPhases": [
+      "base",
+      "build",
+      "peak",
+      "taper",
+      "race"
+    ],
+    "stableName": "Escalera frontal – salto bipodal por cuadro",
+    "stableDescription": "Salta con los dos pies juntos cuadro por cuadro avanzando hacia adelante. Aterriza suave y rebota al siguiente cuadro. Foco en elasticidad de tobillo, no en altura."
+  },
+  {
+    "id": "ladder_bipodal_lateral_1",
+    "category": "full_body",
+    "movement": "locomotion",
+    "intensityType": "stability",
+    "equipment": [
+      "ladder",
+      "bodyweight"
+    ],
+    "tags": [
+      "court_footwork",
+      "coordination",
+      "lateral_power",
+      "squash_specific",
+      "beginner_friendly"
+    ],
+    "difficulty": "beginner",
+    "sportsTransfer": [
+      "strength",
+      "squash"
+    ],
+    "squashTransfer": [
+      "footwork_rhythm",
+      "lateral_movement"
+    ],
+    "riskLevel": "low",
+    "fatigueCost": "low",
+    "appropriateForPhases": [
+      "base",
+      "build",
+      "peak",
+      "taper",
+      "race"
+    ],
+    "stableName": "Escalera lateral – dos pies por cuadro",
+    "stableDescription": "Avanza de costado entrando los dos pies en cada cuadro antes de pasar al siguiente. Hombros al frente, cadera baja. Repite en ambas direcciones para no generar asimetría."
+  },
+  {
+    "id": "ladder_bipodal_lateral_3",
+    "category": "full_body",
+    "movement": "locomotion",
+    "intensityType": "stability",
+    "equipment": [
+      "ladder",
+      "bodyweight"
+    ],
+    "tags": [
+      "court_footwork",
+      "coordination",
+      "lateral_power",
+      "squash_specific",
+      "beginner_friendly"
+    ],
+    "difficulty": "beginner",
+    "sportsTransfer": [
+      "strength",
+      "squash"
+    ],
+    "squashTransfer": [
+      "footwork_rhythm",
+      "lateral_movement"
+    ],
+    "riskLevel": "low",
+    "fatigueCost": "low",
+    "appropriateForPhases": [
+      "base",
+      "build",
+      "peak",
+      "taper",
+      "race"
+    ],
+    "stableName": null,
+    "stableDescription": null
+  },
+  {
+    "id": "ladder_coordinativo_front_2",
+    "category": "full_body",
+    "movement": "locomotion",
+    "intensityType": "stability",
+    "equipment": [
+      "ladder",
+      "bodyweight"
+    ],
+    "tags": [
+      "court_footwork",
+      "coordination",
+      "squash_specific",
+      "beginner_friendly"
+    ],
+    "difficulty": "beginner",
+    "sportsTransfer": [
+      "strength",
+      "squash"
+    ],
+    "squashTransfer": [
+      "footwork_rhythm",
+      "court_reacceleration"
+    ],
+    "riskLevel": "low",
+    "fatigueCost": "low",
+    "appropriateForPhases": [
+      "base",
+      "build",
+      "peak",
+      "taper",
+      "race"
+    ],
+    "stableName": "Escalera frontal – un pie por cuadro",
+    "stableDescription": "Avanza por la escalera apoyando un solo pie por cuadro, alternando pie derecho e izquierdo. Foco en rapidez y precisión de apoyo."
+  },
+  {
+    "id": "ladder_coordinativo_front_4",
+    "category": "full_body",
+    "movement": "locomotion",
+    "intensityType": "stability",
+    "equipment": [
+      "ladder",
+      "bodyweight"
+    ],
+    "tags": [
+      "court_footwork",
+      "coordination",
+      "squash_specific",
+      "beginner_friendly"
+    ],
+    "difficulty": "beginner",
+    "sportsTransfer": [
+      "strength",
+      "squash"
+    ],
+    "squashTransfer": [
+      "footwork_rhythm",
+      "court_reacceleration"
+    ],
+    "riskLevel": "low",
+    "fatigueCost": "low",
+    "appropriateForPhases": [
+      "base",
+      "build",
+      "peak",
+      "taper",
+      "race"
+    ],
+    "stableName": "Escalera frontal – Icky shuffle",
+    "stableDescription": null
+  },
+  {
+    "id": "landmine_press",
+    "category": "upper",
+    "movement": "push",
+    "intensityType": "strength",
+    "equipment": [
+      "barbell"
+    ],
+    "tags": [
+      "upper_strength",
+      "gym",
+      "athletic_transfer",
+      "shoulder_friendly",
+      "squash_specific"
+    ],
+    "difficulty": "beginner",
+    "sportsTransfer": [
+      "strength",
+      "squash"
+    ],
+    "squashTransfer": [
+      "trunk_stiffness",
+      "shoulder_resilience"
+    ],
+    "riskLevel": "low",
+    "fatigueCost": "medium",
+    "loadReference": {
+      "lift": "overheadPress",
+      "selectorEligible": true
+    },
+    "appropriateForPhases": [
+      "base",
+      "build",
+      "peak"
+    ],
+    "blockRotationGroup": "C",
+    "stableName": null,
+    "stableDescription": null
+  },
+  {
+    "id": "lat_pulldown",
+    "category": "upper",
+    "movement": "pull",
+    "intensityType": "hypertrophy",
+    "equipment": [
+      "machine",
+      "cable"
+    ],
+    "tags": [
+      "upper_strength",
+      "hypertrophy",
+      "gym",
+      "beginner_friendly"
+    ],
+    "difficulty": "beginner",
+    "sportsTransfer": [
+      "strength",
+      "general_fitness"
+    ],
+    "appropriateForPhases": [
+      "base",
+      "build"
+    ],
+    "stableName": "Jalón al pecho",
+    "stableDescription": "Tirón vertical en polea hacia el pecho. Opción controlada para volumen y trabajo amigable con el hombro."
+  },
+  {
+    "id": "lateral_band_walk",
+    "category": "lower",
+    "movement": "locomotion",
+    "intensityType": "stability",
+    "equipment": [
+      "bands"
+    ],
+    "tags": [
+      "lower_strength",
+      "stability",
+      "lateral_strength",
+      "beginner_friendly",
+      "squash_specific"
+    ],
+    "difficulty": "beginner",
+    "sportsTransfer": [
+      "strength",
+      "squash",
+      "running"
+    ],
+    "squashTransfer": [
+      "lateral_stability",
+      "hip_control"
+    ],
+    "riskLevel": "low",
+    "fatigueCost": "low",
+    "appropriateForPhases": [
+      "base",
+      "build",
+      "peak",
+      "taper",
+      "race"
+    ],
+    "stableName": "Caminata lateral con banda",
+    "stableDescription": null
+  },
+  {
+    "id": "lateral_skater_jumps",
+    "category": "full_body",
+    "movement": "locomotion",
+    "intensityType": "power",
+    "equipment": [
+      "bodyweight"
+    ],
+    "unilateral": true,
+    "tags": [
+      "power",
+      "lateral_power",
+      "athletic_transfer",
+      "squash_specific"
+    ],
+    "difficulty": "intermediate",
+    "sportsTransfer": [
+      "strength",
+      "squash",
+      "running"
+    ],
+    "squashTransfer": [
+      "lateral_power",
+      "deceleration"
+    ],
+    "riskLevel": "medium",
+    "fatigueCost": "medium",
+    "appropriateForPhases": [
+      "build",
+      "peak"
+    ],
+    "stableName": "Saltos laterales de patinador",
+    "stableDescription": "Saltos laterales alternando de pie en pie. Potencia lateral, desaceleración y reaceleración. Aterriza absorbiendo y empuja para el siguiente salto."
+  },
+  {
+    "id": "med_ball_rotational_throw",
+    "category": "core",
+    "movement": "rotation",
+    "intensityType": "power",
+    "equipment": [
+      "medball"
+    ],
+    "tags": [
+      "core",
+      "power",
+      "athletic_transfer",
+      "gym"
+    ],
+    "difficulty": "intermediate",
+    "sportsTransfer": [
+      "strength",
+      "squash"
+    ],
+    "appropriateForPhases": [
+      "build",
+      "peak"
+    ],
+    "stableName": "Lanzamiento rotacional con balón medicinal contra pared",
+    "stableDescription": "Lanzamiento rotacional explosivo con balón medicinal contra una pared. Potencia rotacional con fuerte transferencia a deportes de raqueta."
+  },
+  {
+    "id": "med_ball_slam",
+    "category": "full_body",
+    "movement": "rotation",
+    "intensityType": "power",
+    "equipment": [
+      "medball"
+    ],
+    "tags": [
+      "power",
+      "athletic_transfer",
+      "gym"
+    ],
+    "difficulty": "beginner",
+    "sportsTransfer": [
+      "strength",
+      "general_fitness"
+    ],
+    "appropriateForPhases": [
+      "build",
+      "peak"
+    ],
+    "stableName": "Golpe al suelo con balón medicinal",
+    "stableDescription": "Lanzar el balón medicinal contra el suelo con fuerza desde arriba. Patrón explosivo de cuerpo entero con bajo costo excéntrico."
+  },
+  {
+    "id": "mixed_grip_pull_up",
+    "category": "upper",
+    "movement": "pull",
+    "intensityType": "strength",
+    "equipment": [
+      "bodyweight"
+    ],
+    "tags": [
+      "upper_strength",
+      "compound",
+      "gym",
+      "squash_specific"
+    ],
+    "difficulty": "intermediate",
+    "sportsTransfer": [
+      "strength",
+      "squash"
+    ],
+    "squashTransfer": [
+      "grip_strength",
+      "shoulder_resilience"
+    ],
+    "riskLevel": "medium",
+    "fatigueCost": "medium",
+    "appropriateForPhases": [
+      "base",
+      "build",
+      "peak"
+    ],
+    "stableName": "Dominada con agarre mixto",
+    "stableDescription": "Dominada con una mano supinada y otra prona. Reta agarre y control de hombro de forma asimétrica. Alterna el agarre entre series."
+  },
+  {
+    "id": "overhead_press",
+    "category": "upper",
+    "movement": "push",
+    "intensityType": "strength",
+    "equipment": [
+      "barbell",
+      "dumbbell"
+    ],
+    "tags": [
+      "upper_strength",
+      "gym",
+      "compound",
+      "athletic_transfer",
+      "squash_specific"
+    ],
+    "difficulty": "intermediate",
+    "sportsTransfer": [
+      "strength",
+      "squash"
+    ],
+    "squashTransfer": [
+      "trunk_stiffness",
+      "shoulder_resilience"
+    ],
+    "riskLevel": "medium",
+    "fatigueCost": "medium",
+    "loadReference": {
+      "lift": "overheadPress",
+      "factor": 1,
+      "selectorEligible": true
+    },
+    "appropriateForPhases": [
+      "base",
+      "build",
+      "peak"
+    ],
+    "blockRotationGroup": "A",
+    "stableName": null,
+    "stableDescription": null
+  },
+  {
+    "id": "pallof_press",
+    "category": "core",
+    "movement": "rotation",
+    "intensityType": "stability",
+    "equipment": [
+      "cable",
+      "bands"
+    ],
+    "tags": [
+      "core",
+      "stability",
+      "athletic_transfer",
+      "gym",
+      "home_gym",
+      "squash_specific",
+      "anti_rotation"
+    ],
+    "difficulty": "beginner",
+    "sportsTransfer": [
+      "strength",
+      "squash",
+      "running",
+      "cycling"
+    ],
+    "squashTransfer": [
+      "anti_rotation",
+      "trunk_stiffness"
+    ],
+    "riskLevel": "low",
+    "fatigueCost": "low",
+    "appropriateForPhases": [
+      "base",
+      "build",
+      "peak",
+      "taper",
+      "race"
+    ],
+    "stableName": "Press Pallof",
+    "stableDescription": null
+  },
+  {
+    "id": "plank",
+    "category": "core",
+    "movement": "carry",
+    "intensityType": "stability",
+    "equipment": [
+      "bodyweight"
+    ],
+    "tags": [
+      "core",
+      "stability",
+      "beginner_friendly",
+      "home_gym"
+    ],
+    "difficulty": "beginner",
+    "sportsTransfer": [
+      "strength",
+      "general_fitness"
+    ],
+    "prescriptionUnit": "seconds",
+    "appropriateForPhases": [
+      "base",
+      "build",
+      "peak",
+      "taper",
+      "race"
+    ],
+    "stableName": "Plancha frontal",
+    "stableDescription": "Plancha isométrica de tronco con dosificación simple. Glúteos y abdomen apretados."
+  },
+  {
+    "id": "pogo_jumps",
+    "category": "full_body",
+    "movement": "locomotion",
+    "intensityType": "power",
+    "equipment": [
+      "bodyweight"
+    ],
+    "tags": [
+      "power",
+      "reactive_stiffness",
+      "athletic_transfer",
+      "squash_specific"
+    ],
+    "difficulty": "beginner",
+    "sportsTransfer": [
+      "strength",
+      "squash",
+      "running"
+    ],
+    "squashTransfer": [
+      "reactive_stiffness",
+      "split_step_quality"
+    ],
+    "riskLevel": "medium",
+    "fatigueCost": "low",
+    "appropriateForPhases": [
+      "build",
+      "peak"
+    ],
+    "stableName": "Saltos pogo",
+    "stableDescription": null
+  },
+  {
+    "id": "pull_up",
+    "category": "upper",
+    "movement": "pull",
+    "intensityType": "strength",
+    "equipment": [
+      "bodyweight"
+    ],
+    "tags": [
+      "upper_strength",
+      "compound",
+      "gym",
+      "home_gym",
+      "squash_specific"
+    ],
+    "difficulty": "intermediate",
+    "sportsTransfer": [
+      "strength",
+      "squash"
+    ],
+    "squashTransfer": [
+      "shoulder_resilience",
+      "upper_back_strength"
+    ],
+    "riskLevel": "medium",
+    "fatigueCost": "medium",
+    "appropriateForPhases": [
+      "base",
+      "build",
+      "peak"
+    ],
+    "blockRotationGroup": "A",
+    "stableName": "Dominada",
+    "stableDescription": "Dominada con peso corporal, agarre supinado o prono. Patrón principal de tirón vertical."
+  },
+  {
+    "id": "push_press",
+    "category": "upper",
+    "movement": "push",
+    "intensityType": "power",
+    "equipment": [
+      "barbell",
+      "dumbbell"
+    ],
+    "tags": [
+      "upper_strength",
+      "power",
+      "gym",
+      "advanced",
+      "athletic_transfer"
+    ],
+    "difficulty": "advanced",
+    "sportsTransfer": [
+      "strength",
+      "squash"
+    ],
+    "loadReference": {
+      "lift": "overheadPress",
+      "factor": 1.15,
+      "selectorEligible": true
+    },
+    "appropriateForPhases": [
+      "build",
+      "peak"
+    ],
+    "blockRotationGroup": "B",
+    "stableName": null,
+    "stableDescription": null
+  },
+  {
+    "id": "push_up",
+    "category": "upper",
+    "movement": "push",
+    "intensityType": "hypertrophy",
+    "equipment": [
+      "bodyweight"
+    ],
+    "tags": [
+      "upper_strength",
+      "beginner_friendly",
+      "home_gym",
+      "general_fitness"
+    ],
+    "difficulty": "beginner",
+    "sportsTransfer": [
+      "strength",
+      "general_fitness"
+    ],
+    "appropriateForPhases": [
+      "base",
+      "build"
+    ],
+    "stableName": "Flexión de brazos",
+    "stableDescription": "Flexión con peso corporal. Empuje horizontal accesible para fuerza y volumen."
+  },
+  {
+    "id": "romanian_deadlift",
+    "category": "lower",
+    "movement": "hinge",
+    "intensityType": "strength",
+    "equipment": [
+      "barbell",
+      "dumbbell"
+    ],
+    "tags": [
+      "lower_strength",
+      "hinge",
+      "gym",
+      "athletic_transfer",
+      "squash_specific"
+    ],
+    "difficulty": "intermediate",
+    "sportsTransfer": [
+      "strength",
+      "running",
+      "cycling",
+      "squash"
+    ],
+    "squashTransfer": [
+      "posterior_chain",
+      "deceleration"
+    ],
+    "riskLevel": "medium",
+    "fatigueCost": "medium",
+    "loadReference": {
+      "lift": "deadlift",
+      "factor": 0.8,
+      "selectorEligible": true
+    },
+    "appropriateForPhases": [
+      "base",
+      "build",
+      "peak"
+    ],
+    "blockRotationGroup": "B",
+    "stableName": "Peso muerto rumano",
+    "stableDescription": "Bisagra de cadera con piernas semi-extendidas y barra cercana al cuerpo. Énfasis en isquios, glúteos y rigidez de tronco."
+  },
+  {
+    "id": "rotational_med_ball_throw",
+    "category": "full_body",
+    "movement": "rotation",
+    "intensityType": "power",
+    "equipment": [
+      "medball"
+    ],
+    "tags": [
+      "power",
+      "athletic_transfer",
+      "gym"
+    ],
+    "difficulty": "intermediate",
+    "sportsTransfer": [
+      "strength",
+      "squash"
+    ],
+    "appropriateForPhases": [
+      "build",
+      "peak"
+    ],
+    "stableName": "Lanzamiento rotacional con balón medicinal",
+    "stableDescription": "Lanzamiento rotacional explosivo con balón medicinal contra la pared. Intención de transferencia deportiva."
+  },
+  {
+    "id": "side_plank",
+    "category": "core",
+    "movement": "carry",
+    "intensityType": "stability",
+    "equipment": [
+      "bodyweight"
+    ],
+    "tags": [
+      "core",
+      "stability",
+      "unilateral",
+      "home_gym",
+      "squash_specific",
+      "lateral_stability"
+    ],
+    "difficulty": "beginner",
+    "sportsTransfer": [
+      "strength",
+      "running",
+      "squash"
+    ],
+    "squashTransfer": [
+      "lateral_stability",
+      "anti_lateral_flexion"
+    ],
+    "riskLevel": "low",
+    "fatigueCost": "low",
+    "prescriptionUnit": "seconds",
+    "appropriateForPhases": [
+      "base",
+      "build",
+      "peak",
+      "taper",
+      "race"
+    ],
+    "stableName": "Plancha lateral",
+    "stableDescription": "Plancha lateral en antebrazo para estabilidad lateral del tronco. Útil para corredores y deportes de raqueta."
+  },
+  {
+    "id": "side_plank_plate_press",
+    "category": "core",
+    "movement": "carry",
+    "intensityType": "stability",
+    "equipment": [
+      "plate",
+      "bodyweight"
+    ],
+    "unilateral": true,
+    "tags": [
+      "core",
+      "stability",
+      "lateral_stability",
+      "anti_rotation",
+      "squash_specific"
+    ],
+    "difficulty": "intermediate",
+    "sportsTransfer": [
+      "strength",
+      "squash"
+    ],
+    "squashTransfer": [
+      "lateral_stability",
+      "anti_rotation"
+    ],
+    "riskLevel": "medium",
+    "fatigueCost": "low",
+    "prescriptionUnit": "seconds",
+    "appropriateForPhases": [
+      "base",
+      "build",
+      "peak",
+      "taper",
+      "race"
+    ],
+    "stableName": "Plancha lateral con press de disco",
+    "stableDescription": "Plancha lateral sosteniendo y empujando un disco hacia arriba. Reta estabilidad lateral y control anti-rotacional. El disco va recto al techo; la cadera no cae."
+  },
+  {
+    "id": "single_leg_broad_jump",
+    "category": "full_body",
+    "movement": "locomotion",
+    "intensityType": "power",
+    "equipment": [
+      "bodyweight"
+    ],
+    "unilateral": true,
+    "tags": [
+      "power",
+      "jump_power",
+      "unilateral",
+      "advanced",
+      "squash_specific"
+    ],
+    "difficulty": "advanced",
+    "sportsTransfer": [
+      "strength",
+      "squash"
+    ],
+    "squashTransfer": [
+      "single_leg_power",
+      "landing_quality"
+    ],
+    "riskLevel": "high",
+    "fatigueCost": "medium",
+    "appropriateForPhases": [
+      "build",
+      "peak"
+    ],
+    "stableName": "Salto horizontal a una pierna",
+    "stableDescription": "Salto horizontal unilateral con aterrizaje controlado en una pierna. Potencia unilateral con alta demanda de estabilidad en la recepción."
+  },
+  {
+    "id": "single_leg_hip_thrust",
+    "category": "lower",
+    "movement": "hinge",
+    "intensityType": "hypertrophy",
+    "equipment": [
+      "bodyweight",
+      "dumbbell",
+      "barbell"
+    ],
+    "unilateral": true,
+    "tags": [
+      "lower_strength",
+      "glute_focus",
+      "unilateral",
+      "athletic_transfer",
+      "squash_specific"
+    ],
+    "difficulty": "intermediate",
+    "sportsTransfer": [
+      "strength",
+      "squash",
+      "running"
+    ],
+    "squashTransfer": [
+      "hip_extension",
+      "single_leg_strength"
+    ],
+    "riskLevel": "low",
+    "fatigueCost": "medium",
+    "loadReference": {
+      "lift": "squat",
+      "factor": 1.2,
+      "selectorEligible": false
+    },
+    "appropriateForPhases": [
+      "base",
+      "build"
+    ],
+    "stableName": "Empuje de cadera a una pierna",
+    "stableDescription": "Empuje de cadera unilateral con espalda en banco. Fuerza de glúteos con menor costo lumbar que el bilateral."
+  },
+  {
+    "id": "split_jerk",
+    "category": "full_body",
+    "movement": "push",
+    "intensityType": "power",
+    "equipment": [
+      "barbell"
+    ],
+    "tags": [
+      "power",
+      "olympic_power",
+      "advanced",
+      "high_skill",
+      "athletic_transfer",
+      "squash_specific"
+    ],
+    "difficulty": "advanced",
+    "sportsTransfer": [
+      "strength",
+      "squash"
+    ],
+    "squashTransfer": [
+      "split_stance_power",
+      "trunk_stiffness",
+      "shoulder_resilience"
+    ],
+    "riskLevel": "high",
+    "fatigueCost": "high",
+    "appropriateForPhases": [
+      "build",
+      "peak"
+    ],
+    "stableName": "Envión en tijera",
+    "stableDescription": "Envión olímpico explosivo con caída en tijera. Alta coordinación y estabilidad de hombro. Movimiento avanzado que requiere progresión técnica."
+  },
+  {
+    "id": "split_squat",
+    "category": "lower",
+    "movement": "squat",
+    "intensityType": "hypertrophy",
+    "equipment": [
+      "bodyweight",
+      "dumbbell"
+    ],
+    "unilateral": true,
+    "tags": [
+      "lower_strength",
+      "unilateral",
+      "beginner_friendly",
+      "home_gym"
+    ],
+    "difficulty": "beginner",
+    "sportsTransfer": [
+      "strength",
+      "running",
+      "squash"
+    ],
+    "loadReference": {
+      "lift": "squat",
+      "factor": 0.4,
+      "selectorEligible": false
+    },
+    "appropriateForPhases": [
+      "base",
+      "build"
+    ],
+    "stableName": null,
+    "stableDescription": null
+  },
+  {
+    "id": "stability_ball_front_plank",
+    "category": "core",
+    "movement": "carry",
+    "intensityType": "stability",
+    "equipment": [
+      "stability_ball",
+      "bodyweight"
+    ],
+    "tags": [
+      "core",
+      "stability",
+      "anti_extension",
+      "squash_specific"
+    ],
+    "difficulty": "beginner",
+    "sportsTransfer": [
+      "strength",
+      "squash"
+    ],
+    "squashTransfer": [
+      "trunk_stiffness",
+      "shoulder_resilience"
+    ],
+    "riskLevel": "low",
+    "fatigueCost": "low",
+    "prescriptionUnit": "seconds",
+    "appropriateForPhases": [
+      "base",
+      "build",
+      "peak",
+      "taper",
+      "race"
+    ],
+    "stableName": "Plancha frontal en fitball",
+    "stableDescription": null
+  },
+  {
+    "id": "step_up",
+    "category": "lower",
+    "movement": "locomotion",
+    "intensityType": "hypertrophy",
+    "equipment": [
+      "dumbbell",
+      "bodyweight"
+    ],
+    "unilateral": true,
+    "tags": [
+      "lower_strength",
+      "unilateral",
+      "beginner_friendly",
+      "home_gym",
+      "athletic_transfer",
+      "squash_specific"
+    ],
+    "difficulty": "beginner",
+    "sportsTransfer": [
+      "strength",
+      "running",
+      "squash"
+    ],
+    "squashTransfer": [
+      "single_leg_strength",
+      "court_lunge_capacity"
+    ],
+    "riskLevel": "low",
+    "fatigueCost": "medium",
+    "appropriateForPhases": [
+      "base",
+      "build"
+    ],
+    "stableName": "Subida al cajón",
+    "stableDescription": "Subida unilateral a un cajón con mancuernas o peso corporal. Transferencia clara a escaleras, carrera y movimiento en cancha."
+  },
+  {
+    "id": "sumo_deadlift",
+    "category": "lower",
+    "movement": "hinge",
+    "intensityType": "strength",
+    "equipment": [
+      "barbell"
+    ],
+    "tags": [
+      "lower_strength",
+      "gym",
+      "compound",
+      "posterior_chain"
+    ],
+    "difficulty": "intermediate",
+    "sportsTransfer": [
+      "strength",
+      "squash"
+    ],
+    "squashTransfer": [
+      "force_production",
+      "posterior_chain"
+    ],
+    "riskLevel": "medium",
+    "fatigueCost": "high",
+    "loadReference": {
+      "lift": "deadlift",
+      "factor": 0.95,
+      "selectorEligible": true
+    },
+    "appropriateForPhases": [
+      "base",
+      "build",
+      "peak"
+    ],
+    "blockRotationGroup": "B",
+    "stableName": "Peso muerto sumo",
+    "stableDescription": null
+  },
+  {
+    "id": "trap_bar_deadlift",
+    "category": "lower",
+    "movement": "hinge",
+    "intensityType": "strength",
+    "equipment": [
+      "trap_bar",
+      "barbell"
+    ],
+    "tags": [
+      "lower_strength",
+      "gym",
+      "athletic_transfer",
+      "general_fitness",
+      "squash_specific"
+    ],
+    "difficulty": "intermediate",
+    "sportsTransfer": [
+      "strength",
+      "squash",
+      "running",
+      "cycling"
+    ],
+    "squashTransfer": [
+      "force_production",
+      "posterior_chain"
+    ],
+    "riskLevel": "medium",
+    "fatigueCost": "high",
+    "loadReference": {
+      "lift": "deadlift",
+      "factor": 0.95,
+      "selectorEligible": true
+    },
+    "appropriateForPhases": [
+      "base",
+      "build",
+      "peak"
+    ],
+    "stableName": "Peso muerto con trap bar",
+    "stableDescription": "Bisagra con barra hexagonal, técnicamente más simple que el peso muerto convencional. Buena alternativa cuando el peso muerto clásico carga mucho la zona lumbar."
+  },
+  {
+    "id": "trx_inverted_row",
+    "category": "upper",
+    "movement": "pull",
+    "intensityType": "hypertrophy",
+    "equipment": [
+      "trx",
+      "bodyweight"
+    ],
+    "tags": [
+      "upper_strength",
+      "beginner_friendly",
+      "home_gym",
+      "squash_specific"
+    ],
+    "difficulty": "beginner",
+    "sportsTransfer": [
+      "strength",
+      "squash"
+    ],
+    "squashTransfer": [
+      "upper_back_strength",
+      "shoulder_resilience"
+    ],
+    "riskLevel": "low",
+    "fatigueCost": "low",
+    "appropriateForPhases": [
+      "base",
+      "build"
+    ],
+    "blockRotationGroup": "C",
+    "stableName": "Remo invertido en TRX",
+    "stableDescription": "Remo en suspensión con TRX. Dificultad escalable según ángulo del cuerpo. El cuerpo va recto como una tabla durante todo el movimiento."
+  },
+  {
+    "id": "walking_lunge",
+    "category": "lower",
+    "movement": "locomotion",
+    "intensityType": "hypertrophy",
+    "equipment": [
+      "dumbbell",
+      "barbell",
+      "bodyweight"
+    ],
+    "unilateral": true,
+    "tags": [
+      "lower_strength",
+      "unilateral",
+      "athletic_transfer",
+      "general_fitness",
+      "squash_specific"
+    ],
+    "difficulty": "intermediate",
+    "sportsTransfer": [
+      "strength",
+      "squash",
+      "running"
+    ],
+    "squashTransfer": [
+      "court_lunge_capacity",
+      "single_leg_strength"
+    ],
+    "riskLevel": "medium",
+    "fatigueCost": "medium",
+    "loadReference": {
+      "lift": "squat",
+      "factor": 0.4,
+      "selectorEligible": false
+    },
+    "appropriateForPhases": [
+      "base",
+      "build"
+    ],
+    "stableName": "Zancadas caminando",
+    "stableDescription": "Caminata dando zancadas alternas con mancuernas o barra. Trabajo unilateral con demanda de coordinación y estabilidad."
+  },
+  {
+    "id": "weighted_pull_up",
+    "category": "upper",
+    "movement": "pull",
+    "intensityType": "strength",
+    "equipment": [
+      "bodyweight",
+      "plate",
+      "dumbbell"
+    ],
+    "tags": [
+      "upper_strength",
+      "compound",
+      "gym",
+      "advanced",
+      "squash_specific"
+    ],
+    "difficulty": "advanced",
+    "sportsTransfer": [
+      "strength",
+      "squash"
+    ],
+    "squashTransfer": [
+      "grip_strength",
+      "upper_back_strength"
+    ],
+    "riskLevel": "medium",
+    "fatigueCost": "medium",
+    "appropriateForPhases": [
+      "base",
+      "build",
+      "peak"
+    ],
+    "stableName": "Dominada lastrada",
+    "stableDescription": "Dominada con lastre (cinturón o chaleco). Fuerza máxima de tirón vertical."
+  },
+  {
+    "id": "z_press",
+    "category": "upper",
+    "movement": "push",
+    "intensityType": "strength",
+    "equipment": [
+      "barbell",
+      "dumbbell"
+    ],
+    "tags": [
+      "upper_strength",
+      "trunk_stability",
+      "gym",
+      "athletic_transfer",
+      "squash_specific"
+    ],
+    "difficulty": "intermediate",
+    "sportsTransfer": [
+      "strength",
+      "squash"
+    ],
+    "squashTransfer": [
+      "trunk_stiffness",
+      "shoulder_resilience"
+    ],
+    "riskLevel": "medium",
+    "fatigueCost": "medium",
+    "loadReference": {
+      "lift": "overheadPress",
+      "factor": 0.65,
+      "selectorEligible": true
+    },
+    "appropriateForPhases": [
+      "base",
+      "build",
+      "peak"
+    ],
+    "blockRotationGroup": "C",
+    "stableName": "Press Z",
+    "stableDescription": null
+  }
+]
