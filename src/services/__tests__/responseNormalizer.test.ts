@@ -28,6 +28,40 @@ describe('responseNormalizer', () => {
     expect(response.actions).toHaveLength(1)
   })
 
+  it('descarta un libraryRef emitido por el modelo', () => {
+    const response = normalizeResponse({
+      text: [
+        'Te propongo esto.',
+        '<actions>',
+        JSON.stringify([{
+          type: 'add_session',
+          reason: 'fuerza',
+          sessionType: 'strength',
+          targetDate: '2026-05-08',
+          title: 'Fuerza',
+          durationMin: 50,
+          timeBlock: 'PM',
+          objective: 'Fuerza general',
+          exercises: [{
+            name: 'Press banca',
+            sets: 3,
+            reps: 5,
+            libraryRef: { source: 'strength_exercise', id: 'back_squat' },
+          }],
+        }]),
+        '</actions>',
+      ].join('\n'),
+      provider: 'mock',
+      requestClass: 'chat_action',
+    })
+
+    const exercise = response.actions?.[0]?.exercises?.find((item) => item.name === 'Press banca') as
+      | Record<string, unknown>
+      | undefined
+    expect(exercise?.name).toBe('Press banca')
+    expect(exercise?.libraryRef).toBeUndefined()
+  })
+
   it('marks max-token provider finishes as likely truncated', () => {
     const response = normalizeResponse({
       text: 'Respuesta larga cortada',

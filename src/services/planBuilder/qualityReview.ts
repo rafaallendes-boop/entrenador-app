@@ -1,6 +1,6 @@
 import type { AthleteProfile, CoachSessionProposal, SupportedSport } from '../../types'
 import type { PlanValidationIssue, TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
-import { findStrengthExerciseByName } from '../training/exerciseLibrary'
+import { resolveStrengthExercise } from '../training/exerciseLibrary'
 import type { ReferenceLift } from '../training/strengthLoadPrescription'
 import { getExpectedSessionsForPlanWeek, getPlanWeekDateRange } from './dateRange'
 import { QUALITY_V2_CALIBRATION } from './qualityCalibrationV2'
@@ -632,7 +632,7 @@ function getProfileStrengthCoverageIssues(
   for (const session of strengthWeeks.flatMap((week) => week.sessions.filter((item) => item.sessionType === 'strength'))) {
     for (const exercise of session.exercises ?? []) {
       if (exercise.targetPercent1RM == null) continue
-      const reference = findStrengthExerciseByName(exercise.name)?.loadReference
+      const reference = resolveStrengthExercise(exercise)?.definition?.loadReference
       if (!reference || !available.has(reference.lift)) continue
       if (reference.factor == null || reference.factor < COVERAGE_MIN_FACTOR || reference.factor > 1) continue
       covered.add(reference.lift)

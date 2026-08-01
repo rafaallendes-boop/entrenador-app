@@ -166,6 +166,33 @@ describe('reviewPlanQuality', () => {
       .toContain('peso muerto')
   })
 
+  it('cuenta la cobertura de 1RM cuando el ejercicio se identifica por libraryRef', () => {
+    const plan = { ...makePlan(), totalWeeks: 4 }
+    const week = makeWeek([
+      squash('2026-05-04', 'Squash técnico'),
+      squash('2026-05-05', 'Squash control'),
+      squash('2026-05-06', 'Squash juego'),
+      running('2026-05-07'),
+      strength('2026-05-08', [
+        {
+          name: 'Movimiento principal de tren inferior',
+          sets: 4,
+          reps: 5,
+          group: 'legs',
+          targetPercent1RM: 80,
+          libraryRef: { source: 'strength_exercise', id: 'back_squat' },
+        },
+        { name: 'Dead bug', sets: 3, reps: 8, group: 'core' },
+      ]),
+    ])
+
+    const review = reviewPlanQuality(plan, [week], { profile: completeStrengthProfile })
+    const coverage = review.issues.filter((issue) => issue.code === 'quality.strength.profile_1rm_underused')
+
+    expect(coverage).toHaveLength(1)
+    expect(coverage[0]!.message).not.toContain('sentadilla')
+  })
+
   it('accepts complete 1RM coverage when all profile references are prescribed', () => {
     const plan = { ...makePlan(), totalWeeks: 4 }
     const week = makeWeek([

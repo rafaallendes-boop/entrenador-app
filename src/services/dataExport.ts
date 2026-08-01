@@ -1480,6 +1480,7 @@ function optionalCoachExercises(value: unknown, path: string): CoachAction['exer
       targetPercent1RM: optionalPercent1RM(row.targetPercent1RM, `${path}[${index}].targetPercent1RM`),
       targetRpe: optionalRpe(row.targetRpe, `${path}[${index}].targetRpe`),
       warmupSets: optionalWarmupSets(row.warmupSets, `${path}[${index}].warmupSets`),
+      libraryRef: sanitizeExerciseLibraryRef(row.libraryRef),
     }
   })
 }

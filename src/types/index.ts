@@ -974,6 +974,7 @@ export interface CoachExerciseProposal {
   targetPercent1RM?: number
   targetRpe?: number
   warmupSets?: WarmupSet[]
+  libraryRef?: ExerciseLibraryRef // origen opcional en las librerías curadas
 }
 
 /** Session proposal used inside create_week actions */

@@ -1,10 +1,11 @@
 import type { CoachExerciseProposal, Exercise, ExerciseGroup, StrengthProfile } from '../../types'
+import type { ExerciseLibraryRef } from '../../types/exerciseLibraryRef'
 import {
   findStrengthExerciseByName,
   getExerciseGroupForDefinition,
-  resolveStrengthExerciseName,
+  resolveStrengthExercise,
   type ExerciseDefinition,
-  type StrengthExerciseNameResolution,
+  type StrengthExerciseResolution,
 } from './exerciseLibrary'
 import {
   buildWarmupRamp,
@@ -40,7 +41,7 @@ export function normalizeStrengthSessionExercises<T extends StrengthExerciseLike
 function removeProtocolExercisesWhenStrengthWorkExists<T extends StrengthExerciseLike>(exercises: T[]): T[] {
   const resolved = exercises.map((exercise) => ({
     exercise,
-    resolution: resolveStrengthExerciseName(exercise.name),
+    resolution: resolveStrengthExercise(exercise),
   }))
   const hasStrengthWork = resolved.some(({ exercise, resolution }) =>
     !isProtocolExercise(exercise, resolution) &&
@@ -68,8 +69,10 @@ export function enhanceStrengthSessionExercises<T extends StrengthExerciseLike>(
   ))
 }
 
-export function resolveStrengthExerciseBlock(exercise: Pick<StrengthExerciseLike, 'name' | 'group'>): ExerciseGroup {
-  return resolveBlockFromResolution(exercise, resolveStrengthExerciseName(exercise.name))
+export function resolveStrengthExerciseBlock(
+  exercise: Pick<StrengthExerciseLike, 'name' | 'group'> & { libraryRef?: ExerciseLibraryRef },
+): ExerciseGroup {
+  return resolveBlockFromResolution(exercise, resolveStrengthExercise(exercise))
 }
 
 /**
@@ -80,14 +83,14 @@ export function resolveStrengthExerciseBlock(exercise: Pick<StrengthExerciseLike
  */
 function resolveBlockFromResolution(
   exercise: Pick<StrengthExerciseLike, 'name' | 'group'>,
-  resolution: StrengthExerciseNameResolution | undefined,
+  resolution: StrengthExerciseResolution | undefined,
 ): ExerciseGroup {
   const definition = resolution?.definition ?? resolution?.candidates[0]
   return definition ? getStrengthBlockForDefinition(definition) : inferExerciseGroup(exercise)
 }
 
 function normalizeStrengthExerciseGroup<T extends StrengthExerciseLike>(exercise: T): T {
-  const resolution = resolveStrengthExerciseName(exercise.name)
+  const resolution = resolveStrengthExercise(exercise)
   const group = resolveBlockFromResolution(exercise, resolution)
   const reps = normalizePlankReps(exercise.name, exercise.reps, resolution)
   return { ...exercise, group, reps }
@@ -101,7 +104,7 @@ function expandGenericFootworkBlocks<T extends StrengthExerciseLike>(exercises: 
 }
 
 function isGenericFootworkBlock(exercise: StrengthExerciseLike): boolean {
-  if (findStrengthExerciseByName(exercise.name)) return false
+  if (resolveStrengthExercise(exercise)?.definition) return false
   const name = normalizeText(exercise.name)
   const reps = normalizeText(String(exercise.reps ?? ''))
   const isFootwork = /\b(escalera|ladder|footwork)\b/.test(name)
@@ -117,12 +120,14 @@ function buildFootworkSeriesFromGenericBlock<T extends StrengthExerciseLike>(exe
     targetPercent1RM: undefined,
     targetRpe: undefined,
     warmupSets: undefined,
+    libraryRef: undefined,
   }
 
   return [
     {
       ...base,
       name: 'Escalera lateral – dos pies por cuadro',
+      libraryRef: { source: 'strength_exercise' as const, id: 'ladder_bipodal_lateral_1' },
       sets: 2,
       reps: '2 pasadas por lado',
       notes: appendExerciseNote(exercise.notes, 'E1 coordinación lateral: calidad de apoyo, cadera baja y regreso caminando.'),
@@ -130,6 +135,7 @@ function buildFootworkSeriesFromGenericBlock<T extends StrengthExerciseLike>(exe
     {
       ...base,
       name: 'Escalera frontal – in-in-out-out',
+      libraryRef: { source: 'strength_exercise' as const, id: 'ladder_bipodal_front_2' },
       sets: 2,
       reps: '2 pasadas',
       notes: appendExerciseNote(exercise.notes, 'E2 ritmo de pies: precisión antes que velocidad.'),
@@ -137,6 +143,7 @@ function buildFootworkSeriesFromGenericBlock<T extends StrengthExerciseLike>(exe
     {
       ...base,
       name: 'Escalera frontal – Icky shuffle',
+      libraryRef: { source: 'strength_exercise' as const, id: 'ladder_coordinativo_front_4' },
       sets: 2,
       reps: '2 pasadas',
       notes: appendExerciseNote(exercise.notes, 'E3 coordinación diagonal: pies activos sin convertirlo en cardio duro.'),
@@ -151,7 +158,7 @@ function appendExerciseNote(original: string | undefined, addition: string): str
 function normalizePlankReps(
   name: string,
   reps: number | string,
-  resolution: StrengthExerciseNameResolution | undefined,
+  resolution: StrengthExerciseResolution | undefined,
 ): number | string {
   if (typeof reps !== 'number') return reps
   if (isAuthoritativeResolution(resolution)) {
@@ -177,14 +184,14 @@ function ensureCoreBlock<T extends StrengthExerciseLike>(exercises: T[]): T[] {
   const core = exercises.filter((exercise) => exercise.group === 'core')
   if (core.length === 0) {
     return [
-      makeCoreExercise<T>('Control de tronco dead bug', 'Zona media: controla pelvis y costillas antes de la fuerza principal.'),
+      makeCoreExercise<T>('Control de tronco dead bug', 'Zona media: controla pelvis y costillas antes de la fuerza principal.', 'dead_bug'),
       ...exercises,
     ]
   }
 
   if (core.length === 1) {
     return [
-      makeCoreExercise<T>('Control de tronco dead bug', 'Zona media: anti-extensión y control lumbo-pélvico.'),
+      makeCoreExercise<T>('Control de tronco dead bug', 'Zona media: anti-extensión y control lumbo-pélvico.', 'dead_bug'),
       ...exercises,
     ]
   }
@@ -196,7 +203,7 @@ function ensureCoreBlock<T extends StrengthExerciseLike>(exercises: T[]): T[] {
   return exercises.map((exercise) => {
     if (replaced || exercise.group !== 'core') return exercise
     replaced = true
-    return makeCoreExercise<T>('Control de tronco dead bug', 'Zona media: anti-extensión y control lumbo-pélvico.')
+    return makeCoreExercise<T>('Control de tronco dead bug', 'Zona media: anti-extensión y control lumbo-pélvico.', 'dead_bug')
   })
 }
 
@@ -205,7 +212,7 @@ function completeStrengthLoadAndEffort<T extends StrengthExerciseLike>(
   profile: StrengthProfile | undefined,
   isMainLift: boolean,
 ): T {
-  const resolution = resolveStrengthExerciseName(exercise.name)
+  const resolution = resolveStrengthExercise(exercise)
   const definition = resolution?.definition
   if (!isLoadBearingStrengthExercise(exercise, resolution)) return exercise
 
@@ -237,7 +244,7 @@ function completeStrengthLoadAndEffort<T extends StrengthExerciseLike>(
 
 function isLoadBearingStrengthExercise(
   exercise: StrengthExerciseLike,
-  resolution = resolveStrengthExerciseName(exercise.name),
+  resolution = resolveStrengthExercise(exercise),
 ): boolean {
   if (isProtocolExercise(exercise, resolution)) return false
 
@@ -254,19 +261,22 @@ function isLoadBearingStrengthExercise(
 }
 
 /**
- * Solo un id, un nombre canónico o un alias declarado identifican al ejercicio
- * con certeza. `substring` y `ambiguous` son coincidencias de texto: conservan
- * los regex estructurales, que fueron escritos justamente para nombres libres.
+ * Solo un `libraryRef` vivo, un id, un nombre canónico o un alias declarado
+ * identifican al ejercicio con certeza. `substring` y `ambiguous` son
+ * coincidencias de texto: conservan los regex estructurales, que fueron
+ * escritos justamente para nombres libres.
  */
 function isAuthoritativeResolution(
-  resolution: StrengthExerciseNameResolution | undefined,
-): resolution is StrengthExerciseNameResolution & { definition: ExerciseDefinition; matchKind: 'exact' | 'alias' } {
-  return resolution?.matchKind === 'exact' || resolution?.matchKind === 'alias'
+  resolution: StrengthExerciseResolution | undefined,
+): resolution is StrengthExerciseResolution & { definition: ExerciseDefinition; matchKind: 'ref' | 'exact' | 'alias' } {
+  return resolution?.matchKind === 'ref'
+    || resolution?.matchKind === 'exact'
+    || resolution?.matchKind === 'alias'
 }
 
 function isProtocolExercise(
   exercise: Pick<StrengthExerciseLike, 'name'>,
-  resolution: StrengthExerciseNameResolution | undefined,
+  resolution: StrengthExerciseResolution | undefined,
 ): boolean {
   if (isAuthoritativeResolution(resolution)) return false
   const name = normalizeText(exercise.name ?? '')
@@ -279,7 +289,7 @@ function isProtocolExercise(
 
 function inferTargetPercent1RM(
   exercise: StrengthExerciseLike,
-  resolution: StrengthExerciseNameResolution | undefined,
+  resolution: StrengthExerciseResolution | undefined,
   isMainLift: boolean,
 ): number {
   const reps = extractRepresentativeReps(exercise.reps)
@@ -303,7 +313,7 @@ function inferTargetPercent1RM(
 
 function shouldExposePercent1RM(
   exercise: StrengthExerciseLike,
-  resolution: StrengthExerciseNameResolution | undefined,
+  resolution: StrengthExerciseResolution | undefined,
 ): boolean {
   if (isAuthoritativeResolution(resolution)) return definitionExposesPercent1RM(resolution.definition)
 
@@ -330,7 +340,7 @@ function definitionExposesPercent1RM(definition: ExerciseDefinition): boolean {
 
 function limitImplementableWeight(
   exercise: StrengthExerciseLike,
-  resolution: StrengthExerciseNameResolution | undefined,
+  resolution: StrengthExerciseResolution | undefined,
   weight: number,
 ): number {
   if (!Number.isFinite(weight) || weight <= 0) return weight
@@ -341,7 +351,7 @@ function limitImplementableWeight(
 
 function getImplementableMaxWeight(
   exercise: StrengthExerciseLike,
-  resolution: StrengthExerciseNameResolution | undefined,
+  resolution: StrengthExerciseResolution | undefined,
 ): number | undefined {
   if (isAuthoritativeResolution(resolution)) return definitionMaxWeight(resolution.definition)
 
@@ -407,18 +417,19 @@ function extractRepresentativeReps(reps: number | string): number | undefined {
   return Number(match[0])
 }
 
-function makeCoreExercise<T extends StrengthExerciseLike>(name: string, notes: string): T {
+function makeCoreExercise<T extends StrengthExerciseLike>(name: string, notes: string, id: string): T {
   return {
     name,
     sets: 3,
     reps: '8/lado',
     group: 'core',
     notes,
+    libraryRef: { source: 'strength_exercise', id },
   } as T
 }
 
 function isFoundationCore(exercise: StrengthExerciseLike): boolean {
-  const definition = findStrengthExerciseByName(exercise.name)
+  const definition = resolveStrengthExercise(exercise)?.definition
   if (definition) {
     return (
       definition.tags.includes('anti_extension') ||

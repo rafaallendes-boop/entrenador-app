@@ -41,6 +41,27 @@ function backupFixture(exercises: unknown[]) {
   }
 }
 
+function backupWithProposalExercise(libraryRef: unknown) {
+  const fixture = backupFixture([])
+  return {
+    ...fixture,
+    tables: {
+      ...fixture.tables,
+      coachProposals: [{
+        id: 'p1',
+        message: 'm',
+        status: 'pending',
+        createdAt: 1,
+        actions: [{
+          type: 'add_session',
+          reason: 'r',
+          exercises: [{ name: 'Press banca', sets: 3, reps: 5, libraryRef }],
+        }],
+      }],
+    },
+  }
+}
+
 describe('libraryRef en backup/import', () => {
   beforeEach(async () => {
     db.close()
@@ -95,5 +116,17 @@ describe('libraryRef en backup/import', () => {
     expect(imported).toHaveLength(2)
     expect(imported?.[0].libraryRef).toBeUndefined()
     expect(imported?.[1].libraryRef).toBeUndefined()
+  })
+
+  it('preserva un ref válido en el import de propuestas pendientes', () => {
+    const parsed = parseAppDataExport(backupWithProposalExercise(validRef))
+    expect(parsed.tables.coachProposals[0]!.actions[0]!.exercises![0]!.libraryRef).toEqual(validRef)
+  })
+
+  it('descarta un ref malformado de una propuesta sin invalidar el ejercicio', () => {
+    const parsed = parseAppDataExport(backupWithProposalExercise({ source: 'inventado', id: 42 }))
+    const exercise = parsed.tables.coachProposals[0]!.actions[0]!.exercises![0]!
+    expect(exercise.libraryRef).toBeUndefined()
+    expect(exercise.name).toBe('Press banca')
   })
 })

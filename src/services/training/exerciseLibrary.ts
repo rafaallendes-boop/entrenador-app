@@ -1,4 +1,5 @@
 import type { ExerciseGroup } from '../../types'
+import type { ExerciseLibraryRef } from '../../types/exerciseLibraryRef'
 
 export type ExerciseCategory = 'lower' | 'upper' | 'core' | 'full_body'
 export type MovementPattern = 'squat' | 'hinge' | 'push' | 'pull' | 'rotation' | 'carry' | 'locomotion'
@@ -36,20 +37,20 @@ export interface StrengthLoadReference {
   selectorEligible: boolean
 }
 
-export type StrengthExerciseNameMatchKind = 'exact' | 'alias' | 'substring' | 'ambiguous'
+export type StrengthExerciseMatchKind = 'ref' | 'exact' | 'alias' | 'substring' | 'ambiguous'
 
 /**
- * Procedencia de una resolución de nombre.
+ * Procedencia de una resolución de ejercicio.
  *
  * `ambiguous` no entrega `definition`: prescribir carga sobre un fragmento que
  * empata entre varios ejercicios es adivinar. Sí entrega `candidates`, porque
  * clasificar el bloque de la sesión no es fail-closed (spec §2) y descartarlos
  * mandaba nombres perfectamente reconocibles a `other`.
  */
-export type StrengthExerciseNameResolution =
+export type StrengthExerciseResolution =
   | {
     definition: ExerciseDefinition
-    matchKind: Exclude<StrengthExerciseNameMatchKind, 'ambiguous'>
+    matchKind: Exclude<StrengthExerciseMatchKind, 'ambiguous'>
     candidates: ExerciseDefinition[]
   }
   | {
@@ -1347,6 +1348,13 @@ function withExercisePhase2Metadata(exercise: ExerciseDefinition): ExerciseDefin
 export const STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = RAW_STRENGTH_EXERCISE_LIBRARY.map(withExercisePhase2Metadata)
 export const EXERCISE_LIBRARY = STRENGTH_EXERCISE_LIBRARY
 
+/**
+ * `id` que existieron y se retiraron del catálogo. Nunca se reutilizan para
+ * otro ejercicio: un `libraryRef` guardado apunta a este `id` para siempre.
+ * Al retirar un ejercicio, mover su `id` acá en el mismo cambio.
+ */
+export const RETIRED_STRENGTH_EXERCISE_IDS: readonly string[] = []
+
 export function getExerciseById(id: string): ExerciseDefinition | undefined {
   return STRENGTH_EXERCISE_LIBRARY.find((exercise) => exercise.id === id)
 }
@@ -1366,7 +1374,7 @@ export function normalizeStrengthExerciseKey(value: string): string {
     .replace(/^_+|_+$/g, '')
 }
 
-export function resolveStrengthExerciseName(name: string): StrengthExerciseNameResolution | undefined {
+function resolveByNameLadder(name: string): StrengthExerciseResolution | undefined {
   const normalized = normalizeStrengthExerciseKey(name)
 
   const exact = STRENGTH_EXERCISE_LIBRARY.find((exercise) =>
@@ -1438,6 +1446,23 @@ export function resolveStrengthExerciseName(name: string): StrengthExerciseNameR
   if (candidates.length === 0) return undefined
   if (candidates.length === 1) return { definition: candidates[0]!, matchKind: 'substring', candidates }
   return { matchKind: 'ambiguous', candidates }
+}
+
+function resolveFromLibraryRef(ref: ExerciseLibraryRef | undefined): ExerciseDefinition | undefined {
+  if (!ref || ref.source !== 'strength_exercise') return undefined
+  return STRENGTH_EXERCISE_LIBRARY.find((exercise) => exercise.id === ref.id)
+}
+
+export function resolveStrengthExercise(
+  exercise: { name: string; libraryRef?: ExerciseLibraryRef },
+): StrengthExerciseResolution | undefined {
+  const fromRef = resolveFromLibraryRef(exercise.libraryRef)
+  if (fromRef) return { definition: fromRef, matchKind: 'ref', candidates: [fromRef] }
+  return resolveByNameLadder(exercise.name)
+}
+
+export function resolveStrengthExerciseName(name: string): StrengthExerciseResolution | undefined {
+  return resolveStrengthExercise({ name })
 }
 
 export function findStrengthExerciseByName(name: string): ExerciseDefinition | undefined {

@@ -1,7 +1,6 @@
-import {
-  findStrengthExerciseByName,
-  normalizeStrengthExerciseKey,
-} from '../training/exerciseLibrary'
+import type { ExerciseLibraryRef } from '../../types/exerciseLibraryRef'
+import { resolveStrengthExercise } from '../training/exerciseLibrary'
+import { getStrengthExerciseKey } from '../training/strengthExerciseProposal'
 
 /**
  * Contrato de rol para el check de repetición y para la rotación de accesorios.
@@ -23,12 +22,12 @@ export function isCountableRole(role: StrengthContractRole): boolean {
 }
 
 export function resolveSessionStrengthRoles(
-  exercises: ReadonlyArray<{ name: string }>,
+  exercises: ReadonlyArray<{ name: string; libraryRef?: ExerciseLibraryRef }>,
 ): StrengthContractRole[] {
   let mainLiftTaken = false
 
   return exercises.map((exercise) => {
-    const definition = findStrengthExerciseByName(exercise.name)
+    const definition = resolveStrengthExercise(exercise)?.definition
     if (!definition) return 'unknown'
     if (definition.category === 'core') return 'trunk'
     if (definition.intensityType === 'power') return 'power'
@@ -42,7 +41,7 @@ export function resolveSessionStrengthRoles(
 
 type StrengthSessionLike = {
   sessionType?: string
-  exercises?: ReadonlyArray<{ name: string }>
+  exercises?: ReadonlyArray<{ name: string; libraryRef?: ExerciseLibraryRef }>
 }
 
 /** Nombres que aparecen AL MENOS UNA VEZ en posición no principal. */
@@ -54,7 +53,7 @@ export function collectCountableKeys(sessions: ReadonlyArray<StrengthSessionLike
     const roles = resolveSessionStrengthRoles(exercises)
     exercises.forEach((exercise, index) => {
       if (!isCountableRole(roles[index]!)) return
-      const key = normalizeStrengthExerciseKey(exercise.name)
+      const key = getStrengthExerciseKey(exercise)
       if (key) keys.add(key)
     })
   }
@@ -67,7 +66,7 @@ export function collectAllStrengthKeys(sessions: ReadonlyArray<StrengthSessionLi
   for (const session of sessions) {
     if (session.sessionType !== 'strength') continue
     for (const exercise of session.exercises ?? []) {
-      const key = normalizeStrengthExerciseKey(exercise.name)
+      const key = getStrengthExerciseKey(exercise)
       if (key) keys.add(key)
     }
   }

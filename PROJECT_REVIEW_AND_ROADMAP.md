@@ -4,8 +4,8 @@ Actualizado: 2026-08-01
 
 Base de contraste:
 
-- **Fuerza — desacople del nombre, Entregas 1–3 (2026-08-01): implementadas y revisadas, sin commitear.** Ver §18 — los cuatro hallazgos del code review quedaron corregidos y la suite, lint y build estan verdes; pendiente solo el commit antes del siguiente bloque.
-- **Siguiente mejora tecnica propuesta: identidad estable de ejercicios (`libraryRef`-first).** Ver §19 — aprovechar el `id` de catalogo que ya existe en sesiones, plantillas y backup/import para que el Plan Builder no vuelva a inferir identidad desde el nombre. Sin migraciones.
+- **Fuerza — desacople del nombre, Entregas 1–3 (2026-08-01): commiteadas en `3d480b3`.** Ver §18 — los hallazgos del code review quedaron corregidos y el bloque se cerró sin migraciones.
+- **Fuerza — identidad estable (`libraryRef`-first): implementada y commiteada.** Ver §19 — Plan Builder, coach y calidad consumen el `id` del catálogo sin volver a inferir identidad desde el nombre. Sin migraciones; 2613/2613 tests, lint y build verdes.
 - `main` con el commit de esta entrega (`feat: complete coach planning library and calendar hardening`).
 - **`011_whoop_integration.sql` y `012_whoop_workouts.sql` aplicados en produccion.** Whoop readiness y Workout Auto-Complete quedan operativos de punta a punta (owner confirma cierre operacional); pendiente solo el linkeo de consentimiento biometrico/legal antes de exponer a terceros (ver Riesgo 1).
 - **Coach Workspace v0 + ampliacion implementados (2026-07-13 a 2026-07-19):** `/coach` pasa de un roster unico (`CoachRosterPage`) a `CoachWorkspacePage` con Resumen, Alumnos, Planificacion y Biblioteca operativas; Asistente IA conserva el placeholder. Incluye endurecimiento de `switchActiveAthlete`, edicion multi-atleta, alta/aplicacion de plantillas y lock de concurrencia a nivel de modulo. `015` y el bundle de Biblioteca/Planificacion ya fueron aplicados en produccion; queda el smoke autenticado.
@@ -398,7 +398,7 @@ proyecta el contenido competitivo no canonico. Esta cubierta por tests locales,
 Estado: **commiteado y pusheado, pendiente deploy.** Suite 324 archivos / 2425
 tests, lint y build OK. Sin migraciones Dexie ni Supabase.
 
-### 18. Fuerza — desacople del nombre, Entregas 1–3 (2026-08-01, implementadas sin commitear)
+### 18. Fuerza — desacople del nombre, Entregas 1–3 (2026-08-01, `3d480b3`)
 
 Mismo espiritu que la rotacion de squash (§16): que el nombre visible del
 ejercicio deje de decidir seleccion o carga. Sin migraciones Dexie ni Supabase.
@@ -434,53 +434,41 @@ ejercicio deje de decidir seleccion o carga. Sin migraciones Dexie ni Supabase.
   post-migración; el cruce de los 25 factores vive ahora en un ledger literal
   independiente de `loadReference`.
 
-Estado: **implementado sin commitear, sin migraciones.** Verificado con
-**2577/2577 tests**, lint y build OK. Code review cerrado; pendiente solo el
-commit separado. El copy de fuerza sigue fuera de este bloque.
+Estado: **commiteado en `3d480b3`, sin migraciones.** Code review cerrado. El
+copy de fuerza sigue fuera de este bloque.
 
-### 19. Propuesta — identidad estable de ejercicios de fuerza (`libraryRef`-first)
+### 19. Fuerza — identidad estable de ejercicios (`libraryRef`-first) (2026-08-01)
 
-La Entrega 3 quitó del nombre las decisiones declarativas, pero el Plan Builder
-todavía pierde el `id` al convertir un `StrengthSelectionExercise` en
-`CoachExerciseProposal`. Desde ahi, estructura, carga, roles, reparación y
-calidad vuelven a llamar al resolvedor por `name`. El sistema ya tiene la pieza
-que falta: `Exercise.libraryRef`, preservada en sesiones, plantillas y
-backup/import e invalidada cuando el usuario edita el nombre.
+La identidad viaja ahora desde los productores deterministas hasta todos los
+consumidores que reciben el ejercicio completo:
 
-Mejora recomendada para el siguiente bloque de desarrollo:
+- `resolveStrengthExercise` prioriza un ref vivo de fuerza y cae a
+  `exact`/`alias`/`substring`/`ambiguous` cuando está muerto, es ajeno o falta;
+- selector, core inyectado y expansión de footwork estampan refs; footwork
+  reemplaza el ref del bloque genérico y un ref vivo evita la expansión;
+- conversión, rotación y deduplicación tienen helpers únicos; historial,
+  progresión, reemplazo, roles, cobertura de 1RM y detección del coach son
+  ref-aware;
+- backup/import sanitiza el ref de propuestas pendientes, mientras el
+  normalizador descarta cualquier identidad emitida por la IA;
+- los 77 ids conocidos están congelados en una lista append-only y un registro
+  separado impide reutilizar ids retirados.
 
-1. **Transportar la identidad.** Agregar `libraryRef` a
-   `CoachExerciseProposal` y estampar
-   `{ source: 'strength_exercise', id }` en todas las conversiones locales desde
-   el selector y las reparaciones deterministas. El normalizador no debe confiar
-   en referencias emitidas por la IA: el postproceso solo las adjunta desde una
-   seleccion local o una resolucion `exact`/`alias` validada contra el catalogo.
-2. **Resolver una sola vez, por precedencia explicita.** Un helper central debe
-   usar primero un `libraryRef` de fuerza cuyo `id` exista en el catalogo;
-   despues `exact`/`alias`; luego `substring` solo como compatibilidad legacy;
-   y finalmente nombre libre con las salvaguardas actuales.
-3. **Consumir la identidad estable.** Estructura de sesión, prescripción de
-   carga, contrato de rol, calidad y reparación deben recibir el resultado del
-   helper en vez de volver a resolver cada uno por nombre.
-4. **Endurecer el contrato.** Una referencia desconocida cae de forma segura al
-   flujo legacy; editar el nombre sigue borrando `libraryRef`; no se hace
-   backfill masivo de sesiones existentes ni migración Dexie/Supabase.
+**Gate de comportamiento.** Contra `3d480b3`, 2541 casos de nombres y 116
+salidas de selector fueron byte a byte idénticos. La cohorte canónica dio 0/231
+mismatches entre resolución por nombre exacto y por ref. El primer barrido de
+conversión detectó una regresión en 47/92 filas (RPE, porcentaje, peso y
+warmups); se corrigió con una proyección pre-enrichment que conserva el ref sin
+adelantar targets, y el barrido final quedó 0/92.
 
-Criterios de aceptación:
+Estado: **implementado y commiteado, sin migraciones.** Verificado con 339
+archivos / **2613/2613 tests**, TypeScript, lint, build y `git diff --check`.
+Spec y plan: `docs/superpowers/specs/2026-08-01-strength-library-ref-first-design.md`
+y `docs/superpowers/plans/2026-08-01-strength-library-ref-first.md`.
 
-- cambiar el copy visible de una definición, conservando su `id`, no altera su
-  bloque, rol, carga, implemento, unidad ni participación en calidad;
-- ejercicios nuevos generados localmente llegan persistidos con `libraryRef`;
-- sesiones antiguas sin referencia mantienen exactamente el contrato
-  `exact`/`alias`/`substring` de §18;
-- referencias corruptas o ids retirados no confieren autoridad: caen al
-  resolvedor legacy y conservan sus guardas;
-- texto libre y la invalidación por rename continúan cubiertos por tests.
-
-Estado: **propuesta, no implementada.** Es una evolución compatible y sin
-migraciones. Recomendada inmediatamente después de commitear §18 y antes del
-copy de fuerza, porque convierte los aliases y el substring en compatibilidad
-legacy en vez de mantenerlos como camino normal del Plan Builder.
+Limitación central: sesiones, plantillas y planes creados antes de esta entrega
+siguen sin ref. El siguiente proyecto de copy debe conservar cada nombre legacy
+en `aliases`; no hay backfill automático.
 
 ## Avances Ya Implementados
 
@@ -1078,13 +1066,10 @@ dificultad.
    `technical`, y los 3 nombres de partido con literales hardcodeados en 5
    consumidores en vez de centralizados por `id`.
 
-   **Mitad de fisico/fuerza: desacople implementado sin commitear — ver §18.**
-   No es todavia el proyecto de copy: primero deja deterministas la seleccion y
-   la carga, con metadata explicita y suite verde. El code review esta cerrado;
-   falta el commit separado. Antes de editar nombres visibles se recomienda la
-   Entrega 4 `libraryRef`-first de §19, que transporta el `id` ya existente a
-   traves del Plan Builder y deja la resolucion por nombre como compatibilidad
-   legacy.
+   **Mitad de fisico/fuerza: desacople commiteado e identidad estable
+   implementada — ver §18–19.** El siguiente bloque ya puede abordar copy
+   visible por `id`, conservando cada nombre anterior en `aliases` para el
+   contenido legacy que no tiene ref.
 5. **Analisis de entrenamientos con Whoop.** Superficie nueva sobre datos que ya
    estan locales (readiness + workouts). Mantener el contrato vigente: contexto
    objetivo y consentido, sin diagnostico ni ajuste automatico.
@@ -1112,7 +1097,9 @@ quedo terminado o a medias antes de construir encima.
 
 Orden recomendado (Athlete-Aware Core + Coach F2-lite Parte 2b + Whoop v1/Workout Auto-Complete + Coach Workspace v0 + Fase 0 coaches landing ya en prod):
 
-0. **Commitear Fuerza — desacople del nombre, Entregas 1–3 (§18).** El code review y sus seis correcciones ya estan cerrados, con 2577/2577 tests, lint y build verdes. Mantener este bloque separado de la Entrega 4 propuesta y del copy posterior.
+0. **Commitear Fuerza — identidad `libraryRef`-first (§19).** Está implementada
+   con barridos en cero y 2613/2613 tests; mantenerla separada del copy visible
+   posterior.
 1. **Desplegar rotacion + roles de partido (`9754f78`).** El smoke pagado de la rotacion esta aceptado; los roles de squash viajan encima y **no** estan medidos, solo cubiertos por tests. Con ~US$0,60 de saldo no alcanza para re-medir (~US$0,90 por corrida), asi que la decision es desplegar asumiendo la cobertura de la suite o recargar y correr un smoke sobre `9754f78` antes.
 2. **Verificacion operativa post-deploy:** revisar la fila de job/attempts de la primera corrida real y mirar `squashFinisherPreservedCount` / `squashStandaloneMatchCount` contra lo esperado.
 3. **Revision juridica formal** (2-3 dias abogado, paralelizar con items 4-5): firma de terminos/privacidad/descargos/políticas Whoop.
@@ -1120,10 +1107,10 @@ Orden recomendado (Athlete-Aware Core + Coach F2-lite Parte 2b + Whoop v1/Workou
 5. **QA deportiva y preparacion piloto** (1-2 dias): generar 3 planes arquetipo como atletas gestionados, revisar salida coach, preparar oferta (duracion, precio, soporte, reembolso).
 6. **Primer cliente acompanado** (ejecutar en paralelo con abogado): elegir 1 candidato, onboarding 1:1, generar semana 1, iniciar protocolo de revision semanal.
 
-**Siguiente bloque de desarrollo recomendado:** §19, identidad estable de
-ejercicios de fuerza con `libraryRef`-first. No desplaza los pendientes
-operativos 1–6: debe arrancar en una rama/commit nuevo despues de cerrar §18 y
-antes del proyecto de copy de fuerza.
+**Siguiente bloque de desarrollo recomendado:** copy de ejercicios de fuerza
+por `id`, con ledger de renombres y `aliases` legacy. Congelar por test que
+`loadReference`, `prescriptionUnit`, tags, equipamiento y rol no cambian junto
+con el texto. No desplaza los pendientes operativos 1–6.
 
 ## Que No Hacer Ahora
 
@@ -1147,7 +1134,6 @@ El cambio principal desde hace dos dias es que el bloqueante tecnico principales
 
 Mi recomendacion: **iniciar revision juridica formal YA** (paralelo a items 2-3) + consentimiento biometrico en-app + QA deportiva de planes arquetipo + primer cliente acompanado. SP1a dos-lados y contenido real de Planificacion/Biblioteca quedan como incrementos posteriores al piloto, no son bloqueantes.
 
-Nota tactica que no cambia esta recomendacion pero la precede: hay un bloque
-amplio de fuerza sin commitear (§18), ya revisado y verde. Conviene cerrarlo en
-un commit separado y continuar con la identidad `libraryRef`-first de §19 antes
-de empezar el copy de ejercicios.
+Nota tactica que no cambia esta recomendacion: la Entrega 4 de fuerza (§19)
+quedo commiteada por separado, revisada y verde. El copy visible de los
+ejercicios de fuerza es la entrega siguiente y viaja en su propio commit.

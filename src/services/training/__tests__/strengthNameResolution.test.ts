@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   findStrengthExerciseByName,
+  resolveStrengthExercise,
   resolveStrengthExerciseName,
   STRENGTH_EXERCISE_LIBRARY,
 } from '../exerciseLibrary'
@@ -84,5 +85,51 @@ describe('resolución de nombres de ejercicios', () => {
 
   it('una resolución con definición se lista a sí misma como único candidato', () => {
     expect(resolveStrengthExerciseName('Press banca')?.candidates.map((c) => c.id)).toEqual(['bench_press'])
+  })
+})
+
+describe('resolución ref-first de ejercicios', () => {
+  it('un ref vivo gana sobre el nombre', () => {
+    expect(resolveStrengthExercise({
+      name: 'Press banca',
+      libraryRef: { source: 'strength_exercise', id: 'back_squat' },
+    })).toMatchObject({
+      definition: { id: 'back_squat' },
+      matchKind: 'ref',
+    })
+  })
+
+  it('un ref muerto cae a la escalera por nombre', () => {
+    expect(resolveStrengthExercise({
+      name: 'Press banca',
+      libraryRef: { source: 'strength_exercise', id: 'ejercicio_retirado' },
+    })).toMatchObject({
+      definition: { id: 'bench_press' },
+      matchKind: 'exact',
+    })
+  })
+
+  it('un ref de otra librería se ignora', () => {
+    expect(resolveStrengthExercise({
+      name: 'Press banca',
+      libraryRef: { source: 'squash_drill', id: 'back_squat' },
+    })).toMatchObject({
+      definition: { id: 'bench_press' },
+      matchKind: 'exact',
+    })
+  })
+
+  it('sin ref conserva exacto, ambiguo y no resuelto', () => {
+    expect(resolveStrengthExercise({ name: 'Sentadilla trasera con barra' })?.matchKind).toBe('exact')
+    const ambiguous = resolveStrengthExercise({ name: 'press' })
+    expect(ambiguous?.matchKind).toBe('ambiguous')
+    expect(ambiguous?.definition).toBeUndefined()
+    expect(resolveStrengthExercise({ name: 'Circuito experimental alfa' })).toBeUndefined()
+  })
+
+  it('el wrapper por nombre delega en la misma escalera', () => {
+    expect(resolveStrengthExerciseName('Press banca')).toEqual(
+      resolveStrengthExercise({ name: 'Press banca' }),
+    )
   })
 })

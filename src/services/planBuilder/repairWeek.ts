@@ -16,6 +16,7 @@ import type {
   WizardFatigueLevel,
 } from '../../types'
 import type { TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
+import type { ExerciseLibraryRef } from '../../types/exerciseLibraryRef'
 import { getExpectedSessionsForPlanWeek, getPlanWeekDateRange, isDateInsidePlanWeekRange } from './dateRange'
 import {
   selectSquashDrillReplacement,
@@ -42,7 +43,8 @@ import {
   type StrengthSportProfile,
 } from '../training/strengthSelector'
 import { enhanceStrengthSessionExercises, resolveStrengthExerciseBlock } from '../training/strengthSessionStructure'
-import { findStrengthExerciseByName, normalizeStrengthExerciseKey, type ExperienceLevel } from '../training/exerciseLibrary'
+import { type ExperienceLevel } from '../training/exerciseLibrary'
+import { getStrengthExerciseKey, toStrengthProposal } from '../training/strengthExerciseProposal'
 import { selectMobilitySession, type MobilityPhase } from '../training/mobilitySelector'
 import { selectCyclingSession, type CyclingPhase, type CyclingSportProfile } from '../training/cyclingSelector'
 import { normalizeMobilityDetails, type MobilitySportContext } from '../training/mobilitySessionLibrary'
@@ -1534,6 +1536,7 @@ interface StrengthRotationSlot {
   sessionOrdinal: number
   position: number
   currentName: string
+  currentRef?: ExerciseLibraryRef
   reason?: StrengthSubstitutionReason
 }
 
@@ -1575,7 +1578,7 @@ function normalizeStrengthSessions(
     const roles = resolveSessionStrengthRoles(exercises)
     const alreadyCanonical = currentBlockId != null && hasCanonicalStrengthRotation(session, currentBlockId)
     exercises.forEach((exercise, position) => {
-      const key = normalizeStrengthExerciseKey(exercise.name)
+      const key = getStrengthExerciseKey(exercise)
       if (!key) return
       if (!isCountableRole(roles[position]!) || alreadyCanonical) {
         assignedKeys.add(key)
@@ -1587,7 +1590,14 @@ function normalizeStrengthSessions(
           ? 'policy'
           : undefined
       if (!reason) assignedKeys.add(key)
-      slots.push({ session, sessionOrdinal, position, currentName: exercise.name, reason })
+      slots.push({
+        session,
+        sessionOrdinal,
+        position,
+        currentName: exercise.name,
+        currentRef: exercise.libraryRef,
+        reason,
+      })
     })
   })
 
@@ -1598,13 +1608,16 @@ function normalizeStrengthSessions(
     if (!slot.reason) continue
     const replacement = selectStrengthReplacement({
       originalName: slot.currentName,
+      originalRef: slot.currentRef,
       context: buildStrengthSelectionContext(slot.session, context, []),
       excludedKeys: new Set([...assignedKeys, ...previousKeys]),
       rotationIndex: weekIndexInBlock * 31 + slot.sessionOrdinal * 7 + slot.position,
       exerciseIndex: slot.position,
     })
     assignments.set(slot, replacement)
-    assignedKeys.add(normalizeStrengthExerciseKey(replacement?.name ?? slot.currentName))
+    assignedKeys.add(getStrengthExerciseKey(
+      replacement ?? { name: slot.currentName, libraryRef: slot.currentRef },
+    ))
   }
 
   let policyActions = 0
@@ -1612,10 +1625,13 @@ function normalizeStrengthSessions(
   const correctiveSessions = new Set<string>()
   for (const slot of slots) {
     const replacement = assignments.get(slot)
-    if (!replacement || normalizeStrengthExerciseKey(replacement.name) === normalizeStrengthExerciseKey(slot.currentName)) continue
+    if (
+      !replacement ||
+      getStrengthExerciseKey(replacement) === getStrengthExerciseKey({ name: slot.currentName, libraryRef: slot.currentRef })
+    ) continue
     const exercises = slot.session.exercises
     if (!exercises) continue
-    exercises[slot.position] = toCoachExerciseProposal(replacement)
+    exercises[slot.position] = toStrengthProposal(replacement)
     if (slot.reason === 'corrective') correctiveSessions.add(sessionKeyOf(slot.session))
     else if (slot.reason === 'policy') {
       policyActions++
@@ -1650,7 +1666,7 @@ function normalizeStrengthSessions(
 
 function canonicalStrengthSignature(session: CoachSessionProposal): string {
   return (session.exercises ?? [])
-    .map((exercise) => normalizeStrengthExerciseKey(exercise.name))
+    .map(getStrengthExerciseKey)
     .sort((left, right) => left.localeCompare(right))
     .join('|')
 }
@@ -2227,15 +2243,7 @@ function completeStrengthExercises(
   recentExercises = extractRecentStrengthExercises(context.previousWeek),
 ): void {
   const result = selectStrengthSession(buildStrengthSelectionContext(session, context, recentExercises))
-  session.exercises = result.exercises.map<CoachExerciseProposal>((e) => ({
-    name: e.name,
-    sets: e.sets,
-    reps: e.reps,
-    group: e.group,
-    notes: e.notes,
-    targetPercent1RM: e.targetPercent1RM,
-    targetRpe: e.targetRpe,
-  }))
+  session.exercises = result.exercises.map(toStrengthProposal)
   if (result.starLift) {
     session.metadata = {
       ...(session.metadata ?? {}),
@@ -2302,7 +2310,7 @@ function completeStrengthExerciseDensity(
   let strengthWorkCount = exercises.filter(isStrengthWorkExercise).length
 
   const candidates = selected
-    .map(toCoachExerciseProposal)
+    .map(toStrengthProposal)
     .filter((exercise) => !existingKeys.has(getStrengthExerciseKey(exercise)))
 
   for (const candidate of candidates) {
@@ -2330,18 +2338,6 @@ function completeStrengthExerciseDensity(
   })
 }
 
-function toCoachExerciseProposal(exercise: StrengthSelectionExercise): CoachExerciseProposal {
-  return {
-    name: exercise.name,
-    sets: exercise.sets,
-    reps: exercise.reps,
-    group: exercise.group,
-    notes: exercise.notes,
-    targetPercent1RM: exercise.targetPercent1RM,
-    targetRpe: exercise.targetRpe,
-  }
-}
-
 function getMinimumStrengthWorkCount(durationMin: number): number {
   if (durationMin >= 70) return 5
   if (durationMin >= 55) return 4
@@ -2352,10 +2348,6 @@ function getMinimumStrengthWorkCount(durationMin: number): number {
 function isStrengthWorkExercise(exercise: CoachExerciseProposal): boolean {
   const block = resolveStrengthExerciseBlock(exercise)
   return block !== 'core' && block !== 'cardio' && block !== 'mobility'
-}
-
-function getStrengthExerciseKey(exercise: Pick<CoachExerciseProposal, 'name'>): string {
-  return findStrengthExerciseByName(exercise.name)?.id ?? normalizeStrengthExerciseKey(exercise.name)
 }
 
 function completeMobilityDetails(session: CoachSessionProposal, context: RepairContext): void {

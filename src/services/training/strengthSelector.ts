@@ -1,9 +1,11 @@
 import type { ExerciseGroup, Session } from '../../types'
+import type { ExerciseLibraryRef } from '../../types/exerciseLibraryRef'
 import {
   findStrengthExerciseByName,
   getExerciseGroupForDefinition,
   getStrengthExerciseRole,
   normalizeStrengthExerciseKey,
+  resolveStrengthExercise,
   STRENGTH_EXERCISE_LIBRARY,
   type EquipmentType,
   type Exercise1RMReference,
@@ -13,6 +15,7 @@ import {
   type MovementPattern,
   type StrengthExerciseRole,
 } from './exerciseLibrary'
+import { getStrengthExerciseKey } from './strengthExerciseProposal'
 import { selectStrengthBlockTemplate, type StrengthBlockSlot } from './strengthBlocks'
 import type { DisciplineAcwr } from '../loadAnalytics'
 
@@ -55,6 +58,7 @@ export interface StrengthSelectionExercise {
   group?: ExerciseGroup
   targetPercent1RM?: number
   targetRpe?: number
+  libraryRef?: ExerciseLibraryRef
 }
 
 /**
@@ -65,6 +69,8 @@ export interface StrengthSelectionExercise {
  */
 export interface StrengthReplacementRequest {
   originalName: string
+  /** Identidad estable del ejercicio original cuando el texto no alcanza. */
+  originalRef?: ExerciseLibraryRef
   context: StrengthContext
   excludedKeys: ReadonlySet<string>
   rotationIndex: number
@@ -356,12 +362,18 @@ function isCandidateAllowedInContext(
 export function selectStrengthReplacement(
   request: StrengthReplacementRequest,
 ): StrengthSelectionExercise | undefined {
-  const original = findStrengthExerciseByName(request.originalName)
+  const original = resolveStrengthExercise({
+    name: request.originalName,
+    libraryRef: request.originalRef,
+  })?.definition
   if (!original) return undefined
 
   const candidates = STRENGTH_EXERCISE_LIBRARY
     .filter((candidate) => candidate.movement === original.movement)
-    .filter((candidate) => !request.excludedKeys.has(normalizeStrengthExerciseKey(candidate.name)))
+    .filter((candidate) =>
+      !request.excludedKeys.has(getStrengthExerciseKey(candidate)) &&
+      !request.excludedKeys.has(normalizeStrengthExerciseKey(candidate.name)),
+    )
     .filter((candidate) => isCandidateAllowedInContext(candidate, request.context))
     .sort((a, b) => a.id.localeCompare(b.id))
 
@@ -441,9 +453,7 @@ export function extractRecentStrengthExercises(historicalSessions: Session[]): s
     .slice(0, 3)
 
   return strengthSessions.flatMap((session) =>
-    (session.exercises ?? []).map((exercise) =>
-      findStrengthExerciseByName(exercise.name)?.id ?? normalizeStrengthExerciseKey(exercise.name),
-    ),
+    (session.exercises ?? []).map((exercise) => getStrengthExerciseKey(exercise)),
   )
 }
 
@@ -1027,7 +1037,7 @@ export function deriveStrengthProgressionState(context: StrengthContext): Streng
 
   strengthSessions.forEach((session, sessionIndex) => {
     session.exercises?.forEach((exercise, index) => {
-      const definition = findStrengthExerciseByName(exercise.name)
+      const definition = resolveStrengthExercise(exercise)?.definition
       if (!definition) return
 
       const role = getStrengthExerciseRole(definition, index)
@@ -1200,6 +1210,7 @@ function buildSelectionExercise(
     intensity: prescription.intensity,
     notes: buildExerciseNotes(exercise, context, prescription.intensity, index),
     group: getExerciseGroupForDefinition(exercise),
+    libraryRef: { source: 'strength_exercise', id: exercise.id },
   }
 }
 

@@ -1,6 +1,10 @@
 import type { ChatContext, CoachAction, CoachExerciseProposal, Session, SessionType, StrengthProfile, TimeBlock } from '../../types'
 import { currentWeekStartISO, todayISO } from '../../utils/date'
-import { findStrengthExerciseByName, normalizeStrengthExerciseKey } from '../training/exerciseLibrary'
+import { resolveStrengthExercise } from '../training/exerciseLibrary'
+import {
+  getStrengthExerciseKey,
+  toStrengthProposalForEnhancement,
+} from '../training/strengthExerciseProposal'
 import { getTargetExerciseDensity, selectStrengthSession, type StrengthContext, type StrengthPhase, type StrengthSportProfile } from '../training/strengthSelector'
 import { enhanceStrengthSessionExercises, resolveStrengthExerciseBlock } from '../training/strengthSessionStructure'
 import type { CoachNormalizedResponse } from './types'
@@ -594,13 +598,7 @@ function buildFallbackAddSessionAction(options: {
 
   if (options.sessionType === 'strength') {
     const selection = selectStrengthSession(buildStrengthSelectionContextForAction(options.context, durationMin, objective))
-    action.exercises = selection.exercises.map((exercise) => ({
-      name: exercise.name,
-      sets: exercise.sets,
-      reps: exercise.reps,
-      group: exercise.group,
-      notes: exercise.notes,
-    }))
+    action.exercises = selection.exercises.map(toStrengthProposalForEnhancement)
   }
 
   return completeRunningZone2Details(action, intentText)
@@ -752,7 +750,7 @@ function completeStrengthLoads(action: CoachAction, context: ChatContext): Coach
   if ((action.type === 'add_session' || action.type === 'update_session') && action.exercises) {
     const shouldDensify = action.type === 'add_session'
       ? action.sessionType === 'strength'
-      : action.newType === 'strength' || action.exercises.some((exercise) => findStrengthExerciseByName(exercise.name))
+      : action.newType === 'strength' || action.exercises.some((exercise) => resolveStrengthExercise(exercise)?.definition)
     return {
       ...action,
       exercises: shouldDensify
@@ -825,13 +823,7 @@ function alignSingleSessionSportToRequest(
       next.objective,
     ))
     next.rpe = action.rpe ?? 7
-    next.exercises = selection.exercises.map((exercise) => ({
-      name: exercise.name,
-      sets: exercise.sets,
-      reps: exercise.reps,
-      group: exercise.group,
-      notes: exercise.notes,
-    }))
+    next.exercises = selection.exercises.map(toStrengthProposalForEnhancement)
   }
 
   return next
@@ -859,13 +851,7 @@ function enrichStrengthExercises(
   const existingKeys = new Set(enhanced.map(getStrengthExerciseKey))
   const additions: CoachExerciseProposal[] = []
   const candidates = selectStrengthSession(selectionContext).exercises
-    .map((exercise) => ({
-      name: exercise.name,
-      sets: exercise.sets,
-      reps: exercise.reps,
-      group: exercise.group,
-      notes: exercise.notes,
-    }))
+    .map(toStrengthProposalForEnhancement)
     .filter((exercise) => !existingKeys.has(getStrengthExerciseKey(exercise)))
 
   const minimumStrengthWork = getMinimumStrengthWorkCount(options.durationMin ?? 50)
@@ -936,10 +922,6 @@ function getMinimumStrengthWorkCount(durationMin: number): number {
 function isStrengthWorkExercise(exercise: CoachExerciseProposal): boolean {
   const block = resolveStrengthExerciseBlock(exercise)
   return block !== 'core' && block !== 'cardio' && block !== 'mobility'
-}
-
-function getStrengthExerciseKey(exercise: Pick<CoachExerciseProposal, 'name'>): string {
-  return findStrengthExerciseByName(exercise.name)?.id ?? normalizeStrengthExerciseKey(exercise.name)
 }
 
 function alignActionDate(action: CoachAction, targetDate: string): CoachAction {

@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
 import type { CoachExerciseProposal } from '../../types'
-import { enhanceStrengthSessionExercises, normalizeStrengthSessionExercises } from '../training/strengthSessionStructure'
+import {
+  enhanceStrengthSessionExercises,
+  normalizeStrengthSessionExercises,
+  resolveStrengthExerciseBlock,
+} from '../training/strengthSessionStructure'
 
 describe('normalizeStrengthSessionExercises', () => {
   it('separates core first, strength work next and ladder cardio last', () => {
@@ -251,5 +255,67 @@ describe('normalizeStrengthSessionExercises', () => {
 
     expect(result[0]?.weight).toBeUndefined()
     expect(result[0]?.group).toBe('legs')
+  })
+})
+
+describe('libraryRef como resolución autoritativa', () => {
+  const refTo = (id: string) => ({ source: 'strength_exercise' as const, id })
+
+  it('un ref hereda las salvaguardas de un match exacto', () => {
+    const result = enhanceStrengthSessionExercises([
+      {
+        name: 'Movimiento unilateral irreconocible',
+        sets: 3,
+        reps: 8,
+        libraryRef: refTo('bulgarian_split_squat'),
+      },
+    ], { durationMin: 30, strengthProfile: { squat1RM: 100 } })!
+
+    expect(result[0]?.weight).toBe(25)
+    expect(result[0]?.targetPercent1RM).toBeUndefined()
+  })
+
+  it('un ref a una plancha usa prescriptionUnit y no el regex del nombre', () => {
+    const result = enhanceStrengthSessionExercises([
+      { name: 'Isométrico de tronco', sets: 3, reps: 45, libraryRef: refTo('plank') },
+    ], { durationMin: 30 })!
+
+    expect(result[0]?.reps).toBe('45s')
+    expect(result[0]?.group).toBe('core')
+  })
+
+  it('un ref vivo gana el filtro de protocolo aunque el nombre lo dispare', () => {
+    const result = enhanceStrengthSessionExercises([
+      { name: 'Press banca', sets: 3, reps: 5 },
+      { name: 'Estiramiento de sentadilla', sets: 4, reps: 5, libraryRef: refTo('back_squat') },
+    ], { durationMin: 30, strengthProfile: { benchPress1RM: 100, squat1RM: 100 } })!
+
+    expect(result.map((exercise) => exercise.name)).toContain('Estiramiento de sentadilla')
+  })
+
+  it('sin ref, el regex de protocolo sigue filtrando', () => {
+    const result = enhanceStrengthSessionExercises([
+      { name: 'Press banca', sets: 3, reps: 5 },
+      { name: 'Estiramiento de isquiotibiales', sets: 1, reps: 30 },
+    ], { durationMin: 30, strengthProfile: { benchPress1RM: 100 } })!
+
+    expect(result.map((exercise) => exercise.name)).toEqual(['Press banca'])
+  })
+
+  it('un ref a un ejercicio de potencia usa intensityType, no el regex del nombre', () => {
+    const result = enhanceStrengthSessionExercises([
+      { name: 'Trabajo reactivo de tren inferior', sets: 3, reps: 3, libraryRef: refTo('box_jump') },
+    ], { durationMin: 30, strengthProfile: { squat1RM: 100 } })!
+
+    expect(result[0]?.targetPercent1RM).toBeUndefined()
+    expect(result[0]?.weight).toBeUndefined()
+  })
+
+  it('resolveStrengthExerciseBlock usa el ref cuando está', () => {
+    expect(resolveStrengthExerciseBlock({
+      name: 'Movimiento sin nombre reconocible',
+      group: undefined,
+      libraryRef: refTo('bench_press'),
+    })).toBe('push')
   })
 })

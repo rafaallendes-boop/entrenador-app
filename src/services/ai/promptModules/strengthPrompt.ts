@@ -2,7 +2,7 @@
  * Strength-specific prompt sections for the AI coach.
  */
 
-import type { ChatContext, CoachExerciseProposal, MacroPlanPhase } from '../../../types'
+import type { ChatContext, MacroPlanPhase } from '../../../types'
 import { isCompetitionSquashMatch } from '../../../utils/squash'
 import { todayISO } from '../../../utils/date'
 import { buildStrengthLoadPack } from '../prompt/packs/quality/strengthLoad'
@@ -24,6 +24,7 @@ import {
   type StrengthSportProfile,
 } from '../../training/strengthSelector'
 import { getStrengthProgression } from '../../progressionInsights'
+import { toModelFacingProposal } from '../../training/strengthExerciseProposal'
 import {
   deriveFatigueLevel,
   diffDays,
@@ -110,17 +111,7 @@ export function formatSelectedStrengthExercises(
     .join(' · ')
 }
 
-export function toCoachExerciseProposal(exercise: StrengthSelectionExercise): CoachExerciseProposal {
-  return {
-    name: exercise.name,
-    sets: exercise.sets,
-    reps: exercise.reps,
-    group: exercise.group,
-    notes: exercise.notes
-      ? `${exercise.notes} [${exercise.intensity}]`
-      : (exercise.intensity ? `[${exercise.intensity}]` : undefined),
-  }
-}
+export const toCoachExerciseProposal = toModelFacingProposal
 
 export function stringifyStrengthExercises(
   exercises: StrengthSelectionExercise[],
