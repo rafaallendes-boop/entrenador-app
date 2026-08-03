@@ -2,6 +2,7 @@ import { BrowserRouter, Navigate, Routes, Route, useNavigate, useLocation } from
 import { Component, lazy, Suspense, useEffect, type ErrorInfo, type ReactNode } from 'react'
 import AppShell from './components/layout/AppShell'
 import AuthGate from './components/auth/AuthGate'
+import ConsentGate from './components/legal/ConsentGate'
 import CoachScopeGuard from './components/layout/CoachScopeGuard'
 import { ROUTES } from './constants/routes'
 import { useAuthStore } from './store/useAuthStore'
@@ -351,9 +352,10 @@ export default function App() {
           <Route path={ROUTES.COACHES} element={<RouteBoundary><CoachesLandingPage /></RouteBoundary>} />
           <Route path="*" element={(
             <AuthGate>
-              <CoachScopeGuard />
-              <OnboardingGuard>
-                <Routes>
+              <ConsentGate>
+                <CoachScopeGuard />
+                <OnboardingGuard>
+                  <Routes>
                   <Route path={ROUTES.ONBOARDING} element={<OnboardingPage />} />
                   <Route element={<AppShell />}>
                     <Route path={ROUTES.HOME} element={<RouteBoundary><Dashboard /></RouteBoundary>} />
@@ -372,8 +374,9 @@ export default function App() {
                     <Route path={ROUTES.IMPORT} element={<RouteBoundary><ImportPDF /></RouteBoundary>} />
                     <Route path="*" element={<Navigate to={ROUTES.HOME} replace />} />
                   </Route>
-                </Routes>
-              </OnboardingGuard>
+                  </Routes>
+                </OnboardingGuard>
+              </ConsentGate>
             </AuthGate>
           )} />
         </Routes>
