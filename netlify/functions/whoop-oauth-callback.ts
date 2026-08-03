@@ -3,6 +3,8 @@ import { exchangeCode } from './_shared/whoopClient'
 import { getServiceRoleDb } from './_shared/whoopOAuth'
 import { consumeOAuthState, upsertConnection } from './_shared/whoopSupabase'
 import { CURRENT_KEY_VERSION } from './_shared/tokenCrypto'
+import { isConsentEnforcementEnabled } from './_shared/consentFlag'
+import { hasCurrentWhoopConsent } from './_shared/consentEnforcement'
 
 const SETTINGS_SUCCESS = '/settings?whoop=connected'
 const NATIVE_SETTINGS_SUCCESS = 'rallyiq://settings?whoop=connected'
@@ -12,6 +14,7 @@ type CallbackFailureReason =
   | 'invalid_callback'
   | 'expired_state'
   | 'state_error'
+  | 'consent_required'
   | 'token_exchange'
   | 'connection_save'
 
@@ -46,6 +49,10 @@ export const handler: Handler = async (event) => {
     return redirect(errorLocation(nativeReturn, 'state_error'))
   }
   if (!consumed) return redirect(errorLocation(nativeReturn, 'expired_state'))
+
+  if (isConsentEnforcementEnabled() && !(await hasCurrentWhoopConsent(consumed.userId))) {
+    return redirect(errorLocation(nativeReturn, 'consent_required'))
+  }
 
   let tokens: Awaited<ReturnType<typeof exchangeCode>>
   try {

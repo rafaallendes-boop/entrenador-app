@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { Link, RefreshCcw, Trash2 } from 'lucide-react'
 import Card from '../ui/Card'
@@ -8,20 +8,35 @@ import { hydrateActiveAthlete } from '../../services/athlete/hydrateActiveAthlet
 import { useAuthStore } from '../../store/useAuthStore'
 import {
   disconnectWhoop,
+  isWhoopConsentRequiredError,
   startWhoopConnect,
 } from '../../services/readiness/whoopApi'
 import { clearLocalWhoopReadiness, clearLocalWhoopWorkouts } from '../../services/readiness/localReadiness'
 import { useWhoopSync } from '../../hooks/useWhoopSync'
 import { Browser } from '@capacitor/browser'
 import { isNativePlatform } from '../../services/platform'
+import { isConsentEnforcementEnabled } from '../../services/legal/consentFlag'
+import {
+  getMissingConsents,
+  hydrateConsents,
+  verifyCurrentConsentRemotely,
+} from '../../services/legal/consentService'
+import ConsentScreen from '../legal/ConsentScreen'
+
+type ConsentCheckState = 'checking' | 'current' | 'missing' | 'unavailable'
 
 export function WhoopConnection() {
   const location = useLocation()
   const activeAthleteFromStore = useAuthStore((state) => state.activeAthleteId)
   const userId = useAuthStore((state) => state.user?.id ?? null)
+  const consentEnabled = isConsentEnforcementEnabled()
   const [message, setMessage] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [biometricConsent, setBiometricConsent] = useState(false)
+  const [consentState, setConsentState] = useState<ConsentCheckState>(
+    consentEnabled ? 'checking' : 'current',
+  )
+  const consentRefreshRef = useRef(0)
   const {
     apiAvailable,
     clearMessage: clearSyncMessage,
@@ -44,6 +59,7 @@ export function WhoopConnection() {
     && Boolean(status?.connected)
     && !(status?.scopes ?? []).includes('read:workout')
   const actionBusy = busy || syncing
+  const consentBlocksWhoop = consentEnabled && consentState !== 'current'
   const displayMessage = message ?? syncMessage
   const oauthResult = new URLSearchParams(location.search).get('whoop')
   const oauthErrorReason = new URLSearchParams(location.search).get('reason')
@@ -53,6 +69,7 @@ export function WhoopConnection() {
     if (oauthResult !== 'error') return null
     if (oauthErrorReason === 'authorization_denied') return 'No se autorizó la conexión con Whoop.'
     if (oauthErrorReason === 'expired_state') return 'La autorización demoró demasiado. Intenta conectar Whoop nuevamente.'
+    if (oauthErrorReason === 'consent_required') return 'Aceptá el descargo biométrico para conectar Whoop.'
     if (oauthErrorReason === 'token_exchange') return 'Whoop no pudo completar la autorización. Intenta nuevamente.'
     return 'No se pudo completar la conexión con Whoop.'
   }, [oauthErrorReason, oauthResult])
@@ -60,6 +77,65 @@ export function WhoopConnection() {
   useEffect(() => {
     void refresh()
   }, [refresh])
+
+  const refreshConsent = useCallback(async () => {
+    const refreshId = ++consentRefreshRef.current
+    if (!consentEnabled) {
+      setConsentState('current')
+      return
+    }
+    if (!userId) {
+      setConsentState('checking')
+      return
+    }
+
+    setConsentState('checking')
+    try {
+      const localMissing = await getMissingConsents(userId, ['whoop_biometric'])
+      if (refreshId !== consentRefreshRef.current) return
+      if (localMissing.length === 0) {
+        setConsentState('current')
+        return
+      }
+
+      const hydrated = await hydrateConsents(userId)
+      if (refreshId !== consentRefreshRef.current) return
+      if (!hydrated.ok) {
+        setConsentState('unavailable')
+        return
+      }
+
+      const missing = await getMissingConsents(userId, ['whoop_biometric'])
+      if (refreshId === consentRefreshRef.current) {
+        setConsentState(missing.length > 0 ? 'missing' : 'current')
+      }
+    } catch {
+      if (refreshId === consentRefreshRef.current) setConsentState('unavailable')
+    }
+  }, [consentEnabled, userId])
+
+  const reconcileServerConsentRejection = useCallback(async () => {
+    const refreshId = ++consentRefreshRef.current
+    if (!consentEnabled || !userId) return
+
+    setConsentState('checking')
+    try {
+      const remote = await verifyCurrentConsentRemotely(userId, 'whoop_biometric')
+      if (refreshId !== consentRefreshRef.current) return
+      // Si el cliente confirma la fila que el servidor rechazó, hay una
+      // discrepancia de autoridad: no inducir una aceptación duplicada.
+      setConsentState(remote.ok && !remote.current ? 'missing' : 'unavailable')
+    } catch {
+      if (refreshId === consentRefreshRef.current) setConsentState('unavailable')
+    }
+  }, [consentEnabled, userId])
+
+  useEffect(() => {
+    void refreshConsent()
+    return () => {
+      consentRefreshRef.current += 1
+    }
+  }, [refreshConsent, status?.connected])
 
   useEffect(() => {
     if (!userId || (activeAthleteId != null && selfAthleteId != null)) return
@@ -103,13 +179,18 @@ export function WhoopConnection() {
   }
 
   const onConnect = async () => {
-    if (!canConnect || !biometricConsent) return
+    if (!canConnect || (consentEnabled ? consentState !== 'current' : !biometricConsent)) return
     setMessage(null)
     clearSyncMessage()
     setBusy(true)
     try {
       await launchWhoopOAuth()
     } catch (error) {
+      if (isWhoopConsentRequiredError(error)) {
+        await reconcileServerConsentRejection()
+        setMessage('Whoop requiere volver a verificar tu consentimiento biométrico.')
+        return
+      }
       console.error('[whoop] connect failed', error)
       setMessage('No se pudo iniciar la conexion con Whoop.')
     } finally {
@@ -118,13 +199,18 @@ export function WhoopConnection() {
   }
 
   const onReconnect = async () => {
-    if (!canConnect) return
+    if (!canConnect || consentBlocksWhoop) return
     setMessage(null)
     clearSyncMessage()
     setBusy(true)
     try {
       await launchWhoopOAuth()
     } catch (error) {
+      if (isWhoopConsentRequiredError(error)) {
+        await reconcileServerConsentRejection()
+        setMessage('Whoop requiere volver a verificar tu consentimiento biométrico.')
+        return
+      }
       console.error('[whoop] reconnect failed', error)
       setMessage('No se pudo iniciar la reconexion con Whoop.')
     } finally {
@@ -133,6 +219,7 @@ export function WhoopConnection() {
   }
 
   const onSync = async () => {
+    if (consentBlocksWhoop) return
     setMessage(null)
     await syncNow()
   }
@@ -180,6 +267,44 @@ export function WhoopConnection() {
         </p>
       )}
 
+      {consentEnabled && consentState === 'checking' && (
+        <p className="mt-3 rounded-xl border border-surface-border bg-surface-raised px-3 py-2 text-xs text-ink-muted">
+          Verificando tu consentimiento biométrico…
+        </p>
+      )}
+
+      {consentEnabled && consentState === 'unavailable' && (
+        <div className="mt-3 rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-3">
+          <p className="text-xs leading-relaxed text-amber-300">
+            No pudimos verificar tu consentimiento biométrico. Revisá tu conexión o reabrí la app antes de continuar.
+          </p>
+          <button
+            type="button"
+            disabled={actionBusy}
+            onClick={() => void refreshConsent()}
+            className="mt-2 rounded-xl border border-amber-400/30 px-3 py-2 text-xs font-semibold text-amber-200 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            Reintentar
+          </button>
+        </div>
+      )}
+
+      {consentEnabled && consentState === 'missing' && (
+        <div className="mt-3">
+          <ConsentScreen
+            variant="inline"
+            documents={['whoop_biometric']}
+            isUpdate={Boolean(status?.connected)}
+            onAccepted={() => void refreshConsent()}
+          />
+          {Boolean(status?.connected) && (
+            <p className="mt-3 text-xs text-ink-muted">
+              Pausamos la sincronización hasta que aceptes el descargo actualizado.
+            </p>
+          )}
+        </div>
+      )}
+
       {status?.connected ? (
         <div className="mt-4 space-y-3">
           <div className="rounded-xl border border-surface-border bg-surface-raised px-3 py-3">
@@ -196,7 +321,7 @@ export function WhoopConnection() {
               </p>
               <button
                 type="button"
-                disabled={actionBusy}
+                disabled={actionBusy || consentBlocksWhoop}
                 onClick={() => void onReconnect()}
                 className="mt-2 inline-flex items-center gap-2 rounded-xl bg-brand px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-brand-light disabled:cursor-not-allowed disabled:opacity-60"
               >
@@ -208,7 +333,7 @@ export function WhoopConnection() {
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
-              disabled={actionBusy}
+              disabled={actionBusy || consentBlocksWhoop}
               onClick={() => void onSync()}
               className="inline-flex items-center gap-2 rounded-xl bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-light disabled:cursor-not-allowed disabled:opacity-60"
             >
@@ -236,21 +361,22 @@ export function WhoopConnection() {
 
           {canConnect && (
             <>
-              {/* TODO: replace with onboarding consent once client-readiness legal consent lands. */}
-              <label className="flex items-start gap-3 rounded-xl border border-surface-border bg-surface-raised px-3 py-3">
-                <input
-                  type="checkbox"
-                  checked={biometricConsent}
-                  onChange={(event) => setBiometricConsent(event.target.checked)}
-                  className="mt-0.5 h-4 w-4 rounded border-surface-border bg-surface"
-                />
-                <span className="text-xs leading-relaxed text-ink-muted">
-                  Acepto usar datos biométricos de Whoop para contexto de entrenamiento. No reemplaza consejo médico y puedo desconectar o borrar estos datos.
-                </span>
-              </label>
+              {!consentEnabled && (
+                <label className="flex items-start gap-3 rounded-xl border border-surface-border bg-surface-raised px-3 py-3">
+                  <input
+                    type="checkbox"
+                    checked={biometricConsent}
+                    onChange={(event) => setBiometricConsent(event.target.checked)}
+                    className="mt-0.5 h-4 w-4 rounded border-surface-border bg-surface"
+                  />
+                  <span className="text-xs leading-relaxed text-ink-muted">
+                    Acepto usar datos biométricos de Whoop para contexto de entrenamiento. No reemplaza consejo médico y puedo desconectar o borrar estos datos.
+                  </span>
+                </label>
+              )}
               <button
                 type="button"
-                disabled={actionBusy || !biometricConsent}
+                disabled={actionBusy || (consentEnabled ? consentState !== 'current' : !biometricConsent)}
                 onClick={() => void onConnect()}
                 className="inline-flex items-center gap-2 rounded-xl bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-light disabled:cursor-not-allowed disabled:opacity-60"
               >

@@ -15,7 +15,29 @@ export interface WhoopStatus {
 export interface WhoopSyncResponse {
   ok: boolean
   reason?: 'no_connection' | 'no_self_athlete' | 'cooldown' | 'rate_limited' | 'error'
+  code?: 'consent_required'
+  error?: string
   retryAfterMs?: number
+}
+
+export class WhoopApiError extends Error {
+  readonly status: number
+  readonly code?: 'consent_required'
+
+  constructor(
+    message: string,
+    status: number,
+    code?: 'consent_required',
+  ) {
+    super(message)
+    this.name = 'WhoopApiError'
+    this.status = status
+    this.code = code
+  }
+}
+
+export function isWhoopConsentRequiredError(error: unknown): boolean {
+  return error instanceof WhoopApiError && error.code === 'consent_required'
 }
 
 async function authHeader(): Promise<Record<string, string>> {
@@ -32,8 +54,14 @@ export async function startWhoopConnect(options: { nativeReturn?: boolean } = {}
     headers: { 'Content-Type': 'application/json', ...await authHeader() },
     body: JSON.stringify({ nativeReturn: options.nativeReturn === true }),
   })
-  if (!res.ok) throw new Error('No se pudo iniciar la conexion con Whoop.')
-  const data = await res.json() as { url?: string }
+  const data = await res.json().catch(() => ({})) as { url?: string; error?: string; code?: unknown }
+  if (!res.ok) {
+    throw new WhoopApiError(
+      data.error ?? 'No se pudo iniciar la conexion con Whoop.',
+      res.status,
+      data.code === 'consent_required' ? 'consent_required' : undefined,
+    )
+  }
   if (!data.url) throw new Error('Whoop no devolvio una URL de autorizacion.')
   return data.url
 }
@@ -51,7 +79,15 @@ export async function syncWhoopNow(): Promise<WhoopSyncResponse> {
     method: 'POST',
     headers: await authHeader(),
   })
-  return res.json() as Promise<WhoopSyncResponse>
+  const data = await res.json().catch(() => ({})) as Partial<WhoopSyncResponse>
+  if (!res.ok) {
+    return {
+      ...data,
+      ok: false,
+      reason: data.reason ?? 'error',
+    }
+  }
+  return { ...data, ok: data.ok === true }
 }
 
 export async function disconnectWhoop(): Promise<void> {

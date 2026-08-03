@@ -3,6 +3,9 @@ import { pullReadiness } from '../services/readiness/pullReadiness'
 import { pullWorkouts } from '../services/readiness/pullWorkouts'
 import { autoCompleteFromWorkouts } from '../services/readiness/autoCompleteFromWorkouts'
 import { getWhoopStatus, syncWhoopNow, type WhoopStatus, type WhoopSyncResponse } from '../services/readiness/whoopApi'
+import { useAuthStore } from '../store/useAuthStore'
+import { isConsentEnforcementEnabled } from '../services/legal/consentFlag'
+import { getMissingConsents, hydrateConsents } from '../services/legal/consentService'
 
 export interface UseWhoopSyncOptions {
   onReadinessPulled?: () => Promise<void> | void
@@ -10,6 +13,9 @@ export interface UseWhoopSyncOptions {
 
 function messageForSyncResult(result: WhoopSyncResponse): string {
   if (result.ok) return 'Whoop sincronizado.'
+  if (result.code === 'consent_required') {
+    return 'Aceptá el descargo biométrico en Ajustes para reanudar la sincronización.'
+  }
   if (result.reason === 'cooldown') {
     const seconds = Math.max(1, Math.ceil((result.retryAfterMs ?? 0) / 1000))
     return `Espera ${seconds}s para volver a sincronizar.`
@@ -42,6 +48,7 @@ export async function syncWhoopAndRefreshLocalData(
 
 export function useWhoopSync(options: UseWhoopSyncOptions = {}) {
   const onReadinessPulled = options.onReadinessPulled
+  const userId = useAuthStore((state) => state.user?.id ?? null)
   const [status, setStatus] = useState<WhoopStatus | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const [syncing, setSyncing] = useState(false)
@@ -72,6 +79,33 @@ export function useWhoopSync(options: UseWhoopSyncOptions = {}) {
     setSyncing(true)
     setMessage(null)
     try {
+      if (isConsentEnforcementEnabled() && userId) {
+        try {
+          let missing = await getMissingConsents(userId, ['whoop_biometric'])
+          if (missing.length > 0) {
+            const hydrated = await hydrateConsents(userId)
+            if (!hydrated.ok) {
+              if (mountedRef.current) {
+                setMessage('No pudimos verificar tu consentimiento biométrico. Revisá tu conexión.')
+              }
+              return null
+            }
+            missing = await getMissingConsents(userId, ['whoop_biometric'])
+          }
+          if (missing.length > 0) {
+            if (mountedRef.current) {
+              setMessage('Aceptá el descargo biométrico en Ajustes para reanudar la sincronización.')
+            }
+            return null
+          }
+        } catch {
+          if (mountedRef.current) {
+            setMessage('No pudimos verificar tu consentimiento biométrico. Revisá tu conexión.')
+          }
+          return null
+        }
+      }
+
       const result = await syncWhoopAndRefreshLocalData(onReadinessPulled)
 
       if (mountedRef.current) setMessage(messageForSyncResult(result))
@@ -87,7 +121,7 @@ export function useWhoopSync(options: UseWhoopSyncOptions = {}) {
     } finally {
       if (mountedRef.current) setSyncing(false)
     }
-  }, [onReadinessPulled, refreshStatus])
+  }, [onReadinessPulled, refreshStatus, userId])
 
   const clearMessage = useCallback(() => {
     setMessage(null)

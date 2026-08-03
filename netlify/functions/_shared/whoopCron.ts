@@ -15,6 +15,8 @@ import {
   upsertWorkouts,
   type WhoopDb,
 } from './whoopSupabase'
+import { isConsentEnforcementEnabled } from './consentFlag'
+import { hasCurrentWhoopConsent } from './consentEnforcement'
 
 interface SelectConnectionsQuery {
   select(columns?: string): Promise<{
@@ -53,6 +55,7 @@ export async function runWhoopCron(): Promise<HandlerResponse> {
     .filter((userId): userId is string => typeof userId === 'string' && userId.length > 0)
 
   for (const userId of userIds) {
+    if (isConsentEnforcementEnabled() && !(await hasCurrentWhoopConsent(userId))) continue
     await runWhoopSync(baseDeps(db), { userId, trigger: 'cron' }).catch(() => undefined)
   }
   await deleteExpiredOAuthStates(db).catch(() => undefined)

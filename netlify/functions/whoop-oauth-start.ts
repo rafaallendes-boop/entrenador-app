@@ -3,6 +3,8 @@ import { json, resolveAuthContext } from './_shared/planGenerationShared'
 import { buildAuthorizeUrl, generateOAuthState, getServiceRoleDb, OAUTH_STATE_TTL_MS, WHOOP_SCOPES } from './_shared/whoopOAuth'
 import { insertOAuthState } from './_shared/whoopSupabase'
 import { corsPreflight } from './_shared/cors'
+import { isConsentEnforcementEnabled } from './_shared/consentFlag'
+import { hasCurrentWhoopConsent } from './_shared/consentEnforcement'
 
 export const handler: Handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') return corsPreflight()
@@ -13,6 +15,14 @@ export const handler: Handler = async (event) => {
     auth = await resolveAuthContext(event)
   } catch (error) {
     return json((error as { statusCode?: number }).statusCode ?? 401, { error: 'Sesión requerida.' })
+  }
+
+  if (isConsentEnforcementEnabled() && !(await hasCurrentWhoopConsent(auth.userId))) {
+    return json(403, {
+      ok: false,
+      error: 'Consentimiento biométrico requerido.',
+      code: 'consent_required',
+    })
   }
 
   const clientId = process.env['WHOOP_CLIENT_ID']

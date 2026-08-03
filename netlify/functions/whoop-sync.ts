@@ -17,6 +17,8 @@ import {
   type WhoopDb,
 } from './_shared/whoopSupabase'
 import { corsPreflight } from './_shared/cors'
+import { isConsentEnforcementEnabled } from './_shared/consentFlag'
+import { hasCurrentWhoopConsent } from './_shared/consentEnforcement'
 
 const baseDeps = (db: WhoopDb) => ({
   db,
@@ -56,6 +58,18 @@ export const handler: Handler = async (event) => {
     auth = await resolveAuthContext(event)
   } catch (error) {
     return json((error as { statusCode?: number }).statusCode ?? 401, { error: 'Sesión requerida.' })
+  }
+
+  if (
+    event.httpMethod === 'POST'
+    && isConsentEnforcementEnabled()
+    && !(await hasCurrentWhoopConsent(auth.userId))
+  ) {
+    return json(403, {
+      ok: false,
+      error: 'Consentimiento biométrico requerido.',
+      code: 'consent_required',
+    })
   }
 
   const db = getServiceRoleDb()
