@@ -1,14 +1,15 @@
 # RallyIQ - Project Review and Roadmap
 
-Actualizado: 2026-08-01
+Actualizado: 2026-08-03
 
 Base de contraste:
 
+- **Consentimiento in-app versionado implementado localmente (2026-08-03):** `017_user_consents.sql` escrita y no aplicada, Dexie v19, publicaciones legales inmutables, gate general y enforcement biométrico de Whoop en cliente/servidor. Las flags `VITE_CONSENT_GATE` y `CONSENT_GATE_ENABLED` siguen apagadas; no habilitar hasta aprobar los textos y resolver el copy de borrado total.
 - **Fuerza — desacople del nombre, Entregas 1–3 (2026-08-01): commiteadas en `3d480b3`.** Ver §18 — los hallazgos del code review quedaron corregidos y el bloque se cerró sin migraciones.
 - **Fuerza — identidad estable (`libraryRef`-first): implementada y commiteada.** Ver §19 — Plan Builder, coach y calidad consumen el `id` del catálogo sin volver a inferir identidad desde el nombre. Sin migraciones; 2613/2613 tests, lint y build verdes.
 - **Fuerza — copy de la librería por `id`: implementado y commiteado en este bloque.** Ver §20 — 12 renombres, 31 descripciones y aliases legacy sin cambios de prescripción; 2666/2666 tests, lint y build verdes.
 - `main` con el commit de esta entrega (`feat: complete coach planning library and calendar hardening`).
-- **`011_whoop_integration.sql` y `012_whoop_workouts.sql` aplicados en produccion.** Whoop readiness y Workout Auto-Complete quedan operativos de punta a punta (owner confirma cierre operacional); pendiente solo el linkeo de consentimiento biometrico/legal antes de exponer a terceros (ver Riesgo 1).
+- **`011_whoop_integration.sql` y `012_whoop_workouts.sql` aplicados en produccion.** Whoop readiness y Workout Auto-Complete quedan operativos de punta a punta (owner confirma cierre operacional); el enforcement biométrico ya está implementado localmente y queda pendiente su rollout legal (`017` + flags, ver Riesgo 1).
 - **Coach Workspace v0 + ampliacion implementados (2026-07-13 a 2026-07-19):** `/coach` pasa de un roster unico (`CoachRosterPage`) a `CoachWorkspacePage` con Resumen, Alumnos, Planificacion y Biblioteca operativas; Asistente IA conserva el placeholder. Incluye endurecimiento de `switchActiveAthlete`, edicion multi-atleta, alta/aplicacion de plantillas y lock de concurrencia a nivel de modulo. `015` y el bundle de Biblioteca/Planificacion ya fueron aplicados en produccion; queda el smoke autenticado.
 - **Gestion de roster + Planificacion read-only implementadas (2026-07-14):** Alumnos agrega archivar/restaurar y borrado duro confirmado por nombre. El borrado usa tombstones por intento, barrera y tracking single-tab, delete remoto durable, supresion de cola y purga Dexie transaccional para impedir resurrecciones. Planificacion muestra la semana de cualquier atleta del roster mediante lecturas/hidratacion por `athleteId` explicito, sin cambiar el scope activo. `015` y el deploy de Biblioteca ya estan en produccion; resta el smoke autenticado.
 - **Coach Biblioteca + Planificacion completa desplegadas (2026-07-18/19):** edicion de sesiones, Biblioteca de plantillas account-scoped, aplicar/guardar plantillas para cualquier atleta/dia, Dexie v18, backup v4 y sync Supabase por fila con LWW/delete-wins y tombstones versionados. `015_session_templates.sql` fue aplicada y el bundle desplegado; falta el smoke autenticado en produccion.
@@ -25,7 +26,7 @@ Base de contraste:
 - **Coach UI F2-lite Parte 2b desplegada en produccion (2026-07-05):** switcher + roster `/coach` + onboarding athlete-aware, gated por `VITE_COACH_ACCOUNTS`. Migracion `010a/b/c` (day/week full unique expand->contract) aplicada; `008a`/`010a` post-deploy en 0. Smoke self + gestionado OK.
 - Superficie publica actualizada para demo multideporte: Landing/Features/Pricing limpian residuos visibles de version/localidad, reducen sesgo squash-only y Pricing queda en 3 planes: Base gratis, Coach Semanal y Avanzado con Plan Builder.
 - **Polish de uso real implementado (2026-07-06):** la nota/lectura semanal del coach queda disponible solo desde viernes-domingo y completar todos los ejercicios de una sesion marca automaticamente la sesion como realizada.
-- **WHOOP v1 implementado, commiteado y aplicado en produccion (2026-07-08/10, `011` cerrado 2026-07-13):** integracion end-to-end en `main` (`c8aa5f8`, `14b7056`, `5293e6c`): `011_whoop_integration.sql`, Dexie v15 `readinessDaily`, OAuth start/callback/status con state single-use, tokens AES-256-GCM, sync manual/on-demand con cooldown, cron dedicado, `ReadinessCard`, `WhoopConnection`, prefill de check-in gateado (hoy+self+atleta), contexto pasivo del coach, borrado completo service-role, export/backup y wipe local. Cierre de review previo: lint + 1160 tests + build + typecheck. Pendiente unicamente el gate legal/consentimiento biometrico antes de terceros.
+- **WHOOP v1 implementado, commiteado y aplicado en produccion (2026-07-08/10, `011` cerrado 2026-07-13):** integracion end-to-end en `main` (`c8aa5f8`, `14b7056`, `5293e6c`): `011_whoop_integration.sql`, Dexie v15 `readinessDaily`, OAuth start/callback/status con state single-use, tokens AES-256-GCM, sync manual/on-demand con cooldown, cron dedicado, `ReadinessCard`, `WhoopConnection`, prefill de check-in gateado (hoy+self+atleta), contexto pasivo del coach, borrado completo service-role, export/backup y wipe local. Cierre de review previo: lint + 1160 tests + build + typecheck. El gate biométrico ya está implementado localmente; faltan aprobación y rollout.
 - **WHOOP Esfuerzo (2026-07-08) implementado:** `dayLog.rpeActual` se mantiene como storage pero la UI/copy lo relabela a "Esfuerzo"; Whoop strain lo prellena con `clamp(round(strain / 2.1), 1, 10)`, editable, y no se usa para sembrar `Session.actualRpe` ni inflar ACWR/carga.
 - **Resumen semanal/coach note corregido (2026-07-10):** snapshot de nota semanal, freshness check y tests evitan reusar notas obsoletas cuando cambia el resumen.
 - **SP1a dos-lados implementado en codigo (2026-07-09/10):** spec endurecido con D1-D6 y plan `docs/superpowers/plans/2026-07-09-sp1a-two-sided-foundation.md` ejecutado en el cliente (Dexie v17 con `athleteMemberships`/`athleteCoachNotes`, `membershipCache`, `claimGate`, ruteo `session_completion` via RPC `mark_session_done`) y `013a/b/c` escritas en `supabase/`. **Rollout remoto de `013a/b/c` sin confirmar** — el plan se conserva por su guia de aplicacion. SP1b (invites + UI) sigue sin implementar.
@@ -37,7 +38,7 @@ RallyIQ esta en una etapa donde el core ya no es el cuello de botella principal.
 
 Lo que queda antes de mostrar/cobrar con confianza se concentra en dos carriles:
 
-1. **Cierre legal completo:** consentimiento biometrico explicito de Whoop + revision juridica formal + RUT/domicilio legal antes de cobro/anuncios masivos.
+1. **Cierre legal y rollout:** el consentimiento general y biométrico ya está implementado detrás de flags; faltan revisión jurídica formal, decisión de retención al borrar cuenta, aplicar `017` y habilitar cliente/servidor juntos, además de RUT/domicilio legal antes de cobro/anuncios masivos.
 2. **QA deportiva y operacional:** planes arquetipo como atletas gestionados, protocolo de revision semanal, canales de soporte, y primer piloto acompanado (1-3 clientes).
 
 Carriles de producto que siguen abiertos pero ya no bloquean la oferta comercial:
@@ -49,21 +50,36 @@ Mi lectura como lider tecnico: el cambio principal entre hoy y hace dos dias es 
 
 ## Estado Actual En Una Frase
 
-RallyIQ ya opera multi-atleta en produccion, con Whoop readiness y Workout Auto-Complete operativos (`011`/`012` aplicados), Coach Workspace base (`/coach`) y rutas legales publicas + landing `/coaches` en vivo. `015` y Biblioteca/Planificacion ya estan desplegadas, `quality_version = 2` quedo verificada en `plan_generation_jobs`, y la rotacion coordinada del Plan Builder ya paso su control `high` pagado; el siguiente paso tecnico es autorizar el deploy de esa tanda junto con los roles de partido de squash que viajan encima (`9754f78`, sin medir). En paralelo siguen pendientes revision juridica formal y consentimiento biometrico de Whoop antes del primer piloto pagado.
+RallyIQ ya opera multi-atleta en produccion, con Whoop readiness y Workout Auto-Complete operativos (`011`/`012` aplicados), Coach Workspace base (`/coach`) y rutas legales publicas + landing `/coaches` en vivo. El consentimiento in-app y biométrico ya está implementado localmente, pero continúa apagado: `017` no está aplicada y las dos flags no se habilitan hasta cerrar textos y retención. `015` y Biblioteca/Planificacion ya estan desplegadas, `quality_version = 2` quedo verificada en `plan_generation_jobs`, y la rotacion coordinada del Plan Builder ya paso su control `high` pagado.
 
 ## Porcentaje De Avance
 
 Estimacion actual:
 
 - Demo acompanada: **99% listo / 1% pendiente** (rutas legales publicas ya vivas; pendiente solo revision juridica formal).
-- Piloto manual pagado 1-3 clientes: **93% listo / 7% pendiente** (Fase 0 completa; pendiente consentimiento biometrico Whoop + operaciones piloto).
+- Piloto manual pagado 1-3 clientes: **93% listo / 7% pendiente** (Fase 0 completa; pendiente rollout legal del consentimiento Whoop + operaciones piloto).
 - Coach UI F2-lite MVP interno: **99% listo / 1% pendiente** (roster, edicion de Planificacion y Biblioteca desplegados con `015`; pendiente smoke autenticado y Asistente IA futura).
 - Coach dos-lados/SP1: **25% listo / 75% pendiente** (especificado y planificado, pero no urgente frente al piloto de una sola cuenta).
-- Monetizacion publica self-serve: **62% listo / 38% pendiente** (rutas legales + landing coach vivas; falta pagos automaticos, consentimiento in-app, e2e auth).
+- Monetizacion publica self-serve: **62% listo / 38% pendiente** (rutas legales + landing coach vivas y consentimiento implementado; faltan pagos automáticos, rollout legal y e2e auth).
 
 Traduccion practica: el producto ya tiene sustancia y superficie legal/comercial minima. Lo pendiente es reducir riesgo juridico formal (revision de abogado) y riesgo operacional (primer cliente real).
 
 ## Lo Nuevo Desde El Roadmap Anterior
+
+### Consentimiento in-app versionado quedó implementado detrás de flags
+
+- Los textos legales pasan a publicaciones de datos inmutables; el ledger congela `documento@versión#sha256`, incluyendo estructura, énfasis y destinos de enlace.
+- `017_user_consents.sql` crea un log append-only por cuenta, fuerza `accepted_at` en servidor y solo expone `select`/`insert` propios por RLS. No lleva FK a `auth.users`: mientras el abogado no decida, el default es conservar la evidencia.
+- Dexie v19 espeja únicamente filas devueltas por Supabase y siempre filtra por `userId`; el espejo queda fuera de export/import y se limpia con el reset local completo.
+- El gate general exige términos, privacidad y salud. Hidrata remoto antes de pedir una aceptación desconocida y funciona sin red en sesiones posteriores gracias al espejo confirmado.
+- Aunque el gate esté cerrado, mantiene una superficie restringida para cerrar sesión, exportar y borrar datos; Settings y el resto del producto siguen bloqueados.
+- Whoop exige la versión biométrica vigente antes de iniciar OAuth, completar el callback, sincronizar manualmente o procesar la cuenta en cron. La desconexión `DELETE` queda siempre disponible.
+- Un `403 consent_required` al iniciar OAuth conserva su código y dispara una verificación remota: solo una ausencia confirmada muestra re-aceptación; una falla o discrepancia muestra indisponibilidad.
+- Rollout: aplicar `017` y encender juntas `VITE_CONSENT_GATE` y `CONSENT_GATE_ENABLED`. Encender solo una es un estado inválido.
+
+Estado: **implementado y verificado localmente, no desplegado ni habilitado.** Suite completa: 354 archivos / 2740 tests, typecheck, lint, build y `git diff --check` verdes. La activación tiene dos bloqueantes duros: textos aprobados y resolver que Ajustes promete borrar “TODOS” los datos mientras el default legal conserva `user_consents`.
+
+Decisiones abiertas para abogado, con default actual: (1) conservar evidencia al borrar cuenta; (2) salud se acepta por separado e IA queda cubierta por términos; (3) todo id nuevo de publicación, incluso por redacción menor, exige reaceptación.
 
 ### 1. `008b` paso de plan a produccion
 
@@ -103,7 +119,7 @@ Decision de producto del 2026-07-06, ejecutada entre 2026-07-08 y 2026-07-10:
 - `rpeActual` se mantiene como storage pero el producto lo relabela a **Esfuerzo**; Whoop strain lo prellena como esfuerzo diario editable, sin contaminar `Session.actualRpe`.
 - La futura landing/oferta coach solo puede prometer contexto objetivo opcional y consentido; no diagnostico, prevencion de lesiones ni ajuste automatico.
 
-Estado: **`011` aplicado en produccion, deploy y smoke operativo confirmados por el owner.** Pendiente unicamente linkear el gate legal/consentimiento biometrico antes de exponer Whoop a terceros — no bloquea el uso del owner.
+Estado: **`011` aplicado en produccion, deploy y smoke operativo confirmados por el owner.** El gate legal/biométrico está implementado localmente; su activación espera `017`, textos aprobados y ambas flags — no bloquea el uso actual del owner.
 
 ### 4. SP1 Coach dos-lados quedo especificado y planificado como SP1a/SP1b
 
@@ -598,13 +614,15 @@ Cierres tecnicos recientes:
 
 ## Riesgos Que Siguen Vivos
 
-### 1. WHOOP ya agrega dato sensible: falta cerrar consentimiento (operacion ya cerrada)
+### 1. WHOOP ya agrega dato sensible: enforcement implementado, rollout legal pendiente
 
 Whoop es el track de producto con mas retorno inmediato, e introduce datos biometricos,
 OAuth externo, tokens cifrados y borrado completo. La operacion tecnica ya cerro (`011`/`012`
-aplicados, deploy y smoke confirmados por el owner). Lo que falta antes de exponerlo a terceros:
+aplicados, deploy y smoke confirmados por el owner). El código ya exige consentimiento
+biométrico vigente en todos los puntos de incorporación de datos cuando las flags están
+activas. Lo que falta antes de exponerlo a terceros:
 
-- consentimiento biometrico explicito;
+- aplicar `017` y encender juntas las flags de cliente y servidor;
 - politica de privacidad/terminos actualizados;
 - rutas o UI que expliquen desconexion + borrado remoto/local.
 
@@ -755,9 +773,10 @@ Objetivo: poder enviar links y cobrar sin zona gris innecesaria.
 - [x] Crear ruta publica `/health-disclaimer` (Fase 0).
 - [x] Crear superficie de descargo Whoop como ruta publica (Fase 0).
 - [x] Linkear rutas desde landing, pricing, features y signup/login (Fase 0 + SharedPublicNav fix).
-- [ ] Agregar consentimiento de terminos/privacidad/descargo/IA en signup u onboarding (UI checkbox/modal).
-- [ ] Agregar consentimiento biometrico antes de conectar Whoop para terceros (en WhoopConnection).
-- [ ] Registrar version y fecha de consentimiento (tabla DB si es necesario).
+- [x] Implementar consentimiento de terminos/privacidad/salud en la app autenticada, detrás de flag (2026-08-03; rollout pendiente).
+- [x] Implementar consentimiento biometrico persistido antes de conectar y procesar Whoop (cliente + servidor; rollout pendiente).
+- [x] Registrar version y fecha de consentimiento en log append-only (`017` escrita, no aplicada; Dexie v19).
+- [ ] Aprobar textos, resolver retención al borrar cuenta, aplicar `017` y encender juntas ambas flags.
 - [ ] Agregar politica simple de cancelacion/reembolso para piloto manual (en landing coach).
 - [ ] Revision juridica formal de textos legales con abogado antes de pago publico o anuncios masivos.
 

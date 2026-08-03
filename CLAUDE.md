@@ -27,12 +27,13 @@ Etapa: preparando piloto premium acompañado (1-3 clientes fundadores). Coach Mo
 - `supabase/00X_*.sql` — migraciones remotas numeradas, de aplicación manual
 
 ## Estado actual del producto
-Ver `PROJECT_REVIEW_AND_ROADMAP.md` para el estado completo. Actualizado: 2026-08-01.
-Suite completa verificada: **2666/2666 tests**, lint y build OK.
-Migraciones remotas aplicadas hasta `016`. Dexie local en **v18**.
+Ver `PROJECT_REVIEW_AND_ROADMAP.md` para el estado completo. Actualizado: 2026-08-03.
+Suite completa verificada: **2740/2740 tests** en 354 archivos, typecheck, lint y build OK.
+Migraciones remotas aplicadas hasta `016`; `017_user_consents.sql` está escrita pero **no aplicada**. Dexie local en **v19**.
 El chunk más pesado es `pdf.worker.min` — ya optimizado, no tocar sin razón.
 
 Bloques recientes relevantes:
+- **Consentimiento in-app versionado** (`017`, Dexie **v19**, 2026-08-03): publicaciones legales inmutables con ledger `documento@versión#sha256`, log remoto append-only con timestamp forzado por servidor, espejo local account-scoped, hidratación remota y gate bloqueante para términos/privacidad/salud. El bloqueo conserva cerrar sesión, exportar y borrar datos sin abrir Settings. Whoop exige consentimiento vigente en OAuth, callback, sync manual y cron; un 403 OAuth se revalida remoto antes de mostrar re-aceptación, y desconectar/borrar sigue permitido. La entrega queda detrás de `VITE_CONSENT_GATE` + `CONSENT_GATE_ENABLED`, ambas apagadas por defecto. **Código implementado localmente; `017` no aplicada y flags no habilitadas.** Activación bloqueada hasta aprobar los textos y resolver la contradicción entre conservar evidencia y el copy de borrado total de Ajustes.
 - **Athlete scope foundation** (`007`): tabla `athletes`, `athlete_id` backfilleado, hidratación de atleta activo, flag `VITE_ATHLETE_SCOPE` (off).
 - **F2 data prereqs**: Dexie v14 con únicos compuestos `[athleteId+date]` / `[athleteId+weekStartDate]`; merges/import/export athlete-aware.
 - **008b write path**: handler reactivo de `23505` (`reconcileNaturalKeyConflict`) aplicado en prod; mantener `008a` como preflight operativo antes de futuros cambios de contrato.
@@ -61,7 +62,7 @@ Saldo Anthropic al 2026-07-30: **~US$0,60**. Una corrida de `npm run loadtest:pl
 
 ## Prioridades abiertas (en orden)
 1. Smokear Biblioteca + Planificación autenticadas, incluyendo el catálogo/picker del coach (`015` y su bundle llevan días en producción sin verificación end-to-end con sesión real).
-2. Consentimiento in-app (términos/privacidad/IA) + consentimiento biométrico antes de conectar Whoop para terceros; revisión jurídica formal en paralelo.
+2. Aprobar y habilitar el consentimiento in-app ya implementado: revisión jurídica, decisión de retención al borrar cuenta, aplicar `017` y encender juntas las dos flags.
 3. QA deportiva: 3 planes arquetipo como atletas gestionados y checklist manual de revisión.
 4. Operación del piloto premium: oferta cerrada, soporte, reembolso, primer cliente onboardeado.
 5. Validación operativa real de sync (conflictos concurrentes, recovery multi-dispositivo).
@@ -74,7 +75,7 @@ Saldo Anthropic al 2026-07-30: **~US$0,60**. Una corrida de `npm run loadtest:pl
   - Toda creación local de esas filas se estampa con `withActiveAthleteStamp`.
   - En sync, el fallback legacy se ancla a `getSelfAthleteId()`, nunca al atleta activo.
   - `isInAthleteScope` (effectiveAthleteKey) es para delete-scoping de sync; para lecturas usar `activeScopeFilter`.
-- El modelo local es Dexie (**v18**) — cualquier cambio de schema requiere migración + test de upgrade real (fake-indexeddb ya instalado; patrón: `db.close(); await db.delete(); await db.open()` por test).
+- El modelo local es Dexie (**v19**) — cualquier cambio de schema requiere migración + test de upgrade real (fake-indexeddb ya instalado; el upgrade de consentimiento abre primero una base legacy v18 con datos, la cierra y luego abre `EntrenadorDB`).
 - Las migraciones remotas son de **aplicación manual**: escribir el `.sql` numerado no es aplicarlo. Antes de asumir que una tabla existe en prod, confirmar el rollout con el owner.
 - Coach: las lecturas/escrituras por atleta explícito van por `coachScopedReads`/`coachScopedWrites` — nunca cambiando el atleta activo para leer la semana de otro.
 - No modificar `promptBuilder.ts` sin revisar el contexto completo del coach.
