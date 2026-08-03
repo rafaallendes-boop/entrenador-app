@@ -1,0 +1,31 @@
+<h1> | text:Términos y Condiciones
+<p> | text:Última actualización: | text:2026-07-13
+<p> | strong:Titular del servicio: | text:Rafael Allendes | text:. Si cambia la persona o entidad titular del servicio, esta sección y la Política de Privacidad se actualizarán antes de que el cambio produzca efectos para los usuarios.
+<p> | strong:Contacto: | text:hola@rallyiq.cl
+<p> | strong:Jurisdicción: | text:Chile.
+<p> | text:Al crear una cuenta o usar RallyIQ ("el servicio") aceptas estos Términos. Si no estás de acuerdo, no uses el servicio.
+<h2> | text:1. Qué es el servicio
+<p> | text:RallyIQ es una aplicación de planificación y seguimiento de entrenamiento deportivo con asistencia de inteligencia artificial. El servicio | strong:no es consejo médico | text:; consulta el | link[/health-disclaimer]:Descargo de responsabilidad de salud | text:, que forma parte de estos Términos.
+<h2> | text:2. Cuenta y acceso
+<li> | text:Necesitas una cuenta para usar las funciones autenticadas del servicio.
+<li> | text:Eres responsable de la actividad de tu cuenta y de mantener segura tu sesión.
+<li> | text:Debes tener al menos 18 años para crear una cuenta o contratar el servicio.
+<p> | text:RallyIQ no está disponible para personas menores de 18 años ni permite registrar datos de atletas menores de 18 años durante esta etapa.
+<h2> | text:3. Suscripción, pagos y renovación
+<p> | strong:RallyIQ aún no habilita contratación ni cobros. | text:Antes del lanzamiento pagado, esta sección se actualizará con precio, moneda, impuestos o documento tributario, renovación, cancelación y reembolsos. La versión vigente deberá aceptarse explícitamente antes de realizar el primer cobro.
+<h2> | text:4. Uso aceptable
+<p> | text:No puedes usar el servicio para fines ilegales; revender o redistribuir masivamente el software o sus contenidos fuera del servicio; intentar vulnerar su seguridad, extraer datos masivamente o interferir con su funcionamiento. Si usas RallyIQ como coach, sí puedes compartir con los atletas que gestionas los planes y sesiones creados para ellos dentro del uso normal del servicio.
+<h2> | text:5. Tus datos y contenido
+<li> | text:Conservas la titularidad de los datos que ingresas. Nos otorgas una licencia limitada para procesarlos y prestarte el servicio; consulta la | link[/privacy]:Política de Privacidad | text:.
+<li> | text:Puedes | strong:exportar y eliminar | text:tus datos desde Ajustes.
+<h2> | text:6. Inteligencia artificial
+<p> | text:Parte del contenido se genera con modelos de IA y puede contener errores. Las sugerencias son orientativas; la decisión final de entrenar es tuya y, cuando corresponda, de tu entrenador o profesional de la salud.
+<h2> | text:7. Disponibilidad y cambios
+<li> | text:El servicio se ofrece "tal cual" y "según disponibilidad". Podemos modificar, suspender o discontinuar funciones, avisando cuando sea razonable.
+<li> | text:Podemos actualizar estos Términos; los cambios relevantes se comunicarán y la fecha de última actualización reflejará la versión vigente.
+<h2> | text:8. Limitación de responsabilidad
+<p> | text:En la máxima medida permitida por la ley aplicable, RallyIQ y sus responsables no serán responsables por daños indirectos, lesiones, pérdida de datos o lucro cesante derivados del uso del servicio. Nada en estos Términos limita derechos que no puedan limitarse según la ley de protección al consumidor aplicable.
+<h2> | text:9. Ley aplicable
+<p> | text:Estos Términos se rigen por las leyes de | strong:Chile | text:y cualquier disputa se someterá a sus tribunales competentes, sin perjuicio de los derechos irrenunciables del consumidor conforme a la Ley 19.496.
+<h2> | text:10. Contacto
+<p> | text:Consultas: hola@rallyiq.cl

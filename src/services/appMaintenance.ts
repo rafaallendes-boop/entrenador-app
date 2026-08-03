@@ -137,11 +137,12 @@ export async function clearAllLocalAppData(userId?: string): Promise<void> {
   clearCoachPlanningHydrationRegistry()
 
   // Keep all account and athlete stores in the same atomic reset. In
-  // particular, Dexie requires sessionTemplates to be declared before it can
-  // be touched by this transaction.
+  // particular, Dexie requires every account-scoped table to be declared
+  // before it can be touched by this transaction.
   await db.transaction('rw', getAllLocalTables(), async () => {
     await clearSelectedTables(selection)
     await db.sessionTemplates.clear()
+    await db.consentAcceptances.clear()
   })
 
   syncStoresAfterClear(selection)

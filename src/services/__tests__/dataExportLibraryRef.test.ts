@@ -92,6 +92,27 @@ describe('libraryRef en backup/import', () => {
     expect(imported?.exercises?.[0].libraryRef).toEqual(validRef)
   })
 
+  it('el espejo de consentimientos no viaja en el backup', async () => {
+    const acceptance = {
+      id: 'consent-1',
+      userId: 'user-1',
+      document: 'terms' as const,
+      version: '2026-07-13',
+      acceptedAt: '2026-08-03T10:00:00.000Z',
+    }
+    await db.consentAcceptances.put(acceptance)
+
+    const { json } = await exportAppData()
+    const exported = JSON.parse(json) as { tables: Record<string, unknown> }
+    expect(Object.keys(exported.tables)).not.toContain('consentAcceptances')
+
+    const parsed = parseAppDataExport({
+      ...exported,
+      tables: { ...exported.tables, consentAcceptances: [acceptance] },
+    })
+    expect(Object.keys(parsed.tables)).not.toContain('consentAcceptances')
+  })
+
   it('descarta refs inválidos del fixture sin perder el ejercicio', () => {
     const parsed = parseAppDataExport(backupFixture([
       {

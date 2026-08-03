@@ -43,12 +43,20 @@ describe('athlete-scoped Dexie manifest', () => {
   })
 
   it('separa stores account-scoped y expone su unión para resets completos', () => {
-    expect(getAccountScopedTables().map((table) => table.name)).toEqual(['sessionTemplates'])
+    expect(getAccountScopedTables().map((table) => table.name)).toEqual([
+      'sessionTemplates',
+      'consentAcceptances',
+    ])
 
     const athleteNames = getAllAthleteScopedTables().map((table) => table.name)
     const allLocalNames = getAllLocalTables().map((table) => table.name)
     expect(athleteNames).not.toContain('sessionTemplates')
-    expect(allLocalNames).toEqual([...athleteNames, 'sessionTemplates'])
+    expect(athleteNames).not.toContain('consentAcceptances')
+    expect(allLocalNames).toEqual([
+      ...athleteNames,
+      'sessionTemplates',
+      'consentAcceptances',
+    ])
     expect(new Set(allLocalNames).size).toBe(allLocalNames.length)
   })
 })

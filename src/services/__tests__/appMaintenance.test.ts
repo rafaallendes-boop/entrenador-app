@@ -27,6 +27,7 @@ const dbMock = {
   athleteMemberships: table(),
   athleteCoachNotes: table(),
   sessionTemplates: table(),
+  consentAcceptances: table(),
   transaction: vi.fn(async (_mode: string, _tables: unknown[], callback: () => Promise<void>) => {
     await callback()
   }),
@@ -185,6 +186,7 @@ describe('appMaintenance', () => {
     expect(dbMock.coachProposals.clear).toHaveBeenCalled()
     expect(dbMock.athleteProfiles.clear).toHaveBeenCalled()
     expect(dbMock.sessionTemplates.clear).toHaveBeenCalled()
+    expect(dbMock.consentAcceptances.clear).toHaveBeenCalled()
     expect(Array.from(localStorageState.keys()).filter((key) => (
       key.startsWith('entrenador_') || key.startsWith('coach_') || key.startsWith('entrenador:')
     ))).toEqual([])
@@ -207,5 +209,6 @@ describe('appMaintenance', () => {
     expect(dbMock.coachProposals.clear).not.toHaveBeenCalled()
     expect(dbMock.athleteProfiles.clear).not.toHaveBeenCalled()
     expect(dbMock.sessionTemplates.clear).not.toHaveBeenCalled()
+    expect(dbMock.consentAcceptances.clear).not.toHaveBeenCalled()
   })
 })

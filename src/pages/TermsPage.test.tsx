@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { MemoryRouter } from 'react-router-dom'
-import { LEGAL_CONTROLLER_NAME, MINORS_POLICY_COPY } from '../constants/legal'
 import TermsPage from './TermsPage'
+
+const CONTROLLER_NAME = 'Rafael Allendes'
+const MINORS_POLICY =
+  'RallyIQ no está disponible para personas menores de 18 años ni permite registrar datos de atletas menores de 18 años durante esta etapa.'
 
 describe('TermsPage', () => {
   it('renders the controller, adults-only rule, contact and payment status', () => {
@@ -13,8 +16,8 @@ describe('TermsPage', () => {
     )
 
     expect(html).toContain('Términos y Condiciones')
-    expect(html).toContain(LEGAL_CONTROLLER_NAME)
-    expect(html).toContain(MINORS_POLICY_COPY)
+    expect(html).toContain(CONTROLLER_NAME)
+    expect(html).toContain(MINORS_POLICY)
     expect(html).toContain('hola@rallyiq.cl')
     expect(html).toContain('aún no habilita contratación ni cobros')
     expect(html).not.toContain('[[')

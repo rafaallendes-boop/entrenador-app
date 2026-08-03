@@ -1,0 +1,20 @@
+<h1> | text:Descargo y consentimiento para datos Whoop
+<p> | text:Última actualización: | text:2026-07-07
+<p> | text:La integración con Whoop es | strong:opcional | text:. Si decides conectarla, autorizas a RallyIQ a recibir y tratar datos biométricos y de actividad generados por Whoop como contexto objetivo opcional y consentido para tu entrenamiento.
+<h2> | text:Datos que podemos recibir
+<li> | text:Recovery diario y puntaje de recuperación.
+<li> | text:HRV y frecuencia cardiaca en reposo.
+<li> | text:Strain o carga registrada por Whoop.
+<li> | text:Datos de sueño, incluyendo horas de sueño y sleep performance.
+<p> | strong:No recibimos tus credenciales de Whoop. | text:El acceso se realiza mediante OAuth y los tokens se guardan cifrados del lado servidor.
+<h2> | text:Para qué se usan
+<p> | text:Usamos estos datos como contexto objetivo opcional y consentido para:
+<li> | text:Mostrar señales de recuperación, sueño y strain en la app.
+<li> | text:Prellenar campos editables del check-in diario, como sueño, calidad de sueño y energía.
+<li> | text:Dar contexto pasivo al coach de IA.
+<p> | text:Estos datos | strong:no se usan para diagnosticar, tratar o prevenir enfermedades o lesiones | text:. RallyIQ no reemplaza la evaluación de un profesional médico, entrenador calificado u otro especialista de salud.
+<h2> | text:Dónde se guardan
+<p> | text:Los tokens de acceso se guardan cifrados en el servidor. Los datos biométricos crudos se procesan del lado servidor y no se exponen directamente al cliente. La app solo replica localmente un resumen diario de readiness asociado a tu atleta activo.
+<h2> | text:Desconexión y borrado
+<p> | text:Puedes desconectar Whoop desde Ajustes. Al desconectar, RallyIQ revoca el acceso cuando el backend de Whoop está disponible para ello y deja de sincronizar nuevos datos.
+<p> | text:También puedes eliminar tus datos desde las opciones de borrado de la app. El borrado completo elimina los resúmenes locales y remotos asociados a Whoop, además de los demás datos de entrenamiento de tu cuenta.

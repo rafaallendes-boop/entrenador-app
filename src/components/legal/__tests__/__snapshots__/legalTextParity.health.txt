@@ -1,0 +1,15 @@
+<h1> | text:Descargo de responsabilidad de salud
+<p> | text:Última actualización: | text:2026-06-20
+<p> | text:RallyIQ ("la aplicación") es una herramienta de | strong:planificación y seguimiento de entrenamiento deportivo | text:. No es un dispositivo médico, no presta servicios de salud y no sustituye el consejo de un médico, kinesiólogo, nutricionista ni de ningún profesional de la salud calificado.
+<h2> | text:Antes de empezar
+<li> | strong:Consulta a un profesional de la salud | text:antes de iniciar este o cualquier programa de ejercicio, especialmente si tienes una condición preexistente, lesiones, estás embarazada, tomas medicación o hace tiempo que no entrenas.
+<li> | text:Si durante una sesión sientes dolor en el pecho, mareo, falta de aire, dolor articular agudo u otro síntoma inusual, | strong:detén la actividad y busca atención médica | text:.
+<h2> | text:Naturaleza de los planes
+<li> | text:Los planes, cargas, ejercicios y notas que genera RallyIQ son | strong:sugerencias generales | text:basadas en los datos que ingresas. No están calibrados por un profesional que te haya evaluado en persona.
+<li> | text:Parte del contenido se genera con asistencia de modelos de inteligencia artificial y | strong:puede contener errores o recomendaciones inadecuadas para tu caso | text:. Usa tu criterio y el de tu entrenador o profesional de cabecera.
+<li> | text:Cuando un entrenador revise los planes antes de entregártelos, esa revisión | strong:no constituye una prescripción médica | text:.
+<h2> | text:Tu responsabilidad
+<li> | text:Eres responsable de entrenar dentro de tus capacidades, ajustar o saltar cualquier sesión que no sea apropiada para ti ese día y usar técnica y equipamiento seguros.
+<li> | text:Al usar la aplicación aceptas que entrenas | strong:bajo tu propio riesgo | text:y que RallyIQ y sus responsables no son responsables por lesiones, daños o pérdidas derivadas del uso de los planes o la información provista, en la máxima medida permitida por la ley aplicable.
+<h2> | text:Emergencias
+<p> | text:RallyIQ no está diseñada para emergencias médicas. Ante una emergencia, contacta a los servicios de urgencia de tu país.

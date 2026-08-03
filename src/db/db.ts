@@ -3,6 +3,7 @@ import type { Session, DayLog, WeekSummary, ChatMessage, CoachProposal, AthleteP
 import type { PlanGenerationJob, TrainingPlan, TrainingPlanWeek } from '../types/planBuilder'
 import type { SyncDiagnosticEvent, SyncErrorLogEntry } from '../types/syncDiagnostics'
 import type { StoredSessionTemplate } from '../types/sessionTemplate'
+import type { ConsentAcceptance } from '../types/consent'
 import { getOrCreateChatSessionId } from '../utils/chatSession'
 import { toISO, getWeekStart, fromISO } from '../utils/date'
 
@@ -26,6 +27,7 @@ export class EntrenadorDB extends Dexie {
   athleteMemberships!: Table<AthleteMembership, [string, string]>
   athleteCoachNotes!: Table<AthleteCoachNote, string>
   sessionTemplates!: Table<StoredSessionTemplate, string>
+  consentAcceptances!: Table<ConsentAcceptance, string>
 
   constructor() {
     super('EntrenadorDB')
@@ -238,6 +240,13 @@ export class EntrenadorDB extends Dexie {
     // v18 — account-scoped Coach Library session templates.
     this.version(18).stores({
       sessionTemplates: 'id, kind, updatedAt, name',
+    })
+
+    // v19 — espejo local de consentimientos confirmados por el servidor.
+    // El índice compuesto único evita filas paralelas en hidrataciones
+    // repetidas de la misma publicación para una cuenta.
+    this.version(19).stores({
+      consentAcceptances: 'id, userId, &[userId+document+version]',
     })
   }
 }

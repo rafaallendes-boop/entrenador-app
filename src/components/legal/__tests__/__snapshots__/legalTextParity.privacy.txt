@@ -1,0 +1,33 @@
+<h1> | text:Política de Privacidad
+<p> | text:Última actualización: | text:2026-07-13
+<p> | text:Esta política explica qué datos tratamos, para qué los usamos y cómo puedes gestionar o eliminar tu información. Para la operación en Chile, el tratamiento se rige por la | strong:Ley 19.628 | text:vigente. Esta política también prepara la operación para las modificaciones introducidas por la | strong:Ley 21.719 | text:, cuya entrada en vigencia está fijada para el | strong:1 de diciembre de 2026 | text:.
+<h2> | text:Responsable y contacto
+<p> | text:El responsable del tratamiento es | strong:Rafael Allendes | text:. Para consultas de privacidad, soporte o solicitudes sobre tus datos, puedes escribir a | link[mailto:hola@rallyiq.cl]:hola@rallyiq.cl | text:.
+<h2> | text:Datos que tratamos
+<li> | strong:Cuenta: | text:nombre y correo asociados a tu inicio de sesión.
+<li> | strong:Entrenamiento: | text:sesiones, planes, objetivos, disponibilidad, notas, RPE y registros diarios.
+<li> | strong:Salud y rendimiento declarados: | text:sensaciones, sueño, energía, molestias, peso corporal y datos deportivos que ingresas manualmente. Algunos pueden considerarse datos sensibles; los tratamos para prestarte el servicio y con tu consentimiento.
+<li> | strong:Wearables opcionales: | text:si conectas Whoop, usamos recovery, HRV, frecuencia cardiaca en reposo, strain y datos de sueño. La conexión es | strong:opcional | text:y exige tu autorización.
+<li> | strong:Datos técnicos: | text:información mínima necesaria para operar, autenticar, sincronizar y diagnosticar errores del servicio.
+<h2> | text:Uso de datos de Whoop
+<p> | text:La conexión con Whoop es opcional y requiere tu autorización. Usamos esos datos como contexto objetivo opcional y consentido para mostrar readiness, prellenar campos editables del check-in diario y entregar contexto pasivo al coach de IA. Los datos de Whoop | strong:no se usan para diagnosticar, tratar o prevenir enfermedades o lesiones | text:. RallyIQ no reemplaza a un profesional médico, entrenador calificado u otro especialista de salud.
+<h2> | text:Para qué usamos tus datos
+<li> | text:Generar, registrar y ajustar planes de entrenamiento.
+<li> | text:Sincronizar tus datos entre dispositivos.
+<li> | text:Mostrar resúmenes de carga, adherencia, readiness y progreso.
+<li> | text:Dar contexto al coach de IA y a las recomendaciones dentro de la app.
+<li> | text:Prestar soporte, mejorar el producto y mantener la seguridad del servicio.
+<p> | strong:No vendemos tus datos personales.
+<h2> | text:Almacenamiento y proveedores
+<p> | text:La app funciona local-first: parte de tus datos se guarda en tu navegador. Si inicias sesión, también se sincronizan en infraestructura cloud para que puedas recuperarlos y usarlos entre dispositivos. Usamos proveedores como Supabase para base de datos y autenticación, Netlify para hosting y proveedores de IA para generar contenido dentro de la app. Estos proveedores reciben la información necesaria para prestar el servicio. Los tokens de Whoop se almacenan cifrados del lado servidor; la app usa un resumen diario asociado a tu cuenta y atleta activo.
+<h2> | text:Tus controles
+<li> | text:Puedes exportar tus datos desde Ajustes.
+<li> | text:Puedes eliminar datos locales y remotos desde Ajustes.
+<li> | text:Puedes desconectar Whoop desde Ajustes; al hacerlo se borran los datos de Whoop asociados.
+<li> | text:Puedes escribir a hola@rallyiq.cl para solicitar acceso, rectificación o eliminación.
+<h2> | text:Conservación y seguridad
+<p> | text:Conservamos tus datos mientras tu cuenta esté activa o mientras sean necesarios para prestar el servicio. Aplicamos medidas razonables de seguridad, incluyendo autenticación, conexiones cifradas y cifrado de credenciales de integraciones sensibles.
+<h2> | text:Menores
+<p> | text:RallyIQ no está disponible para personas menores de 18 años ni permite registrar datos de atletas menores de 18 años durante esta etapa.
+<h2> | text:Cambios a esta política
+<p> | text:Podemos actualizar esta política para reflejar cambios del producto, legales o de seguridad. La fecha de última actualización indicará la versión vigente. Durante el prelanzamiento puede actualizarse antes de habilitar cuentas pagadas; los cambios relevantes deberán comunicarse y aceptarse cuando corresponda.
