@@ -4,19 +4,20 @@ Actualizado: 2026-08-03
 
 Base de contraste:
 
-- **Consentimiento in-app versionado implementado localmente (2026-08-03):** `017_user_consents.sql` escrita y no aplicada, Dexie v19, publicaciones legales inmutables, gate general y enforcement biométrico de Whoop en cliente/servidor. Las flags `VITE_CONSENT_GATE` y `CONSENT_GATE_ENABLED` siguen apagadas; no habilitar hasta aprobar los textos y resolver el copy de borrado total.
+- **Consentimiento in-app versionado mergeado a `main` (2026-08-03, `c451808`…`e59b85f`):** Dexie v19, publicaciones legales inmutables, gate general y enforcement biométrico de Whoop en cliente/servidor. El bundle se despliega en esta tanda; `017_user_consents.sql` **sigue sin aplicar** y las flags `VITE_CONSENT_GATE` / `CONSENT_GATE_ENABLED` siguen apagadas. Con las flags apagadas el deploy es inerte para el gate: se despliega código dormido y el smoke en curso es de **no-regresión**, no de activación. Aplicar `017` y encender ambas flags sigue bloqueado por textos aprobados y por la contradicción del copy de borrado total.
+- **Deploy de 2026-08-03 arrastra las cuatro tandas que estaban pendientes:** rotación coordinada del Plan Builder (§16), roles de partido de squash (§17, `9754f78`), identidad `libraryRef`-first de fuerza (§19, `afaac17`) y copy de la librería de fuerza (§20, `33d585f`). Ninguna trae migración. **El smoke en producción está en curso y su resultado todavía no está registrado acá.**
 - **Fuerza — desacople del nombre, Entregas 1–3 (2026-08-01): commiteadas en `3d480b3`.** Ver §18 — los hallazgos del code review quedaron corregidos y el bloque se cerró sin migraciones.
-- **Fuerza — identidad estable (`libraryRef`-first): implementada y commiteada.** Ver §19 — Plan Builder, coach y calidad consumen el `id` del catálogo sin volver a inferir identidad desde el nombre. Sin migraciones; 2613/2613 tests, lint y build verdes.
-- **Fuerza — copy de la librería por `id`: implementado y commiteado en este bloque.** Ver §20 — 12 renombres, 31 descripciones y aliases legacy sin cambios de prescripción; 2666/2666 tests, lint y build verdes.
+- **Fuerza — identidad estable (`libraryRef`-first): implementada, commiteada y desplegada el 2026-08-03.** Ver §19 — Plan Builder, coach y calidad consumen el `id` del catálogo sin volver a inferir identidad desde el nombre. Sin migraciones; 2613/2613 tests, lint y build verdes.
+- **Fuerza — copy de la librería por `id`: implementado, commiteado (`33d585f`) y desplegado el 2026-08-03.** Ver §20 — 12 renombres, 31 descripciones y aliases legacy sin cambios de prescripción; 2666/2666 tests, lint y build verdes.
 - `main` con el commit de esta entrega (`feat: complete coach planning library and calendar hardening`).
-- **`011_whoop_integration.sql` y `012_whoop_workouts.sql` aplicados en produccion.** Whoop readiness y Workout Auto-Complete quedan operativos de punta a punta (owner confirma cierre operacional); el enforcement biométrico ya está implementado localmente y queda pendiente su rollout legal (`017` + flags, ver Riesgo 1).
+- **`011_whoop_integration.sql` y `012_whoop_workouts.sql` aplicados en produccion.** Whoop readiness y Workout Auto-Complete quedan operativos de punta a punta (owner confirma cierre operacional); el enforcement biométrico ya está desplegado pero inactivo, y queda pendiente su rollout legal (`017` + flags, ver Riesgo 1).
 - **Coach Workspace v0 + ampliacion implementados (2026-07-13 a 2026-07-19):** `/coach` pasa de un roster unico (`CoachRosterPage`) a `CoachWorkspacePage` con Resumen, Alumnos, Planificacion y Biblioteca operativas; Asistente IA conserva el placeholder. Incluye endurecimiento de `switchActiveAthlete`, edicion multi-atleta, alta/aplicacion de plantillas y lock de concurrencia a nivel de modulo. `015` y el bundle de Biblioteca/Planificacion ya fueron aplicados en produccion; queda el smoke autenticado.
 - **Gestion de roster + Planificacion read-only implementadas (2026-07-14):** Alumnos agrega archivar/restaurar y borrado duro confirmado por nombre. El borrado usa tombstones por intento, barrera y tracking single-tab, delete remoto durable, supresion de cola y purga Dexie transaccional para impedir resurrecciones. Planificacion muestra la semana de cualquier atleta del roster mediante lecturas/hidratacion por `athleteId` explicito, sin cambiar el scope activo. `015` y el deploy de Biblioteca ya estan en produccion; resta el smoke autenticado.
 - **Coach Biblioteca + Planificacion completa desplegadas (2026-07-18/19):** edicion de sesiones, Biblioteca de plantillas account-scoped, aplicar/guardar plantillas para cualquier atleta/dia, Dexie v18, backup v4 y sync Supabase por fila con LWW/delete-wins y tombstones versionados. `015_session_templates.sql` fue aplicada y el bundle desplegado; falta el smoke autenticado en produccion.
 - **Hardening de fechas y semanas (2026-07-19):** conteos de semanas, ventanas de Plan Builder, insights de fatiga y filtros semanales usan dias calendario en vez de milisegundos para no fallar al cruzar DST. Se agrego serializacion JSON canonica para comparar estructuras sin reescrituras redundantes.
 - **Fase 0 de medicion del Plan Builder cerrada, incluidos sus pendientes operativos (2026-07-25/26):** control aceptado y versionado con SHA-256 `6c45885a870cf7e019906a0b4d786e828b2653fe1643f95d436be3aa0ee94d7a`; calibracion congelada, `quality_version = 2` productiva, bundle desplegado y smoke de produccion ejecutado el 2026-07-26 con una corrida real verificada en `plan_generation_jobs`.
-- **Rotacion coordinada del Plan Builder, con smoke aceptado (2026-07-30):** identidad de bloque unica, rotacion determinista de fuerza y squash, fail-closed para firmas de squash y telemetria allowlisted. Smoke pagado ejecutado sobre `2ea9b53` y aceptado (US$0,8941, `ELEGIBLE`). **Pendiente deploy.**
-- **Roles de partido de squash (2026-07-30, `9754f78`):** el rol de una sesion de squash se deriva de su contenido (`standalone` / `finisher` / `none`), no de `sessionMode`. Commiteado y pusheado, con dos hallazgos de code review corregidos antes del commit (ver §17). **Es posterior al smoke de la rotacion, asi que su efecto no esta medido**; queda cubierto por tests locales.
+- **Rotacion coordinada del Plan Builder, con smoke aceptado (2026-07-30):** identidad de bloque unica, rotacion determinista de fuerza y squash, fail-closed para firmas de squash y telemetria allowlisted. Smoke pagado ejecutado sobre `2ea9b53` y aceptado (US$0,8941, `ELEGIBLE`). **Desplegada en el bundle del 2026-08-03; pendiente verificación post-deploy de la primera corrida real.**
+- **Roles de partido de squash (2026-07-30, `9754f78`):** el rol de una sesion de squash se deriva de su contenido (`standalone` / `finisher` / `none`), no de `sessionMode`. Commiteado, pusheado y **desplegado en el bundle del 2026-08-03**, con dos hallazgos de code review corregidos antes del commit (ver §17). **Es posterior al smoke de la rotacion, asi que su efecto no esta medido**; queda cubierto por tests locales y por la verificacion post-deploy pendiente.
 - **Fase 0 de coaches landing completada (2026-07-13):** rutas públicas reales (no AuthGate fallbacks), las cuatro páginas legales publicadas como rutas (`/terms`, `/privacy`, `/health-disclaimer`, y disclamer Whoop), landing `/coaches` en modo prelanzamiento con estructura de 3 planes, metadata/OG cards por ruta con prerender para crawlers, deep links nativos para OAuth callback en iOS, y cierre de compartimiento entre rutas públicas. Falta aún revisión jurídica y RUT/domicilio legal antes de cobro o anuncios masivos.
 - `main` hasta `167ef6e Plan whoop y entrenador`.
 - `007` aplicado y F2 data prereqs en `6e33926`.
@@ -50,7 +51,7 @@ Mi lectura como lider tecnico: el cambio principal entre hoy y hace dos dias es 
 
 ## Estado Actual En Una Frase
 
-RallyIQ ya opera multi-atleta en produccion, con Whoop readiness y Workout Auto-Complete operativos (`011`/`012` aplicados), Coach Workspace base (`/coach`) y rutas legales publicas + landing `/coaches` en vivo. El consentimiento in-app y biométrico ya está implementado localmente, pero continúa apagado: `017` no está aplicada y las dos flags no se habilitan hasta cerrar textos y retención. `015` y Biblioteca/Planificacion ya estan desplegadas, `quality_version = 2` quedo verificada en `plan_generation_jobs`, y la rotacion coordinada del Plan Builder ya paso su control `high` pagado.
+RallyIQ ya opera multi-atleta en produccion, con Whoop readiness y Workout Auto-Complete operativos (`011`/`012` aplicados), Coach Workspace base (`/coach`) y rutas legales publicas + landing `/coaches` en vivo. El deploy del 2026-08-03 puso en produccion el consentimiento in-app y las cuatro tandas de Plan Builder/fuerza que estaban pendientes, pero el consentimiento viaja **apagado**: `017` no está aplicada y las dos flags no se habilitan hasta cerrar textos y retención. `015` y Biblioteca/Planificacion ya estan desplegadas, `quality_version = 2` quedo verificada en `plan_generation_jobs`, y la rotacion coordinada del Plan Builder ya paso su control `high` pagado.
 
 ## Porcentaje De Avance
 
@@ -77,7 +78,17 @@ Traduccion practica: el producto ya tiene sustancia y superficie legal/comercial
 - Un `403 consent_required` al iniciar OAuth conserva su código y dispara una verificación remota: solo una ausencia confirmada muestra re-aceptación; una falla o discrepancia muestra indisponibilidad.
 - Rollout: aplicar `017` y encender juntas `VITE_CONSENT_GATE` y `CONSENT_GATE_ENABLED`. Encender solo una es un estado inválido.
 
-Estado: **implementado y verificado localmente, no desplegado ni habilitado.** Suite completa: 354 archivos / 2740 tests, typecheck, lint, build y `git diff --check` verdes. La activación tiene dos bloqueantes duros: textos aprobados y resolver que Ajustes promete borrar “TODOS” los datos mientras el default legal conserva `user_consents`.
+Estado: **mergeado a `main` en cuatro commits (`c451808` publicaciones+persistencia, `084b41a` gate, `5dac6e4` enforcement Whoop, `e59b85f` documentación) y desplegado el 2026-08-03; no habilitado.** Suite completa: 354 archivos / 2740 tests, typecheck, lint, build y `git diff --check` verdes.
+
+Qué significa el deploy del 2026-08-03: el código viaja a producción **dormido**. `017` no está aplicada y ambas flags siguen apagadas, así que ni el gate general ni el enforcement biométrico de Whoop se ejercitan. El smoke en curso vale como **no-regresión** —que la app, el onboarding y Whoop sigan comportándose exactamente igual que antes— y no como validación del consentimiento. Validar el gate de verdad exige la secuencia completa de activación, y esa sigue con dos bloqueantes duros: textos aprobados y resolver que Ajustes promete borrar “TODOS” los datos mientras el default legal conserva `user_consents`.
+
+Secuencia de activación cuando se destrabe (en este orden, no parcial):
+
+1. Aprobar los textos de las cuatro publicaciones; cualquier cambio de redacción obliga a un id de publicación nuevo y a reaceptación.
+2. Resolver la retención al borrar cuenta y alinear el copy de Ajustes con lo que se decida.
+3. Aplicar `017_user_consents.sql` en la Supabase de producción.
+4. Encender `VITE_CONSENT_GATE` (cliente, requiere rebuild) y `CONSENT_GATE_ENABLED` (servidor) **juntas**. Encender solo una es un estado inválido.
+5. Smoke de activación: aceptar los tres documentos, verificar la fila en `user_consents`, confirmar que la superficie restringida deja cerrar sesión/exportar/borrar con el gate cerrado, y que Whoop rechaza OAuth sin consentimiento biométrico vigente.
 
 Decisiones abiertas para abogado, con default actual: (1) conservar evidencia al borrar cuenta; (2) salud se acepta por separado e IA queda cubierta por términos; (3) todo id nuevo de publicación, incluso por redacción menor, exige reaceptación.
 
@@ -356,8 +367,8 @@ sesion de drills con un solo drill se sigue penalizando. El artefacto es
 **anterior** a ese arreglo. No se pudo verificar que las 8 ocurrencias sean todas
 de partido: el artefacto guarda metricas allowlisted, no contenido de sesion.
 
-Estado: **veredicto positivo, commiteado y pusheado (`9754f78`), pendiente
-deploy.** Suite 320 archivos / 2386 tests, lint y build OK al cierre de esta
+Estado: **veredicto positivo, commiteado, pusheado (`9754f78`) y desplegado en
+el bundle del 2026-08-03.** Suite 320 archivos / 2386 tests, lint y build OK al cierre de esta
 pieza. El bloqueo previo en `chatCoachConversations.test.tsx` quedo resuelto. No
 se re-mide el arreglo de `low_drill_depth` con el loadtest: seria otra corrida
 pagada para confirmar un cambio de regla de scoring.
@@ -412,7 +423,7 @@ proyecta el contenido competitivo no canonico. Esta cubierta por tests locales,
 **no** por el artefacto. Con ~US$0,60 de saldo no alcanza para re-medir
 (~US$0,90 por corrida).
 
-Estado: **commiteado y pusheado, pendiente deploy.** Suite 324 archivos / 2425
+Estado: **commiteado, pusheado y desplegado el 2026-08-03.** Suite 324 archivos / 2425
 tests, lint y build OK. Sin migraciones Dexie ni Supabase.
 
 ### 18. Fuerza — desacople del nombre, Entregas 1–3 (2026-08-01, `3d480b3`)
@@ -478,7 +489,7 @@ conversión detectó una regresión en 47/92 filas (RPE, porcentaje, peso y
 warmups); se corrigió con una proyección pre-enrichment que conserva el ref sin
 adelantar targets, y el barrido final quedó 0/92.
 
-Estado: **implementado y commiteado, sin migraciones.** Verificado con 339
+Estado: **implementado, commiteado y desplegado el 2026-08-03, sin migraciones.** Verificado con 339
 archivos / **2613/2613 tests**, TypeScript, lint, build y `git diff --check`.
 Spec y plan: `docs/superpowers/specs/2026-08-01-strength-library-ref-first-design.md`
 y `docs/superpowers/plans/2026-08-01-strength-library-ref-first.md`.
@@ -522,18 +533,66 @@ El snapshot de invariantes congela la metadata deportiva de los 77 y el texto
 fuera de alcance: 65 nombres y 46 descripciones intactos, verificado sin
 regenerarlo.
 
-Estado: **implementado y commiteado en este bloque.** Spec y plan en
+Estado: **implementado, commiteado (`33d585f`) y desplegado el 2026-08-03.** Spec y plan en
 `docs/superpowers/specs/2026-08-01-strength-exercise-copy-design.md` y
 `docs/superpowers/plans/2026-08-01-strength-exercise-copy.md`.
 
-**Riesgo latente documentado.** `getStrengthExerciseIdentityById` lanza si el
-`id` no existe, y `buildDeterministicWeekCreatorResponse` se invoca **fuera**
-del `try/catch` del loop de reintentos (`WeekCreatorEngine.ts:582`). Si un `id`
-del fallback desapareciera del catálogo, la ruta de último recurso pasaría de
-entregar una semana degradada a fallar entera. Hoy es inalcanzable: el gate de
-permanencia (`strengthCatalogIdPermanence.test.ts`) congela los 77 ids y rompe
-en CI antes de que eso llegue a producción. Es CI lo que lo previene, no el
-runtime.
+**Riesgo latente — cerrado el 2026-08-03.** Ver §21.
+
+### 21. Week Creator — endurecimiento del fallback determinista (2026-08-03)
+
+Cierra el riesgo latente que §20 dejó documentado. Sin migraciones, un archivo
+de producción y un test nuevo.
+
+El defecto real no era que `getStrengthExerciseIdentityById` lanzara —eso es
+deliberado y se conserva—, sino que el throw **salteaba una salida que ya
+existía y estaba bien instrumentada**. La rama de validación fallida
+(`WeekCreatorEngine.ts:604-618`) ya hacía `failRequest` + flush del tracker +
+`throw` de un mensaje en español con código de soporte; construir el fallback
+fuera de todo `try` esquivaba ese camino y producía tres efectos:
+
+1. se perdía la semana degradada, que es el propósito del fallback;
+2. el usuario veía el string interno `Ejercicio de fuerza inexistente: xyz`,
+   porque `formatError` (`useChatStore.ts:921`) reexpone `Error.message` tal
+   cual en el chat;
+3. quedaba un request en vuelo para siempre en `useAIDebugStore`, porque
+   `startRequest` ya se había disparado y no corría ni `completeRequest` ni
+   `failRequest`.
+
+Solución: el cierre de falla se extrajo a un helper local `failFallback`
+—`never`-returning, con el trace id del mensaje como parámetro— que ahora usan
+**las dos** ramas. El `try` envuelve **únicamente** la construcción; la
+validación queda fuera a propósito, para que `fallback_invalid` conserve su
+significado («se construyó pero no validó») y no colapse con
+`fallback_build_failed` («no se pudo construir»). La causa cruda va a
+`console.warn` y a los `warnings` de telemetría; nunca al mensaje del usuario.
+
+**Calibración honesta del valor.** Esto **no** baja la probabilidad de que
+ocurra, que ya era muy baja: dos tests independientes rompen en CI antes
+—`strengthCatalogIdPermanence.test.ts` congela los 77 ids, y
+`strengthCopyProducerIdentity.test.ts:90` maneja `sendWeekCreate` hasta el
+fallback verificando que cada ejercicio resuelva a una definición viva—. Lo que
+cambia es **qué pasa si ocurre igual**: degradación instrumentada en vez de
+degradación fea. Es defensa en profundidad, no el cierre de un agujero abierto.
+
+**Inconsistencia preexistente corregida en el mismo bloque.** La rama de
+validación registraba telemetría bajo `fallbackTraceId` pero lanzaba el mensaje
+con `failureTraceId`, el trace del fallo del *proveedor*: el código de soporte
+que recibía el usuario no apuntaba a la fila que registraba su error. Por
+decisión del owner las dos ramas usan ahora `fallbackTraceId`, y
+`failureTraceId` se conserva para correlación interna como warning
+`Provider failure trace: <id>` en la fila de telemetría. Es un cambio de
+comportamiento observable en una rama que existía, aprobado explícitamente.
+
+Un bloque de tests **espejo** fuerza `fallback_invalid` —rechazando la
+validación solo de la semana ya construida, identificada por su
+`model: 'local-week-fallback'`— y fija que ambas ramas cumplen el mismo
+contrato: código visible igual al `traceId` de su fila, trace del proveedor
+presente para correlación, y cero requests en vuelo.
+
+Verificado: **355 archivos / 2750 tests**, typecheck, lint, build y
+`git diff --check` verdes. Spec en
+`docs/superpowers/specs/2026-08-03-week-creator-fallback-hardening-design.md`.
 
 ### Producto Publico Y Marca
 
@@ -614,13 +673,16 @@ Cierres tecnicos recientes:
 
 ## Riesgos Que Siguen Vivos
 
-### 1. WHOOP ya agrega dato sensible: enforcement implementado, rollout legal pendiente
+### 1. WHOOP ya agrega dato sensible: enforcement desplegado pero inactivo
 
 Whoop es el track de producto con mas retorno inmediato, e introduce datos biometricos,
 OAuth externo, tokens cifrados y borrado completo. La operacion tecnica ya cerro (`011`/`012`
-aplicados, deploy y smoke confirmados por el owner). El código ya exige consentimiento
-biométrico vigente en todos los puntos de incorporación de datos cuando las flags están
-activas. Lo que falta antes de exponerlo a terceros:
+aplicados, deploy y smoke confirmados por el owner). El código que exige consentimiento
+biométrico vigente en todos los puntos de incorporación de datos **ya esta en produccion
+desde el 2026-08-03, pero apagado**: sin `017` aplicada y sin flags, el enforcement no
+corre. En terminos de riesgo esto no mejora nada respecto de la semana pasada — el dato
+biometrico se sigue incorporando sin consentimiento registrado; lo unico que cambio es que
+activarlo ya no requiere desarrollo. Lo que falta antes de exponerlo a terceros:
 
 - aplicar `017` y encender juntas las flags de cliente y servidor;
 - politica de privacidad/terminos actualizados;
@@ -773,10 +835,14 @@ Objetivo: poder enviar links y cobrar sin zona gris innecesaria.
 - [x] Crear ruta publica `/health-disclaimer` (Fase 0).
 - [x] Crear superficie de descargo Whoop como ruta publica (Fase 0).
 - [x] Linkear rutas desde landing, pricing, features y signup/login (Fase 0 + SharedPublicNav fix).
-- [x] Implementar consentimiento de terminos/privacidad/salud en la app autenticada, detrás de flag (2026-08-03; rollout pendiente).
-- [x] Implementar consentimiento biometrico persistido antes de conectar y procesar Whoop (cliente + servidor; rollout pendiente).
+- [x] Implementar consentimiento de terminos/privacidad/salud en la app autenticada, detrás de flag (2026-08-03; desplegado apagado).
+- [x] Implementar consentimiento biometrico persistido antes de conectar y procesar Whoop (cliente + servidor; desplegado apagado).
 - [x] Registrar version y fecha de consentimiento en log append-only (`017` escrita, no aplicada; Dexie v19).
-- [ ] Aprobar textos, resolver retención al borrar cuenta, aplicar `017` y encender juntas ambas flags.
+- [x] Desplegar el bundle con el consentimiento dormido y smokear no-regresion (2026-08-03, smoke en curso).
+- [ ] Aprobar textos legales de las cuatro publicaciones.
+- [ ] Resolver retención de `user_consents` al borrar cuenta y alinear el copy de Ajustes.
+- [ ] Aplicar `017` en produccion.
+- [ ] Encender `VITE_CONSENT_GATE` + `CONSENT_GATE_ENABLED` juntas y correr el smoke de activacion.
 - [ ] Agregar politica simple de cancelacion/reembolso para piloto manual (en landing coach).
 - [ ] Revision juridica formal de textos legales con abogado antes de pago publico o anuncios masivos.
 
@@ -1140,10 +1206,26 @@ dificultad.
 5. **Analisis de entrenamientos con Whoop.** Superficie nueva sobre datos que ya
    estan locales (readiness + workouts). Mantener el contrato vigente: contexto
    objetivo y consentido, sin diagnostico ni ajuste automatico.
-6. **Chat — latencia de respuesta.** Deliberadamente **despues** de tener
-   medicion: hoy no existe instrumentacion de latencia del chat general (el plan
-   de `2026-07-16` midio `week_creator`, que es otro camino). Optimizar antes de
-   medir es exactamente lo que la Fase 0 del Plan Builder existio para evitar.
+6. **Chat — latencia y costo.** Deliberadamente **despues** de tener medicion.
+   Correccion de esta entrada (verificado 2026-08-03): no es cierto que "no
+   existe instrumentacion". `logCoachRequest` (`netlify/functions/coach.ts:591`)
+   ya emite por request duracion de proveedor y de servidor, tokens de
+   prompt/completion/cache, `requestClass`, `finishReason`, `outcome`,
+   `retryUsed` y `fallbackUsed`. Lo que falta es **persistencia**: es un
+   `console.info` que muere en los logs de Netlify, asi que no se puede sumar un
+   mes ni separar `chat_general` de `chat_action`.
+
+   Eso convierte el trabajo en el mismo patron que `016` aplico al Plan Builder
+   —tabla, row mapper, guard de drift bidireccional, retencion— sobre campos que
+   ya estan calculados, y no en una Fase 0 completa. Es la unica pieza de codigo
+   que hoy desbloquea una decision de negocio real: **el precio del piloto no se
+   puede fijar sin el costo del chat**, que es el camino de mayor volumen (tope
+   de 80 requests/dia) y el unico sin cifra. Costo de API para construirlo:
+   **cero** — la telemetria viaja sobre uso real, no sobre un loadtest pagado.
+
+   Friccion a considerar antes de empezar: exige una migracion `018` que se
+   apilaria detras de `017`, todavia sin aplicar. Son independientes, pero son
+   dos migraciones manuales pendientes a la vez.
 7. **Flags por plan** (Base / Coach Semanal / Avanzado). Necesarios en cuanto el
    piloto tenga mas de un tier conviviendo.
 8. **Pasarela de pago.** Deliberadamente al final. Para 1-3 clientes acompanados,
@@ -1164,24 +1246,44 @@ quedo terminado o a medias antes de construir encima.
 
 Orden recomendado (Athlete-Aware Core + Coach F2-lite Parte 2b + Whoop v1/Workout Auto-Complete + Coach Workspace v0 + Fase 0 coaches landing ya en prod):
 
-0. **Desplegar las tandas pendientes.** Rotacion coordinada + roles de partido
-   (`9754f78`), identidad de fuerza (`afaac17`) y copy de la libreria (§20). El
-   smoke pagado de la rotacion esta aceptado; los roles de squash viajan encima
-   y **no** estan medidos, solo cubiertos por tests. Con ~US$0,60 de saldo no
-   alcanza para re-medir (~US$0,90 por corrida), asi que la decision es desplegar
-   asumiendo la cobertura de la suite o recargar y correr un smoke antes.
-1. **Verificacion operativa post-deploy:** revisar la fila de job/attempts de la primera corrida real y mirar `squashFinisherPreservedCount` / `squashStandaloneMatchCount` contra lo esperado.
-2. **Revision juridica formal** (2-3 dias abogado, paralelizar con items 3-4): firma de terminos/privacidad/descargos/políticas Whoop.
-3. **Consentimiento in-app + biometrico** (1-2 dias implementacion): checkbox en signup, descargo antes de Whoop connect, registrar version/fecha.
-4. **QA deportiva y preparacion piloto** (1-2 dias): generar 3 planes arquetipo como atletas gestionados, revisar salida coach, preparar oferta (duracion, precio, soporte, reembolso).
-5. **Primer cliente acompanado** (ejecutar en paralelo con abogado): elegir 1 candidato, onboarding 1:1, generar semana 1, iniciar protocolo de revision semanal.
+0. ✅ **Desplegar las tandas pendientes.** Hecho el 2026-08-03: rotacion
+   coordinada + roles de partido (`9754f78`), identidad de fuerza (`afaac17`),
+   copy de la libreria (`33d585f`) y consentimiento apagado
+   (`c451808`…`e59b85f`) viajaron en el mismo bundle. Los roles de squash **no**
+   estan medidos —el smoke pagado es anterior—, y con ~US$0,60 de saldo no
+   alcanza para re-medir (~US$0,90 por corrida): quedan cubiertos por la suite y
+   por la verificacion post-deploy del item 1.
+1. **Verificacion operativa post-deploy (en curso):** el smoke de produccion del
+   2026-08-03 debe cubrir dos cosas distintas. (a) **No-regresion del
+   consentimiento apagado:** con `017` sin aplicar y ambas flags off, la app, el
+   onboarding y Whoop tienen que comportarse exactamente igual que antes; si el
+   gate aparece o Whoop empieza a rechazar OAuth, hay un problema de gating de
+   flag, no una activacion. (b) **Efecto de las tandas de motor:** generar un
+   plan real y revisar la fila de job/attempts, mirando
+   `squashFinisherPreservedCount` / `squashStandaloneMatchCount` contra lo
+   esperado, y de paso confirmar que los nombres nuevos de la libreria de fuerza
+   aparecen en la UI sin romper sesiones/plantillas viejas (que resuelven por
+   `aliases`).
+2. **Smoke autenticado de Biblioteca y Planificacion** (pendiente §11 desde el
+   deploy de `015`): es la deuda de verificacion mas vieja del proyecto y sale
+   casi gratis si ya hay una sesion real abierta para el item 1.
+3. **Revision juridica formal** (2-3 dias abogado, paralelizar con items 4-5): firma de terminos/privacidad/descargos/políticas Whoop.
+4. **Activacion del consentimiento** (una vez aprobados los textos y resuelta la
+   retencion al borrar cuenta): aplicar `017`, encender ambas flags juntas y
+   correr el smoke de activacion. El codigo ya esta en produccion; esto es
+   rollout, no desarrollo.
+5. **QA deportiva y preparacion piloto** (1-2 dias): generar 3 planes arquetipo como atletas gestionados, revisar salida coach, preparar oferta (duracion, precio, soporte, reembolso).
+6. **Primer cliente acompanado** (ejecutar en paralelo con abogado): elegir 1 candidato, onboarding 1:1, generar semana 1, iniciar protocolo de revision semanal.
 
 **Siguiente bloque de desarrollo recomendado:** ninguno de motor. Squash y
 fuerza quedaron cerrados de punta a punta —seleccion, carga, identidad y copy—,
-asi que lo que separa el producto de cobrarle a alguien es legal y operacional,
-no codigo. Si aparece tiempo de desarrollo libre, el candidato con mejor
-relacion valor/riesgo es el **smoke autenticado de Biblioteca y Planificacion**
-(pendiente §11), no una mejora nueva.
+y el consentimiento ya esta escrito y desplegado, asi que lo que separa el
+producto de cobrarle a alguien es legal y operacional, no codigo. Si aparece
+tiempo de desarrollo libre, los dos candidatos con mejor relacion valor/riesgo
+son el **smoke autenticado de Biblioteca y Planificacion** (item 2) y, como
+unica pieza de codigo nueva que se justifica hoy, la **politica de
+cancelacion/reembolso + one-liner de oferta** en `/coaches`, que es superficie
+publica pendiente del checklist B y bloquea cobrar, no una mejora de motor.
 
 ## Que No Hacer Ahora
 

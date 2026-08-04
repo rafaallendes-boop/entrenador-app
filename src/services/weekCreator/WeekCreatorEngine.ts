@@ -578,17 +578,71 @@ export const WeekCreatorEngine = {
       weekCreatorContract,
       ...cohort,
     })
+    // Cierre único de las dos salidas de falla del fallback. Existía solo la
+    // rama de validación; construir el fallback fuera de ella salteaba su
+    // instrumentación y dejaba el request en vuelo (spec 2026-08-03 §2).
+    //
+    // El código de soporte que ve el usuario es siempre `fallbackTraceId`: el
+    // trace de la fila que registra el fallo final. El trace del fallo del
+    // proveedor viaja en los warnings para correlación interna, no en el
+    // mensaje visible.
+    const failFallback: (input: {
+      errorCode: string
+      provider?: CoachNormalizedResponse['provider']
+      model?: string
+      extraWarnings?: string[]
+    }) => never = (input) => {
+      useAIDebugStore.getState().failRequest(fallbackTraceId, {
+        provider: input.provider,
+        model: input.model,
+        durationMs: Date.now() - fallbackStartedAt,
+        retryUsed: providerAttempts > 1,
+        fallbackUsed: true,
+        errorCode: input.errorCode,
+        outcome: 'schema_invalid',
+        warnings: [
+          buildWeekCreatorFallbackWarning(providerAttempts, lastFailure?.category),
+          `Provider failure trace: ${failureTraceId}`,
+          ...(input.extraWarnings ?? []),
+        ],
+        stageTimings: fallbackTracker.timings(),
+      })
+      fallbackTracker.flush('invalid_schema', { generationId, attempt: providerAttempts + 1 })
+      throw new Error(`${failureMessage} Código de soporte: ${fallbackTraceId}.`)
+    }
+
     const fallbackStage = fallbackTracker.stage('fallback')
-    const fallback = buildDeterministicWeekCreatorResponse({
-      config,
-      targetWeekStart: options.targetWeekStart,
-      planningStartDate: dateWindow.planningStartDate,
-      profile: context.athleteProfile ?? undefined,
-      provider: lastFailure?.provider,
-      error: failureMessage,
-      traceId: fallbackTraceId,
-    })
-    fallbackStage.end({ ok: true })
+    let fallback: CoachNormalizedResponse
+    try {
+      fallback = buildDeterministicWeekCreatorResponse({
+        config,
+        targetWeekStart: options.targetWeekStart,
+        planningStartDate: dateWindow.planningStartDate,
+        profile: context.athleteProfile ?? undefined,
+        provider: lastFailure?.provider,
+        error: failureMessage,
+        traceId: fallbackTraceId,
+      })
+      fallbackStage.end({ ok: true })
+    } catch (error) {
+      // Causa cruda para el operador (consola + telemetría), nunca para el
+      // usuario: `formatError` en useChatStore reexpone `Error.message` tal
+      // cual en el chat.
+      const cause = error instanceof Error ? error.message : String(error)
+      fallbackStage.end({ ok: false, error: cause })
+      if (typeof console !== 'undefined' && typeof console.warn === 'function') {
+        console.warn('[WeekCreatorEngine] fallback build failed', {
+          traceId: fallbackTraceId,
+          cause,
+        })
+      }
+      failFallback({
+        errorCode: 'fallback_build_failed',
+        provider: lastFailure?.provider,
+        model: lastFailure?.model,
+        extraWarnings: [`Fallback build failed: ${cause}`],
+      })
+    }
     const fallbackValidateStage = fallbackTracker.stage('validate')
     const fallbackValidation = validateWeekCreatorResponse({
       response: fallback,
@@ -602,19 +656,11 @@ export const WeekCreatorEngine = {
       error: fallbackValidation.ok ? undefined : fallbackValidation.error,
     })
     if (!fallbackValidation.ok || !fallbackValidation.action) {
-      useAIDebugStore.getState().failRequest(fallbackTraceId, {
+      failFallback({
+        errorCode: 'fallback_invalid',
         provider: fallback.provider,
         model: fallback.model,
-        durationMs: Date.now() - fallbackStartedAt,
-        retryUsed: providerAttempts > 1,
-        fallbackUsed: true,
-        errorCode: 'fallback_invalid',
-        outcome: 'schema_invalid',
-        warnings: [buildWeekCreatorFallbackWarning(providerAttempts, lastFailure?.category)],
-        stageTimings: fallbackTracker.timings(),
       })
-      fallbackTracker.flush('invalid_schema', { generationId, attempt: providerAttempts + 1 })
-      throw new Error(`${failureMessage} Código de soporte: ${failureTraceId}.`)
     }
     const fallbackDurationMs = Date.now() - fallbackStartedAt
     useAIDebugStore.getState().completeRequest(fallback.traceId, {
