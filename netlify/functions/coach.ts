@@ -1621,12 +1621,12 @@ export const handler = stream(async (event: HandlerEvent): Promise<StreamingResp
   let persistence: { userId: string; token: string } | undefined
   try {
     const auth = await resolveAuthContext(event)
-    enforceRateLimit(auth)
-    authDurationMs = Date.now() - authStartedAt
     const token = getBearerToken(event)
     if (token && auth.userId !== ANONYMOUS_USER_ID) {
       persistence = { userId: auth.userId, token }
     }
+    enforceRateLimit(auth)
+    authDurationMs = Date.now() - authStartedAt
   } catch (error) {
     authDurationMs = Date.now() - authStartedAt
     const normalized = normalizeError(error)
@@ -1636,11 +1636,12 @@ export const handler = stream(async (event: HandlerEvent): Promise<StreamingResp
       logicalAttempt: req.logicalAttempt,
       requestClass: normalizeRequestClass(req.requestClass),
       outcome: 'error',
-      streamed: Boolean(req.stream),
+      // Auth/rate-limit exits always use json(...), regardless of req.stream.
+      streamed: false,
       authDurationMs,
       serverDurationMs: Date.now() - requestReceivedAt,
       errorCode: normalized.errorCode,
-    })
+    }, persistence)
     return json(normalized.statusCode ?? 500, {
       error: normalized.message,
       errorCode: normalized.errorCode ?? 'unknown',

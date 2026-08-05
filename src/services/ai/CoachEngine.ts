@@ -191,12 +191,22 @@ async function sendTrackedCoachRequest(
           : undefined,
       }
 
+      const trackedProvider: AIProvider = {
+        name: provider.name,
+        call: async (trackedRequest) => {
+          const raw = await provider.call(trackedRequest)
+          // Capture transport before normalization, which may itself throw.
+          useAIDebugStore.getState().updateRequest(traceId, { streamed: raw.streamed })
+          return raw
+        },
+      }
+
       const providerStage = tracker.stage('provider_call')
       const result = requestClass === 'chat_action'
-        ? await sendWithRecovery(provider, request)
+        ? await sendWithRecovery(trackedProvider, request)
         : requestClass === 'chat_general'
-          ? await sendGeneralWithRecovery(provider, request)
-          : await sendDirect(provider, request)
+          ? await sendGeneralWithRecovery(trackedProvider, request)
+          : await sendDirect(trackedProvider, request)
       providerStage.end({ ok: true })
 
       const finalResult = requestClass === 'chat_action'

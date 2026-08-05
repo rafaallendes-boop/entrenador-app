@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mockProviderCall = vi.hoisted(() => vi.fn())
+const mockPostProcessCoachActions = vi.hoisted(() => vi.fn())
 
 vi.mock('../ai/providerResolver', () => ({
   getActiveProvider: () => ({ name: 'mock', call: mockProviderCall }),
@@ -13,12 +14,18 @@ vi.mock('../ai/aiTelemetry', () => ({
   upsertAIRequestLog: vi.fn(async () => undefined),
 }))
 
+vi.mock('../ai/actionPostProcessor', () => ({
+  postProcessCoachActions: mockPostProcessCoachActions,
+}))
+
 import { CoachEngine } from '../ai/CoachEngine'
 import { useAIDebugStore } from '../../store/useAIDebugStore'
 
 describe('CoachEngine telemetry persistence', () => {
   beforeEach(() => {
     mockProviderCall.mockReset()
+    mockPostProcessCoachActions.mockReset()
+    mockPostProcessCoachActions.mockImplementation((result) => result)
     useAIDebugStore.getState().clear()
   })
 
@@ -84,6 +91,56 @@ describe('CoachEngine telemetry persistence', () => {
       status: 'completed',
       surface: 'import',
       streamed: false,
+    })
+  })
+
+  it('preserves terminal transport when action post-processing fails', async () => {
+    mockProviderCall.mockImplementation(async (request: { traceId: string; requestClass: string }) => ({
+      text: '<actions>[]</actions>',
+      provider: 'openai',
+      model: 'gpt-5-mini',
+      streamed: false,
+      traceId: request.traceId,
+      requestClass: request.requestClass,
+    }))
+    mockPostProcessCoachActions.mockImplementation(() => {
+      throw new Error('post-processing failed')
+    })
+
+    await expect(CoachEngine.sendAction(
+      'ajusta mi semana',
+      { recentMessages: [], recentSessions: [], plannedSessions: [], historicalSessions: [] },
+    )).rejects.toThrow('post-processing failed')
+
+    expect(useAIDebugStore.getState().requests[0]).toMatchObject({
+      status: 'failed',
+      streamed: false,
+    })
+  })
+
+  it('preserves terminal transport when normalization fails', async () => {
+    mockProviderCall.mockImplementation(async (request: { traceId: string; requestClass: string }) => {
+      const raw = {
+        provider: 'openai',
+        model: 'gpt-5-mini',
+        streamed: true,
+        traceId: request.traceId,
+        requestClass: request.requestClass,
+      }
+      Object.defineProperty(raw, 'text', {
+        get: () => { throw new Error('normalization failed') },
+      })
+      return raw
+    })
+
+    await expect(CoachEngine.sendChat(
+      '¿Cómo ajusto la carga?',
+      { recentMessages: [], recentSessions: [], plannedSessions: [], historicalSessions: [] },
+    )).rejects.toThrow('normalization failed')
+
+    expect(useAIDebugStore.getState().requests[0]).toMatchObject({
+      status: 'failed',
+      streamed: true,
     })
   })
 })

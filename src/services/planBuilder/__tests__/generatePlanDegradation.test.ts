@@ -1,8 +1,15 @@
 import { describe, expect, it, vi } from 'vitest'
+
+vi.mock('../../ai/aiTelemetry', () => ({
+  assertDailyAIRequestLimit: vi.fn(async () => undefined),
+  upsertAIRequestLog: vi.fn(async () => undefined),
+}))
+
 import { generatePlanWeeks } from '../generatePlan'
 import type { AIProvider } from '../../ai/types'
 import type { AthleteProfile, PlanWizardConfig } from '../../../types'
 import type { TrainingPlan, TrainingPlanWeek } from '../../../types/planBuilder'
+import { useAIDebugStore } from '../../../store/useAIDebugStore'
 
 function makeWizard(): PlanWizardConfig {
   return {
@@ -75,6 +82,7 @@ function createWeekActionText(targetDate: string, titlePrefix: string): string {
 
 describe('generatePlanWeeks pair → single degradation', () => {
   it('preserves the same batchId across generating and resolved states', async () => {
+    useAIDebugStore.getState().clear()
     const weeks = [makeWeek('2026-06-01', 0), makeWeek('2026-06-08', 1)]
     const callSpy = vi.fn(async () => ({
       text: JSON.stringify({
@@ -84,6 +92,7 @@ describe('generatePlanWeeks pair → single degradation', () => {
         ],
       }),
       provider: 'gemini',
+      streamed: false,
       model: 'gemini-2.5-flash',
       durationMs: 1000,
       traceId: 'pair-trace',
@@ -109,6 +118,9 @@ describe('generatePlanWeeks pair → single degradation', () => {
     expect(new Set(updates[0]).size).toBe(1)
     expect(new Set(updates[1]).size).toBe(1)
     expect(updates[0]?.[0]).toBe(updates[1]?.[0])
+    expect(useAIDebugStore.getState().requests.find(
+      (request) => request.requestClass === 'plan_builder_pair',
+    )).toMatchObject({ status: 'completed', streamed: false })
   })
 
   it('propagates the complete taxonomy through the pair result path', async () => {
@@ -341,5 +353,38 @@ describe('generatePlanWeeks pair → single degradation', () => {
       correctedSessionsAffected: 0,
       structurallyRepairedSessionsAffected: 0,
     })
+  })
+
+  it('preserves pair transport when normalization fails after the provider response', async () => {
+    useAIDebugStore.getState().clear()
+    const provider: AIProvider = {
+      name: 'gemini',
+      async call(request) {
+        const raw = {
+          provider: 'gemini',
+          model: 'gemini-2.5-flash',
+          streamed: true,
+          traceId: request.traceId,
+        }
+        Object.defineProperty(raw, 'text', {
+          get: () => { throw new Error('normalization failed') },
+        })
+        return raw as Awaited<ReturnType<AIProvider['call']>>
+      },
+    }
+
+    await generatePlanWeeks({
+      plan: makePlan(),
+      weeks: [makeWeek('2026-06-01', 0), makeWeek('2026-06-08', 1)],
+      profile: makeProfile(),
+      wizardConfig: makeWizard(),
+      provider,
+      deterministicPrimary: false,
+      strategy: 'pairs',
+    })
+
+    expect(useAIDebugStore.getState().requests.find(
+      (request) => request.requestClass === 'plan_builder_pair',
+    )).toMatchObject({ status: 'failed', streamed: true })
   })
 })

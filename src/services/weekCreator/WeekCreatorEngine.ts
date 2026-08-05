@@ -666,6 +666,7 @@ export const WeekCreatorEngine = {
     useAIDebugStore.getState().completeRequest(fallback.traceId, {
       provider: fallback.provider,
       model: fallback.model,
+      streamed: false,
       durationMs: fallbackDurationMs,
       retryUsed: providerAttempts > 1,
       fallbackUsed: true,
@@ -1022,6 +1023,7 @@ function buildRawTelemetry(raw: AIRawResponse | undefined): Partial<AITechnicalR
   return {
     provider: raw.provider,
     model: raw.model,
+    streamed: raw.streamed,
     durationMs: raw.durationMs,
     retryUsed: raw.retryUsed,
     fallbackUsed: raw.fallbackUsed,

@@ -64,6 +64,10 @@ Quedan deliberadamente **sin persistir**:
 Ambas siguen visibles en los `console.info`, que **no se tocan**. De los 6 call
 sites de `logCoachRequest`, 5 persisten.
 
+El rechazo por rate limit ocurre **después** de resolver la autenticación y sí
+se persiste con `outcome = error` / `error_code = rate_limit`; no forma parte de
+las exclusiones anteriores.
+
 `on delete cascade` mantiene la telemetría consistente al borrar la cuenta.
 Nota deliberada: esto difiere de `user_consents` (`017`), que **no** lleva FK
 porque su default legal es conservar evidencia. Acá no hay obligación
@@ -290,7 +294,9 @@ existe: `useAIDebugStore` conserva `startedAt` y fija `completedAt` al completar
 o fallar, así que el end-to-end es `completedAt - startedAt`. Además,
 `AITechnicalResult.streamed` conserva el **transporte terminal efectivo** que
 reporta `ProxyProvider`: una caída streaming→JSON queda clasificada como
-`false`, aunque haya existido un primer intento streaming fallido.
+`false`, aunque haya existido un primer intento streaming fallido. Ese campo se
+propaga en Coach Engine, Week Creator y los caminos single/pair del Plan Builder;
+el fallback local determinista de Week Creator se registra como `false`.
 
 **Escalada si hay pérdida material o impacto de latencia en cualquiera de los
 dos caminos:** endpoint dedicado de telemetría invocado por el cliente tras el
@@ -356,10 +362,14 @@ en el rollout.** No se afirma que sea nulo.
    rama de streaming en `coach.ts:1603`), y `stream: false` persiste
    `streamed = false`.
 9. **Retención**: borra filas de `coach_requests` más viejas que el corte y
-   respeta las recientes.
+   respeta las recientes. Cada tabla reporta su resultado de forma independiente:
+   que `coach_requests` todavía no exista no invalida los deletes exitosos de
+   attempts/jobs.
 10. **Transporte terminal cliente**: NDJSON produce `streamed = true`; JSON y
     el fallback streaming→JSON producen `streamed = false` en
-    `useAIDebugStore`.
+    `useAIDebugStore`, también para Week Creator y Plan Builder.
+11. **Rate limit autenticado**: el 429 persiste una fila con el usuario resuelto
+    y `error_code = rate_limit`; auth fallida sigue sin intentar escritura.
 
 **No cubierto por tests unitarios, y por eso va al rollout:** que la escritura
 sin `await` efectivamente persista, y que no agregue latencia observable. Son

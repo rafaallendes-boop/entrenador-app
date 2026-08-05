@@ -732,6 +732,7 @@ describe('WeekCreatorEngine', () => {
         },
       ]) + '</actions>',
       provider: 'mock',
+      streamed: true,
       model: 'mock-week-creator',
       traceId: request.traceId,
       generationId: request.generationId,
@@ -762,6 +763,10 @@ describe('WeekCreatorEngine', () => {
       context,
       { surface: 'chat', targetWeekStart: '2026-05-04' },
     )
+
+    expect(useAIDebugStore.getState().requests.find(
+      (request) => request.traceId === response.traceId,
+    )).toMatchObject({ status: 'completed', streamed: true })
 
     expect(mockProviderCall).toHaveBeenCalledTimes(1)
     expect(response.actions).toHaveLength(1)
@@ -1438,6 +1443,7 @@ describe('WeekCreatorEngine', () => {
     )).toBe(false)
     expect(requests[0]).toMatchObject({
       status: 'completed',
+      streamed: false,
       fallbackUsed: true,
       retryUsed: false,
       errorCode: 'missing_create_week',

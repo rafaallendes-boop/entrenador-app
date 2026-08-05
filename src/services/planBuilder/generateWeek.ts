@@ -288,6 +288,7 @@ export async function generateWeek(input: GenerateWeekInput): Promise<GenerateWe
   let outcome: CoachOutcome = 'error'
   let chunkCount = 0
   let requestStarted = false
+  let debugRaw: AIRawResponse | undefined
 
   try {
     await assertDailyAIRequestLimit(requestClass)
@@ -304,7 +305,6 @@ export async function generateWeek(input: GenerateWeekInput): Promise<GenerateWe
     requestStarted = true
 
     const providerStage = tracker.stage('provider_call')
-    const debugRef: { raw?: AIRawResponse } = {}
     const result = await generateWeekCore({
       plan,
       week,
@@ -327,7 +327,7 @@ export async function generateWeek(input: GenerateWeekInput): Promise<GenerateWe
             input.onChunk?.(chunk)
           },
         })
-        debugRef.raw = raw
+        debugRaw = raw
         return raw
       },
     })
@@ -341,10 +341,11 @@ export async function generateWeek(input: GenerateWeekInput): Promise<GenerateWe
     if (result.meta.lastError) {
       const qualityRejected = isQualityFailClosedRejection(result.meta.errorClass)
       outcome = qualityRejected ? 'quality_rejected' : 'invalid_schema'
-      const raw = debugRef.raw
+      const raw = debugRaw
       useAIDebugStore.getState().failRequest(traceId, {
         provider: raw?.provider ?? result.meta.provider,
         model: raw?.model ?? result.meta.model,
+        streamed: raw?.streamed,
         durationMs: raw?.durationMs ?? result.meta.durationMs,
         errorCode: qualityRejected ? result.meta.errorClass : 'validation_error',
         retryUsed: raw?.retryUsed ?? result.meta.retryUsed,
@@ -369,10 +370,11 @@ export async function generateWeek(input: GenerateWeekInput): Promise<GenerateWe
       }
     }
 
-    const raw = debugRef.raw
+    const raw = debugRaw
     useAIDebugStore.getState().completeRequest(traceId, {
       provider: raw?.provider ?? result.meta.provider,
       model: raw?.model ?? result.meta.model,
+      streamed: raw?.streamed,
       durationMs: raw?.durationMs ?? result.meta.durationMs,
       retryUsed: raw?.retryUsed ?? result.meta.retryUsed,
       fallbackUsed: raw?.fallbackUsed ?? result.meta.fallbackUsed,
@@ -396,6 +398,7 @@ export async function generateWeek(input: GenerateWeekInput): Promise<GenerateWe
     const message = error instanceof Error ? error.message : String(error)
     if (requestStarted) {
       useAIDebugStore.getState().failRequest(traceId, {
+        streamed: debugRaw?.streamed,
         errorCode: errorCode ?? message,
       })
     }

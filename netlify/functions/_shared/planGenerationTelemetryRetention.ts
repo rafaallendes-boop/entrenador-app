@@ -12,6 +12,34 @@ interface RetentionClient {
   }
 }
 
+type RetentionTable = 'plan_generation_attempts' | 'plan_generation_jobs' | 'coach_requests'
+
+type RetentionResult =
+  | { status: 'ok'; deleted: number }
+  | { status: 'failed'; error: string }
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
+async function runTableRetention(
+  table: RetentionTable,
+  operation: Promise<number>,
+): Promise<RetentionResult> {
+  try {
+    const deleted = await withTimeout(
+      operation,
+      RETENTION_TIMEOUT_MS,
+      `${table} retention`,
+    )
+    return { status: 'ok', deleted }
+  } catch (error) {
+    const message = errorMessage(error)
+    console.error(`[plan-generation-telemetry-retention] ${table} cleanup failed`, error)
+    return { status: 'failed', error: message }
+  }
+}
+
 export async function deleteExpiredPlanGenerationAttempts(
   client: RetentionClient,
   now = Date.now(),
@@ -73,34 +101,46 @@ export async function runPlanGenerationTelemetryRetention(): Promise<{
     const client = createClient(url, serviceRoleKey, {
       auth: { persistSession: false, autoRefreshToken: false },
     })
-    const [deleted, deletedJobs, deletedCoachRequests] = await Promise.all([
-      withTimeout(
+    const [attempts, jobs, coachRequests] = await Promise.all([
+      runTableRetention(
+        'plan_generation_attempts',
         deleteExpiredPlanGenerationAttempts(client),
-        RETENTION_TIMEOUT_MS,
-        'plan generation attempt retention',
       ),
-      withTimeout(
+      runTableRetention(
+        'plan_generation_jobs',
         deleteExpiredPlanGenerationJobs(client),
-        RETENTION_TIMEOUT_MS,
-        'plan generation job retention',
       ),
-      withTimeout(
+      runTableRetention(
+        'coach_requests',
         deleteExpiredCoachRequests(client),
-        RETENTION_TIMEOUT_MS,
-        'coach request retention',
       ),
     ])
+
+    const results: Record<RetentionTable, RetentionResult> = {
+      plan_generation_attempts: attempts,
+      plan_generation_jobs: jobs,
+      coach_requests: coachRequests,
+    }
+    const failedTables = Object.entries(results)
+      .filter((entry): entry is [RetentionTable, Extract<RetentionResult, { status: 'failed' }>] => (
+        entry[1].status === 'failed'
+      ))
+      .map(([table, result]) => ({ table, error: result.error }))
+    const successfulTableCount = Object.values(results).filter(result => result.status === 'ok').length
+
     return {
-      statusCode: 200,
+      statusCode: failedTables.length === 0 ? 200 : successfulTableCount > 0 ? 207 : 500,
       body: JSON.stringify({
-        deleted,
-        deletedJobs,
-        deletedCoachRequests,
+        deleted: attempts.status === 'ok' ? attempts.deleted : null,
+        deletedJobs: jobs.status === 'ok' ? jobs.deleted : null,
+        deletedCoachRequests: coachRequests.status === 'ok' ? coachRequests.deleted : null,
+        results,
+        failures: failedTables,
         durationMs: Date.now() - startedAt,
       }),
     }
-  } catch {
-    console.error('[plan-generation-telemetry-retention] cleanup failed')
+  } catch (error) {
+    console.error('[plan-generation-telemetry-retention] setup failed', error)
     return { statusCode: 500, body: JSON.stringify({ error: 'telemetry retention failed' }) }
   }
 }

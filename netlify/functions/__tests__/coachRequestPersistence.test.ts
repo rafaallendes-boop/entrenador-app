@@ -148,6 +148,31 @@ describe('persistencia de telemetría del coach', () => {
     expect(mocks.insertRow).not.toHaveBeenCalled()
   })
 
+  it('persiste un rechazo por rate limit después de autenticar al usuario', async () => {
+    vi.stubEnv('COACH_RATE_LIMIT_MAX', '1')
+    stubAuthFetch()
+    const request = {
+      systemPrompt: 's',
+      userMessage: BYPASS_MESSAGE,
+      requestClass: 'chat_action',
+      stream: true,
+    }
+    const headers = { authorization: 'Bearer tok' }
+
+    expect((await callHandler(request, headers)).statusCode).toBe(200)
+    const limited = await callHandler(request, headers)
+    await flushMicrotasks()
+
+    expect(limited.statusCode).toBe(429)
+    expect(mocks.insertRow).toHaveBeenCalledTimes(2)
+    expect(mocks.insertRow.mock.calls[1]![1]).toMatchObject({
+      userId: AUTHED_USER_ID,
+      outcome: 'error',
+      errorCode: 'rate_limit',
+      streamed: false,
+    })
+  })
+
   it('un fallo de Supabase no altera la respuesta del coach ni lanza', async () => {
     stubAuthFetch()
     mocks.insertRow.mockResolvedValue('failed')

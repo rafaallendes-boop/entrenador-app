@@ -1,4 +1,4 @@
-import type { AIProvider } from '../ai/types'
+import type { AIProvider, AIRawResponse } from '../ai/types'
 import { getProviderForRequestClass } from '../ai/providerResolver'
 import type { AthleteProfile, CoachAction, PlanWizardConfig, StageTiming } from '../../types'
 import type { TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
@@ -596,6 +596,7 @@ async function generateWeekPair(
   const traceId = buildAITraceId(requestClass)
   const policy = getAIRequestPolicy(requestClass)
   let chunkCount = 0
+  let terminalRaw: AIRawResponse | undefined
   const chunkRouter = createWeekBatchChunkRouter(weeks, onChunk)
   const streamingParser = createStreamingActionsParser()
   await assertDailyAIRequestLimit(requestClass)
@@ -634,6 +635,7 @@ async function generateWeekPair(
         streamingParser.push(chunk)
       },
     })
+    terminalRaw = raw
     const normalized = normalizeResponse(raw)
     const streamedActions = streamingParser.flush().completeActions
     const finalActions = normalized.actions && normalized.actions.length > 0
@@ -708,6 +710,7 @@ async function generateWeekPair(
     useAIDebugStore.getState().completeRequest(traceId, {
       provider: raw.provider,
       model: raw.model,
+      streamed: raw.streamed,
       durationMs: raw.durationMs,
       retryUsed: raw.retryUsed,
       fallbackUsed: raw.fallbackUsed,
@@ -739,6 +742,7 @@ async function generateWeekPair(
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     useAIDebugStore.getState().failRequest(traceId, {
+      streamed: terminalRaw?.streamed,
       errorCode: message,
     })
     return {
