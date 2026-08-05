@@ -56,6 +56,8 @@ export interface AIConversationMessage {
 export interface AIRawResponse {
   text: string
   provider: AIProviderName
+  /** Effective terminal transport used by the proxy response. */
+  streamed?: boolean
   model?: string
   raw?: unknown        // full API response, available for debugging
   durationMs?: number
@@ -104,6 +106,8 @@ export interface CoachNormalizedResponse {
   /** Nutrition tips extracted from structured response (future — always undefined v1) */
   nutritionFocus?: string[]
   provider: AIProviderName
+  /** Effective terminal transport used by the proxy response. */
+  streamed?: boolean
   model?: string
   /** Full raw API response — useful for debugging, never shown in UI */
   raw?: unknown

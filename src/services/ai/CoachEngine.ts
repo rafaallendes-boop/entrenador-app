@@ -108,6 +108,7 @@ export const CoachEngine = {
       useAIDebugStore.getState().completeRequest(traceId, {
         provider: raw.provider,
         model: raw.model,
+        streamed: raw.streamed,
         durationMs: raw.durationMs,
         retryUsed: raw.retryUsed,
         fallbackUsed: raw.fallbackUsed,
@@ -235,6 +236,7 @@ async function withTracing<T extends Pick<
   CoachNormalizedResponse,
   | 'provider'
   | 'model'
+  | 'streamed'
   | 'durationMs'
   | 'retryUsed'
   | 'fallbackUsed'
@@ -267,6 +269,7 @@ async function withTracing<T extends Pick<
     useAIDebugStore.getState().completeRequest(traceId, {
       provider: result.provider,
       model: result.model,
+      streamed: result.streamed,
       durationMs: result.durationMs,
       retryUsed: result.retryUsed,
       fallbackUsed: result.fallbackUsed,

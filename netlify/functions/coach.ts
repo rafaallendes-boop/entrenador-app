@@ -7,6 +7,7 @@
  */
 
 import { stream, type HandlerEvent, type StreamingResponse } from '@netlify/functions'
+import { createClient } from '@supabase/supabase-js'
 import {
   normalizeJsonSchemaForGemini,
   normalizeJsonSchemaForStandardProvider,
@@ -18,6 +19,10 @@ import {
   type OpenAIReasoningEffort,
 } from '../../src/services/ai/openAIReasoning'
 import { mapGeminiUsage, mapOpenAIUsage } from '../../src/services/ai/providerUsage'
+import {
+  insertCoachRequestRow,
+  type CoachRequestTelemetry,
+} from './_shared/coachRequestTelemetry'
 import { CORS_HEADERS, corsPreflight } from './_shared/cors'
 
 export { mapGeminiUsage, mapOpenAIUsage } from '../../src/services/ai/providerUsage'
@@ -611,12 +616,88 @@ function logCoachRequest(payload: {
   responseCharCount?: number
   finishReason?: string
   errorCode?: TechnicalErrorCode
+  /** Transporte efectivo. Obligatorio para segmentar el rollout. */
+  streamed: boolean
 }): void {
   if (typeof console === 'undefined' || typeof console.info !== 'function') return
   try {
     console.info(JSON.stringify({ event: 'coach.request.completed', ...payload }))
   } catch {
     /* noop */
+  }
+}
+
+/** Literal que usa `resolveAuthContext` cuando AUTH_REQUIRED es false. */
+const ANONYMOUS_USER_ID = 'anonymous'
+
+function warnCoachTelemetryFailure(traceId: string): void {
+  if (typeof console !== 'undefined' && typeof console.warn === 'function') {
+    console.warn('[coach] telemetry insert failed', { traceId })
+  }
+}
+
+/**
+ * Loguea siempre y persiste para usuarios autenticados. La escritura es
+ * best-effort y no bloquea la respuesta del coach.
+ */
+function recordCoachRequest(
+  payload: Parameters<typeof logCoachRequest>[0],
+  persistence?: { userId: string; token: string },
+): void {
+  logCoachRequest(payload)
+  if (!persistence?.userId || persistence.userId === ANONYMOUS_USER_ID) return
+
+  const url = process.env['SUPABASE_URL'] ?? process.env['VITE_SUPABASE_URL']
+  const anonKey = process.env['SUPABASE_ANON_KEY'] ?? process.env['VITE_SUPABASE_ANON_KEY']
+  if (!url || !anonKey) {
+    warnCoachTelemetryFailure(payload.traceId)
+    return
+  }
+
+  const telemetry: CoachRequestTelemetry = {
+    traceId: payload.traceId,
+    userId: persistence.userId,
+    generationId: payload.generationId,
+    logicalAttempt: payload.logicalAttempt,
+    requestClass: payload.requestClass,
+    streamed: payload.streamed,
+    outcome: payload.outcome,
+    errorCode: payload.errorCode,
+    finishReason: payload.finishReason,
+    retryUsed: payload.retryUsed,
+    fallbackUsed: payload.fallbackUsed,
+    authDurationMs: payload.authDurationMs,
+    providerDurationMs: payload.providerDurationMs,
+    serverDurationMs: payload.serverDurationMs,
+    provider: payload.provider,
+    model: payload.model,
+    serviceTier: payload.serviceTier,
+    reasoningEffort: payload.reasoningEffort,
+    promptTokens: payload.promptTokens,
+    completionTokens: payload.completionTokens,
+    reasoningTokens: payload.reasoningTokens,
+    cacheCreationInputTokens: payload.cacheCreationInputTokens,
+    cacheReadInputTokens: payload.cacheReadInputTokens,
+    responseCharCount: payload.responseCharCount,
+    createdAt: Date.now(),
+  }
+
+  try {
+    const client = createClient(url, anonKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+      global: { headers: { Authorization: `Bearer ${persistence.token}` } },
+    })
+
+    void insertCoachRequestRow(client as never, telemetry).then((status) => {
+      if (status === 'failed') warnCoachTelemetryFailure(telemetry.traceId)
+    }).catch(() => {
+      // El contrato del helper es no lanzar; esta defensa evita un rechazo no
+      // manejado si una implementación o mock futuro viola ese contrato.
+      warnCoachTelemetryFailure(telemetry.traceId)
+    })
+  } catch {
+    // Ni una configuración inválida del cliente puede romper la respuesta.
+    warnCoachTelemetryFailure(telemetry.traceId)
   }
 }
 
@@ -1434,6 +1515,7 @@ async function executeWithPolicy(
 function streamResponse(
   req: CoachRequest,
   timing: { requestReceivedAt: number; authDurationMs: number },
+  persistence?: { userId: string; token: string },
 ): StreamingResponse {
   const traceId = req.traceId ?? `srv-${Date.now()}`
   const requestClass = normalizeRequestClass(req.requestClass)
@@ -1454,12 +1536,13 @@ function streamResponse(
             authDurationMs: timing.authDurationMs,
             serverDurationMs,
           }
-          logCoachRequest({
+          recordCoachRequest({
             traceId: result.traceId,
             generationId: req.generationId,
             logicalAttempt: req.logicalAttempt,
             requestClass,
             outcome: 'ok',
+            streamed: true,
             provider: result.provider,
             model: result.model,
             authDurationMs: timing.authDurationMs,
@@ -1476,21 +1559,22 @@ function streamResponse(
             reasoningEffort: result.reasoningEffort,
             responseCharCount: result.text.length,
             finishReason: result.finishReason,
-          })
+          }, persistence)
           controller.enqueue(encoder.encode(`${JSON.stringify({ type: 'done', ...response })}\n`))
         } catch (error) {
           const normalized = normalizeError(error)
           const serverDurationMs = Date.now() - timing.requestReceivedAt
-          logCoachRequest({
+          recordCoachRequest({
             traceId,
             generationId: req.generationId,
             logicalAttempt: req.logicalAttempt,
             requestClass,
             outcome: 'error',
+            streamed: true,
             authDurationMs: timing.authDurationMs,
             serverDurationMs,
             errorCode: normalized.errorCode,
-          })
+          }, persistence)
           controller.enqueue(encoder.encode(`${JSON.stringify({
             type: 'error',
             truncated: sentAnyChunk,
@@ -1534,19 +1618,25 @@ export const handler = stream(async (event: HandlerEvent): Promise<StreamingResp
 
   const authStartedAt = Date.now()
   let authDurationMs = 0
+  let persistence: { userId: string; token: string } | undefined
   try {
     const auth = await resolveAuthContext(event)
     enforceRateLimit(auth)
     authDurationMs = Date.now() - authStartedAt
+    const token = getBearerToken(event)
+    if (token && auth.userId !== ANONYMOUS_USER_ID) {
+      persistence = { userId: auth.userId, token }
+    }
   } catch (error) {
     authDurationMs = Date.now() - authStartedAt
     const normalized = normalizeError(error)
-    logCoachRequest({
+    recordCoachRequest({
       traceId: req.traceId ?? `srv-${requestReceivedAt}`,
       generationId: req.generationId,
       logicalAttempt: req.logicalAttempt,
       requestClass: normalizeRequestClass(req.requestClass),
       outcome: 'error',
+      streamed: Boolean(req.stream),
       authDurationMs,
       serverDurationMs: Date.now() - requestReceivedAt,
       errorCode: normalized.errorCode,
@@ -1583,12 +1673,13 @@ export const handler = stream(async (event: HandlerEvent): Promise<StreamingResp
       serverDurationMs: Date.now() - requestReceivedAt,
     }
 
-    logCoachRequest({
+    recordCoachRequest({
       traceId: result.traceId,
       generationId: req.generationId,
       logicalAttempt: req.logicalAttempt,
       requestClass,
       outcome: 'ok',
+      streamed: Boolean(req.stream),
       provider: result.provider,
       model: result.model,
       authDurationMs,
@@ -1598,7 +1689,7 @@ export const handler = stream(async (event: HandlerEvent): Promise<StreamingResp
       fallbackUsed: false,
       responseCharCount: text.length,
       finishReason: result.finishReason,
-    })
+    }, persistence)
 
     if (req.stream) {
       const encoder = new TextEncoder()
@@ -1616,19 +1707,20 @@ export const handler = stream(async (event: HandlerEvent): Promise<StreamingResp
   }
 
   if (req.stream) {
-    return streamResponse(req, { requestReceivedAt, authDurationMs })
+    return streamResponse(req, { requestReceivedAt, authDurationMs }, persistence)
   }
 
   try {
     const result = await executeWithPolicy(req)
     const serverDurationMs = Date.now() - requestReceivedAt
     const response = { ...result, authDurationMs, serverDurationMs }
-    logCoachRequest({
+    recordCoachRequest({
       traceId: result.traceId,
       generationId: req.generationId,
       logicalAttempt: req.logicalAttempt,
       requestClass,
       outcome: 'ok',
+      streamed: false,
       provider: result.provider,
       model: result.model,
       authDurationMs,
@@ -1645,21 +1737,22 @@ export const handler = stream(async (event: HandlerEvent): Promise<StreamingResp
       reasoningEffort: result.reasoningEffort,
       responseCharCount: result.text.length,
       finishReason: result.finishReason,
-    })
+    }, persistence)
     return json(200, response)
   } catch (error) {
     const normalized = normalizeError(error)
     const serverDurationMs = Date.now() - requestReceivedAt
-    logCoachRequest({
+    recordCoachRequest({
       traceId: req.traceId ?? `srv-${requestReceivedAt}`,
       generationId: req.generationId,
       logicalAttempt: req.logicalAttempt,
       requestClass,
       outcome: 'error',
+      streamed: false,
       authDurationMs,
       serverDurationMs,
       errorCode: normalized.errorCode,
-    })
+    }, persistence)
     return json(normalized.statusCode ?? 500, {
       error: normalized.message,
       errorCode: normalized.errorCode ?? 'unknown',

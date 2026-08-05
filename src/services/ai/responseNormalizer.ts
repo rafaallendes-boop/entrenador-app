@@ -231,6 +231,7 @@ export function normalizeResponse(raw: AIRawResponse): CoachNormalizedResponse {
     message,
     actions: actions && actions.length > 0 ? actions : undefined,
     provider: raw.provider,
+    streamed: raw.streamed,
     model: raw.model,
     raw: raw.raw,
     timestamp: Date.now(),

@@ -61,6 +61,8 @@ export interface AITechnicalResult {
   promptTrace?: PromptTrace
   provider?: AIProviderName
   model?: string
+  /** Effective terminal transport used by the proxy response. */
+  streamed?: boolean
   systemPromptCharCount?: number
   userPromptCharCount?: number
   responseSchemaCharCount?: number

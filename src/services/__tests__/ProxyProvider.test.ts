@@ -58,6 +58,7 @@ describe('ProxyProvider streaming fallback', () => {
     expect(fetchMock.mock.calls[0]?.[1]?.body).toContain('"logicalAttempt":2')
     expect(fetchMock.mock.calls[1]?.[1]?.body).toContain('"logicalAttempt":2')
     expect(response.text).toBe('Hola de vuelta')
+    expect(response.streamed).toBe(false)
   })
 
   it('normalizes unauthorized proxy responses', async () => {
@@ -119,6 +120,7 @@ describe('ProxyProvider streaming fallback', () => {
 
     expect(response).toMatchObject({
       provider: 'claude',
+      streamed: false,
       finishReason: 'stop',
       promptTokens: 1200,
       completionTokens: 340,
@@ -160,6 +162,7 @@ describe('ProxyProvider streaming fallback', () => {
 
     expect(response).toMatchObject({
       provider: 'claude',
+      streamed: true,
       promptTokens: 1200,
       completionTokens: 340,
       reasoningTokens: 120,

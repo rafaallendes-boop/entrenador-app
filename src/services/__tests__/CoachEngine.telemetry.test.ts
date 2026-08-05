@@ -27,6 +27,7 @@ describe('CoachEngine telemetry persistence', () => {
       text: 'Respuesta final',
       provider: 'openai',
       model: 'gpt-5-mini',
+      streamed: true,
       traceId: request.traceId,
       requestClass: request.requestClass,
       durationMs: 4_100,
@@ -52,6 +53,7 @@ describe('CoachEngine telemetry persistence', () => {
       status: 'completed',
       provider: 'openai',
       model: 'gpt-5-mini',
+      streamed: true,
       durationMs: 4_100,
       finishReason: 'stop',
       promptTokens: 800,
@@ -62,6 +64,26 @@ describe('CoachEngine telemetry persistence', () => {
       reasoningEffort: 'none',
       serverDurationMs: 4_250,
       authDurationMs: 75,
+    })
+  })
+
+  it('persists the terminal transport for import extraction', async () => {
+    mockProviderCall.mockImplementation(async (request: { traceId: string; requestClass: string }) => ({
+      text: '{"sessions":[]}',
+      provider: 'openai',
+      model: 'gpt-5-mini',
+      streamed: false,
+      traceId: request.traceId,
+      requestClass: request.requestClass,
+    }))
+
+    await CoachEngine.extractRaw('Extrae sesiones', 'Texto importado')
+
+    const request = useAIDebugStore.getState().requests[0]
+    expect(request).toMatchObject({
+      status: 'completed',
+      surface: 'import',
+      streamed: false,
     })
   })
 })

@@ -144,6 +144,7 @@ export class ProxyProvider implements AIProvider {
       return {
         text: data.text,
         provider,
+        streamed: false,
         model: data.model,
         raw: data,
         durationMs: data.durationMs ?? Date.now() - options.startedAt,
@@ -295,6 +296,7 @@ export class ProxyProvider implements AIProvider {
     return {
       text: fullText,
       provider,
+      streamed: true,
       model,
       durationMs: Date.now() - t0,
       traceId: request.traceId,
