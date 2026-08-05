@@ -594,6 +594,51 @@ Verificado: **355 archivos / 2750 tests**, typecheck, lint, build y
 `git diff --check` verdes. Spec en
 `docs/superpowers/specs/2026-08-03-week-creator-fallback-hardening-design.md`.
 
+### 22. Telemetría de requests del coach (`018`, 2026-08-05)
+
+El chat era el camino de mayor volumen sin una cifra agregable de costo ni de
+latencia. `logCoachRequest` ya emitía duración, tokens, `finishReason` y
+`outcome` por request, pero como `console.info`; lo que faltaba era
+**persistencia**.
+
+`018_coach_requests.sql` guarda una fila por request de las 7 clases que pasan
+por `coach.ts`. El Plan Builder **async** no entra: ya lo cubre `016`; las filas
+`plan_builder_*` de esta tabla son del camino **síncrono**.
+
+Decisiones principales:
+
+- Escritura con el token del usuario y policy
+  `insert with check (auth.uid() = user_id)`, sin service role en la función del
+  coach. El trade-off aceptado es que un cliente de confianza podría forjar
+  filas; revisar si aparece self-serve.
+- `user_id not null`: no se persisten requests en modo dev sin auth ni las que
+  fallan autenticación. Los eventos de consola se conservan.
+- Persistencia **best-effort sin `await`**, con
+  `AbortSignal.timeout(3_000)`. Durabilidad y latencia deben medirse en el
+  rollout; un test local no demuestra propiedades del runtime de Netlify.
+- `streamed` registra el transporte efectivo para segmentar pérdida y latencia.
+  En el cliente, `AITechnicalResult` conserva el transporte **terminal**: un
+  fallback streaming→JSON se clasifica como `false`.
+
+`estimated_cost_usd` distingue `0` para el bypass determinista, `null` para
+precio ausente o usage insuficiente y un valor numérico cuando el precio
+fechado está disponible. **`null` nunca significa cero.** `MODEL_PRICES` aún
+solo cubre `claude-sonnet-4-6`; responder cuánto cuesta el chat requiere poblar
+los modelos reales de Gemini/OpenAI, trabajo separado.
+
+Rollout de `018`:
+
+1. Aplicar `supabase/018_coach_requests.sql` en producción (**manual**).
+2. Desplegar el bundle.
+3. Verificar pérdida por `streamed`: filas contra eventos
+   `coach.request.completed` sobre la misma ventana.
+4. Verificar latencia por `streamed`: p50/p90 de
+   `completedAt - startedAt` de `useAIDebugStore` contra la línea base. No usar
+   `serverDurationMs`, calculado antes de la escritura.
+5. Si hay pérdida material o impacto de latencia, escalar al endpoint dedicado
+   antes de confiar en los agregados.
+6. Recién entonces poblar `MODEL_PRICES` y agregar la sección medida del chat.
+
 ### Producto Publico Y Marca
 
 - Marca publica operativa: `RallyIQ`.
@@ -1206,26 +1251,11 @@ dificultad.
 5. **Analisis de entrenamientos con Whoop.** Superficie nueva sobre datos que ya
    estan locales (readiness + workouts). Mantener el contrato vigente: contexto
    objetivo y consentido, sin diagnostico ni ajuste automatico.
-6. **Chat — latencia y costo.** Deliberadamente **despues** de tener medicion.
-   Correccion de esta entrada (verificado 2026-08-03): no es cierto que "no
-   existe instrumentacion". `logCoachRequest` (`netlify/functions/coach.ts:591`)
-   ya emite por request duracion de proveedor y de servidor, tokens de
-   prompt/completion/cache, `requestClass`, `finishReason`, `outcome`,
-   `retryUsed` y `fallbackUsed`. Lo que falta es **persistencia**: es un
-   `console.info` que muere en los logs de Netlify, asi que no se puede sumar un
-   mes ni separar `chat_general` de `chat_action`.
-
-   Eso convierte el trabajo en el mismo patron que `016` aplico al Plan Builder
-   —tabla, row mapper, guard de drift bidireccional, retencion— sobre campos que
-   ya estan calculados, y no en una Fase 0 completa. Es la unica pieza de codigo
-   que hoy desbloquea una decision de negocio real: **el precio del piloto no se
-   puede fijar sin el costo del chat**, que es el camino de mayor volumen (tope
-   de 80 requests/dia) y el unico sin cifra. Costo de API para construirlo:
-   **cero** — la telemetria viaja sobre uso real, no sobre un loadtest pagado.
-
-   Friccion a considerar antes de empezar: exige una migracion `018` que se
-   apilaria detras de `017`, todavia sin aplicar. Son independientes, pero son
-   dos migraciones manuales pendientes a la vez.
+6. **Chat — latencia y costo.** *(persistencia implementada 2026-08-05, ver
+   §22)* Ya no es trabajo de código: queda aplicar `018` en producción, correr
+   la verificación de pérdida y latencia del rollout, y poblar `MODEL_PRICES`
+   con los modelos que realmente sirven el chat. Sin ese último paso el costo
+   sigue sin respuesta, aunque el usage reportado ya quede guardado.
 7. **Flags por plan** (Base / Coach Semanal / Avanzado). Necesarios en cuanto el
    piloto tenga mas de un tier conviviendo.
 8. **Pasarela de pago.** Deliberadamente al final. Para 1-3 clientes acompanados,

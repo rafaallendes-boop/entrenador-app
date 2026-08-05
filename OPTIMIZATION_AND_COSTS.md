@@ -16,21 +16,24 @@ Gemini y subestimaba el Plan Builder en cerca de un orden de magnitud.
 |---|---|---|
 | **Plan Builder async** | `plan_generation_jobs` + `plan_generation_attempts` (`016`), con tokens y `estimated_cost_usd` fechado (`pricing.ts`) | **Medido en producción** (2026-07-26) |
 | **Week Creator** | Loadtest propio (`scripts/loadtest-week-creator.mjs`) | Medido en su momento; no hay telemetría continua |
-| **Chat general / chat action** | `logCoachRequest` (`coach.ts:591`) ya emite por request `providerDurationMs`, `serverDurationMs`, tokens (incl. cache), `requestClass`, `finishReason` y `outcome` — pero como `console.info`, no persistido | **Sin agregar.** El dato existe por request y muere en los logs de Netlify: no es consultable ni sumable. Falta la capa de persistencia, no la instrumentación |
+| **Chat general / chat action** | `logCoachRequest` + persistencia en `coach_requests` (`018`) | **Instrumentado, pendiente de aplicar `018` y poblar precios.** Los tokens quedan persistidos siempre que el proveedor los reporte; `estimated_cost_usd` es `null` mientras el modelo no esté en `MODEL_PRICES` |
 | **Resumen semanal / import** | Ninguna | Sin medir |
 
-No se proyecta un costo mensual total de la app mientras el chat siga sin
-**agregar**. Es la parte de mayor volumen (80 requests/día de tope) y cualquier
-número saldría de una suposición, no de una medición.
+No se proyecta un costo mensual total de la app hasta aplicar `018`, verificar
+su cobertura y poblar los precios de los modelos que realmente sirven el chat.
+Es la parte de mayor volumen (80 requests/día de tope) y cualquier cifra previa
+saldría de una cobertura incompleta, no de una medición confiable.
 
-Matiz importante para dimensionar ese trabajo (verificado 2026-08-03): el chat
-**sí** emite los campos que hacen falta —duración de proveedor y de servidor,
-tokens de prompt/completion/cache, `requestClass`, `finishReason`, `outcome`,
-`retryUsed`, `fallbackUsed`—, uno por request. Lo que no existe es persistencia:
-`logCoachRequest` termina en `console.info`, así que no hay forma de sumar un
-mes ni de separar `chat_general` de `chat_action`. El trabajo pendiente es el
-mismo patrón que `016` aplicó al Plan Builder (tabla + row mapper + guard de
-drift + retención), no una instrumentación desde cero.
+> **`estimated_cost_usd = null` no es cero.** Toda agregación de costo debe
+> excluir los nulls y reportar cobertura en **dos** dimensiones: porcentaje de
+> filas y porcentaje de tokens cubiertos. Reportar solo filas engaña, porque
+> las requests caras suelen ser pocas.
+
+La persistencia de `018` conserva los campos que `logCoachRequest` ya emitía y
+agrega `streamed` para segmentar el transporte efectivo. Es **best-effort**:
+su completitud y el posible impacto de latencia solo pueden validarse en el
+runtime de Netlify, contrastando filas con los eventos
+`coach.request.completed` y usando el end-to-end observado por el cliente.
 
 ---
 
