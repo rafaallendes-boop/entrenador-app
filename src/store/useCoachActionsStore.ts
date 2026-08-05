@@ -363,6 +363,12 @@ function preValidateActions(
   athleteProfile: AthleteProfile | null,
 ): string[] {
   const errors: string[] = []
+  const occupiedSessionsBySlot = new Map(
+    store.sessions
+      .filter((session) => session.status !== 'skipped')
+      .map((session) => [`${session.date}|${session.timeBlock}`, session]),
+  )
+  const proposedAddSessionSlots = new Set<string>()
 
   for (let i = 0; i < actions.length; i++) {
     const action = actions[i]
@@ -410,19 +416,37 @@ function preValidateActions(
         if (!action.targetDate) errors.push(`${label}: targetDate requerido`)
         break
 
-      case 'add_session':
+      case 'add_session': {
+        let addSessionIsValid = true
         if (!action.targetDate || !action.sessionType || !action.title || !action.durationMin || !action.timeBlock) {
           errors.push(`${label}: campos requeridos faltantes (targetDate, sessionType, title, durationMin, timeBlock)`)
+          addSessionIsValid = false
         } else if (!isSessionTypeAllowedForPlan(action.sessionType, athleteProfile)) {
           errors.push(`${label}: tipo ${action.sessionType} no permitido en planificacion actual`)
+          addSessionIsValid = false
         } else if (action.sessionType === 'squash' && !action.squashDetails) {
           errors.push(`${label}: squashDetails requerido para sesiones de squash`)
+          addSessionIsValid = false
         } else if (action.sessionType === 'cycling' && !action.cyclingDetails) {
           errors.push(`${label}: cyclingDetails requerido para sesiones de ciclismo`)
+          addSessionIsValid = false
         } else if (action.sessionType === 'mobility' && !action.mobilityDetails) {
           errors.push(`${label}: mobilityDetails requerido para sesiones de movilidad`)
+          addSessionIsValid = false
+        }
+        if (addSessionIsValid && action.targetDate && action.timeBlock) {
+          const slotKey = `${action.targetDate}|${action.timeBlock}`
+          const occupiedSession = occupiedSessionsBySlot.get(slotKey)
+          if (occupiedSession) {
+            errors.push(`${label}: bloque ${action.targetDate} ${action.timeBlock} ya ocupado por "${occupiedSession.title}"; usa update_session, move_session o libera el bloque antes de agregar otra sesión`)
+          } else if (proposedAddSessionSlots.has(slotKey)) {
+            errors.push(`${label}: bloque ${action.targetDate} ${action.timeBlock} duplicado dentro de la propuesta`)
+          } else {
+            proposedAddSessionSlots.add(slotKey)
+          }
         }
         break
+      }
 
       case 'create_week':
         if (!action.sessions || action.sessions.length === 0) {

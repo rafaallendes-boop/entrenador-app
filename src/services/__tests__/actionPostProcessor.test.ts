@@ -333,6 +333,104 @@ describe('actionPostProcessor', () => {
     expect(response.meta?.warnings).toContain('chat_action_missing_requested_sessions_repaired')
   })
 
+  it('keeps a Thursday weights request from leaking into Friday recommendations', () => {
+    vi.setSystemTime(new Date('2026-08-04T12:00:00.000Z'))
+    const fridayStrength = makeSession({
+      id: 'friday-strength',
+      date: '2026-08-07',
+      weekStartDate: '2026-08-03',
+      timeBlock: 'PM',
+      type: 'strength',
+      title: 'Fuerza estructurada',
+    })
+    const context = makeContext([fridayStrength], {
+      currentWeekSummary: {
+        id: 'week-2026-08-03',
+        weekStartDate: '2026-08-03',
+        totalSessions: 1,
+        totalMinutes: 45,
+        plannedSessions: 1,
+        completedSessions: 0,
+        plannedMinutes: 45,
+        completedMinutes: 0,
+        squashSessions: 0,
+        runningSessions: 0,
+        strengthSessions: 1,
+        updatedAt: 1,
+      },
+    })
+
+    const response = postProcessCoachActions({
+      message: 'Entendido, ajustaré las sesiones indicadas.',
+      provider: 'mock',
+      traceId: 'trace-1',
+      requestClass: 'chat_action',
+      timestamp: 1,
+    }, context, 'Ajusta mi semana, para mañana deja solo 1 partido de squash en horario PM. Jueves créame una sesión de pesas y para viernes y sábado recomiéndame algún entrenamiento')
+
+    expect(response.actions).toEqual([
+      expect.objectContaining({
+        type: 'add_session',
+        targetDate: '2026-08-06',
+        timeBlock: 'PM',
+        sessionType: 'strength',
+      }),
+    ])
+    expect(response.actions?.some((action) => (
+      action.type === 'add_session' && action.targetDate === '2026-08-07' && action.sessionType === 'strength'
+    ))).toBe(false)
+  })
+
+  it('removes an add_session that collides with an occupied slot', () => {
+    vi.setSystemTime(new Date('2026-08-04T12:00:00.000Z'))
+    const occupiedFridayAm = makeSession({
+      id: 'friday-squash',
+      date: '2026-08-07',
+      weekStartDate: '2026-08-03',
+      timeBlock: 'AM',
+      type: 'squash',
+      title: 'Squash',
+    })
+    const occupiedFridayPm = makeSession({
+      id: 'friday-strength',
+      date: '2026-08-07',
+      weekStartDate: '2026-08-03',
+      timeBlock: 'PM',
+      type: 'strength',
+      title: 'Fuerza estructurada',
+    })
+    const context = makeContext([occupiedFridayAm, occupiedFridayPm], {
+      currentWeekSummary: {
+        id: 'week-2026-08-03',
+        weekStartDate: '2026-08-03',
+        totalSessions: 2,
+        totalMinutes: 105,
+        plannedSessions: 2,
+        completedSessions: 0,
+        plannedMinutes: 105,
+        completedMinutes: 0,
+        squashSessions: 1,
+        runningSessions: 0,
+        strengthSessions: 1,
+        updatedAt: 1,
+      },
+    })
+
+    const response = postProcessCoachActions(makeResponse([{
+      type: 'add_session',
+      reason: 'Añadir fuerza',
+      targetDate: '2026-08-07',
+      timeBlock: 'PM',
+      sessionType: 'strength',
+      title: 'Fuerza extra',
+      durationMin: 60,
+    }]), context, 'Agrega fuerza el viernes PM')
+
+    expect(response.actions).toEqual([])
+    expect(response.meta?.warnings).toContain('chat_action_occupied_slot_actions_removed')
+    expect(response.message).toContain('bloque ya estaba ocupado')
+  })
+
   it('inherits the recent next-week weekday when a short follow-up asks to add the running session', () => {
     const response = postProcessCoachActions({
       message: 'Te propongo este cambio:',
@@ -602,7 +700,7 @@ describe('actionPostProcessor', () => {
     expect(action?.exercises?.length).toBeGreaterThanOrEqual(8)
   })
 
-  it('keeps explicit tomorrow requests on tomorrow even when that date is occupied', () => {
+  it('does not create an explicit tomorrow request when both slots are occupied', () => {
     vi.setSystemTime(new Date('2026-06-29T12:00:00.000Z'))
     const occupiedTomorrow = [
       makeSession({
@@ -648,11 +746,8 @@ describe('actionPostProcessor', () => {
       },
     }), 'Hazme un entrenamiento de running para mañana')
 
-    expect(response.actions?.[0]).toMatchObject({
-      type: 'add_session',
-      targetDate: '2026-06-30',
-      sessionType: 'running',
-    })
+    expect(response.actions).toEqual([])
+    expect(response.meta?.warnings).toContain('chat_action_occupied_slot_actions_removed')
   })
 
   it('overrides model sport drift when a single-session request explicitly asks for weights', () => {

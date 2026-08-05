@@ -36,6 +36,7 @@ export function postProcessCoachActions(
   if (response.requestClass !== 'chat_action') return response
 
   const normalizedMessage = normalizeText(userMessage)
+  const hasMultipleTemporalTargets = hasMultipleExplicitTemporalTargets(normalizedMessage)
   const inheritsRecentActionContext = shouldInheritRecentActionContext(normalizedMessage, context)
   const actionIntentText = inheritsRecentActionContext
     ? buildRecentActionIntentText(normalizedMessage, context)
@@ -56,7 +57,7 @@ export function postProcessCoachActions(
     contextualFollowUpDate ??
     resolveWeekdayDate(actionIntentText, context, requestedWeekStart, restOffsets)
   const resolvedDate =
-    explicitSessionDayTargetCount > 1 ? undefined : candidateResolvedDate
+    explicitSessionDayTargetCount > 1 || hasMultipleTemporalTargets ? undefined : candidateResolvedDate
   const affectedSession =
     findAffectedSession(context, normalizedMessage, resolvedDate) ??
     findAffectedSession(context, actionIntentText, resolvedDate)
@@ -108,7 +109,7 @@ export function postProcessCoachActions(
   )
   if (!sourceActions?.length) return response
 
-  const actions = sourceActions.map((action) => {
+  const alignedActions = sourceActions.map((action) => {
     const dateAligned = resolvedDate ? alignActionDate(action, resolvedDate) : action
     const weekAligned = alignmentWeekStart
       ? alignActionToRequestedWeek(dateAligned, alignmentWeekStart, restOffsets, occupiedSlots, { lockDate: Boolean(resolvedDate) })
@@ -141,18 +142,23 @@ export function postProcessCoachActions(
 
     return loadAligned
   })
+  const { actions, removedCollidingAddSessionCount } = removeCollidingAddSessionActions(alignedActions, sessions)
+  const baseMessage = repairedReplacementAction
+    ? buildRunningReplacementMessage(repairedReplacementAction)
+    : response.actions?.length && !repairedMissingRequestedActions
+      && !repairedRequestedMoves
+      ? response.message
+      : buildFallbackActionMessage(actions, response.message)
+  const message = removedCollidingAddSessionCount > 0
+    ? `${baseMessage}\n\nNo agregué ${removedCollidingAddSessionCount === 1 ? 'una sesión' : `${removedCollidingAddSessionCount} sesiones`} porque el bloque ya estaba ocupado.`
+    : baseMessage
 
   return {
     ...response,
     actions,
-    message: repairedReplacementAction
-      ? buildRunningReplacementMessage(repairedReplacementAction)
-      : response.actions?.length && !repairedMissingRequestedActions
-        && !repairedRequestedMoves
-        ? response.message
-        : buildFallbackActionMessage(actions, response.message),
-    fallbackUsed: response.fallbackUsed || !response.actions?.length || Boolean(repairedReplacementAction) || repairedMissingRequestedActions || repairedRequestedMoves,
-    meta: response.actions?.length && !repairedReplacementAction && !repairedMissingRequestedActions && !repairedRequestedMoves
+    message,
+    fallbackUsed: response.fallbackUsed || !response.actions?.length || Boolean(repairedReplacementAction) || repairedMissingRequestedActions || repairedRequestedMoves || removedCollidingAddSessionCount > 0,
+    meta: response.actions?.length && !repairedReplacementAction && !repairedMissingRequestedActions && !repairedRequestedMoves && removedCollidingAddSessionCount === 0
       ? response.meta
       : {
           ...response.meta,
@@ -165,9 +171,11 @@ export function postProcessCoachActions(
               ? 'chat_action_delete_only_repaired_to_running_replacement'
               : repairedRequestedMoves
                 ? 'chat_action_move_sessions_reconciled'
-              : repairedMissingRequestedActions
-                ? 'chat_action_missing_requested_sessions_repaired'
-              : 'chat_action_without_actions_repaired',
+                : repairedMissingRequestedActions
+                  ? 'chat_action_missing_requested_sessions_repaired'
+                  : removedCollidingAddSessionCount > 0
+                    ? 'chat_action_occupied_slot_actions_removed'
+                    : 'chat_action_without_actions_repaired',
             ...(response.meta?.actionParseFailed || response.meta?.likelyTruncated
               ? ['chat_action_malformed_response_repaired']
               : []),
@@ -393,7 +401,7 @@ function buildFallbackRequestedSessionActions(
   if (!CREATE_SESSION_INTENT_PATTERN.test(normalizedMessage)) return undefined
 
   const clauses = extractActionableWeekdaySessionClauses(normalizedMessage, context, requestedWeekStart, restOffsets)
-  if (clauses.length < 2) return undefined
+  if (clauses.length === 0) return undefined
 
   return clauses.map((clause) => buildFallbackAddSessionAction({
     sessionType: clause.sessionType,
@@ -458,6 +466,22 @@ function countActionableWeekdayTargets(
   ).length
 }
 
+function hasMultipleExplicitTemporalTargets(normalizedMessage: string): boolean {
+  const targetDates = new Set<string>()
+  const today = todayISO()
+
+  if (/\bhoy\b/.test(normalizedMessage)) targetDates.add(today)
+  if (/\bmanana\b/.test(normalizedMessage)) targetDates.add(addDaysToISO(today, 1))
+
+  for (const weekday of collectWeekdayMatches(normalizedMessage)) {
+    const todayOffset = getWeekdayOffset(today)
+    const daysUntilWeekday = (weekday.offset - todayOffset + 7) % 7
+    targetDates.add(addDaysToISO(today, daysUntilWeekday))
+  }
+
+  return targetDates.size > 1
+}
+
 function extractActionableWeekdaySessionClauses(
   normalizedMessage: string,
   context: ChatContext,
@@ -480,6 +504,7 @@ function extractActionableWeekdaySessionClauses(
     const clauseEnd = findClauseEnd(normalizedMessage, match.end, nextStart)
     const clause = normalizedMessage.slice(clauseStart, clauseEnd).trim()
     if (!clause || hasRestWeekdayReference(clause, match.label)) continue
+    if (!CREATE_SESSION_INTENT_PATTERN.test(clause)) continue
 
     const sessionType = inferRequestedSessionTypeFromClause(clause, match.index - clauseStart)
     if (!sessionType) continue
@@ -526,7 +551,12 @@ function findClauseStart(text: string, weekdayIndex: number, previousWeekdayEnd:
     text.lastIndexOf('.', weekdayIndex - 1),
     text.lastIndexOf('\n', weekdayIndex - 1),
   )
-  return Math.max(previousWeekdayEnd, boundary + 1)
+  const clauseStart = Math.max(previousWeekdayEnd, boundary + 1)
+  const prefix = text.slice(clauseStart, weekdayIndex)
+  // A connector such as "pesas y para viernes" starts a new day request. Do
+  // not let the sport from the previous day leak into the next one.
+  const coordinatedDayLead = /(?:^|\s)y\s+(?:para\s+)?(?:el\s+|la\s+)?$/.exec(prefix)
+  return coordinatedDayLead ? clauseStart + coordinatedDayLead.index : clauseStart
 }
 
 function findClauseEnd(text: string, weekdayEnd: number, nextWeekdayStart: number): number {
@@ -632,11 +662,13 @@ function isClearSingleSessionCreationRequest(
   const hasDay = WEEKDAY_REFERENCE_PATTERN.test(normalizedMessage)
   const hasRelativeDate = /\b(hoy|manana)\b/.test(normalizedMessage)
   const actionableWeekdayCount = countActionableWeekdayTargets(normalizedMessage, resolveRestWeekdayOffsets(normalizedMessage))
+  const hasMultipleTemporalTargets = hasMultipleExplicitTemporalTargets(normalizedMessage)
   const broadWeekTarget = /\b(microciclo|plan completo|planificar semana)\b/.test(normalizedMessage)
   const explicitWeekCreation = /\b(crea(?:r|me)?|crear|genera(?:r|me)?|generar|haz(?:me)?|hacer|arma(?:me)?)\b.{0,24}\bsemana\b/.test(normalizedMessage)
   return hasCreateIntent
     && hasSessionTarget
     && (hasRelativeDate || actionableWeekdayCount === 1 || (Boolean(options.allowResolvedDateOnly) && !hasDay))
+    && !hasMultipleTemporalTargets
     && !broadWeekTarget
     && !explicitWeekCreation
 }
@@ -1103,6 +1135,37 @@ function buildOccupiedSlotSet(sessions: Session[], requestedWeekStart: string | 
     }
   }
   return occupied
+}
+
+function removeCollidingAddSessionActions(
+  actions: CoachAction[],
+  sessions: Session[],
+): { actions: CoachAction[]; removedCollidingAddSessionCount: number } {
+  const occupiedSlots = new Set(
+    sessions
+      .filter((session) => session.status !== 'skipped')
+      .map((session) => `${session.date}|${session.timeBlock}`),
+  )
+  const safeActions: CoachAction[] = []
+  let removedCollidingAddSessionCount = 0
+
+  for (const action of actions) {
+    if (action.type !== 'add_session' || !action.targetDate || !action.timeBlock) {
+      safeActions.push(action)
+      continue
+    }
+
+    const slotKey = `${action.targetDate}|${action.timeBlock}`
+    if (occupiedSlots.has(slotKey)) {
+      removedCollidingAddSessionCount += 1
+      continue
+    }
+
+    occupiedSlots.add(slotKey)
+    safeActions.push(action)
+  }
+
+  return { actions: safeActions, removedCollidingAddSessionCount }
 }
 
 function findAvailableDateInRequestedWeek(

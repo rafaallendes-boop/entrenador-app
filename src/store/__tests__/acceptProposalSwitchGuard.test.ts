@@ -157,4 +157,46 @@ describe('acceptProposal - switch guard', () => {
     expect((await db.sessions.get('future-running'))?.date).toBe('2026-07-28')
     expect((await db.coachProposals.get('future-move'))?.status).toBe('accepted')
   })
+
+  it('rejects an add_session that targets an occupied calendar slot', async () => {
+    await db.sessions.put({
+      id: 'friday-strength',
+      athleteId: 'ath_user-1',
+      date: '2026-08-07',
+      weekStartDate: '2026-08-03',
+      timeBlock: 'PM',
+      type: 'strength',
+      status: 'completed',
+      title: 'Fuerza estructurada',
+      durationMin: 45,
+      createdAt: 1,
+      updatedAt: 1,
+    })
+    await db.coachProposals.put({
+      id: 'occupied-slot',
+      athleteId: 'ath_user-1',
+      createdAt: Date.now(),
+      status: 'pending',
+      message: 'Agregar otra fuerza el viernes PM',
+      actions: [{
+        type: 'add_session',
+        targetDate: '2026-08-07',
+        timeBlock: 'PM',
+        sessionType: 'strength',
+        title: 'Fuerza extra',
+        durationMin: 60,
+        reason: 'Sesión adicional',
+      }],
+    })
+    useTrainingStore.setState({ sessions: [], loadedWeekStart: '2026-07-20' })
+    await useCoachActionsStore.getState().loadProposals()
+
+    const result = await useCoachActionsStore.getState().acceptProposal('occupied-slot')
+
+    expect(result.errors).toEqual(expect.arrayContaining([
+      expect.stringContaining('bloque 2026-08-07 PM ya ocupado'),
+    ]))
+    expect(await db.sessions.toArray()).toHaveLength(1)
+    expect((await db.coachProposals.get('occupied-slot'))?.status).toBe('rejected')
+  })
 })
