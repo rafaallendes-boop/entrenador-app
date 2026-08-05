@@ -1,16 +1,16 @@
 # RallyIQ - Project Review and Roadmap
 
-Actualizado: 2026-08-03
+Actualizado: 2026-08-05
 
 Base de contraste:
 
-- **Consentimiento in-app versionado mergeado a `main` (2026-08-03, `c451808`…`e59b85f`):** Dexie v19, publicaciones legales inmutables, gate general y enforcement biométrico de Whoop en cliente/servidor. El bundle se despliega en esta tanda; `017_user_consents.sql` **sigue sin aplicar** y las flags `VITE_CONSENT_GATE` / `CONSENT_GATE_ENABLED` siguen apagadas. Con las flags apagadas el deploy es inerte para el gate: se despliega código dormido y el smoke en curso es de **no-regresión**, no de activación. Aplicar `017` y encender ambas flags sigue bloqueado por textos aprobados y por la contradicción del copy de borrado total.
-- **Deploy de 2026-08-03 arrastra las cuatro tandas que estaban pendientes:** rotación coordinada del Plan Builder (§16), roles de partido de squash (§17, `9754f78`), identidad `libraryRef`-first de fuerza (§19, `afaac17`) y copy de la librería de fuerza (§20, `33d585f`). Ninguna trae migración. **El smoke en producción está en curso y su resultado todavía no está registrado acá.**
+- **Consentimiento in-app versionado activado en producción (2026-08-03, `c451808`…`e59b85f`):** `017_user_consents.sql` aplicada, `VITE_CONSENT_GATE=true` y `CONSENT_GATE_ENABLED=true`. El smoke real confirmó el gate general, la aceptación biométrica separada, cuatro filas append-only con las versiones vigentes y timestamps de servidor, y la hidratación remota desde una ventana incógnita: con Dexie vacío verificó Supabase y abrió la app sin reaceptación en ~0,2 s.
+- **Deploy de 2026-08-03 arrastra las cuatro tandas que estaban pendientes:** rotación coordinada del Plan Builder (§16), roles de partido de squash (§17, `9754f78`), identidad `libraryRef`-first de fuerza (§19, `afaac17`) y copy de la librería de fuerza (§20, `33d585f`). Ninguna trae migración. **El smoke del consentimiento quedó cerrado; sigue pendiente registrar la verificación post-deploy de las tandas de motor.**
 - **Fuerza — desacople del nombre, Entregas 1–3 (2026-08-01): commiteadas en `3d480b3`.** Ver §18 — los hallazgos del code review quedaron corregidos y el bloque se cerró sin migraciones.
 - **Fuerza — identidad estable (`libraryRef`-first): implementada, commiteada y desplegada el 2026-08-03.** Ver §19 — Plan Builder, coach y calidad consumen el `id` del catálogo sin volver a inferir identidad desde el nombre. Sin migraciones; 2613/2613 tests, lint y build verdes.
 - **Fuerza — copy de la librería por `id`: implementado, commiteado (`33d585f`) y desplegado el 2026-08-03.** Ver §20 — 12 renombres, 31 descripciones y aliases legacy sin cambios de prescripción; 2666/2666 tests, lint y build verdes.
 - `main` con el commit de esta entrega (`feat: complete coach planning library and calendar hardening`).
-- **`011_whoop_integration.sql` y `012_whoop_workouts.sql` aplicados en produccion.** Whoop readiness y Workout Auto-Complete quedan operativos de punta a punta (owner confirma cierre operacional); el enforcement biométrico ya está desplegado pero inactivo, y queda pendiente su rollout legal (`017` + flags, ver Riesgo 1).
+- **`011_whoop_integration.sql`, `012_whoop_workouts.sql` y `017_user_consents.sql` aplicadas en produccion.** Whoop readiness y Workout Auto-Complete quedan operativos de punta a punta; el consentimiento biométrico ya está activo y persistió la versión `2026-07-07` en el smoke del owner. La revisión jurídica y la política de retención siguen abiertas (ver Riesgo 1).
 - **Coach Workspace v0 + ampliacion implementados (2026-07-13 a 2026-07-19):** `/coach` pasa de un roster unico (`CoachRosterPage`) a `CoachWorkspacePage` con Resumen, Alumnos, Planificacion y Biblioteca operativas; Asistente IA conserva el placeholder. Incluye endurecimiento de `switchActiveAthlete`, edicion multi-atleta, alta/aplicacion de plantillas y lock de concurrencia a nivel de modulo. `015` y el bundle de Biblioteca/Planificacion ya fueron aplicados en produccion; queda el smoke autenticado.
 - **Gestion de roster + Planificacion read-only implementadas (2026-07-14):** Alumnos agrega archivar/restaurar y borrado duro confirmado por nombre. El borrado usa tombstones por intento, barrera y tracking single-tab, delete remoto durable, supresion de cola y purga Dexie transaccional para impedir resurrecciones. Planificacion muestra la semana de cualquier atleta del roster mediante lecturas/hidratacion por `athleteId` explicito, sin cambiar el scope activo. `015` y el deploy de Biblioteca ya estan en produccion; resta el smoke autenticado.
 - **Coach Biblioteca + Planificacion completa desplegadas (2026-07-18/19):** edicion de sesiones, Biblioteca de plantillas account-scoped, aplicar/guardar plantillas para cualquier atleta/dia, Dexie v18, backup v4 y sync Supabase por fila con LWW/delete-wins y tombstones versionados. `015_session_templates.sql` fue aplicada y el bundle desplegado; falta el smoke autenticado en produccion.
@@ -27,19 +27,19 @@ Base de contraste:
 - **Coach UI F2-lite Parte 2b desplegada en produccion (2026-07-05):** switcher + roster `/coach` + onboarding athlete-aware, gated por `VITE_COACH_ACCOUNTS`. Migracion `010a/b/c` (day/week full unique expand->contract) aplicada; `008a`/`010a` post-deploy en 0. Smoke self + gestionado OK.
 - Superficie publica actualizada para demo multideporte: Landing/Features/Pricing limpian residuos visibles de version/localidad, reducen sesgo squash-only y Pricing queda en 3 planes: Base gratis, Coach Semanal y Avanzado con Plan Builder.
 - **Polish de uso real implementado (2026-07-06):** la nota/lectura semanal del coach queda disponible solo desde viernes-domingo y completar todos los ejercicios de una sesion marca automaticamente la sesion como realizada.
-- **WHOOP v1 implementado, commiteado y aplicado en produccion (2026-07-08/10, `011` cerrado 2026-07-13):** integracion end-to-end en `main` (`c8aa5f8`, `14b7056`, `5293e6c`): `011_whoop_integration.sql`, Dexie v15 `readinessDaily`, OAuth start/callback/status con state single-use, tokens AES-256-GCM, sync manual/on-demand con cooldown, cron dedicado, `ReadinessCard`, `WhoopConnection`, prefill de check-in gateado (hoy+self+atleta), contexto pasivo del coach, borrado completo service-role, export/backup y wipe local. Cierre de review previo: lint + 1160 tests + build + typecheck. El gate biométrico ya está implementado localmente; faltan aprobación y rollout.
+- **WHOOP v1 implementado, commiteado y aplicado en produccion (2026-07-08/10, `011` cerrado 2026-07-13):** integracion end-to-end en `main` (`c8aa5f8`, `14b7056`, `5293e6c`): `011_whoop_integration.sql`, Dexie v15 `readinessDaily`, OAuth start/callback/status con state single-use, tokens AES-256-GCM, sync manual/on-demand con cooldown, cron dedicado, `ReadinessCard`, `WhoopConnection`, prefill de check-in gateado (hoy+self+atleta), contexto pasivo del coach, borrado completo service-role, export/backup y wipe local. Cierre de review previo: lint + 1160 tests + build + typecheck. El gate biométrico versionado está activo en producción; falta la revisión jurídica formal.
 - **WHOOP Esfuerzo (2026-07-08) implementado:** `dayLog.rpeActual` se mantiene como storage pero la UI/copy lo relabela a "Esfuerzo"; Whoop strain lo prellena con `clamp(round(strain / 2.1), 1, 10)`, editable, y no se usa para sembrar `Session.actualRpe` ni inflar ACWR/carga.
 - **Resumen semanal/coach note corregido (2026-07-10):** snapshot de nota semanal, freshness check y tests evitan reusar notas obsoletas cuando cambia el resumen.
 - **SP1a dos-lados implementado en codigo (2026-07-09/10):** spec endurecido con D1-D6 y plan `docs/superpowers/plans/2026-07-09-sp1a-two-sided-foundation.md` ejecutado en el cliente (Dexie v17 con `athleteMemberships`/`athleteCoachNotes`, `membershipCache`, `claimGate`, ruteo `session_completion` via RPC `mark_session_done`) y `013a/b/c` escritas en `supabase/`. **Rollout remoto de `013a/b/c` sin confirmar** — el plan se conserva por su guia de aplicacion. SP1b (invites + UI) sigue sin implementar.
-- **Whoop Workout Auto-Complete implementado (2026-07-10):** `012_whoop_workouts.sql`, Dexie v16, scope `read:workout`, reconciliacion autoritativa server/client, matcher self-only serializado con idempotencia durable, badge y lifecycle completo. SP1a queda reservado para `013+`/Dexie v17+. Pendiente operacional: aplicar `012`, deploy, reconectar Whoop y smoke.
+- **Whoop Workout Auto-Complete implementado (2026-07-10):** `012_whoop_workouts.sql`, Dexie v16, scope `read:workout`, reconciliacion autoritativa server/client, matcher self-only serializado con idempotencia durable, badge y lifecycle completo. SP1a queda reservado para `013+`/Dexie v17+. `012`, deploy, reconexión y smoke operativo ya están cerrados.
 
 ## Resumen Ejecutivo
 
-RallyIQ esta en una etapa donde el core ya no es el cuello de botella principal. El motor de planificacion, Plan Builder async, calidad deportiva base, athlete scope foundation, claves naturales locales por atleta, write path remoto seguro para day/week, Athlete-Aware Core, Coach F2-lite Parte 2b, Whoop v1 + Workout Auto-Complete (ambas migraciones aplicadas), Coach Workspace con roster/Planificacion/Biblioteca, y Fase 0 de coaches landing (rutas legales publicas + landing `/coaches` de prelanzamiento) ya estan construidos. La Fase 0 de medicion del Plan Builder tambien esta cerrada: `quality_version = 2` es productiva, el bundle esta desplegado y una corrida real quedo verificada en `plan_generation_jobs` el 2026-07-26. La rotacion coordinada de fuerza y squash ya tiene su smoke `high` pagado y aceptado, y encima de ella viajan los roles de partido de squash; ambas tandas estan commiteadas y pusheadas, y solo falta el deploy autorizado. Biblioteca y Planificacion tienen `015` y deploy aplicados; queda cerrar el smoke autenticado.
+RallyIQ esta en una etapa donde el core ya no es el cuello de botella principal. El motor de planificacion, Plan Builder async, calidad deportiva base, athlete scope foundation, claves naturales locales por atleta, write path remoto seguro para day/week, Athlete-Aware Core, Coach F2-lite Parte 2b, Whoop v1 + Workout Auto-Complete (ambas migraciones aplicadas), Coach Workspace con roster/Planificacion/Biblioteca, y Fase 0 de coaches landing (rutas legales publicas + landing `/coaches` de prelanzamiento) ya estan construidos. La Fase 0 de medicion del Plan Builder tambien esta cerrada: `quality_version = 2` es productiva, el bundle esta desplegado y una corrida real quedo verificada en `plan_generation_jobs` el 2026-07-26. La rotacion coordinada de fuerza y squash ya tiene su smoke `high` pagado y aceptado, y encima de ella viajan los roles de partido de squash; ambas tandas quedaron desplegadas el 2026-08-03 y resta su verificación post-deploy. Biblioteca y Planificacion tienen `015` y deploy aplicados; queda cerrar el smoke autenticado.
 
 Lo que queda antes de mostrar/cobrar con confianza se concentra en dos carriles:
 
-1. **Cierre legal y rollout:** el consentimiento general y biométrico ya está implementado detrás de flags; faltan revisión jurídica formal, decisión de retención al borrar cuenta, aplicar `017` y habilitar cliente/servidor juntos, además de RUT/domicilio legal antes de cobro/anuncios masivos.
+1. **Cierre legal:** el consentimiento general y biométrico ya está activo, persistido y smokeado; faltan revisión jurídica formal, decisión de retención al borrar cuenta y RUT/domicilio legal antes de cobro/anuncios masivos.
 2. **QA deportiva y operacional:** planes arquetipo como atletas gestionados, protocolo de revision semanal, canales de soporte, y primer piloto acompanado (1-3 clientes).
 
 Carriles de producto que siguen abiertos pero ya no bloquean la oferta comercial:
@@ -51,23 +51,23 @@ Mi lectura como lider tecnico: el cambio principal entre hoy y hace dos dias es 
 
 ## Estado Actual En Una Frase
 
-RallyIQ ya opera multi-atleta en produccion, con Whoop readiness y Workout Auto-Complete operativos (`011`/`012` aplicados), Coach Workspace base (`/coach`) y rutas legales publicas + landing `/coaches` en vivo. El deploy del 2026-08-03 puso en produccion el consentimiento in-app y las cuatro tandas de Plan Builder/fuerza que estaban pendientes, pero el consentimiento viaja **apagado**: `017` no está aplicada y las dos flags no se habilitan hasta cerrar textos y retención. `015` y Biblioteca/Planificacion ya estan desplegadas, `quality_version = 2` quedo verificada en `plan_generation_jobs`, y la rotacion coordinada del Plan Builder ya paso su control `high` pagado.
+RallyIQ ya opera multi-atleta en produccion, con Whoop readiness y Workout Auto-Complete operativos (`011`/`012` aplicados), Coach Workspace base (`/coach`) y rutas legales publicas + landing `/coaches` en vivo. El consentimiento in-app también está **activo**: `017` aplicada, ambas flags encendidas y smoke de persistencia/hidratación cerrado. `015` y Biblioteca/Planificacion ya estan desplegadas, `quality_version = 2` quedo verificada en `plan_generation_jobs`, y la rotacion coordinada del Plan Builder ya paso su control `high` pagado.
 
 ## Porcentaje De Avance
 
 Estimacion actual:
 
 - Demo acompanada: **99% listo / 1% pendiente** (rutas legales publicas ya vivas; pendiente solo revision juridica formal).
-- Piloto manual pagado 1-3 clientes: **93% listo / 7% pendiente** (Fase 0 completa; pendiente rollout legal del consentimiento Whoop + operaciones piloto).
+- Piloto manual pagado 1-3 clientes: **95% listo / 5% pendiente** (Fase 0 y rollout técnico del consentimiento completos; pendientes cierre jurídico y operaciones piloto).
 - Coach UI F2-lite MVP interno: **99% listo / 1% pendiente** (roster, edicion de Planificacion y Biblioteca desplegados con `015`; pendiente smoke autenticado y Asistente IA futura).
 - Coach dos-lados/SP1: **25% listo / 75% pendiente** (especificado y planificado, pero no urgente frente al piloto de una sola cuenta).
-- Monetizacion publica self-serve: **62% listo / 38% pendiente** (rutas legales + landing coach vivas y consentimiento implementado; faltan pagos automáticos, rollout legal y e2e auth).
+- Monetizacion publica self-serve: **65% listo / 35% pendiente** (rutas legales + landing coach vivas y consentimiento activo; faltan pagos automáticos, cierre jurídico y e2e auth).
 
 Traduccion practica: el producto ya tiene sustancia y superficie legal/comercial minima. Lo pendiente es reducir riesgo juridico formal (revision de abogado) y riesgo operacional (primer cliente real).
 
 ## Lo Nuevo Desde El Roadmap Anterior
 
-### Consentimiento in-app versionado quedó implementado detrás de flags
+### Consentimiento in-app versionado quedó activado y smokeado en producción
 
 - Los textos legales pasan a publicaciones de datos inmutables; el ledger congela `documento@versión#sha256`, incluyendo estructura, énfasis y destinos de enlace.
 - `017_user_consents.sql` crea un log append-only por cuenta, fuerza `accepted_at` en servidor y solo expone `select`/`insert` propios por RLS. No lleva FK a `auth.users`: mientras el abogado no decida, el default es conservar la evidencia.
@@ -76,19 +76,18 @@ Traduccion practica: el producto ya tiene sustancia y superficie legal/comercial
 - Aunque el gate esté cerrado, mantiene una superficie restringida para cerrar sesión, exportar y borrar datos; Settings y el resto del producto siguen bloqueados.
 - Whoop exige la versión biométrica vigente antes de iniciar OAuth, completar el callback, sincronizar manualmente o procesar la cuenta en cron. La desconexión `DELETE` queda siempre disponible.
 - Un `403 consent_required` al iniciar OAuth conserva su código y dispara una verificación remota: solo una ausencia confirmada muestra re-aceptación; una falla o discrepancia muestra indisponibilidad.
-- Rollout: aplicar `017` y encender juntas `VITE_CONSENT_GATE` y `CONSENT_GATE_ENABLED`. Encender solo una es un estado inválido.
+- Rollout ejecutado: `017` aplicada y `VITE_CONSENT_GATE` / `CONSENT_GATE_ENABLED` encendidas juntas. Encender solo una sigue siendo un estado inválido para futuros cambios o rollback.
 
-Estado: **mergeado a `main` en cuatro commits (`c451808` publicaciones+persistencia, `084b41a` gate, `5dac6e4` enforcement Whoop, `e59b85f` documentación) y desplegado el 2026-08-03; no habilitado.** Suite completa: 354 archivos / 2740 tests, typecheck, lint, build y `git diff --check` verdes.
+Estado: **mergeado a `main` en cuatro commits (`c451808` publicaciones+persistencia, `084b41a` gate, `5dac6e4` enforcement Whoop, `e59b85f` documentación), desplegado y habilitado el 2026-08-03.** Suite completa: 354 archivos / 2740 tests, typecheck, lint, build y `git diff --check` verdes.
 
-Qué significa el deploy del 2026-08-03: el código viaja a producción **dormido**. `017` no está aplicada y ambas flags siguen apagadas, así que ni el gate general ni el enforcement biométrico de Whoop se ejercitan. El smoke en curso vale como **no-regresión** —que la app, el onboarding y Whoop sigan comportándose exactamente igual que antes— y no como validación del consentimiento. Validar el gate de verdad exige la secuencia completa de activación, y esa sigue con dos bloqueantes duros: textos aprobados y resolver que Ajustes promete borrar “TODOS” los datos mientras el default legal conserva `user_consents`.
+Smoke de activación del 2026-08-03: la cuenta principal aceptó `terms@2026-07-13`, `privacy@2026-07-13`, `health@2026-06-20` y `whoop_biometric@2026-07-07`. Supabase mostró cuatro ids independientes y `accepted_at` generado por servidor. En una ventana incógnita, sin espejo Dexie previo, el gate hidrató esas filas desde Supabase y abrió la app sin pedir una segunda decisión en ~0,2 s. Esto valida el camino feliz, la persistencia remota y la hidratación multi-dispositivo; los tests automatizados siguen cubriendo fallas parciales, `23505`, offline y enforcement de los cuatro puntos Whoop.
 
-Secuencia de activación cuando se destrabe (en este orden, no parcial):
+Pendientes posteriores al rollout:
 
 1. Aprobar los textos de las cuatro publicaciones; cualquier cambio de redacción obliga a un id de publicación nuevo y a reaceptación.
 2. Resolver la retención al borrar cuenta y alinear el copy de Ajustes con lo que se decida.
-3. Aplicar `017_user_consents.sql` en la Supabase de producción.
-4. Encender `VITE_CONSENT_GATE` (cliente, requiere rebuild) y `CONSENT_GATE_ENABLED` (servidor) **juntas**. Encender solo una es un estado inválido.
-5. Smoke de activación: aceptar los tres documentos, verificar la fila en `user_consents`, confirmar que la superficie restringida deja cerrar sesión/exportar/borrar con el gate cerrado, y que Whoop rechaza OAuth sin consentimiento biométrico vigente.
+3. Completar, cuando se programe el siguiente smoke de Whoop, una comprobación manual directa del `403 consent_required` servidor antes de aceptar; el contrato ya está cubierto por tests, pero esa rama no quedó observada en este smoke de activación.
+4. Tratar cualquier mejora visual del gate como iteración posterior basada en uso real; el flash breve de “Verificando tus consentimientos” al hidratar un navegador nuevo es esperado y no justifica añadir latencia artificial.
 
 Decisiones abiertas para abogado, con default actual: (1) conservar evidencia al borrar cuenta; (2) salud se acepta por separado e IA queda cubierta por términos; (3) todo id nuevo de publicación, incluso por redacción menor, exige reaceptación.
 
@@ -130,7 +129,7 @@ Decision de producto del 2026-07-06, ejecutada entre 2026-07-08 y 2026-07-10:
 - `rpeActual` se mantiene como storage pero el producto lo relabela a **Esfuerzo**; Whoop strain lo prellena como esfuerzo diario editable, sin contaminar `Session.actualRpe`.
 - La futura landing/oferta coach solo puede prometer contexto objetivo opcional y consentido; no diagnostico, prevencion de lesiones ni ajuste automatico.
 
-Estado: **`011` aplicado en produccion, deploy y smoke operativo confirmados por el owner.** El gate legal/biométrico está implementado localmente; su activación espera `017`, textos aprobados y ambas flags — no bloquea el uso actual del owner.
+Estado: **`011` aplicado en produccion, deploy y smoke operativo confirmados por el owner.** El gate legal/biométrico está activo y la aceptación vigente quedó persistida; la revisión jurídica formal continúa pendiente antes de terceros.
 
 ### 4. SP1 Coach dos-lados quedo especificado y planificado como SP1a/SP1b
 
@@ -655,7 +654,8 @@ Rollout de `018`:
   - `descargo-de-salud.md`.
   - `descargo-whoop.md`.
 - Alineados a piloto Chile/persona natural y billing diferido.
-- Falta publicarlos como rutas reales y registrar consentimiento general + biometrico.
+- Publicados como rutas reales y conectados al consentimiento versionado general + biometrico.
+- El rollout técnico está cerrado; faltan aprobación jurídica formal y decisión de retención de la evidencia al borrar cuenta.
 
 ### Plan Builder Y Calidad Deportiva
 
@@ -718,20 +718,19 @@ Cierres tecnicos recientes:
 
 ## Riesgos Que Siguen Vivos
 
-### 1. WHOOP ya agrega dato sensible: enforcement desplegado pero inactivo
+### 1. WHOOP ya agrega dato sensible: enforcement activo, cierre jurídico pendiente
 
 Whoop es el track de producto con mas retorno inmediato, e introduce datos biometricos,
 OAuth externo, tokens cifrados y borrado completo. La operacion tecnica ya cerro (`011`/`012`
-aplicados, deploy y smoke confirmados por el owner). El código que exige consentimiento
-biométrico vigente en todos los puntos de incorporación de datos **ya esta en produccion
-desde el 2026-08-03, pero apagado**: sin `017` aplicada y sin flags, el enforcement no
-corre. En terminos de riesgo esto no mejora nada respecto de la semana pasada — el dato
-biometrico se sigue incorporando sin consentimiento registrado; lo unico que cambio es que
-activarlo ya no requiere desarrollo. Lo que falta antes de exponerlo a terceros:
+aplicados, deploy y smoke confirmados por el owner), y desde el 2026-08-03 también están
+activos `017` y los gates de cliente/servidor. El smoke persistió
+`whoop_biometric@2026-07-07` separado de los tres documentos generales.
 
-- aplicar `017` y encender juntas las flags de cliente y servidor;
-- politica de privacidad/terminos actualizados;
-- rutas o UI que expliquen desconexion + borrado remoto/local.
+El riesgo que queda ya no es falta de enforcement técnico, sino gobernanza legal:
+
+- aprobar formalmente privacidad, términos y descargos;
+- decidir cuánto tiempo conservar `user_consents` al borrar una cuenta y alinear el copy de Ajustes;
+- verificar manualmente el `403 consent_required` server-side en un próximo smoke de Whoop, además de la cobertura automatizada existente.
 
 ### 2. Legal existe como rutas, pero falta revision juridica formal
 
@@ -766,7 +765,7 @@ Whoop Workout Auto-Complete usa `012_whoop_workouts.sql` + Dexie v16. SP1a queda
 
 Objetivo: pasar de codigo committed a flujo real confiable en produccion.
 
-Estado: **`011` aplicado, deploy confirmado, smoke conectar -> sync -> ReadinessCard -> prefill -> desconectar/borrar hecho por el owner.** Falta unicamente consentimiento biometrico formalizado antes de exponer a terceros (revision juridica).
+Estado: **`011` aplicado, deploy confirmado, smoke conectar -> sync -> ReadinessCard -> prefill -> desconectar/borrar hecho por el owner.** El consentimiento biométrico técnico está activo y persistido; falta únicamente su aprobación jurídica formal antes de exponerlo a terceros.
 
 ### Opcion B - Whoop Workout Auto-Complete — CERRADA
 
@@ -782,7 +781,7 @@ Orden:
 
 1. ✅ Rutas legales publicas (Fase 0 completa).
 2. ⏳ Revision juridica formal (en curso).
-3. ⏳ Consentimiento biometrico in-app (proxima semana).
+3. ✅ Consentimiento general y biometrico in-app activo y persistido (2026-08-03).
 4. ⏳ QA de 3 planes arquetipo como atletas gestionados.
 5. ⏳ Oferta piloto cerrada (1-2 semanas, precio, soporte, reembolso).
 6. ⏳ Primer cliente acompanado elegido y onboardeado.
@@ -799,7 +798,7 @@ Estado: especificado y planificado (plan completo: `docs/superpowers/plans/2026-
 
 ### Recomendacion
 
-Ejecutar **Opcion C (Piloto manual) + Opcion A consentimiento biometrico YA**. Opcion B (Workout Auto-Complete) ya esta operativa, no requiere trabajo adicional. Opcion D (SP1a dos-lados) espera hasta post-piloto cuando se entienda mejor si el siguiente cliente sera alguien que quiera compartir con su coach o sera el owner/coach usando mas atletas propios.
+Ejecutar **Opcion C (Piloto manual) + cierre jurídico**. El consentimiento técnico y la Opcion B (Workout Auto-Complete) ya están operativos; no requieren otra entrega. Opcion D (SP1a dos-lados) espera hasta post-piloto cuando se entienda mejor si el siguiente cliente sera alguien que quiera compartir con su coach o sera el owner/coach usando mas atletas propios.
 
 ## Checklist Actualizado Para Mostrar Y Monetizar
 
@@ -880,14 +879,18 @@ Objetivo: poder enviar links y cobrar sin zona gris innecesaria.
 - [x] Crear ruta publica `/health-disclaimer` (Fase 0).
 - [x] Crear superficie de descargo Whoop como ruta publica (Fase 0).
 - [x] Linkear rutas desde landing, pricing, features y signup/login (Fase 0 + SharedPublicNav fix).
-- [x] Implementar consentimiento de terminos/privacidad/salud en la app autenticada, detrás de flag (2026-08-03; desplegado apagado).
-- [x] Implementar consentimiento biometrico persistido antes de conectar y procesar Whoop (cliente + servidor; desplegado apagado).
-- [x] Registrar version y fecha de consentimiento en log append-only (`017` escrita, no aplicada; Dexie v19).
-- [x] Desplegar el bundle con el consentimiento dormido y smokear no-regresion (2026-08-03, smoke en curso).
+- [x] Implementar consentimiento de terminos/privacidad/salud en la app autenticada, detrás de flag (2026-08-03).
+- [x] Implementar consentimiento biometrico persistido antes de conectar y procesar Whoop (cliente + servidor).
+- [x] Registrar version y fecha de consentimiento en log append-only (`017` aplicada; Dexie v19).
+- [x] Desplegar el bundle y completar el smoke de activación en producción (2026-08-03).
+- [x] Confirmar cuatro filas vigentes en Supabase (`terms`, `privacy`, `health`, `whoop_biometric`) con ids independientes y timestamps de servidor.
+- [x] Confirmar hidratación remota con Dexie vacío: login en incógnito abre sin reaceptación en ~0,2 s.
 - [ ] Aprobar textos legales de las cuatro publicaciones.
 - [ ] Resolver retención de `user_consents` al borrar cuenta y alinear el copy de Ajustes.
-- [ ] Aplicar `017` en produccion.
-- [ ] Encender `VITE_CONSENT_GATE` + `CONSENT_GATE_ENABLED` juntas y correr el smoke de activacion.
+- [x] Aplicar `017` en produccion.
+- [x] Encender `VITE_CONSENT_GATE` + `CONSENT_GATE_ENABLED` juntas.
+- [ ] Verificar manualmente en producción el rechazo server-side `403 consent_required` de Whoop antes de aceptar; cubierto por tests, no observado directamente en este smoke.
+- [ ] Evaluar mejoras de UI del gate después de uso real; no agregar espera artificial al chequeo remoto breve.
 - [ ] Agregar politica simple de cancelacion/reembolso para piloto manual (en landing coach).
 - [ ] Revision juridica formal de textos legales con abogado antes de pago publico o anuncios masivos.
 
@@ -1019,7 +1022,8 @@ Estado: **implementado, revisado, commiteado y `011` aplicado en produccion con 
 - [x] Normalizacion v2 endurecida: anclaje por `cycle_id`, `timezone_offset`, filtro de siestas, sueño por etapas, tri-estado `score_state` (SCORED/PENDING/UNSCORABLE).
 - [x] Aplicar `011` en prod y smoke end-to-end (conectar → sync → ReadinessCard → prefill → desconectar/borrar).
 - [x] Confirmar deploy del bundle Whoop actual en produccion.
-- [ ] Linkear `descargo-whoop.md` + consentimiento biometrico antes de exponer a terceros.
+- [x] Linkear el descargo Whoop y activar consentimiento biometrico versionado.
+- [ ] Obtener aprobación jurídica formal antes de exponer datos biométricos a terceros.
 - [ ] Re-correr smoke despues del primer refresh real para confirmar refresh token/scopes.
 
 ### J. WHOOP Workout Auto-Complete
@@ -1087,12 +1091,13 @@ No entra todavía:
 - Obtencion de firma y versionado de terminos.
 - Estimado: 2-3 dias abogado, no 2-3 horas; paralelizar con siguiente.
 
-### Dia 1-2 - Consentimiento In-App Y Biometrico
+### Consentimiento In-App Y Biometrico — CERRADO 2026-08-03
 
-- Agregar checkbox/modal de consentimiento de terminos/privacidad/descargo/IA en signup u onboarding.
-- Agregar descargo biometrico explícito antes de conectar Whoop (en WhoopConnection).
-- Registrar version y fecha de consentimiento en DB.
-- Tests: flow de rechazo, aceptacion, version bump.
+- [x] Gate separable para terminos, privacidad y salud en la app autenticada.
+- [x] Descargo biometrico explícito antes de conectar/procesar Whoop.
+- [x] Version y timestamp de servidor registrados en `user_consents`.
+- [x] Persistencia e hidratación remota verificadas en producción.
+- [x] Tests de rechazo, aceptacion, conflicto idempotente, offline y version bump.
 
 ### Dia 2-3 - Preparacion Piloto (Paralelo A Abogado)
 
@@ -1127,13 +1132,13 @@ Unico pendiente para cerrar: revision juridica formal antes de enviar links masi
 
 ### Nivel 2 - Piloto Manual Pagado (1-3 Clientes Acompanados)
 
-Estado: **viable ahora que `011`/`012` estan cerrados y Fase 0 esta en vivo**; falta revision juridica formal y consentimiento biometrico.
+Estado: **viable ahora que `011`/`012` y el consentimiento versionado están activos**; falta revision juridica formal y cierre operacional del piloto.
 
 Pendiente minimo:
 
 - [x] Precio fundador + duracion.
 - [x] Terminos/privacidad/descargo linkeados.
-- [ ] Consentimiento in-app de terminos/privacidad/biometrico.
+- [x] Consentimiento in-app de terminos/privacidad/salud/biometrico activo y auditado.
 - [x] Canal de soporte (WhatsApp/email).
 - [x] Revision manual de planes (requiere QA deportiva).
 - [ ] Politica simple de reembolso/cancelacion.
@@ -1146,7 +1151,8 @@ Estado: operable internamente con F2-lite 2b + Coach Workspace v0; Whoop readine
 
 Pendiente minimo:
 
-- [ ] Consentimiento biometrico formalizado si se entrega a terceros.
+- [x] Consentimiento biometrico técnico activo y persistido.
+- [ ] Aprobación jurídica del tratamiento biométrico antes de entregarlo a terceros.
 - [ ] QA de planes arquetipo como gestionados (3-5 planes).
 - [ ] Protocolo de revision semanal documentado.
 - [ ] Rutas legales y consentimiento general firmados por abogado.
@@ -1278,39 +1284,37 @@ Orden recomendado (Athlete-Aware Core + Coach F2-lite Parte 2b + Whoop v1/Workou
 
 0. ✅ **Desplegar las tandas pendientes.** Hecho el 2026-08-03: rotacion
    coordinada + roles de partido (`9754f78`), identidad de fuerza (`afaac17`),
-   copy de la libreria (`33d585f`) y consentimiento apagado
+   copy de la libreria (`33d585f`) y consentimiento versionado
    (`c451808`…`e59b85f`) viajaron en el mismo bundle. Los roles de squash **no**
    estan medidos —el smoke pagado es anterior—, y con ~US$0,60 de saldo no
    alcanza para re-medir (~US$0,90 por corrida): quedan cubiertos por la suite y
-   por la verificacion post-deploy del item 1.
-1. **Verificacion operativa post-deploy (en curso):** el smoke de produccion del
-   2026-08-03 debe cubrir dos cosas distintas. (a) **No-regresion del
-   consentimiento apagado:** con `017` sin aplicar y ambas flags off, la app, el
-   onboarding y Whoop tienen que comportarse exactamente igual que antes; si el
-   gate aparece o Whoop empieza a rechazar OAuth, hay un problema de gating de
-   flag, no una activacion. (b) **Efecto de las tandas de motor:** generar un
-   plan real y revisar la fila de job/attempts, mirando
+   por la verificacion post-deploy del item 2.
+1. ✅ **Activar y smokear el consentimiento.** Cerrado el 2026-08-03: `017`
+   aplicada, ambas flags encendidas, tres documentos generales + Whoop
+   persistidos con las versiones vigentes, y reingreso desde incógnito resuelto
+   por hidratación remota sin reaceptación en ~0,2 s. La mejora visual queda
+   como backlog posterior; el comportamiento observado es correcto.
+2. **Verificacion operativa de las tandas de motor:** generar un plan real y
+   revisar la fila de job/attempts, mirando
    `squashFinisherPreservedCount` / `squashStandaloneMatchCount` contra lo
    esperado, y de paso confirmar que los nombres nuevos de la libreria de fuerza
    aparecen en la UI sin romper sesiones/plantillas viejas (que resuelven por
    `aliases`).
-2. **Smoke autenticado de Biblioteca y Planificacion** (pendiente §11 desde el
+3. **Smoke autenticado de Biblioteca y Planificacion** (pendiente §11 desde el
    deploy de `015`): es la deuda de verificacion mas vieja del proyecto y sale
-   casi gratis si ya hay una sesion real abierta para el item 1.
-3. **Revision juridica formal** (2-3 dias abogado, paralelizar con items 4-5): firma de terminos/privacidad/descargos/políticas Whoop.
-4. **Activacion del consentimiento** (una vez aprobados los textos y resuelta la
-   retencion al borrar cuenta): aplicar `017`, encender ambas flags juntas y
-   correr el smoke de activacion. El codigo ya esta en produccion; esto es
-   rollout, no desarrollo.
+   casi gratis si ya hay una sesion real abierta para el item 2.
+4. **Revision juridica formal y retención** (2-3 dias abogado, paralelizar con
+   items 2-3): firma de terminos/privacidad/descargos/políticas Whoop y decisión
+   sobre `user_consents` al borrar cuenta. El rollout técnico ya no está pendiente.
 5. **QA deportiva y preparacion piloto** (1-2 dias): generar 3 planes arquetipo como atletas gestionados, revisar salida coach, preparar oferta (duracion, precio, soporte, reembolso).
 6. **Primer cliente acompanado** (ejecutar en paralelo con abogado): elegir 1 candidato, onboarding 1:1, generar semana 1, iniciar protocolo de revision semanal.
 
 **Siguiente bloque de desarrollo recomendado:** ninguno de motor. Squash y
 fuerza quedaron cerrados de punta a punta —seleccion, carga, identidad y copy—,
-y el consentimiento ya esta escrito y desplegado, asi que lo que separa el
+y el consentimiento ya esta escrito, activo y smokeado, asi que lo que separa el
 producto de cobrarle a alguien es legal y operacional, no codigo. Si aparece
 tiempo de desarrollo libre, los dos candidatos con mejor relacion valor/riesgo
-son el **smoke autenticado de Biblioteca y Planificacion** (item 2) y, como
+son el **smoke autenticado de Biblioteca y Planificacion** (item 3) y, como
 unica pieza de codigo nueva que se justifica hoy, la **politica de
 cancelacion/reembolso + one-liner de oferta** en `/coaches`, que es superficie
 publica pendiente del checklist B y bloquea cobrar, no una mejora de motor.
@@ -1333,9 +1337,9 @@ publica pendiente del checklist B y bloquea cobrar, no una mejora de motor.
 
 RallyIQ ya tiene producto suficiente para operar entrenamiento real y varios atletas gestionados desde la cuenta del owner. Whoop v1 y Workout Auto-Complete ya no son ideas pendientes: estan aplicados en produccion y operativos de punta a punta. Coach Workspace v0 suma un roster mejorado y navegacion honesta hacia lo que falta construir. Fase 0 de coaches landing (rutas legales + landing `/coaches` + deep links nativos) ya esta en vivo, reduciendo la zona gris tecnica.
 
-El cambio principal desde hace dos dias es que el bloqueante tecnico principales ya se cerraron. Lo que falta es operacional y legal: revision formal de terminos (con abogado), consentimiento in-app biometrico, y el primer cliente real validando flujo comercial/operacional.
+El cambio principal desde hace dos dias es que los bloqueantes técnicos principales ya se cerraron, incluido el consentimiento general y biométrico activo en producción. Lo que falta es operacional y legal: revisión formal de términos y retención de evidencia, y el primer cliente real validando flujo comercial/operacional.
 
-Mi recomendacion: **iniciar revision juridica formal YA** (paralelo a items 2-3) + consentimiento biometrico en-app + QA deportiva de planes arquetipo + primer cliente acompanado. SP1a dos-lados y contenido real de Planificacion/Biblioteca quedan como incrementos posteriores al piloto, no son bloqueantes.
+Mi recomendacion: **cerrar revisión jurídica y retención YA** (en paralelo al smoke de Biblioteca/Planificación) + QA deportiva de planes arquetipo + primer cliente acompañado. La UI del consentimiento puede pulirse después con evidencia de uso; SP1a dos-lados y contenido real del Asistente IA quedan como incrementos posteriores al piloto, no son bloqueantes.
 
 Nota tactica que no cambia esta recomendacion: la Entrega 4 de fuerza (§19)
 quedo commiteada por separado, revisada y verde. El copy visible de los
