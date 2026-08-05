@@ -380,22 +380,21 @@ Verificación de cierre: `npm run lint && npm test && npm run build` + typecheck
 
 ## 9. Rollout
 
-1. Aplicar `018_coach_requests.sql` en la Supabase de producción
-   (**manual** — escribir el `.sql` no es aplicarlo).
-2. Desplegar el bundle.
-3. Ejecutar el contraste de §6.2 sobre una ventana real —**pérdida y latencia,
+1. ✅ Aplicar `018_coach_requests.sql` en la Supabase de producción
+   (**completado 2026-08-05**).
+2. ⏳ Confirmar el bundle desplegado.
+3. ⏳ Ejecutar el contraste de §6.2 sobre una ventana real —**pérdida y latencia,
    separadas por camino streaming y no-streaming**— antes de confiar en los
    agregados. Si cualquiera de las dos falla, ejecutar la escalada al endpoint
    dedicado antes de seguir.
-4. Recién entonces, poblar `MODEL_PRICES` (trabajo separado) y agregar la
+4. ⏳ Recién entonces, poblar `MODEL_PRICES` (trabajo separado) y agregar la
    sección medida del chat a `OPTIMIZATION_AND_COSTS.md`, reportando la
    cobertura en filas **y** en tokens (§5.1).
 
-Nota de secuencia (actualizada 2026-08-05): `017` **ya fue aplicada** en
-producción el 2026-08-03, con ambas flags de consentimiento activas. Una
-versión anterior de esta spec decía lo contrario, escrita cuando ese rollout
-seguía pendiente. Así que `018` es la única migración manual pendiente y no hay
-riesgo de confundir dos rollouts simultáneos.
+Nota de secuencia (actualizada 2026-08-05): `017` fue aplicada el 2026-08-03 y
+`018` fue aplicada el 2026-08-05. La prueba de producción de `018` sigue
+pendiente, por lo que todavía no se confía en los agregados ni se da por
+validado el impacto de latencia.
 
 ## 10. Referencias
 

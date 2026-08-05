@@ -16,11 +16,11 @@ Gemini y subestimaba el Plan Builder en cerca de un orden de magnitud.
 |---|---|---|
 | **Plan Builder async** | `plan_generation_jobs` + `plan_generation_attempts` (`016`), con tokens y `estimated_cost_usd` fechado (`pricing.ts`) | **Medido en producción** (2026-07-26) |
 | **Week Creator** | Loadtest propio (`scripts/loadtest-week-creator.mjs`) | Medido en su momento; no hay telemetría continua |
-| **Chat general / chat action** | `logCoachRequest` + persistencia en `coach_requests` (`018`) | **Instrumentado, pendiente de aplicar `018` y poblar precios.** Los tokens quedan persistidos siempre que el proveedor los reporte; `estimated_cost_usd` es `null` mientras el modelo no esté en `MODEL_PRICES` |
+| **Chat general / chat action** | `logCoachRequest` + persistencia en `coach_requests` (`018`) | **`018` aplicada; prueba de producción y precios pendientes.** Los tokens pueden persistirse cuando el proveedor los reporte; `estimated_cost_usd` es `null` mientras el modelo no esté en `MODEL_PRICES` |
 | **Resumen semanal / import** | Ninguna | Sin medir |
 
-No se proyecta un costo mensual total de la app hasta aplicar `018`, verificar
-su cobertura y poblar los precios de los modelos que realmente sirven el chat.
+No se proyecta un costo mensual total de la app hasta verificar la cobertura
+real de `018` y poblar los precios de los modelos que realmente sirven el chat.
 Es la parte de mayor volumen (80 requests/día de tope) y cualquier cifra previa
 saldría de una cobertura incompleta, no de una medición confiable.
 

@@ -595,6 +595,11 @@ Verificado: **355 archivos / 2750 tests**, typecheck, lint, build y
 
 ### 22. Telemetría de requests del coach (`018`, 2026-08-05)
 
+Estado operacional: **`018_coach_requests.sql` aplicada en producción el
+2026-08-05.** La prueba con tráfico real queda pendiente; hasta completarla no
+se considera verificada la durabilidad best-effort, la latencia end-to-end ni
+la cobertura de costos.
+
 El chat era el camino de mayor volumen sin una cifra agregable de costo ni de
 latencia. `logCoachRequest` ya emitía duración, tokens, `finishReason` y
 `outcome` por request, pero como `console.info`; lo que faltaba era
@@ -627,16 +632,17 @@ los modelos reales de Gemini/OpenAI, trabajo separado.
 
 Rollout de `018`:
 
-1. Aplicar `supabase/018_coach_requests.sql` en producción (**manual**).
-2. Desplegar el bundle.
-3. Verificar pérdida por `streamed`: filas contra eventos
+1. ✅ Aplicar `supabase/018_coach_requests.sql` en producción (**completado
+   2026-08-05**).
+2. ⏳ Confirmar el bundle desplegado y ejecutar la prueba de producción.
+3. ⏳ Verificar pérdida por `streamed`: filas contra eventos
    `coach.request.completed` sobre la misma ventana.
-4. Verificar latencia por `streamed`: p50/p90 de
+4. ⏳ Verificar latencia por `streamed`: p50/p90 de
    `completedAt - startedAt` de `useAIDebugStore` contra la línea base. No usar
    `serverDurationMs`, calculado antes de la escritura.
 5. Si hay pérdida material o impacto de latencia, escalar al endpoint dedicado
    antes de confiar en los agregados.
-6. Recién entonces poblar `MODEL_PRICES` y agregar la sección medida del chat.
+6. ⏳ Recién entonces poblar `MODEL_PRICES` y agregar la sección medida del chat.
 
 ### Producto Publico Y Marca
 
@@ -1258,10 +1264,11 @@ dificultad.
    estan locales (readiness + workouts). Mantener el contrato vigente: contexto
    objetivo y consentido, sin diagnostico ni ajuste automatico.
 6. **Chat — latencia y costo.** *(persistencia implementada 2026-08-05, ver
-   §22)* Ya no es trabajo de código: queda aplicar `018` en producción, correr
-   la verificación de pérdida y latencia del rollout, y poblar `MODEL_PRICES`
-   con los modelos que realmente sirven el chat. Sin ese último paso el costo
-   sigue sin respuesta, aunque el usage reportado ya quede guardado.
+   §22; `018` aplicada 2026-08-05)* Ya no es trabajo de código: queda correr la
+   prueba de producción, verificar pérdida y latencia del rollout, y poblar
+   `MODEL_PRICES` con los modelos que realmente sirven el chat. Sin ese último
+   paso el costo sigue sin respuesta, aunque el usage reportado ya pueda quedar
+   guardado.
 7. **Flags por plan** (Base / Coach Semanal / Avanzado). Necesarios en cuanto el
    piloto tenga mas de un tier conviviendo.
 8. **Pasarela de pago.** Deliberadamente al final. Para 1-3 clientes acompanados,
