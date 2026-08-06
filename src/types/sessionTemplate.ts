@@ -189,6 +189,7 @@ function isTemplateExercise(value: unknown): value is SessionTemplateExercise {
     || (typeof value.reps !== 'string' && !isFiniteNumber(value.reps))
     || !isOptionalFiniteNumber(value.weight)
     || !isOptionalString(value.notes)
+    || !isOptionalString(value.supersetGroup)
   ) return false
   if (value.warmupSets === undefined) return true
   return Array.isArray(value.warmupSets) && value.warmupSets.every((set) => (

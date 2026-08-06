@@ -1,0 +1,28 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`paridad sin grupos > una sesion sin grupos produce el mismo orden que el comparador plano 1`] = `
+[
+  "Dead bug — control de tronco",
+  "Plancha frontal",
+  "Peso muerto con trap bar",
+  "Remo con pecho apoyado",
+]
+`;
+
+exports[`paridad sin grupos > una sesion sin grupos produce el mismo orden que el comparador plano 2`] = `
+[
+  "Dead bug — control de tronco",
+  "Clean",
+  "Sentadilla trasera con barra",
+  "Dominadas",
+]
+`;
+
+exports[`paridad sin grupos > una sesion sin grupos produce el mismo orden que el comparador plano 3`] = `
+[
+  "Dead bug — control de tronco",
+  "Pallof press",
+  "Salto al cajon",
+  "Press vertical",
+]
+`;

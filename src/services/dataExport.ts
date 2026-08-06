@@ -28,6 +28,7 @@ import type {
 import type { TrainingPlan, TrainingPlanWeek } from '../types/planBuilder'
 import type { StoredSessionTemplate } from '../types/sessionTemplate'
 import { sanitizeExerciseLibraryRef } from '../types/exerciseLibraryRef'
+import { normalizeSupersetGroupId, normalizeSupersetGroups } from './training/supersetGroups'
 import { useChatStore } from '../store/useChatStore'
 import { useCoachActionsStore } from '../store/useCoachActionsStore'
 import { useCoachMemoryStore } from '../store/useCoachMemoryStore'
@@ -1360,7 +1361,7 @@ function optionalExercises(value: unknown, path: string): Session['exercises'] {
   if (value == null) return undefined
   const exercises = ensureArray(value, path)
 
-  return exercises.map((exercise, index) => {
+  const rows = exercises.map((exercise, index) => {
     const row = ensureRecord(exercise, `${path}[${index}]`)
     return {
       id: requireString(row.id, `${path}[${index}].id`),
@@ -1377,8 +1378,11 @@ function optionalExercises(value: unknown, path: string): Session['exercises'] {
       targetRpe: optionalRpe(row.targetRpe, `${path}[${index}].targetRpe`),
       warmupSets: optionalWarmupSets(row.warmupSets, `${path}[${index}].warmupSets`),
       libraryRef: sanitizeExerciseLibraryRef(row.libraryRef),
+      supersetGroup: normalizeSupersetGroupId(row.supersetGroup),
     }
   })
+
+  return normalizeSupersetGroups(rows)
 }
 
 function optionalPlanGenerationSummary(value: unknown, path: string): CoachProposal['planSummary'] {
@@ -1467,7 +1471,7 @@ function optionalCoachExercises(value: unknown, path: string): CoachAction['exer
   if (value == null) return undefined
   const exercises = ensureArray(value, path)
 
-  return exercises.map((exercise, index) => {
+  const rows = exercises.map((exercise, index) => {
     const row = ensureRecord(exercise, `${path}[${index}]`)
     return {
       name: requireString(row.name, `${path}[${index}].name`),
@@ -1481,8 +1485,11 @@ function optionalCoachExercises(value: unknown, path: string): CoachAction['exer
       targetRpe: optionalRpe(row.targetRpe, `${path}[${index}].targetRpe`),
       warmupSets: optionalWarmupSets(row.warmupSets, `${path}[${index}].warmupSets`),
       libraryRef: sanitizeExerciseLibraryRef(row.libraryRef),
+      supersetGroup: normalizeSupersetGroupId(row.supersetGroup),
     }
   })
+
+  return normalizeSupersetGroups(rows)
 }
 
 function optionalWarmupSets(value: unknown, path: string): WarmupSet[] | undefined {

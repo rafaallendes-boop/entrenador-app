@@ -202,6 +202,7 @@ export interface Exercise {
   targetRpe?: number           // strength: fallback target effort when no 1RM available (1-10)
   warmupSets?: WarmupSet[]     // strength: approach sets before the working set
   libraryRef?: ExerciseLibraryRef // optional origin in the curated exercise libraries
+  supersetGroup?: string   // id opaco y estable de superserie; la etiqueta visible se deriva
 }
 
 export interface WarmupSet {
@@ -977,6 +978,7 @@ export interface CoachExerciseProposal {
   targetRpe?: number
   warmupSets?: WarmupSet[]
   libraryRef?: ExerciseLibraryRef // origen opcional en las librerías curadas
+  supersetGroup?: string   // id opaco de superserie; la politica corre antes de materializar
 }
 
 /** Session proposal used inside create_week actions */

@@ -300,7 +300,15 @@ planSupersetGroups<T extends SupersetCandidate>(exercises: readonly T[], mode): 
 `planSupersetGroups` es el **núcleo único**. Devuelve, junto a la lista agrupada,
 un canal de diagnósticos con una decisión por candidato evaluado: regla que
 aplicó, miembros asignados, o descarte con motivo (`sets_mismatch`,
-`no_eligible_partner`, `reserved`, `blocked_kind`).
+`no_eligible_partner`, `blocked_kind`). Un ejercicio ya reservado por una regla
+anterior simplemente no vuelve al pool: no genera un diagnóstico propio, porque
+el motivo real ya quedó registrado en la regla que se lo llevó.
+
+A las cuatro reglas de §7.2 se suma una quinta etiqueta, **`eligibility`**, que
+no agrupa: es la que registra los descartes por tipo (cardio, movilidad,
+footwork). Existe para que `blocked_kind` no se atribuya a `core_circuit`, que
+no fue quien los descartó — un diagnóstico falso en la auditoría es peor que no
+tenerlo.
 
 Los caminos productivos descartan `decisions` y se quedan con `exercises`. La
 auditoría del corpus (§9) consume el **mismo** resultado, de modo que audita la

@@ -14,6 +14,7 @@ import type {
 import type { ExerciseLibraryRef } from '../../types/exerciseLibraryRef'
 import { fromISO, getWeekStart, toISO } from '../../utils/date'
 import { generateDefaultProtocols } from '../trainingProtocols'
+import { normalizeSupersetGroupId } from '../training/supersetGroups'
 
 export interface CoachSessionDraft {
   date: string
@@ -45,6 +46,7 @@ export interface CoachSessionDraft {
     weight?: number
     notes?: string
     libraryRef?: ExerciseLibraryRef
+    supersetGroup?: string
   }>
 }
 
@@ -83,6 +85,7 @@ export function sessionToDraft(session: Session): CoachSessionDraft {
       weight: exercise.weight,
       notes: exercise.notes,
       libraryRef: exercise.libraryRef,
+      supersetGroup: normalizeSupersetGroupId(exercise.supersetGroup),
     })),
   }
 }
@@ -234,6 +237,7 @@ function draftExercisesToExercises(
     .map((draft) => {
       const reps = draft.reps.trim() || '10'
       const notes = draft.notes?.trim() || undefined
+      const supersetGroup = normalizeSupersetGroupId(draft.supersetGroup)
       const prior = byId.get(draft.id)
       if (prior) {
         const next: Exercise = {
@@ -246,6 +250,8 @@ function draftExercisesToExercises(
         }
         if (draft.libraryRef) next.libraryRef = draft.libraryRef
         else delete next.libraryRef
+        if (supersetGroup) next.supersetGroup = supersetGroup
+        else delete next.supersetGroup
         return next
       }
       return {
@@ -257,6 +263,7 @@ function draftExercisesToExercises(
         notes,
         completed: false,
         ...(draft.libraryRef ? { libraryRef: draft.libraryRef } : {}),
+        ...(supersetGroup ? { supersetGroup } : {}),
       }
     })
 }

@@ -1,4 +1,4 @@
-import type { Session } from '../../types'
+import type { Exercise, Session } from '../../types'
 import type {
   SessionTemplateExercise,
   SessionTemplatePayload,
@@ -7,6 +7,7 @@ import { sanitizeExerciseLibraryRef } from '../../types/exerciseLibraryRef'
 import { jsonStructurallyEqual } from '../../utils/canonicalJson'
 import { fromISO, getWeekStart, toISO } from '../../utils/date'
 import { v4 as uuid } from '../../utils/uuid'
+import { normalizeSupersetGroupId, normalizeSupersetGroups } from '../training/supersetGroups'
 import {
   buildCyclingDetailsDraft,
   draftToNewSessionFields,
@@ -76,6 +77,7 @@ function exerciseToDraft(
     weight: exercise.weight,
     notes: exercise.notes,
     libraryRef: sanitizeExerciseLibraryRef(exercise.libraryRef),
+    supersetGroup: normalizeSupersetGroupId(exercise.supersetGroup),
   }
 }
 
@@ -136,6 +138,9 @@ function mergeTemplateExercises(
       const libraryRef = sanitizeExerciseLibraryRef(draft.libraryRef)
       if (libraryRef) mergedExercise.libraryRef = libraryRef
       else delete mergedExercise.libraryRef
+      const supersetGroup = normalizeSupersetGroupId(draft.supersetGroup)
+      if (supersetGroup) mergedExercise.supersetGroup = supersetGroup
+      else delete mergedExercise.supersetGroup
       return mergedExercise
     })
   return merged.length > 0 ? merged : undefined
@@ -408,21 +413,36 @@ export function materializeTemplateSession(
     ...(mergedPayload.warmup !== undefined ? { warmup: mergedPayload.warmup } : {}),
     ...(mergedPayload.cooldown !== undefined ? { cooldown: mergedPayload.cooldown } : {}),
   }
-  return {
-    ...base,
-    ...richFields,
-    date,
-    weekStartDate: toISO(getWeekStart(fromISO(date))),
-    exercises: mergedPayload.exercises?.map((exercise) => {
+  // Re-emitir ids de grupo por aplicacion: dos aplicaciones de la misma
+  // plantilla en el mismo dia no pueden compartir id de superserie, o el
+  // normalizador disolveria el segundo segmento por su regla de contiguidad.
+  const materializedExercises = (() => {
+    const groupIds = new Map<string, string>()
+    return mergedPayload.exercises?.map((exercise): Exercise => {
       const copy = structuredClone(exercise) as Record<string, unknown>
       delete copy.libraryRef
+      delete copy.supersetGroup
       const libraryRef = sanitizeExerciseLibraryRef(exercise.libraryRef)
+      const sourceGroup = normalizeSupersetGroupId(exercise.supersetGroup)
+      let supersetGroup: string | undefined
+      if (sourceGroup) {
+        if (!groupIds.has(sourceGroup)) groupIds.set(sourceGroup, uuid())
+        supersetGroup = groupIds.get(sourceGroup)
+      }
       return {
         ...copy,
         id: uuid(),
         completed: false,
         ...(libraryRef ? { libraryRef } : {}),
-      }
-    }),
+        ...(supersetGroup ? { supersetGroup } : {}),
+      } as Exercise
+    })
+  })()
+  return {
+    ...base,
+    ...richFields,
+    date,
+    weekStartDate: toISO(getWeekStart(fromISO(date))),
+    exercises: materializedExercises ? normalizeSupersetGroups(materializedExercises) : undefined,
   } as Omit<Session, 'id' | 'athleteId' | 'authoredByRole' | 'createdAt' | 'updatedAt'>
 }

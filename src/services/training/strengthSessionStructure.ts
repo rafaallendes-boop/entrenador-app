@@ -13,6 +13,7 @@ import {
   computeWeightFromPercent,
   getStrengthReferenceKg,
 } from './strengthLoadPrescription'
+import { normalizeSupersetGroups, resolveSupersetLayout } from './supersetGroups'
 
 type StrengthExerciseLike = CoachExerciseProposal | Exercise
 
@@ -32,11 +33,33 @@ export function normalizeStrengthSessionExercises<T extends StrengthExerciseLike
     ? ensureCoreBlock(normalized)
     : normalized
 
-  return [...withCore].sort((a, b) => {
-    const groupDelta = groupRank(a.group) - groupRank(b.group)
-    if (groupDelta !== 0) return groupDelta
-    return coreRank(a) - coreRank(b)
-  })
+  return sortStrengthSessionUnits(withCore)
+}
+
+function compareStrengthExercises(a: StrengthExerciseLike, b: StrengthExerciseLike): number {
+  const groupDelta = groupRank(a.group) - groupRank(b.group)
+  if (groupDelta !== 0) return groupDelta
+  return coreRank(a) - coreRank(b)
+}
+
+/**
+ * Dos caminos, decididos ANTES de ordenar:
+ *   - Sin grupos: sort actual, ejercicio por ejercicio. Identico a hoy.
+ *   - Con grupos: se ordenan UNIDADES con el mismo comparador, evaluado sobre
+ *     el lider; los miembros lo siguen.
+ * El comparador no cambia; cambia la unidad. Tras agrupar NO vuelve a correr
+ * ningun sort individual.
+ */
+function sortStrengthSessionUnits<T extends StrengthExerciseLike>(exercises: T[]): T[] {
+  const normalized = normalizeSupersetGroups(exercises)
+  const hasGroups = normalized.some((exercise) => exercise.supersetGroup != null)
+
+  if (!hasGroups) return [...normalized].sort(compareStrengthExercises)
+
+  return resolveSupersetLayout(normalized)
+    .slice()
+    .sort((a, b) => compareStrengthExercises(a.members[0]!, b.members[0]!))
+    .flatMap((segment) => segment.members)
 }
 
 function removeProtocolExercisesWhenStrengthWorkExists<T extends StrengthExerciseLike>(exercises: T[]): T[] {
@@ -201,7 +224,18 @@ function ensureCoreBlock<T extends StrengthExerciseLike>(exercises: T[]): T[] {
   return exercises.map((exercise) => {
     if (replaced || exercise.group !== 'core') return exercise
     replaced = true
-    return makeCoreExercise<T>('dead_bug', 'Zona media: anti-extensión y control lumbo-pélvico.')
+    const replacement = makeCoreExercise<T>('dead_bug', 'Zona media: anti-extensión y control lumbo-pélvico.')
+    if (!exercise.supersetGroup) return replacement
+
+    // El enriquecimiento de core es anterior al sort por unidades. Si el core
+    // reemplazado lideraba un grupo manual, perder el tag lo convertiría en dos
+    // singletons y el normalizador disolvería una decisión válida del usuario.
+    // También se conserva el número de rondas del líder original.
+    return {
+      ...replacement,
+      sets: exercise.sets,
+      supersetGroup: exercise.supersetGroup,
+    }
   })
 }
 
