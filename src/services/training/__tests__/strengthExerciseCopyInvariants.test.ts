@@ -4,8 +4,8 @@ import { STRENGTH_EXERCISE_LIBRARY } from '../exerciseLibrary'
 import { RENAMED_STRENGTH_IDS, REWRITTEN_DESCRIPTION_IDS } from './strengthCopyScope'
 
 /**
- * Guard de congelamiento previo al copy de fuerza (spec 2026-08-01, plan
- * `docs/superpowers/plans/2026-08-01-strength-exercise-copy.md` §1.1).
+ * Guard de congelamiento previo al copy de fuerza (bloque del 2026-08-01, §1.1
+ * del plan; spec y plan retirados tras el despliegue, historial en git).
  *
  * Este snapshot se genera ANTES de tocar `name`/`description` en
  * `exerciseLibrary.ts`. Congela por `id` los 16 campos de metadata que no

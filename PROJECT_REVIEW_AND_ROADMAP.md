@@ -431,7 +431,7 @@ tests, lint y build OK. Sin migraciones Dexie ni Supabase.
 Mismo espiritu que la rotacion de squash (§16): que el nombre visible del
 ejercicio deje de decidir seleccion o carga. Sin migraciones Dexie ni Supabase.
 
-- **Inventario** (`docs/superpowers/specs/2026-07-31-strength-name-coupling-inventory.md`):
+- **Inventario** (retirado tras el cierre del bloque; historial en git):
   tres rutas de resolucion (resuelto por campos / resuelto pero el nombre gana
   igual / no resuelto) y dos hallazgos — dos fuentes de verdad para el 1RM sin
   factor comun, y desempate por nombre en `strengthSelector.ts:1006`, el mismo
@@ -491,8 +491,7 @@ adelantar targets, y el barrido final quedó 0/92.
 
 Estado: **implementado, commiteado y desplegado el 2026-08-03, sin migraciones.** Verificado con 339
 archivos / **2613/2613 tests**, TypeScript, lint, build y `git diff --check`.
-Spec y plan: `docs/superpowers/specs/2026-08-01-strength-library-ref-first-design.md`
-y `docs/superpowers/plans/2026-08-01-strength-library-ref-first.md`.
+Spec y plan retirados tras el despliegue; historial en git.
 
 Limitación central: sesiones, plantillas y planes creados antes de esta entrega
 siguen sin ref. El siguiente proyecto de copy debe conservar cada nombre legacy
@@ -534,8 +533,7 @@ fuera de alcance: 65 nombres y 46 descripciones intactos, verificado sin
 regenerarlo.
 
 Estado: **implementado, commiteado (`33d585f`) y desplegado el 2026-08-03.** Spec y plan en
-`docs/superpowers/specs/2026-08-01-strength-exercise-copy-design.md` y
-`docs/superpowers/plans/2026-08-01-strength-exercise-copy.md`.
+git (spec y plan retirados tras el despliegue).
 
 **Riesgo latente — cerrado el 2026-08-03.** Ver §21.
 
@@ -592,7 +590,7 @@ presente para correlación, y cero requests en vuelo.
 
 Verificado: **355 archivos / 2750 tests**, typecheck, lint, build y
 `git diff --check` verdes. Spec en
-`docs/superpowers/specs/2026-08-03-week-creator-fallback-hardening-design.md`.
+git (spec retirado tras el cierre del bloque).
 
 ### 22. Telemetría de requests del coach (`018`, 2026-08-05)
 
@@ -749,8 +747,7 @@ legítimo— y normaliza al guardar.
 
 Verificado: **372 archivos / 2900 tests**, lint, build y `git diff --check`
 verdes. Spec en
-`docs/superpowers/specs/2026-08-05-strength-supersets-design.md` y plan en
-`docs/superpowers/plans/2026-08-05-strength-supersets.md`.
+git: spec y plan retirados tras el despliegue.
 
 **Pendiente: verificación manual post-deploy.** No cuesta API y son seis pasos
 con una sesión real: (1) una sesión de fuerza vieja sin grupos se ve igual que
@@ -1158,7 +1155,7 @@ Estado: **implementado, revisado, commiteado y `011` aplicado en produccion con 
 
 Objetivo: usar workouts detectados por Whoop para completar sesiones planificadas del atleta self, sin crear sesiones nuevas ni tocar RPE de carga.
 
-Estado: **implementado y con rollout operativo cerrado**.Spec escrito en docs/superpowers/specs/2026-07-26-chat-conversations-design.md.
+Estado: **implementado y con rollout operativo cerrado**. Spec retirado tras el cierre; historial en git.
 
 En la auto-revisión encontré tres inconsistencias propias, y dos habrían causado bugs reales si el plan se implementaba tal como lo había redactado:
 
@@ -1363,7 +1360,7 @@ dificultad.
    **Mitad de squash: implementada y commiteada (2026-07-31, `21af7f8`…`b9e3f31`
    — esta entrada quedo desactualizada).** Spec y plan en
    `docs/superpowers/specs/2026-07-31-squash-drill-copy-design.md` y
-   `docs/superpowers/plans/2026-07-31-squash-drill-copy.md`: 14 nombres y 21
+   (plan retirado, historial en git): 14 nombres y 21
    descripciones de los 43 drills reescritos a lenguaje de jugador (terminologia
    tecnica consistente — `boast`, `drop`, `lob`, `nick`, `tin`, glosada en su
    primer uso; se retiran `RSA`, "chapa" y "game"), sin tocar `category`,
@@ -1407,10 +1404,11 @@ Deuda menor asociada: `OPTIMIZATION_AND_COSTS.md` proyecta costos de la era
 Gemini y subestima el Plan Builder en cerca de un orden de magnitud (medido:
 ~$0.029 por semana generada). Corregirlo antes de fijar el precio del piloto.
 
-Estado ambiguo a verificar: `docs/superpowers/plans/2026-07-23-plan-cycle-closure.md`
-tiene 53 checkboxes sin marcar, pero el codigo existe con tests
-(`closePlanCycle.ts`, `deletePlanCycle.ts`, `CycleHistory.tsx`). Confirmar si
-quedo terminado o a medias antes de construir encima.
+Estado ambiguo **resuelto (2026-08-06)**: el cierre de ciclo del Plan Builder
+esta implementado. El plan tenia 53 checkboxes sin marcar porque se ejecuto via
+PR agentico (#10, mergeado el 2026-07-24) y nadie los tildo; el codigo y sus
+tests existen (`closePlanCycle.ts`, `deletePlanCycle.ts`, `CycleHistory.tsx`,
+`CycleHistory.test.tsx`). Se puede construir encima. Plan retirado.
 
 ## Que Hacer Primero
 

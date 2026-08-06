@@ -1,8 +1,8 @@
 # Smoke en dev — Conversaciones del chat
 
 Fecha: 2026-07-26
-Plan: `docs/superpowers/plans/2026-07-26-chat-conversations.md`
-Spec: `docs/superpowers/specs/2026-07-26-chat-conversations-design.md`
+Plan: el plan retirado (historial en git)
+Spec: el spec retirado (historial en git)
 
 **Migraciones: ninguna.** Dexie sigue en **v18**, no hay SQL nuevo y el backup no
 sube de versión. Si durante el smoke aparece un prompt de upgrade de Dexie o un

@@ -12,7 +12,7 @@
 
 ### 1.1 Punto de partida
 
-El plan `docs/superpowers/plans/2026-07-16-week-creator-latency-plan.md` tenía las Fases 0–4 implementadas y verificadas localmente. **No quedaba desarrollo pendiente**: todos los criterios de salida eran empíricos (faltaba muestra), no de código.
+El plan de latencia de `week_creator` (retirado tras el cierre; historial en git) tenía las Fases 0–4 implementadas y verificadas localmente. **No quedaba desarrollo pendiente**: todos los criterios de salida eran empíricos (faltaba muestra), no de código.
 
 ### 1.2 Loadtest parametrizado por escenarios (implementado, TDD)
 

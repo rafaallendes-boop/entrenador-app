@@ -1,7 +1,7 @@
 # Plan Builder — smoke de rotación coordinada
 
 Fecha de la corrida: **2026-07-30**. Cierra la Task 12 del plan
-`docs/superpowers/plans/2026-07-30-plan-builder-rotation-coordinated.md`.
+el plan retirado (historial en git).
 
 ## Procedencia
 

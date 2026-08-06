@@ -21,7 +21,7 @@ driver.
 | Costo estimado | US$0,92 (`estimated_cost_usd`, no facturación observada) |
 
 Control del que se calibra la penalización de reparación de `quality_version = 2`
-(spec `2026-07-25-plan-builder-loadtest-and-quality-v2-activation.md`, §3.7-§3.9).
+(spec de la Entrega 2, §3.7-§3.9; retirado tras el cierre, historial en git).
 
 Se generó con `quality_version = 1` —el flip a v2 ocurre después— así que su
 `variant_id` lleva `q1`. Por eso el guard de procedencia compara el **request

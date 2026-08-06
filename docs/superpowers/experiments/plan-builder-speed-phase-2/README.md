@@ -2,7 +2,7 @@
 
 **Ejecutada:** 2026-07-27
 **Spec:** `docs/superpowers/specs/2026-07-26-plan-builder-speed-phase-2-design.md`
-**Plan:** `docs/superpowers/plans/2026-07-26-plan-builder-speed-phase-2.md`
+**Plan:** el plan retirado (historial en git)
 
 ## Veredicto
 
