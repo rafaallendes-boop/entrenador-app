@@ -4,6 +4,7 @@ Actualizado: 2026-08-05
 
 Base de contraste:
 
+- **Superseries de fuerza implementadas y desplegadas (2026-08-05, `49ab6a8`…`faf70f4`):** ver §23. Estructura real y editable en vez de prefijos `A1/A2` en `notes`, con normalizador aislado, sort por unidades, roles group-aware y política determinista cableada en chat y Plan Builder. Sin migraciones. Pendiente solo la verificación manual post-deploy, que no cuesta API.
 - **Consentimiento in-app versionado activado en producción (2026-08-03, `c451808`…`e59b85f`):** `017_user_consents.sql` aplicada, `VITE_CONSENT_GATE=true` y `CONSENT_GATE_ENABLED=true`. El smoke real confirmó el gate general, la aceptación biométrica separada, cuatro filas append-only con las versiones vigentes y timestamps de servidor, y la hidratación remota desde una ventana incógnita: con Dexie vacío verificó Supabase y abrió la app sin reaceptación en ~0,2 s.
 - **Deploy de 2026-08-03 arrastra las cuatro tandas que estaban pendientes:** rotación coordinada del Plan Builder (§16), roles de partido de squash (§17, `9754f78`), identidad `libraryRef`-first de fuerza (§19, `afaac17`) y copy de la librería de fuerza (§20, `33d585f`). Ninguna trae migración. **El smoke del consentimiento quedó cerrado; sigue pendiente registrar la verificación post-deploy de las tandas de motor.**
 - **Fuerza — desacople del nombre, Entregas 1–3 (2026-08-01): commiteadas en `3d480b3`.** Ver §18 — los hallazgos del code review quedaron corregidos y el bloque se cerró sin migraciones.
@@ -35,7 +36,7 @@ Base de contraste:
 
 ## Resumen Ejecutivo
 
-RallyIQ esta en una etapa donde el core ya no es el cuello de botella principal. El motor de planificacion, Plan Builder async, calidad deportiva base, athlete scope foundation, claves naturales locales por atleta, write path remoto seguro para day/week, Athlete-Aware Core, Coach F2-lite Parte 2b, Whoop v1 + Workout Auto-Complete (ambas migraciones aplicadas), Coach Workspace con roster/Planificacion/Biblioteca, y Fase 0 de coaches landing (rutas legales publicas + landing `/coaches` de prelanzamiento) ya estan construidos. La Fase 0 de medicion del Plan Builder tambien esta cerrada: `quality_version = 2` es productiva, el bundle esta desplegado y una corrida real quedo verificada en `plan_generation_jobs` el 2026-07-26. La rotacion coordinada de fuerza y squash ya tiene su smoke `high` pagado y aceptado, y encima de ella viajan los roles de partido de squash; ambas tandas quedaron desplegadas el 2026-08-03 y resta su verificación post-deploy. Biblioteca y Planificacion tienen `015` y deploy aplicados; queda cerrar el smoke autenticado.
+RallyIQ esta en una etapa donde el core ya no es el cuello de botella principal. El motor de planificacion, Plan Builder async, calidad deportiva base, athlete scope foundation, claves naturales locales por atleta, write path remoto seguro para day/week, Athlete-Aware Core, Coach F2-lite Parte 2b, Whoop v1 + Workout Auto-Complete (ambas migraciones aplicadas), Coach Workspace con roster/Planificacion/Biblioteca, y Fase 0 de coaches landing (rutas legales publicas + landing `/coaches` de prelanzamiento) ya estan construidos. La Fase 0 de medicion del Plan Builder tambien esta cerrada: `quality_version = 2` es productiva, el bundle esta desplegado y una corrida real quedo verificada en `plan_generation_jobs` el 2026-07-26. La rotacion coordinada de fuerza y squash ya tiene su smoke `high` pagado y aceptado, y encima de ella viajan los roles de partido de squash; ambas tandas quedaron desplegadas el 2026-08-03 y resta su verificación post-deploy. Biblioteca y Planificacion tienen `015` y deploy aplicados; queda cerrar el smoke autenticado. El 2026-08-05 se sumaron las superseries de fuerza (§23), que cierran la estructura de sesion sin migraciones y quedan a la espera de su verificacion manual.
 
 Lo que queda antes de mostrar/cobrar con confianza se concentra en dos carriles:
 
@@ -51,7 +52,7 @@ Mi lectura como lider tecnico: el cambio principal entre hoy y hace dos dias es 
 
 ## Estado Actual En Una Frase
 
-RallyIQ ya opera multi-atleta en produccion, con Whoop readiness y Workout Auto-Complete operativos (`011`/`012` aplicados), Coach Workspace base (`/coach`) y rutas legales publicas + landing `/coaches` en vivo. El consentimiento in-app también está **activo**: `017` aplicada, ambas flags encendidas y smoke de persistencia/hidratación cerrado. `015` y Biblioteca/Planificacion ya estan desplegadas, `quality_version = 2` quedo verificada en `plan_generation_jobs`, y la rotacion coordinada del Plan Builder ya paso su control `high` pagado.
+RallyIQ ya opera multi-atleta en produccion, con Whoop readiness y Workout Auto-Complete operativos (`011`/`012` aplicados), Coach Workspace base (`/coach`) y rutas legales publicas + landing `/coaches` en vivo. El consentimiento in-app también está **activo**: `017` aplicada, ambas flags encendidas y smoke de persistencia/hidratación cerrado. `015` y Biblioteca/Planificacion ya estan desplegadas, `quality_version = 2` quedo verificada en `plan_generation_jobs`, la rotacion coordinada del Plan Builder ya paso su control `high` pagado, y las sesiones de fuerza soportan superseries reales de punta a punta.
 
 ## Porcentaje De Avance
 
@@ -643,6 +644,127 @@ Rollout de `018`:
 5. Si hay pérdida material o impacto de latencia, escalar al endpoint dedicado
    antes de confiar en los agregados.
 6. ⏳ Recién entonces poblar `MODEL_PRICES` y agregar la sección medida del chat.
+
+### 23. Superseries de fuerza (2026-08-05, `49ab6a8`…`faf70f4`)
+
+Las superseries dejan de ser una convención de texto libre en `notes` y pasan a
+ser estructura real: editables a mano y generables por el motor determinista.
+Sin migraciones — Dexie sigue en v19 y Supabase no cambia, porque el campo viaja
+dentro de `sessions.data`, que ya es `jsonb`.
+
+**Modelo.** Un campo opcional `supersetGroup` (id opaco) sobre una lista de
+ejercicios que **sigue siendo plana y sigue siendo la única fuente de verdad**.
+No hay estructura anidada, así que ningún consumidor existente necesita
+enterarse. `supersetGroups.ts` corrige tags y rondas **sin reordenar, insertar
+ni borrar** —eso mantiene intactos los contratos posicionales de fuerza— con
+tres reglas en orden fijo: contigüidad, cardinalidad, rondas. El orden importa y
+queda congelado por el caso `A, X, A, A`, donde el primer segmento reserva el id
+aunque después se disuelva por singleton, así que el segundo también lo pierde.
+
+**Persistencia.** Serializers, plantillas y export/import propagan el campo.
+Todo borde de deserialización pasa por el normalizador **completo**, no solo por
+el saneador de id: un backup puede traer contigüidad rota, un singleton o `sets`
+divergentes, y ninguna de esas tres cosas la arregla sanear el id.
+Materializar una plantilla **re-emite** los ids por aplicación, para que
+aplicarla dos veces el mismo día no produzca dos segmentos con el mismo id que
+el normalizador disolvería; import/export normal los conserva.
+
+**Orden.** El sort de fuerza ordena **unidades** con el mismo comparador
+evaluado sobre el líder, y tras agrupar no vuelve a correr ningún sort
+individual. Una sesión sin grupos ordena exactamente igual que antes: el
+snapshot de paridad se congeló contra el código previo y se verificó revirtiendo
+el módulo a HEAD antes de tocarlo.
+
+**Roles.** El contrato de roles es group-aware: un seguidor nunca es elegible
+para `main_lift`. Un core o un power dentro de un grupo **conservan** su rol, así
+que la regla de seguidor solo bloquea la elegibilidad y no abre un agujero de
+exención. El conjunto contable que alimenta `qualityReview` y `countRepairsV2`
+no se mueve al agrupar accesorios.
+
+**Política determinista.** Cuatro reglas con prioridad fija y reserva por
+ejercicio —circuito de zona media sobre la cohorte de series más grande, main
+lift + pliométrico, power olímpico + pull accesorio, push accesorio + pull
+accesorio— y una restricción dura: **solo agrupa candidatos cuyo `sets` ya
+coincide**. Sin ella, la regla de ancla del normalizador convertiría la política
+en un cambio de prescripción y dejaría de ser cierto que únicamente cambia el
+orden y el tag. Los pliométricos van por allowlist explícita de ids, igual que
+los drills competitivos de squash: `intensityType: 'power'` abarca desde el
+clean hasta la bici de asalto y no sirve como predicado. El reflow conserva el
+orden relativo de los anclajes, así que la identidad del `main_lift` no se
+mueve; hay un test de propiedad sobre las rotaciones del pool que lo fija.
+
+**Modo.** `shouldApplySupersetPolicy` es total: un contexto incompleto o una
+fase fuera de dominio devuelven `off`, que es el modo seguro. Usa solo las tres
+señales comparables entre chat y Plan Builder (`phase`, `sportProfile`,
+`sessionDurationMin`); `fatigueLevel`, `experienceLevel` y `recentExercises`
+quedan excluidas porque en el chat son constantes hardcodeadas y usarlas
+divergiría los dos caminos en silencio. Más `intent`, de **tres** estados.
+
+**Cableado.** Dos puntos. En el chat, `actionPostProcessor.ts`, con las señales
+tal como vienen y sin los defaults del selector de ejercicios, que rellenan fase
+y duración ausentes y anularían ese resguardo. En el Plan Builder, **un solo**
+punto —al final de `normalizeStrengthSessions`, después de toda la rotación y
+sustitución— y con la fase **cruda**: `mapStrengthPhase` convierte `transition`
+en `base` y dejaría una semana de transición elegible para `full`.
+
+**Prompt.** Se retiró la regla de etiquetado `A1/A2`, que comunicaba supersets
+implícitos sin cambio de schema. El normalizador de respuestas no incluye
+`supersetGroup` en su allowlist, así que **el modelo no puede emitir identidad
+de grupo** — mismo precedente que `libraryRef` en §19.
+
+**UI.** Un riel izquierdo con corchete, el mismo lenguaje en las dos
+superficies. El checklist muestra `A · Superserie · 4 rondas` y renderiza el
+segmento entero en el bloque visual de su líder, así que un grupo que cruza
+bloques nunca se parte. El editor agrupa por costura entre tarjetas, arrastra la
+unidad completa al mover un líder, reordena un seguidor solo dentro de su grupo
+y asigna un id nuevo al segmento derecho al cortar. El editor **no** normaliza
+mientras se edita —un grupo de uno en construcción es un estado intermedio
+legítimo— y normaliza al guardar.
+
+**Code review.** Tres hallazgos confirmados y corregidos.
+
+1. La auditoría del corpus usaba `'Remo en maquina'`, que **no resuelve** contra
+   el catálogo (rol `unknown`, bloque `other`). El escenario de squash quedaba
+   sin ningún pull accesorio, así que el snapshot congelaba un
+   `push_pull → no_eligible_partner` producido por el fixture y no por la
+   política, y esa regla no estaba ejercitada en positivo en todo el corpus.
+   Corregido a `'Remo con pecho apoyado'` y, sobre todo, **cerrado con un guard**
+   que exige que todo el corpus resuelva contra el catálogo vivo.
+2. El resumen de cabecera de `SessionCard` aparecía en los cuatro tipos de
+   sesión con ejercicios, no solo en fuerza, y decía «1 ejercicios». Acotado a
+   fuerza y con singular correcto.
+3. **`prefersSupersets` ignoraba el rechazo explícito.** Era un booleano, y
+   `false` significaba a la vez «no lo mencionó» y «lo rechazó». Como la
+   preferencia solo podía subir un nivel y nunca bajar, un contexto que ya
+   resolvía `permissive` por fase y duración agrupaba igual: «armame la sesión
+   del lunes sin superseries» a 60 min en fase base devolvía el circuito de zona
+   media armado. Pasó a un `intent` de tres estados —`undefined`, `'requested'`,
+   `'declined'`— donde el rechazo corta en `off` **antes que cualquier otra
+   regla**, incluida la validación de contexto, porque «sin superseries»
+   significa lo mismo con o sin fase conocida. Es un defecto del diseño del
+   plan, no una desviación de la implementación: la detección de negaciones ya
+   existía, pero solo servía para no leer «sin superseries» como una petición
+   *de* superseries. El oracle de la tabla total pasó de 252 a 378
+   combinaciones.
+
+Verificado: **372 archivos / 2900 tests**, lint, build y `git diff --check`
+verdes. Spec en
+`docs/superpowers/specs/2026-08-05-strength-supersets-design.md` y plan en
+`docs/superpowers/plans/2026-08-05-strength-supersets.md`.
+
+**Pendiente: verificación manual post-deploy.** No cuesta API y son seis pasos
+con una sesión real: (1) una sesión de fuerza vieja sin grupos se ve igual que
+antes; (2) crear una superserie a mano, guardar y recargar; (3) guardarla como
+plantilla y aplicarla dos veces el mismo día, confirmando que los dos grupos son
+independientes; (4) exportar backup, borrar datos locales, importar y confirmar
+que los grupos vuelven; (5) pedirle al chat una sesión «en superseries»;
+(6) pedirle una «sin superseries» a 60 min en fase base y confirmar que **no**
+agrupa.
+
+**Fuera de alcance**, declarado en el spec §2: carga por serie, descanso entre
+rondas, tríos automáticos, backfill de sesiones existentes, limpieza de
+prefijos `A1/A2` históricos, superseries fuera de fuerza e `intent` en Plan
+Builder.
 
 ### Producto Publico Y Marca
 
@@ -1260,6 +1382,11 @@ dificultad.
    commiteada (`afaac17`) y copy de la libreria commiteado en este bloque.
    Los cuatro productores deterministas construyen por `id` y cada nombre
    anterior vive en `aliases` para el contenido legacy sin ref.
+
+   **Estructura de sesion: superseries entregadas (§23, 2026-08-05).** Es lo
+   que faltaba para que una sesion de fuerza se lea como la escribe un
+   entrenador y no como una lista plana. Cierra tambien la deuda de los
+   prefijos `A1/A2`, que el prompt pedia y ningun consumidor interpretaba.
 5. **Analisis de entrenamientos con Whoop.** Superficie nueva sobre datos que ya
    estan locales (readiness + workouts). Mantener el contrato vigente: contexto
    objetivo y consentido, sin diagnostico ni ajuste automatico.
@@ -1306,7 +1433,8 @@ Orden recomendado (Athlete-Aware Core + Coach F2-lite Parte 2b + Whoop v1/Workou
    `squashFinisherPreservedCount` / `squashStandaloneMatchCount` contra lo
    esperado, y de paso confirmar que los nombres nuevos de la libreria de fuerza
    aparecen en la UI sin romper sesiones/plantillas viejas (que resuelven por
-   `aliases`).
+   `aliases`). **Aprovechar la misma sesion real para los seis pasos de
+   verificacion de superseries (§23)**, que no cuestan API y comparten setup.
 3. **Smoke autenticado de Biblioteca y Planificacion** (pendiente §11 desde el
    deploy de `015`): es la deuda de verificacion mas vieja del proyecto y sale
    casi gratis si ya hay una sesion real abierta para el item 2.
@@ -1317,7 +1445,8 @@ Orden recomendado (Athlete-Aware Core + Coach F2-lite Parte 2b + Whoop v1/Workou
 6. **Primer cliente acompanado** (ejecutar en paralelo con abogado): elegir 1 candidato, onboarding 1:1, generar semana 1, iniciar protocolo de revision semanal.
 
 **Siguiente bloque de desarrollo recomendado:** ninguno de motor. Squash y
-fuerza quedaron cerrados de punta a punta —seleccion, carga, identidad y copy—,
+fuerza quedaron cerrados de punta a punta —seleccion, carga, identidad, copy y,
+desde el 2026-08-05, estructura de sesion via superseries (§23)—,
 y el consentimiento ya esta escrito, activo y smokeado, asi que lo que separa el
 producto de cobrarle a alguien es legal y operacional, no codigo. Si aparece
 tiempo de desarrollo libre, los dos candidatos con mejor relacion valor/riesgo
