@@ -118,15 +118,12 @@ function makeProfile(): AthleteProfile {
 }
 
 describe('strength prompt structure', () => {
-  it('instructs strength exercises to carry A/B/C/D/E block labels in notes', () => {
+  it('does not encode supersets as A1/A2 prefixes in exercise notes', () => {
     const rules = buildStrengthRulesSection()
 
-    expect(rules).toContain('Etiquetado por bloques')
-    expect(rules).toContain('A1/A2')
-    expect(rules).toContain('B1/B2')
-    expect(rules).toContain('C1/C2')
-    expect(rules).toContain('D para fuerza secundaria')
-    expect(rules).toContain('E para coordinacion/footwork')
+    expect(rules).not.toContain('Etiquetado por bloques')
+    expect(rules).not.toMatch(/\b[ABC][12]\b/)
+    expect(rules).not.toContain('despues del prefijo de bloque')
   })
 
   it('limits strength technical notes to the approved cue shortlist', () => {

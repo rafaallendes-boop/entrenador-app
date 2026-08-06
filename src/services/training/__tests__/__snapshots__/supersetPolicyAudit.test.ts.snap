@@ -1,0 +1,108 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`auditoria de la politica de superseries > produce un reporte legible de grupos y descartes 1`] = `
+[
+  {
+    "discarded": [
+      {
+        "members": [
+          "Bici de asalto 30/30",
+        ],
+        "reason": "blocked_kind",
+        "rule": "eligibility",
+      },
+    ],
+    "finalOrder": [
+      "Plancha frontal *",
+      "Pallof press *",
+      "Peso muerto con trap bar",
+      "Press vertical *",
+      "Remo con pecho apoyado *",
+      "Bici de asalto 30/30",
+    ],
+    "groups": [
+      {
+        "members": [
+          "Plancha frontal",
+          "Pallof press",
+        ],
+        "rule": "core_circuit",
+      },
+      {
+        "members": [
+          "Press vertical",
+          "Remo con pecho apoyado",
+        ],
+        "rule": "push_pull",
+      },
+    ],
+    "label": "squash sport_support 60min",
+    "mode": "permissive",
+  },
+  {
+    "discarded": [],
+    "finalOrder": [
+      "Plancha lateral *",
+      "Dead bug — control de tronco *",
+      "Clean *",
+      "Dominadas *",
+      "Sentadilla trasera con barra *",
+      "Salto al cajon *",
+    ],
+    "groups": [
+      {
+        "members": [
+          "Plancha lateral",
+          "Dead bug — control de tronco",
+        ],
+        "rule": "core_circuit",
+      },
+      {
+        "members": [
+          "Sentadilla trasera con barra",
+          "Salto al cajon",
+        ],
+        "rule": "main_lift_plyo",
+      },
+      {
+        "members": [
+          "Clean",
+          "Dominadas",
+        ],
+        "rule": "olympic_pull",
+      },
+    ],
+    "label": "strength_primary 70min con potencia",
+    "mode": "full",
+  },
+  {
+    "discarded": [
+      {
+        "members": [
+          "Plancha frontal",
+          "Pallof press",
+        ],
+        "reason": "sets_mismatch",
+        "rule": "core_circuit",
+      },
+      {
+        "members": [
+          "Peso muerto con trap bar",
+          "Salto al cajon",
+        ],
+        "reason": "sets_mismatch",
+        "rule": "main_lift_plyo",
+      },
+    ],
+    "finalOrder": [
+      "Plancha frontal",
+      "Pallof press",
+      "Peso muerto con trap bar",
+      "Salto al cajon",
+    ],
+    "groups": [],
+    "label": "sets divergentes",
+    "mode": "full",
+  },
+]
+`;

@@ -7,6 +7,7 @@ import {
 } from '../training/strengthExerciseProposal'
 import { getTargetExerciseDensity, selectStrengthSession, type StrengthContext, type StrengthPhase, type StrengthSportProfile } from '../training/strengthSelector'
 import { enhanceStrengthSessionExercises, resolveStrengthExerciseBlock } from '../training/strengthSessionStructure'
+import { detectSupersetPreference, planSupersetGroups, shouldApplySupersetPolicy } from '../training/supersetPolicy'
 import type { CoachNormalizedResponse } from './types'
 
 const WEEKDAYS = [
@@ -116,7 +117,7 @@ export function postProcessCoachActions(
       : dateAligned
     const requestAligned = alignSingleSessionSportToRequest(weekAligned, normalizedMessage, context)
     const runningAligned = completeRunningZone2Details(requestAligned, actionIntentText)
-    const loadAligned = completeStrengthLoads(runningAligned, context)
+    const loadAligned = completeStrengthLoads(runningAligned, context, actionIntentText)
 
     if (loadAligned.type === 'add_session' && adjustmentIntent && affectedSession) {
       return convertAddSessionToUpdateSession(loadAligned, affectedSession)
@@ -777,22 +778,30 @@ function buildFallbackActionMessage(actions: CoachAction[], originalMessage: str
   return originalMessage || 'Te propongo este cambio:'
 }
 
-function completeStrengthLoads(action: CoachAction, context: ChatContext): CoachAction {
+function completeStrengthLoads(
+  action: CoachAction,
+  context: ChatContext,
+  actionIntentText: string,
+): CoachAction {
   const profile = context.athleteProfile?.strengthProfile
   if ((action.type === 'add_session' || action.type === 'update_session') && action.exercises) {
     const shouldDensify = action.type === 'add_session'
       ? action.sessionType === 'strength'
       : action.newType === 'strength' || action.exercises.some((exercise) => resolveStrengthExercise(exercise)?.definition)
+    const durationMin = action.type === 'add_session' ? action.durationMin : action.newDurationMin
+    const enriched = shouldDensify
+      ? enrichStrengthExercises(action.exercises, {
+          durationMin,
+          strengthProfile: profile,
+          context,
+          objective: action.type === 'add_session' ? action.objective : action.newObjective,
+        })
+      : action.exercises
     return {
       ...action,
       exercises: shouldDensify
-        ? enrichStrengthExercises(action.exercises, {
-            durationMin: action.type === 'add_session' ? action.durationMin : action.newDurationMin,
-            strengthProfile: profile,
-            context,
-            objective: action.type === 'add_session' ? action.objective : action.newObjective,
-          })
-        : action.exercises,
+        ? applySupersetPolicy(enriched, context, actionIntentText, durationMin)
+        : enriched,
     }
   }
 
@@ -803,12 +812,17 @@ function completeStrengthLoads(action: CoachAction, context: ChatContext): Coach
         session.sessionType === 'strength' && session.exercises
           ? {
               ...session,
-              exercises: enrichStrengthExercises(session.exercises, {
-                durationMin: session.durationMin,
-                strengthProfile: profile,
+              exercises: applySupersetPolicy(
+                enrichStrengthExercises(session.exercises, {
+                  durationMin: session.durationMin,
+                  strengthProfile: profile,
+                  context,
+                  objective: session.objective,
+                }),
                 context,
-                objective: session.objective,
-              }),
+                actionIntentText,
+                session.durationMin,
+              ),
             }
           : session
       )),
@@ -816,6 +830,26 @@ function completeStrengthLoads(action: CoachAction, context: ChatContext): Coach
   }
 
   return action
+}
+
+function applySupersetPolicy(
+  exercises: CoachExerciseProposal[] | undefined,
+  context: ChatContext,
+  actionIntentText: string,
+  sessionDurationMin?: number,
+): CoachExerciseProposal[] | undefined {
+  if (!exercises || exercises.length === 0) return exercises
+
+  const phase = context.athleteProfile?.macroPlan?.currentPhase
+  const primarySport = context.athleteProfile?.sportContext?.primarySport
+  const mode = shouldApplySupersetPolicy({
+    phase,
+    sportProfile: primarySport ? deriveActionStrengthSportProfile(primarySport) : undefined,
+    sessionDurationMin,
+    prefersSupersets: detectSupersetPreference(actionIntentText),
+  })
+
+  return planSupersetGroups(exercises, mode).exercises
 }
 
 function alignSingleSessionSportToRequest(

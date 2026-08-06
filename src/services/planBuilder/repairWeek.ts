@@ -43,6 +43,7 @@ import {
   type StrengthSportProfile,
 } from '../training/strengthSelector'
 import { enhanceStrengthSessionExercises, resolveStrengthExerciseBlock } from '../training/strengthSessionStructure'
+import { planSupersetGroups, shouldApplySupersetPolicy } from '../training/supersetPolicy'
 import { type ExperienceLevel } from '../training/exerciseLibrary'
 import { getStrengthExerciseKey, toStrengthProposal } from '../training/strengthExerciseProposal'
 import { selectMobilitySession, type MobilityPhase } from '../training/mobilitySelector'
@@ -1647,6 +1648,15 @@ function normalizeStrengthSessions(
       durationMin: session.durationMin,
       strengthProfile: context.profile.strengthProfile,
     })
+    if (session.exercises) {
+      const mode = shouldApplySupersetPolicy({
+        phase: context.week.phase,
+        sportProfile: deriveStrengthSportProfile(context),
+        sessionDurationMin: session.durationMin,
+        prefersSupersets: false,
+      })
+      session.exercises = planSupersetGroups(session.exercises, mode).exercises
+    }
     if (currentBlockId != null && (applyPolicy || correctiveSessions.has(sessionKeyOf(session)))) {
       session.metadata = {
         ...(session.metadata ?? {}),
