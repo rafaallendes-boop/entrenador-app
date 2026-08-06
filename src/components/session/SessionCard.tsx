@@ -1,6 +1,6 @@
-import { Clock, Flame, ChevronDown, ChevronUp, Trash2, Wind } from 'lucide-react'
+import { Clock, Flame, ChevronDown, ChevronUp, Layers, Trash2, Wind } from 'lucide-react'
 import { useState } from 'react'
-import type { Session, SessionStatus } from '../../types'
+import type { Exercise, Session, SessionStatus } from '../../types'
 import { SESSION_TYPE_CONFIG, SQUASH_SUBTYPE_LABELS } from '../../constants/sessionTypes'
 import { formatDuration } from '../../utils/format'
 import { getHeartRateTargetDisplay } from '../../utils/heartRate'
@@ -10,6 +10,7 @@ import ExerciseChecklist from './ExerciseChecklist'
 import { useTrainingStore } from '../../store/useTrainingStore'
 import { normalizeGeneratedProtocol } from '../../services/trainingProtocols'
 import { formatMobilityFocusAreas, normalizeMobilityTargetStructure } from '../../services/training/mobilitySessionLibrary'
+import { resolveSupersetLayout } from '../../services/training/supersetGroups'
 
 const STATUS_CONFIG: Record<SessionStatus, { label: string; badge: string; icon: string }> = {
   planned:   { label: 'Planificado', badge: 'bg-surface-raised text-ink-faint border border-surface-border',       icon: '○' },
@@ -45,6 +46,15 @@ export const SQUASH_BLOCKS_DURATION_GUIDANCE =
   'La duracion total de la sesion es la referencia principal. Los ejercicios dentro de cada bloque son orientativos.'
 export const SQUASH_DRILLS_DURATION_GUIDANCE =
   'La duracion total de la sesion es la referencia principal. Los drills listados sirven como guia.'
+
+function summarizeExercises(exercises: Exercise[]): string {
+  const groupCount = resolveSupersetLayout(exercises)
+    .filter((segment) => segment.groupId != null)
+    .length
+  const base = `${exercises.length} ${exercises.length === 1 ? 'ejercicio' : 'ejercicios'}`
+  if (groupCount === 0) return base
+  return `${base} · ${groupCount} ${groupCount === 1 ? 'superserie' : 'superseries'}`
+}
 
 function WhoopSyncBadge() {
   return (
@@ -228,6 +238,15 @@ export default function SessionCard({ session, compact = false, onDelete }: Sess
               <span className="text-xs text-pink-300">{formatMobilityFocusAreas(session.mobilityDetails?.focusAreas)}</span>
             )}
             {session.opponent && <span className="text-xs text-ink-faint">vs {session.opponent}</span>}
+            {/* Solo fuerza: es el unico tipo donde existen grupos, y en squash o
+                movilidad la cabecera ya resume el contenido con sus propias
+                señales (subtipo, areas de foco). */}
+            {hasExercises && session.type === 'strength' && (
+              <span className="flex items-center gap-1 text-xs text-ink-muted">
+                <Layers size={11} />
+                {summarizeExercises(session.exercises!)}
+              </span>
+            )}
           </div>
         </div>
         <div className="flex flex-shrink-0 items-center gap-2 self-start md:self-center">

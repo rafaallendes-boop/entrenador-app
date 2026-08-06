@@ -2,6 +2,7 @@ import { Check } from 'lucide-react'
 import type { Exercise, Session, WarmupSet } from '../../types'
 import { useTrainingStore } from '../../store/useTrainingStore'
 import { resolveStrengthExerciseBlock } from '../../services/training/strengthSessionStructure'
+import { describeSupersetSegment, resolveSupersetLayout, type SupersetSegment } from '../../services/training/supersetGroups'
 
 interface ExerciseChecklistProps {
   sessionId: string
@@ -27,11 +28,21 @@ const BLOCK_TONE: Record<DisplayBlock, string> = {
 
 const BLOCK_ORDER: DisplayBlock[] = ['core', 'strength', 'cardio', 'mobility']
 
+interface RenderSection {
+  block: DisplayBlock | undefined
+  segments: SupersetSegment<Exercise>[]
+}
+
 export default function ExerciseChecklist({ sessionId, exercises, sessionType }: ExerciseChecklistProps) {
   const toggleExercise = useTrainingStore(s => s.toggleExercise)
-  const sections = sessionType === 'strength'
+  const sections: RenderSection[] = sessionType === 'strength'
     ? groupStrengthExercises(exercises)
-    : [{ block: undefined, exercises }]
+    : [{
+        block: undefined,
+        segments: exercises.length > 0 ? [{ groupId: undefined, members: exercises }] : [],
+      }]
+
+  let groupLetterIndex = 0
 
   return (
     <div className="mt-3 space-y-3">
@@ -41,13 +52,31 @@ export default function ExerciseChecklist({ sessionId, exercises, sessionType }:
             <p className="mb-2 text-[10px] font-medium uppercase tracking-wider">{BLOCK_LABEL[section.block]}</p>
           )}
           <div className="space-y-3">
-            {section.exercises.map(ex => (
-              <ExerciseRow
-                key={ex.id}
-                exercise={ex}
-                onToggle={() => toggleExercise(sessionId, ex.id)}
-              />
-            ))}
+            {section.segments.map((segment) => {
+              const letter = segment.groupId ? String.fromCharCode(65 + groupLetterIndex++) : undefined
+              return (
+                <div
+                  key={segment.groupId ?? segment.members[0]!.id}
+                  className={segment.groupId
+                    ? 'space-y-2 border-l-2 border-brand/40 pl-3'
+                    : 'space-y-3'}
+                >
+                  {letter && (
+                    <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-brand-light/90">
+                      {`${letter} · ${describeSupersetSegment(segment.members.length)} · ${segment.members[0]!.sets} rondas`}
+                    </p>
+                  )}
+                  {segment.members.map(ex => (
+                    <ExerciseRow
+                      key={ex.id}
+                      exercise={ex}
+                      grouped={segment.groupId != null}
+                      onToggle={() => toggleExercise(sessionId, ex.id)}
+                    />
+                  ))}
+                </div>
+              )
+            })}
           </div>
         </div>
       ))}
@@ -55,7 +84,7 @@ export default function ExerciseChecklist({ sessionId, exercises, sessionType }:
   )
 }
 
-function ExerciseRow({ exercise: ex, onToggle }: { exercise: Exercise; onToggle: () => void }) {
+function ExerciseRow({ exercise: ex, grouped, onToggle }: { exercise: Exercise; grouped?: boolean; onToggle: () => void }) {
   return (
     <div className="space-y-1">
       <button
@@ -75,7 +104,7 @@ function ExerciseRow({ exercise: ex, onToggle }: { exercise: Exercise; onToggle:
           </span>
         </div>
         <div className="text-xs text-ink-muted flex-shrink-0">
-          {formatTargetSet(ex)}
+          {grouped ? formatGroupedTargetSet(ex) : formatTargetSet(ex)}
         </div>
       </button>
       {ex.warmupSets && ex.warmupSets.length > 0 && (
@@ -92,17 +121,19 @@ function ExerciseRow({ exercise: ex, onToggle }: { exercise: Exercise; onToggle:
   )
 }
 
-function groupStrengthExercises(exercises: Exercise[]): Array<{ block: DisplayBlock; exercises: Exercise[] }> {
-  const groups = new Map<DisplayBlock, Exercise[]>()
+function groupStrengthExercises(exercises: Exercise[]): RenderSection[] {
+  const segments = resolveSupersetLayout(exercises)
+  const byBlock = new Map<DisplayBlock, SupersetSegment<Exercise>[]>()
 
-  for (const exercise of exercises) {
-    const block = toDisplayBlock(resolveStrengthExerciseBlock(exercise))
-    groups.set(block, [...(groups.get(block) ?? []), exercise])
+  for (const segment of segments) {
+    // El segmento entero va al bloque de su LIDER: nunca se parte.
+    const block = toDisplayBlock(resolveStrengthExerciseBlock(segment.members[0]!))
+    byBlock.set(block, [...(byBlock.get(block) ?? []), segment])
   }
 
   return BLOCK_ORDER
-    .map((block) => ({ block, exercises: groups.get(block) ?? [] }))
-    .filter((section) => section.exercises.length > 0)
+    .map((block) => ({ block, segments: byBlock.get(block) ?? [] }))
+    .filter((section) => section.segments.length > 0)
 }
 
 function toDisplayBlock(group: ReturnType<typeof resolveStrengthExerciseBlock>): DisplayBlock {
@@ -121,6 +152,22 @@ function formatTargetSet(ex: Exercise): string {
   if (ex.targetRpe != null) {
     return `${base} · RPE ${ex.targetRpe}`
   }
+  return base
+}
+
+function formatGroupedTargetSet(ex: Exercise): string {
+  // El editor persiste `reps` como string incluso cuando es un numero. Esos
+  // targets siguen necesitando la unidad visible, mientras que una duracion o
+  // una instruccion compuesta ("30s", "8/lado") ya se leen por si solas.
+  const rawReps = String(ex.reps).trim()
+  const base = typeof ex.reps === 'number' || /^\d+(?:[.,]\d+)?(?:\s*[-–]\s*\d+(?:[.,]\d+)?)?$/.test(rawReps)
+    ? `${rawReps} reps`
+    : rawReps
+  if (ex.weight != null) {
+    const pct = ex.targetPercent1RM != null ? ` (${Math.round(ex.targetPercent1RM)}% 1RM)` : ''
+    return `${base} · ${ex.weight}kg${pct}`
+  }
+  if (ex.targetRpe != null) return `${base} · RPE ${ex.targetRpe}`
   return base
 }
 

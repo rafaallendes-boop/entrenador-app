@@ -58,6 +58,52 @@ describe('SessionCard exercises', () => {
 
     expect(screen.queryByText('Drill de pared')).not.toBeNull()
   })
+
+  it('resume ejercicios y superseries de una sesion de fuerza en la cabecera', () => {
+    render(
+      <SessionCard
+        session={makeSession({
+          type: 'strength',
+          exercises: [
+            { id: '1', name: 'Clean', sets: 4, reps: 3, completed: false, supersetGroup: 'g1' },
+            { id: '2', name: 'Dominadas', sets: 4, reps: 8, completed: false, supersetGroup: 'g1' },
+            { id: '3', name: 'Plancha frontal', sets: 3, reps: '30s', completed: false },
+          ],
+        })}
+      />,
+    )
+
+    expect(screen.getByText('3 ejercicios · 1 superserie')).not.toBeNull()
+  })
+
+  it('usa singular cuando hay un solo ejercicio y ningun grupo', () => {
+    render(
+      <SessionCard
+        session={makeSession({
+          type: 'strength',
+          exercises: [{ id: '1', name: 'Clean', sets: 4, reps: 3, completed: false }],
+        })}
+      />,
+    )
+
+    expect(screen.getByText('1 ejercicio')).not.toBeNull()
+  })
+
+  it('no resume ejercicios fuera de fuerza', () => {
+    render(
+      <SessionCard
+        session={makeSession({
+          type: 'squash',
+          exercises: [
+            { id: 'e1', name: 'Drill de pared', sets: 3, reps: '10', completed: false },
+            { id: 'e2', name: 'Drill cruzado', sets: 3, reps: '10', completed: false },
+          ],
+        })}
+      />,
+    )
+
+    expect(screen.queryByText(/\d+ ejercicios?/)).toBeNull()
+  })
 })
 
 describe('SessionCard squash match badges', () => {

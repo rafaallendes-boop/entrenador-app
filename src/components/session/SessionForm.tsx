@@ -1,5 +1,5 @@
 import { useRef, useState, type FormEvent } from 'react'
-import { BookOpen, Plus, Trash2, X } from 'lucide-react'
+import { BookOpen, ChevronDown, ChevronUp, Link2, Plus, Trash2, X } from 'lucide-react'
 import { SESSION_TYPE_CONFIG } from '../../constants/sessionTypes'
 import type {
   MatchResult,
@@ -18,6 +18,7 @@ import {
 import type { ExerciseLibraryRef } from '../../types/exerciseLibraryRef'
 import { todayISO } from '../../utils/date'
 import { v4 as uuid } from '../../utils/uuid'
+import { normalizeSupersetGroups } from '../../services/training/supersetGroups'
 import ExerciseLibraryBrowser from './ExerciseLibraryBrowser'
 import ExerciseNameInput from './ExerciseNameInput'
 
@@ -42,6 +43,7 @@ interface ExerciseDraft {
   weight: string
   notes: string
   libraryRef?: ExerciseLibraryRef
+  supersetGroup?: string
   touched: {
     sets: boolean
     reps: boolean
@@ -95,6 +97,80 @@ const optionalNumber = (value: string): number | undefined => {
   return Number.isFinite(parsed) ? parsed : undefined
 }
 
+function leaderIndexOf(exercises: readonly ExerciseDraft[], index: number): number {
+  const groupId = exercises[index]?.supersetGroup
+  if (groupId == null) return index
+  let cursor = index
+  while (cursor > 0 && exercises[cursor - 1]!.supersetGroup === groupId) cursor -= 1
+  return cursor
+}
+
+function unitBoundsOf(
+  exercises: readonly ExerciseDraft[],
+  index: number,
+): { start: number; end: number } {
+  const groupId = exercises[index]?.supersetGroup
+  if (groupId == null) return { start: index, end: index }
+  let start = index
+  let end = index
+  while (start > 0 && exercises[start - 1]!.supersetGroup === groupId) start -= 1
+  while (end < exercises.length - 1 && exercises[end + 1]!.supersetGroup === groupId) end += 1
+  return { start, end }
+}
+
+/**
+ * Los lideres y ejercicios sueltos mueven su unidad completa. Un seguidor solo
+ * cambia de posicion dentro de su grupo y nunca atraviesa sus limites.
+ */
+function reorderSupersetUnits(
+  exercises: readonly ExerciseDraft[],
+  index: number,
+  direction: -1 | 1,
+): ExerciseDraft[] {
+  const { start, end } = unitBoundsOf(exercises, index)
+
+  if (index !== start) {
+    const target = index + direction
+    if (target < start || target > end) return [...exercises]
+    const next = [...exercises]
+    ;[next[index], next[target]] = [next[target]!, next[index]!]
+    return next
+  }
+
+  if (direction === -1) {
+    if (start === 0) return [...exercises]
+    const previous = unitBoundsOf(exercises, start - 1)
+    return [
+      ...exercises.slice(0, previous.start),
+      ...exercises.slice(start, end + 1),
+      ...exercises.slice(previous.start, start),
+      ...exercises.slice(end + 1),
+    ]
+  }
+
+  if (end === exercises.length - 1) return [...exercises]
+  const next = unitBoundsOf(exercises, end + 1)
+  return [
+    ...exercises.slice(0, start),
+    ...exercises.slice(end + 1, next.end + 1),
+    ...exercises.slice(start, end + 1),
+    ...exercises.slice(next.end + 1),
+  ]
+}
+
+function canMoveExercise(
+  exercises: readonly ExerciseDraft[],
+  index: number,
+  direction: -1 | 1,
+): boolean {
+  const { start, end } = unitBoundsOf(exercises, index)
+  if (index !== start) {
+    const target = index + direction
+    return target >= start && target <= end
+  }
+  return direction === -1 ? start > 0 : end < exercises.length - 1
+}
+
 export default function SessionForm({
   initialValues,
   defaultSport,
@@ -143,6 +219,7 @@ export default function SessionForm({
       weight: String(exercise.weight ?? ''),
       notes: exercise.notes ?? '',
       libraryRef: exercise.libraryRef,
+      supersetGroup: exercise.supersetGroup,
       touched: { sets: true, reps: true, weight: true, notes: true },
     })) ?? []
   ))
@@ -198,31 +275,101 @@ export default function SessionForm({
   }
 
   const updateExercise = (id: string, field: EditableExerciseField, value: string) => {
-    setExercises((current) => current.map((exercise) => {
-      if (exercise.id !== id) return exercise
-      if (field === 'name') return { ...exercise, name: value, libraryRef: undefined }
-      return {
-        ...exercise,
-        [field]: value,
-        touched: { ...exercise.touched, [field]: true },
+    setExercises((current) => {
+      const index = current.findIndex((exercise) => exercise.id === id)
+      if (index === -1) return current
+      const target = current[index]!
+
+      if (field === 'sets') {
+        const groupId = target.supersetGroup
+        if (groupId != null && index !== leaderIndexOf(current, index)) return current
+        return current.map((exercise) => (
+          exercise.id === id || (groupId != null && exercise.supersetGroup === groupId)
+            ? { ...exercise, sets: value, touched: { ...exercise.touched, sets: true } }
+            : exercise
+        ))
       }
-    }))
+
+      return current.map((exercise) => {
+        if (exercise.id !== id) return exercise
+        if (field === 'name') return { ...exercise, name: value, libraryRef: undefined }
+        return {
+          ...exercise,
+          [field]: value,
+          touched: { ...exercise.touched, [field]: true },
+        }
+      })
+    })
   }
 
   const applyCatalogEntry = (id: string, entry: CatalogEntry) => {
-    setExercises((current) => current.map((exercise) => {
-      if (exercise.id !== id) return exercise
-      return {
-        ...exercise,
-        name: entry.name,
-        libraryRef: toLibraryRef(entry),
-        sets: exercise.touched.sets
-          ? exercise.sets
-          : entry.defaults.sets !== undefined ? String(entry.defaults.sets) : exercise.sets,
-        reps: exercise.touched.reps ? exercise.reps : entry.defaults.reps ?? exercise.reps,
-        notes: exercise.touched.notes ? exercise.notes : entry.defaults.notes ?? '',
+    setExercises((current) => {
+      const index = current.findIndex((exercise) => exercise.id === id)
+      if (index === -1) return current
+      const target = current[index]!
+      const groupId = target.supersetGroup
+      const isFollower = groupId != null && index !== leaderIndexOf(current, index)
+      const shouldApplyDefaultSets = !target.touched.sets && !isFollower
+        && entry.defaults.sets !== undefined
+      const nextSets = shouldApplyDefaultSets ? String(entry.defaults.sets) : target.sets
+
+      return current.map((exercise) => {
+        if (exercise.id === id) {
+          return {
+            ...exercise,
+            name: entry.name,
+            libraryRef: toLibraryRef(entry),
+            sets: nextSets,
+            reps: exercise.touched.reps ? exercise.reps : entry.defaults.reps ?? exercise.reps,
+            notes: exercise.touched.notes ? exercise.notes : entry.defaults.notes ?? '',
+          }
+        }
+        if (shouldApplyDefaultSets && groupId != null && exercise.supersetGroup === groupId) {
+          return { ...exercise, sets: nextSets }
+        }
+        return exercise
+      })
+    })
+  }
+
+  const groupBoundaryToggle = (index: number) => {
+    setExercises((current) => {
+      if (index <= 0 || index >= current.length) return current
+      const previous = current[index - 1]!
+      const target = current[index]!
+      const joined = target.supersetGroup != null
+        && target.supersetGroup === previous.supersetGroup
+
+      if (!joined) {
+        const left = unitBoundsOf(current, index - 1)
+        const right = unitBoundsOf(current, index)
+        const groupId = previous.supersetGroup ?? uuid()
+        const leaderSets = current[left.start]!.sets
+        return current.map((exercise, exerciseIndex) => (
+          exerciseIndex >= left.start && exerciseIndex <= right.end
+            ? { ...exercise, supersetGroup: groupId, sets: leaderSets }
+            : exercise
+        ))
       }
-    }))
+
+      const groupId = target.supersetGroup!
+      const bounds = unitBoundsOf(current, index)
+      const leftId = index - bounds.start >= 2 ? groupId : undefined
+      const rightId = bounds.end - index + 1 >= 2 ? uuid() : undefined
+
+      return current.map((exercise, exerciseIndex) => {
+        if (exerciseIndex < bounds.start || exerciseIndex > bounds.end) return exercise
+        const nextGroupId = exerciseIndex < index ? leftId : rightId
+        const next = { ...exercise }
+        if (nextGroupId == null) delete next.supersetGroup
+        else next.supersetGroup = nextGroupId
+        return next
+      })
+    })
+  }
+
+  const moveExercise = (index: number, direction: -1 | 1) => {
+    setExercises((current) => reorderSupersetUnits(current, index, direction))
   }
 
   const addFromCatalog = (entry: CatalogEntry) => {
@@ -266,9 +413,10 @@ export default function SessionForm({
           }
         : undefined,
       exercises: showExercises
-        ? exercises
-            .filter((exercise) => exercise.name.trim())
-            .map((exercise) => ({
+        ? (() => {
+            const submitted = exercises
+              .filter((exercise) => exercise.name.trim())
+              .map((exercise) => ({
               id: exercise.id,
               name: exercise.name.trim(),
               sets: Number(exercise.sets) || 3,
@@ -276,7 +424,12 @@ export default function SessionForm({
               weight: optionalNumber(exercise.weight),
               notes: exercise.notes.trim() || undefined,
               libraryRef: exercise.libraryRef,
-            }))
+              ...(type === 'strength' && exercise.supersetGroup != null
+                ? { supersetGroup: exercise.supersetGroup }
+                : {}),
+              }))
+            return type === 'strength' ? normalizeSupersetGroups(submitted) : submitted
+          })()
         : undefined,
     }
 
@@ -482,8 +635,42 @@ export default function SessionForm({
                 </div>
               </div>
               <div className="space-y-3">
-                {exercises.map((exercise, index) => (
-                  <div key={exercise.id} className="space-y-2 rounded-xl bg-surface-raised p-3">
+                {exercises.map((exercise, index) => {
+                  const joinedAbove = type === 'strength'
+                    && exercise.supersetGroup != null
+                    && exercise.supersetGroup === exercises[index - 1]?.supersetGroup
+                  const joinedBelow = type === 'strength'
+                    && exercise.supersetGroup != null
+                    && exercise.supersetGroup === exercises[index + 1]?.supersetGroup
+                  return (
+                  <div key={exercise.id} className="relative">
+                    {/* Riel de grupo: mismo lenguaje que el checklist. Vive en el
+                        envoltorio, no dentro del `space-y-2` de la tarjeta, para
+                        no alterar su ritmo vertical. Se extiende al hueco de la
+                        lista para dibujar una sola linea por grupo. */}
+                    {(joinedAbove || joinedBelow) && (
+                      <span
+                        aria-hidden
+                        className={`absolute left-0 z-10 w-0.5 bg-brand/40 ${joinedAbove ? '-top-3' : 'top-3 rounded-t-full'} ${joinedBelow ? '-bottom-3' : 'bottom-3 rounded-b-full'}`}
+                      />
+                    )}
+                    <div className="space-y-2 rounded-xl bg-surface-raised p-3">
+                    {type === 'strength' && index > 0 && (
+                      <button
+                        type="button"
+                        aria-label={`Agrupar ejercicio ${index + 1} con el anterior`}
+                        aria-pressed={joinedAbove}
+                        onClick={() => groupBoundaryToggle(index)}
+                        className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] uppercase tracking-wide transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-brand/60 ${
+                          joinedAbove
+                            ? 'border-brand text-brand'
+                            : 'border-surface-border text-ink-muted hover:border-brand/50 hover:text-brand-light'
+                        }`}
+                      >
+                        <Link2 size={11} />
+                        Agrupar
+                      </button>
+                    )}
                     <div className="flex gap-2">
                       {catalogEnabled ? (
                         <ExerciseNameInput
@@ -496,16 +683,38 @@ export default function SessionForm({
                       ) : (
                         <input aria-label={`Ejercicio ${index + 1}`} value={exercise.name} onChange={(event) => updateExercise(exercise.id, 'name', event.target.value)} className="flex-1 rounded-lg border bg-surface px-2.5 py-1.5" />
                       )}
-                      <button type="button" aria-label={`Eliminar ejercicio ${index + 1}`} onClick={() => setExercises((current) => current.filter((item) => item.id !== exercise.id))}><Trash2 size={14} /></button>
+                      <div className="flex flex-shrink-0 items-center gap-1">
+                        <button
+                          type="button"
+                          aria-label={`Subir ejercicio ${index + 1}`}
+                          disabled={!canMoveExercise(exercises, index, -1)}
+                          onClick={() => moveExercise(index, -1)}
+                          className="rounded-md p-1 text-ink-muted transition-colors hover:bg-surface hover:text-ink focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-brand/60 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent"
+                        >
+                          <ChevronUp size={14} />
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={`Bajar ejercicio ${index + 1}`}
+                          disabled={!canMoveExercise(exercises, index, 1)}
+                          onClick={() => moveExercise(index, 1)}
+                          className="rounded-md p-1 text-ink-muted transition-colors hover:bg-surface hover:text-ink focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-brand/60 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent"
+                        >
+                          <ChevronDown size={14} />
+                        </button>
+                        <button type="button" aria-label={`Eliminar ejercicio ${index + 1}`} onClick={() => setExercises((current) => current.filter((item) => item.id !== exercise.id))} className="rounded-md p-1 text-ink-muted transition-colors hover:bg-surface hover:text-ink focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-brand/60"><Trash2 size={14} /></button>
+                      </div>
                     </div>
                     <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                      <input aria-label={`Series ${index + 1}`} type="number" value={exercise.sets} onChange={(event) => updateExercise(exercise.id, 'sets', event.target.value)} className="rounded-lg border bg-surface px-2 py-1.5" />
+                      <input aria-label={`Series ${index + 1}`} type="number" value={exercise.sets} readOnly={joinedAbove} title={joinedAbove ? 'Las rondas las define el primer ejercicio del grupo' : undefined} onChange={(event) => updateExercise(exercise.id, 'sets', event.target.value)} className="rounded-lg border bg-surface px-2 py-1.5 read-only:cursor-not-allowed read-only:text-ink-muted" />
                       <input aria-label={`Reps ${index + 1}`} value={exercise.reps} onChange={(event) => updateExercise(exercise.id, 'reps', event.target.value)} className="rounded-lg border bg-surface px-2 py-1.5" />
                       {type === 'strength' && <input aria-label={`Carga ${index + 1}`} type="number" value={exercise.weight} onChange={(event) => updateExercise(exercise.id, 'weight', event.target.value)} className="rounded-lg border bg-surface px-2 py-1.5" />}
                     </div>
                     <input aria-label={`Notas ejercicio ${index + 1}`} value={exercise.notes} onChange={(event) => updateExercise(exercise.id, 'notes', event.target.value)} className="w-full rounded-lg border bg-surface px-2.5 py-1.5" />
+                    </div>
                   </div>
-                ))}
+                  )
+                })}
                 {exercises.length === 0 && <button type="button" onClick={() => setExercises([emptyExercise()])} className="w-full rounded-xl border border-dashed py-3 text-xs text-ink-faint">+ Añadir ejercicio</button>}
               </div>
             </div>
