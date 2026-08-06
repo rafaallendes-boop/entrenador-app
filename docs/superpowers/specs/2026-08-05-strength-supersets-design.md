@@ -47,7 +47,7 @@ circuitos, en los tres caminos — editor manual, chat y Plan Builder.
 - Backfill de sesiones existentes y limpieza de los prefijos `A1/A2` históricos
   que quedan en `notes`.
 - Superseries fuera de fuerza (squash, movilidad).
-- `prefersSupersets` en Plan Builder: cableado, siempre `false` en v1.
+- `intent` en Plan Builder: cableado, siempre ausente en v1.
 
 ## 3. Decisiones de producto
 
@@ -402,9 +402,19 @@ reparar datos importados o inconsistentes.
 ### 7.4 `shouldApplySupersetPolicy` — función total
 
 Señales, **solo las tres comparables entre ambos caminos**: `phase`,
-`sessionDurationMin`, `sportProfile`. Más `prefersSupersets`, que significa
-«preferir superseries y subir un nivel dentro del límite seguro», no «forzar
-`full`».
+`sessionDurationMin`, `sportProfile`. Más `intent`, con **tres** estados:
+
+| `intent` | Significado | Efecto |
+|---|---|---|
+| `undefined` | no se mencionó | decide el contexto |
+| `'requested'` | pidió superseries | sube **un** nivel dentro del límite seguro; no fuerza `full` |
+| `'declined'` | pidió que no | `off`, mande lo que mande el contexto |
+
+**Tres estados y no un booleano.** Con un booleano, `false` significaba a la vez
+«no lo mencionó» y «lo rechazó», así que un contexto que ya resolvía
+`permissive` por fase y duración agrupaba igual después de que el atleta pidiera
+explícitamente lo contrario. El rechazo tiene que poder **mandar hacia abajo**,
+no solo dejar de subir.
 
 Quedan **excluidas** por no ser comparables:
 
@@ -420,10 +430,11 @@ chat agrupe siempre como «fatiga media» mientras el Plan Builder varía.
 Estructura:
 
 ```ts
+if (intent === 'declined') return 'off'            // el rechazo manda sobre el contexto
 if (hasInvalidInput(context)) return 'off'          // off absoluto, antes del upgrade
 
 const baseMode = resolveBaseMode(context)
-const requestedMode = prefersSupersets ? upgradeOneLevel(baseMode) : baseMode
+const requestedMode = intent === 'requested' ? upgradeOneLevel(baseMode) : baseMode
 
 return minMode(requestedMode, PHASE_MODE_CAP[phase])
 ```
@@ -432,6 +443,7 @@ Modo base, primera regla que matchea:
 
 | # | Condición | Modo base |
 |---|---|---|
+| R−1 | `intent === 'declined'` | `off` (absoluto, no depende del resto del contexto) |
 | R0 | `phase`, `sportProfile` o `sessionDurationMin` ausentes o fuera de dominio | `off` (absoluto) |
 | R1 | `phase ∈ {taper, race}` | `off` |
 | R2 | `phase === 'transition'` | `off` |
@@ -441,7 +453,7 @@ Modo base, primera regla que matchea:
 
 `full` **automático** queda reservado a `strength_primary` en v1. Un perfil
 `hybrid` o `sport_support` puede llegar igual a `full` mediante
-`prefersSupersets`, así que no se pierde capacidad: solo se evita activar
+`intent: 'requested'`, así que no se pierde capacidad: solo se evita activar
 emparejamientos de potencia y de `main_lift` sin señales comparables de fatiga o
 experiencia entre los dos caminos.
 
@@ -476,12 +488,12 @@ los emparejamientos de potencia y de `main_lift`.
 El default es no agrupar salvo que las señales lo justifiquen: agrupar cambia el
 estímulo — densidad, descanso, fatiga acumulada — y no es una decisión neutra.
 
-### 7.5 Detección de `prefersSupersets`
+### 7.5 Detección de `intent`
 
 Helper local y testeable, sin llamadas al modelo:
 
 ```ts
-detectSupersetPreference(intentText: string): boolean
+detectSupersetIntent(intentText: string): 'requested' | 'declined' | undefined
 ```
 
 Contrato:
@@ -494,7 +506,8 @@ Contrato:
   «en circuito», «triserie», sobre texto ya normalizado (minúsculas, sin tildes),
   que es como llega `actionIntentText`.
 - **Respeta negaciones**: «sin superseries», «nada de circuitos», «no los
-  agrupes» devuelven `false`, no `true`.
+  agrupes» devuelven `'declined'` — un rechazo explícito, distinto de la ausencia
+  de mención, que devuelve `undefined`.
 - Cuando el texto contiene menciones en ambos sentidos, **prevalece la última
   mención explícita**, no la negación. `actionIntentText` concatena el contexto de
   la acción reciente con el mensaje nuevo, así que «no quiero superseries» seguido
@@ -585,7 +598,7 @@ Sin migraciones y sin gasto de API.
 | Barrido pareado por `id` (como §19/§20) | Sesiones **sin** grupos producen orden y prescripción byte a byte idénticos a hoy |
 | Test de propiedad `main_lift` | La identidad se preserva tras agrupar y reflow, sobre la lista normalizada |
 | `qualityReview` / `countRepairsV2` antes/después | Comparación directa sobre el corpus, aunque la invariancia esté razonada |
-| Tabla exhaustiva | 6 fases × 3 perfiles × bandas de duración × 2 de `prefersSupersets`, enumerada completa |
+| Tabla exhaustiva | 6 fases × 3 perfiles × bandas de duración × 3 de `intent`, enumerada completa |
 | Round-trip de serializers | Los 5 escenarios de §9.1 |
 | Idempotencia | `normalize(normalize(x)) === normalize(x)`; reaplicar la política conserva ids |
 | Contigüidad | Inserción, eliminación, separación, reordenamiento y el caso `A, X, A, A` |
@@ -647,7 +660,7 @@ registrar a mano el entrenamiento completo de referencia: el valor llega antes
 que la automatización.
 
 **4 — Política determinista.** `supersetPolicy.ts` con `planSupersetGroups` y su
-canal de `decisions`, la tabla total, `detectSupersetPreference`, la auditoría
+canal de `decisions`, la tabla total, `detectSupersetIntent`, la auditoría
 del corpus, el cableado en `actionPostProcessor` y `repairWeek`, y el retiro de la
 regla `A1/A2` de `strengthPrompt.ts`.
 

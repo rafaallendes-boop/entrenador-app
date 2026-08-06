@@ -7,7 +7,7 @@ import {
 } from '../training/strengthExerciseProposal'
 import { getTargetExerciseDensity, selectStrengthSession, type StrengthContext, type StrengthPhase, type StrengthSportProfile } from '../training/strengthSelector'
 import { enhanceStrengthSessionExercises, resolveStrengthExerciseBlock } from '../training/strengthSessionStructure'
-import { detectSupersetPreference, planSupersetGroups, shouldApplySupersetPolicy } from '../training/supersetPolicy'
+import { detectSupersetIntent, planSupersetGroups, shouldApplySupersetPolicy } from '../training/supersetPolicy'
 import type { CoachNormalizedResponse } from './types'
 
 const WEEKDAYS = [
@@ -846,7 +846,7 @@ function applySupersetPolicy(
     phase,
     sportProfile: primarySport ? deriveActionStrengthSportProfile(primarySport) : undefined,
     sessionDurationMin,
-    prefersSupersets: detectSupersetPreference(actionIntentText),
+    intent: detectSupersetIntent(actionIntentText),
   })
 
   return planSupersetGroups(exercises, mode).exercises

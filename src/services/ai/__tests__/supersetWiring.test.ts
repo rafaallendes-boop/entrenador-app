@@ -81,6 +81,48 @@ describe('cableado de superseries en chat', () => {
     expect(processed.actions?.[0]?.exercises?.every((exercise) => exercise.supersetGroup == null)).toBe(true)
   })
 
+  // El contexto por si solo resuelve `permissive` a 60 min en base. Sin un
+  // rechazo que mande, el atleta pedia "sin superseries" y las recibia igual.
+  it('un rechazo explicito gana sobre un contexto que agruparia solo', () => {
+    const sinMencion = postProcessCoachActions(
+      makeResponse([strengthAction(60)]),
+      makeContext('base'),
+      'armame una sesion de fuerza',
+    )
+    expectCoreCircuit(sinMencion.actions)
+
+    const conRechazo = postProcessCoachActions(
+      makeResponse([strengthAction(60)]),
+      makeContext('base'),
+      'armame una sesion de fuerza sin superseries',
+    )
+
+    expect(conRechazo.actions?.[0]?.exercises?.every((exercise) => exercise.supersetGroup == null)).toBe(true)
+  })
+
+  it('un rechazo dentro de create_week apaga la politica sesion por sesion', () => {
+    const processed = postProcessCoachActions(
+      makeResponse([{
+        type: 'create_week',
+        reason: 'Semana solicitada',
+        sessions: [{
+          date: '2026-08-10',
+          timeBlock: 'PM' as const,
+          sessionType: 'strength' as const,
+          title: 'Fuerza',
+          durationMin: 60,
+          exercises: strengthAction().exercises,
+        }],
+      }]),
+      makeContext('base'),
+      'creame la semana, nada de circuitos',
+    )
+
+    const exercises = processed.actions?.[0]?.sessions?.[0]?.exercises ?? []
+    expect(exercises.length).toBeGreaterThan(0)
+    expect(exercises.every((exercise) => exercise.supersetGroup == null)).toBe(true)
+  })
+
   it('taper sin preferencia queda en off', () => {
     const processed = postProcessCoachActions(
       makeResponse([strengthAction(60)]),

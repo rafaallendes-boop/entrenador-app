@@ -1,41 +1,45 @@
 import { describe, expect, it } from 'vitest'
 
-import { detectSupersetPreference } from '../supersetPolicy'
+import { detectSupersetIntent } from '../supersetPolicy'
 
-describe('detectSupersetPreference', () => {
+describe('detectSupersetIntent', () => {
   it('reconoce formas positivas', () => {
-    expect(detectSupersetPreference('armamelo en superseries')).toBe(true)
-    expect(detectSupersetPreference('quiero los ejercicios agrupados')).toBe(true)
-    expect(detectSupersetPreference('hacelo en circuito')).toBe(true)
-    expect(detectSupersetPreference('meteme una triserie')).toBe(true)
+    expect(detectSupersetIntent('armamelo en superseries')).toBe('requested')
+    expect(detectSupersetIntent('quiero los ejercicios agrupados')).toBe('requested')
+    expect(detectSupersetIntent('hacelo en circuito')).toBe('requested')
+    expect(detectSupersetIntent('meteme una triserie')).toBe('requested')
   })
 
-  it('devuelve false cuando no hay mencion', () => {
-    expect(detectSupersetPreference('armame la sesion de fuerza del martes')).toBe(false)
+  // La distincion que importa: no mencionar nada deja decidir a la politica,
+  // rechazar explicitamente la apaga. Un booleano colapsaba los dos casos y
+  // agrupaba igual cuando el atleta habia dicho que no.
+  it('devuelve undefined cuando no hay mencion', () => {
+    expect(detectSupersetIntent('armame la sesion de fuerza del martes')).toBeUndefined()
   })
 
-  it('respeta negaciones', () => {
-    expect(detectSupersetPreference('sin superseries por favor')).toBe(false)
-    expect(detectSupersetPreference('nada de circuitos')).toBe(false)
-    expect(detectSupersetPreference('no los agrupes')).toBe(false)
+  it('reconoce negaciones como rechazo explicito, no como ausencia', () => {
+    expect(detectSupersetIntent('sin superseries por favor')).toBe('declined')
+    expect(detectSupersetIntent('nada de circuitos')).toBe('declined')
+    expect(detectSupersetIntent('no los agrupes')).toBe('declined')
   })
 
   it('hace prevalecer la ultima mencion explicita', () => {
-    expect(detectSupersetPreference(
+    expect(detectSupersetIntent(
       'no quiero superseries. dale, armamelo en superseries',
-    )).toBe(true)
-    expect(detectSupersetPreference(
+    )).toBe('requested')
+    expect(detectSupersetIntent(
       'armamelo en superseries. mejor sin superseries',
-    )).toBe(false)
+    )).toBe('declined')
   })
 
   it('reconoce las conjugaciones agrupes y agrupen como menciones', () => {
-    expect(detectSupersetPreference('no los agrupes')).toBe(false)
-    expect(detectSupersetPreference('en superseries; finalmente no los agrupes')).toBe(false)
-    expect(detectSupersetPreference('no los agrupen; mejor si, en superseries')).toBe(true)
+    expect(detectSupersetIntent('no los agrupes')).toBe('declined')
+    expect(detectSupersetIntent('en superseries; finalmente no los agrupes')).toBe('declined')
+    expect(detectSupersetIntent('no los agrupen; mejor si, en superseries')).toBe('requested')
   })
 
   it('tolera mayusculas y tildes', () => {
-    expect(detectSupersetPreference('ARMÁMELO EN SUPERSERIES')).toBe(true)
+    expect(detectSupersetIntent('ARMÁMELO EN SUPERSERIES')).toBe('requested')
+    expect(detectSupersetIntent('SIN SUPERSERIES')).toBe('declined')
   })
 })

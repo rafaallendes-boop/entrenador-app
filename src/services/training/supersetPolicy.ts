@@ -283,11 +283,19 @@ export function planSupersetGroups<T extends SupersetCandidate>(
   return { exercises: result, decisions }
 }
 
+/**
+ * Tres estados, no un booleano. `undefined` —no se menciono— deja decidir a la
+ * politica; `declined` la apaga. Colapsarlos en `false` hacia que un contexto
+ * que ya resolvia `permissive` por fase y duracion agrupara igual despues de
+ * que el atleta pidiera explicitamente lo contrario.
+ */
+export type SupersetIntent = 'requested' | 'declined'
+
 export interface SupersetPolicyContext {
   phase?: StrengthPhase
   sportProfile?: StrengthSportProfile
   sessionDurationMin?: number
-  prefersSupersets?: boolean
+  intent?: SupersetIntent
 }
 
 const MODE_RANK: Record<SupersetPolicyMode, number> = {
@@ -344,12 +352,18 @@ function minMode(left: SupersetPolicyMode, right: SupersetPolicyMode): SupersetP
   return MODE_RANK[left] <= MODE_RANK[right] ? left : right
 }
 
-/** Resuelve el modo para toda entrada posible; R0 es un `off` absoluto. */
+/**
+ * Resuelve el modo para toda entrada posible. Dos salidas mandan sobre el
+ * contexto: un rechazo explicito y R0, ambas `off`. El rechazo va primero
+ * porque no depende de que el resto del contexto sea valido — «sin superseries»
+ * significa lo mismo con o sin fase conocida.
+ */
 export function shouldApplySupersetPolicy(context: SupersetPolicyContext): SupersetPolicyMode {
+  if (context.intent === 'declined') return 'off'
   if (hasInvalidInput(context)) return 'off'
 
   const baseMode = resolveBaseMode(context)
-  const requestedMode = context.prefersSupersets
+  const requestedMode = context.intent === 'requested'
     ? upgradeOneLevel(baseMode)
     : baseMode
 
@@ -382,10 +396,16 @@ function collectSpans(text: string, pattern: RegExp): Span[] {
   }))
 }
 
-/** La ultima mencion explicita prevalece sobre menciones anteriores. */
-export function detectSupersetPreference(intentText: string): boolean {
+/**
+ * La ultima mencion explicita prevalece sobre las anteriores. Ausencia de
+ * menciones devuelve `undefined`, que NO es lo mismo que `declined`: sin
+ * mencion la politica decide por contexto, con rechazo queda apagada.
+ */
+export function detectSupersetIntent(intentText: string): SupersetIntent | undefined {
   const text = normalizeIntentText(intentText)
   const negatives = collectSpans(text, NEGATIVE_PATTERN)
+  // Un positivo contenido dentro de un negativo no cuenta como mencion propia:
+  // «sin superseries» no es una peticion de superseries.
   const positives = collectSpans(text, POSITIVE_PATTERN)
     .filter((span) => !negatives.some((negative) => (
       span.start >= negative.start && span.end <= negative.end
@@ -394,7 +414,7 @@ export function detectSupersetPreference(intentText: string): boolean {
   const lastNegative = negatives[negatives.length - 1]
   const lastPositive = positives[positives.length - 1]
 
-  if (lastPositive == null) return false
-  if (lastNegative == null) return true
-  return lastPositive.start > lastNegative.start
+  if (lastPositive == null) return lastNegative == null ? undefined : 'declined'
+  if (lastNegative == null) return 'requested'
+  return lastPositive.start > lastNegative.start ? 'requested' : 'declined'
 }

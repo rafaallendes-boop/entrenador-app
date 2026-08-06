@@ -1653,7 +1653,9 @@ function normalizeStrengthSessions(
         phase: context.week.phase,
         sportProfile: deriveStrengthSportProfile(context),
         sessionDurationMin: session.durationMin,
-        prefersSupersets: false,
+        // Sin `intent`: el wizard no tiene hoy ningun campo que exprese
+        // preferencia ni rechazo, y reutilizar uno con otro significado seria
+        // inventar una señal. Ausencia deja decidir al contexto.
       })
       session.exercises = planSupersetGroups(session.exercises, mode).exercises
     }
