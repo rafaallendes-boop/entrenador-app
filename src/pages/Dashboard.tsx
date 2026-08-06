@@ -78,11 +78,10 @@ export default function Dashboard() {
   }, [activeAthleteId, today])
   const {
     message: whoopSyncMessage,
-    refreshStatus: refreshWhoopStatus,
     status: whoopStatus,
     syncing: whoopSyncing,
     syncNow: syncWhoopNow,
-  } = useWhoopSync({ onReadinessPulled: loadLocalReadiness })
+  } = useWhoopSync({ onReadinessPulled: loadLocalReadiness, autoSync: canConnectWhoop })
 
   // Macro plan — computed on-the-fly from profile, not persisted as source of truth
   const macroPlan = useMemo(() => computeMacroPlan(athleteProfile), [athleteProfile])
@@ -113,16 +112,13 @@ export default function Dashboard() {
         return
       }
 
-      // On mount we only pull whatever the server cron already synced into
-      // readiness_daily; a fresh Whoop fetch stays behind the manual button.
+      // Baja lo que ya este en readiness_daily. El fetch fresco contra Whoop lo
+      // dispara el auto-sync del hook cuando el estado remoto no esta fresco.
       await pullReadiness().catch(() => undefined)
       const nextReadiness = await getLocalReadinessForDate(activeAthleteId, today)
 
       if (cancelled) return
       setReadiness(nextReadiness)
-      if (!canConnectWhoop) return
-
-      await refreshWhoopStatus()
     }
 
     void loadWhoopReadiness()
@@ -130,7 +126,7 @@ export default function Dashboard() {
     return () => {
       cancelled = true
     }
-  }, [activeAthleteId, canConnectWhoop, refreshWhoopStatus, today])
+  }, [activeAthleteId, today])
 
   useEffect(() => {
     if (!hasDayLogPrefillPatch(todayWhoopPrefill)) return

@@ -6,19 +6,34 @@ import { getWhoopStatus, syncWhoopNow, type WhoopStatus, type WhoopSyncResponse 
 import { useAuthStore } from '../store/useAuthStore'
 import { isConsentEnforcementEnabled } from '../services/legal/consentFlag'
 import { getMissingConsents, hydrateConsents } from '../services/legal/consentService'
+import { shouldAutoSyncWhoop } from '../services/readiness/whoopAutoSync'
 
 export interface UseWhoopSyncOptions {
   onReadinessPulled?: () => Promise<void> | void
+  /** Dispara un sync silencioso al montar si el estado remoto no esta fresco. */
+  autoSync?: boolean
+}
+
+export interface SyncNowOptions {
+  /** Un sync de fondo no escribe carteles; solo `consent_required` se muestra igual. */
+  silent?: boolean
+}
+
+const CONSENT_REQUIRED_MESSAGE =
+  'Aceptá el descargo biométrico en Ajustes para reanudar la sincronización.'
+
+/** Redondea hacia arriba: mostrar menos tiempo del real invita a reintentar antes de tiempo. */
+function formatRetryDelay(retryAfterMs: number | undefined): string {
+  const seconds = Math.max(1, Math.ceil((retryAfterMs ?? 0) / 1000))
+  if (seconds < 60) return `${seconds}s`
+  return `${Math.ceil(seconds / 60)} min`
 }
 
 function messageForSyncResult(result: WhoopSyncResponse): string {
   if (result.ok) return 'Whoop sincronizado.'
-  if (result.code === 'consent_required') {
-    return 'Aceptá el descargo biométrico en Ajustes para reanudar la sincronización.'
-  }
+  if (result.code === 'consent_required') return CONSENT_REQUIRED_MESSAGE
   if (result.reason === 'cooldown') {
-    const seconds = Math.max(1, Math.ceil((result.retryAfterMs ?? 0) / 1000))
-    return `Espera ${seconds}s para volver a sincronizar.`
+    return `Whoop ya está al día. Podés volver a sincronizar en ${formatRetryDelay(result.retryAfterMs)}.`
   }
   if (result.reason === 'no_self_athlete') {
     return 'Tu perfil de atleta todavia no esta listo. Reabre la app y reintenta.'
@@ -48,14 +63,24 @@ export async function syncWhoopAndRefreshLocalData(
 
 export function useWhoopSync(options: UseWhoopSyncOptions = {}) {
   const onReadinessPulled = options.onReadinessPulled
+  const autoSync = options.autoSync === true
   const userId = useAuthStore((state) => state.user?.id ?? null)
   const [status, setStatus] = useState<WhoopStatus | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const [syncing, setSyncing] = useState(false)
   const [apiAvailable, setApiAvailable] = useState(true)
   const mountedRef = useRef(true)
+  const syncInFlightRef = useRef(false)
+  const onReadinessPulledRef = useRef(onReadinessPulled)
 
-  useEffect(() => () => { mountedRef.current = false }, [])
+  useEffect(() => {
+    onReadinessPulledRef.current = onReadinessPulled
+  })
+
+  useEffect(() => {
+    mountedRef.current = true
+    return () => { mountedRef.current = false }
+  }, [])
 
   const refreshStatus = useCallback(async (): Promise<WhoopStatus | null> => {
     try {
@@ -75,9 +100,21 @@ export function useWhoopSync(options: UseWhoopSyncOptions = {}) {
     }
   }, [])
 
-  const syncNow = useCallback(async (): Promise<WhoopSyncResponse | null> => {
+  const syncNow = useCallback(async (
+    options: SyncNowOptions = {},
+  ): Promise<WhoopSyncResponse | null> => {
+    if (syncInFlightRef.current) return null
+    syncInFlightRef.current = true
+
+    const silent = options.silent === true
+    const showMessage = (text: string, force = false) => {
+      if (!mountedRef.current) return
+      if (silent && !force) return
+      setMessage(text)
+    }
+
     setSyncing(true)
-    setMessage(null)
+    if (!silent) setMessage(null)
     try {
       if (isConsentEnforcementEnabled() && userId) {
         try {
@@ -85,43 +122,58 @@ export function useWhoopSync(options: UseWhoopSyncOptions = {}) {
           if (missing.length > 0) {
             const hydrated = await hydrateConsents(userId)
             if (!hydrated.ok) {
-              if (mountedRef.current) {
-                setMessage('No pudimos verificar tu consentimiento biométrico. Revisá tu conexión.')
-              }
+              showMessage('No pudimos verificar tu consentimiento biométrico. Revisá tu conexión.')
               return null
             }
             missing = await getMissingConsents(userId, ['whoop_biometric'])
           }
           if (missing.length > 0) {
-            if (mountedRef.current) {
-              setMessage('Aceptá el descargo biométrico en Ajustes para reanudar la sincronización.')
-            }
+            showMessage(CONSENT_REQUIRED_MESSAGE, true)
             return null
           }
         } catch {
-          if (mountedRef.current) {
-            setMessage('No pudimos verificar tu consentimiento biométrico. Revisá tu conexión.')
-          }
+          showMessage('No pudimos verificar tu consentimiento biométrico. Revisá tu conexión.')
           return null
         }
       }
 
-      const result = await syncWhoopAndRefreshLocalData(onReadinessPulled)
+      const result = await syncWhoopAndRefreshLocalData(onReadinessPulledRef.current)
 
-      if (mountedRef.current) setMessage(messageForSyncResult(result))
+      showMessage(messageForSyncResult(result), result.code === 'consent_required')
       await refreshStatus()
       return result
     } catch (error) {
       console.error('[whoop] sync failed', error)
-      if (mountedRef.current) {
-        setApiAvailable(false)
-        setMessage('No se pudo sincronizar Whoop.')
-      }
+      if (mountedRef.current) setApiAvailable(false)
+      showMessage('No se pudo sincronizar Whoop.')
       return null
     } finally {
+      syncInFlightRef.current = false
       if (mountedRef.current) setSyncing(false)
     }
-  }, [onReadinessPulled, refreshStatus, userId])
+  }, [refreshStatus, userId])
+
+  useEffect(() => {
+    if (!autoSync) return
+    let cancelled = false
+
+    void (async () => {
+      const nextStatus = await refreshStatus()
+      if (cancelled || nextStatus === null) return
+
+      const stale = shouldAutoSyncWhoop({
+        connected: nextStatus.connected,
+        lastSyncAt: nextStatus.lastSyncAt,
+        lastSyncStatus: nextStatus.lastSyncStatus,
+        now: Date.now(),
+      })
+      if (!stale || cancelled) return
+
+      await syncNow({ silent: true })
+    })()
+
+    return () => { cancelled = true }
+  }, [autoSync, refreshStatus, syncNow])
 
   const clearMessage = useCallback(() => {
     setMessage(null)
