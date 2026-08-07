@@ -21,7 +21,11 @@ import WhoopDisclaimerPage from '../../../pages/WhoopDisclaimerPage'
 function renderedShape(ui: ReactElement): string {
   const { container } = render(<MemoryRouter>{ui}</MemoryRouter>)
   const lines: string[] = []
-  container.querySelectorAll('h1, h2, h3, p, li').forEach((node) => {
+  // Solo el documento. El chrome del sitio (nav, índice, pie) vive fuera de
+  // `<main>` o no usa estas etiquetas, así que rediseñar la página no puede
+  // ensuciar una paridad que existe para vigilar el texto legal.
+  const article = container.querySelector('main') ?? container
+  article.querySelectorAll('h1, h2, h3, p, li').forEach((node) => {
     const parts: string[] = [`<${node.tagName.toLowerCase()}>`]
     node.childNodes.forEach((child) => {
       if (child.nodeType === Node.TEXT_NODE) {

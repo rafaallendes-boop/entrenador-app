@@ -1,11 +1,15 @@
 import type { LegalBlock, LegalSpan } from '../../services/legal/legalDocumentContent'
+import { useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import {
   getDocument,
   getPublication,
   type ConsentDocumentId,
 } from '../../services/legal/consentDocuments'
-import LegalPageLayout from './LegalPageLayout'
+import LegalPageLayout, { type LegalSection } from './LegalPageLayout'
+
+/** Ancla por posición: el texto del encabezado es contenido legal versionado y no debe acoplarse a una URL. */
+const sectionAnchor = (index: number) => `seccion-${index + 1}`
 
 function renderSpan(span: LegalSpan, index: number) {
   if ('href' in span && span.href.startsWith('/')) {
@@ -16,8 +20,8 @@ function renderSpan(span: LegalSpan, index: number) {
   return <span key={index}>{span.text}</span>
 }
 
-function renderBlock(block: LegalBlock, index: number) {
-  if (block.kind === 'heading') return <h2 key={index}>{block.text}</h2>
+function renderBlock(block: LegalBlock, index: number, anchorByBlock: Map<number, string>) {
+  if (block.kind === 'heading') return <h2 key={index} id={anchorByBlock.get(index)}>{block.text}</h2>
   if (block.kind === 'list') {
     return (
       <ul key={index}>
@@ -34,6 +38,22 @@ export default function LegalDocumentRenderer({ id }: { id: ConsentDocumentId })
   const document = getDocument(id)
   const publication = getPublication(id, document.currentVersion)
 
+  // Memoizado a propósito: `sections` es dependencia del efecto que arma el
+  // IntersectionObserver del índice, y ese efecto además dispara el `setState`
+  // que provoca el re-render. Con una identidad nueva por render, el observer se
+  // desconectaría y volvería a crearse en cada scroll marcado.
+  const { sections, anchorByBlock } = useMemo(() => {
+    const collected: LegalSection[] = []
+    const anchors = new Map<number, string>()
+    publication.content.blocks.forEach((block, blockIndex) => {
+      if (block.kind !== 'heading') return
+      const anchor = sectionAnchor(collected.length)
+      anchors.set(blockIndex, anchor)
+      collected.push({ id: anchor, text: block.text })
+    })
+    return { sections: collected, anchorByBlock: anchors }
+  }, [publication])
+
   return (
     <LegalPageLayout
       eyebrow={publication.content.eyebrow}
@@ -41,8 +61,9 @@ export default function LegalDocumentRenderer({ id }: { id: ConsentDocumentId })
       metaRoute={document.route}
       // La fecha sale del manifiesto, nunca de un literal en la página.
       updatedAt={document.currentVersion}
+      sections={sections}
     >
-      {publication.content.blocks.map(renderBlock)}
+      {publication.content.blocks.map((block, index) => renderBlock(block, index, anchorByBlock))}
     </LegalPageLayout>
   )
 }
