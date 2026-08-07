@@ -21,10 +21,14 @@ import {
 import { getLocalReadinessForDate } from '../services/readiness/localReadiness'
 import { prefillDayLog } from '../services/readiness/prefillDayLog'
 import { pullReadiness } from '../services/readiness/pullReadiness'
+import { getLocalWhoopWorkoutsInRange } from '../services/readiness/localWhoopWorkouts'
+import { canResolveWorkoutClaims, selectUnclaimedWorkouts } from '../services/readiness/unclaimedWorkouts'
+import { mapWhoopSport } from '../services/readiness/whoopSportMap'
+import { SESSION_TYPE_CONFIG } from '../constants/sessionTypes'
 import { getDayNutrition, getLoadTypeLabel, getLoadTypeColor } from '../services/nutritionEngine'
 import { resolveSessionProtocols } from '../services/trainingProtocols'
 import { useCoachMemoryStore } from '../store/useCoachMemoryStore'
-import type { AthleteProfile, DayLog, GeneratedProtocol, ReadinessDaily, Session } from '../types'
+import type { AthleteProfile, DayLog, GeneratedProtocol, ReadinessDaily, Session, WhoopWorkout } from '../types'
 
 function DayFeedbackFields({
   dayLog,
@@ -293,9 +297,22 @@ function WhoopPrefillHint() {
   )
 }
 
+/**
+ * Nombre de deporte para el residual del día.
+ *
+ * `sportName` es el literal de Whoop en inglés (`weightlifting`,
+ * `functional fitness`), y el resto del día habla en el vocabulario de la app.
+ * Se traduce por el mapa que ya existe; un deporte sin mapear conserva su
+ * nombre crudo en vez de perderse.
+ */
+function whoopSportLabel(sportName: string): string {
+  const sport = mapWhoopSport(sportName)
+  return sport ? SESSION_TYPE_CONFIG[sport].label : sportName
+}
+
 export default function DayDetail() {
   const { date } = useParams<{ date: string }>()
-  const { sessions, dayLogs, loadWeek, saveDayLog, updateSession } = useTrainingStore()
+  const { sessions, dayLogs, loadWeek, loadedWeekStart, saveDayLog, updateSession } = useTrainingStore()
   const { athleteProfile } = useCoachMemoryStore()
   const activeAthleteFromStore = useAuthStore((state) => state.activeAthleteId)
   const { setCurrentWeekStart, setSelectedDate } = useUIStore()
@@ -320,6 +337,30 @@ export default function DayDetail() {
   const activeAthleteId = activeAthleteFromStore ?? getActiveAthleteId()
   const selfAthleteId = getSelfAthleteId()
   const [readiness, setReadiness] = useState<ReadinessDaily | undefined>(undefined)
+  /**
+   * Estado identificado por `{ athleteId, date }`.
+   *
+   * Un `useState<WhoopWorkout[]>` pelado retiene las filas anteriores mientras
+   * resuelve la lectura nueva, así que al cambiar de atleta o de día la vista
+   * mostraría por un instante los workouts del anterior. Guardar las claves junto
+   * a las filas hace que un resultado viejo sea inutilizable en vez de plausible.
+   */
+  const [whoopWorkoutsState, setWhoopWorkoutsState] = useState<{
+    athleteId: string
+    date: string
+    rows: WhoopWorkout[]
+  } | null>(null)
+  const dayWorkouts =
+    whoopWorkoutsState?.athleteId === activeAthleteId && whoopWorkoutsState?.date === dateISO
+      ? whoopWorkoutsState.rows
+      : []
+  const workoutsById = new Map(dayWorkouts.map((workout) => [workout.workoutId, workout]))
+  // Mismo criterio de estado identificado que `whoopWorkoutsState`, aplicado al
+  // otro lado de la comparación: sin las sesiones del día cargadas no se puede
+  // afirmar que un workout no esté asociado.
+  const unclaimedWorkouts = canResolveWorkoutClaims(dateISO, loadedWeekStart)
+    ? selectUnclaimedWorkouts(dayWorkouts, daySessions)
+    : []
   const prefill = useMemo(() => prefillDayLog(dayLog ?? {}, readiness), [dayLog, readiness])
   const activePrefillSource = useMemo(
     () => ({
@@ -347,6 +388,26 @@ export default function DayDetail() {
     }
 
     void loadReadiness()
+
+    return () => {
+      cancelled = true
+    }
+  }, [activeAthleteId, dateISO])
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadWorkouts() {
+      if (!activeAthleteId || !dateISO) {
+        if (!cancelled) setWhoopWorkoutsState(null)
+        return
+      }
+      // Lectura local pura: el sync de workouts lo dispara whoopAutoSync.
+      const rows = await getLocalWhoopWorkoutsInRange(activeAthleteId, dateISO, dateISO)
+      if (!cancelled) setWhoopWorkoutsState({ athleteId: activeAthleteId, date: dateISO, rows })
+    }
+
+    void loadWorkouts()
 
     return () => {
       cancelled = true
@@ -450,7 +511,14 @@ export default function DayDetail() {
                     const protocols = resolveSessionProtocols(s, { dayLog, recentSessions: sessions })
                     return (
                       <div key={s.id} className="space-y-2">
-                        <SessionCard session={s} />
+                        <SessionCard
+                          session={s}
+                          whoopWorkout={
+                            s.autoCompletion?.workoutId
+                              ? workoutsById.get(s.autoCompletion.workoutId)
+                              : undefined
+                          }
+                        />
                         <div className="grid gap-2 sm:grid-cols-2">
                           <ProtocolGuideCard label="Warm-up recomendado" protocol={protocols.warmup} />
                           <ProtocolGuideCard label="Cooldown recomendado" protocol={protocols.cooldown} />
@@ -469,7 +537,14 @@ export default function DayDetail() {
                     const protocols = resolveSessionProtocols(s, { dayLog, recentSessions: sessions })
                     return (
                       <div key={s.id} className="space-y-2">
-                        <SessionCard session={s} />
+                        <SessionCard
+                          session={s}
+                          whoopWorkout={
+                            s.autoCompletion?.workoutId
+                              ? workoutsById.get(s.autoCompletion.workoutId)
+                              : undefined
+                          }
+                        />
                         <div className="grid gap-2 sm:grid-cols-2">
                           <ProtocolGuideCard label="Warm-up recomendado" protocol={protocols.warmup} />
                           <ProtocolGuideCard label="Cooldown recomendado" protocol={protocols.cooldown} />
@@ -481,6 +556,23 @@ export default function DayDetail() {
               </Card>
             )}
           </div>
+        )}
+
+        {unclaimedWorkouts.length > 0 && (
+          <Card variant="panel" className="p-4">
+            <p className="text-[11px] text-ink-faint font-semibold uppercase tracking-wider mb-2">
+              Whoop registró además
+            </p>
+            <ul className="space-y-1">
+              {unclaimedWorkouts.map((workout) => (
+                <li key={workout.workoutId} className="text-sm text-ink-muted">
+                  {whoopSportLabel(workout.sportName)} · {Math.round(workout.durationMin)} min
+                  {workout.distanceM != null
+                    && ` · ${(workout.distanceM / 1000).toFixed(2).replace('.', ',')} km`}
+                </li>
+              ))}
+            </ul>
+          </Card>
         )}
 
         <DayNutritionCard sessions={daySessions} profile={athleteProfile} dayLog={dayLog} />

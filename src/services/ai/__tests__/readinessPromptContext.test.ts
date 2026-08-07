@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { ChatContext, ReadinessDaily } from '../../../types'
 import { todayISO } from '../../../utils/date'
+import { optimizeChatContext } from '../contextOptimizer'
 import { buildCoachSystemPrompt } from '../promptBuilder'
 import { formatReadinessLine } from '../readinessContext'
 
@@ -176,5 +177,61 @@ describe('readiness prompt context', () => {
 
     expect(prompt).toContain('Sueño: 5.2h · Calidad 2/5')
     expect(prompt).toContain('Energía: 3/10')
+  })
+})
+
+describe('whoopWorkoutBlock en el prompt', () => {
+  const BLOCK = [
+    'Carga objetiva registrada por Whoop (ultimos 7 dias):',
+    '- 04-08 running 30 min · strain 11.2 → sin sesion asociada',
+    'Strain es carga fisiologica medida (0-21), no el esfuerzo declarado por el atleta.',
+  ].join('\n')
+
+  function makeContext(overrides: Partial<ChatContext> = {}): ChatContext {
+    return {
+      recentSessions: [],
+      plannedSessions: [],
+      historicalSessions: [],
+      ...overrides,
+    }
+  }
+
+  const dayLog = {
+    id: `day:${todayISO()}`,
+    date: todayISO(),
+    energyLevel: 7,
+    updatedAt: 1,
+  }
+
+  it('emits the block when a dayLog exists', () => {
+    const prompt = buildCoachSystemPrompt(
+      makeContext({ dayLog, whoopWorkoutBlock: BLOCK }),
+      { requestClass: 'chat_general' },
+    )
+    expect(prompt).toContain('Carga objetiva registrada por Whoop')
+  })
+
+  it('emits the block when the dayLog is absent', () => {
+    // `buildTodaySection` retorna temprano sin dayLog (promptBuilder.ts:1611-1615).
+    // Sin este test el bloque desaparecería justo los días sin check-in, que es
+    // cuando el coach más necesita saber qué registró Whoop.
+    const prompt = buildCoachSystemPrompt(
+      makeContext({ whoopWorkoutBlock: BLOCK }),
+      { requestClass: 'chat_general' },
+    )
+    expect(prompt).toContain('Carga objetiva registrada por Whoop')
+  })
+
+  it('emits nothing when the block is absent', () => {
+    const prompt = buildCoachSystemPrompt(
+      makeContext({ dayLog }),
+      { requestClass: 'chat_general' },
+    )
+    expect(prompt).not.toContain('Carga objetiva registrada por Whoop')
+  })
+
+  it('is preserved by the context optimizer', () => {
+    const optimized = optimizeChatContext(makeContext({ whoopWorkoutBlock: BLOCK }))
+    expect(optimized.whoopWorkoutBlock).toBe(BLOCK)
   })
 })

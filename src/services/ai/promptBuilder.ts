@@ -1600,7 +1600,7 @@ function hasWeekDayLogSignal(log: DayLog): boolean {
 }
 
 function buildTodaySection(context: ChatContext): string {
-  const { dayLog } = context
+  const { dayLog, whoopWorkoutBlock } = context
   const readinessLine = formatReadinessLine(context.readiness)
   const today = todayISO()
 
@@ -1611,6 +1611,7 @@ function buildTodaySection(context: ChatContext): string {
   if (!dayLog) {
     lines.push('Sin registro diario todavía.')
     if (readinessLine) lines.push(readinessLine)
+    if (whoopWorkoutBlock) lines.push(whoopWorkoutBlock)
     return lines.join('\n')
   }
 
@@ -1640,6 +1641,7 @@ function buildTodaySection(context: ChatContext): string {
     lines.push(`Notas día: "${sanitizeUserText(dayLog.generalNotes, 160)}"`)
   }
   if (readinessLine) lines.push(readinessLine)
+  if (whoopWorkoutBlock) lines.push(whoopWorkoutBlock)
 
   return lines.join('\n')
 }

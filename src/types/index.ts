@@ -866,6 +866,14 @@ export interface ChatContext {
     message: string
     actions: CoachAction[]
   }>
+  /**
+   * Bloque de carga objetiva de Whoop, ya renderizado a texto de prompt.
+   *
+   * Viaja como string armado y no como datos crudos a propósito: el optimizador
+   * recorta sesiones para acotar tokens, así que calcularlo aguas abajo lo
+   * construiría sobre la colección ya recortada.
+   */
+  whoopWorkoutBlock?: string
   intent?: 'general_chat' | 'plan_week' | 'adjust_session' | 'weekly_summary'
   /** Multi-week load analytics — optional, computed async before sending */
   loadAnalytics?: import('../services/loadAnalytics').LoadAnalytics

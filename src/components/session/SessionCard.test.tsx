@@ -3,7 +3,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import type { Session } from '../../types'
+import type { Session, WhoopWorkout } from '../../types'
 import SessionCard, { SQUASH_BLOCKS_DURATION_GUIDANCE } from './SessionCard'
 
 afterEach(cleanup)
@@ -256,5 +256,103 @@ describe('SessionCard Whoop badge', () => {
     expect(completed).toContain('Sincronizado desde Whoop')
     expect(reverted).not.toContain('Sincronizado desde Whoop')
     expect(manual).not.toContain('Sincronizado desde Whoop')
+  })
+})
+
+describe('SessionCard — detalle de Whoop', () => {
+  // `makeSession(overrides)` ya existe en este archivo (línea ~23).
+  // `SessionAutoCompletion.completedAt` es **string**, no number (types/index.ts:448-452).
+  function makeWhoopSession(): Session {
+    return makeSession({
+      status: 'completed',
+      autoCompletion: {
+        source: 'whoop_workout',
+        workoutId: 'w1',
+        completedAt: '2026-08-04T10:30:00.000Z',
+      },
+    })
+  }
+
+  const workout: WhoopWorkout = {
+    id: 'whoop:athlete-1:w1',
+    workoutId: 'w1',
+    athleteId: 'athlete-1',
+    date: '2026-08-04',
+    sportName: 'running',
+    startAt: '2026-08-04T10:00:00.000Z',
+    endAt: '2026-08-04T10:30:00.000Z',
+    durationMin: 30,
+    strain: 11.2,
+    avgHr: 148,
+    maxHr: 172,
+    distanceM: 5000,
+    scoreState: 'SCORED',
+    updatedAt: 1,
+  }
+
+  it('renders the real workout metrics when a workout is provided', () => {
+    render(<SessionCard session={makeWhoopSession()} whoopWorkout={workout} />)
+
+    expect(screen.getByText('11.2')).not.toBeNull()
+    expect(screen.getByText('148 / 172 bpm')).not.toBeNull()
+    expect(screen.getByText('5,00 km')).not.toBeNull()
+    expect(screen.getByText('6:00 /km')).not.toBeNull()
+  })
+
+  it('renders nothing extra when no workout is provided', () => {
+    render(<SessionCard session={makeWhoopSession()} />)
+    expect(screen.queryByText('11.2')).toBeNull()
+  })
+
+  it('renders nothing for a manually completed session', () => {
+    render(<SessionCard session={makeSession({ status: 'completed' })} whoopWorkout={workout} />)
+    expect(screen.queryByText('11.2')).toBeNull()
+  })
+
+  it('renders nothing when the workout does not belong to this session', () => {
+    const otherWorkout = { ...workout, workoutId: 'w-otro' }
+    render(<SessionCard session={makeWhoopSession()} whoopWorkout={otherWorkout} />)
+    expect(screen.queryByText('11.2')).toBeNull()
+  })
+
+  it('rounds a fractional durationMin instead of rendering raw decimals', () => {
+    // `durationMin: 30` en el fixture base es un entero que no puede exponer
+    // este bug. Un backup/import solo garantiza finitud (`requireFiniteNumber`
+    // en dataExport.ts), no enteridad, así que una fila real puede traer esto.
+    const fractionalWorkout = { ...workout, durationMin: 47.833333333333336 }
+    render(<SessionCard session={makeWhoopSession()} whoopWorkout={fractionalWorkout} />)
+    expect(screen.getByText('48 min')).not.toBeNull()
+    expect(screen.queryByText('47.833333333333336 min')).toBeNull()
+  })
+
+  it('distinguishes the pending notice from the unscorable one', () => {
+    // Un workout no SCORED nunca tiene métricas: `normalizeWorkouts` no lee
+    // `score` fuera de SCORED, así que el fixture las borra todas, no solo strain.
+    const unscored = {
+      ...workout,
+      strain: undefined,
+      avgHr: undefined,
+      maxHr: undefined,
+      distanceM: undefined,
+    }
+
+    const { unmount } = render(
+      <SessionCard
+        session={makeWhoopSession()}
+        whoopWorkout={{ ...unscored, scoreState: 'PENDING_SCORE' as const }}
+      />,
+    )
+    expect(screen.getByText(/todavía no puntuó/)).not.toBeNull()
+    // Solo sobrevive la duración.
+    expect(screen.getByText('30 min')).not.toBeNull()
+    unmount()
+
+    render(
+      <SessionCard
+        session={makeWhoopSession()}
+        whoopWorkout={{ ...unscored, scoreState: 'UNSCORABLE' as const }}
+      />,
+    )
+    expect(screen.getByText(/no pudo puntuar/)).not.toBeNull()
   })
 })

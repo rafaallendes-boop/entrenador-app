@@ -20,9 +20,10 @@ import { ROUTES } from '../constants/routes'
 import { useLoadAnalytics } from '../hooks/useWeeklySnapshot'
 import { useWeeklyLaunchIntent } from '../hooks/useWeeklyLaunchIntent'
 import { buildWeeklyActionComposerDraft } from '../services/weeklyLaunchIntent'
-import { getActiveAthleteId } from '../services/athlete/activeAthlete'
+import { getActiveAthleteId, getSwitchEpoch } from '../services/athlete/activeAthlete'
 import { getLocalReadinessForDate } from '../services/readiness/localReadiness'
 import { pullReadiness } from '../services/readiness/pullReadiness'
+import { loadWhoopWorkoutBlock } from '../services/readiness/whoopWorkoutBlock'
 import { getSessionsForDateRange } from '../db/queries'
 
 const QuickActionChips = lazy(() => import('../components/chat/QuickActionChips'))
@@ -215,7 +216,11 @@ export default function ChatCoach() {
     }
   }, [menuOpen])
 
-  const buildContext = useCallback((message: string, planningSessions = sessions): ChatContext => {
+  const buildContext = useCallback((
+    message: string,
+    planningSessions = sessions,
+    whoopWorkoutBlock?: string,
+  ): ChatContext => {
     const uniqueSessions = new Map(
       [...sessions, ...planningSessions].map((session) => [session.id, session]),
     )
@@ -233,6 +238,7 @@ export default function ChatCoach() {
       currentWeekSummary: currentWeekSummary ?? undefined,
       dayLog: dayLogs[todayISO()],
       readiness,
+      whoopWorkoutBlock,
       weekDayLogs: Object.values(dayLogs),
       athleteMemory: coachMemory || undefined,
       athleteProfile: athleteProfile ?? undefined,
@@ -255,9 +261,43 @@ export default function ChatCoach() {
   const submitMessage = useCallback(async (message: string) => {
     const today = todayISO()
     const planningHorizonEnd = toISO(addDays(fromISO(today), 20))
+    const athleteIdAtStart = getActiveAthleteId()
+    const epochAtStart = getSwitchEpoch()
+
     const planningSessions = await getSessionsForDateRange(today, planningHorizonEnd)
       .catch(() => sessions)
-    const result = await sendMessage(message, buildContext(message, planningSessions))
+
+    // Best-effort: un fallo de lectura local no debe impedir mandar el mensaje.
+    const whoopWorkoutBlock = athleteIdAtStart
+      ? await loadWhoopWorkoutBlock(athleteIdAtStart, today).catch(() => null)
+      : null
+
+    // Si el atleta activo cambió mientras corrían las consultas, el bloque
+    // pertenece al scope anterior. Se descarta EL BLOQUE, no el envío: mandar
+    // el mensaje sin bloque es exactamente el comportamiento previo a esta
+    // entrega, así que no puede filtrar nada, y abortar el envío sí perdería el
+    // texto del usuario sin dejar rastro —`ChatInput` ya limpió el textarea y
+    // el auto-submit ya se marcó consumido, así que no hay burbuja ni reintento.
+    //
+    // El caso frecuente además no es un switch real: `hydrateActiveAthlete`
+    // publica el atleta con `setActiveAthleteId` SIN tocar el epoch, así que un
+    // arranque que resuelve `null → ath_x` mientras el mensaje viaja llega acá
+    // con la identidad cambiada y el epoch intacto.
+    //
+    // Se comprueba epoch E identidad, mismo patrón que `pullWorkouts.ts:96`:
+    // un cambio de holder que no incremente el epoch pasaría el primer check.
+    const scopeChanged =
+      getSwitchEpoch() !== epochAtStart
+      || getActiveAthleteId() !== athleteIdAtStart
+
+    const result = await sendMessage(
+      message,
+      buildContext(
+        message,
+        planningSessions,
+        scopeChanged ? undefined : whoopWorkoutBlock ?? undefined,
+      ),
+    )
     if (result.route === 'plan_builder_redirect') {
       // Navigate straight to the V2 Plan Builder. Going through the legacy
       // /plan-builder route forwards location.state through <Navigate replace>,

@@ -1,12 +1,13 @@
 import { Clock, Flame, ChevronDown, ChevronUp, Layers, Trash2, Wind } from 'lucide-react'
 import { useState } from 'react'
-import type { Exercise, Session, SessionStatus } from '../../types'
+import type { Exercise, Session, SessionStatus, WhoopWorkout } from '../../types'
 import { SESSION_TYPE_CONFIG, SQUASH_SUBTYPE_LABELS } from '../../constants/sessionTypes'
 import { formatDuration } from '../../utils/format'
 import { getHeartRateTargetDisplay } from '../../utils/heartRate'
 import { isCompetitionSquashMatch, isPracticeSquashMatch, resolveSquashSessionKind, resolveSquashSessionMode } from '../../utils/squash'
 import SessionTypeIcon from './SessionTypeIcon'
 import ExerciseChecklist from './ExerciseChecklist'
+import WhoopWorkoutMetrics from './WhoopWorkoutMetrics'
 import { useTrainingStore } from '../../store/useTrainingStore'
 import { normalizeGeneratedProtocol } from '../../services/trainingProtocols'
 import { formatMobilityFocusAreas, normalizeMobilityTargetStructure } from '../../services/training/mobilitySessionLibrary'
@@ -74,9 +75,11 @@ interface SessionCardProps {
   session: Session
   compact?: boolean
   onDelete?: (session: Session) => void
+  /** Detalle real del entrenamiento. La tarjeta no consulta Dexie: se lo pasan. */
+  whoopWorkout?: WhoopWorkout
 }
 
-export default function SessionCard({ session, compact = false, onDelete }: SessionCardProps) {
+export default function SessionCard({ session, compact = false, onDelete, whoopWorkout }: SessionCardProps) {
   const [expanded, setExpanded] = useState(false)
   const cycleStatus = useTrainingStore((s) => s.cycleSessionStatus)
   const updateSession = useTrainingStore((s) => s.updateSession)
@@ -282,6 +285,11 @@ export default function SessionCard({ session, compact = false, onDelete }: Sess
           {isExpandable && <span className="text-ink-faint">{expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}</span>}
         </div>
       </div>
+      {session.status === 'completed'
+        && session.autoCompletion?.source === 'whoop_workout'
+        && whoopWorkout?.workoutId === session.autoCompletion.workoutId && (
+          <WhoopWorkoutMetrics workout={whoopWorkout} />
+        )}
       {expanded && (
         <div className="space-y-2 border-t border-white/5 px-3 pb-3 md:px-4 md:pb-4">
           {session.objective && (

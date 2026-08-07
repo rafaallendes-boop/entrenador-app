@@ -1,9 +1,11 @@
 # RallyIQ - Project Review and Roadmap
 
-Actualizado: 2026-08-05
+Actualizado: 2026-08-07
 
 Base de contraste:
 
+- **Whoop — detalle de entrenamientos y contexto del coach implementados en el working tree (2026-08-07):** cada sesión auto-completada puede mostrar duración, strain, FC, distancia y ritmo elegible; `DayDetail` lista workouts no asociados; y el chat recibe hasta ocho entrenamientos `SCORED` de los últimos siete días, con asociación al plan y guardia explícita strain 0–21 vs esfuerzo 1–10. Sin migraciones: reutiliza `012` y Dexie v19. Code review cerrado con cinco hallazgos corregidos —uno de ellos, el envío de chat abortado, era una pérdida de mensaje real— y la suite quedó en 379 archivos / 3000 tests, typecheck, lint, build y `git diff --check` verdes. Pendientes operativos: deploy y smoke autenticado (`docs/superpowers/smokes/2026-08-07-whoop-workout-detail-smoke.md`).
+- **Whoop — auto-sync de datos stale commiteado (2026-08-05, `c267a1f`):** al entrar al Dashboard como self consulta estado y sincroniza en silencio solo si no hay sync previo, pasaron 30 minutos o el último estado fue error. Mantiene cooldown manual y no corre para gestionados. Suite de cierre: 373 archivos / 2938 tests; queda incluido en el mismo smoke autenticado del detalle para evitar dos sesiones de QA con idéntico setup.
 - **Superseries de fuerza implementadas y desplegadas (2026-08-05, `49ab6a8`…`faf70f4`):** ver §23. Estructura real y editable en vez de prefijos `A1/A2` en `notes`, con normalizador aislado, sort por unidades, roles group-aware y política determinista cableada en chat y Plan Builder. Sin migraciones. Pendiente solo la verificación manual post-deploy, que no cuesta API.
 - **Consentimiento in-app versionado activado en producción (2026-08-03, `c451808`…`e59b85f`):** `017_user_consents.sql` aplicada, `VITE_CONSENT_GATE=true` y `CONSENT_GATE_ENABLED=true`. El smoke real confirmó el gate general, la aceptación biométrica separada, cuatro filas append-only con las versiones vigentes y timestamps de servidor, y la hidratación remota desde una ventana incógnita: con Dexie vacío verificó Supabase y abrió la app sin reaceptación en ~0,2 s.
 - **Deploy de 2026-08-03 arrastra las cuatro tandas que estaban pendientes:** rotación coordinada del Plan Builder (§16), roles de partido de squash (§17, `9754f78`), identidad `libraryRef`-first de fuerza (§19, `afaac17`) y copy de la librería de fuerza (§20, `33d585f`). Ninguna trae migración. **El smoke del consentimiento quedó cerrado; sigue pendiente registrar la verificación post-deploy de las tandas de motor.**
@@ -36,7 +38,7 @@ Base de contraste:
 
 ## Resumen Ejecutivo
 
-RallyIQ esta en una etapa donde el core ya no es el cuello de botella principal. El motor de planificacion, Plan Builder async, calidad deportiva base, athlete scope foundation, claves naturales locales por atleta, write path remoto seguro para day/week, Athlete-Aware Core, Coach F2-lite Parte 2b, Whoop v1 + Workout Auto-Complete (ambas migraciones aplicadas), Coach Workspace con roster/Planificacion/Biblioteca, y Fase 0 de coaches landing (rutas legales publicas + landing `/coaches` de prelanzamiento) ya estan construidos. La Fase 0 de medicion del Plan Builder tambien esta cerrada: `quality_version = 2` es productiva, el bundle esta desplegado y una corrida real quedo verificada en `plan_generation_jobs` el 2026-07-26. La rotacion coordinada de fuerza y squash ya tiene su smoke `high` pagado y aceptado, y encima de ella viajan los roles de partido de squash; ambas tandas quedaron desplegadas el 2026-08-03 y resta su verificación post-deploy. Biblioteca y Planificacion tienen `015` y deploy aplicados; queda cerrar el smoke autenticado. El 2026-08-05 se sumaron las superseries de fuerza (§23), que cierran la estructura de sesion sin migraciones y quedan a la espera de su verificacion manual.
+RallyIQ esta en una etapa donde el core ya no es el cuello de botella principal. El motor de planificacion, Plan Builder async, calidad deportiva base, athlete scope foundation, claves naturales locales por atleta, write path remoto seguro para day/week, Athlete-Aware Core, Coach F2-lite Parte 2b, Whoop v1 + Workout Auto-Complete (ambas migraciones aplicadas), Coach Workspace con roster/Planificacion/Biblioteca, y Fase 0 de coaches landing (rutas legales publicas + landing `/coaches` de prelanzamiento) ya estan construidos. La Fase 0 de medicion del Plan Builder tambien esta cerrada: `quality_version = 2` es productiva, el bundle esta desplegado y una corrida real quedo verificada en `plan_generation_jobs` el 2026-07-26. La rotacion coordinada de fuerza y squash ya tiene su smoke `high` pagado y aceptado, y encima de ella viajan los roles de partido de squash; ambas tandas quedaron desplegadas el 2026-08-03 y resta su verificación post-deploy. Biblioteca y Planificacion tienen `015` y deploy aplicados; queda cerrar el smoke autenticado. El 2026-08-05 se sumaron las superseries de fuerza (§23), y el 2026-08-07 el dato de workouts Whoop dejó de servir solo para auto-completar: ya tiene detalle visible por sesión, residual por día y contexto objetivo de siete días para el coach (§24). Ambas entregas quedan a la espera de su verificación manual.
 
 Lo que queda antes de mostrar/cobrar con confianza se concentra en dos carriles:
 
@@ -52,7 +54,7 @@ Mi lectura como lider tecnico: el cambio principal entre hoy y hace dos dias es 
 
 ## Estado Actual En Una Frase
 
-RallyIQ ya opera multi-atleta en produccion, con Whoop readiness y Workout Auto-Complete operativos (`011`/`012` aplicados), Coach Workspace base (`/coach`) y rutas legales publicas + landing `/coaches` en vivo. El consentimiento in-app también está **activo**: `017` aplicada, ambas flags encendidas y smoke de persistencia/hidratación cerrado. `015` y Biblioteca/Planificacion ya estan desplegadas, `quality_version = 2` quedo verificada en `plan_generation_jobs`, la rotacion coordinada del Plan Builder ya paso su control `high` pagado, y las sesiones de fuerza soportan superseries reales de punta a punta.
+RallyIQ ya opera multi-atleta en produccion, con Whoop readiness y Workout Auto-Complete operativos (`011`/`012` aplicados), Coach Workspace base (`/coach`) y rutas legales publicas + landing `/coaches` en vivo. El consentimiento in-app también está **activo**: `017` aplicada, ambas flags encendidas y smoke de persistencia/hidratación cerrado. `015` y Biblioteca/Planificacion ya estan desplegadas, `quality_version = 2` quedo verificada en `plan_generation_jobs`, la rotacion coordinada del Plan Builder ya paso su control `high` pagado, y las sesiones de fuerza soportan superseries reales de punta a punta. El auto-sync de Whoop, el detalle del workout y el bloque objetivo para el coach están commiteados en `main`. Falta deploy y smoke combinado antes de describir esta última capa como productiva.
 
 ## Porcentaje De Avance
 
@@ -763,6 +765,106 @@ rondas, tríos automáticos, backfill de sesiones existentes, limpieza de
 prefijos `A1/A2` históricos, superseries fuera de fuerza e `intent` en Plan
 Builder.
 
+### 24. Whoop — frescura, detalle de workouts y contexto del coach (2026-08-05/07)
+
+El incremento cierra el salto entre “Whoop completó una sesión” y “el atleta y
+el coach entienden qué carga registró”. No cambia el matcher ni usa strain para
+`Session.actualRpe`.
+
+**Frescura.** `c267a1f` agrega auto-sync self-only al entrar al Dashboard. La
+política es determinista: sincroniza si nunca hubo éxito, si pasaron 30 minutos
+o si el último sync terminó en error; una lectura fallida de status no dispara
+un POST a ciegas. El camino es silencioso y reutiliza el cooldown existente.
+
+**Detalle por sesión.** Las tarjetas auto-completadas por Whoop reciben el
+workout real por prop y muestran métricas semánticas formateadas en la UI:
+duración siempre; strain, FC y distancia si existen; ritmo solo para `running`,
+con distancia mínima de 300 m y duración exacta `endAt - startAt`. `PENDING_SCORE`
+y `UNSCORABLE` tienen mensajes distintos; `SCORED` con datos parciales no inventa
+un estado pendiente.
+
+**Residual diario.** `DayDetail` consulta por `{ athleteId, date }`, identifica
+el estado con esas dos claves para no retener filas al cambiar de scope y lista
+una línea por workout que ninguna sesión reclama. La fuente durable de la
+asociación es `session.autoCompletion.workoutId`, no el status local del workout.
+
+**Coach.** Cada request de chat arma al vuelo una ventana inclusiva de siete
+días, conserva como máximo los ocho workouts `SCORED` más recientes y resume el
+desborde. Cada línea separa la carga medida de su sesión planificada o declara
+`sin sesion asociada`. La guardia final evita mezclar strain 0–21 con Esfuerzo
+1–10. El bloque se omite completo si no hay datos y también en atletas
+gestionados. `ChatCoach` captura atleta + switch epoch antes de leer y descarta
+**el bloque** si el scope cambió durante las consultas — nunca el envío.
+
+**Datos y costo.** No hay SQL, migración Dexie ni backfill. Se reutilizan los
+workouts ya sincronizados por `012`; por eso sesiones viejas obtienen el detalle
+al vuelo. El costo máximo aceptado es aproximadamente 280 tokens por request de
+chat cuando hay workouts.
+
+**Code review (2026-08-07).** Cinco hallazgos corregidos antes del commit.
+
+1. **El guard de scope del chat descartaba el mensaje entero, y se disparaba en
+   una transición benigna.** `hydrateActiveAthlete` publica el atleta con
+   `setActiveAthleteId` **sin** `bumpSwitchEpoch` (`activeAthlete.ts:13`), así
+   que un arranque que resuelve `null → ath_x` mientras el envío estaba en vuelo
+   llegaba al guard con la identidad cambiada y el epoch intacto. `ChatInput`
+   limpia el textarea **antes** de llamar a `onSend` (`ChatInput.tsx:18`) y el
+   auto-submit ya marcó el draft consumido: el mensaje se perdía sin burbuja,
+   sin error y sin reintento. Ahora se descarta **el bloque** y el envío sigue.
+   Mandar sin bloque es exactamente el comportamiento previo a esta entrega, así
+   que la degradación no puede filtrar nada. Fijado por
+   `chatCoachWhoopBlockScope.test.tsx`, cuyos tres casos de scope fallan contra
+   el código anterior.
+2. **El residual del día se afirmaba antes de tener con qué.** `loadWeek` es un
+   efecto y `sessions` arranca vacío, mientras que los workouts salen de un
+   índice puntual de Dexie y ganan la carrera: al entrar directo a `/day/:date`,
+   un workout que **sí** completó una sesión aparecía un instante bajo «Whoop
+   registró además». La afirmación ahora exige `canResolveWorkoutClaims`, que
+   compara `loadedWeekStart` con la semana del día. Una lista vacía por no haber
+   cargado es indistinguible de una vacía de verdad — por eso se pregunta por la
+   semana cargada y no por la cantidad de sesiones.
+3. **El recuadro de métricas salía a sangre.** Se renderiza como hermano de la
+   cabecera (`p-3 md:p-4`) sin padding propio, así que su borde redondeado
+   chocaba con el de la tarjeta y con la franja de acento. Igualado con
+   `mx-3 mb-3 md:mx-4 md:mb-4`.
+4. **`WINDOW_DAYS` estaba declarado dos veces**, en el orquestador y en el
+   formateador: la ventana que se consulta y la que se filtra eran constantes
+   independientes. Ampliar una sola truncaría o pediría de menos sin que ningún
+   test lo notara. Ahora `whoopWorkoutBlock.ts` importa
+   `WHOOP_WORKOUT_WINDOW_DAYS` del formateador, que es su dueño.
+5. **El residual imprimía el literal inglés de Whoop** (`weightlifting`,
+   `functional fitness`) en una vista que habla el vocabulario de la app. Pasa
+   por `mapWhoopSport` + `SESSION_TYPE_CONFIG`, conservando el nombre crudo si
+   el deporte no está mapeado.
+
+**No corregido, reportado.** El título de sesión entra al prompt por un
+`sanitizeField` local (colapso de espacios + tope de 48) en vez de
+`sanitizeUserText` (`promptBuilder.ts:325`), que neutraliza bloques `actions` y
+etiquetas de rol. **No es una exposición nueva:** los mismos títulos ya viajan
+crudos en `promptBuilder.ts:1506` y `:1805`, así que endurecer solo este bloque
+no cierra nada y tocar la política de saneado del coach es una pieza aparte.
+También queda abierto que `LegalPageLayout.handleSignIn` se traga el fallo de
+OAuth con un `console.error`, sin la superficie de `authError` que sí tiene
+`LandingPage`.
+
+**Verificación.** Working tree revisado con **379 archivos / 3000 tests**,
+typecheck, lint, build y `git diff --check` verdes. La pasada autenticada quedó
+escrita en `docs/superpowers/smokes/2026-08-07-whoop-workout-detail-smoke.md` y
+cubre también el auto-sync para cerrar ambos pendientes con una sola sesión real.
+
+**Pendiente de rollout:** deploy y smoke combinado. No marcar esta capa como
+productiva antes de observar un workout asociado, uno no asociado si los datos
+reales lo permiten, el payload del coach y la ausencia total bajo un atleta
+gestionado.
+
+**Siguiente mejora recomendada:** zonas de frecuencia cardíaca por workout. Es
+la Entrega 3 y requiere un spec nuevo, `019` + Dexie v20, normalización y
+lifecycle completo. Antes de diseñarla, medir varios payloads reales para
+confirmar completitud de `zone_durations` por deporte y score state. Después
+quedan, en este orden: resumen en `WeeklyView` usando los mismos predicados,
+desnivel para running/cycling y kilojoules; estos dos últimos no justifican una
+migración por sí solos mientras no exista un caso real frecuente.
+
 ### Producto Publico Y Marca
 
 - Marca publica operativa: `RallyIQ`.
@@ -817,11 +919,17 @@ Builder.
 - Credenciales/raw server-only; cliente solo lee `readiness_daily` por acceso al atleta.
 - OAuth v2, refresh, scopes base + `offline`, tokens cifrados AES-256-GCM.
 - Sync manual/on-demand con cooldown y cron dedicado.
+- Auto-sync self-only al abrir Dashboard cuando el estado está stale (30 min),
+  nunca a ciegas tras fallo de status y nunca para atletas gestionados.
 - Dexie v15 `readinessDaily`, pull local, backup/export y wipe local.
 - `ReadinessCard` en dashboard y `WhoopConnection` en settings.
 - Prefill de check-in: sueno, calidad, energia y **Esfuerzo** desde Whoop, editable y con procedencia `prefillSource`.
 - `Session.actualRpe` queda separado: el esfuerzo objetivo de Whoop no alimenta carga/ACWR por sesion.
 - Readiness entra al prompt del coach como contexto pasivo y a alerta suave por recovery rojo.
+- Workouts auto-completados muestran métricas reales en `DayDetail`; los no
+  asociados quedan visibles como residual del día.
+- El coach recibe hasta ocho workouts `SCORED` de los últimos siete días,
+  distinguiendo carga medida, sesión planificada y actividad fuera de plan.
 - Desconexion/borrado remoto con service-role y tolerancia a 404/tabla ausente.
 
 ### Resumen Semanal Y Coach Note
@@ -1384,9 +1492,12 @@ dificultad.
    que faltaba para que una sesion de fuerza se lea como la escribe un
    entrenador y no como una lista plana. Cierra tambien la deuda de los
    prefijos `A1/A2`, que el prompt pedia y ningun consumidor interpretaba.
-5. **Analisis de entrenamientos con Whoop.** Superficie nueva sobre datos que ya
-   estan locales (readiness + workouts). Mantener el contrato vigente: contexto
-   objetivo y consentido, sin diagnostico ni ajuste automatico.
+5. **Analisis de entrenamientos con Whoop.** *(implementado en el working tree,
+   2026-08-07; ver §24)* La primera capa ya está cerrada: métricas reales en la
+   sesión, residual diario y bloque objetivo de siete días para el coach, sin
+   diagnóstico ni ajuste automático. Pendientes: commit/deploy/smoke. La mejora
+   siguiente es zonas de FC (`019` + Dexie v20); `WeeklyView`, desnivel y
+   kilojoules quedan detrás.
 6. **Chat — latencia y costo.** *(persistencia implementada 2026-08-05, ver
    §22; `018` aplicada 2026-08-05)* Ya no es trabajo de código: queda correr la
    prueba de producción, verificar pérdida y latencia del rollout, y poblar
@@ -1426,32 +1537,40 @@ Orden recomendado (Athlete-Aware Core + Coach F2-lite Parte 2b + Whoop v1/Workou
    persistidos con las versiones vigentes, y reingreso desde incógnito resuelto
    por hidratación remota sin reaceptación en ~0,2 s. La mejora visual queda
    como backlog posterior; el comportamiento observado es correcto.
-2. **Verificacion operativa de las tandas de motor:** generar un plan real y
+2. **Cerrar Whoop auto-sync + detalle de workouts:** deploy y ejecutar
+   `docs/superpowers/smokes/2026-08-07-whoop-workout-detail-smoke.md`.
+   El mismo recorrido valida frescura, UI, residual, payload del coach y scope
+   gestionado sin abrir OAuth ni agregar migraciones.
+3. **Verificacion operativa de las tandas de motor:** generar un plan real y
    revisar la fila de job/attempts, mirando
    `squashFinisherPreservedCount` / `squashStandaloneMatchCount` contra lo
    esperado, y de paso confirmar que los nombres nuevos de la libreria de fuerza
    aparecen en la UI sin romper sesiones/plantillas viejas (que resuelven por
    `aliases`). **Aprovechar la misma sesion real para los seis pasos de
    verificacion de superseries (§23)**, que no cuestan API y comparten setup.
-3. **Smoke autenticado de Biblioteca y Planificacion** (pendiente §11 desde el
+4. **Smoke autenticado de Biblioteca y Planificacion** (pendiente §11 desde el
    deploy de `015`): es la deuda de verificacion mas vieja del proyecto y sale
-   casi gratis si ya hay una sesion real abierta para el item 2.
-4. **Revision juridica formal y retención** (2-3 dias abogado, paralelizar con
+   casi gratis si ya hay una sesion real abierta para el item 3.
+5. **Revision juridica formal y retención** (2-3 dias abogado, paralelizar con
    items 2-3): firma de terminos/privacidad/descargos/políticas Whoop y decisión
    sobre `user_consents` al borrar cuenta. El rollout técnico ya no está pendiente.
-5. **QA deportiva y preparacion piloto** (1-2 dias): generar 3 planes arquetipo como atletas gestionados, revisar salida coach, preparar oferta (duracion, precio, soporte, reembolso).
-6. **Primer cliente acompanado** (ejecutar en paralelo con abogado): elegir 1 candidato, onboarding 1:1, generar semana 1, iniciar protocolo de revision semanal.
+6. **QA deportiva y preparacion piloto** (1-2 dias): generar 3 planes arquetipo como atletas gestionados, revisar salida coach, preparar oferta (duracion, precio, soporte, reembolso).
+7. **Primer cliente acompanado** (ejecutar en paralelo con abogado): elegir 1 candidato, onboarding 1:1, generar semana 1, iniciar protocolo de revision semanal.
 
-**Siguiente bloque de desarrollo recomendado:** ninguno de motor. Squash y
-fuerza quedaron cerrados de punta a punta —seleccion, carga, identidad, copy y,
-desde el 2026-08-05, estructura de sesion via superseries (§23)—,
-y el consentimiento ya esta escrito, activo y smokeado, asi que lo que separa el
-producto de cobrarle a alguien es legal y operacional, no codigo. Si aparece
-tiempo de desarrollo libre, los dos candidatos con mejor relacion valor/riesgo
-son el **smoke autenticado de Biblioteca y Planificacion** (item 3) y, como
-unica pieza de codigo nueva que se justifica hoy, la **politica de
-cancelacion/reembolso + one-liner de oferta** en `/coaches`, que es superficie
-publica pendiente del checklist B y bloquea cobrar, no una mejora de motor.
+**Siguiente bloque de desarrollo recomendado, después del smoke:** Whoop
+Entrega 3 — **zonas de frecuencia cardíaca por workout** (§24). Es la extensión
+con mejor continuidad de producto: agrega distribución de intensidad útil en
+running y squash, reutiliza las superficies recién construidas y mejora el
+contexto objetivo sin tocar las reglas de coaching. No empezar por el schema:
+primero auditar payloads reales y cerrar el contrato de `zone_durations`; luego
+escribir spec/plan para `019` + Dexie v20, incluyendo sync, export/import,
+borrado, estados no `SCORED`, UI y costo de prompt.
+
+Esto no cambia el gate comercial: lo que separa el producto de cobrarle a
+alguien sigue siendo legal y operacional. Si se prioriza salida a piloto sobre
+producto Whoop, el mejor uso del tiempo continúa siendo el smoke autenticado de
+Biblioteca/Planificacion y la política de cancelación/reembolso + one-liner de
+oferta en `/coaches`.
 
 ## Que No Hacer Ahora
 
