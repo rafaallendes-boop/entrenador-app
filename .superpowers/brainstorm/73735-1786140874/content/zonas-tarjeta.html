@@ -1,0 +1,168 @@
+<style>
+  .rq-card {
+    background: #14161a;
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 14px;
+    padding: 0;
+    overflow: hidden;
+    font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+    color: #e8eaed;
+  }
+  .rq-head { padding: 12px 14px 10px; display: flex; gap: 10px; align-items: baseline; }
+  .rq-head strong { font-size: 14px; font-weight: 600; }
+  .rq-head span { font-size: 11px; color: #8b9099; }
+  .rq-badge {
+    margin-left: auto; font-size: 9px; letter-spacing: .1em; text-transform: uppercase;
+    color: #7fd1b9; border: 1px solid rgba(127,209,185,.3); border-radius: 999px; padding: 2px 7px;
+  }
+  .rq-box {
+    margin: 0 14px 14px; padding: 9px 11px;
+    border: 1px solid rgba(255,255,255,0.05);
+    background: rgba(255,255,255,0.03);
+    border-radius: 12px;
+  }
+  .rq-metrics { display: flex; flex-wrap: wrap; gap: 8px 18px; }
+  .rq-metric .v { font-family: ui-monospace, SFMono-Regular, monospace; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .rq-metric .k { font-size: 9px; letter-spacing: .16em; text-transform: uppercase; color: #767b84; margin-top: 1px; }
+
+  .rq-bar { display: flex; height: 9px; border-radius: 999px; overflow: hidden; margin-top: 10px; }
+  .rq-bar i { display: block; }
+  .rq-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 8px; }
+  .rq-legend span { font-size: 10px; color: #8b9099; display: inline-flex; align-items: center; gap: 5px; font-variant-numeric: tabular-nums; }
+  .rq-legend i { width: 7px; height: 7px; border-radius: 2px; display: inline-block; }
+
+  .rq-rows { margin-top: 10px; display: grid; gap: 5px; }
+  .rq-row { display: grid; grid-template-columns: 22px 1fr 46px; align-items: center; gap: 8px; }
+  .rq-row .z { font-size: 10px; color: #767b84; font-family: ui-monospace, monospace; }
+  .rq-row .t { height: 6px; border-radius: 999px; background: rgba(255,255,255,.05); overflow: hidden; }
+  .rq-row .t i { display: block; height: 100%; border-radius: 999px; }
+  .rq-row .m { font-size: 11px; text-align: right; font-family: ui-monospace, monospace; color: #b9bec7; font-variant-numeric: tabular-nums; }
+
+  .rq-note { font-size: 10.5px; color: #8b9099; margin-top: 9px; }
+  .rq-caption { font-size: 11px; color: var(--muted, #8b9099); margin-top: 10px; line-height: 1.5; }
+  .rq-cost { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: #767b84; margin-bottom: 6px; }
+</style>
+
+<h2>¿Cómo se ve la distribución de zonas en la tarjeta?</h2>
+<p class="subtitle">Mismo entrenamiento en las cuatro: squash, 62 min, strain 12,4. Z0&nbsp;8&nbsp;· Z1&nbsp;12&nbsp;· Z2&nbsp;18&nbsp;· Z3&nbsp;14&nbsp;· Z4&nbsp;8&nbsp;· Z5&nbsp;2&nbsp;min. Fijate en cuánto espacio vertical pide cada una y qué te deja leer de un vistazo.</p>
+
+<div class="cards">
+
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:16px;background:#0d0f12">
+      <div class="rq-cost">Opción A</div>
+      <div class="rq-card">
+        <div class="rq-head"><strong>Partido de squash</strong><span>18:30</span><span class="rq-badge">Whoop</span></div>
+        <div class="rq-box">
+          <div class="rq-metrics">
+            <div class="rq-metric"><div class="v">12,4</div><div class="k">Strain</div></div>
+            <div class="rq-metric"><div class="v">62 min</div><div class="k">Duración</div></div>
+            <div class="rq-metric"><div class="v">142 / 181 bpm</div><div class="k">FC</div></div>
+          </div>
+          <div class="rq-bar">
+            <i style="width:12.9%;background:#3a4048"></i>
+            <i style="width:19.4%;background:#4f7ea8"></i>
+            <i style="width:29.0%;background:#4f9e7a"></i>
+            <i style="width:22.6%;background:#c9a13f"></i>
+            <i style="width:12.9%;background:#d07b3f"></i>
+            <i style="width:3.2%;background:#c9524a"></i>
+          </div>
+          <div class="rq-legend">
+            <span><i style="background:#4f9e7a"></i>Z2 18</span>
+            <span><i style="background:#c9a13f"></i>Z3 14</span>
+            <span><i style="background:#d07b3f"></i>Z4 8</span>
+            <span><i style="background:#c9524a"></i>Z5 2</span>
+          </div>
+        </div>
+      </div>
+      <p class="rq-caption"><strong>Barra apilada + leyenda parcial.</strong> La barra muestra las seis zonas; la leyenda nombra solo las que tienen peso. Se ve la forma del entrenamiento sin leer números.</p>
+    </div>
+    <div class="card-body">
+      <h3>A · Barra apilada</h3>
+      <p>+2 líneas de alto. Comunica forma, no cifras exactas. Necesita leyenda para ser legible.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:16px;background:#0d0f12">
+      <div class="rq-cost">Opción B</div>
+      <div class="rq-card">
+        <div class="rq-head"><strong>Partido de squash</strong><span>18:30</span><span class="rq-badge">Whoop</span></div>
+        <div class="rq-box">
+          <div class="rq-metrics">
+            <div class="rq-metric"><div class="v">12,4</div><div class="k">Strain</div></div>
+            <div class="rq-metric"><div class="v">62 min</div><div class="k">Duración</div></div>
+            <div class="rq-metric"><div class="v">142 / 181 bpm</div><div class="k">FC</div></div>
+            <div class="rq-metric"><div class="v">24 min</div><div class="k">Sobre Z3</div></div>
+          </div>
+        </div>
+      </div>
+      <p class="rq-caption"><strong>Una métrica más.</strong> Las zonas se resumen en un solo número —minutos en Z4+Z5— y entran en la fila que ya existe. Cero lenguaje visual nuevo, cero alto adicional.</p>
+    </div>
+    <div class="card-body">
+      <h3>B · Un número</h3>
+      <p>+0 líneas. Responde «¿qué tan duro fue?» directo. Pierde la forma: no distingue 24 min continuos de 24 min en picos.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:16px;background:#0d0f12">
+      <div class="rq-cost">Opción C</div>
+      <div class="rq-card">
+        <div class="rq-head"><strong>Partido de squash</strong><span>18:30</span><span class="rq-badge">Whoop</span></div>
+        <div class="rq-box">
+          <div class="rq-metrics">
+            <div class="rq-metric"><div class="v">12,4</div><div class="k">Strain</div></div>
+            <div class="rq-metric"><div class="v">62 min</div><div class="k">Duración</div></div>
+            <div class="rq-metric"><div class="v">142 / 181 bpm</div><div class="k">FC</div></div>
+          </div>
+          <div class="rq-rows">
+            <div class="rq-row"><span class="z">Z5</span><span class="t"><i style="width:11%;background:#c9524a"></i></span><span class="m">2 min</span></div>
+            <div class="rq-row"><span class="z">Z4</span><span class="t"><i style="width:44%;background:#d07b3f"></i></span><span class="m">8 min</span></div>
+            <div class="rq-row"><span class="z">Z3</span><span class="t"><i style="width:78%;background:#c9a13f"></i></span><span class="m">14 min</span></div>
+            <div class="rq-row"><span class="z">Z2</span><span class="t"><i style="width:100%;background:#4f9e7a"></i></span><span class="m">18 min</span></div>
+            <div class="rq-row"><span class="z">Z1</span><span class="t"><i style="width:67%;background:#4f7ea8"></i></span><span class="m">12 min</span></div>
+            <div class="rq-row"><span class="z">Z0</span><span class="t"><i style="width:44%;background:#3a4048"></i></span><span class="m">8 min</span></div>
+          </div>
+        </div>
+      </div>
+      <p class="rq-caption"><strong>Seis filas.</strong> Cada zona con su barra y sus minutos exactos. Es lo que muestra la app de Whoop, y lo único que permite comparar dos entrenamientos zona por zona.</p>
+    </div>
+    <div class="card-body">
+      <h3>C · Seis filas</h3>
+      <p>+6 líneas de alto. Detalle completo. En una vista con varias sesiones del día empuja todo hacia abajo.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="d" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:16px;background:#0d0f12">
+      <div class="rq-cost">Opción D</div>
+      <div class="rq-card">
+        <div class="rq-head"><strong>Partido de squash</strong><span>18:30</span><span class="rq-badge">Whoop</span></div>
+        <div class="rq-box">
+          <div class="rq-metrics">
+            <div class="rq-metric"><div class="v">12,4</div><div class="k">Strain</div></div>
+            <div class="rq-metric"><div class="v">62 min</div><div class="k">Duración</div></div>
+            <div class="rq-metric"><div class="v">142 / 181 bpm</div><div class="k">FC</div></div>
+            <div class="rq-metric"><div class="v">24 min</div><div class="k">Sobre Z3</div></div>
+          </div>
+          <div class="rq-bar">
+            <i style="width:12.9%;background:#3a4048"></i>
+            <i style="width:19.4%;background:#4f7ea8"></i>
+            <i style="width:29.0%;background:#4f9e7a"></i>
+            <i style="width:22.6%;background:#c9a13f"></i>
+            <i style="width:12.9%;background:#d07b3f"></i>
+            <i style="width:3.2%;background:#c9524a"></i>
+          </div>
+          <p class="rq-note">Tocá para ver el detalle por zona</p>
+        </div>
+      </div>
+      <p class="rq-caption"><strong>Resumen plegado.</strong> El número contesta la pregunta, la barra da la forma, y las seis filas de la opción C aparecen solo al desplegar. La leyenda se cambia por el número, que ya nombra lo que importa.</p>
+    </div>
+    <div class="card-body">
+      <h3>D · Número + barra, detalle al desplegar</h3>
+      <p>+1 línea plegado, C completo al abrir. Más superficie que construir y probar.</p>
+    </div>
+  </div>
+
+</div>

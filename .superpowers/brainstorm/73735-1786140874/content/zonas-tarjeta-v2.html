@@ -1,0 +1,208 @@
+<style>
+  .rq2-card {
+    background: #14161a;
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 14px;
+    overflow: hidden;
+    font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+    color: #e8eaed;
+  }
+  .rq2-head { padding: 13px 14px 11px; display: flex; gap: 9px; align-items: baseline; flex-wrap: wrap; }
+  .rq2-head strong { font-size: 14px; font-weight: 600; }
+  .rq2-head .t { font-size: 11px; color: #8b9099; }
+  .rq2-badge {
+    margin-left: auto; font-size: 9px; letter-spacing: .1em; text-transform: uppercase;
+    color: #7fd1b9; border: 1px solid rgba(127,209,185,.3); border-radius: 999px; padding: 2px 7px; white-space: nowrap;
+  }
+  .rq2-box {
+    margin: 0 14px 14px; padding: 12px 13px 13px;
+    border: 1px solid rgba(255,255,255,0.05);
+    background: rgba(255,255,255,0.03);
+    border-radius: 12px;
+  }
+
+  /* Grilla en vez de flex-wrap: en angosto las métricas quedan alineadas en
+     columnas en vez de dejar una huérfana colgando a la derecha. */
+  .rq2-metrics { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 12px 16px; }
+  .rq2-wide .rq2-metrics { grid-template-columns: repeat(4, minmax(0,1fr)); }
+  .rq2-metric .v { font-family: ui-monospace, SFMono-Regular, monospace; font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.2; }
+  .rq2-metric .k { font-size: 9px; letter-spacing: .16em; text-transform: uppercase; color: #767b84; margin-top: 3px; }
+  .rq2-metric.hi .v { color: #e9a15f; }
+
+  .rq2-barwrap { margin-top: 15px; }
+  .rq2-bar { display: flex; height: 10px; border-radius: 999px; overflow: hidden; gap: 1.5px; background: rgba(255,255,255,.04); }
+  .rq2-bar i { display: block; min-width: 2px; }
+  .rq2-scale { display: flex; justify-content: space-between; margin-top: 6px; }
+  .rq2-scale span { font-size: 9px; color: #6e737c; font-family: ui-monospace, monospace; letter-spacing: .06em; }
+
+  .rq2-toggle {
+    display: flex; align-items: center; gap: 6px; margin-top: 13px;
+    padding-top: 11px; border-top: 1px solid rgba(255,255,255,.05);
+    font-size: 11px; color: #9aa0a9; cursor: pointer;
+  }
+  .rq2-toggle svg { flex: none; }
+
+  .rq2-rows { margin-top: 12px; display: grid; gap: 7px; }
+  .rq2-row { display: grid; grid-template-columns: 20px 1fr 44px; align-items: center; gap: 9px; }
+  .rq2-row .z { font-size: 10px; color: #767b84; font-family: ui-monospace, monospace; }
+  .rq2-row .t { height: 6px; border-radius: 999px; background: rgba(255,255,255,.05); overflow: hidden; }
+  .rq2-row .t i { display: block; height: 100%; border-radius: 999px; }
+  .rq2-row .m { font-size: 11px; text-align: right; font-family: ui-monospace, monospace; color: #b9bec7; font-variant-numeric: tabular-nums; }
+
+  .rq2-frame { background: #0d0f12; border-radius: 12px; padding: 16px; }
+  .rq2-label { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: #767b84; margin-bottom: 9px; }
+  .rq2-stage { display: flex; gap: 18px; flex-wrap: wrap; align-items: flex-start; }
+  .rq2-col { flex: 1 1 300px; min-width: 0; }
+  .rq2-phone { max-width: 340px; margin: 0 auto; }
+</style>
+
+<h2>Opción D, con aire y en dos anchos</h2>
+<p class="subtitle">Mismo partido: squash, 62 min, strain 12,4. Z0&nbsp;8 · Z1&nbsp;12 · Z2&nbsp;18 · Z3&nbsp;14 · Z4&nbsp;8 · Z5&nbsp;2 min. El número ahora es <strong>Z4+Z5 = 10 min</strong>, que es lo que está por encima de Z3.</p>
+
+<div class="rq2-stage">
+
+  <div class="rq2-col">
+    <div class="rq2-label">Móvil · 340 px · plegado</div>
+    <div class="rq2-frame">
+      <div class="rq2-phone">
+        <div class="rq2-card">
+          <div class="rq2-head"><strong>Partido de squash</strong><span class="t">18:30</span><span class="rq2-badge">Whoop</span></div>
+          <div class="rq2-box">
+            <div class="rq2-metrics">
+              <div class="rq2-metric"><div class="v">12,4</div><div class="k">Strain</div></div>
+              <div class="rq2-metric"><div class="v">62 min</div><div class="k">Duración</div></div>
+              <div class="rq2-metric"><div class="v">142/181</div><div class="k">FC bpm</div></div>
+              <div class="rq2-metric hi"><div class="v">10 min</div><div class="k">Zona alta</div></div>
+            </div>
+            <div class="rq2-barwrap">
+              <div class="rq2-bar">
+                <i style="width:12.9%;background:#3a4048"></i>
+                <i style="width:19.4%;background:#4f7ea8"></i>
+                <i style="width:29.0%;background:#4f9e7a"></i>
+                <i style="width:22.6%;background:#c9a13f"></i>
+                <i style="width:12.9%;background:#e9a15f"></i>
+                <i style="width:3.2%;background:#c9524a"></i>
+              </div>
+              <div class="rq2-scale"><span>Z0</span><span>Z5</span></div>
+            </div>
+            <div class="rq2-toggle">
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 3.5L5 6.5L8 3.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Ver minutos por zona
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="rq2-col">
+    <div class="rq2-label">Móvil · 340 px · desplegado</div>
+    <div class="rq2-frame">
+      <div class="rq2-phone">
+        <div class="rq2-card">
+          <div class="rq2-head"><strong>Partido de squash</strong><span class="t">18:30</span><span class="rq2-badge">Whoop</span></div>
+          <div class="rq2-box">
+            <div class="rq2-metrics">
+              <div class="rq2-metric"><div class="v">12,4</div><div class="k">Strain</div></div>
+              <div class="rq2-metric"><div class="v">62 min</div><div class="k">Duración</div></div>
+              <div class="rq2-metric"><div class="v">142/181</div><div class="k">FC bpm</div></div>
+              <div class="rq2-metric hi"><div class="v">10 min</div><div class="k">Zona alta</div></div>
+            </div>
+            <div class="rq2-barwrap">
+              <div class="rq2-bar">
+                <i style="width:12.9%;background:#3a4048"></i>
+                <i style="width:19.4%;background:#4f7ea8"></i>
+                <i style="width:29.0%;background:#4f9e7a"></i>
+                <i style="width:22.6%;background:#c9a13f"></i>
+                <i style="width:12.9%;background:#e9a15f"></i>
+                <i style="width:3.2%;background:#c9524a"></i>
+              </div>
+              <div class="rq2-scale"><span>Z0</span><span>Z5</span></div>
+            </div>
+            <div class="rq2-toggle" style="color:#c3c8d0">
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" style="transform:rotate(180deg)"><path d="M2 3.5L5 6.5L8 3.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Ocultar minutos por zona
+            </div>
+            <div class="rq2-rows">
+              <div class="rq2-row"><span class="z">Z5</span><span class="t"><i style="width:11%;background:#c9524a"></i></span><span class="m">2 min</span></div>
+              <div class="rq2-row"><span class="z">Z4</span><span class="t"><i style="width:44%;background:#e9a15f"></i></span><span class="m">8 min</span></div>
+              <div class="rq2-row"><span class="z">Z3</span><span class="t"><i style="width:78%;background:#c9a13f"></i></span><span class="m">14 min</span></div>
+              <div class="rq2-row"><span class="z">Z2</span><span class="t"><i style="width:100%;background:#4f9e7a"></i></span><span class="m">18 min</span></div>
+              <div class="rq2-row"><span class="z">Z1</span><span class="t"><i style="width:67%;background:#4f7ea8"></i></span><span class="m">12 min</span></div>
+              <div class="rq2-row"><span class="z">Z0</span><span class="t"><i style="width:44%;background:#3a4048"></i></span><span class="m">8 min</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="section" style="margin-top:22px">
+  <div class="rq2-label">Escritorio · ancho completo · plegado</div>
+  <div class="rq2-frame">
+    <div class="rq2-card rq2-wide">
+      <div class="rq2-head"><strong>Partido de squash</strong><span class="t">18:30</span><span class="rq2-badge">Whoop</span></div>
+      <div class="rq2-box">
+        <div class="rq2-metrics">
+          <div class="rq2-metric"><div class="v">12,4</div><div class="k">Strain</div></div>
+          <div class="rq2-metric"><div class="v">62 min</div><div class="k">Duración</div></div>
+          <div class="rq2-metric"><div class="v">142 / 181 bpm</div><div class="k">FC</div></div>
+          <div class="rq2-metric hi"><div class="v">10 min</div><div class="k">Zona alta</div></div>
+        </div>
+        <div class="rq2-barwrap">
+          <div class="rq2-bar">
+            <i style="width:12.9%;background:#3a4048"></i>
+            <i style="width:19.4%;background:#4f7ea8"></i>
+            <i style="width:29.0%;background:#4f9e7a"></i>
+            <i style="width:22.6%;background:#c9a13f"></i>
+            <i style="width:12.9%;background:#e9a15f"></i>
+            <i style="width:3.2%;background:#c9524a"></i>
+          </div>
+          <div class="rq2-scale"><span>Z0</span><span>Z5</span></div>
+        </div>
+        <div class="rq2-toggle">
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 3.5L5 6.5L8 3.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Ver minutos por zona
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="subtitle" style="margin-top:10px">Qué cambió respecto de la primera versión: las métricas pasan de <em>flex-wrap</em> a grilla —2 columnas en móvil, 4 en escritorio— así ninguna queda huérfana colgando; la barra ganó separación arriba y una escala Z0→Z5 debajo para no depender de leyenda; el desplegable quedó separado por un divisor en vez de pegado a la barra; y la métrica nueva va en color cálido para que se lea como el titular del recuadro.</p>
+</div>
+
+<div class="section" style="margin-top:26px">
+  <h3>¿Cómo se llama ese número?</h3>
+  <p class="subtitle">Etiqueta en mayúsculas chicas, junto a STRAIN / DURACIÓN / FC. Son 10 min por encima de Z3.</p>
+  <div class="options">
+    <div class="option" data-choice="zona-alta" onclick="toggleSelect(this)">
+      <div class="letter">1</div>
+      <div class="content">
+        <h3>Zona alta</h3>
+        <p>Dos palabras cortas, sin jerga. No dice dónde empieza, pero la barra de al lado lo muestra. Es lo que está puesto en el mockup.</p>
+      </div>
+    </div>
+    <div class="option" data-choice="zona-exigente" onclick="toggleSelect(this)">
+      <div class="letter">2</div>
+      <div class="content">
+        <h3>Zona exigente</h3>
+        <p>Tu propuesta. Más evocativa y describe la sensación, no el número. Una letra más larga que puede apretar en móvil.</p>
+      </div>
+    </div>
+    <div class="option" data-choice="z4" onclick="toggleSelect(this)">
+      <div class="letter">3</div>
+      <div class="content">
+        <h3>Z4+</h3>
+        <p>Preciso y brevísimo: no hay ambigüedad sobre dónde empieza. Es jerga, y el resto de la app viene deliberadamente saliendo de la jerga.</p>
+      </div>
+    </div>
+    <div class="option" data-choice="sobre-z3" onclick="toggleSelect(this)">
+      <div class="letter">4</div>
+      <div class="content">
+        <h3>Sobre Z3</h3>
+        <p>Literalmente lo que pediste. Preciso, pero obliga a saber qué es Z3 para entenderlo, y se lee como una condición más que como una métrica.</p>
+      </div>
+    </div>
+  </div>
+</div>

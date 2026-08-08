@@ -1,0 +1,145 @@
+<style>
+  .rw-card {
+    background: linear-gradient(145deg,rgba(26,26,26,.96),rgba(14,14,14,.98));
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 16px; padding: 15px 15px 16px;
+    font-family: ui-sans-serif, system-ui, -apple-system, sans-serif; color: #e8eaed;
+  }
+  .rw-kicker { font-size: 10px; font-weight: 600; letter-spacing: .22em; text-transform: uppercase; color: #767b84; }
+  .rw-hero { display: flex; align-items: baseline; gap: 8px; margin-top: 9px; }
+  .rw-hero .n { font-family: ui-monospace, SFMono-Regular, monospace; font-size: 26px; font-weight: 700; color: #e9a15f; font-variant-numeric: tabular-nums; line-height: 1; }
+  .rw-hero .u { font-size: 12px; color: #9aa0a9; }
+  .rw-sub { font-size: 11px; color: #8b9099; margin-top: 6px; line-height: 1.45; }
+
+  .rw-bar { display: flex; height: 11px; border-radius: 999px; overflow: hidden; gap: 1.5px; background: rgba(255,255,255,.04); margin-top: 14px; }
+  .rw-bar i { display: block; min-width: 2px; }
+  .rw-scale { display: flex; justify-content: space-between; margin-top: 6px; }
+  .rw-scale span { font-size: 9px; color: #6e737c; font-family: ui-monospace, monospace; }
+
+  .rw-rows { margin-top: 13px; display: grid; gap: 7px; }
+  .rw-row { display: grid; grid-template-columns: 20px 1fr 46px; align-items: center; gap: 9px; }
+  .rw-row .z { font-size: 10px; color: #767b84; font-family: ui-monospace, monospace; }
+  .rw-row .t { height: 6px; border-radius: 999px; background: rgba(255,255,255,.05); overflow: hidden; }
+  .rw-row .t i { display: block; height: 100%; border-radius: 999px; }
+  .rw-row .m { font-size: 11px; text-align: right; font-family: ui-monospace, monospace; color: #b9bec7; font-variant-numeric: tabular-nums; }
+
+  .rw-days { display: grid; grid-template-columns: repeat(7, minmax(0,1fr)); gap: 6px; margin-top: 15px; align-items: end; }
+  .rw-day { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .rw-stack { width: 100%; height: 82px; display: flex; flex-direction: column-reverse; justify-content: flex-start; border-radius: 5px; overflow: hidden; background: rgba(255,255,255,.035); }
+  .rw-stack i { display: block; width: 100%; }
+  .rw-dl { font-size: 9px; color: #6e737c; font-family: ui-monospace, monospace; letter-spacing: .04em; }
+
+  .rw-frame { background: #0d0f12; border-radius: 12px; padding: 16px; }
+  .rw-holder { max-width: 330px; }
+  .rw-legend { display: flex; flex-wrap: wrap; gap: 4px 11px; margin-top: 11px; }
+  .rw-legend span { font-size: 10px; color: #8b9099; display: inline-flex; align-items: center; gap: 5px; }
+  .rw-legend i { width: 7px; height: 7px; border-radius: 2px; display: inline-block; }
+  .rw-delta { font-size: 11px; color: #7fd1b9; margin-top: 7px; }
+</style>
+
+<h2>¿Qué forma tiene el resumen semanal?</h2>
+<p class="subtitle">Misma semana en las tres: 5 entrenamientos, 230 min registrados. Z0&nbsp;41 · Z1&nbsp;54 · Z2&nbsp;66 · Z3&nbsp;45 · Z4&nbsp;20 · Z5&nbsp;4 min. Zona alta (Z4+Z5) = <strong>24 min</strong>. Mostradas al ancho real de la columna «Resumen semanal».</p>
+
+<div class="cards">
+
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:16px;background:#0d0f12">
+      <div class="rw-holder">
+        <div class="rw-card">
+          <div class="rw-kicker">Carga medida por Whoop</div>
+          <div class="rw-hero"><span class="n">24</span><span class="u">min en zona alta</span></div>
+          <p class="rw-sub">5 entrenamientos · 230 min registrados</p>
+          <div class="rw-bar">
+            <i style="width:17.8%;background:#3a4048"></i>
+            <i style="width:23.5%;background:#4f7ea8"></i>
+            <i style="width:28.7%;background:#4f9e7a"></i>
+            <i style="width:19.6%;background:#c9a13f"></i>
+            <i style="width:8.7%;background:#e9a15f"></i>
+            <i style="width:1.7%;background:#c9524a"></i>
+          </div>
+          <div class="rw-scale"><span>Z0</span><span>Z5</span></div>
+          <div class="rw-rows">
+            <div class="rw-row"><span class="z">Z5</span><span class="t"><i style="width:6%;background:#c9524a"></i></span><span class="m">4 min</span></div>
+            <div class="rw-row"><span class="z">Z4</span><span class="t"><i style="width:30%;background:#e9a15f"></i></span><span class="m">20 min</span></div>
+            <div class="rw-row"><span class="z">Z3</span><span class="t"><i style="width:68%;background:#c9a13f"></i></span><span class="m">45 min</span></div>
+            <div class="rw-row"><span class="z">Z2</span><span class="t"><i style="width:100%;background:#4f9e7a"></i></span><span class="m">66 min</span></div>
+            <div class="rw-row"><span class="z">Z1</span><span class="t"><i style="width:82%;background:#4f7ea8"></i></span><span class="m">54 min</span></div>
+            <div class="rw-row"><span class="z">Z0</span><span class="t"><i style="width:62%;background:#3a4048"></i></span><span class="m">41 min</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A · Total de la semana</h3>
+      <p>Mismo lenguaje visual que la tarjeta de sesión, escalado a 7 días. Contesta «cuánto» y «en qué proporción». No dice <em>cuándo</em>: una semana con todo el trabajo duro el mismo día se ve igual que una repartida.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:16px;background:#0d0f12">
+      <div class="rw-holder">
+        <div class="rw-card">
+          <div class="rw-kicker">Carga medida por Whoop</div>
+          <div class="rw-hero"><span class="n">24</span><span class="u">min en zona alta</span></div>
+          <p class="rw-sub">5 entrenamientos · 230 min registrados</p>
+          <div class="rw-days">
+            <div class="rw-day"><div class="rw-stack">
+              <i style="height:9.9%;background:#3a4048"></i><i style="height:14.8%;background:#4f7ea8"></i><i style="height:22.2%;background:#4f9e7a"></i><i style="height:17.3%;background:#c9a13f"></i><i style="height:9.9%;background:#e9a15f"></i><i style="height:2.5%;background:#c9524a"></i>
+            </div><span class="rw-dl">L</span></div>
+            <div class="rw-day"><div class="rw-stack">
+              <i style="height:24.7%;background:#3a4048"></i><i style="height:18.5%;background:#4f7ea8"></i><i style="height:9.9%;background:#4f9e7a"></i><i style="height:2.5%;background:#c9a13f"></i>
+            </div><span class="rw-dl">M</span></div>
+            <div class="rw-day"><div class="rw-stack"></div><span class="rw-dl">M</span></div>
+            <div class="rw-day"><div class="rw-stack">
+              <i style="height:3.7%;background:#3a4048"></i><i style="height:7.4%;background:#4f7ea8"></i><i style="height:17.3%;background:#4f9e7a"></i><i style="height:14.8%;background:#c9a13f"></i><i style="height:3.7%;background:#e9a15f"></i>
+            </div><span class="rw-dl">J</span></div>
+            <div class="rw-day"><div class="rw-stack"></div><span class="rw-dl">V</span></div>
+            <div class="rw-day"><div class="rw-stack">
+              <i style="height:7.4%;background:#3a4048"></i><i style="height:11.1%;background:#4f7ea8"></i><i style="height:17.3%;background:#4f9e7a"></i><i style="height:18.5%;background:#c9a13f"></i><i style="height:11.1%;background:#e9a15f"></i><i style="height:2.5%;background:#c9524a"></i>
+            </div><span class="rw-dl">S</span></div>
+            <div class="rw-day"><div class="rw-stack">
+              <i style="height:4.9%;background:#3a4048"></i><i style="height:14.8%;background:#4f7ea8"></i><i style="height:14.8%;background:#4f9e7a"></i><i style="height:2.5%;background:#c9a13f"></i>
+            </div><span class="rw-dl">D</span></div>
+          </div>
+          <div class="rw-legend">
+            <span><i style="background:#4f9e7a"></i>Z2</span>
+            <span><i style="background:#c9a13f"></i>Z3</span>
+            <span><i style="background:#e9a15f"></i>Z4</span>
+            <span><i style="background:#c9524a"></i>Z5</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B · Una columna por día</h3>
+      <p>Muestra la distribución <em>y</em> el reparto: se ve que el sábado fue el día duro y que el miércoles y el viernes no hubo nada. Es lo que de verdad contesta «cómo está mi semana». Más superficie y siete columnas apretadas en móvil.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:16px;background:#0d0f12">
+      <div class="rw-holder">
+        <div class="rw-card">
+          <div class="rw-kicker">Carga medida por Whoop</div>
+          <div class="rw-hero"><span class="n">24</span><span class="u">min en zona alta</span></div>
+          <p class="rw-sub">5 entrenamientos · 230 min registrados</p>
+          <p class="rw-delta">↑ 6 min más que la semana pasada</p>
+          <div class="rw-bar">
+            <i style="width:17.8%;background:#3a4048"></i>
+            <i style="width:23.5%;background:#4f7ea8"></i>
+            <i style="width:28.7%;background:#4f9e7a"></i>
+            <i style="width:19.6%;background:#c9a13f"></i>
+            <i style="width:8.7%;background:#e9a15f"></i>
+            <i style="width:1.7%;background:#c9524a"></i>
+          </div>
+          <div class="rw-scale"><span>Z0</span><span>Z5</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C · Titular y comparación</h3>
+      <p>Lo mínimo: el número, la barra y el cambio respecto de la semana anterior. La tendencia es lo que más te va a decir semana a semana. Ojo: la comparación se rompe apenas la semana previa cae fuera de la ventana de 16 días.</p>
+    </div>
+  </div>
+
+</div>
