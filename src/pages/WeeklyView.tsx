@@ -10,6 +10,7 @@ import { formatFullDate, fromISO, getWeekDays, getWeekStart, toISO, isDateToday,
 import WeekStrip from '../components/week/WeekStrip'
 import WeekSummaryCard from '../components/week/WeekSummaryCard'
 import MacroPhaseSummaryCard from '../components/week/MacroPhaseSummaryCard'
+import WeeklyHrZonesCard from '../components/week/WeeklyHrZonesCard'
 import SessionCard from '../components/session/SessionCard'
 import AddSessionModal from '../components/session/AddSessionModal'
 import ConfirmDialog from '../components/ui/ConfirmDialog'
@@ -388,6 +389,7 @@ export default function WeeklyView() {
               <DailyCheckInCard todaySessions={todaySessions} autoExpandToken={checkInExpandToken} />
             </Suspense>
             <MacroPhaseSummaryCard summary={macroWeekCoherence} />
+            <WeeklyHrZonesCard weekDays={weekDays.map((day) => toISO(day))} />
             {currentWeekSummary && <WeekSummaryCard summary={currentWeekSummary} />}
           </div>
         </div>

@@ -11,6 +11,8 @@ La integracion con Whoop es opcional. Si decides conectarla, autorizas a RallyIQ
 - HRV y frecuencia cardiaca en reposo.
 - Strain/carga registrada por Whoop.
 - Datos de sueno, incluyendo horas de sueno y sleep performance.
+- Entrenamientos detectados por Whoop: fecha, deporte, duracion, frecuencia cardiaca media y maxima, distancia cuando corresponde, y la distribucion del tiempo entre las seis zonas de frecuencia cardiaca de Whoop.
+- El porcentaje de la sesion en que Whoop registro frecuencia cardiaca, para que puedas saber que tan completa es esa distribucion.
 
 No recibimos tus credenciales de Whoop. El acceso se realiza mediante OAuth y los tokens se guardan cifrados del lado servidor.
 
@@ -20,13 +22,13 @@ Usamos estos datos como contexto objetivo para:
 
 - Mostrar senales de recuperacion, sueno y strain en la app.
 - Prellenar campos editables del check-in diario, como sueno, calidad de sueno y energia.
-- Dar contexto pasivo al coach de IA.
+- Dar contexto pasivo al coach de IA, incluyendo la carga objetiva de tus entrenamientos recientes y su distribucion por zona de frecuencia cardiaca.
 
 Estos datos no se usan para diagnosticar, tratar o prevenir enfermedades o lesiones. RallyIQ no reemplaza la evaluacion de un profesional medico, entrenador calificado u otro especialista de salud.
 
 ## Donde se guardan
 
-Los tokens de acceso se guardan cifrados en el servidor. Los datos biometricos crudos se procesan del lado servidor y no se exponen directamente al cliente. La app solo replica localmente un resumen diario de readiness asociado a tu atleta activo.
+Los tokens de acceso se guardan cifrados en el servidor. Los datos biometricos crudos se procesan del lado servidor y no se exponen directamente al cliente. La app guarda en nuestra base de datos y replica en el almacenamiento local de tu dispositivo el resumen diario de readiness y los entrenamientos detectados con sus metricas, incluida la distribucion por zona de frecuencia cardiaca, siempre asociados a tu cuenta y atleta activo.
 
 ## Desconexion y borrado
 

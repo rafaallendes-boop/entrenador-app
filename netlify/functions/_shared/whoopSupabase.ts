@@ -1,4 +1,6 @@
 import { CURRENT_KEY_VERSION, decryptTokenForVersion, encryptToken } from './tokenCrypto'
+import { areWhoopZonesEnabled } from './whoopZonesFlag'
+import type { WhoopZoneDurations } from '../../../src/types'
 
 export interface WhoopDb {
   from(table: string): unknown
@@ -72,6 +74,8 @@ export interface WorkoutRow {
   maxHr: number | null
   distanceM: number | null
   scoreState: WorkoutScoreState
+  zoneDurations: WhoopZoneDurations | null
+  percentRecorded: number | null
 }
 
 function table<T = unknown>(db: WhoopDb, name: string): QueryBuilder<T> {
@@ -297,6 +301,7 @@ export async function upsertWorkouts(
 ): Promise<void> {
   if (rows.length === 0) return
   const updatedAt = Date.now()
+  const zonesEnabled = areWhoopZonesEnabled()
   const payload = rows.map((row) => ({
     workout_id: row.workoutId,
     user_id: userId,
@@ -312,6 +317,20 @@ export async function upsertWorkouts(
     distance_m: row.distanceM,
     score_state: row.scoreState,
     updated_at: updatedAt,
+    // Las siete claves se OMITEN con el flag apagado en vez de escribirse como
+    // null: `upsert` pisa toda clave presente, así que un null borraría zonas ya
+    // guardadas y convertiría un flag de ingestión en un destructor de datos.
+    ...(zonesEnabled
+      ? {
+          zone_zero_milli: row.zoneDurations?.z0 ?? null,
+          zone_one_milli: row.zoneDurations?.z1 ?? null,
+          zone_two_milli: row.zoneDurations?.z2 ?? null,
+          zone_three_milli: row.zoneDurations?.z3 ?? null,
+          zone_four_milli: row.zoneDurations?.z4 ?? null,
+          zone_five_milli: row.zoneDurations?.z5 ?? null,
+          percent_recorded: row.percentRecorded,
+        }
+      : {}),
   }))
   const { error } = await table(db, 'whoop_workouts').upsert(payload, { onConflict: 'workout_id' })
   if (error) throw new Error(`upsertWorkouts: ${message(error)}`)

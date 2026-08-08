@@ -457,6 +457,8 @@ describe('normalizeWorkouts', () => {
       maxHr: 172,
       distanceM: null,
       scoreState: 'SCORED',
+      zoneDurations: null,
+      percentRecorded: null,
     }])
   })
 
@@ -511,5 +513,60 @@ describe('normalizeWorkouts', () => {
       ],
     })
     expect(rows.map((row) => row.workoutId)).toEqual(['a', 'b'])
+  })
+})
+
+describe('normalizeWorkouts — zonas de FC', () => {
+  function rawWorkout(score: Record<string, unknown> | null) {
+    return {
+      ...emptyRaw,
+      workouts: [makeRawWorkout({
+        score_state: score ? 'SCORED' : 'PENDING_SCORE',
+        score: score ?? undefined,
+      })],
+    }
+  }
+
+  const FULL_ZONES = {
+    zone_zero_milli: 60_000,
+    zone_one_milli: 120_000,
+    zone_two_milli: 600_000,
+    zone_three_milli: 900_000,
+    zone_four_milli: 700_000,
+    zone_five_milli: 200_000,
+  }
+
+  it('extrae las seis zonas y la cobertura de un workout SCORED', () => {
+    const [row] = normalizeWorkouts(rawWorkout({
+      strain: 12.4,
+      zone_durations: FULL_ZONES,
+      percent_recorded: 98.5,
+    }))
+    expect(row.zoneDurations).toEqual({
+      z0: 60_000, z1: 120_000, z2: 600_000, z3: 900_000, z4: 700_000, z5: 200_000,
+    })
+    expect(row.percentRecorded).toBe(98.5)
+  })
+
+  it('deja ambos en null cuando el workout no está SCORED', () => {
+    const [row] = normalizeWorkouts(rawWorkout(null))
+    expect(row.zoneDurations).toBeNull()
+    expect(row.percentRecorded).toBeNull()
+  })
+
+  it('deja ambos en null cuando el score no trae zone_durations', () => {
+    const [row] = normalizeWorkouts(rawWorkout({ strain: 12.4 }))
+    expect(row.zoneDurations).toBeNull()
+    expect(row.percentRecorded).toBeNull()
+  })
+
+  it('descarta la distribución inválida sin descartar el workout', () => {
+    const [row] = normalizeWorkouts(rawWorkout({
+      zone_durations: { ...FULL_ZONES, zone_two_milli: -1 },
+      percent_recorded: 72.4,
+    }))
+    expect(row.workoutId).toBe('w-1')
+    expect(row.zoneDurations).toBeNull()
+    expect(row.percentRecorded).toBe(72.4)
   })
 })

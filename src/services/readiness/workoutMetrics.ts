@@ -80,3 +80,81 @@ export function resolveScoreNotice(workout: WhoopWorkout): WorkoutScoreNotice {
   if (workout.scoreState === 'UNSCORABLE') return 'unscorable'
   return null
 }
+
+export const HR_ZONE_KEYS = ['z0', 'z1', 'z2', 'z3', 'z4', 'z5'] as const
+
+export type HrZoneKey = (typeof HR_ZONE_KEYS)[number]
+
+/** Etiqueta compacta para gráficos y leyendas. */
+export const HR_ZONE_LABELS: Record<HrZoneKey, string> = {
+  z0: 'Z0', z1: 'Z1', z2: 'Z2', z3: 'Z3', z4: 'Z4', z5: 'Z5',
+}
+
+/** Nombre hablado, para texto accesible. Whoop no publica nombres por zona. */
+export const HR_ZONE_ACCESSIBLE_LABELS: Record<HrZoneKey, string> = {
+  z0: 'zona 0', z1: 'zona 1', z2: 'zona 2',
+  z3: 'zona 3', z4: 'zona 4', z5: 'zona 5',
+}
+
+/**
+ * Zonas que cuentan como «alta»: lo estrictamente por encima de Z3.
+ *
+ * Es la ÚNICA declaración del umbral. La suma de abajo itera sobre esta lista en
+ * vez de escribir `z4 + z5` a mano, y la leyenda dibuja su corchete a partir de
+ * ella: si el umbral se moviera, cálculo y color se mueven juntos o no se mueve
+ * ninguno. Con dos literales independientes —uno acá y otro en la capa de
+ * presentación— el corchete podía marcar un tramo que la cifra no contaba.
+ */
+export const HIGH_ZONE_KEYS: readonly HrZoneKey[] = ['z4', 'z5']
+
+/**
+ * Zona alta = suma de `HIGH_ZONE_KEYS`.
+ *
+ * ÚNICA declaración del proyecto. El precedente es `WINDOW_DAYS` declarado dos
+ * veces en la Entrega 2: tres superficies con tres umbrales distintos de «duro»
+ * darían tres respuestas a la misma pregunta.
+ *
+ * Devuelve milisegundos SIN redondear; cada superficie convierte una sola vez,
+ * en su borde de presentación.
+ */
+export function resolveHighZoneDurationMs(workout: WhoopWorkout): number | null {
+  const zones = workout.zoneDurations
+  if (!zones) return null
+  return HIGH_ZONE_KEYS.reduce((total, key) => total + zones[key], 0)
+}
+
+/** Umbral VISUAL y solo visual: no descarta zonas ni altera ningún agregado. */
+export const LOW_HR_CAPTURE_NOTICE_THRESHOLD = 90
+
+export type HrCaptureState =
+  | { kind: 'unknown' }
+  | { kind: 'full' }
+  | { kind: 'high'; percent: number }
+  | { kind: 'low'; percent: number }
+
+/**
+ * Devuelve `null` cuando no hay distribución, aunque `percentRecorded` esté
+ * presente: la cobertura califica un reparto, y sin reparto no califica nada.
+ * Si devolviera `unknown` ante la mera ausencia de porcentaje, todo
+ * entrenamiento anterior al flag caería en esa rama y el coach le agregaría
+ * «cobertura no informada» a algo que ni siquiera tiene distribución.
+ */
+export function resolveHrCaptureState(workout: WhoopWorkout): HrCaptureState | null {
+  if (!workout.zoneDurations) return null
+
+  const percent = workout.percentRecorded
+  if (percent == null) return { kind: 'unknown' }
+  if (percent >= 100) return { kind: 'full' }
+  if (percent >= LOW_HR_CAPTURE_NOTICE_THRESHOLD) return { kind: 'high', percent }
+  return { kind: 'low', percent }
+}
+
+/**
+ * TRUNCA a un decimal; no redondea. El truncamiento es la única operación que
+ * preserva la clasificación: redondear 89,96 daría «90,0» junto a un aviso de
+ * cobertura baja.
+ */
+export function formatHrCapturePercent(percent: number, decimalSeparator: '.' | ','): string {
+  const truncated = Math.floor(percent * 10) / 10
+  return String(truncated).replace('.', decimalSeparator)
+}

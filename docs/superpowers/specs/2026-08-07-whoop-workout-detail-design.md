@@ -43,7 +43,9 @@ sola.
 
 - **Zonas de frecuencia cardíaca** (`zone_durations` de `/v2/activity/workout`).
   Es la métrica que más dice sobre *cómo* fue la sesión, y es una Entrega 3
-  futura porque **requiere `019` + Dexie v20**. Se deja fuera a propósito
+  futura porque requiere la migración Supabase **`019`** y un contrato propio de
+  normalización/presentación. **No requiere Dexie v20:** es una propiedad no
+  indexada y no cambia `stores()`. Se deja fuera a propósito
   mientras corre la verificación post-deploy de las tandas de motor: meter una
   migración en el medio de un smoke es exactamente lo que no se quiere.
 - Kilojoules, desnivel acumulado, `percent_recorded`.
@@ -430,7 +432,7 @@ blinda con test (§5).
 | Orden de entregas | UI primero, coach después | El dato ya está local: la UI es render puro y despliega sin coordinación |
 | Superficie | Detalle en la sesión + residual en el día | El caso normal se lee donde corresponde; el raro no desaparece |
 | Métricas | Strain, duración, FC, distancia (de la API) + ritmo (derivado) | Cero migraciones: todo sale de campos que Dexie ya tiene |
-| Zonas de FC | Entrega 3 futura | Exige `019` + Dexie v20; no durante el smoke en curso |
+| Zonas de FC | Entrega 3 futura | Exige `019`, sin migración Dexie; no durante el smoke en curso |
 | Strain en check-in | No | `Esfuerzo` es del atleta y no debe mezclarse con carga objetiva |
 | Vía al coach | Bloque al vuelo, no `completionNotes` | No persiste, aplica retroactivo, reversible sin residuo |
 | Ritmo | Whitelist solo `running` | Una regla abierta se vuelve sola el bug de «ritmo en squash indoor»; walking no es deporte soportado |

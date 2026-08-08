@@ -23,8 +23,12 @@ Esta política explica qué datos tratamos, para qué y qué derechos tienes.
   estos pueden considerarse **datos sensibles** (salud); los tratamos solo para
   prestarte el servicio y con tu consentimiento.
 - **Datos de wearables (Whoop), si lo conectas:** recovery, HRV, frecuencia
-  cardiaca en reposo, strain y datos de sueno. La conexion es opcional y exige
-  consentimiento especifico.
+  cardiaca en reposo, strain, datos de sueno y los entrenamientos que Whoop
+  detecta: fecha, deporte, duracion, frecuencia cardiaca media y maxima,
+  distancia cuando corresponde, la distribucion del tiempo entre las seis zonas
+  de frecuencia cardiaca de Whoop, y el porcentaje de la sesion en que Whoop
+  registro frecuencia cardiaca. La conexion es opcional y exige consentimiento
+  especifico.
 - **Datos técnicos mínimos** necesarios para operar (p. ej. errores de la
   aplicación). [[CONFIRMAR si se usa analítica; si sí, detallar herramienta y
   finalidad]].
@@ -79,9 +83,13 @@ al coach de IA. No los usamos para diagnosticar, tratar o prevenir enfermedades
 o lesiones, ni para ajustar automaticamente tu plan.
 
 Los tokens de Whoop se guardan cifrados del lado servidor. Los datos biometricos
-crudos no se exponen directamente al cliente; la app solo usa un resumen diario
-asociado a tu atleta activo. Puedes desconectar Whoop o borrar tus datos desde
-Ajustes. Ver tambien: `docs/legal/descargo-whoop.md`.
+crudos no se exponen directamente al cliente; la app guarda en nuestra base de
+datos y replica en el almacenamiento local de tu dispositivo el resumen diario de
+readiness y los entrenamientos detectados con sus metricas, incluida la
+distribucion del tiempo entre las seis zonas de frecuencia cardiaca y el
+porcentaje de la sesion en que Whoop registro frecuencia cardiaca, siempre
+asociados a tu cuenta y atleta activo. Puedes desconectar Whoop o borrar tus
+datos desde Ajustes. Ver tambien: `docs/legal/descargo-whoop.md`.
 
 ## 8. Menores
 

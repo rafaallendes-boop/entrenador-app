@@ -1,6 +1,7 @@
 import { db } from '../db/db'
 import { getAllLocalTables } from '../db/athleteScopedTables'
 import { APP_INFO } from '../constants/appInfo'
+import { normalizeWorkoutScoreData } from './readiness/whoopZoneDurations'
 import type {
   Athlete,
   AthleteCoachNote,
@@ -1130,6 +1131,26 @@ const WHOOP_MATCH_STATUSES = ['completed', 'skipped_short', 'skipped_multiple', 
 function parseWhoopWorkout(value: unknown, index: number): WhoopWorkout {
   const path = `whoopWorkouts[${index}]`
   const row = ensureRecord(value, path)
+  // A diferencia del resto del parser, esto NO lanza ante un dato inválido:
+  // delega en el normalizador compartido, que descarta en silencio. Un backup
+  // con una distribución rota se importa sin zonas en vez de rechazar el
+  // archivo entero — y sobre todo, en vez de entrar con zonas falsas.
+  //
+  // Por eso `isRecord` y no `ensureRecord`: este último LANZA ante lo que no sea
+  // objeto, así que un `zoneDurations: 5` manipulado rechazaría el backup
+  // completo y desmentiría el comentario de arriba. `row.zoneDurations ?? {}`
+  // tampoco alcanza: cubre null y undefined, no primitivas. `isRecord` acepta
+  // arrays, y eso está bien: un `[]` no tiene las seis claves, así que el
+  // normalizador lo descarta igual.
+  //
+  // La anotación es necesaria: sin ella TS infiere `Record<string, unknown> | {}`
+  // y `zones.z0` no compila sobre la rama `{}`.
+  const zones: Record<string, unknown> = isRecord(row.zoneDurations) ? row.zoneDurations : {}
+  const scoreData = normalizeWorkoutScoreData({
+    scoreState: row.scoreState,
+    zones: { z0: zones.z0, z1: zones.z1, z2: zones.z2, z3: zones.z3, z4: zones.z4, z5: zones.z5 },
+    percentRecorded: row.percentRecorded,
+  })
   return {
     id: requireString(row.id, `${path}.id`),
     workoutId: requireString(row.workoutId, `${path}.workoutId`),
@@ -1144,6 +1165,11 @@ function parseWhoopWorkout(value: unknown, index: number): WhoopWorkout {
     maxHr: optionalFiniteNumber(row.maxHr, `${path}.maxHr`),
     distanceM: optionalFiniteNumber(row.distanceM, `${path}.distanceM`),
     scoreState: requireEnum(row.scoreState, WHOOP_SCORE_STATES, `${path}.scoreState`) as WhoopWorkout['scoreState'],
+    // Ojo con el orden: `scoreState` se lee de `row.scoreState` CRUDO arriba,
+    // mientras que la línea anterior valida el enum. Son consistentes porque
+    // `normalizeWorkoutScoreData` compara contra el literal `'SCORED'`: un
+    // estado inválido hace fallar `requireEnum` de todos modos.
+    ...scoreData,
     updatedAt: requireFiniteNumber(row.updatedAt, `${path}.updatedAt`),
     autoComplete: optionalWhoopWorkoutAutoComplete(row.autoComplete, `${path}.autoComplete`),
   }

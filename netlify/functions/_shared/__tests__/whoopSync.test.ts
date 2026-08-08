@@ -139,6 +139,8 @@ describe('runWhoopSync', () => {
       maxHr: null,
       distanceM: null,
       scoreState: 'SCORED' as const,
+      zoneDurations: null,
+      percentRecorded: null,
     }]
     const d = deps({
       getConnection: vi.fn(async () => ({ ...baseConn, scopes: 'offline read:workout' })),

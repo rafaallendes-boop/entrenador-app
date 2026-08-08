@@ -1,7 +1,13 @@
 import { subDays } from 'date-fns'
 import type { Session, WhoopWorkout } from '../../types'
 import { fromISO, toISO } from '../../utils/date'
-import { buildWorkoutMetrics, type WorkoutMetric } from '../readiness/workoutMetrics'
+import {
+  buildWorkoutMetrics,
+  formatHrCapturePercent,
+  resolveHighZoneDurationMs,
+  resolveHrCaptureState,
+  type WorkoutMetric,
+} from '../readiness/workoutMetrics'
 
 /**
  * Ventana del bloque, en días calendario inclusive. Se exporta porque el
@@ -17,8 +23,20 @@ const MAX_DETAILED_LINES = 8
 /** Orden de lectura de la línea, independiente del orden de emisión del módulo puro. */
 const LINE_ORDER: WorkoutMetric['key'][] = ['duration', 'strain', 'hr', 'distance', 'pace']
 
+/**
+ * Texto del spec §6, restaurado literalmente.
+ *
+ * Se probó una versión corta —«No propongas objetivos por zona: el producto no
+ * los tiene»— para ahorrar los ~17 tokens fijos que cuesta la diferencia. Se
+ * revirtió: conservaba la prohibición pero perdía la **premisa**, que las zonas
+ * son distribución *medida*. Sin esa palabra el modelo puede leer los minutos
+ * por zona como una prescripción a cumplir en vez de como una observación de lo
+ * que ya pasó, y la primera frase solo declara medido el strain.
+ */
 const GUARD_LINE =
-  'Strain es carga fisiologica medida (0-21), no el esfuerzo declarado por el atleta.'
+  'Strain es carga fisiologica medida (0-21), no el esfuerzo declarado por el atleta. '
+  + 'Las zonas son distribucion de FC medida: no propongas objetivos por zona, '
+  + 'el producto no tiene sesiones con objetivo de zona.'
 
 const MAX_TITLE_CHARS = 48
 const MAX_SPORT_CHARS = 24
@@ -65,6 +83,29 @@ function formatWorkoutLine(workout: WhoopWorkout, session: Session | undefined):
   const metrics = [...buildWorkoutMetrics(workout)]
     .sort((a, b) => LINE_ORDER.indexOf(a.key) - LINE_ORDER.indexOf(b.key))
   for (const metric of metrics) parts.push(formatMetricPart(metric))
+
+  // `LINE_ORDER` pone `strain` antes de `hr`, así que para que la zona alta caiga
+  // entre ambos hay que insertarla por posición, no por append.
+  const highZoneMs = resolveHighZoneDurationMs(workout)
+  if (highZoneMs != null) {
+    const hrIndex = parts.findIndex((part) => part.startsWith('FC '))
+    const segment = `${Math.round(highZoneMs / 60_000)} min zona alta`
+    if (hrIndex === -1) parts.push(segment)
+    else parts.splice(hrIndex, 0, segment)
+  }
+
+  const capture = resolveHrCaptureState(workout)
+  // `full` y `high` no agregan nada: entre 90 y 100 la distribución es
+  // utilizable y gastar tokens en decirlo no cambia ninguna lectura. `null`
+  // tampoco: sin distribución no hay nada que calificar.
+  if (capture?.kind === 'low') {
+    parts.push(`cobertura ${formatHrCapturePercent(capture.percent, '.')}%`)
+  } else if (capture?.kind === 'unknown') {
+    // `cobertura ?` y no «cobertura no informada»: es el caso que puede repetirse
+    // en las ocho líneas, y la frase larga costaba 50 tokens por bloque para
+    // decir lo mismo que el signo de pregunta junto a una métrica ya nombrada.
+    parts.push('cobertura ?')
+  }
 
   const tail = session
     ? `sesion planificada: ${sanitizeField(session.title, MAX_TITLE_CHARS)} ${Math.round(session.durationMin)} min`

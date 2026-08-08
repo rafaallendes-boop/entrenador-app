@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const supabaseRows: unknown[] = []
+let capturedSelect = ''
 let supabaseError: { message: string } | null = null
 let queryGate: Promise<void> | null = null
 let activeQueries = 0
@@ -19,7 +20,9 @@ vi.mock('../../sync/athleteDeleteTombstones', () => ({
 vi.mock('../../sync/syncSupabase', () => ({
   getSupabase: () => ({
     from: () => ({
-      select: () => ({
+      select: (columns?: string) => {
+        capturedSelect = columns ?? ''
+        return {
         eq: () => ({
           gte: async () => {
             activeQueries += 1
@@ -34,7 +37,8 @@ vi.mock('../../sync/syncSupabase', () => ({
             }
           },
         }),
-      }),
+        }
+      },
     }),
   }),
 }))
@@ -42,6 +46,7 @@ vi.mock('../../sync/syncSupabase', () => ({
 import { db } from '../../../db/db'
 import { setActiveAthleteId, setSelfAthleteId } from '../../athlete/activeAthlete'
 import { pullWorkouts } from '../pullWorkouts'
+import { WHOOP_WORKOUT_ZONE_COLUMNS } from '../whoopZoneDurations'
 
 function remoteRow(overrides: Record<string, unknown> = {}) {
   return {
@@ -163,5 +168,71 @@ describe('pullWorkouts', () => {
     release()
     await Promise.all([first, second])
     expect(maxActiveQueries).toBe(1)
+  })
+})
+
+describe('pullWorkouts — zonas de FC', () => {
+  const ZONE_COLUMNS = {
+    zone_zero_milli: 1, zone_one_milli: 2, zone_two_milli: 3,
+    zone_three_milli: 4, zone_four_milli: 5, zone_five_milli: 6,
+  }
+  const NULL_ZONE_COLUMNS = {
+    zone_zero_milli: null, zone_one_milli: null, zone_two_milli: null,
+    zone_three_milli: null, zone_four_milli: null, zone_five_milli: null,
+  }
+
+  beforeEach(async () => {
+    db.close()
+    await db.delete()
+    await db.open()
+    supabaseRows.length = 0
+    supabaseError = null
+    queryGate = null
+    tombstonedAthletes.clear()
+    setSelfAthleteId('ath_1')
+    setActiveAthleteId('ath_1')
+  })
+
+  it('pide las siete columnas nuevas en el SELECT', async () => {
+    supabaseRows.length = 0
+    await pullWorkouts()
+    const selected = capturedSelect.split(',')
+    // Tercer eje del guard de drift: recorrer la constante compartida, no una
+    // lista escrita a mano acá. Con `019` y la constante ya alineadas por la
+    // Task 2, esto cierra el último camino por el que el cliente podía quedarse
+    // atrás y pedir de menos.
+    for (const column of WHOOP_WORKOUT_ZONE_COLUMNS) {
+      expect(selected).toContain(column)
+    }
+  })
+
+  it('mapea la distribución y la cobertura', async () => {
+    supabaseRows.length = 0
+    supabaseRows.push(remoteRow({ ...ZONE_COLUMNS, percent_recorded: 98.5 }))
+    await pullWorkouts()
+    const row = await db.whoopWorkouts.get('whoop:ath_1:w-1')
+    expect(row?.zoneDurations).toEqual({ z0: 1, z1: 2, z2: 3, z3: 4, z4: 5, z5: 6 })
+    expect(row?.percentRecorded).toBe(98.5)
+  })
+
+  it('deja los campos AUSENTES cuando las columnas vienen en null', async () => {
+    supabaseRows.length = 0
+    supabaseRows.push(remoteRow({ ...NULL_ZONE_COLUMNS, percent_recorded: null }))
+    await pullWorkouts()
+    const row = await db.whoopWorkouts.get('whoop:ath_1:w-1')
+    // Ausentes, no `undefined` explícito: así el round-trip de backup no gana
+    // claves vacías.
+    expect(Object.hasOwn(row!, 'zoneDurations')).toBe(false)
+    expect(Object.hasOwn(row!, 'percentRecorded')).toBe(false)
+  })
+
+  it('descarta una distribución inválida sin descartar el workout', async () => {
+    supabaseRows.length = 0
+    supabaseRows.push(remoteRow({ ...ZONE_COLUMNS, zone_two_milli: -1, percent_recorded: 72.4 }))
+    await pullWorkouts()
+    const row = await db.whoopWorkouts.get('whoop:ath_1:w-1')
+    expect(row?.workoutId).toBe('w-1')
+    expect(row?.zoneDurations).toBeUndefined()
+    expect(row?.percentRecorded).toBe(72.4)
   })
 })

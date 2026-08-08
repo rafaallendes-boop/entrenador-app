@@ -3,6 +3,10 @@ import type { WhoopWorkout } from '../../types'
 import { getActiveAthleteId, getSwitchEpoch } from '../athlete/activeAthlete'
 import { getSupabase } from '../sync/syncSupabase'
 import { runAthleteWrite } from '../sync/athleteWriteLease'
+import { normalizeWorkoutScoreData, WHOOP_WORKOUT_ZONE_COLUMNS } from './whoopZoneDurations'
+
+const BASE_WORKOUT_COLUMNS = 'workout_id,athlete_id,date,sport_name,start_at,end_at,duration_min,strain,avg_hr,max_hr,distance_m,score_state,updated_at'
+const WORKOUT_COLUMNS = [BASE_WORKOUT_COLUMNS, ...WHOOP_WORKOUT_ZONE_COLUMNS].join(',')
 
 interface WhoopWorkoutRemoteRow {
   workout_id: string
@@ -18,6 +22,13 @@ interface WhoopWorkoutRemoteRow {
   distance_m: number | null
   score_state: string
   updated_at: number | null
+  zone_zero_milli: number | null
+  zone_one_milli: number | null
+  zone_two_milli: number | null
+  zone_three_milli: number | null
+  zone_four_milli: number | null
+  zone_five_milli: number | null
+  percent_recorded: number | null
 }
 
 function optionalNumber(value: number | null): number | undefined {
@@ -44,6 +55,19 @@ function toWhoopWorkout(row: WhoopWorkoutRemoteRow): WhoopWorkout | null {
   const endAt = toCanonicalIso(row.end_at)
   if (!startAt || !endAt) return null
 
+  const scoreData = normalizeWorkoutScoreData({
+    scoreState,
+    zones: {
+      z0: row.zone_zero_milli,
+      z1: row.zone_one_milli,
+      z2: row.zone_two_milli,
+      z3: row.zone_three_milli,
+      z4: row.zone_four_milli,
+      z5: row.zone_five_milli,
+    },
+    percentRecorded: row.percent_recorded,
+  })
+
   return {
     id: `whoop:${row.athlete_id}:${row.workout_id}`,
     workoutId: row.workout_id,
@@ -58,6 +82,10 @@ function toWhoopWorkout(row: WhoopWorkoutRemoteRow): WhoopWorkout | null {
     maxHr: optionalNumber(row.max_hr),
     distanceM: optionalNumber(row.distance_m),
     scoreState,
+    // `...scoreData` es deliberado: propaga solo las claves presentes, así que un
+    // workout sin zonas conserva los campos AUSENTES en Dexie en vez de
+    // `undefined` explícito, y el round-trip de backup no gana claves vacías.
+    ...scoreData,
     updatedAt: row.updated_at ?? Date.now(),
   }
 }
@@ -88,7 +116,7 @@ async function pullWorkoutsOnce(context: {
 
   const { data, error } = await getSupabase()
     .from('whoop_workouts')
-    .select('workout_id,athlete_id,date,sport_name,start_at,end_at,duration_min,strain,avg_hr,max_hr,distance_m,score_state,updated_at')
+    .select(WORKOUT_COLUMNS)
     .eq('athlete_id', athleteId)
     .gte('start_at', sinceIso)
 
@@ -99,7 +127,14 @@ async function pullWorkoutsOnce(context: {
   }
 
   await runAthleteWrite(athleteId, async () => {
-    const rows = (data as WhoopWorkoutRemoteRow[])
+    // `as unknown as` y no `as` directo: el cliente de Supabase deriva el tipo de
+    // la fila del literal que recibe `.select()`, y `WORKOUT_COLUMNS` se compone
+    // en runtime desde `WHOOP_WORKOUT_ZONE_COLUMNS`, así que su tipo es `string`
+    // y la inferencia cae a `GenericStringError[]`. Es el precio de tener una
+    // sola lista de columnas en vez de un literal duplicado; la forma real de la
+    // fila la declara `WhoopWorkoutRemoteRow` y la valida `toWhoopWorkout`, que
+    // descarta cualquier fila que no cumpla.
+    const rows = (data as unknown as WhoopWorkoutRemoteRow[])
       .map(toWhoopWorkout)
       .filter((row): row is WhoopWorkout => row != null)
     const remoteIds = new Set(rows.map((row) => row.id))

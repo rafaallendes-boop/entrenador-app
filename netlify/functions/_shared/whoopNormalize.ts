@@ -1,4 +1,5 @@
 import type { WhoopRaw } from './whoopClient'
+import { normalizeWorkoutScoreData } from '../../../src/services/readiness/whoopZoneDurations'
 import {
   READINESS_METRIC_CLEAR,
   type BiometricReadingRow,
@@ -259,6 +260,19 @@ export function normalizeWorkouts(raw: WhoopRaw): WorkoutRow[] {
     if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) continue
 
     const score = scoreState === 'SCORED' ? asObject(workout.score) : {}
+    const rawZones = asObject(score.zone_durations)
+    const scoreData = normalizeWorkoutScoreData({
+      scoreState,
+      zones: {
+        z0: rawZones.zone_zero_milli,
+        z1: rawZones.zone_one_milli,
+        z2: rawZones.zone_two_milli,
+        z3: rawZones.zone_three_milli,
+        z4: rawZones.zone_four_milli,
+        z5: rawZones.zone_five_milli,
+      },
+      percentRecorded: score.percent_recorded,
+    })
     rows.push({
       workoutId,
       date,
@@ -271,6 +285,8 @@ export function normalizeWorkouts(raw: WhoopRaw): WorkoutRow[] {
       maxHr: num(score.max_heart_rate),
       distanceM: num(score.distance_meter),
       scoreState,
+      zoneDurations: scoreData.zoneDurations ?? null,
+      percentRecorded: scoreData.percentRecorded ?? null,
     })
   }
   return rows.sort((a, b) => a.startAt.localeCompare(b.startAt) || a.workoutId.localeCompare(b.workoutId))

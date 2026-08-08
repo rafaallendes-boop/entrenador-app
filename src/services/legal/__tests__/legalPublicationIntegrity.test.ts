@@ -31,8 +31,10 @@ function sha256(value: string): string {
 const FROZEN_PUBLICATIONS = [
   'health@2026-06-20#153a93785d8d135962d9743553c1cfd15da471832f6efcdfa7cf6278be6e182e',
   'privacy@2026-07-13#d226efd919744ef32e46b17d74e1a35d651135919cef30316adb6162b77e560d',
+  'privacy@2026-08-08#6541521b7b1d73bc3955aa3b592d4c2413ca2ab64eef679df9df535fb8bbb4aa',
   'terms@2026-07-13#b30dac62687b22e568b78d6c8f2f2be52da520020d0be2ce18e0adbafed1f20a',
   'whoop_biometric@2026-07-07#4dc98910c0d7df3ae7ed17a8df010856e8ed68c13bc3ddfe94549e5be3f7af98',
+  'whoop_biometric@2026-08-08#29d1264f14f340d56a6fff4f7c5e8f7d02852b40c439572c506103c500ed1d3c',
 ]
 
 describe('integridad de las publicaciones legales', () => {

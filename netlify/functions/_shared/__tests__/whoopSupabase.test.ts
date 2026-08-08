@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { randomBytes } from 'node:crypto'
 import {
   consumeOAuthState,
@@ -11,7 +11,10 @@ import {
   upsertReadiness,
   upsertWorkouts,
   reconcileWorkouts,
+  type WhoopDb,
+  type WorkoutRow,
 } from '../whoopSupabase'
+import { WHOOP_WORKOUT_ZONE_COLUMNS } from '../../../../src/services/readiness/whoopZoneDurations'
 
 type Row = Record<string, unknown>
 type Tables = Record<string, Row[]>
@@ -309,6 +312,8 @@ describe('whoopSupabase', () => {
       maxHr: 172,
       distanceM: null,
       scoreState: 'SCORED',
+      zoneDurations: null,
+      percentRecorded: null,
     }])
 
     const call = db.calls.find((entry) => entry.tableName === 'whoop_workouts' && entry.op === 'upsert')
@@ -398,3 +403,90 @@ describe('whoopSupabase', () => {
     expect(deletedTables).toContain('whoop_workouts')
   })
 })
+
+describe('upsertWorkouts — flag de ingestión de zonas', () => {
+  // `WhoopDb` (whoopSupabase.ts:3) y `WorkoutRow` (:63) están exportados. El
+  // prefijo `type` no es opcional: `tsconfig.node.json` tiene
+  // `verbatimModuleSyntax: true` y su `include` abarca `netlify/functions`, así
+  // que estos tests sí entran al typecheck.
+  const ROW: WorkoutRow = {
+    workoutId: 'w1',
+    date: '2026-08-04',
+    sportName: 'squash',
+    startAt: '2026-08-04T10:00:00.000Z',
+    endAt: '2026-08-04T11:00:00.000Z',
+    durationMin: 60,
+    strain: 12.4,
+    avgHr: 142,
+    maxHr: 181,
+    distanceM: null,
+    scoreState: 'SCORED',
+    zoneDurations: { z0: 1, z1: 2, z2: 3, z3: 4, z4: 5, z5: 6 },
+    percentRecorded: 98.5,
+  }
+
+  afterEach(() => { delete process.env['WHOOP_ZONES_ENABLED'] })
+
+  it('con el flag apagado OMITE las siete claves, no las escribe como null', async () => {
+    delete process.env['WHOOP_ZONES_ENABLED']
+    const { db, captured } = makeCapturingDb()
+    await upsertWorkouts(db, 'user-1', 'ath-1', [ROW])
+    const payload = captured.upsert[0][0]
+    for (const column of WHOOP_WORKOUT_ZONE_COLUMNS) {
+      expect(Object.hasOwn(payload, column)).toBe(false)
+    }
+    expect(payload.strain).toBe(12.4)
+  })
+
+  it('con el flag encendido escribe las siete columnas', async () => {
+    process.env['WHOOP_ZONES_ENABLED'] = 'true'
+    const { db, captured } = makeCapturingDb()
+    await upsertWorkouts(db, 'user-1', 'ath-1', [ROW])
+    const payload = captured.upsert[0][0]
+    // Segundo eje del guard de drift: el payload se construye a mano, así que
+    // recorrer la constante —en vez de enumerar claves literales— es lo que hace
+    // que agregar una columna a `019` sin agregarla al upsert rompa en CI.
+    for (const column of WHOOP_WORKOUT_ZONE_COLUMNS) {
+      expect(Object.hasOwn(payload, column)).toBe(true)
+    }
+    expect(payload).toMatchObject({
+      zone_zero_milli: 1,
+      zone_one_milli: 2,
+      zone_two_milli: 3,
+      zone_three_milli: 4,
+      zone_four_milli: 5,
+      zone_five_milli: 6,
+      percent_recorded: 98.5,
+    })
+  })
+
+  it('con el flag encendido y sin zonas escribe null en las siete', async () => {
+    process.env['WHOOP_ZONES_ENABLED'] = 'true'
+    const { db, captured } = makeCapturingDb()
+    await upsertWorkouts(db, 'user-1', 'ath-1', [
+      { ...ROW, zoneDurations: null, percentRecorded: null },
+    ])
+    const payload = captured.upsert[0][0]
+    for (const column of WHOOP_WORKOUT_ZONE_COLUMNS) {
+      expect(payload[column]).toBeNull()
+    }
+  })
+})
+
+type CapturedRow = Record<string, unknown>
+
+function makeCapturingDb() {
+  // Tipado como `Record<string, unknown>[][]` y no `unknown[][]`: los tres tests
+  // hacen `Object.hasOwn(payload, column)` y `payload[column]`, y ninguna de las
+  // dos cosas compila sobre `unknown`.
+  const captured: { upsert: CapturedRow[][] } = { upsert: [] }
+  const db = {
+    from: () => ({
+      upsert: (payload: unknown) => {
+        captured.upsert.push(payload as CapturedRow[])
+        return Promise.resolve({ error: null })
+      },
+    }),
+  } as unknown as WhoopDb
+  return { db, captured }
+}

@@ -498,6 +498,22 @@ export interface WhoopWorkoutAutoComplete {
   processedAt: number
 }
 
+/**
+ * Milisegundos por zona de FC, tal como los publica Whoop en
+ * `score.zone_durations`. Objeto opcional con seis campos REQUERIDOS: el
+ * todo-o-nada deja de ser una convención que hay que recordar en cada consumidor
+ * y pasa a ser una garantía del tipo. No existe forma de representar una
+ * distribución parcial.
+ */
+export interface WhoopZoneDurations {
+  z0: number
+  z1: number
+  z2: number
+  z3: number
+  z4: number
+  z5: number
+}
+
 export interface WhoopWorkout {
   id: string
   workoutId: string
@@ -512,6 +528,9 @@ export interface WhoopWorkout {
   maxHr?: number
   distanceM?: number
   scoreState: 'SCORED' | 'PENDING_SCORE' | 'UNSCORABLE'
+  zoneDurations?: WhoopZoneDurations
+  /** `score.percent_recorded`: float 0-100. Independiente de `zoneDurations`. */
+  percentRecorded?: number
   updatedAt: number
   autoComplete?: WhoopWorkoutAutoComplete
 }

@@ -1,10 +1,11 @@
 # RallyIQ - Project Review and Roadmap
 
-Actualizado: 2026-08-07
+Actualizado: 2026-08-08
 
 Base de contraste:
 
-- **Whoop — detalle de entrenamientos y contexto del coach implementados en el working tree (2026-08-07):** cada sesión auto-completada puede mostrar duración, strain, FC, distancia y ritmo elegible; `DayDetail` lista workouts no asociados; y el chat recibe hasta ocho entrenamientos `SCORED` de los últimos siete días, con asociación al plan y guardia explícita strain 0–21 vs esfuerzo 1–10. Sin migraciones: reutiliza `012` y Dexie v19. Code review cerrado con cinco hallazgos corregidos —uno de ellos, el envío de chat abortado, era una pérdida de mensaje real— y la suite quedó en 379 archivos / 3000 tests, typecheck, lint, build y `git diff --check` verdes. Pendientes operativos: deploy y smoke autenticado (`docs/superpowers/smokes/2026-08-07-whoop-workout-detail-smoke.md`).
+- **Whoop — zonas de frecuencia cardíaca por entrenamiento implementadas (2026-08-08):** ver §25. Seis duraciones de zona y cobertura de medición por workout, con normalizador compartido como única autoridad de forma, migración `019` de aplicación manual, flag de ingestión `WHOOP_ZONES_ENABLED` que omite claves en vez de escribir null, guard de drift de columnas en tres ejes, rampa secuencial de un solo tono y dos publicaciones legales registradas y no vigentes. **Sin Dexie v20.** Suite: 385 archivos / 3087 tests. Pendiente todo el rollout, empezando por aplicar `019` antes del primer deploy.
+- **Whoop — detalle de entrenamientos y contexto del coach commiteados y pusheados (2026-08-07, `d91e21e`):** cada sesión auto-completada puede mostrar duración, strain, FC, distancia y ritmo elegible; `DayDetail` lista workouts no asociados; y el chat recibe hasta ocho entrenamientos `SCORED` de los últimos siete días, con asociación al plan y guardia explícita strain 0–21 vs esfuerzo 1–10. Sin migraciones: reutiliza `012` y Dexie v19. Code review cerrado con cinco hallazgos corregidos —uno de ellos, el envío de chat abortado, era una pérdida de mensaje real— y la suite quedó en 379 archivos / 3000 tests, typecheck, lint, build y `git diff --check` verdes. Pendientes operativos: deploy y smoke autenticado (`docs/superpowers/smokes/2026-08-07-whoop-workout-detail-smoke.md`).
 - **Whoop — auto-sync de datos stale commiteado (2026-08-05, `c267a1f`):** al entrar al Dashboard como self consulta estado y sincroniza en silencio solo si no hay sync previo, pasaron 30 minutos o el último estado fue error. Mantiene cooldown manual y no corre para gestionados. Suite de cierre: 373 archivos / 2938 tests; queda incluido en el mismo smoke autenticado del detalle para evitar dos sesiones de QA con idéntico setup.
 - **Superseries de fuerza implementadas y desplegadas (2026-08-05, `49ab6a8`…`faf70f4`):** ver §23. Estructura real y editable en vez de prefijos `A1/A2` en `notes`, con normalizador aislado, sort por unidades, roles group-aware y política determinista cableada en chat y Plan Builder. Sin migraciones. Pendiente solo la verificación manual post-deploy, que no cuesta API.
 - **Consentimiento in-app versionado activado en producción (2026-08-03, `c451808`…`e59b85f`):** `017_user_consents.sql` aplicada, `VITE_CONSENT_GATE=true` y `CONSENT_GATE_ENABLED=true`. El smoke real confirmó el gate general, la aceptación biométrica separada, cuatro filas append-only con las versiones vigentes y timestamps de servidor, y la hidratación remota desde una ventana incógnita: con Dexie vacío verificó Supabase y abrió la app sin reaceptación en ~0,2 s.
@@ -857,13 +858,92 @@ productiva antes de observar un workout asociado, uno no asociado si los datos
 reales lo permiten, el payload del coach y la ausencia total bajo un atleta
 gestionado.
 
-**Siguiente mejora recomendada:** zonas de frecuencia cardíaca por workout. Es
-la Entrega 3 y requiere un spec nuevo, `019` + Dexie v20, normalización y
-lifecycle completo. Antes de diseñarla, medir varios payloads reales para
-confirmar completitud de `zone_durations` por deporte y score state. Después
-quedan, en este orden: resumen en `WeeklyView` usando los mismos predicados,
-desnivel para running/cycling y kilojoules; estos dos últimos no justifican una
-migración por sí solos mientras no exista un caso real frecuente.
+**Siguiente mejora recomendada:** zonas de frecuencia cardíaca por workout.
+**Implementada — ver §25.**
+
+### 25. Whoop — zonas de frecuencia cardíaca por entrenamiento (`019`, 2026-08-08)
+
+Tercera entrega del bloque Whoop. Persiste las seis duraciones de zona y la
+cobertura de medición de cada entrenamiento, y las usa en la tarjeta de sesión,
+el bloque objetivo del coach y un resumen semanal nuevo. **Sin Dexie v20:** las
+zonas son propiedades no indexadas de `WhoopWorkout`, así que `stores()` no
+cambia.
+
+**Autoridad de forma.** `whoopZoneDurations.ts` es el único normalizador; los
+tres bordes que deserializan —servidor, pull del cliente, parser de import— solo
+adaptan nombres y delegan. Recibe `scoreState` a propósito: el CHECK de `019` lo
+garantiza en Supabase, pero el tipo admite cualquier combinación y un backup
+manipulado entraría a Dexie, donde ninguna restricción lo alcanza. Descarta la
+distribución completa ante cualquier clave faltante, no entera, negativa, o si
+las seis suman cero; la cobertura se valida por separado, así que descartar una
+no descarta la otra.
+
+**Migración.** `019_whoop_workout_zones.sql`: siete columnas y cinco `CHECK`
+—todo-o-nada, no negatividad, suma positiva, rango de cobertura, y solo con
+`SCORED`—. Se agregan sin validación diferida porque todas las filas existentes
+las tienen en null. **Se aplica a mano y ANTES del primer deploy de código:**
+`pullWorkouts` pide las columnas por nombre y pedir una inexistente devuelve 400
+en cada pull.
+
+**Flag de ingestión.** `WHOOP_ZONES_ENABLED` controla **solo** si se incorporan
+zonas nuevas desde Whoop. Apagado, el upsert **omite** las siete claves en vez de
+escribirlas como `null`: `upsert` pisa toda clave presente, así que un null
+borraría zonas ya guardadas y convertiría un flag de ingestión en un destructor
+de datos. No oculta zonas persistidas ni impide que un backup las traiga.
+
+**Guard de drift en tres ejes.** `WHOOP_WORKOUT_ZONE_COLUMNS` vive en `src/` —no
+en `netlify/`— para que el cliente la importe sin arrastrar código de Functions
+al bundle. La consumen el `.sql` (guard de migración), el payload del upsert y el
+`SELECT` del cliente. Con una sola lista y los tres tests recorriéndola, ampliar
+la migración sin tocar el código rompe en CI en vez de dar 400 en producción.
+Verificado no vacuo: una octava columna hace fallar el guard.
+
+**Presentación.** `workoutMetrics.ts` gana `HIGH_ZONE_KEYS` —única declaración
+del umbral, sobre la que itera `resolveHighZoneDurationMs`—, el estado de
+cobertura en cuatro ramas y el formateo truncado a un decimal (redondear 89,96
+daría «90,0» junto a un aviso de cobertura baja). Los milisegundos son la unidad
+de autoridad y cada superficie convierte una sola vez.
+
+**Color.** La escala es una rampa **secuencial de un solo tono**, no categórica:
+las zonas son ordinales, así que el orden tiene que verse en el color. Tono 37°
+—el de `brand`—, luminosidad OKLCH monótona 0,34→0,668, croma 0,028→0,224 y paso
+más alto anclado exactamente en `#ff4d00`. La curva de croma sube despacio y
+salta al final, así que solo Z4/Z5 llevan croma pleno: lo encendido es lo que
+cuenta el titular. Una sola autoridad de color en `hrZoneScale.ts`.
+
+**Legales.** Dos publicaciones nuevas, `privacy@2026-08-08` y
+`whoop_biometric@2026-08-08`, **registradas y NO vigentes**. Enumeran los
+entrenamientos, las seis zonas y el porcentaje registrado, y reemplazan la
+afirmación de que el cliente replica solo un resumen diario, que dejó de ser
+cierta con `012`. Un test hermano fija que `currentVersion` no se movió: activarlas
+es el Deploy 2 y detiene la sincronización de Whoop para quien no reacepte.
+
+**Code review.** Cuatro hallazgos corregidos. El más serio: la publicación nueva
+actualizaba el párrafo de almacenamiento pero dejaba intacta la enumeración
+«Wearables opcionales», que es lo que efectivamente se consiente. También se
+había perdido la leyenda de las seis zonas en el resumen semanal —el defecto
+exacto del mockup que el spec §7.3 mandó corregir, reintroducido— y `HIGH_ZONE_KEYS`
+existía duplicada en la capa de presentación.
+
+**Desviación registrada.** En el coach, `unknown` emite `· cobertura ?` y no el
+literal largo: medido, el bloque costaba +70/+120 tokens contra los ~40
+presupuestados, y el literal puede repetirse en las ocho líneas. La guardia se
+probó corta por lo mismo y **se revirtió**: perdía la premisa de que las zonas
+son distribución *medida*. Anotado como enmienda en el spec §6.
+
+Verificado: **385 archivos / 3087 tests**, typecheck, lint, build y
+`git diff --check`.
+
+**Pendiente de rollout, en este orden:** (0) confirmar flags de consentimiento;
+(1) aplicar `019`; (2) Deploy 1 con el flag apagado; (3) aprobación jurídica del
+paquete de dos publicaciones; (4) Deploy 2 cambiando ambos `currentVersion`;
+(5) reaceptación; (6) Deploy 3 encendiendo `WHOOP_ZONES_ENABLED`. El smoke está
+escrito en `docs/superpowers/smokes/2026-08-08-whoop-hr-zones-smoke.md`, separado
+entre lo verificable con el flag apagado y lo que exige el Deploy 3.
+
+**Después de esto** quedan, en este orden: desnivel para running/cycling y
+kilojoules; ninguno de los dos justifica una migración por sí solo mientras no
+exista un caso real frecuente.
 
 ### Producto Publico Y Marca
 
@@ -1492,12 +1572,13 @@ dificultad.
    que faltaba para que una sesion de fuerza se lea como la escribe un
    entrenador y no como una lista plana. Cierra tambien la deuda de los
    prefijos `A1/A2`, que el prompt pedia y ningun consumidor interpretaba.
-5. **Analisis de entrenamientos con Whoop.** *(implementado en el working tree,
-   2026-08-07; ver §24)* La primera capa ya está cerrada: métricas reales en la
+5. **Analisis de entrenamientos con Whoop.** *(commiteado y pusheado en
+   `d91e21e`, 2026-08-07; ver §24)* La primera capa ya está cerrada: métricas reales en la
    sesión, residual diario y bloque objetivo de siete días para el coach, sin
-   diagnóstico ni ajuste automático. Pendientes: commit/deploy/smoke. La mejora
-   siguiente es zonas de FC (`019` + Dexie v20); `WeeklyView`, desnivel y
-   kilojoules quedan detrás.
+   diagnóstico ni ajuste automático. Pendientes: deploy/smoke. **Las zonas de FC
+   (`019`) y el resumen en `WeeklyView` también están implementados — ver §25**,
+   con sus dos publicaciones legales registradas y no vigentes; queda todo el
+   rollout. Detrás quedan solo desnivel y kilojoules.
 6. **Chat — latencia y costo.** *(persistencia implementada 2026-08-05, ver
    §22; `018` aplicada 2026-08-05)* Ya no es trabajo de código: queda correr la
    prueba de producción, verificar pérdida y latencia del rollout, y poblar
@@ -1563,8 +1644,11 @@ con mejor continuidad de producto: agrega distribución de intensidad útil en
 running y squash, reutiliza las superficies recién construidas y mejora el
 contexto objetivo sin tocar las reglas de coaching. No empezar por el schema:
 primero auditar payloads reales y cerrar el contrato de `zone_durations`; luego
-escribir spec/plan para `019` + Dexie v20, incluyendo sync, export/import,
-borrado, estados no `SCORED`, UI y costo de prompt.
+escribir spec/plan para `019` —sin migración Dexie—, incluyendo sync,
+export/import, borrado, estados no `SCORED`, UI y costo de prompt. El plan debe
+llevar como gate de rollout dos publicaciones nuevas, Whoop biométrica y
+Privacidad, revisadas jurídicamente y activadas antes de sincronizar zonas en
+producción.
 
 Esto no cambia el gate comercial: lo que separa el producto de cobrarle a
 alguien sigue siendo legal y operacional. Si se prioriza salida a piloto sobre

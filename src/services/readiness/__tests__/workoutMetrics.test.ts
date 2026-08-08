@@ -4,6 +4,9 @@ import {
   buildWorkoutMetrics,
   resolvePaceSecondsPerKm,
   resolveScoreNotice,
+  resolveHighZoneDurationMs,
+  resolveHrCaptureState,
+  formatHrCapturePercent,
 } from '../workoutMetrics'
 
 function makeWorkout(overrides: Partial<WhoopWorkout> = {}): WhoopWorkout {
@@ -113,5 +116,61 @@ describe('resolveScoreNotice', () => {
 
   it('stays silent for a scored workout with missing metrics', () => {
     expect(resolveScoreNotice(makeWorkout())).toBeNull()
+  })
+})
+
+const ZONES = { z0: 60_000, z1: 120_000, z2: 600_000, z3: 900_000, z4: 700_000, z5: 200_000 }
+
+describe('resolveHighZoneDurationMs', () => {
+  it('suma z4 + z5 en milisegundos, sin redondear', () => {
+    expect(resolveHighZoneDurationMs(makeWorkout({ zoneDurations: ZONES }))).toBe(900_000)
+  })
+
+  it('devuelve null sin distribución', () => {
+    expect(resolveHighZoneDurationMs(makeWorkout())).toBeNull()
+  })
+
+  it('devuelve 0 cuando z4 y z5 son cero: cero medido no es ausencia', () => {
+    expect(resolveHighZoneDurationMs(
+      makeWorkout({ zoneDurations: { ...ZONES, z4: 0, z5: 0 } }),
+    )).toBe(0)
+  })
+})
+
+describe('resolveHrCaptureState', () => {
+  it('devuelve null si no hay distribución, aunque haya cobertura', () => {
+    expect(resolveHrCaptureState(makeWorkout({ percentRecorded: 72.4 }))).toBeNull()
+  })
+
+  it('devuelve unknown con distribución y sin cobertura', () => {
+    expect(resolveHrCaptureState(makeWorkout({ zoneDurations: ZONES }))).toEqual({ kind: 'unknown' })
+  })
+
+  it.each([
+    [100, { kind: 'full' }],
+    [100.0, { kind: 'full' }],
+    [99.9, { kind: 'high', percent: 99.9 }],
+    [90, { kind: 'high', percent: 90 }],
+    [89.96, { kind: 'low', percent: 89.96 }],
+    [0, { kind: 'low', percent: 0 }],
+  ])('clasifica %s con el valor crudo', (percentRecorded, expected) => {
+    expect(resolveHrCaptureState(makeWorkout({ zoneDurations: ZONES, percentRecorded })))
+      .toEqual(expected)
+  })
+})
+
+describe('formatHrCapturePercent', () => {
+  it('trunca a un decimal en vez de redondear', () => {
+    // Redondear 89.96 daría 90,0 junto a un aviso de cobertura baja.
+    expect(formatHrCapturePercent(89.96, ',')).toBe('89,9')
+  })
+
+  it('respeta el separador pedido', () => {
+    expect(formatHrCapturePercent(72.45, '.')).toBe('72.4')
+    expect(formatHrCapturePercent(72.45, ',')).toBe('72,4')
+  })
+
+  it('no deja decimal colgando en enteros', () => {
+    expect(formatHrCapturePercent(90, ',')).toBe('90')
   })
 })

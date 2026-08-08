@@ -26,9 +26,22 @@ describe('consentDocuments', () => {
   })
 
   it('expone el ledger y resuelve publicaciones vigentes', () => {
-    expect(CONSENT_LEDGER).toHaveLength(4)
+    // 6 = 4 documentos + las dos publicaciones de zonas de FC, registradas y NO
+    // vigentes. El largo crece cada vez que se registra una publicación nueva;
+    // lo que no puede moverse sin decisión explícita es `currentVersion`.
+    expect(CONSENT_LEDGER).toHaveLength(6)
     expect(getCurrentVersion('health')).toBe('2026-06-20')
     expect(getPublication('terms', '2026-07-13')).toBe(getDocument('terms').publications[0])
+  })
+
+  it('las publicaciones de zonas de FC quedan registradas pero NO vigentes', () => {
+    // Activarlas es el Deploy 2 del rollout, después de la aprobación jurídica,
+    // y detiene la sincronización de Whoop para quien no reacepte. Que este test
+    // se ponga rojo significa que alguien adelantó ese paso.
+    expect(getCurrentVersion('privacy')).toBe('2026-07-13')
+    expect(getCurrentVersion('whoop_biometric')).toBe('2026-07-07')
+    expect(getPublication('privacy', '2026-08-08')).toBeDefined()
+    expect(getPublication('whoop_biometric', '2026-08-08')).toBeDefined()
   })
 
   it('rechaza documentos y publicaciones inexistentes', () => {

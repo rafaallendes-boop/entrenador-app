@@ -172,7 +172,71 @@ describe('formatWhoopWorkoutBlock', () => {
   it('closes with the strain guard line', () => {
     const block = formatWhoopWorkoutBlock([makeWorkout({ workoutId: 'one' })], [], TODAY)!
     expect(block.split('\n').at(-1)).toBe(
-      'Strain es carga fisiologica medida (0-21), no el esfuerzo declarado por el atleta.',
+      'Strain es carga fisiologica medida (0-21), no el esfuerzo declarado por el atleta. '
+      + 'Las zonas son distribucion de FC medida: no propongas objetivos por zona, '
+      + 'el producto no tiene sesiones con objetivo de zona.',
     )
+  })
+})
+
+describe('formatWhoopWorkoutBlock — zonas', () => {
+  const ZONES = { z0: 0, z1: 0, z2: 600_000, z3: 900_000, z4: 500_000, z5: 100_000 }
+
+  /** Mismo helper del archivo, con las métricas que el bloque debe imprimir. */
+  function zoneWorkout(overrides: Partial<WhoopWorkout> = {}): WhoopWorkout {
+    return makeWorkout({
+      workoutId: 'wz', sportName: 'squash', durationMin: 60,
+      strain: 12.4, avgHr: 142, maxHr: 181, ...overrides,
+    })
+  }
+
+  it('inserta la zona alta entre strain y FC', () => {
+    const block = formatWhoopWorkoutBlock(
+      [zoneWorkout({ zoneDurations: ZONES })], [], TODAY,
+    )
+    expect(block).toContain('60 min · strain 12.4 · 10 min zona alta · FC 142/181')
+  })
+
+  it('un entrenamiento sin zonas produce exactamente la línea de la Entrega 2', () => {
+    const block = formatWhoopWorkoutBlock([zoneWorkout()], [], TODAY)
+    expect(block).toContain('60 min · strain 12.4 · FC 142/181')
+    expect(block).not.toContain('zona alta')
+    expect(block).not.toContain('cobertura')
+  })
+
+  it('usa punto decimal, igual que strain', () => {
+    const block = formatWhoopWorkoutBlock(
+      [zoneWorkout({ zoneDurations: ZONES, percentRecorded: 72.45 })], [], TODAY,
+    )
+    expect(block).toContain('· cobertura 72.4%')
+    expect(block).not.toContain('72,4')
+  })
+
+  it.each([
+    [100], [92.4],
+  ])('no menciona la cobertura cuando es %s', (percentRecorded) => {
+    const block = formatWhoopWorkoutBlock(
+      [zoneWorkout({ zoneDurations: ZONES, percentRecorded })], [], TODAY,
+    )
+    expect(block).not.toContain('cobertura')
+  })
+
+  it('dice «cobertura ?» solo con zonas y sin porcentaje', () => {
+    const withZones = formatWhoopWorkoutBlock(
+      [zoneWorkout({ zoneDurations: ZONES })], [], TODAY,
+    )
+    expect(withZones).toContain('· cobertura ?')
+
+    // Sin zonas NO aparece, aunque falte el porcentaje: es el caso de todo
+    // entrenamiento anterior al flag.
+    const withoutZones = formatWhoopWorkoutBlock([zoneWorkout()], [], TODAY)
+    expect(withoutZones).not.toContain('cobertura ?')
+  })
+
+  it('la guardia prohíbe proponer objetivos por zona', () => {
+    const block = formatWhoopWorkoutBlock(
+      [zoneWorkout({ zoneDurations: ZONES })], [], TODAY,
+    )
+    expect(block).toContain('no propongas objetivos por zona')
   })
 })
